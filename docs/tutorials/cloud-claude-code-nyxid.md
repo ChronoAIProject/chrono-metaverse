@@ -227,24 +227,31 @@ Claude 会调用 `chrono-cd__put_app`，参数大致如下（这是本项目的�
       "port": 8080, "routes": ["/api"], "expose": "public",
       "health_path": "/api/healthz",
       "env": { "NYXID_JWT_AUDIENCE": "urn:chrono-metaverse:api" },
-      "addon_env": { "mongodb": { "uri": "MONGODB_URI", "database": "MONGODB_DATABASE" } },
-      "secret_keys": ["KEY_PEPPER"]
+      "addon_env": { "mongodb": { "uri": "MONGODB_URI", "database": "MONGODB_DATABASE" } }
     }
   }
 }
 ```
 
-**写入密钥不要交给 Claude。** `chrono-cd__set_app_secrets` 要求把密钥值放进调用参数，参数由 Claude 生成，值会留在对话记录里（返回结果里没有值，只说明返回不含值）。真实密钥请在**自己电脑上**用 NyxID 命令行写入：
+本项目第一版**不需要任何应用密钥**：
+- 数据库连接由 MongoDB 插件自动注入（`addon_env`）；
+- 校验 NyxID 身份令牌只用公开的公钥；
+- 空间钥匙、分享令牌都是高强度随机数，库里只存哈希，不需要额外的服务端密钥。
+
+如果你的服务确实需要密钥，例如调用第三方接口的 key、NyxID 服务账号的密码，按下面的方式处理：
+
+1. 在配置里用 `secret_keys` 声明名字。不要写进 `env`：`env` 的值会出现在 `get_app` 的返回里，组织成员都能看到。
+2. 值在**自己电脑上**用 NyxID 命令行写入，**不要交给 Claude**：`chrono-cd__set_app_secrets` 要求把值放进调用参数，参数由 Claude 生成，值会留在对话记录里。
 
 ```bash
-# secrets.json 内容：{"KEY_PEPPER":"<值>"}，不要放进仓库；KEY_PEPPER 可用 openssl rand -hex 32 生成，并存进密码管理器
+# secrets.json 内容：{"THIRD_PARTY_API_KEY":"<值>"}，不要放进仓库
 nyxid proxy request chrono-cd \
   'api/v1/projects/metaverse/apps/chrono-metaverse/services/api/secrets?org_id=<组织编号>' \
   --method PUT --data @secrets.json --output json
 rm secrets.json
 ```
 
-返回里只有键名，例如 `{"service":"api","keys":["KEY_PEPPER"]}`。之后回到云端会话，让 Claude 查看部署状态。
+返回里只有键名，例如 `{"service":"api","keys":["THIRD_PARTY_API_KEY"]}`。之后回到云端会话，让 Claude 查看部署状态。
 
 其他常用操作：
 
