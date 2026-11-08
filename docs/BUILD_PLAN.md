@@ -35,33 +35,50 @@
 | 重建：结构平面 + 物体常见形状拟合（圆角盒、倒角、弧形挤出、旋转体、扫掠管、少量截面放样）+ 贴图转移 | 物体自动识别模型（第一版用规则加 AI 本地辅助） |
 | NyxID 身份令牌校验、组织角色查询、jti 防重放 | NyxID 侧的注册与开关（需要人工，见第 7 节） |
 
-## 3. 代码结构
+## 3. 代码结构（参照 CMA，能复用的都复用）
+
+代码结构和技术栈与 CMA 保持一致：后端 Rust，前端沿用 CMA 的 React 工程。
 
 ```
-apps/api        接口服务（Bun + Hono + @hono/zod-openapi + MongoDB）
-apps/web        只读网站（Vite + TypeScript + Three.js）
-apps/worker     处理服务（Python：任务、上传校验、对齐、重建、体素化、清理）
-packages/core   共用核心（类型、区块编码、哈希、回放引擎、校验、形状词表与网格生成）
-packages/sdk    建造脚本工具包
-packages/cli    metaverse 命令行
-skills/metaverse-builder  建造技能说明
-infra/          Dockerfile、chrono-cd 部署配置、本地启动脚本
+api/        后端：一个 Rust 工作区（axum 0.8 + tokio + mongodb + utoipa，与 CMA 相同）
+  crates/metaverse-core   区块编码、内容哈希、回放、校验、操作、形状数据类型
+  crates/metaverse-api    接口服务（公开读、写、管理接口，NyxID 鉴权，OpenAPI）
+web/        前端：React 19 + Vite + three.js（沿用 CMA web 的工程配置、样式和测试设施）
+  src/core                区块解码、形状网格生成、事件回放（TypeScript）
+worker/     处理服务（Python：任务、上传校验、对齐、重建、体素化、清理）
+sdk/typescript  建造脚本工具包 + metaverse 命令行
+infra/      Dockerfile（api / web / worker）、chrono-cd 部署配置、本地启动脚本
+docs/       文档（含形状词表 SHAPES.md）
 .github/workflows  测试与镜像构建
 ```
 
+**从 CMA 复用**（`/ChronoAIProject/cma`）：
+
+| 用途 | CMA 位置 | 用法 |
+|---|---|---|
+| 身份令牌验签 | `api/crates/cma/src/auth/nyxid_proxy/jwt.rs` | 照搬改名：RS256 + kid、公钥列表缓存、签发方/受众/服务编号精确匹配、≤60 秒 |
+| 组织角色查询 | `api/crates/cma/src/auth/organizations/` | 照搬：`/orgs/{id}/authorization`，不跨请求缓存，三态结果 |
+| 资源归属与授权 | `api/crates/layer2-core/src/resource_access/` | 参照：主人类型、组织归属证据、子资源继承主人、授权凭据 |
+| 权限映射 | `api/crates/cma/src/permissions.rs` | 参照：`metaverse:*` 精确映射成固定能力 |
+| 配置、健康检查、错误格式、OpenAPI | `api/crates/cma/src/config*.rs`、`health.rs`、utoipa 用法 | 参照 |
+| 前端工程 | `web/`（vite、eslint、prettier、vitest、playwright、nginx.conf） | 复制工程配置，去掉与 agent 有关的页面 |
+| 部署 | `infra/api/Dockerfile`、`infra/web/Dockerfile`、`.github/workflows/` | 参照，改成推送 ghcr.io 并按 chrono-cd 的要求（数字 uid、linux/amd64） |
+
+处理服务的几何计算（对齐、重建、体素化）沿用已验证的 Python 代码，放在 `worker/`。这是和 CMA 根目录约定唯一的不同。
+
 ## 4. 关键约定
 
-- **形状词表**（`packages/core`，网站、命令行、处理服务共用）：
+- **形状词表**：格式见 [SHAPES.md](SHAPES.md)，Rust、TypeScript、Python 各自实现，用同一批测试向量核对：
   - 包括 `box`（可带圆角半径、倒角）、`cylinder`、`cone`、`extrude`（轮廓可含圆弧和圆角）、`lathe`（旋转体）、`sweep`（沿路径扫掠截面，用于椅腿、扶手）、`loft`（少量截面放样）、`template`（实例化）。
   - 每个形状可以带 `transform`（位置、偏航、俯仰、翻滚，连续值）和材质（颜色或贴图资源）。
-  - 处理服务输出这套 JSON，网站和命令行用同一份 TypeScript 代码生成网格。
+  - 处理服务输出这套 JSON，网站用 TypeScript 生成网格。
 - **鉴权**：身份令牌校验地址（JWKS）、签发方、受众、允许的服务编号都来自配置。测试和本地开发用测试密钥自签令牌，不连 NyxID。
-- **数据访问**：只在 `apps/api/src/repo/` 里访问数据库；所有读写都要求传入授权凭据对象（设计 9.4）。
+- **数据访问**：只在 `api/crates/metaverse-api/src/repo/` 里访问数据库；所有读写都要求传入授权凭据对象（设计 9.4）。
 - **所有接口都写 `operationId`**，用小写加下划线；路径带 `/api` 前缀。
 
 ## 5. 验收标准
 
-1. **单元测试**：`packages/core`、`apps/api`、`apps/worker`、`packages/cli` 的单元测试全部通过。
+1. **单元测试**：`api`（cargo test）、`web`（vitest）、`worker`（pytest）、`sdk/typescript` 的单元测试全部通过。
 2. **端到端测试**（本地，用真实 MongoDB 进程）：
    1. 用测试令牌建组织空间；
    2. 分片上传前厅扫描；
@@ -77,7 +94,7 @@ infra/          Dockerfile、chrono-cd 部署配置、本地启动脚本
 
 ## 6. 执行顺序
 
-1. **基础**：仓库骨架、`packages/core`（类型、编码、回放、校验、形状网格）及测试。
+1. **基础**：Rust 工作区和 metaverse-core、前端工程（复用 CMA）、处理服务骨架，三边按测试向量互相核对。
 2. **并行开发**：接口服务、处理服务（任务框架）、重建模块、网站、命令行与工具包、部署与文档。
 3. **集成**：本地启动全部服务，跑端到端测试，修问题。
 4. **审查**：安全与正确性审查，修问题。
