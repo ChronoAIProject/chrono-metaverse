@@ -459,7 +459,7 @@ jobs { _id, spaceId, kind, params, status: queued|running|done|failed,
 | | 公开读 `/api/public/*` | 写 + 给 AI 的读 `/api/v1/*` | 管理 `/api/v1/admin/*` |
 |---|---|---|---|
 | 访问方式 | 直接访问应用域名 | 经过 NyxID 代理 | 经过 NyxID 代理（命令行） |
-| 鉴权 | 公开空间无需鉴权；凭链接查看的空间要带分享令牌 | NyxID 身份令牌；按 9.2 要求"写"级别（主人或组织 admin / member）；agent 的细粒度权限由 NyxID 操作范围在转发前检查 | NyxID 身份令牌；按 9.2 要求"管理"级别（主人本人、组织本身或组织 admin） |
+| 鉴权 | 公开空间无需鉴权；凭链接查看的空间要带分享令牌 | NyxID 身份令牌；按 9.2 要求写入权限（主人本人、组织本身或组织 admin）；agent 的细粒度权限由 NyxID 操作范围在转发前检查 | NyxID 身份令牌；按 9.2 要求"管理"级别（主人本人、组织本身或组织 admin） |
 | 是否成为 AI 工具 | 否 | 是（写进注册给 NyxID 的 OpenAPI） | 否（不写进 OpenAPI） |
 
 ### 8.2 公开读接口
@@ -551,7 +551,10 @@ jobs { _id, spaceId, kind, params, status: queued|running|done|failed,
 
 接口服务部署在 chrono-cd 上，公网可以直接访问，前面没有 NyxID 把关。所以 `/api/v1/*` 必须自己校验 `X-NyxID-Identity-Token`：
 
-- **签名**：用 NyxID 的公钥列表（JWKS）校验，只接受 RS256；签发方以 NyxID 的 `/.well-known/openid-configuration` 为准；留 5 秒时钟容差。
+- **签名**（按 CMA `auth/nyxid_proxy/jwt.rs` 的做法）：
+  - 用 NyxID 的公钥列表（JWKS）校验，只接受 RS256 并按 kid 选公钥；公钥列表缓存 5 分钟，遇到未知 kid 时最多每 5 秒刷新一次；
+  - 签发方以 NyxID 的 `/.well-known/openid-configuration` 为准；
+  - 签发时间到过期时间不超过 60 秒，留 5 秒时钟容差。
 - **受众**：注册服务时显式设置 `identity_jwt_audience = urn:chrono-metaverse:api`，校验时必须一致，不依赖地址默认值。签发方和受众这两项配置缺失时，服务直接启动失败——`jose` 在这两项为空时会静默跳过检查。
 - **令牌类型**：NyxID 的访问令牌和身份令牌用同一把密钥签名，签发方也相同。所以要拒绝带 `token_type` 的令牌，并要求令牌带 `nyx_service_id`。
 - **服务编号**：从第一步起就校验令牌里的服务编号，要求 `nyx_service_id ∈ ALLOWED_NYX_SERVICE_IDS`。
@@ -563,30 +566,35 @@ jobs { _id, spaceId, kind, params, status: queued|running|done|failed,
 
 ### 9.2 谁能写：资源归属与租户隔离
 
-参照 CMA 的做法（Ornn 也类似）：没有单独的"租户"实体，租户边界就是"每个空间归哪个 NyxID 主体"。身份、权限、组织成员关系和角色、agent 能做什么，都由 NyxID 给出；本服务只存"资源归哪个 NyxID 主体"这一个事实，不存人、组织、成员、钥匙或角色。
+**按 CMA 的实现做**（`cma/src/auth/organizations`、`layer2-core/src/resource_access`）：没有单独的"租户"实体，租户边界就是"每个空间归哪个 NyxID 主体"。身份、权限、组织成员关系和角色、agent 能做什么，都由 NyxID 给出；本服务只存"资源归哪个 NyxID 主体"这一个事实，不存人、组织、成员、钥匙或角色。
 
 - **显式记录主人类型**：空间和组合都记 `owner: { kind: person | org, id }`。不能从一个编号去猜它是不是组织。
-- **组织空间要先查证再创建**：创建组织空间时，现场调用 NyxID 的组织授权接口确认调用者是该组织的 admin，再写入 `ownerEvidence`（组织编号、核验人、核验时间、当时的角色）。查不到就拒绝。
+- **组织空间要先查证再创建**：创建组织空间时，现场调用 NyxID 的组织授权接口确认调用者是该组织的 admin，再写入 `ownerEvidence`（签发方、组织编号、核验人、核验时间，与 CMA 的组织归属证据相同）。查不到就拒绝。没有证据的空间一律按个人所有处理。
+- **子资源继承主人**：提交、草稿、事件、物件、锚点都带 `spaceId` 和主人副本，写入时校验副本与空间的主人一致，不一致判为数据损坏（CMA 的 lineage 规则）。
 - **访问级别**：
 
 | 调用者 | 个人空间 | 组织空间 |
 |---|---|---|
 | 主人本人 | 管理 | — |
 | 组织本身（组织的 agent key，令牌里的 sub 就是组织） | — | 管理 |
-| 组织 admin | — | 管理 |
-| 组织 member | — | 写 |
+| 组织 admin | — | 管理（等同主人） |
+| 组织 member | — | 只读（含内部级数据） |
 | 组织 viewer | — | 只读（含内部级数据） |
 | 其他人 | 无 | 无 |
 
-  "管理"包括 `/api/v1/admin` 下的接口、删除空间、轮换分享令牌。这张表写成代码常量，并配测试矩阵。
-- **怎么查组织角色**（参照 CMA、chrono-cd 的写法）：
-  - 用 NyxID 转发过来的调用者 Bearer，调用 `GET /api/v1/orgs/{orgId}/authorization`。要求返回的编号等于 `orgId`（不认 slug），角色只能是 admin、member、viewer 三种之一。
-  - 401、403、404 判为"不是成员"；其他错误判为"查不到"。超时 3–5 秒。
-  - 结果只在单个请求内复用，不跨请求缓存。写操作要求证据是在本次操作开始之后取得的。
+  - **与 CMA 一致**：组织 admin 等同主人；member 和 viewer 只能读。日常写入由组织的 agent key（sub 就是组织）和 admin 完成。以后需要成员也能写，只改这张表对应的常量。
+  - "管理"包括写入、`/api/v1/admin` 下的接口、删除空间、轮换分享令牌。
+  - 这张表写成代码常量，并配测试矩阵（参照 CMA `resource_access/tests.rs`）。
+- **怎么查组织角色**（CMA 的写法，chrono-cd 照抄了它）：
+  - 用调用者自己的凭据调用 `GET /api/v1/orgs/{orgId}/authorization`。要求返回的编号等于 `orgId`（不认 slug），角色只能是 admin、member、viewer 三种之一。
+  - 401、403、404 判为"不是成员"；其他错误判为"查不到"。整次查询有截止时间（CMA 为 15 秒）。
+  - 结果不跨请求缓存，证据最多用 60 秒。写操作要求证据是在本次操作开始之后取得的。
   - 没有转发令牌时判为"查不到"。如果转发的是 JWT，要先验签，并要求它的 sub 等于身份令牌的 sub。
 - **查不到怎么办**：写操作返回 503 `org_membership_unavailable`；读操作按"不是成员"处理，公开空间和凭分享令牌的访问不受影响。
-- **转发令牌是一个有记录的例外**：
-  - NyxID 的身份令牌里没有组织角色，所以查角色需要在本服务的 NyxID 注册上开启"转发调用者令牌"（`forward_access_token`）。这意味着本服务会在请求期间拿到调用者的访问令牌，命令行的 agent key 配置下拿到的是 agent key 原文。
+- **调用者凭据从哪来（和 CMA 唯一的不同）**：
+  - CMA 有网页登录，会在服务端保存用户的 NyxID 令牌，查角色时用这份令牌。本服务网站只读、不登录，没有这份令牌。
+  - 所以本服务改为：在 NyxID 注册上开启"转发调用者令牌"（`forward_access_token`），让 NyxID 把调用者的令牌随请求带过来。Ornn 就是这样做的。
+  - 这是一个有记录的例外：本服务会在请求期间拿到调用者的访问令牌，命令行的 agent key 配置下拿到的是 agent key 原文。
   - 约束：只在内存里用，只调这一个 NyxID 接口，不记日志、不落库、用完即弃。
   - NyxID 补上"令牌里带组织角色"（9.6）之后，就取消这个例外。
 - **第一步尽量不需要转发**：
@@ -594,7 +602,10 @@ jobs { _id, spaceId, kind, params, status: queued|running|done|failed,
   - agent（数据源、合作方、AI 装修）一律用组织的 agent key，令牌里的 sub 就是组织，直接判为"管理"，不用查角色；
   - 只有成员用个人身份写入时，才需要转发令牌查角色。
 - **不再用"组织连接的服务编号"推断成员身份**：这个推断 Ornn 和 CMA 都没有用过，只作为第 0 阶段的实测项，实测成立之前不作为授权依据。
-- **功能级开关（可选）**：需要平台级限制时（例如谁能建空间），请平台管理员在 NyxID 建 `metaverse-user`、`metaverse-admin` 角色。服务端只认 `metaverse:*` 权限字符串，不认角色名，不在本地维护管理员名单。第一步可以不用。
+- **功能级开关（可选）**：
+  - 需要平台级限制时（例如谁能建空间），请平台管理员在 NyxID 建 `metaverse-user`、`metaverse-admin` 角色。
+  - 服务端按 CMA 的做法，把令牌里的 `permissions` 按字符串精确映射成一组固定的能力；不认角色名和用户组，未知字符串和前缀通配一律不授予，不在本地维护管理员名单。
+  - 第一步可以不用。
 - **更细的限制交给 NyxID**：能改哪个地块、能写哪个数据源、能不能发布，由 agent key 的操作范围在转发前检查（9.3）。人的登录态不受操作范围约束，这正是上面的主人和角色检查必须存在的原因。
 
 ### 9.3 agent 的权限：NyxID agent key
@@ -639,7 +650,7 @@ jobs { _id, spaceId, kind, params, status: queued|running|done|failed,
 
 1. **身份**（全部 `/api/v1/*`）：按 9.1 验签。身份令牌头只能出现一次；完全不读 `X-NyxID-User-*` 明文头（Ornn 的回退是漏洞，本服务直接暴露在公网）。失败返回 401；拿不到 NyxID 公钥返回 503。
 2. **功能级权限**（可选，9.2）：精确匹配 `metaverse:*` 权限字符串，不认前缀通配。
-3. **资源级**（`/spaces/{space_id}/...`、`/universes/{universe_id}/...`）：读出主人，按 9.2 算出访问级别（无 / 只读 / 写 / 管理），交给后面的处理逻辑。
+3. **资源级**（`/spaces/{space_id}/...`、`/universes/{universe_id}/...`）：读出主人，按 9.2 算出访问级别（无 / 只读 / 管理），交给后面的处理逻辑。
 
 **请求内容与路径一致**：
 - 地块路径下的每个操作（填充盒、复制目标、物件包围盒、锚点的新旧位置）都必须落在该地块内；实体区路径下的操作只能改实体区。
