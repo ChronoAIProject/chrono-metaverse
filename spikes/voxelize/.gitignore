@@ -1,0 +1,10 @@
+# scan inputs and generated models stay out of git
+*.drc
+*.glb
+*.jpg
+!results/*.jpg
+out/
+shots/
+viewer/models
+viewer/node_modules/
+.venv/

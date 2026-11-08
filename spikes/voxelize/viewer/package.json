@@ -1,0 +1,8 @@
+{
+  "name": "voxelize-spike-viewer",
+  "private": true,
+  "description": "Headless three.js renderer for the voxelization spike",
+  "dependencies": {
+    "three": "0.170.0"
+  }
+}

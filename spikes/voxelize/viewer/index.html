@@ -1,0 +1,45 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#2b2d31;overflow:hidden}</style>
+<script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}</script>
+</head><body><script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+const q = new URLSearchParams(location.search);
+const file = q.get('m'), view = q.get('view') || 'persp';
+const W = 1200, H = 900;
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(W, H); renderer.setPixelRatio(1);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x2b2d31);
+const gltf = await new GLTFLoader().loadAsync('./models/' + file);
+gltf.scene.traverse(o => {
+  if (!o.isMesh) return;
+  const old = o.material;
+  const col = o.geometry.attributes.color;
+  if (col) { // vertex colors were written as sRGB bytes; glTF expects linear
+    const n = col.count, out = new Float32Array(n * 3), c = new THREE.Color();
+    for (let i = 0; i < n; i++) { c.setRGB(col.getX(i), col.getY(i), col.getZ(i)); c.convertSRGBToLinear(); out[i*3]=c.r; out[i*3+1]=c.g; out[i*3+2]=c.b; }
+    o.geometry.setAttribute('color', new THREE.BufferAttribute(out, 3));
+  }
+  o.material = new THREE.MeshBasicMaterial({ map: old.map || null, vertexColors: !!col, side: col ? THREE.DoubleSide : THREE.FrontSide });
+  if (o.material.map) o.material.map.colorSpace = THREE.SRGBColorSpace;
+});
+scene.add(gltf.scene);
+// fixed scene frame (aligned bbox ~ 11.7 x 3.3 x 17.4 m) so all models share one camera
+const c = new THREE.Vector3(5.84, 0.8, 8.7);
+let cam;
+if (view === 'top') {
+  cam = new THREE.OrthographicCamera(-9.5 * W / H, 9.5 * W / H, 9.5, -9.5, 0.1, 100);
+  cam.position.set(c.x, 30, c.z); cam.up.set(0, 0, -1); cam.lookAt(c.x, 0, c.z);
+  // cut the ceiling for a floor-plan look
+  renderer.clippingPlanes = [new THREE.Plane(new THREE.Vector3(0, -1, 0), 2.2)];
+} else {
+  const az = parseFloat(q.get('az') || '220') * Math.PI / 180, el = parseFloat(q.get('el') || '38') * Math.PI / 180, r = parseFloat(q.get('r') || '19');
+  cam = new THREE.PerspectiveCamera(45, W / H, 0.1, 200);
+  cam.position.set(c.x + r * Math.cos(el) * Math.sin(az), c.y + r * Math.sin(el), c.z + r * Math.cos(el) * Math.cos(az));
+  cam.lookAt(c);
+  if (q.get('cut')) renderer.clippingPlanes = [new THREE.Plane(new THREE.Vector3(0, -1, 0), parseFloat(q.get('cut')))];
+}
+renderer.render(scene, cam);
+window.__done = true;
+</script></body></html>

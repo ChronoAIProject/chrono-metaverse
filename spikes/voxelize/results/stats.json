@@ -1,0 +1,47 @@
+{
+  "rotation_deg": -61.375,
+  "surface_area_m2": 378.90404054571087,
+  "bbox_m": [
+    11.678,
+    3.305,
+    17.392
+  ],
+  "sizes": {
+    "5cm": {
+      "voxels": 163372,
+      "grid_dims": [
+        234,
+        66,
+        348
+      ],
+      "chunks_32": 155,
+      "samples": 1365024,
+      "palette": 64,
+      "seconds": 3.5
+    },
+    "10cm": {
+      "voxels": 40335,
+      "grid_dims": [
+        117,
+        33,
+        174
+      ],
+      "chunks_32": 28,
+      "samples": 341485,
+      "palette": 64,
+      "seconds": 0.7
+    },
+    "20cm": {
+      "voxels": 10031,
+      "grid_dims": [
+        59,
+        17,
+        87
+      ],
+      "chunks_32": 6,
+      "samples": 85590,
+      "palette": 64,
+      "seconds": 0.2
+    }
+  }
+}
