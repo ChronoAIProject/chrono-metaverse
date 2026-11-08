@@ -1,0 +1,861 @@
+{
+ "source": "scan-assets/mesh.drc + tex.jpg (aligned with common.load_aligned, rotation -61.375 deg)",
+ "units": "metres, y up, floor ~0.06, x in [0,11.7], z in [0,17.4]",
+ "method": "sample_surface(1500/m2) -> floor = up-facing mode with 0.5 m local height field; walls = peaks of plane-offset histograms of horizontal-normal points per dominant direction (4 axis + strong off-axis), drift-aware inliers (+-4 cm of a per-0.5 m local offset), split into segments on a 10 cm (u,y) occupancy grid; glazing = broad offset peak on the floor-footprint edge; corners snapped; textures baked orthographically at 1 cm/px from a 40k/m2 re-sample of the inlier faces, holes push-pull filled",
+ "elements": [
+  {
+   "id": "floor",
+   "kind": "floor",
+   "plane": {
+    "axis": "y",
+    "offset": 0.0635,
+    "normal": [
+     0,
+     1,
+     0
+    ]
+   },
+   "rect": {
+    "x": [
+     0.2,
+     11.5
+    ],
+    "z": [
+     0.2,
+     15.7
+    ]
+   },
+   "thickness": 0.05,
+   "texture": "tex/floor.png",
+   "texture_size": [
+    1130,
+    1550
+   ],
+   "metres_per_px": 0.01,
+   "texture_layout": "column 0 = x min, row 0 = z min (image up = -z, same as the top view); slab extends 0.05 m below the plane",
+   "observed_mask": "tex/floor_mask.png",
+   "footprint_mask": "tex/floor_footprint.png",
+   "footprint_grid": "floor_footprint_10cm.npy",
+   "footprint_note": "floor region (10 cm cells, [z, x] = cell (z/0.1, x/0.1)): scanned floor + regions enclosed by floor and walls (under the desk / sofas / table), max 1.2 m from scanned floor; the rect is its bounding box, texels outside it are hole-filled colour",
+   "footprint_m2": 129.23,
+   "scanned_footprint_m2": 113.32,
+   "observed_fraction": 0.554,
+   "support_pts": 162743,
+   "height_range": [
+    -0.011,
+    0.173
+   ]
+  },
+  {
+   "id": "wall_x1.42_1",
+   "kind": "wall",
+   "plane": {
+    "axis": "x",
+    "offset": 1.4174,
+    "normal": [
+     1.0,
+     0.0,
+     0.0
+    ]
+   },
+   "rect": {
+    "z": [
+     2.818,
+     15.641
+    ],
+    "y": [
+     0.064,
+     2.859
+    ]
+   },
+   "thickness": 0.1,
+   "texture": "tex/wall_x1.42_1.png",
+   "texture_size": [
+    1282,
+    280
+   ],
+   "metres_per_px": 0.01,
+   "u_axis": [
+    0.0,
+    0.0,
+    -1.0
+   ],
+   "u_range": [
+    -15.641,
+    -2.818
+   ],
+   "corners": [
+    [
+     1.4174,
+     0.0635,
+     15.6413
+    ],
+    [
+     1.4174,
+     0.0635,
+     2.8183
+    ],
+    [
+     1.4174,
+     2.859,
+     2.8183
+    ],
+    [
+     1.4174,
+     2.859,
+     15.6413
+    ]
+   ],
+   "texture_layout": "column 0 = corners[0] end (left as seen from the room), row 0 = top (y max); plane = visible face, normal points into the room, slab extends thickness behind it",
+   "observed_mask": "tex/wall_x1.42_1_mask.png",
+   "observed_fraction": 0.858,
+   "support_pts": 44651,
+   "fill": 0.946,
+   "fill_above_1m": 0.986,
+   "length_m": 12.823,
+   "offset_drift": [
+    [
+     -15.64,
+     -0.095
+    ],
+    [
+     -15.13,
+     -0.1
+    ],
+    [
+     -14.62,
+     -0.087
+    ],
+    [
+     -14.1,
+     -0.072
+    ],
+    [
+     -13.59,
+     -0.069
+    ],
+    [
+     -13.08,
+     -0.062
+    ],
+    [
+     -12.56,
+     -0.059
+    ],
+    [
+     -12.05,
+     -0.044
+    ],
+    [
+     -11.54,
+     -0.028
+    ],
+    [
+     -11.02,
+     -0.022
+    ],
+    [
+     -10.51,
+     -0.022
+    ],
+    [
+     -10.0,
+     -0.022
+    ],
+    [
+     -9.49,
+     -0.022
+    ],
+    [
+     -8.97,
+     -0.017
+    ],
+    [
+     -8.46,
+     0.017
+    ],
+    [
+     -7.95,
+     0.05
+    ],
+    [
+     -7.43,
+     0.058
+    ],
+    [
+     -6.92,
+     0.058
+    ],
+    [
+     -6.41,
+     0.058
+    ],
+    [
+     -5.9,
+     0.065
+    ],
+    [
+     -5.38,
+     0.068
+    ],
+    [
+     -4.87,
+     0.068
+    ],
+    [
+     -4.36,
+     0.068
+    ],
+    [
+     -3.84,
+     0.068
+    ],
+    [
+     -3.33,
+     0.059
+    ],
+    [
+     -2.82,
+     -0.003
+    ]
+   ]
+  },
+  {
+   "id": "wall_x9.84_1",
+   "kind": "wall",
+   "plane": {
+    "axis": "x",
+    "offset": 9.8361,
+    "normal": [
+     -1.0,
+     0.0,
+     0.0
+    ]
+   },
+   "rect": {
+    "z": [
+     0.5,
+     4.409
+    ],
+    "y": [
+     0.064,
+     2.874
+    ]
+   },
+   "thickness": 0.1,
+   "texture": "tex/wall_x9.84_1.png",
+   "texture_size": [
+    391,
+    281
+   ],
+   "metres_per_px": 0.01,
+   "u_axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "u_range": [
+    0.5,
+    4.409
+   ],
+   "corners": [
+    [
+     9.8361,
+     0.0635,
+     0.5
+    ],
+    [
+     9.8361,
+     0.0635,
+     4.4094
+    ],
+    [
+     9.8361,
+     2.8737,
+     4.4094
+    ],
+    [
+     9.8361,
+     2.8737,
+     0.5
+    ]
+   ],
+   "texture_layout": "column 0 = corners[0] end (left as seen from the room), row 0 = top (y max); plane = visible face, normal points into the room, slab extends thickness behind it",
+   "observed_mask": "tex/wall_x9.84_1_mask.png",
+   "observed_fraction": 0.928,
+   "support_pts": 15592,
+   "fill": 0.97,
+   "fill_above_1m": 0.995,
+   "length_m": 3.909,
+   "offset_drift": [
+    [
+     0.5,
+     -0.049
+    ],
+    [
+     1.06,
+     -0.043
+    ],
+    [
+     1.62,
+     -0.024
+    ],
+    [
+     2.18,
+     -0.002
+    ],
+    [
+     2.73,
+     0.011
+    ],
+    [
+     3.29,
+     0.011
+    ],
+    [
+     3.85,
+     0.011
+    ],
+    [
+     4.41,
+     0.011
+    ]
+   ]
+  },
+  {
+   "id": "wall_z1.39_1",
+   "kind": "wall",
+   "plane": {
+    "axis": "z",
+    "offset": 1.3912,
+    "normal": [
+     0.0,
+     0.0,
+     1.0
+    ]
+   },
+   "rect": {
+    "x": [
+     4.058,
+     8.567
+    ],
+    "y": [
+     0.064,
+     2.657
+    ]
+   },
+   "thickness": 0.1,
+   "texture": "tex/wall_z1.39_1.png",
+   "texture_size": [
+    451,
+    259
+   ],
+   "metres_per_px": 0.01,
+   "u_axis": [
+    1.0,
+    0.0,
+    -0.0
+   ],
+   "u_range": [
+    4.058,
+    8.567
+   ],
+   "corners": [
+    [
+     4.0575,
+     0.0635,
+     1.3912
+    ],
+    [
+     8.5675,
+     0.0635,
+     1.3912
+    ],
+    [
+     8.5675,
+     2.6573,
+     1.3912
+    ],
+    [
+     4.0575,
+     2.6573,
+     1.3912
+    ]
+   ],
+   "texture_layout": "column 0 = corners[0] end (left as seen from the room), row 0 = top (y max); plane = visible face, normal points into the room, slab extends thickness behind it",
+   "observed_mask": "tex/wall_z1.39_1_mask.png",
+   "observed_fraction": 0.895,
+   "support_pts": 15042,
+   "fill": 0.937,
+   "fill_above_1m": 0.969,
+   "length_m": 4.51,
+   "offset_drift": [
+    [
+     4.06,
+     0.006
+    ],
+    [
+     4.56,
+     0.004
+    ],
+    [
+     5.06,
+     -0.002
+    ],
+    [
+     5.56,
+     0.0
+    ],
+    [
+     6.06,
+     -0.002
+    ],
+    [
+     6.56,
+     -0.006
+    ],
+    [
+     7.06,
+     -0.012
+    ],
+    [
+     7.57,
+     -0.004
+    ],
+    [
+     8.07,
+     -0.003
+    ],
+    [
+     8.57,
+     -0.013
+    ]
+   ]
+  },
+  {
+   "id": "wall_a210_1",
+   "kind": "wall",
+   "plane": {
+    "axis": "n",
+    "offset": -10.713,
+    "normal": [
+     -0.8616,
+     0.0,
+     -0.5075
+    ],
+    "note": "off-axis wall: plane is normal.x*x + normal.z*z = offset (not axis-aligned in the scan)"
+   },
+   "rect": {
+    "u": [
+     -1.193,
+     2.8
+    ],
+    "y": [
+     0.064,
+     2.917
+    ]
+   },
+   "thickness": 0.1,
+   "texture": "tex/wall_a210_1.png",
+   "texture_size": [
+    399,
+    285
+   ],
+   "metres_per_px": 0.01,
+   "u_axis": [
+    -0.5075,
+    0.0,
+    0.8616
+   ],
+   "u_range": [
+    -1.193,
+    2.8
+   ],
+   "corners": [
+    [
+     9.8361,
+     0.0635,
+     4.4094
+    ],
+    [
+     7.8095,
+     0.0635,
+     7.8498
+    ],
+    [
+     7.8095,
+     2.9171,
+     7.8498
+    ],
+    [
+     9.8361,
+     2.9171,
+     4.4094
+    ]
+   ],
+   "texture_layout": "column 0 = corners[0] end (left as seen from the room), row 0 = top (y max); plane = visible face, normal points into the room, slab extends thickness behind it",
+   "observed_mask": "tex/wall_a210_1_mask.png",
+   "observed_fraction": 0.821,
+   "support_pts": 13639,
+   "fill": 0.852,
+   "fill_above_1m": 0.969,
+   "length_m": 3.993,
+   "offset_drift": [
+    [
+     -1.19,
+     -0.04
+    ],
+    [
+     -0.62,
+     -0.019
+    ],
+    [
+     -0.05,
+     -0.008
+    ],
+    [
+     0.52,
+     0.009
+    ],
+    [
+     1.09,
+     0.025
+    ],
+    [
+     1.66,
+     0.003
+    ],
+    [
+     2.23,
+     0.017
+    ],
+    [
+     2.8,
+     0.007
+    ]
+   ]
+  },
+  {
+   "id": "wall_x3.32_1",
+   "kind": "wall",
+   "plane": {
+    "axis": "x",
+    "offset": 3.3168,
+    "normal": [
+     1.0,
+     0.0,
+     0.0
+    ]
+   },
+   "rect": {
+    "z": [
+     0.4,
+     1.491
+    ],
+    "y": [
+     0.064,
+     2.841
+    ]
+   },
+   "thickness": 0.1,
+   "texture": "tex/wall_x3.32_1.png",
+   "texture_size": [
+    109,
+    278
+   ],
+   "metres_per_px": 0.01,
+   "u_axis": [
+    0.0,
+    0.0,
+    -1.0
+   ],
+   "u_range": [
+    -1.491,
+    -0.4
+   ],
+   "corners": [
+    [
+     3.3168,
+     0.0635,
+     1.4909
+    ],
+    [
+     3.3168,
+     0.0635,
+     0.4
+    ],
+    [
+     3.3168,
+     2.8408,
+     0.4
+    ],
+    [
+     3.3168,
+     2.8408,
+     1.4909
+    ]
+   ],
+   "texture_layout": "column 0 = corners[0] end (left as seen from the room), row 0 = top (y max); plane = visible face, normal points into the room, slab extends thickness behind it",
+   "observed_mask": "tex/wall_x3.32_1_mask.png",
+   "observed_fraction": 0.726,
+   "support_pts": 3089,
+   "fill": 0.76,
+   "fill_above_1m": 0.935,
+   "length_m": 1.091,
+   "offset_drift": [
+    [
+     -1.49,
+     0.028
+    ],
+    [
+     -0.95,
+     0.004
+    ],
+    [
+     -0.4,
+     -0.012
+    ]
+   ]
+  },
+  {
+   "id": "glazing_z15.64_1",
+   "kind": "wall",
+   "plane": {
+    "axis": "z",
+    "offset": 15.6413,
+    "normal": [
+     0.0,
+     0.0,
+     -1.0
+    ]
+   },
+   "rect": {
+    "x": [
+     1.417,
+     10.1
+    ],
+    "y": [
+     0.064,
+     2.859
+    ]
+   },
+   "thickness": 0.1,
+   "texture": "tex/glazing_z15.64_1_r2.png",
+   "texture_size": [
+    868,
+    280
+   ],
+   "metres_per_px": 0.01,
+   "u_axis": [
+    -1.0,
+    0.0,
+    -0.0
+   ],
+   "u_range": [
+    -10.1,
+    -1.417
+   ],
+   "corners": [
+    [
+     10.1,
+     0.0635,
+     15.6413
+    ],
+    [
+     1.4174,
+     0.0635,
+     15.6413
+    ],
+    [
+     1.4174,
+     2.859,
+     15.6413
+    ],
+    [
+     10.1,
+     2.859,
+     15.6413
+    ]
+   ],
+   "texture_layout": "column 0 = corners[0] end (left as seen from the room), row 0 = top (y max); plane = visible face, normal points into the room, slab extends thickness behind it",
+   "observed_mask": "tex/glazing_z15.64_1_r2_mask.png",
+   "observed_fraction": 0.286,
+   "support_pts": 12480,
+   "fill": 0.553,
+   "fill_above_1m": 0.578,
+   "length_m": 8.683,
+   "glazing": true,
+   "confidence": "low",
+   "note": "window / glass curtain wall: glass is scanned sparsely at scattered depths, the plane is the room-side face (75th pct), texture is a blurred projection of everything seen through it",
+   "depth_band": [
+    -0.507,
+    0.144
+   ],
+   "texture_fill": "r2: white frame samples and mullion strips excluded; holes in each pane (between mullions) filled with the vertically smoothed per-row median of that pane's observed glass texels (sky above, city below); the r1 push-pull texture is kept as tex/glazing_z15.64_1.png",
+   "frame_object": "window-frame-01"
+  },
+  {
+   "id": "glazing_east_1",
+   "kind": "wall",
+   "plane": {
+    "axis": "n",
+    "offset": -12.723,
+    "normal": [
+     -0.95,
+     0.0,
+     -0.313
+    ],
+    "note": "off-axis plane: normal.x*x + normal.z*z = offset"
+   },
+   "rect": {
+    "u": [
+     6.231,
+     7.297
+    ],
+    "y": [
+     0.064,
+     2.859
+    ]
+   },
+   "thickness": 0.03,
+   "texture": "tex/glazing_east_1.png",
+   "texture_size": [
+    107,
+    280
+   ],
+   "metres_per_px": 0.01,
+   "u_axis": [
+    -0.313,
+    0.0,
+    0.95
+   ],
+   "u_range": [
+    6.231,
+    7.297
+   ],
+   "corners": [
+    [
+     10.137,
+     0.064,
+     9.897
+    ],
+    [
+     9.803,
+     0.064,
+     10.909
+    ],
+    [
+     9.803,
+     2.859,
+     10.909
+    ],
+    [
+     10.137,
+     2.859,
+     9.897
+    ]
+   ],
+   "texture_layout": "column 0 = corners[0] end (left as seen from the room), row 0 = top (y max)",
+   "observed_mask": "tex/glazing_east_1_mask.png",
+   "observed_fraction": 0.799,
+   "support_pts": 2070,
+   "length_m": 1.066,
+   "glazing": true,
+   "confidence": "medium",
+   "note": "diagonal glass partition of the east meeting room (the scan shows the room behind it: world-map wall and people)",
+   "source": "refine_r2.py (PCA line fit on vertical samples; added in round 2)"
+  },
+  {
+   "id": "glazing_east_2",
+   "kind": "wall",
+   "plane": {
+    "axis": "n",
+    "offset": -9.123,
+    "normal": [
+     -1.0,
+     0.0,
+     0.011
+    ],
+    "note": "off-axis plane: normal.x*x + normal.z*z = offset"
+   },
+   "rect": {
+    "u": [
+     12.455,
+     13.104
+    ],
+    "y": [
+     0.064,
+     2.859
+    ]
+   },
+   "thickness": 0.03,
+   "texture": "tex/glazing_east_2.png",
+   "texture_size": [
+    65,
+    280
+   ],
+   "metres_per_px": 0.01,
+   "u_axis": [
+    0.011,
+    0.0,
+    1.0
+   ],
+   "u_range": [
+    12.455,
+    13.104
+   ],
+   "corners": [
+    [
+     9.26,
+     0.064,
+     12.354
+    ],
+    [
+     9.267,
+     0.064,
+     13.002
+    ],
+    [
+     9.267,
+     2.859,
+     13.002
+    ],
+    [
+     9.26,
+     2.859,
+     12.354
+    ]
+   ],
+   "texture_layout": "column 0 = corners[0] end (left as seen from the room), row 0 = top (y max)",
+   "observed_mask": "tex/glazing_east_2_mask.png",
+   "observed_fraction": 0.558,
+   "support_pts": 1184,
+   "length_m": 0.649,
+   "glazing": true,
+   "confidence": "low",
+   "note": "glass door at the south end of the east corridor",
+   "source": "refine_r2.py (PCA line fit on vertical samples; added in round 2)"
+  }
+ ],
+ "planes_npy": "structure_points.npy",
+ "planes_npy_columns": [
+  "nx",
+  "ny",
+  "nz",
+  "offset (n.p)",
+  "tx",
+  "ty",
+  "tz",
+  "u0",
+  "u1",
+  "v0",
+  "v1",
+  "band_front_m",
+  "band_back_m",
+  "is_wall",
+  "is_glazing",
+  "pad"
+ ],
+ "planes_npy_note": "row k = elements[k]. Point p is on element k if -band_back < n.p - offset < band_front and its in-plane coords lie inside the rect (walls: u = t.p in [u0,u1], y in [v0,v1]; floor: x in [u0,u1], z in [v0,v1], better: floor_footprint_10cm.npy). offset here is n.p (for -x / -z facing walls it is minus the world coordinate). For solid walls offset_drift in the json gives the per-0.5 m deviation for a tighter test.",
+ "round2": "refine_r2.py: glazing_z15.64_1 re-baked (per-pane row-median fill); glazing_east_1/2 added (rows appended to structure_points.npy)"
+}

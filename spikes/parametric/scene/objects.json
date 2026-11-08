@@ -1,0 +1,6187 @@
+[
+ {
+  "id": "counter-01",
+  "label": "前台接待台",
+  "label_en": "reception desk",
+  "anchor_suggestion": "counter-01",
+  "category": "desk",
+  "transform": {
+   "position": [
+    6.974,
+    0.118,
+    5.902
+   ],
+   "yaw_deg": 0.0
+  },
+  "parts": [
+   {
+    "type": "profile_extrude",
+    "name": "front_block",
+    "polygon": [
+     [
+      -0.86,
+      0.04
+     ],
+     [
+      -0.86,
+      1.871
+     ],
+     [
+      -0.2,
+      1.871
+     ],
+     [
+      -0.2,
+      0.249
+     ]
+    ],
+    "edge_inset": [
+     1,
+     1,
+     0,
+     0
+    ],
+    "inset_profile": [
+     [
+      0.0,
+      0.32
+     ],
+     [
+      0.2,
+      0.31
+     ],
+     [
+      0.24,
+      0.22
+     ],
+     [
+      0.34,
+      0.06
+     ],
+     [
+      0.58,
+      0.0
+     ],
+     [
+      1.123,
+      0.171
+     ]
+    ],
+    "position": [
+     0.0,
+     0,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     228,
+     229,
+     226
+    ],
+    "low_color_rgb": [
+     50,
+     50,
+     52
+    ],
+    "low_until": 0.24,
+    "color_source": "fixed"
+   },
+   {
+    "type": "profile_extrude",
+    "name": "end_return",
+    "polygon": [
+     [
+      -0.2,
+      1.547
+     ],
+     [
+      -0.2,
+      1.871
+     ],
+     [
+      0.86,
+      1.871
+     ],
+     [
+      0.86,
+      1.547
+     ]
+    ],
+    "edge_inset": [
+     0,
+     1,
+     0,
+     0
+    ],
+    "inset_profile": [
+     [
+      0.0,
+      0.32
+     ],
+     [
+      0.2,
+      0.31
+     ],
+     [
+      0.24,
+      0.22
+     ],
+     [
+      0.34,
+      0.06
+     ],
+     [
+      0.58,
+      0.0
+     ],
+     [
+      1.123,
+      0.171
+     ]
+    ],
+    "position": [
+     0.0,
+     0,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     228,
+     229,
+     226
+    ],
+    "low_color_rgb": [
+     50,
+     50,
+     52
+    ],
+    "low_until": 0.24,
+    "color_source": "fixed"
+   },
+   {
+    "type": "profile_extrude",
+    "name": "wing",
+    "polygon": [
+     [
+      -0.565,
+      0.134
+     ],
+     [
+      0.729,
+      -1.701
+     ],
+     [
+      0.488,
+      -1.871
+     ],
+     [
+      -0.86,
+      0.04
+     ]
+    ],
+    "edge_inset": [
+     0,
+     1,
+     1,
+     0
+    ],
+    "inset_profile": [
+     [
+      0.0,
+      0.32
+     ],
+     [
+      0.2,
+      0.31
+     ],
+     [
+      0.24,
+      0.22
+     ],
+     [
+      0.34,
+      0.06
+     ],
+     [
+      0.58,
+      0.0
+     ],
+     [
+      0.942,
+      0.114
+     ]
+    ],
+    "position": [
+     0.0,
+     0,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     228,
+     229,
+     226
+    ],
+    "low_color_rgb": [
+     50,
+     50,
+     52
+    ],
+    "low_until": 0.24,
+    "color_source": "fixed"
+   },
+   {
+    "type": "extrude",
+    "name": "work_surface",
+    "polygon": [
+     [
+      0.169,
+      1.402
+     ],
+     [
+      0.339,
+      1.496
+     ],
+     [
+      0.458,
+      1.495
+     ],
+     [
+      0.807,
+      1.057
+     ],
+     [
+      0.773,
+      -1.69
+     ],
+     [
+      0.772,
+      -1.727
+     ],
+     [
+      0.639,
+      -1.799
+     ],
+     [
+      -0.443,
+      0.471
+     ],
+     [
+      -0.451,
+      0.491
+     ],
+     [
+      -0.459,
+      0.538
+     ],
+     [
+      -0.485,
+      0.692
+     ],
+     [
+      -0.455,
+      0.798
+     ]
+    ],
+    "height": 0.04,
+    "position": [
+     0.0,
+     0.741,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     95,
+     88,
+     85
+    ],
+    "color_n": 1509,
+    "color_source": "fixed"
+   },
+   {
+    "type": "box",
+    "name": "dark_item_1",
+    "size": [
+     0.362,
+     0.245,
+     0.356
+    ],
+    "position": [
+     0.745,
+     0.903,
+     1.436
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     38,
+     38,
+     42
+    ],
+    "color_source": "fixed",
+    "color_n": 272
+   },
+   {
+    "type": "box",
+    "name": "monitor_2",
+    "size": [
+     0.04,
+     0.35,
+     0.55
+    ],
+    "position": [
+     -0.242,
+     1.011,
+     0.904
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     25,
+     25,
+     28
+    ],
+    "color_source": "fixed",
+    "color_n": 245
+   },
+   {
+    "type": "box",
+    "name": "monitor_2_stand",
+    "size": [
+     0.12,
+     0.055,
+     0.1
+    ],
+    "position": [
+     -0.202,
+     0.809,
+     0.904
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     40,
+     40,
+     44
+    ],
+    "color_source": "fixed",
+    "color_n": 0
+   },
+   {
+    "type": "box",
+    "name": "monitor_3",
+    "size": [
+     0.04,
+     0.35,
+     0.55
+    ],
+    "position": [
+     0.538,
+     0.957,
+     0.461
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     25,
+     25,
+     28
+    ],
+    "color_source": "fixed",
+    "color_n": 203
+   },
+   {
+    "type": "box",
+    "name": "monitor_3_stand",
+    "size": [
+     0.12,
+     0.001,
+     0.1
+    ],
+    "position": [
+     0.578,
+     0.782,
+     0.461
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     40,
+     40,
+     44
+    ],
+    "color_source": "fixed",
+    "color_n": 0
+   },
+   {
+    "type": "box",
+    "name": "dark_item_4",
+    "size": [
+     0.29,
+     0.312,
+     0.12
+    ],
+    "position": [
+     -0.146,
+     0.937,
+     1.512
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     38,
+     38,
+     42
+    ],
+    "color_source": "fixed",
+    "color_n": 53
+   },
+   {
+    "type": "box",
+    "name": "blue_box",
+    "size": [
+     0.79,
+     0.332,
+     0.22
+    ],
+    "position": [
+     0.409,
+     0.947,
+     1.515
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     106,
+     120,
+     155
+    ],
+    "color_source": "fixed",
+    "color_n": 278
+   }
+  ],
+  "bbox": {
+   "min": [
+    6.114,
+    0.118,
+    4.031
+   ],
+   "max": [
+    7.9,
+    1.304,
+    7.773
+   ]
+  },
+  "fit": {
+   "points": 10386,
+   "source": "cluster 1 (desk side of the diagonal wall)",
+   "method": "folded white shell: 3 profile extrusions (front block, end return, wing) sharing one measured inset profile with a dark recessed plinth, mitred front/wing joint; work surface = convex hull inset 0.15 m; monitors / dark items / blue box from clusters of dark / blue samples above the desk",
+   "heights": {
+    "front": 1.117,
+    "return": 1.123,
+    "wing": 0.942,
+    "work_surface": 0.781
+   },
+   "coverage_5cm": 0.891,
+   "coverage_samples": 9571,
+   "unsupported_parts": [],
+   "inset_profile_source": "outermost x (p2) per 10 cm height band of the front face samples, z 6.3-7.4"
+  }
+ },
+ {
+  "id": "logo-wall-01",
+  "label": "前台Logo背景墙",
+  "label_en": "reception logo wall",
+  "anchor_suggestion": "wall-logo-01",
+  "category": "wall_panel",
+  "transform": {
+   "position": [
+    8.726,
+    0.119,
+    6.338
+   ],
+   "yaw_deg": 60.11
+  },
+  "parts": [
+   {
+    "type": "box",
+    "name": "white_panel",
+    "size": [
+     2.189,
+     2.855,
+     0.087
+    ],
+    "position": [
+     0.825,
+     1.428,
+     -0.01
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     190,
+     183,
+     178
+    ],
+    "color_n": 4073
+   },
+   {
+    "type": "box",
+    "name": "wood_panel",
+    "size": [
+     1.65,
+     2.855,
+     0.212
+    ],
+    "position": [
+     -1.095,
+     1.428,
+     0.025
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     82,
+     68,
+     52
+    ],
+    "color_n": 4011
+   },
+   {
+    "type": "box",
+    "name": "logo_wordmark",
+    "size": [
+     1.179,
+     0.159,
+     0.012
+    ],
+    "position": [
+     0.834,
+     2.039,
+     -0.061
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     57,
+     59,
+     62
+    ],
+    "color_n": 64
+   },
+   {
+    "type": "box",
+    "name": "logo_tagline",
+    "size": [
+     1.296,
+     0.101,
+     0.012
+    ],
+    "position": [
+     0.943,
+     1.745,
+     -0.061
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     49,
+     53,
+     56
+    ],
+    "color_n": 67
+   }
+  ],
+  "bbox": {
+   "min": [
+    7.699,
+    0.119,
+    4.647
+   ],
+   "max": [
+    9.712,
+    2.974,
+    8.068
+   ]
+  },
+  "fit": {
+   "points": 8084,
+   "source": "tall non-axis-aligned plane inside cluster 1",
+   "method": "PCA line fit of tall samples; white/wood split by median (R-B) colour along the line; logo = bbox of dark samples on the white face",
+   "notes": "logo text is only a flat dark plate; use a texture decal for the actual ChronoAI artwork",
+   "coverage_5cm": 0.644,
+   "coverage_samples": 15430,
+   "unsupported_parts": []
+  }
+ },
+ {
+  "id": "screen-01",
+  "label": "LED大屏",
+  "label_en": "LED video wall",
+  "anchor_suggestion": "screen-01",
+  "category": "screen",
+  "transform": {
+   "position": [
+    6.287,
+    0.07,
+    1.39
+   ],
+   "yaw_deg": 180.0
+  },
+  "parts": [
+   {
+    "type": "box",
+    "name": "led_panel",
+    "size": [
+     4.491,
+     2.457,
+     0.08
+    ],
+    "position": [
+     0.0,
+     1.396,
+     0.04
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     62,
+     155,
+     209
+    ],
+    "color_n": 15159,
+    "color_source": "p80-86 luminance band of outward samples within 5 cm"
+   },
+   {
+    "type": "box",
+    "name": "base_strip",
+    "size": [
+     4.491,
+     0.167,
+     0.14
+    ],
+    "position": [
+     0.0,
+     0.084,
+     0.01
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     63,
+     92,
+     122
+    ],
+    "color_n": 835,
+    "color_source": "p80-86 luminance band of outward samples within 5 cm"
+   },
+   {
+    "type": "box",
+    "name": "speaker_left",
+    "size": [
+     0.23,
+     1.188,
+     0.2
+    ],
+    "position": [
+     2.339,
+     0.594,
+     -0.1
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     50,
+     45,
+     52
+    ],
+    "color_n": 157,
+    "color_source": "p80-86 luminance band of outward samples within 5 cm"
+   },
+   {
+    "type": "box",
+    "name": "speaker_right",
+    "size": [
+     0.358,
+     1.202,
+     0.2
+    ],
+    "position": [
+     -2.357,
+     0.601,
+     -0.1
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     32,
+     31,
+     33
+    ],
+    "color_n": 349,
+    "color_source": "p80-86 luminance band of outward samples within 5 cm"
+   },
+   {
+    "type": "box",
+    "name": "floor_box",
+    "size": [
+     0.729,
+     0.184,
+     0.38
+    ],
+    "position": [
+     -0.028,
+     0.092,
+     -0.254
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     72,
+     81,
+     102
+    ],
+    "color_n": 233,
+    "color_source": "p80-86 luminance band of outward samples within 5 cm"
+   }
+  ],
+  "bbox": {
+   "min": [
+    3.833,
+    0.07,
+    1.31
+   ],
+   "max": [
+    8.823,
+    2.694,
+    1.834
+   ]
+  },
+  "fit": {
+   "points": 8815,
+   "source": "z=1.40 wall plane (removed as boundary in clustering) + clusters 13/14",
+   "method": "bbox of +z-facing blue-dominant samples on the wall plane; speakers = dark samples next to it",
+   "notes": "screen content (desktop image) is texture, not geometry; panel colour is the median of the displayed image",
+   "coverage_5cm": 0.976,
+   "coverage_samples": 10736,
+   "unsupported_parts": []
+  }
+ },
+ {
+  "id": "table-01",
+  "label": "长会议桌",
+  "label_en": "long meeting table",
+  "anchor_suggestion": "table-01",
+  "category": "table",
+  "transform": {
+   "position": [
+    4.493,
+    0.045,
+    11.345
+   ],
+   "yaw_deg": 0.0
+  },
+  "parts": [
+   {
+    "type": "extrude",
+    "name": "top_slab",
+    "polygon": [
+     [
+      -1.348,
+      -0.513
+     ],
+     [
+      -1.481,
+      -0.496
+     ],
+     [
+      -1.605,
+      -0.444
+     ],
+     [
+      -1.711,
+      -0.363
+     ],
+     [
+      -1.793,
+      -0.257
+     ],
+     [
+      -1.844,
+      -0.133
+     ],
+     [
+      -1.861,
+      0.0
+     ],
+     [
+      -1.844,
+      0.133
+     ],
+     [
+      -1.793,
+      0.257
+     ],
+     [
+      -1.711,
+      0.363
+     ],
+     [
+      -1.605,
+      0.444
+     ],
+     [
+      -1.481,
+      0.496
+     ],
+     [
+      -1.348,
+      0.513
+     ],
+     [
+      1.348,
+      0.513
+     ],
+     [
+      1.481,
+      0.496
+     ],
+     [
+      1.605,
+      0.444
+     ],
+     [
+      1.711,
+      0.363
+     ],
+     [
+      1.793,
+      0.257
+     ],
+     [
+      1.844,
+      0.133
+     ],
+     [
+      1.861,
+      0.0
+     ],
+     [
+      1.844,
+      -0.133
+     ],
+     [
+      1.793,
+      -0.257
+     ],
+     [
+      1.711,
+      -0.363
+     ],
+     [
+      1.605,
+      -0.444
+     ],
+     [
+      1.481,
+      -0.496
+     ],
+     [
+      1.348,
+      -0.513
+     ]
+    ],
+    "height": 0.05,
+    "position": [
+     0.0,
+     0.715,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     210,
+     205,
+     194
+    ],
+    "color_n": 4875,
+    "color_source": "p80-86 luminance band of outward samples within 5 cm"
+   },
+   {
+    "type": "extrude",
+    "name": "pedestal",
+    "polygon": [
+     [
+      -1.533,
+      -0.093
+     ],
+     [
+      -1.569,
+      -0.086
+     ],
+     [
+      -1.599,
+      -0.066
+     ],
+     [
+      -1.619,
+      -0.036
+     ],
+     [
+      -1.627,
+      0.0
+     ],
+     [
+      -1.619,
+      0.036
+     ],
+     [
+      -1.599,
+      0.066
+     ],
+     [
+      -1.569,
+      0.086
+     ],
+     [
+      -1.533,
+      0.093
+     ],
+     [
+      1.533,
+      0.093
+     ],
+     [
+      1.569,
+      0.086
+     ],
+     [
+      1.599,
+      0.066
+     ],
+     [
+      1.619,
+      0.036
+     ],
+     [
+      1.627,
+      0.0
+     ],
+     [
+      1.619,
+      -0.036
+     ],
+     [
+      1.599,
+      -0.066
+     ],
+     [
+      1.569,
+      -0.086
+     ],
+     [
+      1.533,
+      -0.093
+     ]
+    ],
+    "height": 0.715,
+    "position": [
+     0.0,
+     0,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     103,
+     77,
+     68
+    ],
+    "color_n": 1031,
+    "color_source": "p80-86 luminance band of outward samples within 5 cm"
+   }
+  ],
+  "bbox": {
+   "min": [
+    2.632,
+    0.045,
+    10.832
+   ],
+   "max": [
+    6.354,
+    0.81,
+    11.858
+   ]
+  },
+  "fit": {
+   "points": 3550,
+   "source": "cluster 2",
+   "method": "height-histogram peak of up-facing samples = top; largest blob -> stadium (racetrack) outline; brown samples + face histogram -> pedestal",
+   "notes": "pedestal +x end and depth are mirrored about the table centre (hidden by chairs)",
+   "coverage_5cm": 0.741,
+   "coverage_samples": 6162,
+   "unsupported_parts": []
+  },
+  "textures": [
+   {
+    "file": "tex/obj_table-01_top.png",
+    "view": "top",
+    "parts": [
+     "top_slab"
+    ],
+    "normal": [
+     0,
+     1,
+     0
+    ],
+    "origin": [
+     2.632,
+     0.81,
+     10.832
+    ],
+    "u_vec": [
+     1,
+     0,
+     0
+    ],
+    "v_vec": [
+     0,
+     0,
+     1
+    ],
+    "px": 0.01,
+    "size": [
+     372,
+     103
+    ],
+    "observed_fraction": 0.877,
+    "faces": 4382,
+    "method": "orthographic visible-surface bake of the scan (nearest surface within 3 cm per texel), push-pull hole fill"
+   }
+  ]
+ },
+ {
+  "id": "chair-01",
+  "label": "会议椅",
+  "label_en": "meeting chair",
+  "anchor_suggestion": "chair-01",
+  "category": "chair",
+  "group": "table-01",
+  "transform": {
+   "position": [
+    3.503,
+    0.035,
+    10.969
+   ],
+   "yaw_deg": 180.0
+  },
+  "parts": [
+   {
+    "type": "extrude",
+    "name": "back",
+    "polygon": [
+     [
+      -0.25,
+      0.17
+     ],
+     [
+      -0.208,
+      0.206
+     ],
+     [
+      -0.161,
+      0.236
+     ],
+     [
+      -0.11,
+      0.257
+     ],
+     [
+      -0.055,
+      0.271
+     ],
+     [
+      0.0,
+      0.275
+     ],
+     [
+      0.055,
+      0.271
+     ],
+     [
+      0.11,
+      0.257
+     ],
+     [
+      0.161,
+      0.236
+     ],
+     [
+      0.208,
+      0.206
+     ],
+     [
+      0.25,
+      0.17
+     ],
+     [
+      0.225,
+      0.145
+     ],
+     [
+      0.187,
+      0.178
+     ],
+     [
+      0.145,
+      0.205
+     ],
+     [
+      0.099,
+      0.224
+     ],
+     [
+      0.05,
+      0.236
+     ],
+     [
+      0.0,
+      0.24
+     ],
+     [
+      -0.05,
+      0.236
+     ],
+     [
+      -0.099,
+      0.224
+     ],
+     [
+      -0.145,
+      0.205
+     ],
+     [
+      -0.187,
+      0.178
+     ],
+     [
+      -0.225,
+      0.145
+     ]
+    ],
+    "height": 0.317,
+    "position": [
+     0.0,
+     0.449,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     102,
+     92,
+     90
+    ],
+    "color_n": 209,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "seat",
+    "size": [
+     0.45,
+     0.08,
+     0.55
+    ],
+    "position": [
+     -0.0,
+     0.408,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     102,
+     92,
+     90
+    ],
+    "color_n": 209,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_left",
+    "size": [
+     0.06,
+     0.2,
+     0.42
+    ],
+    "position": [
+     0.195,
+     0.548,
+     0.065
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     102,
+     92,
+     90
+    ],
+    "color_n": 209,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_right",
+    "size": [
+     0.06,
+     0.2,
+     0.42
+    ],
+    "position": [
+     -0.195,
+     0.548,
+     0.065
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     102,
+     92,
+     90
+    ],
+    "color_n": 209,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_1",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     -0.19,
+     0.184,
+     -0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_2",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     0.19,
+     0.184,
+     -0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_3",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     0.19,
+     0.184,
+     0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_4",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     -0.19,
+     0.184,
+     0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   }
+  ],
+  "bbox": {
+   "min": [
+    3.253,
+    0.035,
+    10.694
+   ],
+   "max": [
+    3.753,
+    0.801,
+    11.244
+   ]
+  },
+  "fit": {
+   "points": 184,
+   "source": "cluster 2, -z side, back-profile peak x=3.52",
+   "method": "x-histogram peaks of back samples outside the table outline; outer back edge = 2/98 percentile; standard depth 0.55 m",
+   "tucked": true,
+   "coverage_5cm": 0.777,
+   "coverage_samples": 319,
+   "unsupported_parts": [
+    "legs (4 thin metal legs, typical shell chair; base not observed)"
+   ]
+  }
+ },
+ {
+  "id": "chair-02",
+  "label": "会议椅",
+  "label_en": "meeting chair",
+  "anchor_suggestion": "chair-02",
+  "category": "chair",
+  "group": "table-01",
+  "transform": {
+   "position": [
+    4.282,
+    0.034,
+    10.992
+   ],
+   "yaw_deg": 180.0
+  },
+  "parts": [
+   {
+    "type": "extrude",
+    "name": "back",
+    "polygon": [
+     [
+      -0.25,
+      0.17
+     ],
+     [
+      -0.208,
+      0.206
+     ],
+     [
+      -0.161,
+      0.236
+     ],
+     [
+      -0.11,
+      0.257
+     ],
+     [
+      -0.055,
+      0.271
+     ],
+     [
+      0.0,
+      0.275
+     ],
+     [
+      0.055,
+      0.271
+     ],
+     [
+      0.11,
+      0.257
+     ],
+     [
+      0.161,
+      0.236
+     ],
+     [
+      0.208,
+      0.206
+     ],
+     [
+      0.25,
+      0.17
+     ],
+     [
+      0.225,
+      0.145
+     ],
+     [
+      0.187,
+      0.178
+     ],
+     [
+      0.145,
+      0.205
+     ],
+     [
+      0.099,
+      0.224
+     ],
+     [
+      0.05,
+      0.236
+     ],
+     [
+      0.0,
+      0.24
+     ],
+     [
+      -0.05,
+      0.236
+     ],
+     [
+      -0.099,
+      0.224
+     ],
+     [
+      -0.145,
+      0.205
+     ],
+     [
+      -0.187,
+      0.178
+     ],
+     [
+      -0.225,
+      0.145
+     ]
+    ],
+    "height": 0.293,
+    "position": [
+     0.0,
+     0.448,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     114,
+     96,
+     90
+    ],
+    "color_n": 239,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "seat",
+    "size": [
+     0.45,
+     0.08,
+     0.55
+    ],
+    "position": [
+     -0.0,
+     0.408,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     114,
+     96,
+     90
+    ],
+    "color_n": 239,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_left",
+    "size": [
+     0.06,
+     0.2,
+     0.42
+    ],
+    "position": [
+     0.195,
+     0.548,
+     0.065
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     114,
+     96,
+     90
+    ],
+    "color_n": 239,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_right",
+    "size": [
+     0.06,
+     0.2,
+     0.42
+    ],
+    "position": [
+     -0.195,
+     0.548,
+     0.065
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     114,
+     96,
+     90
+    ],
+    "color_n": 239,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_1",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     -0.19,
+     0.184,
+     -0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_2",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     0.19,
+     0.184,
+     -0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_3",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     0.19,
+     0.184,
+     0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_4",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     -0.19,
+     0.184,
+     0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   }
+  ],
+  "bbox": {
+   "min": [
+    4.032,
+    0.034,
+    10.717
+   ],
+   "max": [
+    4.532,
+    0.775,
+    11.267
+   ]
+  },
+  "fit": {
+   "points": 140,
+   "source": "cluster 2, -z side, back-profile peak x=4.28",
+   "method": "x-histogram peaks of back samples outside the table outline; outer back edge = 2/98 percentile; standard depth 0.55 m",
+   "tucked": true,
+   "coverage_5cm": 0.925,
+   "coverage_samples": 213,
+   "unsupported_parts": [
+    "legs (4 thin metal legs, typical shell chair; base not observed)"
+   ]
+  }
+ },
+ {
+  "id": "chair-03",
+  "label": "会议椅",
+  "label_en": "meeting chair",
+  "anchor_suggestion": "chair-03",
+  "category": "chair",
+  "group": "table-01",
+  "transform": {
+   "position": [
+    5.141,
+    0.026,
+    10.93
+   ],
+   "yaw_deg": 180.0
+  },
+  "parts": [
+   {
+    "type": "extrude",
+    "name": "back",
+    "polygon": [
+     [
+      -0.25,
+      0.17
+     ],
+     [
+      -0.208,
+      0.206
+     ],
+     [
+      -0.161,
+      0.236
+     ],
+     [
+      -0.11,
+      0.257
+     ],
+     [
+      -0.055,
+      0.271
+     ],
+     [
+      0.0,
+      0.275
+     ],
+     [
+      0.055,
+      0.271
+     ],
+     [
+      0.11,
+      0.257
+     ],
+     [
+      0.161,
+      0.236
+     ],
+     [
+      0.208,
+      0.206
+     ],
+     [
+      0.25,
+      0.17
+     ],
+     [
+      0.225,
+      0.145
+     ],
+     [
+      0.187,
+      0.178
+     ],
+     [
+      0.145,
+      0.205
+     ],
+     [
+      0.099,
+      0.224
+     ],
+     [
+      0.05,
+      0.236
+     ],
+     [
+      0.0,
+      0.24
+     ],
+     [
+      -0.05,
+      0.236
+     ],
+     [
+      -0.099,
+      0.224
+     ],
+     [
+      -0.145,
+      0.205
+     ],
+     [
+      -0.187,
+      0.178
+     ],
+     [
+      -0.225,
+      0.145
+     ]
+    ],
+    "height": 0.385,
+    "position": [
+     0.0,
+     0.449,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     68,
+     64,
+     68
+    ],
+    "color_n": 93,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "seat",
+    "size": [
+     0.45,
+     0.08,
+     0.55
+    ],
+    "position": [
+     -0.0,
+     0.408,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     68,
+     64,
+     68
+    ],
+    "color_n": 93,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_left",
+    "size": [
+     0.06,
+     0.2,
+     0.42
+    ],
+    "position": [
+     0.195,
+     0.548,
+     0.065
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     68,
+     64,
+     68
+    ],
+    "color_n": 93,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_right",
+    "size": [
+     0.06,
+     0.2,
+     0.42
+    ],
+    "position": [
+     -0.195,
+     0.548,
+     0.065
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     68,
+     64,
+     68
+    ],
+    "color_n": 93,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_1",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     -0.19,
+     0.184,
+     -0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_2",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     0.19,
+     0.184,
+     -0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_3",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     0.19,
+     0.184,
+     0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_4",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     -0.19,
+     0.184,
+     0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   }
+  ],
+  "bbox": {
+   "min": [
+    4.891,
+    0.026,
+    10.655
+   ],
+   "max": [
+    5.391,
+    0.86,
+    11.205
+   ]
+  },
+  "fit": {
+   "points": 144,
+   "source": "cluster 2, -z side, back-profile peak x=5.12",
+   "method": "x-histogram peaks of back samples outside the table outline; outer back edge = 2/98 percentile; standard depth 0.55 m",
+   "tucked": true,
+   "coverage_5cm": 0.627,
+   "coverage_samples": 343,
+   "unsupported_parts": [
+    "legs (4 thin metal legs, typical shell chair; base not observed)"
+   ]
+  }
+ },
+ {
+  "id": "chair-04",
+  "label": "会议椅",
+  "label_en": "meeting chair",
+  "anchor_suggestion": "chair-04",
+  "category": "chair",
+  "group": "table-01",
+  "transform": {
+   "position": [
+    5.792,
+    0.029,
+    10.871
+   ],
+   "yaw_deg": 180.0
+  },
+  "parts": [
+   {
+    "type": "extrude",
+    "name": "back",
+    "polygon": [
+     [
+      -0.25,
+      0.17
+     ],
+     [
+      -0.208,
+      0.206
+     ],
+     [
+      -0.161,
+      0.236
+     ],
+     [
+      -0.11,
+      0.257
+     ],
+     [
+      -0.055,
+      0.271
+     ],
+     [
+      0.0,
+      0.275
+     ],
+     [
+      0.055,
+      0.271
+     ],
+     [
+      0.11,
+      0.257
+     ],
+     [
+      0.161,
+      0.236
+     ],
+     [
+      0.208,
+      0.206
+     ],
+     [
+      0.25,
+      0.17
+     ],
+     [
+      0.225,
+      0.145
+     ],
+     [
+      0.187,
+      0.178
+     ],
+     [
+      0.145,
+      0.205
+     ],
+     [
+      0.099,
+      0.224
+     ],
+     [
+      0.05,
+      0.236
+     ],
+     [
+      0.0,
+      0.24
+     ],
+     [
+      -0.05,
+      0.236
+     ],
+     [
+      -0.099,
+      0.224
+     ],
+     [
+      -0.145,
+      0.205
+     ],
+     [
+      -0.187,
+      0.178
+     ],
+     [
+      -0.225,
+      0.145
+     ]
+    ],
+    "height": 0.386,
+    "position": [
+     0.0,
+     0.448,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     105,
+     93,
+     79
+    ],
+    "color_n": 73,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "seat",
+    "size": [
+     0.45,
+     0.08,
+     0.55
+    ],
+    "position": [
+     -0.0,
+     0.408,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     105,
+     93,
+     79
+    ],
+    "color_n": 73,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_left",
+    "size": [
+     0.06,
+     0.2,
+     0.42
+    ],
+    "position": [
+     0.195,
+     0.548,
+     0.065
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     105,
+     93,
+     79
+    ],
+    "color_n": 73,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_right",
+    "size": [
+     0.06,
+     0.2,
+     0.42
+    ],
+    "position": [
+     -0.195,
+     0.548,
+     0.065
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     105,
+     93,
+     79
+    ],
+    "color_n": 73,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_1",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     -0.19,
+     0.184,
+     -0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_2",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     0.19,
+     0.184,
+     -0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_3",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     0.19,
+     0.184,
+     0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_4",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     -0.19,
+     0.184,
+     0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   }
+  ],
+  "bbox": {
+   "min": [
+    5.542,
+    0.029,
+    10.596
+   ],
+   "max": [
+    6.042,
+    0.863,
+    11.146
+   ]
+  },
+  "fit": {
+   "points": 169,
+   "source": "cluster 2, -z side, back-profile peak x=5.78",
+   "method": "x-histogram peaks of back samples outside the table outline; outer back edge = 2/98 percentile; standard depth 0.55 m",
+   "tucked": true,
+   "coverage_5cm": 0.351,
+   "coverage_samples": 424,
+   "unsupported_parts": [
+    "legs (4 thin metal legs, typical shell chair; base not observed)"
+   ]
+  }
+ },
+ {
+  "id": "chair-05",
+  "label": "会议椅",
+  "label_en": "meeting chair",
+  "anchor_suggestion": "chair-05",
+  "category": "chair",
+  "group": "table-01",
+  "transform": {
+   "position": [
+    3.352,
+    0.073,
+    11.78
+   ],
+   "yaw_deg": 0.0
+  },
+  "parts": [
+   {
+    "type": "extrude",
+    "name": "back",
+    "polygon": [
+     [
+      -0.25,
+      0.17
+     ],
+     [
+      -0.208,
+      0.206
+     ],
+     [
+      -0.161,
+      0.236
+     ],
+     [
+      -0.11,
+      0.257
+     ],
+     [
+      -0.055,
+      0.271
+     ],
+     [
+      0.0,
+      0.275
+     ],
+     [
+      0.055,
+      0.271
+     ],
+     [
+      0.11,
+      0.257
+     ],
+     [
+      0.161,
+      0.236
+     ],
+     [
+      0.208,
+      0.206
+     ],
+     [
+      0.25,
+      0.17
+     ],
+     [
+      0.225,
+      0.145
+     ],
+     [
+      0.187,
+      0.178
+     ],
+     [
+      0.145,
+      0.205
+     ],
+     [
+      0.099,
+      0.224
+     ],
+     [
+      0.05,
+      0.236
+     ],
+     [
+      0.0,
+      0.24
+     ],
+     [
+      -0.05,
+      0.236
+     ],
+     [
+      -0.099,
+      0.224
+     ],
+     [
+      -0.145,
+      0.205
+     ],
+     [
+      -0.187,
+      0.178
+     ],
+     [
+      -0.225,
+      0.145
+     ]
+    ],
+    "height": 0.318,
+    "position": [
+     0.0,
+     0.448,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     86,
+     94,
+     112
+    ],
+    "color_n": 186,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "seat",
+    "size": [
+     0.45,
+     0.08,
+     0.55
+    ],
+    "position": [
+     0.0,
+     0.408,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     86,
+     94,
+     112
+    ],
+    "color_n": 186,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_left",
+    "size": [
+     0.06,
+     0.2,
+     0.42
+    ],
+    "position": [
+     -0.195,
+     0.548,
+     0.065
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     86,
+     94,
+     112
+    ],
+    "color_n": 186,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_right",
+    "size": [
+     0.06,
+     0.2,
+     0.42
+    ],
+    "position": [
+     0.195,
+     0.548,
+     0.065
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     86,
+     94,
+     112
+    ],
+    "color_n": 186,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_1",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     -0.19,
+     0.184,
+     -0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_2",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     0.19,
+     0.184,
+     -0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_3",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     0.19,
+     0.184,
+     0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_4",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     -0.19,
+     0.184,
+     0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   }
+  ],
+  "bbox": {
+   "min": [
+    3.102,
+    0.073,
+    11.505
+   ],
+   "max": [
+    3.602,
+    0.839,
+    12.055
+   ]
+  },
+  "fit": {
+   "points": 213,
+   "source": "cluster 2, +z side, back-profile peak x=3.38",
+   "method": "x-histogram peaks of back samples outside the table outline; outer back edge = 2/98 percentile; standard depth 0.55 m",
+   "tucked": true,
+   "coverage_5cm": 0.636,
+   "coverage_samples": 626,
+   "unsupported_parts": [
+    "legs (4 thin metal legs, typical shell chair; base not observed)"
+   ]
+  }
+ },
+ {
+  "id": "chair-06",
+  "label": "会议椅",
+  "label_en": "meeting chair",
+  "anchor_suggestion": "chair-06",
+  "category": "chair",
+  "group": "table-01",
+  "transform": {
+   "position": [
+    3.925,
+    0.078,
+    11.815
+   ],
+   "yaw_deg": 0.0
+  },
+  "parts": [
+   {
+    "type": "extrude",
+    "name": "back",
+    "polygon": [
+     [
+      -0.25,
+      0.17
+     ],
+     [
+      -0.208,
+      0.206
+     ],
+     [
+      -0.161,
+      0.236
+     ],
+     [
+      -0.11,
+      0.257
+     ],
+     [
+      -0.055,
+      0.271
+     ],
+     [
+      0.0,
+      0.275
+     ],
+     [
+      0.055,
+      0.271
+     ],
+     [
+      0.11,
+      0.257
+     ],
+     [
+      0.161,
+      0.236
+     ],
+     [
+      0.208,
+      0.206
+     ],
+     [
+      0.25,
+      0.17
+     ],
+     [
+      0.225,
+      0.145
+     ],
+     [
+      0.187,
+      0.178
+     ],
+     [
+      0.145,
+      0.205
+     ],
+     [
+      0.099,
+      0.224
+     ],
+     [
+      0.05,
+      0.236
+     ],
+     [
+      0.0,
+      0.24
+     ],
+     [
+      -0.05,
+      0.236
+     ],
+     [
+      -0.099,
+      0.224
+     ],
+     [
+      -0.145,
+      0.205
+     ],
+     [
+      -0.187,
+      0.178
+     ],
+     [
+      -0.225,
+      0.145
+     ]
+    ],
+    "height": 0.305,
+    "position": [
+     0.0,
+     0.448,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     68,
+     78,
+     90
+    ],
+    "color_n": 327,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "seat",
+    "size": [
+     0.45,
+     0.08,
+     0.55
+    ],
+    "position": [
+     0.0,
+     0.408,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     68,
+     78,
+     90
+    ],
+    "color_n": 327,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_left",
+    "size": [
+     0.06,
+     0.2,
+     0.42
+    ],
+    "position": [
+     -0.195,
+     0.548,
+     0.065
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     68,
+     78,
+     90
+    ],
+    "color_n": 327,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_right",
+    "size": [
+     0.06,
+     0.2,
+     0.42
+    ],
+    "position": [
+     0.195,
+     0.548,
+     0.065
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     68,
+     78,
+     90
+    ],
+    "color_n": 327,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_1",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     -0.19,
+     0.184,
+     -0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_2",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     0.19,
+     0.184,
+     -0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_3",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     0.19,
+     0.184,
+     0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_4",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     -0.19,
+     0.184,
+     0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   }
+  ],
+  "bbox": {
+   "min": [
+    3.675,
+    0.078,
+    11.54
+   ],
+   "max": [
+    4.175,
+    0.831,
+    12.09
+   ]
+  },
+  "fit": {
+   "points": 239,
+   "source": "cluster 2, +z side, back-profile peak x=3.92",
+   "method": "x-histogram peaks of back samples outside the table outline; outer back edge = 2/98 percentile; standard depth 0.55 m",
+   "tucked": true,
+   "coverage_5cm": 0.6,
+   "coverage_samples": 645,
+   "unsupported_parts": [
+    "legs (4 thin metal legs, typical shell chair; base not observed)"
+   ]
+  }
+ },
+ {
+  "id": "chair-07",
+  "label": "会议椅",
+  "label_en": "meeting chair",
+  "anchor_suggestion": "chair-07",
+  "category": "chair",
+  "group": "table-01",
+  "transform": {
+   "position": [
+    4.471,
+    0.091,
+    11.842
+   ],
+   "yaw_deg": 0.0
+  },
+  "parts": [
+   {
+    "type": "extrude",
+    "name": "back",
+    "polygon": [
+     [
+      -0.25,
+      0.17
+     ],
+     [
+      -0.208,
+      0.206
+     ],
+     [
+      -0.161,
+      0.236
+     ],
+     [
+      -0.11,
+      0.257
+     ],
+     [
+      -0.055,
+      0.271
+     ],
+     [
+      0.0,
+      0.275
+     ],
+     [
+      0.055,
+      0.271
+     ],
+     [
+      0.11,
+      0.257
+     ],
+     [
+      0.161,
+      0.236
+     ],
+     [
+      0.208,
+      0.206
+     ],
+     [
+      0.25,
+      0.17
+     ],
+     [
+      0.225,
+      0.145
+     ],
+     [
+      0.187,
+      0.178
+     ],
+     [
+      0.145,
+      0.205
+     ],
+     [
+      0.099,
+      0.224
+     ],
+     [
+      0.05,
+      0.236
+     ],
+     [
+      0.0,
+      0.24
+     ],
+     [
+      -0.05,
+      0.236
+     ],
+     [
+      -0.099,
+      0.224
+     ],
+     [
+      -0.145,
+      0.205
+     ],
+     [
+      -0.187,
+      0.178
+     ],
+     [
+      -0.225,
+      0.145
+     ]
+    ],
+    "height": 0.279,
+    "position": [
+     0.0,
+     0.447,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     96,
+     85,
+     76
+    ],
+    "color_n": 513,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "seat",
+    "size": [
+     0.45,
+     0.08,
+     0.55
+    ],
+    "position": [
+     0.0,
+     0.408,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     96,
+     85,
+     76
+    ],
+    "color_n": 513,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_left",
+    "size": [
+     0.06,
+     0.2,
+     0.42
+    ],
+    "position": [
+     -0.195,
+     0.548,
+     0.065
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     96,
+     85,
+     76
+    ],
+    "color_n": 513,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_right",
+    "size": [
+     0.06,
+     0.2,
+     0.42
+    ],
+    "position": [
+     0.195,
+     0.548,
+     0.065
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     96,
+     85,
+     76
+    ],
+    "color_n": 513,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_1",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     -0.19,
+     0.184,
+     -0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_2",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     0.19,
+     0.184,
+     -0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_3",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     0.19,
+     0.184,
+     0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_4",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     -0.19,
+     0.184,
+     0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   }
+  ],
+  "bbox": {
+   "min": [
+    4.221,
+    0.091,
+    11.567
+   ],
+   "max": [
+    4.721,
+    0.817,
+    12.117
+   ]
+  },
+  "fit": {
+   "points": 306,
+   "source": "cluster 2, +z side, back-profile peak x=4.47",
+   "method": "x-histogram peaks of back samples outside the table outline; outer back edge = 2/98 percentile; standard depth 0.55 m",
+   "tucked": true,
+   "coverage_5cm": 0.687,
+   "coverage_samples": 748,
+   "unsupported_parts": [
+    "legs (4 thin metal legs, typical shell chair; base not observed)"
+   ]
+  }
+ },
+ {
+  "id": "chair-08",
+  "label": "会议椅",
+  "label_en": "meeting chair",
+  "anchor_suggestion": "chair-08",
+  "category": "chair",
+  "group": "table-01",
+  "transform": {
+   "position": [
+    5.08,
+    0.094,
+    11.856
+   ],
+   "yaw_deg": 0.0
+  },
+  "parts": [
+   {
+    "type": "extrude",
+    "name": "back",
+    "polygon": [
+     [
+      -0.25,
+      0.17
+     ],
+     [
+      -0.208,
+      0.206
+     ],
+     [
+      -0.161,
+      0.236
+     ],
+     [
+      -0.11,
+      0.257
+     ],
+     [
+      -0.055,
+      0.271
+     ],
+     [
+      0.0,
+      0.275
+     ],
+     [
+      0.055,
+      0.271
+     ],
+     [
+      0.11,
+      0.257
+     ],
+     [
+      0.161,
+      0.236
+     ],
+     [
+      0.208,
+      0.206
+     ],
+     [
+      0.25,
+      0.17
+     ],
+     [
+      0.225,
+      0.145
+     ],
+     [
+      0.187,
+      0.178
+     ],
+     [
+      0.145,
+      0.205
+     ],
+     [
+      0.099,
+      0.224
+     ],
+     [
+      0.05,
+      0.236
+     ],
+     [
+      0.0,
+      0.24
+     ],
+     [
+      -0.05,
+      0.236
+     ],
+     [
+      -0.099,
+      0.224
+     ],
+     [
+      -0.145,
+      0.205
+     ],
+     [
+      -0.187,
+      0.178
+     ],
+     [
+      -0.225,
+      0.145
+     ]
+    ],
+    "height": 0.278,
+    "position": [
+     0.0,
+     0.448,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     62,
+     66,
+     68
+    ],
+    "color_n": 287,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "seat",
+    "size": [
+     0.45,
+     0.08,
+     0.55
+    ],
+    "position": [
+     0.0,
+     0.408,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     62,
+     66,
+     68
+    ],
+    "color_n": 287,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_left",
+    "size": [
+     0.06,
+     0.2,
+     0.42
+    ],
+    "position": [
+     -0.195,
+     0.548,
+     0.065
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     62,
+     66,
+     68
+    ],
+    "color_n": 287,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_right",
+    "size": [
+     0.06,
+     0.2,
+     0.42
+    ],
+    "position": [
+     0.195,
+     0.548,
+     0.065
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     62,
+     66,
+     68
+    ],
+    "color_n": 287,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_1",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     -0.19,
+     0.184,
+     -0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_2",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     0.19,
+     0.184,
+     -0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_3",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     0.19,
+     0.184,
+     0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_4",
+    "radius": 0.012,
+    "height": 0.368,
+    "position": [
+     -0.19,
+     0.184,
+     0.19
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   }
+  ],
+  "bbox": {
+   "min": [
+    4.83,
+    0.094,
+    11.581
+   ],
+   "max": [
+    5.33,
+    0.82,
+    12.131
+   ]
+  },
+  "fit": {
+   "points": 222,
+   "source": "cluster 2, +z side, back-profile peak x=5.08",
+   "method": "x-histogram peaks of back samples outside the table outline; outer back edge = 2/98 percentile; standard depth 0.55 m",
+   "tucked": true,
+   "coverage_5cm": 0.545,
+   "coverage_samples": 714,
+   "unsupported_parts": [
+    "legs (4 thin metal legs, typical shell chair; base not observed)"
+   ]
+  }
+ },
+ {
+  "id": "chair-09",
+  "label": "会议椅",
+  "label_en": "meeting chair",
+  "anchor_suggestion": "chair-09",
+  "category": "chair",
+  "group": "table-01",
+  "transform": {
+   "position": [
+    5.666,
+    0.095,
+    12.148
+   ],
+   "yaw_deg": 0.0
+  },
+  "parts": [
+   {
+    "type": "extrude",
+    "name": "back",
+    "polygon": [
+     [
+      -0.25,
+      0.17
+     ],
+     [
+      -0.208,
+      0.206
+     ],
+     [
+      -0.161,
+      0.236
+     ],
+     [
+      -0.11,
+      0.257
+     ],
+     [
+      -0.055,
+      0.271
+     ],
+     [
+      0.0,
+      0.275
+     ],
+     [
+      0.055,
+      0.271
+     ],
+     [
+      0.11,
+      0.257
+     ],
+     [
+      0.161,
+      0.236
+     ],
+     [
+      0.208,
+      0.206
+     ],
+     [
+      0.25,
+      0.17
+     ],
+     [
+      0.225,
+      0.145
+     ],
+     [
+      0.187,
+      0.178
+     ],
+     [
+      0.145,
+      0.205
+     ],
+     [
+      0.099,
+      0.224
+     ],
+     [
+      0.05,
+      0.236
+     ],
+     [
+      0.0,
+      0.24
+     ],
+     [
+      -0.05,
+      0.236
+     ],
+     [
+      -0.099,
+      0.224
+     ],
+     [
+      -0.145,
+      0.205
+     ],
+     [
+      -0.187,
+      0.178
+     ],
+     [
+      -0.225,
+      0.145
+     ]
+    ],
+    "height": 0.273,
+    "position": [
+     0.0,
+     0.448,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     128,
+     124,
+     116
+    ],
+    "color_n": 194,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "seat",
+    "size": [
+     0.45,
+     0.08,
+     0.55
+    ],
+    "position": [
+     0.0,
+     0.408,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     128,
+     124,
+     116
+    ],
+    "color_n": 194,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_left",
+    "size": [
+     0.06,
+     0.2,
+     0.42
+    ],
+    "position": [
+     -0.195,
+     0.548,
+     0.065
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     128,
+     124,
+     116
+    ],
+    "color_n": 194,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_right",
+    "size": [
+     0.06,
+     0.2,
+     0.42
+    ],
+    "position": [
+     0.195,
+     0.548,
+     0.065
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     128,
+     124,
+     116
+    ],
+    "color_n": 194,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "cylinder",
+    "name": "column",
+    "radius": 0.03,
+    "height": 0.318,
+    "position": [
+     0.0,
+     0.209,
+     0.0
+    ],
+    "segments": 12,
+    "color_rgb": [
+     89,
+     85,
+     82
+    ],
+    "color_n": 16,
+    "color_source": "p80-86 luminance band of outward samples within 5 cm"
+   },
+   {
+    "type": "cylinder",
+    "name": "base",
+    "radius": 0.26,
+    "height": 0.05,
+    "position": [
+     0.0,
+     0.025,
+     0.0
+    ],
+    "segments": 20,
+    "color_rgb": [
+     58,
+     58,
+     62
+    ],
+    "color_n": 42,
+    "color_source": "p80-86 luminance band of outward samples within 5 cm"
+   }
+  ],
+  "bbox": {
+   "min": [
+    5.406,
+    0.095,
+    11.873
+   ],
+   "max": [
+    5.926,
+    0.816,
+    12.423
+   ]
+  },
+  "fit": {
+   "points": 611,
+   "source": "cluster 2, +z side, back-profile peak x=5.68",
+   "method": "x-histogram peaks of back samples outside the table outline; outer back edge = 2/98 percentile; standard depth 0.55 m",
+   "tucked": false,
+   "coverage_5cm": 0.53,
+   "coverage_samples": 851,
+   "unsupported_parts": [
+    "column"
+   ]
+  }
+ },
+ {
+  "id": "chair-10",
+  "label": "桌端休闲椅",
+  "label_en": "lounge chair (table end)",
+  "anchor_suggestion": "chair-10",
+  "category": "chair",
+  "group": "table-01",
+  "transform": {
+   "position": [
+    6.709,
+    0.078,
+    11.434
+   ],
+   "yaw_deg": 90.0
+  },
+  "parts": [
+   {
+    "type": "box",
+    "name": "back",
+    "size": [
+     0.694,
+     0.76,
+     0.14
+    ],
+    "position": [
+     0.0,
+     0.68,
+     0.249
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     163,
+     152,
+     119
+    ],
+    "color_n": 887,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "seat",
+    "size": [
+     0.694,
+     0.13,
+     0.538
+    ],
+    "position": [
+     -0.0,
+     0.368,
+     -0.05
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     163,
+     152,
+     119
+    ],
+    "color_n": 887,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "shell_under",
+    "size": [
+     0.634,
+     0.023,
+     0.588
+    ],
+    "position": [
+     0.0,
+     0.291,
+     0.025
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     163,
+     152,
+     119
+    ],
+    "color_n": 887,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "cylinder",
+    "name": "column",
+    "radius": 0.03,
+    "height": 0.24,
+    "position": [
+     0.0,
+     0.16,
+     0.0
+    ],
+    "segments": 12,
+    "color_rgb": [
+     60,
+     60,
+     62
+    ],
+    "color_n": 0,
+    "color_source": "r1 default (part not observed in r1; nearby samples belong to other surfaces)"
+   },
+   {
+    "type": "cylinder",
+    "name": "base",
+    "radius": 0.3,
+    "height": 0.04,
+    "position": [
+     0.0,
+     0.02,
+     0.0
+    ],
+    "segments": 20,
+    "color_rgb": [
+     60,
+     60,
+     62
+    ],
+    "color_n": 0,
+    "color_source": "r1 default (part not observed in r1; nearby samples belong to other surfaces)"
+   }
+  ],
+  "bbox": {
+   "min": [
+    6.39,
+    0.078,
+    11.087
+   ],
+   "max": [
+    7.028,
+    1.138,
+    11.781
+   ]
+  },
+  "fit": {
+   "points": 1108,
+   "source": "cluster 2, +x end",
+   "method": "bbox + height bands (seat up-facing median, back = top 2%)",
+   "coverage_5cm": 0.734,
+   "coverage_samples": 1179,
+   "unsupported_parts": [
+    "column"
+   ]
+  }
+ },
+ {
+  "id": "sofa-01",
+  "label": "灰色布艺沙发",
+  "label_en": "grey fabric sofa",
+  "anchor_suggestion": "sofa-01",
+  "category": "sofa",
+  "transform": {
+   "position": [
+    5.025,
+    0.08,
+    14.63
+   ],
+   "yaw_deg": 0.0
+  },
+  "parts": [
+   {
+    "type": "box",
+    "name": "seat_base",
+    "size": [
+     1.611,
+     0.414,
+     0.714
+    ],
+    "position": [
+     -0.014,
+     0.207,
+     -0.114
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     179,
+     179,
+     168
+    ],
+    "color_n": 3539,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "back",
+    "size": [
+     2.046,
+     0.774,
+     0.229
+    ],
+    "position": [
+     0.0,
+     0.387,
+     0.357
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     179,
+     179,
+     168
+    ],
+    "color_n": 3539,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_left",
+    "size": [
+     0.203,
+     0.611,
+     0.714
+    ],
+    "position": [
+     -0.921,
+     0.305,
+     -0.114
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     179,
+     179,
+     168
+    ],
+    "color_n": 3539,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_right",
+    "size": [
+     0.232,
+     0.611,
+     0.714
+    ],
+    "position": [
+     0.907,
+     0.305,
+     -0.114
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     179,
+     179,
+     168
+    ],
+    "color_n": 3539,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   }
+  ],
+  "bbox": {
+   "min": [
+    4.002,
+    0.08,
+    14.159
+   ],
+   "max": [
+    6.048,
+    0.854,
+    15.102
+   ]
+  },
+  "fit": {
+   "points": 3282,
+   "source": "cluster 0 (split by x-occupancy gap)",
+   "method": "front = 2% z of low samples, back top band = up-facing samples 0.7-0.95 m, arms = up-facing 0.5-0.72 m near ends",
+   "heights": {
+    "seat": 0.414,
+    "arm": 0.611,
+    "back": 0.774
+   },
+   "coverage_5cm": 0.921,
+   "coverage_samples": 3317,
+   "unsupported_parts": []
+  },
+  "textures": [
+   {
+    "file": "tex/obj_sofa-01_top.png",
+    "view": "top",
+    "parts": [
+     "seat_base",
+     "back",
+     "arm_left",
+     "arm_right"
+    ],
+    "normal": [
+     0,
+     1,
+     0
+    ],
+    "origin": [
+     4.002,
+     0.854,
+     14.159
+    ],
+    "u_vec": [
+     1,
+     0,
+     0
+    ],
+    "v_vec": [
+     0,
+     0,
+     1
+    ],
+    "px": 0.01,
+    "size": [
+     205,
+     94
+    ],
+    "observed_fraction": 0.938,
+    "faces": 3346,
+    "method": "orthographic visible-surface bake of the scan (nearest surface within 3 cm per texel), push-pull hole fill"
+   },
+   {
+    "file": "tex/obj_sofa-01_front.png",
+    "view": "front",
+    "parts": [
+     "seat_base",
+     "back",
+     "arm_left",
+     "arm_right"
+    ],
+    "normal": [
+     0,
+     0,
+     -1
+    ],
+    "origin": [
+     6.048,
+     0.854,
+     14.159
+    ],
+    "u_vec": [
+     -1,
+     0,
+     0
+    ],
+    "v_vec": [
+     0,
+     -1,
+     0
+    ],
+    "px": 0.01,
+    "size": [
+     205,
+     77
+    ],
+    "observed_fraction": 0.832,
+    "faces": 3399,
+    "method": "orthographic visible-surface bake of the scan (nearest surface within 5 cm per texel), push-pull hole fill"
+   }
+  ]
+ },
+ {
+  "id": "sofa-02",
+  "label": "米色皮沙发",
+  "label_en": "beige leather sofa",
+  "anchor_suggestion": "sofa-02",
+  "category": "sofa",
+  "transform": {
+   "position": [
+    2.397,
+    0.088,
+    14.647
+   ],
+   "yaw_deg": 0.0
+  },
+  "parts": [
+   {
+    "type": "box",
+    "name": "seat_base",
+    "size": [
+     1.52,
+     0.404,
+     0.791
+    ],
+    "position": [
+     -0.031,
+     0.202,
+     -0.108
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     197,
+     176,
+     135
+    ],
+    "color_n": 2843,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "back",
+    "size": [
+     1.882,
+     0.759,
+     0.215
+    ],
+    "position": [
+     0.0,
+     0.379,
+     0.395
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     197,
+     176,
+     135
+    ],
+    "color_n": 2843,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_left",
+    "size": [
+     0.15,
+     0.607,
+     0.791
+    ],
+    "position": [
+     -0.866,
+     0.303,
+     -0.108
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     197,
+     176,
+     135
+    ],
+    "color_n": 2843,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_right",
+    "size": [
+     0.212,
+     0.607,
+     0.791
+    ],
+    "position": [
+     0.835,
+     0.303,
+     -0.108
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     197,
+     176,
+     135
+    ],
+    "color_n": 2843,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   }
+  ],
+  "bbox": {
+   "min": [
+    1.456,
+    0.087,
+    14.143
+   ],
+   "max": [
+    3.338,
+    0.846,
+    15.149
+   ]
+  },
+  "fit": {
+   "points": 3146,
+   "source": "cluster 0 (split by x-occupancy gap)",
+   "method": "front = 2% z of low samples, back top band = up-facing samples 0.7-0.95 m, arms = up-facing 0.5-0.72 m near ends",
+   "heights": {
+    "seat": 0.404,
+    "arm": 0.607,
+    "back": 0.759
+   },
+   "coverage_5cm": 0.907,
+   "coverage_samples": 3099,
+   "unsupported_parts": []
+  },
+  "textures": [
+   {
+    "file": "tex/obj_sofa-02_top.png",
+    "view": "top",
+    "parts": [
+     "seat_base",
+     "back",
+     "arm_left",
+     "arm_right"
+    ],
+    "normal": [
+     0,
+     1,
+     0
+    ],
+    "origin": [
+     1.456,
+     0.846,
+     14.143
+    ],
+    "u_vec": [
+     1,
+     0,
+     0
+    ],
+    "v_vec": [
+     0,
+     0,
+     1
+    ],
+    "px": 0.01,
+    "size": [
+     188,
+     101
+    ],
+    "observed_fraction": 0.878,
+    "faces": 3151,
+    "method": "orthographic visible-surface bake of the scan (nearest surface within 3 cm per texel), push-pull hole fill"
+   },
+   {
+    "file": "tex/obj_sofa-02_front.png",
+    "view": "front",
+    "parts": [
+     "seat_base",
+     "back",
+     "arm_left",
+     "arm_right"
+    ],
+    "normal": [
+     0,
+     0,
+     -1
+    ],
+    "origin": [
+     3.338,
+     0.846,
+     14.143
+    ],
+    "u_vec": [
+     -1,
+     0,
+     0
+    ],
+    "v_vec": [
+     0,
+     -1,
+     0
+    ],
+    "px": 0.01,
+    "size": [
+     188,
+     76
+    ],
+    "observed_fraction": 0.859,
+    "faces": 3131,
+    "method": "orthographic visible-surface bake of the scan (nearest surface within 5 cm per texel), push-pull hole fill"
+   }
+  ]
+ },
+ {
+  "id": "side-table-01",
+  "label": "圆形边几",
+  "label_en": "round side table",
+  "anchor_suggestion": "side-table-01",
+  "category": "side_table",
+  "transform": {
+   "position": [
+    3.69,
+    0.084,
+    14.726
+   ],
+   "yaw_deg": 0.0
+  },
+  "parts": [
+   {
+    "type": "cylinder",
+    "name": "top",
+    "radius": 0.29,
+    "height": 0.04,
+    "position": [
+     0.0,
+     0.34,
+     0.0
+    ],
+    "segments": 24,
+    "color_rgb": [
+     216,
+     212,
+     201
+    ],
+    "color_n": 553,
+    "color_source": "p80-86 luminance band of outward samples within 5 cm"
+   },
+   {
+    "type": "cylinder",
+    "name": "drum_base",
+    "radius": 0.191,
+    "height": 0.32,
+    "position": [
+     0.0,
+     0.16,
+     0.0
+    ],
+    "segments": 24,
+    "color_rgb": [
+     115,
+     93,
+     76
+    ],
+    "color_n": 148,
+    "color_source": "p80-86 luminance band of outward samples within 5 cm"
+   }
+  ],
+  "bbox": {
+   "min": [
+    3.4,
+    0.084,
+    14.436
+   ],
+   "max": [
+    3.98,
+    0.444,
+    15.016
+   ]
+  },
+  "fit": {
+   "points": 277,
+   "source": "cluster 0 (between sofas)",
+   "method": "up-facing samples at the top height -> centre/radius; base radius = median radial distance below",
+   "coverage_5cm": 0.973,
+   "coverage_samples": 377,
+   "unsupported_parts": []
+  }
+ },
+ {
+  "id": "armchair-01",
+  "label": "白色单人休闲椅",
+  "label_en": "white wing-back lounge chair",
+  "anchor_suggestion": "armchair-01",
+  "category": "armchair",
+  "transform": {
+   "position": [
+    1.819,
+    0.074,
+    12.789
+   ],
+   "yaw_deg": -90.0
+  },
+  "parts": [
+   {
+    "type": "box",
+    "name": "seat",
+    "size": [
+     0.555,
+     0.12,
+     0.645
+    ],
+    "position": [
+     0.0,
+     0.346,
+     -0.04
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     160,
+     149,
+     132
+    ],
+    "color_n": 899,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "back",
+    "size": [
+     0.675,
+     0.746,
+     0.12
+    ],
+    "position": [
+     -0.0,
+     0.659,
+     0.303
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     160,
+     149,
+     132
+    ],
+    "color_n": 899,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_left",
+    "size": [
+     0.07,
+     0.32,
+     0.505
+    ],
+    "position": [
+     -0.303,
+     0.446,
+     0.01
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     160,
+     149,
+     132
+    ],
+    "color_n": 899,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "box",
+    "name": "arm_right",
+    "size": [
+     0.07,
+     0.32,
+     0.505
+    ],
+    "position": [
+     0.303,
+     0.446,
+     0.01
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     160,
+     149,
+     132
+    ],
+    "color_n": 899,
+    "material": "upholstery",
+    "color_source": "p80-86 luminance band of outward samples within 5 cm (material group 'upholstery')"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_1",
+    "radius": 0.012,
+    "height": 0.286,
+    "position": [
+     -0.238,
+     0.143,
+     0.243
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "r1 default (part not observed in r1; nearby samples belong to other surfaces)"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_2",
+    "radius": 0.012,
+    "height": 0.286,
+    "position": [
+     0.238,
+     0.143,
+     0.243
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "r1 default (part not observed in r1; nearby samples belong to other surfaces)"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_3",
+    "radius": 0.012,
+    "height": 0.286,
+    "position": [
+     -0.238,
+     0.143,
+     -0.283
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "r1 default (part not observed in r1; nearby samples belong to other surfaces)"
+   },
+   {
+    "type": "cylinder",
+    "name": "leg_4",
+    "radius": 0.012,
+    "height": 0.286,
+    "position": [
+     0.238,
+     0.143,
+     -0.283
+    ],
+    "segments": 8,
+    "color_rgb": [
+     150,
+     150,
+     150
+    ],
+    "color_n": 0,
+    "color_source": "r1 default (part not observed in r1; nearby samples belong to other surfaces)"
+   }
+  ],
+  "bbox": {
+   "min": [
+    1.456,
+    0.074,
+    12.451
+   ],
+   "max": [
+    2.181,
+    1.106,
+    13.127
+   ]
+  },
+  "fit": {
+   "points": 932,
+   "source": "cluster 9 (+ samples inside the wall tolerance band)",
+   "method": "bbox + height bands; back = samples within 0.14 m of the wall side",
+   "coverage_5cm": 0.947,
+   "coverage_samples": 993,
+   "unsupported_parts": [
+    "leg_1",
+    "leg_2",
+    "leg_3",
+    "leg_4"
+   ]
+  }
+ },
+ {
+  "id": "display-01",
+  "label": "黑色镜面展示柜",
+  "label_en": "black mirror display unit",
+  "anchor_suggestion": "display-01",
+  "category": "cabinet",
+  "transform": {
+   "position": [
+    6.856,
+    0.098,
+    14.245
+   ],
+   "yaw_deg": 0.0
+  },
+  "parts": [
+   {
+    "type": "box",
+    "name": "mirror_panel",
+    "size": [
+     1.594,
+     2.41,
+     0.08
+    ],
+    "position": [
+     0.0,
+     1.205,
+     -0.479
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     88,
+     67,
+     57
+    ],
+    "color_n": 2370,
+    "texture": {
+     "file": "tex/obj_display-01_mirror.png",
+     "normal": [
+      0,
+      0,
+      -1
+     ],
+     "origin": [
+      7.653,
+      2.508,
+      13.726
+     ],
+     "u_vec": [
+      -1,
+      0,
+      0
+     ],
+     "v_vec": [
+      0,
+      -1,
+      0
+     ],
+     "px": 0.01,
+     "size": [
+      159,
+      241
+     ],
+     "observed_fraction": 0.814,
+     "faces": 3877
+    },
+    "color_source": "p80-86 luminance band of outward samples within 5 cm"
+   },
+   {
+    "type": "box",
+    "name": "glass_cabinet",
+    "size": [
+     1.554,
+     0.45,
+     0.363
+    ],
+    "position": [
+     0.0,
+     0.225,
+     -0.701
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     70,
+     78,
+     84
+    ],
+    "color_n": 1499,
+    "color_source": "fixed"
+   },
+   {
+    "type": "box",
+    "name": "shelf_end_1",
+    "size": [
+     0.423,
+     2.312,
+     0.03
+    ],
+    "position": [
+     -0.572,
+     1.156,
+     -0.424
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     26,
+     30,
+     34
+    ],
+    "color_source": "fixed"
+   },
+   {
+    "type": "box",
+    "name": "shelf_end_2",
+    "size": [
+     0.423,
+     2.312,
+     0.03
+    ],
+    "position": [
+     -0.572,
+     1.156,
+     0.866
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     26,
+     30,
+     34
+    ],
+    "color_source": "fixed"
+   },
+   {
+    "type": "box",
+    "name": "shelf_top",
+    "size": [
+     0.423,
+     0.03,
+     1.321
+    ],
+    "position": [
+     -0.572,
+     2.297,
+     0.221
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     26,
+     30,
+     34
+    ],
+    "color_source": "fixed"
+   },
+   {
+    "type": "box",
+    "name": "shelf_board_1",
+    "size": [
+     0.423,
+     0.03,
+     1.261
+    ],
+    "position": [
+     -0.572,
+     0.1,
+     0.221
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     26,
+     30,
+     34
+    ],
+    "color_source": "fixed"
+   },
+   {
+    "type": "box",
+    "name": "book_1_6",
+    "size": [
+     0.296,
+     0.234,
+     0.045
+    ],
+    "position": [
+     -0.572,
+     0.232,
+     -0.156
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     120,
+     90,
+     60
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_1_7",
+    "size": [
+     0.296,
+     0.246,
+     0.032
+    ],
+    "position": [
+     -0.572,
+     0.238,
+     -0.113
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     80,
+     110,
+     80
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_1_8",
+    "size": [
+     0.296,
+     0.206,
+     0.031
+    ],
+    "position": [
+     -0.572,
+     0.218,
+     -0.077
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     190,
+     170,
+     120
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_1_9",
+    "size": [
+     0.296,
+     0.252,
+     0.037
+    ],
+    "position": [
+     -0.572,
+     0.241,
+     0.36
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     200,
+     195,
+     185
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_1_10",
+    "size": [
+     0.296,
+     0.308,
+     0.059
+    ],
+    "position": [
+     -0.572,
+     0.269,
+     0.413
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     120,
+     90,
+     60
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_1_11",
+    "size": [
+     0.296,
+     0.259,
+     0.042
+    ],
+    "position": [
+     -0.572,
+     0.245,
+     0.467
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     120,
+     90,
+     60
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "shelf_board_2",
+    "size": [
+     0.423,
+     0.03,
+     1.261
+    ],
+    "position": [
+     -0.572,
+     0.6,
+     0.221
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     26,
+     30,
+     34
+    ],
+    "color_source": "fixed"
+   },
+   {
+    "type": "box",
+    "name": "book_2_13",
+    "size": [
+     0.296,
+     0.306,
+     0.038
+    ],
+    "position": [
+     -0.572,
+     0.768,
+     -0.345
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     80,
+     110,
+     80
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_2_14",
+    "size": [
+     0.296,
+     0.282,
+     0.032
+    ],
+    "position": [
+     -0.572,
+     0.756,
+     -0.306
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     150,
+     60,
+     50
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_2_15",
+    "size": [
+     0.296,
+     0.307,
+     0.037
+    ],
+    "position": [
+     -0.572,
+     0.769,
+     -0.268
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     70,
+     70,
+     75
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_2_16",
+    "size": [
+     0.296,
+     0.202,
+     0.056
+    ],
+    "position": [
+     -0.572,
+     0.716,
+     -0.217
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     120,
+     90,
+     60
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_2_17",
+    "size": [
+     0.296,
+     0.26,
+     0.03
+    ],
+    "position": [
+     -0.572,
+     0.745,
+     -0.17
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     200,
+     195,
+     185
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_2_18",
+    "size": [
+     0.296,
+     0.224,
+     0.043
+    ],
+    "position": [
+     -0.572,
+     0.727,
+     -0.13
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     80,
+     110,
+     80
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_2_19",
+    "size": [
+     0.296,
+     0.218,
+     0.039
+    ],
+    "position": [
+     -0.572,
+     0.724,
+     0.267
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     60,
+     80,
+     120
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_2_20",
+    "size": [
+     0.296,
+     0.296,
+     0.043
+    ],
+    "position": [
+     -0.572,
+     0.763,
+     0.313
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     200,
+     195,
+     185
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_2_21",
+    "size": [
+     0.296,
+     0.238,
+     0.037
+    ],
+    "position": [
+     -0.572,
+     0.734,
+     0.357
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     60,
+     80,
+     120
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_2_22",
+    "size": [
+     0.296,
+     0.261,
+     0.045
+    ],
+    "position": [
+     -0.572,
+     0.745,
+     0.402
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     120,
+     90,
+     60
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_2_23",
+    "size": [
+     0.296,
+     0.21,
+     0.058
+    ],
+    "position": [
+     -0.572,
+     0.72,
+     0.667
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     150,
+     60,
+     50
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_2_24",
+    "size": [
+     0.296,
+     0.244,
+     0.055
+    ],
+    "position": [
+     -0.572,
+     0.737,
+     0.727
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     70,
+     70,
+     75
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_2_25",
+    "size": [
+     0.296,
+     0.312,
+     0.042
+    ],
+    "position": [
+     -0.572,
+     0.771,
+     0.78
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     70,
+     70,
+     75
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "shelf_board_3",
+    "size": [
+     0.423,
+     0.03,
+     1.261
+    ],
+    "position": [
+     -0.572,
+     1.1,
+     0.221
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     26,
+     30,
+     34
+    ],
+    "color_source": "fixed"
+   },
+   {
+    "type": "box",
+    "name": "book_3_27",
+    "size": [
+     0.296,
+     0.227,
+     0.044
+    ],
+    "position": [
+     -0.572,
+     1.228,
+     -0.189
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     200,
+     195,
+     185
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_3_28",
+    "size": [
+     0.296,
+     0.213,
+     0.049
+    ],
+    "position": [
+     -0.572,
+     1.221,
+     -0.138
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     60,
+     80,
+     120
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_3_29",
+    "size": [
+     0.296,
+     0.245,
+     0.049
+    ],
+    "position": [
+     -0.572,
+     1.238,
+     -0.085
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     200,
+     195,
+     185
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_3_30",
+    "size": [
+     0.296,
+     0.223,
+     0.054
+    ],
+    "position": [
+     -0.572,
+     1.227,
+     -0.03
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     60,
+     80,
+     120
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_3_31",
+    "size": [
+     0.296,
+     0.246,
+     0.054
+    ],
+    "position": [
+     -0.572,
+     1.238,
+     0.028
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     190,
+     170,
+     120
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_3_32",
+    "size": [
+     0.296,
+     0.274,
+     0.051
+    ],
+    "position": [
+     -0.572,
+     1.252,
+     0.085
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     60,
+     80,
+     120
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_3_33",
+    "size": [
+     0.296,
+     0.297,
+     0.052
+    ],
+    "position": [
+     -0.572,
+     1.264,
+     0.538
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     150,
+     60,
+     50
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_3_34",
+    "size": [
+     0.296,
+     0.302,
+     0.051
+    ],
+    "position": [
+     -0.572,
+     1.266,
+     0.594
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     60,
+     80,
+     120
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_3_35",
+    "size": [
+     0.296,
+     0.266,
+     0.042
+    ],
+    "position": [
+     -0.572,
+     1.248,
+     0.645
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     200,
+     195,
+     185
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_3_36",
+    "size": [
+     0.296,
+     0.238,
+     0.059
+    ],
+    "position": [
+     -0.572,
+     1.234,
+     0.699
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     80,
+     110,
+     80
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_3_37",
+    "size": [
+     0.296,
+     0.2,
+     0.042
+    ],
+    "position": [
+     -0.572,
+     1.215,
+     0.753
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     120,
+     90,
+     60
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_3_38",
+    "size": [
+     0.296,
+     0.312,
+     0.049
+    ],
+    "position": [
+     -0.572,
+     1.271,
+     0.803
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     190,
+     170,
+     120
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "shelf_board_4",
+    "size": [
+     0.423,
+     0.03,
+     1.261
+    ],
+    "position": [
+     -0.572,
+     1.6,
+     0.221
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     26,
+     30,
+     34
+    ],
+    "color_source": "fixed"
+   },
+   {
+    "type": "box",
+    "name": "book_4_40",
+    "size": [
+     0.296,
+     0.299,
+     0.036
+    ],
+    "position": [
+     -0.572,
+     1.764,
+     -0.28
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     70,
+     70,
+     75
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_4_41",
+    "size": [
+     0.296,
+     0.249,
+     0.035
+    ],
+    "position": [
+     -0.572,
+     1.739,
+     -0.241
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     190,
+     170,
+     120
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_4_42",
+    "size": [
+     0.296,
+     0.299,
+     0.056
+    ],
+    "position": [
+     -0.572,
+     1.765,
+     -0.191
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     150,
+     60,
+     50
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_4_43",
+    "size": [
+     0.296,
+     0.263,
+     0.034
+    ],
+    "position": [
+     -0.572,
+     1.747,
+     -0.142
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     70,
+     70,
+     75
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_4_44",
+    "size": [
+     0.296,
+     0.213,
+     0.047
+    ],
+    "position": [
+     -0.572,
+     1.721,
+     0.175
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     70,
+     70,
+     75
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_4_45",
+    "size": [
+     0.296,
+     0.254,
+     0.038
+    ],
+    "position": [
+     -0.572,
+     1.742,
+     0.221
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     70,
+     70,
+     75
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_4_46",
+    "size": [
+     0.296,
+     0.2,
+     0.032
+    ],
+    "position": [
+     -0.572,
+     1.715,
+     0.26
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     120,
+     90,
+     60
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_4_47",
+    "size": [
+     0.296,
+     0.311,
+     0.04
+    ],
+    "position": [
+     -0.572,
+     1.771,
+     0.3
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     60,
+     80,
+     120
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_4_48",
+    "size": [
+     0.296,
+     0.28,
+     0.044
+    ],
+    "position": [
+     -0.572,
+     1.755,
+     0.719
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     80,
+     110,
+     80
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "book_4_49",
+    "size": [
+     0.296,
+     0.24,
+     0.056
+    ],
+    "position": [
+     -0.572,
+     1.735,
+     0.772
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     150,
+     60,
+     50
+    ],
+    "color_source": "fixed",
+    "color_n": 0,
+    "decorative": true
+   },
+   {
+    "type": "box",
+    "name": "shelf_board_5",
+    "size": [
+     0.423,
+     0.03,
+     1.261
+    ],
+    "position": [
+     -0.572,
+     2.1,
+     0.221
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     26,
+     30,
+     34
+    ],
+    "color_source": "fixed"
+   }
+  ],
+  "bbox": {
+   "min": [
+    6.059,
+    0.098,
+    13.362
+   ],
+   "max": [
+    7.653,
+    2.508,
+    15.127
+   ]
+  },
+  "fit": {
+   "points": 6926,
+   "source": "cluster 0 (x 6.0-7.7)",
+   "method": "mirror panel with baked front texture (reflections of the room, as in the scan); open shelf (2 ends, top, 5 boards, decorative books); low dark-glass cabinet 0.45 m",
+   "notes": "glossy/mirror surface: the scan baked reflections into it, geometry is noisy behind it",
+   "coverage_5cm": 0.978,
+   "coverage_samples": 7095,
+   "unsupported_parts": [
+    "books (decorative)",
+    "shelf boards heights (typical)"
+   ]
+  }
+ },
+ {
+  "id": "suitcase-01",
+  "label": "行李箱",
+  "label_en": "suitcase",
+  "anchor_suggestion": "suitcase-01",
+  "category": "prop",
+  "transform": {
+   "position": [
+    1.624,
+    0.093,
+    13.724
+   ],
+   "yaw_deg": 0.0
+  },
+  "parts": [
+   {
+    "type": "box",
+    "name": "body",
+    "size": [
+     0.196,
+     0.692,
+     0.465
+    ],
+    "position": [
+     -0.074,
+     0.376,
+     -0.004
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     85,
+     71,
+     58
+    ],
+    "color_n": 607,
+    "color_source": "p80-86 luminance band of outward samples within 5 cm"
+   }
+  ],
+  "bbox": {
+   "min": [
+    1.452,
+    0.123,
+    13.488
+   ],
+   "max": [
+    1.648,
+    0.815,
+    13.953
+   ]
+  },
+  "fit": {
+   "points": 415,
+   "source": "cluster 10",
+   "method": "bbox",
+   "notes": "transient object",
+   "coverage_5cm": 1.0,
+   "coverage_samples": 421,
+   "unsupported_parts": []
+  }
+ },
+ {
+  "id": "pillar-01",
+  "label": "白色墙垛",
+  "label_en": "white wall pier",
+  "anchor_suggestion": "pillar-01",
+  "category": "structure",
+  "transform": {
+   "position": [
+    9.632,
+    0.076,
+    11.367
+   ],
+   "yaw_deg": -13.45
+  },
+  "parts": [
+   {
+    "type": "box",
+    "name": "pier",
+    "size": [
+     0.12,
+     2.783,
+     0.456
+    ],
+    "position": [
+     0.0,
+     1.392,
+     0.0
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     226,
+     223,
+     217
+    ],
+    "color_n": 2283,
+    "color_source": "p80-86 luminance band of outward samples within 5 cm"
+   }
+  ],
+  "bbox": {
+   "min": [
+    9.521,
+    0.076,
+    11.131
+   ],
+   "max": [
+    9.743,
+    2.86,
+    11.603
+   ]
+  },
+  "fit": {
+   "points": 1327,
+   "source": "white vertical samples x 9.45-9.85, z 10.85-11.75",
+   "method": "PCA line of the white face; box 0.12 m thick behind the room-facing face (p80 offset)",
+   "note": "r1 fitted a circle (r=0.37) to this flat pier plus the glass beside it"
+  }
+ },
+ {
+  "id": "window-frame-01",
+  "label": "窗框（竖梃+窗台+顶梁）",
+  "label_en": "window frame (mullions, sill, head)",
+  "anchor_suggestion": "window-frame-01",
+  "category": "structure",
+  "transform": {
+   "position": [
+    5.758,
+    0.064,
+    15.641
+   ],
+   "yaw_deg": 0.0
+  },
+  "parts": [
+   {
+    "type": "box",
+    "name": "mullion_1",
+    "size": [
+     0.15,
+     2.796,
+     0.411
+    ],
+    "position": [
+     -3.248,
+     1.398,
+     -0.205
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     225,
+     225,
+     222
+    ],
+    "color_n": 213,
+    "color_source": "fixed"
+   },
+   {
+    "type": "box",
+    "name": "mullion_2",
+    "size": [
+     0.15,
+     2.796,
+     0.399
+    ],
+    "position": [
+     -1.8,
+     1.398,
+     -0.2
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     225,
+     225,
+     222
+    ],
+    "color_n": 145,
+    "color_source": "fixed"
+   },
+   {
+    "type": "box",
+    "name": "mullion_3",
+    "size": [
+     0.15,
+     2.796,
+     0.377
+    ],
+    "position": [
+     -0.277,
+     1.398,
+     -0.189
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     225,
+     225,
+     222
+    ],
+    "color_n": 28,
+    "color_source": "fixed"
+   },
+   {
+    "type": "box",
+    "name": "mullion_4",
+    "size": [
+     0.15,
+     2.796,
+     0.399
+    ],
+    "position": [
+     1.188,
+     1.398,
+     -0.2
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     225,
+     225,
+     222
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   },
+   {
+    "type": "box",
+    "name": "mullion_5",
+    "size": [
+     0.15,
+     2.796,
+     0.239
+    ],
+    "position": [
+     2.683,
+     1.398,
+     -0.119
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     225,
+     225,
+     222
+    ],
+    "color_n": 75,
+    "color_source": "fixed"
+   },
+   {
+    "type": "box",
+    "name": "mullion_6",
+    "size": [
+     0.15,
+     2.796,
+     0.496
+    ],
+    "position": [
+     4.137,
+     1.398,
+     -0.248
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     225,
+     225,
+     222
+    ],
+    "color_n": 898,
+    "color_source": "fixed"
+   },
+   {
+    "type": "box",
+    "name": "sill",
+    "size": [
+     8.683,
+     0.419,
+     0.307
+    ],
+    "position": [
+     0.0,
+     0.209,
+     -0.154
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     225,
+     225,
+     222
+    ],
+    "color_n": 1244,
+    "color_source": "fixed"
+   },
+   {
+    "type": "box",
+    "name": "head",
+    "size": [
+     8.683,
+     0.12,
+     0.34
+    ],
+    "position": [
+     0.0,
+     2.736,
+     -0.17
+    ],
+    "yaw_deg": 0.0,
+    "color_rgb": [
+     215,
+     215,
+     212
+    ],
+    "color_n": 0,
+    "color_source": "fixed"
+   }
+  ],
+  "fit": {
+   "source": "white vertical samples z 15.0-15.7 (mullions), up-facing / -z-facing samples y<0.55 (sill)",
+   "method": "mullion x = median of white samples near the 1.47 m pitch positions (the one hidden by the display is interpolated), depth from the front-face p10 to the glazing plane; sill top = p75 of up-facing samples; head beam at the glazing top",
+   "unsupported_parts": [
+    "mullion_4",
+    "head"
+   ]
+  },
+  "bbox": {
+   "min": [
+    1.417,
+    0.064,
+    15.145
+   ],
+   "max": [
+    10.099,
+    2.86,
+    15.642
+   ]
+  }
+ },
+ {
+  "id": "plant-01",
+  "label": "落地绿植",
+  "label_en": "potted plant",
+  "anchor_suggestion": "plant-01",
+  "category": "plant",
+  "transform": {
+   "position": [
+    11.025,
+    0.091,
+    8.113
+   ],
+   "yaw_deg": 0.0
+  },
+  "parts": [
+   {
+    "type": "cylinder",
+    "name": "pot",
+    "radius": 0.22,
+    "height": 0.4,
+    "position": [
+     0.0,
+     0.2,
+     0.0
+    ],
+    "segments": 20,
+    "color_rgb": [
+     37,
+     43,
+     41
+    ],
+    "color_n": 91,
+    "color_source": "p80-86 luminance band of outward samples within 5 cm"
+   },
+   {
+    "type": "bicone",
+    "name": "foliage_1",
+    "radius": 0.331,
+    "height": 2.247,
+    "waist": 0.42,
+    "position": [
+     0.0,
+     1.524,
+     0.0
+    ],
+    "segments": 10,
+    "color_rgb": [
+     78,
+     96,
+     88
+    ],
+    "color_n": 439,
+    "color_source": "fixed"
+   },
+   {
+    "type": "bicone",
+    "name": "foliage_2",
+    "radius": 0.27,
+    "height": 1.2,
+    "waist": 0.5,
+    "position": [
+     0.04,
+     1.15,
+     -0.13
+    ],
+    "segments": 10,
+    "color_rgb": [
+     78,
+     96,
+     88
+    ],
+    "color_n": 439,
+    "color_source": "fixed"
+   },
+   {
+    "type": "bicone",
+    "name": "foliage_3",
+    "radius": 0.252,
+    "height": 1.25,
+    "waist": 0.45,
+    "position": [
+     -0.03,
+     1.725,
+     0.12
+    ],
+    "segments": 10,
+    "color_rgb": [
+     78,
+     96,
+     88
+    ],
+    "color_n": 439,
+    "color_source": "fixed"
+   }
+  ],
+  "fit": {
+   "points": 1619,
+   "source": "green samples x 10.1-11.2, z 7.4-8.9",
+   "method": "pot cylinder + 3 stacked bicone foliage masses; stem placed 0.7 R behind the scanned face"
+  },
+  "bbox": {
+   "min": [
+    10.694,
+    0.091,
+    7.726
+   ],
+   "max": [
+    11.356,
+    2.739,
+    8.473
+   ]
+  }
+ }
+]
