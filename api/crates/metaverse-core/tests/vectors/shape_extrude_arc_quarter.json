@@ -1,0 +1,61 @@
+{
+  "bounds": {
+    "max": [
+      2.2071067811865475,
+      0.5,
+      1.0
+    ],
+    "min": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "description": "小于半圆的弧：跨过坐标轴方向时才产生极值点",
+  "kind": "shape",
+  "name": "extrude-arc-quarter",
+  "shape": {
+    "chamfer": 0.02,
+    "height": 0.5,
+    "outline": {
+      "arcs": [
+        {
+          "bulge": 0.41421356237309503,
+          "from": 1
+        },
+        {
+          "bulge": -0.3,
+          "from": 3
+        }
+      ],
+      "fillets": [
+        {
+          "at": 0,
+          "radius": 0.1
+        }
+      ],
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          0,
+          1
+        ]
+      ]
+    },
+    "type": "extrude"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "valid": true
+}

@@ -1,0 +1,31 @@
+{
+  "bounds": {
+    "max": [
+      0.6830127018922193,
+      1.0,
+      0.6830127018922193
+    ],
+    "min": [
+      -0.6830127018922193,
+      0.0,
+      -0.6830127018922193
+    ]
+  },
+  "description": "非 90° 整数倍的偏航，用浮点 sin/cos",
+  "kind": "shape",
+  "name": "box-yaw30",
+  "shape": {
+    "size": [
+      1,
+      1,
+      1
+    ],
+    "transform": {
+      "yaw": 30
+    },
+    "type": "box"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "valid": true
+}

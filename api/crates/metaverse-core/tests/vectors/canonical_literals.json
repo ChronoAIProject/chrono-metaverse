@@ -1,0 +1,8 @@
+{
+  "canonical": "[{},[],\"\",null,true,false,{\"\":{}}]",
+  "description": "空对象、空数组、空字符串和字面量",
+  "input": "[{}, [], \"\", null, true, false, {\"\": {}}]",
+  "kind": "canonical",
+  "name": "literals",
+  "sha256": "4d2d9f6e7efd4c2d91048585afdfa1694edbb17f836152eb3abd6b4261c8d961"
+}

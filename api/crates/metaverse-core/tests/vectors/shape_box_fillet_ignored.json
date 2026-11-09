@@ -1,0 +1,38 @@
+{
+  "bounds": {
+    "max": [
+      0.3,
+      0.45,
+      0.25
+    ],
+    "min": [
+      -0.3,
+      0.0,
+      -0.25
+    ]
+  },
+  "description": "box 的圆角和倒角不改变包围盒",
+  "kind": "shape",
+  "name": "box-fillet-ignored",
+  "shape": {
+    "chamfer": 0.01,
+    "fillet": 0.04,
+    "material": {
+      "color": [
+        90,
+        90,
+        96
+      ]
+    },
+    "segments": 6,
+    "size": [
+      0.6,
+      0.45,
+      0.5
+    ],
+    "type": "box"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "valid": true
+}

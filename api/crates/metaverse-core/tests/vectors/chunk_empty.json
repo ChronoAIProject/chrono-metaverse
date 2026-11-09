@@ -1,0 +1,14 @@
+{
+  "byteChecks": [],
+  "byteLength": 65536,
+  "canonicalBytesSha256": "de2f256064a0af797747c2b97505dc0b9f3df0de4f489eac731c23ae9ca9cc31",
+  "cells": [],
+  "compressedBase64": "eJztwIEAAAAAgKD9qRepAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgBoADwAB",
+  "description": "全 0 区块：不进清单，但哈希仍然有定义",
+  "fills": [],
+  "hash": "5524d41599c2176cac9e6e123066487e5795f8ba1bec83f8a80d103c61199b23",
+  "isEmpty": true,
+  "kind": "chunk",
+  "name": "empty",
+  "nonZeroCount": 0
+}

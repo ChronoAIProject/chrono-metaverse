@@ -1,0 +1,50 @@
+{
+  "bounds": {
+    "max": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "min": [
+      -0.25,
+      0.0,
+      0.0
+    ]
+  },
+  "description": "最后一点回到第一点的边也可以是圆弧（from = n − 1）",
+  "kind": "shape",
+  "name": "extrude-closing-arc",
+  "shape": {
+    "height": 1,
+    "outline": {
+      "arcs": [
+        {
+          "bulge": 0.5,
+          "from": 3
+        }
+      ],
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          0,
+          1
+        ]
+      ]
+    },
+    "type": "extrude"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "valid": true
+}

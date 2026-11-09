@@ -1,0 +1,13 @@
+{
+  "canonical": "{\"anchorId\":\"t1\",\"box\":[10,0,10,26,15,20],\"kind\":\"table\",\"label\":\"1 号桌\",\"visibility\":\"public\"}",
+  "description": "锚点记录（设计 4.4）的内容哈希",
+  "input": "{\"anchorId\": \"t1\", \"kind\": \"table\", \"box\": [10, 0, 10, 26, 15, 20], \"label\": \"1 号桌\", \"visibility\": \"public\"}",
+  "kind": "canonical",
+  "name": "anchor-record",
+  "record": {
+    "hash": "72864f3a8660a4588b37f29ae84ff01f5b4159bad26066fe8bf1550ff27dbf97",
+    "kind": "anchor",
+    "spaceId": "front-hall"
+  },
+  "sha256": "5e1f68c0c5c769a95cfd18d3173a0a9d0232bccee838d8bfaad364f6a2692d20"
+}

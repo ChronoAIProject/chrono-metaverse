@@ -1,0 +1,45 @@
+{
+  "bounds": {
+    "max": [
+      0.065,
+      0.465,
+      0.115
+    ],
+    "min": [
+      -0.015,
+      -0.015,
+      -0.015
+    ]
+  },
+  "description": "扫掠圆截面（椅腿）：路径包围盒向各方向扩 r",
+  "kind": "shape",
+  "name": "sweep-circle",
+  "shape": {
+    "caps": true,
+    "path": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0.4,
+        0.02
+      ],
+      [
+        0.05,
+        0.45,
+        0.1
+      ]
+    ],
+    "section": {
+      "circle": 0.015
+    },
+    "smooth": 0.03,
+    "type": "sweep"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "valid": true
+}

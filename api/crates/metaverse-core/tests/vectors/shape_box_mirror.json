@@ -1,0 +1,40 @@
+{
+  "bounds": {
+    "max": [
+      0.5,
+      1.0,
+      6.0
+    ],
+    "min": [
+      -0.5,
+      0.0,
+      4.0
+    ]
+  },
+  "description": "负缩放（镜像）",
+  "kind": "shape",
+  "name": "box-mirror",
+  "shape": {
+    "size": [
+      1,
+      1,
+      1
+    ],
+    "transform": {
+      "position": [
+        0,
+        0,
+        5
+      ],
+      "scale": [
+        -1,
+        1,
+        2
+      ]
+    },
+    "type": "box"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "valid": true
+}

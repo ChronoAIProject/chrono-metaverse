@@ -1,0 +1,60 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/metaverse-core",
+    "crates/metaverse-api",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# 依赖版本与 CMA（api/Cargo.toml）保持一致；只保留本项目用得到的部分。
+[workspace.dependencies]
+async-trait = "0.1"
+axum = { version = "0.8", features = ["macros"] }
+base64 = "0.22"
+flate2 = "1"
+futures-util = "0.3"
+mongodb = { version = "3", default-features = false, features = [
+    "bson-3",
+    "compat-3-3-0",
+    "rustls-tls",
+    # 托管环境给的是 mongodb+srv:// 地址，需要 DNS 解析（同 CMA 的说明）。
+    "dns-resolver",
+] }
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "rustls-tls",
+    "stream",
+] }
+ring = "0.17.14"
+serde = { version = "1", features = ["derive"] }
+# float_roundtrip：解析浮点数时精确舍入。默认的快速解析偶尔差 1 个 ulp，
+# 会让规范化 JSON 和内容哈希与其他语言不一致（SHAPES 5）。
+serde_json = { version = "1", features = ["float_roundtrip"] }
+sha2 = "0.10"
+subtle = "2.6"
+thiserror = "2"
+time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
+tokio = { version = "1", features = [
+    "macros",
+    "rt-multi-thread",
+    "net",
+    "io-util",
+    "sync",
+    "time",
+    "signal",
+] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["trace", "limit", "request-id", "timeout"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2"
+# 与 CMA 相同：维护中的 utoipa 分支，去掉了 cargo-deny 拒绝的已归档 `paste` 依赖。
+utoipa = { package = "meteroid-utoipa", version = "5.6", features = ["axum_extras"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+zeroize = "1.9.0"
+
+metaverse-core = { path = "crates/metaverse-core" }

@@ -1,0 +1,58 @@
+{
+  "byteChecks": [
+    {
+      "offset": 3104,
+      "value": 7
+    },
+    {
+      "offset": 3105,
+      "value": 0
+    }
+  ],
+  "byteLength": 65536,
+  "canonicalBytesSha256": "49bd5865866c3e52399995463851d9b774c540a3bd24104c037da7c1cf6d20b3",
+  "cells": [
+    {
+      "block": 7,
+      "index": 1552,
+      "x": 16,
+      "y": 1,
+      "z": 16
+    }
+  ],
+  "compressedBase64": "eJztzbERACAMAzGOFOy/MUO4gURy/edaO1rp9Xq9Xq//sM/o9fq+/Qn79F+v1+v1er1er9fr9Xq9Xq/X6/V6vV6v1+v1er1er9fr9Xq9Xq/X6/V6vV6vn9wDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMALLqVnCsg=",
+  "description": "y = 0 整层铺 2，x = 0 一面墙铺 3（后写的覆盖先写的），再单独放一格",
+  "fills": [
+    {
+      "block": 2,
+      "max": [
+        32,
+        1,
+        32
+      ],
+      "min": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "block": 3,
+      "max": [
+        1,
+        8,
+        32
+      ],
+      "min": [
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "hash": "efd44341e0be3a763bbbf7dabe1b56ef389065afdc96d9067713344ba3317586",
+  "isEmpty": false,
+  "kind": "chunk",
+  "name": "floor-and-wall",
+  "nonZeroCount": 1249
+}

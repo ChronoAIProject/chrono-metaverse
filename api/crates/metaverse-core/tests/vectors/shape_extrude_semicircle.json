@@ -1,0 +1,50 @@
+{
+  "bounds": {
+    "max": [
+      1.0,
+      0.1,
+      2.0
+    ],
+    "min": [
+      -1.0,
+      0.0,
+      -1.0
+    ]
+  },
+  "description": "bulge = 1 的半圆向外凸，包围盒包括圆弧最低点",
+  "kind": "shape",
+  "name": "extrude-semicircle",
+  "shape": {
+    "height": 0.1,
+    "outline": {
+      "arcs": [
+        {
+          "bulge": 1,
+          "from": 0
+        }
+      ],
+      "points": [
+        [
+          -1,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          2
+        ],
+        [
+          -1,
+          2
+        ]
+      ]
+    },
+    "type": "extrude"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "valid": true
+}

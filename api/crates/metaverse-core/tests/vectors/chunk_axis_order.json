@@ -1,0 +1,61 @@
+{
+  "byteChecks": [
+    {
+      "offset": 2,
+      "value": 2
+    },
+    {
+      "offset": 3,
+      "value": 0
+    },
+    {
+      "offset": 64,
+      "value": 3
+    },
+    {
+      "offset": 65,
+      "value": 0
+    },
+    {
+      "offset": 2048,
+      "value": 4
+    },
+    {
+      "offset": 2049,
+      "value": 0
+    }
+  ],
+  "byteLength": 65536,
+  "canonicalBytesSha256": "d95a20dc952a504f242360d0e671d266ca3764b8b33c7e0db8e96575063faefc",
+  "cells": [
+    {
+      "block": 2,
+      "index": 1,
+      "x": 1,
+      "y": 0,
+      "z": 0
+    },
+    {
+      "block": 3,
+      "index": 32,
+      "x": 0,
+      "y": 0,
+      "z": 1
+    },
+    {
+      "block": 4,
+      "index": 1024,
+      "x": 0,
+      "y": 1,
+      "z": 0
+    }
+  ],
+  "compressedBase64": "eJztwDENACAQALEL4F8zAhiZPmlr9WMHAExzAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIDXBd/DAAo=",
+  "description": "沿 x、z、y 各走一格：下标分别是 1、32、1024，核对 index = x + 32·(z + 32·y)",
+  "fills": [],
+  "hash": "d82f173d1a861be080b297d9d845d68b11842834e240b823f544bcc6078c2291",
+  "isEmpty": false,
+  "kind": "chunk",
+  "name": "axis-order",
+  "nonZeroCount": 3
+}

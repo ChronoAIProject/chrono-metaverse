@@ -1,0 +1,26 @@
+{
+  "bounds": {
+    "max": [
+      0.3,
+      0.75,
+      0.3
+    ],
+    "min": [
+      -0.3,
+      0.0,
+      -0.3
+    ]
+  },
+  "description": "圆柱：按解析圆，与分段数无关",
+  "kind": "shape",
+  "name": "cylinder",
+  "shape": {
+    "height": 0.75,
+    "radius": 0.3,
+    "segments": 12,
+    "type": "cylinder"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "valid": true
+}

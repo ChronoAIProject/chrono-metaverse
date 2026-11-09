@@ -1,0 +1,8 @@
+{
+  "canonical": "[\"quote \\\" backslash \\\\ slash /\",\"\\b\\f\\n\\r\\t\",\"\\u0000\\u0001\\u001f\",\"é中😀 \"]",
+  "description": "字符串只转义引号、反斜杠和 U+0000–U+001F；/、DEL、非 ASCII、U+2028 原样输出",
+  "input": "[\"quote \\\" backslash \\\\ slash \\/\", \"\\b\\f\\n\\r\\t\", \"\\u0000\\u0001\\u001f\\u007f\", \"\\u00e9\\u4e2d\\ud83d\\ude00\\u2028\"]",
+  "kind": "canonical",
+  "name": "strings",
+  "sha256": "3b512f8b781100c1d8ab98f8a0ccec08afc3000a233d47cfb7c295bd08c531fb"
+}

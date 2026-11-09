@@ -1,0 +1,13 @@
+{
+  "description": "引用不存在的模板",
+  "errorMessage": "$: 找不到模板 ghost",
+  "errorPath": "$",
+  "kind": "shape",
+  "name": "invalid-missing-template",
+  "shape": {
+    "template": "ghost",
+    "type": "instance"
+  },
+  "templates": {},
+  "valid": false
+}
