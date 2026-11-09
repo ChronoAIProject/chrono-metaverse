@@ -1,7 +1,13 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
-import { App, FIXTURE_LINK, FIXTURE_PREVIEW_LINK, FIXTURE_UNIVERSE_LINK } from './App';
+import {
+  App,
+  FIXTURE_LINK,
+  FIXTURE_MATERIALS_LINK,
+  FIXTURE_PREVIEW_LINK,
+  FIXTURE_UNIVERSE_LINK,
+} from './App';
 import { createPublicClient } from './core/api/client';
 import type { Visual } from './core/visuals';
 import { fixtureFetch } from './fixtures/server';
@@ -47,6 +53,10 @@ describe('应用外壳', () => {
     expect(screen.getByRole('link', { name: /草稿预览/ })).toHaveAttribute(
       'href',
       FIXTURE_PREVIEW_LINK,
+    );
+    expect(screen.getByRole('link', { name: /材质样板/ })).toHaveAttribute(
+      'href',
+      FIXTURE_MATERIALS_LINK,
     );
   });
 
@@ -131,6 +141,38 @@ describe('应用外壳', () => {
     visit('/preview#t=wrong');
     render(<App createClient={createClient} createView={fakeViewFactory().factory} />);
     expect(await screen.findByRole('alert')).toHaveTextContent('预览链接无效或已过期');
+  });
+
+  it('材质样板：平铺、着色方式、法线和粗糙度贴图交给场景，引用的贴图都能下载', async () => {
+    const { factory, views } = fakeViewFactory();
+    visit(FIXTURE_MATERIALS_LINK);
+    render(<App createClient={createClient} createView={factory} />);
+    expect(await screen.findByRole('heading', { name: '材质样板' })).toBeInTheDocument();
+    await waitFor(() => expect(views[0]?.contents.length).toBeGreaterThan(0));
+    const { entities } = views[0]!.last().members[0]!.view;
+    const byId = new Map(entities.map((e) => [e.entityId, e]));
+    expect(byId.get('floor')?.shape?.material).toMatchObject({
+      tile: [1, 1],
+      shading: 'albedo',
+      uv: 'planar',
+    });
+    expect(byId.get('wall-stretched')?.shape?.material).not.toHaveProperty('tile');
+    expect(byId.get('crate-baked')?.material).toBeUndefined();
+    expect(byId.get('crate-albedo')?.material).toEqual({ shading: 'albedo' });
+    // 贴图、法线、粗糙度贴图和模型都能经公开接口下载
+    const hashes = new Set<string>();
+    for (const entity of entities) {
+      const material = entity.shape?.material as Record<string, unknown> | undefined;
+      for (const key of ['texture', 'normalMap', 'roughnessMap']) {
+        if (typeof material?.[key] === 'string') hashes.add(material[key] as string);
+      }
+      if (entity.assetHash) hashes.add(entity.assetHash);
+    }
+    expect(hashes.size).toBe(7);
+    const client = createClient('fixture-materials-token-13579bdf2468ace0');
+    for (const hash of hashes) {
+      expect((await client.asset(hash)).byteLength).toBeGreaterThan(0);
+    }
   });
 
   it('打开夹具空间：加载场景，切换三种视图，剖切传给场景', async () => {
