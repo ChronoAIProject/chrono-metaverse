@@ -328,7 +328,7 @@ eventTypes { spaceId, type, version,           // 只追加的版本记录；回
 ```
 drafts { _id, spaceId, scope: physical | plot:<编号>, baseSeq, rev, createdBy: { sub },
          ops, touched: { chunks, entities, anchors, regions, plots },
-         resultChunks: [ { layer, cx, cy, cz, hash } ], expiresAt }      // 30 天过期
+         resultChunks: [ { layer, cx, cy, cz, hash } ], assets, expiresAt }      // 30 天过期；assets 是草稿引用的资源哈希
 draftChunks（草稿生成的区块，随草稿过期删除，不写进 chunks）
 ```
 
@@ -338,7 +338,7 @@ draftChunks（草稿生成的区块，随草稿过期删除，不写进 chunks�
   - 默认有效 24 小时，最长 7 天；草稿发布或丢弃时，令牌立即失效。
   - 链接形如 `/preview#t=<令牌>`，令牌放在 `#` 后面，不会进入服务器和网络层的日志。
   - 预览和公开接口一样，只显示公开锚点和公开事件；响应不缓存。
-  - 草稿区块和草稿里新上传的资源走预览专用接口（8.2），凭预览令牌读取。
+  - 预览用到的全部区块和资源都走预览专用接口（8.2），凭预览令牌读取。服务端只返回属于这次预览的内容：草稿生成的区块、草稿引用的资源（`assets`），以及草稿基础版本及更早（seq ≤ `baseSeq`）的提交引用过、已发布的区块和本空间已登记（`assetRefs`）的资源；其他哈希一律 404。草稿区块和草稿新上传的资源在发布前只能这样读到。
 - **草稿范围**：草稿属于创建时的路径范围（实体区或某个地块）。追加操作、生成预览、发布都必须走同一范围的路径，谁能调这些路径由 NyxID 操作范围决定。
 - **发布**：
   - 如果时间线已经前进，就拿 (baseSeq, head] 之间各提交的变化和草稿的 `touched` 求交集：没有交集就直接叠加到最新版本上发布；有交集才返回 409，并列出冲突的键。
@@ -494,7 +494,7 @@ jobs { _id, spaceId, kind, params, status: queued|running|done|failed,
 | `GET /api/public/universes/{id}?at=` | T 时刻生效的组合修订（成员、摆放、连接）和各成员在 T 时刻的 seq；查看器再按这些 seq 调用 `snapshot?seq=` | 不缓存 |
 | `GET /api/public/universes/{id}/revisions/{seq}` | 某一次组合修订的内容 | 长 |
 | `GET /api/public/previews` | 草稿预览（令牌放在请求头里） | 不缓存 |
-| `GET /api/public/previews/chunks/{hash}`、`.../assets/{hash}` | 草稿区块和草稿新上传的资源；服务端确认哈希属于该草稿才返回 | 不缓存 |
+| `GET /api/public/previews/chunks/{hash}`、`.../assets/{hash}` | 预览用到的区块和资源：草稿生成的区块、草稿引用的资源，以及草稿基础版本（seq ≤ baseSeq）的提交引用过、已发布的区块和本空间已登记的资源；不属于这些的一律 404；资源支持分段下载 | 不缓存 |
 
 路径带 `.bin` 扩展名，是为了让平台前面的 Cloudflare 按默认规则缓存这些内容不变的文件：成功响应带 `Cache-Control: public, max-age=31536000, immutable`，不带 Set-Cookie 和 Vary。
 
