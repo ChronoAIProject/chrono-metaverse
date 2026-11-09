@@ -251,12 +251,12 @@ Claude 会调用 `chrono-cd__put_app`，参数大致如下（节选；本项目�
 ```bash
 # secrets.json 内容：{"THIRD_PARTY_API_KEY":"<值>"}，不要放进仓库
 nyxid proxy request chrono-cd \
-  'api/v1/projects/metaverse/apps/chrono-metaverse/services/api/secrets?org_id=<组织编号>' \
+  'api/v1/projects/metaverse/apps/chrono-metaverse/services/metaverse-api/secrets?org_id=<组织编号>' \
   --method PUT --data @secrets.json --output json
 rm secrets.json
 ```
 
-返回里只有键名，例如 `{"service":"api","keys":["THIRD_PARTY_API_KEY"]}`。之后回到云端会话，让 Claude 查看部署状态。
+返回里只有键名，例如 `{"service":"metaverse-api","keys":["THIRD_PARTY_API_KEY"]}`。之后回到云端会话，让 Claude 查看部署状态。
 
 其他常用操作：
 
