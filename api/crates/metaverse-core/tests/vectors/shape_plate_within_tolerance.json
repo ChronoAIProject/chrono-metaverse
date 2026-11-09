@@ -1,0 +1,55 @@
+{
+  "bounds": {
+    "max": [
+      1.2000019999999632,
+      2.100001142857122,
+      0.0004
+    ],
+    "min": [
+      0.0,
+      0.0,
+      -0.01199999977891157
+    ]
+  },
+  "description": "plate：有一个点离平面 0.4 毫米（不超过 1 毫米的平面度容差）；半透明玻璃材质",
+  "kind": "shape",
+  "name": "plate-within-tolerance",
+  "shape": {
+    "material": {
+      "color": [
+        200,
+        225,
+        235
+      ],
+      "opacity": 0.3
+    },
+    "points": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        1.2,
+        0,
+        0
+      ],
+      [
+        1.2,
+        2.1,
+        0.0004
+      ],
+      [
+        0,
+        2.1,
+        0
+      ]
+    ],
+    "thickness": 0.012,
+    "type": "plate"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "triangles": 12,
+  "valid": true
+}

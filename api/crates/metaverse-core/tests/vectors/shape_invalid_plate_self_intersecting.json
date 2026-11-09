@@ -1,0 +1,35 @@
+{
+  "description": "plate：蝴蝶结形（自相交）",
+  "errorMessage": "$.points: 多边形自相交",
+  "errorPath": "$.points",
+  "kind": "shape",
+  "name": "invalid-plate-self-intersecting",
+  "shape": {
+    "points": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        2,
+        0,
+        1
+      ],
+      [
+        2,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        2
+      ]
+    ],
+    "thickness": 0.02,
+    "type": "plate"
+  },
+  "templates": {},
+  "valid": false
+}

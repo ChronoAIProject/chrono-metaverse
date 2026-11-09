@@ -1,0 +1,52 @@
+{
+  "bounds": {
+    "max": [
+      1.0,
+      1.0,
+      0.0
+    ],
+    "min": [
+      0.0,
+      0.0,
+      -0.01
+    ]
+  },
+  "description": "plate：一条边上多一个共线点，仍是简单多边形，三角形数仍按 4n − 4",
+  "kind": "shape",
+  "name": "plate-collinear-point",
+  "shape": {
+    "points": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0.5,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        1,
+        1,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ]
+    ],
+    "thickness": 0.01,
+    "type": "plate"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "triangles": 16,
+  "valid": true
+}

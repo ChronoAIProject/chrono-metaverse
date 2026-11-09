@@ -1,0 +1,47 @@
+{
+  "bounds": {
+    "max": [
+      2.0,
+      0.9063245553203367,
+      0.3
+    ],
+    "min": [
+      0.0,
+      0.0,
+      -0.01897366596101028
+    ]
+  },
+  "description": "plate：斜放的矩形板（前台立面），沿 −法向 加厚；包围盒取各点和加厚后的点",
+  "kind": "shape",
+  "name": "plate-slanted",
+  "shape": {
+    "points": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        2,
+        0,
+        0
+      ],
+      [
+        2,
+        0.9,
+        0.3
+      ],
+      [
+        0,
+        0.9,
+        0.3
+      ]
+    ],
+    "thickness": 0.02,
+    "type": "plate"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "triangles": 12,
+  "valid": true
+}

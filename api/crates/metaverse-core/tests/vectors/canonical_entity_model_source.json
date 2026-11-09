@@ -1,0 +1,13 @@
+{
+  "canonical": "{\"assetHash\":\"4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d9f2c7d\",\"bounds\":{\"max\":[3,0.82,3.3],\"min\":[1.1,0,2.4]},\"entityId\":\"sofa-01\",\"kind\":\"object\",\"label\":\"沙发\",\"layer\":\"rebuilt\",\"material\":{\"tint\":[214,196,176]},\"props\":{\"source\":{\"author\":\"示例作者\",\"id\":\"example_sofa\",\"library\":\"polyhaven\",\"license\":\"CC0-1.0\",\"page\":\"https://polyhaven.com/a/example_sofa\",\"title\":\"示例沙发\"}}}",
+  "description": "引用外部模型的物件（SHAPES 3）：只有 assetHash，material 给整个模型调色，props.source 是署名",
+  "input": "{ \"entityId\": \"sofa-01\", \"layer\": \"rebuilt\", \"kind\": \"object\", \"label\": \"沙发\",\n  \"assetHash\": \"4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d9f2c7d\",\n  \"material\": { \"tint\": [214, 196, 176] },\n  \"bounds\": { \"min\": [1.1, 0, 2.4], \"max\": [3.0, 0.82, 3.3] },\n  \"props\": { \"source\": { \"library\": \"polyhaven\", \"id\": \"example_sofa\", \"page\": \"https://polyhaven.com/a/example_sofa\",\n                         \"author\": \"示例作者\", \"license\": \"CC0-1.0\", \"title\": \"示例沙发\" } } }",
+  "kind": "canonical",
+  "name": "entity-model-source",
+  "record": {
+    "hash": "d3b3bfd5ca1a3d008bbbeb2b4605e8da1ecc7f17f643d69fcf9d6a6ed407fef4",
+    "kind": "entity",
+    "spaceId": "front-hall"
+  },
+  "sha256": "a50c1d8ce753e6a5fdd3cf084e96283f61e5af57a5b880b01a784be673155984"
+}

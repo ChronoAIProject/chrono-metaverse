@@ -1,0 +1,72 @@
+{
+  "bounds": {
+    "max": [
+      3.732050807568877,
+      0.75,
+      1.2320508075688774
+    ],
+    "min": [
+      1.0,
+      0.71,
+      -1.5
+    ]
+  },
+  "description": "plate：L 形台面（凹多边形），法向 +y，板向下加厚；带变换和颜色",
+  "kind": "shape",
+  "name": "plate-concave",
+  "shape": {
+    "material": {
+      "color": [
+        180,
+        150,
+        110
+      ]
+    },
+    "points": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        2
+      ],
+      [
+        2,
+        0,
+        2
+      ],
+      [
+        2,
+        0,
+        1.4
+      ],
+      [
+        0.6,
+        0,
+        1.4
+      ],
+      [
+        0.6,
+        0,
+        0
+      ]
+    ],
+    "thickness": 0.04,
+    "transform": {
+      "position": [
+        1,
+        0.75,
+        -0.5
+      ],
+      "yaw": 30
+    },
+    "type": "plate"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "triangles": 20,
+  "valid": true
+}
