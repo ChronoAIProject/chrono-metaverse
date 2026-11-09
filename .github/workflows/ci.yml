@@ -180,6 +180,10 @@ jobs:
         run: bash .github/scripts/check-db-boundary.sh
       - name: 本地开发设施：模拟 NyxID 的测试
         run: node --test infra/dev/mock-nyxid.test.mjs
+      - name: 部署规格检查（infra/chrono-cd/app.json）
+        run: |
+          node --test infra/chrono-cd/*.test.mjs
+          node infra/chrono-cd/check-app.mjs
       - name: 本地开发设施：JSON 与脚本语法
         run: |
           node --check infra/dev/mock-nyxid.mjs

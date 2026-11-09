@@ -5,6 +5,8 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 
 规格格式以 chrono-cd 的接口文档为准（`docs/protocol/api.md`、技能文件 `skills/chrono-cd/SKILL.md`），并对照了组织下已有应用（`omega/mathesis`、`integrations/frigate-events-test`）的实际配置。
 
+改 `app.json` 后先跑静态检查（持续集成里也跑）：`node infra/chrono-cd/check-app.mjs`。它检查处理服务的线程数和内存上限、接口服务的限流额度和可信地址头、README 的环境变量表是否列全、`infra/dev/up.sh` 是否设了同样的线程变量；测试在 `check-app.test.mjs`（`node --test infra/chrono-cd/*.test.mjs`）。
+
 ## 1. 规格要点
 
 | 服务 | 镜像 | 路由 | 暴露 | 端口 | 健康检查 | 副本 | 资源申请 / 上限 |
@@ -70,9 +72,9 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 - **所以限流按网关地址计**：接口服务默认用 TCP 连接地址当来源，这个地址是 Google 前端代理（`35.191.0.0/16`、`130.211.0.0/22`）或 nginx 副本的地址，所有访客落进少数几个桶，限流只能当兜底。接口服务按单个访客设计的默认额度（每分钟 1200、突发 200）在这种情况下几十个同时在线的访客就会触发 429，所以 `app.json` 显式调高了 `PUBLIC_*` 四个额度。
 - **额度怎么来的**：网站"现在"模式每个访客每 5 秒带 If-None-Match 查一次 `/head`（多数 304），有变化时再拉增量事件、状态，约每分钟 24–36 次；打开一个空间约 10–20 次 JSON 请求，再加几百个区块和资源（前厅 5 厘米格约 155–195 个区块）。每分钟 12000 次按 200 个同时在线访客留了余量，突发 2000 约等于 100 个访客同时打开；区块和资源按同样的人数放大 10 倍。真正保护进程的是每个空间的并发上限（`PUBLIC_SPACE_CONCURRENCY`，默认 64）和进程内缓存，这里的额度只防一个来源把接口打满。
 - **为什么暂时不设 `TRUSTED_CLIENT_IP_HEADER=cf-connecting-ip`**：接口服务对配置的头无条件信任。只要有人能绕过 Cloudflare 直接连到平台的负载均衡，就可以每个请求写一个不同的 `cf-connecting-ip`，每次都拿到新额度，限流完全失效。所以要先向平台确认两件事：① 负载均衡只接受 Cloudflare 的流量（或者会覆盖外来的 `cf-connecting-ip`）；② `cf-connecting-ip` 原样到达容器。
-- **`X-Forwarded-For` 不能用**：Google 负载均衡和 nginx 都会在后面追加地址，值是多个 IP；接口服务只认恰好一个 IP 的值，会退回连接地址。要按转发链取客户端地址（只信任来自 Google 前端代理网段的连接、跳过负载均衡自己追加的那一段，参照 CMA 的 `CHRONO_SERVER_TRUSTED_PROXY_CIDRS`），需要接口服务先支持。
+- **`X-Forwarded-For` 不能用**：Google 负载均衡和 nginx 都会在后面追加地址，值是多个 IP；接口服务只认恰好一个 IP 的值，会退回连接地址（`check-app.mjs` 也会拒绝把它配成可信头）。要按转发链取客户端地址（只信任来自 Google 前端代理网段的连接、跳过负载均衡自己追加的那一段，参照 CMA 的 `CHRONO_SERVER_TRUSTED_PROXY_CIDRS`），需要接口服务先支持。
 
-平台确认之后：在 `app.json` 里设 `"TRUSTED_CLIENT_IP_HEADER": "cf-connecting-ip"`，四个 `PUBLIC_*` 可以删掉（回到按单个访客的默认额度），再用 `PATCH` 只改这几项（JSON 合并补丁里写 `null` 表示删除这一项；改完 `GET` 一次确认）：
+平台确认之后：在 `app.json` 里设 `"TRUSTED_CLIENT_IP_HEADER": "cf-connecting-ip"`，四个 `PUBLIC_*` 可以删掉（回到按单个访客的默认额度），跑一遍 `node infra/chrono-cd/check-app.mjs`，再用 `PATCH` 只改这几项（JSON 合并补丁里写 `null` 表示删除这一项；改完 `GET` 一次确认）：
 
 ```bash
 nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --data '{"services":{"metaverse-api":{"env":{
@@ -108,7 +110,7 @@ nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --
 | 不设（4 核） | 7 | 471MB |
 | 只设 `OMP_NUM_THREADS=2` | 3 | 307MB |
 
-每多一个线程约 +40MB，两份 OpenBLAS 各算一次。线程数设成 `cpu_limit`（2），地址空间与节点大小无关。Dockerfile 按约定不写 `ENV`，所以这几个变量只在这里设；`infra/dev/up.sh` 本地也设同样的值，本地测的内存和线上一致。`worker/README.md` 的内存数据（RSS 1,263MB）是在 4 核机器上测的，上线后按子进程实测的 `VmPeak` 复核 `WORKER_JOB_MEMORY_MB`。改 `cpu_limit` 时同步改这两个线程数。
+每多一个线程约 +40MB，两份 OpenBLAS 各算一次。线程数设成 `cpu_limit`（2），地址空间与节点大小无关。Dockerfile 按约定不写 `ENV`，所以这几个变量只在这里设；`infra/dev/up.sh` 本地也设同样的值，本地测的内存和线上一致。`worker/README.md` 的内存数据（RSS 1,263MB）是在 4 核机器上测的，上线后按子进程实测的 `VmPeak` 复核 `WORKER_JOB_MEMORY_MB`。改 `cpu_limit` 时同步改这两个线程数（`check-app.mjs` 会检查线程数不超过 `cpu_limit`）。
 
 `metaverse-web`：不需要环境变量。
 
@@ -156,7 +158,7 @@ nyxid proxy request chrono-cd "api/v1/account?org_id=$ORG" --output json
 
 ### 第 4 步：提交应用规格
 
-把 `app.json` 里三个镜像的标签换成要部署的提交哈希，然后提交：
+先跑 `node infra/chrono-cd/check-app.mjs`，再把 `app.json` 里三个镜像的标签换成要部署的提交哈希，然后提交：
 
 ```bash
 SHA=<7 位提交哈希>
