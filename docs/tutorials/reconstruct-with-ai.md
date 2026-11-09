@@ -200,7 +200,7 @@ metaverse rebuild --authored recon/out/authored/authored.json
 | 现象 | 处理 |
 |---|---|
 | `doctor` 说渲染不可用 | 按提示装 node / three / Playwright，或用环境变量指定路径；不出图时 `compare`、`assemble` 加 `--no-render` 也能算数字 |
-| 候选面朝墙、前后反了 | 看高度图确认靠背在哪边，`place --yaw <角度> --yaw-range 20` 限定 |
+| 候选面朝墙、前后反了 | 看高度图确认靠背在哪边，`place --yaw <角度> --yaw-range 20` 限定。别只凭"正面"图：贴墙家具背面扫不到，从背后看扫描像正面（前厅实测里就把对的朝向"纠正"反了，网站上和原始扫描一对才发现） |
 | 候选比例不对 | `--scale axis`；还不行就换候选 |
 | 候选颜色差太多 | `place` 会提示 tint 帮不上（只能调暗）：换颜色接近或更浅的候选再 `--tint` |
 | `fetch` 提示坐标超过 ±1000 米 | 模型多半是厘米单位：`place` 会按扫描缩放，处理服务按缩放后的坐标检查，可以照常用 |
