@@ -442,6 +442,36 @@ impl Repo {
         Ok(owned.contains(hash).then_some(meta))
     }
 
+    /// 把事件类型 spawnEntity 显示方式的模型（`entityAsset`）登记到本空间的 `assetRefs`：网页按
+    /// 公开资源接口 `/api/public/assets/{hash}.bin` 加载它。已登记就不变（`$setOnInsert`，
+    /// `eventType` 记第一次登记它的事件类型）。调用方先用 [`Repo::unusable_assets`] 确认能引用。
+    pub async fn register_event_type_asset(
+        &self,
+        grant: &Grant,
+        hash: &str,
+        event_type: &str,
+        now: metaverse_core::Timestamp,
+    ) -> Result<(), RepoError> {
+        if !grant.can_manage() {
+            return Err(RepoError::GrantMismatch);
+        }
+        let owner = mongodb::bson::serialize_to_bson(grant.owner())
+            .map_err(|error| RepoError::Corrupt(error.to_string()))?;
+        let on_insert = doc! {
+            "owner": owner,
+            "createdAt": now.to_rfc3339(),
+            "eventType": event_type,
+        };
+        self.collection(collections::ASSET_REFS)
+            .update_one(
+                doc! {"hash": hash, "spaceId": grant.space_id()},
+                doc! {"$setOnInsert": on_insert},
+            )
+            .upsert(true)
+            .await?;
+        Ok(())
+    }
+
     /// 把一段字节登记成资源（按内容哈希去重），与处理服务 `assets.put_asset` 的布局相同：
     /// 先写 256 KiB 的数据块，最后插入 `files` 文档；同一内容被并发登记时删掉本次的数据块。
     /// 用于草稿发布时把超过 1MB 的操作存成资源（不登记到 `assetRefs`，公开接口读不到）。

@@ -523,6 +523,39 @@ impl TestApp {
             .unwrap();
     }
 
+    /// 直接登记一份资源（与处理服务 `assets.put_asset` 相同的 GridFS 布局：256KiB 的数据块 +
+    /// `files` 文档，文件名 = 内容哈希）。`metadata` 原样写入，再补上 `sha256`。返回内容哈希。
+    pub async fn put_asset(&self, bytes: &[u8], mut metadata: Document) -> String {
+        let hash = sha256_hex(bytes);
+        let files_id = mongodb::bson::oid::ObjectId::new();
+        let chunks: Vec<Document> = bytes
+            .chunks(256 * 1024)
+            .enumerate()
+            .map(|(n, block)| {
+                doc! {"files_id": files_id, "n": n as i32, "data": mongodb::bson::Binary {
+                    subtype: mongodb::bson::spec::BinarySubtype::Generic,
+                    bytes: block.to_vec(),
+                }}
+            })
+            .collect();
+        if !chunks.is_empty() {
+            self.collection("assets.chunks")
+                .insert_many(chunks)
+                .await
+                .unwrap();
+        }
+        metadata.insert("sha256", &hash);
+        self.collection("assets.files")
+            .insert_one(doc! {
+                "_id": files_id, "length": bytes.len() as i64, "chunkSize": 256 * 1024,
+                "uploadDate": mongodb::bson::DateTime::now(), "filename": &hash,
+                "metadata": metadata,
+            })
+            .await
+            .unwrap();
+        hash
+    }
+
     /// 模拟处理服务校验失败（`_fail_upload`）。
     pub async fn fail_upload(&self, upload_id: &str, reason: &str) {
         self.collection("uploads")
