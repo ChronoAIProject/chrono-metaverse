@@ -19,7 +19,8 @@ import {
  * - 凭链接查看：不带或带错分享令牌一律 404，不暴露空间是否存在；
  * - 组合的分享令牌能读成员空间（请求带 `?universe=<组合编号>`）；
  * - 预览令牌放在 `Authorization: Preview <令牌>` 里，预览响应不缓存；
- * - 分页：提交每页 3 条、事件每页 400 条（故意比真实接口小，测试能走到翻页）；
+ * - 分页：提交每页 3 条、事件每页 400 条（故意比真实接口小，测试能走到翻页）；事件和真实接口
+ *   一样先按原始记录分页再做公开投影，一整页都是内部级事件时返回空的 items 和非空的 nextAfter；
  * - 写请求一律拒绝。另有 `/__fixtures/emit`、`/__fixtures/reset` 两个控制地址（不在 /api 下），
  *   供"现在"模式的端到端测试模拟新事件和新提交。
  */
@@ -331,24 +332,42 @@ export function fixtureReply(
       return json(200, page(items, TIMELINE_PAGE, params.get('after')));
     }
     case '/events': {
+      // 与接口服务相同：给了 since 是增量（按记录时间 recordedAt），否则是时间窗 [from, to)，
+      // 每次最多 24 小时；增量时 from/to 只是对 at 的筛选，不限跨度。
+      const incremental = params.has('since');
       const from = params.has('from') ? toMillis(params.get('from')!) : -Infinity;
       const to = params.has('to') ? toMillis(params.get('to')!) : Infinity;
-      const since = params.has('since') ? toMillis(params.get('since')!) : -Infinity;
-      // from/to 每次最多 24 小时；只按 since 增量取时不限。
-      if ((params.has('from') || params.has('to')) && to - from > 24 * 3_600_000 + 1) {
+      if (
+        !incremental &&
+        (params.has('from') || params.has('to')) &&
+        to - from > 24 * 3_600_000 + 1
+      ) {
         return problem(400, 'range_too_long', '每次最多查 24 小时');
       }
       const types = params.get('types')?.split(',').filter(Boolean);
-      const items = publicEvents(space).filter((e) => {
+      // 先按原始记录分页（时间窗：原事件按 (at, 编号)；增量：原事件和更正按 (recordedAt, 编号)），
+      // 内部级事件、内部锚点上的事件也占名额；再对这一页涉及的事件做公开投影。
+      // 所以某一页的 items 可能是空的，但 nextAfter 不为 null（客户端要接着翻）。
+      const order = (key: 'at' | 'recordedAt') => (a: SpaceEvent, b: SpaceEvent) =>
+        toMillis(a[key]) - toMillis(b[key]) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+      const ordered = incremental
+        ? space.events
+            .filter((e) => toMillis(e.recordedAt) >= toMillis(params.get('since')!))
+            .sort(order('recordedAt'))
+        : space.events
+            .filter((e) => {
+              const at = toMillis(e.at);
+              return e.corrects === undefined && at >= from && at < to;
+            })
+            .sort(order('at'));
+      const { items: slice, nextAfter } = page(ordered, EVENTS_PAGE, params.get('after'));
+      const touched = new Set(slice.map((e) => e.corrects ?? e.id));
+      const records = space.events.filter((e) => touched.has(e.corrects ?? e.id));
+      const items = publicProjection(space, records).filter((e) => {
         const at = toMillis(e.at);
-        return (
-          at >= from &&
-          at <= to &&
-          toMillis(e.recordedAt) >= since &&
-          (types === undefined || types.includes(e.type))
-        );
+        return at >= from && at < to && (types === undefined || types.includes(e.type));
       });
-      return json(200, page(items, EVENTS_PAGE, params.get('after')));
+      return json(200, { items, nextAfter });
     }
     case '/events/density': {
       const from = params.get('from');

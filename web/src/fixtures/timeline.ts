@@ -6,6 +6,7 @@ import { random } from './png';
  * 夹具时间线：两个空间的提交、事件类型和事件。
  *
  * 前厅 4 次提交；一个多月的入座、出餐、离座、客流（热力）和营业状态事件，一条更正；
+ * 10 月 2 日凌晨有一大串内部级门磁事件（sensor.door），夹具接口的第一页全是它们（空页）。
  * 店员备注（staff.note）默认内部级：一条没写可见级别（公开接口不返回），另有显式标成公开的
  * （公开接口返回，并且和真实接口一样不带 visibility）。存的是原始记录，visibility 只在写入时
  * 显式给了才有；公开投影在夹具接口（server.ts）里做。
@@ -134,6 +135,13 @@ export const eventTypes: EventTypeDef[] = [
     display: { kind: 'spawnEntity', entityAsset: MODELS.bouquet.hash },
   },
   {
+    // 门磁传感器：默认内部级、量大。公开接口按原始记录分页，一整页都是它时返回空页。
+    type: 'sensor.door',
+    version: 1,
+    defaultVisibility: 'internal',
+    display: { kind: 'icon', icon: 'door' },
+  },
+  {
     // 默认内部级；写入时显式标成公开的那几条公开接口照样返回（不带 visibility）。
     type: 'staff.note',
     version: 1,
@@ -180,6 +188,8 @@ const DAY = 86_400_000;
 const HOUR = 3_600_000;
 const START = Date.parse('2026-10-01T00:00:00Z');
 const DISHES = ['拿铁', '美式', '抹茶', '可颂', '三明治'];
+/** 10 月 2 日凌晨一连串内部级门磁事件的条数（比夹具接口的一页 400 条多）。 */
+export const SENSOR_BURST = 450;
 
 /** 送花日：10 月 21 日起每三天一次，10:00 出发、10:25 到达、10:30 摆上前台。 */
 export function deliveryDays(): number[] {
@@ -264,6 +274,16 @@ export function fixtureEvents(now: number = Date.now()): SpaceEvent[] {
       anchorId: 'counter-01',
     });
   });
+  // 10 月 2 日 0 点到 1 点：门磁每 8 秒一条，共 450 条内部级事件，排在当天的公开事件前面。
+  // 夹具接口每页 400 条：这天的第一页全是它们（items 为空），公开事件在后面的页里。
+  for (let i = 0; i < SENSOR_BURST; i += 1) {
+    drafts.push({
+      at: START + DAY + i * 8_000,
+      type: 'sensor.door',
+      anchorId: 'door-01',
+      data: { open: i % 2 === 0 },
+    });
+  }
   // 内部级事件：公开接口不返回（查看器也不该看到）。
   drafts.push({
     at: START + 2 * DAY + 3 * HOUR,
