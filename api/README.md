@@ -71,6 +71,9 @@ cargo run -p metaverse-api
 | `UPLOAD_MAX_OPEN_PER_SPACE` | 否 | 每个空间进行中的上传数（`open`、`complete`），超过 429，默认 16 |
 | `UPLOAD_MAX_CONCURRENT_PARTS` | 否 | 每个进程同时处理的分片数（读请求体之前取名额，20 秒等不到返回 503），默认 8 |
 | `JOB_MAX_PENDING_PER_SPACE` | 否 | 每个空间排队和运行中的任务数，超过 429，默认 8 |
+| `METAVERSE_DEMO_SEED` | 否 | 部署配置种子（JSON，见下文"部署配置种子"）：启动后在后台建演示空间、导入扫描。不设就什么都不做；设了但不合法时启动失败 |
+| `METAVERSE_DEMO_SHARE_TOKEN` | 种子凭链接查看时必填 | 演示空间的分享令牌原文（32–256 个 base64url 字符），只用来算哈希存进空间，不写日志；线上是 chrono-cd 的应用密钥 |
+| `SSL_CERT_FILE` | 否 | 下载种子文件时额外信任的根证书（PEM，标准变量）；只在本地经过会重新签发证书的出口代理时需要，线上不设 |
 
 NyxID 地址只接受 https；明文 http 只允许本机地址（本地测试）。
 
@@ -121,12 +124,14 @@ NyxID 地址只接受 https；明文 http 只允许本机地址（本地测试�
 | `src/repo/uploads.rs`、`jobs.rs` | 上传会话、分片写成 GridFS 数据块（布局同处理服务 `assets.py` 的 `write_upload_part`）、"完成上传"事务、任务创建与查询 |
 | `src/repo/events.rs` | 事件类型版本、批量写事件（去重）、时间窗/增量查询、密度聚合、抹除、状态快照 |
 | `src/repo/universes.rs` | 组合的主人与令牌、修订事务、T 时刻的修订和成员、成员资格的时间段、成员空间在 T 时刻的 seq |
+| `src/demo_seed/*` | 部署配置种子：配置解析（`config`）、下载核对（`fetch`）、打包 stored zip（`pack`）、执行与重试（`mod`），见下文"部署配置种子" |
 | `src/repo/transactions.rs` | "插入 + 条件更新"的小事务（暂时性错误重试） |
 | `src/auth/authorizer/universes.rs` | 组合凭据 `UniverseGrant`、成员变更凭据 `MembershipGrant`、凭组合令牌读成员空间（`public_space_via_universe*`） |
-| `src/auth/authorizer/system.rs` | 由已有凭据派生的系统范围 `SystemGrant`（写审计日志），用于保存和删除状态快照 |
+| `src/auth/authorizer/system.rs` | 由已有凭据派生的系统范围 `SystemGrant`（写审计日志），用于保存和删除状态快照；部署配置种子的建空间凭据 `seed_create_grant` 和种子空间凭据 `seed_space`（同样写审计日志） |
 | `tests/api.rs` | 集成测试：本地 MongoDB + 模拟 NyxID（公钥列表、组织授权接口） |
 | `tests/timeline.rs`、`tests/timeline_support/` | 时间线、草稿、公开读、管理接口的集成测试（同样的设施，另加直接写库模拟上传和处理服务） |
 | `tests/uploads_jobs.rs`、`tests/events.rs`、`tests/universes.rs`、`tests/ingest_support/` | 上传与任务、事件、组合的集成测试（同样的设施；处理服务的结果按约定的文档格式直接写库模拟） |
+| `tests/demo_seed.rs` | 部署配置种子的集成测试：本机 HTTP 服务提供文件；首次建空间、登记资源、建任务，再次启动不重复，哈希不符不建空间，重试，多副本并发，补建与新版本，别人的空间不碰；有 `worker/.venv` 时用处理服务的格式嗅探核对打包的 zip |
 
 ### 目前实现的接口
 
@@ -174,7 +179,7 @@ NyxID 地址只接受 https；明文 http 只允许本机地址（本地测试�
 
 | 接口 | operationId | 说明 |
 |---|---|---|
-| `POST /api/v1/admin/spaces` | `admin_create_space` | 个人空间由本人建；组织空间要求调用者是组织本身，或经 NyxID 现场核验是 admin，写入归属证据；返回一次性的分享令牌原文；随即写第一次提交（`_space` 锚点 + 通用方块表） |
+| `POST /api/v1/admin/spaces` | `admin_create_space` | 个人空间由本人建；组织空间要求调用者是组织本身，或经 NyxID 现场核验是 admin，写入归属证据（`basis` 是 `org_subject` 或 `org_admin`）；返回一次性的分享令牌原文；随即写第一次提交（`_space` 锚点 + 通用方块表）。写入路径 `create_space_with` 与部署配置种子共用 |
 | `PATCH /api/v1/admin/spaces/{space_id}` | `admin_update_space` | `{name?, description?, visibility?, confirmPublicHistory?}`；凭链接查看 → 公开必须 `confirmPublicHistory: true`，否则 409 `confirmation_required` |
 | `POST /api/v1/admin/spaces/{space_id}/share-tokens` | `admin_rotate_share_token` | 吊销全部现有分享令牌，新令牌原文只返回一次 |
 | `PUT /api/v1/admin/spaces/{space_id}/layout` | `admin_set_layout` | `{regions, plots, message?, baseSeq?}`，写成一次提交（`regionsHash`） |
@@ -308,6 +313,33 @@ universeRevisions { _id: "<组合编号>:<seq>", universeId, owner, seq, at, act
 - `public::guard` 中间件已经套在整个 `/api/public` 路由上：按来源地址限流（区块和资源单独一档），`/api/public/spaces/{id}/...` 每空间并发上限；拒绝一律 `no-store`（429 带 `Retry-After`）。
 - `public::headers::{share_token, preview_token, cache_control, IMMUTABLE, NO_STORE}`：令牌解析与缓存头（`cache_control(&grant, 秒)` 按授权依据给 `public` / `private` / `no-store`）。
 - `state.public.cache`（`ByteCache`）：按 `CacheKey`（`Snapshot`、`Chunk`、`Asset`、`Other {purpose, space_id, key}`）存编码好的响应体；**先拿到授权凭据再查缓存**；`invalidate_space` 清掉某空间的全部缓存。
+
+### 部署配置种子（`src/demo_seed/`）
+
+写接口只认 NyxID 身份令牌，注册 NyxID 服务又要组织管理员手工操作；为了部署时就能看到演示空间，接口服务可以按部署配置建一个空间并导入扫描，**不经过任何网络接口**（设计 9.2"部署配置种子是运维行为"）。线上的配置是 `infra/chrono-cd/demo-seed.json`，部署步骤见 `infra/chrono-cd/README.md` 第 8 步；本地用 `infra/dev/up.sh --demo-seed`。
+
+`METAVERSE_DEMO_SEED`（拒绝未知字段）：
+
+```json
+{"spaceId": "chronoai-lobby", "name": "ChronoAI 前厅", "description": "…",
+ "owner": {"kind": "org", "id": "<NyxID 组织编号>"}, "visibility": "unlisted", "observedAt": "（可选）RFC 3339",
+ "files": [{"url": "https://…/mesh.drc", "name": "mesh.drc", "sha256": "<64 位十六进制>", "size": 1003301},
+           {"url": "https://…/tex.jpg", "name": "tex.jpg", "sha256": "…", "size": 4897711}],
+ "rebuild": true, "voxelize": false, "revision": 1, "hints": {"objects": […]}}
+```
+
+- `spaceId`、`name`、`description` 按建空间接口的规则校验；`owner` 只能是组织；`visibility` 默认 `unlisted`，这时必须设 `METAVERSE_DEMO_SHARE_TOKEN`（`public` 不需要，设了也存哈希）；
+- `files`：1–32 个，地址只接受 https（本机地址可用 http，测试用），不带用户名、密码、片段；文件名只能用字母、数字、`.`、`_`、`-`，扩展名决定作用：单独一个 `glb`/`drc`/`obj`/`zip` 直接用，否则必须是一个网格（`glb`/`drc`/`obj`）加贴图（`jpg`/`jpeg`/`png`/`webp`）和材质（`mtl`），打包成 stored zip（与 Scaniverse 导出的布局相同，时间固定，同样的文件总得到同样的哈希）；每个文件声明 `size` 和 `sha256`，总大小不超过 `UPLOAD_MAX_SCAN_BYTES`；
+- `rebuild`（默认 true）、`voxelize`（默认 false）、`hints`（≤ 4KB 的对象，坐标必须是处理服务对齐后的空间坐标）原样进 `scan_import` 的参数；`revision`（默认 1）是导入版本。
+
+执行（`main.rs` 在索引建好后后台调用 `demo_seed::spawn`；暂时性失败按 10/30/90/270 秒重试 4 次，最后记错误日志，不影响就绪）：
+
+1. 授权层 `seed_space` 查空间：不存在 → 继续；是种子为同一组织建的（`ownerEvidence.basis = operator_seed`、主人一致）→ 这个版本的任务已存在就结束（`AlreadyDone`），否则补做 3、4；别的空间 → 不碰（`Foreign`）；
+2. 下载（跟随 ≤ 5 次重定向，新地址同样要合法；超过声明大小立即停止）、核对大小和 sha256、按扩展名核对文件头（同上传第 0 片的检查）；任何一项不对都不建空间。4xx、内容不对不重试，网络错误、5xx、429 重试；
+3. `seed_create_grant` 签发建空间凭据（审计日志）→ `create_space_with`（与 `admin_create_space` 同一条路径）：主人取配置，归属证据 `{issuer, orgId, verifiedBy: "system:demo-seed", verifiedAt, basis: "operator_seed"}`，分享令牌只存 sha256；第一次提交的发布者 `sub = system:demo-seed`、`nyxServiceId = ""`。编号已存在（别的副本刚建好）就接着做；
+4. 扫描登记成资源（`put_asset_bytes_with`：`assets.files {_id: ObjectId, length, chunkSize: 262144, uploadDate, filename: 内容哈希, metadata: {sha256, contentType, kind: "scan", spaceId, format}}`，与处理服务 `put_asset(..., extra={"format"})` 相同；已存在就复用）→ 补写第一次提交 → 插入 `scan_import` 任务，字段与 `POST /scans` 相同：`{_id, spaceId, owner, kind, params {assetHash, observedAt?, rebuild, voxelize, hints?}, status: queued, attempt: 0, maxAttempts: 3, createdAt, actor {sub: "system:demo-seed", nyxServiceId: ""}, scope: physical}`。任务编号 = `job_` + sha256("demo-seed\0空间\0空间创建时间\0版本") 的前 32 位：同一个空间的同一个版本只有一个任务（唯一键），空间删掉重建后编号也变。
+
+原始扫描不登记 `assetRefs`（公开接口读不到，同处理服务的规则），也不计入空间存储用量（没有上传会话）。改分享令牌的密钥不会改已有空间的令牌（要换就用 `admin_rotate_share_token`，或删空间让种子重建）。
 
 ### 鉴权流程
 
