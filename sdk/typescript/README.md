@@ -4,7 +4,7 @@ chrono-metaverse 的本地工作区工具（设计第 10 节）：`metaverse` �
 `@chrono-metaverse/sdk`。从检出的源码使用，不发布到包仓库。
 
 - **工具包**：类型安全地生成高层操作（填充、空心盒、替换、复制区域、新增方块、放物件、锚点）和形状
-  （box、cylinder、cone、extrude、lathe、sweep、loft、group、instance），米 / 格互换，常用家具和结构
+  （box、cylinder、cone、extrude、lathe、sweep、loft、plate、hull、group、instance），米 / 格互换，常用家具和结构
   （桌、椅、凳、柜台、柜子、书架、墙和门窗洞）。构造时就按服务端的规则校验。
 - **本地应用操作**：`metaverse-core/src/ops.rs` 的语义移植到 TypeScript，用 Rust 生成的测试向量
   （`api/crates/metaverse-core/tests/vectors/`）逐条核对区块哈希、记录哈希和影响范围。

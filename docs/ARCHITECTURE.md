@@ -191,7 +191,8 @@ palettes { _id: 内容哈希, spaceId, blocks: [ { id, name, kind: solid|glass|e
 ```
 records { _id: 内容哈希, kind: entity | anchor, spaceId, body }
 // 物件 body：{ entityId, layer: rebuilt | ext, kind: structure | object,
-//             shape?（参数化定义：基本形体、轮廓放样、模板实例）, assetHash?（生成的模型）, textures?,
+//             shape?（参数化定义：基本形体、轮廓放样、板、凸包、模板实例）, assetHash?（生成的模型）,
+//             material?（模型整体的调色、半透明、不受光照）, textures?,
 //             position, rotation, scale（连续值）, regionId, anchorId?, props }
 // 锚点 body：{ anchorId, kind: table|seat|zone|door|camera|counter|space,
 //             box | position, label, visibility: public|internal }
@@ -201,8 +202,8 @@ entities / anchors（当前状态，只作 head 的读缓存）
 - **历史**：每次提交用 `changedEntities` 和 `changedAnchors` 记录变化，格式是 `{id, hash | null}`，null 表示删除。回放以提交记录为准。
 - **事件只引用锚点编号**：重新装修后只需移动锚点，历史事件仍然显示在当时的位置上。
 - **空间级锚点**：保留锚点 `_space`，用于营业状态这类针对整个空间的事件。
-- **物件模型**：`assetHash` 只能引用经处理服务校验并重新导出的模型（6.1），网站也只加载处理后的版本。
-- **自定义属性**：物件的 `props` 是不透明的键值。网站只在点选物件时，在信息面板里按纯文本列出（保留键 `label` 作为悬浮标签），不做其他解释。
+- **物件模型**：`assetHash` 只能引用经处理服务校验并重新导出的模型（6.1），网站也只加载处理后的版本。从公开模型库（Poly Haven、Objaverse 里 CC0 / CC-BY 的对象，可选 Sketchfab）找来的现成模型也走这条路，署名写在 `props.source`（SHAPES 3）。
+- **自定义属性**：物件的 `props` 是不透明的键值。网站只在点选物件时，在信息面板里按纯文本列出（保留键 `label` 作为悬浮标签），不做其他解释。例外是 `props.source` 为对象时：它是外部模型的署名（库、编号、来源页、作者、许可、标题），服务端按结构校验、只收可商用不传染的许可，网站在模型来源面板和信息面板里显示。
 
 ### 4.5 组合宇宙
 
