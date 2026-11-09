@@ -48,6 +48,7 @@ export function SourceLine({ source }: { readonly source: ModelSource }) {
  * 画面底部常驻的一行简短署名（CC BY 要求署名可见，不能藏在收起的面板里）：
  * "模型来源：标题 / 作者 / 许可 …，共 N 项"，标题链到来源页、许可链到许可正文；
  * 按钮展开完整的"模型来源"面板。场景里没有 CC BY 的模型时不显示（CC0 不要求署名）。
+ * 一行放不下时先截短标题（模型库的标题常有四五十个字符），作者、许可和"共 N 项"留在行里看得见。
  */
 export function CreditLine({
   credits,
@@ -64,10 +65,14 @@ export function CreditLine({
     <div className="viewer__credit" role="note" aria-label="模型署名">
       <span className="viewer__credit-text">
         模型来源：
-        <ExternalLink href={first.page}>{first.title}</ExternalLink>
-        {` / ${first.author} / `}
-        <ExternalLink href={LICENSE_INFO[first.license].url}>{first.license}</ExternalLink>
-        {credits.length > 1 ? ` …，共 ${credits.length} 项` : ''}
+        <ExternalLink className="viewer__credit-title" href={first.page}>
+          {first.title}
+        </ExternalLink>
+        <span className="viewer__credit-rest">
+          {` / ${first.author} / `}
+          <ExternalLink href={LICENSE_INFO[first.license].url}>{first.license}</ExternalLink>
+          {credits.length > 1 ? ` …，共 ${credits.length} 项` : ''}
+        </span>
       </span>
       <button
         type="button"

@@ -615,6 +615,34 @@ test('板、凸包、玻璃、灯箱和外部模型：画得出来，底部常�
   expect(viewerBox.y + viewerBox.height - (lineBox.y + lineBox.height)).toBeLessThan(24);
   await expect(page.getByRole('button', { name: /模型来源 ·/ })).toHaveCount(0);
   await page.screenshot({ path: join(SHOTS, 'florist-credit-line.png') });
+  // 模型库的标题常有四五十个字符（前厅的显示器就是），一行放不下时只截短标题，
+  // 许可链接和"共 N 项"照样整个在行里看得见（夹具的标题短，这里临时换成长标题量一下）。
+  await line.evaluate((node) => {
+    const title = node.querySelector<HTMLElement>('.viewer__credit-title')!;
+    title.dataset.original = title.textContent ?? '';
+    title.textContent = 'Computer Monitor 16:9 (Low Poly, Game Ready) '.repeat(3).trim();
+  });
+  const longTitle = await line.evaluate((node) => {
+    const title = node.querySelector<HTMLElement>('.viewer__credit-title')!;
+    const rest = node.querySelector<HTMLElement>('.viewer__credit-rest')!;
+    const text = node.querySelector<HTMLElement>('.viewer__credit-text')!.getBoundingClientRect();
+    const restBox = rest.getBoundingClientRect();
+    return {
+      titleTruncated: title.scrollWidth > title.clientWidth,
+      restWhole: rest.scrollWidth <= rest.clientWidth,
+      restInside: restBox.left >= text.left && restBox.right <= text.right + 0.5,
+    };
+  });
+  expect(longTitle).toEqual({ titleTruncated: true, restWhole: true, restInside: true });
+  await expect(line.getByRole('link', { name: 'CC-BY-4.0' })).toBeVisible();
+  await page.screenshot({ path: join(SHOTS, 'florist-credit-line-long-title.png') });
+  await line.evaluate((node) => {
+    const title = node.querySelector<HTMLElement>('.viewer__credit-title')!;
+    title.textContent = title.dataset.original ?? '';
+  });
+  await expect(line).toHaveText(
+    /^模型来源：玻璃瓶花束（示例） \/ 夹具作者乙 \/ CC-BY-4\.0 …，共 2 项/,
+  );
   // 展开：列出两个外部模型的署名，链接新开窗口且不带来源信息。
   const toggle = line.getByRole('button');
   await expect(toggle).toHaveText('全部来源');

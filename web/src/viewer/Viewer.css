@@ -250,12 +250,12 @@
   gap: var(--space-2);
 }
 
-/* 简短署名：放不下时截断文字（完整列表点"全部来源"展开），按钮一直看得见。 */
+/* 简短署名：放不下时先截短标题（完整列表点"全部来源"展开），许可、项数和按钮一直看得见。 */
 .viewer__credit {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  max-width: min(520px, calc(100% - 240px));
+  max-width: min(720px, calc(100% - 240px));
   height: var(--control-h);
   padding: 0 4px 0 12px;
   border-radius: var(--radius);
@@ -266,10 +266,27 @@
 }
 
 .viewer__credit-text {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* 一行放不下时只截短标题，作者、许可和"共 N 项"不缩（作者名极长、超过四分之三行宽时才截它的末尾）。 */
+.viewer__credit-title {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.viewer__credit-rest {
+  flex: none;
+  max-width: 75%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
 }
 
 .viewer__credit a {
@@ -504,6 +521,12 @@
     line-clamp: 2;
     white-space: normal;
     line-height: 1.35;
+  }
+
+  .viewer__credit-title,
+  .viewer__credit-rest {
+    display: inline;
+    white-space: normal;
   }
 
   .viewer--credited .viewer__sources {

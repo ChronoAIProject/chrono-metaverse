@@ -82,6 +82,11 @@ describe('模型来源', () => {
     const license = within(line).getByRole('link', { name: 'CC-BY-4.0' });
     expect(license).toHaveAttribute('href', 'https://creativecommons.org/licenses/by/4.0/');
     expect(license).toHaveAttribute('rel', 'noopener noreferrer');
+    // 一行放不下时只截短标题：作者、许可和"共 N 项"在不截短的那一段里
+    expect(title).toHaveClass('viewer__credit-title');
+    expect(license.closest('.viewer__credit-rest')).toHaveTextContent(
+      '/ 夹具作者乙 / CC-BY-4.0 …，共 2 项',
+    );
     // 底部有署名行时，右下角不再另放"模型来源"按钮
     expect(screen.queryByRole('button', { name: /模型来源 ·/ })).toBeNull();
     expect(screen.queryByRole('region', { name: '模型来源' })).toBeNull();
