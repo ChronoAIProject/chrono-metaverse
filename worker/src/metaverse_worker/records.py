@@ -73,10 +73,15 @@ def entity_body(
 
 
 def _contains(outer: Bounds, inner: Bounds, tol: float) -> bool:
-    return all(outer["min"][k] <= inner["min"][k] + tol and outer["max"][k] >= inner["max"][k] - tol for k in range(3))
+    return all(
+        outer["min"][k] <= inner["min"][k] + tol and outer["max"][k] >= inner["max"][k] - tol
+        for k in range(3)
+    )
 
 
-def validate_entity_body(body: Mapping[str, Any], templates: Mapping[str, Mapping[str, Any]] | None = None) -> None:
+def validate_entity_body(
+    body: Mapping[str, Any], templates: Mapping[str, Mapping[str, Any]] | None = None
+) -> None:
     allowed = {
         "entityId", "layer", "kind", "label", "anchorId", "regionId", "shape",
         "assetHash", "textures", "bounds", "fit", "props",

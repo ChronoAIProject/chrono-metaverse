@@ -104,7 +104,7 @@
           NyxID（身份认证、身份令牌）                    │（不经过 NyxID）
                  │                                      │
                  ▼                                      ▼
-   ┌──────────────── 接口服务（Bun + Hono）──────────────────────┐
+   ┌──────────────── 接口服务（Rust + axum）─────────────────────┐
    │ /api/v1/*        写接口 + 给 AI 的读接口（注册到 NyxID）     │
    │ /api/v1/admin/*  管理接口（不进 AI 工具）                    │
    │ /api/public/*    公开读接口（无需登录，按分享令牌或公开）    │
@@ -120,10 +120,10 @@
 
 | 组件 | 技术 | 职责 |
 |---|---|---|
-| 网站 | TypeScript + Three.js | 只读查看器：三种视图、剖切、时间轴回放、"现在"模式 |
-| 接口服务 | Bun + Hono + `@hono/zod-openapi` | 校验 NyxID 身份、时间线、上传、读写接口 |
+| 网站 | React + TypeScript + three.js（沿用 CMA 前端工程，nginx 托管） | 只读查看器：三种视图、剖切、时间轴回放、"现在"模式 |
+| 接口服务 | Rust（axum + tokio + mongodb + utoipa，与 CMA 相同） | 校验 NyxID 身份、时间线、上传、读写接口 |
 | 处理服务 | Python（trimesh / open3d / numpy） | 上传校验、扫描对齐、体素化、取色、网页用模型、过期数据清理 |
-| 核心包 | TypeScript | 操作定义、区块编码、回放引擎；网站、接口、命令行共用 |
+| 核心库 | Rust（`metaverse-core`）；网站和命令行用 TypeScript、处理服务用 Python 各自实现同样的规则，用同一批测试向量核对 | 操作定义、区块编码、回放引擎、形状词表 |
 | 命令行 / 工具包 | TypeScript（npm） | 本地工作区、建造脚本、本地预览与截图、分片上传、推送 |
 
 ---
@@ -549,7 +549,7 @@ jobs { _id, spaceId, kind, params, status: queued|running|done|failed,
 - **超时**：网络层约 100 秒无响应就断开，长时间操作一律做成任务。
 - **直连的请求体上限**：
   - 直接访问本服务的请求不经过 NyxID，所以不受它的 100MB 上限约束。
-  - 每个路由用 Hono 的 `bodyLimit` 单独设上限（JSON ≤ 8MB，分片 ≤ 32MiB + 1KiB），Bun 的 `maxRequestBodySize` 设为各路由上限中的最大值。
+  - 每个路由单独设请求体上限（JSON ≤ 8MB，分片 ≤ 32MiB + 1KiB）：axum 默认对所有提取器限 2MB，按路由用 `DefaultBodyLimit::max(..)`（或 tower-http 的 `RequestBodyLimitLayer`）放到该路由的上限，不设全局的更大上限；超出返回 413。
   - 先校验身份令牌，再读请求体。
 
 ---
@@ -570,14 +570,14 @@ jobs { _id, spaceId, kind, params, status: queued|running|done|failed,
   - 用 NyxID 的公钥列表（JWKS）校验，只接受 RS256 并按 kid 选公钥；公钥列表缓存 5 分钟，遇到未知 kid 时最多每 5 秒刷新一次；
   - 签发方以 NyxID 的 `/.well-known/openid-configuration` 为准；
   - 签发时间到过期时间不超过 60 秒，留 5 秒时钟容差。
-- **受众**：注册服务时显式设置 `identity_jwt_audience = urn:chrono-metaverse:api`，校验时必须一致，不依赖地址默认值。签发方和受众这两项配置缺失时，服务直接启动失败——`jose` 在这两项为空时会静默跳过检查。
+- **受众**：注册服务时显式设置 `identity_jwt_audience = urn:chrono-metaverse:api`，校验时必须一致，不依赖地址默认值。签发方和受众这两项配置缺失时，服务直接启动失败——有的 JWT 库（例如 `jose`）在这两项为空时会静默跳过检查。
 - **令牌类型**：NyxID 的访问令牌和身份令牌用同一把密钥签名，签发方也相同。所以要拒绝带 `token_type` 的令牌，并要求令牌带 `nyx_service_id`。
 - **服务编号**：从第一步起就校验令牌里的服务编号，要求 `nyx_service_id ∈ ALLOWED_NYX_SERVICE_IDS`。
   - 第一步填组织自定义服务的编号；注册成目录服务后（9.3 需要），把目录编号加进来，过渡期结束后删掉旧编号。
   - 别人自建连接指向本服务，一律返回 401。
 - **防重放**：以令牌编号 jti 作为主键直接插入防重放集合，重复就拒绝（不能先查后写）。记录保留时间 ≥ 60 秒有效期 + 30 秒时钟容差。
 - **不信任明文头**：`X-NyxID-User-*` 这类明文头一律不信任。
-- **参考实现**：chrono-bucket 的 `verifier.ts` 和 `nyxidAuth.ts`。它没有校验服务编号，也没有做 jti 去重，这两项要自己补上。
+- **参考实现**：CMA 的 `auth/nyxid_proxy/jwt.rs`（照搬到 `api/crates/metaverse-api/src/auth/jwt.rs`）。chrono-bucket 的 `verifier.ts` 和 `nyxidAuth.ts` 没有校验服务编号，也没有做 jti 去重，这两项要自己补上。
 
 ### 9.2 谁能写：资源归属与租户隔离
 
@@ -766,7 +766,7 @@ jobs { _id, spaceId, kind, params, status: queued|running|done|failed,
 - **技能文件**：技能说明（中文）随命令行工具分发，由 `metaverse init` 写进工作区，写明坐标约定、方块表、区域和地块规则、建造规范、两种建造方式和示例。平台仓库里的 `skills/metaverse-builder/` 只是源文件。
 - **教程**：
   - `docs/tutorials/cloud-claude-code-nyxid.md` 是平台开发教程；
-  - 给建造者的教程另写（`docs/tutorials/build-space.md`，待写），内容是在本地或云端用 Claude Code / Codex 建造空间，以及怎么给 AI 配置 agent key。
+  - 给建造者的教程另写（`docs/tutorials/build-space.md`），内容是在本地或云端用 Claude Code / Codex 建造空间，以及怎么给 AI 配置 agent key。
 
 ---
 
@@ -853,17 +853,18 @@ jobs { _id, spaceId, kind, params, status: queued|running|done|failed,
 
 | 服务 | 镜像 | 路由 | 暴露 | 说明 |
 |---|---|---|---|---|
-| `web` | `ghcr.io/chronoaiproject/chrono-metaverse-web` | `/` | 公网 | 静态网站 |
-| `api` | `ghcr.io/chronoaiproject/chrono-metaverse-api` | `/api` | 公网 | 健康检查 `/api/healthz`；挂 MongoDB 插件；Bun 的空闲超时调大到 120 秒 |
-| `worker` | `ghcr.io/chronoaiproject/chrono-metaverse-worker` | — | 不暴露（`expose: none`） | 无端口、无探针；进程内设看门狗，任务心跳停滞就退出重启；体素化放在子进程里；内存申请 3Gi，上限 8Gi（按实测峰值调整） |
+| `metaverse-web` | `ghcr.io/chronoaiproject/chrono-metaverse-web` | `/` | 公网 | 静态网站（nginx 非特权镜像，端口 8080）；健康检查 `/healthz` |
+| `metaverse-api` | `ghcr.io/chronoaiproject/chrono-metaverse-api` | `/api` | 公网 | 健康检查 `/api/healthz`；挂 MongoDB 插件；axum（hyper）默认没有空闲超时，不会比平台更早断开连接 |
+| `metaverse-worker` | `ghcr.io/chronoaiproject/chrono-metaverse-worker` | — | 只在集群内（`expose: internal`，不进公网路由） | 只开健康检查端口（`/healthz`）给平台探针；进程内设看门狗，任务心跳停滞就退出重启；体素化放在子进程里；内存申请 3Gi，上限 8Gi（按实测峰值调整） |
 
+- **服务名**：chrono-cd 要求服务名在同一主人（ChronoAI 组织）的所有应用之间唯一，`web`、`worker` 已被组织里的其他应用占用，所以加 `metaverse-` 前缀。服务之间按 `http://<服务名>:<端口>` 互相访问（网站的 nginx 把 `/api/` 转给 `http://metaverse-api:8080`）。规格文件和部署步骤见 `infra/chrono-cd/`。
 - **镜像要求**：只能用 ghcr.io，建议设为公开包；用数字形式的非 root 用户（如 `USER 1000:1000`）；构建 linux/amd64。
 - **滚动更新**：每次多起一个新副本、旧副本先不下线，终止宽限 30 秒，更新期间新旧副本会同时运行。处理服务收到停止信号后不再领新任务，做不完的任务等租约过期后由其他副本重做；任务必须幂等（6.4）。
 - **配额**：
   - 组织配额由组织下所有应用共用，默认 8 核 / 16Gi / 40 个容器 / 80Gi。
   - 计算方式：Σ(副本数 × 资源申请)，另外为滚动更新预留本应用资源申请最大的那个服务一份，再加 1 个容器。
   - 部署前先查用量，不够就提配额申请。
-- **持续集成**：GitHub Actions 构建并推送镜像，再用组织的 NyxID API key 调用 chrono-cd 更新镜像版本。
+- **持续集成**：GitHub Actions 构建并推送镜像（`.github/workflows/images.yml`）；目前由组织 admin 用 chrono-cd 的 `PATCH` 更新镜像版本（`infra/chrono-cd/README.md`），以后可以在工作流里用组织的 NyxID API key 自动调用。
 - **注册到 NyxID**：
   - 第一步：组织管理员自助注册自定义服务，地址填应用根地址，OpenAPI 地址填 `https://<应用域名>/api/openapi.json`（只包含 `/api/v1/*`，不含管理接口，`paths` 带 `/api` 前缀），开启身份令牌并设置 `identity_jwt_audience`（9.1）。具体命令见开发教程第 9 节。
   - 要用 agent key 的路径参数限制时（第 3 阶段之前就需要，9.3）：请平台管理员注册成目录服务，并同步接口列表；同时为配置操作范围的人打开 `assistant:operation-scopes` 开关。

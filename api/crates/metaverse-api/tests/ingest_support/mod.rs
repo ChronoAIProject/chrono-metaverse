@@ -396,8 +396,21 @@ impl TestApp {
             .unwrap();
     }
 
-    /// 直接写一条提交（提交写入不在这一分工里）：只写本分工读得到的字段。
-    pub async fn insert_commit(&self, space: &str, owner: Value, seq: i64, at: &str, scan_hash: Option<&str>) {
+    /// 直接写一条提交（提交写入不在这一分工里）：只写本分工读得到的字段，seq 接在空间的
+    /// 最新 seq 之后。返回这次的 seq。
+    pub async fn insert_commit(&self, space: &str, owner: Value, at: &str, scan_hash: Option<&str>) -> i64 {
+        let current = self
+            .collection("spaces")
+            .find_one(doc! {"_id": space})
+            .await
+            .unwrap()
+            .expect("空间存在");
+        let head = current.get_document("head").unwrap();
+        let seq = match head.get("seq") {
+            Some(mongodb::bson::Bson::Int32(n)) => i64::from(*n),
+            Some(mongodb::bson::Bson::Int64(n)) => *n,
+            other => panic!("head.seq 不是整数：{other:?}"),
+        } + 1;
         let mut document = doc! {
             "_id": format!("c_{space}_{seq}"),
             "spaceId": space,
@@ -418,6 +431,7 @@ impl TestApp {
             .update_one(doc! {"_id": space}, doc! {"$set": {"head.seq": seq, "head.at": at}})
             .await
             .unwrap();
+        seq
     }
 
     /// 模拟处理服务完成 upload_verify（`handlers/upload_verify.py` 的 `_finish`）：登记资源

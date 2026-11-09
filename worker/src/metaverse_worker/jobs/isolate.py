@@ -1,6 +1,7 @@
 """重计算放进子进程（设计 6.4、14）：设内存上限（`resource.setrlimit`）和超时，可随时取消。
 
-用法：`run_isolated("metaverse_worker.processing.voxelize:run_voxelize", {"...": ...}, memory_mb=..., timeout=...)`。
+用法：`run_isolated("metaverse_worker.processing.tasks:voxelize_task", {"...": ...},
+memory_mb=..., timeout=...)`。
 目标函数在子进程里执行，参数和返回值经临时文件用 pickle 传递（结果里可以有大数组、贴图）。
 子进程用 spawn 启动：不继承父进程的线程、数据库连接和信号处理。
 
@@ -141,7 +142,9 @@ def run_isolated(
         if payload["ok"]:
             return payload["value"]
         if payload["kind"] == "memory":
-            raise IsolatedMemoryError(f"子进程内存超限（上限 {memory_mb} MB）", kind="memory", error_type="MemoryError")
+            raise IsolatedMemoryError(
+                f"子进程内存超限（上限 {memory_mb} MB）", kind="memory", error_type="MemoryError"
+            )
         raise IsolatedError(
             f"{payload['type']}: {payload['message']}",
             kind="error",

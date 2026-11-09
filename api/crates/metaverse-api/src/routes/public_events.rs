@@ -28,7 +28,10 @@ use super::event_query::{
 };
 use super::events::{EventRequest, EventsQuery};
 use super::ingest_common::{encode_cursor, invalid_with, parse_time, public_cache, set_header};
-use super::public_access::{public_space_grant, share_token};
+use super::events::EventMode;
+use super::public_access::{
+    public_space_grant, public_space_grant_during, share_token, UniverseParam,
+};
 use crate::auth::{Authorizer, Grant, PublicBasis};
 use crate::error::{ApiError, ProblemDocument};
 use crate::ingest::head_cache::HeadData;
@@ -52,7 +55,7 @@ pub fn routes() -> Router<AppState> {
 }
 
 /// 时间线最新位置（网站 `Head`）。
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicHeadView {
     pub seq: u64,
@@ -61,13 +64,6 @@ pub struct PublicHeadView {
     /// 最新的公开可见变化（公开事件、晚到事件、更正和撤回）的记录时间；没有时为 null。
     #[schema(value_type = Option<String>, format = DateTime)]
     pub recorded_at: Option<Timestamp>,
-}
-
-#[derive(Debug, Deserialize, IntoParams)]
-#[into_params(parameter_in = Query)]
-pub struct UniverseParam {
-    /// 凭组合的分享令牌读取时的组合编号（`Authorization: Share <组合令牌>`）。
-    pub universe: Option<String>,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -285,14 +281,24 @@ pub async fn list_public_events(
     }
     let request = EventRequest::parse(&query)?;
     let now = crate::now()?;
-    let grant = public_space_grant(
-        &state,
-        &space_id,
-        &headers,
-        query.universe.as_deref(),
-        request.membership_time(now),
-    )
-    .await?;
+    let universe = query.universe.as_deref();
+    let grant = match request.mode {
+        // 时间窗：这段时间里某个时刻是组合成员即可。
+        EventMode::Window { from, to } => {
+            public_space_grant_during(&state, &space_id, &headers, universe, from, to.min(now))
+                .await?
+        }
+        EventMode::Since(_) => {
+            public_space_grant(
+                &state,
+                &space_id,
+                &headers,
+                universe,
+                request.membership_time(now),
+            )
+            .await?
+        }
+    };
     let limit = query
         .limit
         .unwrap_or(PUBLIC_PAGE_LIMIT)
@@ -364,11 +370,12 @@ pub async fn get_public_event_density(
         ));
     }
     let now = crate::now()?;
-    let grant = public_space_grant(
+    let grant = public_space_grant_during(
         &state,
         &space_id,
         &headers,
         query.universe.as_deref(),
+        from,
         to.min(now),
     )
     .await?;

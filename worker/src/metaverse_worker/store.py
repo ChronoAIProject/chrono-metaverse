@@ -169,6 +169,7 @@ class Store:
             C.CHUNKS: [named([("publishedAt", ASCENDING)], "published_at")],
             C.RECORDS: [named([("spaceId", ASCENDING), ("kind", ASCENDING)], "space_kind")],
             C.ENTITIES: [named([("spaceId", ASCENDING), ("id", ASCENDING)], "space_id", unique=True)],
+            C.ANCHORS: [named([("spaceId", ASCENDING), ("id", ASCENDING)], "space_id", unique=True)],
             C.ASSET_REFS: [named([("hash", ASCENDING), ("spaceId", ASCENDING)], "hash_space", unique=True)],
             C.UPLOADS: [
                 named([("spaceId", ASCENDING)], "space"),

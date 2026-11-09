@@ -512,7 +512,8 @@ async fn org_admin_creates_org_space_with_evidence() {
     let space = &reply.body["space"];
     assert_eq!(space["owner"], json!({"kind": "org", "id": ORG}));
     assert_eq!(space["visibility"], "unlisted");
-    assert_eq!(space["head"]["seq"], 0);
+    // 建空间时自动写第一次提交（`_space` 锚点 + 通用方块表）。
+    assert_eq!(space["head"]["seq"], 1);
     let evidence = &space["ownerEvidence"];
     assert_eq!(evidence["basis"], "org_admin");
     assert_eq!(evidence["roleAtVerification"], "admin");
@@ -672,12 +673,13 @@ async fn space_reads_follow_the_access_table() {
     ] {
         let reply = app.read("front-hall", &identity(subject), credential).await;
         assert_eq!(reply.status, StatusCode::OK, "{subject}");
+        // 两个测试锚点 + 建空间时自动创建的 `_space`。
         assert_eq!(
             reply.body["anchors"].as_array().unwrap().len(),
-            2,
+            3,
             "{subject}"
         );
-        assert_eq!(reply.headers.get(header::ETAG).unwrap(), "\"0\"");
+        assert_eq!(reply.headers.get(header::ETAG).unwrap(), "\"1\"");
     }
     // 不是成员、查不到角色（读操作按"不是成员"处理）、没有转发凭据：一律 404。
     for credential in [Some("stranger-token"), Some("down-token"), None] {
@@ -739,9 +741,13 @@ async fn public_read_needs_share_token_unless_public() {
         .unwrap()
         .starts_with("private"));
     // 公开投影：只有公开锚点，没有主人、证据和令牌。
-    let anchors = reply.body["anchors"].as_array().unwrap();
-    assert_eq!(anchors.len(), 1);
-    assert_eq!(anchors[0]["anchorId"], "t1");
+    let anchors: Vec<&str> = reply.body["anchors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|anchor| anchor["anchorId"].as_str().unwrap())
+        .collect();
+    assert_eq!(anchors, ["_space", "t1"]);
     for hidden in ["owner", "ownerEvidence", "shareTokens", "storageLimitBytes"] {
         assert!(reply.body.get(hidden).is_none(), "{hidden}");
     }

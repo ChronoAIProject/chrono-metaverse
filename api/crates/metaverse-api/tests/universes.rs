@@ -106,14 +106,17 @@ async fn membership_links_visibility_and_public_reads() {
     };
     let universe_token = setup(&app).await;
     let share = format!("Share {universe_token}");
-    app.insert_commit("restaurant", org_owner(), 1, "2026-01-01T00:00:00.000Z", None)
-        .await;
 
     // 组织本身既管空间也管组合：直接加入。
     let reply = join(&app, who(ORG), "restaurant", json!({"offset": [0, 0, 0], "rotation": 0})).await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     assert_eq!(reply.body["seq"], 1);
     let first_at = reply.body["at"].as_str().unwrap().to_owned();
+    // 加入之后餐厅又有一次提交：现在的 seq 比加入时大 1。
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let restaurant_seq = app
+        .insert_commit("restaurant", org_owner(), &ago(0), None)
+        .await;
     // 已经是成员。
     let reply = join(&app, who(ORG), "restaurant", json!({"offset": [0, 0, 0], "rotation": 0})).await;
     assert_eq!(reply.body["code"], "already_member");
@@ -211,8 +214,9 @@ async fn membership_links_visibility_and_public_reads() {
     let members = reply.body["members"].as_array().unwrap();
     assert_eq!(members.len(), 3);
     assert_eq!(members[0]["spaceId"], "restaurant");
-    assert_eq!(members[0]["seq"], 1);
-    assert_eq!(members[1]["seq"], 0);
+    assert_eq!(members[0]["seq"], restaurant_seq);
+    // 花店只有建空间时的第一次提交。
+    assert_eq!(members[1]["seq"], 1);
     assert_eq!(reply.body["links"].as_array().unwrap().len(), 1);
     // 第一次修订之前：没有成员。
     let before = metaverse_core::Timestamp::parse_rfc3339(&first_at)
@@ -227,6 +231,8 @@ async fn membership_links_visibility_and_public_reads() {
         .public(&format!("/api/public/universes/street?at={first_at}"), Some(&share), &[])
         .await;
     assert_eq!(reply.body["seq"], 1);
+    // 加入那一刻餐厅还是加入前的版本。
+    assert_eq!(reply.body["members"][0]["seq"], restaurant_seq - 1);
     // 某一次修订。
     let reply = app.public("/api/public/universes/street/revisions/2", Some(&share), &[]).await;
     assert_eq!(reply.status, StatusCode::OK);
@@ -256,6 +262,37 @@ async fn membership_links_visibility_and_public_reads() {
         .public(&format!("/api/public/spaces/hall/events?universe=street&since={}", ago(60)), Some(&share), &[])
         .await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    // 空间信息、快照、提交列表同样可以凭组合令牌读取。
+    let reply = app.public("/api/public/spaces/hall?universe=street", Some(&share), &[]).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(reply.body["head"]["recordedAt"], Value::Null);
+    assert!(reply.body["eventTypes"].is_array());
+    let hall_seq = reply.body["head"]["seq"].as_u64().unwrap();
+    let reply = app
+        .public(&format!("/api/public/spaces/hall/snapshot?seq={hall_seq}&universe=street"), Some(&share), &[])
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let reply = app
+        .public(&format!("/api/public/spaces/hall/snapshot?at={}&universe=street", ago(0)), Some(&share), &[])
+        .await;
+    assert_eq!(reply.status, StatusCode::FOUND, "{:?}", reply.body);
+    assert_eq!(
+        reply.headers.get("location").unwrap(),
+        &format!("/api/public/spaces/hall/snapshot?seq={hall_seq}&universe=street")
+    );
+    let reply = app
+        .public("/api/public/spaces/hall/timeline?universe=street", Some(&share), &[])
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(
+        app.public("/api/public/spaces/hall/snapshot?seq=1", Some(&share), &[]).await.status,
+        StatusCode::NOT_FOUND,
+        "不带 ?universe= 时组合令牌不是这个空间的令牌"
+    );
+    assert_eq!(
+        app.public("/api/public/spaces/secret-shop/snapshot?seq=1&universe=street", Some(&share), &[]).await.status,
+        StatusCode::NOT_FOUND
+    );
     // 不是成员的空间、别的组合编号：404。
     assert_eq!(
         app.public("/api/public/spaces/secret-shop/head?universe=street", Some(&share), &[]).await.status,

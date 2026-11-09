@@ -100,14 +100,18 @@ pub struct PublicSpaceView {
     pub description: String,
     #[schema(value_type = String, example = "unlisted")]
     pub visibility: Visibility,
-    pub head: HeadView,
-    #[schema(value_type = Vec<Object>)]
-    pub regions: Vec<Region>,
-    #[schema(value_type = Vec<Object>)]
-    pub plots: Vec<Plot>,
+    /// 最新 seq、at，以及最新公开可见变化的记录时间 `recordedAt`（与 `/head` 相同）。
+    pub head: super::public_events::PublicHeadView,
+    /// 区域（公开形状：`{id, kind, label?, boxes}`）。
+    pub regions: Vec<crate::timeline::views::RegionView>,
+    /// 地块（公开形状：`{id, regionId, label?, boxes}`）。
+    pub plots: Vec<crate::timeline::views::PlotView>,
     /// 只含公开级锚点。
     #[schema(value_type = Vec<Object>)]
     pub anchors: Vec<AnchorBody>,
+    /// 事件类型及显示规则（全部版本；不含 JSON Schema），查看器据此可视化事件。
+    #[schema(value_type = Vec<Object>)]
+    pub event_types: Vec<serde_json::Value>,
 }
 
 impl PublicSpaceView {
@@ -117,14 +121,15 @@ impl PublicSpaceView {
             name: space.name,
             description: space.description,
             visibility: space.visibility,
-            head: HeadView {
+            head: super::public_events::PublicHeadView {
                 seq: space.head.seq,
                 at: space.head.at,
-                commit_id: None,
+                recorded_at: None,
             },
-            regions: space.regions,
-            plots: space.plots,
+            regions: space.regions.into_iter().map(Into::into).collect(),
+            plots: space.plots.into_iter().map(Into::into).collect(),
             anchors,
+            event_types: Vec::new(),
         }
     }
 }

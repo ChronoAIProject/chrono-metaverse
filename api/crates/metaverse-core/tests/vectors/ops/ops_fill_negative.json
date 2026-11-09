@@ -1,0 +1,450 @@
+{
+  "base": {
+    "anchors": [],
+    "entities": [],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ]
+  },
+  "description": "负坐标按向下取整定位区块：-1 落在区块 -1 的第 31 格",
+  "expect": {
+    "anchors": [],
+    "baseChunks": [],
+    "chunkChanges": [
+      {
+        "cx": -2,
+        "cy": 0,
+        "cz": 0,
+        "hash": "a0585895e50da8e8e8a6aee1060f04d45227c0d5e355352b1f8bcb16d8c7c61d",
+        "layer": "ext"
+      },
+      {
+        "cx": -1,
+        "cy": -1,
+        "cz": -1,
+        "hash": "e6647e20f52064f92271bcbf504a688a4f9abd2c21dd1d62e36bb2eb85d9c792",
+        "layer": "ext"
+      },
+      {
+        "cx": -1,
+        "cy": -1,
+        "cz": 0,
+        "hash": "c2fea72ad4bd5f95644f115de3842ffc08689dd88f987a432c7ccda3239fc191",
+        "layer": "ext"
+      },
+      {
+        "cx": -1,
+        "cy": 0,
+        "cz": -1,
+        "hash": "7e2cb8ceeaa406ef978470a1d158794995a682fb67160d4ff3fb849f25ec8a47",
+        "layer": "ext"
+      },
+      {
+        "cx": -1,
+        "cy": 0,
+        "cz": 0,
+        "hash": "3f9f4bb2fdcfd9ac703f9d708eb7fab1d2939b9ab15c05a49e57b9e24f6caf90",
+        "layer": "ext"
+      },
+      {
+        "cx": 0,
+        "cy": -1,
+        "cz": -1,
+        "hash": "052e8f651c3caad5592e8d3db2f4b483344f2477437683dc6678b3cdc2cda7bc",
+        "layer": "ext"
+      },
+      {
+        "cx": 0,
+        "cy": -1,
+        "cz": 0,
+        "hash": "2a4a019c50c7ffa4afca954e73fa328ef06cbe3466007653a9f0edefa94ddbbb",
+        "layer": "ext"
+      },
+      {
+        "cx": 0,
+        "cy": 0,
+        "cz": -1,
+        "hash": "8a66295723d7970a539619f3a0e88c6fd759efe57edb44a18c8de749466c04d0",
+        "layer": "ext"
+      },
+      {
+        "cx": 0,
+        "cy": 0,
+        "cz": 0,
+        "hash": "e8224b1c70e767c15fac412c668dc2fa8bbf30826911d447d553c4368589c8f3",
+        "layer": "ext"
+      }
+    ],
+    "chunks": [
+      {
+        "cx": -2,
+        "cy": 0,
+        "cz": 0,
+        "hash": "a0585895e50da8e8e8a6aee1060f04d45227c0d5e355352b1f8bcb16d8c7c61d",
+        "layer": "ext",
+        "nonZeroCount": 1
+      },
+      {
+        "cx": -1,
+        "cy": -1,
+        "cz": -1,
+        "hash": "e6647e20f52064f92271bcbf504a688a4f9abd2c21dd1d62e36bb2eb85d9c792",
+        "layer": "ext",
+        "nonZeroCount": 6
+      },
+      {
+        "cx": -1,
+        "cy": -1,
+        "cz": 0,
+        "hash": "c2fea72ad4bd5f95644f115de3842ffc08689dd88f987a432c7ccda3239fc191",
+        "layer": "ext",
+        "nonZeroCount": 6
+      },
+      {
+        "cx": -1,
+        "cy": 0,
+        "cz": -1,
+        "hash": "7e2cb8ceeaa406ef978470a1d158794995a682fb67160d4ff3fb849f25ec8a47",
+        "layer": "ext",
+        "nonZeroCount": 3
+      },
+      {
+        "cx": -1,
+        "cy": 0,
+        "cz": 0,
+        "hash": "3f9f4bb2fdcfd9ac703f9d708eb7fab1d2939b9ab15c05a49e57b9e24f6caf90",
+        "layer": "ext",
+        "nonZeroCount": 3
+      },
+      {
+        "cx": 0,
+        "cy": -1,
+        "cz": -1,
+        "hash": "052e8f651c3caad5592e8d3db2f4b483344f2477437683dc6678b3cdc2cda7bc",
+        "layer": "ext",
+        "nonZeroCount": 4
+      },
+      {
+        "cx": 0,
+        "cy": -1,
+        "cz": 0,
+        "hash": "2a4a019c50c7ffa4afca954e73fa328ef06cbe3466007653a9f0edefa94ddbbb",
+        "layer": "ext",
+        "nonZeroCount": 4
+      },
+      {
+        "cx": 0,
+        "cy": 0,
+        "cz": -1,
+        "hash": "8a66295723d7970a539619f3a0e88c6fd759efe57edb44a18c8de749466c04d0",
+        "layer": "ext",
+        "nonZeroCount": 2
+      },
+      {
+        "cx": 0,
+        "cy": 0,
+        "cz": 0,
+        "hash": "e8224b1c70e767c15fac412c668dc2fa8bbf30826911d447d553c4368589c8f3",
+        "layer": "ext",
+        "nonZeroCount": 2
+      }
+    ],
+    "entities": [],
+    "footprints": [
+      {
+        "cells": [
+          [
+            -3,
+            -2,
+            -1,
+            2,
+            1,
+            1
+          ]
+        ],
+        "spaceWide": false
+      },
+      {
+        "cells": [
+          [
+            -33,
+            0,
+            0,
+            -32,
+            1,
+            1
+          ]
+        ],
+        "spaceWide": false
+      }
+    ],
+    "ok": true,
+    "probes": [
+      {
+        "cell": [
+          -1,
+          -1,
+          -1
+        ],
+        "effective": 3,
+        "ext": 3,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          -3,
+          -2,
+          -1
+        ],
+        "effective": 3,
+        "ext": 3,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          1,
+          0,
+          0
+        ],
+        "effective": 3,
+        "ext": 3,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          2,
+          0,
+          0
+        ],
+        "effective": 0,
+        "ext": 0,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          -33,
+          0,
+          0
+        ],
+        "effective": 2,
+        "ext": 2,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          -32,
+          0,
+          0
+        ],
+        "effective": 0,
+        "ext": 0,
+        "rebuilt": 0
+      }
+    ],
+    "provisionalBlocks": [],
+    "touched": {
+      "anchors": [],
+      "chunks": [
+        {
+          "cx": -2,
+          "cy": 0,
+          "cz": 0,
+          "layer": "ext"
+        },
+        {
+          "cx": -1,
+          "cy": -1,
+          "cz": -1,
+          "layer": "ext"
+        },
+        {
+          "cx": -1,
+          "cy": -1,
+          "cz": 0,
+          "layer": "ext"
+        },
+        {
+          "cx": -1,
+          "cy": 0,
+          "cz": -1,
+          "layer": "ext"
+        },
+        {
+          "cx": -1,
+          "cy": 0,
+          "cz": 0,
+          "layer": "ext"
+        },
+        {
+          "cx": 0,
+          "cy": -1,
+          "cz": -1,
+          "layer": "ext"
+        },
+        {
+          "cx": 0,
+          "cy": -1,
+          "cz": 0,
+          "layer": "ext"
+        },
+        {
+          "cx": 0,
+          "cy": 0,
+          "cz": -1,
+          "layer": "ext"
+        },
+        {
+          "cx": 0,
+          "cy": 0,
+          "cz": 0,
+          "layer": "ext"
+        }
+      ],
+      "entities": [],
+      "palette": false
+    }
+  },
+  "kind": "ops",
+  "name": "fill-negative",
+  "ops": [
+    {
+      "block": 3,
+      "box": [
+        -3,
+        -2,
+        -1,
+        2,
+        1,
+        1
+      ],
+      "op": "fill"
+    },
+    {
+      "block": 2,
+      "box": [
+        -33,
+        0,
+        0,
+        -32,
+        1,
+        1
+      ],
+      "op": "fill"
+    }
+  ],
+  "probeCells": [
+    [
+      -1,
+      -1,
+      -1
+    ],
+    [
+      -3,
+      -2,
+      -1
+    ],
+    [
+      1,
+      0,
+      0
+    ],
+    [
+      2,
+      0,
+      0
+    ],
+    [
+      -33,
+      0,
+      0
+    ],
+    [
+      -32,
+      0,
+      0
+    ]
+  ],
+  "scope": null,
+  "spaceId": "vec-space"
+}

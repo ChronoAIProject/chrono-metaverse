@@ -423,7 +423,11 @@ def _validate_at(shape: Any, path: str, depth: int, nodes: list[int]) -> None:
             raise ShapeError(None, "path 必须是数组")
         pts = [_vec(p, 3, "path") for p in points]
         section = shape["section"]
-        if not isinstance(section, dict) or len(section) != 1 or next(iter(section)) not in ("circle", "rect"):
+        if (
+            not isinstance(section, dict)
+            or len(section) != 1
+            or next(iter(section)) not in ("circle", "rect")
+        ):
             raise ShapeError(None, "section 必须是 {circle: r} 或 {rect: [w, h]}")
         if shape.get("caps") is not None and not isinstance(shape["caps"], bool):
             raise ShapeError(None, "caps 必须是布尔值")
@@ -552,7 +556,12 @@ def arc_extremes(start: Sequence[float], end: Sequence[float], bulge: float) -> 
     begin = math.atan2(start[1] - center[1], start[0] - center[0])
     out = []
     tau = 2 * math.pi
-    for angle, direction in ((0.0, (1, 0)), (math.pi / 2, (0, 1)), (math.pi, (-1, 0)), (3 * math.pi / 2, (0, -1))):
+    for angle, direction in (
+        (0.0, (1, 0)),
+        (math.pi / 2, (0, 1)),
+        (math.pi, (-1, 0)),
+        (3 * math.pi / 2, (0, -1)),
+    ):
         delta = (angle - begin) % tau if sweep > 0 else (begin - angle) % tau
         if delta <= abs(sweep):
             out.append([center[0] + radius * direction[0], center[1] + radius * direction[1]])
@@ -579,7 +588,9 @@ def outline_bounds_2d(ol: Mapping[str, Any]) -> tuple[list[float], list[float]]:
     return lo, hi
 
 
-def shape_bounds(shape: Mapping[str, Any], templates: Mapping[str, Mapping[str, Any]] | None = None) -> Bounds:
+def shape_bounds(
+    shape: Mapping[str, Any], templates: Mapping[str, Mapping[str, Any]] | None = None
+) -> Bounds:
     """包围盒（含本形状自己的 transform）。模板循环引用、找不到模板、嵌套过深时报错。"""
     cache: dict[str, Bounds] = {}
     visiting: set[str] = set()

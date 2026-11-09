@@ -33,6 +33,21 @@ pub use events::{Cursor, EventInsert, Lower};
 pub use jobs::{JobInsert, MAX_JOB_LIST};
 pub use universes::{UniverseFieldsUpdate, UniversePolicy, UniverseWrite};
 pub use uploads::{AssetAvailability, CompleteWrite, PartWrite, PendingUploads};
+// 时间线、草稿、内容寻址数据、管理写入（时间线与公开读分工）。
+mod blobs;
+mod commits;
+mod drafts;
+mod space_admin;
+
+pub use blobs::{AssetMeta, AssetStream};
+pub use commits::{
+    palette_hash, state_blob_hash, BlobKind, CommitError, CommitOutcome, CommitPlan, Layout,
+    StoredChunk,
+};
+pub use drafts::{
+    DraftDoc, DraftStatus, NewPreview, OpsAsset, OpsRef, OpsUpload, PreviewRecord, ProvisionalBlock,
+};
+pub use space_admin::{SpaceSettings, MAX_SHARE_TOKEN_RECORDS};
 
 /// 集合名（设计 13.2）。
 pub mod collections {

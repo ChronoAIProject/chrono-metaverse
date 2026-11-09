@@ -396,7 +396,18 @@ async fn head_density_and_state() {
     // 没有事件时 recordedAt 为 null。
     let reply = app.public(&head, Some(&share), &[]).await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
-    assert_eq!(reply.body, json!({"seq": 0, "at": reply.body["at"], "recordedAt": null}));
+    assert_eq!(
+        reply.body,
+        json!({"seq": reply.body["seq"], "at": reply.body["at"], "recordedAt": null})
+    );
+    assert!(reply.body["seq"].is_u64());
+    // 空间信息里的 head 带同一个 recordedAt，还有事件类型（不含 schema）。
+    let info = app.public(PUBLIC, Some(&share), &[]).await;
+    assert_eq!(info.status, StatusCode::OK, "{:?}", info.body);
+    assert_eq!(info.body["head"]["recordedAt"], Value::Null);
+    let types = info.body["eventTypes"].as_array().unwrap();
+    assert_eq!(types.len(), 5);
+    assert!(types.iter().all(|t| t.get("schema").is_none() && t["display"].is_object()));
     assert_eq!(app.public(&head, None, &[]).await.status, StatusCode::NOT_FOUND);
     // 内部级事件不改变 head。
     write(&app, who(ORG), "pos", json!([
@@ -421,6 +432,8 @@ async fn head_density_and_state() {
     assert_eq!(reply.body["recordedAt"], recorded.as_str());
     assert_ne!(reply.headers.get("etag").unwrap().to_str().unwrap(), first_tag);
     assert!(reply.headers.get("cache-control").unwrap().to_str().unwrap().starts_with("private"));
+    let info = app.public(PUBLIC, Some(&share), &[]).await;
+    assert_eq!(info.body["head"]["recordedAt"], recorded.as_str());
     // 错误的令牌即使命中缓存也是 404。
     let wrong = format!("Share {}", "B".repeat(43));
     assert_eq!(app.public(&head, Some(&wrong), &[]).await.status, StatusCode::NOT_FOUND);

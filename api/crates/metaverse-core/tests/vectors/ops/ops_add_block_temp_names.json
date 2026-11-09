@@ -1,0 +1,321 @@
+{
+  "base": {
+    "anchors": [],
+    "entities": [],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ]
+  },
+  "description": "新增方块用临时名称引用，临时编号从现有最大编号 + 1 开始",
+  "expect": {
+    "anchors": [],
+    "baseChunks": [],
+    "chunkChanges": [
+      {
+        "cx": 0,
+        "cy": 0,
+        "cz": 0,
+        "hash": "f5d2f9310b144067ab4383b6a1626062246b35cf061efee6c73364891d605d83",
+        "layer": "ext"
+      }
+    ],
+    "chunks": [
+      {
+        "cx": 0,
+        "cy": 0,
+        "cz": 0,
+        "hash": "f5d2f9310b144067ab4383b6a1626062246b35cf061efee6c73364891d605d83",
+        "layer": "ext",
+        "nonZeroCount": 35
+      }
+    ],
+    "entities": [],
+    "footprints": [
+      {
+        "cells": [],
+        "spaceWide": false
+      },
+      {
+        "cells": [],
+        "spaceWide": false
+      },
+      {
+        "cells": [
+          [
+            0,
+            0,
+            0,
+            3,
+            1,
+            3
+          ]
+        ],
+        "spaceWide": false
+      },
+      {
+        "cells": [
+          [
+            0,
+            1,
+            0,
+            3,
+            4,
+            3
+          ]
+        ],
+        "spaceWide": false
+      },
+      {
+        "cells": [
+          [
+            1,
+            1,
+            1,
+            2,
+            2,
+            2
+          ]
+        ],
+        "spaceWide": false
+      }
+    ],
+    "ok": true,
+    "probes": [
+      {
+        "cell": [
+          0,
+          0,
+          0
+        ],
+        "effective": 8,
+        "ext": 8,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          0,
+          1,
+          0
+        ],
+        "effective": 9,
+        "ext": 9,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          1,
+          2,
+          1
+        ],
+        "effective": 0,
+        "ext": 0,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          1,
+          1,
+          1
+        ],
+        "effective": 9,
+        "ext": 9,
+        "rebuilt": 0
+      }
+    ],
+    "provisionalBlocks": [
+      {
+        "id": 8,
+        "name": "brick"
+      },
+      {
+        "id": 9,
+        "name": "tile"
+      }
+    ],
+    "touched": {
+      "anchors": [],
+      "chunks": [
+        {
+          "cx": 0,
+          "cy": 0,
+          "cz": 0,
+          "layer": "ext"
+        }
+      ],
+      "entities": [],
+      "palette": true
+    }
+  },
+  "kind": "ops",
+  "name": "add-block-temp-names",
+  "ops": [
+    {
+      "block": {
+        "color": [
+          180,
+          60,
+          40
+        ],
+        "kind": "solid",
+        "name": "brick"
+      },
+      "op": "addBlock"
+    },
+    {
+      "block": {
+        "kind": "solid",
+        "name": "tile",
+        "tags": [
+          "floor"
+        ],
+        "texture": {
+          "bottom": "9f2c7d4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d",
+          "side": "9f2c7d4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d",
+          "top": "9f2c7d4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d"
+        }
+      },
+      "op": "addBlock"
+    },
+    {
+      "block": "brick",
+      "box": [
+        0,
+        0,
+        0,
+        3,
+        1,
+        3
+      ],
+      "op": "fill"
+    },
+    {
+      "block": "tile",
+      "box": [
+        0,
+        1,
+        0,
+        3,
+        4,
+        3
+      ],
+      "op": "hollowBox"
+    },
+    {
+      "block": 9,
+      "box": [
+        1,
+        1,
+        1,
+        2,
+        2,
+        2
+      ],
+      "op": "fill"
+    }
+  ],
+  "probeCells": [
+    [
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      1,
+      0
+    ],
+    [
+      1,
+      2,
+      1
+    ],
+    [
+      1,
+      1,
+      1
+    ]
+  ],
+  "scope": null,
+  "spaceId": "vec-space"
+}

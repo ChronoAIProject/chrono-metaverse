@@ -345,6 +345,82 @@ impl Repo {
             .unwrap_or_default())
     }
 
+    /// 全部修订的 (时间, 成员空间编号)，按 seq 排序（判断成员资格的时间段用，最多 10000 条）。
+    pub async fn universe_membership_history(
+        &self,
+        grant: &UniverseGrant,
+    ) -> Result<Vec<(Timestamp, Vec<String>)>, RepoError> {
+        #[derive(Deserialize)]
+        struct MemberId {
+            #[serde(rename = "spaceId")]
+            space_id: String,
+        }
+        #[derive(Deserialize)]
+        struct StateMembers {
+            #[serde(default)]
+            members: Vec<MemberId>,
+        }
+        #[derive(Deserialize)]
+        struct Row {
+            at: Timestamp,
+            state: StateMembers,
+        }
+        let mut cursor = self
+            .collection(collections::UNIVERSE_REVISIONS)
+            .find(granted_revisions(grant))
+            .sort(doc! {"seq": 1})
+            .projection(doc! {"at": 1, "state.members.spaceId": 1})
+            .limit(10_000)
+            .await?;
+        let mut history = Vec::new();
+        while cursor.advance().await? {
+            let document: Document = cursor
+                .deserialize_current()
+                .map_err(|error| RepoError::Corrupt(error.to_string()))?;
+            let row: Row = from_document(document)?;
+            history.push((
+                row.at,
+                row.state.members.into_iter().map(|m| m.space_id).collect(),
+            ));
+        }
+        Ok(history)
+    }
+
+    /// 第 seq 次提交生效的时间段 `[at(seq), at(seq + 1))`；seq 是最新提交时终点为空。
+    /// 提交不存在时返回空。
+    pub async fn commit_window(
+        &self,
+        grant: &Grant,
+        seq: u64,
+    ) -> Result<Option<(Timestamp, Option<Timestamp>)>, RepoError> {
+        let at_of = |seq: u64| {
+            let filter = doc! {
+                "spaceId": grant.space_id(),
+                "owner.kind": owner_kind(grant.owner()),
+                "owner.id": &grant.owner().id,
+                "seq": seq as i64,
+            };
+            async move {
+                let found = self
+                    .collection(collections::COMMITS)
+                    .find_one(filter)
+                    .projection(doc! {"at": 1})
+                    .await?;
+                Ok::<_, RepoError>(found.and_then(|document| {
+                    document
+                        .get_str("at")
+                        .ok()
+                        .and_then(|text| Timestamp::parse_rfc3339(text).ok())
+                }))
+            }
+        };
+        let Some(start) = at_of(seq).await? else {
+            return Ok(None);
+        };
+        let end = at_of(seq + 1).await?;
+        Ok(Some((start, end)))
+    }
+
     /// 空间在 T 时刻的 seq：`at ≤ T` 的最大 seq；T 之前没有提交时是 0。
     pub async fn space_seq_at(&self, grant: &Grant, at: Timestamp) -> Result<u64, RepoError> {
         let found = self

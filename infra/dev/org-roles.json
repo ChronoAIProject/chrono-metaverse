@@ -1,0 +1,9 @@
+{
+  "orgs": {
+    "chronoai": {
+      "alice": "admin",
+      "bob": "member",
+      "carol": "viewer"
+    }
+  }
+}

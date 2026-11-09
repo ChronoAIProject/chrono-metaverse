@@ -20,6 +20,9 @@ pub mod ingest;
 pub mod openapi;
 pub mod repo;
 pub mod routes;
+// 时间线与公开读分工：公开接口基础设施、时间线领域逻辑。
+pub mod public;
+pub mod timeline;
 
 use auth::{jwt, organizations::OrganizationClient, Authenticator, Authorizer};
 use config::Config;
@@ -34,6 +37,8 @@ pub struct AppState {
     pub authorizer: Arc<Authorizer>,
     /// 上传、任务的上限和进程内状态（分片并发、`/head` 短缓存）。
     pub ingest: Arc<ingest::IngestRuntime>,
+    /// 公开接口的限流、并发计数和进程内缓存。
+    pub public: Arc<public::PublicServices>,
     ready: Arc<AtomicBool>,
 }
 
@@ -54,6 +59,7 @@ impl AppState {
                 config.nyxid.issuer.clone(),
                 config.require_permissions,
             )),
+            public: public::PublicServices::new(config.public.clone()),
             repo,
             ingest: Arc::new(ingest::IngestRuntime::new(config.ingest.clone())),
             ready: Arc::new(AtomicBool::new(false)),

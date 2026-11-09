@@ -1,0 +1,278 @@
+{
+  "base": {
+    "anchors": [],
+    "entities": [],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ]
+  },
+  "description": "填充跨两个区块（x = 31 | 32）：两个区块都碰到，都有新哈希",
+  "expect": {
+    "anchors": [],
+    "baseChunks": [],
+    "chunkChanges": [
+      {
+        "cx": 0,
+        "cy": 0,
+        "cz": 0,
+        "hash": "87b75ed978f080b4e855b2039669fd58bf8567e7c99f1a2d9231acad32ba4809",
+        "layer": "ext"
+      },
+      {
+        "cx": 1,
+        "cy": 0,
+        "cz": 0,
+        "hash": "18d43054df0d6cd0b849933e499a8c3cf8f96ed48fa348a7a3b9e1de20da2ea2",
+        "layer": "ext"
+      }
+    ],
+    "chunks": [
+      {
+        "cx": 0,
+        "cy": 0,
+        "cz": 0,
+        "hash": "87b75ed978f080b4e855b2039669fd58bf8567e7c99f1a2d9231acad32ba4809",
+        "layer": "ext",
+        "nonZeroCount": 2
+      },
+      {
+        "cx": 1,
+        "cy": 0,
+        "cz": 0,
+        "hash": "18d43054df0d6cd0b849933e499a8c3cf8f96ed48fa348a7a3b9e1de20da2ea2",
+        "layer": "ext",
+        "nonZeroCount": 2
+      }
+    ],
+    "entities": [],
+    "footprints": [
+      {
+        "cells": [
+          [
+            30,
+            0,
+            0,
+            34,
+            1,
+            1
+          ]
+        ],
+        "spaceWide": false
+      }
+    ],
+    "ok": true,
+    "probes": [
+      {
+        "cell": [
+          29,
+          0,
+          0
+        ],
+        "effective": 0,
+        "ext": 0,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          30,
+          0,
+          0
+        ],
+        "effective": 2,
+        "ext": 2,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          31,
+          0,
+          0
+        ],
+        "effective": 2,
+        "ext": 2,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          32,
+          0,
+          0
+        ],
+        "effective": 2,
+        "ext": 2,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          33,
+          0,
+          0
+        ],
+        "effective": 2,
+        "ext": 2,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          34,
+          0,
+          0
+        ],
+        "effective": 0,
+        "ext": 0,
+        "rebuilt": 0
+      }
+    ],
+    "provisionalBlocks": [],
+    "touched": {
+      "anchors": [],
+      "chunks": [
+        {
+          "cx": 0,
+          "cy": 0,
+          "cz": 0,
+          "layer": "ext"
+        },
+        {
+          "cx": 1,
+          "cy": 0,
+          "cz": 0,
+          "layer": "ext"
+        }
+      ],
+      "entities": [],
+      "palette": false
+    }
+  },
+  "kind": "ops",
+  "name": "fill-across-chunks",
+  "ops": [
+    {
+      "block": 2,
+      "box": [
+        30,
+        0,
+        0,
+        34,
+        1,
+        1
+      ],
+      "op": "fill"
+    }
+  ],
+  "probeCells": [
+    [
+      29,
+      0,
+      0
+    ],
+    [
+      30,
+      0,
+      0
+    ],
+    [
+      31,
+      0,
+      0
+    ],
+    [
+      32,
+      0,
+      0
+    ],
+    [
+      33,
+      0,
+      0
+    ],
+    [
+      34,
+      0,
+      0
+    ]
+  ],
+  "scope": null,
+  "spaceId": "vec-space"
+}

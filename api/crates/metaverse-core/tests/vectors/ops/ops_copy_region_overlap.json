@@ -1,0 +1,392 @@
+{
+  "base": {
+    "anchors": [],
+    "entities": [],
+    "fills": [
+      {
+        "block": 2,
+        "box": [
+          0,
+          0,
+          0,
+          1,
+          1,
+          1
+        ],
+        "layer": "ext"
+      },
+      {
+        "block": 3,
+        "box": [
+          1,
+          0,
+          0,
+          2,
+          1,
+          1
+        ],
+        "layer": "ext"
+      },
+      {
+        "block": 7,
+        "box": [
+          3,
+          0,
+          0,
+          4,
+          1,
+          1
+        ],
+        "layer": "ext"
+      },
+      {
+        "block": 2,
+        "box": [
+          0,
+          1,
+          0,
+          2,
+          2,
+          2
+        ],
+        "layer": "rebuilt"
+      }
+    ],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ]
+  },
+  "description": "复制只取扩展层（含 0），源和目标重叠时按复制前的内容",
+  "expect": {
+    "anchors": [],
+    "baseChunks": [
+      {
+        "cx": 0,
+        "cy": 0,
+        "cz": 0,
+        "hash": "6fe583727cb3c7ba9934b7e2c85b82e116bee04733594188b00db574edac8ea4",
+        "layer": "rebuilt"
+      },
+      {
+        "cx": 0,
+        "cy": 0,
+        "cz": 0,
+        "hash": "9c9c24552aaa7f8c461ce2b1fdb3f77a76774193488d649e6c0ead0e23391ffe",
+        "layer": "ext"
+      }
+    ],
+    "chunkChanges": [
+      {
+        "cx": 0,
+        "cy": 0,
+        "cz": 0,
+        "hash": "308745db4c3d75143231477100dc8da03bc9d731b3dd5be4fda4a7ea79b45314",
+        "layer": "ext"
+      }
+    ],
+    "chunks": [
+      {
+        "cx": 0,
+        "cy": 0,
+        "cz": 0,
+        "hash": "6fe583727cb3c7ba9934b7e2c85b82e116bee04733594188b00db574edac8ea4",
+        "layer": "rebuilt",
+        "nonZeroCount": 4
+      },
+      {
+        "cx": 0,
+        "cy": 0,
+        "cz": 0,
+        "hash": "308745db4c3d75143231477100dc8da03bc9d731b3dd5be4fda4a7ea79b45314",
+        "layer": "ext",
+        "nonZeroCount": 7
+      }
+    ],
+    "entities": [],
+    "footprints": [
+      {
+        "cells": [
+          [
+            2,
+            0,
+            0,
+            6,
+            1,
+            1
+          ]
+        ],
+        "spaceWide": false
+      },
+      {
+        "cells": [
+          [
+            30,
+            5,
+            30,
+            32,
+            7,
+            32
+          ]
+        ],
+        "spaceWide": false
+      }
+    ],
+    "ok": true,
+    "probes": [
+      {
+        "cell": [
+          2,
+          0,
+          0
+        ],
+        "effective": 2,
+        "ext": 2,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          3,
+          0,
+          0
+        ],
+        "effective": 3,
+        "ext": 3,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          4,
+          0,
+          0
+        ],
+        "effective": 0,
+        "ext": 0,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          5,
+          0,
+          0
+        ],
+        "effective": 7,
+        "ext": 7,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          30,
+          5,
+          30
+        ],
+        "effective": 2,
+        "ext": 2,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          31,
+          5,
+          30
+        ],
+        "effective": 3,
+        "ext": 3,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          30,
+          6,
+          30
+        ],
+        "effective": 0,
+        "ext": 0,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          33,
+          6,
+          31
+        ],
+        "effective": 0,
+        "ext": 0,
+        "rebuilt": 0
+      }
+    ],
+    "provisionalBlocks": [],
+    "touched": {
+      "anchors": [],
+      "chunks": [
+        {
+          "cx": 0,
+          "cy": 0,
+          "cz": 0,
+          "layer": "ext"
+        }
+      ],
+      "entities": [],
+      "palette": false
+    }
+  },
+  "kind": "ops",
+  "name": "copy-region-overlap",
+  "ops": [
+    {
+      "op": "copyRegion",
+      "source": [
+        0,
+        0,
+        0,
+        4,
+        1,
+        1
+      ],
+      "to": [
+        2,
+        0,
+        0
+      ]
+    },
+    {
+      "op": "copyRegion",
+      "source": [
+        0,
+        0,
+        0,
+        2,
+        2,
+        2
+      ],
+      "to": [
+        30,
+        5,
+        30
+      ]
+    }
+  ],
+  "probeCells": [
+    [
+      2,
+      0,
+      0
+    ],
+    [
+      3,
+      0,
+      0
+    ],
+    [
+      4,
+      0,
+      0
+    ],
+    [
+      5,
+      0,
+      0
+    ],
+    [
+      30,
+      5,
+      30
+    ],
+    [
+      31,
+      5,
+      30
+    ],
+    [
+      30,
+      6,
+      30
+    ],
+    [
+      33,
+      6,
+      31
+    ]
+  ],
+  "scope": null,
+  "spaceId": "vec-space"
+}

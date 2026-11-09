@@ -5,37 +5,28 @@
 //! - 成功响应：凭令牌访问时 `Cache-Control: private`；只有公开空间才用 `public`。
 
 use axum::{
-    extract::{Path, State},
-    http::{header, HeaderMap, HeaderValue},
+    extract::{Path, Query, State},
+    http::{header, HeaderMap},
     response::{IntoResponse, Response},
     Json,
 };
 
+use super::public_access::{public_space_grant, UniverseParam};
 use super::views::PublicSpaceView;
-use crate::auth::PublicBasis;
 use crate::error::{ApiError, ProblemDocument};
+use crate::public::headers::cache_control;
 use crate::AppState;
-
-/// `Authorization: Share <令牌>`。头只能出现一次；别的认证方案一律忽略。
-fn share_token(headers: &HeaderMap) -> Option<&str> {
-    let mut values = headers.get_all(header::AUTHORIZATION).iter();
-    let value = values.next()?;
-    if values.next().is_some() {
-        return None;
-    }
-    let (scheme, token) = value.to_str().ok()?.split_once(' ')?;
-    scheme.eq_ignore_ascii_case("share").then_some(token.trim())
-}
 
 #[utoipa::path(
     get,
     path = "/api/public/spaces/{space_id}",
     operation_id = "get_public_space",
     tag = "public",
-    description = "公开读：名称、区域、地块和公开锚点。凭链接查看的空间需要 `Authorization: Share <分享令牌>`。",
+    description = "公开读：名称、区域、地块、公开锚点、最新位置（含最新公开变化的 recordedAt）和事件类型的显示规则。凭链接查看的空间需要 `Authorization: Share <分享令牌>`；也可以带组合的分享令牌和 `?universe=<组合编号>`（要求现在是组合成员）。",
     params(
         ("space_id" = String, Path, description = "空间编号", example = "front-hall"),
-        ("Authorization" = Option<String>, Header, description = "`Share <分享令牌>`；公开空间可省略"),
+        ("Authorization" = Option<String>, Header, description = "`Share <空间或组合的分享令牌>`；公开空间可省略"),
+        UniverseParam,
     ),
     responses(
         (status = 200, description = "空间的公开信息", body = PublicSpaceView),
@@ -46,45 +37,36 @@ fn share_token(headers: &HeaderMap) -> Option<&str> {
 pub async fn get_public_space(
     State(state): State<AppState>,
     Path(space_id): Path<String>,
+    Query(universe): Query<UniverseParam>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
-    let grant = state
-        .authorizer
-        .public_space(&space_id, share_token(&headers))
-        .await?;
+    // 凭组合令牌（`?universe=`）时要求现在是组合成员。
+    let grant = public_space_grant(
+        &state,
+        &space_id,
+        &headers,
+        universe.universe.as_deref(),
+        crate::now()?,
+    )
+    .await?;
     let space = state
         .repo
         .space(&grant)
         .await?
         .ok_or_else(ApiError::not_found)?;
     let anchors = state.repo.anchors(&grant).await?;
-    let mut response = Json(PublicSpaceView::new(space, anchors)).into_response();
-    let cache = match grant.public_basis() {
-        Some(PublicBasis::PublicVisibility) => "public, max-age=5",
-        _ => "private, max-age=5",
-    };
+    let mut view = PublicSpaceView::new(space, anchors);
+    view.head.recorded_at = super::event_query::public_recorded_at(&state, &grant).await?;
+    view.event_types = state
+        .repo
+        .event_types(&grant)
+        .await?
+        .iter()
+        .map(|event_type| super::events::event_type_view(event_type, false))
+        .collect();
+    let mut response = Json(view).into_response();
     response
         .headers_mut()
-        .insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
+        .insert(header::CACHE_CONTROL, cache_control(&grant, 5));
     Ok(response)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn share_scheme_only() {
-        let mut headers = HeaderMap::new();
-        assert_eq!(share_token(&headers), None);
-        headers.insert(header::AUTHORIZATION, HeaderValue::from_static("Share abc"));
-        assert_eq!(share_token(&headers), Some("abc"));
-        headers.insert(header::AUTHORIZATION, HeaderValue::from_static("share abc"));
-        assert_eq!(share_token(&headers), Some("abc"));
-        headers.insert(
-            header::AUTHORIZATION,
-            HeaderValue::from_static("Bearer abc"),
-        );
-        assert_eq!(share_token(&headers), None);
-    }
 }

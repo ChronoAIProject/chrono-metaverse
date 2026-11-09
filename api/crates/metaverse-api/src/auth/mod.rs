@@ -30,6 +30,7 @@ pub use authorizer::{
     CreateUniverseGrant, MembershipBasis, MembershipChange, MembershipGrant, SystemGrant,
     UniverseGrant,
 };
+pub use authorizer::{BlobGrant, PreviewTarget};
 pub use organizations::ForwardedCredential;
 
 use crate::error::ApiError;

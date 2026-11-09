@@ -1,0 +1,140 @@
+{
+  "base": {
+    "anchors": [
+      {
+        "anchorId": "_space",
+        "kind": "space",
+        "visibility": "public"
+      }
+    ],
+    "entities": [],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ]
+  },
+  "description": "空间级锚点不能移动（给了位置，校验失败）",
+  "expect": {
+    "baseChunks": [],
+    "error": {
+      "index": 0,
+      "kind": "invalid",
+      "message": "第 0 条操作：_space 锚点没有位置"
+    },
+    "footprints": [
+      {
+        "cells": [
+          [
+            0,
+            0,
+            0,
+            1,
+            1,
+            1
+          ]
+        ],
+        "spaceWide": true
+      }
+    ],
+    "ok": false
+  },
+  "kind": "ops",
+  "name": "invalid-space-anchor-move",
+  "ops": [
+    {
+      "anchorId": "_space",
+      "box": [
+        0,
+        0,
+        0,
+        1,
+        1,
+        1
+      ],
+      "op": "moveAnchor"
+    }
+  ],
+  "probeCells": [],
+  "scope": "physical",
+  "spaceId": "vec-space"
+}

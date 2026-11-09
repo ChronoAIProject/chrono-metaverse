@@ -1,0 +1,162 @@
+{
+  "base": {
+    "anchors": [],
+    "entities": [
+      {
+        "bounds": {
+          "max": [
+            2,
+            3,
+            0.05
+          ],
+          "min": [
+            -2,
+            0,
+            -0.05
+          ]
+        },
+        "entityId": "wall-1",
+        "kind": "structure",
+        "layer": "rebuilt",
+        "shape": {
+          "size": [
+            4,
+            3,
+            0.1
+          ],
+          "type": "box"
+        }
+      }
+    ],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ]
+  },
+  "description": "同编号的重建层物件只能由任务修改",
+  "expect": {
+    "baseChunks": [],
+    "error": {
+      "index": 0,
+      "kind": "invalid",
+      "message": "第 0 条操作：物件 wall-1 属于重建层，只能由任务修改"
+    },
+    "footprints": [],
+    "ok": false
+  },
+  "kind": "ops",
+  "name": "invalid-rebuilt-overwrite",
+  "ops": [
+    {
+      "entity": {
+        "bounds": {
+          "max": [
+            0.5,
+            1,
+            0.5
+          ],
+          "min": [
+            -0.5,
+            0,
+            -0.5
+          ]
+        },
+        "entityId": "wall-1",
+        "kind": "structure",
+        "layer": "ext",
+        "shape": {
+          "size": [
+            1,
+            1,
+            1
+          ],
+          "type": "box"
+        }
+      },
+      "op": "placeEntity"
+    }
+  ],
+  "probeCells": [],
+  "scope": null,
+  "spaceId": "vec-space"
+}

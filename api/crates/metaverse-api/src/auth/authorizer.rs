@@ -41,6 +41,8 @@ pub enum PublicBasis {
     PublicVisibility,
     /// 凭分享令牌。
     ShareToken,
+    /// 凭草稿预览令牌（设计 5.6）：响应一律不缓存。
+    Preview,
 }
 
 /// 访问某个空间的授权凭据（空间编号、主人、访问级别）。
@@ -50,6 +52,20 @@ pub struct Grant {
     owner: Owner,
     access: GrantAccess,
     public_basis: Option<PublicBasis>,
+}
+
+/// 读取不属于某个空间的内容寻址数据（已发布的区块、登记在 `assetRefs` 里的资源）的凭据。
+/// 这些数据一旦发出就收不回（设计 8.2），但数据访问层同样只认授权层签发的凭据。
+#[derive(Debug, Clone)]
+pub struct BlobGrant {
+    _private: (),
+}
+
+/// 预览令牌指向的草稿版本（设计 5.6：绑定 {空间, 草稿, rev}）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreviewTarget {
+    pub draft_id: String,
+    pub rev: u64,
 }
 
 impl Grant {
@@ -310,10 +326,107 @@ pub use system::SystemGrant;
 pub use universes::{
     CreateUniverseGrant, MembershipBasis, MembershipChange, MembershipGrant, UniverseGrant,
 };
+/// 预览令牌原文的格式：base64url，43 个字符（256 位随机数）。
+fn plausible_preview_token(token: &str) -> bool {
+    token.len() == 43
+        && token
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+impl Authorizer {
+    /// 刚创建的空间：创建凭据换成同一空间的"管理"凭据（用于写第一次提交）。
+    pub fn grant_for_created_space(&self, grant: &CreateGrant, space_id: &str) -> Grant {
+        Grant {
+            space_id: space_id.to_owned(),
+            owner: grant.owner.clone(),
+            access: GrantAccess::Manage,
+            public_basis: None,
+        }
+    }
+
+    /// 后台用途的显式系统范围（设计 9.4）：只在服务端自己发起的后台处理里使用
+    /// （例如接口服务进程内处理的 `ops_from_upload` 任务），每次签发都写审计日志。
+    /// 空间的主人必须仍是发起时记录的主人，否则拒绝。
+    pub async fn system_space(
+        &self,
+        space_id: &str,
+        expected_owner: &Owner,
+        purpose: &'static str,
+        reference: &str,
+    ) -> Result<Grant, ApiError> {
+        let policy = self
+            .repo
+            .space_policy(&Self::key(), space_id)
+            .await?
+            .ok_or_else(ApiError::not_found)?;
+        if &policy.owner != expected_owner {
+            tracing::warn!(target: "audit", space = %space_id, purpose, reference, "系统范围被拒绝：空间主人已变");
+            return Err(ApiError::not_found());
+        }
+        tracing::info!(target: "audit", space = %space_id, owner = %policy.owner.id, purpose, reference, "签发系统范围");
+        Ok(Grant {
+            space_id: space_id.to_owned(),
+            owner: policy.owner,
+            access: GrantAccess::Manage,
+            public_basis: None,
+        })
+    }
+
+    /// 读取已发布区块和已登记资源的凭据（公开读接口 `.bin`）。
+    pub fn published_blobs(&self) -> BlobGrant {
+        BlobGrant { _private: () }
+    }
+
+    /// 草稿预览（设计 5.6、8.2）：令牌只存哈希；过期、不存在、格式不对一律 404。
+    /// 返回的凭据和公开读接口一样只能读公开级数据。
+    pub async fn preview(
+        &self,
+        token: Option<&str>,
+        now: Timestamp,
+    ) -> Result<(Grant, PreviewTarget), ApiError> {
+        let token = token
+            .filter(|token| plausible_preview_token(token))
+            .ok_or_else(ApiError::not_found)?;
+        let record = self
+            .repo
+            .preview_by_hash(&Self::key(), &sha256_hex(token.as_bytes()))
+            .await?
+            .filter(|record| record.expires_at > now && is_space_id(&record.space_id))
+            .ok_or_else(ApiError::not_found)?;
+        let policy = self
+            .repo
+            .space_policy(&Self::key(), &record.space_id)
+            .await?
+            .ok_or_else(ApiError::not_found)?;
+        if policy.owner != record.owner {
+            return Err(ApiError::not_found());
+        }
+        Ok((
+            Grant {
+                space_id: record.space_id,
+                owner: policy.owner,
+                access: GrantAccess::Public,
+                public_basis: Some(PublicBasis::Preview),
+            },
+            PreviewTarget {
+                draft_id: record.draft_id,
+                rev: record.rev,
+            },
+        ))
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preview_token_format() {
+        assert!(plausible_preview_token(&"a".repeat(43)));
+        assert!(!plausible_preview_token(&"a".repeat(42)));
+        assert!(!plausible_preview_token(&format!("{}=", "a".repeat(42))));
+    }
 
     #[test]
     fn share_token_format() {

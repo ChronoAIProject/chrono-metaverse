@@ -1,0 +1,456 @@
+{
+  "base": {
+    "anchors": [],
+    "entities": [
+      {
+        "bounds": {
+          "max": [
+            0.225,
+            0.87,
+            0.225
+          ],
+          "min": [
+            -0.225,
+            0,
+            -0.225
+          ]
+        },
+        "entityId": "chair-a",
+        "kind": "template",
+        "layer": "ext",
+        "shape": {
+          "children": [
+            {
+              "fillet": 0.01,
+              "size": [
+                0.45,
+                0.04,
+                0.45
+              ],
+              "transform": {
+                "position": [
+                  0,
+                  0.43,
+                  0
+                ]
+              },
+              "type": "box"
+            },
+            {
+              "size": [
+                0.45,
+                0.4,
+                0.03
+              ],
+              "transform": {
+                "position": [
+                  0,
+                  0.47,
+                  -0.21
+                ]
+              },
+              "type": "box"
+            },
+            {
+              "path": [
+                [
+                  -0.2,
+                  0.015,
+                  -0.2
+                ],
+                [
+                  -0.2,
+                  0.43,
+                  -0.2
+                ]
+              ],
+              "section": {
+                "circle": 0.015
+              },
+              "type": "sweep"
+            },
+            {
+              "path": [
+                [
+                  0.2,
+                  0.015,
+                  -0.2
+                ],
+                [
+                  0.2,
+                  0.43,
+                  -0.2
+                ]
+              ],
+              "section": {
+                "circle": 0.015
+              },
+              "type": "sweep"
+            },
+            {
+              "path": [
+                [
+                  -0.2,
+                  0.015,
+                  0.2
+                ],
+                [
+                  -0.2,
+                  0.43,
+                  0.2
+                ]
+              ],
+              "section": {
+                "circle": 0.015
+              },
+              "type": "sweep"
+            },
+            {
+              "path": [
+                [
+                  0.2,
+                  0.015,
+                  0.2
+                ],
+                [
+                  0.2,
+                  0.43,
+                  0.2
+                ]
+              ],
+              "section": {
+                "circle": 0.015
+              },
+              "type": "sweep"
+            }
+          ],
+          "type": "group"
+        }
+      },
+      {
+        "bounds": {
+          "max": [
+            5.725,
+            0.87,
+            0.725
+          ],
+          "min": [
+            5.275,
+            0.0,
+            0.275
+          ]
+        },
+        "entityId": "chair-in",
+        "kind": "object",
+        "layer": "ext",
+        "shape": {
+          "template": "chair-a",
+          "transform": {
+            "position": [
+              5.5,
+              0,
+              0.5
+            ]
+          },
+          "type": "instance"
+        }
+      },
+      {
+        "bounds": {
+          "max": [
+            9.225,
+            0.87,
+            0.725
+          ],
+          "min": [
+            8.775,
+            0.0,
+            0.275
+          ]
+        },
+        "entityId": "chair-out",
+        "kind": "object",
+        "layer": "ext",
+        "shape": {
+          "template": "chair-a",
+          "transform": {
+            "position": [
+              9.0,
+              0,
+              0.5
+            ]
+          },
+          "type": "instance"
+        }
+      }
+    ],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ]
+  },
+  "description": "改模板等于改所有用到它的物件：有一把椅子在地块外，改模板就超出范围",
+  "expect": {
+    "baseChunks": [],
+    "error": {
+      "index": 0,
+      "kind": "scope",
+      "message": "第 0 条操作：操作超出了路径范围 plot:p1"
+    },
+    "footprints": [
+      {
+        "cells": [
+          [
+            105,
+            0,
+            5,
+            115,
+            18,
+            15
+          ],
+          [
+            175,
+            0,
+            5,
+            185,
+            18,
+            15
+          ],
+          [
+            105,
+            0,
+            5,
+            115,
+            18,
+            15
+          ],
+          [
+            175,
+            0,
+            5,
+            185,
+            18,
+            15
+          ]
+        ],
+        "spaceWide": false
+      }
+    ],
+    "ok": false
+  },
+  "kind": "ops",
+  "name": "scope-template-users",
+  "ops": [
+    {
+      "entity": {
+        "bounds": {
+          "max": [
+            0.225,
+            0.87,
+            0.225
+          ],
+          "min": [
+            -0.225,
+            0,
+            -0.225
+          ]
+        },
+        "entityId": "chair-a",
+        "kind": "template",
+        "layer": "ext",
+        "shape": {
+          "children": [
+            {
+              "fillet": 0.01,
+              "size": [
+                0.45,
+                0.04,
+                0.45
+              ],
+              "transform": {
+                "position": [
+                  0,
+                  0.43,
+                  0
+                ]
+              },
+              "type": "box"
+            },
+            {
+              "size": [
+                0.45,
+                0.4,
+                0.03
+              ],
+              "transform": {
+                "position": [
+                  0,
+                  0.47,
+                  -0.21
+                ]
+              },
+              "type": "box"
+            },
+            {
+              "path": [
+                [
+                  -0.2,
+                  0.015,
+                  -0.2
+                ],
+                [
+                  -0.2,
+                  0.43,
+                  -0.2
+                ]
+              ],
+              "section": {
+                "circle": 0.015
+              },
+              "type": "sweep"
+            },
+            {
+              "path": [
+                [
+                  0.2,
+                  0.015,
+                  -0.2
+                ],
+                [
+                  0.2,
+                  0.43,
+                  -0.2
+                ]
+              ],
+              "section": {
+                "circle": 0.015
+              },
+              "type": "sweep"
+            },
+            {
+              "path": [
+                [
+                  -0.2,
+                  0.015,
+                  0.2
+                ],
+                [
+                  -0.2,
+                  0.43,
+                  0.2
+                ]
+              ],
+              "section": {
+                "circle": 0.015
+              },
+              "type": "sweep"
+            },
+            {
+              "path": [
+                [
+                  0.2,
+                  0.015,
+                  0.2
+                ],
+                [
+                  0.2,
+                  0.43,
+                  0.2
+                ]
+              ],
+              "section": {
+                "circle": 0.015
+              },
+              "type": "sweep"
+            }
+          ],
+          "type": "group"
+        }
+      },
+      "op": "placeEntity"
+    }
+  ],
+  "probeCells": [],
+  "scope": "plot:p1",
+  "spaceId": "vec-space"
+}

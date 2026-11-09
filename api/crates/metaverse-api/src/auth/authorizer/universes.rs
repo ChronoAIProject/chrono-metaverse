@@ -119,6 +119,22 @@ pub enum MembershipChange {
     Leave,
 }
 
+/// 按修订历史判断：空间在 `[from, to]`（`to` 为空表示到现在以后）里是否有某个时刻是成员。
+/// 第 i 条修订从它的 `at` 起生效，到下一条修订的 `at` 为止。
+fn member_during(
+    history: &[(Timestamp, Vec<String>)],
+    space_id: &str,
+    from: Timestamp,
+    to: Option<Timestamp>,
+) -> bool {
+    history.iter().enumerate().any(|(index, (start, members))| {
+        let end = history.get(index + 1).map(|(next, _)| *next);
+        members.iter().any(|member| member == space_id)
+            && to.is_none_or(|to| *start <= to)
+            && end.is_none_or(|end| end > from)
+    })
+}
+
 /// 比较分享令牌：逐个比较全部未吊销的令牌，不提前退出。
 fn token_matches(records: &[ShareTokenRecord], token: Option<&str>) -> bool {
     let Some(token) = token.filter(|token| plausible_share_token(token)) else {
@@ -407,6 +423,84 @@ impl Authorizer {
         })
     }
 
+    /// 凭组合令牌读成员空间在一段时间 `[from, to]` 里的公开数据（时间窗事件、密度、提交列表）：
+    /// 要求该空间在这段时间里的某个时刻是组合成员。
+    pub async fn public_space_via_universe_during(
+        &self,
+        space_id: &str,
+        universe_id: &str,
+        share_token: Option<&str>,
+        from: Timestamp,
+        to: Timestamp,
+    ) -> Result<Grant, ApiError> {
+        if !is_space_id(space_id) {
+            return Err(ApiError::not_found());
+        }
+        let universe = self.public_universe(universe_id, share_token).await?;
+        let history = self.repo.universe_membership_history(&universe).await?;
+        if !member_during(&history, space_id, from, Some(to)) {
+            return Err(ApiError::not_found());
+        }
+        self.member_space_grant(space_id, &universe).await
+    }
+
+    /// 凭组合令牌读成员空间的某个版本（快照 `?seq=`）：这个版本生效的时间段
+    /// `[at(seq), at(seq + 1))` 里该空间必须有某个时刻是组合成员。
+    pub async fn public_space_via_universe_for_seq(
+        &self,
+        space_id: &str,
+        universe_id: &str,
+        share_token: Option<&str>,
+        seq: u64,
+    ) -> Result<Grant, ApiError> {
+        if !is_space_id(space_id) {
+            return Err(ApiError::not_found());
+        }
+        let universe = self.public_universe(universe_id, share_token).await?;
+        let history = self.repo.universe_membership_history(&universe).await?;
+        if !history
+            .iter()
+            .any(|(_, members)| members.iter().any(|m| m == space_id))
+        {
+            return Err(ApiError::not_found());
+        }
+        let grant = self.member_space_grant(space_id, &universe).await?;
+        // 只用来读提交时间，不交给调用方。
+        let (start, end) = self
+            .repo
+            .commit_window(&grant, seq)
+            .await?
+            .ok_or_else(ApiError::not_found)?;
+        let end = end.map(|end| end.saturating_add_millis(-1));
+        if !member_during(&history, space_id, start, end) {
+            return Err(ApiError::not_found());
+        }
+        Ok(grant)
+    }
+
+    async fn member_space_grant(
+        &self,
+        space_id: &str,
+        universe: &UniverseGrant,
+    ) -> Result<Grant, ApiError> {
+        let policy = self
+            .repo
+            .space_policy(&Self::key(), space_id)
+            .await?
+            .ok_or_else(ApiError::not_found)?;
+        Ok(Grant {
+            space_id: space_id.to_owned(),
+            owner: policy.owner,
+            access: GrantAccess::Public,
+            public_basis: Some(match universe.public_basis {
+                Some(PublicBasis::PublicVisibility) if policy.visibility == Visibility::Public => {
+                    PublicBasis::PublicVisibility
+                }
+                _ => PublicBasis::ShareToken,
+            }),
+        })
+    }
+
     /// 公开读空间，同时返回授权信息（`/head` 把它放进进程内缓存）。规则同 [`Authorizer::public_space`]。
     pub async fn public_space_with_policy(
         &self,
@@ -480,6 +574,24 @@ impl Authorizer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn membership_periods_follow_revisions() {
+        let t = |s: i64| Timestamp::from_millis(s * 1000).unwrap();
+        let history = vec![
+            (t(10), vec!["a".to_owned()]),
+            (t(20), vec!["a".to_owned(), "b".to_owned()]),
+            (t(30), vec!["b".to_owned()]),
+        ];
+        // a 是 [10, 30) 的成员；b 是 [20, +∞) 的成员。
+        assert!(member_during(&history, "a", t(29), Some(t(29))));
+        assert!(!member_during(&history, "a", t(30), Some(t(40))));
+        assert!(!member_during(&history, "a", t(0), Some(t(9))));
+        assert!(member_during(&history, "a", t(0), Some(t(10))));
+        assert!(member_during(&history, "b", t(100), None));
+        assert!(!member_during(&history, "b", t(5), Some(t(19))));
+        assert!(!member_during(&history, "c", t(0), None));
+    }
 
     #[test]
     fn token_matching_ignores_revoked_and_malformed() {

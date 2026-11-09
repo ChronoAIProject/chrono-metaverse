@@ -14,6 +14,7 @@
 //! | `PUBLIC_BASE_URL` | 否 | 对外地址，默认 `http://localhost:8080` |
 //! | `METAVERSE_REQUIRE_PERMISSIONS` | 否 | 是否启用功能级权限（`true`/`false`），默认 `false` |
 //! | `UPLOAD_*`、`JOB_MAX_PENDING_PER_SPACE` | 否 | 上传大小、格式和任务数的上限，见 [`crate::ingest`] |
+//! | `PUBLIC_*`、`TRUSTED_CLIENT_IP_HEADER` | 否 | 公开接口的限流、并发、缓存和可信客户端地址头，见 [`crate::public::PublicConfig`] |
 
 use std::net::SocketAddr;
 
@@ -42,6 +43,8 @@ pub struct Config {
     pub require_permissions: bool,
     /// 上传、任务的上限（`UPLOAD_*`、`JOB_*`，见 `ingest` 模块）。
     pub ingest: crate::ingest::IngestConfig,
+    /// 公开接口的限流、并发和缓存（见 [`crate::public::PublicConfig`]）。
+    pub public: crate::public::PublicConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -139,7 +142,10 @@ impl Config {
             }
         };
         let ingest = crate::ingest::IngestConfig::from_lookup(&lookup)?;
+        let mut public = crate::public::PublicConfig::from_lookup(&lookup)?;
+        public.site_base_url = public_base_url.as_str().trim_end_matches('/').to_owned();
         Ok(Self {
+            public,
             bind,
             public_base_url,
             mongodb_uri,

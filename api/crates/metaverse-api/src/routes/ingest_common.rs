@@ -104,17 +104,19 @@ pub fn no_store(mut response: Response) -> Response {
     response
 }
 
-/// 公开读的缓存头：只有公开空间的内容才能被共享缓存，凭令牌的一律 `private`（设计 8.2）。
-pub fn public_cache(mut response: Response, grant_basis: Option<PublicBasis>, max_age: u32) -> Response {
-    let scope = match grant_basis {
-        Some(PublicBasis::PublicVisibility) => "public",
-        _ => "private",
+/// 公开读的缓存头（与 `public::headers::cache_control` 相同的规则，设计 8.2）：只有公开空间
+/// 的内容才能被共享缓存，凭令牌的一律 `private`，预览不缓存。
+pub fn public_cache(
+    mut response: Response,
+    grant_basis: Option<PublicBasis>,
+    max_age: u32,
+) -> Response {
+    let value = match grant_basis {
+        Some(PublicBasis::PublicVisibility) => format!("public, max-age={max_age}"),
+        Some(PublicBasis::ShareToken) => format!("private, max-age={max_age}"),
+        Some(PublicBasis::Preview) | None => crate::public::headers::NO_STORE.to_owned(),
     };
-    set_header(
-        &mut response,
-        header::CACHE_CONTROL,
-        &format!("{scope}, max-age={max_age}"),
-    );
+    set_header(&mut response, header::CACHE_CONTROL, &value);
     response
 }
 

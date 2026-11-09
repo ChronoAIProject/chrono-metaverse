@@ -1,0 +1,664 @@
+{
+  "cases": [
+    {
+      "input": {
+        "block": 2,
+        "box": [
+          0,
+          0,
+          0,
+          2,
+          2,
+          2
+        ],
+        "op": "fill"
+      },
+      "valid": true
+    },
+    {
+      "input": {
+        "block": "brick",
+        "box": [
+          0,
+          0,
+          0,
+          2,
+          2,
+          2
+        ],
+        "op": "fill"
+      },
+      "valid": true
+    },
+    {
+      "input": {
+        "block": 65535,
+        "box": [
+          0,
+          0,
+          0,
+          2,
+          2,
+          2
+        ],
+        "op": "fill"
+      },
+      "valid": true
+    },
+    {
+      "input": {
+        "block": 65536,
+        "box": [
+          0,
+          0,
+          0,
+          2,
+          2,
+          2
+        ],
+        "op": "fill"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "block": -1,
+        "box": [
+          0,
+          0,
+          0,
+          2,
+          2,
+          2
+        ],
+        "op": "fill"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "block": 2.5,
+        "box": [
+          0,
+          0,
+          0,
+          2,
+          2,
+          2
+        ],
+        "op": "fill"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "block": 2,
+        "box": [
+          0,
+          0,
+          0,
+          0,
+          2,
+          2
+        ],
+        "op": "fill"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "block": 2,
+        "box": [
+          0,
+          0,
+          0,
+          2,
+          2
+        ],
+        "op": "fill"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "block": 2,
+        "box": [
+          0,
+          0,
+          0,
+          1073741825,
+          2,
+          2
+        ],
+        "op": "fill"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "block": 2,
+        "box": [
+          0,
+          0,
+          0,
+          2,
+          2,
+          2
+        ],
+        "extra": 1,
+        "op": "fill"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "box": [
+          0,
+          0,
+          0,
+          2,
+          2,
+          2
+        ],
+        "op": "fill"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "op": "explode"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "block": 2,
+        "box": [
+          0,
+          0,
+          0,
+          2,
+          2,
+          2
+        ]
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "block": 2,
+        "box": [
+          0,
+          0,
+          0,
+          4,
+          4,
+          4
+        ],
+        "op": "hollowBox",
+        "thickness": 2
+      },
+      "valid": true
+    },
+    {
+      "input": {
+        "block": 2,
+        "box": [
+          0,
+          0,
+          0,
+          4,
+          4,
+          4
+        ],
+        "op": "hollowBox",
+        "thickness": null
+      },
+      "valid": true
+    },
+    {
+      "input": {
+        "block": 2,
+        "box": [
+          0,
+          0,
+          0,
+          4,
+          4,
+          4
+        ],
+        "op": "hollowBox",
+        "thickness": -1
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "box": [
+          0,
+          0,
+          0,
+          4,
+          4,
+          4
+        ],
+        "from": 2,
+        "op": "replace",
+        "to": "brick"
+      },
+      "valid": true
+    },
+    {
+      "input": {
+        "op": "copyRegion",
+        "source": [
+          0,
+          0,
+          0,
+          4,
+          4,
+          4
+        ],
+        "to": [
+          1,
+          2,
+          3
+        ]
+      },
+      "valid": true
+    },
+    {
+      "input": {
+        "op": "copyRegion",
+        "source": [
+          0,
+          0,
+          0,
+          4,
+          4,
+          4
+        ],
+        "to": [
+          1.5,
+          2,
+          3
+        ]
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "op": "copy_region",
+        "source": [
+          0,
+          0,
+          0,
+          4,
+          4,
+          4
+        ],
+        "to": [
+          1,
+          2,
+          3
+        ]
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "block": {
+          "color": [
+            1,
+            2,
+            3
+          ],
+          "kind": "solid",
+          "name": "brick"
+        },
+        "op": "addBlock"
+      },
+      "valid": true
+    },
+    {
+      "input": {
+        "block": {
+          "color": [
+            1,
+            2,
+            3
+          ],
+          "kind": "metal",
+          "name": "brick"
+        },
+        "op": "addBlock"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "block": {
+          "color": [
+            1,
+            2,
+            300
+          ],
+          "kind": "solid",
+          "name": "brick"
+        },
+        "op": "addBlock"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "block": {
+          "colour": [
+            1,
+            2,
+            3
+          ],
+          "kind": "solid",
+          "name": "brick"
+        },
+        "op": "addBlock"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "entityId": "x",
+        "op": "removeEntity"
+      },
+      "valid": true
+    },
+    {
+      "input": {
+        "entity_id": "x",
+        "op": "removeEntity"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "entity": {
+          "bounds": {
+            "max": [
+              1,
+              1,
+              1
+            ],
+            "min": [
+              0,
+              0,
+              0
+            ]
+          },
+          "entityId": "a",
+          "kind": "object",
+          "layer": "ext",
+          "shape": {
+            "size": [
+              1,
+              1,
+              1
+            ],
+            "type": "box"
+          }
+        },
+        "op": "placeEntity"
+      },
+      "valid": true
+    },
+    {
+      "input": {
+        "entity": {
+          "bounds": {
+            "max": [
+              1,
+              1,
+              1
+            ],
+            "min": [
+              0,
+              0,
+              0
+            ]
+          },
+          "color": [
+            1,
+            2,
+            3
+          ],
+          "entityId": "a",
+          "kind": "object",
+          "layer": "ext",
+          "shape": {
+            "size": [
+              1,
+              1,
+              1
+            ],
+            "type": "box"
+          }
+        },
+        "op": "placeEntity"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "entity": {
+          "bounds": {
+            "max": [
+              1,
+              1,
+              1
+            ],
+            "min": [
+              0,
+              0,
+              0
+            ]
+          },
+          "entityId": "a",
+          "kind": "object",
+          "layer": "ext",
+          "shape": {
+            "colour": [
+              1,
+              2,
+              3
+            ],
+            "size": [
+              1,
+              1,
+              1
+            ],
+            "type": "box"
+          }
+        },
+        "op": "placeEntity"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "entity": {
+          "entityId": "a",
+          "kind": "object",
+          "layer": "ext",
+          "shape": {
+            "size": [
+              1,
+              1,
+              1
+            ],
+            "type": "box"
+          }
+        },
+        "op": "placeEntity"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "entity": {
+          "bounds": {
+            "max": [
+              1,
+              1,
+              1
+            ],
+            "min": [
+              0,
+              0,
+              0
+            ]
+          },
+          "entityId": "a",
+          "kind": "furniture",
+          "layer": "ext",
+          "shape": {
+            "size": [
+              1,
+              1,
+              1
+            ],
+            "type": "box"
+          }
+        },
+        "op": "placeEntity"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "anchor": {
+          "anchorId": "t1",
+          "box": [
+            0,
+            0,
+            0,
+            1,
+            1,
+            1
+          ],
+          "kind": "table",
+          "visibility": "public"
+        },
+        "op": "createAnchor"
+      },
+      "valid": true
+    },
+    {
+      "input": {
+        "anchor": {
+          "anchorId": "t1",
+          "box": [
+            0,
+            0,
+            0,
+            1,
+            1,
+            1
+          ],
+          "kind": "bar",
+          "visibility": "public"
+        },
+        "op": "createAnchor"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "anchor": {
+          "anchorId": "t1",
+          "box": [
+            0,
+            0,
+            0,
+            1,
+            1,
+            1
+          ],
+          "kind": "table"
+        },
+        "op": "createAnchor"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "anchorId": "t1",
+        "op": "moveAnchor",
+        "position": [
+          1,
+          0,
+          1
+        ]
+      },
+      "valid": true
+    },
+    {
+      "input": {
+        "anchorId": "t1",
+        "box": [
+          0,
+          0,
+          0,
+          1,
+          1,
+          1
+        ],
+        "op": "moveAnchor",
+        "position": null
+      },
+      "valid": true
+    },
+    {
+      "input": {
+        "anchorId": "t1",
+        "op": "moveAnchor",
+        "position": [
+          1,
+          0
+        ]
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "anchorId": "t1",
+        "op": "updateAnchor",
+        "visibility": "secret"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "anchorId": "t1",
+        "kind": "counter",
+        "label": "1 号桌",
+        "op": "updateAnchor"
+      },
+      "valid": true
+    },
+    {
+      "input": {
+        "anchorId": "t1",
+        "op": "removeAnchor"
+      },
+      "valid": true
+    },
+    {
+      "input": {
+        "op": "removeAnchor"
+      },
+      "valid": false
+    }
+  ],
+  "description": "结构检查：字段名、类型、未知字段、方块编号范围、盒子是否合法。valid = false 的输入必须在解析阶段被拒绝",
+  "kind": "ops-parse",
+  "name": "parse"
+}

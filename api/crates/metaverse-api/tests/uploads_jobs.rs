@@ -459,7 +459,7 @@ async fn scan_and_model_jobs() {
         .await;
     assert_eq!(reply.status, StatusCode::NOT_FOUND);
     assert_eq!(reply.body["code"], "scan_not_found");
-    app.insert_commit("front-hall", org_owner(), 1, &ago(60), Some(&scan)).await;
+    app.insert_commit("front-hall", org_owner(), &ago(0), Some(&scan)).await;
     let reply = app
         .call(who(ORG), Method::POST, &format!("{base}/scans/{scan}/voxelize"), Some(json!({"style": "default"})))
         .await;

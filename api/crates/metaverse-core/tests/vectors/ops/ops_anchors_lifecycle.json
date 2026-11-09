@@ -1,0 +1,281 @@
+{
+  "base": {
+    "anchors": [
+      {
+        "anchorId": "_space",
+        "kind": "space",
+        "visibility": "public"
+      },
+      {
+        "anchorId": "cam-1",
+        "kind": "camera",
+        "position": [
+          4,
+          2.5,
+          4
+        ],
+        "visibility": "internal"
+      }
+    ],
+    "entities": [],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ]
+  },
+  "description": "锚点：新建（盒子 / 点）、移动、改标签和可见级别、删除；_space 锚点的影响范围是整个空间（实体区路径允许）",
+  "expect": {
+    "anchors": [
+      {
+        "hash": "e4becee112343ac26adbd7c2b56e2a97f9c1d5cfef0293557556a536b72c213a",
+        "id": "_space"
+      },
+      {
+        "hash": "d1eed21b7e0863509c7f77cc9c29f7c0337f61d7720d3e30480d2dd1baf735c7",
+        "id": "door-1"
+      },
+      {
+        "hash": "2c790fe2a7241a2867a3b15790f7d38ade2f6660e1af03d840e198bd96d04afc",
+        "id": "t1"
+      }
+    ],
+    "baseChunks": [],
+    "chunkChanges": [],
+    "chunks": [],
+    "entities": [],
+    "footprints": [
+      {
+        "cells": [
+          [
+            10,
+            0,
+            10,
+            26,
+            15,
+            20
+          ]
+        ],
+        "spaceWide": false
+      },
+      {
+        "cells": [
+          [
+            2,
+            0,
+            49,
+            3,
+            1,
+            50
+          ]
+        ],
+        "spaceWide": false
+      },
+      {
+        "cells": [
+          [
+            10,
+            0,
+            10,
+            26,
+            15,
+            20
+          ],
+          [
+            30,
+            15,
+            20,
+            31,
+            16,
+            21
+          ]
+        ],
+        "spaceWide": false
+      },
+      {
+        "cells": [
+          [
+            2,
+            0,
+            49,
+            3,
+            1,
+            50
+          ]
+        ],
+        "spaceWide": false
+      },
+      {
+        "cells": [],
+        "spaceWide": true
+      },
+      {
+        "cells": [
+          [
+            80,
+            50,
+            80,
+            81,
+            51,
+            81
+          ]
+        ],
+        "spaceWide": false
+      }
+    ],
+    "ok": true,
+    "probes": [],
+    "provisionalBlocks": [],
+    "touched": {
+      "anchors": [
+        "_space",
+        "cam-1",
+        "door-1",
+        "t1"
+      ],
+      "chunks": [],
+      "entities": [],
+      "palette": false
+    }
+  },
+  "kind": "ops",
+  "name": "anchors-lifecycle",
+  "ops": [
+    {
+      "anchor": {
+        "anchorId": "t1",
+        "box": [
+          10,
+          0,
+          10,
+          26,
+          15,
+          20
+        ],
+        "kind": "table",
+        "label": "1 号桌",
+        "visibility": "public"
+      },
+      "op": "createAnchor"
+    },
+    {
+      "anchor": {
+        "anchorId": "door-1",
+        "kind": "door",
+        "position": [
+          0.12,
+          0,
+          2.49
+        ],
+        "visibility": "internal"
+      },
+      "op": "createAnchor"
+    },
+    {
+      "anchorId": "t1",
+      "op": "moveAnchor",
+      "position": [
+        1.5,
+        0.75,
+        1.0
+      ]
+    },
+    {
+      "anchorId": "door-1",
+      "label": "正门",
+      "op": "updateAnchor",
+      "visibility": "public"
+    },
+    {
+      "anchorId": "_space",
+      "label": "营业中的店",
+      "op": "updateAnchor"
+    },
+    {
+      "anchorId": "cam-1",
+      "op": "removeAnchor"
+    }
+  ],
+  "probeCells": [],
+  "scope": "physical",
+  "spaceId": "vec-space"
+}
