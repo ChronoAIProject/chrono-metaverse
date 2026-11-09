@@ -124,7 +124,7 @@ curl -s http://127.0.0.1:8080/api/v1/spaces/front-hall \
 
 ```bash
 infra/dev/down.sh                                   # 先停掉自己起的全套（验收要自己起一套）
-node infra/dev/e2e.mjs --scan <前厅扫描.drc|.glb|.obj> [--voxelize] [--keep]
+node infra/dev/e2e.mjs --scan <前厅扫描.zip|.drc|.glb|.obj> [--voxelize] [--keep]
 ```
 
 | 步骤 | 做法 | 断言 |
@@ -141,7 +141,7 @@ node infra/dev/e2e.mjs --scan <前厅扫描.drc|.glb|.obj> [--voxelize] [--keep]
 
 - 端口都是临时挑的空闲端口，库名 `metaverse_e2e_<随机后缀>`；结束时运行 `down.sh` 并删除这个库，`--keep` 保留现场；
 - 结果、截图（`view-*.png`、`timeline-before-rebuild.png`、`live-event.png`、`plot-build-extended.png`，失败时 `failure.png`）、工作区和 `up.sh` 的输出在 `infra/dev/.run/e2e-<后缀>/`；各服务的日志在 `infra/dev/.run/*.log`；
-- 扫描文件不进版本库，用 `--scan` 或 `METAVERSE_E2E_SCAN` 指定；只接受 `metaverse scan` 支持的 glb、drc、obj；
+- 扫描文件不进版本库，用 `--scan` 或 `METAVERSE_E2E_SCAN` 指定；只接受 `metaverse scan` 支持的 glb、drc、obj、zip（带贴图的扫描把网格和贴图打包成 zip，例如 Scaniverse 导出的 drc + jpg）；
 - 浏览器：`METAVERSE_E2E_BROWSER_PATH`，没有时用 `/opt/pw-browsers/chromium`，再没有交给网站依赖里的 Playwright 自己找；处理任务的等待上限 `METAVERSE_E2E_JOB_TIMEOUT`（秒，默认 1800）；
 - 退出码：0 全部通过，1 有步骤失败（后面的步骤标"未执行"），2 参数或环境不对（没开始验收）。
 

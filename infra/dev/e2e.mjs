@@ -15,7 +15,7 @@
 // 用法：
 //   node infra/dev/e2e.mjs --scan <扫描文件> [--voxelize] [--keep]
 //
-// - 扫描文件不进版本库：用 --scan 或环境变量 METAVERSE_E2E_SCAN 指定（glb、drc、obj，命令行
+// - 扫描文件不进版本库：用 --scan 或环境变量 METAVERSE_E2E_SCAN 指定（glb、drc、obj、zip，命令行
 //   metaverse scan 接受的格式）；
 // - 每次用随机库名和空闲端口，结束时停掉全套（down.sh）并删除这个库；--keep 保留现场排查；
 // - 截图、工作区、日志和结果在 infra/dev/.run/e2e-<后缀>/（不进版本库）；
@@ -52,7 +52,7 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '..', '..');
 const run = join(here, '.run');
-const SCAN_FORMATS = ['.glb', '.drc', '.obj'];
+const SCAN_FORMATS = ['.glb', '.drc', '.obj', '.zip'];
 const ORG = 'chronoai';
 const PLOT = 'p1';
 
@@ -62,7 +62,7 @@ const PLOT = 'p1';
 
 function usage(message, code = 2) {
   if (message) console.error(message);
-  console.error('用法：node infra/dev/e2e.mjs --scan <扫描文件（glb/drc/obj）> [--voxelize] [--keep]');
+  console.error('用法：node infra/dev/e2e.mjs --scan <扫描文件（glb/drc/obj/zip）> [--voxelize] [--keep]');
   process.exit(code);
 }
 
