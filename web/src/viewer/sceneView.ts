@@ -476,18 +476,52 @@ export class SceneView {
     return texture;
   }
 
-  /** 形状材质（按材质和"玻璃"共用一份）。 */
+  /**
+   * 形状材质（按材质和"玻璃"共用一份）。
+   *
+   * - `opacity < 1`：半透明，不写深度、双面；three.js 把透明的材质组放到不透明物体之后、
+   *   按远近排序再画，所以玻璃后面的东西能透出来；
+   * - `unlit`：不打光的 MeshBasicMaterial，按颜色或贴图原样显示（不做色调映射），用于屏幕、灯箱；
+   * - 旧数据里的 `props.glass === true` 仍按原来的玻璃外观画。
+   */
   private shapeMaterial(material: Material, glass: boolean): THREE.Material {
     const key = `${materialKey(material)}|${glass ? 'g' : 'o'}`;
     const cached = this.materialCache.get(key);
     if (cached !== undefined) return cached;
+    const opacity = glass ? 0.32 : Math.min(1, Math.max(0, material.opacity ?? 1));
+    const transparent = opacity < 1;
+    const side = transparent ? THREE.DoubleSide : THREE.FrontSide;
+    if (material.unlit === true && !glass) {
+      const basic = new THREE.MeshBasicMaterial({
+        transparent,
+        opacity,
+        depthWrite: !transparent,
+        side,
+        clippingPlanes: this.clipping,
+        toneMapped: false,
+      });
+      if (isTextureMaterial(material)) {
+        basic.color = material.tint ? srgb(material.tint) : new THREE.Color(0xffffff);
+        this.texture(material.texture)
+          ?.then((map) => {
+            if (this.disposed) return;
+            basic.map = map;
+            basic.needsUpdate = true;
+          })
+          .catch(() => undefined);
+      } else {
+        basic.color = srgb(material.color);
+      }
+      this.materialCache.set(key, basic);
+      return basic;
+    }
     const base = new THREE.MeshStandardMaterial({
-      roughness: glass ? 0.1 : 0.82,
+      roughness: transparent ? 0.1 : 0.82,
       metalness: 0.02,
-      transparent: glass,
-      opacity: glass ? 0.32 : 1,
-      depthWrite: !glass,
-      side: glass ? THREE.DoubleSide : THREE.FrontSide,
+      transparent,
+      opacity,
+      depthWrite: !transparent,
+      side,
       clippingPlanes: this.clipping,
     });
     if (isTextureMaterial(material)) {
@@ -559,11 +593,13 @@ export class SceneView {
               if (doubleSided) material.side = THREE.DoubleSide;
               material.clippingPlanes = this.clipping;
               // 受光照的贴图材质（不是 unlit 的扫描）同样只让一部分受光照。
+              // 原来的颜色记下来：物件要求不打光（unlit）时按原色显示，不用调暗后的颜色。
               if (
                 material instanceof THREE.MeshStandardMaterial &&
                 material.map !== null &&
                 material.emissiveMap === null
               ) {
+                material.userData.baseColor = material.color.clone();
                 applyTexturedLook(material, material.color.clone(), material.map);
               }
             }
@@ -587,14 +623,63 @@ export class SceneView {
     return model;
   }
 
-  /** 共用的模型实例：几何体和材质属于缓存，释放时跳过。 */
-  private sharedClone(model: THREE.Object3D): THREE.Object3D {
+  /**
+   * 共用的模型实例：几何体和材质属于缓存，释放时跳过。
+   * 物件给了 `material`（tint / opacity / unlit）时，换成按这组外观派生的材质（也进缓存）。
+   */
+  private sharedClone(model: THREE.Object3D, look?: EntityBody['material']): THREE.Object3D {
     const clone = model.clone(true);
+    const derive =
+      look !== undefined &&
+      (look.tint !== undefined || (look.opacity ?? 1) < 1 || look.unlit === true);
     clone.traverse((object) => {
       object.userData.sharedGeometry = true;
       object.userData.sharedMaterial = true;
+      const mesh = object as THREE.Mesh;
+      if (!derive || !mesh.isMesh) return;
+      mesh.material = Array.isArray(mesh.material)
+        ? mesh.material.map((m) => this.lookMaterial(m, look))
+        : this.lookMaterial(mesh.material, look);
     });
     return clone;
+  }
+
+  /** 模型材质按物件的外观派生：颜色和自发光乘上 tint，opacity 叠到原来的透明度上，unlit 换成不打光的材质。 */
+  private lookMaterial(source: THREE.Material, look: NonNullable<EntityBody['material']>) {
+    const tint = look.tint ? srgb(look.tint) : null;
+    const opacity = Math.min(1, Math.max(0, look.opacity ?? 1)) * source.opacity;
+    const key = `look|${source.uuid}|${tint?.getHexString() ?? ''}|${opacity}|${look.unlit === true}`;
+    const cached = this.materialCache.get(key);
+    if (cached !== undefined) return cached;
+    const transparent = source.transparent || opacity < 1;
+    const standard = source as THREE.MeshStandardMaterial;
+    let material: THREE.Material;
+    if (look.unlit === true) {
+      const base = source.userData.baseColor as THREE.Color | undefined;
+      const basic = new THREE.MeshBasicMaterial({
+        map: standard.map ?? null,
+        color: (base ?? standard.color)?.clone() ?? new THREE.Color(0xffffff),
+        side: source.side,
+        transparent,
+        opacity,
+        depthWrite: !transparent,
+        clippingPlanes: this.clipping,
+        toneMapped: false,
+      });
+      if (tint) basic.color.multiply(tint);
+      material = basic;
+    } else {
+      const copy = source.clone() as THREE.MeshStandardMaterial;
+      if (tint && copy.color instanceof THREE.Color) copy.color.multiply(tint);
+      if (tint && copy.emissive instanceof THREE.Color) copy.emissive.multiply(tint);
+      copy.transparent = transparent;
+      copy.opacity = opacity;
+      if (opacity < 1) copy.depthWrite = false;
+      copy.clippingPlanes = this.clipping;
+      material = copy;
+    }
+    this.materialCache.set(key, material);
+    return material;
   }
 
   // ---------------------------------------------------------------------------
@@ -786,7 +871,9 @@ export class SceneView {
         this.pickables.push(holder);
         this.model(entity.assetHash)
           ?.then((model) => {
-            if (!this.disposed && holder.parent !== null) holder.add(this.sharedClone(model));
+            if (!this.disposed && holder.parent !== null) {
+              holder.add(this.sharedClone(model, entity.material));
+            }
           })
           .catch(() => warnings.push(`${entity.entityId}：模型下载失败`));
       }

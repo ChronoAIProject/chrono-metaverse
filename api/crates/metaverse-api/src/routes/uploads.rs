@@ -466,10 +466,10 @@ async fn create(
     path = "/api/v1/spaces/{space_id}/uploads/{purpose}",
     operation_id = "create_upload",
     tag = "uploads",
-    description = "创建分片上传（实体区路径）。声明总大小、整体 SHA-256、分片大小（256KiB 的整数倍，≤32MiB）和格式；用途写在路径里（scan、model、texture、ops、script）。本空间已经拥有同一用途的这份资源时直接复用（status=done、reused=true），否则返回上传编号（两种情况都是 201；别的空间有同一份内容也要完整上传），之后按片号（从 0 开始）PUT 原始字节，最后调用 complete。大小上限：扫描 1GiB、物件模型 50MiB、贴图 50MiB、ops 64MiB（接口服务应用操作时整份读入，不能调大）、脚本 4MiB（可配置）；超过上限或空间存储上限返回 413，进行中的上传太多返回 429。大文件请用命令行，不要经 AI 工具传二进制。",
+    description = "创建分片上传（实体区路径）。声明总大小、整体 SHA-256、分片大小（256KiB 的整数倍，≤32MiB）和格式；用途写在路径里（scan、model、texture、ops、script、authored；authored 是 AI 物件集 JSON，交给 import_scan、rebuild_scan 的 authoredAsset）。本空间已经拥有同一用途的这份资源时直接复用（status=done、reused=true），否则返回上传编号（两种情况都是 201；别的空间有同一份内容也要完整上传），之后按片号（从 0 开始）PUT 原始字节，最后调用 complete。大小上限：扫描 1GiB、物件模型 50MiB、贴图 50MiB、ops 64MiB（接口服务应用操作时整份读入，不能调大）、脚本 4MiB（可配置）、AI 物件集 4MiB（固定）；超过上限或空间存储上限返回 413，进行中的上传太多返回 429。大文件请用命令行，不要经 AI 工具传二进制。",
     params(
         ("space_id" = String, Path, description = "空间编号", example = "front-hall"),
-        ("purpose" = String, Path, description = "用途：scan | model | texture | ops | script", example = "scan"),
+        ("purpose" = String, Path, description = "用途：scan | model | texture | ops | script | authored（AI 物件集，JSON，≤ 4MB，只经实体区路径）", example = "scan"),
     ),
     request_body = CreateUploadRequest,
     security(("nyxid_identity" = [])),

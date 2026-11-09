@@ -41,6 +41,8 @@ pub enum ScopeError {
     SourceInBody,
     #[error("地块路径下不能上传扫描")]
     ScanOutsidePhysical,
+    #[error("地块路径下不能上传 AI 物件集（它写重建层，只经实体区路径导入）")]
+    AuthoredOutsidePhysical,
     #[error("草稿属于 {draft}，不能经 {path} 路径操作")]
     DraftScopeMismatch { draft: String, path: String },
 }
@@ -165,13 +167,16 @@ pub enum UploadPurpose {
     Texture,
     Ops,
     Script,
+    /// AI 物件集（JSON，设计 6.3）：交给 scan_import / rebuild 写进重建层。
+    Authored,
 }
 
-/// 扫描只能经实体区路径上传。
+/// 扫描和 AI 物件集只能经实体区路径上传。
 pub fn check_upload_purpose(scope: &PathScope, purpose: UploadPurpose) -> Result<(), ScopeError> {
     match (scope, purpose) {
         (PathScope::Physical, _) => Ok(()),
         (PathScope::Plot(_), UploadPurpose::Scan) => Err(ScopeError::ScanOutsidePhysical),
+        (PathScope::Plot(_), UploadPurpose::Authored) => Err(ScopeError::AuthoredOutsidePhysical),
         (PathScope::Plot(_), _) => Ok(()),
         (PathScope::Source(_), _) => Err(ScopeError::NoGeometry),
     }
@@ -271,6 +276,8 @@ mod tests {
         assert!(check_upload_purpose(&PathScope::Physical, UploadPurpose::Scan).is_ok());
         assert!(check_upload_purpose(&plot, UploadPurpose::Scan).is_err());
         assert!(check_upload_purpose(&plot, UploadPurpose::Model).is_ok());
+        assert!(check_upload_purpose(&PathScope::Physical, UploadPurpose::Authored).is_ok());
+        assert!(check_upload_purpose(&plot, UploadPurpose::Authored).is_err());
         assert!(check_draft_scope(&plot, &plot).is_ok());
         assert!(check_draft_scope(&plot, &PathScope::Physical).is_err());
     }

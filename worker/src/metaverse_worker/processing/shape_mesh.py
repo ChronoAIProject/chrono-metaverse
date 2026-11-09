@@ -1,5 +1,5 @@
 """形状词表（SHAPES 2）的网格生成，逐条对照网站的 `web/src/core/shapes/`（box.ts、extrude.ts、lathe.ts、
-sweep.ts、loft.ts、outline.ts、uv.ts、build.ts、transform.ts）。
+sweep.ts、loft.ts、solid.ts、outline.ts、uv.ts、build.ts、transform.ts）。
 
 用途：重建模块算拟合偏差（模型表面到扫描的距离）、按网站同样的 UV 投影烘焙贴图、导出查看用的 glb。
 所以分段数、硬边判断、UV 投影都和网站一致：贴图在网站上的位置与这里烘焙时的位置相同。
@@ -18,6 +18,9 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+from scipy.spatial import ConvexHull
+
+from ..shapes import ShapeError, plate_frame, plate_projection_axes, validate_shape
 
 EPS = 1e-9
 HARD_ANGLE_DEG = 30.0
@@ -981,6 +984,92 @@ def loft_mesh(shape) -> Mesh:
     return drop_degenerate(b.build())
 
 
+# ---------------------------------------------------------------------------- 板和凸包
+
+
+def _solid_problem(shape: Mapping[str, Any]) -> str | None:
+    """板和凸包不合法的原因（与接口服务同一套判定）；合法时返回 None。"""
+    try:
+        validate_shape({"type": shape.get("type"), "points": shape.get("points"), **_solid_extra(shape)})
+    except ShapeError as error:
+        return error.message
+    return None
+
+
+def _solid_extra(shape: Mapping[str, Any]) -> dict[str, Any]:
+    return {"thickness": shape.get("thickness")} if shape.get("type") == "plate" else {}
+
+
+def plate_mesh(shape: Mapping[str, Any]) -> Mesh:
+    """与网站 solid.ts 相同：正面是给出的多边形（法向 n），背面沿 −n 平移厚度，耳切法三角化（保留共线的点），
+    每条边一个平的侧面，三角形数 4n − 4。自然贴图坐标（米）：正面和背面用面内坐标（u 沿第 0 点到第 1 点、
+    v = n × u），侧面 u 是沿轮廓累计的边长、v 从背面 0 到正面 thickness。不合法时返回空网格。"""
+    if _solid_problem(shape) is not None:
+        return empty_mesh()
+    points = [np.asarray(p, float) for p in shape["points"]]
+    _, normal, _ = plate_frame(shape["points"])
+    n = np.asarray(normal)
+    t = float(shape["thickness"])
+    back = [p - t * n for p in points]
+    first = points[1] - points[0]
+    u = _norm(first - n * float(first @ n), (1.0, 0.0, 0.0))
+    v = np.cross(n, u)
+    ia, ib = plate_projection_axes(normal)
+    triangles = triangulate([(p[ia], p[ib]) for p in points])
+    b = _Builder()
+    top = [b.vertex(p, n, ((p - points[0]) @ u, (p - points[0]) @ v)) for p in points]
+    bottom = [b.vertex(p, -n, ((p - back[0]) @ u, (p - back[0]) @ v)) for p in back]
+    for i0, i1, i2 in triangles:
+        b.oriented_tri(top[i0], top[i1], top[i2])
+        b.oriented_tri(bottom[i0], bottom[i1], bottom[i2])
+    along = 0.0
+    count = len(points)
+    for i in range(count):
+        j = (i + 1) % count
+        edge = points[j] - points[i]
+        out = _norm(np.cross(edge, n), (1.0, 0.0, 0.0))
+        step = float(np.linalg.norm(edge))
+        ids = [
+            b.vertex(points[i], out, (along, t)),
+            b.vertex(points[j], out, (along + step, t)),
+            b.vertex(back[j], out, (along + step, 0.0)),
+            b.vertex(back[i], out, (along, 0.0)),
+        ]
+        b.oriented_quad(*ids)
+        along += step
+    return b.build()
+
+
+def _face_uv(p, normal) -> tuple[float, float]:
+    """按面法向的主轴投影（米），轴的选法与 \"uv\": \"box\" 相同。"""
+    x, y, z = (abs(float(c)) for c in normal)
+    if x >= y and x >= z:
+        return float(p[2]), float(p[1])
+    if y >= z:
+        return float(p[0]), float(p[2])
+    return float(p[0]), float(p[1])
+
+
+def hull_mesh(shape: Mapping[str, Any]) -> Mesh:
+    """凸包（scipy.spatial.ConvexHull，即 Qhull，三角化输出）：每个面平着色、朝外（按全部点的平均判断，
+    凸包里它一定在内部）；一般位置下三角形数 2V − 4。不合法时返回空网格。"""
+    if _solid_problem(shape) is not None:
+        return empty_mesh()
+    pts = np.asarray(shape["points"], float)
+    center = pts.mean(axis=0)
+    b = _Builder()
+    for simplex in ConvexHull(pts).simplices:
+        a, c1, c2 = pts[simplex[0]], pts[simplex[1]], pts[simplex[2]]
+        forward = np.cross(c1 - a, c2 - a)
+        if float(forward @ (a - center)) < 0:
+            c1, c2 = c2, c1
+            forward = -forward
+        unit = _norm(forward, (0.0, 1.0, 0.0))
+        ids = [b.vertex(p, unit, _face_uv(p, unit)) for p in (a, c1, c2)]
+        b.tri(*ids)
+    return b.build()
+
+
 # ---------------------------------------------------------------------------- UV、变换、组合
 
 
@@ -1056,15 +1145,22 @@ def primitive_mesh(shape: Mapping[str, Any]) -> Mesh | None:
         "lathe": lathe_mesh,
         "sweep": sweep_mesh,
         "loft": loft_mesh,
+        "plate": plate_mesh,
+        "hull": hull_mesh,
     }.get(kind)
     return fn(shape) if fn is not None else None
 
 
 def material_key(material: Mapping[str, Any]) -> str:
+    """相同材质（含 opacity、unlit）的块合并成一个网格；没有这两项时与旧的键相同。"""
+    opacity = material.get("opacity")
+    look = (f":o{opacity}" if opacity is not None and opacity != 1 else "") + (
+        ":u" if material.get("unlit") is True else ""
+    )
     if material.get("texture") is not None:
         tint = material.get("tint")
-        return f"t:{material['texture']}:{','.join(str(v) for v in tint) if tint else ''}"
-    return "c:" + ",".join(str(v) for v in material["color"])
+        return f"t:{material['texture']}:{','.join(str(v) for v in tint) if tint else ''}{look}"
+    return "c:" + ",".join(str(v) for v in material["color"]) + look
 
 
 @dataclass
@@ -1097,15 +1193,22 @@ def _assign(parts: list[Part], material: Mapping[str, Any]) -> list[Part]:
     return out
 
 
+def _look(material: Mapping[str, Any] | None) -> dict[str, Any]:
+    return {k: material[k] for k in ("opacity", "unlit") if material and material.get(k) is not None}
+
+
 def _override(parts: list[Part], material: Mapping[str, Any]) -> list[Part]:
+    """实例的材质覆盖模板：颜色部件换成实例的颜色，贴图部件用实例颜色做 tint；实例带了 opacity / unlit 时
+    一并覆盖，没带的保留模板部件自己的（与网站 build.ts 相同）。"""
     if material.get("texture") is not None:
         return _assign([Part(p.mesh, None, p.path) for p in parts], material)
+    look = _look(material)
     out = []
     for p in parts:
         if p.material is not None and p.material.get("texture") is not None:
-            out.append(Part(p.mesh, {**p.material, "tint": list(material["color"])}, p.path))
+            out.append(Part(p.mesh, {**p.material, "tint": list(material["color"]), **look}, p.path))
         else:
-            out.append(Part(p.mesh, dict(material), p.path))
+            out.append(Part(p.mesh, {"color": list(material["color"]), **_look(p.material), **look}, p.path))
     return out
 
 

@@ -192,6 +192,11 @@ describe('metaverse init', () => {
     const skill = readFileSync(join(root, '.claude/skills/metaverse-builder/SKILL.md'), 'utf8');
     expect(skill).toBe(readFileSync(join(SDK_ROOT, 'skills/metaverse-builder/SKILL.md'), 'utf8'));
     expect(skill).toContain('GRID_UNIT = 0.05');
+    const recon = readFileSync(join(root, '.claude/skills/metaverse-reconstruct/SKILL.md'), 'utf8');
+    expect(recon).toBe(
+      readFileSync(join(SDK_ROOT, 'skills/metaverse-reconstruct/SKILL.md'), 'utf8'),
+    );
+    expect(recon).toContain('metaverse-recon');
     expect(readFileSync(join(root, 'build/main.ts'), 'utf8')).toContain(
       'export default function build',
     );

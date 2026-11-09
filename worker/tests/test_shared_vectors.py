@@ -15,6 +15,7 @@ import pytest
 from metaverse_worker import chunk as ch
 from metaverse_worker import shapes as sh
 from metaverse_worker.canonical import CanonicalError, canonicalize_text
+from metaverse_worker.processing import shape_mesh as sm
 from metaverse_worker.records import record_hash
 
 VECTORS = Path(
@@ -81,3 +82,26 @@ def test_shape_vectors(vector):
     tol = vector.get("tolerance", 1e-9)
     assert b["min"] == pytest.approx(vector["bounds"]["min"], abs=tol)
     assert b["max"] == pytest.approx(vector["bounds"]["max"], abs=tol)
+    if "triangles" not in vector:
+        return
+    # 网格（与网站同样的生成方式）：三角形数按向量；局部网格的包围盒按变换的 8 个角点取包围盒，与向量相同。
+    local = {k: v for k, v in vector["shape"].items() if k != "transform"}
+    mesh = sm.shape_mesh(local, templates)
+    assert mesh.triangle_count == vector["triangles"]
+    lo, hi = mesh.bounds()
+    got = sh.transform_bounds(vector["shape"].get("transform"), {"min": list(lo), "max": list(hi)})
+    assert got["min"] == pytest.approx(vector["bounds"]["min"], abs=1e-9)
+    assert got["max"] == pytest.approx(vector["bounds"]["max"], abs=1e-9)
+    # 三角形朝外：几何法线与顶点法线同向。
+    tri = mesh.positions[mesh.indices]
+    face = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+    assert (np.einsum("ij,ij->i", face, mesh.normals[mesh.indices[:, 0]]) > 0).all()
+
+
+def test_triangle_vectors_present():
+    if not VECTORS.is_dir():
+        pytest.skip(f"没有测试向量目录 {VECTORS}")
+    counted = [
+        f.stem for f in VECTORS.glob("shape_*.json") if "triangles" in json.loads(f.read_text("utf-8"))
+    ]
+    assert any("plate" in name for name in counted) and any("hull" in name for name in counted)

@@ -26,6 +26,13 @@ OWNER = {"kind": "person", "id": "alice"}
 ACTOR = {"sub": "alice", "nyxServiceId": "dev-service"}
 
 
+@pytest.fixture(autouse=True)
+def _recon_cache(tmp_path_factory, monkeypatch):
+    """重建工作台的缓存（模型库索引、下载的模型）放进临时目录：不碰本机的 ~/.cache/metaverse-recon，
+    也不会在本机缓存里找到别的模型旁注。"""
+    monkeypatch.setenv("METAVERSE_RECON_CACHE", str(tmp_path_factory.mktemp("recon-cache")))
+
+
 def png_bytes(texture: np.ndarray) -> bytes:
     buf = io.BytesIO()
     Image.fromarray(texture).save(buf, format="PNG")

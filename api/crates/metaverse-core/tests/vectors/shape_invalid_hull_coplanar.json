@@ -1,0 +1,39 @@
+{
+  "description": "hull：点全部共面（容差 1 毫米）",
+  "errorMessage": "$.points: 点全部共面（容差 1 毫米）",
+  "errorPath": "$.points",
+  "kind": "shape",
+  "name": "invalid-hull-coplanar",
+  "shape": {
+    "points": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        1
+      ],
+      [
+        0,
+        0,
+        1
+      ],
+      [
+        0.5,
+        0.0005,
+        0.5
+      ]
+    ],
+    "type": "hull"
+  },
+  "templates": {},
+  "valid": false
+}

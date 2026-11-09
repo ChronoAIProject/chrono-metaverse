@@ -7,8 +7,10 @@ import { isObjectId } from './ids.js';
  *
  * 校验与服务端一致：拼错或多余的字段、类型不对、取值超出范围一律拒绝。包围盒规则见
  * Rust 模块文档：先求局部包围盒（与分段数无关，圆角、倒角、smooth 忽略，lathe 一律按整圈，
- * sweep 向各方向扩出截面外接半径，轮廓圆弧算上坐标轴方向的极值点），再用 transform
- * 变换 8 个角点取包围盒；变换顺序 缩放 → 翻滚 → 俯仰 → 偏航 → 平移。
+ * sweep 向各方向扩出截面外接半径，轮廓圆弧算上坐标轴方向的极值点；plate 取各点和沿 −法向
+ * 平移厚度后的点，hull 取全部点），再用 transform 变换 8 个角点取包围盒；变换顺序
+ * 缩放 → 翻滚 → 俯仰 → 偏航 → 平移。板的 Newell 法向、平面度、简单多边形检查和凸包的退化判定
+ * 与 Rust 用同样的公式和比较顺序。
  */
 
 export type Vec2 = readonly [number, number];
@@ -27,12 +29,20 @@ export interface Transform {
 
 export type UvMode = 'box' | 'planar' | 'cylindrical' | 'mesh';
 
-export interface ColorMaterial {
+/** 两种材质都可以带的外观选项。 */
+export interface MaterialLook {
+  /** 不透明度 0–1，默认 1；小于 1 时半透明（玻璃）。 */
+  readonly opacity?: number;
+  /** 不受光照（屏幕、灯箱），默认 false。 */
+  readonly unlit?: boolean;
+}
+
+export interface ColorMaterial extends MaterialLook {
   /** sRGB 0–255。 */
   readonly color: Rgb;
 }
 
-export interface TextureMaterial {
+export interface TextureMaterial extends MaterialLook {
   /** 资源哈希。 */
   readonly texture: string;
   readonly uv: UvMode;
@@ -126,6 +136,21 @@ export interface LoftShape extends ShapeBase {
   readonly sections: readonly LoftSection[];
 }
 
+/** 平面简单多边形沿 −法向 加厚成的板；点按右手定则给出法向（从法向一侧看是逆时针）。 */
+export interface PlateShape extends ShapeBase {
+  readonly type: 'plate';
+  /** 3 到 64 个点（局部坐标，米），所有点到最佳拟合平面的距离不超过 1 毫米。 */
+  readonly points: readonly Vec3[];
+  /** 0 < thickness ≤ 1（米）。 */
+  readonly thickness: number;
+}
+
+/** 点的凸包实体（4 到 256 个点，不能全部共面或共线）。 */
+export interface HullShape extends ShapeBase {
+  readonly type: 'hull';
+  readonly points: readonly Vec3[];
+}
+
 export interface GroupShape extends ShapeBase {
   readonly type: 'group';
   readonly children: readonly Shape[];
@@ -144,6 +169,8 @@ export type Shape =
   | LatheShape
   | SweepShape
   | LoftShape
+  | PlateShape
+  | HullShape
   | GroupShape
   | InstanceShape;
 
@@ -163,6 +190,18 @@ export const MAX_ANGLE = 3600;
 export const MAX_BULGE = 1000;
 export const MIN_LOFT_SECTIONS = 2;
 export const MAX_LOFT_SECTIONS = 8;
+export const MIN_PLATE_POINTS = 3;
+export const MAX_PLATE_POINTS = 64;
+/** 板厚上限（米）。 */
+export const MAX_PLATE_THICKNESS = 1;
+/** 板的最小面积（平方米，1 平方毫米）。 */
+export const MIN_PLATE_AREA = 1e-6;
+/** 相邻两点至少相距这么远（米）。 */
+export const MIN_EDGE_LENGTH = 1e-6;
+/** 平面度、凸包退化的容差（米，1 毫米）。 */
+export const FLAT_TOLERANCE = 0.001;
+export const MIN_HULL_POINTS = 4;
+export const MAX_HULL_POINTS = 256;
 
 /** 校验或计算失败：`path` 是 JSON 路径，例如 `$.children[2].outline.points[3]`。 */
 export class ShapeError extends Error {
@@ -305,9 +344,198 @@ function validateTransform(value: unknown, path: string): void {
   }
 }
 
+/** 不透明度必须是 0 到 1 之间的有限值（Rust `validate_opacity`）。 */
+export function validateOpacity(path: string, opacity: number | undefined): void {
+  if (opacity !== undefined && !(Number.isFinite(opacity) && opacity >= 0 && opacity <= 1)) {
+    throw new ShapeError(path, '不透明度必须在 0 到 1 之间');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 板和凸包（docs/SHAPES.md 第 2 节；公式和比较顺序与 Rust 相同）
+// ---------------------------------------------------------------------------
+
+function sub3(a: readonly number[], b: readonly number[]): [number, number, number] {
+  return [a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!];
+}
+
+function dot3(a: readonly number[], b: readonly number[]): number {
+  return a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!;
+}
+
+function cross3(a: readonly number[], b: readonly number[]): [number, number, number] {
+  return [
+    a[1]! * b[2]! - a[2]! * b[1]!,
+    a[2]! * b[0]! - a[0]! * b[2]!,
+    a[0]! * b[1]! - a[1]! * b[0]!,
+  ];
+}
+
+/** 板的中心（各点平均）、Newell 单位法向和面积。 */
+export interface PlateFrame {
+  readonly center: Vec3;
+  readonly normal: Vec3;
+  readonly area: number;
+}
+
+/** Newell 法向 `N = Σ (Pᵢ − c) × (Pᵢ₊₁ − c)`；面积 `|N| / 2` 小于 1 平方毫米时返回 null。 */
+export function plateFrame(points: readonly Vec3[]): PlateFrame | null {
+  if (points.length < MIN_PLATE_POINTS) return null;
+  const sum = [0, 0, 0];
+  for (const p of points) for (let axis = 0; axis < 3; axis += 1) sum[axis]! += p[axis]!;
+  const count = points.length;
+  const center: Vec3 = [sum[0]! / count, sum[1]! / count, sum[2]! / count];
+  const newell = [0, 0, 0];
+  points.forEach((p, i) => {
+    const c = cross3(sub3(p, center), sub3(points[(i + 1) % count]!, center));
+    for (let axis = 0; axis < 3; axis += 1) newell[axis]! += c[axis]!;
+  });
+  const length = Math.sqrt(dot3(newell, newell));
+  const area = length / 2;
+  if (Number.isNaN(area) || area < MIN_PLATE_AREA) return null;
+  return {
+    center,
+    normal: [newell[0]! / length, newell[1]! / length, newell[2]! / length],
+    area,
+  };
+}
+
+/** 去掉法向分量绝对值最大的轴（并列时先去 x、再 y），返回剩下两个轴的下标。 */
+export function plateProjectionAxes(normal: Vec3): [number, number] {
+  const [x, y, z] = normal.map(Math.abs) as [number, number, number];
+  if (x >= y && x >= z) return [1, 2];
+  if (y >= z) return [0, 2];
+  return [0, 1];
+}
+
+function orient2(a: Vec2, b: Vec2, c: Vec2): number {
+  return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+}
+
+function within(a: Vec2, b: Vec2, p: Vec2): boolean {
+  return (
+    Math.min(a[0], b[0]) <= p[0] &&
+    p[0] <= Math.max(a[0], b[0]) &&
+    Math.min(a[1], b[1]) <= p[1] &&
+    p[1] <= Math.max(a[1], b[1])
+  );
+}
+
+/** 两条线段是否相交（含端点接触、共线重叠）。 */
+export function segmentsIntersect(p1: Vec2, p2: Vec2, p3: Vec2, p4: Vec2): boolean {
+  const d1 = orient2(p3, p4, p1);
+  const d2 = orient2(p3, p4, p2);
+  const d3 = orient2(p1, p2, p3);
+  const d4 = orient2(p1, p2, p4);
+  const straddle = (a: number, b: number) => (a > 0 && b < 0) || (a < 0 && b > 0);
+  if (straddle(d1, d2) && straddle(d3, d4)) return true;
+  return (
+    (d1 === 0 && within(p3, p4, p1)) ||
+    (d2 === 0 && within(p3, p4, p2)) ||
+    (d3 === 0 && within(p1, p2, p3)) ||
+    (d4 === 0 && within(p1, p2, p4))
+  );
+}
+
+function validatePlate(path: string, points: readonly Vec3[], thickness: number): void {
+  const at = `${path}.points`;
+  if (points.length < MIN_PLATE_POINTS || points.length > MAX_PLATE_POINTS) {
+    throw new ShapeError(at, '板需要 3 到 64 个点');
+  }
+  points.forEach((point, index) => coords(`${at}[${index}]`, point));
+  if (!(Number.isFinite(thickness) && thickness > 0 && thickness <= MAX_PLATE_THICKNESS)) {
+    throw new ShapeError(`${path}.thickness`, '厚度必须大于 0 且不超过 1 米');
+  }
+  const count = points.length;
+  points.forEach((point, index) => {
+    const edge = sub3(points[(index + 1) % count]!, point);
+    if (dot3(edge, edge) <= MIN_EDGE_LENGTH * MIN_EDGE_LENGTH) {
+      throw new ShapeError(`${at}[${index}]`, '与下一点重合');
+    }
+  });
+  const frame = plateFrame(points);
+  if (frame === null) throw new ShapeError(at, '面积太小（点几乎共线）');
+  points.forEach((point, index) => {
+    if (Math.abs(dot3(sub3(point, frame.center), frame.normal)) > FLAT_TOLERANCE) {
+      throw new ShapeError(`${at}[${index}]`, '离最佳拟合平面超过 1 毫米');
+    }
+  });
+  const [u, v] = plateProjectionAxes(frame.normal);
+  const flat: Vec2[] = points.map((p) => [p[u]!, p[v]!]);
+  for (let index = 0; index < count; index += 1) {
+    const here = flat[index]!;
+    const prev = flat[(index + count - 1) % count]!;
+    const next = flat[(index + 1) % count]!;
+    const a = [prev[0] - here[0], prev[1] - here[1]] as const;
+    const b = [next[0] - here[0], next[1] - here[1]] as const;
+    if (a[0] * b[1] - a[1] * b[0] === 0 && a[0] * b[0] + a[1] * b[1] > 0) {
+      throw new ShapeError(`${at}[${index}]`, '相邻两条边在这一点折回');
+    }
+  }
+  for (let i = 0; i < count; i += 1) {
+    for (let j = i + 2; j < count; j += 1) {
+      if (i === 0 && j === count - 1) continue;
+      if (segmentsIntersect(flat[i]!, flat[i + 1]!, flat[j]!, flat[(j + 1) % count]!)) {
+        throw new ShapeError(at, '多边形自相交');
+      }
+    }
+  }
+}
+
+/** 凸包退化判定（容差 1 毫米）：点重合、共线或共面时返回说明，否则返回 null。 */
+export function hullDegeneracy(points: readonly Vec3[]): string | null {
+  const a = points[0];
+  if (a === undefined) return '没有点';
+  const tolerance = FLAT_TOLERANCE * FLAT_TOLERANCE;
+  // 第一个取到最大值的点和这个最大值。
+  const farthest = (measure: (p: Vec3) => number): [number, number] => {
+    let best: [number, number] = [0, -Infinity];
+    points.forEach((p, index) => {
+      const value = measure(p);
+      if (value > best[1]) best = [index, value];
+    });
+    return best;
+  };
+  const [b, spread] = farthest((p) => {
+    const d = sub3(p, a);
+    return dot3(d, d);
+  });
+  if (spread <= tolerance) return '点全部重合（容差 1 毫米）';
+  const axis = sub3(points[b]!, a);
+  const axisSq = dot3(axis, axis);
+  const [c, offset] = farthest((p) => {
+    const k = cross3(sub3(p, a), axis);
+    return dot3(k, k) / axisSq;
+  });
+  if (offset <= tolerance) return '点全部共线（容差 1 毫米）';
+  const normal = cross3(axis, sub3(points[c]!, a));
+  const normalSq = dot3(normal, normal);
+  const [, height] = farthest((p) => {
+    const h = dot3(sub3(p, a), normal);
+    return (h * h) / normalSq;
+  });
+  if (height <= tolerance) return '点全部共面（容差 1 毫米）';
+  return null;
+}
+
+function validateHull(path: string, points: readonly Vec3[]): void {
+  const at = `${path}.points`;
+  if (points.length < MIN_HULL_POINTS || points.length > MAX_HULL_POINTS) {
+    throw new ShapeError(at, '凸包需要 4 到 256 个点');
+  }
+  points.forEach((point, index) => coords(`${at}[${index}]`, point));
+  const problem = hullDegeneracy(points);
+  if (problem !== null) throw new ShapeError(at, problem);
+}
+
 function validateMaterial(value: unknown, path: string): void {
   if (!isPlainObject(value)) throw new ShapeError(path, 'material 必须是对象');
-  onlyKeys(value, ['color', 'texture', 'uv', 'tint'], path);
+  onlyKeys(value, ['color', 'texture', 'uv', 'tint', 'opacity', 'unlit'], path);
+  if (present(value, 'unlit') && typeof value.unlit !== 'boolean') {
+    throw new ShapeError(`${path}.unlit`, '必须是布尔值');
+  }
+  const opacity = optionalNumber(value, 'opacity', path);
+  validateOpacity(`${path}.opacity`, opacity);
   if (present(value, 'color')) expectRgb(value.color, `${path}.color`);
   if (present(value, 'tint')) expectRgb(value.tint, `${path}.tint`);
   if (present(value, 'texture') && typeof value.texture !== 'string') {
@@ -403,6 +631,8 @@ const KIND_FIELDS: Record<ShapeType, readonly string[]> = {
   lathe: ['profile', 'segments', 'angle'],
   sweep: ['path', 'section', 'smooth', 'caps'],
   loft: ['sections'],
+  plate: ['points', 'thickness'],
+  hull: ['points'],
   group: ['children'],
   instance: ['template'],
 };
@@ -539,6 +769,21 @@ function validateAt(value: unknown, path: string, depth: number, counter: Counte
         previous = y;
         validateOutline(s.outline, `${at}.outline`);
       });
+      return;
+    }
+    case 'plate': {
+      const points = expectArray(required(value, 'points', path), `${path}.points`).map((p, i) =>
+        expectTuple(p, 3, `${path}.points[${i}]`),
+      ) as unknown as Vec3[];
+      const thickness = expectNumber(required(value, 'thickness', path), `${path}.thickness`);
+      validatePlate(path, points, thickness);
+      return;
+    }
+    case 'hull': {
+      const points = expectArray(required(value, 'points', path), `${path}.points`).map((p, i) =>
+        expectTuple(p, 3, `${path}.points[${i}]`),
+      ) as unknown as Vec3[];
+      validateHull(path, points);
       return;
     }
     case 'group': {
@@ -777,6 +1022,22 @@ function localBounds(
         }
       }
       return { min: [min2[0]!, first.y, min2[1]!], max: [max2[0]!, last.y, max2[1]!] };
+    }
+    case 'plate': {
+      const frame = plateFrame(shape.points);
+      if (frame === null) throw new ShapeError(path, '板的面积太小（点几乎共线）');
+      const t = shape.thickness;
+      const back = shape.points.map((p): Vec3 => [
+        p[0] - t * frame.normal[0],
+        p[1] - t * frame.normal[1],
+        p[2] - t * frame.normal[2],
+      ]);
+      return aabbFromPoints([...shape.points, ...back])!;
+    }
+    case 'hull': {
+      const aabb = aabbFromPoints(shape.points);
+      if (aabb === null) throw new ShapeError(path, '凸包没有点');
+      return aabb;
     }
     case 'group': {
       let result: Aabb | null = null;

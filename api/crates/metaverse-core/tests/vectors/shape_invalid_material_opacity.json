@@ -1,0 +1,25 @@
+{
+  "description": "opacity 必须在 0 到 1 之间",
+  "errorMessage": "$.material.opacity: 不透明度必须在 0 到 1 之间",
+  "errorPath": "$.material.opacity",
+  "kind": "shape",
+  "name": "invalid-material-opacity",
+  "shape": {
+    "material": {
+      "color": [
+        1,
+        2,
+        3
+      ],
+      "opacity": 1.5
+    },
+    "size": [
+      1,
+      1,
+      1
+    ],
+    "type": "box"
+  },
+  "templates": {},
+  "valid": false
+}

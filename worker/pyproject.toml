@@ -26,9 +26,14 @@ dev = [
 
 [project.scripts]
 metaverse-worker = "metaverse_worker.__main__:main"
+metaverse-recon = "metaverse_worker.recon.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+# 重建工作台的无头渲染页（node + Playwright 加载）
+"metaverse_worker.recon" = ["render/*.html", "render/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -38,8 +43,6 @@ markers = [
 ]
 
 [tool.ruff]
-# 概念验证代码（大语言模型看图写模型的工作台），以后会改写成正式的命令行功能，暂不纳入静态检查。
-extend-exclude = ["scripts/llm_poc"]
 line-length = 110
 target-version = "py313"
 src = ["src", "tests"]

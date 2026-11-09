@@ -1,0 +1,30 @@
+{
+  "description": "plate：点全部共线，没有面积",
+  "errorMessage": "$.points: 面积太小（点几乎共线）",
+  "errorPath": "$.points",
+  "kind": "shape",
+  "name": "invalid-plate-collinear",
+  "shape": {
+    "points": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        2,
+        0,
+        0
+      ]
+    ],
+    "thickness": 0.02,
+    "type": "plate"
+  },
+  "templates": {},
+  "valid": false
+}

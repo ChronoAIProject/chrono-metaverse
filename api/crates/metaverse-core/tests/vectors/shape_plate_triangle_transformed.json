@@ -1,0 +1,57 @@
+{
+  "bounds": {
+    "max": [
+      1.045575699478245,
+      1.3208107455401508,
+      -1.5763799105630283
+    ],
+    "min": [
+      0.4715831554334781,
+      0.862719250235969,
+      -2.221179039633659
+    ]
+  },
+  "description": "plate：三角形板，完整变换；从法向一侧看逆时针",
+  "kind": "shape",
+  "name": "plate-triangle-transformed",
+  "shape": {
+    "points": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0.4,
+        0.1,
+        0
+      ],
+      [
+        0.1,
+        0.5,
+        0.2
+      ]
+    ],
+    "thickness": 0.03,
+    "transform": {
+      "pitch": 20,
+      "position": [
+        0.5,
+        1,
+        -2
+      ],
+      "roll": 10,
+      "scale": [
+        1,
+        0.5,
+        2
+      ],
+      "yaw": 30
+    },
+    "type": "plate"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "triangles": 8,
+  "valid": true
+}

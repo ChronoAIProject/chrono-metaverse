@@ -428,6 +428,64 @@ test('种子：按接口服务的规则静态校验', () => {
   assertProblem(seedProblems(null), /必须是 JSON 对象/);
 });
 
+test('种子：AI 物件集按提交哈希固定在 raw.githubusercontent.com 的 infra/chrono-cd/demo/ 下', () => {
+  const commit = '0123456789abcdef0123456789abcdef01234567';
+  const good = {
+    url: `https://raw.githubusercontent.com/chronoaiproject/chrono-metaverse/${commit}/infra/chrono-cd/demo/authored.json`,
+    sha256: 'a'.repeat(64),
+    size: 123456,
+  };
+  assert.deepEqual(
+    seedVariant((s) => (s.authored = { ...good })),
+    [],
+  );
+  assertProblem(
+    seedVariant((s) => (s.authored = { ...good, url: good.url.replace(commit, 'main') })),
+    /authored\.url 必须是 .*40 位提交哈希/,
+  );
+  assertProblem(
+    seedVariant((s) => (s.authored = { ...good, url: good.url.replace('https:', 'http:') })),
+    /authored\.url 必须是/,
+  );
+  assertProblem(
+    seedVariant((s) => (s.authored = { ...good, url: good.url.replace('infra/chrono-cd/demo', 'tmp') })),
+    /authored\.url 必须是/,
+  );
+  assertProblem(
+    seedVariant((s) => (s.authored = { ...good, url: good.url.replace('raw.githubusercontent.com', 'example.com') })),
+    /authored\.url 必须是/,
+  );
+  assertProblem(seedVariant((s) => (s.authored = { ...good, sha256: 'ABC' })), /authored\.sha256/);
+  assertProblem(seedVariant((s) => (s.authored = { ...good, size: 0 })), /authored\.size 必须是 1–4194304/);
+  assertProblem(seedVariant((s) => (s.authored = { ...good, size: 4 * 1024 * 1024 + 1 })), /authored\.size/);
+  assertProblem(seedVariant((s) => (s.authored = { ...good, name: 'x.json' })), /authored 有不认识的字段 name/);
+  assertProblem(seedVariant((s) => (s.authored = [good])), /authored 必须是/);
+  assertProblem(
+    seedVariant((s) => {
+      s.authored = { ...good };
+      s.rebuild = false;
+    }),
+    /rebuild 不能是 false/,
+  );
+});
+
+test('处理服务：WORKER_MODEL_HOSTS 必须显式写出，每项是主机名、后缀或 主机:端口', () => {
+  assertProblem(
+    problemsOf(variant((copy) => delete workerEnv(copy).WORKER_MODEL_HOSTS)),
+    /缺少 WORKER_MODEL_HOSTS/,
+  );
+  for (const bad of ['https://dl.polyhaven.org', 'dl.polyhaven.org/models', '*.hf.co', '', ' , ', '.hf.co:443', 'localhost']) {
+    assertProblem(
+      problemsOf(variant((copy) => (workerEnv(copy).WORKER_MODEL_HOSTS = bad))),
+      /WORKER_MODEL_HOSTS 每项必须是/,
+    );
+  }
+  assert.deepEqual(
+    problemsOf(variant((copy) => (workerEnv(copy).WORKER_MODEL_HOSTS = 'dl.polyhaven.org, .HF.co,localhost:8443'))),
+    [],
+  );
+});
+
 test('种子：凭链接查看要声明分享令牌密钥，令牌不能写进 env，README 要写明 set_app_secrets', () => {
   const noSecret = variant((copy) => delete copy.services[API_SERVICE].secret_keys);
   assertProblem(checkApp(noSecret, { seed: seedText }), /secret_keys 里要有 METAVERSE_DEMO_SHARE_TOKEN/);

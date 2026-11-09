@@ -3,6 +3,9 @@
 只用于本地查看和渲染对比（`scripts/reconstruct_lobby.py`），不进提交。每个物件一个节点（名字是 entityId），
 每种材质一个图元；贴图原样嵌入 JPEG；颜色写成线性空间的 baseColorFactor。
 glTF 的贴图坐标原点在左上角，这里的 v 向上，所以写出 1 − v。
+
+材质的 `opacity` < 1 写成 `alphaMode: "BLEND"`（透明度放进 baseColorFactor 的第四个分量，双面）；
+`unlit` 为真（或整份导出要求不打光）时写 `KHR_materials_unlit`。
 """
 
 from __future__ import annotations
@@ -34,6 +37,7 @@ class _Writer:
         self.images: list[dict[str, Any]] = []
         self.tex_index: dict[str, int] = {}
         self.mat_index: dict[str, int] = {}
+        self.used_unlit = False
 
     def view(self, data: bytes, target: int | None = None) -> int:
         pad = (-len(data)) % 4
@@ -63,20 +67,29 @@ class _Writer:
         if key in self.mat_index:
             return self.mat_index[key]
         pbr: dict[str, Any] = {"metallicFactor": 0.0, "roughnessFactor": 0.9}
+        opacity = float(mat.get("opacity", 1.0))
         h = mat.get("texture")
         if h is not None and h in self.textures:
             if h not in self.tex_index:
                 self.images.append({"bufferView": self.view(self.textures[h]), "mimeType": "image/jpeg"})
                 self.tex_index[h] = len(self.images) - 1
             pbr["baseColorTexture"] = {"index": self.tex_index[h]}
-            if mat.get("tint"):
-                pbr["baseColorFactor"] = [*(_srgb_to_linear(c) for c in mat["tint"]), 1.0]
+            if mat.get("tint") or opacity < 1:
+                pbr["baseColorFactor"] = [
+                    *(_srgb_to_linear(c) for c in mat.get("tint") or (255, 255, 255)),
+                    1.0,
+                ]
         else:
             rgb = mat.get("color") or mat.get("tint") or [200, 200, 200]
             pbr["baseColorFactor"] = [*(_srgb_to_linear(c) for c in rgb), 1.0]
         m: dict[str, Any] = {"pbrMetallicRoughness": pbr, "doubleSided": False}
-        if self.unlit:
+        if opacity < 1:
+            pbr["baseColorFactor"][3] = opacity
+            m["alphaMode"] = "BLEND"
+            m["doubleSided"] = True
+        if self.unlit or mat.get("unlit") is True:
             m["extensions"] = {"KHR_materials_unlit": {}}
+            self.used_unlit = True
         self.materials.append(m)
         self.mat_index[key] = len(self.materials) - 1
         return self.mat_index[key]
@@ -134,7 +147,7 @@ def export_glb(
         doc["images"] = w.images
         doc["textures"] = [{"source": i, "sampler": 0} for i in range(len(w.images))]
         doc["samplers"] = [{"magFilter": 9729, "minFilter": 9987, "wrapS": 33071, "wrapT": 33071}]
-    if unlit:
+    if w.used_unlit:
         doc["extensionsUsed"] = ["KHR_materials_unlit"]
     js = json.dumps(doc, separators=(",", ":")).encode()
     js += b" " * ((-len(js)) % 4)

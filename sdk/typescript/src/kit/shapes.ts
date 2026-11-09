@@ -7,6 +7,7 @@ import {
   type CylinderShape,
   type ExtrudeShape,
   type GroupShape,
+  type HullShape,
   type InstanceShape,
   type LatheShape,
   type LoftSection,
@@ -15,6 +16,7 @@ import {
   type Outline,
   type OutlineArc,
   type OutlineFillet,
+  type PlateShape,
   type Rgb,
   type Shape,
   type SweepSection,
@@ -29,7 +31,7 @@ import {
  * 构造时就按服务端的规则校验，写错了立刻报错（带 JSON 路径）。
  *
  * 局部原点：box、cylinder、cone、extrude、lathe、loft 都在**底面中心**，向 +y 延伸；
- * sweep 的原点就是路径坐标系的原点。单位米，角度用度。
+ * sweep 的原点就是路径坐标系的原点；plate、hull 直接用点的局部坐标。单位米，角度用度。
  */
 
 /** 颜色：`[r, g, b]`（0–255）或 `'#rrggbb'`。 */
@@ -50,6 +52,10 @@ export interface ShapeOptions {
   readonly color?: ColorInput;
   /** 贴图材质：资源哈希 + 贴图坐标方式。 */
   readonly texture?: { readonly hash: string; readonly uv: UvMode; readonly tint?: ColorInput };
+  /** 不透明度 0–1（小于 1 时半透明，用于玻璃）；要和 color 或 texture 一起给。 */
+  readonly opacity?: number;
+  /** 不受光照（屏幕、灯箱）；要和 color 或 texture 一起给。 */
+  readonly unlit?: boolean;
 }
 
 /** `'#rrggbb'` 或 `[r, g, b]` → `[r, g, b]`。 */
@@ -74,14 +80,20 @@ function materialOf(options: ShapeOptions): Material | undefined {
   if (options.color !== undefined && options.texture !== undefined) {
     throw new Error('color 和 texture 只能给一个');
   }
-  if (options.color !== undefined) return { color: rgb(options.color) };
+  const look = {
+    ...(options.opacity !== undefined ? { opacity: options.opacity } : {}),
+    ...(options.unlit !== undefined ? { unlit: options.unlit } : {}),
+  };
+  if (options.color !== undefined) return { color: rgb(options.color), ...look };
   if (options.texture !== undefined) {
     return {
       texture: options.texture.hash,
       uv: options.texture.uv,
       ...(options.texture.tint !== undefined ? { tint: rgb(options.texture.tint) } : {}),
+      ...look,
     };
   }
+  if (Object.keys(look).length > 0) throw new Error('opacity、unlit 要和 color 或 texture 一起给');
   return undefined;
 }
 
@@ -223,6 +235,27 @@ export function loft(
 ): LoftShape {
   const list: LoftSection[] = sections.map((s) => ({ y: s.y, outline: outlineOf(s.outline) }));
   return finish<LoftShape>({ type: 'loft', sections: list }, options);
+}
+
+/**
+ * 板：平面简单多边形（3 到 64 个点，局部坐标）沿 −法向 加厚 `thickness`（0 < t ≤ 1 米）。
+ * 点的顺序按右手定则给出法向：从法向一侧看是逆时针，板从这一面往背后长。
+ * 所有点到最佳拟合平面的距离不能超过 1 毫米。用于前台这类斜面折板、台面、玻璃。
+ */
+export function plate(
+  points: readonly Vec3[],
+  thickness: number,
+  options: ShapeOptions = {},
+): PlateShape {
+  return finish<PlateShape>({ type: 'plate', points, thickness }, options);
+}
+
+/**
+ * 凸包：这些点（4 到 256 个）的凸包实体，用于楔形、船头这类凸多面体。
+ * 点不能全部共面或共线（容差 1 毫米）；内部的点不影响形状。
+ */
+export function hull(points: readonly Vec3[], options: ShapeOptions = {}): HullShape {
+  return finish<HullShape>({ type: 'hull', points }, options);
 }
 
 /** 组合：`at`、`yaw` 等作用于全部子形状。 */

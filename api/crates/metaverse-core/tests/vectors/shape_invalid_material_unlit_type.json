@@ -1,0 +1,25 @@
+{
+  "description": "unlit 必须是布尔值",
+  "errorMessage": "material: invalid type: string \"yes\", expected a boolean",
+  "errorPath": null,
+  "kind": "shape",
+  "name": "invalid-material-unlit-type",
+  "shape": {
+    "material": {
+      "color": [
+        1,
+        2,
+        3
+      ],
+      "unlit": "yes"
+    },
+    "size": [
+      1,
+      1,
+      1
+    ],
+    "type": "box"
+  },
+  "templates": {},
+  "valid": false
+}

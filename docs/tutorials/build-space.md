@@ -153,7 +153,9 @@ front-hall/
   chunks/         拉取下来的区块
   build/          建造脚本（可以用 git 管理）
   assets/         网页用模型、贴图缓存
-  .claude/skills/metaverse-builder/   给 AI 的技能说明（坐标约定、方块表、地块规则、建造规范、示例）
+  .claude/skills/metaverse-builder/       给 AI 的建造技能说明（坐标约定、方块表、地块规则、建造规范、示例）
+  .claude/skills/metaverse-reconstruct/   给 AI 的重建技能说明（扫描过的实体空间：先搜模型库、搜不到再手写，
+                                          见[重建教程](reconstruct-with-ai.md)）
 ```
 
 让 Claude Code 在这个目录里工作，它会读到技能说明。

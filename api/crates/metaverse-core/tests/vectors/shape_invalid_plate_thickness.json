@@ -1,0 +1,30 @@
+{
+  "description": "plate：厚度超过 1 米",
+  "errorMessage": "$.thickness: 厚度必须大于 0 且不超过 1 米",
+  "errorPath": "$.thickness",
+  "kind": "shape",
+  "name": "invalid-plate-thickness",
+  "shape": {
+    "points": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ]
+    ],
+    "thickness": 1.5,
+    "type": "plate"
+  },
+  "templates": {},
+  "valid": false
+}

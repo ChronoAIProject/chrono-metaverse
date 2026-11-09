@@ -1,0 +1,35 @@
+{
+  "description": "plate：相邻两条边折回（第 1 点）",
+  "errorMessage": "$.points[1]: 相邻两条边在这一点折回",
+  "errorPath": "$.points[1]",
+  "kind": "shape",
+  "name": "invalid-plate-folded",
+  "shape": {
+    "points": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0.5,
+        0,
+        0
+      ],
+      [
+        0.5,
+        0,
+        1
+      ]
+    ],
+    "thickness": 0.02,
+    "type": "plate"
+  },
+  "templates": {},
+  "valid": false
+}

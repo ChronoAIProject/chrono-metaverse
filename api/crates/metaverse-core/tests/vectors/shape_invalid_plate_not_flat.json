@@ -1,0 +1,35 @@
+{
+  "description": "plate：有一个点离最佳拟合平面超过 1 毫米",
+  "errorMessage": "$.points[0]: 离最佳拟合平面超过 1 毫米",
+  "errorPath": "$.points[0]",
+  "kind": "shape",
+  "name": "invalid-plate-not-flat",
+  "shape": {
+    "points": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        1,
+        1,
+        0.01
+      ],
+      [
+        0,
+        1,
+        0
+      ]
+    ],
+    "thickness": 0.02,
+    "type": "plate"
+  },
+  "templates": {},
+  "valid": false
+}

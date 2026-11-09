@@ -14,6 +14,9 @@
 //! - 引用的资源必须是本空间校验通过的上传（物件模型经地块路径时还要求是同一地块上传的）；
 //! - 每个空间排队和运行中的任务数有上限（`JOB_MAX_PENDING_PER_SPACE`），超过返回 429；
 //! - 带 `Idempotency-Key` 时，同一个键重复请求返回同一个任务（200），参数不同返回 409；
+//! - 导入和重建可以带 AI 物件集（设计 6.3）：内联的 `authored` 先做浅层校验（[`check_authored`]），
+//!   再登记成本空间的 authored 资源（规范化 JSON），任务参数里只放 `authoredAsset`，任务文档不会太大；
+//!   `authoredAsset` 必须是本空间 authored 用途的资源。深层校验由处理服务做，不合格时任务失败；
 //! - 经地块路径只能查到本地块发起的任务。
 
 use axum::{
@@ -23,6 +26,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use metaverse_core::authored::check_authored;
 use metaverse_core::canonical::canonical_json;
 use metaverse_core::ids::is_object_id;
 use metaverse_core::model::{Job, JobKind, JobStatus, JOB_MAX_ATTEMPTS};
@@ -47,6 +51,8 @@ use crate::AppState;
 
 /// `hints` 规范化后的最大字节数。
 pub const MAX_HINTS_BYTES: usize = 4 * 1024;
+/// AI 物件集资源的 `metadata.kind`（authored 用途上传、接口服务和部署种子登记的都是它）。
+pub const AUTHORED_KIND: &str = "authored";
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -104,6 +110,14 @@ pub struct ImportScanRequest {
     #[serde(default)]
     #[schema(value_type = Option<Object>)]
     pub hints: Option<Value>,
+    /// AI 物件集（内联，规范化后 ≤ 4MB，计入请求体 8MB 上限），与 authoredAsset 二选一。给了就不跑物体重建，
+    /// 重建层换成物件集里的物件；rebuild 不能是 false。格式见 rebuild_scan 的说明。
+    #[serde(default)]
+    #[schema(value_type = Option<Object>)]
+    pub authored: Option<Value>,
+    /// AI 物件集资源的内容哈希（本空间经 authored 用途上传并校验通过），与 authored 二选一。
+    #[serde(default)]
+    pub authored_asset: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -122,6 +136,13 @@ pub struct AlignScanRequest {
     #[serde(default)]
     #[schema(value_type = Option<Object>)]
     pub hints: Option<Value>,
+    /// AI 物件集（内联），与 authoredAsset 二选一，规则同 import_scan。
+    #[serde(default)]
+    #[schema(value_type = Option<Object>)]
+    pub authored: Option<Value>,
+    /// AI 物件集资源的内容哈希，与 authored 二选一。
+    #[serde(default)]
+    pub authored_asset: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize, ToSchema)]
@@ -138,6 +159,13 @@ pub struct RebuildRequest {
     #[serde(default)]
     #[schema(value_type = Option<Object>)]
     pub hints: Option<Value>,
+    /// AI 物件集（内联，规范化后 ≤ 4MB，计入请求体 8MB 上限），与 authoredAsset 二选一。
+    #[serde(default)]
+    #[schema(value_type = Option<Object>)]
+    pub authored: Option<Value>,
+    /// AI 物件集资源的内容哈希（本空间经 authored 用途上传并校验通过），与 authored 二选一。
+    #[serde(default)]
+    pub authored_asset: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -308,6 +336,88 @@ async fn require_asset(
     }
 }
 
+/// 请求里的 AI 物件集 → 任务参数里的 `authoredAsset`（没给时 None）。
+///
+/// - 内联的 `authored`：浅层校验（结构、数量、大小、地址必须 https、`bake` 只能出现在没有 `texture` 的
+///   材质里），不合格 422 `invalid_authored`；通过后按规范化 JSON 登记成本空间的 authored 资源（已有同一
+///   内容就复用并刷新 `touchedAt`）。这份资源不计入空间存储用量：它只是任务的输入，任务结束 7 天后由
+///   定期清理删掉，每个空间排队的任务数又有上限；
+/// - `authoredAsset`：必须是本空间 authored 用途的资源（422 `asset_unknown`），还在校验中 409
+///   `asset_not_ready`；过清理的栅栏（刷新 `touchedAt`）。
+pub(crate) async fn authored_asset(
+    state: &AppState,
+    grant: &Grant,
+    authored: Option<Value>,
+    asset: Option<String>,
+) -> Result<Option<String>, ApiError> {
+    match (authored, asset) {
+        (None, None) => Ok(None),
+        (Some(_), Some(_)) => Err(invalid_with(
+            "invalid_authored",
+            "authored 和 authoredAsset 只能给一个",
+        )),
+        (Some(value), None) => {
+            check_authored(&value).map_err(|error| invalid_with("invalid_authored", error.0))?;
+            let text = canonical_json(&value)
+                .map_err(|error| invalid_with("invalid_authored", error.to_string()))?;
+            let put = state
+                .repo
+                .put_asset_bytes_with(
+                    grant,
+                    text.as_bytes(),
+                    "application/json",
+                    AUTHORED_KIND,
+                    &[("format", "json")],
+                )
+                .await?;
+            tracing::info!(space = %grant.space_id(), asset = %put.hash, reused = put.reused, "内联的 AI 物件集已登记成资源");
+            Ok(Some(put.hash))
+        }
+        (None, Some(hash)) => {
+            check_hash("authoredAsset", &hash)?;
+            require_authored_asset(state, grant, &hash).await?;
+            Ok(Some(hash))
+        }
+    }
+}
+
+async fn require_authored_asset(
+    state: &AppState,
+    grant: &Grant,
+    hash: &str,
+) -> Result<(), ApiError> {
+    let missing = || {
+        invalid_with(
+            "asset_unknown",
+            "本空间没有这个物件集资源（先经 authored 用途上传并完成），或资源已被清理（上传后 7 天内没被引用的资源会被删除，请重新上传）",
+        )
+    };
+    match state.repo.space_owned_asset(grant, hash).await? {
+        Some(meta) if meta.kind.as_deref() == Some(AUTHORED_KIND) => {
+            if state.repo.touch_asset(grant, hash).await? {
+                Ok(())
+            } else {
+                Err(missing())
+            }
+        }
+        Some(_) => Err(invalid_with(
+            "asset_unknown",
+            "authoredAsset 不是 authored 用途的资源",
+        )),
+        None => match state
+            .repo
+            .asset_availability(grant, hash, &[UploadPurpose::Authored], None)
+            .await?
+        {
+            AssetAvailability::Pending => Err(conflict_with(
+                "asset_not_ready",
+                "物件集还在校验中，等 upload_verify 任务完成后再试",
+            )),
+            _ => Err(missing()),
+        },
+    }
+}
+
 /// 对齐变换线性部分（左上 3×3）行列式的下限（不含）：不大于它就是退化或镜像。
 /// 与处理服务 `processing/align.py` 的 `matrix_from_params`（`det > 1e-6`）相同。
 pub const MIN_TRANSFORM_DET: f64 = 1e-6;
@@ -470,6 +580,7 @@ pub(crate) fn scan_params(
     voxelize: Option<bool>,
     hints: Option<Value>,
     transform: Option<[f64; 16]>,
+    authored_asset: Option<&str>,
 ) -> Value {
     let mut params = Map::new();
     params.insert("assetHash".into(), json!(asset_hash));
@@ -484,6 +595,9 @@ pub(crate) fn scan_params(
     if let Some(hints) = hints {
         params.insert("hints".into(), hints);
     }
+    if let Some(asset) = authored_asset {
+        params.insert("authoredAsset".into(), json!(asset));
+    }
     Value::Object(params)
 }
 
@@ -496,7 +610,7 @@ pub(crate) fn scan_params(
     path = "/api/v1/spaces/{space_id}/scans",
     operation_id = "import_scan",
     tag = "scans",
-    description = "导入扫描（只经实体区路径）：建 scan_import 任务，返回 202 和任务。处理服务读取扫描 → 对齐（首次自动对齐并固定坐标系，重扫自动配准；误差超阈值时不提交，任务 result = {needsAlignment, proposedTransform, errorCm}，再用 align_scan 给出变换）→ 网页用模型 → AI 重建 → 写一次提交 →（可选）体素化。assetHash 必须是本空间经 scan 用途上传并校验通过的资源；它就是扫描编号 scan_id。每个空间排队和运行中的任务数有上限（429）。可带 Idempotency-Key。",
+    description = "导入扫描（只经实体区路径）：建 scan_import 任务，返回 202 和任务。处理服务读取扫描 → 对齐（首次自动对齐并固定坐标系，重扫自动配准；误差超阈值时不提交，任务 result = {needsAlignment, proposedTransform, errorCm}，再用 align_scan 给出变换）→ 网页用模型 → AI 重建 → 写一次提交 →（可选）体素化。assetHash 必须是本空间经 scan 用途上传并校验通过的资源；它就是扫描编号 scan_id。每个空间排队和运行中的任务数有上限（429）。可带 Idempotency-Key。可以带 AI 物件集（authored 内联或 authoredAsset 资源，二选一，格式见 rebuild_scan）：这时不跑物体重建，重建层换成物件集里的物件，rebuild 不能是 false；内联的物件集由接口服务登记成资源，任务参数里是 authoredAsset。",
     params(("space_id" = String, Path, description = "空间编号", example = "front-hall")),
     request_body = ImportScanRequest,
     security(("nyxid_identity" = [])),
@@ -506,7 +620,7 @@ pub(crate) fn scan_params(
         (status = 403, description = "没有写权限", body = ProblemDocument),
         (status = 404, description = "空间不存在", body = ProblemDocument),
         (status = 409, description = "资源还在校验中，或幂等键已用于别的请求", body = ProblemDocument),
-        (status = 422, description = "参数不合法或资源不存在", body = ProblemDocument),
+        (status = 422, description = "参数不合法、资源不存在，或物件集浅层校验不通过（invalid_authored）", body = ProblemDocument),
         (status = 429, description = "任务太多", body = ProblemDocument),
     )
 )]
@@ -520,6 +634,13 @@ pub async fn import_scan(
     let (grant, scope) = writable(&state, &caller, &space_id, None).await?;
     check_hash("assetHash", &request.asset_hash)?;
     check_hints(&request.hints)?;
+    let has_authored = request.authored.is_some() || request.authored_asset.is_some();
+    if has_authored && request.rebuild == Some(false) {
+        return Err(invalid_with(
+            "invalid_authored",
+            "带 AI 物件集（authored / authoredAsset）时 rebuild 不能是 false",
+        ));
+    }
     require_asset(
         &state,
         &grant,
@@ -528,6 +649,7 @@ pub async fn import_scan(
         None,
     )
     .await?;
+    let authored = authored_asset(&state, &grant, request.authored, request.authored_asset).await?;
     let params = scan_params(
         &request.asset_hash,
         request.observed_at,
@@ -535,6 +657,7 @@ pub async fn import_scan(
         request.voxelize,
         request.hints,
         None,
+        authored.as_deref(),
     );
     create_job(
         &state,
@@ -553,7 +676,7 @@ pub async fn import_scan(
     path = "/api/v1/spaces/{space_id}/scans/{scan_id}/alignment",
     operation_id = "align_scan",
     tag = "scans",
-    description = "用给定的对齐变换重新导入扫描（重扫配准误差过大、需要人工微调时用）：建带 transform 的 scan_import 任务。transform 是 4×4 列主序矩阵（扫描坐标 → 空间坐标），通常取任务结果里的 proposedTransform 微调；最后一行 [0,0,0,1]，线性部分行列式 > 1e-6（不能镜像或退化），平移绝对值 ≤ 100000 米，否则 422。",
+    description = "用给定的对齐变换重新导入扫描（重扫配准误差过大、需要人工微调时用）：建带 transform 的 scan_import 任务。transform 是 4×4 列主序矩阵（扫描坐标 → 空间坐标），通常取任务结果里的 proposedTransform 微调；最后一行 [0,0,0,1]，线性部分行列式 > 1e-6（不能镜像或退化），平移绝对值 ≤ 100000 米，否则 422。也可以带 AI 物件集（authored / authoredAsset，规则同 import_scan）。",
     params(
         ("space_id" = String, Path, description = "空间编号"),
         ("scan_id" = String, Path, description = "扫描编号（扫描资源的内容哈希）"),
@@ -581,7 +704,15 @@ pub async fn align_scan(
     }
     let transform = check_transform(&request.transform)?;
     check_hints(&request.hints)?;
+    let has_authored = request.authored.is_some() || request.authored_asset.is_some();
+    if has_authored && request.rebuild == Some(false) {
+        return Err(invalid_with(
+            "invalid_authored",
+            "带 AI 物件集（authored / authoredAsset）时 rebuild 不能是 false",
+        ));
+    }
     require_asset(&state, &grant, &scan_id, &[UploadPurpose::Scan], None).await?;
+    let authored = authored_asset(&state, &grant, request.authored, request.authored_asset).await?;
     let params = scan_params(
         &scan_id,
         request.observed_at,
@@ -589,6 +720,7 @@ pub async fn align_scan(
         request.voxelize,
         request.hints,
         Some(transform),
+        authored.as_deref(),
     );
     create_job(
         &state,
@@ -669,7 +801,7 @@ pub async fn voxelize_scan(
     path = "/api/v1/spaces/{space_id}/scans/{scan_id}/rebuild",
     operation_id = "rebuild_scan",
     tag = "scans",
-    description = "对已导入的扫描重跑 AI 重建（结构 + 物体），结果写成一次新提交：建 rebuild 任务。",
+    description = "对已导入的扫描重跑 AI 重建（结构 + 物体），结果写成一次新提交：建 rebuild 任务。\n\n可以带 AI 物件集（本地的 AI 逐件完成的物件：先去模型库找看起来差不多的现成模型，找不到再手写参数形状），二选一：authored（内联 JSON，规范化后 ≤ 4MB）或 authoredAsset（本空间经 authored 用途上传的资源）。格式：{version: 1, templates: [模板 body（kind template）], entities: [物件 body], notes?: 建模过程记录（≤ 64KB）, structure?: keep | replace}，≤ 2000 个物件、≤ 200 个模板，空间坐标（与 scan_import 对齐后的坐标系相同）。物件是 SHAPES 3 的 body（layer 省略按 rebuilt；bounds 可省略；fit 由处理服务重算）：形状物件的材质可以带烘焙指令 bake: planar | box | cylindrical（不能和 texture 同时出现），处理服务从扫描烘焙贴图；外部模型物件不带 shape，带 model: {url（https，只允许处理服务配置的模型库主机）, sha256, size, format: glb | gltf-zip | gltf（gltf 另给 files: {相对路径: {url, sha256, size}}）}、transform（含 scale）、可选 material.tint、props.source = {library: polyhaven | objaverse | sketchfab, id, page, author, license: CC0-1.0 | CC-BY-4.0 | CC-BY-3.0, title}（署名）。structure 为 keep 时结构沿用算法结果，replace 时用物件集里 kind structure 的物件。处理服务下载并核对外部模型、重新导出成受限 glb、逐件计算偏差（fit），notes 存成脚本资源、提交带 scriptRef；任务 result.authored 里有逐件偏差、下载和烘焙统计。这里只做浅层校验（结构、数量、大小、https、bake），深层校验不通过时任务失败。内联的物件集由接口服务登记成资源，任务参数里是 authoredAsset。",
     params(
         ("space_id" = String, Path, description = "空间编号"),
         ("scan_id" = String, Path, description = "扫描编号（扫描资源的内容哈希）"),
@@ -680,7 +812,8 @@ pub async fn voxelize_scan(
         (status = 202, description = "任务已创建", body = JobView),
         (status = 200, description = "幂等键重复，返回已有任务", body = JobView),
         (status = 404, description = "空间或扫描不存在", body = ProblemDocument),
-        (status = 422, description = "hints 不合法", body = ProblemDocument),
+        (status = 409, description = "物件集资源还在校验中", body = ProblemDocument),
+        (status = 422, description = "hints 不合法、物件集浅层校验不通过（invalid_authored）或物件集资源不存在", body = ProblemDocument),
         (status = 429, description = "任务太多", body = ProblemDocument),
     )
 )]
@@ -695,10 +828,14 @@ pub async fn rebuild_scan(
     let (grant, scope) = writable(&state, &caller, &space_id, None).await?;
     committed_scan(&state, &grant, &scan_id).await?;
     check_hints(&request.hints)?;
+    let authored = authored_asset(&state, &grant, request.authored, request.authored_asset).await?;
     let mut params = Map::new();
     params.insert("scanAssetHash".into(), json!(scan_id));
     if let Some(hints) = request.hints {
         params.insert("hints".into(), hints);
+    }
+    if let Some(asset) = authored {
+        params.insert("authoredAsset".into(), json!(asset));
     }
     create_job(
         &state,

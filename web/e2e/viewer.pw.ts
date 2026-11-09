@@ -3,7 +3,14 @@ import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import * as THREE from 'three';
 import { frameBox } from '../src/viewer/framing';
-import { brightCoverage, decodePng, imageStats, patchLuma, type DecodedPng } from './png';
+import {
+  brightCoverage,
+  decodePng,
+  imageStats,
+  patchColor,
+  patchLuma,
+  type DecodedPng,
+} from './png';
 
 /*
  * 夹具模式的端到端测试：三种视图（含 ?view= 参数）、取景、灯光、锚点标签、形状 / 方块、剖切、
@@ -15,6 +22,7 @@ const SHOTS = join(import.meta.dirname, 'screenshots');
 const LINK = '/s/demo-lobby#share=fixture-share-token-0123456789abcdef';
 const UNIVERSE = '/u/demo-street#share=fixture-universe-token-00112233445566778899';
 const PREVIEW = '/preview#t=fixture-preview-token-aabbccddeeff00112233445566778899';
+const FLORIST = '/s/demo-florist#share=fixture-florist-token-fedcba9876543210';
 
 function watchErrors(page: Page): string[] {
   const errors: string[] = [];
@@ -555,6 +563,47 @@ test('现在模式：带 ETag 轮询 /head，增量拉到新事件，seq 变了�
   // 一律按 seq 取快照，不走 ?at= 跳转。
   expect(snapshotQueries.every((q) => q.includes('seq='))).toBe(true);
   await page.screenshot({ path: join(SHOTS, 'live-new-commit.png') });
+});
+
+test('板、凸包、玻璃、灯箱和外部模型：画得出来，"模型来源"给出署名', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.goto(FLORIST);
+  await waitForScene(page, 'optimized');
+  await expect(page.locator('.viewer')).toHaveAttribute('data-sources', '2');
+  await expectRendered(page);
+  const png = await sceneOnly(page);
+  const project = await projector(page);
+  // 灯箱不受光照：按材质颜色 (255, 128, 84) 原样显示（不做色调映射）。
+  const sign = project([2, 1.97, 0.04]);
+  const [r, g, b] = patchColor(png, sign.x, sign.y, 2);
+  expect(r).toBeGreaterThan(235);
+  expect(g).toBeGreaterThan(105);
+  expect(g).toBeLessThan(150);
+  expect(b).toBeLessThan(110);
+  // 楔形底座（hull）朝南的三角面：深棕色，和浅色地砖明显不同。
+  const wedge = project([3.75, 0.2, 0.8]);
+  const wedgeColor = patchColor(png, wedge.x, wedge.y, 2);
+  const floor = project([3.0, 0, 2.0]);
+  const floorColor = patchColor(png, floor.x, floor.y, 2);
+  const luma = ([cr, cg, cb]: number[]) => 0.2126 * cr! + 0.7152 * cg! + 0.0722 * cb!;
+  expect(luma(floorColor) - luma(wedgeColor)).toBeGreaterThan(40);
+  expect(wedgeColor[0] - wedgeColor[2]).toBeGreaterThan(8);
+  await page.screenshot({ path: join(SHOTS, 'florist-solids.png') });
+
+  // 模型来源：按钮一直在，点开列出两个外部模型的署名，链接新开窗口且不带来源信息。
+  const toggle = page.getByRole('button', { name: '模型来源 · 2' });
+  await expect(toggle).toBeVisible();
+  await toggle.click();
+  const panel = page.getByRole('region', { name: '模型来源' });
+  await expect(panel).toBeVisible();
+  const cc = panel.getByRole('link', { name: '玻璃瓶花束（示例）' });
+  await expect(cc).toHaveAttribute('href', 'https://example.com/models/bouquet');
+  await expect(cc).toHaveAttribute('rel', 'noopener noreferrer');
+  await expect(panel.getByText('CC BY 4.0（须署名）')).toBeVisible();
+  await expect(panel.getByText('作者 夹具作者乙')).toBeVisible();
+  await expect(panel.getByRole('link', { name: '木质花架（示例）' })).toBeVisible();
+  await page.screenshot({ path: join(SHOTS, 'florist-sources.png') });
+  expect(errors).toEqual([]);
 });
 
 test('组合页：两个空间按摆放拼在一起，连接可飞过去，送花路线', async ({ page, request }) => {

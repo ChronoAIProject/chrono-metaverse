@@ -88,6 +88,12 @@ pub fn check_header(
                 return Err(mismatch());
             }
         }
+        UploadFormat::Json => {
+            let first = head.iter().find(|b| !b.is_ascii_whitespace());
+            if first != Some(&b'{') || !is_text(head) {
+                return Err(mismatch());
+            }
+        }
     }
     Ok(())
 }
@@ -269,6 +275,9 @@ mod tests {
         let cut = &"建".as_bytes()[..2];
         assert!(check_header(UploadFormat::Text, cut, 1, MAX).is_ok());
         assert!(check_header(UploadFormat::Text, b"a\0b", 1, MAX).is_err());
+        assert!(check_header(UploadFormat::Json, b" {\"version\": 1}", 1, MAX).is_ok());
+        assert!(check_header(UploadFormat::Json, b"[1]", 1, MAX).is_err());
+        assert!(check_header(UploadFormat::Json, b"{\0}", 1, MAX).is_err());
         assert!(check_header(UploadFormat::Obj, b"# scan\nv 0 0 0\n", 1, MAX).is_ok());
         assert!(check_header(UploadFormat::Obj, b"<html>", 1, MAX).is_err());
     }

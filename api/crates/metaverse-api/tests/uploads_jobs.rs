@@ -1485,3 +1485,308 @@ async fn complete_waits_for_parts_in_flight() {
     let reply = app.call(who(ORG), Method::POST, &complete, None).await;
     assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
 }
+
+/// 一份合法的 AI 物件集：带烘焙指令的面板 + 外部模型（形状和署名的深层校验在处理服务）。
+fn authored_doc() -> Value {
+    json!({
+        "version": 1,
+        "entities": [
+            {"entityId": "panel-01", "kind": "object",
+             "shape": {"type": "box", "size": [0.02, 1, 1], "material": {"bake": "planar"}}},
+            {"entityId": "chair-01", "kind": "object",
+             "model": {"url": "https://dl.polyhaven.org/a.glb", "sha256": "a".repeat(64), "size": 10, "format": "glb"},
+             "transform": {"position": [2, 0, 1]},
+             "props": {"category": "chair", "source": {"library": "polyhaven", "id": "a",
+                       "page": "https://polyhaven.com/a/a", "author": "x", "license": "CC0-1.0", "title": "A"}}}
+        ],
+        "notes": "前厅",
+        "structure": "keep"
+    })
+}
+
+#[tokio::test]
+async fn scans_and_rebuild_accept_authored_sets() {
+    let Some(app) = TestApp::start(&[("JOB_MAX_PENDING_PER_SPACE", "20")]).await else {
+        return;
+    };
+    front_hall(&app).await;
+    let base = "/api/v1/spaces/front-hall";
+    let scan = uploaded(&app, base, "scan", "drc", b"DRACO the scan").await;
+
+    // 内联：浅层校验通过后登记成本空间的 authored 资源（规范化 JSON），任务参数里是 authoredAsset。
+    let doc = authored_doc();
+    let reply = app
+        .call(
+            who(ORG),
+            Method::POST,
+            &format!("{base}/scans"),
+            Some(json!({"assetHash": scan, "authored": doc})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
+    let canonical = metaverse_core::canonical::canonical_json(&doc).unwrap();
+    let inline_hash = sha256_hex(canonical.as_bytes());
+    assert_eq!(
+        reply.body["params"],
+        json!({"assetHash": scan, "rebuild": true, "voxelize": false, "authoredAsset": inline_hash})
+    );
+    let files = app
+        .collection("assets.files")
+        .find_one(doc! {"filename": &inline_hash})
+        .await
+        .unwrap()
+        .expect("物件集已登记");
+    let metadata = files.get_document("metadata").unwrap();
+    assert_eq!(metadata.get_str("kind").unwrap(), "authored");
+    assert_eq!(metadata.get_str("spaceId").unwrap(), "front-hall");
+    assert_eq!(metadata.get_str("contentType").unwrap(), "application/json");
+
+    // 对齐接口（带变换的导入）同样接受。
+    let identity = json!([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    let reply = app
+        .call(
+            who(ORG),
+            Method::POST,
+            &format!("{base}/scans/{scan}/alignment"),
+            Some(json!({"transform": identity, "authored": authored_doc()})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
+    assert_eq!(reply.body["params"]["authoredAsset"], json!(inline_hash));
+    assert_eq!(
+        reply.body["params"]["transform"].as_array().map(Vec::len),
+        Some(16)
+    );
+    let reply = app
+        .call(
+            who(ORG),
+            Method::POST,
+            &format!("{base}/scans/{scan}/alignment"),
+            Some(json!({"transform": identity, "authored": authored_doc(), "rebuild": false})),
+        )
+        .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{:?}",
+        reply.body
+    );
+
+    // 浅层校验不通过：422 invalid_authored。
+    let mut wrong_version = authored_doc();
+    wrong_version["version"] = json!(2);
+    let mut baked_texture = authored_doc();
+    baked_texture["entities"][0]["shape"]["material"]["texture"] = json!("b".repeat(64));
+    let mut plain_http = authored_doc();
+    plain_http["entities"][1]["model"]["url"] = json!("http://dl.polyhaven.org/a.glb");
+    let mut too_many = authored_doc();
+    too_many["entities"] = Value::Array(
+        (0..2001)
+            .map(|i| json!({"entityId": format!("b-{i}"), "kind": "object", "shape": {"type": "box"}}))
+            .collect(),
+    );
+    for (body, message) in [
+        (
+            json!({"assetHash": scan, "authored": wrong_version}),
+            "version",
+        ),
+        (
+            json!({"assetHash": scan, "authored": baked_texture}),
+            "texture",
+        ),
+        (json!({"assetHash": scan, "authored": plain_http}), "https"),
+        (json!({"assetHash": scan, "authored": too_many}), "entities"),
+        (
+            json!({"assetHash": scan, "authored": authored_doc(), "authoredAsset": inline_hash}),
+            "只能给一个",
+        ),
+        (
+            json!({"assetHash": scan, "authored": authored_doc(), "rebuild": false}),
+            "rebuild",
+        ),
+    ] {
+        let reply = app
+            .call(who(ORG), Method::POST, &format!("{base}/scans"), Some(body))
+            .await;
+        assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY, "{message}");
+        assert_eq!(reply.body["code"], "invalid_authored", "{message}");
+        assert!(
+            reply.body["detail"].as_str().unwrap().contains(message),
+            "{message}: {:?}",
+            reply.body
+        );
+    }
+
+    // authored 用途上传：只经实体区路径；内容是 JSON 对象。
+    let mut uploaded_doc = authored_doc();
+    uploaded_doc["notes"] = json!("上传的版本");
+    let bytes = serde_json::to_vec_pretty(&uploaded_doc).unwrap();
+    let reply = create_upload(
+        &app,
+        who(ORG),
+        &format!("{base}/plots/p1"),
+        "authored",
+        json!({"size": bytes.len(), "sha256": sha256_hex(&bytes), "partSize": KIB256, "format": "json"}),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::FORBIDDEN, "{:?}", reply.body);
+    let reply = create_upload(
+        &app,
+        who(ORG),
+        base,
+        "authored",
+        json!({"size": 5 << 20, "sha256": sha256_hex(b"x"), "partSize": KIB256, "format": "json"}),
+    )
+    .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "{:?}",
+        reply.body
+    );
+    let reply = create_upload(
+        &app,
+        who(ORG),
+        base,
+        "authored",
+        json!({"size": 10, "sha256": sha256_hex(b"x"), "partSize": KIB256, "format": "text"}),
+    )
+    .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{:?}",
+        reply.body
+    );
+    let asset = uploaded(&app, base, "authored", "json", &bytes).await;
+
+    // 重建：已导入的扫描才行；authoredAsset 必须是本空间 authored 用途的资源。
+    app.insert_commit("front-hall", org_owner(), &ago(0), Some(&scan))
+        .await;
+    let rebuild = format!("{base}/scans/{scan}/rebuild");
+    let reply = app
+        .call(
+            who(ORG),
+            Method::POST,
+            &rebuild,
+            Some(json!({"authoredAsset": asset})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
+    assert_eq!(
+        reply.body["params"],
+        json!({"scanAssetHash": scan, "authoredAsset": asset})
+    );
+    let reply = app
+        .call(
+            who(ORG),
+            Method::POST,
+            &rebuild,
+            Some(json!({"authored": authored_doc(), "hints": {"x": 1}})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
+    assert_eq!(
+        reply.body["params"],
+        json!({"scanAssetHash": scan, "hints": {"x": 1}, "authoredAsset": inline_hash})
+    );
+    let other_kind = app
+        .put_asset(
+            b"{\"version\": 1}",
+            doc! {"kind": "script", "spaceId": "front-hall"},
+        )
+        .await;
+    for (hash, status, code) in [
+        (
+            scan.clone(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "asset_unknown",
+        ),
+        (
+            other_kind,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "asset_unknown",
+        ),
+        (
+            sha256_hex(b"never"),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "asset_unknown",
+        ),
+        (
+            "NOT-A-HASH".to_owned(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_request",
+        ),
+    ] {
+        let reply = app
+            .call(
+                who(ORG),
+                Method::POST,
+                &rebuild,
+                Some(json!({"authoredAsset": hash})),
+            )
+            .await;
+        assert_eq!(reply.status, status, "{hash}: {:?}", reply.body);
+        assert_eq!(reply.body["code"], code, "{hash}");
+    }
+    // 别的空间的物件集不能用（资源归属）。
+    app.create_space(who(ORG), "back-room", "org", ORG, "unlisted")
+        .await;
+    let foreign = uploaded(
+        &app,
+        "/api/v1/spaces/back-room",
+        "authored",
+        "json",
+        b"{\"version\":1,\"entities\":[]}",
+    )
+    .await;
+    let reply = app
+        .call(
+            who(ORG),
+            Method::POST,
+            &rebuild,
+            Some(json!({"authoredAsset": foreign})),
+        )
+        .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{:?}",
+        reply.body
+    );
+    // 还在校验中的物件集：409。
+    let pending =
+        br#"{"version":1,"entities":[{"entityId":"a","kind":"object","shape":{}}]}"#.to_vec();
+    let created = create_upload(
+        &app,
+        who(ORG),
+        base,
+        "authored",
+        json!({"size": pending.len(), "sha256": sha256_hex(&pending), "partSize": KIB256, "format": "json"}),
+    )
+    .await;
+    let id = created.body["uploadId"].as_str().unwrap().to_owned();
+    app.put_bytes(
+        who(ORG),
+        &format!("{base}/uploads/authored/{id}/parts/0"),
+        pending.clone(),
+    )
+    .await;
+    app.call(
+        who(ORG),
+        Method::POST,
+        &format!("{base}/uploads/authored/{id}/complete"),
+        None,
+    )
+    .await;
+    let reply = app
+        .call(
+            who(ORG),
+            Method::POST,
+            &rebuild,
+            Some(json!({"authoredAsset": sha256_hex(&pending)})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::CONFLICT, "{:?}", reply.body);
+    assert_eq!(reply.body["code"], "asset_not_ready");
+}

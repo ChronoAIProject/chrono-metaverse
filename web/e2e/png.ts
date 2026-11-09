@@ -101,6 +101,27 @@ export function brightCoverage(png: DecodedPng, threshold = 45): number {
   return bright / Math.max(1, total);
 }
 
+/** 以 (x, y)（像素）为中心、边长 2·radius + 1 的方块里的平均颜色 [r, g, b]（0–255）。 */
+export function patchColor(
+  png: DecodedPng,
+  x: number,
+  y: number,
+  radius = 3,
+): [number, number, number] {
+  const { width, height, channels, pixels } = png;
+  const sum = [0, 0, 0];
+  let count = 0;
+  for (let py = Math.round(y) - radius; py <= Math.round(y) + radius; py += 1) {
+    for (let px = Math.round(x) - radius; px <= Math.round(x) + radius; px += 1) {
+      if (px < 0 || py < 0 || px >= width || py >= height) continue;
+      const i = (py * width + px) * channels;
+      for (let k = 0; k < 3; k += 1) sum[k]! += pixels[i + k]!;
+      count += 1;
+    }
+  }
+  return sum.map((v) => (count === 0 ? 0 : v / count)) as [number, number, number];
+}
+
 /** 以 (x, y)（像素）为中心、边长 2·radius + 1 的方块里的平均亮度（0–255）；超出画面的部分不算。 */
 export function patchLuma(png: DecodedPng, x: number, y: number, radius = 3): number {
   const { width, height, channels, pixels } = png;

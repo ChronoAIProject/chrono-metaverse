@@ -1,0 +1,46 @@
+{
+  "bounds": {
+    "max": [
+      1.0,
+      0.9,
+      1.1
+    ],
+    "min": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "description": "hull：四面体（4 个点都在凸包上，三角形数 4）",
+  "kind": "shape",
+  "name": "hull-tetra",
+  "shape": {
+    "points": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0.1
+      ],
+      [
+        0.2,
+        0.9,
+        0.3
+      ],
+      [
+        0.3,
+        0.1,
+        1.1
+      ]
+    ],
+    "type": "hull"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "triangles": 4,
+  "valid": true
+}
