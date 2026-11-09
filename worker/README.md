@@ -175,14 +175,23 @@ uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceI
    一侧的贴图面板 + 纯色墙体，没扫到的墙面用同一面墙的中位色补；玻璃是浅蓝灰纯色玻璃 + 竖梃 + 窗台，不用贴图；
    墙顶统一高度）。任务参数里的 `hints` 也交给结构：内点大多落在某个提示物体盒子里的大平面（LED 大屏）不当墙，
    靠墙放的提示物体不印进墙面贴图。物体调用 `processing.objects.reconstruct_objects`（见下），效果见
-   "前厅重建效果"；
+   "前厅重建效果"。`hints` 原样传给物体模块。`hints.objects` 是逐个物体的提示
+   （本地 AI 看图给出，最多看前 500 项，格式不对的项忽略）：
+
+   ```
+   {center: [x, y, z] 或 [x, z]（空间坐标，米）, kind?: chair|table|sofa|counter|cabinet|…, label?: "会议桌",
+    size?: [宽, 高, 深], yaw?: 角度, anchor?: true}
+   ```
+
+   `center`、`kind`、`label`、`size`、`yaw` 由物体模块读取（改写分割和类型，`label` 成为物体的标签）；
+   `anchor` 由处理服务读取，只对椅子起作用（见下面的"锚点"）；
 7. **一次提交**（事务外先按内容哈希登记资源、物件记录、锚点记录）：
 
    ```
    scan: { assetHash, webModelHashes: [默认档, 低细节档], transform: [16 个数，列主序] }
    observedAt: 参数里的时间规范化成 UTC 毫秒（YYYY-MM-DDTHH:MM:SS.mmmZ）
    changedEntities: 重建层物件的变化（新增 / 变化写新哈希，消失的写 null）；扩展层不动
-   changedAnchors: 新建的锚点（物体的建议锚点编号；已存在的锚点不动）
+   changedAnchors: 新建的锚点（只给有意义的物体建，见下；已存在的锚点不动）
    assetRefs: 两档网页用模型、所有贴图（原始扫描不登记，见下）
    frame: 空间还没有坐标系时固定为 {fixedAt, referenceScan: assetHash}
    ```
@@ -192,10 +201,27 @@ uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceI
      `scan.assetHash` 引用，定期清理不会删它。本空间新登记的网页用模型、贴图计入空间存储用量（见下）；
    - **重建层替换规则**：物体重建正常运行时，重建层的全部旧物件（structure / object / template）换成这次的
      结果；物体重建模块导入失败、只交了结构时，只替换 `kind: structure` 的物件，旧物体保留；
-   - **锚点**：`kind: object` 且带 `anchorId` 的物体，按编号前缀定类型（`table`/`desk` → table，
-     `chair`/`seat`/`sofa`/`bench`/`stool` → seat，`counter`/`reception`/`bar` → counter，`door`、`camera`，
-     其他 → zone），`box` = 物体 `bounds` 覆盖的格子（同接口服务 `Aabb::grid_cover`），`visibility: public`，
-     `label` 取物体的 `label`；生成后按接口服务 `AnchorBody::validate` 的规则校验（不合格 → 任务失败）；
+   - **锚点**：只给"有意义"的物体建，不再每个物体都建（前厅以前建了 58 个，标签把场景盖住了）。
+     `kind: object`、带 `anchorId`（建议的锚点编号，就用它）的物体按类别 `props.category` 决定：
+
+     | 类别 | 锚点类型 |
+     |---|---|
+     | `table`（桌子） | `table` |
+     | `counter`（前台） | `counter` |
+     | `sofa`（沙发） | `zone` |
+     | `chair`（椅子） | 只在提示里明确要求时建 `seat`（见下） |
+     | `cabinet`、`clutter`、`plant`、`lamp`、`pillar`、`round` 等，以及没有类别的物体 | 不建 |
+
+     **椅子的座位锚点**：`hints.objects[]` 里写了 `anchor: true`（必须是布尔值 true）、没写 `kind` 或
+     `kind` 是 `chair` / `armchair` / `stool` 的项，按中心点的 x、z 找椅子：中心落在椅子包围盒里或离它
+     不超过 0.3 米的算指的是它，几把都符合时取离包围盒最近、再取离盒子中心最近的那把。例如
+     `{"center": [2.4, 0.45, 1.0], "kind": "chair", "label": "主持人座位", "anchor": true}`。
+     `anchor` 对别的类别不起作用（柜子、杂物等写了也不建）。
+
+     `box` = 物体 `bounds` 覆盖的格子（同接口服务 `Aabb::grid_cover`），`visibility: public`，`label` 用物体
+     的中文标签（提示里的 `label`，如"会议桌""前台"），物体没有标签就用类别的中文名（桌子、前台、沙发、
+     椅子）；生成后按接口服务 `AnchorBody::validate` 的规则校验（不合格 → 任务失败）。**已存在的锚点不动**：
+     同编号的锚点已经有了就不再写，以前按旧规则建的锚点（例如杂物、柜子的）也不会被删掉或改掉。
      锚点当前状态写进 `anchors`（`{spaceId, id, owner, hash, body, seq}`）；
    - **体素化**：`voxelize: true` 时在**同一个事务里插入一个 `voxelize` 任务**（编号
      `<本任务编号>-voxelize`，参数 `{scanAssetHash}`，`parentJobId` 指向本任务），不在本任务里写第二次提交。
@@ -219,8 +245,10 @@ uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceI
 ### `rebuild` `{scanAssetHash?, hints?}`
 
 对指定扫描（默认最新扫描）用它最近一次提交的变换重跑结构 + 物体重建并提交，不重新生成网页用模型。
-指定的不是当前扫描时，提交里带上这个扫描的 `scan` 引用，让扫描层和重建层一致。结果与当前状态完全相同
-时不提交，任务直接完成（`result.unchanged = true`）。`result` 同上（没有 `webModels`）。
+指定的不是当前扫描时，提交里带上这个扫描的 `scan` 引用，让扫描层和重建层一致。锚点规则同上：可以用
+`hints.objects[].anchor: true` 给已经导入的椅子补建座位锚点（物件没变、只有新锚点时也提交）。结果与当前
+状态完全相同（物件没变、也没有要新建的锚点）时不提交，任务直接完成（`result.unchanged = true`）。
+`result` 同上（没有 `webModels`）。
 
 ### `voxelize` `{scanAssetHash?, style?}`
 
@@ -266,6 +294,8 @@ result = reconstruct_objects(mesh_space, structure, params=hints)
 # structure：同一网格上 extract_structure(mesh_space, hints=hints) 的 StructureResult
 # params：任务参数里的 hints（没给时是 {}）
 result.entities  # {entityId: body}，SHAPES 第 3 节，layer 必须是 rebuilt，kind 是 object 或 template
+#   物体的 props.category 写类别（chair、table、sofa、counter、cabinet、clutter……），决定建不建锚点；
+#   anchorId 写建议的锚点编号；label 写中文标签（有提示用提示的 label）
 result.textures  # {sha256 十六进制: 图片字节（jpeg/png/webp）}，被 material.texture 引用
 result.metrics  # 任意 JSON，原样放进 result.objects
 ```

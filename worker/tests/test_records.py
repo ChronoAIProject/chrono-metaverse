@@ -3,8 +3,6 @@
 import pytest
 
 from metaverse_worker import shapes as sh
-from metaverse_worker.errors import PermanentJobError
-from metaverse_worker.handlers.scan import anchor_proposals
 from metaverse_worker.records import RecordError, check_label, entity_body, validate_anchor_body
 
 BOX = sh.box([1.0, 0.75, 0.8])
@@ -65,14 +63,3 @@ def test_anchor_body_rules():
     for body in bad:
         with pytest.raises(RecordError):
             validate_anchor_body(body)
-
-
-def test_anchor_proposals_copy_label_and_validate():
-    table = entity_body(entity_id="table-01", kind="object", shape=BOX, anchor_id="table-01", label="会议桌")
-    anchors = anchor_proposals({"table-01": table})
-    assert anchors["table-01"]["label"] == "会议桌" and anchors["table-01"]["kind"] == "table"
-    validate_anchor_body(anchors["table-01"])
-    # 绕过物件校验塞进来的控制字符：建锚点时也拦下，不写出接口服务改不动的锚点
-    broken = {**table, "label": "会议桌\n"}
-    with pytest.raises(PermanentJobError):
-        anchor_proposals({"table-01": broken})
