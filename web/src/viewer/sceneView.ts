@@ -22,7 +22,7 @@ import {
 import { materialKey } from '../core/shapes/build';
 import type { VoxelPart } from '../core/voxels';
 import { anchorKey, linkRoute, type AnchorRef, type Visual } from '../core/visuals';
-import { clipBox, frameBox } from './framing';
+import { clipBox, frameBox, scanFrameBox } from './framing';
 import { iconElement } from './icons';
 import { applyTexturedLook, createLights } from './lighting';
 import {
@@ -122,11 +122,13 @@ interface AnchorInfo {
   readonly memberName?: string;
 }
 
-/** 一个成员的取景来源：内容所在的组、取景范围（世界坐标）、只有模型的物件的包围盒。 */
+/** 一个成员的取景来源：内容所在的组、取景范围（世界坐标）、只有模型的物件的包围盒、扫描。 */
 interface FrameSource {
   readonly group: THREE.Object3D;
   readonly clips: readonly THREE.Box3[];
   readonly extraBoxes: readonly THREE.Box3[];
+  /** 原始视图的扫描模型（组里的那一份）；取景用它表面的 2%–98% 分位包围盒，不用外包盒。 */
+  readonly scan: THREE.Object3D | null;
 }
 
 /** 没有范围的锚点按这么大（米）估计屏幕上的大小。 */
@@ -305,6 +307,8 @@ export class SceneView {
   private autoFramed = false;
   private lastMode: SceneContent['mode'] | null = null;
   private frameSources: FrameSource[] = [];
+  /** 扫描的取景包围盒，按组里的那一份缓存（换了内容那一份就没人引用了）。 */
+  private readonly scanBoxes = new WeakMap<THREE.Object3D, THREE.Box3>();
   private disposed = false;
   private pointerDown: { x: number; y: number } | null = null;
   /** 悬停：最多每 80 毫秒处理一次，处理的总是最后一个位置（尾随节流）。 */
@@ -803,12 +807,15 @@ export class SceneView {
 
       // 扫描。
       const scan = scans[index];
+      let scanInstance: THREE.Object3D | null = null;
       if (scan) {
         hasScan = true;
         const instance = scan.clone(true);
         instance.traverse((object) => {
           object.userData.sharedGeometry = true;
           object.userData.sharedMaterial = true;
+          // 取景时扫描单独算（分位包围盒），不按网格的外包盒算。
+          object.userData.scanPart = true;
         });
         instance.userData.shared = true;
         if (member.scanTransform && member.scanTransform.length === 16) {
@@ -817,6 +824,7 @@ export class SceneView {
         }
         instance.name = 'scan';
         group.add(instance);
+        scanInstance = instance;
         instance.traverse((object) => {
           const mesh = object as THREE.Mesh;
           if (mesh.isMesh) triangles += (mesh.geometry.index?.count ?? 0) / 3;
@@ -824,7 +832,7 @@ export class SceneView {
       }
 
       this.buildOverlay(member, overlay, content.members.length > 1);
-      this.frameSources.push(frameSourceOf(member, group));
+      this.frameSources.push(frameSourceOf(member, group, scanInstance));
     });
 
     this.links = content.links;
@@ -1381,6 +1389,7 @@ export class SceneView {
   /**
    * 取景用的包围盒：每个成员里内容（物件、方块、扫描）的包围盒和它的取景范围（实体区，
    * 优化 + 扩展视图再加虚拟区）求交后合并；没有定义实体区的成员用全部内容。
+   * 扫描按表面（三角形按面积加权）的 2%–98% 分位包围盒算，去掉零星的离群点（framing.ts 的 `scanFrameBox`）。
    * 开着剖切时顶部压到剖切高度（上面的内容反正看不见）。
    */
   private frameTarget(): THREE.Box3 {
@@ -1389,8 +1398,11 @@ export class SceneView {
     for (const source of this.frameSources) {
       const box = new THREE.Box3();
       source.group.traverse((object) => {
-        if ((object as THREE.Mesh).isMesh) box.union(new THREE.Box3().expandByObject(object));
+        if ((object as THREE.Mesh).isMesh && object.userData.scanPart !== true) {
+          box.union(new THREE.Box3().expandByObject(object));
+        }
       });
+      if (source.scan !== null) box.union(this.scanBox(source.scan));
       for (const extra of source.extraBoxes) box.union(extra);
       out.union(clipBox(box, source.clips));
     }
@@ -1399,6 +1411,15 @@ export class SceneView {
       out.max.y = Math.min(out.max.y, this.cutHeight);
     }
     return out;
+  }
+
+  private scanBox(scan: THREE.Object3D): THREE.Box3 {
+    let box = this.scanBoxes.get(scan);
+    if (box === undefined) {
+      box = scanFrameBox(scan);
+      this.scanBoxes.set(scan, box);
+    }
+    return box;
   }
 
   /**
@@ -1780,10 +1801,15 @@ function placedGridBox(placement: Placement, box: readonly number[]): THREE.Box3
   );
 }
 
-/** 成员的取景来源：取景范围（实体区，扩展视图加虚拟区），只有模型、可能还没加载完的物件，虚拟区。 */
-function frameSourceOf(member: MemberContent, group: THREE.Object3D): FrameSource {
+/** 成员的取景来源：取景范围（实体区，扩展视图加虚拟区），只有模型、可能还没加载完的物件，虚拟区，扫描。 */
+function frameSourceOf(
+  member: MemberContent,
+  group: THREE.Object3D,
+  scan: THREE.Object3D | null,
+): FrameSource {
   return {
     group,
+    scan,
     clips: member.view.frameBoxes.map((box) => placedGridBox(member.placement, box)),
     extraBoxes: [
       ...member.view.entities
