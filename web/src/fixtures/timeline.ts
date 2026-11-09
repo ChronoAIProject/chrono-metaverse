@@ -12,7 +12,7 @@ import { random } from './png';
  * 显式给了才有；公开投影在夹具接口（server.ts）里做。
  * 每隔三天花店送一次花（花店写 delivery.sent，前厅写 delivery.arrived，同一个 correlationId），
  * 到了之后前台上摆出花束（spawnEntity）。另有一批相对"现在"的事件，"现在"模式一打开就能看到
- * 全部显示方式：营业中（标签）、1 号桌有人（高亮）、客流热力、正在路上的送花（只有起点）。
+ * 全部显示方式：营业中（标签）、1 号桌和 2 号座位有人（高亮）、客流热力、正在路上的送花（只有起点）。
  */
 
 export const commits: CommitSummary[] = [
@@ -313,6 +313,13 @@ export function fixtureEvents(now: number = Date.now()): SpaceEvent[] {
     type: 'table.occupancy',
     anchorId: 'table-01',
     data: { status: '有人', party: 3 },
+  });
+  // 座位默认不显示标签；有事件状态时要显示（锚点标签取舍的演示）。
+  drafts.push({
+    at: t0 - 15 * 60_000,
+    type: 'table.occupancy',
+    anchorId: 'seat-02',
+    data: { status: '有人', party: 1 },
   });
   drafts.push({
     at: t0 - 10 * 60_000,

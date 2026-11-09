@@ -3,6 +3,7 @@ import type { PublicClient } from '../core/api/client';
 import { toMillis } from '../core/events';
 import {
   IDENTITY_PLACEMENT,
+  hasStyleChoice,
   sceneHeightRange,
   selectView,
   type SceneContent,
@@ -11,9 +12,17 @@ import {
 import { buildVisuals } from '../core/visuals';
 import { useAssetLoaders, useDensity, useRuntimeState } from '../data/hooks';
 import { SpaceRuntime } from '../data/spaceRuntime';
+import { useRebuiltStyle } from '../routing/routes';
 import { TimelineBar, formatTime } from '../timeline/TimelineBar';
 import { Viewer, type SceneViewFactory } from '../viewer/Viewer';
-import { CutawayControl, ErrorCard, LoadingCard, ThemeToggle, ViewModeSwitch } from './controls';
+import {
+  CutawayControl,
+  ErrorCard,
+  LoadingCard,
+  StyleSwitch,
+  ThemeToggle,
+  ViewModeSwitch,
+} from './controls';
 import { usePlayback } from './usePlayback';
 import './SpacePage.css';
 
@@ -47,6 +56,7 @@ export function SpacePage({
   initialMode = 'optimized',
 }: SpacePageProps) {
   const [mode, setMode] = useState<ViewMode>(initialMode);
+  const [style, setStyle] = useRebuiltStyle();
   const [cutEnabled, setCutEnabled] = useState(true);
   const [cutHeight, setCutHeight] = useState(2.2);
   const [attempt, setAttempt] = useState(0);
@@ -101,7 +111,7 @@ export function SpacePage({
     if (state.status !== 'ready') return null;
     if (state.seq === null) return { mode, members: [], links: [] };
     if (scene === null) return null;
-    const view = selectView(scene, mode);
+    const view = selectView(scene, mode, style);
     // 原始视图要等扫描下载完再交给查看器，避免先画一个空场景。
     if (view.showScan && scan === null) return null;
     return {
@@ -118,7 +128,7 @@ export function SpacePage({
       ],
       links: [],
     };
-  }, [state.status, state.seq, scene, mode, scan, spaceId, info?.name]);
+  }, [state.status, state.seq, scene, mode, style, scan, spaceId, info?.name]);
 
   const visuals = useMemo(
     () =>
@@ -187,7 +197,12 @@ export function SpacePage({
                 : '这个时刻还没有任何提交'}
           </p>
         </div>
-        <ViewModeSwitch mode={mode} onChange={setMode} />
+        <div className="space__switches">
+          <ViewModeSwitch mode={mode} onChange={setMode} />
+          {scene !== null && hasStyleChoice(scene) && (
+            <StyleSwitch style={style} disabled={mode === 'raw'} onChange={setStyle} />
+          )}
+        </div>
         <CutawayControl
           enabled={cutEnabled}
           height={Math.min(cutHeight, heights.max)}

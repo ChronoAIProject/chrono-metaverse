@@ -19,6 +19,8 @@ export interface SceneViewLike {
   setCutaway(height: number | null): void;
   select(selection: Selection | null): void;
   frameContent(): void;
+  /** 显示全部锚点标签；false 时只显示有意义的几类（见 labelLayout.ts）。 */
+  setShowAllLabels(all: boolean): void;
   getStats(): SceneStats;
   dispose(): void;
 }
@@ -66,6 +68,7 @@ export function Viewer({
   const [unsupported, setUnsupported] = useState<string | null>(null);
   const [step, setStep] = useState<LoadStep | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [allLabels, setAllLabels] = useState(false);
 
   useEffect(() => {
     textureRef.current = loadTexture;
@@ -146,6 +149,10 @@ export function Viewer({
     viewRef.current?.setVisuals(visuals);
   }, [visuals, content]);
 
+  useEffect(() => {
+    viewRef.current?.setShowAllLabels(allLabels);
+  }, [allLabels, content]);
+
   // 换了内容（换时刻、换视图）时，原来选中的物件可能已经不在了。
   const [selectedContent, setSelectedContent] = useState(content);
   if (selectedContent !== content) {
@@ -185,13 +192,26 @@ export function Viewer({
         />
       )}
       {content !== null && unsupported === null && (
-        <button
-          type="button"
-          className="viewer__frame"
-          onClick={() => viewRef.current?.frameContent()}
-        >
-          回到全景
-        </button>
+        <div className="viewer__tools">
+          <label
+            className="viewer__tool viewer__tool--check"
+            title="默认只显示桌子、前台、区域、门和有事件的锚点"
+          >
+            <input
+              type="checkbox"
+              checked={allLabels}
+              onChange={(event) => setAllLabels(event.target.checked)}
+            />
+            显示全部标签
+          </label>
+          <button
+            type="button"
+            className="viewer__tool"
+            onClick={() => viewRef.current?.frameContent()}
+          >
+            回到全景
+          </button>
+        </div>
       )}
     </div>
   );

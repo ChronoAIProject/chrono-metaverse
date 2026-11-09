@@ -1,10 +1,11 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { decodePng, imageStats } from './png';
+import { brightCoverage, decodePng, imageStats } from './png';
 
 /*
- * 夹具模式的端到端测试：三种视图、剖切、时间轴、"现在"模式、组合页、预览页、错误页、移动端。
+ * 夹具模式的端到端测试：三种视图、取景、锚点标签、形状 / 方块、剖切、时间轴、"现在"模式、
+ * 组合页、预览页、错误页、移动端。
  * 截图写到 e2e/screenshots/（不进版本库），用来人工核对渲染（圆角和弧度、贴图、不是全黑）。
  */
 
@@ -41,6 +42,33 @@ async function expectRendered(page: Page) {
   const stats = imageStats(decodePng(await page.locator('.viewer__canvas').screenshot()));
   expect(stats.brightRatio).toBeGreaterThan(0.15);
   expect(stats.colors).toBeGreaterThan(20);
+}
+
+/** 房间（亮像素）占整个画布的比例。 */
+async function roomCoverage(page: Page): Promise<number> {
+  return brightCoverage(decodePng(await page.locator('.viewer__canvas').screenshot()));
+}
+
+/** 当前看得见的锚点标签。 */
+function visibleLabels(page: Page) {
+  return page.locator('.viewer__anchor:visible');
+}
+
+/** 看得见的锚点标签两两不重叠（允许 1 像素误差）。 */
+async function expectNoOverlap(page: Page) {
+  const rects = await visibleLabels(page).evaluateAll((elements) =>
+    elements.map((element) => {
+      const r = element.getBoundingClientRect();
+      return [r.left, r.top, r.right, r.bottom] as const;
+    }),
+  );
+  for (let i = 0; i < rects.length; i += 1) {
+    for (let j = i + 1; j < rects.length; j += 1) {
+      const [a, b] = [rects[i]!, rects[j]!];
+      const overlap = a[0] < b[2] - 1 && b[0] < a[2] - 1 && a[1] < b[3] - 1 && b[1] < a[3] - 1;
+      expect(overlap, `标签 ${i} 和 ${j} 重叠`).toBe(false);
+    }
+  }
 }
 
 test.beforeAll(() => {
@@ -102,6 +130,155 @@ test('三种视图：形状带圆角和贴图，同款物件共用几何体，�
   await info.getByRole('button', { name: '关闭' }).click();
   await expect(info).toHaveCount(0);
   expect(errors).toEqual([]);
+});
+
+test('取景：房间占画面的大部分，"回到全景"用同样的取景', async ({ page }) => {
+  await page.goto(LINK);
+  await waitForScene(page, 'optimized');
+  // 取景范围是实体区里的内容（6 × 5 米的前厅），不是整个场景。
+  const frame = (await page.locator('.viewer').getAttribute('data-frame'))!.split(',').map(Number);
+  expect(frame[3]! - frame[0]!).toBeLessThan(6.5);
+  expect(frame[5]! - frame[2]!).toBeLessThan(5.5);
+  await page.screenshot({ path: join(SHOTS, 'framing.png') });
+  const framed = await roomCoverage(page);
+  expect(framed).toBeGreaterThan(0.3);
+
+  // 拉远以后房间变小，"回到全景"恢复同样的取景。
+  const canvas = (await page.locator('.viewer__canvas').boundingBox())!;
+  await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + canvas.height / 2);
+  for (let i = 0; i < 5; i += 1) await page.mouse.wheel(0, 400);
+  await page.waitForTimeout(900);
+  expect(await roomCoverage(page)).toBeLessThan(framed * 0.6);
+  await page.getByRole('button', { name: '回到全景' }).click();
+  await page.waitForTimeout(500);
+  expect(await roomCoverage(page)).toBeGreaterThan(0.3);
+
+  // 优化 + 扩展：虚拟区一起纳入取景（镜头没动过时换视图自动重新取景）。
+  await page.getByRole('button', { name: '优化 + 扩展' }).click();
+  await waitForScene(page, 'extended');
+  await expect
+    .poll(async () => {
+      const box = (await page.locator('.viewer').getAttribute('data-frame'))!.split(',');
+      return Number(box[3]);
+    })
+    .toBeGreaterThan(9.5);
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: join(SHOTS, 'framing-extended.png') });
+  expect(await roomCoverage(page)).toBeGreaterThan(0.3);
+});
+
+test('锚点标签：默认只显示有意义的，避让、有上限，悬停时显示，可以显示全部', async ({ page }) => {
+  await page.goto(LINK);
+  await waitForScene(page, 'optimized');
+  const anchors = page.locator('.viewer__anchor');
+  const total = await numberAttr(page, 'data-anchors');
+  expect(total).toBeGreaterThanOrEqual(20);
+  await expect.poll(() => numberAttr(page, 'data-labels')).toBeGreaterThan(3);
+  const shown = await visibleLabels(page).count();
+  // 1440 × 900 的画面最多 10 个。
+  expect(shown).toBeLessThanOrEqual(10);
+  expect(shown).toBeLessThan(total);
+  expect(await numberAttr(page, 'data-labels')).toBe(shown);
+  await expectNoOverlap(page);
+  // 桌子、前台、门默认显示；座位默认不显示，有事件状态（有人）的座位显示。
+  await expect(anchors.filter({ hasText: '1 号桌' })).toBeVisible();
+  await expect(anchors.filter({ hasText: /^前台/ })).toBeVisible();
+  await expect(anchors.filter({ hasText: '入口' })).toBeVisible();
+  await expect(anchors.filter({ hasText: '座位 1' })).toBeHidden();
+  await expect(anchors.filter({ hasText: '座位 2 · 有人 1 位' })).toBeVisible();
+  // 桌上的小杂物在屏幕上太小，默认不放标签。
+  await expect(anchors.filter({ hasText: '杂物' }).first()).toBeAttached();
+  expect(await visibleLabels(page).filter({ hasText: '杂物' }).count()).toBeLessThan(
+    await anchors.filter({ hasText: '杂物' }).count(),
+  );
+  await page.screenshot({ path: join(SHOTS, 'labels-default.png') });
+
+  // 显示全部标签。
+  const all = page.getByRole('checkbox', { name: '显示全部标签' });
+  await all.check();
+  const seat = anchors.filter({ hasText: '座位 1' });
+  await expect(seat).toBeVisible();
+  await expect.poll(() => visibleLabels(page).count()).toBeGreaterThan(shown);
+  await page.screenshot({ path: join(SHOTS, 'labels-all.png') });
+  // 标签中心就是锚点在屏幕上的位置：记下来，关掉"显示全部"后把鼠标移过去。
+  const seatBox = (await seat.boundingBox())!;
+  await all.uncheck();
+  await expect(seat).toBeHidden();
+  await expect.poll(() => visibleLabels(page).count()).toBe(shown);
+
+  // 悬停在锚点上时显示，移开后隐藏。
+  await page.mouse.move(seatBox.x + seatBox.width / 2, seatBox.y + seatBox.height / 2, {
+    steps: 4,
+  });
+  await expect(seat).toBeVisible();
+  await page.screenshot({ path: join(SHOTS, 'labels-hover.png') });
+  const canvas = (await page.locator('.viewer__canvas').boundingBox())!;
+  await page.mouse.move(canvas.x + 20, canvas.y + 20, { steps: 4 });
+  await expect(seat).toBeHidden();
+
+  // 拉远：屏幕上变小的锚点不放标签，标签变少；有事件的锚点优先，仍然有标签。
+  await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + canvas.height / 2);
+  for (let i = 0; i < 6; i += 1) await page.mouse.wheel(0, 400);
+  await expect.poll(() => numberAttr(page, 'data-labels')).toBeLessThan(shown);
+  const withEvents = /1 号桌|座位 2|前台|入口|休息区/;
+  expect(await visibleLabels(page).filter({ hasText: withEvents }).count()).toBeGreaterThan(0);
+  await expectNoOverlap(page);
+  await page.screenshot({ path: join(SHOTS, 'labels-far.png') });
+});
+
+test('形状 / 方块：重建层两种内容都有时可以切换，地址里记住选择', async ({ page }) => {
+  await page.goto(LINK);
+  await waitForScene(page, 'optimized');
+  const styles = page.getByRole('group', { name: '重建层画法' });
+  const shapes = styles.getByRole('button', { name: '形状' });
+  const blocks = styles.getByRole('button', { name: '方块' });
+  await expect(shapes).toHaveAttribute('aria-pressed', 'true');
+  // 形状画法：重建层物件都画，方块只有扩展层的地毯。
+  const shapeEntities = await numberAttr(page, 'data-entities');
+  const shapeFaces = await numberAttr(page, 'data-voxel-faces');
+  expect(shapeEntities).toBeGreaterThan(20);
+
+  await blocks.click();
+  await expect(blocks).toHaveAttribute('aria-pressed', 'true');
+  await expect(page).toHaveURL(/\?style=blocks#share=fixture-share-token-0123456789abcdef$/);
+  await expect.poll(() => numberAttr(page, 'data-voxel-faces')).toBeGreaterThan(shapeFaces * 5);
+  await waitForScene(page, 'optimized');
+  // 方块画法：重建层物件不画（优化视图里扩展层没有物件）。
+  expect(await numberAttr(page, 'data-entities')).toBe(0);
+  await expectRendered(page);
+  await page.screenshot({ path: join(SHOTS, 'style-blocks.png') });
+
+  // 刷新：仍然是方块，# 后面的分享令牌照样有效。
+  await page.reload();
+  await waitForScene(page, 'optimized');
+  await expect(blocks).toHaveAttribute('aria-pressed', 'true');
+  expect(await numberAttr(page, 'data-voxel-faces')).toBeGreaterThan(shapeFaces * 5);
+
+  // 优化 + 扩展：扩展层的物件（展台）照画。
+  await page.getByRole('button', { name: '优化 + 扩展' }).click();
+  await waitForScene(page, 'extended');
+  expect(await numberAttr(page, 'data-entities')).toBeGreaterThan(0);
+  expect(await numberAttr(page, 'data-entities')).toBeLessThan(shapeEntities);
+
+  // 原始视图只画扫描，切换禁用。
+  await page.getByRole('button', { name: '原始', exact: true }).click();
+  await waitForScene(page, 'raw');
+  await expect(blocks).toBeDisabled();
+
+  // 换回形状：地址里去掉 style，物件回来、重建层区块不画。
+  await page.getByRole('button', { name: '优化', exact: true }).click();
+  await shapes.click();
+  await expect(page).toHaveURL(/\/s\/demo-lobby#share=/);
+  await expect.poll(() => numberAttr(page, 'data-entities')).toBe(shapeEntities);
+  await waitForScene(page, 'optimized');
+  expect(await numberAttr(page, 'data-voxel-faces')).toBe(shapeFaces);
+
+  // 重建之前（版本 #1）重建层什么都没有，不显示切换。
+  await page.getByRole('slider', { name: '时间' }).focus();
+  await page.keyboard.press('Home');
+  await page.getByRole('button', { name: '下一个提交' }).click();
+  await expect(page.locator('.space__version')).toContainText('版本 #1');
+  await expect(styles).toHaveCount(0);
 });
 
 test('剖切：所有视图都能切掉某个高度以上的内容（含扫描模型）', async ({ page }) => {
@@ -340,6 +517,10 @@ test.describe('移动端', () => {
       () => document.documentElement.scrollWidth - window.innerWidth,
     );
     expect(overflow).toBeLessThanOrEqual(0);
+    // 手机上标签更少（最多 4 个），房间同样占画面的大部分。
+    await expect.poll(() => numberAttr(page, 'data-labels')).toBeGreaterThan(0);
+    expect(await visibleLabels(page).count()).toBeLessThanOrEqual(4);
+    expect(await roomCoverage(page)).toBeGreaterThan(0.3);
     await page.screenshot({ path: join(SHOTS, 'mobile.png') });
 
     // 单指拖动旋转、双指张开缩放：画面都会变。

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import type { RebuiltStyle } from '../core/scene';
 
 /**
  * 页面路由。照搬 CMA web/src/routing/routes.ts 的写法：路径和路由对象一一对应、
@@ -10,6 +11,7 @@ import { useCallback, useEffect, useState } from 'react';
  * - `/`：首页。
  *
  * 令牌在 `#` 后面，不属于路由，也不会发给服务器。
+ * 页面的显示选项放在查询参数里（目前只有重建层画法 `?style=blocks`），不碰 `#` 后面的令牌。
  */
 export type AppRoute =
   | { readonly kind: 'home' }
@@ -81,4 +83,38 @@ export function useAppRouter(): AppRouter {
     setRoute(parseRoute(routePath(next)));
   }, []);
   return { route, navigate };
+}
+
+/** 查询参数里记住的重建层画法的键。 */
+export const STYLE_PARAM = 'style';
+
+/** 地址里记住的重建层画法：`?style=blocks` 是方块；没有或不认识的值是默认的形状。 */
+export function styleFromSearch(search: string): RebuiltStyle {
+  return new URLSearchParams(search).get(STYLE_PARAM) === 'blocks' ? 'blocks' : 'shapes';
+}
+
+/** 换掉查询参数里的画法（默认的形状不写），其他参数原样保留。返回 `''` 或 `?…`。 */
+export function searchWithStyle(search: string, style: RebuiltStyle): string {
+  const params = new URLSearchParams(search);
+  if (style === 'blocks') params.set(STYLE_PARAM, 'blocks');
+  else params.delete(STYLE_PARAM);
+  const text = params.toString();
+  return text === '' ? '' : `?${text}`;
+}
+
+/**
+ * 重建层画法（形状 / 方块），记在地址的查询参数里：刷新、复制链接都保留。
+ * 只换查询参数，路径和 `#share=…` 原样保留；用 replaceState，不新增历史记录。
+ */
+export function useRebuiltStyle(): readonly [RebuiltStyle, (style: RebuiltStyle) => void] {
+  const [style, setStyle] = useState<RebuiltStyle>(() => styleFromSearch(window.location.search));
+  const change = useCallback((next: RebuiltStyle) => {
+    setStyle(next);
+    const { pathname, search, hash } = window.location;
+    const nextSearch = searchWithStyle(search, next);
+    if (nextSearch !== search) {
+      window.history.replaceState(window.history.state, '', `${pathname}${nextSearch}${hash}`);
+    }
+  }, []);
+  return [style, change] as const;
 }

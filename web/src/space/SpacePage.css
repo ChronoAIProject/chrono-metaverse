@@ -85,6 +85,29 @@
   background: var(--primary-fill);
 }
 
+.segmented button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.segmented button:disabled:hover {
+  color: var(--ink-2);
+  background: transparent;
+}
+
+.segmented button[aria-pressed='true']:disabled:hover {
+  color: var(--on-primary);
+  background: var(--primary-fill);
+}
+
+/* 视图切换和"形状 / 方块"切换挨在一起。 */
+.space__switches {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .cutaway {
   display: inline-flex;
   align-items: center;

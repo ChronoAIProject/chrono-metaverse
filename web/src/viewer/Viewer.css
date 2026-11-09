@@ -223,10 +223,20 @@
   accent-color: var(--accent);
 }
 
-.viewer__frame {
+.viewer__tools {
   position: absolute;
   right: var(--space-4);
   bottom: var(--space-4);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.viewer__tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   height: var(--control-h);
   padding: 0 12px;
   border-radius: var(--radius);
@@ -234,10 +244,19 @@
   color: var(--ink);
   border: 1px solid var(--rule-2);
   font-size: var(--text-note);
+  white-space: nowrap;
 }
 
-.viewer__frame:hover {
+.viewer__tool:hover {
   background: var(--raised);
+}
+
+.viewer__tool--check {
+  cursor: pointer;
+}
+
+.viewer__tool--check input {
+  accent-color: var(--accent);
 }
 
 .viewer__info {
