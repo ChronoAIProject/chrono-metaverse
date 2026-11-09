@@ -12,7 +12,8 @@ import type {
  *
  * - 更正：`corrects` 一律指向最初那条事件；同一事件有多条更正时，以 recordedAt 最新的为准。
  *   替换是完整的新记录（at 与原事件相同），撤回是 `retracted: true`。
- * - 公开过滤顺序：先应用更正，再按可见级别过滤。
+ * - 公开过滤顺序：先应用更正，再按可见级别过滤。公开接口返回的已经是服务端的公开投影
+ *   （不带 visibility），网站拿到后只丢掉显式标成内部级的记录，不再按类型默认级别过滤。
  * - 状态事件：对每个 (锚点, 状态 key) 取 at ≤ T 的最后一条有效事件，不受时间窗限制；
  *   超过 maxAgeSec 没有更新的状态自动失效。
  */
@@ -32,15 +33,34 @@ export interface EffectiveEvent extends SpaceEvent {
 }
 
 export interface EffectiveOptions {
-  /** 只要公开级的（在应用更正之后过滤）。 */
+  /**
+   * 只要公开级的（在应用更正之后过滤）。
+   *
+   * 公开接口返回的事件已经按生效的可见级别过滤过，并且不带 `visibility`——其中可能有
+   * 类型默认内部级、写入时显式标成公开的事件。对这种数据不要传 `types`：这时只丢掉
+   * 显式写了 `visibility: 'internal'` 的记录，没写的一律当公开。
+   */
   readonly publicOnly?: boolean;
-  /** 事件类型的默认可见级别，事件没写 visibility 时用。 */
+  /**
+   * 全部事件类型（含各版本）。只在手里是原始记录时传（夹具模拟服务端）：没写 visibility
+   * 的事件按服务端的规则取 (type, typeVersion) 那个版本的默认级别，类型或版本找不到时按内部级。
+   */
   readonly types?: readonly EventTypeDef[];
 }
 
+/**
+ * 生效的可见级别：事件自己写的优先；否则给了 `types` 时取事件记录的那个版本的默认级别
+ * （与接口服务 `effective_visibility` 相同，找不到按内部级），没给时当公开。
+ */
 function visibilityOf(event: SpaceEvent, types?: readonly EventTypeDef[]): 'public' | 'internal' {
   if (event.visibility) return event.visibility;
-  return types?.find((t) => t.type === event.type)?.defaultVisibility ?? 'public';
+  if (types === undefined) return 'public';
+  const def =
+    event.typeVersion === undefined
+      ? typeOf(types, event.type)
+      : types.find((t) => t.type === event.type && t.version === event.typeVersion);
+  if (def === undefined) return 'internal';
+  return def.defaultVisibility ?? 'public';
 }
 
 /** 应用更正和撤回，按 at（再按编号）排序。 */
@@ -119,10 +139,10 @@ export function stateAt(
   at: Timestamp | number,
 ): Map<string, Map<string, AnchorState>> {
   const t = toMillis(at);
-  const byType = new Map(types.filter((d) => d.state !== undefined).map((d) => [d.type, d]));
   const latest = new Map<string, { event: SpaceEvent; def: EventTypeDef }>();
   for (const event of events) {
-    const def = byType.get(event.type);
+    // 按事件记录的版本取规则（同一类型各版本的 state 可以不同）。
+    const def = typeOf(types, event.type, event.typeVersion);
     if (def?.state === undefined) continue;
     const time = toMillis(event.at);
     if (time > t) continue;

@@ -87,6 +87,51 @@ describe('更正与撤回', () => {
     expect(effectiveEvents(events, { types }).map((e) => e.id)).toEqual(['e1', 'e2', 'e3']);
   });
 
+  it('公开接口的数据（不带 visibility）：不给 types 时只丢显式内部级，不按类型默认级别过滤', () => {
+    // staff.note 默认内部级；n1 写入时显式标成公开，接口返回时不带 visibility。
+    const events = [
+      event('n1', 0, { type: 'staff.note', data: { note: '今日新品' } }),
+      event('n2', 1, { type: 'staff.note', visibility: 'internal' }),
+      event('e3', 2, { type: 'order.served' }),
+      event('u1', 3, { type: 'not.registered' }),
+    ];
+    expect(effectiveEvents(events, { publicOnly: true }).map((e) => e.id)).toEqual([
+      'n1',
+      'e3',
+      'u1',
+    ]);
+    // 显式公开优先于类型的默认级别。
+    const explicit = event('n3', 4, { type: 'staff.note', visibility: 'public' });
+    expect(effectiveEvents([explicit], { publicOnly: true, types }).map((e) => e.id)).toEqual([
+      'n3',
+    ]);
+  });
+
+  it('给 types 时按事件记录的 (type, typeVersion) 取默认级别；类型或版本找不到时按内部级', () => {
+    const versioned: EventTypeDef[] = [
+      { type: 'door.opened', version: 1, defaultVisibility: 'internal', display: { kind: 'icon' } },
+      { type: 'door.opened', version: 2, defaultVisibility: 'public', display: { kind: 'icon' } },
+    ];
+    const events = [
+      event('v1', 0, { type: 'door.opened', typeVersion: 1 }),
+      event('v2', 1, { type: 'door.opened', typeVersion: 2 }),
+      event('v3', 2, { type: 'door.opened', typeVersion: 3 }),
+      event('v1p', 3, { type: 'door.opened', typeVersion: 1, visibility: 'public' }),
+      // 没写版本：取这个类型的最高版本。
+      event('latest', 4, { type: 'door.opened' }),
+      event('unknown', 5, { type: 'not.registered', typeVersion: 1 }),
+    ];
+    expect(
+      effectiveEvents(events, { publicOnly: true, types: versioned }).map((e) => e.id),
+    ).toEqual(['v2', 'v1p', 'latest']);
+    // 反过来排版本顺序，结果不变（不是"数组里第一个同名类型"）。
+    expect(
+      effectiveEvents(events, { publicOnly: true, types: [...versioned].reverse() }).map(
+        (e) => e.id,
+      ),
+    ).toEqual(['v2', 'v1p', 'latest']);
+  });
+
   it('抹除的事件不带 data', () => {
     const [effective] = effectiveEvents([event('e1', 0, { redacted: true })]);
     expect(effective!.data).toBeUndefined();
@@ -121,6 +166,25 @@ describe('T 时刻的状态', () => {
     const events = effectiveEvents([event('e1', 0)]);
     expect(stateAt(events, types, iso(179)).has('table-01')).toBe(true);
     expect(stateAt(events, types, iso(181)).has('table-01')).toBe(false);
+  });
+
+  it('按事件记录的版本取状态规则', () => {
+    const versioned: EventTypeDef[] = [
+      {
+        type: 'table.occupancy',
+        version: 2,
+        state: { key: 'occupancy', value: 'party' },
+        display: { kind: 'highlight' },
+      },
+      ...types,
+    ];
+    const events = effectiveEvents([
+      event('v1', 0, { typeVersion: 1, data: { status: 'occupied', party: 2 } }),
+      event('v2', 0, { anchorId: 'table-02', typeVersion: 2, data: { status: 'x', party: 4 } }),
+    ]);
+    const states = stateAt(events, versioned, iso(1));
+    expect(states.get('table-01')?.get('occupancy')?.value).toBe('occupied');
+    expect(states.get('table-02')?.get('occupancy')?.value).toBe(4);
   });
 
   it('更正后的状态按更正后的内容算', () => {

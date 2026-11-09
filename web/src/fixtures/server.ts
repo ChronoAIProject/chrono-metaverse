@@ -93,16 +93,76 @@ function page<T>(items: readonly T[], size: number, after: string | null) {
   return { items: slice, nextAfter: next };
 }
 
-/** 公开投影：只留公开级，data 只留 publicFields。 */
-function publicEvents(space: FixtureSpace): SpaceEvent[] {
-  const types = new Map(space.eventTypes.map((t) => [t.type, t]));
-  return space.events
-    .filter((e) => (e.visibility ?? types.get(e.type)?.defaultVisibility) !== 'internal')
+/** 按点分路径取值。 */
+function valueAt(data: Readonly<Record<string, unknown>>, path: string): unknown {
+  let current: unknown = data;
+  for (const part of path.split('.')) {
+    if (current === null || typeof current !== 'object') return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+
+/** 只留登记的公开字段（点分路径还原成嵌套对象；没登记任何字段时是空对象）。 */
+function projectFields(
+  data: Readonly<Record<string, unknown>>,
+  fields: readonly string[],
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const path of fields) {
+    const value = valueAt(data, path);
+    if (value === undefined) continue;
+    const parts = path.split('.');
+    let target = out;
+    for (const part of parts.slice(0, -1)) {
+      const child = target[part];
+      if (child === null || typeof child !== 'object') target[part] = {};
+      target = target[part] as Record<string, unknown>;
+    }
+    target[parts[parts.length - 1]!] = value;
+  }
+  return out;
+}
+
+/**
+ * 公开投影（与接口服务 `public_items` 相同）：先应用更正，再按生效的可见级别过滤
+ * （事件自己写的优先，否则取 (type, typeVersion) 那个版本的默认级别），只留公开锚点上的事件，
+ * data 只留公开字段。输出和真实接口一样不带 visibility、corrects、sourceEventId。
+ */
+function publicProjection(space: FixtureSpace, records: readonly SpaceEvent[]): SpaceEvent[] {
+  const anchors = new Set(
+    space.anchors.filter((a) => a.visibility === 'public').map((a) => a.anchorId),
+  );
+  anchors.add('_space');
+  const redacted = new Set(records.filter((e) => e.redacted).map((e) => e.corrects ?? e.id));
+  return effectiveEvents(records, { publicOnly: true, types: space.eventTypes })
+    .filter((e) => anchors.has(e.anchorId))
     .map((e) => {
-      const fields = types.get(e.type)?.publicFields;
-      if (fields === undefined || e.data === undefined) return e;
-      return { ...e, data: Object.fromEntries(fields.map((f) => [f, e.data![f]])) };
+      const def = space.eventTypes.find((t) => t.type === e.type && t.version === e.typeVersion);
+      const isRedacted = redacted.has(e.id);
+      const data =
+        isRedacted || e.data === undefined
+          ? undefined
+          : projectFields(e.data, def?.publicFields ?? []);
+      return {
+        id: e.id,
+        spaceId: space.id,
+        at: e.at,
+        recordedAt: e.recordedAt,
+        source: e.source,
+        type: e.type,
+        typeVersion: e.typeVersion,
+        anchorId: e.anchorId,
+        ...(data === undefined ? {} : { data }),
+        ...(e.correlationId === undefined ? {} : { correlationId: e.correlationId }),
+        ...(isRedacted ? { redacted: true } : {}),
+      };
     });
+}
+
+/** 空间的全部公开事件（已应用更正）。 */
+function publicEvents(space: FixtureSpace): SpaceEvent[] {
+  return publicProjection(space, space.events);
 }
 
 function spaceAuthorized(
@@ -300,10 +360,7 @@ export function fixtureReply(
       if (toMillis(to) - toMillis(from) > 90 * 86_400_000 + 1) {
         return problem(400, 'range_too_long', '最长 90 天');
       }
-      const events = effectiveEvents(publicEvents(space), {
-        publicOnly: true,
-        types: space.eventTypes,
-      });
+      const events = publicEvents(space);
       return json(200, {
         from,
         to,
@@ -313,10 +370,7 @@ export function fixtureReply(
     }
     case '/state': {
       const at = params.get('at') ?? new Date().toISOString();
-      const events = effectiveEvents(publicEvents(space), {
-        publicOnly: true,
-        types: space.eventTypes,
-      });
+      const events = publicEvents(space);
       const byId = new Map(events.map((e) => [e.id, e]));
       const states = [...stateAt(events, space.eventTypes, at).values()].flatMap((m) =>
         [...m.values()].map((state) => {

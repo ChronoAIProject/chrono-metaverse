@@ -80,6 +80,24 @@ describe('回放', () => {
     expect(urls().filter((u) => u.includes('/snapshot')).length).toBe(before);
   });
 
+  it('默认内部级、显式标成公开的事件（接口返回时不带 visibility）照样显示；内部级的不出现', async () => {
+    const { client } = setup();
+    runtime = new SpaceRuntime(client, SPACE_ID);
+    runtime.start();
+    await until(() => runtime!.getState().status === 'ready', '加载完');
+    // 空间信息里有全部事件类型，staff.note 默认内部级。
+    expect(
+      runtime.getState().info?.eventTypes?.find((t) => t.type === 'staff.note')?.defaultVisibility,
+    ).toBe('internal');
+    runtime.setTime(Date.parse('2026-10-03T04:05:00Z'), false, 15 * 60_000);
+    await until(
+      () => runtime!.getState().events.some((e) => e.type === 'staff.note'),
+      '显式公开的备注',
+    );
+    const notes = runtime.getState().events.filter((e) => e.type === 'staff.note');
+    expect(notes.map((e) => e.data?.note)).toEqual(['今日新品：桂花拿铁']);
+  });
+
   it('组合页的成员：seq 由外面给出，请求都带 universe 参数', async () => {
     const { client, urls } = setup({ universe: true });
     runtime = new SpaceRuntime(client, FLORIST_ID, client, { seqSource: 'external' });
@@ -117,6 +135,13 @@ describe('"现在"模式', () => {
     );
     expect(urls().some((u) => /\/state\?at=/.test(u))).toBe(true);
     expect(runtime.getState().states.get('table-01')?.get('occupancy')?.value).toBe('有人');
+    // 默认内部级、显式标成公开的备注（不带 visibility）在"现在"模式里也保留。
+    expect(
+      runtime
+        .getState()
+        .events.filter((e) => e.type === 'staff.note')
+        .map((e) => e.data?.note),
+    ).toEqual(['今日新品：桂花拿铁']);
 
     // 没有变化：304，不再拉事件。
     const count = urls().length;

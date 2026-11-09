@@ -6,6 +6,9 @@ import { random } from './png';
  * 夹具时间线：两个空间的提交、事件类型和事件。
  *
  * 前厅 4 次提交；一个多月的入座、出餐、离座、客流（热力）和营业状态事件，一条更正；
+ * 店员备注（staff.note）默认内部级：一条没写可见级别（公开接口不返回），另有显式标成公开的
+ * （公开接口返回，并且和真实接口一样不带 visibility）。存的是原始记录，visibility 只在写入时
+ * 显式给了才有；公开投影在夹具接口（server.ts）里做。
  * 每隔三天花店送一次花（花店写 delivery.sent，前厅写 delivery.arrived，同一个 correlationId），
  * 到了之后前台上摆出花束（spawnEntity）。另有一批相对"现在"的事件，"现在"模式一打开就能看到
  * 全部显示方式：营业中（标签）、1 号桌有人（高亮）、客流热力、正在路上的送花（只有起点）。
@@ -131,8 +134,10 @@ export const eventTypes: EventTypeDef[] = [
     display: { kind: 'spawnEntity', entityAsset: MODELS.bouquet.hash },
   },
   {
+    // 默认内部级；写入时显式标成公开的那几条公开接口照样返回（不带 visibility）。
     type: 'staff.note',
     version: 1,
+    publicFields: ['note'],
     defaultVisibility: 'internal',
     display: { kind: 'label', labelTemplate: '{note}' },
   },
@@ -164,7 +169,8 @@ function finish(prefix: string, drafts: Draft[]): SpaceEvent[] {
         typeVersion: 1,
         anchorId: d.anchorId,
         data: d.data ?? {},
-        visibility: d.visibility ?? 'public',
+        // 只有显式写了才带；没写的由夹具接口按类型默认级别判断（与接口服务相同）。
+        ...(d.visibility ? { visibility: d.visibility } : {}),
         ...(d.correlationId ? { correlationId: d.correlationId } : {}),
       };
     });
@@ -264,7 +270,14 @@ export function fixtureEvents(now: number = Date.now()): SpaceEvent[] {
     type: 'staff.note',
     anchorId: 'counter-01',
     data: { note: '内部备注' },
-    visibility: 'internal',
+  });
+  // 默认内部级、写入时显式标成公开：公开接口返回（不带 visibility），查看器要显示。
+  drafts.push({
+    at: START + 2 * DAY + 4 * HOUR,
+    type: 'staff.note',
+    anchorId: 'counter-01',
+    data: { note: '今日新品：桂花拿铁' },
+    visibility: 'public',
   });
 
   // 相对"现在"的一批（按分钟取整，同一次运行里稳定）。
@@ -280,6 +293,13 @@ export function fixtureEvents(now: number = Date.now()): SpaceEvent[] {
     type: 'table.occupancy',
     anchorId: 'table-01',
     data: { status: '有人', party: 3 },
+  });
+  drafts.push({
+    at: t0 - 10 * 60_000,
+    type: 'staff.note',
+    anchorId: 'counter-01',
+    data: { note: '今日新品：桂花拿铁' },
+    visibility: 'public',
   });
   for (let m = 55; m >= 2; m -= 4) {
     drafts.push({

@@ -96,12 +96,21 @@ describe('公开读接口客户端', () => {
     });
     expect(events.length).toBeGreaterThan(0);
     expect(events.every((e) => e.type === 'order.served')).toBe(true);
-    // 公开投影：data 只含公开字段，内部级事件不返回。
+    // 公开投影（与接口服务相同）：data 只含公开字段，内部级事件不返回；
+    // 默认内部级、写入时显式标成公开的事件照样返回；返回的事件都不带 visibility。
     const day = await allEvents(client, SPACE_ID, {
       from: '2026-10-03T00:00:00Z',
       to: '2026-10-04T00:00:00Z',
     });
-    expect(day.some((e) => e.type === 'staff.note')).toBe(false);
+    const notes = day.filter((e) => e.type === 'staff.note');
+    expect(notes.map((e) => e.data)).toEqual([{ note: '今日新品：桂花拿铁' }]);
+    expect(day.every((e) => !('visibility' in e) && !('corrects' in e))).toBe(true);
+    expect(day.every((e) => e.spaceId === SPACE_ID)).toBe(true);
+    // 空间信息和接口服务一样返回全部事件类型（包括默认内部级的）。
+    const info = await client.space(SPACE_ID);
+    expect(info.eventTypes?.find((t) => t.type === 'staff.note')?.defaultVisibility).toBe(
+      'internal',
+    );
     await expect(
       client.events(SPACE_ID, { from: '2026-10-01T00:00:00Z', to: '2026-10-03T00:00:00Z' }),
     ).rejects.toThrow(/24 小时/);
