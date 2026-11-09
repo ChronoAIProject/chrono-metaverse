@@ -651,6 +651,27 @@ async fn from_upload(
                 "没有找到本空间已完成校验的 ops 上传",
             )
         })?;
+    // 处理时整份读入，超过上限的文件（例如调小上限之前传的）在返回 202 之前就拒绝，
+    // 不要等后台任务才失败。
+    match state.repo.asset_length(&grant, &upload.asset_hash).await? {
+        None => {
+            return Err(ApiError::new(
+                StatusCode::NOT_FOUND,
+                "not_found",
+                "这个 ops 上传的资源已经不存在（可能已被清理）",
+            ))
+        }
+        Some(length) if length > MAX_OPS_FILE_BYTES => {
+            return Err(ApiError::new(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "ops_file_too_large",
+                format!(
+                    "操作文件 {length} 字节，超过上限 {MAX_OPS_FILE_BYTES} 字节；请拆成几个文件分别上传和应用"
+                ),
+            ))
+        }
+        Some(_) => {}
+    }
     let job_id = uuid::Uuid::new_v4().simple().to_string();
     let now = crate::now()?;
     let params = json!({
@@ -800,7 +821,7 @@ async fn process_ops_job(
     path = "/api/v1/spaces/{space_id}/drafts/{draft_id}/ops-from-upload",
     operation_id = "draft_ops_from_upload",
     tag = "drafts",
-    description = "大批量操作（异步）：把已上传的 ops 文件（NDJSON，每行一个操作，可 gzip 压缩，最多 10 万条）应用到实体区草稿。请求体 {uploadId} 或 {assetHash}。返回 202 和任务编号，进度和结果用 get_job 查询；任何一条不合法或越界，整份都不生效（任务失败并给出原因）。",
+    description = "大批量操作（异步）：把已上传的 ops 文件（NDJSON，每行一个操作，可 gzip 压缩，文件 ≤ 64MiB、解压后 ≤ 256MiB，最多 10 万条）应用到实体区草稿。请求体 {uploadId} 或 {assetHash}。返回 202 和任务编号，进度和结果用 get_job 查询；任何一条不合法或越界，整份都不生效（任务失败并给出原因）。",
     params(
         ("space_id" = String, Path, description = "空间编号"),
         ("draft_id" = String, Path, description = "草稿编号"),
@@ -812,6 +833,7 @@ async fn process_ops_job(
         (status = 403, description = "只有只读权限", body = ProblemDocument),
         (status = 404, description = "草稿或上传不存在", body = ProblemDocument),
         (status = 409, description = "草稿已发布", body = ProblemDocument),
+        (status = 413, description = "操作文件超过 64MiB", body = ProblemDocument),
         (status = 422, description = "请求体不合法", body = ProblemDocument),
     )
 )]
@@ -842,6 +864,7 @@ pub async fn draft_ops_from_upload(
         (status = 403, description = "只有只读权限", body = ProblemDocument),
         (status = 404, description = "草稿或上传不存在", body = ProblemDocument),
         (status = 409, description = "草稿已发布", body = ProblemDocument),
+        (status = 413, description = "操作文件超过 64MiB", body = ProblemDocument),
         (status = 422, description = "请求体不合法", body = ProblemDocument),
     )
 )]

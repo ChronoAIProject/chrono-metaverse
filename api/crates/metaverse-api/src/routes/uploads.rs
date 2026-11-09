@@ -102,7 +102,7 @@ pub fn routes() -> Router<crate::AppState> {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateUploadRequest {
     /// 文件总字节数（也接受字段名 `totalSize`）。上限按用途（默认扫描 1GiB、物件模型 50MiB、
-    /// 贴图 50MiB、ops 256MiB、脚本 4MiB）。
+    /// 贴图 50MiB、ops 64MiB、脚本 4MiB）。
     #[serde(alias = "totalSize")]
     #[schema(example = 734003200)]
     pub size: u64,
@@ -455,7 +455,7 @@ async fn create(
     path = "/api/v1/spaces/{space_id}/uploads/{purpose}",
     operation_id = "create_upload",
     tag = "uploads",
-    description = "创建分片上传（实体区路径）。声明总大小、整体 SHA-256、分片大小（256KiB 的整数倍，≤32MiB）和格式；用途写在路径里（scan、model、texture、ops、script）。哈希已存在时直接复用（200，status=done），否则返回 201 和上传编号，之后按片号（从 0 开始）PUT 原始字节，最后调用 complete。大小上限：扫描 1GiB、物件模型 50MiB、贴图 128MiB、ops 256MiB、脚本 4MiB（可配置）；超过上限或空间存储上限返回 413，进行中的上传太多返回 429。大文件请用命令行，不要经 AI 工具传二进制。",
+    description = "创建分片上传（实体区路径）。声明总大小、整体 SHA-256、分片大小（256KiB 的整数倍，≤32MiB）和格式；用途写在路径里（scan、model、texture、ops、script）。哈希已存在时直接复用（200，status=done），否则返回 201 和上传编号，之后按片号（从 0 开始）PUT 原始字节，最后调用 complete。大小上限：扫描 1GiB、物件模型 50MiB、贴图 50MiB、ops 64MiB（接口服务应用操作时整份读入，不能调大）、脚本 4MiB（可配置）；超过上限或空间存储上限返回 413，进行中的上传太多返回 429。大文件请用命令行，不要经 AI 工具传二进制。",
     params(
         ("space_id" = String, Path, description = "空间编号", example = "front-hall"),
         ("purpose" = String, Path, description = "用途：scan | model | texture | ops | script", example = "scan"),

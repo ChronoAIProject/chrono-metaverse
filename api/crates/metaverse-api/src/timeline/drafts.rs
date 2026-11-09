@@ -46,7 +46,8 @@ pub const MAX_DRAFT_OPS: u64 = 100_000;
 pub const MAX_INLINE_OPS_BYTES: usize = 4 * 1024 * 1024;
 /// 提交里内联操作的上限（设计 5.2：约 1MB，超出就存成资源）。
 pub const MAX_COMMIT_INLINE_OPS_BYTES: usize = 1024 * 1024;
-/// ops 文件（可能 gzip 压缩）的大小上限。
+/// ops 文件（可能 gzip 压缩）的大小上限：接口服务处理时整份读入内存。ops 用途的上传上限
+/// `UPLOAD_MAX_OPS_BYTES` 不能超过它（配置校验），所以传得上去的文件都能应用。
 pub const MAX_OPS_FILE_BYTES: u64 = 64 * 1024 * 1024;
 /// ops 文件解压后的大小上限。
 pub const MAX_OPS_FILE_DECOMPRESSED: u64 = 256 * 1024 * 1024;

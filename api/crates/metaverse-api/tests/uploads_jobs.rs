@@ -370,6 +370,31 @@ async fn upload_rules_scope_and_access() {
     .await;
     assert_eq!(reply.status, StatusCode::PAYLOAD_TOO_LARGE);
     assert_eq!(reply.body["code"], "upload_too_large");
+    // ops 的上传上限等于接口服务应用操作时整份读入的上限（64MiB）：65MiB 在创建时就 413，
+    // 不会等到 ops-from-upload 的后台任务才失败；正好 64MiB 可以。
+    let reply = create_upload(&app, who(ORG), base, "ops", body(65 << 20, 8 << 20, "gzip")).await;
+    assert_eq!(
+        reply.status,
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "{:?}",
+        reply.body
+    );
+    assert_eq!(reply.body["code"], "upload_too_large");
+    let reply = create_upload(
+        &app,
+        who(ORG),
+        base,
+        "ops",
+        json!({"size": 64 << 20, "sha256": sha256_hex(b"ops at the limit"),
+               "partSize": 8 << 20, "format": "gzip"}),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::CREATED, "{:?}", reply.body);
+    // 不占后面"进行中的上传"的名额。
+    app.collection("uploads")
+        .delete_one(doc! {"_id": reply.body["uploadId"].as_str().unwrap()})
+        .await
+        .unwrap();
     let reply = create_upload(
         &app,
         who(ORG),

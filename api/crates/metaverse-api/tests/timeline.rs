@@ -964,6 +964,64 @@ async fn ops_from_upload_runs_in_process_and_publishes_with_ops_ref() {
 }
 
 #[tokio::test]
+async fn ops_from_upload_rejects_oversized_or_missing_files_before_queueing() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    app.define_layout(SPACE).await;
+    let path = draft_path(
+        SPACE,
+        &new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await,
+    );
+    let ops = json!({"op": "fill", "box": [0, 0, 0, 1, 1, 1], "block": 2}).to_string();
+    // 调小上限之前传的大文件：资源长度超过 64MiB（只改登记的长度模拟），202 之前就 413。
+    let (big_upload, big_hash) = app.put_ops_upload(SPACE, ops.as_bytes()).await;
+    app.collection("assets.files")
+        .update_one(
+            doc! {"filename": &big_hash},
+            doc! {"$set": {"length": (64_i64 << 20) + 1}},
+        )
+        .await
+        .unwrap();
+    let reply = app
+        .org(
+            Method::POST,
+            &format!("{path}/ops-from-upload"),
+            Some(json!({"uploadId": big_upload})),
+        )
+        .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "{:?}",
+        reply.body
+    );
+    assert_eq!(reply.body["code"], "ops_file_too_large");
+    // 资源已被清理：404。
+    app.collection("assets.files")
+        .delete_one(doc! {"filename": &big_hash})
+        .await
+        .unwrap();
+    let reply = app
+        .org(
+            Method::POST,
+            &format!("{path}/ops-from-upload"),
+            Some(json!({"assetHash": big_hash})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND, "{:?}", reply.body);
+    // 两次都没有建任务。
+    assert_eq!(
+        app.collection("jobs")
+            .count_documents(doc! {"kind": "ops_from_upload"})
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
 async fn plot_ops_from_upload_job_is_visible_through_its_plot_path_with_progress() {
     let Some(app) = TestApp::start().await else {
         return;
