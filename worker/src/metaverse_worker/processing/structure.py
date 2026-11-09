@@ -9,7 +9,9 @@
    每 0.5 米一段求局部偏移（处理扫描漂移，剔除墙前家具造成的跳变），±4 厘米内的点为内点；
    在 10 厘米 (沿墙, 高度) 占用图上切段：1.0–2.4 米覆盖率高、到达 2 米以上、并且某处接近地面的列才算墙。
 3. **玻璃**：玻璃扫描得稀疏、深度分散，不会形成尖峰。在轴向上找宽峰（排除已认定的实墙附近），
-   要求长度 ≥ 3 米、1 米以上有覆盖、位于地面范围的外缘（前面有地、后面没有）。
+   要求长度 ≥ 3 米、1 米以上有覆盖、位于地面范围的外缘（前面有地、后面没有）。玻璃上扫到的是室外景色和
+   反光，不烘贴图：写成浅蓝灰的纯色玻璃板 + 检测到的竖梃（等距补上被家具挡住的）+ 底部的实心窗台
+   （`glazing_parts`）。
 4. **墙角吸附**：两段不平行的墙，端点都在交点附近时把端点移到交点。
 5. **地面补全**：把墙线画进占用图当作边界，填满被地面和墙围住的区域（桌下、沙发下），
    但不超出已扫到地面 1.2 米。
@@ -28,6 +30,7 @@
 from __future__ import annotations
 
 import io
+import itertools
 import logging
 import math
 from dataclasses import dataclass, field
@@ -71,6 +74,15 @@ class StructureParams:
     wall_back_depth: float = 0.3  # 墙背面的扫描最多在墙面后这么远（米），用来取墙体颜色
     wall_back_min_area: float = 0.5  # 背面扫到这么多面积（平方米）才用背面的颜色
     floor_thickness: float = 0.05
+    glass_color: tuple[int, int, int] = (172, 192, 206)  # 玻璃：浅蓝灰纯色（SHAPES 的材质没有透明度）
+    glass_thickness: float = 0.02
+    mullion_reach: float = 0.5  # 竖梃、窗台：玻璃面朝房间这么远以内的扫描（米）
+    mullion_max_depth: float = 0.35  # 一段竖梃的点的中位深度超过这个就是玻璃前的家具，不算
+    mullion_fill: float = 0.7  # 5 厘米宽的一列，在窗台以上到顶的高度上至少这么多 10 厘米格有扫描
+    mullion_width: tuple[float, float] = (0.05, 0.35)  # 竖梃宽度范围（米），更宽的是柜子之类
+    mullion_regular: float = 0.15  # 竖梃间距：缺口是主间距整数倍（误差在这个比例内）时补上被挡住的竖梃
+    ledge_min_cover: float = 0.1  # 窗台：底部每 10 厘米一行，至少这么多 10 厘米列有扫描
+    ledge_solid: float = 0.6  # 行里至少这么多比例的点在玻璃面前方 10 厘米以外（实心），才算窗台
     jpeg_quality: int = 85
     seed: int = 0
 
@@ -79,8 +91,8 @@ class StructureParams:
 class Element:
     id: str
     kind: str  # floor | wall | glazing
-    texture: np.ndarray  # H×W×3 uint8
-    observed: np.ndarray  # H×W bool
+    texture: np.ndarray | None  # H×W×3 uint8；玻璃没有贴图（纯色玻璃 + 竖梃 + 窗台）
+    observed: np.ndarray  # H×W bool（玻璃是 10 厘米格的扫描覆盖）
     info: dict[str, Any] = field(default_factory=dict)
 
 
@@ -558,6 +570,29 @@ def extract_structure(mesh: ScanMesh, params: StructureParams | None = None) -> 
         pre = "glazing" if c["glazing"] else "wall"
         counters[(pre, tag)] = counters.get((pre, tag), 0) + 1
         wid = slug_id(f"{pre}-{tag}-{counters[(pre, tag)]}")
+        pu = np.linspace(u0, u1, max(2, int((u1 - u0) / 0.5) + 1))
+        drift = np.interp(pu, prof_u, prof_v) - off
+        info: dict[str, Any] = {
+            "normal": [float(n2[0]), float(n2[1])],
+            "tangent": [float(t2[0]), float(t2[1])],
+            "offset": float(off),
+            "u": [float(u0), float(u1)],
+            "y": [float(y0), float(y1)],
+            "thickness": prm.wall_thickness,
+            "axis": axis,
+            "direction_deg": float(c["dir"]),
+            "support_pts": int(c["npts"]),
+            "fill_above_1m": float(c["fill_upper"]),
+            "max_drift": float(np.abs(drift).max()),
+        }
+        if c["glazing"]:
+            # 玻璃不烘贴图（扫到的是室外景色和反光，拉伸后是一片模糊）：纯色玻璃 + 竖梃 + 窗台
+            parts = glazing_parts(P, C, N, n2, t2, off, (u0, u1), (y0, y1), prm)
+            info.update(parts["info"])
+            elements.append(
+                Element(id=wid, kind="glazing", texture=None, observed=parts["observed"], info=info)
+            )
+            continue
         pxw = max(prm.px, (u1 - u0) / prm.max_texture_px, (y1 - y0) / prm.max_texture_px)
         Ww, Hw = max(1, round((u1 - u0) / pxw)), max(1, round((y1 - y0) / pxw))
         fs = FC[:, [0, 2]] @ n2
@@ -565,7 +600,7 @@ def extract_structure(mesh: ScanMesh, params: StructureParams | None = None) -> 
         fn2 = table.normals[:, [0, 2]] @ n2
         dsf = fs - np.interp(fu, prof_u, prof_v)
         ffs = np.where(
-            (fn2 > math.cos(math.radians(35 if c["glazing"] else 30)))
+            (fn2 > math.cos(math.radians(30)))
             & (dsf < bf + 0.01)
             & (dsf > -bb - 0.01)
             & (fu > u0 - 0.05)
@@ -613,34 +648,149 @@ def extract_structure(mesh: ScanMesh, params: StructureParams | None = None) -> 
             body = np.median(rgb[obs], axis=0)
         else:
             body = np.median(rgb.reshape(-1, 3), axis=0)
-        pu = np.linspace(u0, u1, max(2, int((u1 - u0) / 0.5) + 1))
-        drift = np.interp(pu, prof_u, prof_v) - off
-        elements.append(
-            Element(
-                id=wid,
-                kind="glazing" if c["glazing"] else "wall",
-                texture=rgb,
-                observed=obs,
-                info={
-                    "normal": [float(n2[0]), float(n2[1])],
-                    "tangent": [float(t2[0]), float(t2[1])],
-                    "offset": float(off),
-                    "u": [float(u0), float(u1)],
-                    "y": [float(y0), float(y1)],
-                    "px": pxw,
-                    "thickness": prm.wall_thickness,
-                    "face_thickness": prm.wall_face_thickness,
-                    "body_color": [int(v) for v in np.round(body)],
-                    "axis": axis,
-                    "direction_deg": float(c["dir"]),
-                    "support_pts": int(c["npts"]),
-                    "fill_above_1m": float(c["fill_upper"]),
-                    "max_drift": float(np.abs(drift).max()),
-                },
-            )
-        )
+        info["px"] = pxw
+        info["face_thickness"] = prm.wall_face_thickness
+        info["body_color"] = [int(v) for v in np.round(body)]
+        elements.append(Element(id=wid, kind="wall", texture=rgb, observed=obs, info=info))
     stats["elements"] = len(elements)
     return StructureResult(floor_y=floor_y, elements=elements, footprint=occ, footprint_cell=FG, stats=stats)
+
+
+# ---------------------------------------------------------------------------- 玻璃部件
+
+
+def _lit_median(col: np.ndarray, quantile: float = 75.0) -> list[int]:
+    """最亮的一部分采样（亮度在 quantile 分位以上）的中位色：竖梃、窗台的侧面常被室外的蓝光染暗，
+    取迎光面的颜色。"""
+    lum = _lum(col)
+    sel = col[lum >= np.percentile(lum, quantile)]
+    return [int(v) for v in np.round(np.median(sel, axis=0))]
+
+
+def glazing_parts(
+    P: np.ndarray,
+    C: np.ndarray,
+    N: np.ndarray,
+    n2: np.ndarray,
+    t2: np.ndarray,
+    off: float,
+    u_range: tuple[float, float],
+    y_range: tuple[float, float],
+    prm: StructureParams,
+) -> dict[str, Any]:
+    """玻璃幕墙的规整部件。s = 到玻璃面的距离（房间一侧为正），u = 沿玻璃的切向坐标。
+
+    - **窗台**：从地面往上每 10 厘米一行，覆盖率够、并且大部分点在玻璃面前方 10 厘米以外（实心）的行连成窗台；
+      高度用窗台顶面（朝上的点）的中位高度，进深用前脸的中位深度；
+    - **竖梃**：窗台以上（至少离地 1 米）到顶，5 厘米一列，大部分高度上都有扫描的列连成段，宽度合理、
+      中位深度不太深（不是玻璃前的柜子）的段算竖梃；统一用中位宽度和中位深度。竖梃不少于 3 根时取主间距，
+      相邻竖梃的缺口接近主间距的整数倍就按等距补上（被展示柜之类挡住的那几根）；
+    - 颜色：窗台、竖梃取迎光面的中位色；玻璃用固定的浅蓝灰（扫到的是室外景色和反光，没有意义）。
+
+    返回 {"info": {...写进元素 info}, "observed": 10 厘米格的扫描覆盖（行 0 = 顶部）}。
+    """
+    u0, u1 = u_range
+    y0, y1 = y_range
+    s = P[:, [0, 2]] @ n2 - off
+    u = P[:, [0, 2]] @ t2
+    y = P[:, 1]
+    inside = (u > u0) & (u < u1) & (y > y0) & (y < y1)
+    vert = inside & (np.abs(N[:, 1]) < 0.5)
+    nu = max(1, int(np.ceil((u1 - u0) / 0.1)))
+    ny = max(1, int(np.ceil((y1 - y0) / 0.1)))
+    near = vert & (np.abs(s) < 0.35)
+    observed = np.zeros((ny, nu), bool)
+    observed[
+        ((y1 - y[near]) / 0.1).astype(int).clip(0, ny - 1), ((u[near] - u0) / 0.1).astype(int).clip(0, nu - 1)
+    ] = True
+
+    # 窗台
+    front = vert & (s > -0.35) & (s < prm.mullion_reach)
+    rows = 0
+    for r in range(min(ny, 12)):
+        row = front & (y >= y0 + r * 0.1) & (y < y0 + (r + 1) * 0.1)
+        if row.sum() < 10:
+            break
+        cover = len(np.unique(((u[row] - u0) / 0.1).astype(int))) / nu
+        if cover < prm.ledge_min_cover or np.mean(s[row] > 0.1) < prm.ledge_solid:
+            break
+        rows = r + 1
+    ledge = None
+    if rows >= 2:
+        lp = front & (y < y0 + rows * 0.1) & (s > 0.1)
+        depth = float(np.clip(np.median(s[lp]), 0.05, prm.mullion_reach))
+        tops = (
+            (u > u0)
+            & (u < u1)
+            & (N[:, 1] > 0.9)
+            & (s > 0.02)
+            & (s < depth + 0.03)
+            & (y > y0 + 0.15)
+            & (y < y0 + rows * 0.1 + 0.15)
+        )
+        top = float(np.median(y[tops])) if tops.sum() >= 10 else y0 + rows * 0.1
+        ledge = {"top": top, "depth": depth, "color": _lit_median(C[lp])}
+
+    # 竖梃
+    ylo = max(y0 + 1.0, (ledge["top"] if ledge else y0) + 0.2)
+    yhi = y1 - 0.15
+    found: list[dict[str, Any]] = []
+    frame_pts = np.zeros(len(P), bool)
+    if yhi - ylo >= 0.5:
+        m = vert & (s > -0.05) & (s < prm.mullion_reach) & (y > ylo) & (y < yhi)
+        nc = max(1, int(np.ceil((u1 - u0) / 0.05)))
+        nr = max(1, int(np.ceil((yhi - ylo) / 0.1)))
+        grid = np.zeros((nc, nr))
+        np.add.at(
+            grid,
+            (
+                ((u[m] - u0) / 0.05).astype(int).clip(0, nc - 1),
+                ((y[m] - ylo) / 0.1).astype(int).clip(0, nr - 1),
+            ),
+            1,
+        )
+        for a, b in _runs((grid >= 2).mean(1) >= prm.mullion_fill):
+            width = (b - a) * 0.05
+            if not prm.mullion_width[0] <= width <= prm.mullion_width[1]:
+                continue
+            sel = m & (u >= u0 + a * 0.05) & (u < u0 + b * 0.05)
+            depth = float(np.median(s[sel]))
+            if depth > prm.mullion_max_depth:
+                continue
+            found.append({"u": u0 + 0.5 * (a + b) * 0.05, "width": width, "depth": depth})
+            frame_pts |= sel
+    mullions: list[dict[str, float]] = []
+    if found:
+        width = float(np.clip(np.median([f["width"] for f in found]), 0.05, 0.3))
+        depth = float(np.clip(np.median([f["depth"] for f in found]), 0.04, 0.3))
+        us = sorted(f["u"] for f in found)
+        if len(us) >= 3:
+            step = float(np.median(np.diff(us)))
+            filled = [us[0]]
+            for a, b in itertools.pairwise(us):
+                k = round((b - a) / step) if step > 0 else 1
+                if k >= 2 and abs((b - a) / k - step) < prm.mullion_regular * step:
+                    filled.extend(a + (b - a) * i / k for i in range(1, k))
+                filled.append(b)
+            us = filled
+        for uc in us:
+            uc = float(np.clip(uc, u0 + width / 2, u1 - width / 2))
+            mullions.append({"u": uc, "width": width, "depth": depth})
+    if frame_pts.any():
+        frame = _lit_median(C[frame_pts])
+    elif ledge:
+        frame = list(ledge["color"])
+    else:
+        frame = [220, 220, 215]
+    info = {
+        "glass_color": [int(v) for v in prm.glass_color],
+        "glass_thickness": prm.glass_thickness,
+        "frame_color": frame,
+        "ledge": ledge,
+        "mullions": mullions,
+        "mullions_detected": len(found),
+    }
+    return {"info": info, "observed": observed}
 
 
 # ---------------------------------------------------------------------------- 地面轮廓
@@ -727,15 +877,20 @@ def encode_texture(rgb: np.ndarray, quality: int = 85) -> bytes:
     return buf.getvalue()
 
 
-def element_shape(element: Element, texture_hash: str) -> dict[str, Any]:
+def element_shape(element: Element, texture_hash: str | None = None) -> dict[str, Any]:
     """一个结构元素 → SHAPES 形状。
 
     - 地面：带贴图的 box，非矩形时用 extrude；
     - 墙：group = 朝房间一侧的薄贴图面板 + 纯色墙体。整块 box 用 planar 贴图时背面、顶面、侧面也会印上
-      （镜像的）贴图，从房间外面看就是一面印着反字和斑点的墙，所以贴图只放在面板上，墙体用这面墙的中位色。
+      （镜像的）贴图，从房间外面看就是一面印着反字和斑点的墙，所以贴图只放在面板上，墙体用这面墙的中位色；
+    - 玻璃：group = 浅蓝灰的玻璃板 + 竖梃（细 box）+ 窗台（box），都是纯色，不用贴图。
     """
-    material = sh.texture_material(texture_hash, "planar")
     info = element.info
+    if element.kind == "glazing":
+        return _glazing_shape(info)
+    if texture_hash is None:
+        raise ValueError(f"结构元素 {element.id} 需要贴图")
+    material = sh.texture_material(texture_hash, "planar")
     if element.kind == "floor":
         (x0, x1), (z0, z1) = info["rect"]["x"], info["rect"]["z"]
         t = info["thickness"]
@@ -775,6 +930,51 @@ def element_shape(element: Element, texture_hash: str) -> dict[str, Any]:
     )
 
 
+def _glazing_shape(info: dict[str, Any]) -> dict[str, Any]:
+    """玻璃的局部坐标：原点在玻璃面（房间一侧）的底边中点，局部 +z 指向房间，局部 +x = 切向。"""
+    n = np.array(info["normal"])
+    tvec = np.array(info["tangent"])
+    u0, u1 = info["u"]
+    y0, y1 = info["y"]
+    w = u1 - u0
+    uc = (u0 + u1) / 2
+    face = n * info["offset"] + tvec * uc
+    yaw = math.degrees(math.atan2(n[0], n[1]))
+    gt = float(info["glass_thickness"])
+    frame = sh.color_material(info["frame_color"])
+    children = []
+    base = y0
+    ledge = info.get("ledge")
+    if ledge and ledge["top"] - y0 > 0.05:
+        d = ledge["depth"]
+        base = ledge["top"]
+        children.append(
+            sh.box(
+                [w, base - y0, d + gt],
+                xf=sh.transform(position=[0, 0, (d - gt) / 2]),
+                material=sh.color_material(ledge["color"]),
+            )
+        )
+    h = y1 - base
+    children.append(
+        sh.box(
+            [w, h, gt],
+            xf=sh.transform(position=[0, base - y0, -gt / 2]),
+            material=sh.color_material(info["glass_color"]),
+        )
+    )
+    for m in info.get("mullions") or []:
+        md = m["depth"]
+        children.append(
+            sh.box(
+                [m["width"], h, md + gt],
+                xf=sh.transform(position=[m["u"] - uc, base - y0, (md - gt) / 2]),
+                material=frame,
+            )
+        )
+    return sh.group(children, xf=sh.transform(position=[face[0], y0, face[1]], yaw=yaw))
+
+
 LABELS = {"floor": "地面", "wall": "墙面", "glazing": "玻璃"}
 
 
@@ -783,8 +983,9 @@ def element_props(element: Element) -> dict[str, Any]:
     props: dict[str, Any] = {
         "structure": element.kind,
         "observedFraction": round(float(element.observed.mean()), 3),
-        "metresPerPixel": round(float(info["px"]), 4),
     }
+    if "px" in info:
+        props["metresPerPixel"] = round(float(info["px"]), 4)
     if element.kind == "floor":
         props["footprintM2"] = info.get("footprint_m2")
     else:
@@ -794,6 +995,9 @@ def element_props(element: Element) -> dict[str, Any]:
             props["offAxisDeg"] = round(info["direction_deg"], 1)
     if element.kind == "glazing":
         props["confidence"] = "low"
+        props["mullions"] = len(info.get("mullions") or [])
+        if info.get("ledge"):
+            props["ledgeTopM"] = round(float(info["ledge"]["top"]), 3)
     return props
 
 

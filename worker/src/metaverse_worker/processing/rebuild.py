@@ -58,15 +58,17 @@ def structure_entities(
     bodies: dict[str, dict] = {}
     textures: dict[str, bytes] = {}
     for element in result.elements:
-        data = encode_texture(element.texture, quality)
-        sha = hashlib.sha256(data).hexdigest()
-        textures[sha] = data
+        sha = None
+        if element.texture is not None:  # 玻璃是纯色的，没有贴图
+            data = encode_texture(element.texture, quality)
+            sha = hashlib.sha256(data).hexdigest()
+            textures[sha] = data
         bodies[element.id] = entity_body(
             entity_id=element.id,
             kind="structure",
             shape=element_shape(element, sha),
             label=LABELS.get(element.kind),
-            textures=[sha],
+            textures=[sha] if sha else None,
             props=element_props(element),
         )
     return bodies, textures

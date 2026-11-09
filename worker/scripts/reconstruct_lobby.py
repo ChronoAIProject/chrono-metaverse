@@ -52,16 +52,18 @@ def structure_entities(result) -> tuple[dict[str, dict], dict[str, bytes]]:
     entities: dict[str, dict] = {}
     textures: dict[str, bytes] = {}
     for e in result.elements:
-        data = st.encode_texture(e.texture)
-        h = hashlib.sha256(data).hexdigest()
-        textures[h] = data
+        h = None
+        if e.texture is not None:  # 玻璃是纯色的，没有贴图
+            data = st.encode_texture(e.texture)
+            h = hashlib.sha256(data).hexdigest()
+            textures[h] = data
         shape = st.element_shape(e, h)
         entities[e.id] = entity_body(
             entity_id=e.id,
             kind="structure",
             shape=shape,
             label=st.LABELS[e.kind],
-            textures=[h],
+            textures=[h] if h else None,
             props=st.element_props(e),
         )
     return entities, textures
