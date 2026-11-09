@@ -490,6 +490,68 @@ cd worker
     --hints scripts/lobby_hints.json --seed ../infra/chrono-cd/demo-seed.json     # --check 只核对
 ```
 
+## 重建工作台（metaverse-recon）
+
+给本地的 AI 模型师（Claude Code / Codex）用的命令行，`worker/src/metaverse_worker/recon/`。前厅的"优化模型"由
+大模型逐件完成：每件物体**先去模型库搜一个看起来差不多的现成模型**摆进扫描里对照，搜不到或差太多的定制件
+（前台、LED 大屏墙、入口门框、嵌入柜）再手写参数形状。工作台只做眼睛、尺子和裁判（渲染、测量、对齐、偏差），
+结果合并成 AI 物件集交给处理服务写进时间线。教程见 `docs/tutorials/reconstruct-with-ai.md`，给模型师的技能说明是
+`sdk/typescript/skills/metaverse-reconstruct/SKILL.md`（`metaverse init` 写进工作区）。
+
+```bash
+cd worker && uv venv .venv && uv pip install --python .venv/bin/python -e .
+.venv/bin/metaverse-recon doctor     # 渲染要用的 node、three、Playwright、Chromium、中文字体在不在
+```
+
+| 命令 | 作用 | 输出 |
+|---|---|---|
+| `prepare` | 扫描（zip、glb，或 drc + 贴图）+ 可选提示 → 基线目录。**直接调用 `scan_import` 首次导入的同一条代码路径**（`processing.tasks.scan_task` → `processing.align.auto_align` → 结构 + 物体重建），坐标、结构、物体编号与线上导入同一份扫描完全一致 | `scan.glb`、`transform.json`、`structure.json`、`objects.json`、`candidates.json`（编号、类别、标签、包围盒、点数、偏差、建议先搜还是手写、同款）、`base.json` |
+| `views` | 只渲染包围盒附近的扫描，6 个角度 + 任意相机，带米制刻度、像素 ↔ 坐标换算 | JPEG + `views.json` |
+| `measure` | 外接框、最小外接矩形、按高度剖面、水平/竖直截面（网格精确求交）、俯视占用图、圆拟合、颜色；**平面拟合**（`--plane`：法向、坡度、方位、残差、可直接作 `plate` 的角点）、**高度图数字表**（`--heightmap`）、排除框（`--exclude`）、局部坐标（`--frame`） | `measure.json` + 截面图、占用图 |
+| `compare` | 物件记录（形状物件或外部模型物件）与扫描、现有算法并排渲染，偏差（扫描→模型、模型→扫描、分部件、漏建团块），校验；`--exclude`、`--color-parts`、`--scene`（多物件 / 整房） | `compare.jpg`、`compare_error.jpg`、`compare.json` |
+| `search` / `index` | 模型库检索，许可硬过滤：Poly Haven（全部 CC0）、Objaverse（逐个对象读许可，只要 CC0 / CC-BY）、Sketchfab（设了 `SKETCHFAB_TOKEN` 才启用） | `candidates.json` + 带编号的缩略图拼图 `sheet.jpg` |
+| `fetch` | 下载候选（Poly Haven 的 glTF 打包成 glb），记 sha256、大小、署名；上限 50 MB | `<缓存>/models/<库>/<编号>/model.glb` + `model.json` |
+| `place` | 候选摆到扫描里的物体上：自动判断向上轴、按量出的尺寸缩放（等比，或逐轴 ±15%）、偏航粗搜 + 只求偏航和平移的迭代最近点 + 顶面高度图分朝向、落地；可按扫描颜色给 tint 建议 | `entity.json`（外部模型物件记录）、`place.jpg`（扫描 \| 候选）、`place.json` |
+| `assemble` | 合并物件文件成 AI 物件集（模板去重、编号唯一、引用的模板存在、逐个校验、重算包围盒） | `authored.json`、`room.glb`、`room.jpg`（扫描 \| 现有算法 \| AI 重建：总览、俯视、四个角）、`report.json`（逐件偏差、漏建团块） |
+| `reframe` | 物件在两种对齐之间换算：`compute`（`reconstruct_lobby.py`）↔ `scan_import`（prepare），或任意变换文件 | 同格式的物件文件 |
+
+**形状新增**（`plate`、`hull`、材质 `opacity`、`unlit`，以及 AI 物件集里的烘焙指令 `bake`）：工作台按 SHAPES 的
+规定自带一份校验、包围盒和网格（`recon/shapes_ext.py`），处理服务的 `shapes.py`、`shape_mesh.py` 认识了就用处理
+服务的实现。
+
+**外部模型物件**（`place` 输出，AI 物件集的外部模型格式）：没有 `shape`，带 `model`（`url`、`sha256`、`size`、
+`format`：`glb`、`gltf`（Poly Haven：另有 `files` 列出 .bin 和贴图的地址、哈希、大小）或 `gltf-zip`）、`transform`
+（作用于 `processing.modelimport.load_model` 读出的模型坐标，顺序同 SHAPES，含 `scale`）、`bounds`、
+`props.source`（`library、id、page、author、license、title`，网站据此显示"模型来源"）、可选 `material.tint`。
+地址只允许 `dl.polyhaven.org`、`huggingface.co`（`METAVERSE_RECON_MODEL_HOSTS` 可改）。
+
+| 环境变量 | 用途 |
+|---|---|
+| `METAVERSE_RECON_BASE` | 基线目录（默认 `./base`） |
+| `METAVERSE_RECON_CACHE` | 缓存目录（默认 `~/.cache/metaverse-recon`：Objaverse 索引、下载的模型、缩略图） |
+| `METAVERSE_RECON_THREE`、`METAVERSE_RECON_PLAYWRIGHT`、`METAVERSE_RECON_CHROMIUM`、`METAVERSE_RECON_NODE` | 渲染工具的位置（默认在仓库 `web/node_modules`、`npm root -g`、`PLAYWRIGHT_BROWSERS_PATH`、`~/.cache/ms-playwright`、`~/Library/Caches/ms-playwright`、`/Applications` 里找） |
+| `METAVERSE_RECON_FONT` | 图上标注的中文字体（默认 Mac 苹方、冬青黑体，Linux 文泉驿、Noto CJK）；找不到时图上用英文，`METAVERSE_RECON_LANG=en` 强制英文 |
+| `SKETCHFAB_TOKEN` | 启用 Sketchfab 检索和下载（只放请求头，不写进任何文件） |
+
+**Objaverse 索引**：本地 SQLite 全文索引（BM25），只收许可允许的对象。元数据按需**增量下载**（160 个分片，每个约
+3.6 MB / 5000 个对象）：检索时按 LVIS 类别（chair、sofa……）匹配到的对象所在分片优先，每次最多 `--max-new-shards`
+个（默认 48），不下载任何模型文件；`metaverse-recon index --all` 一次建全（约 580 MB 下载，索引约 370 MB）。
+Cap3D 的描述（ODC-By 1.0，要署名）暂未接入。
+
+### 前厅实测（2026-11-09）
+
+`prepare`（drc + 贴图 + 部署种子里的提示，打包成和种子相同的 zip）46 秒：自动对齐 −61.423°、倾斜 0.094°，结构 6
+个、物体 41 个、模板 2 个，与 `scan_import` 的变换一致；概念验证的四个模型用 `reframe --from compute` 换过来，沙发
+在新基线上 2.87 厘米（概念验证报告 2.83）。
+
+| 物体 | 检索 | 选中的候选 | 摆放 | 扫描→模型（候选 / 现有算法） |
+|---|---|---|---|---|
+| `sofa-01` 米色皮沙发 | `search --query "leather loveseat two seater sofa" --category sofa --library objaverse` | Objaverse "Sofa White Leather"（DoobiDooba，CC-BY-4.0） | `place --scale axis --tint`：+y 向上、偏航 180°、逐轴缩放、tint [184,157,121] 调成米色 | 4.12 / 4.08 厘米 |
+| `chair-08` 会议椅 | `search --query "velvet tub dining armchair barrel chair metal legs" --category chair --library objaverse` | Objaverse "Black Leather Tub Armchair"（bigshape，CC-BY-4.0） | `place --exclude <桌面> --tint`：偏航 −106.6°（落到外接矩形方向）、等比 0.967 | 4.79 / 5.33 厘米 |
+
+两件的朝向都和扫描一致（顶面高度图核对过靠背在哪一边：沙发靠背在 z 大的一边，椅背背对会议桌）。沙发的形状更贴近的是 "2-seater
+Sofa"（gla_bot，两人位、枕式扶手，4.53 厘米），但它是深棕色，比扫描暗得多，tint 调不亮。
+
 ## 已知限制
 
 - 低细节档减面时要跨过贴图块的接缝（块边上的顶点太多，只合并块内部减不到 6 万），跨过接缝的大三角形上

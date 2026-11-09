@@ -1,44 +1,62 @@
-"""重建工作台的公共部分：路径、范围、扫描读写与裁剪、地面高度、表面采样、物件记录、渲染调度、图片输出。"""
+"""重建工作台的公共部分：范围、扫描 glb 读写与裁剪、地面高度与高度图、表面采样、二维图底板、图片输出。
+
+扫描 `scan.glb` 是 `prepare` 输出的对齐后扫描（空间坐标：米，y 向上，与处理服务 `scan_import` 相同）。
+"""
 
 from __future__ import annotations
 
+import functools
 import io
 import json
 import math
 import os
 import struct
-import subprocess
-import tempfile
-import time
+import sys
 from dataclasses import dataclass, field
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-# 基线数据（reconstruct_lobby.py 的输出目录：scan.glb、objects.json 等），用 WB_BASE 指定。
-BASE = os.environ.get("WB_BASE", os.path.normpath(os.path.join(HERE, "..", "base")))
-# 默认用仓库里网站的 three 包（先在 web/ 下 npm ci）。
-THREE = os.environ.get(
-    "WB_THREE", os.path.normpath(os.path.join(HERE, "..", "..", "..", "..", "web", "node_modules", "three"))
-)
-PLAYWRIGHT = os.environ.get("WB_PLAYWRIGHT", "/opt/node22/lib/node_modules/playwright")
-RENDER_JS = os.path.join(HERE, "render", "render.js")
-FONT_PATH = os.environ.get("WB_FONT", "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc")
+from .env import find_font
+
+
+class ReconError(SystemExit):
+    """命令行可以直接报给用户的错误（退出码 2）。"""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
 
 
 def log(msg: str) -> None:
-    print(msg, flush=True)
+    print(msg, file=sys.stderr, flush=True)
 
 
 def r(v, d: int = 4):
     """数字或数组按 d 位小数取整（JSON 输出用）。"""
-    if isinstance(v, (list, tuple, np.ndarray)):
+    if isinstance(v, list | tuple | np.ndarray):
         return [r(x, d) for x in v]
     if v is None:
         return None
     f = round(float(v), d)
     return 0.0 if f == 0 else f
+
+
+def write_json(path: str, data) -> None:
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, ensure_ascii=False, indent=1)
+        fh.write("\n")
+
+
+def read_json(path: str):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except FileNotFoundError as e:
+        raise ReconError(f"找不到文件 {path}") from e
+    except json.JSONDecodeError as e:
+        raise ReconError(f"{path} 不是合法的 JSON：{e}") from e
 
 
 # ---------------------------------------------------------------------------- 范围
@@ -66,20 +84,12 @@ class Box:
     def as_dict(self) -> dict:
         return {"min": r(self.lo), "max": r(self.hi)}
 
+    @staticmethod
+    def of(bounds: dict) -> Box:
+        return Box(np.array(bounds["min"], float), np.array(bounds["max"], float))
 
-def load_objects(path: str) -> dict[str, dict]:
-    """base/objects.json：entityId → body（也接受 body 列表）。"""
-    with open(path, encoding="utf-8") as fh:
-        data = json.load(fh)
-    if isinstance(data, list):
-        return {b["entityId"]: b for b in data}
-    if isinstance(data, dict) and "objects" in data and isinstance(data["objects"], (list, dict)):
-        return load_objects_from(data["objects"])
-    return data
-
-
-def load_objects_from(data) -> dict[str, dict]:
-    return {b["entityId"]: b for b in data} if isinstance(data, list) else dict(data)
+    def union(self, other: Box) -> Box:
+        return Box(np.minimum(self.lo, other.lo), np.maximum(self.hi, other.hi))
 
 
 def parse_box(text: str) -> Box:
@@ -89,25 +99,14 @@ def parse_box(text: str) -> Box:
         d = json.loads(text)
         lo, hi = np.array(d["min"], float), np.array(d["max"], float)
     else:
-        v = [float(x) for x in text.replace(" ", ",").split(",") if x]
+        try:
+            v = [float(x) for x in text.replace(" ", ",").split(",") if x]
+        except ValueError as e:
+            raise ReconError(f"包围盒格式不对：{text}") from e
         if len(v) != 6:
-            raise SystemExit("--box 需要 6 个数：x0,y0,z0,x1,y1,z1")
+            raise ReconError("包围盒需要 6 个数：x0,y0,z0,x1,y1,z1")
         lo, hi = np.array(v[:3]), np.array(v[3:])
     return Box(np.minimum(lo, hi), np.maximum(lo, hi))
-
-
-def resolve_box(args) -> tuple[Box, str | None]:
-    """--box 优先，否则按 --object 到 objects.json 里取 bounds。返回 (包围盒, entityId)。"""
-    if getattr(args, "box", None):
-        return parse_box(args.box), getattr(args, "object", None)
-    if getattr(args, "object", None):
-        objs = load_objects(args.objects)
-        body = objs.get(args.object)
-        if body is None or "bounds" not in body:
-            raise SystemExit(f"objects.json 里没有 {args.object} 的 bounds")
-        b = body["bounds"]
-        return Box(np.array(b["min"], float), np.array(b["max"], float)), args.object
-    raise SystemExit("需要 --box 或 --object")
 
 
 # ---------------------------------------------------------------------------- 扫描
@@ -134,12 +133,14 @@ _DT = {5126: np.float32, 5125: np.uint32, 5123: np.uint16, 5121: np.uint8}
 _NC = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4}
 
 
-def _read_glb(path: str) -> tuple[dict, bytes]:
+def read_glb(path: str) -> tuple[dict, bytes]:
     with open(path, "rb") as fh:
         b = fh.read()
+    if len(b) < 12:
+        raise ReconError(f"{path} 不是 glb")
     magic, _, _ = struct.unpack("<4sII", b[:12])
     if magic != b"glTF":
-        raise SystemExit(f"{path} 不是 glb")
+        raise ReconError(f"{path} 不是 glb")
     off, js, binb = 12, None, b""
     while off + 8 <= len(b):
         ln, typ = struct.unpack("<I4s", b[off : off + 8])
@@ -149,6 +150,8 @@ def _read_glb(path: str) -> tuple[dict, bytes]:
         elif typ == b"BIN\0":
             binb = chunk
         off += 8 + ln
+    if js is None:
+        raise ReconError(f"{path} 没有 JSON 块")
     return js, binb
 
 
@@ -168,15 +171,17 @@ def _accessor(js: dict, binb: bytes, i: int) -> np.ndarray:
 
 
 def load_scan(path: str) -> Scan:
-    """读单网格、单贴图的扫描 glb（base/scan.glb 已在空间坐标里：米，y 向上）。多个图元会合并。"""
-    js, binb = _read_glb(path)
+    """读对齐后的扫描 glb（单贴图；节点不能带变换）。多个图元会合并。"""
+    if not os.path.exists(path):
+        raise ReconError(f"找不到扫描 {path}（先运行 metaverse-recon prepare，或用 --base / --scan 指定）")
+    js, binb = read_glb(path)
     Vs, Fs, UVs, off = [], [], [], 0
     image, mime = None, "image/jpeg"
     for node in js.get("nodes", []):
         if "mesh" not in node:
             continue
         if any(k in node for k in ("matrix", "translation", "rotation", "scale")):
-            raise SystemExit("扫描 glb 的节点带变换，工作台只支持已对齐到空间坐标的扫描")
+            raise ReconError("扫描 glb 的节点带变换：工作台只用 prepare 输出的、已对齐到空间坐标的扫描")
         for prim in js["meshes"][node["mesh"]]["primitives"]:
             V = _accessor(js, binb, prim["attributes"]["POSITION"]).astype(np.float64)
             F = _accessor(js, binb, prim["indices"]).reshape(-1, 3).astype(np.int64)
@@ -196,7 +201,7 @@ def load_scan(path: str) -> Scan:
                     image = bytes(binb[s : s + bv["byteLength"]])
                     mime = img.get("mimeType", mime)
     if not Vs:
-        raise SystemExit("扫描 glb 里没有网格")
+        raise ReconError("扫描 glb 里没有网格")
     return Scan(np.concatenate(Vs), np.concatenate(Fs), np.concatenate(UVs), image, mime)
 
 
@@ -213,8 +218,22 @@ def crop_scan(scan: Scan, box: Box) -> Scan:
     return out
 
 
+def glb_bytes(doc: dict, chunks: list[bytes]) -> bytes:
+    js = json.dumps(doc, separators=(",", ":")).encode()
+    js += b" " * ((-len(js)) % 4)
+    binary = b"".join(chunks)
+    head = struct.pack("<4sII", b"glTF", 2, 12 + 8 + len(js) + 8 + len(binary))
+    return (
+        head
+        + struct.pack("<I4s", len(js), b"JSON")
+        + js
+        + struct.pack("<I4s", len(binary), b"BIN\0")
+        + binary
+    )
+
+
 def write_scan_glb(scan: Scan, path: str) -> None:
-    """裁剪后的扫描写成不打光、带原贴图的 glb（渲染用）。"""
+    """扫描写成不打光、带原贴图的 glb。"""
     chunks: list[bytes] = []
     views: list[dict] = []
     acc: list[dict] = []
@@ -232,9 +251,17 @@ def write_scan_glb(scan: Scan, path: str) -> None:
         return len(views) - 1
 
     pos = scan.V.astype(np.float32)
-    acc.append({"bufferView": view(pos.tobytes(), 34962), "componentType": 5126, "count": len(pos), "type": "VEC3",
-                "min": pos.min(0).tolist(), "max": pos.max(0).tolist()})  # fmt: skip
-    prim = {"attributes": {"POSITION": 0}, "indices": None, "material": 0}
+    acc.append(
+        {
+            "bufferView": view(pos.tobytes(), 34962),
+            "componentType": 5126,
+            "count": len(pos),
+            "type": "VEC3",
+            "min": pos.min(0).tolist(),
+            "max": pos.max(0).tolist(),
+        }
+    )
+    prim: dict = {"attributes": {"POSITION": 0}, "material": 0}
     if scan.UV is not None:
         uv = scan.UV.astype(np.float32)
         acc.append(
@@ -247,8 +274,13 @@ def write_scan_glb(scan: Scan, path: str) -> None:
     )
     prim["indices"] = len(acc) - 1
     pbr: dict = {"metallicFactor": 0.0, "roughnessFactor": 0.9}
-    doc: dict = {"asset": {"version": "2.0", "generator": "wb"}, "scene": 0, "scenes": [{"nodes": [0]}],
-                 "nodes": [{"name": "scan", "mesh": 0}], "meshes": [{"primitives": [prim]}]}  # fmt: skip
+    doc: dict = {
+        "asset": {"version": "2.0", "generator": "metaverse-recon"},
+        "scene": 0,
+        "scenes": [{"nodes": [0]}],
+        "nodes": [{"name": "scan", "mesh": 0}],
+        "meshes": [{"primitives": [prim]}],
+    }
     if scan.image is not None and scan.UV is not None:
         doc["images"] = [{"bufferView": view(scan.image), "mimeType": scan.mime}]
         doc["textures"] = [{"source": 0, "sampler": 0}]
@@ -261,15 +293,8 @@ def write_scan_glb(scan: Scan, path: str) -> None:
     doc["accessors"] = acc
     doc["bufferViews"] = views
     doc["buffers"] = [{"byteLength": offset}]
-    js = json.dumps(doc, separators=(",", ":")).encode()
-    js += b" " * ((-len(js)) % 4)
-    binary = b"".join(chunks)
     with open(path, "wb") as fh:
-        fh.write(struct.pack("<4sII", b"glTF", 2, 12 + 8 + len(js) + 8 + len(binary)))
-        fh.write(struct.pack("<I4s", len(js), b"JSON"))
-        fh.write(js)
-        fh.write(struct.pack("<I4s", len(binary), b"BIN\0"))
-        fh.write(binary)
+        fh.write(glb_bytes(doc, chunks))
 
 
 def face_normals(V: np.ndarray, F: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -286,9 +311,13 @@ def estimate_floor(scan: Scan, box: Box, ring: float = 0.4) -> float:
     lo, hi = box.lo - ring, box.hi + ring
     m = (
         (n[:, 1] > 0.92)
-        & (cen[:, 0] >= lo[0]) & (cen[:, 0] <= hi[0]) & (cen[:, 2] >= lo[2]) & (cen[:, 2] <= hi[2])
-        & (cen[:, 1] <= box.lo[1] + 0.12) & (cen[:, 1] >= box.lo[1] - 0.4)
-    )  # fmt: skip
+        & (cen[:, 0] >= lo[0])
+        & (cen[:, 0] <= hi[0])
+        & (cen[:, 2] >= lo[2])
+        & (cen[:, 2] <= hi[2])
+        & (cen[:, 1] <= box.lo[1] + 0.12)
+        & (cen[:, 1] >= box.lo[1] - 0.4)
+    )
     if m.sum() < 20:
         return float(box.lo[1])
     y, w = cen[m, 1], area[m]
@@ -321,60 +350,92 @@ def sample_points(scan: Scan, density: float, seed: int = 0):
     return P, C, n[idx], idx
 
 
-# ---------------------------------------------------------------------------- 物件记录
+# ---------------------------------------------------------------------------- 地面高度图
 
 
-def load_textures(*dirs: str) -> dict[str, bytes]:
-    out: dict[str, bytes] = {}
-    for d in dirs:
-        if not os.path.isdir(d):
-            continue
-        for name in os.listdir(d):
-            stem, ext = os.path.splitext(name)
-            if ext.lower() in (".jpg", ".jpeg", ".png") and len(stem) == 64:
-                with open(os.path.join(d, name), "rb") as fh:
-                    out[stem] = fh.read()
-    return out
+def floor_heightmap(scan: Scan, region: Box, floor_y: float, cell: float = 0.05):
+    """地面高度图（cell 米一格）：范围内朝上、离估计地面 ±10 厘米的三角形中心高度的中位数；
+    看不到地面的格子（物体底下）取最近的有值格子，再做 3×3 中值平滑。返回 (x0, z0, cell, 高度数组[iz, ix])。
+    """
+    from scipy import ndimage
+
+    n, _ = face_normals(scan.V, scan.F)
+    c = scan.V[scan.F].mean(axis=1)
+    m = (n[:, 1] > 0.9) & (np.abs(c[:, 1] - floor_y) < 0.1)
+    m &= (
+        (c[:, 0] >= region.lo[0])
+        & (c[:, 0] <= region.hi[0])
+        & (c[:, 2] >= region.lo[2])
+        & (c[:, 2] <= region.hi[2])
+    )
+    nx = max(1, int(np.ceil((region.hi[0] - region.lo[0]) / cell)))
+    nz = max(1, int(np.ceil((region.hi[2] - region.lo[2]) / cell)))
+    H = np.full((nz, nx), np.nan)
+    if m.sum() >= 5:
+        ix = np.clip(((c[m, 0] - region.lo[0]) / cell).astype(int), 0, nx - 1)
+        iz = np.clip(((c[m, 2] - region.lo[2]) / cell).astype(int), 0, nz - 1)
+        key = iz * nx + ix
+        order = np.argsort(key, kind="stable")
+        ks, ys = key[order], c[m, 1][order]
+        uniq, start = np.unique(ks, return_index=True)
+        for k, s0, s1 in zip(uniq, start, [*start[1:], len(ks)], strict=True):
+            H.flat[k] = np.median(ys[s0:s1])
+    valid = ~np.isnan(H)
+    if not valid.any():
+        H[:] = floor_y
+    else:
+        _, (iz, ix) = ndimage.distance_transform_edt(~valid, return_indices=True)
+        H = H[iz, ix]
+        H = ndimage.median_filter(H, size=3, mode="nearest")
+    return float(region.lo[0]), float(region.lo[2]), cell, H
 
 
-def load_records(path: str) -> tuple[dict[str, dict], dict[str, dict], list[str]]:
-    """模型师的物件记录文件。支持：单个 body、body 列表、entityId → body 的对象、
-    `{"bodies"|"objects": [...], "templates": {编号: 形状}}`，以及裸形状（有 type 字段）。
-    返回 (物件 entityId → body, 模板编号 → 形状, 读取时的提示)。"""
-    with open(path, encoding="utf-8") as fh:
-        data = json.load(fh)
-    notes: list[str] = []
-    templates: dict[str, dict] = {}
-    bodies: list[dict] = []
-    if isinstance(data, dict) and "type" in data and "shape" not in data:
-        notes.append("文件是裸形状，按 entityId=model 的物件处理")
-        bodies = [{"entityId": "model", "kind": "object", "shape": data}]
-    elif isinstance(data, list):
-        bodies = data
-    elif isinstance(data, dict) and ("shape" in data or "entityId" in data):
-        bodies = [data]
-    elif isinstance(data, dict):
-        for key in ("bodies", "objects", "entities"):
-            if key in data:
-                v = data[key]
-                bodies = list(v.values()) if isinstance(v, dict) else list(v)
-        if not bodies and "templates" not in data:
-            bodies = [dict(v, entityId=v.get("entityId", k)) for k, v in data.items() if isinstance(v, dict)]
-        for k, v in (data.get("templates") or {}).items():
-            templates[k] = v.get("shape", v) if isinstance(v, dict) else v
-    out: dict[str, dict] = {}
-    for i, b in enumerate(bodies):
-        if not isinstance(b, dict):
-            raise SystemExit(f"第 {i} 个记录不是对象")
-        eid = b.get("entityId") or f"model-{i + 1}"
-        if b.get("kind") == "template":
-            templates[eid] = b.get("shape")
-        else:
-            out[eid] = b
-    return out, templates, notes
+def flat_heightmap(region: Box, y: float):
+    return float(region.lo[0]), float(region.lo[2]), 1.0, np.full((1, 1), y)
 
 
-# ---------------------------------------------------------------------------- 相机与视图
+def floor_at(hm, P: np.ndarray) -> np.ndarray:
+    """地面高度图在点 P 处的值（高度图范围外取边上的格子）。"""
+    x0, z0, cell, H = hm
+    nz, nx = H.shape
+    ix = np.clip(((P[:, 0] - x0) / cell).astype(int), 0, nx - 1)
+    iz = np.clip(((P[:, 2] - z0) / cell).astype(int), 0, nz - 1)
+    return H[iz, ix]
+
+
+def draped_grid(
+    hm, region: Box, lift: float = 0.008, step: float = 0.05, unit: float = 0.1, major: int = 5, big: int = 10
+) -> dict:
+    """贴着地面高度图的网格线（unit 一格；分成细线、每 major 格、每 big 格三组，
+    每组是平铺的线段端点坐标）。"""
+    x0, z0, cell, H = hm
+    nz, nx = H.shape
+
+    def h(x, z):
+        ix = np.clip(((x - x0) / cell).astype(int), 0, nx - 1)
+        iz = np.clip(((z - z0) / cell).astype(int), 0, nz - 1)
+        return H[iz, ix] + lift
+
+    groups: dict[str, list[float]] = {"minor": [], "major": [], "unit": []}
+
+    def line(xs, zs, k):
+        ys = h(xs, zs)
+        P = np.stack([xs, ys, zs], axis=1)
+        seg = np.stack([P[:-1], P[1:]], axis=1).reshape(-1)
+        g = "unit" if k % big == 0 else "major" if k % major == 0 else "minor"
+        groups[g].extend(np.round(seg, 4).tolist())
+
+    lo, hi = region.lo, region.hi
+    for k in range(int(np.ceil(lo[0] / unit)), int(np.floor(hi[0] / unit)) + 1):
+        zs = np.append(np.arange(lo[2], hi[2], step), hi[2])
+        line(np.full(len(zs), k * unit), zs, k)
+    for k in range(int(np.ceil(lo[2] / unit)), int(np.floor(hi[2] / unit)) + 1):
+        xs = np.append(np.arange(lo[0], hi[0], step), hi[0])
+        line(xs, np.full(len(xs), k * unit), k)
+    return groups
+
+
+# ---------------------------------------------------------------------------- 相机
 
 
 def cam_vectors(az: float, el: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -392,19 +453,8 @@ def cam_vectors(az: float, el: float) -> tuple[np.ndarray, np.ndarray, np.ndarra
 def axis_name(v: np.ndarray, tol: float = 0.999) -> str:
     for i, n in enumerate("XYZ"):
         if abs(v[i]) > tol:
-            return ("+" if v[i] > 0 else "−") + n
+            return ("+" if v[i] > 0 else "-") + n
     return "(" + ", ".join(f"{x:.2f}" for x in v) + ")"
-
-
-def describe_camera(az: float, el: float) -> tuple[str, str, str]:
-    d, right, up = cam_vectors(az, el)
-    if abs(d[1]) > 0.999:
-        where = "相机在正上方，看向 −Y"
-    elif abs(el) < 1e-6 and axis_name(d)[0] in "+−" and len(axis_name(d)) == 2:
-        where = f"相机在 {axis_name(d)} 侧，看向 {axis_name(-d)}"
-    else:
-        where = f"相机方位角 {az:g}°、仰角 {el:g}°（方向 {axis_name(d)}）"
-    return where, axis_name(right), axis_name(up)
 
 
 def screen_map(info: dict) -> dict | None:
@@ -413,7 +463,7 @@ def screen_map(info: dict) -> dict | None:
         return None
     s = info["scale"]
     t = info["target"]
-    out = {"metersPerPixel": r(s, 6)}
+    out: dict = {"metersPerPixel": r(s, 6)}
     for key, vec, base, sign_px in (
         ("x", info["right"], info["left"], 1),
         ("y", info["up"], info["top"], -1),
@@ -423,7 +473,6 @@ def screen_map(info: dict) -> dict | None:
         if len(name) == 2:
             i = "XYZ".index(name[1])
             sg = 1 if name[0] == "+" else -1
-            # 坐标 = t_i + sg·(base + sign_px·像素·s)
             out[f"px{key}"] = {
                 "axis": name[1],
                 "at0": r(t[i] + sg * base, 4),
@@ -432,31 +481,23 @@ def screen_map(info: dict) -> dict | None:
     return out
 
 
-def run_render(models: dict[str, str], views: list[dict], workdir: str, timeout: int = 300) -> list[dict]:
-    job = {"three": THREE, "playwright": PLAYWRIGHT, "models": models, "views": views}
-    fd, job_path = tempfile.mkstemp(prefix="render_", suffix=".json", dir=workdir)
-    with os.fdopen(fd, "w") as fh:
-        json.dump(job, fh)
-    t = time.time()
-    proc = subprocess.run(["node", RENDER_JS, job_path], capture_output=True, text=True, timeout=timeout)
-    if proc.returncode != 0:
-        raise SystemExit(f"渲染失败：\n{proc.stdout}\n{proc.stderr}")
-    with open(job_path + ".out.json") as fh:
-        infos = json.load(fh)
-    os.remove(job_path)
-    os.remove(job_path + ".out.json")
-    log(f"  渲染 {len(views)} 张，{time.time() - t:.1f} 秒")
-    return infos
-
-
 # ---------------------------------------------------------------------------- 图片
 
 
-def font(size: int) -> ImageFont.FreeTypeFont:
-    try:
-        return ImageFont.truetype(FONT_PATH, size)
-    except OSError:
-        return ImageFont.load_default()
+@functools.cache
+def font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    path = find_font()
+    if path:
+        try:
+            return ImageFont.truetype(path, size)
+        except OSError:
+            pass
+    for name in ("DejaVuSans.ttf", "Arial.ttf", "Helvetica.ttc"):
+        try:
+            return ImageFont.truetype(name, size)
+        except OSError:
+            continue
+    return ImageFont.load_default(size=size)
 
 
 def save_jpeg(img: Image.Image, path: str, max_bytes: int = 200_000) -> tuple[int, int]:
@@ -486,19 +527,24 @@ def heat_color(v: np.ndarray, lo: float, hi: float) -> np.ndarray:
     return (stops[i] * (1 - f) + stops[i + 1] * f).astype(np.uint8)
 
 
-def draw_rulers(
-    img: Image.Image,
-    origin: tuple[int, int],
-    px_per_m: float,
-    u0: float,
-    v0: float,
-    size_px: tuple[int, int],
-    u_name: str,
-    v_name: str,
-    v_down: bool = True,
-) -> None:
-    """在图像区域（origin 起，size_px 大小）的上边和左边画米制刻度：10 厘米小刻度、50 厘米标数字。
-    像素 (i, j) 对应坐标 u = u0 + i/px_per_m，v = v0 ± j/px_per_m（v_down 时向下增大）。"""
+PALETTE = [
+    (255, 99, 99),
+    (99, 200, 255),
+    (255, 200, 60),
+    (140, 230, 120),
+    (220, 130, 255),
+    (255, 150, 60),
+    (80, 230, 210),
+    (250, 120, 190),
+    (180, 180, 255),
+    (200, 220, 90),
+    (255, 255, 255),
+    (150, 110, 80),
+]
+
+
+def draw_rulers(img, origin, px_per_m, u0, v0, size_px, u_name, v_name, v_down=True) -> None:
+    """在图像区域（origin 起，size_px 大小）的上边和左边画米制刻度：10 厘米小刻度、50 厘米标数字。"""
     d = ImageDraw.Draw(img)
     f = font(12)
     ox, oy = origin
@@ -527,10 +573,8 @@ def draw_rulers(
     )
 
 
-def grid_overlay(
-    img: Image.Image, origin, px_per_m: float, u0: float, v0: float, size_px, v_down=True
-) -> None:
-    """图像区域里的淡网格（10 厘米细线、50 厘米亮线）。"""
+def grid_overlay(img, origin, px_per_m, u0, v0, size_px, v_down=True) -> Image.Image:
+    """图像区域里的淡网格（10 厘米细线、50 厘米亮线）。返回叠好网格的图。"""
     over = Image.new("RGBA", img.size, (0, 0, 0, 0))
     d = ImageDraw.Draw(over)
     ox, oy = origin
@@ -545,107 +589,58 @@ def grid_overlay(
         y = oy + (k / 10 - v0) * px_per_m * sgn
         a = 110 if k % 10 == 0 else 70 if k % 5 == 0 else 28
         d.line([(ox, y), (ox + w, y)], fill=(255, 255, 255, a))
-    img.alpha_composite(over) if img.mode == "RGBA" else img.paste(
-        Image.alpha_composite(img.convert("RGBA"), over)
-    )
+    return Image.alpha_composite(img.convert("RGBA"), over).convert("RGB")
 
 
-# ---------------------------------------------------------------------------- 地面高度图与贴地网格
-
-
-def floor_heightmap(scan: Scan, region: Box, floor_y: float, cell: float = 0.05):
-    """地面高度图（cell 米一格）：范围内朝上、离估计地面 ±10 厘米的三角形中心高度的中位数；
-    看不到地面的格子（物体底下）取最近的有值格子，再做 3×3 中值平滑。返回 (x0, z0, cell, 高度数组[iz, ix])。"""
-    from scipy import ndimage
-
-    n, _ = face_normals(scan.V, scan.F)
-    c = scan.V[scan.F].mean(axis=1)
-    m = (n[:, 1] > 0.9) & (np.abs(c[:, 1] - floor_y) < 0.1)
-    m &= (
-        (c[:, 0] >= region.lo[0])
-        & (c[:, 0] <= region.hi[0])
-        & (c[:, 2] >= region.lo[2])
-        & (c[:, 2] <= region.hi[2])
-    )
-    nx = max(1, int(np.ceil((region.hi[0] - region.lo[0]) / cell)))
-    nz = max(1, int(np.ceil((region.hi[2] - region.lo[2]) / cell)))
-    H = np.full((nz, nx), np.nan)
-    if m.sum() >= 5:
-        ix = np.clip(((c[m, 0] - region.lo[0]) / cell).astype(int), 0, nx - 1)
-        iz = np.clip(((c[m, 2] - region.lo[2]) / cell).astype(int), 0, nz - 1)
-        key = iz * nx + ix
-        order = np.argsort(key, kind="stable")
-        ks, ys = key[order], c[m, 1][order]
-        uniq, start = np.unique(ks, return_index=True)
-        for k, s0, s1 in zip(uniq, start, list(start[1:]) + [len(ks)]):
-            H.flat[k] = np.median(ys[s0:s1])
-    valid = ~np.isnan(H)
-    if not valid.any():
-        H[:] = floor_y
-    else:
-        _, (iz, ix) = ndimage.distance_transform_edt(~valid, return_indices=True)
-        H = H[iz, ix]
-        H = ndimage.median_filter(H, size=3, mode="nearest")
-    return float(region.lo[0]), float(region.lo[2]), cell, H
-
-
-def draped_grid(hm, region: Box, lift: float = 0.008, step: float = 0.05) -> dict:
-    """贴着地面高度图的 10 厘米网格线（分成细线、50 厘米线、整米线三组，每组是平铺的线段端点坐标）。"""
-    x0, z0, cell, H = hm
-    nz, nx = H.shape
-
-    def h(x, z):
-        ix = np.clip(((x - x0) / cell).astype(int), 0, nx - 1)
-        iz = np.clip(((z - z0) / cell).astype(int), 0, nz - 1)
-        return H[iz, ix] + lift
-
-    groups: dict[str, list[float]] = {"minor": [], "major": [], "unit": []}
-
-    def line(xs, zs, k):
-        ys = h(xs, zs)
-        P = np.stack([xs, ys, zs], axis=1)
-        seg = np.stack([P[:-1], P[1:]], axis=1).reshape(-1)
-        g = "unit" if k % 10 == 0 else "major" if k % 5 == 0 else "minor"
-        groups[g].extend(np.round(seg, 4).tolist())
-
-    lo, hi = region.lo, region.hi
-    for k in range(int(np.ceil(lo[0] * 10)), int(np.floor(hi[0] * 10)) + 1):
-        zs = np.append(np.arange(lo[2], hi[2], step), hi[2])
-        line(np.full(len(zs), k / 10), zs, k)
-    for k in range(int(np.ceil(lo[2] * 10)), int(np.floor(hi[2] * 10)) + 1):
-        xs = np.append(np.arange(lo[0], hi[0], step), hi[0])
-        line(xs, np.full(len(xs), k / 10), k)
-    return groups
+def wrap_text(text: str, width: int, f) -> list[str]:
+    lines = []
+    for para in text.split("\n"):
+        cur = ""
+        for ch in para:
+            if f.getlength(cur + ch) > width:
+                lines.append(cur)
+                cur = ""
+            cur += ch
+        lines.append(cur)
+    return lines
 
 
 class Panel:
-    """二维图底板：深色背景 + 淡网格 + 上边、左边米制刻度 + 标题。坐标 (u, v)：u 向右增大，v 向下（v_down）或向上增大。"""
+    """二维图底板：深色背景 + 淡网格 + 上边、左边米制刻度 + 标题。
 
-    def __init__(self, u0, u1, v0, v1, *, v_down: bool, u_name: str, v_name: str, title: str, sub: str = "",
-                 max_w: int = 860, max_h: int = 860, right: int = 16, ppm: float | None = None,
-                 min_w: int = 560):  # fmt: skip
+    坐标 (u, v)：u 向右增大，v 向下或向上增大。"""
+
+    def __init__(
+        self,
+        u0,
+        u1,
+        v0,
+        v1,
+        *,
+        v_down: bool,
+        u_name: str,
+        v_name: str,
+        title: str,
+        sub: str = "",
+        max_w: int = 860,
+        max_h: int = 860,
+        right: int = 16,
+        ppm: float | None = None,
+        min_w: int = 560,
+    ):
         self.u0, self.u1, self.v0, self.v1, self.v_down = u0, u1, v0, v1, v_down
-        title, sub = title.replace("−", "-"), sub.replace("−", "-")  # 文泉驿正黑没有 U+2212
+        title, sub = title.replace("−", "-"), sub.replace("−", "-")  # 有的中文字体没有 U+2212
         self.ppm = ppm or min(max_w / max(u1 - u0, 1e-6), max_h / max(v1 - v0, 1e-6))
-        self.w, self.h = int(round((u1 - u0) * self.ppm)), int(round((v1 - v0) * self.ppm))
-        # 副标题按宽度折行
-        lines, f12 = [], font(12)
+        self.w, self.h = round((u1 - u0) * self.ppm), round((v1 - v0) * self.ppm)
+        f12 = font(12)
         min_w = max(min_w if sub else 0, int(font(15).getlength(title)) + 16)
         width = max(self.w + 62 + right, min_w)
-        for para in sub.split("\n") if sub else []:
-            cur = ""
-            for ch in para:
-                if f12.getlength(cur + ch) > width - 16:
-                    lines.append(cur)
-                    cur = ""
-                cur += ch
-            lines.append(cur)
+        lines = wrap_text(sub, width - 16, f12) if sub else []
         self.L, self.T = 62, 54 + 17 * len(lines) if lines else 50
-        self.img = Image.new("RGB", (width, self.h + self.T + 16), (24, 26, 30))
-        d = ImageDraw.Draw(self.img)
-        d.rectangle([self.L, self.T, self.L + self.w, self.T + self.h], fill=(34, 36, 40))
+        img = Image.new("RGB", (width, self.h + self.T + 16), (24, 26, 30))
+        ImageDraw.Draw(img).rectangle([self.L, self.T, self.L + self.w, self.T + self.h], fill=(34, 36, 40))
         self.vtop = v0 if v_down else v1
-        grid_overlay(self.img, (self.L, self.T), self.ppm, u0, self.vtop, (self.w, self.h), v_down)
+        self.img = grid_overlay(img, (self.L, self.T), self.ppm, u0, self.vtop, (self.w, self.h), v_down)
         self.draw = ImageDraw.Draw(self.img, "RGBA")
         self.draw.text((8, 6), title, font=font(15), fill=(255, 255, 255))
         for i, line in enumerate(lines):
@@ -658,24 +653,32 @@ class Panel:
             np.asarray(v) - self.vtop
         ) * self.ppm * sg
 
+    def set_image(self, img: Image.Image) -> None:
+        self.img = img
+        self.draw = ImageDraw.Draw(self.img, "RGBA")
+
     def finish(self) -> Image.Image:
-        draw_rulers(self.img, (self.L, self.T), self.ppm, self.u0, self.vtop, (self.w, self.h), self.u_name,
-                    self.v_name, self.v_down)  # fmt: skip
+        draw_rulers(
+            self.img,
+            (self.L, self.T),
+            self.ppm,
+            self.u0,
+            self.vtop,
+            (self.w, self.h),
+            self.u_name,
+            self.v_name,
+            self.v_down,
+        )
         return self.img
 
 
-PALETTE = [(255, 99, 99), (99, 200, 255), (255, 200, 60), (140, 230, 120), (220, 130, 255), (255, 150, 60),
-           (80, 230, 210), (250, 120, 190), (180, 180, 255), (200, 220, 90)]  # fmt: skip
-
-
-def floor_at(hm, P: np.ndarray) -> np.ndarray:
-    """地面高度图在点 P 处的值（高度图范围外取边上的格子）。"""
-    x0, z0, cell, H = hm
-    nz, nx = H.shape
-    ix = np.clip(((P[:, 0] - x0) / cell).astype(int), 0, nx - 1)
-    iz = np.clip(((P[:, 2] - z0) / cell).astype(int), 0, nz - 1)
-    return H[iz, ix]
-
-
-def flat_heightmap(region: Box, y: float):
-    return float(region.lo[0]), float(region.lo[2]), 1.0, np.full((1, 1), y)
+def plot_points(panel: Panel, U: np.ndarray, V: np.ndarray, colors: np.ndarray, size: int = 2) -> None:
+    """把散点（已排好绘制顺序）画到底板上。"""
+    arr = np.asarray(panel.img).copy()
+    u, v = panel.px(U, V)
+    ui, vi = np.round(u).astype(int), np.round(v).astype(int)
+    for du in range(size):
+        for dv in range(size):
+            ok = (ui + du >= 0) & (ui + du < arr.shape[1]) & (vi + dv >= 0) & (vi + dv < arr.shape[0])
+            arr[vi[ok] + dv, ui[ok] + du] = colors[ok]
+    panel.set_image(Image.fromarray(arr))

@@ -9,7 +9,9 @@ chrono-metaverse 的本地工作区工具（设计第 10 节）：`metaverse` �
 - **本地应用操作**：`metaverse-core/src/ops.rs` 的语义移植到 TypeScript，用 Rust 生成的测试向量
   （`api/crates/metaverse-core/tests/vectors/`）逐条核对区块哈希、记录哈希和影响范围。
 - **命令**：`init`、`admin`、`scan`、`pull`、`build`、`dev`、`shot`、`diff`、`check`、`push`、`publish`、`voxelize`。
-- **技能说明**：[skills/metaverse-builder/SKILL.md](skills/metaverse-builder/SKILL.md)，`metaverse init` 把它写进工作区。
+- **技能说明**：[skills/metaverse-builder/SKILL.md](skills/metaverse-builder/SKILL.md)（建造）和
+  [skills/metaverse-reconstruct/SKILL.md](skills/metaverse-reconstruct/SKILL.md)（用 AI 重建实体空间，配合
+  处理服务的 `metaverse-recon`），`metaverse init` 把它们写进工作区。
 
 ## 安装
 
@@ -81,7 +83,8 @@ chunks/          拉取的区块（<哈希>.bin，zlib）和清单 index.json
 build/main.ts    建造脚本（可以用 git 管理）
 assets/          网页用模型等资源缓存
 out/             build 的输出：ops.ndjson、result.json、新区块、drafts.json、shots/
-.claude/skills/metaverse-builder/SKILL.md   技能说明
+.claude/skills/metaverse-builder/SKILL.md       技能说明（建造）
+.claude/skills/metaverse-reconstruct/SKILL.md   技能说明（用 AI 重建实体空间）
 tsconfig.json、node_modules/@chrono-metaverse/sdk（指向这份 SDK 的链接，编辑器和脚本里的 import 用）
 ```
 
