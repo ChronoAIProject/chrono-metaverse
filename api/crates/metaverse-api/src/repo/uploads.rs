@@ -3,12 +3,14 @@
 //! 数据块布局与处理服务 `assets.py` 的 `write_upload_part` 完全一致：GridFS 桶 `assets` 的
 //! `assets.chunks`，`files_id` = 上传编号（字符串），每块固定 256KiB，第 n 片（从 0 开始）的
 //! 第 i 块序号 = `n × (partSize / 256KiB) + i`；同一片重传时先删掉这片原有的数据块，所以
-//! 重传是幂等的。数据块写完后才按 `status: open` 条件登记这一片；登记失败（会话已过期、被
-//! 清理）时删掉刚写的数据块，不留下无人认领的数据。
+//! 重传是幂等的。动数据块之前先按 `status: open` 条件给会话记"正在写入"，"完成上传"要求没有
+//! 正在写入的分片，所以会话完成之后数据块再也改不动（处理服务登记资源时直接用这些块）；
+//! 写完后按 `status: open` 条件登记这一片，登记失败（会话已过期、被清理）时删掉刚写的数据块，
+//! 不留下无人认领的数据。
 //!
 //! 每个方法都要求空间的授权凭据（写入要求"管理"），条件自动带上空间编号和主人。
 
-use metaverse_core::model::{Job, Upload, UploadPart, UploadStatus, ASSET_CHUNK_SIZE};
+use metaverse_core::model::{Job, Upload, UploadPart, ASSET_CHUNK_SIZE};
 use metaverse_core::scope::{PathScope, UploadPurpose};
 use metaverse_core::Timestamp;
 use mongodb::bson::{self, doc, spec::BinarySubtype, Binary, Bson, DateTime, Document};
@@ -19,6 +21,10 @@ use crate::auth::Grant;
 
 /// 一次 `insert_many` 最多写多少块（32 × 256KiB = 8MiB，与处理服务相同）。
 const INSERT_BATCH: usize = 32;
+
+/// 写一片时占用会话的租期（毫秒）：比整个请求的超时（90 秒）长。写到一半进程退出、来不及
+/// 释放时，租期过了"完成上传"才不再被它挡住。
+const PART_WRITE_LEASE_MS: i64 = 120 * 1000;
 
 pub(super) fn owner_kind(owner: &metaverse_core::model::Owner) -> &'static str {
     match owner.kind {
@@ -79,7 +85,7 @@ pub enum PartWrite {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompleteWrite {
     Completed,
-    /// 会话已经不是 `open`。
+    /// 会话已经不是 `open`，或者还有分片正在写入（调用方重新读会话区分）。
     NotOpen,
 }
 
@@ -201,7 +207,16 @@ impl Repo {
             .transpose()
     }
 
-    /// 写一片：先删这片原有的数据块，再按 256KiB 切块写入，最后按 `status: open` 条件登记。
+    /// 写一片。数据块按上传编号存放，处理服务校验通过后直接把它们登记成资源（不复制），所以
+    /// "改写数据块"必须和会话状态互斥：
+    ///
+    /// 1. 先按 `status: open` 条件给会话记一个"正在写入"（`writing` 计数 + `writeLeaseUntil`
+    ///    租期）——会话已经完成、过期或被清理时什么都不写；
+    /// 2. 删掉这一片原有的数据块，按 256KiB 切块写入；
+    /// 3. 按 `status: open` 条件登记这一片并释放"正在写入"。
+    ///
+    /// "完成上传"要求没有正在写入的分片（或租期已过），所以完成之后再也改不动数据块，资源的
+    /// 内容和哈希一定一致。登记失败（会话期间过期、被清理）时删掉刚写的块。
     /// 调用方已经核对过长度（和第 0 片的文件头），所以登记第 0 片时同时记下 `headerChecked`。
     pub async fn write_upload_part(
         &self,
@@ -224,16 +239,74 @@ impl Repo {
         let first = part_no * per_part;
         let chunk_number =
             |offset: u64| i32::try_from(first + offset).map_err(|_| RepoError::GrantMismatch);
-        let chunks = self.collection(collections::ASSET_CHUNKS);
         let range = doc! {
             "files_id": &upload.id,
             "n": {"$gte": chunk_number(0)?, "$lt": chunk_number(per_part)?},
         };
+        let uploads = self.collection(collections::UPLOADS);
+        let mut open = space_children(grant);
+        open.insert("_id", &upload.id);
+        open.insert("status", "open");
+        let lease = now.saturating_add_millis(PART_WRITE_LEASE_MS);
+        let claimed = uploads
+            .update_one(
+                open.clone(),
+                doc! {
+                    "$inc": {"writing": 1_i32},
+                    "$max": {"writeLeaseUntil": lease.to_rfc3339()},
+                },
+            )
+            .await?;
+        if claimed.matched_count != 1 {
+            return Ok(PartWrite::NotOpen);
+        }
+        let mut by_id = space_children(grant);
+        by_id.insert("_id", &upload.id);
+        let release = doc! {"$inc": {"writing": -1_i32}};
+        if let Err(error) = self
+            .write_part_chunks(&upload.id, data, &range, first)
+            .await
+        {
+            let _ = uploads.update_one(by_id, release).await;
+            return Err(error);
+        }
+        let mut set = Document::new();
+        set.insert(format!("parts.{part_no}"), to_bson(&part)?);
+        set.insert("updatedAt", now.to_rfc3339());
+        if part_no == 0 {
+            set.insert("headerChecked", true);
+        }
+        let result = uploads
+            .update_one(open, doc! {"$set": set, "$inc": {"writing": -1_i32}})
+            .await?;
+        if result.matched_count == 1 {
+            return Ok(PartWrite::Stored);
+        }
+        // 会话在写入期间过期或被清理了（"完成上传"被正在写入挡着，不会是它）：释放占用，
+        // 删掉刚写的块，不留下无人认领的数据。
+        uploads.update_one(by_id, release).await?;
+        self.collection(collections::ASSET_CHUNKS)
+            .delete_many(range)
+            .await?;
+        Ok(PartWrite::NotOpen)
+    }
+
+    /// 删掉这一片原有的数据块，再按 256KiB 切块写入。
+    async fn write_part_chunks(
+        &self,
+        upload_id: &str,
+        data: &[u8],
+        range: &Document,
+        first: u64,
+    ) -> Result<(), RepoError> {
+        let chunk_number =
+            |offset: u64| i32::try_from(first + offset).map_err(|_| RepoError::GrantMismatch);
+        let chunks = self.collection(collections::ASSET_CHUNKS);
         chunks.delete_many(range.clone()).await?;
         let mut batch = Vec::with_capacity(INSERT_BATCH);
         for (offset, block) in data.chunks(ASSET_CHUNK_SIZE as usize).enumerate() {
             batch.push(doc! {
-                "files_id": &upload.id,
+                "files_id": upload_id,
                 "n": chunk_number(offset as u64)?,
                 "data": Binary { subtype: BinarySubtype::Generic, bytes: block.to_vec() },
             });
@@ -244,32 +317,7 @@ impl Repo {
         if !batch.is_empty() {
             chunks.insert_many(batch).await?;
         }
-        let mut filter = space_children(grant);
-        filter.insert("_id", &upload.id);
-        filter.insert("status", "open");
-        let mut set = Document::new();
-        set.insert(format!("parts.{part_no}"), to_bson(&part)?);
-        set.insert("updatedAt", now.to_rfc3339());
-        if part_no == 0 {
-            set.insert("headerChecked", true);
-        }
-        let result = self
-            .collection(collections::UPLOADS)
-            .update_one(filter, doc! {"$set": set})
-            .await?;
-        if result.matched_count == 1 {
-            return Ok(PartWrite::Stored);
-        }
-        // 会话已不是 open：只有它已经过期、失败或不存在时才删掉刚写的块；
-        // 已完成的会话可能正在被校验，不能动它的数据。
-        let current = self.upload(grant, &upload.id).await?;
-        if current
-            .as_ref()
-            .is_none_or(|u| matches!(u.status, UploadStatus::Expired | UploadStatus::Failed))
-        {
-            chunks.delete_many(range).await?;
-        }
-        Ok(PartWrite::NotOpen)
+        Ok(())
     }
 
     /// 完成上传：在一个事务里把会话从 `open` 改成 `complete` 并插入 `upload_verify` 任务。
@@ -290,6 +338,15 @@ impl Repo {
         let mut filter = space_children(grant);
         filter.insert("_id", &upload.id);
         filter.insert("status", "open");
+        // 没有正在写入的分片（租期已过的占用按进程中途退出处理）。
+        filter.insert(
+            "$or",
+            vec![
+                doc! {"writing": {"$exists": false}},
+                doc! {"writing": {"$lte": 0}},
+                doc! {"writeLeaseUntil": {"$lt": now.to_rfc3339()}},
+            ],
+        );
         let outcome = self
             .run_transaction(&[
                 TxnOp::Update {

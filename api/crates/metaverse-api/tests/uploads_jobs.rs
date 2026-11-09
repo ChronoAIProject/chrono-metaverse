@@ -1354,3 +1354,134 @@ async fn space_deletion_uses_a_tombstone_and_recreated_ids_do_not_inherit_assets
         .await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
 }
+
+/// 已完成的会话里，分片请求不能再改写数据块：校验和登记都在读这些块，资源按哈希全局去重，
+/// 改写会让"文件名是一个哈希、内容却是另一份"。复现：分片请求过了状态检查、卡在读请求体时，
+/// 同一上传者调用 complete、处理服务校验并登记；之后再放行请求体。
+#[tokio::test]
+async fn late_part_write_cannot_rewrite_a_completed_upload() {
+    use tower::ServiceExt as _;
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    front_hall(&app).await;
+    let data = draco_bytes();
+    let sha = sha256_hex(&data);
+    let base = "/api/v1/spaces/front-hall";
+    let reply = create_upload(
+        &app,
+        who(ORG),
+        base,
+        "scan",
+        json!({"size": data.len(), "sha256": sha, "partSize": KIB256, "format": "drc"}),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::CREATED, "{:?}", reply.body);
+    let upload_id = reply.body["uploadId"].as_str().unwrap().to_owned();
+    let part = |n: usize| format!("{base}/uploads/scan/{upload_id}/parts/{n}");
+    for (n, bytes) in data.chunks(KIB256).enumerate() {
+        let reply = app.put_bytes(who(ORG), &part(n), bytes.to_vec()).await;
+        assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    }
+    // 第 1 片的重传：过了状态检查，等信号才给出请求体。
+    let (release, wait) = tokio::sync::oneshot::channel::<()>();
+    let evil = vec![0xEE_u8; data.len() - KIB256];
+    let stream = futures_util::stream::once(async move {
+        let _ = wait.await;
+        Ok::<_, std::io::Error>(axum::body::Bytes::from(evil))
+    });
+    let request = axum::http::Request::builder()
+        .method(Method::PUT)
+        .uri(part(1))
+        .header("x-nyxid-identity-token", identity(ORG))
+        .header("content-type", "application/octet-stream")
+        .header("content-length", (data.len() - KIB256).to_string())
+        .body(axum::body::Body::from_stream(stream))
+        .unwrap();
+    let router = metaverse_api::app(app.state.clone());
+    let late = tokio::spawn(async move { router.oneshot(request).await.unwrap().status() });
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let reply = app
+        .call(
+            who(ORG),
+            Method::POST,
+            &format!("{base}/uploads/scan/{upload_id}/complete"),
+            None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
+    app.finish_upload(&upload_id, &sha, data.len() as i64).await;
+    release.send(()).unwrap();
+    assert_eq!(late.await.unwrap(), StatusCode::CONFLICT);
+    // 数据块没有被改写：内容仍然是登记的哈希。
+    let stored: Vec<u8> = chunks_of(&app, &upload_id)
+        .await
+        .iter()
+        .flat_map(|chunk| match chunk.get("data") {
+            Some(Bson::Binary(binary)) => binary.bytes.clone(),
+            other => panic!("数据块格式不对：{other:?}"),
+        })
+        .collect();
+    assert_eq!(sha256_hex(&stored), sha);
+    let upload = app
+        .collection("uploads")
+        .find_one(doc! {"_id": &upload_id})
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(upload.get_i32("writing").unwrap_or(0), 0);
+}
+
+/// 有分片正在写入时不能完成上传（409 parts_in_progress）；写入方中途退出、租期过了之后可以。
+#[tokio::test]
+async fn complete_waits_for_parts_in_flight() {
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    front_hall(&app).await;
+    let data = draco_bytes();
+    let sha = sha256_hex(&data);
+    let base = "/api/v1/spaces/front-hall";
+    let reply = create_upload(
+        &app,
+        who(ORG),
+        base,
+        "scan",
+        json!({"size": data.len(), "sha256": sha, "partSize": KIB256, "format": "drc"}),
+    )
+    .await;
+    let upload_id = reply.body["uploadId"].as_str().unwrap().to_owned();
+    for (n, bytes) in data.chunks(KIB256).enumerate() {
+        let reply = app
+            .put_bytes(
+                who(ORG),
+                &format!("{base}/uploads/scan/{upload_id}/parts/{n}"),
+                bytes.to_vec(),
+            )
+            .await;
+        assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    }
+    let complete = format!("{base}/uploads/scan/{upload_id}/complete");
+    // 模拟另一个分片请求正在写数据块。
+    app.collection("uploads")
+        .update_one(
+            doc! {"_id": &upload_id},
+            doc! {"$set": {"writing": 1_i32, "writeLeaseUntil": "2999-01-01T00:00:00.000Z"}},
+        )
+        .await
+        .unwrap();
+    let reply = app.call(who(ORG), Method::POST, &complete, None).await;
+    assert_eq!(reply.status, StatusCode::CONFLICT, "{:?}", reply.body);
+    assert_eq!(reply.body["code"], "parts_in_progress");
+    assert_eq!(reply.headers.get("retry-after").unwrap(), "2");
+    // 写入方进程退出、没来得及释放：租期过了照常完成。
+    app.collection("uploads")
+        .update_one(
+            doc! {"_id": &upload_id},
+            doc! {"$set": {"writeLeaseUntil": "2000-01-01T00:00:00.000Z"}},
+        )
+        .await
+        .unwrap();
+    let reply = app.call(who(ORG), Method::POST, &complete, None).await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
+}

@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 use axum::{
     body::Body,
     extract::{DefaultBodyLimit, Path, State},
-    http::{header, HeaderMap, StatusCode},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post, put},
     Json, Router,
@@ -866,6 +866,18 @@ async fn complete(
             match current.status {
                 UploadStatus::Complete => Ok(reply(StatusCode::ACCEPTED, &current)),
                 UploadStatus::Done => Ok(reply(StatusCode::OK, &current)),
+                // 还有分片请求正在写数据块：等它们写完再完成，否则校验的数据可能被改写。
+                UploadStatus::Open => {
+                    let mut response = conflict_with(
+                        "parts_in_progress",
+                        "还有分片正在写入，请等这些请求结束后再调用 complete",
+                    )
+                    .into_response();
+                    response
+                        .headers_mut()
+                        .insert(header::RETRY_AFTER, HeaderValue::from_static("2"));
+                    Ok(response)
+                }
                 other => Err(conflict_with(
                     "upload_not_open",
                     format!("上传已是 {} 状态", status_name(other)),
