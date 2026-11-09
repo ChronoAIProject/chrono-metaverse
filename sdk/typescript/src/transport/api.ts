@@ -5,9 +5,10 @@ import type { Plot, Region } from '../core/scope.js';
 import type { ApiClient } from './client.js';
 
 /**
- * 命令行用到的接口（设计 8.3、8.4）。路径和字段集中写在这里，接口服务定稿后只改这一个文件。
- * 请求体字段按 metaverse-core 的 serde 定义（小驼峰）；响应解析尽量宽松（编号字段同时认
- * `id` / `xxxId`）。
+ * 命令行用到的接口（设计 8.3、8.4）。路径和字段集中写在这里，已与接口服务的实现
+ * （`api/crates/metaverse-api/src/routes/`）逐项核对。接口服务的请求体都带
+ * `deny_unknown_fields`：只发它定义的字段（小驼峰），多一个字段就 422。响应解析尽量宽松
+ * （编号字段同时认 `id` / `xxxId`）。
  *
  * 作用范围放在路径里：实体区 `/api/v1/spaces/{space_id}/…`，地块
  * `/api/v1/spaces/{space_id}/plots/{plot_id}/…`。
