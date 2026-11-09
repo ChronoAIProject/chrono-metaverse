@@ -14,7 +14,8 @@
 第 6 步匹配不到（租约已丢）或 jobId 唯一键冲突时，中止事务、丢弃结果。并发提交造成的写冲突由驱动的
 `with_transaction` 自动重试（重新执行 `build`）。接口服务以后自己写回任务结果时，照搬这里的顺序和条件。
 
-**事务后**：给本次新引用的区块打上 `publishedAt`（幂等，失败可以补做）。
+**事务后**：给本次新引用的区块打上 `publishedAt`（幂等）。没打上的由两处补做：任务被重新领取、发现已经有
+提交时（`finish_if_committed`），以及定期清理（`backfill_published_chunks`，最近 48 小时的提交）。
 """
 
 from __future__ import annotations
@@ -306,10 +307,14 @@ def diff_chunks(
 
 
 def finish_if_committed(store: Store, lease: Lease) -> str | None:
-    """领取后先查：已经有带这个 jobId 的提交，就直接把任务标记为完成，不再重做（设计 6.4）。"""
-    existing = store.commits.find_one({"jobId": str(lease.job_id)}, {"_id": 1})
+    """领取后先查：已经有带这个 jobId 的提交，就直接把任务标记为完成，不再重做（设计 6.4）。
+
+    上次很可能是在事务提交之后、给区块打 `publishedAt` 之前退出的，所以先补打一次（幂等）。
+    """
+    existing = store.commits.find_one({"jobId": str(lease.job_id)}, {"_id": 1, "at": 1, "changedChunks": 1})
     if existing is None:
         return None
+    publish_chunks(store, commit_chunk_hashes(existing), existing["at"])
     mark_done(store, lease, result_commit_id=existing["_id"])
     return existing["_id"]
 
@@ -431,9 +436,42 @@ def write_back(
     return CommitResult(commit_id, outcome["seq"], outcome["at"])
 
 
-def publish_chunks(store: Store, hashes: Iterable[str], at: str) -> None:
+def commit_chunk_hashes(commit: Mapping[str, Any]) -> list[str]:
+    """提交引用的区块哈希（`changedChunks` 里非 null 的）。"""
+    return sorted({c["hash"] for c in commit.get("changedChunks") or [] if isinstance(c.get("hash"), str)})
+
+
+def publish_chunks(store: Store, hashes: Iterable[str], at: str) -> int:
+    """给还没有 `publishedAt` 的区块打上（设计 5.7，幂等）。返回这次新打上的个数。"""
     hashes = sorted(set(hashes))
-    if hashes:
-        store.col(C.CHUNKS).update_many(
-            {"_id": {"$in": hashes}, "publishedAt": {"$exists": False}}, {"$set": {"publishedAt": at}}
+    published = 0
+    for start in range(0, len(hashes), 1000):
+        published += (
+            store.col(C.CHUNKS)
+            .update_many(
+                {"_id": {"$in": hashes[start : start + 1000]}, "publishedAt": {"$exists": False}},
+                {"$set": {"publishedAt": at}},
+            )
+            .modified_count
         )
+    return published
+
+
+def backfill_published_chunks(store: Store, hours: float) -> int:
+    """补打 `publishedAt`：最近 `hours` 小时的提交引用、还没有 `publishedAt` 的区块，按提交的 `at` 补上。
+
+    写回在事务提交之后才打 `publishedAt`，进程恰好在这两步之间退出、或者那一次更新失败时，这些区块在公开
+    接口上一直是 404（接口服务失败时也只记日志）。按空间查，走 `(spaceId, at)` 索引。返回补打了多少个区块。
+    """
+    since = format_ts(store.clock() - int(hours * 3600 * 1000))
+    fixed = 0
+    for space in list(store.spaces.find({}, {"_id": 1})):
+        recent = store.commits.find(
+            {"spaceId": space["_id"], "at": {"$gte": since}, "changedChunks.hash": {"$type": "string"}},
+            {"at": 1, "changedChunks": 1},
+        ).sort("at", 1)
+        for commit in recent:
+            fixed += publish_chunks(store, commit_chunk_hashes(commit), commit["at"])
+    if fixed:
+        log.warning("补打了 %d 个区块的 publishedAt", fixed)
+    return fixed

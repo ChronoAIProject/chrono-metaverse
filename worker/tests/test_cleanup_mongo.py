@@ -191,5 +191,6 @@ def test_assets_of_expired_drafts_are_released_in_the_same_round(store):
         "previews": 0,
         "draftChunks": 0,
         "assets": 1,
+        "publishedChunks": 0,
     }
     assert find_asset(store, kept) is not None and find_asset(store, released) is None

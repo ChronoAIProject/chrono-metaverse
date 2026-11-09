@@ -14,6 +14,9 @@
    引用的资源不再算被草稿引用，按第 2 条处理。
 
 这些数据还没进时间线（已发布草稿的内容已经在提交里），删除它们不违反只追加原则。
+
+另外顺带补做一件事：最近 48 小时的提交引用、还没打上 `publishedAt` 的区块补打上（设计 5.7，见
+`writeback.backfill_published_chunks`）。
 """
 
 from __future__ import annotations
@@ -26,10 +29,12 @@ from ..assets import delete_file_chunks
 from ..store import C, JobStatus, Store, UploadStatus
 from ..timeutil import format_ts
 from ..uploads import release_upload_storage, settle_stuck_uploads
+from .writeback import backfill_published_chunks
 
 log = logging.getLogger(__name__)
 
 _BATCH = 200
+PUBLISH_BACKFILL_HOURS = 48
 
 
 def cleanup_uploads(store: Store, ttl_hours: float) -> int:
@@ -182,4 +187,5 @@ def run_cleanup(store: Store, *, upload_ttl_hours: float, asset_grace_days: floa
         "uploads": uploads,
         **drafts,
         "assets": cleanup_assets(store, asset_grace_days),
+        "publishedChunks": backfill_published_chunks(store, PUBLISH_BACKFILL_HOURS),
     }

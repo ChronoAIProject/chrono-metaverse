@@ -29,6 +29,7 @@ from metaverse_worker.handlers import scan as scan_handlers
 from metaverse_worker.jobs.cleanup import cleanup_assets
 from metaverse_worker.jobs.isolate import IsolatedCancelled, IsolatedTimeout
 from metaverse_worker.jobs.lease import claim
+from metaverse_worker.jobs.writeback import commit_chunk_hashes
 from metaverse_worker.processing import tasks
 from metaverse_worker.processing.align import column_major
 from metaverse_worker.processing.glb import read_glb_json
@@ -522,6 +523,40 @@ def test_voxelize_style_name_from_api(runner, store):
     for bad, text in (("watercolor", "不认识的体素化风格"), (5, "风格名"), ({"colors": 3}, "不认识的字段")):
         doc = run_job(runner, store, "voxelize", {"style": bad})
         assert doc["status"] == "failed" and doc["attempt"] == 1 and text in doc["lastError"]
+
+
+def test_published_at_is_backfilled(runner, store):
+    """事务后给区块打 publishedAt 没做成（进程退出等）：重新领取已提交的任务时、定期清理时补做。"""
+    import_room(runner, store, rebuild=False)
+    doc = run_job(runner, store, "voxelize", {"style": "coarse"})
+    assert doc["status"] == "done", doc.get("lastError")
+    commit = commits(store)[-1]
+    hashes = commit_chunk_hashes(commit)
+    assert hashes
+
+    def unpublish():
+        store.col(C.CHUNKS).update_many({"_id": {"$in": hashes}}, {"$unset": {"publishedAt": ""}})
+
+    def published():
+        return {c["_id"]: c.get("publishedAt") for c in store.col(C.CHUNKS).find({"_id": {"$in": hashes}})}
+
+    # 任务被重新领取，发现已经有提交：先补打再标记完成
+    unpublish()
+    store.jobs.update_one({"_id": doc["_id"]}, {"$set": {"status": "queued"}})
+    assert runner.run_once() is True and runner.counts["already"] == 1
+    assert set(published().values()) == {commit["at"]}
+    # 定期清理补打最近的提交引用的区块
+    unpublish()
+    assert runner.housekeeping()["publishedChunks"] == len(hashes)
+    assert set(published().values()) == {commit["at"]}
+    assert runner.housekeeping()["publishedChunks"] == 0
+    # 超出时间窗口的提交不再查；没被任何提交引用的区块不发布
+    unpublish()
+    store.commits.update_one({"_id": commit["_id"]}, {"$set": {"at": "2020-01-01T00:00:00.000Z"}})
+    store.col(C.CHUNKS).insert_one({"_id": "f" * 64, "data": b"", "format": 1})
+    assert runner.housekeeping()["publishedChunks"] == 0
+    assert set(published().values()) == {None}
+    assert "publishedAt" not in store.col(C.CHUNKS).find_one({"_id": "f" * 64})
 
 
 def test_model_import_job(runner, store):

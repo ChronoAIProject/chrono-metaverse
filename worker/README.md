@@ -6,7 +6,8 @@ chrono-metaverse 的后台处理服务（设计第 6 节）：从 MongoDB 的 `j
 
 - 只有 `store.py`、`assets.py`、`uploads.py`、`jobs/`、`handlers/` 碰数据库；`processing/` 是纯计算，在子进程里运行；
 - 每个任务的重计算放进子进程（`resource.setrlimit` 内存上限 + 超时，可随时取消）；
-- 写回按设计 6.4：提交带 `jobId`，同一事务里按 `{_id, attempt, leaseOwner, status: running}` 把任务标记为完成。
+- 写回按设计 6.4：提交带 `jobId`，同一事务里按 `{_id, attempt, leaseOwner, status: running}` 把任务标记为完成；
+  事务后给新引用的区块打 `publishedAt`，没打上的由重新领取和定期清理补做（设计 5.7）。
 
 ## 启动
 
@@ -38,7 +39,7 @@ export MONGODB_DATABASE=metaverse
  "currentJob": {"jobId": "…", "kind": "scan_import", "spaceId": "front-hall", "since": "…"},
  "jobs": {"done": 3, "failed": 0},
  "lastCleanup": {"at": "…", "exhaustedJobs": 0, "stuckUploads": 0, "uploads": 0, "drafts": 0, "previews": 0,
-                 "draftChunks": 0, "assets": 0}}
+                 "draftChunks": 0, "assets": 0, "publishedChunks": 0}}
 ```
 
 ## 环境变量
@@ -287,11 +288,15 @@ result.metrics  # 任意 JSON，原样放进 result.objects
    200 个草稿；
 3. **没人引用的资源**：上传或最近复用超过 `WORKER_ASSET_GRACE_DAYS`（7 天）、没有被引用的资源，先删 `files`
    文档再删数据块，再把计过用量的上传从各自空间的 `storageUsedBytes` 里减回（见上）。草稿在第 2 步先删，
-   过期草稿引用的资源本轮就不再算被引用。
+   过期草稿引用的资源本轮就不再算被引用；
+4. **补打区块的 `publishedAt`**（设计 5.7："幂等，失败可以补做"）：最近 48 小时的提交（处理服务和接口服务
+   写的都算，按空间走 `(spaceId, at)` 索引）引用、还没有 `publishedAt` 的区块，按提交的 `at` 补上。写回在
+   事务提交之后才打 `publishedAt`，进程恰好在两步之间退出时，这些区块在公开接口上会一直 404。任务被重新
+   领取、发现已经有提交时也先补打一次再标记完成。
 
 处理服务启动时也幂等地建 `drafts`、`draftChunks`、`previews` 的 `expiresAt` 索引（名字和定义与接口服务相同）。
 健康检查的 `lastCleanup` 带每一项处理了多少：`{at, exhaustedJobs, stuckUploads, uploads, drafts, previews,
-draftChunks, assets}`。
+draftChunks, assets, publishedChunks}`。
 
 资源"被引用"指出现在下面任何一处：
 
