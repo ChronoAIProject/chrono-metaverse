@@ -110,6 +110,7 @@ def scan_task(
     align_max_error_cm: float = 3.0,
 ) -> dict:
     """见模块说明。`reference = {"path", "transform"}` 时做重扫配准；`transform` 给了就直接用。"""
+    os.makedirs(workdir, exist_ok=True)
     timings: dict[str, float] = {}
     t0 = time.monotonic()
     mesh = read_scan(scan_path, workdir, limits)
@@ -230,6 +231,7 @@ def voxelize_task(
 
 
 def model_task(*, path: str, workdir: str, limits: Mapping[str, int]) -> dict:
+    os.makedirs(workdir, exist_ok=True)
     model_path, texture_path = prepare_model_file(path, workdir, int(limits["max_model_bytes"]) * 4)
     mesh, colors, base = load_model(
         model_path,

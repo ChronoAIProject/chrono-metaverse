@@ -73,7 +73,7 @@ def load_model(
             inspect_glb(model_path, max_triangles, max_texture_pixels)
         elif _count_obj_faces(model_path) > max_triangles:
             raise InputRejected(f"三角形数超过上限 {max_triangles}")
-        loaded = trimesh.load(model_path, file_type=fmt, process=False, force="mesh")
+        loaded = _load_trimesh(model_path, fmt)
         if not isinstance(loaded, trimesh.Trimesh) or len(loaded.faces) == 0:
             raise InputRejected("模型里没有三角网格")
         if len(loaded.faces) > max_triangles:
@@ -85,7 +85,8 @@ def load_model(
         visual = loaded.visual
         if isinstance(visual, trimesh.visual.TextureVisuals):
             material = visual.material
-            image = getattr(material, "baseColorTexture", None) or getattr(material, "image", None)
+            # 压缩包里单独给的贴图优先（obj 的 mtl 被改了名，trimesh 找不到时会给一张 2×2 的默认图）
+            image = None if texture_path is not None else _material_image(material)
             if visual.uv is not None and (image is not None or texture_path is not None):
                 uv = np.asarray(visual.uv, np.float64).copy()
                 uv[:, 1] = 1.0 - uv[:, 1]  # trimesh 内部是左下角原点
@@ -96,17 +97,12 @@ def load_model(
                     with Image.open(texture_path) as img:
                         texture = np.asarray(img.convert("RGB"))
             else:
-                factor = getattr(material, "baseColorFactor", None)
-                if factor is None:
-                    factor = getattr(material, "main_color", None)
-                if factor is not None:
-                    f = np.asarray(factor, np.float64).reshape(-1)
-                    if f.max() > 1.0:
-                        f = f / 255.0
-                    alpha = float(f[3]) if len(f) > 3 else 1.0
-                    base = (float(f[0]), float(f[1]), float(f[2]), alpha)
+                vertex_colors = (getattr(visual, "vertex_attributes", None) or {}).get("color")
+                if vertex_colors is not None and len(vertex_colors) == len(vertices):
+                    colors = _rgba_u8(vertex_colors)
+                base = _base_color(material) or base
         elif isinstance(visual, trimesh.visual.ColorVisuals) and visual.kind == "vertex":
-            colors = np.asarray(visual.vertex_colors, np.uint8)
+            colors = _rgba_u8(visual.vertex_colors)
         mesh = ScanMesh(vertices, faces, uv, texture)
     else:
         raise InputRejected("物件模型只接受 glb、obj、drc")
@@ -119,6 +115,51 @@ def load_model(
     if mesh.uv is not None and len(mesh.uv) != len(mesh.vertices):
         mesh.uv = None
     return mesh, colors, base
+
+
+def _load_trimesh(path: str, fmt: str):
+    """只有一个网格、一个节点时直接取那个网格（套上节点变换），保留顶点颜色等属性；
+    多个网格时让 trimesh 合并（贴图会被拼成图集，顶点颜色可能丢失）。"""
+    import trimesh
+
+    loaded = trimesh.load(path, file_type=fmt, process=False)
+    if isinstance(loaded, trimesh.Scene):
+        nodes = loaded.graph.nodes_geometry
+        if len(loaded.geometry) == 1 and len(nodes) == 1:
+            matrix, name = loaded.graph[nodes[0]]
+            mesh = loaded.geometry[name]  # 不复制：trimesh 的 copy 会丢掉顶点颜色
+            if not np.allclose(matrix, np.eye(4)):
+                mesh.vertices = trimesh.transform_points(mesh.vertices, matrix)
+            return mesh
+        return loaded.to_geometry() if hasattr(loaded, "to_geometry") else loaded.dump(concatenate=True)
+    return loaded
+
+
+def _material_image(material):
+    return getattr(material, "baseColorTexture", None) or getattr(material, "image", None)
+
+
+def _base_color(material) -> tuple[float, float, float, float] | None:
+    factor = getattr(material, "baseColorFactor", None)
+    if factor is None:
+        factor = getattr(material, "main_color", None)
+    if factor is None:
+        return None
+    f = np.asarray(factor, np.float64).reshape(-1)
+    if f.max() > 1.0:
+        f = f / 255.0
+    alpha = float(f[3]) if len(f) > 3 else 1.0
+    return (float(f[0]), float(f[1]), float(f[2]), alpha)
+
+
+def _rgba_u8(colors) -> np.ndarray:
+    c = np.asarray(colors)
+    if c.dtype.kind == "f":
+        c = np.clip(np.round(c * 255.0), 0, 255)
+    c = c.astype(np.uint8)
+    if c.shape[1] == 3:
+        c = np.concatenate([c, np.full((len(c), 1), 255, np.uint8)], axis=1)
+    return c
 
 
 def _encode_texture(texture: np.ndarray) -> tuple[bytes, str]:
