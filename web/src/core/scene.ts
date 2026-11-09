@@ -105,6 +105,43 @@ export const VIEW_MODES: readonly {
   { id: 'extended', label: '优化 + 扩展', hint: '实体区加上虚拟扩展' },
 ];
 
+/**
+ * 重建层的画法。同一次扫描既做了形状重建、又做了体素化时，重建层里既有物件又有区块，
+ * 叠在一起画会让地面成为马赛克，所以两者只画一种：
+ *
+ * - 形状（默认）：画重建层物件，不画重建层区块；
+ * - 方块：画重建层区块，不画重建层物件。
+ *
+ * 扩展层的物件和区块两种画法下都画。重建层只有一种内容时不用选。
+ */
+export type RebuiltStyle = 'shapes' | 'blocks';
+
+export const REBUILT_STYLES: readonly {
+  readonly id: RebuiltStyle;
+  readonly label: string;
+  readonly hint: string;
+}[] = [
+  { id: 'shapes', label: '形状', hint: '重建层画成形状物件' },
+  { id: 'blocks', label: '方块', hint: '重建层画成体素化的方块' },
+];
+
+/** 重建层里有哪些内容：形状物件（能画的）、区块。两样都有时页面才给出"形状 / 方块"切换。 */
+export function rebuiltContent(scene: SceneDocument): {
+  readonly shapes: boolean;
+  readonly blocks: boolean;
+} {
+  return {
+    shapes: scene.entities.some((e) => e.layer === 'rebuilt' && isDrawable(e)),
+    blocks: scene.chunks.some((c) => c.layer === 'rebuilt'),
+  };
+}
+
+/** 重建层两种内容都有，需要在形状和方块之间选一种。 */
+export function hasStyleChoice(scene: SceneDocument): boolean {
+  const content = rebuiltContent(scene);
+  return content.shapes && content.blocks;
+}
+
 /** 米坐标是否落在格子盒里（左闭右开）。 */
 export function boxContains(box: GridBox, point: readonly number[]): boolean {
   for (let k = 0; k < 3; k += 1) {
@@ -160,6 +197,18 @@ export interface ViewContent {
   /** 需要画边界光效和"虚拟"标签的区域。 */
   readonly virtualRegions: readonly Region[];
   readonly anchors: readonly Anchor[];
+  /** 重建层这次按哪种画法取的；重建层只有一种内容（或原始视图）时为 null。 */
+  readonly style: RebuiltStyle | null;
+  /**
+   * 挂在锚点上、带包围盒的物件（按视图的区域过滤，但不管这种画法画不画）：
+   * 用来画高亮的包围盒、估计锚点在屏幕上有多大。
+   */
+  readonly anchored: readonly EntityBody[];
+  /**
+   * 镜头取景的范围（格子盒）：实体区，优化 + 扩展视图再加上虚拟区。
+   * 没有定义实体区时为空，取景就用全部内容。
+   */
+  readonly frameBoxes: readonly GridBox[];
 }
 
 /** 视图里有没有可画的内容（物件或方块）。 */
@@ -183,11 +232,20 @@ export function isDrawable(entity: EntityBody): boolean {
  * | 优化 + 扩展 | 重建层 ⊕ 全部扩展层（含虚拟区的方块） | 全部物件 | 有 |
  *
  * 公开锚点三种视图都显示。没有定义任何实体区时，整个空间都算实体区。
+ * 重建层既有物件又有区块时按 `style` 只取一种（见 `RebuiltStyle`）。
  */
-export function selectView(scene: SceneDocument, mode: ViewMode): ViewContent {
+export function selectView(
+  scene: SceneDocument,
+  mode: ViewMode,
+  style: RebuiltStyle = 'shapes',
+): ViewContent {
   const templates = templatesOf(scene.entities);
   const anchors = scene.anchors.filter((a) => a.visibility !== 'internal');
   const palette = scene.palette;
+  const physical = scene.regions.filter((r) => r.kind === 'physical');
+  const physicalBoxes = physical.flatMap((r) => r.boxes);
+  const anchoredOf = (entities: readonly EntityBody[]) =>
+    entities.filter((e) => e.anchorId !== undefined && e.bounds !== undefined);
   if (mode === 'raw') {
     const hasScan = (scene.scan?.webModelHashes.length ?? 0) > 0;
     return {
@@ -199,37 +257,56 @@ export function selectView(scene: SceneDocument, mode: ViewMode): ViewContent {
       voxels: { chunks: [], keepBoxes: null, palette },
       virtualRegions: [],
       anchors,
+      style: null,
+      anchored: anchoredOf(scene.entities.filter(isDrawable)),
+      frameBoxes: physicalBoxes,
     };
   }
+  // 重建层两种内容都有时只画选中的一种；只有一种时照常画。
+  const choice = hasStyleChoice(scene) ? style : null;
+  const keepEntity = (e: EntityBody) => !(choice === 'blocks' && e.layer === 'rebuilt');
+  const keepChunk = (c: LayerChunk) => !(choice === 'shapes' && c.layer === 'rebuilt');
   const drawable = scene.entities.filter(isDrawable);
+  const styledChunks = scene.chunks.filter(keepChunk);
   if (mode === 'extended') {
+    const virtualRegions = scene.regions.filter((r) => r.kind === 'virtual');
     return {
       mode,
       showScan: false,
       scanMissing: false,
-      entities: drawable,
+      entities: drawable.filter(keepEntity),
       templates,
-      voxels: { chunks: scene.chunks, keepBoxes: null, palette },
-      virtualRegions: scene.regions.filter((r) => r.kind === 'virtual'),
+      voxels: { chunks: styledChunks, keepBoxes: null, palette },
+      virtualRegions,
       anchors,
+      style: choice,
+      anchored: anchoredOf(drawable),
+      // 没有实体区时整个空间都算实体区，取景用全部内容。
+      frameBoxes:
+        physicalBoxes.length === 0
+          ? []
+          : [...physicalBoxes, ...virtualRegions.flatMap((r) => r.boxes)],
     };
   }
-  const physical = scene.regions.filter((r) => r.kind === 'physical');
-  const keepBoxes = physical.length === 0 ? null : physical.flatMap((r) => r.boxes);
+  const keepBoxes = physical.length === 0 ? null : physicalBoxes;
   // 只取实体区：区块里完全落在实体区外的整块直接不送去生成网格。
   const chunks =
     keepBoxes === null
-      ? scene.chunks
-      : scene.chunks.filter((chunk) => keepBoxes.some((box) => chunkTouchesBox(chunk, box)));
+      ? styledChunks
+      : styledChunks.filter((chunk) => keepBoxes.some((box) => chunkTouchesBox(chunk, box)));
+  const inPhysical = drawable.filter((e) => entityRegionKind(e, scene.regions) === 'physical');
   return {
     mode,
     showScan: false,
     scanMissing: false,
-    entities: drawable.filter((e) => entityRegionKind(e, scene.regions) === 'physical'),
+    entities: inPhysical.filter(keepEntity),
     templates,
     voxels: { chunks, keepBoxes, palette },
     virtualRegions: [],
     anchors,
+    style: choice,
+    anchored: anchoredOf(inPhysical),
+    frameBoxes: physicalBoxes,
   };
 }
 

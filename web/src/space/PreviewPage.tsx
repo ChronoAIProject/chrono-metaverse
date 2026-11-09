@@ -3,6 +3,7 @@ import type { PublicClient } from '../core/api/client';
 import type { PreviewView } from '../core/api/types';
 import {
   IDENTITY_PLACEMENT,
+  hasStyleChoice,
   loadScene,
   sceneHeightRange,
   selectView,
@@ -12,9 +13,17 @@ import {
 } from '../core/scene';
 import { useAssetLoaders } from '../data/hooks';
 import { runtimeError, type LoadProgress, type RuntimeError } from '../data/spaceRuntime';
+import { useRebuiltStyle } from '../routing/routes';
 import { formatTime } from '../timeline/TimelineBar';
 import { Viewer, type SceneViewFactory } from '../viewer/Viewer';
-import { CutawayControl, ErrorCard, LoadingCard, ThemeToggle, ViewModeSwitch } from './controls';
+import {
+  CutawayControl,
+  ErrorCard,
+  LoadingCard,
+  StyleSwitch,
+  ThemeToggle,
+  ViewModeSwitch,
+} from './controls';
 import './SpacePage.css';
 
 export interface PreviewPageProps {
@@ -39,6 +48,7 @@ export function PreviewPage({
   initialMode = 'extended',
 }: PreviewPageProps) {
   const [mode, setMode] = useState<ViewMode>(initialMode);
+  const [style, setStyle] = useRebuiltStyle();
   const [cutEnabled, setCutEnabled] = useState(true);
   const [cutHeight, setCutHeight] = useState(2.2);
   const [preview, setPreview] = useState<PreviewView | null>(null);
@@ -109,7 +119,7 @@ export function PreviewPage({
 
   const content = useMemo<SceneContent | null>(() => {
     if (scene === null) return null;
-    const view = selectView(scene, mode);
+    const view = selectView(scene, mode, style);
     const bytes = scan !== null && scan.hash === scanHash ? scan.bytes : null;
     if (view.showScan && bytes === null) return null;
     return {
@@ -126,7 +136,7 @@ export function PreviewPage({
       ],
       links: [],
     };
-  }, [scene, mode, scan, scanHash]);
+  }, [scene, mode, style, scan, scanHash]);
   const heights = useMemo(() => (scene ? sceneHeightRange(scene) : { min: 0, max: 3 }), [scene]);
 
   if (token === null) {
@@ -173,7 +183,12 @@ export function PreviewPage({
               : '正在读取草稿'}
           </p>
         </div>
-        <ViewModeSwitch mode={mode} onChange={setMode} />
+        <div className="space__switches">
+          <ViewModeSwitch mode={mode} onChange={setMode} />
+          {scene !== null && hasStyleChoice(scene) && (
+            <StyleSwitch style={style} disabled={mode === 'raw'} onChange={setStyle} />
+          )}
+        </div>
         <CutawayControl
           enabled={cutEnabled}
           height={Math.min(cutHeight, heights.max)}

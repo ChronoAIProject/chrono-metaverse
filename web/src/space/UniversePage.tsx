@@ -3,6 +3,7 @@ import type { PublicClient } from '../core/api/client';
 import type { CommitSummary, UniverseView } from '../core/api/types';
 import { toMillis } from '../core/events';
 import {
+  hasStyleChoice,
   sceneHeightRange,
   selectView,
   type MemberContent,
@@ -12,9 +13,17 @@ import {
 import { buildVisuals, type SpaceVisualInput } from '../core/visuals';
 import { useAssetLoaders, useDensity, useRuntimeStates, useStableList } from '../data/hooks';
 import { SpaceRuntime, runtimeError, type RuntimeError } from '../data/spaceRuntime';
+import { useRebuiltStyle } from '../routing/routes';
 import { TimelineBar } from '../timeline/TimelineBar';
 import { Viewer, type SceneViewFactory } from '../viewer/Viewer';
-import { CutawayControl, ErrorCard, LoadingCard, ThemeToggle, ViewModeSwitch } from './controls';
+import {
+  CutawayControl,
+  ErrorCard,
+  LoadingCard,
+  StyleSwitch,
+  ThemeToggle,
+  ViewModeSwitch,
+} from './controls';
 import { timelineRange } from './SpacePage';
 import { usePlayback } from './usePlayback';
 import './SpacePage.css';
@@ -50,6 +59,7 @@ export function UniversePage({
   initialMode = 'optimized',
 }: UniversePageProps) {
   const [mode, setMode] = useState<ViewMode>(initialMode);
+  const [style, setStyle] = useRebuiltStyle();
   const [cutEnabled, setCutEnabled] = useState(true);
   const [cutHeight, setCutHeight] = useState(2.2);
   const [view, setView] = useState<UniverseView | null>(null);
@@ -187,7 +197,7 @@ export function UniversePage({
     view.members.forEach((member, i) => {
       const scene = scenes[i];
       if (member.seq === null || member.seq === undefined || !scene) return;
-      const memberView = selectView(scene, mode);
+      const memberView = selectView(scene, mode, style);
       const hash = scene.scan?.webModelHashes[0];
       members.push({
         spaceId: member.spaceId,
@@ -199,7 +209,9 @@ export function UniversePage({
       });
     });
     return { mode, members, links: view.links };
-  }, [view, scenes, mode, scans, names]);
+  }, [view, scenes, mode, style, scans, names]);
+  // 有成员的重建层既有物件又有区块时才给出"形状 / 方块"切换。
+  const styleChoice = scenes.some((scene) => scene != null && hasStyleChoice(scene));
 
   const visuals = useMemo(() => {
     const inputs: SpaceVisualInput[] = runtimes.map((runtime, i) => ({
@@ -279,7 +291,12 @@ export function UniversePage({
               : '正在读取组合'}
           </p>
         </div>
-        <ViewModeSwitch mode={mode} onChange={setMode} />
+        <div className="space__switches">
+          <ViewModeSwitch mode={mode} onChange={setMode} />
+          {styleChoice && (
+            <StyleSwitch style={style} disabled={mode === 'raw'} onChange={setStyle} />
+          )}
+        </div>
         <CutawayControl
           enabled={cutEnabled}
           height={Math.min(cutHeight, heights.max)}

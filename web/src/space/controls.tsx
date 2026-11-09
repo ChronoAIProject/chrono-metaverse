@@ -1,4 +1,4 @@
-import { VIEW_MODES, type ViewMode } from '../core/scene';
+import { REBUILT_STYLES, VIEW_MODES, type RebuiltStyle, type ViewMode } from '../core/scene';
 import {
   APPEARANCE_ORDER,
   appearanceLabel,
@@ -24,6 +24,43 @@ export function ViewModeSwitch({
           title={option.hint}
           onClick={() => onChange(option.id)}
           data-mode={option.id}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * 重建层画法：形状 / 方块。只在重建层既有物件又有区块时出现；
+ * 原始视图只画扫描模型，切换不起作用，所以禁用。
+ */
+export function StyleSwitch({
+  style,
+  disabled = false,
+  onChange,
+}: {
+  readonly style: RebuiltStyle;
+  readonly disabled?: boolean;
+  readonly onChange: (style: RebuiltStyle) => void;
+}) {
+  return (
+    <div
+      className="segmented"
+      role="group"
+      aria-label="重建层画法"
+      title={disabled ? '原始视图只显示扫描模型' : undefined}
+    >
+      {REBUILT_STYLES.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          aria-pressed={style === option.id}
+          title={option.hint}
+          disabled={disabled}
+          onClick={() => onChange(option.id)}
+          data-style={option.id}
         >
           {option.label}
         </button>

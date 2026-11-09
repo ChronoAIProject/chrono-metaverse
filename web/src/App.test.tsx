@@ -161,6 +161,52 @@ describe('应用外壳', () => {
     await waitFor(() => expect(view.cutaway).toBeNull());
   });
 
+  it('形状 / 方块：重建层两种内容都有时出现，选择记在查询参数里，# 后面的令牌不受影响', async () => {
+    const { factory, views } = fakeViewFactory();
+    visit(FIXTURE_LINK);
+    render(<App createClient={createClient} createView={factory} />);
+    const group = await screen.findByRole('group', { name: '重建层画法' });
+    const member = () => views[0]!.last().members[0]!;
+    await waitFor(() => expect(member().view.style).toBe('shapes'));
+    expect(member().view.voxels.chunks.every((c) => c.layer === 'ext')).toBe(true);
+    expect(screen.getByRole('button', { name: '形状' })).toHaveAttribute('aria-pressed', 'true');
+
+    await userEvent.click(screen.getByRole('button', { name: '方块' }));
+    await waitFor(() => expect(member().view.style).toBe('blocks'));
+    expect(member().view.entities).toEqual([]);
+    expect(member().view.voxels.chunks.some((c) => c.layer === 'rebuilt')).toBe(true);
+    expect(window.location.search).toBe('?style=blocks');
+    expect(window.location.pathname).toBe('/s/demo-lobby');
+    expect(window.location.hash).toBe('#share=fixture-share-token-0123456789abcdef');
+
+    // 原始视图只画扫描：切换禁用。
+    await userEvent.click(screen.getByRole('button', { name: '原始' }));
+    expect(screen.getByRole('button', { name: '方块' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: '优化' }));
+
+    await userEvent.click(screen.getByRole('button', { name: '形状' }));
+    await waitFor(() => expect(member().view.style).toBe('shapes'));
+    expect(window.location.search).toBe('');
+    expect(window.location.hash).toBe('#share=fixture-share-token-0123456789abcdef');
+    expect(group).toBeInTheDocument();
+
+    // 重建之前（版本 #1）重建层什么都没有：不显示切换。
+    await userEvent.click(screen.getByRole('button', { name: /跳到提交 #1/ }));
+    await waitFor(() => expect(screen.getByText(/版本 #1/)).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByRole('group', { name: '重建层画法' })).not.toBeInTheDocument(),
+    );
+  });
+
+  it('打开带 ?style=blocks 的链接：直接用方块画法，分享令牌照样读到', async () => {
+    const { factory, views } = fakeViewFactory();
+    visit('/s/demo-lobby?style=blocks#share=fixture-share-token-0123456789abcdef');
+    render(<App createClient={createClient} createView={factory} />);
+    expect(await screen.findByRole('heading', { name: '演示前厅' })).toBeInTheDocument();
+    await waitFor(() => expect(views[0]?.last().members[0]?.view.style).toBe('blocks'));
+    expect(screen.getByRole('button', { name: '方块' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('跳到第一次提交：优化视图为空并提示', async () => {
     const { factory, views } = fakeViewFactory();
     visit(FIXTURE_LINK);

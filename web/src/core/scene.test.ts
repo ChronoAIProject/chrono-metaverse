@@ -8,13 +8,16 @@ import {
   anchorPosition,
   boxContains,
   entityRegionKind,
+  hasStyleChoice,
   isDrawable,
   loadScene,
   placePoint,
+  rebuiltContent,
   sceneHeightRange,
   selectView,
   templatesOf,
   viewHasGeometry,
+  type SceneDocument,
 } from './scene';
 import {
   composeVoxels,
@@ -98,6 +101,74 @@ describe('三种视图', () => {
 
   it('模板表只收 kind = template 的物件', async () => {
     expect(Object.keys(templatesOf((await sceneAt(2)).entities))).toEqual(['chair-a']);
+  });
+});
+
+describe('重建层画法：形状 / 方块', () => {
+  const layers = (view: ReturnType<typeof selectView>) => ({
+    entities: [...new Set(view.entities.map((e) => e.layer))].sort(),
+    chunks: [...new Set(view.voxels.chunks.map((c) => c.layer))].sort(),
+  });
+
+  it('重建层既有物件又有区块时才需要选（夹具 seq 2 起体素化过）', async () => {
+    expect(rebuiltContent(await sceneAt(1))).toEqual({ shapes: false, blocks: false });
+    expect(hasStyleChoice(await sceneAt(1))).toBe(false);
+    expect(rebuiltContent(await sceneAt(2))).toEqual({ shapes: true, blocks: true });
+    expect(hasStyleChoice(await sceneAt(4))).toBe(true);
+  });
+
+  it('形状（默认）：不画重建层区块，扩展层区块照画', async () => {
+    const scene = await sceneAt(4);
+    for (const mode of ['optimized', 'extended'] as const) {
+      const view = selectView(scene, mode);
+      expect(view.style).toBe('shapes');
+      expect(layers(view)).toEqual({
+        entities: mode === 'extended' ? ['ext', 'rebuilt'] : ['rebuilt'],
+        chunks: ['ext'],
+      });
+    }
+  });
+
+  it('方块：不画重建层物件，扩展层物件照画；高亮仍然用重建层物件的包围盒', async () => {
+    const scene = await sceneAt(4);
+    const optimized = selectView(scene, 'optimized', 'blocks');
+    expect(optimized.style).toBe('blocks');
+    expect(optimized.entities).toEqual([]);
+    expect(layers(optimized).chunks).toEqual(['ext', 'rebuilt']);
+    expect(optimized.anchored.map((e) => e.anchorId)).toContain('table-01');
+    const extended = selectView(scene, 'extended', 'blocks');
+    expect(extended.entities.map((e) => e.entityId)).toEqual(['kiosk-01']);
+    expect(viewHasGeometry(optimized)).toBe(true);
+  });
+
+  it('重建层只有一种内容时照常画，不管选的是哪种；原始视图没有画法', async () => {
+    const scene = await sceneAt(4);
+    const onlyBlocks: SceneDocument = {
+      ...scene,
+      entities: scene.entities.filter((e) => e.layer !== 'rebuilt'),
+    };
+    const view = selectView(onlyBlocks, 'optimized', 'shapes');
+    expect(view.style).toBeNull();
+    expect(layers(view).chunks).toEqual(['ext', 'rebuilt']);
+    const onlyShapes: SceneDocument = {
+      ...scene,
+      chunks: scene.chunks.filter((c) => c.layer !== 'rebuilt'),
+    };
+    expect(selectView(onlyShapes, 'optimized', 'blocks').entities.length).toBeGreaterThan(10);
+    expect(selectView(scene, 'raw', 'blocks').style).toBeNull();
+  });
+
+  it('取景范围：优化视图是实体区，扩展视图加上虚拟区，没有实体区时为空', async () => {
+    const scene = await sceneAt(4);
+    expect(selectView(scene, 'optimized').frameBoxes).toEqual([[0, 0, 0, 120, 60, 100]]);
+    expect(selectView(scene, 'raw').frameBoxes).toEqual([[0, 0, 0, 120, 60, 100]]);
+    expect(selectView(scene, 'extended').frameBoxes).toEqual([
+      [0, 0, 0, 120, 60, 100],
+      [120, 0, 0, 200, 60, 100],
+    ]);
+    const noRegions: SceneDocument = { ...scene, regions: [] };
+    expect(selectView(noRegions, 'optimized').frameBoxes).toEqual([]);
+    expect(selectView(noRegions, 'extended').frameBoxes).toEqual([]);
   });
 });
 
