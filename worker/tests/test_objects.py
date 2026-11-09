@@ -573,3 +573,31 @@ def test_reconstruction_is_deterministic():
     b = reconstruct_objects(mesh, structure)
     assert a.entities == b.entities
     assert a.textures.keys() == b.textures.keys()
+
+
+def _box_points(size, *, n=4000, seed=0):
+    """均匀分布在外接框表面附近的点（局部坐标，底面在 y=0），法线粗略按所在面给。"""
+    rng = np.random.default_rng(seed)
+    w, h, d = size
+    P = rng.uniform([-w / 2, 0, -d / 2], [w / 2, h, d / 2], size=(n, 3))
+    N = np.tile([0.0, 0.0, 1.0], (n, 1))
+    C = np.full((n, 3), 200.0)
+    return P, N, C
+
+
+def test_thin_vertical_board_is_not_a_counter():
+    """入口处 2.2 米宽、1.1 米高、13 厘米厚的竖板（门框、隔断的一截）不能按规则认成前台。"""
+    from metaverse_worker.processing.objects import COUNTER_MIN_DEPTH, classify
+
+    P, N, C = _box_points((2.2, 1.1, 0.13))
+    assert COUNTER_MIN_DEPTH > 0.13
+    assert classify(P, N, C, set(), None) != "counter"
+    assert classify(P, N, C, set(), 1.1) != "counter"
+
+
+def test_deep_reception_desk_is_still_a_counter():
+    from metaverse_worker.processing.objects import classify
+
+    P, N, C = _box_points((2.4, 1.1, 0.8))
+    assert classify(P, N, C, set(), None) == "counter"
+    assert classify(P, N, C, set(), 1.1) == "counter"

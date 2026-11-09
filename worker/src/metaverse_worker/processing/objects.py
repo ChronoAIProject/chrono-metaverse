@@ -87,6 +87,8 @@ LABELS = {
     "clutter": "杂物",
 }
 FURNITURE = {"chair", "table", "sofa", "counter", "cabinet"}
+# 规则识别前台时要求的最小进深（米，俯视外接框的短边）。
+COUNTER_MIN_DEPTH = 0.35
 SMALL = 0.8  # 小件：最长边不到 0.8 米（小柜子只用纯色；杂物和小件的俯视轮廓偏向简单的）
 # 提示里常见的别名
 KIND_ALIASES = {
@@ -247,8 +249,10 @@ def classify(L: np.ndarray, N: np.ndarray, C: np.ndarray, tags: set[str], top_h:
     long_, short = float(max(ext)), float(min(ext))
     if "on-top" in tags:
         return "clutter"
+    # 前台要有进深：入口处 2 米多宽、十几厘米厚的竖板（门框、隔断的一截）不是前台。
+    deep = short >= COUNTER_MIN_DEPTH
     if top_h is not None:
-        if top_h > 0.95 and long_ > 1.2:
+        if top_h > 0.95 and long_ > 1.2 and deep:
             return "counter"
         return "cabinet" if skirt > 0.6 else "table"
     if H > 1.5:
@@ -267,7 +271,7 @@ def classify(L: np.ndarray, N: np.ndarray, C: np.ndarray, tags: set[str], top_h:
                 return "sofa"
             if long_ <= 1.05:
                 return "chair"
-    if 0.85 < H < 1.35 and long_ > 1.5:
+    if 0.85 < H < 1.35 and long_ > 1.5 and deep:
         return "counter"
     if long_ < 1.2 and H > 0.25:
         o = Local(L, N, C)
