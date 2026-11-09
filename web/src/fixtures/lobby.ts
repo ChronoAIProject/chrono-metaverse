@@ -10,6 +10,9 @@ import { TEXTURES } from './assets';
  *   扫掠椅腿的椅子模板和 3 个实例（sweep + group + instance，其中一把换了颜色）、
  *   布面沙发（extrude + arcs + fillets，贴图按网格自身坐标 + 色调）、放样花盆（loft）、
  *   条纹灯罩的落地灯（cylinder，贴图圆柱投影）、带弧形正面的前台（extrude）；
+ * - 和真实扫描一样，每个重建出的物体都有一个锚点：桌上、前台上和地上的几件杂物（小圆角盒）、
+ *   两个柜子、边几、绿植、落地灯也都带锚点（类型按处理服务的规则，不认识的前缀归 zone），
+ *   用来演示锚点标签的取舍（默认只显示有意义的几个，悬停时显示，见 web/README.md）；
  * - 扩展层：虚拟区里的展台（物件）和方块平台（区块，见 chunks.ts）。
  * - 锚点：桌、座位、休息区、入口、前台、虚拟展区，以及空间级锚点 `_space`（营业状态）。
  *
@@ -323,6 +326,69 @@ const wall = (size: [number, number, number], position: [number, number, number]
   material: { color: [232, 228, 220] },
 });
 
+/** 杂物：小圆角盒（书、电脑、杯子、纸箱……），锚点和真实扫描一样是 `clutter-NN`、标签"杂物"。 */
+const CLUTTER: readonly {
+  readonly id: string;
+  readonly min: [number, number, number];
+  readonly max: [number, number, number];
+  readonly color: readonly [number, number, number];
+}[] = [
+  { id: 'clutter-01', min: [1.8, 0.75, 1.35], max: [2.05, 0.83, 1.6], color: [180, 70, 60] },
+  { id: 'clutter-02', min: [2.5, 0.75, 1.4], max: [2.85, 0.77, 1.65], color: [60, 62, 68] },
+  { id: 'clutter-03', min: [3.0, 0.75, 1.75], max: [3.08, 0.85, 1.83], color: [240, 240, 236] },
+  { id: 'clutter-04', min: [1.6, 1.04, 3.75], max: [1.75, 1.2, 3.9], color: [96, 140, 190] },
+  { id: 'clutter-05', min: [2.6, 1.04, 3.8], max: [2.8, 1.1, 3.95], color: [214, 180, 90] },
+  { id: 'clutter-06', min: [5.4, 0, 4.4], max: [5.75, 0.3, 4.8], color: [176, 138, 96] },
+  { id: 'clutter-07', min: [0.3, 0, 2.8], max: [0.6, 0.4, 3.1], color: [176, 138, 96] },
+  { id: 'clutter-08', min: [3.75, 0, 2.9], max: [4.0, 0.35, 3.15], color: [70, 90, 120] },
+];
+
+/** 柜子：贴墙的高柜和矮柜（木纹贴图）。 */
+const CABINETS: readonly {
+  readonly id: string;
+  readonly min: [number, number, number];
+  readonly max: [number, number, number];
+}[] = [
+  { id: 'cabinet-01', min: [0.3, 0, 0.05], max: [1.3, 1.8, 0.5] },
+  { id: 'cabinet-02', min: [0.05, 0, 1.2], max: [0.5, 1.2, 2.4] },
+];
+
+function boxEntity(
+  id: string,
+  label: string,
+  min: readonly number[],
+  max: readonly number[],
+  material: Shape['material'],
+): EntityBody {
+  const size: [number, number, number] = [0, 1, 2].map((k) => max[k]! - min[k]!) as [
+    number,
+    number,
+    number,
+  ];
+  return {
+    entityId: id,
+    layer: 'rebuilt',
+    kind: 'object',
+    label,
+    anchorId: id,
+    shape: {
+      type: 'box',
+      size,
+      fillet: Math.min(0.012, Math.min(...size) * 0.2),
+      transform: { position: [(min[0]! + max[0]!) / 2, min[1]!, (min[2]! + max[2]!) / 2] },
+      material,
+    },
+    bounds: { min: [min[0]!, min[1]!, min[2]!], max: [max[0]!, max[1]!, max[2]!] },
+  };
+}
+
+/** 米制包围盒覆盖的格子（和处理服务、接口服务的 grid_cover 相同）。 */
+function gridCover(min: readonly number[], max: readonly number[]): Anchor['box'] {
+  const lo = min.map((v) => Math.floor(Math.round((v / 0.05) * 1e6) / 1e6));
+  const hi = max.map((v, k) => Math.max(lo[k]! + 1, Math.ceil(Math.round((v / 0.05) * 1e6) / 1e6)));
+  return [lo[0]!, lo[1]!, lo[2]!, hi[0]!, hi[1]!, hi[2]!];
+}
+
 /** 实体（结构 + 物体）。bounds 是手算的包围盒，供区域判断和剖切范围用。 */
 function rebuiltEntities(chairZ: number): EntityBody[] {
   return [
@@ -438,6 +504,7 @@ function rebuiltEntities(chairZ: number): EntityBody[] {
       layer: 'rebuilt',
       kind: 'object',
       label: '边几',
+      anchorId: 'zone-side',
       shape: sideTable,
       bounds: { min: [4.63, 0, 3.43], max: [5.17, 0.54, 3.97] },
     },
@@ -455,6 +522,7 @@ function rebuiltEntities(chairZ: number): EntityBody[] {
       layer: 'rebuilt',
       kind: 'object',
       label: '绿植',
+      anchorId: 'plant-01',
       shape: planter,
       bounds: { min: [0.22, 0, 4.12], max: [0.78, 1.48, 4.68] },
     },
@@ -463,6 +531,7 @@ function rebuiltEntities(chairZ: number): EntityBody[] {
       layer: 'rebuilt',
       kind: 'object',
       label: '落地灯',
+      anchorId: 'lamp-01',
       shape: lamp,
       bounds: { min: [5.28, 0, 0.28], max: [5.72, 1.7, 0.72] },
     },
@@ -476,6 +545,14 @@ function rebuiltEntities(chairZ: number): EntityBody[] {
       bounds: { min: [1.4, 0, 3.6], max: [3.0, 1.04, 4.25] },
       props: { label: '前台（收花处）', 材质: '人造石 + 木纹台面' },
     },
+    ...CABINETS.map(({ id, min, max }) =>
+      boxEntity(id, '柜子', min, max, {
+        texture: TEXTURES.wood.hash,
+        uv: 'box',
+        tint: [214, 196, 176],
+      }),
+    ),
+    ...CLUTTER.map(({ id, min, max, color }) => boxEntity(id, '杂物', min, max, { color })),
   ];
 }
 
@@ -584,6 +661,42 @@ export const anchors: Anchor[] = [
     position: [2.2, 1.05, 3.9],
     visibility: 'public',
   },
+  // 和真实扫描一样，每个重建出的物体都有锚点（盒子锚点 = 物体包围盒覆盖的格子）。
+  {
+    anchorId: 'zone-side',
+    kind: 'zone',
+    label: '边几',
+    box: gridCover([4.63, 0, 3.43], [5.17, 0.54, 3.97]),
+    visibility: 'public',
+  },
+  {
+    anchorId: 'plant-01',
+    kind: 'zone',
+    label: '绿植',
+    box: gridCover([0.22, 0, 4.12], [0.78, 1.48, 4.68]),
+    visibility: 'public',
+  },
+  {
+    anchorId: 'lamp-01',
+    kind: 'zone',
+    label: '落地灯',
+    box: gridCover([5.28, 0, 0.28], [5.72, 1.7, 0.72]),
+    visibility: 'public',
+  },
+  ...CABINETS.map(({ id, min, max }): Anchor => ({
+    anchorId: id,
+    kind: 'zone',
+    label: '柜子',
+    box: gridCover(min, max),
+    visibility: 'public',
+  })),
+  ...CLUTTER.map(({ id, min, max }): Anchor => ({
+    anchorId: id,
+    kind: 'zone',
+    label: '杂物',
+    box: gridCover(min, max),
+    visibility: 'public',
+  })),
   { anchorId: '_space', kind: 'space', label: '演示前厅', visibility: 'public' },
   {
     anchorId: 'camera-01',
