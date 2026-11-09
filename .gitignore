@@ -1,2 +1,27 @@
 # 后台并行开发用的临时 git worktree，不提交
 .claude/worktrees/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Rust
+target/
+
+# 前端
+node_modules/
+dist/
+coverage/
+test-results/
+playwright-report/
+
+# 本地密钥与环境
+.env
+.env.*
+!.env.example
+*.pem
+*.key
