@@ -882,3 +882,465 @@ async fn state_snapshots_are_saved_and_invalidated_by_late_events() {
         0
     );
 }
+
+/// 内部锚点上的活动不能从 `/head` 的 recordedAt 和 ETag（以及空间信息的 head.recordedAt）里看出来：
+/// 只统计公开接口可见的变化。
+#[tokio::test]
+async fn head_ignores_activity_on_internal_anchors() {
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    let token = restaurant(&app).await;
+    register_types(&app).await;
+    let share = format!("Share {token}");
+    let head = format!("{PUBLIC}/head");
+    let reply = write(
+        &app,
+        who(ORG),
+        "pos",
+        json!([{"sourceEventId": "base", "type": "table.occupancy", "anchorId": "t1",
+                "at": ago(60), "data": {"guests": 2}}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let before = app.public(&head, Some(&share), &[]).await;
+    assert_eq!(before.status, StatusCode::OK, "{:?}", before.body);
+    let tag = before
+        .headers
+        .get("etag")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let recorded = before.body["recordedAt"].clone();
+    assert!(recorded.is_string());
+    tokio::time::sleep(std::time::Duration::from_millis(1600)).await;
+    // 内部锚点 safe 上的公开级事件，以及对它的撤回。
+    let reply = write(
+        &app,
+        who(ORG),
+        "pos",
+        json!([{"sourceEventId": "vault-open", "type": "table.occupancy", "anchorId": "safe",
+                "at": ago(5), "data": {"guests": 1}}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let reply = correct(
+        &app,
+        "pos",
+        json!([{"sourceEventId": "vault-retract", "correctsSourceEventId": "vault-open", "retracted": true}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    tokio::time::sleep(std::time::Duration::from_millis(1600)).await;
+    let after = app
+        .public(&head, Some(&share), &[("if-none-match", tag.as_str())])
+        .await;
+    assert_eq!(
+        after.status,
+        StatusCode::NOT_MODIFIED,
+        "内部锚点上的活动改变了 /head：{:?}",
+        after.body
+    );
+    let info = app.public(PUBLIC, Some(&share), &[]).await;
+    assert_eq!(info.body["head"]["recordedAt"], recorded);
+    // 公开锚点上的新事件照常改变 /head。
+    let reply = write(
+        &app,
+        who(ORG),
+        "pos",
+        json!([{"sourceEventId": "t2-seat", "type": "table.occupancy", "anchorId": "t2",
+                "at": ago(1), "data": {"guests": 3}}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    tokio::time::sleep(std::time::Duration::from_millis(1600)).await;
+    let changed = app
+        .public(&head, Some(&share), &[("if-none-match", tag.as_str())])
+        .await;
+    assert_eq!(changed.status, StatusCode::OK);
+    assert_ne!(changed.body["recordedAt"], recorded);
+}
+
+/// 主人把空间级锚点 `_space` 改成内部级之后，它上面的事件和状态同样不公开。
+#[tokio::test]
+async fn internal_space_anchor_hides_space_level_events() {
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    let token = restaurant(&app).await;
+    register_types(&app).await;
+    let share = format!("Share {token}");
+    let reply = write(
+        &app,
+        who(ORG),
+        "pos",
+        json!([{"sourceEventId": "closed", "type": "seat.count", "anchorId": "_space",
+                "at": ago(30), "data": {"n": 7}}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let window = format!(
+        "{PUBLIC}/events?from={}&to={}",
+        urlencode(&ago(3600)),
+        urlencode(&ago(-60))
+    );
+    // `_space` 公开时可见。
+    let reply = app.public(&window, Some(&share), &[]).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(reply.body["items"].as_array().unwrap().len(), 1);
+    // 主人发布 updateAnchor 把 `_space` 改成内部级（这里直接改当前状态）。
+    app.collection("anchors")
+        .update_one(
+            doc! {"spaceId": "restaurant", "id": "_space"},
+            doc! {"$set": {"body.visibility": "internal"}},
+        )
+        .await
+        .unwrap();
+    let reply = app.public(&window, Some(&share), &[]).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(reply.body["items"], json!([]), "{:?}", reply.body);
+    let reply = app
+        .public(&format!("{PUBLIC}/state"), Some(&share), &[])
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(reply.body["states"], json!([]), "{:?}", reply.body);
+    let reply = app
+        .public(
+            &format!(
+                "{PUBLIC}/events/density?from={}&to={}&bucket=3600",
+                urlencode(&ago(3600)),
+                urlencode(&ago(-60))
+            ),
+            Some(&share),
+            &[],
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let total: u64 = reply.body["buckets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|bucket| bucket["count"].as_u64().unwrap())
+        .sum();
+    assert_eq!(total, 0);
+    // `/api/v1` 照常看得到。
+    let reply = app
+        .call(
+            who(ORG),
+            Method::GET,
+            &format!(
+                "{BASE}/events?from={}&to={}",
+                urlencode(&ago(3600)),
+                urlencode(&ago(-60))
+            ),
+            None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(reply.body["items"].as_array().unwrap().len(), 1);
+}
+
+fn urlencode(text: &str) -> String {
+    text.replace('+', "%2B").replace(':', "%3A")
+}
+
+/// 直接写一批记录（模拟写接口一批批灌进来的数据）。
+async fn insert_raw(app: &TestApp, documents: Vec<mongodb::bson::Document>) {
+    for batch in documents.chunks(5000) {
+        app.collection("events")
+            .insert_many(batch.to_vec())
+            .await
+            .unwrap();
+    }
+}
+
+fn raw_event(id: &str, at: &str, corrects: Option<&str>, n: i64) -> mongodb::bson::Document {
+    let mut document = doc! {
+        "_id": id, "spaceId": "restaurant", "owner": {"kind": "org", "id": ORG},
+        "at": at, "recordedAt": at, "source": "pos", "sourceEventId": id,
+        "type": "seat.count", "typeVersion": 1_i32, "anchorId": "t2",
+        "data": {"n": n}, "visibility": "public",
+    };
+    if let Some(original) = corrects {
+        document.insert("corrects", original);
+    }
+    document
+}
+
+/// 同一批里多条更正指向同一条原事件：记录时间相同、生效的那条取决于编号，所以拒绝；
+/// 分批写时后写的生效。
+#[tokio::test]
+async fn corrections_to_one_event_in_one_batch_are_rejected() {
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    let token = restaurant(&app).await;
+    register_types(&app).await;
+    let share = format!("Share {token}");
+    let reply = write(
+        &app,
+        who(ORG),
+        "pos",
+        json!([{"sourceEventId": "e1", "type": "table.occupancy", "anchorId": "t1",
+                "at": ago(60), "data": {"guests": 2}}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let reply = correct(
+        &app,
+        "pos",
+        json!([
+            {"sourceEventId": "c1", "correctsSourceEventId": "e1", "type": "table.occupancy",
+             "anchorId": "t1", "data": {"guests": 3}},
+            {"sourceEventId": "c2", "correctsSourceEventId": "e1", "retracted": true}
+        ]),
+    )
+    .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{:?}",
+        reply.body
+    );
+    assert_eq!(reply.body["code"], "duplicate_target");
+    assert_eq!(
+        app.collection("events")
+            .count_documents(doc! {"corrects": {"$exists": true}})
+            .await
+            .unwrap(),
+        0,
+        "整批不生效"
+    );
+    // 分批：先替换、后撤回，最终撤回。
+    let reply = correct(
+        &app,
+        "pos",
+        json!([{"sourceEventId": "c1", "correctsSourceEventId": "e1", "type": "table.occupancy",
+                "anchorId": "t1", "data": {"guests": 3}}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let reply = correct(
+        &app,
+        "pos",
+        json!([{"sourceEventId": "c2", "correctsSourceEventId": "e1", "retracted": true}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let reply = app
+        .public(
+            &format!("{PUBLIC}/events?from={}&to={}", ago(3600), ago(-60)),
+            Some(&share),
+            &[],
+        )
+        .await;
+    assert_eq!(reply.body["items"], json!([]), "{:?}", reply.body);
+}
+
+/// 每条原事件的更正有上限；同一批重试不会被误拒。
+#[tokio::test]
+async fn corrections_per_event_are_capped() {
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    restaurant(&app).await;
+    register_types(&app).await;
+    let reply = write(
+        &app,
+        who(ORG),
+        "pos",
+        json!([{"sourceEventId": "e1", "type": "seat.count", "anchorId": "t2",
+                "at": ago(60), "data": {"n": 1}}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let original = reply.body["results"][0]["id"].as_str().unwrap().to_owned();
+    let at = app
+        .collection("events")
+        .find_one(doc! {"_id": &original})
+        .await
+        .unwrap()
+        .unwrap()
+        .get_str("at")
+        .unwrap()
+        .to_owned();
+    insert_raw(
+        &app,
+        (0..99)
+            .map(|i| raw_event(&format!("ev_fill{i}"), &at, Some(&original), i))
+            .collect(),
+    )
+    .await;
+    let batch = json!([{"sourceEventId": "c100", "correctsSourceEventId": "e1",
+                        "type": "seat.count", "anchorId": "t2", "data": {"n": 100}}]);
+    let reply = correct(&app, "pos", batch.clone()).await;
+    assert_eq!(reply.status, StatusCode::OK, "第 100 条：{:?}", reply.body);
+    // 同一批重试：去重，不算超出上限。
+    let reply = correct(&app, "pos", batch).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let reply = correct(
+        &app,
+        "pos",
+        json!([{"sourceEventId": "c101", "correctsSourceEventId": "e1", "retracted": true}]),
+    )
+    .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{:?}",
+        reply.body
+    );
+    assert_eq!(reply.body["code"], "too_many_corrections");
+}
+
+/// 灌进大量更正、同一时刻的事件后，一次公开请求读进内存的记录数有上限：分页提前结束，
+/// 单条原事件的更正就超过上限时 503，而不是把它们全部读进内存。
+#[tokio::test]
+async fn reads_are_bounded_when_corrections_or_same_instant_events_pile_up() {
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    let token = restaurant(&app).await;
+    register_types(&app).await;
+    let share = format!("Share {token}");
+    let base = metaverse_core::Timestamp::parse_rfc3339(&ago(7200)).unwrap();
+    let at = |offset: i64| base.saturating_add_millis(offset).to_rfc3339();
+    // A 有 15000 条更正，B 有 10000 条：一页放不下两条。
+    let mut documents = vec![
+        raw_event("ev_a", &at(0), None, 1),
+        raw_event("ev_b", &at(1000), None, 2),
+    ];
+    documents.extend((0..15_000).map(|i| raw_event(&format!("ev_a{i}"), &at(0), Some("ev_a"), i)));
+    documents
+        .extend((0..10_000).map(|i| raw_event(&format!("ev_b{i}"), &at(1000), Some("ev_b"), i)));
+    insert_raw(&app, documents).await;
+    let window = format!("{PUBLIC}/events?from={}&to={}", at(-1000), at(60_000));
+    let reply = app.public(&window, Some(&share), &[]).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(ids(&reply.body["items"]), vec!["ev_a"]);
+    let next = reply.body["nextAfter"].as_str().unwrap().to_owned();
+    let reply = app
+        .public(&format!("{window}&after={next}"), Some(&share), &[])
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(ids(&reply.body["items"]), vec!["ev_b"]);
+    assert_eq!(reply.body["nextAfter"], Value::Null);
+    // 增量同样分页。
+    let since = format!("{PUBLIC}/events?since={}", at(-1000));
+    let reply = app.public(&since, Some(&share), &[]).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert!(reply.body["nextAfter"].is_string());
+    // 旧数据：单条原事件就有 25000 条更正，503 而不是全部读进内存。
+    let mut documents = vec![raw_event("ev_c", &at(2000), None, 3)];
+    documents
+        .extend((0..25_000).map(|i| raw_event(&format!("ev_c{i}"), &at(2000), Some("ev_c"), i)));
+    insert_raw(&app, documents).await;
+    let window = format!("{PUBLIC}/events?from={}&to={}", at(1500), at(60_000));
+    let reply = app.public(&window, Some(&share), &[]).await;
+    assert_eq!(
+        reply.status,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "{:?}",
+        reply.body
+    );
+    assert_eq!(reply.body["code"], "too_many_corrections");
+    // 状态：同一时刻超过上限的记录 503，不一次读完。
+    let reply = app
+        .public(
+            &format!("{PUBLIC}/state?at={}", at(3000)),
+            Some(&share),
+            &[],
+        )
+        .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "{:?}",
+        reply.body
+    );
+    assert_eq!(reply.body["code"], "state_computing");
+}
+
+/// 抹除与状态计算同时进行时，计算方可能在抹除之后才保存带着旧内容的快照：快照的失效判断要
+/// 同时看抹除时间，否则公开接口会一直返回已抹除的内容。
+#[tokio::test]
+async fn snapshot_saved_after_a_concurrent_redaction_is_stale() {
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    let token = restaurant(&app).await;
+    register_types(&app).await;
+    let share = format!("Share {token}");
+    let reply = write(
+        &app,
+        who(ORG),
+        "pos",
+        json!([{"sourceEventId": "e1", "type": "seat.count", "anchorId": "t2",
+                "at": ago(7200), "data": {"n": 7}}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let event_id = reply.body["results"][0]["id"].as_str().unwrap().to_owned();
+    let event_at = app
+        .collection("events")
+        .find_one(doc! {"_id": &event_id})
+        .await
+        .unwrap()
+        .unwrap()
+        .get_str("at")
+        .unwrap()
+        .to_owned();
+    app.collection("events")
+        .update_one(
+            doc! {"_id": &event_id},
+            doc! {"$set": {"recordedAt": ago(7000)}},
+        )
+        .await
+        .unwrap();
+    // 抹除（管理接口）。
+    let reply = app
+        .call(
+            who(ORG),
+            Method::POST,
+            &format!("/api/v1/admin/spaces/restaurant/events/{event_id}/redact"),
+            None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    // 与抹除同时开始的状态计算：在抹除之前读到了内容、抹除之后才保存快照
+    // （computedAt 早于抹除时间）。
+    let snapshot_at = ago(3600);
+    app.collection("stateSnapshots")
+        .insert_one(doc! {
+            "_id": format!("ss_restaurant_{}", metaverse_core::Timestamp::parse_rfc3339(&snapshot_at).unwrap().millis()),
+            "spaceId": "restaurant", "owner": {"kind": "org", "id": ORG},
+            "at": &snapshot_at, "computedAt": ago(600),
+            "states": [{"anchorId": "t2", "key": "count", "value": 7, "since": &event_at,
+                        "eventId": &event_id, "type": "seat.count", "typeVersion": 1_i32,
+                        "data": {"n": 7}}],
+        })
+        .await
+        .unwrap();
+    let reply = app
+        .public(&format!("{PUBLIC}/state?at={}", ago(60)), Some(&share), &[])
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let states = reply.body["states"].as_array().unwrap();
+    assert!(
+        states
+            .iter()
+            .all(|state| state["data"].is_null() && state["value"] != 7),
+        "抹除之后公开接口还返回内容：{:?}",
+        reply.body
+    );
+    assert_eq!(
+        app.collection("stateSnapshots")
+            .count_documents(doc! {"computedAt": {"$lt": ago(300)}})
+            .await
+            .unwrap(),
+        0,
+        "带着旧内容的快照被判为失效并删除"
+    );
+}

@@ -241,9 +241,13 @@ impl Repo {
     /// 本空间拥有 `hashes` 里的哪些资源。资源按内容全局去重，`metadata.spaceId` 只记第一个登记
     /// 的空间，所以按下面任何一条都算本空间的（依次查，查到的不再往下查）：
     ///
-    /// 1. `metadata.spaceId` 是本空间（调用方已经从 `assets.files` 读出，传在 `registered_here`）；
-    /// 2. 本空间的 `assetRefs` 登记过（提交或事件类型引用过）；
-    /// 3. 本空间有 `status: done`、`assetHash` 是它的上传（含哈希已存在时复用的上传）；
+    /// 1. `metadata.spaceId` 是本空间（调用方已经从 `assets.files` 读出，传在 `registered_here`），
+    ///    并且是本空间**这一次创建之后**登记的（空间编号删除后可以被别人重新注册，旧空间登记的
+    ///    资源不归新空间）；
+    /// 2. 本空间（同一主人）的 `assetRefs` 登记过（提交或事件类型引用过）；
+    /// 3. 本空间有 `status: done`、`assetHash` 是它、**真正传过数据**的上传。哈希已存在时
+    ///    "直接复用、不收数据"的上传（`reused: true`）不算：只凭哈希不能确立所有权；
+    ///    复用本来也只对本空间已经拥有的资源开放；
     /// 4. 本空间有 `status: done` 的 `model_import` 任务，结果 `modelHash` 是它；
     /// 5. 本空间的提交引用过它（`scan.assetHash`、`scan.webModelHashes`、`opsRef`）。
     pub async fn owned_assets(
@@ -255,10 +259,28 @@ impl Repo {
         if !grant.can_read_internal() {
             return Err(RepoError::GrantMismatch);
         }
-        let mut owned: BTreeSet<String> = registered_here
+        let mut owned: BTreeSet<String> = BTreeSet::new();
+        // 1. metadata.spaceId，且登记时间不早于本空间这一次创建
+        let candidates: Vec<String> = registered_here
             .into_iter()
             .filter(|hash| hashes.contains(hash))
             .collect();
+        if !candidates.is_empty() {
+            if let Some(created) = self.space_created_at(grant).await? {
+                self.collect_strings(
+                    collections::ASSET_FILES,
+                    doc! {
+                        "filename": {"$in": &candidates},
+                        "metadata.spaceId": grant.space_id(),
+                        "uploadDate": {"$gte": mongodb::bson::DateTime::from_millis(created.millis())},
+                    },
+                    &["filename"],
+                    &candidates,
+                    &mut owned,
+                )
+                .await?;
+            }
+        }
         let remaining = |owned: &BTreeSet<String>| -> Vec<String> {
             let mut left: Vec<String> = hashes
                 .iter()
@@ -274,9 +296,11 @@ impl Repo {
         if left.is_empty() {
             return Ok(owned);
         }
+        let mut filter = granted_children(grant);
+        filter.insert("hash", doc! {"$in": &left});
         self.collect_strings(
             collections::ASSET_REFS,
-            doc! {"hash": {"$in": &left}, "spaceId": grant.space_id()},
+            filter,
             &["hash"],
             &left,
             &mut owned,
@@ -289,6 +313,7 @@ impl Repo {
         }
         let mut filter = granted_children(grant);
         filter.insert("status", "done");
+        filter.insert("reused", doc! {"$ne": true});
         filter.insert("assetHash", doc! {"$in": &left});
         self.collect_strings(
             collections::UPLOADS,

@@ -55,6 +55,12 @@ pub async fn get_public_space(
         .space(&grant)
         .await?
         .ok_or_else(ApiError::not_found)?;
+    // 离开组合时的最新位置：离开之后的提交和事件凭组合令牌不可见（设计 8.2"T 时刻是成员"）。
+    let left_at = if current {
+        None
+    } else {
+        grant.membership().and_then(|periods| periods.last_end())
+    };
     let anchors = if current {
         state.repo.anchors(&grant).await?
     } else {
@@ -62,8 +68,23 @@ pub async fn get_public_space(
         space.plots.clear();
         Vec::new()
     };
+    let created_at = space.created_at;
     let mut view = PublicSpaceView::new(space, anchors);
-    view.head.recorded_at = super::event_query::public_recorded_at(&state, &grant).await?;
+    match left_at {
+        None => {
+            view.head.recorded_at = super::event_query::public_recorded_at(&state, &grant).await?;
+        }
+        Some(left_at) => {
+            let last = left_at.saturating_add_millis(-1);
+            let seq = state.repo.seq_at(&grant, last).await?;
+            view.head.seq = seq;
+            view.head.at = match state.repo.commit_window(&grant, seq).await? {
+                Some((at, _)) if seq > 0 => at,
+                _ => created_at,
+            };
+            view.head.recorded_at = None;
+        }
+    }
     view.event_types = state
         .repo
         .event_types(&grant)

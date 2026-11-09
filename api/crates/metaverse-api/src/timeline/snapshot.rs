@@ -30,6 +30,7 @@ pub enum Audience {
     /// `/api/v1`：含内部级锚点和原始扫描。
     Internal,
     /// 草稿预览：只给草稿状态里公开级的锚点（草稿可能把内部锚点改成公开），扫描只给网页用模型。
+    /// 草稿没有改动、而现在已经是内部级（或改成内部级后删除）的锚点同样不出现。
     Preview,
 }
 
@@ -37,7 +38,8 @@ fn is_public_anchor(body: &Value) -> bool {
     body.get("visibility").and_then(Value::as_str) == Some("public")
 }
 
-/// 按清单组装快照（`extra_blocks` 是预览时草稿新增的方块）。
+/// 按清单组装快照（`extra_blocks` 是预览时草稿新增的方块，`draft_anchors` 是草稿改动过的锚点）。
+#[allow(clippy::too_many_arguments)]
 pub async fn assemble(
     repo: &Repo,
     grant: &Grant,
@@ -45,6 +47,7 @@ pub async fn assemble(
     at: Timestamp,
     manifest: &StateManifest,
     extra_blocks: &[PaletteBlock],
+    draft_anchors: &BTreeSet<String>,
     audience: Audience,
 ) -> Result<SnapshotView, ApiError> {
     let space_id = grant.space_id();
@@ -79,9 +82,17 @@ pub async fn assemble(
             body: body.clone(),
         });
     }
+    // 当前是内部级（或改成内部级后删除）的锚点在任何历史版本里都不出现；预览里草稿自己改过的
+    // 锚点按草稿状态判断。
     let internal_now: BTreeSet<String> = match audience {
         Audience::Public => repo.internal_anchor_ids(grant).await?.into_iter().collect(),
-        Audience::Internal | Audience::Preview => BTreeSet::new(),
+        Audience::Preview => repo
+            .internal_anchor_ids(grant)
+            .await?
+            .into_iter()
+            .filter(|id| !draft_anchors.contains(id))
+            .collect(),
+        Audience::Internal => BTreeSet::new(),
     };
     let mut anchors = Vec::with_capacity(manifest.anchors.len());
     for (id, hash) in &manifest.anchors {
@@ -155,7 +166,17 @@ pub async fn snapshot_at(
             .at
     };
     let manifest = repo.manifest_at(grant, seq).await?;
-    assemble(repo, grant, seq, at, &manifest, &[], audience).await
+    assemble(
+        repo,
+        grant,
+        seq,
+        at,
+        &manifest,
+        &[],
+        &BTreeSet::new(),
+        audience,
+    )
+    .await
 }
 
 fn actor_kind_name(kind: ActorKind) -> String {

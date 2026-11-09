@@ -141,6 +141,7 @@ impl Authorizer {
             owner: policy.owner,
             access: GrantAccess::Manage,
             public_basis: None,
+            membership: None,
         }))
     }
 }

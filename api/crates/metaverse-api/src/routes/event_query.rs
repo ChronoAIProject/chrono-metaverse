@@ -30,8 +30,13 @@ use crate::AppState;
 pub const PUBLIC_PAGE_LIMIT: i64 = 5000;
 /// 时间窗最长 24 小时。
 pub const MAX_WINDOW_MS: i64 = 24 * 3600 * 1000;
+/// 一页最多读进内存的记录数（原事件 + 指向它们的更正）。更正和同一时刻的事件都没有总量配额，
+/// 读取必须有上限：超过时本页提前结束（下一页从这里接着），单条原事件的更正就超过上限时 503。
+pub const MAX_PAGE_RECORDS: u64 = 20_000;
 /// 状态计算每批读多少条记录。
 const STATE_BATCH: i64 = 5000;
+/// 状态计算时同一时刻的记录最多读多少条（同一时刻的原事件和更正要一起折叠，不能拆批）。
+const STATE_SAME_AT_MAX: i64 = 20_000;
 /// 一次状态请求最多折叠多少条记录；超过返回 503（期间保存的快照让下次接着算）。
 const STATE_MAX_RECORDS: usize = 200_000;
 /// 折叠了这么多条记录就保存一份快照。
@@ -54,7 +59,8 @@ pub async fn type_map(state: &AppState, grant: &Grant) -> Result<TypeMap, ApiErr
         .collect())
 }
 
-/// 公开锚点的编号（加上空间级锚点 `_space`）。
+/// 公开锚点的编号，加上空间级锚点 `_space`——除非主人把 `_space` 改成了内部级（这时空间级
+/// 事件和状态同样不公开；还没有 `_space` 锚点的空间照旧当作公开）。
 pub async fn public_anchor_ids(
     state: &AppState,
     grant: &Grant,
@@ -67,7 +73,16 @@ pub async fn public_anchor_ids(
         .filter(|anchor| anchor.visibility == DataVisibility::Public)
         .map(|anchor| anchor.anchor_id)
         .collect();
-    ids.insert(SPACE_ANCHOR_ID.to_owned());
+    if !ids.contains(SPACE_ANCHOR_ID)
+        && !state
+            .repo
+            .internal_anchor_ids(grant)
+            .await?
+            .iter()
+            .any(|id| id == SPACE_ANCHOR_ID)
+    {
+        ids.insert(SPACE_ANCHOR_ID.to_owned());
+    }
     Ok(ids)
 }
 
@@ -91,8 +106,14 @@ pub async fn window_page(
         .repo
         .originals_in_window(grant, from, to, after, limit + 1)
         .await?;
-    let more = originals.len() as i64 > limit;
+    let mut more = originals.len() as i64 > limit;
     originals.truncate(limit as usize);
+    let ids: Vec<String> = originals.iter().map(|event| event.id.clone()).collect();
+    let (keep, budget) = within_budget(state, grant, &ids).await?;
+    if keep < originals.len() {
+        originals.truncate(keep);
+        more = true;
+    }
     let next = more.then(|| {
         let last = originals.last().expect("有下一页时本页不为空");
         Cursor {
@@ -102,12 +123,47 @@ pub async fn window_page(
     });
     let touched: Vec<String> = originals.iter().map(|event| event.id.clone()).collect();
     let mut records = originals;
-    records.extend(state.repo.corrections_for(grant, &touched).await?);
+    records.extend(
+        state
+            .repo
+            .corrections_for(grant, &touched, budget as i64 + 1)
+            .await?,
+    );
     Ok(EventPage {
         records,
         touched,
         next,
     })
+}
+
+/// 按顺序取原事件，直到"原事件 + 它们的更正"超过 [`MAX_PAGE_RECORDS`]：返回能放进本页的
+/// 原事件个数和其中更正的总数。第一条原事件自己就超过上限时 503（单条原事件的更正有写入上限，
+/// 只有旧数据会这样）。
+async fn within_budget(
+    state: &AppState,
+    grant: &Grant,
+    ids: &[String],
+) -> Result<(usize, u64), ApiError> {
+    let counts = state.repo.correction_counts(grant, ids, &[]).await?;
+    let mut used = 0u64;
+    let mut corrections = 0u64;
+    for (index, id) in ids.iter().enumerate() {
+        let extra = counts.get(id).copied().unwrap_or(0);
+        let cost = 1 + extra;
+        if used + cost > MAX_PAGE_RECORDS {
+            if index == 0 {
+                return Err(ApiError::new(
+                    axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                    "too_many_corrections",
+                    "这条事件的更正太多，无法读取",
+                ));
+            }
+            return Ok((index, corrections));
+        }
+        used += cost;
+        corrections += extra;
+    }
+    Ok((ids.len(), corrections))
 }
 
 /// 增量：`recordedAt ≥ since`。
@@ -122,8 +178,25 @@ pub async fn since_page(
         .repo
         .records_since(grant, since, after, limit + 1)
         .await?;
-    let more = changed.len() as i64 > limit;
+    let mut more = changed.len() as i64 > limit;
     changed.truncate(limit as usize);
+    let mut touched = Vec::new();
+    let mut first_seen = Vec::new();
+    let mut seen = BTreeSet::new();
+    for (position, record) in changed.iter().enumerate() {
+        let original = record.corrects.clone().unwrap_or_else(|| record.id.clone());
+        if seen.insert(original.clone()) {
+            touched.push(original);
+            first_seen.push(position);
+        }
+    }
+    // 涉及的原事件连同全部更正一起重算：总量超过上限时，本页在第一次出现放不下的原事件之前结束。
+    let (keep, budget) = within_budget(state, grant, &touched).await?;
+    if keep < touched.len() {
+        changed.truncate(first_seen[keep]);
+        touched.truncate(keep);
+        more = true;
+    }
     let next = more.then(|| {
         let last = changed.last().expect("有下一页时本页不为空");
         Cursor {
@@ -131,16 +204,13 @@ pub async fn since_page(
             id: last.id.clone(),
         }
     });
-    let mut touched = Vec::new();
-    let mut seen = BTreeSet::new();
-    for record in &changed {
-        let original = record.corrects.clone().unwrap_or_else(|| record.id.clone());
-        if seen.insert(original.clone()) {
-            touched.push(original);
-        }
-    }
     let mut records = state.repo.originals(grant, &touched).await?;
-    records.extend(state.repo.corrections_for(grant, &touched).await?);
+    records.extend(
+        state
+            .repo
+            .corrections_for(grant, &touched, budget as i64 + 1)
+            .await?,
+    );
     Ok(EventPage {
         records,
         touched,
@@ -415,12 +485,17 @@ pub fn internal_items(space_id: &str, page: &EventPage, filters: &Filters) -> Ve
 // /head
 // ---------------------------------------------------------------------------
 
-/// 最新一条公开可见变化的记录时间。
+/// 最新一条公开可见变化的记录时间：只算公开锚点上的事件（与公开事件接口一致），内部锚点上
+/// 的活动不能从 `/head` 的 recordedAt 和 ETag 里看出来。
 pub async fn public_recorded_at(
     state: &AppState,
     grant: &Grant,
 ) -> Result<Option<Timestamp>, ApiError> {
-    let latest_public = state.repo.latest_public_recorded_at(grant).await?;
+    let anchors = public_anchor_ids(state, grant).await?;
+    let latest_public = state
+        .repo
+        .latest_public_recorded_at(grant, &anchors)
+        .await?;
     let hiding = state
         .repo
         .hiding_corrections_after(grant, latest_public, 200)
@@ -432,7 +507,7 @@ pub async fn public_recorded_at(
         .iter()
         .filter_map(|record| record.corrects.clone())
         .collect();
-    let ever = state.repo.ever_public(grant, &targets).await?;
+    let ever = state.repo.ever_public(grant, &targets, &anchors).await?;
     let withdrawn = hiding
         .iter()
         .filter(|record| record.corrects.as_ref().is_some_and(|id| ever.contains(id)))
@@ -498,11 +573,25 @@ pub async fn public_state_at(
         let last_at = batch.last().expect("非空").at;
         let head: Vec<Event> = batch.iter().filter(|e| e.at < last_at).cloned().collect();
         if head.is_empty() {
-            // 整批都是同一个时刻：把这个时刻的记录一次读完。
+            // 整批都是同一个时刻：把这个时刻的记录一次读完（原事件和更正要一起折叠），但有上限。
             let same = state
                 .repo
-                .records_by_at(grant, Lower::Inclusive(last_at), last_at, None)
+                .records_by_at(
+                    grant,
+                    Lower::Inclusive(last_at),
+                    last_at,
+                    Some(STATE_SAME_AT_MAX + 1),
+                )
                 .await?;
+            if same.len() as i64 > STATE_SAME_AT_MAX {
+                tracing::warn!(space = %grant.space_id(), at = %last_at.to_rfc3339(), "同一时刻的事件太多，无法计算状态");
+                return Err(ApiError::new(
+                    axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                    "state_computing",
+                    "同一时刻的事件太多，无法计算状态",
+                ));
+            }
+            total += same.len();
             since_save += same.len();
             fold.apply(&same, &types);
             lower = Lower::Exclusive(last_at);

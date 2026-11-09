@@ -277,6 +277,7 @@ pub async fn set_layout(
             return Err(ApiError::conflict("时间线在写入期间前进了，请重试"))
         }
         Err(CommitError::Missing) => return Err(ApiError::not_found()),
+        Err(CommitError::DraftChanged) => return Err(ApiError::internal()),
         Err(CommitError::Repo(error)) => return Err(error.into()),
     };
     state.public.cache.invalidate_space(&space_id);
@@ -316,6 +317,7 @@ pub struct DeleteQuery {
         (status = 403, description = "只有只读权限", body = ProblemDocument),
         (status = 404, description = "空间不存在或无权查看", body = ProblemDocument),
         (status = 422, description = "没有带 confirm=<空间编号>", body = ProblemDocument),
+        (status = 503, description = "清理没做完（数据库暂时不可用）；再调用一次会接着清理", body = ProblemDocument),
     )
 )]
 pub async fn delete_space(
@@ -326,14 +328,32 @@ pub async fn delete_space(
 ) -> Result<Response, ApiError> {
     let grant = state
         .authorizer
-        .space(&caller, &space_id, Purpose::Manage)
+        .space_for_deletion(&caller, &space_id)
         .await?;
     if query.confirm.as_deref() != Some(space_id.as_str()) {
         return Err(ApiError::invalid(
             "删除空间不可恢复，请带 ?confirm=<空间编号> 确认",
         ));
     }
-    if !state.repo.delete_space(&grant).await? {
+    let now = crate::now()?;
+    // 1. 墓碑：之后谁都拿不到这个空间，编号仍被占着，清理完之前别人不能用它新建空间。
+    if !state.repo.mark_space_deleting(&grant, now).await? {
+        return Err(ApiError::not_found());
+    }
+    state.public.cache.invalidate_space(&space_id);
+    // 2. 移出所有组合（写退出修订）：空间编号删除后可以被别人重新注册，留在组合里的旧编号
+    //    不能让新空间被凭别人的组合令牌读取（设计 12）。
+    let actor = super::ingest_common::path_actor(
+        &caller,
+        metaverse_core::scope::PathScope::Physical,
+        metaverse_core::model::ActorKind::Admin,
+    );
+    state
+        .repo
+        .remove_space_from_universes(&grant, &actor, now)
+        .await?;
+    // 3. 清理子集合，最后删掉空间文档。中途失败时墓碑还在，再次调用本接口会接着清理。
+    if !state.repo.purge_deleting_space(&grant).await? {
         return Err(ApiError::not_found());
     }
     state.public.cache.invalidate_space(&space_id);

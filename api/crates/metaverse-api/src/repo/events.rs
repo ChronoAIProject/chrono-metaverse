@@ -6,7 +6,7 @@
 //! - 事件类型只追加版本，`(spaceId, type, version)` 唯一，文档上冗余主人；
 //! - 读写都要求空间的授权凭据，条件带上空间编号和主人；状态快照由系统范围写入。
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use metaverse_core::model::{Event, EventType, Owner, StateSnapshot};
 use metaverse_core::Timestamp;
@@ -188,11 +188,13 @@ impl Repo {
         collect(cursor).await
     }
 
-    /// 指向这些原事件的全部更正。
+    /// 指向这些原事件的更正，最多 `limit` 条（取记录时间最新的；调用方事先按
+    /// [`Repo::correction_counts`] 控制总量，这里只防计数之后又写入的）。
     pub async fn corrections_for(
         &self,
         grant: &Grant,
         ids: &[String],
+        limit: i64,
     ) -> Result<Vec<Event>, RepoError> {
         if ids.is_empty() {
             return Ok(Vec::new());
@@ -202,9 +204,49 @@ impl Repo {
         let cursor = self
             .collection(collections::EVENTS)
             .find(filter)
-            .sort(doc! {"recordedAt": 1, "_id": 1})
+            .sort(doc! {"recordedAt": -1, "_id": -1})
+            .limit(limit)
             .await?;
         collect(cursor).await
+    }
+
+    /// 每条原事件已有的更正条数（不算 `exclude` 里的编号：同一批重试时不重复计数）。
+    pub async fn correction_counts(
+        &self,
+        grant: &Grant,
+        ids: &[String],
+        exclude: &[String],
+    ) -> Result<BTreeMap<String, u64>, RepoError> {
+        let mut counts = BTreeMap::new();
+        if ids.is_empty() {
+            return Ok(counts);
+        }
+        let mut filter = space_children(grant);
+        filter.insert("corrects", doc! {"$in": ids});
+        if !exclude.is_empty() {
+            filter.insert("_id", doc! {"$nin": exclude});
+        }
+        let mut cursor = self
+            .collection(collections::EVENTS)
+            .aggregate([
+                doc! {"$match": filter},
+                doc! {"$group": {"_id": "$corrects", "count": {"$sum": 1}}},
+            ])
+            .await?;
+        while cursor.advance().await? {
+            let row: Document = cursor
+                .deserialize_current()
+                .map_err(|error| RepoError::Corrupt(error.to_string()))?;
+            let count = match row.get("count") {
+                Some(Bson::Int32(n)) => u64::try_from(*n).unwrap_or(0),
+                Some(Bson::Int64(n)) => u64::try_from(*n).unwrap_or(0),
+                _ => 0,
+            };
+            if let Ok(id) = row.get_str("_id") {
+                counts.insert(id.to_owned(), count);
+            }
+        }
+        Ok(counts)
     }
 
     /// 时间窗 `[from, to)` 里的原事件，按 (at, 编号) 排序分页。
@@ -225,6 +267,7 @@ impl Repo {
         if let Some(after) = after {
             filter.insert("$and", vec![after_filter("at", after)]);
         }
+        super::restrict_to_membership(&mut filter, grant, "at");
         let cursor = self
             .collection(collections::EVENTS)
             .find(filter)
@@ -247,6 +290,8 @@ impl Repo {
         if let Some(after) = after {
             filter.insert("$and", vec![after_filter("recordedAt", after)]);
         }
+        // 更正的 at 与原事件相同，所以按 at 裁剪时原事件和它的更正一起留下或去掉。
+        super::restrict_to_membership(&mut filter, grant, "at");
         let cursor = self
             .collection(collections::EVENTS)
             .find(filter)
@@ -285,14 +330,20 @@ impl Repo {
         collect(find.await?).await
     }
 
-    /// 最新一条公开级记录的记录时间（原事件或替换）。
+    /// 最新一条公开级记录（原事件或替换）的记录时间，只算 `public_anchors` 上的。
     pub async fn latest_public_recorded_at(
         &self,
         grant: &Grant,
+        public_anchors: &BTreeSet<String>,
     ) -> Result<Option<Timestamp>, RepoError> {
         let mut filter = space_children(grant);
         filter.insert("visibility", "public");
         filter.insert("retracted", doc! {"$ne": true});
+        filter.insert(
+            "anchorId",
+            doc! {"$in": public_anchors.iter().collect::<Vec<_>>()},
+        );
+        super::restrict_to_membership(&mut filter, grant, "at");
         let found = self
             .collection(collections::EVENTS)
             .find_one(filter)
@@ -323,6 +374,7 @@ impl Repo {
         if let Some(after) = after {
             filter.insert("recordedAt", doc! {"$gt": after.to_rfc3339()});
         }
+        super::restrict_to_membership(&mut filter, grant, "at");
         let cursor = self
             .collection(collections::EVENTS)
             .find(filter)
@@ -332,17 +384,22 @@ impl Repo {
         collect(cursor).await
     }
 
-    /// 这些原事件里，哪些有过公开级的版本（原事件或某条替换）。
+    /// 这些原事件里，哪些在 `public_anchors` 上有过公开级的版本（原事件或某条替换）。
     pub async fn ever_public(
         &self,
         grant: &Grant,
         ids: &[String],
+        public_anchors: &BTreeSet<String>,
     ) -> Result<BTreeSet<String>, RepoError> {
         if ids.is_empty() {
             return Ok(BTreeSet::new());
         }
         let mut filter = space_children(grant);
         filter.insert("visibility", "public");
+        filter.insert(
+            "anchorId",
+            doc! {"$in": public_anchors.iter().collect::<Vec<_>>()},
+        );
         filter.insert(
             "$or",
             vec![doc! {"_id": {"$in": ids}}, doc! {"corrects": {"$in": ids}}],
@@ -381,6 +438,7 @@ impl Repo {
             "at",
             doc! {"$gte": from.to_rfc3339(), "$lt": to.to_rfc3339()},
         );
+        super::restrict_to_membership(&mut filter, grant, "at");
         let anchors: Vec<&String> = public_anchors.iter().collect();
         let pipeline = vec![
             doc! {"$match": filter},
@@ -488,7 +546,9 @@ impl Repo {
         collect(cursor).await
     }
 
-    /// 快照是否失效：有 `at ≤ 快照时刻`、但在 `computedAt` 之后才记录的事件（晚到或更正）。
+    /// 快照是否失效：有 `at ≤ 快照时刻`、但在 `computedAt` 之后才记录（晚到或更正）或被抹除的
+    /// 事件。抹除不改 `recordedAt`；抹除时会删掉已有的快照，但与抹除同时进行的状态计算可能在
+    /// 抹除之后才保存它读到的旧内容，所以抹除时间也要比较。
     pub async fn state_snapshot_is_stale(
         &self,
         grant: &Grant,
@@ -496,9 +556,13 @@ impl Repo {
     ) -> Result<bool, RepoError> {
         let mut filter = space_children(grant);
         filter.insert("at", doc! {"$lte": snapshot.at.to_rfc3339()});
+        let computed_at = snapshot.computed_at.to_rfc3339();
         filter.insert(
-            "recordedAt",
-            doc! {"$gt": snapshot.computed_at.to_rfc3339()},
+            "$or",
+            vec![
+                doc! {"recordedAt": {"$gt": &computed_at}},
+                doc! {"redactedAt": {"$gt": &computed_at}},
+            ],
         );
         Ok(self
             .collection(collections::EVENTS)

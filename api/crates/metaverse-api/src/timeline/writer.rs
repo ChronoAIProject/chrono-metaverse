@@ -243,6 +243,7 @@ pub async fn ensure_genesis_as(
         }
         Err(CommitError::HeadMoved) => Ok(None),
         Err(CommitError::Missing) => Err(ApiError::not_found()),
+        Err(CommitError::DraftChanged) => Err(ApiError::internal()),
         Err(CommitError::Repo(error)) => Err(error.into()),
     }
 }

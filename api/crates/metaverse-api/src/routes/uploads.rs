@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 use axum::{
     body::Body,
     extract::{DefaultBodyLimit, Path, State},
-    http::{header, HeaderMap, StatusCode},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post, put},
     Json, Router,
@@ -155,7 +155,7 @@ pub struct UploadView {
     /// 校验通过后的资源哈希（= sha256）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub asset_hash: Option<String>,
-    /// 哈希已存在，直接复用了已有资源。
+    /// 本空间已经拥有这份资源，直接复用（没有收数据）。
     pub reused: bool,
     /// 校验失败的原因。
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -388,8 +388,14 @@ async fn create(
         error: None,
         failed_at: None,
     };
-    // 哈希已经存在：直接复用，不再接收数据（设计 6.1）。
-    if let Some(length) = state.repo.asset_length(&grant, &request.sha256).await? {
+    // 本空间已经拥有同一用途的这份资源：直接复用，不再接收数据（设计 6.1）。只凭哈希不行——
+    // 别的主人的资源（或全系统里有没有某个文件）都不能这样拿到：其他情况一律照常上传完整数据，
+    // 由处理服务核对整体哈希后在存储层去重，所有权只靠真正传过数据确立。两种情况都返回 201。
+    if let Some(length) = state
+        .repo
+        .reusable_asset_length(&grant, &request.sha256, purpose)
+        .await?
+    {
         if length != request.size {
             return Err(invalid_with(
                 "size_mismatch",
@@ -403,9 +409,9 @@ async fn create(
         upload.header_checked = true;
         upload.completed_at = Some(now);
         state.repo.insert_upload(&grant, &upload).await?;
-        tracing::info!(space = %upload.space_id, upload = %upload.id, purpose = purpose_name(purpose), "复用已有资源");
+        tracing::info!(space = %upload.space_id, upload = %upload.id, purpose = purpose_name(purpose), "复用本空间已有的资源");
         return Ok(no_store(
-            (StatusCode::OK, Json(UploadView::new(&upload))).into_response(),
+            (StatusCode::CREATED, Json(UploadView::new(&upload))).into_response(),
         ));
     }
     let pending = state.repo.pending_uploads(&grant).await?;
@@ -455,7 +461,7 @@ async fn create(
     path = "/api/v1/spaces/{space_id}/uploads/{purpose}",
     operation_id = "create_upload",
     tag = "uploads",
-    description = "创建分片上传（实体区路径）。声明总大小、整体 SHA-256、分片大小（256KiB 的整数倍，≤32MiB）和格式；用途写在路径里（scan、model、texture、ops、script）。哈希已存在时直接复用（200，status=done），否则返回 201 和上传编号，之后按片号（从 0 开始）PUT 原始字节，最后调用 complete。大小上限：扫描 1GiB、物件模型 50MiB、贴图 50MiB、ops 64MiB（接口服务应用操作时整份读入，不能调大）、脚本 4MiB（可配置）；超过上限或空间存储上限返回 413，进行中的上传太多返回 429。大文件请用命令行，不要经 AI 工具传二进制。",
+    description = "创建分片上传（实体区路径）。声明总大小、整体 SHA-256、分片大小（256KiB 的整数倍，≤32MiB）和格式；用途写在路径里（scan、model、texture、ops、script）。本空间已经拥有同一用途的这份资源时直接复用（status=done、reused=true），否则返回上传编号（两种情况都是 201；别的空间有同一份内容也要完整上传），之后按片号（从 0 开始）PUT 原始字节，最后调用 complete。大小上限：扫描 1GiB、物件模型 50MiB、贴图 50MiB、ops 64MiB（接口服务应用操作时整份读入，不能调大）、脚本 4MiB（可配置）；超过上限或空间存储上限返回 413，进行中的上传太多返回 429。大文件请用命令行，不要经 AI 工具传二进制。",
     params(
         ("space_id" = String, Path, description = "空间编号", example = "front-hall"),
         ("purpose" = String, Path, description = "用途：scan | model | texture | ops | script", example = "scan"),
@@ -464,7 +470,6 @@ async fn create(
     security(("nyxid_identity" = [])),
     responses(
         (status = 201, description = "已创建，开始上传分片", body = UploadView),
-        (status = 200, description = "哈希已存在，直接复用", body = UploadView),
         (status = 403, description = "没有写权限", body = ProblemDocument),
         (status = 404, description = "空间不存在或无权查看", body = ProblemDocument),
         (status = 413, description = "超过大小上限或空间存储上限", body = ProblemDocument),
@@ -496,7 +501,6 @@ pub async fn create_upload(
     security(("nyxid_identity" = [])),
     responses(
         (status = 201, description = "已创建", body = UploadView),
-        (status = 200, description = "哈希已存在，直接复用", body = UploadView),
         (status = 403, description = "没有写权限，或地块路径上传扫描", body = ProblemDocument),
         (status = 404, description = "空间或地块不存在", body = ProblemDocument),
         (status = 413, description = "超过大小上限或空间存储上限", body = ProblemDocument),
@@ -862,6 +866,18 @@ async fn complete(
             match current.status {
                 UploadStatus::Complete => Ok(reply(StatusCode::ACCEPTED, &current)),
                 UploadStatus::Done => Ok(reply(StatusCode::OK, &current)),
+                // 还有分片请求正在写数据块：等它们写完再完成，否则校验的数据可能被改写。
+                UploadStatus::Open => {
+                    let mut response = conflict_with(
+                        "parts_in_progress",
+                        "还有分片正在写入，请等这些请求结束后再调用 complete",
+                    )
+                    .into_response();
+                    response
+                        .headers_mut()
+                        .insert(header::RETRY_AFTER, HeaderValue::from_static("2"));
+                    Ok(response)
+                }
                 other => Err(conflict_with(
                     "upload_not_open",
                     format!("上传已是 {} 状态", status_name(other)),

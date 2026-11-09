@@ -306,6 +306,10 @@ impl Workspace {
 
     /// 逐条检查影响范围并作用。`offset` 是这批操作在整个请求里的起始下标（错误信息用）。
     /// 出错时工作状态已经部分改动，调用方必须丢弃它。
+    ///
+    /// 方块操作是纯计算：先占一个进程级的计算名额（同时最多 [`MAX_CONCURRENT_COMPUTE`] 个），
+    /// 每处理 [`YIELD_EVERY_CELLS`] 格让出一次线程，长时间的计算不会让同一工作线程上的其他请求
+    /// （公开读、健康检查）一直等着；调用方另外按 [`ops_cells`] 限制总计算量。
     pub async fn apply_ops(
         &mut self,
         repo: &Repo,
@@ -314,7 +318,9 @@ impl Workspace {
         area: &AllowedArea,
         offset: usize,
     ) -> Result<TouchedSet, ApplyError> {
+        let _slot = compute_slot().await?;
         let mut touched = TouchedSet::default();
+        let mut since_yield = 0u64;
         for (batch_index, batch) in ops.chunks(64).enumerate() {
             let mut keys = BTreeSet::new();
             for op in batch {
@@ -334,6 +340,11 @@ impl Workspace {
                         .apply(op)
                         .map_err(|e| ApplyError::Op(with_index(e, index)))?,
                 );
+                since_yield = since_yield.saturating_add(op_cells(op));
+                if since_yield >= YIELD_EVERY_CELLS {
+                    since_yield = 0;
+                    tokio::task::yield_now().await;
+                }
             }
         }
         Ok(touched)
@@ -347,6 +358,49 @@ impl Workspace {
             .filter(|chunk| !chunk.is_empty())
             .map(|chunk| (chunk.hash(), chunk.compress()))
     }
+}
+
+/// 同时进行的方块计算（追加操作、ops-from-upload、发布时重放）最多几个（进程级）。
+pub const MAX_CONCURRENT_COMPUTE: usize = 2;
+/// 等计算名额的最长时间，超过返回 503。
+const COMPUTE_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
+/// 计算期间每处理这么多格让出一次线程。
+pub const YIELD_EVERY_CELLS: u64 = 1 << 20;
+
+fn compute_slots() -> &'static tokio::sync::Semaphore {
+    static SLOTS: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
+    SLOTS.get_or_init(|| tokio::sync::Semaphore::new(MAX_CONCURRENT_COMPUTE))
+}
+
+async fn compute_slot() -> Result<tokio::sync::SemaphorePermit<'static>, ApiError> {
+    match tokio::time::timeout(COMPUTE_WAIT, compute_slots().acquire()).await {
+        Ok(Ok(permit)) => Ok(permit),
+        _ => Err(ApiError::new(
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            "compute_busy",
+            "正在处理的方块操作太多，请稍后重试",
+        )),
+    }
+}
+
+/// 一个操作的计算量（格数）：填充、空心盒、替换按区域体积，复制区域按源体积的两倍（读一遍、
+/// 写一遍），其他操作按 1。
+pub fn op_cells(op: &Op) -> u64 {
+    let volume =
+        |region: &metaverse_core::grid::GridBox| u64::try_from(region.volume()).unwrap_or(u64::MAX);
+    match op {
+        Op::Fill { region, .. } | Op::HollowBox { region, .. } | Op::Replace { region, .. } => {
+            volume(region).max(1)
+        }
+        Op::CopyRegion { source, .. } => volume(source).saturating_mul(2).max(1),
+        _ => 1,
+    }
+}
+
+/// 一批操作的总计算量。
+pub fn ops_cells(ops: &[Op]) -> u64 {
+    ops.iter()
+        .fold(0u64, |total, op| total.saturating_add(op_cells(op)))
 }
 
 /// 只检查影响范围、不碰区块的"影子"重放：发布时按最新的区域和地块重新校验全部操作
@@ -378,6 +432,30 @@ mod tests {
 
     fn op(value: serde_json::Value) -> Op {
         serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn op_cost_counts_cells() {
+        assert_eq!(
+            op_cells(&op(json!({"op":"fill","box":[0,0,0,10,10,10],"block":2}))),
+            1000
+        );
+        assert_eq!(
+            op_cells(&op(
+                json!({"op":"copyRegion","source":[0,0,0,128,256,128],"to":[128,0,0]})
+            )),
+            2 * 128 * 256 * 128
+        );
+        assert_eq!(
+            op_cells(&op(
+                json!({"op":"createAnchor","anchor":{"anchorId":"t1","kind":"table","box":[0,0,0,1,1,1],"visibility":"public"}})
+            )),
+            1
+        );
+        let many: Vec<Op> = (0..200)
+            .map(|_| op(json!({"op":"replace","box":[0,0,0,256,64,256],"from":2,"to":3})))
+            .collect();
+        assert_eq!(ops_cells(&many), 200 * 256 * 64 * 256);
     }
 
     #[test]

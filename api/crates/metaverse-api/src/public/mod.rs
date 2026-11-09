@@ -32,6 +32,7 @@ pub use cache::{ByteCache, CacheKey};
 use crate::config::ConfigError;
 use crate::error::ApiError;
 use crate::AppState;
+use metaverse_core::ids::is_space_id;
 
 /// 默认每个来源地址每分钟的请求数。
 pub const DEFAULT_RATE_PER_MINUTE: u32 = 1200;
@@ -359,11 +360,26 @@ fn too_many_requests(retry_after: u64) -> Response {
     response
 }
 
-/// 路径 `/api/public/spaces/{id}/...` 里的空间编号。
-fn space_of(path: &str) -> Option<&str> {
-    let rest = path.strip_prefix("/api/public/spaces/")?;
-    let id = rest.split('/').next()?;
-    (!id.is_empty()).then_some(id)
+/// 路径 `/api/public/spaces/{id}/...` 里的空间编号段（原样，没有百分号解码）。
+#[derive(Debug, PartialEq, Eq)]
+enum SpaceSegment<'a> {
+    /// 不是空间路径。
+    None,
+    /// 规范的空间编号：并发计数就用它。
+    Id(&'a str),
+    /// 不是规范的空间编号（例如 `rest%61urant`）。路由提取路径参数时会做百分号解码，同一个
+    /// 空间可以写成任意多种编码；按原始字符串计数就能把每空间并发上限放大成任意倍，所以直接 404。
+    Invalid,
+}
+
+fn space_of(path: &str) -> SpaceSegment<'_> {
+    let Some(rest) = path.strip_prefix("/api/public/spaces/") else {
+        return SpaceSegment::None;
+    };
+    match rest.split('/').next() {
+        Some(id) if is_space_id(id) => SpaceSegment::Id(id),
+        _ => SpaceSegment::Invalid,
+    }
 }
 
 /// `/api/public/*` 的中间件：先限流，再占空间的并发名额。
@@ -379,7 +395,8 @@ pub async fn guard(State(state): State<AppState>, request: Request, next: Next) 
         return too_many_requests(retry_after);
     }
     let _permit = match space_of(request.uri().path()) {
-        Some(space_id) => match services.acquire_space(space_id) {
+        SpaceSegment::Invalid => return ApiError::not_found().into_response(),
+        SpaceSegment::Id(space_id) => match services.acquire_space(space_id) {
             Some(permit) => Some(permit),
             None => {
                 tracing::warn!(space = %space_id, "空间的公开请求并发已满");
@@ -391,7 +408,7 @@ pub async fn guard(State(state): State<AppState>, request: Request, next: Next) 
                 .into_response();
             }
         },
-        None => None,
+        SpaceSegment::None => None,
     };
     next.run(request).await
 }
@@ -515,13 +532,22 @@ mod tests {
     fn space_segment() {
         assert_eq!(
             space_of("/api/public/spaces/front-hall"),
-            Some("front-hall")
+            SpaceSegment::Id("front-hall")
         );
         assert_eq!(
             space_of("/api/public/spaces/front-hall/snapshot"),
-            Some("front-hall")
+            SpaceSegment::Id("front-hall")
         );
-        assert_eq!(space_of("/api/public/chunks/abc.bin"), None);
-        assert_eq!(space_of("/api/public/spaces/"), None);
+        assert_eq!(space_of("/api/public/chunks/abc.bin"), SpaceSegment::None);
+        assert_eq!(space_of("/api/public/spaces/"), SpaceSegment::Invalid);
+        // 百分号编码的变体不能各占一个并发计数桶。
+        for path in [
+            "/api/public/spaces/rest%61urant",
+            "/api/public/spaces/%72estaurant/snapshot",
+            "/api/public/spaces/REST%61URANT/head",
+            "/api/public/spaces/Restaurant",
+        ] {
+            assert_eq!(space_of(path), SpaceSegment::Invalid, "{path}");
+        }
     }
 }

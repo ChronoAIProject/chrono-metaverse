@@ -1857,11 +1857,28 @@ async fn draft_assets_are_checked_by_role_and_by_space_ownership() {
         );
     }
     let owner = doc! {"kind": "org", "id": ORG};
+    // 只凭哈希"直接复用"的上传（旧版本留下的，没有传过数据）不能确立所有权。
+    app.collection("uploads")
+        .insert_one(doc! {
+            "_id": "up_reused_texture", "spaceId": SPACE, "owner": owner.clone(),
+            "purpose": "texture", "status": "done", "assetHash": &shared_texture,
+            "reused": true, "createdAt": "2026-01-01T00:00:00.000Z",
+        })
+        .await
+        .unwrap();
+    let reply = append(&app, &path, rug("mat", &shared_texture)).await;
+    assert_eq!(
+        reply.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{:?}",
+        reply.body
+    );
+    // 真正传过数据、经处理服务校验的上传（存储层去重后同一份内容）算本空间的。
     app.collection("uploads")
         .insert_one(doc! {
             "_id": "up_shared_texture", "spaceId": SPACE, "owner": owner.clone(),
             "purpose": "texture", "status": "done", "assetHash": &shared_texture,
-            "reused": true, "createdAt": "2026-01-01T00:00:00.000Z",
+            "createdAt": "2026-01-01T00:00:00.000Z",
         })
         .await
         .unwrap();
@@ -1942,7 +1959,8 @@ async fn v1_asset_download_is_limited_to_the_space_and_its_readers() {
             "scan",
         )
         .await;
-    // 别的空间先登记的同一份内容，本空间有完成的上传：算本空间的。
+    // 别的空间先登记的同一份内容：本空间只凭哈希"直接复用"的上传（旧版本留下的）不算，
+    // 真正传过数据的完成上传才算本空间的。
     let shared = app
         .put_space_asset(
             "other-space",
@@ -1951,15 +1969,27 @@ async fn v1_asset_download_is_limited_to_the_space_and_its_readers() {
             "ops",
         )
         .await;
+    let path = |hash: &str| format!("/api/v1/spaces/{SPACE}/assets/{hash}");
     app.collection("uploads")
         .insert_one(doc! {
-            "_id": "up_shared_ops", "spaceId": SPACE, "owner": {"kind": "org", "id": ORG},
+            "_id": "up_reused_ops", "spaceId": SPACE, "owner": {"kind": "org", "id": ORG},
             "purpose": "ops", "status": "done", "assetHash": &shared, "reused": true,
             "createdAt": "2026-01-01T00:00:00.000Z",
         })
         .await
         .unwrap();
-    let path = |hash: &str| format!("/api/v1/spaces/{SPACE}/assets/{hash}");
+    assert_eq!(
+        app.org(Method::GET, &path(&shared), None).await.status,
+        StatusCode::NOT_FOUND
+    );
+    app.collection("uploads")
+        .insert_one(doc! {
+            "_id": "up_shared_ops", "spaceId": SPACE, "owner": {"kind": "org", "id": ORG},
+            "purpose": "ops", "status": "done", "assetHash": &shared,
+            "createdAt": "2026-01-01T00:00:00.000Z",
+        })
+        .await
+        .unwrap();
 
     // 主人：原始扫描（不在 assetRefs 里，公开接口读不到）。
     let reply = app.org(Method::GET, &path(&scan), None).await;
@@ -2000,7 +2030,7 @@ async fn v1_asset_download_is_limited_to_the_space_and_its_readers() {
         reply.header(header::CONTENT_RANGE),
         format!("bytes 262140-262149/{}", web_bytes.len())
     );
-    // 复用的上传。
+    // 真正传过数据的上传。
     let reply = app.org(Method::GET, &path(&shared), None).await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(&reply.bytes[..], b"ops shared by content");
@@ -2062,4 +2092,442 @@ async fn v1_asset_download_is_limited_to_the_space_and_its_readers() {
         app.public(&path(&scan), None).await.status,
         StatusCode::UNAUTHORIZED
     );
+}
+
+async fn publish(app: &TestApp, ops: Value) -> u64 {
+    let draft_id = new_draft(app, &format!("/api/v1/spaces/{SPACE}/drafts")).await;
+    let path = draft_path(SPACE, &draft_id);
+    let reply = append(app, &path, ops).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let reply = app
+        .org(Method::POST, &format!("{path}/publish"), None)
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    reply.body["seq"].as_u64().unwrap()
+}
+
+/// 锚点先改成内部级、再删除：它在历史版本里公开过的内容不能因为删除而重新出现。
+#[tokio::test]
+async fn deleted_internal_anchor_stays_hidden_in_history() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    let share = format!("Share {}", app.create_space(SPACE).await);
+    app.define_layout(SPACE).await;
+    let created = publish(
+        &app,
+        json!([{"op": "createAnchor", "anchor": {"anchorId": "vault", "kind": "zone",
+                "position": [1, 0, 1], "label": "保险柜", "visibility": "public"}}]),
+    )
+    .await;
+    let snapshot = |seq: u64| {
+        let app = &app;
+        let share = share.clone();
+        async move {
+            let reply = app
+                .public(
+                    &format!("/api/public/spaces/{SPACE}/snapshot?seq={seq}"),
+                    Some(&share),
+                )
+                .await;
+            assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+            ids(&reply.body["anchors"], "anchorId")
+        }
+    };
+    assert!(snapshot(created).await.contains(&"vault".to_owned()));
+    publish(
+        &app,
+        json!([{"op": "updateAnchor", "anchorId": "vault", "visibility": "internal"}]),
+    )
+    .await;
+    assert!(!snapshot(created).await.contains(&"vault".to_owned()));
+    let removed = publish(&app, json!([{"op": "removeAnchor", "anchorId": "vault"}])).await;
+    assert!(
+        !snapshot(created).await.contains(&"vault".to_owned()),
+        "删除之后历史快照重新公开了内部锚点"
+    );
+    let timeline = app
+        .public(
+            &format!("/api/public/spaces/{SPACE}/timeline"),
+            Some(&share),
+        )
+        .await;
+    assert_eq!(timeline.status, StatusCode::OK, "{:?}", timeline.body);
+    for item in timeline.body["items"].as_array().unwrap() {
+        assert!(
+            item["changedAnchors"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|change| change["id"] != "vault"),
+            "{item:?}"
+        );
+    }
+    // 同一编号重新建成公开锚点：从这之后照常公开。
+    let recreated = publish(
+        &app,
+        json!([{"op": "createAnchor", "anchor": {"anchorId": "vault", "kind": "zone",
+                "position": [2, 0, 2], "label": "新展柜", "visibility": "public"}}]),
+    )
+    .await;
+    assert!(recreated > removed);
+    assert!(snapshot(recreated).await.contains(&"vault".to_owned()));
+}
+
+/// 草稿预览也不显示"现在已经是内部级"的锚点（草稿没有改动它时）。
+#[tokio::test]
+async fn preview_hides_anchors_made_internal_after_the_draft_base() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    app.define_layout(SPACE).await;
+    publish(
+        &app,
+        json!([{"op": "createAnchor", "anchor": {"anchorId": "x", "kind": "zone",
+                "position": [1, 0, 1], "label": "秘密标签", "visibility": "public"}}]),
+    )
+    .await;
+    // 草稿 B 基于 x 还公开的版本，只填方块。
+    let draft_b = new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await;
+    let path_b = draft_path(SPACE, &draft_b);
+    let reply = append(
+        &app,
+        &path_b,
+        json!([{"op": "fill", "box": [0, 0, 0, 2, 1, 2], "block": 2}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let preview = app
+        .org(Method::POST, &format!("{path_b}/preview"), None)
+        .await;
+    assert_eq!(preview.status, StatusCode::CREATED, "{:?}", preview.body);
+    let auth = format!("Preview {}", preview.body["token"].as_str().unwrap());
+    let view = app.public("/api/public/previews", Some(&auth)).await;
+    assert!(ids(&view.body["anchors"], "anchorId").contains(&"x".to_owned()));
+    // 另一次提交把 x 改成内部级：旧预览令牌不再显示它。
+    publish(
+        &app,
+        json!([{"op": "updateAnchor", "anchorId": "x", "visibility": "internal"}]),
+    )
+    .await;
+    let view = app.public("/api/public/previews", Some(&auth)).await;
+    assert_eq!(view.status, StatusCode::OK, "{:?}", view.body);
+    assert!(
+        !ids(&view.body["anchors"], "anchorId").contains(&"x".to_owned()),
+        "{:?}",
+        view.body
+    );
+    // 草稿自己把 x 改回公开：预览按草稿状态显示。
+    let draft_c = new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await;
+    let path_c = draft_path(SPACE, &draft_c);
+    let reply = append(
+        &app,
+        &path_c,
+        json!([{"op": "updateAnchor", "anchorId": "x", "visibility": "public"}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let preview = app
+        .org(Method::POST, &format!("{path_c}/preview"), None)
+        .await;
+    let auth = format!("Preview {}", preview.body["token"].as_str().unwrap());
+    let view = app.public("/api/public/previews", Some(&auth)).await;
+    assert!(ids(&view.body["anchors"], "anchorId").contains(&"x".to_owned()));
+}
+
+/// 百分号编码的空间编号不经过解码直接 404：路由提取路径参数时会解码，按原始字符串计数的
+/// 每空间并发上限可以被同一空间的任意多种写法放大。
+#[tokio::test]
+async fn percent_encoded_space_ids_are_rejected_before_counting() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    let share = format!("Share {}", app.create_space(SPACE).await);
+    let reply = app
+        .public(&format!("/api/public/spaces/{SPACE}/head"), Some(&share))
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    for path in [
+        "/api/public/spaces/fr%6Fnt-hall/head",
+        "/api/public/spaces/%66ront-hall",
+        "/api/public/spaces/FRONT-HALL/head",
+    ] {
+        let reply = app.public(path, Some(&share)).await;
+        assert_eq!(reply.status, StatusCode::NOT_FOUND, "{path}");
+        assert_eq!(reply.header(header::CACHE_CONTROL), "no-store");
+    }
+}
+
+/// 发布在提交事务里占用草稿（rev 不变、仍是 open）：发布期间被追加、丢弃或已被别的请求
+/// 发布时整个提交作废（409），草稿和它的区块不受影响。
+#[tokio::test]
+async fn publish_claims_the_draft_inside_the_commit_transaction() {
+    use metaverse_api::repo::{CommitError, CommitPlan};
+    use metaverse_core::model::{Actor, ActorKind, Owner};
+    use metaverse_core::scope::PathScope;
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    app.define_layout(SPACE).await;
+    let draft_id = new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await;
+    let path = draft_path(SPACE, &draft_id);
+    let reply = append(
+        &app,
+        &path,
+        json!([{"op": "fill", "box": [0, 0, 0, 2, 1, 2], "block": 2}]),
+    )
+    .await;
+    assert_eq!(reply.body["rev"], 1);
+    // 发布方读到 rev 1 之后，另一个请求又追加了一批（rev 2，碰了另一个区块）。
+    let reply = append(
+        &app,
+        &path,
+        json!([{"op": "fill", "box": [40, 0, 40, 42, 1, 42], "block": 2}]),
+    )
+    .await;
+    assert_eq!(reply.body["rev"], 2);
+    let chunks_before = app
+        .collection("draftChunks")
+        .count_documents(doc! {"draftId": &draft_id})
+        .await
+        .unwrap();
+    assert!(chunks_before >= 2);
+    let grant = app
+        .state
+        .authorizer
+        .system_space(SPACE, &Owner::org(ORG.to_owned()), "测试", "publish")
+        .await
+        .unwrap();
+    let head = app.state.repo.head_seq(&grant).await.unwrap().unwrap();
+    let actor = Actor {
+        sub: ORG.to_owned(),
+        nyx_service_id: "svc".to_owned(),
+        scope: PathScope::Physical,
+        kind: ActorKind::Admin,
+    };
+    let plan = |rev: u64| {
+        let mut plan = CommitPlan::new(head, actor.clone(), "发布");
+        plan.draft_id = Some(draft_id.clone());
+        plan.draft_rev = Some(rev);
+        plan
+    };
+    let now = metaverse_core::Timestamp::from_system_time(std::time::SystemTime::now()).unwrap();
+    // 按旧 rev 发布：提交作废，时间线不前进，草稿和区块原样。
+    assert!(matches!(
+        app.state.repo.write_commit(&grant, &plan(1), now).await,
+        Err(CommitError::DraftChanged)
+    ));
+    assert_eq!(app.state.repo.head_seq(&grant).await.unwrap(), Some(head));
+    let draft = app
+        .collection("drafts")
+        .find_one(doc! {"_id": &draft_id})
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(draft.get_str("status").unwrap(), "open");
+    assert_eq!(
+        app.collection("draftChunks")
+            .count_documents(doc! {"draftId": &draft_id})
+            .await
+            .unwrap(),
+        chunks_before
+    );
+    // 当前 rev：发布成功，草稿在同一事务里标记为已发布。
+    let outcome = app.state.repo.write_commit(&grant, &plan(2), now).await;
+    assert!(outcome.is_ok(), "{outcome:?}");
+    let draft = app
+        .collection("drafts")
+        .find_one(doc! {"_id": &draft_id})
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(draft.get_str("status").unwrap(), "published");
+    // 同一草稿再发布一次（并发的第二个发布请求）：作废，不会写出第二个提交。
+    let mut again = plan(2);
+    again.base_seq = head + 1;
+    assert!(matches!(
+        app.state.repo.write_commit(&grant, &again, now).await,
+        Err(CommitError::DraftChanged)
+    ));
+    assert_eq!(
+        app.state.repo.head_seq(&grant).await.unwrap(),
+        Some(head + 1)
+    );
+    // 经接口：已发布的草稿再追加、再发布都是 409。
+    let reply = append(
+        &app,
+        &path,
+        json!([{"op": "fill", "box": [0, 0, 0, 1, 1, 1], "block": 2}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::CONFLICT, "{:?}", reply.body);
+    // 丢弃之后的草稿同样不能被发布。
+    let discarded = new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await;
+    let discarded_path = draft_path(SPACE, &discarded);
+    append(
+        &app,
+        &discarded_path,
+        json!([{"op": "fill", "box": [0, 0, 0, 1, 1, 1], "block": 2}]),
+    )
+    .await;
+    let reply = app.org(Method::DELETE, &discarded_path, None).await;
+    assert!(reply.status.is_success(), "{:?}", reply.body);
+    let mut gone = CommitPlan::new(head + 1, actor.clone(), "发布");
+    gone.draft_id = Some(discarded);
+    gone.draft_rev = Some(1);
+    assert!(matches!(
+        app.state.repo.write_commit(&grant, &gone, now).await,
+        Err(CommitError::DraftChanged)
+    ));
+}
+
+/// 草稿操作是纯计算：单次内联追加、整个草稿都有计算量（格数）上限，超出在开始计算之前就 413。
+/// 复现的攻击请求是一次追加 200 条、每条 4M 格的复制区域（十几 KB 的请求体，几分钟的计算）。
+#[tokio::test]
+async fn draft_ops_have_a_compute_budget() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    app.define_layout(SPACE).await;
+    let draft_id = new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await;
+    let path = draft_path(SPACE, &draft_id);
+    let heavy: Vec<Value> = (0..200)
+        .map(|_| json!({"op": "copyRegion", "source": [0, 0, 0, 128, 256, 128], "to": [128, 0, 0]}))
+        .collect();
+    let started = std::time::Instant::now();
+    let reply = append(&app, &path, json!(heavy)).await;
+    assert_eq!(
+        reply.status,
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "{:?}",
+        reply.body
+    );
+    assert!(reply.body["detail"].as_str().unwrap().contains("格"));
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "没有先算就拒绝：{:?}",
+        started.elapsed()
+    );
+    // 预算之内的照常追加，并记下累计计算量。
+    let reply = append(
+        &app,
+        &path,
+        json!([{"op": "fill", "box": [0, 0, 0, 10, 10, 10], "block": 2}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let draft = app
+        .collection("drafts")
+        .find_one(doc! {"_id": &draft_id})
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(draft.get_i64("workCells").unwrap(), 1000);
+    // 整个草稿的累计上限（ops-from-upload 和发布时的重放都要全部再算一遍）。
+    app.collection("drafts")
+        .update_one(
+            doc! {"_id": &draft_id},
+            doc! {"$set": {"workCells": (1_i64 << 26) - 10}},
+        )
+        .await
+        .unwrap();
+    let reply = append(
+        &app,
+        &path,
+        json!([{"op": "fill", "box": [0, 0, 0, 10, 10, 10], "block": 2}]),
+    )
+    .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "{:?}",
+        reply.body
+    );
+    let reply = append(
+        &app,
+        &path,
+        json!([{"op": "createAnchor", "anchor": {"anchorId": "t1", "kind": "table",
+                "position": [1, 0, 1], "visibility": "public"}}]),
+    )
+    .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::OK,
+        "非方块操作只算 1 格：{:?}",
+        reply.body
+    );
+}
+
+/// ops-from-upload 计入每空间的任务上限，草稿引用的操作文件个数有上限：不能无限次地让接口服务
+/// 把整份文件读进内存解析。
+#[tokio::test]
+async fn ops_from_upload_is_limited_per_space_and_per_draft() {
+    let Some(app) = TestApp::start_with_env(&[("JOB_MAX_PENDING_PER_SPACE", "1")]).await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    app.define_layout(SPACE).await;
+    let draft_id = new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await;
+    let path = draft_path(SPACE, &draft_id);
+    let ops = json!({"op": "fill", "box": [0, 0, 0, 1, 1, 1], "block": 2}).to_string();
+    let (upload_id, _) = app.put_ops_upload(SPACE, ops.as_bytes()).await;
+    // 已有一个运行中的任务：429，不建新任务。
+    app.collection("jobs")
+        .insert_one(doc! {
+            "_id": "job_busy", "spaceId": SPACE, "owner": {"kind": "org", "id": ORG},
+            "kind": "scan_import", "status": "running", "params": {},
+            "attempt": 1, "maxAttempts": 3, "createdAt": "2026-01-01T00:00:00.000Z",
+        })
+        .await
+        .unwrap();
+    let reply = app
+        .org(
+            Method::POST,
+            &format!("{path}/ops-from-upload"),
+            Some(json!({"uploadId": upload_id})),
+        )
+        .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::TOO_MANY_REQUESTS,
+        "{:?}",
+        reply.body
+    );
+    assert_eq!(reply.body["code"], "too_many_jobs");
+    assert_eq!(
+        app.collection("jobs")
+            .count_documents(doc! {"kind": "ops_from_upload"})
+            .await
+            .unwrap(),
+        0
+    );
+    app.collection("jobs")
+        .delete_one(doc! {"_id": "job_busy"})
+        .await
+        .unwrap();
+    // 草稿已经引用了 20 个操作文件：413。
+    let refs: Vec<mongodb::bson::Document> = (0..20)
+        .map(|i| doc! {"assetHash": format!("{i:064}"), "after": 0_i64, "count": 1_i64})
+        .collect();
+    app.collection("drafts")
+        .update_one(doc! {"_id": &draft_id}, doc! {"$set": {"opsRefs": refs}})
+        .await
+        .unwrap();
+    let reply = app
+        .org(
+            Method::POST,
+            &format!("{path}/ops-from-upload"),
+            Some(json!({"uploadId": upload_id})),
+        )
+        .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "{:?}",
+        reply.body
+    );
+    assert_eq!(reply.body["code"], "too_many_ops_files");
 }

@@ -28,8 +28,8 @@ pub use authorizer::{
 };
 pub use authorizer::{BlobGrant, PreviewTarget};
 pub use authorizer::{
-    CreateUniverseGrant, MembershipBasis, MembershipChange, MembershipGrant, SeedSpace,
-    SystemGrant, UniverseGrant,
+    CreateUniverseGrant, MembershipBasis, MembershipChange, MembershipGrant, MembershipPeriods,
+    SeedSpace, SystemGrant, UniverseGrant,
 };
 pub use organizations::ForwardedCredential;
 

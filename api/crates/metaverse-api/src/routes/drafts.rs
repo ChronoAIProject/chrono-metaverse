@@ -35,8 +35,8 @@ use crate::auth::{Caller, Grant, Purpose};
 use crate::error::{ApiError, ProblemDocument, PROBLEM_TYPE_PREFIX};
 use crate::repo::{DraftDoc, DraftStatus, NewPreview, OpsRef};
 use crate::timeline::drafts::{
-    append_ops, ops_job_result, parse_op_values, parse_ops_file, publish, OpsSource, PublishError,
-    PublishOptions, MAX_DRAFT_OPS, MAX_OPS_FILE_BYTES,
+    append_ops, ops_job_result, parse_op_values, parse_ops_file_blocking, publish, OpsSource,
+    PublishError, PublishOptions, MAX_DRAFT_OPS, MAX_DRAFT_OPS_REFS, MAX_OPS_FILE_BYTES,
 };
 use crate::timeline::state::ApplyError;
 use crate::timeline::writer::ensure_genesis;
@@ -332,6 +332,7 @@ async fn create(
         provisional_blocks: Vec::new(),
         assets: Vec::new(),
         commit_id: None,
+        work_cells: 0,
         created_at: now,
         updated_at: now,
         expires_at: now.saturating_add_seconds(DRAFT_TTL_SECONDS),
@@ -541,7 +542,7 @@ async fn append(
     path = "/api/v1/spaces/{space_id}/drafts/{draft_id}/ops",
     operation_id = "append_draft_ops",
     tag = "drafts",
-    description = "给实体区草稿追加一批高层操作（填充、空心盒、替换、复制区域、新增方块、放物件、新建/移动/修改锚点），每次最多 200 条、请求体最多 1MB，超出返回 413，请改走上传（ops_from_upload）。操作只能写扩展层，并且只能改实体区；任何一条不合法或越界，整批都不生效。成功后草稿 rev 加一。",
+    description = "给实体区草稿追加一批高层操作（填充、空心盒、替换、复制区域、新增方块、放物件、新建/移动/修改锚点），每次最多 200 条、请求体最多 1MB、计算量最多 16M 格（填充、空心盒、替换按区域体积，复制区域按源体积的两倍；一个草稿累计最多 64M 格），超出返回 413，请拆批或改走上传（ops_from_upload）。操作只能写扩展层，并且只能改实体区；任何一条不合法或越界，整批都不生效。成功后草稿 rev 加一。",
     params(
         ("space_id" = String, Path, description = "空间编号"),
         ("draft_id" = String, Path, description = "草稿编号"),
@@ -676,6 +677,24 @@ async fn from_upload(
         }
         Some(_) => {}
     }
+    if draft.ops_refs.len() >= MAX_DRAFT_OPS_REFS {
+        return Err(ApiError::new(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "too_many_ops_files",
+            format!(
+                "一个草稿最多引用 {MAX_DRAFT_OPS_REFS} 个操作文件，请合并成更大的文件或另建草稿"
+            ),
+        ));
+    }
+    // 和其他任务一样计入每空间的排队上限：每个任务都要把整份文件读进内存解析。
+    let limit = state.ingest.config.max_pending_jobs_per_space;
+    if state.repo.pending_jobs(&grant).await? >= limit {
+        return Err(ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "too_many_jobs",
+            format!("这个空间排队和运行中的任务最多 {limit} 个，请稍后再试"),
+        ));
+    }
     let job_id = uuid::Uuid::new_v4().simple().to_string();
     let now = crate::now()?;
     let params = json!({
@@ -761,6 +780,14 @@ async fn run_ops_job(
     }
 }
 
+/// 进程里同时处理的 ops-from-upload 任务数。
+const MAX_CONCURRENT_OPS_JOBS: usize = 1;
+
+fn ops_job_slots() -> &'static tokio::sync::Semaphore {
+    static SLOTS: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
+    SLOTS.get_or_init(|| tokio::sync::Semaphore::new(MAX_CONCURRENT_OPS_JOBS))
+}
+
 fn epoch() -> Timestamp {
     Timestamp::from_millis(0).expect("纪元时间在合法范围内")
 }
@@ -773,6 +800,12 @@ async fn process_ops_job(
     asset_hash: &str,
 ) -> Result<Value, String> {
     use crate::repo::OpsAsset;
+    // 进程里同时只处理 [`MAX_CONCURRENT_OPS_JOBS`] 个：每个都要把文件读进内存、解析、计算。
+    // 等名额的任务只占一个空闲的异步任务，不占内存。
+    let _slot = ops_job_slots()
+        .acquire()
+        .await
+        .map_err(|_| "处理名额不可用".to_owned())?;
     let bytes = match state
         .repo
         .read_ops_asset(grant, asset_hash, MAX_OPS_FILE_BYTES)
@@ -787,7 +820,7 @@ async fn process_ops_job(
             ))
         }
     };
-    let ops = parse_ops_file(&bytes, MAX_DRAFT_OPS)?;
+    let ops = parse_ops_file_blocking(bytes, MAX_DRAFT_OPS).await?;
     let total = ops.len();
     let _ = state
         .repo
@@ -825,7 +858,7 @@ async fn process_ops_job(
     path = "/api/v1/spaces/{space_id}/drafts/{draft_id}/ops-from-upload",
     operation_id = "draft_ops_from_upload",
     tag = "drafts",
-    description = "大批量操作（异步）：把已上传的 ops 文件（NDJSON，每行一个操作，可 gzip 压缩，文件 ≤ 64MiB、解压后 ≤ 256MiB，最多 10 万条）应用到实体区草稿。请求体 {uploadId} 或 {assetHash}。返回 202 和任务编号，进度和结果用 get_job 查询；任何一条不合法或越界，整份都不生效（任务失败并给出原因）。",
+    description = "大批量操作（异步）：把已上传的 ops 文件（NDJSON，每行一个操作，可 gzip 压缩，文件 ≤ 64MiB、解压后 ≤ 256MiB、每行 ≤ 64KiB，最多 10 万条）应用到实体区草稿。一个草稿最多引用 20 个操作文件，计入每空间排队任务上限（429），方块操作累计计算量有上限（413）。请求体 {uploadId} 或 {assetHash}。返回 202 和任务编号，进度和结果用 get_job 查询；任何一条不合法或越界，整份都不生效（任务失败并给出原因）。",
     params(
         ("space_id" = String, Path, description = "空间编号"),
         ("draft_id" = String, Path, description = "草稿编号"),

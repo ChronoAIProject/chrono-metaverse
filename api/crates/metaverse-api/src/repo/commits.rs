@@ -63,6 +63,9 @@ pub struct CommitPlan {
     pub keyframe: Option<String>,
     pub asset_refs: Vec<String>,
     pub draft_id: Option<String>,
+    /// 发布草稿时草稿的 rev：在提交事务里按 `{rev, status: open}` 条件把草稿标记为已发布，
+    /// 草稿期间被追加、丢弃或已被别的请求发布时整个提交作废（[`CommitError::DraftChanged`]）。
+    pub draft_rev: Option<u64>,
     pub script_ref: Option<String>,
 }
 
@@ -87,6 +90,7 @@ impl CommitPlan {
             keyframe: None,
             asset_refs: Vec::new(),
             draft_id: None,
+            draft_rev: None,
             script_ref: None,
         }
     }
@@ -108,6 +112,9 @@ pub enum CommitError {
     /// 空间不存在，或主人与凭据不一致。
     #[error("空间不存在")]
     Missing,
+    /// 要发布的草稿已经变了（被追加、丢弃，或已被别的请求发布）。
+    #[error("草稿已经变了")]
+    DraftChanged,
     #[error(transparent)]
     Repo(#[from] RepoError),
 }
@@ -165,11 +172,14 @@ pub(super) fn granted_children(grant: &Grant) -> Document {
     }
 }
 
+/// `{_id, owner.kind, owner.id}`，并排除正在删除的空间（`deletingAt` 墓碑）：删除开始后，
+/// 任何提交、设置修改都匹配不到它。
 pub(super) fn granted_space(grant: &Grant) -> Document {
     doc! {
         "_id": grant.space_id(),
         "owner.kind": owner_kind(grant),
         "owner.id": &grant.owner().id,
+        "deletingAt": {"$exists": false},
     }
 }
 
@@ -505,7 +515,33 @@ impl Repo {
         if moved.matched_count != 1 {
             return Err(CommitError::HeadMoved.into());
         }
+        // 发布草稿：在同一个事务里占用草稿（rev 不变、仍是 open），与追加、丢弃、重复发布互斥。
+        if let (Some(draft_id), Some(rev)) = (&plan.draft_id, plan.draft_rev) {
+            let mut filter = granted_children(grant);
+            filter.insert("_id", draft_id);
+            filter.insert("rev", rev as i64);
+            filter.insert("status", "open");
+            let claimed = self
+                .collection(collections::DRAFTS)
+                .update_one(
+                    filter,
+                    doc! {"$set": {
+                        "status": "published",
+                        "commitId": commit_id,
+                        "updatedAt": at.to_rfc3339(),
+                    }},
+                )
+                .session(&mut *session)
+                .await?;
+            if claimed.matched_count != 1 {
+                return Err(CommitError::DraftChanged.into());
+            }
+        }
         let owner = owner_document(grant).map_err(CommitError::from)?;
+        // 删除时是内部级的锚点：记在空间文档的 `withdrawnAnchors` 里，公开投影把它当作"当前是
+        // 内部级"，它在历史版本里公开过的内容不会因为删除而重新出现。重新写成公开级时去掉。
+        let mut withdrawn: Vec<String> = Vec::new();
+        let mut republished: Vec<String> = Vec::new();
         for (collection, changes, bodies) in [
             (
                 collections::ENTITIES,
@@ -524,7 +560,18 @@ impl Repo {
                 key.insert("id", &change.id);
                 match &change.hash {
                     None => {
-                        current.delete_one(key).session(&mut *session).await?;
+                        let removed = current
+                            .find_one_and_delete(key)
+                            .session(&mut *session)
+                            .await?;
+                        let internal = removed
+                            .as_ref()
+                            .and_then(|document| document.get_document("body").ok())
+                            .and_then(|body| body.get_str("visibility").ok())
+                            == Some("internal");
+                        if collection == collections::ANCHORS && internal {
+                            withdrawn.push(change.id.clone());
+                        }
                     }
                     Some(hash) => {
                         let body = bodies.get(&change.id).ok_or_else(|| {
@@ -533,6 +580,19 @@ impl Repo {
                                 change.id
                             )))
                         })?;
+                        if collection == collections::ANCHORS
+                            && serde_json::to_value(body)
+                                .ok()
+                                .and_then(|value| {
+                                    value
+                                        .get("visibility")
+                                        .and_then(|v| v.as_str())
+                                        .map(|v| v == "public")
+                                })
+                                .unwrap_or(false)
+                        {
+                            republished.push(change.id.clone());
+                        }
                         let replacement = doc! {
                             "spaceId": grant.space_id(),
                             "id": &change.id,
@@ -549,6 +609,22 @@ impl Repo {
                     }
                 }
             }
+        }
+        if !withdrawn.is_empty() || !republished.is_empty() {
+            let mut update = Document::new();
+            if !withdrawn.is_empty() {
+                update.insert(
+                    "$addToSet",
+                    doc! {"withdrawnAnchors": {"$each": &withdrawn}},
+                );
+            }
+            if !republished.is_empty() {
+                update.insert("$pull", doc! {"withdrawnAnchors": {"$in": &republished}});
+            }
+            spaces
+                .update_one(granted_space(grant), update)
+                .session(&mut *session)
+                .await?;
         }
         let refs = self.collection(collections::ASSET_REFS);
         let mut assets: Vec<&String> = plan.asset_refs.iter().collect();
@@ -886,6 +962,7 @@ impl Repo {
         if let Some(after) = after {
             filter.insert("seq", doc! {"$gt": after as i64});
         }
+        super::restrict_to_membership(&mut filter, grant, "at");
         self.find_commits(filter, doc! {"seq": 1}, Some(limit))
             .await
     }
@@ -907,8 +984,29 @@ impl Repo {
         }))
     }
 
-    /// 当前内部级锚点的编号（公开投影用：当前是内部级的锚点在历史里也不出现）。
+    /// 当前内部级锚点的编号（公开投影用：当前是内部级的锚点在历史里也不出现），加上删除时是
+    /// 内部级的锚点（空间文档的 `withdrawnAnchors`）——改成内部级再删除，不能让它在历史里重新公开。
     pub async fn internal_anchor_ids(&self, grant: &Grant) -> Result<Vec<String>, RepoError> {
+        let mut ids = self.current_internal_anchor_ids(grant).await?;
+        let space = self
+            .collection(collections::SPACES)
+            .find_one(granted_space(grant))
+            .projection(doc! {"withdrawnAnchors": 1})
+            .await?;
+        if let Some(Ok(withdrawn)) = space
+            .as_ref()
+            .map(|document| document.get_array("withdrawnAnchors"))
+        {
+            ids.extend(
+                withdrawn
+                    .iter()
+                    .filter_map(|id| id.as_str().map(str::to_owned)),
+            );
+        }
+        Ok(ids)
+    }
+
+    async fn current_internal_anchor_ids(&self, grant: &Grant) -> Result<Vec<String>, RepoError> {
         let mut filter = granted_children(grant);
         filter.insert("body.visibility", "internal");
         let mut cursor = self

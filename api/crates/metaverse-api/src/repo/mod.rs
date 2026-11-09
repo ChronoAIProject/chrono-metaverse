@@ -294,7 +294,11 @@ impl Repo {
             ),
             (
                 UNIVERSES,
-                vec![index(doc! {"owner.kind": 1, "owner.id": 1}, named("owner"))],
+                vec![
+                    index(doc! {"owner.kind": 1, "owner.id": 1}, named("owner")),
+                    // 删除空间时找出以它为成员的组合。
+                    index(doc! {"members.spaceId": 1}, named("member_space")),
+                ],
             ),
             (
                 UNIVERSE_REVISIONS,
@@ -349,6 +353,40 @@ impl Repo {
             Ok(_) => Ok(JtiClaim::Fresh),
             Err(error) if is_duplicate_key(&error) => Ok(JtiClaim::Replayed),
             Err(error) => Err(error.into()),
+        }
+    }
+}
+
+/// 凭组合令牌读取时（凭据带成员期），把按 `field`（RFC 3339 字符串，`at`）的查询限制在成员期
+/// `[start, end)` 里：只有加入组合期间发生的提交、事件才凭组合可读（设计 8.2）。其他凭据不变。
+pub(crate) fn restrict_to_membership(
+    filter: &mut Document,
+    grant: &crate::auth::Grant,
+    field: &str,
+) {
+    let Some(periods) = grant.membership() else {
+        return;
+    };
+    let ranges: Vec<Document> = periods
+        .periods()
+        .iter()
+        .map(|(start, end)| {
+            let mut range = doc! {"$gte": start.to_rfc3339()};
+            if let Some(end) = end {
+                range.insert("$lt", end.to_rfc3339());
+            }
+            doc! {field: range}
+        })
+        .collect();
+    let clause = if ranges.is_empty() {
+        doc! {field: {"$in": []}}
+    } else {
+        doc! {"$or": ranges}
+    };
+    match filter.get_array_mut("$and") {
+        Ok(and) => and.push(clause.into()),
+        Err(_) => {
+            filter.insert("$and", vec![clause]);
         }
     }
 }

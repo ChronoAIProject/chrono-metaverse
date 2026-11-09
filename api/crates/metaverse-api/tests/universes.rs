@@ -663,3 +663,510 @@ async fn membership_links_visibility_and_public_reads() {
         StatusCode::NOT_FOUND
     );
 }
+
+// ---------------------------------------------------------------------------
+// 成员期、删除空间、同编号重建、组合改公开（安全回归）
+// ---------------------------------------------------------------------------
+
+fn ts(text: &str) -> metaverse_core::Timestamp {
+    metaverse_core::Timestamp::parse_rfc3339(text).unwrap()
+}
+
+/// 直接写一条公开的 seat.count 事件（事件写接口另有测试）。`at` 同时作为记录时间。
+async fn insert_event(app: &TestApp, space: &str, owner: &str, id: &str, at: &str, n: i64) {
+    app.collection("events")
+        .insert_one(doc! {
+            "_id": id, "spaceId": space, "owner": {"kind": "org", "id": owner},
+            "at": at, "recordedAt": at, "source": "pos", "sourceEventId": id,
+            "type": "seat.count", "typeVersion": 1_i32, "anchorId": "_space",
+            "data": {"n": n}, "visibility": "public",
+        })
+        .await
+        .unwrap();
+}
+
+/// 邀请 secret-shop（花店组织、凭链接查看）并由花店加入，返回加入时刻。
+async fn invite_and_join_secret_shop(app: &TestApp) -> String {
+    let reply = patch(app, who(ORG), json!({"invitations": ["secret-shop"]})).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let reply = join(
+        app,
+        who(OTHER_ORG),
+        "secret-shop",
+        json!({"offset": [0, 0, 600], "rotation": 0}),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    reply.body["at"].as_str().unwrap().to_owned()
+}
+
+fn item_ids(body: &Value) -> Vec<String> {
+    body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["id"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[tokio::test]
+async fn deleted_member_leaves_universe_and_recreated_id_is_not_a_member() {
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    let share = format!("Share {}", setup(&app).await);
+    let joined = invite_and_join_secret_shop(&app).await;
+    // 花店删除空间：同时写一条退出修订，组合不再列出它。
+    let reply = app
+        .call(
+            who(OTHER_ORG),
+            Method::DELETE,
+            "/api/v1/admin/spaces/secret-shop?confirm=secret-shop",
+            None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::NO_CONTENT, "{:?}", reply.body);
+    let reply = app.call(who(ORG), Method::GET, U, None).await;
+    assert_eq!(reply.body["members"], json!([]), "{:?}", reply.body);
+    assert_eq!(reply.body["seq"], 2);
+    let revision = app
+        .collection("universeRevisions")
+        .find_one(doc! {"universeId": "street", "seq": 2_i64})
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(revision.get_str("message").unwrap().contains("已删除"));
+    // 组合页（现在、回看加入时刻）都不报错；已删除的成员不出现。
+    for path in [
+        "/api/public/universes/street".to_owned(),
+        format!("/api/public/universes/street?at={joined}"),
+    ] {
+        let reply = app.public(&path, Some(&share), &[]).await;
+        assert_eq!(reply.status, StatusCode::OK, "{path}: {:?}", reply.body);
+        assert_eq!(reply.body["members"], json!([]), "{path}");
+    }
+    // 别人用同一个编号新建凭链接查看的空间：旧组合令牌读不到它的任何内容。
+    app.create_space(who("alice"), "secret-shop", "person", "alice", "unlisted")
+        .await;
+    app.insert_anchor(
+        "secret-shop",
+        json!({"kind": "person", "id": "alice"}),
+        json!({"anchorId": "alice-door", "kind": "door", "box": [0, 0, 0, 2, 40, 20], "visibility": "public"}),
+    )
+    .await;
+    for path in [
+        "/api/public/spaces/secret-shop?universe=street".to_owned(),
+        "/api/public/spaces/secret-shop/head?universe=street".to_owned(),
+        "/api/public/spaces/secret-shop/snapshot?seq=1&universe=street".to_owned(),
+        "/api/public/spaces/secret-shop/timeline?universe=street".to_owned(),
+        format!("/api/public/spaces/secret-shop/state?universe=street&at={joined}"),
+    ] {
+        let reply = app.public(&path, Some(&share), &[]).await;
+        assert_eq!(
+            reply.status,
+            StatusCode::NOT_FOUND,
+            "{path}: {:?}",
+            reply.body
+        );
+    }
+    let reply = app
+        .public(
+            &format!("/api/public/universes/street?at={joined}"),
+            Some(&share),
+            &[],
+        )
+        .await;
+    assert_eq!(reply.body["members"], json!([]));
+}
+
+#[tokio::test]
+async fn dangling_member_from_old_deletion_is_skipped_not_inherited() {
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    let share = format!("Share {}", setup(&app).await);
+    // 先加入、再按旧版本的方式删除（只删空间文档，组合里还留着编号）。
+    let joined = invite_and_join_secret_shop(&app).await;
+    app.collection("spaces")
+        .delete_one(doc! {"_id": "secret-shop"})
+        .await
+        .unwrap();
+    // 成员空间不存在：组合页和修改都不是 500。
+    let reply = app
+        .public("/api/public/universes/street", Some(&share), &[])
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(reply.body["members"], json!([]));
+    let reply = app
+        .public(
+            &format!("/api/public/universes/street?at={joined}"),
+            Some(&share),
+            &[],
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let reply = patch(&app, who(ORG), json!({"links": []})).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let reply = patch(&app, who(ORG), json!({"visibility": "public"})).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let reply = patch(&app, who(ORG), json!({"visibility": "unlisted"})).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    // 同编号被别人重建：修订里的旧编号不算新空间的成员资格。
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    app.create_space(who("alice"), "secret-shop", "person", "alice", "unlisted")
+        .await;
+    for path in [
+        "/api/public/spaces/secret-shop?universe=street".to_owned(),
+        "/api/public/spaces/secret-shop/head?universe=street".to_owned(),
+        "/api/public/spaces/secret-shop/snapshot?seq=1&universe=street".to_owned(),
+        format!(
+            "/api/public/spaces/secret-shop/snapshot?at={}&universe=street",
+            ago(0)
+        ),
+        format!(
+            "/api/public/spaces/secret-shop/events?universe=street&since={}",
+            ago(60)
+        ),
+    ] {
+        let reply = app.public(&path, Some(&share), &[]).await;
+        assert_eq!(
+            reply.status,
+            StatusCode::NOT_FOUND,
+            "{path}: {:?}",
+            reply.body
+        );
+    }
+    let reply = app
+        .public("/api/public/universes/street", Some(&share), &[])
+        .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(reply.body["members"], json!([]), "新空间不出现在组合页");
+}
+
+#[tokio::test]
+async fn universe_reads_are_clipped_to_membership_periods() {
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    let share = format!("Share {}", setup(&app).await);
+    let reply = app
+        .call(
+            who(OTHER_ORG),
+            Method::POST,
+            "/api/v1/admin/spaces/secret-shop/event-types",
+            Some(
+                json!({"type": "seat.count", "schema": {"type": "object"}, "publicFields": ["n"],
+                        "defaultVisibility": "public", "display": {"kind": "label"}}),
+            ),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::CREATED, "{:?}", reply.body);
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let joined = invite_and_join_secret_shop(&app).await;
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let other = json!({"kind": "org", "id": OTHER_ORG});
+    let inside = app
+        .insert_commit("secret-shop", other.clone(), &ago(0), None)
+        .await;
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let reply = app
+        .call(
+            who(OTHER_ORG),
+            Method::DELETE,
+            &format!("{U}/members/secret-shop"),
+            None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let left = reply.body["at"].as_str().unwrap().to_owned();
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let after = app
+        .insert_commit("secret-shop", other.clone(), &ago(0), None)
+        .await;
+    let (joined_t, left_t) = (ts(&joined), ts(&left));
+    let mid = joined_t.saturating_add_millis(left_t.millis_since(joined_t) / 2);
+    let before = joined_t.saturating_add_millis(-60_000).to_rfc3339();
+    let during = mid.to_rfc3339();
+    let later = left_t.saturating_add_millis(1).to_rfc3339();
+    insert_event(&app, "secret-shop", OTHER_ORG, "ev_before", &before, 1).await;
+    insert_event(&app, "secret-shop", OTHER_ORG, "ev_during", &during, 2).await;
+    insert_event(&app, "secret-shop", OTHER_ORG, "ev_after", &later, 3).await;
+
+    // 提交列表：只有成员期里的提交（加入前、离开后的都不出现）。
+    let reply = app
+        .public(
+            "/api/public/spaces/secret-shop/timeline?universe=street",
+            Some(&share),
+            &[],
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let seqs: Vec<i64> = reply.body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["seq"].as_i64().unwrap())
+        .collect();
+    assert_eq!(seqs, vec![inside], "离开后的 seq {after} 不能出现");
+    assert_eq!(reply.body["nextAfter"], Value::Null);
+    // 增量事件：从纪元开始也只有成员期里的事件。
+    let reply = app
+        .public(
+            "/api/public/spaces/secret-shop/events?universe=street&since=1970-01-01T00:00:00Z",
+            Some(&share),
+            &[],
+        )
+        .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::NOT_FOUND,
+        "现在已不是成员：增量按现在判断"
+    );
+    let just_after = mid.saturating_add_millis(1).to_rfc3339();
+    let reply = app
+        .public(
+            &format!(
+                "/api/public/spaces/secret-shop/events?universe=street&since=1970-01-01T00:00:00Z&to={just_after}"
+            ),
+            Some(&share),
+            &[],
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(item_ids(&reply.body), vec!["ev_during"]);
+    // 时间窗跨过加入和离开：同样只有成员期里的。
+    let window_from = joined_t.saturating_add_millis(-3_600_000).to_rfc3339();
+    let window_to = left_t.saturating_add_millis(3_600_000).to_rfc3339();
+    let reply = app
+        .public(
+            &format!("/api/public/spaces/secret-shop/events?universe=street&from={window_from}&to={window_to}"),
+            Some(&share),
+            &[],
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(item_ids(&reply.body), vec!["ev_during"]);
+    // 密度：只数成员期里的。
+    let reply = app
+        .public(
+            &format!("/api/public/spaces/secret-shop/events/density?universe=street&from={window_from}&to={window_to}&bucket=86400"),
+            Some(&share),
+            &[],
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let total: u64 = reply.body["buckets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|bucket| bucket["count"].as_u64().unwrap())
+        .sum();
+    assert_eq!(total, 1);
+    // 离开之后的版本：快照 404；空间信息停在离开时的版本，不给离开后的 recordedAt。
+    assert_eq!(
+        app.public(
+            &format!("/api/public/spaces/secret-shop/snapshot?seq={after}&universe=street"),
+            Some(&share),
+            &[]
+        )
+        .await
+        .status,
+        StatusCode::NOT_FOUND
+    );
+    let reply = app
+        .public(
+            "/api/public/spaces/secret-shop?universe=street",
+            Some(&share),
+            &[],
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(reply.body["head"]["seq"], inside);
+    assert_eq!(reply.body["head"]["recordedAt"], Value::Null);
+    // 不经组合（空间自己的令牌）照常看得到全部。
+    let own = app
+        .collection("spaces")
+        .find_one(doc! {"_id": "secret-shop"})
+        .await
+        .unwrap()
+        .unwrap();
+    let own_token = format!("Share {}", own_share_token(&app).await);
+    let reply = app
+        .public(
+            "/api/public/spaces/secret-shop/timeline",
+            Some(&own_token),
+            &[],
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(reply.body["items"].as_array().unwrap().len() as i64, after);
+    assert!(own.get_document("head").is_ok());
+}
+
+/// 轮换 secret-shop 的分享令牌，返回新令牌原文。
+async fn own_share_token(app: &TestApp) -> String {
+    let reply = app
+        .call(
+            who(OTHER_ORG),
+            Method::POST,
+            "/api/v1/admin/spaces/secret-shop/share-tokens",
+            None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::CREATED, "{:?}", reply.body);
+    reply.body["token"].as_str().unwrap().to_owned()
+}
+
+#[tokio::test]
+async fn public_universe_does_not_expose_former_unlisted_members() {
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    let share = format!("Share {}", setup(&app).await);
+    let reply = join(
+        &app,
+        who(ORG),
+        "restaurant",
+        json!({"offset": [0, 0, 0], "rotation": 0}),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let joined = invite_and_join_secret_shop(&app).await;
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    let reply = app
+        .call(
+            who(OTHER_ORG),
+            Method::DELETE,
+            &format!("{U}/members/secret-shop"),
+            None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    // 只剩公开的餐厅：组合可以改成公开。
+    let reply = patch(&app, who(ORG), json!({"visibility": "public"})).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    // 不带令牌：曾经的凭链接查看成员一律 404，组合页也不列出它。
+    for path in [
+        "/api/public/spaces/secret-shop?universe=street".to_owned(),
+        "/api/public/spaces/secret-shop/timeline?universe=street".to_owned(),
+        "/api/public/spaces/secret-shop/snapshot?seq=1&universe=street".to_owned(),
+        format!("/api/public/spaces/secret-shop/state?universe=street&at={joined}"),
+        format!(
+            "/api/public/spaces/secret-shop/events?universe=street&since=1970-01-01T00:00:00Z&to={joined}"
+        ),
+    ] {
+        let reply = app.public(&path, None, &[]).await;
+        assert_eq!(
+            reply.status,
+            StatusCode::NOT_FOUND,
+            "{path}: {:?}",
+            reply.body
+        );
+    }
+    let reply = app
+        .public(
+            &format!("/api/public/universes/street?at={joined}"),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let members: Vec<&str> = reply.body["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|member| member["spaceId"].as_str().unwrap())
+        .collect();
+    assert_eq!(members, vec!["restaurant"]);
+    // 公开成员照常可读；带组合令牌时，曾经的成员仍按成员期可读（加入时同意过）。
+    let reply = app
+        .public("/api/public/spaces/restaurant?universe=street", None, &[])
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let reply = app
+        .public(
+            "/api/public/spaces/secret-shop?universe=street",
+            Some(&share),
+            &[],
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+}
+
+#[tokio::test]
+async fn snapshot_at_before_first_commit_via_universe_resolves_seq_zero() {
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    let share = format!("Share {}", setup(&app).await);
+    // 模拟第一次提交没写成：没有提交、head.seq = 0。
+    app.collection("commits")
+        .delete_many(doc! {"spaceId": "secret-shop"})
+        .await
+        .unwrap();
+    app.collection("spaces")
+        .update_one(
+            doc! {"_id": "secret-shop"},
+            doc! {"$set": {"head.seq": 0_i64}},
+        )
+        .await
+        .unwrap();
+    invite_and_join_secret_shop(&app).await;
+    let reply = app
+        .public(
+            &format!(
+                "/api/public/spaces/secret-shop/snapshot?at={}&universe=street",
+                ago(0)
+            ),
+            Some(&share),
+            &[],
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::FOUND, "{:?}", reply.body);
+    let location = reply
+        .headers
+        .get("location")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(
+        location,
+        "/api/public/spaces/secret-shop/snapshot?seq=0&universe=street"
+    );
+    let reply = app.public(&location, Some(&share), &[]).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(reply.body["seq"], 0);
+    // 不是成员的空间：seq=0 同样 404。
+    assert_eq!(
+        app.public(
+            "/api/public/spaces/hall/snapshot?seq=0&universe=street",
+            Some(&share),
+            &[]
+        )
+        .await
+        .status,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn seq_zero_before_joining_stays_hidden() {
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    let share = format!("Share {}", setup(&app).await);
+    // 建空间时就有第一次提交：seq=0 只在创建那一刻之前生效，早于加入，凭组合读不到。
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    invite_and_join_secret_shop(&app).await;
+    assert_eq!(
+        app.public(
+            "/api/public/spaces/secret-shop/snapshot?seq=0&universe=street",
+            Some(&share),
+            &[]
+        )
+        .await
+        .status,
+        StatusCode::NOT_FOUND
+    );
+}

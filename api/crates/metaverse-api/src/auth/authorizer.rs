@@ -52,6 +52,9 @@ pub struct Grant {
     owner: Owner,
     access: GrantAccess,
     public_basis: Option<PublicBasis>,
+    /// 凭组合令牌读成员空间时，该空间作为组合成员的时间段：读取方只能拿到落在这些时间段里的
+    /// 提交和事件（设计 8.2"T 时刻是成员"）。其他凭据为空。
+    membership: Option<MembershipPeriods>,
 }
 
 /// 读取不属于某个空间的内容寻址数据（已发布的区块、登记在 `assetRefs` 里的资源）的凭据。
@@ -94,6 +97,11 @@ impl Grant {
 
     pub fn public_basis(&self) -> Option<PublicBasis> {
         self.public_basis
+    }
+
+    /// 凭组合令牌读取时的成员期（见 [`MembershipPeriods`]）；其他凭据为空。
+    pub fn membership(&self) -> Option<&MembershipPeriods> {
+        self.membership.as_ref()
     }
 }
 
@@ -185,6 +193,36 @@ impl Authorizer {
             .space_policy(&Self::key(), space_id)
             .await?
             .ok_or_else(ApiError::not_found)?;
+        self.space_from_policy(caller, space_id, policy, purpose)
+            .await
+    }
+
+    /// 删除空间（管理接口）：规则同 [`Authorizer::space`] 的"管理"，但正在删除（上次没清理完）
+    /// 的空间也能拿到凭据，好让主人重试删除。
+    pub async fn space_for_deletion(
+        &self,
+        caller: &Caller,
+        space_id: &str,
+    ) -> Result<Grant, ApiError> {
+        if !is_space_id(space_id) {
+            return Err(ApiError::not_found());
+        }
+        let policy = self
+            .repo
+            .space_policy_for_deletion(&Self::key(), space_id)
+            .await?
+            .ok_or_else(ApiError::not_found)?;
+        self.space_from_policy(caller, space_id, policy, Purpose::Manage)
+            .await
+    }
+
+    async fn space_from_policy(
+        &self,
+        caller: &Caller,
+        space_id: &str,
+        policy: crate::repo::SpacePolicy,
+        purpose: Purpose,
+    ) -> Result<Grant, ApiError> {
         let owner = policy.effective_owner();
         let level = match direct_access(&owner, &caller.subject) {
             Some(level) => level,
@@ -212,6 +250,7 @@ impl Authorizer {
             owner: policy.owner,
             access,
             public_basis: None,
+            membership: None,
         })
     }
 
@@ -315,6 +354,7 @@ impl Authorizer {
             owner: policy.owner,
             access: GrantAccess::Public,
             public_basis: Some(basis),
+            membership: None,
         })
     }
 }
@@ -325,7 +365,8 @@ mod universes;
 
 pub use system::{SeedSpace, SystemGrant};
 pub use universes::{
-    CreateUniverseGrant, MembershipBasis, MembershipChange, MembershipGrant, UniverseGrant,
+    CreateUniverseGrant, MembershipBasis, MembershipChange, MembershipGrant, MembershipPeriods,
+    UniverseGrant,
 };
 /// 预览令牌原文的格式：base64url，43 个字符（256 位随机数）。
 fn plausible_preview_token(token: &str) -> bool {
@@ -343,6 +384,7 @@ impl Authorizer {
             owner: grant.owner.clone(),
             access: GrantAccess::Manage,
             public_basis: None,
+            membership: None,
         }
     }
 
@@ -371,6 +413,7 @@ impl Authorizer {
             owner: policy.owner,
             access: GrantAccess::Manage,
             public_basis: None,
+            membership: None,
         })
     }
 
@@ -409,6 +452,7 @@ impl Authorizer {
                 owner: policy.owner,
                 access: GrantAccess::Public,
                 public_basis: Some(PublicBasis::Preview),
+                membership: None,
             },
             PreviewTarget {
                 draft_id: record.draft_id,

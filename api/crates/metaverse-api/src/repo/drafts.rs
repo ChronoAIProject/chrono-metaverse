@@ -91,6 +91,10 @@ pub struct DraftDoc {
     pub assets: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub commit_id: Option<String>,
+    /// 已追加的全部操作的计算量（格数，见 `timeline::state::ops_cells`）：发布时重放要把它们
+    /// 全部再算一遍，所以每个草稿有总量上限。旧草稿没有这个字段时是 0。
+    #[serde(default)]
+    pub work_cells: u64,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
     pub expires_at: Timestamp,
@@ -213,26 +217,27 @@ impl Repo {
         Ok(result.matched_count == 1)
     }
 
-    /// 发布后：标记已发布，记下提交编号；预览令牌和草稿区块随即作废。
-    pub async fn mark_draft_published(
+    /// 发布后（草稿已在提交事务里标记为已发布）：预览令牌和草稿区块随即作废。只在草稿确实
+    /// 已发布时才删，避免误删仍在使用的草稿的区块。
+    pub async fn clear_published_draft(
         &self,
         grant: &Grant,
         draft_id: &str,
-        rev: u64,
-        commit_id: &str,
-        now: Timestamp,
     ) -> Result<(), RepoError> {
         if !grant.can_manage() {
             return Err(RepoError::GrantMismatch);
         }
         let mut filter = draft_filter(grant, draft_id);
-        filter.insert("rev", rev as i64);
-        self.collection(collections::DRAFTS)
-            .update_one(
-                filter,
-                doc! {"$set": {"status": "published", "commitId": commit_id, "updatedAt": now.to_rfc3339()}},
-            )
-            .await?;
+        filter.insert("status", "published");
+        let published = self
+            .collection(collections::DRAFTS)
+            .find_one(filter)
+            .projection(doc! {"_id": 1})
+            .await?
+            .is_some();
+        if !published {
+            return Ok(());
+        }
         self.delete_draft_children(grant, draft_id).await
     }
 
@@ -433,8 +438,17 @@ impl Repo {
         let found = self
             .collection(collections::UPLOADS)
             .find_one(filter)
-            .projection(doc! {"_id": 1, "assetHash": 1})
+            .projection(doc! {"_id": 1, "assetHash": 1, "reused": 1})
             .await?;
+        // "直接复用"的上传没有传过数据，资源还要按所有权规则属于本空间（旧版本按哈希就允许复用）。
+        if let Some(document) = &found {
+            if document.get_bool("reused").unwrap_or(false) {
+                let hash = document.get_str("assetHash").unwrap_or_default();
+                if self.space_owned_asset(grant, hash).await?.is_none() {
+                    return Ok(None);
+                }
+            }
+        }
         Ok(found.and_then(|document| {
             let hash = document.get_str("assetHash").ok()?.to_owned();
             let id = match document.get("_id") {
