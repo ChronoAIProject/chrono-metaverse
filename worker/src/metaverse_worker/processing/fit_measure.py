@@ -254,6 +254,15 @@ def _dp(points: np.ndarray, tol: float) -> list[int]:
     return sorted(set(keep))
 
 
+def _inset(contour: np.ndarray, delta: float) -> np.ndarray:
+    """格子边界的轮廓比真实边界向外多半个格子：向内收回。"""
+    from .shape_mesh import _offset_inward
+
+    if len(contour) < 3 or sh.signed_area(contour.tolist()) <= 0:
+        return contour
+    return np.asarray(_offset_inward([tuple(p) for p in contour], delta))
+
+
 def contour_of(xz: np.ndarray, cell: float, close: int = 2) -> np.ndarray | None:
     m = occupancy(xz, cell, close=close)
     c = trace_contour(m)
@@ -263,7 +272,8 @@ def contour_of(xz: np.ndarray, cell: float, close: int = 2) -> np.ndarray | None
             c = xz[hull.vertices]
         except Exception:
             return None
-    return smooth_contour(c, cell, 5)
+        return smooth_contour(c, cell, 5)
+    return _inset(smooth_contour(c, cell, 3), cell / 2)
 
 
 # ---------------------------------------------------------------------------- 轮廓拟合
@@ -287,7 +297,6 @@ def _rect_outline(half: tuple[float, float], r: float, cx: float = 0.0, cz: floa
 def fit_outline(contour: np.ndarray, tol: float, *, allow_circle: bool = True) -> OutlineFit:
     """局部坐标里的轮廓 → 常见形状：圆 → 圆角矩形（含跑道形）→ 带圆弧的折线。"""
     pts = np.asarray(contour, float)
-    area = abs(sh.signed_area(pts.tolist()))
     if allow_circle and len(pts) >= 8:
         c, r, rmse = fit_circle(pts)
         if rmse < max(tol, 0.02 * r) and r > 0.02:
@@ -306,10 +315,15 @@ def fit_outline(contour: np.ndarray, tol: float, *, allow_circle: bool = True) -
     lo, hi = pts.min(0), pts.max(0)
     half = ((hi[0] - lo[0]) / 2, (hi[1] - lo[1]) / 2)
     ctr = (lo + hi) / 2
-    deficit = max(0.0, 4 * half[0] * half[1] - area)
-    r = min(math.sqrt(deficit / (4 - math.pi)), min(half))
+    # 圆角半径：在 0 到半个短边之间搜索，取轮廓到圆角矩形距离最小的
+    best_r, rmse = 0.0, math.inf
+    for r in np.linspace(0.0, min(half), 41):
+        d = rounded_rect_distance(pts - ctr, half, float(r))
+        e = float(np.sqrt(np.mean(d * d)))
+        if e < rmse - 1e-6:
+            best_r, rmse = float(r), e
+    r = best_r
     d = rounded_rect_distance(pts - ctr, half, r)
-    rmse = float(np.sqrt(np.mean(d * d)))
     if rmse < tol * 1.2 and np.percentile(d, 95) < tol * 3:
         return OutlineFit(
             "rect",
@@ -347,15 +361,18 @@ def poly_outline(pts: np.ndarray, tol: float, *, snap_deg: float = 4.0) -> dict[
             chord = math.hypot(*(seg[-1] - seg[0]))
             if chord < 0.06 or len(seg) < 6:
                 continue
+            # 转向一致：简化后的各顶点都往同一边转，且每段转角不大（不是尖角）；一旦不满足，再长也不会满足
+            vv = loop[[V[q] if q < m else n for q in range(i, j + 1)]]
+            dd = np.diff(vv, axis=0)
+            cr = dd[:-1, 0] * dd[1:, 1] - dd[:-1, 1] * dd[1:, 0]
+            dot = (dd[:-1] * dd[1:]).sum(1)
+            turn = np.abs(np.arctan2(cr, dot))
+            if not (np.all(cr > 0) or np.all(cr < 0)) or turn.max() > math.radians(35):
+                break
             c, r, _ = fit_circle(seg)
             res = np.abs(np.hypot(seg[:, 0] - c[0], seg[:, 1] - c[1]) - r)
-            if res.max() > tol * 1.5 or r > 5.0:
-                break
-            # 转向一致
-            dd = np.diff(seg, axis=0)
-            cr = dd[:-1, 0] * dd[1:, 1] - dd[:-1, 1] * dd[1:, 0]
-            if not (np.mean(cr > 0) > 0.85 or np.mean(cr < 0) > 0.85):
-                break
+            if np.percentile(res, 90) > tol * 1.2 or res.max() > tol * 3 or r > 5.0:
+                continue
             best = (j, c, r)
         if best is not None:
             j, c, r = best
@@ -486,12 +503,12 @@ def fit_footprint(
     """俯视占用 → 轮廓：先按 `fit_outline`（圆 / 圆角矩形 / 带圆弧的折线），与占用的交并比不到 0.8 时
     退回凸包或外接框里交并比最高的那个。"""
     size = float(np.ptp(xz, axis=0).max())
-    cell = cell or (0.01 if size < 1.0 else 0.02)
+    cell = cell or (0.01 if size < 2.5 else 0.02)
     m = mask if mask is not None else occupancy(xz, cell, close=2)
     cands: list[OutlineFit] = []
     cont = trace_contour(m)
     if cont is not None and len(cont) >= 8:
-        sc = smooth_contour(cont, m.cell, 5)
+        sc = _inset(smooth_contour(cont, m.cell, 3), m.cell / 2)
         first = fit_outline(sc, tol, allow_circle=allow_circle)
         cands.append(first)
         if first.kind != "poly":
@@ -506,8 +523,18 @@ def fit_footprint(
     lo, hi = np.percentile(xz, 1, axis=0), np.percentile(xz, 99, axis=0)
     half = (max((hi[0] - lo[0]) / 2, 0.01), max((hi[1] - lo[1]) / 2, 0.01))
     ctr = (lo + hi) / 2
-    info = {"half": half, "radius": 0.0, "center": ctr.tolist()}
-    cands.append(OutlineFit("rect", _rect_outline(half, 0.0, ctr[0], ctr[1]), 0.0, info))
+    r = 0.0
+    if cont is not None and len(cont) >= 8:
+        # 圆角半径：轮廓到这个外接框的圆角矩形距离最小的半径
+        sc0 = _inset(smooth_contour(cont, m.cell, 3), m.cell / 2) - ctr
+        errs = [
+            (float(np.mean(rounded_rect_distance(sc0, half, float(rr)) ** 2)), float(rr))
+            for rr in np.linspace(0, min(half), 41)
+        ]
+        r = min(errs)[1]
+    info = {"half": half, "radius": r, "center": ctr.tolist()}
+    cands.append(OutlineFit("rect", _rect_outline(half, r, ctr[0], ctr[1]), 0.0, info))
+    # 交并比减去复杂度代价（每个顶点 0.004）：差不多时取简单的（圆、圆角矩形、少几个点的折线）
     best = None
     for c in cands:
         try:
@@ -517,8 +544,20 @@ def fit_footprint(
         except Exception:
             continue
         c.info["iou"] = iou
-        if iou >= 0.8:
-            return c
-        if best is None or iou > best.info["iou"]:
-            best = c
-    return best if best is not None else cands[-1]
+        score = iou - 0.004 * len(c.outline["points"])
+        if best is None or score > best[0]:
+            best = (score, c)
+    return best[1] if best is not None else cands[-1]
+
+
+def is_convex(outline: dict[str, Any]) -> bool:
+    """轮廓（只看顶点，圆弧向外凸也算）是否是凸的：凸轮廓挤出时边缘倒圆不会把网格推出轮廓外。"""
+    pts = np.asarray(outline["points"], float)
+    if len(pts) < 3:
+        return False
+    d1 = pts - np.roll(pts, 1, axis=0)
+    d2 = np.roll(pts, -1, axis=0) - pts
+    cr = d1[:, 0] * d2[:, 1] - d1[:, 1] * d2[:, 0]
+    if np.any(cr < -1e-9):
+        return False
+    return all(a["bulge"] >= 0 for a in outline.get("arcs") or [])

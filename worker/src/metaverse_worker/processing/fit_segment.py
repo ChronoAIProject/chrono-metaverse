@@ -335,7 +335,7 @@ def split_table(op: ObjectPoints, idx: np.ndarray, top: dict[str, Any], prm: Seg
     table = [idx[slab]]
     clutter: list[np.ndarray] = []
     others: list[Segment] = []
-    reg_in = ndimage.binary_dilation(region, iterations=1)
+    reg_in = ndimage.binary_dilation(region, iterations=3)  # 台面边缘倒圆、立面在台面边以外几厘米
     for g in _groups(lab):
         gi = rest[g]
         frac_in = grid.lookup(reg_in, P[gi][:, [0, 2]]).mean()
@@ -627,13 +627,16 @@ def apply_hints(
     for k, seg in enumerate(segs):
         seg_of[seg.idx] = k
     # 台面薄层（台面投影内、台面高度带里的点，不管在哪一块）不被别的提示框认领
-    slab = np.zeros(len(op.P), bool)
+    slab_of: list[tuple[np.ndarray, np.ndarray]] = []  # (台面薄层的点, 台面的格子中心)
     for seg in segs:
         if seg.top is not None and "mask" in seg.top:
             lo, hi = seg.top["band"]
             y = op.P[:, 1]
-            cand = (y > lo) & (y < hi)
-            slab[cand] |= seg.top["grid"].lookup(seg.top["mask"], op.P[cand][:, [0, 2]])
+            cand = np.nonzero((y > lo) & (y < hi))[0]
+            cand = cand[seg.top["grid"].lookup(seg.top["mask"], op.P[cand][:, [0, 2]])]
+            g = seg.top["grid"]
+            zz, xx = np.nonzero(seg.top["mask"])
+            slab_of.append((cand, np.c_[g.x0 + (xx + 0.5) * g.cell, g.z0 + (zz + 0.5) * g.cell]))
     boxed = []
     for k, hint in enumerate(hints):
         box = _hint_box(hint)
@@ -650,7 +653,13 @@ def apply_hints(
         inside = (np.abs(lx) <= half[0] + pad) & (np.abs(lz) <= half[2] + pad) & (np.abs(ly) <= half[1] + pad)
         is_table = str(hint.get("kind", "")) == "table"
         if not is_table:
-            inside &= ~slab
+            # 台面整个落在框里（柜顶）时归这个框；台面伸出框外（椅子框碰到桌面边）时台面的点不归它
+            for cand, cells in slab_of:
+                dc = cells - ctr[[0, 2]]
+                cx = dc[:, 0] * math.cos(a) - dc[:, 1] * math.sin(a)
+                cz = dc[:, 0] * math.sin(a) + dc[:, 1] * math.cos(a)
+                if ((np.abs(cx) <= half[0] + 0.05) & (np.abs(cz) <= half[2] + 0.05)).mean() < 0.7:
+                    inside[cand] = False
         score = np.sqrt((lx / half[0]) ** 2 + (lz / half[2]) ** 2)
         take = inside & (score < best)
         owner[take] = k

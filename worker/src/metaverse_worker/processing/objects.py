@@ -1,7 +1,9 @@
-"""物体重建（设计 6.3 的"优化模型"）：扫描 → 物体分割 → 测量 → 常见形状拟合 → 同款合并 → 贴图转移 → 自查。
+"""物体重建（设计 6.3 的"优化模型"）：
+扫描 → 物体分割 → 测量 → 常见形状拟合 → 同款合并 → 贴图转移 → 自查。
 
-入口 `reconstruct_objects(mesh, structure, params=...)`，mesh 已对齐到空间坐标（y 向上，米），structure 是同一网格上
-`extract_structure` 的结果。输出 SHAPES 第 3 节的物件记录 body（`layer: rebuilt`，`kind: object` 或 `template`）、
+入口 `reconstruct_objects(mesh, structure, params=...)`，mesh 已对齐到空间坐标（y 向上，米），
+structure 是同一网格上 `extract_structure` 的结果。
+输出 SHAPES 第 3 节的物件记录 body（`layer: rebuilt`，`kind: object` 或 `template`）、
 被引用的贴图（内容哈希 → JPEG 字节）和指标。
 
 流程：
@@ -200,15 +202,39 @@ def _is_green(C: np.ndarray) -> bool:
     return bool(np.mean((c[:, 1] > c[:, 0] + 6) & (c[:, 1] > c[:, 2])) > 0.35)
 
 
+def skirt_fraction(L: np.ndarray, top_h: float) -> float:
+    """台面一圈的边上，台面以下（离地 0.1 米到台面下 0.15 米）有扫描表面的比例：
+    柜子四面落地，桌子是悬空的。"""
+    from .fit_measure import occupancy
+
+    band = (L[:, 1] > top_h - 0.04) & (L[:, 1] < top_h + 0.03)
+    if band.sum() < 20:
+        return 0.0
+    m = occupancy(L[band][:, [0, 2]], 0.03, close=2)
+    ring = m.mask & ~ndimage.binary_erosion(m.mask, iterations=2)
+    below = (L[:, 1] > 0.1) & (L[:, 1] < top_h - 0.15)
+    if not below.any() or not ring.any():
+        return 0.0
+    iz = np.clip(((L[below, 2] - m.z0) / m.cell).astype(int), 0, m.mask.shape[0] - 1)
+    ix = np.clip(((L[below, 0] - m.x0) / m.cell).astype(int), 0, m.mask.shape[1] - 1)
+    hit = np.zeros_like(m.mask)
+    hit[iz, ix] = True
+    hit = ndimage.binary_dilation(hit, iterations=1)
+    return float((hit & ring).sum() / ring.sum())
+
+
 def classify(L: np.ndarray, N: np.ndarray, C: np.ndarray, tags: set[str], top_h: float | None) -> str:
     y = L[:, 1]
     H = float(np.percentile(y, 98))
+    skirt = skirt_fraction(L, top_h) if top_h is not None else 0.0
     ext = np.ptp(L[:, [0, 2]], axis=0)
     long_, short = float(max(ext)), float(min(ext))
     if "on-top" in tags:
         return "clutter"
     if top_h is not None:
-        return "counter" if top_h > 0.95 and long_ > 1.2 else "table"
+        if top_h > 0.95 and long_ > 1.2:
+            return "counter"
+        return "cabinet" if skirt > 0.6 else "table"
     if H > 1.5:
         if _is_green(C):
             return "plant"

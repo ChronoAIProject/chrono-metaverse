@@ -3,14 +3,16 @@
 每个模板读物体局部坐标里的扫描点（原点在物体底面中心的地面上，y 向上；椅子、沙发的正面朝 +z），
 用 `fit_measure` 测出尺寸和特征，组合成 SHAPES 的常见形状：
 
-| 类型 | 组合 |
-|---|---|
-| 桌子 `table` | 台面：圆角矩形 / 跑道形 / 圆形 / 带圆弧折线的 `extrude`（边缘倒圆）；底座：按台面下的投影块 —— 圆柱、圆角盒或轮廓挤出；看不到时补 4 条腿 |
-| 椅子 `chair` | 座面 `extrude`（圆角）；靠背（连扶手）：逐层圆弧带的 `loft`，保留靠背弧度；底座：转椅的立柱 + 4 爪 `sweep`，或 4 条 `sweep` 椅腿 |
-| 沙发 `sofa` | 底座、座垫、靠背（可后仰）、扶手：圆角盒；离地高时补短腿 |
-| 前台 `counter` | 俯视按高度分层（台面、矮台），每层轮廓（圆弧 + 折线）挤出；主体按几层截面做 `loft`，保留折面 |
-| 柜子 `cabinet`、立柱 `pillar`、杂物 `clutter` | 圆角盒；俯视不是矩形时用轮廓挤出 |
-| 圆的东西（边几、花盆、灯）`round`、绿植 `plant` | 按高度的半径剖面做 `lathe` |
+- 桌子 `table`：台面是圆角矩形 / 跑道形 / 圆形 / 带圆弧折线的 `extrude`（边缘倒圆）；
+  底座按台面下的投影块做圆柱、圆角盒或轮廓挤出，看不到时补 4 条腿；
+- 椅子 `chair`：座面 `extrude`（圆角）；靠背连扶手是逐层圆弧带的 `loft`，保留靠背弧度；
+  底座是转椅的立柱 + 4 爪 `sweep`，或 4 条 `sweep` 椅腿；
+- 沙发 `sofa`：底座、座垫、扶手是圆角盒；靠背是侧面轮廓（保留后仰和顶部圆角）沿长度方向的挤出；
+  离地高时补短腿；
+- 前台 `counter`：俯视按最高点高度分层（台面、矮台），每层轮廓（圆弧 + 折线）挤出；
+  主体再按高度分段挤出（踢脚线内收、上部外扩）；
+- 柜子 `cabinet`、立柱 `pillar`、杂物 `clutter`：圆角盒；俯视不是矩形或上下不一样宽时用分段的轮廓挤出；
+- 圆的东西（边几、花盆、灯）`round`、绿植 `plant`：按高度的半径剖面做 `lathe`。
 
 每个叶子形状带一个临时字段 `_part = {"name", "uv"}`：部件名和建议的贴图投影（`planar` / `cylindrical`），
 上色阶段（`fit_texture`）据此决定用纯色还是贴图，写出前去掉。
@@ -18,6 +20,7 @@
 
 from __future__ import annotations
 
+import itertools
 import math
 from dataclasses import dataclass, field
 from typing import Any
@@ -31,6 +34,7 @@ from .fit_measure import (
     fit_circle,
     fit_footprint,
     height_peaks,
+    is_convex,
     largest,
     occupancy,
     outline_polygon,
@@ -205,7 +209,7 @@ def _band_level(xz: np.ndarray, bin_deg: float = 12.0) -> list[float] | None:
     φ 从 −z 方向量起、逆时针为正（相对拟合的圆心）。"""
     phi = np.arctan2(xz[:, 0], -xz[:, 1])
     r = np.hypot(xz[:, 0], xz[:, 1])
-    nb = int(round(360 / bin_deg))
+    nb = round(360 / bin_deg)
     k = np.floor((phi + math.pi) / (2 * math.pi) * nb).astype(int) % nb
     rout = np.full(nb, np.nan)
     rin = np.full(nb, np.nan)
@@ -610,7 +614,9 @@ def fit_terrace(o: Local, *, cell: float = 0.03, max_levels: int = 4, name: str 
         else:
             shape = sh.extrude(fit.outline, top)
         if shape["type"] == "extrude":
-            shape["fillet"] = 0.01
+            shape["fillet"] = 0.01 if is_convex(shape["outline"]) else None
+            if shape["fillet"] is None:
+                del shape["fillet"]
         children.append(part(shape, f"{name}-{i + 1}", "cylindrical"))
     if not children:
         return fit_box(o)
@@ -700,7 +706,8 @@ def fit_box(o: Local, name: str = "body", uv: str = "cylindrical") -> dict[str, 
             )
             return sh.group([part(shape, name, uv)])
         shape = sh.extrude(fit.outline, h, xf=sh.transform(position=[0, bottom, 0]))
-        shape["fillet"] = 0.008
+        if is_convex(fit.outline):
+            shape["fillet"] = 0.008
         return sh.group([part(shape, name, uv)])
     lo, hi = xz.min(0), xz.max(0)
     shape = sh.box(
@@ -727,7 +734,7 @@ def fit_stack(
     m_all = occupancy(xz, cell, close=0, fill=False)
     edges = np.arange(bottom, top + 0.1, 0.1)
     masks = []
-    for a, b in zip(edges[:-1], edges[1:], strict=False):
+    for a, b in itertools.pairwise(edges):
         q = (y >= a) & (y < b)
         mk = np.zeros_like(m_all.mask)
         if q.sum():
@@ -777,7 +784,8 @@ def fit_stack(
             )
         else:
             shape = sh.extrude(fit.outline, y1 - y0, xf=sh.transform(position=[0, y0, 0]))
-            shape["fillet"] = 0.008
+            if is_convex(fit.outline):
+                shape["fillet"] = 0.008
         children.append(part(shape, f"{name}-{i + 1}", uv))
     if len(children) < 2:
         return None
@@ -794,7 +802,7 @@ def radial_profile(o: Local, n_max: int = 10) -> list[list[float]]:
         bottom = 0.0
     edges = np.linspace(bottom, top, int(np.clip((top - bottom) / 0.04, 4, 40)) + 1)
     prof = []
-    for a, b in zip(edges[:-1], edges[1:], strict=True):
+    for a, b in itertools.pairwise(edges):
         m = (y >= a) & (y < b)
         if m.sum() >= 5:
             prof.append([float(np.percentile(r[m], 90)), (a + b) / 2])
@@ -802,7 +810,7 @@ def radial_profile(o: Local, n_max: int = 10) -> list[list[float]]:
         return [[0.0, bottom], [0.1, bottom], [0.1, top], [0.0, top]]
     pr = np.array(prof)
     pr[:, 0] = ndimage.median_filter(pr[:, 0], size=3, mode="nearest")
-    pts = [[pr[0, 0], bottom]] + pr.tolist() + [[pr[-1, 0], top]]
+    pts = [[pr[0, 0], bottom], *pr.tolist(), [pr[-1, 0], top]]
     from .fit_measure import _dp
 
     arr = np.array(pts)

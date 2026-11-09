@@ -91,7 +91,8 @@ def scan_glb(mesh, path: str, max_tex: int = 4096) -> None:
         "material": w.material({"texture": "scan", "uv": "mesh"}),
     }
     doc = {
-        "asset": {"version": "2.0"}, "scene": 0, "scenes": [{"nodes": [0]}], "nodes": [{"name": "scan", "mesh": 0}],
+        "asset": {"version": "2.0"}, "scene": 0, "scenes": [{"nodes": [0]}],
+        "nodes": [{"name": "scan", "mesh": 0}],
         "meshes": [{"primitives": [prim]}], "materials": w.materials, "accessors": w.accessors,
         "bufferViews": w.views, "buffers": [{"byteLength": w.offset}], "images": w.images,
         "textures": [{"source": 0}], "extensionsUsed": ["KHR_materials_unlit"],
@@ -110,8 +111,8 @@ def scan_glb(mesh, path: str, max_tex: int = 4096) -> None:
 
 
 def zone_metric(mesh, objects: dict[str, dict], structure: dict[str, dict]) -> dict:
-    """第 3 轮的"家具区"口径：扫描表面（每平方米 300 点，y ≤ 2.4）落在家具包围盒 +5 厘米内、离地 2 厘米以上的，
-    到整个模型（结构 + 物体）的精确距离。"""
+    """第 3 轮的"家具区"口径：扫描表面（每平方米 300 点，y ≤ 2.4）落在家具包围盒 +5 厘米内、
+    离地 2 厘米以上的，到整个模型（结构 + 物体）的精确距离。"""
     P, _, _, _ = sample_surface(mesh, 300, seed=7)
     P = P[P[:, 1] <= 2.4]
     templates = {k: b["shape"] for k, b in objects.items() if b["kind"] == "template"}
@@ -191,7 +192,10 @@ def main() -> None:
     t1 = time.time()
     structure = st.extract_structure(mesh)
     t2 = time.time()
-    params = json.load(open(args.hints, encoding="utf-8")) if args.hints else None
+    params = None
+    if args.hints:
+        with open(args.hints, encoding="utf-8") as fh:
+            params = json.load(fh)
     res = reconstruct_objects(mesh, structure, params=params)
     t3 = time.time()
     s_entities, s_textures = structure_entities(structure)
