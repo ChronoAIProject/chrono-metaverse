@@ -5,7 +5,7 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 
 规格格式以 chrono-cd 的接口文档为准（`docs/protocol/api.md`、技能文件 `skills/chrono-cd/SKILL.md`），并对照了组织下已有应用（`omega/mathesis`、`integrations/frigate-events-test`）的实际配置。
 
-改 `app.json` 后先跑静态检查（持续集成里也跑）：`node infra/chrono-cd/check-app.mjs`。它检查处理服务的线程数和内存上限、接口服务的限流额度和可信地址头、README 的环境变量表是否列全、`infra/dev/up.sh` 是否设了同样的线程变量；测试在 `check-app.test.mjs`（`node --test infra/chrono-cd/*.test.mjs`）。
+改 `app.json` 后先跑静态检查（持续集成里也跑）：`node infra/chrono-cd/check-app.mjs`。它检查处理服务的线程数和内存上限、接口服务的限流额度和可信地址头、README 的环境变量表和密钥是否列全、`infra/dev/up.sh` 是否设了同样的线程变量，以及演示数据的种子（[`demo-seed.json`](demo-seed.json)）和接口服务的 `METAVERSE_DEMO_SEED` 是否一致、种子本身是否合法（第 8 步）；测试在 `check-app.test.mjs`（`node --test infra/chrono-cd/*.test.mjs`）。
 
 ## 1. 规格要点
 
@@ -37,9 +37,9 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 
 按 2026-11-09 查到的组织现有应用估算，已用约 2.8 核 / 5.3Gi / 11 个容器，放得下。部署前仍要按第 3 步实际查一次。
 
-### 环境变量（不含任何密钥）
+### 环境变量与密钥
 
-第一版**没有应用密钥**（没有 `secret_keys`）：数据库连接由插件注入，身份令牌只用 NyxID 公钥校验。
+只有一个应用密钥：接口服务的 `METAVERSE_DEMO_SHARE_TOKEN`（演示空间的分享令牌原文，在规格的 `secret_keys` 里声明，值用 `set_app_secrets` 设置，见第 5 步）。`env` 里没有任何密钥：数据库连接由插件注入，身份令牌只用 NyxID 公钥校验。
 
 `metaverse-api`（完整说明见 [`api/README.md`](../../api/README.md)）：
 
@@ -62,7 +62,11 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 | `PUBLIC_RATE_LIMIT_PER_MINUTE` / `PUBLIC_RATE_LIMIT_BURST` | `12000` / `2000` | 公开 JSON 接口的限流额度。**目前按网关地址计、所有访客共用**（见下面"公开接口限流"），所以比接口服务按单个访客设计的默认值（1200 / 200）高 10 倍 |
 | `PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE` / `PUBLIC_BLOB_RATE_LIMIT_BURST` | `120000` / `20000` | 区块和资源（`/api/public/chunks/`、`/assets/`）的限流额度，同上（默认 12000 / 2000） |
 | `TRUSTED_CLIENT_IP_HEADER` | **不设（待向平台确认）** | 可信的客户端地址请求头。确认之前不设，接口服务按 TCP 连接地址限流，连接地址是网关或 nginx 的地址（见下面"公开接口限流"） |
+| `METAVERSE_DEMO_SEED` | [`demo-seed.json`](demo-seed.json) 压缩成的一行 | 部署配置种子：接口服务启动、建好索引后在后台建演示空间 `chronoai-lobby` 并导入前厅扫描（第 8 步）。改种子时两处一起改，`check-app.mjs` 检查一致 |
+| `METAVERSE_DEMO_SHARE_TOKEN` | **密钥**（`secret_keys`，不在 `env` 里） | 演示空间的分享令牌原文，接口服务只存它的 sha256、不写日志；用 `set_app_secrets` 设置（第 5 步）。种子是凭链接查看（`unlisted`）时必须有，缺了接口服务启动失败 |
 | `RUST_LOG` | `info` | |
+
+种子要从 `scaniverse.com` 下载扫描（约 6MB），所以接口服务需要能访问公网（chrono-cd 默认 `egress` 允许）；下载的文件在内存里核对、打包，内存峰值约为文件总大小的两倍，`memory_limit` 1Gi 足够。
 
 #### 公开接口限流（待向平台确认可信的客户端地址头）
 
@@ -178,16 +182,33 @@ nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH \
 
 常见失败：`400 image_not_found`（标签不存在或还没构建完）、`400 image_unauthorized`（第 2 步没做）、`409 quota_exceeded`（第 3 步）、`409 service_name_taken`（服务名被组织里别的应用占用）。
 
-### 第 5 步：密钥
+规格里声明了密钥 `METAVERSE_DEMO_SHARE_TOKEN`：第一次提交时密钥还没设置，chrono-cd 返回 `422 missing_secret_keys`——这表示规格**已保存**、等密钥，接着做第 5 步，设置后 chrono-cd 立即应用。
 
-第一版不需要，跳过。以后确实要加密钥时：在规格里用 `secret_keys` 声明名字，值在**自己电脑上**写入，不要交给 AI（参数会留在对话记录里）：
+### 第 5 步：密钥（演示空间的分享令牌）
 
-```bash
-# secrets.json：{"SOME_KEY":"<值>"}，不要放进仓库，用完删除
-nyxid proxy request chrono-cd "$APP/services/metaverse-api/secrets?org_id=$ORG" \
-  --method PUT --data @secrets.json --output json
-rm secrets.json
-```
+只有一个：接口服务的 `METAVERSE_DEMO_SHARE_TOKEN`，演示空间 `chronoai-lobby`（凭链接查看）的分享令牌原文。接口服务只用它算 sha256 存进空间文档，不写日志；演示链接是 `/s/chronoai-lobby#share=<令牌>`（第 8 步）。
+
+1. 在自己电脑上生成（256 位随机数，base64url，43 个字符；接口服务要求 32–256 个 `A–Z a–z 0–9 - _`），存进密码管理器：
+
+   ```bash
+   openssl rand -base64 32 | tr '+/' '-_' | tr -d '='
+   ```
+
+2. 用 chrono-cd 的 `set_app_secrets` 设置（服务 `metaverse-api`），chrono-cd 会重新应用：
+
+   - Claude 会话里：让它调用 `chrono-cd__set_app_secrets`，参数 `project=metaverse`、`app=chrono-metaverse`、`service=metaverse-api`、`org_id=<ORG>`、`body={"METAVERSE_DEMO_SHARE_TOKEN": "<令牌>"}`。令牌会留在对话记录里；它本来就要放进分享出去的演示链接，只能读这个演示空间，可以接受。别的密钥不要这样做；
+   - 或者在自己电脑上用同一个接口（值不经过 AI）：
+
+     ```bash
+     # secrets.json：{"METAVERSE_DEMO_SHARE_TOKEN":"<令牌>"}，不要放进仓库，用完删除
+     nyxid proxy request chrono-cd "$APP/services/metaverse-api/secrets?org_id=$ORG" \
+       --method PUT --data @secrets.json --output json
+     rm secrets.json
+     ```
+
+令牌在空间**第一次建成时**写入（只存哈希）。之后改密钥不会改已有空间的令牌：要换令牌，NyxID 注册好以后用管理接口轮换（`POST /api/v1/admin/spaces/chronoai-lobby/share-tokens`，新令牌只返回一次），或者删掉空间让种子按新密钥重建（第 8 步）。
+
+以后再加别的密钥：在规格里用 `secret_keys` 声明名字，值同样用 `set_app_secrets` 写入，不要写进 `env` 或仓库（`get_app` 会把 `env` 原样返回给组织成员）。
 
 ### 第 6 步：查状态和日志
 
@@ -231,18 +252,50 @@ nyxid proxy request chrono-metaverse api/v1/spaces/front-hall --output json
 
 要用 agent key 的路径参数限制时，还要请平台管理员注册成目录服务并同步接口列表，再把目录服务的编号加进 `ALLOWED_NYX_SERVICE_IDS`（逗号分隔，过渡期新旧都留着）。
 
-### 第 8 步：导入演示数据（前厅）
+### 第 8 步：演示数据（部署配置种子，自动完成）
 
-1. 以组织 admin 身份建空间（管理接口，不进 AI 工具）。主人写组织的**规范编号**，不写 slug：
+写接口 `/api/v1` 只认 NyxID 身份令牌，第 7 步做完之前没法经接口建空间、上传扫描。所以演示空间由部署配置驱动（设计 9.2"部署配置种子是运维行为"）：[`demo-seed.json`](demo-seed.json) 压缩成一行放在接口服务的 `METAVERSE_DEMO_SEED`，接口服务每次启动、建好索引后在后台执行一次，**不经过任何网络接口**：
+
+1. 空间 `chronoai-lobby` 已存在：是种子以前建的、这个导入版本（`revision`）的任务也建过 → 什么都不做；不是种子建的（例如有人经管理接口建了同名空间）→ 也不碰；
+2. 从 Scaniverse 下载 `mesh.drc`、`tex.jpg`，核对大小和 sha256，打包成 zip（网格 + 贴图，和 Scaniverse 导出的一样）；不对就不建空间；
+3. 建空间：主人是 ChronoAI 组织，归属证据的依据是 `operator_seed`（核验人 `system:demo-seed`），凭链接查看，分享令牌是第 5 步设置的密钥（只存哈希）；第一次提交照常写 `_space` 锚点和通用方块表；
+4. 扫描登记成资源，插入 `scan_import` 任务（发起者 `system:demo-seed`）；处理服务领取后自动对齐、生成网页用模型、重建结构和物体（4 核机器实测约 1 分钟）。
+
+失败（下载不了、数据库暂时不可用）按 10 秒、30 秒、90 秒、270 秒重试，最后记错误日志，接口服务照常提供服务。多副本同时启动也只建一次（空间编号和任务编号都是唯一键）。
+
+**确认**（第 6 步的日志命令）：接口服务日志里有 `部署配置种子完成 … outcome=Created`（之后重启是 `AlreadyDone`），处理服务日志里有 `任务 job_… 结束：done`。然后打开演示链接：
+
+```
+https://<应用域名>/s/chronoai-lobby#share=<第 5 步的令牌>
+```
+
+不带令牌或令牌不对，公开接口一律 404。也可以只查头部（`seq` ≥ 2 说明扫描已导入）：
+
+```bash
+curl -s -H "Authorization: Share <令牌>" https://<应用域名>/api/public/spaces/chronoai-lobby/head
+```
+
+**物体提示的坐标**：种子里的 `hints`（物体中心、尺寸、类别）必须是处理服务 `scan_import` 实际对齐出来的空间坐标。`worker/scripts/lobby_hints.json` 是在 `reconstruct_lobby.py` 的坐标系里标的（对齐方法不同，前厅差约 29 厘米平移和 0.09° 倾斜），所以由 [`worker/scripts/demo_seed_hints.py`](../../worker/scripts/demo_seed_hints.py) 用处理服务的对齐换算后写进 `demo-seed.json`。本地实测：换算后家具区平均偏差 3.29 厘米（43 个物体）；不换算是 3.96 厘米，而且沙发、杂物被重复识别（61 个物体）。
+
+**重新导入**（换扫描、改提示、处理服务的重建改进了想重跑）：
+
+1. 改 `demo-seed.json`，把 `revision` 加一（换了扫描或对齐变了就先跑一遍 `demo_seed_hints.py`）；
+2. 同步 `app.json`：`node infra/dev/demo-seed.mjs compact infra/chrono-cd/demo-seed.json` 的输出就是 `METAVERSE_DEMO_SEED` 的值，再跑 `node infra/chrono-cd/check-app.mjs`；
+3. 只改这一项（滚动更新会重启接口服务，种子在同一个空间里再建一个导入任务，空间和演示链接不变）：
 
    ```bash
-   nyxid proxy request chrono-metaverse api/v1/admin/spaces --method POST --output json \
-     --data '{"id":"front-hall","name":"公司前厅","description":"演示空间","owner":{"kind":"org","id":"52aa284c-b5b2-49bd-9d12-79f24772dbd7"}}'
+   SEED=$(node infra/dev/demo-seed.mjs compact infra/chrono-cd/demo-seed.json)
+   nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json \
+     --data "$(jq -n --arg seed "$SEED" '{services:{"metaverse-api":{env:{METAVERSE_DEMO_SEED:$seed}}}}')"
    ```
 
-   返回里的 `shareToken.token` 只出现这一次，库里只存哈希。把它存进密码管理器，不要贴进对话或提交。
-2. 上传前厅扫描并导入：`metaverse init front-hall` 建工作区，再在工作区里 `metaverse scan <扫描文件>`（命令行见设计 10.1 和建造教程 [`docs/tutorials/build-space.md`](../../docs/tutorials/build-space.md)）。命令行会分片上传、发起 `scan_import` 任务；在 `GET /api/v1/spaces/front-hall/jobs/{job_id}` 看进度，处理服务的日志在第 6 步的命令里看。
-3. 打开 `https://<应用域名>/s/front-hall#share=<分享令牌>`，确认三种视图和时间轴。
+   没改配置、只想重新执行一次种子（例如上次下载失败、重试次数用完）：`restart_app` 重启接口服务即可，已经建过的不会重复。
+
+**从头重建**（连空间一起）：第 7 步做完以后，组织 admin 用管理接口删空间（`DELETE /api/v1/admin/spaces/chronoai-lobby?confirm=chronoai-lobby`），再重启接口服务，种子按当前配置和密钥重建（分享令牌是当时的密钥）。
+
+**不再要演示数据**：从 `app.json` 删掉 `METAVERSE_DEMO_SEED`（连同 `demo-seed.json`、`secret_keys` 里的令牌），已建的空间留着，要删用上面的管理接口。
+
+第 7 步做完以后，别的空间照常经接口建：以组织 admin 身份 `POST /api/v1/admin/spaces`（主人写组织的**规范编号**），再用命令行 `metaverse init <空间>`、`metaverse scan <扫描文件>`（设计 10.1、建造教程 [`docs/tutorials/build-space.md`](../../docs/tutorials/build-space.md)）。
 
 ## 3. 日常更新
 
@@ -278,6 +331,6 @@ nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --
 
 ## 5. 不要做的事
 
-- 不要把任何密钥写进 `env`（`get_app` 会原样返回给组织成员）或 `app.json`。
+- 不要把任何密钥写进 `env`（`get_app` 会原样返回给组织成员）或 `app.json`，包括演示空间的分享令牌 `METAVERSE_DEMO_SHARE_TOKEN`（它只在 `secret_keys` 里声明名字）。
 - 不要 `DELETE` 应用来"重来"：删除不可恢复，带 `purge=true` 还会删掉数据库。
 - 不要把 `ALLOWED_NYX_SERVICE_IDS` 改成别人的服务编号或放宽成多个不相干的编号：别人自建的连接指向本服务时，正是靠它返回 401（设计 9.1）。
