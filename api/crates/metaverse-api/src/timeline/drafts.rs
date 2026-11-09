@@ -32,12 +32,12 @@ use super::palette::{assign_final_ids, palette_value, parse_palette};
 use super::snapshot::{assemble, Audience};
 use super::state::{check_scope_only, ApplyError, Workspace};
 use super::views::SnapshotView;
-use super::writer::{actor, attach_keyframe, commit, entity_assets, record_of};
+use super::writer::{actor, attach_keyframe, commit, entity_asset_roles, entity_assets, record_of};
 use crate::auth::{Caller, Grant};
 use crate::error::ApiError;
 use crate::repo::{
-    CommitError, CommitOutcome, CommitPlan, DraftDoc, DraftStatus, OpsAsset, OpsRef,
-    ProvisionalBlock, Repo,
+    AssetRole, CommitError, CommitOutcome, CommitPlan, DraftDoc, DraftStatus, OpsAsset, OpsRef,
+    ProvisionalBlock, Repo, UnusableAsset,
 };
 
 /// 一个草稿最多的操作条数（内联 + 上传）。
@@ -46,7 +46,8 @@ pub const MAX_DRAFT_OPS: u64 = 100_000;
 pub const MAX_INLINE_OPS_BYTES: usize = 4 * 1024 * 1024;
 /// 提交里内联操作的上限（设计 5.2：约 1MB，超出就存成资源）。
 pub const MAX_COMMIT_INLINE_OPS_BYTES: usize = 1024 * 1024;
-/// ops 文件（可能 gzip 压缩）的大小上限。
+/// ops 文件（可能 gzip 压缩）的大小上限：接口服务处理时整份读入内存。ops 用途的上传上限
+/// `UPLOAD_MAX_OPS_BYTES` 不能超过它（配置校验），所以传得上去的文件都能应用。
 pub const MAX_OPS_FILE_BYTES: u64 = 64 * 1024 * 1024;
 /// ops 文件解压后的大小上限。
 pub const MAX_OPS_FILE_DECOMPRESSED: u64 = 256 * 1024 * 1024;
@@ -150,11 +151,11 @@ fn provisional_list(
     list
 }
 
-fn block_textures(block: &metaverse_core::ops::BlockDef, into: &mut BTreeSet<String>) {
+fn block_textures(block: &metaverse_core::ops::BlockDef, into: &mut BTreeSet<(String, AssetRole)>) {
     if let Some(texture) = &block.texture {
-        into.insert(texture.top.clone());
-        into.insert(texture.side.clone());
-        into.insert(texture.bottom.clone());
+        for hash in [&texture.top, &texture.side, &texture.bottom] {
+            into.insert((hash.clone(), AssetRole::Texture));
+        }
     }
 }
 
@@ -218,7 +219,7 @@ pub async fn append_ops(
     }
     // 结果记录。
     let mut records = Vec::new();
-    let mut assets: BTreeSet<String> = BTreeSet::new();
+    let mut assets: BTreeSet<(String, AssetRole)> = BTreeSet::new();
     let mut entity_results: BTreeMap<String, Option<String>> = draft
         .result_entities
         .iter()
@@ -227,7 +228,7 @@ pub async fn append_ops(
     for id in &touched.entities {
         let hash = match workspace.state.entities.get(id) {
             Some(body) => {
-                entity_assets(body, &mut assets);
+                entity_asset_roles(body, &mut assets);
                 let (hash, value) = record_of(RecordKind::Entity, grant.space_id(), body)?;
                 records.push((hash.clone(), "entity", value));
                 Some(hash)
@@ -256,24 +257,27 @@ pub async fn append_ops(
     for block in &provisional {
         block_textures(&block.block, &mut assets);
     }
-    // 物件模型和贴图只能引用本空间已登记、可以公开的资源（发布后登记到 assetRefs）。
-    let new_assets: Vec<String> = assets
-        .iter()
-        .filter(|hash| !draft.assets.contains(hash))
-        .cloned()
-        .collect();
-    let unusable = repo.unusable_assets(grant, &new_assets).await?;
+    // 物件模型和贴图只能按用途引用本空间的资源（发布后登记到 assetRefs、公开可读）：物件模型
+    // 必须是 model_import 处理后的版本，贴图必须是贴图。这一批碰过的物件和新增方块都重新检查
+    // （同一个哈希以前按别的用途引用过也一样）。
+    let wanted: Vec<(String, AssetRole)> = assets.iter().cloned().collect();
+    let unusable = repo.unusable_assets(grant, &wanted).await?;
     if !unusable.is_empty() {
         return Err(ApiError::new(
             axum::http::StatusCode::UNPROCESSABLE_ENTITY,
             "unknown_asset",
             format!(
-                "引用的资源不存在、不属于本空间，或是原始扫描/操作文件/脚本：{}",
-                unusable.join(", ")
+                "引用的资源不能这样用：{}",
+                unusable
+                    .iter()
+                    .map(UnusableAsset::describe)
+                    .collect::<Vec<_>>()
+                    .join("；")
             ),
         )
         .into());
     }
+    let new_assets: Vec<String> = assets.into_iter().map(|(hash, _)| hash).collect();
 
     repo.put_draft_chunks(grant, &draft.id, &new_chunks, draft.expires_at)
         .await?;

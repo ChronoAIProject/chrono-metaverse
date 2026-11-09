@@ -117,13 +117,18 @@ fn unix_now() -> i64 {
 
 /// 一份合法的身份令牌；每次调用都是新的 jti。
 pub fn identity(subject: &str) -> String {
+    identity_with(subject, &[])
+}
+
+/// 带 `permissions` 的身份令牌（测试功能级开关）。
+pub fn identity_with(subject: &str, permissions: &[&str]) -> String {
     let now = unix_now();
     Signer::shared().sign(&json!({
         "sub": subject, "iss": ISSUER, "aud": AUDIENCE,
         "iat": now, "exp": now + 60,
         "jti": uuid::Uuid::new_v4().to_string(),
         "nyx_service_id": SERVICE,
-        "permissions": [], "roles": [], "groups": []
+        "permissions": permissions, "roles": [], "groups": []
     }))
 }
 
@@ -321,6 +326,25 @@ impl TestApp {
             headers.push(("authorization", bearer.as_str()));
         }
         self.send(method, path, &headers, payload).await
+    }
+
+    /// 组织本身带着给定的 `permissions` 调用 `/api/v1`（测试功能级开关）。
+    pub async fn org_with(
+        &self,
+        permissions: &[&str],
+        method: Method,
+        path: &str,
+        body: Option<Value>,
+    ) -> Reply {
+        let token = identity_with(ORG, permissions);
+        let payload = body.map_or(Payload::None, Payload::Json);
+        self.send(
+            method,
+            path,
+            &[("x-nyxid-identity-token", token.as_str())],
+            payload,
+        )
+        .await
     }
 
     /// 组织本身（组织的 agent key）调用 `/api/v1`。

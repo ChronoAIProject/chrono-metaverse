@@ -491,11 +491,15 @@ impl Repo {
     /// 新建 `ops_from_upload` 任务记录：状态直接是 `running`，`attempt = maxAttempts = 1`，
     /// 处理服务的领取条件（`attempt < maxAttempts`、种类列表）不会选中它；租约过期后由
     /// 处理服务的回收逻辑标记为失败（接口服务进程在处理中途退出时）。
+    ///
+    /// `scope` 是草稿的路径范围（与 `create_job` 存的格式相同：`physical` 或 `plot:<编号>`），
+    /// 经地块路径只能查到本地块的任务，所以必须写上。
     #[allow(clippy::too_many_arguments)]
     pub async fn insert_ops_job(
         &self,
         grant: &Grant,
         job_id: &str,
+        scope: &PathScope,
         params: &Value,
         actor_sub: &str,
         actor_service: &str,
@@ -518,6 +522,7 @@ impl Repo {
                 "attempt": 1,
                 "maxAttempts": 1,
                 "actor": {"sub": actor_sub, "nyxServiceId": actor_service},
+                "scope": scope.to_string(),
                 "progress": {"opsApplied": 0},
                 "createdAt": now.to_rfc3339(),
                 "startedAt": now.to_rfc3339(),

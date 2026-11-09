@@ -30,6 +30,7 @@ use serde_json::{json, Value};
 use utoipa::ToSchema;
 
 use super::admin_spaces::check_text;
+use crate::auth::permissions::Capability;
 use crate::auth::{Caller, Grant, Purpose};
 use crate::error::{ApiError, ProblemDocument, PROBLEM_TYPE_PREFIX};
 use crate::repo::{DraftDoc, DraftStatus, NewPreview, OpsRef};
@@ -225,6 +226,18 @@ fn path_scope(plot_id: Option<String>) -> Result<PathScope, ApiError> {
     }
 }
 
+/// 草稿的写操作（建草稿、追加、从上传应用、预览、发布、丢弃）：功能级开关打开时先要求
+/// `metaverse:content:write`（与上传、扫描任务相同），再做资源级"管理"检查。
+async fn writable(state: &AppState, caller: &Caller, space_id: &str) -> Result<Grant, ApiError> {
+    state
+        .authorizer
+        .require_capability(caller, Capability::WriteContent)?;
+    state
+        .authorizer
+        .space(caller, space_id, Purpose::Manage)
+        .await
+}
+
 /// 按路径读草稿：经别的范围的路径访问一律 404（不暴露草稿是否存在）。
 async fn scoped_draft(
     state: &AppState,
@@ -278,10 +291,7 @@ async fn create(
     body: Bytes,
 ) -> Result<Response, ApiError> {
     let scope = path_scope(plot_id)?;
-    let grant = state
-        .authorizer
-        .space(&caller, &space_id, Purpose::Manage)
-        .await?;
+    let grant = writable(&state, &caller, &space_id).await?;
     let request: CreateDraftRequest = parse_optional(&body)?;
     let now = crate::now()?;
     ensure_genesis(&state.repo, &grant, &caller, now).await?;
@@ -489,10 +499,7 @@ async fn append(
     body: Result<Bytes, axum::extract::rejection::BytesRejection>,
 ) -> Result<Response, ApiError> {
     let scope = path_scope(plot_id)?;
-    let grant = state
-        .authorizer
-        .space(&caller, &space_id, Purpose::Manage)
-        .await?;
+    let grant = writable(&state, &caller, &space_id).await?;
     let body = body.map_err(|rejection| {
         if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE {
             ApiError::new(
@@ -622,10 +629,7 @@ async fn from_upload(
     body: Bytes,
 ) -> Result<Response, ApiError> {
     let scope = path_scope(plot_id)?;
-    let grant = state
-        .authorizer
-        .space(&caller, &space_id, Purpose::Manage)
-        .await?;
+    let grant = writable(&state, &caller, &space_id).await?;
     let request: OpsFromUploadRequest = parse_optional(&body)?;
     let (upload_id, asset_hash) = match (&request.upload_id, &request.asset_hash) {
         (Some(id), None) if !id.is_empty() && id.len() <= 128 => (Some(id.as_str()), None),
@@ -651,6 +655,27 @@ async fn from_upload(
                 "没有找到本空间已完成校验的 ops 上传",
             )
         })?;
+    // 处理时整份读入，超过上限的文件（例如调小上限之前传的）在返回 202 之前就拒绝，
+    // 不要等后台任务才失败。
+    match state.repo.asset_length(&grant, &upload.asset_hash).await? {
+        None => {
+            return Err(ApiError::new(
+                StatusCode::NOT_FOUND,
+                "not_found",
+                "这个 ops 上传的资源已经不存在（可能已被清理）",
+            ))
+        }
+        Some(length) if length > MAX_OPS_FILE_BYTES => {
+            return Err(ApiError::new(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "ops_file_too_large",
+                format!(
+                    "操作文件 {length} 字节，超过上限 {MAX_OPS_FILE_BYTES} 字节；请拆成几个文件分别上传和应用"
+                ),
+            ))
+        }
+        Some(_) => {}
+    }
     let job_id = uuid::Uuid::new_v4().simple().to_string();
     let now = crate::now()?;
     let params = json!({
@@ -663,6 +688,7 @@ async fn from_upload(
         .insert_ops_job(
             &grant,
             &job_id,
+            &draft.scope,
             &params,
             &caller.subject,
             &caller.service_id,
@@ -799,7 +825,7 @@ async fn process_ops_job(
     path = "/api/v1/spaces/{space_id}/drafts/{draft_id}/ops-from-upload",
     operation_id = "draft_ops_from_upload",
     tag = "drafts",
-    description = "大批量操作（异步）：把已上传的 ops 文件（NDJSON，每行一个操作，可 gzip 压缩，最多 10 万条）应用到实体区草稿。请求体 {uploadId} 或 {assetHash}。返回 202 和任务编号，进度和结果用 get_job 查询；任何一条不合法或越界，整份都不生效（任务失败并给出原因）。",
+    description = "大批量操作（异步）：把已上传的 ops 文件（NDJSON，每行一个操作，可 gzip 压缩，文件 ≤ 64MiB、解压后 ≤ 256MiB，最多 10 万条）应用到实体区草稿。请求体 {uploadId} 或 {assetHash}。返回 202 和任务编号，进度和结果用 get_job 查询；任何一条不合法或越界，整份都不生效（任务失败并给出原因）。",
     params(
         ("space_id" = String, Path, description = "空间编号"),
         ("draft_id" = String, Path, description = "草稿编号"),
@@ -811,6 +837,7 @@ async fn process_ops_job(
         (status = 403, description = "只有只读权限", body = ProblemDocument),
         (status = 404, description = "草稿或上传不存在", body = ProblemDocument),
         (status = 409, description = "草稿已发布", body = ProblemDocument),
+        (status = 413, description = "操作文件超过 64MiB", body = ProblemDocument),
         (status = 422, description = "请求体不合法", body = ProblemDocument),
     )
 )]
@@ -841,6 +868,7 @@ pub async fn draft_ops_from_upload(
         (status = 403, description = "只有只读权限", body = ProblemDocument),
         (status = 404, description = "草稿或上传不存在", body = ProblemDocument),
         (status = 409, description = "草稿已发布", body = ProblemDocument),
+        (status = 413, description = "操作文件超过 64MiB", body = ProblemDocument),
         (status = 422, description = "请求体不合法", body = ProblemDocument),
     )
 )]
@@ -887,10 +915,7 @@ async fn preview(
     body: Bytes,
 ) -> Result<Response, ApiError> {
     let scope = path_scope(plot_id)?;
-    let grant = state
-        .authorizer
-        .space(&caller, &space_id, Purpose::Manage)
-        .await?;
+    let grant = writable(&state, &caller, &space_id).await?;
     let request: PreviewRequest = parse_optional(&body)?;
     let ttl = request.ttl_seconds.unwrap_or(PREVIEW_TTL_DEFAULT);
     if !(60..=PREVIEW_TTL_MAX).contains(&ttl) {
@@ -1031,10 +1056,7 @@ async fn publish_draft_inner(
     body: Bytes,
 ) -> Result<Response, ApiError> {
     let scope = path_scope(plot_id)?;
-    let grant = state
-        .authorizer
-        .space(&caller, &space_id, Purpose::Manage)
-        .await?;
+    let grant = writable(&state, &caller, &space_id).await?;
     let request: PublishRequest = parse_optional(&body)?;
     let message = request.message.unwrap_or_else(|| "发布草稿".to_owned());
     check_text("message", &message, 2000, false)?;
@@ -1165,10 +1187,7 @@ async fn discard(
     draft_id: String,
 ) -> Result<Response, ApiError> {
     let scope = path_scope(plot_id)?;
-    let grant = state
-        .authorizer
-        .space(&caller, &space_id, Purpose::Manage)
-        .await?;
+    let grant = writable(&state, &caller, &space_id).await?;
     let draft = scoped_draft(&state, &grant, &scope, &draft_id).await?;
     if !state.repo.delete_draft(&grant, &draft.id).await? {
         return Err(ApiError::not_found());

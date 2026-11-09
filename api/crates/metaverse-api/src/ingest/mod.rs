@@ -5,7 +5,7 @@
 //! | `UPLOAD_MAX_SCAN_BYTES` | 1 GiB | 扫描（设计 6.1） |
 //! | `UPLOAD_MAX_MODEL_BYTES` | 50 MiB | 物件模型 |
 //! | `UPLOAD_MAX_TEXTURE_BYTES` | 50 MiB | 单张贴图的文件大小（与处理服务的上限相同） |
-//! | `UPLOAD_MAX_OPS_BYTES` | 256 MiB | 大批量操作（NDJSON，可 gzip） |
+//! | `UPLOAD_MAX_OPS_BYTES` | 64 MiB | 大批量操作（NDJSON，可 gzip）；不能超过接口服务处理时整份读入的上限 `MAX_OPS_FILE_BYTES`（64 MiB），否则启动失败 |
 //! | `UPLOAD_MAX_SCRIPT_BYTES` | 4 MiB | 建造脚本（纯文本） |
 //! | `UPLOAD_MAX_TEXTURE_SIDE` | 8192 | 图片单边像素上限（收到第 0 片时按文件头检查） |
 //! | `UPLOAD_SCAN_FORMATS` | `glb,drc,obj,zip` | 扫描用途接受的格式（zip = 模型 + 贴图，例如 Scaniverse 导出；单独的贴图走 texture 用途） |
@@ -25,6 +25,7 @@ use metaverse_core::scope::UploadPurpose;
 use tokio::sync::Semaphore;
 
 use crate::config::ConfigError;
+use crate::timeline::drafts::MAX_OPS_FILE_BYTES;
 
 pub mod formats;
 pub mod head_cache;
@@ -73,7 +74,8 @@ impl Default for IngestConfig {
             max_scan_bytes: 1 << 30,
             max_model_bytes: 50 << 20,
             max_texture_bytes: 50 << 20,
-            max_ops_bytes: 256 << 20,
+            // 处理时整份读入内存（解压后另有 256 MiB 上限），上传上限不能比它大。
+            max_ops_bytes: MAX_OPS_FILE_BYTES,
             max_script_bytes: 4 << 20,
             max_texture_side: 8192,
             scan_formats: MODEL_FORMATS.to_vec(),
@@ -130,7 +132,14 @@ impl IngestConfig {
                 1,
                 TIB,
             )?,
-            max_ops_bytes: number("UPLOAD_MAX_OPS_BYTES", defaults.max_ops_bytes, 1, TIB)?,
+            // 超过处理时的上限就能传上去却应用不了（ops-from-upload 和草稿展开都会失败），
+            // 所以配置大了直接启动失败。
+            max_ops_bytes: number(
+                "UPLOAD_MAX_OPS_BYTES",
+                defaults.max_ops_bytes,
+                1,
+                MAX_OPS_FILE_BYTES,
+            )?,
             max_script_bytes: number("UPLOAD_MAX_SCRIPT_BYTES", defaults.max_script_bytes, 1, TIB)?,
             max_texture_side: number(
                 "UPLOAD_MAX_TEXTURE_SIDE",
@@ -260,6 +269,9 @@ mod tests {
         assert_eq!(config, IngestConfig::default());
         assert_eq!(config.max_bytes(UploadPurpose::Scan), 1 << 30);
         assert_eq!(config.max_bytes(UploadPurpose::Model), 50 << 20);
+        // ops 的上传上限等于处理时整份读入的上限（64 MiB）。
+        assert_eq!(config.max_bytes(UploadPurpose::Ops), 64 << 20);
+        assert_eq!(config.max_bytes(UploadPurpose::Ops), MAX_OPS_FILE_BYTES);
         assert_eq!(
             config.formats(UploadPurpose::Ops),
             [UploadFormat::Ndjson, UploadFormat::Gzip]
@@ -278,6 +290,11 @@ mod tests {
         assert_eq!(config.max_scan_bytes, 2048);
         assert_eq!(config.model_formats, [UploadFormat::Glb]);
         assert_eq!(config.max_pending_jobs_per_space, 3);
+        // 调小可以。
+        let config = load(&[("UPLOAD_MAX_OPS_BYTES", "67108864")]).unwrap();
+        assert_eq!(config.max_ops_bytes, MAX_OPS_FILE_BYTES);
+        let config = load(&[("UPLOAD_MAX_OPS_BYTES", "1048576")]).unwrap();
+        assert_eq!(config.max_ops_bytes, 1 << 20);
         for (name, value) in [
             ("UPLOAD_MAX_SCAN_BYTES", "0"),
             ("UPLOAD_MAX_SCAN_BYTES", "lots"),
@@ -286,6 +303,9 @@ mod tests {
             ("UPLOAD_MODEL_FORMATS", "ndjson"),
             ("UPLOAD_TEXTURE_FORMATS", " , "),
             ("UPLOAD_MAX_CONCURRENT_PARTS", "0"),
+            // 超过处理时的上限（原来的 256 MiB 默认值）：传得上去却应用不了，启动失败。
+            ("UPLOAD_MAX_OPS_BYTES", "268435456"),
+            ("UPLOAD_MAX_OPS_BYTES", "67108865"),
         ] {
             assert!(
                 matches!(load(&[(name, value)]), Err(ConfigError::Invalid(n, _)) if n == name),

@@ -5,6 +5,8 @@
 //! 3. **凭组合的分享令牌**：`Authorization: Share <组合的分享令牌>` + 查询参数
 //!    `?universe=<组合编号>`。服务端校验令牌属于这个组合，并且该空间在相关时刻是组合成员：
 //!    - 按时刻（`state?at=`、`/head`、增量事件）：T 时刻是成员（取 `at ≤ T` 的最后一条修订）；
+//!    - 空间信息（不按时刻索引）：`[纪元, now]` 里某个时刻是成员；现在已不是成员时只给名称、
+//!      事件显示规则这类信息，不给离开之后的区域、地块、锚点；
 //!    - 按时间段（时间窗事件、密度、提交列表）：这段时间里某个时刻是成员；
 //!    - 按版本（快照 `?seq=`）：这个版本生效的时间段里某个时刻是成员。
 //!
@@ -62,6 +64,31 @@ pub async fn public_space_grant(
                 .public_space(space_id, share_token(headers))
                 .await
         }
+    }
+}
+
+/// 公开读某个空间不按时刻索引的信息（空间信息）。凭组合令牌时要求 `[纪元, now]` 里某个时刻
+/// 是成员（与不带时间段的提交列表相同）。返回凭据和"现在是否仍可见"：不经组合时总是 `true`；
+/// 经组合时表示该空间现在仍是组合成员。
+pub async fn public_space_grant_ever(
+    state: &AppState,
+    space_id: &str,
+    headers: &HeaderMap,
+    universe: Option<&str>,
+    now: Timestamp,
+) -> Result<(Grant, bool), ApiError> {
+    match universe_id(universe)? {
+        Some(universe_id) => {
+            state
+                .authorizer
+                .public_space_via_universe_ever(space_id, universe_id, share_token(headers), now)
+                .await
+        }
+        None => state
+            .authorizer
+            .public_space(space_id, share_token(headers))
+            .await
+            .map(|grant| (grant, true)),
     }
 }
 

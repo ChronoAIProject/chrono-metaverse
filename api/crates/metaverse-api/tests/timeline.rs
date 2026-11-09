@@ -118,6 +118,14 @@ async fn genesis_layout_drafts_preview_publish_and_reads() {
         .await;
     assert_eq!(view.status, StatusCode::OK, "{:?}", view.body);
     assert_eq!(view.header(header::CACHE_CONTROL), "no-store");
+    // 快照加空间名称和草稿信息（网站的 PreviewView）。
+    assert_eq!(view.body["spaceName"], "测试空间");
+    assert_eq!(
+        view.body["preview"],
+        json!({"draftId": draft_id, "rev": 1, "baseSeq": view.body["seq"], "scope": "physical",
+               "expiresAt": preview.body["expiresAt"]})
+    );
+    assert_eq!(view.body["spaceId"], SPACE);
     assert_eq!(ids(&view.body["anchors"], "anchorId"), ["_space", "t1"]);
     assert_eq!(ids(&view.body["entities"], "id"), ["counter-01"]);
     let draft_chunk = view.body["chunks"][0]["hash"].as_str().unwrap().to_owned();
@@ -964,6 +972,180 @@ async fn ops_from_upload_runs_in_process_and_publishes_with_ops_ref() {
 }
 
 #[tokio::test]
+async fn ops_from_upload_rejects_oversized_or_missing_files_before_queueing() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    app.define_layout(SPACE).await;
+    let path = draft_path(
+        SPACE,
+        &new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await,
+    );
+    let ops = json!({"op": "fill", "box": [0, 0, 0, 1, 1, 1], "block": 2}).to_string();
+    // 调小上限之前传的大文件：资源长度超过 64MiB（只改登记的长度模拟），202 之前就 413。
+    let (big_upload, big_hash) = app.put_ops_upload(SPACE, ops.as_bytes()).await;
+    app.collection("assets.files")
+        .update_one(
+            doc! {"filename": &big_hash},
+            doc! {"$set": {"length": (64_i64 << 20) + 1}},
+        )
+        .await
+        .unwrap();
+    let reply = app
+        .org(
+            Method::POST,
+            &format!("{path}/ops-from-upload"),
+            Some(json!({"uploadId": big_upload})),
+        )
+        .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "{:?}",
+        reply.body
+    );
+    assert_eq!(reply.body["code"], "ops_file_too_large");
+    // 资源已被清理：404。
+    app.collection("assets.files")
+        .delete_one(doc! {"filename": &big_hash})
+        .await
+        .unwrap();
+    let reply = app
+        .org(
+            Method::POST,
+            &format!("{path}/ops-from-upload"),
+            Some(json!({"assetHash": big_hash})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND, "{:?}", reply.body);
+    // 两次都没有建任务。
+    assert_eq!(
+        app.collection("jobs")
+            .count_documents(doc! {"kind": "ops_from_upload"})
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn plot_ops_from_upload_job_is_visible_through_its_plot_path_with_progress() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    app.define_layout(SPACE).await;
+    let plot_draft = new_draft(&app, &format!("/api/v1/spaces/{SPACE}/plots/p1/drafts")).await;
+    let plot_path = plot_draft_path(SPACE, "p1", &plot_draft);
+    let mut ndjson = String::new();
+    for i in 0..3 {
+        ndjson.push_str(
+            &json!({"op": "fill", "box": [200 + i, 0, 0, 201 + i, 1, 1], "block": 2}).to_string(),
+        );
+        ndjson.push('\n');
+    }
+    let (upload_id, _) = app.put_ops_upload(SPACE, ndjson.as_bytes()).await;
+    let reply = app
+        .org(
+            Method::POST,
+            &format!("{plot_path}/ops-from-upload"),
+            Some(json!({"uploadId": upload_id})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
+    let job_id = reply.body["jobId"].as_str().unwrap().to_owned();
+    let stored = app.wait_job(&job_id).await;
+    assert_eq!(stored.get_str("status").unwrap(), "done", "{stored:?}");
+    // 任务记录带草稿的范围，和 create_job 存的格式相同。
+    assert_eq!(stored.get_str("scope").unwrap(), "plot:p1");
+
+    // 地块路径查得到，带进度。
+    let job = app
+        .org(
+            Method::GET,
+            &format!("/api/v1/spaces/{SPACE}/plots/p1/jobs/{job_id}"),
+            None,
+        )
+        .await;
+    assert_eq!(job.status, StatusCode::OK, "{:?}", job.body);
+    assert_eq!(job.body["kind"], "ops_from_upload");
+    assert_eq!(job.body["scope"], "plot:p1");
+    assert_eq!(
+        job.body["progress"],
+        json!({"opsApplied": 3, "opsTotal": 3})
+    );
+    // 地块草稿的预览带范围 plot:p1 和应用后的 rev。
+    let preview = app
+        .org(Method::POST, &format!("{plot_path}/preview"), None)
+        .await;
+    assert_eq!(preview.status, StatusCode::CREATED, "{:?}", preview.body);
+    let view = app
+        .public(
+            "/api/public/previews",
+            Some(&format!(
+                "Preview {}",
+                preview.body["token"].as_str().unwrap()
+            )),
+        )
+        .await;
+    assert_eq!(view.status, StatusCode::OK, "{:?}", view.body);
+    assert_eq!(view.body["preview"]["scope"], "plot:p1");
+    assert_eq!(view.body["preview"]["draftId"], plot_draft.as_str());
+    assert_eq!(view.body["preview"]["rev"], 1);
+    let list = app
+        .org(
+            Method::GET,
+            &format!("/api/v1/spaces/{SPACE}/plots/p1/jobs"),
+            None,
+        )
+        .await;
+    assert_eq!(list.status, StatusCode::OK);
+    assert!(ids(&list.body["items"], "id").contains(&job_id));
+    // 实体区路径看得到全部任务。
+    let job = app
+        .org(
+            Method::GET,
+            &format!("/api/v1/spaces/{SPACE}/jobs/{job_id}"),
+            None,
+        )
+        .await;
+    assert_eq!(job.status, StatusCode::OK);
+
+    // 实体区草稿的任务经地块路径查不到。
+    let physical = new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await;
+    let ops = json!({"op": "fill", "box": [0, 0, 0, 1, 1, 1], "block": 2}).to_string();
+    let (upload_id, _) = app.put_ops_upload(SPACE, ops.as_bytes()).await;
+    let reply = app
+        .org(
+            Method::POST,
+            &format!("{}/ops-from-upload", draft_path(SPACE, &physical)),
+            Some(json!({"uploadId": upload_id})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
+    let physical_job = reply.body["jobId"].as_str().unwrap().to_owned();
+    let stored = app.wait_job(&physical_job).await;
+    assert_eq!(stored.get_str("scope").unwrap(), "physical");
+    let reply = app
+        .org(
+            Method::GET,
+            &format!("/api/v1/spaces/{SPACE}/plots/p1/jobs/{physical_job}"),
+            None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND);
+    let list = app
+        .org(
+            Method::GET,
+            &format!("/api/v1/spaces/{SPACE}/plots/p1/jobs"),
+            None,
+        )
+        .await;
+    assert!(!ids(&list.body["items"], "id").contains(&physical_job));
+}
+
+#[tokio::test]
 async fn admin_settings_tokens_and_deletion() {
     let Some(app) = TestApp::start().await else {
         return;
@@ -1446,4 +1628,438 @@ async fn draft_assets_must_belong_to_the_space_and_become_public_on_publish() {
         .unwrap()
         .unwrap();
     assert_eq!(registered.get_str("commitId").unwrap(), commit_id);
+}
+
+/// 功能级开关打开时（`METAVERSE_REQUIRE_PERMISSIONS=true`），草稿的全部写操作和区域都要求
+/// `metaverse:content:write`，事件类型和抹除要求 `metaverse:event:write`；读草稿不要求。
+#[tokio::test]
+async fn draft_writes_require_content_write_when_permissions_are_enforced() {
+    let Some(app) = TestApp::start_with_env(&[("METAVERSE_REQUIRE_PERMISSIONS", "true")]).await
+    else {
+        return;
+    };
+    const CREATE: &str = "metaverse:space:create";
+    const CONTENT: &str = "metaverse:content:write";
+    const EVENTS: &str = "metaverse:event:write";
+    let reply = app
+        .org_with(
+            &[CREATE],
+            Method::POST,
+            "/api/v1/admin/spaces",
+            Some(json!({"id": SPACE, "name": "测试空间", "owner": {"kind": "org", "id": ORG}})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::CREATED, "{:?}", reply.body);
+    let layout = json!({
+        "regions": [{"id": "hall", "kind": "physical", "boxes": [[0, 0, 0, 200, 60, 200]]}],
+        "plots": []
+    });
+    let layout_path = format!("/api/v1/admin/spaces/{SPACE}/layout");
+    let reply = app
+        .org_with(&[], Method::PUT, &layout_path, Some(layout.clone()))
+        .await;
+    assert_eq!(reply.status, StatusCode::FORBIDDEN);
+    let reply = app
+        .org_with(&[CONTENT], Method::PUT, &layout_path, Some(layout))
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+
+    // 建草稿。
+    let drafts = format!("/api/v1/spaces/{SPACE}/drafts");
+    let reply = app.org_with(&[], Method::POST, &drafts, None).await;
+    assert_eq!(reply.status, StatusCode::FORBIDDEN);
+    let reply = app.org_with(&[CONTENT], Method::POST, &drafts, None).await;
+    assert_eq!(reply.status, StatusCode::CREATED, "{:?}", reply.body);
+    let path = draft_path(SPACE, reply.body["id"].as_str().unwrap());
+    // 读草稿不要求能力。
+    assert_eq!(
+        app.org_with(&[], Method::GET, &path, None).await.status,
+        StatusCode::OK
+    );
+    // 追加、从上传应用、预览、发布、丢弃：没有 content:write 一律 403，草稿不变。
+    let ops = json!({"ops": [{"op": "fill", "box": [0, 0, 0, 1, 1, 1], "block": 2}]});
+    let (upload_id, _) = app
+        .put_ops_upload(SPACE, ops["ops"][0].to_string().as_bytes())
+        .await;
+    for (method, suffix, body) in [
+        (Method::POST, "/ops", Some(ops.clone())),
+        (
+            Method::POST,
+            "/ops-from-upload",
+            Some(json!({"uploadId": upload_id})),
+        ),
+        (Method::POST, "/preview", None),
+        (Method::POST, "/publish", None),
+        (Method::DELETE, "", None),
+    ] {
+        let reply = app
+            .org_with(&[EVENTS], method.clone(), &format!("{path}{suffix}"), body)
+            .await;
+        assert_eq!(reply.status, StatusCode::FORBIDDEN, "{method} {suffix}");
+    }
+    assert_eq!(
+        app.org_with(&[], Method::GET, &path, None).await.body["rev"],
+        0
+    );
+    let reply = app
+        .org_with(&[CONTENT], Method::POST, &format!("{path}/ops"), Some(ops))
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let reply = app
+        .org_with(&[CONTENT], Method::POST, &format!("{path}/preview"), None)
+        .await;
+    assert_eq!(reply.status, StatusCode::CREATED, "{:?}", reply.body);
+    let reply = app
+        .org_with(&[CONTENT], Method::POST, &format!("{path}/publish"), None)
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let reply = app.org_with(&[CONTENT], Method::POST, &drafts, None).await;
+    let second = draft_path(SPACE, reply.body["id"].as_str().unwrap());
+    let reply = app
+        .org_with(&[CONTENT], Method::DELETE, &second, None)
+        .await;
+    assert_eq!(reply.status, StatusCode::NO_CONTENT);
+
+    // 事件类型和抹除：要求 event:write（content:write 不够）。
+    let event_types = format!("/api/v1/admin/spaces/{SPACE}/event-types");
+    let definition = json!({"type": "door.open", "schema": {"type": "object"},
+        "defaultVisibility": "public", "display": {"kind": "highlight"}});
+    let reply = app
+        .org_with(
+            &[CONTENT],
+            Method::POST,
+            &event_types,
+            Some(definition.clone()),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::FORBIDDEN);
+    let reply = app
+        .org_with(&[EVENTS], Method::POST, &event_types, Some(definition))
+        .await;
+    assert_eq!(reply.status, StatusCode::CREATED, "{:?}", reply.body);
+    let redact = format!("/api/v1/admin/spaces/{SPACE}/events/ev_missing/redact");
+    let reply = app.org_with(&[CONTENT], Method::POST, &redact, None).await;
+    assert_eq!(reply.status, StatusCode::FORBIDDEN);
+    let reply = app.org_with(&[EVENTS], Method::POST, &redact, None).await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND);
+}
+
+/// 物件模型只能引用 model_import 处理后的版本（设计 4.4、6.1），贴图只能是贴图；资源按内容
+/// 全局去重，本空间上传过或导入过的同一份内容也算本空间的。
+#[tokio::test]
+async fn draft_assets_are_checked_by_role_and_by_space_ownership() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    app.define_layout(SPACE).await;
+    let set_metadata = |hash: String, metadata: mongodb::bson::Document| {
+        let files = app.collection("assets.files");
+        async move {
+            files
+                .update_one(doc! {"filename": &hash}, doc! {"$set": metadata})
+                .await
+                .unwrap();
+        }
+    };
+    // 原始的 model 用途上传（处理服务登记时 kind = 用途、带 uploadId）。
+    let raw = app
+        .put_space_asset(SPACE, b"glTF raw upload", "model/gltf-binary", "model")
+        .await;
+    set_metadata(raw.clone(), doc! {"metadata.uploadId": "up_raw"}).await;
+    // model_import 重新导出的模型（kind = model、带 sourceHash）。
+    let processed = app
+        .put_space_asset(SPACE, b"glTF processed", "model/gltf-binary", "model")
+        .await;
+    set_metadata(processed.clone(), doc! {"metadata.sourceHash": &raw}).await;
+    let texture = app
+        .put_space_asset(SPACE, b"\x89PNG texture", "image/png", "texture")
+        .await;
+    let web_model = app
+        .put_space_asset(SPACE, b"glTF web model", "model/gltf-binary", "web_model")
+        .await;
+    let place = |id: &str, model: &str| {
+        json!([{"op": "placeEntity", "entity": {"entityId": id, "layer": "ext", "kind": "object",
+            "assetHash": model, "bounds": {"min": [1, 0, 1], "max": [1.5, 0.5, 1.5]}}}])
+    };
+    let rug = |id: &str, texture: &str| {
+        json!([{"op": "placeEntity", "entity": {"entityId": id, "layer": "ext", "kind": "object",
+            "shape": {"type": "box", "size": [1, 0.02, 1], "transform": {"position": [2, 0, 2]},
+                      "material": {"texture": texture, "uv": "planar"}},
+            "bounds": {"min": [1.5, 0, 1.5], "max": [2.5, 0.02, 2.5]}}}])
+    };
+    let path = draft_path(
+        SPACE,
+        &new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await,
+    );
+    // 原始模型上传：422，并提示先导入。
+    let reply = append(&app, &path, place("lamp", &raw)).await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(reply.body["code"], "unknown_asset");
+    assert!(
+        reply.body["detail"]
+            .as_str()
+            .unwrap()
+            .contains("import_model"),
+        "{:?}",
+        reply.body
+    );
+    // 贴图、网页用模型当物件模型；处理后的模型当贴图：422。
+    for ops in [
+        place("lamp", &texture),
+        place("lamp", &web_model),
+        rug("rug", &processed),
+    ] {
+        let reply = append(&app, &path, ops).await;
+        assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(reply.body["code"], "unknown_asset");
+    }
+    assert_eq!(app.org(Method::GET, &path, None).await.body["rev"], 0);
+    // 处理后的模型和贴图：可以。
+    let reply = append(&app, &path, place("lamp", &processed)).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let reply = append(&app, &path, rug("rug", &texture)).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+
+    // 别的空间先登记了同一份内容（metadata.spaceId 是别的空间）：
+    // 本空间有完成的上传或 model_import 任务就算本空间的，否则 422。
+    let shared_texture = app
+        .put_space_asset(
+            "other-space",
+            b"\xff\xd8\xff shared",
+            "image/jpeg",
+            "texture",
+        )
+        .await;
+    let shared_model = app
+        .put_space_asset(
+            "other-space",
+            b"glTF shared chair",
+            "model/gltf-binary",
+            "model",
+        )
+        .await;
+    set_metadata(
+        shared_model.clone(),
+        doc! {"metadata.sourceHash": "f".repeat(64)},
+    )
+    .await;
+    for ops in [place("chair", &shared_model), rug("mat", &shared_texture)] {
+        let reply = append(&app, &path, ops).await;
+        assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            reply.body["detail"]
+                .as_str()
+                .unwrap()
+                .contains("不属于本空间"),
+            "{:?}",
+            reply.body
+        );
+    }
+    let owner = doc! {"kind": "org", "id": ORG};
+    app.collection("uploads")
+        .insert_one(doc! {
+            "_id": "up_shared_texture", "spaceId": SPACE, "owner": owner.clone(),
+            "purpose": "texture", "status": "done", "assetHash": &shared_texture,
+            "reused": true, "createdAt": "2026-01-01T00:00:00.000Z",
+        })
+        .await
+        .unwrap();
+    app.collection("jobs")
+        .insert_one(doc! {
+            "_id": "job_shared_model", "spaceId": SPACE, "owner": owner.clone(),
+            "kind": "model_import", "status": "done", "params": {"assetHash": "f".repeat(64)},
+            "result": {"modelHash": &shared_model, "sourceHash": "f".repeat(64)},
+            "attempt": 1, "maxAttempts": 3, "createdAt": "2026-01-01T00:00:00.000Z",
+        })
+        .await
+        .unwrap();
+    // 失败的任务、别的空间的上传不算。
+    let foreign_texture = app
+        .put_space_asset(
+            "other-space",
+            b"\xff\xd8\xff not ours",
+            "image/jpeg",
+            "texture",
+        )
+        .await;
+    app.collection("uploads")
+        .insert_one(doc! {
+            "_id": "up_failed", "spaceId": SPACE, "owner": owner.clone(),
+            "purpose": "texture", "status": "failed", "assetHash": &foreign_texture,
+            "createdAt": "2026-01-01T00:00:00.000Z",
+        })
+        .await
+        .unwrap();
+    let reply = append(&app, &path, rug("doormat", &foreign_texture)).await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let reply = append(&app, &path, place("chair", &shared_model)).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let reply = append(&app, &path, rug("mat", &shared_texture)).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+
+    // 发布后登记到 assetRefs，公开可读。
+    let reply = app
+        .org(Method::POST, &format!("{path}/publish"), None)
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    for hash in [&processed, &texture, &shared_model, &shared_texture] {
+        let reply = app
+            .public(&format!("/api/public/assets/{hash}.bin"), None)
+            .await;
+        assert_eq!(reply.status, StatusCode::OK, "{hash}");
+    }
+    assert_eq!(
+        app.public(&format!("/api/public/assets/{raw}.bin"), None)
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+}
+
+/// `/api/v1` 的资源下载（设计 8.2：原始扫描、大块操作文件和脚本只能由有权限的调用者经
+/// `/api/v1` 下载；命令行 pull 用它下载网页用模型）。
+#[tokio::test]
+async fn v1_asset_download_is_limited_to_the_space_and_its_readers() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    let scan_bytes = b"DRACO raw scan bytes".to_vec();
+    let scan = app
+        .put_space_asset(SPACE, &scan_bytes, "application/x-draco", "scan")
+        .await;
+    let web_bytes: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
+    let web_model = app
+        .put_asset(&web_bytes, "model/gltf-binary", "web_model")
+        .await;
+    app.register_asset_ref(SPACE, &web_model).await;
+    let foreign = app
+        .put_space_asset(
+            "other-space",
+            b"someone else's scan",
+            "application/x-draco",
+            "scan",
+        )
+        .await;
+    // 别的空间先登记的同一份内容，本空间有完成的上传：算本空间的。
+    let shared = app
+        .put_space_asset(
+            "other-space",
+            b"ops shared by content",
+            "application/x-ndjson",
+            "ops",
+        )
+        .await;
+    app.collection("uploads")
+        .insert_one(doc! {
+            "_id": "up_shared_ops", "spaceId": SPACE, "owner": {"kind": "org", "id": ORG},
+            "purpose": "ops", "status": "done", "assetHash": &shared, "reused": true,
+            "createdAt": "2026-01-01T00:00:00.000Z",
+        })
+        .await
+        .unwrap();
+    let path = |hash: &str| format!("/api/v1/spaces/{SPACE}/assets/{hash}");
+
+    // 主人：原始扫描（不在 assetRefs 里，公开接口读不到）。
+    let reply = app.org(Method::GET, &path(&scan), None).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(reply.bytes, scan_bytes);
+    assert_eq!(
+        reply.header(header::CONTENT_TYPE),
+        "application/octet-stream"
+    );
+    assert_eq!(reply.header(header::X_CONTENT_TYPE_OPTIONS), "nosniff");
+    assert_eq!(reply.header(header::CACHE_CONTROL), "private, no-store");
+    assert_eq!(
+        app.public(&format!("/api/public/assets/{scan}.bin"), None)
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    // 网页用模型：类型按白名单固定，支持分段下载（跨数据块）。
+    let reply = app.org(Method::GET, &path(&web_model), None).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(reply.bytes, web_bytes);
+    assert_eq!(reply.header(header::CONTENT_TYPE), "model/gltf-binary");
+    let token = timeline_support::identity(ORG);
+    let reply = app
+        .send(
+            Method::GET,
+            &path(&web_model),
+            &[
+                ("x-nyxid-identity-token", token.as_str()),
+                ("range", "bytes=262140-262149"),
+            ],
+            Payload::None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::PARTIAL_CONTENT);
+    assert_eq!(reply.bytes, web_bytes[262_140..262_150]);
+    assert_eq!(
+        reply.header(header::CONTENT_RANGE),
+        format!("bytes 262140-262149/{}", web_bytes.len())
+    );
+    // 复用的上传。
+    let reply = app.org(Method::GET, &path(&shared), None).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(&reply.bytes[..], b"ops shared by content");
+    // 本空间提交里引用过的（发布时存成资源的大块操作，内容和别的空间相同）。
+    let committed = app
+        .put_space_asset(
+            "other-space",
+            b"big ops in a commit",
+            "application/x-ndjson",
+            "ops",
+        )
+        .await;
+    assert_eq!(
+        app.org(Method::GET, &path(&committed), None).await.status,
+        StatusCode::NOT_FOUND
+    );
+    app.collection("commits")
+        .insert_one(doc! {
+            "_id": "c_with_ops_ref", "spaceId": SPACE, "owner": {"kind": "org", "id": ORG},
+            "seq": 999_i64, "at": "2026-01-01T00:00:00.000Z", "message": "大块操作",
+            "opsRef": &committed,
+        })
+        .await
+        .unwrap();
+    let reply = app.org(Method::GET, &path(&committed), None).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(&reply.bytes[..], b"big ops in a commit");
+
+    // 组织成员只读也能下载。
+    let reply = app
+        .v1(
+            Method::GET,
+            &path(&scan),
+            "bob",
+            Some("member-token"),
+            Payload::None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    // 陌生人：404。
+    let reply = app
+        .v1(
+            Method::GET,
+            &path(&scan),
+            "eve",
+            Some("stranger-token"),
+            Payload::None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND);
+    // 别的空间的资源、不存在的资源、哈希格式不对：404。
+    for hash in [foreign.clone(), "d".repeat(64), "ABC".to_owned()] {
+        let reply = app.org(Method::GET, &path(&hash), None).await;
+        assert_eq!(reply.status, StatusCode::NOT_FOUND, "{hash}");
+        assert_eq!(reply.header(header::CACHE_CONTROL), "no-store");
+    }
+    // 没有身份令牌：401。
+    assert_eq!(
+        app.public(&path(&scan), None).await.status,
+        StatusCode::UNAUTHORIZED
+    );
 }

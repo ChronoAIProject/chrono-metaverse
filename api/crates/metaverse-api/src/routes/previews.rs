@@ -13,9 +13,12 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use metaverse_core::Timestamp;
+use serde::Serialize;
+use utoipa::ToSchema;
 
 use super::blob_response::{asset_response, chunk_response, path_hash};
-use crate::auth::Grant;
+use crate::auth::{Grant, PreviewTarget};
 use crate::error::{ApiError, ProblemDocument};
 use crate::public::headers::{preview_token, NO_STORE};
 use crate::repo::{DraftDoc, DraftStatus};
@@ -23,8 +26,44 @@ use crate::timeline::drafts::preview_snapshot;
 use crate::timeline::views::SnapshotView;
 use crate::AppState;
 
+/// 预览的是哪个草稿修订（设计 5.6：预览令牌绑定 {空间, 草稿, rev}，给看预览的人确认）。
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewInfoView {
+    pub draft_id: String,
+    /// 令牌绑定的草稿修订。
+    pub rev: u64,
+    /// 草稿基于的版本（与快照的 `seq` 相同）。
+    pub base_seq: u64,
+    /// 草稿的路径范围：`physical` 或 `plot:<编号>`。
+    pub scope: String,
+    /// 这个预览令牌的过期时间。
+    #[schema(value_type = String, format = DateTime)]
+    pub expires_at: Timestamp,
+}
+
+/// 预览响应：快照（形状同公开快照）加空间名称和草稿信息（网站 `PreviewView`）。
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewSnapshotView {
+    #[serde(flatten)]
+    pub snapshot: SnapshotView,
+    /// 空间名称（预览页标题用）。
+    pub space_name: String,
+    pub preview: PreviewInfoView,
+}
+
 /// 校验预览令牌，读出它绑定的草稿版本。
 async fn previewed(state: &AppState, headers: &HeaderMap) -> Result<(Grant, DraftDoc), ApiError> {
+    previewed_with_target(state, headers)
+        .await
+        .map(|(grant, draft, _)| (grant, draft))
+}
+
+async fn previewed_with_target(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<(Grant, DraftDoc, PreviewTarget), ApiError> {
     let now = crate::now()?;
     let (grant, target) = state
         .authorizer
@@ -36,7 +75,7 @@ async fn previewed(state: &AppState, headers: &HeaderMap) -> Result<(Grant, Draf
         .await?
         .filter(|draft| draft.status == DraftStatus::Open && draft.rev == target.rev)
         .ok_or_else(ApiError::not_found)?;
-    Ok((grant, draft))
+    Ok((grant, draft, target))
 }
 
 #[utoipa::path(
@@ -44,10 +83,10 @@ async fn previewed(state: &AppState, headers: &HeaderMap) -> Result<(Grant, Draf
     path = "/api/public/previews",
     operation_id = "get_preview",
     tag = "public",
-    description = "草稿预览：基础版本叠加草稿结果后的快照（形状同公开快照，只含公开锚点；seq 是草稿的基础版本）。令牌放在 `Authorization: Preview <令牌>` 里；响应不缓存。",
+    description = "草稿预览：基础版本叠加草稿结果后的快照（形状同公开快照，只含公开锚点；seq 是草稿的基础版本），另带空间名称 spaceName 和草稿信息 preview: {draftId, rev, baseSeq, scope, expiresAt}。令牌放在 `Authorization: Preview <令牌>` 里；响应不缓存。",
     params(("Authorization" = String, Header, description = "`Preview <预览令牌>`")),
     responses(
-        (status = 200, description = "预览快照", body = SnapshotView),
+        (status = 200, description = "预览快照", body = PreviewSnapshotView),
         (status = 404, description = "令牌无效、过期，或草稿已变化", body = ProblemDocument),
     )
 )]
@@ -55,9 +94,25 @@ pub async fn get_preview(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
-    let (grant, draft) = previewed(&state, &headers).await?;
+    let (grant, draft, target) = previewed_with_target(&state, &headers).await?;
+    let space = state
+        .repo
+        .space(&grant)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
     let snapshot = preview_snapshot(&state.repo, &grant, &draft).await?;
-    let mut response = Json(snapshot).into_response();
+    let view = PreviewSnapshotView {
+        snapshot,
+        space_name: space.name,
+        preview: PreviewInfoView {
+            draft_id: draft.id.clone(),
+            rev: draft.rev,
+            base_seq: draft.base_seq,
+            scope: draft.scope.to_string(),
+            expires_at: target.expires_at,
+        },
+    };
+    let mut response = Json(view).into_response();
     response
         .headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static(NO_STORE));

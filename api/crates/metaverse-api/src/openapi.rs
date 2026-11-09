@@ -72,6 +72,7 @@ use utoipa::{
         crate::routes::timeline::list_timeline,
         crate::routes::timeline::get_snapshot,
         crate::routes::timeline::get_chunk,
+        crate::routes::timeline::get_asset,
         crate::routes::timeline::get_region_content,
         crate::routes::drafts::create_draft,
         crate::routes::drafts::create_plot_draft,
@@ -252,6 +253,24 @@ mod tests {
         }
     }
 
+    /// 预览响应 = 快照 + spaceName + preview（网站 `PreviewView`）。
+    #[test]
+    fn preview_response_schema_has_space_name_and_draft_info() {
+        let document = full_document();
+        let schema =
+            serde_json::to_string(&document["components"]["schemas"]["PreviewSnapshotView"])
+                .unwrap();
+        for part in ["SnapshotView", "spaceName", "PreviewInfoView"] {
+            assert!(schema.contains(part), "{part}: {schema}");
+        }
+        let info = &document["components"]["schemas"]["PreviewInfoView"]["properties"];
+        for field in ["draftId", "rev", "baseSeq", "scope", "expiresAt"] {
+            assert!(info.get(field).is_some(), "{field}");
+        }
+        let response = &document["paths"]["/api/public/previews"]["get"]["responses"]["200"];
+        assert!(response.to_string().contains("PreviewSnapshotView"));
+    }
+
     #[test]
     fn nyxid_document_has_only_non_admin_v1_paths() {
         let document = nyxid_document();
@@ -264,6 +283,12 @@ mod tests {
         assert!(paths.contains(&"/api/v1/spaces/{space_id}".to_owned()));
         assert!(paths.contains(&"/api/v1/spaces/{space_id}/sources/{source}/events".to_owned()));
         assert!(paths.contains(&"/api/v1/spaces/{space_id}/drafts/{draft_id}/publish".to_owned()));
+        // 命令行 pull 下载网页用模型、原始扫描用（设计 8.2）。
+        assert!(paths.contains(&"/api/v1/spaces/{space_id}/assets/{hash}".to_owned()));
+        assert_eq!(
+            document["paths"]["/api/v1/spaces/{space_id}/assets/{hash}"]["get"]["operationId"],
+            "get_asset"
+        );
         assert!(paths
             .iter()
             .all(|p| p.starts_with("/api/v1/") && !p.starts_with("/api/v1/admin")));

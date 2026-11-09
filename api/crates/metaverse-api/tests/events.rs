@@ -165,6 +165,115 @@ async fn event_types_are_versioned_and_validated() {
     assert!(items[0].get("spaceId").is_none());
 }
 
+/// spawnEntity 的模型（`display.entityAsset`）：必须是本空间 model_import 处理后的模型，登记时
+/// 写进 assetRefs，网页经公开资源接口能读到。
+#[tokio::test]
+async fn spawn_entity_models_are_checked_and_become_public() {
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    let token = restaurant(&app).await;
+    let processed = app
+        .put_asset(
+            b"glTF processed robot",
+            doc! {"kind": "model", "contentType": "model/gltf-binary", "spaceId": "restaurant",
+            "sourceHash": "e".repeat(64)},
+        )
+        .await;
+    let raw = app
+        .put_asset(
+            b"glTF raw robot upload",
+            doc! {"kind": "model", "contentType": "model/gltf-binary", "spaceId": "restaurant",
+            "uploadId": "up_robot"},
+        )
+        .await;
+    let foreign = app
+        .put_asset(
+            b"glTF someone else's robot",
+            doc! {"kind": "model", "contentType": "model/gltf-binary", "spaceId": "flower-shop",
+            "sourceHash": "d".repeat(64)},
+        )
+        .await;
+    let texture = app
+        .put_asset(
+            b"\x89PNG not a model",
+            doc! {"kind": "texture", "contentType": "image/png", "spaceId": "restaurant"},
+        )
+        .await;
+    let spawn = |asset: &str| {
+        json!({"type": "robot.arrived", "schema": {"type": "object"}, "defaultVisibility": "public",
+               "display": {"kind": "spawnEntity", "entityAsset": asset, "durationSec": 30}})
+    };
+    // 原始上传、别的空间的、不是模型的、不存在的：422，不登记。
+    for asset in [
+        raw.clone(),
+        foreign.clone(),
+        texture.clone(),
+        "c".repeat(64),
+    ] {
+        let reply = register(&app, who(ORG), spawn(&asset)).await;
+        assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY, "{asset}");
+        assert_eq!(reply.body["code"], "unknown_asset");
+        assert_eq!(
+            app.public(&format!("/api/public/assets/{asset}.bin"), None, &[])
+                .await
+                .status,
+            StatusCode::NOT_FOUND
+        );
+    }
+    let reply = register(&app, who(ORG), spawn(&raw)).await;
+    assert!(reply.body["detail"]
+        .as_str()
+        .unwrap()
+        .contains("import_model"));
+    // 只读成员不能登记（也就不能借此公开资源）。
+    let reply = register(&app, who_with("bob", "member-token"), spawn(&processed)).await;
+    assert_eq!(reply.status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        app.public(&format!("/api/public/assets/{processed}.bin"), None, &[])
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    // 处理后的模型：登记成功，assetRefs 有记录，公开资源接口可读（网页按它加载）。
+    let reply = register(&app, who(ORG), spawn(&processed)).await;
+    assert_eq!(reply.status, StatusCode::CREATED, "{:?}", reply.body);
+    let registered = app
+        .collection("assetRefs")
+        .find_one(doc! {"hash": &processed, "spaceId": "restaurant"})
+        .await
+        .unwrap()
+        .expect("登记到 assetRefs");
+    assert_eq!(registered.get_str("eventType").unwrap(), "robot.arrived");
+    let reply = app
+        .public(&format!("/api/public/assets/{processed}.bin"), None, &[])
+        .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(
+        reply.headers.get("content-type").unwrap(),
+        "model/gltf-binary"
+    );
+    // 再登记一个版本：不重复登记。
+    let reply = register(&app, who(ORG), spawn(&processed)).await;
+    assert_eq!(reply.body["version"], 2);
+    assert_eq!(
+        app.collection("assetRefs")
+            .count_documents(doc! {"hash": &processed})
+            .await
+            .unwrap(),
+        1
+    );
+    // 显示规则经空间信息给网页。
+    let reply = app
+        .public(PUBLIC, Some(&format!("Share {token}")), &[])
+        .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(
+        reply.body["eventTypes"][0]["display"]["entityAsset"],
+        processed.as_str()
+    );
+}
+
 #[tokio::test]
 async fn write_dedupe_correct_and_read() {
     let Some(app) = TestApp::start(&[]).await else {

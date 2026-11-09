@@ -87,6 +87,10 @@ pub fn router(state: AppState) -> Router {
             get(timeline::get_chunk),
         )
         .route(
+            "/api/v1/spaces/{space_id}/assets/{hash}",
+            get(timeline::get_asset),
+        )
+        .route(
             "/api/v1/spaces/{space_id}/regions/{region_id}/content",
             get(timeline::get_region_content),
         )

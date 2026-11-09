@@ -24,10 +24,11 @@ use utoipa::ToSchema;
 use super::events::event_type_view;
 use super::ingest_common::{invalid_with, no_store};
 use super::ApiJson;
+use crate::auth::permissions::Capability;
 use crate::auth::{Authorizer, Caller, Purpose};
 use crate::error::{ApiError, ProblemDocument};
 use crate::ingest::schema::CompiledSchema;
-use crate::repo::RepoError;
+use crate::repo::{AssetRole, RepoError};
 use crate::AppState;
 
 pub fn routes() -> axum::Router<AppState> {
@@ -220,7 +221,7 @@ fn check_definition(request: &RegisterEventTypeRequest) -> Result<(), ApiError> 
     path = "/api/v1/admin/spaces/{space_id}/event-types",
     operation_id = "admin_register_event_type",
     tag = "admin",
-    description = "登记事件类型的新版本（只追加，版本号自动加一）。回放时用事件记录的版本。需要\"管理\"级别。",
+    description = "登记事件类型的新版本（只追加，版本号自动加一）。回放时用事件记录的版本。display.entityAsset（spawnEntity 显示的模型）必须是本空间 model_import 处理后的模型，登记时同时写进 assetRefs，网页可以经公开资源接口读取；不合格返回 422 unknown_asset。需要\"管理\"级别。",
     params(("space_id" = String, Path, description = "空间编号")),
     request_body = RegisterEventTypeRequest,
     security(("nyxid_identity" = [])),
@@ -228,7 +229,7 @@ fn check_definition(request: &RegisterEventTypeRequest) -> Result<(), ApiError> 
         (status = 201, description = "已登记；返回完整的事件类型（含版本号）"),
         (status = 403, description = "没有管理权限", body = ProblemDocument),
         (status = 404, description = "空间不存在或无权查看", body = ProblemDocument),
-        (status = 422, description = "定义不合法", body = ProblemDocument),
+        (status = 422, description = "定义不合法，或 entityAsset 不是本空间处理后的模型", body = ProblemDocument),
     )
 )]
 pub async fn register_event_type(
@@ -237,11 +238,34 @@ pub async fn register_event_type(
     Path(space_id): Path<String>,
     ApiJson(request): ApiJson<RegisterEventTypeRequest>,
 ) -> Result<Response, ApiError> {
+    // 功能级开关打开时：事件类型和抹除都属于事件写入，要求 `metaverse:event:write`。
+    state
+        .authorizer
+        .require_capability(&caller, Capability::WriteEvents)?;
     let grant = state
         .authorizer
         .space(&caller, &space_id, Purpose::Manage)
         .await?;
     check_definition(&request)?;
+    // spawnEntity 的模型：网页按公开资源接口加载，所以和草稿里的物件模型一样只能引用本空间
+    // model_import 处理后的模型，并登记到 assetRefs（设计 8.2：assetRefs 登记网页需要的资源）。
+    // 先登记再写事件类型：登记是幂等的，事件类型没写成也只是让一个合格的模型可以公开读取。
+    if let Some(asset) = &request.display.entity_asset {
+        let unusable = state
+            .repo
+            .unusable_assets(&grant, &[(asset.clone(), AssetRole::Model)])
+            .await?;
+        if let Some(problem) = unusable.first() {
+            return Err(invalid_with(
+                "unknown_asset",
+                format!("display.entityAsset 不能用：{}", problem.describe()),
+            ));
+        }
+        state
+            .repo
+            .register_event_type_asset(&grant, asset, &request.name, crate::now()?)
+            .await?;
+    }
     for _ in 0..5 {
         let latest = state
             .repo
@@ -304,6 +328,9 @@ pub async fn redact_event(
     caller: Caller,
     Path((space_id, event_id)): Path<(String, String)>,
 ) -> Result<Response, ApiError> {
+    state
+        .authorizer
+        .require_capability(&caller, Capability::WriteEvents)?;
     let grant = state
         .authorizer
         .space(&caller, &space_id, Purpose::Manage)

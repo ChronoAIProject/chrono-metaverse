@@ -11,7 +11,7 @@ use axum::{
     Json,
 };
 
-use super::public_access::{public_space_grant, UniverseParam};
+use super::public_access::{public_space_grant_ever, UniverseParam};
 use super::views::PublicSpaceView;
 use crate::error::{ApiError, ProblemDocument};
 use crate::public::headers::cache_control;
@@ -22,7 +22,7 @@ use crate::AppState;
     path = "/api/public/spaces/{space_id}",
     operation_id = "get_public_space",
     tag = "public",
-    description = "公开读：名称、区域、地块、公开锚点、最新位置（含最新公开变化的 recordedAt）和事件类型的显示规则。凭链接查看的空间需要 `Authorization: Share <分享令牌>`；也可以带组合的分享令牌和 `?universe=<组合编号>`（要求现在是组合成员）。",
+    description = "公开读：名称、区域、地块、公开锚点、最新位置（含最新公开变化的 recordedAt）和事件类型的显示规则。凭链接查看的空间需要 `Authorization: Share <分享令牌>`；也可以带组合的分享令牌和 `?universe=<组合编号>`：该空间曾经是组合成员即可（组合页回看历史用）；现在已经离开组合时 regions、plots、anchors 为空数组（历史状态按版本读快照）。",
     params(
         ("space_id" = String, Path, description = "空间编号", example = "front-hall"),
         ("Authorization" = Option<String>, Header, description = "`Share <空间或组合的分享令牌>`；公开空间可省略"),
@@ -40,8 +40,9 @@ pub async fn get_public_space(
     Query(universe): Query<UniverseParam>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
-    // 凭组合令牌（`?universe=`）时要求现在是组合成员。
-    let grant = public_space_grant(
+    // 凭组合令牌（`?universe=`）时：曾经是组合成员即可（组合页回看历史时，后来离开组合的
+    // 成员也要取得到名称和事件显示规则）；现在已经不是成员时，不给离开之后的当前内容。
+    let (grant, current) = public_space_grant_ever(
         &state,
         &space_id,
         &headers,
@@ -49,12 +50,18 @@ pub async fn get_public_space(
         crate::now()?,
     )
     .await?;
-    let space = state
+    let mut space = state
         .repo
         .space(&grant)
         .await?
         .ok_or_else(ApiError::not_found)?;
-    let anchors = state.repo.anchors(&grant).await?;
+    let anchors = if current {
+        state.repo.anchors(&grant).await?
+    } else {
+        space.regions.clear();
+        space.plots.clear();
+        Vec::new()
+    };
     let mut view = PublicSpaceView::new(space, anchors);
     view.head.recorded_at = super::event_query::public_recorded_at(&state, &grant).await?;
     view.event_types = state

@@ -370,6 +370,31 @@ async fn upload_rules_scope_and_access() {
     .await;
     assert_eq!(reply.status, StatusCode::PAYLOAD_TOO_LARGE);
     assert_eq!(reply.body["code"], "upload_too_large");
+    // ops 的上传上限等于接口服务应用操作时整份读入的上限（64MiB）：65MiB 在创建时就 413，
+    // 不会等到 ops-from-upload 的后台任务才失败；正好 64MiB 可以。
+    let reply = create_upload(&app, who(ORG), base, "ops", body(65 << 20, 8 << 20, "gzip")).await;
+    assert_eq!(
+        reply.status,
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "{:?}",
+        reply.body
+    );
+    assert_eq!(reply.body["code"], "upload_too_large");
+    let reply = create_upload(
+        &app,
+        who(ORG),
+        base,
+        "ops",
+        json!({"size": 64 << 20, "sha256": sha256_hex(b"ops at the limit"),
+               "partSize": 8 << 20, "format": "gzip"}),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::CREATED, "{:?}", reply.body);
+    // 不占后面"进行中的上传"的名额。
+    app.collection("uploads")
+        .delete_one(doc! {"_id": reply.body["uploadId"].as_str().unwrap()})
+        .await
+        .unwrap();
     let reply = create_upload(
         &app,
         who(ORG),
@@ -656,6 +681,29 @@ async fn scan_and_model_jobs() {
         .await;
     assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(reply.body["code"], "invalid_transform");
+    // 处理服务会拒绝的变换（平移超过 1e5 米、毫米单位的 0.001 缩放）在请求时就是 422。
+    let mut far = identity_matrix;
+    far[12] = 200_000.0;
+    let mut millimetres = identity_matrix;
+    for i in [0, 5, 10] {
+        millimetres[i] = 0.001;
+    }
+    for transform in [far, millimetres] {
+        let reply = app
+            .call(
+                who(ORG),
+                Method::POST,
+                &format!("{base}/scans/{scan}/alignment"),
+                Some(json!({ "transform": transform })),
+            )
+            .await;
+        assert_eq!(
+            reply.status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{transform:?}"
+        );
+        assert_eq!(reply.body["code"], "invalid_transform");
+    }
     let reply = app
         .call(
             who(ORG),
@@ -904,4 +952,118 @@ async fn pending_job_limit_is_429() {
         )
         .await;
     assert_eq!(reply.status, StatusCode::ACCEPTED);
+}
+
+/// 模拟"建空间时第一次提交没写成"：删掉提交和锚点、把 head 退回 0。
+async fn drop_genesis(app: &TestApp, space: &str) {
+    app.collection("commits")
+        .delete_many(doc! {"spaceId": space})
+        .await
+        .unwrap();
+    app.collection("anchors")
+        .delete_many(doc! {"spaceId": space})
+        .await
+        .unwrap();
+    app.collection("spaces")
+        .update_one(
+            doc! {"_id": space},
+            doc! {"$set": {"head": {"seq": 0_i64, "at": ago(60)}}},
+        )
+        .await
+        .unwrap();
+}
+
+async fn commit_seqs(app: &TestApp, space: &str) -> Vec<i64> {
+    let commits: Vec<Document> = app
+        .collection("commits")
+        .find(doc! {"spaceId": space})
+        .sort(doc! {"seq": 1})
+        .await
+        .unwrap()
+        .try_collect()
+        .await
+        .unwrap();
+    commits
+        .iter()
+        .map(|c| match c.get("seq") {
+            Some(Bson::Int32(n)) => i64::from(*n),
+            Some(Bson::Int64(n)) => *n,
+            other => panic!("seq 不是整数：{other:?}"),
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn scan_jobs_write_the_missing_first_commit_before_queueing() {
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    front_hall(&app).await;
+    let base = "/api/v1/spaces/front-hall";
+    let scan = uploaded(&app, base, "scan", "drc", b"DRACO genesis scan").await;
+    let model = uploaded(&app, base, "model", "drc", b"DRACO genesis lamp").await;
+    drop_genesis(&app, "front-hall").await;
+
+    // 物件模型导入不写提交，不需要补写第一次提交。
+    let reply = app
+        .call(
+            who(ORG),
+            Method::POST,
+            &format!("{base}/models"),
+            Some(json!({"assetHash": model})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
+    assert!(commit_seqs(&app, "front-hall").await.is_empty());
+
+    // 导入扫描：先写 seq 1（_space 锚点 + 通用方块表），再建任务，处理服务的提交从 seq 2 开始。
+    let reply = app
+        .call(
+            who(ORG),
+            Method::POST,
+            &format!("{base}/scans"),
+            Some(json!({"assetHash": scan})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
+    assert_eq!(commit_seqs(&app, "front-hall").await, vec![1]);
+    let genesis = app
+        .collection("commits")
+        .find_one(doc! {"spaceId": "front-hall", "seq": 1})
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(genesis.get_str("paletteHash").is_ok(), "{genesis:?}");
+    let anchors = genesis.get_array("changedAnchors").unwrap();
+    assert_eq!(
+        anchors[0].as_document().unwrap().get_str("id").unwrap(),
+        "_space"
+    );
+
+    // 已经有第一次提交：再建任务不会多写提交。
+    let reply = app
+        .call(
+            who(ORG),
+            Method::POST,
+            &format!("{base}/scans"),
+            Some(json!({"assetHash": scan, "rebuild": false})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
+    assert_eq!(commit_seqs(&app, "front-hall").await, vec![1]);
+
+    // 体素化、重建同样先检查：空间已有提交（这里模拟处理服务直接写的 seq 1）时不再补写。
+    drop_genesis(&app, "front-hall").await;
+    app.insert_commit("front-hall", org_owner(), &ago(30), Some(&scan))
+        .await;
+    let reply = app
+        .call(
+            who(ORG),
+            Method::POST,
+            &format!("{base}/scans/{scan}/rebuild"),
+            None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
+    assert_eq!(commit_seqs(&app, "front-hall").await, vec![1]);
 }
