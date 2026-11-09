@@ -16,6 +16,7 @@ import {
   normalizeShape,
   shapeBounds,
   ShapeError,
+  validateOpacity,
   validateShape,
   type Shape,
   type TemplateTable,
@@ -67,11 +68,44 @@ export interface EntityBody {
   readonly regionId?: string;
   readonly shape?: Shape;
   readonly assetHash?: string;
+  /** 模型（assetHash）整体的调色、半透明、不受光照；只能和 assetHash 一起给。 */
+  readonly material?: ModelMaterial;
   readonly textures?: readonly string[];
   /** 由生成方计算，用于权限范围检查和网站裁剪。 */
   readonly bounds: Aabb;
   readonly fit?: Fit;
+  /** 不透明的键值；`source` 是对象时是外部模型的署名（ModelSource），按结构校验。 */
   readonly props?: Readonly<Record<string, unknown>>;
+}
+
+/** 物件模型整体的外观（docs/SHAPES.md 第 3 节）。 */
+export interface ModelMaterial {
+  /** 乘到模型原来的颜色上（sRGB 0–255）。 */
+  readonly tint?: readonly [number, number, number];
+  /** 0–1。 */
+  readonly opacity?: number;
+  readonly unlit?: boolean;
+}
+
+/** 外部模型的可选库。 */
+export const SOURCE_LIBRARIES = ['polyhaven', 'objaverse', 'sketchfab'] as const;
+/** 外部模型允许的许可：明确可商用、不传染（NC、ND、SA 一律排除）。 */
+export const SOURCE_LICENSES = ['CC0-1.0', 'CC-BY-4.0', 'CC-BY-3.0'] as const;
+/** 来源里编号、作者、标题的最大字符数。 */
+export const MAX_SOURCE_TEXT_CHARS = 200;
+/** 来源页地址的最大字符数。 */
+export const MAX_SOURCE_URL_CHARS = 2000;
+
+/** 外部模型的来源（`props.source` 是对象时），网站据此显示署名。 */
+export interface ModelSource {
+  readonly library: (typeof SOURCE_LIBRARIES)[number];
+  readonly id: string;
+  /** 来源页（https 地址）。 */
+  readonly page: string;
+  readonly author: string;
+  /** SPDX 风格的许可名。 */
+  readonly license: (typeof SOURCE_LICENSES)[number];
+  readonly title: string;
 }
 
 /** 锚点记录的 body。位置用盒子（格）或点（米）表示，二选一；`_space` 没有位置。 */
@@ -140,6 +174,85 @@ function checkLabel(label: string): void {
   }
 }
 
+/** 是否含空白（与 Rust `char::is_whitespace` 相同的 Unicode White_Space 字符）。 */
+function hasWhitespace(text: string): boolean {
+  for (const ch of text) {
+    const code = ch.codePointAt(0)!;
+    if (
+      (code >= 0x09 && code <= 0x0d) ||
+      code === 0x20 ||
+      code === 0x85 ||
+      code === 0xa0 ||
+      code === 0x1680 ||
+      (code >= 0x2000 && code <= 0x200a) ||
+      code === 0x2028 ||
+      code === 0x2029 ||
+      code === 0x202f ||
+      code === 0x205f ||
+      code === 0x3000
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** 来源页地址：`https://` 开头、后面至少一个字符，不超过 2000 个字符，不含空白和控制字符。 */
+export function isHttpsUrl(url: string): boolean {
+  return (
+    url.length > 'https://'.length &&
+    url.startsWith('https://') &&
+    [...url].length <= MAX_SOURCE_URL_CHARS &&
+    !hasWhitespace(url) &&
+    !hasControl(url)
+  );
+}
+
+const SOURCE_FIELDS = ['library', 'id', 'page', 'author', 'license', 'title'];
+
+/**
+ * 外部模型的署名（Rust `ModelSource`）：六个字段都必须是字符串，不能有别的字段；
+ * 库和许可只能取白名单里的值，来源页必须是 https 地址。
+ */
+export function validateModelSource(value: unknown): ModelSource {
+  if (!isPlainObject(value)) throw new RecordError('props.source 必须是对象');
+  for (const key of Object.keys(value)) {
+    if (!SOURCE_FIELDS.includes(key)) throw new RecordError(`props.source 里不认识的字段 ${key}`);
+  }
+  for (const key of SOURCE_FIELDS) {
+    if (typeof value[key] !== 'string') throw new RecordError(`props.source.${key} 必须是字符串`);
+  }
+  const source = value as unknown as ModelSource;
+  if (!(SOURCE_LIBRARIES as readonly string[]).includes(source.library)) {
+    throw new RecordError('props.source.library 只能是 polyhaven、objaverse 或 sketchfab');
+  }
+  if (!(SOURCE_LICENSES as readonly string[]).includes(source.license)) {
+    throw new RecordError(
+      'props.source.license 只能是 CC0-1.0、CC-BY-4.0 或 CC-BY-3.0（可商用、不传染）',
+    );
+  }
+  for (const key of ['id', 'author', 'title'] as const) {
+    const chars = [...source[key]].length;
+    if (chars === 0 || chars > MAX_SOURCE_TEXT_CHARS || hasControl(source[key])) {
+      throw new RecordError(`props.source.${key} 必须是 1 到 200 个字符，不含控制字符`);
+    }
+  }
+  if (!isHttpsUrl(source.page)) {
+    throw new RecordError(
+      'props.source.page 必须是 https 地址（不超过 2000 个字符，不含空白和控制字符）',
+    );
+  }
+  return source;
+}
+
+/**
+ * `props` 里有结构的键（Rust `validate_props`）：`source` 是对象时按署名校验；
+ * 不是对象的 `source`（旧数据里识别来源的字符串）照旧当不透明的值。
+ */
+export function validateProps(props: Readonly<Record<string, unknown>>): void {
+  if (isPlainObject(props.source)) validateModelSource(props.source);
+}
+
 // ---------------------------------------------------------------------------
 // 物件
 // ---------------------------------------------------------------------------
@@ -153,6 +266,7 @@ const ENTITY_FIELDS = [
   'regionId',
   'shape',
   'assetHash',
+  'material',
   'textures',
   'bounds',
   'fit',
@@ -192,6 +306,27 @@ export function parseEntityBody(value: unknown): EntityBody {
   }
   if (given(value, 'props') && !isPlainObject(value.props)) {
     throw new RecordError('props 必须是对象');
+  }
+  if (given(value, 'material')) {
+    const material = value.material;
+    if (!isPlainObject(material)) throw new RecordError('material 必须是对象');
+    onlyKeys(material, ['tint', 'opacity', 'unlit'], 'material');
+    if (given(material, 'tint')) {
+      const tint = material.tint;
+      if (
+        !Array.isArray(tint) ||
+        tint.length !== 3 ||
+        !tint.every((c) => typeof c === 'number' && Number.isInteger(c) && c >= 0 && c <= 255)
+      ) {
+        throw new RecordError('material.tint 必须是 3 个 0–255 的整数');
+      }
+    }
+    if (given(material, 'opacity') && typeof material.opacity !== 'number') {
+      throw new RecordError('material.opacity 必须是数字');
+    }
+    if (given(material, 'unlit') && typeof material.unlit !== 'boolean') {
+      throw new RecordError('material.unlit 必须是布尔值');
+    }
   }
   if (given(value, 'shape')) {
     try {
@@ -238,6 +373,17 @@ export function validateEntityBody(body: EntityBody, templates: TemplateTable): 
   if (body.assetHash !== undefined && !isSha256Hex(body.assetHash)) {
     throw new RecordError('assetHash 必须是 64 位小写十六进制');
   }
+  if (body.material !== undefined) {
+    if (body.assetHash === undefined) {
+      throw new RecordError('material 只用于模型，必须和 assetHash 一起给');
+    }
+    try {
+      validateOpacity('material.opacity', body.material.opacity);
+    } catch (error) {
+      if (error instanceof ShapeError) throw new RecordError(error.message);
+      throw error;
+    }
+  }
   if (
     body.textures !== undefined &&
     (body.textures.length > 64 || !body.textures.every((hash) => isSha256Hex(hash)))
@@ -254,6 +400,7 @@ export function validateEntityBody(body: EntityBody, templates: TemplateTable): 
   if (Buffer.byteLength(canonicalJson(body.props ?? {}), 'utf8') > MAX_PROPS_BYTES) {
     throw new RecordError('props 超过 16KB');
   }
+  validateProps(body.props ?? {});
   if (body.shape !== undefined) {
     try {
       validateShape(body.shape);

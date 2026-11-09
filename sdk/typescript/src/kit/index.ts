@@ -2,7 +2,7 @@
  * 建造工具包：建造脚本的第二个参数就是这个模块（也可以 `import … from '@chrono-metaverse/sdk'`）。
  *
  * - 单位：`cm`、`toGrid`、`toMetres`、`cellsBetween`、`cells`；
- * - 形状：`box`、`cylinder`、`cone`、`extrude`、`lathe`、`sweep`、`loft`、`group`、`instance`，
+ * - 形状：`box`、`cylinder`、`cone`、`extrude`、`lathe`、`sweep`、`loft`、`plate`、`hull`、`group`、`instance`，
  *   轮廓 `rect`、`circle`、`stadium`、`lShape`、`outline`、`bulgeFor`；
  * - 操作：`fill`、`hollowBox`、`replace`、`copyRegion`、`addBlock`、`place`、`placeEntity`、
  *   `removeEntity`、`createAnchor`、`moveAnchor`、`updateAnchor`、`removeAnchor`，

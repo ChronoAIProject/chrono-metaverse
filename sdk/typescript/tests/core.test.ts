@@ -38,14 +38,22 @@ import { isObjectId, isSpaceId, isSubjectId } from '../src/core/ids.js';
 import { OpError, parseOp, touchedToModel, WorkingState, type Op } from '../src/core/ops.js';
 import {
   anchorFootprint,
+  isHttpsUrl,
   parseAnchorBody,
   parseEntityBody,
   RecordError,
+  validateEntityBody,
+  validateModelSource,
 } from '../src/core/record.js';
 import { AllowedArea, parsePathScope, plotScope, ScopeError } from '../src/core/scope.js';
 import {
   applyTransform,
   arcExtremes,
+  hullDegeneracy,
+  plateFrame,
+  plateProjectionAxes,
+  segmentsIntersect,
+  ShapeError,
   sinCosDegrees,
   templateRefs,
   validateShape,
@@ -210,6 +218,15 @@ describe('编号、范围、记录', () => {
     ]) {
       expect(() => parseEntityBody(bad)).toThrow(RecordError);
     }
+    for (const bad of [
+      { ...base, assetHash: 'ab'.repeat(32), material: { color: [1, 2, 3] } },
+      { ...base, assetHash: 'ab'.repeat(32), material: { tint: [1, 2] } },
+      { ...base, assetHash: 'ab'.repeat(32), material: { opacity: '1' } },
+      { ...base, assetHash: 'ab'.repeat(32), material: { unlit: 1 } },
+      { ...base, assetHash: 'ab'.repeat(32), material: [] },
+    ]) {
+      expect(() => parseEntityBody(bad)).toThrow(RecordError);
+    }
     expect(() =>
       parseAnchorBody({ anchorId: 't', kind: 'table', visibility: 'public', box: 'x' }),
     ).toThrow('box');
@@ -224,6 +241,162 @@ describe('编号、范围、记录', () => {
         visibility: 'public',
       }),
     ).toThrow('position');
+  });
+});
+
+describe('外部模型：material 和 props.source', () => {
+  const source = {
+    library: 'objaverse',
+    id: '0123abcd',
+    page: 'https://sketchfab.com/3d-models/0123abcd',
+    author: '某作者',
+    license: 'CC-BY-4.0',
+    title: '布艺沙发',
+  };
+  const model = (extra: Record<string, unknown> = {}) =>
+    parseEntityBody({
+      entityId: 'sofa-01',
+      layer: 'rebuilt',
+      kind: 'object',
+      assetHash: 'ab'.repeat(32),
+      bounds: { min: [0, 0, 0], max: [2, 0.8, 0.9] },
+      props: { source },
+      ...extra,
+    });
+
+  it('合法的模型物件：调色 + 署名；旧数据里字符串 source 照旧放行', () => {
+    validateEntityBody(model({ material: { tint: [200, 190, 180], opacity: 1 } }), new Map());
+    validateEntityBody(model({ props: { source: 'hint' } }), new Map());
+    expect(validateModelSource(source)).toEqual(source);
+    expect(isHttpsUrl('https://polyhaven.com/a/sofa')).toBe(true);
+    expect(isHttpsUrl('https://')).toBe(false);
+    expect(isHttpsUrl(`https://a.b/${'x'.repeat(2000)}`)).toBe(false);
+  });
+
+  it('许可、库、地址、文字长度、多余或缺少的字段都被拒绝', () => {
+    for (const [key, value] of [
+      ['license', 'CC-BY-NC-4.0'],
+      ['license', 'CC-BY-SA-4.0'],
+      ['library', 'thingiverse'],
+      ['page', 'javascript:alert(1)'],
+      ['page', 'http://example.com/x'],
+      ['page', 'https://example.com/a b'],
+      ['page', 'https://example.com/a b'],
+      ['author', ''],
+      ['title', 'a\u0007b'],
+      ['id', 7],
+      ['extra', 'x'],
+    ] as const) {
+      expect(
+        () => validateEntityBody(model({ props: { source: { ...source, [key]: value } } }), {}),
+        `${key} = ${String(value)}`,
+      ).toThrow(RecordError);
+    }
+    const missing: Record<string, string> = { ...source };
+    delete missing.author;
+    expect(() => validateEntityBody(model({ props: { source: missing } }), {})).toThrow(
+      RecordError,
+    );
+  });
+
+  it('material 只能和 assetHash 一起给，opacity 在 0–1 之间', () => {
+    expect(() =>
+      validateEntityBody(
+        model({
+          assetHash: undefined,
+          material: { tint: [1, 2, 3] },
+          shape: { type: 'box', size: [2, 0.8, 0.9], transform: { position: [1, 0, 0.45] } },
+        }),
+        {},
+      ),
+    ).toThrow('material');
+    expect(() => validateEntityBody(model({ material: { opacity: 2 } }), {})).toThrow('不透明度');
+  });
+});
+
+describe('板和凸包的判定', () => {
+  it('Newell 法向、投影轴、线段相交、凸包退化', () => {
+    const frame = plateFrame([
+      [0, 1, 0],
+      [0, 1, 2],
+      [3, 1, 2],
+      [3, 1, 0],
+    ])!;
+    expect(frame.normal).toEqual([0, 1, 0]);
+    expect(frame.area).toBeCloseTo(6, 12);
+    expect(
+      plateFrame([
+        [0, 0, 0],
+        [1, 0, 0],
+        [2, 0, 0],
+      ]),
+    ).toBeNull();
+    expect(plateProjectionAxes([0, 0, -1])).toEqual([0, 1]);
+    expect(plateProjectionAxes([0.6, 0.6, 0.1])).toEqual([1, 2]);
+    expect(plateProjectionAxes([0.1, 0.6, 0.6])).toEqual([0, 2]);
+    expect(segmentsIntersect([0, 0], [2, 2], [0, 2], [2, 0])).toBe(true);
+    expect(segmentsIntersect([0, 0], [1, 0], [0, 1], [1, 1])).toBe(false);
+    expect(segmentsIntersect([0, 0], [2, 0], [1, 0], [1, 1])).toBe(true);
+    expect(segmentsIntersect([0, 0], [1, 0], [2, 0], [3, 0])).toBe(false);
+    expect(
+      hullDegeneracy([
+        [0, 0, 0],
+        [1, 0, 0],
+        [0, 1, 0],
+        [0.5, 0.5, 0.002],
+      ]),
+    ).toBeNull();
+    expect(
+      hullDegeneracy([
+        [0, 0, 0],
+        [1, 0, 0],
+        [0, 1, 0],
+        [0.5, 0.5, 0.0009],
+      ]),
+    ).toContain('共面');
+    expect(
+      hullDegeneracy([
+        [0, 0, 0],
+        [1, 0, 0],
+        [2, 0.0005, 0],
+        [3, 0, 0],
+      ]),
+    ).toContain('共线');
+    expect(hullDegeneracy([[0, 0, 0]])).toContain('重合');
+    expect(hullDegeneracy([])).toBe('没有点');
+  });
+
+  it('板的结构错误', () => {
+    for (const bad of [
+      { type: 'plate', points: [[0, 0, 0]], thickness: 'x' },
+      { type: 'plate', points: [[0, 0]], thickness: 0.1 },
+      { type: 'plate', points: 'x', thickness: 0.1 },
+      {
+        type: 'plate',
+        points: [
+          [0, 0, 0],
+          [1, 0, 0],
+          [1, 0, 0],
+          [0, 1, 0],
+        ],
+        thickness: 0.1,
+      },
+      {
+        type: 'plate',
+        points: [
+          [0, 0, 0],
+          [2, 0, 0],
+          [2, 2, 0],
+          [1, 0, 0],
+          [0, 2, 0],
+        ],
+        thickness: 0.1,
+      },
+      { type: 'hull', points: [[0, 0, 0, 1]] },
+      { type: 'box', size: [1, 1, 1], material: { color: [1, 1, 1], unlit: 'yes' } },
+    ]) {
+      expect(() => validateShape(bad), JSON.stringify(bad)).toThrow(ShapeError);
+    }
   });
 });
 
