@@ -72,6 +72,7 @@ use utoipa::{
         crate::routes::timeline::list_timeline,
         crate::routes::timeline::get_snapshot,
         crate::routes::timeline::get_chunk,
+        crate::routes::timeline::get_asset,
         crate::routes::timeline::get_region_content,
         crate::routes::drafts::create_draft,
         crate::routes::drafts::create_plot_draft,
@@ -282,6 +283,12 @@ mod tests {
         assert!(paths.contains(&"/api/v1/spaces/{space_id}".to_owned()));
         assert!(paths.contains(&"/api/v1/spaces/{space_id}/sources/{source}/events".to_owned()));
         assert!(paths.contains(&"/api/v1/spaces/{space_id}/drafts/{draft_id}/publish".to_owned()));
+        // 命令行 pull 下载网页用模型、原始扫描用（设计 8.2）。
+        assert!(paths.contains(&"/api/v1/spaces/{space_id}/assets/{hash}".to_owned()));
+        assert_eq!(
+            document["paths"]["/api/v1/spaces/{space_id}/assets/{hash}"]["get"]["operationId"],
+            "get_asset"
+        );
         assert!(paths
             .iter()
             .all(|p| p.starts_with("/api/v1/") && !p.starts_with("/api/v1/admin")));

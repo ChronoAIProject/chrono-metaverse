@@ -1916,3 +1916,150 @@ async fn draft_assets_are_checked_by_role_and_by_space_ownership() {
         StatusCode::NOT_FOUND
     );
 }
+
+/// `/api/v1` 的资源下载（设计 8.2：原始扫描、大块操作文件和脚本只能由有权限的调用者经
+/// `/api/v1` 下载；命令行 pull 用它下载网页用模型）。
+#[tokio::test]
+async fn v1_asset_download_is_limited_to_the_space_and_its_readers() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    let scan_bytes = b"DRACO raw scan bytes".to_vec();
+    let scan = app
+        .put_space_asset(SPACE, &scan_bytes, "application/x-draco", "scan")
+        .await;
+    let web_bytes: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
+    let web_model = app
+        .put_asset(&web_bytes, "model/gltf-binary", "web_model")
+        .await;
+    app.register_asset_ref(SPACE, &web_model).await;
+    let foreign = app
+        .put_space_asset(
+            "other-space",
+            b"someone else's scan",
+            "application/x-draco",
+            "scan",
+        )
+        .await;
+    // 别的空间先登记的同一份内容，本空间有完成的上传：算本空间的。
+    let shared = app
+        .put_space_asset(
+            "other-space",
+            b"ops shared by content",
+            "application/x-ndjson",
+            "ops",
+        )
+        .await;
+    app.collection("uploads")
+        .insert_one(doc! {
+            "_id": "up_shared_ops", "spaceId": SPACE, "owner": {"kind": "org", "id": ORG},
+            "purpose": "ops", "status": "done", "assetHash": &shared, "reused": true,
+            "createdAt": "2026-01-01T00:00:00.000Z",
+        })
+        .await
+        .unwrap();
+    let path = |hash: &str| format!("/api/v1/spaces/{SPACE}/assets/{hash}");
+
+    // 主人：原始扫描（不在 assetRefs 里，公开接口读不到）。
+    let reply = app.org(Method::GET, &path(&scan), None).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(reply.bytes, scan_bytes);
+    assert_eq!(
+        reply.header(header::CONTENT_TYPE),
+        "application/octet-stream"
+    );
+    assert_eq!(reply.header(header::X_CONTENT_TYPE_OPTIONS), "nosniff");
+    assert_eq!(reply.header(header::CACHE_CONTROL), "private, no-store");
+    assert_eq!(
+        app.public(&format!("/api/public/assets/{scan}.bin"), None)
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    // 网页用模型：类型按白名单固定，支持分段下载（跨数据块）。
+    let reply = app.org(Method::GET, &path(&web_model), None).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(reply.bytes, web_bytes);
+    assert_eq!(reply.header(header::CONTENT_TYPE), "model/gltf-binary");
+    let token = timeline_support::identity(ORG);
+    let reply = app
+        .send(
+            Method::GET,
+            &path(&web_model),
+            &[
+                ("x-nyxid-identity-token", token.as_str()),
+                ("range", "bytes=262140-262149"),
+            ],
+            Payload::None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::PARTIAL_CONTENT);
+    assert_eq!(reply.bytes, web_bytes[262_140..262_150]);
+    assert_eq!(
+        reply.header(header::CONTENT_RANGE),
+        format!("bytes 262140-262149/{}", web_bytes.len())
+    );
+    // 复用的上传。
+    let reply = app.org(Method::GET, &path(&shared), None).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(&reply.bytes[..], b"ops shared by content");
+    // 本空间提交里引用过的（发布时存成资源的大块操作，内容和别的空间相同）。
+    let committed = app
+        .put_space_asset(
+            "other-space",
+            b"big ops in a commit",
+            "application/x-ndjson",
+            "ops",
+        )
+        .await;
+    assert_eq!(
+        app.org(Method::GET, &path(&committed), None).await.status,
+        StatusCode::NOT_FOUND
+    );
+    app.collection("commits")
+        .insert_one(doc! {
+            "_id": "c_with_ops_ref", "spaceId": SPACE, "owner": {"kind": "org", "id": ORG},
+            "seq": 999_i64, "at": "2026-01-01T00:00:00.000Z", "message": "大块操作",
+            "opsRef": &committed,
+        })
+        .await
+        .unwrap();
+    let reply = app.org(Method::GET, &path(&committed), None).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(&reply.bytes[..], b"big ops in a commit");
+
+    // 组织成员只读也能下载。
+    let reply = app
+        .v1(
+            Method::GET,
+            &path(&scan),
+            "bob",
+            Some("member-token"),
+            Payload::None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    // 陌生人：404。
+    let reply = app
+        .v1(
+            Method::GET,
+            &path(&scan),
+            "eve",
+            Some("stranger-token"),
+            Payload::None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND);
+    // 别的空间的资源、不存在的资源、哈希格式不对：404。
+    for hash in [foreign.clone(), "d".repeat(64), "ABC".to_owned()] {
+        let reply = app.org(Method::GET, &path(&hash), None).await;
+        assert_eq!(reply.status, StatusCode::NOT_FOUND, "{hash}");
+        assert_eq!(reply.header(header::CACHE_CONTROL), "no-store");
+    }
+    // 没有身份令牌：401。
+    assert_eq!(
+        app.public(&path(&scan), None).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+}

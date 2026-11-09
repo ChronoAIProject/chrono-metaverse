@@ -1,10 +1,11 @@
 //! `/api/v1` 的时间线读接口（设计 8.3 的"查看"）：提交列表、快照（给 AI 和命令行拉取，含内部
-//! 锚点）、区块（命令行 `pull` 用，含未公开的）、区域内容（分层文字）。主人和组织成员可读。
+//! 锚点）、区块（命令行 `pull` 用，含未公开的）、资源（原始扫描、网页用模型、ops 文件、脚本等，
+//! 设计 8.2：只能由有权限的调用者经 `/api/v1` 下载）、区域内容（分层文字）。主人和组织成员可读。
 
 use axum::{
     body::Bytes,
     extract::{Path, Query, State},
-    http::{header, HeaderValue},
+    http::{header, HeaderMap, HeaderValue},
     response::{IntoResponse, Response},
     Json,
 };
@@ -12,7 +13,7 @@ use metaverse_core::ids::is_object_id;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
-use super::blob_response::{chunk_response, parse_seq, parse_time, path_hash};
+use super::blob_response::{asset_response, chunk_response, parse_seq, parse_time, path_hash};
 use crate::auth::{Caller, Grant, Purpose};
 use crate::error::{ApiError, ProblemDocument};
 use crate::repo::Repo;
@@ -164,6 +165,52 @@ pub async fn get_snapshot(
         response.headers_mut().insert(header::ETAG, value);
     }
     Ok(response)
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/spaces/{space_id}/assets/{hash}",
+    operation_id = "get_asset",
+    tag = "timeline",
+    description = "下载空间的一个资源（原始字节，按内容哈希）：原始扫描、网页用模型（快照 scan.webModelHashes）、处理后的物件模型、贴图、ops 文件、建造脚本等。给命令行 pull 和本地处理用；文件可能很大（扫描最大 1GiB），支持单段 Range: bytes=a-b。只返回属于这个空间的资源（本空间登记、上传、导入或在提交里引用过的），否则 404。Content-Type 按白名单固定（model/gltf-binary、image/jpeg|png|webp，其余 application/octet-stream），不缓存。",
+    params(
+        ("space_id" = String, Path, description = "空间编号", example = "front-hall"),
+        ("hash" = String, Path, description = "资源的内容哈希（64 位小写十六进制）"),
+        ("Range" = Option<String>, Header, description = "单段 `bytes=a-b`"),
+    ),
+    security(("nyxid_identity" = [])),
+    responses(
+        (status = 200, description = "资源内容", content_type = "application/octet-stream"),
+        (status = 206, description = "分段内容", content_type = "application/octet-stream"),
+        (status = 401, description = "身份令牌无效", body = ProblemDocument),
+        (status = 404, description = "资源不存在、不属于这个空间，或无权查看", body = ProblemDocument),
+        (status = 416, description = "Range 不合法", body = ProblemDocument),
+    )
+)]
+pub async fn get_asset(
+    State(state): State<AppState>,
+    caller: Caller,
+    Path((space_id, hash)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let grant = state
+        .authorizer
+        .space(&caller, &space_id, Purpose::Read)
+        .await?;
+    let hash = path_hash(&hash, "")?;
+    let meta = state
+        .repo
+        .space_owned_asset(&grant, hash)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    asset_response(
+        &state,
+        &meta,
+        &headers,
+        HeaderValue::from_static("private, no-store"),
+        false,
+    )
+    .await
 }
 
 #[utoipa::path(
