@@ -3,11 +3,16 @@
 接口服务（Rust）、网站（TypeScript）、处理服务（Python）各自实现 [SHAPES.md](../../../../../docs/SHAPES.md) 里的格式，用这里的同一批向量核对结果。
 
 - **由 Rust 实现生成**：`tests/vectors.rs` 里定义用例，运行
-  `METAVERSE_WRITE_VECTORS=1 cargo test -p metaverse-core --test vectors` 重新生成全部文件。
+  `METAVERSE_WRITE_VECTORS=1 cargo test -p metaverse-core --test vectors` 重新生成顶层的全部文件
+  （`ops/` 见第 4 节）。
 - **平时 `cargo test` 会核对**：每个文件都用 Rust 实现重算一遍；用例和文件对不上（忘了重新生成）时测试失败。
 - **不要手改这些文件**。要加用例，改 `tests/vectors.rs` 再重新生成。
+- **例外**：`uv/`（贴图坐标）和 `authored/`（AI 物件集的外链贴图）由 `tools/texture_vectors.py` 按 SHAPES 独立算出
+  （只用 Python 标准库，不调用任何一边的实现），见第 5、6 节；改用例改这个脚本，`python3 tools/texture_vectors.py`
+  重新生成，`--check` 只核对。
 
-每个文件都有 `kind`（`chunk` / `canonical` / `shape`）、`name` 和中文 `description`。
+每个文件都有 `kind`（`chunk` / `canonical` / `shape` / `ops` / `ops-parse` / `uv` / `authored`）、`name` 和中文
+`description`。各边要接上哪些运行器见第 7 节。
 
 ## 1. 区块：`chunk_*.json`
 
@@ -72,6 +77,17 @@
 
 板和凸包的包围盒、合法条件、三角形数见 docs/SHAPES.md 第 2 节：`plate` 取各点和沿 −法向 平移厚度后的点，`hull` 取全部点。其他形状的三角形数取决于各自的分段方式，暂不给出。
 
+**材质的平铺、着色、法线、粗糙度**（SHAPES 2"贴图坐标的平铺、着色、法线与粗糙度"）：`shape_material_tile`、
+`shape_material_albedo_maps`、`shape_material_color_normal_map`、`shape_material_color_roughness`、
+`shape_material_baked_explicit`、`shape_material_limits` 是合法的写法（全部是 `[2, 1, 0.5]` 的盒子，包围盒精确），
+`shape_invalid_material_*` 各错一处：`tile` 越界、不是两个数、没有贴图坐标却带 `tile`，`offset` / `rotate` 越界或没给
+`tile`，颜色材质带 `normalMap` 却没给 `uv`，`normalMap` 不是资源哈希，`normalScale` 越界或没给 `normalMap`，`roughness`、
+`metalness` 越界，`shading` 不认识，形状里写了只有 AI 物件集才收的外链对象 `{url, sha256, size}`。
+
+这批用例在 `tests/vectors.rs` 的 `texture_material_cases` 里，文件先按规格写好：`valid`、`bounds` 是规格要求的结论，
+`errorPath`、`errorMessage` 是暂定的。Rust 实现跟上之前 `cargo test --test vectors` 会因为它们失败；跟上之后用
+`METAVERSE_WRITE_VECTORS=1` 重新生成，只允许 `errorMessage` 的措辞和 `errorPath`（解析阶段拒绝时是 `null`）变化。
+
 ## 4. 高层操作：`ops/ops_*.json`
 
 对应设计 8.3 和 `crates/metaverse-core/src/ops.rs`。命令行（`sdk/typescript`）在本地应用操作（dev / shot / diff / check），用这批向量核对结果与服务端一致。
@@ -112,3 +128,67 @@
 ### 4.2 结构检查：`kind = "ops-parse"`
 
 `cases: [{ "input": 操作 JSON, "valid": bool }]`。`valid = false` 的输入必须在解析阶段就被拒绝（字段拼错、多余字段、类型不对、方块编号超出 0–65535、盒子不合法等）；`valid = true` 的只要求能解析，不要求能作用成功。
+
+## 5. 贴图坐标：`uv/uv_*.json`
+
+对应 SHAPES 2"贴图坐标的平铺、着色、法线与粗糙度"。放在子目录里：Rust 不生成网格，顶层的运行器也不认 `kind = "uv"`。
+
+| 字段 | 含义 |
+|---|---|
+| `shape` | 形状 JSON，最外层带 `material`（贴图材质，或带法线贴图、有 `uv` 的颜色材质） |
+| `templates` | 可用的模板，目前都是空对象 |
+| `wrap` | glb 采样器的重复方式：`"repeat"`（给了 `tile`，`wrapS = wrapT = 10497`）或 `"clamp"`（没给，`33071`）。网站不给 `tile` 时保持现在的重复方式 |
+| `tolerance` | `{ "position": 1e-5, "normalDot": 0.99, "uv": 1e-5 }` |
+| `vertices` | 要核对的顶点：`{ "where", "position": [x,y,z], "normal": [x,y,z], "uv": [u,v] }`，`where` 是说明 |
+
+核对方法：
+
+1. 用各自的网格生成（网站 `web/src/core/shapes/build.ts`，处理服务 `processing/shape_mesh.py`）生成 `shape` 的网格；
+   最外层的 `transform` 先去掉（贴图坐标在变换之前算，去掉不影响结果；目前的向量都没有最外层变换）；
+2. 每个 `vertices` 用位置和法线找顶点：位置每个分量相差不超过 `tolerance.position`，并且单位法线与给出的方向
+   （归一化后）点积不小于 `tolerance.normalDot`。至少要找到一个；找到几个，每个的贴图坐标都要与 `uv` 相差不超过
+   `tolerance.uv`（逐分量）。用位置和法线而不是下标，是因为各语言三角化、顶点排列的顺序不同；同一位置的不同面靠
+   法线区分。接缝上同一位置、同一法线有两个贴图坐标的顶点（圆柱 mesh 坐标的 +z、柱面投影的 −z）不放进向量；
+3. `uv` 是网格里存的贴图坐标（v 向上，原点在图片左下角），不是 glb 里写的 `1 − v`。
+
+覆盖：`box`（不给 `tile`；`tile`；`offset` + `rotate` 90°；`rotate` 30°）、`planar`（墙、挤出的地面）、`cylindrical`（有无
+`tile`）、`mesh`（盒子的米坐标；圆柱不给 / 给 `tile`；挤出不给 / 给 `tile` + `offset` + `rotate`；板；扫掠）、写在组合上的
+材质（子形状带 `transform`）、颜色材质带法线贴图。不给 `tile` 的几个（`uv_box_normalized`、`uv_cylindrical_normalized`、
+`uv_mesh_cylinder_normalized`、`uv_mesh_extrude`）就是现在的算法，网站和处理服务现在就该通过。
+
+## 6. AI 物件集的外链贴图：`authored/authored_*.json`
+
+对应设计 6.3 和 `worker/README.md`"AI 物件集"。
+
+| 字段 | 含义 |
+|---|---|
+| `cases` | 用例：`{ "name", "description", "authored": 物件集, "valid": bool, "summary"?, "where"? }` |
+| `cases[].summary` | `valid = true` 时：`{ entities, templates, models, textureUrls }`。前三个就是接口服务 `check_authored` 的统计；`textureUrls` 是去重后的外链贴图地址数，处理服务的 `parse_authored` 要整理出这么多个下载 |
+| `cases[].where` | `valid = false` 时错在哪里（说明，仅供参考） |
+
+- `authored_texture_urls_valid.json`：结构、组合、模板、实例、外部模型、烘焙指令和外链贴图混用的完整示例（同一个
+  外链用了两次，只算一个），颜色材质带外链的法线、粗糙度贴图，以及一个最小的物件集。接口服务的浅层校验和处理服务
+  的完整校验都必须接受。
+- `authored_texture_urls_invalid.json`：从最小的物件集改一处：不是 https、带用户名、`sha256` 大写或长度不对、`size`
+  是 0、超过 16 MiB、是小数、是字符串、缺了，多了字段，工作台的 `{file}` 引用，`texture` 是数字，`normalMap`、
+  `roughnessMap` 的外链写错，模板里的外链写错，烘焙指令和 `normalMap`、`tile` 一起出现。**接口服务的浅层校验**就必须
+  全部拒绝，处理服务的完整校验当然也拒绝。
+
+外链地址里的哈希、大小、提交号都是编的，用例只用来核对校验，不下载。
+
+## 7. 各边的运行器
+
+| 向量 | 接口服务（Rust，`metaverse-core`） | 网站（`web/`） | 处理服务（`worker/`） | 命令行（`sdk/typescript`） |
+|---|---|---|---|---|
+| `chunk_*`、`canonical_*` | `tests/vectors.rs` | —（`src/core/codec.test.ts` 用内联的向量） | `tests/test_shared_vectors.py` | `tests/vectors.test.ts` |
+| `shape_*` | `tests/vectors.rs` | `src/core/shapes/solid.test.ts`（板、凸包、材质） | `tests/test_shared_vectors.py` | `tests/vectors.test.ts` |
+| `ops/` | `tests/ops_vectors.rs` | — | — | `tests/vectors.test.ts` |
+| `uv/` | —（不生成网格） | **要接上** | **要接上** | — |
+| `authored/` | **要接上**（`check_authored`） | — | **要接上**（`parse_authored`，合法的还要核对 `textureUrls`） | 可选（`readAuthored` 只做很少的本地检查） |
+
+顶层的运行器按文件名前缀（`chunk_`、`canonical_`、`shape_`）挑文件，不会读到 `uv/`、`authored/`；新加的两类要各边
+自己接上。`shape_material_*`、`shape_invalid_material_*` 已经在顶层，现有的形状运行器会直接读到：接口服务
+（`vectors_match_rust_implementation`、`generated_vectors_are_current`）、处理服务、命令行在实现新字段之前，6 个合法的
+`shape_material_*`（`tile`、`albedo_maps`、`color_normal_map`、`color_roughness`、`baked_explicit`、`limits`）会失败，
+不合法的本来就因为字段不认识被拒绝（Rust 的 `generated_vectors_are_current` 还会因为它们的 `errorPath`、
+`errorMessage` 与现在的说明不同而失败，实现后重新生成即可）；网站的运行器只核对网格，不受影响。
