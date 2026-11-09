@@ -151,7 +151,7 @@ def rebuild(
     """在已对齐到空间坐标的扫描上做结构 + 物体重建。"""
     out = RebuildOutput()
     try:
-        structure = extract_structure(mesh_space, structure_params)
+        structure = extract_structure(mesh_space, structure_params, hints=hints)
     except ValueError as error:
         raise PermanentJobError(f"结构重建失败：{error}") from error
     bodies, textures = structure_entities(structure)

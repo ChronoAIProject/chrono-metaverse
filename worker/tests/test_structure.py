@@ -14,6 +14,8 @@ from metaverse_worker.processing.structure import (
     element_shape,
     extract_structure,
     glazing_parts,
+    hint_boxes,
+    inside_hints,
 )
 from synthetic import ROOM_COLORS, room_mesh
 
@@ -229,3 +231,46 @@ def test_structure_entities_without_texture():
         element_shape(
             Element(id="wall-1", kind="wall", texture=None, observed=np.ones((1, 1), bool), info={})
         )
+
+
+# ---------------------------------------------------------------------------- 提示里的物体不当墙
+
+
+def test_hint_boxes_parse_and_rotate():
+    boxes = hint_boxes(
+        {
+            "objects": [
+                {"center": [1, 1, 1], "size": [2, 2, 0.2], "label": "屏幕", "yaw": 90},
+                {"center": [1, 1], "size": [1, 1, 1]},  # 二维中心：没有盒子
+                {"center": [0, 0, 0], "size": [1, -1, 1]},  # 尺寸不合法
+                {"center": [0, 0, 0], "size": [1, 1, "x"]},
+                {"center": [5, 1, 5], "size": [1, 1, 1], "kind": "cabinet"},
+                "不是对象",
+            ]
+        }
+    )
+    assert [b.label for b in boxes] == ["屏幕", "cabinet"]
+    assert hint_boxes(None) == [] and hint_boxes({"objects": "x"}) == []
+    # 偏航 90°：局部 x（2 米宽）转到世界 z 方向
+    pts = np.array([[1.0, 1.0, 1.9], [1.9, 1.0, 1.0], [1.0, 1.0, 0.05], [5.2, 1.2, 5.2]])
+    assert inside_hints(pts, boxes, 0.0).tolist() == [True, False, True, True]
+    assert inside_hints(pts, boxes[:1], 0.0).tolist() == [True, False, True, False]
+
+
+def test_hinted_object_is_not_a_wall():
+    room = room_mesh(diagonal=False)
+    plain = extract_structure(room)
+    hints = {"objects": [{"center": [4.85, 1.3, 2.0], "size": [0.4, 2.7, 4.2], "label": "整面的柜子"}]}
+    hinted = extract_structure(room, hints=hints)
+
+    def normals(res):
+        return sorted(tuple(np.round(e.info["normal"], 3)) for e in res.elements if e.kind != "floor")
+
+    assert (-1.0, 0.0) in normals(plain)  # x = 5 的东墙
+    assert (-1.0, 0.0) not in normals(hinted)  # 落在提示物体里 → 留给物体重建
+    assert len(normals(hinted)) == len(normals(plain)) - 1
+    assert hinted.stats["walls_hinted_out"] == ["整面的柜子"]
+    assert all(e.kind != "glazing" for e in hinted.elements)  # 也不会被当成玻璃
+    # 只盖住墙的一小段的提示物体不影响墙
+    small = {"objects": [{"center": [4.85, 0.4, 2.0], "size": [0.4, 0.8, 0.6]}]}
+    assert normals(extract_structure(room, hints=small)) == normals(plain)

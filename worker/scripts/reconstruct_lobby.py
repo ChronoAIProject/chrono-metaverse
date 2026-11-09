@@ -192,12 +192,12 @@ def main() -> None:
     al = compute_alignment(mesh.vertices, mesh.faces)
     mesh = mesh.transformed(al.matrix)
     t1 = time.time()
-    structure = st.extract_structure(mesh)
-    t2 = time.time()
     params = None
     if args.hints:
         with open(args.hints, encoding="utf-8") as fh:
             params = json.load(fh)
+    structure = st.extract_structure(mesh, hints=params)
+    t2 = time.time()
     res = reconstruct_objects(mesh, structure, params=params)
     t3 = time.time()
     s_entities, s_textures = structure_entities(structure)

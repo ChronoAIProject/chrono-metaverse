@@ -8,6 +8,7 @@
 2. **墙**：近似水平法线的点按方向做直方图：4 个轴向 + 足够强的斜向。每个方向上按平面偏移做直方图找峰，
    每 0.5 米一段求局部偏移（处理扫描漂移，剔除墙前家具造成的跳变），±4 厘米内的点为内点；
    在 10 厘米 (沿墙, 高度) 占用图上切段：1.0–2.4 米覆盖率高、到达 2 米以上、并且某处接近地面的列才算墙。
+   给了提示（与物体重建同一份）时，内点大多落在某个提示物体盒子里的候选（LED 大屏这种大平面）不当墙。
 3. **玻璃**：玻璃扫描得稀疏、深度分散，不会形成尖峰。在轴向上找宽峰（排除已认定的实墙附近），
    要求长度 ≥ 3 米、1 米以上有覆盖、位于地面范围的外缘（前面有地、后面没有）。玻璃上扫到的是室外景色和
    反光，不烘贴图：写成浅蓝灰的纯色玻璃板 + 检测到的竖梃（等距补上被家具挡住的）+ 底部的实心窗台
@@ -33,6 +34,7 @@ import io
 import itertools
 import logging
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -83,6 +85,8 @@ class StructureParams:
     mullion_regular: float = 0.15  # 竖梃间距：缺口是主间距整数倍（误差在这个比例内）时补上被挡住的竖梃
     ledge_min_cover: float = 0.1  # 窗台：底部每 10 厘米一行，至少这么多 10 厘米列有扫描
     ledge_solid: float = 0.6  # 行里至少这么多比例的点在玻璃面前方 10 厘米以外（实心），才算窗台
+    hint_margin: float = 0.1  # 提示物体的盒子向外放宽这么多（米）
+    hint_cover: float = 0.6  # 墙候选的内点至少这么多落在同一个提示物体的盒子里，就当物体不当墙
     jpeg_quality: int = 85
     seed: int = 0
 
@@ -173,8 +177,74 @@ class _HeightField:
         return self.sample(self.field, x, z)
 
 
-def extract_structure(mesh: ScanMesh, params: StructureParams | None = None) -> StructureResult:
-    """在已对齐（地面 y≈0，墙与坐标轴对齐，最小角在原点）的扫描上找出地面、墙和玻璃，并烘焙贴图。"""
+@dataclass(frozen=True)
+class HintBox:
+    center: np.ndarray  # [x, y, z]
+    half: np.ndarray  # 半尺寸 [w, h, d] / 2（局部 x、y、z）
+    yaw: float  # 度，局部 → 世界：M = T · Ry(yaw)
+    label: str
+
+
+def hint_boxes(hints: Mapping[str, Any] | None) -> list[HintBox]:
+    """提示里给了中心和尺寸的物体（与物体重建同一份 `hints["objects"]`：[{center, size, yaw?, label?}]）。
+    格式不对的项忽略。"""
+    raw = hints.get("objects") if isinstance(hints, Mapping) else None
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for item in raw[:500]:
+        if not isinstance(item, Mapping):
+            continue
+        c, s = item.get("center"), item.get("size")
+        if not (isinstance(c, list) and isinstance(s, list) and len(c) == 3 and len(s) == 3):
+            continue
+        try:
+            cv = np.array([float(v) for v in c])
+            sv = np.array([float(v) for v in s])
+            yaw = float(item.get("yaw") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if not (np.isfinite(cv).all() and np.isfinite(sv).all() and math.isfinite(yaw) and (sv > 0).all()):
+            continue
+        label = item.get("label") if isinstance(item.get("label"), str) else item.get("kind")
+        out.append(HintBox(cv, sv / 2, yaw, str(label or "物体")))
+    return out
+
+
+def _inside_box(P: np.ndarray, box: HintBox, margin: float) -> np.ndarray:
+    d = P - box.center
+    a = math.radians(box.yaw)
+    lx = math.cos(a) * d[:, 0] - math.sin(a) * d[:, 2]
+    lz = math.sin(a) * d[:, 0] + math.cos(a) * d[:, 2]
+    h = box.half + margin
+    return (np.abs(lx) <= h[0]) & (np.abs(d[:, 1]) <= h[1]) & (np.abs(lz) <= h[2])
+
+
+def inside_hints(P: np.ndarray, boxes: list[HintBox], margin: float) -> np.ndarray:
+    """落在任意一个提示物体盒子（放宽 margin）里的点。"""
+    out = np.zeros(len(P), bool)
+    for box in boxes:
+        out |= _inside_box(P, box, margin)
+    return out
+
+
+def covering_hint(P: np.ndarray, boxes: list[HintBox], margin: float, cover: float) -> str | None:
+    """至少 cover 比例的点落在同一个提示物体盒子里时，返回那个物体的名称。"""
+    if len(P) == 0:
+        return None
+    for box in boxes:
+        if _inside_box(P, box, margin).mean() >= cover:
+            return box.label
+    return None
+
+
+def extract_structure(
+    mesh: ScanMesh, params: StructureParams | None = None, hints: Mapping[str, Any] | None = None
+) -> StructureResult:
+    """在已对齐（地面 y≈0，墙与坐标轴对齐，最小角在原点）的扫描上找出地面、墙和玻璃，并烘焙贴图。
+
+    `hints` 与物体重建是同一份提示（`{"objects": [{center, size, ...}]}`）：内点大多落在某个提示物体盒子里的
+    墙候选（比如 LED 大屏这种大平面）不当墙，留给物体重建；提示物体上的点也不参与玻璃检测。"""
     prm = params or StructureParams()
     dens = prm.sample_density
 
@@ -347,6 +417,22 @@ def extract_structure(mesh: ScanMesh, params: StructureParams | None = None) -> 
         and c["fill_upper"] >= prm.wall_fill_upper
         and c["npts"] >= pts(prm.wall_min_area)
     ]
+    # 提示里标成物体的（LED 大屏、整面的柜子）：大平面看起来和墙一样，内点大多落在某个提示物体的盒子里就不当墙
+    boxes = hint_boxes(hints)
+    hinted = inside_hints(P, boxes, prm.hint_margin)
+    dropped: list[str] = []
+    for c in list(walls):
+        label = covering_hint(P[c["seg"]], boxes, prm.hint_margin, prm.hint_cover)
+        if label is not None:
+            walls.remove(c)
+            dropped.append(label)
+            log.info(
+                "墙候选（方向 %.0f°，偏移 %.2f 米）落在提示物体「%s」里，按物体处理",
+                c["dir"],
+                c["off"],
+                label,
+            )
+    stats["walls_hinted_out"] = dropped
     for c in walls:
         useg = P[c["seg"]][:, [0, 2]] @ c["t2"]
         c["u"] = [
@@ -378,7 +464,7 @@ def extract_structure(mesh: ScanMesh, params: StructureParams | None = None) -> 
         a = math.radians(dg)
         n2 = np.round(np.array([math.cos(a), math.sin(a)]), 6)
         t2 = np.array([n2[1], -n2[0]])
-        dm = hor5 & (_angdiff(ANG, dg) < 35) & ~near_solid
+        dm = hor5 & (_angdiff(ANG, dg) < 35) & ~near_solid & ~hinted  # 提示物体上的点不是玻璃
         s_all = P[:, [0, 2]] @ n2
         u_all = P[:, [0, 2]] @ t2
         sel = dm & (P[:, 1] > 0.8)
