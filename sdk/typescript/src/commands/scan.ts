@@ -25,11 +25,12 @@ glb 内嵌贴图，直接上传即可。
 
 选项：
   --observed-at <时间>    扫描拍摄时间（RFC 3339），只用于显示
-  --transform <16 个数>   扫描坐标 → 空间坐标的 4×4 列主序矩阵（逗号分隔）；不给就自动对齐
+  --transform <16 个数>   扫描坐标 → 空间坐标的 4×4 列主序矩阵（逗号分隔）；不给就自动对齐。
+                          给了就用对齐接口（scans/{哈希}/alignment）按这个变换导入
   --no-rebuild            不做 AI 重建
   --voxelize              同时体素化（方块风格）
   --part-size <MiB>       分片大小（默认 8，必须是 0.25 的整数倍，最大 32）
-  --asset <哈希>          不上传，直接用已上传的扫描资源发起导入（例如重新对齐）
+  --asset <哈希>          不上传，直接用已上传的扫描资源发起导入（加 --transform 就是重新对齐）
   --no-wait               发起任务后立刻返回`;
 
 /** 扩展名 → 上传格式（接口服务 scan 用途默认接受 glb、drc、obj、zip）。 */
@@ -80,6 +81,13 @@ export async function runScan(ctx: CliContext, args: readonly string[]): Promise
     },
     ...(ctx.sleep ? { sleep: ctx.sleep } : {}),
   };
+  // 参数先检查完再上传（扫描可能有上 GB，传完才发现参数不对就白传了）。
+  const transformText = str(values, 'transform');
+  const transform = transformText !== undefined ? parseTransform(transformText) : undefined;
+  const observedAt = str(values, 'observed-at');
+  if (observedAt !== undefined && Number.isNaN(Date.parse(observedAt))) {
+    throw new CliError('--observed-at 必须是 RFC 3339 时间，例如 2026-11-01T10:00:00Z');
+  }
   let assetHash = str(values, 'asset');
   let uploadInfo: Record<string, unknown> = {};
   if (assetHash !== undefined) {
@@ -121,22 +129,17 @@ export async function runScan(ctx: CliContext, args: readonly string[]): Promise
       await waitForJob(api, result.jobId, waitOptions);
     }
   }
-  const transform = str(values, 'transform');
-  const observedAt = str(values, 'observed-at');
-  if (observedAt !== undefined && Number.isNaN(Date.parse(observedAt))) {
-    throw new CliError('--observed-at 必须是 RFC 3339 时间，例如 2026-11-01T10:00:00Z');
-  }
-  // 已上传的扫描 + 给定变换 = 重新对齐（scans/{scan_id}/alignment）；其余情况发起导入。
+  // 导入扫描（scans）不收变换：给了 --transform 时（首次导入或重新对齐都一样）一律走
+  // scans/{scan_id}/alignment，它只要求资源已校验，不要求扫描已经提交过。
+  const options = {
+    ...(observedAt !== undefined ? { observedAt } : {}),
+    rebuild: !flag(values, 'no-rebuild'),
+    voxelize: flag(values, 'voxelize'),
+  };
   const started =
-    str(values, 'asset') !== undefined && transform !== undefined
-      ? await api.alignScan(assetHash, { transform: parseTransform(transform) })
-      : await api.importScan({
-          assetHash,
-          ...(observedAt !== undefined ? { observedAt } : {}),
-          ...(transform !== undefined ? { transform: parseTransform(transform) } : {}),
-          rebuild: !flag(values, 'no-rebuild'),
-          voxelize: flag(values, 'voxelize'),
-        });
+    transform !== undefined
+      ? await api.alignScan(assetHash, { transform, ...options })
+      : await api.importScan({ assetHash, ...options });
   const jobId = idOf(started, 'jobId');
   if (jobId === undefined) throw new CliError('导入扫描的响应里没有任务编号');
   if (!json) ctx.out(`已发起导入任务 ${jobId}（扫描编号 = 资源哈希 ${assetHash}）`);

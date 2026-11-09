@@ -432,7 +432,82 @@ describe('metaverse scan', () => {
       await main(ctx, ['scan', '--asset', hash, '--transform', transform, '--no-wait', '--json']),
     ).toBe(0);
     expect(fake.requests.at(-1)!.path).toBe(`/api/v1/spaces/demo-space/scans/${hash}/alignment`);
+    expect(JSON.parse(fake.requests.at(-1)!.body.toString())).toEqual({
+      transform: transform.split(',').map(Number),
+      rebuild: true,
+      voxelize: false,
+    });
+    // 重新对齐时 --no-rebuild、--voxelize、--observed-at 也带上（原来被静默丢掉）。
+    expect(
+      await main(ctx, [
+        'scan',
+        '--asset',
+        hash,
+        '--transform',
+        transform,
+        '--no-rebuild',
+        '--voxelize',
+        '--observed-at',
+        '2026-11-02T08:00:00Z',
+        '--no-wait',
+      ]),
+    ).toBe(0);
+    expect(JSON.parse(fake.requests.at(-1)!.body.toString())).toEqual({
+      transform: transform.split(',').map(Number),
+      observedAt: '2026-11-02T08:00:00Z',
+      rebuild: false,
+      voxelize: true,
+    });
     expect(() => parseTransform('1,2,3')).toThrow('16 个数');
+  });
+
+  it('首次导入带 --transform：上传后走 alignment，不把 transform 发给 /scans', async () => {
+    fake = await startFakeApi();
+    const root = directWorkspace(fake);
+    writeFileSync(join(root, 'lobby.glb'), fakeGlb(4096));
+    const ctx = makeContext(root);
+    const transform = '1,0,0,0, 0,1,0,0, 0,0,1,0, 2,0,3,1';
+    expect(
+      await main(ctx, [
+        'scan',
+        'lobby.glb',
+        '--transform',
+        transform,
+        '--observed-at',
+        '2026-11-01T10:00:00Z',
+      ]),
+    ).toBe(0);
+    expect(fake.requests.some((r) => r.path.endsWith('/scans'))).toBe(false);
+    const hash = [...fake.state.uploads.values()][0]!.sha256;
+    const align = fake.requests.find((r) => r.path.endsWith('/alignment'))!;
+    expect(align.path).toBe(`/api/v1/spaces/demo-space/scans/${hash}/alignment`);
+    expect(JSON.parse(align.body.toString())).toEqual({
+      transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2, 0, 3, 1],
+      observedAt: '2026-11-01T10:00:00Z',
+      rebuild: true,
+      voxelize: false,
+    });
+    expect(ctx.lines.join('\n')).toContain('导入完成，提交 commit-9');
+    // /scans 收到 transform 时，接口服务（和假接口）返回 422。
+    const api = new MetaverseApi(
+      new ApiClient({ mode: 'direct', api: fake.url, devTokenUrl: fake.devTokenUrl }),
+      'demo-space',
+    );
+    await expect(
+      api.importScan({ assetHash: hash, transform: [1] } as unknown as { assetHash: string }),
+    ).rejects.toMatchObject({ status: 422 });
+  });
+
+  it('--transform、--observed-at 不合法时，上传之前就报错', async () => {
+    fake = await startFakeApi();
+    const root = directWorkspace(fake);
+    writeFileSync(join(root, 'lobby.glb'), fakeGlb(4096));
+    const ctx = makeContext(root);
+    expect(await main(ctx, ['scan', 'lobby.glb', '--transform', '1,2,3'])).toBe(1);
+    expect(ctx.errors.at(-1)).toContain('16 个数');
+    expect(await main(ctx, ['scan', 'lobby.glb', '--observed-at', '昨天'])).toBe(1);
+    expect(ctx.errors.at(-1)).toContain('RFC 3339');
+    expect(fake.requests).toHaveLength(0);
   });
 
   it('带贴图的扫描打包成 zip 上传（format: zip）', async () => {

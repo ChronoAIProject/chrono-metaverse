@@ -129,6 +129,18 @@ export interface PublishView {
   readonly id?: string;
 }
 
+/** 导入扫描的共同选项（`scans` 和 `scans/{scan_id}/alignment` 都收）。 */
+export interface ScanImportOptions {
+  /** 现实中拍摄的时间（RFC 3339，只用于显示）。 */
+  readonly observedAt?: string;
+  /** 导入后做 AI 重建，默认 true。 */
+  readonly rebuild?: boolean;
+  /** 导入后体素化，默认 false。 */
+  readonly voxelize?: boolean;
+  /** 给处理服务的提示（JSON 对象，≤ 4KB）。 */
+  readonly hints?: unknown;
+}
+
 /** ops-from-upload 的请求体：上传编号和资源哈希只能给一个。 */
 export type OpsFromUploadRequest =
   | { readonly uploadId: string; readonly assetHash?: never }
@@ -261,22 +273,24 @@ export class MetaverseApi {
 
   // ---- 扫描 -----------------------------------------------------------------
 
-  /** `POST /api/v1/spaces/{space_id}/scans` → 202 `{ jobId }`（scan_import 任务）。 */
-  importScan(request: {
-    assetHash: string;
-    observedAt?: string;
-    transform?: readonly number[];
-    rebuild?: boolean;
-    voxelize?: boolean;
-    hints?: unknown;
-  }): Promise<{ jobId?: string; id?: string }> {
+  /**
+   * `POST /api/v1/spaces/{space_id}/scans` → 202 任务（scan_import，响应里的 `id` 是任务编号）。
+   * 请求体没有 `transform`（接口服务拒绝未知字段）：带变换的导入走 `alignScan`。
+   */
+  importScan(request: ScanImportOptions & { assetHash: string }): Promise<{
+    jobId?: string;
+    id?: string;
+  }> {
     return this.client.json('POST', `${this.space}/scans`, { json: request });
   }
 
-  /** `POST /api/v1/spaces/{space_id}/scans/{scan_id}/alignment`，请求体 `{ transform }`：用给定变换重新导入。 */
+  /**
+   * `POST /api/v1/spaces/{space_id}/scans/{scan_id}/alignment`，请求体 `{ transform, observedAt?,
+   * rebuild?, voxelize?, hints? }`：用给定变换导入（首次导入或重新对齐都可以；只要求资源已校验）。
+   */
   alignScan(
     scanId: string,
-    request: { transform: readonly number[] },
+    request: ScanImportOptions & { transform: readonly number[] },
   ): Promise<{ jobId?: string; id?: string }> {
     return this.client.json('POST', `${this.space}/scans/${seg(scanId)}/alignment`, {
       json: request,

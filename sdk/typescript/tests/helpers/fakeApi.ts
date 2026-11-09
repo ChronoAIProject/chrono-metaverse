@@ -377,6 +377,15 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
     }
     if (apiPath === `${space}/scans` && request.method === 'POST') {
       const req = parsed();
+      // ImportScanRequest 没有 transform（带变换的导入走 alignment）。
+      if (
+        invalidFields(
+          req,
+          ['assetHash', 'observedAt', 'rebuild', 'voxelize', 'hints'],
+          ['assetHash'],
+        )
+      )
+        return;
       if (!state.assets.has(String(req.assetHash)))
         return problem(404, 'not_found', '没有这个资源');
       const job = newJob('scan_import', {
@@ -391,8 +400,28 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
     if (
       (m = /^\/api\/v1\/spaces\/[^/]+\/scans\/([0-9a-f]{64})\/(voxelize|alignment)$/.exec(apiPath))
     ) {
-      const job = newJob(m[2] === 'voxelize' ? 'voxelize' : 'scan_import');
-      return json(202, { jobId: job.id });
+      const req = parsed();
+      if (m[2] === 'voxelize') {
+        if (invalidFields(req, ['style'])) return;
+        return json(202, { jobId: newJob('voxelize').id });
+      }
+      if (
+        invalidFields(
+          req,
+          ['transform', 'observedAt', 'rebuild', 'voxelize', 'hints'],
+          ['transform'],
+        )
+      )
+        return;
+      if (!Array.isArray(req.transform) || req.transform.length !== 16)
+        return problem(422, 'invalid_transform', 'transform 必须是 16 个数');
+      // 只要求资源已校验（不要求扫描已经提交过）。
+      if (!state.assets.has(m[1]!)) return problem(422, 'asset_not_found', '没有这个资源');
+      const job = newJob('scan_import', {
+        result: state.scanResult ?? {},
+        resultCommitId: 'commit-9',
+      });
+      return json(202, { id: job.id, kind: job.kind, status: 'queued' });
     }
     // 草稿：{范围}/drafts[/{id}/(ops|ops-from-upload|preview|publish)]
     if (
