@@ -11,14 +11,18 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from pymongo import ASCENDING, IndexModel, MongoClient
+from bson.int64 import Int64
+from pymongo import ASCENDING, IndexModel, MongoClient, ReadPreference
+from pymongo.client_session import ClientSession
 from pymongo.collection import Collection
 from pymongo.database import Database
 from pymongo.errors import BulkWriteError, DuplicateKeyError, OperationFailure
+from pymongo.read_concern import ReadConcern
+from pymongo.write_concern import WriteConcern
 
 from .config import Config
 from .timeutil import Clock, system_clock
@@ -150,6 +154,35 @@ class Store:
 
     def ping(self) -> None:
         self.db.command("ping")
+
+    def run_transaction(self, callback: Callable[[ClientSession], Any]) -> Any:
+        """在一个事务里执行 `callback(session)`（快照读、多数派写）。
+
+        写冲突等临时错误由驱动自动重试整个回调；回调抛出的其他异常中止事务、原样抛出。
+        """
+        with self.client.start_session() as session:
+            return session.with_transaction(
+                callback,
+                read_concern=ReadConcern("snapshot"),
+                write_concern=WriteConcern("majority"),
+                read_preference=ReadPreference.PRIMARY,
+            )
+
+    def add_storage_used(
+        self, space_filter: Mapping[str, Any], delta: int, session: ClientSession | None = None
+    ) -> None:
+        """空间的 `storageUsedBytes` 加上 `delta`（可以是负数，减到 0 为止）。
+
+        接口服务按 u64 读这个字段，所以不能写成负数；字段不存在时按 0 算。条件带主人（`space_filter`）。
+        """
+        if delta == 0:
+            return
+        if delta > 0:
+            update: Any = {"$inc": {"storageUsedBytes": Int64(delta)}}
+        else:
+            used = {"$ifNull": ["$storageUsedBytes", Int64(0)]}
+            update = [{"$set": {"storageUsedBytes": {"$max": [Int64(0), {"$add": [used, Int64(delta)]}]}}}]
+        self.spaces.update_one(dict(space_filter), update, session=session)
 
     def ensure_indexes(self) -> None:
         """幂等地建处理服务依赖的索引。名字和定义与接口服务相同，多副本、两种服务同时执行都安全。"""

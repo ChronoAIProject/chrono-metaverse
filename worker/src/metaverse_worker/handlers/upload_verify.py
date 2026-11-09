@@ -12,7 +12,8 @@
 5. 按用途嗅探格式（子进程里做，见 `processing/sniff.py`）；不合规同样标记失败、删数据块；
 6. 登记成资源（`assets.files` 文档，`_id` = 上传编号、文件名 = 内容哈希）。文件名唯一键冲突（同一内容
    被并发上传、或之前已有）时删掉本次数据块、复用已有资源；
-7. 上传标记为 `done` 并写 `assetHash`，任务完成，`result = {assetHash, reused, format, contentType, bytes}`。
+7. 同一个事务里：上传标记为 `done` 并写 `assetHash`、`storageBytes`，空间的 `storageUsedBytes` 加上上传的
+   大小（复用已有资源也算），任务完成，`result = {assetHash, reused, format, contentType, bytes}`。
 
 每一步都可以重做：崩溃后重新领取的任务按上面的判断从中间接着做。
 
@@ -31,7 +32,7 @@ from ..errors import InputRejected, PermanentJobError
 from ..jobs.lease import Lease, mark_done
 from ..processing.sniff import PURPOSES
 from ..store import C, Store, UploadStatus
-from ..uploads import declared, fail_upload, find_upload, mark_upload_done, settle_upload
+from ..uploads import declared, fail_upload, find_upload, finish_upload, settle_upload
 from .context import JobContext
 
 log = logging.getLogger(__name__)
@@ -155,13 +156,22 @@ def _finish(
     *,
     reused: bool,
 ) -> dict[str, Any]:
-    mark_upload_done(ctx.store, files_id, sha, fmt=fmt, content_type=content_type)
     result = {"assetHash": sha, "reused": reused, "bytes": size}
     if fmt:
         result["format"] = fmt
     if content_type:
         result["contentType"] = content_type
-    mark_done(ctx.store, ctx.lease, result=result)
+    scope = ctx.lease.scope
+
+    def txn(session) -> None:
+        # 上传改成 done、计入空间的存储用量、任务完成，三件事在同一个事务里：租约丢了就一起放弃，
+        # 新的持有者从头收尾，不会多计或漏计。
+        finish_upload(
+            ctx.store, scope, files_id, sha, size, fmt=fmt, content_type=content_type, session=session
+        )
+        mark_done(ctx.store, ctx.lease, result=result, session=session)
+
+    ctx.store.run_transaction(txn)
     log.info("上传 %s 校验通过：%s（%s）", files_id, sha, "复用已有资源" if reused else "新登记")
     return result
 

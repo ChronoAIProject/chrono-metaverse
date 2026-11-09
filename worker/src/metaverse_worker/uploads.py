@@ -10,6 +10,11 @@
 接口服务把 `open` 和 `complete` 都算作进行中的上传（每个空间的上限、存储上限的预估），资源可用性也把
 `complete` 当作"还在校验"。所以校验任务最终失败时，上传必须离开 `complete`（`settle_upload`），
 定期清理再兜底一遍（`settle_stuck_uploads`），否则它会一直占着配额。
+
+**空间的存储用量 `spaces.storageUsedBytes`**（设计 4.1、6.1）由处理服务累加：上传 `complete → done` 时，
+在同一个事务里给上传写 `storageBytes`（计入的字节数）并把空间的用量加上它（复用已有资源也算本空间的
+用量）；资源被定期清理删掉以后，`release_upload_storage` 把还没减回的上传（`storageReleasedAt` 不存在）
+从各自空间的用量里减回去。处理服务写的提交新登记派生资源时也计入（见 `jobs/writeback.py`）。
 """
 
 from __future__ import annotations
@@ -18,6 +23,7 @@ import logging
 from typing import Any
 
 from bson import ObjectId
+from bson.int64 import Int64
 from pymongo.client_session import ClientSession
 
 from .assets import delete_file_chunks, find_asset
@@ -49,29 +55,83 @@ def declared(doc: dict[str, Any]) -> tuple[str | None, int | None, str | None]:
     return sha, size if isinstance(size, int) and not isinstance(size, bool) else None, purpose
 
 
-def mark_upload_done(
+def finish_upload(
     store: Store,
+    scope: SystemScope,
     files_id: Any,
     sha: str,
+    size: int,
     *,
     fmt: str | None,
     content_type: str | None,
     session: ClientSession | None = None,
 ) -> bool:
-    """`complete → done`，写 `assetHash`。上传已经不是 `complete` 时什么也不做，返回 False。"""
+    """`complete → done`，写 `assetHash`、`storageBytes`，并把 `size` 计入空间的存储用量。
+
+    两处写入要放在同一个事务里（传 `session`），否则中途退出会多计或漏计。上传已经不是 `complete` 时
+    什么也不做，返回 False。
+    """
     update: dict[str, Any] = {
         "status": UploadStatus.DONE,
         "assetHash": sha,
         "verifiedAt": now_ts(store.clock),
+        "storageBytes": Int64(size),
     }
     if fmt:
         update["format"] = fmt
     if content_type:
         update["contentType"] = content_type
     moved = store.uploads.update_one(
-        {"_id": files_id, "status": UploadStatus.COMPLETE}, {"$set": update}, session=session
+        {"_id": files_id, "status": UploadStatus.COMPLETE, **scope.child_filter()},
+        {"$set": update},
+        session=session,
     )
-    return moved.modified_count == 1
+    if moved.modified_count != 1:
+        return False
+    store.add_storage_used(scope.space_filter(), size, session=session)
+    return True
+
+
+def release_upload_storage(store: Store, sha: str) -> int:
+    """资源被清理删掉以后，把计过用量的上传从各自空间的 `storageUsedBytes` 里减回去。返回减回了几个上传。
+
+    每个上传单独一个事务：先按 `storageReleasedAt` 不存在的条件写上它，再减空间的用量，所以不会减两次。
+    """
+    released = 0
+    counted = store.uploads.find(
+        {
+            "assetHash": sha,
+            "status": UploadStatus.DONE,
+            "storageBytes": {"$gt": 0},
+            "storageReleasedAt": {"$exists": False},
+        },
+        {"_id": 1, "spaceId": 1, "owner": 1, "storageBytes": 1},
+    )
+    for upload in list(counted):
+        try:
+            owner = Owner.from_doc(upload)
+        except ValueError as error:
+            log.error("上传 %s 记录不合法，不减回用量：%s", upload["_id"], error)
+            continue
+        space = {"_id": upload.get("spaceId"), "owner.kind": owner.kind, "owner.id": owner.id}
+        if _release_one(store, upload["_id"], space, int(upload["storageBytes"])):
+            released += 1
+    return released
+
+
+def _release_one(store: Store, upload_id: Any, space_filter: dict[str, Any], size: int) -> bool:
+    def txn(session: ClientSession) -> bool:
+        moved = store.uploads.update_one(
+            {"_id": upload_id, "storageReleasedAt": {"$exists": False}},
+            {"$set": {"storageReleasedAt": now_ts(store.clock)}},
+            session=session,
+        )
+        if moved.modified_count != 1:
+            return False
+        store.add_storage_used(space_filter, -size, session=session)
+        return True
+
+    return bool(store.run_transaction(txn))
 
 
 def fail_upload(store: Store, files_id: Any, reason: str) -> bool:
@@ -111,7 +171,14 @@ def settle_upload(store: Store, scope: SystemScope, upload_id: Any, reason: str)
         if asset["_id"] != files_id:
             delete_file_chunks(store, files_id)
         fmt, content_type = meta.get("format"), meta.get("contentType")
-        if mark_upload_done(store, files_id, sha, fmt=fmt, content_type=content_type):
+        size = int(asset["length"])
+
+        def txn(session: ClientSession) -> bool:
+            return finish_upload(
+                store, scope, files_id, sha, size, fmt=fmt, content_type=content_type, session=session
+            )
+
+        if store.run_transaction(txn):
             log.info("上传 %s 的内容已登记成资源 %s，校验任务失败后补做收尾", files_id, sha)
             return UploadStatus.DONE
         return None

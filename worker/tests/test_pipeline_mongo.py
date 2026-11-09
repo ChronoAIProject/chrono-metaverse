@@ -161,6 +161,46 @@ def test_upload_verify_resumes_after_crash(runner, store):
     assert doc["status"] == "done" and doc["result"]["assetHash"] == sha
 
 
+def used_bytes(store) -> int:
+    return store.spaces.find_one({"_id": SPACE})["storageUsedBytes"]
+
+
+def test_upload_verify_counts_space_storage(runner, store):
+    """校验通过时把上传的大小计入空间的 storageUsedBytes（复用已有资源也算），重做不会重复计。"""
+    first = b"echo storage\n" * 300
+    uid = make_upload(store, first, "script")
+    assert run_job(runner, store, "upload_verify", {"uploadId": uid})["status"] == "done"
+    assert used_bytes(store) == len(first)
+    assert store.uploads.find_one({"_id": uid})["storageBytes"] == len(first)
+    # 已经 done 的上传再校验一次：不重复计
+    assert run_job(runner, store, "upload_verify", {"uploadId": uid})["status"] == "done"
+    assert used_bytes(store) == len(first)
+    # 同一内容再上传一次（复用已有资源）：也算本空间的用量
+    again = make_upload(store, first, "script")
+    doc = run_job(runner, store, "upload_verify", {"uploadId": again})
+    assert doc["result"]["reused"] is True and used_bytes(store) == 2 * len(first)
+    # 校验失败的上传不计
+    bad = make_upload(store, b"not an image", "texture")
+    assert run_job(runner, store, "upload_verify", {"uploadId": bad})["status"] == "failed"
+    assert used_bytes(store) == 2 * len(first)
+
+
+def test_upload_verify_lease_lost_does_not_count_storage(runner, store):
+    """收尾时租约已丢：上传改 done、计用量、任务完成在同一个事务里，一起放弃。"""
+    content = b"echo lost\n" * 100
+    uid = make_upload(store, content, "script")
+    jid = make_job(store, "upload_verify", {"uploadId": uid})
+    lease = claim(store, "worker-a", ["upload_verify"], 60_000)
+    store.jobs.update_one({"_id": jid}, {"$set": {"leaseOwner": "worker-b"}})
+    assert runner.process(lease) == "lost"
+    assert store.uploads.find_one({"_id": uid})["status"] == "complete"
+    assert used_bytes(store) == 0
+    # 新的持有者从头收尾，只计一次
+    store.jobs.update_one({"_id": jid}, {"$set": {"status": "queued"}, "$unset": {"leaseOwner": ""}})
+    assert runner.run_once() is True
+    assert job(store, jid)["status"] == "done" and used_bytes(store) == len(content)
+
+
 def test_upload_verify_timeout_fails_upload(runner, store, monkeypatch):
     """嗅探子进程超时（不可重试）：任务失败的同时上传也标记失败、删数据块，不再占着进行中的配额。"""
 
@@ -237,6 +277,7 @@ def test_stuck_complete_uploads_are_settled_by_housekeeping(runner, store):
     assert status[queued]["status"] == "complete" and status[fresh]["status"] == "complete"
     assert status[registered]["status"] == "done" and status[registered]["assetHash"] == sha
     assert read_asset(store, sha) == content
+    assert used_bytes(store) == len(content)  # 补做收尾的也计入用量；失败的不计
     assert store.uploads.find_one({"_id": exhausted})["status"] == "failed"
     for uid in (failed, orphan, exhausted):
         assert store.col(C.ASSET_CHUNKS).count_documents({"files_id": uid}) == 0
@@ -494,6 +535,18 @@ def test_model_import_job(runner, store):
     junk = upload_asset(store, b"\x00\x01garbage", "model", kind="model")
     doc = run_job(runner, store, "model_import", {"assetHash": junk})
     assert doc["status"] == "failed" and doc["attempt"] == 1
+
+
+def test_derived_assets_count_space_storage_once(runner, store):
+    """扫描导入新登记进 assetRefs 的网页用模型计入空间用量；同样的资源再次引用不重复计。"""
+    asset, doc = import_room(runner, store, rebuild=False)
+    assert doc["status"] == "done", doc.get("lastError")
+    web = commits(store)[0]["scan"]["webModelHashes"]
+    web_bytes = sum(find_asset(store, h)["length"] for h in web)
+    assert web_bytes > 0 and used_bytes(store) == web_bytes  # 原始扫描在这里没经过上传校验，不计
+    doc = run_job(runner, store, "scan_import", {"assetHash": asset, "rebuild": False})
+    assert doc["status"] == "done" and len(commits(store)) == 2
+    assert used_bytes(store) == web_bytes
 
 
 def test_raw_scan_not_public_but_kept_by_cleanup(runner, store):

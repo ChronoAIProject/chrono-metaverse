@@ -8,7 +8,7 @@
 2. 由 `build(session, space)` 按事务内看到的最新状态算出本次变化（旧区块写 null、旧物件删除等）；
 3. 插入提交：`seq = head.seq + 1`，`at = max(当前时间, head.at)`，带 `jobId`（`commits.jobId` 部分唯一索引）；
 4. 按 `head.seq == 旧值` 条件推进 `spaces.head`（首次导入扫描时同时固定坐标系 `frame`）；
-5. 更新物件当前状态 `entities`、登记资源引用 `assetRefs`；
+5. 更新物件当前状态 `entities`、登记资源引用 `assetRefs`；本空间新登记的资源计入空间的 `storageUsedBytes`；
 6. **`mark_done`**：按 `{_id, attempt, leaseOwner, status: running}` 把任务标记为完成并写入 `resultCommitId`。
 
 第 6 步匹配不到（租约已丢）或 jobId 唯一键冲突时，中止事务、丢弃结果。并发提交造成的写冲突由驱动的
@@ -26,10 +26,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from bson import Binary
-from pymongo import ReadPreference
 from pymongo.client_session import ClientSession
-from pymongo.read_concern import ReadConcern
-from pymongo.write_concern import WriteConcern
 
 from ..canonical import content_hash
 from ..errors import PermanentJobError
@@ -410,23 +407,25 @@ def write_back(
                 },
                 session=session,
             )
+        added_bytes = 0
         for asset_hash in sorted(set(plan.asset_refs)):
-            store.col(C.ASSET_REFS).update_one(
+            ref = store.col(C.ASSET_REFS).update_one(
                 {"hash": asset_hash, "spaceId": scope.space_id},
                 {"$setOnInsert": {"owner": scope.owner.as_doc(), "createdAt": at, "commitId": commit_id}},
                 upsert=True,
                 session=session,
             )
+            if ref.upserted_id is not None:
+                # 本空间第一次引用这个派生资源（网页用模型、贴图）：计入空间的存储用量，每个空间只计一次
+                files = store.col(C.ASSET_FILES).find_one(
+                    {"filename": asset_hash}, {"length": 1}, session=session
+                )
+                added_bytes += int(files["length"]) if files else 0
+        store.add_storage_used(scope.space_filter(), added_bytes, session=session)
         mark_done(store, lease, result_commit_id=commit_id, result=plan.result or None, session=session)
         outcome.update(seq=seq, at=at, chunks=[c["hash"] for c in plan.changed_chunks if c.get("hash")])
 
-    with store.client.start_session() as session:
-        session.with_transaction(
-            callback,
-            read_concern=ReadConcern("snapshot"),
-            write_concern=WriteConcern("majority"),
-            read_preference=ReadPreference.PRIMARY,
-        )
+    store.run_transaction(callback)
     publish_chunks(store, outcome["chunks"], outcome["at"])
     log.info("任务 %s 写回提交 %s（seq %s）", lease.job_id, commit_id, outcome["seq"])
     return CommitResult(commit_id, outcome["seq"], outcome["at"])

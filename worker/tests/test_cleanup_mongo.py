@@ -14,6 +14,7 @@ from metaverse_worker.assets import find_asset
 from metaverse_worker.jobs.cleanup import cleanup_assets, cleanup_drafts, run_cleanup
 from metaverse_worker.store import C, Store
 from metaverse_worker.timeutil import format_ts
+from metaverse_worker.uploads import release_upload_storage
 
 pytestmark = pytest.mark.mongo
 
@@ -79,6 +80,42 @@ def test_assets_referenced_by_draft_ops_refs_survive(store):
     store.col(C.DRAFTS).delete_one({"_id": "d1"})
     assert cleanup_assets(store, 7) == 2
     assert find_asset(store, ops) is None and find_asset(store, tex) is None
+
+
+def test_deleted_asset_releases_counted_upload_storage(store):
+    """没人引用的资源被删掉后，计过用量的上传各自减回；只减一次，用量不会变成负数。"""
+    make_space(store)
+    make_space(store, "other-space")
+    content = b"unused upload bytes" * 10
+    sha = upload_asset(store, content, "script", kind="script")
+    age_assets(store, sha)
+    size = len(content)
+    for uid, space_id in (("u1", SPACE), ("u2", SPACE), ("u3", "other-space"), ("u4", SPACE)):
+        store.uploads.insert_one(
+            {
+                "_id": uid,
+                "spaceId": space_id,
+                "owner": OWNER,
+                "purpose": "script",
+                "size": size,
+                "sha256": sha,
+                "status": "done",
+                "assetHash": sha,
+                "createdAt": ts(store, 0),
+                # u4 是处理服务累加用量以前完成的上传，没有计过，也不减
+                **({"storageBytes": size} if uid != "u4" else {}),
+            }
+        )
+    store.spaces.update_one({"_id": SPACE}, {"$set": {"storageUsedBytes": 2 * size + 1000}})
+    store.spaces.update_one({"_id": "other-space"}, {"$set": {"storageUsedBytes": size // 2}})
+    assert cleanup_assets(store, 7) == 1 and find_asset(store, sha) is None
+    assert store.spaces.find_one({"_id": SPACE})["storageUsedBytes"] == 1000
+    assert store.spaces.find_one({"_id": "other-space"})["storageUsedBytes"] == 0  # 减到 0 为止
+    released = {u["_id"] for u in store.uploads.find({"storageReleasedAt": {"$exists": True}})}
+    assert released == {"u1", "u2", "u3"}
+    # 再减一次什么也不做
+    assert release_upload_storage(store, sha) == 0
+    assert store.spaces.find_one({"_id": SPACE})["storageUsedBytes"] == 1000
 
 
 def make_preview(store: Store, token_hash: str, draft_id: str, *, expires_in_ms: int) -> None:

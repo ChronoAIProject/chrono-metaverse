@@ -101,7 +101,8 @@ export MONGODB_DATABASE=metaverse
    不合规同样标记失败、删数据块；
 4. 登记资源（`assets.files`：`_id` = 上传编号，`filename` = 内容哈希，`metadata = {sha256, contentType,
    kind: 用途, spaceId, uploadId, format}`）。文件名冲突就删本次数据块、复用已有资源；
-5. 上传标记 `done` 并写 `assetHash`。
+5. 同一个事务里：上传标记 `done` 并写 `assetHash`、`storageBytes`，空间的 `storageUsedBytes` 加上上传的大小
+   （见"空间存储用量"），任务标记完成。租约丢了就一起放弃，新的持有者重新收尾，不会多计或漏计。
 
 **任务因为别的原因最终失败**（嗅探子进程超时或内存超限、子进程反复崩溃、数据库抖动导致重试次数用完）时，
 上传不能一直停在 `complete`：接口服务把 `open`、`complete` 都算作进行中的上传（每个空间的上限、存储上限的
@@ -123,7 +124,8 @@ uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceI
           purpose: scan|model|texture|ops|script, size: 声明的总字节数, sha256: 声明的整体哈希, partSize,
           status: open|complete|done|failed|expired, createdAt, completedAt?, jobId?: upload_verify 任务编号,
           // 处理服务写入：
-          assetHash?, format?, contentType?, verifiedAt?, verifiedSha256?, error?, failedAt? }
+          assetHash?, format?, contentType?, verifiedAt?, verifiedSha256?, error?, failedAt?,
+          storageBytes?: 计入空间用量的字节数, storageReleasedAt?: 资源被清理、用量已减回的时间 }
 ```
 
 处理服务只处理 `status: complete` 的上传（接口服务"完成上传"时把 `open` 改成 `complete` 并建任务）。
@@ -167,7 +169,7 @@ uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceI
 
    - **资源引用表**：`assetRefs` 是公开资源接口 `GET /api/public/assets/{hash}.bin` 的白名单（设计 8.2），
      只登记网页要用的资源。原始扫描可能含个人信息，**不登记**，只能经 `/api/v1` 下载；它被提交的
-     `scan.assetHash` 引用，定期清理不会删它；
+     `scan.assetHash` 引用，定期清理不会删它。本空间新登记的网页用模型、贴图计入空间存储用量（见下）；
    - **重建层替换规则**：物体重建正常运行时，重建层的全部旧物件（structure / object / template）换成这次的
      结果；物体重建模块导入失败、只交了结构时，只替换 `kind: structure` 的物件，旧物体保留；
    - **锚点**：`kind: object` 且带 `anchorId` 的物体，按编号前缀定类型（`table`/`desk` → table，
@@ -251,6 +253,21 @@ result.metrics  # 任意 JSON，原样放进 result.objects
 引用的贴图都随结果给出、编号不和结构元素（`floor`、`wall-*`、`glazing-*`）重复。不合格 → 任务失败
 （不可重试）；模块导入失败 → 记录警告、只提交结构。
 
+## 空间存储用量
+
+`spaces.storageUsedBytes`（设计 4.1；接口服务创建上传时按"已用 + 进行中的上传 + 本次大小 > storageLimitBytes"
+返回 413）由处理服务累加，都按 `{_id, owner.kind, owner.id}` 条件更新，和引起变化的写入在同一个事务里：
+
+| 时机 | 变化 |
+|---|---|
+| `upload_verify` 把上传改成 `done`（新登记或复用已有资源都算） | `+size`，上传写 `storageBytes = size` |
+| 处理服务写的提交（`scan_import`、`rebuild`）在 `assetRefs` 里**新**登记本空间的派生资源（网页用模型、贴图） | `+资源字节数`（同一空间同一资源只计一次） |
+| 定期清理删掉没人引用的资源 | 对每个 `assetHash` 是它、带 `storageBytes`、还没有 `storageReleasedAt` 的上传：写 `storageReleasedAt`，所属空间 `-storageBytes`（减到 0 为止，接口服务按 u64 读） |
+
+不计入的：区块、物件记录、方块表（在各自的集合里，不在 GridFS）；`model_import` 重新导出的模型（它的来源
+上传已经计入）。接口服务在"哈希已存在、直接复用"创建上传（创建即 `done`）时也应 `+size` 并写
+`storageBytes`，这样资源被清理时能一并减回。
+
 ## 定期清理
 
 后台线程每 `WORKER_CLEANUP_INTERVAL_SECONDS` 秒一次（设计 6.1），按顺序：
@@ -266,7 +283,8 @@ result.metrics  # 任意 JSON，原样放进 result.objects
    （`{draftId, spaceId}`）；预览令牌（最长 7 天）和草稿区块再各自按自己的 `expiresAt` 扫一遍。每轮最多
    200 个草稿；
 3. **没人引用的资源**：上传或最近复用超过 `WORKER_ASSET_GRACE_DAYS`（7 天）、没有被引用的资源，先删 `files`
-   文档再删数据块（草稿在第 2 步先删，过期草稿引用的资源本轮就不再算被引用）。
+   文档再删数据块，再把计过用量的上传从各自空间的 `storageUsedBytes` 里减回（见上）。草稿在第 2 步先删，
+   过期草稿引用的资源本轮就不再算被引用。
 
 处理服务启动时也幂等地建 `drafts`、`draftChunks`、`previews` 的 `expiresAt` 索引（名字和定义与接口服务相同）。
 健康检查的 `lastCleanup` 带每一项处理了多少：`{at, exhaustedJobs, stuckUploads, uploads, drafts, previews,
