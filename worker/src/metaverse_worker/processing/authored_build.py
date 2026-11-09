@@ -13,7 +13,9 @@
    部件表面的一点，取扫描最近表面（法线相容优先）的颜色，没采到的纹素用 push-pull 补；附近完全没有扫描时
    退回后备纯色；
 4. **偏差**：物件包围盒水平和向上各外扩 5 厘米、底面以上 1 厘米（不算地面）范围内的扫描表面密集采样，
-   求到物件网格的距离，写成 `fit {meanCm, p90Cm, coverage3cm}`；范围里几乎没有扫描时不写。
+   求到物件网格的距离，写成 `fit {meanCm, p90Cm, coverage3cm}`；范围里几乎没有扫描时不写。墙和玻璃（地面
+   以外的结构）作为背景参与最近距离（与重建工作台 compare 相同）：贴墙物件范围里的墙面扫描点算到墙上，
+   不当成物件的偏差。
 
 采样的随机数按物件编号固定，同样的输入得到同样的贴图、偏差和记录哈希（重新重建没有变化就不提交）。
 """
@@ -43,6 +45,7 @@ from .fit_texture import (
     ColorSource,
     SurfaceIndex,
     TextureParams,
+    _closest_point_on_triangles,
     _rasterize,
     encode_jpeg,
     fit_stats,
@@ -64,6 +67,8 @@ BAKE_DENSITY = 40_000.0
 MAX_BAKE_POINTS = 400_000
 MAX_GLTF_ZIP_MEMBERS = 64
 GLTF_MAIN = "model.gltf"  # 父进程摆好的 gltf 主文件名（format gltf）
+BACKGROUND_MARGIN = 0.3  # 偏差的背景：只用离偏差范围 30 厘米以内的结构三角形
+BACKGROUND_EXACT_TRIANGLES = 2000  # 背景三角形不多时逐个精确求距离，多了用采样点索引
 
 
 def _seed(*parts: str) -> int:
@@ -98,8 +103,59 @@ def fit_box(bounds: Mapping[str, Any]) -> tuple[np.ndarray, np.ndarray]:
     return lo, hi
 
 
+def background_meshes(bodies: Mapping[str, Mapping[str, Any]], templates: Mapping[str, Any]) -> list[Mesh]:
+    """偏差的背景：地面以外的结构（墙、玻璃……）的网格。"""
+    out = []
+    for body in bodies.values():
+        props = body.get("props") or {}
+        if body.get("kind") != "structure" or props.get("structure") == "floor" or body.get("shape") is None:
+            continue
+        mesh = merge_meshes([p.mesh for p in build_parts(body["shape"], templates)])
+        if len(mesh.indices):
+            out.append(mesh)
+    return out
+
+
+def background_distance(
+    P: np.ndarray, background: list[Mesh], lo: np.ndarray, hi: np.ndarray
+) -> np.ndarray | None:
+    """扫描点到背景（偏差范围附近的结构三角形）的距离；附近没有结构时返回 None。"""
+    tris = [m.triangles() for m in background if len(m.indices)]
+    if not tris or len(P) == 0:
+        return None
+    T = np.concatenate(tris)
+    near = np.all(
+        (T.max(axis=1) >= lo - BACKGROUND_MARGIN) & (T.min(axis=1) <= hi + BACKGROUND_MARGIN), axis=1
+    )
+    T = T[near]
+    if len(T) == 0:
+        return None
+    if len(T) > BACKGROUND_EXACT_TRIANGLES:
+        index = SurfaceIndex.build(
+            [
+                Mesh(
+                    T.reshape(-1, 3),
+                    np.zeros((len(T) * 3, 3)),
+                    np.zeros((len(T) * 3, 2)),
+                    np.arange(len(T) * 3).reshape(-1, 3),
+                )
+            ],
+            spacing=0.02,
+        )
+        return index.query(P, k=4)[0]
+    best = np.full(len(P), np.inf)
+    for t in T:  # 结构多是大块平面，三角形少：逐个精确求最近点
+        cp = _closest_point_on_triangles(np.broadcast_to(t, (len(P), 3, 3)), P)
+        best = np.minimum(best, np.linalg.norm(cp - P, axis=1))
+    return best
+
+
 def entity_fit(
-    meshes: list[Mesh], table: FaceTable, bounds: Mapping[str, Any], eid: str
+    meshes: list[Mesh],
+    table: FaceTable,
+    bounds: Mapping[str, Any],
+    eid: str,
+    background: list[Mesh] | None = None,
 ) -> tuple[dict[str, float] | None, int]:
     """扫描点到物件网格的偏差（见模块说明第 4 条）。返回 (fit 或 None, 采样点数)。"""
     meshes = [m for m in meshes if len(m.indices)]
@@ -111,6 +167,9 @@ def entity_fit(
         return None, len(P)
     index = SurfaceIndex.build(meshes, spacing=0.01, seed=_seed("surface", eid))
     d, _, _ = index.query(P, k=4)
+    db = background_distance(P, background or [], lo, hi)
+    if db is not None:
+        d = np.minimum(d, db)
     return fit_stats(d), len(P)
 
 
@@ -423,6 +482,12 @@ def authored_rebuild(
     template_shapes = {eid: body["shape"] for eid, body in templates.items()}
     table = FaceTable(mesh_space)
     model_files, placed = export_models(authored, sources, workdir, limits)
+    structure_bodies = (
+        {e: entities[e] for e in structure_ids}
+        if authored["structure"] == "keep"
+        else {e: authored["entities"][e] for e in structure_ids}
+    )
+    background = background_meshes(structure_bodies, template_shapes)
 
     bake_stats = {"entities": 0, "parts": 0, "textured": 0, "fallback": 0}
     fits: list[dict[str, Any]] = []
@@ -446,7 +511,8 @@ def authored_rebuild(
                 if used:
                     body["textures"] = sorted(used)
             meshes = [p.mesh for p in build_parts(body["shape"], template_shapes)]
-        fit, points = entity_fit(meshes, table, body["bounds"], eid)
+        own = [] if eid in structure_ids else background
+        fit, points = entity_fit(meshes, table, body["bounds"], eid, own)
         if fit is not None:
             body["fit"] = fit
         fits.append({"entityId": eid, "points": points, **(fit or {})})
@@ -481,6 +547,8 @@ def authored_rebuild(
 
 __all__ = [
     "authored_rebuild",
+    "background_distance",
+    "background_meshes",
     "bake_entity",
     "bake_mesh",
     "entity_fit",

@@ -614,3 +614,31 @@ def test_uv_extents_follow_projection():
     eu, ev = uv_extents(mesh)
     assert eu == pytest.approx(2.0, rel=1e-6) and ev == pytest.approx(1.0, rel=1e-6)
     assert png_bytes(np.zeros((2, 2, 3), np.uint8))  # 夹具可用
+
+
+def test_fit_counts_wall_points_against_the_wall():
+    """偏差的背景：贴墙物件范围里的墙面扫描点算到墙上（与工作台 compare 相同），地面不当背景。"""
+    from metaverse_worker.processing.authored_build import background_meshes, entity_fit
+    from metaverse_worker.processing.bake import FaceTable
+
+    table = FaceTable(room_mesh())
+    # 离南墙（z = 0）4 厘米的矮柜；扫描里没有它，偏差范围（外扩 5 厘米）里只有墙面的点
+    cabinet = sh.box([1.0, 0.75, 0.56], xf=sh.transform(position=[1.5, 0, 0.32]))
+    meshes = [p.mesh for p in build_parts(cabinet)]
+    bounds = {"min": [1.0, 0.0, 0.04], "max": [2.0, 0.75, 0.6]}
+    wall = sh.box([5.0, 2.6, 0.01], xf=sh.transform(position=[2.5, 0, -0.005]))
+    floor = sh.box([5.0, 0.01, 4.0], xf=sh.transform(position=[2.5, -0.01, 2.0]))
+    background = background_meshes(
+        {
+            "wall-south": {"kind": "structure", "props": {"structure": "wall"}, "shape": wall},
+            "floor": {"kind": "structure", "props": {"structure": "floor"}, "shape": floor},
+            "desk": {"kind": "object", "shape": sh.box([1, 1, 1])},
+        },
+        {},
+    )
+    assert len(background) == 1  # 只有墙：地面和物体不当背景
+    alone, n = entity_fit(meshes, table, bounds, "cabinet")
+    with_wall, n2 = entity_fit(meshes, table, bounds, "cabinet", background)
+    assert n == n2 > 20
+    assert alone["meanCm"] > 3.5
+    assert with_wall["meanCm"] < 0.5 and with_wall["coverage3cm"] > 0.99
