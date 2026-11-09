@@ -808,7 +808,7 @@ Python 3.13；numpy、scipy、pillow、trimesh、DracoPy、fast-simplification�
 | `.github/workflows/ci.yml` | `worker` 任务改成本地工具：不再起 MongoDB，`uv sync --frozen --extra dev`、ruff、pytest；删掉"持续集成插件的测试"；hadolint 只查两个 Dockerfile |
 | `.github/dependabot.yml` | 删掉 docker 的 `/infra/worker` 和 pip 的 `/infra/worker`（S6a）；加 `/recon`（S7） |
 | `.github/scripts/pytest_require_mongo.py`、`test_pytest_require_mongo.py` | 删除 |
-| `infra/chrono-cd/check-app.mjs` 及测试 | 删掉处理服务的检查；加：`METAVERSE_DEMO_SEED_HOSTS` 显式写出且每项合法；种子是新格式（旧字段报错）；清单和来源表的地址是 https、主机在列表里、sha256 和大小齐全；上面列出的上限和缓存配置显式写出且是正整数；不允许出现 `metaverse-worker` |
+| `infra/chrono-cd/check-app.mjs` 及测试 | 删掉处理服务的检查（其中"`up.sh` 给处理服务设线程变量"一条 S2 已改成只在 `up.sh` 起处理服务时检查）；加：`METAVERSE_DEMO_SEED_HOSTS` 显式写出且每项合法；种子是新格式（旧字段报错）；清单和来源表的地址是 https、主机在列表里、sha256 和大小齐全；上面列出的上限和缓存配置显式写出且是正整数；不允许出现 `metaverse-worker` |
 | `infra/chrono-cd/pin-images.mjs`、`check-pins.mjs` 及测试 | 只认 `api=`、`web=`；删掉处理服务构建后端的检查 |
 | `infra/chrono-cd/README.md`、`demo/README.md` | 删掉处理服务、线程数一节；"演示数据"一节改成重建包（7.4）；回滚一节按 11.5；更新镜像时注意种子格式和镜像要在同一次 `PUT` 里一起换 |
 
@@ -1038,7 +1038,12 @@ S2 做完后的状态（实施记录）：
      S3 一行和 S1 的实施记录都把它放在 S3；S3 正在并行开发，为了不在同一处冲突，S2 只让资源元数据带上核对记录、Content-Type 按
      `check.format`、创建上传时的直接复用按核对记录判断。所以 S2 合并以后到 S3 合并之前，新上传的物件模型（没有 `sourceHash`）还
      不能被物件引用（`model_import` 已下线），这是中间状态；
-  2. `upload_verify` 的处理放在 `runner/upload_verify.rs`（文件清单写在 `verify/mod.rs` 里），`verify/` 只放检查器。
+  2. `upload_verify` 的处理放在 `runner/upload_verify.rs`（文件清单写在 `verify/mod.rs` 里），`verify/` 只放检查器；
+  3. **部署检查 `check-app` 提前改了一处**（10.2 原定 S9 改）：`up.sh` 不再起处理服务以后，`check-app` 仍要求它给处理服务设
+     `OPENBLAS_NUM_THREADS`、`OMP_NUM_THREADS`、`MALLOC_ARENA_MAX`，持续集成会失败。改成只在 `up.sh` 起处理服务时检查；
+     `app.json` 里处理服务自己的线程变量照旧检查（R2 之前线上仍跑旧的处理服务），S9 删处理服务时连同这条规则一起删。
+- 中断后的收尾（这一步做到快结束时机器重启，之后接着做）：补上上面第 3 条；执行器在索引就绪之前收到停止信号也直接退出
+  （原来等就绪的循环不看停止信号，数据库一直连不上时停止会卡住），加了测试；重新跑了全部检查和本机验收（结果见合并请求说明）。
 
 #### S3 重建路径
 
