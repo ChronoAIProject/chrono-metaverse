@@ -1,7 +1,7 @@
 name: CI
 
 # 每次推送和每个合并请求都跑：接口服务、网站（含夹具模式的端到端测试）、处理服务、命令行（目录存在时）
-# 和仓库检查。
+# 和仓库检查。跨服务的九步验收（infra/dev/e2e.mjs）要本地起全套并提供前厅扫描，不在这里跑。
 # 写法参照 CMA 的 .github/workflows/ci.yml，按本项目的规模收缩。
 
 on:
@@ -225,8 +225,9 @@ jobs:
           cache: false
       - name: 数据访问边界（不需要编译）
         run: bash .github/scripts/check-db-boundary.sh
-      - name: 本地开发设施：模拟 NyxID 的测试
-        run: node --test infra/dev/mock-nyxid.test.mjs
+      # 模拟 NyxID、九步验收脚本的小工具和参数检查（验收本身要起全套和前厅扫描，不在这里跑）。
+      - name: 本地开发设施的测试
+        run: node --test infra/dev/*.test.mjs
       - name: 部署规格检查（infra/chrono-cd/app.json）
         run: |
           node --test infra/chrono-cd/*.test.mjs
@@ -235,6 +236,8 @@ jobs:
         run: |
           node --check infra/dev/mock-nyxid.mjs
           node --check infra/dev/call.mjs
+          node --check infra/dev/e2e.mjs
+          node --check infra/dev/e2e-lib.mjs
           node -e 'for (const f of process.argv.slice(1)) JSON.parse(require("fs").readFileSync(f, "utf8"))' \
             infra/dev/org-roles.json infra/chrono-cd/app.json
       - name: shellcheck
