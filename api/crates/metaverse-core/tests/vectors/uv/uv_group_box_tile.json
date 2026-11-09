@@ -1,0 +1,119 @@
+{
+  "description": "材质写在组合上：子形状先用自己的 transform，再按全部子形状合起来的包围盒投影（第二个盒子偏航 90°）",
+  "kind": "uv",
+  "name": "group-box-tile",
+  "shape": {
+    "children": [
+      {
+        "size": [
+          1,
+          1,
+          1
+        ],
+        "type": "box"
+      },
+      {
+        "size": [
+          1,
+          1,
+          1
+        ],
+        "transform": {
+          "position": [
+            3,
+            0,
+            0
+          ],
+          "yaw": 90
+        },
+        "type": "box"
+      }
+    ],
+    "material": {
+      "texture": "9f2c7d4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d",
+      "tile": [
+        1,
+        1
+      ],
+      "uv": "box"
+    },
+    "type": "group"
+  },
+  "templates": {},
+  "tolerance": {
+    "normalDot": 0.99,
+    "position": 0.00001,
+    "uv": 0.00001
+  },
+  "vertices": [
+    {
+      "normal": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "position": [
+        -0.5,
+        1.0,
+        -0.5
+      ],
+      "uv": [
+        0.0,
+        0.0
+      ],
+      "where": "第一个盒子 +y 面"
+    },
+    {
+      "normal": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "position": [
+        3.5,
+        1.0,
+        0.5
+      ],
+      "uv": [
+        4.0,
+        1.0
+      ],
+      "where": "第二个盒子 +y 面"
+    },
+    {
+      "normal": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "position": [
+        3.5,
+        0.0,
+        -0.5
+      ],
+      "uv": [
+        0.0,
+        0.0
+      ],
+      "where": "第二个盒子朝 +x 的面（局部 +z 面转过来的）"
+    },
+    {
+      "normal": [
+        0.0,
+        0.0,
+        -1.0
+      ],
+      "position": [
+        2.5,
+        1.0,
+        -0.5
+      ],
+      "uv": [
+        3.0,
+        1.0
+      ],
+      "where": "第二个盒子朝 −z 的面"
+    }
+  ],
+  "wrap": "repeat"
+}

@@ -1,0 +1,665 @@
+{
+  "cases": [
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "panel-01",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "shading": "albedo",
+                "texture": {
+                  "sha256": "e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5",
+                  "size": 268321,
+                  "url": "http://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/0123456789abcdef0123456789abcdef01234567/infra/chrono-cd/demo/textures/counter-marble.jpg"
+                },
+                "tile": [
+                  0.8,
+                  0.8
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "type": "box"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "外链必须是 https",
+      "name": "http",
+      "valid": false,
+      "where": "material.texture.url"
+    },
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "panel-01",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "shading": "albedo",
+                "texture": {
+                  "sha256": "e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5",
+                  "size": 268321,
+                  "url": "https://user@raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/0123456789abcdef0123456789abcdef01234567/infra/chrono-cd/demo/textures/counter-marble.jpg"
+                },
+                "tile": [
+                  0.8,
+                  0.8
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "type": "box"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "https 地址不能带用户名",
+      "name": "userinfo",
+      "valid": false,
+      "where": "material.texture.url"
+    },
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "panel-01",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "shading": "albedo",
+                "texture": {
+                  "sha256": "E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5E5",
+                  "size": 268321,
+                  "url": "https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/0123456789abcdef0123456789abcdef01234567/infra/chrono-cd/demo/textures/counter-marble.jpg"
+                },
+                "tile": [
+                  0.8,
+                  0.8
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "type": "box"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "sha256 必须是小写十六进制",
+      "name": "sha256-uppercase",
+      "valid": false,
+      "where": "material.texture.sha256"
+    },
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "panel-01",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "shading": "albedo",
+                "texture": {
+                  "sha256": "e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5",
+                  "size": 268321,
+                  "url": "https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/0123456789abcdef0123456789abcdef01234567/infra/chrono-cd/demo/textures/counter-marble.jpg"
+                },
+                "tile": [
+                  0.8,
+                  0.8
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "type": "box"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "sha256 必须是 64 位",
+      "name": "sha256-length",
+      "valid": false,
+      "where": "material.texture.sha256"
+    },
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "panel-01",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "shading": "albedo",
+                "texture": {
+                  "sha256": "e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5",
+                  "size": 0,
+                  "url": "https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/0123456789abcdef0123456789abcdef01234567/infra/chrono-cd/demo/textures/counter-marble.jpg"
+                },
+                "tile": [
+                  0.8,
+                  0.8
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "type": "box"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "size 必须是正整数",
+      "name": "size-zero",
+      "valid": false,
+      "where": "material.texture.size"
+    },
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "panel-01",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "shading": "albedo",
+                "texture": {
+                  "sha256": "e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5",
+                  "size": 16777217,
+                  "url": "https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/0123456789abcdef0123456789abcdef01234567/infra/chrono-cd/demo/textures/counter-marble.jpg"
+                },
+                "tile": [
+                  0.8,
+                  0.8
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "type": "box"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "size 超过 16 MiB（16777216 字节）",
+      "name": "size-too-large",
+      "valid": false,
+      "where": "material.texture.size"
+    },
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "panel-01",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "shading": "albedo",
+                "texture": {
+                  "sha256": "e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5",
+                  "size": 1024.5,
+                  "url": "https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/0123456789abcdef0123456789abcdef01234567/infra/chrono-cd/demo/textures/counter-marble.jpg"
+                },
+                "tile": [
+                  0.8,
+                  0.8
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "type": "box"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "size 必须是整数",
+      "name": "size-fraction",
+      "valid": false,
+      "where": "material.texture.size"
+    },
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "panel-01",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "shading": "albedo",
+                "texture": {
+                  "sha256": "e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5",
+                  "size": "268321",
+                  "url": "https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/0123456789abcdef0123456789abcdef01234567/infra/chrono-cd/demo/textures/counter-marble.jpg"
+                },
+                "tile": [
+                  0.8,
+                  0.8
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "type": "box"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "size 必须是数字",
+      "name": "size-string",
+      "valid": false,
+      "where": "material.texture.size"
+    },
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "panel-01",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "shading": "albedo",
+                "texture": {
+                  "sha256": "e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5",
+                  "url": "https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/0123456789abcdef0123456789abcdef01234567/infra/chrono-cd/demo/textures/counter-marble.jpg"
+                },
+                "tile": [
+                  0.8,
+                  0.8
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "type": "box"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "url、sha256、size 都必须给",
+      "name": "size-missing",
+      "valid": false,
+      "where": "material.texture.size"
+    },
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "panel-01",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "shading": "albedo",
+                "texture": {
+                  "format": "jpeg",
+                  "sha256": "e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5",
+                  "size": 268321,
+                  "url": "https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/0123456789abcdef0123456789abcdef01234567/infra/chrono-cd/demo/textures/counter-marble.jpg"
+                },
+                "tile": [
+                  0.8,
+                  0.8
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "type": "box"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "外链对象只能有 url、sha256、size",
+      "name": "extra-field",
+      "valid": false,
+      "where": "material.texture.format"
+    },
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "panel-01",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "shading": "albedo",
+                "texture": {
+                  "file": "textures/counter-marble.jpg"
+                },
+                "tile": [
+                  0.8,
+                  0.8
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "type": "box"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "工作台的本地文件引用 {file} 不能出现在写回的物件集里（assemble --texture-base-url 换成外链）",
+      "name": "workbench-file",
+      "valid": false,
+      "where": "material.texture"
+    },
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "panel-01",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "shading": "albedo",
+                "texture": 12345,
+                "tile": [
+                  0.8,
+                  0.8
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "type": "box"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "texture 只能是资源哈希字符串或外链对象",
+      "name": "texture-number",
+      "valid": false,
+      "where": "material.texture"
+    },
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "panel-01",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "normalMap": {
+                  "sha256": "f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6",
+                  "size": 1048576,
+                  "url": "ftp://example.org/wood-normal.png"
+                },
+                "shading": "albedo",
+                "texture": {
+                  "sha256": "e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5",
+                  "size": 268321,
+                  "url": "https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/0123456789abcdef0123456789abcdef01234567/infra/chrono-cd/demo/textures/counter-marble.jpg"
+                },
+                "tile": [
+                  0.8,
+                  0.8
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "type": "box"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "normalMap 的外链同样必须是 https",
+      "name": "normal-map-ftp",
+      "valid": false,
+      "where": "material.normalMap.url"
+    },
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "panel-01",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "roughnessMap": {
+                  "sha256": "not-a-hash",
+                  "size": 402559,
+                  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/example_wood_floor/example_wood_floor_rough_1k.png"
+                },
+                "shading": "albedo",
+                "texture": {
+                  "sha256": "e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5",
+                  "size": 268321,
+                  "url": "https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/0123456789abcdef0123456789abcdef01234567/infra/chrono-cd/demo/textures/counter-marble.jpg"
+                },
+                "tile": [
+                  0.8,
+                  0.8
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "type": "box"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "roughnessMap 的外链同样核对 sha256 的写法",
+      "name": "roughness-map-sha256",
+      "valid": false,
+      "where": "material.roughnessMap.sha256"
+    },
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "panel-01",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "shading": "albedo",
+                "texture": {
+                  "sha256": "e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5",
+                  "size": 268321,
+                  "url": "https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/0123456789abcdef0123456789abcdef01234567/infra/chrono-cd/demo/textures/counter-marble.jpg"
+                },
+                "tile": [
+                  0.8,
+                  0.8
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "type": "box"
+            }
+          }
+        ],
+        "templates": [
+          {
+            "entityId": "tpl-tile",
+            "kind": "template",
+            "shape": {
+              "material": {
+                "texture": {
+                  "sha256": "e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5",
+                  "size": -1,
+                  "url": "https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/0123456789abcdef0123456789abcdef01234567/infra/chrono-cd/demo/textures/counter-marble.jpg"
+                },
+                "tile": [
+                  0.6,
+                  0.6
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                0.6,
+                0.01,
+                0.6
+              ],
+              "type": "box"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "模板里的外链贴图同样检查（size 是负数）",
+      "name": "template-size",
+      "valid": false,
+      "where": "templates[0].shape.material.texture.size"
+    },
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "panel-01",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "bake": "planar",
+                "color": [
+                  40,
+                  40,
+                  44
+                ],
+                "normalMap": {
+                  "sha256": "f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6",
+                  "size": 1048576,
+                  "url": "https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/0123456789abcdef0123456789abcdef01234567/infra/chrono-cd/demo/textures/counter-wood-normal.png"
+                }
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "type": "box"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "烘焙指令不能和 normalMap 一起出现",
+      "name": "bake-normal-map",
+      "valid": false,
+      "where": "material.bake"
+    },
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "panel-01",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "bake": "planar",
+                "color": [
+                  40,
+                  40,
+                  44
+                ],
+                "tile": [
+                  1,
+                  1
+                ]
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "type": "box"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "烘焙指令不能和 tile 一起出现",
+      "name": "bake-tile",
+      "valid": false,
+      "where": "material.bake"
+    }
+  ],
+  "description": "外链贴图写错的物件集：接口服务浅层校验就要拒绝（处理服务的完整校验当然也拒绝）；每个用例只错一处",
+  "kind": "authored",
+  "name": "texture-urls-invalid"
+}
