@@ -87,3 +87,14 @@ def broken_objects(mesh, structure, *, params: dict | None = None) -> ObjectsRes
 
 def raising_objects(mesh, structure, *, params: dict | None = None) -> ObjectsResult:
     raise RuntimeError("物体重建内部出错")
+
+
+def moved_objects(mesh, structure, *, params: dict | None = None) -> ObjectsResult:
+    """和 reconstruct_objects 一样，只是桌子挪了位置（用来测试重新重建会产生变化）。"""
+    result = reconstruct_objects(mesh, structure, params=params)
+    shape = dict(result.entities["table-01"]["shape"])
+    shape["transform"] = sh.transform(position=[2.5, float(structure.floor_y), 2.0])
+    result.entities["table-01"] = entity_body(
+        entity_id="table-01", kind="object", shape=shape, anchor_id="table-01", label="会议桌"
+    )
+    return result
