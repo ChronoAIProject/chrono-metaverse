@@ -10,6 +10,7 @@ import hashlib
 import math
 import threading
 import time
+from datetime import UTC, datetime
 
 import numpy as np
 import pytest
@@ -25,6 +26,7 @@ from conftest import (
 from metaverse_worker.assets import find_asset, put_asset, read_asset, register_upload
 from metaverse_worker.chunk import decompress
 from metaverse_worker.handlers import scan as scan_handlers
+from metaverse_worker.jobs.cleanup import cleanup_assets
 from metaverse_worker.jobs.isolate import IsolatedCancelled
 from metaverse_worker.jobs.lease import claim
 from metaverse_worker.processing.align import column_major
@@ -218,7 +220,8 @@ def test_upload_then_scan_import_full_pipeline_in_subprocess(store, db_config, m
 
     refs = {r["hash"] for r in store.col(C.ASSET_REFS).find({"spaceId": SPACE})}
     table_tex = ents["table-01"]["body"]["shape"]["material"]["texture"]
-    assert {asset, *scan["webModelHashes"], table_tex, *ents["floor"]["body"]["textures"]} <= refs
+    assert {*scan["webModelHashes"], table_tex, *ents["floor"]["body"]["textures"]} <= refs
+    assert asset not in refs  # 原始扫描不进公开白名单
 
     result = doc["result"]
     assert result["alignment"]["method"] == "auto"
@@ -397,6 +400,22 @@ def test_model_import_job(runner, store):
     junk = upload_asset(store, b"\x00\x01garbage", "model", kind="model")
     doc = run_job(runner, store, "model_import", {"assetHash": junk})
     assert doc["status"] == "failed" and doc["attempt"] == 1
+
+
+def test_raw_scan_not_public_but_kept_by_cleanup(runner, store):
+    """原始扫描不登记 assetRefs（公开资源接口的白名单），但被提交引用，过了宽限期也不会被清理。"""
+    asset, doc = import_room(runner, store, rebuild=False)
+    assert doc["status"] == "done", doc.get("lastError")
+    refs = {r["hash"] for r in store.col(C.ASSET_REFS).find({"spaceId": SPACE})}
+    web = commits(store)[0]["scan"]["webModelHashes"]
+    assert refs == set(web) and asset not in refs
+    # 没被提交引用的另一个扫描：宽限期过后会被清理；已提交的扫描保留
+    orphan = upload_asset(store, b"orphan scan bytes", "scan")
+    long_ago = {"$set": {"uploadDate": datetime(2020, 1, 1, tzinfo=UTC)}}
+    store.col(C.ASSET_FILES).update_many({"filename": {"$in": [asset, orphan, *web]}}, long_ago)
+    assert cleanup_assets(store, 7) == 1
+    assert find_asset(store, asset) is not None and find_asset(store, orphan) is None
+    assert all(find_asset(store, h) is not None for h in web)
 
 
 # ---------------------------------------------------------------------------- 主循环

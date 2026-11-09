@@ -149,10 +149,13 @@ uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceI
    observedAt: 参数里的时间规范化成 UTC 毫秒（YYYY-MM-DDTHH:MM:SS.mmmZ）
    changedEntities: 重建层物件的变化（新增 / 变化写新哈希，消失的写 null）；扩展层不动
    changedAnchors: 新建的锚点（物体的建议锚点编号；已存在的锚点不动）
-   assetRefs: 扫描、两档网页用模型、所有贴图
+   assetRefs: 两档网页用模型、所有贴图（原始扫描不登记，见下）
    frame: 空间还没有坐标系时固定为 {fixedAt, referenceScan: assetHash}
    ```
 
+   - **资源引用表**：`assetRefs` 是公开资源接口 `GET /api/public/assets/{hash}.bin` 的白名单（设计 8.2），
+     只登记网页要用的资源。原始扫描可能含个人信息，**不登记**，只能经 `/api/v1` 下载；它被提交的
+     `scan.assetHash` 引用，定期清理不会删它；
    - **重建层替换规则**：物体重建正常运行时，重建层的全部旧物件（structure / object / template）换成这次的
      结果；物体重建模块导入失败、只交了结构时，只替换 `kind: structure` 的物件，旧物体保留；
    - **锚点**：`kind: object` 且带 `anchorId` 的物体，按编号前缀定类型（`table`/`desk` → table，

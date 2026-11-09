@@ -58,6 +58,7 @@ class CommitPlan:
     palette_hash: str | None = None
     scan: dict[str, Any] | None = None
     observed_at: str | None = None
+    # 登记进 assetRefs 的资源：公开资源接口的白名单，只放网页要用的资源（设计 8.2），原始扫描不放
     asset_refs: list[str] = field(default_factory=list)
     reference_scan: str | None = None  # 空间还没有坐标系时，以这次扫描固定坐标系（设计 4.1）
     result: dict[str, Any] = field(default_factory=dict)
