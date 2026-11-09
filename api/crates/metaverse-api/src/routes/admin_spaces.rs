@@ -178,7 +178,8 @@ pub async fn create_space(
         "空间已创建"
     );
     // 第一次提交：`_space` 锚点 + 通用方块表（设计 4.3、4.4）。失败也不影响建空间：
-    // 之后第一次建草稿或改区域时会补写（只在 head.seq == 0 时写）。
+    // 之后第一次建草稿、改区域，或建会写提交的任务（导入扫描、体素化、重建）时会补写
+    // （只在 head.seq == 0 时写）。
     let space_grant = state.authorizer.grant_for_created_space(&grant, &space.id);
     let (space, anchors) = match crate::timeline::writer::ensure_genesis(
         &state.repo,

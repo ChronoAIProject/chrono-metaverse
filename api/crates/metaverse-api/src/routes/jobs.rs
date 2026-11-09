@@ -42,6 +42,7 @@ use crate::auth::{Caller, Grant, Purpose};
 use crate::error::{ApiError, ProblemDocument};
 use crate::ingest::new_id;
 use crate::repo::{AssetAvailability, JobInsert};
+use crate::timeline::writer::ensure_genesis;
 use crate::AppState;
 
 /// `hints` 规范化后的最大字节数。
@@ -340,6 +341,18 @@ fn check_transform(values: &[f64]) -> Result<[f64; 16], ApiError> {
     Ok(matrix)
 }
 
+/// 处理服务做完会写提交的任务种类（`model_import`、`upload_verify` 不写提交）。
+fn writes_commit(kind: JobKind) -> bool {
+    matches!(
+        kind,
+        JobKind::ScanImport
+            | JobKind::Align
+            | JobKind::Rebuild
+            | JobKind::Voxelize
+            | JobKind::WebModel
+    )
+}
+
 /// 建任务。带幂等键时编号由 (空间, 范围, 种类, 键) 算出。
 async fn create_job(
     state: &AppState,
@@ -367,6 +380,12 @@ async fn create_job(
         if let Some(existing) = state.repo.job(grant, &id).await? {
             return idempotent_reply(existing, kind, &params, grant.space_id());
         }
+    }
+    // 会写提交的任务：先补写第一次提交（建空间时没写成的话）。处理服务写回时按 head.seq + 1
+    // 提交，不管有没有第一次提交；先建任务的话它会占用 seq 1，`_space` 锚点和通用方块表就再也
+    // 补不上了。补写失败（数据库暂时不可用 503 等）就不建任务。
+    if writes_commit(kind) {
+        ensure_genesis(&state.repo, grant, caller, crate::now()?).await?;
     }
     let limit = state.ingest.config.max_pending_jobs_per_space;
     if state.repo.pending_jobs(grant).await? >= limit {
@@ -987,6 +1006,26 @@ mod tests {
         assert!(check_transform(&translated(0.0, 0.0, 2e6)).is_err());
         assert_eq!(MAX_TRANSFORM_TRANSLATION, 1e5);
         assert_eq!(MIN_TRANSFORM_DET, 1e-6);
+    }
+
+    #[test]
+    fn only_commit_writing_jobs_need_the_first_commit() {
+        for kind in [
+            JobKind::ScanImport,
+            JobKind::Align,
+            JobKind::Rebuild,
+            JobKind::Voxelize,
+            JobKind::WebModel,
+        ] {
+            assert!(writes_commit(kind), "{kind:?}");
+        }
+        for kind in [
+            JobKind::UploadVerify,
+            JobKind::ModelImport,
+            JobKind::OpsFromUpload,
+        ] {
+            assert!(!writes_commit(kind), "{kind:?}");
+        }
     }
 
     #[test]

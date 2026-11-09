@@ -928,3 +928,117 @@ async fn pending_job_limit_is_429() {
         .await;
     assert_eq!(reply.status, StatusCode::ACCEPTED);
 }
+
+/// 模拟"建空间时第一次提交没写成"：删掉提交和锚点、把 head 退回 0。
+async fn drop_genesis(app: &TestApp, space: &str) {
+    app.collection("commits")
+        .delete_many(doc! {"spaceId": space})
+        .await
+        .unwrap();
+    app.collection("anchors")
+        .delete_many(doc! {"spaceId": space})
+        .await
+        .unwrap();
+    app.collection("spaces")
+        .update_one(
+            doc! {"_id": space},
+            doc! {"$set": {"head": {"seq": 0_i64, "at": ago(60)}}},
+        )
+        .await
+        .unwrap();
+}
+
+async fn commit_seqs(app: &TestApp, space: &str) -> Vec<i64> {
+    let commits: Vec<Document> = app
+        .collection("commits")
+        .find(doc! {"spaceId": space})
+        .sort(doc! {"seq": 1})
+        .await
+        .unwrap()
+        .try_collect()
+        .await
+        .unwrap();
+    commits
+        .iter()
+        .map(|c| match c.get("seq") {
+            Some(Bson::Int32(n)) => i64::from(*n),
+            Some(Bson::Int64(n)) => *n,
+            other => panic!("seq 不是整数：{other:?}"),
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn scan_jobs_write_the_missing_first_commit_before_queueing() {
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    front_hall(&app).await;
+    let base = "/api/v1/spaces/front-hall";
+    let scan = uploaded(&app, base, "scan", "drc", b"DRACO genesis scan").await;
+    let model = uploaded(&app, base, "model", "drc", b"DRACO genesis lamp").await;
+    drop_genesis(&app, "front-hall").await;
+
+    // 物件模型导入不写提交，不需要补写第一次提交。
+    let reply = app
+        .call(
+            who(ORG),
+            Method::POST,
+            &format!("{base}/models"),
+            Some(json!({"assetHash": model})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
+    assert!(commit_seqs(&app, "front-hall").await.is_empty());
+
+    // 导入扫描：先写 seq 1（_space 锚点 + 通用方块表），再建任务，处理服务的提交从 seq 2 开始。
+    let reply = app
+        .call(
+            who(ORG),
+            Method::POST,
+            &format!("{base}/scans"),
+            Some(json!({"assetHash": scan})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
+    assert_eq!(commit_seqs(&app, "front-hall").await, vec![1]);
+    let genesis = app
+        .collection("commits")
+        .find_one(doc! {"spaceId": "front-hall", "seq": 1})
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(genesis.get_str("paletteHash").is_ok(), "{genesis:?}");
+    let anchors = genesis.get_array("changedAnchors").unwrap();
+    assert_eq!(
+        anchors[0].as_document().unwrap().get_str("id").unwrap(),
+        "_space"
+    );
+
+    // 已经有第一次提交：再建任务不会多写提交。
+    let reply = app
+        .call(
+            who(ORG),
+            Method::POST,
+            &format!("{base}/scans"),
+            Some(json!({"assetHash": scan, "rebuild": false})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
+    assert_eq!(commit_seqs(&app, "front-hall").await, vec![1]);
+
+    // 体素化、重建同样先检查：空间已有提交（这里模拟处理服务直接写的 seq 1）时不再补写。
+    drop_genesis(&app, "front-hall").await;
+    app.insert_commit("front-hall", org_owner(), &ago(30), Some(&scan))
+        .await;
+    let reply = app
+        .call(
+            who(ORG),
+            Method::POST,
+            &format!("{base}/scans/{scan}/rebuild"),
+            None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
+    assert_eq!(commit_seqs(&app, "front-hall").await, vec![1]);
+}
