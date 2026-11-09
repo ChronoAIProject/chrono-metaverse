@@ -59,6 +59,8 @@ class CommitPlan:
     # 登记进 assetRefs 的资源：公开资源接口的白名单，只放网页要用的资源（设计 8.2），原始扫描不放
     asset_refs: list[str] = field(default_factory=list)
     reference_scan: str | None = None  # 空间还没有坐标系时，以这次扫描固定坐标系（设计 4.1）
+    # 提交附带的脚本资源（AI 物件集的建模过程记录），只为追溯；清理按提交的 scriptRef 保留它
+    script_ref: str | None = None
     result: dict[str, Any] = field(default_factory=dict)
     # 和提交同一个事务里插入的后续任务（例如扫描导入之后的体素化），编号要确定，重做不会重复
     new_jobs: list[dict[str, Any]] = field(default_factory=list)
@@ -362,6 +364,8 @@ def write_back(
             commit["paletteHash"] = plan.palette_hash
         if plan.scan is not None:
             commit["scan"] = plan.scan
+        if plan.script_ref:
+            commit["scriptRef"] = plan.script_ref
         try:
             store.commits.insert_one(commit, session=session)
         except Exception as error:

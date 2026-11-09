@@ -23,6 +23,13 @@
 **rebuild** `{scanAssetHash?, hints?}`：对指定扫描（默认最新扫描）用它最近一次提交的变换重跑结构 + 物体
 重建并提交（不重新生成网页用模型）。指定的不是当前扫描时，提交里带上这个扫描的引用，让扫描层和重建层一致。
 结果与当前状态完全相同时不提交，任务直接完成（`result.unchanged = true`）。
+
+**AI 物件集**：两种任务都可以带 `authored`（内联）或 `authoredAsset`（资源哈希），这时重建层的物体不由算法
+重建，而是换成物件集里的物件（`handlers/authored.py`、`processing/authored_build.py`）：结构按 `structure`
+沿用算法结果（keep）或用物件集里的结构（replace）；带烘焙指令的部件从扫描烘焙贴图；外部模型下载、核对、
+重新导出后写成 `assetHash`；逐件偏差写进 `fit`；`notes` 存成脚本资源，提交的 `scriptRef` 指向它。重建层
+全部旧物件换成这次的结果，锚点规则不变（按 `props.category`）。`scan_import` 带物件集时 `rebuild` 不能是
+false。结果里 `authored = {fit: [逐件偏差], downloads, models, bake, scriptRef, …}`。
 """
 
 from __future__ import annotations
@@ -54,6 +61,7 @@ from ..processing.scan import sniff_format
 from ..processing.sniff import CONTENT_TYPES
 from ..records import RecordError, validate_anchor_body
 from ..timeutil import format_ts, parse_ts
+from . import authored as authored_io
 from .context import JobContext, optional_dict, require_hash
 
 log = logging.getLogger(__name__)
@@ -220,9 +228,14 @@ def _space(ctx: JobContext) -> dict[str, Any]:
 
 
 def _register_rebuild(
-    ctx: JobContext, rebuilt: Mapping[str, Any], hints: Mapping[str, Any]
+    ctx: JobContext,
+    rebuilt: Mapping[str, Any],
+    hints: Mapping[str, Any],
+    authored: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """事务外：登记贴图资源、物件记录、锚点记录（按提示决定哪些椅子建座位锚点）。返回写提交要用的东西。"""
+    """事务外：登记贴图资源、物件记录、锚点记录（按提示决定哪些椅子建座位锚点）。返回写提交要用的东西。
+
+    AI 物件集（`authored`）另外登记处理后的外部模型和建模过程记录（脚本资源）。"""
     scope = ctx.lease.scope
     textures = []
     for sha, data in sorted(rebuilt["textures"].items()):
@@ -232,6 +245,12 @@ def _register_rebuild(
         if info.hash != sha:
             raise PermanentJobError(f"贴图 {sha} 的内容与哈希不符")
         textures.append(sha)
+    models: list[str] = []
+    script_ref = None
+    if authored is not None:
+        models = authored_io.register_models(ctx, rebuilt.get("models") or {})
+        textures += authored["fencedTextures"]
+        script_ref = authored_io.store_notes(ctx, authored.get("notes"))
     bodies = rebuilt["entities"]
     hashes = put_entity_records(ctx.store, scope, bodies)
     anchors = anchor_proposals(bodies, hints)
@@ -239,11 +258,29 @@ def _register_rebuild(
     return {
         "bodies": bodies,
         "hashes": hashes,
-        "textures": textures,
+        "textures": sorted(set(textures)) + models,
         "anchors": anchors,
         "anchor_hashes": anchor_hashes,
         "structure_only": bool(rebuilt.get("objectsSkipped")),
+        "script_ref": script_ref,
     }
+
+
+def _prepare_authored(ctx: JobContext) -> tuple[dict[str, Any] | None, dict, dict]:
+    """读取并校验物件集、给已有贴图过栅栏、下载外部模型。没有物件集时返回 (None, {}, {})。"""
+    authored = authored_io.load_authored(ctx)
+    if authored is None:
+        return None, {}, {}
+    authored["fencedTextures"] = authored_io.fence_textures(ctx, authored)
+    sources, downloads = authored_io.download_sources(ctx, authored)
+    return authored, sources, downloads
+
+
+def _compute_authored(authored: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """交给子进程的物件集：去掉父进程自己用的字段。"""
+    if authored is None:
+        return None
+    return {k: v for k, v in authored.items() if k not in ("origin", "fencedTextures", "notes")}
 
 
 def _entity_changes(ctx: JobContext, reg: Mapping[str, Any], session) -> tuple[list, dict, list, dict]:
@@ -289,6 +326,9 @@ def run_import(ctx: JobContext) -> dict[str, Any]:
     do_voxelize = params.get("voxelize") is True
     hints = optional_dict(params, "hints")
     space = _space(ctx)
+    if not do_rebuild and (params.get("authored") is not None or params.get("authoredAsset") is not None):
+        raise PermanentJobError("带 AI 物件集（authored / authoredAsset）时 rebuild 不能是 false")
+    authored, sources, downloads = _prepare_authored(ctx)
 
     transform, method, reference = given, "given", None
     if transform is None:
@@ -323,6 +363,8 @@ def run_import(ctx: JobContext) -> dict[str, Any]:
         physical_boxes=physical_boxes(space),
         objects_target=OBJECTS_TARGET,
         align_max_error_cm=config.align_max_error_cm,
+        authored=_compute_authored(authored),
+        authored_sources=sources,
     )
     if out.get("needsAlignment"):
         result = {
@@ -351,7 +393,7 @@ def run_import(ctx: JobContext) -> dict[str, Any]:
         )
         web_models.append({"hash": info.hash, **{k: v for k, v in model.items() if k != "path"}})
     web_hashes = [m["hash"] for m in web_models]
-    reg = _register_rebuild(ctx, out["rebuild"], hints) if do_rebuild else None
+    reg = _register_rebuild(ctx, out["rebuild"], hints, authored) if do_rebuild else None
     scan_ref = {"assetHash": asset_hash, "webModelHashes": web_hashes, "transform": out["transform"]}
     voxelize_job_id = f"{ctx.lease.job_id}-voxelize" if do_voxelize else None
     result: dict[str, Any] = {
@@ -364,10 +406,13 @@ def run_import(ctx: JobContext) -> dict[str, Any]:
     }
     if voxelize_job_id:
         result["voxelizeJobId"] = voxelize_job_id
+    if authored is not None:
+        result["authored"] = authored_io.summary(authored, out["rebuild"], downloads, reg["script_ref"])
+    suffix = "，AI 物件集" if authored is not None else ""
 
     def build(session, space_doc) -> CommitPlan:
         plan = CommitPlan(
-            message=f"导入扫描 {asset_hash[:12]}（{_METHOD_TEXT.get(_method(out), '对齐')}）",
+            message=f"导入扫描 {asset_hash[:12]}（{_METHOD_TEXT.get(_method(out), '对齐')}{suffix}）",
             scan=scan_ref,
             observed_at=observed_at,
             # 资源引用表就是公开资源接口的白名单（设计 8.2）：只登记网页要用的网页用模型和贴图，
@@ -383,6 +428,7 @@ def run_import(ctx: JobContext) -> dict[str, Any]:
             plan.changed_anchors = anchors
             plan.anchor_bodies = anchor_bodies
             plan.asset_refs += reg["textures"]
+            plan.script_ref = reg["script_ref"]
             plan.result.update(_rebuild_summary(out["rebuild"], changed, anchors))
         if voxelize_job_id:
             plan.new_jobs = [
@@ -413,6 +459,7 @@ def run_rebuild(ctx: JobContext) -> dict[str, Any]:
     commit = scan_commit(store, scope, target)
     if commit is None:
         raise PermanentJobError("空间还没有导入扫描" if target is None else f"空间里没有扫描 {target}")
+    authored, sources, downloads = _prepare_authored(ctx)
     scan_ref = dict(commit["scan"])
     asset_hash = scan_ref["assetHash"]
     current = head_scan(store, scope) or {}
@@ -429,11 +476,15 @@ def run_rebuild(ctx: JobContext) -> dict[str, Any]:
         hints=hints,
         physical_boxes=physical_boxes(space),
         objects_target=OBJECTS_TARGET,
+        authored=_compute_authored(authored),
+        authored_sources=sources,
     )
     ctx.check_cancel()
-    reg = _register_rebuild(ctx, out["rebuild"], hints)
+    reg = _register_rebuild(ctx, out["rebuild"], hints, authored)
     switch_scan = current.get("assetHash") != asset_hash
     result: dict[str, Any] = {"scanAssetHash": asset_hash, "timings": out.get("timings")}
+    if authored is not None:
+        result["authored"] = authored_io.summary(authored, out["rebuild"], downloads, reg["script_ref"])
 
     # 先在事务外看一眼：完全没变就不提交
     changed, _, anchors, _ = _entity_changes(ctx, reg, None)
@@ -444,13 +495,17 @@ def run_rebuild(ctx: JobContext) -> dict[str, Any]:
 
     def build(session, space_doc) -> CommitPlan:
         changed, bodies, anchors, anchor_bodies = _entity_changes(ctx, reg, session)
+        message = f"重新重建扫描 {asset_hash[:12]}"
+        if authored is not None:
+            message = f"写入 AI 物件集（扫描 {asset_hash[:12]}）"
         plan = CommitPlan(
-            message=f"重新重建扫描 {asset_hash[:12]}",
+            message=message,
             changed_entities=changed,
             entity_bodies=bodies,
             changed_anchors=anchors,
             anchor_bodies=anchor_bodies,
             asset_refs=list(reg["textures"]),
+            script_ref=reg["script_ref"],
             result={**result, **_rebuild_summary(out["rebuild"], changed, anchors)},
         )
         if switch_scan:

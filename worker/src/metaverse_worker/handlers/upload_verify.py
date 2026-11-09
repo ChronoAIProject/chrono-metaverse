@@ -28,6 +28,7 @@ import logging
 from typing import Any
 
 from ..assets import AssetError, find_asset, iter_file_chunks, register_upload, touch_asset
+from ..authored import MAX_AUTHORED_BYTES
 from ..errors import InputRejected, PermanentJobError, SpaceGone
 from ..jobs.lease import Lease, mark_done
 from ..processing.sniff import PURPOSES
@@ -55,6 +56,7 @@ def _purpose_limit(ctx: JobContext, purpose: str) -> int:
         "texture": c.max_model_bytes,
         "ops": c.max_ops_bytes,
         "script": SCRIPT_MAX_BYTES,
+        "authored": MAX_AUTHORED_BYTES,
     }[purpose]
 
 

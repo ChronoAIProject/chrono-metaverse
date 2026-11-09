@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from ..errors import InputRejected
 from .scan import guard_pixels, image_dimensions, sniff_format
 
-PURPOSES = ("scan", "model", "texture", "ops", "script")
+PURPOSES = ("scan", "model", "texture", "ops", "script", "authored")
 MODEL_FORMATS = ("glb", "draco", "obj")
 IMAGE_FORMATS = ("png", "jpeg", "webp")
 
@@ -36,6 +36,7 @@ CONTENT_TYPES = {
     "ndjson": "application/x-ndjson",
     "ndjson+gzip": "application/gzip",
     "text": "text/plain; charset=utf-8",
+    "json": "application/json",
 }
 
 MAX_ZIP_MEMBERS = 256
@@ -291,6 +292,23 @@ def check_script(path: str) -> Sniffed:
     return Sniffed("text", CONTENT_TYPES["text"], {})
 
 
+def check_authored(path: str) -> Sniffed:
+    """AI 物件集（authored 用途）：UTF-8 JSON，≤ 4MB，按 `authored.parse_authored` 完整校验一遍
+    （格式不对在上传时就失败；任务里还会再校验一次）。"""
+    from ..authored import MAX_AUTHORED_BYTES, AuthoredError, load_authored_bytes, parse_authored
+
+    if os.path.getsize(path) > MAX_AUTHORED_BYTES:
+        raise InputRejected(f"物件集超过 {MAX_AUTHORED_BYTES} 字节")
+    with open(path, "rb") as fh:
+        data = fh.read()
+    try:
+        parsed = parse_authored(load_authored_bytes(data))
+    except AuthoredError as error:
+        raise InputRejected(str(error)) from error
+    detail = {"entities": len(parsed["entities"]), "templates": len(parsed["templates"])}
+    return Sniffed("json", CONTENT_TYPES["json"], {**detail, "models": len(parsed["models"])})
+
+
 def sniff_upload(path: str, purpose: str, limits: dict) -> Sniffed:
     """按用途检查上传文件。`limits`：max_texture_side、max_texture_pixels、max_ops_bytes、max_zip_bytes。"""
     if purpose in ("scan", "model"):
@@ -301,4 +319,6 @@ def sniff_upload(path: str, purpose: str, limits: dict) -> Sniffed:
         return check_ops(path, int(limits["max_ops_bytes"]))
     if purpose == "script":
         return check_script(path)
+    if purpose == "authored":
+        return check_authored(path)
     raise InputRejected(f"不认识的上传用途：{purpose}")

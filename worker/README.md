@@ -90,6 +90,7 @@ uv lock --upgrade-package numpy     # 只升级某一个依赖
 | `WORKER_MODEL_MAX_TEXTURE_SIDE` | 2048 | 物件模型重新导出的贴图长边上限 |
 | `WORKER_ALIGN_MAX_ERROR_CM` | 3 | 重扫配准误差超过它就不自动提交，转人工 |
 | `WORKER_ALIGN_HOLD_DAYS` | 30 | 转人工的扫描保留多久等人工对齐（这期间定期清理不删它，见"定期清理"） |
+| `WORKER_MODEL_HOSTS` | `dl.polyhaven.org,huggingface.co,cdn-lfs.huggingface.co,.hf.co` | AI 物件集里外部模型允许下载的主机（逗号分隔）：写主机名精确匹配（只许默认的 443 端口），以点开头（如 `.hf.co`）匹配它的所有子域名，`主机:端口` 只匹配那个端口。只用 https，重定向的每一跳都要在列表里，见"AI 物件集" |
 | `WORKER_WORKDIR` | 系统临时目录 | 下载扫描、子进程交换数据的本地目录（每个任务一个子目录，结束就删） |
 | `LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL` |
 
@@ -124,6 +125,7 @@ uv lock --upgrade-package numpy     # 只升级某一个依赖
    | `texture` | png、jpeg、webp，单边 ≤ 8192 |
    | `ops` | NDJSON（每行一个 JSON 对象），可 gzip |
    | `script` | UTF-8 纯文本，不含 NUL |
+   | `authored` | AI 物件集：UTF-8 JSON，≤ 4MB，按"AI 物件集"的格式完整校验一遍（资源 `kind: authored`，格式 `json`） |
 
    不合规同样标记失败、删数据块；
 4. 登记资源（`assets.files`：`_id` = 上传编号，`filename` = 内容哈希，`metadata = {sha256, contentType,
@@ -148,7 +150,7 @@ webp | ndjson | ndjson+gzip | text`。
 
 ```
 uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceId, owner: {kind, id},
-          purpose: scan|model|texture|ops|script, size: 声明的总字节数, sha256: 声明的整体哈希, partSize,
+          purpose: scan|model|texture|ops|script|authored, size: 声明的总字节数, sha256: 声明的整体哈希, partSize,
           status: open|complete|done|failed|expired, createdAt, completedAt?, jobId?: upload_verify 任务编号,
           // 处理服务写入：
           assetHash?, format?, contentType?, verifiedAt?, verifiedSha256?, error?, failedAt?,
@@ -158,7 +160,7 @@ uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceI
 处理服务只处理 `status: complete` 的上传（接口服务"完成上传"时把 `open` 改成 `complete` 并建任务）。
 读取时也接受 `totalSize`、`hash` 作为 `size`、`sha256` 的别名。
 
-### `scan_import` `{assetHash, observedAt?, transform?, rebuild?: true, voxelize?: false, hints?: {...}}`
+### `scan_import` `{assetHash, observedAt?, transform?, rebuild?: true, voxelize?: false, hints?: {...}, authored? | authoredAsset?}`
 
 1. **对齐方式**：给了 `transform`（16 个数，列主序，扫描坐标 → 空间坐标；最后一行必须是 0 0 0 1，
    不能镜像）就直接用；没给时，这个扫描以前提交过就沿用它最近一次的变换；空间还没有 `frame` 就首次自动
@@ -263,13 +265,69 @@ uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceI
 
 提交说明形如 `导入扫描 8be81ec5ccf2（首次自动对齐）`。
 
-### `rebuild` `{scanAssetHash?, hints?}`
+### `rebuild` `{scanAssetHash?, hints?, authored? | authoredAsset?}`
 
 对指定扫描（默认最新扫描）用它最近一次提交的变换重跑结构 + 物体重建并提交，不重新生成网页用模型。
 指定的不是当前扫描时，提交里带上这个扫描的 `scan` 引用，让扫描层和重建层一致。锚点规则同上：可以用
 `hints.objects[].anchor: true` 给已经导入的椅子补建座位锚点（物件没变、只有新锚点时也提交）。结果与当前
 状态完全相同（物件没变、也没有要新建的锚点）时不提交，任务直接完成（`result.unchanged = true`）。
 `result` 同上（没有 `webModels`）。
+
+### AI 物件集（`scan_import`、`rebuild` 带 `authored` 或 `authoredAsset`）
+
+本地的 AI（大语言模型）逐件完成物件：先去模型库找一个看起来差不多的现成模型摆进扫描里对照，找不到或差太多
+的定制件再手写参数形状；完成后把整套物件交给任务写进时间线。两种任务都可以带：
+
+- `authored`：物件集本身（内联 JSON，规范化后 ≤ 4MB）；
+- `authoredAsset`：本空间 `authored` 用途上传（或部署种子登记）的资源哈希，内容是物件集的 UTF-8 JSON。
+
+```json
+{ "version": 1,
+  "templates": [ 模板物件 body（kind "template"）... ],
+  "entities":  [ 物件 body ... ],
+  "notes": "建模过程记录（可选，≤ 64KB）",
+  "structure": "keep" }
+```
+
+| 部分 | 规则 |
+|---|---|
+| 坐标 | 空间坐标，与 `scan_import` 对齐后的坐标系相同 |
+| 物件 | SHAPES 3 的 body，`layer` 省略时按 `rebuilt`（只能是 rebuilt）；`kind` 是 object 或 structure（模板放 `templates`）；`bounds` 可省略；`fit`、`textures` 一律重算；不能带 `assetHash`（外部模型用 `model`）；≤ 2000 个物件、≤ 200 个模板，编号不重复 |
+| 烘焙指令 | 材质里 `"bake": "planar" \| "box" \| "cylindrical"`，不能和 `texture`、`uv`、`tint` 同时出现，可以带 `color` 作为后备。按网站同样的投影展开 UV（同一个材质节点下的部件共用一张图），每个纹素取扫描最近表面（法线相容优先）的颜色，push-pull 补洞，JPEG 登记成贴图资源，材质换成 `{texture, uv}`；附近完全没有扫描时退回后备纯色。模板里不能带（模板在局部坐标里）；≤ 500 处 |
+| 外部模型 | 没有 `shape`，带 `model: {url, sha256, size, format}`、`transform`（含 `scale`）、`props.source`、可选的 `material: {tint}`。`format`：`glb`；`gltf-zip`（zip 里正好一个 `.gltf` 和它引用的文件，按相对路径安全解压）；`gltf`（`url` 指向 `.gltf`，另给 `files: {相对路径: {url, sha256, size}}`，就是 Poly Haven 文件列表里的 `include`）。gltf 只能引用模型目录里的相对文件，必需扩展只放行材质和贴图坐标类（Draco、meshopt 压缩的请换版本） |
+| 已有贴图 | 形状里的 `material.texture` 必须是本空间已登记的贴图资源，任务先过清理的栅栏（刷新 `touchedAt`），再登记进 `assetRefs` |
+| `structure` | `keep`（默认）：结构跑算法（地面、墙、玻璃），物件集里不能有 `kind: structure`；`replace`：结构就是物件集里 `kind: structure` 的物件，不跑算法 |
+| 署名 | `props.source = {library, id, page, author, license, title}`：`library` 是 `polyhaven`、`objaverse`、`sketchfab`；`license` 只收 `CC0-1.0`、`CC-BY-4.0`、`CC-BY-3.0`（NC、ND、SA 一律拒绝，SA 也排除以免传染）；CC-BY 必须写作者；`page` 是 https 来源页。外部模型物件必须带，形状物件可选 |
+
+处理：
+
+1. 读物件集并校验（`authored.py`），不合法直接失败（不可重试）；`scan_import` 带物件集时 `rebuild` 不能是 false；
+2. **下载外部模型**（父进程，`fetch.py`）：只用 https，主机在 `WORKER_MODEL_HOSTS` 里；不自动跟随重定向，每一跳
+   的 `Location` 都按同样的规则检查，最多 5 跳；`Content-Length` 与声明的大小不一致就不读，边读边数，读完核对
+   sha256。同一个文件只下载一次；单个模型（含附属文件）≤ `WORKER_MAX_MODEL_BYTES`，全部 ≤ 1 GiB。主机不在列表、
+   不是 https、大小或哈希不符、4xx 都不可重试；网络错误、超时、5xx 稍后重试。错误说明只写主机，不带完整地址；
+3. 子进程里（`processing/authored_build.py`）：结构（keep 时跑算法）→ 外部模型：把 `transform` 的旋转、缩放和
+   `tint` 烘进网格，按物件模型的限制（`WORKER_MODEL_MAX_TRIANGLES`、`WORKER_MODEL_MAX_TEXTURE_SIDE`）减面、缩小
+   贴图，**以包围盒的底面中心为原点**写成 glb（网站按物件 `bounds` 的底面中心摆放只有 `assetHash` 的物件，所以
+   平移落在 `bounds` 上；旋转、缩放、调色都相同的物件共用一个 glb）→ 烘焙 → **逐件偏差**：物件包围盒水平和
+   向上各外扩 5 厘米、底面以上 1 厘米（不算地面）范围里的扫描表面密集采样（最多 2 万点），求到物件网格的距离，
+   写成 `fit {meanCm, p90Cm, coverage3cm}`；范围里不到 20 个点时不写。采样的随机数按物件编号固定，同样的输入
+   得到同样的贴图、偏差和记录哈希；
+4. 登记：处理后的模型（`kind: model`，`metadata.authoredSource`）、烘焙的贴图（`kind: texture`）进 `assetRefs`
+   （计入空间存储用量）；`notes` 存成本空间的脚本资源（`kind: script`），提交的 `scriptRef` 指向它；
+5. **重建层替换**：重建层全部旧物件（结构、物体、模板）换成这次的结果；锚点规则不变（按 `props.category`）。
+
+提交说明形如 `导入扫描 8be81ec5ccf2（指定变换，AI 物件集）`、`写入 AI 物件集（扫描 8be81ec5ccf2）`。`result` 另加：
+
+```json
+{"authored": {"origin": {"kind": "inline"} 或 {"kind": "asset", "assetHash": "…"}, "structure": "keep",
+  "entities": 24, "templates": 1,
+  "fit": [{"entityId": "counter-01", "points": 20000, "meanCm": 1.8, "p90Cm": 4.2, "coverage3cm": 0.81}, …],
+  "downloads": {"models": 3, "files": 9, "bytes": 5123456, "redirects": 2},
+  "models": {"files": 3, "bytes": 1234567, "triangles": 54321},
+  "bake": {"entities": 4, "parts": 6, "textured": 6, "fallback": 0},
+  "scriptRef": "…"}}
+```
 
 ### `voxelize` `{scanAssetHash?, style?}`
 
@@ -337,7 +395,7 @@ result.metrics  # 任意 JSON，原样放进 result.objects
 | 时机 | 变化 |
 |---|---|
 | `upload_verify` 把上传改成 `done`（新登记或复用已有资源都算） | `+size`，上传写 `storageBytes = size` |
-| 处理服务写的提交（`scan_import`、`rebuild`）在 `assetRefs` 里**新**登记本空间的派生资源（网页用模型、贴图） | `+资源字节数`（同一空间同一资源只计一次） |
+| 处理服务写的提交（`scan_import`、`rebuild`）在 `assetRefs` 里**新**登记本空间的派生资源（网页用模型、贴图、AI 物件集的外部模型） | `+资源字节数`（同一空间同一资源只计一次） |
 | `model_import` 完成（处理后的模型新登记或复用已有资源都算） | `+模型字节数`，任务写 `storageBytes`；和任务完成在同一个事务里 |
 | 定期清理删掉没人引用的资源 | 对每个 `assetHash` 是它、带 `storageBytes`、还没有 `storageReleasedAt` 的上传，以及 `result.modelHash` 是它的同样的 `model_import` 任务：写 `storageReleasedAt`，所属空间 `-storageBytes`（减到 0 为止，接口服务按 u64 读） |
 
@@ -404,7 +462,9 @@ METAVERSE_TEST_MONGODB_URI='mongodb://127.0.0.1:27018/?replicaSet=rs0' .venv/bin
 ```
 
 集成测试每个用例建一个随机库，结束时删除。`tests/fake_objects.py` 是物体重建的假实现，集成测试把
-`handlers.scan.OBJECTS_TARGET` 换成它（其中一个用例在真实子进程里导入它）。
+`handlers.scan.OBJECTS_TARGET` 换成它（其中一个用例在真实子进程里导入它）。AI 物件集的测试用本机 https 服务
+（`tests/https_server.py`，用 `openssl` 命令行在临时目录里现做自签名证书，不进仓库）当模型库，把
+`handlers.authored.OPENER_FACTORY` 换成信任这张证书、不走代理的下载器。
 
 ## 实测：公司前厅扫描
 
