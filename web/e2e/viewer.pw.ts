@@ -657,8 +657,8 @@ test('板、凸包、玻璃、灯箱和外部模型：画得出来，底部常�
   await expect(panel.getByText('CC BY 4.0（须署名）')).toBeVisible();
   await expect(panel.getByText('作者 夹具作者乙')).toBeVisible();
   await expect(panel.getByRole('link', { name: '木质花架（示例）' })).toBeVisible();
-  // 注明改动（CC BY 的要求）：网站上的模型是处理服务重新导出的
-  await expect(panel.getByText(/经本服务处理后重新导出.*与原文件不同/)).toBeVisible();
+  // 注明改动（CC BY 的要求）：说明不依赖具体工具
+  await expect(panel.getByText(/可能经过调整.*后重新导出，与原文件不同/)).toBeVisible();
   await page.screenshot({ path: join(SHOTS, 'florist-sources.png') });
   await toggle.click();
   await expect(panel).toHaveCount(0);
