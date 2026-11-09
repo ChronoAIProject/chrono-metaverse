@@ -389,6 +389,17 @@ def test_voxelize_without_scan_and_unchanged(runner, store):
     assert doc["status"] == "failed"
 
 
+def test_voxelize_style_name_from_api(runner, store):
+    """接口服务和命令行把 style 当字符串（风格名）传：按风格表换算颜色数；不认识的名字直接失败。"""
+    import_room(runner, store, rebuild=False)
+    doc = run_job(runner, store, "voxelize", {"style": "coarse"})
+    assert doc["status"] == "done", doc.get("lastError")
+    assert doc["result"]["style"] == "coarse" and doc["result"]["paletteSize"] == 16
+    for bad, text in (("watercolor", "不认识的体素化风格"), (5, "风格名"), ({"colors": 3}, "不认识的字段")):
+        doc = run_job(runner, store, "voxelize", {"style": bad})
+        assert doc["status"] == "failed" and doc["attempt"] == 1 and text in doc["lastError"]
+
+
 def test_model_import_job(runner, store):
     source = upload_asset(store, dense_box_glb(), "model", kind="model")
     doc = run_job(runner, store, "model_import", {"assetHash": source})

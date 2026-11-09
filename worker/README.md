@@ -187,16 +187,28 @@ uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceI
 指定的不是当前扫描时，提交里带上这个扫描的 `scan` 引用，让扫描层和重建层一致。结果与当前状态完全相同
 时不提交，任务直接完成（`result.unchanged = true`）。`result` 同上（没有 `webModels`）。
 
-### `voxelize` `{scanAssetHash?, style?: {paletteSize?}}`
+### `voxelize` `{scanAssetHash?, style?}`
+
+`style` 可以是风格名（字符串，接口服务 `POST .../scans/{scan_id}/voxelize {style}` 和命令行
+`metaverse voxelize --style` 传的就是它），也可以是对象 `{paletteSize?}`（直接给颜色数，1–1024，默认 64）：
+
+| 风格名 | 颜色数 |
+|---|---|
+| `default`（不给 `style` 时也是它） | 64 |
+| `coarse` | 16 |
+| `fine` | 256 |
+
+不认识的风格名、对象里有别的字段、颜色数超出范围 → 任务失败（不可重试），`lastError` 列出可用的风格名。
 
 按 `GRID_UNIT`（5 厘米）体素化（每格面积约 9 个采样点、线性空间平均色、去掉少于 2 个采样点的格子和小连通块），
 空间定义了实体区（`regions` 里 `kind: physical` 的盒子）时只保留实体区里的格子；Lab 空间 k-means 量化成
-`paletteSize`（默认 64，1–1024）种颜色。方块表只追加：编号 0、1 保留，从 2 开始；当前方块表里颜色相同的
+`paletteSize` 种颜色。方块表只追加：编号 0、1 保留，从 2 开始；当前方块表里颜色相同的
 扫描方块（`tags` 含 `scan`）复用编号，否则追加 `{id, name: "扫描色 #rrggbb", kind: solid, color, tags: ["scan"]}`。
 区块按 `chunk.py` 编码（32³），写到**重建层**；旧清单里有、新结果里没有的区块写 null；方块表变了才带
 `paletteHash`。事务里发现方块表在计算期间变了就放弃、稍后重试。没有变化时不提交（`result.unchanged = true`）。
 
-`result = {scanAssetHash, paletteSize, newBlocks, samples, rawCells, cells, colors, chunks, seconds, paletteHash?, changedChunks}`。
+`result = {scanAssetHash, style?, paletteSize, newBlocks, samples, rawCells, cells, colors, chunks, seconds, paletteHash?, changedChunks}`
+（`style` 只在传了风格名时出现）。
 
 ### `model_import` `{assetHash}`
 

@@ -5,7 +5,7 @@
 | `upload_verify` | `{uploadId}` | 上传标记 done + `assetHash`；`result = {assetHash, reused, format, …}` |
 | `scan_import` | `{assetHash, observedAt?, transform?, rebuild?, voxelize?, hints?}` | 一次提交 |
 | `rebuild` | `{scanAssetHash?, hints?}` | 一次提交（没变化时不提交） |
-| `voxelize` | `{scanAssetHash?, style?: {paletteSize?}}` | 一次提交（没变化时不提交） |
+| `voxelize` | `{scanAssetHash?, style?}`（风格名，或 `{paletteSize?}`） | 一次提交（没变化时不提交） |
 | `model_import` | `{assetHash}` | `result = {modelHash, …}` |
 
 `ops_from_upload` 由接口服务自己处理，处理服务不领取。
