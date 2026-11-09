@@ -14,6 +14,7 @@ use metaverse_core::Timestamp;
 
 pub mod auth;
 pub mod config;
+pub mod demo_seed;
 pub mod error;
 pub mod health;
 pub mod ingest;

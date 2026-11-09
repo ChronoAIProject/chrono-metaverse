@@ -137,7 +137,8 @@ spaces {
   _id: "restaurant-xyz"            // 空间编号；不当作秘密
   name, description,
   owner: { kind: person | org, id }   // 主人：NyxID 个人或组织（9.2）
-  ownerEvidence?: { orgId, verifiedBy, verifiedAt, roleAtVerification }   // 组织空间创建时的核验记录，之后只读
+  ownerEvidence?: { issuer, orgId, verifiedBy, verifiedAt, basis, roleAtVerification? }   // 组织空间创建时的核验记录，之后只读
+                                   // basis：org_subject | org_admin | operator_seed（部署配置种子，9.2）
   visibility: unlisted | public    // 第一步只用 unlisted（凭分享令牌）
   shareTokens: [ { id, hash, createdAt, revokedAt } ]   // 至少 128 位随机数，只存哈希，可轮换、可吊销
   frame: { fixedAt, referenceScan } // 坐标系：首次导入扫描时固定，之后不变
@@ -585,6 +586,7 @@ jobs { _id, spaceId, kind, params, status: queued|running|done|failed,
 
 - **显式记录主人类型**：空间和组合都记 `owner: { kind: person | org, id }`。不能从一个编号去猜它是不是组织。
 - **组织空间要先查证再创建**：创建组织空间时，现场调用 NyxID 的组织授权接口确认调用者是该组织的 admin，再写入 `ownerEvidence`（签发方、组织编号、核验人、核验时间，与 CMA 的组织归属证据相同）。查不到就拒绝。没有证据的空间一律按个人所有处理。
+- **部署配置种子是运维行为**：演示空间可以由部署配置建（接口服务的 `METAVERSE_DEMO_SEED`，见 `infra/chrono-cd/README.md` 第 8 步），不经过任何网络接口、没有调用者。它的依据是"部署这套服务的组织 admin 把它写进了部署配置"——在 chrono-cd 里改应用规格、设密钥都要求组织 admin，所以与 admin 现场核验同级。归属证据写成单独的依据 `basis = operator_seed`、`verifiedBy = system:demo-seed`（带冒号，不可能是 NyxID 主体编号），一致性检查只在"组织主人 + 这种依据 + 证据里的组织就是配置里的主人"时接受它。种子用授权层签发的显式系统范围写入并记审计日志，只碰自己建的空间（证据是 `operator_seed`、主人一致），已有的别人的空间一律不动；建空间、第一次提交、导入任务与管理接口和 `POST /scans` 走同一条代码路径。
 - **子资源继承主人**：提交、草稿、事件、物件、锚点都带 `spaceId` 和主人副本，写入时校验副本与空间的主人一致，不一致判为数据损坏（CMA 的 lineage 规则）。
 - **访问级别**：
 
@@ -849,7 +851,7 @@ jobs { _id, spaceId, kind, params, status: queued|running|done|failed,
 
 ## 14. 部署（chrono-cd）
 
-部署在 ChronoAI 组织下：项目 `metaverse`，应用 `chrono-metaverse`。在组织下部署、写密钥、重启都要求操作者是组织的 admin。新应用的主机名在 `apps.nyxid.ai` 下，以创建后返回的 `url` 为准。第一版不需要应用密钥：数据库连接由插件注入，身份令牌只用公钥校验。
+部署在 ChronoAI 组织下：项目 `metaverse`，应用 `chrono-metaverse`。在组织下部署、写密钥、重启都要求操作者是组织的 admin。新应用的主机名在 `apps.nyxid.ai` 下，以创建后返回的 `url` 为准。只有一个应用密钥：演示空间的分享令牌 `METAVERSE_DEMO_SHARE_TOKEN`（规格的 `secret_keys` 声明名字，值用 `set_app_secrets` 设置，接口服务只存哈希，9.2）；数据库连接由插件注入，身份令牌只用公钥校验。
 
 | 服务 | 镜像 | 路由 | 暴露 | 说明 |
 |---|---|---|---|---|

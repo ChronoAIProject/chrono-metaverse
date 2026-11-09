@@ -13,10 +13,14 @@
 //   只能是单值头（接口服务只认恰好一个 IP 的值，X-Forwarded-For 这类转发链会被忽略）；
 //   没有可信头时限流按网关地址计，所有访客共用额度，必须显式调高到演示规模
 //   （README 第 1 节"公开接口限流"）。
-// - README 的环境变量表列出了 app.json 里的每一个环境变量；本地 up.sh 给处理服务设了同样的
+// - README 的环境变量表列出了 app.json 里的每一个环境变量和密钥名；本地 up.sh 给处理服务设了同样的
 //   线程变量，本地测的内存和线上一致。
+// - 部署配置种子：`demo-seed.json` 和接口服务的 `METAVERSE_DEMO_SEED` 内容一致（后者是前者压缩成的
+//   一行）；种子按接口服务的规则静态校验（拒绝未知字段、https 地址、sha256 和大小、主人是部署这个
+//   应用的组织、提示不超过 4KB）；凭链接查看时 `secret_keys` 里要有 `METAVERSE_DEMO_SHARE_TOKEN`，
+//   README 要写明用 `set_app_secrets` 设置它（README 第 5 步"密钥"、"演示数据"一节）。
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -40,6 +44,30 @@ export const PUBLIC_RATE_DEFAULTS = {
 
 /** 值是一串地址（逐跳追加）的转发头：接口服务只认恰好一个 IP 的值，这些头配了也不起作用。 */
 export const CHAIN_HEADERS = ['x-forwarded-for', 'forwarded', 'x-forwarded', 'x-original-forwarded-for', 'via'];
+
+/** 部署配置种子（api/crates/metaverse-api/src/demo_seed/config.rs）。 */
+export const SEED_VAR = 'METAVERSE_DEMO_SEED';
+export const SEED_TOKEN_VAR = 'METAVERSE_DEMO_SHARE_TOKEN';
+const SEED_KEYS = [
+  'spaceId',
+  'name',
+  'description',
+  'owner',
+  'visibility',
+  'observedAt',
+  'files',
+  'rebuild',
+  'voxelize',
+  'hints',
+  'revision',
+];
+const SEED_FILE_KEYS = ['url', 'name', 'sha256', 'size'];
+const MESH_EXTENSIONS = ['glb', 'drc', 'obj'];
+const SIDE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'mtl'];
+/** 提示规范化后的上限（接口服务 `MAX_HINTS_BYTES`）。 */
+export const MAX_HINTS_BYTES = 4096;
+/** 扫描上传的默认上限（接口服务 `UPLOAD_MAX_SCAN_BYTES` 的默认值），种子文件总大小不能超过它。 */
+const DEFAULT_MAX_SCAN_BYTES = 1 << 30;
 
 const U32_MAX = 4_294_967_295;
 const HEADER_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
@@ -175,6 +203,171 @@ function checkApi(spec, problems) {
   }
 }
 
+/** 规范化 JSON（键按码点排序，没有空白）：与接口服务的 `canonical_json` 对这里会出现的值相同。 */
+export function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const keys = Object.keys(value).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function isLoopbackHost(hostname) {
+  return hostname === 'localhost' || hostname === '[::1]' || /^127\.\d+\.\d+\.\d+$/.test(hostname);
+}
+
+/**
+ * 按接口服务的规则静态校验种子（不下载文件）。`targetOrg` 是部署这个应用的组织，`maxScanBytes` 是
+ * 接口服务的扫描上传上限。返回问题列表。
+ */
+export function seedProblems(seed, { targetOrg, maxScanBytes = DEFAULT_MAX_SCAN_BYTES } = {}) {
+  const problems = [];
+  const bad = (text) => problems.push(`demo-seed.json：${text}`);
+  if (seed === null || typeof seed !== 'object' || Array.isArray(seed)) {
+    bad('必须是 JSON 对象');
+    return problems;
+  }
+  for (const key of Object.keys(seed)) {
+    if (!SEED_KEYS.includes(key)) bad(`不认识的字段 ${key}（接口服务会拒绝，启动失败）`);
+  }
+  if (typeof seed.spaceId !== 'string' || !/^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(seed.spaceId)) {
+    bad('spaceId 必须是 3–64 个字符的小写字母、数字和 -，首尾不能是 -');
+  }
+  if (typeof seed.name !== 'string' || seed.name.trim() === '' || [...seed.name].length > 200) {
+    bad('name 不能为空，最多 200 个字符');
+  }
+  if (seed.description !== undefined && (typeof seed.description !== 'string' || [...seed.description].length > 2000)) {
+    bad('description 最多 2000 个字符');
+  }
+  const owner = seed.owner;
+  if (owner === null || typeof owner !== 'object' || owner.kind !== 'org' || typeof owner.id !== 'string') {
+    bad('owner 必须是 {"kind": "org", "id": <组织编号>}');
+  } else {
+    const extra = Object.keys(owner).filter((key) => !['kind', 'id'].includes(key));
+    if (extra.length > 0) bad(`owner 有不认识的字段 ${extra.join('、')}`);
+    if (targetOrg !== undefined && owner.id !== targetOrg) {
+      bad(`owner.id（${owner.id}）不是部署这个应用的组织（target_org_id ${targetOrg}）`);
+    }
+  }
+  const visibility = seed.visibility ?? 'unlisted';
+  if (!['unlisted', 'public'].includes(visibility)) bad('visibility 只能是 unlisted 或 public');
+  if (seed.observedAt !== undefined && (typeof seed.observedAt !== 'string' || Number.isNaN(Date.parse(seed.observedAt)))) {
+    bad('observedAt 必须是 RFC 3339 时间');
+  }
+  for (const key of ['rebuild', 'voxelize']) {
+    if (seed[key] !== undefined && typeof seed[key] !== 'boolean') bad(`${key} 必须是 true 或 false`);
+  }
+  if (seed.revision !== undefined && !(Number.isInteger(seed.revision) && seed.revision >= 1 && seed.revision <= U32_MAX)) {
+    bad('revision 必须是从 1 开始的整数');
+  }
+  if (seed.hints !== undefined && seed.hints !== null) {
+    if (typeof seed.hints !== 'object' || Array.isArray(seed.hints)) {
+      bad('hints 必须是 JSON 对象');
+    } else if (Buffer.byteLength(canonicalJson(seed.hints)) > MAX_HINTS_BYTES) {
+      bad(`hints 规范化后超过 ${MAX_HINTS_BYTES} 字节`);
+    }
+  }
+  const files = Array.isArray(seed.files) ? seed.files : [];
+  if (files.length === 0 || files.length > 32) bad('files 要有 1–32 个文件');
+  let total = 0;
+  const names = new Set();
+  const extensions = [];
+  for (const [index, file] of files.entries()) {
+    const label = `files[${index}]`;
+    if (file === null || typeof file !== 'object') {
+      bad(`${label} 必须是对象`);
+      continue;
+    }
+    for (const key of Object.keys(file)) {
+      if (!SEED_FILE_KEYS.includes(key)) bad(`${label} 有不认识的字段 ${key}`);
+    }
+    let url = null;
+    try {
+      url = new URL(file.url);
+    } catch {
+      bad(`${label}.url 不是合法地址`);
+    }
+    if (url !== null) {
+      const httpsOk = url.protocol === 'https:' || (url.protocol === 'http:' && isLoopbackHost(url.hostname));
+      if (!httpsOk || url.username !== '' || url.password !== '' || url.hash !== '') {
+        bad(`${label}.url 必须是 https，不带用户名、密码和片段（${file.url}）`);
+      }
+    }
+    const name = typeof file.name === 'string' ? file.name : '';
+    const extension = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$/.test(name) ? name.split('.').pop().toLowerCase() : '';
+    if (![...MESH_EXTENSIONS, ...SIDE_EXTENSIONS, 'zip'].includes(extension) || !name.includes('.')) {
+      bad(`${label}.name 不合法（${JSON.stringify(file.name)}）：扩展名只能是 glb、drc、obj、jpg、jpeg、png、webp、mtl、zip`);
+    }
+    if (names.has(name.toLowerCase())) bad(`${label}.name 重复：${name}`);
+    names.add(name.toLowerCase());
+    extensions.push(extension);
+    if (typeof file.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(file.sha256)) {
+      bad(`${label}.sha256 必须是 64 位小写十六进制`);
+    }
+    if (!Number.isSafeInteger(file.size) || file.size <= 0 || file.size > maxScanBytes) {
+      bad(`${label}.size 必须是 1–${maxScanBytes} 的整数`);
+    } else {
+      total += file.size;
+    }
+  }
+  if (total > maxScanBytes) bad(`文件总大小 ${total} 超过扫描上传上限 ${maxScanBytes}（UPLOAD_MAX_SCAN_BYTES）`);
+  const meshes = extensions.filter((extension) => MESH_EXTENSIONS.includes(extension)).length;
+  const archives = extensions.filter((extension) => extension === 'zip').length;
+  const usable = files.length === 1 ? meshes + archives === 1 : meshes === 1 && archives === 0;
+  if (files.length > 0 && !usable) {
+    bad('files 要么是单独一个 glb / drc / obj / zip，要么是一个网格加贴图和材质（会打包成 zip）');
+  }
+  return problems;
+}
+
+function checkSeed(spec, seedText, problems) {
+  const service = spec?.services?.[API_SERVICE];
+  if (!service) return;
+  const env = service.env ?? {};
+  const value = env[SEED_VAR];
+  if (seedText === undefined || seedText === null) {
+    if (value !== undefined) problems.push(`${API_SERVICE}：设了 ${SEED_VAR}，但 infra/chrono-cd/demo-seed.json 不存在（两处要一致）`);
+    return;
+  }
+  let seed;
+  try {
+    seed = JSON.parse(seedText);
+  } catch (error) {
+    problems.push(`demo-seed.json 不是合法的 JSON：${error.message}`);
+    return;
+  }
+  const expected = JSON.stringify(seed);
+  if (value === undefined) {
+    problems.push(`${API_SERVICE}：没有 ${SEED_VAR}，与 infra/chrono-cd/demo-seed.json 不一致（不用种子时两处一起删）`);
+  } else if (typeof value !== 'string' || value.includes('\n')) {
+    problems.push(`${API_SERVICE}：${SEED_VAR} 必须是压缩成一行的 JSON`);
+  } else if (value !== expected) {
+    let same = false;
+    try {
+      same = canonicalJson(JSON.parse(value)) === canonicalJson(seed);
+    } catch {
+      same = false;
+    }
+    problems.push(
+      same
+        ? `${API_SERVICE}：${SEED_VAR} 与 demo-seed.json 内容相同但不是它压缩成的一行（用 node infra/dev/demo-seed.mjs compact infra/chrono-cd/demo-seed.json 生成）`
+        : `${API_SERVICE}：${SEED_VAR} 与 infra/chrono-cd/demo-seed.json 不一致（用 node infra/dev/demo-seed.mjs compact infra/chrono-cd/demo-seed.json 重新生成）`,
+    );
+  }
+  const maxScanBytes = parsePositiveInt(env.UPLOAD_MAX_SCAN_BYTES) ?? DEFAULT_MAX_SCAN_BYTES;
+  problems.push(...seedProblems(seed, { targetOrg: spec.target_org_id, maxScanBytes }));
+  const secrets = service.secret_keys ?? [];
+  if ((seed.visibility ?? 'unlisted') === 'unlisted' && !secrets.includes(SEED_TOKEN_VAR)) {
+    problems.push(
+      `${API_SERVICE}：种子是凭链接查看（unlisted），secret_keys 里要有 ${SEED_TOKEN_VAR}（分享令牌原文，用 set_app_secrets 设置）`,
+    );
+  }
+  if (secrets.includes(SEED_TOKEN_VAR) && SEED_TOKEN_VAR in env) {
+    problems.push(`${API_SERVICE}：${SEED_TOKEN_VAR} 是密钥，不能写进 env（get_app 会原样返回）`);
+  }
+}
+
 /** README 里以 `名称` 出现过的环境变量。 */
 function documentedNames(readme) {
   return new Set([...readme.matchAll(/`([A-Z][A-Z0-9_]*)`/g)].map((match) => match[1]));
@@ -186,6 +379,7 @@ function checkReadme(spec, readme, problems) {
     const names = [
       ...Object.keys(service.env ?? {}),
       ...Object.values(service.addon_env ?? {}).flatMap((mapping) => Object.values(mapping ?? {})),
+      ...(service.secret_keys ?? []),
     ];
     for (const name of names) {
       if (!documented.has(name)) {
@@ -195,6 +389,10 @@ function checkReadme(spec, readme, problems) {
   }
   if (serviceEnv(spec, API_SERVICE).TRUSTED_CLIENT_IP_HEADER === undefined && !documented.has('TRUSTED_CLIENT_IP_HEADER')) {
     problems.push('README 要写明 `TRUSTED_CLIENT_IP_HEADER` 还没设置（待向平台确认）以及限流按网关地址计');
+  }
+  const hasSecrets = Object.values(spec?.services ?? {}).some((service) => (service.secret_keys ?? []).length > 0);
+  if (hasSecrets && !readme.includes('set_app_secrets')) {
+    problems.push('README 要写明密钥怎么设置（chrono-cd 的 `set_app_secrets`，值不进仓库、不交给 AI）');
   }
 }
 
@@ -208,9 +406,10 @@ function checkDevScript(upScript, problems) {
 
 /**
  * 检查应用规格，返回问题列表（空表示通过）。
- * `readme`、`upScript` 是对应文件的文本，不给就跳过那部分检查。
+ * `readme`、`upScript` 是对应文件的文本，不给就跳过那部分检查；`seed` 是 demo-seed.json 的文本
+ * （`null` 表示文件不存在，不给就跳过种子检查）。
  */
-export function checkApp(spec, { readme, upScript } = {}) {
+export function checkApp(spec, { readme, upScript, seed } = {}) {
   const problems = [];
   if (spec === null || typeof spec !== 'object' || typeof spec.services !== 'object' || spec.services === null) {
     return ['app.json 没有 services'];
@@ -219,6 +418,7 @@ export function checkApp(spec, { readme, upScript } = {}) {
   checkApi(spec, problems);
   if (readme !== undefined) checkReadme(spec, readme, problems);
   if (upScript !== undefined) checkDevScript(upScript, problems);
+  if (seed !== undefined) checkSeed(spec, seed, problems);
   return problems;
 }
 
@@ -228,7 +428,9 @@ export function checkRepository(appPath) {
   const spec = JSON.parse(readFileSync(appPath ?? join(here, 'app.json'), 'utf8'));
   const readme = readFileSync(join(here, 'README.md'), 'utf8');
   const upScript = readFileSync(join(here, '..', 'dev', 'up.sh'), 'utf8');
-  return checkApp(spec, { readme, upScript });
+  const seedPath = join(here, 'demo-seed.json');
+  const seed = existsSync(seedPath) ? readFileSync(seedPath, 'utf8') : null;
+  return checkApp(spec, { readme, upScript, seed });
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

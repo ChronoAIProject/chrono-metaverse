@@ -25,7 +25,12 @@ async fn serve() -> Result<(), String> {
     let config = Config::from_env().map_err(|error| format!("配置不可用：{error}"))?;
     let state = AppState::from_config(&config).await?;
     // 先监听再建索引：建好之前 /api/healthz 返回 503，平台不会把流量导过来。
-    state.spawn_preparation();
+    let preparation = state.spawn_preparation();
+    // 部署配置种子（演示空间）：索引建好之后在后台执行，失败只记日志，不影响就绪。
+    if let Some(seed) = config.demo_seed.clone() {
+        tracing::info!(space = %seed.space_id, revision = seed.revision, "已配置部署配置种子，索引建好后执行");
+        metaverse_api::demo_seed::spawn(state.clone(), seed, preparation);
+    }
     let listener = tokio::net::TcpListener::bind(config.bind)
         .await
         .map_err(|error| format!("无法监听 {}：{error}", config.bind))?;

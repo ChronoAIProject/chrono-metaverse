@@ -47,6 +47,15 @@ pub enum AssetRole {
     Texture,
 }
 
+/// [`Repo::put_asset_bytes_with`] 的结果。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PutAsset {
+    /// 内容哈希（也是 GridFS 文件名）。
+    pub hash: String,
+    /// 已有同一内容的资源，复用了它（没有写新数据块）。
+    pub reused: bool,
+}
+
 /// 资源不能按某个用途引用的原因。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssetRejection {
@@ -482,6 +491,26 @@ impl Repo {
         content_type: &str,
         kind: &str,
     ) -> Result<String, RepoError> {
+        Ok(self
+            .put_asset_bytes_with(grant, bytes, content_type, kind, &[])
+            .await?
+            .hash)
+    }
+
+    /// 同 [`Repo::put_asset_bytes`]，`metadata` 里另加 `extra` 的字符串字段（例如处理服务
+    /// `put_asset(..., extra={"format": ...})` 写的 `format`），并告诉调用方是不是复用了已有资源。
+    ///
+    /// 布局与处理服务完全一致：`assets.files {_id: ObjectId, length, chunkSize: 262144, uploadDate,
+    /// filename: 内容哈希, metadata: {sha256, contentType, kind, spaceId, ...extra}}`，数据块
+    /// `assets.chunks {files_id, n, data}`；已存在时只写 `metadata.touchedAt`（清理按它计算宽限）。
+    pub async fn put_asset_bytes_with(
+        &self,
+        grant: &Grant,
+        bytes: &[u8],
+        content_type: &str,
+        kind: &str,
+        extra: &[(&str, &str)],
+    ) -> Result<PutAsset, RepoError> {
         if !grant.can_manage() {
             return Err(RepoError::GrantMismatch);
         }
@@ -494,50 +523,73 @@ impl Repo {
             .matched_count
             == 1
         {
-            return Ok(hash);
+            return Ok(PutAsset { hash, reused: true });
         }
         let files_id = mongodb::bson::oid::ObjectId::new();
-        let chunks: Vec<Document> = bytes
-            .chunks(ASSET_CHUNK_SIZE)
-            .enumerate()
-            .map(|(n, block)| {
-                doc! {
-                    "files_id": files_id,
-                    "n": n as i32,
-                    "data": mongodb::bson::Binary {
-                        subtype: mongodb::bson::spec::BinarySubtype::Generic,
-                        bytes: block.to_vec(),
-                    },
-                }
-            })
-            .collect();
         let chunk_collection = self.collection(collections::ASSET_CHUNKS);
-        for batch in chunks.chunks(32) {
-            chunk_collection.insert_many(batch.to_vec()).await?;
+        // 每次最多 32 块（8 MiB）：不先把整份数据复制成文档列表。
+        let written: Result<(), RepoError> = async {
+            let blocks: Vec<&[u8]> = bytes.chunks(ASSET_CHUNK_SIZE).collect();
+            for (batch_no, batch) in blocks.chunks(32).enumerate() {
+                let documents: Vec<Document> = batch
+                    .iter()
+                    .enumerate()
+                    .map(|(i, block)| {
+                        doc! {
+                            "files_id": files_id,
+                            "n": (batch_no * 32 + i) as i32,
+                            "data": mongodb::bson::Binary {
+                                subtype: mongodb::bson::spec::BinarySubtype::Generic,
+                                bytes: block.to_vec(),
+                            },
+                        }
+                    })
+                    .collect();
+                chunk_collection.insert_many(documents).await?;
+            }
+            Ok(())
         }
+        .await;
+        if let Err(error) = written {
+            let _ = chunk_collection
+                .delete_many(doc! {"files_id": files_id})
+                .await;
+            return Err(error);
+        }
+        let mut metadata = doc! {
+            "sha256": &hash,
+            "contentType": content_type,
+            "kind": kind,
+            "spaceId": grant.space_id(),
+        };
+        for (key, value) in extra {
+            metadata.insert(*key, *value);
+        }
+        // 与处理服务（pymongo）写出的类型相同：放得进 32 位就是 Int32，否则 Int64。
+        let length = i32::try_from(bytes.len())
+            .map(Bson::Int32)
+            .unwrap_or(Bson::Int64(bytes.len() as i64));
         let inserted = files
             .insert_one(doc! {
                 "_id": files_id,
-                "length": bytes.len() as i64,
+                "length": length,
                 "chunkSize": ASSET_CHUNK_SIZE as i32,
                 "uploadDate": mongodb::bson::DateTime::now(),
                 "filename": &hash,
-                "metadata": {
-                    "sha256": &hash,
-                    "contentType": content_type,
-                    "kind": kind,
-                    "spaceId": grant.space_id(),
-                },
+                "metadata": metadata,
             })
             .await;
         match inserted {
-            Ok(_) => Ok(hash),
+            Ok(_) => Ok(PutAsset {
+                hash,
+                reused: false,
+            }),
             Err(error) if super::is_duplicate_key(&error) => {
                 chunk_collection
                     .delete_many(doc! {"files_id": files_id})
                     .await?;
                 files.update_one(doc! {"filename": &hash}, touched).await?;
-                Ok(hash)
+                Ok(PutAsset { hash, reused: true })
             }
             Err(error) => {
                 let _ = chunk_collection
