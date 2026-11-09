@@ -433,8 +433,17 @@ impl Repo {
         let found = self
             .collection(collections::UPLOADS)
             .find_one(filter)
-            .projection(doc! {"_id": 1, "assetHash": 1})
+            .projection(doc! {"_id": 1, "assetHash": 1, "reused": 1})
             .await?;
+        // "直接复用"的上传没有传过数据，资源还要按所有权规则属于本空间（旧版本按哈希就允许复用）。
+        if let Some(document) = &found {
+            if document.get_bool("reused").unwrap_or(false) {
+                let hash = document.get_str("assetHash").unwrap_or_default();
+                if self.space_owned_asset(grant, hash).await?.is_none() {
+                    return Ok(None);
+                }
+            }
+        }
         Ok(found.and_then(|document| {
             let hash = document.get_str("assetHash").ok()?.to_owned();
             let id = match document.get("_id") {

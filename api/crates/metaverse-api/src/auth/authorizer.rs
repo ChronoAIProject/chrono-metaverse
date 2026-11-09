@@ -193,6 +193,36 @@ impl Authorizer {
             .space_policy(&Self::key(), space_id)
             .await?
             .ok_or_else(ApiError::not_found)?;
+        self.space_from_policy(caller, space_id, policy, purpose)
+            .await
+    }
+
+    /// 删除空间（管理接口）：规则同 [`Authorizer::space`] 的"管理"，但正在删除（上次没清理完）
+    /// 的空间也能拿到凭据，好让主人重试删除。
+    pub async fn space_for_deletion(
+        &self,
+        caller: &Caller,
+        space_id: &str,
+    ) -> Result<Grant, ApiError> {
+        if !is_space_id(space_id) {
+            return Err(ApiError::not_found());
+        }
+        let policy = self
+            .repo
+            .space_policy_for_deletion(&Self::key(), space_id)
+            .await?
+            .ok_or_else(ApiError::not_found)?;
+        self.space_from_policy(caller, space_id, policy, Purpose::Manage)
+            .await
+    }
+
+    async fn space_from_policy(
+        &self,
+        caller: &Caller,
+        space_id: &str,
+        policy: crate::repo::SpacePolicy,
+        purpose: Purpose,
+    ) -> Result<Grant, ApiError> {
         let owner = policy.effective_owner();
         let level = match direct_access(&owner, &caller.subject) {
             Some(level) => level,

@@ -247,7 +247,7 @@ async fn chunked_upload_writes_gridfs_chunks_and_queues_verification() {
         json!({"size": data.len(), "sha256": sha, "partSize": KIB256, "format": "drc"}),
     )
     .await;
-    assert_eq!(reused.status, StatusCode::OK, "{:?}", reused.body);
+    assert_eq!(reused.status, StatusCode::CREATED, "{:?}", reused.body);
     assert_eq!(reused.body["status"], "done");
     assert_eq!(reused.body["reused"], true);
     assert_eq!(reused.body["assetHash"], sha.as_str());
@@ -1066,4 +1066,291 @@ async fn scan_jobs_write_the_missing_first_commit_before_queueing() {
         .await;
     assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
     assert_eq!(commit_seqs(&app, "front-hall").await, vec![1]);
+}
+
+/// 只凭哈希和大小不能把别的主人的资源变成自己的：别的空间请求"复用"时照常要求上传完整
+/// 数据（201、status=open），既拿不到资源，也看不出全系统里有没有这个文件。
+#[tokio::test]
+async fn reuse_by_hash_requires_owning_the_asset() {
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    front_hall(&app).await;
+    // 别的主人的个人空间。
+    app.create_space(who("bob"), "bob-space", "person", "bob", "unlisted")
+        .await;
+    let secret = draco_bytes();
+    let sha = sha256_hex(&secret);
+    let base = "/api/v1/spaces/front-hall";
+    let reply = create_upload(
+        &app,
+        who(ORG),
+        base,
+        "scan",
+        json!({"size": secret.len(), "sha256": sha, "partSize": KIB256, "format": "drc"}),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::CREATED, "{:?}", reply.body);
+    let upload_id = reply.body["uploadId"].as_str().unwrap().to_owned();
+    for (n, part) in secret.chunks(KIB256).enumerate() {
+        let reply = app
+            .put_bytes(
+                who(ORG),
+                &format!("{base}/uploads/scan/{upload_id}/parts/{n}"),
+                part.to_vec(),
+            )
+            .await;
+        assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    }
+    let reply = app
+        .call(
+            who(ORG),
+            Method::POST,
+            &format!("{base}/uploads/scan/{upload_id}/complete"),
+            None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
+    app.finish_upload(&upload_id, &sha, secret.len() as i64)
+        .await;
+
+    // bob 声明同一哈希和大小（任何用途）：不复用，照常要求上传数据；响应与全新文件相同。
+    let bob = "/api/v1/spaces/bob-space";
+    let unknown = sha256_hex(b"nobody has this");
+    for (purpose, format, hash) in [
+        ("texture", "png", sha.as_str()),
+        ("scan", "drc", sha.as_str()),
+        ("scan", "drc", unknown.as_str()),
+    ] {
+        let reply = create_upload(
+            &app,
+            who("bob"),
+            bob,
+            purpose,
+            json!({"size": secret.len(), "sha256": hash, "partSize": KIB256, "format": format}),
+        )
+        .await;
+        assert_eq!(
+            reply.status,
+            StatusCode::CREATED,
+            "{purpose}: {:?}",
+            reply.body
+        );
+        assert_eq!(reply.body["status"], "open", "{purpose}");
+        assert_eq!(reply.body["reused"], false, "{purpose}");
+    }
+    // 拿不到资源，也不能拿它建导入任务。
+    let reply = app
+        .call(
+            who("bob"),
+            Method::GET,
+            &format!("{bob}/assets/{sha}"),
+            None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND, "{:?}", reply.body);
+    let reply = app
+        .call(
+            who("bob"),
+            Method::POST,
+            &format!("{bob}/scans"),
+            Some(json!({"assetHash": sha})),
+        )
+        .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{:?}",
+        reply.body
+    );
+    assert_eq!(reply.body["code"], "asset_unknown");
+
+    // 旧版本按哈希复用留下的上传（status=done、reused=true）同样不算。
+    app.collection("uploads")
+        .insert_one(doc! {
+            "_id": "up_legacy_reuse", "spaceId": "bob-space",
+            "owner": {"kind": "person", "id": "bob"}, "scope": "physical",
+            "purpose": "scan", "status": "done", "sha256": &sha, "assetHash": &sha,
+            "reused": true, "size": secret.len() as i64, "createdAt": ago(0),
+        })
+        .await
+        .unwrap();
+    let reply = app
+        .call(
+            who("bob"),
+            Method::GET,
+            &format!("{bob}/assets/{sha}"),
+            None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND, "{:?}", reply.body);
+    let reply = app
+        .call(
+            who("bob"),
+            Method::POST,
+            &format!("{bob}/scans"),
+            Some(json!({"assetHash": sha})),
+        )
+        .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{:?}",
+        reply.body
+    );
+
+    // 主人自己照常复用（201、status=done）并能下载。
+    let reply = create_upload(
+        &app,
+        who(ORG),
+        base,
+        "scan",
+        json!({"size": secret.len(), "sha256": sha, "partSize": KIB256, "format": "drc"}),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::CREATED, "{:?}", reply.body);
+    assert_eq!(reply.body["reused"], true);
+    // 用途不同（本空间的扫描当贴图）不直接复用。
+    let reply = create_upload(
+        &app,
+        who(ORG),
+        base,
+        "texture",
+        json!({"size": secret.len(), "sha256": sha, "partSize": KIB256, "format": "png"}),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::CREATED, "{:?}", reply.body);
+    assert_eq!(reply.body["reused"], false);
+}
+
+/// 删除空间先记墓碑：清理完之前编号仍被占着、谁都拿不到这个空间；清理中途失败时主人可以
+/// 重试。删除后用同一个编号重建的空间不继承旧空间的资源（按 `metadata.spaceId` 或残留的
+/// `assetRefs`）。
+#[tokio::test]
+async fn space_deletion_uses_a_tombstone_and_recreated_ids_do_not_inherit_assets() {
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    front_hall(&app).await;
+    let secret = b"front-hall private scan".to_vec();
+    let hash = app
+        .put_asset(&secret, doc! {"kind": "scan", "spaceId": "front-hall"})
+        .await;
+    let base = "/api/v1/spaces/front-hall";
+    let reply = app
+        .call(
+            who(ORG),
+            Method::GET,
+            &format!("{base}/assets/{hash}"),
+            None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+
+    // 模拟上次删除清理到一半失败：空间文档上只有墓碑。
+    app.collection("spaces")
+        .update_one(
+            doc! {"_id": "front-hall"},
+            doc! {"$set": {"deletingAt": ago(0)}},
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        app.call(who(ORG), Method::GET, base, None).await.status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        app.public("/api/public/spaces/front-hall/head", None, &[])
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    // 编号还被占着：别人不能现在就用它新建空间（否则清理会删掉新空间的数据）。
+    let reply = app
+        .call(
+            who("bob"),
+            Method::POST,
+            "/api/v1/admin/spaces",
+            Some(
+                json!({"id": "front-hall", "name": "x", "visibility": "unlisted",
+                        "owner": {"kind": "person", "id": "bob"}}),
+            ),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::CONFLICT, "{:?}", reply.body);
+    // 别人不能替主人"重试删除"。
+    let reply = app
+        .call(
+            who_with("bob", "stranger-token"),
+            Method::DELETE,
+            "/api/v1/admin/spaces/front-hall?confirm=front-hall",
+            None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND);
+    // 主人重试：接着清理，最后释放编号。
+    let reply = app
+        .call(
+            who(ORG),
+            Method::DELETE,
+            "/api/v1/admin/spaces/front-hall?confirm=front-hall",
+            None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::NO_CONTENT, "{:?}", reply.body);
+    for collection in ["spaces", "commits", "palettes", "anchors"] {
+        let filter = if collection == "spaces" {
+            doc! {"_id": "front-hall"}
+        } else {
+            doc! {"spaceId": "front-hall"}
+        };
+        assert_eq!(
+            app.collection(collection)
+                .count_documents(filter)
+                .await
+                .unwrap(),
+            0,
+            "{collection}"
+        );
+    }
+
+    // 旧主人在这个编号下留下的资源引用（例如清理失败的旧数据）。
+    app.collection("assetRefs")
+        .insert_one(doc! {"hash": &hash, "spaceId": "front-hall",
+        "owner": {"kind": "org", "id": ORG}, "createdAt": ago(0)})
+        .await
+        .unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    app.create_space(who("bob"), "front-hall", "person", "bob", "unlisted")
+        .await;
+    let reply = app
+        .call(
+            who("bob"),
+            Method::GET,
+            &format!("{base}/assets/{hash}"),
+            None,
+        )
+        .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::NOT_FOUND,
+        "旧空间的资源不归同编号的新空间：{:?}",
+        reply.body
+    );
+    // 新空间自己登记的资源照常算它的。
+    let own = app
+        .put_asset(
+            b"bob's own scan",
+            doc! {"kind": "scan", "spaceId": "front-hall"},
+        )
+        .await;
+    let reply = app
+        .call(
+            who("bob"),
+            Method::GET,
+            &format!("{base}/assets/{own}"),
+            None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
 }

@@ -1857,11 +1857,28 @@ async fn draft_assets_are_checked_by_role_and_by_space_ownership() {
         );
     }
     let owner = doc! {"kind": "org", "id": ORG};
+    // 只凭哈希"直接复用"的上传（旧版本留下的，没有传过数据）不能确立所有权。
+    app.collection("uploads")
+        .insert_one(doc! {
+            "_id": "up_reused_texture", "spaceId": SPACE, "owner": owner.clone(),
+            "purpose": "texture", "status": "done", "assetHash": &shared_texture,
+            "reused": true, "createdAt": "2026-01-01T00:00:00.000Z",
+        })
+        .await
+        .unwrap();
+    let reply = append(&app, &path, rug("mat", &shared_texture)).await;
+    assert_eq!(
+        reply.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{:?}",
+        reply.body
+    );
+    // 真正传过数据、经处理服务校验的上传（存储层去重后同一份内容）算本空间的。
     app.collection("uploads")
         .insert_one(doc! {
             "_id": "up_shared_texture", "spaceId": SPACE, "owner": owner.clone(),
             "purpose": "texture", "status": "done", "assetHash": &shared_texture,
-            "reused": true, "createdAt": "2026-01-01T00:00:00.000Z",
+            "createdAt": "2026-01-01T00:00:00.000Z",
         })
         .await
         .unwrap();
@@ -1942,7 +1959,8 @@ async fn v1_asset_download_is_limited_to_the_space_and_its_readers() {
             "scan",
         )
         .await;
-    // 别的空间先登记的同一份内容，本空间有完成的上传：算本空间的。
+    // 别的空间先登记的同一份内容：本空间只凭哈希"直接复用"的上传（旧版本留下的）不算，
+    // 真正传过数据的完成上传才算本空间的。
     let shared = app
         .put_space_asset(
             "other-space",
@@ -1951,15 +1969,27 @@ async fn v1_asset_download_is_limited_to_the_space_and_its_readers() {
             "ops",
         )
         .await;
+    let path = |hash: &str| format!("/api/v1/spaces/{SPACE}/assets/{hash}");
     app.collection("uploads")
         .insert_one(doc! {
-            "_id": "up_shared_ops", "spaceId": SPACE, "owner": {"kind": "org", "id": ORG},
+            "_id": "up_reused_ops", "spaceId": SPACE, "owner": {"kind": "org", "id": ORG},
             "purpose": "ops", "status": "done", "assetHash": &shared, "reused": true,
             "createdAt": "2026-01-01T00:00:00.000Z",
         })
         .await
         .unwrap();
-    let path = |hash: &str| format!("/api/v1/spaces/{SPACE}/assets/{hash}");
+    assert_eq!(
+        app.org(Method::GET, &path(&shared), None).await.status,
+        StatusCode::NOT_FOUND
+    );
+    app.collection("uploads")
+        .insert_one(doc! {
+            "_id": "up_shared_ops", "spaceId": SPACE, "owner": {"kind": "org", "id": ORG},
+            "purpose": "ops", "status": "done", "assetHash": &shared,
+            "createdAt": "2026-01-01T00:00:00.000Z",
+        })
+        .await
+        .unwrap();
 
     // 主人：原始扫描（不在 assetRefs 里，公开接口读不到）。
     let reply = app.org(Method::GET, &path(&scan), None).await;
@@ -2000,7 +2030,7 @@ async fn v1_asset_download_is_limited_to_the_space_and_its_readers() {
         reply.header(header::CONTENT_RANGE),
         format!("bytes 262140-262149/{}", web_bytes.len())
     );
-    // 复用的上传。
+    // 真正传过数据的上传。
     let reply = app.org(Method::GET, &path(&shared), None).await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(&reply.bytes[..], b"ops shared by content");

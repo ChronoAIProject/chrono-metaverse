@@ -165,11 +165,14 @@ pub(super) fn granted_children(grant: &Grant) -> Document {
     }
 }
 
+/// `{_id, owner.kind, owner.id}`，并排除正在删除的空间（`deletingAt` 墓碑）：删除开始后，
+/// 任何提交、设置修改都匹配不到它。
 pub(super) fn granted_space(grant: &Grant) -> Document {
     doc! {
         "_id": grant.space_id(),
         "owner.kind": owner_kind(grant),
         "owner.id": &grant.owner().id,
+        "deletingAt": {"$exists": false},
     }
 }
 

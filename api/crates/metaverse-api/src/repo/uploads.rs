@@ -94,7 +94,26 @@ pub enum AssetAvailability {
 }
 
 impl Repo {
-    /// 资源（GridFS 文件名 = 内容哈希）的长度；不存在时为空。内容寻址，任何空间都可以复用。
+    /// 本空间可以"直接复用、不收数据"的资源的长度：资源必须**已经属于本空间**（见
+    /// [`Repo::owned_assets`]），并且种类与这次上传的用途相同。只凭知道哈希和大小不能把别的主人的
+    /// 资源变成自己的（设计 8.2：原始扫描、ops、脚本只能由有权限的调用者读到）；不属于本空间时
+    /// 返回空，调用方照常要求上传完整数据、由处理服务核对整体哈希。
+    pub async fn reusable_asset_length(
+        &self,
+        grant: &Grant,
+        hash: &str,
+        purpose: UploadPurpose,
+    ) -> Result<Option<u64>, RepoError> {
+        if !grant.can_manage() {
+            return Err(RepoError::GrantMismatch);
+        }
+        let Some(meta) = self.space_owned_asset(grant, hash).await? else {
+            return Ok(None);
+        };
+        Ok((meta.kind.as_deref() == Some(purpose_name(purpose))).then_some(meta.length))
+    }
+
+    /// 资源（GridFS 文件名 = 内容哈希）的长度；不存在时为空。调用方已经核对过资源属于本空间。
     pub async fn asset_length(&self, grant: &Grant, hash: &str) -> Result<Option<u64>, RepoError> {
         if !grant.can_manage() {
             return Err(RepoError::GrantMismatch);
@@ -317,20 +336,27 @@ impl Repo {
         let mut cursor = self
             .collection(collections::UPLOADS)
             .find(filter)
-            .projection(doc! {"status": 1})
+            .projection(doc! {"status": 1, "reused": 1})
             .limit(20)
             .await?;
         let mut pending = false;
         let mut done = false;
+        let mut reused = false;
         while cursor.advance().await? {
             let document: Document = cursor
                 .deserialize_current()
                 .map_err(|error| RepoError::Corrupt(error.to_string()))?;
             match document.get_str("status") {
+                Ok("done") if document.get_bool("reused").unwrap_or(false) => reused = true,
                 Ok("done") => done = true,
                 Ok("complete") => pending = true,
                 _ => {}
             }
+        }
+        // "直接复用"的上传没有传过数据：资源还要另外按所有权规则属于本空间才算（旧版本按哈希就
+        // 允许复用，留下的这类上传不能让别的主人的资源变成可用）。
+        if !done && reused {
+            done = self.space_owned_asset(grant, hash).await?.is_some();
         }
         if done {
             let exists = self

@@ -49,12 +49,14 @@ fn owner_kind(owner: &Owner) -> &'static str {
     }
 }
 
-/// `{_id, owner.kind, owner.id}`：读写都带上主人，主人变了就匹配不到。
+/// `{_id, owner.kind, owner.id}`：读写都带上主人，主人变了就匹配不到；正在删除的空间
+/// （带 `deletingAt` 的墓碑）也匹配不到。
 fn granted_space(grant: &Grant) -> Document {
     doc! {
         "_id": grant.space_id(),
         "owner.kind": owner_kind(grant.owner()),
         "owner.id": &grant.owner().id,
+        "deletingAt": {"$exists": false},
     }
 }
 
@@ -77,15 +79,36 @@ struct AnchorDocument {
 const MAX_ANCHORS: i64 = 10_000;
 
 impl Repo {
-    /// 只读主人、可见性和分享令牌哈希，专供授权层使用。
+    /// 只读主人、可见性和分享令牌哈希，专供授权层使用。正在删除的空间当作不存在。
     pub async fn space_policy(
         &self,
-        _key: &AuthorizerKey,
+        key: &AuthorizerKey,
         space_id: &str,
+    ) -> Result<Option<SpacePolicy>, RepoError> {
+        self.find_space_policy(
+            key,
+            doc! {"_id": space_id, "deletingAt": {"$exists": false}},
+        )
+        .await
+    }
+
+    /// 删除空间用：正在删除（上次没清理完）的空间也返回，好让主人重试删除。
+    pub async fn space_policy_for_deletion(
+        &self,
+        key: &AuthorizerKey,
+        space_id: &str,
+    ) -> Result<Option<SpacePolicy>, RepoError> {
+        self.find_space_policy(key, doc! {"_id": space_id}).await
+    }
+
+    async fn find_space_policy(
+        &self,
+        _key: &AuthorizerKey,
+        filter: Document,
     ) -> Result<Option<SpacePolicy>, RepoError> {
         let found = self
             .collection(collections::SPACES)
-            .find_one(doc! {"_id": space_id})
+            .find_one(filter)
             .projection(doc! {
                 "owner": 1, "ownerEvidence": 1, "visibility": 1, "shareTokens": 1, "createdAt": 1
             })
@@ -126,6 +149,24 @@ impl Repo {
                     .map_err(|error| RepoError::Corrupt(error.to_string()))
             })
             .transpose()
+    }
+
+    /// 空间这一次创建的时间（判断"属于本空间"时排除同编号旧空间留下的数据）。
+    pub(super) async fn space_created_at(
+        &self,
+        grant: &Grant,
+    ) -> Result<Option<metaverse_core::Timestamp>, RepoError> {
+        let found = self
+            .collection(collections::SPACES)
+            .find_one(granted_space(grant))
+            .projection(doc! {"createdAt": 1})
+            .await?;
+        Ok(found.and_then(|document| {
+            document
+                .get_str("createdAt")
+                .ok()
+                .and_then(|text| metaverse_core::Timestamp::parse_rfc3339(text).ok())
+        }))
     }
 
     /// 锚点的当前状态。公开凭据只能读到公开级锚点。
