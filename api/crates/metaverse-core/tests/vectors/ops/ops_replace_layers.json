@@ -1,0 +1,340 @@
+{
+  "base": {
+    "anchors": [],
+    "entities": [],
+    "fills": [
+      {
+        "block": 2,
+        "box": [
+          0,
+          0,
+          0,
+          4,
+          1,
+          4
+        ],
+        "layer": "rebuilt"
+      },
+      {
+        "block": 7,
+        "box": [
+          0,
+          1,
+          0,
+          2,
+          2,
+          2
+        ],
+        "layer": "rebuilt"
+      },
+      {
+        "block": 3,
+        "box": [
+          3,
+          0,
+          3,
+          4,
+          1,
+          4
+        ],
+        "layer": "ext"
+      }
+    ],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ]
+  },
+  "description": "替换看的是有效方块（扩展层优先，空气覆盖算空），写到扩展层：把重建层的石头换成空气覆盖，把空格换成橡木",
+  "expect": {
+    "anchors": [],
+    "baseChunks": [
+      {
+        "cx": 0,
+        "cy": 0,
+        "cz": 0,
+        "hash": "e09273621f1de4352887cce6e3ca57c531c5ce22cf702d9171ea237aa3d71210",
+        "layer": "rebuilt"
+      },
+      {
+        "cx": 0,
+        "cy": 0,
+        "cz": 0,
+        "hash": "58e25113f169e5bbfbebe5a5e451380daaaab34c9cda34c91e35980c1248621f",
+        "layer": "ext"
+      }
+    ],
+    "chunkChanges": [
+      {
+        "cx": 0,
+        "cy": 0,
+        "cz": 0,
+        "hash": "341dbcbd294023e74bda357eaa1a5670c84a3ffc02983acecdf10ea3f4a18975",
+        "layer": "ext"
+      }
+    ],
+    "chunks": [
+      {
+        "cx": 0,
+        "cy": 0,
+        "cz": 0,
+        "hash": "e09273621f1de4352887cce6e3ca57c531c5ce22cf702d9171ea237aa3d71210",
+        "layer": "rebuilt",
+        "nonZeroCount": 20
+      },
+      {
+        "cx": 0,
+        "cy": 0,
+        "cz": 0,
+        "hash": "341dbcbd294023e74bda357eaa1a5670c84a3ffc02983acecdf10ea3f4a18975",
+        "layer": "ext",
+        "nonZeroCount": 28
+      }
+    ],
+    "entities": [],
+    "footprints": [
+      {
+        "cells": [
+          [
+            0,
+            0,
+            0,
+            4,
+            1,
+            4
+          ]
+        ],
+        "spaceWide": false
+      },
+      {
+        "cells": [
+          [
+            0,
+            1,
+            0,
+            4,
+            2,
+            4
+          ]
+        ],
+        "spaceWide": false
+      },
+      {
+        "cells": [
+          [
+            0,
+            0,
+            0,
+            4,
+            2,
+            4
+          ]
+        ],
+        "spaceWide": false
+      }
+    ],
+    "ok": true,
+    "probes": [
+      {
+        "cell": [
+          0,
+          0,
+          0
+        ],
+        "effective": 0,
+        "ext": 1,
+        "rebuilt": 2
+      },
+      {
+        "cell": [
+          3,
+          0,
+          3
+        ],
+        "effective": 3,
+        "ext": 3,
+        "rebuilt": 2
+      },
+      {
+        "cell": [
+          0,
+          1,
+          0
+        ],
+        "effective": 7,
+        "ext": 0,
+        "rebuilt": 7
+      },
+      {
+        "cell": [
+          3,
+          1,
+          3
+        ],
+        "effective": 3,
+        "ext": 3,
+        "rebuilt": 0
+      }
+    ],
+    "provisionalBlocks": [],
+    "touched": {
+      "anchors": [],
+      "chunks": [
+        {
+          "cx": 0,
+          "cy": 0,
+          "cz": 0,
+          "layer": "ext"
+        }
+      ],
+      "entities": [],
+      "palette": false
+    }
+  },
+  "kind": "ops",
+  "name": "replace-layers",
+  "ops": [
+    {
+      "box": [
+        0,
+        0,
+        0,
+        4,
+        1,
+        4
+      ],
+      "from": 2,
+      "op": "replace",
+      "to": 1
+    },
+    {
+      "box": [
+        0,
+        1,
+        0,
+        4,
+        2,
+        4
+      ],
+      "from": 0,
+      "op": "replace",
+      "to": 3
+    },
+    {
+      "box": [
+        0,
+        0,
+        0,
+        4,
+        2,
+        4
+      ],
+      "from": 1,
+      "op": "replace",
+      "to": 7
+    }
+  ],
+  "probeCells": [
+    [
+      0,
+      0,
+      0
+    ],
+    [
+      3,
+      0,
+      3
+    ],
+    [
+      0,
+      1,
+      0
+    ],
+    [
+      3,
+      1,
+      3
+    ]
+  ],
+  "scope": null,
+  "spaceId": "vec-space"
+}

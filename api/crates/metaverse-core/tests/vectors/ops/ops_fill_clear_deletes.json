@@ -1,0 +1,240 @@
+{
+  "base": {
+    "anchors": [],
+    "entities": [],
+    "fills": [
+      {
+        "block": 2,
+        "box": [
+          0,
+          0,
+          0,
+          4,
+          4,
+          4
+        ],
+        "layer": "ext"
+      }
+    ],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ]
+  },
+  "description": "扩展层原有内容被写成 0（不覆盖）后整块为空：变化记为删除（hash = null）；从未有内容的区块写 0 不算变化",
+  "expect": {
+    "anchors": [],
+    "baseChunks": [
+      {
+        "cx": 0,
+        "cy": 0,
+        "cz": 0,
+        "hash": "b6f1cca95267b35acd21b29ae0b3654e5c197879eeb798aa598ede1c5e56ba9d",
+        "layer": "ext"
+      }
+    ],
+    "chunkChanges": [
+      {
+        "cx": 0,
+        "cy": 0,
+        "cz": 0,
+        "hash": null,
+        "layer": "ext"
+      }
+    ],
+    "chunks": [],
+    "entities": [],
+    "footprints": [
+      {
+        "cells": [
+          [
+            0,
+            0,
+            0,
+            4,
+            4,
+            4
+          ]
+        ],
+        "spaceWide": false
+      },
+      {
+        "cells": [
+          [
+            40,
+            0,
+            0,
+            41,
+            1,
+            1
+          ]
+        ],
+        "spaceWide": false
+      }
+    ],
+    "ok": true,
+    "probes": [
+      {
+        "cell": [
+          0,
+          0,
+          0
+        ],
+        "effective": 0,
+        "ext": 0,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          40,
+          0,
+          0
+        ],
+        "effective": 0,
+        "ext": 0,
+        "rebuilt": 0
+      }
+    ],
+    "provisionalBlocks": [],
+    "touched": {
+      "anchors": [],
+      "chunks": [
+        {
+          "cx": 0,
+          "cy": 0,
+          "cz": 0,
+          "layer": "ext"
+        },
+        {
+          "cx": 1,
+          "cy": 0,
+          "cz": 0,
+          "layer": "ext"
+        }
+      ],
+      "entities": [],
+      "palette": false
+    }
+  },
+  "kind": "ops",
+  "name": "fill-clear-deletes",
+  "ops": [
+    {
+      "block": 0,
+      "box": [
+        0,
+        0,
+        0,
+        4,
+        4,
+        4
+      ],
+      "op": "fill"
+    },
+    {
+      "block": 0,
+      "box": [
+        40,
+        0,
+        0,
+        41,
+        1,
+        1
+      ],
+      "op": "fill"
+    }
+  ],
+  "probeCells": [
+    [
+      0,
+      0,
+      0
+    ],
+    [
+      40,
+      0,
+      0
+    ]
+  ],
+  "scope": null,
+  "spaceId": "vec-space"
+}

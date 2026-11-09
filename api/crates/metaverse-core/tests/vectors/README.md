@@ -70,3 +70,44 @@
 4. `group` 先求各子形状（含子形状自己的变换）的并，再整体变换；`instance` 取模板（含模板自己的变换）的包围盒再变换。
 
 三角形数暂未给出：网格的分段方式由网站的网格生成代码确定后，再在这里补 `triangles` 字段。
+
+## 4. 高层操作：`ops/ops_*.json`
+
+对应设计 8.3 和 `crates/metaverse-core/src/ops.rs`。命令行（`sdk/typescript`）在本地应用操作（dev / shot / diff / check），用这批向量核对结果与服务端一致。
+
+- **由 Rust 实现生成**：用例在 `tests/ops_vectors.rs` 里，运行
+  `METAVERSE_WRITE_VECTORS=1 cargo test -p metaverse-core --test ops_vectors` 重新生成 `ops/` 下的全部文件；平时 `cargo test` 会重算并核对。
+- **放在子目录 `ops/`**：`tests/vectors.rs` 把顶层的每个 `.json` 当作区块、规范化或形状向量核对，重新生成时还会删掉顶层的全部 `.json`，所以操作向量单独放一个目录。
+
+### 4.1 作用结果：`kind = "ops"`
+
+| 字段 | 含义 |
+|---|---|
+| `spaceId` | 计算记录哈希用的空间编号 |
+| `base.palette` | 方块表（`palettes.blocks[]` 的形状：`{ id, name, kind, color \| texture, tags }`） |
+| `base.fills` | 按顺序把格子写进基础状态：`{ "layer": "rebuilt" \| "ext", "box": [x0,y0,z0,x1,y1,z1], "block": n }`（格，半开区间） |
+| `base.entities`、`base.anchors` | 基础状态里的物件、锚点 body（直接放进状态，不再校验） |
+| `base.regions`、`base.plots` | 区域和地块，`scope` 据此算允许范围 |
+| `scope` | `null`（不检查范围）、`"physical"` 或 `"plot:<编号>"` |
+| `ops` | 操作列表（接口请求体里的 JSON 形状） |
+| `probeCells` | 作用完成后要读的格子 `[x, y, z]` |
+| `expect.baseChunks` | 按 `base.fills` 构造出的非空区块 `{ layer, cx, cy, cz, hash }`，先核对基础状态 |
+| `expect.footprints` | 每条操作的影响范围 `{ "cells": [盒子…], "spaceWide": bool }`，按作用之前的状态计算；失败时只到失败的那条（影响范围本身就算不出来时不含那条） |
+| `expect.ok` | 整批是否成功 |
+| `expect.error` | 失败时：`{ "kind": "invalid" \| "scope", "index": 第几条（从 0 开始）, "message": Rust 的说明（仅供参考） }` |
+| `expect.touched` | 成功时碰过的键：`{ chunks: [{layer,cx,cy,cz}], entities, anchors, palette }` |
+| `expect.chunkChanges` | 与基础状态相比，碰过的区块的变化 `{ layer, cx, cy, cz, hash \| null }`（`null` = 区块变空，即删除；没变的不列） |
+| `expect.chunks` | 作用后的全部非空区块 `{ layer, cx, cy, cz, hash, nonZeroCount }` |
+| `expect.entities`、`expect.anchors` | 作用后的全部物件、锚点 `{ id, hash }`，`hash` 是 `records._id`（`{body, kind, spaceId}` 规范化后的 sha256） |
+| `expect.provisionalBlocks` | 草稿里新增的方块 `{ name, id }`（临时编号） |
+| `expect.probes` | `probeCells` 每格的 `{ cell, ext, rebuilt, effective }` |
+
+作用规则（与 `WorkingState::apply_in_scope` 相同）：
+
+1. 按顺序处理每条操作：先按**当前**状态算影响范围；给了 `scope` 就检查影响范围是否完全落在允许的盒子里（空间级的影响只允许 `physical`）；再作用到状态。
+2. 任何一条失败，整批失败，状态保持不变。错误分两类：`invalid`（操作本身不合法、引用不存在、记录校验失败）和 `scope`（超出路径范围）。
+3. 记录哈希按服务端存下的 body 计算：值为 `null` 的可选字段去掉，物件的 `props` 缺省为 `{}`（`props` 里面的 `null` 保留）。
+
+### 4.2 结构检查：`kind = "ops-parse"`
+
+`cases: [{ "input": 操作 JSON, "valid": bool }]`。`valid = false` 的输入必须在解析阶段就被拒绝（字段拼错、多余字段、类型不对、方块编号超出 0–65535、盒子不合法等）；`valid = true` 的只要求能解析，不要求能作用成功。
