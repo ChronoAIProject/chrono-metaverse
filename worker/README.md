@@ -26,6 +26,22 @@ export MONGODB_DATABASE=metaverse
 
 数据库必须是副本集（写回用事务）。本地的 MongoDB 副本集见 `infra/dev/`。
 
+### 依赖锁定
+
+`pyproject.toml` 只写版本范围，实际版本锁在 `uv.lock`（用 uv 0.11.32 生成，提交进仓库）。镜像
+（`infra/worker/Dockerfile`）有 `uv.lock` 时按 `uv export --frozen` 的锁定版本装，镜像、持续集成、本地用的
+就是同一组经过测试的版本，回滚重建旧提交也得到当时的依赖。
+
+```bash
+cd worker
+uv sync --frozen --extra dev        # 按锁定版本建 .venv（含开发依赖）
+uv lock                             # 改了 pyproject.toml 的依赖以后重新锁定，连同 uv.lock 一起提交
+uv lock --upgrade-package numpy     # 只升级某一个依赖
+```
+
+`tests/test_lockfile.py` 检查 `uv.lock` 覆盖了 `pyproject.toml` 的全部依赖、锁定版本都在声明的范围内；
+改了依赖范围却忘了重新锁定时，测试会失败。
+
 ## 健康检查
 
 `GET /healthz`，端口 `WORKER_HEALTH_PORT`（默认 8080），不需要鉴权：
