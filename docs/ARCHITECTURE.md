@@ -735,7 +735,7 @@ jobs { _id, spaceId, kind, params, status: queued|running|done|failed,
 
 | 命令 | 作用 |
 |---|---|
-| `metaverse init` | 创建工作区，并写入技能说明 `.claude/skills/metaverse-builder/` |
+| `metaverse init` | 创建工作区，并写入技能说明 `.claude/skills/metaverse-builder/`（建造）和 `metaverse-reconstruct/`（用 AI 重建实体空间） |
 | `metaverse admin …` | 管理命令：建空间、轮换分享令牌、定义区域和地块、登记事件类型、抹除事件（调用 8.4） |
 | `metaverse scan <文件>` | 分片上传扫描，并发起导入和体素化任务 |
 | `metaverse pull` | 下载空间的当前状态 |
