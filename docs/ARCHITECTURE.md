@@ -364,11 +364,11 @@ draftChunks（草稿生成的区块，随草稿过期删除，不写进 chunks�
 ### 6.1 上传
 
 - **创建上传**：
-  - 声明总大小、整体 SHA-256、分片大小和用途（scan / model / texture / ops / script）。
+  - 声明总大小、整体 SHA-256、分片大小和用途（scan / model / texture / ops / script / authored）。
   - 用途写在路径里（`.../uploads/{purpose}`），能上传哪类文件由 NyxID 操作范围决定；地块路径下不能上传扫描。
   - 如果这个哈希已经存在，直接复用，不再接收数据。
 - **大小上限**（可配置）：扫描 ≤ 1GB，物件模型 ≤ 50MB，单张贴图 ≤ 8192×8192。
-- **格式**：模型和贴图只接受 glb、drc、obj、png、jpeg、webp；ops 用途只接受 NDJSON（可用 gzip 压缩）；script 用途只接受纯文本。
+- **格式**：模型和贴图只接受 glb、drc、obj、png、jpeg、webp；ops 用途只接受 NDJSON（可用 gzip 压缩）；script 用途只接受纯文本；authored 用途（AI 物件集，见 6.3）只接受 JSON 对象，≤ 4MB，只经实体区路径。
 - **分片**：
   - 分片大小在创建时固定，是 256KiB 的整数倍，最大 32MiB；除最后一片外，各片大小相同。
   - 服务端把每片切成固定 256KiB 的 GridFS 数据块写入（`files_id` = 上传编号，序号按片号推算），并记录这一片的 SHA-256。这样做是因为 GridFS 要求同一文件的数据块大小一致，而单个文档不能超过 16MB。
@@ -415,6 +415,21 @@ draftChunks（草稿生成的区块，随草稿过期删除，不写进 chunks�
 9. **方块化（可选）**：需要方块风格时，仍可以按网格体素化（`spikes/voxelize/`）。
 
 识别和拆分需要 AI 参与：可以由处理服务调用 AI 完成，也可以由本地的 AI 完成后上传结果（第 10 节）。
+
+**AI 物件集写回**：本地的 AI 逐件完成的物件（先去模型库找看起来差不多的现成模型，找不到再手写参数形状）写成
+`{version: 1, templates, entities, notes?, structure: keep | replace}`，经 `scan_import` / `rebuild` 任务的
+`authored`（内联，接口服务登记成资源）或 `authoredAsset`（authored 用途上传）写进时间线：
+
+- 接口服务只做浅层校验（结构、数量 ≤ 2000 物件 / ≤ 200 模板、≤ 4MB、地址必须 https、烘焙指令的位置），
+  深层校验（形状、记录、模板引用、署名许可）在处理服务，不合格时任务失败；
+- 结构按 `structure` 沿用算法结果或用物件集里的结构；带烘焙指令 `bake` 的部件从扫描烘焙贴图；
+- 外部模型（Poly Haven、Objaverse 里许可为 CC0、CC-BY 的）只从配置的主机经 https 下载（重定向逐跳检查），
+  核对大小和 sha256，把旋转、缩放、调色烘进网格，按物件模型的限制重新导出 glb，写成 `assetHash`；
+  `props.source` 记作者、来源页、许可，网站显示"模型来源"；
+- 逐件计算扫描到物件的偏差写进 `fit`；`notes` 存成脚本资源，提交的 `scriptRef` 指向它；
+- 重建层全部换成这次的结果，锚点规则不变。部署种子可以带物件集（`infra/chrono-cd/README.md`）。
+
+格式和规则见 `worker/README.md`"AI 物件集"。
 
 ### 6.4 任务
 
@@ -530,7 +545,7 @@ jobs { _id, spaceId, kind, params, status: queued|running|done|failed,
 | 查看 | `GET /api/v1/spaces/{space_id}`：空间信息，含最新 seq（也作为 ETag）、区域、地块、锚点（含内部级）<br>`GET .../regions/{region_id}/content`：区域内容（分层文字）<br>`GET .../timeline`、`GET .../events`（含内部级）、`GET .../jobs/{job_id}` |
 | 实体区修改 | `POST /api/v1/spaces/{space_id}/drafts`：建草稿<br>→ `POST .../drafts/{draft_id}/ops`：批量操作<br>→ `POST .../drafts/{draft_id}/ops-from-upload`：大批量，异步<br>→ `POST .../drafts/{draft_id}/preview`<br>→ `POST .../drafts/{draft_id}/publish` |
 | 地块修改 | 同上，路径换成 `/api/v1/spaces/{space_id}/plots/{plot_id}/drafts...`；服务端保证每个操作都落在该地块内 |
-| 扫描与上传 | `POST /api/v1/spaces/{space_id}/uploads/{purpose}` → `PUT .../uploads/{purpose}/{upload_id}/parts/{n}` → `POST .../complete`<br>`POST .../scans`（导入）、`POST .../scans/{scan_id}/voxelize`、`POST .../scans/{scan_id}/alignment` |
+| 扫描与上传 | `POST /api/v1/spaces/{space_id}/uploads/{purpose}` → `PUT .../uploads/{purpose}/{upload_id}/parts/{n}` → `POST .../complete`<br>`POST .../scans`（导入）、`POST .../scans/{scan_id}/voxelize`、`POST .../scans/{scan_id}/alignment`、`POST .../scans/{scan_id}/rebuild`（导入、对齐、重建都可以带 AI 物件集，6.3） |
 | 事件 | `POST /api/v1/spaces/{space_id}/sources/{source}/events`：批量写，每批 ≤ 1000 条<br>`POST .../sources/{source}/corrections`：更正和撤回 |
 | 组合 | `POST /api/v1/universes`<br>`PATCH /api/v1/universes/{universe_id}`：摆放、连接、可见性、分享令牌<br>`POST /api/v1/universes/{universe_id}/members/{space_id}`：加入；`DELETE` 同一路径：退出 |
 
