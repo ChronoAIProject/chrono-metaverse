@@ -26,6 +26,7 @@ import json
 import logging
 import math
 import time
+import zlib
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -737,7 +738,7 @@ def reconstruct_objects(mesh: ScanMesh, structure, *, params: dict | None = None
         for o in group:
             lshape, method = _fit_local(o.local, o.kind)
             wshape = _world_shape(lshape, o.origin, o.yaw)
-            csrc = _color_source(table, o.faces, prm, seed=hash(o.entity_id) % 1000)
+            csrc = _color_source(table, o.faces, prm, seed=zlib.crc32(o.entity_id.encode()) % 1000)
             size = float(np.ptp(o.local.L, axis=0).max())
             finalize_materials(wshape, o.P, o.C, o.N, csrc, prm.texture, size, textures)
             wshape = _clean_shape(wshape)

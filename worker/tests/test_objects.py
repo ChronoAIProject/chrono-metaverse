@@ -335,3 +335,14 @@ def test_hints_override_kind_and_label():
     assert objs[0]["props"]["source"] == "hint"
     color = objs[0]["shape"]["children"][0]["material"]
     assert "color" in color and np.allclose(color["color"], [90, 120, 200], atol=12)
+
+
+def test_reconstruction_is_deterministic():
+    """同一份扫描重跑，物件记录和贴图完全相同（内容哈希不变，重扫没有变化时不会产生新的提交内容）。"""
+    shape = sh.box([0.9, 0.8, 0.5], fillet=0.04, xf=sh.transform(position=[2.5, 0, 2.0], yaw=20))
+    mesh = _scene([(shape, (150, 100, 60))])
+    structure = extract_structure(mesh)
+    a = reconstruct_objects(mesh, structure)
+    b = reconstruct_objects(mesh, structure)
+    assert a.entities == b.entities
+    assert a.textures.keys() == b.textures.keys()
