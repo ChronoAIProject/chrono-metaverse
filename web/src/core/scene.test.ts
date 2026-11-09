@@ -5,12 +5,16 @@ import { createPublicClient } from './api/client';
 import type { Palette } from './api/types';
 import { BLOCK_AIR, chunkIndex, emptyChunk } from './chunk';
 import {
+  anchorPosition,
   boxContains,
   entityRegionKind,
+  isDrawable,
   loadScene,
+  placePoint,
   sceneHeightRange,
   selectView,
   templatesOf,
+  viewHasGeometry,
 } from './scene';
 import {
   composeVoxels,
@@ -251,5 +255,46 @@ describe('方块叠加与网格', () => {
       expect(n[0]! * expected[0]! + n[1]! * expected[1]! + n[2]! * expected[2]!).toBeGreaterThan(0);
     }
     expect(Math.max(...opaque.positions)).toBeCloseTo(0.05, 6);
+  });
+});
+
+describe('组合里的摆放', () => {
+  it('先绕成员原点按 y 轴旋转，再平移 offset（格）', () => {
+    const place = (rotation: number, point: number[]) =>
+      placePoint({ offset: [20, 2, -40], rotation }, point).map((v) => Math.round(v * 1e9) / 1e9);
+    // 与形状的 yaw 方向一致：x' = x cos + z sin，z' = −x sin + z cos。
+    expect(place(0, [1, 0, 0])).toEqual([2, 0.1, -2]);
+    expect(place(90, [1, 0, 0])).toEqual([1, 0.1, -3]);
+    expect(place(180, [1, 0, 2])).toEqual([0, 0.1, -4]);
+    expect(place(270, [0, 1, 1])).toEqual([0, 1.1, -2]);
+  });
+
+  it('锚点位置：点锚点取点，盒子锚点取顶面中心，空间级锚点没有位置', () => {
+    expect(anchorPosition({ anchorId: 'a', kind: 'table', position: [1, 2, 3] })).toEqual([
+      1, 2, 3,
+    ]);
+    expect(anchorPosition({ anchorId: 'b', kind: 'zone', box: [0, 0, 0, 20, 10, 40] })).toEqual([
+      0.5, 0.5, 1,
+    ]);
+    expect(anchorPosition({ anchorId: '_space', kind: 'space' })).toBeNull();
+  });
+
+  it('只有处理后模型的物件也能画；模板不画', () => {
+    expect(isDrawable({ entityId: 'm', layer: 'rebuilt', kind: 'object', assetHash: 'a' })).toBe(
+      true,
+    );
+    expect(isDrawable({ entityId: 't', layer: 'rebuilt', kind: 'template', assetHash: 'a' })).toBe(
+      false,
+    );
+    expect(isDrawable({ entityId: 'n', layer: 'rebuilt', kind: 'object' })).toBe(false);
+  });
+
+  it('优化视图先把整块落在实体区外的区块剔掉', async () => {
+    const scene = await sceneAt(3);
+    const optimized = selectView(scene, 'optimized');
+    const extended = selectView(scene, 'extended');
+    expect(optimized.voxels.chunks.length).toBeLessThan(extended.voxels.chunks.length);
+    expect(viewHasGeometry(optimized)).toBe(true);
+    expect(viewHasGeometry(selectView(await sceneAt(1), 'optimized'))).toBe(false);
   });
 });

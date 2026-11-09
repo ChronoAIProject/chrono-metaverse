@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CommitSummary, EventTypeDef, SpaceEvent } from './api/types';
 import {
+  advanceStates,
   commitAt,
   densityBuckets,
   effectiveEvents,
@@ -8,6 +9,7 @@ import {
   incrementalCursor,
   mergeIncremental,
   stateAt,
+  stateMapFrom,
 } from './events';
 
 const T0 = Date.parse('2026-11-01T12:00:00Z');
@@ -176,5 +178,67 @@ describe('时间窗、密度、增量', () => {
     expect(commitAt(commits, iso(5))).toBeNull();
     expect(commitAt(commits, iso(20))!.seq).toBe(2);
     expect(commitAt(commits, iso(99))!.seq).toBe(3);
+  });
+});
+
+describe('"现在"模式：在 state?at= 的结果上叠加增量事件', () => {
+  const base = stateMapFrom([
+    {
+      anchorId: 'table-01',
+      key: 'occupancy',
+      value: 'occupied',
+      at: iso(0),
+      eventId: 'e1',
+      type: 'table.occupancy',
+    },
+  ]);
+  const baseAt = T0 + 5 * 60_000;
+  const now = T0 + 30 * 60_000;
+
+  it('新事件改写状态，清除类事件删掉状态', () => {
+    const second = event('e2', 10, { anchorId: 'seat-01', data: { status: 'reserved' } });
+    const { states, refetch } = advanceStates(base, baseAt, [second], types, now);
+    expect(refetch).toBe(false);
+    expect(states.get('seat-01')?.get('occupancy')).toMatchObject({
+      value: 'reserved',
+      eventId: 'e2',
+      data: { status: 'reserved' },
+    });
+    const vacated = event('e3', 12, { type: 'table.vacated', data: {} });
+    const cleared = advanceStates(states, baseAt, [vacated], types, now);
+    expect(cleared.states.has('table-01')).toBe(false);
+    expect(cleared.states.has('seat-01')).toBe(true);
+  });
+
+  it('比当前状态早的晚到事件不改写；当前状态那条事件被更正时按更正后的内容', () => {
+    const late = event('old', -10, { recordedAt: iso(20), data: { status: 'late' } });
+    expect(
+      advanceStates(base, baseAt, [late], types, now).states.get('table-01')?.get('occupancy'),
+    ).toMatchObject({ value: 'occupied' });
+    const correction = event('c1', 0, {
+      recordedAt: iso(20),
+      corrects: 'e1',
+      data: { status: 'reserved' },
+    });
+    const corrected = advanceStates(base, baseAt, [correction], types, now);
+    expect(corrected.refetch).toBe(false);
+    expect(corrected.states.get('table-01')?.get('occupancy')).toMatchObject({
+      value: 'reserved',
+      eventId: 'e1',
+    });
+  });
+
+  it('撤回、撤下当前状态的事件，或早于 baseAt 又没有状态的晚到事件：要重新取', () => {
+    const retracted = event('c2', 0, { corrects: 'e1', retracted: true, recordedAt: iso(20) });
+    expect(advanceStates(base, baseAt, [retracted], types, now).refetch).toBe(true);
+    const withdrawn = { id: 'e1', withdrawn: true, recordedAt: iso(20) } as SpaceEvent;
+    expect(advanceStates(base, baseAt, [withdrawn], types, now).refetch).toBe(true);
+    const lateOther = event('x', 1, { anchorId: 'seat-02', recordedAt: iso(20) });
+    expect(advanceStates(base, baseAt, [lateOther], types, now).refetch).toBe(true);
+    // 和状态无关的撤下不用重新取；未来的事件先不算。
+    const unrelated = { id: 'zzz', withdrawn: true, recordedAt: iso(20) } as SpaceEvent;
+    expect(advanceStates(base, baseAt, [unrelated], types, now).refetch).toBe(false);
+    const future = event('f', 60, { anchorId: 'seat-03' });
+    expect(advanceStates(base, baseAt, [future], types, now).states.has('seat-03')).toBe(false);
   });
 });

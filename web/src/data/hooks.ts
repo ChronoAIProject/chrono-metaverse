@@ -29,14 +29,37 @@ export function useRuntimeState(runtime: SpaceRuntime | null): RuntimeState {
   );
 }
 
-/** 订阅一组空间（组合页的各成员）；任何一个变化都重新渲染。 */
-export function useRuntimeStates(runtimes: readonly SpaceRuntime[]): RuntimeState[] {
-  const [, setVersion] = useState(0);
-  useEffect(() => {
-    const offs = runtimes.map((runtime) => runtime.subscribe(() => setVersion((v) => v + 1)));
-    return () => offs.forEach((off) => off());
-  }, [runtimes]);
-  return runtimes.map((runtime) => runtime.getState());
+/** 一组运行时合起来的订阅；没有变化时 getSnapshot 返回同一个数组。 */
+function statesStore(runtimes: readonly SpaceRuntime[]) {
+  let last: readonly RuntimeState[] = [];
+  return {
+    subscribe(listener: () => void) {
+      const offs = runtimes.map((runtime) => runtime.subscribe(listener));
+      return () => offs.forEach((off) => off());
+    },
+    getSnapshot(): readonly RuntimeState[] {
+      const next = runtimes.map((runtime) => runtime.getState());
+      if (next.length !== last.length || next.some((state, i) => state !== last[i])) last = next;
+      return last;
+    },
+  };
+}
+
+/**
+ * 订阅一组空间（组合页的各成员）；任何一个变化都重新渲染。
+ * 没有变化时返回同一个数组，下游的 useMemo 不会白算。
+ */
+export function useRuntimeStates(runtimes: readonly SpaceRuntime[]): readonly RuntimeState[] {
+  const store = useMemo(() => statesStore(runtimes), [runtimes]);
+  return useSyncExternalStore(store.subscribe, store.getSnapshot);
+}
+
+/** 列表的元素逐个没变（===）时返回上一次的数组，用作 useMemo 的依赖。 */
+export function useStableList<T>(list: readonly T[]): readonly T[] {
+  const [previous, setPrevious] = useState(list);
+  const same = previous.length === list.length && previous.every((item, i) => item === list[i]);
+  if (!same) setPrevious(list);
+  return same ? previous : list;
 }
 
 /** 资源的取法：公开接口（凭分享令牌）或预览接口（凭预览令牌）。 */

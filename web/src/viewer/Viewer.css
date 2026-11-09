@@ -103,13 +103,14 @@
   padding: 3px 9px 3px 5px;
 }
 
+/* 用独立的 scale 属性，不覆盖 CSS2DRenderer 写在 transform 上的定位。 */
 @keyframes viewer-pop {
   from {
-    transform: scale(0.6);
+    scale: 0.6;
     opacity: 0;
   }
   to {
-    transform: scale(1);
+    scale: 1;
     opacity: 1;
   }
 }

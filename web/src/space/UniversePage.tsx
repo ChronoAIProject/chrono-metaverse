@@ -10,7 +10,7 @@ import {
   type ViewMode,
 } from '../core/scene';
 import { buildVisuals, type SpaceVisualInput } from '../core/visuals';
-import { useAssetLoaders, useDensity, useRuntimeStates } from '../data/hooks';
+import { useAssetLoaders, useDensity, useRuntimeStates, useStableList } from '../data/hooks';
 import { SpaceRuntime, runtimeError, type RuntimeError } from '../data/spaceRuntime';
 import { TimelineBar } from '../timeline/TimelineBar';
 import { Viewer, type SceneViewFactory } from '../viewer/Viewer';
@@ -136,6 +136,10 @@ export function UniversePage({
   }, [runtimes, time, live, windowMs]);
 
   const states = useRuntimeStates(runtimes);
+  // 只在场景、空间信息、提交列表真的变了时才重算（"现在"模式下事件每秒都在变）。
+  const scenes = useStableList(states.map((s) => s.scene));
+  const infos = useStableList(states.map((s) => s.info));
+  const commitLists = useStableList(states.map((s) => s.commits));
 
   // 原始视图：各成员的扫描模型。
   const scanWanted = useMemo(
@@ -143,10 +147,10 @@ export function UniversePage({
       mode !== 'raw'
         ? []
         : runtimes.flatMap((runtime, i) => {
-            const hash = states[i]?.scene?.scan?.webModelHashes[0];
+            const hash = scenes[i]?.scan?.webModelHashes[0];
             return hash === undefined ? [] : [{ runtime, hash }];
           }),
-    [mode, runtimes, states],
+    [mode, runtimes, scenes],
   );
   const scanKey = scanWanted.map((s) => s.hash).join(',');
   useEffect(() => {
@@ -169,16 +173,16 @@ export function UniversePage({
   const names = useMemo(() => {
     const map = new Map<string, string>();
     view?.members.forEach((member, i) => {
-      map.set(member.spaceId, member.name ?? states[i]?.info?.name ?? member.spaceId);
+      map.set(member.spaceId, member.name ?? infos[i]?.name ?? member.spaceId);
     });
     return map;
-  }, [view, states]);
+  }, [view, infos]);
 
   const content = useMemo<SceneContent | null>(() => {
     if (view === null) return null;
     const members: MemberContent[] = [];
     view.members.forEach((member, i) => {
-      const scene = states[i]?.scene;
+      const scene = scenes[i];
       if (member.seq === null || member.seq === undefined || !scene) return;
       const memberView = selectView(scene, mode);
       const hash = scene.scan?.webModelHashes[0];
@@ -192,7 +196,7 @@ export function UniversePage({
       });
     });
     return { mode, members, links: view.links };
-  }, [view, states, mode, scans, names]);
+  }, [view, scenes, mode, scans, names]);
 
   const visuals = useMemo(() => {
     const inputs: SpaceVisualInput[] = runtimes.map((runtime, i) => ({
@@ -208,14 +212,14 @@ export function UniversePage({
     () =>
       runtimes
         .flatMap((runtime, i) =>
-          (states[i]?.commits ?? []).map((commit) => ({
+          (commitLists[i] ?? []).map((commit) => ({
             ...commit,
             spaceId: runtime.spaceId,
             spaceName: names.get(runtime.spaceId) ?? runtime.spaceId,
           })),
         )
         .sort((a, b) => toMillis(a.at) - toMillis(b.at)),
-    [runtimes, states, names],
+    [runtimes, commitLists, names],
   );
   const nowMs = now();
   const range = useMemo(

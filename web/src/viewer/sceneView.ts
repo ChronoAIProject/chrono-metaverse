@@ -1233,9 +1233,20 @@ export class SceneView {
     let update: (next: Visual) => void = () => undefined;
     if (from?.world && to?.world) {
       const points = this.routePoints(from, to, this.links);
-      const line = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(points),
-        new THREE.LineBasicMaterial({ color: srgb(visual.color), transparent: true, opacity: 0.9 }),
+      // 用细管子画路线（WebGL 的线宽固定 1 像素，远看几乎看不见）。
+      const line = new THREE.Mesh(
+        new THREE.TubeGeometry(
+          new THREE.CatmullRomCurve3(points, false, 'centripetal'),
+          Math.max(16, points.length * 2),
+          0.025,
+          8,
+          false,
+        ),
+        new THREE.MeshBasicMaterial({
+          color: srgb(visual.color),
+          transparent: true,
+          opacity: 0.85,
+        }),
       );
       line.name = `path:${visual.correlationId}`;
       const marker = new THREE.Mesh(

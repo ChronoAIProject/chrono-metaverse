@@ -241,11 +241,11 @@ export function fixtureStore(now: number = Date.now()): FixtureStore {
   // 草稿预览：在前厅最新版本上，虚拟展区里加一张大理石长椅（新上传的贴图）和一座喷泉（草稿区块）。
   const base = lobby.snapshots.get(4)!;
   const fountain = storeChunks(
-    chunksFrom('ext', [150, 0, 40], [170, 30, 60], (gx, gy, gz) => {
-      const dx = gx - 159.5;
-      const dz = gz - 49.5;
+    chunksFrom('ext', [128, 0, 70], [150, 30, 90], (gx, gy, gz) => {
+      const dx = gx - 138.5;
+      const dz = gz - 79.5;
       const r = Math.hypot(dx, dz);
-      if (gy === 2 && r < 9) return r > 7.5 ? 2 : 4;
+      if (gy === 2 && r < 8) return r > 6.5 ? 2 : 4;
       if (gy > 2 && gy < 26 && r < 1.6) return 4;
       if (gy === 26 && r < 2.5) return 6;
       return 0;
@@ -276,10 +276,10 @@ export function fixtureStore(now: number = Date.now()): FixtureStore {
       },
       height: 0.45,
       fillet: 0.04,
-      transform: { position: [8, 0.1, 4.2] },
+      transform: { position: [8.4, 0.1, 4.2] },
       material: { texture: DRAFT_TEXTURE.hash, uv: 'box' },
     },
-    bounds: { min: [7.1, 0.1, 3.95], max: [8.9, 0.55, 4.45] },
+    bounds: { min: [7.5, 0.1, 3.95], max: [9.3, 0.55, 4.45] },
   };
   const preview: PreviewView = {
     ...base,

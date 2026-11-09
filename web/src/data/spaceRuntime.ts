@@ -243,10 +243,12 @@ export class SpaceRuntime {
 
   private refresh(): void {
     if (!this.active || this.state.status !== 'ready') return;
+    // "现在"模式下按当前时间取版本（页面的时刻每秒才前进一次，新提交可能比它新）。
+    const t = this.state.live ? Math.max(this.time, this.now()) : this.time;
     const seq =
       this.seqSource === 'external'
         ? this.externalSeq
-        : (commitAt(this.state.commits, this.time)?.seq ?? null);
+        : (commitAt(this.state.commits, t)?.seq ?? null);
     if (seq !== this.state.seq) this.update({ seq });
     this.ensureScene(seq);
     if (this.state.live) this.updateLiveView();
