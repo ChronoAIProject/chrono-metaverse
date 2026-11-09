@@ -427,6 +427,8 @@ describe('metaverse bundle push', () => {
     writeBase(root, base);
     expect(await main(ctx, ['bundle', 'push', '--preview-ttl', '5'])).toBe(1);
     expect(await main(ctx, ['bundle', 'push', '--message', ''])).toBe(1);
+    expect(await main(ctx, ['bundle', 'push', '--part-size', '0.1'])).toBe(1);
+    expect(ctx.errors.at(-1)).toContain('256KiB');
     expect(api.requests).toEqual([]);
     const outside = tempDir();
     dirs.push(outside);

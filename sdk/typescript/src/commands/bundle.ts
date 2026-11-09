@@ -11,7 +11,14 @@ import {
   type UploadFormat,
 } from '../transport/api.js';
 import { ApiError } from '../transport/client.js';
-import { describeJob, upload, waitForJob, type UploadResult } from '../transport/upload.js';
+import {
+  checkPartSize,
+  DEFAULT_PART_SIZE,
+  describeJob,
+  upload,
+  waitForJob,
+  type UploadResult,
+} from '../transport/upload.js';
 import {
   BundleFilesError,
   checkBundleDir,
@@ -321,6 +328,7 @@ export async function runBundlePush(ctx: CliContext, args: readonly string[]): P
   }
   const partMiB = num(values, 'part-size');
   const partSize = partMiB !== undefined ? Math.round(partMiB * 1024 * 1024) : undefined;
+  if (partSize !== undefined) checkPartSize(partSize);
   const message = str(values, 'message');
   if (message !== undefined) {
     const error = messageError(message);
@@ -395,7 +403,7 @@ export async function runBundlePush(ctx: CliContext, args: readonly string[]): P
       {
         size: file.size,
         sha256: file.sha256,
-        partSize: partSize ?? 8 * 1024 * 1024,
+        partSize: partSize ?? DEFAULT_PART_SIZE,
         format: formatOf(file),
       },
       REBUILD,
