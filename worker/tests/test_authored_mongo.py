@@ -24,7 +24,7 @@ from metaverse_worker.handlers import scan as scan_handlers
 from metaverse_worker.runner import Runner
 from metaverse_worker.store import C
 from synthetic import room_mesh
-from test_authored import SOURCE, gltf_files, model_glb
+from test_authored import SOURCE, gltf_files, model_glb, room_with_table
 
 pytestmark = pytest.mark.mongo
 
@@ -109,7 +109,7 @@ def authored_doc(library, *, texture: str | None = None, **overrides) -> dict:
 
 
 def import_scan(runner, store, **params) -> tuple[str, dict]:
-    scan = upload_asset(store, scan_zip(room_mesh()), "scan")
+    scan = upload_asset(store, scan_zip(room_with_table()), "scan")  # 扫描里有会议桌（算得出偏差）
     return scan, run_job(runner, store, "scan_import", {"assetHash": scan, "transform": IDENTITY, **params})
 
 
@@ -128,7 +128,8 @@ def test_scan_import_with_inline_authored(runner, store, library):
     panel = current["panel-01"]
     texture = panel["shape"]["material"]["texture"]
     assert find_asset(store, texture)["metadata"]["kind"] == "texture" and texture in asset_refs(store)
-    assert panel["fit"]["meanCm"] < 1.0
+    # 偏差：扫描里的会议桌写了 fit；面板贴墙、扫描里分不出来，不写
+    assert current["table-01"]["fit"]["meanCm"] < 1.0 and "fit" not in panel
     # 外部模型：下载、重新导出、登记，物件只引用处理后的模型
     chair = current["chair-01"]
     meta = find_asset(store, chair["assetHash"])["metadata"]
@@ -150,7 +151,10 @@ def test_scan_import_with_inline_authored(runner, store, library):
     assert result["downloads"] == {"models": 1, "files": 1, "bytes": len(model_glb()), "redirects": 0}
     assert result["models"]["files"] == 1 and result["bake"]["textured"] == 1
     fits = {f["entityId"]: f for f in result["fit"]}
-    assert fits["panel-01"]["meanCm"] == panel["fit"]["meanCm"] and result["scriptRef"] == script
+    assert (
+        fits["table-01"]["meanCm"] == current["table-01"]["fit"]["meanCm"] and result["scriptRef"] == script
+    )
+    assert "meanCm" not in fits["panel-01"] and fits["panel-01"]["points"] > 0
     assert job["result"]["entities"]["objects"] == 4
 
 
