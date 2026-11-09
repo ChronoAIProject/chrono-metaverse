@@ -60,6 +60,7 @@ def _count_obj_faces(path: str) -> int:
 # gltf 的必需扩展只放行材质和贴图坐标类；几何压缩（Draco、meshopt）等 trimesh 读不了的直接拒绝
 _GLTF_EXTENSION_PREFIXES = ("KHR_materials_", "KHR_texture_transform", "KHR_mesh_quantization")
 MAX_GLTF_JSON_BYTES = 16 << 20
+MAX_MODEL_COORD = 1000.0  # 模型坐标上限（米）：超出时单位多半不是米
 
 
 def _gltf_file(base_dir: str, uri: Any, what: str) -> str:
@@ -130,8 +131,11 @@ def load_model(
     *,
     max_triangles: int,
     max_texture_pixels: int,
+    coord_limit: float | None = MAX_MODEL_COORD,
 ) -> tuple[ScanMesh, np.ndarray | None, tuple[float, float, float, float]]:
     """读模型：返回 (网格 + 可选贴图, 顶点颜色 (N,4) uint8 或 None, 材质底色)。
+
+    坐标超出 ±`coord_limit` 米时拒收（单位可能不是米）；AI 物件集的外部模型先缩放再检查，传 None。
 
     像素上限在任何解码之前检查：单独给的贴图在加载模型之前（obj 的材质可能引用同一张图），glb 内嵌的贴图
     由 `inspect_glb` 读文件头，trimesh 打开的贴图在转换成数组之前再按尺寸查一次。
@@ -194,8 +198,8 @@ def load_model(
         raise InputRejected("顶点坐标含非有限值")
     if mesh.faces.min() < 0 or mesh.faces.max() >= len(mesh.vertices):
         raise InputRejected("三角面引用了不存在的顶点")
-    if np.abs(mesh.vertices).max() > 1000:
-        raise InputRejected("模型坐标超出 ±1000 米，单位可能不是米")
+    if coord_limit is not None and np.abs(mesh.vertices).max() > coord_limit:
+        raise InputRejected(f"模型坐标超出 ±{coord_limit:g} 米，单位可能不是米")
     if mesh.uv is not None and len(mesh.uv) != len(mesh.vertices):
         mesh.uv = None
     return mesh, colors, base

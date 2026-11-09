@@ -47,7 +47,7 @@ from .fit_texture import (
     encode_jpeg,
     fit_stats,
 )
-from .modelimport import load_model, simplify_for_export, write_model
+from .modelimport import MAX_MODEL_COORD, load_model, simplify_for_export, write_model
 from .rebuild import structure_entities
 from .scan import ScanMesh
 from .shape_mesh import Mesh, build_parts, merge_meshes, transform_matrix
@@ -278,6 +278,7 @@ def load_source(source: Mapping[str, Any], workdir: str, limits: Mapping[str, in
             None,
             max_triangles=int(limits["max_triangles"]),
             max_texture_pixels=int(limits["max_texture_pixels"]),
+            coord_limit=None,  # 模型库的模型常用厘米等单位：缩放之后再检查（placed_mesh）
         )
     except InputRejected:
         raise
@@ -293,10 +294,12 @@ def _linear(transform: Mapping[str, Any]) -> np.ndarray:
 def placed_mesh(
     mesh: ScanMesh, colors: np.ndarray | None, base: tuple, transform: Mapping[str, Any], tint: Any
 ) -> tuple[ScanMesh, np.ndarray | None, tuple]:
-    """把旋转、缩放（不含平移）和调色烘进网格。镜像时翻转三角形绕向。"""
+    """把旋转、缩放（不含平移）和调色烘进网格。镜像时翻转三角形绕向。缩放后的坐标超出 ±1000 米时拒收。"""
     lin = _linear(transform)
     faces = mesh.faces if np.linalg.det(lin) > 0 else mesh.faces[:, [0, 2, 1]]
     out = ScanMesh(mesh.vertices @ lin.T, faces, mesh.uv, mesh.texture)
+    if np.abs(out.vertices).max() > MAX_MODEL_COORD:
+        raise InputRejected(f"模型缩放后的坐标超出 ±{MAX_MODEL_COORD:g} 米（scale 是不是没按模型单位换算）")
     if tint is not None:
         k = np.asarray(tint, np.float64) / 255.0
         if out.texture is not None:

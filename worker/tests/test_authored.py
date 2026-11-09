@@ -245,6 +245,15 @@ def test_cc_by_needs_author_and_gltf_paths_stay_inside():
     d["entities"][3]["props"]["source"].update(license="CC-BY-4.0", author="")
     with pytest.raises(AuthoredError, match="author"):
         parse_authored(d)
+    # 署名规则与物件记录相同：CC0 也要写作者（records.validate_model_source）
+    d = doc()
+    d["entities"][3]["props"]["source"]["author"] = ""
+    with pytest.raises(AuthoredError, match="author"):
+        parse_authored(d)
+    d = doc()
+    del d["entities"][3]["props"]["source"]["title"]
+    with pytest.raises(AuthoredError, match="title"):
+        parse_authored(d)
     for bad in ("../x.bin", "/etc/x", "a/../../b", "a\\b.bin"):
         d = doc()
         d["entities"][3]["model"] = {
@@ -379,6 +388,42 @@ def test_export_bakes_rotation_scale_and_tint(tmp_path):
     mesh, _, _ = load_model(files[sha]["path"], None, max_triangles=10_000, max_texture_pixels=1 << 24)
     red, green, _ = mesh.texture.reshape(-1, 3)[:, :3].astype(float).mean(0)
     assert 90 < red < 110 and 90 < green < 110  # 橙色 (200, 100, 50) 的红色减半
+
+
+def test_model_material_tint_is_baked_and_look_stays_on_the_entity():
+    model = {"url": "https://dl.polyhaven.org/a.glb", "sha256": SHA, "size": 1, "format": "glb"}
+    parsed = parse_authored(
+        doc(
+            templates=[],
+            entities=[
+                model_entity("c-1", model, material={"tint": [10, 20, 30], "opacity": 0.4, "unlit": True})
+            ],
+        )
+    )
+    assert parsed["models"]["c-1"]["tint"] == [10, 20, 30]
+    assert parsed["entities"]["c-1"]["material"] == {"opacity": 0.4, "unlit": True}
+    for bad, message in (({"opacity": 1.5}, "opacity"), ({"unlit": 1}, "unlit"), ({"shine": 1}, "只能是")):
+        with pytest.raises(AuthoredError, match=message):
+            parse_authored(doc(templates=[], entities=[model_entity("c-1", model, material=bad)]))
+
+
+def test_centimetre_models_are_checked_after_scaling(tmp_path):
+    """模型库的模型常用厘米：原始坐标超过 ±1000 米也收，缩放后的坐标才按上限检查。"""
+    src = tmp_path / "cm.glb"
+    box = trimesh.creation.box((3000, 1200, 3000))  # 厘米：30 × 12 × 30 米
+    src.write_bytes(trimesh.Scene(box).export(file_type="glb"))
+    model = {"url": "https://dl.polyhaven.org/a.glb", "sha256": SHA, "size": 1, "format": "glb"}
+    scaled = parse_authored(
+        doc(templates=[], entities=[model_entity("c-1", model, transform={"scale": [0.01, 0.01, 0.01]})])
+    )
+    key = scaled["models"]["c-1"]["source"]
+    sources = {key: {"format": "glb", "path": str(src)}}
+    _, placed = export_models(scaled, sources, str(tmp_path / "a"), LIMITS)
+    lo, hi = placed["c-1"]["mesh"].bounds()
+    assert np.allclose(hi - lo, [30, 12, 30], atol=1e-6)
+    raw = parse_authored(doc(templates=[], entities=[model_entity("c-1", model)]))
+    with pytest.raises(InputRejected, match="1000"):
+        export_models(raw, sources, str(tmp_path / "b"), LIMITS)
 
 
 def test_mirrored_scale_flips_winding(tmp_path):

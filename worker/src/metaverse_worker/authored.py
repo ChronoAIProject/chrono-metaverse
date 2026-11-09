@@ -17,17 +17,22 @@
     `texture` 同时出现，可以带 `color` 作为采不到颜色时的后备），处理服务从扫描烘焙贴图后换成
     `{texture, uv}`；模板里不能带烘焙指令（模板在自己的局部坐标里，不知道对应扫描的哪一处）；
   - **外部模型物件**：没有 `shape`，带 `model: {url, sha256, size, format}`、`transform`（含 `scale`）、
-    `props.source`（署名）、可选的 `material: {tint}`。`format` 是 `glb`、`gltf-zip`（zip 里一个 `.gltf` 和它
-    引用的文件），或 `gltf`（`url` 指向 `.gltf`，另给 `files: {相对路径: {url, sha256, size}}`，即 Poly Haven
-    文件列表里的 `include`）。处理服务下载、核对哈希和大小，把 `transform` 和 `tint` 烘进模型、按物件模型的
-    限制重新导出 glb，写成 `assetHash`；
+    `props.source`（署名）、可选的 `material: {tint, opacity, unlit}`（`tint` 烘进模型，`opacity`、
+    `unlit` 留在处理后物件的 `material` 里，网站按它画半透明或不打光）。`format` 是 `glb`、
+    `gltf-zip`（zip 里一个 `.gltf` 和它引用的文件），或 `gltf`（`url` 指向 `.gltf`，另给
+    `files: {相对路径: {url, sha256, size}}`，即 Poly Haven 文件列表里的 `include`）。处理服务下载、
+    核对哈希和大小，把 `transform` 和 `tint` 烘进模型（±1000 米的坐标上限按缩放之后检查，厘米单位的
+    模型缩放后也能用）、按物件模型的限制重新导出 glb，写成 `assetHash`；工作台 `place` 写的 `fit` 可以
+    留着，处理服务会重算；
   - `bounds` 可以省略（形状物件按形状算；外部模型按导出后的网格算），`fit` 和 `textures` 一律由处理服务重算；
   - 形状里引用的贴图（`material.texture`）必须是本空间已登记的贴图资源；
 - **`structure`**：`keep`（默认）时结构（地面、墙、玻璃）沿用算法结果，物件集里不能有 `kind: structure`；
   `replace` 时结构就是物件集里 `kind: structure` 的物件，不跑结构算法；
 - **署名** `props.source = {library, id, page, author, license, title}`：`library` 是 `polyhaven`、
   `objaverse`、`sketchfab`；`license` 只接受可商用、不传染的 `CC0-1.0`、`CC-BY-4.0`、`CC-BY-3.0`
-  （NC、ND、SA 一律拒绝），CC-BY 必须写作者。外部模型物件必须带，形状物件可选。
+  （NC、ND、SA 一律拒绝）；六个字段都必须是非空字符串（CC0 也写模型库标注的作者），规则与物件记录的
+  `props.source` 相同（`records.validate_model_source`，接口服务提交时也按它校验）。外部模型物件必须带，形状
+  物件可选。
 
 本模块只做纯数据的解析和校验（父进程里调用，不碰网络和数据库）：返回普通字典，可以原样交给子进程。
 """
@@ -46,8 +51,8 @@ from urllib.parse import urlsplit
 from .canonical import CanonicalError, canonical_json, is_sha256_hex
 from .errors import PermanentJobError
 from .ids import is_object_id
-from .records import RecordError, validate_entity_body
-from .shapes import ShapeError, _validate_transform, rounded_bounds, shape_bounds
+from .records import RecordError, validate_entity_body, validate_model_source
+from .shapes import ShapeError, _validate_transform, rounded_bounds, shape_bounds, validate_opacity
 
 AUTHORED_VERSION = 1
 MAX_AUTHORED_BYTES = 4 << 20
@@ -57,7 +62,6 @@ MAX_NOTES_BYTES = 64 << 10
 MAX_MODEL_SOURCES = 200
 MAX_MODEL_FILES = 64
 MAX_BAKES = 500
-MAX_TEXT = 200
 MAX_URL = 2048
 
 STRUCTURE_MODES = ("keep", "replace")
@@ -66,7 +70,6 @@ MODEL_FORMATS = ("glb", "gltf-zip", "gltf")
 LIBRARIES = ("polyhaven", "objaverse", "sketchfab")
 # 只收可商用、不传染的许可（SPDX 写法）；CC-BY 要署名
 LICENSES = ("CC0-1.0", "CC-BY-4.0", "CC-BY-3.0")
-ATTRIBUTION_LICENSES = ("CC-BY-4.0", "CC-BY-3.0")
 # 烘焙失败（附近没有扫描）时的后备颜色
 FALLBACK_COLOR = [128, 128, 128]
 # 校验外部模型物件的 body 时临时填的资源哈希和包围盒（导出后换成真的）
@@ -81,7 +84,6 @@ _MODEL_ENTITY_KEYS = {
     "entityId", "layer", "kind", "label", "anchorId", "regionId",
     "bounds", "fit", "props", "model", "transform", "material",
 }  # fmt: skip
-_SOURCE_KEYS = {"library", "id", "page", "author", "license", "title"}
 _FILE_PATH = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_. -]*(?:/[A-Za-z0-9_][A-Za-z0-9_. -]*)*$")
 
 
@@ -112,35 +114,19 @@ def _is_https(value: Any) -> bool:
     return parts.scheme == "https" and bool(parts.hostname) and parts.username is None
 
 
-def _text(value: Any, what: str, *, required: bool = True, limit: int = MAX_TEXT) -> str | None:
-    if value is None and not required:
-        return None
-    if not isinstance(value, str) or (required and not value.strip()) or len(value) > limit:
-        raise AuthoredError(f"{what} 必须是不超过 {limit} 个字符的非空字符串")
-    return value
-
-
 def validate_source(value: Any, what: str) -> dict[str, Any]:
-    """`props.source`：模型库来源与署名。"""
+    """`props.source`：模型库来源与署名，规则与物件记录相同（`records.validate_model_source`）。"""
     if not isinstance(value, Mapping):
         raise AuthoredError(f"{what} 必须是对象 {{library, id, page, author, license, title}}")
-    unknown = set(value) - _SOURCE_KEYS
-    if unknown:
-        raise AuthoredError(f"{what} 有不认识的字段：{sorted(unknown)}")
-    if value.get("library") not in LIBRARIES:
-        raise AuthoredError(f"{what}.library 必须是 {'、'.join(LIBRARIES)} 之一")
-    license_ = value.get("license")
-    if license_ not in LICENSES:
+    if value.get("license") is not None and value.get("license") not in LICENSES:
+        allowed = "、".join(LICENSES)
         raise AuthoredError(
-            f"{what}.license {license_!r} 不可用：只接受 {'、'.join(LICENSES)}（NC、ND、SA 一律排除）"
+            f"{what}.license {value.get('license')!r} 这个许可不能用：只接受 {allowed}（NC、ND、SA 排除）"
         )
-    _text(value.get("id"), f"{what}.id")
-    _text(value.get("title"), f"{what}.title")
-    if not _is_https(value.get("page")):
-        raise AuthoredError(f"{what}.page 必须是 https 地址（来源页）")
-    author = _text(value.get("author"), f"{what}.author", required=license_ in ATTRIBUTION_LICENSES)
-    if author is None and "author" in value and value["author"] is not None:
-        raise AuthoredError(f"{what}.author 必须是字符串")
+    try:
+        validate_model_source(dict(value))
+    except RecordError as error:
+        raise AuthoredError(f"{what} 不合法：{error}") from error
     return dict(value)
 
 
@@ -265,21 +251,28 @@ def source_key(model: Mapping[str, Any]) -> str:
     return hashlib.sha256("\n".join(parts).encode()).hexdigest()
 
 
-def _tint(value: Any, what: str) -> list[int] | None:
+def model_material(value: Any, what: str) -> tuple[list[int] | None, dict[str, Any] | None]:
+    """外部模型物件的 `material: {tint?, opacity?, unlit?}` → (烘进模型的 tint, 留在物件上的 material)。"""
     if value is None:
-        return None
-    if not isinstance(value, Mapping) or set(value) - {"tint"}:
-        raise AuthoredError(f"{what} 只能是 {{tint: [r, g, b]}}")
+        return None, None
+    if not isinstance(value, Mapping) or set(value) - {"tint", "opacity", "unlit"}:
+        raise AuthoredError(f"{what} 只能是 {{tint?: [r, g, b], opacity?: 0–1, unlit?: 布尔}}")
     tint = value.get("tint")
-    if tint is None:
-        return None
-    if not (
+    if tint is not None and not (
         isinstance(tint, list)
         and len(tint) == 3
         and all(isinstance(c, int) and not isinstance(c, bool) and 0 <= c <= 255 for c in tint)
     ):
         raise AuthoredError(f"{what}.tint 必须是 3 个 0–255 的整数")
-    return list(tint)
+    if value.get("unlit") is not None and not isinstance(value["unlit"], bool):
+        raise AuthoredError(f"{what}.unlit 必须是布尔值")
+    if value.get("opacity") is not None:
+        try:
+            validate_opacity(f"{what}.opacity", value["opacity"])
+        except ShapeError as error:
+            raise AuthoredError(str(error)) from error
+    look = {k: value[k] for k in ("opacity", "unlit") if value.get(k) is not None}
+    return (list(tint) if tint is not None else None), (look or None)
 
 
 # ---------------------------------------------------------------------------- 物件
@@ -336,7 +329,9 @@ def _model_entity(raw: Mapping[str, Any], what: str) -> tuple[dict, dict, dict]:
         _validate_transform(f"{what}.transform", transform)
     except ShapeError as error:
         raise AuthoredError(f"{what}.transform 不合法：{error}") from error
-    tint = _tint(body.pop("material", None), f"{what}.material")
+    tint, look = model_material(body.pop("material", None), f"{what}.material")
+    if look is not None:
+        body["material"] = look
     if "source" not in body["props"]:
         raise AuthoredError(f"{what} 是外部模型，必须在 props.source 里写明来源和许可（署名）")
     body.pop("bounds", None)  # 按导出后的网格重算
@@ -480,6 +475,7 @@ __all__ = [
     "AuthoredError",
     "extract_bakes",
     "load_authored_bytes",
+    "model_material",
     "node_at",
     "parse_authored",
     "parse_model",
