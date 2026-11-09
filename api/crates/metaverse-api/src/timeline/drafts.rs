@@ -429,7 +429,7 @@ pub async fn preview_snapshot(
         draft.updated_at,
         &manifest,
         &extra,
-        Audience::Public,
+        Audience::Preview,
     )
     .await
 }
@@ -799,6 +799,9 @@ pub async fn publish(
     }
     if options.expected_rev.is_some_and(|rev| rev != draft.rev) {
         return Err(ApiError::conflict("草稿已经被修改，请重新读取后再发布").into());
+    }
+    if draft.op_count() == 0 {
+        return Err(ApiError::invalid("草稿里还没有任何操作").into());
     }
     let (ops, ops_ref) = commit_ops(repo, grant, draft).await?;
     let kind = match draft.scope {

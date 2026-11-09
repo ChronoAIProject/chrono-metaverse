@@ -39,6 +39,11 @@ pub const DEFAULT_RATE_PER_MINUTE: u32 = 1200;
 pub const DEFAULT_RATE_BURST: u32 = 200;
 /// 默认每个空间同时处理的公开请求数。
 pub const DEFAULT_SPACE_CONCURRENCY: usize = 64;
+/// 区块和资源（内容寻址、可以永久缓存）默认每个来源地址每分钟的请求数：查看器打开一个空间
+/// 会一次取几百个区块，所以单独一档、额度更高。
+pub const DEFAULT_BLOB_RATE_PER_MINUTE: u32 = 12_000;
+/// 区块和资源的默认突发额度。
+pub const DEFAULT_BLOB_RATE_BURST: u32 = 2_000;
 /// 默认进程内缓存的总字节数。
 pub const DEFAULT_CACHE_BYTES: usize = 256 * 1024 * 1024;
 
@@ -48,6 +53,8 @@ pub const DEFAULT_CACHE_BYTES: usize = 256 * 1024 * 1024;
 /// |---|---|---|
 /// | `PUBLIC_RATE_LIMIT_PER_MINUTE` | 1200 | 每个来源地址每分钟的请求数 |
 /// | `PUBLIC_RATE_LIMIT_BURST` | 200 | 突发额度 |
+/// | `PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE` | 12000 | 区块和资源（`/chunks/`、`/assets/`）每个来源地址每分钟的请求数 |
+/// | `PUBLIC_BLOB_RATE_LIMIT_BURST` | 2000 | 区块和资源的突发额度 |
 /// | `PUBLIC_SPACE_CONCURRENCY` | 64 | 每个空间同时处理的公开请求数 |
 /// | `PUBLIC_CACHE_BYTES` | 268435456 | 进程内缓存总字节数（0 表示不缓存） |
 /// | `TRUSTED_CLIENT_IP_HEADER` | 不设 | 可信的客户端地址请求头（例如 `cf-connecting-ip`）；不设就用连接地址 |
@@ -55,6 +62,8 @@ pub const DEFAULT_CACHE_BYTES: usize = 256 * 1024 * 1024;
 pub struct PublicConfig {
     pub rate_per_minute: NonZeroU32,
     pub rate_burst: NonZeroU32,
+    pub blob_rate_per_minute: NonZeroU32,
+    pub blob_rate_burst: NonZeroU32,
     pub space_concurrency: usize,
     pub cache_bytes: usize,
     pub trusted_client_ip_header: Option<HeaderName>,
@@ -67,6 +76,8 @@ impl Default for PublicConfig {
         Self {
             rate_per_minute: NonZeroU32::new(DEFAULT_RATE_PER_MINUTE).expect("非零"),
             rate_burst: NonZeroU32::new(DEFAULT_RATE_BURST).expect("非零"),
+            blob_rate_per_minute: NonZeroU32::new(DEFAULT_BLOB_RATE_PER_MINUTE).expect("非零"),
+            blob_rate_burst: NonZeroU32::new(DEFAULT_BLOB_RATE_BURST).expect("非零"),
             space_concurrency: DEFAULT_SPACE_CONCURRENCY,
             cache_bytes: DEFAULT_CACHE_BYTES,
             trusted_client_ip_header: None,
@@ -105,6 +116,16 @@ impl PublicConfig {
             optional("PUBLIC_RATE_LIMIT_BURST"),
             defaults.rate_burst,
         )?;
+        let blob_rate_per_minute = number(
+            "PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE",
+            optional("PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE"),
+            defaults.blob_rate_per_minute,
+        )?;
+        let blob_rate_burst = number(
+            "PUBLIC_BLOB_RATE_LIMIT_BURST",
+            optional("PUBLIC_BLOB_RATE_LIMIT_BURST"),
+            defaults.blob_rate_burst,
+        )?;
         let space_concurrency = number(
             "PUBLIC_SPACE_CONCURRENCY",
             optional("PUBLIC_SPACE_CONCURRENCY"),
@@ -130,6 +151,8 @@ impl PublicConfig {
         Ok(Self {
             rate_per_minute,
             rate_burst,
+            blob_rate_per_minute,
+            blob_rate_burst,
             space_concurrency,
             cache_bytes,
             trusted_client_ip_header,
@@ -170,6 +193,32 @@ impl ClientKey {
     }
 }
 
+/// 限流档位。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RateTier {
+    /// 普通公开接口。
+    Default,
+    /// 区块和资源（内容寻址，查看器一次会取很多个）。
+    Blob,
+}
+
+impl RateTier {
+    /// 按路径判断档位：`/api/public/chunks/`、`/api/public/assets/` 和预览的区块、资源。
+    pub fn for_path(path: &str) -> Self {
+        const BLOB_PREFIXES: [&str; 4] = [
+            "/api/public/chunks/",
+            "/api/public/assets/",
+            "/api/public/previews/chunks/",
+            "/api/public/previews/assets/",
+        ];
+        if BLOB_PREFIXES.iter().any(|prefix| path.starts_with(prefix)) {
+            RateTier::Blob
+        } else {
+            RateTier::Default
+        }
+    }
+}
+
 /// 每个空间的并发计数。
 #[derive(Default)]
 struct SpaceConcurrency {
@@ -203,6 +252,7 @@ impl Drop for SpacePermit {
 pub struct PublicServices {
     config: PublicConfig,
     limiter: DefaultKeyedRateLimiter<ClientKey>,
+    blob_limiter: DefaultKeyedRateLimiter<ClientKey>,
     concurrency: SpaceConcurrency,
     decisions: AtomicU64,
     rejections: AtomicU64,
@@ -212,8 +262,11 @@ pub struct PublicServices {
 impl PublicServices {
     pub fn new(config: PublicConfig) -> Arc<Self> {
         let quota = Quota::per_minute(config.rate_per_minute).allow_burst(config.rate_burst);
+        let blob_quota =
+            Quota::per_minute(config.blob_rate_per_minute).allow_burst(config.blob_rate_burst);
         Arc::new(Self {
             limiter: RateLimiter::keyed(quota),
+            blob_limiter: RateLimiter::keyed(blob_quota),
             concurrency: SpaceConcurrency::default(),
             decisions: AtomicU64::new(0),
             rejections: AtomicU64::new(0),
@@ -246,17 +299,22 @@ impl PublicServices {
         })
     }
 
-    /// 限流检查；超出时返回需要等待的秒数。
-    pub fn check_rate(&self, key: &ClientKey) -> Result<(), u64> {
-        let decision = self.limiter.check_key(key).map_err(|refusal| {
+    /// 限流检查；超出时返回需要等待的秒数。`tier` 区分普通接口和内容寻址数据。
+    pub fn check_rate(&self, key: &ClientKey, tier: RateTier) -> Result<(), u64> {
+        let limiter = match tier {
+            RateTier::Default => &self.limiter,
+            RateTier::Blob => &self.blob_limiter,
+        };
+        let decision = limiter.check_key(key).map_err(|refusal| {
             refusal
-                .wait_time_from(self.limiter.clock().now())
+                .wait_time_from(limiter.clock().now())
                 .as_secs()
                 .max(1)
         });
         let count = self.decisions.fetch_add(1, Ordering::Relaxed) + 1;
         if count.is_multiple_of(1024) {
             self.limiter.retain_recent();
+            self.blob_limiter.retain_recent();
         }
         if decision.is_err() {
             let rejected = self.rejections.fetch_add(1, Ordering::Relaxed) + 1;
@@ -316,7 +374,8 @@ pub async fn guard(State(state): State<AppState>, request: Request, next: Next) 
         .get::<ConnectInfo<SocketAddr>>()
         .map(|info| info.0);
     let key = services.client_key(request.headers(), peer);
-    if let Err(retry_after) = services.check_rate(&key) {
+    let tier = RateTier::for_path(request.uri().path());
+    if let Err(retry_after) = services.check_rate(&key, tier) {
         return too_many_requests(retry_after);
     }
     let _permit = match space_of(request.uri().path()) {
@@ -428,11 +487,22 @@ mod tests {
             ..PublicConfig::default()
         });
         let key = ClientKey::Network("1.2.3.4".parse().unwrap());
-        assert!(services.check_rate(&key).is_ok());
-        assert!(services.check_rate(&key).is_ok());
-        assert!(services.check_rate(&key).unwrap_err() >= 1);
-        // 别的来源不受影响。
-        assert!(services.check_rate(&ClientKey::Unidentified).is_ok());
+        assert!(services.check_rate(&key, RateTier::Default).is_ok());
+        assert!(services.check_rate(&key, RateTier::Default).is_ok());
+        assert!(services.check_rate(&key, RateTier::Default).unwrap_err() >= 1);
+        // 别的来源、内容寻址数据的档位不受影响。
+        assert!(services
+            .check_rate(&ClientKey::Unidentified, RateTier::Default)
+            .is_ok());
+        assert!(services.check_rate(&key, RateTier::Blob).is_ok());
+        assert_eq!(
+            RateTier::for_path("/api/public/chunks/abc.bin"),
+            RateTier::Blob
+        );
+        assert_eq!(
+            RateTier::for_path("/api/public/spaces/x/snapshot"),
+            RateTier::Default
+        );
         let first = services.acquire_space("front-hall").unwrap();
         let _second = services.acquire_space("front-hall").unwrap();
         assert!(services.acquire_space("front-hall").is_none());

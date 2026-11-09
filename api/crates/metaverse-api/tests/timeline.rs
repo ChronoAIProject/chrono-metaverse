@@ -381,6 +381,59 @@ async fn genesis_layout_drafts_preview_publish_and_reads() {
         StatusCode::NOT_FOUND
     );
 
+    // 预览按草稿状态里的可见级别：把内部锚点改成公开的草稿，预览里能看到它。
+    let reveal = draft_path(
+        SPACE,
+        &new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await,
+    );
+    let reply = append(
+        &app,
+        &reveal,
+        json!([{"op": "updateAnchor", "anchorId": "safe", "visibility": "public"}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let token = app
+        .org(
+            Method::POST,
+            &format!("{reveal}/preview"),
+            Some(json!({"ttlSeconds": 600})),
+        )
+        .await
+        .body["token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let view = app
+        .public("/api/public/previews", Some(&format!("Preview {token}")))
+        .await;
+    assert_eq!(
+        ids(&view.body["anchors"], "anchorId"),
+        ["_space", "safe", "t1"]
+    );
+    // 预览有效期超出范围：422。
+    let reply = app
+        .org(
+            Method::POST,
+            &format!("{reveal}/preview"),
+            Some(json!({"ttlSeconds": 999999})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    // 草稿再追加操作后 rev 变了，旧预览令牌失效。
+    append(
+        &app,
+        &reveal,
+        json!([{"op": "updateAnchor", "anchorId": "t1", "label": "一号桌"}]),
+    )
+    .await;
+    assert_eq!(
+        app.public("/api/public/previews", Some(&format!("Preview {token}")))
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+
     // 别人看不到：/api/v1 一律 404。
     for path in [
         format!("/api/v1/spaces/{SPACE}/timeline"),
@@ -616,6 +669,16 @@ async fn scope_rules_access_levels_and_size_limits() {
             .unwrap(),
         ORG
     );
+
+    // 空草稿不能发布。
+    let empty = draft_path(
+        SPACE,
+        &new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await,
+    );
+    let reply = app
+        .org(Method::POST, &format!("{empty}/publish"), None)
+        .await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
 
     // 丢弃草稿：之后 404。
     let reply = app.org(Method::DELETE, &physical_path, None).await;
@@ -1283,6 +1346,11 @@ async fn public_rate_limit_and_space_ids() {
             StatusCode::TOO_MANY_REQUESTS
         ]
     );
+    // 区块和资源单独一档，不受普通公开接口额度的影响。
+    let reply = app
+        .public(&format!("/api/public/chunks/{}.bin", "0".repeat(64)), None)
+        .await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND);
     // /api/v1 不受公开接口限流影响。
     let reply = app
         .org(Method::GET, "/api/v1/spaces/no-such-space/timeline", None)

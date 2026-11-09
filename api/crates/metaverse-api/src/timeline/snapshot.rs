@@ -29,6 +29,8 @@ pub enum Audience {
     Public,
     /// `/api/v1`：含内部级锚点和原始扫描。
     Internal,
+    /// 草稿预览：只给草稿状态里公开级的锚点（草稿可能把内部锚点改成公开），扫描只给网页用模型。
+    Preview,
 }
 
 fn is_public_anchor(body: &Value) -> bool {
@@ -79,12 +81,13 @@ pub async fn assemble(
     }
     let internal_now: BTreeSet<String> = match audience {
         Audience::Public => repo.internal_anchor_ids(grant).await?.into_iter().collect(),
-        Audience::Internal => BTreeSet::new(),
+        Audience::Internal | Audience::Preview => BTreeSet::new(),
     };
     let mut anchors = Vec::with_capacity(manifest.anchors.len());
     for (id, hash) in &manifest.anchors {
         let body = bodies.get(hash).ok_or_else(|| missing(hash))?;
-        if audience == Audience::Public && (!is_public_anchor(body) || internal_now.contains(id)) {
+        if audience != Audience::Internal && (!is_public_anchor(body) || internal_now.contains(id))
+        {
             continue;
         }
         anchors.push(body.clone());
