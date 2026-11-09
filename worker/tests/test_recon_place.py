@@ -49,8 +49,10 @@ def test_up_rotations_map_axis_to_y():
 def test_tint_only_darkens():
     tint = pl.tint_suggestion(np.array([100, 80, 60]), np.array([200, 200, 200]))
     assert all(0 <= c <= 255 for c in tint["tint"]) and tint["note"] is None
-    bright = pl.tint_suggestion(np.array([200, 200, 200]), np.array([50, 50, 50]))
-    assert max(bright["tint"]) == 255 and "暗" in bright["note"]
+    near = pl.tint_suggestion(np.array([120, 110, 100]), np.array([110, 110, 110]))
+    assert max(near["tint"]) == 255 and "色相" in near["note"]
+    dark = pl.tint_suggestion(np.array([200, 200, 200]), np.array([50, 50, 50]))
+    assert dark["tint"] is None and "换颜色" in dark["note"]
 
 
 def test_place_recovers_pose_scale_and_up(tmp_path, setup):

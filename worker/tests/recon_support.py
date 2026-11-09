@@ -143,7 +143,7 @@ def write_candidate(tmp: Path, V: np.ndarray, F: np.ndarray, license: str = "CC-
     """候选模型（glb）和 fetch 写的那种旁注 model.json。"""
     d = tmp / "candidate"
     d.mkdir(parents=True, exist_ok=True)
-    data = write_glb(GlbMesh(V, F, base_color=(0.6, 0.5, 0.4, 1.0), unlit=False))
+    data = write_glb(GlbMesh(V, F, base_color=(0.95, 0.9, 0.85, 1.0), unlit=False))
     (d / "model.glb").write_bytes(data)
     sha = hashlib.sha256(data).hexdigest()
     side = {

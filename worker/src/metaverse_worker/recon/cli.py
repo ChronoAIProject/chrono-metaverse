@@ -231,6 +231,9 @@ def _library_parsers(sub) -> None:
     p.add_argument("--yaw-range", type=float, default=20.0, help="配合 --yaw（默认 ±20 度）")
     p.add_argument("--yaw-steps", type=int, default=24, help="偏航粗搜的角度数（默认 24，即每 15 度）")
     p.add_argument("--exclude", action="append", help="不算这个框里的扫描点（相邻物体）；可重复")
+    p.add_argument(
+        "--no-snap", action="store_true", help="不把偏航落到墙或物体外接矩形的方向（默认相差 10° 以内会试）"
+    )
     p.add_argument("--front", type=float, help="对比图的正面方位角（默认看扫描水平外接矩形的长边）")
     p.add_argument("--tint", action="store_true", help="把按扫描颜色算出的 tint 写进记录（默认只给建议）")
     p.add_argument("--floor-gap", type=float, default=0.02, help="去掉离局部地面这么高以内的扫描点")

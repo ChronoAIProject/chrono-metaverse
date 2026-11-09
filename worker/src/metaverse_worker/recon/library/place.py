@@ -107,12 +107,52 @@ def kabsch_yaw(src: np.ndarray, dst: np.ndarray, w: np.ndarray | None = None) ->
     return math.degrees(theta), np.array([t2[0], 0.0, t2[1]])
 
 
-def cost(S: np.ndarray, M: np.ndarray, tree_s: cKDTree) -> tuple[float, float, float]:
+class TopMap:
+    """俯视的顶面高度图（每格最高点）。扫描从上面看得最全，顶面高度最能分清朝向：沙发的靠背在哪一边、
+    是不是倒过来了。"""
+
+    def __init__(self, S: np.ndarray, cell: float = 0.04) -> None:
+        self.cell = cell
+        self.x0, self.z0 = float(S[:, 0].min()), float(S[:, 2].min())
+        self.nx = int(np.ceil(np.ptp(S[:, 0]) / cell)) + 1
+        self.nz = int(np.ceil(np.ptp(S[:, 2]) / cell)) + 1
+        self.H = self.top(S)
+        self.has = np.isfinite(self.H)
+
+    def top(self, P: np.ndarray) -> np.ndarray:
+        ix = np.floor((P[:, 0] - self.x0) / self.cell).astype(int)
+        iz = np.floor((P[:, 2] - self.z0) / self.cell).astype(int)
+        ok = (ix >= 0) & (ix < self.nx) & (iz >= 0) & (iz < self.nz)
+        H = np.full((self.nz, self.nx), -np.inf)
+        np.maximum.at(H, (iz[ok], ix[ok]), P[ok, 1])
+        return H
+
+    def cost(self, M: np.ndarray) -> float:
+        """有扫描的格子：高度差（截到 15 厘米），模型没盖到算 15 厘米；模型多出来的格子（包括伸出扫描范围的）
+        每格算 5 厘米。按有扫描的格子数平均。"""
+        Hm = self.top(M)
+        hm = np.isfinite(Hm)
+        both = self.has & hm
+        d = np.minimum(np.abs(self.H[both] - Hm[both]), 0.15).sum()
+        miss = (self.has & ~hm).sum() * 0.15
+        ix = np.floor((M[:, 0] - self.x0) / self.cell).astype(np.int64)
+        iz = np.floor((M[:, 2] - self.z0) / self.cell).astype(np.int64)
+        cells = len(np.unique(ix * 1_000_003 + iz))
+        extra = (cells - int(both.sum())) * 0.05
+        return float((d + miss + extra) / max(int(self.has.sum()), 1))
+
+
+def cost(
+    S: np.ndarray, M: np.ndarray, tree_s: cKDTree, top: TopMap | None = None
+) -> tuple[float, float, float]:
+    """代价 = 扫描→模型 + 0.5 × 模型→扫描（去掉最差 20%）+ 0.5 × 顶面高度图的差（给了 top 时）；
+    距离都截到 10 厘米。"""
     d1, _ = cKDTree(M).query(S, k=1)
     d2, _ = tree_s.query(M, k=1)
     d1 = np.minimum(d1, CAP)
     d2 = np.sort(np.minimum(d2, CAP))[: max(1, int(len(d2) * 0.8))]
-    return float(d1.mean() + 0.5 * d2.mean()), float(d1.mean()), float(d2.mean())
+    total = float(d1.mean() + 0.5 * d2.mean()) + (0.5 * top.cost(M) if top is not None else 0.0)
+    return total, float(d1.mean()), float(d2.mean())
 
 
 def icp_yaw(
@@ -124,8 +164,9 @@ def icp_yaw(
     iters: int,
     thr0: float = 0.15,
     thr1: float = 0.04,
+    fix_yaw: bool = False,
 ) -> tuple[float, np.ndarray]:
-    """只求偏航和水平平移：M = Ry(yaw)·M0 + t。双向最近点，去掉最差的 30%。"""
+    """只求偏航和水平平移：M = Ry(yaw)·M0 + t。双向最近点，去掉最差的 30%。`fix_yaw` 时只求平移。"""
     for k in range(iters):
         thr = thr0 + (thr1 - thr0) * (k / max(iters - 1, 1))
         M = M0 @ ry(yaw).T + t
@@ -140,7 +181,10 @@ def icp_yaw(
             break
         src = np.vstack([M[j1[k1]], M[k2]])
         dst = np.vstack([S[k1], S[j2[k2]]])
-        dyaw, dt = kabsch_yaw(src, dst)
+        if fix_yaw:
+            dyaw, dt = 0.0, (dst - src).mean(0) * np.array([1.0, 0.0, 1.0])
+        else:
+            dyaw, dt = kabsch_yaw(src, dst)
         # 新的 M' = Ry(dyaw)·(Ry(yaw)·M0 + t) + dt
         t = ry(dyaw) @ t + dt
         t[1] = 0.0
@@ -148,6 +192,70 @@ def icp_yaw(
         if abs(dyaw) < 0.02 and np.linalg.norm(dt) < 1e-4:
             break
     return yaw, t
+
+
+def angle_diff(a: float, b: float) -> float:
+    return (a - b + 180) % 360 - 180
+
+
+def snap_yaw(
+    best: dict, S: np.ndarray, tree_s: cKDTree, Ms: np.ndarray, sm: dict, tol: float = 10.0
+) -> dict | None:
+    """家具多半和房间的墙、或者扫描物体自己的外接矩形对齐：偏航离这些方向不到 tol 度时，试着落到这个方向上
+    （只再求平移）。代价不比自由偏航差 3% 以上就采用。返回采用的结果或 None。"""
+    world_dirs = [k * 90.0 for k in range(4)] + [sm["rect"]["yaw"] + k * 90.0 for k in range(4)]
+    principal = best["yaw"] + best["modelRectYaw"]
+    target = min(world_dirs, key=lambda d: abs(angle_diff(principal, d)))
+    delta = angle_diff(target, principal)
+    if abs(delta) > tol or abs(delta) < 0.05:
+        return None
+    M0 = subsample(Ms @ best["Ru"].T * best["scale"], 6000, 4)
+    yaw = best["yaw"] + delta
+    _, t = icp_yaw(S, tree_s, M0, yaw, best["t"].copy(), 15, 0.08, 0.03, fix_yaw=True)
+    t[1] = best["t"][1]
+    c = cost(S, M0 @ ry(yaw).T + t, tree_s, TopMap(S))
+    if c[0] <= best["cost"] * 1.03 + 0.002:
+        return {
+            **best,
+            "cost": c[0],
+            "scanToModel": c[1],
+            "modelToScan": c[2],
+            "yaw": yaw,
+            "t": t,
+            "snappedFrom": round(float(best["yaw"]), 2),
+        }
+    return None
+
+
+def center_extents(
+    best: dict, S: np.ndarray, tree_s: cKDTree, Ms: np.ndarray, frame_scale: np.ndarray
+) -> dict:
+    """在模型的偏航坐标系里把模型和扫描的水平范围（2%–98%）中心对齐，代价不比迭代最近点差 5% 以上就用它：
+    模型和扫描外形差得多时，迭代最近点容易整体滑开，按范围居中更稳。"""
+    R = ry(best["yaw"])
+    M = (Ms @ best["Ru"].T * frame_scale) @ R.T + best["t"]
+    ls = (S - best["t"]) @ R
+    lm = (M - best["t"]) @ R
+    shift = np.zeros(3)
+    for k in (0, 2):
+        a = np.percentile(ls[:, k], [2, 98]).mean()
+        b = np.percentile(lm[:, k], [2, 98]).mean()
+        shift[k] = a - b
+    t2 = best["t"] + R @ shift
+    sub = subsample(Ms @ best["Ru"].T * frame_scale, 6000, 4)
+    top = TopMap(S)
+    c_icp = cost(S, sub @ R.T + best["t"], tree_s, top)
+    c_ctr = cost(S, sub @ R.T + t2, tree_s, top)
+    if c_ctr[0] <= c_icp[0] * 1.05:
+        return {
+            **best,
+            "t": t2,
+            "cost": c_ctr[0],
+            "scanToModel": c_ctr[1],
+            "modelToScan": c_ctr[2],
+            "centered": [round(float(v), 4) for v in R @ shift],
+        }
+    return best
 
 
 def scan_measure(P: np.ndarray, floor_y: float) -> dict:
@@ -179,8 +287,9 @@ def place_up(
     scale_mode: str,
     yaws: list[float],
     fixed_scale: float | None = None,
+    yaw_window: tuple[float, float] | None = None,
 ) -> dict:
-    """一种向上轴：缩放 → 偏航粗搜 + 细化。返回最好的结果。"""
+    """一种向上轴：缩放 → 偏航粗搜 + 细化。返回最好的结果。`yaw_window = (中心, 半宽)` 时只试这个范围。"""
     Ru = up_rotation(up)
     Vu = Ms @ Ru.T
     mm = model_measure(Vu)
@@ -191,6 +300,10 @@ def place_up(
     # 粗搜的角度 + 按水平外接矩形对齐的 4 个角度
     base_yaw = sm["rect"]["yaw"] - mm["rect"]["yaw"]
     seeds = [*yaws, *(base_yaw + k * 90 for k in range(4))]
+    if yaw_window is not None:  # 给了 --yaw：只试这个范围里的角度
+        center, half = yaw_window
+        seeds = [y for y in seeds if abs(((y - center + 180) % 360) - 180) <= half]
+    top = TopMap(S)
     S_c = subsample(S, 1500, 1)
     tree_c = cKDTree(S_c)
     M_c = subsample(M0, 1500, 2)
@@ -201,22 +314,33 @@ def place_up(
         fc = footprint(Mr)
         tt = c_s - np.array([fc["center"][0], 0, fc["center"][1]])
         tt[1] = sm["floor"] - bottom
+        # 初始摆法也算一个候选：模型和扫描差得多时迭代最近点会滑走，只在代价变低时采用
+        results.append((cost(S_c, M_c @ R.T + tt, tree_c, top)[0], y0, tt.copy()))
         yaw, tvec = icp_yaw(S_c, tree_c, M_c, y0, tt, 6)
         tvec[1] = sm["floor"] - bottom
-        cst = cost(S_c, M_c @ ry(yaw).T + tvec, tree_c)
+        cst = cost(S_c, M_c @ ry(yaw).T + tvec, tree_c, top)
         results.append((cst[0], yaw, tvec))
     results.sort(key=lambda x: x[0])
     best = None
     S_f = subsample(S, 6000, 3)
     tree_f = cKDTree(S_f)
     M_f = subsample(M0, 6000, 4)
-    for _, yaw, tvec in results[:3]:
-        yaw, tvec = icp_yaw(S_f, tree_f, M_f, yaw, tvec, 20, 0.08, 0.03)
+    for _, yaw0, t0 in results[:4]:
+        yaw, tvec = icp_yaw(S_f, tree_f, M_f, yaw0, t0.copy(), 20, 0.08, 0.03)
         tvec[1] = sm["floor"] - bottom
-        cst = cost(S_f, M_f @ ry(yaw).T + tvec, tree_f)
-        if best is None or cst[0] < best["cost"]:
-            best = {"cost": cst[0], "scanToModel": cst[1], "modelToScan": cst[2], "yaw": yaw, "t": tvec}
-    best.update(up=up, scale=s, modelHeight=mm["height"], modelRect=mm["rect"]["size"], Ru=Ru)
+        for y, tv in ((yaw0, t0), (yaw, tvec)):
+            cst = cost(S_f, M_f @ ry(y).T + tv, tree_f, top)
+            if best is None or cst[0] < best["cost"]:
+                best = {"cost": cst[0], "scanToModel": cst[1], "modelToScan": cst[2], "yaw": y, "t": tv}
+    best.update(
+        up=up,
+        scale=s,
+        modelHeight=mm["height"],
+        modelRect=mm["rect"]["size"],
+        modelRectYaw=mm["rect"]["yaw"],
+        Ru=Ru,
+        bottom=bottom,
+    )
     return best
 
 
@@ -253,21 +377,25 @@ def linear_to_srgb(c):
 
 
 def tint_suggestion(scan_rgb: np.ndarray, model_rgb: np.ndarray) -> dict:
-    """tint 乘在模型颜色上（线性空间）：tint = 扫描 / 模型，只能调暗（每个通道 ≤ 255）。"""
+    """tint 乘在模型颜色上（线性空间）：tint = 扫描 / 模型，只能调暗（每个通道 ≤ 255）。
+    模型比扫描暗得多时 tint 帮不上（只会更暗、偏色），不给建议，提示换颜色接近的候选。"""
     s, m = srgb_to_linear(scan_rgb), srgb_to_linear(model_rgb)
     ratio = s / np.maximum(m, 1e-4)
     k = float(ratio.max())
-    note = None
-    if k > 1:
-        note = f"模型比扫描暗（差 {k:.2f} 倍），tint 只能调暗：按色相给出，亮度达不到扫描"
-        ratio = ratio / k
-    tint = [round(float(v)) for v in linear_to_srgb(ratio)]
-    return {
-        "tint": tint,
+    out = {
+        "tint": None,
         "scanMedian": [int(v) for v in scan_rgb],
         "modelMedian": [int(v) for v in model_rgb],
-        "note": note,
+        "note": None,
     }
+    if k > 1.5:
+        out["note"] = f"模型比扫描暗（最亮的通道差 {k:.1f} 倍），tint 只能调暗，帮不上：换颜色接近的候选"
+        return out
+    if k > 1:
+        ratio = ratio / k
+        out["note"] = "模型略暗于扫描，tint 按色相给出"
+    out["tint"] = [round(float(v)) for v in linear_to_srgb(ratio)]
+    return out
 
 
 # ---------------------------------------------------------------------------- 候选
@@ -348,20 +476,41 @@ def cmd_place(args) -> dict:
         for u in ups:
             if u not in UP_OPTIONS:
                 raise wc.ReconError(f"--up 只能是 auto 或 {', '.join(UP_OPTIONS)}")
-        tried = [place_up(u, Pf, tree_s, Ms, sm, args.scale, yaws) for u in ups]
+        window = (args.yaw, args.yaw_range) if args.yaw is not None else None
+        tried = [place_up(u, Pf, tree_s, Ms, sm, args.scale, yaws, yaw_window=window) for u in ups]
         by_up = {b["up"]: b for b in tried}
         best = min(tried, key=lambda b: b["cost"])
         if "+y" in by_up and best["up"] != "+y" and best["cost"] > 0.85 * by_up["+y"]["cost"]:
             best = by_up["+y"]  # glTF 约定 +y 向上：别的轴要明显更好才选
+        if not args.no_snap:
+            snapped = snap_yaw(best, subsample(Pf, 6000, 3), tree_s, Ms, sm)
+            if snapped is not None:
+                wc.log(
+                    f"  偏航 {best['yaw']:.1f}° 落到 {snapped['yaw']:.1f}°（和墙或外接矩形对齐，代价不变差）"
+                )
+                best = snapped
         frame_scale = np.full(3, best["scale"])
         if args.scale == "axis":
             frame_scale = best["scale"] * axis_scale(best, Pf, Ms, args.axis_limit)
             Vu = Ms @ best["Ru"].T * frame_scale
             sub = subsample(Vu, 6000, 4)
-            bottom = Vu[:, 1].min()
-            yaw, tvec = icp_yaw(subsample(Pf, 6000, 3), tree_s, sub, best["yaw"], best["t"], 15, 0.06, 0.03)
-            tvec[1] = local_floor - bottom
-            best.update(yaw=yaw, t=tvec)
+            S_f = subsample(Pf, 6000, 3)
+            top = TopMap(S_f)
+            t0 = best["t"].copy()
+            t0[1] = local_floor - Vu[:, 1].min()
+            yaw, tvec = icp_yaw(
+                S_f, tree_s, sub, best["yaw"], t0.copy(), 15, 0.06, 0.03, fix_yaw="snappedFrom" in best
+            )
+            tvec[1] = t0[1]
+            # 迭代最近点只在代价变低时采用（模型和扫描差得多时它会滑走）
+            if (
+                cost(S_f, sub @ ry(yaw).T + tvec, tree_s, top)[0]
+                < cost(S_f, sub @ ry(best["yaw"]).T + t0, tree_s, top)[0]
+            ):
+                best.update(yaw=yaw, t=tvec)
+            else:
+                best.update(t=t0)
+        best = center_extents(best, subsample(Pf, 6000, 3), tree_s, Ms, frame_scale)
         pitch, roll = UP_OPTIONS[best["up"]]
         yaw = float((best["yaw"] + 180) % 360 - 180)
         xf = {
@@ -428,7 +577,7 @@ def cmd_place(args) -> dict:
         tint = None
         if close.sum() > 50:
             tint = tint_suggestion(np.median(C[j_m[close]], 0), np.median(Cm[close], 0))
-            if args.tint:
+            if args.tint and tint["tint"]:
                 body["material"] = {"tint": tint["tint"]}
         wc.write_json(os.path.join(out_dir, "entity.json"), body)
 
@@ -495,6 +644,7 @@ def cmd_place(args) -> dict:
             "rect": {"size": r(sm["rect"]["size"], 3), "yaw": sm["rect"]["yaw"]},
         },
         "chosen": {
+            "snappedFrom": best.get("snappedFrom"),
             "up": best["up"],
             "yaw": round(yaw, 2),
             "scale": xf["scale"],
