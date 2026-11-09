@@ -17,8 +17,9 @@
 // - 镜像：每个服务都按摘要固定（`仓库[:7 位提交哈希]@sha256:<64 位>`），仓库与服务名对应。ghcr 的标签
 //   可以被任何分支里改过的工作流改写，chrono-cd 每次 PUT / PATCH 都把标签重新解析成摘要，按标签
 //   写的规格在一次只改环境变量的 PATCH 里也会换成别人推上去的镜像（README 第 1 步"镜像按摘要固定"）。
-// - README 的环境变量表列出了 app.json 里的每一个环境变量和密钥名；本地 up.sh 给处理服务设了同样的
-//   线程变量，本地测的内存和线上一致。
+// - README 的环境变量表列出了 app.json 里的每一个环境变量和密钥名；本地 up.sh 起处理服务时给它设了
+//   同样的线程变量，本地测的内存和线上一致（up.sh 已不再起处理服务，见 docs/design/server-slim.md 13.3，
+//   这条只在它起处理服务时检查）。
 // - 部署配置种子：`demo-seed.json` 和接口服务的 `METAVERSE_DEMO_SEED` 内容一致（后者是前者压缩成的
 //   一行）；种子按接口服务的规则静态校验（拒绝未知字段、https 地址、sha256 和大小、主人是部署这个
 //   应用的组织、提示不超过 4KB）；凭链接查看时 `secret_keys` 里要有 `METAVERSE_DEMO_SHARE_TOKEN`，
@@ -551,7 +552,15 @@ function checkReadme(spec, readme, problems) {
   }
 }
 
+/** up.sh 是否在本地起处理服务（`start worker …`）。 */
+export function devScriptStartsWorker(upScript) {
+  return /^\s*start worker\b/m.test(upScript);
+}
+
 function checkDevScript(upScript, problems) {
+  // 处理服务下线以后（docs/design/server-slim.md 13.3），up.sh 不再起它，本地也就没有要和线上
+  // 对齐的处理服务内存；线上在 R2 之前仍跑旧的处理服务，app.json 里它的线程变量照旧检查。
+  if (!devScriptStartsWorker(upScript)) return;
   for (const name of [...WORKER_THREAD_VARS, WORKER_ARENA_VAR]) {
     if (!new RegExp(`(^|\\s)${name}=`, 'm').test(upScript)) {
       problems.push(`infra/dev/up.sh 没有给处理服务设 ${name}：本地测的内存和线上不一致`);

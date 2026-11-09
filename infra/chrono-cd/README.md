@@ -5,7 +5,7 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 
 规格格式以 chrono-cd 的接口文档为准（`docs/protocol/api.md`、技能文件 `skills/chrono-cd/SKILL.md`），并对照了组织下已有应用（`omega/mathesis`、`integrations/frigate-events-test`）的实际配置。
 
-改 `app.json` 后先跑静态检查（持续集成里也跑）：`node infra/chrono-cd/check-app.mjs`。它检查每个服务的镜像都按摘要固定（第 1 步"镜像按摘要固定"）、处理服务的线程数和内存上限、接口服务的限流额度和可信地址头、README 的环境变量表和密钥是否列全、`infra/dev/up.sh` 是否设了同样的线程变量，以及演示数据的种子（[`demo-seed.json`](demo-seed.json)）和接口服务的 `METAVERSE_DEMO_SEED` 是否一致、种子本身是否合法（第 8 步）；测试在 `check-app.test.mjs`（`node --test infra/chrono-cd/*.test.mjs`）。镜像换版本用 [`pin-images.mjs`](pin-images.mjs) 生成规格或补丁（测试在 `pin-images.test.mjs`）。
+改 `app.json` 后先跑静态检查（持续集成里也跑）：`node infra/chrono-cd/check-app.mjs`。它检查每个服务的镜像都按摘要固定（第 1 步"镜像按摘要固定"）、处理服务的线程数和内存上限、接口服务的限流额度和可信地址头、README 的环境变量表和密钥是否列全、`infra/dev/up.sh` 起处理服务时是否设了同样的线程变量（处理服务下线以后 up.sh 不再起它，这条不再检查，见 `docs/design/server-slim.md` 13.3），以及演示数据的种子（[`demo-seed.json`](demo-seed.json)）和接口服务的 `METAVERSE_DEMO_SEED` 是否一致、种子本身是否合法（第 8 步）；测试在 `check-app.test.mjs`（`node --test infra/chrono-cd/*.test.mjs`）。镜像换版本用 [`pin-images.mjs`](pin-images.mjs) 生成规格或补丁（测试在 `pin-images.test.mjs`）。
 
 ## 1. 规格要点
 
@@ -117,7 +117,7 @@ nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --
 | 不设（4 核） | 7 | 471MB |
 | 只设 `OMP_NUM_THREADS=2` | 3 | 307MB |
 
-每多一个线程约 +40MB，两份 OpenBLAS 各算一次。线程数设成 `cpu_limit`（2），地址空间与节点大小无关。Dockerfile 按约定不写 `ENV`，所以这几个变量只在这里设；`infra/dev/up.sh` 本地也设同样的值，本地测的内存和线上一致。`worker/README.md` 的内存数据（RSS 1,263MB）是在 4 核机器上测的，上线后按子进程实测的 `VmPeak` 复核 `WORKER_JOB_MEMORY_MB`。改 `cpu_limit` 时同步改这两个线程数（`check-app.mjs` 会检查线程数不超过 `cpu_limit`）。
+每多一个线程约 +40MB，两份 OpenBLAS 各算一次。线程数设成 `cpu_limit`（2），地址空间与节点大小无关。Dockerfile 按约定不写 `ENV`，所以这几个变量只在这里设；处理服务下线以前 `infra/dev/up.sh` 本地也设同样的值，本地测的内存和线上一致（现在 up.sh 不再起处理服务，见 `docs/design/server-slim.md` 13.3）。`worker/README.md` 的内存数据（RSS 1,263MB）是在 4 核机器上测的，上线后按子进程实测的 `VmPeak` 复核 `WORKER_JOB_MEMORY_MB`。改 `cpu_limit` 时同步改这两个线程数（`check-app.mjs` 会检查线程数不超过 `cpu_limit`）。
 
 `metaverse-web`：不需要环境变量。
 
