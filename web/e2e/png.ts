@@ -1,0 +1,83 @@
+import { inflateSync } from 'node:zlib';
+
+/**
+ * 端到端测试用的最小 PNG 解码（8 位 RGB / RGBA，不隔行）：读 Playwright 的截图，
+ * 统计画面的亮度和颜色数，判断三维场景真的画出了东西（不是全黑、不是一片纯色）。
+ */
+export interface DecodedPng {
+  readonly width: number;
+  readonly height: number;
+  readonly channels: number;
+  readonly pixels: Uint8Array;
+}
+
+export function decodePng(buffer: Buffer): DecodedPng {
+  let offset = 8;
+  let width = 0;
+  let height = 0;
+  let channels = 0;
+  const idat: Buffer[] = [];
+  while (offset < buffer.length) {
+    const length = buffer.readUInt32BE(offset);
+    const type = buffer.toString('ascii', offset + 4, offset + 8);
+    const data = buffer.subarray(offset + 8, offset + 8 + length);
+    if (type === 'IHDR') {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      const colorType = data[9];
+      if (data[8] !== 8 || data[12] !== 0) throw new Error('只支持 8 位、不隔行的 PNG');
+      channels = colorType === 6 ? 4 : colorType === 2 ? 3 : 0;
+      if (channels === 0) throw new Error(`不支持的颜色类型 ${colorType}`);
+    } else if (type === 'IDAT') {
+      idat.push(data);
+    } else if (type === 'IEND') {
+      break;
+    }
+    offset += 12 + length;
+  }
+  const raw = inflateSync(Buffer.concat(idat));
+  const stride = width * channels;
+  const pixels = new Uint8Array(height * stride);
+  for (let y = 0; y < height; y += 1) {
+    const filter = raw[y * (stride + 1)]!;
+    const line = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
+    for (let x = 0; x < stride; x += 1) {
+      const a = x >= channels ? pixels[y * stride + x - channels]! : 0;
+      const b = y > 0 ? pixels[(y - 1) * stride + x]! : 0;
+      const c = x >= channels && y > 0 ? pixels[(y - 1) * stride + x - channels]! : 0;
+      let value = line[x]!;
+      if (filter === 1) value += a;
+      else if (filter === 2) value += b;
+      else if (filter === 3) value += (a + b) >> 1;
+      else if (filter === 4) {
+        const p = a + b - c;
+        const pa = Math.abs(p - a);
+        const pb = Math.abs(p - b);
+        const pc = Math.abs(p - c);
+        value += pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+      }
+      pixels[y * stride + x] = value & 0xff;
+    }
+  }
+  return { width, height, channels, pixels };
+}
+
+/** 中央一半区域里：亮像素（亮度 > 60）的比例和不同颜色（每通道取高 4 位）的数量。 */
+export function imageStats(png: DecodedPng): { brightRatio: number; colors: number } {
+  const { width, height, channels, pixels } = png;
+  let bright = 0;
+  let total = 0;
+  const colors = new Set<number>();
+  for (let y = Math.floor(height / 4); y < Math.floor((height * 3) / 4); y += 2) {
+    for (let x = Math.floor(width / 4); x < Math.floor((width * 3) / 4); x += 2) {
+      const i = (y * width + x) * channels;
+      const r = pixels[i]!;
+      const g = pixels[i + 1]!;
+      const b = pixels[i + 2]!;
+      if (0.2126 * r + 0.7152 * g + 0.0722 * b > 60) bright += 1;
+      colors.add(((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4));
+      total += 1;
+    }
+  }
+  return { brightRatio: bright / Math.max(1, total), colors: colors.size };
+}

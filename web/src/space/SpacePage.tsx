@@ -1,14 +1,21 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { PublicClient } from '../core/api/client';
-import { sceneHeightRange, selectView, type ViewMode } from '../core/scene';
-import { PLAYBACK_SPEEDS, TimelineBar, formatTime } from '../timeline/TimelineBar';
+import { toMillis } from '../core/events';
+import {
+  IDENTITY_PLACEMENT,
+  sceneHeightRange,
+  selectView,
+  type SceneContent,
+  type ViewMode,
+} from '../core/scene';
+import { buildVisuals } from '../core/visuals';
+import { useAssetLoaders, useDensity, useRuntimeState } from '../data/hooks';
+import { SpaceRuntime } from '../data/spaceRuntime';
+import { TimelineBar, formatTime } from '../timeline/TimelineBar';
 import { Viewer, type SceneViewFactory } from '../viewer/Viewer';
-import { CutawayControl, ViewModeSwitch } from './controls';
-import { HEAD_POLL_MS, useSpace } from './useSpace';
+import { CutawayControl, ErrorCard, LoadingCard, ThemeToggle, ViewModeSwitch } from './controls';
+import { usePlayback } from './usePlayback';
 import './SpacePage.css';
-
-/** 播放时每一帧推进的间隔（毫秒）。 */
-const TICK_MS = 100;
 
 export interface SpacePageProps {
   readonly spaceId: string;
@@ -21,7 +28,16 @@ export interface SpacePageProps {
   readonly initialMode?: ViewMode;
 }
 
-/** 查看一个空间：三维视图、三种视图切换、剖切、时间轴（设计第 7 节）。 */
+/** 时间轴的范围：第一次提交前一天到现在（或最后一次提交、当前时刻里最晚的）。 */
+export function timelineRange(commitTimes: readonly number[], now: number, time: number) {
+  const first = commitTimes.length > 0 ? Math.min(...commitTimes) : now - 7 * 86_400_000;
+  const last = commitTimes.length > 0 ? Math.max(...commitTimes) : now;
+  const to = Math.max(now, last, time);
+  const from = Math.min(first - 86_400_000, to - 86_400_000);
+  return { from, to };
+}
+
+/** 查看一个空间：三维视图、三种视图切换、剖切、时间轴、事件可视化（设计第 7 节）。 */
 export function SpacePage({
   spaceId,
   client,
@@ -31,58 +47,44 @@ export function SpacePage({
   initialMode = 'optimized',
 }: SpacePageProps) {
   const [mode, setMode] = useState<ViewMode>(initialMode);
-  const [live, setLive] = useState(true);
-  const [time, setTime] = useState(() => now());
-  const [playing, setPlaying] = useState(false);
-  const [speed, setSpeed] = useState(PLAYBACK_SPEEDS[2]!.value);
   const [cutEnabled, setCutEnabled] = useState(true);
   const [cutHeight, setCutHeight] = useState(2.2);
+  const [attempt, setAttempt] = useState(0);
   // 下载好的扫描模型，连同它的哈希：换了扫描时旧的自动失效。
   const [loadedScan, setLoadedScan] = useState<{ hash: string; bytes: ArrayBuffer } | null>(null);
-  const timeRef = useRef(time);
+  const playback = usePlayback(now);
+  const { time, live, windowMs } = playback;
 
-  const data = useSpace(client, spaceId, time, live, now);
-  const { scene, space, load, loadScan } = data;
+  // 每个空间（和每次"重试"）一个运行时；挂载时开始，卸载时停下。
+  const runtime = useMemo(
+    () => new SpaceRuntime(client, spaceId, client, { now }),
+    // now 只用来取当前时间；attempt 变了表示重试，换一个新的运行时。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [client, spaceId, attempt],
+  );
+  useEffect(() => {
+    runtime.start();
+    return () => runtime.stop();
+  }, [runtime]);
 
   useEffect(() => {
-    timeRef.current = time;
-  }, [time]);
+    runtime.setTime(time, live, windowMs);
+  }, [runtime, time, live, windowMs]);
 
-  // "现在"模式下时刻跟着当前时间走（进入"现在"模式的地方已经把时刻设成了当前时间）。
-  useEffect(() => {
-    if (!live) return;
-    const timer = setInterval(() => setTime(now()), HEAD_POLL_MS);
-    return () => clearInterval(timer);
-  }, [live, now]);
-
-  // 播放：按速度推进；追上现在就切回"现在"模式。
-  useEffect(() => {
-    if (!playing) return;
-    const timer = setInterval(() => {
-      const next = timeRef.current + TICK_MS * speed;
-      if (next >= now()) {
-        setPlaying(false);
-        setLive(true);
-        setTime(now());
-      } else {
-        setTime(next);
-      }
-    }, TICK_MS);
-    return () => clearInterval(timer);
-  }, [playing, speed, now]);
+  const state = useRuntimeState(runtime);
+  const { scene, info } = state;
+  const loaders = useAssetLoaders(client);
 
   useEffect(() => {
-    if (space) document.title = `${space.name} · chrono-metaverse`;
-  }, [space]);
+    if (info) document.title = `${info.name} · chrono-metaverse`;
+  }, [info]);
 
-  const content = useMemo(() => (scene ? selectView(scene, mode) : null), [scene, mode]);
-  const heights = useMemo(() => (scene ? sceneHeightRange(scene) : { min: 0, max: 3 }), [scene]);
   const scanHash = mode === 'raw' ? scene?.scan?.webModelHashes[0] : undefined;
-
   useEffect(() => {
     if (scanHash === undefined) return;
     let cancelled = false;
-    loadScan(scanHash)
+    runtime
+      .scan(scanHash)
       .then((bytes) => {
         if (!cancelled) setLoadedScan({ hash: scanHash, bytes });
       })
@@ -92,34 +94,95 @@ export function SpacePage({
     return () => {
       cancelled = true;
     };
-  }, [scanHash, loadScan]);
+  }, [scanHash, runtime]);
   const scan = loadedScan !== null && loadedScan.hash === scanHash ? loadedScan.bytes : null;
 
-  // 原始视图要等扫描下载完再交给查看器，避免先画一个空场景。
-  const viewerContent = content && content.showScan && scan === null ? null : content;
+  const content = useMemo<SceneContent | null>(() => {
+    if (state.status !== 'ready') return null;
+    if (state.seq === null) return { mode, members: [], links: [] };
+    if (scene === null) return null;
+    const view = selectView(scene, mode);
+    // 原始视图要等扫描下载完再交给查看器，避免先画一个空场景。
+    if (view.showScan && scan === null) return null;
+    return {
+      mode,
+      members: [
+        {
+          spaceId,
+          name: info?.name,
+          view,
+          scan,
+          scanTransform: scene.scan?.transform,
+          placement: IDENTITY_PLACEMENT,
+        },
+      ],
+      links: [],
+    };
+  }, [state.status, state.seq, scene, mode, scan, spaceId, info?.name]);
 
-  if (load.status === 'error') {
+  const visuals = useMemo(
+    () =>
+      buildVisuals(
+        [
+          {
+            spaceId,
+            types: info?.eventTypes ?? [],
+            events: state.events,
+            states: state.states,
+          },
+        ],
+        { at: time, windowMs },
+      ),
+    [spaceId, info?.eventTypes, state.events, state.states, time, windowMs],
+  );
+
+  const heights = useMemo(() => (scene ? sceneHeightRange(scene) : { min: 0, max: 3 }), [scene]);
+  const nowMs = now();
+  const range = useMemo(
+    () =>
+      timelineRange(
+        state.commits.map((c) => toMillis(c.at)),
+        nowMs,
+        time,
+      ),
+    [state.commits, nowMs, time],
+  );
+  const density = useDensity(
+    client,
+    [spaceId],
+    range.from,
+    range.to,
+    state.changes,
+    state.status === 'ready',
+  );
+
+  if (state.status === 'error' && state.error) {
     return (
-      <main className="space space--message">
-        <div className="space__message" role="alert">
-          <h1>打不开这个空间</h1>
-          <p>{load.message}</p>
-          {!hasShareToken && load.notFound && <p>链接里没有分享令牌（# 后面的 share=…）。</p>}
-        </div>
-      </main>
+      <ErrorCard
+        title="打不开这个空间"
+        message={state.error.message}
+        notFound={state.error.notFound}
+        hint={
+          !hasShareToken && state.error.notFound
+            ? '链接里没有分享令牌（# 后面的 share=…）。'
+            : undefined
+        }
+        onRetry={() => setAttempt((n) => n + 1)}
+      />
     );
   }
 
-  const commit = data.commit;
+  const commit = state.commits.filter((c) => c.seq === state.seq)[0] ?? null;
+  const loading = state.status === 'loading' || (state.seq !== null && scene === null);
   return (
-    <main className="space" data-space-id={spaceId}>
+    <main className="space" data-space-id={spaceId} data-live={live}>
       <header className="space__bar">
         <div className="space__title">
-          <h1>{space?.name ?? '正在加载…'}</h1>
+          <h1>{info?.name ?? '正在加载…'}</h1>
           <p className="space__version">
             {commit
               ? `版本 #${commit.seq} · ${commit.message}`
-              : load.status === 'loading'
+              : state.status === 'loading'
                 ? '正在读取时间线'
                 : '这个时刻还没有任何提交'}
           </p>
@@ -132,17 +195,30 @@ export function SpacePage({
           onToggle={setCutEnabled}
           onHeight={setCutHeight}
         />
+        <ThemeToggle />
       </header>
 
-      <section className="space__stage" aria-label="三维视图" aria-busy={data.sceneLoading}>
+      <section className="space__stage" aria-label="三维视图" aria-busy={state.sceneLoading}>
         <Viewer
-          content={viewerContent}
-          scan={mode === 'raw' ? scan : null}
-          scanTransform={scene?.scan?.transform}
+          content={content}
+          visuals={visuals}
           cutaway={cutEnabled ? cutHeight : null}
-          states={data.states}
+          loadTexture={loaders.loadTexture}
+          loadModel={loaders.loadModel}
           createView={createView}
         />
+        {(loading || state.progress !== null) && (
+          <LoadingCard
+            label={state.progress?.label ?? (state.status === 'loading' ? '读取空间' : '读取版本')}
+            done={state.progress?.done}
+            total={state.progress?.total}
+          />
+        )}
+        {state.status === 'ready' && state.seq === null && (
+          <div className="space__empty" role="status">
+            这个时刻还没有任何提交。
+          </div>
+        )}
         {mode === 'extended' && (
           <div className="space__legend" aria-hidden="true">
             <span className="space__legend-swatch" /> 虚拟区
@@ -173,34 +249,18 @@ export function SpacePage({
       </section>
 
       <TimelineBar
-        from={data.range.from}
-        to={data.range.to}
+        from={range.from}
+        to={range.to}
         time={time}
-        commits={data.commits}
-        density={data.density}
-        playing={playing}
-        speed={speed}
+        commits={state.commits}
+        density={density}
+        playing={playback.playing}
+        speed={playback.speed}
         live={live}
-        onSeek={(t) => {
-          setLive(false);
-          setTime(t);
-        }}
-        onTogglePlay={() => {
-          if (playing) {
-            setPlaying(false);
-            return;
-          }
-          // 在"现在"模式下按播放：从时间轴起点开始回放。
-          if (live || time >= now() - 1000) setTime(data.range.from);
-          setLive(false);
-          setPlaying(true);
-        }}
-        onSpeedChange={setSpeed}
-        onNow={() => {
-          setPlaying(false);
-          setLive(true);
-          setTime(now());
-        }}
+        onSeek={playback.seek}
+        onTogglePlay={() => playback.togglePlay(range.from)}
+        onSpeedChange={playback.setSpeed}
+        onNow={playback.goNow}
       />
     </main>
   );

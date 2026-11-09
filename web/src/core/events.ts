@@ -214,3 +214,97 @@ export function commitAt(
   }
   return found;
 }
+
+/** 锚点 → 状态 key → 状态。 */
+export type StateMap = ReadonlyMap<string, ReadonlyMap<string, AnchorState>>;
+
+/** `state?at=` 的结果整理成按锚点、状态 key 索引的表。 */
+export function stateMapFrom(states: readonly AnchorState[]): StateMap {
+  const map = new Map<string, Map<string, AnchorState>>();
+  for (const state of states) {
+    const entry = map.get(state.anchorId) ?? new Map<string, AnchorState>();
+    entry.set(state.key, state);
+    map.set(state.anchorId, entry);
+  }
+  return map;
+}
+
+function typeOf(types: readonly EventTypeDef[], type: string | undefined, version?: number) {
+  let best: EventTypeDef | undefined;
+  for (const def of types) {
+    if (def.type !== type) continue;
+    if (version !== undefined && def.version === version) return def;
+    if (best === undefined || def.version > best.version) best = def;
+  }
+  return best;
+}
+
+/**
+ * "现在"模式：在 `state?at=<baseAt>` 的结果上叠加增量拉到的事件（设计 5.5）。
+ *
+ * - 新事件（时间不早于该锚点、该 key 当前状态的时间）直接改写状态，清除类事件删掉状态；
+ * - 改的是当前状态那条事件本身（更正）：按更正后的内容改写；
+ * - 撤回、撤下了当前状态的那条事件，或者晚到的事件早于 baseAt 而该 key 又没有状态时，
+ *   本地无法确定结果，返回 `refetch: true`，由调用方重新取 `state?at=`。
+ */
+export function advanceStates(
+  base: StateMap,
+  baseAt: number,
+  incoming: readonly SpaceEvent[],
+  types: readonly EventTypeDef[],
+  at: number,
+): { readonly states: StateMap; readonly refetch: boolean } {
+  const states = new Map<string, Map<string, AnchorState>>();
+  for (const [anchorId, entry] of base) states.set(anchorId, new Map(entry));
+  const holders = () => {
+    const ids = new Set<string>();
+    for (const entry of states.values()) for (const state of entry.values()) ids.add(state.eventId);
+    return ids;
+  };
+  let refetch = false;
+  const ordered = [...incoming].sort((a, b) => {
+    const ta = a.at === undefined ? 0 : toMillis(a.at);
+    const tb = b.at === undefined ? 0 : toMillis(b.at);
+    return ta - tb || toMillis(a.recordedAt) - toMillis(b.recordedAt);
+  });
+  for (const event of ordered) {
+    const target = event.corrects ?? event.id;
+    if (event.withdrawn || event.retracted || event.redacted) {
+      if (holders().has(target)) refetch = true;
+      continue;
+    }
+    const def = typeOf(types, event.type, event.typeVersion);
+    if (def?.state === undefined || event.anchorId === undefined || event.at === undefined) {
+      continue;
+    }
+    const time = toMillis(event.at);
+    if (time > at) continue;
+    const entry = states.get(event.anchorId) ?? new Map<string, AnchorState>();
+    const current = entry.get(def.state.key);
+    const replacesCurrent = current?.eventId === target;
+    if (!replacesCurrent) {
+      if (current !== undefined && time < toMillis(current.at)) continue;
+      if (current === undefined && time < baseAt) {
+        refetch = true;
+        continue;
+      }
+    }
+    if (def.state.clears) {
+      entry.delete(def.state.key);
+    } else {
+      entry.set(def.state.key, {
+        anchorId: event.anchorId,
+        key: def.state.key,
+        value: def.state.value === undefined ? event.type : (event.data?.[def.state.value] ?? null),
+        at: event.at,
+        eventId: target,
+        type: event.type,
+        typeVersion: event.typeVersion,
+        data: event.data,
+      });
+    }
+    states.set(event.anchorId, entry);
+  }
+  for (const [anchorId, entry] of states) if (entry.size === 0) states.delete(anchorId);
+  return { states, refetch };
+}

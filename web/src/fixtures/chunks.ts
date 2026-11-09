@@ -8,10 +8,11 @@ import {
   isEmptyChunk,
 } from '../core/chunk';
 import type { LayerChunk } from '../core/voxels';
+import { TEXTURES } from './assets';
 
 /**
  * 夹具的方块内容（扩展层）：虚拟展区里的一座小展亭，以及实体区里的一块地毯。
- * 方块表从 2 开始编号（0、1 是保留编号）。
+ * 方块表从 2 开始编号（0、1 是保留编号）；草地顶面和红砖用贴图，柱顶的灯是发光方块。
  */
 
 export const palette: Palette = {
@@ -19,17 +20,17 @@ export const palette: Palette = {
     { id: 2, name: '石材', kind: 'solid', color: [158, 158, 152] },
     { id: 3, name: '木地板', kind: 'solid', color: [168, 128, 86] },
     { id: 4, name: '玻璃', kind: 'glass', color: [168, 210, 236] },
-    { id: 5, name: '草地', kind: 'solid', color: [98, 160, 74] },
+    { id: 5, name: '草地', kind: 'solid', texture: { top: TEXTURES.grass.hash } },
     { id: 6, name: '灯', kind: 'emissive', color: [255, 222, 140] },
-    { id: 7, name: '红砖', kind: 'solid', color: [176, 88, 66] },
+    { id: 7, name: '红砖', kind: 'solid', texture: { side: TEXTURES.brick.hash } },
     { id: 8, name: '地毯', kind: 'solid', color: [120, 70, 110] },
   ],
 };
 
-type Fill = (gx: number, gy: number, gz: number) => number;
+export type Fill = (gx: number, gy: number, gz: number) => number;
 
 /** 在格子范围 [min, max) 内按 fill 填格子，按区块切开；全 0 的区块不要。 */
-function chunksFrom(
+export function chunksFrom(
   layer: Layer,
   min: [number, number, number],
   max: [number, number, number],

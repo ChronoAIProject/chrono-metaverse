@@ -1,14 +1,17 @@
 import type { Anchor, EntityBody, Plot, Region } from '../core/api/types';
 import type { Shape } from '../core/shapes/types';
+import { TEXTURES } from './assets';
 
 /**
  * 夹具空间"演示前厅"：按 docs/SHAPES.md 写成的一个小房间，覆盖全部形状类型。
  *
- * - 结构：地面、三面墙（南墙留门洞）、东侧玻璃隔断、天花板；
- * - 物体：带圆角的办公桌（box + fillet）、旋转体边几（lathe）、
+ * - 结构：地砖地面（贴图，planar）、三面墙（南墙留门洞）、东侧玻璃隔断、天花板；
+ * - 物体：木纹办公桌（box + fillet，贴图 box 投影）、旋转体边几（lathe）、
  *   扫掠椅腿的椅子模板和 3 个实例（sweep + group + instance，其中一把换了颜色）、
- *   轮廓带圆弧的沙发（extrude + arcs + fillets）、放样花盆（loft）、落地灯（cylinder + cone）；
+ *   布面沙发（extrude + arcs + fillets，贴图按网格自身坐标 + 色调）、放样花盆（loft）、
+ *   条纹灯罩的落地灯（cylinder，贴图圆柱投影）、带弧形正面的前台（extrude）；
  * - 扩展层：虚拟区里的展台（物件）和方块平台（区块，见 chunks.ts）。
+ * - 锚点：桌、座位、休息区、入口、前台、虚拟展区，以及空间级锚点 `_space`（营业状态）。
  *
  * 实体区 x 0–6 米、z 0–5 米；虚拟区在东边 x 6–10 米。格子单位 5 厘米。
  */
@@ -26,7 +29,7 @@ export const plots: Plot[] = [
   { id: 'p1', regionId: 'virtual', label: '一号地块', boxes: [[124, 0, 8, 196, 60, 92]] },
 ];
 
-const WALNUT = [124, 88, 60] as const;
+const WALNUT_TINT = [255, 236, 214] as const;
 const METAL = [58, 60, 66] as const;
 const FABRIC = [86, 112, 140] as const;
 
@@ -102,7 +105,7 @@ export const chairTemplate: Shape = {
 /** 办公桌：桌面和侧板都是圆角盒。 */
 const desk: Shape = {
   type: 'group',
-  material: { color: WALNUT },
+  material: { texture: TEXTURES.wood.hash, uv: 'box', tint: WALNUT_TINT },
   transform: { position: [2.4, 0, 1.6] },
   children: [
     { type: 'box', size: [1.6, 0.04, 0.8], fillet: 0.015, transform: { position: [0, 0.71, 0] } },
@@ -145,7 +148,7 @@ const sideTable: Shape = {
 /** 沙发：座垫正面是外凸的圆弧，靠背是一条弧形带，扶手是圆角盒。 */
 const sofa: Shape = {
   type: 'group',
-  material: { color: FABRIC },
+  material: { texture: TEXTURES.fabric.hash, uv: 'mesh', tint: FABRIC },
   transform: { position: [4.6, 0, 2.2], yaw: -90 },
   children: [
     {
@@ -274,7 +277,41 @@ const lamp: Shape = {
       radiusTop: 0.14,
       height: 0.28,
       transform: { position: [0, 1.42, 0] },
-      material: { color: [244, 232, 205] },
+      material: { texture: TEXTURES.stripe.hash, uv: 'cylindrical' },
+    },
+  ],
+};
+
+/** 前台：正面外凸的圆弧挤出，木纹台面。 */
+const counter: Shape = {
+  type: 'group',
+  transform: { position: [2.2, 0, 3.9] },
+  children: [
+    {
+      type: 'extrude',
+      outline: {
+        points: [
+          [-0.8, -0.25],
+          [0.8, -0.25],
+          [0.8, 0.25],
+          [-0.8, 0.25],
+        ],
+        arcs: [{ from: 2, bulge: 0.12 }],
+        fillets: [
+          { at: 0, radius: 0.05 },
+          { at: 1, radius: 0.05 },
+        ],
+      },
+      height: 1.0,
+      chamfer: 0.01,
+      material: { color: [236, 232, 224] },
+    },
+    {
+      type: 'box',
+      size: [1.7, 0.04, 0.62],
+      fillet: 0.015,
+      transform: { position: [0, 1.0, 0.03] },
+      material: { texture: TEXTURES.wood.hash, uv: 'planar' },
     },
   ],
 };
@@ -298,7 +335,7 @@ function rebuiltEntities(chairZ: number): EntityBody[] {
         type: 'box',
         size: [6, 0.05, 5],
         transform: { position: [3, -0.05, 2.5] },
-        material: { color: [184, 160, 128] },
+        material: { texture: TEXTURES.tile.hash, uv: 'planar' },
       },
       bounds: { min: [0, -0.05, 0], max: [6, 0, 5] },
     },
@@ -429,6 +466,16 @@ function rebuiltEntities(chairZ: number): EntityBody[] {
       shape: lamp,
       bounds: { min: [5.28, 0, 0.28], max: [5.72, 1.7, 0.72] },
     },
+    {
+      entityId: 'counter-01',
+      layer: 'rebuilt',
+      kind: 'object',
+      label: '前台',
+      anchorId: 'counter-01',
+      shape: counter,
+      bounds: { min: [1.4, 0, 3.6], max: [3.0, 1.04, 4.25] },
+      props: { label: '前台（收花处）', 材质: '人造石 + 木纹台面' },
+    },
   ];
 }
 
@@ -530,6 +577,14 @@ export const anchors: Anchor[] = [
     position: [8, 2.8, 2.5],
     visibility: 'public',
   },
+  {
+    anchorId: 'counter-01',
+    kind: 'counter',
+    label: '前台',
+    position: [2.2, 1.05, 3.9],
+    visibility: 'public',
+  },
+  { anchorId: '_space', kind: 'space', label: '演示前厅', visibility: 'public' },
   {
     anchorId: 'camera-01',
     kind: 'camera',

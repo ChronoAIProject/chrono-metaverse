@@ -5,7 +5,8 @@ import { useCallback, useEffect, useState } from 'react';
  * 可以往返转换，不引入路由库。
  *
  * - `/s/<空间编号>#share=<分享令牌>`：查看一个空间；
- * - `/u/<组合编号>#share=<分享令牌>`：查看组合宇宙（第一版只占位）；
+ * - `/u/<组合编号>#share=<分享令牌>`：查看组合宇宙；
+ * - `/preview#t=<预览令牌>`：草稿预览；
  * - `/`：首页。
  *
  * 令牌在 `#` 后面，不属于路由，也不会发给服务器。
@@ -14,6 +15,7 @@ export type AppRoute =
   | { readonly kind: 'home' }
   | { readonly kind: 'space'; readonly spaceId: string }
   | { readonly kind: 'universe'; readonly universeId: string }
+  | { readonly kind: 'preview' }
   | { readonly kind: 'not_found'; readonly pathname: string };
 
 function decodeSegment(value: string): string | null {
@@ -30,6 +32,7 @@ function decodeSegment(value: string): string | null {
 
 export function parseRoute(pathname: string): AppRoute {
   if (pathname === '/' || pathname === '') return { kind: 'home' };
+  if (pathname === '/preview') return { kind: 'preview' };
   if (!pathname.startsWith('/') || pathname.endsWith('/')) return { kind: 'not_found', pathname };
   const segments = pathname.slice(1).split('/').map(decodeSegment);
   if (segments.some((s) => s === null)) return { kind: 'not_found', pathname };
@@ -49,6 +52,8 @@ export function routePath(route: AppRoute): string {
       return `/s/${encodeURIComponent(route.spaceId)}`;
     case 'universe':
       return `/u/${encodeURIComponent(route.universeId)}`;
+    case 'preview':
+      return '/preview';
     case 'not_found':
       return route.pathname;
   }
