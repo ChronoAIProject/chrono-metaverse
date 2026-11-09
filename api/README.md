@@ -329,7 +329,7 @@ universeRevisions { _id: "<组合编号>:<seq>", universeId, owner, seq, at, act
 ```
 
 - `spaceId`、`name`、`description` 按建空间接口的规则校验；`owner` 只能是组织；`visibility` 默认 `unlisted`，这时必须设 `METAVERSE_DEMO_SHARE_TOKEN`（`public` 不需要，设了也存哈希）；
-- `files`：1–32 个，地址只接受 https（本机地址可用 http，测试用），不带用户名、密码、片段；文件名只能用字母、数字、`.`、`_`、`-`，扩展名决定作用：单独一个 `glb`/`drc`/`obj`/`zip` 直接用，否则必须是一个网格（`glb`/`drc`/`obj`）加贴图（`jpg`/`jpeg`/`png`/`webp`）和材质（`mtl`），打包成 stored zip（与 Scaniverse 导出的布局相同，时间固定，同样的文件总得到同样的哈希）；每个文件声明 `size` 和 `sha256`，总大小不超过 `UPLOAD_MAX_SCAN_BYTES`；
+- `files`：1–32 个，地址只接受 https（本机地址可用 http，测试用），不带用户名、密码、片段；文件名只能用字母、数字、`.`、`_`、`-`，扩展名决定作用：单独一个 `glb`/`drc`/`obj`/`zip` 直接用，否则必须是一个网格（`glb`/`drc`/`obj`）加贴图（`jpg`/`jpeg`/`png`/`webp`）和材质（`mtl`），打包成 stored zip（与 Scaniverse 导出的布局相同，时间固定，同样的文件总得到同样的哈希）；每个文件声明 `size` 和 `sha256`，总大小不超过 256MiB 和 `UPLOAD_MAX_SCAN_BYTES` 中较小的一个（文件和打包的 zip 都在内存里，峰值约为总大小的两倍；种子每次启动都执行，超内存被杀会让接口服务反复重启，所以比扫描上传的上限严）；
 - `rebuild`（默认 true）、`voxelize`（默认 false）、`hints`（≤ 4KB 的对象，坐标必须是处理服务对齐后的空间坐标）原样进 `scan_import` 的参数；`revision`（默认 1）是导入版本。
 
 执行（`main.rs` 在索引建好后后台调用 `demo_seed::spawn`；暂时性失败按 10/30/90/270 秒重试 4 次，最后记错误日志，不影响就绪）：

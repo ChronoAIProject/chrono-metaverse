@@ -66,8 +66,13 @@ const MESH_EXTENSIONS = ['glb', 'drc', 'obj'];
 const SIDE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'mtl'];
 /** 提示规范化后的上限（接口服务 `MAX_HINTS_BYTES`）。 */
 export const MAX_HINTS_BYTES = 4096;
-/** 扫描上传的默认上限（接口服务 `UPLOAD_MAX_SCAN_BYTES` 的默认值），种子文件总大小不能超过它。 */
+/** 扫描上传的默认上限（接口服务 `UPLOAD_MAX_SCAN_BYTES` 的默认值）。 */
 const DEFAULT_MAX_SCAN_BYTES = 1 << 30;
+/**
+ * 种子文件总大小的固定上限（接口服务 `MAX_SEED_TOTAL_BYTES`，256MiB）：文件和打包的 zip 都在内存里，
+ * 实际上限取它和扫描上传上限中较小的一个。
+ */
+export const MAX_SEED_TOTAL_BYTES = 256 * 1024 * 1024;
 
 const U32_MAX = 4_294_967_295;
 const HEADER_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
@@ -223,6 +228,7 @@ function isLoopbackHost(hostname) {
  */
 export function seedProblems(seed, { targetOrg, maxScanBytes = DEFAULT_MAX_SCAN_BYTES } = {}) {
   const problems = [];
+  const limit = Math.min(maxScanBytes, MAX_SEED_TOTAL_BYTES);
   const bad = (text) => problems.push(`demo-seed.json：${text}`);
   if (seed === null || typeof seed !== 'object' || Array.isArray(seed)) {
     bad('必须是 JSON 对象');
@@ -305,13 +311,15 @@ export function seedProblems(seed, { targetOrg, maxScanBytes = DEFAULT_MAX_SCAN_
     if (typeof file.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(file.sha256)) {
       bad(`${label}.sha256 必须是 64 位小写十六进制`);
     }
-    if (!Number.isSafeInteger(file.size) || file.size <= 0 || file.size > maxScanBytes) {
-      bad(`${label}.size 必须是 1–${maxScanBytes} 的整数`);
+    if (!Number.isSafeInteger(file.size) || file.size <= 0 || file.size > limit) {
+      bad(`${label}.size 必须是 1–${limit} 的整数`);
     } else {
       total += file.size;
     }
   }
-  if (total > maxScanBytes) bad(`文件总大小 ${total} 超过扫描上传上限 ${maxScanBytes}（UPLOAD_MAX_SCAN_BYTES）`);
+  if (total > limit) {
+    bad(`文件总大小 ${total} 超过上限 ${limit}（种子在内存里处理，取 256MiB 和 UPLOAD_MAX_SCAN_BYTES 中较小的）`);
+  }
   const meshes = extensions.filter((extension) => MESH_EXTENSIONS.includes(extension)).length;
   const archives = extensions.filter((extension) => extension === 'zip').length;
   const usable = files.length === 1 ? meshes + archives === 1 : meshes === 1 && archives === 0;

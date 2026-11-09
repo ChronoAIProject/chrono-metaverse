@@ -1,8 +1,8 @@
 //! 部署配置种子的配置：`METAVERSE_DEMO_SEED`（JSON）和 `METAVERSE_DEMO_SHARE_TOKEN`（分享令牌原文）。
 //!
 //! 解析严格：拒绝未知字段；地址只接受 https（本机测试可用 http://127.0.0.1 这类本机地址）；每个文件
-//! 必须声明大小和 sha256，总大小不超过扫描上传的上限（`UPLOAD_MAX_SCAN_BYTES`）；空间编号、名称、
-//! 说明按建空间接口的规则校验。配置不合法时接口服务启动失败（与其他配置一样，见 `config.rs`）。
+//! 必须声明大小和 sha256，总大小不超过 [`MAX_SEED_TOTAL_BYTES`] 和扫描上传上限（`UPLOAD_MAX_SCAN_BYTES`）
+//! 中较小的一个；空间编号、名称、说明按建空间接口的规则校验。配置不合法时接口服务启动失败（与其他配置一样，见 `config.rs`）。
 //!
 //! 分享令牌原文只用来算哈希：`Debug` 不输出内容、释放时清零，错误信息里也不出现它。
 
@@ -26,6 +26,10 @@ pub const SEED_ENV: &str = "METAVERSE_DEMO_SEED";
 pub const SHARE_TOKEN_ENV: &str = "METAVERSE_DEMO_SHARE_TOKEN";
 /// 最多几个文件（一个网格 + 贴图、材质）。
 pub const MAX_FILES: usize = 32;
+/// 种子文件总大小的固定上限（256MiB）。下载的文件和打包的 zip 都在内存里，峰值约为总大小的两倍；
+/// 接口服务的 `memory_limit` 是 1Gi，还要给并发的分片上传留余量。种子在每次启动时执行，超内存被杀
+/// 会让接口服务反复重启，所以这里比扫描上传的上限（默认 1GiB）严。
+pub const MAX_SEED_TOTAL_BYTES: u64 = 256 << 20;
 /// 分享令牌原文的长度范围（base64url；32 个字符约 192 位随机数）。
 pub const MIN_SHARE_TOKEN_CHARS: usize = 32;
 pub const MAX_SHARE_TOKEN_CHARS: usize = 256;
@@ -94,7 +98,7 @@ pub struct DemoSeedConfig {
     /// 导入版本：改大以后重启接口服务，会对同一个空间再发起一次导入（见 `demo_seed` 模块说明）。
     pub revision: u32,
     pub share_token: Option<SeedShareToken>,
-    /// 所有文件加起来（以及打包后的 zip）的上限。
+    /// 所有文件加起来（以及打包后的 zip）的上限：[`MAX_SEED_TOTAL_BYTES`] 和扫描上传上限中较小的。
     pub max_total_bytes: u64,
 }
 
@@ -239,11 +243,13 @@ fn parse_share_token(raw: Option<String>) -> Result<Option<SeedShareToken>, Conf
 
 impl DemoSeedConfig {
     /// 读配置。没设 `METAVERSE_DEMO_SEED` 时返回 `None`（什么都不做）。
-    /// `max_total_bytes` 是扫描上传的上限（`UPLOAD_MAX_SCAN_BYTES`）。
+    /// `max_scan_bytes` 是扫描上传的上限（`UPLOAD_MAX_SCAN_BYTES`）；种子文件总大小不超过它和
+    /// [`MAX_SEED_TOTAL_BYTES`] 中较小的一个。
     pub fn from_lookup(
         lookup: &dyn Fn(&str) -> Option<String>,
-        max_total_bytes: u64,
+        max_scan_bytes: u64,
     ) -> Result<Option<Self>, ConfigError> {
+        let max_total_bytes = max_scan_bytes.min(MAX_SEED_TOTAL_BYTES);
         let optional = |name: &str| {
             lookup(name)
                 .map(|v| v.trim().to_owned())
@@ -322,7 +328,7 @@ impl DemoSeedConfig {
         }
         if total > max_total_bytes {
             return Err(invalid(format!(
-                "文件总大小 {total} 超过上限 {max_total_bytes}（UPLOAD_MAX_SCAN_BYTES）"
+                "文件总大小 {total} 超过上限 {max_total_bytes}（种子在内存里处理，上限取 256MiB 和 UPLOAD_MAX_SCAN_BYTES 中较小的）"
             )));
         }
         let meshes = files.iter().filter(|f| f.role == FileRole::Mesh).count();
@@ -504,13 +510,13 @@ mod tests {
             ("大小", Box::new(|v| v["files"][0]["size"] = json!(0))),
             (
                 "大小",
-                Box::new(|v| v["files"][0]["size"] = json!((1u64 << 30) + 1)),
+                Box::new(|v| v["files"][0]["size"] = json!(MAX_SEED_TOTAL_BYTES + 1)),
             ),
             (
                 "总大小",
                 Box::new(|v| {
-                    v["files"][0]["size"] = json!(1u64 << 29);
-                    v["files"][1]["size"] = json!((1u64 << 29) + 1);
+                    v["files"][0]["size"] = json!(1u64 << 27);
+                    v["files"][1]["size"] = json!((1u64 << 27) + 1);
                 }),
             ),
             (
@@ -595,6 +601,37 @@ mod tests {
         assert_eq!(
             config.observed_at.unwrap().to_rfc3339(),
             "2026-10-01T01:30:00.000Z"
+        );
+    }
+
+    #[test]
+    fn total_size_is_capped_by_the_smaller_limit() {
+        let total = |max_scan_bytes: u64| {
+            let values = BTreeMap::from([
+                (SEED_ENV, seed().to_string()),
+                (SHARE_TOKEN_ENV, TOKEN.to_owned()),
+            ]);
+            DemoSeedConfig::from_lookup(&|name| values.get(name).cloned(), max_scan_bytes)
+                .unwrap()
+                .unwrap()
+                .max_total_bytes
+        };
+        // 扫描上传上限 1GiB 时取种子自己的 256MiB（全在内存里处理）；上传上限更小时取上传上限。
+        assert_eq!(total(1 << 30), MAX_SEED_TOTAL_BYTES);
+        assert_eq!(total(1 << 20), 1 << 20);
+        // 单个文件不超过上传上限，但超过种子的上限：拒绝。
+        let mut value = seed();
+        value["files"][0]["size"] = json!(MAX_SEED_TOTAL_BYTES + 1);
+        assert!(reason(load(&value, Some(TOKEN))).contains(&MAX_SEED_TOTAL_BYTES.to_string()));
+        let mut value = seed();
+        value["files"][0]["size"] = json!(1500);
+        let values = BTreeMap::from([
+            (SEED_ENV, value.to_string()),
+            (SHARE_TOKEN_ENV, TOKEN.to_owned()),
+        ]);
+        let rejected = DemoSeedConfig::from_lookup(&|name| values.get(name).cloned(), 3000);
+        assert!(
+            matches!(rejected, Err(ConfigError::Invalid(_, reason)) if reason.contains("总大小"))
         );
     }
 

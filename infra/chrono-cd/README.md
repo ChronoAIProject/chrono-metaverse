@@ -66,7 +66,7 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 | `METAVERSE_DEMO_SHARE_TOKEN` | **密钥**（`secret_keys`，不在 `env` 里） | 演示空间的分享令牌原文，接口服务只存它的 sha256、不写日志；用 `set_app_secrets` 设置（第 5 步）。种子是凭链接查看（`unlisted`）时必须有，缺了接口服务启动失败 |
 | `RUST_LOG` | `info` | |
 
-种子要从 `scaniverse.com` 下载扫描（约 6MB），所以接口服务需要能访问公网（chrono-cd 默认 `egress` 允许）；下载的文件在内存里核对、打包，内存峰值约为文件总大小的两倍，`memory_limit` 1Gi 足够。
+种子要从 `scaniverse.com` 下载扫描（约 6MB），所以接口服务需要能访问公网（chrono-cd 默认 `egress` 允许）；下载的文件在内存里核对、打包，内存峰值约为文件总大小的两倍；种子文件总量上限是 256MiB（比扫描上传的 1GiB 严，免得超内存被杀后每次启动都再超一次），`memory_limit` 1Gi 足够。
 
 #### 公开接口限流（待向平台确认可信的客户端地址头）
 

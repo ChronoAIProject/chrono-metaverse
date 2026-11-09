@@ -291,12 +291,18 @@ test('种子：按接口服务的规则静态校验', () => {
   assertProblem(seedVariant((s) => (s.files[1].name = 'MESH.drc')), /name 重复/);
   assertProblem(seedVariant((s) => (s.files[1].name = 'tex.exe')), /name 不合法/);
   assertProblem(seedVariant((s) => (s.files[1].name = 'other.glb')), /要么是单独一个/);
+  // 总大小上限取 256MiB（种子全在内存里处理）和 UPLOAD_MAX_SCAN_BYTES 中较小的。
   assertProblem(
     seedVariant((s) => {
-      s.files[0].size = 600 * 1024 * 1024;
-      s.files[1].size = 600 * 1024 * 1024;
+      s.files[0].size = 128 * 1024 * 1024;
+      s.files[1].size = 128 * 1024 * 1024 + 1;
     }),
-    /文件总大小 \d+ 超过扫描上传上限/,
+    /文件总大小 \d+ 超过上限 268435456/,
+  );
+  assertProblem(seedVariant((s) => (s.files[0].size = 300 * 1024 * 1024)), /size 必须是 1–268435456 的整数/);
+  assertProblem(
+    seedProblems(seed, { targetOrg: spec.target_org_id, maxScanBytes: 5 * 1024 * 1024 }),
+    /文件总大小 \d+ 超过上限 5242880/,
   );
   assertProblem(seedVariant((s) => (s.files = [])), /files 要有 1–32 个文件/);
   // 本机 http（本地开发的种子）和单独一个 zip 都可以。
