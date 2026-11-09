@@ -22,8 +22,9 @@ import {
 import { materialKey } from '../core/shapes/build';
 import type { VoxelPart } from '../core/voxels';
 import { anchorKey, linkRoute, type AnchorRef, type Visual } from '../core/visuals';
-import { clipBox, frameBox } from './framing';
+import { clipBox, frameBox, scanFrameBox } from './framing';
 import { iconElement } from './icons';
+import { applyTexturedLook, createLights } from './lighting';
 import {
   LABEL_PADDING,
   MIN_SCREEN_SIZE,
@@ -44,6 +45,8 @@ import type { ShapeJob } from './meshJobs';
  *   最外层的 transform 拆出来当实例矩阵，同样的局部形状（同款椅子）共用一份几何体，
  *   两个以上时画成 InstancedMesh；
  * - 材质：颜色或贴图（按资源哈希下载，uv 投影在网格生成时算好，tint 作颜色）；
+ * - 灯光：半球光 + 主光 + 补光，强度按物理单位（π 的倍数）；贴图材质一部分按自发光显示，
+ *   亮度接近不打光的原始扫描（lighting.ts）；
  * - 方块：叠加后的区块 → 可见面网格（后台线程），玻璃半透明、发光方块不受光照、贴图方块按贴图分块；
  * - 扫描：网页用 glb，按对齐变换（列主序 4×4）摆放；
  * - 组合：每个成员一组，按摆放（先绕 y 轴旋转、再平移）放进同一场景；连接画出来，点击飞到另一端；
@@ -119,11 +122,13 @@ interface AnchorInfo {
   readonly memberName?: string;
 }
 
-/** 一个成员的取景来源：内容所在的组、取景范围（世界坐标）、只有模型的物件的包围盒。 */
+/** 一个成员的取景来源：内容所在的组、取景范围（世界坐标）、只有模型的物件的包围盒、扫描。 */
 interface FrameSource {
   readonly group: THREE.Object3D;
   readonly clips: readonly THREE.Box3[];
   readonly extraBoxes: readonly THREE.Box3[];
+  /** 原始视图的扫描模型（组里的那一份）；取景用它表面的 2%–98% 分位包围盒，不用外包盒。 */
+  readonly scan: THREE.Object3D | null;
 }
 
 /** 没有范围的锚点按这么大（米）估计屏幕上的大小。 */
@@ -302,6 +307,8 @@ export class SceneView {
   private autoFramed = false;
   private lastMode: SceneContent['mode'] | null = null;
   private frameSources: FrameSource[] = [];
+  /** 扫描的取景包围盒，按组里的那一份缓存（换了内容那一份就没人引用了）。 */
+  private readonly scanBoxes = new WeakMap<THREE.Object3D, THREE.Box3>();
   private disposed = false;
   private pointerDown: { x: number; y: number } | null = null;
   /** 悬停：最多每 80 毫秒处理一次，处理的总是最后一个位置（尾随节流）。 */
@@ -357,13 +364,8 @@ export class SceneView {
     this.meshes = options.meshService ?? createMeshService();
     this.ownsMeshes = options.meshService === undefined;
 
-    this.scene.add(new THREE.HemisphereLight(0xf4f1ea, 0x3a3d44, 1.6));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.6);
-    sun.position.set(6, 12, 8);
-    this.scene.add(sun);
-    const fill = new THREE.DirectionalLight(0xdfe8ff, 0.5);
-    fill.position.set(-8, 6, -4);
-    this.scene.add(fill);
+    // 灯光按物理单位设置（强度是 π 的倍数），见 lighting.ts。
+    this.scene.add(...createLights());
     this.grid = new THREE.GridHelper(60, 60, 0x6b6f78, 0x3b3f48);
     (this.grid.material as THREE.Material).transparent = true;
     (this.grid.material as THREE.Material).opacity = 0.45;
@@ -489,19 +491,18 @@ export class SceneView {
       clippingPlanes: this.clipping,
     });
     if (isTextureMaterial(material)) {
+      // 贴图材质只有一部分受光照（另一部分按自发光直接显示贴图），亮度接近原始扫描。
       const tint = material.tint ? srgb(material.tint) : new THREE.Color(0xffffff);
       // 贴图到之前先用色调的灰一点的版本占位。
-      base.color = tint.clone().multiplyScalar(0.8);
+      applyTexturedLook(base, tint.clone().multiplyScalar(0.8), null);
       const texture = this.texture(material.texture);
       texture
         ?.then((map) => {
           if (this.disposed) return;
-          base.map = map;
-          base.color = tint;
-          base.needsUpdate = true;
+          applyTexturedLook(base, tint, map);
         })
         .catch(() => {
-          base.color = tint;
+          applyTexturedLook(base, tint, null);
         });
     } else {
       base.color = srgb(material.color);
@@ -557,6 +558,14 @@ export class SceneView {
             for (const material of materials) {
               if (doubleSided) material.side = THREE.DoubleSide;
               material.clippingPlanes = this.clipping;
+              // 受光照的贴图材质（不是 unlit 的扫描）同样只让一部分受光照。
+              if (
+                material instanceof THREE.MeshStandardMaterial &&
+                material.map !== null &&
+                material.emissiveMap === null
+              ) {
+                applyTexturedLook(material, material.color.clone(), material.map);
+              }
             }
           });
           resolve(gltf.scene);
@@ -798,12 +807,15 @@ export class SceneView {
 
       // 扫描。
       const scan = scans[index];
+      let scanInstance: THREE.Object3D | null = null;
       if (scan) {
         hasScan = true;
         const instance = scan.clone(true);
         instance.traverse((object) => {
           object.userData.sharedGeometry = true;
           object.userData.sharedMaterial = true;
+          // 取景时扫描单独算（分位包围盒），不按网格的外包盒算。
+          object.userData.scanPart = true;
         });
         instance.userData.shared = true;
         if (member.scanTransform && member.scanTransform.length === 16) {
@@ -812,6 +824,7 @@ export class SceneView {
         }
         instance.name = 'scan';
         group.add(instance);
+        scanInstance = instance;
         instance.traverse((object) => {
           const mesh = object as THREE.Mesh;
           if (mesh.isMesh) triangles += (mesh.geometry.index?.count ?? 0) / 3;
@@ -819,7 +832,7 @@ export class SceneView {
       }
 
       this.buildOverlay(member, overlay, content.members.length > 1);
-      this.frameSources.push(frameSourceOf(member, group));
+      this.frameSources.push(frameSourceOf(member, group, scanInstance));
     });
 
     this.links = content.links;
@@ -1376,6 +1389,7 @@ export class SceneView {
   /**
    * 取景用的包围盒：每个成员里内容（物件、方块、扫描）的包围盒和它的取景范围（实体区，
    * 优化 + 扩展视图再加虚拟区）求交后合并；没有定义实体区的成员用全部内容。
+   * 扫描按表面（三角形按面积加权）的 2%–98% 分位包围盒算，去掉零星的离群点（framing.ts 的 `scanFrameBox`）。
    * 开着剖切时顶部压到剖切高度（上面的内容反正看不见）。
    */
   private frameTarget(): THREE.Box3 {
@@ -1384,8 +1398,11 @@ export class SceneView {
     for (const source of this.frameSources) {
       const box = new THREE.Box3();
       source.group.traverse((object) => {
-        if ((object as THREE.Mesh).isMesh) box.union(new THREE.Box3().expandByObject(object));
+        if ((object as THREE.Mesh).isMesh && object.userData.scanPart !== true) {
+          box.union(new THREE.Box3().expandByObject(object));
+        }
       });
+      if (source.scan !== null) box.union(this.scanBox(source.scan));
       for (const extra of source.extraBoxes) box.union(extra);
       out.union(clipBox(box, source.clips));
     }
@@ -1394,6 +1411,15 @@ export class SceneView {
       out.max.y = Math.min(out.max.y, this.cutHeight);
     }
     return out;
+  }
+
+  private scanBox(scan: THREE.Object3D): THREE.Box3 {
+    let box = this.scanBoxes.get(scan);
+    if (box === undefined) {
+      box = scanFrameBox(scan);
+      this.scanBoxes.set(scan, box);
+    }
+    return box;
   }
 
   /**
@@ -1775,10 +1801,15 @@ function placedGridBox(placement: Placement, box: readonly number[]): THREE.Box3
   );
 }
 
-/** 成员的取景来源：取景范围（实体区，扩展视图加虚拟区），只有模型、可能还没加载完的物件，虚拟区。 */
-function frameSourceOf(member: MemberContent, group: THREE.Object3D): FrameSource {
+/** 成员的取景来源：取景范围（实体区，扩展视图加虚拟区），只有模型、可能还没加载完的物件，虚拟区，扫描。 */
+function frameSourceOf(
+  member: MemberContent,
+  group: THREE.Object3D,
+  scan: THREE.Object3D | null,
+): FrameSource {
   return {
     group,
+    scan,
     clips: member.view.frameBoxes.map((box) => placedGridBox(member.placement, box)),
     extraBoxes: [
       ...member.view.entities

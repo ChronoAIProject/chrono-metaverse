@@ -13,7 +13,7 @@ import {
 } from '../core/scene';
 import { useAssetLoaders } from '../data/hooks';
 import { runtimeError, type LoadProgress, type RuntimeError } from '../data/spaceRuntime';
-import { useRebuiltStyle } from '../routing/routes';
+import { useRebuiltStyle, useViewMode } from '../routing/routes';
 import { formatTime } from '../timeline/TimelineBar';
 import { Viewer, type SceneViewFactory } from '../viewer/Viewer';
 import {
@@ -31,6 +31,7 @@ export interface PreviewPageProps {
   readonly token: string | null;
   readonly client: PublicClient;
   readonly createView?: SceneViewFactory;
+  /** 默认视图：地址里没有（或不认识）`?view=` 时用它；切回它时地址里不写 view。 */
   readonly initialMode?: ViewMode;
 }
 
@@ -47,7 +48,7 @@ export function PreviewPage({
   createView,
   initialMode = 'extended',
 }: PreviewPageProps) {
-  const [mode, setMode] = useState<ViewMode>(initialMode);
+  const [mode, setMode] = useViewMode(initialMode);
   const [style, setStyle] = useRebuiltStyle();
   const [cutEnabled, setCutEnabled] = useState(true);
   const [cutHeight, setCutHeight] = useState(2.2);
