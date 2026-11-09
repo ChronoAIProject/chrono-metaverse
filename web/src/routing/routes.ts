@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { RebuiltStyle } from '../core/scene';
+import { VIEW_MODES, type RebuiltStyle, type ViewMode } from '../core/scene';
 
 /**
  * 页面路由。照搬 CMA web/src/routing/routes.ts 的写法：路径和路由对象一一对应、
@@ -11,7 +11,8 @@ import type { RebuiltStyle } from '../core/scene';
  * - `/`：首页。
  *
  * 令牌在 `#` 后面，不属于路由，也不会发给服务器。
- * 页面的显示选项放在查询参数里（目前只有重建层画法 `?style=blocks`），不碰 `#` 后面的令牌。
+ * 页面的显示选项放在查询参数里（视图 `?view=raw|optimized|extended`、重建层画法 `?style=blocks`），
+ * 不碰 `#` 后面的令牌。
  */
 export type AppRoute =
   | { readonly kind: 'home' }
@@ -117,4 +118,44 @@ export function useRebuiltStyle(): readonly [RebuiltStyle, (style: RebuiltStyle)
     }
   }, []);
   return [style, change] as const;
+}
+
+/** 查询参数里记住的视图的键。 */
+export const VIEW_PARAM = 'view';
+
+/** 地址里指定的视图：`?view=raw|optimized|extended`；没有或不认识的值返回 null（用页面的默认视图）。 */
+export function viewFromSearch(search: string): ViewMode | null {
+  const value = new URLSearchParams(search).get(VIEW_PARAM);
+  return VIEW_MODES.find((mode) => mode.id === value)?.id ?? null;
+}
+
+/** 换掉查询参数里的视图（等于页面的默认视图时不写），其他参数原样保留。返回 `''` 或 `?…`。 */
+export function searchWithView(search: string, view: ViewMode, fallback: ViewMode): string {
+  const params = new URLSearchParams(search);
+  if (view === fallback) params.delete(VIEW_PARAM);
+  else params.set(VIEW_PARAM, view);
+  const text = params.toString();
+  return text === '' ? '' : `?${text}`;
+}
+
+/**
+ * 视图（原始 / 优化 / 优化 + 扩展），记在地址的查询参数里：打开 `?view=raw` 的链接直接进原始视图，
+ * 切换视图时用 replaceState 更新地址（页面的默认视图不写），路径和 `#share=…` 原样保留。
+ */
+export function useViewMode(fallback: ViewMode): readonly [ViewMode, (mode: ViewMode) => void] {
+  const [mode, setMode] = useState<ViewMode>(
+    () => viewFromSearch(window.location.search) ?? fallback,
+  );
+  const change = useCallback(
+    (next: ViewMode) => {
+      setMode(next);
+      const { pathname, search, hash } = window.location;
+      const nextSearch = searchWithView(search, next, fallback);
+      if (nextSearch !== search) {
+        window.history.replaceState(window.history.state, '', `${pathname}${nextSearch}${hash}`);
+      }
+    },
+    [fallback],
+  );
+  return [mode, change] as const;
 }

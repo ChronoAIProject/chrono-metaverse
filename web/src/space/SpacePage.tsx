@@ -12,7 +12,7 @@ import {
 import { buildVisuals } from '../core/visuals';
 import { useAssetLoaders, useDensity, useRuntimeState } from '../data/hooks';
 import { SpaceRuntime } from '../data/spaceRuntime';
-import { useRebuiltStyle } from '../routing/routes';
+import { useRebuiltStyle, useViewMode } from '../routing/routes';
 import { TimelineBar, formatTime } from '../timeline/TimelineBar';
 import { Viewer, type SceneViewFactory } from '../viewer/Viewer';
 import {
@@ -33,7 +33,7 @@ export interface SpacePageProps {
   readonly hasShareToken: boolean;
   readonly createView?: SceneViewFactory;
   readonly now?: () => number;
-  /** 初始视图（测试和截图用）。 */
+  /** 默认视图：地址里没有（或不认识）`?view=` 时用它；切回它时地址里不写 view。 */
   readonly initialMode?: ViewMode;
 }
 
@@ -55,7 +55,7 @@ export function SpacePage({
   now = Date.now,
   initialMode = 'optimized',
 }: SpacePageProps) {
-  const [mode, setMode] = useState<ViewMode>(initialMode);
+  const [mode, setMode] = useViewMode(initialMode);
   const [style, setStyle] = useRebuiltStyle();
   const [cutEnabled, setCutEnabled] = useState(true);
   const [cutHeight, setCutHeight] = useState(2.2);

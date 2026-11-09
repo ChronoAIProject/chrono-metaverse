@@ -13,7 +13,7 @@ import {
 import { buildVisuals, type SpaceVisualInput } from '../core/visuals';
 import { useAssetLoaders, useDensity, useRuntimeStates, useStableList } from '../data/hooks';
 import { SpaceRuntime, runtimeError, type RuntimeError } from '../data/spaceRuntime';
-import { useRebuiltStyle } from '../routing/routes';
+import { useRebuiltStyle, useViewMode } from '../routing/routes';
 import { TimelineBar } from '../timeline/TimelineBar';
 import { Viewer, type SceneViewFactory } from '../viewer/Viewer';
 import {
@@ -40,6 +40,7 @@ export interface UniversePageProps {
   readonly hasShareToken: boolean;
   readonly createView?: SceneViewFactory;
   readonly now?: () => number;
+  /** 默认视图：地址里没有（或不认识）`?view=` 时用它；切回它时地址里不写 view。 */
   readonly initialMode?: ViewMode;
 }
 
@@ -58,7 +59,7 @@ export function UniversePage({
   now = Date.now,
   initialMode = 'optimized',
 }: UniversePageProps) {
-  const [mode, setMode] = useState<ViewMode>(initialMode);
+  const [mode, setMode] = useViewMode(initialMode);
   const [style, setStyle] = useRebuiltStyle();
   const [cutEnabled, setCutEnabled] = useState(true);
   const [cutHeight, setCutHeight] = useState(2.2);

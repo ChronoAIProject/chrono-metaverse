@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { parseRoute, routePath, searchWithStyle, styleFromSearch, type AppRoute } from './routes';
+import {
+  parseRoute,
+  routePath,
+  searchWithStyle,
+  searchWithView,
+  styleFromSearch,
+  viewFromSearch,
+  type AppRoute,
+} from './routes';
 
 const ROUTES: readonly AppRoute[] = [
   { kind: 'home' },
@@ -49,5 +57,30 @@ describe('地址里记住的重建层画法', () => {
     expect(searchWithStyle('?a=1&style=blocks', 'shapes')).toBe('?a=1');
     expect(searchWithStyle('?a=1', 'blocks')).toBe('?a=1&style=blocks');
     expect(searchWithStyle('', 'shapes')).toBe('');
+  });
+});
+
+describe('地址里指定的视图', () => {
+  it('?view=raw|optimized|extended；没有或不认识的值返回 null（用页面的默认视图）', () => {
+    expect(viewFromSearch('?view=raw')).toBe('raw');
+    expect(viewFromSearch('?style=blocks&view=extended')).toBe('extended');
+    expect(viewFromSearch('?view=optimized')).toBe('optimized');
+    expect(viewFromSearch('')).toBeNull();
+    expect(viewFromSearch('?view=RAW')).toBeNull();
+    expect(viewFromSearch('?view=')).toBeNull();
+  });
+
+  it('只换 view，其他查询参数原样保留；等于页面默认视图时不写', () => {
+    expect(searchWithView('', 'raw', 'optimized')).toBe('?view=raw');
+    expect(searchWithView('?view=raw', 'optimized', 'optimized')).toBe('');
+    expect(searchWithView('?style=blocks', 'extended', 'optimized')).toBe(
+      '?style=blocks&view=extended',
+    );
+    expect(searchWithView('?style=blocks&view=raw', 'optimized', 'optimized')).toBe(
+      '?style=blocks',
+    );
+    // 预览页默认是优化 + 扩展：切到优化要写出来。
+    expect(searchWithView('', 'optimized', 'extended')).toBe('?view=optimized');
+    expect(searchWithView('?view=optimized', 'extended', 'extended')).toBe('');
   });
 });

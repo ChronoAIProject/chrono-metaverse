@@ -207,6 +207,58 @@ describe('应用外壳', () => {
     expect(screen.getByRole('button', { name: '方块' })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it('打开带 ?view=raw 的链接：直接进原始视图；切换视图时更新地址，# 后面的令牌不受影响', async () => {
+    const { factory, views } = fakeViewFactory();
+    visit('/s/demo-lobby?view=raw#share=fixture-share-token-0123456789abcdef');
+    render(<App createClient={createClient} createView={factory} />);
+    expect(await screen.findByRole('heading', { name: '演示前厅' })).toBeInTheDocument();
+    await waitFor(() => expect(views[0]?.last().mode).toBe('raw'));
+    // 第一次交给场景的就是原始视图（不先画一遍优化视图）。
+    expect(views[0]!.contents.every((content) => content.mode === 'raw')).toBe(true);
+    expect(screen.getByRole('button', { name: '原始' })).toHaveAttribute('aria-pressed', 'true');
+
+    await userEvent.click(screen.getByRole('button', { name: '优化 + 扩展' }));
+    await waitFor(() => expect(views[0]!.last().mode).toBe('extended'));
+    expect(window.location.pathname).toBe('/s/demo-lobby');
+    expect(window.location.search).toBe('?view=extended');
+    expect(window.location.hash).toBe('#share=fixture-share-token-0123456789abcdef');
+
+    // 和画法参数互不影响；切回默认的优化视图时地址里不写 view。
+    await userEvent.click(screen.getByRole('button', { name: '方块' }));
+    expect(window.location.search).toBe('?view=extended&style=blocks');
+    await userEvent.click(screen.getByRole('button', { name: '优化' }));
+    await waitFor(() => expect(views[0]!.last().mode).toBe('optimized'));
+    expect(window.location.search).toBe('?style=blocks');
+    expect(window.location.hash).toBe('#share=fixture-share-token-0123456789abcdef');
+  });
+
+  it('?view= 的值不认识时用默认视图；组合页和预览页同样适用', async () => {
+    const space = fakeViewFactory();
+    visit('/s/demo-lobby?view=nope#share=fixture-share-token-0123456789abcdef');
+    const { unmount } = render(<App createClient={createClient} createView={space.factory} />);
+    await waitFor(() => expect(space.views[0]?.last().mode).toBe('optimized'));
+    unmount();
+
+    const universe = fakeViewFactory();
+    visit('/u/demo-street?view=extended#share=fixture-universe-token-00112233445566778899');
+    const second = render(<App createClient={createClient} createView={universe.factory} />);
+    await waitFor(() => expect(universe.views[0]?.last().mode).toBe('extended'));
+    second.unmount();
+
+    // 预览页默认是优化 + 扩展；切到优化时写出来，切回默认时去掉。
+    const preview = fakeViewFactory();
+    visit('/preview?view=raw#t=fixture-preview-token-aabbccddeeff00112233445566778899');
+    render(<App createClient={createClient} createView={preview.factory} />);
+    await waitFor(() => expect(preview.views[0]?.last().mode).toBe('raw'));
+    await userEvent.click(screen.getByRole('button', { name: '优化' }));
+    await waitFor(() => expect(preview.views[0]!.last().mode).toBe('optimized'));
+    expect(window.location.search).toBe('?view=optimized');
+    await userEvent.click(screen.getByRole('button', { name: '优化 + 扩展' }));
+    await waitFor(() => expect(preview.views[0]!.last().mode).toBe('extended'));
+    expect(window.location.search).toBe('');
+    expect(window.location.hash).toBe('#t=fixture-preview-token-aabbccddeeff00112233445566778899');
+  });
+
   it('显示全部标签：开关传给场景', async () => {
     const { factory, views } = fakeViewFactory();
     visit(FIXTURE_LINK);
