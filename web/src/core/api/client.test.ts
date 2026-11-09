@@ -9,10 +9,13 @@ import {
   fixtureStore,
 } from '../../fixtures';
 import { fixtureFetch } from '../../fixtures/server';
+import { SENSOR_BURST } from '../../fixtures/timeline';
+import type { CommitSummary, Page, SpaceEvent } from './types';
 import {
   allEvents,
   allTimeline,
   createPublicClient,
+  MAX_PAGES,
   previewTokenFromHash,
   PublicApiError,
   shareTokenFromHash,
@@ -96,12 +99,21 @@ describe('公开读接口客户端', () => {
     });
     expect(events.length).toBeGreaterThan(0);
     expect(events.every((e) => e.type === 'order.served')).toBe(true);
-    // 公开投影：data 只含公开字段，内部级事件不返回。
+    // 公开投影（与接口服务相同）：data 只含公开字段，内部级事件不返回；
+    // 默认内部级、写入时显式标成公开的事件照样返回；返回的事件都不带 visibility。
     const day = await allEvents(client, SPACE_ID, {
       from: '2026-10-03T00:00:00Z',
       to: '2026-10-04T00:00:00Z',
     });
-    expect(day.some((e) => e.type === 'staff.note')).toBe(false);
+    const notes = day.filter((e) => e.type === 'staff.note');
+    expect(notes.map((e) => e.data)).toEqual([{ note: '今日新品：桂花拿铁' }]);
+    expect(day.every((e) => !('visibility' in e) && !('corrects' in e))).toBe(true);
+    expect(day.every((e) => e.spaceId === SPACE_ID)).toBe(true);
+    // 空间信息和接口服务一样返回全部事件类型（包括默认内部级的）。
+    const info = await client.space(SPACE_ID);
+    expect(info.eventTypes?.find((t) => t.type === 'staff.note')?.defaultVisibility).toBe(
+      'internal',
+    );
     await expect(
       client.events(SPACE_ID, { from: '2026-10-01T00:00:00Z', to: '2026-10-03T00:00:00Z' }),
     ).rejects.toThrow(/24 小时/);
@@ -183,5 +195,92 @@ describe('公开读接口客户端', () => {
 
   it('编号为空或是 . / .. 时直接拒绝，不发请求', () => {
     expect(() => client.space('..')).toThrow(PublicApiError);
+  });
+});
+
+describe('分页：只以 nextAfter 判断有没有下一页', () => {
+  const event = (id: string): SpaceEvent => ({
+    id,
+    at: '2026-10-02T01:00:00.000Z',
+    recordedAt: '2026-10-02T01:00:00.000Z',
+    source: 'pos',
+    type: 'shop.status',
+    anchorId: '_space',
+  });
+
+  /** 按给定的页依次回答，记下每次请求的 after。 */
+  function pager<T>(pages: readonly Page<T>[]) {
+    const afters: (string | undefined)[] = [];
+    const fetchPage = vi.fn(async (_spaceId: string, q: { after?: string } = {}) => {
+      afters.push(q.after);
+      return pages[afters.length - 1] ?? { items: [], nextAfter: null };
+    });
+    return { fetchPage, afters };
+  }
+
+  it('空页但 nextAfter 不为 null 时接着翻，直到 nextAfter 为 null', async () => {
+    const { fetchPage, afters } = pager<SpaceEvent>([
+      { items: [], nextAfter: 'c1' },
+      { items: [], nextAfter: 'c2' },
+      { items: [event('a')], nextAfter: 'c3' },
+      { items: [event('b')], nextAfter: null },
+    ]);
+    const events = await allEvents({ events: fetchPage }, 'demo', { since: 'x' });
+    expect(events.map((e) => e.id)).toEqual(['a', 'b']);
+    expect(afters).toEqual([undefined, 'c1', 'c2', 'c3']);
+    expect(fetchPage.mock.calls[1]![1]).toEqual({ since: 'x', after: 'c1' });
+  });
+
+  it('nextAfter 没给（undefined）也当作没有下一页', async () => {
+    const { fetchPage } = pager<SpaceEvent>([
+      { items: [event('a')], nextAfter: undefined as unknown as null },
+    ]);
+    expect(await allEvents({ events: fetchPage }, 'demo')).toHaveLength(1);
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('游标不前进时停下；一直有下一页时最多取 MAX_PAGES 页', async () => {
+    const stuck = pager<SpaceEvent>([
+      { items: [event('a')], nextAfter: 'same' },
+      { items: [event('a')], nextAfter: 'same' },
+    ]);
+    expect(await allEvents({ events: stuck.fetchPage }, 'demo')).toHaveLength(2);
+    expect(stuck.afters).toEqual([undefined, 'same']);
+
+    let n = 0;
+    const endless = vi.fn(async () => ({ items: [], nextAfter: `p${(n += 1)}` }));
+    expect(await allEvents({ events: endless }, 'demo')).toEqual([]);
+    expect(endless).toHaveBeenCalledTimes(MAX_PAGES);
+  });
+
+  it('提交列表同样：空页不停，按 seq 去重排序', async () => {
+    const commit = (seq: number): CommitSummary => ({
+      seq,
+      at: '2026-10-01T09:00:00.000Z',
+      message: `#${seq}`,
+      actor: { kind: 'job' },
+    });
+    const { fetchPage } = pager<CommitSummary>([
+      { items: [commit(2)], nextAfter: '2' },
+      { items: [], nextAfter: '2b' },
+      { items: [commit(1), commit(2), commit(3)], nextAfter: null },
+    ]);
+    const commits = await allTimeline({ timeline: fetchPage }, 'demo');
+    expect(commits.map((c) => c.seq)).toEqual([1, 2, 3]);
+    expect(fetchPage).toHaveBeenCalledTimes(3);
+  });
+
+  it('夹具接口和真实接口一样先按原始记录分页：一整页内部级事件是空页，后面的公开事件照样取到', async () => {
+    const client = createPublicClient({ share: SHARE_TOKEN, fetch: fixtureFetch });
+    const day = { from: '2026-10-02T00:00:00Z', to: '2026-10-03T00:00:00Z' };
+    const first = await client.events(SPACE_ID, day);
+    expect(SENSOR_BURST).toBeGreaterThan(400);
+    expect(first.items).toEqual([]);
+    expect(first.nextAfter).not.toBeNull();
+    const events = await allEvents(client, SPACE_ID, day);
+    expect(events.some((e) => e.type === 'shop.status' && e.data?.status === '营业中')).toBe(true);
+    expect(events.some((e) => e.type === 'sensor.door')).toBe(false);
+    // 时间窗左闭右开：to 那一刻的事件不在这一段里。
+    expect(events.every((e) => Date.parse(e.at) < Date.parse(day.to))).toBe(true);
   });
 });

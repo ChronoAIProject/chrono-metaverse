@@ -162,7 +162,8 @@ export function spaceInfo(space: FixtureSpace): SpaceInfo {
     plots: space.plots,
     anchors: space.anchors.filter((a) => a.visibility === 'public'),
     head: headOf(space),
-    eventTypes: space.eventTypes.filter((t) => t.defaultVisibility !== 'internal'),
+    // 与接口服务相同：返回全部事件类型和版本（含默认内部级的），不按 defaultVisibility 过滤。
+    eventTypes: space.eventTypes,
   };
 }
 
@@ -389,7 +390,6 @@ export function emitFixture(kind: EmitKind, now: number = Date.now()): { seq: nu
       recordedAt: time,
       source: 'pos',
       typeVersion: 1,
-      visibility: 'public',
       ...event,
     });
   if (kind === 'event') {

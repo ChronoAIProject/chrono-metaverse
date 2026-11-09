@@ -1,5 +1,5 @@
 import type { AnchorState, EventTypeDef, SpaceEvent, UniverseLink } from './api/types';
-import { toMillis } from './events';
+import { toMillis, valueAtPath } from './events';
 import type { Rgb } from './shapes/types';
 
 /**
@@ -138,15 +138,6 @@ export function eventTypeFor(
   return best;
 }
 
-function fieldValue(data: Readonly<Record<string, unknown>> | undefined, path: string): unknown {
-  let current: unknown = data;
-  for (const part of path.split('.')) {
-    if (current === null || typeof current !== 'object') return undefined;
-    current = (current as Record<string, unknown>)[part];
-  }
-  return current;
-}
-
 function plain(value: unknown): string {
   if (value === undefined || value === null) return '';
   if (typeof value === 'string') return value;
@@ -168,7 +159,7 @@ export function renderTemplate(
       if (publicFields !== undefined && publicFields.length > 0 && !publicFields.includes(field)) {
         return '';
       }
-      return plain(fieldValue(data, field));
+      return plain(valueAtPath(data, field));
     })
     .trim();
 }
@@ -184,11 +175,21 @@ function eventText(def: EventTypeDef, data: Readonly<Record<string, unknown>> | 
   return text === '' ? undefined : text;
 }
 
+/** 把值放回点分路径的位置：`party.size` → `{ party: { size: 值 } }`。 */
+function nestAt(path: string, value: unknown): Record<string, unknown> {
+  const parts = path.split('.');
+  let nested: unknown = value;
+  for (let i = parts.length - 1; i >= 0; i -= 1) nested = { [parts[i]!]: nested };
+  return nested as Record<string, unknown>;
+}
+
 /** 状态的文本：有模板用模板，没有时用状态值（状态值就是类型名时不显示）。 */
 function stateText(def: EventTypeDef, state: AnchorState): string | undefined {
   const data =
     state.data ??
-    (def.state?.value !== undefined ? { [def.state.value]: state.value } : { value: state.value });
+    (def.state?.value !== undefined
+      ? nestAt(def.state.value, state.value)
+      : { value: state.value });
   const templated = eventText(def, data);
   if (templated !== undefined) return templated;
   if (state.value === null || state.value === undefined || state.value === state.type)

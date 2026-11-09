@@ -368,12 +368,12 @@ export class SpaceRuntime {
     for (let index = first; index <= last; index += 1)
       raw.push(...(this.bucketData.get(index) ?? []));
     const deduped = [...new Map(raw.map((event) => [event.id, event])).values()];
-    const events = effectiveEvents(deduped, { publicOnly: true, types: this.types }).filter(
-      (event) => {
-        const at = toMillis(event.at);
-        return at >= t - look.before && at <= t + look.after;
-      },
-    );
+    // 公开接口已经按生效的可见级别过滤过、不带 visibility：不能再按类型的默认级别过滤，
+    // 否则默认内部级、显式标成公开的事件会被丢掉（只丢显式内部级的记录）。
+    const events = effectiveEvents(deduped, { publicOnly: true }).filter((event) => {
+      const at = toMillis(event.at);
+      return at >= t - look.before && at <= t + look.after;
+    });
     this.update({ events });
   }
 
@@ -530,12 +530,11 @@ export class SpaceRuntime {
   private updateLiveView(): void {
     const t = this.time;
     const look = eventLookMs(this.types, this.windowMs);
-    const events = effectiveEvents(this.liveRaw, { publicOnly: true, types: this.types }).filter(
-      (event) => {
-        const at = toMillis(event.at);
-        return at >= t - look.before && at <= t + 60_000;
-      },
-    );
+    // 同回放：公开接口的数据不再按类型默认级别过滤。
+    const events = effectiveEvents(this.liveRaw, { publicOnly: true }).filter((event) => {
+      const at = toMillis(event.at);
+      return at >= t - look.before && at <= t + 60_000;
+    });
     this.update({ events, states: this.liveStates });
   }
 

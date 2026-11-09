@@ -1,5 +1,5 @@
 import type { SpaceEvent } from '../core/api/types';
-import { densityBuckets, effectiveEvents, stateAt, toMillis } from '../core/events';
+import { densityBuckets, effectiveEvents, stateAt, toMillis, valueAtPath } from '../core/events';
 import {
   emitFixture,
   fixtureStore,
@@ -19,7 +19,8 @@ import {
  * - 凭链接查看：不带或带错分享令牌一律 404，不暴露空间是否存在；
  * - 组合的分享令牌能读成员空间（请求带 `?universe=<组合编号>`）；
  * - 预览令牌放在 `Authorization: Preview <令牌>` 里，预览响应不缓存；
- * - 分页：提交每页 3 条、事件每页 400 条（故意比真实接口小，测试能走到翻页）；
+ * - 分页：提交每页 3 条、事件每页 400 条（故意比真实接口小，测试能走到翻页）；事件和真实接口
+ *   一样先按原始记录分页再做公开投影，一整页都是内部级事件时返回空的 items 和非空的 nextAfter；
  * - 写请求一律拒绝。另有 `/__fixtures/emit`、`/__fixtures/reset` 两个控制地址（不在 /api 下），
  *   供"现在"模式的端到端测试模拟新事件和新提交。
  */
@@ -93,16 +94,66 @@ function page<T>(items: readonly T[], size: number, after: string | null) {
   return { items: slice, nextAfter: next };
 }
 
-/** 公开投影：只留公开级，data 只留 publicFields。 */
-function publicEvents(space: FixtureSpace): SpaceEvent[] {
-  const types = new Map(space.eventTypes.map((t) => [t.type, t]));
-  return space.events
-    .filter((e) => (e.visibility ?? types.get(e.type)?.defaultVisibility) !== 'internal')
+/** 只留登记的公开字段（点分路径还原成嵌套对象；没登记任何字段时是空对象）。 */
+function projectFields(
+  data: Readonly<Record<string, unknown>>,
+  fields: readonly string[],
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const path of fields) {
+    const value = valueAtPath(data, path);
+    if (value === undefined) continue;
+    const parts = path.split('.');
+    let target = out;
+    for (const part of parts.slice(0, -1)) {
+      const child = target[part];
+      if (child === null || typeof child !== 'object') target[part] = {};
+      target = target[part] as Record<string, unknown>;
+    }
+    target[parts[parts.length - 1]!] = value;
+  }
+  return out;
+}
+
+/**
+ * 公开投影（与接口服务 `public_items` 相同）：先应用更正，再按生效的可见级别过滤
+ * （事件自己写的优先，否则取 (type, typeVersion) 那个版本的默认级别），只留公开锚点上的事件，
+ * data 只留公开字段。输出和真实接口一样不带 visibility、corrects、sourceEventId。
+ */
+function publicProjection(space: FixtureSpace, records: readonly SpaceEvent[]): SpaceEvent[] {
+  const anchors = new Set(
+    space.anchors.filter((a) => a.visibility === 'public').map((a) => a.anchorId),
+  );
+  anchors.add('_space');
+  const redacted = new Set(records.filter((e) => e.redacted).map((e) => e.corrects ?? e.id));
+  return effectiveEvents(records, { publicOnly: true, types: space.eventTypes })
+    .filter((e) => anchors.has(e.anchorId))
     .map((e) => {
-      const fields = types.get(e.type)?.publicFields;
-      if (fields === undefined || e.data === undefined) return e;
-      return { ...e, data: Object.fromEntries(fields.map((f) => [f, e.data![f]])) };
+      const def = space.eventTypes.find((t) => t.type === e.type && t.version === e.typeVersion);
+      const isRedacted = redacted.has(e.id);
+      const data =
+        isRedacted || e.data === undefined
+          ? undefined
+          : projectFields(e.data, def?.publicFields ?? []);
+      return {
+        id: e.id,
+        spaceId: space.id,
+        at: e.at,
+        recordedAt: e.recordedAt,
+        source: e.source,
+        type: e.type,
+        typeVersion: e.typeVersion,
+        anchorId: e.anchorId,
+        ...(data === undefined ? {} : { data }),
+        ...(e.correlationId === undefined ? {} : { correlationId: e.correlationId }),
+        ...(isRedacted ? { redacted: true } : {}),
+      };
     });
+}
+
+/** 空间的全部公开事件（已应用更正）。 */
+function publicEvents(space: FixtureSpace): SpaceEvent[] {
+  return publicProjection(space, space.events);
 }
 
 function spaceAuthorized(
@@ -271,24 +322,42 @@ export function fixtureReply(
       return json(200, page(items, TIMELINE_PAGE, params.get('after')));
     }
     case '/events': {
+      // 与接口服务相同：给了 since 是增量（按记录时间 recordedAt），否则是时间窗 [from, to)，
+      // 每次最多 24 小时；增量时 from/to 只是对 at 的筛选，不限跨度。
+      const incremental = params.has('since');
       const from = params.has('from') ? toMillis(params.get('from')!) : -Infinity;
       const to = params.has('to') ? toMillis(params.get('to')!) : Infinity;
-      const since = params.has('since') ? toMillis(params.get('since')!) : -Infinity;
-      // from/to 每次最多 24 小时；只按 since 增量取时不限。
-      if ((params.has('from') || params.has('to')) && to - from > 24 * 3_600_000 + 1) {
+      if (
+        !incremental &&
+        (params.has('from') || params.has('to')) &&
+        to - from > 24 * 3_600_000 + 1
+      ) {
         return problem(400, 'range_too_long', '每次最多查 24 小时');
       }
       const types = params.get('types')?.split(',').filter(Boolean);
-      const items = publicEvents(space).filter((e) => {
+      // 先按原始记录分页（时间窗：原事件按 (at, 编号)；增量：原事件和更正按 (recordedAt, 编号)），
+      // 内部级事件、内部锚点上的事件也占名额；再对这一页涉及的事件做公开投影。
+      // 所以某一页的 items 可能是空的，但 nextAfter 不为 null（客户端要接着翻）。
+      const order = (key: 'at' | 'recordedAt') => (a: SpaceEvent, b: SpaceEvent) =>
+        toMillis(a[key]) - toMillis(b[key]) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+      const ordered = incremental
+        ? space.events
+            .filter((e) => toMillis(e.recordedAt) >= toMillis(params.get('since')!))
+            .sort(order('recordedAt'))
+        : space.events
+            .filter((e) => {
+              const at = toMillis(e.at);
+              return e.corrects === undefined && at >= from && at < to;
+            })
+            .sort(order('at'));
+      const { items: slice, nextAfter } = page(ordered, EVENTS_PAGE, params.get('after'));
+      const touched = new Set(slice.map((e) => e.corrects ?? e.id));
+      const records = space.events.filter((e) => touched.has(e.corrects ?? e.id));
+      const items = publicProjection(space, records).filter((e) => {
         const at = toMillis(e.at);
-        return (
-          at >= from &&
-          at <= to &&
-          toMillis(e.recordedAt) >= since &&
-          (types === undefined || types.includes(e.type))
-        );
+        return at >= from && at < to && (types === undefined || types.includes(e.type));
       });
-      return json(200, page(items, EVENTS_PAGE, params.get('after')));
+      return json(200, { items, nextAfter });
     }
     case '/events/density': {
       const from = params.get('from');
@@ -300,10 +369,7 @@ export function fixtureReply(
       if (toMillis(to) - toMillis(from) > 90 * 86_400_000 + 1) {
         return problem(400, 'range_too_long', '最长 90 天');
       }
-      const events = effectiveEvents(publicEvents(space), {
-        publicOnly: true,
-        types: space.eventTypes,
-      });
+      const events = publicEvents(space);
       return json(200, {
         from,
         to,
@@ -313,10 +379,7 @@ export function fixtureReply(
     }
     case '/state': {
       const at = params.get('at') ?? new Date().toISOString();
-      const events = effectiveEvents(publicEvents(space), {
-        publicOnly: true,
-        types: space.eventTypes,
-      });
+      const events = publicEvents(space);
       const byId = new Map(events.map((e) => [e.id, e]));
       const states = [...stateAt(events, space.eventTypes, at).values()].flatMap((m) =>
         [...m.values()].map((state) => {

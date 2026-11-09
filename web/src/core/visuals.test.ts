@@ -157,6 +157,34 @@ describe('T 时刻要画的东西', () => {
     expect(visuals.find((v) => v.kind === 'spawn')).toMatchObject({ asset: 'a'.repeat(64) });
   });
 
+  it('状态值来自点分路径、状态没带 data 时，模板按同一路径取到状态值', () => {
+    const seated: EventTypeDef = {
+      type: 'party.seated',
+      version: 1,
+      state: { key: 'party', value: 'party.size' },
+      display: { kind: 'label', labelTemplate: '{party.size} 位' },
+    };
+    const input: SpaceVisualInput = {
+      ...space('lobby', [], [state('t', 'party', 'party.seated', 4, T)]),
+      types: [seated],
+    };
+    expect(buildVisuals([input], { at: T })).toContainEqual(
+      expect.objectContaining({ kind: 'label', text: '4 位' }),
+    );
+    // 带了 data 时以 data 为准。
+    const withData: SpaceVisualInput = {
+      ...space(
+        'lobby',
+        [],
+        [{ ...state('t', 'party', 'party.seated', 4, T), data: { party: { size: 2 } } }],
+      ),
+      types: [seated],
+    };
+    expect(buildVisuals([withData], { at: T })).toContainEqual(
+      expect.objectContaining({ kind: 'label', text: '2 位' }),
+    );
+  });
+
   it('瞬时事件只在时间窗内显示；窗口取 durationSec 和调用方窗口里大的', () => {
     const served = event('order.served', T - 2000, 'table-01');
     const note = event('note', T - 60_000, 'door', { data: { text: '你好' } });

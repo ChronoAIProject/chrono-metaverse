@@ -21,7 +21,9 @@ import type {
  *   `Authorization: Share <令牌>` 里，不进地址栏以外的任何地方；
  * - 组合页用组合的分享令牌读成员空间：每个请求另带 `?universe=<组合编号>`，
  *   服务端据此核对该空间是这个组合的成员（设计 8.2）；
- * - 分页接口（提交列表、事件）用 `allTimeline`、`allEvents` 按 `nextAfter` 取完；
+ * - 分页接口（提交列表、事件）用 `allTimeline`、`allEvents` 按 `nextAfter` 取完：只以
+ *   `nextAfter` 判断有没有下一页，空页也照样往下翻（服务端按原始记录分页后再做公开投影，
+ *   一整页都是内部级事件时 `items` 为空但还有下一页）；
  * - 错误按 CMA 的问题文档格式（RFC 9457：`code`、`detail`、`title`）解析；
  * - 区块按内容哈希下载，解压后核对哈希。
  */
@@ -210,7 +212,28 @@ async function readBody(response: Response, onProgress?: ProgressCallback): Prom
 }
 
 /** 分页结果每页的上限保护：服务端如果一直给 nextAfter，最多取这么多页。 */
-const MAX_PAGES = 200;
+export const MAX_PAGES = 200;
+
+/**
+ * 按 `nextAfter` 取完全部页。只在 `nextAfter` 为 null（或没给）时停：某一页的 `items`
+ * 可以是空的——服务端先按原始记录分页、再做公开投影，一整页都是内部级事件时就是空页，
+ * 后面的页里照样可能有公开事件。`nextAfter` 和本页请求的游标相同（没有前进）时也停下，
+ * 防止死循环；最多取 `MAX_PAGES` 页。
+ */
+async function allPages<T>(
+  fetchPage: (after: string | undefined) => Promise<Page<T>>,
+): Promise<T[]> {
+  const items: T[] = [];
+  let after: string | undefined;
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const result = await fetchPage(after);
+    items.push(...result.items);
+    const next = result.nextAfter;
+    if (next === null || next === undefined || next === after) break;
+    after = next;
+  }
+  return items;
+}
 
 /** 取完提交列表的全部页（每页 ≤ 500）。 */
 export async function allTimeline(
@@ -218,15 +241,7 @@ export async function allTimeline(
   spaceId: string,
   q: Omit<TimelineQuery, 'after'> = {},
 ): Promise<CommitSummary[]> {
-  const items: CommitSummary[] = [];
-  let after: string | undefined;
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const result = await client.timeline(spaceId, { ...q, after });
-    items.push(...result.items);
-    if (result.nextAfter === null || result.nextAfter === undefined || result.items.length === 0)
-      break;
-    after = result.nextAfter;
-  }
+  const items = await allPages((after) => client.timeline(spaceId, { ...q, after }));
   const bySeq = new Map(items.map((commit) => [commit.seq, commit]));
   return [...bySeq.values()].sort((a, b) => a.seq - b.seq);
 }
@@ -237,16 +252,7 @@ export async function allEvents(
   spaceId: string,
   q: Omit<EventsQuery, 'after'> = {},
 ): Promise<SpaceEvent[]> {
-  const items: SpaceEvent[] = [];
-  let after: string | undefined;
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const result = await client.events(spaceId, { ...q, after });
-    items.push(...result.items);
-    if (result.nextAfter === null || result.nextAfter === undefined || result.items.length === 0)
-      break;
-    after = result.nextAfter;
-  }
-  return items;
+  return allPages((after) => client.events(spaceId, { ...q, after }));
 }
 
 export function createPublicClient(options: PublicClientOptions = {}): PublicClient {
