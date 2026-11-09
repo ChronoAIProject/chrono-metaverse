@@ -593,11 +593,13 @@ export class SceneView {
               if (doubleSided) material.side = THREE.DoubleSide;
               material.clippingPlanes = this.clipping;
               // 受光照的贴图材质（不是 unlit 的扫描）同样只让一部分受光照。
+              // 原来的颜色记下来：物件要求不打光（unlit）时按原色显示，不用调暗后的颜色。
               if (
                 material instanceof THREE.MeshStandardMaterial &&
                 material.map !== null &&
                 material.emissiveMap === null
               ) {
+                material.userData.baseColor = material.color.clone();
                 applyTexturedLook(material, material.color.clone(), material.map);
               }
             }
@@ -653,9 +655,10 @@ export class SceneView {
     const standard = source as THREE.MeshStandardMaterial;
     let material: THREE.Material;
     if (look.unlit === true) {
+      const base = source.userData.baseColor as THREE.Color | undefined;
       const basic = new THREE.MeshBasicMaterial({
         map: standard.map ?? null,
-        color: standard.color?.clone() ?? new THREE.Color(0xffffff),
+        color: (base ?? standard.color)?.clone() ?? new THREE.Color(0xffffff),
         side: source.side,
         transparent,
         opacity,
