@@ -19,6 +19,9 @@ x、z 的 0.05% 分位）。前厅扫描在两个坐标系之间差约 (−0.29,
 - 打印两种对齐的变换和差异，以及处理服务将得到的 `transform`（导入后与任务 `result.transform` 对照）。
 - 改了种子以后同步 `infra/chrono-cd/app.json` 的 `METAVERSE_DEMO_SEED`（`node infra/chrono-cd/check-app.mjs`
   会检查两处一致）。
+
+只适用于**新空间的第一次导入**（`auto_align`）。空间已经存在时坐标系已经固定，之后导入的扫描都配准到
+原来的坐标系里，提示要保持原来的坐标，不要用新扫描重算。
 """
 
 from __future__ import annotations

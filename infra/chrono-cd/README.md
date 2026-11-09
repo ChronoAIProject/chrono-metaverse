@@ -279,7 +279,7 @@ curl -s -H "Authorization: Share <令牌>" https://<应用域名>/api/public/spa
 
 **重新导入**（换扫描、改提示、处理服务的重建改进了想重跑）：
 
-1. 改 `demo-seed.json`，把 `revision` 加一（换了扫描或对齐变了就先跑一遍 `demo_seed_hints.py`）；
+1. 改 `demo-seed.json`，把 `revision` 加一。提示坐标是**这个空间**的坐标系：坐标系在第一次导入时固定，之后导入的扫描（哪怕换了一份）都配准到这个坐标系里，所以在同一个空间里重新导入时提示**不要**重算；只有"从头重建"（删掉空间）并且换了扫描时，才用新扫描跑一遍 `demo_seed_hints.py`（它算的是首次导入的对齐）。换了扫描时，配准误差超过 3 厘米处理服务不会自动提交（任务结果是 `needsAlignment`），要等第 7 步做完后经接口 `align_scan` 给出变换；
 2. 同步 `app.json`：`node infra/dev/demo-seed.mjs compact infra/chrono-cd/demo-seed.json` 的输出就是 `METAVERSE_DEMO_SEED` 的值，再跑 `node infra/chrono-cd/check-app.mjs`；
 3. 只改这一项（滚动更新会重启接口服务，种子在同一个空间里再建一个导入任务，空间和演示链接不变）：
 
