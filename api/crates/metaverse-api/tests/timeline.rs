@@ -1603,3 +1603,117 @@ async fn draft_assets_must_belong_to_the_space_and_become_public_on_publish() {
         .unwrap();
     assert_eq!(registered.get_str("commitId").unwrap(), commit_id);
 }
+
+/// 功能级开关打开时（`METAVERSE_REQUIRE_PERMISSIONS=true`），草稿的全部写操作和区域都要求
+/// `metaverse:content:write`，事件类型和抹除要求 `metaverse:event:write`；读草稿不要求。
+#[tokio::test]
+async fn draft_writes_require_content_write_when_permissions_are_enforced() {
+    let Some(app) = TestApp::start_with_env(&[("METAVERSE_REQUIRE_PERMISSIONS", "true")]).await
+    else {
+        return;
+    };
+    const CREATE: &str = "metaverse:space:create";
+    const CONTENT: &str = "metaverse:content:write";
+    const EVENTS: &str = "metaverse:event:write";
+    let reply = app
+        .org_with(
+            &[CREATE],
+            Method::POST,
+            "/api/v1/admin/spaces",
+            Some(json!({"id": SPACE, "name": "测试空间", "owner": {"kind": "org", "id": ORG}})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::CREATED, "{:?}", reply.body);
+    let layout = json!({
+        "regions": [{"id": "hall", "kind": "physical", "boxes": [[0, 0, 0, 200, 60, 200]]}],
+        "plots": []
+    });
+    let layout_path = format!("/api/v1/admin/spaces/{SPACE}/layout");
+    let reply = app
+        .org_with(&[], Method::PUT, &layout_path, Some(layout.clone()))
+        .await;
+    assert_eq!(reply.status, StatusCode::FORBIDDEN);
+    let reply = app
+        .org_with(&[CONTENT], Method::PUT, &layout_path, Some(layout))
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+
+    // 建草稿。
+    let drafts = format!("/api/v1/spaces/{SPACE}/drafts");
+    let reply = app.org_with(&[], Method::POST, &drafts, None).await;
+    assert_eq!(reply.status, StatusCode::FORBIDDEN);
+    let reply = app.org_with(&[CONTENT], Method::POST, &drafts, None).await;
+    assert_eq!(reply.status, StatusCode::CREATED, "{:?}", reply.body);
+    let path = draft_path(SPACE, reply.body["id"].as_str().unwrap());
+    // 读草稿不要求能力。
+    assert_eq!(
+        app.org_with(&[], Method::GET, &path, None).await.status,
+        StatusCode::OK
+    );
+    // 追加、从上传应用、预览、发布、丢弃：没有 content:write 一律 403，草稿不变。
+    let ops = json!({"ops": [{"op": "fill", "box": [0, 0, 0, 1, 1, 1], "block": 2}]});
+    let (upload_id, _) = app
+        .put_ops_upload(SPACE, ops["ops"][0].to_string().as_bytes())
+        .await;
+    for (method, suffix, body) in [
+        (Method::POST, "/ops", Some(ops.clone())),
+        (
+            Method::POST,
+            "/ops-from-upload",
+            Some(json!({"uploadId": upload_id})),
+        ),
+        (Method::POST, "/preview", None),
+        (Method::POST, "/publish", None),
+        (Method::DELETE, "", None),
+    ] {
+        let reply = app
+            .org_with(&[EVENTS], method.clone(), &format!("{path}{suffix}"), body)
+            .await;
+        assert_eq!(reply.status, StatusCode::FORBIDDEN, "{method} {suffix}");
+    }
+    assert_eq!(
+        app.org_with(&[], Method::GET, &path, None).await.body["rev"],
+        0
+    );
+    let reply = app
+        .org_with(&[CONTENT], Method::POST, &format!("{path}/ops"), Some(ops))
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let reply = app
+        .org_with(&[CONTENT], Method::POST, &format!("{path}/preview"), None)
+        .await;
+    assert_eq!(reply.status, StatusCode::CREATED, "{:?}", reply.body);
+    let reply = app
+        .org_with(&[CONTENT], Method::POST, &format!("{path}/publish"), None)
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let reply = app.org_with(&[CONTENT], Method::POST, &drafts, None).await;
+    let second = draft_path(SPACE, reply.body["id"].as_str().unwrap());
+    let reply = app
+        .org_with(&[CONTENT], Method::DELETE, &second, None)
+        .await;
+    assert_eq!(reply.status, StatusCode::NO_CONTENT);
+
+    // 事件类型和抹除：要求 event:write（content:write 不够）。
+    let event_types = format!("/api/v1/admin/spaces/{SPACE}/event-types");
+    let definition = json!({"type": "door.open", "schema": {"type": "object"},
+        "defaultVisibility": "public", "display": {"kind": "highlight"}});
+    let reply = app
+        .org_with(
+            &[CONTENT],
+            Method::POST,
+            &event_types,
+            Some(definition.clone()),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::FORBIDDEN);
+    let reply = app
+        .org_with(&[EVENTS], Method::POST, &event_types, Some(definition))
+        .await;
+    assert_eq!(reply.status, StatusCode::CREATED, "{:?}", reply.body);
+    let redact = format!("/api/v1/admin/spaces/{SPACE}/events/ev_missing/redact");
+    let reply = app.org_with(&[CONTENT], Method::POST, &redact, None).await;
+    assert_eq!(reply.status, StatusCode::FORBIDDEN);
+    let reply = app.org_with(&[EVENTS], Method::POST, &redact, None).await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND);
+}

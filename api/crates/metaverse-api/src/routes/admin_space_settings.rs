@@ -25,6 +25,7 @@ use utoipa::{IntoParams, ToSchema};
 use super::admin_spaces::{check_text, new_share_token, ShareTokenView};
 use super::views::SpaceView;
 use super::ApiJson;
+use crate::auth::permissions::Capability;
 use crate::auth::{Caller, Purpose};
 use crate::error::{ApiError, ProblemDocument};
 use crate::repo::{BlobKind, CommitError, CommitPlan, Layout, SpaceSettings};
@@ -214,6 +215,10 @@ pub async fn set_layout(
     Path(space_id): Path<String>,
     ApiJson(request): ApiJson<SetLayoutRequest>,
 ) -> Result<Response, ApiError> {
+    // 区域和地块写成一次提交，属于内容写入：功能级开关打开时要求 `metaverse:content:write`。
+    state
+        .authorizer
+        .require_capability(&caller, Capability::WriteContent)?;
     let grant = state
         .authorizer
         .space(&caller, &space_id, Purpose::Manage)

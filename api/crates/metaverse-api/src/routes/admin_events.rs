@@ -24,6 +24,7 @@ use utoipa::ToSchema;
 use super::events::event_type_view;
 use super::ingest_common::{invalid_with, no_store};
 use super::ApiJson;
+use crate::auth::permissions::Capability;
 use crate::auth::{Authorizer, Caller, Purpose};
 use crate::error::{ApiError, ProblemDocument};
 use crate::ingest::schema::CompiledSchema;
@@ -237,6 +238,10 @@ pub async fn register_event_type(
     Path(space_id): Path<String>,
     ApiJson(request): ApiJson<RegisterEventTypeRequest>,
 ) -> Result<Response, ApiError> {
+    // 功能级开关打开时：事件类型和抹除都属于事件写入，要求 `metaverse:event:write`。
+    state
+        .authorizer
+        .require_capability(&caller, Capability::WriteEvents)?;
     let grant = state
         .authorizer
         .space(&caller, &space_id, Purpose::Manage)
@@ -304,6 +309,9 @@ pub async fn redact_event(
     caller: Caller,
     Path((space_id, event_id)): Path<(String, String)>,
 ) -> Result<Response, ApiError> {
+    state
+        .authorizer
+        .require_capability(&caller, Capability::WriteEvents)?;
     let grant = state
         .authorizer
         .space(&caller, &space_id, Purpose::Manage)

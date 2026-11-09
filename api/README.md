@@ -300,7 +300,16 @@ universeRevisions { _id: "<组合编号>:<seq>", universeId, owner, seq, at, act
 ### 鉴权流程
 
 1. **身份**（全部 `/api/v1/*`，在读请求体之前）：`X-NyxID-Identity-Token` 只能出现一次；RS256 + kid；公钥列表缓存 5 分钟，未知 kid 最多每 5 秒刷新一次；签发方、受众精确匹配；`nyx_service_id` 必须在允许列表里；签发到过期 ≤ 60 秒；带 `token_type` 的一律拒绝；验签全部通过后以 jti 为主键插入 `replay` 集合（TTL 索引按过期时间清理），重复就是重放。完全不读 `X-NyxID-User-*`。失败 401，拿不到公钥 503。
-2. **功能级**（可选）：`METAVERSE_REQUIRE_PERMISSIONS=true` 时，建空间要求 `metaverse:space:create`。
+2. **功能级**（可选）：`METAVERSE_REQUIRE_PERMISSIONS=true` 时按令牌的 `permissions` 精确检查，缺了返回 403（在资源级检查之前）：
+
+   | 能力 | 要求它的接口 |
+   |---|---|
+   | `metaverse:space:create` | 建空间 |
+   | `metaverse:content:write` | 上传（创建、分片、完成）、扫描与物件模型任务、草稿的全部写操作（建草稿、追加、从上传应用、预览、发布、丢弃）、管理接口里的定义区域和地块（会写提交） |
+   | `metaverse:event:write` | 写事件和更正、管理接口里的登记事件类型和抹除事件 |
+   | `metaverse:universe:write` | 建组合、改组合、加入和退出 |
+
+   读接口（含读草稿、查任务）不要求能力。管理接口里的改名称和可见性、轮换分享令牌、删除空间只要求资源级"管理"，不对应能力（它们只该由主人或组织 admin 经命令行调用，不进 AI 工具）。
 3. **资源级**：读出主人（没有一致归属证据的组织空间按个人所有处理）→ 主人本人或组织本身直接是"管理"→ 否则用调用者转发来的 `Authorization: Bearer` 凭据调 NyxID `GET /api/v1/orgs/{id}/authorization`（转发的是 JWT 时先验签并要求 sub 一致；返回编号必须等于组织编号；401/403/404 判为不是成员，其他判为查不到；15 秒截止；不跨请求缓存；证据最多用 60 秒）→ admin 是"管理"，member/viewer 是"只读"。看不到 404，能看不能写 403，写操作查不到角色 503 `org_membership_unavailable`。
 
 ### 从 CMA 复用了什么
