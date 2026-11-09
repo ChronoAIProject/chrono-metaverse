@@ -1,0 +1,194 @@
+name: CI
+
+# 每次推送和每个合并请求都跑：接口服务、网站、处理服务、命令行（目录存在时）和仓库检查。
+# 写法参照 CMA 的 .github/workflows/ci.yml，按本项目的规模收缩。
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: 接口服务（api）
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CARGO_TERM_COLOR: always
+      # 集成测试连本 job 起的副本集；每个测试用独立的随机库，结束时删除。
+      METAVERSE_TEST_MONGODB_URI: mongodb://127.0.0.1:27017/?replicaSet=rs0
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v5
+      - name: 起 MongoDB 副本集
+        working-directory: .
+        run: bash .github/scripts/start-mongo.sh
+      # 与 api/rust-toolchain.toml 一致。
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.0
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: api
+      - name: 格式
+        run: cargo fmt --all --check
+      - name: 静态检查
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+      - name: 测试
+        run: cargo test --workspace --locked
+      - name: 数据访问边界（repo/ 以外不访问数据库）
+        run: cargo test -p metaverse-api --locked --lib repo::tests::only_repo_touches_the_database -- --exact
+
+  api-deny:
+    name: 接口服务依赖审查
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: api/Cargo.toml
+          command: check advisories licenses bans sources
+          arguments: --all-features --locked
+
+  web:
+    name: 网站（web）
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: 安装依赖
+        run: npm ci --no-audit --no-fund
+      - name: 静态检查
+        run: npm run lint
+      - name: 类型检查
+        run: npm run typecheck
+      - name: 格式
+        run: npm run format:check
+      - name: 测试
+        run: npm test
+      - name: 生产构建
+        run: npm run build
+
+  worker:
+    name: 处理服务（worker）
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      METAVERSE_TEST_MONGODB_URI: mongodb://127.0.0.1:27017/?replicaSet=rs0
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v5
+      - name: 起 MongoDB 副本集
+        working-directory: .
+        run: bash .github/scripts/start-mongo.sh
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.11.32
+          enable-cache: true
+          cache-dependency-glob: worker/pyproject.toml
+      - name: 安装（含开发依赖）
+        run: |
+          uv venv --python 3.13 .venv
+          uv pip install --python .venv/bin/python -e '.[dev]'
+      - name: 静态检查
+        run: .venv/bin/ruff check .
+      - name: 格式
+        run: .venv/bin/ruff format --check .
+      - name: 测试（含 MongoDB 测试）
+        run: .venv/bin/pytest
+
+  sdk-typescript:
+    name: 命令行（sdk/typescript）
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: 检查目录是否存在
+        id: detect
+        run: |
+          if [[ -f sdk/typescript/package.json ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "sdk/typescript 还不存在，跳过。"
+          fi
+      - uses: actions/setup-node@v6
+        if: steps.detect.outputs.present == 'true'
+        with:
+          node-version: 22
+      - name: 安装依赖
+        if: steps.detect.outputs.present == 'true'
+        working-directory: sdk/typescript
+        run: |
+          if [[ -f package-lock.json ]]; then
+            npm ci --no-audit --no-fund
+          else
+            echo "::error::sdk/typescript 缺少 package-lock.json，持续集成只用 npm ci 安装"
+            exit 1
+          fi
+      - name: 静态检查、类型检查、测试、构建
+        if: steps.detect.outputs.present == 'true'
+        working-directory: sdk/typescript
+        run: |
+          npm run lint --if-present
+          npm run typecheck --if-present
+          npm test --if-present
+          npm run build --if-present
+
+  repo:
+    name: 仓库检查
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: false
+      - name: 数据访问边界（不需要编译）
+        run: bash .github/scripts/check-db-boundary.sh
+      - name: 本地开发设施：模拟 NyxID 的测试
+        run: node --test infra/dev/mock-nyxid.test.mjs
+      - name: 本地开发设施：JSON 与脚本语法
+        run: |
+          node --check infra/dev/mock-nyxid.mjs
+          node --check infra/dev/call.mjs
+          node -e 'for (const f of process.argv.slice(1)) JSON.parse(require("fs").readFileSync(f, "utf8"))' \
+            infra/dev/org-roles.json infra/chrono-cd/app.json
+      - name: shellcheck
+        run: shellcheck infra/dev/*.sh .github/scripts/*.sh
+      - name: hadolint（Dockerfile）
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/hadolint" \
+            https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-linux-x86_64
+          echo "6bf226944684f56c84dd014e8b979d27425c0148f61b3bd99bcc6f39e9dc5a47  $RUNNER_TEMP/hadolint" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/hadolint"
+          "$RUNNER_TEMP/hadolint" infra/api/Dockerfile infra/web/Dockerfile infra/worker/Dockerfile
+      - name: actionlint（工作流）
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          "$(go env GOPATH)/bin/actionlint" -color
