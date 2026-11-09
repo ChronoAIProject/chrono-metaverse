@@ -108,7 +108,9 @@ def put_chunks(store: Store, chunks: Mapping[str, bytes]) -> None:
     )
 
 
-def put_entity_records(store: Store, scope: SystemScope, bodies: Mapping[str, Mapping[str, Any]]) -> dict[str, str]:
+def put_entity_records(
+    store: Store, scope: SystemScope, bodies: Mapping[str, Mapping[str, Any]]
+) -> dict[str, str]:
     """物件记录：`records {_id: 内容哈希, kind: entity, spaceId, owner, body}`。返回 `{entityId: 哈希}`。"""
     out: dict[str, str] = {}
     docs = []
@@ -116,7 +118,13 @@ def put_entity_records(store: Store, scope: SystemScope, bodies: Mapping[str, Ma
         h = record_hash("entity", scope.space_id, body)
         out[entity_id] = h
         docs.append(
-            {"_id": h, "kind": "entity", "spaceId": scope.space_id, "owner": scope.owner.as_doc(), "body": dict(body)}
+            {
+                "_id": h,
+                "kind": "entity",
+                "spaceId": scope.space_id,
+                "owner": scope.owner.as_doc(),
+                "body": dict(body),
+            }
         )
     _insert_ignore_duplicates(store, C.RECORDS, docs)
     return out
@@ -140,7 +148,9 @@ def put_palette(store: Store, scope: SystemScope, blocks: list[dict[str, Any]]) 
 # ---------------------------------------------------------------------------- 事务内读取当前状态
 
 
-def head_palette(store: Store, scope: SystemScope, session: ClientSession | None = None) -> list[dict[str, Any]]:
+def head_palette(
+    store: Store, scope: SystemScope, session: ClientSession | None = None
+) -> list[dict[str, Any]]:
     """head 生效的方块表（最近一次带 paletteHash 的提交）。没有时返回空表。"""
     commit = store.commits.find_one(
         scope.child_filter(paletteHash={"$type": "string"}),
@@ -150,13 +160,17 @@ def head_palette(store: Store, scope: SystemScope, session: ClientSession | None
     )
     if commit is None:
         return []
-    doc = store.col(C.PALETTES).find_one({"_id": commit["paletteHash"], "spaceId": scope.space_id}, session=session)
+    doc = store.col(C.PALETTES).find_one(
+        {"_id": commit["paletteHash"], "spaceId": scope.space_id}, session=session
+    )
     if doc is None:
         raise PermanentJobError(f"方块表 {commit['paletteHash']} 不存在")
     return list(doc.get("blocks") or [])
 
 
-def head_scan(store: Store, scope: SystemScope, session: ClientSession | None = None) -> dict[str, Any] | None:
+def head_scan(
+    store: Store, scope: SystemScope, session: ClientSession | None = None
+) -> dict[str, Any] | None:
     """head 生效的扫描（最近一次带 scan 的提交）。"""
     commit = store.commits.find_one(
         scope.child_filter(scan={"$type": "object"}), {"scan": 1}, sort=[("seq", -1)], session=session
@@ -199,7 +213,9 @@ def current_entity_ids(
     filt = scope.child_filter(**{"body.layer": layer})
     if kind is not None:
         filt["body.kind"] = kind
-    return {d["id"]: d["hash"] for d in store.col(C.ENTITIES).find(filt, {"id": 1, "hash": 1}, session=session)}
+    return {
+        d["id"]: d["hash"] for d in store.col(C.ENTITIES).find(filt, {"id": 1, "hash": 1}, session=session)
+    }
 
 
 def diff_ids(old: Mapping[str, str], new: Mapping[str, str]) -> list[dict[str, Any]]:
@@ -219,7 +235,8 @@ def diff_chunks(
         if old.get(k) != h
     ]
     out += [
-        {"layer": layer, "cx": k[0], "cy": k[1], "cz": k[2], "hash": None} for k in sorted(set(old) - set(new))
+        {"layer": layer, "cx": k[0], "cy": k[1], "cz": k[2], "hash": None}
+        for k in sorted(set(old) - set(new))
     ]
     return out
 
@@ -301,7 +318,13 @@ def write_back(
                 body = plan.entity_bodies[change["id"]]
                 store.col(C.ENTITIES).replace_one(
                     key,
-                    {**key, "owner": scope.owner.as_doc(), "hash": change["hash"], "body": dict(body), "seq": seq},
+                    {
+                        **key,
+                        "owner": scope.owner.as_doc(),
+                        "hash": change["hash"],
+                        "body": dict(body),
+                        "seq": seq,
+                    },
                     upsert=True,
                     session=session,
                 )

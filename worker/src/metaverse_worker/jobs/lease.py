@@ -73,9 +73,7 @@ class Lease:
 
 def _attempt_expr(op: str) -> dict[str, Any]:
     return {
-        "$expr": {
-            op: [{"$ifNull": ["$attempt", 0]}, {"$ifNull": ["$maxAttempts", DEFAULT_MAX_ATTEMPTS]}]
-        }
+        "$expr": {op: [{"$ifNull": ["$attempt", 0]}, {"$ifNull": ["$maxAttempts", DEFAULT_MAX_ATTEMPTS]}]}
     }
 
 
@@ -139,7 +137,10 @@ def claim(
         # 记录本身不合法：不能确定系统范围，直接标记失败，不做任何处理。
         store.jobs.update_one(
             {"_id": doc["_id"], "leaseOwner": worker_id, "attempt": doc["attempt"]},
-            {"$set": {"status": JobStatus.FAILED, "lastError": f"任务记录不合法：{error}"}, "$unset": {"leaseUntil": ""}},
+            {
+                "$set": {"status": JobStatus.FAILED, "lastError": f"任务记录不合法：{error}"},
+                "$unset": {"leaseUntil": ""},
+            },
         )
         log.error("任务 %s 记录不合法：%s", doc["_id"], error)
         return None

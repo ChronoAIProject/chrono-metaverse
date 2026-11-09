@@ -17,7 +17,15 @@
 - `WORKER_CLEANUP_INTERVAL_SECONDS`（600）：定期清理的间隔；
 - `WORKER_UPLOAD_TTL_HOURS`（24）、`WORKER_ASSET_GRACE_DAYS`（7）：清理阈值（设计 6.1）；
 - `WORKER_MAX_SCAN_BYTES`（1 GiB）、`WORKER_MAX_TRIANGLES`（500 万）、
-  `WORKER_MAX_TEXTURE_PIXELS`（8192×8192）、`WORKER_MAX_GRID_CELLS`（4 亿）：解析前检查的上限（设计 6.4）。
+  `WORKER_MAX_TEXTURE_PIXELS`（8192×8192）、`WORKER_MAX_GRID_CELLS`（4 亿）：解析前检查的上限（设计 6.4）；
+- `WORKER_MAX_TEXTURE_SIDE`（8192）：贴图上传单边像素上限（设计 6.1）；
+- `WORKER_MAX_MODEL_BYTES`（50 MiB）：物件模型资源的大小上限；
+- `WORKER_MODEL_MAX_TRIANGLES`（10 万）、`WORKER_MODEL_MAX_TEXTURE_SIDE`（2048）：物件模型重新导出时的上限；
+- `WORKER_MAX_OPS_BYTES`（256 MiB）：ops 上传解压后的大小上限（防压缩炸弹）；
+- `WORKER_ALIGN_MAX_ERROR_CM`（3）：重扫配准误差超过它就不自动提交，转人工（设计 6.2）；
+- `WORKER_HEALTH_HOST`（0.0.0.0）、`WORKER_HEALTH_PORT`（8080）：健康检查 `GET /healthz` 的监听地址；
+- `WORKER_WORKDIR`（系统临时目录）：下载扫描、子进程交换数据用的本地目录；
+- `LOG_LEVEL`（INFO）：日志级别。
 """
 
 from __future__ import annotations
@@ -58,6 +66,16 @@ class Config:
     max_triangles: int = 5_000_000
     max_texture_pixels: int = 8192 * 8192
     max_grid_cells: int = 400_000_000
+    max_texture_side: int = 8192
+    max_model_bytes: int = 50 << 20
+    model_max_triangles: int = 100_000
+    model_max_texture_side: int = 2048
+    max_ops_bytes: int = 256 << 20
+    align_max_error_cm: float = 3.0
+    health_host: str = "0.0.0.0"
+    health_port: int = 8080
+    workdir: str | None = None
+    log_level: str = "INFO"
 
     def __post_init__(self) -> None:
         if not self.mongodb_uri.startswith(("mongodb://", "mongodb+srv://")):
@@ -93,9 +111,24 @@ class Config:
             "max_triangles",
             "max_texture_pixels",
             "max_grid_cells",
+            "max_texture_side",
+            "max_model_bytes",
+            "model_max_triangles",
+            "model_max_texture_side",
+            "max_ops_bytes",
         ):
             if getattr(self, name) < 1:
                 raise ConfigError(f"{name} 必须是正整数")
+        if not self.align_max_error_cm > 0:
+            raise ConfigError("WORKER_ALIGN_MAX_ERROR_CM 必须大于 0")
+        if not 0 <= self.health_port <= 65535:
+            raise ConfigError("WORKER_HEALTH_PORT 必须在 0–65535 之间")
+        if not self.health_host:
+            raise ConfigError("WORKER_HEALTH_HOST 不能为空")
+        if self.workdir is not None and not os.path.isdir(self.workdir):
+            raise ConfigError("WORKER_WORKDIR 不是已存在的目录")
+        if self.log_level.upper() not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+            raise ConfigError("LOG_LEVEL 必须是 DEBUG、INFO、WARNING、ERROR 或 CRITICAL")
 
     @property
     def lease_millis(self) -> int:
@@ -152,4 +185,35 @@ class Config:
             max_triangles=integer("WORKER_MAX_TRIANGLES", defaults["max_triangles"].default),
             max_texture_pixels=integer("WORKER_MAX_TEXTURE_PIXELS", defaults["max_texture_pixels"].default),
             max_grid_cells=integer("WORKER_MAX_GRID_CELLS", defaults["max_grid_cells"].default),
+            max_texture_side=integer("WORKER_MAX_TEXTURE_SIDE", defaults["max_texture_side"].default),
+            max_model_bytes=integer("WORKER_MAX_MODEL_BYTES", defaults["max_model_bytes"].default),
+            model_max_triangles=integer(
+                "WORKER_MODEL_MAX_TRIANGLES", defaults["model_max_triangles"].default
+            ),
+            model_max_texture_side=integer(
+                "WORKER_MODEL_MAX_TEXTURE_SIDE", defaults["model_max_texture_side"].default
+            ),
+            max_ops_bytes=integer("WORKER_MAX_OPS_BYTES", defaults["max_ops_bytes"].default),
+            align_max_error_cm=number("WORKER_ALIGN_MAX_ERROR_CM", defaults["align_max_error_cm"].default),
+            health_host=env.get("WORKER_HEALTH_HOST", "").strip() or defaults["health_host"].default,
+            health_port=integer("WORKER_HEALTH_PORT", defaults["health_port"].default),
+            workdir=env.get("WORKER_WORKDIR", "").strip() or None,
+            log_level=(env.get("LOG_LEVEL", "").strip() or defaults["log_level"].default).upper(),
         )
+
+    def summary(self) -> dict[str, object]:
+        """启动日志里打印的配置摘要：不含连接串（可能带密码），只给主机部分。"""
+        out: dict[str, object] = {}
+        for name in self.__dataclass_fields__:
+            if name == "mongodb_uri":
+                out["mongodb_hosts"] = redact_uri(self.mongodb_uri)
+            else:
+                out[name] = getattr(self, name)
+        return out
+
+
+def redact_uri(uri: str) -> str:
+    """`mongodb://user:pass@host1,host2/db?x=y` → `host1,host2`（不含用户名、密码和参数）。"""
+    rest = uri.split("://", 1)[-1]
+    rest = rest.rsplit("@", 1)[-1]
+    return rest.split("/", 1)[0].split("?", 1)[0]

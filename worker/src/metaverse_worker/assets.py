@@ -121,7 +121,7 @@ def put_asset(
         sha, length = _file_sha256(path)
 
         def opener() -> BinaryIO:
-            return open(path, "rb")  # noqa: SIM115（由调用方 with 关闭）
+            return open(path, "rb")  # 由调用方 with 关闭
 
     existing = find_asset(store, sha)
     if existing is not None:
@@ -257,7 +257,9 @@ def write_upload_part(store: Store, upload_id: Any, part_no: int, part_size: int
         raise AssetError("分片长度不对")
     per_part = part_size // ASSET_CHUNK_SIZE
     first = part_no * per_part
-    store.col(C.ASSET_CHUNKS).delete_many({"files_id": upload_id, "n": {"$gte": first, "$lt": first + per_part}})
+    store.col(C.ASSET_CHUNKS).delete_many(
+        {"files_id": upload_id, "n": {"$gte": first, "$lt": first + per_part}}
+    )
     _write_chunks(store, upload_id, _blocks(io.BytesIO(data)), first_n=first)
     return hashlib.sha256(data).hexdigest()
 
@@ -273,7 +275,10 @@ def register_upload(
     space_id: str | None,
     session: ClientSession | None = None,
 ) -> AssetInfo:
-    """把已核对的上传分片登记成资源：插入 `files` 文档（`_id` = 上传编号）。重名时删掉本次分片，复用已有资源。"""
+    """把已核对的上传分片登记成资源：插入 `files` 文档（`_id` = 上传编号）。
+
+    重名时删掉本次分片，复用已有资源。
+    """
     return _insert_files_doc(
         store, upload_id, sha, length, content_type, kind, space_id, {"uploadId": str(upload_id)}, session
     )

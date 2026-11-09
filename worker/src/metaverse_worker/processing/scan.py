@@ -243,11 +243,19 @@ def wall_rotation(vertices: np.ndarray, faces: np.ndarray) -> float:
     if not np.any(horiz):
         return 0.0
     ang4 = np.mod(np.arctan2(normals[horiz, 2], normals[horiz, 0]), np.pi / 2)
-    hist, edges = np.histogram(ang4, bins=360, range=(0, np.pi / 2), weights=area[horiz])
+    weights = area[horiz]
+    hist, edges = np.histogram(ang4, bins=360, range=(0, np.pi / 2), weights=weights)
     hist = ndimage.uniform_filter1d(hist, 5, mode="wrap")
     k = int(np.argmax(hist))
+    peak = (edges[k] + edges[k + 1]) / 2
+    # 直方图格子宽 0.25°：再用峰值 ±1.5° 内法线角度的加权圆周平均精化（周期 90°，所以乘 4 再取平均）。
+    near = np.abs(np.mod(ang4 - peak + np.pi / 4, np.pi / 2) - np.pi / 4) < np.radians(1.5)
+    if near.any():
+        w = weights[near]
+        mean4 = np.arctan2((np.sin(4 * ang4[near]) * w).sum(), (np.cos(4 * ang4[near]) * w).sum()) / 4
+        peak = float(np.mod(mean4, np.pi / 2))
     # 与验证代码一致：峰值在 [0°, 90°)，旋转 −峰值（前厅实测约 −61°，坐标轴与验证结果相同）。
-    return -(edges[k] + edges[k + 1]) / 2
+    return -peak
 
 
 def rotation_y(theta: float) -> np.ndarray:

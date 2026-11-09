@@ -28,7 +28,10 @@ def cleanup_uploads(store: Store, ttl_hours: float) -> int:
     cutoff = format_ts(store.clock() - int(ttl_hours * 3600 * 1000))
     removed = 0
     stale = store.uploads.find(
-        {"status": {"$in": [UploadStatus.OPEN, UploadStatus.FAILED, UploadStatus.EXPIRED]}, "createdAt": {"$lt": cutoff}},
+        {
+            "status": {"$in": [UploadStatus.OPEN, UploadStatus.FAILED, UploadStatus.EXPIRED]},
+            "createdAt": {"$lt": cutoff},
+        },
         {"_id": 1, "status": 1},
     ).limit(_BATCH)
     for upload in list(stale):
@@ -71,7 +74,13 @@ def _referenced(store: Store, sha: str) -> bool:
         (C.RECORDS, {"$or": [{"body.assetHash": sha}, {"body.textures": sha}]}),
         (
             C.PALETTES,
-            {"$or": [{"blocks.texture.top": sha}, {"blocks.texture.side": sha}, {"blocks.texture.bottom": sha}]},
+            {
+                "$or": [
+                    {"blocks.texture.top": sha},
+                    {"blocks.texture.side": sha},
+                    {"blocks.texture.bottom": sha},
+                ]
+            },
         ),
         (C.DRAFTS, {"$or": [{"opsRef": sha}, {"scriptRef": sha}, {"assets": sha}]}),
     ]
@@ -100,13 +109,17 @@ def _strings(value: Any) -> set[str]:
 def cleanup_assets(store: Store, grace_days: float) -> int:
     cutoff = datetime.fromtimestamp(store.clock() / 1000, tz=UTC) - timedelta(days=grace_days)
     removed = 0
-    candidates = store.col(C.ASSET_FILES).find(
-        {
-            "uploadDate": {"$lt": cutoff},
-            "$or": [{"metadata.touchedAt": {"$exists": False}}, {"metadata.touchedAt": {"$lt": cutoff}}],
-        },
-        {"_id": 1, "filename": 1},
-    ).limit(_BATCH)
+    candidates = (
+        store.col(C.ASSET_FILES)
+        .find(
+            {
+                "uploadDate": {"$lt": cutoff},
+                "$or": [{"metadata.touchedAt": {"$exists": False}}, {"metadata.touchedAt": {"$lt": cutoff}}],
+            },
+            {"_id": 1, "filename": 1},
+        )
+        .limit(_BATCH)
+    )
     for doc in list(candidates):
         sha = doc.get("filename")
         if not isinstance(sha, str) or _referenced(store, sha):
