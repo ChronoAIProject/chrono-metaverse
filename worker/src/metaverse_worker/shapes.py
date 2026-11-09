@@ -9,12 +9,17 @@
    - `lathe`：`r` 的最大值决定 x、z 范围（不管 `angle` 一律按整圈），y 取轮廓的最小、最大值；
    - `sweep`：路径点的包围盒向各方向扩出截面外接半径（圆 `r`，矩形 `√(w²+h²)/2`，忽略 `smooth`）；
    - `loft`：各截面轮廓包围盒的并 × `[第一个 y, 最后一个 y]`；
+   - `plate`：各点和它们沿 −法向 平移厚度后的点的包围盒（Newell 法向，见 `plate_frame`）；
+   - `hull`：全部点的包围盒；
    - `group`：各子形状（含子形状自己的变换）包围盒的并；`instance`：模板（含模板自己的变换）的包围盒。
 2. 再用 `transform` 变换局部包围盒的 8 个角点取包围盒：`M = T · Ry(yaw) · Rx(pitch) · Rz(roll) · S`，
    角度单位是度；90° 的整数倍时正弦、余弦取精确的 0、±1。
 
 二维轮廓的点写作 `[x, z]`，在数学平面 (u, v) = (x, z) 上逆时针排列（有向面积为正）；
 `bulge` = tan(圆心角 / 4)，正值表示逆时针转的圆弧（对逆时针轮廓就是向外凸）。
+
+板和凸包的合法性（docs/SHAPES.md 第 2 节）与 Rust 用同样的公式和比较顺序：板的 Newell 法向、1 毫米平面度、
+投影平面上的简单多边形检查；凸包的 1 毫米退化判定（重合、共线、共面）。材质可以带 `opacity`（0–1）和 `unlit`。
 """
 
 from __future__ import annotations
@@ -37,6 +42,14 @@ MAX_ANGLE = 3600.0
 MAX_BULGE = 1000.0
 MIN_LOFT_SECTIONS = 2
 MAX_LOFT_SECTIONS = 8
+MIN_PLATE_POINTS = 3
+MAX_PLATE_POINTS = 64
+MAX_PLATE_THICKNESS = 1.0
+MIN_PLATE_AREA = 1e-6  # 平方米（1 平方毫米）
+MIN_EDGE_LENGTH = 1e-6  # 米
+FLAT_TOLERANCE = 0.001  # 平面度、凸包退化的容差（米）
+MIN_HULL_POINTS = 4
+MAX_HULL_POINTS = 256
 
 UV_MODES = ("box", "planar", "cylindrical", "mesh")
 
@@ -82,12 +95,30 @@ def transform(
     return out
 
 
-def color_material(rgb: Sequence[int]) -> dict[str, Any]:
-    return {"color": [int(max(0, min(255, round(c)))) for c in rgb]}
+def _look(out: dict[str, Any], opacity: float | None, unlit: bool | None) -> dict[str, Any]:
+    if opacity is not None:
+        if not (math.isfinite(opacity) and 0 <= opacity <= 1):
+            raise ShapeError("$.material.opacity", "不透明度必须在 0 到 1 之间")
+        out["opacity"] = r4(opacity, 3)
+    if unlit is not None:
+        out["unlit"] = bool(unlit)
+    return out
+
+
+def color_material(
+    rgb: Sequence[int], *, opacity: float | None = None, unlit: bool | None = None
+) -> dict[str, Any]:
+    """颜色材质；`opacity` < 1 时半透明（玻璃），`unlit` 为真时不受光照（屏幕、灯箱）。"""
+    return _look({"color": [int(max(0, min(255, round(c)))) for c in rgb]}, opacity, unlit)
 
 
 def texture_material(
-    texture_hash: str, uv: str = "planar", tint: Sequence[int] | None = None
+    texture_hash: str,
+    uv: str = "planar",
+    tint: Sequence[int] | None = None,
+    *,
+    opacity: float | None = None,
+    unlit: bool | None = None,
 ) -> dict[str, Any]:
     if not is_sha256_hex(texture_hash):
         raise ShapeError("$.material.texture", "贴图必须是 64 位小写十六进制的资源哈希")
@@ -96,7 +127,7 @@ def texture_material(
     out: dict[str, Any] = {"texture": texture_hash, "uv": uv}
     if tint is not None:
         out["tint"] = [int(c) for c in tint]
-    return out
+    return _look(out, opacity, unlit)
 
 
 def _decorate(shape: dict[str, Any], xf: Mapping[str, Any] | None, material: Mapping[str, Any] | None):
@@ -163,6 +194,33 @@ def extrude(
     return _decorate(shape, xf, material)
 
 
+def plate(
+    points: Iterable[Sequence[float]],
+    thickness: float,
+    *,
+    xf: Mapping[str, Any] | None = None,
+    material: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """板：平面简单多边形（点按右手定则给出法向）沿 −法向 加厚 `thickness` 米。"""
+    shape: dict[str, Any] = {
+        "type": "plate",
+        "points": [[r4(p[0]), r4(p[1]), r4(p[2])] for p in points],
+        "thickness": r4(thickness),
+    }
+    return _decorate(shape, xf, material)
+
+
+def hull(
+    points: Iterable[Sequence[float]],
+    *,
+    xf: Mapping[str, Any] | None = None,
+    material: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """凸包：这些点的凸包实体（楔形、船头这类凸多面体）。"""
+    shape: dict[str, Any] = {"type": "hull", "points": [[r4(p[0]), r4(p[1]), r4(p[2])] for p in points]}
+    return _decorate(shape, xf, material)
+
+
 def group(children: Sequence[Mapping[str, Any]], *, xf: Mapping[str, Any] | None = None) -> dict[str, Any]:
     return _decorate({"type": "group", "children": [dict(c) for c in children]}, xf, None)
 
@@ -184,6 +242,8 @@ _FIELDS = {
     "lathe": ({"profile"}, {"segments", "angle"}),
     "sweep": ({"path", "section"}, {"smooth", "caps"}),
     "loft": ({"sections"}, set()),
+    "plate": ({"points", "thickness"}, set()),
+    "hull": ({"points"}, set()),
     "group": ({"children"}, set()),
     "instance": ({"template"}, set()),
 }
@@ -283,8 +343,20 @@ def _rgb(value: Any, what: str) -> None:
         raise ShapeError(None, f"{what} 必须是 3 个 0–255 的整数")
 
 
+def validate_opacity(path: str, value: Any) -> None:
+    """不透明度必须是 0 到 1 之间的有限值（Rust `validate_opacity`）。"""
+    if value is None:
+        return
+    v = _num(value, "opacity")
+    if not (math.isfinite(v) and 0 <= v <= 1):
+        raise ShapeError(path, "不透明度必须在 0 到 1 之间")
+
+
 def _validate_material(path: str, value: Any) -> None:
-    obj = _fields(value, set(), {"color", "texture", "uv", "tint"}, "material")
+    obj = _fields(value, set(), {"color", "texture", "uv", "tint", "opacity", "unlit"}, "material")
+    if obj.get("unlit") is not None and not isinstance(obj["unlit"], bool):
+        raise ShapeError(None, "unlit 必须是布尔值")
+    validate_opacity(f"{path}.opacity", obj.get("opacity"))
     for key in ("color", "tint"):
         if obj.get(key) is not None:
             _rgb(obj[key], key)
@@ -353,6 +425,178 @@ def _validate_outline(path: str, obj: Mapping[str, Any]) -> None:
             raise ShapeError(at, "at 超出点数或重复")
         seen.add(fillet["at"])
         _positive(f"{at}.radius", float(fillet["radius"]))
+
+
+# ---------------------------------------------------------------------------- 板和凸包
+
+
+def _sub3(a: Sequence[float], b: Sequence[float]) -> list[float]:
+    return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+
+
+def _dot3(a: Sequence[float], b: Sequence[float]) -> float:
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _cross3(a: Sequence[float], b: Sequence[float]) -> list[float]:
+    return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+
+
+def plate_frame(points: Sequence[Sequence[float]]) -> tuple[list[float], list[float], float] | None:
+    """板的中心（各点平均）、Newell 单位法向和面积：`N = Σ (Pᵢ − c) × (Pᵢ₊₁ − c)`，面积 `|N| / 2`。
+
+    点从法向一侧看是逆时针。面积小于 1 平方毫米（点几乎共线）时返回 None。
+    """
+    if len(points) < MIN_PLATE_POINTS:
+        return None
+    count = len(points)
+    total = [0.0, 0.0, 0.0]
+    for p in points:
+        for k in range(3):
+            total[k] += float(p[k])
+    center = [total[0] / count, total[1] / count, total[2] / count]
+    newell = [0.0, 0.0, 0.0]
+    for i, p in enumerate(points):
+        c = _cross3(_sub3(p, center), _sub3(points[(i + 1) % count], center))
+        for k in range(3):
+            newell[k] += c[k]
+    length = math.sqrt(_dot3(newell, newell))
+    area = length / 2
+    if math.isnan(area) or area < MIN_PLATE_AREA:
+        return None
+    return center, [newell[0] / length, newell[1] / length, newell[2] / length], area
+
+
+def plate_projection_axes(normal: Sequence[float]) -> tuple[int, int]:
+    """去掉法向分量绝对值最大的轴（并列时先去 x、再 y），返回剩下两个轴的下标。"""
+    x, y, z = (abs(v) for v in normal)
+    if x >= y and x >= z:
+        return 1, 2
+    if y >= z:
+        return 0, 2
+    return 0, 1
+
+
+def _orient2(a, b, c) -> float:
+    return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+
+def _within(a, b, p) -> bool:
+    return min(a[0], b[0]) <= p[0] <= max(a[0], b[0]) and min(a[1], b[1]) <= p[1] <= max(a[1], b[1])
+
+
+def segments_intersect(p1, p2, p3, p4) -> bool:
+    """两条线段是否相交（含端点接触、共线重叠）。"""
+    d1, d2 = _orient2(p3, p4, p1), _orient2(p3, p4, p2)
+    d3, d4 = _orient2(p1, p2, p3), _orient2(p1, p2, p4)
+
+    def straddle(a: float, b: float) -> bool:
+        return (a > 0 and b < 0) or (a < 0 and b > 0)
+
+    if straddle(d1, d2) and straddle(d3, d4):
+        return True
+    return (
+        (d1 == 0 and _within(p3, p4, p1))
+        or (d2 == 0 and _within(p3, p4, p2))
+        or (d3 == 0 and _within(p1, p2, p3))
+        or (d4 == 0 and _within(p1, p2, p4))
+    )
+
+
+def _validate_plate(path: str, points: list[list[float]], thickness: float) -> None:
+    at = f"{path}.points"
+    if not MIN_PLATE_POINTS <= len(points) <= MAX_PLATE_POINTS:
+        raise ShapeError(at, "板需要 3 到 64 个点")
+    for i, p in enumerate(points):
+        for k, v in enumerate(p):
+            _finite(f"{at}[{i}][{k}]", v)
+    if not (math.isfinite(thickness) and 0 < thickness <= MAX_PLATE_THICKNESS):
+        raise ShapeError(f"{path}.thickness", "厚度必须大于 0 且不超过 1 米")
+    count = len(points)
+    for i, p in enumerate(points):
+        edge = _sub3(points[(i + 1) % count], p)
+        if _dot3(edge, edge) <= MIN_EDGE_LENGTH * MIN_EDGE_LENGTH:
+            raise ShapeError(f"{at}[{i}]", "与下一点重合")
+    frame = plate_frame(points)
+    if frame is None:
+        raise ShapeError(at, "面积太小（点几乎共线）")
+    center, normal, _ = frame
+    for i, p in enumerate(points):
+        if abs(_dot3(_sub3(p, center), normal)) > FLAT_TOLERANCE:
+            raise ShapeError(f"{at}[{i}]", "离最佳拟合平面超过 1 毫米")
+    u, v = plate_projection_axes(normal)
+    flat = [(p[u], p[v]) for p in points]
+    for i in range(count):
+        here, prev, nxt = flat[i], flat[(i + count - 1) % count], flat[(i + 1) % count]
+        a = (prev[0] - here[0], prev[1] - here[1])
+        b = (nxt[0] - here[0], nxt[1] - here[1])
+        if a[0] * b[1] - a[1] * b[0] == 0 and a[0] * b[0] + a[1] * b[1] > 0:
+            raise ShapeError(f"{at}[{i}]", "相邻两条边在这一点折回")
+    for i in range(count):
+        for j in range(i + 2, count):
+            if i == 0 and j == count - 1:
+                continue
+            if segments_intersect(flat[i], flat[i + 1], flat[j], flat[(j + 1) % count]):
+                raise ShapeError(at, "多边形自相交")
+
+
+def hull_degeneracy(points: Sequence[Sequence[float]]) -> str | None:
+    """凸包退化判定（容差 1 毫米）：点重合、共线或共面时返回说明，否则返回 None。"""
+    if not points:
+        return "没有点"
+    a = points[0]
+    tolerance = FLAT_TOLERANCE * FLAT_TOLERANCE
+
+    def farthest(measure) -> tuple[int, float]:
+        best = (0, -math.inf)
+        for index, p in enumerate(points):
+            value = measure(p)
+            if value > best[1]:
+                best = (index, value)
+        return best
+
+    b, spread = farthest(lambda p: _dot3(_sub3(p, a), _sub3(p, a)))
+    if spread <= tolerance:
+        return "点全部重合（容差 1 毫米）"
+    axis = _sub3(points[b], a)
+    axis_sq = _dot3(axis, axis)
+
+    def line_distance_sq(p) -> float:
+        k = _cross3(_sub3(p, a), axis)
+        return _dot3(k, k) / axis_sq
+
+    c, offset = farthest(line_distance_sq)
+    if offset <= tolerance:
+        return "点全部共线（容差 1 毫米）"
+    normal = _cross3(axis, _sub3(points[c], a))
+    normal_sq = _dot3(normal, normal)
+
+    def plane_distance_sq(p) -> float:
+        h = _dot3(_sub3(p, a), normal)
+        return h * h / normal_sq
+
+    _, height = farthest(plane_distance_sq)
+    if height <= tolerance:
+        return "点全部共面（容差 1 毫米）"
+    return None
+
+
+def _validate_hull(path: str, points: list[list[float]]) -> None:
+    at = f"{path}.points"
+    if not MIN_HULL_POINTS <= len(points) <= MAX_HULL_POINTS:
+        raise ShapeError(at, "凸包需要 4 到 256 个点")
+    for i, p in enumerate(points):
+        for k, v in enumerate(p):
+            _finite(f"{at}[{i}][{k}]", v)
+    problem = hull_degeneracy(points)
+    if problem is not None:
+        raise ShapeError(at, problem)
+
+
+def _points3(value: Any, what: str) -> list[list[float]]:
+    if not isinstance(value, list):
+        raise ShapeError(None, f"{what} 必须是数组")
+    return [_vec(p, 3, what) for p in value]
 
 
 def validate_shape(shape: Any) -> None:
@@ -459,6 +703,11 @@ def _validate_at(shape: Any, path: str, depth: int, nodes: list[int]) -> None:
             if i > 0 and y <= parsed[i - 1][0]:
                 raise ShapeError(f"{at}.y", "截面的 y 必须递增")
             _validate_outline(f"{at}.outline", ol)
+    elif kind == "plate":
+        points = _points3(shape["points"], "points")
+        _validate_plate(path, points, _num(shape["thickness"], "thickness"))
+    elif kind == "hull":
+        _validate_hull(path, _points3(shape["points"], "points"))
     elif kind == "group":
         children = shape["children"]
         if not isinstance(children, list):
@@ -642,6 +891,19 @@ def _bounds_at(shape, path, depth, templates, cache, visiting) -> Bounds:
             "min": [lo2[0], float(sections[0]["y"]), lo2[1]],
             "max": [hi2[0], float(sections[-1]["y"]), hi2[1]],
         }
+    elif kind == "plate":
+        points = [[float(v) for v in p] for p in shape["points"]]
+        frame = plate_frame(points)
+        if frame is None:
+            raise ShapeError(path, "板的面积太小（点几乎共线）")
+        t = float(shape["thickness"])
+        n = frame[1]
+        back = [[p[0] - t * n[0], p[1] - t * n[1], p[2] - t * n[2]] for p in points]
+        local = bounds_of_points([*points, *back])
+    elif kind == "hull":
+        if not shape["points"]:
+            raise ShapeError(path, "凸包没有点")
+        local = bounds_of_points(shape["points"])
     elif kind == "group":
         result = None
         for i, child in enumerate(shape["children"]):
