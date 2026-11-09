@@ -123,6 +123,11 @@ export interface PublishView {
   readonly id?: string;
 }
 
+/** ops-from-upload 的请求体：上传编号和资源哈希只能给一个。 */
+export type OpsFromUploadRequest =
+  | { readonly uploadId: string; readonly assetHash?: never }
+  | { readonly assetHash: string; readonly uploadId?: never };
+
 export interface CreateSpaceRequest {
   readonly id: string;
   readonly name: string;
@@ -303,10 +308,14 @@ export class MetaverseApi {
     });
   }
 
-  /** `POST {范围}/drafts/{draft_id}/ops-from-upload`，请求体 `{ assetHash }` → 202 `{ jobId }`（ops_from_upload 任务）。 */
+  /**
+   * `POST {范围}/drafts/{draft_id}/ops-from-upload` → 202 `{ jobId, draftId, status }`（ops_from_upload 任务）。
+   * 请求体是 `{ uploadId }` 或 `{ assetHash }` 二者之一（两个都给接口服务返回 422）；优先用上传编号，
+   * 服务端能核对它是本空间 ops 用途、已完成校验的上传。
+   */
   opsFromUpload(
     draftId: string,
-    request: { assetHash: string; uploadId?: string },
+    request: OpsFromUploadRequest,
     plot?: string | null,
   ): Promise<{ jobId?: string; id?: string } & Record<string, unknown>> {
     return this.client.json(

@@ -150,12 +150,12 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
       `已上传操作文件（${result.ops.length} 条，${ndjson.length} 字节，资源 ${uploaded.assetHash}）`,
     );
     if (uploaded.jobId !== null) await waitForJob(api, uploaded.jobId, waitOptions);
+    // 接口服务只接受 { uploadId } 或 { assetHash } 之一：有上传编号（包括复用已有内容时）就用它。
     const started = await api.opsFromUpload(
       draftId,
-      {
-        assetHash: uploaded.assetHash,
-        ...(uploaded.uploadId !== null ? { uploadId: uploaded.uploadId } : {}),
-      },
+      uploaded.uploadId !== null
+        ? { uploadId: uploaded.uploadId }
+        : { assetHash: uploaded.assetHash },
       plot,
     );
     const jobId = idOf(started, 'jobId');

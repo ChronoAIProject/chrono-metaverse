@@ -422,8 +422,23 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
           draft.ops.push(...(req.ops as unknown[]));
           return json(200, { rev: draft.ops.length });
         case 'ops-from-upload': {
-          const bytes = state.assets.get(String(req.assetHash));
-          if (bytes === undefined) return problem(404, 'not_found', '没有这个资源');
+          if (invalidFields(req, ['uploadId', 'assetHash'])) return;
+          // 与接口服务相同：{uploadId} 或 {assetHash} 二选一，两个都给或都不给 422。
+          if ((req.uploadId === undefined) === (req.assetHash === undefined))
+            return problem(
+              422,
+              'invalid_request',
+              '请求体必须是 {uploadId} 或 {assetHash}（64 位小写十六进制）之一',
+            );
+          const source = [...state.uploads.values()].find(
+            (u) =>
+              u.purpose === 'ops' &&
+              u.status === 'done' &&
+              (req.uploadId !== undefined ? u.id === req.uploadId : u.sha256 === req.assetHash),
+          );
+          const bytes = source === undefined ? undefined : state.assets.get(source.sha256);
+          if (bytes === undefined)
+            return problem(404, 'not_found', '没有找到本空间已完成校验的 ops 上传');
           const ops = bytes
             .toString('utf8')
             .split('\n')

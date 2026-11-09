@@ -8,6 +8,9 @@ import { parseTransform, scanFormat } from '../src/commands/scan.js';
 import { runVoxelize } from '../src/commands/voxelize.js';
 import { validateLayout } from '../src/commands/admin.js';
 import { chunkHash, compressChunk, emptyChunk } from '../src/core/chunk.js';
+import { MetaverseApi } from '../src/transport/api.js';
+import { ApiClient } from '../src/transport/client.js';
+import { upload } from '../src/transport/upload.js';
 import { readConfig, writeConfig } from '../src/workspace/config.js';
 import { readBase } from '../src/workspace/files.js';
 import { fakeGlb, startFakeApi, type FakeApi } from './helpers/fakeApi.js';
@@ -207,6 +210,12 @@ describe('metaverse push / publish', () => {
     const uploadBody = JSON.parse(upload.body.toString()) as Record<string, unknown>;
     expect(Object.keys(uploadBody).sort()).toEqual(['format', 'partSize', 'sha256', 'size']);
     expect(uploadBody).toMatchObject({ format: 'ndjson', partSize: 8388608 });
+    // ops-from-upload 只带上传编号（接口服务要求 uploadId 和 assetHash 二选一）。
+    const fromUpload = fake.requests.find((r) => r.path.endsWith('/ops-from-upload'))!;
+    expect(fromUpload.path).toMatch(/^\/api\/v1\/spaces\/demo-space\/plots\/p1\/drafts\//);
+    expect(JSON.parse(fromUpload.body.toString())).toEqual({
+      uploadId: [...fake.state.uploads.values()][0]!.id,
+    });
     const drafts = JSON.parse(readFileSync(join(root, 'out/drafts.json'), 'utf8')) as Record<
       string,
       { plot: string }
@@ -220,6 +229,45 @@ describe('metaverse push / publish', () => {
     const publish = fake.requests.at(-1)!;
     expect(publish.path).toBe(`/api/v1/spaces/demo-space/plots/p1/drafts/${draftId}/publish`);
     expect(JSON.parse(publish.body.toString())).toEqual({ message: '确认' });
+  });
+
+  it('操作文件已经传过（复用已有内容）时，ops-from-upload 仍然只带上传编号', async () => {
+    fake = await startFakeApi(remoteSnapshot().state);
+    const root = directWorkspace(fake, PUSH_SCRIPT);
+    expect(await main(makeContext(root), ['push', '--plot', 'p1', '--no-preview'])).toBe(0);
+    expect(await main(makeContext(root), ['push', '--plot', 'p1', '--no-preview'])).toBe(0);
+    const uploads = [...fake.state.uploads.values()];
+    expect(uploads.map((u) => u.reused)).toEqual([false, true]);
+    const bodies = fake.requests
+      .filter((r) => r.path.endsWith('/ops-from-upload'))
+      .map((r) => JSON.parse(r.body.toString()) as unknown);
+    expect(bodies).toEqual([{ uploadId: uploads[0]!.id }, { uploadId: uploads[1]!.id }]);
+    expect(fake.requests.filter((r) => r.method === 'PUT')).toHaveLength(1);
+  });
+
+  it('ops-from-upload 两个字段都给、都不给时，接口服务返回 422；只给资源哈希也行', async () => {
+    fake = await startFakeApi(remoteSnapshot().state);
+    const api = new MetaverseApi(
+      new ApiClient({ mode: 'direct', api: fake.url, devTokenUrl: fake.devTokenUrl }),
+      'demo-space',
+    );
+    const ndjson = new TextEncoder().encode('{"op":"removeEntity","entityId":"x"}\n');
+    const uploaded = await upload(api, {
+      purpose: 'ops',
+      source: { bytes: ndjson },
+      format: 'ndjson',
+    });
+    const draft = await api.createDraft({ baseSeq: 5 });
+    const both = { uploadId: uploaded.uploadId!, assetHash: uploaded.assetHash } as unknown as {
+      uploadId: string;
+    };
+    await expect(api.opsFromUpload(draft.id!, both)).rejects.toMatchObject({ status: 422 });
+    await expect(
+      api.opsFromUpload(draft.id!, {} as unknown as { uploadId: string }),
+    ).rejects.toMatchObject({ status: 422 });
+    expect(await api.opsFromUpload(draft.id!, { assetHash: uploaded.assetHash })).toMatchObject({
+      jobId: expect.any(String),
+    });
   });
 
   it('--inline 分批调用批量操作接口；--json 输出', async () => {
