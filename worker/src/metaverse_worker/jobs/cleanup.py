@@ -178,7 +178,8 @@ def cleanup_drafts(store: Store) -> dict[str, int]:
 
 
 def run_cleanup(store: Store, *, upload_ttl_hours: float, asset_grace_days: float) -> dict[str, int]:
-    # 先清草稿：过期草稿引用的资源在同一轮里就不再算被引用（仍要过资源自己的宽限期）。
+    # 顺序：先让卡在 complete 的上传离开（失败的随后按上传规则删除）；草稿在资源之前清，
+    # 过期草稿引用的资源在同一轮里就不再算被引用（仍要过资源自己的宽限期）。
     stuck = settle_stuck_uploads(store, upload_ttl_hours)
     uploads = cleanup_uploads(store, upload_ttl_hours)
     drafts = cleanup_drafts(store)

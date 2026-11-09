@@ -32,8 +32,6 @@ from .timeutil import format_ts, now_ts
 
 log = logging.getLogger(__name__)
 
-_BATCH = 200
-
 
 def find_upload(store: Store, scope: SystemScope, upload_id: Any) -> dict[str, Any] | None:
     """按编号找本空间、本主人的上传（编号也接受 ObjectId 的十六进制写法）。"""
@@ -193,11 +191,13 @@ def settle_stuck_uploads(store: Store, ttl_hours: float) -> int:
     """
     cutoff = format_ts(store.clock() - int(ttl_hours * 3600 * 1000))
     settled = 0
+    # 不限条数：complete 的上传最多是"空间数 × 每个空间的进行中上传上限"，限条数的话排在前面的正常上传
+    # 会一直挡住后面卡住的。
     stuck = store.uploads.find(
         {"status": UploadStatus.COMPLETE},
         {"_id": 1, "spaceId": 1, "owner": 1, "jobId": 1, "completedAt": 1, "createdAt": 1},
-    ).limit(_BATCH)
-    for upload in list(stuck):
+    )
+    for upload in stuck:
         job_id = upload.get("jobId")
         job = store.jobs.find_one({"_id": job_id}, {"status": 1, "lastError": 1}) if job_id else None
         if job is not None and job.get("status") != JobStatus.FAILED:
