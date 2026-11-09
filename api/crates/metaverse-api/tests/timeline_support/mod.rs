@@ -465,6 +465,101 @@ impl TestApp {
         (upload_id, hash)
     }
 
+    /// 模拟 `days` 天前上传、校验通过的资源：登记资源，再写本空间一条 `status: done` 的上传
+    /// （`sha256` = `assetHash` = 内容哈希，真正传过数据，所以资源属于本空间），然后把资源的
+    /// 上传时间改到 `days` 天前（见 [`TestApp::age_asset`]）。返回内容哈希。
+    pub async fn put_old_upload(
+        &self,
+        space: &str,
+        purpose: &str,
+        bytes: &[u8],
+        metadata: Document,
+        days: i64,
+    ) -> String {
+        let content_type = metadata.get_str("contentType").unwrap_or("").to_owned();
+        let kind = metadata.get_str("kind").unwrap_or(purpose).to_owned();
+        let hash = self.put_asset(bytes, &content_type, &kind).await;
+        if !metadata.is_empty() {
+            let mut set = Document::new();
+            for (key, value) in metadata {
+                set.insert(format!("metadata.{key}"), value);
+            }
+            self.collection("assets.files")
+                .update_one(doc! {"filename": &hash}, doc! {"$set": set})
+                .await
+                .unwrap();
+        }
+        self.collection("uploads")
+            .insert_one(doc! {
+                "_id": format!("up_{}", uuid::Uuid::new_v4().simple()), "spaceId": space,
+                "owner": {"kind": "org", "id": ORG}, "scope": "physical",
+                "purpose": purpose, "status": "done", "sha256": &hash, "assetHash": &hash,
+                "size": bytes.len() as i64, "createdAt": "2026-01-01T00:00:00.000Z",
+            })
+            .await
+            .unwrap();
+        self.age_asset(&hash, days).await;
+        hash
+    }
+
+    /// 把资源的上传时间改到 `days` 天前、去掉 `metadata.touchedAt`：超过 7 天就成了处理服务
+    /// 定期清理的候选（`jobs/cleanup.py` 的 `cleanup_assets`）。
+    pub async fn age_asset(&self, hash: &str, days: i64) {
+        let then = DateTime::from_millis(DateTime::now().timestamp_millis() - days * 86_400_000);
+        self.collection("assets.files")
+            .update_one(
+                doc! {"filename": hash},
+                doc! {"$set": {"uploadDate": then}, "$unset": {"metadata.touchedAt": ""}},
+            )
+            .await
+            .unwrap();
+    }
+
+    /// 资源的 `metadata.touchedAt`（没有资源或没刷新过时为空）。
+    pub async fn touched_at(&self, hash: &str) -> Option<DateTime> {
+        let found = self
+            .collection("assets.files")
+            .find_one(doc! {"filename": hash})
+            .await
+            .unwrap()?;
+        found
+            .get_document("metadata")
+            .ok()?
+            .get_datetime("touchedAt")
+            .ok()
+            .copied()
+    }
+
+    /// 模拟处理服务定期清理对一个资源的删除（`jobs/cleanup.py` 的 `cleanup_assets`，宽限 7 天）。
+    /// 清理先查引用、再条件删除，两步之间没有锁；这里代表"查引用时还没人引用、现在执行删除"
+    /// 的那一步：只按清理的条件（上传时间和 `touchedAt` 都早于 7 天前）删除 `files` 文档和数据块，
+    /// 不再看引用。返回是否删掉了。
+    pub async fn cleanup_delete(&self, hash: &str) -> bool {
+        let cutoff = DateTime::from_millis(DateTime::now().timestamp_millis() - 7 * 86_400_000);
+        let stale = doc! {"$or": [
+            {"metadata.touchedAt": {"$exists": false}},
+            {"metadata.touchedAt": {"$lt": cutoff}},
+        ]};
+        let files = self.collection("assets.files");
+        let mut candidate = stale.clone();
+        candidate.insert("filename", hash);
+        candidate.insert("uploadDate", doc! {"$lt": cutoff});
+        let Some(found) = files.find_one(candidate).await.unwrap() else {
+            return false;
+        };
+        let files_id = found.get("_id").unwrap().clone();
+        let mut condition = stale;
+        condition.insert("_id", files_id.clone());
+        if files.delete_one(condition).await.unwrap().deleted_count != 1 {
+            return false;
+        }
+        self.collection("assets.chunks")
+            .delete_many(doc! {"files_id": files_id})
+            .await
+            .unwrap();
+        true
+    }
+
     /// 把资源登记到 `assetRefs`（网页可读）。
     pub async fn register_asset_ref(&self, space: &str, hash: &str) {
         self.collection("assetRefs")
