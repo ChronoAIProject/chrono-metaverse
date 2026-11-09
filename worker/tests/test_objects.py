@@ -16,7 +16,8 @@ import pytest
 from metaverse_worker import shapes as sh
 from metaverse_worker.processing import fit_measure as fm
 from metaverse_worker.processing import fit_templates as ft
-from metaverse_worker.processing.objects import parse_hints, reconstruct_objects
+from metaverse_worker.processing.fit_segment import ObjectPoints, Segment
+from metaverse_worker.processing.objects import _textured, attach_to_tables, parse_hints, reconstruct_objects
 from metaverse_worker.processing.scan import ScanMesh
 from metaverse_worker.processing.shape_mesh import build_parts, expand_outline, merge_meshes, shape_mesh
 from metaverse_worker.processing.structure import extract_structure
@@ -166,6 +167,23 @@ def test_fit_box_recovers_rounded_box():
     assert 0.02 <= box["fillet"] <= 0.09
 
 
+def test_fit_box_complexity_prefers_simple_outline_for_piles():
+    """桌上的一堆东西（平放的书 + 立着的盒子 + 杯子）：顶点代价调高后轮廓明显更简单。"""
+    o = visible_boxes(
+        [
+            sh.box([0.40, 0.04, 0.30], xf=sh.transform(position=[0.0, 0.0, 0.0])),
+            sh.box([0.12, 0.25, 0.12], xf=sh.transform(position=[0.24, 0.0, -0.08])),
+            sh.box([0.10, 0.12, 0.10], xf=sh.transform(position=[-0.05, 0.0, 0.2])),
+        ]
+    )
+
+    def n_points(g):
+        leaf = g["children"][0]
+        return len(leaf["outline"]["points"]) if leaf["type"] == "extrude" else 4
+
+    assert n_points(ft.fit_box(o, complexity=0.015)) <= n_points(ft.fit_box(o)) - 3
+
+
 def test_fit_round_recovers_cylinder():
     o = local_of(sh.cylinder(0.25, 0.5, segments=48))
     lathe = ft.fit_round(o)["children"][0]
@@ -190,6 +208,48 @@ def test_fit_table_recovers_top_and_pedestal():
     assert radii and max(radii) == pytest.approx(0.4, abs=0.06)
     bases = [c for c in g["children"][1:] if c["type"] in ("cylinder", "extrude", "box")]
     assert bases
+
+
+def test_fit_table_base_needs_support():
+    """长桌：两端各一个柱脚（从地面到台面下）；推进桌下的椅子座面（只在 0.4–0.5 米）、挂在台面边下的
+    碎片（只在台面下几厘米）不算底座。柱脚做成沿桌子方向的圆角盒。"""
+    top = sh.extrude(
+        sh.outline(
+            [(-1.6, -0.5), (1.6, -0.5), (1.6, 0.5), (-1.6, 0.5)],
+            fillets=[{"at": i, "radius": 0.45} for i in range(4)],
+        ),
+        0.05,
+        xf=sh.transform(position=[0, 0.7, 0]),
+    )
+    peds = [sh.box([0.4, 0.7, 0.5], xf=sh.transform(position=[x, 0, 0])) for x in (-1.2, 1.2)]
+    seat = sh.box([0.45, 0.06, 0.3], xf=sh.transform(position=[0.0, 0.42, 0.3]))
+    lip = sh.box([0.5, 0.03, 0.1], xf=sh.transform(position=[0.3, 0.64, -0.35]))
+    o = local_of(sh.group([top, *peds, seat, lip]))
+    g = ft.fit_table(o, 0.75, 0.05)
+    bases = [c for c in g["children"] if c["_part"]["name"].startswith("base")]
+    assert len(bases) == 2
+    xs = sorted(c["transform"]["position"][0] for c in bases)
+    assert xs == pytest.approx([-1.2, 1.2], abs=0.05)
+    for c in bases:
+        assert c["type"] == "box"
+        assert c["size"][0] == pytest.approx(0.4, abs=0.06)
+
+
+def test_fit_box_flat_item_rounds_only_vertical_edges():
+    """桌上一叠扁的东西俯视是大圆角：圆角只做在竖边（轮廓圆角），不是一块所有边都圆的肥皂。"""
+    item = sh.extrude(
+        sh.outline(
+            [(-0.3, -0.2), (0.3, -0.2), (0.3, 0.2), (-0.3, 0.2)],
+            fillets=[{"at": i, "radius": 0.12} for i in range(4)],
+        ),
+        0.08,
+    )
+    g = ft.fit_box(local_of(item), complexity=0.015)
+    leaf = g["children"][0]
+    assert leaf["type"] == "extrude"
+    assert leaf["height"] == pytest.approx(0.08, abs=0.01)
+    assert leaf["fillet"] <= 0.02
+    assert max(f["radius"] for f in leaf["outline"]["fillets"]) > 0.06
 
 
 def test_fit_chair_recovers_seat_and_curved_back():
@@ -218,9 +278,132 @@ def test_fit_sofa_finds_seat_back_and_arms():
     o = visible_boxes([base, seat, back, *arms])
     g = ft.fit_sofa(o)
     names = [c["_part"]["name"] for c in g["children"]]
-    assert {"base", "seat", "back", "arm-left", "arm-right"} <= set(names)
-    seat_fit = next(c for c in g["children"] if c["_part"]["name"] == "seat")
-    assert seat_fit["transform"]["position"][1] + seat_fit["size"][1] == pytest.approx(0.42, abs=0.03)
+    assert {"base", "back-1", "back-2", "arm-left", "arm-right"} <= set(names)
+    # 坐垫按长度分成两个圆角盒，座高 0.42
+    seats = [c for c in g["children"] if c["_part"]["name"].startswith("seat-")]
+    assert len(seats) == 2
+    for s in seats:
+        assert s["type"] == "box" and s["fillet"] > 0
+        assert s["transform"]["position"][1] + s["size"][1] == pytest.approx(0.42, abs=0.03)
+    # 靠背垫、扶手是侧面轮廓的挤出，轮廓带圆弧（靠背顶、扶手前上角），挤出两端倒圆边
+    for name in ("back-1", "back-2", "arm-left", "arm-right"):
+        c = next(c for c in g["children"] if c["_part"]["name"] == name)
+        assert c["type"] == "extrude" and c["outline"].get("arcs") and c["fillet"] > 0
+    arm = next(c for c in g["children"] if c["_part"]["name"] == "arm-left")
+    assert sh.shape_bounds(arm)["max"][1] == pytest.approx(0.68, abs=0.04)
+    # 同一种面料：一个材质组
+    assert {c["_part"].get("group") for c in g["children"]} == {"upholstery"}
+    for c in g["children"]:
+        c.pop("_part")
+    sh.validate_shape(g)
+
+
+# ---------------------------------------------------------------------------- 只看到两个面的高柜
+
+
+def test_fit_faces_box_ignores_mirror_points():
+    """高柜只扫到两个相邻的面（x = −0.6 朝 −x，z = 0.6 朝 +z），镜子的虚像点散在外面：
+    盒子只按两个面定尺寸，没看到的两侧取看到的面沿边的范围。"""
+    rng = np.random.default_rng(4)
+    n = 4000
+    f1 = np.c_[np.full(n, -0.6), rng.uniform(0, 2.3, n), rng.uniform(-0.8, 0.6, n)]
+    f2 = np.c_[rng.uniform(-0.6, 1.0, n), rng.uniform(0, 2.3, n), np.full(n, 0.6)]
+    ghost = np.c_[rng.uniform(-1.5, 0.5, 1500), rng.uniform(0, 1.0, 1500), rng.uniform(-1.5, 1.4, 1500)]
+    P = np.concatenate([f1, f2, ghost])
+    N = np.concatenate(
+        [np.tile([-1.0, 0, 0], (n, 1)), np.tile([0, 0, 1.0], (n, 1)), rng.normal(size=(1500, 3))]
+    )
+    N /= np.linalg.norm(N, axis=1, keepdims=True)
+    o = ft.Local(P, N, np.full((len(P), 3), 30, np.uint8))
+    g = ft.fit_faces_box(o)
+    assert g is not None
+    box = g["children"][0]
+    w, h, d = box["size"]
+    x, _, z = box["transform"]["position"]
+    assert x - w / 2 == pytest.approx(-0.6, abs=0.02) and x + w / 2 == pytest.approx(1.0, abs=0.04)
+    assert z + d / 2 == pytest.approx(0.6, abs=0.02) and z - d / 2 == pytest.approx(-0.8, abs=0.04)
+    assert h == pytest.approx(2.3, abs=0.05)
+
+
+def test_fit_faces_box_needs_two_perpendicular_faces():
+    """只有一个面（贴墙的薄板）或者太矮：不用这个拟合。"""
+    rng = np.random.default_rng(5)
+    P = np.c_[rng.uniform(-1, 1, 3000), rng.uniform(0, 2.2, 3000), np.zeros(3000)]
+    N = np.tile([0, 0, 1.0], (3000, 1))
+    assert ft.fit_faces_box(ft.Local(P, N, np.zeros((3000, 3), np.uint8))) is None
+    P2 = P * [1, 0.4, 1]
+    assert ft.fit_faces_box(ft.Local(P2, N, np.zeros((3000, 3), np.uint8))) is None
+
+
+# ---------------------------------------------------------------------------- 大屏、展板
+
+
+def _screen_scan(tilt: float = 0.0, seed: int = 6) -> ft.Local:
+    """5 米宽、2.5 米高的大屏（正面朝 +z，面上 z = −0.15 + tilt·y，颜色是彩色的画面），
+    两端各立一个 1.1 米高的音箱（正面 z = −0.05），中间地上一个盒子。"""
+    rng = np.random.default_rng(seed)
+    n = 30000
+    scr = np.c_[rng.uniform(-2.3, 2.3, n), rng.uniform(0.05, 2.55, n), np.zeros(n)]
+    scr[:, 2] = -0.15 + tilt * scr[:, 1]
+    col = np.c_[rng.integers(20, 90, n), rng.integers(80, 200, n), rng.integers(150, 255, n)]
+    parts_p, parts_n, parts_c = [scr], [np.tile([0, 0, 1.0], (n, 1))], [col]
+    for x in (-2.45, 2.45):
+        m = 900
+        parts_p.append(np.c_[rng.uniform(x - 0.12, x + 0.12, m), rng.uniform(0, 1.1, m), np.full(m, -0.05)])
+        parts_n.append(np.tile([0, 0, 1.0], (m, 1)))
+        parts_c.append(np.full((m, 3), 22))
+    m = 600
+    box = np.c_[rng.uniform(-0.25, 0.25, m), np.full(m, 0.18), rng.uniform(-0.1, 0.3, m)]
+    parts_p.append(box)
+    parts_n.append(np.tile([0, 1.0, 0], (m, 1)))
+    parts_c.append(np.full((m, 3), 30))
+    P, N, C = np.concatenate(parts_p), np.concatenate(parts_n), np.concatenate(parts_c)
+    return ft.Local(P, N, C.astype(np.uint8))
+
+
+def test_fit_panel_screen_with_speakers():
+    """大屏：正面一块 1 厘米的贴图面板 + 后面的深色机身（颜色定死，不从画面取色），
+    两端的音箱、地上的盒子各是一个盒子；面板的范围和平面位置按扫描。"""
+    g = ft.fit_panel(_screen_scan())
+    assert g is not None
+    kids = {k["_part"]["name"]: k for k in g["children"]}
+    body, screen = kids["body"], kids["screen"]
+    w, h, d = screen["size"]
+    assert w == pytest.approx(4.6, abs=0.05) and d == pytest.approx(0.01)
+    assert h == pytest.approx(2.5, abs=0.05)
+    # 面板正面在 z = −0.15
+    z = screen["transform"]["position"][2] + d / 2
+    assert z == pytest.approx(-0.15, abs=0.01)
+    assert body["_part"]["color"][2] < 60  # 深色：取的是音箱和盒子，不是蓝色的画面
+    assert body["transform"]["position"][2] < z - 0.04
+    fronts = [k for name, k in kids.items() if name.startswith("front")]
+    tall = [k for k in fronts if k["size"][1] > 1.0]
+    assert len(tall) == 2
+    xs = sorted(k["transform"]["position"][0] for k in tall)
+    assert xs == pytest.approx([-2.45, 2.45], abs=0.03)
+    assert any(k["size"][1] < 0.3 and k["transform"]["position"][2] > -0.1 for k in fronts)
+    sh.validate_shape(json_clean(g))
+
+
+def test_fit_panel_follows_tilt_and_refuses_non_panels():
+    """面板有一两度的后仰时按直线拟合（俯仰角）；盒子、太矮的东西不当面板。"""
+    g = ft.fit_panel(_screen_scan(tilt=-0.02))
+    assert g is not None
+    screen = next(k for k in g["children"] if k["_part"]["name"] == "screen")
+    assert screen["transform"]["pitch"] == pytest.approx(math.degrees(math.asin(-0.02)), abs=0.2)
+    assert ft.fit_panel(local_of(sh.box([1.2, 1.5, 1.0]))) is None
+    low = _screen_scan()
+    assert ft.fit_panel(ft.Local(low.L * [1, 0.3, 1], low.N, low.C)) is None
+
+
+def json_clean(shape: dict) -> dict:
+    import json
+
+    from metaverse_worker.processing.fit_texture import strip_parts
+
+    out = json.loads(json.dumps(shape))
+    strip_parts(out)
+    return out
 
 
 # ---------------------------------------------------------------------------- 端到端
@@ -309,6 +492,50 @@ def test_end_to_end_recognizes_and_fits(scene_result):
         assert b["fit"]["meanCm"] < 2.5, (b["entityId"], b["fit"])
     assert res.metrics["furnitureMeanCm"] < 2.5
     assert res.metrics["templates"] == 1
+
+
+def test_clutter_and_small_cabinets_use_plain_colors():
+    """杂物和最长边不到 0.8 米的小柜子只用纯色（贴上去的多半是反光和粘连进来的表面）；
+    大柜子、边几（大理石台面是真的图案）照旧可以烘焙贴图。"""
+    assert not _textured("clutter", 2.0)
+    assert not _textured("cabinet", 0.6)
+    assert _textured("cabinet", 1.2)
+    assert _textured("table", 0.6)
+
+
+def test_attach_to_tables_merges_pedestals_and_lifts_items():
+    """拆桌面剩下的块：台面下靠里、从地面到台面下的柱脚并回桌子；压在台面上、只有几个点挂到台面边下的
+    东西改成桌上的杂物（去掉台面以下的点）；推进桌下、贴着台面边的椅子照旧。"""
+    rng = np.random.default_rng(8)
+
+    def blob(n, x, y, z):
+        return np.c_[rng.uniform(*x, n), rng.uniform(*y, n), rng.uniform(*z, n)]
+
+    t = 0.75
+    slab = blob(3000, (-1.6, 1.6), (t - 0.04, t), (-0.5, 0.5))
+    ped = blob(800, (-1.4, -1.0), (0.02, t - 0.06), (-0.2, 0.2))
+    item = np.concatenate(
+        [blob(400, (0.1, 0.5), (t, t + 0.12), (-0.1, 0.1)), blob(60, (0.1, 0.5), (0.6, t), (-0.1, 0.1))]
+    )
+    chair = blob(500, (0.6, 1.0), (0.02, 0.8), (0.3, 0.6))
+    P = np.concatenate([slab, ped, item, chair])
+    n = len(P)
+    op = ObjectPoints(
+        P, np.zeros((n, 3), np.uint8), np.tile([0, 1.0, 0], (n, 1)), np.zeros(n, int), P[:, 1], None, None, {}
+    )
+    ranges = np.cumsum([0, len(slab), len(ped), len(item), len(chair)])
+    idx = [np.arange(ranges[k], ranges[k + 1]) for k in range(4)]
+    table = Segment(idx[0], {"table-top"}, top={"height": t, "thickness": 0.04})
+    tag = {f"below-top:{t:.3f}"}
+    out = attach_to_tables(
+        op, [table, Segment(idx[1], set(tag)), Segment(idx[2], set(tag)), Segment(idx[3], set(tag))]
+    )
+    assert len(out) == 3
+    merged = next(s for s in out if "table-top" in s.tags)
+    assert len(merged.idx) == len(slab) + len(ped)
+    on_top = next(s for s in out if "on-top" in s.tags)
+    assert P[on_top.idx, 1].min() > t - 0.0101 and 400 <= len(on_top.idx) <= 410
+    assert any(s.tags == tag and len(s.idx) == len(chair) for s in out)
 
 
 def test_hints_override_kind_and_label():

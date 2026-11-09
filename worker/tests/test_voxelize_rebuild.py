@@ -14,7 +14,7 @@ from metaverse_worker.chunk import FIRST_PALETTE_BLOCK, decompress
 from metaverse_worker.errors import InputRejected, PermanentJobError
 from metaverse_worker.handlers.voxelize import palette_size_of
 from metaverse_worker.processing.glb import GlbMesh, read_glb_json, write_glb
-from metaverse_worker.processing.rebuild import load_objects_impl, rebuild, structure_entities
+from metaverse_worker.processing.rebuild import body_textures, load_objects_impl, rebuild, structure_entities
 from metaverse_worker.processing.scan import ScanMesh
 from metaverse_worker.processing.structure import extract_structure
 from metaverse_worker.processing.tasks import (
@@ -137,7 +137,12 @@ def test_structure_entities_are_valid_records(room):
         assert body["layer"] == "rebuilt" and body["kind"] == "structure"
         (tex,) = body["textures"]
         assert tex in textures and hashlib.sha256(textures[tex]).hexdigest() == tex
-        assert body["shape"]["material"]["texture"] == tex
+        assert body_textures(body) == {tex}
+        if body["props"]["structure"] == "floor":
+            assert body["shape"]["material"]["texture"] == tex
+        else:  # 墙：贴图面板 + 纯色墙体
+            face, wall = body["shape"]["children"]
+            assert face["material"]["texture"] == tex and "color" in wall["material"]
 
 
 def test_rebuild_with_fake_objects(room):

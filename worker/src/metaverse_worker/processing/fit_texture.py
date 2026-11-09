@@ -2,6 +2,9 @@
 
 - **部件归属**：模型每个叶子形状（部件）的网格密集采样，扫描点归最近的部件；
 - **纯色还是贴图**：部件附近扫描点的亮度标准差小（颜色单一）就用纯色（中位数）；否则烘焙贴图；
+  同一材质组（`_part.group`）的部件取整组扫描点的同一个颜色；声明浅色单一材质（`_part.albedo = "bright"`）
+  的取最亮的 10% 的中位色（烘焙的阴影不算进颜色），接近白色的中性色按白色处理；拟合时定好颜色的部件
+  （`_part.color`）不取色；
 - **贴图转移**：部件按网站同样的投影（`planar` 沿最薄的轴、`cylindrical` 绕竖直中轴）展开 UV，
   每个纹素落到模型表面的一点，取原扫描最近表面（法线朝向相容）的颜色；正反两面落在同一纹素时，
   扫描里看得更多的那一面优先；没采到的纹素用 push-pull 补；JPEG 编码，内容哈希作资源编号；
@@ -252,6 +255,22 @@ class TextureParams:
     lum_std_texture: float = 16.0  # 亮度标准差超过这个就烘焙贴图
     min_texture_area: float = 0.03  # 部件表面积小于这个只用纯色
     assign_dist: float = 0.03  # 部件取色只用离它 3 厘米以内的扫描点（相邻物体粘连进来的点不算）
+    white_saturation: float = 0.1  # 浅色单一材质：饱和度低于这个、
+    white_min_lum: float = 175.0  # 最亮的 10% 的亮度不低于这个的，按白色处理
+    white_lum: float = 235.0
+
+
+def bright_albedo(cols: np.ndarray, tp: TextureParams) -> np.ndarray:
+    """单一的浅色材质（前台的白色外壳）的颜色：扫描里烘焙的阴影把中位色压暗，取最亮的 10% 的中位色
+    （被照亮的那部分）；接近白色的中性色（饱和度 < `white_saturation`、亮度 ≥ `white_min_lum`）再按白色
+    （亮度 `white_lum`）归一——白色表面在扫描里总带着阴影和背光，取出来的是灰，网站重新打光后会更灰。"""
+    lum = luminance(cols)
+    c = np.median(cols[lum >= np.percentile(lum, 90)].astype(float), axis=0)
+    hi, lo = float(c.max()), float(c.min())
+    y = float(luminance(c[None])[0])
+    if hi > 0 and (hi - lo) / hi < tp.white_saturation and y >= tp.white_min_lum:
+        c = np.clip(c * (tp.white_lum / y), 0, 255)
+    return c
 
 
 def finalize_materials(
@@ -288,16 +307,42 @@ def finalize_materials(
             color_src = ColorSource(color_src.P[keep], color_src.C[keep], color_src.N[keep])
     texel = float(np.interp(size_hint, [1.0, 3.0], [tp.texel_small, tp.texel_large]))
     max_px = tp.max_px_large if size_hint > 1.5 else tp.max_px
+
+    def base_color(cols: np.ndarray, bright: bool) -> np.ndarray:
+        if bright and len(cols) > 20:
+            return bright_albedo(cols, tp)
+        return np.median(cols.astype(float), axis=0)
+
+    # 同一材质组的部件（沙发的坐垫、靠背、扶手；前台的外壳和台面）用整组扫描点的同一个颜色
+    groups: dict[str, list[np.ndarray]] = {}
+    bright_groups: set[str] = set()
+    for k, path in enumerate(paths):
+        info = parts_info.get(path, {})
+        if info.get("group"):
+            groups.setdefault(info["group"], []).append(scan_C[(owner == k) & (d < tp.assign_dist)])
+            if info.get("albedo") == "bright":
+                bright_groups.add(info["group"])
+    group_color = {
+        g: base_color(np.concatenate(v), g in bright_groups)
+        for g, v in groups.items()
+        if sum(len(a) for a in v) > 0
+    }
     for k, path in enumerate(paths):
         leaf = leaf_at(shape, path)
         info = parts_info.get(path, {"uv": "planar"})
+        if info.get("color") is not None:
+            # 拟合时已经定好的颜色（大屏的深色机身：附近的扫描点多半是屏幕本身，取色会取成画面的颜色）
+            leaf["material"] = sh.color_material(info["color"])
+            continue
         m = (owner == k) & (d < tp.assign_dist)
         cols = scan_C[m]
         if len(cols) == 0:
             near = np.argsort(d)[: max(1, min(50, len(d)))]
             cols = scan_C[near]
-        med = np.median(cols.astype(float), axis=0)
         lum_std = float(np.std(luminance(cols))) if len(cols) > 5 else 0.0
+        med = base_color(cols, info.get("albedo") == "bright")
+        if info.get("group") in group_color:
+            med = group_color[info["group"]]
         area = meshes[k].area()
         # 部件可以声明"偏向纯色"（椅子壳、椅腿这类单一材质的部件），门槛提高
         limit = math.inf if info.get("prefer") == "color" else tp.lum_std_texture

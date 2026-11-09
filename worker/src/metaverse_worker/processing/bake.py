@@ -2,10 +2,12 @@
 
 做法：对指定的三角面按面积密集重采样（默认每平方米 4 万点，约每纹素 4 个），每个采样点按重心坐标取扫描
 贴图的颜色，再映射到目标图像的纹素上取平均；没有采样到的纹素用 push-pull 金字塔平滑补洞。
+墙面可以改用 `fill_unobserved`：小洞推拉补，大片没扫到的地方用同一面墙已扫到部分沿墙分段的中位色。
 """
 
 from __future__ import annotations
 
+import itertools
 from collections.abc import Callable
 
 import numpy as np
@@ -61,6 +63,60 @@ def push_pull(img: np.ndarray, w: np.ndarray) -> np.ndarray:
     up = ndimage.zoom(coarse, (Hp / coarse.shape[0], Wp / coarse.shape[1], 1), order=1)[:H, :W]
     a = np.minimum(w, 1.0)[..., None]
     return img * a + up * (1 - a)
+
+
+def band_medians(img: np.ndarray, observed: np.ndarray, band_px: int, min_texels: int = 20) -> np.ndarray:
+    """沿图像横向每 band_px 列一段，取段内已扫到纹素的中位色，段间线性插值，返回每列的颜色（W×3）。
+
+    已扫到的纹素太少的段不参与，全图都太少时退回全部已扫到纹素的中位色。"""
+    W = observed.shape[1]
+    edges = np.unique(np.linspace(0, W, max(1, round(W / max(band_px, 1))) + 1).astype(int))
+    centers, meds = [], []
+    for a, b in itertools.pairwise(edges):
+        sel = observed[:, a:b]
+        if sel.sum() >= max(min_texels, 0.05 * sel.size):
+            centers.append(0.5 * (a + b))
+            meds.append(np.median(img[:, a:b][sel], axis=0))
+    if not meds:
+        return np.broadcast_to(np.median(img[observed], axis=0), (W, img.shape[2])).astype(np.float64)
+    cols = np.arange(W) + 0.5
+    m = np.array(meds, np.float64)
+    return np.stack([np.interp(cols, centers, m[:, c]) for c in range(img.shape[2])], -1)
+
+
+def fill_unobserved(
+    img: np.ndarray,
+    observed: np.ndarray,
+    *,
+    near_px: float,
+    far_px: float,
+    band_px: int,
+    default: float = 160.0,
+) -> np.ndarray:
+    """补没扫到的纹素（墙面用）。
+
+    - 离已扫到区域 near_px 以内：推拉金字塔局部平滑补洞，和周围的纹理接得上；
+    - far_px 以外：同一面墙已扫到部分沿墙分段的中位色（`band_medians`），木纹墙、白墙各补各的，
+      不再像整图推拉那样把远处不相关的颜色（墙前的椅子、门框）拉过来；
+    - 中间线性过渡。已扫到的纹素保持原值。
+
+    "已扫到区域"按 5×5 窗口里至少四分之一的纹素有采样来算；零星的孤立采样保留自己的颜色，但不参与推拉，
+    避免它们把颜色带进大片空洞。返回浮点 H×W×3。
+    """
+    img = np.asarray(img, np.float64)
+    if not observed.any():
+        return np.full(img.shape, default)
+    covered = ndimage.uniform_filter(observed.astype(np.float64), 5) >= 0.25
+    if not (covered & observed).any():
+        covered = observed
+    local = push_pull(img, (observed & covered).astype(np.float64))
+    dist = ndimage.distance_transform_edt(~covered)
+    flat = band_medians(img, observed, band_px)[None]
+    w = np.clip((dist - near_px) / max(far_px - near_px, 1e-9), 0.0, 1.0)
+    w[observed] = 0.0
+    out = local * (1 - w[..., None]) + flat * w[..., None]
+    out[observed] = img[observed]
+    return out
 
 
 def bake(
