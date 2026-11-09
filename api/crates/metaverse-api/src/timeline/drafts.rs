@@ -256,18 +256,21 @@ pub async fn append_ops(
     for block in &provisional {
         block_textures(&block.block, &mut assets);
     }
-    // 物件模型和贴图只能引用已登记的资源（物件模型须是处理服务重新导出的版本）。
+    // 物件模型和贴图只能引用本空间已登记、可以公开的资源（发布后登记到 assetRefs）。
     let new_assets: Vec<String> = assets
         .iter()
         .filter(|hash| !draft.assets.contains(hash))
         .cloned()
         .collect();
-    let missing = repo.missing_assets(grant, &new_assets).await?;
-    if !missing.is_empty() {
+    let unusable = repo.unusable_assets(grant, &new_assets).await?;
+    if !unusable.is_empty() {
         return Err(ApiError::new(
             axum::http::StatusCode::UNPROCESSABLE_ENTITY,
             "unknown_asset",
-            format!("引用的资源还没有登记：{}", missing.join(", ")),
+            format!(
+                "引用的资源不存在、不属于本空间，或是原始扫描/操作文件/脚本：{}",
+                unusable.join(", ")
+            ),
         )
         .into());
     }

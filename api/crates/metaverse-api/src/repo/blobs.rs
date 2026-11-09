@@ -131,12 +131,17 @@ impl Repo {
         self.asset_meta_unchecked(hash).await
     }
 
-    /// 资源是否已经登记（物件模型、贴图只能引用已登记的资源）。返回没找到的哈希。
-    pub async fn missing_assets(
+    /// 草稿里的物件模型、贴图能不能引用这些资源。返回不能用的哈希。
+    ///
+    /// 发布时这些资源会登记到 `assetRefs`、经公开接口可读，所以必须：已登记（GridFS 里有）；
+    /// 属于本空间（登记时 `metadata.spaceId` 是本空间，或本空间已经引用过）；不是原始扫描、
+    /// 操作文件或脚本（`metadata.kind` 为 `scan`、`ops`、`script` 的一律不行）。
+    pub async fn unusable_assets(
         &self,
         grant: &Grant,
         hashes: &[String],
     ) -> Result<Vec<String>, RepoError> {
+        const PRIVATE_KINDS: [&str; 3] = ["scan", "ops", "script"];
         if !grant.can_manage() {
             return Err(RepoError::GrantMismatch);
         }
@@ -146,18 +151,39 @@ impl Repo {
         let mut cursor = self
             .collection(collections::ASSET_FILES)
             .find(doc! {"filename": {"$in": hashes}})
-            .projection(doc! {"filename": 1})
+            .projection(doc! {"filename": 1, "metadata": 1})
             .await?;
-        let mut found = std::collections::BTreeSet::new();
+        let mut usable_here = std::collections::BTreeSet::new();
+        let mut public_kind = std::collections::BTreeSet::new();
         while cursor.advance().await? {
             let document: Document = cursor.deserialize_current().map_err(corrupt)?;
-            if let Ok(name) = document.get_str("filename") {
-                found.insert(name.to_owned());
+            let Ok(name) = document.get_str("filename") else {
+                continue;
+            };
+            let metadata = document.get_document("metadata").ok();
+            let kind = metadata.and_then(|m| m.get_str("kind").ok());
+            if kind.is_some_and(|kind| PRIVATE_KINDS.contains(&kind)) {
+                continue;
+            }
+            public_kind.insert(name.to_owned());
+            if metadata.and_then(|m| m.get_str("spaceId").ok()) == Some(grant.space_id()) {
+                usable_here.insert(name.to_owned());
+            }
+        }
+        let mut cursor = self
+            .collection(collections::ASSET_REFS)
+            .find(doc! {"hash": {"$in": hashes}, "spaceId": grant.space_id()})
+            .projection(doc! {"hash": 1})
+            .await?;
+        while cursor.advance().await? {
+            let document: Document = cursor.deserialize_current().map_err(corrupt)?;
+            if let Ok(hash) = document.get_str("hash") {
+                usable_here.insert(hash.to_owned());
             }
         }
         Ok(hashes
             .iter()
-            .filter(|hash| !found.contains(*hash))
+            .filter(|hash| !(public_kind.contains(*hash) && usable_here.contains(*hash)))
             .cloned()
             .collect())
     }

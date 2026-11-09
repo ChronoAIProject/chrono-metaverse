@@ -377,6 +377,25 @@ impl TestApp {
         reply.body
     }
 
+    /// 把一段字节登记成某个空间的资源（`metadata.spaceId`）。
+    pub async fn put_space_asset(
+        &self,
+        space: &str,
+        bytes: &[u8],
+        content_type: &str,
+        kind: &str,
+    ) -> String {
+        let hash = self.put_asset(bytes, content_type, kind).await;
+        self.collection("assets.files")
+            .update_one(
+                doc! {"filename": &hash},
+                doc! {"$set": {"metadata.spaceId": space}},
+            )
+            .await
+            .unwrap();
+        hash
+    }
+
     /// 把一段字节登记成资源（与处理服务 `assets.put_asset` 相同的 GridFS 布局）。
     pub async fn put_asset(&self, bytes: &[u8], content_type: &str, kind: &str) -> String {
         let hash = metaverse_core::sha256_hex(bytes);

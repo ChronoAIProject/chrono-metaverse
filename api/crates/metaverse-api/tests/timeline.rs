@@ -1357,3 +1357,93 @@ async fn public_rate_limit_and_space_ids() {
         .await;
     assert_eq!(reply.status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn draft_assets_must_belong_to_the_space_and_become_public_on_publish() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    app.define_layout(SPACE).await;
+    let texture = app
+        .put_space_asset(SPACE, b"\xff\xd8\xff texture", "image/jpeg", "texture")
+        .await;
+    let scan = app
+        .put_space_asset(SPACE, b"raw scan bytes", "application/octet-stream", "scan")
+        .await;
+    let foreign = app
+        .put_space_asset(
+            "other-space",
+            b"someone else's texture",
+            "image/png",
+            "texture",
+        )
+        .await;
+    let entity = |hash: &str| {
+        json!([{"op": "placeEntity", "entity": {"entityId": "rug", "layer": "ext", "kind": "object",
+            "shape": {"type": "box", "size": [1, 0.02, 1], "transform": {"position": [2, 0, 2]},
+                      "material": {"texture": hash, "uv": "planar"}},
+            "bounds": {"min": [1.5, 0, 1.5], "max": [2.5, 0.02, 2.5]}}}])
+    };
+    let path = draft_path(
+        SPACE,
+        &new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await,
+    );
+    // 原始扫描、别的空间的资源、不存在的资源：422，草稿不变。
+    for hash in [scan.clone(), foreign.clone(), "b".repeat(64)] {
+        let reply = append(&app, &path, entity(&hash)).await;
+        assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY, "{hash}");
+        assert_eq!(reply.body["code"], "unknown_asset");
+    }
+    let reply = append(&app, &path, entity(&texture)).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(reply.body["assets"], json!([texture]));
+    // 发布前：公开资源地址读不到，预览地址能读到。
+    let public_path = format!("/api/public/assets/{texture}.bin");
+    assert_eq!(
+        app.public(&public_path, None).await.status,
+        StatusCode::NOT_FOUND
+    );
+    let token = app
+        .org(Method::POST, &format!("{path}/preview"), None)
+        .await
+        .body["token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let preview_auth = format!("Preview {token}");
+    let reply = app
+        .public(
+            &format!("/api/public/previews/assets/{texture}"),
+            Some(&preview_auth),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(reply.header(header::CONTENT_TYPE), "image/jpeg");
+    assert_eq!(reply.header(header::CACHE_CONTROL), "no-store");
+    assert_eq!(
+        app.public(
+            &format!("/api/public/previews/assets/{scan}"),
+            Some(&preview_auth)
+        )
+        .await
+        .status,
+        StatusCode::NOT_FOUND
+    );
+    // 发布后登记到 assetRefs（带提交编号），公开可读。
+    let reply = app
+        .org(Method::POST, &format!("{path}/publish"), None)
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let commit_id = reply.body["commitId"].as_str().unwrap().to_owned();
+    let reply = app.public(&public_path, None).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(&reply.bytes[..], b"\xff\xd8\xff texture");
+    let registered = app
+        .collection("assetRefs")
+        .find_one(doc! {"hash": &texture, "spaceId": SPACE})
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(registered.get_str("commitId").unwrap(), commit_id);
+}
