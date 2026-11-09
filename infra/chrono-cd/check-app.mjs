@@ -14,6 +14,9 @@
 //   没有可信头时限流按网关地址计，所有访客共用几个桶，一个来源持续多发请求就能耗尽它们、让所有
 //   访客都 429。所以这时四个额度必须显式设到单个进程处理不了的高度（每核每秒 100 万次），
 //   等于关掉限流，靠每空间并发上限和进程内缓存兜底（README 第 1 节"公开接口限流"）。
+// - 镜像：每个服务都按摘要固定（`仓库[:7 位提交哈希]@sha256:<64 位>`），仓库与服务名对应。ghcr 的标签
+//   可以被任何分支里改过的工作流改写，chrono-cd 每次 PUT / PATCH 都把标签重新解析成摘要，按标签
+//   写的规格在一次只改环境变量的 PATCH 里也会换成别人推上去的镜像（README 第 1 步"镜像按摘要固定"）。
 // - README 的环境变量表列出了 app.json 里的每一个环境变量和密钥名；本地 up.sh 给处理服务设了同样的
 //   线程变量，本地测的内存和线上一致。
 // - 部署配置种子：`demo-seed.json` 和接口服务的 `METAVERSE_DEMO_SEED` 内容一致（后者是前者压缩成的
@@ -27,6 +30,29 @@ import { fileURLToPath } from 'node:url';
 
 export const API_SERVICE = 'metaverse-api';
 export const WORKER_SERVICE = 'metaverse-worker';
+
+/** 每个服务的镜像仓库（images.yml 推送的包）。 */
+export const IMAGE_REPOSITORIES = {
+  'metaverse-web': 'ghcr.io/chronoaiproject/chrono-metaverse-web',
+  [API_SERVICE]: 'ghcr.io/chronoaiproject/chrono-metaverse-api',
+  [WORKER_SERVICE]: 'ghcr.io/chronoaiproject/chrono-metaverse-worker',
+};
+
+/**
+ * 按摘要固定的镜像引用：`仓库[:标签]@sha256:<64 位小写十六进制>`。chrono-cd 在标签和摘要都有时
+ * 只按摘要拉取，标签只是给人看的记号，所以只允许 7 位提交哈希（images.yml 的短哈希标签），
+ * 不允许 `main` 这类分支标签，免得记号和实际镜像对不上。
+ */
+const PINNED_IMAGE = /^(?<repo>[a-z0-9.-]+(?:\/[a-z0-9._-]+)+?)(?::(?<tag>[^@:/]+))?@(?<digest>sha256:[0-9a-f]{64})$/;
+const COMMIT_TAG = /^[0-9a-f]{7}$/;
+
+/** 解析按摘要固定的镜像引用；不是这种形式时返回 null。 */
+export function parsePinnedImage(image) {
+  const match = typeof image === 'string' ? PINNED_IMAGE.exec(image) : null;
+  if (!match) return null;
+  const { repo, tag, digest } = match.groups;
+  return { repo, tag: tag ?? null, digest };
+}
 
 /** 处理服务必须设置的线程相关变量。 */
 export const WORKER_THREAD_VARS = ['OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS'];
@@ -247,6 +273,31 @@ function checkApi(spec, problems) {
   }
 }
 
+function checkImages(spec, problems) {
+  for (const [name, service] of Object.entries(spec.services)) {
+    const image = service?.image;
+    const pinned = parsePinnedImage(image);
+    if (pinned === null) {
+      problems.push(
+        `${name}：image 必须按摘要固定（仓库[:7 位提交哈希]@sha256:<64 位>，现在是 ${JSON.stringify(image)}）。` +
+          `ghcr 的标签可以被任何分支的工作流改写，chrono-cd 每次 PUT / PATCH 都会重新解析标签，` +
+          `一次只改环境变量的 PATCH 也会把别人推上去的镜像部署上线；用 pin-images.mjs 生成`,
+      );
+      continue;
+    }
+    if (pinned.tag !== null && !COMMIT_TAG.test(pinned.tag)) {
+      problems.push(
+        `${name}：image 的标签 ${pinned.tag} 不是 7 位提交哈希。标签和摘要都有时 chrono-cd 只看摘要，` +
+          `标签只是记号；写分支名之类的标签会让人以为部署的是别的版本`,
+      );
+    }
+    const expected = IMAGE_REPOSITORIES[name];
+    if (expected !== undefined && pinned.repo !== expected) {
+      problems.push(`${name}：image 的仓库应当是 ${expected}（现在是 ${pinned.repo}）`);
+    }
+  }
+}
+
 /** 规范化 JSON（键按码点排序，没有空白）：与接口服务的 `canonical_json` 对这里会出现的值相同。 */
 export function canonicalJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
@@ -461,6 +512,7 @@ export function checkApp(spec, { readme, upScript, seed } = {}) {
   if (spec === null || typeof spec !== 'object' || typeof spec.services !== 'object' || spec.services === null) {
     return ['app.json 没有 services'];
   }
+  checkImages(spec, problems);
   checkWorker(spec, problems);
   checkApi(spec, problems);
   if (readme !== undefined) checkReadme(spec, readme, problems);

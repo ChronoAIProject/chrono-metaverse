@@ -5,7 +5,7 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 
 规格格式以 chrono-cd 的接口文档为准（`docs/protocol/api.md`、技能文件 `skills/chrono-cd/SKILL.md`），并对照了组织下已有应用（`omega/mathesis`、`integrations/frigate-events-test`）的实际配置。
 
-改 `app.json` 后先跑静态检查（持续集成里也跑）：`node infra/chrono-cd/check-app.mjs`。它检查处理服务的线程数和内存上限、接口服务的限流额度和可信地址头、README 的环境变量表和密钥是否列全、`infra/dev/up.sh` 是否设了同样的线程变量，以及演示数据的种子（[`demo-seed.json`](demo-seed.json)）和接口服务的 `METAVERSE_DEMO_SEED` 是否一致、种子本身是否合法（第 8 步）；测试在 `check-app.test.mjs`（`node --test infra/chrono-cd/*.test.mjs`）。
+改 `app.json` 后先跑静态检查（持续集成里也跑）：`node infra/chrono-cd/check-app.mjs`。它检查每个服务的镜像都按摘要固定（第 1 步"镜像按摘要固定"）、处理服务的线程数和内存上限、接口服务的限流额度和可信地址头、README 的环境变量表和密钥是否列全、`infra/dev/up.sh` 是否设了同样的线程变量，以及演示数据的种子（[`demo-seed.json`](demo-seed.json)）和接口服务的 `METAVERSE_DEMO_SEED` 是否一致、种子本身是否合法（第 8 步）；测试在 `check-app.test.mjs`（`node --test infra/chrono-cd/*.test.mjs`）。镜像换版本用 [`pin-images.mjs`](pin-images.mjs) 生成规格或补丁（测试在 `pin-images.test.mjs`）。
 
 ## 1. 规格要点
 
@@ -23,7 +23,7 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 
 **探针**：chrono-cd 用 `health_path` 同时做就绪、存活、启动探针和负载均衡健康检查（存活每 15 秒、超时 5 秒；启动最多等 300 秒）。接口服务建好索引前 `/api/healthz` 返回 503，平台不会把流量导过来。网站用 nginx 自己的 `/healthz`（不读文件、不记访问日志）。处理服务不对外，`expose: internal` 只建集群内地址，不进公网路由。
 
-**镜像要求**（Dockerfile 在 [`infra/`](..) 下）：只能来自 ghcr.io；数字形式的非 root 用户（api 65532、web 101、worker 10001）；linux/amd64。chrono-cd 每次应用规格都把标签解析成摘要并固定下来。
+**镜像要求**（Dockerfile 在 [`infra/`](..) 下）：只能来自 ghcr.io；数字形式的非 root 用户（api 65532、web 101、worker 10001）；linux/amd64。规格里的镜像**一律按摘要固定**（`仓库:<7 位提交哈希>@sha256:<摘要>`，标签只作记号），原因见第 1 步。
 
 ### 配额
 
@@ -137,7 +137,24 @@ APP=api/v1/projects/metaverse/apps/chrono-metaverse
 - `…:<分支名>`（`/` 换成 `-`，例如 `claude-happy-ritchie-oly5hx`、`main`）
 - `…:latest`（只有 `main`）
 
-部署时**用提交哈希标签**，回滚和排查都能对上代码。
+#### 镜像按摘要固定
+
+部署**只用摘要**，不用任何标签（包括 7 位提交哈希标签）：
+
+- **标签可以被改写**：`Images` 的触发条件和 `packages: write` 权限都由被推分支自己的 `images.yml` 声明。有推送权限的人（或泄露的令牌）在任何分支里改一下这个文件，推一次就能覆盖 `:<线上的提交哈希>` 这类标签，ghcr 没有禁止改写标签的设置。
+- **chrono-cd 每次 `PUT` 和 `PATCH` 都会重新解析标签**（`Put` 对每个服务调用 `resolveImages`，不管镜像字段改没改；`set_app_secrets` 和重启用已存的摘要）。按标签写的规格，下一次只改环境变量的 `PATCH`（例如第 4 步改 `PUBLIC_BASE_URL`、第 7 步改 `ALLOWED_NYX_SERVICE_IDS`）就会把标签当时指向的镜像部署上线，修订记录里标签名不变、只有摘要变了。
+- **按摘要写时**：chrono-cd 在标签和摘要都有时只按摘要拉取，重新解析也还是同一个镜像。
+
+摘要从**这次提交在部署分支上的 `Images` 运行**里取：GitHub 的 Actions 页面打开那次运行（核对分支和提交哈希），三个任务的摘要里各有一行 `api=sha256:…`、`web=sha256:…`、`worker=sha256:…`，原样交给 [`pin-images.mjs`](pin-images.mjs)。不要按标签去 ghcr 查摘要，那查到的是标签现在指向的镜像。命令行也可以这样取（`gh` 登录后）：
+
+```bash
+gh run list -R ChronoAIProject/chrono-metaverse --workflow Images --commit <完整提交哈希> --json databaseId,headBranch,conclusion
+gh run view <运行编号> -R ChronoAIProject/chrono-metaverse --log | grep -oE '(api|web|worker)=sha256:[0-9a-f]{64}' | sort -u
+```
+
+`app.json` 里写的是已经上线验证过的版本（目前是 `aabf88f`，摘要与 chrono-cd 修订 2 记录的一致）；`check-app.mjs` 拒绝只有标签、标签不是 7 位提交哈希、或仓库和服务对不上的镜像。
+
+按摘要部署只保证"部署的就是那次运行构建的镜像"，管不到谁能推镜像、推代码。还没做、要仓库管理员在 GitHub 上决定的：建受保护的 `main` 作为部署分支（现在唯一的分支 `claude/happy-ritchie-oly5hx` 没有保护）；在包设置的 Manage Actions access 里收回本仓库工作流的写权限，改用只在受保护分支的 GitHub Environment 里可用的凭证推镜像（工作流自己声明的 `packages: write` 拦不住改过的工作流）；用组织规则集限制谁能改 `.github/workflows`。
 
 ### 第 2 步：把三个包设为公开（只做一次）
 
@@ -149,7 +166,7 @@ APP=api/v1/projects/metaverse/apps/chrono-metaverse
 TOKEN=$(curl -s "https://ghcr.io/token?scope=repository:chronoaiproject/chrono-metaverse-api:pull" | jq -r .token)
 curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" \
   -H 'Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
-  https://ghcr.io/v2/chronoaiproject/chrono-metaverse-api/manifests/<提交哈希>
+  https://ghcr.io/v2/chronoaiproject/chrono-metaverse-api/manifests/sha256:<摘要>
 ```
 
 不想公开时，可以在 `PUT` 请求体里带一次 `registry_credential`（经典 PAT，`read:packages`），但这样就有一个要保管的凭证，不推荐。
@@ -164,16 +181,18 @@ nyxid proxy request chrono-cd "api/v1/account?org_id=$ORG" --output json
 
 ### 第 4 步：提交应用规格
 
-先跑 `node infra/chrono-cd/check-app.mjs`，再把 `app.json` 里三个镜像的标签换成要部署的提交哈希，然后提交：
+先跑 `node infra/chrono-cd/check-app.mjs`，再用 `pin-images.mjs` 把三个镜像换成要部署那次提交的摘要（第 1 步"镜像按摘要固定"；它输出整份规格，并且只有通过 `check-app` 的检查才输出），然后提交：
 
 ```bash
-SHA=<7 位提交哈希>
-sed "s/:main\"/:$SHA\"/" infra/chrono-cd/app.json > /tmp/chrono-metaverse.json
+node infra/chrono-cd/pin-images.mjs <提交哈希> \
+  api=sha256:<摘要> web=sha256:<摘要> worker=sha256:<摘要> > /tmp/chrono-metaverse.json
 nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PUT \
   --data "$(cat /tmp/chrono-metaverse.json)" --output json
 ```
 
-在 Claude 会话里：让它用 `chrono-cd__put_app` 提交，参数是 `project=metaverse`、`app=chrono-metaverse`、`org_id=<ORG>`，`addons` 和 `services` 取自 `app.json`（`target_org_id` 与 `org_id` 一致）。先让它把要提交的内容给你看。
+部署 `app.json` 里写的那个版本时不用换，直接提交 `app.json`。
+
+在 Claude 会话里：让它用 `chrono-cd__put_app` 提交，参数是 `project=metaverse`、`app=chrono-metaverse`、`org_id=<ORG>`，`addons` 和 `services` 取自 `pin-images.mjs` 的输出或 `app.json`（`target_org_id` 与 `org_id` 一致；镜像必须带 `@sha256:`）。先让它把要提交的内容给你看。
 
 返回 `201`（新建）或 `200`（替换）。记下返回里的 `url`，如果和 `PUBLIC_BASE_URL` 的预估值不同，改掉它（chrono-cd 的 `PATCH` 是 JSON 合并补丁，只改这一项，其他字段不动）：
 
@@ -182,7 +201,7 @@ nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH \
   --data '{"services":{"metaverse-api":{"env":{"PUBLIC_BASE_URL":"https://<返回的 url 主机名>"}}}}' --output json
 ```
 
-常见失败：`400 image_not_found`（标签不存在或还没构建完）、`400 image_unauthorized`（第 2 步没做）、`409 quota_exceeded`（第 3 步）、`409 service_name_taken`（服务名被组织里别的应用占用）。
+常见失败：`400 image_not_found`（摘要不存在、复制错了或还没构建完）、`400 image_unauthorized`（第 2 步没做）、`409 quota_exceeded`（第 3 步）、`409 service_name_taken`（服务名被组织里别的应用占用）。
 
 规格里声明了密钥 `METAVERSE_DEMO_SHARE_TOKEN`：第一次提交时密钥还没设置，chrono-cd 返回 `422 missing_secret_keys`——这表示规格**已保存**、等密钥，接着做第 5 步，设置后 chrono-cd 立即应用。
 
@@ -301,15 +320,17 @@ curl -s -H "Authorization: Share <令牌>" https://<应用域名>/api/public/spa
 
 ## 3. 日常更新
 
-新版本只换镜像标签，用 `PATCH`（不会动其他字段，也不会覆盖别人中途的部署）：
+新版本只换镜像，用 `PATCH`（不会动其他字段，也不会覆盖别人中途的部署）。摘要按第 1 步"镜像按摘要固定"从那次提交的 `Images` 运行里取，`pin-images.mjs --patch` 生成只含镜像的补丁：
 
 ```bash
-SHA=<新的 7 位提交哈希>
-nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --data "{\"services\":{
-  \"metaverse-web\":{\"image\":\"ghcr.io/chronoaiproject/chrono-metaverse-web:$SHA\"},
-  \"metaverse-api\":{\"image\":\"ghcr.io/chronoaiproject/chrono-metaverse-api:$SHA\"},
-  \"metaverse-worker\":{\"image\":\"ghcr.io/chronoaiproject/chrono-metaverse-worker:$SHA\"}}}"
+PATCH_BODY=$(node infra/chrono-cd/pin-images.mjs --patch <新的提交哈希> \
+  api=sha256:<摘要> web=sha256:<摘要> worker=sha256:<摘要>)
+nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --data "$PATCH_BODY"
 ```
+
+上线后同步改 `app.json` 的三个镜像（同一条命令去掉 `--patch` 的输出里就是新的镜像引用），让仓库里记的是线上验证过的版本。
+
+**线上规格还是按标签写的时候（只做一次）**：2026-11-09 部署的修订 1、2 用的是 `:b957be0`、`:aabf88f` 这类标签。在做任何只改环境变量的 `PATCH` 之前，先用上面的命令把镜像换成按摘要固定，摘要取 `revisions` 里**当前修订记录的** `ImageDigest`（部署时解析出来的，不受之后改写标签的影响；与那次 `Images` 运行的摘要核对一次）。之后再按需要用 `PATCH` 同步 `app.json` 里改过的环境变量（例如第 1 节"公开接口限流"的四个额度）。
 
 改了 `app.json` 的其他内容（环境变量、资源）时用第 4 步的 `PUT` 整份提交；`PUT` 会整份替换，提交前先 `GET` 一次，把线上手工改过的值（`PUBLIC_BASE_URL`、`ALLOWED_NYX_SERVICE_IDS`）同步回来，再带上 `If-Match: <generation>`。
 
@@ -323,16 +344,17 @@ nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --
    nyxid proxy request chrono-cd "$APP/revisions?org_id=$ORG&limit=10" --output json
    ```
 
-   每个修订都带各服务的镜像和摘要。同一个标签被重新推送过时，用 `镜像名@sha256:<摘要>` 更稳。
-2. 用第 3 节的 `PATCH` 把镜像换回旧标签或旧摘要（只回滚出问题的服务也可以）。
+   每个修订都带各服务的镜像和摘要（`ImageDigest`，部署时解析出来的）。回滚用这个摘要，不要用标签：标签可能已经被改写。
+2. 用第 3 节的 `pin-images.mjs --patch` 生成补丁，把镜像换回旧摘要（只回滚出问题的服务也可以，只写那个服务，例如 `api=sha256:<旧摘要>`；提交哈希写旧版本的）。
 3. 用第 6 步的命令确认 `phase = ready`。
 
-在 Claude 会话里没有 `PATCH`：先 `chrono-cd__get_app` 读出当前完整配置，只把对应服务的 `image` 换成旧版本，其他字段（全部服务、`env`、`addon_env`、`addons`、`volumes`）原样保留，再用 `chrono-cd__put_app` 提交。漏了服务，那个服务会被删掉；漏了 `addons`，MongoDB 插件会被撤掉（数据保留，但应用随即连不上数据库）。
+在 Claude 会话里没有 `PATCH`：先 `chrono-cd__get_app` 读出当前完整配置，只把对应服务的 `image` 换成旧版本（`仓库:<旧提交哈希>@sha256:<旧摘要>`），其他字段（全部服务、`env`、`addon_env`、`addons`、`volumes`）原样保留，再用 `chrono-cd__put_app` 提交。漏了服务，那个服务会被删掉；漏了 `addons`，MongoDB 插件会被撤掉（数据保留，但应用随即连不上数据库）。
 
 回滚不回滚数据：如果新版本已经跑过不兼容旧版本的迁移，单纯换镜像不够，先看迁移说明。
 
 ## 5. 不要做的事
 
 - 不要把任何密钥写进 `env`（`get_app` 会原样返回给组织成员）或 `app.json`，包括演示空间的分享令牌 `METAVERSE_DEMO_SHARE_TOKEN`（它只在 `secret_keys` 里声明名字）。
+- 不要在规格里写只有标签的镜像（`:main`、`:<提交哈希>`），也不要按标签去 ghcr 查摘要：标签可以被任何分支的工作流改写，chrono-cd 每次 `PUT` / `PATCH` 都会重新解析（第 1 步"镜像按摘要固定"）。
 - 不要 `DELETE` 应用来"重来"：删除不可恢复，带 `purge=true` 还会删掉数据库。
 - 不要把 `ALLOWED_NYX_SERVICE_IDS` 改成别人的服务编号或放宽成多个不相干的编号：别人自建的连接指向本服务时，正是靠它返回 401（设计 9.1）。

@@ -18,6 +18,7 @@ import {
   checkRepository,
   parseCpu,
   parseMemoryMiB,
+  parsePinnedImage,
   parsePositiveInt,
   seedProblems,
   sharedBucketFloor,
@@ -267,6 +268,61 @@ test('up.sh 必须给处理服务设同样的线程变量', () => {
   assertProblem(problems, /up\.sh 没有给处理服务设 OPENBLAS_NUM_THREADS/);
   assertProblem(problems, /up\.sh 没有给处理服务设 MALLOC_ARENA_MAX/);
   assert.ok(!problems.some((problem) => problem.includes('OMP_NUM_THREADS')), '没删的不报');
+});
+
+test('镜像：每个服务都按摘要固定，标签只能是 7 位提交哈希，仓库与服务对应', () => {
+  const digest = `sha256:${'a'.repeat(64)}`;
+  const image = (service, value) => problemsOf(variant((copy) => (copy.services[service].image = value)));
+
+  // 只写标签（分支名、提交哈希都不行）：标签可以被改写，PUT / PATCH 时会重新解析。
+  for (const value of [
+    'ghcr.io/chronoaiproject/chrono-metaverse-api:main',
+    'ghcr.io/chronoaiproject/chrono-metaverse-api:aabf88f',
+    'ghcr.io/chronoaiproject/chrono-metaverse-api:latest',
+  ]) {
+    assertProblem(image(API_SERVICE, value), /metaverse-api：image 必须按摘要固定.*重新解析标签/);
+  }
+  // 摘要格式不对、缺 image、多出一段 @。
+  for (const value of [
+    `ghcr.io/chronoaiproject/chrono-metaverse-web@sha256:${'A'.repeat(64)}`,
+    `ghcr.io/chronoaiproject/chrono-metaverse-web@sha256:${'a'.repeat(63)}`,
+    `ghcr.io/chronoaiproject/chrono-metaverse-web@sha512:${'a'.repeat(64)}`,
+    `ghcr.io/chronoaiproject/chrono-metaverse-web:aabf88f@${digest}@${digest}`,
+    undefined,
+    '',
+  ]) {
+    assertProblem(image('metaverse-web', value), /metaverse-web：image 必须按摘要固定/);
+  }
+  // 分支名当记号会误导人。
+  assertProblem(
+    image(WORKER_SERVICE, `ghcr.io/chronoaiproject/chrono-metaverse-worker:main@${digest}`),
+    /metaverse-worker：image 的标签 main 不是 7 位提交哈希/,
+  );
+  // 换成别的仓库（例如把处理服务的镜像写到接口服务上，或者别人的包）。
+  assertProblem(
+    image(API_SERVICE, `ghcr.io/chronoaiproject/chrono-metaverse-worker:aabf88f@${digest}`),
+    /metaverse-api：image 的仓库应当是 ghcr\.io\/chronoaiproject\/chrono-metaverse-api（现在是 ghcr\.io\/chronoaiproject\/chrono-metaverse-worker）/,
+  );
+  assertProblem(image(API_SERVICE, `ghcr.io/someone/chrono-metaverse-api@${digest}`), /image 的仓库应当是/);
+
+  // 只有摘要、或者提交哈希加摘要，都可以。
+  assert.deepEqual(image(API_SERVICE, `ghcr.io/chronoaiproject/chrono-metaverse-api@${digest}`), []);
+  assert.deepEqual(image(API_SERVICE, `ghcr.io/chronoaiproject/chrono-metaverse-api:0123abc@${digest}`), []);
+
+  // 别的服务（以后加的）也要按摘要固定。
+  const extra = problemsOf(
+    variant((copy) => (copy.services['metaverse-extra'] = { image: 'ghcr.io/chronoaiproject/extra:1' })),
+  );
+  assertProblem(extra, /metaverse-extra：image 必须按摘要固定/);
+
+  assert.deepEqual(parsePinnedImage(`ghcr.io/o/p:abc1234@${digest}`), {
+    repo: 'ghcr.io/o/p',
+    tag: 'abc1234',
+    digest,
+  });
+  assert.deepEqual(parsePinnedImage(`ghcr.io/o/sub/p@${digest}`), { repo: 'ghcr.io/o/sub/p', tag: null, digest });
+  assert.equal(parsePinnedImage('ghcr.io/o/p:abc1234'), null);
+  assert.equal(parsePinnedImage(42), null);
 });
 
 test('缺服务或没有 services 时报错', () => {

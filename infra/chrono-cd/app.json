@@ -5,7 +5,7 @@
   },
   "services": {
     "metaverse-web": {
-      "image": "ghcr.io/chronoaiproject/chrono-metaverse-web:main",
+      "image": "ghcr.io/chronoaiproject/chrono-metaverse-web:aabf88f@sha256:31dff47bbda6656e1dfd1e55e241612b8120de11060ebcbc4ea0285a4faaee76",
       "port": 8080,
       "routes": ["/"],
       "expose": "public",
@@ -19,7 +19,7 @@
       }
     },
     "metaverse-api": {
-      "image": "ghcr.io/chronoaiproject/chrono-metaverse-api:main",
+      "image": "ghcr.io/chronoaiproject/chrono-metaverse-api:aabf88f@sha256:e87c4fd2f6dbb4d98da83611b33991f36384980f46dfb6ac2b7bd86b7ad5aeb3",
       "port": 8080,
       "routes": ["/api"],
       "expose": "public",
@@ -65,7 +65,7 @@
       }
     },
     "metaverse-worker": {
-      "image": "ghcr.io/chronoaiproject/chrono-metaverse-worker:main",
+      "image": "ghcr.io/chronoaiproject/chrono-metaverse-worker:aabf88f@sha256:8ad4bbc10806ae74b5a4f3836554afec625933a20723d1ba160c9c9adbe1c6e0",
       "port": 8080,
       "expose": "internal",
       "health_path": "/healthz",
