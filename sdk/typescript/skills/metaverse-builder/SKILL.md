@@ -186,6 +186,9 @@ export default function build(base: BuildBase, kit: Kit) {
 `base` 上常用的：`target`（目标范围）、`regions`、`plots`、`anchors`、`entities`、`palette`、`templates`、
 `block(名称)`、`blockAt([x,y,z])`、`entity(编号)`、`anchor(编号)`。
 
+脚本由 Node 直接运行（自带的类型擦除）：只用可以擦除的类型写法（不要用 `enum`、`namespace`），
+拆成多个文件时相对导入写完整的扩展名（`import { tables } from './tables.ts'`）。
+
 ## 9. 出错时
 
 - `build` 报"第 N 条操作：……"：按说明改脚本（N 从 0 开始数）。
