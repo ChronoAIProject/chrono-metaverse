@@ -404,6 +404,8 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
       const [, scopePath, draftId, action] = m;
       if (draftId === undefined && request.method === 'POST') {
         const req = parsed();
+        // CreateDraftRequest 只有 baseSeq（提交说明在发布时给）。
+        if (invalidFields(req, ['baseSeq'])) return;
         const id = nextId('draft');
         state.drafts.set(id, { scopePath: scopePath!, baseSeq: Number(req.baseSeq), ops: [] });
         return json(201, {
@@ -451,6 +453,7 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
         case 'preview':
           return json(201, { token: 'preview-token-abc', expiresAt: '2026-11-10T00:00:00.000Z' });
         case 'publish':
+          if (invalidFields(req, ['message', 'replay', 'rev', 'observedAt', 'scriptRef'])) return;
           if (state.publishConflict) {
             return problem(409, 'draft_conflict', '时间线已前进，与草稿冲突', {
               conflicts: { entities: ['table-1'] },

@@ -27,7 +27,8 @@ metaverse publish <草稿编号>。
 
 选项：
   --plot <地块>       目标地块（不给就是实体区，或 metaverse.json 的 plot）
-  --message <说明>    提交说明（默认用建造脚本返回的 message）
+  --message <说明>    提交说明（默认用建造脚本返回的 message）。说明记进 out/drafts.json，
+                      发布时作为提交说明（接口服务在发布时才收说明，建草稿不收）
   --inline            不上传文件，直接分批（每批 ≤ ${MAX_OPS_PER_BATCH} 条）调用批量操作接口
   --no-preview        不生成预览链接
   --preview-ttl <秒>  预览链接有效期（默认 24 小时，最长 7 天）
@@ -37,13 +38,33 @@ export const PUBLISH_HELP = `metaverse publish <草稿编号> [--plot <地块>] 
 
 发布草稿（所用 agent key 的操作范围要包含发布接口）。草稿属于创建时的路径范围：push 时记下了
 草稿的地块，也可以用 --plot 指定。时间线已前进且与草稿冲突时返回冲突的键；--replay 请服务端
-在最新版本上重放草稿的操作。`;
+在最新版本上重放草稿的操作。
+
+选项：
+  --plot <地块>       草稿所属的地块（默认用 push 时记下的）
+  --message <说明>    提交说明（默认用 push 时记下的说明：--message 或建造脚本返回的 message）
+  --replay            冲突时在最新版本上重放`;
+
+/** 提交说明的上限（接口服务按字符数检查）。 */
+export const MAX_MESSAGE_CHARS = 2000;
+
+/** 与接口服务相同的提交说明检查：不能为空、≤ 2000 字、除换行外不含控制字符。 */
+export function messageError(message: string): string | null {
+  if (message.trim() === '') return '提交说明不能为空';
+  if ([...message].length > MAX_MESSAGE_CHARS) return `提交说明最多 ${MAX_MESSAGE_CHARS} 字`;
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/.test(message))
+    return '提交说明不能含控制字符（换行除外）';
+  return null;
+}
 
 interface DraftRecord {
   readonly plot: string | null;
   readonly baseSeq: number;
   readonly opCount: number;
   readonly createdAt: string;
+  /** 提交说明：发布时没给 --message 就用它。 */
+  readonly message?: string;
   readonly preview?: string;
 }
 
@@ -109,6 +130,12 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
     return 0;
   }
   if (!result.base.pulled) throw new CliError('工作区还没有拉取：先运行 metaverse pull');
+  // 接口服务建草稿时不收说明，说明记进 drafts.json，发布时再给。先在本地检查，免得发布时才失败。
+  const message = str(values, 'message') ?? result.message ?? undefined;
+  if (message !== undefined) {
+    const error = messageError(message);
+    if (error !== null) throw new CliError(`没有推送：${error}`);
+  }
   const api = makeApi(ctx, ws, values);
   const waitOptions = {
     onUpdate: (job: Parameters<typeof describeJob>[0]) => say(describeJob(job)),
@@ -121,11 +148,7 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
       `注意：时间线已从 seq ${baseSeq} 前进到 ${space.head.seq}；发布时服务端会检查冲突（冲突就先 pull 再 build、push）`,
     );
   }
-  const message = str(values, 'message') ?? result.message ?? undefined;
-  const draft = await api.createDraft(
-    { baseSeq, ...(message !== undefined ? { message } : {}) },
-    plot,
-  );
+  const draft = await api.createDraft({ baseSeq }, plot);
   const draftId = idOf(draft, 'draftId');
   if (draftId === undefined) throw new CliError('建草稿的响应里没有草稿编号');
   say(`已建草稿 ${draftId}（${plot ? `地块 ${plot}` : '实体区'}，基于 seq ${baseSeq}）`);
@@ -177,6 +200,7 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
     baseSeq,
     opCount: result.ops.length,
     createdAt: new Date().toISOString(),
+    ...(message !== undefined ? { message } : {}),
     ...(link !== null ? { preview: link } : {}),
   });
   const summary = diffSummary(result);
@@ -186,6 +210,7 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
       plot,
       baseSeq,
       opCount: result.ops.length,
+      message: message ?? null,
       summary,
       applied,
       preview: link,
@@ -196,6 +221,7 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
   ctx.out(formatDiff(summary));
   ctx.out('');
   ctx.out(`草稿编号：${draftId}`);
+  if (message !== undefined) ctx.out(`提交说明（发布时使用）：${message}`);
   if (link !== null) ctx.out(`预览链接：${link}`);
   ctx.out(`请人看过预览后再发布：metaverse publish ${draftId}`);
   return 0;
@@ -217,7 +243,12 @@ export async function runPublish(ctx: CliContext, args: readonly string[]): Prom
   const record = readDrafts(ws.root)[draftId];
   const plot = str(values, 'plot') ?? record?.plot ?? null;
   const api = makeApi(ctx, ws, values);
-  const message = str(values, 'message');
+  // 没给 --message 时用 push 时记下的说明。
+  const message = str(values, 'message') ?? record?.message;
+  if (message !== undefined) {
+    const error = messageError(message);
+    if (error !== null) throw new CliError(error);
+  }
   try {
     const result = await api.publish(
       draftId,

@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { main } from '../src/commands/index.js';
-import { previewLink } from '../src/commands/push.js';
+import { messageError, previewLink } from '../src/commands/push.js';
 import { parseTransform, scanFormat } from '../src/commands/scan.js';
 import { runVoxelize } from '../src/commands/voxelize.js';
 import { validateLayout } from '../src/commands/admin.js';
@@ -199,7 +199,9 @@ describe('metaverse push / publish', () => {
     const create = fake.requests.find(
       (r) => r.path === '/api/v1/spaces/demo-space/plots/p1/drafts',
     )!;
-    expect(JSON.parse(create.body.toString())).toEqual({ baseSeq: 3, message: '放两张桌子' });
+    // 建草稿只带 baseSeq（接口服务拒绝未知字段）；说明记进 drafts.json，发布时再给。
+    expect(JSON.parse(create.body.toString())).toEqual({ baseSeq: 3 });
+    expect(text).toContain('提交说明（发布时使用）：放两张桌子');
     const draft = [...fake.state.drafts.values()][0]!;
     expect(draft.scopePath).toBe('/api/v1/spaces/demo-space/plots/p1');
     expect(draft.ops.map((op) => (op as { op: string }).op)).toEqual([
@@ -218,10 +220,10 @@ describe('metaverse push / publish', () => {
     });
     const drafts = JSON.parse(readFileSync(join(root, 'out/drafts.json'), 'utf8')) as Record<
       string,
-      { plot: string }
+      { plot: string; message?: string }
     >;
     const draftId = Object.keys(drafts)[0]!;
-    expect(drafts[draftId]!.plot).toBe('p1');
+    expect(drafts[draftId]).toMatchObject({ plot: 'p1', message: '放两张桌子' });
     // 发布：草稿记住了地块，走同一范围的路径。
     const publishCtx = makeContext(root);
     expect(await main(publishCtx, ['publish', draftId, '--message', '确认'])).toBe(0);
@@ -229,6 +231,32 @@ describe('metaverse push / publish', () => {
     const publish = fake.requests.at(-1)!;
     expect(publish.path).toBe(`/api/v1/spaces/demo-space/plots/p1/drafts/${draftId}/publish`);
     expect(JSON.parse(publish.body.toString())).toEqual({ message: '确认' });
+    // 不给 --message 时用 push 时记下的说明（建造脚本返回的 message）。
+    expect(await main(makeContext(root), ['publish', draftId])).toBe(0);
+    expect(JSON.parse(fake.requests.at(-1)!.body.toString())).toEqual({ message: '放两张桌子' });
+  });
+
+  it('--message 覆盖脚本的说明；说明不合法时不推送、不发布', async () => {
+    fake = await startFakeApi(remoteSnapshot().state);
+    const root = directWorkspace(fake, PUSH_SCRIPT);
+    const ctx = makeContext(root);
+    expect(
+      await main(ctx, ['push', '--plot', 'p1', '--no-preview', '--json', '--message', '改说明']),
+    ).toBe(0);
+    const out = JSON.parse(ctx.lines.at(-1)!) as { draftId: string; message: string };
+    expect(out.message).toBe('改说明');
+    expect(await main(ctx, ['publish', out.draftId])).toBe(0);
+    expect(JSON.parse(fake.requests.at(-1)!.body.toString())).toEqual({ message: '改说明' });
+    const before = fake.requests.length;
+    expect(await main(ctx, ['push', '--plot', 'p1', '--message', '  '])).toBe(1);
+    expect(ctx.errors.at(-1)).toContain('不能为空');
+    expect(await main(ctx, ['push', '--plot', 'p1', '--message', 'x'.repeat(2001)])).toBe(1);
+    expect(ctx.errors.at(-1)).toContain('2000');
+    expect(await main(ctx, ['publish', out.draftId, '--message', 'a\u0007b'])).toBe(1);
+    expect(ctx.errors.at(-1)).toContain('控制字符');
+    expect(fake.requests.length).toBe(before);
+    expect(messageError('第一行\n第二行')).toBeNull();
+    expect(messageError('回车\r')).not.toBeNull();
   });
 
   it('操作文件已经传过（复用已有内容）时，ops-from-upload 仍然只带上传编号', async () => {

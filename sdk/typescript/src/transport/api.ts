@@ -289,11 +289,11 @@ export class MetaverseApi {
 
   // ---- 草稿 -----------------------------------------------------------------
 
-  /** `POST {范围}/drafts`，请求体 `{ baseSeq, message? }`。 */
-  createDraft(
-    request: { baseSeq: number; message?: string },
-    plot?: string | null,
-  ): Promise<DraftView> {
+  /**
+   * `POST {范围}/drafts`，请求体只有 `{ baseSeq }`（接口服务拒绝未知字段）。提交说明在发布时
+   * 才给（`publish` 的 `message`）。
+   */
+  createDraft(request: { baseSeq: number }, plot?: string | null): Promise<DraftView> {
     return this.client.json('POST', `${scopePath(this.spaceId, plot)}/drafts`, { json: request });
   }
 
@@ -342,7 +342,7 @@ export class MetaverseApi {
     );
   }
 
-  /** `POST {范围}/drafts/{draft_id}/publish`，请求体 `{ message?, replay? }`。 */
+  /** `POST {范围}/drafts/{draft_id}/publish`，请求体 `{ message?, replay? }`（提交说明 ≤ 2000 字，不给时服务端写"发布草稿"）。 */
   publish(
     draftId: string,
     request: { message?: string; replay?: boolean } = {},
