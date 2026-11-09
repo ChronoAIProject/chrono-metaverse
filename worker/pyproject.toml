@@ -26,9 +26,14 @@ dev = [
 
 [project.scripts]
 metaverse-worker = "metaverse_worker.__main__:main"
+metaverse-recon = "metaverse_worker.recon.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+# 重建工作台的无头渲染页（node + Playwright 加载）
+"metaverse_worker.recon" = ["render/*.html", "render/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
