@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { HEAD_POLL_MS } from '../data/spaceRuntime';
 import { PLAYBACK_SPEEDS } from '../timeline/TimelineBar';
 
 /** 播放时每一帧推进的间隔（毫秒）。 */
@@ -7,6 +8,11 @@ const TICK_MS = 100;
 const LIVE_TICK_MS = 1000;
 /** 暂停回放时，瞬时事件的可见窗口。 */
 const PAUSED_WINDOW_MS = 15 * 60_000;
+/**
+ * "现在"模式下瞬时事件至少显示多久：增量最多每 5 秒拉一次，事件到达时可能已经过去几秒，
+ * 窗口取两个轮询间隔，保证短促的事件（出餐 3 秒）也能被看到。
+ */
+const LIVE_WINDOW_MS = HEAD_POLL_MS * 2;
 
 export interface Playback {
   readonly time: number;
@@ -83,6 +89,6 @@ export function usePlayback(now: () => number = Date.now): Playback {
     setTime(now());
   }, [now]);
 
-  const windowMs = live ? 0 : playing ? speed * TICK_MS * 15 : PAUSED_WINDOW_MS;
+  const windowMs = live ? LIVE_WINDOW_MS : playing ? speed * TICK_MS * 15 : PAUSED_WINDOW_MS;
   return { time, live, playing, speed, windowMs, seek, togglePlay, setSpeed, goNow };
 }

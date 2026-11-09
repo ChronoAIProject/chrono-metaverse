@@ -274,7 +274,8 @@ export function fixtureReply(
       const from = params.has('from') ? toMillis(params.get('from')!) : -Infinity;
       const to = params.has('to') ? toMillis(params.get('to')!) : Infinity;
       const since = params.has('since') ? toMillis(params.get('since')!) : -Infinity;
-      if (to - from > 24 * 3_600_000 + 1) {
+      // from/to 每次最多 24 小时；只按 since 增量取时不限。
+      if ((params.has('from') || params.has('to')) && to - from > 24 * 3_600_000 + 1) {
         return problem(400, 'range_too_long', '每次最多查 24 小时');
       }
       const types = params.get('types')?.split(',').filter(Boolean);
