@@ -123,6 +123,48 @@ export function tileTexture(): Uint8Array {
   });
 }
 
+/** 地砖贴图上一个点离最近的勾缝有多远（像素；勾缝在每 64 像素的前 2 像素）。 */
+function groutDistance(x: number, y: number): number {
+  const along = (p: number) => {
+    const q = p % 64;
+    return q < 2 ? 0 : Math.min(q - 1, 64 - q);
+  };
+  return Math.min(along(x), along(y));
+}
+
+/** 砖面边缘的倒角宽度（像素）：从勾缝往里这么宽的一圈是斜面，再往里是平的。 */
+const BEVEL = 6;
+
+/** 地砖的高度场：勾缝 0，倒角斜坡升到 1，砖面平的。 */
+function tileHeight(x: number, y: number): number {
+  return Math.min(1, groutDistance(x, y) / BEVEL);
+}
+
+/**
+ * 地砖的法线贴图（与 `tileTexture` 对齐）：切线空间、OpenGL 约定（红 = +u，绿 = +v = 图片上方），
+ * `RGB = (n + 1) / 2`，线性数据（docs/SHAPES.md 第 2 节"法线贴图"）。勾缝凹下去，砖的四边是倒角。
+ */
+export function tileNormalTexture(): Uint8Array {
+  const strength = BEVEL * 0.9;
+  return render(128, (x, y) => {
+    // 图片的行往下数，v 往上：对 v 的导数是对行号导数的相反数
+    const dx = (tileHeight((x + 1) % 128, y) - tileHeight((x + 127) % 128, y)) / 2;
+    const dv = -(tileHeight(x, (y + 1) % 128) - tileHeight(x, (y + 127) % 128)) / 2;
+    const n = [-dx * strength, -dv * strength, 1];
+    const length = Math.hypot(n[0]!, n[1]!, n[2]!);
+    return [0, 1, 2].map((k) => ((n[k]! / length + 1) / 2) * 255) as [number, number, number];
+  });
+}
+
+/** 地砖的粗糙度贴图（与 `tileTexture` 对齐，灰度，白 = 粗糙）：勾缝粗糙，砖面半光（不低于 0.5）。 */
+export function tileRoughnessTexture(): Uint8Array {
+  const rand = random(29);
+  return render(128, (x, y) => {
+    const t = groutDistance(x, y) < 2 ? 1 : 0.58 + rand() * 0.06;
+    return [255 * t, 255 * t, 255 * t];
+  });
+}
+
 /** 灯罩：竖条纹（圆柱投影时绕一圈）。 */
 export function stripeTexture(): Uint8Array {
   return render(64, (x) => {

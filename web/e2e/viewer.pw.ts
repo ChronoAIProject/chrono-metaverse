@@ -676,6 +676,98 @@ test('板、凸包、玻璃、灯箱和外部模型：画得出来，底部常�
   expect(errors).toEqual([]);
 });
 
+/** 一串亮度里相邻两项深浅交替（一升一降）的次数。 */
+function alternations(values: readonly number[]): number {
+  let count = 0;
+  for (let i = 2; i < values.length; i += 1) {
+    const a = values[i - 1]! - values[i - 2]!;
+    const b = values[i]! - values[i - 1]!;
+    if (a * b < 0) count += 1;
+  }
+  return count;
+}
+
+test('按米平铺的贴图、法线和粗糙度贴图：墙面上的砖是正方形，不随墙的长宽拉伸', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.goto(FLORIST);
+  await waitForScene(page, 'optimized');
+  const png = await sceneOnly(page);
+  const project = await projector(page);
+  // 瓷砖墙裙在北墙内侧（z = 0.02 的面），2.4 × 1.2 米，贴图每 0.4 米重复一次：一张图 2 × 2 块砖、
+  // 相邻两块深浅不同，所以沿水平、竖直方向每 0.2 米深浅交替一次。旧的按包围盒铺满一次的画法下，
+  // 整面墙只有 2 × 2 块被拉成 1.2 × 0.6 米的砖，取样点大多落在同一块里，不会交替。
+  const lumaAt = (x: number, y: number) => {
+    const point = project([x, y, 0.02]);
+    return patchLuma(png, point.x, point.y, 2);
+  };
+  const row = Array.from({ length: 12 }, (_, i) => lumaAt(0.8 + 0.2 * i, 1.1));
+  const column = Array.from({ length: 6 }, (_, j) => lumaAt(0.8, 0.1 + 0.2 * j));
+  // 一行 12 块砖之间 10 次交替、一列 6 块砖之间 4 次交替，深浅两种砖的亮度差得开
+  expect(alternations(row), `一行的亮度 ${row.map(Math.round).join(', ')}`).toBe(10);
+  expect(alternations(column), `一列的亮度 ${column.map(Math.round).join(', ')}`).toBe(4);
+  expect(Math.max(...row) - Math.min(...row)).toBeGreaterThan(5);
+  await page.screenshot({ path: join(SHOTS, 'florist-tiled-wall.png') });
+  // 近看（人工核对）：勾缝凹下去、砖边有倒角（法线贴图：主光在东南上方，砖的上沿和东沿亮、
+  // 下沿和西沿暗），砖面半光（粗糙度贴图）。倒角只有 2 厘米，全景里不到 2 像素，不在这里按像素断言。
+  const canvas = (await page.locator('.viewer__canvas').boundingBox())!;
+  const wall = project([1.9, 0.8, 0.02]);
+  await page.mouse.move(canvas.x + wall.x, canvas.y + wall.y);
+  for (let i = 0; i < 6; i += 1) await page.mouse.wheel(0, -240);
+  await page.waitForTimeout(900);
+  await page.screenshot({ path: join(SHOTS, 'florist-tiled-wall-closeup.png') });
+  expect(errors).toEqual([]);
+});
+
+test('只有模型的物件：模型比记录大时兜底缩进记录；albedo 着色按 glb 原样受光', async ({ page }) => {
+  const errors = watchErrors(page);
+  const warnings: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'warning') warnings.push(message.text());
+  });
+  await page.goto(FLORIST);
+  await waitForScene(page, 'optimized');
+  await expect
+    .poll(() => warnings.filter((w) => w.startsWith('crate：')))
+    .toEqual([
+      'crate：模型实际大小 [0.6, 0.6, 0.6] 米超出记录的范围 [0.4, 0.4, 0.4] 米，已按 0.667 等比缩小放进范围',
+    ]);
+  const png = await sceneOnly(page);
+  const project = await projector(page);
+  const luma = (point: readonly [number, number, number]) => {
+    const { x, y } = project(point);
+    return patchLuma(png, x, y, 2);
+  };
+  const color = (point: readonly [number, number, number]) => {
+    const { x, y } = project(point);
+    return patchColor(png, x, y, 2);
+  };
+  // 记录 0.4 米见方、底面中心在 (1.2, 0, 1.75)；模型 0.6 米。缩进记录以后，记录的正面（朝南）和东面是木纹；
+  // 记录东边外面贴着地面的地方、记录顶边在画面上往上一点的地方都是地面（没缩的话那里还是箱子，亮度约 100–120）
+  for (const point of [
+    [1.2, 0.2, 1.95],
+    [1.4, 0.2, 1.75],
+  ] as const) {
+    const [r, , b] = color(point);
+    expect(r! - b!).toBeGreaterThan(50);
+    expect(luma(point)).toBeLessThan(140);
+  }
+  expect(luma([1.43, 0.03, 1.75])).toBeGreaterThan(160);
+  expect(luma([1.48, 0.03, 1.75])).toBeGreaterThan(160);
+  const corners = [0, 1, 2, 3, 4, 5, 6, 7].map((i) =>
+    project([i & 1 ? 1.4 : 1.0, i & 2 ? 0.4 : 0, i & 4 ? 1.95 : 1.55]),
+  );
+  const top = Math.min(...corners.map((c) => c.y));
+  const left = Math.min(...corners.map((c) => c.x));
+  const right = Math.max(...corners.map((c) => c.x));
+  for (const f of [0.35, 0.5, 0.65]) {
+    expect(patchLuma(png, left + (right - left) * f, top - 8, 2)).toBeGreaterThan(160);
+  }
+  // albedo：木纹是固有色、完整受光，朝上的顶面比朝南的正面亮得多（扫描烘焙的看法下只差一成左右）
+  expect(luma([1.2, 0.4, 1.75]) / luma([1.2, 0.2, 1.95])).toBeGreaterThan(1.3);
+  await page.screenshot({ path: join(SHOTS, 'florist-crate.png') });
+  expect(errors).toEqual([]);
+});
+
 test('组合页：两个空间按摆放拼在一起，连接可飞过去，送花路线', async ({ page, request }) => {
   const errors = watchErrors(page);
   await page.goto(UNIVERSE);

@@ -1,7 +1,7 @@
 import type { Anchor, EntityBody, Region } from '../core/api/types';
 import type { Shape } from '../core/shapes/types';
 import { shapeBounds } from '../core/shapes/build';
-import { MODELS, TEXTURES, bouquetShape } from './assets';
+import { CRATE_SIZE, MODELS, TEXTURES, bouquetShape } from './assets';
 
 /**
  * 第二个夹具空间"街角花店"：4 × 4 米的小店，用来演示组合宇宙和跨空间的送花路线。
@@ -10,7 +10,8 @@ import { MODELS, TEXTURES, bouquetShape } from './assets';
  * - 物体：收银台（圆角盒、木纹贴图）、六个花桶（同一个模板的实例，画成 InstancedMesh）、
  *   花架和花束（只有处理后的模型 assetHash，没有形状；带 props.source 署名，花束整体调色）、
  *   收银台上斜放的玻璃挡板（plate + opacity）、斜面展台（hull 楔形 + plate 木板）、
- *   营业中灯箱（unlit）；
+ *   营业中灯箱（unlit）、北墙的瓷砖墙裙（按米平铺的贴图 + 法线贴图 + 粗糙度贴图，`albedo` 着色）、
+ *   木箱（带木纹贴图的模型，`material.shading: "albedo"`；模型故意比记录大，演示网站的兜底摆放）；
  * - 锚点：收银台（送花起点）、门（组合里和前厅的门相连）、空间级锚点 `_space`。
  */
 
@@ -132,6 +133,21 @@ const DISPLAY_STAND: Shape = {
       material: { texture: TEXTURES.wood.hash, uv: 'mesh' },
     },
   ],
+};
+
+/** 木箱记录的边长（米），比模型小。 */
+export const CRATE_RECORD = 0.4;
+
+/** 瓷砖墙裙的材质：每 0.4 米重复一次，法线和粗糙度贴图与颜色贴图对齐。 */
+export const TILE_WAINSCOT: Shape['material'] = {
+  texture: TEXTURES.tile.hash,
+  uv: 'box',
+  tint: [206, 226, 238],
+  tile: [0.4, 0.4],
+  shading: 'albedo',
+  normalMap: TEXTURES.tileNormal.hash,
+  normalScale: 1,
+  roughnessMap: TEXTURES.tileRoughness.hash,
 };
 
 export const floristAnchors: Anchor[] = [
@@ -262,6 +278,37 @@ export function floristEntities(seq: number): EntityBody[] {
       shape: DISPLAY_STAND,
       bounds: { min: [3.2, 0, 0.1], max: [3.9, 0.7, 0.8] },
       props: { 说明: '楔形底座（hull）+ 斜面木板（plate）' },
+    },
+    {
+      // 材质库式的贴图：每 0.4 米重复一次（一张图 2 × 2 块砖，砖是 0.2 米见方），
+      // 2.4 × 1.2 米的墙面上砖仍是正方形（不按包围盒拉伸）；勾缝凹、砖边倒角靠法线贴图。
+      entityId: 'tile-wainscot',
+      layer: 'rebuilt',
+      kind: 'structure',
+      label: '瓷砖墙裙',
+      shape: {
+        type: 'box',
+        size: [2.4, 1.2, 0.02],
+        transform: { position: [1.9, 0, 0.01] },
+        material: TILE_WAINSCOT,
+      },
+      bounds: { min: [0.7, 0, 0], max: [3.1, 1.2, 0.02] },
+      props: { 说明: '按米平铺的贴图、法线贴图和粗糙度贴图（albedo 着色）' },
+    },
+    {
+      // 模型 0.6 米见方，记录只有 0.4 米：服务端会拒绝这样的记录（model_bounds_mismatch），
+      // 网站兜底按 2/3 等比缩进记录。模型的贴图是固有色，按 albedo 完整受光。
+      entityId: 'crate',
+      layer: 'rebuilt',
+      kind: 'object',
+      label: '木箱',
+      assetHash: MODELS.crate.hash,
+      material: { shading: 'albedo' },
+      bounds: {
+        min: [1.2 - CRATE_RECORD / 2, 0, 1.75 - CRATE_RECORD / 2],
+        max: [1.2 + CRATE_RECORD / 2, CRATE_RECORD, 1.75 + CRATE_RECORD / 2],
+      },
+      props: { 说明: `模型 ${CRATE_SIZE} 米，记录 ${CRATE_RECORD} 米（演示兜底摆放）` },
     },
     {
       entityId: 'open-sign',

@@ -115,6 +115,38 @@ export function writeGlb(mesh: GlbMesh): Uint8Array {
   return out;
 }
 
+/**
+ * 带贴图的形状 → glb：形状的每个部件都按 `material` 的贴图坐标算好，底色贴图内嵌（模型库式的固有色贴图）。
+ * glTF 的贴图坐标原点在图片左上角，写 `(u, 1 − v)`（docs/SHAPES.md 第 2 节"glb 导出"）。
+ */
+export function texturedShapeToGlb(
+  shape: Shape,
+  image: { readonly bytes: Uint8Array; readonly mimeType: 'image/png' | 'image/jpeg' },
+  name?: string,
+): Uint8Array {
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  for (const part of buildShape(shape, {}).parts) {
+    const offset = positions.length / 3;
+    positions.push(...part.mesh.positions);
+    normals.push(...part.mesh.normals);
+    for (let i = 0; i < part.mesh.uvs.length; i += 2) {
+      uvs.push(part.mesh.uvs[i]!, 1 - part.mesh.uvs[i + 1]!);
+    }
+    for (const index of part.mesh.indices) indices.push(index + offset);
+  }
+  return writeGlb({
+    positions: new Float32Array(positions),
+    normals: new Float32Array(normals),
+    uvs: new Float32Array(uvs),
+    indices: new Uint32Array(indices),
+    image,
+    name,
+  });
+}
+
 /** 形状 → 带顶点颜色的 glb（处理后的物件模型：原点在底面中心）。 */
 export function shapeToGlb(shape: Shape, templates: TemplateTable = {}, name?: string): Uint8Array {
   const positions: number[] = [];

@@ -1,12 +1,14 @@
 import { sha256Hex } from '../core/hash';
 import type { Shape } from '../core/shapes/types';
-import { shapeToGlb } from './glb';
+import { shapeToGlb, texturedShapeToGlb } from './glb';
 import {
   brickTexture,
   fabricTexture,
   grassTexture,
   marbleTexture,
   stripeTexture,
+  tileNormalTexture,
+  tileRoughnessTexture,
   tileTexture,
   woodTexture,
 } from './png';
@@ -25,11 +27,13 @@ function asset(bytes: Uint8Array, type: string): FixtureAsset {
   return { hash: sha256Hex(bytes), bytes, type };
 }
 
-/** 形状和方块用的贴图。 */
+/** 形状和方块用的贴图（`tileNormal`、`tileRoughness` 是与 `tile` 对齐的法线、粗糙度贴图）。 */
 export const TEXTURES = {
   wood: asset(woodTexture(), 'image/png'),
   fabric: asset(fabricTexture(), 'image/png'),
   tile: asset(tileTexture(), 'image/png'),
+  tileNormal: asset(tileNormalTexture(), 'image/png'),
+  tileRoughness: asset(tileRoughnessTexture(), 'image/png'),
   stripe: asset(stripeTexture(), 'image/png'),
   brick: asset(brickTexture(), 'image/png'),
   grass: asset(grassTexture(), 'image/png'),
@@ -120,9 +124,24 @@ const shelfShape: Shape = {
   ],
 };
 
+/** 木箱模型的边长（米）。 */
+export const CRATE_SIZE = 0.6;
+
+/** 木箱：带内嵌木纹贴图的模型（模型库式的固有色贴图），原点在底面中心。 */
+const crateShape: Shape = {
+  type: 'box',
+  size: [CRATE_SIZE, CRATE_SIZE, CRATE_SIZE],
+  fillet: 0.02,
+  material: { texture: '0'.repeat(64), uv: 'box' },
+};
+
 export const MODELS = {
   bouquet: asset(shapeToGlb(bouquetShape, {}, 'bouquet'), 'model/gltf-binary'),
   shelf: asset(shapeToGlb(shelfShape, {}, 'shelf'), 'model/gltf-binary'),
+  crate: asset(
+    texturedShapeToGlb(crateShape, { bytes: woodTexture(), mimeType: 'image/png' }, 'crate'),
+    'model/gltf-binary',
+  ),
 } as const;
 
 /** 草稿里新上传的贴图（大理石纹）：还没发布，只能经预览接口读取。 */
