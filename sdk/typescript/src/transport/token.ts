@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { isSafeName } from '../workspace/config.js';
 
 /**
  * nyxid 模式的令牌来源，按顺序取第一个有的：
@@ -8,7 +9,8 @@ import { join } from 'node:path';
  * 1. 命令行 `--token`；
  * 2. 环境变量 `NYXID_TOKEN`；
  * 3. 环境变量 `NYXID_TOKEN_FILE` 指定的文件；
- * 4. 给了 `--profile <名称>`（或 metaverse.json 的 profile）时读 `~/.nyxid/profiles/<名称>/access_token`；
+ * 4. 给了 `--profile <名称>`（或 metaverse.json 的 profile）时读 `~/.nyxid/profiles/<名称>/access_token`
+ *    （名称只能用字母、数字、_ 和 -，不能拼出别的路径）；
  * 5. 否则读 `~/.nyxid/access_token`。
  *
  * 4、5 的文件位置是按 `nyxid login --agent-key --profile <名称>` 的说明推测的，
@@ -70,7 +72,12 @@ export function tokenFileCandidates(options: TokenSourceOptions): string[] {
   const env = options.env ?? process.env;
   const home = options.home ?? homedir();
   if (env.NYXID_TOKEN_FILE) return [env.NYXID_TOKEN_FILE];
-  if (options.profile) return [join(home, '.nyxid', 'profiles', options.profile, 'access_token')];
+  if (options.profile !== undefined) {
+    if (!isSafeName(options.profile)) {
+      throw new TokenError('nyxid 配置名（profile）只能用 1–64 个字母、数字、_ 和 -');
+    }
+    return [join(home, '.nyxid', 'profiles', options.profile, 'access_token')];
+  }
   return [join(home, '.nyxid', 'access_token')];
 }
 

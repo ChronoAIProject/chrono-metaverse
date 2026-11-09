@@ -1,9 +1,24 @@
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { isObjectId, isSpaceId } from '../core/ids.js';
-import { DEFAULT_SLUG, writeConfig, type WorkspaceConfig } from '../workspace/config.js';
+import {
+  DEFAULT_SLUG,
+  TRUSTED_NYX_BASES,
+  isTrustedNyxBase,
+  validateConfig,
+  writeConfig,
+  type WorkspaceConfig,
+} from '../workspace/config.js';
 import { paths } from '../workspace/files.js';
-import { CliError, displayPath, flag, parse, str, type CliContext } from './common.js';
+import {
+  CliError,
+  displayPath,
+  explicitNyxBase,
+  flag,
+  parse,
+  str,
+  type CliContext,
+} from './common.js';
 
 export const INIT_HELP = `metaverse init <空间编号> [目录]
 
@@ -13,7 +28,9 @@ export const INIT_HELP = `metaverse init <空间编号> [目录]
 选项：
   --mode nyxid|direct     调用方式（默认 nyxid：经 NyxID 代理调用线上服务）
   --slug <slug>           服务在 NyxID 里的 slug（默认 ${DEFAULT_SLUG}）
-  --profile <名称>        nyxid 命令行的配置名（agent key）
+  --profile <名称>        nyxid 命令行的配置名（agent key；字母、数字、_ 和 -）
+  --nyx-base <地址>       写进 metaverse.json 的 NyxID 地址，只能是 ${TRUSTED_NYX_BASES.join('、')}
+                          （别的地址不能写进工作区，每次运行时用 --nyx-base 或 METAVERSE_NYX_BASE 指定）
   --api <地址>            direct 模式的接口服务地址，例如 http://127.0.0.1:8080
   --dev-token-url <地址>  direct 模式的取令牌地址，例如 http://127.0.0.1:8090/dev/token
   --sub <主体编号>        direct 模式取令牌时用的 sub
@@ -122,11 +139,19 @@ export function runInit(ctx: CliContext, args: readonly string[]): number {
   if (mode !== 'nyxid' && mode !== 'direct') throw new CliError('--mode 只能是 nyxid 或 direct');
   const plot = str(values, 'plot');
   if (plot !== undefined && !isObjectId(plot)) throw new CliError('--plot 不是合法的地块编号');
+  // 只把 --nyx-base 写进工作区（环境变量是这台机器自己的设置，不写）；工作区里只能写可信地址。
+  const nyxBase = str(values, 'nyx-base') !== undefined ? explicitNyxBase(values, {}) : undefined;
+  if (nyxBase !== undefined && !isTrustedNyxBase(nyxBase.value)) {
+    throw new CliError(
+      `--nyx-base 不能写进 metaverse.json：工作区里只能写 ${TRUSTED_NYX_BASES.join('、')}。` +
+        '别的 NyxID 地址请在每次运行时用 --nyx-base 或环境变量 METAVERSE_NYX_BASE 指定',
+    );
+  }
   const config: WorkspaceConfig = {
     spaceId,
     mode,
     ...(mode === 'nyxid' ? { slug: str(values, 'slug') ?? DEFAULT_SLUG } : {}),
-    ...(str(values, 'nyx-base') !== undefined ? { nyxBase: str(values, 'nyx-base') } : {}),
+    ...(nyxBase !== undefined ? { nyxBase: nyxBase.value } : {}),
     ...(str(values, 'profile') !== undefined ? { profile: str(values, 'profile') } : {}),
     ...(mode === 'direct'
       ? {
@@ -142,6 +167,7 @@ export function runInit(ctx: CliContext, args: readonly string[]): number {
     ...(str(values, 'web-url') !== undefined ? { webUrl: str(values, 'web-url') } : {}),
     buildScript: 'build/main.ts',
   };
+  validateConfig(config); // 先检查（slug、profile 等），不合格时不留下半个工作区
   mkdirSync(p.build, { recursive: true });
   writeConfig(root, config);
   const created: string[] = [p.config];

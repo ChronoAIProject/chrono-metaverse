@@ -50,6 +50,19 @@ cd web && npm ci && npm run build     # 生成 web/dist；dev 默认在 SDK 所�
 第 4、5 条的文件位置是按 `nyxid login --agent-key --profile <名称>` 推测的，实际不同就用 `NYXID_TOKEN_FILE`。
 文件内容可以是令牌原文，也可以是带 `access_token` / `accessToken` / `token` 字段的 JSON。
 AI 建造时应当用它自己的 agent key 配置（由人在 NyxID 里审批和限定操作范围），不要用人的登录态。
+配置名（`profile`）和 `slug` 只能用 1–64 个字母、数字、`_` 和 `-`，不能拼出别的路径。
+
+**令牌发到哪里（NyxID 地址）**按顺序取第一个有的：`--nyx-base`、环境变量 `METAVERSE_NYX_BASE`、
+`metaverse.json` 的 `nyxBase`，都没有时用 `https://nyx-api.chrono-ai.fun`。地址只能是协议、主机和端口
+（不带账号密码、路径、查询参数和片段），而且必须是 https。
+
+- `metaverse.json` 里**只能写内置的可信地址**：`https://nyx-api.chrono-ai.fun`、`https://api.nyxid.ai`，
+  写别的地址（包括任何 http）时命令直接报错，一个请求都不发。工作区可能来自别人（git 仓库、压缩包），
+  命令行还会从上级目录找 `metaverse.json`，不能让工作区决定令牌的去向。注意 `build`、`push`、`dev`
+  会执行工作区里的建造脚本，只在你信任的工作区里运行它们。
+- 别的 NyxID 地址只能由你自己用 `--nyx-base` 或 `METAVERSE_NYX_BASE` 指定（本机回环地址
+  `127.0.0.1`、`localhost`、`[::1]` 可以用 http，方便本地调试）；用了不在可信列表里的地址时，
+  命令行会在标准错误里提示令牌的来源和去向（不含令牌本身）。`init --nyx-base` 也只把可信地址写进工作区。
 
 **direct 模式**的设置也可以来自环境变量：`METAVERSE_API_URL`、`METAVERSE_DEV_TOKEN_URL`、
 `METAVERSE_DEV_SUB`（默认 `dev-user`）、`METAVERSE_DEV_ORG_ROLE`。
@@ -74,18 +87,19 @@ tsconfig.json、node_modules/@chrono-metaverse/sdk（指向这份 SDK 的链接�
 
 `metaverse.json`：
 
-| 字段                                         | 说明                                                 |
-| -------------------------------------------- | ---------------------------------------------------- |
-| `spaceId`                                    | 空间编号                                             |
-| `mode`                                       | `nyxid`（默认）或 `direct`                           |
-| `slug`、`nyxBase`、`profile`                 | nyxid 模式：服务 slug、NyxID 地址、nyxid 配置名      |
-| `api`、`devTokenUrl`、`devSub`、`devOrgRole` | direct 模式：接口服务地址、取令牌地址、sub、组织角色 |
-| `webUrl`                                     | 网站地址，拼预览链接 `<webUrl>/preview#t=<令牌>` 用  |
-| `buildScript`                                | 建造脚本，默认 `build/main.ts`                       |
-| `plot`                                       | 默认的目标地块（不给就是实体区）                     |
-| `webDist`                                    | 本地查看器用的网站构建产物目录                       |
+| 字段                                         | 说明                                                                    |
+| -------------------------------------------- | ----------------------------------------------------------------------- |
+| `spaceId`                                    | 空间编号                                                                |
+| `mode`                                       | `nyxid`（默认）或 `direct`                                              |
+| `slug`、`nyxBase`、`profile`                 | nyxid 模式：服务 slug、NyxID 地址（只能是可信地址，见上）、nyxid 配置名 |
+| `api`、`devTokenUrl`、`devSub`、`devOrgRole` | direct 模式：接口服务地址、取令牌地址、sub、组织角色                    |
+| `webUrl`                                     | 网站地址，拼预览链接 `<webUrl>/preview#t=<令牌>` 用                     |
+| `buildScript`                                | 建造脚本，默认 `build/main.ts`                                          |
+| `plot`                                       | 默认的目标地块（不给就是实体区）                                        |
+| `webDist`                                    | 本地查看器用的网站构建产物目录                                          |
 
-命令行参数（`--mode`、`--api`、`--slug`、`--profile`、`--dev-token-url`、`--sub` 等）覆盖这里的值；`--dir` 指定工作区。
+命令行参数（`--mode`、`--api`、`--slug`、`--profile`、`--nyx-base`、`--dev-token-url`、`--sub` 等）覆盖这里的值；`--dir` 指定工作区
+（不给时从当前目录往上找 `metaverse.json`）。
 
 ## 命令
 

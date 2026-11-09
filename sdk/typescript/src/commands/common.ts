@@ -5,7 +5,11 @@ import { ApiClient, type TransportConfig } from '../transport/client.js';
 import { MetaverseApi } from '../transport/api.js';
 import { resolveNyxToken } from '../transport/token.js';
 import {
+  TRUSTED_NYX_BASES,
   findWorkspaceRoot,
+  isSafeName,
+  isTrustedNyxBase,
+  normalizeNyxBase,
   readConfig,
   validateConfig,
   type TransportMode,
@@ -103,6 +107,35 @@ export interface Workspace {
   readonly config: WorkspaceConfig;
 }
 
+/**
+ * 用户自己指定的 NyxID 地址：`--nyx-base` 优先，其次环境变量 `METAVERSE_NYX_BASE`。
+ * 必须是 https（本机回环地址可以用 http）；不在可信列表里也可以，makeApi 会提示令牌的去向。
+ */
+export function explicitNyxBase(
+  values: Values,
+  env: CliContext['env'],
+): { readonly value: string; readonly source: string } | undefined {
+  const flagValue = str(values, 'nyx-base');
+  const envValue = env.METAVERSE_NYX_BASE === '' ? undefined : env.METAVERSE_NYX_BASE;
+  const source = flagValue !== undefined ? '--nyx-base' : '环境变量 METAVERSE_NYX_BASE';
+  const raw = flagValue ?? envValue;
+  if (raw === undefined) return undefined;
+  try {
+    return { value: normalizeNyxBase(raw, source, true), source };
+  } catch (error) {
+    throw new CliError((error as Error).message);
+  }
+}
+
+/** profile、slug 参数只能用字母、数字、_ 和 -（profile 会拼进令牌文件路径）。 */
+function safeName(values: Values, key: string): string | undefined {
+  const value = str(values, key);
+  if (value !== undefined && !isSafeName(value)) {
+    throw new CliError(`--${key} 只能用 1–64 个字母、数字、_ 和 -`);
+  }
+  return value;
+}
+
 /** 命令行参数覆盖 metaverse.json 里的调用方式。 */
 function overrides(values: Values, env: CliContext['env']): Partial<WorkspaceConfig> {
   const mode = str(values, 'mode');
@@ -114,9 +147,9 @@ function overrides(values: Values, env: CliContext['env']): Partial<WorkspaceCon
     if (value !== undefined) out[key] = value;
   };
   set('mode', mode);
-  set('slug', str(values, 'slug'));
-  set('nyxBase', str(values, 'nyx-base'));
-  set('profile', str(values, 'profile'));
+  set('slug', safeName(values, 'slug'));
+  set('nyxBase', explicitNyxBase(values, env)?.value);
+  set('profile', safeName(values, 'profile'));
   set('api', str(values, 'api') ?? env.METAVERSE_API_URL);
   set('devTokenUrl', str(values, 'dev-token-url') ?? env.METAVERSE_DEV_TOKEN_URL);
   set('devSub', str(values, 'sub') ?? env.METAVERSE_DEV_SUB);
@@ -146,8 +179,9 @@ export function workspaceOrFlags(ctx: CliContext, values: Values, spaceId: strin
     if (config.spaceId === spaceId)
       return { root, config: { ...config, ...overrides(values, ctx.env) } };
   }
-  const merged = { spaceId, mode: 'nyxid' as TransportMode, ...overrides(values, ctx.env) };
-  return { root: start, config: validateConfig(merged) };
+  // 命令行参数和环境变量由用户自己给出，各自在 overrides 里检查（例如 --nyx-base 可以不在可信列表里）。
+  const base = validateConfig({ spaceId, mode: 'nyxid' as TransportMode });
+  return { root: start, config: { ...base, ...overrides(values, ctx.env) } };
 }
 
 /** 按工作区配置建接口客户端。nyxid 模式立刻解析令牌，找不到就报错。 */
@@ -161,6 +195,13 @@ export function makeApi(ctx: CliContext, ws: Workspace, values: Values): Metaver
             ...(config.profile !== undefined ? { profile: config.profile } : {}),
             env: ctx.env,
           });
+          if (config.nyxBase !== undefined && !isTrustedNyxBase(config.nyxBase)) {
+            // metaverse.json 只能写可信地址，走到这里一定是用户自己用 --nyx-base / METAVERSE_NYX_BASE 指定的。
+            ctx.err(
+              `注意：NyxID 令牌（${resolved.source}）将发给 ${config.nyxBase}，` +
+                `它不是内置的可信地址（${TRUSTED_NYX_BASES.join('、')}）`,
+            );
+          }
           return {
             mode: 'nyxid',
             ...(config.nyxBase !== undefined ? { nyxBase: config.nyxBase } : {}),
