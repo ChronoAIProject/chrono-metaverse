@@ -138,7 +138,9 @@ metaverse-recon compare --object counter-01 --model work/counter-01/entity.json 
 ```
 
 `compare` 出三列对比图（扫描 | 现有算法 | 新模型）、偏差上色图和分部件的数字；`--color-parts` 让每个部件一种颜色，
-对着部件表找哪一块歪了；相邻的东西混进来就加 `--exclude`。改到偏差不再下降为止。
+对着部件表找哪一块歪了；相邻的东西混进来就加 `--exclude`。改到偏差不再下降为止。逐件的"写回偏差"就是提交后
+处理服务写进记录的 `fit`（同一个函数：按物件自身朝向取范围，墙、玻璃、地面作背景，只计 10 厘米以内的点，
+不看 `--box`、`--exclude`），网站信息面板和命令行显示的也是它。
 
 ### 3.4 怎么判断一件做好了
 
@@ -157,8 +159,8 @@ metaverse-recon assemble --entities work/ --notes work/notes.md --out out/author
 - 合并成 AI 物件集 `authored.json`：模板去重、编号唯一、引用的模板必须存在、逐个校验、包围盒重算，最后整份跑一遍
   处理服务收到物件集时的校验（`parse_authored`）。有错误会列出来并以退出码 2 结束；通过了，处理服务就会原样接受；
 - `room.jpg`：扫描 | 现有算法 | AI 重建，总览、俯视、四个角；`room.glb` 可以拖进任何 glTF 查看器；
-- `report.json` 和终端输出：逐件偏差表，以及"没被任何物件覆盖的扫描团块"（漏建），后面写着现有算法里和它重叠的
-  物体编号，照着补。
+- `report.json` 和终端输出：逐件偏差表（含写回后记录里的 `fit`），以及"没被任何物件覆盖的扫描团块"（漏建），后面
+  写着现有算法里和它重叠的物体编号，照着补。
 
 `--structure keep`（默认）沿用算法做的地面、墙、玻璃；要连结构一起换就 `--structure replace`，并把 `kind:
 "structure"` 的物件也写进去。

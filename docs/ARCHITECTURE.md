@@ -429,7 +429,9 @@ draftChunks（草稿生成的区块，随草稿过期删除，不写进 chunks�
   写成 `assetHash`，`opacity`、`unlit` 留在物件的 `material` 里；`props.source` 记作者、来源页、许可（规则与
   物件记录相同），网站显示"模型来源"；
 - 物件集就是本地重建工作台 `metaverse-recon assemble` 的输出，它最后跑一遍处理服务的同一套校验，通过了才交；
-- 逐件计算扫描到物件的偏差写进 `fit`（墙和玻璃作为背景，与工作台口径一致）；`notes` 存成脚本资源，提交的 `scriptRef` 指向它；
+- 逐件计算扫描到物件的偏差写进 `fit`：按物件自身朝向的包围盒取扫描点（局部坐标外扩），墙、玻璃、地面作为
+  背景，只计离物件或背景 10 厘米以内、顶面和底面上下 2 厘米以内的点，与工作台 `compare` 用同一个函数；`notes`
+  存成脚本资源，提交的 `scriptRef` 指向它；
 - 重建层全部换成这次的结果，锚点规则不变。部署种子可以带物件集（`infra/chrono-cd/README.md`）。
 
 格式和规则见 `worker/README.md`"AI 物件集"。

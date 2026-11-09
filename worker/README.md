@@ -311,12 +311,15 @@ uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceI
 3. 子进程里（`processing/authored_build.py`）：结构（keep 时跑算法）→ 外部模型：把 `transform` 的旋转、缩放和
    `tint` 烘进网格（缩放后的坐标超出 ±1000 米才拒收），按物件模型的限制（`WORKER_MODEL_MAX_TRIANGLES`、`WORKER_MODEL_MAX_TEXTURE_SIDE`）减面、缩小
    贴图，**以包围盒的底面中心为原点**写成 glb（网站按物件 `bounds` 的底面中心摆放只有 `assetHash` 的物件，所以
-   平移落在 `bounds` 上；旋转、缩放、调色都相同的物件共用一个 glb）→ 烘焙 → **逐件偏差**：物件包围盒水平和
-   向上各外扩 5 厘米、底面以上 1 厘米（不算地面）范围里的扫描表面密集采样（最多 2 万点），求到物件网格的距离，
-   墙和玻璃（地面以外的结构）作为背景一起求最近距离（与重建工作台 `compare` 相同：贴墙物件范围里的墙面点算到
-   墙上，不当成物件的偏差；相邻的其他物件不当背景），写成 `fit {meanCm, p90Cm, coverage3cm}`；范围里不到 20 个
-   点时不写。采样的随机数按物件编号固定，同样的输入
-   得到同样的贴图、偏差和记录哈希；
+   平移落在 `bounds` 上；旋转、缩放、调色都相同的物件共用一个 glb）→ 烘焙 → **逐件偏差**（`processing/object_fit.py`，
+   与重建工作台 `compare`、`assemble`、`place` 用同一个函数，数字一致）：范围按**物件自身的朝向**取——水平朝向是
+   物件网格水平投影的最小外接矩形，在这个局部坐标里水平外扩 5 厘米，竖直方向只取底面以下 2 厘米到顶面以上 2 厘米
+   （斜放的入口门框不会把轴对齐包围盒角落里的门外走廊算进来，顶到天花的物件不会把天花板算进来）；范围里的扫描
+   表面密集采样（最多 2 万点），求到物件网格和**背景**（全部结构：墙、玻璃、地面）的最近距离（贴墙、落地的扫描点
+   算到墙和地面上；相邻的其他物件不当背景），**只计 10 厘米以内的点**（更远的是范围里别的东西），写成
+   `fit {meanCm, p90Cm, coverage3cm}`；离物件 10 厘米以内、离背景超过 2 厘米的点不到 20 个（扫描里没有这件物件
+   的证据，例如完全贴墙的饰面、扫描里没有的东西）时不写。采样的随机数按物件编号固定，同样的输入得到同样的贴图、
+   偏差和记录哈希；
 4. 登记：处理后的模型（`kind: model`，`metadata.authoredSource`）、烘焙的贴图（`kind: texture`）进 `assetRefs`
    （计入空间存储用量）；`notes` 存成本空间的脚本资源（`kind: script`），提交的 `scriptRef` 指向它；
 5. **重建层替换**：重建层全部旧物件（结构、物体、模板）换成这次的结果；锚点规则不变（按 `props.category`）。
@@ -572,11 +575,11 @@ cd worker && uv venv .venv && uv pip install --python .venv/bin/python -e .
 | `prepare` | 扫描（zip、glb，或 drc + 贴图）+ 可选提示 → 基线目录。**直接调用 `scan_import` 首次导入的同一条代码路径**（`processing.tasks.scan_task` → `processing.align.auto_align` → 结构 + 物体重建），坐标、结构、物体编号与线上导入同一份扫描完全一致 | `scan.glb`、`transform.json`、`structure.json`、`objects.json`、`candidates.json`（编号、类别、标签、包围盒、点数、偏差、建议先搜还是手写、同款）、`base.json` |
 | `views` | 只渲染包围盒附近的扫描，6 个角度 + 任意相机，带米制刻度、像素 ↔ 坐标换算 | JPEG + `views.json` |
 | `measure` | 外接框、最小外接矩形、按高度剖面、水平/竖直截面（网格精确求交）、俯视占用图、圆拟合、颜色；**平面拟合**（`--plane`：法向、坡度、方位、残差、可直接作 `plate` 的角点）、**高度图数字表**（`--heightmap`）、排除框（`--exclude`）、局部坐标（`--frame`） | `measure.json` + 截面图、占用图 |
-| `compare` | 物件记录（形状物件或外部模型物件）与扫描、现有算法并排渲染，偏差（扫描→模型、模型→扫描、分部件、漏建团块），校验；`--exclude`、`--color-parts`、`--scene`（多物件 / 整房） | `compare.jpg`、`compare_error.jpg`、`compare.json` |
+| `compare` | 物件记录（形状物件或外部模型物件）与扫描、现有算法并排渲染，偏差（扫描→模型、模型→扫描、分部件、漏建团块、逐件的写回 `fit`——与处理服务写回时同一个函数），校验；`--exclude`、`--color-parts`、`--scene`（多物件 / 整房） | `compare.jpg`、`compare_error.jpg`、`compare.json` |
 | `search` / `index` | 模型库检索，许可硬过滤：Poly Haven（全部 CC0）、Objaverse（逐个对象读许可，只要 CC0 / CC-BY）、Sketchfab（设了 `SKETCHFAB_TOKEN` 才启用） | `candidates.json` + 带编号的缩略图拼图 `sheet.jpg` |
 | `fetch` | 下载候选（Poly Haven 的 glTF 打包成 glb），记 sha256、大小、署名；上限 50 MB | `<缓存>/models/<库>/<编号>/model.glb` + `model.json` |
 | `place` | 候选摆到扫描里的物体上：自动判断向上轴、按量出的尺寸缩放（等比，或逐轴 ±15%）、偏航粗搜 + 只求偏航和平移的迭代最近点 + 顶面高度图分朝向、落地；可按扫描颜色给 tint 建议 | `entity.json`（外部模型物件记录）、`place.jpg`（扫描 \| 候选）、`place.json` |
-| `assemble` | 合并物件文件成 AI 物件集（模板去重、编号唯一、引用的模板存在、逐个校验、重算包围盒），最后整份跑一遍写回路径的校验 `metaverse_worker.authored.parse_authored`（处理服务收到时跑的就是它），通过了才算合格 | `authored.json`、`room.glb`、`room.jpg`（扫描 \| 现有算法 \| AI 重建：总览、俯视、四个角）、`report.json`（逐件偏差、漏建团块） |
+| `assemble` | 合并物件文件成 AI 物件集（模板去重、编号唯一、引用的模板存在、逐个校验、重算包围盒），最后整份跑一遍写回路径的校验 `metaverse_worker.authored.parse_authored`（处理服务收到时跑的就是它），通过了才算合格 | `authored.json`、`room.glb`、`room.jpg`（扫描 \| 现有算法 \| AI 重建：总览、俯视、四个角）、`report.json`（逐件偏差和写回 `fit`、漏建团块） |
 | `reframe` | 物件在两种对齐之间换算：`compute`（`reconstruct_lobby.py`）↔ `scan_import`（prepare），或任意变换文件 | 同格式的物件文件 |
 
 **形状**：`plate`、`hull`、材质 `opacity`、`unlit` 的校验、包围盒和网格直接用处理服务的 `shapes.py`、
