@@ -86,11 +86,9 @@ pub fn routes() -> Router<AppState> {
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ImportScanRequest {
-    /// 扫描资源的内容哈希（经 scan 用途上传并校验通过）。导入后它就是扫描编号。
+    /// 扫描资源的内容哈希（经 scan 用途上传并校验通过；带贴图的扫描请打包成 zip 上传）。
+    /// 导入后它就是扫描编号。
     pub asset_hash: String,
-    /// 可选：Draco/OBJ 扫描的贴图资源哈希（经 scan 或 texture 用途上传）。
-    #[serde(default)]
-    pub texture_hash: Option<String>,
     /// 现实中拍摄的时间（只用于显示）。
     #[serde(default)]
     #[schema(value_type = Option<String>, format = DateTime)]
@@ -110,11 +108,9 @@ pub struct ImportScanRequest {
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AlignScanRequest {
-    /// 4×4 列主序变换矩阵（扫描坐标 → 空间坐标），16 个数，最后一行必须是 [0,0,0,1]。
+    /// 4×4 列主序变换矩阵（扫描坐标 → 空间坐标），16 个数，最后一行必须是 [0,0,0,1]，不能镜像。
     #[schema(value_type = Vec<f64>)]
     pub transform: Vec<f64>,
-    #[serde(default)]
-    pub texture_hash: Option<String>,
     #[serde(default)]
     #[schema(value_type = Option<String>, format = DateTime)]
     pub observed_at: Option<Timestamp>,
@@ -292,12 +288,12 @@ async fn require_asset(
     }
 }
 
-/// 4×4 列主序仿射变换：16 个有限数，最后一行 [0,0,0,1]，线性部分可逆。
+/// 4×4 列主序仿射变换：16 个有限数，最后一行 [0,0,0,1]，线性部分可逆且不镜像（行列式 > 0）。
 fn check_transform(values: &[f64]) -> Result<[f64; 16], ApiError> {
     let invalid = || {
         invalid_with(
             "invalid_transform",
-            "transform 必须是 16 个有限数（列主序 4×4），最后一行 [0,0,0,1]，且线性部分可逆",
+            "transform 必须是 16 个有限数（列主序 4×4），最后一行 [0,0,0,1]，线性部分可逆且不镜像",
         )
     };
     let matrix: [f64; 16] = values.try_into().map_err(|_| invalid())?;
@@ -311,7 +307,8 @@ fn check_transform(values: &[f64]) -> Result<[f64; 16], ApiError> {
     let det = m(0, 0) * (m(1, 1) * m(2, 2) - m(1, 2) * m(2, 1))
         - m(0, 1) * (m(1, 0) * m(2, 2) - m(1, 2) * m(2, 0))
         + m(0, 2) * (m(1, 0) * m(2, 1) - m(1, 1) * m(2, 0));
-    if det.abs() < 1e-9 {
+    // 不能镜像（与处理服务相同），也不能退化。
+    if det < 1e-9 {
         return Err(invalid());
     }
     Ok(matrix)
@@ -407,7 +404,6 @@ fn idempotent_reply(
 /// scan_import 的参数。
 fn scan_params(
     asset_hash: &str,
-    texture_hash: Option<&str>,
     observed_at: Option<Timestamp>,
     rebuild: Option<bool>,
     voxelize: Option<bool>,
@@ -416,9 +412,6 @@ fn scan_params(
 ) -> Value {
     let mut params = Map::new();
     params.insert("assetHash".into(), json!(asset_hash));
-    if let Some(texture) = texture_hash {
-        params.insert("textureHash".into(), json!(texture));
-    }
     if let Some(at) = observed_at {
         params.insert("observedAt".into(), json!(at.to_rfc3339()));
     }
@@ -467,20 +460,8 @@ pub async fn import_scan(
     check_hash("assetHash", &request.asset_hash)?;
     check_hints(&request.hints)?;
     require_asset(&state, &grant, &request.asset_hash, &[UploadPurpose::Scan], None).await?;
-    if let Some(texture) = &request.texture_hash {
-        check_hash("textureHash", texture)?;
-        require_asset(
-            &state,
-            &grant,
-            texture,
-            &[UploadPurpose::Texture, UploadPurpose::Scan],
-            None,
-        )
-        .await?;
-    }
     let params = scan_params(
         &request.asset_hash,
-        request.texture_hash.as_deref(),
         request.observed_at,
         request.rebuild,
         request.voxelize,
@@ -524,20 +505,8 @@ pub async fn align_scan(
     let transform = check_transform(&request.transform)?;
     check_hints(&request.hints)?;
     require_asset(&state, &grant, &scan_id, &[UploadPurpose::Scan], None).await?;
-    if let Some(texture) = &request.texture_hash {
-        check_hash("textureHash", texture)?;
-        require_asset(
-            &state,
-            &grant,
-            texture,
-            &[UploadPurpose::Texture, UploadPurpose::Scan],
-            None,
-        )
-        .await?;
-    }
     let params = scan_params(
         &scan_id,
-        request.texture_hash.as_deref(),
         request.observed_at,
         request.rebuild,
         request.voxelize,
@@ -921,6 +890,9 @@ mod tests {
         let mut flat = identity;
         flat[0] = 0.0;
         assert!(check_transform(&flat).is_err());
+        let mut mirrored = identity;
+        mirrored[0] = -1.0;
+        assert!(check_transform(&mirrored).is_err());
         let mut nan = identity;
         nan[12] = f64::NAN;
         assert!(check_transform(&nan).is_err());

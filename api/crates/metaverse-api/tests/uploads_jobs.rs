@@ -389,14 +389,25 @@ async fn scan_and_model_jobs() {
 
     // 导入扫描：scan_import 任务，参数按约定。
     let scan = uploaded(&app, base, "scan", "drc", b"DRACO the scan").await;
+    // 贴图走 texture 用途；带贴图的扫描打包成 zip 上传，scan_import 不再单独接收贴图。
     let texture = uploaded(&app, base, "texture", "jpeg", &[0xff, 0xd8, 0xff, 0xe0, 0, 4, 0, 0]).await;
+    let reply = app
+        .call(who(ORG), Method::POST, &format!("{base}/scans"), Some(json!({"assetHash": scan, "textureHash": texture})))
+        .await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let zipped = uploaded(&app, base, "scan", "zip", b"PK\x03\x04 scan.drc + tex.jpg").await;
+    let reply = app
+        .call(who(ORG), Method::POST, &format!("{base}/scans"), Some(json!({"assetHash": zipped, "rebuild": false})))
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
+    assert_eq!(reply.body["params"]["rebuild"], false);
     let reply = app
         .call_with(
             who(ORG),
             Method::POST,
             &format!("{base}/scans"),
             &[("idempotency-key", "import-1")],
-            Some(json!({"assetHash": scan, "textureHash": texture, "observedAt": "2026-11-01T10:00:00+08:00",
+            Some(json!({"assetHash": scan, "observedAt": "2026-11-01T10:00:00+08:00",
                         "hints": {"floor": "tile"}})),
         )
         .await;
@@ -405,13 +416,13 @@ async fn scan_and_model_jobs() {
     assert_eq!(reply.body["kind"], "scan_import");
     assert_eq!(
         reply.body["params"],
-        json!({"assetHash": scan, "textureHash": texture, "observedAt": "2026-11-01T02:00:00.000Z",
+        json!({"assetHash": scan, "observedAt": "2026-11-01T02:00:00.000Z",
                "rebuild": true, "voxelize": false, "hints": {"floor": "tile"}})
     );
     // 同一个幂等键：返回同一个任务；参数不同：409。
     let reply = app
         .call_with(who(ORG), Method::POST, &format!("{base}/scans"), &[("idempotency-key", "import-1")],
-            Some(json!({"assetHash": scan, "textureHash": texture, "observedAt": "2026-11-01T10:00:00+08:00",
+            Some(json!({"assetHash": scan, "observedAt": "2026-11-01T10:00:00+08:00",
                         "hints": {"floor": "tile"}})))
         .await;
     assert_eq!(reply.status, StatusCode::OK);
