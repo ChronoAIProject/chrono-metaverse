@@ -1,0 +1,39 @@
+# 三个镜像（infra/{api,web,worker}/Dockerfile）的构建上下文都是仓库根目录。
+# 这里排除构建用不到、又可能很大或含本地状态的东西，让上下文小、缓存稳定。
+
+# 版本库与本地工具
+.git
+.github
+.claude
+**/.DS_Store
+
+# 依赖与构建产物（镜像里重新安装、重新构建）
+**/node_modules
+**/target
+**/dist
+**/coverage
+**/*.tsbuildinfo
+web/e2e/test-results
+web/e2e/playwright-report
+web/e2e/screenshots
+
+# Python 本地环境与缓存
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+**/*.egg-info
+
+# 与镜像无关的目录：验证代码与结果、文档、本地开发设施、命令行
+spikes
+docs
+infra/dev
+infra/chrono-cd
+sdk
+
+# 本地密钥与环境，绝不进镜像
+.env
+.env.*
+**/*.pem
+**/*.key
