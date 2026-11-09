@@ -36,6 +36,7 @@ import {
 } from './labelLayout';
 import { createMeshService, type MeshService } from './meshService';
 import type { ShapeJob } from './meshJobs';
+import { applyModelFit, modelBox, modelFit, modelFitWarning, type BoxLike } from './modelFit';
 
 /**
  * 只读查看器的 three.js 场景。React 组件（Viewer.tsx）只负责挂载和传参，
@@ -49,6 +50,7 @@ import type { ShapeJob } from './meshJobs';
  *   亮度接近不打光的原始扫描（lighting.ts）；
  * - 方块：叠加后的区块 → 可见面网格（后台线程），玻璃半透明、发光方块不受光照、贴图方块按贴图分块；
  * - 扫描：网页用 glb，按对齐变换（列主序 4×4）摆放；
+ * - 只有模型的物件：放在 `bounds` 的底面中心，模型比记录大或偏出记录时兜底缩进记录（modelFit.ts）；
  * - 组合：每个成员一组，按摆放（先绕 y 轴旋转、再平移）放进同一场景；连接画出来，点击飞到另一端；
  * - 虚拟区：边界光效 + "虚拟"标签；事件：高亮、图标、标签、路线、生成物件、热力；
  * - 锚点：纯文本标签，默认只显示有意义的几类，屏幕上避让、远处隐藏、总数有上限，
@@ -287,6 +289,8 @@ export class SceneView {
   private readonly materialCache = new Map<string, THREE.Material>();
   private readonly textureCache = new Map<string, Promise<THREE.Texture>>();
   private readonly modelCache = new Map<string, Promise<THREE.Object3D>>();
+  /** 模型按顶点算的实际包围盒（兜底摆放用），按解析出的模型记。 */
+  private readonly modelBoxes = new WeakMap<THREE.Object3D, BoxLike>();
   private readonly scanCache = new WeakMap<ArrayBuffer, Promise<THREE.Object3D>>();
   private readonly cut = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e6);
   private readonly clipping = [this.cut];
@@ -647,6 +651,16 @@ export class SceneView {
     return clone;
   }
 
+  /** 模型按顶点算的实际包围盒（模型坐标，每个模型算一次）。 */
+  private modelBoxOf(model: THREE.Object3D): BoxLike {
+    let box = this.modelBoxes.get(model);
+    if (box === undefined) {
+      box = modelBox(model);
+      this.modelBoxes.set(model, box);
+    }
+    return box;
+  }
+
   /** 模型材质按物件的外观派生：颜色和自发光乘上 tint，opacity 叠到原来的透明度上，unlit 换成不打光的材质。 */
   private lookMaterial(source: THREE.Material, look: NonNullable<EntityBody['material']>) {
     const tint = look.tint ? srgb(look.tint) : null;
@@ -857,7 +871,7 @@ export class SceneView {
         entityCount += batch.items.length;
       }
 
-      // 只有处理后模型（assetHash）的物件：按包围盒的底面中心摆放。
+      // 只有模型（assetHash）的物件：按包围盒的底面中心摆放；模型比记录大或偏出记录时兜底缩进记录。
       for (const { entity } of entities) {
         if (entity.shape !== undefined || entity.assetHash === undefined) continue;
         entityCount += 1;
@@ -874,9 +888,19 @@ export class SceneView {
         this.pickables.push(holder);
         this.model(entity.assetHash)
           ?.then((model) => {
-            if (!this.disposed && holder.parent !== null) {
-              holder.add(this.sharedClone(model, entity.material));
+            if (this.disposed || holder.parent === null) return;
+            const instance = this.sharedClone(model, entity.material);
+            if (entity.bounds) {
+              const actual = this.modelBoxOf(model);
+              const fit = modelFit(actual, entity.bounds);
+              if (fit !== null) {
+                const warning = modelFitWarning(entity.entityId, actual, entity.bounds, fit);
+                console.warn(warning);
+                warnings.push(warning);
+                applyModelFit(instance, fit);
+              }
             }
+            holder.add(instance);
           })
           .catch(() => warnings.push(`${entity.entityId}：模型下载失败`));
       }

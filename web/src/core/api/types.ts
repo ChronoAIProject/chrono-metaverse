@@ -64,8 +64,8 @@ export interface EntityBody {
   readonly regionId?: string;
   readonly shape?: Shape;
   /**
-   * 处理服务重新导出的物件模型（glb，`/api/public/assets/{hash}.bin`）。没有 `shape` 时，
-   * 查看器加载这个模型，按 `bounds` 的底面中心摆放（模型坐标的原点在底面中心）。
+   * 物件模型（glb，`/api/public/assets/{hash}.bin`）。没有 `shape` 时，查看器加载这个模型，
+   * 按 `bounds` 的底面中心摆放（模型坐标的原点在底面中心）；模型比记录大或偏出记录时兜底缩进记录。
    */
   readonly assetHash?: string;
   /**
