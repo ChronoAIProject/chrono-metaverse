@@ -290,7 +290,9 @@ def _base_body(raw: Mapping[str, Any], keys: set[str], what: str) -> dict[str, A
     body.setdefault("props", {})
     if not isinstance(body["props"], dict):
         raise AuthoredError(f"{what}.props 必须是对象")
-    if "source" in body["props"]:
+    # 与物件记录相同：source 是对象时按署名严格校验；不是对象（旧数据和手写模型里标来源的字符串，
+    # 例如 "rules"、"llm-modeler"）原样放行
+    if isinstance(body["props"].get("source"), Mapping):
         body["props"]["source"] = validate_source(body["props"]["source"], f"{what}.props.source")
     return body
 
@@ -332,7 +334,7 @@ def _model_entity(raw: Mapping[str, Any], what: str) -> tuple[dict, dict, dict]:
     tint, look = model_material(body.pop("material", None), f"{what}.material")
     if look is not None:
         body["material"] = look
-    if "source" not in body["props"]:
+    if not isinstance(body["props"].get("source"), Mapping):
         raise AuthoredError(f"{what} 是外部模型，必须在 props.source 里写明来源和许可（署名）")
     body.pop("bounds", None)  # 按导出后的网格重算
     check = {**body, "assetHash": _PLACEHOLDER_HASH, "bounds": {"min": [0, 0, 0], "max": [0, 0, 0]}}

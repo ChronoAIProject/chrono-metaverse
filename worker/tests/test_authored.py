@@ -225,6 +225,7 @@ CHAIR = ["entities", 3]
         (_set([*CHAIR, "props", "source", "library"], "turbosquid"), "library"),
         (_set([*CHAIR, "props", "source", "page"], "http://polyhaven.com/a/x"), "page"),
         (_set([*CHAIR, "props", "source"], _DELETE), "props.source"),
+        (_set([*CHAIR, "props", "source"], "llm-modeler"), "props.source"),
         (_set([*CHAIR, "model", "url"], "http://dl.polyhaven.org/a.glb"), "https"),
         (_set([*CHAIR, "model", "sha256"], "ABC"), "sha256"),
         (_set([*CHAIR, "model", "size"], 0), "size"),
@@ -265,6 +266,15 @@ def test_cc_by_needs_author_and_gltf_paths_stay_inside():
         }
         with pytest.raises(AuthoredError, match="文件路径"):
             parse_authored(d)
+
+
+def test_string_source_on_shapes_passes_like_entity_records():
+    """手写形状的 props.source 可以是标来源的字符串（物件记录也放行），不当署名校验。"""
+    d = doc()
+    d["entities"][1]["props"] = {"source": "llm-modeler"}
+    d["templates"][0]["props"] = {"source": "llm-modeler"}
+    parsed = parse_authored(d)
+    assert parsed["entities"]["panel-01"]["props"]["source"] == "llm-modeler"
 
 
 def test_replace_needs_structure_and_limits():
