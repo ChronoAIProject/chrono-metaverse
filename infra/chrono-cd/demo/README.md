@@ -20,11 +20,12 @@
 | 六组产出直接合并、结构沿用算法（评审前） | 5.74 | 13.18 | 54.3% |
 | **本物件集**（结构改正 + 补漏建 + 穿插修正） | **4.31** | **8.71** | **67.0%** |
 
-展示图（重建工作台渲染，`showcase/`）：
+展示图（`showcase/`）：下面"本地全流程验证"里网站"优化"视图的截图（去掉了页面的标题栏和底部控件），烘焙贴图、
+灯光和网站上看到的一样：
 
 | | |
 |---|---|
-| ![总览](showcase/6-overview.jpg) | ![入口看向会议区](showcase/1-entry.jpg) |
+| ![总览](showcase/6-overview.jpg) | ![入口的 LED 大屏墙（烘焙贴图）](showcase/1-entry.jpg) |
 | ![前台](showcase/2-reception.jpg) | ![会议区](showcase/3-meeting.jpg) |
 | ![休息区](showcase/4-lounge.jpg) | |
 
