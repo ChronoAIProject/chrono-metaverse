@@ -386,3 +386,36 @@ export function sceneHeightRange(scene: SceneDocument): { min: number; max: numb
   }
   return { min: 0, max: max > 0 ? max : 3 };
 }
+
+/** 默认剖切高度比墙顶低多少（米）：天花板在墙顶的高度上，稍低一点才能切干净。 */
+export const CEILING_CUT_MARGIN = 0.05;
+
+/**
+ * 默认的剖切高度：只切掉天花板，墙和高柜都留着。
+ *
+ * 天花板高度取结构墙（`kind: "structure"`、高于 1.5 米的墙和玻璃）顶部的中位数——处理服务把各面墙的
+ * 顶部统一到了天花板线上（worker 的 structure.py），AI 物件集里的墙也是这样写的；再低
+ * {@link CEILING_CUT_MARGIN}，让原始视图里扫描的天花板切干净，优化视图里墙几乎完整。
+ * 没有结构墙时（例如还没重建、只有扫描）返回 null，由调用方用 {@link FALLBACK_CUT_HEIGHT}。
+ */
+export function ceilingCutHeight(scene: SceneDocument): number | null {
+  const tops: number[] = [];
+  for (const entity of scene.entities) {
+    if (entity.kind !== 'structure' || !entity.bounds) continue;
+    const { min, max } = entity.bounds;
+    if (max[1] - min[1] > 1.5) tops.push(max[1]);
+  }
+  if (tops.length === 0) return null;
+  tops.sort((a, b) => a - b);
+  const mid = tops.length >> 1;
+  const median = tops.length % 2 === 1 ? tops[mid]! : (tops[mid - 1]! + tops[mid]!) / 2;
+  return Math.max(median - CEILING_CUT_MARGIN, 0.5);
+}
+
+/** 找不到结构墙时的默认剖切高度（米）：比常见的天花板低，保证从上往下能看见屋里。 */
+export const FALLBACK_CUT_HEIGHT = 2.2;
+
+/** 剖切高度：用户拖过滑块就用用户的，否则按天花板算（算不出来用 {@link FALLBACK_CUT_HEIGHT}）。 */
+export function effectiveCutHeight(chosen: number | null, ceiling: number | null): number {
+  return chosen ?? ceiling ?? FALLBACK_CUT_HEIGHT;
+}

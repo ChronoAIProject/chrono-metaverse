@@ -4,6 +4,8 @@ import type { CommitSummary, UniverseView } from '../core/api/types';
 import { toMillis } from '../core/events';
 import {
   hasStyleChoice,
+  ceilingCutHeight,
+  effectiveCutHeight,
   sceneHeightRange,
   selectView,
   type MemberContent,
@@ -62,7 +64,8 @@ export function UniversePage({
   const [mode, setMode] = useViewMode(initialMode);
   const [style, setStyle] = useRebuiltStyle();
   const [cutEnabled, setCutEnabled] = useState(true);
-  const [cutHeight, setCutHeight] = useState(2.2);
+  // 剖切高度：null 表示用户还没拖过滑块，按各成员的天花板算默认值（取最高的，只切掉天花板）。
+  const [cutChoice, setCutHeight] = useState<number | null>(null);
   const [view, setView] = useState<UniverseView | null>(null);
   const [error, setError] = useState<RuntimeError | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -255,6 +258,15 @@ export function UniversePage({
       if (state.scene) max = Math.max(max, sceneHeightRange(state.scene).max);
     return { min: 0, max };
   }, [states]);
+  const ceiling = useMemo(() => {
+    let top: number | null = null;
+    for (const state of states) {
+      const h = state.scene ? ceilingCutHeight(state.scene) : null;
+      if (h !== null) top = top === null ? h : Math.max(top, h);
+    }
+    return top;
+  }, [states]);
+  const cutHeight = effectiveCutHeight(cutChoice, ceiling);
 
   if (error !== null && view === null) {
     return (

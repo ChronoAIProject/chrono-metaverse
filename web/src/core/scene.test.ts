@@ -14,6 +14,10 @@ import {
   placePoint,
   rebuiltContent,
   sceneHeightRange,
+  ceilingCutHeight,
+  effectiveCutHeight,
+  CEILING_CUT_MARGIN,
+  FALLBACK_CUT_HEIGHT,
   selectView,
   templatesOf,
   viewHasGeometry,
@@ -76,6 +80,45 @@ describe('三种视图', () => {
 
   it('剖切范围取物件和区域的最高点', async () => {
     expect(sceneHeightRange(await sceneAt(2)).max).toBeCloseTo(3, 5);
+  });
+
+  it('默认剖切高度：结构墙顶部的中位数再低一点，只切掉天花板', async () => {
+    // 夹具的墙高 2.8 米
+    expect(ceilingCutHeight(await sceneAt(2))).toBeCloseTo(2.8 - CEILING_CUT_MARGIN, 5);
+    const wall = (id: string, top: number) => ({
+      entityId: id,
+      layer: 'rebuilt' as const,
+      kind: 'structure' as const,
+      bounds: {
+        min: [0, 0, 0] as [number, number, number],
+        max: [1, top, 0.1] as [number, number, number],
+      },
+    });
+    const floor = {
+      entityId: 'floor',
+      layer: 'rebuilt' as const,
+      kind: 'structure' as const,
+      bounds: {
+        min: [0, -0.05, 0] as [number, number, number],
+        max: [5, 0, 5] as [number, number, number],
+      },
+    };
+    const base = await sceneAt(2);
+    const doc = (entities: SceneDocument['entities']) => ({ ...base, entities });
+    // 地面、矮隔断不算；偶数面墙取中间两面的平均
+    expect(
+      ceilingCutHeight(
+        doc([floor, wall('a', 2.7), wall('b', 2.9), wall('c', 2.8), wall('d', 3.0)]),
+      ),
+    ).toBeCloseTo(2.85 - CEILING_CUT_MARGIN, 5);
+    expect(ceilingCutHeight(doc([floor, wall('low', 1.2)]))).toBeNull();
+    expect(ceilingCutHeight(doc([]))).toBeNull();
+  });
+
+  it('剖切高度：拖过滑块用用户的，否则用天花板高度，算不出来用后备高度', () => {
+    expect(effectiveCutHeight(1.6, 2.75)).toBe(1.6);
+    expect(effectiveCutHeight(null, 2.75)).toBe(2.75);
+    expect(effectiveCutHeight(null, null)).toBe(FALLBACK_CUT_HEIGHT);
   });
 
   it('物件按区域分类', () => {

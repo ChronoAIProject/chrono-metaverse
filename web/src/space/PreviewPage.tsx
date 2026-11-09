@@ -5,6 +5,8 @@ import {
   IDENTITY_PLACEMENT,
   hasStyleChoice,
   loadScene,
+  ceilingCutHeight,
+  effectiveCutHeight,
   sceneHeightRange,
   selectView,
   type SceneContent,
@@ -51,7 +53,8 @@ export function PreviewPage({
   const [mode, setMode] = useViewMode(initialMode);
   const [style, setStyle] = useRebuiltStyle();
   const [cutEnabled, setCutEnabled] = useState(true);
-  const [cutHeight, setCutHeight] = useState(2.2);
+  // 剖切高度：null 表示用户还没拖过滑块，按天花板算默认值（只切掉天花板）。
+  const [cutChoice, setCutHeight] = useState<number | null>(null);
   const [preview, setPreview] = useState<PreviewView | null>(null);
   const [scene, setScene] = useState<SceneDocument | null>(null);
   const [error, setError] = useState<RuntimeError | null>(null);
@@ -139,6 +142,8 @@ export function PreviewPage({
     };
   }, [scene, mode, style, scan, scanHash]);
   const heights = useMemo(() => (scene ? sceneHeightRange(scene) : { min: 0, max: 3 }), [scene]);
+  const ceiling = useMemo(() => (scene ? ceilingCutHeight(scene) : null), [scene]);
+  const cutHeight = effectiveCutHeight(cutChoice, ceiling);
 
   if (token === null) {
     return (

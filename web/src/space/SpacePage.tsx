@@ -4,6 +4,8 @@ import { toMillis } from '../core/events';
 import {
   IDENTITY_PLACEMENT,
   hasStyleChoice,
+  ceilingCutHeight,
+  effectiveCutHeight,
   sceneHeightRange,
   selectView,
   type SceneContent,
@@ -58,7 +60,8 @@ export function SpacePage({
   const [mode, setMode] = useViewMode(initialMode);
   const [style, setStyle] = useRebuiltStyle();
   const [cutEnabled, setCutEnabled] = useState(true);
-  const [cutHeight, setCutHeight] = useState(2.2);
+  // 剖切高度：null 表示用户还没拖过滑块，按天花板算默认值（只切掉天花板）。
+  const [cutChoice, setCutHeight] = useState<number | null>(null);
   const [attempt, setAttempt] = useState(0);
   // 下载好的扫描模型，连同它的哈希：换了扫描时旧的自动失效。
   const [loadedScan, setLoadedScan] = useState<{ hash: string; bytes: ArrayBuffer } | null>(null);
@@ -147,6 +150,8 @@ export function SpacePage({
   );
 
   const heights = useMemo(() => (scene ? sceneHeightRange(scene) : { min: 0, max: 3 }), [scene]);
+  const ceiling = useMemo(() => (scene ? ceilingCutHeight(scene) : null), [scene]);
+  const cutHeight = effectiveCutHeight(cutChoice, ceiling);
   const nowMs = now();
   const range = useMemo(
     () =>

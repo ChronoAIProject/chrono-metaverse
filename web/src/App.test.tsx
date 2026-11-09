@@ -144,7 +144,8 @@ describe('应用外壳', () => {
     const member = () => last().members[0]!;
     expect(last().mode).toBe('optimized');
     expect(member().view.entities.some((e) => e.entityId === 'kiosk-01')).toBe(false);
-    expect(view.cutaway).toBeCloseTo(2.2);
+    // 默认只切掉天花板：夹具的墙高 2.8 米
+    expect(view.cutaway).toBeCloseTo(2.75);
     expect(screen.getByText(/版本 #4/)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: '优化 + 扩展' }));
