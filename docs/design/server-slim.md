@@ -216,7 +216,7 @@ MongoDB（普通集合 + GridFS）
 | 位置 | 变化 |
 |---|---|
 | `scope::PathScope` | 加 `Rebuild`，存储写 `rebuild` |
-| `scope::UploadPurpose`、`model::UploadFormat` | 加 `WebModel`（路径里写 `webmodel`）、`Bundle`；`Authored` 只留着读旧记录。`check_upload_purpose`：实体区和地块 `{model, texture, ops, script}`；重建 `{scan, webmodel, model, texture, script, bundle}` |
+| `scope::UploadPurpose`、`model::UploadFormat` | `UploadPurpose` 加 `WebModel`（路径里写 `webmodel`）、`Bundle`；`Authored` 只留着读旧记录。`check_upload_purpose`：实体区和地块 `{model, texture, ops, script}`；重建 `{scan, webmodel, model, texture, script, bundle}`。`UploadFormat` 不用加新值：网页用模型是 glb，清单是 json，都已有 |
 | `scope::AllowedArea` | 加"除去"模式（2.5 第 6 条）；`for_scope(Rebuild)` |
 | `model::ActorKind` | 加 `Rebuild`；`Job` 留给旧提交和后台任务 |
 | `model::JobKind` | 加 `BundleImport`；旧种类留着反序列化 |
@@ -304,7 +304,7 @@ TypeScript 核心库（`sdk/typescript/src/core/`）实现扩展层用得到的�
 2. 只对 zip：先按序号读文件末尾的数据块（≤ 1 MiB），解析中央目录（4.4）。
 3. 从头按序号流式读出全部数据块（`files_id` = 上传编号，按 `n` 升序），核对序号连续、除最后一块外每块 256 KiB、总长度等于声明的大小；边读边算 sha256，同时把字节交给这个用途的检查器（glb：JSON 块、`POSITION` 访问器的数据、图片头；zip：在中央目录给出的偏移处核对本地头；图片：头和段；ops：流式解压、逐行检查；script：UTF-8）。内存只有一批数据块加上检查器留的少量状态。
 4. 哈希不符或检查不通过：上传 `failed`、写原因（`content`）、删数据块，任务失败。
-5. 登记资源：插入 GridFS `files` 文档（`_id` = 上传编号，`filename` = 内容哈希，`metadata = {sha256, contentType, kind, spaceId, uploadId, format, touchedAt, check}`）。文件名唯一键冲突说明同一内容已存在：删本次的数据块、复用已有资源（先刷新它的 `touchedAt`；它没有 `check` 或版本比现在低时，按条件 `$set` 补写本次算出的 `check`——检查结果只取决于文件内容，谁算都一样）。
+5. 登记资源：插入 GridFS `files` 文档（`_id` = 上传编号，`filename` = 内容哈希，`metadata = {sha256, contentType, kind, spaceId, uploadId, format, touchedAt, check}`）。文件名唯一键冲突说明同一内容已存在：删本次的数据块、复用已有资源（先刷新它的 `touchedAt`；它没有 `check`、版本比现在低，或者只是扫描用途的轻量检查（glb 的 `triangles`、`bounds` 为空）而本次做了完整检查时，按条件 `$set` 补写本次算出的 `check`——检查结果只取决于文件内容，谁算都一样）。
 6. 同一个事务里：上传 `done` 并写 `assetHash`、`format`、`storageBytes`，空间 `storageUsedBytes` 加上大小，任务完成（带租约条件）。
 
 任务最终失败、上传停在 `complete` 时的收尾（`settle_upload`：内容已核对通过且资源存在就补做第 6 步，否则 `failed` 并删数据块）照搬，由执行器在标记失败后立即做，清理第 1 步兜底。
@@ -946,6 +946,37 @@ S8 ─────────────────────────�
   - 文档：`docs/SHAPES.md`——第 3 节加编号前缀、同层模板、署名是写入方的声明、物件模型 glb 的要求（节点用单位变换、原点在底面中心、扩展白名单）；新第 7 节"重建包清单"（6.2、6.3）；新第 8 节"资源核对记录与各用途上限"（4.4–4.6）；新操作写进操作说明。
 - **接口与数据**：2.4、2.5、2.9、4.6、6.2–6.4。不改任何路由。
 - **验收**：新操作和规则的 `ops/` 向量 Rust、TypeScript 结果一致；`bundle/` 向量 Rust 展开结果与期望相同，TypeScript 对合法、不合法的判断与 Rust 相同；旧的提交、任务、草稿文档（取自现有测试夹具）往返读写不变；`metaverse-api` 全部测试照过；用公开快照确认线上前厅没有扩展层物件、没有 `rb.` 开头的编号（写进合并请求说明）。
+
+S1 做完后的状态（实施记录）：
+
+- 核心库（Rust）：`scope`（`PathScope::Rebuild`、上传用途表、"除去"模式）、`model`（新取值和新字段、`check_transform`、
+  `check_alignment`）、`ops`（`setScan`、`clearRebuilt`、`ifPresent`、`ifNew`、范围种类、锚点历史、草稿的扫描、
+  `broken_template_refs`）、`record`（`rb.` 前缀）、新模块 `limits`、`check`、`bundle`；接口服务只跟着改到能编译，
+  路由不变。TypeScript 核心库：`scope.ts`、`ops.ts`、`record.ts`、`shape.ts`（`textureRefs`），新 `bundle.ts`（结构校验，
+  不展开）、`limits.ts`、`timestamp.ts`。向量：`ops/` 新增 22 个（共 48 个），`bundle/` 29 个；`tests/compat.rs` 核对旧文档往返。
+  SHAPES 第 3 节加了图层与编号、草稿的种类与操作、物件模型的要求，新第 7、8 节。
+- 实现时补上的细节（设计没写到，按最小的写法定下）：
+  1. 新错误类别 `OpError::NotAllowed`（接口返回 422 `op_not_allowed`），向量里的错误类别 `notAllowed`；
+  2. 重建草稿里 `createAnchor` 不带 `ifNew` 也拒绝（防御，展开时一律带上）；`setScan` 没有格子上的影响范围；
+     `clearRebuilt` 的影响范围是被删的非模板物件；带 `ifNew` 被跳过的锚点、带 `ifPresent` 而不存在的物件影响范围为空；
+  3. 模板引用的完整性按"同一层存在"判断，跨层的旧引用也算缺；
+  4. 清单的 `rebuilt.remove` 上限 2000；字段为 `null` 等于没给（数组字段除外）；每条记录 64 KiB 按清单原文算，
+     本地工具写清单时记录不缩进（命令行按记录的紧凑 JSON 算）；
+  5. `uploadLimits` 的形状（`{v, scan, webmodel, model, texture, ops, script, bundle}`）定在 SHAPES 8；
+  6. 扫描用途的 glb 只做轻量检查，`check.triangles`、`check.bounds` 为空，不能当网页用模型或物件模型；同一份字节再按
+     完整用途上传时补写 `check`（4.3 第 5 步已改）；
+  7. RFC 3339 的写法按 Rust `time` 库（`T`、`t` 或空格，时区偏移 ≤ 23:59，只认 23:59:60 这个闰秒），TypeScript 照着实现。
+- 与设计的偏离（都是多做或提前生效）：
+  1. TypeScript 的工作状态也实现了重建范围的操作（`setScan`、`clearRebuilt` 的作用），`ops/` 向量两边全部一致；
+     清单仍只做结构校验，不展开；
+  2. 通用新规则对现有的实体区、地块草稿已经生效：编号不能以 `rb.` 开头、模板只能同层引用、没定义实体区的空间实体区路径
+     是"除去"模式（2.5 第 6 条原定随 S3 的验收）；命令行的本地建造目标同样按"除去"模式算，建造脚本只拿到扩展层的模板；
+  3. 上传用途表已是瘦身后的规则，但旧的扫描导入和物件集导入删掉之前（S4），接口服务的实体区上传照旧收 `scan`、
+     `authored`（`routes/uploads.rs` 的 `check_legacy_upload_purpose`，S4 删掉）；`webmodel`、`bundle` 在实体区、地块
+     路径上仍是 404，S3 的重建路径接上；
+  4. 线上前厅的核对没有用公开快照（分享令牌是部署密钥，拿不到），改用线上第 3 版的来源：`lobby-authored.json` 的 52 个
+     物件和 1 个模板都在重建层、没有 `rb.` 开头的编号，结构由处理服务的结构算法写入（编号如 `floor`，也不用 `rb.`）；NyxID 注册之前线上只有种子
+     能写，扩展层没有物件，也就没有跨层的模板引用。R2 上线前用分享链接的快照再核对一次（S10 的工作区 `pull --share`）。
 
 #### S2 后台执行器、上传核对、清理
 
