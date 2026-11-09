@@ -1044,24 +1044,23 @@ S5 做完后的状态（实施记录）：
   记录或 `--rebuild` 走重建路径，显示"没有变化"，409 的冲突、`broken_template_ref`、`asset_gone` 分别说明处理办法；`pull` 写
   `limits.json`、`--scan`（`transport/download.ts`）、`--share`（`transport/public.ts`）。传输层的路径范围扩成实体区、地块、
   重建三种（`ScopeRef`），请求可以带 `Range`，任务的 `lastError` 兼容 `{class, message, at}`。
-- 资源核对的命令行实现 `src/core/check/`（`glb.ts`、`image.ts`、`zip.ts`，`index.ts` 里是按用途分派、`fits`、
-  `modelFitsBounds`、`limits.json` 的形状检查），按 4.4–4.6 和 SHAPES 8 写。
+- 资源核对的命令行实现 `src/core/check/`（`glb.ts`、`image.ts`、`zip.ts`、`text.ts`（drc、obj、文本、操作文件、清单外层），
+  `index.ts` 里是按用途和声明的格式分派、`fits`、`modelFitsBounds`），按 4.4–4.6 和 SHAPES 8 写，再逐条对齐 S2 的检查器
+  （`runner/verify/`）：检查的先后、拒绝码、"先检查、再按用途的上限判断（超出是 `over_limit`）"都相同。
 - 测试对着假接口服务（`tests/helpers/fakeApi.ts` 补了重建路径、重建权限、交包、`unchanged`、`Range`、公开读），验收列的
-  每一项都有；资源核对按 6.5 列出的样本在内存里生成（`tests/helpers/samples.ts`）。
+  每一项都有；资源核对按 6.5 列出的样本在内存里生成（`tests/helpers/samples.ts`），另跑 S2 的二进制样本（见下面第 1 条）。
 - 设计没写到、实现时定下的（最小的写法）：
-  1. **拒绝码**（`CheckError.code`）：glb 的 `glb_header`、`glb_json_too_large`、`glb_json`、`glb_external_uri`、`glb_buffer`、
-     `glb_extension`、`glb_unsupported`、`glb_position`、`glb_scene`、`glb_node_graph`、`glb_triangles`、`glb_too_many_triangles`、
-     `glb_bounds_mismatch`、`glb_coord_range`、`glb_image`、`glb_texture_too_large`；图片的 `image_format`、`image_header`、
-     `image_too_large`；zip 的 `zip_format`、`zip_too_large`、`zip64`、`zip_encrypted`、`zip_method`、`zip_path`、`zip_members`、
-     `zip_local_header`、`zip_overlap`；另有 `drc_header`、`obj_header`、`text_encoding`、`too_large`、`format`。
-     S2 生成 `tests/vectors/check/` 时用同一套码，`expected.json` 是 `[{file, purpose, ok, code?, check?}]`（或
-     `{samples: [...]}`），上限一律默认值——命令行的运行器 `tests/check-vectors.test.ts` 按这个格式读，目录还没有时跳过；
-  2. glb 检查的细节：`check.nodes` 是 JSON 里 `nodes` 的个数；没有场景（`scenes[scene]` 不存在）拒绝；场景里没有三角形拒绝；
+  1. **拒绝码和样本**：用 S2 定下的那一套（向量 README 第 9 节）。`checkAsset(用途, 文件, 上限, 声明的格式?)` 不给格式时按
+     内容认（命令行上传时就声明这个格式）。`tests/check-vectors.test.ts` 读 `expected.json` 的 `{version, limits, cases}`，
+     按声明的格式和按内容认各跑一遍；目录还没有时跳过。S5 收尾时 S2 还没合进来，用 `METAVERSE_VECTORS_DIR` 指向 S2 分支
+     导出的 `check/` 跑过：45 个用例（含操作文件和清单外层）的核对记录和拒绝码全部与 Rust 相同；
+  2. glb 检查的细节（与 Rust 相同）：`check.nodes` 是 JSON 里 `nodes` 的个数；没有场景、场景里没有网格或顶点是 `glb_empty`；
      `POSITION` 没有 `bufferView` 拒绝；`min`/`max` 按分量的原始值与数据核对（glTF 规定 `normalized` 不影响它们），还原后的
-     值才进世界包围盒；成环对全部节点查（不只是场景走得到的）；扫描用途的轻量检查不读 BIN 块，`images` 为空、
-     `maxTextureSide`、`texturePixels` 为 0；
+     值才进世界包围盒；成环对全部节点查（不只是场景走得到的）；扩展的键在整个 JSON 里找（含 `extras` 里的）；扫描用途的
+     轻量检查也查缓冲区视图的范围和图片的引用，但不读 BIN 块的数据，`images` 为空、`maxTextureSide`、`texturePixels` 为 0；
   3. zip：名称以 `/` 结尾的目录项与 `__MACOSX/`、`.DS_Store` 一样忽略（仍查路径安全，macOS 压缩文件夹会带目录项）；有数据
-     描述符时本地头里的大小可以是 0；drc 的主版本认 1 和 2，编码类型必须是网格；
+     描述符时本地头里的大小和校验值可以是 0；成员名必须是 UTF-8、不含控制字符；drc 的主版本认 1 和 2，编码类型必须是网格；
+     obj 整份不含 NUL、开头 1 MiB 里要有几何关键字；操作文件的 gzip 只认一个成员并核对校验值；
   4. `bundle push` 必须在工作区里运行（要用 `metaverse.json` 的调用方式和空间编号），`bundle check` 可以在工作区外给出目录；
      本地缺的文件先逐个做复用探测，全部能复用才开始传别的（探测不能复用时留下一个打开的上传会话，24 小时后被清理收走）；
      本地缺的文件按扩展名定上传格式；`base.seq` 超过最新版本时拒绝；`--replay` 只能和 `--publish` 一起用；
@@ -1071,7 +1070,12 @@ S5 做完后的状态（实施记录）：
      工具要用 `--scan` 指定），不把别的格式存成 `.zip`；
   2. `pull --share` 要在已有的工作区里运行，链接的空间要与工作区相同；除了设计列的文件，也写方块表和区块（公开快照里就有），
      这样只读工作区照样能 `build`、`dev`；
-  3. `tests/vectors/check/` 由 S2 生成，S5 时还没有：验收里"结果与 Rust 相同"等 S2 合并后由运行器自动核对（见上面第 1 条）。
+  3. `tests/vectors/check/` 由 S2 生成，S5 的分支里还没有：验收里"结果与 Rust 相同"按上面第 1 条的办法对着 S2 分支的样本
+     做过；两步合并后运行器自动读仓库里的目录。向量 README 第 7 节表里 `check/` 一行的命令行一栏到时改成
+     `tests/check-vectors.test.ts`。
+  4. 资源核对也收 `ops`、`bundle` 两个用途（设计只要求命令行查重建包里的五种文件），为了跑全部样本；
+  5. 文档：除了 `sdk/typescript/README.md` 和技能说明，`docs/tutorials/build-space.md` 的命令表也换掉了删掉的三个命令
+     （其余教程按计划在 S6b、S9 改）。
 
 #### S6a 本地工具去掉服务端部分
 

@@ -11,8 +11,8 @@ chrono-metaverse 的本地工作区工具（设计第 10 节）：`metaverse` �
 - **命令**：`init`、`admin`、`pull`、`build`、`dev`、`shot`、`diff`、`check`、`push`、`publish`、`bundle`。
   `scan`、`rebuild`、`voxelize` 已删除：服务端不再做重建，重建在本地用 `metaverse-recon` 做，打成重建包用
   `metaverse bundle push` 推送（`docs/design/server-slim.md`）。
-- **本地检查**：重建包清单的结构校验（`core/bundle.ts`）和资源核对（`core/check/`：glb、图片、扫描 zip），规则与
-  服务端相同，上传之前就能发现问题。
+- **本地检查**：重建包清单的结构校验（`core/bundle.ts`）和资源核对（`core/check/`：glb、图片、扫描 zip、操作文件、
+  清单外层），规则、拒绝码和超出上限的判断（`over_limit`）与服务端的上传核对相同，上传之前就能发现问题。
 - **技能说明**：[skills/metaverse-builder/SKILL.md](skills/metaverse-builder/SKILL.md)（建造）和
   [skills/metaverse-reconstruct/SKILL.md](skills/metaverse-reconstruct/SKILL.md)（用 AI 重建实体空间，配合
   本地重建工具 `metaverse-recon`），`metaverse init` 把它们写进工作区。
@@ -250,5 +250,7 @@ npm run test:coverage
   必填字段（422），核对上传格式的白名单和第 0 片的文件头，经地块路径只看得到本地块的任务，还能按路径前缀模拟 NyxID 的操作范围。
   重建路径（上传、草稿、交包、发布的 `unchanged`、重建权限）、资源的 `Range` 分段和公开读也在里面，按 `docs/design/server-slim.md`
   2.3 的约定写；接口服务实现以后要对着真服务联调一次。
-- 资源核对：`tests/check.test.ts` 用 `tests/helpers/samples.ts` 在内存里造 glb、图片、zip 样本（设计 6.5 列出的各种不合规
-  文件）；`tests/check-vectors.test.ts` 跑接口服务生成的二进制样本 `vectors/check/`（目录还没有时跳过），结果要与 Rust 相同。
+- 资源核对：`tests/check.test.ts` 用 `tests/helpers/samples.ts` 在内存里造 glb、图片、zip、操作文件样本（设计 6.5 列出的
+  各种不合规文件）；`tests/check-vectors.test.ts` 跑接口服务生成的二进制样本 `vectors/check/`（`expected.json` 的格式和拒绝码
+  见 `vectors/README.md` 第 9 节；目录还没有时跳过），按声明的格式和按内容认各跑一遍，通过时的核对记录、被拒时的拒绝码都要
+  与 Rust 相同。
