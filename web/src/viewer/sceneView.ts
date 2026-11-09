@@ -24,6 +24,7 @@ import type { VoxelPart } from '../core/voxels';
 import { anchorKey, linkRoute, type AnchorRef, type Visual } from '../core/visuals';
 import { clipBox, frameBox } from './framing';
 import { iconElement } from './icons';
+import { applyTexturedLook, createLights } from './lighting';
 import {
   LABEL_PADDING,
   MIN_SCREEN_SIZE,
@@ -44,6 +45,8 @@ import type { ShapeJob } from './meshJobs';
  *   最外层的 transform 拆出来当实例矩阵，同样的局部形状（同款椅子）共用一份几何体，
  *   两个以上时画成 InstancedMesh；
  * - 材质：颜色或贴图（按资源哈希下载，uv 投影在网格生成时算好，tint 作颜色）；
+ * - 灯光：半球光 + 主光 + 补光，强度按物理单位（π 的倍数）；贴图材质一部分按自发光显示，
+ *   亮度接近不打光的原始扫描（lighting.ts）；
  * - 方块：叠加后的区块 → 可见面网格（后台线程），玻璃半透明、发光方块不受光照、贴图方块按贴图分块；
  * - 扫描：网页用 glb，按对齐变换（列主序 4×4）摆放；
  * - 组合：每个成员一组，按摆放（先绕 y 轴旋转、再平移）放进同一场景；连接画出来，点击飞到另一端；
@@ -357,13 +360,8 @@ export class SceneView {
     this.meshes = options.meshService ?? createMeshService();
     this.ownsMeshes = options.meshService === undefined;
 
-    this.scene.add(new THREE.HemisphereLight(0xf4f1ea, 0x3a3d44, 1.6));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.6);
-    sun.position.set(6, 12, 8);
-    this.scene.add(sun);
-    const fill = new THREE.DirectionalLight(0xdfe8ff, 0.5);
-    fill.position.set(-8, 6, -4);
-    this.scene.add(fill);
+    // 灯光按物理单位设置（强度是 π 的倍数），见 lighting.ts。
+    this.scene.add(...createLights());
     this.grid = new THREE.GridHelper(60, 60, 0x6b6f78, 0x3b3f48);
     (this.grid.material as THREE.Material).transparent = true;
     (this.grid.material as THREE.Material).opacity = 0.45;
@@ -489,19 +487,18 @@ export class SceneView {
       clippingPlanes: this.clipping,
     });
     if (isTextureMaterial(material)) {
+      // 贴图材质只有一部分受光照（另一部分按自发光直接显示贴图），亮度接近原始扫描。
       const tint = material.tint ? srgb(material.tint) : new THREE.Color(0xffffff);
       // 贴图到之前先用色调的灰一点的版本占位。
-      base.color = tint.clone().multiplyScalar(0.8);
+      applyTexturedLook(base, tint.clone().multiplyScalar(0.8), null);
       const texture = this.texture(material.texture);
       texture
         ?.then((map) => {
           if (this.disposed) return;
-          base.map = map;
-          base.color = tint;
-          base.needsUpdate = true;
+          applyTexturedLook(base, tint, map);
         })
         .catch(() => {
-          base.color = tint;
+          applyTexturedLook(base, tint, null);
         });
     } else {
       base.color = srgb(material.color);
@@ -557,6 +554,14 @@ export class SceneView {
             for (const material of materials) {
               if (doubleSided) material.side = THREE.DoubleSide;
               material.clippingPlanes = this.clipping;
+              // 受光照的贴图材质（不是 unlit 的扫描）同样只让一部分受光照。
+              if (
+                material instanceof THREE.MeshStandardMaterial &&
+                material.map !== null &&
+                material.emissiveMap === null
+              ) {
+                applyTexturedLook(material, material.color.clone(), material.map);
+              }
             }
           });
           resolve(gltf.scene);
