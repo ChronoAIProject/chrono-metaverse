@@ -29,7 +29,8 @@
 沿用算法结果（keep）或用物件集里的结构（replace）；带烘焙指令的部件从扫描烘焙贴图；外部模型下载、核对、
 重新导出后写成 `assetHash`；逐件偏差写进 `fit`；`notes` 存成脚本资源，提交的 `scriptRef` 指向它。重建层
 全部旧物件换成这次的结果，锚点规则不变（按 `props.category`）。`scan_import` 带物件集时 `rebuild` 不能是
-false。结果里 `authored = {fit: [逐件偏差], downloads, models, bake, scriptRef, …}`。
+false。结果里 `authored = {fit: [逐件偏差], downloads, models, bake, textureFallback: [结构贴图的回退清单],
+scriptRef, …}`。
 """
 
 from __future__ import annotations
@@ -267,11 +268,12 @@ def _register_rebuild(
 
 
 def _prepare_authored(ctx: JobContext) -> tuple[dict[str, Any] | None, dict, dict]:
-    """读取并校验物件集、给已有贴图过栅栏、下载外部模型。没有物件集时返回 (None, {}, {})。"""
+    """读取并校验物件集、给已有贴图过栅栏（不是本空间的贴图记在 `pendingTextures`，交给子进程判断）、
+    下载外部模型。没有物件集时返回 (None, {}, {})。"""
     authored = authored_io.load_authored(ctx)
     if authored is None:
         return None, {}, {}
-    authored["fencedTextures"] = authored_io.fence_textures(ctx, authored)
+    authored["fencedTextures"], authored["pendingTextures"] = authored_io.fence_textures(ctx, authored)
     sources, downloads = authored_io.download_sources(ctx, authored)
     return authored, sources, downloads
 

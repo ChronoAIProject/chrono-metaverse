@@ -2,7 +2,8 @@
 
 覆盖：内联和资源两种传法；提交里就是物件集的物件；烘焙生成贴图；外部模型下载、重新导出、登记；
 偏差写进 fit；结构 keep / replace；notes → scriptRef；锚点按类别；哈希不符、主机不在列表、重定向到不允许的
-主机、资源用途不对、贴图不是本空间的都失败；同样的物件集再跑一次没有变化就不提交。
+主机、资源用途不对、贴图不是本空间的（本次也没算出）都失败；本地基线算的结构贴图回退到本次算出的；同样的
+物件集再跑一次没有变化就不提交。
 """
 
 from __future__ import annotations
@@ -21,6 +22,8 @@ from https_server import serve
 from metaverse_worker.assets import find_asset, put_asset, read_asset
 from metaverse_worker.handlers import authored as authored_io
 from metaverse_worker.handlers import scan as scan_handlers
+from metaverse_worker.processing.rebuild import structure_entities
+from metaverse_worker.processing.structure import extract_structure
 from metaverse_worker.runner import Runner
 from metaverse_worker.store import C
 from synthetic import room_mesh
@@ -203,6 +206,36 @@ def test_rebuild_with_authored_asset_replaces_structure(runner, store, library):
     # 同样的物件集再跑一次：结果完全相同，不提交
     job = run_job(runner, store, "rebuild", {"authoredAsset": asset})
     assert job["status"] == "done" and job["result"]["unchanged"] is True and len(commits(store)) == 2
+
+
+def test_structure_textures_from_a_local_baseline_fall_back(runner, store, library):
+    """物件集的结构是本地基线算的（贴图哈希与线上不同、本空间也没登记）：同一个任务里跑一次结构算法，
+    换成本次算出的贴图，登记引用，结果里列出替换清单；本空间登记过的贴图照常过栅栏、不回退。"""
+    bodies, _ = structure_entities(extract_structure(room_with_table()))
+    poster = put_asset(store, jpeg_bytes(np.full((8, 8, 3), 9, np.uint8)), content_type="image/jpeg",
+                       kind="texture", space_id=SPACE).hash  # fmt: skip
+    structure = []
+    for _, body in sorted(bodies.items()):
+        body = {k: v for k, v in copy.deepcopy(body).items() if k not in ("textures", "fit")}
+        shape = body["shape"]
+        for node in [shape, *(shape.get("children") or [])]:
+            material = node.get("material") or {}
+            if "texture" in material:
+                material["texture"] = hashlib.sha256(f"base\0{material['texture']}".encode()).hexdigest()
+        structure.append(body)
+    doc = authored_doc(library, texture=poster, structure="replace")
+    doc["entities"] += structure
+    _, job = import_scan(runner, store, authored=doc)
+    assert job["status"] == "done", job.get("lastError")
+    replaced = job["result"]["authored"]["textureFallback"]
+    assert replaced and {r["entityId"] for r in replaced} <= set(bodies)
+    current, refs = entities(store), asset_refs(store)
+    for item in replaced:
+        body = current[item["entityId"]]
+        assert item["to"] in body["textures"] and item["from"] not in body["textures"]
+        assert item["to"] in refs and find_asset(store, item["to"])["metadata"]["kind"] == "texture"
+    assert current["poster-01"]["textures"] == [poster] and poster in refs
+    assert all(r["from"] != poster for r in replaced)
 
 
 def _bad_sha(library, doc):

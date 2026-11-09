@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import io
 import json
 import os
@@ -19,10 +20,11 @@ from metaverse_worker.authored import (
     MAX_ENTITIES,
     AuthoredError,
     load_authored_bytes,
+    node_at,
     parse_authored,
     source_key,
 )
-from metaverse_worker.errors import InputRejected
+from metaverse_worker.errors import InputRejected, PermanentJobError
 from metaverse_worker.fetch import (
     DEFAULT_MODEL_HOSTS,
     DownloadFailed,
@@ -33,6 +35,7 @@ from metaverse_worker.fetch import (
 )
 from metaverse_worker.processing.authored_build import (
     GLTF_MAIN,
+    _texture_nodes,
     authored_rebuild,
     export_models,
     extract_gltf_zip,
@@ -41,7 +44,9 @@ from metaverse_worker.processing.authored_build import (
 )
 from metaverse_worker.processing.glb import read_glb_json
 from metaverse_worker.processing.modelimport import inspect_gltf, load_model
+from metaverse_worker.processing.rebuild import structure_entities
 from metaverse_worker.processing.shape_mesh import build_parts
+from metaverse_worker.processing.structure import extract_structure
 from metaverse_worker.records import validate_entity_body
 from synthetic import box_mesh, merged, room_mesh
 
@@ -614,6 +619,107 @@ def test_authored_rebuild_replace_structure_and_bake_fallback(tmp_path):
     far_body = out["entities"]["far-01"]
     assert far_body["shape"]["children"][0]["material"] == {"color": [1, 2, 3]} and "fit" not in far_body
     assert out["bake"]["fallback"] == 1 and out["bake"]["textured"] == 1
+
+
+def algorithm_structure_doc() -> tuple[dict, dict[str, bytes], dict[str, str]]:
+    """本次算法在 `room_mesh()` 上算出的结构 → 物件集里 `kind: structure` 的物件，但贴图哈希换成"本地基线"
+    算的另一份（模拟依赖版本不同、哈希不同），`uv` 也故意改成 box，看回退后是不是保持物件集里写的。
+
+    返回 (物件集, 本次算法的贴图, {本地哈希: 本次哈希})。
+    """
+    bodies, textures = structure_entities(extract_structure(room_mesh()))
+    renamed: dict[str, str] = {}
+    entities = []
+    for _, body in sorted(bodies.items()):
+        body = copy.deepcopy(body)
+        for _, node in _texture_nodes(body["shape"]):
+            old = node["material"]["texture"]
+            new = renamed.setdefault(old, hashlib.sha256(f"local\0{old}".encode()).hexdigest())
+            node["material"] = {"texture": new, "uv": "box"}
+        body.pop("textures", None)
+        entities.append({k: v for k, v in body.items() if k != "fit"})
+    assert renamed and len(entities) >= 3  # 地面和几面墙带贴图
+    doc_ = {"version": 1, "entities": entities, "structure": "replace"}
+    return doc_, textures, {local: real for real, local in renamed.items()}
+
+
+def run_replace(tmp_path, doc_, pending) -> dict:
+    parsed = parse_authored(doc_)
+    parsed["pendingTextures"] = sorted(pending)
+    return authored_rebuild(room_mesh(), parsed, {}, workdir=str(tmp_path), limits=LIMITS)
+
+
+def test_structure_textures_fall_back_to_this_jobs_algorithm(tmp_path):
+    doc_, textures, local_to_real = algorithm_structure_doc()
+    out = run_replace(tmp_path, doc_, set(local_to_real))
+    replaced = out["textureFallback"]
+    assert {(r["from"], r["to"]) for r in replaced} == set(local_to_real.items())
+    assert out["metrics"]["structure"]["textureFallback"] == len(replaced)
+    for item in replaced:
+        body = out["entities"][item["entityId"]]
+        material = node_at(body["shape"], item["path"])["material"]
+        assert material == {"texture": item["to"], "uv": "box"}  # uv 保持物件集里写的
+        assert item["to"] in body["textures"] and item["from"] not in body["textures"]
+        assert out["textures"][item["to"]] == textures[item["to"]]  # 本次算出的贴图要登记
+    assert set(out["textures"]) == set(local_to_real.values())
+    # 本次算出的哈希本来就对（同样的依赖版本）：直接用，不算回退
+    same = copy.deepcopy(doc_)
+    for body in same["entities"]:
+        for _, node in _texture_nodes(body["shape"]):
+            node["material"]["texture"] = local_to_real[node["material"]["texture"]]
+    out = run_replace(tmp_path / "same", same, set(local_to_real.values()))
+    assert out["textureFallback"] == [] and set(out["textures"]) == set(local_to_real.values())
+    # 没有待定的贴图（都是本空间登记过的）：不跑算法，也不登记新贴图
+    out = run_replace(tmp_path / "none", same, set())
+    assert out["textureFallback"] == [] and out["textures"] == {}
+
+
+def _wall_with_texture(doc_) -> dict:
+    return next(b for b in doc_["entities"] if b["entityId"] != "floor" and list(_texture_nodes(b["shape"])))
+
+
+def _rename_wall(doc_):
+    _wall_with_texture(doc_)["entityId"] = "wall-renamed"
+
+
+def _wrap_wall_panel(doc_):
+    wall = _wall_with_texture(doc_)
+    wall["shape"] = {"type": "group", "children": [wall["shape"]]}  # 部件路径变了，那里不是贴图材质
+
+
+def _as_object(doc_):
+    wall = _wall_with_texture(doc_)
+    wall["kind"] = "object"
+
+
+@pytest.mark.parametrize("mutate", [_rename_wall, _wrap_wall_panel, _as_object])
+def test_structure_texture_fallback_needs_same_id_path_and_kind(tmp_path, mutate):
+    doc_, _, local_to_real = algorithm_structure_doc()
+    mutate(doc_)
+    with pytest.raises(PermanentJobError, match="不是本空间的贴图资源，本次任务也没有算出"):
+        run_replace(tmp_path, doc_, set(local_to_real))
+
+
+def test_keep_mode_accepts_textures_this_job_computed(tmp_path):
+    """keep：物件引用的贴图本空间没登记，但本次算法结构算出了同样的贴图——直接用；算不出的照样失败。"""
+    _, textures, _ = algorithm_structure_doc()
+    real = sorted(textures)[0]
+    poster = {
+        "entityId": "poster-01",
+        "kind": "object",
+        "shape": {"type": "box", "size": [0.6, 0.9, 0.01], "transform": {"position": [1, 1, 0.02]},
+                  "material": {"texture": real, "uv": "planar"}},
+    }  # fmt: skip
+    parsed = parse_authored({"version": 1, "entities": [poster]})
+    out = authored_rebuild(
+        room_mesh(), {**parsed, "pendingTextures": [real]}, {}, workdir=str(tmp_path), limits=LIMITS
+    )
+    assert out["entities"]["poster-01"]["textures"] == [real] and real in out["textures"]
+    poster["shape"]["material"]["texture"] = "d" * 64
+    parsed = parse_authored({"version": 1, "entities": [poster]})
+    with pytest.raises(PermanentJobError, match="物件 poster-01 的 \\$ 引用的贴图"):
+        authored_rebuild(room_mesh(), {**parsed, "pendingTextures": ["d" * 64]}, {}, workdir=str(tmp_path),
+                         limits=LIMITS)  # fmt: skip
 
 
 def test_uv_extents_follow_projection():

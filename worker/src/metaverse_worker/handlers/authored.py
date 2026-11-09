@@ -10,7 +10,8 @@
 `processing/authored_build.py`。这里负责：
 
 1. 读物件集并校验，不合法直接失败（不可重试）；
-2. 形状里引用的已有贴图必须是本空间的贴图资源，先过清理的栅栏（刷新 `touchedAt` 并要求匹配到）；
+2. 形状里引用的已有贴图：本空间的贴图资源先过清理的栅栏（刷新 `touchedAt` 并要求匹配到）；不是本空间的
+   交给子进程判断（本次任务算出了同样的贴图，或结构物件回退到本次算法结构的贴图），都不行时任务失败；
 3. 下载外部模型：只用 https、主机在 `WORKER_MODEL_HOSTS` 里、重定向的每一跳都检查，核对大小和 sha256
    （`fetch.py`）；同一个文件只下载一次，单个模型（含附属文件）不超过 `WORKER_MAX_MODEL_BYTES`，全部下载
    不超过 1 GiB；
@@ -88,16 +89,23 @@ def load_authored(ctx: JobContext) -> dict[str, Any] | None:
     return parsed
 
 
-def fence_textures(ctx: JobContext, parsed: Mapping[str, Any]) -> list[str]:
-    """形状里引用的已有贴图：必须是本空间的贴图资源，并且还在（刷新 `touchedAt`，清理就删不掉它）。"""
-    out = []
+def fence_textures(ctx: JobContext, parsed: Mapping[str, Any]) -> tuple[list[str], list[str]]:
+    """形状里引用的已有贴图分成两类，返回 (本空间的, 待定的)：
+
+    - 本空间的贴图资源：过清理的栅栏（刷新 `touchedAt`，清理就删不掉它），之后登记引用；
+    - 不是本空间的（没登记过、或是别的空间的）：先不拒，交给子进程——本次任务算出了同样的贴图就用它，
+      结构物件可以回退到本次算法结构里同编号、同部件路径的贴图（`authored_build.resolve_textures`），
+      都不行时任务失败。
+    """
+    fenced, pending = [], []
     for sha in parsed["textures"]:
         if not space_asset(ctx, sha, "texture"):
-            raise AuthoredError(f"形状引用的贴图 {sha} 不是本空间的贴图资源")
+            pending.append(sha)
+            continue
         if not touch_asset(ctx.store, sha):
             raise AuthoredError(f"形状引用的贴图 {sha} 已被定期清理，请重新上传")
-        out.append(sha)
-    return out
+        fenced.append(sha)
+    return fenced, pending
 
 
 def download_sources(
@@ -186,7 +194,7 @@ def summary(
     downloads: Mapping[str, int],
     script_ref: str | None,
 ) -> dict[str, Any]:
-    """写进任务结果的物件集统计：逐件偏差、下载、模型、烘焙。"""
+    """写进任务结果的物件集统计：逐件偏差、下载、模型、烘焙、结构贴图的回退清单。"""
     models = rebuilt.get("models") or {}
     return {
         "origin": parsed["origin"],
@@ -201,5 +209,6 @@ def summary(
             "triangles": sum(int(m["triangles"]) for m in models.values()),
         },
         "bake": dict(rebuilt.get("bake") or {}),
+        "textureFallback": list(rebuilt.get("textureFallback") or []),
         "scriptRef": script_ref,
     }
