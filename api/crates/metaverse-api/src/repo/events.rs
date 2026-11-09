@@ -546,7 +546,9 @@ impl Repo {
         collect(cursor).await
     }
 
-    /// 快照是否失效：有 `at ≤ 快照时刻`、但在 `computedAt` 之后才记录的事件（晚到或更正）。
+    /// 快照是否失效：有 `at ≤ 快照时刻`、但在 `computedAt` 之后才记录（晚到或更正）或被抹除的
+    /// 事件。抹除不改 `recordedAt`；抹除时会删掉已有的快照，但与抹除同时进行的状态计算可能在
+    /// 抹除之后才保存它读到的旧内容，所以抹除时间也要比较。
     pub async fn state_snapshot_is_stale(
         &self,
         grant: &Grant,
@@ -554,9 +556,13 @@ impl Repo {
     ) -> Result<bool, RepoError> {
         let mut filter = space_children(grant);
         filter.insert("at", doc! {"$lte": snapshot.at.to_rfc3339()});
+        let computed_at = snapshot.computed_at.to_rfc3339();
         filter.insert(
-            "recordedAt",
-            doc! {"$gt": snapshot.computed_at.to_rfc3339()},
+            "$or",
+            vec![
+                doc! {"recordedAt": {"$gt": &computed_at}},
+                doc! {"redactedAt": {"$gt": &computed_at}},
+            ],
         );
         Ok(self
             .collection(collections::EVENTS)

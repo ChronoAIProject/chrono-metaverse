@@ -1262,3 +1262,85 @@ async fn reads_are_bounded_when_corrections_or_same_instant_events_pile_up() {
     );
     assert_eq!(reply.body["code"], "state_computing");
 }
+
+/// 抹除与状态计算同时进行时，计算方可能在抹除之后才保存带着旧内容的快照：快照的失效判断要
+/// 同时看抹除时间，否则公开接口会一直返回已抹除的内容。
+#[tokio::test]
+async fn snapshot_saved_after_a_concurrent_redaction_is_stale() {
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    let token = restaurant(&app).await;
+    register_types(&app).await;
+    let share = format!("Share {token}");
+    let reply = write(
+        &app,
+        who(ORG),
+        "pos",
+        json!([{"sourceEventId": "e1", "type": "seat.count", "anchorId": "t2",
+                "at": ago(7200), "data": {"n": 7}}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let event_id = reply.body["results"][0]["id"].as_str().unwrap().to_owned();
+    let event_at = app
+        .collection("events")
+        .find_one(doc! {"_id": &event_id})
+        .await
+        .unwrap()
+        .unwrap()
+        .get_str("at")
+        .unwrap()
+        .to_owned();
+    app.collection("events")
+        .update_one(
+            doc! {"_id": &event_id},
+            doc! {"$set": {"recordedAt": ago(7000)}},
+        )
+        .await
+        .unwrap();
+    // 抹除（管理接口）。
+    let reply = app
+        .call(
+            who(ORG),
+            Method::POST,
+            &format!("/api/v1/admin/spaces/restaurant/events/{event_id}/redact"),
+            None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    // 与抹除同时开始的状态计算：在抹除之前读到了内容、抹除之后才保存快照
+    // （computedAt 早于抹除时间）。
+    let snapshot_at = ago(3600);
+    app.collection("stateSnapshots")
+        .insert_one(doc! {
+            "_id": format!("ss_restaurant_{}", metaverse_core::Timestamp::parse_rfc3339(&snapshot_at).unwrap().millis()),
+            "spaceId": "restaurant", "owner": {"kind": "org", "id": ORG},
+            "at": &snapshot_at, "computedAt": ago(600),
+            "states": [{"anchorId": "t2", "key": "count", "value": 7, "since": &event_at,
+                        "eventId": &event_id, "type": "seat.count", "typeVersion": 1_i32,
+                        "data": {"n": 7}}],
+        })
+        .await
+        .unwrap();
+    let reply = app
+        .public(&format!("{PUBLIC}/state?at={}", ago(60)), Some(&share), &[])
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let states = reply.body["states"].as_array().unwrap();
+    assert!(
+        states
+            .iter()
+            .all(|state| state["data"].is_null() && state["value"] != 7),
+        "抹除之后公开接口还返回内容：{:?}",
+        reply.body
+    );
+    assert_eq!(
+        app.collection("stateSnapshots")
+            .count_documents(doc! {"computedAt": {"$lt": ago(300)}})
+            .await
+            .unwrap(),
+        0,
+        "带着旧内容的快照被判为失效并删除"
+    );
+}
