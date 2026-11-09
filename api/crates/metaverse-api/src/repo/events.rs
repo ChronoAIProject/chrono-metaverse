@@ -425,8 +425,7 @@ impl Repo {
                 Some(Bson::Double(n)) => Some(*n as i64),
                 _ => None,
             };
-            if let (Some(index), Some(count)) = (number(row.get("_id")), number(row.get("count")))
-            {
+            if let (Some(index), Some(count)) = (number(row.get("_id")), number(row.get("count"))) {
                 buckets.push((index, u64::try_from(count).unwrap_or(0)));
             }
         }

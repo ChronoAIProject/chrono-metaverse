@@ -11,10 +11,14 @@ use serde_json::{json, Value};
 const U: &str = "/api/v1/universes/street";
 
 async fn setup(app: &TestApp) -> String {
-    app.create_space(who(ORG), "restaurant", "org", ORG, "public").await;
-    app.create_space(who(ORG), "hall", "org", ORG, "unlisted").await;
-    app.create_space(who(OTHER_ORG), "flower-shop", "org", OTHER_ORG, "public").await;
-    app.create_space(who(OTHER_ORG), "secret-shop", "org", OTHER_ORG, "unlisted").await;
+    app.create_space(who(ORG), "restaurant", "org", ORG, "public")
+        .await;
+    app.create_space(who(ORG), "hall", "org", ORG, "unlisted")
+        .await;
+    app.create_space(who(OTHER_ORG), "flower-shop", "org", OTHER_ORG, "public")
+        .await;
+    app.create_space(who(OTHER_ORG), "secret-shop", "org", OTHER_ORG, "unlisted")
+        .await;
     for (space, owner, anchor, visibility) in [
         ("restaurant", ORG, "door", "public"),
         ("restaurant", ORG, "vault", "internal"),
@@ -38,12 +42,20 @@ async fn setup(app: &TestApp) -> String {
     assert_eq!(reply.status, StatusCode::CREATED, "{:?}", reply.body);
     assert_eq!(reply.body["universe"]["seq"], 0);
     assert_eq!(reply.body["universe"]["visibility"], "unlisted");
-    reply.body["shareToken"]["token"].as_str().unwrap().to_owned()
+    reply.body["shareToken"]["token"]
+        .as_str()
+        .unwrap()
+        .to_owned()
 }
 
 async fn join(app: &TestApp, caller: Who<'_>, space: &str, body: Value) -> Reply {
-    app.call(caller, Method::POST, &format!("{U}/members/{space}"), Some(body))
-        .await
+    app.call(
+        caller,
+        Method::POST,
+        &format!("{U}/members/{space}"),
+        Some(body),
+    )
+    .await
 }
 
 async fn patch(app: &TestApp, caller: Who<'_>, body: Value) -> Reply {
@@ -58,21 +70,29 @@ async fn create_rules() {
     setup(&app).await;
     let app = &app;
     let create = |caller: Who<'static>, body: Value| async move {
-        app.call(caller, Method::POST, "/api/v1/universes", Some(body)).await
+        app.call(caller, Method::POST, "/api/v1/universes", Some(body))
+            .await
     };
     // 编号重复、格式不对。
     assert_eq!(
-        create(who(ORG), json!({"id": "street", "name": "x"})).await.status,
+        create(who(ORG), json!({"id": "street", "name": "x"}))
+            .await
+            .status,
         StatusCode::CONFLICT
     );
     assert_eq!(
-        create(who(ORG), json!({"id": "Bad Id", "name": "x"})).await.status,
+        create(who(ORG), json!({"id": "Bad Id", "name": "x"}))
+            .await
+            .status,
         StatusCode::UNPROCESSABLE_ENTITY
     );
     // 不给主人时就是调用者本人。
     let reply = create(who("alice"), json!({"id": "alice-u", "name": "我的组合"})).await;
     assert_eq!(reply.status, StatusCode::CREATED);
-    assert_eq!(reply.body["universe"]["owner"], json!({"kind": "person", "id": "alice"}));
+    assert_eq!(
+        reply.body["universe"]["owner"],
+        json!({"kind": "person", "id": "alice"})
+    );
     // 组织组合要求组织本身或组织 admin。
     let reply = create(
         who_with("bob", "member-token"),
@@ -108,7 +128,13 @@ async fn membership_links_visibility_and_public_reads() {
     let share = format!("Share {universe_token}");
 
     // 组织本身既管空间也管组合：直接加入。
-    let reply = join(&app, who(ORG), "restaurant", json!({"offset": [0, 0, 0], "rotation": 0})).await;
+    let reply = join(
+        &app,
+        who(ORG),
+        "restaurant",
+        json!({"offset": [0, 0, 0], "rotation": 0}),
+    )
+    .await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     assert_eq!(reply.body["seq"], 1);
     let first_at = reply.body["at"].as_str().unwrap().to_owned();
@@ -118,29 +144,65 @@ async fn membership_links_visibility_and_public_reads() {
         .insert_commit("restaurant", org_owner(), &ago(0), None)
         .await;
     // 已经是成员。
-    let reply = join(&app, who(ORG), "restaurant", json!({"offset": [0, 0, 0], "rotation": 0})).await;
+    let reply = join(
+        &app,
+        who(ORG),
+        "restaurant",
+        json!({"offset": [0, 0, 0], "rotation": 0}),
+    )
+    .await;
     assert_eq!(reply.body["code"], "already_member");
     // 只读成员不能把组织的空间加进去。
-    let reply = join(&app, who_with("bob", "member-token"), "hall", json!({"offset": [0, 0, 0], "rotation": 0})).await;
+    let reply = join(
+        &app,
+        who_with("bob", "member-token"),
+        "hall",
+        json!({"offset": [0, 0, 0], "rotation": 0}),
+    )
+    .await;
     assert_eq!(reply.status, StatusCode::FORBIDDEN);
     // 别人不能把你的空间拉进他的组合：组合主人看不到花店，404。
-    let reply = join(&app, who_with(ORG, "stranger-token"), "flower-shop", json!({"offset": [400, 0, 0], "rotation": 90})).await;
+    let reply = join(
+        &app,
+        who_with(ORG, "stranger-token"),
+        "flower-shop",
+        json!({"offset": [400, 0, 0], "rotation": 90}),
+    )
+    .await;
     assert_eq!(reply.status, StatusCode::NOT_FOUND, "{:?}", reply.body);
     // 你也不能把自己的空间硬塞进别人的组合：没有邀请时 404。
-    let reply = join(&app, who(OTHER_ORG), "flower-shop", json!({"offset": [400, 0, 0], "rotation": 90})).await;
+    let reply = join(
+        &app,
+        who(OTHER_ORG),
+        "flower-shop",
+        json!({"offset": [400, 0, 0], "rotation": 90}),
+    )
+    .await;
     assert_eq!(reply.status, StatusCode::NOT_FOUND, "{:?}", reply.body);
     // 组合主人邀请，花店主人加入。
     let reply = patch(&app, who(ORG), json!({"invitations": ["flower-shop"]})).await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
-    assert_eq!(reply.body["universe"]["invitations"], json!(["flower-shop"]));
+    assert_eq!(
+        reply.body["universe"]["invitations"],
+        json!(["flower-shop"])
+    );
     assert_eq!(reply.body["universe"]["seq"], 1, "改邀请不产生修订");
-    let reply = join(&app, who(OTHER_ORG), "flower-shop", json!({"offset": [400, 0, 0], "rotation": 90, "message": "花店加入"})).await;
+    let reply = join(
+        &app,
+        who(OTHER_ORG),
+        "flower-shop",
+        json!({"offset": [400, 0, 0], "rotation": 90, "message": "花店加入"}),
+    )
+    .await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     assert_eq!(reply.body["seq"], 2);
     let reply = app.call(who(ORG), Method::GET, U, None).await;
     assert_eq!(reply.body["invitations"], json!([]));
     assert_eq!(reply.body["members"].as_array().unwrap().len(), 2);
-    assert_eq!(reply.body["members"][1], json!({"spaceId": "flower-shop", "offset": [400, 0, 0], "rotation": 90}));
+    assert_eq!(
+        reply.body["members"][1],
+        json!({"spaceId": "flower-shop", "offset": [400, 0, 0], "rotation": 90})
+    );
     // 修订文档带主人副本和发起者。
     let revision = app
         .collection("universeRevisions")
@@ -149,55 +211,121 @@ async fn membership_links_visibility_and_public_reads() {
         .unwrap()
         .unwrap();
     assert_eq!(revision.get_str("_id").unwrap(), "street:2");
-    assert_eq!(revision.get_document("owner").unwrap(), &doc! {"kind": "org", "id": ORG});
-    assert_eq!(revision.get_document("actor").unwrap().get_str("sub").unwrap(), OTHER_ORG);
+    assert_eq!(
+        revision.get_document("owner").unwrap(),
+        &doc! {"kind": "org", "id": ORG}
+    );
+    assert_eq!(
+        revision
+            .get_document("actor")
+            .unwrap()
+            .get_str("sub")
+            .unwrap(),
+        OTHER_ORG
+    );
 
     // 连接：两端必须是成员空间的公开锚点。
-    let link = |from: (&str, &str), to: (&str, &str)| {
-        json!({"from": {"spaceId": from.0, "anchorId": from.1}, "to": {"spaceId": to.0, "anchorId": to.1}, "kind": "street"})
-    };
+    let link = |from: (&str, &str), to: (&str, &str)| json!({"from": {"spaceId": from.0, "anchorId": from.1}, "to": {"spaceId": to.0, "anchorId": to.1}, "kind": "street"});
     for (bad, why) in [
-        (link(("restaurant", "vault"), ("flower-shop", "counter")), "内部锚点"),
+        (
+            link(("restaurant", "vault"), ("flower-shop", "counter")),
+            "内部锚点",
+        ),
         (link(("restaurant", "door"), ("hall", "door")), "不是成员"),
-        (link(("restaurant", "door"), ("flower-shop", "nope")), "锚点不存在"),
+        (
+            link(("restaurant", "door"), ("flower-shop", "nope")),
+            "锚点不存在",
+        ),
     ] {
         let reply = patch(&app, who(ORG), json!({"links": [bad]})).await;
-        assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY, "{why}: {:?}", reply.body);
+        assert_eq!(
+            reply.status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{why}: {:?}",
+            reply.body
+        );
     }
-    let reply = patch(&app, who(ORG), json!({"baseSeq": 2, "message": "连上街道",
-        "links": [link(("restaurant", "door"), ("flower-shop", "counter"))]})).await;
+    let reply = patch(
+        &app,
+        who(ORG),
+        json!({"baseSeq": 2, "message": "连上街道",
+        "links": [link(("restaurant", "door"), ("flower-shop", "counter"))]}),
+    )
+    .await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     assert_eq!(reply.body["universe"]["seq"], 3);
     // 基于旧修订：409（请求体或 If-Match）。
     let reply = patch(&app, who(ORG), json!({"baseSeq": 2, "name": "新名字"})).await;
     assert_eq!(reply.body["code"], "universe_changed");
     let reply = app
-        .call_with(who(ORG), Method::PATCH, U, &[("if-match", "\"1\"")], Some(json!({"name": "新名字"})))
+        .call_with(
+            who(ORG),
+            Method::PATCH,
+            U,
+            &[("if-match", "\"1\"")],
+            Some(json!({"name": "新名字"})),
+        )
         .await;
     assert_eq!(reply.status, StatusCode::CONFLICT);
     // 摆放：只能调整现有成员。
-    let reply = patch(&app, who(ORG), json!({"members": [{"spaceId": "restaurant", "offset": [0, 0, 0], "rotation": 0}]})).await;
+    let reply = patch(
+        &app,
+        who(ORG),
+        json!({"members": [{"spaceId": "restaurant", "offset": [0, 0, 0], "rotation": 0}]}),
+    )
+    .await;
     assert_eq!(reply.body["code"], "members_mismatch");
-    let reply = patch(&app, who(ORG), json!({"members": [
-        {"spaceId": "restaurant", "offset": [0, 0, 0], "rotation": 0},
-        {"spaceId": "flower-shop", "offset": [420, 0, 10], "rotation": 180}
-    ]})).await;
+    let reply = patch(
+        &app,
+        who(ORG),
+        json!({"members": [
+            {"spaceId": "restaurant", "offset": [0, 0, 0], "rotation": 0},
+            {"spaceId": "flower-shop", "offset": [420, 0, 10], "rotation": 180}
+        ]}),
+    )
+    .await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     assert_eq!(reply.body["universe"]["seq"], 4);
     // 只读成员和陌生人不能改。
-    assert_eq!(patch(&app, who_with("bob", "member-token"), json!({"name": "x"})).await.status, StatusCode::FORBIDDEN);
-    assert_eq!(patch(&app, who_with("eve", "stranger-token"), json!({"name": "x"})).await.status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        patch(&app, who_with("bob", "member-token"), json!({"name": "x"}))
+            .await
+            .status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        patch(
+            &app,
+            who_with("eve", "stranger-token"),
+            json!({"name": "x"})
+        )
+        .await
+        .status,
+        StatusCode::NOT_FOUND
+    );
 
     // 可见性：成员都公开时组合可以公开；公开组合不能加入凭链接查看的空间。
     let reply = patch(&app, who(ORG), json!({"visibility": "public"})).await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
-    let reply = join(&app, who(ORG), "hall", json!({"offset": [0, 0, 300], "rotation": 0})).await;
+    let reply = join(
+        &app,
+        who(ORG),
+        "hall",
+        json!({"offset": [0, 0, 300], "rotation": 0}),
+    )
+    .await;
     assert_eq!(reply.body["code"], "visibility_conflict");
     // 公开组合不带令牌也能读。
     let reply = app.public("/api/public/universes/street", None, &[]).await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     patch(&app, who(ORG), json!({"visibility": "unlisted"})).await;
-    let reply = join(&app, who(ORG), "hall", json!({"offset": [0, 0, 300], "rotation": 0})).await;
+    let reply = join(
+        &app,
+        who(ORG),
+        "hall",
+        json!({"offset": [0, 0, 300], "rotation": 0}),
+    )
+    .await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     assert_eq!(reply.body["seq"], 5);
     let hall_joined = reply.body["at"].as_str().unwrap().to_owned();
@@ -205,8 +333,15 @@ async fn membership_links_visibility_and_public_reads() {
     assert_eq!(reply.body["code"], "visibility_conflict");
 
     // 公开读：凭组合令牌；T 时刻的修订 + 各成员在 T 时刻的 seq。
-    assert_eq!(app.public("/api/public/universes/street", None, &[]).await.status, StatusCode::NOT_FOUND);
-    let reply = app.public("/api/public/universes/street", Some(&share), &[]).await;
+    assert_eq!(
+        app.public("/api/public/universes/street", None, &[])
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    let reply = app
+        .public("/api/public/universes/street", Some(&share), &[])
+        .await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     assert_eq!(reply.headers.get("cache-control").unwrap(), "no-store");
     assert_eq!(reply.body["seq"], 5);
@@ -214,6 +349,7 @@ async fn membership_links_visibility_and_public_reads() {
     let members = reply.body["members"].as_array().unwrap();
     assert_eq!(members.len(), 3);
     assert_eq!(members[0]["spaceId"], "restaurant");
+    assert_eq!(members[0]["name"], "restaurant");
     assert_eq!(members[0]["seq"], restaurant_seq);
     // 花店只有建空间时的第一次提交。
     assert_eq!(members[1]["seq"], 1);
@@ -223,57 +359,130 @@ async fn membership_links_visibility_and_public_reads() {
         .unwrap()
         .saturating_add_millis(-1);
     let reply = app
-        .public(&format!("/api/public/universes/street?at={before}"), Some(&share), &[])
+        .public(
+            &format!("/api/public/universes/street?at={before}"),
+            Some(&share),
+            &[],
+        )
         .await;
     assert_eq!(reply.body["seq"], 0);
     assert_eq!(reply.body["members"], json!([]));
     let reply = app
-        .public(&format!("/api/public/universes/street?at={first_at}"), Some(&share), &[])
+        .public(
+            &format!("/api/public/universes/street?at={first_at}"),
+            Some(&share),
+            &[],
+        )
         .await;
     assert_eq!(reply.body["seq"], 1);
     // 加入那一刻餐厅还是加入前的版本。
     assert_eq!(reply.body["members"][0]["seq"], restaurant_seq - 1);
     // 某一次修订。
-    let reply = app.public("/api/public/universes/street/revisions/2", Some(&share), &[]).await;
+    let reply = app
+        .public(
+            "/api/public/universes/street/revisions/2",
+            Some(&share),
+            &[],
+        )
+        .await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.body["universeId"], "street");
     assert_eq!(reply.body["message"], "花店加入");
     assert_eq!(reply.body["state"]["members"].as_array().unwrap().len(), 2);
-    assert!(reply.headers.get("cache-control").unwrap().to_str().unwrap().starts_with("private"));
+    assert!(reply
+        .headers
+        .get("cache-control")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .starts_with("private"));
     assert_eq!(
-        app.public("/api/public/universes/street/revisions/99", Some(&share), &[]).await.status,
+        app.public(
+            "/api/public/universes/street/revisions/99",
+            Some(&share),
+            &[]
+        )
+        .await
+        .status,
         StatusCode::NOT_FOUND
     );
 
     // 凭组合令牌读成员空间（凭链接查看的 hall）的公开数据：要带 ?universe=，且 T 时刻是成员。
     let head = "/api/public/spaces/hall/head";
-    assert_eq!(app.public(head, Some(&share), &[]).await.status, StatusCode::NOT_FOUND);
-    let reply = app.public(&format!("{head}?universe=street"), Some(&share), &[]).await;
+    assert_eq!(
+        app.public(head, Some(&share), &[]).await.status,
+        StatusCode::NOT_FOUND
+    );
+    let reply = app
+        .public(&format!("{head}?universe=street"), Some(&share), &[])
+        .await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
-    assert!(reply.headers.get("cache-control").unwrap().to_str().unwrap().starts_with("private"));
-    let reply = app.public(&format!("/api/public/spaces/hall/state?universe=street&at={hall_joined}"), Some(&share), &[]).await;
+    assert!(reply
+        .headers
+        .get("cache-control")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .starts_with("private"));
+    let reply = app
+        .public(
+            &format!("/api/public/spaces/hall/state?universe=street&at={hall_joined}"),
+            Some(&share),
+            &[],
+        )
+        .await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     let before_hall = metaverse_core::Timestamp::parse_rfc3339(&hall_joined)
         .unwrap()
         .saturating_add_millis(-1);
-    let reply = app.public(&format!("/api/public/spaces/hall/state?universe=street&at={before_hall}"), Some(&share), &[]).await;
-    assert_eq!(reply.status, StatusCode::NOT_FOUND, "加入之前不能凭组合令牌读");
     let reply = app
-        .public(&format!("/api/public/spaces/hall/events?universe=street&since={}", ago(60)), Some(&share), &[])
+        .public(
+            &format!("/api/public/spaces/hall/state?universe=street&at={before_hall}"),
+            Some(&share),
+            &[],
+        )
+        .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::NOT_FOUND,
+        "加入之前不能凭组合令牌读"
+    );
+    let reply = app
+        .public(
+            &format!(
+                "/api/public/spaces/hall/events?universe=street&since={}",
+                ago(60)
+            ),
+            Some(&share),
+            &[],
+        )
         .await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     // 空间信息、快照、提交列表同样可以凭组合令牌读取。
-    let reply = app.public("/api/public/spaces/hall?universe=street", Some(&share), &[]).await;
+    let reply = app
+        .public("/api/public/spaces/hall?universe=street", Some(&share), &[])
+        .await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     assert_eq!(reply.body["head"]["recordedAt"], Value::Null);
     assert!(reply.body["eventTypes"].is_array());
     let hall_seq = reply.body["head"]["seq"].as_u64().unwrap();
     let reply = app
-        .public(&format!("/api/public/spaces/hall/snapshot?seq={hall_seq}&universe=street"), Some(&share), &[])
+        .public(
+            &format!("/api/public/spaces/hall/snapshot?seq={hall_seq}&universe=street"),
+            Some(&share),
+            &[],
+        )
         .await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     let reply = app
-        .public(&format!("/api/public/spaces/hall/snapshot?at={}&universe=street", ago(0)), Some(&share), &[])
+        .public(
+            &format!(
+                "/api/public/spaces/hall/snapshot?at={}&universe=street",
+                ago(0)
+            ),
+            Some(&share),
+            &[],
+        )
         .await;
     assert_eq!(reply.status, StatusCode::FOUND, "{:?}", reply.body);
     assert_eq!(
@@ -281,48 +490,103 @@ async fn membership_links_visibility_and_public_reads() {
         &format!("/api/public/spaces/hall/snapshot?seq={hall_seq}&universe=street")
     );
     let reply = app
-        .public("/api/public/spaces/hall/timeline?universe=street", Some(&share), &[])
+        .public(
+            "/api/public/spaces/hall/timeline?universe=street",
+            Some(&share),
+            &[],
+        )
         .await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     assert_eq!(
-        app.public("/api/public/spaces/hall/snapshot?seq=1", Some(&share), &[]).await.status,
+        app.public("/api/public/spaces/hall/snapshot?seq=1", Some(&share), &[])
+            .await
+            .status,
         StatusCode::NOT_FOUND,
         "不带 ?universe= 时组合令牌不是这个空间的令牌"
     );
     assert_eq!(
-        app.public("/api/public/spaces/secret-shop/snapshot?seq=1&universe=street", Some(&share), &[]).await.status,
+        app.public(
+            "/api/public/spaces/secret-shop/snapshot?seq=1&universe=street",
+            Some(&share),
+            &[]
+        )
+        .await
+        .status,
         StatusCode::NOT_FOUND
     );
     // 不是成员的空间、别的组合编号：404。
     assert_eq!(
-        app.public("/api/public/spaces/secret-shop/head?universe=street", Some(&share), &[]).await.status,
+        app.public(
+            "/api/public/spaces/secret-shop/head?universe=street",
+            Some(&share),
+            &[]
+        )
+        .await
+        .status,
         StatusCode::NOT_FOUND
     );
     assert_eq!(
-        app.public(&format!("{head}?universe=alice-u"), Some(&share), &[]).await.status,
+        app.public(&format!("{head}?universe=alice-u"), Some(&share), &[])
+            .await
+            .status,
         StatusCode::NOT_FOUND
     );
 
     // 轮换令牌：旧令牌失效，新令牌可用。
     let reply = patch(&app, who(ORG), json!({"rotateShareToken": true})).await;
     assert_eq!(reply.status, StatusCode::OK);
-    let new_token = reply.body["shareToken"]["token"].as_str().unwrap().to_owned();
-    assert_eq!(reply.body["universe"]["shareTokens"].as_array().unwrap().len(), 2);
-    assert_eq!(app.public("/api/public/universes/street", Some(&share), &[]).await.status, StatusCode::NOT_FOUND);
+    let new_token = reply.body["shareToken"]["token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     assert_eq!(
-        app.public(&format!("{head}?universe=street"), Some(&share), &[]).await.status,
+        reply.body["universe"]["shareTokens"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        app.public("/api/public/universes/street", Some(&share), &[])
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        app.public(&format!("{head}?universe=street"), Some(&share), &[])
+            .await
+            .status,
         StatusCode::NOT_FOUND
     );
     let fresh = format!("Share {new_token}");
-    assert_eq!(app.public("/api/public/universes/street", Some(&fresh), &[]).await.status, StatusCode::OK);
+    assert_eq!(
+        app.public("/api/public/universes/street", Some(&fresh), &[])
+            .await
+            .status,
+        StatusCode::OK
+    );
 
     // 退出：空间的管理者可以让自己的空间退出，连到它的连接一起去掉。
     let reply = app
-        .call(who_with(OTHER_ORG, "stranger-token"), Method::DELETE, &format!("{U}/members/restaurant"), None)
+        .call(
+            who_with(OTHER_ORG, "stranger-token"),
+            Method::DELETE,
+            &format!("{U}/members/restaurant"),
+            None,
+        )
         .await;
-    assert_eq!(reply.status, StatusCode::NOT_FOUND, "别人不能让你的空间退出");
+    assert_eq!(
+        reply.status,
+        StatusCode::NOT_FOUND,
+        "别人不能让你的空间退出"
+    );
     let reply = app
-        .call(who(OTHER_ORG), Method::DELETE, &format!("{U}/members/flower-shop"), None)
+        .call(
+            who(OTHER_ORG),
+            Method::DELETE,
+            &format!("{U}/members/flower-shop"),
+            None,
+        )
         .await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     assert_eq!(reply.body["seq"], 6);
@@ -330,7 +594,12 @@ async fn membership_links_visibility_and_public_reads() {
     assert_eq!(reply.body["links"], json!([]));
     assert_eq!(reply.body["members"].as_array().unwrap().len(), 2);
     let reply = app
-        .call(who(OTHER_ORG), Method::DELETE, &format!("{U}/members/flower-shop"), None)
+        .call(
+            who(OTHER_ORG),
+            Method::DELETE,
+            &format!("{U}/members/flower-shop"),
+            None,
+        )
         .await;
     assert_eq!(reply.status, StatusCode::NOT_FOUND);
     // 组合主人可以移除任何成员。
@@ -340,7 +609,9 @@ async fn membership_links_visibility_and_public_reads() {
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     // 退出之后凭组合令牌读不到 hall 的现在。
     assert_eq!(
-        app.public(&format!("{head}?universe=street"), Some(&fresh), &[]).await.status,
+        app.public(&format!("{head}?universe=street"), Some(&fresh), &[])
+            .await
+            .status,
         StatusCode::NOT_FOUND
     );
 }

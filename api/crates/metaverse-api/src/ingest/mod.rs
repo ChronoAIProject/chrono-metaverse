@@ -94,15 +94,13 @@ impl IngestConfig {
                 .map(|v| v.trim().to_owned())
                 .filter(|v| !v.is_empty())
         };
-        let number = |name: &'static str, default: u64, min: u64, max: u64| {
-            match optional(name) {
-                None => Ok(default),
-                Some(text) => text
-                    .parse::<u64>()
-                    .ok()
-                    .filter(|value| (min..=max).contains(value))
-                    .ok_or(ConfigError::Invalid(name, text)),
-            }
+        let number = |name: &'static str, default: u64, min: u64, max: u64| match optional(name) {
+            None => Ok(default),
+            Some(text) => text
+                .parse::<u64>()
+                .ok()
+                .filter(|value| (min..=max).contains(value))
+                .ok_or(ConfigError::Invalid(name, text)),
         };
         let formats = |name: &'static str, default: &[UploadFormat]| match optional(name) {
             None => Ok(default.to_vec()),
@@ -133,12 +131,7 @@ impl IngestConfig {
                 TIB,
             )?,
             max_ops_bytes: number("UPLOAD_MAX_OPS_BYTES", defaults.max_ops_bytes, 1, TIB)?,
-            max_script_bytes: number(
-                "UPLOAD_MAX_SCRIPT_BYTES",
-                defaults.max_script_bytes,
-                1,
-                TIB,
-            )?,
+            max_script_bytes: number("UPLOAD_MAX_SCRIPT_BYTES", defaults.max_script_bytes, 1, TIB)?,
             max_texture_side: number(
                 "UPLOAD_MAX_TEXTURE_SIDE",
                 defaults.max_texture_side,

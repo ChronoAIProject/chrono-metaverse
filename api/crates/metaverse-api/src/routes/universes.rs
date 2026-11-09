@@ -28,8 +28,8 @@ use axum::{
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use metaverse_core::ids::is_space_id;
 use metaverse_core::model::{
-    ActorKind, Owner, OwnerKind, Rotation, ShareTokenRecord, Universe, UniverseHead,
-    UniverseLink, UniverseMember, UniverseRevision, UniverseState, Visibility,
+    ActorKind, Owner, OwnerKind, Rotation, ShareTokenRecord, Universe, UniverseHead, UniverseLink,
+    UniverseMember, UniverseRevision, UniverseState, Visibility,
 };
 use metaverse_core::scope::PathScope;
 use metaverse_core::{sha256_hex, Timestamp};
@@ -321,7 +321,11 @@ fn revision(
 }
 
 fn universe_location(response: &mut Response, id: &str) {
-    set_header(response, header::LOCATION, &format!("/api/v1/universes/{id}"));
+    set_header(
+        response,
+        header::LOCATION,
+        &format!("/api/v1/universes/{id}"),
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -530,8 +534,7 @@ pub async fn update_universe(
     };
     if let Some(visibility) = request.visibility {
         if visibility == Visibility::Public {
-            if let Some((space, _, _)) = facts.iter().find(|(_, v, _)| *v != Visibility::Public)
-            {
+            if let Some((space, _, _)) = facts.iter().find(|(_, v, _)| *v != Visibility::Public) {
                 return Err(conflict_with(
                     "visibility_conflict",
                     format!("成员 {space} 是凭链接查看的空间，组合不能设为公开"),
@@ -708,7 +711,11 @@ pub async fn join_universe(
     {
         return Err(ApiError::not_found());
     }
-    if universe.members.iter().any(|member| member.space_id == space_id) {
+    if universe
+        .members
+        .iter()
+        .any(|member| member.space_id == space_id)
+    {
         return Err(conflict_with("already_member", "这个空间已经是组合成员"));
     }
     if universe.members.len() >= MAX_MEMBERS {
@@ -816,7 +823,11 @@ pub async fn leave_universe(
         .universe(membership.universe())
         .await?
         .ok_or_else(ApiError::not_found)?;
-    if !universe.members.iter().any(|member| member.space_id == space_id) {
+    if !universe
+        .members
+        .iter()
+        .any(|member| member.space_id == space_id)
+    {
         return Err(ApiError::not_found());
     }
     base_seq(request.base_seq, &headers, universe.head.seq)?;

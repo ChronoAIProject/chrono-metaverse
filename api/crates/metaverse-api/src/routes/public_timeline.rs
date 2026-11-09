@@ -189,11 +189,13 @@ pub async fn get_public_timeline(
         // 凭组合令牌：查询的时间段里某个时刻是组合成员。
         Some(universe) => {
             let now = crate::now()?;
-            let from = parse_time("from", query.from.as_deref())?
-                .unwrap_or(metaverse_core::Timestamp::from_millis(0).map_err(|_| ApiError::internal())?);
-            let to = parse_time("to", query.to.as_deref())?.unwrap_or(now).min(now);
-            public_space_grant_during(&state, &space_id, &headers, Some(universe), from, to)
-                .await?
+            let from = parse_time("from", query.from.as_deref())?.unwrap_or(
+                metaverse_core::Timestamp::from_millis(0).map_err(|_| ApiError::internal())?,
+            );
+            let to = parse_time("to", query.to.as_deref())?
+                .unwrap_or(now)
+                .min(now);
+            public_space_grant_during(&state, &space_id, &headers, Some(universe), from, to).await?
         }
     };
     let (commits, next_after) = timeline_page(&state.repo, &grant, &query).await?;

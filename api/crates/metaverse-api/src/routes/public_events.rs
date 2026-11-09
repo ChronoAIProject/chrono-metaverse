@@ -26,9 +26,9 @@ use super::event_query::{
     public_anchor_ids, public_items, public_recorded_at, public_state_at, type_map,
     PUBLIC_PAGE_LIMIT,
 };
+use super::events::EventMode;
 use super::events::{EventRequest, EventsQuery};
 use super::ingest_common::{encode_cursor, invalid_with, parse_time, public_cache, set_header};
-use super::events::EventMode;
 use super::public_access::{
     public_space_grant, public_space_grant_during, share_token, UniverseParam,
 };
@@ -46,7 +46,10 @@ const SHORT_CACHE: u32 = 5;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/public/spaces/{space_id}/head", get(get_public_head))
-        .route("/api/public/spaces/{space_id}/events", get(list_public_events))
+        .route(
+            "/api/public/spaces/{space_id}/events",
+            get(list_public_events),
+        )
         .route(
             "/api/public/spaces/{space_id}/events/density",
             get(get_public_event_density),
@@ -120,6 +123,12 @@ pub struct AnchorStateView {
     pub event_id: String,
     #[serde(rename = "type")]
     pub event_type: String,
+    /// 产生这个状态的事件的类型版本（选显示规则用）。
+    pub type_version: u32,
+    /// 产生这个状态的事件的公开字段（按 publicFields 投影），标签模板用；被抹除时没有。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<Object>)]
+    pub data: Option<Value>,
 }
 
 /// T 时刻的状态（网站 `StateAt`）。
@@ -201,7 +210,8 @@ pub async fn get_public_head(
     let (grant, head) = match query.universe.as_deref() {
         Some(universe) => {
             let now = crate::now()?;
-            let grant = public_space_grant(&state, &space_id, &headers, Some(universe), now).await?;
+            let grant =
+                public_space_grant(&state, &space_id, &headers, Some(universe), now).await?;
             let head = head_data(&state, &grant).await?;
             (grant, head)
         }
@@ -221,10 +231,7 @@ pub async fn get_public_head(
                     .public_space_with_policy(&space_id, share_token(&headers))
                     .await?;
                 let head = head_data(&state, &grant).await?;
-                state
-                    .ingest
-                    .head_cache
-                    .put(&space_id, policy, head.clone());
+                state.ingest.head_cache.put(&space_id, policy, head.clone());
                 (grant, head)
             }
         },
@@ -446,6 +453,8 @@ pub async fn get_public_state(
             at: state.since,
             event_id: state.event_id,
             event_type: state.event_type,
+            type_version: state.type_version,
+            data: state.data,
         })
         .collect();
     let response = Json(StateAtView { at, states }).into_response();

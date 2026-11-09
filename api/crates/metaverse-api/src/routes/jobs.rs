@@ -331,9 +331,8 @@ async fn create_job(
         .unwrap_or_default();
     let id = match &key {
         Some(key) => {
-            let digest = sha256_hex(
-                format!("{}\0{scope}\0{kind_name}\0{key}", grant.space_id()).as_bytes(),
-            );
+            let digest =
+                sha256_hex(format!("{}\0{scope}\0{kind_name}\0{key}", grant.space_id()).as_bytes());
             format!("job_{}", &digest[..32])
         }
         None => new_id("job"),
@@ -378,7 +377,10 @@ async fn create_job(
     }
     tracing::info!(space = %job.space_id, job = %job.id, kind = %kind_name, by = %caller.subject, "任务已创建");
     let location = match &scope {
-        PathScope::Plot(plot) => format!("/api/v1/spaces/{}/plots/{plot}/jobs/{}", job.space_id, job.id),
+        PathScope::Plot(plot) => format!(
+            "/api/v1/spaces/{}/plots/{plot}/jobs/{}",
+            job.space_id, job.id
+        ),
         _ => format!("/api/v1/spaces/{}/jobs/{}", job.space_id, job.id),
     };
     let mut response = (StatusCode::ACCEPTED, Json(JobView::new(job))).into_response();
@@ -459,7 +461,14 @@ pub async fn import_scan(
     let (grant, scope) = writable(&state, &caller, &space_id, None).await?;
     check_hash("assetHash", &request.asset_hash)?;
     check_hints(&request.hints)?;
-    require_asset(&state, &grant, &request.asset_hash, &[UploadPurpose::Scan], None).await?;
+    require_asset(
+        &state,
+        &grant,
+        &request.asset_hash,
+        &[UploadPurpose::Scan],
+        None,
+    )
+    .await?;
     let params = scan_params(
         &request.asset_hash,
         request.observed_at,
@@ -468,7 +477,16 @@ pub async fn import_scan(
         request.hints,
         None,
     );
-    create_job(&state, &caller, &grant, scope, JobKind::ScanImport, params, &headers).await
+    create_job(
+        &state,
+        &caller,
+        &grant,
+        scope,
+        JobKind::ScanImport,
+        params,
+        &headers,
+    )
+    .await
 }
 
 #[utoipa::path(
@@ -513,7 +531,16 @@ pub async fn align_scan(
         request.hints,
         Some(transform),
     );
-    create_job(&state, &caller, &grant, scope, JobKind::ScanImport, params, &headers).await
+    create_job(
+        &state,
+        &caller,
+        &grant,
+        scope,
+        JobKind::ScanImport,
+        params,
+        &headers,
+    )
+    .await
 }
 
 /// 已导入本空间的扫描才能体素化、重建。
@@ -650,7 +677,16 @@ async fn model(
     )
     .await?;
     let params = json!({"assetHash": request.asset_hash});
-    create_job(&state, &caller, &grant, scope, JobKind::ModelImport, params, &headers).await
+    create_job(
+        &state,
+        &caller,
+        &grant,
+        scope,
+        JobKind::ModelImport,
+        params,
+        &headers,
+    )
+    .await
 }
 
 #[utoipa::path(

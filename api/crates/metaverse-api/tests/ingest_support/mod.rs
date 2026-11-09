@@ -146,35 +146,37 @@ impl NyxMock {
             .route("/nyx/jwks", get(move || async move { Json(jwks.clone()) }))
             .route(
                 "/api/v1/orgs/{org}/authorization",
-                get(move |Path(org): Path<String>, headers: HeaderMap| async move {
-                    let credential = headers
-                        .get(header::AUTHORIZATION)
-                        .and_then(|v| v.to_str().ok())
-                        .unwrap_or_default()
-                        .to_owned();
-                    let token = credential.strip_prefix("Bearer ").unwrap_or_default();
-                    // `<角色>-token` 对所有组织有效；`<角色>-token@<组织>` 只对那个组织有效。
-                    let (role, only) = match token.split_once('@') {
-                        Some((role, only)) => (role, Some(only)),
-                        None => (token, None),
-                    };
-                    if only.is_some_and(|only| only != org) {
-                        return StatusCode::NOT_FOUND.into_response();
-                    }
-                    let role = match role {
-                        "admin-token" => "admin",
-                        "member-token" => "member",
-                        "viewer-token" => "viewer",
-                        _ => return StatusCode::NOT_FOUND.into_response(),
-                    };
-                    Json(json!({
+                get(
+                    move |Path(org): Path<String>, headers: HeaderMap| async move {
+                        let credential = headers
+                            .get(header::AUTHORIZATION)
+                            .and_then(|v| v.to_str().ok())
+                            .unwrap_or_default()
+                            .to_owned();
+                        let token = credential.strip_prefix("Bearer ").unwrap_or_default();
+                        // `<角色>-token` 对所有组织有效；`<角色>-token@<组织>` 只对那个组织有效。
+                        let (role, only) = match token.split_once('@') {
+                            Some((role, only)) => (role, Some(only)),
+                            None => (token, None),
+                        };
+                        if only.is_some_and(|only| only != org) {
+                            return StatusCode::NOT_FOUND.into_response();
+                        }
+                        let role = match role {
+                            "admin-token" => "admin",
+                            "member-token" => "member",
+                            "viewer-token" => "viewer",
+                            _ => return StatusCode::NOT_FOUND.into_response(),
+                        };
+                        Json(json!({
                         "id": org, "your_role": role, "member_count": 3,
                         "is_primary": true, "active_invite_count": 0,
                         "remote_credential_integrity_verification_opt_out": false,
                         "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"
                     }))
                     .into_response()
-                }),
+                    },
+                ),
             );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base_url = format!("http://{}", listener.local_addr().unwrap());
@@ -242,12 +244,19 @@ impl TestApp {
             ("MONGODB_URI".into(), uri.clone()),
             ("MONGODB_DATABASE".into(), database.clone()),
             ("NYXID_BASE_URL".into(), nyx.base_url.clone()),
-            ("NYXID_JWKS_URL".into(), format!("{}/nyx/jwks", nyx.base_url)),
+            (
+                "NYXID_JWKS_URL".into(),
+                format!("{}/nyx/jwks", nyx.base_url),
+            ),
             ("NYXID_JWT_ISSUER".into(), ISSUER.to_owned()),
             ("NYXID_JWT_AUDIENCE".into(), AUDIENCE.to_owned()),
             ("ALLOWED_NYX_SERVICE_IDS".into(), SERVICE.to_owned()),
         ];
-        values.extend(extra.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())));
+        values.extend(
+            extra
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned())),
+        );
         let config = Config::from_lookup(|name| {
             values
                 .iter()
@@ -293,7 +302,12 @@ impl TestApp {
         }
     }
 
-    fn builder(method: Method, path: &str, caller: Option<Who<'_>>, headers: &[(&str, &str)]) -> axum::http::request::Builder {
+    fn builder(
+        method: Method,
+        path: &str,
+        caller: Option<Who<'_>>,
+        headers: &[(&str, &str)],
+    ) -> axum::http::request::Builder {
         let mut request = Request::builder().method(method).uri(path);
         if let Some(caller) = caller {
             request = request.header("x-nyxid-identity-token", identity(caller.sub));
@@ -308,7 +322,13 @@ impl TestApp {
     }
 
     /// `/api/v1` 请求（带身份令牌）。
-    pub async fn call(&self, caller: Who<'_>, method: Method, path: &str, body: Option<Value>) -> Reply {
+    pub async fn call(
+        &self,
+        caller: Who<'_>,
+        method: Method,
+        path: &str,
+        body: Option<Value>,
+    ) -> Reply {
         self.call_with(caller, method, path, &[], body).await
     }
 
@@ -342,7 +362,12 @@ impl TestApp {
     }
 
     /// 公开读（`authorization` 例如 `Share <令牌>`）。
-    pub async fn public(&self, path: &str, authorization: Option<&str>, headers: &[(&str, &str)]) -> Reply {
+    pub async fn public(
+        &self,
+        path: &str,
+        authorization: Option<&str>,
+        headers: &[(&str, &str)],
+    ) -> Reply {
         let mut all: Vec<(&str, &str)> = headers.to_vec();
         if let Some(value) = authorization {
             all.push(("authorization", value));
@@ -354,7 +379,14 @@ impl TestApp {
     }
 
     /// 建空间，返回分享令牌原文。
-    pub async fn create_space(&self, caller: Who<'_>, id: &str, owner_kind: &str, owner_id: &str, visibility: &str) -> String {
+    pub async fn create_space(
+        &self,
+        caller: Who<'_>,
+        id: &str,
+        owner_kind: &str,
+        owner_id: &str,
+        visibility: &str,
+    ) -> String {
         let reply = self
             .call(
                 caller,
@@ -364,8 +396,16 @@ impl TestApp {
                             "owner": {"kind": owner_kind, "id": owner_id}})),
             )
             .await;
-        assert_eq!(reply.status, StatusCode::CREATED, "建空间 {id}: {:?}", reply.body);
-        reply.body["shareToken"]["token"].as_str().unwrap().to_owned()
+        assert_eq!(
+            reply.status,
+            StatusCode::CREATED,
+            "建空间 {id}: {:?}",
+            reply.body
+        );
+        reply.body["shareToken"]["token"]
+            .as_str()
+            .unwrap()
+            .to_owned()
     }
 
     /// 直接写空间的区域和地块（区域、地块的写接口不在这一分工里）。
@@ -398,7 +438,13 @@ impl TestApp {
 
     /// 直接写一条提交（提交写入不在这一分工里）：只写本分工读得到的字段，seq 接在空间的
     /// 最新 seq 之后。返回这次的 seq。
-    pub async fn insert_commit(&self, space: &str, owner: Value, at: &str, scan_hash: Option<&str>) -> i64 {
+    pub async fn insert_commit(
+        &self,
+        space: &str,
+        owner: Value,
+        at: &str,
+        scan_hash: Option<&str>,
+    ) -> i64 {
         let current = self
             .collection("spaces")
             .find_one(doc! {"_id": space})
@@ -426,9 +472,15 @@ impl TestApp {
                 doc! {"assetHash": hash, "webModelHashes": [], "transform": [1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0, 0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0]},
             );
         }
-        self.collection("commits").insert_one(document).await.unwrap();
+        self.collection("commits")
+            .insert_one(document)
+            .await
+            .unwrap();
         self.collection("spaces")
-            .update_one(doc! {"_id": space}, doc! {"$set": {"head.seq": seq, "head.at": at}})
+            .update_one(
+                doc! {"_id": space},
+                doc! {"$set": {"head.seq": seq, "head.at": at}},
+            )
             .await
             .unwrap();
         seq
@@ -464,8 +516,8 @@ impl TestApp {
             .update_one(
                 doc! {"_id": upload_id, "status": "complete"},
                 doc! {"$set": {"status": "done", "assetHash": sha256, "format": "draco",
-                               "contentType": "application/x-draco", "verifiedAt": ago(0),
-                               "verifiedSha256": sha256}},
+                "contentType": "application/x-draco", "verifiedAt": ago(0),
+                "verifiedSha256": sha256}},
             )
             .await
             .unwrap();

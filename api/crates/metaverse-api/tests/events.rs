@@ -109,30 +109,54 @@ async fn event_types_are_versioned_and_validated() {
     assert_eq!(second.body["version"], 2);
     let mut bad_schema = occupancy();
     bad_schema["schema"] = json!({"type": "nonsense"});
-    assert_eq!(register(&app, who(ORG), bad_schema).await.body["code"], "invalid_schema");
+    assert_eq!(
+        register(&app, who(ORG), bad_schema).await.body["code"],
+        "invalid_schema"
+    );
     let mut external = occupancy();
     external["schema"] = json!({"$ref": "file:///etc/passwd"});
-    assert_eq!(register(&app, who(ORG), external).await.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        register(&app, who(ORG), external).await.status,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
     let mut label = occupancy();
     label["display"]["labelTemplate"] = json!("{amount} 元");
-    assert_eq!(register(&app, who(ORG), label).await.body["code"], "label_not_public");
+    assert_eq!(
+        register(&app, who(ORG), label).await.body["code"],
+        "label_not_public"
+    );
     let mut name = occupancy();
     name["type"] = json!("Table Occupancy");
-    assert_eq!(register(&app, who(ORG), name).await.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        register(&app, who(ORG), name).await.status,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
     let path = json!({"type": "x.path", "schema": {}, "defaultVisibility": "public", "display": {"kind": "path"}});
-    assert_eq!(register(&app, who(ORG), path).await.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        register(&app, who(ORG), path).await.status,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
     // 只读成员不能登记；陌生人看不到空间。
     assert_eq!(
-        register(&app, who_with("bob", "member-token"), occupancy()).await.status,
+        register(&app, who_with("bob", "member-token"), occupancy())
+            .await
+            .status,
         StatusCode::FORBIDDEN
     );
     assert_eq!(
-        register(&app, who_with("eve", "stranger-token"), occupancy()).await.status,
+        register(&app, who_with("eve", "stranger-token"), occupancy())
+            .await
+            .status,
         StatusCode::NOT_FOUND
     );
     // 给 AI 的列表含全部版本和 schema。
     let reply = app
-        .call(who_with("bob", "member-token"), Method::GET, &format!("{BASE}/event-types"), None)
+        .call(
+            who_with("bob", "member-token"),
+            Method::GET,
+            &format!("{BASE}/event-types"),
+            None,
+        )
         .await;
     assert_eq!(reply.status, StatusCode::OK);
     let items = reply.body["items"].as_array().unwrap();
@@ -188,39 +212,93 @@ async fn write_dedupe_correct_and_read() {
         .unwrap();
     assert_eq!(stored.get_str("source").unwrap(), "pos");
     assert_eq!(stored.get_str("visibility").unwrap(), "public");
-    assert_eq!(stored.get_document("actor").unwrap().get_str("scope").unwrap(), "source:pos");
+    assert_eq!(
+        stored
+            .get_document("actor")
+            .unwrap()
+            .get_str("scope")
+            .unwrap(),
+        "source:pos"
+    );
 
     // 拒收的情况：整批一条也不写。
     let future = metaverse_core::Timestamp::from_millis(
-        metaverse_core::Timestamp::parse_rfc3339(&ago(0)).unwrap().millis() + 10 * 60 * 1000,
+        metaverse_core::Timestamp::parse_rfc3339(&ago(0))
+            .unwrap()
+            .millis()
+            + 10 * 60 * 1000,
     )
     .unwrap()
     .to_rfc3339();
     let cases: Vec<(Value, StatusCode, &str)> = vec![
-        (json!([{"sourceEventId": "x1", "type": "table.occupancy", "anchorId": "t1", "at": ago(1),
-                 "data": {"guests": 1}, "source": "camera"}]), StatusCode::FORBIDDEN, "scope_violation"),
-        (json!([{"sourceEventId": "x1", "type": "table.occupancy", "anchorId": "t1", "at": future,
-                 "data": {"guests": 1}}]), StatusCode::UNPROCESSABLE_ENTITY, "event_in_future"),
-        (json!([{"sourceEventId": "x1", "type": "table.occupancy", "anchorId": "t1", "at": ago(1),
-                 "data": {"guests": -1}}]), StatusCode::UNPROCESSABLE_ENTITY, "schema_violation"),
-        (json!([{"sourceEventId": "x1", "type": "table.occupancy", "anchorId": "t1", "at": ago(1)}]),
-            StatusCode::UNPROCESSABLE_ENTITY, "schema_violation"),
-        (json!([{"sourceEventId": "x1", "type": "order.served", "anchorId": "t1", "at": ago(1),
-                 "data": {"note": "很".repeat(2000)}}]), StatusCode::UNPROCESSABLE_ENTITY, "data_too_large"),
-        (json!([{"sourceEventId": "x1", "type": "no.such", "anchorId": "t1", "at": ago(1)}]),
-            StatusCode::UNPROCESSABLE_ENTITY, "unknown_event_type"),
-        (json!([{"sourceEventId": "x1", "type": "table.occupancy", "typeVersion": 9, "anchorId": "t1",
-                 "at": ago(1), "data": {"guests": 1}}]), StatusCode::UNPROCESSABLE_ENTITY, "unknown_event_type"),
-        (json!([{"sourceEventId": "x1", "type": "table.occupancy", "anchorId": "t9", "at": ago(1),
-                 "data": {"guests": 1}}]), StatusCode::UNPROCESSABLE_ENTITY, "unknown_anchor"),
-        (json!([{"sourceEventId": "x1", "type": "delivery.sent", "anchorId": "_space", "at": ago(1),
-                 "correlationId": "florist:d-1"}]), StatusCode::UNPROCESSABLE_ENTITY, "invalid_correlation_id"),
-        (json!([{"sourceEventId": "x1", "type": "order.served", "anchorId": "t1", "at": ago(1)},
+        (
+            json!([{"sourceEventId": "x1", "type": "table.occupancy", "anchorId": "t1", "at": ago(1),
+                 "data": {"guests": 1}, "source": "camera"}]),
+            StatusCode::FORBIDDEN,
+            "scope_violation",
+        ),
+        (
+            json!([{"sourceEventId": "x1", "type": "table.occupancy", "anchorId": "t1", "at": future,
+                 "data": {"guests": 1}}]),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "event_in_future",
+        ),
+        (
+            json!([{"sourceEventId": "x1", "type": "table.occupancy", "anchorId": "t1", "at": ago(1),
+                 "data": {"guests": -1}}]),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "schema_violation",
+        ),
+        (
+            json!([{"sourceEventId": "x1", "type": "table.occupancy", "anchorId": "t1", "at": ago(1)}]),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "schema_violation",
+        ),
+        (
+            json!([{"sourceEventId": "x1", "type": "order.served", "anchorId": "t1", "at": ago(1),
+                 "data": {"note": "很".repeat(2000)}}]),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "data_too_large",
+        ),
+        (
+            json!([{"sourceEventId": "x1", "type": "no.such", "anchorId": "t1", "at": ago(1)}]),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "unknown_event_type",
+        ),
+        (
+            json!([{"sourceEventId": "x1", "type": "table.occupancy", "typeVersion": 9, "anchorId": "t1",
+                 "at": ago(1), "data": {"guests": 1}}]),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "unknown_event_type",
+        ),
+        (
+            json!([{"sourceEventId": "x1", "type": "table.occupancy", "anchorId": "t9", "at": ago(1),
+                 "data": {"guests": 1}}]),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "unknown_anchor",
+        ),
+        (
+            json!([{"sourceEventId": "x1", "type": "delivery.sent", "anchorId": "_space", "at": ago(1),
+                 "correlationId": "florist:d-1"}]),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_correlation_id",
+        ),
+        (
+            json!([{"sourceEventId": "x1", "type": "order.served", "anchorId": "t1", "at": ago(1)},
                 {"sourceEventId": "x1", "type": "order.served", "anchorId": "t1", "at": ago(1)}]),
-            StatusCode::UNPROCESSABLE_ENTITY, "invalid_request"),
-        (json!([{"sourceEventId": "x1", "type": "order.served", "anchorId": "t1", "at": ago(1), "recordedAt": ago(1)}]),
-            StatusCode::UNPROCESSABLE_ENTITY, "invalid_request"),
-        (json!([]), StatusCode::UNPROCESSABLE_ENTITY, "invalid_request"),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_request",
+        ),
+        (
+            json!([{"sourceEventId": "x1", "type": "order.served", "anchorId": "t1", "at": ago(1), "recordedAt": ago(1)}]),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_request",
+        ),
+        (
+            json!([]),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_request",
+        ),
     ];
     for (events, status, code) in cases {
         let reply = write(&app, who(ORG), "pos", events.clone()).await;
@@ -230,7 +308,10 @@ async fn write_dedupe_correct_and_read() {
     let too_many: Vec<Value> = (0..1001)
         .map(|i| json!({"sourceEventId": format!("b{i}"), "type": "order.served", "anchorId": "t1", "at": ago(1)}))
         .collect();
-    assert_eq!(write(&app, who(ORG), "pos", json!(too_many)).await.status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(
+        write(&app, who(ORG), "pos", json!(too_many)).await.status,
+        StatusCode::PAYLOAD_TOO_LARGE
+    );
     assert!(app
         .collection("events")
         .find_one(doc! {"sourceEventId": "x1"})
@@ -238,9 +319,20 @@ async fn write_dedupe_correct_and_read() {
         .unwrap()
         .is_none());
     // 越权：只读成员 403，陌生人 404。
-    let one = json!([{"sourceEventId": "m1", "type": "order.served", "anchorId": "t1", "at": ago(1)}]);
-    assert_eq!(write(&app, who_with("bob", "member-token"), "pos", one.clone()).await.status, StatusCode::FORBIDDEN);
-    assert_eq!(write(&app, who_with("eve", "stranger-token"), "pos", one).await.status, StatusCode::NOT_FOUND);
+    let one =
+        json!([{"sourceEventId": "m1", "type": "order.served", "anchorId": "t1", "at": ago(1)}]);
+    assert_eq!(
+        write(&app, who_with("bob", "member-token"), "pos", one.clone())
+            .await
+            .status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        write(&app, who_with("eve", "stranger-token"), "pos", one)
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
 
     // 更正：e1 替换（人数改成 3），e4 撤回。
     let reply = correct(&app, "pos", json!([
@@ -254,28 +346,56 @@ async fn write_dedupe_correct_and_read() {
     let correction_id = reply.body["results"][0]["id"].as_str().unwrap().to_owned();
     let bad: Vec<(Value, StatusCode)> = vec![
         // 指向另一条更正。
-        (json!([{"sourceEventId": "c3", "corrects": correction_id, "retracted": true}]), StatusCode::UNPROCESSABLE_ENTITY),
+        (
+            json!([{"sourceEventId": "c3", "corrects": correction_id, "retracted": true}]),
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
         // 替换的时间与原事件不同。
-        (json!([{"sourceEventId": "c3", "corrects": event_ids[0], "type": "table.occupancy", "anchorId": "t1",
-                 "at": ago(1), "data": {"guests": 1}}]), StatusCode::UNPROCESSABLE_ENTITY),
+        (
+            json!([{"sourceEventId": "c3", "corrects": event_ids[0], "type": "table.occupancy", "anchorId": "t1",
+                 "at": ago(1), "data": {"guests": 1}}]),
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
         // 撤回带内容；替换缺锚点；原事件不存在；两种指向都给。
-        (json!([{"sourceEventId": "c3", "corrects": event_ids[0], "retracted": true, "data": {}}]), StatusCode::UNPROCESSABLE_ENTITY),
-        (json!([{"sourceEventId": "c3", "corrects": event_ids[0], "type": "table.occupancy", "data": {"guests": 1}}]), StatusCode::UNPROCESSABLE_ENTITY),
-        (json!([{"sourceEventId": "c3", "correctsSourceEventId": "nope", "retracted": true}]), StatusCode::UNPROCESSABLE_ENTITY),
-        (json!([{"sourceEventId": "c3", "corrects": event_ids[0], "correctsSourceEventId": "e1", "retracted": true}]), StatusCode::UNPROCESSABLE_ENTITY),
+        (
+            json!([{"sourceEventId": "c3", "corrects": event_ids[0], "retracted": true, "data": {}}]),
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+        (
+            json!([{"sourceEventId": "c3", "corrects": event_ids[0], "type": "table.occupancy", "data": {"guests": 1}}]),
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+        (
+            json!([{"sourceEventId": "c3", "correctsSourceEventId": "nope", "retracted": true}]),
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+        (
+            json!([{"sourceEventId": "c3", "corrects": event_ids[0], "correctsSourceEventId": "e1", "retracted": true}]),
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
     ];
     for (body, status) in bad {
         let reply = correct(&app, "pos", body.clone()).await;
         assert_eq!(reply.status, status, "{body}: {:?}", reply.body);
     }
     // 只能经原事件的数据源更正。
-    let reply = correct(&app, "camera", json!([{"sourceEventId": "c3", "corrects": event_ids[0], "retracted": true}])).await;
+    let reply = correct(
+        &app,
+        "camera",
+        json!([{"sourceEventId": "c3", "corrects": event_ids[0], "retracted": true}]),
+    )
+    .await;
     assert_eq!(reply.status, StatusCode::FORBIDDEN, "{:?}", reply.body);
 
     let window = format!("from={}&to={}", ago(3600), ago(0));
     // /api/v1：更正已应用，含内部级和全部数据。
     let reply = app
-        .call(who_with("bob", "member-token"), Method::GET, &format!("{BASE}/events?{window}"), None)
+        .call(
+            who_with("bob", "member-token"),
+            Method::GET,
+            &format!("{BASE}/events?{window}"),
+            None,
+        )
         .await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     let items = reply.body["items"].as_array().unwrap();
@@ -286,33 +406,60 @@ async fn write_dedupe_correct_and_read() {
     assert!(items.iter().any(|item| item["visibility"] == "internal"));
     assert!(!items.iter().any(|item| item["id"] == event_ids[3].as_str()));
     let raw = app
-        .call(who(ORG), Method::GET, &format!("{BASE}/events?{window}&raw=true"), None)
+        .call(
+            who(ORG),
+            Method::GET,
+            &format!("{BASE}/events?{window}&raw=true"),
+            None,
+        )
         .await;
     assert_eq!(raw.body["items"].as_array().unwrap().len(), 8);
     let reply = app
-        .call(who(ORG), Method::GET, &format!("{BASE}/events?from={}&to={}", ago(3 * 86400), ago(0)), None)
+        .call(
+            who(ORG),
+            Method::GET,
+            &format!("{BASE}/events?from={}&to={}", ago(3 * 86400), ago(0)),
+            None,
+        )
         .await;
     assert_eq!(reply.body["code"], "window_too_large");
 
     // 公开读：要分享令牌；只有公开事件、公开锚点、公开字段。
     let path = format!("{PUBLIC}/events?{window}");
-    assert_eq!(app.public(&path, None, &[]).await.status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        app.public(&path, None, &[]).await.status,
+        StatusCode::NOT_FOUND
+    );
     let reply = app.public(&path, Some(&share), &[]).await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
-    assert!(reply.headers.get("cache-control").unwrap().to_str().unwrap().starts_with("private"));
+    assert!(reply
+        .headers
+        .get("cache-control")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .starts_with("private"));
     let items = reply.body["items"].as_array().unwrap();
     let public_ids = ids(&reply.body["items"]);
     assert!(public_ids.contains(&event_ids[0]));
     assert!(public_ids.contains(&event_ids[4]), "{items:?}");
     assert!(!public_ids.contains(&event_ids[1]), "内部级事件不公开");
-    assert!(!public_ids.contains(&event_ids[2]), "内部锚点上的事件不公开");
+    assert!(
+        !public_ids.contains(&event_ids[2]),
+        "内部锚点上的事件不公开"
+    );
     assert!(!public_ids.contains(&event_ids[3]), "撤回的事件不公开");
-    let e1 = items.iter().find(|item| item["id"] == event_ids[0].as_str()).unwrap();
+    let e1 = items
+        .iter()
+        .find(|item| item["id"] == event_ids[0].as_str())
+        .unwrap();
     assert_eq!(e1["data"], json!({"guests": 3}));
     assert_eq!(e1["type"], "table.occupancy");
     assert!(e1.get("sourceEventId").is_none());
     // types 过滤、分页。
-    let reply = app.public(&format!("{path}&types=delivery.sent"), Some(&share), &[]).await;
+    let reply = app
+        .public(&format!("{path}&types=delivery.sent"), Some(&share), &[])
+        .await;
     assert_eq!(ids(&reply.body["items"]), [event_ids[4].clone()]);
     let mut after: Option<String> = None;
     let mut seen = Vec::new();
@@ -335,10 +482,17 @@ async fn write_dedupe_correct_and_read() {
     assert!(pages >= 5);
     // 增量：撤回的公开事件带"撤下"标记；内部级的原本就没公开过，没有标记。
     let reply = app
-        .public(&format!("{PUBLIC}/events?since={}", ago(3600)), Some(&share), &[])
+        .public(
+            &format!("{PUBLIC}/events?since={}", ago(3600)),
+            Some(&share),
+            &[],
+        )
         .await;
     let items = reply.body["items"].as_array().unwrap();
-    let withdrawn: Vec<&Value> = items.iter().filter(|item| item["withdrawn"] == true).collect();
+    let withdrawn: Vec<&Value> = items
+        .iter()
+        .filter(|item| item["withdrawn"] == true)
+        .collect();
     assert_eq!(withdrawn.len(), 1, "{items:?}");
     assert_eq!(withdrawn[0]["id"], event_ids[3].as_str());
     assert!(withdrawn[0].get("data").is_none());
@@ -356,30 +510,62 @@ async fn write_dedupe_correct_and_read() {
     let reply = app
         .public(&format!("{PUBLIC}/events?since={since}"), Some(&share), &[])
         .await;
-    assert_eq!(reply.body["items"].as_array().unwrap().len(), 1, "{:?}", reply.body);
+    assert_eq!(
+        reply.body["items"].as_array().unwrap().len(),
+        1,
+        "{:?}",
+        reply.body
+    );
     assert_eq!(reply.body["items"][0]["id"], event_ids[4].as_str());
     assert_eq!(reply.body["items"][0]["withdrawn"], true);
 
     // 抹除 e1：/api/v1 和公开接口都不再返回 data。
-    let redact = format!("/api/v1/admin/spaces/restaurant/events/{}/redact", event_ids[0]);
+    let redact = format!(
+        "/api/v1/admin/spaces/restaurant/events/{}/redact",
+        event_ids[0]
+    );
     assert_eq!(
-        app.call(who_with("bob", "member-token"), Method::POST, &redact, None).await.status,
+        app.call(who_with("bob", "member-token"), Method::POST, &redact, None)
+            .await
+            .status,
         StatusCode::FORBIDDEN
     );
     let reply = app.call(who(ORG), Method::POST, &redact, None).await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     assert_eq!(reply.body["records"], 2);
     let reply = app
-        .call(who(ORG), Method::GET, &format!("{BASE}/events?{window}"), None)
+        .call(
+            who(ORG),
+            Method::GET,
+            &format!("{BASE}/events?{window}"),
+            None,
+        )
         .await;
-    let e1 = reply.body["items"].as_array().unwrap().iter().find(|i| i["id"] == event_ids[0].as_str()).unwrap().clone();
+    let e1 = reply.body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"] == event_ids[0].as_str())
+        .unwrap()
+        .clone();
     assert!(e1.get("data").is_none());
     assert_eq!(e1["redacted"], true);
     let reply = app.public(&path, Some(&share), &[]).await;
-    let e1 = reply.body["items"].as_array().unwrap().iter().find(|i| i["id"] == event_ids[0].as_str()).unwrap().clone();
+    let e1 = reply.body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"] == event_ids[0].as_str())
+        .unwrap()
+        .clone();
     assert!(e1.get("data").is_none());
     let reply = app
-        .call(who(ORG), Method::POST, "/api/v1/admin/spaces/restaurant/events/ev_nope/redact", None)
+        .call(
+            who(ORG),
+            Method::POST,
+            "/api/v1/admin/spaces/restaurant/events/ev_nope/redact",
+            None,
+        )
         .await;
     assert_eq!(reply.status, StatusCode::NOT_FOUND);
 }
@@ -407,17 +593,35 @@ async fn head_density_and_state() {
     assert_eq!(info.body["head"]["recordedAt"], Value::Null);
     let types = info.body["eventTypes"].as_array().unwrap();
     assert_eq!(types.len(), 5);
-    assert!(types.iter().all(|t| t.get("schema").is_none() && t["display"].is_object()));
-    assert_eq!(app.public(&head, None, &[]).await.status, StatusCode::NOT_FOUND);
+    assert!(types
+        .iter()
+        .all(|t| t.get("schema").is_none() && t["display"].is_object()));
+    assert_eq!(
+        app.public(&head, None, &[]).await.status,
+        StatusCode::NOT_FOUND
+    );
     // 内部级事件不改变 head。
-    write(&app, who(ORG), "pos", json!([
-        {"sourceEventId": "i1", "type": "order.served", "anchorId": "t1", "at": ago(900)}
-    ]))
+    write(
+        &app,
+        who(ORG),
+        "pos",
+        json!([
+            {"sourceEventId": "i1", "type": "order.served", "anchorId": "t1", "at": ago(900)}
+        ]),
+    )
     .await;
     let reply = app.public(&head, Some(&share), &[]).await;
     assert_eq!(reply.body["recordedAt"], Value::Null);
-    let first_tag = reply.headers.get("etag").unwrap().to_str().unwrap().to_owned();
-    let reply = app.public(&head, Some(&share), &[("if-none-match", &first_tag)]).await;
+    let first_tag = reply
+        .headers
+        .get("etag")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let reply = app
+        .public(&head, Some(&share), &[("if-none-match", &first_tag)])
+        .await;
     assert_eq!(reply.status, StatusCode::NOT_MODIFIED);
     // 公开事件让 head 变化（同一进程的缓存在写入时失效）。
     let reply = write(&app, who(ORG), "pos", json!([
@@ -427,22 +631,40 @@ async fn head_density_and_state() {
     ]))
     .await;
     let recorded = reply.body["recordedAt"].as_str().unwrap().to_owned();
-    let reply = app.public(&head, Some(&share), &[("if-none-match", &first_tag)]).await;
+    let reply = app
+        .public(&head, Some(&share), &[("if-none-match", &first_tag)])
+        .await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.body["recordedAt"], recorded.as_str());
-    assert_ne!(reply.headers.get("etag").unwrap().to_str().unwrap(), first_tag);
-    assert!(reply.headers.get("cache-control").unwrap().to_str().unwrap().starts_with("private"));
+    assert_ne!(
+        reply.headers.get("etag").unwrap().to_str().unwrap(),
+        first_tag
+    );
+    assert!(reply
+        .headers
+        .get("cache-control")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .starts_with("private"));
     let info = app.public(PUBLIC, Some(&share), &[]).await;
     assert_eq!(info.body["head"]["recordedAt"], recorded.as_str());
     // 错误的令牌即使命中缓存也是 404。
     let wrong = format!("Share {}", "B".repeat(43));
-    assert_eq!(app.public(&head, Some(&wrong), &[]).await.status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        app.public(&head, Some(&wrong), &[]).await.status,
+        StatusCode::NOT_FOUND
+    );
 
     // 密度：只数公开锚点上的公开事件。
     let to = metaverse_core::Timestamp::parse_rfc3339(&ago(0)).unwrap();
     let from = to.saturating_add_millis(-1_200_000);
     let reply = app
-        .public(&format!("{PUBLIC}/events/density?from={from}&to={to}&bucket=300"), Some(&share), &[])
+        .public(
+            &format!("{PUBLIC}/events/density?from={from}&to={to}&bucket=300"),
+            Some(&share),
+            &[],
+        )
         .await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     assert_eq!(reply.body["bucketSec"], 300);
@@ -451,7 +673,15 @@ async fn head_density_and_state() {
     let total: u64 = buckets.iter().map(|b| b["count"].as_u64().unwrap()).sum();
     assert_eq!(total, 3);
     let reply = app
-        .public(&format!("{PUBLIC}/events/density?from={}&to={}&bucket=1", ago(100 * 86400), ago(0)), Some(&share), &[])
+        .public(
+            &format!(
+                "{PUBLIC}/events/density?from={}&to={}&bucket=1",
+                ago(100 * 86400),
+                ago(0)
+            ),
+            Some(&share),
+            &[],
+        )
         .await;
     assert_eq!(reply.body["code"], "window_too_large");
 
@@ -465,6 +695,9 @@ async fn head_density_and_state() {
     assert_eq!(states[0]["key"], "occupancy");
     assert_eq!(states[0]["value"], 2);
     assert_eq!(states[0]["type"], "table.occupancy");
+    assert_eq!(states[0]["typeVersion"], 1);
+    // 产生状态的事件的公开字段（标签模板用）。
+    assert_eq!(states[0]["data"], json!({"guests": 2}));
     let reply = app.public(&state_at(680), Some(&share), &[]).await;
     assert_eq!(reply.body["states"].as_array().unwrap().len(), 2);
     let reply = app.public(&state_at(850), Some(&share), &[]).await;
@@ -502,14 +735,21 @@ async fn state_snapshots_are_saved_and_invalidated_by_late_events() {
     }
     // 当作很早以前就记录了（快照只信任两分钟以前记录的数据）。
     app.collection("events")
-        .update_many(doc! {"source": "counter"}, doc! {"$set": {"recordedAt": ago(7000)}})
+        .update_many(
+            doc! {"source": "counter"},
+            doc! {"$set": {"recordedAt": ago(7000)}},
+        )
         .await
         .unwrap();
     let state = format!("{PUBLIC}/state?at={}", ago(3000));
     let reply = app.public(&state, Some(&share), &[]).await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     assert_eq!(reply.body["states"][0]["value"], 2099);
-    let snapshots = app.collection("stateSnapshots").count_documents(doc! {}).await.unwrap();
+    let snapshots = app
+        .collection("stateSnapshots")
+        .count_documents(doc! {})
+        .await
+        .unwrap();
     assert_eq!(snapshots, 1);
     // 下次直接用快照：即使底层事件不在了，结果也来自快照。
     app.collection("events")
@@ -525,5 +765,11 @@ async fn state_snapshots_are_saved_and_invalidated_by_late_events() {
     .await;
     let reply = app.public(&state, Some(&share), &[]).await;
     assert_eq!(reply.body["states"][0]["value"], -1, "{:?}", reply.body);
-    assert_eq!(app.collection("stateSnapshots").count_documents(doc! {}).await.unwrap(), 0);
+    assert_eq!(
+        app.collection("stateSnapshots")
+            .count_documents(doc! {})
+            .await
+            .unwrap(),
+        0
+    );
 }

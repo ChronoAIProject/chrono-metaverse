@@ -130,7 +130,10 @@ fn check_definition(request: &RegisterEventTypeRequest) -> Result<(), ApiError> 
     CompiledSchema::compile(&request.schema)
         .map_err(|error| invalid_with("invalid_schema", error))?;
     if request.public_fields.len() > MAX_PUBLIC_FIELDS
-        || !request.public_fields.iter().all(|path| valid_field_path(path))
+        || !request
+            .public_fields
+            .iter()
+            .all(|path| valid_field_path(path))
     {
         return Err(ApiError::invalid(format!(
             "publicFields 最多 {MAX_PUBLIC_FIELDS} 个点分路径（字母、数字、_、-）"
@@ -163,7 +166,9 @@ fn check_definition(request: &RegisterEventTypeRequest) -> Result<(), ApiError> 
         .duration_sec
         .is_some_and(|sec| sec == 0 || sec > MAX_DISPLAY_SEC)
     {
-        return Err(ApiError::invalid("display.durationSec 必须在 1 秒到一天之间"));
+        return Err(ApiError::invalid(
+            "display.durationSec 必须在 1 秒到一天之间",
+        ));
     }
     if let Some(icon) = &display.icon {
         if icon.chars().count() > 64 || icon.chars().any(char::is_control) {
@@ -189,7 +194,9 @@ fn check_definition(request: &RegisterEventTypeRequest) -> Result<(), ApiError> 
         }
     }
     if display.kind == DisplayKind::Path && display.path_role.is_none() {
-        return Err(ApiError::invalid("路线显示（kind = path）必须给出 pathRole"));
+        return Err(ApiError::invalid(
+            "路线显示（kind = path）必须给出 pathRole",
+        ));
     }
     if display.kind == DisplayKind::SpawnEntity && display.entity_asset.is_none() {
         return Err(ApiError::invalid("spawnEntity 必须给出 entityAsset"));

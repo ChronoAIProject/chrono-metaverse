@@ -458,7 +458,11 @@ pub async fn public_state_at(
     // 1. 最近的有效快照；失效的（有晚到事件或更正）连同之后的快照一起删掉。
     let mut base: Option<StateSnapshot> = None;
     for candidate in state.repo.state_snapshots_before(grant, t, 4).await? {
-        if state.repo.state_snapshot_is_stale(grant, &candidate).await? {
+        if state
+            .repo
+            .state_snapshot_is_stale(grant, &candidate)
+            .await?
+        {
             let system = Authorizer::system_scope(grant, "删除失效的状态快照");
             state
                 .repo
@@ -472,7 +476,8 @@ pub async fn public_state_at(
     let mut lower = base
         .as_ref()
         .map_or(Lower::None, |snapshot| Lower::Exclusive(snapshot.at));
-    let mut fold = StateFold::from_snapshot(base.map(|snapshot| snapshot.states).unwrap_or_default());
+    let mut fold =
+        StateFold::from_snapshot(base.map(|snapshot| snapshot.states).unwrap_or_default());
     let mut since_save = 0usize;
     let mut total = 0usize;
     // 2. 按 at 分批折叠；同一 at 的记录不跨批。

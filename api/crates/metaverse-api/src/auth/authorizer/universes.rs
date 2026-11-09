@@ -327,12 +327,7 @@ impl Authorizer {
                     return Err(ApiError::not_found());
                 }
                 Ok(MembershipGrant {
-                    universe: Self::universe_grant(
-                        universe_id,
-                        &policy,
-                        GrantAccess::Public,
-                        None,
-                    ),
+                    universe: Self::universe_grant(universe_id, &policy, GrantAccess::Public, None),
                     space: Some(space),
                     space_id: space_id.to_owned(),
                     basis: MembershipBasis::SpaceManager,
@@ -413,9 +408,7 @@ impl Authorizer {
             access: GrantAccess::Public,
             public_basis: Some(match universe.public_basis {
                 // 组合公开意味着全部成员都公开。
-                Some(PublicBasis::PublicVisibility)
-                    if policy.visibility == Visibility::Public =>
-                {
+                Some(PublicBasis::PublicVisibility) if policy.visibility == Visibility::Public => {
                     PublicBasis::PublicVisibility
                 }
                 _ => PublicBasis::ShareToken,

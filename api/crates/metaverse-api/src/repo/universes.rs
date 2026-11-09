@@ -8,8 +8,8 @@
 //! - 唯一不带授权的读取是 [`Repo::universe_policy`]，要求只有授权层能构造的钥匙。
 
 use metaverse_core::model::{
-    Owner, OwnerEvidence, OwnerKind, ShareTokenRecord, Universe, UniverseMember,
-    UniverseRevision, Visibility,
+    Owner, OwnerEvidence, OwnerKind, ShareTokenRecord, Universe, UniverseMember, UniverseRevision,
+    Visibility,
 };
 use metaverse_core::Timestamp;
 use mongodb::bson::{self, doc, Bson, Document};
@@ -271,7 +271,10 @@ impl Repo {
         }
         let mut document = to_document(revision)?;
         document.insert("_id", format!("{}:{}", revision.universe_id, revision.seq));
-        set.insert("head", doc! {"seq": revision.seq as i64, "at": revision.at.to_rfc3339()});
+        set.insert(
+            "head",
+            doc! {"seq": revision.seq as i64, "at": revision.at.to_rfc3339()},
+        );
         set.insert("members", to_bson(&revision.state.members)?);
         set.insert("links", to_bson(&revision.state.links)?);
         let outcome = self
@@ -289,7 +292,9 @@ impl Repo {
             .await;
         match outcome {
             Ok(TxnOutcome::Committed) => Ok(UniverseWrite::Applied),
-            Ok(TxnOutcome::NotMatched(_)) | Err(RepoError::Duplicate) => Ok(UniverseWrite::Conflict),
+            Ok(TxnOutcome::NotMatched(_)) | Err(RepoError::Duplicate) => {
+                Ok(UniverseWrite::Conflict)
+            }
             Err(error) => Err(error),
         }
     }
@@ -421,8 +426,12 @@ impl Repo {
         Ok(Some((start, end)))
     }
 
-    /// 空间在 T 时刻的 seq：`at ≤ T` 的最大 seq；T 之前没有提交时是 0。
-    pub async fn space_seq_at(&self, grant: &Grant, at: Timestamp) -> Result<u64, RepoError> {
+    /// 空间在 T 时刻的 seq：`at ≤ T` 的最大 seq；T 之前没有提交时为空。
+    pub async fn space_seq_at(
+        &self,
+        grant: &Grant,
+        at: Timestamp,
+    ) -> Result<Option<u64>, RepoError> {
         let found = self
             .collection(collections::COMMITS)
             .find_one(doc! {
@@ -434,13 +443,11 @@ impl Repo {
             .sort(doc! {"at": -1, "seq": -1})
             .projection(doc! {"seq": 1})
             .await?;
-        Ok(found
-            .and_then(|document| match document.get("seq") {
-                Some(Bson::Int64(seq)) => u64::try_from(*seq).ok(),
-                Some(Bson::Int32(seq)) => u64::try_from(*seq).ok(),
-                Some(Bson::Double(seq)) if *seq >= 0.0 => Some(*seq as u64),
-                _ => None,
-            })
-            .unwrap_or(0))
+        Ok(found.and_then(|document| match document.get("seq") {
+            Some(Bson::Int64(seq)) => u64::try_from(*seq).ok(),
+            Some(Bson::Int32(seq)) => u64::try_from(*seq).ok(),
+            Some(Bson::Double(seq)) if *seq >= 0.0 => Some(*seq as u64),
+            _ => None,
+        }))
     }
 }

@@ -473,6 +473,9 @@ pub struct SnapshotState {
     #[serde(rename = "type")]
     pub event_type: String,
     pub type_version: u32,
+    /// 决定这个状态的事件的公开字段（按 publicFields 投影；被抹除时为空），网站的标签模板用。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<Value>,
 }
 
 /// 状态类事件的规则：从此刻起该锚点处于某状态，直到同一 key 的下一条。

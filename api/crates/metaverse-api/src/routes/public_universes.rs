@@ -31,7 +31,10 @@ const REVISION_CACHE: u32 = 24 * 3600;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/api/public/universes/{universe_id}", get(get_public_universe))
+        .route(
+            "/api/public/universes/{universe_id}",
+            get(get_public_universe),
+        )
         .route(
             "/api/public/universes/{universe_id}/revisions/{seq}",
             get(get_public_universe_revision),
@@ -45,7 +48,7 @@ pub struct UniverseAtQuery {
     pub at: Option<String>,
 }
 
-/// 成员与摆放（网站 `UniverseMember`）。
+/// T 时刻的成员与摆放（网站 `UniverseMember`）。
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicMemberView {
@@ -54,9 +57,20 @@ pub struct PublicMemberView {
     pub offset: [i64; 3],
     #[schema(value_type = u16)]
     pub rotation: Rotation,
-    /// 该成员在 T 时刻的 seq（只在按时刻查询时给出）。
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// 该成员在 T 时刻的 seq；那时还没有任何提交时为 null。
     pub seq: Option<u64>,
+    /// 成员空间的名称。
+    pub name: String,
+}
+
+/// 修订里的成员与摆放。
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RevisionMemberView {
+    pub space_id: String,
+    pub offset: [i64; 3],
+    #[schema(value_type = u16)]
+    pub rotation: Rotation,
 }
 
 /// T 时刻的组合（网站 `UniverseView`）。
@@ -77,7 +91,7 @@ pub struct PublicUniverseView {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct PublicRevisionState {
-    pub members: Vec<PublicMemberView>,
+    pub members: Vec<RevisionMemberView>,
     #[schema(value_type = Vec<Object>)]
     pub links: Vec<UniverseLink>,
 }
@@ -142,11 +156,18 @@ pub async fn get_public_universe(
         Some(revision) => {
             let mut members = Vec::with_capacity(revision.state.members.len());
             for (member, member_grant) in revision.state.members.iter().zip(&member_grants) {
+                let name = state
+                    .repo
+                    .space(member_grant)
+                    .await?
+                    .map(|space| space.name)
+                    .unwrap_or_default();
                 members.push(PublicMemberView {
                     space_id: member.space_id.clone(),
                     offset: member.offset,
                     rotation: member.rotation,
-                    seq: Some(state.repo.space_seq_at(member_grant, at).await?),
+                    seq: state.repo.space_seq_at(member_grant, at).await?,
+                    name,
                 });
             }
             PublicUniverseView {
@@ -207,11 +228,10 @@ pub async fn get_public_universe_revision(
                 .state
                 .members
                 .into_iter()
-                .map(|member| PublicMemberView {
+                .map(|member| RevisionMemberView {
                     space_id: member.space_id,
                     offset: member.offset,
                     rotation: member.rotation,
-                    seq: None,
                 })
                 .collect(),
             links: revision.state.links,

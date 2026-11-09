@@ -334,7 +334,7 @@ async fn create(
             )
         })?;
     if request.part_size == 0
-        || request.part_size % ASSET_CHUNK_SIZE != 0
+        || !request.part_size.is_multiple_of(ASSET_CHUNK_SIZE)
         || request.part_size > MAX_UPLOAD_PART_SIZE
     {
         return Err(invalid_with(
@@ -583,12 +583,14 @@ async fn put_part(
             "正在处理的分片太多，请稍后重试",
         ));
     };
-    let data = axum::body::to_bytes(body, expected as usize).await.map_err(|_| {
-        too_large(
-            "part_too_large",
-            format!("第 {n} 片应为 {expected} 字节，累计会超过声明的总大小"),
-        )
-    })?;
+    let data = axum::body::to_bytes(body, expected as usize)
+        .await
+        .map_err(|_| {
+            too_large(
+                "part_too_large",
+                format!("第 {n} 片应为 {expected} 字节，累计会超过声明的总大小"),
+            )
+        })?;
     if data.len() as u64 != expected {
         return Err(invalid_with(
             "part_size_mismatch",
@@ -616,7 +618,7 @@ async fn put_part(
     let now = crate::now()?;
     match state
         .repo
-        .write_upload_part(&grant, &upload, n, &data, part.clone(), n == 0, now)
+        .write_upload_part(&grant, &upload, n, &data, part.clone(), now)
         .await?
     {
         PartWrite::Stored => {}
@@ -669,7 +671,10 @@ pub async fn put_upload_part(
     headers: HeaderMap,
     body: Body,
 ) -> Result<Response, ApiError> {
-    put_part(state, caller, space_id, None, purpose, upload_id, n, headers, body).await
+    put_part(
+        state, caller, space_id, None, purpose, upload_id, n, headers, body,
+    )
+    .await
 }
 
 #[utoipa::path(
@@ -791,7 +796,11 @@ async fn complete(
                 "还缺 {} 片：{}{}",
                 missing.len(),
                 listed.join("、"),
-                if missing.len() > MISSING_LIST { "……" } else { "" }
+                if missing.len() > MISSING_LIST {
+                    "……"
+                } else {
+                    ""
+                }
             ),
         ));
     }
@@ -839,7 +848,11 @@ async fn complete(
                     PathScope::Plot(plot) => format!("/api/v1/spaces/{space_id}/plots/{plot}"),
                     _ => format!("/api/v1/spaces/{space_id}"),
                 };
-                set_header(&mut response, header::LOCATION, &format!("{base}/jobs/{job_id}"));
+                set_header(
+                    &mut response,
+                    header::LOCATION,
+                    &format!("{base}/jobs/{job_id}"),
+                );
             }
             Ok(response)
         }

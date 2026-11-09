@@ -72,6 +72,8 @@ impl StateFold {
                     event_id: event.id,
                     event_type: event.event_type,
                     type_version: event.type_version,
+                    // public_events 已经按公开字段投影过。
+                    data: event.data,
                 },
             );
         }
@@ -178,7 +180,7 @@ mod tests {
     #[test]
     fn batched_fold_matches_the_core_rule() {
         let types = types();
-        let records = vec![
+        let records = [
             event("a", 10, "seated", "t1", json!({"guests": 2, "amount": 9})),
             event("b", 20, "seated", "t2", json!({"guests": 3})),
             event("c", 30, "left", "t1", json!({})),
@@ -186,11 +188,7 @@ mod tests {
         ];
         let anchors: BTreeSet<String> = ["t1", "t2"].iter().map(|s| (*s).to_owned()).collect();
         for t in [5, 15, 25, 35, 45, 125, 200] {
-            let upto: Vec<_> = records
-                .iter()
-                .filter(|e| e.at <= ts(t))
-                .cloned()
-                .collect();
+            let upto: Vec<_> = records.iter().filter(|e| e.at <= ts(t)).cloned().collect();
             // 分两批折叠，与一次算出的结果相同。
             let (first, second) = upto.split_at(upto.len() / 2);
             let mut fold = StateFold::default();
@@ -219,7 +217,10 @@ mod tests {
         hidden.visibility = Some(DataVisibility::Internal);
         let mut fold = StateFold::default();
         fold.apply(
-            &[hidden, event("b", 10, "seated", "safe", json!({"guests": 1}))],
+            &[
+                hidden,
+                event("b", 10, "seated", "safe", json!({"guests": 1})),
+            ],
             &types,
         );
         let anchors: BTreeSet<String> = ["t1"].iter().map(|s| (*s).to_owned()).collect();

@@ -41,8 +41,8 @@ use super::event_query::{
     TypeMap, MAX_WINDOW_MS,
 };
 use super::ingest_common::{
-    decode_cursor, encode_cursor, invalid_with, no_store, parse_time, path_actor,
-    scope_violation, too_large,
+    decode_cursor, encode_cursor, invalid_with, no_store, parse_time, path_actor, scope_violation,
+    too_large,
 };
 use super::ApiJson;
 use crate::auth::permissions::Capability;
@@ -67,7 +67,10 @@ pub fn routes() -> Router<AppState> {
             post(write_corrections),
         )
         .route("/api/v1/spaces/{space_id}/events", get(list_events))
-        .route("/api/v1/spaces/{space_id}/event-types", get(list_event_types))
+        .route(
+            "/api/v1/spaces/{space_id}/event-types",
+            get(list_event_types),
+        )
 }
 
 // ---------------------------------------------------------------------------
@@ -269,7 +272,10 @@ fn check_content<'t>(
     let version = match type_version {
         Some(version) => version,
         None => *latest.get(event_type).ok_or_else(|| {
-            invalid_with("unknown_event_type", format!("事件类型 {event_type} 没有登记"))
+            invalid_with(
+                "unknown_event_type",
+                format!("事件类型 {event_type} 没有登记"),
+            )
         })?,
     };
     let definition = types
@@ -287,7 +293,8 @@ fn check_content<'t>(
         ));
     }
     let data = data.unwrap_or_else(|| json!({}));
-    validate_event_data(&data).map_err(|error| invalid_with("data_too_large", error.to_string()))?;
+    validate_event_data(&data)
+        .map_err(|error| invalid_with("data_too_large", error.to_string()))?;
     let key = (event_type.to_owned(), version);
     if !schemas.contains_key(&key) {
         let compiled = CompiledSchema::compile(&definition.schema).map_err(|error| {
@@ -298,9 +305,9 @@ fn check_content<'t>(
         })?;
         schemas.insert(key.clone(), compiled);
     }
-    schemas[&key]
-        .validate(&data)
-        .map_err(|error| invalid_with("schema_violation", format!("data 不符合 schema：{error}")))?;
+    schemas[&key].validate(&data).map_err(|error| {
+        invalid_with("schema_violation", format!("data 不符合 schema：{error}"))
+    })?;
     if let Some(correlation_id) = correlation_id {
         validate_correlation_id(space_id, correlation_id, definition.display.path_role)
             .map_err(|error| invalid_with("invalid_correlation_id", error.to_string()))?;
@@ -326,12 +333,10 @@ fn check_batch_size(len: usize, what: &str) -> Result<(), ApiError> {
 }
 
 fn parse_item<T: serde::de::DeserializeOwned>(index: usize, item: Value) -> Result<T, ApiError> {
-    check_event_body_has_no_source(&item).map_err(|error| {
-        at_index(index, scope_violation(error.to_string()))
-    })?;
-    serde_json::from_value(item).map_err(|error| {
-        at_index(index, ApiError::invalid(format!("字段不合法：{error}")))
-    })
+    check_event_body_has_no_source(&item)
+        .map_err(|error| at_index(index, scope_violation(error.to_string())))?;
+    serde_json::from_value(item)
+        .map_err(|error| at_index(index, ApiError::invalid(format!("字段不合法：{error}"))))
 }
 
 /// 构造要写入的事件（同步：编译好的 schema 不跨 await）。
@@ -417,9 +422,9 @@ fn build_corrections(
     let mut corrections = Vec::with_capacity(inputs.len());
     for (index, input, target) in inputs {
         let fail = |error: ApiError| at_index(index, error);
-        let original = originals.get(&target).ok_or_else(|| {
-            fail(invalid_with("unknown_original", "被更正的事件不存在"))
-        })?;
+        let original = originals
+            .get(&target)
+            .ok_or_else(|| fail(invalid_with("unknown_original", "被更正的事件不存在")))?;
         if original.corrects.is_some() {
             return Err(fail(invalid_with(
                 "invalid_correction",
@@ -472,10 +477,16 @@ fn build_corrections(
             }
         } else {
             let event_type = input.event_type.as_deref().ok_or_else(|| {
-                fail(invalid_with("invalid_correction", "替换必须是完整的新记录（缺 type）"))
+                fail(invalid_with(
+                    "invalid_correction",
+                    "替换必须是完整的新记录（缺 type）",
+                ))
             })?;
             let anchor_id = input.anchor_id.as_deref().ok_or_else(|| {
-                fail(invalid_with("invalid_correction", "替换必须是完整的新记录（缺 anchorId）"))
+                fail(invalid_with(
+                    "invalid_correction",
+                    "替换必须是完整的新记录（缺 anchorId）",
+                ))
             })?;
             let (definition, data, visibility) = check_content(
                 grant.space_id(),
@@ -604,7 +615,15 @@ pub async fn write_events(
     let types = type_map(&state, &grant).await?;
     let anchors = known_anchors(&state, &grant).await?;
     let now = crate::now()?;
-    let events = build_events(&grant, &source, &caller, &types, &anchors, request.events, now)?;
+    let events = build_events(
+        &grant,
+        &source,
+        &caller,
+        &types,
+        &anchors,
+        request.events,
+        now,
+    )?;
     let results = state.repo.insert_events(&grant, &events).await?;
     state.ingest.head_cache.invalidate(grant.space_id());
     tracing::info!(space = %space_id, source = %source, count = events.len(), by = %caller.subject, "写入事件");
@@ -643,8 +662,7 @@ pub async fn write_corrections(
     let mut seen = BTreeSet::new();
     for (index, item) in request.corrections.into_iter().enumerate() {
         let input: CorrectionInput = parse_item(index, item)?;
-        if !is_object_id(&input.source_event_id) || !seen.insert(input.source_event_id.clone())
-        {
+        if !is_object_id(&input.source_event_id) || !seen.insert(input.source_event_id.clone()) {
             return Err(at_index(
                 index,
                 ApiError::invalid("sourceEventId 格式不对或同一批里重复"),
@@ -727,10 +745,7 @@ pub async fn list_events(
         records
             .into_iter()
             .filter(|record| {
-                request
-                    .filters
-                    .types
-                    .is_empty()
+                request.filters.types.is_empty()
                     || record
                         .event_type
                         .as_ref()
@@ -831,15 +846,13 @@ impl EventRequest {
                 }
                 EventMode::Window { from, to }
             }
-            _ => {
-                return Err(ApiError::invalid(
-                    "必须给出 since，或者同时给出 from 和 to",
-                ))
-            }
+            _ => return Err(ApiError::invalid("必须给出 since，或者同时给出 from 和 to")),
         };
         let filters = Filters {
             types,
-            from: matches!(mode, EventMode::Since(_)).then_some(from).flatten(),
+            from: matches!(mode, EventMode::Since(_))
+                .then_some(from)
+                .flatten(),
             to: matches!(mode, EventMode::Since(_)).then_some(to).flatten(),
         };
         Ok(Self {

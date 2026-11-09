@@ -142,7 +142,9 @@ pub fn idempotency_key(headers: &HeaderMap) -> Result<Option<String>, ApiError> 
     };
     let text = value.to_str().unwrap_or_default().trim();
     if text.is_empty() || text.len() > 200 || !text.bytes().all(|b| b.is_ascii_graphic()) {
-        return Err(ApiError::invalid("Idempotency-Key 必须是 1–200 个可见 ASCII 字符"));
+        return Err(ApiError::invalid(
+            "Idempotency-Key 必须是 1–200 个可见 ASCII 字符",
+        ));
     }
     Ok(Some(text.to_owned()))
 }
@@ -170,9 +172,7 @@ pub fn decode_cursor(text: &str) -> Result<Cursor, ApiError> {
 }
 
 /// 可以省略的 JSON 请求体：空请求体按默认值处理。
-pub fn optional_json<T: serde::de::DeserializeOwned + Default>(
-    body: &[u8],
-) -> Result<T, ApiError> {
+pub fn optional_json<T: serde::de::DeserializeOwned + Default>(body: &[u8]) -> Result<T, ApiError> {
     if body.iter().all(u8::is_ascii_whitespace) {
         return Ok(T::default());
     }
@@ -201,7 +201,12 @@ mod tests {
             id: "ev_0123".into(),
         };
         assert_eq!(decode_cursor(&encode_cursor(&cursor)).unwrap(), cursor);
-        for bad in ["", "!!", &URL_SAFE_NO_PAD.encode("no-separator"), &URL_SAFE_NO_PAD.encode("2025-01-01T00:00:00Z|a/b")] {
+        for bad in [
+            "",
+            "!!",
+            &URL_SAFE_NO_PAD.encode("no-separator"),
+            &URL_SAFE_NO_PAD.encode("2025-01-01T00:00:00Z|a/b"),
+        ] {
             assert!(decode_cursor(bad).is_err(), "{bad}");
         }
     }

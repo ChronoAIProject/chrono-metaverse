@@ -168,7 +168,11 @@ impl Repo {
     }
 
     /// 读上传会话。
-    pub async fn upload(&self, grant: &Grant, upload_id: &str) -> Result<Option<Upload>, RepoError> {
+    pub async fn upload(
+        &self,
+        grant: &Grant,
+        upload_id: &str,
+    ) -> Result<Option<Upload>, RepoError> {
         let mut filter = space_children(grant);
         filter.insert("_id", upload_id);
         self.collection(collections::UPLOADS)
@@ -179,6 +183,7 @@ impl Repo {
     }
 
     /// 写一片：先删这片原有的数据块，再按 256KiB 切块写入，最后按 `status: open` 条件登记。
+    /// 调用方已经核对过长度（和第 0 片的文件头），所以登记第 0 片时同时记下 `headerChecked`。
     pub async fn write_upload_part(
         &self,
         grant: &Grant,
@@ -186,13 +191,12 @@ impl Repo {
         part_no: u64,
         data: &[u8],
         part: UploadPart,
-        header_checked: bool,
         now: Timestamp,
     ) -> Result<PartWrite, RepoError> {
         if !grant.can_manage()
             || upload.space_id != grant.space_id()
             || &upload.owner != grant.owner()
-            || upload.part_size % ASSET_CHUNK_SIZE != 0
+            || !upload.part_size.is_multiple_of(ASSET_CHUNK_SIZE)
             || part_no >= upload.part_count
         {
             return Err(RepoError::GrantMismatch);
@@ -227,7 +231,7 @@ impl Repo {
         let mut set = Document::new();
         set.insert(format!("parts.{part_no}"), to_bson(&part)?);
         set.insert("updatedAt", now.to_rfc3339());
-        if header_checked {
+        if part_no == 0 {
             set.insert("headerChecked", true);
         }
         let result = self

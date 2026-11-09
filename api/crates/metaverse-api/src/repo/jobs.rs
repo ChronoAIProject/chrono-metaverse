@@ -36,8 +36,7 @@ impl Repo {
     }
 
     pub async fn insert_job(&self, grant: &Grant, job: &Job) -> Result<JobInsert, RepoError> {
-        if !grant.can_manage() || job.space_id != grant.space_id() || &job.owner != grant.owner()
-        {
+        if !grant.can_manage() || job.space_id != grant.space_id() || &job.owner != grant.owner() {
             return Err(RepoError::GrantMismatch);
         }
         match self
