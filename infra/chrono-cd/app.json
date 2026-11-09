@@ -43,6 +43,10 @@
         "UPLOAD_MAX_OPEN_PER_SPACE": "16",
         "UPLOAD_MAX_CONCURRENT_PARTS": "8",
         "JOB_MAX_PENDING_PER_SPACE": "8",
+        "PUBLIC_RATE_LIMIT_PER_MINUTE": "12000",
+        "PUBLIC_RATE_LIMIT_BURST": "2000",
+        "PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE": "120000",
+        "PUBLIC_BLOB_RATE_LIMIT_BURST": "20000",
         "RUST_LOG": "info"
       },
       "addon_env": {
@@ -67,6 +71,9 @@
       "env": {
         "WORKER_HEALTH_PORT": "8080",
         "WORKER_JOB_MEMORY_MB": "6144",
+        "OPENBLAS_NUM_THREADS": "2",
+        "OMP_NUM_THREADS": "2",
+        "MALLOC_ARENA_MAX": "2",
         "PYTHONUNBUFFERED": "1"
       },
       "addon_env": {

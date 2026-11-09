@@ -5,6 +5,8 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 
 规格格式以 chrono-cd 的接口文档为准（`docs/protocol/api.md`、技能文件 `skills/chrono-cd/SKILL.md`），并对照了组织下已有应用（`omega/mathesis`、`integrations/frigate-events-test`）的实际配置。
 
+改 `app.json` 后先跑静态检查（持续集成里也跑）：`node infra/chrono-cd/check-app.mjs`。它检查处理服务的线程数和内存上限、接口服务的限流额度和可信地址头、README 的环境变量表是否列全、`infra/dev/up.sh` 是否设了同样的线程变量；测试在 `check-app.test.mjs`（`node --test infra/chrono-cd/*.test.mjs`）。
+
 ## 1. 规格要点
 
 | 服务 | 镜像 | 路由 | 暴露 | 端口 | 健康检查 | 副本 | 资源申请 / 上限 |
@@ -52,12 +54,36 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 | `NYXID_JWT_AUDIENCE` | `urn:chrono-metaverse:api` | 必须和 NyxID 注册时的 `identity_jwt_audience` 一字不差 |
 | `ALLOWED_NYX_SERVICE_IDS` | `pending-nyxid-registration` | **占位值**：NyxID 注册要先有应用地址，所以第一次部署时还没有服务编号。占位值能让服务正常启动（网站和公开读接口可用），但所有 `/api/v1/*` 都会 401，直到第 7 步换成真实编号 |
 | `METAVERSE_REQUIRE_PERMISSIONS` | `false` | 第一步不启用功能级权限 |
-| `UPLOAD_MAX_SCAN_BYTES` / `_MODEL_` / `_TEXTURE_` / `_OPS_` / `_SCRIPT_BYTES` | 1GiB / 50MiB / 50MiB / 256MiB / 4MiB | 各用途上传的大小上限（与处理服务的上限一致；改大时处理服务的 `WORKER_MAX_*` 也要改） |
+| `UPLOAD_MAX_SCAN_BYTES` / `UPLOAD_MAX_MODEL_BYTES` / `UPLOAD_MAX_TEXTURE_BYTES` / `UPLOAD_MAX_OPS_BYTES` / `UPLOAD_MAX_SCRIPT_BYTES` | 1GiB / 50MiB / 50MiB / 256MiB / 4MiB | 各用途上传的大小上限（与处理服务的上限一致；改大时处理服务的 `WORKER_MAX_*` 也要改） |
 | `UPLOAD_MAX_TEXTURE_SIDE` | `8192` | 图片单边像素上限（第 0 片按文件头检查） |
 | `UPLOAD_MAX_OPEN_PER_SPACE` | `16` | 每个空间进行中的上传数，超过返回 429 |
 | `UPLOAD_MAX_CONCURRENT_PARTS` | `8` | 每个副本同时处理的分片数（每片最多 32MiB 在内存里，与 `memory_limit` 一起考虑） |
 | `JOB_MAX_PENDING_PER_SPACE` | `8` | 每个空间排队和运行中的任务数，超过返回 429 |
+| `PUBLIC_RATE_LIMIT_PER_MINUTE` / `PUBLIC_RATE_LIMIT_BURST` | `12000` / `2000` | 公开 JSON 接口的限流额度。**目前按网关地址计、所有访客共用**（见下面"公开接口限流"），所以比接口服务按单个访客设计的默认值（1200 / 200）高 10 倍 |
+| `PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE` / `PUBLIC_BLOB_RATE_LIMIT_BURST` | `120000` / `20000` | 区块和资源（`/api/public/chunks/`、`/assets/`）的限流额度，同上（默认 12000 / 2000） |
+| `TRUSTED_CLIENT_IP_HEADER` | **不设（待向平台确认）** | 可信的客户端地址请求头。确认之前不设，接口服务按 TCP 连接地址限流，连接地址是网关或 nginx 的地址（见下面"公开接口限流"） |
 | `RUST_LOG` | `info` | |
+
+#### 公开接口限流（待向平台确认可信的客户端地址头）
+
+设计 8.2 要求公开接口按来源地址限流，并在第 0 阶段向平台确认哪个请求头里是可信的客户端地址（设计 16.2）。确认之前的情况：
+
+- **链路**：公网请求先到 Cloudflare，再到平台的 Google 负载均衡，最后到 `metaverse-api`（2026-11-09 实测 `https://chrono-metaverse-chronoai.apps.nyxid.ai/api/healthz` 的响应头：`server: cloudflare`、`cf-ray`、`via: 1.1 google`）；`/api` 走 nginx 兜底时还要再经过网站的 nginx。
+- **所以限流按网关地址计**：接口服务默认用 TCP 连接地址当来源，这个地址是 Google 前端代理（`35.191.0.0/16`、`130.211.0.0/22`）或 nginx 副本的地址，所有访客落进少数几个桶，限流只能当兜底。接口服务按单个访客设计的默认额度（每分钟 1200、突发 200）在这种情况下几十个同时在线的访客就会触发 429，所以 `app.json` 显式调高了 `PUBLIC_*` 四个额度。
+- **额度怎么来的**：网站"现在"模式每个访客每 5 秒带 If-None-Match 查一次 `/head`（多数 304），有变化时再拉增量事件、状态，约每分钟 24–36 次；打开一个空间约 10–20 次 JSON 请求，再加几百个区块和资源（前厅 5 厘米格约 155–195 个区块）。每分钟 12000 次按 200 个同时在线访客留了余量，突发 2000 约等于 100 个访客同时打开；区块和资源按同样的人数放大 10 倍。真正保护进程的是每个空间的并发上限（`PUBLIC_SPACE_CONCURRENCY`，默认 64）和进程内缓存，这里的额度只防一个来源把接口打满。
+- **为什么暂时不设 `TRUSTED_CLIENT_IP_HEADER=cf-connecting-ip`**：接口服务对配置的头无条件信任。只要有人能绕过 Cloudflare 直接连到平台的负载均衡，就可以每个请求写一个不同的 `cf-connecting-ip`，每次都拿到新额度，限流完全失效。所以要先向平台确认两件事：① 负载均衡只接受 Cloudflare 的流量（或者会覆盖外来的 `cf-connecting-ip`）；② `cf-connecting-ip` 原样到达容器。
+- **`X-Forwarded-For` 不能用**：Google 负载均衡和 nginx 都会在后面追加地址，值是多个 IP；接口服务只认恰好一个 IP 的值，会退回连接地址（`check-app.mjs` 也会拒绝把它配成可信头）。要按转发链取客户端地址（只信任来自 Google 前端代理网段的连接、跳过负载均衡自己追加的那一段，参照 CMA 的 `CHRONO_SERVER_TRUSTED_PROXY_CIDRS`），需要接口服务先支持。
+
+平台确认之后：在 `app.json` 里设 `"TRUSTED_CLIENT_IP_HEADER": "cf-connecting-ip"`，四个 `PUBLIC_*` 可以删掉（回到按单个访客的默认额度），跑一遍 `node infra/chrono-cd/check-app.mjs`，再用 `PATCH` 只改这几项（JSON 合并补丁里写 `null` 表示删除这一项；改完 `GET` 一次确认）：
+
+```bash
+nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --data '{"services":{"metaverse-api":{"env":{
+  "TRUSTED_CLIENT_IP_HEADER":"cf-connecting-ip",
+  "PUBLIC_RATE_LIMIT_PER_MINUTE":null,"PUBLIC_RATE_LIMIT_BURST":null,
+  "PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE":null,"PUBLIC_BLOB_RATE_LIMIT_BURST":null}}}}'
+```
+
+改完用第 6 步的命令看 `metaverse-api` 的日志：被限流时会打印"公开接口限流"。
 
 `metaverse-worker`（完整说明见 `worker/src/metaverse_worker/config.py`）：
 
@@ -65,8 +91,26 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 |---|---|---|
 | `MONGODB_URI`、`MONGODB_DATABASE` | 插件注入 | `addon_env` |
 | `WORKER_HEALTH_PORT` | `8080` | 健康检查端口（`/healthz`），与 `port` 一致 |
-| `WORKER_JOB_MEMORY_MB` | `6144` | 重计算子进程的内存上限，要小于容器上限 8Gi |
+| `WORKER_JOB_MEMORY_MB` | `6144` | 重计算子进程的内存上限，要小于容器上限 8Gi。这是**地址空间**上限（`RLIMIT_AS`），不是常驻内存，线程栈和预留的堆都算在里面（见下面"处理服务的线程数"） |
+| `OPENBLAS_NUM_THREADS` | `2` | 与 `cpu_limit` 一致。numpy、scipy 各带一份 OpenBLAS，不设时按**节点**可见核数建线程 |
+| `OMP_NUM_THREADS` | `2` | 同上，给 OpenMP 库（OpenBLAS 在没有自己的变量时也读它） |
+| `MALLOC_ARENA_MAX` | `2` | glibc 的分配区个数上限；不设时最多 8×节点核数个，每个预留 64MB 地址空间 |
 | `PYTHONUNBUFFERED` | `1` | 日志不缓冲，立即出现在 chrono-cd 日志里 |
+
+#### 处理服务的线程数
+
+重计算子进程用 `resource.setrlimit(RLIMIT_AS)` 限内存（`worker/src/metaverse_worker/jobs/isolate.py`），限的是虚拟地址空间。numpy 和 scipy 各自带一份 OpenBLAS，**导入时**就按可见核数建线程，每个线程约占 41MB 地址空间（8MiB 栈加缓冲区）。Kubernetes 只用 CFS 配额限 CPU，容器里看到的是整台节点的核数，与 `cpu_limit` 无关：不设线程数时，32 核节点上子进程一启动就占掉约 2.5GB，64 核节点约 5.2GB，6144MB 的额度只剩约 1GB；2 核配额下跑上百个 BLAS 线程还会被 CFS 严重限流，任务更容易撞上 1800 秒超时。
+
+2026-11-09 在 4 核机器上实测（numpy 2.5.4、scipy 1.18.1，只导入 `numpy`、`scipy.linalg`、`scipy.spatial`，读 `/proc/self/status`）：
+
+| 设置 | 线程数 | VmSize |
+|---|---|---|
+| `OPENBLAS_NUM_THREADS=1` | 1 | 227MB |
+| `OPENBLAS_NUM_THREADS=2` | 3 | 307MB |
+| 不设（4 核） | 7 | 471MB |
+| 只设 `OMP_NUM_THREADS=2` | 3 | 307MB |
+
+每多一个线程约 +40MB，两份 OpenBLAS 各算一次。线程数设成 `cpu_limit`（2），地址空间与节点大小无关。Dockerfile 按约定不写 `ENV`，所以这几个变量只在这里设；`infra/dev/up.sh` 本地也设同样的值，本地测的内存和线上一致。`worker/README.md` 的内存数据（RSS 1,263MB）是在 4 核机器上测的，上线后按子进程实测的 `VmPeak` 复核 `WORKER_JOB_MEMORY_MB`。改 `cpu_limit` 时同步改这两个线程数（`check-app.mjs` 会检查线程数不超过 `cpu_limit`）。
 
 `metaverse-web`：不需要环境变量。
 
@@ -114,7 +158,7 @@ nyxid proxy request chrono-cd "api/v1/account?org_id=$ORG" --output json
 
 ### 第 4 步：提交应用规格
 
-把 `app.json` 里三个镜像的标签换成要部署的提交哈希，然后提交：
+先跑 `node infra/chrono-cd/check-app.mjs`，再把 `app.json` 里三个镜像的标签换成要部署的提交哈希，然后提交：
 
 ```bash
 SHA=<7 位提交哈希>

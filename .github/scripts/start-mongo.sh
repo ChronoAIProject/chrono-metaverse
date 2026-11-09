@@ -13,8 +13,8 @@ readonly image="mongo:8.0.13@sha256:cf340b1e5283843c63eb12999922f20c463ae31285f7
 readonly name="metaverse-mongo"
 
 # 任何一步失败都打印容器日志，方便排查（容器启动后立即退出时尤其需要）。
-# 只在 ERR 陷阱里调用，shellcheck 看不出来。
-# shellcheck disable=SC2317
+# 只在 ERR 陷阱里调用，shellcheck 看不出来（旧版报 SC2317，0.10 起报 SC2329）。
+# shellcheck disable=SC2317,SC2329
 show_logs() {
   echo "MongoDB 启动失败，容器日志：" >&2
   docker ps --all --filter "name=$name" >&2 || true

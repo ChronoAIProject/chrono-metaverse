@@ -13,6 +13,8 @@
 #   METAVERSE_DEV_MONGO_PORT（27017，本脚本自己起 mongod 时用）、MONGOD_BIN（mongod 可执行文件）
 #   UPLOAD_MAX_SCAN_BYTES、UPLOAD_MAX_OPEN_PER_SPACE、UPLOAD_MAX_CONCURRENT_PARTS、JOB_MAX_PENDING_PER_SPACE
 #     （传给接口服务的上传和任务上限，其余 UPLOAD_* 用接口服务的默认值）
+#   OPENBLAS_NUM_THREADS、OMP_NUM_THREADS、MALLOC_ARENA_MAX（都是 2，传给处理服务；与 infra/chrono-cd/app.json
+#     一致，本地测的子进程内存才和线上一样，见 infra/chrono-cd/README.md"处理服务的线程数"）
 set -euo pipefail
 
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
@@ -33,7 +35,7 @@ for arg in "$@"; do
     --no-worker) with_worker=0 ;;
     --no-web) with_web=0 ;;
     -h | --help)
-      sed -n '2,15p' "${BASH_SOURCE[0]}"
+      sed -n '2,17p' "${BASH_SOURCE[0]}"
       exit 0
       ;;
     *)
@@ -252,9 +254,14 @@ if [[ $with_worker -eq 1 ]]; then
   else
     port_busy "$worker_health_port" && die "端口 $worker_health_port 已被占用（用 WORKER_HEALTH_PORT 换一个）"
     say "启动处理服务（健康检查端口 $worker_health_port）"
+    # 线程数与线上（app.json 的 cpu_limit 2 核）一致：OpenBLAS 不设时按本机核数建线程，
+    # 每个线程约占 41MB 地址空间，会挤占重计算子进程的 RLIMIT_AS 额度。
     MONGODB_URI="$mongo_uri" \
       MONGODB_DATABASE="$database" \
       WORKER_HEALTH_PORT="$worker_health_port" \
+      OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-2}" \
+      OMP_NUM_THREADS="${OMP_NUM_THREADS:-2}" \
+      MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}" \
       PYTHONUNBUFFERED=1 \
       start worker "$venv/bin/metaverse-worker"
     sleep 3

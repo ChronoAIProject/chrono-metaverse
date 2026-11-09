@@ -1,6 +1,7 @@
 name: CI
 
-# 每次推送和每个合并请求都跑：接口服务、网站、处理服务、命令行（目录存在时）和仓库检查。
+# 每次推送和每个合并请求都跑：接口服务、网站（含夹具模式的端到端测试）、处理服务、命令行（目录存在时）
+# 和仓库检查。跨服务的九步验收（infra/dev/e2e.mjs）要本地起全套并提供前厅扫描，不在这里跑。
 # 写法参照 CMA 的 .github/workflows/ci.yml，按本项目的规模收缩。
 
 on:
@@ -95,6 +96,40 @@ jobs:
       - name: 生产构建
         run: npm run build
 
+  # 网站的端到端测试（Playwright，夹具模式：src/fixtures 回答公开接口，不需要后端）：
+  # 三种视图、剖切、时间轴、现在模式、组合页、预览页、错误页、浅色主题、手机。
+  # 无头 Chromium 用 SwiftShader 软件渲染 WebGL，不需要显卡。
+  web-e2e:
+    name: 网站端到端（web e2e）
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: 安装依赖
+        run: npm ci --no-audit --no-fund
+      # 装锁文件里 @playwright/test 对应版本的 Chromium 和系统依赖（与 CMA 相同的写法）。
+      - name: 安装 Chromium
+        timeout-minutes: 10
+        run: npx --no-install playwright install --with-deps chromium
+      - name: 端到端测试
+        run: npm run e2e
+      - name: 失败时上传截图
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-e2e-screenshots-${{ github.run_id }}-${{ github.run_attempt }}
+          path: web/e2e/screenshots/
+          if-no-files-found: ignore
+          retention-days: 7
+
   worker:
     name: 处理服务（worker）
     runs-on: ubuntu-latest
@@ -122,8 +157,18 @@ jobs:
         run: .venv/bin/ruff check .
       - name: 格式
         run: .venv/bin/ruff format --check .
-      - name: 测试（含 MongoDB 测试）
-        run: .venv/bin/pytest
+      # store 夹具在 MongoDB 连不上时会 skip；这里加载 .github/scripts/pytest_require_mongo.py，
+      # 设置了 METAVERSE_TEST_MONGODB_URI 时把 MongoDB 测试的跳过改判为失败，副本集出问题不会静默通过。
+      - name: 测试（含 MongoDB 测试，不许跳过）
+        env:
+          PYTHONPATH: ${{ github.workspace }}/.github/scripts
+        run: .venv/bin/pytest -p pytest_require_mongo
+      - name: 持续集成插件的测试与静态检查
+        working-directory: .
+        run: |
+          worker/.venv/bin/pytest -p pytester -p no:cacheprovider .github/scripts/test_pytest_require_mongo.py
+          worker/.venv/bin/ruff check --config worker/pyproject.toml .github/scripts
+          worker/.venv/bin/ruff format --check --config worker/pyproject.toml .github/scripts
 
   sdk-typescript:
     name: 命令行（sdk/typescript）
@@ -154,12 +199,14 @@ jobs:
             echo "::error::sdk/typescript 缺少 package-lock.json，持续集成只用 npm ci 安装"
             exit 1
           fi
-      - name: 静态检查、类型检查、测试、构建
+      # 与 sdk/typescript/README.md"开发"一节列出的完整检查一致。
+      - name: 静态检查、类型检查、格式、测试、构建
         if: steps.detect.outputs.present == 'true'
         working-directory: sdk/typescript
         run: |
           npm run lint --if-present
           npm run typecheck --if-present
+          npm run format:check --if-present
           npm test --if-present
           npm run build --if-present
 
@@ -178,12 +225,19 @@ jobs:
           cache: false
       - name: 数据访问边界（不需要编译）
         run: bash .github/scripts/check-db-boundary.sh
-      - name: 本地开发设施：模拟 NyxID 的测试
-        run: node --test infra/dev/mock-nyxid.test.mjs
+      # 模拟 NyxID、九步验收脚本的小工具和参数检查（验收本身要起全套和前厅扫描，不在这里跑）。
+      - name: 本地开发设施的测试
+        run: node --test infra/dev/*.test.mjs
+      - name: 部署规格检查（infra/chrono-cd/app.json）
+        run: |
+          node --test infra/chrono-cd/*.test.mjs
+          node infra/chrono-cd/check-app.mjs
       - name: 本地开发设施：JSON 与脚本语法
         run: |
           node --check infra/dev/mock-nyxid.mjs
           node --check infra/dev/call.mjs
+          node --check infra/dev/e2e.mjs
+          node --check infra/dev/e2e-lib.mjs
           node -e 'for (const f of process.argv.slice(1)) JSON.parse(require("fs").readFileSync(f, "utf8"))' \
             infra/dev/org-roles.json infra/chrono-cd/app.json
       - name: shellcheck

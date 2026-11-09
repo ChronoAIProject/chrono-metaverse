@@ -8,7 +8,11 @@
 | `mock-nyxid.mjs` | 模拟 NyxID（Node 22，无第三方依赖） |
 | `org-roles.json` | 模拟 NyxID 用的组织角色表 |
 | `call.mjs` | 调用接口服务的小工具：每次自动取新令牌、带上 NyxID 代理会带的请求头 |
-| `mock-nyxid.test.mjs` | 模拟 NyxID 的测试：`node --test infra/dev/mock-nyxid.test.mjs` |
+| `mock-nyxid.test.mjs` | 模拟 NyxID 的测试 |
+| `e2e.mjs` | 九步端到端验收（`docs/BUILD_PLAN.md` 5.2）：自己起全套、按九步执行并断言、收尾，见下面"九步验收" |
+| `e2e-lib.mjs` / `e2e-lib.test.mjs` | 验收脚本的小工具（步骤执行、等待、请求头、截图判断）和它们的测试 |
+
+测试：`node --test infra/dev/*.test.mjs`（持续集成的仓库检查任务也跑）。
 
 ## 准备
 
@@ -48,6 +52,15 @@ NYXID_JWT_AUDIENCE=urn:chrono-metaverse:api
 ALLOWED_NYX_SERVICE_IDS=dev-service
 BIND=127.0.0.1:8080   PUBLIC_BASE_URL=http://127.0.0.1:5173
 ```
+
+给处理服务设置的环境变量（线程数与线上 `infra/chrono-cd/app.json` 一致，本地测的子进程内存才和线上一样；原因见 [`infra/chrono-cd/README.md`](../chrono-cd/README.md) 的"处理服务的线程数"）：
+
+```bash
+MONGODB_URI=<发现的副本集>   MONGODB_DATABASE=chrono_metaverse_dev   WORKER_HEALTH_PORT=8082
+OPENBLAS_NUM_THREADS=2   OMP_NUM_THREADS=2   MALLOC_ARENA_MAX=2   PYTHONUNBUFFERED=1
+```
+
+三个线程变量都可以在运行 `up.sh` 前用同名环境变量覆盖。
 
 接口服务只允许本机地址用明文 http 当 NyxID 地址，所以模拟 NyxID 必须跑在本机。处理服务第一次启动前会在 `worker/.venv` 建虚拟环境（`pyproject.toml` 变了会重装）。
 
@@ -104,6 +117,41 @@ curl -s http://127.0.0.1:8080/api/v1/spaces/front-hall \
 ```
 
 命令行（`sdk/typescript`）要在本地联调时，可以按同样的方式：从 `POST /dev/token` 取令牌，直接请求接口服务并带上这两个请求头。
+
+## 九步验收（`e2e.mjs`）
+
+`docs/BUILD_PLAN.md` 5.2 的端到端验收，跨接口服务、处理服务、网站和命令行，用真实的 MongoDB 副本集：
+
+```bash
+infra/dev/down.sh                                   # 先停掉自己起的全套（验收要自己起一套）
+node infra/dev/e2e.mjs --scan <前厅扫描.drc|.glb|.obj> [--voxelize] [--keep]
+```
+
+| 步骤 | 做法 | 断言 |
+|---|---|---|
+| 1. 建组织空间 | alice（`chronoai` 的 admin）`POST /api/v1/admin/spaces`，再 `PUT .../layout` 定义实体区、虚拟区和地块 `p1`；`metaverse init`（direct 模式，从模拟 NyxID 取令牌） | 201、分享令牌、归属证据 `org_admin` |
+| 2. 分片上传扫描 | `metaverse scan <文件> --part-size 0.25 --no-wait --json` | 分成多片、有资源哈希和 `scan_import` 任务 |
+| 3. 对齐与 AI 重建 | 轮询任务直到 `done`，再等全部任务完成 | 不要求人工对齐；seq 前进；快照有物件和网页用模型 |
+| 4. 公开快照 | 凭分享令牌读公开提交列表、`snapshot?seq=` 重建前后两个版本、网页用模型（和区块） | 重建后有物件、重建前为空；资源 `immutable`；没带或带错令牌 404 |
+| 5. 三种视图 | 无头 Chromium 打开 `/s/<空间>#share=<令牌>`，依次切"优化""优化 + 扩展""原始" | 每种视图就绪；画布截图不是空白；优化有物件、扩展有"虚拟"标识、原始有扫描 |
+| 6. 回到重建前 | 点重建前那次提交的标记，再点"现在" | 显示"这个时刻还没有优化模型"；回到最新版本 |
+| 7. 写事件、"现在"模式 | 登记 `shop.status`（空间级状态），重开页面，alice 写一条事件 | 公开 `/head` 的 `recordedAt` 变化；公开增量事件里有它；页面状态栏出现事件文字 |
+| 8. 地块建造 | 工作区里 `metaverse pull` → `build --plot p1`（示例脚本）→ `check` → `push --json` → `publish --json` | 新 seq；公开快照里有示例桌子；页面拉到新版本，扩展视图物件变多 |
+| 9. 越权 | bob（member）建草稿、写事件、登记事件类型、建组织空间；dave（非成员）读和写；alice 读写 carol 的个人空间 | member 写 403；看不到的一律 404 |
+
+- 端口都是临时挑的空闲端口，库名 `metaverse_e2e_<随机后缀>`；结束时运行 `down.sh` 并删除这个库，`--keep` 保留现场；
+- 结果、截图（`view-*.png`、`timeline-before-rebuild.png`、`live-event.png`、`plot-build-extended.png`，失败时 `failure.png`）、工作区和 `up.sh` 的输出在 `infra/dev/.run/e2e-<后缀>/`；各服务的日志在 `infra/dev/.run/*.log`；
+- 扫描文件不进版本库，用 `--scan` 或 `METAVERSE_E2E_SCAN` 指定；只接受 `metaverse scan` 支持的 glb、drc、obj；
+- 浏览器：`METAVERSE_E2E_BROWSER_PATH`，没有时用 `/opt/pw-browsers/chromium`，再没有交给网站依赖里的 Playwright 自己找；处理任务的等待上限 `METAVERSE_E2E_JOB_TIMEOUT`（秒，默认 1800）；
+- 退出码：0 全部通过，1 有步骤失败（后面的步骤标"未执行"），2 参数或环境不对（没开始验收）。
+
+要跑的是本地全套和一份真实扫描，不放进每次合并请求的持续集成；持续集成只跑小工具的测试和参数检查（`e2e-lib.test.mjs`）。
+
+**2026-11-09 实测**（4 核机器，前厅扫描的 Draco 网格 1.0MB，不带贴图）：
+
+- 按当时的代码，第 2 步失败：命令行建上传时发 `contentType`、`fileName`，接口服务只认 `size`/`totalSize`、`sha256`、`partSize`、`format`（拒收未知字段，422）。命令行和接口服务对不上的地方还有两处，都在第 8 步：建草稿时多发了 `message`（接口服务只认 `baseSeq`），"从上传应用操作"同时发了 `uploadId` 和 `assetHash`（接口服务要求只给一个）。这三处要命令行改（或接口服务放宽），改之前验收停在第 2 步；
+- 在本地临时把这三处请求体改成接口服务的写法（不提交）后，九步全部通过：上传 4 片；重建 30 秒左右（64 个物件、2 档网页用模型）；三种视图截图都不是空白；回到版本 #2 显示"还没有优化模型"；事件写入后约 5 秒内页面状态栏出现；地块建造 3 个操作发布为 seq 4，扩展视图能看到虚拟区里的桌椅；9 个越权请求全部按预期返回 403 / 404。全程约 2 分钟（不含首次编译）。
+- 页面只在打开时读一次事件类型，打开之后才登记的类型，它的事件要重新打开页面才显示；所以第 7 步登记类型后先重开页面再写事件。
 
 ## 实测示例
 
