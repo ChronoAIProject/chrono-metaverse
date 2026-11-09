@@ -85,6 +85,7 @@ class StructureParams:
     mullion_regular: float = 0.15  # 竖梃间距：缺口是主间距整数倍（误差在这个比例内）时补上被挡住的竖梃
     ledge_min_cover: float = 0.1  # 窗台：底部每 10 厘米一行，至少这么多 10 厘米列有扫描
     ledge_solid: float = 0.6  # 行里至少这么多比例的点在玻璃面前方 10 厘米以外（实心），才算窗台
+    wall_top_snap: float = 0.25  # 墙顶和各面墙顶部的中位数相差这么多以内（米）就统一到中位数
     hint_margin: float = 0.1  # 提示物体的盒子向外放宽这么多（米）
     hint_cover: float = 0.6  # 墙候选的内点至少这么多落在同一个提示物体的盒子里，就当物体不当墙
     jpeg_quality: int = 85
@@ -638,10 +639,15 @@ def extract_structure(
 
     solid_tops = [c["y"][1] for c in walls if not c["glazing"]]
     wall_top = float(np.median(solid_tops)) if solid_tops else 2.6
+    stats["wall_top"] = round(wall_top, 3)
     counters: dict[tuple[str, str], int] = {}
     for c in walls:
         if c["glazing"]:
             c["y"][1] = min(c["y"][1], wall_top)  # 透过玻璃看到的东西会超出天花板线
+        if abs(c["y"][1] - wall_top) <= prm.wall_top_snap:
+            # 墙顶统一到同一高度（各面墙的顶部常差几厘米，是天花板线附近扫得不全）；补出来的一条没有扫描，
+            # 贴图里由补洞填成这面墙的颜色。差得多的（矮隔断）保持自己的高度
+            c["y"][1] = wall_top
         n2, t2, off = c["n2"], c["t2"], c["off"]
         axis = "x" if abs(n2[0]) > 0.999 else ("z" if abs(n2[1]) > 0.999 else "n")
         y0 = floor_y if c["y"][0] < 0.4 else c["y"][0]

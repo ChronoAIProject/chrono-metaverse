@@ -17,7 +17,7 @@ from metaverse_worker.processing.structure import (
     hint_boxes,
     inside_hints,
 )
-from synthetic import ROOM_COLORS, room_mesh
+from synthetic import ROOM_COLORS, _Builder, room_mesh
 
 TEX = "ab" * 32
 
@@ -96,6 +96,27 @@ def test_wall_is_textured_face_plus_plain_body(room_structure):
         # 面板在房间一侧（局部 z ∈ [−ft, 0]），墙体在它后面
         assert face["transform"]["position"][2] == pytest.approx(-ft / 2)
         assert body["transform"]["position"][2] == pytest.approx(-ft - (t - ft) / 2)
+
+
+def test_wall_tops_are_unified_except_low_partitions():
+    """三面 2.6 米、一面 2.2 米高的墙（矮隔断）：接近的统一到中位数，差得多的保持自己的高度。"""
+    b = _Builder()
+    b.plane([0, 0, 0], [0, 0, 4], [5, 0, 0], ROOM_COLORS["floor"])
+    for name, (x0, z0), (x1, z1), h in (
+        ("south", (0, 0), (5, 0), 2.6),
+        ("east", (5, 0), (5, 4), 2.55),
+        ("north", (5, 4), (0, 4), 2.62),
+        ("west", (0, 4), (0, 0), 2.2),
+    ):
+        b.plane([x0, 0, z0], [x1 - x0, 0, z1 - z0], [0, h, 0], ROOM_COLORS[name])
+    res = extract_structure(b.build())
+    tops = {tuple(np.round(e.info["normal"], 3)): e.info["y"][1] for e in res.elements if e.kind == "wall"}
+    assert len(tops) == 4
+    top = res.stats["wall_top"]
+    assert 2.54 <= top <= 2.62  # 四面墙顶部的中位数（矮隔断也参与中位数，但只有一面）
+    for n in ((0.0, 1.0), (-1.0, 0.0), (0.0, -1.0)):
+        assert tops[n] == pytest.approx(top, abs=1e-3)
+    assert tops[(1.0, 0.0)] == pytest.approx(2.2, abs=0.03)
 
 
 def test_wall_body_colour_and_visible_face(room_structure):
