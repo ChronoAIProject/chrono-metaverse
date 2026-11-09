@@ -4,15 +4,15 @@
 
 - **由 Rust 实现生成**：`tests/vectors.rs` 里定义用例，运行
   `METAVERSE_WRITE_VECTORS=1 cargo test -p metaverse-core --test vectors` 重新生成顶层的全部文件
-  （`ops/` 见第 4 节）。
+  （`ops/` 见第 4 节，`bundle/` 见第 8 节）。
 - **平时 `cargo test` 会核对**：每个文件都用 Rust 实现重算一遍；用例和文件对不上（忘了重新生成）时测试失败。
 - **不要手改这些文件**。要加用例，改 `tests/vectors.rs` 再重新生成。
 - **例外**：`uv/`（贴图坐标）和 `authored/`（AI 物件集的外链贴图）由 `tools/texture_vectors.py` 按 SHAPES 独立算出
   （只用 Python 标准库，不调用任何一边的实现），见第 5、6 节；改用例改这个脚本，`python3 tools/texture_vectors.py`
   重新生成，`--check` 只核对。
 
-每个文件都有 `kind`（`chunk` / `canonical` / `shape` / `ops` / `ops-parse` / `uv` / `authored`）、`name` 和中文
-`description`。各边要接上哪些运行器见第 7 节。
+每个文件都有 `kind`（`chunk` / `canonical` / `shape` / `ops` / `ops-parse` / `uv` / `authored` / `bundle` /
+`bundle-limits`）、`name` 和中文 `description`。各边要接上哪些运行器见第 7 节。
 
 ## 1. 区块：`chunk_*.json`
 
@@ -104,25 +104,29 @@ Rust 实现之后重新生成，文件没有变化）。接口服务、本地工
 | `base.palette` | 方块表（`palettes.blocks[]` 的形状：`{ id, name, kind, color \| texture, tags }`） |
 | `base.fills` | 按顺序把格子写进基础状态：`{ "layer": "rebuilt" \| "ext", "box": [x0,y0,z0,x1,y1,z1], "block": n }`（格，半开区间） |
 | `base.entities`、`base.anchors` | 基础状态里的物件、锚点 body（直接放进状态，不再校验） |
-| `base.regions`、`base.plots` | 区域和地块，`scope` 据此算允许范围 |
-| `scope` | `null`（不检查范围）、`"physical"` 或 `"plot:<编号>"` |
+| `base.regions`、`base.plots` | 区域和地块，`scope` 据此算允许范围（没有实体区时实体区路径、重建路径是"除去"模式） |
+| `base.scopeKind` | 工作状态的范围种类：`"ext"`（实体区、地块草稿）或 `"rebuild"`（重建草稿），决定能用哪些操作、写哪一层（SHAPES 3"草稿的种类与操作"） |
+| `base.anchorHistory` | 本空间时间线上出现过的锚点编号（`createAnchor` 带 `ifNew` 时用） |
+| `scope` | `null`（不检查范围）、`"physical"`、`"plot:<编号>"` 或 `"rebuild"` |
 | `ops` | 操作列表（接口请求体里的 JSON 形状） |
 | `probeCells` | 作用完成后要读的格子 `[x, y, z]` |
 | `expect.baseChunks` | 按 `base.fills` 构造出的非空区块 `{ layer, cx, cy, cz, hash }`，先核对基础状态 |
 | `expect.footprints` | 每条操作的影响范围 `{ "cells": [盒子…], "spaceWide": bool }`，按作用之前的状态计算；失败时只到失败的那条（影响范围本身就算不出来时不含那条） |
 | `expect.ok` | 整批是否成功 |
-| `expect.error` | 失败时：`{ "kind": "invalid" \| "scope", "index": 第几条（从 0 开始）, "message": Rust 的说明（仅供参考） }` |
-| `expect.touched` | 成功时碰过的键：`{ chunks: [{layer,cx,cy,cz}], entities, anchors, palette }` |
+| `expect.error` | 失败时：`{ "kind": "invalid" \| "notAllowed" \| "scope", "index": 第几条（从 0 开始）, "message": Rust 的说明 }`。`notAllowed` 是这种草稿不能用的操作（接口返回 422 `op_not_allowed`） |
+| `expect.touched` | 成功时碰过的键：`{ chunks: [{layer,cx,cy,cz}], entities, anchors, palette, scan, rebuiltLayer, skippedAnchors: [{id, reason: "exists" \| "existed"}] }`。带 `ifNew` 跳过的锚点不算碰过，列在 `skippedAnchors` 里 |
 | `expect.chunkChanges` | 与基础状态相比，碰过的区块的变化 `{ layer, cx, cy, cz, hash \| null }`（`null` = 区块变空，即删除；没变的不列） |
 | `expect.chunks` | 作用后的全部非空区块 `{ layer, cx, cy, cz, hash, nonZeroCount }` |
 | `expect.entities`、`expect.anchors` | 作用后的全部物件、锚点 `{ id, hash }`，`hash` 是 `records._id`（`{body, kind, spaceId}` 规范化后的 sha256） |
 | `expect.provisionalBlocks` | 草稿里新增的方块 `{ name, id }`（临时编号） |
 | `expect.probes` | `probeCells` 每格的 `{ cell, ext, rebuilt, effective }` |
+| `expect.scan` | 草稿的 `setScan`：`{ scan, observedAt }`（`observedAt` 没给时是 `null`），没有时 `null` |
+| `expect.brokenTemplateRefs` | 作用后模板引用的完整性检查：缺的引用 `{ entityId, template }`（引用的模板不在同一层），按物件编号排好；空表示完整 |
 
 作用规则（与 `WorkingState::apply_in_scope` 相同）：
 
 1. 按顺序处理每条操作：先按**当前**状态算影响范围；给了 `scope` 就检查影响范围是否完全落在允许的盒子里（空间级的影响只允许 `physical`）；再作用到状态。
-2. 任何一条失败，整批失败，状态保持不变。错误分两类：`invalid`（操作本身不合法、引用不存在、记录校验失败）和 `scope`（超出路径范围）。
+2. 任何一条失败，整批失败，状态保持不变。错误分三类：`invalid`（操作本身不合法、引用不存在、记录校验失败）、`notAllowed`（这种草稿不能用这个操作，算影响范围时就报出）和 `scope`（超出路径范围）。
 3. 记录哈希按服务端存下的 body 计算：值为 `null` 的可选字段去掉，物件的 `props` 缺省为 `{}`（`props` 里面的 `null` 保留）。
 
 ### 4.2 结构检查：`kind = "ops-parse"`
@@ -187,8 +191,45 @@ Rust 实现之后重新生成，文件没有变化）。接口服务、本地工
 | `ops/` | `tests/ops_vectors.rs` | — | — | `tests/vectors.test.ts` |
 | `uv/` | —（不生成网格） | `src/core/shapes/uv.test.ts` | `tests/test_shared_vectors.py`（`test_uv_vectors`） | —（不生成网格） |
 | `authored/` | —（不收物件集） | — | 本地工具 `bundle` 的物件集校验（设计 13.2 S6b 接上，合法的还要核对 `textureUrls`） | — |
+| `bundle/` | `tests/bundle_vectors.rs`（校验、引用表、展开、作用一次和两次） | — | —（只在生成时守住上限） | `tests/vectors.test.ts`（结构校验：合法与否、出错的字段、引用表；默认上限） |
 
 顶层的运行器按文件名前缀（`chunk_`、`canonical_`、`shape_`）挑文件，不会读到 `uv/`、`authored/`；这两类各边单独接上。
 `shape_material_*`、`shape_invalid_material_*` 在顶层，现有的形状运行器直接读到：接口服务
 （`vectors_match_rust_implementation`、`generated_vectors_are_current`）、本地工具、命令行按同样的规则接受或拒绝；
 网站的运行器只核对合法用例的网格。
+
+## 8. 重建包清单：`bundle/bundle_*.json`
+
+对应 SHAPES 7、8 和 `crates/metaverse-core/src/bundle.rs`。由 Rust 实现生成：用例在 `tests/bundle_vectors.rs` 里，
+`METAVERSE_WRITE_VECTORS=1 cargo test -p metaverse-core --test bundle_vectors` 重新生成 `bundle/` 下的全部文件。
+
+### 8.1 清单：`kind = "bundle"`
+
+| 字段 | 含义 |
+|---|---|
+| `manifest` | 清单（JSON 对象）。运行器把它写成紧凑的 JSON 文本再校验 |
+| `limits` | 各用途的上限（`uploadLimits` 的形状）；`null` 用默认值 |
+| `spaceTemplates` | 目标空间重建层已有的模板 `{ 编号: 形状 }`，只在 `merge` 模式下可以引用；`null` 没有 |
+| `apply` | 可选：`{ base, runs }`。`base` 是基础状态（`entities`、`anchors`、`anchorHistory`、`regions`、`plots`），在上面按重建草稿的规则作用展开的操作 `runs` 次，每次以上一次的结果为基础（锚点历史加上已经出现过的锚点） |
+| `expect.valid` | 是否合法 |
+| `expect.field`、`expect.message` | 不合法时出错的字段（JSON 路径，`$` 表示整体结构）和 Rust 的说明。各边要给出相同的 `field` |
+| `expect.references` | 合法时记录里引用到的全部资源 `{ 哈希: 用途 }` |
+| `expect.ops` | 合法时展开成的操作（SHAPES 7"展开成操作"） |
+| `expect.runs` | 有 `apply` 时每次作用的结果：`touched`（同 4.1，只有物件、锚点、扫描、重建层和跳过的锚点）、作用后的 `entities`、`anchors`（`{ id, hash }`）、`brokenTemplateRefs`、`unchanged`（物件和锚点与作用前完全相同） |
+
+用例：`bundle_valid_*` 是合法的写法（整体替换、"合并包推两次"、只有锚点、只有扫描、合并包引用目标空间的模板），其中
+整体替换和合并包在处理服务写的旧重建层上作用两次，第二次 `unchanged = true`；`bundle_invalid_*` 各错一处（版本、
+`chunks`、缺文件、用途不符、路径、重复哈希、超过上限、编号前缀、`layer`、`bounds`、模板的 `kind`、`remove` 的两条规则、
+整体替换引用空间的模板、`_space` 锚点、重复锚点、镜像变换、`notes` 的用途、报告里的本地路径、`tool.source`、什么都没给、
+`createdAt`、单条记录超过 64 KiB）。
+
+### 8.2 默认上限：`kind = "bundle-limits"`
+
+`bundle_limits_default.json` 的 `limits` 是各用途的默认上限（`uploadLimits` 的形状，SHAPES 8）。命令行、本地工具
+没有 `limits.json` 时用的默认值必须与它相同。
+
+### 8.3 命令行怎么跑
+
+命令行（`sdk/typescript/src/core/bundle.ts`）只做结构校验，不展开：`checkBundleText(JSON.stringify(manifest), { limits,
+spaceTemplates })`，核对合法与否、不合法时的 `field`、合法时的引用表。单条记录的大小按记录的紧凑 JSON 算（Rust 按清单
+原文里这条记录的文本算，向量里两者相同）。
