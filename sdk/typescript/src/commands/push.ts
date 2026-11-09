@@ -1,11 +1,19 @@
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { MAX_OPS_PER_BATCH } from '../core/ops.js';
-import { idOf, PREVIEW_TTL_MAX, PREVIEW_TTL_MIN } from '../transport/api.js';
+import {
+  idOf,
+  isRebuild,
+  PREVIEW_TTL_MAX,
+  PREVIEW_TTL_MIN,
+  REBUILD,
+  scopeName,
+  type PublishView,
+  type ScopeRef,
+} from '../transport/api.js';
 import { ApiError } from '../transport/client.js';
 import { describeJob, upload, waitForJob } from '../transport/upload.js';
 import { opsToNdjson, runBuild } from '../workspace/build.js';
-import { paths, writeJson } from '../workspace/files.js';
+import { readDrafts, saveDraft } from '../workspace/drafts.js';
+import { readBase } from '../workspace/files.js';
 import { checkReport, diffSummary, formatDiff } from '../workspace/report.js';
 import {
   CliError,
@@ -34,15 +42,17 @@ metaverse publish <草稿编号>。
   --preview-ttl <秒>  预览链接有效期，60–604800 秒的整数（默认 24 小时，最长 7 天）
   --part-size <MiB>   上传分片大小（默认 8）`;
 
-export const PUBLISH_HELP = `metaverse publish <草稿编号> [--plot <地块>] [--message <说明>] [--replay]
+export const PUBLISH_HELP = `metaverse publish <草稿编号> [--plot <地块> | --rebuild] [--message <说明>] [--replay]
 
-发布草稿（所用 agent key 的操作范围要包含发布接口）。草稿属于创建时的路径范围：push 时记下了
-草稿的地块，也可以用 --plot 指定。时间线已前进且与草稿冲突时返回冲突的键；--replay 请服务端
-在最新版本上重放草稿的操作。
+发布草稿（所用 agent key 的操作范围要包含发布接口）。草稿属于创建时的路径范围：push、bundle push
+时记下了草稿的范围（实体区、地块或重建），也可以用 --plot、--rebuild 指定。时间线已前进且与草稿冲突时
+返回冲突的键；--replay 请服务端在最新版本上重放草稿的操作。重建草稿的内容与最新版本相同时不写新提交，
+显示"没有变化"。
 
 选项：
   --plot <地块>       草稿所属的地块（默认用 push 时记下的）
-  --message <说明>    提交说明（默认用 push 时记下的说明：--message 或建造脚本返回的 message）
+  --rebuild           重建草稿（走 /rebuild/ 路径；默认用 bundle push 时记下的）
+  --message <说明>    提交说明（默认用推送时记下的说明；重建草稿不给时服务端用清单的 note）
   --replay            冲突时在最新版本上重放`;
 
 /** 提交说明的上限（接口服务按字符数检查）。 */
@@ -58,34 +68,9 @@ export function messageError(message: string): string | null {
   return null;
 }
 
-interface DraftRecord {
-  readonly plot: string | null;
-  readonly baseSeq: number;
-  readonly opCount: number;
-  readonly createdAt: string;
-  /** 提交说明：发布时没给 --message 就用它。 */
-  readonly message?: string;
-  readonly preview?: string;
-}
-
-function draftsFile(root: string): string {
-  return join(paths(root).out, 'drafts.json');
-}
-
-function readDrafts(root: string): Record<string, DraftRecord> {
-  const file = draftsFile(root);
-  if (!existsSync(file)) return {};
-  try {
-    return JSON.parse(readFileSync(file, 'utf8')) as Record<string, DraftRecord>;
-  } catch {
-    return {};
-  }
-}
-
-function saveDraft(root: string, draftId: string, record: DraftRecord): void {
-  mkdirSync(paths(root).out, { recursive: true });
-  writeJson(draftsFile(root), { ...readDrafts(root), [draftId]: record });
-}
+/** 用分享链接拉取的工作区（公开快照，只读）不能推送。 */
+export const READ_ONLY_PUSH =
+  '这个工作区是用分享链接拉取的公开快照（只读，锚点只有公开的），不能推送：先用 metaverse pull 经 NyxID 重新拉取';
 
 /** 预览链接：服务端给了完整地址就用它，否则用网站地址拼 `/preview#t=<令牌>`。 */
 export function previewLink(
@@ -117,6 +102,9 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
   const say = (line: string) => {
     if (!json) ctx.out(line);
   };
+  if (readBase(ws.root, ws.config.spaceId).space.readOnly === true) {
+    throw new CliError(READ_ONLY_PUSH);
+  }
   const plot = str(values, 'plot') ?? ws.config.plot ?? null;
   const script = str(values, 'script');
   const result = await runBuild(ws.root, ws.config, {
@@ -149,7 +137,7 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
   const api = makeApi(ctx, ws, values);
   // 上传校验和 ops_from_upload 任务都属于草稿所在的路径范围，查任务也走同一范围的路径。
   const waitOptions = {
-    plot,
+    scope: plot,
     onUpdate: (job: Parameters<typeof describeJob>[0]) => say(describeJob(job)),
     ...(ctx.sleep ? { sleep: ctx.sleep } : {}),
   };
@@ -189,7 +177,7 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
     const uploaded = await upload(api, {
       purpose: 'ops',
       source: { bytes: ndjson },
-      plot,
+      scope: plot,
       format: 'ndjson',
       ...(partMiB !== undefined ? { partSize: Math.round(partMiB * 1024 * 1024) } : {}),
     });
@@ -250,9 +238,83 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
   return 0;
 }
 
+/** 发布结果的说明（重建草稿没有变化时不写提交）。 */
+export function describePublish(draftId: string, result: PublishView): string {
+  if (result.unchanged === true) {
+    return `草稿 ${draftId} 的内容与最新版本相同，没有写新提交${
+      result.seq !== undefined ? `（最新仍是 seq ${result.seq}）` : ''
+    }`;
+  }
+  return `已发布草稿 ${draftId}${result.seq !== undefined ? `：seq ${result.seq}` : ''}${
+    result.at ? `（${result.at}）` : ''
+  }`;
+}
+
+/**
+ * 发布草稿，把服务端的 409 翻译成处理办法（冲突、资源被清理、模板引用不完整）。`retry` 是冲突时
+ * 建议的另一条路（实体区草稿重新 pull、build、push；重建草稿重新拉取、打包、bundle push）。
+ */
+export async function publishDraft(
+  api: ReturnType<typeof makeApi>,
+  draftId: string,
+  request: { message?: string; replay?: boolean },
+  scope: ScopeRef,
+): Promise<PublishView> {
+  const rebuild = isRebuild(scope);
+  const retry = rebuild
+    ? `metaverse pull 后重新打包（metaverse-recon bundle），再 metaverse bundle push`
+    : 'metaverse pull → metaverse build → metaverse push 生成新草稿';
+  try {
+    return await api.publish(draftId, request, scope);
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 409) throw error;
+    const body = (error.body ?? {}) as Record<string, unknown>;
+    if (error.code === 'asset_gone') {
+      // 草稿引用的资源被服务端定期清理了（上传后 7 天内没被引用）：重放或重新拉取都没用，
+      // 只能重新上传同一内容（哈希不变）。
+      const assets = Array.isArray(body.assets) ? body.assets.map(String) : [];
+      throw new CliError(
+        [
+          `发布失败：${error.message}`,
+          assets.length > 0 ? `已被清理的资源：${assets.join('、')}` : '',
+          rebuild
+            ? `处理：重新运行 metaverse bundle push（会重新上传缺的文件，生成新草稿）。`
+            : `处理：重新运行 metaverse push（会重新上传操作文件，生成新草稿）；列出的若是贴图或物件模型，先按原来的方式重新上传同一内容（哈希不变）。重新上传之后，也可以直接再运行 metaverse publish ${draftId}。`,
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      );
+    }
+    if (error.code === 'broken_template_ref') {
+      const { type: _t, title: _ti, status: _s, code: _c, detail: _d, ...rest } = body;
+      void [_t, _ti, _s, _c, _d];
+      throw new CliError(
+        [
+          `发布失败：${error.message}`,
+          Object.keys(rest).length > 0 ? `缺的模板引用：${JSON.stringify(rest)}` : '',
+          `处理：模板被删了而还有物件引用它（常见于中途别人改过同一层）。${retry}；或 --replay 在最新版本上重放看准确的结果。`,
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      );
+    }
+    const conflicts = body.conflicts ?? body.conflictingKeys;
+    throw new CliError(
+      [
+        `发布冲突：${error.message}`,
+        conflicts !== undefined ? `冲突的键：${JSON.stringify(conflicts)}` : '',
+        `处理：确认冲突的键后用 metaverse publish ${draftId}${rebuild ? ' --rebuild' : ''} --replay 请服务端在最新版本上重放；或者 ${retry}。`,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    );
+  }
+}
+
 export async function runPublish(ctx: CliContext, args: readonly string[]): Promise<number> {
   const { values, positionals } = parse(args, {
     plot: { type: 'string' },
+    rebuild: { type: 'boolean' },
     message: { type: 'string' },
     replay: { type: 'boolean' },
   });
@@ -264,60 +326,33 @@ export async function runPublish(ctx: CliContext, args: readonly string[]): Prom
   if (draftId === undefined) throw new CliError('用法：metaverse publish <草稿编号>');
   const ws = openWorkspace(ctx, values);
   const record = readDrafts(ws.root)[draftId];
-  const plot = str(values, 'plot') ?? record?.plot ?? null;
+  if (flag(values, 'rebuild') && str(values, 'plot') !== undefined) {
+    throw new CliError('--rebuild 和 --plot 只能给一个');
+  }
+  const scope: ScopeRef =
+    flag(values, 'rebuild') || (str(values, 'plot') === undefined && record?.scope === 'rebuild')
+      ? REBUILD
+      : (str(values, 'plot') ?? record?.plot ?? null);
   const api = makeApi(ctx, ws, values);
-  // 没给 --message 时用 push 时记下的说明。
+  // 没给 --message 时用推送时记下的说明。
   const message = str(values, 'message') ?? record?.message;
   if (message !== undefined) {
     const error = messageError(message);
     if (error !== null) throw new CliError(error);
   }
-  try {
-    const result = await api.publish(
-      draftId,
-      {
-        ...(message !== undefined ? { message } : {}),
-        ...(flag(values, 'replay') ? { replay: true } : {}),
-      },
-      plot,
-    );
-    if (flag(values, 'json')) printJson(ctx, result);
-    else {
-      ctx.out(
-        `已发布草稿 ${draftId}${result.seq !== undefined ? `：seq ${result.seq}` : ''}${result.at ? `（${result.at}）` : ''}`,
-      );
-      ctx.out('运行 metaverse pull 把工作区更新到最新版本');
-    }
-    return 0;
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 409 && error.code === 'asset_gone') {
-      // 草稿引用的资源被服务端定期清理了（上传后 7 天内没被引用）：重放或重新拉取都没用，
-      // 只能重新上传同一内容（哈希不变）。命令行只上传操作文件，贴图和物件模型要按原来的方式重传。
-      const body = (error.body ?? {}) as Record<string, unknown>;
-      const assets = Array.isArray(body.assets) ? body.assets.map(String) : [];
-      throw new CliError(
-        [
-          `发布失败：${error.message}`,
-          assets.length > 0 ? `已被清理的资源：${assets.join('、')}` : '',
-          `处理：重新运行 metaverse push（会重新上传操作文件，生成新草稿）；列出的若是贴图或物件模型，先按原来的方式重新上传同一内容（哈希不变）。重新上传之后，也可以直接再运行 metaverse publish ${draftId}。`,
-        ]
-          .filter(Boolean)
-          .join('\n'),
-      );
-    }
-    if (error instanceof ApiError && error.status === 409) {
-      const body = (error.body ?? {}) as Record<string, unknown>;
-      const conflicts = body.conflicts ?? body.conflictingKeys;
-      throw new CliError(
-        [
-          `发布冲突：${error.message}`,
-          conflicts !== undefined ? `冲突的键：${JSON.stringify(conflicts)}` : '',
-          '处理：metaverse pull → metaverse build → metaverse push 生成新草稿；或者 --replay 请服务端在最新版本上重放。',
-        ]
-          .filter(Boolean)
-          .join('\n'),
-      );
-    }
-    throw error;
+  const result = await publishDraft(
+    api,
+    draftId,
+    {
+      ...(message !== undefined ? { message } : {}),
+      ...(flag(values, 'replay') ? { replay: true } : {}),
+    },
+    scope,
+  );
+  if (flag(values, 'json')) printJson(ctx, result);
+  else {
+    ctx.out(`${describePublish(draftId, result)}（${scopeName(scope)}草稿）`);
+    if (result.unchanged !== true) ctx.out('运行 metaverse pull 把工作区更新到最新版本');
   }
+  return 0;
 }

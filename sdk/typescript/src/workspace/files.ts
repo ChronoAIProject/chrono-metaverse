@@ -54,6 +54,11 @@ export interface SpaceFile {
   readonly scan?: ScanInfo | null;
   readonly paletteHash?: string;
   readonly pulledAt?: string;
+  /**
+   * 用分享链接拉取的公开快照（`metaverse pull --share`）：只有公开锚点，不能推送。经 NyxID 的
+   * `metaverse pull` 会重写 space.json，去掉这个标记。
+   */
+  readonly readOnly?: boolean;
 }
 
 export interface PaletteFile {

@@ -236,8 +236,8 @@ metaverse publish <草稿编号>
 
 | 命令 | 作用 |
 |---|---|
-| `metaverse scan <文件>` | 分片上传扫描（Scaniverse 导出的 glb、Draco 网格等），发起导入任务：对齐 → 网页用模型 → AI 重建；进度用任务接口查 |
-| `metaverse voxelize` | 用和云端相同的处理镜像在本地试跑体素化，调参用，结果不直接上传（需要 Docker） |
+| `metaverse bundle check` / `metaverse bundle push` | 重建层（扫描、结构、物体）在本地用 `metaverse-recon` 做成重建包，`bundle check` 先在本地检查，`bundle push` 经 `/rebuild/` 路径上传、交包、生成预览；要求令牌带 `metaverse:rebuild:write`（见 `sdk/typescript/README.md`、[`docs/design/server-slim.md`](../design/server-slim.md) 第 6 节）。原来的 `metaverse scan`、`rebuild`、`voxelize` 已删除 |
+| `metaverse pull --scan` / `--share <分享链接>` | 另外下载原始扫描和它的变换（本地重建用，分段下载、能续传）；或者不经 NyxID 只读公开快照 |
 | `metaverse admin …` | 管理命令：建空间、轮换分享令牌、定义区域和地块、登记事件类型、抹除事件。要求"管理"级别（空间主人、组织本身或组织 admin），用人的身份执行，不交给 agent key |
 
 ---
