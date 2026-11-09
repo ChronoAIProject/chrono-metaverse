@@ -1,6 +1,8 @@
 # 本地开发设施
 
-在自己电脑（或云端会话）上起一套完整的 chrono-metaverse：MongoDB 副本集、模拟 NyxID、接口服务、处理服务、网站开发服务器。全部只监听 `127.0.0.1`，不连真实的 NyxID，也不需要任何密钥。
+在自己电脑（或云端会话）上起一套完整的 chrono-metaverse：MongoDB 副本集、模拟 NyxID、接口服务（含后台执行器：上传核对、`ops_from_upload`、定期清理）、网站开发服务器。全部只监听 `127.0.0.1`，不连真实的 NyxID，也不需要任何密钥。
+
+处理服务已下线（[`docs/design/server-slim.md`](../../docs/design/server-slim.md)）：上传核对由接口服务自己做，重建改在本地用重建工具（`worker/.venv/bin/metaverse-recon`，改名后在 `recon/`）做，`up.sh` 不再起处理服务，也不再需要 Python。
 
 | 文件 | 作用 |
 |---|---|
@@ -12,12 +14,13 @@
 | `e2e.mjs` | 九步端到端验收（`docs/BUILD_PLAN.md` 5.2）：自己起全套、按九步执行并断言、收尾，见下面"九步验收" |
 | `e2e-lib.mjs` / `e2e-lib.test.mjs` | 验收脚本的小工具（步骤执行、等待、请求头、截图判断）和它们的测试 |
 | `demo-seed.mjs` / `demo-seed.test.mjs` | 部署配置种子的小工具（压缩成一行、换主人、生成分享令牌；`up.sh --demo-seed` 用）和它的测试 |
+| `mongo.mjs` / `mongo.test.mjs` | 不用驱动的 MongoDB 小工具（查副本集名、初始化单节点副本集、删库；`up.sh` 和验收收尾用）和它的测试 |
 
 测试：`node --test infra/dev/*.test.mjs`（持续集成的仓库检查任务也跑）。
 
 ## 准备
 
-- Node 22、npm；Rust（`rustup`，版本由 `api/rust-toolchain.toml` 固定为 1.97.0）；Python 3.13，推荐装 [uv](https://docs.astral.sh/uv/)；curl。
+- Node 22、npm；Rust（`rustup`，版本由 `api/rust-toolchain.toml` 固定为 1.97.0）；curl。本地重建工具另要 Python 3.13（推荐装 [uv](https://docs.astral.sh/uv/)），`up.sh` 本身不需要。
 - MongoDB 副本集（接口服务要用事务，单机版不行）。`up.sh` 会先找 `127.0.0.1:27017`、`27018` 上已有的副本集；都没有时，如果装了 `mongod`（在 PATH 里，或设置 `MONGOD_BIN`）就在 `infra/dev/.run/mongo-data` 起一个单节点副本集 `rs0`；还没有的话按提示下载 [MongoDB 社区版](https://www.mongodb.com/try/download/community)，或用 Docker：
 
   ```bash
@@ -29,7 +32,6 @@
 
 ```bash
 infra/dev/up.sh              # 全套
-infra/dev/up.sh --no-worker  # 不起处理服务
 infra/dev/up.sh --no-web     # 不起网站
 infra/dev/up.sh --demo-seed  # 另外按部署配置种子建演示空间（见下面"演示数据"）
 infra/dev/down.sh            # 停止（复用的 MongoDB 不动）
@@ -40,7 +42,6 @@ infra/dev/down.sh            # 停止（复用的 MongoDB 不动）
 | MongoDB | 自动发现，库 `chrono_metaverse_dev` | `METAVERSE_MONGODB_URI`、`METAVERSE_DEV_DATABASE`、`METAVERSE_DEV_MONGO_PORT` |
 | 模拟 NyxID | `http://127.0.0.1:8090` | `MOCK_NYXID_PORT`；角色表 `MOCK_NYXID_ROLES` |
 | 接口服务 | `http://127.0.0.1:8080`（`cargo build` 后直接运行二进制） | `METAVERSE_API_PORT` |
-| 处理服务 | 健康检查 `http://127.0.0.1:8082/healthz` | `WORKER_HEALTH_PORT` |
 | 网站 | `http://127.0.0.1:5173`（Vite 开发服务器，`/api` 转给本地接口服务） | `METAVERSE_WEB_PORT` |
 
 `up.sh` 给接口服务设置的环境变量：
@@ -53,16 +54,12 @@ NYXID_JWT_ISSUER=http://127.0.0.1:8090
 NYXID_JWT_AUDIENCE=urn:chrono-metaverse:api
 ALLOWED_NYX_SERVICE_IDS=dev-service
 BIND=127.0.0.1:8080   PUBLIC_BASE_URL=http://127.0.0.1:5173
+UPLOAD_MAX_CONCURRENT_PARTS=4   RUNNER_POLL_SECONDS=2   CLEANUP_INTERVAL_SECONDS=600
 ```
 
-给处理服务设置的环境变量（线程数与线上 `infra/chrono-cd/app.json` 一致，本地测的子进程内存才和线上一样；原因见 [`infra/chrono-cd/README.md`](../chrono-cd/README.md) 的"处理服务的线程数"）：
+后台执行器和定期清理的其余配置（`RUNNER_*`、`CLEANUP_*`、各用途的上传上限）用接口服务的默认值，见 [`api/README.md`](../../api/README.md)；都可以在运行 `up.sh` 前用同名环境变量覆盖（`up.sh` 显式传的几个也一样）。
 
-```bash
-MONGODB_URI=<发现的副本集>   MONGODB_DATABASE=chrono_metaverse_dev   WORKER_HEALTH_PORT=8082
-OPENBLAS_NUM_THREADS=2   OMP_NUM_THREADS=2   MALLOC_ARENA_MAX=2   PYTHONUNBUFFERED=1
-```
-
-三个线程变量都可以在运行 `up.sh` 前用同名环境变量覆盖。
+`down.sh` 照旧会停掉旧版本 `up.sh` 起的处理服务（`worker.pid`），新起的全套里没有它。
 
 ### 演示数据（可选，部署配置种子）
 
@@ -71,10 +68,10 @@ OPENBLAS_NUM_THREADS=2   OMP_NUM_THREADS=2   MALLOC_ARENA_MAX=2   PYTHONUNBUFFER
 - 种子压缩成一行交给接口服务的 `METAVERSE_DEMO_SEED`（`node infra/dev/demo-seed.mjs compact <种子.json>`）；
 - 分享令牌取 `METAVERSE_DEMO_SHARE_TOKEN`，没设时生成一个存在 `infra/dev/.run/demo-share-token`，之后复用（空间里只存第一次的哈希）；结束时打印演示链接 `http://127.0.0.1:5173/s/<空间>#share=<令牌>`；
 - 主人默认是配置里的线上组织编号（公开读不受影响，但本地没人能管理它）；`METAVERSE_DEV_DEMO_SEED_OWNER=chronoai` 换成模拟 NyxID 的组织，alice 就能经 `/api/v1` 管理；
-- 进度看 `infra/dev/.run/api.log`（`部署配置种子完成 … outcome=Created`）和 `worker.log`（`scan_import` 结束），处理服务在 4 核机器上约 1 分钟；
+- 进度看 `infra/dev/.run/api.log`（`部署配置种子完成 … outcome=Created`）。现在的种子格式还在建 `scan_import` 任务，处理服务下线以后它会被定期清理标记失败（`lastError.class = content`），空间建出来但没有内容；种子改成导入重建包以后（设计 13.2 S4）才会再有内容；
 - 经过会重新签发证书的出口代理时，接口服务另外信任 `SSL_CERT_FILE`（PEM）里的根证书，从环境继承即可。
 
-接口服务只允许本机地址用明文 http 当 NyxID 地址，所以模拟 NyxID 必须跑在本机。处理服务第一次启动前会在 `worker/.venv` 建虚拟环境（`pyproject.toml` 变了会重装）。
+接口服务只允许本机地址用明文 http 当 NyxID 地址，所以模拟 NyxID 必须跑在本机。
 
 ## 模拟 NyxID
 
@@ -132,12 +129,15 @@ curl -s http://127.0.0.1:8080/api/v1/spaces/front-hall \
 
 ## 九步验收（`e2e.mjs`）
 
-`docs/BUILD_PLAN.md` 5.2 的端到端验收，跨接口服务、处理服务、网站和命令行，用真实的 MongoDB 副本集：
+`docs/BUILD_PLAN.md` 5.2 的端到端验收，跨接口服务、网站和命令行，用真实的 MongoDB 副本集：
 
 ```bash
-infra/dev/down.sh                                   # 先停掉自己起的全套（验收要自己起一套）
-node infra/dev/e2e.mjs --scan <前厅扫描.zip|.drc|.glb|.obj> [--voxelize] [--keep]
+infra/dev/down.sh                       # 先停掉自己起的全套（验收要自己起一套）
+node infra/dev/e2e.mjs [--keep]         # 默认只跑第 1、8、9 步（见下）
+node infra/dev/e2e.mjs --only 1-9 --scan <前厅扫描.zip|.drc|.glb|.obj> [--voxelize]
 ```
+
+**处理服务下线后的过渡**（[设计 13.3](../../docs/design/server-slim.md)）：第 2–7 步依赖处理服务的重建结果（上传扫描 → 对齐和 AI 重建 → 快照、视图、时间轴、"现在"模式），九步改成"本地重建工具出包、`metaverse bundle push` 发布"之前（设计 13.2 S9）跑不通，所以 `--only` 默认是 `1,8,9`，不需要扫描文件；第 8 步没有前面的步骤时自己打开页面、读当时的版本。`--only` 接受逗号分隔的编号和区间（`1,8,9`、`1-9`、`2-4,8`），只有选了第 2 步才要 `--scan`；结果表保留原来的步骤编号。
 
 | 步骤 | 做法 | 断言 |
 |---|---|---|
@@ -154,7 +154,8 @@ node infra/dev/e2e.mjs --scan <前厅扫描.zip|.drc|.glb|.obj> [--voxelize] [--
 - 端口都是临时挑的空闲端口，库名 `metaverse_e2e_<随机后缀>`；结束时运行 `down.sh` 并删除这个库，`--keep` 保留现场；
 - 结果、截图（`view-*.png`（`--voxelize` 时多一张方块画法的 `view-optimized-blocks.png`）、`timeline-before-rebuild.png`、`live-event.png`、`plot-build-extended.png`，失败时 `failure.png`）、工作区和 `up.sh` 的输出在 `infra/dev/.run/e2e-<后缀>/`；各服务的日志在 `infra/dev/.run/*.log`；
 - 扫描文件不进版本库，用 `--scan` 或 `METAVERSE_E2E_SCAN` 指定；只接受 `metaverse scan` 支持的 glb、drc、obj、zip（带贴图的扫描把网格和贴图打包成 zip，例如 Scaniverse 导出的 drc + jpg）；
-- 浏览器：`METAVERSE_E2E_BROWSER_PATH`，没有时用 `/opt/pw-browsers/chromium`，再没有交给网站依赖里的 Playwright 自己找；处理任务的等待上限 `METAVERSE_E2E_JOB_TIMEOUT`（秒，默认 1800）；
+- 浏览器：`METAVERSE_E2E_BROWSER_PATH`，没有时用 `/opt/pw-browsers/chromium`，再没有交给网站依赖里的 Playwright 自己找；任务的等待上限 `METAVERSE_E2E_JOB_TIMEOUT`（秒，默认 1800）；
+- 收尾删库用 `mongo.mjs drop`（不再借处理服务虚拟环境里的 pymongo）；
 - 退出码：0 全部通过，1 有步骤失败（后面的步骤标"未执行"），2 参数或环境不对（没开始验收）。
 
 要跑的是本地全套和一份真实扫描，不放进每次合并请求的持续集成；持续集成只跑小工具的测试和参数检查（`e2e-lib.test.mjs`）。
@@ -259,3 +260,7 @@ node infra/dev/call.mjs --share <分享令牌> GET /api/public/spaces/front-hall
 | `--as chronoai POST /api/v1/admin/spaces`（组织本身，不查角色） | 201，`ownerEvidence.basis = org_subject` |
 
 分享令牌只在创建时返回一次，库里只存哈希；示例里用占位符代替了实测时的随机值。
+
+**2026-11-09 处理服务下线后（设计 13.2 S2）**：`node infra/dev/e2e.mjs`（默认第 1、8、9 步）在 4 核机器上跑了两次，都全部通过：
+建组织空间、定义区域；命令行在地块里 `pull → build → check → push → publish`（3 个操作，发布为 seq 3，扩展视图里有 3 个物件）；
+9 个越权请求都按预期返回 403 / 404。`up.sh` 没起处理服务，副本集用 `mongo.mjs` 查到，收尾删库也用它。

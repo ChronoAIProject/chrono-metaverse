@@ -23,6 +23,7 @@ import {
   looksRendered,
   parseUpOutput,
   randomSuffix,
+  parseOnly,
   runSteps,
   waitFor,
 } from './e2e-lib.mjs';
@@ -307,28 +308,50 @@ function runScript(args, env = {}) {
   return spawnSync(process.execPath, [script, ...args], { encoding: 'utf8', env: { ...cleanEnv, ...env } });
 }
 
-test('e2e.mjs：没给扫描文件、文件不存在、格式不对时退出码 2，不起全套', async () => {
-  const missing = runScript([]);
+test('e2e.mjs：选了第 2 步却没给扫描文件、文件不存在、格式不对时退出码 2，不起全套', async () => {
+  // 默认只跑第 1、8、9 步（不要扫描文件，会起全套），这里都显式选上第 2 步。
+  const missing = runScript(['--only', '1-9']);
   assert.equal(missing.status, 2);
   assert.match(missing.stderr, /缺少扫描文件/);
 
-  const absent = runScript(['--scan', join(rolesDir, 'none.drc')]);
+  const absent = runScript(['--only', '2', '--scan', join(rolesDir, 'none.drc')]);
   assert.equal(absent.status, 2);
   assert.match(absent.stderr, /找不到扫描文件/);
 
   // zip（网格 + 贴图）也是合法的扫描格式，用别的扩展名。
   const wrong = join(rolesDir, 'scan.ply');
   await writeFile(wrong, 'ply');
-  const format = runScript([], { METAVERSE_E2E_SCAN: wrong });
+  const format = runScript(['--only', '2'], { METAVERSE_E2E_SCAN: wrong });
   assert.equal(format.status, 2);
   assert.match(format.stderr, /扫描文件必须是 \.glb、\.drc、\.obj、\.zip/);
 
   const unknown = runScript(['--bogus']);
   assert.equal(unknown.status, 2);
+  const badOnly = runScript(['--only', '10']);
+  assert.equal(badOnly.status, 2);
+  assert.match(badOnly.stderr, /--only/);
 });
 
 test('e2e.mjs --help 打印说明', () => {
   const help = runScript(['--help']);
   assert.equal(help.status, 0);
   assert.match(help.stdout, /九步端到端验收/);
+});
+
+test('parseOnly：编号和区间，排好序；写法不对或越界报错', () => {
+  assert.deepEqual([...parseOnly('1,8,9', 9)], [1, 8, 9]);
+  assert.deepEqual([...parseOnly('9, 2-4,1', 9)], [1, 2, 3, 4, 9]);
+  assert.deepEqual([...parseOnly('1-9', 9)], [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  for (const bad of ['', '0', '10', '3-2', 'a', '1,,x']) {
+    assert.throws(() => parseOnly(bad, 9), /--only/, bad);
+  }
+});
+
+test('runSteps：只跑部分步骤时保留原来的编号', async () => {
+  const lines = [];
+  const { results } = await runSteps([{ name: '地块建造', number: 8, run: async () => 'ok' }], {}, {
+    log: (line) => lines.push(line),
+  });
+  assert.ok(lines.some((line) => line.includes('8. 地块建造')), lines.join('\n'));
+  assert.match(formatReport(results), /\| 8\. 地块建造 \| 通过/);
 });
