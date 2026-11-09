@@ -18,8 +18,12 @@
      贴图，就取并入顶点在这一块里的那一份；并入顶点不在这一块里（折叠跨过了接缝），就沿折叠链往回找，取
      还在这一块里的最后一个顶点的。每个面的三个贴图坐标都在自己那块贴图里，不会跨到别的块上；代价是跨过
      接缝的大三角形上贴图有拉伸（低细节档的地面能看出来，但没有洞）。
-- **贴图**：缩小到上限以内（只缩不放），JPEG 质量 85（低细节档 80）。
-- 三角形数本来就不超过上限时不减面，原样写出。
+- **贴图补边**：先按原始网格的贴图坐标三角形光栅化出"用到的纹素"（`uv_coverage`，纹素中心在三角形里），
+  缩小时只平均用到的纹素（`shrink_used`，和先补边再缩小等价，原图分辨率上只按行分段算），缩小后没用到的
+  纹素都换成离它最近的用到的纹素的颜色（`fill_unused`）：块与块之间的空白（Scaniverse 填的是深灰色）不会
+  再被双线性过滤、逐级缩小的贴图（mipmap）和减面后略微越过块边的三角形采到。只缩不放，JPEG 质量 85
+  （低细节档 80）。
+- 三角形数本来就不超过上限时不减面，原样写出（贴图照样补边）。
 """
 
 from __future__ import annotations
@@ -29,7 +33,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from PIL import Image
-from scipy import sparse
+from scipy import ndimage, sparse
 from scipy.sparse import csgraph
 
 from .glb import GlbMesh, vertex_normals, write_glb
@@ -247,6 +251,136 @@ def shrink_texture(texture: np.ndarray, max_side: int) -> np.ndarray:
     return np.asarray(img)
 
 
+def _row_spans(
+    x: np.ndarray, y: np.ndarray, r0: np.ndarray, n: np.ndarray, w: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """三角形在纹素行中心线上覆盖的纹素区间，返回 (行, 起始列, 结束列)。
+
+    x、y 的每一行是一个三角形三个角的纹素角坐标；第 k 个三角形从第 r0[k] 行起共 n[k] 行。
+    """
+    tri = np.repeat(np.arange(len(x)), n)
+    row = r0[tri] + np.arange(len(tri)) - np.repeat(np.cumsum(n) - n, n)
+    yc = row + 0.5
+    xl = np.full(len(tri), np.inf)
+    xr = np.full(len(tri), -np.inf)
+    for i, j in ((0, 1), (1, 2), (2, 0)):
+        xa, xb, ya, yb = x[tri, i], x[tri, j], y[tri, i], y[tri, j]
+        hit = (yc >= np.minimum(ya, yb)) & (yc <= np.maximum(ya, yb)) & (ya != yb)
+        xi = xa + (yc - ya) * (xb - xa) / np.where(ya != yb, yb - ya, 1.0)
+        xl = np.where(hit, np.minimum(xl, xi), xl)
+        xr = np.where(hit, np.maximum(xr, xi), xr)
+    cs = np.clip(np.ceil(xl - 0.5), 0, w)
+    ce = np.clip(np.floor(xr - 0.5), -1, w - 1)
+    ok = cs <= ce
+    return row[ok].astype(np.int32), cs[ok].astype(np.int32), ce[ok].astype(np.int32)
+
+
+def uv_coverage(
+    uv: np.ndarray,
+    faces: np.ndarray,
+    shape: tuple[int, int],
+    *,
+    chunk: int = 200_000,
+    band: int = 256,
+    max_spans: int = 50_000_000,
+) -> np.ndarray | None:
+    """贴图上中心落在某个三角形（按贴图坐标）里的纹素（H×W 布尔），即"用到的纹素"。
+
+    纹素 (列, 行) 的中心在 ((列 + 0.5) / W, (行 + 0.5) / H)。只压到边、中心在三角形外的纹素不算：它们的原色
+    多半是块外的底色，双线性过滤在三角形边上会采到它们，要和块外的空白一起补成块里的颜色。做法是扫描线：
+    每个三角形在每个纹素行的中心线上求出覆盖的列区间（numpy 向量化），再按行分段用差分累加标出来。
+    面积为 0 或贴图坐标不是有限值的面跳过。三角形在贴图上铺得异常大（行区间总数超过 `max_spans`，正常扫描
+    远不到）时返回 None，调用方就不补边。
+    """
+    h, w = shape
+    t = np.asarray(uv, np.float64)[np.asarray(faces, np.int64)] * (w, h)
+    x, y = t[..., 0], t[..., 1]
+    area = (x[:, 1] - x[:, 0]) * (y[:, 2] - y[:, 0]) - (x[:, 2] - x[:, 0]) * (y[:, 1] - y[:, 0])
+    ok = np.isfinite(t).all(axis=(1, 2)) & (area != 0)
+    x, y = x[ok], y[ok]
+    r0 = np.clip(np.ceil(y.min(1) - 0.5), 0, h).astype(np.int64)
+    n = np.maximum(np.clip(np.floor(y.max(1) - 0.5), -1, h - 1).astype(np.int64) - r0 + 1, 0)
+    if n.sum() > max_spans:
+        return None
+    mask = np.zeros((h, w), bool)
+    parts = [
+        _row_spans(x[i : i + chunk], y[i : i + chunk], r0[i : i + chunk], n[i : i + chunk], w)
+        for i in range(0, len(x), chunk)
+    ]
+    if not parts:
+        return mask
+    row, cs, ce = (np.concatenate(p) for p in zip(*parts, strict=True))
+    order = np.argsort(row, kind="stable")
+    row, cs, ce = row[order], cs[order], ce[order]
+    bounds = np.searchsorted(row, np.arange(0, h + band, band))
+    for k, b0 in enumerate(range(0, h, band)):
+        lo, hi = bounds[k], bounds[k + 1]
+        if lo == hi:
+            continue
+        nb = min(band, h - b0)
+        base = (row[lo:hi].astype(np.int64) - b0) * (w + 1)
+        diff = np.bincount(base + cs[lo:hi], minlength=nb * (w + 1))
+        diff -= np.bincount(base + ce[lo:hi] + 1, minlength=nb * (w + 1))
+        mask[b0 : b0 + nb] = np.cumsum(diff.reshape(nb, w + 1), axis=1)[:, :w] > 0
+    return mask
+
+
+def shrink_used(
+    texture: np.ndarray, used: np.ndarray, max_side: int, band: int = 256
+) -> tuple[np.ndarray, np.ndarray]:
+    """按比例缩小到长边不超过 max_side，只平均用到的纹素（盒式滤波）。
+
+    返回 (颜色 float32 h×w×3, 权重 float32 h×w)：权重是每个新纹素里用到的原纹素占比，为 0 的纹素颜色无意义。
+    按输出行分段做，原图分辨率上只有一段的浮点数组。
+    """
+    H, W = used.shape
+    scale = max_side / max(H, W)
+    if scale >= 1:
+        return texture.astype(np.float32), used.astype(np.float32)
+    tw, th = max(1, round(W * scale)), max(1, round(H * scale))
+    sy = H / th
+    color = np.empty((th, tw, 3), np.float32)
+    weight = np.empty((th, tw), np.float32)
+    box_filter = Image.Resampling.BOX
+    for r0 in range(0, th, band):
+        r1 = min(th, r0 + band)
+        y0, y1 = int(np.floor(r0 * sy)), min(H, int(np.ceil(r1 * sy)))
+        box = (0.0, r0 * sy - y0, float(W), r1 * sy - y0)
+        m = used[y0:y1].astype(np.float32)
+        weight[r0:r1] = np.asarray(Image.fromarray(m).resize((tw, r1 - r0), box_filter, box=box))
+        for c in range(3):
+            ch = texture[y0:y1, :, c].astype(np.float32)
+            ch *= m
+            color[r0:r1, :, c] = np.asarray(Image.fromarray(ch).resize((tw, r1 - r0), box_filter, box=box))
+    color /= np.maximum(weight, 1e-12)[..., None]
+    return color, weight
+
+
+def fill_unused(color: np.ndarray, valid: np.ndarray) -> np.ndarray:
+    """把没用到的纹素（`valid` 为 False）都换成离它最近的用到的纹素的颜色（补边），返回 uint8。
+
+    用欧氏距离变换找最近的用到的纹素：块边外面不管多远都是块自己边上的颜色，双线性过滤、逐级缩小的贴图和
+    略微越过块边的三角形采到的都是块里的颜色，不会是底色，也不会混进远处别的块（推拉金字塔按粗格子取平均，
+    块边外几个纹素就会混进同一个粗格子里别的块的颜色）。`color` 是 float32 时就地改写。用到的纹素保持原色；
+    一个都没用到时原样返回。
+    """
+    color = np.asarray(color, np.float32)
+    if valid.any() and not valid.all():
+        hole = ~valid
+        rows, cols = ndimage.distance_transform_edt(hole, return_distances=False, return_indices=True)
+        color[hole] = color[rows[hole], cols[hole]]
+    np.rint(color, out=color)
+    return np.clip(color, 0, 255).astype(np.uint8)
+
+
+def prepare_texture(texture: np.ndarray, used: np.ndarray | None, max_side: int) -> np.ndarray:
+    """网页用模型的贴图：缩小到上限以内，`used` 给出时只用用到的纹素，空白处补边（见模块说明）。"""
+    if used is None or used.shape != texture.shape[:2] or not used.any():
+        return shrink_texture(texture, max_side)
+    color, weight = shrink_used(texture, used, max_side)
+    return fill_unused(color, weight > 0)
+
+
 def encode_jpeg(texture: np.ndarray, quality: int) -> bytes:
     buf = io.BytesIO()
     Image.fromarray(np.asarray(texture, np.uint8)).convert("RGB").save(
@@ -255,12 +389,27 @@ def encode_jpeg(texture: np.ndarray, quality: int) -> bytes:
     return buf.getvalue()
 
 
-def encode_web_model(simple: ScanMesh, level: WebModelLevel, name: str = "scan") -> WebModel:
-    """把（已经减过面的）网格写成 glb：贴图缩到这一档的上限，JPEG 编码后内嵌。"""
+# ---------------------------------------------------------------------------- 写出
+
+
+def texture_usage(mesh: ScanMesh) -> np.ndarray | None:
+    """原始网格用到的纹素（没有贴图或贴图坐标、或者贴图坐标异常时为 None，见 `uv_coverage`）。"""
+    if mesh.texture is None or mesh.uv is None:
+        return None
+    return uv_coverage(mesh.uv, mesh.faces, mesh.texture.shape[:2])
+
+
+def encode_web_model(
+    simple: ScanMesh, level: WebModelLevel, name: str = "scan", used: np.ndarray | None = None
+) -> WebModel:
+    """把（已经减过面的）网格写成 glb：贴图缩到这一档的上限、补边，JPEG 编码后内嵌。
+
+    `used` 是原始网格用到的纹素（`texture_usage`）；为 None 时只缩小、不补边。
+    """
     image = None
     side = 0
     if simple.texture is not None and simple.uv is not None:
-        tex = shrink_texture(simple.texture, level.max_texture_side)
+        tex = prepare_texture(simple.texture, used, level.max_texture_side)
         side = int(max(tex.shape[:2]))
         image = encode_jpeg(tex, level.jpeg_quality)
     glb = GlbMesh(
@@ -276,14 +425,16 @@ def encode_web_model(simple: ScanMesh, level: WebModelLevel, name: str = "scan")
 
 
 def build_web_model(mesh: ScanMesh, level: WebModelLevel, name: str = "scan") -> WebModel:
-    return encode_web_model(simplify_mesh(mesh, level.max_triangles), level, name)
+    return encode_web_model(simplify_mesh(mesh, level.max_triangles), level, name, texture_usage(mesh))
 
 
 def build_web_models(mesh: ScanMesh) -> list[WebModel]:
-    """按 `WEB_MODEL_LEVELS` 生成两档。低细节档从默认档继续减面（更快，结果相近）；贴图都从原图缩小。"""
+    """按 `WEB_MODEL_LEVELS` 生成两档。低细节档从默认档继续减面（更快，结果相近）；贴图都从原图缩小，
+    用到的纹素都按原始网格算。"""
+    used = texture_usage(mesh)
     out: list[WebModel] = []
     source = mesh
     for index, level in enumerate(WEB_MODEL_LEVELS):
         source = simplify_mesh(source, level.max_triangles)
-        out.append(encode_web_model(source, level, name=f"scan-lod{index}"))
+        out.append(encode_web_model(source, level, name=f"scan-lod{index}", used=used))
     return out
