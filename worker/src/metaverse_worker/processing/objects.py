@@ -9,7 +9,8 @@ structure 是同一网格上 `extract_structure` 的结果。
 流程：
 
 1. **分割**（`fit_segment`）：去掉地面、墙、玻璃带、天花板，聚类，按悬空台面、高矮、颈部、靠背山头拆开；
-   `params["objects"]` 里的提示（本地 AI 看图给出）可以改写分割和类型；
+   `params["objects"]` 里的提示（本地 AI 看图给出）可以改写分割和类型；拆桌面剩下的块里，台面下靠里的
+   柱脚并回桌子，压在台面上的东西按桌上的杂物处理（`attach_to_tables`）；
 2. **识别**：有提示用提示的 `kind`、`label`；没有就按规则（尺寸、座面、台面、颜色、圆度）；
 3. **朝向和原点**：最小外接矩形（接近墙的方向时取墙的方向），椅子按靠背定正面，沙发靠背朝 −z；
    原点在物体底面中心的地面上，偏航是连续值；
@@ -34,7 +35,7 @@ from typing import Any
 
 import numpy as np
 from scipy import ndimage
-from scipy.spatial import cKDTree
+from scipy.spatial import ConvexHull, cKDTree
 
 from .. import shapes as sh
 from ..canonical import canonical_json
@@ -42,7 +43,15 @@ from ..ids import slug_id
 from ..records import entity_body
 from .bake import FaceTable
 from .fit_counter import fit_counter
-from .fit_measure import Rect, dirs_to_local, fit_circle, height_peaks, min_area_rect, to_local
+from .fit_measure import (
+    Rect,
+    dirs_to_local,
+    fit_circle,
+    height_peaks,
+    min_area_rect,
+    polygon_contains,
+    to_local,
+)
 from .fit_segment import ObjectPoints, Segment, SegmentParams, segment_objects
 from .fit_templates import (
     Local,
@@ -685,6 +694,82 @@ def _face_tables(objs: list[Obj], reach: float = 0.6, agree: float = 40.0) -> No
             o.info["facing"] = "table"
 
 
+def attach_to_tables(op: ObjectPoints, segs: list[Segment]) -> list[Segment]:
+    """拆桌面时台面以下剩下的块（`below-top:<台面高度>`），按它和桌子的关系重新归属：
+
+    - **底座**：俯视一半以上在台面投影里、重心离台面边 15 厘米以上、从地面附近（0.35 米以下）一直到
+      台面下 0.3 米以内的大块（300 点以上）是桌子的柱脚，并回桌子，由桌子的拟合做成规整的底座
+      （不再是一个单独的"柜子"）；
+    - **桌上的东西**：俯视 70% 以上在台面投影里、60% 以上的点高过台面的是压在台面上的东西（只是有几个点挂到了
+      台面边以下）：去掉台面以下的点，按桌上的杂物处理（底面贴着台面，不会往台面下面长出一个大圆角盒）。
+
+    其余的照旧。"""
+    tables = [s for s in segs if "table-top" in s.tags and s.top is not None]
+    if not tables:
+        return segs
+    hulls: list[np.ndarray | None] = []
+    rects: list[Rect | None] = []
+    for s in tables:
+        # 台面的俯视范围：台面薄层上的点的凸包（台面上压着东西的地方，台面检测的格子里是缺的）
+        P = op.P[s.idx]
+        t, th = s.top["height"], float(s.top.get("thickness") or 0.04)
+        xz = P[(P[:, 1] > t - th - 0.03) & (P[:, 1] < t + 0.04)][:, [0, 2]]
+        try:
+            hulls.append(xz[ConvexHull(xz).vertices] if len(xz) >= 10 else None)
+            rects.append(min_area_rect(xz) if len(xz) >= 10 else None)
+        except Exception:
+            hulls.append(None)
+            rects.append(None)
+    out: list[Segment] = []
+    extra: dict[int, list[np.ndarray]] = {}
+    for seg in segs:
+        tag = next((t for t in seg.tags if t.startswith("below-top:")), None)
+        if tag is None or seg.hint is not None:
+            out.append(seg)
+            continue
+        t = float(tag.split(":")[1])
+        owner = next(
+            (k for k, s in enumerate(tables) if abs(s.top["height"] - t) < 0.005 and hulls[k] is not None),
+            None,
+        )
+        if owner is None:
+            out.append(seg)
+            continue
+        top = tables[owner].top
+        P, h = op.P[seg.idx], op.h[seg.idx]
+        hull = hulls[owner]
+        inside = float(polygon_contains(hull, P[:, [0, 2]]).mean())
+        y = P[:, 1]
+        under = t - float(top.get("thickness") or 0.04)
+        lo, hi = np.percentile(h, 2), np.percentile(y, 98)
+        # 柱脚在台面下面靠里：重心在台面外接矩形里、离矩形的边 15 厘米以上（台面一角被柱脚的块分走时，
+        # 凸包会缺一角，外接矩形不会）；推进桌下的椅子贴着台面边
+        rect = rects[owner]
+        assert rect is not None
+        c = to_local(
+            np.c_[P[:, 0], np.zeros(len(P)), P[:, 2]].mean(0, keepdims=True),
+            np.r_[rect.center[0], 0, rect.center[1]],
+            rect.yaw,
+        )[0]
+        depth = min(rect.size[0] / 2 - abs(c[0]), rect.size[1] / 2 - abs(c[2]))
+        core = depth >= 0.15
+        if len(y) >= 300 and inside >= 0.5 and core and lo <= 0.35 and under - 0.3 <= hi <= t + 0.02:
+            extra.setdefault(owner, []).append(seg.idx)
+        elif inside < 0.7:
+            out.append(seg)
+        elif np.mean(y > t) >= 0.6:
+            keep = seg.idx[y > t - 0.01]
+            if len(keep) >= 30:
+                out.append(Segment(keep, {"on-top"}))
+        else:
+            out.append(seg)
+    for k, idxs in extra.items():
+        s = tables[k]
+        merged = Segment(np.concatenate([s.idx, *idxs]), set(s.tags), s.top, s.hint)
+        out[next(i for i, x in enumerate(out) if x is s)] = merged
+    return out
+
+
 def _name(objs: list[Obj]) -> None:
     counters: dict[str, int] = {}
     for o in sorted(objs, key=lambda o: (o.kind, round(o.origin[2], 1), round(o.origin[0], 1))):
@@ -697,6 +782,7 @@ def reconstruct_objects(mesh: ScanMesh, structure, *, params: dict | None = None
     prm = ObjectParams()
     hints = parse_hints(params)
     op, segs = segment_objects(mesh, structure, prm.segment, hints)
+    segs = attach_to_tables(op, segs)
     t_seg = time.time()
     wall_yaws = _wall_yaws(structure)
     objs = [o for o in (_prepare(op, s, wall_yaws) for s in segs) if o is not None]

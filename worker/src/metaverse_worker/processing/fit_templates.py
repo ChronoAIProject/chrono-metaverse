@@ -4,7 +4,8 @@
 用 `fit_measure` 测出尺寸和特征，组合成 SHAPES 的常见形状：
 
 - 桌子 `table`：台面是圆角矩形 / 跑道形 / 圆形 / 带圆弧折线的 `extrude`（边缘倒圆）；
-  底座按台面下的投影块做圆柱、圆角盒或轮廓挤出，看不到时补 4 条腿；
+  底座按台面下的投影块做圆柱、圆角盒或轮廓挤出（要从地面撑到台面下：推进桌下的椅子、地上的包不算；
+  长桌的柱脚取沿桌子方向的圆角盒），看不到时补 4 条腿；
 - 椅子 `chair`：座面 `extrude`（圆角）；靠背连扶手是逐层圆弧带的 `loft`，保留靠背弧度；
   底座是转椅的立柱 + 4 爪 `sweep`，或 4 条 `sweep` 椅腿；
 - 沙发 `sofa`：底座、分块的坐垫是圆角盒；分块的靠背垫和两侧扶手是侧面轮廓（带圆弧：靠背的后仰和顶部、
@@ -116,19 +117,32 @@ def fit_table(o: Local, top_y: float | None = None, thickness: float | None = No
     children.append(part(top, "top", "planar"))
     poly = outline_polygon(top_outline)
     under = top_y - th
-    # 底座：台面下方 5 厘米以上的点在俯视里的连通块
-    sup = (y > 0.05) & (y < under - 0.02) & polygon_contains(poly, o.xz)
+    # 底座：台面下方 5 厘米以上的点在俯视里的连通块。要"撑得住"：既有贴近地面的点（台面下高度的 45% 以下），
+    # 又有靠近台面的点（60% 以上）——推进桌下的椅子、地上的包、挂在台面边下的碎片都不算底座
+    # 台面边缘倒圆、台面下沿的几厘米不算（否则柱脚的俯视范围会连上整个台面的一端）
+    sup = (y > 0.05) & (y < under - 0.06) & polygon_contains(poly, o.xz)
     legs = []
     if sup.sum() >= 15:
         m = occupancy(o.xz[sup], 0.02, close=2)
         lab, n = ndimage.label(m.mask)
+        own = lab[
+            np.clip(((o.xz[sup, 1] - m.z0) / m.cell).astype(int), 0, lab.shape[0] - 1),
+            np.clip(((o.xz[sup, 0] - m.x0) / m.cell).astype(int), 0, lab.shape[1] - 1),
+        ]
+        ys = y[sup]
         for r in range(1, n + 1):
             reg = lab == r
             if reg.sum() * m.cell**2 < 0.004:
                 continue
+            yr = ys[own == r]
+            if not (np.any(yr < 0.45 * under) and np.any(yr > 0.6 * under)):
+                continue
             zz, xx = np.nonzero(reg)
             pts = np.c_[m.x0 + (xx + 0.5) * m.cell, m.z0 + (zz + 0.5) * m.cell]
             legs.append(pts)
+    # 有大的柱脚（俯视 0.3 米以上）时，旁边零星的细腿不要（多半是柱脚没连上的一小片）
+    if any(np.ptp(p, axis=0).max() >= 0.3 for p in legs):
+        legs = [p for p in legs if np.ptp(p, axis=0).max() >= 0.2]
     if legs:
         for i, pts in enumerate(sorted(legs, key=lambda p: -len(p))[:6]):
             span = np.ptp(pts, axis=0)
@@ -137,10 +151,27 @@ def fit_table(o: Local, top_y: float | None = None, thickness: float | None = No
                 r = max(0.015, max(span) / 2)
                 leg = sh.cylinder(r, under, segments=16, xf=sh.transform(position=[c[0], 0, c[1]]))
             else:
-                fit = fit_footprint(pts, 0.02, cell=0.02)
+                # 柱脚偏向规整的形状（圆角矩形、圆）：被椅子挡住、只扫到一部分的柱脚不追碎的轮廓
+                fit = fit_footprint(pts, 0.02, cell=0.02, complexity=0.03)
                 if fit is not None and fit.kind == "circle":
                     cc, rr = fit.info["center"], fit.info["radius"]
                     leg = sh.cylinder(rr, under, segments=32, xf=sh.transform(position=[cc[0], 0, cc[1]]))
+                elif fit is not None and fit.kind == "rect":
+                    hx, hz = fit.info["half"]
+                    cc = fit.info["center"]
+                    leg = sh.box(
+                        [2 * hx, under, 2 * hz],
+                        fillet=sh.r4(float(np.clip(fit.info.get("radius", 0.0), 0.01, 0.03))),
+                        xf=sh.transform(position=[cc[0], 0, cc[1]]),
+                    )
+                elif fit is not None and size >= 1.5:
+                    # 长桌的柱脚多半被椅子挡住一部分：取沿桌子方向的外接框做圆角盒，不追凸包的斜边
+                    lo, hi = np.percentile(pts, 3, axis=0), np.percentile(pts, 97, axis=0)
+                    leg = sh.box(
+                        [hi[0] - lo[0], under, hi[1] - lo[1]],
+                        fillet=0.02,
+                        xf=sh.transform(position=[(lo[0] + hi[0]) / 2, 0, (lo[1] + hi[1]) / 2]),
+                    )
                 elif fit is not None:
                     leg = sh.extrude(fit.outline, under)
                     leg["fillet"] = 0.01
@@ -150,7 +181,7 @@ def fit_table(o: Local, top_y: float | None = None, thickness: float | None = No
                         [hi[0] - lo[0], under, hi[1] - lo[1]],
                         xf=sh.transform(position=[(lo[0] + hi[0]) / 2, 0, (lo[1] + hi[1]) / 2]),
                     )
-            children.append(part(leg, f"base-{i + 1}", "cylindrical"))
+            children.append(part(leg, f"base-{i + 1}", "cylindrical", "color"))
     elif kind == "circle":
         children.append(part(sh.cylinder(0.04, under, segments=24), "base-1", "cylindrical"))
         r = min(0.25, 0.6 * float(np.ptp(poly[:, 0])) / 2)
@@ -858,6 +889,12 @@ def fit_box(
             hx, hz = fit.info["half"]
             c = fit.info["center"]
             r = float(fit.info["radius"])
+            if r > max(0.02, h / 4):
+                # 扁的东西俯视圆角大：圆角只做在竖边上（轮廓圆角），顶边、底边小圆角——
+                # 盒子的圆角是所有边一样大，扁盒子会变成一块肥皂、一个枕头
+                shape = sh.extrude(fit.outline, h, xf=sh.transform(position=[0, bottom, 0]))
+                shape["fillet"] = sh.r4(min(0.008, h / 4))
+                return sh.group([part(shape, name, uv)])
             shape = sh.box(
                 [2 * hx, h, 2 * hz],
                 fillet=sh.r4(min(max(0.008, r), min(hx, hz, h / 2) * 0.9)),

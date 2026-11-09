@@ -16,7 +16,8 @@ import pytest
 from metaverse_worker import shapes as sh
 from metaverse_worker.processing import fit_measure as fm
 from metaverse_worker.processing import fit_templates as ft
-from metaverse_worker.processing.objects import _textured, parse_hints, reconstruct_objects
+from metaverse_worker.processing.fit_segment import ObjectPoints, Segment
+from metaverse_worker.processing.objects import _textured, attach_to_tables, parse_hints, reconstruct_objects
 from metaverse_worker.processing.scan import ScanMesh
 from metaverse_worker.processing.shape_mesh import build_parts, expand_outline, merge_meshes, shape_mesh
 from metaverse_worker.processing.structure import extract_structure
@@ -207,6 +208,48 @@ def test_fit_table_recovers_top_and_pedestal():
     assert radii and max(radii) == pytest.approx(0.4, abs=0.06)
     bases = [c for c in g["children"][1:] if c["type"] in ("cylinder", "extrude", "box")]
     assert bases
+
+
+def test_fit_table_base_needs_support():
+    """长桌：两端各一个柱脚（从地面到台面下）；推进桌下的椅子座面（只在 0.4–0.5 米）、挂在台面边下的
+    碎片（只在台面下几厘米）不算底座。柱脚做成沿桌子方向的圆角盒。"""
+    top = sh.extrude(
+        sh.outline(
+            [(-1.6, -0.5), (1.6, -0.5), (1.6, 0.5), (-1.6, 0.5)],
+            fillets=[{"at": i, "radius": 0.45} for i in range(4)],
+        ),
+        0.05,
+        xf=sh.transform(position=[0, 0.7, 0]),
+    )
+    peds = [sh.box([0.4, 0.7, 0.5], xf=sh.transform(position=[x, 0, 0])) for x in (-1.2, 1.2)]
+    seat = sh.box([0.45, 0.06, 0.3], xf=sh.transform(position=[0.0, 0.42, 0.3]))
+    lip = sh.box([0.5, 0.03, 0.1], xf=sh.transform(position=[0.3, 0.64, -0.35]))
+    o = local_of(sh.group([top, *peds, seat, lip]))
+    g = ft.fit_table(o, 0.75, 0.05)
+    bases = [c for c in g["children"] if c["_part"]["name"].startswith("base")]
+    assert len(bases) == 2
+    xs = sorted(c["transform"]["position"][0] for c in bases)
+    assert xs == pytest.approx([-1.2, 1.2], abs=0.05)
+    for c in bases:
+        assert c["type"] == "box"
+        assert c["size"][0] == pytest.approx(0.4, abs=0.06)
+
+
+def test_fit_box_flat_item_rounds_only_vertical_edges():
+    """桌上一叠扁的东西俯视是大圆角：圆角只做在竖边（轮廓圆角），不是一块所有边都圆的肥皂。"""
+    item = sh.extrude(
+        sh.outline(
+            [(-0.3, -0.2), (0.3, -0.2), (0.3, 0.2), (-0.3, 0.2)],
+            fillets=[{"at": i, "radius": 0.12} for i in range(4)],
+        ),
+        0.08,
+    )
+    g = ft.fit_box(local_of(item), complexity=0.015)
+    leaf = g["children"][0]
+    assert leaf["type"] == "extrude"
+    assert leaf["height"] == pytest.approx(0.08, abs=0.01)
+    assert leaf["fillet"] <= 0.02
+    assert max(f["radius"] for f in leaf["outline"]["fillets"]) > 0.06
 
 
 def test_fit_chair_recovers_seat_and_curved_back():
@@ -458,6 +501,41 @@ def test_clutter_and_small_cabinets_use_plain_colors():
     assert not _textured("cabinet", 0.6)
     assert _textured("cabinet", 1.2)
     assert _textured("table", 0.6)
+
+
+def test_attach_to_tables_merges_pedestals_and_lifts_items():
+    """拆桌面剩下的块：台面下靠里、从地面到台面下的柱脚并回桌子；压在台面上、只有几个点挂到台面边下的
+    东西改成桌上的杂物（去掉台面以下的点）；推进桌下、贴着台面边的椅子照旧。"""
+    rng = np.random.default_rng(8)
+
+    def blob(n, x, y, z):
+        return np.c_[rng.uniform(*x, n), rng.uniform(*y, n), rng.uniform(*z, n)]
+
+    t = 0.75
+    slab = blob(3000, (-1.6, 1.6), (t - 0.04, t), (-0.5, 0.5))
+    ped = blob(800, (-1.4, -1.0), (0.02, t - 0.06), (-0.2, 0.2))
+    item = np.concatenate(
+        [blob(400, (0.1, 0.5), (t, t + 0.12), (-0.1, 0.1)), blob(60, (0.1, 0.5), (0.6, t), (-0.1, 0.1))]
+    )
+    chair = blob(500, (0.6, 1.0), (0.02, 0.8), (0.3, 0.6))
+    P = np.concatenate([slab, ped, item, chair])
+    n = len(P)
+    op = ObjectPoints(
+        P, np.zeros((n, 3), np.uint8), np.tile([0, 1.0, 0], (n, 1)), np.zeros(n, int), P[:, 1], None, None, {}
+    )
+    ranges = np.cumsum([0, len(slab), len(ped), len(item), len(chair)])
+    idx = [np.arange(ranges[k], ranges[k + 1]) for k in range(4)]
+    table = Segment(idx[0], {"table-top"}, top={"height": t, "thickness": 0.04})
+    tag = {f"below-top:{t:.3f}"}
+    out = attach_to_tables(
+        op, [table, Segment(idx[1], set(tag)), Segment(idx[2], set(tag)), Segment(idx[3], set(tag))]
+    )
+    assert len(out) == 3
+    merged = next(s for s in out if "table-top" in s.tags)
+    assert len(merged.idx) == len(slab) + len(ped)
+    on_top = next(s for s in out if "on-top" in s.tags)
+    assert P[on_top.idx, 1].min() > t - 0.0101 and 400 <= len(on_top.idx) <= 410
+    assert any(s.tags == tag and len(s.idx) == len(chair) for s in out)
 
 
 def test_hints_override_kind_and_label():
