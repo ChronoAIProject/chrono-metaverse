@@ -34,7 +34,9 @@ def test_single_origin_vector():
     cells = ch.empty_chunk()
     cells[0, 0, 0] = 2
     data = ch.canonical_bytes(cells)
-    assert hashlib.sha256(data).hexdigest() == "ad931d4b4e5bcf32b55169f325f5d2b31d7b82a7366d4788be50bcc003c69606"
+    assert (
+        hashlib.sha256(data).hexdigest() == "ad931d4b4e5bcf32b55169f325f5d2b31d7b82a7366d4788be50bcc003c69606"
+    )
     assert ch.chunk_hash(cells) == "79d3ba5b33373bb6ae7dd3d787b1a96f8a9991c92fc8e238b96de6463e7c1a81"
     rust_compressed = base64.b64decode(
         "eJztwAENAAAAwqDP/qEtAgsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
@@ -53,7 +55,9 @@ def test_floor_and_wall_vector():
     assert data[3104:3106] == bytes([7, 0])
     assert ch.non_zero_count(cells) == 1249
     assert ch.chunk_hash(cells) == "efd44341e0be3a763bbbf7dabe1b56ef389065afdc96d9067713344ba3317586"
-    assert hashlib.sha256(data).hexdigest() == "49bd5865866c3e52399995463851d9b774c540a3bd24104c037da7c1cf6d20b3"
+    assert (
+        hashlib.sha256(data).hexdigest() == "49bd5865866c3e52399995463851d9b774c540a3bd24104c037da7c1cf6d20b3"
+    )
 
 
 def test_round_trip_and_corruption():

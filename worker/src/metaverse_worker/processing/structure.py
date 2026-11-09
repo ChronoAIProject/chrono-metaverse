@@ -11,7 +11,8 @@
 3. **玻璃**：玻璃扫描得稀疏、深度分散，不会形成尖峰。在轴向上找宽峰（排除已认定的实墙附近），
    要求长度 ≥ 3 米、1 米以上有覆盖、位于地面范围的外缘（前面有地、后面没有）。
 4. **墙角吸附**：两段不平行的墙，端点都在交点附近时把端点移到交点。
-5. **地面补全**：把墙线画进占用图当作边界，填满被地面和墙围住的区域（桌下、沙发下），但不超出已扫到地面 1.2 米。
+5. **地面补全**：把墙线画进占用图当作边界，填满被地面和墙围住的区域（桌下、沙发下），
+   但不超出已扫到地面 1.2 米。
 6. **贴图**：每个元素按 1 厘米/像素正交投影烘焙（地面剔除与周围地面颜色差异大的采样，去掉印在地上的椅子）。
 
 输出 `StructureResult`，再由 `structure_entities` 写成 SHAPES 物件记录（`kind: structure`，带贴图的 `box`
@@ -156,7 +157,7 @@ def extract_structure(mesh: ScanMesh, params: StructureParams | None = None) -> 
     dens = prm.sample_density
 
     def pts(area: float) -> int:
-        return max(3, int(round(area * dens)))
+        return max(3, round(area * dens))
 
     table = FaceTable(mesh)
     V = mesh.vertices
@@ -166,7 +167,7 @@ def extract_structure(mesh: ScanMesh, params: StructureParams | None = None) -> 
     if len(P) < 100:
         raise ValueError("扫描表面太小，无法重建结构")
     FG = prm.footprint_cell
-    cell_min = max(1, int(round(0.2 * FG * FG * dens)))  # 10 厘米格子里至少 20% 的期望点数
+    cell_min = max(1, round(0.2 * FG * FG * dens))  # 10 厘米格子里至少 20% 的期望点数
 
     # ------------------------------------------------------------ 1. 地面
     up = (N[:, 1] > 0.9) & (P[:, 1] < 0.4)
@@ -177,7 +178,7 @@ def extract_structure(mesh: ScanMesh, params: StructureParams | None = None) -> 
     fl = up & (np.abs(P[:, 1] - y_mode) < 0.15)
     floor_y = float(np.median(P[fl, 1]))
     G = prm.height_cell
-    hf_min = max(3, int(round(0.0667 * G * G * dens)))
+    hf_min = max(3, round(0.0667 * G * G * dens))
     hf = _HeightField(P, fl, extent, G, hf_min)
     fin = up & (np.abs(P[:, 1] - hf.height(P[:, 0], P[:, 2])) < 0.05)
     stats["floor"] = {"y": floor_y, "inliers": int(fin.sum())}
@@ -237,7 +238,9 @@ def extract_structure(mesh: ScanMesh, params: StructureParams | None = None) -> 
         hh, ee = np.histogram(s, bins=nb, range=(lo, lo + 0.02 * nb))
         sup = np.convolve(hh, np.ones(5), "same")
         peaks = [
-            i for i in range(nb) if sup[i] == sup[max(0, i - 7) : i + 8].max() and sup[i] >= pts(prm.wall_peak_min_area)
+            i
+            for i in range(nb)
+            if sup[i] == sup[max(0, i - 7) : i + 8].max() and sup[i] >= pts(prm.wall_peak_min_area)
         ]
         for i in sorted(peaks, key=lambda i: -sup[i]):
             off0 = 0.5 * (ee[i] + ee[i + 1])
@@ -384,9 +387,17 @@ def extract_structure(mesh: ScanMesh, params: StructureParams | None = None) -> 
             off = float(np.percentile(s_all[seg], 75))  # 玻璃靠房间一侧的面
             uu = np.linspace(ua, ub_, 60)
             f_in = np.mean(
-                [in_footprint(*(n2[None] * (off + dd) + t2[None] * uu[:, None]).T).mean() for dd in (0.6, 1.2, 1.8)]
+                [
+                    in_footprint(*(n2[None] * (off + dd) + t2[None] * uu[:, None]).T).mean()
+                    for dd in (0.6, 1.2, 1.8)
+                ]
             )
-            b_in = np.mean([in_footprint(*(n2[None] * (off - dd) + t2[None] * uu[:, None]).T).mean() for dd in (0.6, 1.2)])
+            b_in = np.mean(
+                [
+                    in_footprint(*(n2[None] * (off - dd) + t2[None] * uu[:, None]).T).mean()
+                    for dd in (0.6, 1.2)
+                ]
+            )
             if f_in < 0.5 or b_in > 0.2:
                 continue
             sv = s_all[seg]
@@ -405,7 +416,10 @@ def extract_structure(mesh: ScanMesh, params: StructureParams | None = None) -> 
                     prof_v=np.array([off, off]),
                     seg=seg,
                     glazing=True,
-                    band=(float(np.percentile(sv, 98) - off) + 0.02, float(off - np.percentile(sv, 2)) + 0.02),
+                    band=(
+                        float(np.percentile(sv, 98) - off) + 0.02,
+                        float(off - np.percentile(sv, 2)) + 0.02,
+                    ),
                 )
             )
 
@@ -439,7 +453,9 @@ def extract_structure(mesh: ScanMesh, params: StructureParams | None = None) -> 
         ok = (i >= 0) & (i < occ.shape[0]) & (j >= 0) & (j < occ.shape[1])
         bar[i[ok], j[ok]] = True
     occ0 = occ.copy()
-    occ = ndimage.binary_fill_holes(ndimage.binary_closing(occ | bar, np.ones((3, 3)), iterations=2) | occ | bar)
+    occ = ndimage.binary_fill_holes(
+        ndimage.binary_closing(occ | bar, np.ones((3, 3)), iterations=2) | occ | bar
+    )
     occ &= ndimage.binary_dilation(occ0, np.ones((3, 3)), iterations=12)  # 不超出已扫到的地面 1.2 米
     occ = ndimage.binary_opening(occ, np.ones((2, 2))) | occ0
     zz, xx = np.where(occ)
@@ -723,7 +739,9 @@ def element_props(element: Element) -> dict[str, Any]:
     return props
 
 
-def floor_outline(footprint: np.ndarray, cell: float, tolerance: float = 0.15) -> list[tuple[float, float]] | None:
+def floor_outline(
+    footprint: np.ndarray, cell: float, tolerance: float = 0.15
+) -> list[tuple[float, float]] | None:
     """地面范围明显不是矩形时（填充率 < 97%），返回简化后的轮廓（逆时针），用 extrude 生成地面；否则 None。"""
     zz, xx = np.nonzero(footprint)
     if len(zz) == 0:

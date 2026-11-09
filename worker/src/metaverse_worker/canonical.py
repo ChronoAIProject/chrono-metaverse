@@ -147,8 +147,4 @@ def content_hash(value: Any) -> str:
 
 
 def is_sha256_hex(value: Any) -> bool:
-    return (
-        isinstance(value, str)
-        and len(value) == 64
-        and all(c in "0123456789abcdef" for c in value)
-    )
+    return isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)

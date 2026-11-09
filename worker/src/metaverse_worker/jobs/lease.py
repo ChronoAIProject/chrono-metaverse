@@ -73,9 +73,7 @@ class Lease:
 
 def _attempt_expr(op: str) -> dict[str, Any]:
     return {
-        "$expr": {
-            op: [{"$ifNull": ["$attempt", 0]}, {"$ifNull": ["$maxAttempts", DEFAULT_MAX_ATTEMPTS]}]
-        }
+        "$expr": {op: [{"$ifNull": ["$attempt", 0]}, {"$ifNull": ["$maxAttempts", DEFAULT_MAX_ATTEMPTS]}]}
     }
 
 
@@ -139,7 +137,10 @@ def claim(
         # 记录本身不合法：不能确定系统范围，直接标记失败，不做任何处理。
         store.jobs.update_one(
             {"_id": doc["_id"], "leaseOwner": worker_id, "attempt": doc["attempt"]},
-            {"$set": {"status": JobStatus.FAILED, "lastError": f"任务记录不合法：{error}"}, "$unset": {"leaseUntil": ""}},
+            {
+                "$set": {"status": JobStatus.FAILED, "lastError": f"任务记录不合法：{error}"},
+                "$unset": {"leaseUntil": ""},
+            },
         )
         log.error("任务 %s 记录不合法：%s", doc["_id"], error)
         return None
@@ -222,6 +223,22 @@ def mark_failed(store: Store, lease: Lease, error: BaseException | str, *, retry
 def release(store: Store, lease: Lease) -> bool:
     """收到停止信号、来不及做完时主动释放租约：把到期时间设为现在，其他副本马上可以重做。"""
     outcome = store.jobs.update_one(lease.fence(), {"$set": {"leaseUntil": format_ts(store.clock() - 1)}})
+    return outcome.matched_count == 1
+
+
+def requeue(store: Store, lease: Lease) -> bool:
+    """收到停止信号、来不及做完：退回队列，并退还这一次的重试次数（不是任务本身的问题）。
+
+    条件带栅栏；匹配不到说明租约已经不属于本进程，什么也不做。
+    """
+    outcome = store.jobs.update_one(
+        lease.fence(),
+        {
+            "$set": {"status": JobStatus.QUEUED},
+            "$unset": {"leaseOwner": "", "leaseUntil": ""},
+            "$inc": {"attempt": -1},
+        },
+    )
     return outcome.matched_count == 1
 
 
