@@ -1,0 +1,294 @@
+{
+ "objects": {
+  "objects": 45,
+  "templates": 2,
+  "furnitureMeanCm": 3.11,
+  "furnitureP90Cm": 7.89,
+  "furnitureCoverage3cm": 0.668,
+  "allMeanCm": 2.91,
+  "allP90Cm": 7.32,
+  "textures": 57,
+  "textureBytes": 168854,
+  "jsonBytes": 64819,
+  "bytes": 233673,
+  "byKind": {
+   "cabinet": 12,
+   "chair": 11,
+   "clutter": 11,
+   "counter": 1,
+   "pillar": 6,
+   "sofa": 2,
+   "table": 2
+  },
+  "perObject": {
+   "counter-01": {
+    "kind": "counter",
+    "points": 30265,
+    "meanCm": 2.98
+   },
+   "cabinet-01": {
+    "kind": "cabinet",
+    "points": 2091,
+    "meanCm": 2.18
+   },
+   "chair-04": {
+    "kind": "chair",
+    "points": 2043,
+    "meanCm": 10.72
+   },
+   "chair-02": {
+    "kind": "chair",
+    "points": 1758,
+    "meanCm": 6.86
+   },
+   "chair-03": {
+    "kind": "chair",
+    "points": 1429,
+    "meanCm": 7.26
+   },
+   "chair-06": {
+    "kind": "chair",
+    "points": 1485,
+    "meanCm": 3.84
+   },
+   "chair-07": {
+    "kind": "chair",
+    "points": 1115,
+    "meanCm": 3.35
+   },
+   "chair-08": {
+    "kind": "chair",
+    "points": 1481,
+    "meanCm": 2.55
+   },
+   "chair-09": {
+    "kind": "chair",
+    "points": 1784,
+    "meanCm": 4.81
+   },
+   "chair-01": {
+    "kind": "chair",
+    "points": 886,
+    "meanCm": 10.48
+   },
+   "chair-10": {
+    "kind": "chair",
+    "points": 4520,
+    "meanCm": 4.15
+   },
+   "chair-05": {
+    "kind": "chair",
+    "points": 3207,
+    "meanCm": 4.05
+   },
+   "chair-11": {
+    "kind": "chair",
+    "points": 1886,
+    "meanCm": 2.02
+   },
+   "sofa-02": {
+    "kind": "sofa",
+    "points": 9677,
+    "meanCm": 2.71
+   },
+   "sofa-01": {
+    "kind": "sofa",
+    "points": 9114,
+    "meanCm": 4.15
+   },
+   "table-02": {
+    "kind": "table",
+    "points": 1276,
+    "meanCm": 1.29
+   },
+   "cabinet-10": {
+    "kind": "cabinet",
+    "points": 20735,
+    "meanCm": 3.51
+   },
+   "clutter-06": {
+    "kind": "clutter",
+    "points": 964,
+    "meanCm": 0.83
+   },
+   "pillar-01": {
+    "kind": "pillar",
+    "points": 4341,
+    "meanCm": 0.87
+   },
+   "clutter-07": {
+    "kind": "clutter",
+    "points": 440,
+    "meanCm": 1.92
+   },
+   "cabinet-04": {
+    "kind": "cabinet",
+    "points": 7106,
+    "meanCm": 1.22
+   },
+   "pillar-02": {
+    "kind": "pillar",
+    "points": 2911,
+    "meanCm": 1.82
+   },
+   "cabinet-09": {
+    "kind": "cabinet",
+    "points": 1331,
+    "meanCm": 2.01
+   },
+   "clutter-01": {
+    "kind": "clutter",
+    "points": 300,
+    "meanCm": 1.62
+   },
+   "cabinet-11": {
+    "kind": "cabinet",
+    "points": 4209,
+    "meanCm": 1.13
+   },
+   "cabinet-12": {
+    "kind": "cabinet",
+    "points": 2246,
+    "meanCm": 2.61
+   },
+   "clutter-08": {
+    "kind": "clutter",
+    "points": 380,
+    "meanCm": 0.86
+   },
+   "clutter-02": {
+    "kind": "clutter",
+    "points": 236,
+    "meanCm": 1.04
+   },
+   "clutter-03": {
+    "kind": "clutter",
+    "points": 246,
+    "meanCm": 0.55
+   },
+   "cabinet-03": {
+    "kind": "cabinet",
+    "points": 1028,
+    "meanCm": 1.15
+   },
+   "clutter-05": {
+    "kind": "clutter",
+    "points": 526,
+    "meanCm": 1.61
+   },
+   "table-01": {
+    "kind": "table",
+    "points": 8262,
+    "meanCm": 1.18
+   },
+   "cabinet-08": {
+    "kind": "cabinet",
+    "points": 823,
+    "meanCm": 1.35
+   },
+   "cabinet-07": {
+    "kind": "cabinet",
+    "points": 667,
+    "meanCm": 2.33
+   },
+   "cabinet-06": {
+    "kind": "cabinet",
+    "points": 647,
+    "meanCm": 3.12
+   },
+   "clutter-04": {
+    "kind": "clutter",
+    "points": 642,
+    "meanCm": 2.99
+   },
+   "cabinet-05": {
+    "kind": "cabinet",
+    "points": 1235,
+    "meanCm": 2.03
+   },
+   "cabinet-02": {
+    "kind": "cabinet",
+    "points": 1743,
+    "meanCm": 1.05
+   },
+   "pillar-06": {
+    "kind": "pillar",
+    "points": 1130,
+    "meanCm": 2.28
+   },
+   "pillar-03": {
+    "kind": "pillar",
+    "points": 1366,
+    "meanCm": 1.28
+   },
+   "pillar-04": {
+    "kind": "pillar",
+    "points": 1657,
+    "meanCm": 2.0
+   },
+   "pillar-05": {
+    "kind": "pillar",
+    "points": 1413,
+    "meanCm": 1.56
+   },
+   "clutter-09": {
+    "kind": "clutter",
+    "points": 291,
+    "meanCm": 1.67
+   },
+   "clutter-11": {
+    "kind": "clutter",
+    "points": 118,
+    "meanCm": 1.09
+   },
+   "clutter-10": {
+    "kind": "clutter",
+    "points": 112,
+    "meanCm": 0.92
+   }
+  },
+  "segmentStats": {
+   "samples": 947352,
+   "floor": 273336,
+   "wall": 306016,
+   "ceiling": 203425,
+   "outside": 2276,
+   "objects": 162299
+  },
+  "seconds": {
+   "segment": 3.5,
+   "total": 44.93
+  }
+ },
+ "furnitureZone": {
+  "meanCm": 2.95,
+  "p90Cm": 6.9,
+  "coverage3cm": 0.638,
+  "points": 18244,
+  "within2cm": 0.477
+ },
+ "sizes": {
+  "objectsJsonBytes": 64831,
+  "objectTexturesBytes": 168854,
+  "objectsTotalBytes": 233685,
+  "structureJsonBytes": 4483,
+  "structureTexturesBytes": 284694,
+  "allTotalBytes": 522862,
+  "lobbyGlb": {
+   "triangles": 51172,
+   "bytes": 2668088,
+   "nodes": 52
+  },
+  "objectsGlb": {
+   "triangles": 50928,
+   "bytes": 2359620,
+   "nodes": 45
+  }
+ },
+ "seconds": {
+  "load_align": 1.4,
+  "structure": 8.0,
+  "objects": 44.9
+ },
+ "hints": true
+}

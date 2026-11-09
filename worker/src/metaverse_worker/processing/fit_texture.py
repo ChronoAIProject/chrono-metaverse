@@ -300,7 +300,7 @@ def finalize_materials(
         lum_std = float(np.std(luminance(cols))) if len(cols) > 5 else 0.0
         area = meshes[k].area()
         # 部件可以声明"偏向纯色"（椅子壳、椅腿这类单一材质的部件），门槛提高
-        limit = tp.lum_std_texture * (2.0 if info.get("prefer") == "color" else 1.0)
+        limit = math.inf if info.get("prefer") == "color" else tp.lum_std_texture
         want = allow_textures and lum_std > limit and area >= tp.min_texture_area and m.sum() >= 150
         if not want:
             leaf["material"] = sh.color_material(med)

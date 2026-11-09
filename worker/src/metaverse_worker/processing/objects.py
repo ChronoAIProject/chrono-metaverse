@@ -386,7 +386,14 @@ def _fit_local_raw(o: Local, kind: str) -> tuple[dict[str, Any], str]:
     if kind == "sofa":
         return fit_sofa(o), "sofa"
     if kind == "counter":
-        return _best_of(o, [("terrace", lambda: fit_terrace(o)), ("stack", lambda: fit_stack(o))])
+        return _best_of(
+            o,
+            [
+                ("terrace", lambda: fit_terrace(o)),
+                ("terrace", lambda: fit_terrace(o, main_mode="stack")),
+                ("stack", lambda: fit_stack(o)),
+            ],
+        )
     if kind == "plant":
         return fit_plant(o), "lathe"
     if kind in ("round", "lamp"):
@@ -397,11 +404,13 @@ def _fit_local_raw(o: Local, kind: str) -> tuple[dict[str, Any], str]:
     cands = [("box", lambda: fit_box(o, uv=uv))]
     if kind in ("cabinet", "clutter") and float(np.percentile(o.y, 99)) > 0.3:
         cands.append(("stack", lambda: fit_stack(o, uv=uv)))
+        if float(np.percentile(o.y, 99)) > 1.5:
+            cands.append(("stack", lambda: fit_stack(o, uv=uv, max_bands=6)))
     return _best_of(o, cands)
 
 
 def _best_of(o: Local, cands) -> tuple[dict[str, Any], str]:
-    """几种拟合里选偏差最小的（每多一个部件加 0.3 厘米的代价，偏向简单的形状）。"""
+    """几种拟合里选偏差最小的（每多一个部件加 0.1 厘米的代价，偏向简单的形状）。"""
     from .fit_texture import strip_parts
 
     rng = np.random.default_rng(5)
@@ -417,7 +426,7 @@ def _best_of(o: Local, cands) -> tuple[dict[str, Any], str]:
         if len(mesh.indices) == 0:
             continue
         d, _, _ = SurfaceIndex.build([mesh], spacing=0.015).query(P, k=3)
-        score = float(d.mean()) + 0.003 * len(shape.get("children") or [shape])
+        score = float(d.mean()) + 0.001 * len(shape.get("children") or [shape])
         if best is None or score < best[0]:
             best = (score, shape, name)
     if best is None:

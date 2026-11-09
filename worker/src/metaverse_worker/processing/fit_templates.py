@@ -98,7 +98,8 @@ def fit_table(o: Local, top_y: float | None = None, thickness: float | None = No
     xz = o.xz[slab] if slab.sum() >= 20 else o.xz
     size = float(np.ptp(xz, axis=0).max())
     children = []
-    fit = fit_footprint(xz, tol_for(size), cell=0.01 if size < 2.0 else 0.02)
+    # 台面偏向规整的形状（圆角矩形、跑道形、圆、凸包）：桌边的椅子、没扫全的台面让占用不规则，不追这些
+    fit = fit_footprint(xz, tol_for(size), cell=0.01 if size < 2.0 else 0.02, complexity=0.012)
     top_outline = fit.outline
     kind = fit.kind
     top = sh.extrude(top_outline, th, xf=sh.transform(position=[0, top_y - th, 0]))
@@ -553,7 +554,9 @@ def fit_sofa(o: Local) -> dict[str, Any]:
 # ---------------------------------------------------------------------------- 前台（分层挤出）
 
 
-def fit_terrace(o: Local, *, cell: float = 0.03, max_levels: int = 4, name: str = "body") -> dict[str, Any]:
+def fit_terrace(
+    o: Local, *, cell: float = 0.03, max_levels: int = 4, name: str = "body", main_mode: str = "shell"
+) -> dict[str, Any]:
     """俯视按最高点高度分层：每层的区域按轮廓（圆弧 + 折线）挤出到该层高度。主层（面积最大的）
     用 3 个截面的 loft 表达立面的折面：各高度截面相对主层轮廓的整体外扩量。"""
     y = o.y
@@ -591,7 +594,13 @@ def fit_terrace(o: Local, *, cell: float = 0.03, max_levels: int = 4, name: str 
             regions.append((h, rm))
     if not regions:
         return fit_box(o)
-    main = max(regions, key=lambda t: t[1].sum())
+    # 主体：最高一层里最大的区域（前台的高台面那一圈立面），不太小时优先于更大的矮区域（里面的工作台）
+    biggest = max(regions, key=lambda t: t[1].sum())
+    top_level = max(h for h, _ in regions)
+    highs = [r for r in regions if r[0] == top_level]
+    main = max(highs, key=lambda t: t[1].sum())
+    if main[1].sum() < 0.3 * biggest[1].sum():
+        main = biggest
     for i, (h, rm) in enumerate(sorted(regions, key=lambda t: -t[1].sum())[:8]):
         zz, xx = np.nonzero(rm)
         cxz = np.c_[m.x0 + (xx + 0.5) * cell, m.z0 + (zz + 0.5) * cell]
@@ -606,11 +615,15 @@ def fit_terrace(o: Local, *, cell: float = 0.03, max_levels: int = 4, name: str 
             iz2 = np.clip(((o.L[:, 2] - m.z0) / cell).astype(int), 0, rm.shape[0] - 1)
             ix2 = np.clip(((o.L[:, 0] - m.x0) / cell).astype(int), 0, rm.shape[1] - 1)
             sub = o.sub(inside.mask[iz2, ix2] & (o.y <= top + 0.03))
-            stack = fit_stack(sub, max_bands=4, name=f"{name}-{i + 1}") if len(sub.L) > 200 else None
-            if stack is not None:
-                children.extend(stack["children"])
+            if main_mode == "shell":
+                shell = _counter_shell(sub, fit.outline, top, f"{name}-{i + 1}") if len(sub.L) > 200 else None
+            else:
+                stack = fit_stack(sub, max_bands=4, name=f"{name}-{i + 1}") if len(sub.L) > 200 else None
+                shell = stack["children"] if stack is not None else None
+            if shell:
+                children.extend(shell)
                 continue
-            shape = _facade_loft(o, fit.outline, top) or sh.extrude(fit.outline, top)
+            shape = sh.extrude(fit.outline, top)
         else:
             shape = sh.extrude(fit.outline, top)
         if shape["type"] == "extrude":
@@ -623,47 +636,72 @@ def fit_terrace(o: Local, *, cell: float = 0.03, max_levels: int = 4, name: str 
     return sh.group(children)
 
 
-def _facade_loft(o: Local, outline: dict[str, Any], top: float) -> dict[str, Any] | None:
-    """主层的立面：在 3–4 个高度上量截面相对轮廓的外扩量（中位数的带符号距离），不明显时返回 None。"""
+def _facade_offsets(o: Local, outline: dict[str, Any], ys: list[float]) -> list[float | None]:
+    """各高度上立面相对轮廓的外扩量：只用朝外的点（水平法线与最近一段轮廓的外法线一致），
+    取它们到轮廓的带符号距离（外正内负）的中位数。"""
     poly = outline_polygon(outline)
-    if len(poly) < 3 or len(poly) > 400:
-        return None
-    ys = [0.04, top * 0.35, top * 0.7, top - 0.03]
-    offs = []
     seg_a = poly
     seg_b = np.roll(poly, -1, axis=0)
+    ab = seg_b - seg_a
+    ln = np.maximum(np.hypot(*ab.T), 1e-9)
+    outward = np.c_[ab[:, 1], -ab[:, 0]] / ln[:, None]
+    out: list[float | None] = []
     for yk in ys:
         msk = np.abs(o.y - yk) < 0.03
         if msk.sum() < 30:
-            offs.append(None)
+            out.append(None)
             continue
         p = o.xz[msk]
-        # 点到折线的距离，按在多边形内外取符号
-        d = np.full(len(p), np.inf)
-        for a, b in zip(seg_a, seg_b, strict=True):
-            ab = b - a
-            t = np.clip(((p - a) @ ab) / max(ab @ ab, 1e-12), 0, 1)
-            d = np.minimum(d, np.hypot(*(p - (a + t[:, None] * ab)).T))
-        inside = polygon_contains(poly, p)
-        sd = np.where(inside, -d, d)
-        near = np.abs(sd) < 0.15
-        offs.append(float(np.percentile(sd[near], 80)) if near.sum() > 20 else None)
-    vals = [v for v in offs if v is not None]
-    if len(vals) < 2 or max(vals) - min(vals) < 0.03:
-        return None
+        nh = o.N[msk][:, [0, 2]]
+        best_d = np.full(len(p), np.inf)
+        best_k = np.zeros(len(p), int)
+        for k in range(len(seg_a)):
+            t = np.clip(((p - seg_a[k]) @ ab[k]) / max(ab[k] @ ab[k], 1e-12), 0, 1)
+            dk = np.hypot(*(p - (seg_a[k] + t[:, None] * ab[k])).T)
+            better = dk < best_d
+            best_d[better] = dk[better]
+            best_k[better] = k
+        sd = np.where(polygon_contains(poly, p), -best_d, best_d)
+        facing = (nh * outward[best_k]).sum(1) > 0.5
+        near = facing & (np.abs(sd) < 0.2)
+        out.append(float(np.median(sd[near])) if near.sum() > 20 else None)
+    return out
+
+
+def _counter_shell(o: Local, outline: dict[str, Any], top: float, name: str) -> list[dict[str, Any]] | None:
+    """前台主体：踢脚线（底部内收的一圈，单独一块）+ 立面（几个高度上相对台面轮廓整体外扩或内收的截面放样，
+    保留折面和斜面）。轮廓点太多时返回 None。"""
     from .fit_measure import offset_outline
 
-    sections = []
-    for yk, off in zip(ys, offs, strict=True):
-        if off is None:
-            continue
-        off = float(np.clip(off, -0.12, 0.12))
-        ol = offset_outline(outline, off) if abs(off) > 0.003 else outline
-        sections.append({"y": sh.r4(yk if yk > 0.05 else 0.0), "outline": ol})
-    sections[-1]["y"] = sh.r4(top)
-    if len(sections) < 2:
+    poly = outline_polygon(outline)
+    if len(poly) < 3 or len(poly) > 400:
         return None
-    return {"type": "loft", "sections": sections}
+    ys = [0.06, 0.2, top * 0.45, top * 0.75, top - 0.03]
+    offs = _facade_offsets(o, outline, ys)
+    parts: list[dict[str, Any]] = []
+    base = 0.0
+    body = [(y, f) for y, f in zip(ys[1:], offs[1:], strict=True) if f is not None]
+    if offs[0] is not None and body and offs[0] < min(f for _, f in body) - 0.03:
+        # 踢脚线：比上面的立面缩进 3 厘米以上
+        base = 0.12
+        kick = sh.extrude(offset_outline(outline, float(np.clip(offs[0], -0.25, 0.1))), base)
+        parts.append(part(kick, f"{name}-kick", "cylindrical", "color"))
+    secs = [(max(y, base), f) for y, f in body if y >= base]
+    if len(secs) >= 2 and max(f for _, f in secs) - min(f for _, f in secs) >= 0.02:
+        sections = []
+        for i, (yk, off) in enumerate(secs):
+            y = base if i == 0 else (top if i == len(secs) - 1 else yk)
+            off = float(np.clip(off, -0.15, 0.15))
+            ol = offset_outline(outline, off) if abs(off) > 0.003 else outline
+            sections.append({"y": sh.r4(y), "outline": ol})
+        if all(sections[i]["y"] < sections[i + 1]["y"] for i in range(len(sections) - 1)):
+            parts.append(part({"type": "loft", "sections": sections}, f"{name}-facade", "cylindrical"))
+            return parts
+    body_shape = sh.extrude(outline, top - base, xf=sh.transform(position=[0, base, 0]))
+    if is_convex(outline):
+        body_shape["fillet"] = 0.01
+    parts.append(part(body_shape, f"{name}-facade", "cylindrical"))
+    return parts
 
 
 # ---------------------------------------------------------------------------- 盒子、旋转体

@@ -499,6 +499,7 @@ def fit_footprint(
     cell: float | None = None,
     allow_circle: bool = True,
     mask: Mask2D | None = None,
+    complexity: float = 0.004,
 ) -> OutlineFit:
     """俯视占用 → 轮廓：先按 `fit_outline`（圆 / 圆角矩形 / 带圆弧的折线），与占用的交并比不到 0.8 时
     退回凸包或外接框里交并比最高的那个。"""
@@ -534,7 +535,7 @@ def fit_footprint(
         r = min(errs)[1]
     info = {"half": half, "radius": r, "center": ctr.tolist()}
     cands.append(OutlineFit("rect", _rect_outline(half, r, ctr[0], ctr[1]), 0.0, info))
-    # 交并比减去复杂度代价（每个顶点 0.004）：差不多时取简单的（圆、圆角矩形、少几个点的折线）
+    # 交并比减去复杂度代价（默认每个顶点 0.004）：差不多时取简单的（圆、圆角矩形、少几个点的折线）
     best = None
     for c in cands:
         try:
@@ -544,7 +545,7 @@ def fit_footprint(
         except Exception:
             continue
         c.info["iou"] = iou
-        score = iou - 0.004 * len(c.outline["points"])
+        score = iou - complexity * len(c.outline["points"])
         if best is None or score > best[0]:
             best = (score, c)
     return best[1] if best is not None else cands[-1]
