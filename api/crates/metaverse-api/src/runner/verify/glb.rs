@@ -1120,7 +1120,7 @@ impl GlbStream {
                 width,
                 height,
             } = image.probe.finish().map_err(|error| {
-                Reject::new("glb_image", format!("glb 里的图片：{}", error.message))
+                Reject::new(error.code, format!("glb 里的图片：{}", error.message))
             })?;
             max_side = max_side.max(width.max(height));
             pixels += u64::from(width) * u64::from(height);
