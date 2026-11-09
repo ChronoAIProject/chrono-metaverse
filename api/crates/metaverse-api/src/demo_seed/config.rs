@@ -4,10 +4,15 @@
 //! 必须声明大小和 sha256，总大小不超过 [`MAX_SEED_TOTAL_BYTES`] 和扫描上传上限（`UPLOAD_MAX_SCAN_BYTES`）
 //! 中较小的一个；空间编号、名称、说明按建空间接口的规则校验。配置不合法时接口服务启动失败（与其他配置一样，见 `config.rs`）。
 //!
+//! 可选的 `authored: {url, sha256, size}` 是 AI 物件集（设计 6.3）：地址规则、下载、核对与扫描文件相同，
+//! 大小 ≤ 4MB（[`MAX_AUTHORED_BYTES`]）；下载后登记成 authored 资源，导入任务带 `authoredAsset`，
+//! 重建层换成物件集里的物件（这时 `rebuild` 不能是 false）。
+//!
 //! 分享令牌原文只用来算哈希：`Debug` 不输出内容、释放时清零，错误信息里也不出现它。
 
 use std::fmt;
 
+use metaverse_core::authored::MAX_AUTHORED_BYTES;
 use metaverse_core::canonical::canonical_json;
 use metaverse_core::ids::is_subject_id;
 use metaverse_core::model::{Owner, OwnerKind, UploadFormat, Visibility};
@@ -30,6 +35,8 @@ pub const MAX_FILES: usize = 32;
 /// 接口服务的 `memory_limit` 是 1Gi，还要给并发的分片上传留余量。种子在每次启动时执行，超内存被杀
 /// 会让接口服务反复重启，所以这里比扫描上传的上限（默认 1GiB）严。
 pub const MAX_SEED_TOTAL_BYTES: u64 = 256 << 20;
+/// 物件集在日志和错误信息里的文件名。
+pub const AUTHORED_FILE: &str = "authored.json";
 /// 分享令牌原文的长度范围（base64url；32 个字符约 192 位随机数）。
 pub const MIN_SHARE_TOKEN_CHARS: usize = 32;
 pub const MAX_SHARE_TOKEN_CHARS: usize = 256;
@@ -67,6 +74,8 @@ pub enum FileRole {
     Material,
     /// 已经打好的 zip（只能单独一个文件）。
     Archive,
+    /// AI 物件集（`authored`，JSON），不进扫描压缩包。
+    Authored,
 }
 
 /// 一个要下载的文件。
@@ -95,6 +104,8 @@ pub struct DemoSeedConfig {
     pub rebuild: bool,
     pub voxelize: bool,
     pub hints: Option<Value>,
+    /// AI 物件集（可选，文件名固定为 `authored.json`，格式 JSON）。
+    pub authored: Option<SeedFile>,
     /// 导入版本：改大以后重启接口服务，会对同一个空间再发起一次导入（见 `demo_seed` 模块说明）。
     pub revision: u32,
     pub share_token: Option<SeedShareToken>,
@@ -138,8 +149,18 @@ struct RawSeed {
     voxelize: bool,
     #[serde(default)]
     hints: Option<Value>,
+    #[serde(default)]
+    authored: Option<RawAuthored>,
     #[serde(default = "default_revision")]
     revision: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawAuthored {
+    url: String,
+    sha256: String,
+    size: u64,
 }
 
 #[derive(Deserialize)]
@@ -343,6 +364,37 @@ impl DemoSeedConfig {
                 "files 要么是单独一个 glb / drc / obj / zip，要么是一个 glb / drc / obj 网格加贴图（jpg、png、webp）和材质（mtl），会打包成 zip",
             ));
         }
+        let authored = match raw.authored {
+            None => None,
+            Some(authored) => {
+                let url = url::Url::parse(&authored.url)
+                    .map_err(|error| invalid(format!("authored 的地址不合法：{error}")))?;
+                if !url_allowed(&url) {
+                    return Err(invalid(
+                        "authored 的地址必须是 https（本机测试可用 http://127.0.0.1），不带用户名、密码和片段",
+                    ));
+                }
+                if !is_sha256_hex(&authored.sha256) {
+                    return Err(invalid("authored 的 sha256 必须是 64 位小写十六进制"));
+                }
+                if authored.size == 0 || authored.size > MAX_AUTHORED_BYTES {
+                    return Err(invalid(format!(
+                        "authored 的大小必须在 1–{MAX_AUTHORED_BYTES} 字节之间"
+                    )));
+                }
+                if !raw.rebuild {
+                    return Err(invalid("带 authored（AI 物件集）时 rebuild 不能是 false"));
+                }
+                Some(SeedFile {
+                    url,
+                    name: AUTHORED_FILE.to_owned(),
+                    sha256: authored.sha256,
+                    size: authored.size,
+                    role: FileRole::Authored,
+                    format: UploadFormat::Json,
+                })
+            }
+        };
         if let Some(hints) = &raw.hints {
             let fits = hints.is_object()
                 && canonical_json(hints).is_ok_and(|text| text.len() <= MAX_HINTS_BYTES);
@@ -371,6 +423,7 @@ impl DemoSeedConfig {
             rebuild: raw.rebuild,
             voxelize: raw.voxelize,
             hints: raw.hints,
+            authored,
             revision: raw.revision,
             share_token,
             max_total_bytes,
@@ -675,5 +728,43 @@ mod tests {
         let printed = format!("{config:?}");
         assert!(!printed.contains(TOKEN));
         assert!(printed.contains("<redacted>"));
+    }
+
+    #[test]
+    fn authored_set_is_optional_and_checked() {
+        let mut value = seed();
+        value["authored"] = json!({"url": "https://raw.githubusercontent.com/o/r/0123abc/infra/chrono-cd/demo/authored.json",
+                                   "sha256": "c".repeat(64), "size": 1234});
+        let config = load(&value, Some(TOKEN)).unwrap().unwrap();
+        let authored = config.authored.expect("带物件集");
+        assert_eq!(
+            (authored.name.as_str(), authored.size),
+            (AUTHORED_FILE, 1234)
+        );
+        assert_eq!(authored.format, UploadFormat::Json);
+        assert_eq!(authored.role, FileRole::Authored);
+        assert!(load(&seed(), Some(TOKEN))
+            .unwrap()
+            .unwrap()
+            .authored
+            .is_none());
+        for (key, bad) in [
+            ("url", json!("http://example.com/a.json")),
+            ("url", json!("not a url")),
+            ("sha256", json!("C".repeat(64))),
+            ("size", json!(0)),
+            ("size", json!(MAX_AUTHORED_BYTES + 1)),
+        ] {
+            let mut value = value.clone();
+            value["authored"][key] = bad.clone();
+            assert!(load(&value, Some(TOKEN)).is_err(), "{key}={bad}");
+        }
+        let mut extra = value.clone();
+        extra["authored"]["name"] = json!("x.json");
+        assert!(load(&extra, Some(TOKEN)).is_err());
+        let mut no_rebuild = value.clone();
+        no_rebuild["rebuild"] = json!(false);
+        let error = load(&no_rebuild, Some(TOKEN)).unwrap_err();
+        assert!(error.to_string().contains("rebuild"), "{error}");
     }
 }
