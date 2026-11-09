@@ -26,13 +26,28 @@ export interface ModelSource {
   readonly title: string;
 }
 
-/** 许可的显示名和是否要求署名。 */
+/** 许可的显示名、是否要求署名、许可正文的地址（CC BY 署名要附许可的链接）。 */
 export const LICENSE_INFO: Readonly<
-  Record<SourceLicense, { readonly label: string; readonly attribution: boolean }>
+  Record<
+    SourceLicense,
+    { readonly label: string; readonly attribution: boolean; readonly url: string }
+  >
 > = {
-  'CC0-1.0': { label: 'CC0 1.0（公有领域）', attribution: false },
-  'CC-BY-4.0': { label: 'CC BY 4.0（须署名）', attribution: true },
-  'CC-BY-3.0': { label: 'CC BY 3.0（须署名）', attribution: true },
+  'CC0-1.0': {
+    label: 'CC0 1.0（公有领域）',
+    attribution: false,
+    url: 'https://creativecommons.org/publicdomain/zero/1.0/',
+  },
+  'CC-BY-4.0': {
+    label: 'CC BY 4.0（须署名）',
+    attribution: true,
+    url: 'https://creativecommons.org/licenses/by/4.0/',
+  },
+  'CC-BY-3.0': {
+    label: 'CC BY 3.0（须署名）',
+    attribution: true,
+    url: 'https://creativecommons.org/licenses/by/3.0/',
+  },
 };
 
 export const LIBRARY_LABELS: Readonly<Record<SourceLibrary, string>> = {
@@ -112,6 +127,11 @@ export interface SourceCredit {
   readonly source: ModelSource;
   /** 用到这个模型的物件的显示名（标签或编号），去重后按出现顺序。 */
   readonly usedBy: readonly string[];
+}
+
+/** 许可要求署名（CC BY）的那些，顺序不变。 */
+export function attributionCredits(credits: readonly SourceCredit[]): SourceCredit[] {
+  return credits.filter((credit) => LICENSE_INFO[credit.source.license].attribution);
 }
 
 /** 场景里所有物件（含组合里的各个成员）的署名，按标题排序。 */
