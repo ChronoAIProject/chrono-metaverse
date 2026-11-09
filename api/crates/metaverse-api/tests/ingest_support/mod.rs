@@ -195,6 +195,8 @@ impl Drop for NyxMock {
 
 pub struct TestApp {
     pub state: AppState,
+    /// 启动时用的配置（部署配置种子的测试要用 `demo_seed`）。
+    pub config: Config,
     nyx: NyxMock,
     pub uri: String,
     pub database: String,
@@ -269,6 +271,7 @@ impl TestApp {
         let client = mongodb::Client::with_uri_str(&uri).await.unwrap();
         Some(Self {
             state,
+            config,
             nyx,
             uri,
             database,
