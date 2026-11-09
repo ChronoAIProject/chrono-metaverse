@@ -450,8 +450,17 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
           const job = newJob('ops_from_upload', { result: { applied: ops.length, rev: 1 } });
           return json(202, { jobId: job.id });
         }
-        case 'preview':
-          return json(201, { token: 'preview-token-abc', expiresAt: '2026-11-10T00:00:00.000Z' });
+        case 'preview': {
+          if (invalidFields(req, ['ttlSeconds'])) return;
+          const ttl = req.ttlSeconds === undefined ? 86400 : Number(req.ttlSeconds);
+          if (!Number.isInteger(ttl) || ttl < 60 || ttl > 604800)
+            return problem(422, 'invalid_request', 'ttlSeconds 必须在 60 到 604800 之间');
+          return json(201, {
+            token: 'preview-token-abc',
+            rev: draft.ops.length,
+            expiresAt: '2026-11-10T00:00:00.000Z',
+          });
+        }
         case 'publish':
           if (invalidFields(req, ['message', 'replay', 'rev', 'observedAt', 'scriptRef'])) return;
           if (state.publishConflict) {

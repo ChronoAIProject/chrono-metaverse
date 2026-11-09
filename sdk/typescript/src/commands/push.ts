@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { MAX_OPS_PER_BATCH } from '../core/ops.js';
-import { idOf } from '../transport/api.js';
+import { idOf, PREVIEW_TTL_MAX, PREVIEW_TTL_MIN } from '../transport/api.js';
 import { ApiError } from '../transport/client.js';
 import { describeJob, upload, waitForJob } from '../transport/upload.js';
 import { opsToNdjson, runBuild } from '../workspace/build.js';
@@ -31,7 +31,7 @@ metaverse publish <草稿编号>。
                       发布时作为提交说明（接口服务在发布时才收说明，建草稿不收）
   --inline            不上传文件，直接分批（每批 ≤ ${MAX_OPS_PER_BATCH} 条）调用批量操作接口
   --no-preview        不生成预览链接
-  --preview-ttl <秒>  预览链接有效期（默认 24 小时，最长 7 天）
+  --preview-ttl <秒>  预览链接有效期，60–604800 秒的整数（默认 24 小时，最长 7 天）
   --part-size <MiB>   上传分片大小（默认 8）`;
 
 export const PUBLISH_HELP = `metaverse publish <草稿编号> [--plot <地块>] [--message <说明>] [--replay]
@@ -130,6 +130,16 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
     return 0;
   }
   if (!result.base.pulled) throw new CliError('工作区还没有拉取：先运行 metaverse pull');
+  // 预览有效期也先检查：草稿建好、操作应用之后才发现不合法就晚了。
+  const ttl = flag(values, 'no-preview') ? undefined : num(values, 'preview-ttl');
+  if (
+    ttl !== undefined &&
+    (!Number.isInteger(ttl) || ttl < PREVIEW_TTL_MIN || ttl > PREVIEW_TTL_MAX)
+  ) {
+    throw new CliError(
+      `--preview-ttl 必须是 ${PREVIEW_TTL_MIN} 到 ${PREVIEW_TTL_MAX} 之间的整数（秒）`,
+    );
+  }
   // 接口服务建草稿时不收说明，说明记进 drafts.json，发布时再给。先在本地检查，免得发布时才失败。
   const message = str(values, 'message') ?? result.message ?? undefined;
   if (message !== undefined) {
@@ -191,8 +201,7 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
   }
   let link: string | null = null;
   if (!flag(values, 'no-preview')) {
-    const ttl = num(values, 'preview-ttl');
-    const preview = await api.preview(draftId, ttl !== undefined ? { ttlSec: ttl } : {}, plot);
+    const preview = await api.preview(draftId, ttl !== undefined ? { ttlSeconds: ttl } : {}, plot);
     link = previewLink(ws.config.webUrl, preview);
   }
   saveDraft(ws.root, draftId, {

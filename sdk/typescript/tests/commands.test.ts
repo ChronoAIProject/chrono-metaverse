@@ -298,6 +298,33 @@ describe('metaverse push / publish', () => {
     });
   });
 
+  it('--preview-ttl 发 ttlSeconds；超出 60–604800 秒时什么也不建', async () => {
+    fake = await startFakeApi(remoteSnapshot().state);
+    const root = directWorkspace(fake, PUSH_SCRIPT);
+    const ctx = makeContext(root);
+    expect(await main(ctx, ['push', '--plot', 'p1', '--preview-ttl', '3600'])).toBe(0);
+    const preview = fake.requests.find((r) => r.path.endsWith('/preview'))!;
+    expect(JSON.parse(preview.body.toString())).toEqual({ ttlSeconds: 3600 });
+    expect(ctx.lines.join('\n')).toContain('预览链接：');
+    const before = fake.requests.length;
+    for (const bad of ['59', '604801', '90.5']) {
+      expect(await main(ctx, ['push', '--plot', 'p1', '--preview-ttl', bad])).toBe(1);
+      expect(ctx.errors.at(-1)).toContain('60 到 604800');
+    }
+    expect(fake.requests.length).toBe(before);
+    expect(fake.state.drafts.size).toBe(1);
+    // 不给时请求体是 {}，服务端用默认的 24 小时。
+    expect(await main(ctx, ['push', '--plot', 'p1'])).toBe(0);
+    expect(
+      JSON.parse(
+        fake.requests
+          .filter((r) => r.path.endsWith('/preview'))
+          .at(-1)!
+          .body.toString(),
+      ),
+    ).toEqual({});
+  });
+
   it('--inline 分批调用批量操作接口；--json 输出', async () => {
     fake = await startFakeApi(remoteSnapshot().state);
     const root = directWorkspace(fake, PUSH_SCRIPT);

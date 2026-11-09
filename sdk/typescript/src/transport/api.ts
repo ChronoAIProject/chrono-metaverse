@@ -113,8 +113,14 @@ export interface DraftView {
 export interface PreviewView {
   readonly token?: string;
   readonly url?: string;
+  /** 绑定的草稿版本。 */
+  readonly rev?: number;
   readonly expiresAt?: string;
 }
+
+/** 预览链接有效期的范围（秒），与接口服务相同。 */
+export const PREVIEW_TTL_MIN = 60;
+export const PREVIEW_TTL_MAX = 7 * 24 * 3600;
 
 export interface PublishView {
   readonly seq?: number;
@@ -327,10 +333,13 @@ export class MetaverseApi {
     );
   }
 
-  /** `POST {范围}/drafts/{draft_id}/preview` → `{ token, url?, expiresAt }`。 */
+  /**
+   * `POST {范围}/drafts/{draft_id}/preview`，请求体 `{ ttlSeconds? }`（60–604800 秒，默认 86400；
+   * 接口服务拒绝未知字段）→ 201 `{ token, url, rev, expiresAt }`。
+   */
   preview(
     draftId: string,
-    request: { ttlSec?: number } = {},
+    request: { ttlSeconds?: number } = {},
     plot?: string | null,
   ): Promise<PreviewView> {
     return this.client.json(
