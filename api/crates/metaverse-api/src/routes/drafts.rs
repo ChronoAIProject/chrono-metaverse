@@ -1160,13 +1160,13 @@ async fn publish_draft_inner(
         Err(PublishError::AssetsGone(gone)) => {
             tracing::info!(space = %space_id, draft = %draft.id, assets = ?gone, "发布时引用的资源已被清理，没有发布");
             Ok(problem_with(
-            StatusCode::CONFLICT,
-            "asset_gone",
-            format!(
-                "草稿引用的 {} 个资源已经被清理（上传后 7 天内没被引用的资源会被删除），没有发布；请重新上传 assets 里列出的资源（内容相同，哈希也相同）后再发布",
-                gone.len()
-            ),
-            json!({"assets": gone}),
+                StatusCode::CONFLICT,
+                "asset_gone",
+                format!(
+                    "草稿引用的 {} 个资源已经被清理（上传后 7 天内没被引用的资源会被删除），没有发布；请重新上传 assets 里列出的资源（内容相同，哈希也相同）后再发布",
+                    gone.len()
+                ),
+                json!({"assets": gone}),
             ))
         }
     }
