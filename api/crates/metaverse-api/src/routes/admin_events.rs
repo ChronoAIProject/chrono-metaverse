@@ -247,13 +247,18 @@ pub async fn register_event_type(
         .space(&caller, &space_id, Purpose::Manage)
         .await?;
     check_definition(&request)?;
-    // spawnEntity 的模型：网页按公开资源接口加载，所以和草稿里的物件模型一样只能引用本空间
-    // model_import 处理后的模型，并登记到 assetRefs（设计 8.2：assetRefs 登记网页需要的资源）。
+    // spawnEntity 的模型：网页按公开资源接口加载，所以和草稿里的物件模型一样只能引用本空间的、
+    // 核对结果合乎物件模型上限的 glb（docs/design/server-slim.md 4.6），并登记到 assetRefs
+    // （设计 8.2：assetRefs 登记网页需要的资源）。
     // 先登记再写事件类型：登记是幂等的，事件类型没写成也只是让一个合格的模型可以公开读取。
     if let Some(asset) = &request.display.entity_asset {
         let unusable = state
             .repo
-            .unusable_assets(&grant, &[(asset.clone(), AssetRole::Model)])
+            .unusable_assets(
+                &grant,
+                &[(asset.clone(), AssetRole::Model)],
+                &state.ingest.config.upload_limits(),
+            )
             .await?;
         if let Some(problem) = unusable.first() {
             return Err(invalid_with(

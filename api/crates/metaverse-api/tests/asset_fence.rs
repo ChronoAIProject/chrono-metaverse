@@ -51,7 +51,7 @@ fn rug(id: &str, texture: &str) -> Value {
 }
 
 fn texture_meta() -> Document {
-    doc! {"kind": "texture", "contentType": "image/png"}
+    doc! {"kind": "texture", "contentType": "image/png", "check": timeline_support::image_check("png", 64, 64)}
 }
 
 async fn setup() -> Option<TestApp> {
@@ -294,7 +294,7 @@ async fn script_ref_must_be_a_script_of_the_space_and_is_fenced() {
             SPACE,
             "script",
             b"for x in range(2): fill(x)\n",
-            doc! {"kind": "script", "contentType": "text/plain"},
+            doc! {"kind": "script", "contentType": "text/plain", "check": timeline_support::text_check()},
             8,
         )
         .await;
@@ -433,7 +433,8 @@ async fn reuse_jobs_and_event_types_refresh_touched_at() {
             SPACE,
             "model",
             b"glTF processed robot",
-            doc! {"kind": "model", "contentType": "model/gltf-binary", "sourceHash": "e".repeat(64)},
+            doc! {"kind": "model", "contentType": "model/gltf-binary",
+            "check": timeline_support::glb_check([-0.5, 0.0, -0.5], [0.5, 1.0, 0.5], 500)},
             8,
         )
         .await;

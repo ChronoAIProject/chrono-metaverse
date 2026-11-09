@@ -35,6 +35,24 @@ impl Repo {
             .await?)
     }
 
+    /// 这个草稿有没有排队中或运行中的 `ops_from_upload` 任务（交包时，一个重建草稿只收一个包）。
+    pub async fn draft_has_pending_job(
+        &self,
+        grant: &Grant,
+        draft_id: &str,
+    ) -> Result<bool, RepoError> {
+        let mut filter = space_children(grant);
+        filter.insert("kind", "ops_from_upload");
+        filter.insert("params.draftId", draft_id);
+        filter.insert("status", doc! {"$in": ["queued", "running"]});
+        Ok(self
+            .collection(collections::JOBS)
+            .find_one(filter)
+            .projection(doc! {"_id": 1})
+            .await?
+            .is_some())
+    }
+
     pub async fn insert_job(&self, grant: &Grant, job: &Job) -> Result<JobInsert, RepoError> {
         if !grant.can_manage() || job.space_id != grant.space_id() || &job.owner != grant.owner() {
             return Err(RepoError::GrantMismatch);

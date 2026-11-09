@@ -43,15 +43,16 @@ mod drafts;
 mod space_admin;
 
 pub use blobs::{
-    AssetMeta, AssetRejection, AssetRole, AssetStream, PutAsset, UnusableAsset, MISSING_ASSET,
+    AssetMeta, AssetRejection, AssetRole, AssetRoleCheck, AssetStream, PutAsset, UnusableAsset,
+    MISSING_ASSET,
 };
 pub use commits::{
     palette_hash, state_blob_hash, BlobKind, CommitError, CommitOutcome, CommitPlan, Layout,
     StoredChunk,
 };
 pub use drafts::{
-    DraftDoc, DraftStatus, JobDraftSave, NewPreview, OpsAsset, OpsRef, OpsUpload, PreviewRecord,
-    ProvisionalBlock,
+    DraftDoc, DraftScanDoc, DraftStatus, JobDraftSave, NewPreview, OpsAsset, OpsRef, OpsUpload,
+    PreviewRecord, ProvisionalBlock,
 };
 pub use space_admin::{SpaceSettings, MAX_SHARE_TOKEN_RECORDS};
 

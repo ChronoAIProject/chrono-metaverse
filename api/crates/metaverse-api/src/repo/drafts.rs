@@ -8,7 +8,11 @@
 //!          touched, resultChunks,     // 草稿碰过的键、结果区块（全 0 的区块不列出 = 删除）
 //!          resultEntities, resultAnchors: [{id, hash|null}],   // 结果记录（body 在 records 里）
 //!          provisionalBlocks: [{name, id, block}],             // 草稿新增的方块（临时编号）
-//!          assets,                    // 草稿引用的资源（预览可读）
+//!          assets,                    // 草稿引用的可预览资源：网页用模型、物件模型、贴图（预览可读）
+//!          heldAssets,                // 只为防清理而持有的资源：包清单、原始扫描、建模记录（预览读不到）
+//!          scan?,                     // 重建草稿的 setScan：{scan, observedAt?}
+//!          bundleRef?, defaultMessage?, defaultScriptRef?,     // 重建草稿交的包、包的说明和建模记录
+//!          unchanged?,                // 重建草稿发布时内容没变、没写提交
 //!          commitId?, createdAt, updatedAt, expiresAt }        // 30 天过期
 //! draftChunks { _id: "<草稿编号>:<区块哈希>", draftId, spaceId, owner, hash, data, expiresAt }
 //! previews { _id: sha256(令牌), spaceId, owner, draftId, rev, createdBy, createdAt, expiresAt }
@@ -19,7 +23,7 @@
 use std::collections::BTreeMap;
 
 use metaverse_core::model::{Author, DraftChunk, IdChange, Owner, Touched};
-use metaverse_core::ops::{BlockDef, Op};
+use metaverse_core::ops::{BlockDef, DraftScan, Op, ScanSpec};
 use metaverse_core::scope::PathScope;
 use metaverse_core::Timestamp;
 use mongodb::bson::{doc, oid::ObjectId, spec::BinarySubtype, Binary, Bson, Document};
@@ -64,6 +68,34 @@ pub struct OpsRef {
     /// 追加它的后台任务（`ops_from_upload`）：任务被重新领取时据此判断已经做过。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub job_id: Option<String>,
+    /// 由重建包展开时：清单的资源哈希（docs/design/server-slim.md 2.6 第 6 步）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+}
+
+/// 重建草稿的 `setScan`（docs/design/server-slim.md 2.4）：发布时写进提交的 `scan`，预览快照用它。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DraftScanDoc {
+    pub scan: ScanSpec,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_at: Option<metaverse_core::Timestamp>,
+}
+
+impl DraftScanDoc {
+    pub fn from_state(scan: &DraftScan) -> Self {
+        Self {
+            scan: scan.scan.clone(),
+            observed_at: scan.observed_at,
+        }
+    }
+
+    pub fn to_state(&self) -> DraftScan {
+        DraftScan {
+            scan: self.scan.clone(),
+            observed_at: self.observed_at,
+        }
+    }
 }
 
 /// 草稿新增的方块：临时名称 → 临时编号。发布时按最新的方块表分配正式编号。
@@ -102,8 +134,28 @@ pub struct DraftDoc {
     pub result_anchors: Vec<IdChange>,
     #[serde(default)]
     pub provisional_blocks: Vec<ProvisionalBlock>,
+    /// 可预览的资源：按角色 `WebModel`、`Model`、`Texture` 引用的哈希（预览接口只认这些）。
     #[serde(default)]
     pub assets: Vec<String>,
+    /// 只为防清理而持有的资源：包清单、原始扫描、建模记录（docs/design/server-slim.md 2.8）。
+    /// 预览接口永远拿不到；发布时只被提交引用，不登记到 `assetRefs`。
+    #[serde(default)]
+    pub held_assets: Vec<String>,
+    /// 重建草稿的 `setScan`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scan: Option<DraftScanDoc>,
+    /// 重建草稿交的包（清单的资源哈希）；一个重建草稿只收一个包。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bundle_ref: Option<String>,
+    /// 发布时没给 `message` 就用它（清单的 `note`）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_message: Option<String>,
+    /// 发布时没给 `scriptRef` 就用它（清单的 `notes`）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_script_ref: Option<String>,
+    /// 重建草稿发布时内容与最新版本相比没有变化：没写提交，草稿照样标记为已发布。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unchanged: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub commit_id: Option<String>,
     /// 已追加的全部操作的计算量（格数，见 `timeline::state::ops_cells`）：发布时重放要把它们
@@ -274,6 +326,35 @@ impl Repo {
             TxnOutcome::NotMatched(0) => JobDraftSave::DraftChanged,
             TxnOutcome::NotMatched(_) => JobDraftSave::LeaseLost,
         })
+    }
+
+    /// 重建草稿发布时内容没有变化（docs/design/server-slim.md 2.7）：不写提交，按
+    /// `{_id, rev, status: open}` 条件把草稿标记为已发布、`unchanged: true`。返回是否匹配到。
+    pub async fn mark_draft_unchanged(
+        &self,
+        grant: &Grant,
+        draft_id: &str,
+        rev: u64,
+        now: metaverse_core::Timestamp,
+    ) -> Result<bool, RepoError> {
+        if !grant.can_manage() {
+            return Err(RepoError::GrantMismatch);
+        }
+        let mut filter = draft_filter(grant, draft_id);
+        filter.insert("rev", rev as i64);
+        filter.insert("status", "open");
+        let result = self
+            .collection(collections::DRAFTS)
+            .update_one(
+                filter,
+                doc! {"$set": {
+                    "status": "published",
+                    "unchanged": true,
+                    "updatedAt": now.to_rfc3339(),
+                }},
+            )
+            .await?;
+        Ok(result.matched_count == 1)
     }
 
     /// 发布后（草稿已在提交事务里标记为已发布）：预览令牌和草稿区块随即作废。只在草稿确实
@@ -482,9 +563,41 @@ impl Repo {
         upload_id: Option<&str>,
         asset_hash: Option<&str>,
     ) -> Result<Option<OpsUpload>, RepoError> {
+        self.done_upload(grant, "ops", None, upload_id, asset_hash)
+            .await
+    }
+
+    /// 交包（docs/design/server-slim.md 2.3）按上传编号找清单：必须是本空间重建路径（`scope: rebuild`）
+    /// 上传、用途 `bundle`、已核对完成的上传。
+    pub async fn bundle_upload(
+        &self,
+        grant: &Grant,
+        upload_id: &str,
+    ) -> Result<Option<OpsUpload>, RepoError> {
+        self.done_upload(
+            grant,
+            "bundle",
+            Some(&metaverse_core::scope::PathScope::Rebuild),
+            Some(upload_id),
+            None,
+        )
+        .await
+    }
+
+    async fn done_upload(
+        &self,
+        grant: &Grant,
+        purpose: &str,
+        scope: Option<&metaverse_core::scope::PathScope>,
+        upload_id: Option<&str>,
+        asset_hash: Option<&str>,
+    ) -> Result<Option<OpsUpload>, RepoError> {
         let mut filter = granted_children(grant);
-        filter.insert("purpose", "ops");
+        filter.insert("purpose", purpose);
         filter.insert("status", "done");
+        if let Some(scope) = scope {
+            filter.insert("scope", scope.to_string());
+        }
         match (upload_id, asset_hash) {
             (Some(id), None) => {
                 filter.insert("_id", upload_id_values(id));
@@ -544,7 +657,8 @@ impl Repo {
             .map(OpsAsset::Bytes)
     }
 
-    /// 草稿引用的资源（预览读草稿新上传的资源）：哈希必须在草稿的 `assets` 里。
+    /// 草稿引用的资源（预览读草稿新上传的资源）：哈希必须在草稿的 `assets` 里（只为防清理而持有的
+    /// `heldAssets`——包清单、原始扫描、建模记录——永远拿不到，docs/design/server-slim.md 2.8）。
     pub async fn draft_asset(
         &self,
         grant: &Grant,
