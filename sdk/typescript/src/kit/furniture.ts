@@ -160,12 +160,12 @@ export function chair(options: ChairOptions = {}): GroupShape {
         { color: legColor },
       ),
     );
-    // 后腿一直伸到靠背顶端，兼作靠背立柱。
+    // 后腿一直伸到靠背顶端，兼作靠背立柱（顶端留出截面半径，总高不超过靠背）。
     parts.push(
       sweep(
         [
           [sx * x, r, -z],
-          [sx * x, h + back, -z],
+          [sx * x, h + back - r, -z],
         ],
         r,
         { color: legColor },

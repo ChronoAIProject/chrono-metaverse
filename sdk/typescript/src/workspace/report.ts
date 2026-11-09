@@ -125,7 +125,7 @@ export interface CheckReport {
 /** 检查每条操作的影响范围是否都落在目标地块或实体区内。 */
 export function checkReport(result: BuildResult): CheckReport {
   const target = result.target;
-  const where = target.plotId ? `地块 ${target.plotId}` : '实体区';
+  const where = target.plotId ? `地块 ${target.plotId} ` : '实体区';
   if (target.boxes.length === 0 && result.ops.length > 0) {
     return {
       ok: false,
@@ -138,7 +138,7 @@ export function checkReport(result: BuildResult): CheckReport {
       text: `全部 ${result.ops.length} 条操作都落在${where}内（${target.scope}）`,
     };
   }
-  const lines = [`有 ${result.outside.length} 条操作超出了${where}（${target.scope}）：`];
+  const lines = [`有 ${result.outside.length} 条操作超出了${where}范围（${target.scope}）：`];
   for (const violation of result.outside.slice(0, 20)) {
     const parts = violation.cells.map((cells) => JSON.stringify(cells));
     if (violation.spaceWide) parts.push('整个空间（_space 锚点只能经实体区路径修改）');
