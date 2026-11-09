@@ -59,8 +59,8 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 | `UPLOAD_MAX_OPEN_PER_SPACE` | `16` | 每个空间进行中的上传数，超过返回 429 |
 | `UPLOAD_MAX_CONCURRENT_PARTS` | `8` | 每个副本同时处理的分片数（每片最多 32MiB 在内存里，与 `memory_limit` 一起考虑） |
 | `JOB_MAX_PENDING_PER_SPACE` | `8` | 每个空间排队和运行中的任务数，超过返回 429 |
-| `PUBLIC_RATE_LIMIT_PER_MINUTE` / `PUBLIC_RATE_LIMIT_BURST` | `12000` / `2000` | 公开 JSON 接口的限流额度。**目前按网关地址计、所有访客共用**（见下面"公开接口限流"），所以比接口服务按单个访客设计的默认值（1200 / 200）高 10 倍 |
-| `PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE` / `PUBLIC_BLOB_RATE_LIMIT_BURST` | `120000` / `20000` | 区块和资源（`/api/public/chunks/`、`/assets/`）的限流额度，同上（默认 12000 / 2000） |
+| `PUBLIC_RATE_LIMIT_PER_MINUTE` / `PUBLIC_RATE_LIMIT_BURST` | `60000000` / `1000000` | 公开 JSON 接口的限流额度。**目前按网关地址计、所有访客共用几个桶**，额度只要是进程处理得了的速率，一台机器就能把桶耗尽、让所有访客都 429，所以设成每秒 100 万次，**等于关掉限流**（见下面"公开接口限流"；接口服务按单个访客设计的默认值是 1200 / 200） |
+| `PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE` / `PUBLIC_BLOB_RATE_LIMIT_BURST` | `60000000` / `1000000` | 区块和资源（`/api/public/chunks/`、`/assets/`）的限流额度，同上（默认 12000 / 2000） |
 | `TRUSTED_CLIENT_IP_HEADER` | **不设（待向平台确认）** | 可信的客户端地址请求头。确认之前不设，接口服务按 TCP 连接地址限流，连接地址是网关或 nginx 的地址（见下面"公开接口限流"） |
 | `METAVERSE_DEMO_SEED` | [`demo-seed.json`](demo-seed.json) 压缩成的一行 | 部署配置种子：接口服务启动、建好索引后在后台建演示空间 `chronoai-lobby` 并导入前厅扫描（第 8 步）。改种子时两处一起改，`check-app.mjs` 检查一致 |
 | `METAVERSE_DEMO_SHARE_TOKEN` | **密钥**（`secret_keys`，不在 `env` 里） | 演示空间的分享令牌原文，接口服务只存它的 sha256、不写日志；用 `set_app_secrets` 设置（第 5 步）。种子是凭链接查看（`unlisted`）时必须有，缺了接口服务启动失败 |
@@ -73,12 +73,14 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 设计 8.2 要求公开接口按来源地址限流，并在第 0 阶段向平台确认哪个请求头里是可信的客户端地址（设计 16.2）。确认之前的情况：
 
 - **链路**：公网请求先到 Cloudflare，再到平台的 Google 负载均衡，最后到 `metaverse-api`（2026-11-09 实测 `https://chrono-metaverse-chronoai.apps.nyxid.ai/api/healthz` 的响应头：`server: cloudflare`、`cf-ray`、`via: 1.1 google`）；`/api` 走 nginx 兜底时还要再经过网站的 nginx。
-- **所以限流按网关地址计**：接口服务默认用 TCP 连接地址当来源，这个地址是 Google 前端代理（`35.191.0.0/16`、`130.211.0.0/22`）或 nginx 副本的地址，所有访客落进少数几个桶，限流只能当兜底。接口服务按单个访客设计的默认额度（每分钟 1200、突发 200）在这种情况下几十个同时在线的访客就会触发 429，所以 `app.json` 显式调高了 `PUBLIC_*` 四个额度。
-- **额度怎么来的**：网站"现在"模式每个访客每 5 秒带 If-None-Match 查一次 `/head`（多数 304），有变化时再拉增量事件、状态，约每分钟 24–36 次；打开一个空间约 10–20 次 JSON 请求，再加几百个区块和资源（前厅 5 厘米格约 155–195 个区块）。每分钟 12000 次按 200 个同时在线访客留了余量，突发 2000 约等于 100 个访客同时打开；区块和资源按同样的人数放大 10 倍。真正保护进程的是每个空间的并发上限（`PUBLIC_SPACE_CONCURRENCY`，默认 64）和进程内缓存，这里的额度只防一个来源把接口打满。
+- **所以限流按网关地址计**：接口服务默认用 TCP 连接地址当来源，这个地址是 Google 前端代理（`35.191.0.0/16`、`130.211.0.0/22`）或 nginx 副本的地址，所有访客落进少数几个桶。
+- **共用的桶会变成"全站 429 开关"，所以现在等于关掉限流**：只要额度是进程处理得了的速率，任何人在一台机器上持续以略高于额度的速度请求（例如有 1–2 秒进程内缓存、服务端几乎没有成本的 `/api/public/spaces/<编号>/head`），就能耗尽这几个桶，之后所有访客打开公开链接或分享链接都得到 429，攻击停下才恢复。以前按"200 个同时在线访客"调高到每分钟 12000、突发 2000 时，模拟（与锁文件相同的 governor 0.10.4、模拟时钟，合法访客共 50 次/秒，攻击都经同一个代理地址，持续 60 秒）的结果是：攻击 400 次/秒时合法请求只有 13% 成功，2000 次/秒时 1.8%。所以 `app.json` 把四个额度设成每秒 100 万次（每分钟 6000 万、突发 100 万）：单副本、1 核的接口服务远远处理不了这么多请求，进程被打满之前限流器不会拒绝任何人；同样的模拟里攻击到 10 万次/秒（60 秒）、90 万次/秒（5 秒）合法请求仍然全部成功。`check-app.mjs` 要求没有可信地址头时四个额度不低于"每核每秒 100 万次"（按接口服务的 `cpu_limit` 放大，突发至少一秒的量），改 `cpu_limit` 时要跟着改。
+- **现在靠什么兜底**：每个空间的并发上限（`PUBLIC_SPACE_CONCURRENCY`，默认 64，满了返回 503 `space_busy`，只影响那一个空间）、进程内缓存（`/head` 同一空间每秒最多读一次数据库，快照、区块、资源有字节上限）、公开空间内容不变的区块和资源（`.bin` 路径）按设计由 Cloudflare 缓存（是否命中待实测，设计 16.2），以及 Cloudflare 自带的防护。把进程本身打满仍然可能，但那要每秒几万次以上的持续洪泛，不再是每秒几百次就能做到的事。
 - **为什么暂时不设 `TRUSTED_CLIENT_IP_HEADER=cf-connecting-ip`**：接口服务对配置的头无条件信任。只要有人能绕过 Cloudflare 直接连到平台的负载均衡，就可以每个请求写一个不同的 `cf-connecting-ip`，每次都拿到新额度，限流完全失效。所以要先向平台确认两件事：① 负载均衡只接受 Cloudflare 的流量（或者会覆盖外来的 `cf-connecting-ip`）；② `cf-connecting-ip` 原样到达容器。
-- **`X-Forwarded-For` 不能用**：Google 负载均衡和 nginx 都会在后面追加地址，值是多个 IP；接口服务只认恰好一个 IP 的值，会退回连接地址（`check-app.mjs` 也会拒绝把它配成可信头）。要按转发链取客户端地址（只信任来自 Google 前端代理网段的连接、跳过负载均衡自己追加的那一段，参照 CMA 的 `CHRONO_SERVER_TRUSTED_PROXY_CIDRS`），需要接口服务先支持。
+- **`X-Forwarded-For` 不能用**：Google 负载均衡和 nginx 都会在后面追加地址，值是多个 IP；接口服务只认恰好一个 IP 的值，会退回连接地址（`check-app.mjs` 也会拒绝把它配成可信头）。
+- **不用等平台确认的做法（要接口服务先支持）**：按可信代理网段取客户端地址——只有 TCP 对端在 Google 前端代理网段（`35.191.0.0/16`、`130.211.0.0/22`）里时，才取 `X-Forwarded-For` 里负载均衡追加的客户端地址（倒数第二段）；这个地址在 Cloudflare 公布的网段里时再取 `cf-connecting-ip`，否则就用它本身；nginx 兜底路径同理只信任集群内的对端（参照 CMA 的 `CHRONO_SERVER_TRUSTED_PROXY_CIDRS`）。这样请求头不能被伪造，也不需要先确认平台配置。这是接口服务（`api/crates/metaverse-api/src/public/mod.rs` 的 `client_key`）的改动，不在部署配置里，接口服务支持之前限流保持关闭。
 
-平台确认之后：在 `app.json` 里设 `"TRUSTED_CLIENT_IP_HEADER": "cf-connecting-ip"`，四个 `PUBLIC_*` 可以删掉（回到按单个访客的默认额度），跑一遍 `node infra/chrono-cd/check-app.mjs`，再用 `PATCH` 只改这几项（JSON 合并补丁里写 `null` 表示删除这一项；改完 `GET` 一次确认）：
+平台确认之后：在 `app.json` 里设 `"TRUSTED_CLIENT_IP_HEADER": "cf-connecting-ip"`，四个 `PUBLIC_*` 可以删掉（回到按单个访客的默认额度；接口服务支持按可信代理网段取地址时同理，按它的配置项设置），跑一遍 `node infra/chrono-cd/check-app.mjs`，再用 `PATCH` 只改这几项（JSON 合并补丁里写 `null` 表示删除这一项；改完 `GET` 一次确认）：
 
 ```bash
 nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --data '{"services":{"metaverse-api":{"env":{

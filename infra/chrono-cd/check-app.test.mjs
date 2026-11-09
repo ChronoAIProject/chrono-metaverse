@@ -11,6 +11,7 @@ import { spawnSync } from 'node:child_process';
 
 import {
   API_SERVICE,
+  SHARED_BUCKET_PER_CORE_PER_SECOND,
   WORKER_SERVICE,
   canonicalJson,
   checkApp,
@@ -19,6 +20,7 @@ import {
   parseMemoryMiB,
   parsePositiveInt,
   seedProblems,
+  sharedBucketFloor,
 } from './check-app.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -92,6 +94,20 @@ test('数量解析：CPU、内存、正整数', () => {
   assert.equal(parsePositiveInt('4294967296', 4_294_967_295), null, '超过 u32');
 });
 
+test('共用桶的额度下限：每核每秒 100 万次，按 cpu_limit 向上取整，不合法时按 1 核', () => {
+  assert.deepEqual(sharedBucketFloor('1'), {
+    PUBLIC_RATE_LIMIT_PER_MINUTE: 60_000_000,
+    PUBLIC_RATE_LIMIT_BURST: 1_000_000,
+    PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE: 60_000_000,
+    PUBLIC_BLOB_RATE_LIMIT_BURST: 1_000_000,
+  });
+  assert.equal(sharedBucketFloor('250m').PUBLIC_RATE_LIMIT_BURST, 1_000_000);
+  assert.equal(sharedBucketFloor('2').PUBLIC_RATE_LIMIT_PER_MINUTE, 120_000_000);
+  assert.equal(sharedBucketFloor('2.5').PUBLIC_BLOB_RATE_LIMIT_BURST, 3_000_000);
+  assert.equal(sharedBucketFloor(undefined).PUBLIC_RATE_LIMIT_PER_MINUTE, 60_000_000);
+  assert.equal(SHARED_BUCKET_PER_CORE_PER_SECOND, 1_000_000);
+});
+
 test('处理服务：缺少线程变量时报错', () => {
   for (const name of ['OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS']) {
     const problems = problemsOf(variant((copy) => delete workerEnv(copy)[name]));
@@ -151,12 +167,50 @@ test('处理服务：子进程内存上限不小于容器上限时报错', () =>
   assert.deepEqual(problemsOf(variant((copy) => (workerEnv(copy).WORKER_JOB_MEMORY_MB = '8191'))), []);
 });
 
-test('接口服务：没有可信地址头时，限流额度必须显式设置并高于按单个访客的默认值', () => {
+test('接口服务：没有可信地址头时，限流额度必须显式设到进程处理不了的高度（共用的桶不能被一个来源耗尽）', () => {
   const missing = problemsOf(variant((copy) => delete apiEnv(copy).PUBLIC_RATE_LIMIT_PER_MINUTE));
-  assertProblem(missing, /必须显式设置 PUBLIC_RATE_LIMIT_PER_MINUTE/);
+  assertProblem(missing, /必须显式设置 PUBLIC_RATE_LIMIT_PER_MINUTE（至少 60000000/);
 
+  // 按单个访客的默认值、以及以前"调高 10 倍到演示规模"的额度：一台机器每秒几百到几千次就能耗尽。
   const atDefault = problemsOf(variant((copy) => (apiEnv(copy).PUBLIC_BLOB_RATE_LIMIT_BURST = '2000')));
-  assertProblem(atDefault, /PUBLIC_BLOB_RATE_LIMIT_BURST=2000 没有高于按单个访客设计的默认值 2000/);
+  assertProblem(atDefault, /PUBLIC_BLOB_RATE_LIMIT_BURST=2000 低于 1000000.*所有访客的公开查看都返回 429/);
+  const demoScale = problemsOf(
+    variant((copy) => {
+      Object.assign(apiEnv(copy), {
+        PUBLIC_RATE_LIMIT_PER_MINUTE: '12000',
+        PUBLIC_RATE_LIMIT_BURST: '2000',
+        PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE: '120000',
+        PUBLIC_BLOB_RATE_LIMIT_BURST: '20000',
+      });
+    }),
+  );
+  for (const name of ['PUBLIC_RATE_LIMIT_PER_MINUTE', 'PUBLIC_RATE_LIMIT_BURST', 'PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE', 'PUBLIC_BLOB_RATE_LIMIT_BURST']) {
+    assertProblem(demoScale, new RegExp(`${name}=\\d+ 低于`));
+  }
+
+  // 只差一点也不行；正好等于下限可以。
+  assertProblem(
+    problemsOf(variant((copy) => (apiEnv(copy).PUBLIC_RATE_LIMIT_PER_MINUTE = '59999999'))),
+    /PUBLIC_RATE_LIMIT_PER_MINUTE=59999999 低于 60000000/,
+  );
+  assert.deepEqual(
+    problemsOf(
+      variant((copy) => {
+        Object.assign(apiEnv(copy), {
+          PUBLIC_RATE_LIMIT_PER_MINUTE: '60000000',
+          PUBLIC_RATE_LIMIT_BURST: '1000000',
+          PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE: '60000000',
+          PUBLIC_BLOB_RATE_LIMIT_BURST: '1000000',
+        });
+      }),
+    ),
+    [],
+  );
+
+  // 接口服务的核数调高后，进程能处理的请求也多了，下限跟着放大。
+  const twoCores = problemsOf(variant((copy) => (copy.services[API_SERVICE].resources.cpu_limit = '1500m')));
+  assertProblem(twoCores, /PUBLIC_RATE_LIMIT_PER_MINUTE=60000000 低于 120000000（cpu_limit 1500m/);
+  assertProblem(twoCores, /PUBLIC_BLOB_RATE_LIMIT_BURST=1000000 低于 2000000/);
 
   const invalid = problemsOf(variant((copy) => (apiEnv(copy).PUBLIC_RATE_LIMIT_BURST = '0')));
   assertProblem(invalid, /PUBLIC_RATE_LIMIT_BURST 必须是 1 到 4294967295 的整数.*启动失败/);
