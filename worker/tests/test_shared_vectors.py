@@ -105,3 +105,41 @@ def test_triangle_vectors_present():
         f.stem for f in VECTORS.glob("shape_*.json") if "triangles" in json.loads(f.read_text("utf-8"))
     ]
     assert any("plate" in name for name in counted) and any("hull" in name for name in counted)
+
+
+def _load_uv():
+    folder = VECTORS / "uv"
+    if not folder.is_dir():
+        return [pytest.param(None, marks=pytest.mark.skip(reason=f"没有贴图坐标向量目录 {folder}"))]
+    return [
+        pytest.param(json.loads(f.read_text("utf-8")), id=f.stem) for f in sorted(folder.glob("uv_*.json"))
+    ]
+
+
+@pytest.mark.parametrize("vector", _load_uv())
+def test_uv_vectors(vector):
+    """贴图坐标（vectors/README.md 第 5 节）：按位置和法线找到顶点，最终贴图坐标与向量相同。"""
+    tol = vector["tolerance"]
+    local = {k: v for k, v in vector["shape"].items() if k != "transform"}
+    parts = sm.build_parts(local, vector.get("templates") or {})
+    assert len(parts) >= 1
+    assert all(p.material == vector["shape"]["material"] for p in parts), "向量里的形状只有一种材质"
+    mesh = sm.merge_meshes([p.mesh for p in parts])
+    unit = mesh.normals / np.linalg.norm(mesh.normals, axis=1, keepdims=True)
+    # 采样方式：给了 tile 的材质重复采样，其余钳边（glb 导出用，SHAPES 2"采样方式"）
+    assert vector["wrap"] == ("repeat" if "tile" in vector["shape"]["material"] else "clamp")
+    for row in vector["vertices"]:
+        normal = np.asarray(row["normal"], float)
+        near = np.all(np.abs(mesh.positions - row["position"]) <= tol["position"], axis=1)
+        facing = unit @ (normal / np.linalg.norm(normal)) >= tol["normalDot"]
+        found = np.flatnonzero(near & facing)
+        assert len(found) > 0, f"{row['where']}：找不到顶点"
+        for i in found:
+            assert mesh.uvs[i] == pytest.approx(row["uv"], abs=tol["uv"]), row["where"]
+
+
+def test_uv_vectors_present():
+    if not (VECTORS / "uv").is_dir():
+        pytest.skip(f"没有测试向量目录 {VECTORS / 'uv'}")
+    names = {f.stem for f in (VECTORS / "uv").glob("uv_*.json")}
+    assert {"uv_box_tile", "uv_mesh_cylinder_tile", "uv_mesh_sweep_tile", "uv_cylindrical_tile"} <= names

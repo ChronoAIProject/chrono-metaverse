@@ -7,11 +7,14 @@ sweep.ts、loft.ts、solid.ts、outline.ts、uv.ts、build.ts、transform.ts）�
 - 三角形按"从外面看逆时针"排列，法线朝外；
 - 贴图坐标 v 向上（与 three.js 相同，图片第 0 行 = v 最大）；
 - 投影（box / planar / cylindrical）在带材质的那个形状自己的局部坐标里做，包围盒是它下面还没有材质的
-  全部网格块的包围盒。
+  全部网格块的包围盒；
+- 材质给了 `tile` 时按米算贴图坐标（SHAPES 2"贴图坐标的平铺、着色、法线与粗糙度"）：投影不除包围盒尺寸，
+  `mesh` 模式用网格生成时一并给出的米版本自然坐标（`Mesh.meters`），再加 `offset`、转 `rotate`、除 `tile`。
 """
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -39,6 +42,11 @@ class Mesh:
     normals: np.ndarray  # (n, 3)
     uvs: np.ndarray  # (n, 2)
     indices: np.ndarray  # (m, 3) int64
+    # 自然坐标的米版本（`uv: "mesh"` 给了 `tile` 时用）；None 表示与 `uvs` 相同（挤出、板、凸包本来就是米）
+    meters: np.ndarray | None = None
+
+    def meter_uvs(self) -> np.ndarray:
+        return self.uvs if self.meters is None else self.meters
 
     @property
     def triangle_count(self) -> int:
@@ -72,11 +80,15 @@ def merge_meshes(meshes: Sequence[Mesh]) -> Mesh:
     for m in meshes:
         idx.append(m.indices + offset)
         offset += len(m.positions)
+    meters = (
+        np.concatenate([m.meter_uvs() for m in meshes]) if any(m.meters is not None for m in meshes) else None
+    )
     return Mesh(
         np.concatenate([m.positions for m in meshes]),
         np.concatenate([m.normals for m in meshes]),
         np.concatenate([m.uvs for m in meshes]),
         np.concatenate(idx),
+        meters,
     )
 
 
@@ -85,12 +97,19 @@ class _Builder:
         self.p: list[Sequence[float]] = []
         self.n: list[Sequence[float]] = []
         self.uv: list[Sequence[float]] = []
+        self.m: list[Sequence[float]] = []
+        self.has_meters = False
         self.idx: list[tuple[int, int, int]] = []
 
-    def vertex(self, p, n, uv=(0.0, 0.0)) -> int:
+    def vertex(self, p, n, uv=(0.0, 0.0), meters=None) -> int:
+        """`meters` 是自然坐标的米版本，不给时与 `uv` 相同。"""
         self.p.append((float(p[0]), float(p[1]), float(p[2])))
         self.n.append((float(n[0]), float(n[1]), float(n[2])))
         self.uv.append((float(uv[0]), float(uv[1])))
+        if meters is not None:
+            self.has_meters = True
+        m = uv if meters is None else meters
+        self.m.append((float(m[0]), float(m[1])))
         return len(self.p) - 1
 
     def tri(self, a: int, b: int, c: int) -> None:
@@ -126,6 +145,7 @@ class _Builder:
             np.asarray(self.n, float),
             np.asarray(self.uv, float),
             np.asarray(self.idx, np.int64).reshape(-1, 3),
+            np.asarray(self.m, float) if self.has_meters else None,
         )
 
 
@@ -135,17 +155,18 @@ def drop_degenerate(mesh: Mesh, min_area: float = 1e-14) -> Mesh:
     t = mesh.positions[mesh.indices]
     n = np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
     keep = (n * n).sum(1) > min_area * min_area * 4
-    return Mesh(mesh.positions, mesh.normals, mesh.uvs, mesh.indices[keep])
+    return Mesh(mesh.positions, mesh.normals, mesh.uvs, mesh.indices[keep], mesh.meters)
 
 
 def flat_shade(mesh: Mesh) -> Mesh:
     t = mesh.positions[mesh.indices].reshape(-1, 3)
     uv = mesh.uvs[mesh.indices].reshape(-1, 2)
+    meters = None if mesh.meters is None else mesh.meters[mesh.indices].reshape(-1, 2)
     tri = t.reshape(-1, 3, 3)
     n = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
     ln = np.linalg.norm(n, axis=1, keepdims=True)
     n = np.where(ln > EPS, n / np.maximum(ln, EPS), [0.0, 1.0, 0.0])
-    return Mesh(t, np.repeat(n, 3, axis=0), uv, np.arange(len(t), dtype=np.int64).reshape(-1, 3))
+    return Mesh(t, np.repeat(n, 3, axis=0), uv, np.arange(len(t), dtype=np.int64).reshape(-1, 3), meters)
 
 
 # ---------------------------------------------------------------------------- 小工具
@@ -501,7 +522,12 @@ def box_mesh(shape: Mapping[str, Any]) -> Mesh:
     mesh = drop_degenerate(b.build())
     if chamfer > 0:
         mesh = flat_shade(mesh)
-    return project_uvs(mesh, "box")
+    if len(mesh.positions) == 0:
+        return mesh
+    # 自然坐标是三面投影：按盒子自己的包围盒归一化；米版本从最小角 (−w/2, 0, −d/2) 量起
+    bounds = mesh.bounds()
+    meters = surface_coords(mesh, "box", bounds, meters=True)
+    return Mesh(mesh.positions, mesh.normals, surface_coords(mesh, "box", bounds), mesh.indices, meters)
 
 
 def lathe_profile_mesh(profile_input, segments_input, angle_input) -> Mesh:
@@ -533,7 +559,8 @@ def lathe_profile_mesh(profile_input, segments_input, angle_input) -> Mesh:
     total = max(lengths[-1], 1e-9)
     b = _Builder()
 
-    def ring(point, normal, v):
+    def ring(point, normal, length):
+        # 自然坐标 (转过的比例, 轮廓长 / 总长)；米版本 (θ·r：这一圈上的弧长, 轮廓累计长)
         ids = []
         for i in range(steps + 1):
             theta = i / steps * angle
@@ -542,14 +569,15 @@ def lathe_profile_mesh(profile_input, segments_input, angle_input) -> Mesh:
                 b.vertex(
                     (point[0] * s, point[1], point[0] * c),
                     (normal[0] * s, normal[1], normal[0] * c),
-                    (i / steps, v),
+                    (i / steps, length / total),
+                    (theta * point[0], length),
                 )
             )
         return ids
 
     for j in range(len(profile) - 1):
-        ra = ring(profile[j], vertex_normal(j, j), lengths[j] / total)
-        rb = ring(profile[j + 1], vertex_normal(j + 1, j), lengths[j + 1] / total)
+        ra = ring(profile[j], vertex_normal(j, j), lengths[j])
+        rb = ring(profile[j + 1], vertex_normal(j + 1, j), lengths[j + 1])
         for i in range(steps):
             b.oriented_quad(ra[i], ra[i + 1], rb[i + 1], rb[i])
     if not full:
@@ -726,6 +754,7 @@ def smooth_path(path, radius: float):
 
 
 def _section_points(shape):
+    """截面的点：(偏移, 法线, 自然坐标 u（一周的比例）, 米版本 u（沿截面边界的长度）)。"""
     section = shape.get("section") or {"circle": 0.02}
     if "rect" in section:
         w = _positive_or((section.get("rect") or [0.02, 0.02])[0], 0.02) / 2
@@ -736,10 +765,11 @@ def _section_points(shape):
             ((-w, h), (-w, -h), (-1, 0)),
             ((-w, -h), (w, -h), (0, -1)),
         ]
+        along = [0.0, 2 * h, 2 * h + 2 * w, 4 * h + 2 * w, 4 * h + 4 * w]
         out = []
         for i, (a, c, n) in enumerate(sides):
-            out.append((a, n, i / 4))
-            out.append((c, n, (i + 1) / 4))
+            out.append((a, n, i / 4, along[i]))
+            out.append((c, n, (i + 1) / 4, along[i + 1]))
         return out, True
     radius = _positive_or(section.get("circle"), 0.02)
     segments = _segments_or(shape.get("segments"), 16, 3, 64)
@@ -747,7 +777,7 @@ def _section_points(shape):
     for k in range(segments + 1):
         ang = k / segments * math.pi * 2
         c, s = math.cos(ang), math.sin(ang)
-        out.append(((radius * c, radius * s), (c, s), k / segments))
+        out.append(((radius * c, radius * s), (c, s), k / segments, ang * radius))
     return out, False
 
 
@@ -807,13 +837,20 @@ def sweep_mesh(shape) -> Mesh:
         bend = _norm(t_out - t_in, n_axis) if interior else n_axis
         t_seg = tangents[segment]
         ids = []
-        for offset, normal, u in section:
+        for offset, normal, u, u_meters in section:
             o = b_axis * offset[0] + n_axis * offset[1]
             stretched = o + bend * float(o @ bend) * (1 / cos_half - 1)
             nn = b_axis * normal[0] + n_axis * normal[1]
             if hard:
                 nn = _norm(nn - t_seg * float(nn @ t_seg), nn)
-            ids.append(b.vertex(path[i] + stretched, _norm(nn, (0, 1, 0)), (u, lengths[i] / total)))
+            ids.append(
+                b.vertex(
+                    path[i] + stretched,
+                    _norm(nn, (0, 1, 0)),
+                    (u, lengths[i] / total),
+                    (u_meters, lengths[i]),
+                )
+            )
         return ids
 
     for s in range(len(tangents)):
@@ -826,13 +863,13 @@ def sweep_mesh(shape) -> Mesh:
             n = seg_normals[segment]
             t = tangents[segment]
             b_axis = _norm(np.cross(t, n), (0, 1, 0))
-            center = b.vertex(path[i], normal, (0.5, 0.5))
+            center = b.vertex(path[i], normal, (0.5, 0.5), (0.0, 0.0))
             if is_rect:
                 rim_pts = [section[k][0] for k in range(0, len(section), 2)]
             else:
                 rim_pts = [section[k][0] for k in range(len(section) - 1)]
             rim = [
-                b.vertex(path[i] + b_axis * o[0] + n * o[1], normal, (0.5 + o[0], 0.5 + o[1]))
+                b.vertex(path[i] + b_axis * o[0] + n * o[1], normal, (0.5 + o[0], 0.5 + o[1]), (o[0], o[1]))
                 for o in rim_pts
             ]
             for k in range(len(rim)):
@@ -886,7 +923,13 @@ def _prepare_section(y, raw_points, raw_hard):
     perimeter = lengths[len(points)]
     if not perimeter > 0:
         return None
-    return {"y": y, "points": points, "hard": hard, "params": [v / perimeter for v in lengths[:-1]]}
+    return {
+        "y": y,
+        "points": points,
+        "hard": hard,
+        "params": [v / perimeter for v in lengths[:-1]],
+        "perimeter": perimeter,
+    }
 
 
 def _sample_at(section, t):
@@ -969,9 +1012,16 @@ def loft_mesh(shape) -> Mesh:
         ids = []
         for r, ring in enumerate(rings):
             row = []
+            perimeter = sections[r]["perimeter"]
             for c, col in enumerate(cols):
                 u = 1.0 if frm + c >= columns else params[col]
-                row.append(b.vertex(ring[col], _norm(normals[r][c], (0, 1, 0)), (u, v_of(ring[col][1]))))
+                y = ring[col][1]
+                # 米版本：截面上的弧长（参数 × 这一截面的周长），高度从首截面量起
+                row.append(
+                    b.vertex(
+                        ring[col], _norm(normals[r][c], (0, 1, 0)), (u, v_of(y)), (u * perimeter, y - y0)
+                    )
+                )
             ids.append(row)
         for r in range(len(rings) - 1):
             for c in range(span):
@@ -1073,18 +1123,28 @@ def hull_mesh(shape: Mapping[str, Any]) -> Mesh:
 # ---------------------------------------------------------------------------- UV、变换、组合
 
 
-def project_uvs(mesh: Mesh, mode: str, bounds=None) -> Mesh:
-    """与网站 uv.ts 相同：box 按顶点法线主轴三面投影，planar 沿包围盒最薄的轴，cylindrical 绕竖直中轴展开。"""
-    if mode == "mesh" or len(mesh.positions) == 0:
-        return mesh
+def surface_coords(mesh: Mesh, mode: str, bounds=None, *, meters: bool = False) -> np.ndarray:
+    """贴图坐标第 1 步（SHAPES 2）：每个顶点的 (s, t)，与网站 uv.ts 相同。
+
+    box 按顶点法线主轴三面投影，planar 沿包围盒最薄的轴，cylindrical 绕竖直中轴展开，mesh 用网格生成时的
+    自然坐标。`meters` 为真（材质给了 `tile`）时按米：投影不除包围盒尺寸，柱面是 (φ·R, 高度)，mesh 用米版本。
+    """
+    if mode == "mesh":
+        return mesh.meter_uvs() if meters else mesh.uvs
+    P = mesh.positions
+    if len(P) == 0:
+        return np.zeros((0, 2))
     lo, hi = bounds if bounds is not None else mesh.bounds()
     size = np.maximum(hi - lo, 1e-9)
-    P = mesh.positions
-    unit = (P - lo) / size
+    unit = (P - lo) if meters else (P - lo) / size
     uv = np.zeros((len(P), 2))
     if mode == "cylindrical":
         cx, cz = (lo[0] + hi[0]) / 2, (lo[2] + hi[2]) / 2
-        uv[:, 0] = np.arctan2(P[:, 0] - cx, P[:, 2] - cz) / (2 * math.pi) + 0.5
+        angle = np.arctan2(P[:, 0] - cx, P[:, 2] - cz)
+        if meters:
+            uv[:, 0] = (angle + math.pi) * ((size[0] + size[2]) / 4)
+        else:
+            uv[:, 0] = angle / (2 * math.pi) + 0.5
         uv[:, 1] = unit[:, 1]
     else:
         if mode == "box":
@@ -1096,7 +1156,46 @@ def project_uvs(mesh: Mesh, mode: str, bounds=None) -> Mesh:
             axis = np.full(len(P), int(np.argmin(size)))
         uv[:, 0] = np.where(axis == 0, unit[:, 2], unit[:, 0])
         uv[:, 1] = np.where(axis == 1, unit[:, 2], unit[:, 1])
-    return Mesh(mesh.positions, mesh.normals, uv, mesh.indices)
+    return uv
+
+
+def exact_sin_cos(degrees: float) -> tuple[float, float]:
+    """角度的 sin、cos；90° 的整数倍取精确的 0、±1（SHAPES 2 的 `rotate`）。"""
+    if degrees % 90 == 0:
+        return [(0.0, 1.0), (1.0, 0.0), (0.0, -1.0), (-1.0, 0.0)][int(degrees // 90) % 4]
+    r = math.radians(degrees)
+    return math.sin(r), math.cos(r)
+
+
+def tiled_uvs(st: np.ndarray, material: Mapping[str, Any]) -> np.ndarray:
+    """贴图坐标第 2 步（只在给了 `tile` 时）：先加 offset、再逆时针转 rotate 度、再除 tile。"""
+    tile = material.get("tile")
+    if tile is None:
+        return st
+    du, dv = material.get("offset") or (0.0, 0.0)
+    sin, cos = exact_sin_cos(float(material.get("rotate") or 0))
+    a = st[:, 0] + du
+    b = st[:, 1] + dv
+    return np.stack([(a * cos + b * sin) / tile[0], (-a * sin + b * cos) / tile[1]], axis=1)
+
+
+def uv_mode(material: Mapping[str, Any]) -> str:
+    """材质的贴图坐标方式：给了 `uv` 就用它（贴图材质，或带法线、粗糙度贴图的颜色材质）；贴图材质缺 `uv` 时按
+    box；颜色材质没有贴图坐标，保留网格的自然坐标。"""
+    if material.get("uv") is not None:
+        return str(material["uv"])
+    return "box" if material.get("texture") is not None else "mesh"
+
+
+def project_uvs(mesh: Mesh, mode: str, bounds=None, material: Mapping[str, Any] | None = None) -> Mesh:
+    """按材质算最终贴图坐标：第 1 步投影（`surface_coords`），材质给了 `tile` 再做第 2 步（`tiled_uvs`）。
+    `mesh` 模式不给 `tile` 时原样返回。米版本自然坐标保留，模板实例换贴图时还要用。"""
+    tiled = material is not None and material.get("tile") is not None
+    if len(mesh.positions) == 0 or (mode == "mesh" and not tiled):
+        return mesh
+    st = surface_coords(mesh, mode, bounds, meters=tiled)
+    uv = tiled_uvs(st, material) if tiled else st
+    return Mesh(mesh.positions, mesh.normals, uv, mesh.indices, mesh.meters)
 
 
 def _sin_cos(deg: float) -> tuple[float, float]:
@@ -1132,7 +1231,7 @@ def apply_matrix(mesh: Mesh, m: np.ndarray) -> Mesh:
     idx = mesh.indices
     if np.linalg.det(lin) < 0:
         idx = idx[:, [0, 2, 1]]
-    return Mesh(pos, nrm, mesh.uvs, idx)
+    return Mesh(pos, nrm, mesh.uvs, idx, mesh.meters)
 
 
 def primitive_mesh(shape: Mapping[str, Any]) -> Mesh | None:
@@ -1151,12 +1250,23 @@ def primitive_mesh(shape: Mapping[str, Any]) -> Mesh | None:
     return fn(shape) if fn is not None else None
 
 
+# 平铺、着色、法线、粗糙度（SHAPES 2）：分组键要包含它们
+# （贴图坐标已经算进网格，但采样方式、受光方式不同）
+LOOK_FIELDS = (
+    "tile", "offset", "rotate", "shading",
+    "normalMap", "normalScale", "roughnessMap", "roughness", "metalness",
+)  # fmt: skip
+
+
 def material_key(material: Mapping[str, Any]) -> str:
-    """相同材质（含 opacity、unlit）的块合并成一个网格；没有这两项时与旧的键相同。"""
+    """相同材质（含 opacity、unlit 和平铺、着色、法线、粗糙度）的块合并成一个网格；都没有时与旧的键相同。"""
     opacity = material.get("opacity")
     look = (f":o{opacity}" if opacity is not None and opacity != 1 else "") + (
         ":u" if material.get("unlit") is True else ""
     )
+    extra = {k: material[k] for k in LOOK_FIELDS if material.get(k) is not None}
+    if extra:
+        look += ":" + json.dumps(extra, sort_keys=True, separators=(",", ":"))
     if material.get("texture") is not None:
         tint = material.get("tint")
         return f"t:{material['texture']}:{','.join(str(v) for v in tint) if tint else ''}{look}"
@@ -1181,14 +1291,16 @@ def _assign(parts: list[Part], material: Mapping[str, Any]) -> list[Part]:
     open_ = [p for p in parts if p.material is None]
     if not open_:
         return parts
-    mode = (material.get("uv") or "box") if material.get("texture") is not None else "mesh"
+    mode = uv_mode(material)
     bounds = None if mode == "mesh" else _parts_bounds(open_)
     out = []
     for p in parts:
         if p.material is not None:
             out.append(p)
         else:
-            mesh = p.mesh if mode == "mesh" or bounds is None else project_uvs(p.mesh, mode, bounds)
+            mesh = (
+                p.mesh if mode != "mesh" and bounds is None else project_uvs(p.mesh, mode, bounds, material)
+            )
             out.append(Part(mesh, dict(material), p.path))
     return out
 
@@ -1199,7 +1311,8 @@ def _look(material: Mapping[str, Any] | None) -> dict[str, Any]:
 
 def _override(parts: list[Part], material: Mapping[str, Any]) -> list[Part]:
     """实例的材质覆盖模板：颜色部件换成实例的颜色，贴图部件用实例颜色做 tint；实例带了 opacity / unlit 时
-    一并覆盖，没带的保留模板部件自己的（与网站 build.ts 相同）。"""
+    一并覆盖，没带的保留模板部件自己的（与网站 build.ts 相同）。平铺、着色、法线、粗糙度不参与颜色覆盖，
+    模板部件保留自己的；实例给的是贴图材质时全部部件换成实例的整个材质。"""
     if material.get("texture") is not None:
         return _assign([Part(p.mesh, None, p.path) for p in parts], material)
     look = _look(material)
@@ -1208,7 +1321,7 @@ def _override(parts: list[Part], material: Mapping[str, Any]) -> list[Part]:
         if p.material is not None and p.material.get("texture") is not None:
             out.append(Part(p.mesh, {**p.material, "tint": list(material["color"]), **look}, p.path))
         else:
-            out.append(Part(p.mesh, {"color": list(material["color"]), **_look(p.material), **look}, p.path))
+            out.append(Part(p.mesh, {**(p.material or {}), "color": list(material["color"]), **look}, p.path))
     return out
 
 
