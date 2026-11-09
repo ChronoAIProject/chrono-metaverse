@@ -22,12 +22,20 @@ export interface Transform {
 
 export type UvMode = 'box' | 'planar' | 'cylindrical' | 'mesh';
 
-export interface ColorMaterial {
+/** 两种材质都可以带的外观选项（docs/SHAPES.md 第 2 节）。 */
+export interface MaterialLook {
+  /** 不透明度 0–1，默认 1；小于 1 时半透明（玻璃）。 */
+  readonly opacity?: number;
+  /** 不受光照，按颜色或贴图原样显示（屏幕、灯箱），默认 false。 */
+  readonly unlit?: boolean;
+}
+
+export interface ColorMaterial extends MaterialLook {
   /** sRGB 0–255。 */
   readonly color: Rgb;
 }
 
-export interface TextureMaterial {
+export interface TextureMaterial extends MaterialLook {
   /** 资源哈希（`/api/public/assets/{hash}.bin`）。 */
   readonly texture: string;
   readonly uv?: UvMode;
@@ -135,6 +143,23 @@ export interface LoftShape extends ShapeBase {
   readonly sections: readonly LoftSection[];
 }
 
+/**
+ * 板：平面简单多边形（3 到 64 个点，局部坐标）沿 −法向 加厚 `thickness`。
+ * 点按右手定则给出法向（从法向一侧看是逆时针）。用于前台这类斜面折板。
+ */
+export interface PlateShape extends ShapeBase {
+  readonly type: 'plate';
+  readonly points: readonly Vec3[];
+  /** 0 < t ≤ 1（米）。 */
+  readonly thickness: number;
+}
+
+/** 凸包：这些点（4 到 256 个）的凸包实体，用于楔形、船头这类凸多面体。 */
+export interface HullShape extends ShapeBase {
+  readonly type: 'hull';
+  readonly points: readonly Vec3[];
+}
+
 export interface GroupShape extends ShapeBase {
   readonly type: 'group';
   readonly children: readonly Shape[];
@@ -153,6 +178,8 @@ export type Shape =
   | LatheShape
   | SweepShape
   | LoftShape
+  | PlateShape
+  | HullShape
   | GroupShape
   | InstanceShape;
 
@@ -166,6 +193,8 @@ export const SHAPE_TYPES: readonly ShapeType[] = [
   'lathe',
   'sweep',
   'loft',
+  'plate',
+  'hull',
   'group',
   'instance',
 ];

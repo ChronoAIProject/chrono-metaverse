@@ -10,6 +10,7 @@ import {
   type Bounds,
   type MeshData,
 } from './meshData';
+import { hullMesh, hullProblem, plateMesh, plateProblem } from './solid';
 import { sweepMesh } from './sweep';
 import { applyMatrix, transformMatrix } from './transform';
 import {
@@ -70,6 +71,10 @@ export function primitiveMesh(shape: Shape): MeshData | null {
       return sweepMesh(shape);
     case 'loft':
       return loftMesh(shape);
+    case 'plate':
+      return plateMesh(shape);
+    case 'hull':
+      return hullMesh(shape);
     default:
       return null;
   }
@@ -97,7 +102,8 @@ function assignMaterial(parts: MeshPart[], material: Material): MeshPart[] {
 
 /**
  * 实例的材质覆盖模板里的颜色（同款椅子不同颜色）：
- * 颜色材质整个替换；模板里的贴图保留，用实例颜色做色调；实例给的是贴图时整体换成实例的贴图。
+ * 颜色部件换成实例的颜色；模板里的贴图保留，用实例颜色做色调；实例给的是贴图时整体换成实例的贴图。
+ * 实例材质带了 opacity / unlit 时一并覆盖，没带的保留模板部件自己的（重新上色后玻璃仍然透明）。
  */
 function overrideMaterial(parts: MeshPart[], material: Material): MeshPart[] {
   if (isTextureMaterial(material)) {
@@ -106,12 +112,27 @@ function overrideMaterial(parts: MeshPart[], material: Material): MeshPart[] {
       material,
     );
   }
+  const look = {
+    ...(material.opacity !== undefined ? { opacity: material.opacity } : {}),
+    ...(material.unlit !== undefined ? { unlit: material.unlit } : {}),
+  };
   return parts.map((part) => {
+    const own = {
+      ...(part.material?.opacity !== undefined ? { opacity: part.material.opacity } : {}),
+      ...(part.material?.unlit !== undefined ? { unlit: part.material.unlit } : {}),
+    };
     if (part.material !== null && isTextureMaterial(part.material)) {
-      return { mesh: part.mesh, material: { ...part.material, tint: material.color } };
+      return { mesh: part.mesh, material: { ...part.material, tint: material.color, ...look } };
     }
-    return { mesh: part.mesh, material };
+    return { mesh: part.mesh, material: { color: material.color, ...own, ...look } };
   });
+}
+
+/** 板和凸包不合法的原因（三种语言同样的判定）；其他形状返回 null。 */
+function solidProblem(shape: Shape): string | null {
+  if (shape.type === 'plate') return plateProblem(shape);
+  if (shape.type === 'hull') return hullProblem(shape);
+  return null;
 }
 
 function buildNode(shape: Shape, ctx: Context): MeshPart[] {
@@ -136,6 +157,11 @@ function buildNode(shape: Shape, ctx: Context): MeshPart[] {
     if (shape.material !== undefined) parts = overrideMaterial(parts, shape.material);
   } else {
     if (ctx.triangles >= ctx.maxTriangles) return [];
+    const problem = solidProblem(shape);
+    if (problem !== null) {
+      ctx.warnings.push(`${shape.type} 不合法：${problem}`);
+      return [];
+    }
     const mesh = primitiveMesh(shape);
     if (mesh === null) {
       ctx.warnings.push(`未知的形状类型 ${(shape as { type?: unknown }).type as string}`);
@@ -161,12 +187,15 @@ function buildNode(shape: Shape, ctx: Context): MeshPart[] {
   return parts;
 }
 
-/** 材质的分组键：相同材质的块合并成一个网格。 */
+/** 材质的分组键：相同材质（含 opacity、unlit）的块合并成一个网格。 */
 export function materialKey(material: Material): string {
+  const look =
+    (material.opacity !== undefined && material.opacity !== 1 ? `:o${material.opacity}` : '') +
+    (material.unlit === true ? ':u' : '');
   if (isTextureMaterial(material)) {
-    return `t:${material.texture}:${material.tint?.join(',') ?? ''}`;
+    return `t:${material.texture}:${material.tint?.join(',') ?? ''}${look}`;
   }
-  return `c:${material.color.join(',')}`;
+  return `c:${material.color.join(',')}${look}`;
 }
 
 /** 生成形状（含组合和模板实例）的网格，按材质合并。 */
