@@ -1,6 +1,8 @@
 //! 下载种子文件：边下载边数字节，超过声明的大小立即停止；下载完核对大小和 sha256。
 //!
 //! - 只跟随最多 5 次重定向，而且新地址必须同样合法（https，或本机 http），否则不跟随、按失败处理；
+//!   https 不能被重定向成 http（哪怕是本机地址）：本机 http 只给"一开始就是本机地址"的本地测试用；
+//! - 错误信息里不带地址（重定向后的地址可能是带签名的临时链接），只写文件名；
 //! - 代理照常读 `HTTPS_PROXY` / `NO_PROXY`（reqwest 默认行为）；
 //! - 根证书用内置的公共根证书；另外设了 `SSL_CERT_FILE`（标准变量，PEM）时也信任其中的证书——
 //!   只在本地经过会重新签发证书的出口代理时需要，线上不设；
@@ -11,6 +13,8 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
+
+use url::Url;
 
 use super::config::{url_allowed, SeedFile};
 use super::SeedError;
@@ -37,7 +41,7 @@ impl Fetcher {
         let redirect = reqwest::redirect::Policy::custom(|attempt| {
             if attempt.previous().len() >= MAX_REDIRECTS {
                 attempt.error("重定向次数太多")
-            } else if url_allowed(attempt.url()) {
+            } else if redirect_allowed(attempt.previous(), attempt.url()) {
                 attempt.follow()
             } else {
                 attempt.stop()
@@ -65,8 +69,16 @@ impl Fetcher {
             .get(file.url.clone())
             .send()
             .await
-            .map_err(|error| SeedError::Transient(format!("下载 {} 失败：{error}", file.name)))?;
+            .map_err(|error| {
+                SeedError::Transient(format!("下载 {} 失败：{}", file.name, describe(error)))
+            })?;
         let status = response.status();
+        if status.is_redirection() {
+            return Err(SeedError::Permanent(format!(
+                "下载 {} 失败：HTTP {status}，重定向到了不允许的地址（只跟随到 https；https 不能转成 http）",
+                file.name
+            )));
+        }
         if !status.is_success() {
             let message = format!("下载 {} 失败：HTTP {status}", file.name);
             return Err(
@@ -91,7 +103,7 @@ impl Fetcher {
         let mut stream = response.bytes_stream();
         while let Some(part) = stream.next().await {
             let part = part.map_err(|error| {
-                SeedError::Transient(format!("下载 {} 中断：{error}", file.name))
+                SeedError::Transient(format!("下载 {} 中断：{}", file.name, describe(error)))
             })?;
             if (bytes.len() + part.len()) as u64 > file.size {
                 return Err(SeedError::Permanent(format!(
@@ -121,6 +133,26 @@ impl Fetcher {
     }
 }
 
+/// 错误说明：去掉地址，带上底层原因（连接被拒、证书、超时等）。
+fn describe(error: reqwest::Error) -> String {
+    let error = error.without_url();
+    let mut text = error.to_string();
+    let mut source = std::error::Error::source(&error);
+    while let Some(cause) = source {
+        text.push_str("：");
+        text.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    text
+}
+
+/// 能不能跟随到 `next`：新地址本身要合法（[`url_allowed`]），而且只要之前经过 https，就只能继续 https
+/// （本机明文 http 只给一开始就是本机地址的测试用，不能由公网地址重定向过去）。
+pub fn redirect_allowed(previous: &[Url], next: &Url) -> bool {
+    url_allowed(next)
+        && (next.scheme() == "https" || previous.iter().all(|url| url.scheme() == "http"))
+}
+
 /// `SSL_CERT_FILE` 里的证书（没设或读不出来时为空，只记日志）。
 fn extra_roots() -> Vec<reqwest::Certificate> {
     let Some(path) = std::env::var_os("SSL_CERT_FILE") else {
@@ -141,6 +173,48 @@ fn extra_roots() -> Vec<reqwest::Certificate> {
         Err(error) => {
             tracing::warn!(error = %error, "部署配置种子：SSL_CERT_FILE 读不出来，只用内置根证书");
             Vec::new()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn url(text: &str) -> Url {
+        Url::parse(text).unwrap()
+    }
+
+    #[test]
+    fn redirects_never_downgrade_to_http() {
+        let https = url("https://scaniverse.com/api/media/x/mesh.drc");
+        let cdn = url("https://cdn.example/x/mesh.drc?sig=1");
+        let local = url("http://127.0.0.1:9000/files/mesh.drc");
+        // https → https、本机 http → 本机 http / https：可以。
+        assert!(redirect_allowed(std::slice::from_ref(&https), &cdn));
+        assert!(redirect_allowed(
+            std::slice::from_ref(&local),
+            &url("http://localhost:9000/x")
+        ));
+        assert!(redirect_allowed(std::slice::from_ref(&local), &cdn));
+        // https → 本机 http：不可以（公网地址不能把下载引到本机的明文端口）。
+        assert!(!redirect_allowed(std::slice::from_ref(&https), &local));
+        assert!(!redirect_allowed(&[local.clone(), https.clone()], &local));
+        // 新地址本身不合法：不可以。
+        for bad in [
+            "http://scaniverse.com/mesh.drc",
+            "ftp://scaniverse.com/mesh.drc",
+            "https://user:pass@cdn.example/mesh.drc",
+            "file:///etc/passwd",
+        ] {
+            assert!(
+                !redirect_allowed(std::slice::from_ref(&local), &url(bad)),
+                "{bad}"
+            );
+            assert!(
+                !redirect_allowed(std::slice::from_ref(&https), &url(bad)),
+                "{bad}"
+            );
         }
     }
 }

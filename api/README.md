@@ -335,7 +335,7 @@ universeRevisions { _id: "<组合编号>:<seq>", universeId, owner, seq, at, act
 执行（`main.rs` 在索引建好后后台调用 `demo_seed::spawn`；暂时性失败按 10/30/90/270 秒重试 4 次，最后记错误日志，不影响就绪）：
 
 1. 授权层 `seed_space` 查空间：不存在 → 继续；是种子为同一组织建的（`ownerEvidence.basis = operator_seed`、主人一致）→ 这个版本的任务已存在就结束（`AlreadyDone`），否则补做 3、4；别的空间 → 不碰（`Foreign`）；
-2. 下载（跟随 ≤ 5 次重定向，新地址同样要合法；超过声明大小立即停止）、核对大小和 sha256、按扩展名核对文件头（同上传第 0 片的检查）；任何一项不对都不建空间。4xx、内容不对不重试，网络错误、5xx、429 重试；
+2. 下载（跟随 ≤ 5 次重定向，新地址同样要合法，经过 https 之后不能再转到 http；超过声明大小立即停止；错误信息里不带地址）、核对大小和 sha256、按扩展名核对文件头（同上传第 0 片的检查）；任何一项不对都不建空间。4xx、内容不对不重试，网络错误、5xx、429 重试；
 3. `seed_create_grant` 签发建空间凭据（审计日志）→ `create_space_with`（与 `admin_create_space` 同一条路径）：主人取配置，归属证据 `{issuer, orgId, verifiedBy: "system:demo-seed", verifiedAt, basis: "operator_seed"}`，分享令牌只存 sha256；第一次提交的发布者 `sub = system:demo-seed`、`nyxServiceId = ""`。编号已存在（别的副本刚建好）就接着做；
 4. 扫描登记成资源（`put_asset_bytes_with`：`assets.files {_id: ObjectId, length, chunkSize: 262144, uploadDate, filename: 内容哈希, metadata: {sha256, contentType, kind: "scan", spaceId, format}}`，与处理服务 `put_asset(..., extra={"format"})` 相同；已存在就复用）→ 补写第一次提交 → 插入 `scan_import` 任务，字段与 `POST /scans` 相同：`{_id, spaceId, owner, kind, params {assetHash, observedAt?, rebuild, voxelize, hints?}, status: queued, attempt: 0, maxAttempts: 3, createdAt, actor {sub: "system:demo-seed", nyxServiceId: ""}, scope: physical}`。任务编号 = `job_` + sha256("demo-seed\0空间\0空间创建时间\0版本") 的前 32 位：同一个空间的同一个版本只有一个任务（唯一键），空间删掉重建后编号也变。
 
