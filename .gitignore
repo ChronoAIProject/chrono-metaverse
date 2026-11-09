@@ -25,3 +25,6 @@ playwright-report/
 !.env.example
 *.pem
 *.key
+
+# 本地开发全套的进程号、日志和 mongod 数据（infra/dev/up.sh）
+infra/dev/.run/
