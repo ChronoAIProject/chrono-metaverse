@@ -39,6 +39,7 @@ from ..canonical import canonical_json
 from ..ids import slug_id
 from ..records import entity_body
 from .bake import FaceTable
+from .fit_counter import fit_counter
 from .fit_measure import Rect, dirs_to_local, fit_circle, height_peaks, min_area_rect, to_local
 from .fit_segment import ObjectPoints, Segment, SegmentParams, segment_objects
 from .fit_templates import (
@@ -388,6 +389,10 @@ def _fit_local_raw(o: Local, kind: str) -> tuple[dict[str, Any], str]:
     if kind == "sofa":
         return fit_sofa(o), "sofa"
     if kind == "counter":
+        # 外壳 + 台面 + 工作台面的多面体；量不出外壳时退回分层挤出
+        shell = fit_counter(o)
+        if shell is not None:
+            return shell, "counter"
         return _best_of(
             o,
             [
