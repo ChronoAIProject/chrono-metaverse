@@ -35,6 +35,7 @@ import {
   type LabelCandidate,
 } from './labelLayout';
 import { createMeshService, type MeshService } from './meshService';
+import { fitModelInto, measureModel, modelFit, modelFitWarning, type BoxLike } from './modelFit';
 import type { ShapeJob } from './meshJobs';
 
 /**
@@ -288,6 +289,7 @@ export class SceneView {
   private readonly textureCache = new Map<string, Promise<THREE.Texture>>();
   private readonly modelCache = new Map<string, Promise<THREE.Object3D>>();
   private readonly scanCache = new WeakMap<ArrayBuffer, Promise<THREE.Object3D>>();
+  private readonly modelBoxes = new WeakMap<THREE.Object3D, BoxLike | null>();
   private readonly cut = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e6);
   private readonly clipping = [this.cut];
   private anchors = new Map<string, AnchorInfo>();
@@ -614,6 +616,12 @@ export class SceneView {
     });
   }
 
+  /** 物件模型的实际包围盒（逐个顶点），按模型缓存，时间轴来回拖动时不重算。 */
+  private modelBox(model: THREE.Object3D): BoxLike | null {
+    if (!this.modelBoxes.has(model)) this.modelBoxes.set(model, measureModel(model));
+    return this.modelBoxes.get(model) ?? null;
+  }
+
   private model(hash: string): Promise<THREE.Object3D> | null {
     const load = this.options.loadModel;
     if (load === undefined) return null;
@@ -857,26 +865,34 @@ export class SceneView {
         entityCount += batch.items.length;
       }
 
-      // 只有处理后模型（assetHash）的物件：按包围盒的底面中心摆放。
+      // 只有物件模型（assetHash）的物件：按包围盒的底面中心摆放；模型实际比 bounds 大时
+      // 等比缩小兜进 bounds（modelFit.ts，服务端已经实测过，这里只是兜底）。
       for (const { entity } of entities) {
         if (entity.shape !== undefined || entity.assetHash === undefined) continue;
         entityCount += 1;
         const holder = new THREE.Group();
         holder.userData = { entities: [{ spaceId: member.spaceId, entity }] };
-        if (entity.bounds) {
+        const bounds = entity.bounds;
+        if (bounds) {
           holder.position.set(
-            (entity.bounds.min[0] + entity.bounds.max[0]) / 2,
-            entity.bounds.min[1],
-            (entity.bounds.min[2] + entity.bounds.max[2]) / 2,
+            (bounds.min[0] + bounds.max[0]) / 2,
+            bounds.min[1],
+            (bounds.min[2] + bounds.max[2]) / 2,
           );
         }
         group.add(holder);
         this.pickables.push(holder);
         this.model(entity.assetHash)
           ?.then((model) => {
-            if (!this.disposed && holder.parent !== null) {
-              holder.add(this.sharedClone(model, entity.material));
+            if (this.disposed || holder.parent === null) return;
+            const box = bounds ? this.modelBox(model) : null;
+            const fit = bounds && box ? modelFit(box, bounds) : null;
+            if (fit !== null) {
+              const warning = modelFitWarning(entity.entityId, fit);
+              console.warn(warning);
+              warnings.push(warning);
             }
+            holder.add(fitModelInto(this.sharedClone(model, entity.material), fit));
           })
           .catch(() => warnings.push(`${entity.entityId}：模型下载失败`));
       }
