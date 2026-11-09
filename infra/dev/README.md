@@ -49,6 +49,15 @@ ALLOWED_NYX_SERVICE_IDS=dev-service
 BIND=127.0.0.1:8080   PUBLIC_BASE_URL=http://127.0.0.1:5173
 ```
 
+给处理服务设置的环境变量（线程数与线上 `infra/chrono-cd/app.json` 一致，本地测的子进程内存才和线上一样；原因见 [`infra/chrono-cd/README.md`](../chrono-cd/README.md) 的"处理服务的线程数"）：
+
+```bash
+MONGODB_URI=<发现的副本集>   MONGODB_DATABASE=chrono_metaverse_dev   WORKER_HEALTH_PORT=8082
+OPENBLAS_NUM_THREADS=2   OMP_NUM_THREADS=2   MALLOC_ARENA_MAX=2   PYTHONUNBUFFERED=1
+```
+
+三个线程变量都可以在运行 `up.sh` 前用同名环境变量覆盖。
+
 接口服务只允许本机地址用明文 http 当 NyxID 地址，所以模拟 NyxID 必须跑在本机。处理服务第一次启动前会在 `worker/.venv` 建虚拟环境（`pyproject.toml` 变了会重装）。
 
 ## 模拟 NyxID

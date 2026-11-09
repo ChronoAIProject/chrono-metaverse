@@ -89,8 +89,26 @@ nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --
 |---|---|---|
 | `MONGODB_URI`、`MONGODB_DATABASE` | 插件注入 | `addon_env` |
 | `WORKER_HEALTH_PORT` | `8080` | 健康检查端口（`/healthz`），与 `port` 一致 |
-| `WORKER_JOB_MEMORY_MB` | `6144` | 重计算子进程的内存上限，要小于容器上限 8Gi |
+| `WORKER_JOB_MEMORY_MB` | `6144` | 重计算子进程的内存上限，要小于容器上限 8Gi。这是**地址空间**上限（`RLIMIT_AS`），不是常驻内存，线程栈和预留的堆都算在里面（见下面"处理服务的线程数"） |
+| `OPENBLAS_NUM_THREADS` | `2` | 与 `cpu_limit` 一致。numpy、scipy 各带一份 OpenBLAS，不设时按**节点**可见核数建线程 |
+| `OMP_NUM_THREADS` | `2` | 同上，给 OpenMP 库（OpenBLAS 在没有自己的变量时也读它） |
+| `MALLOC_ARENA_MAX` | `2` | glibc 的分配区个数上限；不设时最多 8×节点核数个，每个预留 64MB 地址空间 |
 | `PYTHONUNBUFFERED` | `1` | 日志不缓冲，立即出现在 chrono-cd 日志里 |
+
+#### 处理服务的线程数
+
+重计算子进程用 `resource.setrlimit(RLIMIT_AS)` 限内存（`worker/src/metaverse_worker/jobs/isolate.py`），限的是虚拟地址空间。numpy 和 scipy 各自带一份 OpenBLAS，**导入时**就按可见核数建线程，每个线程约占 41MB 地址空间（8MiB 栈加缓冲区）。Kubernetes 只用 CFS 配额限 CPU，容器里看到的是整台节点的核数，与 `cpu_limit` 无关：不设线程数时，32 核节点上子进程一启动就占掉约 2.5GB，64 核节点约 5.2GB，6144MB 的额度只剩约 1GB；2 核配额下跑上百个 BLAS 线程还会被 CFS 严重限流，任务更容易撞上 1800 秒超时。
+
+2026-11-09 在 4 核机器上实测（numpy 2.5.4、scipy 1.18.1，只导入 `numpy`、`scipy.linalg`、`scipy.spatial`，读 `/proc/self/status`）：
+
+| 设置 | 线程数 | VmSize |
+|---|---|---|
+| `OPENBLAS_NUM_THREADS=1` | 1 | 227MB |
+| `OPENBLAS_NUM_THREADS=2` | 3 | 307MB |
+| 不设（4 核） | 7 | 471MB |
+| 只设 `OMP_NUM_THREADS=2` | 3 | 307MB |
+
+每多一个线程约 +40MB，两份 OpenBLAS 各算一次。线程数设成 `cpu_limit`（2），地址空间与节点大小无关。Dockerfile 按约定不写 `ENV`，所以这几个变量只在这里设；`infra/dev/up.sh` 本地也设同样的值，本地测的内存和线上一致。`worker/README.md` 的内存数据（RSS 1,263MB）是在 4 核机器上测的，上线后按子进程实测的 `VmPeak` 复核 `WORKER_JOB_MEMORY_MB`。改 `cpu_limit` 时同步改这两个线程数。
 
 `metaverse-web`：不需要环境变量。
 
