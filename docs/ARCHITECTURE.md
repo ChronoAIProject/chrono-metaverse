@@ -3,7 +3,7 @@
 > 状态：方案稿。标"待定"的地方需要确认后再实现。
 > 平台相关结论来自对 NyxID、chrono-cd、chrono-bucket 源码的核查（第 15 节）；扫描处理的可行性已用公司前厅扫描实测（第 16 节、`spikes/voxelize/`）。
 
-**第四版的变化**：服务端瘦身。重建全部挪到本地（本地工具 `metaverse-recon` 产出重建包，命令行上传、发布），服务端只做 NyxID 鉴权、存储（分片上传、哈希核对、按文件头的格式和上限检查）、时间线和写入校验，代码里不再有针对某类场景的重建知识。处理服务（`metaverse-worker`）下线，上传核对和过期清理并进接口服务的后台执行器；重建层改由有重建权限的调用者经重建草稿写入（6、8.3、9.3）。迁移步骤见 `docs/design/server-slim.md`。
+**第四版的变化**：服务端瘦身。重建全部挪到本地（本地工具 `metaverse-recon` 产出重建包，命令行上传、发布），服务端只做 NyxID 鉴权、存储（分片上传、哈希核对、按文件内容的轻量格式和上限检查）、时间线和写入校验，代码里不再有针对某类场景的重建知识。处理服务（`metaverse-worker`）下线，上传核对和过期清理并进接口服务的后台执行器；重建层有单独的路径 `/rebuild/`，只收重建包，写入一律要求新权限 `metaverse:rebuild:write`（6、8.3、9.2、9.3）。迁移步骤见 `docs/design/server-slim.md`。
 
 **第三版的变化**：鉴权与权限完全改用 NyxID。本服务不再自建空间钥匙：每个 agent 用一把 NyxID agent key（凭证保存在 agent 本机），能做什么由人在 NyxID 里配置操作范围，服务端只做校验（第 9 节）。接口路径按"能被 NyxID 限制"来设计（8.3）。
 
@@ -122,7 +122,7 @@ MongoDB（普通集合 + GridFS 大文件）
 | 网站 | React + TypeScript + three.js（沿用 CMA 前端工程，nginx 托管） | 只读查看器：三种视图、剖切、时间轴回放、"现在"模式 |
 | 接口服务 | Rust（axum + tokio + mongodb + utoipa，与 CMA 相同） | 校验 NyxID 身份；存储（分片上传、哈希核对、格式和上限检查）；时间线；写入校验；读写接口；后台执行器和定期清理 |
 | 本地重建工具 | Python（numpy / scipy / trimesh / pillow），`recon/`，命令 `metaverse-recon` | 扫描对齐、网页用模型、结构和物体重建、AI 物件集的工作台（看、量、搜、摆、比）、外部模型导出、烘焙、逐件偏差、方块化，产出重建包；不连接本服务 |
-| 核心库 | Rust（`metaverse-core`）；网站和命令行用 TypeScript、本地重建工具用 Python 各自实现同样的规则，用同一批测试向量核对 | 操作定义、区块编码、回放引擎、形状词表、重建包格式 |
+| 核心库 | Rust（`metaverse-core`）；网站和命令行用 TypeScript、本地重建工具用 Python 各自实现同样的规则，用同一批测试向量核对；重建包的展开只在 Rust 实现，TypeScript 只做清单的结构检查和文件检查 | 操作定义、区块编码、回放引擎、形状词表、重建包格式、资源核对规则 |
 | 命令行 / 工具包 | TypeScript（npm） | 本地工作区、建造脚本、本地预览与截图、分片上传、推送；上传和发布重建包 |
 
 ---
@@ -167,7 +167,8 @@ spaces {
   - 1 表示"空气覆盖"，只在扩展层有效，用来删除下层的方块；
   - 方块表的编号从 2 开始。
   - 全 0 的区块不进清单。
-- **扩展层优先**：扩展层的物件可以替换或隐藏重建层的物件（例如重新布置桌椅），扩展层的方块覆盖同一位置的方块，所以重新重建实体区不会冲掉手工修改。
+- **两层互不覆盖**：重新重建只替换重建层，扩展层的物件和方块原样保留；扩展层的方块覆盖同一位置的方块。扩展层要"隐藏或替换"重建层的某件物体（例如重新布置桌椅）目前做不到，以后另行设计（`hides`）。
+- **编号分区**：物件和模板共用一个编号空间；重建层新放的编号以 `rb.` 开头，扩展层不能用这个前缀。模板只能被同一层的物件引用（6.3）。
 - **区块变化记录**：提交里 `changedChunks` 的 `hash = null` 表示删除这个区块。重新生成方块时，旧清单里有、新结果里没有的区块必须写 null。
 
 ### 4.3 方块表
@@ -201,8 +202,9 @@ entities / anchors（当前状态，只作 head 的读缓存）
 - **历史**：每次提交用 `changedEntities` 和 `changedAnchors` 记录变化，格式是 `{id, hash | null}`，null 表示删除。回放以提交记录为准。
 - **事件只引用锚点编号**：重新装修后只需移动锚点，历史事件仍然显示在当时的位置上。
 - **空间级锚点**：保留锚点 `_space`，用于营业状态这类针对整个空间的事件。
-- **物件模型**：`assetHash` 只能引用经接口服务核对过的 glb（6.1：没有外部引用、三角形数和贴图尺寸在上限内、原点在底面中心，物件的 `bounds` 与模型包围盒一致）；以前处理服务重新导出的模型继续可用。从公开模型库（Poly Haven、Objaverse 里 CC0 / CC-BY 的对象，可选 Sketchfab）找来的现成模型，由本地工具把摆放烘进网格、重新导出后上传，署名写在 `props.source`（SHAPES 3）。
-- **自定义属性**：物件的 `props` 是不透明的键值。网站只在点选物件时，在信息面板里按纯文本列出（保留键 `label` 作为悬浮标签），不做其他解释。例外是 `props.source` 为对象时：它是外部模型的署名（库、编号、来源页、作者、许可、标题），服务端按结构校验、只收可商用不传染的许可，网站在画面底边的署名行（有 CC-BY 模型时常驻）、模型来源面板和信息面板里显示。
+- **物件模型**：`assetHash` 只能引用核对结果符合物件模型上限的 glb（6.1：没有外部引用、只用白名单里的扩展、三角形数和贴图尺寸在上限内；包围盒按顶点数据实测，原点在底面中心，物件的 `bounds` 与它一致）；以前处理服务重新导出的模型补上核对结果后继续可用。从公开模型库（Poly Haven、Objaverse 里 CC0 / CC-BY 的对象，可选 Sketchfab）找来的现成模型，由本地工具把摆放烘进网格、重新导出后上传，署名写在 `props.source`（SHAPES 3）。
+- **锚点类型**：`table`、`seat`、`zone`、`door`、`camera`、`counter`、`space` 是固定的通用词表（现实接入用），不是某个场景专用；加一种类型算协议变更，按"先能读、再去写"分两次发布。
+- **自定义属性**：物件的 `props` 是不透明的键值。网站只在点选物件时，在信息面板里按纯文本列出（保留键 `label` 作为悬浮标签），不做其他解释。例外是 `props.source` 为对象时：它是外部模型的署名（库、编号、来源页、作者、许可、标题），服务端按结构校验、只收可商用不传染的许可（署名内容是写入方的声明，服务端只校验格式），网站在画面底边的署名行（有 CC-BY 模型时常驻）、模型来源面板和信息面板里显示。
 
 ### 4.5 组合宇宙
 
@@ -329,8 +331,10 @@ eventTypes { spaceId, type, version,           // 只追加的版本记录；回
 
 ```
 drafts { _id, spaceId, scope: physical | plot:<编号> | rebuild, baseSeq, rev, createdBy: { sub },
-         ops, touched: { chunks, entities, anchors, regions, plots },
-         resultChunks: [ { layer, cx, cy, cz, hash } ], assets, expiresAt }      // 30 天过期；assets 是草稿引用的资源哈希
+         ops, opsRefs, touched: { chunks, entities, anchors, regions, plots, scan, rebuiltLayer },
+         resultChunks: [ { layer, cx, cy, cz, hash } ], assets, heldAssets, bundleRef?, expiresAt }
+// 30 天过期。assets 只放可预览的资源（网页用模型、物件模型、贴图）；heldAssets 放只为防清理而持有的资源
+// （重建包清单、原始扫描、建模记录），预览永远拿不到。保存草稿按字段 $set，不整份替换
 draftChunks（草稿生成的区块，随草稿过期删除，不写进 chunks）
 ```
 
@@ -340,12 +344,14 @@ draftChunks（草稿生成的区块，随草稿过期删除，不写进 chunks�
   - 默认有效 24 小时，最长 7 天；草稿发布或丢弃时，令牌立即失效。
   - 链接形如 `/preview#t=<令牌>`，令牌放在 `#` 后面，不会进入服务器和网络层的日志。
   - 预览和公开接口一样，只显示公开锚点和公开事件；响应不缓存。
-  - 预览用到的全部区块和资源都走预览专用接口（8.2），凭预览令牌读取。服务端只返回属于这次预览的内容：草稿生成的区块、草稿引用的资源（`assets`），以及草稿基础版本及更早（seq ≤ `baseSeq`）的提交引用过、已发布的区块和本空间已登记（`assetRefs`）的资源；其他哈希一律 404。草稿区块和草稿新上传的资源在发布前只能这样读到。
-- **草稿范围**：草稿属于创建时的路径范围（实体区、某个地块，或重建 `rebuild`）。追加操作、生成预览、发布都必须走同一范围的路径，谁能调这些路径由 NyxID 操作范围决定。实体区和地块草稿只写扩展层；重建草稿只写重建层、扫描层和新锚点（6.3）。
+  - 预览用到的全部区块和资源都走预览专用接口（8.2），凭预览令牌读取。服务端只返回属于这次预览的内容：草稿生成的区块、草稿引用的可预览资源（`assets`；`heldAssets` 里的原始扫描、清单、建模记录一律 404），以及草稿基础版本及更早（seq ≤ `baseSeq`）的提交引用过、已发布的区块和本空间已登记（`assetRefs`）的资源；其他哈希一律 404。草稿区块和草稿新上传的资源在发布前只能这样读到。
+- **草稿范围**：草稿属于创建时的路径范围（实体区、某个地块，或重建 `rebuild`）。追加操作、生成预览、发布都必须走同一范围的路径，谁能调这些路径由 NyxID 操作范围决定。实体区和地块草稿只写扩展层和锚点；重建草稿只收一个重建包，只写重建层、扫描层和新锚点（6.3）。
 - **发布**：
   - 如果时间线已经前进，就拿 (baseSeq, head] 之间各提交的变化和草稿的 `touched` 求交集：没有交集就直接叠加到最新版本上发布；有交集才返回 409，并列出冲突的键。
   - 调用方可以请服务端在最新版本上重放草稿的操作。
-  - 只是重新重建了实体区、草稿只改扩展层的情况，不算冲突。
+  - 只是重新重建了实体区、草稿只改扩展层的情况，不算冲突（同一锚点编号除外）。
+  - 重建草稿把整个重建层当一个冲突单位：(baseSeq, head] 里有任何改过重建层的提交都算冲突，避免"整体替换"叠加出半新半旧的结果。
+  - 发布时在"最新版本 + 本次变化"上再查一遍模板引用：放进去的物件引用的模板都在，删掉的模板没有人再用。
   - 发布时，按最新的区域和地块重新校验全部操作是否仍在草稿范围内。提交的 `actor` 记发布者，`author` 记创建者。
   - 提交的 `at` 取发布那一刻的时间。
 
@@ -360,14 +366,14 @@ draftChunks（草稿生成的区块，随草稿过期删除，不写进 chunks�
 
 ## 6. 扫描与重建：本地重建，服务端存储和把关
 
-重建全部在本地完成（对齐、网页用模型、结构和物体、AI 物件集、外部模型、烘焙、逐件偏差、方块化），结果打成**重建包**，用命令行上传、发布成一次提交。服务端只做通用的事：存文件、按文件头核对格式和上限、校验写入是否符合形状词表（`docs/SHAPES.md`）和记录规则、引用的资源是否属于本空间，再记进时间线。服务端代码里没有任何"某类场景怎么重建"的知识。从原来"处理服务在云端重建"迁过来的做法见 `docs/design/server-slim.md`。
+重建全部在本地完成（对齐、网页用模型、结构和物体、AI 物件集、外部模型、烘焙、逐件偏差），结果打成**重建包**，用命令行上传、发布成一次提交。服务端只做通用的事：存文件、按文件内容做轻量的格式和上限检查、校验写入是否符合形状词表（`docs/SHAPES.md`）和记录规则、引用的资源是否属于本空间且核对结果合乎用途，再记进时间线。服务端代码里没有任何"某类场景怎么重建"的知识。从原来"处理服务在云端重建"迁过来的做法见 `docs/design/server-slim.md`。
 
 ### 6.1 上传与核对
 
 - **创建上传**：
   - 声明总大小、整体 SHA-256、分片大小和格式；用途写在路径里（`.../uploads/{purpose}`）：`scan`（原始扫描）、`webmodel`（网页用模型）、`model`（物件模型）、`texture`（贴图）、`ops`（大批量操作）、`script`（脚本、建模记录）、`bundle`（重建包清单）。
-  - 能上传哪类文件由 NyxID 操作范围决定；地块路径下只能上传 `model`、`texture`、`ops`、`script`。
-  - 本空间已经有同一用途的这个哈希，直接复用，不再接收数据。
+  - 哪条路径能传哪些用途：实体区和地块路径 `model`、`texture`、`ops`、`script`；重建路径（`/rebuild/uploads/{purpose}`）`scan`、`webmodel`、`model`、`texture`、`script`、`bundle`。再细的限制由 NyxID 操作范围决定。
+  - 本空间已经拥有这个哈希，并且它的核对结果（`metadata.check`）满足这个用途的上限，就直接复用，不再接收数据；没有核对结果的旧资源照常要求完整上传。
 - **大小上限**（可配置）：扫描 ≤ 1GB，网页用模型 ≤ 64MB，物件模型、贴图 ≤ 50MB，ops ≤ 64MB，脚本 ≤ 4MB，重建包清单 ≤ 16MB。
 - **分片**：
   - 分片大小在创建时固定，是 256KiB 的整数倍，最大 32MiB；除最后一片外，各片大小相同。
@@ -378,15 +384,16 @@ draftChunks（草稿生成的区块，随草稿过期删除，不写进 chunks�
   - 超过配额或空间存储上限时返回 413 或 429。
 - **完成上传**：
   - 返回 202 和一个 `upload_verify` 任务编号。大文件不能在请求里同步算完，核对由接口服务进程内的后台执行器做（6.4），状态存库，进程重启后接着做。
-  - 执行器按序号流式读出数据块，边读边算整体哈希，同时做这个用途的轻量检查；都通过后才登记成资源（文件名 = 内容哈希，唯一索引），计入空间存储用量。
-  - 登记时如果遇到文件名唯一键冲突（同一内容被并发上传），就删掉本次的数据块，复用已有资源。
+  - 执行器按序号流式读出数据块，边读边算整体哈希，同时做这个用途的轻量检查；都通过后才登记成资源（文件名 = 内容哈希，唯一索引），核对结果记在 `metadata.check`，计入空间存储用量。
+  - 登记时如果遇到文件名唯一键冲突（同一内容已存在，可能是别的空间登记的），就删掉本次的数据块，复用已有资源；它还没有核对结果时按条件补写（结果只取决于内容，谁算都一样）。
   - 哈希不符或检查不通过时，删掉本次的数据块，并把上传标记为失败、写明原因。
-- **轻量检查**：只读文件头、glb 的 JSON 块和图片头，不解码网格和图片，也不解压任何东西，所以不怕解压炸弹，也不需要子进程。
-  - glb（网页用模型、物件模型）：头和块结构；`buffers`、`images` 不能有 `uri`（外部地址和 `data:` 都不收），图片只能是内嵌的 png、jpeg；只收三角形图元，不收骨骼、动画、变形目标和网站解不了的压缩扩展；按场景节点数三角形、算包围盒，读每张图片的头拿尺寸。物件模型 ≤ 10 万三角形、贴图边长 ≤ 2048、坐标绝对值 ≤ 1000 米；网页用模型 ≤ 50 万三角形、贴图边长 ≤ 4096。核对结果（三角形数、贴图尺寸、包围盒）记在资源的 `metadata.check` 里。
-  - 贴图：魔数和宽高，单边 ≤ 8192，像素数 ≤ 8192²。
-  - 扫描：只核对格式（glb 的结构、drc 的魔数和类型、obj 的文本、zip 的中央目录：正好一个网格成员，成员名安全、不加密）；扫描不公开，服务端也不解析它。
+- **轻量检查**：不解码网格和图片：只读文件头、glb 的 JSON 块、`POSITION` 访问器的数据（算真实的包围盒）和图片头。唯一要解压的是 ops 的 gzip（有上限，在阻塞线程池里流式解压），不需要子进程。
+  - glb（网页用模型、物件模型）：头和块结构；JSON 块按用途限大小、带类型解析、数组有上限；`buffers`、`images` 不能有 `uri`（外部地址和 `data:` 都不收），图片只能是内嵌的 png、jpeg；只收三角形图元，不收骨骼、动画、变形目标、相机；扩展用白名单（贴图变换、网格量化、不受光照、发光强度），灯光和网站解不了的压缩扩展都拒收；按场景节点数三角形；**包围盒按顶点数据实测**，与文件里声明的 `min`、`max` 不符就拒收；读每张图片的头拿尺寸（JPEG 按段走，找不到尺寸就拒收）。物件模型 ≤ 10 万三角形、贴图边长 ≤ 2048、贴图像素合计 ≤ 4 × 2048²、坐标绝对值 ≤ 1000 米；网页用模型 ≤ 50 万三角形、贴图边长 ≤ 4096、像素合计 ≤ 2 × 4096²。
+  - 贴图：魔数和宽高，单边 ≤ 4096，像素数 ≤ 4096²（贴图是给网站显示的，很多手机的上限是 4096）。
+  - 扫描：只核对格式（glb 的结构、drc 的魔数和类型、obj 的文本、zip 的中央目录和各成员的本地头：正好一个网格成员，成员名安全、不加密、数据区间不重叠）；扫描不公开，服务端也不解析它。
   - ops（NDJSON，可 gzip）：流式解压后 ≤ 256MB、每行 ≤ 64KB；script：UTF-8、不含 NUL；bundle：JSON 对象，格式和版本对得上。完整解析在用到时做（6.3）。
-- **物件模型**：由本地工具导出 glb（摆放的旋转、缩放、调色烘进网格，原点在底面中心），上传核对通过后直接被物件的 `assetHash` 引用；服务端不再重新导出。引用时还要求物件的 `bounds` 与模型的包围盒一致（6.3）。
+  - **核对结果决定用途**：资源能不能当网页用模型、物件模型、贴图引用，看 `metadata.check` 是否满足那个用途的上限，不看第一次登记时记的种类（别的空间可能先用别的用途登记过同一份字节）。
+- **物件模型**：由本地工具导出 glb（摆放的旋转、缩放、调色烘进网格，节点用单位变换，原点在底面中心），上传核对通过后直接被物件的 `assetHash` 引用；服务端不再重新导出。引用时还要求物件的 `bounds` 与模型实测的包围盒一致（6.3）。
 - **清理**（6.5）：超过 24 小时还没完成的上传、完成后 7 天内没有被任何提交或草稿引用的资源会被删掉。
 
 ### 6.2 本地重建
@@ -396,7 +403,7 @@ draftChunks（草稿生成的区块，随草稿过期删除，不写进 chunks�
 - **对齐**：
   - 首次扫描：找到地面并摆正；按墙面法线的主方向绕竖直轴旋转，让墙和网格轴对齐（实测前厅旋转约 −61°）；原点定在实体区地面的一个角，坐标系从此固定（首次发布带扫描的提交时写进 `spaces.frame`）。
   - 重扫：先按同样的方法粗对齐（主墙的 4 个 90° 朝向都试一遍），再和参考扫描（从服务端下载）做点云配准，只求绕竖直轴的旋转和平移，只用地面、墙等稳定结构，剔除离群点；配准误差超过阈值时工具停下，由人确认或微调。
-  - 已有空间重建时，变换直接取线上最新扫描的变换，不重新对齐。
+  - 已有空间重建时，变换直接取线上最新扫描的变换（`metaverse pull`；NyxID 注册之前用 `metaverse pull --share` 读公开快照），不重新对齐。
 - **网页用模型**：为原始扫描生成两档 glb（单网格、内嵌贴图），默认档供"原始"视图使用。
 - **AI 重建（优化模型）**：
   1. 结构：平面拟合找出地面、墙、玻璃，墙角吸附，把原贴图投影到各平面；
@@ -406,24 +413,25 @@ draftChunks（草稿生成的区块，随草稿过期删除，不写进 chunks�
   5. 外部模型：从配置的主机下载、核对大小和哈希，把摆放烘进网格、按物件模型的上限减面和缩小贴图，重新导出 glb；署名写在 `props.source`；
   6. 自查：渲染对比，逐件计算扫描到物件的偏差写进 `fit`（按物件自身朝向取范围，墙、玻璃、地面作背景，只计 10 厘米以内的点）；
   7. 锚点：给有意义的物体（桌子、前台、沙发……）建议锚点编号。
-- **方块化（二期）**：需要方块风格时按网格体素化，结果作为重建层的区块随包提交。
-- **打包**：以上结果写成重建包（6.3），本地先校验一遍（与服务端同一套规则），再交给命令行上传、发布。
+- **方块化**：本地工具保留体素化的实验命令，但重建包第一版不带方块；要做时按清单版本 2 另行设计。
+- **打包**：以上结果写成重建包（6.3），物件编号统一以 `rb.` 开头，`base` 记下基于空间的第几版；再用命令行 `metaverse bundle check` 校验（与服务端同一套规则），然后上传、发布。
 
 ### 6.3 重建包与重建草稿
 
-- **重建包** = `manifest.json` + 文件。清单写：格式和版本号、生成工具和版本、说明、扫描元数据（扫描资源、网页用模型、对齐变换、对齐信息）、重建层记录（结构、物体、模板；整体替换或逐件合并）、锚点、建模记录、文件清单（相对路径、用途、sha256、大小）。包里不能有本地路径；记录里的模型和贴图都写资源哈希。格式见 `docs/design/server-slim.md` 第 6 节。
-- **写入路径**：复用草稿。重建层有自己的路径范围 `rebuild`（`/api/v1/spaces/{space_id}/rebuild/drafts...`），NyxID 可以单独授权（9.3）。命令行上传包里的文件（按哈希复用已有资源）和清单，建重建草稿，用"从上传应用操作"把清单交进去；服务端按固定规则把清单展开成操作：
+- **重建包** = `manifest.json` + 文件。清单写：格式和版本号、生成工具和版本、说明、可选的基础版本 `base: {spaceId, seq}`、扫描元数据（扫描资源、网页用模型、对齐变换、对齐信息）、重建层记录（结构、物体、模板；整体替换或逐件合并）、锚点、建模记录、文件清单（相对路径、用途、sha256、大小）。清单与托管位置无关，不写任何下载地址；包里不能有本地路径；记录里的模型和贴图都写资源哈希，并且每个哈希都在文件清单里。格式见 `docs/design/server-slim.md` 第 6 节（实现时写进 SHAPES）。
+- **写入路径**：重建层有自己的路径范围 `rebuild`：上传（`/api/v1/spaces/{space_id}/rebuild/uploads/{purpose}`）、草稿（`.../rebuild/drafts...`）和任务查询（`.../rebuild/jobs...`）都在这个前缀下，NyxID 可以单独授权（9.3）。命令行上传包里的文件（按哈希复用已有资源）和清单，建重建草稿，把清单交进去（**重建草稿只收一个重建包**，没有内联操作）；服务端按固定规则把清单展开成操作：
   - `setScan`：这次提交的扫描层（扫描资源、网页用模型、变换，可选的对齐信息和拍摄时间）；
   - `clearRebuilt`：清掉重建层的全部物件（整体替换时）；
-  - `placeEntity` / `removeEntity`：只能是重建层的物件（实体区、地块草稿反过来只能写扩展层）；
-  - `createAnchor` 带 `ifAbsent`：锚点只建不改，已存在就跳过。
-- **校验**：每个物件按 SHAPES 的规则完整校验（形状、包围盒、模板引用、署名许可）；引用的资源必须属于本空间，并且种类对得上（扫描、网页用模型、核对过的物件模型、贴图）；物件的 `bounds` 与引用的模型包围盒一致；重建层只能在实体区里（还没定义实体区时不能碰虚拟区和地块）；扩展层物件引用的模板在整体替换后仍要存在。
+  - `placeEntity`：只能是重建层的物件，编号以 `rb.` 开头；`removeEntity` 带 `ifPresent`（不存在就跳过）；
+  - `createAnchor` 带 `ifNew`：锚点只在本空间时间线上从没出现过时才建，所以不会改已有的锚点，也不会让删掉的锚点复活。
+- **校验**：每个物件按 SHAPES 的规则完整校验（形状、包围盒、署名许可）；模板只能被同一层的物件引用；引用的资源必须属于本空间，并且核对结果符合用途（扫描、网页用模型、物件模型、贴图）；只有模型的物件，`bounds` 与模型实测的包围盒一致；重建层只能在实体区里（还没定义实体区时，不能碰虚拟区和地块）。展开结果列出跳过的锚点和"关联物件挪了、锚点没动"的锚点，命令行提示人用实体区草稿处理。
 - **发布**：与其他草稿相同（冲突、重放、预览、栅栏），另外：
-  - 提交记 `actor.kind = rebuild`、`scan`（有 `setScan` 时）、`bundleRef`（清单的资源哈希）；
+  - 提交记 `actor.kind = rebuild`、`scan`（有 `setScan` 且与最新扫描不同时）、`bundleRef`（清单的资源哈希）；没给拍摄时间、扫描又没变时，沿用上一次的 `observedAt`；
   - 空间还没有坐标系时，在提交事务里固定 `frame`；
-  - 网页用模型、物件模型、贴图登记进 `assetRefs`，原始扫描、清单、脚本不登记（不公开）；
+  - 网页用模型、物件模型、贴图登记进 `assetRefs`，原始扫描、清单、建模记录不登记（不公开，预览也拿不到）；
+  - 重建层整体是一个冲突单位：草稿的基础版本之后有别的提交改过重建层，就返回 409，由人决定是否在最新版本上重放；命令行用清单的 `base`（拉取时的版本）当基础版本，所以几天的长时间重建也能查出中途的冲突；
   - 内容与最新版本完全相同时不写提交，返回"没有变化"——同一个包重复发布是幂等的；
-  - 重建层只在实体区，扩展层的修改优先（4.2），所以重新重建不会冲掉手工修改；实体区草稿只改扩展层，与重建草稿互不冲突。
+  - 重新重建只换重建层，扩展层的修改原样保留；实体区草稿与重建草稿只在同一个锚点编号上才会冲突。
 - **重扫**：本地对齐、重建后发布一个新包，时间线上就能看到店铺的真实变化。
 
 ### 6.4 后台任务
@@ -432,26 +440,29 @@ draftChunks（草稿生成的区块，随草稿过期删除，不写进 chunks�
 
 ```
 jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, notBefore?,
-       leaseOwner, leaseUntil, attempt, maxAttempts(默认 3), lastError, result?, progress?, resultCommitId?, createdAt }
+       leaseOwner, leaseUntil, attempt, maxAttempts, lastError?: { class: content|fetch|transient, message, at },
+       history?, result?, progress?, resultCommitId?, createdAt }
 ```
 
+- **名额**：核对和重任务分开计数（默认核对 2 个、重任务 1 个），核对先领，两个长任务占不住核对；每个空间同时只跑一个任务。
 - **领取**：用一次原子更新领取排队中（`notBefore` 已到）的任务，或租约已过期且重试次数未用完的任务，同时写入租约（3 分钟）并把重试次数加 1。
-- **续约**：每 45 秒续一次约，条件带上租约持有者和重试次数。续约失败说明租约已经丢了，必须放弃，不能再写回结果。
-- **写回**：结果和"任务完成"在同一个事务里，条件是 `{_id, attempt, leaseOwner, status: running}`；匹配数为 0 就中止事务、丢弃结果。写提交的任务（部署种子）提交带 `jobId`（部分唯一索引），重做时发现已有这个 `jobId` 的提交就直接标记完成。
-- **重试**：内容不合规、哈希不符这类失败直接 `failed`；数据库抖动、下载出错这类按退避写 `notBefore` 退回队列；次数用完后标记失败。
+- **续约**：每 45 秒续一次约，条件带上租约持有者和重试次数。续约失败说明租约已经丢了，必须放弃。
+- **写回**：任务的所有写入（中间的草稿保存、上传状态、提交、任务完成）都在事务里，并且事务里按 `{_id, attempt, leaseOwner, status: running}` 更新任务；匹配数为 0 就中止事务。所以丢了租约的执行器什么都写不进去。写提交的任务（部署种子）提交带 `jobId`（部分唯一索引）。
+- **重试**：失败分三类：内容不合规、哈希不符这类（`content`）直接失败；下载出错（`fetch`，含 403、404、429）和数据库抖动、草稿被并发修改（`transient`）按退避写 `notBefore` 退回队列；次数用完后标记失败。种子的下载类失败在下次启动时自动重新排队。
 - **停止**：收到停止信号后不再领取，手上的任务做不完就退回队列（退还这一次的重试次数）。
-- **多副本**：领取是原子的，写回带条件，滚动更新时新旧副本同时运行也只会有一个写回成功；本进程同时执行的任务数有上限，每个空间排队的任务数也有上限。
-- **可见性**：任务进度和失败原因可以经接口查询。
+- **多副本**：领取是原子的，写回带条件，滚动更新时新旧副本同时运行也只会有一个写回成功。
+- **不卡请求**：哈希、解压、解析、校验放进阻塞线程池，运行时至少 2 个工作线程；内存按"2 个核对 + 1 个重任务 + 并发分片 + 公开缓存"的最坏情况预算（14）。
+- **可见性**：任务进度和失败原因可以经接口查询（实体区、地块、重建三组路径各看各的范围）；`/api/healthz` 只返回是否就绪，后台状态写日志。
 - **索引**：`(status, createdAt)`、`(status, leaseUntil)`、`(spaceId, status)`。
 
 ### 6.5 过期清理
 
 平台没有定时任务，清理放在接口服务的后台循环里，每 10 分钟一轮；每轮先在 `migrations` 集合里抢一把带租约的锁，只有一个副本执行：
 
-1. 租约过期且重试次数用完的任务标记失败（上传核对任务顺带收尾它的上传）；
+1. 租约过期且重试次数用完的任务标记失败（上传核对任务顺带收尾它的上传）；已下线种类（处理服务的任务）还在排队或运行的，每轮都标记失败；
 2. 超过 24 小时还没完成的上传：先删除 `files_id` = 上传编号的 GridFS 数据块，再删除上传会话；
 3. 过期的草稿、草稿区块、预览令牌；
-4. 完成后 7 天内没有被任何提交、草稿或排队中的任务引用的资源，删除后从空间存储用量里减回；
+4. 完成后 7 天内没有被任何提交（含 `bundleRef`）、草稿（含 `heldAssets`）或排队中的任务引用的资源，删除后从空间存储用量里减回；
 5. 补打最近提交引用的区块的 `publishedAt`。
 
 - **栅栏**：清理先查引用、再按"`touchedAt` 仍早于 7 天前"的条件删除，两步之间没有锁。所以新引用一个已有资源之前（草稿追加、发布、复用上传、登记资源），都先按文件名刷新 `touchedAt` 并要求匹配到；匹配不到说明刚被清理，按资源不存在处理，让调用方重新上传（内容相同，哈希也相同）。发布时在提交事务里再确认一次，缺了就整个提交作废（409 `asset_gone`）。
@@ -516,7 +527,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 | `GET /api/public/universes/{id}?at=` | T 时刻生效的组合修订（成员、摆放、连接）和各成员在 T 时刻的 seq；查看器再按这些 seq 调用 `snapshot?seq=` | 不缓存 |
 | `GET /api/public/universes/{id}/revisions/{seq}` | 某一次组合修订的内容 | 长 |
 | `GET /api/public/previews` | 草稿预览（令牌放在请求头里） | 不缓存 |
-| `GET /api/public/previews/chunks/{hash}`、`.../assets/{hash}` | 预览用到的区块和资源：草稿生成的区块、草稿引用的资源，以及草稿基础版本（seq ≤ baseSeq）的提交引用过、已发布的区块和本空间已登记的资源；不属于这些的一律 404；资源支持分段下载 | 不缓存 |
+| `GET /api/public/previews/chunks/{hash}`、`.../assets/{hash}` | 预览用到的区块和资源：草稿生成的区块、草稿引用的可预览资源（网页用模型、物件模型、贴图；原始扫描、清单、建模记录不给），以及草稿基础版本（seq ≤ baseSeq）的提交引用过、已发布的区块和本空间已登记的资源；不属于这些的一律 404；资源支持分段下载 | 不缓存 |
 
 路径带 `.bin` 扩展名，是为了让平台前面的 Cloudflare 按默认规则缓存这些内容不变的文件：成功响应带 `Cache-Control: public, max-age=31536000, immutable`，不带 Set-Cookie 和 Vary。
 
@@ -547,17 +558,17 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 
 | 分组 | 接口（路径示例） |
 |---|---|
-| 查看 | `GET /api/v1/spaces/{space_id}`：空间信息，含最新 seq（也作为 ETag）、区域、地块、锚点（含内部级）<br>`GET .../regions/{region_id}/content`：区域内容（分层文字）<br>`GET .../timeline`、`GET .../events`（含内部级）、`GET .../jobs/{job_id}` |
+| 查看 | `GET /api/v1/spaces/{space_id}`：空间信息，含最新 seq（也作为 ETag）、区域、地块、锚点（含内部级）、各用途的上传上限 `uploadLimits`<br>`GET .../regions/{region_id}/content`：区域内容（分层文字）<br>`GET .../timeline`、`GET .../events`（含内部级）、`GET .../jobs/{job_id}` |
 | 实体区修改 | `POST /api/v1/spaces/{space_id}/drafts`：建草稿<br>→ `POST .../drafts/{draft_id}/ops`：批量操作<br>→ `POST .../drafts/{draft_id}/ops-from-upload`：大批量，异步<br>→ `POST .../drafts/{draft_id}/preview`<br>→ `POST .../drafts/{draft_id}/publish` |
 | 地块修改 | 同上，路径换成 `/api/v1/spaces/{space_id}/plots/{plot_id}/drafts...`；服务端保证每个操作都落在该地块内 |
-| 重建层 | 同上，路径换成 `/api/v1/spaces/{space_id}/rebuild/drafts...`（`create_rebuild_draft`、`append_rebuild_draft_ops`、`rebuild_draft_ops_from_upload`、`create_rebuild_draft_preview`、`publish_rebuild_draft`……）；只能写重建层、扫描层（`setScan`）和新锚点；`ops-from-upload` 还接受重建包清单（6.3） |
-| 上传 | `POST /api/v1/spaces/{space_id}/uploads/{purpose}` → `PUT .../uploads/{purpose}/{upload_id}/parts/{n}` → `POST .../complete`（返回核对任务，6.1）<br>用途：`scan`、`webmodel`、`model`、`texture`、`ops`、`script`、`bundle`；地块路径只能传 `model`、`texture`、`ops`、`script` |
+| 重建层 | 前缀 `/api/v1/spaces/{space_id}/rebuild/`：上传（`uploads/{purpose}`，用途 `scan`、`webmodel`、`model`、`texture`、`script`、`bundle`）→ 建草稿（`drafts`）→ 交包（`drafts/{draft_id}/bundle`，异步展开）→ 预览 → 发布；任务查询 `jobs`、`jobs/{job_id}`。重建草稿只收一个重建包，没有内联操作；只写重建层、扫描层和新锚点（6.3）。写操作一律要求 `metaverse:rebuild:write`（9.2） |
+| 上传 | `POST /api/v1/spaces/{space_id}/uploads/{purpose}` → `PUT .../uploads/{purpose}/{upload_id}/parts/{n}` → `POST .../complete`（返回核对任务，6.1）<br>实体区和地块路径的用途：`model`、`texture`、`ops`、`script`；扫描、网页用模型和重建包清单只经重建路径上传 |
 | 事件 | `POST /api/v1/spaces/{space_id}/sources/{source}/events`：批量写，每批 ≤ 1000 条<br>`POST .../sources/{source}/corrections`：更正和撤回 |
 | 组合 | `POST /api/v1/universes`<br>`PATCH /api/v1/universes/{universe_id}`：摆放、连接、可见性、分享令牌<br>`POST /api/v1/universes/{universe_id}/members/{space_id}`：加入；`DELETE` 同一路径：退出 |
 
-批量操作只用高层操作（填充、空心盒、替换、复制区域、新增方块、放物件、新建/移动/修改锚点；重建草稿另有设置扫描、清空重建层），每次 ≤ 200 条，请求体 ≤ 1MB；超出返回 413，并提示改走上传。
+批量操作只用高层操作（填充、空心盒、替换、复制区域、新增方块、放物件、删物件（可带"不存在就跳过"）、新建/移动/修改锚点），每次 ≤ 200 条，请求体 ≤ 1MB；超出返回 413，并提示改走上传。设置扫描、清空重建层只由重建包展开产生，调用方不能直接给。
 
-原来发起服务端处理的 `POST .../scans`、`.../scans/{scan_id}/alignment`、`/rebuild`、`/voxelize` 和 `POST .../models` 已经取消（重建在本地完成，模型上传后直接引用），过渡期返回 410。
+原来发起服务端处理的 `POST .../scans`、`.../scans/{scan_id}/alignment`、`/rebuild`、`/voxelize`、`POST .../models` 和 `authored` 用途的上传已经取消（重建在本地完成，模型上传后直接引用），过渡期（一个版本）返回 410。
 
 ### 8.4 管理接口（`/api/v1/admin`）
 
@@ -610,7 +621,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 
 - **显式记录主人类型**：空间和组合都记 `owner: { kind: person | org, id }`。不能从一个编号去猜它是不是组织。
 - **组织空间要先查证再创建**：创建组织空间时，现场调用 NyxID 的组织授权接口确认调用者是该组织的 admin，再写入 `ownerEvidence`（签发方、组织编号、核验人、核验时间，与 CMA 的组织归属证据相同）。查不到就拒绝。没有证据的空间一律按个人所有处理。
-- **部署配置种子是运维行为**：演示空间可以由部署配置建（接口服务的 `METAVERSE_DEMO_SEED`，见 `infra/chrono-cd/README.md` 第 8 步），不经过任何网络接口、没有调用者。它的依据是"部署这套服务的组织 admin 把它写进了部署配置"——在 chrono-cd 里改应用规格、设密钥都要求组织 admin，所以与 admin 现场核验同级。归属证据写成单独的依据 `basis = operator_seed`、`verifiedBy = system:demo-seed`（带冒号，不可能是 NyxID 主体编号），一致性检查只在"组织主人 + 这种依据 + 证据里的组织就是配置里的主人"时接受它。种子用授权层签发的显式系统范围写入并记审计日志，只碰自己建的空间（证据是 `operator_seed`、主人一致），已有的别人的空间一律不动；建空间、第一次提交与管理接口走同一条代码路径，导入的是一个按哈希固定的重建包，由后台执行器下载、核对、登记资源，再与命令行一样建重建草稿、展开、发布（提交的 `actor.sub = system:demo-seed`、`kind = rebuild`），服务端不跑任何重建。NyxID 服务注册之前，线上只能靠种子写入。
+- **部署配置种子是运维行为**：演示空间可以由部署配置建（接口服务的 `METAVERSE_DEMO_SEED`，见 `infra/chrono-cd/README.md` 第 8 步），不经过任何网络接口、没有调用者。它的依据是"部署这套服务的组织 admin 把它写进了部署配置"——在 chrono-cd 里改应用规格、设密钥都要求组织 admin，所以与 admin 现场核验同级。归属证据写成单独的依据 `basis = operator_seed`、`verifiedBy = system:demo-seed`（带冒号，不可能是 NyxID 主体编号），一致性检查只在"组织主人 + 这种依据 + 证据里的组织就是配置里的主人"时接受它。种子用授权层签发的显式系统范围写入并记审计日志，只碰自己建的空间（证据是 `operator_seed`、主人一致），已有的别人的空间一律不动；建空间、第一次提交与管理接口走同一条代码路径，导入的是一个重建包：配置按哈希固定两份小文件——清单和来源表（每个文件从哪里下载），由后台执行器下载、核对、登记资源，再与命令行一样建重建草稿、展开、发布（提交的 `actor.sub = system:demo-seed`、`kind = rebuild`），服务端不跑任何重建。系统范围不是令牌，不经过下面的重建权限检查，这是唯一的例外，写审计日志。NyxID 服务注册之前，线上只能靠种子写入。
 - **子资源继承主人**：提交、草稿、事件、物件、锚点都带 `spaceId` 和主人副本，写入时校验副本与空间的主人一致，不一致判为数据损坏（CMA 的 lineage 规则）。
 - **访问级别**：
 
@@ -646,8 +657,8 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 - **功能级开关（可选）**：
   - 需要平台级限制时（例如谁能建空间），请平台管理员在 NyxID 建 `metaverse-user`、`metaverse-admin` 角色。
   - 服务端按 CMA 的做法，把令牌里的 `permissions` 按字符串精确映射成一组固定的能力；不认角色名和用户组，未知字符串和前缀通配一律不授予，不在本地维护管理员名单。
-  - 现有的权限：`metaverse:space:create`、`metaverse:content:write`、`metaverse:event:write`、`metaverse:universe:write`，以及写重建层的 `metaverse:rebuild:write`（重建路径的写操作要求它，实体区和地块草稿不要求）。
-  - 第一步可以不用。
+  - 现有的权限：`metaverse:space:create`、`metaverse:content:write`、`metaverse:event:write`、`metaverse:universe:write`。总开关 `METAVERSE_REQUIRE_PERMISSIONS` 打开时才检查；第一步可以不用。
+- **重建权限（始终生效）**：重建路径上的写操作（上传、建草稿、交包、预览、发布、丢弃）一律要求令牌带 `metaverse:rebuild:write`，精确匹配，不看总开关，也没有关掉它的配置；缺了返回 403。权限来自 NyxID 角色：请平台管理员建 `metaverse-rebuilder`（只含这个权限），分给要写重建层的人。建好之前，通过接口谁都写不了重建层，只有部署种子能写。同一个人名下的所有 key 都带这个权限，按 key 再细分靠操作范围（9.3）。组织主体能不能挂角色、agent key 的令牌带不带主人的权限，第 0 阶段实测（16.2）。
 - **更细的限制交给 NyxID**：能改哪个地块、能写哪个数据源、能不能发布，由 agent key 的操作范围在转发前检查（9.3）。人的登录态不受操作范围约束，这正是上面的主人和角色检查必须存在的原因。
 
 ### 9.3 agent 的权限：NyxID agent key
@@ -670,7 +681,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 | agent | key 的主人 | 操作范围 |
 |---|---|---|
 | AI 装修（实体区） | 店方 | 查看接口；`/spaces/restaurant/drafts` 下的建草稿、批量操作、预览；**不含**发布（由人发布）；**不含** `/rebuild/` 路径，所以动不了重建层 |
-| 本地重建（重建工具 + 命令行） | 店方组织 | 查看接口；`/spaces/restaurant/uploads/{purpose}` 下的上传（`purpose` 限 `scan`、`webmodel`、`model`、`texture`、`script`、`bundle`）；`/spaces/restaurant/rebuild/drafts` 下的建草稿、追加、`ops-from-upload`、预览；`GET .../jobs/{job_id}`；发布默认不给（人看过预览再发布），店方也可以给 |
+| 本地重建（重建工具 + 命令行） | 有 `metaverse-rebuilder` 角色的人（店方组织 admin） | 查看接口；`/spaces/restaurant/rebuild/` 下的上传、建草稿、交包、预览、任务查询；发布默认不给（人看过预览再发布），店方也可以给 |
 | 地块合作方，或合作方的 AI | 店方组织（交给合作方使用） | `/spaces/restaurant/plots/p1/` 下的全部接口，含发布；不含其他路径 |
 | 收银数据源 | 店方组织 | 只有 `POST /spaces/restaurant/sources/pos/events`，事件类型限定 |
 | 花店送花 | 餐厅组织（交给花店使用） | 只有 `POST /spaces/restaurant/sources/florist/events`；事件类型只能是 `delivery.arrived`，锚点只能是收货台 |
@@ -682,7 +693,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 - **不受影响的限制**：带操作范围的 key 不能用 WebSocket，也不能改写请求方法。本服务的写接口都是普通的 POST/PUT/PATCH，不受影响。
 
 **AI 要用自己的 key**：
-- 通过 claude.ai 连接器登录 NyxID 的 AI，用的是人的身份，拥有人的全部权限。
+- 通过 claude.ai 连接器登录 NyxID 的 AI，用的是人的身份，拥有人的全部权限（有重建角色的人，AI 也就能调重建路径；所以重建草稿只收重建包、没有零散的破坏性操作，重建角色只给真要写重建层的人）。
 - 要限制 AI，必须让它用 agent key：
   - 在本地或云端会话里，用 `nyxid` 命令行的 agent key 配置调用；
   - 或者在 MCP 配置里，用 `x-api-key` 请求头带上 agent key（NyxID 的 MCP 入口只从这个头读取 agent key）。
@@ -692,19 +703,20 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 **三层中间件，顺序固定**：
 
 1. **身份**（全部 `/api/v1/*`）：按 9.1 验签。身份令牌头只能出现一次；完全不读 `X-NyxID-User-*` 明文头（Ornn 的回退是漏洞，本服务直接暴露在公网）。失败返回 401；拿不到 NyxID 公钥返回 503。
-2. **功能级权限**（可选，9.2）：精确匹配 `metaverse:*` 权限字符串，不认前缀通配；写重建层要 `metaverse:rebuild:write`。
+2. **功能级权限**（9.2）：精确匹配 `metaverse:*` 权限字符串，不认前缀通配；重建路径的写操作始终要 `metaverse:rebuild:write`，其余按总开关。
 3. **资源级**（`/spaces/{space_id}/...`、`/universes/{universe_id}/...`）：读出主人，按 9.2 算出访问级别（无 / 只读 / 管理），交给后面的处理逻辑。
 
 **请求内容与路径一致**：
-- 地块路径下的每个操作（填充盒、复制目标、物件包围盒、锚点的新旧位置）都必须落在该地块内；实体区路径下的操作只能改实体区。
+- 地块路径下的每个操作（填充盒、复制目标、物件包围盒、锚点的新旧位置）都必须落在该地块内；实体区路径下的操作只能改实体区（还没定义实体区时，是虚拟区和地块以外的地方，与网站的理解一致）。
 - 只有重建路径能写重建层和扫描层；重建路径下的物件和新锚点必须在实体区里（还没定义实体区时，不能碰虚拟区和地块）。
 - 事件路径里的 `source` 就是事件的数据源，请求体里不能另填。
-- 上传的用途由路径决定；地块路径下不能上传扫描、网页用模型和重建包。
-- 引用的资源必须属于本空间，并且种类与用途对得上（扫描、网页用模型、核对过的物件模型、贴图）。
+- 上传的用途由路径决定；扫描、网页用模型和重建包清单只能经重建路径上传。
+- 编号分区：扩展层的物件编号不能以 `rb.` 开头，重建层新放的必须以它开头；模板只能被同一层的物件引用。
+- 引用的资源必须属于本空间，并且服务端实测的核对结果符合用途（扫描、网页用模型、物件模型、贴图）。
 
 **业务规则**：
 - 基准版本；
-- 草稿范围：草稿属于创建时的路径范围（实体区或某个地块），追加操作、预览、发布都必须走同一范围的路径；
+- 草稿范围：草稿属于创建时的路径范围（实体区、某个地块或重建），追加操作、预览、发布都必须走同一范围的路径；
 - 配额：按空间和主人统计。
 
 **数据访问层强制带授权**（避免 Ornn 出过的"按编号读取不带过滤"的越权漏洞）：
@@ -735,6 +747,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 |---|---|---|
 | 身份令牌加上 agent key 编号（以及子凭证编号、认证方式）。注入点在 NyxID 代理里已经能拿到这些信息，改动很小 | 留痕；区分同一主人名下的多个 agent | 高 |
 | 为配置者打开"操作范围"开关（`assistant:operation-scopes`） | 第一步就要用操作范围限制 agent | 高 |
+| 平台管理员建自定义角色 `metaverse-rebuilder`（只含 `metaverse:rebuild:write`），并确认 agent key 的令牌带主人的权限 | 写重建层（9.2）；建好之前只有部署种子能写重建层 | 高 |
 | 本服务注册成目录服务并同步接口 | 操作范围里的路径参数取值限制只能挂在目录服务的接口上 | 高 |
 | 身份令牌加上调用者在相关组织的角色（或者给已注册的服务提供查询"某人在某组织的角色"的接口；目前服务账号调用组织接口会被拒绝） | 判断组织成员及角色，取消 9.2 的"转发调用者令牌"例外 | 高 |
 | 提供 Claude Code / Codex 用 agent key 接入 MCP 的配置命令（目前只生成登录配置） | 让 AI 默认用受限的 agent key，而不是人的登录态 | 中 |
@@ -764,17 +777,18 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 |---|---|
 | `metaverse init` | 创建工作区，并写入技能说明 `.claude/skills/metaverse-builder/`（建造）和 `metaverse-reconstruct/`（用 AI 重建实体空间） |
 | `metaverse admin …` | 管理命令：建空间、轮换分享令牌、定义区域和地块、登记事件类型、抹除事件（调用 8.4） |
-| `metaverse pull [--scan]` | 下载空间的当前状态；`--scan` 另外下载当前的原始扫描（本地重建、重扫配准要用） |
+| `metaverse pull [--scan]` | 下载空间的当前状态和各用途的上传上限（`limits.json`）；`--scan` 另外分段下载当前的原始扫描（能断点续传），写 `scan/scan.zip` 和 `scan/transform.json`（本地重建、重扫配准要用） |
+| `metaverse pull --share <分享链接> [--seq N] [--assets]` | 只读公开快照，不需要 NyxID：变换、物件、公开锚点，`--assets` 另外下载网页用模型和物件模型；工作区标记为只读，分享令牌不写进工作区 |
 | `metaverse build` | 运行建造脚本。脚本每次都从拉取的基础状态重新生成，可以反复运行 |
 | `metaverse dev` | 本地查看器，和网站同一套代码；脚本改了自动刷新 |
 | `metaverse shot` | 本地截图（无头浏览器软件渲染，不需要显卡），AI 直接看图自查 |
 | `metaverse diff` / `check` | 和拉取时的版本对比；在本地检查改动是否都落在目标地块或实体区内 |
 | `metaverse push [--plot <地块>]` | 操作写成文件 → 分片上传 → "从上传应用操作"生成草稿 → 打印草稿编号、统计和预览链接 |
-| `metaverse bundle check <目录>` | 在本地按服务端同一套规则校验重建包（6.3） |
-| `metaverse bundle push <目录> [--publish]` | 上传重建包的文件（按哈希复用已有资源）和清单 → 建重建草稿 → 展开 → 预览链接；`--publish` 直接发布 |
+| `metaverse bundle check [目录] [--seed]` | 在本地按服务端同一套规则校验重建包（清单结构、文件的哈希和格式检查、记录；6.3）；`--seed` 时对内部锚点和建模记录给出警告（种子包会公开） |
+| `metaverse bundle push [目录] [--publish]` | 默认读 `out/bundle/`：以清单的 `base` 为基础版本，上传文件（按哈希复用已有资源）和清单 → 建重建草稿 → 交包展开 → 列出跳过和漂移的锚点 → 预览链接；`--publish` 直接发布 |
 | `metaverse publish <草稿编号>` | 发布草稿，包括重建草稿（所用 agent key 的操作范围要包含发布接口） |
 
-本地重建工具 `metaverse-recon`（Python，`recon/` 目录；Mac、Linux 都能跑，不需要显卡，渲染要 node 和 Playwright 的 Chromium）只读写本地文件，不连接本服务、不需要凭证；和本服务打交道一律由命令行 `metaverse` 做：
+本地重建工具 `metaverse-recon`（Python，`recon/` 目录；Mac、Linux 都能跑，不需要显卡，渲染要 node 和 Playwright 的 Chromium）只读写本地文件，不连接本服务、不需要凭证；和本服务打交道一律由命令行 `metaverse` 做。仓库外用 `uv tool install "git+https://github.com/ChronoAIProject/chrono-metaverse@<标签>#subdirectory=recon"` 安装，`doctor --install` 把渲染要的工具装进缓存目录。它在命令行工作区里运行，往上找 `space.json` 来定默认的扫描（`scan/scan.zip`）、变换（`scan/transform.json`）、上限（`limits.json`）和输出目录（`out/recon/`、`out/bundle/`）：
 
 | 命令 | 作用 |
 |---|---|
@@ -785,15 +799,16 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 | `search`、`index`、`fetch`、`place` | 模型库检索（只要 CC0、CC-BY）、下载、摆进扫描 |
 | `assemble`、`reframe` | 合并成 AI 物件集；在两种坐标系之间换算 |
 | `models`、`bake`、`fit` | 外部模型导出、烘焙贴图、逐件偏差（`bundle` 会调用它们，也能单独跑） |
-| `bundle`、`bundle-check` | 打成重建包（物件集或算法结果 + 网页用模型 + 扫描 + 建议锚点）；校验 |
-| `voxelize` | 方块化（二期） |
-| `doctor` | 检查渲染要用的工具 |
+| `scan-zip` | 把扫描成员按固定规则打成 zip（同样的成员得到同样的哈希） |
+| `bundle` | 打成重建包（物件集或算法结果 + 网页用模型 + 扫描 + 建议锚点）：编号加 `rb.`，`base` 取工作区；`--seed` 去掉内部锚点和建模记录；`--from-snapshot` 用拉下来的快照打成整体替换的包；最后调用 `metaverse bundle check` |
+| `voxelize` | 方块化（本地实验，结果不能进包） |
+| `doctor [--install]` | 检查渲染要用的工具；`--install` 装进缓存目录 |
 
 - **凭证**：
   - 人在自己的电脑上，用 `nyxid` 命令行的登录态（拥有人的全部权限）。
   - AI 在本地建造时，用自己的 agent key 配置（`nyxid login --agent-key --profile <名称>`，由人审批）。命令行用这个配置调用，不沿用人的登录态。
-- **冲突**：推送冲突时，先拉取最新状态，重新运行脚本，再推送。重建包冲突（有人同时发布了别的重建）时，拉取最新状态、确认后用 `--replay` 在最新版本上重放，或重新打包。
-- **重建的流程**：`metaverse pull --scan`（或拿到扫描原件）→ `metaverse-recon prepare` → 逐件重建（教程 `docs/tutorials/reconstruct-with-ai.md`）→ `metaverse-recon bundle` → `metaverse bundle push` → 人看预览链接 → `metaverse publish`。
+- **冲突**：推送冲突时，先拉取最新状态，重新运行脚本，再推送。重建包冲突（拉取之后有人发布了别的重建）时，看过冲突的键，确认后用 `--replay` 在最新版本上重放，或重新拉取、重新打包。
+- **重建的流程**：`metaverse pull --scan`（或拿到扫描原件；NyxID 注册之前用 `pull --share` 取变换）→ `metaverse-recon prepare` → 逐件重建（教程 `docs/tutorials/reconstruct-with-ai.md`）→ `metaverse-recon bundle` → `metaverse bundle push` → 人看预览链接 → `metaverse publish`。
 
 ### 10.2 两种建造方式
 
@@ -808,7 +823,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 ### 10.3 接入说明
 
 - **能看到工具**：用户在 Claude Code 里连上 NyxID 的 MCP，就能看到本服务的工具。工具可能要先用 `nyx__search_tools` 搜索，再用 `nyx__call_tool` 调用。
-- **能写入**：调用者必须是空间主人或主人组织的成员（9.2），并且所用 agent key 的操作范围允许这个接口（9.3）。
+- **能写入**：调用者必须是空间主人本人、主人组织本身（组织的 agent key）或组织 admin（9.2；组织 member、viewer 只读），并且所用 agent key 的操作范围允许这个接口（9.3）；写重建层还要有重建权限。
 - **技能文件**：技能说明（中文）随命令行工具分发，由 `metaverse init` 写进工作区，写明坐标约定、方块表、区域和地块规则、建造规范、两种建造方式和示例。平台仓库里的 `skills/metaverse-builder/` 只是源文件。
 - **教程**：
   - `docs/tutorials/cloud-claude-code-nyxid.md` 是平台开发教程；
@@ -865,7 +880,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 | 集合 | 内容 | 主要索引 |
 |---|---|---|
 | `spaces` | 空间（含区域、地块的当前状态） | `_id`、`(owner.kind, owner.id, updatedAt)` |
-| `commits` | 提交 | `(spaceId, seq)` 唯一、`(spaceId, at)`、`jobId` 部分唯一 |
+| `commits` | 提交 | `(spaceId, seq)` 唯一、`(spaceId, at)`、`jobId` 部分唯一、`(spaceId, changedAnchors.id)`（查锚点是否出现过） |
 | `chunks` | 区块（压缩存储），带 `publishedAt` | `_id` = 区块哈希 |
 | `draftChunks` | 草稿区块 | 随草稿过期 |
 | `records` | 物件和锚点的各个版本 | `_id` = 内容哈希 |
@@ -876,12 +891,12 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 | `events` | 现实事件 | `(spaceId, at)`、`(spaceId, recordedAt)`、`(spaceId, corrects)` 稀疏、`(spaceId, source, sourceEventId)` 唯一 |
 | `stateSnapshots` | 状态类事件的定期快照 | `(spaceId, at)` |
 | `eventTypes` | 事件类型版本 | `(spaceId, type, version)` 唯一 |
-| `drafts` / `previews` | 草稿、预览令牌（只存哈希） | `spaceId`；按过期时间清理 |
+| `drafts` / `previews` | 草稿（可预览的 `assets` 与只为防清理而持有的 `heldAssets` 分开）、预览令牌（只存哈希） | `spaceId`；按过期时间清理 |
 | `uploads` / `jobs` | 上传会话、后台任务（上传核对、大批量操作、种子导入；旧的处理服务任务只留记录） | 见 6.1、6.4 |
 | `universes` / `universeRevisions` | 组合当前状态、修订 | `(universeId, seq)` 唯一、`(universeId, at)` |
 | `replay` | 令牌防重放 | `_id` = jti，按过期时间删除 |
 | `migrations` | 迁移记录与锁（含定期清理的租约锁） | `_id` = 迁移名或锁名 |
-| GridFS `assets` | 原始扫描、网页用模型、物件模型、贴图、大块操作、脚本、重建包清单；`metadata` 记种类、所属空间、`touchedAt` 和核对结果 `check` | `files.filename` 唯一（= 内容哈希） |
+| GridFS `assets` | 原始扫描、网页用模型、物件模型、贴图、大块操作、脚本、重建包清单；`metadata` 记第一次登记的种类、所属空间、`touchedAt` 和核对结果 `check`（只取决于内容；能不能按某个用途引用看它，不看种类） | `files.filename` 唯一（= 内容哈希） |
 
 ### 13.3 事务
 
@@ -900,13 +915,13 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 | 服务 | 镜像 | 路由 | 暴露 | 说明 |
 |---|---|---|---|---|
 | `metaverse-web` | `ghcr.io/chronoaiproject/chrono-metaverse-web` | `/` | 公网 | 静态网站（nginx 非特权镜像，端口 8080）；健康检查 `/healthz` |
-| `metaverse-api` | `ghcr.io/chronoaiproject/chrono-metaverse-api` | `/api` | 公网 | 健康检查 `/api/healthz`；挂 MongoDB 插件；进程内带后台执行器和定期清理（6.4、6.5），核对是流式的，内存申请 256Mi、上限 1Gi；axum（hyper）默认没有空闲超时，不会比平台更早断开连接 |
+| `metaverse-api` | `ghcr.io/chronoaiproject/chrono-metaverse-api` | `/api` | 公网 | 健康检查 `/api/healthz`；挂 MongoDB 插件；进程内带后台执行器和定期清理（6.4、6.5）；内存申请 384Mi、上限 1536Mi，按"2 个核对 + 1 个重任务 + 4 片并发上传 + 128MiB 公开缓存"的最坏情况预算（`docs/design/server-slim.md` 4.8），运行时至少 2 个工作线程；健康检查只返回是否就绪；axum（hyper）默认没有空闲超时，不会比平台更早断开连接 |
 
 - **没有处理服务**：原来的 `metaverse-worker`（Python，内存申请 3Gi）已下线，重建在本地完成（第 6 节、`docs/design/server-slim.md`）。
 - **服务名**：chrono-cd 要求服务名在同一主人（ChronoAI 组织）的所有应用之间唯一，`web` 已被组织里的其他应用占用，所以加 `metaverse-` 前缀。服务之间按 `http://<服务名>:<端口>` 互相访问（网站的 nginx 把 `/api/` 转给 `http://metaverse-api:8080`）。规格文件和部署步骤见 `infra/chrono-cd/`。
 - **镜像要求**：只能用 ghcr.io，建议设为公开包；用数字形式的非 root 用户（如 `USER 1000:1000`）；构建 linux/amd64。
 - **滚动更新**：每次多起一个新副本、旧副本先不下线，终止宽限 30 秒，更新期间新旧副本会同时运行。后台执行器收到停止信号后不再领新任务，做不完的退回队列，或等租约过期后由新副本重做；任务必须幂等（6.4）。新版本要先能读、再去写新格式的数据（先扩后收，13.1），所以涉及新数据格式的改动分两次发布。
-- **演示数据**：接口服务的部署配置 `METAVERSE_DEMO_SEED` 指向一个按哈希固定的重建包（9.2），允许下载的主机写在 `METAVERSE_DEMO_SEED_HOSTS`。
+- **演示数据**：接口服务的部署配置 `METAVERSE_DEMO_SEED` 按哈希固定一个重建包的清单和来源表（9.2），允许下载的主机写在 `METAVERSE_DEMO_SEED_HOSTS`；种子包里的一切都会公开。旧格式的种子只记错误、跳过，不影响启动；种子格式和镜像在同一次 `PUT` 里一起换。
 - **配额**：
   - 组织配额由组织下所有应用共用，默认 8 核 / 16Gi / 40 个容器 / 80Gi。
   - 计算方式：Σ(副本数 × 资源申请)，另外为滚动更新预留本应用资源申请最大的那个服务一份，再加 1 个容器。
@@ -986,8 +1001,14 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
   - 事务；
   - 300MB 文件分片上传进 GridFS；
   - 向平台确认备份和容量。
+- **重建权限**：
+  - 平台管理员建 `metaverse-rebuilder` 角色后：个人身份和这个人的 agent key 调用时，身份令牌的 `permissions` 里是否都带 `metaverse:rebuild:write`；
+  - 组织主体能不能挂角色（不能的话，重建由组织 admin 本人或他的 agent key 做）。
 - **上传核对与本地重建**：
   - 接口服务后台核对 1GB 扫描时的耗时和内存峰值（流式，应只多几 MB）；
+  - "2 个最坏的核对 + 1 个最坏的大批量操作 + 4 片并发上传 + 公开缓存装满"时接口服务的内存峰值（要在 1.2GB 以内），以及这期间 `/api/healthz` 的响应时间；
+  - 真实的 Scaniverse 导出 zip、macOS"压缩"生成的 zip 能否通过扫描的格式检查；
+  - 经 NyxID 代理分段下载 1GB 原始扫描（`metaverse pull --scan`）：单段大小和时长的限制；
   - 本地重建工具在 Mac 上处理真实扫描的耗时和内存；
   - 同一空间两次扫描的配准误差（以格数计）。
 - **公开读接口**：
@@ -1017,7 +1038,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 6. **高斯点云**：什么时候支持（网格模型已验证可用）。
 7. **空间归属**：店铺用 NyxID 组织还是个人账号作为空间主人（建议组织，方便给员工、数据源、合作方分别发 agent key）。
 8. **NyxID 需求排期**：9.6 列出的几项，尤其是"身份令牌加 agent key 编号"和"打开操作范围开关、注册目录服务"。
-9. **服务端瘦身的遗留项**：演示用重建包的大文件放在本仓库发布页是否可以；重建层的发布是否交给 agent；没有实体区时重建层的范围规则；方块化二期是否还做（`docs/design/server-slim.md` 第 14 节）。
+9. **服务端瘦身的遗留项**：演示用重建包的大文件放在本仓库发布页是否可以（`docs/design/server-slim.md` 第 14 节）。重建 agent 默认不给发布、没定义实体区时的范围、重建包第一版不带方块，都已在该文定下。
 
 ## 18. 风险
 
@@ -1032,6 +1053,11 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 | NyxID 令牌里看不到 agent key | 暂时按路径范围留痕；向 NyxID 提需求，把 agent key 编号加进令牌（9.6） |
 | 部署打断后台任务 | 租约加幂等重做（6.4） |
 | 组织配额被同组织其他应用占满 | 部署前查用量，必要时申请配额 |
-| 上传的模型是恶意构造的（解压炸弹等） | 服务端只读文件头、glb 的 JSON 块和图片头，不解码、不解压；拒绝外部引用和网站解不了的扩展；网站只加载核对过的 glb |
+| 上传的模型是恶意构造的（解压炸弹、伪造包围盒、超大贴图、灯光扩展） | 服务端不解码网格和图片：只读文件头、glb 的 JSON 块（带类型解析、数组有上限）、顶点位置（实测包围盒）和图片头；扩展用白名单，拒绝外部引用；按用途限三角形和贴图像素合计；网站只加载核对过的 glb，并按实际包围盒把模型兜进记录的范围 |
+| 一个坏文件让唯一的接口进程内存超限 | 按种类分名额、每空间同时一个任务、流式解析；内存按最坏情况预算并实测（14、16.2）；大批量操作少重试 |
+| 别的空间抢先用别的用途登记同一份字节 | 资源能不能按某个用途引用看实测的核对结果，归属按空间判断（6.1） |
+| 外部模型的署名不实 | 署名是写入方的声明，服务端只校验格式；网站的改动说明不依赖具体工具 |
+| 别人抢先用掉重建包要用的锚点编号 | 重建包只建"从没出现过"的锚点，跳过的会列出来给人看；物件编号分区（`rb.`），抢不走 |
 | 本地工具版本不同，重建结果不同 | 结果以重建包为准：文件按哈希固定，清单记生成工具和版本；已有空间重建时沿用线上的变换 |
-| 重建层被不该写的 agent 改掉 | 重建是单独的路径范围，NyxID 只给指定的 key；可选的功能级权限 `metaverse:rebuild:write`；时间线只追加，改坏了再发布一个包改回来 |
+| 重建层被不该写的人或 agent 改掉 | 重建路径的写操作始终要求 `metaverse:rebuild:write`（没配好之前只有部署种子能写）；重建是单独的路径范围，NyxID 可以只给指定的 key；重建草稿只收重建包；时间线只追加，改坏了再发布一个包改回来 |
+| 种子包里的内容被公开 | 种子包进公开仓库和发布页，一切都会公开；生成时去掉内部锚点和建模记录，检查时给出警告 |
