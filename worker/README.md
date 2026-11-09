@@ -433,8 +433,14 @@ cd worker
 `scripts/lobby_hints.json` 是在 `scripts/reconstruct_lobby.py` 的坐标系里标的：那个脚本用 `processing.scan.compute_alignment`
 （只绕竖直轴旋转，地面取 y 的 1% 分位，原点取 x、z 的最小值）。`scan_import` 首次导入用的是 `processing.align.auto_align`
 （先摆正倾斜，地面取低处朝上面的众数，原点取 x、z 的 0.05% 分位），前厅扫描在两者之间差 (−0.286, −0.050, −0.258) 米平移和
-0.09° 倾斜。提示框只向外放宽 3 厘米，直接拿来用会认领错的点：处理服务里实测不换算时家具区平均偏差 3.96 厘米、61 个物体（沙发、
-杂物重复识别），换算后 3.29 厘米、43 个物体（`reconstruct_lobby.py` 自己的坐标系里是 3.11 厘米、45 个）。
+0.09° 倾斜。提示框只向外放宽 3 厘米，直接拿来用会认领错的点。处理服务里实测（任务结果 `objects.furnitureMeanCm`，与
+`lobby_metrics.json` 的 `objects.furnitureMeanCm` 同一口径；表里的 `furnitureZone.meanCm` 是另一种口径，不能拿来比）：
+
+| 提示 | 家具平均偏差 | 90% 分位 | 物体数 | 说明 |
+|---|---|---|---|---|
+| `reconstruct_lobby.py` 自己的坐标系（`lobby_metrics.json`） | 3.08 厘米 | 8.12 | 41 | 基准 |
+| 处理服务坐标系，换算后（部署配置种子） | 3.14 厘米 | 8.41 | 41 | 入口附近一块 13 厘米厚的薄板被规则识别成"前台"（多一个锚点） |
+| 处理服务坐标系，不换算 | 4.51 厘米 | 11.51 | 59 | 沙发、桌子、前台重复识别；LED 大屏的提示没对上，又被当成墙 |
 
 所以部署配置种子（`infra/chrono-cd/demo-seed.json` 的 `hints`）里的是换算后的坐标，由 `scripts/demo_seed_hints.py` 生成：
 它在同一份扫描上分别算两种对齐，按 `M_auto · M_compute⁻¹` 换算物体中心（尺寸不变，`yaw` 加上偏航差），并打印处理服务将得到的

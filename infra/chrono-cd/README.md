@@ -275,7 +275,7 @@ https://<应用域名>/s/chronoai-lobby#share=<第 5 步的令牌>
 curl -s -H "Authorization: Share <令牌>" https://<应用域名>/api/public/spaces/chronoai-lobby/head
 ```
 
-**物体提示的坐标**：种子里的 `hints`（物体中心、尺寸、类别）必须是处理服务 `scan_import` 实际对齐出来的空间坐标。`worker/scripts/lobby_hints.json` 是在 `reconstruct_lobby.py` 的坐标系里标的（对齐方法不同，前厅差约 29 厘米平移和 0.09° 倾斜），所以由 [`worker/scripts/demo_seed_hints.py`](../../worker/scripts/demo_seed_hints.py) 用处理服务的对齐换算后写进 `demo-seed.json`。本地实测：换算后家具区平均偏差 3.29 厘米（43 个物体）；不换算是 3.96 厘米，而且沙发、杂物被重复识别（61 个物体）。
+**物体提示的坐标**：种子里的 `hints`（物体中心、尺寸、类别）必须是处理服务 `scan_import` 实际对齐出来的空间坐标。`worker/scripts/lobby_hints.json` 是在 `reconstruct_lobby.py` 的坐标系里标的（对齐方法不同，前厅差约 29 厘米平移和 0.09° 倾斜），所以由 [`worker/scripts/demo_seed_hints.py`](../../worker/scripts/demo_seed_hints.py) 用处理服务的对齐换算后写进 `demo-seed.json`。本地实测（任务结果的 `objects.furnitureMeanCm`）：换算后 3.14 厘米、41 个物体（`reconstruct_lobby.py` 自己的坐标系里是 3.08 厘米、41 个）；不换算是 4.51 厘米、59 个物体，沙发、桌子、前台被重复识别，LED 大屏又被当成墙。
 
 **重新导入**（换扫描、改提示、处理服务的重建改进了想重跑）：
 
