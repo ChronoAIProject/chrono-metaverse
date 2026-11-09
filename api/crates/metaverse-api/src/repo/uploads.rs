@@ -137,18 +137,56 @@ impl Repo {
         }))
     }
 
-    /// 标记资源刚被复用（处理服务清理时按 max(上传时间, touchedAt) 计算 7 天宽限）。
-    pub async fn touch_asset(&self, grant: &Grant, hash: &str) -> Result<(), RepoError> {
+    /// 引用一个已登记的资源之前的栅栏（与处理服务 `assets.touch_asset` 相同）：按文件名刷新
+    /// `metadata.touchedAt`，返回是否匹配到了资源。
+    ///
+    /// 处理服务的定期清理（`jobs/cleanup.py`）先查引用、再按"`touchedAt` 仍早于 7 天前"的条件删除
+    /// `files` 文档，两步之间没有锁。所以写下任何新引用（草稿、记录、提交、任务、复用的上传）之前
+    /// 都要先刷新并确认匹配到：刷新之后清理的条件删除就删不掉它；匹配不到说明它刚被清理删掉，
+    /// 调用方按资源不存在处理（要求重新上传），不能写下一个悬空的引用。
+    pub async fn touch_asset(&self, grant: &Grant, hash: &str) -> Result<bool, RepoError> {
+        Ok(self
+            .touch_assets(grant, &[hash.to_owned()])
+            .await?
+            .is_empty())
+    }
+
+    /// 同 [`Repo::touch_asset`]，一次刷新多个资源。返回没有匹配到（已经不在）的哈希，升序去重；
+    /// 空表示全部都还在、都已刷新。
+    pub async fn touch_assets(
+        &self,
+        grant: &Grant,
+        hashes: &[String],
+    ) -> Result<Vec<String>, RepoError> {
         if !grant.can_manage() {
             return Err(RepoError::GrantMismatch);
         }
-        self.collection(collections::ASSET_FILES)
-            .update_one(
-                doc! {"filename": hash},
+        let mut wanted: Vec<&String> = hashes.iter().collect();
+        wanted.sort();
+        wanted.dedup();
+        if wanted.is_empty() {
+            return Ok(Vec::new());
+        }
+        let files = self.collection(collections::ASSET_FILES);
+        let touched = files
+            .update_many(
+                doc! {"filename": {"$in": &wanted}},
                 doc! {"$set": {"metadata.touchedAt": DateTime::now()}},
             )
             .await?;
-        Ok(())
+        // `filename` 上有唯一索引：匹配数等于还在的资源数。
+        if touched.matched_count == wanted.len() as u64 {
+            return Ok(Vec::new());
+        }
+        // 刷新过的不会再被删掉；这时又新登记的同名资源刚上传，也不在 7 天宽限之外，都算还在。
+        let present = files
+            .distinct("filename", doc! {"filename": {"$in": &wanted}})
+            .await?;
+        Ok(wanted
+            .into_iter()
+            .filter(|hash| !present.contains(&Bson::String((*hash).clone())))
+            .cloned()
+            .collect())
     }
 
     pub async fn pending_uploads(&self, grant: &Grant) -> Result<PendingUploads, RepoError> {

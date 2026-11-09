@@ -402,17 +402,22 @@ async fn create(
                 "同一哈希的已有资源大小与声明的 size 不一致",
             ));
         }
-        state.repo.touch_asset(&grant, &request.sha256).await?;
-        upload.status = UploadStatus::Done;
-        upload.asset_hash = Some(request.sha256.clone());
-        upload.reused = true;
-        upload.header_checked = true;
-        upload.completed_at = Some(now);
-        state.repo.insert_upload(&grant, &upload).await?;
-        tracing::info!(space = %upload.space_id, upload = %upload.id, purpose = purpose_name(purpose), "复用本空间已有的资源");
-        return Ok(no_store(
-            (StatusCode::CREATED, Json(UploadView::new(&upload))).into_response(),
-        ));
+        // 清理的栅栏：先刷新 touchedAt 并确认资源还在，刷新之后的 7 天里清理删不掉它，调用方
+        // 在这期间拿这次上传去建任务、追加操作。刷新不到说明它刚被清理删掉：按本空间没有这份
+        // 资源处理，往下照常要求上传完整数据，不登记一个指向已删除资源的"复用"上传。
+        if state.repo.touch_asset(&grant, &request.sha256).await? {
+            upload.status = UploadStatus::Done;
+            upload.asset_hash = Some(request.sha256.clone());
+            upload.reused = true;
+            upload.header_checked = true;
+            upload.completed_at = Some(now);
+            state.repo.insert_upload(&grant, &upload).await?;
+            tracing::info!(space = %upload.space_id, upload = %upload.id, purpose = purpose_name(purpose), "复用本空间已有的资源");
+            return Ok(no_store(
+                (StatusCode::CREATED, Json(UploadView::new(&upload))).into_response(),
+            ));
+        }
+        tracing::info!(space = %upload.space_id, purpose = purpose_name(purpose), "可复用的资源刚被清理，改为完整上传");
     }
     let pending = state.repo.pending_uploads(&grant).await?;
     if pending.count >= limits.max_open_uploads_per_space {

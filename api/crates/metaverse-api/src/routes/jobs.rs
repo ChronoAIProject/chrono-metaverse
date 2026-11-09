@@ -270,7 +270,11 @@ pub(crate) fn check_hints(hints: &Option<Value>) -> Result<(), ApiError> {
     }
 }
 
-/// 资源必须是本空间校验通过的上传。
+/// 资源必须是本空间校验通过的上传，而且资源还在。
+///
+/// 任务参数引用它（排队、运行中的任务算引用）：插入任务之前先过清理的栅栏
+/// （[`crate::repo::Repo::touch_asset`]），刷新不到说明它刚被清理删掉，和没有资源一样 422，
+/// 不建一个注定读不到资源的任务。
 async fn require_asset(
     state: &AppState,
     grant: &Grant,
@@ -278,20 +282,29 @@ async fn require_asset(
     purposes: &[UploadPurpose],
     scope: Option<&PathScope>,
 ) -> Result<(), ApiError> {
+    let missing = || {
+        invalid_with(
+            "asset_unknown",
+            "本空间没有这个资源的已校验上传（先经对应用途上传并完成），或资源已被清理（上传后 7 天内没被引用的资源会被删除，请重新上传）",
+        )
+    };
     match state
         .repo
         .asset_availability(grant, hash, purposes, scope)
         .await?
     {
-        AssetAvailability::Ready => Ok(()),
+        AssetAvailability::Ready => {
+            if state.repo.touch_asset(grant, hash).await? {
+                Ok(())
+            } else {
+                Err(missing())
+            }
+        }
         AssetAvailability::Pending => Err(conflict_with(
             "asset_not_ready",
             "资源还在校验中，等 upload_verify 任务完成后再试",
         )),
-        AssetAvailability::Missing => Err(invalid_with(
-            "asset_unknown",
-            "本空间没有这个资源的已校验上传（先经对应用途上传并完成）",
-        )),
+        AssetAvailability::Missing => Err(missing()),
     }
 }
 
