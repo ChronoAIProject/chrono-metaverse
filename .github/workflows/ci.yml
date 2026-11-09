@@ -53,13 +53,20 @@ jobs:
     name: 接口服务依赖审查
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: api
     steps:
       - uses: actions/checkout@v5
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: dtolnay/rust-toolchain@master
         with:
-          manifest-path: api/Cargo.toml
-          command: check advisories licenses bans sources
-          arguments: --all-features --locked
+          toolchain: 1.97.0
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      # 与 api/README.md 列出的命令相同；规则在 api/deny.toml。
+      - name: cargo deny
+        run: cargo deny --locked --all-features check advisories licenses bans sources
 
   web:
     name: 网站（web）
