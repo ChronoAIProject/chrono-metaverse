@@ -811,6 +811,10 @@ pub struct Job {
     /// 任务的非提交结果（任意 JSON），例如 `{needsAlignment, proposedTransform, errorCm}`、`{modelHash}`。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result: Option<Value>,
+    /// 运行中的进度（任意 JSON，由执行任务的一方写入），例如 `ops_from_upload` 的
+    /// `{opsApplied, opsTotal}`。接口原样返回（设计 6.4：任务进度可以经接口查询）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress: Option<Value>,
     /// 处理服务领取时写入。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub started_at: Option<Timestamp>,

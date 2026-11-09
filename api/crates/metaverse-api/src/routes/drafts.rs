@@ -663,6 +663,7 @@ async fn from_upload(
         .insert_ops_job(
             &grant,
             &job_id,
+            &draft.scope,
             &params,
             &caller.subject,
             &caller.service_id,

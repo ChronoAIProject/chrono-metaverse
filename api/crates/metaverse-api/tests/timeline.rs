@@ -964,6 +964,104 @@ async fn ops_from_upload_runs_in_process_and_publishes_with_ops_ref() {
 }
 
 #[tokio::test]
+async fn plot_ops_from_upload_job_is_visible_through_its_plot_path_with_progress() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    app.define_layout(SPACE).await;
+    let plot_draft = new_draft(&app, &format!("/api/v1/spaces/{SPACE}/plots/p1/drafts")).await;
+    let plot_path = plot_draft_path(SPACE, "p1", &plot_draft);
+    let mut ndjson = String::new();
+    for i in 0..3 {
+        ndjson.push_str(
+            &json!({"op": "fill", "box": [200 + i, 0, 0, 201 + i, 1, 1], "block": 2}).to_string(),
+        );
+        ndjson.push('\n');
+    }
+    let (upload_id, _) = app.put_ops_upload(SPACE, ndjson.as_bytes()).await;
+    let reply = app
+        .org(
+            Method::POST,
+            &format!("{plot_path}/ops-from-upload"),
+            Some(json!({"uploadId": upload_id})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
+    let job_id = reply.body["jobId"].as_str().unwrap().to_owned();
+    let stored = app.wait_job(&job_id).await;
+    assert_eq!(stored.get_str("status").unwrap(), "done", "{stored:?}");
+    // 任务记录带草稿的范围，和 create_job 存的格式相同。
+    assert_eq!(stored.get_str("scope").unwrap(), "plot:p1");
+
+    // 地块路径查得到，带进度。
+    let job = app
+        .org(
+            Method::GET,
+            &format!("/api/v1/spaces/{SPACE}/plots/p1/jobs/{job_id}"),
+            None,
+        )
+        .await;
+    assert_eq!(job.status, StatusCode::OK, "{:?}", job.body);
+    assert_eq!(job.body["kind"], "ops_from_upload");
+    assert_eq!(job.body["scope"], "plot:p1");
+    assert_eq!(
+        job.body["progress"],
+        json!({"opsApplied": 3, "opsTotal": 3})
+    );
+    let list = app
+        .org(
+            Method::GET,
+            &format!("/api/v1/spaces/{SPACE}/plots/p1/jobs"),
+            None,
+        )
+        .await;
+    assert_eq!(list.status, StatusCode::OK);
+    assert!(ids(&list.body["items"], "id").contains(&job_id));
+    // 实体区路径看得到全部任务。
+    let job = app
+        .org(
+            Method::GET,
+            &format!("/api/v1/spaces/{SPACE}/jobs/{job_id}"),
+            None,
+        )
+        .await;
+    assert_eq!(job.status, StatusCode::OK);
+
+    // 实体区草稿的任务经地块路径查不到。
+    let physical = new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await;
+    let ops = json!({"op": "fill", "box": [0, 0, 0, 1, 1, 1], "block": 2}).to_string();
+    let (upload_id, _) = app.put_ops_upload(SPACE, ops.as_bytes()).await;
+    let reply = app
+        .org(
+            Method::POST,
+            &format!("{}/ops-from-upload", draft_path(SPACE, &physical)),
+            Some(json!({"uploadId": upload_id})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
+    let physical_job = reply.body["jobId"].as_str().unwrap().to_owned();
+    let stored = app.wait_job(&physical_job).await;
+    assert_eq!(stored.get_str("scope").unwrap(), "physical");
+    let reply = app
+        .org(
+            Method::GET,
+            &format!("/api/v1/spaces/{SPACE}/plots/p1/jobs/{physical_job}"),
+            None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND);
+    let list = app
+        .org(
+            Method::GET,
+            &format!("/api/v1/spaces/{SPACE}/plots/p1/jobs"),
+            None,
+        )
+        .await;
+    assert!(!ids(&list.body["items"], "id").contains(&physical_job));
+}
+
+#[tokio::test]
 async fn admin_settings_tokens_and_deletion() {
     let Some(app) = TestApp::start().await else {
         return;

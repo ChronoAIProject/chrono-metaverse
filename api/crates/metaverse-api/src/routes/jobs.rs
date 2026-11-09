@@ -169,6 +169,11 @@ pub struct JobView {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Option<Object>)]
     pub result: Option<Value>,
+    /// 运行中的进度（执行任务的一方写入，原样返回），例如 `ops_from_upload` 的
+    /// `{opsApplied, opsTotal}`。没有进度信息时省略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<Object>)]
+    pub progress: Option<Value>,
     /// 发起任务的路径范围。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scope: Option<String>,
@@ -196,6 +201,7 @@ impl JobView {
             last_error: job.last_error,
             result_commit_id: job.result_commit_id,
             result: job.result,
+            progress: job.progress,
             scope: job.scope.map(|scope| scope.to_string()),
             created_at: job.created_at,
             started_at: job.started_at,
@@ -366,6 +372,7 @@ async fn create_job(
         actor: Some(request_actor(caller)),
         scope: Some(scope.clone()),
         result: None,
+        progress: None,
         started_at: None,
         finished_at: None,
     };

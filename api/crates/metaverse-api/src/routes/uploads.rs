@@ -829,6 +829,7 @@ async fn complete(
         actor: Some(request_actor(&caller)),
         scope: Some(scope.clone()),
         result: None,
+        progress: None,
         started_at: None,
         finished_at: None,
     };
