@@ -67,11 +67,16 @@ class Local:
         return Local(self.L[m], self.N[m], self.C[m], self.info)
 
 
-def part(shape: dict[str, Any], name: str, uv: str = "planar", prefer: str | None = None) -> dict[str, Any]:
+def part(
+    shape: dict[str, Any], name: str, uv: str = "planar", prefer: str | None = None, group: str | None = None
+) -> dict[str, Any]:
+    """叶子形状加上部件信息：`prefer="color"` 偏向纯色；`group` 是材质组，同组的部件取同一个颜色。"""
     shape["material"] = sh.color_material(GRAY)
     shape["_part"] = {"name": name, "uv": uv}
     if prefer:
         shape["_part"]["prefer"] = prefer
+    if group:
+        shape["_part"]["group"] = group
     return shape
 
 
