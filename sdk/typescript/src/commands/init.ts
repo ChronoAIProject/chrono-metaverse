@@ -23,7 +23,8 @@ import {
 export const INIT_HELP = `metaverse init <空间编号> [目录]
 
 创建本地工作区（默认目录 ./<空间编号>）：写入 metaverse.json、示例建造脚本 build/main.ts、
-技能说明 .claude/skills/metaverse-builder/SKILL.md，以及让编辑器认识工具包类型的 tsconfig.json。
+技能说明 .claude/skills/metaverse-builder/SKILL.md（建造）和 .claude/skills/metaverse-reconstruct/SKILL.md
+（用 AI 重建实体空间），以及让编辑器认识工具包类型的 tsconfig.json。
 
 选项：
   --mode nyxid|direct     调用方式（默认 nyxid：经 NyxID 代理调用线上服务）
@@ -84,20 +85,32 @@ assets/
 node_modules/
 `;
 
+/** 随 SDK 分发、写进工作区的技能说明：建造（metaverse-builder）和用 AI 重建实体空间（metaverse-reconstruct）。 */
+export const SKILLS = ['metaverse-builder', 'metaverse-reconstruct'] as const;
+
 /** 技能说明的源文件（随 SDK 分发）。 */
-export function skillSource(sdkRoot: string): string {
-  return join(sdkRoot, 'skills', 'metaverse-builder', 'SKILL.md');
+export function skillSource(sdkRoot: string, name: string = SKILLS[0]): string {
+  return join(sdkRoot, 'skills', name, 'SKILL.md');
 }
 
-/** 把技能说明写进工作区（init 和 pull 都会调用，保持最新）。 */
-export function installSkill(sdkRoot: string, root: string, force: boolean): boolean {
-  const target = paths(root).skill;
-  if (existsSync(target) && !force) return false;
-  const source = skillSource(sdkRoot);
-  if (!existsSync(source)) throw new CliError(`找不到技能说明源文件 ${source}`);
-  mkdirSync(dirname(target), { recursive: true });
-  writeFileSync(target, readFileSync(source));
-  return true;
+/** 技能说明在工作区里的位置。 */
+export function skillTarget(root: string, name: string): string {
+  return join(root, '.claude', 'skills', name, 'SKILL.md');
+}
+
+/** 把技能说明写进工作区（init 和 pull 都会调用，保持最新）。返回这次写入的文件。 */
+export function installSkill(sdkRoot: string, root: string, force: boolean): string[] {
+  const written: string[] = [];
+  for (const name of SKILLS) {
+    const target = skillTarget(root, name);
+    if (existsSync(target) && !force) continue;
+    const source = skillSource(sdkRoot, name);
+    if (!existsSync(source)) throw new CliError(`找不到技能说明源文件 ${source}`);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, readFileSync(source));
+    written.push(target);
+  }
+  return written;
 }
 
 /** 让工作区里的 `@chrono-metaverse/sdk` 指向这份 SDK（脚本里 import 工具包、编辑器的类型提示都靠它）。 */
@@ -176,7 +189,7 @@ export function runInit(ctx: CliContext, args: readonly string[]): number {
     writeFileSync(script, EXAMPLE_SCRIPT);
     created.push(script);
   }
-  if (installSkill(ctx.sdkRoot, root, true)) created.push(p.skill);
+  created.push(...installSkill(ctx.sdkRoot, root, true));
   const tsconfig = join(root, 'tsconfig.json');
   if (!existsSync(tsconfig) || force) {
     writeFileSync(tsconfig, `${JSON.stringify(WORKSPACE_TSCONFIG, null, 2)}\n`);
