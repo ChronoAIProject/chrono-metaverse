@@ -140,6 +140,8 @@ export interface FakeState {
   drafts: Map<string, { scopePath: string; baseSeq: number; ops: unknown[] }>;
   devTokens: number;
   publishConflict: boolean;
+  /** 给了就让发布返回 409 `asset_gone`（与接口服务相同：`assets` 列出已被定期清理的资源）。 */
+  publishAssetsGone?: readonly string[];
   scanResult?: unknown;
   failNextPart: boolean;
   shareTokenRotations: number;
@@ -186,6 +188,7 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
     drafts: new Map(),
     devTokens: 0,
     publishConflict: init.publishConflict ?? false,
+    ...(init.publishAssetsGone !== undefined ? { publishAssetsGone: init.publishAssetsGone } : {}),
     scanResult: init.scanResult,
     failNextPart: init.failNextPart ?? false,
     shareTokenRotations: 0,
@@ -528,6 +531,14 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
             return problem(409, 'draft_conflict', '时间线已前进，与草稿冲突', {
               conflicts: { entities: ['table-1'] },
             });
+          }
+          if (state.publishAssetsGone !== undefined) {
+            return problem(
+              409,
+              'asset_gone',
+              `草稿引用的 ${state.publishAssetsGone.length} 个资源已经被清理，没有发布；请重新上传 assets 里列出的资源后再发布`,
+              { assets: state.publishAssetsGone },
+            );
           }
           return json(200, {
             seq: Number((state.space.head as { seq: number }).seq) + 1,

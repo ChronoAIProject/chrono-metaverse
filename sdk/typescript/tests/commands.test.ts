@@ -562,6 +562,25 @@ describe('metaverse push / publish', () => {
     expect(await main(ctx, ['publish'])).toBe(1);
   });
 
+  it('引用的资源已被定期清理（409 asset_gone）：列出哈希，提示重新上传，不建议重放', async () => {
+    const gone = 'a'.repeat(64);
+    fake = await startFakeApi({ ...remoteSnapshot().state, publishAssetsGone: [gone] });
+    const root = directWorkspace(fake);
+    const ctx = makeContext(root);
+    fake.state.drafts.set('draft-9', {
+      scopePath: '/api/v1/spaces/demo-space',
+      baseSeq: 3,
+      ops: [],
+    });
+    expect(await main(ctx, ['publish', 'draft-9'])).toBe(1);
+    const message = ctx.errors.at(-1)!;
+    expect(message).toContain('asset_gone');
+    expect(message).toContain(gone);
+    expect(message).toContain('重新上传');
+    expect(message).toContain('metaverse publish draft-9');
+    expect(message).not.toContain('--replay');
+  });
+
   it('预览链接', () => {
     expect(previewLink('https://m.example/', { token: 't' })).toBe('https://m.example/preview#t=t');
     expect(previewLink(undefined, { url: 'https://x/preview#t=1' })).toBe('https://x/preview#t=1');

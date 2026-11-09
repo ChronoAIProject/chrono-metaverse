@@ -290,6 +290,21 @@ export async function runPublish(ctx: CliContext, args: readonly string[]): Prom
     }
     return 0;
   } catch (error) {
+    if (error instanceof ApiError && error.status === 409 && error.code === 'asset_gone') {
+      // 草稿引用的资源被服务端定期清理了（上传后 7 天内没被引用）：重放或重新拉取都没用，
+      // 只能重新上传同一内容（哈希不变）。命令行只上传操作文件，贴图和物件模型要按原来的方式重传。
+      const body = (error.body ?? {}) as Record<string, unknown>;
+      const assets = Array.isArray(body.assets) ? body.assets.map(String) : [];
+      throw new CliError(
+        [
+          `发布失败：${error.message}`,
+          assets.length > 0 ? `已被清理的资源：${assets.join('、')}` : '',
+          `处理：重新运行 metaverse push（会重新上传操作文件，生成新草稿）；列出的若是贴图或物件模型，先按原来的方式重新上传同一内容（哈希不变）。重新上传之后，也可以直接再运行 metaverse publish ${draftId}。`,
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      );
+    }
     if (error instanceof ApiError && error.status === 409) {
       const body = (error.body ?? {}) as Record<string, unknown>;
       const conflicts = body.conflicts ?? body.conflictingKeys;
