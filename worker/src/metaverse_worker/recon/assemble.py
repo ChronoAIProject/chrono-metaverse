@@ -226,7 +226,7 @@ def external_parts(entities: dict[str, dict], locals_: dict[str, str], textures:
             img.save(buf, "JPEG", quality=85)
             key = hashlib.sha256(buf.getvalue()).hexdigest()
             textures[key] = buf.getvalue()
-            mat = {"texture": key, "uv": "mesh"}
+            mat = {"texture": key, "uv": "mesh", "lit": True}
             tint = (body.get("material") or {}).get("tint")
             if tint:
                 mat["tint"] = tint
@@ -473,7 +473,8 @@ def room_image(args, base: Base, entities, glb, textures, out_dir, cut, rep) -> 
     export_glb(
         {**base.structure, **{k: b for k, b in base.objects.items()}}, base.templates, textures, base_glb
     )
-    models: dict = {"scan": base.scan, "base": base_glb, "new": glb}
+    # lit：模型库的贴图打光（扫描烘焙的贴图带不打光的标记，不受影响）
+    models: dict = {"scan": base.scan, "base": base_glb, "new": {"path": glb, "lit": True}}
     box = room_box(base)
     box.hi[1] = min(box.hi[1], cut)
     clip = box.grow(0.05)

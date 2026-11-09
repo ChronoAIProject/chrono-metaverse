@@ -2,7 +2,8 @@
 
 与 `processing.preview_glb` 的区别：逐个材质写 `opacity`（半透明：`alphaMode: BLEND`）和 `unlit`
 （`KHR_materials_unlit`），可以按部件着色，可以把外部模型物件按 transform 合并进来（整房预览）。
-带贴图的材质一律不打光（扫描烘焙的贴图自带光照），纯色材质由渲染页按网站的灯光着色。
+带贴图的材质不打光（扫描烘焙的贴图自带光照；外部模型的贴图带 `lit` 标记，照常打光），纯色材质由渲染页按网站的
+灯光着色。
 """
 
 from __future__ import annotations
@@ -43,7 +44,8 @@ class Writer(_Writer):
         m: dict[str, Any] = {"pbrMetallicRoughness": pbr, "doubleSided": True}
         if opacity < 0.999:
             m["alphaMode"] = "BLEND"
-        if textured or mat.get("unlit"):
+        # 扫描烘焙的贴图自带光照，不打光；模型库的贴图（材质带 lit）是固有色，要打光
+        if (textured and not mat.get("lit")) or mat.get("unlit"):
             m["extensions"] = {"KHR_materials_unlit": {}}
         self.materials.append(m)
         self.mat_index[key] = len(self.materials) - 1
