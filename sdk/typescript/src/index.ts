@@ -51,7 +51,18 @@ export {
   type CheckedBundle,
   type BundleCheckOptions,
 } from './core/bundle.js';
-export { DEFAULT_UPLOAD_LIMITS, type UploadLimits } from './core/limits.js';
+export { DEFAULT_UPLOAD_LIMITS, parseUploadLimits, type UploadLimits } from './core/limits.js';
+export {
+  checkAsset,
+  fits,
+  modelFitsBounds,
+  fileSource,
+  bytesSource,
+  CheckError,
+  type AssetCheck,
+  type AssetRole,
+  type ByteSource,
+} from './core/check/index.js';
 export { canonicalJson, contentHash } from './core/canonical.js';
 export { chunkHash, compressChunk, decompressChunk, type Layer } from './core/chunk.js';
 export type {
