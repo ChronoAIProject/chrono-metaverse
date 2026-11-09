@@ -7,7 +7,13 @@ import { fixtureReply } from '../src/fixtures/server';
  * 只在 `vite serve --mode fixtures` 下加载；生产构建、单元测试和普通 `npm run dev` 都不会加载。
  *
  * 没有夹具的读请求返回带类型的 404 并记一次日志；写请求一律拒绝。
- * 夹具空间的链接：/s/demo-lobby#share=fixture-share-token-0123456789abcdef
+ * `POST /__fixtures/emit?kind=event|commit|delivery` 模拟"现在"发生的事（端到端测试用），
+ * `POST /__fixtures/reset` 重新生成夹具。
+ *
+ * 夹具链接：
+ * - 空间：/s/demo-lobby#share=fixture-share-token-0123456789abcdef
+ * - 组合：/u/demo-street#share=fixture-universe-token-00112233445566778899
+ * - 预览：/preview#t=fixture-preview-token-aabbccddeeff00112233445566778899
  */
 export function devFixtures(): Plugin {
   return {
@@ -17,7 +23,9 @@ export function devFixtures(): Plugin {
       const { logger } = server.config;
       const reported = new Set<string>();
       logger.info('  夹具模式：/api/public 由 src/fixtures 回答。');
-      logger.info('  打开 /s/demo-lobby#share=fixture-share-token-0123456789abcdef');
+      logger.info('  空间 /s/demo-lobby#share=fixture-share-token-0123456789abcdef');
+      logger.info('  组合 /u/demo-street#share=fixture-universe-token-00112233445566778899');
+      logger.info('  预览 /preview#t=fixture-preview-token-aabbccddeeff00112233445566778899');
       server.middlewares.use((request, response, next) => {
         const url = new URL(request.url ?? '/', 'http://fixtures.invalid');
         const headers: Record<string, string | undefined> = {};

@@ -1136,10 +1136,18 @@ export class SceneView {
         return { objects: [holder], update: () => undefined };
       }
       case 'heat': {
-        const geometry = new THREE.CircleGeometry(1, 40);
+        // 柔和的圆斑：中心不透明、边缘透明（顶点颜色带透明度）。
+        const geometry = new THREE.CircleGeometry(0.75, 48);
         geometry.rotateX(-Math.PI / 2);
+        const count = geometry.getAttribute('position').count;
+        const colors = new Float32Array(count * 4);
+        const base = srgb(visual.color);
+        for (let i = 0; i < count; i += 1) {
+          colors.set([base.r, base.g, base.b, i === 0 ? 1 : 0], i * 4);
+        }
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4));
         const material = new THREE.MeshBasicMaterial({
-          color: srgb(visual.color),
+          vertexColors: true,
           transparent: true,
           depthWrite: false,
           side: THREE.DoubleSide,
@@ -1147,14 +1155,13 @@ export class SceneView {
         const disc = new THREE.Mesh(geometry, material);
         // 贴在锚点所在空间的地面上。
         const floor = this.memberFloor(visual.anchor.spaceId);
-        disc.position.set(world.x, floor + 0.015, world.z);
+        disc.position.set(world.x, floor + 0.02, world.z);
         disc.renderOrder = 4;
         disc.name = `heat:${visual.id}`;
         const apply = (next: Visual) => {
           if (next.kind !== 'heat') return;
-          disc.scale.setScalar(0.3 + 0.7 * next.intensity);
-          material.opacity = 0.18 + 0.5 * next.intensity;
-          material.color.copy(srgb(next.color));
+          disc.scale.setScalar(0.45 + 0.55 * next.intensity);
+          material.opacity = 0.25 + 0.6 * next.intensity;
         };
         apply(visual);
         this.visualLayer.add(disc);

@@ -38,6 +38,9 @@ export interface TimelineBarProps {
   readonly onTogglePlay: () => void;
   readonly onSpeedChange: (speed: number) => void;
   readonly onNow: () => void;
+  /** 组合页：提交来自多个空间，标记的键和说明由上层给出。 */
+  readonly markerKey?: (commit: CommitSummary) => string;
+  readonly markerLabel?: (commit: CommitSummary) => string;
 }
 
 /**
@@ -57,6 +60,8 @@ export function TimelineBar({
   onTogglePlay,
   onSpeedChange,
   onNow,
+  markerKey = (commit) => String(commit.seq),
+  markerLabel = (commit) => `#${commit.seq} ${commit.message}`,
 }: TimelineBarProps) {
   const span = Math.max(1, to - from);
   // 相邻提交可能挨得很近（导入扫描和重建只差几分钟），标记会重叠，所以另给"上一个/下一个提交"。
@@ -152,13 +157,14 @@ export function TimelineBar({
         <ol className="timeline__commits" aria-label="提交">
           {commits.map((commit) => {
             const at = toMillis(commit.at);
+            const label = markerLabel(commit);
             return (
-              <li key={commit.seq} style={{ left: `${fraction(at) * 100}%` }}>
+              <li key={markerKey(commit)} style={{ left: `${fraction(at) * 100}%` }}>
                 <button
                   type="button"
                   className="timeline__commit"
-                  title={`#${commit.seq} ${commit.message}\n${formatTime(at)}`}
-                  aria-label={`跳到提交 #${commit.seq}：${commit.message}`}
+                  title={`${label}\n${formatTime(at)}`}
+                  aria-label={`跳到提交 ${label.replace(/^(#\d+) /, '$1：')}`}
                   onClick={() => onSeek(at)}
                 />
               </li>

@@ -178,7 +178,7 @@
 
 .space__legend {
   position: absolute;
-  left: var(--space-4);
+  right: var(--space-4);
   bottom: 64px;
   display: inline-flex;
   align-items: center;
@@ -217,6 +217,10 @@
 
 .space__info dt {
   color: var(--ink-2);
+}
+
+.space__info-row {
+  display: contents;
 }
 
 .space--message {
@@ -296,9 +300,5 @@
 
   .space__info {
     display: none;
-  }
-
-  .space__legend {
-    bottom: var(--space-4);
   }
 }
