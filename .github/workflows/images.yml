@@ -36,16 +36,16 @@ jobs:
       matrix:
         image: [api, web, worker]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: 构建身份
         id: build
         run: |
           echo "version=git-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -53,7 +53,7 @@ jobs:
 
       - name: 标签与标注
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ghcr.io/chronoaiproject/chrono-metaverse-${{ matrix.image }}
           flavor: |
@@ -64,7 +64,7 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
       # 构建参数只有网站用（web/build/identity.ts 的构建身份）；另外两个镜像忽略它们。
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         id: push
         with:
           context: .
@@ -79,8 +79,10 @@ jobs:
             CHRONO_BUILD_ARTIFACT=promotable
           # 单平台清单，不附加证明清单：这里返回的摘要就是 chrono-cd 按摘要拉取的那个清单。
           provenance: false
-          cache-from: type=gha,scope=chrono-metaverse-${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=chrono-metaverse-${{ matrix.image }}
+          # 不读写 Actions 缓存：缓存按仓库和分支共用、不分工作流，同一分支上任何一个 CI 任务里的
+          # action（或它能拿到的缓存令牌）都能写进构建层，发布镜像会原样带上。每次从头构建
+          # （runner 本来就是全新的，no-cache 只是写明这一点）。
+          no-cache: true
 
       # 部署用的摘要：build-push-action 返回的就是推上去的清单摘要（单平台、不带证明清单，
       # 和 chrono-cd 解析出来的一致）。拿不到合法摘要时让运行失败，不给出没法用的结果。

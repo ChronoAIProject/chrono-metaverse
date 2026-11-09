@@ -156,6 +156,17 @@ gh run view <运行编号> -R ChronoAIProject/chrono-metaverse --log | grep -oE 
 
 按摘要部署只保证"部署的就是那次运行构建的镜像"，管不到谁能推镜像、推代码。还没做、要仓库管理员在 GitHub 上决定的：建受保护的 `main` 作为部署分支（现在唯一的分支 `claude/happy-ritchie-oly5hx` 没有保护）；在包设置的 Manage Actions access 里收回本仓库工作流的写权限，改用只在受保护分支的 GitHub Environment 里可用的凭证推镜像（工作流自己声明的 `packages: write` 拦不住改过的工作流）；用组织规则集限制谁能改 `.github/workflows`。
 
+#### 构建输入也固定
+
+镜像的内容取决于构建时拉进来的东西，这些也一律固定到不可改写的引用（持续集成里 `node infra/chrono-cd/check-pins.mjs` 检查，测试在 `check-pins.test.mjs`）：
+
+- 工作流里的 action 固定到 40 位提交哈希，注释里写版本；install-action 装的工具写明版本。上游的标签或分支被改写（例如上游被入侵）时，不会在拿着 `packages: write` 令牌的任务里跑新代码。
+- `Images` 不读写 Actions 缓存：缓存按仓库和分支共用、不分工作流，同一分支上任何 CI 任务里的 action 都能写进构建层。每次从头构建，api 镜像会慢几分钟。
+- 三个 Dockerfile 的 `# syntax=` 构建前端和基础镜像写成"标签@摘要"（构建时 BuildKit 只按摘要拉）。
+- 处理服务的依赖按 `worker/uv.lock` 的哈希装（`--require-hashes`）；worker 包自己的构建后端 setuptools 按 [`infra/worker/build-requirements.txt`](../worker/build-requirements.txt) 的版本和哈希装进虚拟环境、关掉构建隔离再装 worker 包，装完删掉。不这样做时构建隔离每次从 PyPI 拉最新的 setuptools（`uv.lock` 不锁构建依赖）。
+
+更新由 Dependabot 每周提（[`.github/dependabot.yml`](../../.github/dependabot.yml)，新版本发布满一周才提）；`# syntax=` 的摘要要手工换。
+
 ### 第 2 步：把三个包设为公开（只做一次）
 
 第一次推送出来的包默认是私有的，chrono-cd 拉不下来（`400 image_unauthorized`）。到 GitHub 组织的 Packages 页面，分别打开 `chrono-metaverse-api`、`chrono-metaverse-web`、`chrono-metaverse-worker` → Package settings → Danger Zone → Change visibility → Public。
