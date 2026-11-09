@@ -12,22 +12,43 @@ export interface MeshData {
   readonly normals: Float32Array;
   readonly uvs: Float32Array;
   readonly indices: Uint32Array;
+  /**
+   * 自然坐标的米版本（材质 `uv: "mesh"` 给了 `tile` 时用，docs/SHAPES.md 第 2 节"贴图坐标"）；
+   * 没有时与 `uvs` 相同（挤出、板、凸包的自然坐标本来就是米）。
+   */
+  readonly meters?: Float32Array;
+}
+
+/** 自然坐标的米版本。 */
+export function meterUvs(mesh: MeshData): Float32Array {
+  return mesh.meters ?? mesh.uvs;
 }
 
 export class MeshBuilder {
   readonly positions: number[] = [];
   readonly normals: number[] = [];
   readonly uvs: number[] = [];
+  readonly meters: number[] = [];
   readonly indices: number[] = [];
+  private hasMeters = false;
 
   get vertexCount(): number {
     return this.positions.length / 3;
   }
 
-  vertex(p: readonly number[], n: readonly number[], uv: readonly number[] = [0, 0]): number {
+  /** `meters` 是自然坐标的米版本，不给时与 `uv` 相同。 */
+  vertex(
+    p: readonly number[],
+    n: readonly number[],
+    uv: readonly number[] = [0, 0],
+    meters?: readonly number[],
+  ): number {
     this.positions.push(p[0] ?? 0, p[1] ?? 0, p[2] ?? 0);
     this.normals.push(n[0] ?? 0, n[1] ?? 0, n[2] ?? 0);
     this.uvs.push(uv[0] ?? 0, uv[1] ?? 0);
+    const m = meters ?? uv;
+    if (meters !== undefined) this.hasMeters = true;
+    this.meters.push(m[0] ?? 0, m[1] ?? 0);
     return this.vertexCount - 1;
   }
 
@@ -81,11 +102,12 @@ export class MeshBuilder {
     b: readonly number[],
     c: readonly number[],
     uvs: readonly (readonly number[])[] = [],
+    meters: readonly (readonly number[] | undefined)[] = [],
   ): void {
     const n = norm3(cross3(sub3(b, a), sub3(c, a)));
-    const ia = this.vertex(a, n, uvs[0]);
-    const ib = this.vertex(b, n, uvs[1]);
-    const ic = this.vertex(c, n, uvs[2]);
+    const ia = this.vertex(a, n, uvs[0], meters[0]);
+    const ib = this.vertex(b, n, uvs[1], meters[1]);
+    const ic = this.vertex(c, n, uvs[2], meters[2]);
     this.tri(ia, ib, ic);
   }
 
@@ -94,6 +116,8 @@ export class MeshBuilder {
     for (const value of mesh.positions) this.positions.push(value);
     for (const value of mesh.normals) this.normals.push(value);
     for (const value of mesh.uvs) this.uvs.push(value);
+    for (const value of meterUvs(mesh)) this.meters.push(value);
+    if (mesh.meters !== undefined) this.hasMeters = true;
     for (const index of mesh.indices) this.indices.push(index + offset);
   }
 
@@ -103,6 +127,7 @@ export class MeshBuilder {
       normals: new Float32Array(this.normals),
       uvs: new Float32Array(this.uvs),
       indices: new Uint32Array(this.indices),
+      ...(this.hasMeters ? { meters: new Float32Array(this.meters) } : {}),
     };
   }
 }
@@ -198,7 +223,16 @@ export function flatShade(mesh: MeshData): MeshData {
     const ids = [mesh.indices[t] ?? 0, mesh.indices[t + 1] ?? 0, mesh.indices[t + 2] ?? 0];
     const [a, b, c] = ids.map((i) => vertexAt(mesh, i)) as [V3, V3, V3];
     const uv = ids.map((i) => [mesh.uvs[i * 2] ?? 0, mesh.uvs[i * 2 + 1] ?? 0]);
-    builder.flatTri(a, b, c, uv);
+    const meters = mesh.meters;
+    builder.flatTri(
+      a,
+      b,
+      c,
+      uv,
+      ids.map((i) =>
+        meters === undefined ? undefined : [meters[i * 2] ?? 0, meters[i * 2 + 1] ?? 0],
+      ),
+    );
   }
   return builder.build();
 }
