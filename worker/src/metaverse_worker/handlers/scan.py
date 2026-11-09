@@ -46,6 +46,7 @@ from ..processing.align import matrix_from_params
 from ..processing.rebuild import OBJECTS_TARGET as DEFAULT_OBJECTS_TARGET
 from ..processing.scan import sniff_format
 from ..processing.sniff import CONTENT_TYPES
+from ..records import RecordError, validate_anchor_body
 from ..timeutil import format_ts, parse_ts
 from .context import JobContext, optional_dict, require_hash
 
@@ -115,6 +116,10 @@ def anchor_proposals(entities: Mapping[str, Mapping[str, Any]]) -> dict[str, dic
         }
         if isinstance(body.get("label"), str):
             anchor["label"] = body["label"]
+        try:
+            validate_anchor_body(anchor)  # 与接口服务 AnchorBody 同样的规则，之后草稿才改得动它
+        except RecordError as error:
+            raise PermanentJobError(f"物体 {eid} 的建议锚点 {aid} 不合法：{error}") from error
         out[aid] = anchor
     return out
 

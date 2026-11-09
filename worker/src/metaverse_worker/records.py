@@ -1,16 +1,21 @@
-"""物件记录（设计 4.4、SHAPES 3），与接口服务 `metaverse-core/src/record.rs` 一致。
+"""物件和锚点记录（设计 4.4、SHAPES 3），校验规则与接口服务 `metaverse-core/src/record.rs` 一致。
 
 `records { _id: 内容哈希, kind: entity | anchor, spaceId, body }`，
 内容哈希 = `{"body": …, "kind": …, "spaceId": …}` 规范化后的 sha256。
+
+处理服务写进去的记录必须能通过接口服务的同一套校验：接口服务读取时只反序列化不校验，但之后草稿对这些
+物件、锚点做任何修改（移动锚点、只改可见性等）都会重新校验整个 body，不合格就改不动了。
 """
 
 from __future__ import annotations
 
+import math
+import unicodedata
 from collections.abc import Mapping, Sequence
 from typing import Any
 
 from .canonical import canonical_json, content_hash, is_sha256_hex
-from .ids import is_object_id
+from .ids import SPACE_ANCHOR_ID, is_object_id
 from .shapes import Bounds, rounded_bounds, shape_bounds, validate_shape
 
 MAX_PROPS_BYTES = 16 * 1024
@@ -19,10 +24,24 @@ BOUNDS_TOLERANCE = 1e-6
 
 ENTITY_KINDS = ("structure", "object", "template")
 LAYERS = ("rebuilt", "ext")
+ANCHOR_KINDS = ("table", "seat", "zone", "door", "camera", "counter", "space")
+VISIBILITIES = ("public", "internal")
+MAX_GRID_COORD = 1 << 30
+MAX_POSITION = 1e5
 
 
 class RecordError(ValueError):
     pass
+
+
+def check_label(label: Any) -> None:
+    """标签：字符串，不超过 200 个字符，不含控制字符（Unicode 类别 Cc，同 Rust `char::is_control`）。"""
+    if (
+        not isinstance(label, str)
+        or len(label) > MAX_LABEL_CHARS
+        or any(unicodedata.category(ch) == "Cc" for ch in label)
+    ):
+        raise RecordError("label 不超过 200 个字符，不能含控制字符")
 
 
 def record_hash(kind: str, space_id: str, body: Mapping[str, Any]) -> str:
@@ -95,9 +114,8 @@ def validate_entity_body(
         raise RecordError("layer 必须是 rebuilt 或 ext")
     if body.get("kind") not in ENTITY_KINDS:
         raise RecordError("kind 必须是 structure、object 或 template")
-    label = body.get("label")
-    if label is not None and (not isinstance(label, str) or len(label) > MAX_LABEL_CHARS):
-        raise RecordError("label 不超过 200 个字符")
+    if body.get("label") is not None:
+        check_label(body["label"])
     for name in ("anchorId", "regionId"):
         if body.get(name) is not None and not is_object_id(body[name]):
             raise RecordError(f"{name} 格式不对")
@@ -129,3 +147,55 @@ def validate_entity_body(
         validate_shape(shape)
         if not _contains(bounds, shape_bounds(shape, templates), BOUNDS_TOLERANCE):
             raise RecordError("bounds 没有包住形状的实际范围")
+
+
+def _is_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def validate_anchor_body(body: Mapping[str, Any]) -> None:
+    """锚点记录的 body（接口服务 `AnchorBody::validate`）：位置用格子盒子 `box` 或点 `position`（米）二选一，
+    空间级锚点 `_space` 没有位置。"""
+    allowed = {"anchorId", "kind", "box", "position", "label", "visibility"}
+    unknown = set(body) - allowed
+    if unknown:
+        raise RecordError(f"锚点记录有不认识的字段：{sorted(unknown)}")
+    anchor_id, kind = body.get("anchorId"), body.get("kind")
+    reserved = anchor_id == SPACE_ANCHOR_ID
+    if not is_object_id(anchor_id) or (anchor_id.startswith("_") and not reserved):
+        raise RecordError("anchorId 格式不对（以 _ 开头的编号保留）")
+    if kind not in ANCHOR_KINDS:
+        raise RecordError(f"锚点类型必须是 {'、'.join(ANCHOR_KINDS)} 之一")
+    if reserved != (kind == "space"):
+        raise RecordError("只有 _space 锚点的类型是 space")
+    if body.get("visibility") not in VISIBILITIES:
+        raise RecordError("visibility 必须是 public 或 internal")
+    if body.get("label") is not None:
+        check_label(body["label"])
+    box, position = body.get("box"), body.get("position")
+    if kind == "space":
+        if box is not None or position is not None:
+            raise RecordError("_space 锚点没有位置")
+        return
+    if (box is None) == (position is None):
+        raise RecordError("锚点必须且只能给出 box 或 position")
+    if box is not None:
+        if not (
+            isinstance(box, list | tuple)
+            and len(box) == 6
+            and all(_is_int(v) and abs(v) <= MAX_GRID_COORD for v in box)
+            and all(box[k] < box[k + 3] for k in range(3))
+        ):
+            raise RecordError("box 必须是 6 个整数 [x0,y0,z0,x1,y1,z1]，且 min < max")
+    elif not (
+        isinstance(position, list | tuple)
+        and len(position) == 3
+        and all(
+            isinstance(v, int | float)
+            and not isinstance(v, bool)
+            and math.isfinite(v)
+            and abs(v) <= MAX_POSITION
+            for v in position
+        )
+    ):
+        raise RecordError("position 必须是 3 个有限值（米）")

@@ -175,7 +175,8 @@ uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceI
    - **锚点**：`kind: object` 且带 `anchorId` 的物体，按编号前缀定类型（`table`/`desk` → table，
      `chair`/`seat`/`sofa`/`bench`/`stool` → seat，`counter`/`reception`/`bar` → counter，`door`、`camera`，
      其他 → zone），`box` = 物体 `bounds` 覆盖的格子（同接口服务 `Aabb::grid_cover`），`visibility: public`，
-     `label` 取物体的 `label`；锚点当前状态写进 `anchors`（`{spaceId, id, owner, hash, body, seq}`）；
+     `label` 取物体的 `label`；生成后按接口服务 `AnchorBody::validate` 的规则校验（不合格 → 任务失败）；
+     锚点当前状态写进 `anchors`（`{spaceId, id, owner, hash, body, seq}`）；
    - **体素化**：`voxelize: true` 时在**同一个事务里插入一个 `voxelize` 任务**（编号
      `<本任务编号>-voxelize`，参数 `{scanAssetHash}`，`parentJobId` 指向本任务），不在本任务里写第二次提交。
 
@@ -249,9 +250,11 @@ result.textures  # {sha256 十六进制: 图片字节（jpeg/png/webp）}，被 
 result.metrics  # 任意 JSON，原样放进 result.objects
 ```
 
-处理服务会校验：body 合法（模板实例按同一批结果里的模板算包围盒）、贴图字节的哈希与键一致、
+处理服务会校验：body 合法（规则与接口服务 `EntityBody::validate` 相同，`records.py`；模板实例按同一批结果里的
+模板算包围盒；`label` 不超过 200 个字符、**不能含控制字符**，如换行、制表符）、贴图字节的哈希与键一致、
 引用的贴图都随结果给出、编号不和结构元素（`floor`、`wall-*`、`glazing-*`）重复。不合格 → 任务失败
-（不可重试）；模块导入失败 → 记录警告、只提交结构。
+（不可重试）；模块导入失败 → 记录警告、只提交结构。规则必须和接口服务一致：接口服务读取记录时不校验，
+但之后草稿对这些物件、锚点做任何修改都会重新校验整个 body，不合格的记录就改不动了。
 
 ## 空间存储用量
 
