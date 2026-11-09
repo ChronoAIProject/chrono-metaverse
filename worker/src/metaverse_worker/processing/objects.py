@@ -77,6 +77,7 @@ LABELS = {
     "clutter": "杂物",
 }
 FURNITURE = {"chair", "table", "sofa", "counter", "cabinet"}
+SMALL = 0.8  # 小件：最长边不到 0.8 米（只用纯色，俯视轮廓偏向简单的）
 # 提示里常见的别名
 KIND_ALIASES = {
     "desk": "table",
@@ -415,7 +416,9 @@ def _fit_local_raw(o: Local, kind: str) -> tuple[dict[str, Any], str]:
     ext = np.ptp(o.L, axis=0)
     dims = sorted(ext)
     uv = "planar" if dims[0] < 0.4 * dims[1] else "cylindrical"
-    cands = [("box", lambda: fit_box(o, uv=uv))]
+    # 杂物和小件的俯视轮廓偏向简单的（圆角矩形、凸包），不追一堆东西拼出来的凹凸
+    small = kind == "clutter" or max(ext[0], ext[2]) < SMALL
+    cands = [("box", lambda: fit_box(o, uv=uv, complexity=0.015 if small else 0.004))]
     if kind in ("cabinet", "clutter") and float(np.percentile(o.y, 99)) > 0.3:
         cands.append(("stack", lambda: fit_stack(o, uv=uv)))
         if float(np.percentile(o.y, 99)) > 1.5:
@@ -617,7 +620,7 @@ def _groups(objs: list[Obj], prm: ObjectParams) -> list[list[Obj]]:
     return out
 
 
-def _textured(kind: str, size: float, min_size: float = 0.8) -> bool:
+def _textured(kind: str, size: float, min_size: float = SMALL) -> bool:
     """杂物和小件（最长边不到 0.8 米）只用纯色：它们身上的"图案"多半是反光、粘连进来的桌面和扫描噪声，
     贴上去像一块块玻璃；纯色的圆角盒干净。"""
     return kind != "clutter" and size >= min_size

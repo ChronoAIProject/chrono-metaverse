@@ -823,8 +823,11 @@ def _counter_shell(o: Local, outline: dict[str, Any], top: float, name: str) -> 
 # ---------------------------------------------------------------------------- 盒子、旋转体
 
 
-def fit_box(o: Local, name: str = "body", uv: str = "cylindrical") -> dict[str, Any]:
-    """圆角盒；俯视明显不是矩形时用轮廓挤出。"""
+def fit_box(
+    o: Local, name: str = "body", uv: str = "cylindrical", *, complexity: float = 0.004
+) -> dict[str, Any]:
+    """圆角盒；俯视明显不是矩形时用轮廓挤出。`complexity` 是轮廓每个顶点的代价（越大越偏向
+    圆角矩形、凸包这类简单的轮廓）。"""
     y = o.y
     top = float(np.percentile(y, 99))
     bottom = max(0.0, float(np.percentile(y, 0.5)))
@@ -848,7 +851,7 @@ def fit_box(o: Local, name: str = "body", uv: str = "cylindrical") -> dict[str, 
         )
         return sh.group([part(shape, name, uv)])
     if True:
-        fit = fit_footprint(xz, tol_for(size) * 1.5, mask=m)
+        fit = fit_footprint(xz, tol_for(size) * 1.5, mask=m, complexity=complexity)
         if fit.kind == "rect":
             hx, hz = fit.info["half"]
             c = fit.info["center"]

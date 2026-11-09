@@ -166,6 +166,23 @@ def test_fit_box_recovers_rounded_box():
     assert 0.02 <= box["fillet"] <= 0.09
 
 
+def test_fit_box_complexity_prefers_simple_outline_for_piles():
+    """桌上的一堆东西（平放的书 + 立着的盒子 + 杯子）：顶点代价调高后轮廓明显更简单。"""
+    o = visible_boxes(
+        [
+            sh.box([0.40, 0.04, 0.30], xf=sh.transform(position=[0.0, 0.0, 0.0])),
+            sh.box([0.12, 0.25, 0.12], xf=sh.transform(position=[0.24, 0.0, -0.08])),
+            sh.box([0.10, 0.12, 0.10], xf=sh.transform(position=[-0.05, 0.0, 0.2])),
+        ]
+    )
+
+    def n_points(g):
+        leaf = g["children"][0]
+        return len(leaf["outline"]["points"]) if leaf["type"] == "extrude" else 4
+
+    assert n_points(ft.fit_box(o, complexity=0.015)) <= n_points(ft.fit_box(o)) - 3
+
+
 def test_fit_round_recovers_cylinder():
     o = local_of(sh.cylinder(0.25, 0.5, segments=48))
     lathe = ft.fit_round(o)["children"][0]
