@@ -147,15 +147,29 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
     if (error !== null) throw new CliError(`没有推送：${error}`);
   }
   const api = makeApi(ctx, ws, values);
+  // 上传校验和 ops_from_upload 任务都属于草稿所在的路径范围，查任务也走同一范围的路径。
   const waitOptions = {
+    plot,
     onUpdate: (job: Parameters<typeof describeJob>[0]) => say(describeJob(job)),
     ...(ctx.sleep ? { sleep: ctx.sleep } : {}),
   };
   const baseSeq = result.base.space.seq;
-  const space = await api.getSpace();
-  if (space.head.seq !== baseSeq) {
+  let headSeq: number | null = null;
+  try {
+    headSeq = (await api.getSpace()).head.seq;
+  } catch (error) {
+    // 地块合作方的 agent key 一般只开放地块路径（设计 9.3），读不了实体区路径的空间信息：
+    // 跳过这项提示，发布时服务端照样检查冲突。
+    if (!(plot && error instanceof ApiError && (error.status === 403 || error.status === 404))) {
+      throw error;
+    }
     say(
-      `注意：时间线已从 seq ${baseSeq} 前进到 ${space.head.seq}；发布时服务端会检查冲突（冲突就先 pull 再 build、push）`,
+      `注意：读不了空间信息（HTTP ${error.status}，地块 key 一般只开放地块路径），跳过时间线检查；发布时服务端会检查冲突`,
+    );
+  }
+  if (headSeq !== null && headSeq !== baseSeq) {
+    say(
+      `注意：时间线已从 seq ${baseSeq} 前进到 ${headSeq}；发布时服务端会检查冲突（冲突就先 pull 再 build、push）`,
     );
   }
   const draft = await api.createDraft({ baseSeq }, plot);

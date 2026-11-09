@@ -145,6 +145,8 @@ export async function upload(api: MetaverseApi, options: UploadOptions): Promise
 }
 
 export interface WaitOptions {
+  /** 任务是经哪个地块路径发起的（不给就是实体区路径）：查任务也走同一范围的路径。 */
+  readonly plot?: string | null;
   readonly intervalMs?: number;
   readonly timeoutMs?: number;
   readonly onUpdate?: (job: JobView) => void;
@@ -166,7 +168,7 @@ export async function waitForJob(
   for (;;) {
     let job: JobView;
     try {
-      job = await api.getJob(jobId);
+      job = await api.getJob(jobId, options.plot);
     } catch (error) {
       if (error instanceof ApiError && error.status >= 500) {
         await sleep(interval);

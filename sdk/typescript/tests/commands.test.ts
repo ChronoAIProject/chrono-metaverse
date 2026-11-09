@@ -325,6 +325,62 @@ describe('metaverse push / publish', () => {
     ).toEqual({});
   });
 
+  it('只开放地块路径的 agent key（设计 9.3）也能 push、publish：任务经地块路径查', async () => {
+    const plotPrefix = '/api/v1/spaces/demo-space/plots/p1/';
+    fake = await startFakeApi({ ...remoteSnapshot().state, allowedPrefixes: [plotPrefix] });
+    const root = directWorkspace(fake, PUSH_SCRIPT);
+    const ctx = makeContext(root);
+    expect(await main(ctx, ['push', '--plot', 'p1', '--json'])).toBe(0);
+    const out = JSON.parse(ctx.lines.at(-1)!) as { draftId: string; preview: string };
+    expect(out.preview).toContain('#t=preview-token-abc');
+    const api = fake.requests.filter((r) => r.path.startsWith('/api/'));
+    // 只有读空间信息走了实体区路径（被拦下后跳过时间线检查），其余都在地块路径下。
+    expect(api.filter((r) => !r.path.startsWith(plotPrefix)).map((r) => r.path)).toEqual([
+      '/api/v1/spaces/demo-space',
+    ]);
+    const jobPolls = api.filter((r) => r.path.includes('/jobs/'));
+    expect(jobPolls.length).toBeGreaterThan(0);
+    expect(jobPolls.every((r) => r.path.startsWith(`${plotPrefix}jobs/`))).toBe(true);
+    expect(new Set([...fake.state.jobs.values()].map((j) => j.kind))).toEqual(
+      new Set(['upload_verify', 'ops_from_upload']),
+    );
+    const textCtx = makeContext(root);
+    expect(await main(textCtx, ['push', '--plot', 'p1', '--no-preview'])).toBe(0);
+    expect(textCtx.lines.join('\n')).toContain('跳过时间线检查');
+    expect(await main(makeContext(root), ['publish', out.draftId])).toBe(0);
+    expect(fake.requests.at(-1)!.path).toBe(`${plotPrefix}drafts/${out.draftId}/publish`);
+  });
+
+  it('实体区 push 读不了空间信息时照样报错（只有地块范围才跳过这项检查）', async () => {
+    fake = await startFakeApi({
+      ...remoteSnapshot().state,
+      allowedPrefixes: ['/api/v1/spaces/demo-space/drafts', '/api/v1/spaces/demo-space/uploads'],
+    });
+    const root = directWorkspace(
+      fake,
+      "export default (base, kit) => [kit.fill([1, 0, 1, 3, 1, 3], base.block('stone'))];",
+    );
+    const ctx = makeContext(root);
+    expect(await main(ctx, ['push'])).toBe(1);
+    expect(ctx.errors.at(-1)).toContain('HTTP 403');
+    expect(fake.state.drafts.size).toBe(0);
+  });
+
+  it('地块路径查不到别的范围发起的任务', async () => {
+    fake = await startFakeApi();
+    fake.state.jobs.set('job-e', { id: 'job-e', kind: 'scan_import', polls: 0, runningPolls: 0 });
+    const api = new MetaverseApi(
+      new ApiClient({ mode: 'direct', api: fake.url, devTokenUrl: fake.devTokenUrl }),
+      'demo-space',
+    );
+    await expect(api.getJob('job-e', 'p1')).rejects.toMatchObject({ status: 404 });
+    expect(await api.getJob('job-e')).toMatchObject({ status: 'done' });
+    expect(fake.requests.filter((r) => r.path.includes('/jobs/')).map((r) => r.path)).toEqual([
+      '/api/v1/spaces/demo-space/plots/p1/jobs/job-e',
+      '/api/v1/spaces/demo-space/jobs/job-e',
+    ]);
+  });
+
   it('--inline 分批调用批量操作接口；--json 输出', async () => {
     fake = await startFakeApi(remoteSnapshot().state);
     const root = directWorkspace(fake, PUSH_SCRIPT);

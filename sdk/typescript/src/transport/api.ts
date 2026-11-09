@@ -226,9 +226,13 @@ export class MetaverseApi {
     return new Uint8Array(await response.arrayBuffer());
   }
 
-  /** `GET /api/v1/spaces/{space_id}/jobs/{job_id}` */
-  getJob(jobId: string): Promise<JobView> {
-    return this.client.json('GET', `${this.space}/jobs/${seg(jobId)}`);
+  /**
+   * `GET {范围}/jobs/{job_id}`。经地块路径只能查到经这个地块路径发起的任务（上传校验、
+   * ops_from_upload 等）；地块合作方的 agent key 一般只开放地块路径（设计 9.3），所以地块
+   * 范围的任务要经地块路径查。
+   */
+  getJob(jobId: string, plot?: string | null): Promise<JobView> {
+    return this.client.json('GET', `${scopePath(this.spaceId, plot)}/jobs/${seg(jobId)}`);
   }
 
   // ---- 上传 -----------------------------------------------------------------

@@ -120,6 +120,8 @@ interface Upload {
 interface Job {
   id: string;
   kind: string;
+  /** 发起任务的路径范围（经地块路径只能查到本地块的任务）。 */
+  scopePath?: string;
   polls: number;
   /** 前几次查询返回 running，之后 done（或 failed）。 */
   runningPolls: number;
@@ -141,6 +143,10 @@ export interface FakeState {
   scanResult?: unknown;
   failNextPart: boolean;
   shareTokenRotations: number;
+  /**
+   * 模拟 NyxID 的操作范围：给了就只放行以这些前缀开头的接口路径，其余 403（NyxID 在转发前拦下）。
+   */
+  allowedPrefixes?: readonly string[];
   /** 轮换分享令牌时改用这个响应（测试响应缺字段的情况）。 */
   shareTokenResponse?: unknown;
 }
@@ -184,6 +190,7 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
     failNextPart: init.failNextPart ?? false,
     shareTokenRotations: 0,
     shareTokenResponse: init.shareTokenResponse,
+    ...(init.allowedPrefixes !== undefined ? { allowedPrefixes: init.allowedPrefixes } : {}),
   };
   const requests: RecordedRequest[] = [];
   let counter = 0;
@@ -248,6 +255,17 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
       problem(401, 'unauthenticated', '没有令牌');
       return;
     }
+    if (
+      state.allowedPrefixes !== undefined &&
+      !state.allowedPrefixes.some((prefix) => apiPath.startsWith(prefix))
+    ) {
+      problem(
+        403,
+        'operation_scope_denied',
+        `agent key 的操作范围不含 ${request.method} ${apiPath}`,
+      );
+      return;
+    }
     let m: RegExpExecArray | null;
     const spaceId = String(state.space.id);
     const space = `/api/v1/spaces/${spaceId}`;
@@ -270,9 +288,12 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
       response.end(bytes);
       return;
     }
-    if ((m = /^\/api\/v1\/spaces\/[^/]+\/jobs\/([^/]+)$/.exec(apiPath))) {
-      const job = state.jobs.get(m[1]!);
+    if ((m = /^(\/api\/v1\/spaces\/[^/]+(?:\/plots\/[^/]+)?)\/jobs\/([^/]+)$/.exec(apiPath))) {
+      const job = state.jobs.get(m[2]!);
       if (job === undefined) return problem(404, 'not_found', '没有任务');
+      // 与接口服务相同：经地块路径只能查到经这个地块路径发起的任务；实体区路径都能查。
+      if (m[1]!.includes('/plots/') && job.scopePath !== m[1])
+        return problem(404, 'not_found', '任务不存在或不属于这个地块');
       job.polls += 1;
       const status = job.polls <= job.runningPolls ? 'running' : job.fail ? 'failed' : 'done';
       return json(200, {
@@ -367,10 +388,10 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
           Array.from({ length: count }, (_, i) => upload.parts.get(i) ?? Buffer.alloc(0)),
         );
         const sha = createHash('sha256').update(all).digest('hex');
-        const job = newJob(
-          'upload_verify',
-          sha === upload.sha256 ? {} : { fail: '整体哈希不一致' },
-        );
+        const job = newJob('upload_verify', {
+          scopePath: upload.scopePath,
+          ...(sha === upload.sha256 ? {} : { fail: '整体哈希不一致' }),
+        });
         if (sha === upload.sha256) {
           state.assets.set(sha, all);
           upload.status = 'done';
@@ -481,7 +502,11 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
             .filter(Boolean)
             .map((line) => JSON.parse(line) as unknown);
           draft.ops.push(...ops);
-          const job = newJob('ops_from_upload', { result: { applied: ops.length, rev: 1 } });
+          // 任务记下草稿的路径范围（接口服务 insert_ops_job 写 scope 之后的行为）。
+          const job = newJob('ops_from_upload', {
+            scopePath: draft.scopePath,
+            result: { applied: ops.length, rev: 1 },
+          });
           return json(202, { jobId: job.id });
         }
         case 'preview': {
