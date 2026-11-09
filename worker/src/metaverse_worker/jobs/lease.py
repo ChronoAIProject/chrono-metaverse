@@ -226,6 +226,22 @@ def release(store: Store, lease: Lease) -> bool:
     return outcome.matched_count == 1
 
 
+def requeue(store: Store, lease: Lease) -> bool:
+    """收到停止信号、来不及做完：退回队列，并退还这一次的重试次数（不是任务本身的问题）。
+
+    条件带栅栏；匹配不到说明租约已经不属于本进程，什么也不做。
+    """
+    outcome = store.jobs.update_one(
+        lease.fence(),
+        {
+            "$set": {"status": JobStatus.QUEUED},
+            "$unset": {"leaseOwner": "", "leaseUntil": ""},
+            "$inc": {"attempt": -1},
+        },
+    )
+    return outcome.matched_count == 1
+
+
 def reap_exhausted(store: Store) -> int:
     """租约过期且重试次数已用完的任务标记为失败（否则它们会一直停在 running）。"""
     now_ts = format_ts(store.clock())

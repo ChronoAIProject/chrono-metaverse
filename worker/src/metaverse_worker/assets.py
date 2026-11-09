@@ -108,6 +108,7 @@ def put_asset(
     content_type: str,
     kind: str,
     space_id: str | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> AssetInfo:
     """把一段字节或一个本地文件登记成资源（按内容哈希去重）。处理服务生成的贴图、网页用模型都走这里。"""
     if isinstance(data, bytes | bytearray | memoryview):
@@ -131,7 +132,7 @@ def put_asset(
     try:
         with opener() as stream:
             _write_chunks(store, files_id, _blocks(stream))
-        return _insert_files_doc(store, files_id, sha, length, content_type, kind, space_id)
+        return _insert_files_doc(store, files_id, sha, length, content_type, kind, space_id, extra)
     except BaseException:
         delete_file_chunks(store, files_id)
         raise
@@ -274,13 +275,22 @@ def register_upload(
     kind: str,
     space_id: str | None,
     session: ClientSession | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> AssetInfo:
     """把已核对的上传分片登记成资源：插入 `files` 文档（`_id` = 上传编号）。
 
     重名时删掉本次分片，复用已有资源。
     """
     return _insert_files_doc(
-        store, upload_id, sha, length, content_type, kind, space_id, {"uploadId": str(upload_id)}, session
+        store,
+        upload_id,
+        sha,
+        length,
+        content_type,
+        kind,
+        space_id,
+        {"uploadId": str(upload_id), **(extra or {})},
+        session,
     )
 
 

@@ -54,12 +54,15 @@ class CommitPlan:
     changed_entities: list[dict[str, Any]] = field(default_factory=list)
     changed_anchors: list[dict[str, Any]] = field(default_factory=list)
     entity_bodies: dict[str, Mapping[str, Any]] = field(default_factory=dict)
+    anchor_bodies: dict[str, Mapping[str, Any]] = field(default_factory=dict)
     palette_hash: str | None = None
     scan: dict[str, Any] | None = None
     observed_at: str | None = None
     asset_refs: list[str] = field(default_factory=list)
     reference_scan: str | None = None  # 空间还没有坐标系时，以这次扫描固定坐标系（设计 4.1）
     result: dict[str, Any] = field(default_factory=dict)
+    # 和提交同一个事务里插入的后续任务（例如扫描导入之后的体素化），编号要确定，重做不会重复
+    new_jobs: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -108,6 +111,28 @@ def put_chunks(store: Store, chunks: Mapping[str, bytes]) -> None:
     )
 
 
+def put_anchor_records(
+    store: Store, scope: SystemScope, bodies: Mapping[str, Mapping[str, Any]]
+) -> dict[str, str]:
+    """锚点记录：`records {_id: 内容哈希, kind: anchor, spaceId, owner, body}`。返回 `{anchorId: 哈希}`。"""
+    out: dict[str, str] = {}
+    docs = []
+    for anchor_id, body in bodies.items():
+        h = record_hash("anchor", scope.space_id, body)
+        out[anchor_id] = h
+        docs.append(
+            {
+                "_id": h,
+                "kind": "anchor",
+                "spaceId": scope.space_id,
+                "owner": scope.owner.as_doc(),
+                "body": dict(body),
+            }
+        )
+    _insert_ignore_duplicates(store, C.RECORDS, docs)
+    return out
+
+
 def put_entity_records(
     store: Store, scope: SystemScope, bodies: Mapping[str, Mapping[str, Any]]
 ) -> dict[str, str]:
@@ -146,6 +171,26 @@ def put_palette(store: Store, scope: SystemScope, blocks: list[dict[str, Any]]) 
 
 
 # ---------------------------------------------------------------------------- 事务内读取当前状态
+
+
+def head_palette_doc(
+    store: Store, scope: SystemScope, session: ClientSession | None = None
+) -> tuple[str | None, list[dict[str, Any]]]:
+    """head 生效的方块表 (哈希, 方块列表)；还没有方块表时返回 (None, [])。"""
+    commit = store.commits.find_one(
+        scope.child_filter(paletteHash={"$type": "string"}),
+        {"paletteHash": 1},
+        sort=[("seq", -1)],
+        session=session,
+    )
+    if commit is None:
+        return None, []
+    doc = store.col(C.PALETTES).find_one(
+        {"_id": commit["paletteHash"], "spaceId": scope.space_id}, session=session
+    )
+    if doc is None:
+        raise PermanentJobError(f"方块表 {commit['paletteHash']} 不存在")
+    return commit["paletteHash"], list(doc.get("blocks") or [])
 
 
 def head_palette(
@@ -199,6 +244,24 @@ def current_chunks(
             else:
                 state.pop(key, None)
     return state
+
+
+def scan_commit(
+    store: Store, scope: SystemScope, asset_hash: str | None = None, session: ClientSession | None = None
+) -> dict[str, Any] | None:
+    """最近一次带扫描的提交；给了 `asset_hash` 就找引用这个扫描的最近一次提交。"""
+    filt = scope.child_filter(scan={"$type": "object"})
+    if asset_hash is not None:
+        filt["scan.assetHash"] = asset_hash
+    return store.commits.find_one(filt, {"scan": 1, "seq": 1}, sort=[("seq", -1)], session=session)
+
+
+def current_anchor_ids(
+    store: Store, scope: SystemScope, session: ClientSession | None = None
+) -> dict[str, str]:
+    """当前状态里的锚点 `{id: 记录哈希}`。"""
+    cursor = store.col(C.ANCHORS).find(scope.child_filter(), {"id": 1, "hash": 1}, session=session)
+    return {d["id"]: d["hash"] for d in cursor}
 
 
 def current_entity_ids(
@@ -310,24 +373,42 @@ def write_back(
         moved = store.spaces.update_one(head_filter, {"$set": space_set}, session=session)
         if moved.matched_count != 1:
             raise LeaseLost("空间的 head 在事务中变了")  # 快照事务里不应发生；保守起见放弃
-        for change in plan.changed_entities:
-            key = {"spaceId": scope.space_id, "id": change["id"]}
-            if change["hash"] is None:
-                store.col(C.ENTITIES).delete_one({**key, "owner.id": scope.owner.id}, session=session)
-            else:
-                body = plan.entity_bodies[change["id"]]
-                store.col(C.ENTITIES).replace_one(
+        for collection, changes, bodies in (
+            (C.ENTITIES, plan.changed_entities, plan.entity_bodies),
+            (C.ANCHORS, plan.changed_anchors, plan.anchor_bodies),
+        ):
+            for change in changes:
+                key = {"spaceId": scope.space_id, "id": change["id"]}
+                if change["hash"] is None:
+                    store.col(collection).delete_one({**key, "owner.id": scope.owner.id}, session=session)
+                    continue
+                store.col(collection).replace_one(
                     key,
                     {
                         **key,
                         "owner": scope.owner.as_doc(),
                         "hash": change["hash"],
-                        "body": dict(body),
+                        "body": dict(bodies[change["id"]]),
                         "seq": seq,
                     },
                     upsert=True,
                     session=session,
                 )
+        for job in plan.new_jobs:
+            store.jobs.insert_one(
+                {
+                    "spaceId": scope.space_id,
+                    "owner": scope.owner.as_doc(),
+                    "status": "queued",
+                    "attempt": 0,
+                    "maxAttempts": 3,
+                    "createdAt": at,
+                    "actor": dict(lease.doc.get("actor") or {}),
+                    "parentJobId": str(lease.job_id),
+                    **job,
+                },
+                session=session,
+            )
         for asset_hash in sorted(set(plan.asset_refs)):
             store.col(C.ASSET_REFS).update_one(
                 {"hash": asset_hash, "spaceId": scope.space_id},
