@@ -382,6 +382,7 @@ mod tests {
             corrects: None,
             retracted: false,
             redacted: false,
+            actor: None,
         }
     }
 

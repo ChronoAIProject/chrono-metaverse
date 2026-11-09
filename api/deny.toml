@@ -39,6 +39,13 @@ allow = ["CC0-1.0"]
 name = "webpki-roots"
 allow = ["CDLA-Permissive-2.0"]
 
+# boon（事件数据的 JSON Schema 校验）经由 fluent-uri 引入 borrow-or-share：
+#   metaverse-api -> boon -> fluent-uri -> borrow-or-share
+# 许可证是 MIT-0（MIT 去掉了署名要求，比允许列表里的 MIT 更宽松）。只对这一个包开例外。
+[[licenses.exceptions]]
+name = "borrow-or-share"
+allow = ["MIT-0"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
