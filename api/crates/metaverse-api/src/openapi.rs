@@ -32,6 +32,42 @@ use utoipa::{
         crate::routes::spaces::get_space,
         crate::routes::admin_spaces::create_space,
         crate::routes::public_spaces::get_public_space,
+        // 上传、任务、事件、组合
+        crate::routes::uploads::create_upload,
+        crate::routes::uploads::create_plot_upload,
+        crate::routes::uploads::put_upload_part,
+        crate::routes::uploads::put_plot_upload_part,
+        crate::routes::uploads::complete_upload,
+        crate::routes::uploads::complete_plot_upload,
+        crate::routes::uploads::get_upload,
+        crate::routes::uploads::get_plot_upload,
+        crate::routes::jobs::import_scan,
+        crate::routes::jobs::align_scan,
+        crate::routes::jobs::voxelize_scan,
+        crate::routes::jobs::rebuild_scan,
+        crate::routes::jobs::import_model,
+        crate::routes::jobs::import_plot_model,
+        crate::routes::jobs::get_job,
+        crate::routes::jobs::get_plot_job,
+        crate::routes::jobs::list_jobs,
+        crate::routes::jobs::list_plot_jobs,
+        crate::routes::events::write_events,
+        crate::routes::events::write_corrections,
+        crate::routes::events::list_events,
+        crate::routes::events::list_event_types,
+        crate::routes::admin_events::register_event_type,
+        crate::routes::admin_events::redact_event,
+        crate::routes::public_events::get_public_head,
+        crate::routes::public_events::list_public_events,
+        crate::routes::public_events::get_public_event_density,
+        crate::routes::public_events::get_public_state,
+        crate::routes::universes::create_universe,
+        crate::routes::universes::get_universe,
+        crate::routes::universes::update_universe,
+        crate::routes::universes::join_universe,
+        crate::routes::universes::leave_universe,
+        crate::routes::public_universes::get_public_universe,
+        crate::routes::public_universes::get_public_universe_revision,
         // 时间线与公开读分工
         crate::routes::timeline::list_timeline,
         crate::routes::timeline::get_snapshot,
@@ -66,6 +102,10 @@ use utoipa::{
     modifiers(&IdentitySecurity),
     tags(
         (name = "spaces", description = "空间：查看"),
+        (name = "uploads", description = "分片上传"),
+        (name = "scans", description = "扫描、物件模型和任务"),
+        (name = "events", description = "现实事件"),
+        (name = "universes", description = "组合宇宙"),
         (name = "timeline", description = "时间线：提交列表、快照、区块、区域内容"),
         (name = "drafts", description = "草稿：建草稿、批量操作、预览、发布（实体区和地块两组路径）"),
         (name = "admin", description = "管理接口（不进 AI 工具）"),
@@ -222,6 +262,7 @@ mod tests {
             .cloned()
             .collect();
         assert!(paths.contains(&"/api/v1/spaces/{space_id}".to_owned()));
+        assert!(paths.contains(&"/api/v1/spaces/{space_id}/sources/{source}/events".to_owned()));
         assert!(paths.contains(&"/api/v1/spaces/{space_id}/drafts/{draft_id}/publish".to_owned()));
         assert!(paths
             .iter()

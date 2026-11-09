@@ -34,6 +34,18 @@ pub mod previews;
 pub mod public_timeline;
 pub mod timeline;
 
+// 上传、任务、事件、组合（各自的文件里有说明）。
+pub mod admin_events;
+pub mod event_query;
+pub mod events;
+pub mod ingest_common;
+pub mod jobs;
+pub mod public_access;
+pub mod public_events;
+pub mod public_universes;
+pub mod universes;
+pub mod uploads;
+
 use crate::error::{self, ApiError};
 use crate::AppState;
 
@@ -91,6 +103,12 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/admin/spaces/{space_id}/layout",
             put(admin_space_settings::set_layout),
         )
+        // 上传、任务、事件、组合。
+        .merge(uploads::routes())
+        .merge(jobs::routes())
+        .merge(events::routes())
+        .merge(admin_events::routes())
+        .merge(universes::routes())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             crate::auth::require_identity,
@@ -126,6 +144,9 @@ pub fn router(state: AppState) -> Router {
             "/api/public/previews/assets/{hash}",
             get(previews::get_preview_asset),
         )
+        // 事件、状态、组合的公开读。
+        .merge(public_events::routes())
+        .merge(public_universes::routes())
         // 全部公开接口：按来源地址限流、每空间并发上限（设计 8.2）。
         .route_layer(middleware::from_fn_with_state(
             state.clone(),

@@ -318,6 +318,14 @@ impl Authorizer {
     }
 }
 
+// 组合宇宙、凭组合令牌读成员空间、系统范围：放在子模块里，可以构造本模块的凭据。
+mod system;
+mod universes;
+
+pub use system::SystemGrant;
+pub use universes::{
+    CreateUniverseGrant, MembershipBasis, MembershipChange, MembershipGrant, UniverseGrant,
+};
 /// 预览令牌原文的格式：base64url，43 个字符（256 位随机数）。
 fn plausible_preview_token(token: &str) -> bool {
     token.len() == 43

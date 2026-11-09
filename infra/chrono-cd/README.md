@@ -52,6 +52,11 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 | `NYXID_JWT_AUDIENCE` | `urn:chrono-metaverse:api` | 必须和 NyxID 注册时的 `identity_jwt_audience` 一字不差 |
 | `ALLOWED_NYX_SERVICE_IDS` | `pending-nyxid-registration` | **占位值**：NyxID 注册要先有应用地址，所以第一次部署时还没有服务编号。占位值能让服务正常启动（网站和公开读接口可用），但所有 `/api/v1/*` 都会 401，直到第 7 步换成真实编号 |
 | `METAVERSE_REQUIRE_PERMISSIONS` | `false` | 第一步不启用功能级权限 |
+| `UPLOAD_MAX_SCAN_BYTES` / `_MODEL_` / `_TEXTURE_` / `_OPS_` / `_SCRIPT_BYTES` | 1GiB / 50MiB / 50MiB / 256MiB / 4MiB | 各用途上传的大小上限（与处理服务的上限一致；改大时处理服务的 `WORKER_MAX_*` 也要改） |
+| `UPLOAD_MAX_TEXTURE_SIDE` | `8192` | 图片单边像素上限（第 0 片按文件头检查） |
+| `UPLOAD_MAX_OPEN_PER_SPACE` | `16` | 每个空间进行中的上传数，超过返回 429 |
+| `UPLOAD_MAX_CONCURRENT_PARTS` | `8` | 每个副本同时处理的分片数（每片最多 32MiB 在内存里，与 `memory_limit` 一起考虑） |
+| `JOB_MAX_PENDING_PER_SPACE` | `8` | 每个空间排队和运行中的任务数，超过返回 429 |
 | `RUST_LOG` | `info` | |
 
 `metaverse-worker`（完整说明见 `worker/src/metaverse_worker/config.py`）：

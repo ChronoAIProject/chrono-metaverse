@@ -428,6 +428,54 @@ pub struct Event {
     pub retracted: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub redacted: bool,
+    /// 写入者（设计 9.5）：调用者 sub、服务编号、路径范围 `source:<名称>`。公开接口不返回。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
+}
+
+/// 事件编号：由 `(spaceId, source, sourceEventId)` 确定，同一条事件重试时编号不变。
+/// `ev_` + `sha256(spaceId ‖ 0x00 ‖ source ‖ 0x00 ‖ sourceEventId)` 的前 32 位十六进制。
+pub fn event_id(space_id: &str, source: &str, source_event_id: &str) -> String {
+    let digest = crate::sha256_hex(format!("{space_id}\0{source}\0{source_event_id}").as_bytes());
+    format!("ev_{}", &digest[..32])
+}
+
+/// 状态类事件的定期快照（`stateSnapshots` 集合，设计 5.5）：某时刻各 (锚点, 状态 key) 的
+/// **公开**状态（只由公开事件算出，值已按公开字段投影）。
+///
+/// `computedAt` 之后记录的、`at ≤ 快照时刻` 的事件（晚到事件、更正）会让快照失效，
+/// 读取时检查；抹除事件内容时删除受影响的快照。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StateSnapshot {
+    #[serde(rename = "_id")]
+    pub id: String,
+    pub space_id: String,
+    pub owner: Owner,
+    /// 快照时刻：包含全部 `at ≤ 这个时刻` 的事件。
+    pub at: Timestamp,
+    /// 计算时考虑到的最晚记录时间。
+    pub computed_at: Timestamp,
+    #[serde(default)]
+    pub states: Vec<SnapshotState>,
+}
+
+/// 快照里的一项状态。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotState {
+    pub anchor_id: String,
+    pub key: String,
+    pub value: Value,
+    /// 决定这个状态的事件的 `at`。
+    pub since: Timestamp,
+    pub event_id: String,
+    #[serde(rename = "type")]
+    pub event_type: String,
+    pub type_version: u32,
+    /// 决定这个状态的事件的公开字段（按 publicFields 投影；被抹除时为空），网站的标签模板用。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<Value>,
 }
 
 /// 状态类事件的规则：从此刻起该锚点处于某状态，直到同一 key 的下一条。
@@ -681,9 +729,17 @@ pub struct Universe {
     #[serde(default)]
     pub links: Vec<UniverseLink>,
     pub created_at: Timestamp,
+    /// 组织主人的归属证据（规则与空间相同，设计 9.2）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_evidence: Option<OwnerEvidence>,
+    /// 组合主人邀请加入的空间：被邀请空间的主人调用加入接口时不需要组合的管理权限。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub invitations: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<Timestamp>,
 }
 
-/// 每次修订都存完整的新状态。
+/// 每次修订都存完整的新状态。`_id` = `<组合编号>:<seq>`。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UniverseRevision {
@@ -693,6 +749,9 @@ pub struct UniverseRevision {
     pub actor: Actor,
     pub message: String,
     pub state: UniverseState,
+    /// 组合主人的副本（子集合冗余主人字段，设计 9.4）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<Owner>,
 }
 
 // ---------------------------------------------------------------------------
@@ -743,12 +802,209 @@ pub struct Job {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result_commit_id: Option<String>,
     pub created_at: Timestamp,
+    /// 发起者（处理服务写提交时用作提交的 sub 和服务编号）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor: Option<RequestActor>,
+    /// 发起任务的路径范围（`physical` 或 `plot:<编号>`），经地块路径只能查到本地块的任务。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<PathScope>,
+    /// 任务的非提交结果（任意 JSON），例如 `{needsAlignment, proposedTransform, errorCm}`、`{modelHash}`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<Value>,
+    /// 处理服务领取时写入。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<Timestamp>,
+    /// 完成或最终失败时写入。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finished_at: Option<Timestamp>,
+}
+
+/// 发起请求的调用者（任务、上传会话记录这一项）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestActor {
+    pub sub: String,
+    pub nyx_service_id: String,
 }
 
 /// 默认重试次数。
 pub const JOB_MAX_ATTEMPTS: u32 = 3;
 /// 任务租约时长。
 pub const JOB_LEASE_SECONDS: i64 = 180;
+
+// ---------------------------------------------------------------------------
+// 上传会话（设计 6.1）
+// ---------------------------------------------------------------------------
+
+/// 上传会话的状态（与处理服务 `store.py` 的 `UploadStatus` 相同）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UploadStatus {
+    /// 接收分片中。
+    Open,
+    /// 调用方已"完成上传"，`upload_verify` 任务排队中。
+    Complete,
+    /// 校验通过，已登记成资源（`assetHash`）；哈希已存在时创建即为此状态（`reused`）。
+    Done,
+    /// 校验失败，分片已删除。
+    Failed,
+    /// 超过 24 小时没完成，清理中。
+    Expired,
+}
+
+/// 上传时声明的文件格式（`declaredFormat`）。接口服务在收到第 0 片时按它核对文件头；
+/// 处理服务校验时再嗅探一遍，把实际格式写进 `format`（`glb | draco | obj | zip | png | jpeg |
+/// webp | ndjson | ndjson+gzip | text`）和 `contentType`。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UploadFormat {
+    Glb,
+    /// Draco 网格（也接受名称 `draco`）。
+    Drc,
+    Obj,
+    /// zip：里面一个 glb / drc / obj + 贴图（例如 Scaniverse 导出）。
+    Zip,
+    Png,
+    Jpeg,
+    Webp,
+    /// 每行一个 JSON 对象（ops 用途）。
+    Ndjson,
+    /// gzip 压缩的 NDJSON（ops 用途）。
+    Gzip,
+    /// UTF-8 纯文本（script 用途）。
+    Text,
+}
+
+impl UploadFormat {
+    pub const ALL: [UploadFormat; 10] = [
+        UploadFormat::Glb,
+        UploadFormat::Drc,
+        UploadFormat::Obj,
+        UploadFormat::Zip,
+        UploadFormat::Png,
+        UploadFormat::Jpeg,
+        UploadFormat::Webp,
+        UploadFormat::Ndjson,
+        UploadFormat::Gzip,
+        UploadFormat::Text,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            UploadFormat::Glb => "glb",
+            UploadFormat::Drc => "drc",
+            UploadFormat::Obj => "obj",
+            UploadFormat::Zip => "zip",
+            UploadFormat::Png => "png",
+            UploadFormat::Jpeg => "jpeg",
+            UploadFormat::Webp => "webp",
+            UploadFormat::Ndjson => "ndjson",
+            UploadFormat::Gzip => "gzip",
+            UploadFormat::Text => "text",
+        }
+    }
+
+    /// 按名称找格式；也接受处理服务的叫法 `draco`、`ndjson+gzip`。
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "draco" => Some(UploadFormat::Drc),
+            "ndjson+gzip" => Some(UploadFormat::Gzip),
+            _ => Self::ALL.into_iter().find(|format| format.name() == name),
+        }
+    }
+
+    /// 这种格式的 Content-Type（与处理服务 `processing/sniff.py` 的 `CONTENT_TYPES` 相同）。
+    pub fn content_type(self) -> &'static str {
+        match self {
+            UploadFormat::Glb => "model/gltf-binary",
+            UploadFormat::Drc => "application/x-draco",
+            UploadFormat::Obj => "model/obj",
+            UploadFormat::Zip => "application/zip",
+            UploadFormat::Png => "image/png",
+            UploadFormat::Jpeg => "image/jpeg",
+            UploadFormat::Webp => "image/webp",
+            UploadFormat::Ndjson => "application/x-ndjson",
+            UploadFormat::Gzip => "application/gzip",
+            UploadFormat::Text => "text/plain; charset=utf-8",
+        }
+    }
+}
+
+/// 已收到的一片。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UploadPart {
+    pub size: u64,
+    pub sha256: String,
+}
+
+/// 上传会话（`uploads` 集合）。`_id` 同时是 GridFS 数据块的 `files_id`；
+/// 第 n 片（从 0 开始）切成 256KiB 的数据块，序号 = `n × (partSize / 256KiB) + i`。
+///
+/// 处理服务（`handlers/upload_verify.py`）读 `{_id, spaceId, owner, purpose, size, sha256, status}`，
+/// 只处理 `status: complete` 的上传，回写 `status: done|failed`、`assetHash`、`format`、
+/// `contentType`、`verifiedAt`、`verifiedSha256`、`error`、`failedAt`。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Upload {
+    #[serde(rename = "_id")]
+    pub id: String,
+    pub space_id: String,
+    pub owner: Owner,
+    /// 创建时的路径范围：`physical` 或 `plot:<编号>`；之后的分片、完成、查询必须走同一路径。
+    pub scope: PathScope,
+    pub purpose: crate::scope::UploadPurpose,
+    /// 调用方声明的格式。
+    pub declared_format: UploadFormat,
+    pub status: UploadStatus,
+    /// 调用方声明的总字节数。
+    pub size: u64,
+    /// 调用方声明的整体 SHA-256（小写十六进制）。
+    pub sha256: String,
+    pub part_size: u64,
+    pub part_count: u64,
+    /// 已收到的分片，键是片号的十进制字符串。
+    #[serde(default)]
+    pub parts: BTreeMap<String, UploadPart>,
+    /// 第 0 片的文件头已核对通过。
+    #[serde(default)]
+    pub header_checked: bool,
+    pub actor: RequestActor,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<Timestamp>,
+    /// "完成上传"时创建的 `upload_verify` 任务。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_id: Option<String>,
+    /// 创建时哈希已存在，直接复用了已有资源，没有接收数据。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub reused: bool,
+    // ---- 以下由处理服务写入（复用时由接口服务写 assetHash） ----
+    /// 校验通过后的资源哈希（等于 `sha256`）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asset_hash: Option<String>,
+    /// 处理服务嗅探出的实际格式。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verified_at: Option<Timestamp>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verified_sha256: Option<String>,
+    /// 校验失败的原因。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failed_at: Option<Timestamp>,
+}
+
+/// GridFS 数据块大小，固定 256KiB（与处理服务 `assets.py` 的 `ASSET_CHUNK_SIZE` 相同）。
+pub const ASSET_CHUNK_SIZE: u64 = 256 * 1024;
+/// 分片大小上限。
+pub const MAX_UPLOAD_PART_SIZE: u64 = 32 * 1024 * 1024;
+/// 没完成的上传保留时间（处理服务按 `createdAt` 清理）。
+pub const UPLOAD_TTL_SECONDS: i64 = 24 * 3600;
 
 #[cfg(test)]
 mod tests {

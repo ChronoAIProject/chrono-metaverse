@@ -20,6 +20,9 @@ use super::blob_response::{
     asset_response, bytes_asset_response, cached_asset, chunk_response, parse_seq, parse_time,
     path_hash,
 };
+use super::public_access::{
+    public_space_grant, public_space_grant_during, public_space_grant_for_seq, UniverseParam,
+};
 use super::timeline::{timeline_page, TimelineQuery};
 use crate::error::{ApiError, ProblemDocument};
 use crate::public::headers::{cache_control, share_token, IMMUTABLE};
@@ -53,6 +56,7 @@ pub struct SnapshotQuery {
         ("space_id" = String, Path, description = "空间编号", example = "front-hall"),
         ("Authorization" = Option<String>, Header, description = "`Share <分享令牌>`；公开空间可省略"),
         SnapshotQuery,
+        UniverseParam,
     ),
     responses(
         (status = 200, description = "快照", body = SnapshotView),
@@ -65,20 +69,35 @@ pub async fn get_public_snapshot(
     State(state): State<AppState>,
     Path(space_id): Path<String>,
     Query(query): Query<SnapshotQuery>,
+    Query(universe): Query<UniverseParam>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
-    let grant = state
-        .authorizer
-        .public_space(&space_id, share_token(&headers))
-        .await?;
+    // 凭组合令牌（`?universe=`）时，成员资格要按版本或时刻判断，所以先解析参数。
+    let universe = universe.universe.as_deref();
+    let direct = match universe {
+        None => Some(
+            state
+                .authorizer
+                .public_space(&space_id, share_token(&headers))
+                .await?,
+        ),
+        Some(_) => None,
+    };
     let seq = match (
         parse_seq("seq", query.seq.as_deref())?,
         parse_time("at", query.at.as_deref())?,
     ) {
         (Some(seq), None) => seq,
         (None, Some(at)) => {
+            let grant = match direct {
+                Some(grant) => grant,
+                None => public_space_grant(&state, &space_id, &headers, universe, at).await?,
+            };
             let seq = state.repo.seq_at(&grant, at).await?;
-            let location = format!("/api/public/spaces/{space_id}/snapshot?seq={seq}");
+            let mut location = format!("/api/public/spaces/{space_id}/snapshot?seq={seq}");
+            if let Some(universe) = universe {
+                location.push_str(&format!("&universe={universe}"));
+            }
             let mut response = StatusCode::FOUND.into_response();
             let headers = response.headers_mut();
             if let Ok(value) = HeaderValue::from_str(&location) {
@@ -88,6 +107,10 @@ pub async fn get_public_snapshot(
             return Ok(response);
         }
         _ => return Err(ApiError::invalid("seq 和 at 必须且只能给出一个")),
+    };
+    let grant = match direct {
+        Some(grant) => grant,
+        None => public_space_grant_for_seq(&state, &space_id, &headers, universe, seq).await?,
     };
     let head = state
         .repo
@@ -141,6 +164,7 @@ pub async fn get_public_snapshot(
         ("space_id" = String, Path, description = "空间编号", example = "front-hall"),
         ("Authorization" = Option<String>, Header, description = "`Share <分享令牌>`；公开空间可省略"),
         TimelineQuery,
+        UniverseParam,
     ),
     responses(
         (status = 200, description = "一页提交", body = CommitSummaryPage),
@@ -152,12 +176,28 @@ pub async fn get_public_timeline(
     State(state): State<AppState>,
     Path(space_id): Path<String>,
     Query(query): Query<TimelineQuery>,
+    Query(universe): Query<UniverseParam>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
-    let grant = state
-        .authorizer
-        .public_space(&space_id, share_token(&headers))
-        .await?;
+    let grant = match universe.universe.as_deref() {
+        None => {
+            state
+                .authorizer
+                .public_space(&space_id, share_token(&headers))
+                .await?
+        }
+        // 凭组合令牌：查询的时间段里某个时刻是组合成员。
+        Some(universe) => {
+            let now = crate::now()?;
+            let from = parse_time("from", query.from.as_deref())?.unwrap_or(
+                metaverse_core::Timestamp::from_millis(0).map_err(|_| ApiError::internal())?,
+            );
+            let to = parse_time("to", query.to.as_deref())?
+                .unwrap_or(now)
+                .min(now);
+            public_space_grant_during(&state, &space_id, &headers, Some(universe), from, to).await?
+        }
+    };
     let (commits, next_after) = timeline_page(&state.repo, &grant, &query).await?;
     let items = public_summaries(&state.repo, &grant, commits).await?;
     let mut response = Json(CommitSummaryPage { items, next_after }).into_response();

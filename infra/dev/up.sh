@@ -11,6 +11,8 @@
 #   METAVERSE_DEV_DATABASE（chrono_metaverse_dev）
 #   MOCK_NYXID_PORT（8090）、METAVERSE_API_PORT（8080）、METAVERSE_WEB_PORT（5173）、WORKER_HEALTH_PORT（8082）
 #   METAVERSE_DEV_MONGO_PORT（27017，本脚本自己起 mongod 时用）、MONGOD_BIN（mongod 可执行文件）
+#   UPLOAD_MAX_SCAN_BYTES、UPLOAD_MAX_OPEN_PER_SPACE、UPLOAD_MAX_CONCURRENT_PARTS、JOB_MAX_PENDING_PER_SPACE
+#     （传给接口服务的上传和任务上限，其余 UPLOAD_* 用接口服务的默认值）
 set -euo pipefail
 
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
@@ -233,6 +235,10 @@ MONGODB_URI="$mongo_uri" \
   ALLOWED_NYX_SERVICE_IDS="dev-service" \
   BIND="127.0.0.1:$api_port" \
   PUBLIC_BASE_URL="http://127.0.0.1:$web_port" \
+  UPLOAD_MAX_SCAN_BYTES="${UPLOAD_MAX_SCAN_BYTES:-1073741824}" \
+  UPLOAD_MAX_OPEN_PER_SPACE="${UPLOAD_MAX_OPEN_PER_SPACE:-16}" \
+  UPLOAD_MAX_CONCURRENT_PARTS="${UPLOAD_MAX_CONCURRENT_PARTS:-4}" \
+  JOB_MAX_PENDING_PER_SPACE="${JOB_MAX_PENDING_PER_SPACE:-16}" \
   RUST_LOG="${RUST_LOG:-info}" \
   start api "$target/debug/metaverse-api"
 wait_http api "$api/api/healthz" 120

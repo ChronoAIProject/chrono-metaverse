@@ -13,6 +13,8 @@ publish = false
 # 依赖版本与 CMA（api/Cargo.toml）保持一致；只保留本项目用得到的部分。
 [workspace.dependencies]
 async-trait = "0.1"
+# 事件数据的 JSON Schema 校验（纯 Rust，正则用 regex 库，线性时间）。
+boon = "0.6"
 axum = { version = "0.8", features = ["macros"] }
 base64 = "0.22"
 flate2 = "1"

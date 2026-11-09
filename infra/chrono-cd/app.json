@@ -34,6 +34,15 @@
         "NYXID_JWT_AUDIENCE": "urn:chrono-metaverse:api",
         "ALLOWED_NYX_SERVICE_IDS": "pending-nyxid-registration",
         "METAVERSE_REQUIRE_PERMISSIONS": "false",
+        "UPLOAD_MAX_SCAN_BYTES": "1073741824",
+        "UPLOAD_MAX_MODEL_BYTES": "52428800",
+        "UPLOAD_MAX_TEXTURE_BYTES": "52428800",
+        "UPLOAD_MAX_OPS_BYTES": "268435456",
+        "UPLOAD_MAX_SCRIPT_BYTES": "4194304",
+        "UPLOAD_MAX_TEXTURE_SIDE": "8192",
+        "UPLOAD_MAX_OPEN_PER_SPACE": "16",
+        "UPLOAD_MAX_CONCURRENT_PARTS": "8",
+        "JOB_MAX_PENDING_PER_SPACE": "8",
         "RUST_LOG": "info"
       },
       "addon_env": {
