@@ -1,0 +1,46 @@
+{
+  "byteChecks": [
+    {
+      "offset": 0,
+      "value": 2
+    },
+    {
+      "offset": 1,
+      "value": 1
+    },
+    {
+      "offset": 65534,
+      "value": 205
+    },
+    {
+      "offset": 65535,
+      "value": 171
+    }
+  ],
+  "byteLength": 65536,
+  "canonicalBytesSha256": "3747426fcaff1abf434375bb9bc1ff947381178887a0fd6173148795ad1e4f6c",
+  "cells": [
+    {
+      "block": 258,
+      "index": 0,
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    {
+      "block": 43981,
+      "index": 32767,
+      "x": 31,
+      "y": 31,
+      "z": 31
+    }
+  ],
+  "compressedBase64": "eJztwAEBAAAEA7DTv4ksOgli6woAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD4bucAAoABfA==",
+  "description": "小端字节序：0x0102 写成 02 01，最后一格 0xABCD 写成 CD AB",
+  "fills": [],
+  "hash": "9a9c2ffe2c914b68a1077c912f2355af10cc7121f21214cc62a2e4cf30c251b2",
+  "isEmpty": false,
+  "kind": "chunk",
+  "name": "byte-order",
+  "nonZeroCount": 2
+}

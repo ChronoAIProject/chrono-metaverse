@@ -1,0 +1,31 @@
+{
+  "byteChecks": [
+    {
+      "offset": 0,
+      "value": 2
+    },
+    {
+      "offset": 1,
+      "value": 0
+    }
+  ],
+  "byteLength": 65536,
+  "canonicalBytesSha256": "ad931d4b4e5bcf32b55169f325f5d2b31d7b82a7366d4788be50bcc003c69606",
+  "cells": [
+    {
+      "block": 2,
+      "index": 0,
+      "x": 0,
+      "y": 0,
+      "z": 0
+    }
+  ],
+  "compressedBase64": "eJztwAENAAAAwqDP/qEtAgsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADqAC0AAw==",
+  "description": "原点一个方块，编号 2（方块表第一个编号）",
+  "fills": [],
+  "hash": "79d3ba5b33373bb6ae7dd3d787b1a96f8a9991c92fc8e238b96de6463e7c1a81",
+  "isEmpty": false,
+  "kind": "chunk",
+  "name": "single-origin",
+  "nonZeroCount": 1
+}

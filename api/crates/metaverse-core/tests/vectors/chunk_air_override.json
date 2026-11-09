@@ -1,0 +1,76 @@
+{
+  "byteChecks": [
+    {
+      "offset": 330,
+      "value": 1
+    },
+    {
+      "offset": 331,
+      "value": 0
+    },
+    {
+      "offset": 332,
+      "value": 1
+    },
+    {
+      "offset": 333,
+      "value": 0
+    },
+    {
+      "offset": 334,
+      "value": 9
+    },
+    {
+      "offset": 335,
+      "value": 0
+    },
+    {
+      "offset": 6602,
+      "value": 44
+    },
+    {
+      "offset": 6603,
+      "value": 1
+    }
+  ],
+  "byteLength": 65536,
+  "canonicalBytesSha256": "a2b002e590c352a9d0857c198ee03470a8c7e2ff81d14c148efb0b70c7512c4a",
+  "cells": [
+    {
+      "block": 1,
+      "index": 165,
+      "x": 5,
+      "y": 0,
+      "z": 5
+    },
+    {
+      "block": 1,
+      "index": 166,
+      "x": 6,
+      "y": 0,
+      "z": 5
+    },
+    {
+      "block": 9,
+      "index": 167,
+      "x": 7,
+      "y": 0,
+      "z": 5
+    },
+    {
+      "block": 300,
+      "index": 3301,
+      "x": 5,
+      "y": 3,
+      "z": 7
+    }
+  ],
+  "compressedBase64": "eJztwTERADAIBLBnrJf61wciOKYkCTtqvgAAAAAAAOz5FQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgEMNbDUAOQ==",
+  "description": "扩展层：1 表示空气覆盖（删掉下层方块），与普通方块混合",
+  "fills": [],
+  "hash": "9854b29e477058c3d5537e984197ec84fcc00647894317b4fb97b9bf74b157a7",
+  "isEmpty": false,
+  "kind": "chunk",
+  "name": "air-override",
+  "nonZeroCount": 4
+}

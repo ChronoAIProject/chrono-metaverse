@@ -1,0 +1,52 @@
+{
+  "description": "放样截面的 y 必须递增",
+  "errorMessage": "$.sections[1].y: 截面的 y 必须递增",
+  "errorPath": "$.sections[1].y",
+  "kind": "shape",
+  "name": "invalid-loft-order",
+  "shape": {
+    "sections": [
+      {
+        "outline": {
+          "points": [
+            [
+              0,
+              0
+            ],
+            [
+              1,
+              0
+            ],
+            [
+              0,
+              1
+            ]
+          ]
+        },
+        "y": 0.5
+      },
+      {
+        "outline": {
+          "points": [
+            [
+              0,
+              0
+            ],
+            [
+              1,
+              0
+            ],
+            [
+              0,
+              1
+            ]
+          ]
+        },
+        "y": 0.5
+      }
+    ],
+    "type": "loft"
+  },
+  "templates": {},
+  "valid": false
+}

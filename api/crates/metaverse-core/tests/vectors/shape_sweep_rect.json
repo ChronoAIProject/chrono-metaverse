@@ -1,0 +1,46 @@
+{
+  "bounds": {
+    "max": [
+      1.05,
+      0.05,
+      1.05
+    ],
+    "min": [
+      -0.05,
+      -0.05,
+      -0.05
+    ]
+  },
+  "description": "扫掠矩形截面：扩出 √(w²+h²)/2",
+  "kind": "shape",
+  "name": "sweep-rect",
+  "shape": {
+    "path": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        1
+      ]
+    ],
+    "section": {
+      "rect": [
+        0.06,
+        0.08
+      ]
+    },
+    "type": "sweep"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "valid": true
+}

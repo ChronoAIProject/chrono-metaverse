@@ -1,0 +1,28 @@
+{
+  "bounds": {
+    "max": [
+      1.0,
+      1.0,
+      2.0
+    ],
+    "min": [
+      -1.0,
+      0.0,
+      -2.0
+    ]
+  },
+  "description": "box：原点在底面中心，向 +y 延伸",
+  "kind": "shape",
+  "name": "box",
+  "shape": {
+    "size": [
+      2,
+      1,
+      4
+    ],
+    "type": "box"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "valid": true
+}

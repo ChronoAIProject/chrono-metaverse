@@ -1,0 +1,45 @@
+{
+  "bounds": {
+    "max": [
+      1.6,
+      0.75,
+      0.8
+    ],
+    "min": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "description": "拉伸：轮廓 [x, z] 在 xz 平面，沿 +y",
+  "kind": "shape",
+  "name": "extrude-polygon",
+  "shape": {
+    "height": 0.75,
+    "outline": {
+      "closed": true,
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          1.6,
+          0
+        ],
+        [
+          1.6,
+          0.8
+        ],
+        [
+          0,
+          0.8
+        ]
+      ]
+    },
+    "type": "extrude"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "valid": true
+}

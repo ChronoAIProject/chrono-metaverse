@@ -1,0 +1,8 @@
+{
+  "canonical": "{\"label\":\"前 台 \",\"size\":[2.4,1.1,0.6]}",
+  "description": "去掉所有格式化空白，但字符串里的空格保留",
+  "input": "{\n  \"label\" : \"前 台 \",\n  \"size\" : [ 2.4 , 1.1 , 0.6 ]\n}\n",
+  "kind": "canonical",
+  "name": "whitespace",
+  "sha256": "4a749390eeae01bcfa1993d88a9e23295fd5d7cb72166330374009ad7105a71b"
+}

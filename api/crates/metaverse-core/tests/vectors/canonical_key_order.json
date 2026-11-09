@@ -1,0 +1,8 @@
+{
+  "canonical": "{\"a\":{\"b\":null,\"y\":[3,1,2]},\"m\":true,\"z\":1}",
+  "description": "嵌套对象的键按码点排序，数组保持原顺序",
+  "input": "{\"z\": 1, \"a\": {\"y\": [3, 1, 2], \"b\": null}, \"m\": true}",
+  "kind": "canonical",
+  "name": "key-order",
+  "sha256": "ce71d49068dfa83bce4763a8ed11dc872b662b3011899159098857f264aa322c"
+}

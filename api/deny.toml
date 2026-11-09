@@ -1,0 +1,49 @@
+# 依赖审查（cargo deny），照搬 CMA 的 api/deny.toml，只保留本工作区实际用到的例外。
+# CI 里与 CMA 相同：cargo deny --locked --all-features check advisories licenses bans sources
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+]
+# 允许列表比当前依赖图宽一些，新增依赖时不会因为已接受的许可证而失败。
+unused-allowed-license = "allow"
+# 工作区的包都是 publish = false，没有许可证字段。
+private = { ignore = true }
+
+# 与 CMA 相同的例外：tiny-keccak 是 CC0-1.0（公有领域声明，比允许列表里的都宽松），
+# 只经由过程宏的构建期依赖进入：
+#   mongodb -> mongodb-internal-macros -> macro_magic -> const-random -> tiny-keccak
+# 不会链接进发布的二进制。只对这一个包开例外。
+[[licenses.exceptions]]
+name = "tiny-keccak"
+allow = ["CC0-1.0"]
+
+# 与 CMA 相同的例外：webpki-roots 是 Mozilla 的根证书数据，许可证是 CDLA-Permissive-2.0。
+# 它会链接进二进制，是出站 TLS 的信任根，经由两条路径进来：
+#   mongodb -> webpki-roots
+#   reqwest -> hyper-rustls -> webpki-roots
+# 只对这一个包开例外，下一个打包数据的依赖仍然需要人看。
+[[licenses.exceptions]]
+name = "webpki-roots"
+allow = ["CDLA-Permissive-2.0"]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# 工作区内的路径依赖没有版本号，否则会被当作通配。
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"

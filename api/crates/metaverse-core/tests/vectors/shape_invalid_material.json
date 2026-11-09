@@ -1,0 +1,25 @@
+{
+  "description": "材质只能二选一：color 或 texture",
+  "errorMessage": "$.material: 纯色材质不能带 uv 或 tint",
+  "errorPath": "$.material",
+  "kind": "shape",
+  "name": "invalid-material",
+  "shape": {
+    "material": {
+      "color": [
+        1,
+        2,
+        3
+      ],
+      "uv": "box"
+    },
+    "size": [
+      1,
+      1,
+      1
+    ],
+    "type": "box"
+  },
+  "templates": {},
+  "valid": false
+}

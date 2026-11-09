@@ -1,0 +1,37 @@
+{
+  "bounds": {
+    "max": [
+      2.0,
+      3.0,
+      0.05
+    ],
+    "min": [
+      -2.0,
+      0.0,
+      -0.05
+    ]
+  },
+  "description": "贴图材质：texture 是资源哈希，uv 必填",
+  "kind": "shape",
+  "name": "textured",
+  "shape": {
+    "material": {
+      "texture": "9f2c7d4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d",
+      "tint": [
+        255,
+        250,
+        240
+      ],
+      "uv": "planar"
+    },
+    "size": [
+      4,
+      3,
+      0.1
+    ],
+    "type": "box"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "valid": true
+}

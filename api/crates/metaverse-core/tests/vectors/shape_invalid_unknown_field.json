@@ -1,0 +1,15 @@
+{
+  "description": "拼错的字段（radius_top）必须拒绝",
+  "errorMessage": "unknown field `radius_top`, expected one of `radius`, `height`, `radiusTop`, `segments`, `fillet`",
+  "errorPath": null,
+  "kind": "shape",
+  "name": "invalid-unknown-field",
+  "shape": {
+    "height": 1,
+    "radius": 1,
+    "radius_top": 0.5,
+    "type": "cylinder"
+  },
+  "templates": {},
+  "valid": false
+}

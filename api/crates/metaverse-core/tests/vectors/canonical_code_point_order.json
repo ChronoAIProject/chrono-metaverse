@@ -1,0 +1,8 @@
+{
+  "canonical": "{\"\":7,\"A\":4,\"a\":3,\"aa\":6,\"é\":5,\"｡\":2,\"😀\":1}",
+  "description": "按 Unicode 码点排序而不是 UTF-16 码元：U+FF61 排在 U+1F600 前面（JavaScript 默认排序会反过来）",
+  "input": "{\"😀\": 1, \"｡\": 2, \"a\": 3, \"A\": 4, \"é\": 5, \"aa\": 6, \"\": 7}",
+  "kind": "canonical",
+  "name": "code-point-order",
+  "sha256": "59a2bf377b56a74a29a62f89729a0d099a6f1403aa554b7acca7aafff4a0cb51"
+}

@@ -1,0 +1,33 @@
+{
+  "description": "轮廓必须逆时针排列",
+  "errorMessage": "$.outline.points: 轮廓的点必须逆时针排列（有向面积为正）",
+  "errorPath": "$.outline.points",
+  "kind": "shape",
+  "name": "invalid-clockwise",
+  "shape": {
+    "height": 1,
+    "outline": {
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          1,
+          0
+        ]
+      ]
+    },
+    "type": "extrude"
+  },
+  "templates": {},
+  "valid": false
+}

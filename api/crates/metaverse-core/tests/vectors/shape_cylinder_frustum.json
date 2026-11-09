@@ -1,0 +1,27 @@
+{
+  "bounds": {
+    "max": [
+      0.5,
+      1.0,
+      0.5
+    ],
+    "min": [
+      -0.5,
+      0.0,
+      -0.5
+    ]
+  },
+  "description": "圆台：半径取 max(radius, radiusTop)",
+  "kind": "shape",
+  "name": "cylinder-frustum",
+  "shape": {
+    "fillet": 0.01,
+    "height": 1,
+    "radius": 0.2,
+    "radiusTop": 0.5,
+    "type": "cylinder"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "valid": true
+}

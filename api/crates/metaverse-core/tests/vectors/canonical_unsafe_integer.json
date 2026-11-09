@@ -1,0 +1,7 @@
+{
+  "description": "超出 ±(2^53 − 1) 的整数必须拒绝（JavaScript 无法精确表示）",
+  "error": "unsafe_integer",
+  "input": "{\"n\": 9007199254740992}",
+  "kind": "canonical",
+  "name": "unsafe-integer"
+}

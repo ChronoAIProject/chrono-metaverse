@@ -1,0 +1,81 @@
+{
+  "bounds": {
+    "max": [
+      2.25,
+      0.5,
+      0.3289802053291928
+    ],
+    "min": [
+      1.75,
+      -0.058623909579141945,
+      -0.25
+    ]
+  },
+  "description": "组合嵌套：子形状先用自己的变换，组合再整体变换",
+  "kind": "shape",
+  "name": "group-nested",
+  "shape": {
+    "children": [
+      {
+        "size": [
+          0.5,
+          0.05,
+          0.5
+        ],
+        "transform": {
+          "position": [
+            0,
+            0.45,
+            0
+          ]
+        },
+        "type": "box"
+      },
+      {
+        "children": [
+          {
+            "height": 0.45,
+            "radius": 0.02,
+            "transform": {
+              "position": [
+                0.2,
+                0,
+                0.2
+              ]
+            },
+            "type": "cylinder"
+          },
+          {
+            "height": 0.45,
+            "radius": 0.02,
+            "transform": {
+              "pitch": -5,
+              "position": [
+                -0.2,
+                0,
+                0.2
+              ]
+            },
+            "type": "cylinder"
+          }
+        ],
+        "transform": {
+          "roll": 15
+        },
+        "type": "group"
+      }
+    ],
+    "transform": {
+      "position": [
+        2,
+        0,
+        0
+      ],
+      "yaw": 90
+    },
+    "type": "group"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "valid": true
+}

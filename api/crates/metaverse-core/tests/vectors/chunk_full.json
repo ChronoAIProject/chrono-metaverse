@@ -1,0 +1,28 @@
+{
+  "byteChecks": [],
+  "byteLength": 65536,
+  "canonicalBytesSha256": "71189f7fb6aed638640078fba3a35fda6c39c8962e74dcc75935aac948da9063",
+  "cells": [],
+  "compressedBase64": "eJztwIEAAAAAgCB/6hepAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgBp3lw7y",
+  "description": "整块填满 65535（u16 最大值）",
+  "fills": [
+    {
+      "block": 65535,
+      "max": [
+        32,
+        32,
+        32
+      ],
+      "min": [
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "hash": "28ddc6f82be8f9ea9d9b74edd8d69129791ed31ef9a245ece1aec8b548b31534",
+  "isEmpty": false,
+  "kind": "chunk",
+  "name": "full",
+  "nonZeroCount": 32768
+}

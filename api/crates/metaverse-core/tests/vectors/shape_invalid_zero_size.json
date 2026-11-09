@@ -1,0 +1,17 @@
+{
+  "description": "尺寸必须大于 0",
+  "errorMessage": "$.size[1]: 必须大于 0",
+  "errorPath": "$.size[1]",
+  "kind": "shape",
+  "name": "invalid-zero-size",
+  "shape": {
+    "size": [
+      1,
+      0,
+      1
+    ],
+    "type": "box"
+  },
+  "templates": {},
+  "valid": false
+}

@@ -1,0 +1,13 @@
+{
+  "canonical": "{\"anchorId\":\"counter-01\",\"bounds\":{\"max\":[4.2,1.1,1.8],\"min\":[1.8,0,1.2]},\"entityId\":\"counter-01\",\"fit\":{\"coverage3cm\":0.81,\"meanCm\":1.8,\"p90Cm\":4.2},\"kind\":\"object\",\"label\":\"前台\",\"layer\":\"rebuilt\",\"props\":{},\"shape\":{\"fillet\":0.02,\"material\":{\"color\":[182,140,96]},\"size\":[2.4,1.1,0.6],\"transform\":{\"position\":[3,0,1.5]},\"type\":\"box\"}}",
+  "description": "SHAPES 3 的物件记录示例；record.hash 是 records._id 的算法：{body, kind, spaceId} 规范化后的 sha256",
+  "input": "{ \"entityId\": \"counter-01\", \"layer\": \"rebuilt\", \"kind\": \"object\",\n  \"label\": \"前台\", \"anchorId\": \"counter-01\",\n  \"shape\": { \"type\": \"box\", \"size\": [2.4, 1.1, 0.6], \"fillet\": 0.02,\n             \"transform\": { \"position\": [3, 0, 1.5] },\n             \"material\": { \"color\": [182, 140, 96] } },\n  \"bounds\": { \"min\": [1.8, 0, 1.2], \"max\": [4.2, 1.1, 1.8] },\n  \"fit\": { \"meanCm\": 1.8, \"p90Cm\": 4.2, \"coverage3cm\": 0.81 },\n  \"props\": { } }",
+  "kind": "canonical",
+  "name": "entity-record",
+  "record": {
+    "hash": "1a3f585bcab334d42862b833e951c47c92ea90b7d1ed4ba6bdbf66a012947f11",
+    "kind": "entity",
+    "spaceId": "front-hall"
+  },
+  "sha256": "4ee5deb57153dcf2b21a386d406548f0b0b951ce044deea8116247bdbed42584"
+}

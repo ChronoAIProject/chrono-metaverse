@@ -1,0 +1,36 @@
+{
+  "bounds": {
+    "max": [
+      4.0,
+      0.5,
+      1.5
+    ],
+    "min": [
+      2.0,
+      0.0,
+      0.5
+    ]
+  },
+  "description": "偏航 90°（精确的 sin/cos）后平移：x' = z，z' = −x",
+  "kind": "shape",
+  "name": "box-yaw90-translate",
+  "shape": {
+    "size": [
+      1,
+      0.5,
+      2
+    ],
+    "transform": {
+      "position": [
+        3,
+        0,
+        1
+      ],
+      "yaw": 90
+    },
+    "type": "box"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "valid": true
+}
