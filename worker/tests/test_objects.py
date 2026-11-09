@@ -218,9 +218,24 @@ def test_fit_sofa_finds_seat_back_and_arms():
     o = visible_boxes([base, seat, back, *arms])
     g = ft.fit_sofa(o)
     names = [c["_part"]["name"] for c in g["children"]]
-    assert {"base", "seat", "back", "arm-left", "arm-right"} <= set(names)
-    seat_fit = next(c for c in g["children"] if c["_part"]["name"] == "seat")
-    assert seat_fit["transform"]["position"][1] + seat_fit["size"][1] == pytest.approx(0.42, abs=0.03)
+    assert {"base", "back-1", "back-2", "arm-left", "arm-right"} <= set(names)
+    # 坐垫按长度分成两个圆角盒，座高 0.42
+    seats = [c for c in g["children"] if c["_part"]["name"].startswith("seat-")]
+    assert len(seats) == 2
+    for s in seats:
+        assert s["type"] == "box" and s["fillet"] > 0
+        assert s["transform"]["position"][1] + s["size"][1] == pytest.approx(0.42, abs=0.03)
+    # 靠背垫、扶手是侧面轮廓的挤出，轮廓带圆弧（靠背顶、扶手前上角），挤出两端倒圆边
+    for name in ("back-1", "back-2", "arm-left", "arm-right"):
+        c = next(c for c in g["children"] if c["_part"]["name"] == name)
+        assert c["type"] == "extrude" and c["outline"].get("arcs") and c["fillet"] > 0
+    arm = next(c for c in g["children"] if c["_part"]["name"] == "arm-left")
+    assert sh.shape_bounds(arm)["max"][1] == pytest.approx(0.68, abs=0.04)
+    # 同一种面料：一个材质组
+    assert {c["_part"].get("group") for c in g["children"]} == {"upholstery"}
+    for c in g["children"]:
+        c.pop("_part")
+    sh.validate_shape(g)
 
 
 # ---------------------------------------------------------------------------- 只看到两个面的高柜
