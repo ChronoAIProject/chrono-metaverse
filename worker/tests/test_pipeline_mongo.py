@@ -27,8 +27,9 @@ from metaverse_worker.assets import find_asset, put_asset, read_asset, register_
 from metaverse_worker.chunk import decompress
 from metaverse_worker.handlers import scan as scan_handlers
 from metaverse_worker.jobs.cleanup import cleanup_assets
-from metaverse_worker.jobs.isolate import IsolatedCancelled
+from metaverse_worker.jobs.isolate import IsolatedCancelled, IsolatedTimeout
 from metaverse_worker.jobs.lease import claim
+from metaverse_worker.processing import tasks
 from metaverse_worker.processing.align import column_major
 from metaverse_worker.processing.glb import read_glb_json
 from metaverse_worker.processing.scan import ScanMesh, rotation_y
@@ -158,6 +159,88 @@ def test_upload_verify_resumes_after_crash(runner, store):
     # 已经 done 的上传再来一个校验任务：直接完成
     doc = run_job(runner, store, "upload_verify", {"uploadId": uid})
     assert doc["status"] == "done" and doc["result"]["assetHash"] == sha
+
+
+def test_upload_verify_timeout_fails_upload(runner, store, monkeypatch):
+    """嗅探子进程超时（不可重试）：任务失败的同时上传也标记失败、删数据块，不再占着进行中的配额。"""
+
+    def too_slow(**_kwargs):
+        raise IsolatedTimeout("子进程超时（1800 秒）", kind="timeout")
+
+    monkeypatch.setattr(tasks, "sniff_task", too_slow)
+    uid = make_upload(store, b"#!/bin/sh\necho slow\n", "script")
+    doc = run_job(runner, store, "upload_verify", {"uploadId": uid})
+    assert doc["status"] == "failed" and doc["attempt"] == 1
+    upload = store.uploads.find_one({"_id": uid})
+    assert upload["status"] == "failed" and "校验任务失败" in upload["error"] and "超时" in upload["error"]
+    assert store.col(C.ASSET_CHUNKS).count_documents({"files_id": uid}) == 0
+
+
+def test_upload_verify_retries_then_fails_upload(runner, store, monkeypatch):
+    """可重试的错误：重试期间上传保持 complete；重试次数用完后上传标记失败。"""
+
+    def flaky(**_kwargs):
+        raise ConnectionError("数据库抖动")
+
+    monkeypatch.setattr(tasks, "sniff_task", flaky)
+    uid = make_upload(store, b"#!/bin/sh\necho flaky\n", "script")
+    jid = make_job(store, "upload_verify", {"uploadId": uid})
+    for attempt in (1, 2):
+        assert runner.run_once() is True
+        assert job(store, jid)["status"] == "queued" and job(store, jid)["attempt"] == attempt
+        assert store.uploads.find_one({"_id": uid})["status"] == "complete"
+    assert runner.run_once() is True
+    assert job(store, jid)["status"] == "failed"
+    upload = store.uploads.find_one({"_id": uid})
+    assert upload["status"] == "failed" and "数据库抖动" in upload["error"]
+    assert store.col(C.ASSET_CHUNKS).count_documents({"files_id": uid}) == 0
+
+
+def test_stuck_complete_uploads_are_settled_by_housekeeping(runner, store):
+    """主循环没来得及处理的（重试次数用完被回收、任务记录丢了）由定期清理兜底。"""
+    old = format_ts(store.clock() - 48 * 3600 * 1000)
+
+    def stuck_upload(content: bytes, job_status: str | None, **extra) -> str:
+        uid = make_upload(store, content, "script")
+        jid = None
+        if job_status is not None:
+            jid = make_job(store, "upload_verify", {"uploadId": uid})
+            store.jobs.update_one({"_id": jid}, {"$set": {"status": job_status, "lastError": "崩溃了"}})
+        store.uploads.update_one({"_id": uid}, {"$set": {"jobId": jid, "completedAt": old, **extra}})
+        return uid
+
+    failed = stuck_upload(b"echo 1\n", "failed")
+    queued = stuck_upload(b"echo 2\n", "queued")
+    orphan = stuck_upload(b"echo 3\n", None)
+    fresh = stuck_upload(b"echo 4\n", None, completedAt=format_ts(store.clock()))
+    # 上次已核对并登记成资源、还没改上传状态就失败了：补做收尾，不删数据
+    content = b"echo registered\n"
+    sha = hashlib.sha256(content).hexdigest()
+    registered = stuck_upload(content, "failed", verifiedSha256=sha)
+    register_upload(
+        store, registered, sha, len(content), content_type="text/plain", kind="script", space_id=SPACE
+    )
+    # 重试次数用完、租约已过期：housekeeping 先回收任务，同一轮里处理它的上传
+    exhausted = stuck_upload(b"echo 5\n", "running")
+    store.jobs.update_one(
+        {"_id": store.uploads.find_one({"_id": exhausted})["jobId"]},
+        {"$set": {"attempt": 3, "leaseUntil": old, "leaseOwner": "gone"}},
+    )
+
+    cleaned = runner.housekeeping()
+    assert cleaned["stuckUploads"] == 4 and cleaned["exhaustedJobs"] == 1
+    status = {
+        uid: store.uploads.find_one({"_id": uid}) for uid in (failed, queued, orphan, fresh, registered)
+    }
+    assert status[failed]["status"] == "failed" and "崩溃了" in status[failed]["error"]
+    assert status[orphan]["status"] == "failed" and "不存在" in status[orphan]["error"]
+    assert status[queued]["status"] == "complete" and status[fresh]["status"] == "complete"
+    assert status[registered]["status"] == "done" and status[registered]["assetHash"] == sha
+    assert read_asset(store, sha) == content
+    assert store.uploads.find_one({"_id": exhausted})["status"] == "failed"
+    for uid in (failed, orphan, exhausted):
+        assert store.col(C.ASSET_CHUNKS).count_documents({"files_id": uid}) == 0
+    assert runner.housekeeping()["stuckUploads"] == 0
 
 
 # ---------------------------------------------------------------------------- scan_import

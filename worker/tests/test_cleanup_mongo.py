@@ -147,5 +147,12 @@ def test_assets_of_expired_drafts_are_released_in_the_same_round(store):
         store, "abandoned", expires_in_ms=-1, ops_refs=[{"assetHash": released, "after": 0, "count": 1}]
     )
     result = run_cleanup(store, upload_ttl_hours=24, asset_grace_days=7)
-    assert result == {"uploads": 0, "drafts": 1, "previews": 0, "draftChunks": 0, "assets": 1}
+    assert result == {
+        "stuckUploads": 0,
+        "uploads": 0,
+        "drafts": 1,
+        "previews": 0,
+        "draftChunks": 0,
+        "assets": 1,
+    }
     assert find_asset(store, kept) is not None and find_asset(store, released) is None

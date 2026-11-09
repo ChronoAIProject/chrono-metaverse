@@ -4,7 +4,7 @@ chrono-metaverse 的后台处理服务（设计第 6 节）：从 MongoDB 的 `j
 网页用模型、结构 + 物体重建、体素化、物件模型导出，把结果写成时间线上的提交；同时定期清理过期上传、
 过期草稿（连同草稿区块、预览令牌）和没人引用的资源。
 
-- 只有 `store.py`、`assets.py`、`jobs/`、`handlers/` 碰数据库；`processing/` 是纯计算，在子进程里运行；
+- 只有 `store.py`、`assets.py`、`uploads.py`、`jobs/`、`handlers/` 碰数据库；`processing/` 是纯计算，在子进程里运行；
 - 每个任务的重计算放进子进程（`resource.setrlimit` 内存上限 + 超时，可随时取消）；
 - 写回按设计 6.4：提交带 `jobId`，同一事务里按 `{_id, attempt, leaseOwner, status: running}` 把任务标记为完成。
 
@@ -37,7 +37,8 @@ export MONGODB_DATABASE=metaverse
  "timestamp": "2026-11-09T08:00:00.000Z", "kinds": ["model_import", "rebuild", "scan_import", "upload_verify", "voxelize"],
  "currentJob": {"jobId": "…", "kind": "scan_import", "spaceId": "front-hall", "since": "…"},
  "jobs": {"done": 3, "failed": 0},
- "lastCleanup": {"at": "…", "uploads": 0, "drafts": 0, "previews": 0, "draftChunks": 0, "assets": 0, "exhaustedJobs": 0}}
+ "lastCleanup": {"at": "…", "exhaustedJobs": 0, "stuckUploads": 0, "uploads": 0, "drafts": 0, "previews": 0,
+                 "draftChunks": 0, "assets": 0}}
 ```
 
 ## 环境变量
@@ -102,6 +103,16 @@ export MONGODB_DATABASE=metaverse
    kind: 用途, spaceId, uploadId, format}`）。文件名冲突就删本次数据块、复用已有资源；
 5. 上传标记 `done` 并写 `assetHash`。
 
+**任务因为别的原因最终失败**（嗅探子进程超时或内存超限、子进程反复崩溃、数据库抖动导致重试次数用完）时，
+上传不能一直停在 `complete`：接口服务把 `open`、`complete` 都算作进行中的上传（每个空间的上限、存储上限的
+预估），资源可用性也把 `complete` 当成"还在校验"。所以任务标记为 `failed` 以后，主循环马上按
+`{_id: uploadId, status: complete}` 条件收尾（`uploads.settle_upload`）：
+
+- 内容已经核对通过（`verifiedSha256` = 声明的哈希）并且这个哈希的资源已经存在 → 补做第 5 步，标记 `done`；
+- 否则 → 标记 `failed`，`error = "校验任务失败：<原因>"`，删掉数据块。
+
+主循环来不及做的（重试次数用完由 `reap_exhausted` 回收、进程在标记失败后退出）由定期清理兜底，见下。
+
 `result = {assetHash, reused, bytes, format, contentType}`，`format` 是 `glb | draco | obj | zip | png | jpeg |
 webp | ndjson | ndjson+gzip | text`。
 
@@ -110,7 +121,7 @@ webp | ndjson | ndjson+gzip | text`。
 ```
 uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceId, owner: {kind, id},
           purpose: scan|model|texture|ops|script, size: 声明的总字节数, sha256: 声明的整体哈希, partSize,
-          status: open|complete|done|failed|expired, createdAt,
+          status: open|complete|done|failed|expired, createdAt, completedAt?, jobId?: upload_verify 任务编号,
           // 处理服务写入：
           assetHash?, format?, contentType?, verifiedAt?, verifiedSha256?, error?, failedAt? }
 ```
@@ -244,19 +255,22 @@ result.metrics  # 任意 JSON，原样放进 result.objects
 
 后台线程每 `WORKER_CLEANUP_INTERVAL_SECONDS` 秒一次（设计 6.1），按顺序：
 
-1. **上传会话**：超过 `WORKER_UPLOAD_TTL_HOURS`（24 小时）仍 `open` 的上传先改成 `expired` 再删数据块和会话
-   （`failed` / `expired` 的同样删除）；
+0. **重试次数用完的任务**：租约过期且重试次数用完的任务标记失败；
+1. **上传会话**：先兜底处理停在 `complete`、但校验任务（上传的 `jobId`）已经 `failed` 的上传（任务记录
+   不存在、完成上传又超过 24 小时的也算），收尾规则同 `upload_verify` 一节；然后超过
+   `WORKER_UPLOAD_TTL_HOURS`（24 小时）仍 `open` 的上传先改成 `expired` 再删数据块和会话（`failed` /
+   `expired` 的同样删除）；
 2. **草稿、草稿区块、预览令牌**（设计 5.6、13.2）：接口服务把 `drafts`、`draftChunks`、`previews` 的
    `expiresAt` 写成 RFC 3339 字符串、不建 TTL 索引，由处理服务按 `expiresAt < 现在`（字符串比较）删除：
    过期的草稿（`open` 和已发布的都删；草稿 30 天过期）先删草稿本身，再删它的预览令牌和草稿区块
    （`{draftId, spaceId}`）；预览令牌（最长 7 天）和草稿区块再各自按自己的 `expiresAt` 扫一遍。每轮最多
    200 个草稿；
 3. **没人引用的资源**：上传或最近复用超过 `WORKER_ASSET_GRACE_DAYS`（7 天）、没有被引用的资源，先删 `files`
-   文档再删数据块（草稿在第 2 步先删，过期草稿引用的资源本轮就不再算被引用）；
-4. 租约过期且重试次数用完的任务标记失败。
+   文档再删数据块（草稿在第 2 步先删，过期草稿引用的资源本轮就不再算被引用）。
 
 处理服务启动时也幂等地建 `drafts`、`draftChunks`、`previews` 的 `expiresAt` 索引（名字和定义与接口服务相同）。
-健康检查的 `lastCleanup` 带每一项删了多少：`{at, uploads, drafts, previews, draftChunks, assets, exhaustedJobs}`。
+健康检查的 `lastCleanup` 带每一项处理了多少：`{at, exhaustedJobs, stuckUploads, uploads, drafts, previews,
+draftChunks, assets}`。
 
 资源"被引用"指出现在下面任何一处：
 

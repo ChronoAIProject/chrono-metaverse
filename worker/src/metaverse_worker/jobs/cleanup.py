@@ -2,7 +2,8 @@
 
 1. **没完成的上传**：创建超过 24 小时仍是 `open` 的上传会话。先按条件把状态改成 `expired`（之后接口服务
    的"完成上传"按 `status: open` 条件更新就会失败，不会和清理赛跑），再删除 `files_id` = 上传编号的
-   GridFS 数据块，最后删除上传会话。校验失败（`failed`）超过 24 小时的会话同样删除。
+   GridFS 数据块，最后删除上传会话。校验失败（`failed`）超过 24 小时的会话同样删除。在这之前先兜底处理
+   校验任务已经失败、上传却还停在 `complete` 的（`uploads.settle_stuck_uploads`），免得它一直占着配额。
 2. **没人引用的资源**：上传（或最近一次被复用）已超过 7 天、仍没有被任何提交、草稿（`opsRefs.assetHash`、
    `assets`）、物件记录、方块表、资源引用表或未结束的任务引用的资源：先删 `files` 文档（不再可见），
    再删数据块。
@@ -24,6 +25,7 @@ from typing import Any
 from ..assets import delete_file_chunks
 from ..store import C, JobStatus, Store, UploadStatus
 from ..timeutil import format_ts
+from ..uploads import settle_stuck_uploads
 
 log = logging.getLogger(__name__)
 
@@ -170,6 +172,12 @@ def cleanup_drafts(store: Store) -> dict[str, int]:
 
 def run_cleanup(store: Store, *, upload_ttl_hours: float, asset_grace_days: float) -> dict[str, int]:
     # 先清草稿：过期草稿引用的资源在同一轮里就不再算被引用（仍要过资源自己的宽限期）。
+    stuck = settle_stuck_uploads(store, upload_ttl_hours)
     uploads = cleanup_uploads(store, upload_ttl_hours)
     drafts = cleanup_drafts(store)
-    return {"uploads": uploads, **drafts, "assets": cleanup_assets(store, asset_grace_days)}
+    return {
+        "stuckUploads": stuck,
+        "uploads": uploads,
+        **drafts,
+        "assets": cleanup_assets(store, asset_grace_days),
+    }
