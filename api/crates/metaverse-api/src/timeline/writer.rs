@@ -12,7 +12,7 @@ use metaverse_core::model::{Actor, ActorKind, IdChange, KEYFRAME_INTERVAL};
 use metaverse_core::record::{record_hash, AnchorBody, AnchorKind, EntityBody, RecordKind};
 use metaverse_core::replay::StateManifest;
 use metaverse_core::scope::PathScope;
-use metaverse_core::{is_sha256_hex, Timestamp};
+use metaverse_core::Timestamp;
 use serde_json::Value;
 
 use super::palette::{builtin_palette, palette_value};
@@ -119,39 +119,21 @@ pub fn entity_assets(body: &EntityBody, into: &mut BTreeSet<String>) {
     into.extend(roles.into_iter().map(|(hash, _)| hash));
 }
 
-/// 一条物件里引用的资源和它们的用途：`assetHash` 是物件模型；`textures` 和形状材质里的
-/// `texture` 是贴图。
+/// 一条物件里引用的资源和它们的用途：`assetHash` 是物件模型；`textures` 和形状（含全部子形状）
+/// 材质里的 `texture`、`normalMap`、`roughnessMap` 是贴图（SHAPES 2"资源引用"）。
+///
+/// 草稿追加时按这里的结果检查用途和归属（`Repo::unusable_assets`）、过清理的栅栏
+/// （`Repo::touch_assets`），发布时登记进提交的 `assetRefs`，所以新加引用贴图的字段只需要改
+/// [`metaverse_core::shape::Material::texture_refs`]。
 pub fn entity_asset_roles(body: &EntityBody, into: &mut BTreeSet<(String, AssetRole)>) {
     if let Some(hash) = &body.asset_hash {
         into.insert((hash.clone(), AssetRole::Model));
     }
-    let mut textures = BTreeSet::new();
-    for hash in body.textures.iter().flatten() {
-        textures.insert(hash.clone());
-    }
+    let mut textures: BTreeSet<String> = body.textures.iter().flatten().cloned().collect();
     if let Some(shape) = &body.shape {
-        if let Ok(value) = serde_json::to_value(shape) {
-            collect_textures(&value, &mut textures);
-        }
+        textures.extend(shape.texture_refs());
     }
     into.extend(textures.into_iter().map(|hash| (hash, AssetRole::Texture)));
-}
-
-fn collect_textures(value: &Value, into: &mut BTreeSet<String>) {
-    match value {
-        Value::Object(map) => {
-            if let Some(Value::Object(material)) = map.get("material") {
-                if let Some(Value::String(hash)) = material.get("texture") {
-                    if is_sha256_hex(hash) {
-                        into.insert(hash.clone());
-                    }
-                }
-            }
-            map.values().for_each(|item| collect_textures(item, into));
-        }
-        Value::Array(items) => items.iter().for_each(|item| collect_textures(item, into)),
-        _ => {}
-    }
 }
 
 /// 记录的存储形式与内容哈希。
@@ -275,6 +257,38 @@ mod tests {
         assert!(roles.contains(&("b".repeat(64), AssetRole::Texture)));
         assert!(roles.contains(&("c".repeat(64), AssetRole::Texture)));
         assert_eq!(roles.len(), 3);
+    }
+
+    #[test]
+    fn normal_and_roughness_maps_are_textures_too() {
+        let hash = |c: char| c.to_string().repeat(64);
+        let body: EntityBody = serde_json::from_value(serde_json::json!({
+            "entityId": "counter", "layer": "ext", "kind": "object",
+            "textures": [hash('c')],
+            "shape": {"type": "group", "children": [
+                {"type": "box", "size": [1, 1, 1], "material": {
+                    "texture": hash('c'), "uv": "box", "tile": [0.5, 0.5], "shading": "albedo",
+                    "normalMap": hash('d'), "roughnessMap": hash('e')}},
+                {"type": "group", "children": [
+                    {"type": "box", "size": [1, 1, 1], "material": {
+                        "color": [1, 2, 3], "uv": "planar", "roughnessMap": hash('f')}},
+                    {"type": "instance", "template": "stool", "material": {
+                        "texture": hash('7'), "uv": "mesh", "normalMap": hash('d')}}
+                ]}
+            ]},
+            "bounds": {"min": [-0.5, 0, -0.5], "max": [0.5, 1, 0.5]}
+        }))
+        .unwrap();
+        let mut roles = BTreeSet::new();
+        entity_asset_roles(&body, &mut roles);
+        let expected: BTreeSet<(String, AssetRole)> = ['c', 'd', 'e', 'f', '7']
+            .map(|c| (hash(c), AssetRole::Texture))
+            .into_iter()
+            .collect();
+        assert_eq!(roles, expected);
+        let mut assets = BTreeSet::new();
+        entity_assets(&body, &mut assets);
+        assert_eq!(assets.len(), 5);
     }
 
     #[test]
