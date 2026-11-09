@@ -15,7 +15,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use metaverse_core::events::{public_events, value_at_path, TypeLookup};
-use metaverse_core::ids::SPACE_ANCHOR_ID;
 use metaverse_core::model::{Event, SnapshotState};
 use metaverse_core::Timestamp;
 use serde_json::Value;
@@ -93,9 +92,8 @@ impl StateFold {
     ) -> Vec<SnapshotState> {
         self.states
             .values()
-            .filter(|state| {
-                state.anchor_id == SPACE_ANCHOR_ID || public_anchors.contains(&state.anchor_id)
-            })
+            // 空间级锚点 `_space` 是否公开也由调用方放进 `public_anchors`（主人可以把它改成内部级）。
+            .filter(|state| public_anchors.contains(&state.anchor_id))
             .filter(|state| {
                 let max_age = types
                     .event_type(&state.event_type, state.type_version)

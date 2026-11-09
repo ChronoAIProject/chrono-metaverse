@@ -288,14 +288,19 @@ impl Repo {
         collect(find.await?).await
     }
 
-    /// 最新一条公开级记录的记录时间（原事件或替换）。
+    /// 最新一条公开级记录（原事件或替换）的记录时间，只算 `public_anchors` 上的。
     pub async fn latest_public_recorded_at(
         &self,
         grant: &Grant,
+        public_anchors: &BTreeSet<String>,
     ) -> Result<Option<Timestamp>, RepoError> {
         let mut filter = space_children(grant);
         filter.insert("visibility", "public");
         filter.insert("retracted", doc! {"$ne": true});
+        filter.insert(
+            "anchorId",
+            doc! {"$in": public_anchors.iter().collect::<Vec<_>>()},
+        );
         super::restrict_to_membership(&mut filter, grant, "at");
         let found = self
             .collection(collections::EVENTS)
@@ -337,17 +342,22 @@ impl Repo {
         collect(cursor).await
     }
 
-    /// 这些原事件里，哪些有过公开级的版本（原事件或某条替换）。
+    /// 这些原事件里，哪些在 `public_anchors` 上有过公开级的版本（原事件或某条替换）。
     pub async fn ever_public(
         &self,
         grant: &Grant,
         ids: &[String],
+        public_anchors: &BTreeSet<String>,
     ) -> Result<BTreeSet<String>, RepoError> {
         if ids.is_empty() {
             return Ok(BTreeSet::new());
         }
         let mut filter = space_children(grant);
         filter.insert("visibility", "public");
+        filter.insert(
+            "anchorId",
+            doc! {"$in": public_anchors.iter().collect::<Vec<_>>()},
+        );
         filter.insert(
             "$or",
             vec![doc! {"_id": {"$in": ids}}, doc! {"corrects": {"$in": ids}}],

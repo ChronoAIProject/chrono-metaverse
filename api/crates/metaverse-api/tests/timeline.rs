@@ -2093,3 +2093,145 @@ async fn v1_asset_download_is_limited_to_the_space_and_its_readers() {
         StatusCode::UNAUTHORIZED
     );
 }
+
+async fn publish(app: &TestApp, ops: Value) -> u64 {
+    let draft_id = new_draft(app, &format!("/api/v1/spaces/{SPACE}/drafts")).await;
+    let path = draft_path(SPACE, &draft_id);
+    let reply = append(app, &path, ops).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let reply = app
+        .org(Method::POST, &format!("{path}/publish"), None)
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    reply.body["seq"].as_u64().unwrap()
+}
+
+/// 锚点先改成内部级、再删除：它在历史版本里公开过的内容不能因为删除而重新出现。
+#[tokio::test]
+async fn deleted_internal_anchor_stays_hidden_in_history() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    let share = format!("Share {}", app.create_space(SPACE).await);
+    app.define_layout(SPACE).await;
+    let created = publish(
+        &app,
+        json!([{"op": "createAnchor", "anchor": {"anchorId": "vault", "kind": "zone",
+                "position": [1, 0, 1], "label": "保险柜", "visibility": "public"}}]),
+    )
+    .await;
+    let snapshot = |seq: u64| {
+        let app = &app;
+        let share = share.clone();
+        async move {
+            let reply = app
+                .public(
+                    &format!("/api/public/spaces/{SPACE}/snapshot?seq={seq}"),
+                    Some(&share),
+                )
+                .await;
+            assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+            ids(&reply.body["anchors"], "anchorId")
+        }
+    };
+    assert!(snapshot(created).await.contains(&"vault".to_owned()));
+    publish(
+        &app,
+        json!([{"op": "updateAnchor", "anchorId": "vault", "visibility": "internal"}]),
+    )
+    .await;
+    assert!(!snapshot(created).await.contains(&"vault".to_owned()));
+    let removed = publish(&app, json!([{"op": "removeAnchor", "anchorId": "vault"}])).await;
+    assert!(
+        !snapshot(created).await.contains(&"vault".to_owned()),
+        "删除之后历史快照重新公开了内部锚点"
+    );
+    let timeline = app
+        .public(
+            &format!("/api/public/spaces/{SPACE}/timeline"),
+            Some(&share),
+        )
+        .await;
+    assert_eq!(timeline.status, StatusCode::OK, "{:?}", timeline.body);
+    for item in timeline.body["items"].as_array().unwrap() {
+        assert!(
+            item["changedAnchors"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|change| change["id"] != "vault"),
+            "{item:?}"
+        );
+    }
+    // 同一编号重新建成公开锚点：从这之后照常公开。
+    let recreated = publish(
+        &app,
+        json!([{"op": "createAnchor", "anchor": {"anchorId": "vault", "kind": "zone",
+                "position": [2, 0, 2], "label": "新展柜", "visibility": "public"}}]),
+    )
+    .await;
+    assert!(recreated > removed);
+    assert!(snapshot(recreated).await.contains(&"vault".to_owned()));
+}
+
+/// 草稿预览也不显示"现在已经是内部级"的锚点（草稿没有改动它时）。
+#[tokio::test]
+async fn preview_hides_anchors_made_internal_after_the_draft_base() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    app.define_layout(SPACE).await;
+    publish(
+        &app,
+        json!([{"op": "createAnchor", "anchor": {"anchorId": "x", "kind": "zone",
+                "position": [1, 0, 1], "label": "秘密标签", "visibility": "public"}}]),
+    )
+    .await;
+    // 草稿 B 基于 x 还公开的版本，只填方块。
+    let draft_b = new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await;
+    let path_b = draft_path(SPACE, &draft_b);
+    let reply = append(
+        &app,
+        &path_b,
+        json!([{"op": "fill", "box": [0, 0, 0, 2, 1, 2], "block": 2}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let preview = app
+        .org(Method::POST, &format!("{path_b}/preview"), None)
+        .await;
+    assert_eq!(preview.status, StatusCode::CREATED, "{:?}", preview.body);
+    let auth = format!("Preview {}", preview.body["token"].as_str().unwrap());
+    let view = app.public("/api/public/previews", Some(&auth)).await;
+    assert!(ids(&view.body["anchors"], "anchorId").contains(&"x".to_owned()));
+    // 另一次提交把 x 改成内部级：旧预览令牌不再显示它。
+    publish(
+        &app,
+        json!([{"op": "updateAnchor", "anchorId": "x", "visibility": "internal"}]),
+    )
+    .await;
+    let view = app.public("/api/public/previews", Some(&auth)).await;
+    assert_eq!(view.status, StatusCode::OK, "{:?}", view.body);
+    assert!(
+        !ids(&view.body["anchors"], "anchorId").contains(&"x".to_owned()),
+        "{:?}",
+        view.body
+    );
+    // 草稿自己把 x 改回公开：预览按草稿状态显示。
+    let draft_c = new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await;
+    let path_c = draft_path(SPACE, &draft_c);
+    let reply = append(
+        &app,
+        &path_c,
+        json!([{"op": "updateAnchor", "anchorId": "x", "visibility": "public"}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let preview = app
+        .org(Method::POST, &format!("{path_c}/preview"), None)
+        .await;
+    let auth = format!("Preview {}", preview.body["token"].as_str().unwrap());
+    let view = app.public("/api/public/previews", Some(&auth)).await;
+    assert!(ids(&view.body["anchors"], "anchorId").contains(&"x".to_owned()));
+}

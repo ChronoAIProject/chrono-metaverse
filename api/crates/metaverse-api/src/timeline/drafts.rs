@@ -429,6 +429,11 @@ pub async fn preview_snapshot(
             tags: block.block.tags.clone(),
         })
         .collect();
+    let draft_anchors: std::collections::BTreeSet<String> = draft
+        .result_anchors
+        .iter()
+        .map(|change| change.id.clone())
+        .collect();
     assemble(
         repo,
         grant,
@@ -436,6 +441,7 @@ pub async fn preview_snapshot(
         draft.updated_at,
         &manifest,
         &extra,
+        &draft_anchors,
         Audience::Preview,
     )
     .await

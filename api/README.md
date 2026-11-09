@@ -256,7 +256,7 @@ previews    { _id: sha256(令牌), spaceId, owner, draftId, rev, createdBy, crea
   | texture 用途上传、处理服务生成的贴图 | 处理服务 | `texture` | — | 贴图 |
   | 原始扫描、网页用模型、ops、脚本 | 处理服务 / 接口服务 | `scan`、`web_model`、`ops`、`script` | — | 都不能 |
 - 发布：(baseSeq, head] 的变化与草稿碰过的键求交集——没有交集就叠加到最新版本（按最新区域和地块重新校验全部操作，越界 409 `out_of_scope`；新增方块按最新方块表分配正式编号，编号变了就改写草稿区块）；有交集 409 `draft_conflict`，`conflicts` 形如 `chunk:ext:0,0,0`、`entity:<编号>`、`anchor:<编号>`、`palette:<方块名>`；`replay: true` 时在最新版本上重放全部操作；
-- 预览令牌 256 位随机数，只存哈希，绑定 {空间, 草稿, rev}，默认 24 小时、最长 7 天（不超过草稿过期时间）；追加操作（rev 变）、发布、丢弃后失效；预览只显示草稿状态里的公开锚点；
+- 预览令牌 256 位随机数，只存哈希，绑定 {空间, 草稿, rev}，默认 24 小时、最长 7 天（不超过草稿过期时间）；追加操作（rev 变）、发布、丢弃后失效；预览只显示草稿状态里的公开锚点，草稿没有改动、而现在已经是内部级（或改成内部级后删除）的锚点也不显示；
 - **`ops_from_upload` 任务**（接口服务进程内处理，处理服务不领取）：`jobs { _id, spaceId, owner, kind: "ops_from_upload", params {draftId, assetHash, uploadId}, status: running→done|failed, leaseOwner: "api", leaseUntil(30 分钟), attempt: 1, maxAttempts: 1, actor {sub, nyxServiceId}, scope: physical|plot:<编号>（草稿的路径范围，经地块路径只能查到本地块的任务）, progress {opsApplied, opsTotal}, result {draftId, rev, opsApplied, opsTotal, touched {chunks, entities, anchors}}, lastError?, createdAt, startedAt, finishedAt }`。读的上传必须是本空间的 `uploads {purpose: "ops", status: "done", assetHash}`。后台处理用显式系统范围（`Authorizer::system_space`，写审计日志）。
 
 ### 上传与任务（与处理服务 `handlers/upload_verify.py`、`jobs/lease.py` 一致）
@@ -296,6 +296,8 @@ stateSnapshots { _id: "ss_<空间>_<毫秒>", spaceId, owner, at, computedAt, st
 - 更正也是一条事件（`at` 与原事件相同），所以按 `at` 扫描时原事件和它的全部更正总在一起。
 - 公开状态只由公开事件算出（值按公开字段投影），只返回公开锚点上的；状态快照在折叠超过 2000 条记录、且时刻早于现在 10 分钟时保存（系统范围），`computedAt` 之后记录的、`at ≤ 快照时刻` 的事件（晚到、更正）让快照失效并删除。
 - 锚点必须是本空间现有的锚点（或 `_space`）；`correlationId` 起点规则用显示规则的 `pathRole`。
+- 公开读只算公开锚点上的事件：事件、密度、状态，以及 `/head` 和空间信息里的 `recordedAt`（内部锚点上的活动不能从 recordedAt 和 ETag 里看出来）。空间级锚点 `_space` 默认算公开锚点；主人把它改成内部级之后，它上面的事件和状态同样不公开。
+- 删除时是内部级的锚点记在空间文档的 `withdrawnAnchors` 里（提交事务内维护，同一编号重新写成公开级时去掉），快照和提交列表的公开投影把它当作"当前是内部级"：改成内部级再删除，不会让它在历史版本里重新公开。
 - spawnEntity 显示方式的 `entityAsset` 在登记事件类型时就按物件模型的规则检查并登记到 `assetRefs`（不等提交），所以专门为事件上传、导入的模型也能公开读取。
 
 ### 组合宇宙（设计 4.5、12）

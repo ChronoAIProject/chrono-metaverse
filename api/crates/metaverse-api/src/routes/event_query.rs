@@ -54,7 +54,8 @@ pub async fn type_map(state: &AppState, grant: &Grant) -> Result<TypeMap, ApiErr
         .collect())
 }
 
-/// 公开锚点的编号（加上空间级锚点 `_space`）。
+/// 公开锚点的编号，加上空间级锚点 `_space`——除非主人把 `_space` 改成了内部级（这时空间级
+/// 事件和状态同样不公开；还没有 `_space` 锚点的空间照旧当作公开）。
 pub async fn public_anchor_ids(
     state: &AppState,
     grant: &Grant,
@@ -67,7 +68,16 @@ pub async fn public_anchor_ids(
         .filter(|anchor| anchor.visibility == DataVisibility::Public)
         .map(|anchor| anchor.anchor_id)
         .collect();
-    ids.insert(SPACE_ANCHOR_ID.to_owned());
+    if !ids.contains(SPACE_ANCHOR_ID)
+        && !state
+            .repo
+            .internal_anchor_ids(grant)
+            .await?
+            .iter()
+            .any(|id| id == SPACE_ANCHOR_ID)
+    {
+        ids.insert(SPACE_ANCHOR_ID.to_owned());
+    }
     Ok(ids)
 }
 
@@ -415,12 +425,17 @@ pub fn internal_items(space_id: &str, page: &EventPage, filters: &Filters) -> Ve
 // /head
 // ---------------------------------------------------------------------------
 
-/// 最新一条公开可见变化的记录时间。
+/// 最新一条公开可见变化的记录时间：只算公开锚点上的事件（与公开事件接口一致），内部锚点上
+/// 的活动不能从 `/head` 的 recordedAt 和 ETag 里看出来。
 pub async fn public_recorded_at(
     state: &AppState,
     grant: &Grant,
 ) -> Result<Option<Timestamp>, ApiError> {
-    let latest_public = state.repo.latest_public_recorded_at(grant).await?;
+    let anchors = public_anchor_ids(state, grant).await?;
+    let latest_public = state
+        .repo
+        .latest_public_recorded_at(grant, &anchors)
+        .await?;
     let hiding = state
         .repo
         .hiding_corrections_after(grant, latest_public, 200)
@@ -432,7 +447,7 @@ pub async fn public_recorded_at(
         .iter()
         .filter_map(|record| record.corrects.clone())
         .collect();
-    let ever = state.repo.ever_public(grant, &targets).await?;
+    let ever = state.repo.ever_public(grant, &targets, &anchors).await?;
     let withdrawn = hiding
         .iter()
         .filter(|record| record.corrects.as_ref().is_some_and(|id| ever.contains(id)))

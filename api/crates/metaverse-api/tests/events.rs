@@ -882,3 +882,165 @@ async fn state_snapshots_are_saved_and_invalidated_by_late_events() {
         0
     );
 }
+
+/// 内部锚点上的活动不能从 `/head` 的 recordedAt 和 ETag（以及空间信息的 head.recordedAt）里看出来：
+/// 只统计公开接口可见的变化。
+#[tokio::test]
+async fn head_ignores_activity_on_internal_anchors() {
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    let token = restaurant(&app).await;
+    register_types(&app).await;
+    let share = format!("Share {token}");
+    let head = format!("{PUBLIC}/head");
+    let reply = write(
+        &app,
+        who(ORG),
+        "pos",
+        json!([{"sourceEventId": "base", "type": "table.occupancy", "anchorId": "t1",
+                "at": ago(60), "data": {"guests": 2}}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let before = app.public(&head, Some(&share), &[]).await;
+    assert_eq!(before.status, StatusCode::OK, "{:?}", before.body);
+    let tag = before
+        .headers
+        .get("etag")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let recorded = before.body["recordedAt"].clone();
+    assert!(recorded.is_string());
+    tokio::time::sleep(std::time::Duration::from_millis(1600)).await;
+    // 内部锚点 safe 上的公开级事件，以及对它的撤回。
+    let reply = write(
+        &app,
+        who(ORG),
+        "pos",
+        json!([{"sourceEventId": "vault-open", "type": "table.occupancy", "anchorId": "safe",
+                "at": ago(5), "data": {"guests": 1}}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let reply = correct(
+        &app,
+        "pos",
+        json!([{"sourceEventId": "vault-retract", "correctsSourceEventId": "vault-open", "retracted": true}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    tokio::time::sleep(std::time::Duration::from_millis(1600)).await;
+    let after = app
+        .public(&head, Some(&share), &[("if-none-match", tag.as_str())])
+        .await;
+    assert_eq!(
+        after.status,
+        StatusCode::NOT_MODIFIED,
+        "内部锚点上的活动改变了 /head：{:?}",
+        after.body
+    );
+    let info = app.public(PUBLIC, Some(&share), &[]).await;
+    assert_eq!(info.body["head"]["recordedAt"], recorded);
+    // 公开锚点上的新事件照常改变 /head。
+    let reply = write(
+        &app,
+        who(ORG),
+        "pos",
+        json!([{"sourceEventId": "t2-seat", "type": "table.occupancy", "anchorId": "t2",
+                "at": ago(1), "data": {"guests": 3}}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    tokio::time::sleep(std::time::Duration::from_millis(1600)).await;
+    let changed = app
+        .public(&head, Some(&share), &[("if-none-match", tag.as_str())])
+        .await;
+    assert_eq!(changed.status, StatusCode::OK);
+    assert_ne!(changed.body["recordedAt"], recorded);
+}
+
+/// 主人把空间级锚点 `_space` 改成内部级之后，它上面的事件和状态同样不公开。
+#[tokio::test]
+async fn internal_space_anchor_hides_space_level_events() {
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    let token = restaurant(&app).await;
+    register_types(&app).await;
+    let share = format!("Share {token}");
+    let reply = write(
+        &app,
+        who(ORG),
+        "pos",
+        json!([{"sourceEventId": "closed", "type": "seat.count", "anchorId": "_space",
+                "at": ago(30), "data": {"n": 7}}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let window = format!(
+        "{PUBLIC}/events?from={}&to={}",
+        urlencode(&ago(3600)),
+        urlencode(&ago(-60))
+    );
+    // `_space` 公开时可见。
+    let reply = app.public(&window, Some(&share), &[]).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(reply.body["items"].as_array().unwrap().len(), 1);
+    // 主人发布 updateAnchor 把 `_space` 改成内部级（这里直接改当前状态）。
+    app.collection("anchors")
+        .update_one(
+            doc! {"spaceId": "restaurant", "id": "_space"},
+            doc! {"$set": {"body.visibility": "internal"}},
+        )
+        .await
+        .unwrap();
+    let reply = app.public(&window, Some(&share), &[]).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(reply.body["items"], json!([]), "{:?}", reply.body);
+    let reply = app
+        .public(&format!("{PUBLIC}/state"), Some(&share), &[])
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(reply.body["states"], json!([]), "{:?}", reply.body);
+    let reply = app
+        .public(
+            &format!(
+                "{PUBLIC}/events/density?from={}&to={}&bucket=3600",
+                urlencode(&ago(3600)),
+                urlencode(&ago(-60))
+            ),
+            Some(&share),
+            &[],
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let total: u64 = reply.body["buckets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|bucket| bucket["count"].as_u64().unwrap())
+        .sum();
+    assert_eq!(total, 0);
+    // `/api/v1` 照常看得到。
+    let reply = app
+        .call(
+            who(ORG),
+            Method::GET,
+            &format!(
+                "{BASE}/events?from={}&to={}",
+                urlencode(&ago(3600)),
+                urlencode(&ago(-60))
+            ),
+            None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(reply.body["items"].as_array().unwrap().len(), 1);
+}
+
+fn urlencode(text: &str) -> String {
+    text.replace('+', "%2B").replace(':', "%3A")
+}
