@@ -1,0 +1,87 @@
+name: Images
+
+# 推送到 main 和开发分支时，构建三个镜像并推到 ghcr.io：
+#   ghcr.io/chronoaiproject/chrono-metaverse-{api,web,worker}
+# 标签：短提交哈希（7 位）、分支名（/ 换成 -）；latest 只给 main。
+# 只构建 linux/amd64（chrono-cd 的节点架构）。部署不在这里做，见 infra/chrono-cd/README.md。
+
+on:
+  push:
+    branches:
+      - main
+      - claude/happy-ritchie-oly5hx
+  workflow_dispatch: {}
+
+# 同一分支的镜像按推送顺序构建，不中途取消（避免分支标签指向半路被取消的那次之前的版本）。
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: 镜像 ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [api, web, worker]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: 构建身份
+        id: build
+        run: |
+          echo "version=git-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 标签与标注
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/chronoaiproject/chrono-metaverse-${{ matrix.image }}
+          flavor: |
+            latest=false
+          tags: |
+            type=sha,format=short,prefix=
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      # 构建参数只有网站用（web/build/identity.ts 的构建身份）；另外两个镜像忽略它们。
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/${{ matrix.image }}/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            CHRONO_BUILD=${{ steps.build.outputs.version }}
+            CHRONO_BUILD_SHA=${{ github.sha }}
+            CHRONO_BUILD_ARTIFACT=promotable
+          # 单平台清单，不附加证明清单：chrono-cd 按标签解析摘要时最简单。
+          provenance: false
+          cache-from: type=gha,scope=chrono-metaverse-${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=chrono-metaverse-${{ matrix.image }}
+
+      - name: 摘要
+        run: |
+          {
+            echo "### chrono-metaverse-${{ matrix.image }}"
+            echo
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -205,11 +205,13 @@ jobs:
 
 第一次构建完成后，到 GitHub 组织的软件包页面打开这个包，进入设置把可见性改成公开（Public），否则部署时会报 `image_unauthorized`。镜像还没构建出来就部署，会报 `image_not_found`。
 
+上面是最小的写法。本项目实际用的是 `.github/workflows/images.yml`：一次构建三个镜像（Dockerfile 在 `infra/api/`、`infra/web/`、`infra/worker/`，构建上下文是仓库根目录），标签用 7 位提交哈希和分支名，带构建缓存。
+
 ### 7.3 提交应用配置
 
 对 Claude 说："在 ChronoAI 组织下创建项目 metaverse 的应用 chrono-metaverse，先把配置给我看。"
 
-Claude 会调用 `chrono-cd__put_app`，参数大致如下（这是本项目的规划配置）：
+Claude 会调用 `chrono-cd__put_app`，参数大致如下（节选；本项目完整的规格在 `infra/chrono-cd/app.json`，步骤见同目录的 README）：
 
 ```json
 {
@@ -218,20 +220,23 @@ Claude 会调用 `chrono-cd__put_app`，参数大致如下（这是本项目的�
   "org_id": "<ChronoAI 组织编号>",
   "addons": { "mongodb": {} },
   "services": {
-    "web": {
+    "metaverse-web": {
       "image": "ghcr.io/chronoaiproject/chrono-metaverse-web:<版本>",
-      "port": 8080, "routes": ["/"], "expose": "public"
+      "port": 8080, "routes": ["/"], "expose": "public", "health_path": "/healthz"
     },
-    "api": {
+    "metaverse-api": {
       "image": "ghcr.io/chronoaiproject/chrono-metaverse-api:<版本>",
       "port": 8080, "routes": ["/api"], "expose": "public",
       "health_path": "/api/healthz",
-      "env": { "NYXID_JWT_AUDIENCE": "urn:chrono-metaverse:api" },
+      "env": { "NYXID_JWT_AUDIENCE": "urn:chrono-metaverse:api", "…": "其余见 app.json" },
       "addon_env": { "mongodb": { "uri": "MONGODB_URI", "database": "MONGODB_DATABASE" } }
-    }
+    },
+    "metaverse-worker": { "…": "见 app.json" }
   }
 }
 ```
+
+服务名为什么带 `metaverse-` 前缀：chrono-cd 要求服务名在同一主人（这里是 ChronoAI 组织）的所有应用之间唯一，组织里已有应用占用了 `web`、`worker`，重名会返回 `409 service_name_taken`。同一主人的服务在集群里按 `http://<服务名>:<端口>` 互相访问。
 
 本项目第一版**不需要任何应用密钥**：
 - 数据库连接由 MongoDB 插件自动注入（`addon_env`）；
@@ -301,7 +306,7 @@ Error (403): {"error":{"code":"PERMISSION_DENIED","message":"Caller lacks the re
 - **路径要写完整**：NyxID 调用接口时，用注册时填的 `--endpoint-url` 拼上文档 `paths` 里的路径，**不看文档里的 `servers`**。所以 `paths` 要带上 `/api` 前缀，例如 `/api/v1/spaces`。如果 `paths` 只写 `/v1/...`、靠 `servers: [{url: "/api"}]` 补前缀，NyxID 会去请求 `https://<应用域名>/v1/...`，结果是 404。
 - **接口名**：每个接口的 `operationId` 用小写加下划线（例如 `get_scan_status`）。NyxID 会把它转成小写，字母数字以外的字符换成 `_`，所以驼峰写法 `getScanStatus` 会变成难读的 `getscanstatus`。最终工具名是 `服务标识__转换后的名字`，例如 `chrono-metaverse__get_scan_status`。`summary` / `description` 会变成 AI 看到的工具说明。
 - **二进制上传**：用 `application/octet-stream`，在 AI 工具里会变成 base64 文本字段；不要用 multipart 表单。
-- **生成文档**：Bun + Hono 可以用 `@hono/zod-openapi` 自动生成。
+- **生成文档**：本项目的接口服务是 Rust（axum），用 `utoipa` 从代码生成（`api/crates/metaverse-api/src/openapi.rs`）；Bun + Hono 的服务可以用 `@hono/zod-openapi`。
 
 ### 9.2 校验 NyxID 身份令牌
 
@@ -343,7 +348,7 @@ export async function verifyNyxIdentity(token: string) {
   - 防重放：按 `jti` 去重。
 
   做法见 [整体设计](../ARCHITECTURE.md) 9.1 节。
-- **参考实现**：chrono-bucket 的 `src/auth/verifier.ts` 和 `src/middleware/nyxidAuth.ts`（它的环境变量也叫 `NYXID_JWT_ISSUER` / `NYXID_JWT_AUDIENCE`）。
+- **参考实现**：上面是 TypeScript 写法，参照 chrono-bucket 的 `src/auth/verifier.ts` 和 `src/middleware/nyxidAuth.ts`（它的环境变量也叫 `NYXID_JWT_ISSUER` / `NYXID_JWT_AUDIENCE`）。本项目的接口服务是 Rust，照搬 CMA 的实现，并补上了服务编号和 jti 两项：`api/crates/metaverse-api/src/auth/jwt.rs`。
 
 ### 9.3 在 NyxID 注册服务
 
@@ -358,33 +363,43 @@ nyxid whoami       # 确认登录的是你自己的账号
 nyxid org list     # 应有 chronoai 这一行，并且你的角色是 admin
 ```
 
-注册为组织服务：
+#### 把本服务（chrono-metaverse）注册成 NyxID 自定义服务：完整命令
+
+前提：应用已经部署好、拿到了应用域名（`infra/chrono-cd/README.md` 第 1–6 步），`https://<应用域名>/api/openapi.json` 能从公网打开。`--endpoint-url` 加上 `paths` 里的路径，就是 NyxID 实际请求的地址。
 
 ```bash
+URL=https://<应用域名>        # chrono-cd 返回的 url，例如 https://chrono-metaverse-chronoai.apps.nyxid.ai
+
+# 1. 注册为 ChronoAI 组织的自定义服务
 nyxid service add --custom \
   --slug chrono-metaverse \
   --label "chrono-metaverse" \
-  --endpoint-url "https://<你的应用域名>" \
-  --openapi-spec-url "https://<你的应用域名>/api/openapi.json" \
+  --endpoint-url "$URL" \
+  --openapi-spec-url "$URL/api/openapi.json" \
   --auth-method none \
   --org chronoai
-```
 
-`--endpoint-url` 加上 `paths` 里的路径，就是 NyxID 实际请求的地址。
+# 2. 找到这条服务的编号
+nyxid service list --output json      # slug 为 chrono-metaverse 的那一项
+#   id                  连接（UserService）编号：改身份设置用
+#   catalog_service_id  服务定义编号：身份令牌里的 nyx_service_id（第 4 步要用；没有这个字段时用 id）
 
-然后开启身份令牌转发。命令行和 NyxID 网页都还没有这个开关，要直接调用 NyxID 接口：
-
-```bash
-nyxid service show chrono-metaverse   # 输出里的 ID 就是要用的编号
+# 3. 开启身份令牌（jwt 模式，受众固定）和"转发调用者令牌"
 nyxid whoami                          # 顺便刷新登录状态（账号令牌有效期较短）
-curl -X PUT "https://nyx-api.chrono-ai.fun/api/v1/keys/<上面的 ID>" \
+curl -X PUT "https://nyx-api.chrono-ai.fun/api/v1/user-services/<第 2 步的 id>" \
   -H "Authorization: Bearer $(cat ~/.nyxid/access_token)" \
   -H "Content-Type: application/json" \
-  -d '{"identity_propagation_mode":"jwt","identity_jwt_audience":"urn:chrono-metaverse:api"}'
+  -d '{"identity_propagation_mode":"jwt","identity_jwt_audience":"urn:chrono-metaverse:api","forward_access_token":true}'
+nyxid service list --output json      # 确认这一项的三个字段已经是 jwt、urn:chrono-metaverse:api、true
 ```
 
-- 这一步只能用 `nyxid login` 登录后的账号令牌；NyxID API Key 和 Claude 的 NyxID 连接器都会被这个接口拒绝，所以不能交给云端会话里的 Claude 做。
-- `identity_jwt_audience` 要和服务的环境变量 `NYXID_JWT_AUDIENCE` 一字不差。不设置时默认等于 `--endpoint-url`。
+- **身份令牌**：`identity_propagation_mode = jwt` 让 NyxID 每次转发都附带 `X-NyxID-Identity-Token`；`identity_jwt_audience` 要和接口服务的 `NYXID_JWT_AUDIENCE` 一字不差（`urn:chrono-metaverse:api`），不设置时默认等于 `--endpoint-url`，接口服务会拒绝。
+- **转发调用者令牌**：`forward_access_token = true` 让 NyxID 把调用者的令牌放在 `Authorization: Bearer` 里转过来，接口服务用它查调用者在组织里的角色（整体设计 9.2 的例外，只在内存里用）。也可以用命令行单独开：`nyxid service update <第 2 步的 id> --forward-access-token true`。
+- 这一步要用 `nyxid login` 登录后的账号令牌；Claude 的 NyxID 连接器会被拒绝，所以不能交给云端会话里的 Claude 做。NyxID 的说明里，身份设置要改在连接（`/api/v1/user-services/<id>`）上，不要拿服务定义编号去改。
+
+4. 把服务编号填进接口服务的允许列表 `ALLOWED_NYX_SERVICE_IDS`（chrono-cd 的 `PATCH`，命令见 `infra/chrono-cd/README.md` 第 7 步）。NyxID 签发身份令牌时 `nyx_service_id` 取的是服务定义的编号；填错时，经 NyxID 调用会返回 401，错误详情里有 `service_not_allowed`，换成另一个编号即可。
+
+5. 验证（9.4）：`nyxid proxy request chrono-metaverse api/v1/spaces/front-hall --output json` 返回 404 `not_found`（身份校验通过、空间还不存在）就说明通了；401 说明受众或服务编号不对。
 
 ### 9.4 回到云端会话验证
 
