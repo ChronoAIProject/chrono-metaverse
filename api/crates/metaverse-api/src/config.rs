@@ -13,6 +13,7 @@
 //! | `BIND` | 否 | 监听地址，默认 `0.0.0.0:8080` |
 //! | `PUBLIC_BASE_URL` | 否 | 对外地址，默认 `http://localhost:8080` |
 //! | `METAVERSE_REQUIRE_PERMISSIONS` | 否 | 是否启用功能级权限（`true`/`false`），默认 `false` |
+//! | `UPLOAD_*`、`JOB_MAX_PENDING_PER_SPACE` | 否 | 上传大小、格式和任务数的上限，见 [`crate::ingest`] |
 
 use std::net::SocketAddr;
 
@@ -39,6 +40,8 @@ pub struct Config {
     pub mongodb_database: String,
     pub nyxid: NyxIdConfig,
     pub require_permissions: bool,
+    /// 上传、任务的上限（`UPLOAD_*`、`JOB_*`，见 `ingest` 模块）。
+    pub ingest: crate::ingest::IngestConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -135,6 +138,7 @@ impl Config {
                 ))
             }
         };
+        let ingest = crate::ingest::IngestConfig::from_lookup(&lookup)?;
         Ok(Self {
             bind,
             public_base_url,
@@ -148,6 +152,7 @@ impl Config {
                 allowed_service_ids,
             },
             require_permissions,
+            ingest,
         })
     }
 

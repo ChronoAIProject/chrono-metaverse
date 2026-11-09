@@ -302,6 +302,15 @@ impl Authorizer {
     }
 }
 
+// 组合宇宙、凭组合令牌读成员空间、系统范围：放在子模块里，可以构造本模块的凭据。
+mod system;
+mod universes;
+
+pub use system::SystemGrant;
+pub use universes::{
+    CreateUniverseGrant, MembershipBasis, MembershipChange, MembershipGrant, UniverseGrant,
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -22,6 +22,18 @@ mod spaces;
 
 pub use spaces::SpacePolicy;
 
+// 上传、任务、事件、组合（各自的文件里有说明）。
+mod events;
+mod jobs;
+mod transactions;
+mod universes;
+mod uploads;
+
+pub use events::{Cursor, EventInsert, Lower};
+pub use jobs::{JobInsert, MAX_JOB_LIST};
+pub use universes::{UniverseFieldsUpdate, UniversePolicy, UniverseWrite};
+pub use uploads::{AssetAvailability, CompleteWrite, PartWrite, PendingUploads};
+
 /// 集合名（设计 13.2）。
 pub mod collections {
     pub const SPACES: &str = "spaces";

@@ -16,6 +16,7 @@ pub mod auth;
 pub mod config;
 pub mod error;
 pub mod health;
+pub mod ingest;
 pub mod openapi;
 pub mod repo;
 pub mod routes;
@@ -31,6 +32,8 @@ pub struct AppState {
     pub repo: Repo,
     pub authenticator: Arc<Authenticator>,
     pub authorizer: Arc<Authorizer>,
+    /// 上传、任务的上限和进程内状态（分片并发、`/head` 短缓存）。
+    pub ingest: Arc<ingest::IngestRuntime>,
     ready: Arc<AtomicBool>,
 }
 
@@ -52,6 +55,7 @@ impl AppState {
                 config.require_permissions,
             )),
             repo,
+            ingest: Arc::new(ingest::IngestRuntime::new(config.ingest.clone())),
             ready: Arc::new(AtomicBool::new(false)),
         })
     }
