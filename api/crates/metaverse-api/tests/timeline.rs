@@ -2382,3 +2382,152 @@ async fn publish_claims_the_draft_inside_the_commit_transaction() {
         Err(CommitError::DraftChanged)
     ));
 }
+
+/// 草稿操作是纯计算：单次内联追加、整个草稿都有计算量（格数）上限，超出在开始计算之前就 413。
+/// 复现的攻击请求是一次追加 200 条、每条 4M 格的复制区域（十几 KB 的请求体，几分钟的计算）。
+#[tokio::test]
+async fn draft_ops_have_a_compute_budget() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    app.define_layout(SPACE).await;
+    let draft_id = new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await;
+    let path = draft_path(SPACE, &draft_id);
+    let heavy: Vec<Value> = (0..200)
+        .map(|_| json!({"op": "copyRegion", "source": [0, 0, 0, 128, 256, 128], "to": [128, 0, 0]}))
+        .collect();
+    let started = std::time::Instant::now();
+    let reply = append(&app, &path, json!(heavy)).await;
+    assert_eq!(
+        reply.status,
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "{:?}",
+        reply.body
+    );
+    assert!(reply.body["detail"].as_str().unwrap().contains("格"));
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "没有先算就拒绝：{:?}",
+        started.elapsed()
+    );
+    // 预算之内的照常追加，并记下累计计算量。
+    let reply = append(
+        &app,
+        &path,
+        json!([{"op": "fill", "box": [0, 0, 0, 10, 10, 10], "block": 2}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let draft = app
+        .collection("drafts")
+        .find_one(doc! {"_id": &draft_id})
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(draft.get_i64("workCells").unwrap(), 1000);
+    // 整个草稿的累计上限（ops-from-upload 和发布时的重放都要全部再算一遍）。
+    app.collection("drafts")
+        .update_one(
+            doc! {"_id": &draft_id},
+            doc! {"$set": {"workCells": (1_i64 << 26) - 10}},
+        )
+        .await
+        .unwrap();
+    let reply = append(
+        &app,
+        &path,
+        json!([{"op": "fill", "box": [0, 0, 0, 10, 10, 10], "block": 2}]),
+    )
+    .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "{:?}",
+        reply.body
+    );
+    let reply = append(
+        &app,
+        &path,
+        json!([{"op": "createAnchor", "anchor": {"anchorId": "t1", "kind": "table",
+                "position": [1, 0, 1], "visibility": "public"}}]),
+    )
+    .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::OK,
+        "非方块操作只算 1 格：{:?}",
+        reply.body
+    );
+}
+
+/// ops-from-upload 计入每空间的任务上限，草稿引用的操作文件个数有上限：不能无限次地让接口服务
+/// 把整份文件读进内存解析。
+#[tokio::test]
+async fn ops_from_upload_is_limited_per_space_and_per_draft() {
+    let Some(app) = TestApp::start_with_env(&[("JOB_MAX_PENDING_PER_SPACE", "1")]).await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    app.define_layout(SPACE).await;
+    let draft_id = new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await;
+    let path = draft_path(SPACE, &draft_id);
+    let ops = json!({"op": "fill", "box": [0, 0, 0, 1, 1, 1], "block": 2}).to_string();
+    let (upload_id, _) = app.put_ops_upload(SPACE, ops.as_bytes()).await;
+    // 已有一个运行中的任务：429，不建新任务。
+    app.collection("jobs")
+        .insert_one(doc! {
+            "_id": "job_busy", "spaceId": SPACE, "owner": {"kind": "org", "id": ORG},
+            "kind": "scan_import", "status": "running", "params": {},
+            "attempt": 1, "maxAttempts": 3, "createdAt": "2026-01-01T00:00:00.000Z",
+        })
+        .await
+        .unwrap();
+    let reply = app
+        .org(
+            Method::POST,
+            &format!("{path}/ops-from-upload"),
+            Some(json!({"uploadId": upload_id})),
+        )
+        .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::TOO_MANY_REQUESTS,
+        "{:?}",
+        reply.body
+    );
+    assert_eq!(reply.body["code"], "too_many_jobs");
+    assert_eq!(
+        app.collection("jobs")
+            .count_documents(doc! {"kind": "ops_from_upload"})
+            .await
+            .unwrap(),
+        0
+    );
+    app.collection("jobs")
+        .delete_one(doc! {"_id": "job_busy"})
+        .await
+        .unwrap();
+    // 草稿已经引用了 20 个操作文件：413。
+    let refs: Vec<mongodb::bson::Document> = (0..20)
+        .map(|i| doc! {"assetHash": format!("{i:064}"), "after": 0_i64, "count": 1_i64})
+        .collect();
+    app.collection("drafts")
+        .update_one(doc! {"_id": &draft_id}, doc! {"$set": {"opsRefs": refs}})
+        .await
+        .unwrap();
+    let reply = app
+        .org(
+            Method::POST,
+            &format!("{path}/ops-from-upload"),
+            Some(json!({"uploadId": upload_id})),
+        )
+        .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "{:?}",
+        reply.body
+    );
+    assert_eq!(reply.body["code"], "too_many_ops_files");
+}

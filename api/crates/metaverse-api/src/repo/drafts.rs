@@ -91,6 +91,10 @@ pub struct DraftDoc {
     pub assets: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub commit_id: Option<String>,
+    /// 已追加的全部操作的计算量（格数，见 `timeline::state::ops_cells`）：发布时重放要把它们
+    /// 全部再算一遍，所以每个草稿有总量上限。旧草稿没有这个字段时是 0。
+    #[serde(default)]
+    pub work_cells: u64,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
     pub expires_at: Timestamp,

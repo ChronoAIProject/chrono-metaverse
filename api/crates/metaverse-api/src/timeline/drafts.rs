@@ -30,7 +30,7 @@ use serde_json::{json, Value};
 
 use super::palette::{assign_final_ids, palette_value, parse_palette};
 use super::snapshot::{assemble, Audience};
-use super::state::{check_scope_only, ApplyError, Workspace};
+use super::state::{check_scope_only, ops_cells, ApplyError, Workspace};
 use super::views::SnapshotView;
 use super::writer::{actor, attach_keyframe, commit, entity_asset_roles, entity_assets, record_of};
 use crate::auth::{Caller, Grant};
@@ -53,6 +53,13 @@ pub const MAX_OPS_FILE_BYTES: u64 = 64 * 1024 * 1024;
 pub const MAX_OPS_FILE_DECOMPRESSED: u64 = 256 * 1024 * 1024;
 /// 发布时时间线前进导致重算的次数上限。
 const PUBLISH_ATTEMPTS: usize = 3;
+/// 一次内联追加（≤ 200 条）的计算量上限（格数）：单条操作最多 4M 格，200 条复制区域就是
+/// 十几亿格的纯计算，一个请求就能占满接口服务的 CPU。
+pub const MAX_APPEND_CELLS: u64 = 1 << 24;
+/// 一个草稿全部操作的计算量上限（格数）：ops-from-upload 和发布时的重放都要把它们算一遍。
+pub const MAX_DRAFT_CELLS: u64 = 1 << 26;
+/// 一个草稿最多引用几个 ops 文件（预览、发布时每个都要重新解压解析）。
+pub const MAX_DRAFT_OPS_REFS: usize = 20;
 
 fn too_large(detail: impl Into<String>) -> ApiError {
     ApiError::new(
@@ -73,36 +80,72 @@ fn json_size<T: serde::Serialize>(value: &T) -> usize {
     serde_json::to_vec(value).map_or(usize::MAX, |bytes| bytes.len())
 }
 
+/// ops 文件一行的长度上限（字节）。
+pub const MAX_OPS_LINE_BYTES: usize = 64 * 1024;
+
 /// 解析 ops 文件：NDJSON（每行一个操作），可以 gzip 压缩。
+///
+/// 流式逐行解析：解压后的文本不整份留在内存里（只有压缩原文和解析出的操作），每行不超过
+/// [`MAX_OPS_LINE_BYTES`]，解压后总共不超过 [`MAX_OPS_FILE_DECOMPRESSED`]。纯计算，调用方在
+/// 阻塞线程上执行（[`parse_ops_file_blocking`]）。
 pub fn parse_ops_file(bytes: &[u8], max_ops: u64) -> Result<Vec<Op>, String> {
-    let text = if bytes.starts_with(&[0x1f, 0x8b]) {
-        let mut decoder = flate2::read::GzDecoder::new(bytes).take(MAX_OPS_FILE_DECOMPRESSED + 1);
-        let mut out = Vec::new();
-        decoder
-            .read_to_end(&mut out)
-            .map_err(|_| "gzip 数据无法解压".to_owned())?;
-        if out.len() as u64 > MAX_OPS_FILE_DECOMPRESSED {
-            return Err(format!("解压后超过 {MAX_OPS_FILE_DECOMPRESSED} 字节"));
-        }
-        out
+    parse_ops_with_limit(bytes, max_ops, MAX_OPS_FILE_DECOMPRESSED)
+}
+
+fn parse_ops_with_limit(
+    bytes: &[u8],
+    max_ops: u64,
+    max_decompressed: u64,
+) -> Result<Vec<Op>, String> {
+    use std::io::BufRead;
+    let reader: Box<dyn Read + '_> = if bytes.starts_with(&[0x1f, 0x8b]) {
+        Box::new(flate2::read::GzDecoder::new(bytes))
     } else {
-        bytes.to_vec()
+        Box::new(bytes)
     };
-    let text = String::from_utf8(text).map_err(|_| "ops 文件必须是 UTF-8 文本".to_owned())?;
+    let mut reader = std::io::BufReader::new(reader.take(max_decompressed + 1));
     let mut ops = Vec::new();
-    for (number, line) in text.lines().enumerate() {
-        let line = line.trim();
-        if line.is_empty() {
+    let mut line = Vec::new();
+    let mut total = 0u64;
+    let mut number = 0usize;
+    loop {
+        line.clear();
+        number += 1;
+        let read = (&mut reader)
+            .take(MAX_OPS_LINE_BYTES as u64 + 1)
+            .read_until(b'\n', &mut line)
+            .map_err(|_| "gzip 数据无法解压".to_owned())?;
+        if read == 0 {
+            break;
+        }
+        total += read as u64;
+        if total > max_decompressed {
+            return Err(format!("解压后超过 {max_decompressed} 字节"));
+        }
+        if line.len() > MAX_OPS_LINE_BYTES {
+            return Err(format!("第 {number} 行超过 {MAX_OPS_LINE_BYTES} 字节"));
+        }
+        let text =
+            std::str::from_utf8(&line).map_err(|_| "ops 文件必须是 UTF-8 文本".to_owned())?;
+        let text = text.trim();
+        if text.is_empty() {
             continue;
         }
         if ops.len() as u64 >= max_ops {
             return Err(format!("一个草稿最多 {max_ops} 条操作"));
         }
-        let op: Op = serde_json::from_str(line)
-            .map_err(|error| format!("第 {} 行不是合法的操作：{error}", number + 1))?;
+        let op: Op = serde_json::from_str(text)
+            .map_err(|error| format!("第 {number} 行不是合法的操作：{error}"))?;
         ops.push(op);
     }
     Ok(ops)
+}
+
+/// 在阻塞线程上解析 ops 文件（解压、逐行解析都是纯计算，不能占着异步工作线程）。
+pub async fn parse_ops_file_blocking(bytes: Vec<u8>, max_ops: u64) -> Result<Vec<Op>, String> {
+    tokio::task::spawn_blocking(move || parse_ops_file(&bytes, max_ops))
+        .await
+        .map_err(|_| "解析操作文件的线程异常退出".to_owned())?
 }
 
 /// 把逐条解析的操作列表变成 `Op`，错误带下标。
@@ -183,6 +226,26 @@ pub async fn append_ops(
         return Err(too_large(
             "草稿里内联的操作已超过 4MB，请把操作写成 NDJSON 文件分片上传，再调用 ops-from-upload",
         )
+        .into());
+    }
+    if matches!(source, OpsSource::Upload(_)) && draft.ops_refs.len() >= MAX_DRAFT_OPS_REFS {
+        return Err(too_large(format!(
+            "一个草稿最多引用 {MAX_DRAFT_OPS_REFS} 个操作文件，请合并成更大的文件或另建草稿"
+        ))
+        .into());
+    }
+    // 计算量：先按几何算好，超出上限就不开始算。
+    let cells = ops_cells(&ops);
+    if matches!(source, OpsSource::Inline) && cells > MAX_APPEND_CELLS {
+        return Err(too_large(format!(
+            "这一批操作要处理 {cells} 格，超过单次追加的上限 {MAX_APPEND_CELLS} 格；请拆成几批，或把操作写成文件走 ops-from-upload"
+        ))
+        .into());
+    }
+    if draft.work_cells.saturating_add(cells) > MAX_DRAFT_CELLS {
+        return Err(too_large(format!(
+            "草稿的操作累计要处理超过 {MAX_DRAFT_CELLS} 格（发布时可能要全部重放），请先发布这个草稿，再建新草稿继续"
+        ))
         .into());
     }
     let area = allowed_area(repo, grant, &draft.scope).await?;
@@ -326,6 +389,7 @@ pub async fn append_ops(
             count: ops.len() as u64,
         }),
     }
+    draft.work_cells = draft.work_cells.saturating_add(cells);
     draft.rev += 1;
     draft.updated_at = now;
     if !repo.save_draft(grant, &draft, expected_rev).await? {
@@ -361,10 +425,12 @@ pub async fn draft_ops(repo: &Repo, grant: &Grant, draft: &DraftDoc) -> Result<V
                 )))
             }
         };
-        let parsed = parse_ops_file(&bytes, MAX_DRAFT_OPS).map_err(|error| {
-            tracing::error!(asset = %reference.asset_hash, error = %error, "草稿引用的操作文件无法解析");
-            ApiError::internal()
-        })?;
+        let parsed = parse_ops_file_blocking(bytes, MAX_DRAFT_OPS)
+            .await
+            .map_err(|error| {
+                tracing::error!(asset = %reference.asset_hash, error = %error, "草稿引用的操作文件无法解析");
+                ApiError::internal()
+            })?;
         ops.extend(parsed);
     }
     ops.extend(inline.cloned());
@@ -688,6 +754,16 @@ async fn replay_changes(
     area: &AllowedArea,
 ) -> Result<Changes, PublishError> {
     let ops = draft_ops(repo, grant, draft).await?;
+    // 旧草稿没有记录计算量：按实际操作再核对一次总量。
+    let cells = ops_cells(&ops);
+    if cells > MAX_DRAFT_CELLS {
+        return Err(ApiError::new(
+            axum::http::StatusCode::PAYLOAD_TOO_LARGE,
+            "replay_too_large",
+            format!("重放这个草稿要处理 {cells} 格，超过上限 {MAX_DRAFT_CELLS} 格；请不带 replay 解决冲突，或把改动拆成几个草稿"),
+        )
+        .into());
+    }
     let mut workspace = Workspace::at_seq(repo, grant, head_seq).await?;
     let touched = match workspace.apply_ops(repo, grant, &ops, area, 0).await {
         Ok(touched) => touched,
@@ -964,6 +1040,20 @@ mod tests {
         let error = parse_ops_file(b"{\"op\":\"explode\"}", 10).unwrap_err();
         assert!(error.contains("第 1 行"), "{error}");
         assert!(parse_ops_file(&[0xff, 0xfe], 10).is_err());
+        // 行太长、解压后太大都拒绝（流式解析，不整份解压进内存）。
+        let long = format!("{}\n", " ".repeat(MAX_OPS_LINE_BYTES + 10));
+        assert!(parse_ops_file(long.as_bytes(), 10)
+            .unwrap_err()
+            .contains("超过"));
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        encoder.write_all(text.as_bytes()).unwrap();
+        encoder.write_all(&vec![b'\n'; 4 << 20]).unwrap();
+        let bomb = encoder.finish().unwrap();
+        assert!(bomb.len() < 64 << 10, "压缩后很小");
+        assert!(parse_ops_with_limit(&bomb, 10, 1 << 20)
+            .unwrap_err()
+            .contains("解压后超过"));
+        assert_eq!(parse_ops_with_limit(&bomb, 10, 8 << 20).unwrap().len(), 2);
     }
 
     #[test]
