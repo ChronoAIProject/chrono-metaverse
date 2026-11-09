@@ -341,5 +341,43 @@ test.describe('移动端', () => {
     );
     expect(overflow).toBeLessThanOrEqual(0);
     await page.screenshot({ path: join(SHOTS, 'mobile.png') });
+
+    // 单指拖动旋转、双指张开缩放：画面都会变。
+    const canvas = page.locator('.viewer__canvas');
+    const box = (await canvas.boundingBox())!;
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    const session = await page.context().newCDPSession(page);
+    const touch = async (
+      type: 'touchStart' | 'touchMove' | 'touchEnd',
+      points: { x: number; y: number }[],
+    ) => {
+      await session.send('Input.dispatchTouchEvent', {
+        type,
+        touchPoints: points.map((p, id) => ({ ...p, id })),
+      });
+    };
+    const before = await canvas.screenshot();
+    await touch('touchStart', [{ x: cx, y: cy }]);
+    for (let i = 1; i <= 8; i += 1) await touch('touchMove', [{ x: cx + i * 12, y: cy }]);
+    await touch('touchEnd', []);
+    await page.waitForTimeout(600);
+    const rotated = await canvas.screenshot();
+    expect(Buffer.compare(before, rotated)).not.toBe(0);
+    await touch('touchStart', [
+      { x: cx - 20, y: cy },
+      { x: cx + 20, y: cy },
+    ]);
+    for (let i = 1; i <= 8; i += 1) {
+      await touch('touchMove', [
+        { x: cx - 20 - i * 10, y: cy },
+        { x: cx + 20 + i * 10, y: cy },
+      ]);
+    }
+    await touch('touchEnd', []);
+    await page.waitForTimeout(600);
+    const zoomed = await canvas.screenshot();
+    expect(Buffer.compare(rotated, zoomed)).not.toBe(0);
+    await page.screenshot({ path: join(SHOTS, 'mobile-touch.png') });
   });
 });
