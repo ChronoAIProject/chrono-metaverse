@@ -3,7 +3,16 @@
 import pytest
 
 from metaverse_worker import shapes as sh
-from metaverse_worker.records import RecordError, check_label, entity_body, validate_anchor_body
+from metaverse_worker.records import (
+    RecordError,
+    check_label,
+    entity_body,
+    is_https_url,
+    model_source,
+    validate_anchor_body,
+    validate_model_source,
+    validate_props,
+)
 
 BOX = sh.box([1.0, 0.75, 0.8])
 
@@ -63,3 +72,80 @@ def test_anchor_body_rules():
     for body in bad:
         with pytest.raises(RecordError):
             validate_anchor_body(body)
+
+
+SOURCE = {
+    "library": "objaverse",
+    "id": "0123abcd",
+    "page": "https://sketchfab.com/3d-models/0123abcd",
+    "author": "某作者",
+    "license": "CC-BY-4.0",
+    "title": "布艺沙发",
+}
+MODEL = "ab" * 32
+MODEL_BOUNDS = {"min": [0, 0, 0], "max": [2, 0.8, 0.9]}
+
+
+def _model(**extra):
+    args = {
+        "entity_id": "sofa-01",
+        "kind": "object",
+        "asset_hash": MODEL,
+        "bounds": MODEL_BOUNDS,
+        "props": {"source": dict(SOURCE)},
+    }
+    args.update(extra)
+    return entity_body(**args)
+
+
+def test_model_entity_with_source_and_tint():
+    body = _model(material={"tint": [214, 196, 176], "opacity": 1})
+    assert body["material"] == {"tint": [214, 196, 176], "opacity": 1}
+    assert model_source(**SOURCE) == SOURCE
+    # 旧数据里 source 是识别来源的字符串，照旧当不透明的值。
+    _model(props={"source": "hint"})
+    validate_props({"category": "chair"})
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("license", "CC-BY-NC-4.0"),
+        ("license", "CC-BY-SA-4.0"),
+        ("license", "CC-BY-ND-4.0"),
+        ("library", "thingiverse"),
+        ("page", "javascript:alert(1)"),
+        ("page", "http://example.com/x"),
+        ("page", "https://example.com/a b"),
+        ("page", "https://example.com/a b"),
+        ("page", "https://"),
+        ("page", "https://a.b/" + "x" * 2000),
+        ("author", ""),
+        ("title", "a\x07b"),
+        ("title", "x" * 201),
+        ("id", 7),
+        ("extra", "x"),
+    ],
+)
+def test_model_source_rejected(key, value):
+    source = {**SOURCE, key: value}
+    with pytest.raises(RecordError):
+        _model(props={"source": source})
+    with pytest.raises(RecordError):
+        validate_model_source(source)
+
+
+def test_model_material_rules():
+    missing = dict(SOURCE)
+    del missing["author"]
+    with pytest.raises(RecordError):
+        _model(props={"source": missing})
+    with pytest.raises(RecordError):
+        validate_model_source([SOURCE])
+    with pytest.raises(RecordError, match="assetHash"):
+        entity_body(entity_id="sofa-01", kind="object", shape=BOX, material={"tint": [1, 2, 3]})
+    for bad in ({"opacity": 2}, {"color": [1, 2, 3]}, {"tint": [1, 2]}, {"unlit": 1}, []):
+        with pytest.raises(RecordError):
+            _model(material=bad)
+    assert is_https_url("https://polyhaven.com/a/sofa")
+    assert not is_https_url(None)

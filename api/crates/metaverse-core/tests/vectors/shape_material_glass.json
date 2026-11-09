@@ -1,0 +1,36 @@
+{
+  "bounds": {
+    "max": [
+      1.0,
+      1.2,
+      0.006
+    ],
+    "min": [
+      -1.0,
+      0.0,
+      -0.006
+    ]
+  },
+  "description": "材质 opacity < 1：半透明（玻璃）",
+  "kind": "shape",
+  "name": "material-glass",
+  "shape": {
+    "material": {
+      "color": [
+        210,
+        230,
+        240
+      ],
+      "opacity": 0.25
+    },
+    "size": [
+      2,
+      1.2,
+      0.012
+    ],
+    "type": "box"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "valid": true
+}

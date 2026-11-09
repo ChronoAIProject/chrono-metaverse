@@ -68,6 +68,15 @@ export interface EntityBody {
    * 查看器加载这个模型，按 `bounds` 的底面中心摆放（模型坐标的原点在底面中心）。
    */
   readonly assetHash?: string;
+  /**
+   * 模型（assetHash）整体的外观：`tint` 乘到模型原来的颜色上，`opacity` 半透明，`unlit` 不受光照。
+   * 只和 assetHash 一起出现（docs/SHAPES.md 第 3 节）。
+   */
+  readonly material?: {
+    readonly tint?: Rgb;
+    readonly opacity?: number;
+    readonly unlit?: boolean;
+  };
   readonly textures?: readonly string[];
   readonly bounds?: { readonly min: Vec3; readonly max: Vec3 };
   readonly fit?: {
@@ -75,7 +84,10 @@ export interface EntityBody {
     readonly p90Cm?: number;
     readonly coverage3cm?: number;
   };
-  /** 不透明的键值，网站只按纯文本列出。 */
+  /**
+   * 不透明的键值，网站只按纯文本列出。例外：`source` 是对象时是外部模型的署名
+   * （core/sources.ts），在"模型来源"面板和信息面板里显示。
+   */
   readonly props?: Readonly<Record<string, unknown>>;
 }
 

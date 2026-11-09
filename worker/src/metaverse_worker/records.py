@@ -16,7 +16,7 @@ from typing import Any
 
 from .canonical import canonical_json, content_hash, is_sha256_hex
 from .ids import SPACE_ANCHOR_ID, is_object_id
-from .shapes import Bounds, rounded_bounds, shape_bounds, validate_shape
+from .shapes import Bounds, ShapeError, rounded_bounds, shape_bounds, validate_opacity, validate_shape
 
 MAX_PROPS_BYTES = 16 * 1024
 MAX_LABEL_CHARS = 200
@@ -28,6 +28,14 @@ ANCHOR_KINDS = ("table", "seat", "zone", "door", "camera", "counter", "space")
 VISIBILITIES = ("public", "internal")
 MAX_GRID_COORD = 1 << 30
 MAX_POSITION = 1e5
+
+# 外部模型的署名（`props.source` 是对象时，docs/SHAPES.md 第 3 节）。
+SOURCE_LIBRARIES = ("polyhaven", "objaverse", "sketchfab")
+# 明确可商用、不传染的许可（NC、ND、SA 一律排除）。
+SOURCE_LICENSES = ("CC0-1.0", "CC-BY-4.0", "CC-BY-3.0")
+SOURCE_FIELDS = ("library", "id", "page", "author", "license", "title")
+MAX_SOURCE_TEXT_CHARS = 200
+MAX_SOURCE_URL_CHARS = 2000
 
 
 class RecordError(ValueError):
@@ -42,6 +50,87 @@ def check_label(label: Any) -> None:
         or any(unicodedata.category(ch) == "Cc" for ch in label)
     ):
         raise RecordError("label 不超过 200 个字符，不能含控制字符")
+
+
+def _is_control(ch: str) -> bool:
+    return unicodedata.category(ch) == "Cc"
+
+
+def is_https_url(url: Any) -> bool:
+    """来源页地址：`https://` 开头、后面至少一个字符，不超过 2000 个字符，不含空白和控制字符
+    （空白按 Rust `char::is_whitespace`，即 Unicode White_Space）。"""
+    return (
+        isinstance(url, str)
+        and len(url) > len("https://")
+        and url.startswith("https://")
+        and len(url) <= MAX_SOURCE_URL_CHARS
+        and not any(ch.isspace() or _is_control(ch) for ch in url)
+    )
+
+
+def model_source(
+    *, library: str, id: str, page: str, author: str, license: str, title: str
+) -> dict[str, str]:
+    """构造并校验外部模型的署名（放进物件的 `props.source`）。"""
+    source = {
+        "library": library,
+        "id": id,
+        "page": page,
+        "author": author,
+        "license": license,
+        "title": title,
+    }
+    validate_model_source(source)
+    return source
+
+
+def validate_model_source(source: Any) -> None:
+    """署名（Rust `ModelSource::validate`）：六个字段都是字符串、不能有别的字段；库和许可只取白名单里的值，
+    编号、作者、标题 1 到 200 个字符且不含控制字符，来源页必须是 https 地址。"""
+    if not isinstance(source, dict):
+        raise RecordError("props.source 必须是对象")
+    unknown = set(source) - set(SOURCE_FIELDS)
+    if unknown:
+        raise RecordError(f"props.source 有不认识的字段：{sorted(unknown)}")
+    for key in SOURCE_FIELDS:
+        if not isinstance(source.get(key), str):
+            raise RecordError(f"props.source.{key} 必须是字符串")
+    if source["library"] not in SOURCE_LIBRARIES:
+        raise RecordError("props.source.library 只能是 polyhaven、objaverse 或 sketchfab")
+    if source["license"] not in SOURCE_LICENSES:
+        raise RecordError("props.source.license 只能是 CC0-1.0、CC-BY-4.0 或 CC-BY-3.0（可商用、不传染）")
+    for key in ("id", "author", "title"):
+        text = source[key]
+        if not 0 < len(text) <= MAX_SOURCE_TEXT_CHARS or any(_is_control(ch) for ch in text):
+            raise RecordError(f"props.source.{key} 必须是 1 到 200 个字符，不含控制字符")
+    if not is_https_url(source["page"]):
+        raise RecordError("props.source.page 必须是 https 地址（不超过 2000 个字符，不含空白和控制字符）")
+
+
+def validate_props(props: Mapping[str, Any]) -> None:
+    """`props` 里有结构的键：`source` 是对象时按署名校验；不是对象的 `source`（旧数据里识别来源的字符串
+    `hint` / `rules`）照旧当不透明的值。"""
+    if isinstance(props.get("source"), dict):
+        validate_model_source(props["source"])
+
+
+def _validate_model_material(material: Any) -> None:
+    if not isinstance(material, dict):
+        raise RecordError("material 必须是对象")
+    unknown = set(material) - {"tint", "opacity", "unlit"}
+    if unknown:
+        raise RecordError(f"material 有不认识的字段：{sorted(unknown)}")
+    tint = material.get("tint")
+    if tint is not None and not (
+        isinstance(tint, list) and len(tint) == 3 and all(_is_int(c) and 0 <= c <= 255 for c in tint)
+    ):
+        raise RecordError("material.tint 必须是 3 个 0–255 的整数")
+    if material.get("unlit") is not None and not isinstance(material["unlit"], bool):
+        raise RecordError("material.unlit 必须是布尔值")
+    try:
+        validate_opacity("material.opacity", material.get("opacity"))
+    except ShapeError as error:
+        raise RecordError(str(error)) from error
 
 
 def record_hash(kind: str, space_id: str, body: Mapping[str, Any]) -> str:
@@ -59,13 +148,17 @@ def entity_body(
     anchor_id: str | None = None,
     region_id: str | None = None,
     asset_hash: str | None = None,
+    material: Mapping[str, Any] | None = None,
     textures: Sequence[str] | None = None,
     bounds: Bounds | None = None,
     fit: Mapping[str, float] | None = None,
     props: Mapping[str, Any] | None = None,
     templates: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """构造物件记录的 body 并校验。不给 `bounds` 时按形状算出来（向外取整到 0.1 毫米）。"""
+    """构造物件记录的 body 并校验。不给 `bounds` 时按形状算出来（向外取整到 0.1 毫米）。
+
+    引用外部模型时给 `asset_hash`（处理后的 glb）和 `bounds`，可以带 `material`（tint / opacity / unlit，
+    给整个模型调外观），署名放进 `props={"source": model_source(...)}`。"""
     body: dict[str, Any] = {"entityId": entity_id, "layer": layer, "kind": kind}
     if label is not None:
         body["label"] = label
@@ -77,6 +170,8 @@ def entity_body(
         body["shape"] = dict(shape)
     if asset_hash is not None:
         body["assetHash"] = asset_hash
+    if material is not None:
+        body["material"] = dict(material) if isinstance(material, Mapping) else material
     if textures:
         body["textures"] = sorted(set(textures))
     if bounds is None:
@@ -103,7 +198,7 @@ def validate_entity_body(
 ) -> None:
     allowed = {
         "entityId", "layer", "kind", "label", "anchorId", "regionId", "shape",
-        "assetHash", "textures", "bounds", "fit", "props",
+        "assetHash", "material", "textures", "bounds", "fit", "props",
     }  # fmt: skip
     unknown = set(body) - allowed
     if unknown:
@@ -125,6 +220,10 @@ def validate_entity_body(
         raise RecordError("模板必须给出 shape")
     if body.get("assetHash") is not None and not is_sha256_hex(body["assetHash"]):
         raise RecordError("assetHash 必须是 64 位小写十六进制")
+    if body.get("material") is not None:
+        _validate_model_material(body["material"])
+        if body.get("assetHash") is None:
+            raise RecordError("material 只用于模型，必须和 assetHash 一起给")
     textures = body.get("textures")
     if textures is not None and (len(textures) > 64 or not all(is_sha256_hex(t) for t in textures)):
         raise RecordError("textures 必须是至多 64 个资源哈希")
@@ -142,6 +241,7 @@ def validate_entity_body(
             raise RecordError("fit 取值不合法")
     if len(canonical_json(body.get("props", {})).encode()) > MAX_PROPS_BYTES:
         raise RecordError("props 超过 16KB")
+    validate_props(body.get("props") or {})
     shape = body.get("shape")
     if shape is not None:
         validate_shape(shape)

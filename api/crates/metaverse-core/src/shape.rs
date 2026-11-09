@@ -16,6 +16,9 @@
 //!    - `sweep`：路径点的包围盒向各个方向扩出截面的外接半径
 //!      （圆：`r`；矩形：`√(w²+h²)/2`；忽略 `smooth`）；
 //!    - `loft`：各截面轮廓包围盒的并 × `[第一个 y, 最后一个 y]`；
+//!    - `plate`：多边形各点 `Pᵢ` 和它们沿 −法向平移厚度后的点 `Pᵢ − t·n` 的包围盒
+//!      （法向见 [`plate_frame`]）；
+//!    - `hull`：全部点的包围盒（凸包的顶点都取自这些点，包围盒相同）；
 //!    - `group`：各子形状（含子形状自己的 `transform`）包围盒的并；
 //!    - `instance`：模板形状（含模板自己的 `transform`）的包围盒。
 //! 2. 再用本形状的 `transform` 变换局部包围盒的 8 个角点，取这些点的包围盒。
@@ -26,6 +29,16 @@
 //! 二维轮廓的点写作 `[x, z]`，按数学上的 (u, v) = (x, z) 平面理解：`points` 逆时针
 //! 排列（有向面积为正）；`bulge` = tan(圆心角 / 4)，正值表示从第 i 点到第 i+1 点
 //! 逆时针转的圆弧，对逆时针轮廓来说就是向外凸。
+//!
+//! **板（`plate`）和凸包（`hull`）的判定**（三种语言用同样的公式和比较顺序，结果一致）：
+//!
+//! - 板：中心 `c` 是各点的平均；Newell 法向 `N = Σ (Pᵢ − c) × (Pᵢ₊₁ − c)`，面积 = `|N| / 2`，
+//!   单位法向 `n = N / |N|`（点按右手定则排列，从 `n` 一侧看是逆时针）。最佳拟合平面取过 `c`、
+//!   法向为 `n` 的平面，每个点到它的距离 `|(Pᵢ − c)·n|` 不超过 1 毫米。简单多边形的检查在投影
+//!   平面上做：去掉 `|n|` 最大的那个坐标轴（并列时先去 x、再 y），相邻两点不能重合，相邻两条边
+//!   不能折回，不相邻的边不能相交（含接触）。
+//! - 凸包：`a` = 第 0 点；`b` = 离 `a` 最远的点；`c` = 离直线 `ab` 最远的点；`d` = 离平面 `abc`
+//!   最远的点（都取第一个最大值）。三个距离任何一个不超过 1 毫米就是重合、共线或共面，无效。
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::f64::consts::{FRAC_PI_2, PI, TAU};
@@ -58,6 +71,20 @@ pub const MAX_BULGE: f64 = 1000.0;
 /// 放样截面数范围。
 pub const MIN_LOFT_SECTIONS: usize = 2;
 pub const MAX_LOFT_SECTIONS: usize = 8;
+/// 板的点数范围。
+pub const MIN_PLATE_POINTS: usize = 3;
+pub const MAX_PLATE_POINTS: usize = 64;
+/// 板厚上限（米）。
+pub const MAX_PLATE_THICKNESS: f64 = 1.0;
+/// 板的最小面积（平方米，1 平方毫米）。
+pub const MIN_PLATE_AREA: f64 = 1e-6;
+/// 相邻两点至少相距这么远（米），否则算重合。
+pub const MIN_EDGE_LENGTH: f64 = 1e-6;
+/// 平面度、凸包退化的容差（米，1 毫米）。
+pub const FLAT_TOLERANCE: f64 = 0.001;
+/// 凸包的点数范围。
+pub const MIN_HULL_POINTS: usize = 4;
+pub const MAX_HULL_POINTS: usize = 256;
 
 /// 校验或计算失败：`path` 是 JSON 路径，例如 `$.children[2].outline.points[3]`。
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -183,7 +210,9 @@ pub enum UvMode {
 }
 
 /// 材质：`{ "color": [r,g,b] }`，或 `{ "texture": "<资源哈希>", "uv": …, "tint"?: [r,g,b] }`。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// 两种都可以带 `opacity`（0–1，默认 1，小于 1 时半透明，用于玻璃）和 `unlit`
+/// （默认 false，为真时不受光照，用于屏幕、灯箱）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Material {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -194,10 +223,25 @@ pub struct Material {
     pub uv: Option<UvMode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tint: Option<[u8; 3]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opacity: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unlit: Option<bool>,
+}
+
+/// 不透明度必须是 0 到 1 之间的有限值。
+pub fn validate_opacity(path: &str, opacity: Option<f64>) -> Result<(), ShapeError> {
+    match opacity {
+        Some(value) if !(value.is_finite() && (0.0..=1.0).contains(&value)) => {
+            Err(ShapeError::new(path, "不透明度必须在 0 到 1 之间"))
+        }
+        _ => Ok(()),
+    }
 }
 
 impl Material {
     fn validate(&self, path: &str) -> Result<(), ShapeError> {
+        validate_opacity(&format!("{path}.opacity"), self.opacity)?;
         match (&self.color, &self.texture) {
             (Some(_), None) => {
                 if self.uv.is_some() || self.tint.is_some() {
@@ -467,6 +511,15 @@ pub enum ShapeKind {
     Loft {
         sections: Vec<LoftSection>,
     },
+    /// 平面多边形沿 −法向 加厚成的板（斜面折板、台面）。
+    Plate {
+        points: Vec<[f64; 3]>,
+        thickness: f64,
+    },
+    /// 点的凸包实体（楔形、船头这类凸多面体）。
+    Hull {
+        points: Vec<[f64; 3]>,
+    },
     Group {
         children: Vec<Shape>,
     },
@@ -485,6 +538,8 @@ impl ShapeKind {
             ShapeKind::Lathe { .. } => "lathe",
             ShapeKind::Sweep { .. } => "sweep",
             ShapeKind::Loft { .. } => "loft",
+            ShapeKind::Plate { .. } => "plate",
+            ShapeKind::Hull { .. } => "hull",
             ShapeKind::Group { .. } => "group",
             ShapeKind::Instance { .. } => "instance",
         }
@@ -541,6 +596,223 @@ impl<'de> Deserialize<'de> for Shape {
             material,
         })
     }
+}
+
+fn sub3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn dot3(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn cross3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+/// 板的中心、单位法向和面积。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlateFrame {
+    /// 各点的平均。
+    pub center: [f64; 3],
+    /// Newell 法向（单位向量）：点从这一侧看是逆时针。
+    pub normal: [f64; 3],
+    /// 多边形面积（平方米）。
+    pub area: f64,
+}
+
+/// 板的中心和 Newell 法向：`N = Σ (Pᵢ − c) × (Pᵢ₊₁ − c)`，面积 = `|N| / 2`。
+/// 面积小于 [`MIN_PLATE_AREA`]（点几乎共线）时返回 `None`。
+pub fn plate_frame(points: &[[f64; 3]]) -> Option<PlateFrame> {
+    if points.len() < MIN_PLATE_POINTS {
+        return None;
+    }
+    let count = points.len() as f64;
+    let mut sum = [0.0; 3];
+    for p in points {
+        for axis in 0..3 {
+            sum[axis] += p[axis];
+        }
+    }
+    let center = [sum[0] / count, sum[1] / count, sum[2] / count];
+    let mut newell = [0.0; 3];
+    for (i, p) in points.iter().enumerate() {
+        let q = points[(i + 1) % points.len()];
+        let c = cross3(sub3(*p, center), sub3(q, center));
+        for axis in 0..3 {
+            newell[axis] += c[axis];
+        }
+    }
+    let length = dot3(newell, newell).sqrt();
+    let area = length / 2.0;
+    if area.is_nan() || area < MIN_PLATE_AREA {
+        return None;
+    }
+    Some(PlateFrame {
+        center,
+        normal: [newell[0] / length, newell[1] / length, newell[2] / length],
+        area,
+    })
+}
+
+/// 简单多边形检查用的投影：去掉法向分量绝对值最大的坐标轴（并列时先去 x、再 y），
+/// 返回剩下两个坐标轴的下标（从小到大）。
+pub fn plate_projection_axes(normal: [f64; 3]) -> [usize; 2] {
+    let [x, y, z] = normal.map(f64::abs);
+    if x >= y && x >= z {
+        [1, 2]
+    } else if y >= z {
+        [0, 2]
+    } else {
+        [0, 1]
+    }
+}
+
+fn orient2(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> f64 {
+    (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+}
+
+/// `p` 落在线段 `ab` 的外包矩形里（已知三点共线时就是落在线段上）。
+fn within(a: [f64; 2], b: [f64; 2], p: [f64; 2]) -> bool {
+    a[0].min(b[0]) <= p[0]
+        && p[0] <= a[0].max(b[0])
+        && a[1].min(b[1]) <= p[1]
+        && p[1] <= a[1].max(b[1])
+}
+
+/// 两条线段是否相交（含端点接触、共线重叠）。
+pub fn segments_intersect(p1: [f64; 2], p2: [f64; 2], p3: [f64; 2], p4: [f64; 2]) -> bool {
+    let d1 = orient2(p3, p4, p1);
+    let d2 = orient2(p3, p4, p2);
+    let d3 = orient2(p1, p2, p3);
+    let d4 = orient2(p1, p2, p4);
+    let straddle = |a: f64, b: f64| (a > 0.0 && b < 0.0) || (a < 0.0 && b > 0.0);
+    if straddle(d1, d2) && straddle(d3, d4) {
+        return true;
+    }
+    (d1 == 0.0 && within(p3, p4, p1))
+        || (d2 == 0.0 && within(p3, p4, p2))
+        || (d3 == 0.0 && within(p1, p2, p3))
+        || (d4 == 0.0 && within(p1, p2, p4))
+}
+
+fn validate_plate(path: &str, points: &[[f64; 3]], thickness: f64) -> Result<(), ShapeError> {
+    let at = format!("{path}.points");
+    if !(MIN_PLATE_POINTS..=MAX_PLATE_POINTS).contains(&points.len()) {
+        return Err(ShapeError::new(&at, "板需要 3 到 64 个点"));
+    }
+    for (index, point) in points.iter().enumerate() {
+        coords(&format!("{at}[{index}]"), point)?;
+    }
+    if !(thickness.is_finite() && thickness > 0.0 && thickness <= MAX_PLATE_THICKNESS) {
+        return Err(ShapeError::new(
+            &format!("{path}.thickness"),
+            "厚度必须大于 0 且不超过 1 米",
+        ));
+    }
+    let count = points.len();
+    for (index, point) in points.iter().enumerate() {
+        let edge = sub3(points[(index + 1) % count], *point);
+        if dot3(edge, edge) <= MIN_EDGE_LENGTH * MIN_EDGE_LENGTH {
+            return Err(ShapeError::new(&format!("{at}[{index}]"), "与下一点重合"));
+        }
+    }
+    let frame =
+        plate_frame(points).ok_or_else(|| ShapeError::new(&at, "面积太小（点几乎共线）"))?;
+    for (index, point) in points.iter().enumerate() {
+        if dot3(sub3(*point, frame.center), frame.normal).abs() > FLAT_TOLERANCE {
+            return Err(ShapeError::new(
+                &format!("{at}[{index}]"),
+                "离最佳拟合平面超过 1 毫米",
+            ));
+        }
+    }
+    let [u, v] = plate_projection_axes(frame.normal);
+    let flat: Vec<[f64; 2]> = points.iter().map(|p| [p[u], p[v]]).collect();
+    for index in 0..count {
+        let here = flat[index];
+        let prev = flat[(index + count - 1) % count];
+        let next = flat[(index + 1) % count];
+        let a = [prev[0] - here[0], prev[1] - here[1]];
+        let b = [next[0] - here[0], next[1] - here[1]];
+        if a[0] * b[1] - a[1] * b[0] == 0.0 && a[0] * b[0] + a[1] * b[1] > 0.0 {
+            return Err(ShapeError::new(
+                &format!("{at}[{index}]"),
+                "相邻两条边在这一点折回",
+            ));
+        }
+    }
+    for i in 0..count {
+        for j in i + 2..count {
+            if i == 0 && j == count - 1 {
+                continue;
+            }
+            if segments_intersect(flat[i], flat[i + 1], flat[j], flat[(j + 1) % count]) {
+                return Err(ShapeError::new(&at, "多边形自相交"));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// 凸包退化判定（见模块文档）：点重合、共线或共面时返回说明。
+pub fn hull_degeneracy(points: &[[f64; 3]]) -> Result<(), &'static str> {
+    let Some(&a) = points.first() else {
+        return Err("没有点");
+    };
+    let tolerance = FLAT_TOLERANCE * FLAT_TOLERANCE;
+    // 第一个取到最大值的点和这个最大值。
+    let farthest = |measure: &dyn Fn([f64; 3]) -> f64| {
+        let mut best = (0usize, f64::NEG_INFINITY);
+        for (index, point) in points.iter().enumerate() {
+            let value = measure(*point);
+            if value > best.1 {
+                best = (index, value);
+            }
+        }
+        best
+    };
+    let (b, spread) = farthest(&|p| {
+        let d = sub3(p, a);
+        dot3(d, d)
+    });
+    if spread <= tolerance {
+        return Err("点全部重合（容差 1 毫米）");
+    }
+    let axis = sub3(points[b], a);
+    let axis_sq = dot3(axis, axis);
+    let (c, offset) = farthest(&|p| {
+        let c = cross3(sub3(p, a), axis);
+        dot3(c, c) / axis_sq
+    });
+    if offset <= tolerance {
+        return Err("点全部共线（容差 1 毫米）");
+    }
+    let normal = cross3(axis, sub3(points[c], a));
+    let normal_sq = dot3(normal, normal);
+    let (_, height) = farthest(&|p| {
+        let h = dot3(sub3(p, a), normal);
+        h * h / normal_sq
+    });
+    if height <= tolerance {
+        return Err("点全部共面（容差 1 毫米）");
+    }
+    Ok(())
+}
+
+fn validate_hull(path: &str, points: &[[f64; 3]]) -> Result<(), ShapeError> {
+    let at = format!("{path}.points");
+    if !(MIN_HULL_POINTS..=MAX_HULL_POINTS).contains(&points.len()) {
+        return Err(ShapeError::new(&at, "凸包需要 4 到 256 个点"));
+    }
+    for (index, point) in points.iter().enumerate() {
+        coords(&format!("{at}[{index}]"), point)?;
+    }
+    hull_degeneracy(points).map_err(|message| ShapeError::new(&at, message))
 }
 
 /// 按编号查模板（模板是空间里 `kind: "template"` 的物件）。
@@ -755,6 +1027,12 @@ impl Shape {
                     section.outline.validate(&format!("{at}.outline"))?;
                 }
             }
+            ShapeKind::Plate { points, thickness } => {
+                validate_plate(path, points, *thickness)?;
+            }
+            ShapeKind::Hull { points } => {
+                validate_hull(path, points)?;
+            }
             ShapeKind::Group { children } => {
                 if children.is_empty() {
                     return Err(ShapeError::new(
@@ -890,6 +1168,21 @@ impl Shape {
                     max: [max2[0], last.y, max2[1]],
                 }
             }
+            ShapeKind::Plate { points, thickness } => {
+                let frame = plate_frame(points)
+                    .ok_or_else(|| ShapeError::new(path, "板的面积太小（点几乎共线）"))?;
+                let back = points.iter().map(|p| {
+                    [
+                        p[0] - thickness * frame.normal[0],
+                        p[1] - thickness * frame.normal[1],
+                        p[2] - thickness * frame.normal[2],
+                    ]
+                });
+                Aabb::from_points(points.iter().copied().chain(back))
+                    .ok_or_else(|| ShapeError::new(path, "板没有点"))?
+            }
+            ShapeKind::Hull { points } => Aabb::from_points(points.iter().copied())
+                .ok_or_else(|| ShapeError::new(path, "凸包没有点"))?,
             ShapeKind::Group { children } => {
                 let mut result: Option<Aabb> = None;
                 for (index, child) in children.iter().enumerate() {
@@ -1100,6 +1393,144 @@ mod tests {
         );
         let looped = shape(json!({"type":"instance","template":"loop"}));
         assert!(looped.bounds(&templates).is_err());
+    }
+
+    #[test]
+    fn plate_normal_follows_right_hand_rule_and_bounds_extend_backwards() {
+        // 从 +y 往下看是逆时针 → 法向 +y，板向下加厚。
+        let plate = shape(json!({"type":"plate","thickness":0.1,
+            "points":[[0,1,0],[0,1,2],[3,1,2],[3,1,0]]}));
+        plate.validate().unwrap();
+        let ShapeKind::Plate { points, .. } = &plate.kind else {
+            unreachable!()
+        };
+        let frame = plate_frame(points).unwrap();
+        assert_eq!(frame.normal, [0.0, 1.0, 0.0]);
+        assert!((frame.area - 6.0).abs() < 1e-12);
+        close(
+            &plate.bounds(&NoTemplates).unwrap(),
+            [0.0, 0.9, 0.0],
+            [3.0, 1.0, 2.0],
+        );
+        // 反过来排列，法向朝下，板向上加厚。
+        let flipped = shape(json!({"type":"plate","thickness":0.1,
+            "points":[[3,1,0],[3,1,2],[0,1,2],[0,1,0]]}));
+        close(
+            &flipped.bounds(&NoTemplates).unwrap(),
+            [0.0, 1.0, 0.0],
+            [3.0, 1.1, 2.0],
+        );
+    }
+
+    #[test]
+    fn plate_validation_paths() {
+        let path = |value: Value| shape(value).validate().unwrap_err().path;
+        assert_eq!(
+            path(json!({"type":"plate","thickness":0,"points":[[0,0,0],[1,0,0],[0,1,0]]})),
+            "$.thickness"
+        );
+        assert_eq!(
+            path(json!({"type":"plate","thickness":0.1,"points":[[0,0,0],[1,0,0]]})),
+            "$.points"
+        );
+        assert_eq!(
+            path(
+                json!({"type":"plate","thickness":0.1,"points":[[0,0,0],[1,0,0],[1,0,0],[0,1,0]]})
+            ),
+            "$.points[1]"
+        );
+        assert_eq!(
+            path(json!({"type":"plate","thickness":0.1,
+                "points":[[0,0,0],[1,0,0],[1,1,0.01],[0,1,0]]})),
+            "$.points[0]"
+        );
+        // 不相邻的边只在一点接触也算自相交。
+        let touching = json!({"type":"plate","thickness":0.1,
+            "points":[[0,0,0],[2,0,0],[2,2,0],[1,0,0],[0,2,0]]});
+        assert_eq!(path(touching), "$.points");
+        assert!(serde_json::from_value::<Shape>(
+            json!({"type":"plate","points":[[0,0,0],[1,0,0],[0,1,0]]})
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn segment_intersection_cases() {
+        let hit = |a, b, c, d| segments_intersect(a, b, c, d);
+        assert!(hit([0.0, 0.0], [2.0, 2.0], [0.0, 2.0], [2.0, 0.0]));
+        assert!(!hit([0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]));
+        assert!(hit([0.0, 0.0], [2.0, 0.0], [1.0, 0.0], [1.0, 1.0]));
+        assert!(hit([0.0, 0.0], [2.0, 0.0], [1.0, 0.0], [3.0, 0.0]));
+        assert!(!hit([0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [3.0, 0.0]));
+        assert_eq!(plate_projection_axes([0.0, 0.0, -1.0]), [0, 1]);
+        assert_eq!(plate_projection_axes([0.6, 0.6, 0.1]), [1, 2]);
+        assert_eq!(plate_projection_axes([0.1, 0.6, 0.6]), [0, 2]);
+    }
+
+    #[test]
+    fn hull_degeneracy_uses_one_millimetre() {
+        let ok = |points: &[[f64; 3]]| hull_degeneracy(points);
+        assert!(ok(&[[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]).is_ok());
+        assert!(ok(&[
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.5, 0.5, 0.002]
+        ])
+        .is_ok());
+        assert_eq!(
+            ok(&[
+                [0.0; 3],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.5, 0.5, 0.0009]
+            ]),
+            Err("点全部共面（容差 1 毫米）")
+        );
+        assert_eq!(
+            ok(&[
+                [0.0; 3],
+                [1.0, 0.0, 0.0],
+                [2.0, 0.0005, 0.0],
+                [3.0, 0.0, 0.0]
+            ]),
+            Err("点全部共线（容差 1 毫米）")
+        );
+        assert_eq!(ok(&[[0.0; 3]; 4]), Err("点全部重合（容差 1 毫米）"));
+        let hull = shape(
+            json!({"type":"hull","points":[[0,0,0],[1,0,0],[0,2,0],[0,0,3],[0.1,0.1,0.1]],
+            "transform":{"position":[1,1,1]}}),
+        );
+        hull.validate().unwrap();
+        close(
+            &hull.bounds(&NoTemplates).unwrap(),
+            [1.0, 1.0, 1.0],
+            [2.0, 3.0, 4.0],
+        );
+        let many = json!({"type":"hull","points":vec![json!([0,0,0]); MAX_HULL_POINTS + 1]});
+        assert_eq!(shape(many).validate().unwrap_err().path, "$.points");
+    }
+
+    #[test]
+    fn material_opacity_and_unlit() {
+        let glass = json!({"type":"box","size":[1,1,0.01],
+            "material":{"color":[200,220,230],"opacity":0.3,"unlit":false}});
+        let parsed = shape(glass.clone());
+        parsed.validate().unwrap();
+        let canonical = |v: &Value| crate::canonical::canonical_json(v).unwrap();
+        assert_eq!(
+            canonical(&serde_json::to_value(&parsed).unwrap()),
+            canonical(&glass)
+        );
+        for opacity in [-0.1, 1.01] {
+            let bad = shape(json!({"type":"box","size":[1,1,1],
+                "material":{"color":[1,1,1],"opacity":opacity}}));
+            assert_eq!(bad.validate().unwrap_err().path, "$.material.opacity");
+        }
+        assert!(serde_json::from_value::<Shape>(
+            json!({"type":"box","size":[1,1,1],"material":{"color":[1,1,1],"unlit":1}})
+        )
+        .is_err());
     }
 
     #[test]

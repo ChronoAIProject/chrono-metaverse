@@ -38,6 +38,84 @@ describe('单位换算', () => {
   });
 });
 
+describe('板、凸包和材质外观', () => {
+  it('plate：法向按右手定则，板往背后长；坏数据立刻报错', () => {
+    const top = kit.plate(
+      [
+        [0, 0.75, 0],
+        [0, 0.75, 0.6],
+        [1.2, 0.75, 0.6],
+        [1.2, 0.75, 0],
+      ],
+      0.03,
+      { color: '#B08A5A', at: [1, 0, 0] },
+    );
+    expect(top.type).toBe('plate');
+    expect(top.transform).toEqual({ position: [1, 0, 0] });
+    const bounds = shapeBounds(top);
+    close([...bounds.min], [1, 0.72, 0]);
+    close([...bounds.max], [2.2, 0.75, 0.6]);
+    expect(() =>
+      kit.plate(
+        [
+          [0, 0, 0],
+          [1, 0, 0],
+          [1, 1, 0.01],
+          [0, 1, 0],
+        ],
+        0.02,
+      ),
+    ).toThrow(ShapeError);
+    expect(() =>
+      kit.plate(
+        [
+          [0, 0, 0],
+          [1, 0, 0],
+          [0, 1, 0],
+        ],
+        2,
+      ),
+    ).toThrow('厚度');
+  });
+
+  it('hull：凸包的包围盒取全部点；共面的点不行', () => {
+    const wedge = kit.hull(
+      [
+        [0, 0, 0],
+        [1.6, 0, 0],
+        [0, 0.9, 0],
+        [0, 0, 0.6],
+        [1.6, 0, 0.6],
+        [0, 0.9, 0.6],
+      ],
+      { color: [90, 90, 96], yaw: 90 },
+    );
+    const bounds = shapeBounds(wedge);
+    close([...bounds.min], [0, 0, -1.6]);
+    close([...bounds.max], [0.6, 0.9, 0]);
+    expect(() =>
+      kit.hull([
+        [0, 0, 0],
+        [1, 0, 0],
+        [1, 0, 1],
+        [0, 0.0005, 1],
+      ]),
+    ).toThrow('共面');
+  });
+
+  it('opacity、unlit 跟着颜色或贴图走', () => {
+    const glass = kit.box([1, 2, 0.01], { color: [210, 230, 240], opacity: 0.3 });
+    expect(glass.material).toEqual({ color: [210, 230, 240], opacity: 0.3 });
+    const screen = kit.box([3, 1.7, 0.05], {
+      texture: { hash: 'ab'.repeat(32), uv: 'planar' },
+      unlit: true,
+    });
+    expect(screen.material).toEqual({ texture: 'ab'.repeat(32), uv: 'planar', unlit: true });
+    expect(() => kit.box([1, 1, 1], { opacity: 0.5 })).toThrow('color 或 texture');
+    expect(() => kit.box([1, 1, 1], { color: [1, 1, 1], opacity: 1.5 })).toThrow('不透明度');
+  });
+});
+
 describe('形状构造', () => {
   it('box 带圆角、倒角、位置、旋转和颜色', () => {
     const shape = kit.box([1.2, 0.03, 0.75], {

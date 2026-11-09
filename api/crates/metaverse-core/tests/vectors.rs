@@ -326,6 +326,21 @@ fn canonical_cases() -> Vec<(String, Value)> {
             ),
         ),
         (
+            "canonical_entity_model_source".into(),
+            record_vector(
+                "entity-model-source",
+                "引用外部模型的物件（SHAPES 3）：只有 assetHash，material 给整个模型调色，props.source 是署名",
+                RecordKind::Entity,
+                "front-hall",
+                r#"{ "entityId": "sofa-01", "layer": "rebuilt", "kind": "object", "label": "沙发",
+  "assetHash": "4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d9f2c7d",
+  "material": { "tint": [214, 196, 176] },
+  "bounds": { "min": [1.1, 0, 2.4], "max": [3.0, 0.82, 3.3] },
+  "props": { "source": { "library": "polyhaven", "id": "example_sofa", "page": "https://polyhaven.com/a/example_sofa",
+                         "author": "示例作者", "license": "CC0-1.0", "title": "示例沙发" } } }"#,
+            ),
+        ),
+        (
             "canonical_anchor_record".into(),
             record_vector(
                 "anchor-record",
@@ -390,6 +405,11 @@ fn shape_vector(name: &str, description: &str, shape: Value, templates: Value) -
             vector["valid"] = json!(true);
             vector["bounds"] = json!({"min": bounds.min, "max": bounds.max});
             vector["tolerance"] = json!(BOUNDS_TOLERANCE);
+            // 板的三角形数按规则算：顶面、底面各 n − 2，侧面每条边 2 个，共 4n − 4。
+            if vector["shape"]["type"] == "plate" {
+                let n = vector["shape"]["points"].as_array().unwrap().len() as u64;
+                vector["triangles"] = json!(4 * n - 4);
+            }
         }
         Err((path, message)) => {
             vector["valid"] = json!(false);
@@ -586,18 +606,179 @@ fn shape_cases() -> Vec<(String, Value)> {
         "shape_invalid_material",
         "材质只能二选一：color 或 texture",
         json!({"type":"box","size":[1,1,1],"material":{"color":[1,2,3],"uv":"box"}}),
-        none,
+        none.clone(),
     ));
+    cases.extend(plate_hull_material_cases());
+    // 凸包的三角形数 = 2V − 4（V 是凸包顶点数），只在点处于一般位置（没有四点共面）时有定义，
+    // 由用例作者给出（已用 scipy 的 ConvexHull 核对过）。
+    let hull_triangles: BTreeMap<&str, u64> = [
+        ("shape_hull_tetra", 4),
+        ("shape_hull_bow", 10),
+        ("shape_hull_interior_point", 4),
+    ]
+    .into_iter()
+    .collect();
     cases
         .into_iter()
         .map(|(file, description, shape, templates)| {
             let name = file.trim_start_matches("shape_").replace('_', "-");
-            (
-                file.to_owned(),
-                shape_vector(&name, description, shape, templates),
-            )
+            let mut vector = shape_vector(&name, description, shape, templates);
+            if let Some(triangles) = hull_triangles.get(file) {
+                assert_eq!(vector["valid"], json!(true), "{file} 应当合法");
+                vector["triangles"] = json!(triangles);
+            }
+            (file.to_owned(), vector)
         })
         .collect()
+}
+
+/// 板、凸包和材质新字段（opacity、unlit）的用例。
+fn plate_hull_material_cases() -> Vec<(&'static str, &'static str, Value, Value)> {
+    let none = json!({});
+    vec![
+        (
+            "shape_plate_slanted",
+            "plate：斜放的矩形板（前台立面），沿 −法向 加厚；包围盒取各点和加厚后的点",
+            json!({"type":"plate","points":[[0,0,0],[2,0,0],[2,0.9,0.3],[0,0.9,0.3]],"thickness":0.02}),
+            none.clone(),
+        ),
+        (
+            "shape_plate_concave",
+            "plate：L 形台面（凹多边形），法向 +y，板向下加厚；带变换和颜色",
+            json!({"type":"plate","points":[[0,0,0],[0,0,2],[2,0,2],[2,0,1.4],[0.6,0,1.4],[0.6,0,0]],"thickness":0.04,
+                "transform":{"position":[1,0.75,-0.5],"yaw":30},"material":{"color":[180,150,110]}}),
+            none.clone(),
+        ),
+        (
+            "shape_plate_collinear_point",
+            "plate：一条边上多一个共线点，仍是简单多边形，三角形数仍按 4n − 4",
+            json!({"type":"plate","points":[[0,0,0],[0.5,0,0],[1,0,0],[1,1,0],[0,1,0]],"thickness":0.01}),
+            none.clone(),
+        ),
+        (
+            "shape_plate_within_tolerance",
+            "plate：有一个点离平面 0.4 毫米（不超过 1 毫米的平面度容差）；半透明玻璃材质",
+            json!({"type":"plate","points":[[0,0,0],[1.2,0,0],[1.2,2.1,0.0004],[0,2.1,0]],"thickness":0.012,
+                "material":{"color":[200,225,235],"opacity":0.3}}),
+            none.clone(),
+        ),
+        (
+            "shape_plate_triangle_transformed",
+            "plate：三角形板，完整变换；从法向一侧看逆时针",
+            json!({"type":"plate","points":[[0,0,0],[0.4,0.1,0],[0.1,0.5,0.2]],"thickness":0.03,
+                "transform":{"position":[0.5,1,-2],"yaw":30,"pitch":20,"roll":10,"scale":[1,0.5,2]}}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_plate_not_flat",
+            "plate：有一个点离最佳拟合平面超过 1 毫米",
+            json!({"type":"plate","points":[[0,0,0],[1,0,0],[1,1,0.01],[0,1,0]],"thickness":0.02}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_plate_self_intersecting",
+            "plate：蝴蝶结形（自相交）",
+            json!({"type":"plate","points":[[0,0,0],[2,0,1],[2,0,0],[0,0,2]],"thickness":0.02}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_plate_folded",
+            "plate：相邻两条边折回（第 1 点）",
+            json!({"type":"plate","points":[[0,0,0],[1,0,0],[0.5,0,0],[0.5,0,1]],"thickness":0.02}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_plate_collinear",
+            "plate：点全部共线，没有面积",
+            json!({"type":"plate","points":[[0,0,0],[1,0,0],[2,0,0]],"thickness":0.02}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_plate_thickness",
+            "plate：厚度超过 1 米",
+            json!({"type":"plate","points":[[0,0,0],[1,0,0],[0,1,0]],"thickness":1.5}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_plate_too_many_points",
+            "plate：超过 64 个点",
+            json!({"type":"plate","points":(0..65).map(|i| {
+                let a = f64::from(i) * std::f64::consts::TAU / 65.0;
+                json!([a.cos(), 0, -a.sin()])
+            }).collect::<Vec<_>>(),"thickness":0.02}),
+            none.clone(),
+        ),
+        (
+            "shape_hull_tetra",
+            "hull：四面体（4 个点都在凸包上，三角形数 4）",
+            json!({"type":"hull","points":[[0,0,0],[1,0,0.1],[0.2,0.9,0.3],[0.3,0.1,1.1]]}),
+            none.clone(),
+        ),
+        (
+            "shape_hull_bow",
+            "hull：船头形的 7 个点（一般位置，三角形数 2V − 4 = 10）；带变换和贴图",
+            json!({"type":"hull","points":[[0,0,0],[0.82,0.03,0.11],[0.79,0.62,0.07],[0.04,0.58,-0.21],
+                [0.43,0.05,0.93],[0.36,0.66,0.84],[0.4,0.3,1.42]],
+                "transform":{"position":[2,0,1],"yaw":-45},
+                "material":{"texture":"9f2c7d4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d","uv":"box"}}),
+            none.clone(),
+        ),
+        (
+            "shape_hull_interior_point",
+            "hull：有一个点在凸包内部，不是凸包顶点（V = 4，三角形数 4）；包围盒仍取全部点",
+            json!({"type":"hull","points":[[0,0,0],[1.2,0.02,0.1],[0.3,1.1,0.2],[0.25,0.15,0.95],[0.4,0.3,0.3]]}),
+            none.clone(),
+        ),
+        (
+            "shape_hull_wedge",
+            "hull：楔形（三棱柱，侧面四点共面，不是一般位置，不给三角形数）",
+            json!({"type":"hull","points":[[0,0,0],[1.6,0,0],[0,0.9,0],[0,0,0.6],[1.6,0,0.6],[0,0.9,0.6]],
+                "transform":{"position":[0,0,3],"roll":90}}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_hull_coplanar",
+            "hull：点全部共面（容差 1 毫米）",
+            json!({"type":"hull","points":[[0,0,0],[1,0,0],[1,0,1],[0,0,1],[0.5,0.0005,0.5]]}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_hull_collinear",
+            "hull：点全部共线",
+            json!({"type":"hull","points":[[0,0,0],[1,1,1],[2,2,2],[3,3,3]]}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_hull_too_few",
+            "hull：少于 4 个点",
+            json!({"type":"hull","points":[[0,0,0],[1,0,0],[0,1,0]]}),
+            none.clone(),
+        ),
+        (
+            "shape_material_glass",
+            "材质 opacity < 1：半透明（玻璃）",
+            json!({"type":"box","size":[2,1.2,0.012],"material":{"color":[210,230,240],"opacity":0.25}}),
+            none.clone(),
+        ),
+        (
+            "shape_material_unlit_texture",
+            "贴图材质也可以带 opacity 和 unlit（屏幕、灯箱）",
+            json!({"type":"box","size":[3,1.7,0.05],"material":{"texture":"9f2c7d4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d","uv":"planar","unlit":true,"opacity":1}}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_material_opacity",
+            "opacity 必须在 0 到 1 之间",
+            json!({"type":"box","size":[1,1,1],"material":{"color":[1,2,3],"opacity":1.5}}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_material_unlit_type",
+            "unlit 必须是布尔值",
+            json!({"type":"box","size":[1,1,1],"material":{"color":[1,2,3],"unlit":"yes"}}),
+            none,
+        ),
+    ]
 }
 
 fn check_shape(name: &str, vector: &Value) {

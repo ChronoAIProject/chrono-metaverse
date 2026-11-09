@@ -60,6 +60,7 @@
 | `valid` | 是否应当通过校验 |
 | `bounds` | `valid = true` 时的期望包围盒 `{ "min": [x,y,z], "max": [x,y,z] }`（米） |
 | `tolerance` | 包围盒比较的绝对误差，目前是 `1e-9` |
+| `triangles` | 可选。网格应有的三角形数：`plate` 一律给出（4n − 4），`hull` 只在点处于一般位置时给出（2V − 4，V 是凸包顶点数）；其他形状暂不给 |
 | `errorPath`、`errorMessage` | `valid = false` 时 Rust 给出的 JSON 路径和说明，仅供参考；其他语言只要求同样拒绝。`errorPath = null` 表示在解析阶段就被拒绝（字段拼错、类型不认识） |
 
 包围盒规则写在 `crates/metaverse-core/src/shape.rs` 的模块文档里，要点：
@@ -69,7 +70,7 @@
 3. 角度是 90° 的整数倍时 sin/cos 取精确的 0、±1；其他角度用标准库的三角函数，所以要按 `tolerance` 比较。
 4. `group` 先求各子形状（含子形状自己的变换）的并，再整体变换；`instance` 取模板（含模板自己的变换）的包围盒再变换。
 
-三角形数暂未给出：网格的分段方式由网站的网格生成代码确定后，再在这里补 `triangles` 字段。
+板和凸包的包围盒、合法条件、三角形数见 docs/SHAPES.md 第 2 节：`plate` 取各点和沿 −法向 平移厚度后的点，`hull` 取全部点。其他形状的三角形数取决于各自的分段方式，暂不给出。
 
 ## 4. 高层操作：`ops/ops_*.json`
 

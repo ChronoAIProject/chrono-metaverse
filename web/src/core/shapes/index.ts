@@ -13,6 +13,17 @@ export { cylinderMesh, coneMesh, latheMesh } from './lathe';
 export { extrudeMesh } from './extrude';
 export { sweepMesh, smoothPath } from './sweep';
 export { loftMesh } from './loft';
+export {
+  earClip,
+  hullDegeneracy,
+  hullMesh,
+  hullProblem,
+  plateFrame,
+  plateMesh,
+  plateProblem,
+  plateProjectionAxes,
+  segmentsIntersect,
+} from './solid';
 export { expandOutline } from './outline';
 export { projectUvs } from './uv';
 export { transformMatrix, applyMatrix } from './transform';

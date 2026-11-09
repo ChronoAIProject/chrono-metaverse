@@ -1,0 +1,29 @@
+{
+  "description": "hull：少于 4 个点",
+  "errorMessage": "$.points: 凸包需要 4 到 256 个点",
+  "errorPath": "$.points",
+  "kind": "shape",
+  "name": "invalid-hull-too-few",
+  "shape": {
+    "points": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0
+      ]
+    ],
+    "type": "hull"
+  },
+  "templates": {},
+  "valid": false
+}

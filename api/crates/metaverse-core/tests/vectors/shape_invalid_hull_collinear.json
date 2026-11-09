@@ -1,0 +1,34 @@
+{
+  "description": "hull：点全部共线",
+  "errorMessage": "$.points: 点全部共线（容差 1 毫米）",
+  "errorPath": "$.points",
+  "kind": "shape",
+  "name": "invalid-hull-collinear",
+  "shape": {
+    "points": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        1,
+        1
+      ],
+      [
+        2,
+        2,
+        2
+      ],
+      [
+        3,
+        3,
+        3
+      ]
+    ],
+    "type": "hull"
+  },
+  "templates": {},
+  "valid": false
+}
