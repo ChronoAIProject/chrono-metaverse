@@ -27,7 +27,7 @@
 // 退出码：0 全部通过，1 有步骤失败，2 参数或环境不对（没开始验收）。
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -374,7 +374,25 @@ const steps = [
       check(json.upload?.reused || json.upload?.parts > 1, '扫描没有分成多片上传', json.upload);
       ctx.scanJob = json.jobId;
       ctx.scanAsset = json.assetHash;
-      return `${json.upload?.parts ?? 0} 片（${json.upload?.size ?? '?'} 字节），资源 ${json.assetHash.slice(0, 12)}…，任务 ${json.jobId}`;
+      // 同一份内容再建一次上传：本空间已经拥有（真正传过数据的上传已校验通过），直接复用，不再收数据。
+      // 两种情况都是 201，不同只在 reused / status（别的空间凭哈希复用不到，见第 9 步）。
+      ctx.scanUpload = {
+        size: statSync(scanFile).size,
+        sha256: json.assetHash,
+        partSize: 256 * 1024,
+        format: extname(scanFile).slice(1).toLowerCase(),
+      };
+      const again = expectStatus(
+        await call('POST', `/api/v1/spaces/${spaceId}/uploads/scan`, { as: 'alice', body: ctx.scanUpload }),
+        201,
+        '同一空间再上传同一份扫描',
+      );
+      check(
+        again.body?.reused === true && again.body?.status === 'done' && again.body?.assetHash === json.assetHash,
+        '本空间已有的扫描没有直接复用',
+        again.body,
+      );
+      return `${json.upload?.parts ?? 0} 片（${json.upload?.size ?? '?'} 字节），资源 ${json.assetHash.slice(0, 12)}…，任务 ${json.jobId}；同一空间再上传直接复用`;
     },
   },
   {
@@ -406,8 +424,11 @@ const steps = [
       check((snapshot.body.scan?.webModelHashes ?? []).length > 0, '没有网页用模型', snapshot.body.scan);
       check(snapshot.body.seq > ctx.preScanSeq, '导入后 seq 没有前进', { before: ctx.preScanSeq, after: snapshot.body.seq });
       ctx.scanEntities = entities.length;
+      // --voxelize：导入任务另建一个 voxelize 任务，它写的提交带重建层区块。
+      const chunks = (snapshot.body.chunks ?? []).length;
+      if (parsed.voxelize) check(chunks > 0, '体素化后最新快照没有区块', { seq: snapshot.body.seq });
       const timings = job.result?.timings ? `，耗时 ${JSON.stringify(job.result.timings)}` : '';
-      return `seq ${ctx.preScanSeq} → ${snapshot.body.seq}，物件 ${entities.length} 个，网页用模型 ${snapshot.body.scan.webModelHashes.length} 档${timings}`;
+      return `seq ${ctx.preScanSeq} → ${snapshot.body.seq}，物件 ${entities.length} 个，区块 ${chunks} 个，网页用模型 ${snapshot.body.scan.webModelHashes.length} 档${timings}`;
     },
   },
   {
@@ -442,9 +463,23 @@ const steps = [
       const asset = await call('GET', `/api/public/assets/${models[0]}.bin`, { share: ctx.share });
       expectStatus(asset, 200, '网页用模型');
       check(/immutable/.test(asset.headers.get('cache-control') ?? ''), '资源响应不是 immutable', asset.headers.get('cache-control'));
-      const chunks = after.body.chunks ?? [];
+      let chunks = after.body.chunks ?? [];
+      let chunkSeq = ctx.scanSeq;
+      if (parsed.voxelize) {
+        // 体素化结果在导入之后的另一次提交里（voxelize 任务写的），按最新版本读。
+        chunkSeq = ctx.latestSeq;
+        const voxelized = expectStatus(
+          await call('GET', `/api/public/spaces/${spaceId}/snapshot?seq=${chunkSeq}`, { share: ctx.share }),
+          200,
+          `公开快照 seq=${chunkSeq}`,
+        );
+        chunks = voxelized.body.chunks ?? [];
+        check(chunks.length > 0, '体素化后的公开快照没有区块', { seq: chunkSeq });
+      }
       if (chunks.length > 0) {
-        expectStatus(await call('GET', `/api/public/chunks/${chunks[0].hash}.bin`), 200, '公开区块');
+        // 区块按内容哈希公开读取，不带分享令牌；处理服务写回后要补上 publishedAt 才读得到。
+        const chunk = expectStatus(await call('GET', `/api/public/chunks/${chunks[0].hash}.bin`), 200, '公开区块');
+        check(/immutable/.test(chunk.headers.get('cache-control') ?? ''), '区块响应不是 immutable', chunk.headers.get('cache-control'));
       }
       expectStatus(await call('GET', `/api/public/spaces/${spaceId}/snapshot?seq=${ctx.scanSeq}`), 404, '没带分享令牌');
       expectStatus(
@@ -452,7 +487,9 @@ const steps = [
         404,
         '分享令牌不对',
       );
-      return `seq ${ctx.scanSeq}：物件 ${after.body.entities.length} 个、区块 ${chunks.length} 个；seq ${ctx.preScanSeq}：空；没带或带错令牌 404`;
+      const chunkNote =
+        chunkSeq === ctx.scanSeq ? `、区块 ${chunks.length} 个` : `；seq ${chunkSeq}：区块 ${chunks.length} 个`;
+      return `seq ${ctx.scanSeq}：物件 ${after.body.entities.length} 个${chunkNote}；seq ${ctx.preScanSeq}：空；没带或带错令牌 404`;
     },
   },
   {
@@ -485,6 +522,28 @@ const steps = [
           check((await page.locator('.viewer').getAttribute('data-scan')) === 'true', '原始视图没有扫描模型');
         }
         notes.push(`${mode}（${stats.colors} 种颜色，亮 ${(stats.brightRatio * 100).toFixed(0)}%）`);
+      }
+      if (parsed.voxelize) {
+        // 重建层既有物件又有区块：优化视图切到"方块"画法，区块画出来、重建层物件不画，再换回"形状"。
+        await page.getByRole('button', { name: '优化', exact: true }).click();
+        await waitForScene(page, 'optimized');
+        const styles = page.getByRole('group', { name: '重建层画法' });
+        await styles.getByRole('button', { name: '方块' }).click();
+        const faces = await waitFor(
+          async () => {
+            const count = await viewerNumber(page, 'data-voxel-faces');
+            return count > 0 ? count : null;
+          },
+          { timeout: 60_000, what: '方块画法画出区块' },
+        );
+        await waitForScene(page, 'optimized');
+        await overview(page);
+        const entities = await viewerNumber(page, 'data-entities');
+        check(entities === 0, '方块画法不应再画重建层物件', { entities });
+        const stats = await renderedStats(page, 'view-optimized-blocks.png');
+        check(looksRendered(stats), '方块画法的截图像是空白', stats);
+        notes.push(`方块（${faces} 个面，${stats.colors} 种颜色，亮 ${(stats.brightRatio * 100).toFixed(0)}%）`);
+        await styles.getByRole('button', { name: '形状' }).click();
       }
       check(ctx.pageErrors.length === 0, '页面有未捕获的错误', ctx.pageErrors);
       await page.getByRole('button', { name: '优化', exact: true }).click();
@@ -603,7 +662,7 @@ const steps = [
   },
   {
     name: '越权操作返回 403 或 404',
-    async run() {
+    async run(ctx) {
       const carolSpace = `e2e-carol-${suffix}`;
       expectStatus(
         await call('POST', '/api/v1/admin/spaces', {
@@ -632,6 +691,26 @@ const steps = [
         lines.push(`${what} ${reply.status}`);
       }
       expectStatus(await call('GET', `/api/public/spaces/${carolSpace}`), 404, '没带令牌读别人的空间');
+      // 凭哈希拿不到别的空间的资源：carol 用前厅扫描的哈希建上传，必须完整上传（不复用、不说明别处有没有）；
+      // 不上传就直接导入，没有本空间的已校验上传，422。
+      const foreign = expectStatus(
+        await call('POST', `/api/v1/spaces/${carolSpace}/uploads/scan`, { as: 'carol', body: ctx.scanUpload }),
+        201,
+        'carol 用别的空间的扫描哈希建上传',
+      );
+      check(
+        foreign.body?.reused !== true && foreign.body?.status === 'open' && foreign.body?.assetHash === undefined,
+        '凭哈希复用了别的空间的扫描',
+        foreign.body,
+      );
+      lines.push('carol 用前厅扫描的哈希建上传 201（要完整上传）');
+      const imported = expectStatus(
+        await call('POST', `/api/v1/spaces/${carolSpace}/scans`, { as: 'carol', body: { assetHash: ctx.scanAsset } }),
+        422,
+        'carol 凭哈希导入别的空间的扫描',
+      );
+      check(imported.body?.code === 'asset_unknown', '错误码不是 asset_unknown', imported.body);
+      lines.push('carol 凭哈希导入前厅扫描 422');
       return lines.join('；');
     },
   },

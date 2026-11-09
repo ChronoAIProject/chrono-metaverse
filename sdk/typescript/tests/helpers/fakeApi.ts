@@ -360,7 +360,9 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
           reused,
           ...(reused ? { assetHash: upload.sha256 } : {}),
         };
-        return json(reused ? 200 : 201, view);
+        // 与接口服务相同：复用（本空间已有这份内容）和新建都是 201，只靠 reused / status 区分，
+        // 不让状态码透露别处有没有某个文件。
+        return json(201, view);
       }
       const upload = state.uploads.get(uploadId ?? '');
       if (upload === undefined) return problem(404, 'not_found', '没有上传');
