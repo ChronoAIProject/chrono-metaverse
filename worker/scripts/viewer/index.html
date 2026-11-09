@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>重建对比</title>
+<style>html,body{margin:0;background:#2b2d31;overflow:hidden}</style>
+<script type="importmap">{"imports":{"three":"./three/build/three.module.js","three/addons/":"./three/examples/jsm/"}}</script>
+</head>
+<body>
+<script type="module">
+// 查看页：渲染 models/ 下的 glb（逗号分隔可叠加），不打光（与扫描的烘焙光照一致），可选剖切掉天花板。
+// 参数：m=文件名；view=top 俯视正交；否则透视：cx,cy,cz 观察点，az,el 方位角/仰角（度），r 距离，cut 剖切高度。
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+const q = new URLSearchParams(location.search);
+const W = 1200, H = 900;
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(W, H);
+renderer.setPixelRatio(1);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.localClippingEnabled = true;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x2b2d31);
+for (const f of (q.get('m') || '').split(',').filter(Boolean)) {
+  const g = await new GLTFLoader().loadAsync('./models/' + f);
+  g.scene.traverse((o) => {
+    if (!o.isMesh) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    const out = mats.map((m) => {
+      const b = new THREE.MeshBasicMaterial({ map: m.map || null, color: m.color ? m.color.clone() : 0xffffff });
+      if (b.map) b.map.colorSpace = THREE.SRGBColorSpace;
+      return b;
+    });
+    o.material = Array.isArray(o.material) ? out : out[0];
+  });
+  scene.add(g.scene);
+}
+const c = new THREE.Vector3(parseFloat(q.get('cx') || '5.84'), parseFloat(q.get('cy') || '0.8'), parseFloat(q.get('cz') || '8.7'));
+let cam;
+if (q.get('view') === 'top') {
+  const s = parseFloat(q.get('s') || '9.5');
+  cam = new THREE.OrthographicCamera(-s * W / H, s * W / H, s, -s, 0.1, 100);
+  cam.position.set(c.x, 30, c.z);
+  cam.up.set(0, 0, -1);
+  cam.lookAt(c.x, 0, c.z);
+  renderer.clippingPlanes = [new THREE.Plane(new THREE.Vector3(0, -1, 0), parseFloat(q.get('cut') || '2.2'))];
+} else {
+  const az = parseFloat(q.get('az') || '220') * Math.PI / 180;
+  const el = parseFloat(q.get('el') || '38') * Math.PI / 180;
+  const r = parseFloat(q.get('r') || '19');
+  cam = new THREE.PerspectiveCamera(45, W / H, 0.05, 200);
+  cam.position.set(c.x + r * Math.cos(el) * Math.sin(az), c.y + r * Math.sin(el), c.z + r * Math.cos(el) * Math.cos(az));
+  cam.lookAt(c);
+  if (q.get('cut')) renderer.clippingPlanes = [new THREE.Plane(new THREE.Vector3(0, -1, 0), parseFloat(q.get('cut')))];
+}
+renderer.render(scene, cam);
+window.__done = true;
+</script>
+</body>
+</html>

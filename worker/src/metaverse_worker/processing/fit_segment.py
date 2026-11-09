@@ -327,7 +327,9 @@ def split_table(op: ObjectPoints, idx: np.ndarray, top: dict[str, Any], prm: Seg
     reg_d = ndimage.binary_dilation(region, iterations=2)
     inside = grid.lookup(reg_d, P[:, [0, 2]])
     lo_up, hi_up = top.get("band", (t, t))
-    slab = inside & (h > min(t - th - 0.03, lo_up - th - 0.02)) & (h < max(t + 0.03, hi_up + 0.02))
+    band_lo = min(t - th - 0.03, lo_up - th - 0.02)
+    band_hi = max(t + 0.04, hi_up + 0.03)
+    slab = inside & (h > band_lo) & (h < band_hi)
     rest = np.nonzero(~slab)[0]
     lab = voxel_components(P[rest], prm.voxel * 0.85)
     table = [idx[slab]]
@@ -338,15 +340,18 @@ def split_table(op: ObjectPoints, idx: np.ndarray, top: dict[str, Any], prm: Seg
         gi = rest[g]
         frac_in = grid.lookup(reg_in, P[gi][:, [0, 2]]).mean()
         hmin, hmax = np.percentile(h[gi], 2), np.percentile(h[gi], 98)
+        in_band = (h[gi] > band_lo - 0.03) & (h[gi] < band_hi + 0.03)
         if frac_in > 0.85 and hmax <= t + 0.01:
             table.append(idx[gi])  # 桌腿、底座
+        elif frac_in > 0.6 and in_band.mean() > 0.6:
+            table.append(idx[gi])  # 台面上高低不平、没进薄层的碎块
         elif frac_in > 0.85 and hmin >= t - 0.02:
             clutter.append(idx[gi])  # 桌上的东西
         else:
             others.append(Segment(idx[gi], {f"below-top:{t:.3f}"}))
-    seg = Segment(
-        np.concatenate(table), {"table-top"}, top={k: top[k] for k in ("height", "thickness", "area", "base")}
-    )
+    info = {k: top[k] for k in ("height", "thickness", "area", "base")}
+    info.update(grid=grid, mask=reg_d, band=(band_lo, band_hi))
+    seg = Segment(np.concatenate(table), {"table-top"}, top=info)
     out = [seg]
     for c in clutter:
         out.append(Segment(c, {"on-top"}))
@@ -621,12 +626,14 @@ def apply_hints(
     seg_of = np.full(len(op.P), -1)
     for k, seg in enumerate(segs):
         seg_of[seg.idx] = k
+    # 台面薄层（台面投影内、台面高度带里的点，不管在哪一块）不被别的提示框认领
     slab = np.zeros(len(op.P), bool)
     for seg in segs:
-        if seg.top is not None:
-            t, th = seg.top["height"], seg.top["thickness"]
-            y = op.P[seg.idx, 1]
-            slab[seg.idx[(y > t - th - 0.03) & (y < t + 0.03)]] = True
+        if seg.top is not None and "mask" in seg.top:
+            lo, hi = seg.top["band"]
+            y = op.P[:, 1]
+            cand = (y > lo) & (y < hi)
+            slab[cand] |= seg.top["grid"].lookup(seg.top["mask"], op.P[cand][:, [0, 2]])
     boxed = []
     for k, hint in enumerate(hints):
         box = _hint_box(hint)
@@ -660,26 +667,58 @@ def apply_hints(
                     out[-1].top = max(tops, key=lambda t: t["area"])
     rest_hints = [(h, _hint_center_xz(h)) for k, h in enumerate(hints) if k not in boxed]
     rest_hints = [(h, c) for h, c in rest_hints if c is not None]
-    for seg in segs:
-        idx = seg.idx[owner[seg.idx] < 0]
+    remaining = [seg.idx[owner[seg.idx] < 0] for seg in segs]
+    # 只有中心的提示归一块：中心 0.25 米内点最多的那块（桌子优先归有台面的块）
+    claim: dict[int, list[tuple[dict[str, Any], np.ndarray]]] = {}
+    for h, c in rest_hints:
+        best_k, best_n = -1, 0
+        for k, idx in enumerate(remaining):
+            if len(idx) < prm.min_area * prm.density:
+                continue
+            n = int((np.hypot(op.P[idx, 0] - c[0], op.P[idx, 2] - c[1]) < 0.25).sum())
+            if h.get("kind") == "table" and segs[k].top is not None:
+                n *= 4
+            if n > best_n:
+                best_k, best_n = k, n
+        if best_k >= 0:
+            claim.setdefault(best_k, []).append((h, c))
+    for k, seg in enumerate(segs):
+        idx = remaining[k]
         if len(idx) < prm.min_area * prm.density:
             continue
-        tree = cKDTree(op.P[idx][:, [0, 2]])
-        mine = [(h, c) for h, c in rest_hints if tree.query(c, k=1)[0] < 0.12]
+        mine = claim.get(k, [])
         if len(mine) >= 2 and "table-top" not in seg.tags:
             seeds = []
             for h, c in mine:
                 y = float(h["center"][1]) if len(h["center"]) == 3 else float(np.median(op.P[idx, 1]))
                 seeds.append(np.array([c[0], y, c[1]]))
-            for k, sub in enumerate(split_by_seeds(op, idx, seeds, prm.voxel)):
-                out.append(Segment(sub, set(seg.tags) | {"hint"}, seg.top, mine[k][0]))
+            for j, sub in enumerate(split_by_seeds(op, idx, seeds, prm.voxel)):
+                out.append(Segment(sub, set(seg.tags) | {"hint"}, seg.top, mine[j][0]))
         else:
-            out.append(
-                Segment(
-                    idx, set(seg.tags) | ({"hint"} if mine else set()), seg.top, mine[0][0] if mine else None
-                )
-            )
+            tags = set(seg.tags) | ({"hint"} if mine else set())
+            out.append(Segment(idx, tags, seg.top, mine[0][0] if mine else None))
     return out
+
+
+def _tidy(op: ObjectPoints, seg: Segment, prm: SegmentParams) -> list[Segment]:
+    if len(seg.idx) < 50:
+        return [seg]
+    lab = voxel_components(op.P[seg.idx], 0.05, conn=3)
+    groups = sorted(_groups(lab), key=len, reverse=True)
+    if len(groups) == 1:
+        return [seg]
+    main = [groups[0]]
+    tree = cKDTree(op.P[seg.idx[groups[0]]])
+    out: list[Segment] = []
+    min_pts = prm.min_area * prm.density
+    for g in groups[1:]:
+        d, _ = tree.query(op.P[seg.idx[g]], k=1)
+        if d.min() < 0.15:
+            main.append(g)
+        elif len(g) >= min_pts and seg.hint is None:
+            out.append(Segment(seg.idx[g], {t for t in seg.tags if t != "table-top"}))
+    keep = np.concatenate(main)
+    return [Segment(seg.idx[keep], seg.tags, seg.top, seg.hint), *out]
 
 
 def segment_objects(
@@ -732,9 +771,12 @@ def segment_objects(
     # 4. 提示（本地 AI 看图给出的物体中心、可选的尺寸）
     if hints:
         result = apply_hints(op, result, hints, prm)
-    # 5. 清理
-    final = []
+    # 5. 清理：每块再按 5 厘米体素分连通块，离主体 15 厘米以内的并回，远处的大块另起一块，小碎块丢掉
+    tidy: list[Segment] = []
     for seg in result:
+        tidy.extend(_tidy(op, seg, prm))
+    final = []
+    for seg in tidy:
         h = op.h[seg.idx]
         if len(seg.idx) < min_pts or np.percentile(h, 99) < prm.min_height:
             continue
