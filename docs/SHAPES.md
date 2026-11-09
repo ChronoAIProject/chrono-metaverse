@@ -1,6 +1,6 @@
 # 形状词表与跨语言约定
 
-接口服务（Rust）、网站（TypeScript）、处理服务（Python）共用本文的数据格式。三边各自实现，靠 `api/crates/metaverse-core/tests/vectors/` 下的测试向量保证结果一致。
+接口服务（Rust）、网站和命令行（TypeScript）、本地工具（Python）共用本文的数据格式。各边各自实现用得到的部分，靠 `api/crates/metaverse-core/tests/vectors/` 下的测试向量保证结果一致。第 7 节的重建包清单和第 8 节的资源核对记录是服务端瘦身（`docs/design/server-slim.md`）以后的格式。
 
 ## 1. 坐标与单位
 
@@ -244,7 +244,68 @@ v = (−a·sin θ + b·cos θ) / tile[1]
 - `fit` 是可选的拟合质量。
 - 结构元素（墙、地面、玻璃）也是物件，`kind: "structure"`，形状通常是带贴图的 `box` 或 `extrude`。
 
-**引用外部模型的物件**：从模型库里找到的现成模型，经处理服务校验并重新导出成 glb 资源后，物件用 `assetHash` 引用它：
+### 图层、编号和模板
+
+- `layer` 是 `rebuilt`（重建层：按扫描重建的结构和物体，只经重建路径、由重建包写入）或 `ext`（扩展层：人和 AI 的
+  修改，经实体区、地块路径写入）。物件和模板共用一个编号空间，两层也共用。
+- **编号分区**：重建层新放的物件（含模板）编号必须以 `rb.` 开头；扩展层新放的物件编号不能以 `rb.` 开头。已有的
+  旧编号不受影响：扩展层的照常可以改；重建层的旧编号（处理服务写的）只能删，要重新放就换成 `rb.` 开头。这样两层
+  各用一段编号，地块合作方抢不走重建包要用的编号。锚点不分区（锚点编号有现实含义，数据源按它写事件）。
+- **模板只能被同一层引用**：物件形状里 `instance` 引用的模板必须是同一层的模板；改模板的影响范围也只算同一层里
+  用到它的物件。扩展层要用重建层的款式，就复制一份成扩展层模板。
+- **模板引用的完整性**：每次追加（一批内联操作、一个操作文件、一个重建包）全部作用完，工作状态里每个物件（含模板）
+  引用的模板都要在同一层存在；发布时在"最新版本 + 本次变化"上再查一遍。不满足时返回 409 `broken_template_ref`，
+  列出缺的引用。
+
+### 草稿的种类与操作
+
+操作按草稿所属的路径范围分两种（`docs/design/server-slim.md` 2.4）。核心库的工作状态带着这个"范围种类"，按它决定
+能用哪些操作、写哪一层：
+
+| 操作 | 实体区 / 地块草稿（调用方给出的操作） | 重建草稿（只由重建包展开产生，第 7 节） |
+|---|---|---|
+| `fill`、`hollowBox`、`replace`、`copyRegion`、`addBlock` | 可以（只写扩展层） | 拒绝 |
+| `placeEntity` | 只放扩展层；编号不能以 `rb.` 开头 | 只放重建层；编号必须以 `rb.` 开头 |
+| `removeEntity`（可带 `ifPresent`） | 只能删扩展层 | 只能删重建层（含旧编号） |
+| `setScan`、`clearRebuilt` | 拒绝 | 可以 |
+| `createAnchor`（可带 `ifNew`） | 可以 | 可以，必须带 `ifNew` |
+| `moveAnchor`、`updateAnchor`、`removeAnchor` | 可以 | 拒绝 |
+
+"拒绝"的操作返回 422 `op_not_allowed`（核心库的错误类别 `notAllowed`）。重建路径的允许范围与实体区路径相同，但
+不能动空间级锚点 `_space`；空间没有定义实体区（`regions` 里没有 `kind: physical`）时，实体区路径和重建路径的允许
+范围是"不与任何虚拟区、地块的盒子相交"的地方（"除去"模式，只碰到边界不算相交）。
+
+- **`removeEntity` 的 `ifPresent`**（所有草稿都能用）：`{"op": "removeEntity", "entityId": "…", "ifPresent": true}`。
+  这个编号的物件不存在就什么都不做（影响范围为空，也不算碰过）；存在时与不带一样。属于另一层的物件照样拒绝。
+- **`createAnchor` 的 `ifNew`**（所有草稿都能用）：`{"op": "createAnchor", "anchor": {...}, "ifNew": true}`。这个编号
+  现在就有（`exists`），或者在本空间的时间线上出现过（`existed`，草稿基础版本及更早，重放时是最新版本及更早）就
+  什么都不做（影响范围为空，不算碰过，但结果里列出跳过了哪些）；从没出现过才新建。锚点 body 照样要合法。所以删掉的
+  锚点不会被重建包重新建出来。"出现过"的集合由调用方给（服务端按提交的 `changedAnchors.id` 查）。
+- **`setScan`**：设置这次提交的扫描层，一个草稿最多一次。
+
+  ```json
+  { "op": "setScan",
+    "scan": { "assetHash": "<扫描资源>", "webModelHashes": ["<默认档>", "<低细节档>"],
+              "transform": [16 个数，列主序，扫描坐标 → 空间坐标],
+              "alignment": { "method": "auto", "rotationDeg": -61.42, "errorCm": 0.8 } },
+    "observedAt": "2026-10-20T00:00:00.000Z" }
+  ```
+
+  `assetHash` 是 64 位小写十六进制；`webModelHashes` 是 1 到 2 个、不重复的资源哈希（[0] 是网站加载的那一档）；
+  `transform` 是 16 个有限数（绝对值 ≤ 10⁷），最后一行 `0 0 0 1`，线性部分的行列式 > 1e-6（不镜像、不退化），平移的
+  绝对值 ≤ 100000 米；`alignment` 可选，任意 JSON 对象，规范化后 ≤ 4 KiB，服务端原样保存、不解释；`observedAt`
+  可选，RFC 3339。`setScan` 没有格子上的影响范围。
+- **`clearRebuilt`**：`{"op": "clearRebuilt"}`。删掉重建层的全部物件（结构、物体、模板），扩展层、锚点、区块都不动；
+  影响范围是被删的非模板物件。之后的 `placeEntity` 再放进新的重建层，所以"`clearRebuilt` + 全部物件"就是"重建层整体
+  换成这一份"。
+- **RFC 3339 时间**（`observedAt`、清单的 `createdAt`）：`YYYY-MM-DD`，`T`、`t` 或空格，`hh:mm:ss`，可选的小数秒，
+  时区 `Z`、`z` 或 `±hh:mm`（偏移不超过 23:59）；日期必须存在；只有 23:59:60 按 23:59:59.999 算；在 0000–9999 年
+  之间，整个字符串不超过 64 个字符。
+
+### 引用外部模型的物件
+
+从模型库里找到的现成模型，由本地工具导入、修正后导出成 glb（物件模型），上传核对通过后，
+物件用 `assetHash` 引用它：
 
 ```json
 { "entityId": "sofa-01", "layer": "rebuilt", "kind": "object", "label": "沙发",
@@ -257,6 +318,13 @@ v = (−a·sin θ + b·cos θ) / tile[1]
 ```
 
 - 物件可以只有 `assetHash` 没有 `shape`：网站加载模型，按 `bounds` 的底面中心摆放（模型坐标的原点在底面中心），所以模型的大小、朝向在重新导出时就要摆好。
+- **物件模型 glb 的要求**（上传时按第 8 节核对，引用时按核对结果判断能不能当物件模型用）：只有三角形；节点用单位
+  变换——节点变换和调色烘进顶点（服务端按顶点数据实测包围盒，带旋转的节点会让包围盒偏大）；原点在底面中心；扩展只能用
+  `KHR_texture_transform`、`KHR_mesh_quantization`、`KHR_materials_unlit`、`KHR_materials_emissive_strength`；
+  不能有骨骼、动画、变形目标、相机、灯光和外部图片；三角形数、贴图边长、贴图像素合计在物件模型的上限内（第 8 节）。
+- **模型与记录一致**：只有模型、没有形状的物件，模型的实测包围盒（`check.bounds`）三边长与物件 `bounds` 三边长
+  之差不超过 max(2 厘米, 物件边长的 1%)，模型原点在底面中心（`|min.y|`、x 和 z 的中点都不超过 2 厘米），否则
+  422 `model_bounds_mismatch`。这条保证网站摆出来和记录一致，范围检查用的 `bounds` 也就是真实的。
 - `material`（可选，只能和 `assetHash` 一起给）给整个模型调外观：`tint: [r,g,b]`（sRGB 0–255，乘到模型原来的颜色上）、`opacity`（0–1）、`unlit`（布尔），含义与形状材质相同；没有 `color`、`texture`、`uv`，也没有 `tile`、法线、粗糙度这些形状材质的字段（模型自带的贴图和材质原样用）。
 - `material.shading`：`"baked"`（默认）或 `"albedo"`，只影响网站怎么画模型里的材质：
   - `"baked"`（不给时，与现在相同）：模型里带颜色贴图、受光照的材质按扫描烘焙的看法画，0.3 倍受光照 + 0.72 倍自发光（`applyTexturedLook`）；
@@ -273,7 +341,8 @@ v = (−a·sin θ + b·cos θ) / tile[1]
   | `license` | SPDX 风格的许可名，只能是 `CC0-1.0`、`CC-BY-4.0`、`CC-BY-3.0`（明确可商用、不传染；NC、ND、SA 一律不收） |
   | `title` | 标题，1 到 200 个字符，不含控制字符 |
 
-  六个字段都必须给，不能有别的字段。`props.source` 不是对象时（旧数据里识别来源的字符串 `hint` / `rules`）照旧当不透明的值；
+  六个字段都必须给，不能有别的字段。署名是**写入方的声明**：服务端只校验格式（库和许可在白名单里、长度、https），
+  不核实模型是不是真的来自那里。`props.source` 不是对象时（旧数据里识别来源的字符串 `hint` / `rules`）照旧当不透明的值；
   物体重建算法现在把识别来源写在 `props.detectedBy`，`props.source` 只留给署名。
 - **署名必须可见**：场景里有 CC-BY 模型时，网站画面底边常驻一行简短署名（第一个须署名模型的标题、作者、许可，以及总数），不用点开就看得到；展开的"模型来源"面板列出场景里所有 `props.source` 的标题、作者、许可和来源页链接（纯文本，链接只接受 https，带 `rel="noopener noreferrer"`，许可链到许可正文），并注明这些模型经处理服务改动后重新导出（CC BY 要求注明改动）；点选物件时信息面板也显示它的来源。CC-BY 的模型必须这样署名。
 - 模型库只用许可明确可商用的：Poly Haven（全部 CC0）和 Objaverse 里许可为 CC0 / CC-BY 的对象（每个对象有自己的许可字段，NC、ND、SA 一律排除，SA 也排除以免传染）；Sketchfab 只在设置了 `SKETCHFAB_TOKEN` 时可选。
@@ -304,5 +373,181 @@ v = (−a·sin θ + b·cos θ) / tile[1]
 - `canonical_entity_model_source.json`：引用外部模型、带 `material.tint` 和 `props.source` 的物件记录的内容哈希。
 - `uv/uv_*.json`：贴图坐标。给定形状和材质，按顶点的局部位置和法线找到顶点，写明期望的最终贴图坐标；覆盖 `box`、`planar`、`cylindrical`、`mesh`（盒子、圆柱、挤出、板、扫掠）× 有无 `tile`、`offset`、`rotate`，以及组合上的材质和颜色材质的法线贴图。期望值由 `tests/vectors/tools/texture_vectors.py` 按本文独立算出。网站和处理服务核对（接口服务不生成网格）。
 - `authored/authored_*.json`：带外链贴图对象 `{url, sha256, size}` 的 AI 物件集，合法和不合法各一份，由本地工具的物件集校验按 `valid` 接受或拒绝（接口服务不收物件集）。
+- `ops/ops_*.json`：高层操作作用到工作状态的结果，含第 3 节"草稿的种类与操作"的规则（`ifPresent`、带历史的 `ifNew`、编号分区、同层模板、重建草稿的操作、"除去"范围、模板引用的完整性）。Rust 生成，命令行核对。
+- `bundle/bundle_*.json`：第 7 节的重建包清单，合法和不合法的写法、出错的字段、引用表、展开成的操作，以及在旧重建层上推一次、推两次的结果（第二次没有变化）；`bundle_limits_default.json` 是第 8 节的默认上限。Rust 跑全部，命令行只跑结构校验和默认上限。
 
-三种语言的测试都读同一批向量，各类向量的格式和各边要接上的运行器见 `tests/vectors/README.md`。
+各边的测试都读同一批向量，各类向量的格式和各边要接上的运行器见 `tests/vectors/README.md`。
+
+## 7. 重建包清单
+
+重建包是本地重建的产物：一份清单（`manifest.json`）加清单里列出的文件，经命令行 `metaverse bundle push` 上传到重建
+路径、交给重建草稿，由服务端按固定规则展开成操作（`docs/design/server-slim.md` 第 6 节）。清单**与托管位置无关**：只有
+相对路径、用途、sha256、大小，不写任何下载地址；同一个包在本地、命令行推送和部署种子里是同一份字节、同一个哈希。
+
+```json
+{
+  "format": "chrono-metaverse-rebuild-bundle",
+  "version": 1,
+  "tool": { "name": "metaverse-recon", "version": "0.2.0", "source": "git:<40 位提交哈希>" },
+  "note": "前厅第 4 版：AI 物件集 52 件，结构按实测替换",
+  "createdAt": "2026-11-20T08:00:00.000Z",
+  "base": { "spaceId": "chronoai-lobby", "seq": 4 },
+  "scan": {
+    "assetHash": "<扫描 zip 的 sha256>",
+    "webModelHashes": ["<scan-0.glb>"],
+    "transform": [16 个数],
+    "observedAt": "2026-10-20T00:00:00.000Z",
+    "alignment": { "method": "given", "rotationDeg": -61.42, "tiltDeg": 0.09 }
+  },
+  "rebuilt": {
+    "mode": "replace",
+    "templates": [ { "entityId": "rb.chair-a", "layer": "rebuilt", "kind": "template", "shape": { … }, "bounds": { … } } ],
+    "entities":  [ { "entityId": "rb.counter-01", "layer": "rebuilt", "kind": "object", "shape": { … }, "bounds": { … }, "anchorId": "counter-01" } ],
+    "remove": []
+  },
+  "anchors": [ { "anchorId": "counter-01", "kind": "counter", "box": [ … ], "label": "前台", "visibility": "public" } ],
+  "notes": "<notes.md 的 sha256>",
+  "report": { "fit": { "meanCm": 4.31, "p90Cm": 8.71, "within3cm": 0.67 }, "entities": 52 },
+  "files": [
+    { "path": "scan/scan.zip",      "purpose": "scan",     "sha256": "…", "size": 5901234 },
+    { "path": "web/scan-0.glb",     "purpose": "webmodel", "sha256": "…", "size": 13800000 },
+    { "path": "models/3f9a….glb",   "purpose": "model",    "sha256": "…", "size": 412345 },
+    { "path": "textures/8be8….jpg", "purpose": "texture",  "sha256": "…", "size": 51234 },
+    { "path": "notes.md",           "purpose": "script",   "sha256": "…", "size": 9876 }
+  ]
+}
+```
+
+### 规则
+
+清单本身不超过重建包清单的上传上限（默认 16 MiB，第 8 节）。字段为 `null` 等于没给（数组字段除外：`anchors`、
+`files`、`rebuilt.templates`、`rebuilt.entities`、`rebuilt.remove` 给了就必须是数组）。
+
+| 字段 | 规则 |
+|---|---|
+| `format`、`version` | 必须正好是 `chrono-metaverse-rebuild-bundle` 和 1；任何层级上不认识的字段一律拒绝（以后加字段就升版本） |
+| `tool` | `name`、`version` 1–64 个字符，不含控制字符；`source` 可选，只能是 `git:` 加 40 位小写十六进制 |
+| `note` | 1–2000 字，去掉空白后不能是空的，不含换行以外的控制字符（同提交说明） |
+| `createdAt` | RFC 3339（第 3 节），只为追溯 |
+| `base` | 可选；`spaceId` 按空间编号的格式，`seq` ≥ 1。命令行拿它当草稿的基础版本，部署种子不用 |
+| `scan` | 可选；字段规则同 `setScan`（第 3 节），`observedAt`、`alignment` 都在 `scan` 里 |
+| `rebuilt` | 可选；`mode` 是 `replace`（重建层整体换成这一份）或 `merge`（只放、改列出的物件，再删 `remove` 里的编号）。`remove` 只在 `merge` 时能非空，≤ 2000 个，编号合法、不以 `_` 开头、不重复，不能与 `templates`、`entities` 的编号重复（可以是旧编号）。模板 ≤ 200、物件 ≤ 2000；`templates` 里只能是 `kind: "template"`，`entities` 里不能是模板；`layer` 都必须是 `rebuilt`，编号都以 `rb.` 开头、互不重复。每条记录按第 3 节校验（含 `bounds` 包住形状）；形状引用的模板只能是本包的模板，`merge` 模式下也可以是目标空间重建层已有的模板。出现 `chunks` 字段按不认识的字段拒绝（第一版不写方块） |
+| `anchors` | 可选，≤ 2000，编号不重复，不能是 `_space`，锚点 body 按锚点的规则校验 |
+| `notes` | 可选，必须是 `files` 里用途为 `script` 的文件的哈希（建模记录） |
+| `report` | 可选，任意 JSON 对象，规范化后 ≤ 64 KiB，服务端不解释；字符串（键和值）不能以 `/`、`~`、`file:` 开头，也不能是 `C:\`、`D:/` 这样的盘符路径 |
+| 至少有一项 | `scan`、`rebuilt`、`anchors` 至少给一个 |
+| 每条记录 | 清单文件里这条记录的原始 JSON ≤ 64 KiB（逐条解析的上限，与操作文件每行的上限相同）。本地工具写清单时记录不缩进 |
+| `files[]` | ≤ 4096 项；只有 `path`、`purpose`、`sha256`、`size` 四个字段；`path` 是相对路径：`^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$`，≤ 200 个字符，没有 `.`、`..` 段，不重复；`purpose` 是 `scan`、`webmodel`、`model`、`texture`、`script` 之一；`sha256` 64 位小写十六进制，同一哈希只出现一次；`size` ≥ 1 且不超过该用途的上传上限（第 8 节） |
+| 引用 | 记录里引用的**每个**哈希都必须在 `files` 里、用途对得上：`scan.assetHash` → `scan`，`webModelHashes` → `webmodel`，物件的 `assetHash` → `model`，形状材质的 `texture`、`normalMap`、`roughnessMap` 和物件的 `textures` → `texture`，`notes` → `script`。包是完整的：在任何空间里，只要这些文件都在或能上传，就能展开 |
+
+校验按上表的顺序做（先 `format`、`version`，再整体结构，再逐项），出错时给出字段的 JSON 路径（如
+`rebuilt.entities[3].assetHash`；整体结构不对时是 `$`）。Rust（`metaverse_core::bundle`）和命令行
+（`sdk/typescript/src/core/bundle.ts`）给出同样的字段，向量核对。
+
+### 展开成操作
+
+只在服务端（接口服务交包、部署种子）展开，按清单顺序：
+
+```
+1. 有 scan：              {"op": "setScan", "scan": {assetHash, webModelHashes, transform, alignment?}, "observedAt"?}
+2. rebuilt.mode = replace：{"op": "clearRebuilt"}
+3. 每个模板：             {"op": "placeEntity", "entity": 模板}
+4. 每个物件：             {"op": "placeEntity", "entity": 物件}
+5. rebuilt.mode = merge：  每个 remove 编号 {"op": "removeEntity", "entityId": 编号, "ifPresent": true}
+6. 每个锚点：             {"op": "createAnchor", "anchor": 锚点, "ifNew": true}
+```
+
+展开出的操作按重建草稿的规则作用（第 3 节）。同一个包在内容没变时再推一次，结果没有变化：整体替换是"清掉再放同样的
+内容"；合并模式的删除带 `ifPresent`；锚点带 `ifNew`。
+
+### 谁查什么
+
+| 在哪 | 查什么 |
+|---|---|
+| 本地工具 `metaverse-recon bundle` | 生成时按上限导出（上限取工作区的 `limits.json`，没有就用第 8 节的默认值），不实现清单校验和展开 |
+| 命令行 `metaverse bundle check` | 本节的全部规则（不展开）；本地有的文件按第 8 节检查 |
+| 接口服务：交包 | 本节全部；文件属于本空间且核对结果合乎用途；展开后每条按第 3 节 |
+| 接口服务：发布 | 冲突、范围（按最新区域）、模板引用的完整性、没有变化不提交 |
+
+## 8. 资源核对记录与各用途上限
+
+上传的文件由服务端核对：边读边算 sha256，同时按用途检查文件内容（不解码网格、不解码图片，只读文件头、glb 的 JSON 块、
+`POSITION` 访问器的数据和图片头），把核对结果记在资源的 `metadata.check` 里（`docs/design/server-slim.md` 4.3–4.6）。
+引用一个资源时先要属于本空间，再看 `check` 合不合这个**角色**；不看第一次登记时记的种类。
+
+### 各用途的格式和上限
+
+| 用途 | 经哪条路径 | 接受的格式 | 大小上限（默认） | 检查 |
+|---|---|---|---|---|
+| `scan` | 重建 | glb、drc、obj、zip | 1 GiB | glb：头、JSON 块（≤ 8 MiB）的结构、没有外部引用，不算三角形和包围盒；drc：`DRACO` 魔数、版本、编码类型是网格；obj：文本、首个关键字；zip：见下 |
+| `webmodel` | 重建 | glb | 64 MiB | glb 完整检查，JSON 块 ≤ 4 MiB；三角形 ≤ 50 万；贴图边长 ≤ 4096；全部贴图像素合计 ≤ 2 × 4096²；坐标绝对值 ≤ 100000 米 |
+| `model` | 全部 | glb | 50 MiB | glb 完整检查，JSON 块 ≤ 2 MiB；三角形 ≤ 10 万；贴图边长 ≤ 2048；像素合计 ≤ 4 × 2048²；坐标绝对值 ≤ 1000 米 |
+| `texture` | 全部 | png、jpeg、webp | 50 MiB | 魔数与格式一致；读图片头拿宽高（读不到就拒绝）；边长 ≤ 4096，像素 ≤ 4096² |
+| `ops` | 实体区、地块 | NDJSON，可 gzip | 64 MiB | 解压后 ≤ 256 MiB；每行 ≤ 64 KiB、UTF-8、去掉空白后以 `{` 开头 |
+| `script` | 全部 | UTF-8 文本 | 4 MiB | UTF-8，不含 NUL |
+| `bundle` | 重建 | JSON | 16 MiB | `format`、`version` 对得上，`files` 是数组（完整校验在交包时做，第 7 节） |
+
+**zip**（扫描）：中央目录 ≤ 1 MiB、≤ 64 个成员，不收 zip64；本地头与中央目录一致（文件名、大小）、压缩方式只能是存储或
+deflate、没有加密、各成员的数据区间都在文件内且互不重叠；成员名不能是绝对路径、不能含 `..` 段；`__MACOSX/` 下的成员和
+`.DS_Store` 忽略（仍查路径安全）；其余必须正好一个网格成员（glb、drc、obj），别的只能是 jpg、png、mtl。服务端不解压成员。
+
+**glb 完整检查**（网页用模型、物件模型）：
+
+1. 头：魔数 `glTF`、版本 2、头里的总长度等于文件大小；第一个块是 JSON，第二个块（可选）是 `BIN`，没有别的块。
+2. JSON：`asset.version` 是 `"2.0"`；`buffers` 至多 1 个，不能有 `uri`；`images` 只能用 `bufferView` + `mimeType`
+   （`image/png` 或 `image/jpeg`）；缓冲区视图在 BIN 块里，访问器在各自的缓冲区视图里，不收稀疏访问器；图元只收三角形；
+   `POSITION` 是 `VEC3`，浮点数（声明了 `KHR_mesh_quantization` 时也可以是字节或短整数），有有限的 `min`、`max`；不收
+   骨骼、动画、变形目标、相机；扩展只能用 `KHR_texture_transform`、`KHR_mesh_quantization`、`KHR_materials_unlit`、
+   `KHR_materials_emissive_strength`（`extensionsRequired` 只能是前两个），任何对象上的 `extensions` 键也按这张表查。
+   数组长度上限：节点 10000、网格 1000、每个网格的图元 256、访问器 20000、缓冲区视图 20000、材质 256、贴图 256、
+   图片 64、场景 16。
+3. 三角形数：从场景（`scene`，没写就是 0）的根节点往下走，节点不能成环、不能有两个父节点；每个引用网格的节点，
+   三角形数 =（有 `indices` 时是它的 `count`，否则是 `POSITION` 的 `count`）/ 3，必须是整数；同一个网格被几个节点引用
+   就算几次。
+4. 实测包围盒：读 `POSITION` 的数据算每个访问器的实际最小、最大值，与声明的 `min`、`max` 相差超过
+   max(1e-4 × |值|, 1e-6) 就拒绝；世界包围盒 = 每个访问器的实测盒子的 8 个角点经所在节点的世界变换后取外包，坐标上限按它查。
+5. 图片头：PNG 读 `IHDR`；JPEG 从 `SOI` 起按段长度逐段跳过直到 `SOF0`–`SOF2`（走完这张图还没找到就拒绝）；魔数必须与
+   `mimeType` 一致。单张边长、全部像素合计按用途的上限查。
+
+### 核对记录 `metadata.check`
+
+只取决于文件内容，格式版本 `v` 目前是 1：
+
+| 格式 | `check` |
+|---|---|
+| glb | `{v: 1, format: "glb", triangles, nodes, meshes, materials, images: [{w, h, mime}], maxTextureSide, texturePixels, extensions: [...], bounds: {min, max}}`。`bounds` 是实测的世界包围盒；扫描用途的 glb 只做轻量检查，`triangles`、`bounds` 为 `null` |
+| png、jpeg、webp | `{v: 1, format, width, height}` |
+| zip | `{v: 1, format: "zip", mesh: "<网格成员名>", members}` |
+| drc、obj、ndjson、gzip、text、json | `{v: 1, format}` |
+
+### 按角色判断
+
+| 角色 | 引用的地方 | `check` 要满足 |
+|---|---|---|
+| 扫描 | `setScan.scan.assetHash` | `format` 是 glb、drc、obj，或是有 `mesh` 的 zip |
+| 网页用模型 | `setScan.scan.webModelHashes[]` | `format = glb`，有 `triangles` 和 `bounds`，三角形、贴图边长、像素合计、坐标、扩展都在网页用模型的上限内 |
+| 物件模型 | 物件的 `assetHash`、事件显示的 `entityAsset` | `format = glb`，同上但按物件模型的上限；另有第 3 节"模型与记录一致" |
+| 贴图 | 形状材质的 `texture`、`normalMap`、`roughnessMap`，物件的 `textures`，方块贴图 | `format` 是 png、jpeg、webp，边长、像素在贴图上限内 |
+| 文本 | 提交的 `scriptRef`、清单的 `notes` | `format = text` |
+
+上限按**当前配置**判断：调低上限以后，旧资源也可能不能再被新引用（已有提交不受影响）。只做过轻量检查的 glb（扫描用途）
+不能当网页用模型或物件模型；同一份字节再按这两种用途上传时，服务端做完整检查后补写 `check`。
+
+### 上限 `uploadLimits`
+
+`GET /api/v1/spaces/{space_id}` 返回当前生效的上限 `uploadLimits`，命令行写进工作区的 `limits.json`，本地工具和
+命令行据此提前检查；没有 `limits.json` 时用默认值（下面就是默认值；Rust `metaverse_core::limits`，TypeScript
+`sdk/typescript/src/core/limits.ts`，向量 `bundle/bundle_limits_default.json` 核对两边相同）：
+
+```json
+{ "v": 1,
+  "scan":     { "maxBytes": 1073741824 },
+  "webmodel": { "maxBytes": 67108864, "maxTriangles": 500000, "maxTextureSide": 4096, "maxTexturePixels": 33554432, "maxCoord": 100000 },
+  "model":    { "maxBytes": 52428800, "maxTriangles": 100000, "maxTextureSide": 2048, "maxTexturePixels": 16777216, "maxCoord": 1000 },
+  "texture":  { "maxBytes": 52428800, "maxSide": 4096, "maxPixels": 16777216 },
+  "ops":      { "maxBytes": 67108864 },
+  "script":   { "maxBytes": 4194304 },
+  "bundle":   { "maxBytes": 16777216 } }
+```
+
+glb JSON 块的上限、zip 中央目录的上限、glb 各数组的长度上限是固定常量，不开放配置。
