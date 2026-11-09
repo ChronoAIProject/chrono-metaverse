@@ -111,6 +111,7 @@ pub struct EventInput {
 #[serde(deny_unknown_fields)]
 pub struct WriteEventsRequest {
     /// 1–1000 条事件。
+    #[schema(value_type = Vec<EventInput>)]
     pub events: Vec<Value>,
 }
 
@@ -153,6 +154,7 @@ pub struct CorrectionInput {
 #[serde(deny_unknown_fields)]
 pub struct WriteCorrectionsRequest {
     /// 1–1000 条更正。
+    #[schema(value_type = Vec<CorrectionInput>)]
     pub corrections: Vec<Value>,
 }
 

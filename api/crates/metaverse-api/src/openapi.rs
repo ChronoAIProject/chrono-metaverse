@@ -32,10 +32,50 @@ use utoipa::{
         crate::routes::spaces::get_space,
         crate::routes::admin_spaces::create_space,
         crate::routes::public_spaces::get_public_space,
+        // 上传、任务、事件、组合
+        crate::routes::uploads::create_upload,
+        crate::routes::uploads::create_plot_upload,
+        crate::routes::uploads::put_upload_part,
+        crate::routes::uploads::put_plot_upload_part,
+        crate::routes::uploads::complete_upload,
+        crate::routes::uploads::complete_plot_upload,
+        crate::routes::uploads::get_upload,
+        crate::routes::uploads::get_plot_upload,
+        crate::routes::jobs::import_scan,
+        crate::routes::jobs::align_scan,
+        crate::routes::jobs::voxelize_scan,
+        crate::routes::jobs::rebuild_scan,
+        crate::routes::jobs::import_model,
+        crate::routes::jobs::import_plot_model,
+        crate::routes::jobs::get_job,
+        crate::routes::jobs::get_plot_job,
+        crate::routes::jobs::list_jobs,
+        crate::routes::jobs::list_plot_jobs,
+        crate::routes::events::write_events,
+        crate::routes::events::write_corrections,
+        crate::routes::events::list_events,
+        crate::routes::events::list_event_types,
+        crate::routes::admin_events::register_event_type,
+        crate::routes::admin_events::redact_event,
+        crate::routes::public_events::get_public_head,
+        crate::routes::public_events::list_public_events,
+        crate::routes::public_events::get_public_event_density,
+        crate::routes::public_events::get_public_state,
+        crate::routes::universes::create_universe,
+        crate::routes::universes::get_universe,
+        crate::routes::universes::update_universe,
+        crate::routes::universes::join_universe,
+        crate::routes::universes::leave_universe,
+        crate::routes::public_universes::get_public_universe,
+        crate::routes::public_universes::get_public_universe_revision,
     ),
     modifiers(&IdentitySecurity),
     tags(
         (name = "spaces", description = "空间：查看"),
+        (name = "uploads", description = "分片上传"),
+        (name = "scans", description = "扫描、物件模型和任务"),
+        (name = "events", description = "现实事件"),
+        (name = "universes", description = "组合宇宙"),
         (name = "admin", description = "管理接口（不进 AI 工具）"),
         (name = "public", description = "公开读接口（不经过 NyxID）"),
         (name = "health", description = "健康检查"),
@@ -189,7 +229,10 @@ mod tests {
             .keys()
             .cloned()
             .collect();
-        assert_eq!(paths, ["/api/v1/spaces/{space_id}"]);
+        assert!(paths.iter().any(|p| p == "/api/v1/spaces/{space_id}"));
+        assert!(paths
+            .iter()
+            .all(|p| p.starts_with("/api/v1/") && !p.starts_with("/api/v1/admin")));
         let schemas = document["components"]["schemas"].as_object().unwrap();
         assert!(schemas.contains_key("SpaceView"));
         assert!(schemas.contains_key("ProblemDocument"));

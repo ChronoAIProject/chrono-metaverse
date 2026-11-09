@@ -35,6 +35,8 @@ pub mod ingest_common;
 pub mod jobs;
 pub mod public_access;
 pub mod public_events;
+pub mod public_universes;
+pub mod universes;
 pub mod uploads;
 
 use crate::error::{self, ApiError};
@@ -68,6 +70,7 @@ pub fn router(state: AppState) -> Router {
         .merge(jobs::routes())
         .merge(events::routes())
         .merge(admin_events::routes())
+        .merge(universes::routes())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             crate::auth::require_identity,
@@ -77,7 +80,8 @@ pub fn router(state: AppState) -> Router {
             "/api/public/spaces/{space_id}",
             get(public_spaces::get_public_space),
         )
-        .merge(public_events::routes());
+        .merge(public_events::routes())
+        .merge(public_universes::routes());
     let gated = v1
         .merge(public)
         .route_layer(middleware::from_fn_with_state(state.clone(), require_ready));
