@@ -11,8 +11,12 @@
 //   子进程内存上限要小于容器内存上限。
 // - 接口服务：公开接口的限流额度必须是合法正整数（否则接口服务启动失败）；可信客户端地址头
 //   只能是单值头（接口服务只认恰好一个 IP 的值，X-Forwarded-For 这类转发链会被忽略）；
-//   没有可信头时限流按网关地址计，所有访客共用额度，必须显式调高到演示规模
-//   （README 第 1 节"公开接口限流"）。
+//   没有可信头时限流按网关地址计，所有访客共用几个桶，一个来源持续多发请求就能耗尽它们、让所有
+//   访客都 429。所以这时四个额度必须显式设到单个进程处理不了的高度（每核每秒 100 万次），
+//   等于关掉限流，靠每空间并发上限和进程内缓存兜底（README 第 1 节"公开接口限流"）。
+// - 镜像：每个服务都按摘要固定（`仓库[:7 位提交哈希]@sha256:<64 位>`），仓库与服务名对应。ghcr 的标签
+//   可以被任何分支里改过的工作流改写，chrono-cd 每次 PUT / PATCH 都把标签重新解析成摘要，按标签
+//   写的规格在一次只改环境变量的 PATCH 里也会换成别人推上去的镜像（README 第 1 步"镜像按摘要固定"）。
 // - README 的环境变量表列出了 app.json 里的每一个环境变量和密钥名；本地 up.sh 给处理服务设了同样的
 //   线程变量，本地测的内存和线上一致。
 // - 部署配置种子：`demo-seed.json` 和接口服务的 `METAVERSE_DEMO_SEED` 内容一致（后者是前者压缩成的
@@ -26,6 +30,29 @@ import { fileURLToPath } from 'node:url';
 
 export const API_SERVICE = 'metaverse-api';
 export const WORKER_SERVICE = 'metaverse-worker';
+
+/** 每个服务的镜像仓库（images.yml 推送的包）。 */
+export const IMAGE_REPOSITORIES = {
+  'metaverse-web': 'ghcr.io/chronoaiproject/chrono-metaverse-web',
+  [API_SERVICE]: 'ghcr.io/chronoaiproject/chrono-metaverse-api',
+  [WORKER_SERVICE]: 'ghcr.io/chronoaiproject/chrono-metaverse-worker',
+};
+
+/**
+ * 按摘要固定的镜像引用：`仓库[:标签]@sha256:<64 位小写十六进制>`。chrono-cd 在标签和摘要都有时
+ * 只按摘要拉取，标签只是给人看的记号，所以只允许 7 位提交哈希（images.yml 的短哈希标签），
+ * 不允许 `main` 这类分支标签，免得记号和实际镜像对不上。
+ */
+const PINNED_IMAGE = /^(?<repo>[a-z0-9.-]+(?:\/[a-z0-9._-]+)+?)(?::(?<tag>[^@:/]+))?@(?<digest>sha256:[0-9a-f]{64})$/;
+const COMMIT_TAG = /^[0-9a-f]{7}$/;
+
+/** 解析按摘要固定的镜像引用；不是这种形式时返回 null。 */
+export function parsePinnedImage(image) {
+  const match = typeof image === 'string' ? PINNED_IMAGE.exec(image) : null;
+  if (!match) return null;
+  const { repo, tag, digest } = match.groups;
+  return { repo, tag: tag ?? null, digest };
+}
 
 /** 处理服务必须设置的线程相关变量。 */
 export const WORKER_THREAD_VARS = ['OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS'];
@@ -41,6 +68,40 @@ export const PUBLIC_RATE_DEFAULTS = {
   PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE: 12000,
   PUBLIC_BLOB_RATE_LIMIT_BURST: 2000,
 };
+
+/**
+ * 没有可信地址头时，每个桶每秒至少能放行的请求数（按接口服务 `cpu_limit` 的每核计）。
+ *
+ * 这时来源地址是 Google 前端代理或 nginx 副本的地址，所有访客共用少数几个桶。额度只要是
+ * 进程处理得了的速率，一台机器持续以略高于它的速度请求（例如有进程内缓存、几乎没有成本的
+ * `/head`）就能把这些桶耗尽，之后所有访客的公开查看都是 429。每核每秒 100 万次远超接口服务
+ * 的处理能力，进程被打满之前限流器不会拒绝任何人，限流也就不再是一个便宜的"全站 429 开关"。
+ * 突发额度至少是一秒的量：额度很高而突发很小时，同一瞬间到达的几个请求也会被拒。
+ */
+export const SHARED_BUCKET_PER_CORE_PER_SECOND = 1_000_000;
+
+/** 每个限流变量的下限是"每秒多少次"的几倍：每分钟的额度乘 60，突发额度按一秒算。 */
+const SHARED_BUCKET_SECONDS = {
+  PUBLIC_RATE_LIMIT_PER_MINUTE: 60,
+  PUBLIC_RATE_LIMIT_BURST: 1,
+  PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE: 60,
+  PUBLIC_BLOB_RATE_LIMIT_BURST: 1,
+};
+
+/**
+ * 没有可信地址头时四个限流变量的下限：按接口服务的 `cpu_limit`（向上取整、至少 1 核）放大。
+ * `cpuLimit` 不合法时按 1 核算（`cpu_limit` 本身由 chrono-cd 校验）。
+ */
+export function sharedBucketFloor(cpuLimit) {
+  const cpu = parseCpu(cpuLimit);
+  const cores = cpu === null ? 1 : Math.max(1, Math.ceil(cpu));
+  return Object.fromEntries(
+    Object.entries(SHARED_BUCKET_SECONDS).map(([name, seconds]) => [
+      name,
+      SHARED_BUCKET_PER_CORE_PER_SECOND * cores * seconds,
+    ]),
+  );
+}
 
 /** 值是一串地址（逐跳追加）的转发头：接口服务只认恰好一个 IP 的值，这些头配了也不起作用。 */
 export const CHAIN_HEADERS = ['x-forwarded-for', 'forwarded', 'x-forwarded', 'x-original-forwarded-for', 'via'];
@@ -191,19 +252,48 @@ function checkApi(spec, problems) {
     return;
   }
 
-  // 没有可信头：来源地址是网关或 nginx 的地址，所有访客共用额度。
+  // 没有可信头：来源地址是网关或 nginx 的地址，所有访客共用几个桶。额度必须高到进程被打满之前
+  // 不会拒绝任何人，否则一个来源就能把桶耗尽、让所有访客都 429（SHARED_BUCKET_PER_CORE_PER_SECOND）。
+  const cpuLimit = spec.services[API_SERVICE].resources?.cpu_limit;
+  const floor = sharedBucketFloor(cpuLimit);
   for (const [name, perVisitor] of Object.entries(PUBLIC_RATE_DEFAULTS)) {
     const value = parsePositiveInt(env[name] ?? '', U32_MAX);
     if (!(name in env)) {
       problems.push(
-        `${API_SERVICE}：没有设 TRUSTED_CLIENT_IP_HEADER 时限流按网关地址计、所有访客共用额度，` +
-          `必须显式设置 ${name}（接口服务默认的 ${perVisitor} 是按单个访客设计的）`,
+        `${API_SERVICE}：没有设 TRUSTED_CLIENT_IP_HEADER 时限流按网关地址计、所有访客共用几个桶，` +
+          `必须显式设置 ${name}（至少 ${floor[name]}；接口服务默认的 ${perVisitor} 是按单个访客设计的）`,
       );
-    } else if (value !== null && value <= perVisitor) {
+    } else if (value !== null && value < floor[name]) {
       problems.push(
-        `${API_SERVICE}：${name}=${value} 没有高于按单个访客设计的默认值 ${perVisitor}；` +
-          `按网关地址计时几十个访客就会共同触发 429`,
+        `${API_SERVICE}：${name}=${value} 低于 ${floor[name]}（cpu_limit ${cpuLimit} 下每核每秒 ` +
+          `${SHARED_BUCKET_PER_CORE_PER_SECOND} 次）。按网关地址计时所有访客共用几个桶，` +
+          `一个来源持续以略高于额度的速度请求就能让所有访客的公开查看都返回 429`,
       );
+    }
+  }
+}
+
+function checkImages(spec, problems) {
+  for (const [name, service] of Object.entries(spec.services)) {
+    const image = service?.image;
+    const pinned = parsePinnedImage(image);
+    if (pinned === null) {
+      problems.push(
+        `${name}：image 必须按摘要固定（仓库[:7 位提交哈希]@sha256:<64 位>，现在是 ${JSON.stringify(image)}）。` +
+          `ghcr 的标签可以被任何分支的工作流改写，chrono-cd 每次 PUT / PATCH 都会重新解析标签，` +
+          `一次只改环境变量的 PATCH 也会把别人推上去的镜像部署上线；用 pin-images.mjs 生成`,
+      );
+      continue;
+    }
+    if (pinned.tag !== null && !COMMIT_TAG.test(pinned.tag)) {
+      problems.push(
+        `${name}：image 的标签 ${pinned.tag} 不是 7 位提交哈希。标签和摘要都有时 chrono-cd 只看摘要，` +
+          `标签只是记号；写分支名之类的标签会让人以为部署的是别的版本`,
+      );
+    }
+    const expected = IMAGE_REPOSITORIES[name];
+    if (expected !== undefined && pinned.repo !== expected) {
+      problems.push(`${name}：image 的仓库应当是 ${expected}（现在是 ${pinned.repo}）`);
     }
   }
 }
@@ -422,6 +512,7 @@ export function checkApp(spec, { readme, upScript, seed } = {}) {
   if (spec === null || typeof spec !== 'object' || typeof spec.services !== 'object' || spec.services === null) {
     return ['app.json 没有 services'];
   }
+  checkImages(spec, problems);
   checkWorker(spec, problems);
   checkApi(spec, problems);
   if (readme !== undefined) checkReadme(spec, readme, problems);

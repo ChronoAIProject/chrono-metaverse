@@ -4,6 +4,11 @@ name: Images
 #   ghcr.io/chronoaiproject/chrono-metaverse-{api,web,worker}
 # 标签：短提交哈希（7 位）、分支名（/ 换成 -）；latest 只给 main。
 # 只构建 linux/amd64（chrono-cd 的节点架构）。部署不在这里做，见 infra/chrono-cd/README.md。
+#
+# 标签都可以被改写：触发条件和 packages: write 都由被推分支自己的这个文件声明，有推送权限的人
+# 在任何分支里改一下这里就能覆盖同名标签。所以部署一律按摘要固定：每次运行在摘要里写出
+# `api=sha256:…` 这样的行，部署时从这次提交在部署分支上的运行里复制，交给
+# infra/chrono-cd/pin-images.mjs（不要按标签去仓库查摘要）。
 
 on:
   push:
@@ -31,16 +36,16 @@ jobs:
       matrix:
         image: [api, web, worker]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: 构建身份
         id: build
         run: |
           echo "version=git-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -48,7 +53,7 @@ jobs:
 
       - name: 标签与标注
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ghcr.io/chronoaiproject/chrono-metaverse-${{ matrix.image }}
           flavor: |
@@ -59,7 +64,8 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
       # 构建参数只有网站用（web/build/identity.ts 的构建身份）；另外两个镜像忽略它们。
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        id: push
         with:
           context: .
           file: infra/${{ matrix.image }}/Dockerfile
@@ -71,17 +77,37 @@ jobs:
             CHRONO_BUILD=${{ steps.build.outputs.version }}
             CHRONO_BUILD_SHA=${{ github.sha }}
             CHRONO_BUILD_ARTIFACT=promotable
-          # 单平台清单，不附加证明清单：chrono-cd 按标签解析摘要时最简单。
+          # 单平台清单，不附加证明清单：这里返回的摘要就是 chrono-cd 按摘要拉取的那个清单。
           provenance: false
-          cache-from: type=gha,scope=chrono-metaverse-${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=chrono-metaverse-${{ matrix.image }}
+          # 不读写 Actions 缓存：缓存按仓库和分支共用、不分工作流，同一分支上任何一个 CI 任务里的
+          # action（或它能拿到的缓存令牌）都能写进构建层，发布镜像会原样带上。每次从头构建
+          # （runner 本来就是全新的，no-cache 只是写明这一点）。
+          no-cache: true
 
+      # 部署用的摘要：build-push-action 返回的就是推上去的清单摘要（单平台、不带证明清单，
+      # 和 chrono-cd 解析出来的一致）。拿不到合法摘要时让运行失败，不给出没法用的结果。
       - name: 摘要
+        env:
+          NAME: ${{ matrix.image }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
         run: |
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::没有拿到 chrono-metaverse-${NAME} 的镜像摘要（${DIGEST}）"
+            exit 1
+          fi
           {
-            echo "### chrono-metaverse-${{ matrix.image }}"
+            echo "### chrono-metaverse-${NAME}"
+            echo
+            echo "提交 \`${GITHUB_SHA}\`（分支 \`${GITHUB_REF_NAME}\`）。部署按摘要固定，把下面这行交给 \`infra/chrono-cd/pin-images.mjs\`："
             echo
             echo '```'
-            echo "${{ steps.meta.outputs.tags }}"
+            echo "${NAME}=${DIGEST}"
+            echo '```'
+            echo
+            echo "完整引用 \`ghcr.io/chronoaiproject/chrono-metaverse-${NAME}:${GITHUB_SHA::7}@${DIGEST}\`。标签可以被改写，只作记号："
+            echo
+            echo '```'
+            echo "${TAGS}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

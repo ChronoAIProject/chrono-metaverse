@@ -5,7 +5,7 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 
 规格格式以 chrono-cd 的接口文档为准（`docs/protocol/api.md`、技能文件 `skills/chrono-cd/SKILL.md`），并对照了组织下已有应用（`omega/mathesis`、`integrations/frigate-events-test`）的实际配置。
 
-改 `app.json` 后先跑静态检查（持续集成里也跑）：`node infra/chrono-cd/check-app.mjs`。它检查处理服务的线程数和内存上限、接口服务的限流额度和可信地址头、README 的环境变量表和密钥是否列全、`infra/dev/up.sh` 是否设了同样的线程变量，以及演示数据的种子（[`demo-seed.json`](demo-seed.json)）和接口服务的 `METAVERSE_DEMO_SEED` 是否一致、种子本身是否合法（第 8 步）；测试在 `check-app.test.mjs`（`node --test infra/chrono-cd/*.test.mjs`）。
+改 `app.json` 后先跑静态检查（持续集成里也跑）：`node infra/chrono-cd/check-app.mjs`。它检查每个服务的镜像都按摘要固定（第 1 步"镜像按摘要固定"）、处理服务的线程数和内存上限、接口服务的限流额度和可信地址头、README 的环境变量表和密钥是否列全、`infra/dev/up.sh` 是否设了同样的线程变量，以及演示数据的种子（[`demo-seed.json`](demo-seed.json)）和接口服务的 `METAVERSE_DEMO_SEED` 是否一致、种子本身是否合法（第 8 步）；测试在 `check-app.test.mjs`（`node --test infra/chrono-cd/*.test.mjs`）。镜像换版本用 [`pin-images.mjs`](pin-images.mjs) 生成规格或补丁（测试在 `pin-images.test.mjs`）。
 
 ## 1. 规格要点
 
@@ -23,7 +23,7 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 
 **探针**：chrono-cd 用 `health_path` 同时做就绪、存活、启动探针和负载均衡健康检查（存活每 15 秒、超时 5 秒；启动最多等 300 秒）。接口服务建好索引前 `/api/healthz` 返回 503，平台不会把流量导过来。网站用 nginx 自己的 `/healthz`（不读文件、不记访问日志）。处理服务不对外，`expose: internal` 只建集群内地址，不进公网路由。
 
-**镜像要求**（Dockerfile 在 [`infra/`](..) 下）：只能来自 ghcr.io；数字形式的非 root 用户（api 65532、web 101、worker 10001）；linux/amd64。chrono-cd 每次应用规格都把标签解析成摘要并固定下来。
+**镜像要求**（Dockerfile 在 [`infra/`](..) 下）：只能来自 ghcr.io；数字形式的非 root 用户（api 65532、web 101、worker 10001）；linux/amd64。规格里的镜像**一律按摘要固定**（`仓库:<7 位提交哈希>@sha256:<摘要>`，标签只作记号），原因见第 1 步。
 
 ### 配额
 
@@ -59,8 +59,8 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 | `UPLOAD_MAX_OPEN_PER_SPACE` | `16` | 每个空间进行中的上传数，超过返回 429 |
 | `UPLOAD_MAX_CONCURRENT_PARTS` | `8` | 每个副本同时处理的分片数（每片最多 32MiB 在内存里，与 `memory_limit` 一起考虑） |
 | `JOB_MAX_PENDING_PER_SPACE` | `8` | 每个空间排队和运行中的任务数，超过返回 429 |
-| `PUBLIC_RATE_LIMIT_PER_MINUTE` / `PUBLIC_RATE_LIMIT_BURST` | `12000` / `2000` | 公开 JSON 接口的限流额度。**目前按网关地址计、所有访客共用**（见下面"公开接口限流"），所以比接口服务按单个访客设计的默认值（1200 / 200）高 10 倍 |
-| `PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE` / `PUBLIC_BLOB_RATE_LIMIT_BURST` | `120000` / `20000` | 区块和资源（`/api/public/chunks/`、`/assets/`）的限流额度，同上（默认 12000 / 2000） |
+| `PUBLIC_RATE_LIMIT_PER_MINUTE` / `PUBLIC_RATE_LIMIT_BURST` | `60000000` / `1000000` | 公开 JSON 接口的限流额度。**目前按网关地址计、所有访客共用几个桶**，额度只要是进程处理得了的速率，一台机器就能把桶耗尽、让所有访客都 429，所以设成每秒 100 万次，**等于关掉限流**（见下面"公开接口限流"；接口服务按单个访客设计的默认值是 1200 / 200） |
+| `PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE` / `PUBLIC_BLOB_RATE_LIMIT_BURST` | `60000000` / `1000000` | 区块和资源（`/api/public/chunks/`、`/assets/`）的限流额度，同上（默认 12000 / 2000） |
 | `TRUSTED_CLIENT_IP_HEADER` | **不设（待向平台确认）** | 可信的客户端地址请求头。确认之前不设，接口服务按 TCP 连接地址限流，连接地址是网关或 nginx 的地址（见下面"公开接口限流"） |
 | `METAVERSE_DEMO_SEED` | [`demo-seed.json`](demo-seed.json) 压缩成的一行 | 部署配置种子：接口服务启动、建好索引后在后台建演示空间 `chronoai-lobby` 并导入前厅扫描（第 8 步）。改种子时两处一起改，`check-app.mjs` 检查一致 |
 | `METAVERSE_DEMO_SHARE_TOKEN` | **密钥**（`secret_keys`，不在 `env` 里） | 演示空间的分享令牌原文，接口服务只存它的 sha256、不写日志；用 `set_app_secrets` 设置（第 5 步）。种子是凭链接查看（`unlisted`）时必须有，缺了接口服务启动失败 |
@@ -73,12 +73,14 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 设计 8.2 要求公开接口按来源地址限流，并在第 0 阶段向平台确认哪个请求头里是可信的客户端地址（设计 16.2）。确认之前的情况：
 
 - **链路**：公网请求先到 Cloudflare，再到平台的 Google 负载均衡，最后到 `metaverse-api`（2026-11-09 实测 `https://chrono-metaverse-chronoai.apps.nyxid.ai/api/healthz` 的响应头：`server: cloudflare`、`cf-ray`、`via: 1.1 google`）；`/api` 走 nginx 兜底时还要再经过网站的 nginx。
-- **所以限流按网关地址计**：接口服务默认用 TCP 连接地址当来源，这个地址是 Google 前端代理（`35.191.0.0/16`、`130.211.0.0/22`）或 nginx 副本的地址，所有访客落进少数几个桶，限流只能当兜底。接口服务按单个访客设计的默认额度（每分钟 1200、突发 200）在这种情况下几十个同时在线的访客就会触发 429，所以 `app.json` 显式调高了 `PUBLIC_*` 四个额度。
-- **额度怎么来的**：网站"现在"模式每个访客每 5 秒带 If-None-Match 查一次 `/head`（多数 304），有变化时再拉增量事件、状态，约每分钟 24–36 次；打开一个空间约 10–20 次 JSON 请求，再加几百个区块和资源（前厅 5 厘米格约 155–195 个区块）。每分钟 12000 次按 200 个同时在线访客留了余量，突发 2000 约等于 100 个访客同时打开；区块和资源按同样的人数放大 10 倍。真正保护进程的是每个空间的并发上限（`PUBLIC_SPACE_CONCURRENCY`，默认 64）和进程内缓存，这里的额度只防一个来源把接口打满。
+- **所以限流按网关地址计**：接口服务默认用 TCP 连接地址当来源，这个地址是 Google 前端代理（`35.191.0.0/16`、`130.211.0.0/22`）或 nginx 副本的地址，所有访客落进少数几个桶。
+- **共用的桶会变成"全站 429 开关"，所以现在等于关掉限流**：只要额度是进程处理得了的速率，任何人在一台机器上持续以略高于额度的速度请求（例如有 1–2 秒进程内缓存、服务端几乎没有成本的 `/api/public/spaces/<编号>/head`），就能耗尽这几个桶，之后所有访客打开公开链接或分享链接都得到 429，攻击停下才恢复。以前按"200 个同时在线访客"调高到每分钟 12000、突发 2000 时，模拟（与锁文件相同的 governor 0.10.4、模拟时钟，合法访客共 50 次/秒，攻击都经同一个代理地址，持续 60 秒）的结果是：攻击 400 次/秒时合法请求只有 13% 成功，2000 次/秒时 1.8%。所以 `app.json` 把四个额度设成每秒 100 万次（每分钟 6000 万、突发 100 万）：单副本、1 核的接口服务远远处理不了这么多请求，进程被打满之前限流器不会拒绝任何人；同样的模拟里攻击到 10 万次/秒（60 秒）、90 万次/秒（5 秒）合法请求仍然全部成功。`check-app.mjs` 要求没有可信地址头时四个额度不低于"每核每秒 100 万次"（按接口服务的 `cpu_limit` 放大，突发至少一秒的量），改 `cpu_limit` 时要跟着改。
+- **现在靠什么兜底**：每个空间的并发上限（`PUBLIC_SPACE_CONCURRENCY`，默认 64，满了返回 503 `space_busy`，只影响那一个空间）、进程内缓存（`/head` 同一空间每秒最多读一次数据库，快照、区块、资源有字节上限）、公开空间内容不变的区块和资源（`.bin` 路径）按设计由 Cloudflare 缓存（是否命中待实测，设计 16.2），以及 Cloudflare 自带的防护。把进程本身打满仍然可能，但那要每秒几万次以上的持续洪泛，不再是每秒几百次就能做到的事。
 - **为什么暂时不设 `TRUSTED_CLIENT_IP_HEADER=cf-connecting-ip`**：接口服务对配置的头无条件信任。只要有人能绕过 Cloudflare 直接连到平台的负载均衡，就可以每个请求写一个不同的 `cf-connecting-ip`，每次都拿到新额度，限流完全失效。所以要先向平台确认两件事：① 负载均衡只接受 Cloudflare 的流量（或者会覆盖外来的 `cf-connecting-ip`）；② `cf-connecting-ip` 原样到达容器。
-- **`X-Forwarded-For` 不能用**：Google 负载均衡和 nginx 都会在后面追加地址，值是多个 IP；接口服务只认恰好一个 IP 的值，会退回连接地址（`check-app.mjs` 也会拒绝把它配成可信头）。要按转发链取客户端地址（只信任来自 Google 前端代理网段的连接、跳过负载均衡自己追加的那一段，参照 CMA 的 `CHRONO_SERVER_TRUSTED_PROXY_CIDRS`），需要接口服务先支持。
+- **`X-Forwarded-For` 不能用**：Google 负载均衡和 nginx 都会在后面追加地址，值是多个 IP；接口服务只认恰好一个 IP 的值，会退回连接地址（`check-app.mjs` 也会拒绝把它配成可信头）。
+- **不用等平台确认的做法（要接口服务先支持）**：按可信代理网段取客户端地址——只有 TCP 对端在 Google 前端代理网段（`35.191.0.0/16`、`130.211.0.0/22`）里时，才取 `X-Forwarded-For` 里负载均衡追加的客户端地址（倒数第二段）；这个地址在 Cloudflare 公布的网段里时再取 `cf-connecting-ip`，否则就用它本身；nginx 兜底路径同理只信任集群内的对端（参照 CMA 的 `CHRONO_SERVER_TRUSTED_PROXY_CIDRS`）。这样请求头不能被伪造，也不需要先确认平台配置。这是接口服务（`api/crates/metaverse-api/src/public/mod.rs` 的 `client_key`）的改动，不在部署配置里，接口服务支持之前限流保持关闭。
 
-平台确认之后：在 `app.json` 里设 `"TRUSTED_CLIENT_IP_HEADER": "cf-connecting-ip"`，四个 `PUBLIC_*` 可以删掉（回到按单个访客的默认额度），跑一遍 `node infra/chrono-cd/check-app.mjs`，再用 `PATCH` 只改这几项（JSON 合并补丁里写 `null` 表示删除这一项；改完 `GET` 一次确认）：
+平台确认之后：在 `app.json` 里设 `"TRUSTED_CLIENT_IP_HEADER": "cf-connecting-ip"`，四个 `PUBLIC_*` 可以删掉（回到按单个访客的默认额度；接口服务支持按可信代理网段取地址时同理，按它的配置项设置），跑一遍 `node infra/chrono-cd/check-app.mjs`，再用 `PATCH` 只改这几项（JSON 合并补丁里写 `null` 表示删除这一项；改完 `GET` 一次确认）：
 
 ```bash
 nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --data '{"services":{"metaverse-api":{"env":{
@@ -135,7 +137,35 @@ APP=api/v1/projects/metaverse/apps/chrono-metaverse
 - `…:<分支名>`（`/` 换成 `-`，例如 `claude-happy-ritchie-oly5hx`、`main`）
 - `…:latest`（只有 `main`）
 
-部署时**用提交哈希标签**，回滚和排查都能对上代码。
+#### 镜像按摘要固定
+
+部署**只用摘要**，不用任何标签（包括 7 位提交哈希标签）：
+
+- **标签可以被改写**：`Images` 的触发条件和 `packages: write` 权限都由被推分支自己的 `images.yml` 声明。有推送权限的人（或泄露的令牌）在任何分支里改一下这个文件，推一次就能覆盖 `:<线上的提交哈希>` 这类标签，ghcr 没有禁止改写标签的设置。
+- **chrono-cd 每次 `PUT` 和 `PATCH` 都会重新解析标签**（`Put` 对每个服务调用 `resolveImages`，不管镜像字段改没改；`set_app_secrets` 和重启用已存的摘要）。按标签写的规格，下一次只改环境变量的 `PATCH`（例如第 4 步改 `PUBLIC_BASE_URL`、第 7 步改 `ALLOWED_NYX_SERVICE_IDS`）就会把标签当时指向的镜像部署上线，修订记录里标签名不变、只有摘要变了。
+- **按摘要写时**：chrono-cd 在标签和摘要都有时只按摘要拉取，重新解析也还是同一个镜像。
+
+摘要从**这次提交在部署分支上的 `Images` 运行**里取：GitHub 的 Actions 页面打开那次运行（核对分支和提交哈希），三个任务的摘要里各有一行 `api=sha256:…`、`web=sha256:…`、`worker=sha256:…`，原样交给 [`pin-images.mjs`](pin-images.mjs)。不要按标签去 ghcr 查摘要，那查到的是标签现在指向的镜像。命令行也可以这样取（`gh` 登录后）：
+
+```bash
+gh run list -R ChronoAIProject/chrono-metaverse --workflow Images --commit <完整提交哈希> --json databaseId,headBranch,conclusion
+gh run view <运行编号> -R ChronoAIProject/chrono-metaverse --log | grep -oE '(api|web|worker)=sha256:[0-9a-f]{64}' | sort -u
+```
+
+`app.json` 里写的是已经上线验证过的版本（目前是 `aabf88f`，摘要与 chrono-cd 修订 2 记录的一致）；`check-app.mjs` 拒绝只有标签、标签不是 7 位提交哈希、或仓库和服务对不上的镜像。
+
+按摘要部署只保证"部署的就是那次运行构建的镜像"，管不到谁能推镜像、推代码。还没做、要仓库管理员在 GitHub 上决定的：建受保护的 `main` 作为部署分支（现在唯一的分支 `claude/happy-ritchie-oly5hx` 没有保护）；在包设置的 Manage Actions access 里收回本仓库工作流的写权限，改用只在受保护分支的 GitHub Environment 里可用的凭证推镜像（工作流自己声明的 `packages: write` 拦不住改过的工作流）；用组织规则集限制谁能改 `.github/workflows`。
+
+#### 构建输入也固定
+
+镜像的内容取决于构建时拉进来的东西，这些也一律固定到不可改写的引用（持续集成里 `node infra/chrono-cd/check-pins.mjs` 检查，测试在 `check-pins.test.mjs`）：
+
+- 工作流里的 action 固定到 40 位提交哈希，注释里写版本；install-action 装的工具写明版本。上游的标签或分支被改写（例如上游被入侵）时，不会在拿着 `packages: write` 令牌的任务里跑新代码。
+- `Images` 不读写 Actions 缓存：缓存按仓库和分支共用、不分工作流，同一分支上任何 CI 任务里的 action 都能写进构建层。每次从头构建，api 镜像会慢几分钟。
+- 三个 Dockerfile 的 `# syntax=` 构建前端和基础镜像写成"标签@摘要"（构建时 BuildKit 只按摘要拉）。
+- 处理服务的依赖按 `worker/uv.lock` 的哈希装（`--require-hashes`）；worker 包自己的构建后端 setuptools 按 [`infra/worker/build-requirements.txt`](../worker/build-requirements.txt) 的版本和哈希装进虚拟环境、关掉构建隔离再装 worker 包，装完删掉。不这样做时构建隔离每次从 PyPI 拉最新的 setuptools（`uv.lock` 不锁构建依赖）。
+
+更新由 Dependabot 每周提（[`.github/dependabot.yml`](../../.github/dependabot.yml)，新版本发布满一周才提）；`# syntax=` 的摘要要手工换。
 
 ### 第 2 步：把三个包设为公开（只做一次）
 
@@ -147,7 +177,7 @@ APP=api/v1/projects/metaverse/apps/chrono-metaverse
 TOKEN=$(curl -s "https://ghcr.io/token?scope=repository:chronoaiproject/chrono-metaverse-api:pull" | jq -r .token)
 curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" \
   -H 'Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
-  https://ghcr.io/v2/chronoaiproject/chrono-metaverse-api/manifests/<提交哈希>
+  https://ghcr.io/v2/chronoaiproject/chrono-metaverse-api/manifests/sha256:<摘要>
 ```
 
 不想公开时，可以在 `PUT` 请求体里带一次 `registry_credential`（经典 PAT，`read:packages`），但这样就有一个要保管的凭证，不推荐。
@@ -162,16 +192,18 @@ nyxid proxy request chrono-cd "api/v1/account?org_id=$ORG" --output json
 
 ### 第 4 步：提交应用规格
 
-先跑 `node infra/chrono-cd/check-app.mjs`，再把 `app.json` 里三个镜像的标签换成要部署的提交哈希，然后提交：
+先跑 `node infra/chrono-cd/check-app.mjs`，再用 `pin-images.mjs` 把三个镜像换成要部署那次提交的摘要（第 1 步"镜像按摘要固定"；它输出整份规格，并且只有通过 `check-app` 的检查才输出），然后提交：
 
 ```bash
-SHA=<7 位提交哈希>
-sed "s/:main\"/:$SHA\"/" infra/chrono-cd/app.json > /tmp/chrono-metaverse.json
+node infra/chrono-cd/pin-images.mjs <提交哈希> \
+  api=sha256:<摘要> web=sha256:<摘要> worker=sha256:<摘要> > /tmp/chrono-metaverse.json
 nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PUT \
   --data "$(cat /tmp/chrono-metaverse.json)" --output json
 ```
 
-在 Claude 会话里：让它用 `chrono-cd__put_app` 提交，参数是 `project=metaverse`、`app=chrono-metaverse`、`org_id=<ORG>`，`addons` 和 `services` 取自 `app.json`（`target_org_id` 与 `org_id` 一致）。先让它把要提交的内容给你看。
+部署 `app.json` 里写的那个版本时不用换，直接提交 `app.json`。
+
+在 Claude 会话里：让它用 `chrono-cd__put_app` 提交，参数是 `project=metaverse`、`app=chrono-metaverse`、`org_id=<ORG>`，`addons` 和 `services` 取自 `pin-images.mjs` 的输出或 `app.json`（`target_org_id` 与 `org_id` 一致；镜像必须带 `@sha256:`）。先让它把要提交的内容给你看。
 
 返回 `201`（新建）或 `200`（替换）。记下返回里的 `url`，如果和 `PUBLIC_BASE_URL` 的预估值不同，改掉它（chrono-cd 的 `PATCH` 是 JSON 合并补丁，只改这一项，其他字段不动）：
 
@@ -180,7 +212,7 @@ nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH \
   --data '{"services":{"metaverse-api":{"env":{"PUBLIC_BASE_URL":"https://<返回的 url 主机名>"}}}}' --output json
 ```
 
-常见失败：`400 image_not_found`（标签不存在或还没构建完）、`400 image_unauthorized`（第 2 步没做）、`409 quota_exceeded`（第 3 步）、`409 service_name_taken`（服务名被组织里别的应用占用）。
+常见失败：`400 image_not_found`（摘要不存在、复制错了或还没构建完）、`400 image_unauthorized`（第 2 步没做）、`409 quota_exceeded`（第 3 步）、`409 service_name_taken`（服务名被组织里别的应用占用）。
 
 规格里声明了密钥 `METAVERSE_DEMO_SHARE_TOKEN`：第一次提交时密钥还没设置，chrono-cd 返回 `422 missing_secret_keys`——这表示规格**已保存**、等密钥，接着做第 5 步，设置后 chrono-cd 立即应用。
 
@@ -299,15 +331,17 @@ curl -s -H "Authorization: Share <令牌>" https://<应用域名>/api/public/spa
 
 ## 3. 日常更新
 
-新版本只换镜像标签，用 `PATCH`（不会动其他字段，也不会覆盖别人中途的部署）：
+新版本只换镜像，用 `PATCH`（不会动其他字段，也不会覆盖别人中途的部署）。摘要按第 1 步"镜像按摘要固定"从那次提交的 `Images` 运行里取，`pin-images.mjs --patch` 生成只含镜像的补丁：
 
 ```bash
-SHA=<新的 7 位提交哈希>
-nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --data "{\"services\":{
-  \"metaverse-web\":{\"image\":\"ghcr.io/chronoaiproject/chrono-metaverse-web:$SHA\"},
-  \"metaverse-api\":{\"image\":\"ghcr.io/chronoaiproject/chrono-metaverse-api:$SHA\"},
-  \"metaverse-worker\":{\"image\":\"ghcr.io/chronoaiproject/chrono-metaverse-worker:$SHA\"}}}"
+PATCH_BODY=$(node infra/chrono-cd/pin-images.mjs --patch <新的提交哈希> \
+  api=sha256:<摘要> web=sha256:<摘要> worker=sha256:<摘要>)
+nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --data "$PATCH_BODY"
 ```
+
+上线后同步改 `app.json` 的三个镜像（同一条命令去掉 `--patch` 的输出里就是新的镜像引用），让仓库里记的是线上验证过的版本。
+
+**线上规格还是按标签写的时候（只做一次）**：2026-11-09 部署的修订 1、2 用的是 `:b957be0`、`:aabf88f` 这类标签。在做任何只改环境变量的 `PATCH` 之前，先用上面的命令把镜像换成按摘要固定，摘要取 `revisions` 里**当前修订记录的** `ImageDigest`（部署时解析出来的，不受之后改写标签的影响；与那次 `Images` 运行的摘要核对一次）。之后再按需要用 `PATCH` 同步 `app.json` 里改过的环境变量（例如第 1 节"公开接口限流"的四个额度）。
 
 改了 `app.json` 的其他内容（环境变量、资源）时用第 4 步的 `PUT` 整份提交；`PUT` 会整份替换，提交前先 `GET` 一次，把线上手工改过的值（`PUBLIC_BASE_URL`、`ALLOWED_NYX_SERVICE_IDS`）同步回来，再带上 `If-Match: <generation>`。
 
@@ -321,16 +355,17 @@ nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --
    nyxid proxy request chrono-cd "$APP/revisions?org_id=$ORG&limit=10" --output json
    ```
 
-   每个修订都带各服务的镜像和摘要。同一个标签被重新推送过时，用 `镜像名@sha256:<摘要>` 更稳。
-2. 用第 3 节的 `PATCH` 把镜像换回旧标签或旧摘要（只回滚出问题的服务也可以）。
+   每个修订都带各服务的镜像和摘要（`ImageDigest`，部署时解析出来的）。回滚用这个摘要，不要用标签：标签可能已经被改写。
+2. 用第 3 节的 `pin-images.mjs --patch` 生成补丁，把镜像换回旧摘要（只回滚出问题的服务也可以，只写那个服务，例如 `api=sha256:<旧摘要>`；提交哈希写旧版本的）。
 3. 用第 6 步的命令确认 `phase = ready`。
 
-在 Claude 会话里没有 `PATCH`：先 `chrono-cd__get_app` 读出当前完整配置，只把对应服务的 `image` 换成旧版本，其他字段（全部服务、`env`、`addon_env`、`addons`、`volumes`）原样保留，再用 `chrono-cd__put_app` 提交。漏了服务，那个服务会被删掉；漏了 `addons`，MongoDB 插件会被撤掉（数据保留，但应用随即连不上数据库）。
+在 Claude 会话里没有 `PATCH`：先 `chrono-cd__get_app` 读出当前完整配置，只把对应服务的 `image` 换成旧版本（`仓库:<旧提交哈希>@sha256:<旧摘要>`），其他字段（全部服务、`env`、`addon_env`、`addons`、`volumes`）原样保留，再用 `chrono-cd__put_app` 提交。漏了服务，那个服务会被删掉；漏了 `addons`，MongoDB 插件会被撤掉（数据保留，但应用随即连不上数据库）。
 
 回滚不回滚数据：如果新版本已经跑过不兼容旧版本的迁移，单纯换镜像不够，先看迁移说明。
 
 ## 5. 不要做的事
 
 - 不要把任何密钥写进 `env`（`get_app` 会原样返回给组织成员）或 `app.json`，包括演示空间的分享令牌 `METAVERSE_DEMO_SHARE_TOKEN`（它只在 `secret_keys` 里声明名字）。
+- 不要在规格里写只有标签的镜像（`:main`、`:<提交哈希>`），也不要按标签去 ghcr 查摘要：标签可以被任何分支的工作流改写，chrono-cd 每次 `PUT` / `PATCH` 都会重新解析（第 1 步"镜像按摘要固定"）。
 - 不要 `DELETE` 应用来"重来"：删除不可恢复，带 `purge=true` 还会删掉数据库。
 - 不要把 `ALLOWED_NYX_SERVICE_IDS` 改成别人的服务编号或放宽成多个不相干的编号：别人自建的连接指向本服务时，正是靠它返回 401（设计 9.1）。

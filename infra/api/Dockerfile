@@ -1,10 +1,11 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 # 接口服务镜像（metaverse-api）。构建上下文是仓库根目录：
 #   docker build -f infra/api/Dockerfile .
 # 参照 CMA infra/api/Dockerfile：多阶段构建，配置全部由部署时的环境变量注入，这里不写 ENV。
+# 构建前端和基础镜像都按摘要固定（标签只作记号），更新时取同一标签的新摘要（Dependabot 会提）。
 
 # ---- 构建：与 api/rust-toolchain.toml 相同的工具链 ----
-FROM rust:1.97.0-slim-trixie AS build
+FROM rust:1.97.0-slim-trixie@sha256:686a437ead83701e8f871e66e838c3ec55f46b5fc235b025756396ac823bdc51 AS build
 WORKDIR /build
 COPY api/ ./
 # RUSTUP_TOOLCHAIN 只在这条命令里生效：直接用镜像自带的 1.97.0，

@@ -3,6 +3,9 @@ name: CI
 # 每次推送和每个合并请求都跑：接口服务、网站（含夹具模式的端到端测试）、处理服务、命令行（目录存在时）
 # 和仓库检查。跨服务的九步验收（infra/dev/e2e.mjs）要本地起全套并提供前厅扫描，不在这里跑。
 # 写法参照 CMA 的 .github/workflows/ci.yml，按本项目的规模收缩。
+#
+# 第三方 action 一律固定到完整提交哈希（注释里是对应的版本），由 Dependabot 提更新
+# （.github/dependabot.yml）；仓库检查里的 check-pins.mjs 拒绝标签和分支引用。
 
 on:
   push:
@@ -29,16 +32,16 @@ jobs:
       run:
         working-directory: api
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: 起 MongoDB 副本集
         working-directory: .
         run: bash .github/scripts/start-mongo.sh
       # 与 api/rust-toolchain.toml 一致。
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master，2026-11-09
         with:
           toolchain: 1.97.0
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: api
       - name: 格式
@@ -58,13 +61,14 @@ jobs:
       run:
         working-directory: api
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master，2026-11-09
         with:
           toolchain: 1.97.0
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
-          tool: cargo-deny
+          # 工具也固定版本（install-action 按它清单里的 sha256 校验下载的二进制）。
+          tool: cargo-deny@0.20.2
       # 与 api/README.md 列出的命令相同；规则在 api/deny.toml。
       - name: cargo deny
         run: cargo deny --locked --all-features check advisories licenses bans sources
@@ -77,8 +81,8 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
           cache: npm
@@ -107,8 +111,8 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
           cache: npm
@@ -123,7 +127,7 @@ jobs:
         run: npm run e2e
       - name: 失败时上传截图
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: web-e2e-screenshots-${{ github.run_id }}-${{ github.run_attempt }}
           path: web/e2e/screenshots/
@@ -140,11 +144,11 @@ jobs:
       run:
         working-directory: worker
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: 起 MongoDB 副本集
         working-directory: .
         run: bash .github/scripts/start-mongo.sh
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         with:
           version: 0.11.32
           enable-cache: true
@@ -175,7 +179,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: 检查目录是否存在
         id: detect
         run: |
@@ -185,7 +189,7 @@ jobs:
             echo "present=false" >> "$GITHUB_OUTPUT"
             echo "sdk/typescript 还不存在，跳过。"
           fi
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         if: steps.detect.outputs.present == 'true'
         with:
           node-version: 22
@@ -215,11 +219,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: stable
           cache: false
@@ -232,6 +236,10 @@ jobs:
         run: |
           node --test infra/chrono-cd/*.test.mjs
           node infra/chrono-cd/check-app.mjs
+      # action 按提交哈希、基础镜像和构建前端按摘要、处理服务的构建后端按哈希固定；
+      # 发布镜像不读共享的 Actions 缓存。
+      - name: 供应链固定检查
+        run: node infra/chrono-cd/check-pins.mjs
       - name: 本地开发设施：JSON 与脚本语法
         run: |
           node --check infra/dev/mock-nyxid.mjs
