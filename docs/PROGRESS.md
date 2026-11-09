@@ -1,0 +1,85 @@
+# 第一版进度报告
+
+依据：[建设计划](BUILD_PLAN.md)。本文记录第一版的完成情况、验收结果、线上部署和还需要人工完成的事。
+
+## 1. 线上地址
+
+- 网站与接口：<https://chrono-metaverse-chronoai.apps.nyxid.ai>（chrono-cd，ChronoAI 组织，项目 `metaverse`，应用 `chrono-metaverse`）。
+- 前厅演示空间：`/s/chronoai-lobby#share=<分享令牌>`。演示空间是"凭链接查看"，分享令牌只作为 chrono-cd 的密钥注入（`METAVERSE_DEMO_SHARE_TOKEN`），不在仓库里；需要链接请向部署人索取。
+- 演示数据由部署配置种子自动导入（[infra/chrono-cd/demo-seed.json](../infra/chrono-cd/demo-seed.json)）：接口服务启动时从 Scaniverse 下载前厅扫描、核对哈希、建空间并发起扫描导入，处理服务完成对齐和 AI 重建。改 `revision` 会在同一空间重新导入，时间线上能看到前后两个版本。
+- 健康检查：`/api/healthz`；注册给 NyxID 的接口文档：`/api/openapi.json`。
+
+## 2. 验收结果（建设计划第 5 节）
+
+### 2.1 单元与集成测试
+
+| 组件 | 检查 | 结果 |
+|---|---|---|
+| `api`（Rust） | fmt、clippy `-D warnings`、`cargo test`（连本地 MongoDB 副本集） | 全部通过，约 224 个测试 |
+| `worker`（Python） | ruff check、ruff format、pytest（含 MongoDB 集成测试） | 全部通过，333 个测试 |
+| `web`（React） | lint、typecheck、format、vitest、build、Playwright | 全部通过，265 个单元测试、14 个端到端用例 |
+| `sdk/typescript` | lint、typecheck、format、vitest、build | 全部通过，186 个测试 |
+| `infra` | 模拟 NyxID、部署规格检查、shellcheck、hadolint、actionlint | 全部通过 |
+
+持续集成（`.github/workflows/ci.yml`）每次推送都跑以上检查；`images.yml` 构建三个镜像推到 `ghcr.io/chronoaiproject/chrono-metaverse-{api,web,worker}`。
+
+### 2.2 九步端到端（本地真实 MongoDB，前厅扫描）
+
+`node infra/dev/e2e.mjs --scan <前厅扫描.zip>`，默认模式和 `--voxelize` 模式都九步全过：
+
+1. 用测试令牌建组织空间；
+2. 分片上传前厅扫描（并验证本空间可按哈希复用、别的空间不能）；
+3. 处理服务完成对齐和 AI 重建，写入提交（约 1 分钟）；
+4. 公开读接口按 seq 返回快照，没带或带错令牌 404；
+5. 网站三种视图都能渲染（无头浏览器截图）；
+6. 时间轴能回到重建前；
+7. 写事件后"现在"模式能拉到；
+8. 命令行 `pull → build → check → push → publish` 在地块内完成一次建造；
+9. 越权操作返回 403 或 404（11 种情况）。
+
+### 2.3 重建质量（前厅，带提示）
+
+| 指标 | 结果 | 要求 |
+|---|---|---|
+| 家具区平均偏差 | 2.63 厘米（P90 6.23 厘米，3 厘米内 70%） | ≤ 3 厘米 |
+| 模型大小（物体 + 结构，含贴图） | 0.37MB | ≤ 3MB |
+| 物体 / 模板 | 41 个物体、2 个模板（会议椅、休闲椅） | — |
+
+前台是折面外壳 + 台面 + 踢脚线，桌面圆角、椅子靠背弧度、沙发扶手卷边都按常见形状拟合；墙是贴图面板 + 墙体，玻璃带竖梃和窗台。对比图见 [worker/scripts/results/](../worker/scripts/results/)，做法和已知不足见 [worker/README.md](../worker/README.md) 的"前厅重建效果"。
+
+### 2.4 部署
+
+- chrono-cd 上应用状态就绪；公网能打开网站并看到前厅演示空间（三种视图、时间轴）。
+- 公开读接口、健康检查正常；没有令牌访问 `/api/v1` 返回 401，没带分享令牌读演示空间返回 404。
+
+## 3. 审查
+
+- **接口约定审计**：五条组件边界（命令行↔接口、网站↔接口、处理服务↔接口存储、部署↔代码、设计↔实现）共发现约 50 处不一致，已按组件修复。
+- **安全与正确性审查**：五个维度共 35 条发现，逐条由独立核实者尝试推翻，确认 31 条（高 6、中 8、低 17）。其中包括：
+  - 按哈希复用上传可以接管别的主人的私有资源；
+  - 删除后同名重建的空间继承旧组合成员身份；
+  - 组合令牌能读到成员退出后的提交。
+  确认的问题已全部修复并补了回归测试，另有 2 条留作后续（见第 5 节）。
+- **资源清理栅栏**：引用已登记资源前先刷新 `touchedAt`，发布在提交事务里再确认一次，缺了返回 409 `asset_gone`。
+
+## 4. 需要人工完成的事
+
+1. **把服务注册成 NyxID 自定义服务**（组织管理员在自己电脑上用 `nyxid` 命令行操作，命令见 [开发教程 9.3](tutorials/cloud-claude-code-nyxid.md)）：
+   - 注册时开启身份令牌（受众 `urn:chrono-metaverse:api`）和"转发调用者令牌"；
+   - 注册后，把服务编号填进 chrono-cd 规格里 `metaverse-api` 的 `ALLOWED_NYX_SERVICE_IDS`（现在是占位值 `pending-nyxid-registration`，所有 `/api/v1` 都返回 401）。
+   - 完成之前，写入只能走部署配置种子；AI 和命令行还不能经 NyxID 写入。
+2. **ghcr.io 镜像公开**：不需要处理，三个镜像已经可以匿名拉取。
+3. **向平台确认可信的客户端地址请求头**：确认负载均衡只接受 Cloudflare 的流量、`cf-connecting-ip` 原样到达容器后，按 [infra/chrono-cd/README.md](../infra/chrono-cd/README.md)"公开接口限流"一节设置 `TRUSTED_CLIENT_IP_HEADER`，并调回公开接口的限流额度。在此之前，限流按连接地址计算，只能当兜底。
+4. **Dependabot 告警**：GitHub 报告默认分支有 1 个中危依赖告警，合并到默认分支前看一下是否仍适用。
+
+## 5. 已知不足与后续
+
+- **公开事件编号**：公开编号是 `sourceEventId` 的无盐哈希，数据源用可猜的编号时，可以离线猜出非公开事件的编号（低危）。改成 HMAC 需要新增服务端密钥和轮换策略，留作设计条目；接入说明要求 `sourceEventId` 不可猜。
+- **存储用量**：按哈希复用的上传和发布时合并出的操作文件还没计入空间存储用量。
+- **地块合作方的 agent key**：`metaverse pull` 用的是实体区路径的只读接口，只开放地块路径的 key 需要另外开放这几个只读接口（或以后提供地块范围的读接口）。
+- **重建**：
+  - 入口门框还是分层挤出；
+  - 镜面展示柜是纯黑圆角盒；
+  - 被桌子挡住的一把会议椅分割不干净；
+  - 同样输入重复导入时物体数会有小幅差异（重建不完全确定）。
+- **演示令牌轮换**：改密钥不会更新已建空间的令牌哈希，要换令牌需要在 NyxID 注册后用管理接口轮换，或删空间让种子重建。
