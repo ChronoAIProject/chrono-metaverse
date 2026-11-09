@@ -761,6 +761,57 @@ def fit_box(o: Local, name: str = "body", uv: str = "cylindrical") -> dict[str, 
     return sh.group([part(shape, name, uv)])
 
 
+def fit_faces_box(
+    o: Local, *, min_height: float = 1.2, min_share: float = 0.15, name: str = "body"
+) -> dict[str, Any] | None:
+    """高柜子只扫到两个相邻的面（另外两面靠墙、靠窗）、面上又是镜子或玻璃时，镜子里的虚像在柜子外面
+    散成一片，俯视占用变成 L 形，按占用拟合会得到一块斜的大板。这里只用外轮廓上的面定尺寸：
+
+    - 四个水平方向上，法线朝外的点占全部点 `min_share` 以上、位置集中（四分位距 8 厘米以内）的是"看到的面"；
+    - 至少有两个相互垂直的面时，看到的面给出这一侧的位置（中位数），没看到的一侧取相邻那个面的点
+      沿边的范围（2%–98% 分位）——散在外面的虚像点不参与；
+    - 竖直的圆角盒，底在地面，顶是面上的点的 99% 分位。不满足条件时返回 None。"""
+    if float(np.percentile(o.y, 99)) < min_height:
+        return None
+    n_all = len(o.L)
+    faces: dict[tuple[int, int], np.ndarray] = {}
+    for ax in (0, 2):
+        for sg in (-1, 1):
+            m = sg * o.N[:, ax] > 0.8
+            if m.sum() < min_share * n_all:
+                continue
+            q = np.percentile(o.L[m, ax], [25, 75])
+            if q[1] - q[0] > 0.08:
+                continue
+            faces[(ax, sg)] = m
+    if not any(k[0] == 0 for k in faces) or not any(k[0] == 2 for k in faces):
+        return None
+    lo = [0.0, 0.0, 0.0]
+    hi = [0.0, 0.0, 0.0]
+    for ax, other in ((0, 2), (2, 0)):
+        for sg in (-1, 1):
+            if (ax, sg) in faces:
+                v = float(np.median(o.L[faces[(ax, sg)], ax]))
+            else:
+                # 没看到的一侧：垂直方向那个看到的面沿这条轴的范围
+                m = next(faces[k] for k in faces if k[0] == other)
+                v = float(np.percentile(o.L[m, ax], 98 if sg > 0 else 2))
+            (hi if sg > 0 else lo)[ax] = v
+    w, d = hi[0] - lo[0], hi[2] - lo[2]
+    if w < 0.2 or d < 0.2:
+        return None
+    seen = np.zeros(n_all, bool)
+    for m in faces.values():
+        seen |= m
+    top = float(np.percentile(o.y[seen], 99))
+    shape = sh.box(
+        [w, top, d],
+        fillet=0.01,
+        xf=sh.transform(position=[(lo[0] + hi[0]) / 2, 0.0, (lo[2] + hi[2]) / 2]),
+    )
+    return sh.group([part(shape, name, "planar", "color")])
+
+
 def fit_stack(
     o: Local, *, max_bands: int = 4, name: str = "body", uv: str = "cylindrical"
 ) -> dict[str, Any] | None:

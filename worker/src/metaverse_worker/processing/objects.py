@@ -46,6 +46,7 @@ from .fit_templates import (
     circularity,
     fit_box,
     fit_chair,
+    fit_faces_box,
     fit_plant,
     fit_round,
     fit_sofa,
@@ -399,6 +400,11 @@ def _fit_local_raw(o: Local, kind: str) -> tuple[dict[str, Any], str]:
         return fit_plant(o), "lathe"
     if kind in ("round", "lamp"):
         return fit_round(o), "lathe"
+    if kind == "cabinet":
+        # 只扫到两个相邻面的高柜（镜面的虚像散在外面）：按看到的面定尺寸的竖直圆角盒
+        faces = fit_faces_box(o)
+        if faces is not None:
+            return faces, "faces"
     ext = np.ptp(o.L, axis=0)
     dims = sorted(ext)
     uv = "planar" if dims[0] < 0.4 * dims[1] else "cylindrical"

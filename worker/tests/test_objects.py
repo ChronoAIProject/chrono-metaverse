@@ -223,6 +223,43 @@ def test_fit_sofa_finds_seat_back_and_arms():
     assert seat_fit["transform"]["position"][1] + seat_fit["size"][1] == pytest.approx(0.42, abs=0.03)
 
 
+# ---------------------------------------------------------------------------- 只看到两个面的高柜
+
+
+def test_fit_faces_box_ignores_mirror_points():
+    """高柜只扫到两个相邻的面（x = −0.6 朝 −x，z = 0.6 朝 +z），镜子的虚像点散在外面：
+    盒子只按两个面定尺寸，没看到的两侧取看到的面沿边的范围。"""
+    rng = np.random.default_rng(4)
+    n = 4000
+    f1 = np.c_[np.full(n, -0.6), rng.uniform(0, 2.3, n), rng.uniform(-0.8, 0.6, n)]
+    f2 = np.c_[rng.uniform(-0.6, 1.0, n), rng.uniform(0, 2.3, n), np.full(n, 0.6)]
+    ghost = np.c_[rng.uniform(-1.5, 0.5, 1500), rng.uniform(0, 1.0, 1500), rng.uniform(-1.5, 1.4, 1500)]
+    P = np.concatenate([f1, f2, ghost])
+    N = np.concatenate(
+        [np.tile([-1.0, 0, 0], (n, 1)), np.tile([0, 0, 1.0], (n, 1)), rng.normal(size=(1500, 3))]
+    )
+    N /= np.linalg.norm(N, axis=1, keepdims=True)
+    o = ft.Local(P, N, np.full((len(P), 3), 30, np.uint8))
+    g = ft.fit_faces_box(o)
+    assert g is not None
+    box = g["children"][0]
+    w, h, d = box["size"]
+    x, _, z = box["transform"]["position"]
+    assert x - w / 2 == pytest.approx(-0.6, abs=0.02) and x + w / 2 == pytest.approx(1.0, abs=0.04)
+    assert z + d / 2 == pytest.approx(0.6, abs=0.02) and z - d / 2 == pytest.approx(-0.8, abs=0.04)
+    assert h == pytest.approx(2.3, abs=0.05)
+
+
+def test_fit_faces_box_needs_two_perpendicular_faces():
+    """只有一个面（贴墙的薄板）或者太矮：不用这个拟合。"""
+    rng = np.random.default_rng(5)
+    P = np.c_[rng.uniform(-1, 1, 3000), rng.uniform(0, 2.2, 3000), np.zeros(3000)]
+    N = np.tile([0, 0, 1.0], (3000, 1))
+    assert ft.fit_faces_box(ft.Local(P, N, np.zeros((3000, 3), np.uint8))) is None
+    P2 = P * [1, 0.4, 1]
+    assert ft.fit_faces_box(ft.Local(P2, N, np.zeros((3000, 3), np.uint8))) is None
+
+
 # ---------------------------------------------------------------------------- 端到端
 
 
