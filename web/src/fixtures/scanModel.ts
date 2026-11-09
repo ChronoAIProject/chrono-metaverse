@@ -102,6 +102,31 @@ export function fixtureScanGlb(): Uint8Array {
       }
     }
   }
+  // 和真实扫描一样带零星的离群点：门外、玻璃隔断外拍到的碎片，离房间几米远。
+  // 原始视图取景时按表面的分位包围盒去掉它们（viewer/framing.ts 的 scanFrameBox）。
+  // 碎片取图集第一格的颜色。
+  const su = 0.5 / CELLS;
+  const sv = 0.5 / CELLS;
+  for (let i = 0; i < 24; i += 1) {
+    const outside = i % 2 === 0;
+    // 一半在门外的街上（z 7–11 米），一半在玻璃隔断外（x 8–12 米）。
+    const cx = outside ? -1 + rand() * 9 : 8 + rand() * 4;
+    const cz = outside ? 7 + rand() * 4 : rand() * 6;
+    const cy = 0.2 + rand() * 2.2;
+    const offset = positions.length / 3;
+    for (const [dx, dy, dz] of [
+      [0, 0, 0],
+      [0.12, 0, 0.03],
+      [0.02, 0.1, 0],
+    ] as const) {
+      v.set(cx + dx, cy + dy, cz + dz).applyMatrix4(toScan);
+      positions.push(v.x, v.y, v.z);
+      v.set(0, 0, 1).applyMatrix4(normalToScan).normalize();
+      normals.push(v.x, v.y, v.z);
+      uvs.push(su, sv);
+    }
+    indices.push(offset, offset + 1, offset + 2);
+  }
   return writeGlb({
     positions: new Float32Array(positions),
     normals: new Float32Array(normals),

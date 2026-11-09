@@ -1,11 +1,13 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { brightCoverage, decodePng, imageStats } from './png';
+import * as THREE from 'three';
+import { frameBox } from '../src/viewer/framing';
+import { brightCoverage, decodePng, imageStats, patchLuma, type DecodedPng } from './png';
 
 /*
- * 夹具模式的端到端测试：三种视图、取景、锚点标签、形状 / 方块、剖切、时间轴、"现在"模式、
- * 组合页、预览页、错误页、移动端。
+ * 夹具模式的端到端测试：三种视图（含 ?view= 参数）、取景、灯光、锚点标签、形状 / 方块、剖切、
+ * 时间轴、"现在"模式、组合页、预览页、错误页、移动端。
  * 截图写到 e2e/screenshots/（不进版本库），用来人工核对渲染（圆角和弧度、贴图、不是全黑）。
  */
 
@@ -47,6 +49,98 @@ async function expectRendered(page: Page) {
 /** 房间（亮像素）占整个画布的比例。 */
 async function roomCoverage(page: Page): Promise<number> {
   return brightCoverage(decodePng(await page.locator('.viewer__canvas').screenshot()));
+}
+
+/** 镜头取景的范围（data-frame）：[minX, minY, minZ, maxX, maxY, maxZ]。 */
+async function frameRange(page: Page): Promise<number[]> {
+  return (await page.locator('.viewer').getAttribute('data-frame'))!.split(',').map(Number);
+}
+
+/**
+ * 按自动取景的结果（data-frame）还原镜头：和 SceneView 一样，竖直视场 50°、宽高比是画布的
+ * 宽高比，用同一个 frameBox 算位置和观察点。`turned` 为 true 时绕观察点转半圈（拖动画布高度的
+ * 一半就是转半圈，见 `turnAround`）。返回把世界坐标的点投影成画布像素位置的函数。
+ */
+async function projector(page: Page, turned = false) {
+  const range = await frameRange(page);
+  const canvas = (await page.locator('.viewer__canvas').boundingBox())!;
+  const aspect = canvas.width / canvas.height;
+  const box = new THREE.Box3(
+    new THREE.Vector3(range[0], range[1], range[2]),
+    new THREE.Vector3(range[3], range[4], range[5]),
+  );
+  const frame = frameBox(box, { fov: 50, aspect })!;
+  const camera = new THREE.PerspectiveCamera(50, aspect, 0.05, 500);
+  camera.position.copy(frame.position);
+  if (turned) {
+    camera.position.x = 2 * frame.target.x - frame.position.x;
+    camera.position.z = 2 * frame.target.z - frame.position.z;
+  }
+  camera.lookAt(frame.target);
+  camera.updateMatrixWorld();
+  return (point: readonly [number, number, number]) => {
+    const v = new THREE.Vector3(...point).project(camera);
+    return { x: ((v.x + 1) / 2) * canvas.width, y: ((1 - v.y) / 2) * canvas.height };
+  };
+}
+
+/**
+ * 水平拖动画布高度的一半：OrbitControls 按"拖过整个画布高度 = 转一圈"旋转，所以镜头绕观察点
+ * 转半圈，到房间的另一侧。阻尼每帧放掉剩下的 8%，等 100 帧（剩下不到万分之三）再返回。
+ */
+async function turnAround(page: Page) {
+  const canvas = (await page.locator('.viewer__canvas').boundingBox())!;
+  const y = canvas.y + canvas.height * 0.5;
+  const x = canvas.x + canvas.width * 0.25;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + canvas.height / 2, y, { steps: 12 });
+  await page.mouse.up();
+  await page.mouse.move(canvas.x + 2, canvas.y + 2);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        let frames = 0;
+        const tick = () => {
+          frames += 1;
+          if (frames >= 100) resolve();
+          else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+  );
+}
+
+/** 一组世界坐标的点在画面上的平均亮度（每个点取 7 × 7 像素）；每个点都必须在画面里。 */
+function meanLumaAt(
+  png: DecodedPng,
+  project: (point: readonly [number, number, number]) => { x: number; y: number },
+  points: readonly (readonly [number, number, number])[],
+): { mean: number; min: number } {
+  const lumas = points.map((point) => {
+    const { x, y } = project(point);
+    expect(x, `${point.join(',')} 在画面里`).toBeGreaterThan(4);
+    expect(x).toBeLessThan(png.width - 4);
+    expect(y).toBeGreaterThan(4);
+    expect(y).toBeLessThan(png.height - 4);
+    return patchLuma(png, x, y, 3);
+  });
+  return {
+    mean: lumas.reduce((sum, value) => sum + value, 0) / lumas.length,
+    min: Math.min(...lumas),
+  };
+}
+
+/** 画布截图，盖在上面的标签、状态栏、悬停提示和按钮先藏起来（只看三维场景本身的像素）。 */
+async function sceneOnly(page: Page): Promise<DecodedPng> {
+  const hide = await page.addStyleTag({
+    content:
+      '.viewer__labels, .viewer__hud, .viewer__tools, .viewer__progress, .viewer__tooltip { visibility: hidden !important; }',
+  });
+  await page.waitForTimeout(150);
+  const png = decodePng(await page.locator('.viewer__canvas').screenshot());
+  await hide.evaluate((node) => (node as Element).remove());
+  return png;
 }
 
 /** 当前看得见的锚点标签。 */
@@ -165,6 +259,72 @@ test('取景：房间占画面的大部分，"回到全景"用同样的取景', 
   await page.waitForTimeout(300);
   await page.screenshot({ path: join(SHOTS, 'framing-extended.png') });
   expect(await roomCoverage(page)).toBeGreaterThan(0.3);
+});
+
+test('?view= 指定打开时的视图：原始视图的房间占画面大部分，切换视图时更新地址', async ({
+  page,
+}) => {
+  const errors = watchErrors(page);
+  await page.goto('/s/demo-lobby?view=raw#share=fixture-share-token-0123456789abcdef');
+  await waitForScene(page, 'raw');
+  await expect(page.getByRole('button', { name: '原始', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(page.locator('.viewer')).toHaveAttribute('data-scan', 'true');
+  // 扫描带着门外、玻璃隔断外的零星碎片，取景仍然只看房间（6 × 5 米）。
+  const frame = await frameRange(page);
+  expect(frame[0]).toBeGreaterThan(-0.3);
+  expect(frame[2]).toBeGreaterThan(-0.3);
+  expect(frame[3]).toBeLessThan(6.3);
+  expect(frame[5]).toBeLessThan(5.3);
+  expect(await roomCoverage(page)).toBeGreaterThan(0.3);
+  await page.screenshot({ path: join(SHOTS, 'view-param-raw.png') });
+
+  // 切换视图：地址里的 view 跟着变，# 后面的令牌不变；刷新后还是这个视图。
+  await page.getByRole('button', { name: '优化 + 扩展' }).click();
+  await waitForScene(page, 'extended');
+  await expect(page).toHaveURL(
+    /\/s\/demo-lobby\?view=extended#share=fixture-share-token-0123456789abcdef$/,
+  );
+  await page.reload();
+  await waitForScene(page, 'extended');
+  await expect(page.getByRole('button', { name: '优化 + 扩展' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  // 切回默认的优化视图：地址里不写 view。
+  await page.getByRole('button', { name: '优化', exact: true }).click();
+  await waitForScene(page, 'optimized');
+  await expect(page).toHaveURL(/\/s\/demo-lobby#share=fixture-share-token-0123456789abcdef$/);
+  expect(errors).toEqual([]);
+});
+
+test('灯光：优化视图里白色的纯色部件是亮的，背光面也不发黑', async ({ page }) => {
+  await page.goto(LINK);
+  await waitForScene(page, 'optimized');
+  // 墙都是纯色 (232, 228, 220)。迎光面：南墙门洞左边那一段朝外的一面（z = 5.1 米），正对镜头，
+  // 现在约 199。
+  const south: [number, number, number][] = [];
+  for (const x of [0.4, 1.0, 1.6, 2.2, 2.8]) {
+    for (const y of [0.5, 1.0, 1.5, 2.0]) south.push([x, y, 5.1]);
+  }
+  const lit = meanLumaAt(await sceneOnly(page), await projector(page), south);
+  expect(lit.mean).toBeGreaterThan(175);
+  expect(lit.min).toBeGreaterThan(160);
+  await page.screenshot({ path: join(SHOTS, 'lighting-optimized.png') });
+
+  // 背光面：镜头转到房间另一侧，看北墙朝外的一面（z = −0.1 米，背对主光）。
+  // 灯光强度没按物理单位（没乘 π）时这一面只有 145 左右，现在约 194，接近迎光面。
+  await turnAround(page);
+  const north: [number, number, number][] = [];
+  for (const x of [1.5, 2.3, 3.1, 3.9, 4.7]) {
+    for (const y of [1.3, 1.65, 2.0]) north.push([x, y, -0.1]);
+  }
+  const back = meanLumaAt(await sceneOnly(page), await projector(page, true), north);
+  expect(back.mean).toBeGreaterThan(175);
+  expect(back.min).toBeGreaterThan(160);
+  await page.screenshot({ path: join(SHOTS, 'lighting-backlit.png') });
 });
 
 test('锚点标签：默认只显示有意义的，避让、有上限，悬停时显示，可以显示全部', async ({ page }) => {

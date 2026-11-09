@@ -100,3 +100,19 @@ export function brightCoverage(png: DecodedPng, threshold = 45): number {
   }
   return bright / Math.max(1, total);
 }
+
+/** 以 (x, y)（像素）为中心、边长 2·radius + 1 的方块里的平均亮度（0–255）；超出画面的部分不算。 */
+export function patchLuma(png: DecodedPng, x: number, y: number, radius = 3): number {
+  const { width, height, channels, pixels } = png;
+  let sum = 0;
+  let count = 0;
+  for (let py = Math.round(y) - radius; py <= Math.round(y) + radius; py += 1) {
+    for (let px = Math.round(x) - radius; px <= Math.round(x) + radius; px += 1) {
+      if (px < 0 || py < 0 || px >= width || py >= height) continue;
+      const i = (py * width + px) * channels;
+      sum += 0.2126 * pixels[i]! + 0.7152 * pixels[i + 1]! + 0.0722 * pixels[i + 2]!;
+      count += 1;
+    }
+  }
+  return count === 0 ? 0 : sum / count;
+}
