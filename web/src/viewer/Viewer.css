@@ -223,14 +223,95 @@
   accent-color: var(--accent);
 }
 
-.viewer__tools {
+/*
+ * 右下角：工具按钮，下面贴着画面底边是模型署名（有 CC BY 模型时常驻，像地图的署名一样）。
+ * 左下角留给页面自己的信息（空间页的版本信息）；容器的空白处不挡画布的拖拽。
+ */
+.viewer__bottom {
   position: absolute;
+  left: var(--space-4);
   right: var(--space-4);
   bottom: var(--space-4);
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-end;
+  gap: var(--space-2);
+  pointer-events: none;
+}
+
+.viewer__bottom > * {
+  pointer-events: auto;
+}
+
+.viewer__tools {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--space-2);
+}
+
+/* 简短署名：放不下时先截短标题（完整列表点"全部来源"展开），许可、项数和按钮一直看得见。 */
+.viewer__credit {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: min(720px, calc(100% - 240px));
+  height: var(--control-h);
+  padding: 0 4px 0 12px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid var(--rule-2);
+  color: var(--ink-2);
+  font-size: var(--text-meta);
+}
+
+.viewer__credit-text {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* 一行放不下时只截短标题，作者、许可和"共 N 项"不缩（作者名极长、超过四分之三行宽时才截它的末尾）。 */
+.viewer__credit-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.viewer__credit-rest {
+  flex: none;
+  max-width: 75%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+
+.viewer__credit a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--rule-2);
+  text-underline-offset: 3px;
+}
+
+.viewer__credit a:hover {
+  text-decoration-color: var(--accent);
+}
+
+.viewer__credit-toggle {
+  flex: none;
+  height: calc(var(--control-h) - 8px);
+  padding: 0 8px;
+  border-radius: var(--radius);
+  color: var(--ink);
+  font-size: var(--text-meta);
+  white-space: nowrap;
+}
+
+.viewer__credit-toggle:hover {
+  background: var(--tint-hover);
 }
 
 .viewer__tool {
@@ -338,6 +419,10 @@
   font-size: var(--text-note);
 }
 
+.viewer--credited .viewer__sources {
+  bottom: calc(var(--space-4) + 2 * var(--control-h) + 2 * var(--space-2));
+}
+
 .viewer__sources header {
   display: flex;
   align-items: center;
@@ -388,6 +473,13 @@
   overflow-wrap: anywhere;
 }
 
+.viewer__source-license {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--rule-2);
+  text-underline-offset: 3px;
+}
+
 .viewer__source-used {
   color: var(--ink-2);
   font-size: var(--text-meta);
@@ -414,5 +506,30 @@
     left: var(--space-4);
     width: auto;
     bottom: calc(var(--space-4) + 2 * var(--control-h) + 2 * var(--space-2));
+  }
+
+  /* 窄屏：版本信息不显示，署名可以占满宽度，文字最多折成两行（手机上按钮高 44 像素，放得下）；
+     面板再往上让一行。 */
+  .viewer__credit {
+    max-width: 100%;
+  }
+
+  .viewer__credit-text {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
+    line-height: 1.35;
+  }
+
+  .viewer__credit-title,
+  .viewer__credit-rest {
+    display: inline;
+    white-space: normal;
+  }
+
+  .viewer--credited .viewer__sources {
+    bottom: calc(var(--space-4) + 3 * var(--control-h) + 3 * var(--space-2));
   }
 }

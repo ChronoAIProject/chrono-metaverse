@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Texture } from 'three';
 import { viewHasGeometry, type SceneContent } from '../core/scene';
-import { sceneSources } from '../core/sources';
+import { attributionCredits, sceneSources } from '../core/sources';
 import type { Visual } from '../core/visuals';
 import { InfoPanel } from './InfoPanel';
-import { ModelSources } from './ModelSources';
+import { CreditLine, ModelSources } from './ModelSources';
 import {
   SceneView,
   type LoadStep,
@@ -72,8 +72,10 @@ export function Viewer({
   const [selection, setSelection] = useState<Selection | null>(null);
   const [allLabels, setAllLabels] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
-  // 场景里外部模型的署名（CC-BY 必须可见）：有就一直显示模型来源按钮。
+  // 场景里外部模型的署名：有 CC BY 的模型时底部常驻一行简短署名（署名必须可见），
+  // 只有 CC0 的模型时右下角放"模型来源"按钮；两者都能展开完整的模型来源面板。
   const credits = useMemo(() => sceneSources(content), [content]);
+  const attribution = attributionCredits(credits).length > 0;
 
   useEffect(() => {
     textureRef.current = loadTexture;
@@ -168,7 +170,11 @@ export function Viewer({
 
   const notice = content !== null && unsupported === null ? noticeFor(content) : null;
   return (
-    <div className="viewer" ref={attach} data-ready="false">
+    <div
+      className={attribution ? 'viewer viewer--credited' : 'viewer'}
+      ref={attach}
+      data-ready="false"
+    >
       {unsupported !== null && (
         <div className="viewer__notice" role="alert">
           <strong>无法显示三维场景</strong>
@@ -199,37 +205,44 @@ export function Viewer({
       )}
       <ModelSources credits={credits} open={sourcesOpen} onClose={() => setSourcesOpen(false)} />
       {content !== null && unsupported === null && (
-        <div className="viewer__tools">
-          {credits.length > 0 && (
+        <div className="viewer__bottom">
+          <CreditLine
+            credits={credits}
+            open={sourcesOpen}
+            onToggle={() => setSourcesOpen((open) => !open)}
+          />
+          <div className="viewer__tools">
+            {credits.length > 0 && !attribution && (
+              <button
+                type="button"
+                className="viewer__tool"
+                aria-expanded={sourcesOpen}
+                aria-controls="viewer-model-sources"
+                title="场景里外部模型的标题、作者、许可和来源页"
+                onClick={() => setSourcesOpen((open) => !open)}
+              >
+                模型来源 · {credits.length}
+              </button>
+            )}
+            <label
+              className="viewer__tool viewer__tool--check"
+              title="默认只显示桌子、前台、区域、门和有事件的锚点"
+            >
+              <input
+                type="checkbox"
+                checked={allLabels}
+                onChange={(event) => setAllLabels(event.target.checked)}
+              />
+              显示全部标签
+            </label>
             <button
               type="button"
               className="viewer__tool"
-              aria-expanded={sourcesOpen}
-              aria-controls="viewer-model-sources"
-              title="场景里外部模型的标题、作者、许可和来源页"
-              onClick={() => setSourcesOpen((open) => !open)}
+              onClick={() => viewRef.current?.frameContent()}
             >
-              模型来源 · {credits.length}
+              回到全景
             </button>
-          )}
-          <label
-            className="viewer__tool viewer__tool--check"
-            title="默认只显示桌子、前台、区域、门和有事件的锚点"
-          >
-            <input
-              type="checkbox"
-              checked={allLabels}
-              onChange={(event) => setAllLabels(event.target.checked)}
-            />
-            显示全部标签
-          </label>
-          <button
-            type="button"
-            className="viewer__tool"
-            onClick={() => viewRef.current?.frameContent()}
-          >
-            回到全景
-          </button>
+          </div>
         </div>
       )}
     </div>

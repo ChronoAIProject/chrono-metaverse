@@ -2,7 +2,8 @@
 
 覆盖：内联和资源两种传法；提交里就是物件集的物件；烘焙生成贴图；外部模型下载、重新导出、登记；
 偏差写进 fit；结构 keep / replace；notes → scriptRef；锚点按类别；哈希不符、主机不在列表、重定向到不允许的
-主机、资源用途不对、贴图不是本空间的都失败；同样的物件集再跑一次没有变化就不提交。
+主机、资源用途不对、贴图不是本空间的（本次也没算出）都失败；本地基线算的结构贴图回退到本次算出的；同样的
+物件集再跑一次没有变化就不提交。
 """
 
 from __future__ import annotations
@@ -21,10 +22,12 @@ from https_server import serve
 from metaverse_worker.assets import find_asset, put_asset, read_asset
 from metaverse_worker.handlers import authored as authored_io
 from metaverse_worker.handlers import scan as scan_handlers
+from metaverse_worker.processing.rebuild import structure_entities
+from metaverse_worker.processing.structure import extract_structure
 from metaverse_worker.runner import Runner
 from metaverse_worker.store import C
 from synthetic import room_mesh
-from test_authored import SOURCE, gltf_files, model_glb
+from test_authored import SOURCE, gltf_files, model_glb, room_with_table
 
 pytestmark = pytest.mark.mongo
 
@@ -109,7 +112,7 @@ def authored_doc(library, *, texture: str | None = None, **overrides) -> dict:
 
 
 def import_scan(runner, store, **params) -> tuple[str, dict]:
-    scan = upload_asset(store, scan_zip(room_mesh()), "scan")
+    scan = upload_asset(store, scan_zip(room_with_table()), "scan")  # 扫描里有会议桌（算得出偏差）
     return scan, run_job(runner, store, "scan_import", {"assetHash": scan, "transform": IDENTITY, **params})
 
 
@@ -128,7 +131,8 @@ def test_scan_import_with_inline_authored(runner, store, library):
     panel = current["panel-01"]
     texture = panel["shape"]["material"]["texture"]
     assert find_asset(store, texture)["metadata"]["kind"] == "texture" and texture in asset_refs(store)
-    assert panel["fit"]["meanCm"] < 1.0
+    # 偏差：扫描里的会议桌写了 fit；面板贴墙、扫描里分不出来，不写
+    assert current["table-01"]["fit"]["meanCm"] < 1.0 and "fit" not in panel
     # 外部模型：下载、重新导出、登记，物件只引用处理后的模型
     chair = current["chair-01"]
     meta = find_asset(store, chair["assetHash"])["metadata"]
@@ -150,7 +154,10 @@ def test_scan_import_with_inline_authored(runner, store, library):
     assert result["downloads"] == {"models": 1, "files": 1, "bytes": len(model_glb()), "redirects": 0}
     assert result["models"]["files"] == 1 and result["bake"]["textured"] == 1
     fits = {f["entityId"]: f for f in result["fit"]}
-    assert fits["panel-01"]["meanCm"] == panel["fit"]["meanCm"] and result["scriptRef"] == script
+    assert (
+        fits["table-01"]["meanCm"] == current["table-01"]["fit"]["meanCm"] and result["scriptRef"] == script
+    )
+    assert "meanCm" not in fits["panel-01"] and fits["panel-01"]["points"] > 0
     assert job["result"]["entities"]["objects"] == 4
 
 
@@ -199,6 +206,63 @@ def test_rebuild_with_authored_asset_replaces_structure(runner, store, library):
     # 同样的物件集再跑一次：结果完全相同，不提交
     job = run_job(runner, store, "rebuild", {"authoredAsset": asset})
     assert job["status"] == "done" and job["result"]["unchanged"] is True and len(commits(store)) == 2
+
+
+def test_structure_textures_from_a_local_baseline_fall_back(runner, store, library):
+    """物件集的结构是本地基线算的（贴图哈希与线上不同、本空间也没登记）：同一个任务里跑一次结构算法，
+    换成本次算出的贴图，登记引用，结果里列出替换清单；本空间登记过的贴图照常过栅栏、不回退。"""
+    bodies, _ = structure_entities(extract_structure(room_with_table()))
+    poster = put_asset(store, jpeg_bytes(np.full((8, 8, 3), 9, np.uint8)), content_type="image/jpeg",
+                       kind="texture", space_id=SPACE).hash  # fmt: skip
+    structure = []
+    for _, body in sorted(bodies.items()):
+        body = {k: v for k, v in copy.deepcopy(body).items() if k not in ("textures", "fit")}
+        shape = body["shape"]
+        for node in [shape, *(shape.get("children") or [])]:
+            material = node.get("material") or {}
+            if "texture" in material:
+                material["texture"] = hashlib.sha256(f"base\0{material['texture']}".encode()).hexdigest()
+        structure.append(body)
+    doc = authored_doc(library, texture=poster, structure="replace")
+    doc["entities"] += structure
+    _, job = import_scan(runner, store, authored=doc)
+    assert job["status"] == "done", job.get("lastError")
+    replaced = job["result"]["authored"]["textureFallback"]
+    assert replaced and {r["entityId"] for r in replaced} <= set(bodies)
+    current, refs = entities(store), asset_refs(store)
+    for item in replaced:
+        body = current[item["entityId"]]
+        assert item["to"] in body["textures"] and item["from"] not in body["textures"]
+        assert item["to"] in refs and find_asset(store, item["to"])["metadata"]["kind"] == "texture"
+    assert current["poster-01"]["textures"] == [poster] and poster in refs
+    assert all(r["from"] != poster for r in replaced)
+
+
+def test_structure_texture_from_another_space_is_not_borrowed(runner, store, library):
+    """结构物件引用别的空间登记的贴图：不借用，换成本次算出的贴图；别的空间的贴图哈希不进本空间的物件记录和
+    资源引用表（公开资源接口按它放行），那份资源的归属也不变。"""
+    foreign = put_asset(store, jpeg_bytes(np.full((8, 8, 3), 5, np.uint8)), content_type="image/jpeg",
+                        kind="texture", space_id="other-space").hash  # fmt: skip
+    bodies, _ = structure_entities(extract_structure(room_with_table()))
+    doc = authored_doc(library, structure="replace")
+    for _, body in sorted(bodies.items()):
+        body = {k: v for k, v in copy.deepcopy(body).items() if k not in ("textures", "fit")}
+        shape = body["shape"]
+        for node in [shape, *(shape.get("children") or [])]:
+            if "texture" in (node.get("material") or {}):
+                node["material"]["texture"] = foreign
+        doc["entities"].append(body)
+    _, job = import_scan(runner, store, authored=doc)
+    assert job["status"] == "done", job.get("lastError")
+    replaced = job["result"]["authored"]["textureFallback"]
+    assert replaced and all(r["from"] == foreign and r["to"] != foreign for r in replaced)
+    assert foreign not in json.dumps(entities(store)) and foreign not in asset_refs(store)
+    assert find_asset(store, foreign)["metadata"]["spaceId"] == "other-space"
+    # 物体引用同一份别的空间的贴图：不能回退，整个任务失败、不提交
+    before = len(commits(store))
+    _, job = import_scan(runner, store, authored=authored_doc(library, texture=foreign))
+    assert job["status"] == "failed" and "不是本空间的贴图资源" in job["lastError"], job.get("lastError")
+    assert len(commits(store)) == before
 
 
 def _bad_sha(library, doc):

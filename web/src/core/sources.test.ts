@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { EntityBody } from './api/types';
 import type { SceneContent, ViewContent } from './scene';
-import { isHttpsUrl, modelSourceOf, sceneSources, type ModelSource } from './sources';
+import {
+  attributionCredits,
+  isHttpsUrl,
+  LICENSE_INFO,
+  modelSourceOf,
+  sceneSources,
+  type ModelSource,
+} from './sources';
 
 const source: ModelSource = {
   library: 'objaverse',
@@ -83,5 +90,15 @@ describe('模型署名', () => {
     expect(credits[0]!.usedBy).toEqual(['沙发', 'sofa-3']);
     expect(credits[1]!.usedBy).toEqual(['chair-1']);
     expect(sceneSources(null)).toEqual([]);
+    // 底部署名行只看要求署名的（CC BY），顺序不变
+    expect(attributionCredits(credits).map((c) => c.source.title)).toEqual(['布艺沙发']);
+    expect(attributionCredits([credits[1]!])).toEqual([]);
+  });
+
+  it('每种许可都有 https 的许可正文地址（CC BY 署名要附许可链接）', () => {
+    for (const info of Object.values(LICENSE_INFO)) {
+      expect(isHttpsUrl(info.url)).toBe(true);
+      expect(info.url.startsWith('https://creativecommons.org/')).toBe(true);
+    }
   });
 });

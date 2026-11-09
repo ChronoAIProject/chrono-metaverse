@@ -310,17 +310,19 @@ curl -s -H "Authorization: Share <令牌>" https://<应用域名>/api/public/spa
 
 **物体提示的坐标**：种子里的 `hints`（物体中心、尺寸、类别）必须是处理服务 `scan_import` 实际对齐出来的空间坐标。`worker/scripts/lobby_hints.json` 是在 `reconstruct_lobby.py` 的坐标系里标的（对齐方法不同，前厅差约 29 厘米平移和 0.09° 倾斜），所以由 [`worker/scripts/demo_seed_hints.py`](../../worker/scripts/demo_seed_hints.py) 用处理服务的对齐换算后写进 `demo-seed.json`。本地实测（任务结果的 `objects.furnitureMeanCm`）：换算后 3.14 厘米、41 个物体（`reconstruct_lobby.py` 自己的坐标系里是 3.08 厘米、41 个）；不换算是 4.51 厘米、59 个物体，沙发、桌子、前台被重复识别，LED 大屏又被当成墙。
 
-**AI 物件集**（可选，设计 6.3）：本地的 AI 逐件完成前厅的物件——先去模型库（Poly Haven、Objaverse 里许可可商用的）找一个看起来差不多的现成模型，找不到或差太多（前台、LED 大屏墙、入口门框、嵌入柜）再手写参数形状——整套写成一个 JSON 文件（格式见 [`worker/README.md`](../../worker/README.md)“AI 物件集”），种子导入时重建层就换成这些物件，不跑物体重建算法。做法：
+**AI 物件集**（可选，设计 6.3）：本地的 AI 逐件完成前厅的物件——先去模型库（Poly Haven、Objaverse 里许可可商用的）找一个看起来差不多的现成模型，找不到或差太多（前台、LED 大屏墙、入口门框、嵌入柜）再手写参数形状——整套写成一个 JSON 文件（格式见 [`worker/README.md`](../../worker/README.md)“AI 物件集”），种子导入时重建层就换成这些物件，不跑物体重建算法。
 
-1. 物件集放在仓库的 `infra/chrono-cd/demo/` 下（例如 `infra/chrono-cd/demo/authored.json`），合并到默认分支，记下这次提交的 **40 位提交哈希**；
+前厅的物件集已经做好：[`demo/lobby-authored.json`](demo/lobby-authored.json)（1 个模板、52 个物件，其中 Objaverse 的 CC-BY 外部模型 10 个，连结构一起换 `structure: "replace"`；整房扫描到模型的平均偏差 7.11 → 4.31 厘米）。它是什么、怎么做出来的、逐件清单、完整的 CC-BY 署名、怎么复现、本地全流程验证的结果见 [`demo/README.md`](demo/README.md)。物件集里结构的贴图哈希是本地基线算的，线上算出的哈希不同时处理服务按同编号、同部件路径换成本次算出的贴图（任务结果的 `authored.textureFallback` 列出替换），不用手改。上线做法：
+
+1. 物件集放在仓库的 `infra/chrono-cd/demo/` 下（前厅就是 `infra/chrono-cd/demo/lobby-authored.json`），合并到默认分支，记下这次提交的 **40 位提交哈希**；
 2. `demo-seed.json` 加一项（地址必须按提交哈希固定，不能写分支名：分支上的文件会变，内容就和 sha256 对不上，接口服务按失败处理）：
 
    ```json
-   "authored": {"url": "https://raw.githubusercontent.com/<组织>/<仓库>/<40 位提交哈希>/infra/chrono-cd/demo/authored.json",
+   "authored": {"url": "https://raw.githubusercontent.com/<组织>/<仓库>/<40 位提交哈希>/infra/chrono-cd/demo/lobby-authored.json",
                 "sha256": "<sha256sum 的结果>", "size": <字节数>}
    ```
 
-   `sha256`、`size` 用 `sha256sum infra/chrono-cd/demo/authored.json`、`wc -c` 算；大小 ≤ 4MB；带物件集时 `rebuild` 不能是 false；
+   `sha256`、`size` 用 `sha256sum infra/chrono-cd/demo/lobby-authored.json`、`wc -c` 算；大小 ≤ 4MB；带物件集时 `rebuild` 不能是 false；
 3. 和改提示一样把 `revision` 加一，再按下面"重新导入"的第 2、3 步同步 `app.json`、只改 `METAVERSE_DEMO_SEED`。
 
 接口服务下载物件集、核对大小和 sha256、做浅层校验（结构、数量、地址必须 https、烘焙指令的位置），原样登记成资源，`scan_import` 任务带 `authoredAsset`；不合法就什么都不建、不重试（日志里有原因）。处理服务按物件集里的地址从模型库下载外部模型（`WORKER_MODEL_HOSTS`），核对哈希、重新导出成受限 glb，烘焙贴图、逐件算偏差，任务结果的 `authored.fit` 是逐件偏差；形状、署名许可（只收 CC0、CC-BY）等深层校验不通过时任务失败（第 6 步的日志命令看 `lastError`）。`check-app.mjs` 检查 `authored` 的字段、地址形式和大小。

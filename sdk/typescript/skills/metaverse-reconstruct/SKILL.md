@@ -146,8 +146,9 @@ metaverse rebuild --authored out/authored/authored.json
 
 Poly Haven 的模型是 `format: "gltf"`，另有 `files: {相对路径: {url, sha256, size}}`（.bin 和贴图）。`material` 可以带
 `tint`（只能把模型调暗、调色，不能调亮；`place` 给出建议，`--tint` 写进记录）、`opacity`（0–1，玻璃制品）、
-`unlit: true`（灯箱、屏幕）。`fit` 是 `place` 算的偏差，留着无妨，处理服务会重算。模型库的模型常用厘米单位：
-`place` 按扫描缩放，处理服务按缩放后的坐标检查 ±1000 米的上限。
+`unlit: true`（灯箱、屏幕）。`fit` 是 `place` 按写回口径算的偏差（与处理服务、`compare` 的逐件写回偏差同一个
+函数），留着无妨，处理服务会重算。模型库的模型常用厘米单位：`place` 按扫描缩放，处理服务按缩放后的坐标检查
+±1000 米的上限。
 
 **AI 物件集**（`assemble` 输出的 `authored.json`）：`{version: 1, templates: [...], entities: [...], notes, structure:
 "keep"|"replace"}`。`keep` 时结构（地面、墙、玻璃）沿用算法结果，不要放 `kind: "structure"` 的物件。

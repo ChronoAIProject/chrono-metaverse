@@ -4,7 +4,10 @@
 `{entities, textures, ...}`，另加处理后的模型文件、逐件偏差和烘焙统计：
 
 1. **结构**：`keep` 时在扫描上跑结构算法（地面、墙、玻璃，与平常的重建相同），`replace` 时只用物件集里
-   `kind: structure` 的物件；
+   `kind: structure` 的物件；**贴图待定**（形状引用的贴图不是本空间登记过的，父进程记在 `pendingTextures`）
+   时，`replace` 也跑一次结构算法：本次算出了同样的贴图就直接用；结构物件的贴图本次没算出时，回退到本次
+   算法结构里同编号、同部件路径的贴图（物件集里的哈希是本地基线算的，依赖版本稍有不同哈希就不同），写进
+   替换清单 `textureFallback`；都不行时失败（`resolve_textures`）；
 2. **外部模型**：读模型（glb；gltf-zip 先安全解压，gltf 由父进程按相对路径摆好）→ 把 `transform`（旋转、缩放）
    和 `tint` 烘进网格 → 按物件模型的限制减面、缩小贴图 → 以包围盒的底面中心为原点写成 glb（网站按物件
    `bounds` 的底面中心摆放只有 `assetHash` 的物件，平移落在 `bounds` 上）。旋转、缩放、调色都相同的物件
@@ -12,10 +15,10 @@
 3. **烘焙**：带 `bake` 的部件按网站同样的投影展开 UV（同一个材质节点下的部件共用一张图），每个纹素落到
    部件表面的一点，取扫描最近表面（法线相容优先）的颜色，没采到的纹素用 push-pull 补；附近完全没有扫描时
    退回后备纯色；
-4. **偏差**：物件包围盒水平和向上各外扩 5 厘米、底面以上 1 厘米（不算地面）范围内的扫描表面密集采样，
-   求到物件网格的距离，写成 `fit {meanCm, p90Cm, coverage3cm}`；范围里几乎没有扫描时不写。墙和玻璃（地面
-   以外的结构）作为背景参与最近距离（与重建工作台 compare 相同）：贴墙物件范围里的墙面扫描点算到墙上，
-   不当成物件的偏差。
+4. **偏差**：与重建工作台 `compare` 共用 `object_fit.entity_fit`——按物件自身朝向的包围盒（局部坐标水平外扩
+   5 厘米，底面以下、顶面以上各 2 厘米）取扫描点，求到物件网格和背景（全部结构：墙、玻璃、地面）的最近距离，
+   只计 10 厘米以内的点，写成 `fit {meanCm, p90Cm, coverage3cm}`；扫描里没有这件物件的证据（离物件 10 厘米
+   以内、离背景超过 2 厘米的点不到 20 个）时不写。
 
 采样的随机数按物件编号固定，同样的输入得到同样的贴图、偏差和记录哈希（重新重建没有变化就不提交）。
 """
@@ -24,6 +27,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import logging
 import math
 import os
 import posixpath
@@ -41,34 +45,22 @@ from ..errors import InputRejected, PermanentJobError
 from ..records import RecordError, validate_entity_body
 from ..shapes import ShapeError
 from .bake import FaceTable, push_pull
-from .fit_texture import (
-    ColorSource,
-    SurfaceIndex,
-    TextureParams,
-    _closest_point_on_triangles,
-    _rasterize,
-    encode_jpeg,
-    fit_stats,
-)
+from .fit_texture import ColorSource, TextureParams, _rasterize, encode_jpeg
 from .modelimport import MAX_MODEL_COORD, load_model, simplify_for_export, write_model
+from .object_fit import background_meshes, entity_fit
 from .rebuild import structure_entities
 from .scan import ScanMesh
 from .shape_mesh import Mesh, build_parts, merge_meshes, transform_matrix
 from .sniff import MAX_ZIP_MEMBERS, _copy_member
 from .structure import StructureParams, extract_structure
 
-FIT_MARGIN = 0.05  # 偏差范围：包围盒水平和向上外扩 5 厘米
-FIT_FLOOR_SKIP = 0.01  # 包围盒底面以上 1 厘米以下的扫描不算（地面）
-FIT_DENSITY = 20_000.0  # 每平方米采样点数
-MAX_FIT_POINTS = 20_000
-MIN_FIT_POINTS = 20
 BAKE_MARGIN = 0.05
 BAKE_DENSITY = 40_000.0
 MAX_BAKE_POINTS = 400_000
 MAX_GLTF_ZIP_MEMBERS = 64
 GLTF_MAIN = "model.gltf"  # 父进程摆好的 gltf 主文件名（format gltf）
-BACKGROUND_MARGIN = 0.3  # 偏差的背景：只用离偏差范围 30 厘米以内的结构三角形
-BACKGROUND_EXACT_TRIANGLES = 2000  # 背景三角形不多时逐个精确求距离，多了用采样点索引
+
+log = logging.getLogger(__name__)
 
 
 def _seed(*parts: str) -> int:
@@ -94,83 +86,6 @@ def scan_points(
         keep = np.sort(rng.choice(len(P), max_points, replace=False))
         P, C, N = P[keep], C[keep], N[keep]
     return P, C, N
-
-
-def fit_box(bounds: Mapping[str, Any]) -> tuple[np.ndarray, np.ndarray]:
-    lo = np.asarray(bounds["min"], float) - [FIT_MARGIN, 0.0, FIT_MARGIN]
-    lo[1] = float(bounds["min"][1]) + FIT_FLOOR_SKIP
-    hi = np.asarray(bounds["max"], float) + FIT_MARGIN
-    return lo, hi
-
-
-def background_meshes(bodies: Mapping[str, Mapping[str, Any]], templates: Mapping[str, Any]) -> list[Mesh]:
-    """偏差的背景：地面以外的结构（墙、玻璃……）的网格。"""
-    out = []
-    for body in bodies.values():
-        props = body.get("props") or {}
-        if body.get("kind") != "structure" or props.get("structure") == "floor" or body.get("shape") is None:
-            continue
-        mesh = merge_meshes([p.mesh for p in build_parts(body["shape"], templates)])
-        if len(mesh.indices):
-            out.append(mesh)
-    return out
-
-
-def background_distance(
-    P: np.ndarray, background: list[Mesh], lo: np.ndarray, hi: np.ndarray
-) -> np.ndarray | None:
-    """扫描点到背景（偏差范围附近的结构三角形）的距离；附近没有结构时返回 None。"""
-    tris = [m.triangles() for m in background if len(m.indices)]
-    if not tris or len(P) == 0:
-        return None
-    T = np.concatenate(tris)
-    near = np.all(
-        (T.max(axis=1) >= lo - BACKGROUND_MARGIN) & (T.min(axis=1) <= hi + BACKGROUND_MARGIN), axis=1
-    )
-    T = T[near]
-    if len(T) == 0:
-        return None
-    if len(T) > BACKGROUND_EXACT_TRIANGLES:
-        index = SurfaceIndex.build(
-            [
-                Mesh(
-                    T.reshape(-1, 3),
-                    np.zeros((len(T) * 3, 3)),
-                    np.zeros((len(T) * 3, 2)),
-                    np.arange(len(T) * 3).reshape(-1, 3),
-                )
-            ],
-            spacing=0.02,
-        )
-        return index.query(P, k=4)[0]
-    best = np.full(len(P), np.inf)
-    for t in T:  # 结构多是大块平面，三角形少：逐个精确求最近点
-        cp = _closest_point_on_triangles(np.broadcast_to(t, (len(P), 3, 3)), P)
-        best = np.minimum(best, np.linalg.norm(cp - P, axis=1))
-    return best
-
-
-def entity_fit(
-    meshes: list[Mesh],
-    table: FaceTable,
-    bounds: Mapping[str, Any],
-    eid: str,
-    background: list[Mesh] | None = None,
-) -> tuple[dict[str, float] | None, int]:
-    """扫描点到物件网格的偏差（见模块说明第 4 条）。返回 (fit 或 None, 采样点数)。"""
-    meshes = [m for m in meshes if len(m.indices)]
-    if not meshes:
-        return None, 0
-    lo, hi = fit_box(bounds)
-    P, _, _ = scan_points(table, lo, hi, FIT_DENSITY, MAX_FIT_POINTS, _seed("fit", eid))
-    if len(P) < MIN_FIT_POINTS:
-        return None, len(P)
-    index = SurfaceIndex.build(meshes, spacing=0.01, seed=_seed("surface", eid))
-    d, _, _ = index.query(P, k=4)
-    db = background_distance(P, background or [], lo, hi)
-    if db is not None:
-        d = np.minimum(d, db)
-    return fit_stats(d), len(P)
 
 
 # ---------------------------------------------------------------------------- 烘焙
@@ -443,6 +358,80 @@ def _shifted(mesh: Mesh, offset: np.ndarray) -> Mesh:
     return Mesh(mesh.positions + offset, mesh.normals, mesh.uvs, mesh.indices)
 
 
+# ---------------------------------------------------------------------------- 结构贴图回退
+
+
+def _texture_nodes(shape: Mapping[str, Any], path: str = "$"):
+    """形状树里带贴图的节点：(部件路径, 节点)。"""
+    material = shape.get("material")
+    if isinstance(material, Mapping) and isinstance(material.get("texture"), str):
+        yield path, shape
+    if shape.get("type") == "group":
+        for i, child in enumerate(shape.get("children") or []):
+            if isinstance(child, Mapping):
+                yield from _texture_nodes(child, f"{path}.children[{i}]")
+
+
+def _texture_at(shape: Any, path: str) -> str | None:
+    """算法结构的形状在同一部件路径上的贴图哈希；路径不存在或那里不是贴图材质时返回 None。"""
+    try:
+        node = node_at(shape, path)
+    except (ValueError, KeyError, IndexError, TypeError):
+        return None
+    material = node.get("material") if isinstance(node, Mapping) else None
+    texture = material.get("texture") if isinstance(material, Mapping) else None
+    return texture if isinstance(texture, str) else None
+
+
+def resolve_textures(
+    authored: dict[str, Any],
+    pending: set[str],
+    algorithm: Mapping[str, Mapping[str, Any]],
+    algorithm_textures: Mapping[str, bytes],
+) -> tuple[dict[str, bytes], list[dict[str, str]]]:
+    """待定的贴图（本空间没有登记的）：本次任务算出了就直接用；否则结构物件回退到本次算法结构的贴图。
+
+    物件集里结构物件的贴图哈希是本地基线算的，线上处理服务的依赖版本稍有不同、算出的贴图字节就不同，哈希
+    也就不同。某个节点的贴图待定、本次也没算出时：物件是 `kind: structure`，本次算法结构里有同编号的物件，
+    并且同一部件路径上也是贴图材质，就换成本次算出的贴图哈希（`uv` 等其余材质字段保持物件集里写的），记进
+    替换清单；都不满足时失败。就地修改 `authored["entities"]`（同时更新各物件的 `textures`）、
+    `authored["templates"]`。返回 (要登记的贴图 {哈希: 字节}, 替换清单 [{entityId, path, from, to}])。
+    """
+    used: dict[str, bytes] = {}
+    replaced: list[dict[str, str]] = []
+    if not pending:
+        return used, replaced
+    groups = (("模板", authored["templates"]), ("物件", authored["entities"]))
+    for what, bodies in groups:
+        for eid, body in sorted(bodies.items()):
+            shape = body.get("shape")
+            if not isinstance(shape, Mapping):
+                continue
+            changed = False
+            for path, node in list(_texture_nodes(shape)):
+                sha = node["material"]["texture"]
+                if sha not in pending:
+                    continue
+                if sha in algorithm_textures:
+                    used[sha] = algorithm_textures[sha]
+                    continue
+                other = algorithm.get(eid) if body.get("kind") == "structure" else None
+                new = _texture_at(other.get("shape"), path) if other is not None else None
+                if new is None or new not in algorithm_textures:
+                    # 子进程里只有 PermanentJobError / InputRejected 会还原成不可重试的错误
+                    raise PermanentJobError(
+                        f"{what} {eid} 的 {path} 引用的贴图 {sha} 不是本空间的贴图资源，本次任务也没有算出"
+                        "（只有结构物件能回退到本次算法结构里同编号、同部件路径的贴图）"
+                    )
+                node["material"] = {**node["material"], "texture": new}
+                used[new] = algorithm_textures[new]
+                replaced.append({"entityId": eid, "path": path, "from": sha, "to": new})
+                changed = True
+            if changed:
+                body["textures"] = sorted(shape_textures(shape))
+    return used, replaced
+
+
 # ---------------------------------------------------------------------------- 总流程
 
 
@@ -461,12 +450,17 @@ def authored_rebuild(
     entities: dict[str, dict] = {}
     textures: dict[str, bytes] = {}
     metrics: dict[str, Any] = {}
-    if authored["structure"] == "keep":
+    pending = set(authored.pop("pendingTextures", None) or [])
+
+    def algorithm_structure() -> tuple[dict[str, dict], dict[str, bytes]]:
         try:
             structure = extract_structure(mesh_space, structure_params, hints=hints)
         except ValueError as error:
             raise PermanentJobError(f"结构重建失败：{error}") from error
-        bodies, structure_textures = structure_entities(structure)
+        return structure_entities(structure)
+
+    if authored["structure"] == "keep":
+        bodies, structure_textures = algorithm_structure()
         clash = sorted(set(bodies) & (set(authored["entities"]) | set(authored["templates"])))
         if clash:
             raise PermanentJobError(f"物件编号与结构算法的编号重复：{clash[:5]}（请换个编号）")
@@ -475,8 +469,16 @@ def authored_rebuild(
         structure_ids = sorted(bodies)
         metrics["structure"] = {"entities": len(bodies), "source": "algorithm"}
     else:
+        # replace 不用算法结构；只有贴图待定时才跑一次算法，拿它算出的贴图来核对和回退
+        bodies, structure_textures = algorithm_structure() if pending else ({}, {})
         structure_ids = sorted(e for e, b in authored["entities"].items() if b["kind"] == "structure")
         metrics["structure"] = {"entities": len(structure_ids), "source": "authored"}
+    used, replaced = resolve_textures(authored, pending, bodies, structure_textures)
+    textures.update(used)
+    if replaced:
+        metrics["structure"]["textureFallback"] = len(replaced)
+        for item in replaced:
+            log.warning("结构贴图回退：%(entityId)s %(path)s %(from).12s → %(to).12s", item)
 
     templates = authored["templates"]
     template_shapes = {eid: body["shape"] for eid, body in templates.items()}
@@ -512,7 +514,7 @@ def authored_rebuild(
                     body["textures"] = sorted(used)
             meshes = [p.mesh for p in build_parts(body["shape"], template_shapes)]
         own = [] if eid in structure_ids else background
-        fit, points = entity_fit(meshes, table, body["bounds"], eid, own)
+        fit, points = entity_fit(meshes, table, eid, own)
         if fit is not None:
             body["fit"] = fit
         fits.append({"entityId": eid, "points": points, **(fit or {})})
@@ -542,19 +544,18 @@ def authored_rebuild(
         "models": model_files,
         "fit": fits,
         "bake": bake_stats,
+        "textureFallback": replaced,
     }
 
 
 __all__ = [
     "authored_rebuild",
-    "background_distance",
-    "background_meshes",
     "bake_entity",
     "bake_mesh",
-    "entity_fit",
     "export_models",
     "extract_gltf_zip",
     "load_source",
+    "resolve_textures",
     "scan_points",
     "uv_extents",
 ]

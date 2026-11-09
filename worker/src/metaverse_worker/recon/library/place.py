@@ -24,6 +24,7 @@ import time
 import numpy as np
 from scipy.spatial import cKDTree
 
+from ...processing import object_fit as of
 from ...processing import shape_mesh as sm_
 from ...processing.fit_texture import SurfaceIndex
 from .. import core as wc
@@ -38,8 +39,10 @@ from ..compare import (
     parse_angles,
     render_models,
     render_sheet,
+    scan_table,
     structure_parts,
     summary_line,
+    writeback_fits,
 )
 from ..core import r
 from ..i18n import t
@@ -565,8 +568,10 @@ def cmd_place(args) -> dict:
         res_new = evaluate(new, P, C, ref_tree, floor_y, background)
         old = base_modelset(base, [eid] if eid in base.objects else [])
         res_base = evaluate(old, P, C, ref_tree, floor_y, background) if old.parts else None
-        fit = res_new["scanToModel"]
-        body["fit"] = {"meanCm": fit["meanCm"], "p90Cm": fit["p90Cm"], "coverage3cm": fit["coverage3cm"]}
+        # 记录里的 fit 用写回口径（处理服务写回时用同一个函数按处理后的模型重算）
+        wf = writeback_fits(new, scan_table(near), of.background_meshes(base.structure, {}))[body["entityId"]]
+        if wf["fit"] is not None:
+            body["fit"] = wf["fit"]
 
         # tint 建议：模型表面（变换后）离扫描 3 厘米内的点的颜色，对照扫描颜色
         Pm, Cm = model.surface_colors(20000, seed=6)

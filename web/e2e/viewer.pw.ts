@@ -143,7 +143,7 @@ function meanLumaAt(
 async function sceneOnly(page: Page): Promise<DecodedPng> {
   const hide = await page.addStyleTag({
     content:
-      '.viewer__labels, .viewer__hud, .viewer__tools, .viewer__progress, .viewer__tooltip { visibility: hidden !important; }',
+      '.viewer__labels, .viewer__hud, .viewer__bottom, .viewer__progress, .viewer__tooltip { visibility: hidden !important; }',
   });
   await page.waitForTimeout(150);
   const png = decodePng(await page.locator('.viewer__canvas').screenshot());
@@ -565,7 +565,9 @@ test('现在模式：带 ETag 轮询 /head，增量拉到新事件，seq 变了�
   await page.screenshot({ path: join(SHOTS, 'live-new-commit.png') });
 });
 
-test('板、凸包、玻璃、灯箱和外部模型：画得出来，"模型来源"给出署名', async ({ page }) => {
+test('板、凸包、玻璃、灯箱和外部模型：画得出来，底部常驻 CC BY 署名，可展开完整来源', async ({
+  page,
+}) => {
   const errors = watchErrors(page);
   await page.goto(FLORIST);
   await waitForScene(page, 'optimized');
@@ -590,10 +592,63 @@ test('板、凸包、玻璃、灯箱和外部模型：画得出来，"模型来�
   expect(wedgeColor[0] - wedgeColor[2]).toBeGreaterThan(8);
   await page.screenshot({ path: join(SHOTS, 'florist-solids.png') });
 
-  // 模型来源：按钮一直在，点开列出两个外部模型的署名，链接新开窗口且不带来源信息。
-  const toggle = page.getByRole('button', { name: '模型来源 · 2' });
-  await expect(toggle).toBeVisible();
+  // 署名默认可见：画面底边一行（不用点开），标题链到来源页、许可链到许可正文；
+  // 在右下角工具按钮的下面，不挡按钮，也不压左下角的版本信息。
+  const line = page.getByRole('note', { name: '模型署名' });
+  await expect(line).toBeVisible();
+  await expect(line).toHaveText(
+    /^模型来源：玻璃瓶花束（示例） \/ 夹具作者乙 \/ CC-BY-4\.0 …，共 2 项/,
+  );
+  const title = line.getByRole('link', { name: '玻璃瓶花束（示例）' });
+  await expect(title).toHaveAttribute('href', 'https://example.com/models/bouquet');
+  await expect(title).toHaveAttribute('rel', 'noopener noreferrer');
+  await expect(line.getByRole('link', { name: 'CC-BY-4.0' })).toHaveAttribute(
+    'href',
+    'https://creativecommons.org/licenses/by/4.0/',
+  );
+  const lineBox = (await line.boundingBox())!;
+  const toolsBox = (await page.locator('.viewer__tools').boundingBox())!;
+  const infoBox = (await page.locator('.space__info').boundingBox())!;
+  const viewerBox = (await page.locator('.viewer').boundingBox())!;
+  expect(lineBox.y).toBeGreaterThanOrEqual(toolsBox.y + toolsBox.height);
+  expect(lineBox.x).toBeGreaterThan(infoBox.x + infoBox.width);
+  expect(viewerBox.y + viewerBox.height - (lineBox.y + lineBox.height)).toBeLessThan(24);
+  await expect(page.getByRole('button', { name: /模型来源 ·/ })).toHaveCount(0);
+  await page.screenshot({ path: join(SHOTS, 'florist-credit-line.png') });
+  // 模型库的标题常有四五十个字符（前厅的显示器就是），一行放不下时只截短标题，
+  // 许可链接和"共 N 项"照样整个在行里看得见（夹具的标题短，这里临时换成长标题量一下）。
+  await line.evaluate((node) => {
+    const title = node.querySelector<HTMLElement>('.viewer__credit-title')!;
+    title.dataset.original = title.textContent ?? '';
+    title.textContent = 'Computer Monitor 16:9 (Low Poly, Game Ready) '.repeat(3).trim();
+  });
+  const longTitle = await line.evaluate((node) => {
+    const title = node.querySelector<HTMLElement>('.viewer__credit-title')!;
+    const rest = node.querySelector<HTMLElement>('.viewer__credit-rest')!;
+    const text = node.querySelector<HTMLElement>('.viewer__credit-text')!.getBoundingClientRect();
+    const restBox = rest.getBoundingClientRect();
+    return {
+      titleTruncated: title.scrollWidth > title.clientWidth,
+      restWhole: rest.scrollWidth <= rest.clientWidth,
+      restInside: restBox.left >= text.left && restBox.right <= text.right + 0.5,
+    };
+  });
+  expect(longTitle).toEqual({ titleTruncated: true, restWhole: true, restInside: true });
+  await expect(line.getByRole('link', { name: 'CC-BY-4.0' })).toBeVisible();
+  await page.screenshot({ path: join(SHOTS, 'florist-credit-line-long-title.png') });
+  await line.evaluate((node) => {
+    const title = node.querySelector<HTMLElement>('.viewer__credit-title')!;
+    title.textContent = title.dataset.original ?? '';
+  });
+  await expect(line).toHaveText(
+    /^模型来源：玻璃瓶花束（示例） \/ 夹具作者乙 \/ CC-BY-4\.0 …，共 2 项/,
+  );
+  // 展开：列出两个外部模型的署名，链接新开窗口且不带来源信息。
+  const toggle = line.getByRole('button');
+  await expect(toggle).toHaveText('全部来源');
   await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(toggle).toHaveText('收起');
   const panel = page.getByRole('region', { name: '模型来源' });
   await expect(panel).toBeVisible();
   const cc = panel.getByRole('link', { name: '玻璃瓶花束（示例）' });
@@ -602,7 +657,22 @@ test('板、凸包、玻璃、灯箱和外部模型：画得出来，"模型来�
   await expect(panel.getByText('CC BY 4.0（须署名）')).toBeVisible();
   await expect(panel.getByText('作者 夹具作者乙')).toBeVisible();
   await expect(panel.getByRole('link', { name: '木质花架（示例）' })).toBeVisible();
+  // 注明改动（CC BY 的要求）：网站上的模型是处理服务重新导出的
+  await expect(panel.getByText(/经本服务处理后重新导出.*与原文件不同/)).toBeVisible();
   await page.screenshot({ path: join(SHOTS, 'florist-sources.png') });
+  await toggle.click();
+  await expect(panel).toHaveCount(0);
+  await expect(line).toBeVisible();
+
+  // 手机宽度：署名照样在底边，在工具按钮下面，不重叠
+  await page.setViewportSize({ width: 390, height: 780 });
+  await expect(line).toBeVisible();
+  const narrowLine = (await line.boundingBox())!;
+  const narrowTools = (await page.locator('.viewer__tools').boundingBox())!;
+  expect(narrowLine.y).toBeGreaterThanOrEqual(narrowTools.y + narrowTools.height);
+  expect(narrowLine.x).toBeGreaterThanOrEqual(0);
+  expect(narrowLine.x + narrowLine.width).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: join(SHOTS, 'florist-credit-line-narrow.png') });
   expect(errors).toEqual([]);
 });
 

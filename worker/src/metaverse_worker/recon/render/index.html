@@ -11,7 +11,8 @@
 // 重建工作台的无头渲染页（由 render.js 驱动，不单独使用）。
 // window.wbSetup({font, strings}) 设字体和文字；window.wbLoad([[名字, 地址, 选项], ...]) 加载 glb；
 // window.wbRender(参数) 渲染一张图并返回 PNG 的 dataURL。
-// 带贴图的材质不打光（扫描本身带烘焙光照），纯色材质按网站同样的灯光、材质和色调映射着色。
+// 带贴图的材质不打光（扫描本身带烘焙光照），纯色材质按网站同样的灯光、材质和色调映射着色；
+// 模型库模型（lit）的贴图与网站一样一部分受光、一部分按自发光显示。
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
@@ -25,14 +26,25 @@ renderer.toneMappingExposure = 1.05;
 renderer.localClippingEnabled = true;
 document.body.appendChild(renderer.domElement);
 
+// 灯光与网站 web/src/viewer/lighting.ts 相同（改一处要两处一起改）。three.js r155 以后灯光是物理单位：
+// 漫反射 = 反照率 / π × 辐照度，强度写成"系数 × π"，系数就是白色漫反射面拿到的亮度（1 = 原色）。
+// 以前这里的 1.6 只相当于系数 0.5 左右，纯色件比网站上暗约四成。
+const LIGHTS = {
+  hemisphere: { sky: 0xffffff, ground: 0xb3ada2, factor: 0.62 },
+  key: { color: 0xfff7ec, factor: 0.55, direction: [0.45, 0.8, 0.4] },
+  fill: { color: 0xe6edff, factor: 0.28, direction: [-0.55, 0.5, -0.6] },
+};
+// 受光照的贴图材质（模型库的模型）与网站一样只让一部分受光照，另一部分按自发光直接显示贴图
+const TEXTURE_DIFFUSE = 0.3;
+const TEXTURE_EMISSIVE = 0.72;
+
 const scene = new THREE.Scene();
-scene.add(new THREE.HemisphereLight(0xf4f1ea, 0x3a3d44, 1.6));
-const sun = new THREE.DirectionalLight(0xffffff, 1.6);
-sun.position.set(6, 12, 8);
-scene.add(sun);
-const fill = new THREE.DirectionalLight(0xdfe8ff, 0.5);
-fill.position.set(-8, 6, -4);
-scene.add(fill);
+scene.add(new THREE.HemisphereLight(LIGHTS.hemisphere.sky, LIGHTS.hemisphere.ground, LIGHTS.hemisphere.factor * Math.PI));
+for (const spec of [LIGHTS.key, LIGHTS.fill]) {
+  const light = new THREE.DirectionalLight(spec.color, spec.factor * Math.PI);
+  light.position.copy(new THREE.Vector3(...spec.direction).normalize().multiplyScalar(20));
+  scene.add(light);
+}
 
 const models = {}; // 名字 → { root, mats: [材质], group }
 let helpers = []; // 每张图重建的辅助线
@@ -75,7 +87,16 @@ window.wbLoad = async (list) => {
           m.map.anisotropy = 4;
           if (tint) common.color = color.clone().multiply(tint);
           if (opt && opt.lit && !unlit && !m.isMeshBasicMaterial) {
-            r = new THREE.MeshStandardMaterial({ ...common, map: m.map, roughness: 0.8, metalness: 0.0 });
+            // 与网站 applyTexturedLook 相同：颜色 = 色调 × 受光部分，自发光 = 色调 × 不受光部分（同一张贴图）
+            r = new THREE.MeshStandardMaterial({
+              ...common,
+              map: m.map,
+              emissiveMap: m.map,
+              roughness: 0.82,
+              metalness: 0.02,
+            });
+            r.emissive.copy(common.color).multiplyScalar(TEXTURE_EMISSIVE);
+            r.color.copy(common.color).multiplyScalar(TEXTURE_DIFFUSE);
           } else {
             r = new THREE.MeshBasicMaterial({ ...common, map: m.map, toneMapped: false });
           }

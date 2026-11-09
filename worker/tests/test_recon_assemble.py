@@ -115,6 +115,8 @@ def test_assemble_merges_validates_and_reports(tmp_path, base):
     per = {e["entityId"]: e for e in room["entities"]}
     assert per["chair-02"]["kind"] == "model" and per["chair-02"]["source"].startswith("objaverse:")
     assert per["chair-02"]["scanToModel"]["meanCm"] < 1.0
+    # 写回口径的 fit（处理服务写进记录的同一个函数）：摆对了的椅子很小
+    assert per["chair-02"]["fit"]["meanCm"] < 1.0 and per["chair-02"]["fitPoints"] > 100
     assert (tmp_path / "out" / "room.glb").stat().st_size > 1000
 
 

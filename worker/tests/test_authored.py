@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import io
 import json
 import os
@@ -19,10 +20,11 @@ from metaverse_worker.authored import (
     MAX_ENTITIES,
     AuthoredError,
     load_authored_bytes,
+    node_at,
     parse_authored,
     source_key,
 )
-from metaverse_worker.errors import InputRejected
+from metaverse_worker.errors import InputRejected, PermanentJobError
 from metaverse_worker.fetch import (
     DEFAULT_MODEL_HOSTS,
     DownloadFailed,
@@ -33,6 +35,7 @@ from metaverse_worker.fetch import (
 )
 from metaverse_worker.processing.authored_build import (
     GLTF_MAIN,
+    _texture_nodes,
     authored_rebuild,
     export_models,
     extract_gltf_zip,
@@ -41,9 +44,11 @@ from metaverse_worker.processing.authored_build import (
 )
 from metaverse_worker.processing.glb import read_glb_json
 from metaverse_worker.processing.modelimport import inspect_gltf, load_model
+from metaverse_worker.processing.rebuild import structure_entities
 from metaverse_worker.processing.shape_mesh import build_parts
+from metaverse_worker.processing.structure import extract_structure
 from metaverse_worker.records import validate_entity_body
-from synthetic import box_mesh, room_mesh
+from synthetic import box_mesh, merged, room_mesh
 
 LIMITS = {
     "max_triangles": 1_000_000,
@@ -536,13 +541,18 @@ def test_inspect_gltf_rejects_outside_files_and_compression(tmp_path):
 # ---------------------------------------------------------------------------- 烘焙、偏差、结构
 
 
+def room_with_table():
+    """带斜墙的房间 + 会议桌（与 `doc()` 里的 table-01 一样大、一样位置）。"""
+    return merged(room_mesh(), box_mesh([1.2, 0, 2.6], [2.8, 0.75, 3.4], color=(90, 70, 50)))
+
+
 def test_authored_rebuild_bakes_fits_and_keeps_structure(tmp_path):
     src = tmp_path / "chair.glb"
     src.write_bytes(model_glb())
     parsed = parse_authored(doc())
     key = parsed["models"]["chair-01"]["source"]
     out = authored_rebuild(
-        room_mesh(),
+        room_with_table(),
         {k: v for k, v in parsed.items() if k != "notes"},
         {key: {"format": "glb", "path": str(src)}},
         workdir=str(tmp_path / "w"),
@@ -565,17 +575,20 @@ def test_authored_rebuild_bakes_fits_and_keeps_structure(tmp_path):
     r, g, b = img.astype(float).mean(0)
     assert r > 160 and g < 110 and b < 110, (r, g, b)
     assert out["bake"] == {"entities": 1, "parts": 1, "textured": 1, "fallback": 0}
-    # 偏差：面板背面贴着墙，几乎为零；外部模型附近只有地面（不算），不写 fit
-    assert panel["fit"]["meanCm"] < 1.0 and panel["fit"]["coverage3cm"] > 0.95
+    # 偏差：扫描里有会议桌，几乎为零；面板贴着墙（扫描里分不出来）、外部模型附近只有地面：范围里的点都算到
+    # 背景上，没有这件物件的证据，不写 fit
+    table = out["entities"]["table-01"]
+    assert table["fit"]["meanCm"] < 0.5 and table["fit"]["coverage3cm"] > 0.98
     chair = out["entities"]["chair-01"]
-    assert "fit" not in chair and chair["assetHash"] in out["models"]
+    assert "fit" not in chair and "fit" not in panel and chair["assetHash"] in out["models"]
     lo, hi = chair["bounds"]["min"], chair["bounds"]["max"]
     assert np.allclose([(lo[0] + hi[0]) / 2, lo[1], (lo[2] + hi[2]) / 2], [2.5, 0, 2.0], atol=1e-3)
     fits = {f["entityId"]: f for f in out["fit"]}
-    assert fits["chair-01"]["points"] < 20 and fits["panel-01"]["points"] > 1000
+    assert fits["panel-01"]["points"] > 1000 and fits["chair-01"]["points"] > 100
+    assert "meanCm" not in fits["panel-01"] and fits["table-01"]["meanCm"] == table["fit"]["meanCm"]
     # 同样的输入，同样的结果（重新重建没有变化就不提交）
     again = authored_rebuild(
-        room_mesh(),
+        room_with_table(),
         {k: v for k, v in parsed.items() if k != "notes"},
         {key: {"format": "glb", "path": str(src)}},
         workdir=str(tmp_path / "w2"),
@@ -608,37 +621,127 @@ def test_authored_rebuild_replace_structure_and_bake_fallback(tmp_path):
     assert out["bake"]["fallback"] == 1 and out["bake"]["textured"] == 1
 
 
+def algorithm_structure_doc() -> tuple[dict, dict[str, bytes], dict[str, str]]:
+    """本次算法在 `room_mesh()` 上算出的结构 → 物件集里 `kind: structure` 的物件，但贴图哈希换成"本地基线"
+    算的另一份（模拟依赖版本不同、哈希不同），`uv` 也故意改成 box，看回退后是不是保持物件集里写的。
+
+    返回 (物件集, 本次算法的贴图, {本地哈希: 本次哈希})。
+    """
+    bodies, textures = structure_entities(extract_structure(room_mesh()))
+    renamed: dict[str, str] = {}
+    entities = []
+    for _, body in sorted(bodies.items()):
+        body = copy.deepcopy(body)
+        for _, node in _texture_nodes(body["shape"]):
+            old = node["material"]["texture"]
+            new = renamed.setdefault(old, hashlib.sha256(f"local\0{old}".encode()).hexdigest())
+            node["material"] = {"texture": new, "uv": "box"}
+        body.pop("textures", None)
+        entities.append({k: v for k, v in body.items() if k != "fit"})
+    assert renamed and len(entities) >= 3  # 地面和几面墙带贴图
+    doc_ = {"version": 1, "entities": entities, "structure": "replace"}
+    return doc_, textures, {local: real for real, local in renamed.items()}
+
+
+def run_replace(tmp_path, doc_, pending) -> dict:
+    parsed = parse_authored(doc_)
+    parsed["pendingTextures"] = sorted(pending)
+    return authored_rebuild(room_mesh(), parsed, {}, workdir=str(tmp_path), limits=LIMITS)
+
+
+def test_structure_textures_fall_back_to_this_jobs_algorithm(tmp_path):
+    doc_, textures, local_to_real = algorithm_structure_doc()
+    out = run_replace(tmp_path, doc_, set(local_to_real))
+    replaced = out["textureFallback"]
+    assert {(r["from"], r["to"]) for r in replaced} == set(local_to_real.items())
+    assert out["metrics"]["structure"]["textureFallback"] == len(replaced)
+    for item in replaced:
+        body = out["entities"][item["entityId"]]
+        material = node_at(body["shape"], item["path"])["material"]
+        assert material == {"texture": item["to"], "uv": "box"}  # uv 保持物件集里写的
+        assert item["to"] in body["textures"] and item["from"] not in body["textures"]
+        assert out["textures"][item["to"]] == textures[item["to"]]  # 本次算出的贴图要登记
+    assert set(out["textures"]) == set(local_to_real.values())
+    # 本次算出的哈希本来就对（同样的依赖版本）：直接用，不算回退
+    same = copy.deepcopy(doc_)
+    for body in same["entities"]:
+        for _, node in _texture_nodes(body["shape"]):
+            node["material"]["texture"] = local_to_real[node["material"]["texture"]]
+    out = run_replace(tmp_path / "same", same, set(local_to_real.values()))
+    assert out["textureFallback"] == [] and set(out["textures"]) == set(local_to_real.values())
+    # 没有待定的贴图（都是本空间登记过的）：不跑算法，也不登记新贴图
+    out = run_replace(tmp_path / "none", same, set())
+    assert out["textureFallback"] == [] and out["textures"] == {}
+
+
+def _wall_with_texture(doc_) -> dict:
+    return next(b for b in doc_["entities"] if b["entityId"] != "floor" and list(_texture_nodes(b["shape"])))
+
+
+def _rename_wall(doc_):
+    _wall_with_texture(doc_)["entityId"] = "wall-renamed"
+
+
+def _wrap_wall_panel(doc_):
+    wall = _wall_with_texture(doc_)
+    wall["shape"] = {"type": "group", "children": [wall["shape"]]}  # 部件路径变了，那里不是贴图材质
+
+
+def _as_object(doc_):
+    wall = _wall_with_texture(doc_)
+    wall["kind"] = "object"
+
+
+@pytest.mark.parametrize("mutate", [_rename_wall, _wrap_wall_panel, _as_object])
+def test_structure_texture_fallback_needs_same_id_path_and_kind(tmp_path, mutate):
+    doc_, _, local_to_real = algorithm_structure_doc()
+    mutate(doc_)
+    with pytest.raises(PermanentJobError, match="不是本空间的贴图资源，本次任务也没有算出"):
+        run_replace(tmp_path, doc_, set(local_to_real))
+
+
+def test_structure_texture_fallback_is_not_shared_with_templates_or_objects(tmp_path):
+    """同一个待定哈希在结构物件上能回退，模板、物体引用它照样失败：回退只换结构物件自己那个节点，
+    不能借结构物件的名义把别的空间（或不存在）的贴图带进模板和物体。"""
+    doc_, _, local_to_real = algorithm_structure_doc()
+    wall = _wall_with_texture(doc_)
+    local = next(node["material"]["texture"] for _, node in _texture_nodes(wall["shape"]))
+    textured = {"type": "box", "size": [0.6, 0.9, 0.01], "material": {"texture": local, "uv": "planar"}}
+    template = {"entityId": "tpl-poster", "kind": "template", "shape": copy.deepcopy(textured)}
+    with pytest.raises(PermanentJobError, match="模板 tpl-poster 的 \\$ 引用的贴图"):
+        run_replace(tmp_path / "template", {**doc_, "templates": [template]}, set(local_to_real))
+    poster = {"entityId": "poster-01", "kind": "object", "shape": copy.deepcopy(textured)}
+    poster["shape"]["transform"] = {"position": [1, 1, 0.02]}
+    with_poster = {**doc_, "entities": [*doc_["entities"], poster]}
+    with pytest.raises(PermanentJobError, match="物件 poster-01 的 \\$ 引用的贴图"):
+        run_replace(tmp_path / "object", with_poster, set(local_to_real))
+
+
+def test_keep_mode_accepts_textures_this_job_computed(tmp_path):
+    """keep：物件引用的贴图本空间没登记，但本次算法结构算出了同样的贴图——直接用；算不出的照样失败。"""
+    _, textures, _ = algorithm_structure_doc()
+    real = sorted(textures)[0]
+    poster = {
+        "entityId": "poster-01",
+        "kind": "object",
+        "shape": {"type": "box", "size": [0.6, 0.9, 0.01], "transform": {"position": [1, 1, 0.02]},
+                  "material": {"texture": real, "uv": "planar"}},
+    }  # fmt: skip
+    parsed = parse_authored({"version": 1, "entities": [poster]})
+    out = authored_rebuild(
+        room_mesh(), {**parsed, "pendingTextures": [real]}, {}, workdir=str(tmp_path), limits=LIMITS
+    )
+    assert out["entities"]["poster-01"]["textures"] == [real] and real in out["textures"]
+    poster["shape"]["material"]["texture"] = "d" * 64
+    parsed = parse_authored({"version": 1, "entities": [poster]})
+    with pytest.raises(PermanentJobError, match="物件 poster-01 的 \\$ 引用的贴图"):
+        authored_rebuild(room_mesh(), {**parsed, "pendingTextures": ["d" * 64]}, {}, workdir=str(tmp_path),
+                         limits=LIMITS)  # fmt: skip
+
+
 def test_uv_extents_follow_projection():
     shape = {"type": "box", "size": [2.0, 1.0, 0.1], "material": {"texture": SHA, "uv": "planar"}}
     mesh = build_parts(shape)[0].mesh
     eu, ev = uv_extents(mesh)
     assert eu == pytest.approx(2.0, rel=1e-6) and ev == pytest.approx(1.0, rel=1e-6)
     assert png_bytes(np.zeros((2, 2, 3), np.uint8))  # 夹具可用
-
-
-def test_fit_counts_wall_points_against_the_wall():
-    """偏差的背景：贴墙物件范围里的墙面扫描点算到墙上（与工作台 compare 相同），地面不当背景。"""
-    from metaverse_worker.processing.authored_build import background_meshes, entity_fit
-    from metaverse_worker.processing.bake import FaceTable
-
-    table = FaceTable(room_mesh())
-    # 离南墙（z = 0）4 厘米的矮柜；扫描里没有它，偏差范围（外扩 5 厘米）里只有墙面的点
-    cabinet = sh.box([1.0, 0.75, 0.56], xf=sh.transform(position=[1.5, 0, 0.32]))
-    meshes = [p.mesh for p in build_parts(cabinet)]
-    bounds = {"min": [1.0, 0.0, 0.04], "max": [2.0, 0.75, 0.6]}
-    wall = sh.box([5.0, 2.6, 0.01], xf=sh.transform(position=[2.5, 0, -0.005]))
-    floor = sh.box([5.0, 0.01, 4.0], xf=sh.transform(position=[2.5, -0.01, 2.0]))
-    background = background_meshes(
-        {
-            "wall-south": {"kind": "structure", "props": {"structure": "wall"}, "shape": wall},
-            "floor": {"kind": "structure", "props": {"structure": "floor"}, "shape": floor},
-            "desk": {"kind": "object", "shape": sh.box([1, 1, 1])},
-        },
-        {},
-    )
-    assert len(background) == 1  # 只有墙：地面和物体不当背景
-    alone, n = entity_fit(meshes, table, bounds, "cabinet")
-    with_wall, n2 = entity_fit(meshes, table, bounds, "cabinet", background)
-    assert n == n2 > 20
-    assert alone["meanCm"] > 3.5
-    assert with_wall["meanCm"] < 0.5 and with_wall["coverage3cm"] > 0.99

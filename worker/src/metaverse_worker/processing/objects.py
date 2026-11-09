@@ -139,7 +139,7 @@ class Obj:
     origin: np.ndarray  # [x, 地面 y, z]
     yaw: float
     local: Local
-    source: str  # hint | rules
+    detected_by: str  # 识别来源：hint（提示）| rules（规则），写进 props.detectedBy
     entity_id: str = ""
     info: dict[str, Any] = field(default_factory=dict)
 
@@ -858,7 +858,12 @@ def reconstruct_objects(mesh: ScanMesh, structure, *, params: dict | None = None
                         label=o.label,
                         anchor_id=o.entity_id,
                         fit=fit_stats(d),
-                        props={"category": o.kind, "fitMethod": method, "template": tid, "source": o.source},
+                        props={
+                            "category": o.kind,
+                            "fitMethod": method,
+                            "template": tid,
+                            "detectedBy": o.detected_by,
+                        },
                         templates=templates,
                     )
                 group = [o for o in group if all(o is not m for m in members)]
@@ -892,7 +897,7 @@ def reconstruct_objects(mesh: ScanMesh, structure, *, params: dict | None = None
                 anchor_id=o.entity_id,
                 textures=_texture_refs(wshape),
                 fit=fit_stats(d),
-                props={"category": o.kind, "fitMethod": method, "source": o.source},
+                props={"category": o.kind, "fitMethod": method, "detectedBy": o.detected_by},
             )
     # 只保留被引用的贴图
     used = {t for body in entities.values() for t in body.get("textures", [])}

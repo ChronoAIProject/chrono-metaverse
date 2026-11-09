@@ -25,9 +25,10 @@
     模型缩放后也能用）、按物件模型的限制重新导出 glb，写成 `assetHash`；工作台 `place` 写的 `fit` 可以
     留着，处理服务会重算；
   - `bounds` 可以省略（形状物件按形状算；外部模型按导出后的网格算），`fit` 和 `textures` 一律由处理服务重算；
-  - 形状里引用的贴图（`material.texture`）必须是本空间已登记的贴图资源；
+  - 形状里引用的贴图（`material.texture`）是本空间已登记的贴图资源；不是的话必须是本次任务算出的贴图，
+    结构物件可以回退到本次算法结构里同编号、同部件路径的贴图（`processing/authored_build.resolve_textures`）；
 - **`structure`**：`keep`（默认）时结构（地面、墙、玻璃）沿用算法结果，物件集里不能有 `kind: structure`；
-  `replace` 时结构就是物件集里 `kind: structure` 的物件，不跑结构算法；
+  `replace` 时结构就是物件集里 `kind: structure` 的物件，不用结构算法的结果（贴图待定时才跑一次算法核对）；
 - **署名** `props.source = {library, id, page, author, license, title}`：`library` 是 `polyhaven`、
   `objaverse`、`sketchfab`；`license` 只接受可商用、不传染的 `CC0-1.0`、`CC-BY-4.0`、`CC-BY-3.0`
   （NC、ND、SA 一律拒绝）；六个字段都必须是非空字符串（CC0 也写模型库标注的作者），规则与物件记录的
