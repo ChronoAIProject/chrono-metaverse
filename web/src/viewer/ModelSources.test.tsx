@@ -24,7 +24,8 @@ describe('模型来源', () => {
     const { factory, views } = fakeViewFactory();
     visit(FIXTURE_UNIVERSE_LINK);
     render(<App createClient={createClient} createView={factory} />);
-    await waitFor(() => expect(views[0]?.last().members.length).toBe(2));
+    // 组合场景要加载两个空间，机器忙的时候超过默认的 1 秒（整套单元测试和编译同时跑时偶发失败）
+    await waitFor(() => expect(views[0]?.last().members.length).toBe(2), { timeout: 5000 });
     const toggle = await screen.findByRole('button', { name: '模型来源 · 2' });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await userEvent.click(toggle);

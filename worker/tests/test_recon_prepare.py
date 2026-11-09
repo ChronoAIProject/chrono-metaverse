@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 
 import numpy as np
 import pytest
@@ -195,3 +196,29 @@ def test_euler_yxz_roundtrip():
         R = transform_matrix({"yaw": yaw, "pitch": pitch, "roll": roll})[:3, :3]
         y, p, r = rf.euler_yxz(R)
         assert np.allclose(transform_matrix({"yaw": y, "pitch": p, "roll": r})[:3, :3], R, atol=1e-9)
+
+
+def test_reframe_many_files_with_the_same_name_do_not_overwrite(tmp_path, scan_file):
+    """`--in models/*/model.json --out 目录`：同名文件按上一级目录分开放。"""
+    paths = []
+    for name, x in (("counter-01", 1.0), ("sofa-01", 3.0)):
+        body = {
+            "entityId": name,
+            "layer": "rebuilt",
+            "kind": "object",
+            "shape": {"type": "box", "size": [1, 1, 1], "transform": {"position": [x, 0, 1]}},
+        }
+        d = tmp_path / "models" / name
+        d.mkdir(parents=True)
+        (d / "model.json").write_text(json.dumps(body))
+        paths.append(str(d / "model.json"))
+    out = tmp_path / "out"
+    args = build_parser().parse_args(
+        ["reframe", "--scan", str(scan_file), "--from", "compute", "--in", *paths, "--out", str(out)]
+    )
+    res = rf.cmd_reframe(args)
+    assert sorted(os.path.relpath(p, out) for p in res["outputs"]) == [
+        "counter-01/model.json",
+        "sofa-01/model.json",
+    ]
+    assert json.loads((out / "sofa-01" / "model.json").read_text())["entityId"] == "sofa-01"

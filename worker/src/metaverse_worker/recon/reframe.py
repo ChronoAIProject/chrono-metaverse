@@ -170,14 +170,19 @@ def cmd_reframe(args) -> dict:
         )
     )
     outs = []
+    names = [os.path.basename(p) for p in args.inp]
     for path in args.inp:
         data = wc.read_json(path)
         new = reframe_data(data, C, args.max_tilt)
         if len(args.inp) == 1 and not os.path.isdir(args.out):
             target = args.out
         else:
-            os.makedirs(args.out, exist_ok=True)
-            target = os.path.join(args.out, os.path.basename(path))
+            # 文件名重复时（例如 models/*/model.json）按上一级目录分开放，不能互相覆盖
+            name = os.path.basename(path)
+            if names.count(name) > 1:
+                name = os.path.join(os.path.basename(os.path.dirname(os.path.abspath(path))), name)
+            target = os.path.join(args.out, name)
+            os.makedirs(os.path.dirname(target), exist_ok=True)
         wc.write_json(target, new)
         outs.append(target)
         print(f"  {path} → {target}")
