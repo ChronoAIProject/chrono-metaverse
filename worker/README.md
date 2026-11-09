@@ -295,9 +295,9 @@ uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceI
 |---|---|
 | 坐标 | 空间坐标，与 `scan_import` 对齐后的坐标系相同 |
 | 物件 | SHAPES 3 的 body，`layer` 省略时按 `rebuilt`（只能是 rebuilt）；`kind` 是 object 或 structure（模板放 `templates`）；`bounds` 可省略；`fit`、`textures` 一律重算；不能带 `assetHash`（外部模型用 `model`）；≤ 2000 个物件、≤ 200 个模板，编号不重复 |
-| 烘焙指令 | 材质里 `"bake": "planar" \| "box" \| "cylindrical"`，不能和 `texture`、`uv`、`tint` 同时出现，可以带 `color` 作为后备。按网站同样的投影展开 UV（同一个材质节点下的部件共用一张图），每个纹素取扫描最近表面（法线相容优先）的颜色，push-pull 补洞，JPEG 登记成贴图资源，材质换成 `{texture, uv}`；附近完全没有扫描时退回后备纯色。模板里不能带（模板在局部坐标里）；≤ 500 处 |
-| 外部模型 | 没有 `shape`，带 `model: {url, sha256, size, format}`、`transform`（含 `scale`）、`props.source`、可选的 `material: {tint, opacity, unlit}`（`tint` 烘进模型；`opacity`、`unlit` 留在处理后物件的 `material` 里，网站按它画半透明、不打光）；重建工作台 `place` 写的 `fit` 可以留着（重算）。`format`：`glb`；`gltf-zip`（zip 里正好一个 `.gltf` 和它引用的文件，按相对路径安全解压）；`gltf`（`url` 指向 `.gltf`，另给 `files: {相对路径: {url, sha256, size}}`，就是 Poly Haven 文件列表里的 `include`）。gltf 只能引用模型目录里的相对文件，必需扩展只放行材质和贴图坐标类（Draco、meshopt 压缩的请换版本）。模型库里常见厘米单位的模型：±1000 米的坐标上限在旋转、缩放烘进模型之后才检查 |
-| 已有贴图 | 形状里的 `material.texture` 是本空间已登记的贴图资源时，任务先过清理的栅栏（刷新 `touchedAt`），再登记进 `assetRefs`；不是本空间的（例如本地基线算的结构贴图，线上依赖版本稍有不同、哈希就不同）先不拒：本次任务算出了同样的贴图就直接用，`kind: structure` 的物件还可以**回退**到本次算法结构里同编号、同部件路径上的贴图（只换哈希，`uv` 等保持物件集里写的），替换清单写进结果的 `textureFallback`；都不行时任务失败 |
+| 烘焙指令 | 材质里 `"bake": "planar" \| "box" \| "cylindrical"`，不能和 `texture`、`uv`、`tint`、`tile`、`offset`、`rotate`、`normalMap`、`normalScale`、`roughnessMap` 同时出现（烘焙出的是一张按包围盒铺满的颜色贴图），可以带 `color` 作为后备；`opacity`、`unlit`、`shading`、`roughness`、`metalness` 烘焙后原样保留。按网站同样的投影展开 UV（同一个材质节点下的部件共用一张图），每个纹素取扫描最近表面（法线相容优先）的颜色，push-pull 补洞，JPEG 登记成贴图资源，材质换成 `{texture, uv}`；附近完全没有扫描时退回后备纯色。模板里不能带（模板在局部坐标里）；≤ 500 处 |
+| 外部模型 | 没有 `shape`，带 `model: {url, sha256, size, format}`、`transform`（含 `scale`）、`props.source`、可选的 `material: {tint, opacity, unlit, shading}`（`tint` 烘进模型；`opacity`、`unlit`、`shading` 原样留在处理后物件的 `material` 里，网站按它画半透明、不打光、按固有色受光，SHAPES 3）；重建工作台 `place` 写的 `fit` 可以留着（重算）。`format`：`glb`；`gltf-zip`（zip 里正好一个 `.gltf` 和它引用的文件，按相对路径安全解压）；`gltf`（`url` 指向 `.gltf`，另给 `files: {相对路径: {url, sha256, size}}`，就是 Poly Haven 文件列表里的 `include`）。gltf 只能引用模型目录里的相对文件，必需扩展只放行材质和贴图坐标类（Draco、meshopt 压缩的请换版本）。模型库里常见厘米单位的模型：±1000 米的坐标上限在旋转、缩放烘进模型之后才检查 |
+| 已有贴图 | 形状里的 `material.texture`、`normalMap`、`roughnessMap` 是本空间已登记的贴图资源时，任务先过清理的栅栏（刷新 `touchedAt`），再登记进 `assetRefs`；不是本空间的（例如本地基线算的结构贴图，线上依赖版本稍有不同、哈希就不同）先不拒：本次任务算出了同样的贴图就直接用，`kind: structure` 的物件还可以**回退**到本次算法结构里同编号、同部件路径上的贴图（只换哈希，`uv` 等保持物件集里写的），替换清单写进结果的 `textureFallback`（回退只用于 `texture`，算法结构没有法线、粗糙度贴图）；都不行时任务失败 |
 | `structure` | `keep`（默认）：结构跑算法（地面、墙、玻璃），物件集里不能有 `kind: structure`；`replace`：结构就是物件集里 `kind: structure` 的物件，不用算法的结果（只在有待定的贴图时跑一次算法，用来核对和回退贴图） |
 | 署名 | `props.source = {library, id, page, author, license, title}`：`library` 是 `polyhaven`、`objaverse`、`sketchfab`；`license` 只收 `CC0-1.0`、`CC-BY-4.0`、`CC-BY-3.0`（NC、ND、SA 一律拒绝，SA 也排除以免传染）；六个字段都是非空字符串（CC0 也写模型库标注的作者，CC-BY 署名必须有作者），`page` 是 https 来源页——与物件记录 `props.source` 的规则相同（`records.validate_model_source`，接口服务提交时也按它查）。外部模型物件必须带，形状物件可选；不是对象的 `source`（手写模型里标来源的字符串，如 `"llm-modeler"`）与物件记录一样原样放行 |
 
@@ -585,8 +585,9 @@ cd worker && uv venv .venv && uv pip install --python .venv/bin/python -e .
 | `assemble` | 合并物件文件成 AI 物件集（模板去重、编号唯一、引用的模板存在、逐个校验、重算包围盒），最后整份跑一遍写回路径的校验 `metaverse_worker.authored.parse_authored`（处理服务收到时跑的就是它），通过了才算合格 | `authored.json`、`room.glb`、`room.jpg`（扫描 \| 现有算法 \| AI 重建：总览、俯视、四个角）、`report.json`（逐件偏差和写回 `fit`、漏建团块） |
 | `reframe` | 物件在两种对齐之间换算：`compute`（`reconstruct_lobby.py`）↔ `scan_import`（prepare），或任意变换文件 | 同格式的物件文件 |
 
-**形状**：`plate`、`hull`、材质 `opacity`、`unlit` 的校验、包围盒和网格直接用处理服务的 `shapes.py`、
-`shape_mesh.py`（与接口服务、网站、命令行逐条对过同一批测试向量）；AI 物件集独有的烘焙指令 `bake` 由
+**形状**：`plate`、`hull`、材质 `opacity`、`unlit` 和平铺、着色、法线、粗糙度（SHAPES 2）的校验、包围盒、网格和
+贴图坐标直接用处理服务的 `shapes.py`、`shape_mesh.py`（与接口服务、网站、命令行逐条对过同一批测试向量，贴图坐标
+对过 `uv/` 向量）；AI 物件集独有的烘焙指令 `bake` 由
 `recon/shapes_ext.py` 按写回路径的规则处理（预览时按扫描颜色上色）。
 
 **外部模型物件**（`place` 输出，AI 物件集的外部模型格式，与写回路径收的完全相同）：没有 `shape`，带 `model`

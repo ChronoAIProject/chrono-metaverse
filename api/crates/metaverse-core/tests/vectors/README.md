@@ -84,9 +84,9 @@
 `tile`，颜色材质带 `normalMap` 却没给 `uv`，`normalMap` 不是资源哈希，`normalScale` 越界或没给 `normalMap`，`roughness`、
 `metalness` 越界，`shading` 不认识，形状里写了只有 AI 物件集才收的外链对象 `{url, sha256, size}`。
 
-这批用例在 `tests/vectors.rs` 的 `texture_material_cases` 里，文件先按规格写好：`valid`、`bounds` 是规格要求的结论，
-`errorPath`、`errorMessage` 是暂定的。Rust 实现跟上之前 `cargo test --test vectors` 会因为它们失败；跟上之后用
-`METAVERSE_WRITE_VECTORS=1` 重新生成，只允许 `errorMessage` 的措辞和 `errorPath`（解析阶段拒绝时是 `null`）变化。
+这批用例在 `tests/vectors.rs` 的 `texture_material_cases` 里，和其他形状向量一样由 Rust 实现生成（先按规格写好，
+Rust 实现之后重新生成，文件没有变化）。接口服务、本地工具（`worker/`）、命令行三边都按同样的规则接受或拒绝，
+错误路径一致。
 
 ## 4. 高层操作：`ops/ops_*.json`
 
@@ -143,7 +143,7 @@
 
 核对方法：
 
-1. 用各自的网格生成（网站 `web/src/core/shapes/build.ts`，处理服务 `processing/shape_mesh.py`）生成 `shape` 的网格；
+1. 用各自的网格生成（网站 `web/src/core/shapes/build.ts`，本地工具 `processing/shape_mesh.py`）生成 `shape` 的网格；
    最外层的 `transform` 先去掉（贴图坐标在变换之前算，去掉不影响结果；目前的向量都没有最外层变换）；
 2. 每个 `vertices` 用位置和法线找顶点：位置每个分量相差不超过 `tolerance.position`，并且单位法线与给出的方向
    （归一化后）点积不小于 `tolerance.normalDot`。至少要找到一个；找到几个，每个的贴图坐标都要与 `uv` 相差不超过
@@ -154,41 +154,41 @@
 覆盖：`box`（不给 `tile`；`tile`；`offset` + `rotate` 90°；`rotate` 30°）、`planar`（墙、挤出的地面）、`cylindrical`（有无
 `tile`）、`mesh`（盒子的米坐标；圆柱不给 / 给 `tile`；挤出不给 / 给 `tile` + `offset` + `rotate`；板；扫掠）、写在组合上的
 材质（子形状带 `transform`）、颜色材质带法线贴图。不给 `tile` 的几个（`uv_box_normalized`、`uv_cylindrical_normalized`、
-`uv_mesh_cylinder_normalized`、`uv_mesh_extrude`）就是现在的算法，网站和处理服务现在就该通过。
+`uv_mesh_cylinder_normalized`、`uv_mesh_extrude`）就是原来的算法。
 
 ## 6. AI 物件集的外链贴图：`authored/authored_*.json`
 
-对应设计 6.3 和 `worker/README.md`"AI 物件集"。
+对应 SHAPES 2 合法条件第 5 条和 `docs/design/server-slim.md` 第 12 节：外链贴图 `{url, sha256, size}` 只出现在 AI 物件集
+（本地文件）里，由本地工具 `bundle` 按外部模型同样的下载规则下载（主机列表 `METAVERSE_RECON_MODEL_HOSTS`，单个大小上限
+`METAVERSE_RECON_MAX_TEXTURE_BYTES`），按贴图用途的上限（边长 4096）检查，作为 `texture` 文件进重建包，记录里换成哈希。
+接口服务不收物件集，不跑这批向量。
 
 | 字段 | 含义 |
 |---|---|
 | `cases` | 用例：`{ "name", "description", "authored": 物件集, "valid": bool, "summary"?, "where"? }` |
-| `cases[].summary` | `valid = true` 时：`{ entities, templates, models, textureUrls }`。前三个就是接口服务 `check_authored` 的统计；`textureUrls` 是去重后的外链贴图地址数，处理服务的 `parse_authored` 要整理出这么多个下载 |
-| `cases[].where` | `valid = false` 时错在哪里（说明，仅供参考） |
+| `cases[].summary` | `valid = true` 时：`{ entities, templates, models, textureUrls }`：物件、模板、外部模型的个数，`textureUrls` 是去重后的外链贴图地址数，本地工具要整理出这么多个下载 |
+| `cases[].where` | `valid = false` 时错在哪里：物件集里的路径（说明，仅供参考） |
 
 - `authored_texture_urls_valid.json`：结构、组合、模板、实例、外部模型、烘焙指令和外链贴图混用的完整示例（同一个
-  外链用了两次，只算一个），颜色材质带外链的法线、粗糙度贴图，以及一个最小的物件集。接口服务的浅层校验和处理服务
-  的完整校验都必须接受。
+  外链用了两次，只算一个），颜色材质带外链的法线、粗糙度贴图，以及一个最小的物件集。本地工具的物件集校验必须接受。
 - `authored_texture_urls_invalid.json`：从最小的物件集改一处：不是 https、带用户名、`sha256` 大写或长度不对、`size`
   是 0、超过 16 MiB、是小数、是字符串、缺了，多了字段，工作台的 `{file}` 引用，`texture` 是数字，`normalMap`、
-  `roughnessMap` 的外链写错，模板里的外链写错，烘焙指令和 `normalMap`、`tile` 一起出现。**接口服务的浅层校验**就必须
-  全部拒绝，处理服务的完整校验当然也拒绝。
+  `roughnessMap` 的外链写错，模板里的外链写错，烘焙指令和 `normalMap`、`tile` 一起出现。本地工具的物件集校验在下载之前
+  就必须全部拒绝。
 
 外链地址里的哈希、大小、提交号都是编的，用例只用来核对校验，不下载。
 
 ## 7. 各边的运行器
 
-| 向量 | 接口服务（Rust，`metaverse-core`） | 网站（`web/`） | 处理服务（`worker/`） | 命令行（`sdk/typescript`） |
+| 向量 | 接口服务（Rust，`metaverse-core`） | 网站（`web/`） | 本地工具（`worker/`） | 命令行（`sdk/typescript`） |
 |---|---|---|---|---|
 | `chunk_*`、`canonical_*` | `tests/vectors.rs` | —（`src/core/codec.test.ts` 用内联的向量） | `tests/test_shared_vectors.py` | `tests/vectors.test.ts` |
-| `shape_*` | `tests/vectors.rs` | `src/core/shapes/solid.test.ts`（板、凸包、材质） | `tests/test_shared_vectors.py` | `tests/vectors.test.ts` |
+| `shape_*` | `tests/vectors.rs` | `src/core/shapes/solid.test.ts`（板、凸包、材质的网格） | `tests/test_shared_vectors.py` | `tests/vectors.test.ts` |
 | `ops/` | `tests/ops_vectors.rs` | — | — | `tests/vectors.test.ts` |
-| `uv/` | —（不生成网格） | **要接上** | **要接上** | — |
-| `authored/` | **要接上**（`check_authored`） | — | **要接上**（`parse_authored`，合法的还要核对 `textureUrls`） | 可选（`readAuthored` 只做很少的本地检查） |
+| `uv/` | —（不生成网格） | `src/core/shapes/uv.test.ts` | `tests/test_shared_vectors.py`（`test_uv_vectors`） | —（不生成网格） |
+| `authored/` | —（不收物件集） | — | 本地工具 `bundle` 的物件集校验（设计 13.2 S6b 接上，合法的还要核对 `textureUrls`） | — |
 
-顶层的运行器按文件名前缀（`chunk_`、`canonical_`、`shape_`）挑文件，不会读到 `uv/`、`authored/`；新加的两类要各边
-自己接上。`shape_material_*`、`shape_invalid_material_*` 已经在顶层，现有的形状运行器会直接读到：接口服务
-（`vectors_match_rust_implementation`、`generated_vectors_are_current`）、处理服务、命令行在实现新字段之前，6 个合法的
-`shape_material_*`（`tile`、`albedo_maps`、`color_normal_map`、`color_roughness`、`baked_explicit`、`limits`）会失败，
-不合法的本来就因为字段不认识被拒绝（Rust 的 `generated_vectors_are_current` 还会因为它们的 `errorPath`、
-`errorMessage` 与现在的说明不同而失败，实现后重新生成即可）；网站的运行器只核对网格，不受影响。
+顶层的运行器按文件名前缀（`chunk_`、`canonical_`、`shape_`）挑文件，不会读到 `uv/`、`authored/`；这两类各边单独接上。
+`shape_material_*`、`shape_invalid_material_*` 在顶层，现有的形状运行器直接读到：接口服务
+（`vectors_match_rust_implementation`、`generated_vectors_are_current`）、本地工具、命令行按同样的规则接受或拒绝；
+网站的运行器只核对合法用例的网格。

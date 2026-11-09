@@ -784,8 +784,8 @@ fn plate_hull_material_cases() -> Vec<(&'static str, &'static str, Value, Value)
 
 /// 平铺、着色、法线和粗糙度（SHAPES 2「贴图坐标的平铺、着色、法线与粗糙度」）的材质用例。
 ///
-/// 这批向量先按规格写好（`errorMessage` 是暂定的说明），实现跟上之后用 `METAVERSE_WRITE_VECTORS=1`
-/// 重新生成时，只允许 `errorPath = null` 的解析错误和 `errorMessage` 的措辞变化。
+/// 这批向量先按规格写好，Rust 实现之后用 `METAVERSE_WRITE_VECTORS=1` 重新生成没有变化；本地工具和命令行
+/// 按同样的规则接受或拒绝。贴图坐标的向量在 `uv/`（由 `tools/texture_vectors.py` 独立算出）。
 fn texture_material_cases() -> Vec<(&'static str, &'static str, Value, Value)> {
     const TEXTURE: &str = "9f2c7d4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d";
     const NORMAL_MAP: &str = "4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d9f2c7d";

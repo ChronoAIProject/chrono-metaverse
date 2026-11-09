@@ -192,7 +192,7 @@ palettes { _id: 内容哈希, spaceId, blocks: [ { id, name, kind: solid|glass|e
 records { _id: 内容哈希, kind: entity | anchor, spaceId, body }
 // 物件 body：{ entityId, layer: rebuilt | ext, kind: structure | object,
 //             shape?（参数化定义：基本形体、轮廓放样、板、凸包、模板实例）, assetHash?（生成的模型）,
-//             material?（模型整体的调色、半透明、不受光照）, textures?,
+//             material?（模型整体的调色、半透明、不受光照、着色方式）, textures?,
 //             position, rotation, scale（连续值）, regionId, anchorId?, props }
 // 锚点 body：{ anchorId, kind: table|seat|zone|door|camera|counter|space,
 //             box | position, label, visibility: public|internal }

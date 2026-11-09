@@ -2,7 +2,7 @@
 """贴图坐标（`uv/`）和 AI 物件集外链贴图（`authored/`）的跨语言测试向量。
 
 期望值按 docs/SHAPES.md 第 2 节「贴图坐标的平铺、着色、法线与粗糙度」逐条独立算出：不调用接口服务、网站、
-处理服务任何一边的实现，只用 Python 标准库。几个用到的形状（无圆角的盒子、圆柱、多边形挤出、板、直线扫掠）的
+本地工具任何一边的实现，只用 Python 标准库。几个用到的形状（无圆角的盒子、圆柱、多边形挤出、板、直线扫掠）的
 顶点按网站 `web/src/core/shapes/*.ts` 的生成方式列出（位置、法线、两种自然坐标），足够定位要核对的顶点。
 
     python3 texture_vectors.py          # 重新生成 ../uv/*.json 和 ../authored/*.json
@@ -1109,7 +1109,7 @@ def authored_vectors() -> dict[str, dict]:
         "kind": "authored",
         "name": "texture-urls-valid",
         "description": "形状材质的 texture、normalMap、roughnessMap 可以写成外链对象 {url, sha256, size}；"
-        "接口服务浅层校验和处理服务完整校验都要接受",
+        "本地工具的物件集校验要接受（外链贴图由本地工具下载后作为贴图文件进重建包）",
         "cases": [
             {
                 "name": "full-example",
@@ -1138,8 +1138,7 @@ def authored_vectors() -> dict[str, dict]:
     invalid = {
         "kind": "authored",
         "name": "texture-urls-invalid",
-        "description": "外链贴图写错的物件集：接口服务浅层校验就要拒绝（处理服务的完整校验当然也拒绝）；"
-        "每个用例只错一处",
+        "description": "外链贴图写错的物件集：本地工具的物件集校验在下载之前就要拒绝；每个用例只错一处",
         "cases": invalid_cases(),
     }
     return {"authored_texture_urls_valid": valid, "authored_texture_urls_invalid": invalid}

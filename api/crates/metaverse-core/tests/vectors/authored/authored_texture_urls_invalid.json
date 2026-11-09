@@ -659,7 +659,7 @@
       "where": "material.bake"
     }
   ],
-  "description": "外链贴图写错的物件集：接口服务浅层校验就要拒绝（处理服务的完整校验当然也拒绝）；每个用例只错一处",
+  "description": "外链贴图写错的物件集：本地工具的物件集校验在下载之前就要拒绝；每个用例只错一处",
   "kind": "authored",
   "name": "texture-urls-invalid"
 }

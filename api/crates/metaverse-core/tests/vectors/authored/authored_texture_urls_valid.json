@@ -421,7 +421,7 @@
       "valid": true
     }
   ],
-  "description": "形状材质的 texture、normalMap、roughnessMap 可以写成外链对象 {url, sha256, size}；接口服务浅层校验和处理服务完整校验都要接受",
+  "description": "形状材质的 texture、normalMap、roughnessMap 可以写成外链对象 {url, sha256, size}；本地工具的物件集校验要接受（外链贴图由本地工具下载后作为贴图文件进重建包）",
   "kind": "authored",
   "name": "texture-urls-valid"
 }

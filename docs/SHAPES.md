@@ -116,13 +116,13 @@ glb 导出都不变。
 2. `offset`、`rotate` 只能和 `tile` 一起给；`normalScale` 只能和 `normalMap` 一起给；
 3. `tile` 只用于有贴图坐标的材质：贴图材质（本来就必须有 `uv`），或者带了 `normalMap` / `roughnessMap` 的颜色材质；
 4. 颜色材质带了 `normalMap` 或 `roughnessMap` 就必须给 `uv`；两样都没带时仍然不能有 `uv`，也仍然不能有 `tint`（与原来相同）；
-5. `normalMap`、`roughnessMap` 和 `texture` 一样是 64 位小写十六进制的资源哈希。只有 AI 物件集里可以写成外链对象
-   `{url, sha256, size}`，由处理服务下载、登记后换成哈希（设计 6.3、`worker/README.md`"AI 物件集"）；形状本身
-   （提交里的物件记录）只收哈希。
+5. `normalMap`、`roughnessMap` 和 `texture` 一样是 64 位小写十六进制的资源哈希。只有 AI 物件集（本地文件）里可以
+   写成外链对象 `{url, sha256, size}`，由本地工具 `bundle` 下载、核对后作为 `texture` 文件进重建包，记录里换成
+   哈希（`docs/design/server-slim.md` 第 12 节）；形状本身（重建包和提交里的物件记录）只收哈希。
 
 **资源引用**：`normalMap`、`roughnessMap` 和 `texture` 一样是物件引用的贴图资源。物件的 `textures` 列出形状里这三个
-字段的全部哈希（去重，至多 64 个）；接口服务提交时收集引用（`timeline/writer.rs` 的 `collect_textures`）、处理服务
-写回、命令行、资源栅栏、定期清理都要把两个新字段算上。
+字段的全部哈希（去重，至多 64 个）。接口服务按形状收集引用（`Shape::texture_refs`：草稿追加时查用途和归属、
+过清理的栅栏，发布时登记进 `assetRefs`，清理按这些判断引用），本地工具写物件的 `textures`，都把两个新字段算上。
 
 #### 贴图坐标（三种语言相同）
 
@@ -261,7 +261,7 @@ v = (−a·sin θ + b·cos θ) / tile[1]
 - `material.shading`：`"baked"`（默认）或 `"albedo"`，只影响网站怎么画模型里的材质：
   - `"baked"`（不给时，与现在相同）：模型里带颜色贴图、受光照的材质按扫描烘焙的看法画，0.3 倍受光照 + 0.72 倍自发光（`applyTexturedLook`）；
   - `"albedo"`：模型的贴图是固有色，按 glb 里的材质原样完整受光（不加自发光，模型自带的法线、粗糙度、金属度照常用）。
-  - 模型库（Poly Haven、Objaverse 等）的模型应该用 `"albedo"`；从扫描切出来的模型保持 `"baked"`。AI 物件集里带 `model` 的物件由处理服务默认写成 `"albedo"`，物件集里显式写了就照写。glb 本身带 `KHR_materials_unlit` 的材质两种取值都不打光；`unlit: true` 优先。
+  - 模型库（Poly Haven、Objaverse 等）的模型应该用 `"albedo"`；从扫描切出来的模型保持 `"baked"`。AI 物件集里带 `model` 的物件由本地工具打包时默认写成 `"albedo"`，物件集里显式写了就照写。glb 本身带 `KHR_materials_unlit` 的材质两种取值都不打光；`unlit: true` 优先。
 - `props.source` 是**署名**，`props.source` 是对象时按下面的规则严格校验（四种实现相同）：
 
   | 字段 | 规则 |
@@ -303,6 +303,6 @@ v = (−a·sin θ + b·cos θ) / tile[1]
 - `shape_*.json`：给定形状，写明期望的包围盒和三角形数（网站和处理服务据此核对网格生成）。三角形数目前只给 `plate`（4n − 4）和点处于一般位置的 `hull`（2V − 4）；`shape_plate_*`、`shape_hull_*`、`shape_material_*` 和对应的 `shape_invalid_*` 覆盖本文新增的板、凸包、`opacity`、`unlit`，以及第 2 节"贴图坐标的平铺、着色、法线与粗糙度"的新字段（合法的取值和越界、类型错、缺少前提的写法）。
 - `canonical_entity_model_source.json`：引用外部模型、带 `material.tint` 和 `props.source` 的物件记录的内容哈希。
 - `uv/uv_*.json`：贴图坐标。给定形状和材质，按顶点的局部位置和法线找到顶点，写明期望的最终贴图坐标；覆盖 `box`、`planar`、`cylindrical`、`mesh`（盒子、圆柱、挤出、板、扫掠）× 有无 `tile`、`offset`、`rotate`，以及组合上的材质和颜色材质的法线贴图。期望值由 `tests/vectors/tools/texture_vectors.py` 按本文独立算出。网站和处理服务核对（接口服务不生成网格）。
-- `authored/authored_*.json`：带外链贴图对象 `{url, sha256, size}` 的 AI 物件集，合法和不合法各一份。接口服务的浅层校验和处理服务的完整校验都按 `valid` 接受或拒绝。
+- `authored/authored_*.json`：带外链贴图对象 `{url, sha256, size}` 的 AI 物件集，合法和不合法各一份，由本地工具的物件集校验按 `valid` 接受或拒绝（接口服务不收物件集）。
 
 三种语言的测试都读同一批向量，各类向量的格式和各边要接上的运行器见 `tests/vectors/README.md`。
