@@ -238,6 +238,33 @@ def test_structure_textures_from_a_local_baseline_fall_back(runner, store, libra
     assert all(r["from"] != poster for r in replaced)
 
 
+def test_structure_texture_from_another_space_is_not_borrowed(runner, store, library):
+    """结构物件引用别的空间登记的贴图：不借用，换成本次算出的贴图；别的空间的贴图哈希不进本空间的物件记录和
+    资源引用表（公开资源接口按它放行），那份资源的归属也不变。"""
+    foreign = put_asset(store, jpeg_bytes(np.full((8, 8, 3), 5, np.uint8)), content_type="image/jpeg",
+                        kind="texture", space_id="other-space").hash  # fmt: skip
+    bodies, _ = structure_entities(extract_structure(room_with_table()))
+    doc = authored_doc(library, structure="replace")
+    for _, body in sorted(bodies.items()):
+        body = {k: v for k, v in copy.deepcopy(body).items() if k not in ("textures", "fit")}
+        shape = body["shape"]
+        for node in [shape, *(shape.get("children") or [])]:
+            if "texture" in (node.get("material") or {}):
+                node["material"]["texture"] = foreign
+        doc["entities"].append(body)
+    _, job = import_scan(runner, store, authored=doc)
+    assert job["status"] == "done", job.get("lastError")
+    replaced = job["result"]["authored"]["textureFallback"]
+    assert replaced and all(r["from"] == foreign and r["to"] != foreign for r in replaced)
+    assert foreign not in json.dumps(entities(store)) and foreign not in asset_refs(store)
+    assert find_asset(store, foreign)["metadata"]["spaceId"] == "other-space"
+    # 物体引用同一份别的空间的贴图：不能回退，整个任务失败、不提交
+    before = len(commits(store))
+    _, job = import_scan(runner, store, authored=authored_doc(library, texture=foreign))
+    assert job["status"] == "failed" and "不是本空间的贴图资源" in job["lastError"], job.get("lastError")
+    assert len(commits(store)) == before
+
+
 def _bad_sha(library, doc):
     doc["entities"][2]["model"]["sha256"] = "0" * 64
 

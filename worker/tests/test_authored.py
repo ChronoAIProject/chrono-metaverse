@@ -700,6 +700,23 @@ def test_structure_texture_fallback_needs_same_id_path_and_kind(tmp_path, mutate
         run_replace(tmp_path, doc_, set(local_to_real))
 
 
+def test_structure_texture_fallback_is_not_shared_with_templates_or_objects(tmp_path):
+    """同一个待定哈希在结构物件上能回退，模板、物体引用它照样失败：回退只换结构物件自己那个节点，
+    不能借结构物件的名义把别的空间（或不存在）的贴图带进模板和物体。"""
+    doc_, _, local_to_real = algorithm_structure_doc()
+    wall = _wall_with_texture(doc_)
+    local = next(node["material"]["texture"] for _, node in _texture_nodes(wall["shape"]))
+    textured = {"type": "box", "size": [0.6, 0.9, 0.01], "material": {"texture": local, "uv": "planar"}}
+    template = {"entityId": "tpl-poster", "kind": "template", "shape": copy.deepcopy(textured)}
+    with pytest.raises(PermanentJobError, match="模板 tpl-poster 的 \\$ 引用的贴图"):
+        run_replace(tmp_path / "template", {**doc_, "templates": [template]}, set(local_to_real))
+    poster = {"entityId": "poster-01", "kind": "object", "shape": copy.deepcopy(textured)}
+    poster["shape"]["transform"] = {"position": [1, 1, 0.02]}
+    with_poster = {**doc_, "entities": [*doc_["entities"], poster]}
+    with pytest.raises(PermanentJobError, match="物件 poster-01 的 \\$ 引用的贴图"):
+        run_replace(tmp_path / "object", with_poster, set(local_to_real))
+
+
 def test_keep_mode_accepts_textures_this_job_computed(tmp_path):
     """keep：物件引用的贴图本空间没登记，但本次算法结构算出了同样的贴图——直接用；算不出的照样失败。"""
     _, textures, _ = algorithm_structure_doc()
