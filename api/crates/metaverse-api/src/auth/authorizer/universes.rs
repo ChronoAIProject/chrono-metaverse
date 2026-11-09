@@ -135,6 +135,16 @@ fn member_during(
     })
 }
 
+/// 按修订历史判断：空间在 `at` 时刻是否是成员（取 `at ≤ T` 的最后一条修订，与
+/// `Repo::universe_members_at` 相同）。
+fn member_at(history: &[(Timestamp, Vec<String>)], space_id: &str, at: Timestamp) -> bool {
+    history
+        .iter()
+        .rev()
+        .find(|(start, _)| *start <= at)
+        .is_some_and(|(_, members)| members.iter().any(|member| member == space_id))
+}
+
 /// 比较分享令牌：逐个比较全部未吊销的令牌，不提前退出。
 fn token_matches(records: &[ShareTokenRecord], token: Option<&str>) -> bool {
     let Some(token) = token.filter(|token| plausible_share_token(token)) else {
@@ -416,6 +426,30 @@ impl Authorizer {
         })
     }
 
+    /// 凭组合令牌读成员空间不按时刻索引的信息（空间信息）：与不带时间段的提交列表相同，要求该
+    /// 空间在 `[纪元, now]` 里某个时刻是组合成员——组合页回看历史时，后来离开组合的成员也要能
+    /// 取到名称和事件显示规则。返回凭据和"现在是否仍是成员"（调用方据此去掉离开之后的当前内容）。
+    pub async fn public_space_via_universe_ever(
+        &self,
+        space_id: &str,
+        universe_id: &str,
+        share_token: Option<&str>,
+        now: Timestamp,
+    ) -> Result<(Grant, bool), ApiError> {
+        if !is_space_id(space_id) {
+            return Err(ApiError::not_found());
+        }
+        let universe = self.public_universe(universe_id, share_token).await?;
+        let history = self.repo.universe_membership_history(&universe).await?;
+        let epoch = Timestamp::from_millis(0).map_err(|_| ApiError::internal())?;
+        if !member_during(&history, space_id, epoch, Some(now)) {
+            return Err(ApiError::not_found());
+        }
+        let current = member_at(&history, space_id, now);
+        let grant = self.member_space_grant(space_id, &universe).await?;
+        Ok((grant, current))
+    }
+
     /// 凭组合令牌读成员空间在一段时间 `[from, to]` 里的公开数据（时间窗事件、密度、提交列表）：
     /// 要求该空间在这段时间里的某个时刻是组合成员。
     pub async fn public_space_via_universe_during(
@@ -584,6 +618,23 @@ mod tests {
         assert!(member_during(&history, "b", t(100), None));
         assert!(!member_during(&history, "b", t(5), Some(t(19))));
         assert!(!member_during(&history, "c", t(0), None));
+    }
+
+    #[test]
+    fn membership_at_a_moment_uses_the_last_revision_before_it() {
+        let t = |s: i64| Timestamp::from_millis(s * 1000).unwrap();
+        let history = vec![
+            (t(10), vec!["a".to_owned()]),
+            (t(20), vec!["a".to_owned(), "b".to_owned()]),
+            (t(30), vec!["b".to_owned()]),
+        ];
+        assert!(!member_at(&history, "a", t(9)));
+        assert!(member_at(&history, "a", t(10)));
+        assert!(member_at(&history, "a", t(29)));
+        assert!(!member_at(&history, "a", t(30)));
+        assert!(member_at(&history, "b", t(1000)));
+        assert!(!member_at(&history, "c", t(1000)));
+        assert!(!member_at(&[], "a", t(1000)));
     }
 
     #[test]

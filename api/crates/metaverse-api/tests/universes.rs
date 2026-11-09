@@ -465,7 +465,20 @@ async fn membership_links_visibility_and_public_reads() {
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     assert_eq!(reply.body["head"]["recordedAt"], Value::Null);
     assert!(reply.body["eventTypes"].is_array());
+    // 现在是成员：带当前的公开锚点（第一次提交的 _space）。
+    assert_eq!(reply.body["anchors"][0]["anchorId"], "_space");
     let hall_seq = reply.body["head"]["seq"].as_u64().unwrap();
+    // 从来不是成员的空间：空间信息同样 404。
+    assert_eq!(
+        app.public(
+            "/api/public/spaces/secret-shop?universe=street",
+            Some(&share),
+            &[]
+        )
+        .await
+        .status,
+        StatusCode::NOT_FOUND
+    );
     let reply = app
         .public(
             &format!("/api/public/spaces/hall/snapshot?seq={hall_seq}&universe=street"),
@@ -610,6 +623,41 @@ async fn membership_links_visibility_and_public_reads() {
     // 退出之后凭组合令牌读不到 hall 的现在。
     assert_eq!(
         app.public(&format!("{head}?universe=street"), Some(&fresh), &[])
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    // 但组合页回看 hall 还是成员的那段历史时要取得到空间信息（名称、事件显示规则），
+    // 只是不给离开之后的区域、地块和锚点；快照按版本照常读。
+    let reply = app
+        .public("/api/public/spaces/hall?universe=street", Some(&fresh), &[])
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(reply.body["name"], "hall");
+    assert!(reply.body["eventTypes"].is_array());
+    assert_eq!(reply.body["anchors"], json!([]));
+    assert_eq!(reply.body["regions"], json!([]));
+    assert_eq!(reply.body["plots"], json!([]));
+    assert!(reply
+        .headers
+        .get("cache-control")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .starts_with("private"));
+    assert_eq!(
+        app.public(
+            &format!("/api/public/spaces/hall/snapshot?seq={hall_seq}&universe=street"),
+            Some(&fresh),
+            &[]
+        )
+        .await
+        .status,
+        StatusCode::OK
+    );
+    // 令牌不对仍然 404。
+    assert_eq!(
+        app.public("/api/public/spaces/hall?universe=street", Some(&share), &[])
             .await
             .status,
         StatusCode::NOT_FOUND

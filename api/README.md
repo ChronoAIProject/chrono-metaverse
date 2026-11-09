@@ -185,7 +185,7 @@ NyxID 地址只接受 https；明文 http 只允许本机地址（本地测试�
 
 | 接口 | operationId | 缓存 |
 |---|---|---|
-| `GET /api/public/spaces/{space_id}` | `get_public_space` | 名称、区域、地块（`label`）、公开锚点、`head.recordedAt`、`eventTypes`（显示规则，不含 schema）；`max-age=5` |
+| `GET /api/public/spaces/{space_id}` | `get_public_space` | 名称、区域、地块（`label`）、公开锚点、`head.recordedAt`、`eventTypes`（显示规则，不含 schema）；凭组合令牌时曾经是成员即可，已离开组合的区域、地块、锚点为空数组；`max-age=5` |
 | `GET /api/public/spaces/{space_id}/snapshot?seq=` | `get_public_snapshot` | `Snapshot`；`max-age=600`，进程内按 (空间, seq, 最新 seq) 缓存 |
 | `GET /api/public/spaces/{space_id}/snapshot?at=` | 同上 | 换算成 seq 后 302 到 `?seq=`，`no-store` |
 | `GET /api/public/spaces/{space_id}/timeline?from=&to=&after=&limit=` | `get_public_timeline` | `Page<CommitSummary>`，每页 ≤ 500；`max-age=5` |
@@ -205,7 +205,7 @@ NyxID 地址只接受 https；明文 http 只允许本机地址（本地测试�
 
 凭链接查看的空间：没带令牌或令牌无效一律 404；成功响应凭令牌访问时是 `private`，只有公开空间才是 `public`；拒绝响应一律 `no-store`。
 
-**凭组合的分享令牌读成员空间**（设计 8.2、12）：`Authorization: Share <组合令牌>` + `?universe=<组合编号>`，适用于空间信息、`/head`、事件、密度、状态、快照、提交列表。服务端校验令牌属于这个组合，并且该空间在相关时刻是成员：按时刻（`state?at=`、`/head`、空间信息、增量事件）看 T 时刻；按时间段（时间窗事件、密度、提交列表）看这段时间里有没有某个时刻是成员；快照 `?seq=` 看这个版本生效的时间段（`?at=` 的 302 跳转保留 `universe`）。区块和资源按内容哈希读取，本来就不校验令牌。校验函数：`Authorizer::public_space_via_universe` / `_during` / `_for_seq`（`src/auth/authorizer/universes.rs`），路由里用 `routes::public_access::public_space_grant*`。组合实际公开（组合和全部成员都公开）时不需要令牌。
+**凭组合的分享令牌读成员空间**（设计 8.2、12）：`Authorization: Share <组合令牌>` + `?universe=<组合编号>`，适用于空间信息、`/head`、事件、密度、状态、快照、提交列表。服务端校验令牌属于这个组合，并且该空间在相关时刻是成员：按时刻（`state?at=`、`/head`、增量事件）看 T 时刻；按时间段（时间窗事件、密度、提交列表）看这段时间里有没有某个时刻是成员；快照 `?seq=` 看这个版本生效的时间段（`?at=` 的 302 跳转保留 `universe`）；空间信息不按时刻索引，与不带时间段的提交列表相同，曾经是成员即可（组合页回看历史时，后来离开组合的成员也要取得到名称和事件显示规则），但现在已经不是成员时 `regions`、`plots`、`anchors` 返回空数组（不给离开之后的当前内容，历史状态按版本读快照）。区块和资源按内容哈希读取，本来就不校验令牌。校验函数：`Authorizer::public_space_via_universe` / `_during` / `_for_seq` / `_ever`（`src/auth/authorizer/universes.rs`），路由里用 `routes::public_access::public_space_grant*`。组合实际公开（组合和全部成员都公开）时不需要令牌。
 
 ### 提交与时间线（与处理服务 `jobs/writeback.py` 一致）
 
