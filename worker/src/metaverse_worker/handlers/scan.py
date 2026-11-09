@@ -8,8 +8,8 @@
 3. 重扫配准误差超过阈值：不提交，任务完成，`result = {needsAlignment: true, proposedTransform, errorCm, …}`；
 4. 事务外登记资源（网页用模型、贴图）和物件、锚点记录（按内容哈希幂等）；
 5. 一次提交：`scan = {assetHash, webModelHashes, transform}`、`observedAt`、重建层物件替换（扩展层不动）、
-   新锚点、资源引用；首次扫描固定坐标系；`voxelize: true` 时在同一个事务里插入一个 `voxelize` 任务
-   （编号 `<本任务编号>-voxelize`）。
+   新锚点、资源引用（只登记网页用模型和贴图，原始扫描不登记）；首次扫描固定坐标系；`voxelize: true` 时
+   在同一个事务里插入一个 `voxelize` 任务（编号 `<本任务编号>-voxelize`）。
 
 **重建层替换**：物体重建正常运行时，重建层的全部旧物件（结构、物体、模板）换成这次的结果；物体重建模块
 导入失败、只交了结构时，只替换重建层的结构物件，旧的物体保留（不会因为模块缺失把物体删光）。
@@ -46,6 +46,7 @@ from ..processing.align import matrix_from_params
 from ..processing.rebuild import OBJECTS_TARGET as DEFAULT_OBJECTS_TARGET
 from ..processing.scan import sniff_format
 from ..processing.sniff import CONTENT_TYPES
+from ..records import RecordError, validate_anchor_body
 from ..timeutil import format_ts, parse_ts
 from .context import JobContext, optional_dict, require_hash
 
@@ -115,6 +116,10 @@ def anchor_proposals(entities: Mapping[str, Mapping[str, Any]]) -> dict[str, dic
         }
         if isinstance(body.get("label"), str):
             anchor["label"] = body["label"]
+        try:
+            validate_anchor_body(anchor)  # 与接口服务 AnchorBody 同样的规则，之后草稿才改得动它
+        except RecordError as error:
+            raise PermanentJobError(f"物体 {eid} 的建议锚点 {aid} 不合法：{error}") from error
         out[aid] = anchor
     return out
 
@@ -286,7 +291,9 @@ def run_import(ctx: JobContext) -> dict[str, Any]:
             message=f"导入扫描 {asset_hash[:12]}（{_METHOD_TEXT.get(_method(out), '对齐')}）",
             scan=scan_ref,
             observed_at=observed_at,
-            asset_refs=[asset_hash, *web_hashes],
+            # 资源引用表就是公开资源接口的白名单（设计 8.2）：只登记网页要用的网页用模型和贴图，
+            # 原始扫描不登记，只能经 /api/v1 下载；它靠提交里的 scan.assetHash 免于被清理。
+            asset_refs=list(web_hashes),
             reference_scan=asset_hash,
             result=dict(result),
         )

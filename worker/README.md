@@ -1,12 +1,13 @@
 # 处理服务（metaverse-worker）
 
 chrono-metaverse 的后台处理服务（设计第 6 节）：从 MongoDB 的 `jobs` 集合领取任务，做上传校验、扫描对齐、
-网页用模型、结构 + 物体重建、体素化、物件模型导出，把结果写成时间线上的提交；同时定期清理过期上传和
-没人引用的资源。
+网页用模型、结构 + 物体重建、体素化、物件模型导出，把结果写成时间线上的提交；同时定期清理过期上传、
+过期草稿（连同草稿区块、预览令牌）和没人引用的资源。
 
-- 只有 `store.py`、`assets.py`、`jobs/`、`handlers/` 碰数据库；`processing/` 是纯计算，在子进程里运行；
+- 只有 `store.py`、`assets.py`、`uploads.py`、`jobs/`、`handlers/` 碰数据库；`processing/` 是纯计算，在子进程里运行；
 - 每个任务的重计算放进子进程（`resource.setrlimit` 内存上限 + 超时，可随时取消）；
-- 写回按设计 6.4：提交带 `jobId`，同一事务里按 `{_id, attempt, leaseOwner, status: running}` 把任务标记为完成。
+- 写回按设计 6.4：提交带 `jobId`，同一事务里按 `{_id, attempt, leaseOwner, status: running}` 把任务标记为完成；
+  事务后给新引用的区块打 `publishedAt`，没打上的由重新领取和定期清理补做（设计 5.7）。
 
 ## 启动
 
@@ -25,6 +26,22 @@ export MONGODB_DATABASE=metaverse
 
 数据库必须是副本集（写回用事务）。本地的 MongoDB 副本集见 `infra/dev/`。
 
+### 依赖锁定
+
+`pyproject.toml` 只写版本范围，实际版本锁在 `uv.lock`（用 uv 0.11.32 生成，提交进仓库）。镜像
+（`infra/worker/Dockerfile`）有 `uv.lock` 时按 `uv export --frozen` 的锁定版本装，镜像、持续集成、本地用的
+就是同一组经过测试的版本，回滚重建旧提交也得到当时的依赖。
+
+```bash
+cd worker
+uv sync --frozen --extra dev        # 按锁定版本建 .venv（含开发依赖）
+uv lock                             # 改了 pyproject.toml 的依赖以后重新锁定，连同 uv.lock 一起提交
+uv lock --upgrade-package numpy     # 只升级某一个依赖
+```
+
+`tests/test_lockfile.py` 检查 `uv.lock` 覆盖了 `pyproject.toml` 的全部依赖、锁定版本都在声明的范围内；
+改了依赖范围却忘了重新锁定时，测试会失败。
+
 ## 健康检查
 
 `GET /healthz`，端口 `WORKER_HEALTH_PORT`（默认 8080），不需要鉴权：
@@ -36,7 +53,9 @@ export MONGODB_DATABASE=metaverse
 {"status": "ok", "service": "metaverse-worker", "version": "0.1.0", "workerId": "host-1234-ab12cd",
  "timestamp": "2026-11-09T08:00:00.000Z", "kinds": ["model_import", "rebuild", "scan_import", "upload_verify", "voxelize"],
  "currentJob": {"jobId": "…", "kind": "scan_import", "spaceId": "front-hall", "since": "…"},
- "jobs": {"done": 3, "failed": 0}, "lastCleanup": {"at": "…", "uploads": 0, "assets": 0, "exhaustedJobs": 0}}
+ "jobs": {"done": 3, "failed": 0},
+ "lastCleanup": {"at": "…", "exhaustedJobs": 0, "stuckUploads": 0, "uploads": 0, "drafts": 0, "previews": 0,
+                 "draftChunks": 0, "assets": 0, "publishedChunks": 0}}
 ```
 
 ## 环境变量
@@ -99,7 +118,18 @@ export MONGODB_DATABASE=metaverse
    不合规同样标记失败、删数据块；
 4. 登记资源（`assets.files`：`_id` = 上传编号，`filename` = 内容哈希，`metadata = {sha256, contentType,
    kind: 用途, spaceId, uploadId, format}`）。文件名冲突就删本次数据块、复用已有资源；
-5. 上传标记 `done` 并写 `assetHash`。
+5. 同一个事务里：上传标记 `done` 并写 `assetHash`、`storageBytes`，空间的 `storageUsedBytes` 加上上传的大小
+   （见"空间存储用量"），任务标记完成。租约丢了就一起放弃，新的持有者重新收尾，不会多计或漏计。
+
+**任务因为别的原因最终失败**（嗅探子进程超时或内存超限、子进程反复崩溃、数据库抖动导致重试次数用完）时，
+上传不能一直停在 `complete`：接口服务把 `open`、`complete` 都算作进行中的上传（每个空间的上限、存储上限的
+预估），资源可用性也把 `complete` 当成"还在校验"。所以任务标记为 `failed` 以后，主循环马上按
+`{_id: uploadId, status: complete}` 条件收尾（`uploads.settle_upload`）：
+
+- 内容已经核对通过（`verifiedSha256` = 声明的哈希）并且这个哈希的资源已经存在 → 补做第 5 步，标记 `done`；
+- 否则 → 标记 `failed`，`error = "校验任务失败：<原因>"`，删掉数据块。
+
+主循环来不及做的（重试次数用完由 `reap_exhausted` 回收、进程在标记失败后退出）由定期清理兜底，见下。
 
 `result = {assetHash, reused, bytes, format, contentType}`，`format` 是 `glb | draco | obj | zip | png | jpeg |
 webp | ndjson | ndjson+gzip | text`。
@@ -109,9 +139,10 @@ webp | ndjson | ndjson+gzip | text`。
 ```
 uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceId, owner: {kind, id},
           purpose: scan|model|texture|ops|script, size: 声明的总字节数, sha256: 声明的整体哈希, partSize,
-          status: open|complete|done|failed|expired, createdAt,
+          status: open|complete|done|failed|expired, createdAt, completedAt?, jobId?: upload_verify 任务编号,
           // 处理服务写入：
-          assetHash?, format?, contentType?, verifiedAt?, verifiedSha256?, error?, failedAt? }
+          assetHash?, format?, contentType?, verifiedAt?, verifiedSha256?, error?, failedAt?,
+          storageBytes?: 计入空间用量的字节数, storageReleasedAt?: 资源被清理、用量已减回的时间 }
 ```
 
 处理服务只处理 `status: complete` 的上传（接口服务"完成上传"时把 `open` 改成 `complete` 并建任务）。
@@ -149,16 +180,20 @@ uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceI
    observedAt: 参数里的时间规范化成 UTC 毫秒（YYYY-MM-DDTHH:MM:SS.mmmZ）
    changedEntities: 重建层物件的变化（新增 / 变化写新哈希，消失的写 null）；扩展层不动
    changedAnchors: 新建的锚点（物体的建议锚点编号；已存在的锚点不动）
-   assetRefs: 扫描、两档网页用模型、所有贴图
+   assetRefs: 两档网页用模型、所有贴图（原始扫描不登记，见下）
    frame: 空间还没有坐标系时固定为 {fixedAt, referenceScan: assetHash}
    ```
 
+   - **资源引用表**：`assetRefs` 是公开资源接口 `GET /api/public/assets/{hash}.bin` 的白名单（设计 8.2），
+     只登记网页要用的资源。原始扫描可能含个人信息，**不登记**，只能经 `/api/v1` 下载；它被提交的
+     `scan.assetHash` 引用，定期清理不会删它。本空间新登记的网页用模型、贴图计入空间存储用量（见下）；
    - **重建层替换规则**：物体重建正常运行时，重建层的全部旧物件（structure / object / template）换成这次的
      结果；物体重建模块导入失败、只交了结构时，只替换 `kind: structure` 的物件，旧物体保留；
    - **锚点**：`kind: object` 且带 `anchorId` 的物体，按编号前缀定类型（`table`/`desk` → table，
      `chair`/`seat`/`sofa`/`bench`/`stool` → seat，`counter`/`reception`/`bar` → counter，`door`、`camera`，
      其他 → zone），`box` = 物体 `bounds` 覆盖的格子（同接口服务 `Aabb::grid_cover`），`visibility: public`，
-     `label` 取物体的 `label`；锚点当前状态写进 `anchors`（`{spaceId, id, owner, hash, body, seq}`）；
+     `label` 取物体的 `label`；生成后按接口服务 `AnchorBody::validate` 的规则校验（不合格 → 任务失败）；
+     锚点当前状态写进 `anchors`（`{spaceId, id, owner, hash, body, seq}`）；
    - **体素化**：`voxelize: true` 时在**同一个事务里插入一个 `voxelize` 任务**（编号
      `<本任务编号>-voxelize`，参数 `{scanAssetHash}`，`parentJobId` 指向本任务），不在本任务里写第二次提交。
 
@@ -184,16 +219,28 @@ uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceI
 指定的不是当前扫描时，提交里带上这个扫描的 `scan` 引用，让扫描层和重建层一致。结果与当前状态完全相同
 时不提交，任务直接完成（`result.unchanged = true`）。`result` 同上（没有 `webModels`）。
 
-### `voxelize` `{scanAssetHash?, style?: {paletteSize?}}`
+### `voxelize` `{scanAssetHash?, style?}`
+
+`style` 可以是风格名（字符串，接口服务 `POST .../scans/{scan_id}/voxelize {style}` 和命令行
+`metaverse voxelize --style` 传的就是它），也可以是对象 `{paletteSize?}`（直接给颜色数，1–1024，默认 64）：
+
+| 风格名 | 颜色数 |
+|---|---|
+| `default`（不给 `style` 时也是它） | 64 |
+| `coarse` | 16 |
+| `fine` | 256 |
+
+不认识的风格名、对象里有别的字段、颜色数超出范围 → 任务失败（不可重试），`lastError` 列出可用的风格名。
 
 按 `GRID_UNIT`（5 厘米）体素化（每格面积约 9 个采样点、线性空间平均色、去掉少于 2 个采样点的格子和小连通块），
 空间定义了实体区（`regions` 里 `kind: physical` 的盒子）时只保留实体区里的格子；Lab 空间 k-means 量化成
-`paletteSize`（默认 64，1–1024）种颜色。方块表只追加：编号 0、1 保留，从 2 开始；当前方块表里颜色相同的
+`paletteSize` 种颜色。方块表只追加：编号 0、1 保留，从 2 开始；当前方块表里颜色相同的
 扫描方块（`tags` 含 `scan`）复用编号，否则追加 `{id, name: "扫描色 #rrggbb", kind: solid, color, tags: ["scan"]}`。
 区块按 `chunk.py` 编码（32³），写到**重建层**；旧清单里有、新结果里没有的区块写 null；方块表变了才带
 `paletteHash`。事务里发现方块表在计算期间变了就放弃、稍后重试。没有变化时不提交（`result.unchanged = true`）。
 
-`result = {scanAssetHash, paletteSize, newBlocks, samples, rawCells, cells, colors, chunks, seconds, paletteHash?, changedChunks}`。
+`result = {scanAssetHash, style?, paletteSize, newBlocks, samples, rawCells, cells, colors, chunks, seconds, paletteHash?, changedChunks}`
+（`style` 只在传了风格名时出现）。
 
 ### `model_import` `{assetHash}`
 
@@ -220,15 +267,63 @@ result.textures  # {sha256 十六进制: 图片字节（jpeg/png/webp）}，被 
 result.metrics  # 任意 JSON，原样放进 result.objects
 ```
 
-处理服务会校验：body 合法（模板实例按同一批结果里的模板算包围盒）、贴图字节的哈希与键一致、
+处理服务会校验：body 合法（规则与接口服务 `EntityBody::validate` 相同，`records.py`；模板实例按同一批结果里的
+模板算包围盒；`label` 不超过 200 个字符、**不能含控制字符**，如换行、制表符）、贴图字节的哈希与键一致、
 引用的贴图都随结果给出、编号不和结构元素（`floor`、`wall-*`、`glazing-*`）重复。不合格 → 任务失败
-（不可重试）；模块导入失败 → 记录警告、只提交结构。
+（不可重试）；模块导入失败 → 记录警告、只提交结构。规则必须和接口服务一致：接口服务读取记录时不校验，
+但之后草稿对这些物件、锚点做任何修改都会重新校验整个 body，不合格的记录就改不动了。
+
+## 空间存储用量
+
+`spaces.storageUsedBytes`（设计 4.1；接口服务创建上传时按"已用 + 进行中的上传 + 本次大小 > storageLimitBytes"
+返回 413）由处理服务累加，都按 `{_id, owner.kind, owner.id}` 条件更新，和引起变化的写入在同一个事务里：
+
+| 时机 | 变化 |
+|---|---|
+| `upload_verify` 把上传改成 `done`（新登记或复用已有资源都算） | `+size`，上传写 `storageBytes = size` |
+| 处理服务写的提交（`scan_import`、`rebuild`）在 `assetRefs` 里**新**登记本空间的派生资源（网页用模型、贴图） | `+资源字节数`（同一空间同一资源只计一次） |
+| 定期清理删掉没人引用的资源 | 对每个 `assetHash` 是它、带 `storageBytes`、还没有 `storageReleasedAt` 的上传：写 `storageReleasedAt`，所属空间 `-storageBytes`（减到 0 为止，接口服务按 u64 读） |
+
+不计入的：区块、物件记录、方块表（在各自的集合里，不在 GridFS）；`model_import` 重新导出的模型（它的来源
+上传已经计入）。接口服务在"哈希已存在、直接复用"创建上传（创建即 `done`）时也应 `+size` 并写
+`storageBytes`，这样资源被清理时能一并减回。
 
 ## 定期清理
 
-后台线程每 `WORKER_CLEANUP_INTERVAL_SECONDS` 秒一次（设计 6.1）：超过 24 小时仍 `open` 的上传先改成 `expired`
-再删数据块和会话（`failed` / `expired` 的同样删除）；上传或最近复用超过 7 天、没有被提交、草稿、物件记录、
-方块表、资源引用表或未结束任务引用的资源，先删 `files` 文档再删数据块；租约过期且重试次数用完的任务标记失败。
+后台线程每 `WORKER_CLEANUP_INTERVAL_SECONDS` 秒一次（设计 6.1），按顺序：
+
+0. **重试次数用完的任务**：租约过期且重试次数用完的任务标记失败；
+1. **上传会话**：先兜底处理停在 `complete`、但校验任务（上传的 `jobId`）已经 `failed` 的上传（任务记录
+   不存在、完成上传又超过 24 小时的也算），收尾规则同 `upload_verify` 一节；然后超过
+   `WORKER_UPLOAD_TTL_HOURS`（24 小时）仍 `open` 的上传先改成 `expired` 再删数据块和会话（`failed` /
+   `expired` 的同样删除）；
+2. **草稿、草稿区块、预览令牌**（设计 5.6、13.2）：接口服务把 `drafts`、`draftChunks`、`previews` 的
+   `expiresAt` 写成 RFC 3339 字符串、不建 TTL 索引，由处理服务按 `expiresAt < 现在`（字符串比较）删除：
+   过期的草稿（`open` 和已发布的都删；草稿 30 天过期）先删草稿本身，再删它的预览令牌和草稿区块
+   （`{draftId, spaceId}`）；预览令牌（最长 7 天）和草稿区块再各自按自己的 `expiresAt` 扫一遍。每轮最多
+   200 个草稿；
+3. **没人引用的资源**：上传或最近复用超过 `WORKER_ASSET_GRACE_DAYS`（7 天）、没有被引用的资源，先删 `files`
+   文档再删数据块，再把计过用量的上传从各自空间的 `storageUsedBytes` 里减回（见上）。草稿在第 2 步先删，
+   过期草稿引用的资源本轮就不再算被引用；
+4. **补打区块的 `publishedAt`**（设计 5.7："幂等，失败可以补做"）：最近 48 小时的提交（处理服务和接口服务
+   写的都算，按空间走 `(spaceId, at)` 索引）引用、还没有 `publishedAt` 的区块，按提交的 `at` 补上。写回在
+   事务提交之后才打 `publishedAt`，进程恰好在两步之间退出时，这些区块在公开接口上会一直 404。任务被重新
+   领取、发现已经有提交时也先补打一次再标记完成。
+
+处理服务启动时也幂等地建 `drafts`、`draftChunks`、`previews` 的 `expiresAt` 索引（名字和定义与接口服务相同）。
+健康检查的 `lastCleanup` 带每一项处理了多少：`{at, exhaustedJobs, stuckUploads, uploads, drafts, previews,
+draftChunks, assets, publishedChunks}`。
+
+资源"被引用"指出现在下面任何一处：
+
+| 集合 | 字段 |
+|---|---|
+| `assetRefs` | `hash` |
+| `commits` | `scan.assetHash`、`scan.textureHash`、`scan.webModelHashes`、`opsRef`、`scriptRef` |
+| `records` | `body.assetHash`、`body.textures` |
+| `palettes` | `blocks.texture.top / side / bottom` |
+| `drafts`（接口服务的草稿文档） | `opsRefs.assetHash`（经上传追加的操作文件）、`assets` |
+| 排队中 / 运行中的 `jobs` | `params` 里任意位置的字符串 |
 
 ## 测试
 

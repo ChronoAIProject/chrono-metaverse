@@ -8,13 +8,14 @@
 2. 由 `build(session, space)` 按事务内看到的最新状态算出本次变化（旧区块写 null、旧物件删除等）；
 3. 插入提交：`seq = head.seq + 1`，`at = max(当前时间, head.at)`，带 `jobId`（`commits.jobId` 部分唯一索引）；
 4. 按 `head.seq == 旧值` 条件推进 `spaces.head`（首次导入扫描时同时固定坐标系 `frame`）；
-5. 更新物件当前状态 `entities`、登记资源引用 `assetRefs`；
+5. 更新物件当前状态 `entities`、登记资源引用 `assetRefs`；本空间新登记的资源计入空间的 `storageUsedBytes`；
 6. **`mark_done`**：按 `{_id, attempt, leaseOwner, status: running}` 把任务标记为完成并写入 `resultCommitId`。
 
 第 6 步匹配不到（租约已丢）或 jobId 唯一键冲突时，中止事务、丢弃结果。并发提交造成的写冲突由驱动的
 `with_transaction` 自动重试（重新执行 `build`）。接口服务以后自己写回任务结果时，照搬这里的顺序和条件。
 
-**事务后**：给本次新引用的区块打上 `publishedAt`（幂等，失败可以补做）。
+**事务后**：给本次新引用的区块打上 `publishedAt`（幂等）。没打上的由两处补做：任务被重新领取、发现已经有
+提交时（`finish_if_committed`），以及定期清理（`backfill_published_chunks`，最近 48 小时的提交）。
 """
 
 from __future__ import annotations
@@ -26,10 +27,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from bson import Binary
-from pymongo import ReadPreference
 from pymongo.client_session import ClientSession
-from pymongo.read_concern import ReadConcern
-from pymongo.write_concern import WriteConcern
 
 from ..canonical import content_hash
 from ..errors import PermanentJobError
@@ -58,6 +56,7 @@ class CommitPlan:
     palette_hash: str | None = None
     scan: dict[str, Any] | None = None
     observed_at: str | None = None
+    # 登记进 assetRefs 的资源：公开资源接口的白名单，只放网页要用的资源（设计 8.2），原始扫描不放
     asset_refs: list[str] = field(default_factory=list)
     reference_scan: str | None = None  # 空间还没有坐标系时，以这次扫描固定坐标系（设计 4.1）
     result: dict[str, Any] = field(default_factory=dict)
@@ -308,10 +307,14 @@ def diff_chunks(
 
 
 def finish_if_committed(store: Store, lease: Lease) -> str | None:
-    """领取后先查：已经有带这个 jobId 的提交，就直接把任务标记为完成，不再重做（设计 6.4）。"""
-    existing = store.commits.find_one({"jobId": str(lease.job_id)}, {"_id": 1})
+    """领取后先查：已经有带这个 jobId 的提交，就直接把任务标记为完成，不再重做（设计 6.4）。
+
+    上次很可能是在事务提交之后、给区块打 `publishedAt` 之前退出的，所以先补打一次（幂等）。
+    """
+    existing = store.commits.find_one({"jobId": str(lease.job_id)}, {"_id": 1, "at": 1, "changedChunks": 1})
     if existing is None:
         return None
+    publish_chunks(store, commit_chunk_hashes(existing), existing["at"])
     mark_done(store, lease, result_commit_id=existing["_id"])
     return existing["_id"]
 
@@ -409,31 +412,66 @@ def write_back(
                 },
                 session=session,
             )
+        added_bytes = 0
         for asset_hash in sorted(set(plan.asset_refs)):
-            store.col(C.ASSET_REFS).update_one(
+            ref = store.col(C.ASSET_REFS).update_one(
                 {"hash": asset_hash, "spaceId": scope.space_id},
                 {"$setOnInsert": {"owner": scope.owner.as_doc(), "createdAt": at, "commitId": commit_id}},
                 upsert=True,
                 session=session,
             )
+            if ref.upserted_id is not None:
+                # 本空间第一次引用这个派生资源（网页用模型、贴图）：计入空间的存储用量，每个空间只计一次
+                files = store.col(C.ASSET_FILES).find_one(
+                    {"filename": asset_hash}, {"length": 1}, session=session
+                )
+                added_bytes += int(files["length"]) if files else 0
+        store.add_storage_used(scope.space_filter(), added_bytes, session=session)
         mark_done(store, lease, result_commit_id=commit_id, result=plan.result or None, session=session)
         outcome.update(seq=seq, at=at, chunks=[c["hash"] for c in plan.changed_chunks if c.get("hash")])
 
-    with store.client.start_session() as session:
-        session.with_transaction(
-            callback,
-            read_concern=ReadConcern("snapshot"),
-            write_concern=WriteConcern("majority"),
-            read_preference=ReadPreference.PRIMARY,
-        )
+    store.run_transaction(callback)
     publish_chunks(store, outcome["chunks"], outcome["at"])
     log.info("任务 %s 写回提交 %s（seq %s）", lease.job_id, commit_id, outcome["seq"])
     return CommitResult(commit_id, outcome["seq"], outcome["at"])
 
 
-def publish_chunks(store: Store, hashes: Iterable[str], at: str) -> None:
+def commit_chunk_hashes(commit: Mapping[str, Any]) -> list[str]:
+    """提交引用的区块哈希（`changedChunks` 里非 null 的）。"""
+    return sorted({c["hash"] for c in commit.get("changedChunks") or [] if isinstance(c.get("hash"), str)})
+
+
+def publish_chunks(store: Store, hashes: Iterable[str], at: str) -> int:
+    """给还没有 `publishedAt` 的区块打上（设计 5.7，幂等）。返回这次新打上的个数。"""
     hashes = sorted(set(hashes))
-    if hashes:
-        store.col(C.CHUNKS).update_many(
-            {"_id": {"$in": hashes}, "publishedAt": {"$exists": False}}, {"$set": {"publishedAt": at}}
+    published = 0
+    for start in range(0, len(hashes), 1000):
+        published += (
+            store.col(C.CHUNKS)
+            .update_many(
+                {"_id": {"$in": hashes[start : start + 1000]}, "publishedAt": {"$exists": False}},
+                {"$set": {"publishedAt": at}},
+            )
+            .modified_count
         )
+    return published
+
+
+def backfill_published_chunks(store: Store, hours: float) -> int:
+    """补打 `publishedAt`：最近 `hours` 小时的提交引用、还没有 `publishedAt` 的区块，按提交的 `at` 补上。
+
+    写回在事务提交之后才打 `publishedAt`，进程恰好在这两步之间退出、或者那一次更新失败时，这些区块在公开
+    接口上一直是 404（接口服务失败时也只记日志）。按空间查，走 `(spaceId, at)` 索引。返回补打了多少个区块。
+    """
+    since = format_ts(store.clock() - int(hours * 3600 * 1000))
+    fixed = 0
+    for space in list(store.spaces.find({}, {"_id": 1})):
+        recent = store.commits.find(
+            {"spaceId": space["_id"], "at": {"$gte": since}, "changedChunks.hash": {"$type": "string"}},
+            {"at": 1, "changedChunks": 1},
+        ).sort("at", 1)
+        for commit in recent:
+            fixed += publish_chunks(store, commit_chunk_hashes(commit), commit["at"])
+    if fixed:
+        log.warning("补打了 %d 个区块的 publishedAt", fixed)
+    return fixed

@@ -10,6 +10,7 @@ import hashlib
 import math
 import threading
 import time
+from datetime import UTC, datetime
 
 import numpy as np
 import pytest
@@ -25,8 +26,11 @@ from conftest import (
 from metaverse_worker.assets import find_asset, put_asset, read_asset, register_upload
 from metaverse_worker.chunk import decompress
 from metaverse_worker.handlers import scan as scan_handlers
-from metaverse_worker.jobs.isolate import IsolatedCancelled
+from metaverse_worker.jobs.cleanup import cleanup_assets
+from metaverse_worker.jobs.isolate import IsolatedCancelled, IsolatedTimeout
 from metaverse_worker.jobs.lease import claim
+from metaverse_worker.jobs.writeback import commit_chunk_hashes
+from metaverse_worker.processing import tasks
 from metaverse_worker.processing.align import column_major
 from metaverse_worker.processing.glb import read_glb_json
 from metaverse_worker.processing.scan import ScanMesh, rotation_y
@@ -158,6 +162,129 @@ def test_upload_verify_resumes_after_crash(runner, store):
     assert doc["status"] == "done" and doc["result"]["assetHash"] == sha
 
 
+def used_bytes(store) -> int:
+    return store.spaces.find_one({"_id": SPACE})["storageUsedBytes"]
+
+
+def test_upload_verify_counts_space_storage(runner, store):
+    """校验通过时把上传的大小计入空间的 storageUsedBytes（复用已有资源也算），重做不会重复计。"""
+    first = b"echo storage\n" * 300
+    uid = make_upload(store, first, "script")
+    assert run_job(runner, store, "upload_verify", {"uploadId": uid})["status"] == "done"
+    assert used_bytes(store) == len(first)
+    assert store.uploads.find_one({"_id": uid})["storageBytes"] == len(first)
+    # 已经 done 的上传再校验一次：不重复计
+    assert run_job(runner, store, "upload_verify", {"uploadId": uid})["status"] == "done"
+    assert used_bytes(store) == len(first)
+    # 同一内容再上传一次（复用已有资源）：也算本空间的用量
+    again = make_upload(store, first, "script")
+    doc = run_job(runner, store, "upload_verify", {"uploadId": again})
+    assert doc["result"]["reused"] is True and used_bytes(store) == 2 * len(first)
+    # 校验失败的上传不计
+    bad = make_upload(store, b"not an image", "texture")
+    assert run_job(runner, store, "upload_verify", {"uploadId": bad})["status"] == "failed"
+    assert used_bytes(store) == 2 * len(first)
+
+
+def test_upload_verify_lease_lost_does_not_count_storage(runner, store):
+    """收尾时租约已丢：上传改 done、计用量、任务完成在同一个事务里，一起放弃。"""
+    content = b"echo lost\n" * 100
+    uid = make_upload(store, content, "script")
+    jid = make_job(store, "upload_verify", {"uploadId": uid})
+    lease = claim(store, "worker-a", ["upload_verify"], 60_000)
+    store.jobs.update_one({"_id": jid}, {"$set": {"leaseOwner": "worker-b"}})
+    assert runner.process(lease) == "lost"
+    assert store.uploads.find_one({"_id": uid})["status"] == "complete"
+    assert used_bytes(store) == 0
+    # 新的持有者从头收尾，只计一次
+    store.jobs.update_one({"_id": jid}, {"$set": {"status": "queued"}, "$unset": {"leaseOwner": ""}})
+    assert runner.run_once() is True
+    assert job(store, jid)["status"] == "done" and used_bytes(store) == len(content)
+
+
+def test_upload_verify_timeout_fails_upload(runner, store, monkeypatch):
+    """嗅探子进程超时（不可重试）：任务失败的同时上传也标记失败、删数据块，不再占着进行中的配额。"""
+
+    def too_slow(**_kwargs):
+        raise IsolatedTimeout("子进程超时（1800 秒）", kind="timeout")
+
+    monkeypatch.setattr(tasks, "sniff_task", too_slow)
+    uid = make_upload(store, b"#!/bin/sh\necho slow\n", "script")
+    doc = run_job(runner, store, "upload_verify", {"uploadId": uid})
+    assert doc["status"] == "failed" and doc["attempt"] == 1
+    upload = store.uploads.find_one({"_id": uid})
+    assert upload["status"] == "failed" and "校验任务失败" in upload["error"] and "超时" in upload["error"]
+    assert store.col(C.ASSET_CHUNKS).count_documents({"files_id": uid}) == 0
+
+
+def test_upload_verify_retries_then_fails_upload(runner, store, monkeypatch):
+    """可重试的错误：重试期间上传保持 complete；重试次数用完后上传标记失败。"""
+
+    def flaky(**_kwargs):
+        raise ConnectionError("数据库抖动")
+
+    monkeypatch.setattr(tasks, "sniff_task", flaky)
+    uid = make_upload(store, b"#!/bin/sh\necho flaky\n", "script")
+    jid = make_job(store, "upload_verify", {"uploadId": uid})
+    for attempt in (1, 2):
+        assert runner.run_once() is True
+        assert job(store, jid)["status"] == "queued" and job(store, jid)["attempt"] == attempt
+        assert store.uploads.find_one({"_id": uid})["status"] == "complete"
+    assert runner.run_once() is True
+    assert job(store, jid)["status"] == "failed"
+    upload = store.uploads.find_one({"_id": uid})
+    assert upload["status"] == "failed" and "数据库抖动" in upload["error"]
+    assert store.col(C.ASSET_CHUNKS).count_documents({"files_id": uid}) == 0
+
+
+def test_stuck_complete_uploads_are_settled_by_housekeeping(runner, store):
+    """主循环没来得及处理的（重试次数用完被回收、任务记录丢了）由定期清理兜底。"""
+    old = format_ts(store.clock() - 48 * 3600 * 1000)
+
+    def stuck_upload(content: bytes, job_status: str | None, **extra) -> str:
+        uid = make_upload(store, content, "script")
+        jid = None
+        if job_status is not None:
+            jid = make_job(store, "upload_verify", {"uploadId": uid})
+            store.jobs.update_one({"_id": jid}, {"$set": {"status": job_status, "lastError": "崩溃了"}})
+        store.uploads.update_one({"_id": uid}, {"$set": {"jobId": jid, "completedAt": old, **extra}})
+        return uid
+
+    failed = stuck_upload(b"echo 1\n", "failed")
+    queued = stuck_upload(b"echo 2\n", "queued")
+    orphan = stuck_upload(b"echo 3\n", None)
+    fresh = stuck_upload(b"echo 4\n", None, completedAt=format_ts(store.clock()))
+    # 上次已核对并登记成资源、还没改上传状态就失败了：补做收尾，不删数据
+    content = b"echo registered\n"
+    sha = hashlib.sha256(content).hexdigest()
+    registered = stuck_upload(content, "failed", verifiedSha256=sha)
+    register_upload(
+        store, registered, sha, len(content), content_type="text/plain", kind="script", space_id=SPACE
+    )
+    # 重试次数用完、租约已过期：housekeeping 先回收任务，同一轮里处理它的上传
+    exhausted = stuck_upload(b"echo 5\n", "running")
+    store.jobs.update_one(
+        {"_id": store.uploads.find_one({"_id": exhausted})["jobId"]},
+        {"$set": {"attempt": 3, "leaseUntil": old, "leaseOwner": "gone"}},
+    )
+
+    cleaned = runner.housekeeping()
+    assert cleaned["stuckUploads"] == 4 and cleaned["exhaustedJobs"] == 1
+    status = {
+        uid: store.uploads.find_one({"_id": uid}) for uid in (failed, queued, orphan, fresh, registered)
+    }
+    assert status[failed]["status"] == "failed" and "崩溃了" in status[failed]["error"]
+    assert status[orphan]["status"] == "failed" and "不存在" in status[orphan]["error"]
+    assert status[queued]["status"] == "complete" and status[fresh]["status"] == "complete"
+    assert status[registered]["status"] == "done" and status[registered]["assetHash"] == sha
+    assert read_asset(store, sha) == content
+    assert used_bytes(store) == len(content)  # 补做收尾的也计入用量；失败的不计
+    assert store.uploads.find_one({"_id": exhausted})["status"] == "failed"
+    for uid in (failed, orphan, exhausted):
+        assert store.col(C.ASSET_CHUNKS).count_documents({"files_id": uid}) == 0
+    assert runner.housekeeping()["stuckUploads"] == 0
+
+
 # ---------------------------------------------------------------------------- scan_import
 
 
@@ -218,7 +345,8 @@ def test_upload_then_scan_import_full_pipeline_in_subprocess(store, db_config, m
 
     refs = {r["hash"] for r in store.col(C.ASSET_REFS).find({"spaceId": SPACE})}
     table_tex = ents["table-01"]["body"]["shape"]["material"]["texture"]
-    assert {asset, *scan["webModelHashes"], table_tex, *ents["floor"]["body"]["textures"]} <= refs
+    assert {*scan["webModelHashes"], table_tex, *ents["floor"]["body"]["textures"]} <= refs
+    assert asset not in refs  # 原始扫描不进公开白名单
 
     result = doc["result"]
     assert result["alignment"]["method"] == "auto"
@@ -386,6 +514,51 @@ def test_voxelize_without_scan_and_unchanged(runner, store):
     assert doc["status"] == "failed"
 
 
+def test_voxelize_style_name_from_api(runner, store):
+    """接口服务和命令行把 style 当字符串（风格名）传：按风格表换算颜色数；不认识的名字直接失败。"""
+    import_room(runner, store, rebuild=False)
+    doc = run_job(runner, store, "voxelize", {"style": "coarse"})
+    assert doc["status"] == "done", doc.get("lastError")
+    assert doc["result"]["style"] == "coarse" and doc["result"]["paletteSize"] == 16
+    for bad, text in (("watercolor", "不认识的体素化风格"), (5, "风格名"), ({"colors": 3}, "不认识的字段")):
+        doc = run_job(runner, store, "voxelize", {"style": bad})
+        assert doc["status"] == "failed" and doc["attempt"] == 1 and text in doc["lastError"]
+
+
+def test_published_at_is_backfilled(runner, store):
+    """事务后给区块打 publishedAt 没做成（进程退出等）：重新领取已提交的任务时、定期清理时补做。"""
+    import_room(runner, store, rebuild=False)
+    doc = run_job(runner, store, "voxelize", {"style": "coarse"})
+    assert doc["status"] == "done", doc.get("lastError")
+    commit = commits(store)[-1]
+    hashes = commit_chunk_hashes(commit)
+    assert hashes
+
+    def unpublish():
+        store.col(C.CHUNKS).update_many({"_id": {"$in": hashes}}, {"$unset": {"publishedAt": ""}})
+
+    def published():
+        return {c["_id"]: c.get("publishedAt") for c in store.col(C.CHUNKS).find({"_id": {"$in": hashes}})}
+
+    # 任务被重新领取，发现已经有提交：先补打再标记完成
+    unpublish()
+    store.jobs.update_one({"_id": doc["_id"]}, {"$set": {"status": "queued"}})
+    assert runner.run_once() is True and runner.counts["already"] == 1
+    assert set(published().values()) == {commit["at"]}
+    # 定期清理补打最近的提交引用的区块
+    unpublish()
+    assert runner.housekeeping()["publishedChunks"] == len(hashes)
+    assert set(published().values()) == {commit["at"]}
+    assert runner.housekeeping()["publishedChunks"] == 0
+    # 超出时间窗口的提交不再查；没被任何提交引用的区块不发布
+    unpublish()
+    store.commits.update_one({"_id": commit["_id"]}, {"$set": {"at": "2020-01-01T00:00:00.000Z"}})
+    store.col(C.CHUNKS).insert_one({"_id": "f" * 64, "data": b"", "format": 1})
+    assert runner.housekeeping()["publishedChunks"] == 0
+    assert set(published().values()) == {None}
+    assert "publishedAt" not in store.col(C.CHUNKS).find_one({"_id": "f" * 64})
+
+
 def test_model_import_job(runner, store):
     source = upload_asset(store, dense_box_glb(), "model", kind="model")
     doc = run_job(runner, store, "model_import", {"assetHash": source})
@@ -397,6 +570,34 @@ def test_model_import_job(runner, store):
     junk = upload_asset(store, b"\x00\x01garbage", "model", kind="model")
     doc = run_job(runner, store, "model_import", {"assetHash": junk})
     assert doc["status"] == "failed" and doc["attempt"] == 1
+
+
+def test_derived_assets_count_space_storage_once(runner, store):
+    """扫描导入新登记进 assetRefs 的网页用模型计入空间用量；同样的资源再次引用不重复计。"""
+    asset, doc = import_room(runner, store, rebuild=False)
+    assert doc["status"] == "done", doc.get("lastError")
+    web = commits(store)[0]["scan"]["webModelHashes"]
+    web_bytes = sum(find_asset(store, h)["length"] for h in web)
+    assert web_bytes > 0 and used_bytes(store) == web_bytes  # 原始扫描在这里没经过上传校验，不计
+    doc = run_job(runner, store, "scan_import", {"assetHash": asset, "rebuild": False})
+    assert doc["status"] == "done" and len(commits(store)) == 2
+    assert used_bytes(store) == web_bytes
+
+
+def test_raw_scan_not_public_but_kept_by_cleanup(runner, store):
+    """原始扫描不登记 assetRefs（公开资源接口的白名单），但被提交引用，过了宽限期也不会被清理。"""
+    asset, doc = import_room(runner, store, rebuild=False)
+    assert doc["status"] == "done", doc.get("lastError")
+    refs = {r["hash"] for r in store.col(C.ASSET_REFS).find({"spaceId": SPACE})}
+    web = commits(store)[0]["scan"]["webModelHashes"]
+    assert refs == set(web) and asset not in refs
+    # 没被提交引用的另一个扫描：宽限期过后会被清理；已提交的扫描保留
+    orphan = upload_asset(store, b"orphan scan bytes", "scan")
+    long_ago = {"$set": {"uploadDate": datetime(2020, 1, 1, tzinfo=UTC)}}
+    store.col(C.ASSET_FILES).update_many({"filename": {"$in": [asset, orphan, *web]}}, long_ago)
+    assert cleanup_assets(store, 7) == 1
+    assert find_asset(store, asset) is not None and find_asset(store, orphan) is None
+    assert all(find_asset(store, h) is not None for h in web)
 
 
 # ---------------------------------------------------------------------------- 主循环

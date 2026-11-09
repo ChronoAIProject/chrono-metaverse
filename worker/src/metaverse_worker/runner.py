@@ -10,8 +10,9 @@
   - 输入不合法、超出上限、子进程内存超限或超时：不可重试，直接标记失败；
   - 其他错误（数据库抖动、子进程崩溃等）：退回队列，重试次数用完后标记失败；
   - 租约丢失：什么也不写，由新的持有者决定；
-- **定期清理**：后台线程每隔 `WORKER_CLEANUP_INTERVAL_SECONDS` 清理过期上传和没人引用的资源，并把租约过期
-  且重试次数用完的任务标记为失败；
+  - 标记失败以后调用这个种类的收尾（`handlers.FAILURE_HOOKS`）：上传校验任务失败时，上传不能停在 `complete`；
+- **定期清理**：后台线程每隔 `WORKER_CLEANUP_INTERVAL_SECONDS` 清理过期上传、过期草稿（连同草稿区块和预览
+  令牌）和没人引用的资源，并把租约过期且重试次数用完的任务标记为失败；
 - **优雅退出**：收到 SIGTERM / SIGINT 后不再领取新任务；手上的任务最多再等 `WORKER_STOP_GRACE_SECONDS`，
   还没做完就取消子进程、把任务退回队列（退还这一次的重试次数），其他副本马上可以接着做；
 - **看门狗**：主循环空闲时、续约成功时喂狗；超过 `WORKER_WATCHDOG_SECONDS` 没被喂过（数据库长时间不可达、
@@ -33,7 +34,7 @@ from typing import Any
 from . import __version__
 from .config import Config
 from .errors import PERMANENT_ERROR_TYPES, PermanentJobError
-from .handlers import COMMITTING_KINDS, HANDLERS, Handler, JobContext
+from .handlers import COMMITTING_KINDS, FAILURE_HOOKS, HANDLERS, Handler, JobContext
 from .jobs.cleanup import run_cleanup
 from .jobs.heartbeat import Heartbeat, Watchdog
 from .jobs.isolate import (
@@ -45,7 +46,7 @@ from .jobs.isolate import (
 )
 from .jobs.lease import Lease, LeaseLost, claim, mark_failed, reap_exhausted, requeue
 from .jobs.writeback import finish_if_committed
-from .store import Store
+from .store import JobStatus, Store
 from .timeutil import now_ts
 
 log = logging.getLogger(__name__)
@@ -250,6 +251,10 @@ class Runner:
         status = self._safe(lambda: mark_failed(self.store, lease, error, retry=retry))
         level = logging.WARNING if status == "queued" else logging.ERROR
         log.log(level, "任务 %s 失败（%s）：%s", lease.job_id, status or "未能更新状态", error)
+        hook = FAILURE_HOOKS.get(lease.kind)
+        if status == JobStatus.FAILED and hook is not None:
+            # 失败了也不影响结局；没做成的由定期清理兜底（uploads.settle_stuck_uploads）
+            self._safe(lambda: hook(self.store, lease, error))
         return {"queued": "queued", "failed": "failed"}.get(status or "", "lost")
 
     @staticmethod
@@ -263,12 +268,14 @@ class Runner:
     # ------------------------------------------------------------------ 定期清理
 
     def housekeeping(self) -> dict[str, Any]:
+        # 先回收重试次数用完的任务：同一轮的清理就能处理这些任务留下的、还停在 complete 的上传
+        exhausted = reap_exhausted(self.store)
         cleaned = run_cleanup(
             self.store,
             upload_ttl_hours=self.config.upload_ttl_hours,
             asset_grace_days=self.config.asset_grace_days,
         )
-        cleaned["exhaustedJobs"] = reap_exhausted(self.store)
+        cleaned["exhaustedJobs"] = exhausted
         self.last_cleanup = {"at": now_ts(), **cleaned}
         return cleaned
 

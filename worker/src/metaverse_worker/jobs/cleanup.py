@@ -2,11 +2,21 @@
 
 1. **没完成的上传**：创建超过 24 小时仍是 `open` 的上传会话。先按条件把状态改成 `expired`（之后接口服务
    的"完成上传"按 `status: open` 条件更新就会失败，不会和清理赛跑），再删除 `files_id` = 上传编号的
-   GridFS 数据块，最后删除上传会话。校验失败（`failed`）超过 24 小时的会话同样删除。
-2. **没人引用的资源**：上传（或最近一次被复用）已超过 7 天、仍没有被任何提交、草稿、物件记录、
-   方块表、资源引用表或未结束的任务引用的资源：先删 `files` 文档（不再可见），再删数据块。
+   GridFS 数据块，最后删除上传会话。校验失败（`failed`）超过 24 小时的会话同样删除。在这之前先兜底处理
+   校验任务已经失败、上传却还停在 `complete` 的（`uploads.settle_stuck_uploads`），免得它一直占着配额。
+2. **没人引用的资源**：上传（或最近一次被复用）已超过 7 天、仍没有被任何提交、草稿（`opsRefs.assetHash`、
+   `assets`）、物件记录、方块表、资源引用表或未结束的任务引用的资源：先删 `files` 文档（不再可见），
+   再删数据块，最后把上传时计入的存储用量从各自空间的 `storageUsedBytes` 里减回去。
+3. **过期的草稿、草稿区块、预览令牌**（设计 5.6、13.2）：接口服务把 `drafts`、`draftChunks`、`previews` 的
+   `expiresAt` 写成 RFC 3339 字符串（固定格式，字符串比较就是时间比较），不建 TTL 索引，由这里清理。
+   过期的草稿（不论是否已发布）先删草稿本身，再删它的预览令牌和草稿区块；预览令牌（最长 7 天）和草稿区块
+   （与草稿同时过期）再各自按 `expiresAt` 扫一遍，收拾上一轮删了草稿、没来得及删的。草稿删掉后，它
+   引用的资源不再算被草稿引用，按第 2 条处理。
 
-这些数据还没进时间线，删除它们不违反只追加原则。
+这些数据还没进时间线（已发布草稿的内容已经在提交里），删除它们不违反只追加原则。
+
+另外顺带补做一件事：最近 48 小时的提交引用、还没打上 `publishedAt` 的区块补打上（设计 5.7，见
+`writeback.backfill_published_chunks`）。
 """
 
 from __future__ import annotations
@@ -18,10 +28,13 @@ from typing import Any
 from ..assets import delete_file_chunks
 from ..store import C, JobStatus, Store, UploadStatus
 from ..timeutil import format_ts
+from ..uploads import release_upload_storage, settle_stuck_uploads
+from .writeback import backfill_published_chunks
 
 log = logging.getLogger(__name__)
 
 _BATCH = 200
+PUBLISH_BACKFILL_HOURS = 48
 
 
 def cleanup_uploads(store: Store, ttl_hours: float) -> int:
@@ -82,7 +95,9 @@ def _referenced(store: Store, sha: str) -> bool:
                 ]
             },
         ),
-        (C.DRAFTS, {"$or": [{"opsRef": sha}, {"scriptRef": sha}, {"assets": sha}]}),
+        # 草稿（接口服务 repo/drafts.rs）：经上传追加的操作文件在 opsRefs[].assetHash，引用的资源在 assets。
+        # 草稿没有 opsRef / scriptRef（发布时才写到提交上）；过期草稿已在本轮先删掉。
+        (C.DRAFTS, {"$or": [{"opsRefs.assetHash": sha}, {"assets": sha}]}),
     ]
     for collection, filt in checks:
         if store.col(collection).find_one(filt, {"_id": 1}) is not None:
@@ -133,14 +148,45 @@ def cleanup_assets(store: Store, grace_days: float) -> int:
         )
         if gone.deleted_count == 1:
             delete_file_chunks(store, doc["_id"])
+            # 这份内容不再占空间：把计过用量的上传从各自空间的 storageUsedBytes 里减回去
+            release_upload_storage(store, sha)
             removed += 1
     if removed:
         log.info("清理了 %d 个没人引用的资源", removed)
     return removed
 
 
+def cleanup_drafts(store: Store) -> dict[str, int]:
+    """删除过期的草稿、预览令牌和草稿区块，返回各删了多少。"""
+    expired = {"expiresAt": {"$lt": format_ts(store.clock())}}
+    drafts = previews = chunks = 0
+    stale = store.col(C.DRAFTS).find(expired, {"_id": 1, "spaceId": 1}).limit(_BATCH)
+    for draft in list(stale):
+        # 先删草稿（接口服务按编号读不到，就不能再追加、预览或发布），再删它的子文档。
+        gone = store.col(C.DRAFTS).delete_one({"_id": draft["_id"], **expired})
+        if gone.deleted_count != 1:
+            continue
+        drafts += 1
+        children = {"draftId": draft["_id"], "spaceId": draft.get("spaceId")}
+        previews += store.col(C.PREVIEWS).delete_many(children).deleted_count
+        chunks += store.col(C.DRAFT_CHUNKS).delete_many(children).deleted_count
+    previews += store.col(C.PREVIEWS).delete_many(expired).deleted_count
+    chunks += store.col(C.DRAFT_CHUNKS).delete_many(expired).deleted_count
+    if drafts or previews or chunks:
+        log.info("清理了 %d 个过期草稿、%d 个预览令牌、%d 个草稿区块", drafts, previews, chunks)
+    return {"drafts": drafts, "previews": previews, "draftChunks": chunks}
+
+
 def run_cleanup(store: Store, *, upload_ttl_hours: float, asset_grace_days: float) -> dict[str, int]:
+    # 顺序：先让卡在 complete 的上传离开（失败的随后按上传规则删除）；草稿在资源之前清，
+    # 过期草稿引用的资源在同一轮里就不再算被引用（仍要过资源自己的宽限期）。
+    stuck = settle_stuck_uploads(store, upload_ttl_hours)
+    uploads = cleanup_uploads(store, upload_ttl_hours)
+    drafts = cleanup_drafts(store)
     return {
-        "uploads": cleanup_uploads(store, upload_ttl_hours),
+        "stuckUploads": stuck,
+        "uploads": uploads,
+        **drafts,
         "assets": cleanup_assets(store, asset_grace_days),
+        "publishedChunks": backfill_published_chunks(store, PUBLISH_BACKFILL_HOURS),
     }

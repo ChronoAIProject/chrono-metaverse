@@ -12,9 +12,13 @@
 5. 按用途嗅探格式（子进程里做，见 `processing/sniff.py`）；不合规同样标记失败、删数据块；
 6. 登记成资源（`assets.files` 文档，`_id` = 上传编号、文件名 = 内容哈希）。文件名唯一键冲突（同一内容
    被并发上传、或之前已有）时删掉本次数据块、复用已有资源；
-7. 上传标记为 `done` 并写 `assetHash`，任务完成，`result = {assetHash, reused, format, contentType, bytes}`。
+7. 同一个事务里：上传标记为 `done` 并写 `assetHash`、`storageBytes`，空间的 `storageUsedBytes` 加上上传的
+   大小（复用已有资源也算），任务完成，`result = {assetHash, reused, format, contentType, bytes}`。
 
 每一步都可以重做：崩溃后重新领取的任务按上面的判断从中间接着做。
+
+任务因为输入以外的原因最终失败（子进程超时 / 内存超限、反复崩溃、重试次数用完）时，主循环调用
+`on_failed`，让上传离开 `complete`（见 `uploads.settle_upload`），定期清理再兜底一遍。
 """
 
 from __future__ import annotations
@@ -23,21 +27,12 @@ import hashlib
 import logging
 from typing import Any
 
-from bson import ObjectId
-
-from ..assets import (
-    AssetError,
-    delete_file_chunks,
-    find_asset,
-    iter_file_chunks,
-    register_upload,
-    touch_asset,
-)
+from ..assets import AssetError, find_asset, iter_file_chunks, register_upload, touch_asset
 from ..errors import InputRejected, PermanentJobError
-from ..jobs.lease import mark_done
+from ..jobs.lease import Lease, mark_done
 from ..processing.sniff import PURPOSES
-from ..store import C, UploadStatus
-from ..timeutil import now_ts
+from ..store import C, Store, UploadStatus
+from ..uploads import declared, fail_upload, find_upload, finish_upload, settle_upload
 from .context import JobContext
 
 log = logging.getLogger(__name__)
@@ -56,25 +51,6 @@ def _purpose_limit(ctx: JobContext, purpose: str) -> int:
     }[purpose]
 
 
-def find_upload(ctx: JobContext, upload_id: Any) -> dict[str, Any] | None:
-    scope = ctx.lease.scope
-    candidates: list[Any] = [upload_id]
-    if isinstance(upload_id, str) and ObjectId.is_valid(upload_id):
-        candidates.append(ObjectId(upload_id))
-    for candidate in candidates:
-        doc = ctx.store.uploads.find_one({"_id": candidate, **scope.child_filter()})
-        if doc is not None:
-            return doc
-    return None
-
-
-def _declared(doc: dict[str, Any]) -> tuple[str | None, int | None, str | None]:
-    sha = doc.get("sha256", doc.get("hash"))
-    size = doc.get("size", doc.get("totalSize"))
-    purpose = doc.get("purpose")
-    return sha, size if isinstance(size, int) and not isinstance(size, bool) else None, purpose
-
-
 class _Rejected(Exception):
     pass
 
@@ -84,7 +60,7 @@ def run(ctx: JobContext) -> dict[str, Any]:
     if not isinstance(upload_id, str) or not upload_id:
         raise PermanentJobError("参数 uploadId 必须是非空字符串")
     store = ctx.store
-    doc = find_upload(ctx, upload_id)
+    doc = find_upload(store, ctx.lease.scope, upload_id)
     if doc is None:
         raise PermanentJobError(f"上传 {upload_id} 不存在，或不属于这个空间")
     files_id = doc["_id"]
@@ -96,7 +72,7 @@ def run(ctx: JobContext) -> dict[str, Any]:
     if status != UploadStatus.COMPLETE:
         raise PermanentJobError(f"上传 {upload_id} 的状态是 {status}，不能校验")
 
-    sha, size, purpose = _declared(doc)
+    sha, size, purpose = declared(doc)
     try:
         if not isinstance(sha, str) or len(sha) != 64 or any(c not in "0123456789abcdef" for c in sha):
             raise _Rejected("上传记录里声明的整体哈希不合法")
@@ -180,35 +156,39 @@ def _finish(
     *,
     reused: bool,
 ) -> dict[str, Any]:
-    update: dict[str, Any] = {
-        "status": UploadStatus.DONE,
-        "assetHash": sha,
-        "verifiedAt": now_ts(ctx.store.clock),
-    }
-    if fmt:
-        update["format"] = fmt
-    if content_type:
-        update["contentType"] = content_type
-    ctx.store.uploads.update_one({"_id": files_id, "status": UploadStatus.COMPLETE}, {"$set": update})
     result = {"assetHash": sha, "reused": reused, "bytes": size}
     if fmt:
         result["format"] = fmt
     if content_type:
         result["contentType"] = content_type
-    mark_done(ctx.store, ctx.lease, result=result)
+    scope = ctx.lease.scope
+
+    def txn(session) -> None:
+        # 上传改成 done、计入空间的存储用量、任务完成，三件事在同一个事务里：租约丢了就一起放弃，
+        # 新的持有者从头收尾，不会多计或漏计。
+        finish_upload(
+            ctx.store, scope, files_id, sha, size, fmt=fmt, content_type=content_type, session=session
+        )
+        mark_done(ctx.store, ctx.lease, result=result, session=session)
+
+    ctx.store.run_transaction(txn)
     log.info("上传 %s 校验通过：%s（%s）", files_id, sha, "复用已有资源" if reused else "新登记")
     return result
 
 
+def on_failed(store: Store, lease: Lease, error: BaseException | str) -> str | None:
+    """任务最终失败（不再重试）以后由主循环调用：上传还停在 `complete` 时让它离开这个状态。
+
+    输入不合格的情况在 `run` 里已经标记过 `failed`，这里什么也不做；其他原因（子进程超时 / 内存超限、
+    反复崩溃、数据库抖动导致重试次数用完）由这里处理，见 `uploads.settle_upload`。
+    """
+    upload_id = lease.params.get("uploadId")
+    if not isinstance(upload_id, str) or not upload_id:
+        return None
+    text = error if isinstance(error, str) else f"{type(error).__name__}: {error}"
+    return settle_upload(store, lease.scope, upload_id, f"校验任务失败：{text}")
+
+
 def _fail_upload(ctx: JobContext, files_id: Any, reason: str) -> None:
     """先把上传标记为失败（之后不会再被当成可校验的上传），再删掉它的数据块。"""
-    store = ctx.store
-    store.uploads.update_one(
-        {"_id": files_id, "status": UploadStatus.COMPLETE},
-        {"$set": {"status": UploadStatus.FAILED, "error": reason[:500], "failedAt": now_ts(store.clock)}},
-    )
-    if store.col(C.ASSET_FILES).find_one({"_id": files_id}, {"_id": 1}) is not None:
-        log.error("上传 %s 已登记成资源，不删数据块", files_id)
-        return
-    removed = delete_file_chunks(store, files_id)
-    log.warning("上传 %s 校验失败，删除了 %d 个数据块：%s", files_id, removed, reason)
+    fail_upload(ctx.store, files_id, reason)
