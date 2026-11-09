@@ -82,7 +82,10 @@ export function UniversePage({
         )
         .then((next) => {
           if (cancelled) return;
-          setView(next);
+          // 内容没变（同一个修订、同样的成员 seq）时保留原对象，场景不必重建。
+          setView((current) =>
+            current !== null && JSON.stringify(current) === JSON.stringify(next) ? current : next,
+          );
           setError(null);
         })
         .catch((cause: unknown) => {

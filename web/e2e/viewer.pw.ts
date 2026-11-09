@@ -67,6 +67,13 @@ test('三种视图：形状带圆角和贴图，同款物件共用几何体，�
   await expect(page.locator('.viewer__anchor', { hasText: '内部摄像头' })).toHaveCount(0);
   await expectRendered(page);
   await page.screenshot({ path: join(SHOTS, 'optimized.png') });
+  // 近看：圆角、弧形挤出、旋转体、扫掠椅腿、贴图。
+  const canvas = (await page.locator('.viewer__canvas').boundingBox())!;
+  await page.mouse.move(canvas.x + canvas.width * 0.5, canvas.y + canvas.height * 0.55);
+  for (let i = 0; i < 6; i += 1) await page.mouse.wheel(0, -240);
+  await page.waitForTimeout(900);
+  await page.screenshot({ path: join(SHOTS, 'closeup.png') });
+  await page.getByRole('button', { name: '回到全景' }).click();
 
   await page.getByRole('button', { name: '优化 + 扩展' }).click();
   await waitForScene(page, 'extended');
@@ -86,8 +93,14 @@ test('三种视图：形状带圆角和贴图，同款物件共用几何体，�
   // 点选物件：信息面板按纯文本列出 props。
   await page.getByRole('button', { name: '优化', exact: true }).click();
   await waitForScene(page, 'optimized');
-  await page.getByRole('button', { name: '回到全景' }).click();
-  await page.waitForTimeout(400);
+  const box = (await page.locator('.viewer__canvas').boundingBox())!;
+  await page.mouse.click(box.x + box.width * 0.45, box.y + box.height * 0.62);
+  const info = page.getByRole('complementary', { name: '物件信息' });
+  await expect(info).toBeVisible();
+  await expect(info.locator('dt').first()).toHaveText('编号');
+  await page.screenshot({ path: join(SHOTS, 'select-entity.png') });
+  await info.getByRole('button', { name: '关闭' }).click();
+  await expect(info).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
