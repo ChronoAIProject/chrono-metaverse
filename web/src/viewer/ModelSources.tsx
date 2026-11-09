@@ -88,6 +88,13 @@ export function CreditLine({
 }
 
 /**
+ * 改动说明（CC BY 要求注明是否改动过）：网站只加载处理服务校验并重新导出的模型（设计 6.1），
+ * 旋转、缩放烘进了网格，有的还调了色、减了面、缩小了贴图，都不是原文件。
+ */
+const MODIFIED_NOTE =
+  '这些模型都经本服务处理后重新导出（摆放的旋转、缩放烘进模型，按需调色、减面、缩小贴图），与原文件不同。';
+
+/**
  * "模型来源"面板（docs/SHAPES.md 第 3 节）：列出场景里所有外部模型的标题、作者、许可和来源页。
  * 有 CC BY 模型时从底部的署名行展开；只有 CC0 模型时从右下角的"模型来源"按钮展开。
  */
@@ -112,7 +119,7 @@ export function ModelSources({
       </header>
       <p className="viewer__sources-note">
         场景里 {credits.length} 个物件模型来自公开模型库
-        {needsCredit > 0 ? `，其中 ${needsCredit} 个按 CC BY 许可署名如下` : ''}。
+        {needsCredit > 0 ? `，其中 ${needsCredit} 个按 CC BY 许可署名如下` : ''}。{MODIFIED_NOTE}
       </p>
       <ul>
         {credits.map(({ source, usedBy }) => (
