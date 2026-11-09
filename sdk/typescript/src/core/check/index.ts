@@ -10,29 +10,29 @@ import {
   type UploadLimits,
 } from '../limits.js';
 import { checkGlb, checkGlbLight } from './glb.js';
-import { checkTexture } from './image.js';
+import { checkTexture, sniffImage } from './image.js';
+import { checkBundleOuter, checkDraco, checkObj, checkOps, checkScript, readAll } from './text.js';
 import {
-  CHECK_VERSION,
   reject,
   startsWith,
-  utf8,
   type AssetCheck,
   type ByteSource,
   type GlbCheck,
+  type ImageFormat,
 } from './types.js';
 import { checkZip } from './zip.js';
 
 /**
  * 资源核对的命令行实现（docs/design/server-slim.md 4.4–4.6，docs/SHAPES.md 第 8 节）：按用途检查本地文件，
- * 算出与服务端相同的核对记录 `check`，再按角色判断（{@link fits}）和"模型与记录一致"（{@link modelFitsBounds}）。
- * `metaverse bundle check` 用它在上传之前发现不合规的文件；服务端（Rust）的检查是权威。
+ * 算出与服务端相同的核对记录 `check`，再按用途的上限判断（{@link fits}）；另有"模型与记录一致"
+ * （{@link modelFitsBounds}）。`metaverse bundle check` 用它在上传之前发现不合规的文件；服务端（Rust
+ * `runner/verify/`）的检查是权威，两边跑同一批二进制样本（`tests/vectors/check/`）。
  *
- * 拒绝码（`CheckError.code`）：
+ * 拒绝码（`CheckError.code`，与服务端相同，测试向量 README 第 9 节）：
  *
- * - 共同：`too_large`（超过这个用途的大小上限）、`format`（扫描用途认不出格式）；
- * - glb：见 `glb.ts`；图片：`image_format`、`image_header`、`image_too_large`；zip：见 `zip.ts`；
- * - drc：`drc_header`（不是 `DRACO` 魔数、版本不认识、不是网格）；obj：`obj_header`（不是文本，或第一个
- *   关键字不认识）；文本：`text_encoding`（不是 UTF-8 或含 NUL）。
+ * - 共同：`format_mismatch`（这个用途不收这种格式，或内容与声明的格式不符）、`over_limit`（检查通过，
+ *   但超出这个用途的上限：大小、三角形、贴图边长、像素合计、坐标）；
+ * - glb：见 `glb.ts`；图片：见 `image.ts`；zip：见 `zip.ts`；drc、obj、文本、操作文件、清单：见 `text.ts`。
  */
 
 export * from './types.js';
@@ -50,29 +50,33 @@ export const MODEL_ORIGIN_TOLERANCE = 0.02;
 /** 资源被引用时的角色（与 Rust `AssetRole` 相同）。 */
 export type AssetRole = 'scan' | 'webModel' | 'model' | 'texture' | 'script' | 'bundle' | 'ops';
 
-/** 清单 `files[].purpose` 对应的角色。 */
-export const PURPOSE_ROLE: Readonly<Record<BundleFilePurpose, AssetRole>> = {
+/** 上传用途（检查按用途选检查器和上限）：清单里文件的五种，加上操作文件和清单本身。 */
+export type CheckPurpose = BundleFilePurpose | 'ops' | 'bundle';
+
+/** 上传时声明的格式（与核对记录的 `format` 同名）。 */
+export type AssetFormat = AssetCheck['format'];
+
+/** 各用途按哪个角色检查上限（与 Rust `AssetRole::for_purpose` 相同）。 */
+export const PURPOSE_ROLE: Readonly<Record<CheckPurpose, AssetRole>> = {
   scan: 'scan',
   webmodel: 'webModel',
   model: 'model',
   texture: 'texture',
   script: 'script',
+  ops: 'ops',
+  bundle: 'bundle',
 };
 
-const OBJ_KEYWORDS = new Set([
-  'v',
-  'vt',
-  'vn',
-  'vp',
-  'f',
-  'l',
-  'p',
-  'o',
-  'g',
-  's',
-  'mtllib',
-  'usemtl',
-]);
+/** 各用途接受的格式（docs/design/server-slim.md 4.4 的表）。 */
+export const PURPOSE_FORMATS: Readonly<Record<CheckPurpose, readonly AssetFormat[]>> = {
+  scan: ['glb', 'drc', 'obj', 'zip'],
+  webmodel: ['glb'],
+  model: ['glb'],
+  texture: ['png', 'jpeg', 'webp'],
+  ops: ['ndjson', 'gzip'],
+  script: ['text'],
+  bundle: ['json'],
+};
 
 /** 本地文件的字节来源（按需随机读取）。用完要 `close()`。 */
 export async function fileSource(path: string): Promise<ByteSource & { close(): Promise<void> }> {
@@ -95,77 +99,81 @@ export async function fileSource(path: string): Promise<ByteSource & { close(): 
   };
 }
 
-async function checkDraco(source: ByteSource): Promise<AssetCheck> {
-  const head = await source.read(0, 11);
-  // DRACO、主版本、次版本、编码类型（0 点云，1 三角网格）。
-  if (head.length < 11 || !startsWith(head, 'DRACO')) reject('drc_header', '不是 Draco 文件');
-  if (head[5] !== 1 && head[5] !== 2) reject('drc_header', `Draco 主版本 ${head[5]} 不认识`);
-  if (head[7] !== 1) reject('drc_header', 'Draco 文件不是三角网格（是点云）');
-  return { v: CHECK_VERSION, format: 'drc' };
-}
-
-async function checkObj(source: ByteSource): Promise<AssetCheck> {
-  const head = await source.read(0, 64 * 1024);
-  if (head.includes(0)) reject('obj_header', 'OBJ 必须是文本');
-  // 读到的一段可能截断在多字节字符中间：只看完整的行。
-  const text = new TextDecoder('utf-8').decode(head);
-  for (const line of text.split('\n')) {
-    const trimmed = line.trim();
-    if (trimmed === '' || trimmed.startsWith('#')) continue;
-    if (!OBJ_KEYWORDS.has(trimmed.split(/\s+/)[0]!)) {
-      reject('obj_header', `OBJ 的第一个关键字 ${trimmed.split(/\s+/)[0]} 不认识`);
-    }
-    return { v: CHECK_VERSION, format: 'obj' };
+/**
+ * 没有声明格式时按内容认（命令行上传时就声明这个格式）：扫描按魔数认 glb、drc、zip，其余当 obj；
+ * 贴图按魔数认（认不出时为 null，交给图片检查拒绝）；操作文件有 gzip 头就是 gzip。
+ */
+async function sniffFormat(purpose: CheckPurpose, source: ByteSource): Promise<AssetFormat | null> {
+  const head = await source.read(0, 16);
+  switch (purpose) {
+    case 'scan':
+      if (startsWith(head, 'glTF')) return 'glb';
+      if (startsWith(head, 'DRACO')) return 'drc';
+      if (startsWith(head, 'PK')) return 'zip';
+      return 'obj';
+    case 'webmodel':
+    case 'model':
+      return 'glb';
+    case 'texture':
+      return sniffImage(head);
+    case 'ops':
+      return startsWith(head, [0x1f, 0x8b]) ? 'gzip' : 'ndjson';
+    case 'script':
+      return 'text';
+    case 'bundle':
+      return 'json';
   }
-  return reject('obj_header', 'OBJ 的开头 64 KiB 里没有内容');
 }
 
-/** 扫描用途：按魔数认 glb（轻量检查）、drc、zip，其余按 obj 文本检查。 */
-async function checkScan(source: ByteSource): Promise<AssetCheck> {
-  const head = await source.read(0, 8);
-  if (startsWith(head, 'glTF')) return checkGlbLight(source, GLB_JSON_SCAN_BYTES);
-  if (startsWith(head, 'DRACO')) return checkDraco(source);
-  if (startsWith(head, [0x50, 0x4b, 0x03, 0x04])) return checkZip(source);
-  if (startsWith(head, [0x50, 0x4b])) reject('format', 'zip 文件的第一个成员不在文件开头');
-  return checkObj(source);
-}
-
-async function readAll(source: ByteSource): Promise<Uint8Array> {
-  const bytes = await source.read(0, source.size);
-  if (bytes.length !== source.size) reject('format', '文件读不全');
-  return bytes;
+/** 按用途和格式选检查器（与 Rust `Inspector::new` 的表相同）。 */
+async function inspect(
+  purpose: CheckPurpose,
+  format: AssetFormat | null,
+  source: ByteSource,
+): Promise<AssetCheck> {
+  switch (purpose) {
+    case 'scan':
+      if (format === 'glb') return checkGlbLight(source, GLB_JSON_SCAN_BYTES);
+      if (format === 'drc') return checkDraco(source);
+      if (format === 'zip') return checkZip(source);
+      return checkObj(source);
+    case 'webmodel':
+      return checkGlb(source, GLB_JSON_WEBMODEL_BYTES);
+    case 'model':
+      return checkGlb(source, GLB_JSON_MODEL_BYTES);
+    case 'texture':
+      return checkTexture(await readAll(source), (format ?? undefined) as ImageFormat | undefined);
+    case 'ops':
+      return checkOps(source, format === 'gzip');
+    case 'script':
+      return checkScript(source);
+    case 'bundle':
+      return checkBundleOuter(source);
+  }
 }
 
 /**
- * 按用途检查一个文件，返回核对记录（不合规时抛出 CheckError）。上限取 `limits`（工作区的 `limits.json`
- * 或默认值），与服务端上传核对的规则相同（docs/design/server-slim.md 4.4）。
+ * 按用途检查一个文件，返回核对记录（不合规时抛出 CheckError）。`format` 是上传时声明的格式，不给就按
+ * 内容认。检查通过以后再按 `limits`（工作区的 `limits.json` 或默认值）里这个用途的上限判断，超出是
+ * `over_limit`——与服务端上传核对的规则相同（docs/design/server-slim.md 4.4–4.6）。
  */
 export async function checkAsset(
-  purpose: BundleFilePurpose,
+  purpose: CheckPurpose,
   source: ByteSource,
   limits: UploadLimits,
+  format?: AssetFormat,
 ): Promise<AssetCheck> {
   const max = limits[purpose].maxBytes;
   if (source.size < 1 || source.size > max) {
-    reject('too_large', `${source.size} 字节，${purpose} 用途要 1 到 ${max} 字节`);
+    reject('over_limit', `${source.size} 字节，${purpose} 用途要 1 到 ${max} 字节`);
   }
-  switch (purpose) {
-    case 'scan':
-      return checkScan(source);
-    case 'webmodel':
-      return checkGlb(source, limits.webmodel, GLB_JSON_WEBMODEL_BYTES);
-    case 'model':
-      return checkGlb(source, limits.model, GLB_JSON_MODEL_BYTES);
-    case 'texture':
-      return checkTexture(await readAll(source), limits.texture);
-    case 'script': {
-      const bytes = await readAll(source);
-      if (bytes.includes(0) || utf8(bytes) === null) {
-        reject('text_encoding', '建模记录必须是 UTF-8 文本，不含 NUL');
-      }
-      return { v: CHECK_VERSION, format: 'text' };
-    }
+  if (format !== undefined && !PURPOSE_FORMATS[purpose].includes(format)) {
+    reject('format_mismatch', `${purpose} 用途不收 ${format} 格式`);
   }
+  const check = await inspect(purpose, format ?? (await sniffFormat(purpose, source)), source);
+  const misfit = fits(PURPOSE_ROLE[purpose], check, limits);
+  if (misfit !== null) reject('over_limit', misfit);
+  return check;
 }
 
 /** 本地没有文件时按扩展名猜上传格式（复用探测用）；猜不出时返回 null。 */

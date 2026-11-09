@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import {
   bytesSource,
@@ -13,10 +14,11 @@ import {
   modelFitsBounds,
   uploadFormatFromPath,
   type AssetCheck,
+  type AssetFormat,
+  type CheckPurpose,
   type GlbCheck,
 } from '../src/core/check/index.js';
 import { DEFAULT_UPLOAD_LIMITS, parseUploadLimits, type UploadLimits } from '../src/core/limits.js';
-import type { BundleFilePurpose } from '../src/core/limits.js';
 import {
   boxPositions,
   glbBytes,
@@ -34,13 +36,23 @@ import {
 
 const limits = DEFAULT_UPLOAD_LIMITS;
 
-function check(purpose: BundleFilePurpose, bytes: Uint8Array, l: UploadLimits = limits) {
-  return checkAsset(purpose, bytesSource(bytes), l);
+function check(
+  purpose: CheckPurpose,
+  bytes: Uint8Array,
+  l: UploadLimits = limits,
+  format?: AssetFormat,
+) {
+  return checkAsset(purpose, bytesSource(bytes), l, format);
 }
 
-async function code(purpose: BundleFilePurpose, bytes: Uint8Array, l: UploadLimits = limits) {
+async function code(
+  purpose: CheckPurpose,
+  bytes: Uint8Array,
+  l: UploadLimits = limits,
+  format?: AssetFormat,
+) {
   try {
-    await check(purpose, bytes, l);
+    await check(purpose, bytes, l, format);
   } catch (error) {
     if (error instanceof CheckError) return error.code;
     throw error;
@@ -105,7 +117,7 @@ describe('glb 完整检查', () => {
   it('量化坐标：声明了 KHR_mesh_quantization 才收；归一化的按规范还原', async () => {
     const positions = [0, 0, 0, 100, 0, 0, 0, 100, 0];
     expect(await code('model', meshGlb({ positions, indices: null, componentType: 5122 }))).toBe(
-      'glb_position',
+      'glb_accessor',
     );
     const raw = (await check(
       'model',
@@ -156,12 +168,12 @@ describe('glb 完整检查', () => {
       '外部 uri 的缓冲区',
       () =>
         meshGlb({ mutate: (j) => ((j.buffers as object[])[0] = { byteLength: 1, uri: 'x.bin' }) }),
-      'glb_external_uri',
+      'glb_external_ref',
     ],
     [
       'data: 图片',
       () => meshGlb({ mutate: (j) => (j.images = [{ uri: 'data:image/png;base64,AAAA' }]) }),
-      'glb_external_uri',
+      'glb_external_ref',
     ],
     [
       'Draco 扩展',
@@ -244,35 +256,35 @@ describe('glb 完整检查', () => {
         meshGlb({
           mutate: (j) => delete (j.accessors as object[] as Record<string, unknown>[])[0]!.min,
         }),
-      'glb_position',
+      'glb_accessor',
     ],
-    ['坐标越界', () => meshGlb({ positions: boxPositions([3000, 1, 1]) }), 'glb_coord_range'],
-    ['没有场景', () => meshGlb({ mutate: (j) => delete j.scenes }), 'glb_scene'],
+    ['坐标越界', () => meshGlb({ positions: boxPositions([3000, 1, 1]) }), 'over_limit'],
+    ['没有场景', () => meshGlb({ mutate: (j) => delete j.scenes }), 'glb_empty'],
     [
       '稀疏访问器',
       () =>
         meshGlb({ mutate: (j) => ((j.accessors as Record<string, unknown>[])[0]!.sparse = {}) }),
-      'glb_buffer',
+      'glb_unsupported',
     ],
     [
       '访问器超出缓冲区视图',
       () => meshGlb({ mutate: (j) => ((j.accessors as Record<string, unknown>[])[0]!.count = 9) }),
-      'glb_buffer',
+      'glb_accessor',
     ],
     [
       'PNG 魔数与 mimeType 不符',
       () => meshGlb({ images: [{ bytes: pngBytes(4, 4), mime: 'image/jpeg' }] }),
-      'glb_image',
+      'image_mime_mismatch',
     ],
     [
       'JPEG 魔数与 mimeType 不符',
       () => meshGlb({ images: [{ bytes: jpegBytes(4, 4), mime: 'image/png' }] }),
-      'glb_image',
+      'image_mime_mismatch',
     ],
     [
       'JPEG 没有 SOF',
       () => meshGlb({ images: [{ bytes: jpegBytes(4, 4, { sof: false }), mime: 'image/jpeg' }] }),
-      'glb_image',
+      'jpeg_no_sof',
     ],
     [
       'webp 不能内嵌',
@@ -282,7 +294,7 @@ describe('glb 完整检查', () => {
     [
       '贴图边长超过物件模型的上限',
       () => meshGlb({ images: [{ bytes: pngBytes(4096, 4), mime: 'image/png' }] }),
-      'glb_texture_too_large',
+      'over_limit',
     ],
     [
       'asset.version 不对',
@@ -310,7 +322,7 @@ describe('glb 完整检查', () => {
     extra.set(good);
     new DataView(extra.buffer).setUint32(8, extra.length, true);
     expect(await code('model', extra)).toBe('glb_header');
-    expect(await code('model', glbBytes({ asset: { version: '2.0' } }, null))).toBe('glb_scene');
+    expect(await code('model', glbBytes({ asset: { version: '2.0' } }, null))).toBe('glb_empty');
     const notJson = glbBytes({ asset: { version: '2.0' } });
     notJson[20] = 0x5b; // "[" 开头：JSON 不是对象
     expect(await code('model', notJson)).toBe('glb_json');
@@ -318,9 +330,9 @@ describe('glb 完整检查', () => {
 
   it('三角形数、JSON 块按用途的上限', async () => {
     const tight: UploadLimits = { ...limits, model: { ...limits.model, maxTriangles: 11 } };
-    expect(await code('model', meshGlb(), tight)).toBe('glb_too_many_triangles');
+    expect(await code('model', meshGlb(), tight)).toBe('over_limit');
     const big = meshGlb({ mutate: (j) => (j.extras = { pad: 'x'.repeat(2 * 1024 * 1024) }) });
-    expect(await code('model', big)).toBe('glb_json_too_large');
+    expect(await code('model', big)).toBe('glb_json');
     expect(await code('webmodel', big)).toBe('ok');
   });
 });
@@ -342,7 +354,7 @@ describe('扫描、贴图、建模记录', () => {
         'scan',
         meshGlb({ mutate: (j) => ((j.buffers as object[])[0] = { byteLength: 1, uri: 'a' }) }),
       ),
-    ).toBe('glb_external_uri');
+    ).toBe('glb_external_ref');
   });
 
   it('drc、obj', async () => {
@@ -355,7 +367,7 @@ describe('扫描、贴图、建模记录', () => {
     expect(await check('scan', obj)).toEqual({ v: 1, format: 'obj' });
     expect(await code('scan', new TextEncoder().encode('hello world\n'))).toBe('obj_header');
     expect(await code('scan', new TextEncoder().encode('# 只有注释\n'))).toBe('obj_header');
-    expect(await code('scan', Uint8Array.from([0x50, 0x4b, 0x05, 0x06]))).toBe('format');
+    expect(await code('scan', Uint8Array.from([0x50, 0x4b, 0x05, 0x06]))).toBe('zip_structure');
   });
 
   it('贴图：png、jpeg、webp 的宽高和上限', async () => {
@@ -374,10 +386,10 @@ describe('扫描、贴图、建模记录', () => {
       width: 4000,
       height: 3,
     });
-    expect(await code('texture', webpBytes(5000, 3))).toBe('image_too_large');
-    expect(await code('texture', pngBytes(4097, 4))).toBe('image_too_large');
-    expect(await code('texture', jpegBytes(4, 4, { sof: false }))).toBe('image_header');
-    expect(await code('texture', new TextEncoder().encode('GIF89a......'))).toBe('image_format');
+    expect(await code('texture', webpBytes(5000, 3))).toBe('over_limit');
+    expect(await code('texture', pngBytes(4097, 4))).toBe('over_limit');
+    expect(await code('texture', jpegBytes(4, 4, { sof: false }))).toBe('jpeg_no_sof');
+    expect(await code('texture', new TextEncoder().encode('GIF89a......'))).toBe('image_header');
     expect(await code('texture', pngBytes(0, 4))).toBe('image_header');
   });
 
@@ -401,17 +413,17 @@ describe('扫描、贴图、建模记录', () => {
     expect(() => imageSize(vp8l)).toThrow('签名');
     const other = vp8l.slice();
     other.set(new TextEncoder().encode('ALPH'), 12);
-    expect(() => imageSize(other)).toThrow('不认识');
-    expect(() => imageSize(vp8l.subarray(0, 20))).toThrow('太短');
-    expect(() => imageSize(pngBytes(4, 4).subarray(0, 16))).toThrow('IHDR');
+    expect(() => imageSize(other)).toThrow('没有 VP8');
+    expect(() => imageSize(vp8l.subarray(0, 20))).toThrow('不完整');
+    expect(() => imageSize(pngBytes(4, 4).subarray(0, 16))).toThrow('不完整');
     const broken = jpegBytes(4, 4);
     broken[20] = 0x00;
-    expect(() => imageSize(broken)).toThrow('段标记');
+    expect(() => imageSize(broken)).toThrow('不是标记');
     const zeroLength = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0]);
     expect(() => imageSize(zeroLength)).toThrow('段长度');
     const padded = Uint8Array.from([0xff, 0xd8, 0xff, 0xff, 0xd0, ...jpegBytes(7, 9).subarray(2)]);
     expect(imageSize(padded)).toEqual({ format: 'jpeg', width: 7, height: 9 });
-    expect(() => imageSize(pngBytes(4, 4), ['jpeg'])).toThrow('jpeg');
+    expect(() => imageSize(pngBytes(4, 4), 'jpeg')).toThrow('与声明的 jpeg 不符');
   });
 
   it('webp 的上限照 fits 再查一遍', async () => {
@@ -430,9 +442,128 @@ describe('扫描、贴图、建模记录', () => {
     });
     expect(await code('script', Uint8Array.from([0x61, 0, 0x62]))).toBe('text_encoding');
     expect(await code('script', Uint8Array.from([0xff, 0xfe]))).toBe('text_encoding');
-    expect(await code('script', new Uint8Array())).toBe('too_large');
+    expect(await code('script', new Uint8Array())).toBe('over_limit');
     const small: UploadLimits = { ...limits, script: { maxBytes: 3 } };
-    expect(await code('script', new TextEncoder().encode('abcd'), small)).toBe('too_large');
+    expect(await code('script', new TextEncoder().encode('abcd'), small)).toBe('over_limit');
+  });
+});
+
+describe('声明的格式、操作文件、清单外层、其余边界（与 Rust 的检查器相同）', () => {
+  const text = (value: string) => new TextEncoder().encode(value);
+
+  it('用途不收的格式、内容与声明的格式不符', async () => {
+    expect(await code('model', meshGlb(), limits, 'zip')).toBe('format_mismatch');
+    expect(await code('texture', pngBytes(4, 4), limits, 'glb')).toBe('format_mismatch');
+    expect(await code('texture', jpegBytes(4, 4), limits, 'png')).toBe('image_mime_mismatch');
+    expect(await code('scan', meshGlb(), limits, 'drc')).toBe('drc_header');
+    expect(await code('scan', text('v 0 0 0\n'), limits, 'glb')).toBe('glb_header');
+    expect(await check('scan', text('v 0 0 0\n'), limits, 'obj')).toEqual({ v: 1, format: 'obj' });
+  });
+
+  it('操作文件：NDJSON 和 gzip，每行是 JSON 对象', async () => {
+    const lines = '{"op":"fill"}\r\n\n  {"op":"addBlock"}\n';
+    expect(await check('ops', text(lines))).toEqual({ v: 1, format: 'ndjson' });
+    // 拷成 Uint8Array（Buffer 的 slice 不拷贝）。
+    const gz = Uint8Array.from(gzipSync(text(lines)));
+    expect(await check('ops', gz)).toEqual({ v: 1, format: 'gzip' });
+    expect(await code('ops', gz, limits, 'ndjson')).toBe('format_mismatch');
+    expect(await code('ops', text(lines), limits, 'gzip')).toBe('format_mismatch');
+    expect(await code('ops', text('{"a":1}\n[1]\n'))).toBe('ndjson_line');
+    expect(await code('ops', text('\ufeff{"a":1}\n'))).toBe('ndjson_line');
+    expect(await code('ops', Uint8Array.from([0x7b, 0xff, 0x7d]))).toBe('ndjson_line');
+    expect(await code('ops', text(`{"a":"${'x'.repeat(64 * 1024)}"}`))).toBe('ndjson_line');
+    // 只认一个 gzip 成员；校验值不对、数据不完整都拒绝。
+    expect(await code('ops', Uint8Array.from([...gz, ...gz]))).toBe('gzip');
+    const crc = gz.slice();
+    crc[crc.length - 8] = crc[crc.length - 8]! ^ 0xff;
+    expect(await code('ops', crc)).toBe('gzip');
+    expect(await code('ops', gz.subarray(0, gz.length - 3))).toBe('gzip');
+    expect(await code('ops', gz.subarray(0, 12))).toBe('gzip');
+    // 头里带文件名也能走过去。
+    const named = Uint8Array.from([
+      ...gz.subarray(0, 10),
+      ...text('a.ndjson'),
+      0,
+      ...gz.subarray(10),
+    ]);
+    named[3] = 0x08;
+    expect(await check('ops', named)).toEqual({ v: 1, format: 'gzip' });
+  });
+
+  it('清单只查外层：format、version、files', async () => {
+    const outer = { format: 'chrono-metaverse-rebuild-bundle', version: 1, files: [] };
+    expect(await check('bundle', text(JSON.stringify(outer)))).toEqual({ v: 1, format: 'json' });
+    for (const bad of [
+      { ...outer, version: 2 },
+      { ...outer, format: 'other' },
+      { format: outer.format, version: 1 },
+      { ...outer, version: '1' },
+      [outer],
+    ]) {
+      expect(await code('bundle', text(JSON.stringify(bad))), JSON.stringify(bad)).toBe(
+        'json_structure',
+      );
+    }
+    expect(await code('bundle', text('{'))).toBe('json_structure');
+    expect(await code('bundle', text(`\ufeff${JSON.stringify(outer)}`))).toBe('json_structure');
+  });
+
+  it('obj：整份不含 NUL，关键字在开头 1 MiB 里', async () => {
+    expect(await code('scan', text('v 0 0 0\nf 1 2 3\u0000\n'))).toBe('obj_header');
+    expect(await check('scan', text('\r\n# 注释\rusemtl a'))).toEqual({ v: 1, format: 'obj' });
+    expect(await code('scan', text(`${'\n'.repeat(1024 * 1024)}v 0 0 0\n`))).toBe('obj_header');
+  });
+
+  it('JPEG：不支持的编码、第二个 SOI', async () => {
+    const lossless = jpegBytes(4, 4);
+    lossless[lossless.indexOf(0xc0, 2)] = 0xc3;
+    expect(await code('texture', lossless)).toBe('jpeg_unsupported');
+    const twice = Uint8Array.from([0xff, 0xd8, 0xff, 0xd8, ...jpegBytes(4, 4).subarray(2)]);
+    expect(await code('texture', twice)).toBe('image_header');
+  });
+
+  it('glb：轻量检查也查缓冲区视图和图片的引用；BIN 块的结构', async () => {
+    const view = meshGlb({
+      mutate: (j) => ((j.bufferViews as Record<string, unknown>[])[0]!.byteLength = 1e6),
+    });
+    expect(await code('scan', view)).toBe('glb_accessor');
+    const webp = meshGlb({ images: [{ bytes: webpBytes(4, 4), mime: 'image/webp' }] });
+    expect(await code('scan', webp)).toBe('glb_image');
+    // 没有 BIN 块，却要读顶点数据。
+    const noBin = glbBytes({
+      asset: { version: '2.0' },
+      scenes: [{ nodes: [0] }],
+      nodes: [{ mesh: 0 }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+      accessors: [
+        {
+          bufferView: 0,
+          componentType: 5126,
+          count: 3,
+          type: 'VEC3',
+          min: [0, 0, 0],
+          max: [1, 1, 1],
+        },
+      ],
+      bufferViews: [{ buffer: 0, byteLength: 36 }],
+      buffers: [{ byteLength: 36 }],
+    });
+    expect(await code('model', noBin)).toBe('glb_accessor');
+    // JSON 之后只有半个块头。
+    const whole = meshGlb();
+    const jsonLength = new DataView(whole.buffer).getUint32(12, true);
+    const cut = whole.slice(0, 20 + jsonLength + 4);
+    new DataView(cut.buffer).setUint32(8, cut.length, true);
+    expect(await code('model', cut)).toBe('glb_header');
+    // 网格没有图元：场景里没有网格。
+    const empty = meshGlb({
+      mutate: (j) => ((j.meshes as Record<string, unknown>[])[0]!.primitives = []),
+    });
+    expect(await code('model', empty)).toBe('glb_empty');
+    // extras 里的 extensions 键也按扩展查（与 Rust 相同）；extensions 不是对象是 JSON 不合规。
+    const extras = meshGlb({ mutate: (j) => (j.extras = { extensions: { EXT_x: {} } }) });
+    expect(await code('model', extras)).toBe('glb_extension');
+    expect(await code('model', meshGlb({ mutate: (j) => (j.extensions = []) }))).toBe('glb_json');
   });
 });
 
@@ -461,32 +592,35 @@ describe('扫描 zip', () => {
     ['盘符路径', [mesh, { name: 'C:/x.png' }], {}, 'zip_path'],
     ['__MACOSX 里的 .. 照样拒绝', [mesh, { name: '__MACOSX/../x' }], {}, 'zip_path'],
     ['加密', [{ ...mesh, flags: 1 }], {}, 'zip_encrypted'],
-    ['zip64 定位记录', [mesh], { zip64Locator: true }, 'zip64'],
-    ['zip64 扩展信息', [{ ...mesh, centralExtra: Uint8Array.from([1, 0, 0, 0]) }], {}, 'zip64'],
+    ['zip64 定位记录', [mesh], { zip64Locator: true }, 'zip_zip64'],
+    ['zip64 扩展信息', [{ ...mesh, centralExtra: Uint8Array.from([1, 0, 0, 0]) }], {}, 'zip_zip64'],
     ['两个网格成员', [mesh, { name: 'other.obj' }], {}, 'zip_members'],
     ['没有网格成员', [{ name: 'a.png' }], {}, 'zip_members'],
     ['不认识的成员', [mesh, { name: 'run.sh' }], {}, 'zip_members'],
     ['本地头与中央目录不符', [{ ...mesh, localName: 'scan/mesh.drX' }], {}, 'zip_local_header'],
     ['压缩方式', [{ ...mesh, method: 12 }], {}, 'zip_method'],
+    ['控制字符', [mesh, { name: 'a\tb.png' }], {}, 'zip_path'],
+    ['重名', [mesh, { name: 'a.png' }, { name: 'a.png' }], {}, 'zip_structure'],
+    ['数据描述符只在本地头', [{ ...mesh, localFlags: 8 }], {}, 'zip_local_header'],
   ] as const)('%s → %s', async (_name, members, options, expected) => {
     expect(await code('scan', zipBytes(members, options))).toBe(expected);
   });
 
   it('结构：找不到中央目录结尾、分卷、成员太多、数据区间重叠', async () => {
     const good = zipBytes([mesh]);
-    expect(await code('scan', good.slice(0, good.length - 4))).toBe('zip_format');
+    expect(await code('scan', good.slice(0, good.length - 4))).toBe('zip_structure');
     const multi = good.slice();
     new DataView(multi.buffer).setUint16(multi.length - 18, 1, true);
-    expect(await code('scan', multi)).toBe('zip_format');
+    expect(await code('scan', multi)).toBe('zip_structure');
     const many = zipBytes([mesh, ...Array.from({ length: 64 }, (_, i) => ({ name: `t${i}.png` }))]);
-    expect(await code('scan', many)).toBe('zip_too_large');
+    expect(await code('scan', many)).toBe('zip_members');
     // 第二个成员的本地头偏移指向第一个成员：中央目录里的偏移改成 0。
     const two = zipBytes([mesh, { name: 'a.png' }]);
     const view = new DataView(two.buffer);
     const cdOffset = view.getUint32(two.length - 6, true);
     const secondCentral = cdOffset + 46 + 'scan/mesh.drc'.length;
     view.setUint32(secondCentral + 42, 0, true);
-    expect(await code('scan', two)).toBe('zip_local_header');
+    expect(await code('scan', two)).toBe('zip_structure');
   });
 });
 

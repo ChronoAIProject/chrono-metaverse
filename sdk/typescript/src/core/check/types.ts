@@ -12,7 +12,7 @@ export const CHECK_VERSION = 1;
 
 /**
  * 文件不合规。`code` 是拒绝码（小写加下划线，例如 `glb_bounds_mismatch`），`message` 是给人看的说明。
- * 拒绝码的列表见 `index.ts` 的说明。
+ * 拒绝码与接口服务的上传核对相同，列表见 `index.ts` 的说明和测试向量 README 第 9 节。
  */
 export class CheckError extends Error {
   constructor(
@@ -130,10 +130,13 @@ export function startsWith(bytes: Uint8Array, prefix: readonly number[] | string
   return values.every((value, index) => bytes[index] === value);
 }
 
-/** 严格的 UTF-8 解码；不是合法的 UTF-8 时返回 null。 */
+/**
+ * 严格的 UTF-8 解码；不是合法的 UTF-8 时返回 null。开头的 BOM 保留成字符（与 Rust 相同：JSON 解析
+ * 遇到它会出错，NDJSON 的行也不算以 `{` 开头）。
+ */
 export function utf8(bytes: Uint8Array): string | null {
   try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
   } catch {
     return null;
   }

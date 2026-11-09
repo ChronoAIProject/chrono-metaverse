@@ -220,6 +220,8 @@ export interface ZipMember {
   readonly flags?: number;
   /** 本地头里改用别的名称（造"本地头与中央目录不符"）。 */
   readonly localName?: string;
+  /** 本地头里改用别的标志（造"数据描述符只在本地头"）。 */
+  readonly localFlags?: number;
   /** 中央目录里的 extra 字段（造 zip64 扩展信息）。 */
   readonly centralExtra?: Uint8Array;
 }
@@ -242,7 +244,7 @@ export function zipBytes(
     const offset = local.length;
     u32(local, 0x04034b50);
     u16(local, 20);
-    u16(local, member.flags ?? 0);
+    u16(local, member.localFlags ?? member.flags ?? 0);
     u16(local, member.method ?? 0);
     u32(local, 0);
     u32(local, 0);

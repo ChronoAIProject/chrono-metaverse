@@ -68,6 +68,9 @@ export const DEFAULT_UPLOAD_LIMITS: UploadLimits = {
 /** 操作文件、重建包清单里每行 / 每条记录的上限：64 KiB。 */
 export const MAX_RECORD_BYTES = 64 * 1024;
 
+/** 操作文件解压后的上限：256 MiB（核心库常量，不开放配置）。 */
+export const MAX_OPS_INFLATED_BYTES = 256 * MIB;
+
 /** 清单 `files[].purpose` 的取值。 */
 export type BundleFilePurpose = 'scan' | 'webmodel' | 'model' | 'texture' | 'script';
 

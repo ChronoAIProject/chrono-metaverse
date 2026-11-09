@@ -124,7 +124,9 @@ describe('metaverse bundle check', () => {
       },
     });
     expect(await main(ctx, ['bundle', 'check', 'out/bad'])).toBe(1);
-    expect(ctx.errors.at(-1)).toContain('web/scan-0.glb：魔数不是 glTF');
+    expect(ctx.errors.at(-1)).toContain(
+      'web/scan-0.glb：不是 glb 文件（缺少 glTF 魔数）（glb_header）',
+    );
     expect(bundle.files.size).toBe(5);
   });
 

@@ -7,9 +7,7 @@ import {
   CheckError,
   describeCheck,
   fileSource,
-  fits,
   modelFitsBounds,
-  PURPOSE_ROLE,
   type AssetCheck,
 } from '../core/check/index.js';
 import {
@@ -164,9 +162,8 @@ export async function checkBundleDir(
     }
     const source = await fileSource(local);
     try {
+      // 检查通过以后按这个用途的上限判断（超出是 over_limit），与服务端上传核对相同。
       const check = await checkAsset(file.purpose, source, limits);
-      const misfit = fits(PURPOSE_ROLE[file.purpose], check, limits);
-      if (misfit !== null) problems.push(`${file.path}：${misfit}`);
       files.push({ ...file, local: true, check });
     } catch (error) {
       if (!(error instanceof CheckError)) throw error;
