@@ -5,7 +5,8 @@
 - 后台任务使用显式的"系统范围"（设计 9.4）：`SystemScope` 只能由领取到的任务构造，
   带空间编号和主人，所有子集合的读写条件都带上这两项（与接口服务的授权凭据同一用法）。
 
-`jobs/`、`assets.py`、`processing/` 以外的业务代码不直接拼查询条件，统一经这里的函数。
+`jobs/`、`assets.py`、`uploads.py`、`processing/` 以外的业务代码不直接拼查询条件，统一经这里的函数。
+事务统一经 `run_transaction`，空间存储用量统一经 `add_storage_used`。
 """
 
 from __future__ import annotations
