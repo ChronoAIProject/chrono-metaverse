@@ -14,7 +14,9 @@ import {
   nonZeroCount,
   type Layer,
 } from '../src/core/chunk.js';
+import { BundleError, checkBundleText } from '../src/core/bundle.js';
 import { sha256Hex } from '../src/core/hash.js';
+import { DEFAULT_UPLOAD_LIMITS, type UploadLimits } from '../src/core/limits.js';
 import {
   parseOp,
   parseOps,
@@ -43,6 +45,7 @@ const VECTORS = resolve(
     join(import.meta.dirname, '../../../api/crates/metaverse-core/tests/vectors'),
 );
 const OPS = join(VECTORS, 'ops');
+const BUNDLE = join(VECTORS, 'bundle');
 
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -277,6 +280,34 @@ describe.skipIf(!existsSync(OPS))('操作向量', () => {
           effective: state.effectiveBlock(cell),
         })),
       ).toEqual(expected.probes);
+    });
+  }
+});
+
+describe.skipIf(!existsSync(BUNDLE))('重建包清单向量（结构校验）', () => {
+  for (const [name, vector] of load(BUNDLE, 'bundle')) {
+    it(name, () => {
+      if (vector.kind === 'bundle-limits') {
+        expect(vector.limits).toEqual(DEFAULT_UPLOAD_LIMITS);
+        return;
+      }
+      const expected = vector.expect;
+      let checked;
+      try {
+        checked = checkBundleText(JSON.stringify(vector.manifest), {
+          limits: (vector.limits ?? undefined) as UploadLimits | undefined,
+          spaceTemplates: vector.spaceTemplates ?? null,
+        });
+      } catch (error) {
+        expect(error).toBeInstanceOf(BundleError);
+        expect({ valid: false, field: (error as BundleError).field }).toEqual({
+          valid: expected.valid,
+          field: expected.field,
+        });
+        return;
+      }
+      expect(expected.valid, JSON.stringify(expected)).toBe(true);
+      expect(Object.fromEntries(checked.references)).toEqual(expected.references);
     });
   }
 });
