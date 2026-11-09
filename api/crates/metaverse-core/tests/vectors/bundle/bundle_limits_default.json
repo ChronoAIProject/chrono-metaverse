@@ -1,0 +1,39 @@
+{
+  "description": "各用途的默认上传上限（uploadLimits 的形状和默认值）。命令行、本地工具没有 limits.json 时用同样的值",
+  "kind": "bundle-limits",
+  "limits": {
+    "bundle": {
+      "maxBytes": 16777216
+    },
+    "model": {
+      "maxBytes": 52428800,
+      "maxCoord": 1000.0,
+      "maxTexturePixels": 16777216,
+      "maxTextureSide": 2048,
+      "maxTriangles": 100000
+    },
+    "ops": {
+      "maxBytes": 67108864
+    },
+    "scan": {
+      "maxBytes": 1073741824
+    },
+    "script": {
+      "maxBytes": 4194304
+    },
+    "texture": {
+      "maxBytes": 52428800,
+      "maxPixels": 16777216,
+      "maxSide": 4096
+    },
+    "v": 1,
+    "webmodel": {
+      "maxBytes": 67108864,
+      "maxCoord": 100000.0,
+      "maxTexturePixels": 33554432,
+      "maxTextureSide": 4096,
+      "maxTriangles": 500000
+    }
+  },
+  "name": "limits-default"
+}

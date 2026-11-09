@@ -19,10 +19,14 @@
 //! | [`events`] | 事件更正、可见性、状态事件、瞬时事件 | 设计 5.3–5.5 |
 //! | [`scope`] | 请求内容必须落在路径范围内、上传用途表 | 设计 9.4 |
 //! | [`limits`] | 各用途的上传上限（默认值、`uploadLimits` 的形状） | SHAPES 8 |
+//! | [`check`] | 资源核对记录 `metadata.check`、按角色判断能不能引用 | SHAPES 8 |
+//! | [`bundle`] | 重建包清单：逐条解析、校验、展开成操作 | SHAPES 7 |
 //! | [`authored`] | AI 物件集的浅层校验（随旧接口一起删除） | 设计 6.3 |
 
 pub mod authored;
+pub mod bundle;
 pub mod canonical;
+pub mod check;
 pub mod chunk;
 pub mod events;
 pub mod grid;

@@ -1,0 +1,143 @@
+{
+  "apply": null,
+  "description": "合并包可以引用目标空间重建层已有的模板（spaceTemplates 给出）",
+  "expect": {
+    "ops": [
+      {
+        "entity": {
+          "anchorId": "seat-1",
+          "bounds": {
+            "max": [
+              1.225,
+              0.87,
+              1.225
+            ],
+            "min": [
+              0.775,
+              0.41,
+              0.775
+            ]
+          },
+          "entityId": "rb.chair-01",
+          "fit": {
+            "coverage3cm": 0.81,
+            "meanCm": 1.8,
+            "p90Cm": 4.2
+          },
+          "kind": "object",
+          "layer": "rebuilt",
+          "props": {},
+          "shape": {
+            "template": "rb.chair-a",
+            "transform": {
+              "position": [
+                1.0,
+                0.0,
+                1.0
+              ],
+              "yaw": 90.0
+            },
+            "type": "instance"
+          }
+        },
+        "op": "placeEntity"
+      }
+    ],
+    "references": {},
+    "valid": true
+  },
+  "kind": "bundle",
+  "limits": null,
+  "manifest": {
+    "anchors": [],
+    "base": {
+      "seq": 4,
+      "spaceId": "chronoai-lobby"
+    },
+    "createdAt": "2026-11-20T08:00:00.000Z",
+    "files": [
+      {
+        "path": "textures/333333333333.jpg",
+        "purpose": "texture",
+        "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "size": 51234
+      }
+    ],
+    "format": "chrono-metaverse-rebuild-bundle",
+    "note": "前厅第 4 版：AI 物件集，结构按实测替换",
+    "rebuilt": {
+      "entities": [
+        {
+          "anchorId": "seat-1",
+          "bounds": {
+            "max": [
+              1.225,
+              0.87,
+              1.225
+            ],
+            "min": [
+              0.775,
+              0.41,
+              0.775
+            ]
+          },
+          "entityId": "rb.chair-01",
+          "fit": {
+            "coverage3cm": 0.81,
+            "meanCm": 1.8,
+            "p90Cm": 4.2
+          },
+          "kind": "object",
+          "layer": "rebuilt",
+          "shape": {
+            "template": "rb.chair-a",
+            "transform": {
+              "position": [
+                1,
+                0,
+                1
+              ],
+              "yaw": 90
+            },
+            "type": "instance"
+          }
+        }
+      ],
+      "mode": "merge",
+      "remove": [],
+      "templates": []
+    },
+    "report": {
+      "entities": 3,
+      "fit": {
+        "meanCm": 4.31,
+        "p90Cm": 8.71,
+        "within3cm": 0.67
+      }
+    },
+    "tool": {
+      "name": "metaverse-recon",
+      "source": "git:0123456789abcdef0123456789abcdef01234567",
+      "version": "0.2.0"
+    },
+    "version": 1
+  },
+  "name": "valid-merge-space-template",
+  "spaceTemplates": {
+    "rb.chair-a": {
+      "size": [
+        0.45,
+        0.46,
+        0.45
+      ],
+      "transform": {
+        "position": [
+          0,
+          0.41,
+          0
+        ]
+      },
+      "type": "box"
+    }
+  }
+}
