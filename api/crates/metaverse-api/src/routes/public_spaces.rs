@@ -6,26 +6,15 @@
 
 use axum::{
     extract::{Path, State},
-    http::{header, HeaderMap, HeaderValue},
+    http::{header, HeaderMap},
     response::{IntoResponse, Response},
     Json,
 };
 
 use super::views::PublicSpaceView;
-use crate::auth::PublicBasis;
 use crate::error::{ApiError, ProblemDocument};
+use crate::public::headers::{cache_control, share_token};
 use crate::AppState;
-
-/// `Authorization: Share <令牌>`。头只能出现一次；别的认证方案一律忽略。
-fn share_token(headers: &HeaderMap) -> Option<&str> {
-    let mut values = headers.get_all(header::AUTHORIZATION).iter();
-    let value = values.next()?;
-    if values.next().is_some() {
-        return None;
-    }
-    let (scheme, token) = value.to_str().ok()?.split_once(' ')?;
-    scheme.eq_ignore_ascii_case("share").then_some(token.trim())
-}
 
 #[utoipa::path(
     get,
@@ -59,32 +48,8 @@ pub async fn get_public_space(
         .ok_or_else(ApiError::not_found)?;
     let anchors = state.repo.anchors(&grant).await?;
     let mut response = Json(PublicSpaceView::new(space, anchors)).into_response();
-    let cache = match grant.public_basis() {
-        Some(PublicBasis::PublicVisibility) => "public, max-age=5",
-        _ => "private, max-age=5",
-    };
     response
         .headers_mut()
-        .insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
+        .insert(header::CACHE_CONTROL, cache_control(&grant, 5));
     Ok(response)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn share_scheme_only() {
-        let mut headers = HeaderMap::new();
-        assert_eq!(share_token(&headers), None);
-        headers.insert(header::AUTHORIZATION, HeaderValue::from_static("Share abc"));
-        assert_eq!(share_token(&headers), Some("abc"));
-        headers.insert(header::AUTHORIZATION, HeaderValue::from_static("share abc"));
-        assert_eq!(share_token(&headers), Some("abc"));
-        headers.insert(
-            header::AUTHORIZATION,
-            HeaderValue::from_static("Bearer abc"),
-        );
-        assert_eq!(share_token(&headers), None);
-    }
 }

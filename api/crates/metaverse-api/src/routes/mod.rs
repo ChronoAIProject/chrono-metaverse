@@ -13,7 +13,7 @@ use axum::{
     http::HeaderName,
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{get, patch, post, put},
     Router,
 };
 use tower_http::{
@@ -26,6 +26,13 @@ pub mod admin_spaces;
 pub mod public_spaces;
 pub mod spaces;
 pub mod views;
+// 时间线与公开读分工。
+pub mod admin_space_settings;
+pub mod blob_response;
+pub mod drafts;
+pub mod previews;
+pub mod public_timeline;
+pub mod timeline;
 
 use crate::error::{self, ApiError};
 use crate::AppState;
@@ -54,14 +61,76 @@ pub fn router(state: AppState) -> Router {
     let v1 = Router::new()
         .route("/api/v1/spaces/{space_id}", get(spaces::get_space))
         .route("/api/v1/admin/spaces", post(admin_spaces::create_space))
+        // 时间线与公开读分工：时间线读接口、草稿、管理接口。
+        .route(
+            "/api/v1/spaces/{space_id}/timeline",
+            get(timeline::list_timeline),
+        )
+        .route(
+            "/api/v1/spaces/{space_id}/snapshot",
+            get(timeline::get_snapshot),
+        )
+        .route(
+            "/api/v1/spaces/{space_id}/chunks/{hash}",
+            get(timeline::get_chunk),
+        )
+        .route(
+            "/api/v1/spaces/{space_id}/regions/{region_id}/content",
+            get(timeline::get_region_content),
+        )
+        .merge(drafts::routes())
+        .route(
+            "/api/v1/admin/spaces/{space_id}",
+            patch(admin_space_settings::update_space).delete(admin_space_settings::delete_space),
+        )
+        .route(
+            "/api/v1/admin/spaces/{space_id}/share-tokens",
+            post(admin_space_settings::rotate_share_token),
+        )
+        .route(
+            "/api/v1/admin/spaces/{space_id}/layout",
+            put(admin_space_settings::set_layout),
+        )
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             crate::auth::require_identity,
         ));
-    let public = Router::new().route(
-        "/api/public/spaces/{space_id}",
-        get(public_spaces::get_public_space),
-    );
+    let public = Router::new()
+        .route(
+            "/api/public/spaces/{space_id}",
+            get(public_spaces::get_public_space),
+        )
+        // 时间线与公开读分工：快照、提交列表、区块、资源、草稿预览。
+        .route(
+            "/api/public/spaces/{space_id}/snapshot",
+            get(public_timeline::get_public_snapshot),
+        )
+        .route(
+            "/api/public/spaces/{space_id}/timeline",
+            get(public_timeline::get_public_timeline),
+        )
+        .route(
+            "/api/public/chunks/{file}",
+            get(public_timeline::get_public_chunk),
+        )
+        .route(
+            "/api/public/assets/{file}",
+            get(public_timeline::get_public_asset),
+        )
+        .route("/api/public/previews", get(previews::get_preview))
+        .route(
+            "/api/public/previews/chunks/{hash}",
+            get(previews::get_preview_chunk),
+        )
+        .route(
+            "/api/public/previews/assets/{hash}",
+            get(previews::get_preview_asset),
+        )
+        // 全部公开接口：按来源地址限流、每空间并发上限（设计 8.2）。
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::public::guard,
+        ));
     let gated = v1
         .merge(public)
         .route_layer(middleware::from_fn_with_state(state.clone(), require_ready));

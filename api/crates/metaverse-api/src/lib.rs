@@ -19,6 +19,9 @@ pub mod health;
 pub mod openapi;
 pub mod repo;
 pub mod routes;
+// 时间线与公开读分工：公开接口基础设施、时间线领域逻辑。
+pub mod public;
+pub mod timeline;
 
 use auth::{jwt, organizations::OrganizationClient, Authenticator, Authorizer};
 use config::Config;
@@ -31,6 +34,8 @@ pub struct AppState {
     pub repo: Repo,
     pub authenticator: Arc<Authenticator>,
     pub authorizer: Arc<Authorizer>,
+    /// 公开接口的限流、并发计数和进程内缓存。
+    pub public: Arc<public::PublicServices>,
     ready: Arc<AtomicBool>,
 }
 
@@ -51,6 +56,7 @@ impl AppState {
                 config.nyxid.issuer.clone(),
                 config.require_permissions,
             )),
+            public: public::PublicServices::new(config.public.clone()),
             repo,
             ready: Arc::new(AtomicBool::new(false)),
         })

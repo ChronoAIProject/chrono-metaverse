@@ -32,10 +32,42 @@ use utoipa::{
         crate::routes::spaces::get_space,
         crate::routes::admin_spaces::create_space,
         crate::routes::public_spaces::get_public_space,
+        // 时间线与公开读分工
+        crate::routes::timeline::list_timeline,
+        crate::routes::timeline::get_snapshot,
+        crate::routes::timeline::get_chunk,
+        crate::routes::timeline::get_region_content,
+        crate::routes::drafts::create_draft,
+        crate::routes::drafts::create_plot_draft,
+        crate::routes::drafts::get_draft,
+        crate::routes::drafts::get_plot_draft,
+        crate::routes::drafts::append_draft_ops,
+        crate::routes::drafts::append_plot_draft_ops,
+        crate::routes::drafts::draft_ops_from_upload,
+        crate::routes::drafts::plot_draft_ops_from_upload,
+        crate::routes::drafts::create_draft_preview,
+        crate::routes::drafts::create_plot_draft_preview,
+        crate::routes::drafts::publish_draft,
+        crate::routes::drafts::publish_plot_draft,
+        crate::routes::drafts::discard_draft,
+        crate::routes::drafts::discard_plot_draft,
+        crate::routes::admin_space_settings::update_space,
+        crate::routes::admin_space_settings::rotate_share_token,
+        crate::routes::admin_space_settings::set_layout,
+        crate::routes::admin_space_settings::delete_space,
+        crate::routes::public_timeline::get_public_snapshot,
+        crate::routes::public_timeline::get_public_timeline,
+        crate::routes::public_timeline::get_public_chunk,
+        crate::routes::public_timeline::get_public_asset,
+        crate::routes::previews::get_preview,
+        crate::routes::previews::get_preview_chunk,
+        crate::routes::previews::get_preview_asset,
     ),
     modifiers(&IdentitySecurity),
     tags(
         (name = "spaces", description = "空间：查看"),
+        (name = "timeline", description = "时间线：提交列表、快照、区块、区域内容"),
+        (name = "drafts", description = "草稿：建草稿、批量操作、预览、发布（实体区和地块两组路径）"),
         (name = "admin", description = "管理接口（不进 AI 工具）"),
         (name = "public", description = "公开读接口（不经过 NyxID）"),
         (name = "health", description = "健康检查"),
@@ -189,7 +221,11 @@ mod tests {
             .keys()
             .cloned()
             .collect();
-        assert_eq!(paths, ["/api/v1/spaces/{space_id}"]);
+        assert!(paths.contains(&"/api/v1/spaces/{space_id}".to_owned()));
+        assert!(paths.contains(&"/api/v1/spaces/{space_id}/drafts/{draft_id}/publish".to_owned()));
+        assert!(paths
+            .iter()
+            .all(|p| p.starts_with("/api/v1/") && !p.starts_with("/api/v1/admin")));
         let schemas = document["components"]["schemas"].as_object().unwrap();
         assert!(schemas.contains_key("SpaceView"));
         assert!(schemas.contains_key("ProblemDocument"));

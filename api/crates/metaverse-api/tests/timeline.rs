@@ -1,0 +1,1449 @@
+//! 时间线与公开读的集成测试：真实本地 MongoDB + 模拟 NyxID。
+//!
+//! 覆盖：第一次提交、区域和地块、草稿（追加、范围、预览、发布、冲突与重放、方块正式编号、
+//! 从上传应用操作）、时间线和快照（`/api/v1` 与公开投影）、区块与资源（Range、类型白名单）、
+//! 管理接口、限流，以及越权 403/404、范围外 403/409、冲突 409、过大 413、令牌无效 404。
+
+mod timeline_support;
+
+use std::io::Write as _;
+
+use axum::http::{header, Method, StatusCode};
+use mongodb::bson::doc;
+use serde_json::{json, Value};
+use timeline_support::{decode_chunk, Payload, TestApp, ORG};
+
+const SPACE: &str = "front-hall";
+
+fn draft_path(space: &str, draft: &str) -> String {
+    format!("/api/v1/spaces/{space}/drafts/{draft}")
+}
+
+fn plot_draft_path(space: &str, plot: &str, draft: &str) -> String {
+    format!("/api/v1/spaces/{space}/plots/{plot}/drafts/{draft}")
+}
+
+async fn new_draft(app: &TestApp, path: &str) -> String {
+    let reply = app.org(Method::POST, path, None).await;
+    assert_eq!(reply.status, StatusCode::CREATED, "{:?}", reply.body);
+    reply.body["id"].as_str().unwrap().to_owned()
+}
+
+async fn append(app: &TestApp, draft_path: &str, ops: Value) -> timeline_support::Reply {
+    app.org(
+        Method::POST,
+        &format!("{draft_path}/ops"),
+        Some(json!({ "ops": ops })),
+    )
+    .await
+}
+
+fn ids(list: &Value, key: &str) -> Vec<String> {
+    list.as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item[key].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[tokio::test]
+async fn genesis_layout_drafts_preview_publish_and_reads() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    let share_token = app.create_space(SPACE).await;
+    let share = format!("Share {share_token}");
+
+    // 第一次提交：_space 锚点 + 通用方块表。
+    let snapshot = app
+        .public(
+            &format!("/api/public/spaces/{SPACE}/snapshot?seq=1"),
+            Some(&share),
+        )
+        .await;
+    assert_eq!(snapshot.status, StatusCode::OK, "{:?}", snapshot.body);
+    assert_eq!(snapshot.body["seq"], 1);
+    assert_eq!(ids(&snapshot.body["anchors"], "anchorId"), ["_space"]);
+    assert_eq!(snapshot.body["palette"]["blocks"][0]["id"], 2);
+    assert_eq!(snapshot.body["palette"]["blocks"][0]["name"], "stone");
+    assert!(snapshot.body["chunks"].as_array().unwrap().is_empty());
+    assert!(snapshot
+        .header(header::CACHE_CONTROL)
+        .starts_with("private"));
+
+    // 区域和地块写成一次提交。
+    let layout = app.define_layout(SPACE).await;
+    assert_eq!(layout["seq"], 2);
+    let public_space = app
+        .public(&format!("/api/public/spaces/{SPACE}"), Some(&share))
+        .await;
+    assert_eq!(public_space.body["regions"][0]["label"], "前厅");
+    assert_eq!(public_space.body["plots"][0]["regionId"], "garden");
+
+    // 实体区草稿：方块、锚点（公开 + 内部）、物件。
+    let draft_id = new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await;
+    let path = draft_path(SPACE, &draft_id);
+    let reply = append(
+        &app,
+        &path,
+        json!([
+            {"op": "fill", "box": [0, 0, 0, 4, 1, 4], "block": 2},
+            {"op": "createAnchor", "anchor": {"anchorId": "t1", "kind": "table", "box": [10, 0, 10, 20, 15, 20], "label": "1号桌", "visibility": "public"}},
+            {"op": "createAnchor", "anchor": {"anchorId": "safe", "kind": "zone", "position": [1, 0, 1], "visibility": "internal"}},
+            {"op": "placeEntity", "entity": {"entityId": "counter-01", "layer": "ext", "kind": "object", "label": "前台",
+                "shape": {"type": "box", "size": [2, 1, 0.6], "transform": {"position": [3, 0, 3]}},
+                "bounds": {"min": [2, 0, 2.7], "max": [4, 1, 3.3]}}}
+        ]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(reply.body["rev"], 1);
+    assert_eq!(reply.body["opsCount"], 4);
+    assert_eq!(reply.body["touched"]["chunks"].as_array().unwrap().len(), 1);
+
+    // 预览：只显示公开锚点；草稿区块走预览专用地址。
+    let preview = app
+        .org(Method::POST, &format!("{path}/preview"), None)
+        .await;
+    assert_eq!(preview.status, StatusCode::CREATED, "{:?}", preview.body);
+    let token = preview.body["token"].as_str().unwrap().to_owned();
+    assert_eq!(token.len(), 43);
+    assert!(preview.body["url"]
+        .as_str()
+        .unwrap()
+        .starts_with("https://metaverse.example/preview#t="));
+    let preview_auth = format!("Preview {token}");
+    let view = app
+        .public("/api/public/previews", Some(&preview_auth))
+        .await;
+    assert_eq!(view.status, StatusCode::OK, "{:?}", view.body);
+    assert_eq!(view.header(header::CACHE_CONTROL), "no-store");
+    assert_eq!(ids(&view.body["anchors"], "anchorId"), ["_space", "t1"]);
+    assert_eq!(ids(&view.body["entities"], "id"), ["counter-01"]);
+    let draft_chunk = view.body["chunks"][0]["hash"].as_str().unwrap().to_owned();
+    let chunk = app
+        .public(
+            &format!("/api/public/previews/chunks/{draft_chunk}"),
+            Some(&preview_auth),
+        )
+        .await;
+    assert_eq!(chunk.status, StatusCode::OK);
+    let cells = decode_chunk(&chunk.bytes, &draft_chunk);
+    assert_eq!(cells[0], 2);
+    // 草稿区块还没发布：公开区块地址读不到。
+    assert_eq!(
+        app.public(&format!("/api/public/chunks/{draft_chunk}.bin"), None)
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    // 令牌无效：404。
+    for bad in [
+        format!("Preview {}", "A".repeat(43)),
+        "Preview short".to_owned(),
+        format!("Share {token}"),
+    ] {
+        let reply = app.public("/api/public/previews", Some(&bad)).await;
+        assert_eq!(reply.status, StatusCode::NOT_FOUND, "{bad}");
+        assert_eq!(reply.header(header::CACHE_CONTROL), "no-store");
+    }
+
+    // 发布：seq 3；预览令牌立即失效。
+    let published = app
+        .org(
+            Method::POST,
+            &format!("{path}/publish"),
+            Some(json!({"message": "布置前台", "rev": 1})),
+        )
+        .await;
+    assert_eq!(published.status, StatusCode::OK, "{:?}", published.body);
+    assert_eq!(published.body["seq"], 3);
+    assert_eq!(
+        app.public("/api/public/previews", Some(&preview_auth))
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    // 已发布的草稿不能再发布或追加。
+    let again = app
+        .org(Method::POST, &format!("{path}/publish"), None)
+        .await;
+    assert_eq!(again.status, StatusCode::CONFLICT);
+    let more = append(
+        &app,
+        &path,
+        json!([{"op": "fill", "box": [0, 0, 0, 1, 1, 1], "block": 2}]),
+    )
+    .await;
+    assert_eq!(more.status, StatusCode::CONFLICT);
+
+    // 公开快照：公开锚点、物件、区块；区块已发布。
+    let snapshot = app
+        .public(
+            &format!("/api/public/spaces/{SPACE}/snapshot?seq=3"),
+            Some(&share),
+        )
+        .await;
+    assert_eq!(snapshot.status, StatusCode::OK);
+    assert_eq!(ids(&snapshot.body["anchors"], "anchorId"), ["_space", "t1"]);
+    assert_eq!(snapshot.body["entities"][0]["body"]["label"], "前台");
+    assert_eq!(snapshot.body["regions"][0]["id"], "hall");
+    let chunk_hash = snapshot.body["chunks"][0]["hash"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(chunk_hash, draft_chunk);
+    assert_eq!(snapshot.body["chunks"][0]["layer"], "ext");
+    let chunk = app
+        .public(&format!("/api/public/chunks/{chunk_hash}.bin"), None)
+        .await;
+    assert_eq!(chunk.status, StatusCode::OK);
+    assert_eq!(
+        chunk.header(header::CACHE_CONTROL),
+        "public, max-age=31536000, immutable"
+    );
+    assert_eq!(chunk.header(header::X_CONTENT_TYPE_OPTIONS), "nosniff");
+    decode_chunk(&chunk.bytes, &chunk_hash);
+    // 第二次从进程内缓存读，结果一样。
+    let cached = app
+        .public(
+            &format!("/api/public/spaces/{SPACE}/snapshot?seq=3"),
+            Some(&share),
+        )
+        .await;
+    assert_eq!(cached.body, snapshot.body);
+    // 凭链接查看的空间：没带令牌一律 404，且不缓存。
+    let denied = app
+        .public(&format!("/api/public/spaces/{SPACE}/snapshot?seq=3"), None)
+        .await;
+    assert_eq!(denied.status, StatusCode::NOT_FOUND);
+    assert_eq!(denied.header(header::CACHE_CONTROL), "no-store");
+    // 超过最新版本：404；seq 和 at 都没给：422。
+    assert_eq!(
+        app.public(
+            &format!("/api/public/spaces/{SPACE}/snapshot?seq=9"),
+            Some(&share)
+        )
+        .await
+        .status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        app.public(
+            &format!("/api/public/spaces/{SPACE}/snapshot"),
+            Some(&share)
+        )
+        .await
+        .status,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+
+    // /api/v1 快照含内部锚点和发布者信息。
+    let internal = app
+        .org(
+            Method::GET,
+            &format!("/api/v1/spaces/{SPACE}/snapshot"),
+            None,
+        )
+        .await;
+    assert_eq!(internal.status, StatusCode::OK);
+    assert_eq!(internal.body["seq"], 3);
+    assert_eq!(
+        ids(&internal.body["anchors"], "anchorId"),
+        ["_space", "safe", "t1"]
+    );
+
+    // 时间线：/api/v1 带发布者；公开投影只有类别、不出现内部锚点。
+    let timeline = app
+        .org(
+            Method::GET,
+            &format!("/api/v1/spaces/{SPACE}/timeline"),
+            None,
+        )
+        .await;
+    assert_eq!(timeline.status, StatusCode::OK);
+    let items = timeline.body["items"].as_array().unwrap();
+    assert_eq!(items.len(), 3);
+    assert_eq!(items[2]["actor"]["sub"], ORG);
+    assert_eq!(items[2]["actor"]["scope"], "physical");
+    assert_eq!(items[2]["draftId"], draft_id.as_str());
+    assert!(items[0]["paletteHash"].is_string());
+    assert!(items[1]["regionsHash"].is_string());
+    assert!(timeline.body["nextAfter"].is_null());
+    let public_timeline = app
+        .public(
+            &format!("/api/public/spaces/{SPACE}/timeline"),
+            Some(&share),
+        )
+        .await;
+    assert_eq!(public_timeline.status, StatusCode::OK);
+    let items = public_timeline.body["items"].as_array().unwrap();
+    assert_eq!(items.len(), 3);
+    assert_eq!(items[2]["actor"], json!({"kind": "physical"}));
+    assert_eq!(items[0]["actor"], json!({"kind": "admin"}));
+    assert_eq!(ids(&items[2]["changedAnchors"], "id"), ["t1"]);
+    for hidden in ["id", "draftId", "author", "opsRef"] {
+        assert!(items[2].get(hidden).is_none(), "{hidden}");
+    }
+    // 分页。
+    let page = app
+        .public(
+            &format!("/api/public/spaces/{SPACE}/timeline?limit=2"),
+            Some(&share),
+        )
+        .await;
+    assert_eq!(page.body["items"].as_array().unwrap().len(), 2);
+    assert_eq!(page.body["nextAfter"], "2");
+    let page = app
+        .public(
+            &format!("/api/public/spaces/{SPACE}/timeline?limit=2&after=2"),
+            Some(&share),
+        )
+        .await;
+    assert_eq!(page.body["items"][0]["seq"], 3);
+    assert!(page.body["nextAfter"].is_null());
+
+    // ?at= 换算成 seq 后 302 跳转，不缓存。
+    let at = app
+        .org(
+            Method::GET,
+            &format!("/api/v1/spaces/{SPACE}/timeline"),
+            None,
+        )
+        .await
+        .body["items"][1]["at"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let redirect = app
+        .public(
+            &format!("/api/public/spaces/{SPACE}/snapshot?at={at}"),
+            Some(&share),
+        )
+        .await;
+    assert_eq!(redirect.status, StatusCode::FOUND);
+    assert_eq!(redirect.header(header::CACHE_CONTROL), "no-store");
+    assert_eq!(
+        redirect.header(header::LOCATION),
+        format!("/api/public/spaces/{SPACE}/snapshot?seq=2")
+    );
+    let early = app
+        .public(
+            &format!("/api/public/spaces/{SPACE}/snapshot?at=2000-01-01T00:00:00Z"),
+            Some(&share),
+        )
+        .await;
+    assert!(early.header(header::LOCATION).ends_with("/snapshot?seq=0"));
+
+    // 区域内容（分层文字）。
+    let content = app
+        .org(
+            Method::GET,
+            &format!("/api/v1/spaces/{SPACE}/regions/hall/content"),
+            None,
+        )
+        .await;
+    assert_eq!(content.status, StatusCode::OK, "{:?}", content.body);
+    let text = content.body["text"].as_str().unwrap();
+    assert!(text.contains("实体区"), "{text}");
+    assert!(text.contains("counter-01"), "{text}");
+    assert!(text.contains("stone(2) 16 格"), "{text}");
+    assert!(text.contains("safe"), "{text}");
+    assert_eq!(
+        app.org(
+            Method::GET,
+            &format!("/api/v1/spaces/{SPACE}/regions/nowhere/content"),
+            None
+        )
+        .await
+        .status,
+        StatusCode::NOT_FOUND
+    );
+
+    // 命令行 pull：/api/v1 区块；不属于这个空间的哈希 404。
+    let chunk = app
+        .org(
+            Method::GET,
+            &format!("/api/v1/spaces/{SPACE}/chunks/{chunk_hash}"),
+            None,
+        )
+        .await;
+    assert_eq!(chunk.status, StatusCode::OK);
+    decode_chunk(&chunk.bytes, &chunk_hash);
+    assert_eq!(
+        app.org(
+            Method::GET,
+            &format!("/api/v1/spaces/{SPACE}/chunks/{}", "0".repeat(64)),
+            None
+        )
+        .await
+        .status,
+        StatusCode::NOT_FOUND
+    );
+
+    // 预览按草稿状态里的可见级别：把内部锚点改成公开的草稿，预览里能看到它。
+    let reveal = draft_path(
+        SPACE,
+        &new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await,
+    );
+    let reply = append(
+        &app,
+        &reveal,
+        json!([{"op": "updateAnchor", "anchorId": "safe", "visibility": "public"}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let token = app
+        .org(
+            Method::POST,
+            &format!("{reveal}/preview"),
+            Some(json!({"ttlSeconds": 600})),
+        )
+        .await
+        .body["token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let view = app
+        .public("/api/public/previews", Some(&format!("Preview {token}")))
+        .await;
+    assert_eq!(
+        ids(&view.body["anchors"], "anchorId"),
+        ["_space", "safe", "t1"]
+    );
+    // 预览有效期超出范围：422。
+    let reply = app
+        .org(
+            Method::POST,
+            &format!("{reveal}/preview"),
+            Some(json!({"ttlSeconds": 999999})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    // 草稿再追加操作后 rev 变了，旧预览令牌失效。
+    append(
+        &app,
+        &reveal,
+        json!([{"op": "updateAnchor", "anchorId": "t1", "label": "一号桌"}]),
+    )
+    .await;
+    assert_eq!(
+        app.public("/api/public/previews", Some(&format!("Preview {token}")))
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+
+    // 别人看不到：/api/v1 一律 404。
+    for path in [
+        format!("/api/v1/spaces/{SPACE}/timeline"),
+        format!("/api/v1/spaces/{SPACE}/snapshot"),
+        format!("/api/v1/spaces/{SPACE}/chunks/{chunk_hash}"),
+        draft_path(SPACE, &draft_id),
+    ] {
+        let reply = app
+            .v1(
+                Method::GET,
+                &path,
+                "mallory",
+                Some("stranger-token"),
+                Payload::None,
+            )
+            .await;
+        assert_eq!(reply.status, StatusCode::NOT_FOUND, "{path}");
+    }
+}
+
+#[tokio::test]
+async fn scope_rules_access_levels_and_size_limits() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    app.define_layout(SPACE).await;
+
+    // 地块草稿：地块内可以，越出地块 403 且整批不生效。
+    let plot_draft = new_draft(&app, &format!("/api/v1/spaces/{SPACE}/plots/p1/drafts")).await;
+    let plot_path = plot_draft_path(SPACE, "p1", &plot_draft);
+    let ok = append(
+        &app,
+        &plot_path,
+        json!([{"op": "fill", "box": [200, 0, 0, 210, 1, 10], "block": 3}]),
+    )
+    .await;
+    assert_eq!(ok.status, StatusCode::OK, "{:?}", ok.body);
+    let out = append(
+        &app,
+        &plot_path,
+        json!([
+            {"op": "fill", "box": [200, 0, 0, 201, 1, 1], "block": 4},
+            {"op": "createAnchor", "anchor": {"anchorId": "gate", "kind": "door", "box": [260, 0, 60, 270, 10, 70], "visibility": "public"}}
+        ]),
+    )
+    .await;
+    assert_eq!(out.status, StatusCode::FORBIDDEN, "{:?}", out.body);
+    assert_eq!(out.body["code"], "out_of_scope");
+    assert!(out.body["detail"].as_str().unwrap().contains("第 1 条"));
+    let unchanged = app.org(Method::GET, &plot_path, None).await;
+    assert_eq!(unchanged.body["rev"], 1);
+    assert_eq!(unchanged.body["opsCount"], 1);
+    // 地块路径下不能动空间级锚点。
+    let space_anchor = append(
+        &app,
+        &plot_path,
+        json!([{"op": "updateAnchor", "anchorId": "_space", "label": "营业中"}]),
+    )
+    .await;
+    assert_eq!(space_anchor.status, StatusCode::FORBIDDEN);
+
+    // 草稿只能走创建时的范围：经实体区路径或别的地块路径访问一律 404。
+    for wrong in [
+        draft_path(SPACE, &plot_draft),
+        plot_draft_path(SPACE, "p2", &plot_draft),
+    ] {
+        let reply = app.org(Method::GET, &wrong, None).await;
+        assert_eq!(reply.status, StatusCode::NOT_FOUND, "{wrong}");
+        let reply = append(
+            &app,
+            &wrong,
+            json!([{"op": "fill", "box": [200, 0, 0, 201, 1, 1], "block": 2}]),
+        )
+        .await;
+        assert_eq!(reply.status, StatusCode::NOT_FOUND, "{wrong}");
+    }
+    // 不存在的地块不能建草稿。
+    let reply = app
+        .org(
+            Method::POST,
+            &format!("/api/v1/spaces/{SPACE}/plots/p9/drafts"),
+            None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND);
+
+    // 实体区草稿不能改虚拟区。
+    let physical = new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await;
+    let physical_path = draft_path(SPACE, &physical);
+    let reply = append(
+        &app,
+        &physical_path,
+        json!([{"op": "fill", "box": [250, 0, 0, 251, 1, 1], "block": 2}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::FORBIDDEN);
+    // 操作不合法：422；方块不存在：422。
+    let reply = append(&app, &physical_path, json!([{"op": "explode"}])).await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(reply.body["code"], "invalid_op");
+    let reply = append(
+        &app,
+        &physical_path,
+        json!([{"op": "fill", "box": [0, 0, 0, 1, 1, 1], "block": 999}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    // 引用了没登记的模型：422。
+    let reply = append(
+        &app,
+        &physical_path,
+        json!([{"op": "placeEntity", "entity": {"entityId": "vase", "layer": "ext", "kind": "object",
+            "assetHash": "a".repeat(64), "bounds": {"min": [1, 0, 1], "max": [1.2, 0.4, 1.2]}}}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(reply.body["code"], "unknown_asset");
+    // rev 不一致：409。
+    let reply = app
+        .org(
+            Method::POST,
+            &format!("{physical_path}/ops"),
+            Some(json!({"ops": [{"op": "fill", "box": [0, 0, 0, 1, 1, 1], "block": 2}], "rev": 7})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::CONFLICT);
+
+    // 超过 200 条或 1MB：413，并提示改走上传。
+    let many: Vec<Value> = (0..201)
+        .map(|i| json!({"op": "fill", "box": [i, 0, 0, i + 1, 1, 1], "block": 2}))
+        .collect();
+    let reply = append(&app, &physical_path, Value::Array(many)).await;
+    assert_eq!(reply.status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert!(reply.body["detail"]
+        .as_str()
+        .unwrap()
+        .contains("ops-from-upload"));
+    let label = "长".repeat(400_000);
+    let reply = append(
+        &app,
+        &physical_path,
+        json!([{"op": "updateAnchor", "anchorId": "_space", "label": label}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert!(reply.body["detail"].as_str().unwrap().contains("1MB"));
+
+    // 组织成员只读：能看草稿，不能写（403）；查不到的人 404。
+    let reply = app
+        .v1(
+            Method::GET,
+            &physical_path,
+            "bob",
+            Some("member-token"),
+            Payload::None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    for (method, path) in [
+        (Method::POST, format!("/api/v1/spaces/{SPACE}/drafts")),
+        (Method::POST, format!("{physical_path}/publish")),
+        (Method::POST, format!("{physical_path}/preview")),
+        (Method::DELETE, physical_path.clone()),
+    ] {
+        let reply = app
+            .v1(
+                method.clone(),
+                &path,
+                "bob",
+                Some("member-token"),
+                Payload::None,
+            )
+            .await;
+        assert_eq!(reply.status, StatusCode::FORBIDDEN, "{method} {path}");
+        let reply = app
+            .v1(
+                method.clone(),
+                &path,
+                "eve",
+                Some("stranger-token"),
+                Payload::None,
+            )
+            .await;
+        assert_eq!(reply.status, StatusCode::NOT_FOUND, "{method} {path}");
+    }
+    // 组织 admin 可以写，发布时 author 记创建者。
+    let reply = app
+        .v1(
+            Method::POST,
+            &format!("{plot_path}/publish"),
+            "alice",
+            Some("admin-token"),
+            Payload::Json(json!({"message": "地块里铺地"})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let commit = app
+        .collection("commits")
+        .find_one(doc! {"spaceId": SPACE, "seq": reply.body["seq"].as_i64().unwrap()})
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        commit
+            .get_document("actor")
+            .unwrap()
+            .get_str("sub")
+            .unwrap(),
+        "alice"
+    );
+    assert_eq!(
+        commit
+            .get_document("actor")
+            .unwrap()
+            .get_str("scope")
+            .unwrap(),
+        "plot:p1"
+    );
+    assert_eq!(
+        commit
+            .get_document("actor")
+            .unwrap()
+            .get_str("kind")
+            .unwrap(),
+        "plot"
+    );
+    assert_eq!(
+        commit
+            .get_document("author")
+            .unwrap()
+            .get_str("sub")
+            .unwrap(),
+        ORG
+    );
+
+    // 空草稿不能发布。
+    let empty = draft_path(
+        SPACE,
+        &new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await,
+    );
+    let reply = app
+        .org(Method::POST, &format!("{empty}/publish"), None)
+        .await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // 丢弃草稿：之后 404。
+    let reply = app.org(Method::DELETE, &physical_path, None).await;
+    assert_eq!(reply.status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        app.org(Method::GET, &physical_path, None).await.status,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn conflicts_overlay_replay_and_final_block_ids() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    app.define_layout(SPACE).await;
+    let drafts = format!("/api/v1/spaces/{SPACE}/drafts");
+    let a = draft_path(SPACE, &new_draft(&app, &drafts).await);
+    let b = draft_path(SPACE, &new_draft(&app, &drafts).await);
+    let c = draft_path(SPACE, &new_draft(&app, &drafts).await);
+    // A 和 B 改同一个区块，C 改另一个区块。
+    assert_eq!(
+        append(
+            &app,
+            &a,
+            json!([{"op": "fill", "box": [0, 0, 0, 2, 1, 2], "block": 2}])
+        )
+        .await
+        .status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        append(&app, &b, json!([
+            {"op": "addBlock", "block": {"name": "brick-b", "kind": "solid", "color": [200, 50, 40]}},
+            {"op": "fill", "box": [1, 0, 1, 3, 1, 3], "block": "brick-b"}
+        ]))
+        .await
+        .status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        append(&app, &c, json!([
+            {"op": "addBlock", "block": {"name": "tile-c", "kind": "solid", "color": [240, 240, 240]}},
+            {"op": "fill", "box": [64, 0, 64, 66, 1, 66], "block": "tile-c"}
+        ]))
+        .await
+        .status,
+        StatusCode::OK
+    );
+    let published = app.org(Method::POST, &format!("{a}/publish"), None).await;
+    assert_eq!(published.status, StatusCode::OK);
+    // B 与 A 冲突：409 列出冲突的键。
+    let conflict = app.org(Method::POST, &format!("{b}/publish"), None).await;
+    assert_eq!(conflict.status, StatusCode::CONFLICT, "{:?}", conflict.body);
+    assert_eq!(conflict.body["code"], "draft_conflict");
+    assert_eq!(conflict.body["conflicts"], json!(["chunk:ext:0,0,0"]));
+    assert_eq!(conflict.body["baseSeq"], 2);
+    assert_eq!(conflict.body["headSeq"], 3);
+    assert_eq!(
+        conflict.header(header::CONTENT_TYPE),
+        "application/problem+json"
+    );
+    // C 没有交集：直接叠加发布；新增方块拿到正式编号（方块表末尾 + 1）。
+    let published = app.org(Method::POST, &format!("{c}/publish"), None).await;
+    assert_eq!(published.status, StatusCode::OK, "{:?}", published.body);
+    assert_eq!(published.body["seq"], 4);
+    // B 在最新版本上重放：brick-b 的编号排在 tile-c 之后。
+    let replayed = app
+        .org(
+            Method::POST,
+            &format!("{b}/publish"),
+            Some(json!({"replay": true, "message": "重放"})),
+        )
+        .await;
+    assert_eq!(replayed.status, StatusCode::OK, "{:?}", replayed.body);
+    assert_eq!(replayed.body["seq"], 5);
+
+    let snapshot = app
+        .org(
+            Method::GET,
+            &format!("/api/v1/spaces/{SPACE}/snapshot"),
+            None,
+        )
+        .await;
+    let blocks = snapshot.body["palette"]["blocks"].as_array().unwrap();
+    let id_of = |name: &str| {
+        blocks
+            .iter()
+            .find(|b| b["name"] == name)
+            .map(|b| b["id"].as_u64().unwrap())
+            .unwrap()
+    };
+    let stone = id_of("stone");
+    let tile = id_of("tile-c");
+    let brick = id_of("brick-b");
+    assert_eq!(stone, 2);
+    assert_eq!(tile, blocks.len() as u64);
+    assert_eq!(brick, tile + 1);
+    // 区块内容用的是正式编号：A 的石头被 B 在重叠处覆盖成砖。
+    let chunk_of = |cx: i64, cz: i64| {
+        snapshot.body["chunks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["cx"] == cx && c["cz"] == cz)
+            .map(|c| c["hash"].as_str().unwrap().to_owned())
+            .unwrap()
+    };
+    let origin = chunk_of(0, 0);
+    let cells = decode_chunk(
+        &app.org(
+            Method::GET,
+            &format!("/api/v1/spaces/{SPACE}/chunks/{origin}"),
+            None,
+        )
+        .await
+        .bytes,
+        &origin,
+    );
+    assert_eq!(u64::from(cells[0]), stone);
+    assert_eq!(u64::from(cells[1 + 32]), brick);
+    assert_eq!(u64::from(cells[2 + 32 * 2]), brick);
+    let far = chunk_of(2, 2);
+    let cells = decode_chunk(
+        &app.org(
+            Method::GET,
+            &format!("/api/v1/spaces/{SPACE}/chunks/{far}"),
+            None,
+        )
+        .await
+        .bytes,
+        &far,
+    );
+    assert_eq!(u64::from(cells[0]), tile);
+
+    // 草稿基于旧版本（命令行按拉取时的版本建草稿）：baseSeq 不能超过最新版本。
+    let reply = app
+        .org(Method::POST, &drafts, Some(json!({"baseSeq": 99})))
+        .await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let old = draft_path(
+        SPACE,
+        app.org(Method::POST, &drafts, Some(json!({"baseSeq": 2})))
+            .await
+            .body["id"]
+            .as_str()
+            .unwrap(),
+    );
+    append(&app, &old, json!([{"op": "createAnchor", "anchor": {"anchorId": "t9", "kind": "table", "box": [100, 0, 100, 110, 10, 110], "visibility": "public"}}])).await;
+    let reply = app.org(Method::POST, &format!("{old}/publish"), None).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+
+    // 发布时按最新的区域重新校验：区域缩小后，旧草稿的操作越界返回 409。
+    let late = draft_path(SPACE, &new_draft(&app, &drafts).await);
+    append(
+        &app,
+        &late,
+        json!([{"op": "fill", "box": [150, 0, 150, 151, 1, 151], "block": 2}]),
+    )
+    .await;
+    let reply = app
+        .org(
+            Method::PUT,
+            &format!("/api/v1/admin/spaces/{SPACE}/layout"),
+            Some(json!({"regions": [{"id": "hall", "kind": "physical", "boxes": [[0, 0, 0, 100, 60, 100]]}]})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    let reply = app
+        .org(Method::POST, &format!("{late}/publish"), None)
+        .await;
+    assert_eq!(reply.status, StatusCode::CONFLICT);
+    assert_eq!(reply.body["code"], "out_of_scope");
+}
+
+#[tokio::test]
+async fn ops_from_upload_runs_in_process_and_publishes_with_ops_ref() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    app.define_layout(SPACE).await;
+    let draft_id = new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await;
+    let path = draft_path(SPACE, &draft_id);
+    // 500 条操作（超过单次 200 条），gzip 压缩的 NDJSON。
+    let mut ndjson = String::new();
+    for i in 0..500 {
+        ndjson.push_str(
+            &json!({"op": "fill", "box": [i % 100, i / 100, 0, i % 100 + 1, i / 100 + 1, 1], "block": 2})
+                .to_string(),
+        );
+        ndjson.push('\n');
+    }
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    encoder.write_all(ndjson.as_bytes()).unwrap();
+    let (upload_id, hash) = app.put_ops_upload(SPACE, &encoder.finish().unwrap()).await;
+
+    // 请求体必须二选一。
+    let reply = app
+        .org(
+            Method::POST,
+            &format!("{path}/ops-from-upload"),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    // 别的空间的上传、不存在的上传：404。
+    let reply = app
+        .org(
+            Method::POST,
+            &format!("{path}/ops-from-upload"),
+            Some(json!({"uploadId": "up_nothing"})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND);
+
+    let reply = app
+        .org(
+            Method::POST,
+            &format!("{path}/ops-from-upload"),
+            Some(json!({"uploadId": upload_id})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
+    let job_id = reply.body["jobId"].as_str().unwrap().to_owned();
+    let job = app.wait_job(&job_id).await;
+    assert_eq!(job.get_str("status").unwrap(), "done", "{job:?}");
+    assert_eq!(job.get_str("kind").unwrap(), "ops_from_upload");
+    assert_eq!(
+        job.get_document("actor").unwrap().get_str("sub").unwrap(),
+        ORG
+    );
+    let result = job.get_document("result").unwrap();
+    assert_eq!(
+        result
+            .get_i64("opsApplied")
+            .or(result.get_i32("opsApplied").map(i64::from))
+            .unwrap(),
+        500
+    );
+    let draft = app.org(Method::GET, &path, None).await;
+    assert_eq!(draft.body["opsCount"], 500);
+    assert_eq!(draft.body["opsRefs"][0]["assetHash"], hash.as_str());
+
+    // 发布：提交里的操作只放资源哈希。
+    let published = app
+        .org(Method::POST, &format!("{path}/publish"), None)
+        .await;
+    assert_eq!(published.status, StatusCode::OK, "{:?}", published.body);
+    let commit = app
+        .collection("commits")
+        .find_one(doc! {"spaceId": SPACE, "seq": 3})
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(commit.get_str("opsRef").unwrap(), hash);
+    assert!(commit.get("ops").is_none());
+
+    // 文件里有不合法的操作：任务失败，草稿不变。
+    let second = new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await;
+    let second_path = draft_path(SPACE, &second);
+    let bad = b"{\"op\":\"fill\",\"box\":[0,0,0,1,1,1],\"block\":2}\n{\"op\":\"fill\",\"box\":[300,0,0,301,1,1],\"block\":2}\n";
+    let (_, bad_hash) = app.put_ops_upload(SPACE, bad).await;
+    let reply = app
+        .org(
+            Method::POST,
+            &format!("{second_path}/ops-from-upload"),
+            Some(json!({"assetHash": bad_hash})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::ACCEPTED);
+    let job = app.wait_job(reply.body["jobId"].as_str().unwrap()).await;
+    assert_eq!(job.get_str("status").unwrap(), "failed");
+    assert!(
+        job.get_str("lastError").unwrap().contains("超出"),
+        "{job:?}"
+    );
+    assert_eq!(
+        app.org(Method::GET, &second_path, None).await.body["rev"],
+        0
+    );
+}
+
+#[tokio::test]
+async fn admin_settings_tokens_and_deletion() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    let token = app.create_space(SPACE).await;
+    let space_path = format!("/api/v1/admin/spaces/{SPACE}");
+    // 改成公开必须确认。
+    let reply = app
+        .org(
+            Method::PATCH,
+            &space_path,
+            Some(json!({"visibility": "public"})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::CONFLICT);
+    assert_eq!(reply.body["code"], "confirmation_required");
+    let reply = app
+        .org(
+            Method::PATCH,
+            &space_path,
+            Some(json!({"visibility": "public", "confirmPublicHistory": true, "name": "公司前厅"})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(reply.body["name"], "公司前厅");
+    let public = app
+        .public(&format!("/api/public/spaces/{SPACE}/timeline"), None)
+        .await;
+    assert_eq!(public.status, StatusCode::OK);
+    assert!(public.header(header::CACHE_CONTROL).starts_with("public"));
+    // 改回凭链接查看。
+    let reply = app
+        .org(
+            Method::PATCH,
+            &space_path,
+            Some(json!({"visibility": "unlisted"})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    // 轮换分享令牌：旧令牌失效，新令牌可用，原文只返回一次。
+    let reply = app
+        .org(Method::POST, &format!("{space_path}/share-tokens"), None)
+        .await;
+    assert_eq!(reply.status, StatusCode::CREATED);
+    assert_eq!(reply.header(header::CACHE_CONTROL), "no-store");
+    let fresh = reply.body["token"].as_str().unwrap().to_owned();
+    let old_share = format!("Share {token}");
+    let new_share = format!("Share {fresh}");
+    assert_eq!(
+        app.public(
+            &format!("/api/public/spaces/{SPACE}/timeline"),
+            Some(&old_share)
+        )
+        .await
+        .status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        app.public(
+            &format!("/api/public/spaces/{SPACE}/timeline"),
+            Some(&new_share)
+        )
+        .await
+        .status,
+        StatusCode::OK
+    );
+    // 区域不合法：422；baseSeq 不一致：409。
+    let reply = app
+        .org(
+            Method::PUT,
+            &format!("{space_path}/layout"),
+            Some(json!({"regions": [{"id": "hall", "kind": "physical", "boxes": [[0, 0, 0, 10, 10, 10]]}],
+                        "plots": [{"id": "p1", "regionId": "hall", "boxes": [[0, 0, 0, 5, 5, 5]]}]})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let reply = app
+        .org(
+            Method::PUT,
+            &format!("{space_path}/layout"),
+            Some(json!({"regions": [], "baseSeq": 0})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::CONFLICT);
+    // 成员只读：管理接口 403；陌生人 404。
+    for (method, path, body) in [
+        (
+            Method::PATCH,
+            space_path.clone(),
+            Some(json!({"name": "x"})),
+        ),
+        (Method::POST, format!("{space_path}/share-tokens"), None),
+        (
+            Method::PUT,
+            format!("{space_path}/layout"),
+            Some(json!({"regions": []})),
+        ),
+        (
+            Method::DELETE,
+            format!("{space_path}?confirm={SPACE}"),
+            None,
+        ),
+    ] {
+        let payload = || body.clone().map_or(Payload::None, Payload::Json);
+        let reply = app
+            .v1(
+                method.clone(),
+                &path,
+                "bob",
+                Some("member-token"),
+                payload(),
+            )
+            .await;
+        assert_eq!(reply.status, StatusCode::FORBIDDEN, "{method} {path}");
+        let reply = app
+            .v1(
+                method.clone(),
+                &path,
+                "eve",
+                Some("stranger-token"),
+                payload(),
+            )
+            .await;
+        assert_eq!(reply.status, StatusCode::NOT_FOUND, "{method} {path}");
+    }
+    // 删除空间要确认。
+    let reply = app.org(Method::DELETE, &space_path, None).await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let reply = app
+        .org(
+            Method::DELETE,
+            &format!("{space_path}?confirm={SPACE}"),
+            None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        app.org(Method::GET, &format!("/api/v1/spaces/{SPACE}"), None)
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        app.collection("commits")
+            .count_documents(doc! {"spaceId": SPACE})
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn public_assets_chunks_and_ranges() {
+    // 缓存 1 MiB：单项上限 128 KiB，小资源走缓存，大资源按数据块流式读出。
+    let Some(app) = TestApp::start_with_env(&[("PUBLIC_CACHE_BYTES", "1048576")]).await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    let png: Vec<u8> = b"\x89PNG\r\n\x1a\n"
+        .iter()
+        .copied()
+        .chain(0..200u8)
+        .collect();
+    let hash = app.put_asset(&png, "image/png", "texture").await;
+    let html = app
+        .put_asset(b"<script>alert(1)</script>", "text/html", "texture")
+        .await;
+    let path = format!("/api/public/assets/{hash}.bin");
+    // 没登记在 assetRefs 里：404。
+    assert_eq!(app.public(&path, None).await.status, StatusCode::NOT_FOUND);
+    app.register_asset_ref(SPACE, &hash).await;
+    app.register_asset_ref(SPACE, &html).await;
+    let reply = app.public(&path, None).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(reply.bytes, png);
+    assert_eq!(reply.header(header::CONTENT_TYPE), "image/png");
+    assert_eq!(reply.header(header::X_CONTENT_TYPE_OPTIONS), "nosniff");
+    assert_eq!(
+        reply.header(header::CACHE_CONTROL),
+        "public, max-age=31536000, immutable"
+    );
+    assert_eq!(reply.header(header::ACCEPT_RANGES), "bytes");
+    // 分段下载（第二次从缓存读）。
+    let reply = app
+        .send(Method::GET, &path, &[("range", "bytes=0-3")], Payload::None)
+        .await;
+    assert_eq!(reply.status, StatusCode::PARTIAL_CONTENT);
+    assert_eq!(reply.bytes, &png[..4]);
+    assert_eq!(
+        reply.header(header::CONTENT_RANGE),
+        format!("bytes 0-3/{}", png.len())
+    );
+    let reply = app
+        .send(
+            Method::GET,
+            &path,
+            &[("range", "bytes=9999-")],
+            Payload::None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::RANGE_NOT_SATISFIABLE);
+    assert_eq!(reply.header(header::CACHE_CONTROL), "no-store");
+    // 声明的类型不在白名单里：一律 application/octet-stream。
+    let reply = app
+        .public(&format!("/api/public/assets/{html}.bin"), None)
+        .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(
+        reply.header(header::CONTENT_TYPE),
+        "application/octet-stream"
+    );
+    // 大资源（超过单项缓存上限）按数据块流式读出，分段也正确。
+    let big: Vec<u8> = (0..(600 * 1024)).map(|i| (i % 251) as u8).collect();
+    let big_hash = app.put_asset(&big, "model/gltf-binary", "web_model").await;
+    app.register_asset_ref(SPACE, &big_hash).await;
+    let big_path = format!("/api/public/assets/{big_hash}.bin");
+    let reply = app
+        .send(
+            Method::GET,
+            &big_path,
+            &[("range", "bytes=262140-262150")],
+            Payload::None,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::PARTIAL_CONTENT);
+    assert_eq!(reply.bytes, &big[262_140..=262_150]);
+    let reply = app.public(&big_path, None).await;
+    assert_eq!(reply.bytes.len(), big.len());
+    assert_eq!(reply.header(header::CONTENT_TYPE), "model/gltf-binary");
+    // 路径格式不对：404。
+    for bad in [
+        format!("/api/public/assets/{hash}"),
+        "/api/public/assets/XYZ.bin".to_owned(),
+        format!("/api/public/chunks/{hash}"),
+    ] {
+        assert_eq!(
+            app.public(&bad, None).await.status,
+            StatusCode::NOT_FOUND,
+            "{bad}"
+        );
+    }
+    // 没有发布标记的区块：404。
+    let chunk = metaverse_core::chunk::Chunk::empty();
+    let mut chunk = chunk;
+    chunk.set(1, 1, 1, 2).unwrap();
+    let chunk_hash = chunk.hash();
+    app.collection("chunks")
+        .insert_one(doc! {"_id": &chunk_hash, "format": 1,
+            "data": mongodb::bson::Binary { subtype: mongodb::bson::spec::BinarySubtype::Generic, bytes: chunk.compress() }})
+        .await
+        .unwrap();
+    let chunk_path = format!("/api/public/chunks/{chunk_hash}.bin");
+    assert_eq!(
+        app.public(&chunk_path, None).await.status,
+        StatusCode::NOT_FOUND
+    );
+    app.collection("chunks")
+        .update_one(
+            doc! {"_id": &chunk_hash},
+            doc! {"$set": {"publishedAt": "2026-01-01T00:00:00.000Z"}},
+        )
+        .await
+        .unwrap();
+    let reply = app.public(&chunk_path, None).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    decode_chunk(&reply.bytes, &chunk_hash);
+}
+
+#[tokio::test]
+async fn keyframes_and_job_commits_without_keyframes() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    // 写 52 次区域提交（seq 2..=53）；seq 50 存关键帧。
+    for i in 0..52 {
+        let reply = app
+            .org(
+                Method::PUT,
+                &format!("/api/v1/admin/spaces/{SPACE}/layout"),
+                Some(json!({"regions": [{"id": format!("r{i}"), "kind": "physical", "boxes": [[0, 0, 0, 10 + i, 10, 10]]}]})),
+            )
+            .await;
+        assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    }
+    let keyframes: Vec<i64> = {
+        let mut cursor = app
+            .collection("commits")
+            .find(doc! {"spaceId": SPACE, "keyframe": {"$type": "string"}})
+            .await
+            .unwrap();
+        let mut seqs = Vec::new();
+        while cursor.advance().await.unwrap() {
+            let document = cursor.deserialize_current().unwrap();
+            seqs.push(document.get_i64("seq").unwrap());
+        }
+        seqs
+    };
+    assert_eq!(keyframes, [50]);
+    // 处理服务写的提交不带关键帧：直接插入一次提交，推进 head。
+    let head = app
+        .collection("spaces")
+        .find_one(doc! {"_id": SPACE})
+        .await
+        .unwrap()
+        .unwrap()
+        .get_document("head")
+        .unwrap()
+        .clone();
+    assert_eq!(head.get_i64("seq").unwrap(), 53);
+    let at = head.get_str("at").unwrap().to_owned();
+    app.collection("commits")
+        .insert_one(doc! {
+            "_id": "job-commit", "spaceId": SPACE, "owner": {"kind": "org", "id": ORG},
+            "seq": 54, "at": &at,
+            "actor": {"sub": ORG, "nyxServiceId": "svc", "scope": "physical", "kind": "job"},
+            "message": "重建", "changedChunks": [], "changedEntities": [], "changedAnchors": [],
+            "jobId": "job-1",
+        })
+        .await
+        .unwrap();
+    app.collection("spaces")
+        .update_one(
+            doc! {"_id": SPACE},
+            doc! {"$set": {"head": {"seq": 54, "at": &at, "commitId": "job-commit"}}},
+        )
+        .await
+        .unwrap();
+    // 各个版本的快照：从关键帧或从头叠加，区域都对。
+    for (seq, expected) in [(49, "r47"), (50, "r48"), (53, "r51"), (54, "r51")] {
+        let reply = app
+            .org(
+                Method::GET,
+                &format!("/api/v1/spaces/{SPACE}/snapshot?seq={seq}"),
+                None,
+            )
+            .await;
+        assert_eq!(reply.status, StatusCode::OK, "{seq}");
+        assert_eq!(reply.body["regions"][0]["id"], expected, "{seq}");
+        assert_eq!(ids(&reply.body["anchors"], "anchorId"), ["_space"], "{seq}");
+    }
+    // 下一次接口服务写的提交接在处理服务的提交后面。
+    let reply = app
+        .org(
+            Method::PUT,
+            &format!("/api/v1/admin/spaces/{SPACE}/layout"),
+            Some(json!({"regions": [], "baseSeq": 54})),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(reply.body["seq"], 55);
+}
+
+#[tokio::test]
+async fn public_rate_limit_and_space_ids() {
+    let Some(app) = TestApp::start_with_env(&[
+        ("PUBLIC_RATE_LIMIT_PER_MINUTE", "60"),
+        ("PUBLIC_RATE_LIMIT_BURST", "3"),
+    ])
+    .await
+    else {
+        return;
+    };
+    let mut statuses = Vec::new();
+    for _ in 0..4 {
+        let reply = app.public("/api/public/spaces/no-such-space", None).await;
+        statuses.push(reply.status);
+        if reply.status == StatusCode::TOO_MANY_REQUESTS {
+            assert_eq!(reply.header(header::CACHE_CONTROL), "no-store");
+            assert!(!reply.header(header::RETRY_AFTER).is_empty());
+            assert_eq!(reply.body["code"], "rate_limited");
+        }
+    }
+    assert_eq!(
+        statuses,
+        [
+            StatusCode::NOT_FOUND,
+            StatusCode::NOT_FOUND,
+            StatusCode::NOT_FOUND,
+            StatusCode::TOO_MANY_REQUESTS
+        ]
+    );
+    // 区块和资源单独一档，不受普通公开接口额度的影响。
+    let reply = app
+        .public(&format!("/api/public/chunks/{}.bin", "0".repeat(64)), None)
+        .await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND);
+    // /api/v1 不受公开接口限流影响。
+    let reply = app
+        .org(Method::GET, "/api/v1/spaces/no-such-space/timeline", None)
+        .await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn draft_assets_must_belong_to_the_space_and_become_public_on_publish() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    app.define_layout(SPACE).await;
+    let texture = app
+        .put_space_asset(SPACE, b"\xff\xd8\xff texture", "image/jpeg", "texture")
+        .await;
+    let scan = app
+        .put_space_asset(SPACE, b"raw scan bytes", "application/octet-stream", "scan")
+        .await;
+    let foreign = app
+        .put_space_asset(
+            "other-space",
+            b"someone else's texture",
+            "image/png",
+            "texture",
+        )
+        .await;
+    let entity = |hash: &str| {
+        json!([{"op": "placeEntity", "entity": {"entityId": "rug", "layer": "ext", "kind": "object",
+            "shape": {"type": "box", "size": [1, 0.02, 1], "transform": {"position": [2, 0, 2]},
+                      "material": {"texture": hash, "uv": "planar"}},
+            "bounds": {"min": [1.5, 0, 1.5], "max": [2.5, 0.02, 2.5]}}}])
+    };
+    let path = draft_path(
+        SPACE,
+        &new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await,
+    );
+    // 原始扫描、别的空间的资源、不存在的资源：422，草稿不变。
+    for hash in [scan.clone(), foreign.clone(), "b".repeat(64)] {
+        let reply = append(&app, &path, entity(&hash)).await;
+        assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY, "{hash}");
+        assert_eq!(reply.body["code"], "unknown_asset");
+    }
+    let reply = append(&app, &path, entity(&texture)).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(reply.body["assets"], json!([texture]));
+    // 发布前：公开资源地址读不到，预览地址能读到。
+    let public_path = format!("/api/public/assets/{texture}.bin");
+    assert_eq!(
+        app.public(&public_path, None).await.status,
+        StatusCode::NOT_FOUND
+    );
+    let token = app
+        .org(Method::POST, &format!("{path}/preview"), None)
+        .await
+        .body["token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let preview_auth = format!("Preview {token}");
+    let reply = app
+        .public(
+            &format!("/api/public/previews/assets/{texture}"),
+            Some(&preview_auth),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(reply.header(header::CONTENT_TYPE), "image/jpeg");
+    assert_eq!(reply.header(header::CACHE_CONTROL), "no-store");
+    assert_eq!(
+        app.public(
+            &format!("/api/public/previews/assets/{scan}"),
+            Some(&preview_auth)
+        )
+        .await
+        .status,
+        StatusCode::NOT_FOUND
+    );
+    // 发布后登记到 assetRefs（带提交编号），公开可读。
+    let reply = app
+        .org(Method::POST, &format!("{path}/publish"), None)
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let commit_id = reply.body["commitId"].as_str().unwrap().to_owned();
+    let reply = app.public(&public_path, None).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(&reply.bytes[..], b"\xff\xd8\xff texture");
+    let registered = app
+        .collection("assetRefs")
+        .find_one(doc! {"hash": &texture, "spaceId": SPACE})
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(registered.get_str("commitId").unwrap(), commit_id);
+}
