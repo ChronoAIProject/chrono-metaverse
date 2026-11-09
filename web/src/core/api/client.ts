@@ -4,6 +4,7 @@ import type {
   EventDensity,
   Head,
   Page,
+  PreviewView,
   Snapshot,
   SpaceEvent,
   SpaceInfo,
@@ -18,6 +19,9 @@ import type {
  *
  * - 凭链接查看的空间：分享令牌从页面地址的 `#share=` 取出，放在请求头
  *   `Authorization: Share <令牌>` 里，不进地址栏以外的任何地方；
+ * - 组合页用组合的分享令牌读成员空间：每个请求另带 `?universe=<组合编号>`，
+ *   服务端据此核对该空间是这个组合的成员（设计 8.2）；
+ * - 分页接口（提交列表、事件）用 `allTimeline`、`allEvents` 按 `nextAfter` 取完；
  * - 错误按 CMA 的问题文档格式（RFC 9457：`code`、`detail`、`title`）解析；
  * - 区块按内容哈希下载，解压后核对哈希。
  */
@@ -42,8 +46,13 @@ export interface PublicClientOptions {
   readonly baseUrl?: string;
   /** 分享令牌；公开空间不需要。 */
   readonly share?: string | null;
+  /** 组合页：用组合的分享令牌读成员空间时，每个请求都带 `?universe=<组合编号>`。 */
+  readonly universe?: string | null;
   readonly fetch?: typeof fetch;
 }
+
+/** 下载进度：已收到的字节数和总字节数（服务端没给 Content-Length 时总数为 null）。 */
+export type ProgressCallback = (loaded: number, total: number | null) => void;
 
 export interface HeadResult {
   /** 304：和上次一样。 */
@@ -86,17 +95,27 @@ export interface PublicClient {
   readonly state: (spaceId: string, at: Timestamp) => Promise<StateAt>;
   /** 区块：下载、解压、核对哈希。 */
   readonly chunk: (hash: string) => Promise<Uint16Array>;
-  /** 资源（网页用模型、贴图）的原始字节。 */
-  readonly asset: (hash: string) => Promise<ArrayBuffer>;
+  /** 资源（网页用模型、贴图）的原始字节和 Content-Type。 */
+  readonly asset: (hash: string, onProgress?: ProgressCallback) => Promise<ArrayBuffer>;
+  readonly assetBlob: (hash: string, onProgress?: ProgressCallback) => Promise<Blob>;
   readonly universe: (universeId: string, at?: Timestamp) => Promise<UniverseView>;
   readonly universeRevision: (universeId: string, seq: number) => Promise<UniverseRevision>;
   /**
    * 草稿预览（设计 5.6、8.2）：预览令牌放在请求头 `Authorization: Preview <令牌>` 里，
    * 不用分享令牌。预览响应不缓存；草稿区块和草稿新上传的资源走预览专用的地址。
    */
-  readonly preview: (token: string) => Promise<Snapshot>;
+  readonly preview: (token: string) => Promise<PreviewView>;
   readonly previewChunk: (token: string, hash: string) => Promise<Uint16Array>;
-  readonly previewAsset: (token: string, hash: string) => Promise<ArrayBuffer>;
+  readonly previewAsset: (
+    token: string,
+    hash: string,
+    onProgress?: ProgressCallback,
+  ) => Promise<ArrayBuffer>;
+  readonly previewAssetBlob: (
+    token: string,
+    hash: string,
+    onProgress?: ProgressCallback,
+  ) => Promise<Blob>;
 }
 
 const HASH = /^[0-9a-f]{64}$/;
@@ -146,15 +165,93 @@ async function problem(response: Response): Promise<PublicApiError> {
   return new PublicApiError(response.status, detail ?? fallback, code);
 }
 
+function fragmentParam(hash: string, name: string): string | null {
+  const params = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash);
+  const token = params.get(name);
+  return token !== null && token.trim() !== '' ? token.trim() : null;
+}
+
 /** 从页面地址的片段（`#share=...`）取分享令牌。 */
 export function shareTokenFromHash(hash: string): string | null {
-  const params = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash);
-  const token = params.get('share');
-  return token !== null && token.trim() !== '' ? token.trim() : null;
+  return fragmentParam(hash, 'share');
+}
+
+/** 从页面地址的片段（`#t=...`）取预览令牌。 */
+export function previewTokenFromHash(hash: string): string | null {
+  return fragmentParam(hash, 't');
+}
+
+/**
+ * 读完响应体并报告进度。服务端给了 Content-Length 时总数已知；
+ * 浏览器不支持流式读取时退回一次性读取。
+ */
+async function readBody(response: Response, onProgress?: ProgressCallback): Promise<Blob> {
+  const type = response.headers.get('content-type') ?? '';
+  const lengthHeader = Number(response.headers.get('content-length'));
+  const total = Number.isFinite(lengthHeader) && lengthHeader > 0 ? lengthHeader : null;
+  if (onProgress === undefined || response.body === null || response.body === undefined) {
+    const blob = await response.blob();
+    onProgress?.(blob.size, blob.size);
+    return blob.type === '' && type !== '' ? new Blob([blob], { type }) : blob;
+  }
+  const reader = response.body.getReader();
+  const parts: Uint8Array[] = [];
+  let loaded = 0;
+  onProgress(0, total);
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value);
+    loaded += value.byteLength;
+    onProgress(loaded, total);
+  }
+  onProgress(loaded, loaded);
+  return new Blob(parts as BlobPart[], { type });
+}
+
+/** 分页结果每页的上限保护：服务端如果一直给 nextAfter，最多取这么多页。 */
+const MAX_PAGES = 200;
+
+/** 取完提交列表的全部页（每页 ≤ 500）。 */
+export async function allTimeline(
+  client: Pick<PublicClient, 'timeline'>,
+  spaceId: string,
+  q: Omit<TimelineQuery, 'after'> = {},
+): Promise<CommitSummary[]> {
+  const items: CommitSummary[] = [];
+  let after: string | undefined;
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const result = await client.timeline(spaceId, { ...q, after });
+    items.push(...result.items);
+    if (result.nextAfter === null || result.nextAfter === undefined || result.items.length === 0)
+      break;
+    after = result.nextAfter;
+  }
+  const bySeq = new Map(items.map((commit) => [commit.seq, commit]));
+  return [...bySeq.values()].sort((a, b) => a.seq - b.seq);
+}
+
+/** 取完一次事件查询的全部页（每页 ≤ 5000；from/to 的跨度由调用方控制在 24 小时内）。 */
+export async function allEvents(
+  client: Pick<PublicClient, 'events'>,
+  spaceId: string,
+  q: Omit<EventsQuery, 'after'> = {},
+): Promise<SpaceEvent[]> {
+  const items: SpaceEvent[] = [];
+  let after: string | undefined;
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const result = await client.events(spaceId, { ...q, after });
+    items.push(...result.items);
+    if (result.nextAfter === null || result.nextAfter === undefined || result.items.length === 0)
+      break;
+    after = result.nextAfter;
+  }
+  return items;
 }
 
 export function createPublicClient(options: PublicClientOptions = {}): PublicClient {
   const base = (options.baseUrl ?? '').replace(/\/+$/, '');
+  const universe = options.universe ?? undefined;
   const fetcher = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
   const headers = (extra: Record<string, string> = {}): Record<string, string> => ({
     ...(options.share ? { Authorization: `Share ${options.share}` } : {}),
@@ -183,53 +280,61 @@ export function createPublicClient(options: PublicClientOptions = {}): PublicCli
   }
 
   const space = (id: string) => `/spaces/${segment(id)}`;
+  /** 组合页的成员请求都带 `universe=`。 */
+  const q = (params: Record<string, string | number | readonly string[] | undefined> = {}) =>
+    query({ ...params, universe });
 
   return {
-    space: (spaceId) => json<SpaceInfo>(space(spaceId)),
+    space: (spaceId) => json<SpaceInfo>(`${space(spaceId)}${q()}`),
     async head(spaceId, etag) {
       const response = await request(
-        `${space(spaceId)}/head`,
+        `${space(spaceId)}/head${q()}`,
         etag ? { 'If-None-Match': etag } : undefined,
       );
       const nextEtag = response.headers.get('ETag') ?? etag ?? null;
       if (response.status === 304) return { notModified: true, etag: nextEtag };
       return { notModified: false, head: (await response.json()) as Head, etag: nextEtag };
     },
-    snapshot: (spaceId, q) =>
-      json<Snapshot>(
-        `${space(spaceId)}/snapshot${query('seq' in q ? { seq: q.seq } : { at: q.at })}`,
-      ),
-    timeline: (spaceId, q = {}) =>
-      json<Page<CommitSummary>>(`${space(spaceId)}/timeline${query({ ...q })}`),
-    events: (spaceId, q = {}) =>
-      json<Page<SpaceEvent>>(`${space(spaceId)}/events${query({ ...q })}`),
-    eventDensity: (spaceId, q) =>
-      json<EventDensity>(`${space(spaceId)}/events/density${query({ ...q })}`),
-    state: (spaceId, at) => json<StateAt>(`${space(spaceId)}/state${query({ at })}`),
+    snapshot: (spaceId, s) =>
+      json<Snapshot>(`${space(spaceId)}/snapshot${q('seq' in s ? { seq: s.seq } : { at: s.at })}`),
+    timeline: (spaceId, t = {}) =>
+      json<Page<CommitSummary>>(`${space(spaceId)}/timeline${q({ ...t })}`),
+    events: (spaceId, e = {}) => json<Page<SpaceEvent>>(`${space(spaceId)}/events${q({ ...e })}`),
+    eventDensity: (spaceId, d) =>
+      json<EventDensity>(`${space(spaceId)}/events/density${q({ ...d })}`),
+    state: (spaceId, at) => json<StateAt>(`${space(spaceId)}/state${q({ at })}`),
     async chunk(hash) {
       const checked = checkedHash(hash);
-      const response = await request(`/chunks/${checked}.bin`);
+      const response = await request(`/chunks/${checked}.bin${q()}`);
       return decompressChunk(new Uint8Array(await response.arrayBuffer()), checked);
     },
-    async asset(hash) {
-      const response = await request(`/assets/${checkedHash(hash)}.bin`);
-      return response.arrayBuffer();
+    async asset(hash, onProgress) {
+      const response = await request(`/assets/${checkedHash(hash)}.bin${q()}`);
+      return (await readBody(response, onProgress)).arrayBuffer();
+    },
+    async assetBlob(hash, onProgress) {
+      const response = await request(`/assets/${checkedHash(hash)}.bin${q()}`);
+      return readBody(response, onProgress);
     },
     universe: (universeId, at) =>
       json<UniverseView>(`/universes/${segment(universeId)}${query({ at })}`),
     universeRevision: (universeId, seq) =>
       json<UniverseRevision>(`/universes/${segment(universeId)}/revisions/${seq}`),
     async preview(token) {
-      return (await (await request('/previews', undefined, token)).json()) as Snapshot;
+      return (await (await request('/previews', undefined, token)).json()) as PreviewView;
     },
     async previewChunk(token, hash) {
       const checked = checkedHash(hash);
       const response = await request(`/previews/chunks/${checked}`, undefined, token);
       return decompressChunk(new Uint8Array(await response.arrayBuffer()), checked);
     },
-    async previewAsset(token, hash) {
+    async previewAsset(token, hash, onProgress) {
       const response = await request(`/previews/assets/${checkedHash(hash)}`, undefined, token);
-      return response.arrayBuffer();
+      return (await readBody(response, onProgress)).arrayBuffer();
+    },
+    async previewAssetBlob(token, hash, onProgress) {
+      const response = await request(`/previews/assets/${checkedHash(hash)}`, undefined, token);
+      return readBody(response, onProgress);
     },
   };
 }

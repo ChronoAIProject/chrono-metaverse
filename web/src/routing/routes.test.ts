@@ -5,6 +5,7 @@ const ROUTES: readonly AppRoute[] = [
   { kind: 'home' },
   { kind: 'space', spaceId: 'restaurant-xyz' },
   { kind: 'universe', universeId: 'street-1' },
+  { kind: 'preview' },
 ];
 
 describe('路由', () => {
@@ -17,10 +18,19 @@ describe('路由', () => {
     expect(parseRoute(routePath(route))).toEqual(route);
   });
 
-  it.each(['s/a', '/s', '/s/', '/s/a/b', '/s/%', '/s/%2F', '/s/..', '/x/a', '/s//'])(
-    '拒绝格式不对的路径 %s',
-    (pathname) => {
-      expect(parseRoute(pathname).kind).toBe('not_found');
-    },
-  );
+  it.each([
+    's/a',
+    '/s',
+    '/s/',
+    '/preview/x',
+    '/preview/',
+    '/s/a/b',
+    '/s/%',
+    '/s/%2F',
+    '/s/..',
+    '/x/a',
+    '/s//',
+  ])('拒绝格式不对的路径 %s', (pathname) => {
+    expect(parseRoute(pathname).kind).toBe('not_found');
+  });
 });

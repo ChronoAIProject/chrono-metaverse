@@ -26,4 +26,4 @@ export {
   type BuildOptions,
   type BuildResult,
 } from './build';
-export { toBufferGeometry, shapeToGeometry, type ShapeGeometry } from './three';
+export { toBufferGeometry, shapeToGeometry, partsToGeometry, type ShapeGeometry } from './three';
