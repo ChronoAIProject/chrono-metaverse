@@ -26,7 +26,8 @@ export const HELP = `metaverse —— chrono-metaverse 的本地工作区和建�
 
 用法：metaverse <命令> [选项]（每个命令加 --help 看详细说明）
 
-  init <空间编号>        创建工作区，写入技能说明 .claude/skills/metaverse-builder/SKILL.md
+  init <空间编号>        创建工作区，写入技能说明 .claude/skills/ 下的 metaverse-builder（建造）
+                         和 metaverse-reconstruct（AI 重建实体空间）
   admin …                管理命令：建空间、改名和可见性、轮换分享令牌、定义区域和地块、登记事件类型、抹除事件
   scan <文件>            分片上传扫描，发起导入任务并等待（--authored 带 AI 物件集）
   rebuild                对已导入的扫描重跑 AI 重建；--authored <文件> 写入 AI 物件集

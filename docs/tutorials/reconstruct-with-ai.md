@@ -154,8 +154,8 @@ metaverse-recon compare --object counter-01 --model work/counter-01/entity.json 
 metaverse-recon assemble --entities work/ --notes work/notes.md --out out/authored
 ```
 
-- 合并成 AI 物件集 `authored.json`：模板去重、编号唯一、引用的模板必须存在、逐个校验、包围盒重算。有错误会列出来
-  并以退出码 2 结束；
+- 合并成 AI 物件集 `authored.json`：模板去重、编号唯一、引用的模板必须存在、逐个校验、包围盒重算，最后整份跑一遍
+  处理服务收到物件集时的校验（`parse_authored`）。有错误会列出来并以退出码 2 结束；通过了，处理服务就会原样接受；
 - `room.jpg`：扫描 | 现有算法 | AI 重建，总览、俯视、四个角；`room.glb` 可以拖进任何 glTF 查看器；
 - `report.json` 和终端输出：逐件偏差表，以及"没被任何物件覆盖的扫描团块"（漏建），后面写着现有算法里和它重叠的
   物体编号，照着补。
@@ -167,17 +167,31 @@ metaverse-recon assemble --entities work/ --notes work/notes.md --out out/author
 
 ## 5. 提交
 
-`authored.json` 交给处理服务的 `rebuild`（写回路径）：处理服务逐个校验物件、按地址下载外部模型并核对哈希和大小、
-重新导出成受限的 glb 登记成资源、把烘焙指令换成贴图，然后替换重建层写成一次提交。具体的上传和发起命令以
-`metaverse --help` 和接口说明为准（重建接口 `POST /api/v1/spaces/{space_id}/scans/{scan_id}/rebuild`）。
+`authored.json` 用命令行 `metaverse` 交给处理服务（写回路径）：处理服务逐个校验物件、按地址下载外部模型并核对
+哈希和大小、把旋转缩放和调色烘进模型、重新导出成受限的 glb 登记成资源、把烘焙指令换成贴图、逐件算偏差，然后
+替换重建层写成一次提交。
+
+```bash
+cd <工作区>                                   # metaverse init / pull 过的那个
+metaverse rebuild --authored recon/out/authored/authored.json
+```
+
+- 扫描已经导入过：`metaverse rebuild` 默认对工作区拉取的最新扫描重建（`--scan <扫描哈希>` 指定别的），调用的是
+  `POST /api/v1/spaces/{space_id}/scans/{scan_id}/rebuild`；
+- 第一次导入扫描时就带上：`metaverse scan <扫描文件> --authored recon/out/authored/authored.json`（`prepare` 用的
+  必须是同一份扫描，物件集的坐标就是它首次导入的对齐结果）；
+- 物件集规范化后不超过 1MB 时随请求内联，更大的（≤ 4MB）命令行先分片上传、等校验通过再引用；
+- 命令行等任务完成，列出偏差最大的几件、外部模型下载和烘焙的统计。任务失败时错误说明会指出是哪个物件、哪一条
+  规则（例如许可不允许、哈希对不上、地址的主机不在处理服务的 `WORKER_MODEL_HOSTS` 里）。
 
 提交前确认：
 
 - 对比图里没有悬空、穿地、穿墙的东西；
 - 每个外部模型都来自 `fetch` / `place`，没有手改 `model` 和 `props.source`；
-- `notes.md` 写清每件是哪个库的哪个模型、还是手写，以及为什么。
+- `notes.md` 写清每件是哪个库的哪个模型、还是手写，以及为什么（它会随提交存成脚本资源）。
 
-提交后在网站上打开空间，"优化模型"视图里点物件能看到"模型来源"。
+提交后在网站上打开空间，"优化模型"视图里能看到外部模型、手写形状和烘焙的贴图；查看器上的"模型来源 · N"按钮列出
+所有外部模型的标题、作者、许可和来源页，点选物件时信息面板里也有它的来源。
 
 ---
 
@@ -189,5 +203,6 @@ metaverse-recon assemble --entities work/ --notes work/notes.md --out out/author
 | 候选面朝墙、前后反了 | 看高度图确认靠背在哪边，`place --yaw <角度> --yaw-range 20` 限定 |
 | 候选比例不对 | `--scale axis`；还不行就换候选 |
 | 候选颜色差太多 | `place` 会提示 tint 帮不上（只能调暗）：换颜色接近或更浅的候选再 `--tint` |
-| `fetch` 提示坐标超过 ±1000 米 | 处理服务会拒收这个模型，换候选 |
+| `fetch` 提示坐标超过 ±1000 米 | 模型多半是厘米单位：`place` 会按扫描缩放，处理服务按缩放后的坐标检查，可以照常用 |
+| `assemble` 报"写回路径校验不通过" | 按错误说明改对应物件（常见：署名缺字段、`material` 写了 `tint`/`opacity`/`unlit` 以外的键） |
 | Objaverse 第一次检索很慢 | 在下载元数据分片（每个约 3.6 MB）；`metaverse-recon index --category chair` 可以提前下 |

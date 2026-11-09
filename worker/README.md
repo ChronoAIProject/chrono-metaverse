@@ -296,10 +296,10 @@ uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceI
 | 坐标 | 空间坐标，与 `scan_import` 对齐后的坐标系相同 |
 | 物件 | SHAPES 3 的 body，`layer` 省略时按 `rebuilt`（只能是 rebuilt）；`kind` 是 object 或 structure（模板放 `templates`）；`bounds` 可省略；`fit`、`textures` 一律重算；不能带 `assetHash`（外部模型用 `model`）；≤ 2000 个物件、≤ 200 个模板，编号不重复 |
 | 烘焙指令 | 材质里 `"bake": "planar" \| "box" \| "cylindrical"`，不能和 `texture`、`uv`、`tint` 同时出现，可以带 `color` 作为后备。按网站同样的投影展开 UV（同一个材质节点下的部件共用一张图），每个纹素取扫描最近表面（法线相容优先）的颜色，push-pull 补洞，JPEG 登记成贴图资源，材质换成 `{texture, uv}`；附近完全没有扫描时退回后备纯色。模板里不能带（模板在局部坐标里）；≤ 500 处 |
-| 外部模型 | 没有 `shape`，带 `model: {url, sha256, size, format}`、`transform`（含 `scale`）、`props.source`、可选的 `material: {tint}`。`format`：`glb`；`gltf-zip`（zip 里正好一个 `.gltf` 和它引用的文件，按相对路径安全解压）；`gltf`（`url` 指向 `.gltf`，另给 `files: {相对路径: {url, sha256, size}}`，就是 Poly Haven 文件列表里的 `include`）。gltf 只能引用模型目录里的相对文件，必需扩展只放行材质和贴图坐标类（Draco、meshopt 压缩的请换版本） |
+| 外部模型 | 没有 `shape`，带 `model: {url, sha256, size, format}`、`transform`（含 `scale`）、`props.source`、可选的 `material: {tint, opacity, unlit}`（`tint` 烘进模型；`opacity`、`unlit` 留在处理后物件的 `material` 里，网站按它画半透明、不打光）；重建工作台 `place` 写的 `fit` 可以留着（重算）。`format`：`glb`；`gltf-zip`（zip 里正好一个 `.gltf` 和它引用的文件，按相对路径安全解压）；`gltf`（`url` 指向 `.gltf`，另给 `files: {相对路径: {url, sha256, size}}`，就是 Poly Haven 文件列表里的 `include`）。gltf 只能引用模型目录里的相对文件，必需扩展只放行材质和贴图坐标类（Draco、meshopt 压缩的请换版本）。模型库里常见厘米单位的模型：±1000 米的坐标上限在旋转、缩放烘进模型之后才检查 |
 | 已有贴图 | 形状里的 `material.texture` 必须是本空间已登记的贴图资源，任务先过清理的栅栏（刷新 `touchedAt`），再登记进 `assetRefs` |
 | `structure` | `keep`（默认）：结构跑算法（地面、墙、玻璃），物件集里不能有 `kind: structure`；`replace`：结构就是物件集里 `kind: structure` 的物件，不跑算法 |
-| 署名 | `props.source = {library, id, page, author, license, title}`：`library` 是 `polyhaven`、`objaverse`、`sketchfab`；`license` 只收 `CC0-1.0`、`CC-BY-4.0`、`CC-BY-3.0`（NC、ND、SA 一律拒绝，SA 也排除以免传染）；CC-BY 必须写作者；`page` 是 https 来源页。外部模型物件必须带，形状物件可选 |
+| 署名 | `props.source = {library, id, page, author, license, title}`：`library` 是 `polyhaven`、`objaverse`、`sketchfab`；`license` 只收 `CC0-1.0`、`CC-BY-4.0`、`CC-BY-3.0`（NC、ND、SA 一律拒绝，SA 也排除以免传染）；六个字段都是非空字符串（CC0 也写模型库标注的作者，CC-BY 署名必须有作者），`page` 是 https 来源页——与物件记录 `props.source` 的规则相同（`records.validate_model_source`，接口服务提交时也按它查）。外部模型物件必须带，形状物件可选 |
 
 处理：
 
@@ -309,7 +309,7 @@ uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceI
    sha256。同一个文件只下载一次；单个模型（含附属文件）≤ `WORKER_MAX_MODEL_BYTES`，全部 ≤ 1 GiB。主机不在列表、
    不是 https、大小或哈希不符、4xx 都不可重试；网络错误、超时、5xx 稍后重试。错误说明只写主机，不带完整地址；
 3. 子进程里（`processing/authored_build.py`）：结构（keep 时跑算法）→ 外部模型：把 `transform` 的旋转、缩放和
-   `tint` 烘进网格，按物件模型的限制（`WORKER_MODEL_MAX_TRIANGLES`、`WORKER_MODEL_MAX_TEXTURE_SIDE`）减面、缩小
+   `tint` 烘进网格（缩放后的坐标超出 ±1000 米才拒收），按物件模型的限制（`WORKER_MODEL_MAX_TRIANGLES`、`WORKER_MODEL_MAX_TEXTURE_SIDE`）减面、缩小
    贴图，**以包围盒的底面中心为原点**写成 glb（网站按物件 `bounds` 的底面中心摆放只有 `assetHash` 的物件，所以
    平移落在 `bounds` 上；旋转、缩放、调色都相同的物件共用一个 glb）→ 烘焙 → **逐件偏差**：物件包围盒水平和
    向上各外扩 5 厘米、底面以上 1 厘米（不算地面）范围里的扫描表面密集采样（最多 2 万点），求到物件网格的距离，
@@ -574,18 +574,25 @@ cd worker && uv venv .venv && uv pip install --python .venv/bin/python -e .
 | `search` / `index` | 模型库检索，许可硬过滤：Poly Haven（全部 CC0）、Objaverse（逐个对象读许可，只要 CC0 / CC-BY）、Sketchfab（设了 `SKETCHFAB_TOKEN` 才启用） | `candidates.json` + 带编号的缩略图拼图 `sheet.jpg` |
 | `fetch` | 下载候选（Poly Haven 的 glTF 打包成 glb），记 sha256、大小、署名；上限 50 MB | `<缓存>/models/<库>/<编号>/model.glb` + `model.json` |
 | `place` | 候选摆到扫描里的物体上：自动判断向上轴、按量出的尺寸缩放（等比，或逐轴 ±15%）、偏航粗搜 + 只求偏航和平移的迭代最近点 + 顶面高度图分朝向、落地；可按扫描颜色给 tint 建议 | `entity.json`（外部模型物件记录）、`place.jpg`（扫描 \| 候选）、`place.json` |
-| `assemble` | 合并物件文件成 AI 物件集（模板去重、编号唯一、引用的模板存在、逐个校验、重算包围盒） | `authored.json`、`room.glb`、`room.jpg`（扫描 \| 现有算法 \| AI 重建：总览、俯视、四个角）、`report.json`（逐件偏差、漏建团块） |
+| `assemble` | 合并物件文件成 AI 物件集（模板去重、编号唯一、引用的模板存在、逐个校验、重算包围盒），最后整份跑一遍写回路径的校验 `metaverse_worker.authored.parse_authored`（处理服务收到时跑的就是它），通过了才算合格 | `authored.json`、`room.glb`、`room.jpg`（扫描 \| 现有算法 \| AI 重建：总览、俯视、四个角）、`report.json`（逐件偏差、漏建团块） |
 | `reframe` | 物件在两种对齐之间换算：`compute`（`reconstruct_lobby.py`）↔ `scan_import`（prepare），或任意变换文件 | 同格式的物件文件 |
 
-**形状新增**（`plate`、`hull`、材质 `opacity`、`unlit`，以及 AI 物件集里的烘焙指令 `bake`）：工作台按 SHAPES 的
-规定自带一份校验、包围盒和网格（`recon/shapes_ext.py`），处理服务的 `shapes.py`、`shape_mesh.py` 认识了就用处理
-服务的实现。
+**形状**：`plate`、`hull`、材质 `opacity`、`unlit` 的校验、包围盒和网格直接用处理服务的 `shapes.py`、
+`shape_mesh.py`（与接口服务、网站、命令行逐条对过同一批测试向量）；AI 物件集独有的烘焙指令 `bake` 由
+`recon/shapes_ext.py` 按写回路径的规则处理（预览时按扫描颜色上色）。
 
-**外部模型物件**（`place` 输出，AI 物件集的外部模型格式）：没有 `shape`，带 `model`（`url`、`sha256`、`size`、
-`format`：`glb`、`gltf`（Poly Haven：另有 `files` 列出 .bin 和贴图的地址、哈希、大小）或 `gltf-zip`）、`transform`
-（作用于 `processing.modelimport.load_model` 读出的模型坐标，顺序同 SHAPES，含 `scale`）、`bounds`、
-`props.source`（`library、id、page、author、license、title`，网站据此显示"模型来源"）、可选 `material.tint`。
-地址只允许 `dl.polyhaven.org`、`huggingface.co`（`METAVERSE_RECON_MODEL_HOSTS` 可改）。
+**外部模型物件**（`place` 输出，AI 物件集的外部模型格式，与写回路径收的完全相同）：没有 `shape`，带 `model`
+（`url`、`sha256`、`size`、`format`：`glb`、`gltf`（Poly Haven：另有 `files: {相对路径: {url, sha256, size}}` 列出
+.bin 和贴图）或 `gltf-zip`）、`transform`（作用于 `processing.modelimport.load_model` 读出的模型坐标，顺序同
+SHAPES，含 `scale`）、`bounds`、`props.source`（`library、id、page、author、license、title` 六个非空字符串，CC0 也写
+作者；网站据此显示"模型来源"）、可选 `material: {tint, opacity, unlit}`（`tint` 写回时烘进模型，`opacity`、`unlit`
+留在物件上）。`place` 写的 `fit` 可以留着，写回时重算。地址只允许 `dl.polyhaven.org`、`huggingface.co`
+（`METAVERSE_RECON_MODEL_HOSTS` 可改，要和处理服务的 `WORKER_MODEL_HOSTS` 对得上）。模型库里常见厘米单位的模型：
+处理服务把旋转、缩放烘进模型之后才检查 ±1000 米的坐标上限。
+
+**提交**：`assemble` 的 `authored.json` 用命令行交给处理服务——扫描已经导入时在工作区里
+`metaverse rebuild --authored out/authored/authored.json`，第一次导入时 `metaverse scan <扫描> --authored …`
+（物件集的坐标就是 `prepare` 的坐标，也就是这份扫描首次导入的对齐结果）。
 
 | 环境变量 | 用途 |
 |---|---|
