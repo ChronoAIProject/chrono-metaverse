@@ -1,0 +1,149 @@
+{
+  "base": {
+    "anchors": [
+      {
+        "anchorId": "t1",
+        "box": [
+          0,
+          0,
+          0,
+          2,
+          2,
+          2
+        ],
+        "kind": "table",
+        "visibility": "public"
+      }
+    ],
+    "entities": [],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ]
+  },
+  "description": "锚点编号已存在",
+  "expect": {
+    "baseChunks": [],
+    "error": {
+      "index": 0,
+      "kind": "invalid",
+      "message": "第 0 条操作：锚点 t1 已存在"
+    },
+    "footprints": [
+      {
+        "cells": [
+          [
+            0,
+            0,
+            0,
+            1,
+            1,
+            1
+          ]
+        ],
+        "spaceWide": false
+      }
+    ],
+    "ok": false
+  },
+  "kind": "ops",
+  "name": "invalid-duplicate-anchor",
+  "ops": [
+    {
+      "anchor": {
+        "anchorId": "t1",
+        "kind": "seat",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "visibility": "public"
+      },
+      "op": "createAnchor"
+    }
+  ],
+  "probeCells": [],
+  "scope": null,
+  "spaceId": "vec-space"
+}

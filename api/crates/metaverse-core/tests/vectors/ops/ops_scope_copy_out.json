@@ -1,0 +1,138 @@
+{
+  "base": {
+    "anchors": [],
+    "entities": [],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ]
+  },
+  "description": "复制的目标落到地块外：超出范围",
+  "expect": {
+    "baseChunks": [],
+    "error": {
+      "index": 0,
+      "kind": "scope",
+      "message": "第 0 条操作：操作超出了路径范围 plot:p1"
+    },
+    "footprints": [
+      {
+        "cells": [
+          [
+            138,
+            0,
+            0,
+            142,
+            4,
+            4
+          ]
+        ],
+        "spaceWide": false
+      }
+    ],
+    "ok": false
+  },
+  "kind": "ops",
+  "name": "scope-copy-out",
+  "ops": [
+    {
+      "op": "copyRegion",
+      "source": [
+        100,
+        0,
+        0,
+        104,
+        4,
+        4
+      ],
+      "to": [
+        138,
+        0,
+        0
+      ]
+    }
+  ],
+  "probeCells": [],
+  "scope": "plot:p1",
+  "spaceId": "vec-space"
+}

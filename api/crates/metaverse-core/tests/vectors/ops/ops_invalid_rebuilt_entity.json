@@ -1,0 +1,150 @@
+{
+  "base": {
+    "anchors": [],
+    "entities": [],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ]
+  },
+  "description": "操作只能放扩展层的物件",
+  "expect": {
+    "baseChunks": [],
+    "error": {
+      "index": 0,
+      "kind": "invalid",
+      "message": "第 0 条操作：操作只能放扩展层的物件"
+    },
+    "footprints": [
+      {
+        "cells": [
+          [
+            -10,
+            0,
+            -10,
+            10,
+            20,
+            10
+          ]
+        ],
+        "spaceWide": false
+      }
+    ],
+    "ok": false
+  },
+  "kind": "ops",
+  "name": "invalid-rebuilt-entity",
+  "ops": [
+    {
+      "entity": {
+        "bounds": {
+          "max": [
+            0.5,
+            1,
+            0.5
+          ],
+          "min": [
+            -0.5,
+            0,
+            -0.5
+          ]
+        },
+        "entityId": "wall",
+        "kind": "structure",
+        "layer": "rebuilt",
+        "shape": {
+          "size": [
+            1,
+            1,
+            1
+          ],
+          "type": "box"
+        }
+      },
+      "op": "placeEntity"
+    }
+  ],
+  "probeCells": [],
+  "scope": null,
+  "spaceId": "vec-space"
+}

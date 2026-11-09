@@ -1,0 +1,147 @@
+{
+  "base": {
+    "anchors": [],
+    "entities": [],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ]
+  },
+  "description": "声明的 bounds 没有包住形状（圆柱半径 0.2，bounds 只到 x = 0.1）",
+  "expect": {
+    "baseChunks": [],
+    "error": {
+      "index": 0,
+      "kind": "invalid",
+      "message": "第 0 条操作：bounds 没有包住形状的实际范围"
+    },
+    "footprints": [
+      {
+        "cells": [
+          [
+            -2,
+            0,
+            -4,
+            4,
+            20,
+            4
+          ]
+        ],
+        "spaceWide": false
+      }
+    ],
+    "ok": false
+  },
+  "kind": "ops",
+  "name": "invalid-bounds",
+  "ops": [
+    {
+      "entity": {
+        "bounds": {
+          "max": [
+            0.2,
+            1,
+            0.2
+          ],
+          "min": [
+            -0.1,
+            0,
+            -0.2
+          ]
+        },
+        "entityId": "lamp",
+        "kind": "object",
+        "layer": "ext",
+        "shape": {
+          "height": 1,
+          "radius": 0.2,
+          "type": "cylinder"
+        }
+      },
+      "op": "placeEntity"
+    }
+  ],
+  "probeCells": [],
+  "scope": null,
+  "spaceId": "vec-space"
+}

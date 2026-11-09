@@ -1,0 +1,339 @@
+{
+  "base": {
+    "anchors": [],
+    "entities": [],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ]
+  },
+  "description": "空心盒：默认壁厚 1，只写外壳；壁厚 2 的 6×6×6；壁厚超过一半时整盒填满",
+  "expect": {
+    "anchors": [],
+    "baseChunks": [],
+    "chunkChanges": [
+      {
+        "cx": 0,
+        "cy": 0,
+        "cz": 0,
+        "hash": "6b8821a5d43bc2c82669e1f88fdd457558aa54c8ed542330e63c43f5a4b17225",
+        "layer": "ext"
+      }
+    ],
+    "chunks": [
+      {
+        "cx": 0,
+        "cy": 0,
+        "cz": 0,
+        "hash": "6b8821a5d43bc2c82669e1f88fdd457558aa54c8ed542330e63c43f5a4b17225",
+        "layer": "ext",
+        "nonZeroCount": 370
+      }
+    ],
+    "entities": [],
+    "footprints": [
+      {
+        "cells": [
+          [
+            0,
+            0,
+            0,
+            5,
+            5,
+            5
+          ]
+        ],
+        "spaceWide": false
+      },
+      {
+        "cells": [
+          [
+            10,
+            0,
+            0,
+            16,
+            6,
+            6
+          ]
+        ],
+        "spaceWide": false
+      },
+      {
+        "cells": [
+          [
+            20,
+            0,
+            0,
+            24,
+            4,
+            4
+          ]
+        ],
+        "spaceWide": false
+      }
+    ],
+    "ok": true,
+    "probes": [
+      {
+        "cell": [
+          0,
+          0,
+          0
+        ],
+        "effective": 2,
+        "ext": 2,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          2,
+          2,
+          2
+        ],
+        "effective": 0,
+        "ext": 0,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          4,
+          2,
+          2
+        ],
+        "effective": 2,
+        "ext": 2,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          11,
+          2,
+          2
+        ],
+        "effective": 3,
+        "ext": 3,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          12,
+          2,
+          2
+        ],
+        "effective": 0,
+        "ext": 0,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          13,
+          3,
+          3
+        ],
+        "effective": 0,
+        "ext": 0,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          21,
+          1,
+          1
+        ],
+        "effective": 7,
+        "ext": 7,
+        "rebuilt": 0
+      },
+      {
+        "cell": [
+          22,
+          2,
+          2
+        ],
+        "effective": 7,
+        "ext": 7,
+        "rebuilt": 0
+      }
+    ],
+    "provisionalBlocks": [],
+    "touched": {
+      "anchors": [],
+      "chunks": [
+        {
+          "cx": 0,
+          "cy": 0,
+          "cz": 0,
+          "layer": "ext"
+        }
+      ],
+      "entities": [],
+      "palette": false
+    }
+  },
+  "kind": "ops",
+  "name": "hollow-box",
+  "ops": [
+    {
+      "block": 2,
+      "box": [
+        0,
+        0,
+        0,
+        5,
+        5,
+        5
+      ],
+      "op": "hollowBox"
+    },
+    {
+      "block": 3,
+      "box": [
+        10,
+        0,
+        0,
+        16,
+        6,
+        6
+      ],
+      "op": "hollowBox",
+      "thickness": 2
+    },
+    {
+      "block": 7,
+      "box": [
+        20,
+        0,
+        0,
+        24,
+        4,
+        4
+      ],
+      "op": "hollowBox",
+      "thickness": 3
+    }
+  ],
+  "probeCells": [
+    [
+      0,
+      0,
+      0
+    ],
+    [
+      2,
+      2,
+      2
+    ],
+    [
+      4,
+      2,
+      2
+    ],
+    [
+      11,
+      2,
+      2
+    ],
+    [
+      12,
+      2,
+      2
+    ],
+    [
+      13,
+      3,
+      3
+    ],
+    [
+      21,
+      1,
+      1
+    ],
+    [
+      22,
+      2,
+      2
+    ]
+  ],
+  "scope": null,
+  "spaceId": "vec-space"
+}

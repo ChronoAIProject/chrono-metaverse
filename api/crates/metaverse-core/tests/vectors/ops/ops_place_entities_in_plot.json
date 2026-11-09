@@ -1,0 +1,487 @@
+{
+  "base": {
+    "anchors": [],
+    "entities": [],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ]
+  },
+  "description": "地块路径：放模板和两把实例椅子，再放一盏带圆弧轮廓、旋转体和标签的灯；记录哈希按服务端的存法（null 可选字段去掉，props 缺省为 {}）",
+  "expect": {
+    "anchors": [],
+    "baseChunks": [],
+    "chunkChanges": [],
+    "chunks": [],
+    "entities": [
+      {
+        "hash": "e5bbc18868b668e4145f89d30d54e0a41929bd042b0a7d31b5ffa2e8745542a1",
+        "id": "chair-1"
+      },
+      {
+        "hash": "30475fdc57629e167d32a747d53f120e8a2179da40dc202055283ac2ce00adac",
+        "id": "chair-2"
+      },
+      {
+        "hash": "f60c37edbdac57ecf4c5c104cd63e6663ef566de580e0a2400549a6870a545c7",
+        "id": "chair-a"
+      },
+      {
+        "hash": "03d23d8bfa483f601f4142c26f0ff5c674aa9e7ea73667660400451ce4465c26",
+        "id": "lamp-1"
+      }
+    ],
+    "footprints": [
+      {
+        "cells": [],
+        "spaceWide": false
+      },
+      {
+        "cells": [
+          [
+            105,
+            0,
+            5,
+            115,
+            18,
+            15
+          ]
+        ],
+        "spaceWide": false
+      },
+      {
+        "cells": [
+          [
+            125,
+            0,
+            20,
+            135,
+            18,
+            30
+          ]
+        ],
+        "spaceWide": false
+      },
+      {
+        "cells": [
+          [
+            114,
+            0,
+            6,
+            128,
+            32,
+            19
+          ]
+        ],
+        "spaceWide": false
+      }
+    ],
+    "ok": true,
+    "probes": [],
+    "provisionalBlocks": [],
+    "touched": {
+      "anchors": [],
+      "chunks": [],
+      "entities": [
+        "chair-1",
+        "chair-2",
+        "chair-a",
+        "lamp-1"
+      ],
+      "palette": false
+    }
+  },
+  "kind": "ops",
+  "name": "place-entities-in-plot",
+  "ops": [
+    {
+      "entity": {
+        "bounds": {
+          "max": [
+            0.225,
+            0.87,
+            0.225
+          ],
+          "min": [
+            -0.225,
+            0,
+            -0.225
+          ]
+        },
+        "entityId": "chair-a",
+        "kind": "template",
+        "layer": "ext",
+        "shape": {
+          "children": [
+            {
+              "fillet": 0.01,
+              "size": [
+                0.45,
+                0.04,
+                0.45
+              ],
+              "transform": {
+                "position": [
+                  0,
+                  0.43,
+                  0
+                ]
+              },
+              "type": "box"
+            },
+            {
+              "size": [
+                0.45,
+                0.4,
+                0.03
+              ],
+              "transform": {
+                "position": [
+                  0,
+                  0.47,
+                  -0.21
+                ]
+              },
+              "type": "box"
+            },
+            {
+              "path": [
+                [
+                  -0.2,
+                  0.015,
+                  -0.2
+                ],
+                [
+                  -0.2,
+                  0.43,
+                  -0.2
+                ]
+              ],
+              "section": {
+                "circle": 0.015
+              },
+              "type": "sweep"
+            },
+            {
+              "path": [
+                [
+                  0.2,
+                  0.015,
+                  -0.2
+                ],
+                [
+                  0.2,
+                  0.43,
+                  -0.2
+                ]
+              ],
+              "section": {
+                "circle": 0.015
+              },
+              "type": "sweep"
+            },
+            {
+              "path": [
+                [
+                  -0.2,
+                  0.015,
+                  0.2
+                ],
+                [
+                  -0.2,
+                  0.43,
+                  0.2
+                ]
+              ],
+              "section": {
+                "circle": 0.015
+              },
+              "type": "sweep"
+            },
+            {
+              "path": [
+                [
+                  0.2,
+                  0.015,
+                  0.2
+                ],
+                [
+                  0.2,
+                  0.43,
+                  0.2
+                ]
+              ],
+              "section": {
+                "circle": 0.015
+              },
+              "type": "sweep"
+            }
+          ],
+          "type": "group"
+        }
+      },
+      "op": "placeEntity"
+    },
+    {
+      "entity": {
+        "bounds": {
+          "max": [
+            5.725,
+            0.87,
+            0.725
+          ],
+          "min": [
+            5.275,
+            0.0,
+            0.275
+          ]
+        },
+        "entityId": "chair-1",
+        "kind": "object",
+        "layer": "ext",
+        "shape": {
+          "template": "chair-a",
+          "transform": {
+            "position": [
+              5.5,
+              0,
+              0.5
+            ]
+          },
+          "type": "instance"
+        }
+      },
+      "op": "placeEntity"
+    },
+    {
+      "entity": {
+        "bounds": {
+          "max": [
+            6.725,
+            0.87,
+            1.475
+          ],
+          "min": [
+            6.275,
+            0.0,
+            1.025
+          ]
+        },
+        "entityId": "chair-2",
+        "kind": "object",
+        "layer": "ext",
+        "shape": {
+          "template": "chair-a",
+          "transform": {
+            "position": [
+              6.5,
+              0,
+              1.25
+            ]
+          },
+          "type": "instance"
+        }
+      },
+      "op": "placeEntity"
+    },
+    {
+      "entity": {
+        "anchorId": null,
+        "bounds": {
+          "max": [
+            6.4,
+            1.6,
+            0.95
+          ],
+          "min": [
+            5.7,
+            0,
+            0.3
+          ]
+        },
+        "entityId": "lamp-1",
+        "kind": "object",
+        "label": "落地灯 🌙",
+        "layer": "ext",
+        "props": {
+          "note": null,
+          "tags": [
+            "a",
+            "b"
+          ],
+          "watts": 12
+        },
+        "shape": {
+          "children": [
+            {
+              "profile": [
+                [
+                  0,
+                  0
+                ],
+                [
+                  0.18,
+                  0
+                ],
+                [
+                  0.18,
+                  0.03
+                ],
+                [
+                  0.02,
+                  0.05
+                ],
+                [
+                  0.02,
+                  1.4
+                ],
+                [
+                  0,
+                  1.4
+                ]
+              ],
+              "segments": 24,
+              "type": "lathe"
+            },
+            {
+              "height": 0.3,
+              "outline": {
+                "arcs": [
+                  {
+                    "bulge": 0.4,
+                    "from": 1
+                  }
+                ],
+                "fillets": [
+                  {
+                    "at": 0,
+                    "radius": 0.02
+                  }
+                ],
+                "points": [
+                  [
+                    -0.15,
+                    -0.15
+                  ],
+                  [
+                    0.15,
+                    -0.15
+                  ],
+                  [
+                    0.15,
+                    0.15
+                  ],
+                  [
+                    -0.15,
+                    0.15
+                  ]
+                ]
+              },
+              "transform": {
+                "position": [
+                  0,
+                  1.3,
+                  0
+                ]
+              },
+              "type": "extrude"
+            }
+          ],
+          "transform": {
+            "position": [
+              6,
+              0,
+              0.6
+            ],
+            "yaw": 30
+          },
+          "type": "group"
+        }
+      },
+      "op": "placeEntity"
+    }
+  ],
+  "probeCells": [],
+  "scope": "plot:p1",
+  "spaceId": "vec-space"
+}

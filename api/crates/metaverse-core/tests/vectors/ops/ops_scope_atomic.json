@@ -1,0 +1,196 @@
+{
+  "base": {
+    "anchors": [],
+    "entities": [],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ]
+  },
+  "description": "地块路径下第 3 条把锚点移出地块：整批失败（kind = scope，index = 2），前两条也不生效",
+  "expect": {
+    "baseChunks": [],
+    "error": {
+      "index": 2,
+      "kind": "scope",
+      "message": "第 2 条操作：操作超出了路径范围 plot:p1"
+    },
+    "footprints": [
+      {
+        "cells": [
+          [
+            100,
+            0,
+            0,
+            104,
+            4,
+            4
+          ]
+        ],
+        "spaceWide": false
+      },
+      {
+        "cells": [
+          [
+            101,
+            0,
+            1,
+            103,
+            2,
+            3
+          ]
+        ],
+        "spaceWide": false
+      },
+      {
+        "cells": [
+          [
+            101,
+            0,
+            1,
+            103,
+            2,
+            3
+          ],
+          [
+            139,
+            0,
+            39,
+            141,
+            2,
+            41
+          ]
+        ],
+        "spaceWide": false
+      }
+    ],
+    "ok": false
+  },
+  "kind": "ops",
+  "name": "scope-atomic",
+  "ops": [
+    {
+      "block": 2,
+      "box": [
+        100,
+        0,
+        0,
+        104,
+        4,
+        4
+      ],
+      "op": "fill"
+    },
+    {
+      "anchor": {
+        "anchorId": "t9",
+        "box": [
+          101,
+          0,
+          1,
+          103,
+          2,
+          3
+        ],
+        "kind": "table",
+        "visibility": "public"
+      },
+      "op": "createAnchor"
+    },
+    {
+      "anchorId": "t9",
+      "box": [
+        139,
+        0,
+        39,
+        141,
+        2,
+        41
+      ],
+      "op": "moveAnchor"
+    }
+  ],
+  "probeCells": [],
+  "scope": "plot:p1",
+  "spaceId": "vec-space"
+}
