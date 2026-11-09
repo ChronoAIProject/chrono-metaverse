@@ -16,11 +16,11 @@
 - **坐标**：`transform` 作用于模型按 `processing.modelimport.load_model` 读出的坐标（glTF 的节点变换已经展开，
   单位按米理解），顺序与 SHAPES 相同：`M = T · Ry(yaw) · Rx(pitch) · Rz(roll) · S`。所以向上轴不对的模型用
   `pitch` / `roll` 的 90° 倍数摆正，`scale` 是沿模型原始坐标轴的缩放。
-- **格式**：`glb`（一个文件）；`gltf`（Poly Haven：`url` 是 .gltf 文件，`files` 列出它引用的 .bin 和贴图，
-每个都有
-  `path`（相对 .gltf 的路径）、`url`、`sha256`、`size`；`pack_gltf` 把它们打包成 glb）；
-  `gltf-zip`（压缩包里一个
-  .gltf 加它引用的文件，例如 Sketchfab 的 glTF 下载）。
+- **格式**：`glb`（一个文件）；`gltf`（Poly Haven：`url` 是 .gltf 文件，`files` 是
+  `{相对 .gltf 的路径: {url, sha256, size}}`，列出它引用的 .bin 和贴图；`pack_gltf` 把它们打包成 glb）；
+  `gltf-zip`（压缩包里一个 .gltf 加它引用的文件）。与写回路径收的格式相同（`metaverse_worker.authored`）。
+- **material**：`{tint?, opacity?, unlit?}`，`tint` 写回时烘进模型，`opacity`、`unlit` 留在物件上。
+- **单位**：处理服务把旋转、缩放烘进模型之后才检查 ±1000 米的坐标上限，厘米单位的模型缩放后可以用。
 - **bounds** 按变换后的模型算（`world_bounds`）。
 """
 
@@ -38,19 +38,15 @@ from urllib.parse import urlparse
 import numpy as np
 
 from .. import shapes as sh
-from ..canonical import is_sha256_hex
+from ..authored import AuthoredError, model_material, parse_model, validate_source
 from ..processing import shape_mesh as sm
 from .core import Box, ReconError, r
 from .env import cache_dir
-from .library.licenses import allowed as license_allowed
 
-MODEL_FORMATS = ("glb", "gltf", "gltf-zip")
 DEFAULT_HOSTS = ("dl.polyhaven.org", "huggingface.co")
-LIBRARIES = ("polyhaven", "objaverse", "sketchfab")
-SOURCE_FIELDS = ("library", "id", "page", "author", "license", "title")
 MAX_MODEL_TRIANGLES = 3_000_000
 MAX_MODEL_PIXELS = 8192 * 8192
-PROCESSING_COORD_LIMIT = 1000.0  # processing.modelimport.load_model 拒收坐标超过 ±1000 米的模型
+PROCESSING_COORD_LIMIT = 1000.0  # 处理服务拒收缩放后坐标超过 ±1000 米的外部模型
 
 
 def allowed_hosts() -> tuple[str, ...]:
@@ -217,74 +213,64 @@ def _check_transform(xf: Any, errors: list[str]) -> None:
 
 
 def check_source(src: Any) -> list[str]:
-    errors = []
+    """署名：规则与写回路径、物件记录相同（`authored.validate_source` → `records.validate_model_source`）。"""
     if not isinstance(src, Mapping):
         return ["缺少 props.source（署名：library、id、page、author、license、title）"]
-    for k in SOURCE_FIELDS:
-        if not isinstance(src.get(k), str) or not src.get(k).strip():
-            errors.append(f"props.source.{k} 必须是非空字符串")
-    if src.get("library") not in LIBRARIES:
-        errors.append(f"props.source.library 必须是 {'、'.join(LIBRARIES)} 之一")
-    if not license_allowed(src.get("license")):
-        errors.append(f"许可 {src.get('license')!r} 不允许（只要 CC0-1.0、CC-BY-4.0、CC-BY-3.0）")
-    page = src.get("page")
-    if isinstance(page, str) and not page.startswith("https://"):
-        errors.append("props.source.page 必须是 https 地址")
-    return errors
+    try:
+        validate_source(src, "props.source")
+    except AuthoredError as e:
+        return [str(e)]
+    return []
 
 
 def _check_url(url: Any, what: str, hosts: tuple[str, ...], errors: list[str]) -> None:
     if not isinstance(url, str) or not url.startswith("https://"):
-        errors.append(f"{what} 必须是 https 地址")
-        return
+        return  # 结构问题由 parse_model 报
     host = (urlparse(url).hostname or "").lower()
     if host not in hosts:
         errors.append(f"{what} 的主机 {host} 不在允许的列表里（{', '.join(hosts)}）")
 
 
+def model_ref(model: Mapping[str, Any]) -> dict[str, Any]:
+    """写回用的 `model`：只留 url、sha256、size、format，gltf 的附属文件写成 `{相对路径: {url, sha256, size}}`
+    （旧版 fetch 旁注里是 `[{path, url, sha256, size}]`，这里一并换过来）。"""
+    out = {k: model[k] for k in ("url", "sha256", "size", "format") if k in model}
+    files = model.get("files")
+    if isinstance(files, list):
+        files = {
+            f["path"]: {k: f[k] for k in ("url", "sha256", "size") if k in f}
+            for f in files
+            if isinstance(f, Mapping) and isinstance(f.get("path"), str)
+        }
+    if files:
+        out["files"] = {p: dict(files[p]) for p in sorted(files)}
+    return out
+
+
 def check_model_entity(
     body: Mapping[str, Any], hosts: tuple[str, ...] | None = None
 ) -> tuple[list[str], list[str]]:
-    """外部模型物件的校验：返回 (错误, 提示)。"""
+    """外部模型物件的校验：返回 (错误, 提示)。`model`、`material`、署名按写回路径的规则
+    （`metaverse_worker.authored`），另外检查地址的主机在允许列表里、bounds 已经算好。"""
     hosts = hosts or allowed_hosts()
     errors: list[str] = []
     warnings: list[str] = []
-    model = body.get("model")
     if body.get("shape") is not None:
         errors.append("外部模型物件不能同时有 shape")
+    if body.get("assetHash") is not None:
+        errors.append("AI 物件集不能带 assetHash：外部模型用 model（url、sha256、size、format）给出")
+    model = body.get("model")
     if not isinstance(model, Mapping):
-        if body.get("assetHash") is None:
-            errors.append("缺少 model（url、sha256、size、format）")
-        model = {}
+        errors.append("缺少 model（url、sha256、size、format）")
     else:
-        _check_url(model.get("url"), "model.url", hosts, errors)
-        if not is_sha256_hex(model.get("sha256")):
-            errors.append("model.sha256 必须是 64 位小写十六进制")
-        size = model.get("size")
-        if not (isinstance(size, int) and not isinstance(size, bool) and size > 0):
-            errors.append("model.size 必须是正整数（字节）")
-        fmt = model.get("format")
-        if fmt not in MODEL_FORMATS:
-            errors.append(f"model.format 必须是 {'、'.join(MODEL_FORMATS)} 之一")
-        files = model.get("files")
-        if fmt == "gltf":
-            if not isinstance(files, list) or not files:
-                errors.append("gltf 格式要在 model.files 里列出引用的文件")
-            else:
-                for i, f in enumerate(files):
-                    if not isinstance(f, Mapping):
-                        errors.append(f"model.files[{i}] 必须是对象")
-                        continue
-                    _check_url(f.get("url"), f"model.files[{i}].url", hosts, errors)
-                    p = f.get("path")
-                    if not isinstance(p, str) or not p or p.startswith("/") or ".." in p.split("/"):
-                        errors.append(f"model.files[{i}].path 必须是相对路径")
-                    if not is_sha256_hex(f.get("sha256")):
-                        errors.append(f"model.files[{i}].sha256 必须是 64 位小写十六进制")
-                    if not (isinstance(f.get("size"), int) and f["size"] > 0):
-                        errors.append(f"model.files[{i}].size 必须是正整数")
-        elif files is not None:
-            errors.append("只有 gltf 格式才带 model.files")
+        try:
+            parsed = parse_model(model, "model")
+        except AuthoredError as e:
+            errors.append(str(e))
+        else:
+            _check_url(parsed["url"], "model.url", hosts, errors)
+            for f in parsed["files"]:
+                _check_url(f["url"], f"model.files[{f['path']!r}].url", hosts, errors)
     xf = body.get("transform")
     if xf is None:
         warnings.append("没有 transform：按模型原始坐标摆放")
@@ -292,18 +278,10 @@ def check_model_entity(
         _check_transform(xf, errors)
     if not isinstance(body.get("bounds"), Mapping):
         errors.append("缺少 bounds（用 place 或 assemble 按模型算）")
-    mat = body.get("material")
-    if mat is not None:
-        if not isinstance(mat, Mapping) or set(mat) - {"tint", "opacity"}:
-            errors.append("外部模型物件的 material 只能带 tint（和 opacity）")
-        else:
-            tint = mat.get("tint")
-            if tint is not None and not (
-                isinstance(tint, list)
-                and len(tint) == 3
-                and all(isinstance(c, int) and 0 <= c <= 255 for c in tint)
-            ):
-                errors.append("material.tint 必须是 3 个 0–255 的整数")
+    try:
+        model_material(body.get("material"), "material")
+    except AuthoredError as e:
+        errors.append(str(e))
     errors += check_source((body.get("props") or {}).get("source"))
     return errors, warnings
 

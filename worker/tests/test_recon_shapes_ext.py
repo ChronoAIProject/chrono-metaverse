@@ -1,4 +1,4 @@
-"""重建工作台的形状兼容层：plate、hull、opacity、unlit、bake（按 SHAPES 新增的规定）。"""
+"""重建工作台的形状辅助：plate、hull、opacity、unlit 用处理服务的实现，烘焙指令 bake 按物件集的规则。"""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import pytest
 
 from metaverse_worker.processing import shape_mesh as sm
 from metaverse_worker.recon import shapes_ext as sx
-from metaverse_worker.shapes import ShapeError
+from metaverse_worker.shapes import ShapeError, plate_frame
 
 # 斜着的四边形（法向朝 +y 偏 +z），从法向一侧看逆时针
 SLOPE = [[0, 0.5, 0.5], [1.0, 0.5, 0.5], [1.0, 1.0, 0], [0, 1.0, 0]]
@@ -20,14 +20,14 @@ def plate(points=None, t=0.04, **extra):
 def test_plate_normal_bounds_and_mesh():
     shape = plate()
     sx.validate_shape(shape)
-    n = sx.newell_normal(np.array(SLOPE, float))
+    n = np.array(plate_frame(SLOPE)[1])
     assert n[1] > 0 and n[2] > 0  # 右手定则：逆时针给出朝上、朝 +z 的法向
     b = sx.shape_bounds(shape)
     off = -n * 0.04  # 板沿 −法向延伸
     assert b["min"][1] == pytest.approx(0.5 + off[1])
     assert b["min"][2] == pytest.approx(min(0, off[2]))
     assert b["max"][2] == pytest.approx(0.5)
-    mesh = sx.plate_mesh(shape)
+    mesh = sm.plate_mesh(shape)
     # 封闭：顶面 + 底面 + 4 个侧面，体积 = 面积 × 厚度
     area = np.linalg.norm(np.cross(np.array(SLOPE[1]) - SLOPE[0], np.array(SLOPE[3]) - SLOPE[0]))
     tri = mesh.triangles()
@@ -43,10 +43,10 @@ def test_plate_normal_bounds_and_mesh():
         (plate(points=[[0, 0, 0], [1, 0, 0]]), "3 到 64"),
         (plate(points=[[0, 0, 0], [1, 0, 0], [1, 0.01, 1], [0, 0, 1]]), "平面"),
         (plate(points=[[0, 0, 0], [2, 0, 0], [2, 0, 2], [1, 0, -1], [0, 0, 2]]), "自相交"),
-        (plate(points=[[0, 0, 0], [1, 0, 0], [2, 0, 0]]), "共线"),
-        (plate(extra=1), "不认识"),
+        (plate(points=[[0, 0, 0], [1, 0, 0], [2, 0, 0]]), "面积"),
+        (plate(extra=1), "extra"),
         ({"type": "hull", "points": [[0, 0, 0], [1, 0, 0], [0, 0, 1], [1, 0, 1]]}, "共面"),
-        ({"type": "hull", "points": [[0, 0, 0], [1, 0, 0], [0, 1, 0]]}, "4 到 256"),
+        ({"type": "hull", "points": [[0, 0, 0], [1, 0, 0], [0, 1, 0]]}, "4"),
     ],
 )
 def test_invalid_ext_shapes(shape, message):
@@ -63,7 +63,7 @@ def test_hull_mesh_is_closed_convex_and_outward():
     pts = [[0, 0, 0], [1, 0, 0], [0, 0, 1], [1, 0, 1], [0.5, 0.8, 0.5], [0.5, 0.2, 0.5]]  # 最后一点在里面
     shape = {"type": "hull", "points": pts}
     sx.validate_shape(shape)
-    mesh = sx.hull_mesh(shape)
+    mesh = sm.hull_mesh(shape)
     tri = mesh.triangles()
     vol = np.einsum("ij,ij->i", tri[:, 0], np.cross(tri[:, 1], tri[:, 2])).sum() / 6
     assert vol == pytest.approx(1 * 1 * 0.8 / 3)  # 四棱锥，法向朝外时体积为正
@@ -96,9 +96,19 @@ def test_material_extras_validation_and_parts():
         ({"color": [1, 2, 3], "unlit": 1}, "unlit"),
         ({"bake": "mesh"}, "bake"),
         ({"texture": "a" * 64, "uv": "box", "bake": "box"}, "texture"),
+        ({"color": [1, 2, 3], "tint": [1, 2, 3], "bake": "box"}, "tint"),
     ):
         with pytest.raises(ShapeError, match=msg):
             sx.validate_shape({"type": "box", "size": [1, 1, 1], "material": bad})
+
+
+def test_bake_keeps_opacity_and_uses_given_color():
+    material = {"bake": "box", "color": [9, 8, 7], "opacity": 0.5}
+    shape = {"type": "box", "size": [1, 1, 1], "material": material}
+    sx.validate_shape(shape)
+    (part,) = sx.build_parts(shape)
+    assert part.material == {"color": [9, 8, 7], "opacity": 0.5, "bake": "box"}
+    assert sx.lower_body({"shape": shape})["shape"]["material"] == {"color": [9, 8, 7], "opacity": 0.5}
 
 
 def test_build_parts_matches_processing_for_existing_types():

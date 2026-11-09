@@ -15,7 +15,8 @@ AI 物件集（写回路径接收的格式，`rebuild` 任务交给处理服务�
 `bounds` + `props.source`，见 `models.py`）。
 
 合并时：模板按编号去重（内容不同就报错）、物件编号唯一、引用的模板必须存在、每个物件逐个校验、包围盒按形状
-或模型重算。输出目录：`authored.json`、`room.glb`（整房预览：结构 + 物件）、`room.jpg`（扫描 | 现有算法 |
+或模型重算；最后整份交给写回路径的校验（`metaverse_worker.authored.parse_authored`，处理服务收到时跑的就是它），
+通过了才算合格。输出目录：`authored.json`、`room.glb`（整房预览：结构 + 物件）、`room.jpg`（扫描 | 现有算法 |
 AI 重建：总览、俯视、四个角）、`report.json`（逐件偏差表、漏建的扫描团块）。
 """
 
@@ -32,6 +33,7 @@ from PIL import Image
 from scipy import ndimage
 from scipy.spatial import cKDTree
 
+from ..authored import AuthoredError, parse_authored
 from ..canonical import canonical_json
 from ..processing import shape_mesh as sm
 from ..processing.fit_texture import SurfaceIndex
@@ -179,9 +181,11 @@ def validate(
             if chk.get("computedBounds"):
                 body["bounds"] = chk["computedBounds"]
         elif body.get("model") is not None or body.get("assetHash") is not None:
+            if isinstance(body.get("model"), dict):
+                body["model"] = md.model_ref(body["model"])  # 旧版旁注里 files 是数组
             local = md.find_local(body, models_dirs)
             chk = check_model_body(eid, body, local)
-            extra = sorted(set(body) - MODEL_KEYS - ({"assetHash"} if body.get("assetHash") else set()))
+            extra = sorted(set(body) - MODEL_KEYS - {"assetHash"})
             if extra:
                 chk["errors"].append(f"外部模型物件有不认识的字段：{extra}")
             if local is None:
@@ -218,7 +222,12 @@ def external_parts(entities: dict[str, dict], locals_: dict[str, str], textures:
         body = entities[eid]
         m = md.load_model_file(path)
         mesh = md.world_mesh(body, m)
-        mat: dict = {"color": [round(c * 255) for c in m.base_color[:3]]}
+        look = body.get("material") or {}
+        tint = look.get("tint")
+        color = [c * 255 for c in m.base_color[:3]]
+        if tint:
+            color = [c * t / 255 for c, t in zip(color, tint, strict=True)]
+        mat: dict = {"color": [round(c) for c in color]}
         if m.texture is not None and m.uv is not None:
             buf = io.BytesIO()
             img = Image.fromarray(m.texture[:, :, :3])
@@ -227,9 +236,10 @@ def external_parts(entities: dict[str, dict], locals_: dict[str, str], textures:
             key = hashlib.sha256(buf.getvalue()).hexdigest()
             textures[key] = buf.getvalue()
             mat = {"texture": key, "uv": "mesh", "lit": True}
-            tint = (body.get("material") or {}).get("tint")
             if tint:
                 mat["tint"] = tint
+        # 与网站相同：opacity、unlit 作用于整个模型
+        mat.update({k: look[k] for k in ("opacity", "unlit") if look.get(k) is not None})
         out[eid] = [sm.Part(mesh, mat, "$model")]
     return out
 
@@ -400,6 +410,12 @@ def cmd_assemble(args) -> dict:
         del authored["notes"]
     path = os.path.join(out_dir, "authored.json")
     wc.write_json(path, authored)
+    if not errors and not bad:
+        # 写回路径（处理服务）对同一份文件的完整校验：通过了，scan_import / rebuild 就会原样接受
+        try:
+            parse_authored(authored)
+        except AuthoredError as e:
+            errors.append(f"写回路径校验不通过：{e}")
     size = len(json.dumps(authored, ensure_ascii=False).encode())
     print(
         f"AI 物件集：{len(templates)} 个模板，{len(entities)} 个物件"

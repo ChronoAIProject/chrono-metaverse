@@ -110,9 +110,10 @@ def check_model_body(eid: str, body: dict, local: str | None) -> dict:
                 diff = max(abs(db[k][i] - b[k][i]) for k in ("min", "max") for i in range(3))
                 if diff > 0.005:
                     out["warnings"].append(f"记录里的 bounds 与按模型算出的差 {diff:.3f} 米（以算出的为准）")
-            lo, hi = m.bounds()
-            if max(np.abs(lo).max(), np.abs(hi).max()) > md.PROCESSING_COORD_LIMIT:
-                out["errors"].append("模型原始坐标超过 ±1000 米，处理服务会拒收（换一个候选）")
+            # 处理服务把旋转、缩放烘进模型后再查坐标上限（平移不算在内）
+            lin = md.transform_matrix({**(body.get("transform") or {}), "position": [0, 0, 0]})[:3, :3]
+            if np.abs(m.vertices @ lin.T).max() > md.PROCESSING_COORD_LIMIT:
+                out["errors"].append("模型缩放后的坐标超过 ±1000 米，处理服务会拒收（检查 scale 的单位换算）")
         except wc.ReconError as e:
             out["errors"].append(str(e))
     out["ok"] = not out["errors"]
@@ -167,10 +168,13 @@ def build_modelset(
                 ps = md.model_parts(body, m)
                 ms.parts += ps
                 ms.labels += [eid] * len(ps)
+                look = body.get("material") or {}
                 ms.externals[eid] = {
                     "path": local,
                     "matrix": md.column_major(md.transform_matrix(body.get("transform"))),
-                    "tint": (body.get("material") or {}).get("tint"),
+                    "tint": look.get("tint"),
+                    "opacity": look.get("opacity"),
+                    "unlit": look.get("unlit"),
                 }
         else:
             chk = {"entityId": eid, "errors": ["既没有 shape 也没有 model"], "ok": False}
@@ -596,6 +600,8 @@ def render_models(
             "group": "new",
             "lit": True,
             "tint": tint,
+            "opacity": ext.get("opacity"),
+            "unlit": ext.get("unlit"),
         }
     return models
 

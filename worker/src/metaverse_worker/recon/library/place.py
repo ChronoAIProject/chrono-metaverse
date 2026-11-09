@@ -536,8 +536,7 @@ def cmd_place(args) -> dict:
             body["label"] = label
         if src_body and src_body.get("anchorId"):
             body["anchorId"] = src_body["anchorId"]
-        model_ref = {k: v for k, v in side["model"].items() if k != "resolution"}
-        body["model"] = model_ref
+        body["model"] = md.model_ref(side["model"])
         body["transform"] = xf
         body["bounds"] = md.world_bounds(body, model)
         props: dict = {}

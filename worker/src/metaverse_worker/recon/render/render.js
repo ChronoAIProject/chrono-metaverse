@@ -1,7 +1,7 @@
 // 无头渲染：node render.js <任务 JSON 文件>
 // 任务 JSON：{ "three": three 包目录, "playwright": playwright 包目录, "chromium": 可执行文件（可省）,
 //             "font": 字体文件（可省）, "strings": 页面上的文字（中文或英文）,
-//             "models": { 名字: glb 路径 或 { path, matrix?（列主序 16 个数）, tint?, group?, lit? } },
+//             "models": { 名字: glb 路径 或 { path, matrix?（列主序 16 个数）, tint?, group?, lit?, opacity?, unlit? } },
 //             "views": [ { "out": PNG 路径, ...渲染参数 } ] }
 // 起一个只读的本地静态服务：/m/<名字> → 对应 glb，/three/* → three 包，/font → 字体，其余 → 本目录（index.html）。
 // 一个页面加载一次模型，依次渲染所有视图。每张图打印一行耗时；结果信息（比例尺、相机朝向）写到 <任务文件>.out.json。

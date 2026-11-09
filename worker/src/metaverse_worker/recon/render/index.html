@@ -52,18 +52,21 @@ window.wbSetup = async (s) => {
 };
 
 // 选项：matrix（列主序 16 个数，模型坐标 → 空间坐标）、tint（[r,g,b] 0–255，乘到贴图上）、
-// group（显示时按组名选）、lit（贴图也打光：模型库的模型；默认贴图不打光：扫描和烘焙贴图自带光照）。
+// group（显示时按组名选）、lit（贴图也打光：模型库的模型；默认贴图不打光：扫描和烘焙贴图自带光照）、
+// opacity（0–1，乘到整个模型上）、unlit（整个模型不打光）：与网站画外部模型物件的 material 相同。
 window.wbLoad = async (list) => {
   for (const [name, url, opt] of list) {
     const g = await new GLTFLoader().loadAsync(url);
     const mats = [];
     const tint = opt && opt.tint ? new THREE.Color().setRGB(opt.tint[0] / 255, opt.tint[1] / 255, opt.tint[2] / 255, THREE.SRGBColorSpace) : null;
+    const extraOpacity = opt && typeof opt.opacity === 'number' ? Math.min(1, Math.max(0, opt.opacity)) : 1;
+    const unlit = !!(opt && opt.unlit);
     g.scene.traverse((o) => {
       if (!o.isMesh) return;
       const src = Array.isArray(o.material) ? o.material : [o.material];
       const out = src.map((m) => {
         const color = m.color ? m.color.clone() : new THREE.Color(0xffffff);
-        const opacity = m.opacity !== undefined ? m.opacity : 1;
+        const opacity = (m.opacity !== undefined ? m.opacity : 1) * extraOpacity;
         const transparent = m.transparent || opacity < 0.999;
         const common = { color, side: THREE.DoubleSide, transparent, opacity, depthWrite: !transparent };
         let r;
@@ -71,12 +74,12 @@ window.wbLoad = async (list) => {
           m.map.colorSpace = THREE.SRGBColorSpace;
           m.map.anisotropy = 4;
           if (tint) common.color = color.clone().multiply(tint);
-          if (opt && opt.lit && !m.isMeshBasicMaterial) {
+          if (opt && opt.lit && !unlit && !m.isMeshBasicMaterial) {
             r = new THREE.MeshStandardMaterial({ ...common, map: m.map, roughness: 0.8, metalness: 0.0 });
           } else {
             r = new THREE.MeshBasicMaterial({ ...common, map: m.map, toneMapped: false });
           }
-        } else if (m.isMeshBasicMaterial && !(opt && opt.forceLit)) {
+        } else if (unlit || (m.isMeshBasicMaterial && !(opt && opt.forceLit))) {
           // 不受光照的纯色（屏幕、灯箱：材质 unlit）
           if (tint) common.color = color.clone().multiply(tint);
           r = new THREE.MeshBasicMaterial({ ...common, toneMapped: false });

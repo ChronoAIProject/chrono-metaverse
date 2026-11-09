@@ -130,9 +130,7 @@ def model_body(**over):
             "sha256": "a" * 64,
             "size": 10,
             "format": "gltf",
-            "files": [
-                {"path": "x.bin", "url": "https://dl.polyhaven.org/file/x.bin", "sha256": "b" * 64, "size": 5}
-            ],
+            "files": {"x.bin": {"url": "https://dl.polyhaven.org/file/x.bin", "sha256": "b" * 64, "size": 5}},
         },
         "transform": {"position": [0, 0, 0], "yaw": 10, "scale": [1, 1, 1]},
         "bounds": {"min": [0, 0, 0], "max": [1, 1, 1]},
@@ -210,7 +208,22 @@ def model_body(**over):
         ({"transform": {"yaw": "x"}}, "transform"),
         ({"material": {"tint": [300, 0, 0]}}, "tint"),
         ({"material": {"color": [1, 2, 3]}}, "material"),
+        ({"material": {"tint": [1, 2, 3], "opacity": 0.5, "unlit": True}}, None),
+        ({"material": {"opacity": 2}}, "opacity"),
+        ({"assetHash": "c" * 64}, "assetHash"),
         ({"props": {}}, "props.source"),
+        (
+            {
+                "model": {
+                    "url": "https://dl.polyhaven.org/file/x.gltf",
+                    "sha256": "a" * 64,
+                    "size": 10,
+                    "format": "gltf",
+                    "files": {"x.bin": {"url": "https://evil.example/x.bin", "sha256": "b" * 64, "size": 5}},
+                }
+            },
+            "主机",
+        ),
         (
             {
                 "props": {

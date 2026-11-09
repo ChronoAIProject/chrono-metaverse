@@ -5,8 +5,8 @@
 - `model.glb`：本地用的 glb（Poly Haven 的 glTF 打包成 glb，只留底色贴图）；
 - `src/`（只有 Poly Haven）：下载的 .gltf、.bin 和贴图原文件；
 - `model.json`：旁注 —— 署名（`library、id、title、author、license、page`）、写回用的 `model`（`url、sha256、
-size、
-  format`，gltf 格式另有 `files`）、本地文件信息（三角形数、包围盒、贴图尺寸）和提示。
+  size、format`，gltf 格式另有 `files: {相对路径: {url, sha256, size}}`）、本地文件信息（三角形数、包围盒、
+  贴图尺寸）和提示。
 
 大小上限默认 50 MB（与处理服务的物件模型上限相同）。
 """
@@ -63,14 +63,14 @@ def _fetch_polyhaven(c: dict, resolution: str, max_bytes: int, d: str) -> dict:
     src = os.path.join(d, "src")
     gltf_name = os.path.basename(g["url"])
     sha, size = http.download(g["url"], os.path.join(src, gltf_name), max_bytes=max_bytes)
-    files = []
+    files: dict[str, dict] = {}
     blobs: dict[str, bytes] = {}
     for rel in sorted(include):
         info = include[rel]
         if rel.startswith("/") or ".." in rel.split("/"):
             raise wc.ReconError(f"Poly Haven 文件路径不安全：{rel}")
         fsha, fsize = http.download(info["url"], os.path.join(src, rel), max_bytes=max_bytes)
-        files.append({"path": rel, "url": info["url"], "sha256": fsha, "size": fsize})
+        files[rel] = {"url": info["url"], "sha256": fsha, "size": fsize}
         with open(os.path.join(src, rel), "rb") as fh:
             blobs[rel] = fh.read()
     with open(os.path.join(src, gltf_name), "rb") as fh:
@@ -128,8 +128,8 @@ def fetch_one(c: dict, resolution: str = "1k", max_bytes: int = 50 << 20) -> dic
             sha, size = _fetch_glb(url, max_bytes, d)
             model = {"url": None, "sha256": sha, "size": size, "format": "glb"}
             warnings.append(
-                "Sketchfab 的下载地址是临时的、处理服务也没有令牌：这个模型不能按地址写回，"
-                "要先作为物件模型上传（用途 model）再用 assetHash 引用"
+                "Sketchfab 的下载地址是临时的、处理服务也没有令牌：这个模型不能按地址写回"
+                "（AI 物件集只收按地址下载的模型），只能本地对照，写回请换候选"
             )
     else:
         raise wc.ReconError(f"不认识的模型库 {lib}")
@@ -138,7 +138,10 @@ def fetch_one(c: dict, resolution: str = "1k", max_bytes: int = 50 << 20) -> dic
     m = load_model_file(glb)
     lo, hi = m.bounds()
     if max(abs(lo).max(), abs(hi).max()) > PROCESSING_COORD_LIMIT:
-        warnings.append("模型原始坐标超过 ±1000 米：处理服务的模型导入会拒收，换一个候选")
+        warnings.append(
+            "模型原始坐标超过 ±1000 米（单位多半是厘米）：place 会按扫描缩放，"
+            "写回时处理服务按缩放后的坐标检查"
+        )
     if m.triangles > PROCESSING_MAX_TRIANGLES:
         warnings.append(f"三角形 {m.triangles} 个，写回时处理服务会减到 {PROCESSING_MAX_TRIANGLES} 以内")
     if m.texture is None:

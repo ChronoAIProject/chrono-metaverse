@@ -199,3 +199,56 @@ def test_entity_files_from_directories_skip_sidecars(tmp_path):
     assert [f.split("work/")[1] for f in files] == ["chair/entity.json", "sofa/model.json"]
     _, entities, errors, notes = asm.merge([str(tmp_path / "work")])
     assert set(entities) == {"chair-01"} and "旁注" in notes[0] and not errors
+
+
+def test_gltf_model_files_and_look_reach_the_writeback_format(tmp_path, base):
+    """旧版旁注里 gltf 的 files 是数组：assemble 换成写回路径收的 {相对路径: {url, sha256, size}}，
+    material 的 opacity / unlit 原样带上，整份通过 parse_authored。"""
+    from metaverse_worker.authored import parse_authored
+
+    V, F = chair_mesh_raw(scale=100.0, up="+z")
+    side_path = write_candidate(tmp_path / "models", V, F, license="CC0-1.0")
+    side = json.loads(side_path.read_text())
+    side["library"], side["page"] = "polyhaven", "https://polyhaven.com/a/test_chair"
+    side["model"].update(
+        url="https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/x/x_1k.gltf",
+        format="gltf",
+        files=[
+            {
+                "path": "x.bin",
+                "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/x/x.bin",
+                "sha256": "b" * 64,
+                "size": 5,
+            }
+        ],
+    )
+    side_path.write_text(json.dumps(side))
+    body = json.loads(Path(placed_file(tmp_path)).read_text())
+    body["model"] = side["model"]
+    body["props"]["source"] = {k: side[k] for k in ("library", "id", "page", "author", "license", "title")}
+    body["material"] = {"tint": [200, 190, 180], "opacity": 0.6}
+    body["fit"] = {"meanCm": 1.0, "p90Cm": 2.0, "coverage3cm": 0.9}
+    rep = run(tmp_path, base, write(tmp_path / "b" / "entity.json", body))
+    assert rep["ok"]
+    authored = json.loads((tmp_path / "out" / "authored.json").read_text())
+    (chair,) = authored["entities"]
+    assert chair["model"]["files"] == {
+        "x.bin": {
+            "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/x/x.bin",
+            "sha256": "b" * 64,
+            "size": 5,
+        }
+    }
+    parsed = parse_authored(authored)
+    assert parsed["entities"]["chair-02"]["material"] == {"opacity": 0.6}
+    assert parsed["models"]["chair-02"]["tint"] == [200, 190, 180]
+
+
+def test_assemble_rejects_what_the_writeback_would_reject(tmp_path, base):
+    """CC0 也要写作者（与物件记录的署名规则相同）：assemble 当场报错，不等任务失败。"""
+    body = json.loads(Path(placed_file(tmp_path)).read_text())
+    body["props"]["source"]["author"] = ""
+    with pytest.raises(asm.AssembleError):
+        run(tmp_path, base, write(tmp_path / "b" / "entity.json", body))
+    report = json.loads((tmp_path / "out" / "report.json").read_text())
+    assert any("author" in e for c in report["checks"] for e in c.get("errors") or [])
