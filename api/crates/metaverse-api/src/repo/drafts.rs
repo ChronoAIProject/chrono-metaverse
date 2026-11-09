@@ -123,6 +123,18 @@ struct PreviewDocument {
     expires_at: Timestamp,
 }
 
+/// 新的预览令牌记录。
+#[derive(Debug, Clone, Copy)]
+pub struct NewPreview<'a> {
+    /// `sha256(令牌原文)`。
+    pub token_hash: &'a str,
+    pub draft_id: &'a str,
+    pub rev: u64,
+    pub created_by: &'a str,
+    pub now: Timestamp,
+    pub expires_at: Timestamp,
+}
+
 /// 读 ops 文件的结果。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OpsAsset {
@@ -337,7 +349,7 @@ impl Repo {
             .map(|document| {
                 document
                     .get_binary_generic("data")
-                    .map(Clone::clone)
+                    .cloned()
                     .map_err(corrupt)
             })
             .transpose()
@@ -346,13 +358,16 @@ impl Repo {
     pub async fn insert_preview(
         &self,
         grant: &Grant,
-        token_hash: &str,
-        draft_id: &str,
-        rev: u64,
-        created_by: &str,
-        now: Timestamp,
-        expires_at: Timestamp,
+        preview: &NewPreview<'_>,
     ) -> Result<(), RepoError> {
+        let NewPreview {
+            token_hash,
+            draft_id,
+            rev,
+            created_by,
+            now,
+            expires_at,
+        } = *preview;
         if !grant.can_manage() {
             return Err(RepoError::GrantMismatch);
         }

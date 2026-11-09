@@ -67,7 +67,7 @@ pub async fn attach_keyframe(
         .latest_keyframe(grant, plan.base_seq)
         .await?
         .map_or(0, |(seq, _)| seq);
-    if seq % KEYFRAME_INTERVAL != 0 && seq - last < KEYFRAME_INTERVAL {
+    if !seq.is_multiple_of(KEYFRAME_INTERVAL) && seq - last < KEYFRAME_INTERVAL {
         return Ok(());
     }
     let manifest = manifest_after(head, plan);

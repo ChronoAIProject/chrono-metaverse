@@ -39,13 +39,13 @@ fn is_public_anchor(body: &Value) -> bool {
 pub async fn assemble(
     repo: &Repo,
     grant: &Grant,
-    space_id: &str,
     seq: u64,
     at: Timestamp,
     manifest: &StateManifest,
     extra_blocks: &[PaletteBlock],
     audience: Audience,
 ) -> Result<SnapshotView, ApiError> {
+    let space_id = grant.space_id();
     let mut blocks = repo
         .palette_blocks(grant, manifest.palette_hash.as_deref())
         .await?;
@@ -152,17 +152,7 @@ pub async fn snapshot_at(
             .at
     };
     let manifest = repo.manifest_at(grant, seq).await?;
-    assemble(
-        repo,
-        grant,
-        grant.space_id(),
-        seq,
-        at,
-        &manifest,
-        &[],
-        audience,
-    )
-    .await
+    assemble(repo, grant, seq, at, &manifest, &[], audience).await
 }
 
 fn actor_kind_name(kind: ActorKind) -> String {

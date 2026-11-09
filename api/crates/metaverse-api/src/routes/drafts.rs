@@ -32,7 +32,7 @@ use utoipa::ToSchema;
 use super::admin_spaces::check_text;
 use crate::auth::{Caller, Grant, Purpose};
 use crate::error::{ApiError, ProblemDocument, PROBLEM_TYPE_PREFIX};
-use crate::repo::{DraftDoc, DraftStatus, OpsRef};
+use crate::repo::{DraftDoc, DraftStatus, NewPreview, OpsRef};
 use crate::timeline::drafts::{
     append_ops, ops_job_result, parse_op_values, parse_ops_file, publish, OpsSource, PublishError,
     PublishOptions, MAX_DRAFT_OPS, MAX_OPS_FILE_BYTES,
@@ -911,12 +911,14 @@ async fn preview(
         .repo
         .insert_preview(
             &grant,
-            &sha256_hex(token.as_bytes()),
-            &draft.id,
-            draft.rev,
-            &caller.subject,
-            now,
-            expires_at,
+            &NewPreview {
+                token_hash: &sha256_hex(token.as_bytes()),
+                draft_id: &draft.id,
+                rev: draft.rev,
+                created_by: &caller.subject,
+                now,
+                expires_at,
+            },
         )
         .await?;
     let url = format!("{}/preview#t={token}", state.public.config().site_base_url);

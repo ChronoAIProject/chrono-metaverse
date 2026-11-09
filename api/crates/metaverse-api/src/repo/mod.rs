@@ -34,7 +34,7 @@ pub use commits::{
     StoredChunk,
 };
 pub use drafts::{
-    DraftDoc, DraftStatus, OpsAsset, OpsRef, OpsUpload, PreviewRecord, ProvisionalBlock,
+    DraftDoc, DraftStatus, NewPreview, OpsAsset, OpsRef, OpsUpload, PreviewRecord, ProvisionalBlock,
 };
 pub use space_admin::{SpaceSettings, MAX_SHARE_TOKEN_RECORDS};
 

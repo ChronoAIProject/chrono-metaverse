@@ -62,12 +62,15 @@ pub fn palette_value(blocks: &[PaletteBlock]) -> Value {
     serde_json::to_value(blocks).unwrap_or(Value::Array(Vec::new()))
 }
 
+/// 新方块（带正式编号）和"临时编号 → 正式编号"的映射。
+pub type FinalIds = (Vec<PaletteBlock>, BTreeMap<u16, u16>);
+
 /// 发布时给草稿新增的方块分配正式编号：追加在最新方块表之后。
 /// 返回新方块（带正式编号）和"临时编号 → 正式编号"的映射；名称与最新方块表重复时返回冲突的名称。
 pub fn assign_final_ids(
     head: &[PaletteBlock],
     provisional: &[ProvisionalBlock],
-) -> Result<(Vec<PaletteBlock>, BTreeMap<u16, u16>), Vec<String>> {
+) -> Result<FinalIds, Vec<String>> {
     let clashes: Vec<String> = provisional
         .iter()
         .filter(|block| head.iter().any(|existing| existing.name == block.name))

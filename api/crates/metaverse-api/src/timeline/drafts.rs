@@ -425,7 +425,6 @@ pub async fn preview_snapshot(
     assemble(
         repo,
         grant,
-        grant.space_id(),
         draft.base_seq,
         draft.updated_at,
         &manifest,

@@ -60,8 +60,12 @@ pub fn chunk_response(data: Bytes, cache: HeaderValue) -> Response {
     response
 }
 
+/// `Range` 不合法（返回 416）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidRange;
+
 /// 解析单段 `Range`。`Ok(None)` 表示整份返回；`Err` 表示范围不合法（416）。
-pub fn parse_range(headers: &HeaderMap, length: u64) -> Result<Option<(u64, u64)>, ()> {
+pub fn parse_range(headers: &HeaderMap, length: u64) -> Result<Option<(u64, u64)>, InvalidRange> {
     let Some(value) = headers.get(header::RANGE) else {
         return Ok(None);
     };
@@ -75,24 +79,27 @@ pub fn parse_range(headers: &HeaderMap, length: u64) -> Result<Option<(u64, u64)
     if spec.contains(',') {
         return Ok(None);
     }
-    let (start, end) = spec.split_once('-').ok_or(())?;
+    let (start, end) = spec.split_once('-').ok_or(InvalidRange)?;
     let (start, end) = match (start.trim(), end.trim()) {
         ("", suffix) => {
-            let suffix: u64 = suffix.parse().map_err(|_| ())?;
+            let suffix: u64 = suffix.parse().map_err(|_| InvalidRange)?;
             if suffix == 0 || length == 0 {
-                return Err(());
+                return Err(InvalidRange);
             }
             (length.saturating_sub(suffix), length - 1)
         }
-        (start, "") => (start.parse().map_err(|_| ())?, length.saturating_sub(1)),
+        (start, "") => (
+            start.parse().map_err(|_| InvalidRange)?,
+            length.saturating_sub(1),
+        ),
         (start, end) => {
-            let start: u64 = start.parse().map_err(|_| ())?;
-            let end: u64 = end.parse().map_err(|_| ())?;
+            let start: u64 = start.parse().map_err(|_| InvalidRange)?;
+            let end: u64 = end.parse().map_err(|_| InvalidRange)?;
             (start, end.min(length.saturating_sub(1)))
         }
     };
     if start >= length || start > end {
-        return Err(());
+        return Err(InvalidRange);
     }
     Ok(Some((start, end + 1)))
 }
@@ -148,7 +155,7 @@ pub fn bytes_asset_response(
     let length = data.len() as u64;
     let range = match parse_range(request, length) {
         Ok(range) => range,
-        Err(()) => return range_not_satisfiable(length),
+        Err(InvalidRange) => return range_not_satisfiable(length),
     };
     let mut response = match range {
         None => (StatusCode::OK, data).into_response(),
@@ -198,7 +205,7 @@ pub async fn asset_response(
     let length = meta.length;
     let range = match parse_range(request, length) {
         Ok(range) => range,
-        Err(()) => return Ok(range_not_satisfiable(length)),
+        Err(InvalidRange) => return Ok(range_not_satisfiable(length)),
     };
     let (start, end) = range.unwrap_or((0, length));
     let stream = state.repo.asset_stream(meta, start, end).await?;
@@ -254,7 +261,7 @@ pub fn parse_seq(name: &str, value: Option<&str>) -> Result<Option<u64>, ApiErro
 mod tests {
     use super::*;
 
-    fn range(value: &str, length: u64) -> Result<Option<(u64, u64)>, ()> {
+    fn range(value: &str, length: u64) -> Result<Option<(u64, u64)>, InvalidRange> {
         let mut headers = HeaderMap::new();
         headers.insert(header::RANGE, HeaderValue::from_str(value).unwrap());
         parse_range(&headers, length)
@@ -269,10 +276,10 @@ mod tests {
         assert_eq!(range("bytes=8-100", 10), Ok(Some((8, 10))));
         assert_eq!(range("bytes=0-1,4-5", 10), Ok(None));
         assert_eq!(range("items=0-1", 10), Ok(None));
-        assert_eq!(range("bytes=10-", 10), Err(()));
-        assert_eq!(range("bytes=5-2", 10), Err(()));
-        assert_eq!(range("bytes=-0", 10), Err(()));
-        assert_eq!(range("bytes=x-1", 10), Err(()));
+        assert_eq!(range("bytes=10-", 10), Err(InvalidRange));
+        assert_eq!(range("bytes=5-2", 10), Err(InvalidRange));
+        assert_eq!(range("bytes=-0", 10), Err(InvalidRange));
+        assert_eq!(range("bytes=x-1", 10), Err(InvalidRange));
     }
 
     #[test]
