@@ -16,7 +16,7 @@
 - MongoDB 副本集（接口服务要用事务，单机版不行）。`up.sh` 会先找 `127.0.0.1:27017`、`27018` 上已有的副本集；都没有时，如果装了 `mongod`（在 PATH 里，或设置 `MONGOD_BIN`）就在 `infra/dev/.run/mongo-data` 起一个单节点副本集 `rs0`；还没有的话按提示下载 [MongoDB 社区版](https://www.mongodb.com/try/download/community)，或用 Docker：
 
   ```bash
-  docker run -d --name metaverse-mongo -p 127.0.0.1:27017:27017 mongo:8.0.32 --replSet rs0
+  docker run -d --name metaverse-mongo -p 127.0.0.1:27017:27017 mongo:8.0.13 --replSet rs0
   docker exec metaverse-mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]})'
   ```
 

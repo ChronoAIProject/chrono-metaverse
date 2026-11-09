@@ -164,7 +164,7 @@ if [[ -z "$mongo_uri" ]]; then
      解压后把 bin 目录加进 PATH，或设置 MONGOD_BIN=<解压目录>/bin/mongod，再运行本脚本
      （本脚本会在 infra/dev/.run/mongo-data 起一个单节点副本集 rs0）。
   2. 有 Docker 的话：
-       docker run -d --name metaverse-mongo -p 127.0.0.1:27017:27017 mongo:8.0.32 --replSet rs0
+       docker run -d --name metaverse-mongo -p 127.0.0.1:27017:27017 mongo:8.0.13 --replSet rs0
        docker exec metaverse-mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]})'
   3. 已有副本集在别的地址：METAVERSE_MONGODB_URI='mongodb://…/?replicaSet=…' infra/dev/up.sh
 EOF

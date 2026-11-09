@@ -8,8 +8,17 @@
 # 版本与 chrono-cd 的 MongoDB 插件（Atlas，MongoDB 8）同一大版本。
 set -euo pipefail
 
-readonly image="mongo:8.0.32"
+# 与 CMA 的 mongo-contract-tests.sh 同一个镜像（按摘要固定）。
+readonly image="mongo:8.0.13@sha256:cf340b1e5283843c63eb12999922f20c463ae31285f746d30f05dcc21cd1d47c"
 readonly name="metaverse-mongo"
+
+# 任何一步失败都打印容器日志，方便排查（容器启动后立即退出时尤其需要）。
+show_logs() {
+  echo "MongoDB 启动失败，容器日志：" >&2
+  docker ps --all --filter "name=$name" >&2 || true
+  docker logs "$name" 2>&1 | tail -80 >&2 || true
+}
+trap 'show_logs' ERR
 
 docker run --detach --name "$name" --publish 127.0.0.1:27017:27017 "$image" \
   --replSet rs0 --bind_ip_all >/dev/null
