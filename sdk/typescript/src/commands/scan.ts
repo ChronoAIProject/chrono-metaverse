@@ -123,7 +123,7 @@ export async function runScan(ctx: CliContext, args: readonly string[]): Promise
     assetHash = result.assetHash;
     uploadInfo = { ...result };
     if (result.reused) {
-      if (!json) ctx.out(`服务端已有同样的内容，直接复用资源 ${assetHash}`);
+      if (!json) ctx.out(`本空间已有同样的内容（之前传过），直接复用资源 ${assetHash}`);
     } else if (result.jobId !== null) {
       if (!json) ctx.out(`上传完成，等待校验（任务 ${result.jobId}）……`);
       await waitForJob(api, result.jobId, waitOptions);

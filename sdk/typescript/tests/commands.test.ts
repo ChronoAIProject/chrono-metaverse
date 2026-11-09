@@ -602,6 +602,34 @@ describe('metaverse scan', () => {
     });
   });
 
+  it('同一份扫描再导入：本空间已有就直接复用（同样是 201），不再传分片、不等校验', async () => {
+    fake = await startFakeApi();
+    const root = directWorkspace(fake);
+    writeFileSync(join(root, 'lobby.glb'), fakeGlb(300 * 1024, 4));
+    const ctx = makeContext(root);
+    expect(await main(ctx, ['scan', 'lobby.glb', '--part-size', '0.25', '--no-wait'])).toBe(0);
+    const putsBefore = fake.requests.filter((r) => r.method === 'PUT').length;
+    expect(putsBefore).toBe(2);
+    const second = makeContext(root);
+    expect(await main(second, ['scan', 'lobby.glb', '--no-wait', '--json'])).toBe(0);
+    const out = JSON.parse(second.lines.at(-1)!) as {
+      assetHash: string;
+      jobId: string;
+      upload: { reused: boolean; parts: number };
+    };
+    expect(out.upload).toMatchObject({ reused: true, parts: 0 });
+    expect(out.jobId).toBeTruthy();
+    // 复用时不传分片、不调用 complete，直接按哈希发起导入。
+    expect(fake.requests.filter((r) => r.method === 'PUT')).toHaveLength(putsBefore);
+    expect(fake.requests.filter((r) => r.path.endsWith('/complete'))).toHaveLength(1);
+    const imports = fake.requests.filter((r) => r.path.endsWith('/scans'));
+    expect(imports).toHaveLength(2);
+    expect(JSON.parse(imports[1]!.body.toString())).toMatchObject({ assetHash: out.assetHash });
+    const third = makeContext(root);
+    expect(await main(third, ['scan', 'lobby.glb', '--no-wait'])).toBe(0);
+    expect(third.lines.join('\n')).toContain('本空间已有同样的内容');
+  });
+
   it('重扫配准误差超阈值时提示人工对齐；--asset + --transform 走重新对齐', async () => {
     const asset = Buffer.from('scan');
     const hash = createHash('sha256').update(asset).digest('hex');
