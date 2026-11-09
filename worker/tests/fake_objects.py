@@ -2,7 +2,8 @@
 
 接口与约定相同：`reconstruct_objects(mesh, structure, *, params=None) -> ObjectsResult`。
 不分析网格，只按地面高度摆一个模板（椅子）+ 两个实例 + 一张带贴图的桌子（建议锚点 table-01），
-让写回流程覆盖模板、实例、贴图、锚点。
+让写回流程覆盖模板、实例、贴图、锚点。和真实实现一样在 `props.category` 里写类别（处理服务按它决定建不建锚点：
+桌子建，椅子只在提示 `anchor: true` 时建）。
 """
 
 from __future__ import annotations
@@ -52,6 +53,7 @@ def reconstruct_objects(mesh, structure, *, params: dict | None = None) -> Objec
             templates=templates,
             anchor_id="chair-01",
             label="会议椅",
+            props={"category": "chair"},
         ),
         "chair-02": entity_body(
             entity_id="chair-02",
@@ -59,6 +61,7 @@ def reconstruct_objects(mesh, structure, *, params: dict | None = None) -> Objec
             shape=sh.instance("chair-a", xf=sh.transform(position=[2.4, y, 1.0], yaw=-90)),
             templates=templates,
             anchor_id="seat-02",
+            props={"category": "chair"},
         ),
         "table-01": entity_body(
             entity_id="table-01",
@@ -71,6 +74,7 @@ def reconstruct_objects(mesh, structure, *, params: dict | None = None) -> Objec
             anchor_id="table-01",
             label="会议桌",
             fit={"meanCm": 1.2, "p90Cm": 2.5, "coverage3cm": 0.9},
+            props={"category": "table"},
         ),
     }
     return ObjectsResult(
@@ -95,6 +99,11 @@ def moved_objects(mesh, structure, *, params: dict | None = None) -> ObjectsResu
     shape = dict(result.entities["table-01"]["shape"])
     shape["transform"] = sh.transform(position=[2.5, float(structure.floor_y), 2.0])
     result.entities["table-01"] = entity_body(
-        entity_id="table-01", kind="object", shape=shape, anchor_id="table-01", label="会议桌"
+        entity_id="table-01",
+        kind="object",
+        shape=shape,
+        anchor_id="table-01",
+        label="会议桌",
+        props={"category": "table"},
     )
     return result

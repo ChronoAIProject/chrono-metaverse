@@ -299,11 +299,13 @@ def test_upload_then_scan_import_full_pipeline_in_subprocess(store, db_config, m
     assert verify["status"] == "done", verify.get("lastError")
     asset = verify["result"]["assetHash"]
 
+    # 提示只要求第二把椅子建座位锚点（假物体重建把它摆在 x = 2.4、z = 1.0）
+    hints = {"k": 1, "objects": [{"center": [2.4, 0.45, 1.0], "kind": "chair", "anchor": True}]}
     params = {
         "assetHash": asset,
         "observedAt": "2026-11-01T09:30:00+08:00",
         "voxelize": True,
-        "hints": {"k": 1},
+        "hints": hints,
     }
     doc = run_job(runner, store, "scan_import", params)
     assert doc["status"] == "done", doc.get("lastError")
@@ -338,9 +340,10 @@ def test_upload_then_scan_import_full_pipeline_in_subprocess(store, db_config, m
     assert record["kind"] == "entity" and record["owner"] == {"kind": "person", "id": "alice"}
 
     anchors = {a["id"]: a["body"] for a in store.col(C.ANCHORS).find({"spaceId": SPACE})}
-    assert set(anchors) == {"chair-01", "seat-02", "table-01"}
+    assert set(anchors) == {"seat-02", "table-01"}  # chair-01 没被提示要求，不建
     assert anchors["table-01"]["kind"] == "table" and anchors["seat-02"]["kind"] == "seat"
     assert anchors["table-01"]["label"] == "会议桌" and len(anchors["table-01"]["box"]) == 6
+    assert anchors["seat-02"]["label"] == "椅子"  # 物体没有标签：用类别的中文名
     assert {c["id"] for c in commit["changedAnchors"]} == set(anchors)
 
     refs = {r["hash"] for r in store.col(C.ASSET_REFS).find({"spaceId": SPACE})}
@@ -350,7 +353,7 @@ def test_upload_then_scan_import_full_pipeline_in_subprocess(store, db_config, m
 
     result = doc["result"]
     assert result["alignment"]["method"] == "auto"
-    assert result["objects"]["hints"] == {"k": 1} and result["objects"]["entities"] == 4
+    assert result["objects"]["hints"] == hints and result["objects"]["entities"] == 4
     assert result["structure"]["walls"] >= 4 and result["entities"]["removed"] == 0
     assert sorted(result["anchorsCreated"]) == sorted(anchors)
     assert [m["hash"] for m in result["webModels"]] == scan["webModelHashes"]
@@ -499,6 +502,34 @@ def test_rebuild_job(runner, store):
     assert store.col(C.ENTITIES).find_one({"spaceId": SPACE, "id": "table-01"}) is not None
     doc = run_job(runner, store, "rebuild", {"scanAssetHash": "b" * 64})
     assert doc["status"] == "failed" and "没有扫描" in doc["lastError"]
+
+
+def test_rebuild_creates_requested_seat_anchor_and_keeps_existing(runner, store):
+    import_room(runner, store)
+    anchors = {a["id"]: a["hash"] for a in store.col(C.ANCHORS).find({"spaceId": SPACE})}
+    assert set(anchors) == {"table-01"}  # 只有桌子；椅子没被提示要求
+    # 旧版本给杂物建的锚点：已存在的锚点不动（不删、不改）
+    old = {
+        "spaceId": SPACE,
+        "id": "clutter-07",
+        "owner": {"kind": "person", "id": "alice"},
+        "hash": "c" * 64,
+        "body": {"anchorId": "clutter-07", "kind": "zone", "label": "杂物", "visibility": "public"},
+    }
+    store.col(C.ANCHORS).insert_one(dict(old))
+    hints = {"objects": [{"center": [1.2, 1.0], "kind": "chair", "label": "会议椅", "anchor": True}]}
+    doc = run_job(runner, store, "rebuild", {"hints": hints})
+    assert doc["status"] == "done", doc.get("lastError")
+    c2 = commits(store)[1]
+    assert c2["changedEntities"] == [] and [c["id"] for c in c2["changedAnchors"]] == ["chair-01"]
+    assert doc["result"]["anchorsCreated"] == ["chair-01"]
+    now = {a["id"]: a for a in store.col(C.ANCHORS).find({"spaceId": SPACE})}
+    assert set(now) == {"table-01", "chair-01", "clutter-07"}
+    assert now["chair-01"]["body"]["kind"] == "seat" and now["chair-01"]["body"]["label"] == "会议椅"
+    assert now["table-01"]["hash"] == anchors["table-01"] and now["clutter-07"]["hash"] == old["hash"]
+    # 同样的提示再跑一次：锚点都已存在，没有变化就不提交
+    doc = run_job(runner, store, "rebuild", {"hints": hints})
+    assert doc["status"] == "done" and doc["result"]["unchanged"] is True and len(commits(store)) == 2
 
 
 def test_voxelize_without_scan_and_unchanged(runner, store):
