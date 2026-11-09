@@ -1,20 +1,20 @@
 {
  "objects": {
-  "objects": 43,
+  "objects": 41,
   "templates": 2,
-  "furnitureMeanCm": 3.5,
-  "furnitureP90Cm": 8.95,
-  "furnitureCoverage3cm": 0.672,
-  "allMeanCm": 3.32,
-  "allP90Cm": 8.3,
-  "textures": 20,
-  "textureBytes": 68181,
-  "jsonBytes": 56506,
-  "bytes": 124687,
+  "furnitureMeanCm": 3.08,
+  "furnitureP90Cm": 8.12,
+  "furnitureCoverage3cm": 0.714,
+  "allMeanCm": 2.97,
+  "allP90Cm": 7.6,
+  "textures": 16,
+  "textureBytes": 88272,
+  "jsonBytes": 52084,
+  "bytes": 140356,
   "byKind": {
-   "cabinet": 11,
+   "cabinet": 7,
    "chair": 12,
-   "clutter": 10,
+   "clutter": 12,
    "counter": 1,
    "pillar": 5,
    "sofa": 2,
@@ -28,8 +28,8 @@
    },
    "cabinet-01": {
     "kind": "cabinet",
-    "points": 3486,
-    "meanCm": 1.45
+    "points": 32985,
+    "meanCm": 0.86
    },
    "chair-10": {
     "kind": "chair",
@@ -99,14 +99,14 @@
    "table-02": {
     "kind": "table",
     "points": 1262,
-    "meanCm": 1.36
+    "meanCm": 1.33
    },
-   "cabinet-09": {
+   "cabinet-05": {
     "kind": "cabinet",
     "points": 21395,
     "meanCm": 6.96
    },
-   "clutter-06": {
+   "clutter-08": {
     "kind": "clutter",
     "points": 986,
     "meanCm": 0.84
@@ -116,7 +116,7 @@
     "points": 4266,
     "meanCm": 0.84
    },
-   "clutter-07": {
+   "clutter-09": {
     "kind": "clutter",
     "points": 439,
     "meanCm": 2.29
@@ -124,14 +124,14 @@
    "cabinet-03": {
     "kind": "cabinet",
     "points": 7188,
-    "meanCm": 1.38
+    "meanCm": 0.92
    },
    "pillar-02": {
     "kind": "pillar",
     "points": 2827,
     "meanCm": 1.9
    },
-   "cabinet-08": {
+   "cabinet-04": {
     "kind": "cabinet",
     "points": 1394,
     "meanCm": 2.5
@@ -146,17 +146,17 @@
     "points": 1668,
     "meanCm": 7.56
    },
-   "cabinet-10": {
+   "cabinet-06": {
     "kind": "cabinet",
     "points": 4235,
     "meanCm": 1.23
    },
-   "cabinet-11": {
+   "cabinet-07": {
     "kind": "cabinet",
     "points": 2327,
     "meanCm": 2.2
    },
-   "clutter-08": {
+   "clutter-10": {
     "kind": "clutter",
     "points": 391,
     "meanCm": 0.96
@@ -166,7 +166,7 @@
     "points": 107,
     "meanCm": 0.94
    },
-   "clutter-05": {
+   "clutter-07": {
     "kind": "clutter",
     "points": 592,
     "meanCm": 4.02
@@ -178,33 +178,23 @@
    },
    "table-01": {
     "kind": "table",
-    "points": 9078,
-    "meanCm": 1.28
+    "points": 11048,
+    "meanCm": 2.91
    },
-   "cabinet-07": {
-    "kind": "cabinet",
-    "points": 652,
-    "meanCm": 1.62
-   },
-   "cabinet-06": {
-    "kind": "cabinet",
-    "points": 637,
-    "meanCm": 3.61
-   },
-   "cabinet-05": {
-    "kind": "cabinet",
-    "points": 673,
-    "meanCm": 7.42
+   "clutter-06": {
+    "kind": "clutter",
+    "points": 632,
+    "meanCm": 3.48
    },
    "clutter-04": {
     "kind": "clutter",
-    "points": 649,
-    "meanCm": 2.84
+    "points": 471,
+    "meanCm": 4.12
    },
-   "cabinet-04": {
-    "kind": "cabinet",
-    "points": 1318,
-    "meanCm": 2.17
+   "clutter-05": {
+    "kind": "clutter",
+    "points": 641,
+    "meanCm": 2.65
    },
    "cabinet-02": {
     "kind": "cabinet",
@@ -226,12 +216,12 @@
     "points": 1407,
     "meanCm": 1.52
    },
-   "clutter-10": {
+   "clutter-12": {
     "kind": "clutter",
     "points": 302,
     "meanCm": 4.88
    },
-   "clutter-09": {
+   "clutter-11": {
     "kind": "clutter",
     "points": 157,
     "meanCm": 0.91
@@ -240,45 +230,45 @@
   "segmentStats": {
    "samples": 947354,
    "floor": 273546,
-   "wall": 289311,
-   "ceiling": 206027,
-   "outside": 4136,
-   "objects": 174334
+   "wall": 257143,
+   "ceiling": 210133,
+   "outside": 4740,
+   "objects": 201792
   },
   "seconds": {
-   "segment": 4.2,
-   "total": 29.86
+   "segment": 7.95,
+   "total": 35.58
   }
  },
  "furnitureZone": {
-  "meanCm": 2.93,
-  "p90Cm": 6.61,
-  "coverage3cm": 0.663,
-  "points": 19439,
-  "within2cm": 0.509
+  "meanCm": 2.63,
+  "p90Cm": 6.23,
+  "coverage3cm": 0.703,
+  "points": 21882,
+  "within2cm": 0.569
  },
  "sizes": {
-  "objectsJsonBytes": 56510,
-  "objectTexturesBytes": 68181,
-  "objectsTotalBytes": 124691,
-  "structureJsonBytes": 3852,
-  "structureTexturesBytes": 279183,
-  "allTotalBytes": 407726,
+  "objectsJsonBytes": 52088,
+  "objectTexturesBytes": 88272,
+  "objectsTotalBytes": 140360,
+  "structureJsonBytes": 4714,
+  "structureTexturesBytes": 226646,
+  "allTotalBytes": 371720,
   "lobbyGlb": {
-   "triangles": 66133,
-   "bytes": 3049800,
-   "nodes": 49
+   "triangles": 66701,
+   "bytes": 3030616,
+   "nodes": 46
   },
   "objectsGlb": {
-   "triangles": 65905,
-   "bytes": 2749120,
-   "nodes": 43
+   "triangles": 66349,
+   "bytes": 2769688,
+   "nodes": 41
   }
  },
  "seconds": {
-  "load_align": 1.4,
-  "structure": 10.1,
-  "objects": 29.9
+  "load_align": 2.8,
+  "structure": 13.6,
+  "objects": 35.6
  },
  "hints": true
 }
