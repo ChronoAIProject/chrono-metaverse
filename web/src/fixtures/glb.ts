@@ -115,6 +115,34 @@ export function writeGlb(mesh: GlbMesh): Uint8Array {
   return out;
 }
 
+/**
+ * 形状 → 带内嵌颜色贴图的 glb（物件模型：原点在底面中心）。贴图坐标用形状网格的坐标，
+ * 写成 glTF 的约定 `(u, 1 − v)`；材质是受光照的金属度—粗糙度材质（粗糙度 1、金属度 0）。
+ */
+export function texturedShapeToGlb(shape: Shape, png: Uint8Array, name?: string): Uint8Array {
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  for (const part of buildShape(shape).parts) {
+    const offset = positions.length / 3;
+    positions.push(...part.mesh.positions);
+    normals.push(...part.mesh.normals);
+    for (let i = 0; i < part.mesh.uvs.length; i += 2) {
+      uvs.push(part.mesh.uvs[i]!, 1 - part.mesh.uvs[i + 1]!);
+    }
+    for (const index of part.mesh.indices) indices.push(index + offset);
+  }
+  return writeGlb({
+    positions: new Float32Array(positions),
+    normals: new Float32Array(normals),
+    uvs: new Float32Array(uvs),
+    indices: new Uint32Array(indices),
+    image: { bytes: png, mimeType: 'image/png' },
+    name,
+  });
+}
+
 /** 形状 → 带顶点颜色的 glb（处理后的物件模型：原点在底面中心）。 */
 export function shapeToGlb(shape: Shape, templates: TemplateTable = {}, name?: string): Uint8Array {
   const positions: number[] = [];

@@ -497,6 +497,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
   - 页面脚本把令牌放在请求头 `Authorization: Share <令牌>` 里调用公开读接口。
   - 页面设置 `Referrer-Policy: no-referrer`。
 - **加载**：区块和资源按内容哈希命名，可以永久缓存；网格在浏览器的后台线程里生成。
+- **画法**：形状和物件模型按 SHAPES 2、3 的着色方式画——`baked`（默认，扫描烘焙的贴图：一部分受光、一部分原样显示，亮度接近原始扫描）、`albedo`（固有色、完整受光，可带法线和粗糙度贴图），贴图可以按米平铺；只有模型的物件按模型实际的包围盒兜进记录的 `bounds`（服务端已经实测，网站只是兜底）。
 
 ---
 

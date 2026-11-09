@@ -23,6 +23,8 @@ export const FIXTURE_UNIVERSE_LINK =
   '/u/demo-street#share=fixture-universe-token-00112233445566778899';
 export const FIXTURE_PREVIEW_LINK =
   '/preview#t=fixture-preview-token-aabbccddeeff00112233445566778899';
+export const FIXTURE_MATERIALS_LINK =
+  '/s/demo-materials#share=fixture-materials-token-13579bdf2468ace0';
 
 export interface AppProps {
   /**
@@ -64,6 +66,9 @@ function Home({ showFixtureLink }: { readonly showFixtureLink: boolean }) {
             </a>
             <a className="home__link home__link--quiet" href={FIXTURE_PREVIEW_LINK}>
               草稿预览
+            </a>
+            <a className="home__link home__link--quiet" href={FIXTURE_MATERIALS_LINK}>
+              材质样板（平铺、法线、粗糙度）
             </a>
           </div>
         )}

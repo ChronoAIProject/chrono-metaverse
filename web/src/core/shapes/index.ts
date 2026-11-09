@@ -26,6 +26,14 @@ export {
 } from './solid';
 export { expandOutline } from './outline';
 export { projectUvs } from './uv';
+export {
+  shadingLook,
+  isAssetHash,
+  DEFAULT_METALNESS,
+  DEFAULT_ROUGHNESS,
+  TRANSPARENT_ROUGHNESS,
+  type ShadingLook,
+} from './look';
 export { transformMatrix, applyMatrix } from './transform';
 export {
   buildShape,
