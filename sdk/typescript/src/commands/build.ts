@@ -3,6 +3,7 @@ import { buildManifest, runBuild, type BuildResult } from '../workspace/build.js
 import { paths } from '../workspace/files.js';
 import { checkReport, diffSummary, formatDiff } from '../workspace/report.js';
 import {
+  displayPath,
   flag,
   openWorkspace,
   parse,
@@ -66,7 +67,7 @@ export async function runBuildCommand(ctx: CliContext, args: readonly string[]):
   if (!result.base.pulled) ctx.err('注意：工作区还没有拉取（metaverse pull），基础状态是空的');
   ctx.out(`建造完成：${relative(ws.root, result.script)} → ${result.ops.length} 条操作`);
   ctx.out(formatDiff(diffSummary(result)));
-  ctx.out(`输出：${relative(ctx.cwd, p.outOps)}、${relative(ctx.cwd, p.outResult)}`);
+  ctx.out(`输出：${displayPath(ctx, p.outOps)}、${displayPath(ctx, p.outResult)}`);
   const report = checkReport(result);
   if (!report.ok) ctx.err(`注意：${report.text}`);
   return 0;

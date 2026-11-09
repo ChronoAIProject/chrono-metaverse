@@ -1,7 +1,16 @@
 import { existsSync, mkdirSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { paths } from '../workspace/files.js';
-import { CliError, flag, num, parse, printJson, str, type CliContext } from './common.js';
+import {
+  CliError,
+  displayPath,
+  flag,
+  num,
+  parse,
+  printJson,
+  str,
+  type CliContext,
+} from './common.js';
 import { DEV_OPTIONS, startDev } from './dev.js';
 
 export const SHOT_HELP = `metaverse shot [选项]
@@ -15,6 +24,7 @@ export const SHOT_HELP = `metaverse shot [选项]
   --width <像素>      默认 1280
   --height <像素>     默认 800
   --no-cutaway        不剖切（默认剖切，能看到室内）
+  --zoom <级数>       截图前滚轮缩放：正数拉近、负数拉远（默认 0，取全景）
   --out <目录>        默认 out/shots
   --browser <路径>    Chromium 可执行文件（默认环境变量 METAVERSE_BROWSER_PATH，或 /opt/pw-browsers/chromium）
   以及 dev 的 --web-dist、--plot、--internal`;
@@ -61,6 +71,7 @@ export async function runShot(ctx: CliContext, args: readonly string[]): Promise
     'no-cutaway': { type: 'boolean' },
     out: { type: 'string' },
     browser: { type: 'string' },
+    zoom: { type: 'string' },
   });
   if (flag(values, 'help')) {
     ctx.out(SHOT_HELP);
@@ -69,6 +80,7 @@ export async function runShot(ctx: CliContext, args: readonly string[]): Promise
   const views = list<View>(str(values, 'views'), VIEW_IDS, ['extended', 'optimized'], '视图');
   const angles = list<Angle>(str(values, 'angles'), ANGLES, ['front', 'left', 'top'], '角度');
   const width = num(values, 'width') ?? 1280;
+  const zoom = num(values, 'zoom') ?? 0;
   const height = num(values, 'height') ?? 800;
   const executablePath = browserPath(ctx, str(values, 'browser'));
   let playwright: typeof import('playwright-core');
@@ -139,6 +151,12 @@ export async function runShot(ctx: CliContext, args: readonly string[]): Promise
           await page.mouse.up();
           await page.waitForTimeout(1200);
         }
+        if (box !== null && zoom !== 0) {
+          // 滚轮缩放：正数拉近，负数拉远（每一级约一个滚轮刻度）。
+          await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+          await page.mouse.wheel(0, -120 * zoom);
+          await page.waitForTimeout(1000);
+        }
         const path = join(outDir, `${view}-${angle}.png`);
         await page.screenshot({ path });
         shots.push({ view, angle, path });
@@ -151,7 +169,7 @@ export async function runShot(ctx: CliContext, args: readonly string[]): Promise
   if (flag(values, 'json')) {
     printJson(ctx, { shots, errors });
   } else {
-    for (const shot of shots) ctx.out(relative(ctx.cwd, shot.path) || shot.path);
+    for (const shot of shots) ctx.out(displayPath(ctx, shot.path));
     for (const error of errors) ctx.err(`页面错误：${error}`);
   }
   return 0;

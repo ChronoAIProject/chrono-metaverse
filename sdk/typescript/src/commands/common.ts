@@ -1,4 +1,4 @@
-import { dirname, resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs, type ParseArgsConfig } from 'node:util';
 import { ApiClient, type TransportConfig } from '../transport/client.js';
@@ -194,4 +194,10 @@ export function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
   return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GiB`;
+}
+
+/** 给人看的路径：在当前目录下面就写相对路径，否则写绝对路径。 */
+export function displayPath(ctx: CliContext, path: string): string {
+  const rel = relative(ctx.cwd, path);
+  return rel === '' ? '.' : rel.startsWith('..') ? path : rel;
 }

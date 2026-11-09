@@ -3,7 +3,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { isObjectId, isSpaceId } from '../core/ids.js';
 import { DEFAULT_SLUG, writeConfig, type WorkspaceConfig } from '../workspace/config.js';
 import { paths } from '../workspace/files.js';
-import { CliError, flag, parse, str, type CliContext } from './common.js';
+import { CliError, displayPath, flag, parse, str, type CliContext } from './common.js';
 
 export const INIT_HELP = `metaverse init <空间编号> [目录]
 
@@ -167,7 +167,7 @@ export function runInit(ctx: CliContext, args: readonly string[]): number {
   for (const file of created) ctx.out(`  ${relative(root, file) || file}`);
   ctx.out('');
   ctx.out('下一步：');
-  ctx.out(`  cd ${relative(ctx.cwd, root) || '.'}`);
+  ctx.out(`  cd ${displayPath(ctx, root)}`);
   ctx.out('  metaverse pull            # 下载空间的当前状态');
   ctx.out('  metaverse build && metaverse dev   # 运行建造脚本，打开本地查看器');
   return 0;
