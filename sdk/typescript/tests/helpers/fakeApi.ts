@@ -577,7 +577,8 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
       }
       if (tail === '/layout' && request.method === 'PUT') return json(200, { seq: 7 });
       if (tail === '/event-types') return json(201, { type: parsed().type, version: 1 });
-      if (tail.endsWith('/redact')) return json(200, { redacted: true });
+      if (tail.endsWith('/redact'))
+        return json(200, { id: tail.split('/')[2], redacted: true, records: 2 });
     }
     problem(404, 'not_found', `假服务器没有 ${request.method} ${apiPath}`);
   });

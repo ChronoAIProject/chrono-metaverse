@@ -711,8 +711,15 @@ describe('metaverse admin', () => {
     );
     expect(await main(ws, ['admin', 'register-event-type', 'event-type.json'])).toBe(0);
     expect(ws.lines.at(-1)).toContain('table.occupancy 第 1 版');
-    expect(await main(ws, ['admin', 'redact-event', 'ev-1', '--reason', '个人信息'])).toBe(0);
+    expect(await main(ws, ['admin', 'redact-event', 'ev-1'])).toBe(0);
     expect(fake.requests.at(-1)!.path).toBe('/api/v1/admin/spaces/demo-space/events/ev-1/redact');
+    expect(fake.requests.at(-1)!.body.length).toBe(0);
+    expect(ws.lines.at(-1)).toBe('已抹除事件 ev-1 的内容（共 2 条记录，含指向它的更正）');
+    expect(await main(ws, ['admin', 'redact-event', 'ev-2', '--json'])).toBe(0);
+    expect(JSON.parse(ws.lines.at(-1)!)).toEqual({ id: 'ev-2', redacted: true, records: 2 });
+    // 接口服务不读原因，选项已经去掉（原来会被静默丢掉）。
+    expect(await main(ws, ['admin', 'redact-event', 'ev-1', '--reason', '个人信息'])).toBe(1);
+    expect(await main(ws, ['admin', 'redact-event'])).toBe(1);
     expect(await main(ws, ['admin'])).toBe(1);
     expect(await main(ws, ['admin', 'explode'])).toBe(1);
     expect(await main(ws, ['admin', 'create-space', 'x'])).toBe(1);

@@ -34,8 +34,8 @@ export const ADMIN_HELP = `metaverse admin <子命令> …（管理接口 /api/v
       盒子单位是格 [x0,y0,z0,x1,y1,z1]。默认基于工作区拉取的 seq。
   register-event-type <event-type.json>
       登记事件类型（只追加的版本记录）：{ type, schema, publicFields, defaultVisibility, state?, maxAgeSec?, display }。
-  redact-event <事件编号> [--reason <原因>]
-      抹除一条事件的内容（之后读接口不再返回它的 data）。`;
+  redact-event <事件编号>
+      抹除一条事件的内容（之后读接口不再返回它的 data；指向它的更正一起抹除）。`;
 
 function readJsonFile<T>(ctx: CliContext, file: string | undefined, what: string): T {
   if (file === undefined) throw new CliError(`缺少 ${what} 文件参数`);
@@ -254,9 +254,12 @@ async function redactEvent(
   const ws = openWorkspace(ctx, values);
   const eventId = positionals[0];
   if (eventId === undefined) throw new CliError('用法：metaverse admin redact-event <事件编号>');
-  const reason = str(values, 'reason');
-  await makeApi(ctx, ws, values).redactEvent(eventId, reason !== undefined ? { reason } : {});
-  ctx.out(`已抹除事件 ${eventId} 的内容`);
+  const result = await makeApi(ctx, ws, values).redactEvent(eventId);
+  if (flag(values, 'json')) printJson(ctx, result);
+  else
+    ctx.out(
+      `已抹除事件 ${eventId} 的内容${result.records !== undefined ? `（共 ${result.records} 条记录，含指向它的更正）` : ''}`,
+    );
   return 0;
 }
 
@@ -271,7 +274,6 @@ export async function runAdmin(ctx: CliContext, args: readonly string[]): Promis
     yes: { type: 'boolean' },
     message: { type: 'string' },
     'base-seq': { type: 'string' },
-    reason: { type: 'string' },
   });
   if (
     sub === undefined ||

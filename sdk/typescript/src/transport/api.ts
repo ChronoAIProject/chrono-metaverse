@@ -440,11 +440,12 @@ export class MetaverseApi {
     return this.client.json('POST', `${this.admin}/event-types`, { json: request });
   }
 
-  /** `POST /api/v1/admin/spaces/{space_id}/events/{event_id}/redact`，请求体 `{ reason? }`。 */
-  redactEvent(eventId: string, request: { reason?: string } = {}): Promise<unknown> {
-    return this.client.json('POST', `${this.admin}/events/${seg(eventId)}/redact`, {
-      json: request,
-    });
+  /**
+   * `POST /api/v1/admin/spaces/{space_id}/events/{event_id}/redact`（没有请求体，接口服务不读）
+   * → `{ id, redacted, records }`（records = 一起抹除的记录数，含指向它的更正）。
+   */
+  redactEvent(eventId: string): Promise<{ id?: string; redacted?: boolean; records?: number }> {
+    return this.client.json('POST', `${this.admin}/events/${seg(eventId)}/redact`);
   }
 }
 
