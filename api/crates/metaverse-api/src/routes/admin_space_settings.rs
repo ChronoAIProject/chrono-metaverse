@@ -224,6 +224,14 @@ pub async fn set_layout(
         )));
     }
     validate_layout(&request.regions, &request.plots).map_err(ApiError::invalid)?;
+    for name in request
+        .regions
+        .iter()
+        .filter_map(|region| region.name.as_deref())
+        .chain(request.plots.iter().filter_map(|plot| plot.name.as_deref()))
+    {
+        check_text("name", name, 200, false)?;
+    }
     let message = request
         .message
         .unwrap_or_else(|| "修改区域和地块".to_owned());
