@@ -1,0 +1,193 @@
+.timeline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border-top: 1px solid var(--rule);
+  color: var(--ink);
+}
+
+.timeline__play {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: var(--primary-fill);
+  color: var(--on-primary);
+}
+
+.timeline__play svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+.timeline__play:hover {
+  background: var(--primary-fill-hover);
+}
+
+.timeline__steps {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.timeline__step {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: var(--ink-2);
+}
+
+.timeline__step svg {
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
+}
+
+.timeline__step:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--tint-hover);
+}
+
+.timeline__step:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.timeline__speed select {
+  height: var(--control-h);
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid var(--rule-2);
+  background: var(--raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-note);
+}
+
+.timeline__track {
+  position: relative;
+  flex: 1;
+  min-width: 120px;
+  height: 40px;
+}
+
+.timeline__density {
+  position: absolute;
+  inset: 4px 0 14px;
+  width: 100%;
+  height: calc(100% - 18px);
+  fill: var(--ink-3);
+  opacity: 0.55;
+}
+
+.timeline__commits {
+  position: absolute;
+  inset: auto 0 0;
+  height: 14px;
+  list-style: none;
+}
+
+.timeline__commits li {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+}
+
+.timeline__commit {
+  position: relative;
+  z-index: 2;
+  display: block;
+  width: 10px;
+  height: 10px;
+  margin-top: 2px;
+  transform: rotate(45deg);
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.timeline__playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ink);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.timeline__range {
+  position: absolute;
+  inset: 0 0 14px;
+  width: 100%;
+  height: calc(100% - 14px);
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* 拖动条本身是透明的，键盘聚焦时让播放头带上聚焦环。 */
+.timeline__track:has(.timeline__range:focus-visible) .timeline__playhead {
+  box-shadow: var(--focus-ring);
+}
+
+.timeline__time {
+  flex: none;
+  min-width: 168px;
+  font-size: var(--text-note);
+  color: var(--ink-2);
+  text-align: right;
+}
+
+.timeline__now {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--control-h);
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--rule-2);
+  background: var(--raised);
+  font-size: var(--text-note);
+}
+
+.timeline__live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--ink-3);
+}
+
+.timeline__now[aria-pressed='true'] {
+  border-color: transparent;
+  background: var(--accent-wash);
+  color: var(--ink);
+}
+
+.timeline__now[aria-pressed='true'] .timeline__live-dot {
+  background: var(--live);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--live) 30%, transparent);
+}
+
+@media (max-width: 720px) {
+  .timeline {
+    flex-wrap: wrap;
+  }
+
+  .timeline__track {
+    order: 5;
+    flex-basis: 100%;
+  }
+
+  .timeline__time {
+    min-width: 0;
+    flex: 1;
+  }
+}

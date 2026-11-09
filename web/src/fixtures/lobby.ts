@@ -1,0 +1,547 @@
+import type { Anchor, EntityBody, Plot, Region } from '../core/api/types';
+import type { Shape } from '../core/shapes/types';
+
+/**
+ * 夹具空间"演示前厅"：按 docs/SHAPES.md 写成的一个小房间，覆盖全部形状类型。
+ *
+ * - 结构：地面、三面墙（南墙留门洞）、东侧玻璃隔断、天花板；
+ * - 物体：带圆角的办公桌（box + fillet）、旋转体边几（lathe）、
+ *   扫掠椅腿的椅子模板和 3 个实例（sweep + group + instance，其中一把换了颜色）、
+ *   轮廓带圆弧的沙发（extrude + arcs + fillets）、放样花盆（loft）、落地灯（cylinder + cone）；
+ * - 扩展层：虚拟区里的展台（物件）和方块平台（区块，见 chunks.ts）。
+ *
+ * 实体区 x 0–6 米、z 0–5 米；虚拟区在东边 x 6–10 米。格子单位 5 厘米。
+ */
+
+export const SPACE_ID = 'demo-lobby';
+export const SPACE_NAME = '演示前厅';
+export const SHARE_TOKEN = 'fixture-share-token-0123456789abcdef';
+
+export const regions: Region[] = [
+  { id: 'physical', kind: 'physical', label: '实体区', boxes: [[0, 0, 0, 120, 60, 100]] },
+  { id: 'virtual', kind: 'virtual', label: '虚拟展区', boxes: [[120, 0, 0, 200, 60, 100]] },
+];
+
+export const plots: Plot[] = [
+  { id: 'p1', regionId: 'virtual', label: '一号地块', boxes: [[124, 0, 8, 196, 60, 92]] },
+];
+
+const WALNUT = [124, 88, 60] as const;
+const METAL = [58, 60, 66] as const;
+const FABRIC = [86, 112, 140] as const;
+
+const legPath = (x: number, z: number): Shape => ({
+  type: 'sweep',
+  path: [
+    [x, 0, z],
+    [x, 0.44, z],
+  ],
+  section: { circle: 0.012 },
+  material: { color: METAL },
+});
+
+/** 椅子模板：座面（圆角盒）、靠背（放样，略带弧度）、四条扫掠椅腿，后腿向上弯成靠背框。 */
+export const chairTemplate: Shape = {
+  type: 'group',
+  material: { color: [196, 98, 64] },
+  children: [
+    { type: 'box', size: [0.46, 0.05, 0.44], fillet: 0.02, transform: { position: [0, 0.44, 0] } },
+    {
+      type: 'loft',
+      sections: [
+        {
+          y: 0,
+          outline: {
+            points: [
+              [-0.21, -0.012],
+              [0.21, -0.012],
+              [0.21, 0.012],
+              [-0.21, 0.012],
+            ],
+            arcs: [
+              { from: 0, bulge: -0.08 },
+              { from: 2, bulge: 0.08 },
+            ],
+          },
+        },
+        {
+          y: 0.3,
+          outline: {
+            points: [
+              [-0.2, -0.012],
+              [0.2, -0.012],
+              [0.2, 0.012],
+              [-0.2, 0.012],
+            ],
+            arcs: [
+              { from: 0, bulge: -0.1 },
+              { from: 2, bulge: 0.1 },
+            ],
+            fillets: [],
+          },
+        },
+      ],
+      transform: { position: [0, 0.52, -0.2], pitch: -8 },
+    },
+    legPath(-0.19, 0.18),
+    legPath(0.19, 0.18),
+    ...[-0.19, 0.19].map((x): Shape => ({
+      type: 'sweep',
+      path: [
+        [x, 0, -0.18],
+        [x, 0.44, -0.2],
+        [x, 0.84, -0.27],
+      ],
+      smooth: 0.08,
+      section: { circle: 0.012 },
+      material: { color: METAL },
+    })),
+  ],
+};
+
+/** 办公桌：桌面和侧板都是圆角盒。 */
+const desk: Shape = {
+  type: 'group',
+  material: { color: WALNUT },
+  transform: { position: [2.4, 0, 1.6] },
+  children: [
+    { type: 'box', size: [1.6, 0.04, 0.8], fillet: 0.015, transform: { position: [0, 0.71, 0] } },
+    {
+      type: 'box',
+      size: [0.04, 0.71, 0.72],
+      fillet: 0.008,
+      transform: { position: [-0.74, 0, 0] },
+    },
+    { type: 'box', size: [0.04, 0.71, 0.72], fillet: 0.008, transform: { position: [0.74, 0, 0] } },
+    {
+      type: 'box',
+      size: [1.44, 0.4, 0.02],
+      chamfer: 0.004,
+      transform: { position: [0, 0.3, -0.3] },
+      material: { color: [102, 72, 50] },
+    },
+  ],
+};
+
+/** 边几：旋转体，底座、细柱、桌面。 */
+const sideTable: Shape = {
+  type: 'lathe',
+  profile: [
+    [0, 0],
+    [0.2, 0],
+    [0.2, 0.02],
+    [0.06, 0.05],
+    [0.035, 0.12],
+    [0.03, 0.48],
+    [0.27, 0.5],
+    [0.27, 0.54],
+    [0, 0.54],
+  ],
+  segments: 48,
+  transform: { position: [4.9, 0, 3.7] },
+  material: { color: [214, 204, 188] },
+};
+
+/** 沙发：座垫正面是外凸的圆弧，靠背是一条弧形带，扶手是圆角盒。 */
+const sofa: Shape = {
+  type: 'group',
+  material: { color: FABRIC },
+  transform: { position: [4.6, 0, 2.2], yaw: -90 },
+  children: [
+    {
+      type: 'extrude',
+      outline: {
+        points: [
+          [-0.95, -0.42],
+          [0.95, -0.42],
+          [0.95, 0.42],
+          [-0.95, 0.42],
+        ],
+        arcs: [{ from: 2, bulge: 0.08 }],
+        fillets: [
+          { at: 0, radius: 0.06 },
+          { at: 1, radius: 0.06 },
+        ],
+      },
+      height: 0.42,
+      fillet: 0.04,
+    },
+    {
+      type: 'extrude',
+      outline: {
+        points: [
+          [-0.95, -0.42],
+          [0.95, -0.42],
+          [0.95, -0.24],
+          [-0.95, -0.24],
+        ],
+        arcs: [
+          { from: 0, bulge: -0.06 },
+          { from: 2, bulge: 0.06 },
+        ],
+      },
+      height: 0.45,
+      fillet: 0.05,
+      transform: { position: [0, 0.38, 0] },
+    },
+    ...[-1, 1].map((side): Shape => ({
+      type: 'box',
+      size: [0.16, 0.62, 0.84],
+      fillet: 0.05,
+      transform: { position: [side * 1.03, 0, 0] },
+    })),
+    ...[-0.8, 0.8].flatMap((x) =>
+      [-0.32, 0.32].map((z): Shape => ({
+        type: 'cylinder',
+        radius: 0.025,
+        radiusTop: 0.02,
+        height: 0.06,
+        transform: { position: [x, -0.06, z] },
+        material: { color: METAL },
+      })),
+    ),
+  ],
+};
+
+/** 花盆：方形底、圆形口的放样，上面是一棵圆锥形的植物。 */
+const planter: Shape = {
+  type: 'group',
+  transform: { position: [0.5, 0, 4.4] },
+  children: [
+    {
+      type: 'loft',
+      material: { color: [226, 222, 214] },
+      sections: [
+        {
+          y: 0,
+          outline: {
+            points: [
+              [-0.16, -0.16],
+              [0.16, -0.16],
+              [0.16, 0.16],
+              [-0.16, 0.16],
+            ],
+            fillets: [0, 1, 2, 3].map((at) => ({ at, radius: 0.03 })),
+          },
+        },
+        {
+          y: 0.25,
+          outline: {
+            points: [
+              [-0.2, -0.2],
+              [0.2, -0.2],
+              [0.2, 0.2],
+              [-0.2, 0.2],
+            ],
+            fillets: [0, 1, 2, 3].map((at) => ({ at, radius: 0.1 })),
+          },
+        },
+        {
+          y: 0.4,
+          outline: {
+            points: [
+              [-0.22, 0],
+              [0, -0.22],
+              [0.22, 0],
+              [0, 0.22],
+            ],
+            arcs: [0, 1, 2, 3].map((from) => ({ from, bulge: 0.4142 })),
+          },
+        },
+      ],
+    },
+    {
+      type: 'cone',
+      radius: 0.28,
+      height: 1.1,
+      segments: 20,
+      transform: { position: [0, 0.38, 0] },
+      material: { color: [70, 128, 74] },
+    },
+  ],
+};
+
+/** 落地灯：圆柱灯杆（带圆角的底座）+ 圆台灯罩。 */
+const lamp: Shape = {
+  type: 'group',
+  transform: { position: [5.5, 0, 0.5] },
+  children: [
+    { type: 'cylinder', radius: 0.16, height: 0.03, fillet: 0.01, material: { color: METAL } },
+    { type: 'cylinder', radius: 0.012, height: 1.5, segments: 12, material: { color: METAL } },
+    {
+      type: 'cylinder',
+      radius: 0.22,
+      radiusTop: 0.14,
+      height: 0.28,
+      transform: { position: [0, 1.42, 0] },
+      material: { color: [244, 232, 205] },
+    },
+  ],
+};
+
+const wall = (size: [number, number, number], position: [number, number, number]): Shape => ({
+  type: 'box',
+  size,
+  transform: { position },
+  material: { color: [232, 228, 220] },
+});
+
+/** 实体（结构 + 物体）。bounds 是手算的包围盒，供区域判断和剖切范围用。 */
+function rebuiltEntities(chairZ: number): EntityBody[] {
+  return [
+    {
+      entityId: 'floor',
+      layer: 'rebuilt',
+      kind: 'structure',
+      label: '地面',
+      shape: {
+        type: 'box',
+        size: [6, 0.05, 5],
+        transform: { position: [3, -0.05, 2.5] },
+        material: { color: [184, 160, 128] },
+      },
+      bounds: { min: [0, -0.05, 0], max: [6, 0, 5] },
+    },
+    {
+      entityId: 'wall-north',
+      layer: 'rebuilt',
+      kind: 'structure',
+      label: '北墙',
+      shape: wall([6.2, 2.8, 0.1], [3, 0, -0.05]),
+      bounds: { min: [-0.1, 0, -0.1], max: [6.1, 2.8, 0] },
+    },
+    {
+      entityId: 'wall-west',
+      layer: 'rebuilt',
+      kind: 'structure',
+      label: '西墙',
+      shape: wall([0.1, 2.8, 5], [-0.05, 0, 2.5]),
+      bounds: { min: [-0.1, 0, 0], max: [0, 2.8, 5] },
+    },
+    {
+      entityId: 'wall-south',
+      layer: 'rebuilt',
+      kind: 'structure',
+      label: '南墙',
+      shape: {
+        type: 'group',
+        children: [
+          wall([3.6, 2.8, 0.1], [1.7, 0, 5.05]),
+          wall([1.4, 2.8, 0.1], [5.4, 0, 5.05]),
+          wall([1.2, 0.7, 0.1], [4.1, 2.1, 5.05]),
+        ],
+      },
+      bounds: { min: [-0.1, 0, 5], max: [6.1, 2.8, 5.1] },
+    },
+    {
+      entityId: 'glass-east',
+      layer: 'rebuilt',
+      kind: 'structure',
+      label: '玻璃隔断',
+      shape: {
+        type: 'box',
+        size: [0.02, 2.8, 5],
+        transform: { position: [6, 0, 2.5] },
+        material: { color: [176, 206, 222] },
+      },
+      bounds: { min: [5.99, 0, 0], max: [6.01, 2.8, 5] },
+      props: { glass: true },
+    },
+    {
+      entityId: 'ceiling',
+      layer: 'rebuilt',
+      kind: 'structure',
+      label: '天花板',
+      shape: {
+        type: 'box',
+        size: [6, 0.06, 5],
+        transform: { position: [3, 2.8, 2.5] },
+        material: { color: [244, 244, 240] },
+      },
+      bounds: { min: [0, 2.8, 0], max: [6, 2.86, 5] },
+    },
+    {
+      entityId: 'desk-01',
+      layer: 'rebuilt',
+      kind: 'object',
+      label: '办公桌',
+      anchorId: 'table-01',
+      shape: desk,
+      bounds: { min: [1.6, 0, 1.2], max: [3.2, 0.75, 2] },
+      fit: { meanCm: 1.4, p90Cm: 3.1, coverage3cm: 0.86 },
+      props: { 材质: '胡桃木', 来源: '夹具' },
+    },
+    {
+      entityId: 'chair-a',
+      layer: 'rebuilt',
+      kind: 'template',
+      label: '会议椅',
+      shape: chairTemplate,
+    },
+    ...[
+      { id: 'chair-01', x: 1.95, yaw: 180, z: 1.6 + 0.62 },
+      { id: 'chair-02', x: 2.85, yaw: 180, z: chairZ },
+      { id: 'chair-03', x: 2.4, yaw: 0, z: 1.6 - 0.62, color: [74, 132, 112] as const },
+    ].map(({ id, x, yaw, z, color }): EntityBody => ({
+      entityId: id,
+      layer: 'rebuilt',
+      kind: 'object',
+      label: '会议椅',
+      anchorId: `seat-${id.slice(-2)}`,
+      shape: {
+        type: 'instance',
+        template: 'chair-a',
+        transform: { position: [x, 0, z], yaw },
+        ...(color ? { material: { color } } : {}),
+      },
+      bounds: { min: [x - 0.25, 0, z - 0.3], max: [x + 0.25, 0.86, z + 0.3] },
+    })),
+    {
+      entityId: 'side-table-01',
+      layer: 'rebuilt',
+      kind: 'object',
+      label: '边几',
+      shape: sideTable,
+      bounds: { min: [4.63, 0, 3.43], max: [5.17, 0.54, 3.97] },
+    },
+    {
+      entityId: 'sofa-01',
+      layer: 'rebuilt',
+      kind: 'object',
+      label: '沙发',
+      anchorId: 'zone-lounge',
+      shape: sofa,
+      bounds: { min: [4.1, -0.06, 1.1], max: [5.1, 0.83, 3.3] },
+    },
+    {
+      entityId: 'planter-01',
+      layer: 'rebuilt',
+      kind: 'object',
+      label: '绿植',
+      shape: planter,
+      bounds: { min: [0.22, 0, 4.12], max: [0.78, 1.48, 4.68] },
+    },
+    {
+      entityId: 'lamp-01',
+      layer: 'rebuilt',
+      kind: 'object',
+      label: '落地灯',
+      shape: lamp,
+      bounds: { min: [5.28, 0, 0.28], max: [5.72, 1.7, 0.72] },
+    },
+  ];
+}
+
+/** 扩展层物件：虚拟展区里的展台。 */
+const extEntities: EntityBody[] = [
+  {
+    entityId: 'kiosk-01',
+    layer: 'ext',
+    kind: 'object',
+    label: '虚拟展台',
+    regionId: 'virtual',
+    anchorId: 'zone-virtual',
+    shape: {
+      type: 'group',
+      transform: { position: [8, 0.1, 2.5] },
+      children: [
+        {
+          type: 'cylinder',
+          radius: 0.6,
+          height: 0.9,
+          fillet: 0.05,
+          segments: 48,
+          material: { color: [236, 214, 120] },
+        },
+        {
+          type: 'cone',
+          radius: 0.9,
+          height: 0.5,
+          segments: 48,
+          transform: { position: [0, 2.0, 0] },
+          material: { color: [200, 84, 70] },
+        },
+        ...[0, 120, 240].map((yaw): Shape => ({
+          type: 'sweep',
+          path: [
+            [0.55, 0.9, 0],
+            [0.7, 1.5, 0],
+            [0.75, 2.05, 0],
+          ],
+          smooth: 0.3,
+          section: { rect: [0.05, 0.03] },
+          transform: { yaw },
+          material: { color: [90, 90, 96] },
+        })),
+      ],
+    },
+    bounds: { min: [7.1, 0.1, 1.6], max: [8.9, 2.6, 3.4] },
+    props: { 说明: '虚拟区的扩展物件' },
+  },
+];
+
+export const anchors: Anchor[] = [
+  {
+    anchorId: 'table-01',
+    kind: 'table',
+    label: '1 号桌',
+    position: [2.4, 0.75, 1.6],
+    visibility: 'public',
+  },
+  {
+    anchorId: 'seat-01',
+    kind: 'seat',
+    label: '座位 1',
+    position: [1.95, 0.5, 2.22],
+    visibility: 'public',
+  },
+  {
+    anchorId: 'seat-02',
+    kind: 'seat',
+    label: '座位 2',
+    position: [2.85, 0.5, 2.22],
+    visibility: 'public',
+  },
+  {
+    anchorId: 'seat-03',
+    kind: 'seat',
+    label: '座位 3',
+    position: [2.4, 0.5, 0.98],
+    visibility: 'public',
+  },
+  {
+    anchorId: 'zone-lounge',
+    kind: 'zone',
+    label: '休息区',
+    position: [4.6, 0.9, 2.2],
+    visibility: 'public',
+  },
+  {
+    anchorId: 'door-01',
+    kind: 'door',
+    label: '入口',
+    position: [4.1, 1.05, 5.05],
+    visibility: 'public',
+  },
+  {
+    anchorId: 'zone-virtual',
+    kind: 'zone',
+    label: '虚拟展区',
+    position: [8, 2.8, 2.5],
+    visibility: 'public',
+  },
+  {
+    anchorId: 'camera-01',
+    kind: 'camera',
+    label: '内部摄像头',
+    position: [0.2, 2.6, 0.2],
+    visibility: 'internal',
+  },
+];
+
+/** 各版本的物件：seq 1 只有扫描；seq 2 重建；seq 3 加扩展层；seq 4 挪了一把椅子。 */
+export function entitiesAt(seq: number): EntityBody[] {
+  if (seq < 2) return [];
+  const chairZ = seq >= 4 ? 1.6 + 0.9 : 1.6 + 0.62;
+  return [...rebuiltEntities(chairZ), ...(seq >= 3 ? extEntities : [])];
+}

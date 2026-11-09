@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- 分享令牌在地址的 # 后面；页面不发送 Referer，令牌不会随链接外泄（设计 7.2）。 -->
+    <meta name="referrer" content="no-referrer" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FAF2E0" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#060606" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>chrono-metaverse 查看器</title>
+  </head>
+  <body>
+    <!--
+      首次绘制之前决定主题（照搬 CMA index.html）：打包脚本加载完之前，深色用户不会先看到白屏。
+      这段逻辑必须和 src/theme/appearance.ts 保持一致，theme/appearance.test.ts 会直接运行它来核对。
+      存储可能抛错（隐私模式、禁用 Cookie），主题偏好不值得因此让页面打不开。
+    -->
+    <script>
+      (function () {
+        var choice = 'dark';
+        try {
+          var stored = window.localStorage.getItem('metaverse:appearance');
+          if (stored === 'light' || stored === 'dark' || stored === 'system') {
+            choice = stored;
+          }
+        } catch (e) {}
+        var dark =
+          choice === 'dark' ||
+          (choice !== 'light' &&
+            typeof window.matchMedia === 'function' &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+        document.body.toggleAttribute('data-ds-dark-theme', dark);
+      })();
+    </script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

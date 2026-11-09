@@ -1,0 +1,207 @@
+/*
+ * 令牌层：复制自 CMA web/src/styles/tokens.css（CMA docs/Web_Style.md §2–§4）。
+ * 去掉了 Agent Workspace 专用的令牌和本项目用不到的字体，只保留 Geist / Geist Mono。
+ * 调色板本身在 design-platform.css 和 effects-typography.css（原样复制）。
+ */
+
+:root {
+  /* One curve, three durations — §4. Nothing in the product eases differently. */
+  --ds-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ds-transition-duration: 0.2s;
+  --ds-transition-duration-fast: 0.1s;
+  --ds-transition-duration-slow: 0.3s;
+}
+
+/* Every face is self-hosted, OFL-licensed, and visible through fallback while loading. */
+@font-face {
+  font-family: 'Geist';
+  src: url('../assets/fonts/Geist-Variable.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('../assets/fonts/GeistMono-Variable.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+body {
+  --dsw-font-family:
+    'Geist', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', system-ui, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  /* No bare `monospace`: on Windows it may resolve to a CJK serif. */
+  --ds-font-family-code:
+    'Geist Mono', 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, 'Liberation Mono', Menlo,
+    Courier, 'PingFang SC', 'Microsoft YaHei';
+}
+
+/*
+ * ── Migration shim, temporary ────────────────────────────────────────────
+ *
+ * The old names, defined in terms of the new aliases. Thirty-four stylesheets
+ * read them, and rewriting all of them in one commit would be one enormous
+ * unreviewable change — so each surface migrates in its own pull request and
+ * this shim keeps the tree green in between.
+ *
+ * **This block is deleted by the last pull request of #317.** Nothing new may
+ * reference these names; a component added after this was written and reaching
+ * for `--ink` is reaching for something already on its way out.
+ *
+ * The mapping is the one #317 specifies, so a surface being migrated is
+ * substituting names rather than choosing values.
+ *
+ * **Declared on `body`, not `:root`, and that is load-bearing.** A custom
+ * property's value is substituted in the scope it is *declared* in, not the
+ * scope it is used from — so `--ground: var(--dsw-alias-bg-base)` written on
+ * `:root` resolves against `:root`, where the palette is not declared, and
+ * every one of these names computes to nothing at all. The page then renders
+ * on browser defaults: no ground, no ink, no rules, no focus ring.
+ */
+body {
+  --ground: var(--dsw-alias-bg-base);
+  --surface: var(--dsw-alias-bg-layer-1);
+  --raised: var(--dsw-alias-bg-layer-2);
+  --inset: var(--dsw-alias-bg-layer-3);
+  --sunken: var(--dsw-alias-markdown-code-block);
+
+  --ink: var(--dsw-alias-label-primary);
+  --ink-2: var(--dsw-alias-label-secondary);
+  --ink-3: var(--dsw-alias-label-tertiary);
+
+  --rule: var(--dsw-alias-border-l1);
+  --rule-2: var(--dsw-alias-border-l2);
+  --rule-3: var(--dsw-alias-border-l3);
+
+  /*
+   * The theme accent now carries both primary actions and running/current/send
+   * state. These migration names remain separate until #317 removes the shim,
+   * but their role tokens deliberately resolve to the same accent.
+   */
+  --accent: var(--dsw-alias-state-business-primary);
+  --accent-fill: var(--dsw-alias-state-business-primary);
+  --accent-wash: var(--dsw-alias-interactive-bg-hover);
+  --on-accent: var(--dsw-alias-label-primary-foreground);
+
+  --live: var(--dsw-alias-state-success-primary);
+  --wait: var(--dsw-alias-state-warn-primary);
+  --fail: var(--dsw-alias-state-error-primary);
+  --ended: var(--dsw-alias-label-tertiary);
+  --live-wash: var(--dsw-alias-interactive-bg-hover);
+  --wait-wash: var(--dsw-alias-interactive-bg-hover);
+  --fail-wash: var(--dsw-alias-interactive-bg-hover-danger);
+
+  --scrim: var(--dsw-alias-bg-mask-1);
+  --tint-hover: var(--dsw-alias-interactive-bg-hover);
+  --tint-active: var(--dsw-alias-interactive-bg-active);
+  --edge-hairline: var(--dsw-alias-border-l1);
+  --edge-selected: var(--dsw-alias-label-primary);
+
+  --primary-fill: var(--dsw-alias-button-primary-fill);
+  --primary-fill-hover: var(--dsw-alias-button-primary-hover);
+  --on-primary: var(--dsw-alias-button-primary-foreground);
+
+  --lift-rest: var(--dsw-shadow-lv1);
+  --lift-plate: var(--dsw-shadow-lv3);
+  --lift-none: none;
+
+  --font-ui: var(--dsw-font-family);
+  --font-mono: var(--ds-font-family-code);
+
+  /*
+   * Geometry the old sheets still read. These retire with their surfaces:
+   * §2 gives radius and spacing no tokens at all, so a migrated sheet writes
+   * the pixels it needs and stops reading these.
+   */
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  --control-h-sm: 30px;
+  --control-h: 32px;
+  --control-h-md: 36px;
+  --control-h-lg: 40px;
+  --control-h-xl: 46px;
+  --chip-h: 26px;
+  --hit: 32px;
+
+  --text-label: 11px;
+  --text-meta: 12px;
+  --text-note: 13px;
+  --text-ui: 14px;
+  --text-body: 15px;
+  --text-read: 16px;
+  --text-subject: 20px;
+  --text-title: 17px;
+  --text-display: 64px;
+  --text-page: 24px;
+
+  --leading-tight: 1.15;
+  --leading-ui: 1.55;
+  --leading-read: 1.65;
+  --leading-prose: 1.75;
+  --track-tight: -0.01em;
+  --track-label: 0.08em;
+  --track-display: -0.035em;
+
+  --term-size: 13.5px;
+  --term-leading: 1.65;
+  --term-tracking: 0;
+
+  --read-column: 748px;
+  /* Still read by four surfaces; retires with the last of them. */
+  --page-gutter: 20px;
+  --canvas-node-w: 420px;
+  --canvas-node-h: 280px;
+
+  /*
+   * Two syntax tokens, re-declared where they can resolve.
+   *
+   * `shiki.css` writes them on `:root` in terms of aliases the palette
+   * declares on `body`, so upstream they compute to nothing — the same scope
+   * trap the shim above fell into. The first-party syntax sheet keeps its
+   * selector contract, so the body-scoped correction remains here.
+   */
+  --shiki-foreground: var(--dsw-alias-label-primary);
+  --shiki-background: var(--dsw-alias-markdown-code-block);
+
+  --focus-ring:
+    0 0 0 2px var(--dsw-alias-bg-base), 0 0 0 4px var(--dsw-alias-state-business-primary);
+  --focus-prompt: inset 2px 0 0 var(--dsw-alias-state-business-primary);
+  --focus-node: 0 0 0 3px var(--dsw-alias-interactive-bg-active);
+}
+
+/*
+ * The phone override, still part of the shim.
+ *
+ * §9 replaces the band geometry with the three-column concession chain, and
+ * these names go with it — but that is the shell's pull request, not this one.
+ * Kept here so the touch-target floor and the reading column keep working on a
+ * phone until the shell moves.
+ */
+@media (max-width: 29.999rem) {
+  body {
+    --hit: 44px;
+    --control-h-sm: 44px;
+    --control-h: 44px;
+    --control-h-md: 44px;
+    --control-h-lg: 44px;
+    --read-column: 100%;
+  }
+}

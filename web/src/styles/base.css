@@ -1,0 +1,123 @@
+/* 复制自 CMA web/src/styles/base.css，内容未改动。 */
+/*
+ * Base layer — reset plus the page-level rules from docs/Web_Style.md.
+ * Component styling does not live here.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+}
+
+/*
+ * Web_Style.md section 5: the page does not scroll. The app fills exactly the
+ * viewport. dvh rather than vh so the iOS toolbar collapsing does not leave
+ * content under the fold.
+ */
+html,
+body,
+#root {
+  height: 100%;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/*
+ * The platform face is the page's default — Web_Style.md §4 gives it the
+ * headings, labels, prose and controls. Data keeps the mono stack and asks
+ * for it explicitly, because a time or an identifier is data wherever it
+ * appears and inheriting the answer is how one of them ends up in the wrong
+ * face after a parent is restyled.
+ */
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--text-ui);
+  line-height: var(--leading-ui);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* §4: selected text uses the appearance's accent and its paired foreground. */
+::selection {
+  color: var(--dsw-alias-label-primary-foreground);
+  background: var(--dsw-alias-state-business-primary);
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+  font-weight: 600;
+}
+
+/* §4: prose is set for reading; a heading is set to break evenly. */
+p {
+  text-wrap: pretty;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+}
+
+button {
+  cursor: pointer;
+}
+
+/*
+ * Web_Style.md §8: every interactive element has a visible focus state, and it
+ * is --focus-ring — a page-coloured halo and an accent ring, stacked over
+ * whatever impression the state carries. Components that hold their own
+ * impression restate it beside the ring; this is the floor for everything else.
+ */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/*
+ * Clip-rect pattern. display:none and visibility:hidden both remove content
+ * from the accessibility tree, which would defeat the purpose.
+ */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sr-only-focusable:focus-visible {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  clip-path: none;
+  white-space: normal;
+}
+
+/*
+ * Figures that change or line up take tabular numerals (§4, §29): every timestamp and
+ * age is a <time>, so a ticking clock never nudges the words beside it.
+ */
+time {
+  font-variant-numeric: tabular-nums;
+}
