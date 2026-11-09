@@ -316,6 +316,10 @@ def finalize_materials(
     for k, path in enumerate(paths):
         leaf = leaf_at(shape, path)
         info = parts_info.get(path, {"uv": "planar"})
+        if info.get("color") is not None:
+            # 拟合时已经定好的颜色（大屏的深色机身：附近的扫描点多半是屏幕本身，取色会取成画面的颜色）
+            leaf["material"] = sh.color_material(info["color"])
+            continue
         m = (owner == k) & (d < tp.assign_dist)
         cols = scan_C[m]
         if len(cols) == 0:

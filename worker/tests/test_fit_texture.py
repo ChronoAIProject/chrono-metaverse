@@ -63,3 +63,17 @@ def test_bright_albedo_ignores_baked_shadow():
     finalize_materials(bright, P, C, N, ColorSource(P, C, N), TextureParams(), 1.0, {})
     assert plain["children"][0]["material"]["color"][0] == 90
     assert bright["children"][0]["material"]["color"][0] == 220
+
+
+def test_fixed_color_is_not_sampled():
+    """拟合时定好颜色的部件（大屏的机身）：不从附近的扫描点取色（附近全是彩色的画面）。"""
+    box = sh.box([1.0, 0.8, 1.0])
+
+    def screen(n, r):
+        return np.c_[r.integers(0, 80, n), r.integers(100, 200, n), np.full(n, 230)]
+
+    P, C, N = _scan([(box, screen)])
+    shape = sh.group([part(sh.box([1.0, 0.8, 1.0]), "body", prefer="color")])
+    shape["children"][0]["_part"]["color"] = [15, 15, 20]
+    finalize_materials(shape, P, C, N, ColorSource(P, C, N), TextureParams(), 1.0, {})
+    assert shape["children"][0]["material"] == {"color": [15, 15, 20]}

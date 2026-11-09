@@ -50,6 +50,7 @@ from .fit_templates import (
     fit_box,
     fit_chair,
     fit_faces_box,
+    fit_panel,
     fit_plant,
     fit_round,
     fit_sofa,
@@ -413,6 +414,10 @@ def _fit_local_raw(o: Local, kind: str) -> tuple[dict[str, Any], str]:
         faces = fit_faces_box(o)
         if faces is not None:
             return faces, "faces"
+        # 大屏、展板：正面贴图面板 + 深色机身 + 前面立着的音箱、底座
+        panel = fit_panel(o)
+        if panel is not None:
+            return panel, "panel"
     ext = np.ptp(o.L, axis=0)
     dims = sorted(ext)
     uv = "planar" if dims[0] < 0.4 * dims[1] else "cylindrical"

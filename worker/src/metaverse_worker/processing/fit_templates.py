@@ -13,6 +13,7 @@
   分层挤出（俯视按最高点高度分层，每层轮廓挤出）；
 - 柜子 `cabinet`、立柱 `pillar`、杂物 `clutter`：圆角盒；俯视不是矩形或上下不一样宽时用分段的轮廓挤出；
   只扫到相邻两个面的高柜（另两面靠墙、面上是镜子）按看到的面定尺寸，做竖直的圆角盒；
+  大屏、展板（一个竖直的大平面占了大部分点）是正面 1 厘米的贴图面板 + 后面的深色机身 + 前面立着的音箱、底座；
 - 圆的东西（边几、花盆、灯）`round`、绿植 `plant`：按高度的半径剖面做 `lathe`。
 
 每个叶子形状带一个临时字段 `_part = {"name", "uv", "prefer"?, "group"?, "albedo"?}`：部件名、建议的贴图投影
@@ -43,6 +44,7 @@ from .fit_measure import (
     polygon_contains,
     robust_range,
     trace_contour,
+    yaw_rotate,
 )
 
 GRAY = (170, 170, 170)
@@ -924,6 +926,164 @@ def fit_faces_box(
         xf=sh.transform(position=[(lo[0] + hi[0]) / 2, 0.0, (lo[2] + hi[2]) / 2]),
     )
     return sh.group([part(shape, name, "planar", "color")])
+
+
+def _panel_box(
+    u0: float,
+    u1: float,
+    w0: float,
+    w1: float,
+    y0: float,
+    y1: float,
+    phi: float,
+    fillet: float = 0.0,
+    pitch: float = 0.0,
+) -> dict[str, Any]:
+    """面板坐标（u 沿面板、w 沿法线）里的盒子 → 局部坐标的 box（偏航 phi；俯仰 pitch 让盒子随面板后仰，
+    w0、w1 是底边处的位置）。"""
+    c = yaw_rotate(np.array([[(u0 + u1) / 2, (w0 + w1) / 2]]), phi)[0]
+    size = [max(u1 - u0, 0.01), max(y1 - y0, 0.01), max(w1 - w0, 0.005)]
+    f = min(fillet, min(size) * 0.45) if fillet else 0.0
+    xf = sh.transform([c[0], y0, c[1]], yaw=phi, pitch=pitch)
+    return sh.box(size, fillet=sh.r4(f) if f >= 0.002 else None, xf=xf)
+
+
+def _plane_fit(w: np.ndarray, y: np.ndarray, max_slope: float = 0.05) -> tuple[float, float]:
+    """面板沿法线的位置随高度的直线 w = a + b·y（两轮最小二乘，第二轮去掉离线 3 厘米以上的点）；
+    斜率限制在 ±`max_slope`（约 3°）以内。"""
+    A = np.c_[np.ones(len(y)), y]
+    coef = np.linalg.lstsq(A, w, rcond=None)[0]
+    keep = np.abs(A @ coef - w) < 0.03
+    if keep.sum() >= 20:
+        coef = np.linalg.lstsq(A[keep], w[keep], rcond=None)[0]
+    b = float(np.clip(coef[1], -max_slope, max_slope))
+    a = float(np.median(w - b * y))
+    return a, b
+
+
+def fit_panel(
+    o: Local,
+    *,
+    min_width: float = 1.2,
+    min_height: float = 1.0,
+    min_share: float = 0.5,
+    depth: float = 0.08,
+    max_extras: int = 6,
+) -> dict[str, Any] | None:
+    """大屏、展板这类竖直的大平面（一个平面上的点占了大部分）。分层挤出在这里会把屏幕切成一摞薄片，
+    每片的 `planar` 投影沿片自己最薄的轴（竖直）展开，正面全是竖向拉丝，背面还印着镜像的画面。这里改成：
+
+    - **平面**：水平法线朝同一侧（25° 内）的点定法线方向，这些点沿法线的位置随高度拟合一条直线
+      （扫描里大屏常有一两度的后仰），离平面 4 厘米内的点占 `min_share` 以上才算；
+    - **正面贴图面板**：1 厘米厚的薄板，范围是平面附近点的 0.5%–99.5% 分位，`planar` 投影只印在正面；
+    - **机身**：面板后面 `depth` 深的圆角盒，四周比面板大 1.5 厘米（看起来是边框），颜色取整块扫描最暗的
+      四分之一的中位色（`_part.color`）——背面、侧面不会印上镜像的画面；
+    - **面板前面的东西**（音箱、底座、地上的盒子）：前方的点按俯视占用分块：高过 0.3 米的各做一个圆角盒；
+      矮的覆盖面板宽度一半以上时沿面板做一条底座，再往前伸出去的各做一个圆角盒；一共最多 `max_extras` 个。
+
+    不满足条件时返回 None。"""
+    n_all = len(o.L)
+    if n_all < 200 or float(np.percentile(o.y, 99)) < min_height:
+        return None
+    hn = o.N[:, [0, 2]]
+    horiz = np.linalg.norm(hn, axis=1) > 0.8
+    best = None
+    for d in ((1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)):
+        m = horiz & (hn @ np.array(d) > math.cos(math.radians(25)))
+        if best is None or m.sum() > best[1].sum():
+            best = (d, m)
+    assert best is not None
+    facing = best[1]
+    if facing.sum() < min_share * 0.8 * n_all:
+        return None
+    nd = hn[facing].mean(0)
+    nd /= max(float(np.linalg.norm(nd)), 1e-9)
+    phi = math.degrees(math.atan2(nd[0], nd[1]))
+    Q = yaw_rotate(o.xz, -phi)  # 面板坐标：u 沿面板，w 沿法线（正面朝 +w）
+    u, w, y = Q[:, 0], Q[:, 1], o.y
+    a, b = _plane_fit(w[facing], y[facing])
+    off = w - (a + b * y)  # 到面板平面的距离（正面为正）
+    near = np.abs(off) < 0.04
+    if near.mean() < min_share:
+        return None
+    u0, u1 = (float(v) for v in np.percentile(u[near], [0.5, 99.5]))
+    y0, y1 = (float(v) for v in np.percentile(y[near], [0.5, 99.5]))
+    if y0 < 0.06:
+        y0 = 0.0
+    if u1 - u0 < min_width or y1 < min_height:
+        return None
+    pitch = math.degrees(math.asin(b))
+    wb = a + b * y0  # 面板底边处的平面位置
+    # 机身的颜色：不在面板上的点（音箱、底座、边框）里最暗的四分之一；这样的点太少时用全部点
+    lum = o.C.astype(float) @ np.array([0.299, 0.587, 0.114])
+    pool = ~near if (~near).sum() >= 100 else np.ones(n_all, bool)
+    dark = np.median(o.C[pool & (lum <= np.percentile(lum[pool], 25))].astype(float), axis=0)
+    bezel = 0.015
+    body = part(
+        _panel_box(u0 - bezel, u1 + bezel, wb - depth, wb - 0.01, y0, y1 + bezel, phi, 0.01, pitch), "body"
+    )
+    body["_part"]["prefer"] = "color"
+    body["_part"]["color"] = [int(v) for v in np.round(dark)]
+    screen = part(_panel_box(u0, u1, wb - 0.01, wb, y0, y1, phi, 0.0, pitch), "screen", "planar")
+    children = [body, screen]
+    extras: list[tuple[dict[str, Any], str | None]] = []  # (形状, prefer)
+    front = off > 0.03
+    cell = 0.05
+    if front.sum() >= 60:
+        F = np.c_[u[front], off[front], y[front]]
+        gu = ((F[:, 0] - F[:, 0].min()) / cell).astype(int)
+        gw = ((F[:, 1] - F[:, 1].min()) / cell).astype(int)
+
+        def front_box(P: np.ndarray, fillet: float = 0.02) -> dict[str, Any]:
+            lo, hi = np.percentile(P[:, 0], [2, 98])
+            d1 = float(np.percentile(P[:, 1], 98))
+            return _panel_box(lo, hi, a, a + d1, 0.0, float(np.percentile(P[:, 2], 98)), phi, fillet)
+
+        # 高的格子：至少 3 个点高过 0.3 米（零星的噪点不算）
+        hi_pt = F[:, 2] > 0.3
+        high = np.zeros((gw.max() + 1, gu.max() + 1), int)
+        np.add.at(high, (gw[hi_pt], gu[hi_pt]), 1)
+        tall = ndimage.binary_closing(np.pad(high >= 3, 1), iterations=1)[1:-1, 1:-1]
+        lab, nl = ndimage.label(tall, np.ones((3, 3)))
+        in_tall = lab[gw, gu] > 0
+        comps = [lab[gw, gu] == r for r in range(1, nl + 1)]
+        comps = [q for q in comps if (q & hi_pt).sum() >= max(60, 0.005 * n_all)]
+        # 稀疏的碎片（玻璃上的反光、虚像）不算：正面的点密度至少是面板的 35%
+        dens = near.sum() / max((u1 - u0) * (y1 - y0), 1e-6)
+
+        def dense(q: np.ndarray) -> bool:
+            P = F[q]
+            area = float(np.ptp(np.percentile(P[:, 0], [2, 98])) * np.percentile(P[:, 2], 98))
+            return q.sum() >= 0.35 * dens * max(area, 1e-6)
+
+        comps = [q for q in comps if dense(q)]
+        for q in sorted(comps, key=lambda q: -q.sum())[:max_extras]:
+            # 立着的东西（音箱；玻璃隔断前面错开的一扇推拉门）：颜色单一用纯色，否则照常烘焙贴图
+            extras.append((front_box(F[q]), None))
+        low = ~in_tall & ~hi_pt
+        lp = F[low & (F[:, 0] > u0) & (F[:, 0] < u1)]
+        plinth = 0.0
+        if len(lp) >= 60:
+            bins = np.floor((lp[:, 0] - u0) / cell).astype(int)
+            cover = (np.bincount(bins, minlength=int((u1 - u0) / cell) + 1) >= 3).mean()
+            if cover >= 0.5:
+                plinth = float(np.clip(np.percentile(lp[:, 1], 60), 0.03, 0.2))
+                ph = float(np.percentile(lp[:, 2], 95))
+                extras.append((_panel_box(u0, u1, a, a + plinth, 0.0, ph, phi, 0.01), "color"))
+        # 底座再往前伸出去的矮东西（地上的盒子）
+        out = low & (F[:, 1] > plinth + 0.05)
+        if out.sum() >= 60:
+            m2 = np.zeros_like(high, bool)
+            m2[gw[out], gu[out]] = True
+            m2 = ndimage.binary_closing(np.pad(m2, 1), iterations=1)[1:-1, 1:-1]
+            lab2, n2 = ndimage.label(m2, np.ones((3, 3)))
+            for r in range(1, n2 + 1):
+                q = low & (lab2[gw, gu] == r)
+                if q.sum() >= 60:
+                    extras.append((front_box(F[q]), "color"))
+    for k, (shape, prefer) in enumerate(extras[:max_extras]):
+        children.append(part(shape, f"front-{k + 1}", "planar", prefer))
+    return sh.group(children)
 
 
 def fit_stack(

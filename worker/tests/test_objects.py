@@ -292,6 +292,77 @@ def test_fit_faces_box_needs_two_perpendicular_faces():
     assert ft.fit_faces_box(ft.Local(P2, N, np.zeros((3000, 3), np.uint8))) is None
 
 
+# ---------------------------------------------------------------------------- 大屏、展板
+
+
+def _screen_scan(tilt: float = 0.0, seed: int = 6) -> ft.Local:
+    """5 米宽、2.5 米高的大屏（正面朝 +z，面上 z = −0.15 + tilt·y，颜色是彩色的画面），
+    两端各立一个 1.1 米高的音箱（正面 z = −0.05），中间地上一个盒子。"""
+    rng = np.random.default_rng(seed)
+    n = 30000
+    scr = np.c_[rng.uniform(-2.3, 2.3, n), rng.uniform(0.05, 2.55, n), np.zeros(n)]
+    scr[:, 2] = -0.15 + tilt * scr[:, 1]
+    col = np.c_[rng.integers(20, 90, n), rng.integers(80, 200, n), rng.integers(150, 255, n)]
+    parts_p, parts_n, parts_c = [scr], [np.tile([0, 0, 1.0], (n, 1))], [col]
+    for x in (-2.45, 2.45):
+        m = 900
+        parts_p.append(np.c_[rng.uniform(x - 0.12, x + 0.12, m), rng.uniform(0, 1.1, m), np.full(m, -0.05)])
+        parts_n.append(np.tile([0, 0, 1.0], (m, 1)))
+        parts_c.append(np.full((m, 3), 22))
+    m = 600
+    box = np.c_[rng.uniform(-0.25, 0.25, m), np.full(m, 0.18), rng.uniform(-0.1, 0.3, m)]
+    parts_p.append(box)
+    parts_n.append(np.tile([0, 1.0, 0], (m, 1)))
+    parts_c.append(np.full((m, 3), 30))
+    P, N, C = np.concatenate(parts_p), np.concatenate(parts_n), np.concatenate(parts_c)
+    return ft.Local(P, N, C.astype(np.uint8))
+
+
+def test_fit_panel_screen_with_speakers():
+    """大屏：正面一块 1 厘米的贴图面板 + 后面的深色机身（颜色定死，不从画面取色），
+    两端的音箱、地上的盒子各是一个盒子；面板的范围和平面位置按扫描。"""
+    g = ft.fit_panel(_screen_scan())
+    assert g is not None
+    kids = {k["_part"]["name"]: k for k in g["children"]}
+    body, screen = kids["body"], kids["screen"]
+    w, h, d = screen["size"]
+    assert w == pytest.approx(4.6, abs=0.05) and d == pytest.approx(0.01)
+    assert h == pytest.approx(2.5, abs=0.05)
+    # 面板正面在 z = −0.15
+    z = screen["transform"]["position"][2] + d / 2
+    assert z == pytest.approx(-0.15, abs=0.01)
+    assert body["_part"]["color"][2] < 60  # 深色：取的是音箱和盒子，不是蓝色的画面
+    assert body["transform"]["position"][2] < z - 0.04
+    fronts = [k for name, k in kids.items() if name.startswith("front")]
+    tall = [k for k in fronts if k["size"][1] > 1.0]
+    assert len(tall) == 2
+    xs = sorted(k["transform"]["position"][0] for k in tall)
+    assert xs == pytest.approx([-2.45, 2.45], abs=0.03)
+    assert any(k["size"][1] < 0.3 and k["transform"]["position"][2] > -0.1 for k in fronts)
+    sh.validate_shape(json_clean(g))
+
+
+def test_fit_panel_follows_tilt_and_refuses_non_panels():
+    """面板有一两度的后仰时按直线拟合（俯仰角）；盒子、太矮的东西不当面板。"""
+    g = ft.fit_panel(_screen_scan(tilt=-0.02))
+    assert g is not None
+    screen = next(k for k in g["children"] if k["_part"]["name"] == "screen")
+    assert screen["transform"]["pitch"] == pytest.approx(math.degrees(math.asin(-0.02)), abs=0.2)
+    assert ft.fit_panel(local_of(sh.box([1.2, 1.5, 1.0]))) is None
+    low = _screen_scan()
+    assert ft.fit_panel(ft.Local(low.L * [1, 0.3, 1], low.N, low.C)) is None
+
+
+def json_clean(shape: dict) -> dict:
+    import json
+
+    from metaverse_worker.processing.fit_texture import strip_parts
+
+    out = json.loads(json.dumps(shape))
+    strip_parts(out)
+    return out
+
+
 # ---------------------------------------------------------------------------- 端到端
 
 
