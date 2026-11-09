@@ -12,7 +12,14 @@ import {
 } from './grid.js';
 import { isSha256Hex } from './hash.js';
 import { isObjectId, SPACE_ANCHOR_ID } from './ids.js';
-import { normalizeShape, shapeBounds, ShapeError, validateShape, type Shape, type TemplateTable } from './shape.js';
+import {
+  normalizeShape,
+  shapeBounds,
+  ShapeError,
+  validateShape,
+  type Shape,
+  type TemplateTable,
+} from './shape.js';
 
 /**
  * 物件和锚点记录（设计 4.4、SHAPES 3；Rust `record.rs` 的移植）。
@@ -163,7 +170,8 @@ export function parseEntityBody(value: unknown): EntityBody {
   if (!ENTITY_KINDS.includes(value.kind as EntityKind)) {
     throw new RecordError('kind 只能是 structure、object、template');
   }
-  for (const key of ['label', 'anchorId', 'regionId', 'assetHash']) optionalString(value, key, 'entity');
+  for (const key of ['label', 'anchorId', 'regionId', 'assetHash'])
+    optionalString(value, key, 'entity');
   if (given(value, 'textures')) {
     if (!Array.isArray(value.textures) || !value.textures.every((t) => typeof t === 'string')) {
       throw new RecordError('textures 必须是字符串数组');
@@ -225,7 +233,8 @@ export function validateEntityBody(body: EntityBody, templates: TemplateTable): 
   if (body.shape === undefined && body.assetHash === undefined) {
     throw new RecordError('物件至少要有 shape 或 assetHash');
   }
-  if (body.kind === 'template' && body.shape === undefined) throw new RecordError('模板必须给出 shape');
+  if (body.kind === 'template' && body.shape === undefined)
+    throw new RecordError('模板必须给出 shape');
   if (body.assetHash !== undefined && !isSha256Hex(body.assetHash)) {
     throw new RecordError('assetHash 必须是 64 位小写十六进制');
   }
@@ -264,7 +273,8 @@ export function entityFootprint(body: EntityBody): GridBox {
   try {
     return aabbGridCover(body.bounds);
   } catch (error) {
-    if (error instanceof GridError) throw new RecordError(`bounds 无法换算成格子：${error.message}`);
+    if (error instanceof GridError)
+      throw new RecordError(`bounds 无法换算成格子：${error.message}`);
     throw error;
   }
 }

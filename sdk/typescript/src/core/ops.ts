@@ -87,7 +87,13 @@ function atIndex(error: unknown, index: number): OpError {
 export type BlockRef = number | string;
 
 export type BlockKind = 'solid' | 'glass' | 'emissive' | 'liquid' | 'foliage';
-export const BLOCK_KINDS: readonly BlockKind[] = ['solid', 'glass', 'emissive', 'liquid', 'foliage'];
+export const BLOCK_KINDS: readonly BlockKind[] = [
+  'solid',
+  'glass',
+  'emissive',
+  'liquid',
+  'foliage',
+];
 
 export interface BlockTexture {
   readonly top: string;
@@ -308,7 +314,11 @@ export function parseOp(value: unknown): Op {
   };
   switch (name as OpName) {
     case 'fill':
-      return { op: 'fill', box: parseBox(value.box, 'box'), block: parseBlockRef(value.block, 'block') };
+      return {
+        op: 'fill',
+        box: parseBox(value.box, 'box'),
+        block: parseBlockRef(value.block, 'block'),
+      };
     case 'hollowBox': {
       const op: Json = {
         op: 'hollowBox',
@@ -612,7 +622,10 @@ export class WorkingState {
       const before = affected.size;
       for (const id of ids) {
         const entity = this.entities.get(id)!;
-        if (entity.shape !== undefined && [...templateRefs(entity.shape)].some((r) => affected.has(r))) {
+        if (
+          entity.shape !== undefined &&
+          [...templateRefs(entity.shape)].some((r) => affected.has(r))
+        ) {
           affected.add(entity.entityId);
         }
       }
@@ -779,7 +792,11 @@ export class WorkingState {
         const values: [Vec3, number][] = [];
         for (const cell of cellsOf(op.source)) values.push([cell, this.blockAt('ext', cell)]);
         for (const [cell, block] of values) {
-          this.writeCell([cell[0] + offset[0], cell[1] + offset[1], cell[2] + offset[2]], block, touched);
+          this.writeCell(
+            [cell[0] + offset[0], cell[1] + offset[1], cell[2] + offset[2]],
+            block,
+            touched,
+          );
         }
         break;
       }
@@ -942,7 +959,8 @@ export class WorkingState {
   /** 全部非空区块的哈希（键 `layer:cx:cy:cz`）。 */
   chunkHashes(): Map<string, string> {
     const out = new Map<string, string>();
-    for (const [key, cells] of this.chunks) if (!isEmptyChunk(cells)) out.set(key, chunkHash(cells));
+    for (const [key, cells] of this.chunks)
+      if (!isEmptyChunk(cells)) out.set(key, chunkHash(cells));
     return out;
   }
 }

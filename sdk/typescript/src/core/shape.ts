@@ -313,7 +313,10 @@ function validateMaterial(value: unknown, path: string): void {
   if (present(value, 'texture') && typeof value.texture !== 'string') {
     throw new ShapeError(`${path}.texture`, '必须是字符串');
   }
-  if (present(value, 'uv') && !['box', 'planar', 'cylindrical', 'mesh'].includes(value.uv as string)) {
+  if (
+    present(value, 'uv') &&
+    !['box', 'planar', 'cylindrical', 'mesh'].includes(value.uv as string)
+  ) {
     throw new ShapeError(`${path}.uv`, 'uv 只能是 box、planar、cylindrical、mesh');
   }
   const color = present(value, 'color');
@@ -366,7 +369,8 @@ function validateOutline(value: unknown, path: string): void {
   // 以下是 Rust `Outline::validate`。
   if (value.closed === false) throw new ShapeError(`${path}.closed`, '拉伸和放样的轮廓必须闭合');
   const count = points.length;
-  if (count < 3 || count > MAX_POINTS) throw new ShapeError(`${path}.points`, '轮廓需要 3 到 1024 个点');
+  if (count < 3 || count > MAX_POINTS)
+    throw new ShapeError(`${path}.points`, '轮廓需要 3 到 1024 个点');
   points.forEach((point, index) => coords(`${path}.points[${index}]`, point));
   if (!(signedArea(points) > 0)) {
     throw new ShapeError(`${path}.points`, '轮廓的点必须逆时针排列（有向面积为正）');
@@ -374,7 +378,8 @@ function validateOutline(value: unknown, path: string): void {
   const seenArcs = new Set<number>();
   arcs.forEach((arc, index) => {
     const at = `${path}.arcs[${index}]`;
-    if (arc.from >= count || seenArcs.has(arc.from)) throw new ShapeError(at, 'from 超出点数或重复');
+    if (arc.from >= count || seenArcs.has(arc.from))
+      throw new ShapeError(at, 'from 超出点数或重复');
     seenArcs.add(arc.from);
     if (!(Number.isFinite(arc.bulge) && Math.abs(arc.bulge) <= MAX_BULGE)) {
       throw new ShapeError(at, 'bulge 必须是有限值且绝对值不超过 1000');
@@ -383,7 +388,8 @@ function validateOutline(value: unknown, path: string): void {
   const seenFillets = new Set<number>();
   fillets.forEach((fillet, index) => {
     const at = `${path}.fillets[${index}]`;
-    if (fillet.at >= count || seenFillets.has(fillet.at)) throw new ShapeError(at, 'at 超出点数或重复');
+    if (fillet.at >= count || seenFillets.has(fillet.at))
+      throw new ShapeError(at, 'at 超出点数或重复');
     seenFillets.add(fillet.at);
     positive(`${at}.radius`, fillet.radius);
   });
@@ -669,7 +675,10 @@ export function arcExtremes(start: Vec2, end: Vec2, bulge: number): Vec2[] {
       const delta = sweep > 0 ? remEuclid(angle - begin, TAU) : remEuclid(begin - angle, TAU);
       return delta <= Math.abs(sweep);
     })
-    .map(([, direction]) => [center[0]! + radius * direction[0], center[1]! + radius * direction[1]]);
+    .map(([, direction]) => [
+      center[0]! + radius * direction[0],
+      center[1]! + radius * direction[1],
+    ]);
 }
 
 /** 轮廓的二维包围盒 `[min, max]`，含圆弧极值点，忽略圆角。 */

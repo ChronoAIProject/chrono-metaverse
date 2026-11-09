@@ -116,7 +116,9 @@ export function decompressChunk(compressed: Uint8Array, expectedHash?: string): 
 }
 
 /** 格坐标 → [区块坐标, 区块内坐标]。负坐标按向下取整处理。 */
-export function locateCell(cell: readonly number[]): [[number, number, number], [number, number, number]] {
+export function locateCell(
+  cell: readonly number[],
+): [[number, number, number], [number, number, number]] {
   const chunk: [number, number, number] = [0, 0, 0];
   const local: [number, number, number] = [0, 0, 0];
   for (let axis = 0; axis < 3; axis += 1) {
@@ -142,7 +144,5 @@ const LAYER_ORDER: Record<Layer, number> = { rebuilt: 0, ext: 1 };
 
 /** 与 Rust `ChunkKey` 的 `Ord` 相同：先图层（rebuilt < ext），再 cx、cy、cz。 */
 export function compareChunkKeys(a: ChunkKey, b: ChunkKey): number {
-  return (
-    LAYER_ORDER[a.layer] - LAYER_ORDER[b.layer] || a.cx - b.cx || a.cy - b.cy || a.cz - b.cz
-  );
+  return LAYER_ORDER[a.layer] - LAYER_ORDER[b.layer] || a.cx - b.cx || a.cy - b.cy || a.cz - b.cz;
 }

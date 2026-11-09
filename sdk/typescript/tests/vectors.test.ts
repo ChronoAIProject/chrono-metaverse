@@ -87,9 +87,9 @@ describe.skipIf(!present)('规范化向量', () => {
       expect(canonical).toBe(vector.canonical);
       expect(sha256Hex(canonical)).toBe(vector.sha256);
       if (vector.record) {
-        expect(recordHash(vector.record.kind, vector.record.spaceId, JSON.parse(vector.input))).toBe(
-          vector.record.hash,
-        );
+        expect(
+          recordHash(vector.record.kind, vector.record.spaceId, JSON.parse(vector.input)),
+        ).toBe(vector.record.hash);
       }
     });
   }
