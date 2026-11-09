@@ -118,6 +118,14 @@ async fn genesis_layout_drafts_preview_publish_and_reads() {
         .await;
     assert_eq!(view.status, StatusCode::OK, "{:?}", view.body);
     assert_eq!(view.header(header::CACHE_CONTROL), "no-store");
+    // 快照加空间名称和草稿信息（网站的 PreviewView）。
+    assert_eq!(view.body["spaceName"], "测试空间");
+    assert_eq!(
+        view.body["preview"],
+        json!({"draftId": draft_id, "rev": 1, "baseSeq": view.body["seq"], "scope": "physical",
+               "expiresAt": preview.body["expiresAt"]})
+    );
+    assert_eq!(view.body["spaceId"], SPACE);
     assert_eq!(ids(&view.body["anchors"], "anchorId"), ["_space", "t1"]);
     assert_eq!(ids(&view.body["entities"], "id"), ["counter-01"]);
     let draft_chunk = view.body["chunks"][0]["hash"].as_str().unwrap().to_owned();
@@ -1067,6 +1075,24 @@ async fn plot_ops_from_upload_job_is_visible_through_its_plot_path_with_progress
         job.body["progress"],
         json!({"opsApplied": 3, "opsTotal": 3})
     );
+    // 地块草稿的预览带范围 plot:p1 和应用后的 rev。
+    let preview = app
+        .org(Method::POST, &format!("{plot_path}/preview"), None)
+        .await;
+    assert_eq!(preview.status, StatusCode::CREATED, "{:?}", preview.body);
+    let view = app
+        .public(
+            "/api/public/previews",
+            Some(&format!(
+                "Preview {}",
+                preview.body["token"].as_str().unwrap()
+            )),
+        )
+        .await;
+    assert_eq!(view.status, StatusCode::OK, "{:?}", view.body);
+    assert_eq!(view.body["preview"]["scope"], "plot:p1");
+    assert_eq!(view.body["preview"]["draftId"], plot_draft.as_str());
+    assert_eq!(view.body["preview"]["rev"], 1);
     let list = app
         .org(
             Method::GET,

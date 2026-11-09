@@ -191,7 +191,7 @@ NyxID 地址只接受 https；明文 http 只允许本机地址（本地测试�
 | `GET /api/public/spaces/{space_id}/timeline?from=&to=&after=&limit=` | `get_public_timeline` | `Page<CommitSummary>`，每页 ≤ 500；`max-age=5` |
 | `GET /api/public/chunks/{hash}.bin` | `get_public_chunk` | 只返回有 `publishedAt` 的；`public, max-age=31536000, immutable` |
 | `GET /api/public/assets/{hash}.bin` | `get_public_asset` | 只返回登记在 `assetRefs` 的；`Range`；类型白名单 + `nosniff`；immutable |
-| `GET /api/public/previews` | `get_preview` | `Authorization: Preview <令牌>`；`Snapshot`（seq = 草稿基础版本）；`no-store` |
+| `GET /api/public/previews` | `get_preview` | `Authorization: Preview <令牌>`；`PreviewView` = `Snapshot`（seq = 草稿基础版本）+ `spaceName` + `preview: {draftId, rev, baseSeq, scope: physical\|plot:<编号>, expiresAt（令牌的过期时间）}`；`no-store` |
 | `GET /api/public/previews/chunks/{hash}` | `get_preview_chunk` | 草稿区块或基础版本的已发布区块；`no-store` |
 | `GET /api/public/previews/assets/{hash}` | `get_preview_asset` | 草稿引用的资源或本空间已登记的资源；`Range`；`no-store` |
 | `GET /api/public/spaces/{space_id}/head` | `get_public_head` | `Head` `{seq, at, recordedAt}`（最新公开可见变化的记录时间）；ETag、304；进程内缓存 1.5 秒（先验令牌）；公开空间 `public, max-age=1`，凭令牌 `private, no-cache` |

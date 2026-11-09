@@ -252,6 +252,24 @@ mod tests {
         }
     }
 
+    /// 预览响应 = 快照 + spaceName + preview（网站 `PreviewView`）。
+    #[test]
+    fn preview_response_schema_has_space_name_and_draft_info() {
+        let document = full_document();
+        let schema =
+            serde_json::to_string(&document["components"]["schemas"]["PreviewSnapshotView"])
+                .unwrap();
+        for part in ["SnapshotView", "spaceName", "PreviewInfoView"] {
+            assert!(schema.contains(part), "{part}: {schema}");
+        }
+        let info = &document["components"]["schemas"]["PreviewInfoView"]["properties"];
+        for field in ["draftId", "rev", "baseSeq", "scope", "expiresAt"] {
+            assert!(info.get(field).is_some(), "{field}");
+        }
+        let response = &document["paths"]["/api/public/previews"]["get"]["responses"]["200"];
+        assert!(response.to_string().contains("PreviewSnapshotView"));
+    }
+
     #[test]
     fn nyxid_document_has_only_non_admin_v1_paths() {
         let document = nyxid_document();

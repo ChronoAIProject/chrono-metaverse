@@ -61,11 +61,12 @@ pub struct BlobGrant {
     _private: (),
 }
 
-/// 预览令牌指向的草稿版本（设计 5.6：绑定 {空间, 草稿, rev}）。
+/// 预览令牌指向的草稿版本（设计 5.6：绑定 {空间, 草稿, rev}）和令牌的过期时间。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreviewTarget {
     pub draft_id: String,
     pub rev: u64,
+    pub expires_at: Timestamp,
 }
 
 impl Grant {
@@ -412,6 +413,7 @@ impl Authorizer {
             PreviewTarget {
                 draft_id: record.draft_id,
                 rev: record.rev,
+                expires_at: record.expires_at,
             },
         ))
     }
