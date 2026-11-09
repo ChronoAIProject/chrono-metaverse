@@ -1,4 +1,4 @@
-"""上色：材质组（同组的部件取同一个颜色）和浅色单一材质的取色（亮的那一半）。"""
+"""上色：材质组（同组的部件取同一个颜色）、浅色单一材质的取色（最亮的部分，近白按白色）、定死的颜色。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,12 @@ import numpy as np
 
 from metaverse_worker import shapes as sh
 from metaverse_worker.processing.fit_templates import part
-from metaverse_worker.processing.fit_texture import ColorSource, TextureParams, finalize_materials
+from metaverse_worker.processing.fit_texture import (
+    ColorSource,
+    TextureParams,
+    bright_albedo,
+    finalize_materials,
+)
 from test_objects import sample_shape
 
 
@@ -62,7 +67,18 @@ def test_bright_albedo_ignores_baked_shadow():
     finalize_materials(plain, P, C, N, ColorSource(P, C, N), TextureParams(), 1.0, {})
     finalize_materials(bright, P, C, N, ColorSource(P, C, N), TextureParams(), 1.0, {})
     assert plain["children"][0]["material"]["color"][0] == 90
-    assert bright["children"][0]["material"]["color"][0] == 220
+    # 最亮的那部分是 220 的中性色：按白色处理（亮度 235）
+    assert bright["children"][0]["material"]["color"] == [235, 235, 235]
+
+
+def test_bright_albedo_keeps_tinted_and_dim_colors():
+    """浅色单一材质：带颜色的（米色）、不够亮的只去掉阴影，不往白色归一。"""
+    tp = TextureParams()
+    rng = np.random.default_rng(3)
+    beige = np.where(rng.random(400)[:, None] < 0.5, [110, 95, 75], [220, 190, 150])
+    assert bright_albedo(beige, tp).tolist() == [220, 190, 150]
+    gray = np.where(rng.random(400)[:, None] < 0.5, [60, 60, 60], [150, 150, 150])
+    assert bright_albedo(gray, tp).tolist() == [150, 150, 150]
 
 
 def test_fixed_color_is_not_sampled():
