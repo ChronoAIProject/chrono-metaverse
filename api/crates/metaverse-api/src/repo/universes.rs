@@ -8,8 +8,8 @@
 //! - 唯一不带授权的读取是 [`Repo::universe_policy`]，要求只有授权层能构造的钥匙。
 
 use metaverse_core::model::{
-    Owner, OwnerEvidence, OwnerKind, ShareTokenRecord, Universe, UniverseMember, UniverseRevision,
-    Visibility,
+    Actor, Owner, OwnerEvidence, OwnerKind, ShareTokenRecord, Universe, UniverseMember,
+    UniverseRevision, UniverseState, Visibility,
 };
 use metaverse_core::Timestamp;
 use mongodb::bson::{self, doc, Bson, Document};
@@ -297,6 +297,121 @@ impl Repo {
             }
             Err(error) => Err(error),
         }
+    }
+
+    /// 删除空间时把它移出所有组合（设计 12）：每个以它为当前成员的组合写一条退出修订（同时去掉
+    /// 连到它的连接），各组合的邀请列表里也去掉它。空间编号删除后可以被别人重新注册，留在组合里
+    /// 的旧编号会把新空间当成员。凭据要求能管理这个空间（删除空间这一管理操作的后果）。
+    /// 返回写了退出修订的组合数。
+    pub async fn remove_space_from_universes(
+        &self,
+        grant: &Grant,
+        actor: &Actor,
+        now: Timestamp,
+    ) -> Result<usize, RepoError> {
+        if !grant.can_manage() {
+            return Err(RepoError::GrantMismatch);
+        }
+        let space_id = grant.space_id();
+        let universes = self.collection(collections::UNIVERSES);
+        universes
+            .update_many(
+                doc! {"invitations": space_id},
+                doc! {"$pull": {"invitations": space_id}},
+            )
+            .await?;
+        let mut ids = Vec::new();
+        let mut cursor = universes
+            .find(doc! {"members.spaceId": space_id})
+            .projection(doc! {"_id": 1})
+            .limit(10_000)
+            .await?;
+        while cursor.advance().await? {
+            let document: Document = cursor
+                .deserialize_current()
+                .map_err(|error| RepoError::Corrupt(error.to_string()))?;
+            if let Ok(id) = document.get_str("_id") {
+                ids.push(id.to_owned());
+            }
+        }
+        let mut removed = 0;
+        for id in ids {
+            // 组合同时被别人修改时按新的 head 重来。
+            let mut done = false;
+            for _ in 0..8 {
+                let Some(document) = universes.find_one(doc! {"_id": &id}).await? else {
+                    done = true;
+                    break;
+                };
+                let universe: Universe = from_document(document)?;
+                if !universe.members.iter().any(|m| m.space_id == space_id) {
+                    done = true;
+                    break;
+                }
+                let revision = UniverseRevision {
+                    universe_id: universe.id.clone(),
+                    seq: universe.head.seq + 1,
+                    at: now.max(universe.head.at),
+                    actor: actor.clone(),
+                    message: format!("{space_id} 已删除，移出组合"),
+                    state: UniverseState {
+                        members: universe
+                            .members
+                            .iter()
+                            .filter(|member| member.space_id != space_id)
+                            .cloned()
+                            .collect(),
+                        links: universe
+                            .links
+                            .iter()
+                            .filter(|link| {
+                                link.from.space_id != space_id && link.to.space_id != space_id
+                            })
+                            .cloned()
+                            .collect(),
+                    },
+                    owner: Some(universe.owner.clone()),
+                };
+                let mut revision_document = to_document(&revision)?;
+                revision_document
+                    .insert("_id", format!("{}:{}", revision.universe_id, revision.seq));
+                let filter = doc! {"_id": &id, "head.seq": universe.head.seq as i64};
+                let set = doc! {
+                    "head": {"seq": revision.seq as i64, "at": revision.at.to_rfc3339()},
+                    "members": to_bson(&revision.state.members)?,
+                    "links": to_bson(&revision.state.links)?,
+                    "updatedAt": now.to_rfc3339(),
+                };
+                let outcome = self
+                    .run_transaction(&[
+                        TxnOp::Insert {
+                            collection: collections::UNIVERSE_REVISIONS,
+                            document: revision_document,
+                        },
+                        TxnOp::Update {
+                            collection: collections::UNIVERSES,
+                            filter,
+                            update: doc! {"$set": set},
+                        },
+                    ])
+                    .await;
+                match outcome {
+                    Ok(TxnOutcome::Committed) => {
+                        tracing::info!(target: "audit", universe = %id, space = %space_id, seq = revision.seq, "空间已删除，移出组合");
+                        removed += 1;
+                        done = true;
+                        break;
+                    }
+                    Ok(TxnOutcome::NotMatched(_)) | Err(RepoError::Duplicate) => continue,
+                    Err(error) => return Err(error),
+                }
+            }
+            if !done {
+                tracing::warn!(universe = %id, space = %space_id, "组合一直在变化，没能移出已删除的空间");
+                return Err(RepoError::Unavailable);
+            }
+        }
+        Ok(removed)
     }
 
     /// T 时刻生效的修订：`at ≤ T` 的最后一条。

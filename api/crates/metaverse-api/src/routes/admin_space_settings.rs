@@ -333,6 +333,18 @@ pub async fn delete_space(
             "删除空间不可恢复，请带 ?confirm=<空间编号> 确认",
         ));
     }
+    // 先把空间移出所有组合（写退出修订）：空间编号删除后可以被别人重新注册，留在组合里的
+    // 旧编号不能让新空间被凭别人的组合令牌读取（设计 12）。
+    let now = crate::now()?;
+    let actor = super::ingest_common::path_actor(
+        &caller,
+        metaverse_core::scope::PathScope::Physical,
+        metaverse_core::model::ActorKind::Admin,
+    );
+    state
+        .repo
+        .remove_space_from_universes(&grant, &actor, now)
+        .await?;
     if !state.repo.delete_space(&grant).await? {
         return Err(ApiError::not_found());
     }

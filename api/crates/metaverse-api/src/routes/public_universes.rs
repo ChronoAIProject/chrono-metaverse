@@ -155,13 +155,17 @@ pub async fn get_public_universe(
         },
         Some(revision) => {
             let mut members = Vec::with_capacity(revision.state.members.len());
+            let mut shown = std::collections::BTreeSet::new();
             for (member, member_grant) in revision.state.members.iter().zip(&member_grants) {
-                let name = state
-                    .repo
-                    .space(member_grant)
-                    .await?
-                    .map(|space| space.name)
-                    .unwrap_or_default();
+                // 没有凭据的成员（已删除、同编号重建、或组合公开而它不公开）当作不在组合里。
+                let Some(member_grant) = member_grant else {
+                    continue;
+                };
+                let Some(space) = state.repo.space(member_grant).await? else {
+                    continue;
+                };
+                let name = space.name;
+                shown.insert(member.space_id.clone());
                 members.push(PublicMemberView {
                     space_id: member.space_id.clone(),
                     offset: member.offset,
@@ -176,7 +180,14 @@ pub async fn get_public_universe(
                 seq: revision.seq,
                 at: revision.at,
                 members,
-                links: revision.state.links,
+                links: revision
+                    .state
+                    .links
+                    .into_iter()
+                    .filter(|link| {
+                        shown.contains(&link.from.space_id) && shown.contains(&link.to.space_id)
+                    })
+                    .collect(),
             }
         }
     };

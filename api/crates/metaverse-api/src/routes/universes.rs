@@ -464,12 +464,11 @@ async fn member_facts(
         .universe_member_grants_at(grant, now)
         .await?;
     let mut facts = Vec::with_capacity(grants.len());
-    for member in grants {
-        let space = state
-            .repo
-            .space(&member)
-            .await?
-            .ok_or_else(ApiError::internal)?;
+    // 已经删除（或同编号重建）的成员没有凭据，也没有可以连接的锚点。
+    for member in grants.into_iter().flatten() {
+        let Some(space) = state.repo.space(&member).await? else {
+            continue;
+        };
         let anchors = super::event_query::public_anchor_ids(state, &member).await?;
         facts.push((member.space_id().to_owned(), space.visibility, anchors));
     }

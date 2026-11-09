@@ -52,6 +52,9 @@ pub struct Grant {
     owner: Owner,
     access: GrantAccess,
     public_basis: Option<PublicBasis>,
+    /// 凭组合令牌读成员空间时，该空间作为组合成员的时间段：读取方只能拿到落在这些时间段里的
+    /// 提交和事件（设计 8.2"T 时刻是成员"）。其他凭据为空。
+    membership: Option<MembershipPeriods>,
 }
 
 /// 读取不属于某个空间的内容寻址数据（已发布的区块、登记在 `assetRefs` 里的资源）的凭据。
@@ -94,6 +97,11 @@ impl Grant {
 
     pub fn public_basis(&self) -> Option<PublicBasis> {
         self.public_basis
+    }
+
+    /// 凭组合令牌读取时的成员期（见 [`MembershipPeriods`]）；其他凭据为空。
+    pub fn membership(&self) -> Option<&MembershipPeriods> {
+        self.membership.as_ref()
     }
 }
 
@@ -212,6 +220,7 @@ impl Authorizer {
             owner: policy.owner,
             access,
             public_basis: None,
+            membership: None,
         })
     }
 
@@ -315,6 +324,7 @@ impl Authorizer {
             owner: policy.owner,
             access: GrantAccess::Public,
             public_basis: Some(basis),
+            membership: None,
         })
     }
 }
@@ -325,7 +335,8 @@ mod universes;
 
 pub use system::{SeedSpace, SystemGrant};
 pub use universes::{
-    CreateUniverseGrant, MembershipBasis, MembershipChange, MembershipGrant, UniverseGrant,
+    CreateUniverseGrant, MembershipBasis, MembershipChange, MembershipGrant, MembershipPeriods,
+    UniverseGrant,
 };
 /// 预览令牌原文的格式：base64url，43 个字符（256 位随机数）。
 fn plausible_preview_token(token: &str) -> bool {
@@ -343,6 +354,7 @@ impl Authorizer {
             owner: grant.owner.clone(),
             access: GrantAccess::Manage,
             public_basis: None,
+            membership: None,
         }
     }
 
@@ -371,6 +383,7 @@ impl Authorizer {
             owner: policy.owner,
             access: GrantAccess::Manage,
             public_basis: None,
+            membership: None,
         })
     }
 
@@ -409,6 +422,7 @@ impl Authorizer {
                 owner: policy.owner,
                 access: GrantAccess::Public,
                 public_basis: Some(PublicBasis::Preview),
+                membership: None,
             },
             PreviewTarget {
                 draft_id: record.draft_id,

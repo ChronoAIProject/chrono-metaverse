@@ -225,6 +225,7 @@ impl Repo {
         if let Some(after) = after {
             filter.insert("$and", vec![after_filter("at", after)]);
         }
+        super::restrict_to_membership(&mut filter, grant, "at");
         let cursor = self
             .collection(collections::EVENTS)
             .find(filter)
@@ -247,6 +248,8 @@ impl Repo {
         if let Some(after) = after {
             filter.insert("$and", vec![after_filter("recordedAt", after)]);
         }
+        // 更正的 at 与原事件相同，所以按 at 裁剪时原事件和它的更正一起留下或去掉。
+        super::restrict_to_membership(&mut filter, grant, "at");
         let cursor = self
             .collection(collections::EVENTS)
             .find(filter)
@@ -293,6 +296,7 @@ impl Repo {
         let mut filter = space_children(grant);
         filter.insert("visibility", "public");
         filter.insert("retracted", doc! {"$ne": true});
+        super::restrict_to_membership(&mut filter, grant, "at");
         let found = self
             .collection(collections::EVENTS)
             .find_one(filter)
@@ -323,6 +327,7 @@ impl Repo {
         if let Some(after) = after {
             filter.insert("recordedAt", doc! {"$gt": after.to_rfc3339()});
         }
+        super::restrict_to_membership(&mut filter, grant, "at");
         let cursor = self
             .collection(collections::EVENTS)
             .find(filter)
@@ -381,6 +386,7 @@ impl Repo {
             "at",
             doc! {"$gte": from.to_rfc3339(), "$lt": to.to_rfc3339()},
         );
+        super::restrict_to_membership(&mut filter, grant, "at");
         let anchors: Vec<&String> = public_anchors.iter().collect();
         let pipeline = vec![
             doc! {"$match": filter},

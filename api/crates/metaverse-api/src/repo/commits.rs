@@ -886,6 +886,7 @@ impl Repo {
         if let Some(after) = after {
             filter.insert("seq", doc! {"$gt": after as i64});
         }
+        super::restrict_to_membership(&mut filter, grant, "at");
         self.find_commits(filter, doc! {"seq": 1}, Some(limit))
             .await
     }

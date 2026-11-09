@@ -119,30 +119,74 @@ pub enum MembershipChange {
     Leave,
 }
 
-/// 按修订历史判断：空间在 `[from, to]`（`to` 为空表示到现在以后）里是否有某个时刻是成员。
-/// 第 i 条修订从它的 `at` 起生效，到下一条修订的 `at` 为止。
-fn member_during(
-    history: &[(Timestamp, Vec<String>)],
-    space_id: &str,
-    from: Timestamp,
-    to: Option<Timestamp>,
-) -> bool {
-    history.iter().enumerate().any(|(index, (start, members))| {
-        let end = history.get(index + 1).map(|(next, _)| *next);
-        members.iter().any(|member| member == space_id)
-            && to.is_none_or(|to| *start <= to)
-            && end.is_none_or(|end| end > from)
-    })
+/// 某个空间作为组合成员的时间段 `[start, end)`（`end` 为空表示至今），按修订历史计算：第 i 条
+/// 修订从它的 `at` 起生效，到下一条修订的 `at` 为止。
+///
+/// 只算空间**这一次创建之后**开始的时间段：空间编号是全局的，删除后任何人都能重新注册；旧空间
+/// 的成员资格（以及删除前没来得及写退出修订的旧数据）不能让新空间被凭别人的组合令牌读取——
+/// 新空间的主人从来没有同意过（设计 8.2、12）。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MembershipPeriods {
+    periods: Vec<(Timestamp, Option<Timestamp>)>,
 }
 
-/// 按修订历史判断：空间在 `at` 时刻是否是成员（取 `at ≤ T` 的最后一条修订，与
-/// `Repo::universe_members_at` 相同）。
-fn member_at(history: &[(Timestamp, Vec<String>)], space_id: &str, at: Timestamp) -> bool {
-    history
-        .iter()
-        .rev()
-        .find(|(start, _)| *start <= at)
-        .is_some_and(|(_, members)| members.iter().any(|member| member == space_id))
+impl MembershipPeriods {
+    /// 由修订历史（按 seq 排序的 `(at, 成员编号)`）算出 `space_id` 的成员期；`created_at` 之前
+    /// 开始的时间段属于同编号的旧空间，丢掉。
+    pub fn from_history(
+        history: &[(Timestamp, Vec<String>)],
+        space_id: &str,
+        created_at: Option<Timestamp>,
+    ) -> Self {
+        let mut periods = Vec::new();
+        let mut open: Option<Timestamp> = None;
+        for (start, members) in history {
+            let member = members.iter().any(|member| member == space_id);
+            match (member, open) {
+                (true, None) => open = Some(*start),
+                (false, Some(begin)) => {
+                    periods.push((begin, Some(*start)));
+                    open = None;
+                }
+                _ => {}
+            }
+        }
+        if let Some(begin) = open {
+            periods.push((begin, None));
+        }
+        if let Some(created) = created_at {
+            periods.retain(|(start, _)| *start >= created);
+        }
+        Self { periods }
+    }
+
+    /// 全部时间段（按开始时间排序，互不重叠）。
+    pub fn periods(&self) -> &[(Timestamp, Option<Timestamp>)] {
+        &self.periods
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.periods.is_empty()
+    }
+
+    /// `at` 时刻是否是成员。
+    pub fn contains(&self, at: Timestamp) -> bool {
+        self.periods
+            .iter()
+            .any(|(start, end)| *start <= at && end.is_none_or(|end| at < end))
+    }
+
+    /// `[from, to]`（`to` 为空表示到以后）里是否有某个时刻是成员。
+    pub fn overlaps(&self, from: Timestamp, to: Option<Timestamp>) -> bool {
+        self.periods.iter().any(|(start, end)| {
+            to.is_none_or(|to| *start <= to) && end.is_none_or(|end| end > from)
+        })
+    }
+
+    /// 最后一个时间段的终点：现在仍是成员时为空。没有任何时间段时也为空。
+    pub fn last_end(&self) -> Option<Timestamp> {
+        self.periods.last().and_then(|(_, end)| *end)
+    }
 }
 
 /// 比较分享令牌：逐个比较全部未吊销的令牌，不提前退出。
@@ -388,10 +432,59 @@ impl Authorizer {
         ))
     }
 
+    /// 凭组合读成员空间的共同检查：空间存在；组合是因为"公开"（而不是凭令牌）才可读时，空间
+    /// 本身也必须现在是公开的——组合是否公开只看当前成员，曾经的凭链接查看成员不能随着组合
+    /// 改成公开而被任何人读到（设计 12"组合不能比任何成员更公开"）；空间这一次创建之后有成员期。
+    async fn member_policy(
+        &self,
+        space_id: &str,
+        universe: &UniverseGrant,
+    ) -> Result<(crate::repo::SpacePolicy, MembershipPeriods), ApiError> {
+        if !is_space_id(space_id) {
+            return Err(ApiError::not_found());
+        }
+        let policy = self
+            .repo
+            .space_policy(&Self::key(), space_id)
+            .await?
+            .ok_or_else(ApiError::not_found)?;
+        if universe.public_basis != Some(PublicBasis::ShareToken)
+            && policy.visibility != Visibility::Public
+        {
+            return Err(ApiError::not_found());
+        }
+        let history = self.repo.universe_membership_history(universe).await?;
+        let periods = MembershipPeriods::from_history(&history, space_id, policy.created_at);
+        if periods.is_empty() {
+            return Err(ApiError::not_found());
+        }
+        Ok((policy, periods))
+    }
+
+    /// 凭组合读成员空间的凭据：公开级、带成员期（读取方据此裁剪提交和事件）。凭令牌时和凭空间
+    /// 自己的分享令牌一样不可共享缓存（`PublicBasis::ShareToken`）。
+    fn member_grant(
+        space_id: &str,
+        policy: crate::repo::SpacePolicy,
+        universe: &UniverseGrant,
+        periods: MembershipPeriods,
+    ) -> Grant {
+        Grant {
+            space_id: space_id.to_owned(),
+            public_basis: Some(match universe.public_basis {
+                Some(PublicBasis::PublicVisibility) if policy.visibility == Visibility::Public => {
+                    PublicBasis::PublicVisibility
+                }
+                _ => PublicBasis::ShareToken,
+            }),
+            owner: policy.owner,
+            access: GrantAccess::Public,
+            membership: Some(periods),
+        }
+    }
+
     /// 凭组合的分享令牌读成员空间的公开数据（`Authorization: Share <组合令牌>` +
     /// `?universe=<组合编号>`）。要求该空间在 T 时刻是组合成员；否则 404。
-    ///
-    /// 返回的凭据和凭空间自己的分享令牌一样是公开级、不可共享缓存（`PublicBasis::ShareToken`）。
     pub async fn public_space_via_universe(
         &self,
         space_id: &str,
@@ -403,32 +496,16 @@ impl Authorizer {
             return Err(ApiError::not_found());
         }
         let universe = self.public_universe(universe_id, share_token).await?;
-        let members = self.repo.universe_members_at(&universe, at).await?;
-        if !members.iter().any(|member| member == space_id) {
+        let (policy, periods) = self.member_policy(space_id, &universe).await?;
+        if !periods.contains(at) {
             return Err(ApiError::not_found());
         }
-        let policy = self
-            .repo
-            .space_policy(&Self::key(), space_id)
-            .await?
-            .ok_or_else(ApiError::not_found)?;
-        Ok(Grant {
-            space_id: space_id.to_owned(),
-            owner: policy.owner,
-            access: GrantAccess::Public,
-            public_basis: Some(match universe.public_basis {
-                // 组合公开意味着全部成员都公开。
-                Some(PublicBasis::PublicVisibility) if policy.visibility == Visibility::Public => {
-                    PublicBasis::PublicVisibility
-                }
-                _ => PublicBasis::ShareToken,
-            }),
-        })
+        Ok(Self::member_grant(space_id, policy, &universe, periods))
     }
 
-    /// 凭组合令牌读成员空间不按时刻索引的信息（空间信息）：与不带时间段的提交列表相同，要求该
-    /// 空间在 `[纪元, now]` 里某个时刻是组合成员——组合页回看历史时，后来离开组合的成员也要能
-    /// 取到名称和事件显示规则。返回凭据和"现在是否仍是成员"（调用方据此去掉离开之后的当前内容）。
+    /// 凭组合令牌读成员空间不按时刻索引的信息（空间信息）：要求该空间曾经是组合成员——组合页
+    /// 回看历史时，后来离开组合的成员也要能取到名称和事件显示规则。返回凭据和"现在是否仍是
+    /// 成员"（调用方据此去掉离开之后的当前内容）。
     pub async fn public_space_via_universe_ever(
         &self,
         space_id: &str,
@@ -440,18 +517,20 @@ impl Authorizer {
             return Err(ApiError::not_found());
         }
         let universe = self.public_universe(universe_id, share_token).await?;
-        let history = self.repo.universe_membership_history(&universe).await?;
+        let (policy, periods) = self.member_policy(space_id, &universe).await?;
         let epoch = Timestamp::from_millis(0).map_err(|_| ApiError::internal())?;
-        if !member_during(&history, space_id, epoch, Some(now)) {
+        if !periods.overlaps(epoch, Some(now)) {
             return Err(ApiError::not_found());
         }
-        let current = member_at(&history, space_id, now);
-        let grant = self.member_space_grant(space_id, &universe).await?;
-        Ok((grant, current))
+        let current = periods.contains(now);
+        Ok((
+            Self::member_grant(space_id, policy, &universe, periods),
+            current,
+        ))
     }
 
     /// 凭组合令牌读成员空间在一段时间 `[from, to]` 里的公开数据（时间窗事件、密度、提交列表）：
-    /// 要求该空间在这段时间里的某个时刻是组合成员。
+    /// 要求该空间在这段时间里的某个时刻是组合成员。读取方还要按凭据里的成员期裁剪结果。
     pub async fn public_space_via_universe_during(
         &self,
         space_id: &str,
@@ -464,15 +543,16 @@ impl Authorizer {
             return Err(ApiError::not_found());
         }
         let universe = self.public_universe(universe_id, share_token).await?;
-        let history = self.repo.universe_membership_history(&universe).await?;
-        if !member_during(&history, space_id, from, Some(to)) {
+        let (policy, periods) = self.member_policy(space_id, &universe).await?;
+        if !periods.overlaps(from, Some(to)) {
             return Err(ApiError::not_found());
         }
-        self.member_space_grant(space_id, &universe).await
+        Ok(Self::member_grant(space_id, policy, &universe, periods))
     }
 
     /// 凭组合令牌读成员空间的某个版本（快照 `?seq=`）：这个版本生效的时间段
-    /// `[at(seq), at(seq + 1))` 里该空间必须有某个时刻是组合成员。
+    /// `[at(seq), at(seq + 1))` 里该空间必须有某个时刻是组合成员。seq = 0（还没有任何提交的
+    /// 空状态）生效的时间段是 `[空间创建时间, at(1))`。
     pub async fn public_space_via_universe_for_seq(
         &self,
         space_id: &str,
@@ -484,48 +564,36 @@ impl Authorizer {
             return Err(ApiError::not_found());
         }
         let universe = self.public_universe(universe_id, share_token).await?;
-        let history = self.repo.universe_membership_history(&universe).await?;
-        if !history
-            .iter()
-            .any(|(_, members)| members.iter().any(|m| m == space_id))
-        {
-            return Err(ApiError::not_found());
-        }
-        let grant = self.member_space_grant(space_id, &universe).await?;
+        let (policy, periods) = self.member_policy(space_id, &universe).await?;
+        let created_at = policy.created_at;
+        let grant = Self::member_grant(space_id, policy, &universe, periods);
         // 只用来读提交时间，不交给调用方。
-        let (start, end) = self
-            .repo
-            .commit_window(&grant, seq)
-            .await?
-            .ok_or_else(ApiError::not_found)?;
+        let (start, end) = if seq == 0 {
+            let start = match created_at {
+                Some(created) => created,
+                None => Timestamp::from_millis(0).map_err(|_| ApiError::internal())?,
+            };
+            let end = self
+                .repo
+                .commit_window(&grant, 1)
+                .await?
+                .map(|(first, _)| first);
+            (start, end)
+        } else {
+            self.repo
+                .commit_window(&grant, seq)
+                .await?
+                .ok_or_else(ApiError::not_found)?
+        };
         let end = end.map(|end| end.saturating_add_millis(-1));
-        if !member_during(&history, space_id, start, end) {
+        let covered = grant
+            .membership
+            .as_ref()
+            .is_some_and(|periods| periods.overlaps(start, end));
+        if !covered {
             return Err(ApiError::not_found());
         }
         Ok(grant)
-    }
-
-    async fn member_space_grant(
-        &self,
-        space_id: &str,
-        universe: &UniverseGrant,
-    ) -> Result<Grant, ApiError> {
-        let policy = self
-            .repo
-            .space_policy(&Self::key(), space_id)
-            .await?
-            .ok_or_else(ApiError::not_found)?;
-        Ok(Grant {
-            space_id: space_id.to_owned(),
-            owner: policy.owner,
-            access: GrantAccess::Public,
-            public_basis: Some(match universe.public_basis {
-                Some(PublicBasis::PublicVisibility) if policy.visibility == Visibility::Public => {
-                    PublicBasis::PublicVisibility
-                }
-                _ => PublicBasis::ShareToken,
-            }),
-        })
     }
 
     /// 公开读空间，同时返回授权信息（`/head` 把它放进进程内缓存）。规则同 [`Authorizer::public_space`]。
@@ -547,31 +615,56 @@ impl Authorizer {
     }
 
     /// 组合在 T 时刻的修订，以及读取各成员空间公开数据的凭据（成员资格就是同意被凭组合
-    /// 查看，设计 8.2、12）。T 之前没有修订时返回空。
+    /// 查看，设计 8.2、12），与修订里的成员一一对应。T 之前没有修订时返回空。
+    ///
+    /// 某个成员没有凭据（`None`）时调用方当作它不在组合里：空间已经删除；或者同编号的空间是后来
+    /// 重新创建的（新主人没有加入过）；或者组合是因为公开才可读、而这个成员现在不公开。
     pub async fn universe_member_grants_at(
         &self,
         universe: &UniverseGrant,
         at: Timestamp,
-    ) -> Result<(Option<metaverse_core::model::UniverseRevision>, Vec<Grant>), ApiError> {
+    ) -> Result<
+        (
+            Option<metaverse_core::model::UniverseRevision>,
+            Vec<Option<Grant>>,
+        ),
+        ApiError,
+    > {
         let Some(revision) = self.repo.universe_revision_at(universe, at).await? else {
             return Ok((None, Vec::new()));
         };
+        let history = self.repo.universe_membership_history(universe).await?;
         let mut grants = Vec::with_capacity(revision.state.members.len());
         for member in &revision.state.members {
-            let policy = self
+            let Some(policy) = self
                 .repo
                 .space_policy(&Self::key(), &member.space_id)
                 .await?
-                .ok_or_else(|| {
-                    tracing::error!(universe = %universe.universe_id, space = %member.space_id, "组合成员空间不存在");
-                    ApiError::internal()
-                })?;
-            grants.push(Grant {
+            else {
+                tracing::info!(universe = %universe.universe_id, space = %member.space_id, "组合成员空间已不存在，跳过");
+                grants.push(None);
+                continue;
+            };
+            let periods =
+                MembershipPeriods::from_history(&history, &member.space_id, policy.created_at);
+            if !periods.contains(at) {
+                tracing::info!(universe = %universe.universe_id, space = %member.space_id, "组合成员空间是后来重新创建的，跳过");
+                grants.push(None);
+                continue;
+            }
+            if universe.public_basis == Some(PublicBasis::PublicVisibility)
+                && policy.visibility != Visibility::Public
+            {
+                grants.push(None);
+                continue;
+            }
+            grants.push(Some(Grant {
                 space_id: member.space_id.clone(),
                 owner: policy.owner,
                 access: GrantAccess::Public,
                 public_basis: Some(PublicBasis::ShareToken),
-            });
+                membership: Some(periods),
+            }));
         }
         Ok((Some(revision), grants))
     }
@@ -594,6 +687,7 @@ impl Authorizer {
             owner: policy.owner.clone(),
             access: GrantAccess::Public,
             public_basis: Some(basis),
+            membership: None,
         })
     }
 }
@@ -602,39 +696,70 @@ impl Authorizer {
 mod tests {
     use super::*;
 
-    #[test]
-    fn membership_periods_follow_revisions() {
-        let t = |s: i64| Timestamp::from_millis(s * 1000).unwrap();
-        let history = vec![
+    fn t(s: i64) -> Timestamp {
+        Timestamp::from_millis(s * 1000).unwrap()
+    }
+
+    fn history() -> Vec<(Timestamp, Vec<String>)> {
+        vec![
             (t(10), vec!["a".to_owned()]),
             (t(20), vec!["a".to_owned(), "b".to_owned()]),
             (t(30), vec!["b".to_owned()]),
-        ];
-        // a 是 [10, 30) 的成员；b 是 [20, +∞) 的成员。
-        assert!(member_during(&history, "a", t(29), Some(t(29))));
-        assert!(!member_during(&history, "a", t(30), Some(t(40))));
-        assert!(!member_during(&history, "a", t(0), Some(t(9))));
-        assert!(member_during(&history, "a", t(0), Some(t(10))));
-        assert!(member_during(&history, "b", t(100), None));
-        assert!(!member_during(&history, "b", t(5), Some(t(19))));
-        assert!(!member_during(&history, "c", t(0), None));
+            (t(40), vec!["a".to_owned(), "b".to_owned()]),
+        ]
+    }
+
+    #[test]
+    fn membership_periods_follow_revisions() {
+        let history = history();
+        let a = MembershipPeriods::from_history(&history, "a", None);
+        // a 是 [10, 30) 和 [40, +∞) 的成员；b 是 [20, +∞) 的成员。
+        assert_eq!(a.periods(), &[(t(10), Some(t(30))), (t(40), None)][..]);
+        assert!(a.overlaps(t(29), Some(t(29))));
+        assert!(!a.overlaps(t(30), Some(t(39))));
+        assert!(a.overlaps(t(30), Some(t(40))));
+        assert!(!a.overlaps(t(0), Some(t(9))));
+        assert!(a.overlaps(t(0), Some(t(10))));
+        let b = MembershipPeriods::from_history(&history, "b", None);
+        assert!(b.overlaps(t(100), None));
+        assert!(!b.overlaps(t(5), Some(t(19))));
+        assert!(MembershipPeriods::from_history(&history, "c", None).is_empty());
+        assert_eq!(a.last_end(), None);
+        let only_first = MembershipPeriods::from_history(&history[..3], "a", None);
+        assert_eq!(only_first.last_end(), Some(t(30)));
     }
 
     #[test]
     fn membership_at_a_moment_uses_the_last_revision_before_it() {
-        let t = |s: i64| Timestamp::from_millis(s * 1000).unwrap();
-        let history = vec![
-            (t(10), vec!["a".to_owned()]),
-            (t(20), vec!["a".to_owned(), "b".to_owned()]),
-            (t(30), vec!["b".to_owned()]),
-        ];
-        assert!(!member_at(&history, "a", t(9)));
-        assert!(member_at(&history, "a", t(10)));
-        assert!(member_at(&history, "a", t(29)));
-        assert!(!member_at(&history, "a", t(30)));
-        assert!(member_at(&history, "b", t(1000)));
-        assert!(!member_at(&history, "c", t(1000)));
-        assert!(!member_at(&[], "a", t(1000)));
+        let history = history();
+        let a = MembershipPeriods::from_history(&history, "a", None);
+        assert!(!a.contains(t(9)));
+        assert!(a.contains(t(10)));
+        assert!(a.contains(t(29)));
+        assert!(!a.contains(t(30)));
+        assert!(a.contains(t(40)));
+        let b = MembershipPeriods::from_history(&history, "b", None);
+        assert!(b.contains(t(1000)));
+        assert!(!MembershipPeriods::from_history(&history, "c", None).contains(t(1000)));
+        assert!(!MembershipPeriods::from_history(&[], "a", None).contains(t(1000)));
+    }
+
+    #[test]
+    fn recreated_space_does_not_inherit_old_membership() {
+        // 空间 a 在 10 加入、删除时没有写退出修订；同编号的新空间在 35 创建：
+        // 旧的 [10, 30) 不算，40 之后重新加入的才算。
+        let history = history();
+        let a = MembershipPeriods::from_history(&history, "a", Some(t(35)));
+        assert_eq!(a.periods(), &[(t(40), None)][..]);
+        assert!(!a.contains(t(20)));
+        assert!(a.contains(t(41)));
+        // 新空间在最后一次加入之后才创建：没有任何成员期。
+        let late = MembershipPeriods::from_history(&history, "a", Some(t(45)));
+        assert!(late.is_empty());
+        assert!(!late.contains(t(1000)));
+        // 创建时间恰好等于加入时间：算。
+        let same = MembershipPeriods::from_history(&history, "b", Some(t(20)));
+        assert!(same.contains(t(20)));
     }
 
     #[test]

@@ -18,6 +18,10 @@ pub struct SpacePolicy {
     pub visibility: Visibility,
     #[serde(default)]
     pub share_tokens: Vec<ShareTokenRecord>,
+    /// 空间这一次创建的时间：空间编号删除后可以被别人重新注册，凭组合读取时只认这之后开始的
+    /// 成员资格（旧空间的成员资格不归新空间）。
+    #[serde(default)]
+    pub created_at: Option<metaverse_core::Timestamp>,
 }
 
 impl SpacePolicy {
@@ -82,7 +86,9 @@ impl Repo {
         let found = self
             .collection(collections::SPACES)
             .find_one(doc! {"_id": space_id})
-            .projection(doc! {"owner": 1, "ownerEvidence": 1, "visibility": 1, "shareTokens": 1})
+            .projection(doc! {
+                "owner": 1, "ownerEvidence": 1, "visibility": 1, "shareTokens": 1, "createdAt": 1
+            })
             .await?;
         found
             .map(|document| {
