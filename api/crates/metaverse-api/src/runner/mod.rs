@@ -177,6 +177,11 @@ impl Runner {
         &self.config.instance_id
     }
 
+    /// 本进程正在处理的任务数。
+    pub fn running_jobs(&self) -> usize {
+        self.running.lock().expect("正在处理的任务表").len()
+    }
+
     fn slots(&self, class: SlotClass) -> &Arc<Semaphore> {
         match class {
             SlotClass::Verify => &self.verify_slots,
@@ -315,8 +320,8 @@ impl Runner {
         }
     }
 
-    /// 按处理结果写任务状态。
-    async fn settle(&self, lease: &Lease, result: Result<(), JobFailure>) -> Outcome {
+    /// 按处理结果写任务状态（测试也直接调用它核对重试分类）。
+    pub async fn settle(&self, lease: &Lease, result: Result<(), JobFailure>) -> Outcome {
         let (class, message) = match result {
             Ok(()) => return Outcome::Done,
             Err(JobFailure::Recorded) => return Outcome::Failed(ErrorClass::Content),

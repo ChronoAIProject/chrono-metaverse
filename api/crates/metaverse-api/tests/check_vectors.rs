@@ -25,7 +25,12 @@ struct Sample {
     cases: Vec<(&'static str, Option<&'static str>)>,
 }
 
-fn sample(file: &'static str, bytes: Vec<u8>, purpose: &'static str, code: Option<&'static str>) -> Sample {
+fn sample(
+    file: &'static str,
+    bytes: Vec<u8>,
+    purpose: &'static str,
+    code: Option<&'static str>,
+) -> Sample {
     Sample {
         file,
         bytes,
@@ -44,11 +49,11 @@ fn directory() -> PathBuf {
 /// 把 JSON 和 BIN 拼成 glb（JSON 用空格、BIN 用 0 补齐到 4 字节）。
 fn glb(json: &Value, bin: &[u8]) -> Vec<u8> {
     let mut text = serde_json::to_vec(json).unwrap();
-    while text.len() % 4 != 0 {
+    while !text.len().is_multiple_of(4) {
         text.push(b' ');
     }
     let mut data = bin.to_vec();
-    while data.len() % 4 != 0 {
+    while !data.len().is_multiple_of(4) {
         data.push(0);
     }
     let total = 12 + 8 + text.len() + if data.is_empty() { 0 } else { 8 + data.len() };
@@ -268,7 +273,12 @@ const DRC: &[u8] = b"DRACO\x02\x02\x01\x01\x00\x00 mesh data";
 fn samples() -> Vec<Sample> {
     let mut list = Vec::new();
     // ---- glb：通过 ----
-    list.push(sample("glb_model_triangle.glb", triangle(json!({})), "model", None));
+    list.push(sample(
+        "glb_model_triangle.glb",
+        triangle(json!({})),
+        "model",
+        None,
+    ));
     list.push(sample(
         "glb_model_png_texture.glb",
         textured(&png(64, 32), "image/png", json!({})),
@@ -296,7 +306,12 @@ fn samples() -> Vec<Sample> {
             strided.extend_from_slice(element);
             strided.extend_from_slice(&[0, 0]);
         }
-        list.push(sample("glb_quantized.glb", glb(&json, &strided), "model", None));
+        list.push(sample(
+            "glb_quantized.glb",
+            glb(&json, &strided),
+            "model",
+            None,
+        ));
     }
     // 绕竖直轴转 45 度的节点：世界包围盒是 8 个角点变换后的外包（比实际偏大）。
     {
@@ -306,12 +321,21 @@ fn samples() -> Vec<Sample> {
             [0.5, 1.0, 0.5],
             json!({"nodes": [{"mesh": 0, "rotation": [0.0, half.sin(), 0.0, half.cos()]}]}),
         );
-        list.push(sample("glb_rotated_node.glb", glb(&json, &floats(&TRIANGLE)), "model", None));
+        list.push(sample(
+            "glb_rotated_node.glb",
+            glb(&json, &floats(&TRIANGLE)),
+            "model",
+            None,
+        ));
     }
     // 保持扫描原坐标的网页用模型（5000 米外）：当网页用模型可以，当物件模型超出坐标上限。
     {
         let far: Vec<f32> = TRIANGLE.iter().map(|v| v + 5000.0).collect();
-        let json = triangle_json([4999.5, 5000.0, 4999.5], [5000.5, 5001.0, 5000.5], json!({}));
+        let json = triangle_json(
+            [4999.5, 5000.0, 4999.5],
+            [5000.5, 5001.0, 5000.5],
+            json!({}),
+        );
         list.push(Sample {
             file: "glb_far_coordinates.glb",
             bytes: glb(&json, &floats(&far)),
@@ -412,7 +436,11 @@ fn samples() -> Vec<Sample> {
     ));
     {
         let far: Vec<f32> = TRIANGLE.iter().map(|v| v + 2000.0).collect();
-        let json = triangle_json([1999.5, 2000.0, 1999.5], [2000.5, 2001.0, 2000.5], json!({}));
+        let json = triangle_json(
+            [1999.5, 2000.0, 1999.5],
+            [2000.5, 2001.0, 2000.5],
+            json!({}),
+        );
         list.push(sample(
             "glb_coords_out_of_range.glb",
             glb(&json, &floats(&far)),
@@ -441,13 +469,38 @@ fn samples() -> Vec<Sample> {
     // ---- 图片 ----
     list.push(sample("texture.png", png(640, 480), "texture", None));
     // EXIF + ICC 段合计 85 000 字节，宽高在第 85 KB 以后。
-    list.push(sample("texture_long_exif.jpg", jpeg(4000, 3000, 85_000, true), "texture", None));
-    list.push(sample("texture_no_sof.jpg", jpeg(16, 16, 200, false), "texture", Some("jpeg_no_sof")));
-    list.push(sample("texture.webp", webp_vp8x(2048, 1024), "texture", None));
-    list.push(sample("texture_too_large.png", png(8192, 8192), "texture", Some("over_limit")));
+    list.push(sample(
+        "texture_long_exif.jpg",
+        jpeg(4000, 3000, 85_000, true),
+        "texture",
+        None,
+    ));
+    list.push(sample(
+        "texture_no_sof.jpg",
+        jpeg(16, 16, 200, false),
+        "texture",
+        Some("jpeg_no_sof"),
+    ));
+    list.push(sample(
+        "texture.webp",
+        webp_vp8x(2048, 1024),
+        "texture",
+        None,
+    ));
+    list.push(sample(
+        "texture_too_large.png",
+        png(8192, 8192),
+        "texture",
+        Some("over_limit"),
+    ));
     // ---- zip（扫描） ----
     let tex = jpeg(64, 64, 0, true);
-    list.push(sample("scan.zip", zip(&[member("mesh.drc", DRC), member("tex.jpg", &tex)], false), "scan", None));
+    list.push(sample(
+        "scan.zip",
+        zip(&[member("mesh.drc", DRC), member("tex.jpg", &tex)], false),
+        "scan",
+        None,
+    ));
     list.push(sample(
         "scan_macos.zip",
         zip(
@@ -464,31 +517,75 @@ fn samples() -> Vec<Sample> {
         "scan",
         None,
     ));
-    list.push(sample("zip_dotdot.zip", zip(&[member("../mesh.drc", DRC)], false), "scan", Some("zip_path")));
-    list.push(sample("zip_absolute.zip", zip(&[member("/tmp/mesh.drc", DRC)], false), "scan", Some("zip_path")));
+    list.push(sample(
+        "zip_dotdot.zip",
+        zip(&[member("../mesh.drc", DRC)], false),
+        "scan",
+        Some("zip_path"),
+    ));
+    list.push(sample(
+        "zip_absolute.zip",
+        zip(&[member("/tmp/mesh.drc", DRC)], false),
+        "scan",
+        Some("zip_path"),
+    ));
     list.push(sample(
         "zip_encrypted.zip",
-        zip(&[Member { name: "mesh.drc", data: DRC, flags: 1, local_name: None }], false),
+        zip(
+            &[Member {
+                name: "mesh.drc",
+                data: DRC,
+                flags: 1,
+                local_name: None,
+            }],
+            false,
+        ),
         "scan",
         Some("zip_encrypted"),
     ));
-    list.push(sample("zip64.zip", zip(&[member("mesh.drc", DRC)], true), "scan", Some("zip_zip64")));
+    list.push(sample(
+        "zip64.zip",
+        zip(&[member("mesh.drc", DRC)], true),
+        "scan",
+        Some("zip_zip64"),
+    ));
     list.push(sample(
         "zip_two_meshes.zip",
-        zip(&[member("a.drc", DRC), member("b.obj", b"v 0 0 0\n")], false),
+        zip(
+            &[member("a.drc", DRC), member("b.obj", b"v 0 0 0\n")],
+            false,
+        ),
         "scan",
         Some("zip_members"),
     ));
     list.push(sample(
         "zip_local_header_mismatch.zip",
-        zip(&[Member { name: "mesh.drc", data: DRC, flags: 0, local_name: Some("mash.drc") }], false),
+        zip(
+            &[Member {
+                name: "mesh.drc",
+                data: DRC,
+                flags: 0,
+                local_name: Some("mash.drc"),
+            }],
+            false,
+        ),
         "scan",
         Some("zip_local_header"),
     ));
     // ---- 其他扫描格式 ----
     list.push(sample("scan.drc", DRC.to_vec(), "scan", None));
-    list.push(sample("pointcloud.drc", b"DRACO\x02\x02\x00\x01\x00\x00 points".to_vec(), "scan", Some("drc_header")));
-    list.push(sample("scan.obj", b"# Scaniverse\nmtllib scan.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n".to_vec(), "scan", None));
+    list.push(sample(
+        "pointcloud.drc",
+        b"DRACO\x02\x02\x00\x01\x00\x00 points".to_vec(),
+        "scan",
+        Some("drc_header"),
+    ));
+    list.push(sample(
+        "scan.obj",
+        b"# Scaniverse\nmtllib scan.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n".to_vec(),
+        "scan",
+        None,
+    ));
     // ---- 操作文件、文本、清单 ----
     let ops = "{\"op\":\"fill\",\"box\":[0,0,0,1,1,1],\"block\":2}\n\n{\"op\":\"addBlock\",\"name\":\"stone\"}\n";
     list.push(sample("ops.ndjson", ops.as_bytes().to_vec(), "ops", None));
@@ -496,20 +593,46 @@ fn samples() -> Vec<Sample> {
         // 不压缩的 deflate（存储块）：输出与压缩库的版本无关。
         let mut encoder = GzEncoder::new(Vec::new(), flate2::Compression::none());
         encoder.write_all(ops.as_bytes()).unwrap();
-        list.push(sample("ops.ndjson.gz", encoder.finish().unwrap(), "ops", None));
+        list.push(sample(
+            "ops.ndjson.gz",
+            encoder.finish().unwrap(),
+            "ops",
+            None,
+        ));
     }
-    list.push(sample("ops_not_object.ndjson", b"{\"op\":\"fill\"}\n[1, 2]\n".to_vec(), "ops", Some("ndjson_line")));
-    list.push(sample("notes.txt", "建模记录：前台 🪑\n".as_bytes().to_vec(), "script", None));
-    list.push(sample("notes_bad_utf8.txt", b"notes \xff\xfe broken".to_vec(), "script", Some("text_encoding")));
+    list.push(sample(
+        "ops_not_object.ndjson",
+        b"{\"op\":\"fill\"}\n[1, 2]\n".to_vec(),
+        "ops",
+        Some("ndjson_line"),
+    ));
+    list.push(sample(
+        "notes.txt",
+        "建模记录：前台 🪑\n".as_bytes().to_vec(),
+        "script",
+        None,
+    ));
+    list.push(sample(
+        "notes_bad_utf8.txt",
+        b"notes \xff\xfe broken".to_vec(),
+        "script",
+        Some("text_encoding"),
+    ));
     list.push(sample(
         "bundle.json",
-        serde_json::to_vec(&json!({"format": "chrono-metaverse-rebuild-bundle", "version": 1, "files": []})).unwrap(),
+        serde_json::to_vec(
+            &json!({"format": "chrono-metaverse-rebuild-bundle", "version": 1, "files": []}),
+        )
+        .unwrap(),
         "bundle",
         None,
     ));
     list.push(sample(
         "bundle_wrong_version.json",
-        serde_json::to_vec(&json!({"format": "chrono-metaverse-rebuild-bundle", "version": 2, "files": []})).unwrap(),
+        serde_json::to_vec(
+            &json!({"format": "chrono-metaverse-rebuild-bundle", "version": 2, "files": []}),
+        )
+        .unwrap(),
         "bundle",
         Some("json_structure"),
     ));
@@ -561,15 +684,24 @@ fn expected_of(samples: &[Sample]) -> Value {
         let format = format_of(sample.file);
         for (purpose, code) in &sample.cases {
             let actual = run(&sample.bytes, purpose_of(purpose), format, 1 << 18);
-            let mut case = json!({"file": sample.file, "purpose": purpose, "format": format.name()});
+            let mut case =
+                json!({"file": sample.file, "purpose": purpose, "format": format.name()});
             match code {
                 None => {
-                    assert_eq!(actual["ok"], true, "{} 按 {purpose} 应该通过：{actual}", sample.file);
+                    assert_eq!(
+                        actual["ok"], true,
+                        "{} 按 {purpose} 应该通过：{actual}",
+                        sample.file
+                    );
                     case["ok"] = json!(true);
                     case["check"] = actual["check"].clone();
                 }
                 Some(code) => {
-                    assert_eq!(actual["code"], *code, "{} 按 {purpose} 的拒绝码：{actual}", sample.file);
+                    assert_eq!(
+                        actual["code"], *code,
+                        "{} 按 {purpose} 的拒绝码：{actual}",
+                        sample.file
+                    );
                     case["ok"] = json!(false);
                     case["code"] = json!(code);
                 }
@@ -596,9 +728,17 @@ fn check_vectors_match_the_verifier() {
     }
     // 目录里的样本与生成器一致。
     for sample in &samples {
-        let stored = std::fs::read(dir.join(sample.file))
-            .unwrap_or_else(|_| panic!("缺少样本 {}（用 METAVERSE_WRITE_CHECK_VECTORS=1 重新生成）", sample.file));
-        assert!(stored == sample.bytes, "样本 {} 与生成器不一致，请重新生成", sample.file);
+        let stored = std::fs::read(dir.join(sample.file)).unwrap_or_else(|_| {
+            panic!(
+                "缺少样本 {}（用 METAVERSE_WRITE_CHECK_VECTORS=1 重新生成）",
+                sample.file
+            )
+        });
+        assert!(
+            stored == sample.bytes,
+            "样本 {} 与生成器不一致，请重新生成",
+            sample.file
+        );
     }
     let stored: Value =
         serde_json::from_slice(&std::fs::read(dir.join("expected.json")).unwrap()).unwrap();
