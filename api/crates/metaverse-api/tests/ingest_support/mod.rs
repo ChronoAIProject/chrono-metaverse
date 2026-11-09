@@ -503,6 +503,7 @@ impl TestApp {
         assert_eq!(upload.get_str("sha256").unwrap(), sha256);
         assert_eq!(upload.get_i64("size").unwrap(), length);
         let purpose = upload.get_str("purpose").unwrap().to_owned();
+        let declared = upload.get_str("declaredFormat").unwrap_or("drc").to_owned();
         self.collection("assets.files")
             .insert_one(doc! {
                 "_id": upload_id,
@@ -511,7 +512,8 @@ impl TestApp {
                 "uploadDate": mongodb::bson::DateTime::now(),
                 "filename": sha256,
                 "metadata": {"sha256": sha256, "uploadId": upload_id, "kind": &purpose,
-                             "format": "draco", "contentType": "application/x-draco"},
+                             "format": "draco", "contentType": "application/x-draco",
+                             "check": check_for(&purpose, &declared)},
             })
             .await
             .unwrap();
@@ -588,6 +590,25 @@ impl Drop for TestApp {
             });
         })
         .join();
+    }
+}
+
+/// 模拟上传核对写的核对记录（`metadata.check`）：按用途和声明的格式给一份合乎这个用途的记录。
+pub fn check_for(purpose: &str, format: &str) -> Document {
+    match (purpose, format) {
+        ("model" | "webmodel", "glb") => doc! {
+            "v": 1, "format": "glb", "triangles": 12_i64, "nodes": 1, "meshes": 1, "materials": 1,
+            "images": [], "maxTextureSide": 0, "texturePixels": 0_i64, "extensions": [],
+            "bounds": {"min": [-0.5, 0.0, -0.5], "max": [0.5, 1.0, 0.5]},
+        },
+        (_, "glb") => doc! {
+            "v": 1, "format": "glb", "triangles": null, "nodes": 1, "meshes": 1, "materials": 0,
+            "images": [], "maxTextureSide": 0, "texturePixels": 0_i64, "extensions": [], "bounds": null,
+        },
+        (_, "zip") => doc! {"v": 1, "format": "zip", "mesh": "mesh.drc", "members": 2},
+        (_, "png" | "jpeg" | "webp") => doc! {"v": 1, "format": format, "width": 64, "height": 64},
+        (_, "drc" | "obj" | "ndjson" | "gzip" | "text" | "json") => doc! {"v": 1, "format": format},
+        _ => doc! {"v": 1, "format": "drc"},
     }
 }
 

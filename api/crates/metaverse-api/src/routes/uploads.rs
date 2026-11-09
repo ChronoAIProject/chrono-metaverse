@@ -31,7 +31,7 @@ use axum::{
 };
 use metaverse_core::model::{
     Job, JobKind, JobStatus, Upload, UploadFormat, UploadPart, UploadStatus, ASSET_CHUNK_SIZE,
-    JOB_MAX_ATTEMPTS, MAX_UPLOAD_PART_SIZE, UPLOAD_TTL_SECONDS,
+    MAX_UPLOAD_PART_SIZE, UPLOAD_TTL_SECONDS,
 };
 use metaverse_core::scope::{check_upload_purpose, PathScope, UploadPurpose};
 use metaverse_core::{is_sha256_hex, sha256_hex, Timestamp};
@@ -409,7 +409,7 @@ async fn create(
     // 由处理服务核对整体哈希后在存储层去重，所有权只靠真正传过数据确立。两种情况都返回 201。
     if let Some(length) = state
         .repo
-        .reusable_asset_length(&grant, &request.sha256, purpose)
+        .reusable_asset_length(&grant, &request.sha256, purpose, &limits.upload_limits())
         .await?
     {
         if length != request.size {
@@ -847,8 +847,10 @@ async fn complete(
         lease_owner: None,
         lease_until: None,
         attempt: 0,
-        max_attempts: JOB_MAX_ATTEMPTS,
+        max_attempts: JobKind::UploadVerify.max_attempts(),
         last_error: None,
+        not_before: None,
+        history: Vec::new(),
         result_commit_id: None,
         created_at: now,
         actor: Some(request_actor(&caller)),
@@ -864,7 +866,9 @@ async fn complete(
         .await?
     {
         CompleteWrite::Completed => {
-            tracing::info!(space = %upload.space_id, upload = %upload.id, job = %job.id, "上传完成，等待校验");
+            tracing::info!(space = %upload.space_id, upload = %upload.id, job = %job.id, "上传完成，等待核对");
+            // 叫醒本进程的后台执行器，不等轮询。
+            state.job_signal.notify();
             let mut done = upload;
             done.status = UploadStatus::Complete;
             done.job_id = Some(job.id);

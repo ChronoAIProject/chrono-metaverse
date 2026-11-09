@@ -344,6 +344,9 @@ impl Workspace {
                     tokio::task::yield_now().await;
                 }
             }
+            // 放物件、模板这类 0 格的操作不按格数让出：每 64 条至少让出一次
+            // （docs/design/server-slim.md 4.2）。
+            tokio::task::yield_now().await;
         }
         Ok(touched)
     }

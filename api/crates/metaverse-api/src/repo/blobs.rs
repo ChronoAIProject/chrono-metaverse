@@ -25,7 +25,7 @@ const REGISTER_ATTEMPTS: usize = 3;
 #[derive(Debug, Clone)]
 pub struct AssetMeta {
     pub hash: String,
-    files_id: Bson,
+    pub(super) files_id: Bson,
     pub length: u64,
     pub chunk_size: u64,
     /// 登记时写入的 `metadata.contentType`（只作参考，响应的 Content-Type 由服务端按白名单固定）。
@@ -34,6 +34,33 @@ pub struct AssetMeta {
     /// 第一个登记它的空间（`metadata.spaceId`）。资源按内容全局去重，别的空间上传或导入了
     /// 同一份内容时这里不变，所以"属于哪些空间"要看 [`Repo::owned_assets`]。
     pub space_id: Option<String>,
+    /// 服务端从内容实测的核对记录（`metadata.check`，docs/design/server-slim.md 4.6）；旧资源没有，
+    /// 由后台迁移补上；读不懂（更新的版本写的不认识的格式）时也为空。
+    pub check: Option<metaverse_core::check::AssetCheck>,
+    /// 后台迁移补核对记录时检查不过（`metadata.checkError`）：不能再被新引用。
+    pub check_failed: bool,
+}
+
+impl AssetMeta {
+    /// GridFS 文件编号是不是这个上传编号（这份资源就是这次上传登记的）。
+    pub fn files_id_is(&self, upload_id: &str) -> bool {
+        matches!(&self.files_id, Bson::String(id) if id == upload_id)
+    }
+
+    /// 核对记录是当前版本（不是旧版本写的）。
+    pub fn current_check(&self) -> Option<&metaverse_core::check::AssetCheck> {
+        self.check
+            .as_ref()
+            .filter(|check| check.v >= metaverse_core::check::CHECK_VERSION)
+    }
+}
+
+/// `metadata.check` → 核对记录。
+pub(super) fn parse_check(
+    metadata: Option<&Document>,
+) -> Option<metaverse_core::check::AssetCheck> {
+    let check = metadata?.get_document("check").ok()?;
+    mongodb::bson::deserialize_from_document(check.clone()).ok()
 }
 
 /// 资源在草稿、事件类型里被引用的用途（设计 4.4、6.1）。
@@ -203,7 +230,45 @@ impl Repo {
             space_id: metadata
                 .and_then(|m| m.get_str("spaceId").ok())
                 .map(str::to_owned),
+            check: parse_check(metadata),
+            check_failed: metadata.is_some_and(|m| m.contains_key("checkError")),
         }))
+    }
+
+    /// 后台执行器读资源的元数据（调用方已经核对过资源属于这个空间：上传核对时就是本空间刚上传的
+    /// 内容，`ops_from_upload` 在建任务时核对过操作文件属于本空间）。
+    pub async fn asset_meta_for_runner(
+        &self,
+        grant: &Grant,
+        hash: &str,
+    ) -> Result<Option<AssetMeta>, RepoError> {
+        if !grant.can_manage() {
+            return Err(RepoError::GrantMismatch);
+        }
+        self.asset_meta_unchecked(hash).await
+    }
+
+    /// 这次上传之前已经登记成资源（`files._id` = 上传编号）时的元数据。
+    pub async fn asset_registered_by_upload(
+        &self,
+        grant: &Grant,
+        upload_id: &str,
+    ) -> Result<Option<AssetMeta>, RepoError> {
+        if !grant.can_manage() {
+            return Err(RepoError::GrantMismatch);
+        }
+        let found = self
+            .collection(collections::ASSET_FILES)
+            .find_one(doc! {"_id": upload_id})
+            .projection(doc! {"filename": 1})
+            .await?;
+        match found
+            .as_ref()
+            .and_then(|document| document.get_str("filename").ok())
+        {
+            Some(hash) => self.asset_meta_unchecked(hash).await,
+            None => Ok(None),
+        }
     }
 
     /// 公开资源：只返回登记在 `assetRefs` 里的。

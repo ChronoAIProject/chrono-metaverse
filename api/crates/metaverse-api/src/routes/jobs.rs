@@ -189,8 +189,17 @@ pub struct JobView {
     pub params: Value,
     pub attempt: u32,
     pub max_attempts: u32,
+    /// 上一次的错误说明。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_error: Option<String>,
+    /// 上一次错误的类别：`content`（内容不合规，不重试）、`fetch`（下载失败，按退避重试）、
+    /// `transient`（暂时性问题，按退避重试）。处理服务下线前的旧记录没有。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_class: Option<String>,
+    /// 退回队列后最早什么时候再领取。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<String>, format = DateTime)]
+    pub not_before: Option<Timestamp>,
     /// 任务写出的提交。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result_commit_id: Option<String>,
@@ -227,7 +236,13 @@ impl JobView {
             params: job.params,
             attempt: job.attempt,
             max_attempts: job.max_attempts,
-            last_error: job.last_error,
+            error_class: job
+                .last_error
+                .as_ref()
+                .and_then(|error| error.class())
+                .map(|class| class.name().to_owned()),
+            last_error: job.last_error.map(|error| error.message().to_owned()),
+            not_before: job.not_before,
             result_commit_id: job.result_commit_id,
             result: job.result,
             progress: job.progress,
@@ -491,6 +506,8 @@ async fn create_job(
         attempt: 0,
         max_attempts: JOB_MAX_ATTEMPTS,
         last_error: None,
+        not_before: None,
+        history: Vec::new(),
         result_commit_id: None,
         created_at: crate::now()?,
         actor: Some(request_actor(caller)),

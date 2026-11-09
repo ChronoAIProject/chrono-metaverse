@@ -20,10 +20,15 @@ use crate::AppState;
 /// 资源响应允许的 Content-Type。
 const ASSET_TYPES: &[&str] = &["model/gltf-binary", "image/jpeg", "image/png", "image/webp"];
 
-/// 按白名单固定的 Content-Type。
+/// 按白名单固定的 Content-Type：有核对记录的按实测的格式（docs/design/server-slim.md 4.6），
+/// 没有的旧资源按登记时写的 `contentType`。
 pub fn asset_content_type(meta: &AssetMeta) -> &'static str {
-    meta.content_type
-        .as_deref()
+    let declared = match &meta.check {
+        Some(check) => metaverse_core::model::UploadFormat::from_name(check.body.format())
+            .map(|format| format.content_type()),
+        None => meta.content_type.as_deref(),
+    };
+    declared
         .and_then(|declared| ASSET_TYPES.iter().find(|allowed| **allowed == declared))
         .copied()
         .unwrap_or("application/octet-stream")

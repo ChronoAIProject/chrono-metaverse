@@ -905,8 +905,15 @@ pub struct Job {
     pub lease_until: Option<Timestamp>,
     pub attempt: u32,
     pub max_attempts: u32,
+    /// 上一次的错误：处理服务写的是一段文字，接口服务的后台执行器写 `{class, message, at}`。
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_error: Option<String>,
+    pub last_error: Option<JobError>,
+    /// 退回队列后最早什么时候再领取（按退避计算，docs/design/server-slim.md 4.2）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub not_before: Option<Timestamp>,
+    /// 以前的错误（重新排队时把上一次的错误追加进来，最多留 [`JOB_HISTORY_MAX`] 条）。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub history: Vec<JobError>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result_commit_id: Option<String>,
     pub created_at: Timestamp,
@@ -931,6 +938,60 @@ pub struct Job {
     pub finished_at: Option<Timestamp>,
 }
 
+/// 任务失败的类别（docs/design/server-slim.md 4.2）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ErrorClass {
+    /// 内容不合规、哈希或大小不符、参数不对、主机不在列表：不重试，直接失败。
+    Content,
+    /// 下载失败（403、404、408、429、5xx、网络错误、超时）：按退避重试。
+    Fetch,
+    /// 数据库抖动、草稿在处理期间被别人改了：按退避重试。
+    Transient,
+}
+
+impl ErrorClass {
+    pub fn name(self) -> &'static str {
+        match self {
+            ErrorClass::Content => "content",
+            ErrorClass::Fetch => "fetch",
+            ErrorClass::Transient => "transient",
+        }
+    }
+}
+
+/// 任务的一次错误。处理服务下线前写的是一段文字；接口服务的后台执行器写带类别和时间的对象。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum JobError {
+    Detail {
+        class: ErrorClass,
+        message: String,
+        at: Timestamp,
+    },
+    Text(String),
+}
+
+impl JobError {
+    pub fn message(&self) -> &str {
+        match self {
+            JobError::Detail { message, .. } => message,
+            JobError::Text(text) => text,
+        }
+    }
+
+    /// 类别；旧记录（一段文字）没有类别。
+    pub fn class(&self) -> Option<ErrorClass> {
+        match self {
+            JobError::Detail { class, .. } => Some(*class),
+            JobError::Text(_) => None,
+        }
+    }
+}
+
+/// `history` 最多留几条。
+pub const JOB_HISTORY_MAX: usize = 10;
+
 /// 发起请求的调用者（任务、上传会话记录这一项）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -941,6 +1002,44 @@ pub struct RequestActor {
 
 /// 默认重试次数。
 pub const JOB_MAX_ATTEMPTS: u32 = 3;
+
+impl JobKind {
+    /// 这一种任务最多试几次（docs/design/server-slim.md 4.2）：`upload_verify` 3 次；
+    /// `ops_from_upload` 2 次（重任务反复失败多半是资源问题，少试）；`bundle_import` 5 次
+    /// （下载类失败要多给机会）；已下线的种类沿用默认的 3 次。
+    pub fn max_attempts(self) -> u32 {
+        match self {
+            JobKind::OpsFromUpload => 2,
+            JobKind::BundleImport => 5,
+            _ => JOB_MAX_ATTEMPTS,
+        }
+    }
+
+    /// 存储里的名称。
+    pub fn name(self) -> &'static str {
+        match self {
+            JobKind::UploadVerify => "upload_verify",
+            JobKind::ScanImport => "scan_import",
+            JobKind::Align => "align",
+            JobKind::Rebuild => "rebuild",
+            JobKind::Voxelize => "voxelize",
+            JobKind::WebModel => "web_model",
+            JobKind::ModelImport => "model_import",
+            JobKind::OpsFromUpload => "ops_from_upload",
+            JobKind::BundleImport => "bundle_import",
+        }
+    }
+
+    /// 已下线的种类（清理第 0 步把还在排队或运行的标记失败）。
+    pub const RETIRED: [JobKind; 6] = [
+        JobKind::ScanImport,
+        JobKind::Align,
+        JobKind::Rebuild,
+        JobKind::Voxelize,
+        JobKind::WebModel,
+        JobKind::ModelImport,
+    ];
+}
 /// 任务租约时长。
 pub const JOB_LEASE_SECONDS: i64 = 180;
 

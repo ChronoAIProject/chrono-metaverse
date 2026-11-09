@@ -148,6 +148,23 @@ pub enum AssetRole {
     Ops,
 }
 
+impl AssetRole {
+    /// 上传用途按哪个角色检查上限（上传核对和"创建上传时直接复用"都用）。旧用途 `authored` 没有角色。
+    pub fn for_purpose(purpose: crate::scope::UploadPurpose) -> Option<Self> {
+        use crate::scope::UploadPurpose;
+        match purpose {
+            UploadPurpose::Scan => Some(AssetRole::Scan),
+            UploadPurpose::WebModel => Some(AssetRole::WebModel),
+            UploadPurpose::Model => Some(AssetRole::Model),
+            UploadPurpose::Texture => Some(AssetRole::Texture),
+            UploadPurpose::Ops => Some(AssetRole::Ops),
+            UploadPurpose::Script => Some(AssetRole::Script),
+            UploadPurpose::Bundle => Some(AssetRole::Bundle),
+            UploadPurpose::Authored => None,
+        }
+    }
+}
+
 /// 资源的核对记录不合这个角色。
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]

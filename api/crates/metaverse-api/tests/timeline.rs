@@ -961,8 +961,11 @@ async fn ops_from_upload_runs_in_process_and_publishes_with_ops_ref() {
     assert_eq!(reply.status, StatusCode::ACCEPTED);
     let job = app.wait_job(reply.body["jobId"].as_str().unwrap()).await;
     assert_eq!(job.get_str("status").unwrap(), "failed");
+    // 执行器写的错误带类别：内容不合规，不重试。
+    let error = job.get_document("lastError").unwrap();
+    assert_eq!(error.get_str("class").unwrap(), "content");
     assert!(
-        job.get_str("lastError").unwrap().contains("超出"),
+        error.get_str("message").unwrap().contains("超出"),
         "{job:?}"
     );
     assert_eq!(

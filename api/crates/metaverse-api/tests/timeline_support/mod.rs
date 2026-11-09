@@ -452,6 +452,19 @@ impl TestApp {
     /// 模拟一次已完成校验的 ops 上传：登记资源，并写上传会话（`status: done`）。
     pub async fn put_ops_upload(&self, space: &str, bytes: &[u8]) -> (String, String) {
         let hash = self.put_asset(bytes, "application/x-ndjson", "ops").await;
+        // 上传核对写的核对记录（"直接复用"只认有核对记录的资源）。
+        let format = if bytes.starts_with(&[0x1f, 0x8b]) {
+            "gzip"
+        } else {
+            "ndjson"
+        };
+        self.collection("assets.files")
+            .update_one(
+                doc! {"filename": &hash},
+                doc! {"$set": {"metadata.check": {"v": 1, "format": format}}},
+            )
+            .await
+            .unwrap();
         let upload_id = format!("up_{}", uuid::Uuid::new_v4().simple());
         self.collection("uploads")
             .insert_one(doc! {
@@ -569,21 +582,25 @@ impl TestApp {
             .unwrap();
     }
 
-    /// 等任务结束，返回任务文档。
+    /// 让后台执行器把排队的任务都做完，返回这个任务的文档（测试里不起常驻循环，直接按顺序执行）。
     pub async fn wait_job(&self, job_id: &str) -> Document {
-        for _ in 0..200 {
-            let job = self
-                .collection("jobs")
-                .find_one(doc! {"_id": job_id})
-                .await
-                .unwrap()
-                .expect("任务记录存在");
-            if job.get_str("status").unwrap() != "running" {
-                return job;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        }
-        panic!("任务 {job_id} 没有在 10 秒内结束");
+        let runner = metaverse_api::runner::Runner::new(
+            self.state.clone(),
+            metaverse_api::runner::RunnerConfig::default(),
+        );
+        runner.run_until_idle().await;
+        let job = self
+            .collection("jobs")
+            .find_one(doc! {"_id": job_id})
+            .await
+            .unwrap()
+            .expect("任务记录存在");
+        let status = job.get_str("status").unwrap();
+        assert!(
+            status == "done" || status == "failed",
+            "任务 {job_id} 还没结束：{job:?}"
+        );
+        job
     }
 }
 

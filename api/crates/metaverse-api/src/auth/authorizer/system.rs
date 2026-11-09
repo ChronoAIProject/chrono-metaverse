@@ -49,7 +49,28 @@ impl SystemGrant {
     }
 }
 
+/// 后台执行器、定期清理、后台迁移用的跨空间凭据（docs/design/server-slim.md 4.2、第 5 节）：
+/// 领取任务、找过期的上传和草稿、找没人引用的资源都要跨空间查，数据访问层只对这些专门的方法
+/// 接受它。具体到某个空间的读写仍要另外签发那个空间的系统范围（[`Authorizer::system_space`]）。
+/// 只有授权层能构造，每次签发写审计日志。
+#[derive(Debug, Clone)]
+pub struct BackgroundGrant {
+    purpose: &'static str,
+}
+
+impl BackgroundGrant {
+    pub fn purpose(&self) -> &'static str {
+        self.purpose
+    }
+}
+
 impl Authorizer {
+    /// 签发后台用途的跨空间凭据（`runner`、`cleanup`、`migration`），写审计日志。
+    pub fn background(&self, purpose: &'static str) -> BackgroundGrant {
+        tracing::info!(target: "audit", purpose, "签发后台用途的跨空间凭据");
+        BackgroundGrant { purpose }
+    }
+
     /// 由一个已经通过检查的凭据派生同一空间的系统范围，并写审计日志。
     pub fn system_scope(grant: &Grant, purpose: &'static str) -> SystemGrant {
         tracing::info!(

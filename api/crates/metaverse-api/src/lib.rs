@@ -21,6 +21,7 @@ pub mod ingest;
 pub mod openapi;
 pub mod repo;
 pub mod routes;
+pub mod runner;
 // 时间线与公开读分工：公开接口基础设施、时间线领域逻辑。
 pub mod public;
 pub mod timeline;
@@ -40,6 +41,8 @@ pub struct AppState {
     pub ingest: Arc<ingest::IngestRuntime>,
     /// 公开接口的限流、并发计数和进程内缓存。
     pub public: Arc<public::PublicServices>,
+    /// 叫醒本进程的后台执行器（完成上传、建好任务以后，不等轮询）。
+    pub job_signal: Arc<runner::JobSignal>,
     ready: Arc<AtomicBool>,
 }
 
@@ -63,6 +66,7 @@ impl AppState {
             public: public::PublicServices::new(config.public.clone()),
             repo,
             ingest: Arc::new(ingest::IngestRuntime::new(config.ingest.clone())),
+            job_signal: Arc::new(runner::JobSignal::default()),
             ready: Arc::new(AtomicBool::new(false)),
         })
     }

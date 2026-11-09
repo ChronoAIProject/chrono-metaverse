@@ -73,7 +73,11 @@ fn too_large(detail: impl Into<String>) -> ApiError {
 #[derive(Debug, Clone)]
 pub enum OpsSource {
     Inline,
-    Upload(String),
+    /// 经上传的操作文件（后台任务 `ops_from_upload` 追加，`opsRefs` 记下任务编号）。
+    Upload {
+        asset_hash: String,
+        job_id: String,
+    },
 }
 
 fn json_size<T: serde::Serialize>(value: &T) -> usize {
@@ -206,11 +210,41 @@ fn block_textures(block: &metaverse_core::ops::BlockDef, into: &mut BTreeSet<(St
 pub async fn append_ops(
     repo: &Repo,
     grant: &Grant,
-    mut draft: DraftDoc,
+    draft: DraftDoc,
     ops: Vec<Op>,
     source: OpsSource,
     now: Timestamp,
 ) -> Result<DraftDoc, ApplyError> {
+    let prepared = prepare_append(repo, grant, draft, ops, source, now).await?;
+    if !repo
+        .save_draft(grant, &prepared.draft, prepared.expected_rev)
+        .await?
+    {
+        return Err(ApiError::conflict("草稿在处理期间被修改或已发布，请重新读取后再试").into());
+    }
+    Ok(prepared.draft)
+}
+
+/// 算好、还没保存的追加结果。
+#[derive(Debug, Clone)]
+pub struct PreparedAppend {
+    /// 追加以后的草稿（`rev` 已加一）。
+    pub draft: DraftDoc,
+    /// 保存时按这个 `rev` 条件更新。
+    pub expected_rev: u64,
+}
+
+/// 在草稿的工作状态上作用操作，写好结果区块和结果记录（内容寻址、可以重写），返回追加以后的草稿，
+/// 由调用方保存：请求里直接按 `rev` 条件保存，后台任务在带租约栅栏的事务里保存
+/// （docs/design/server-slim.md 4.10）。
+pub async fn prepare_append(
+    repo: &Repo,
+    grant: &Grant,
+    mut draft: DraftDoc,
+    ops: Vec<Op>,
+    source: OpsSource,
+    now: Timestamp,
+) -> Result<PreparedAppend, ApplyError> {
     if draft.status != DraftStatus::Open {
         return Err(ApiError::conflict("草稿已经发布，不能再追加操作").into());
     }
@@ -228,7 +262,7 @@ pub async fn append_ops(
         )
         .into());
     }
-    if matches!(source, OpsSource::Upload(_)) && draft.ops_refs.len() >= MAX_DRAFT_OPS_REFS {
+    if matches!(source, OpsSource::Upload { .. }) && draft.ops_refs.len() >= MAX_DRAFT_OPS_REFS {
         return Err(too_large(format!(
             "一个草稿最多引用 {MAX_DRAFT_OPS_REFS} 个操作文件，请合并成更大的文件或另建草稿"
         ))
@@ -345,14 +379,16 @@ pub async fn append_ops(
     // （`assets`、`opsRefs`）这些引用之前，先刷新这一批引用的全部资源的 touchedAt 并确认都还在。
     // 刷新之后清理的条件删除就删不掉它们；刷新不到说明刚被清理删掉，整批不生效，让调用方重新上传。
     let mut fenced = new_assets.clone();
-    if let OpsSource::Upload(hash) = &source {
-        fenced.push(hash.clone());
+    if let OpsSource::Upload { asset_hash, .. } = &source {
+        fenced.push(asset_hash.clone());
     }
     let gone = repo.touch_assets(grant, &fenced).await?;
     if !gone.is_empty() {
         tracing::info!(space = %grant.space_id(), draft = %draft.id, assets = ?gone, "追加时引用的资源刚被清理");
         let describe = |hash: &String| match &source {
-            OpsSource::Upload(file) if file == hash => format!("操作文件 {hash}：{MISSING_ASSET}"),
+            OpsSource::Upload { asset_hash, .. } if asset_hash == hash => {
+                format!("操作文件 {hash}：{MISSING_ASSET}")
+            }
             _ => format!("{hash}：{MISSING_ASSET}"),
         };
         return Err(ApiError::new(
@@ -410,19 +446,20 @@ pub async fn append_ops(
     draft.assets.dedup();
     match source {
         OpsSource::Inline => draft.ops.extend(ops),
-        OpsSource::Upload(asset_hash) => draft.ops_refs.push(OpsRef {
+        OpsSource::Upload { asset_hash, job_id } => draft.ops_refs.push(OpsRef {
             asset_hash,
             after: draft.ops.len() as u64,
             count: ops.len() as u64,
+            job_id: Some(job_id),
         }),
     }
     draft.work_cells = draft.work_cells.saturating_add(cells);
     draft.rev += 1;
     draft.updated_at = now;
-    if !repo.save_draft(grant, &draft, expected_rev).await? {
-        return Err(ApiError::conflict("草稿在处理期间被修改或已发布，请重新读取后再试").into());
-    }
-    Ok(draft)
+    Ok(PreparedAppend {
+        draft,
+        expected_rev,
+    })
 }
 
 /// 草稿的全部操作（内联操作和上传的操作按追加顺序穿插）。
