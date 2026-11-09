@@ -207,6 +207,20 @@ describe('应用外壳', () => {
     expect(screen.getByRole('button', { name: '方块' })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it('显示全部标签：开关传给场景', async () => {
+    const { factory, views } = fakeViewFactory();
+    visit(FIXTURE_LINK);
+    render(<App createClient={createClient} createView={factory} />);
+    const toggle = await screen.findByRole('checkbox', { name: '显示全部标签' });
+    expect(views[0]!.allLabels).toBe(false);
+    await userEvent.click(toggle);
+    await waitFor(() => expect(views[0]!.allLabels).toBe(true));
+    await userEvent.click(screen.getByRole('button', { name: '回到全景' }));
+    expect(views[0]!.frameContent).toHaveBeenCalled();
+    await userEvent.click(toggle);
+    await waitFor(() => expect(views[0]!.allLabels).toBe(false));
+  });
+
   it('跳到第一次提交：优化视图为空并提示', async () => {
     const { factory, views } = fakeViewFactory();
     visit(FIXTURE_LINK);

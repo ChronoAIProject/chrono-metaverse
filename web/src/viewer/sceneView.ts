@@ -22,7 +22,17 @@ import {
 import { materialKey } from '../core/shapes/build';
 import type { VoxelPart } from '../core/voxels';
 import { anchorKey, linkRoute, type AnchorRef, type Visual } from '../core/visuals';
+import { clipBox, frameBox } from './framing';
 import { iconElement } from './icons';
+import {
+  LABEL_PADDING,
+  MIN_SCREEN_SIZE,
+  anchorLabelPriority,
+  estimateLabelSize,
+  layoutLabels,
+  maxLabelsFor,
+  type LabelCandidate,
+} from './labelLayout';
 import { createMeshService, type MeshService } from './meshService';
 import type { ShapeJob } from './meshJobs';
 
@@ -37,7 +47,10 @@ import type { ShapeJob } from './meshJobs';
  * - 方块：叠加后的区块 → 可见面网格（后台线程），玻璃半透明、发光方块不受光照、贴图方块按贴图分块；
  * - 扫描：网页用 glb，按对齐变换（列主序 4×4）摆放；
  * - 组合：每个成员一组，按摆放（先绕 y 轴旋转、再平移）放进同一场景；连接画出来，点击飞到另一端；
- * - 虚拟区：边界光效 + "虚拟"标签；锚点：纯文本标签；事件：高亮、图标、标签、路线、生成物件、热力；
+ * - 虚拟区：边界光效 + "虚拟"标签；事件：高亮、图标、标签、路线、生成物件、热力；
+ * - 锚点：纯文本标签，默认只显示有意义的几类，屏幕上避让、远处隐藏、总数有上限，
+ *   悬停 / 点按时显示，可切换为显示全部（取舍规则见 labelLayout.ts）；
+ * - 镜头：按实体区里内容的包围盒取景（framing.ts），斜上方 45° 俯视，房间占满画面；
  * - 剖切：内容材质共用一个裁剪平面（世界坐标），切掉某个高度以上的物件、方块和扫描。
  */
 
@@ -101,8 +114,22 @@ interface AnchorInfo {
   readonly label: string;
   /** 挂在这个锚点上的物件的包围盒（世界坐标）。 */
   readonly bounds: THREE.Box3 | null;
+  /** 锚点覆盖的范围（世界坐标）：锚点自己的格子盒，没有就用挂在上面的物件；用来估计屏幕上的大小。 */
+  readonly extent: THREE.Box3 | null;
   readonly memberName?: string;
 }
+
+/** 一个成员的取景来源：内容所在的组、取景范围（世界坐标）、只有模型的物件的包围盒。 */
+interface FrameSource {
+  readonly group: THREE.Object3D;
+  readonly clips: readonly THREE.Box3[];
+  readonly extraBoxes: readonly THREE.Box3[];
+}
+
+/** 没有范围的锚点按这么大（米）估计屏幕上的大小。 */
+const NOMINAL_ANCHOR_SIZE = 0.6;
+/** 标签布局在镜头移动时最多多久重算一次（毫秒）。 */
+const LABEL_LAYOUT_MS = 100;
 
 interface VisualObject {
   readonly objects: THREE.Object3D[];
@@ -271,10 +298,26 @@ export class SceneView {
   private cutHeight: number | null = null;
   private generation = 0;
   private framed = false;
+  /** 镜头还停在自动取景的位置（用户没动过）：画面大小变了、换了视图时重新取景。 */
+  private autoFramed = false;
+  private lastMode: SceneContent['mode'] | null = null;
+  private frameSources: FrameSource[] = [];
   private disposed = false;
   private pointerDown: { x: number; y: number } | null = null;
+  /** 悬停：最多每 80 毫秒处理一次，处理的总是最后一个位置（尾随节流）。 */
   private hoverAt = 0;
+  private hoverPoint: { readonly clientX: number; readonly clientY: number } | null = null;
+  private hoverTimer: ReturnType<typeof setTimeout> | null = null;
   private stats: SceneStats = EMPTY_STATS;
+  /** 锚点标签：显示全部、悬停的、点按（选中）的、有事件的。 */
+  private showAllLabels = false;
+  private hoverAnchor: string | null = null;
+  private focusAnchor: string | null = null;
+  private eventAnchors = new Set<string>();
+  private labelsDirty = true;
+  private labelsAt = 0;
+  private readonly labelCamera = new THREE.Matrix4();
+  private readonly labelProjection = new THREE.Matrix4();
 
   constructor(
     private readonly host: HTMLElement,
@@ -336,6 +379,8 @@ export class SceneView {
     // 触控：单指旋转，双指缩放加平移（OrbitControls 默认）。
     this.controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
     this.controls.target.set(3, 0.8, 2.5);
+    // 用户动了镜头以后，不再自动重新取景。
+    this.controls.addEventListener('start', this.onControlsStart);
 
     const canvas = this.renderer.domElement;
     canvas.addEventListener('pointerdown', this.onPointerDown);
@@ -386,6 +431,9 @@ export class SceneView {
     this.labels.setSize(width, height);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
+    this.labelsDirty = true;
+    // 画面大小变了（转屏、页头换行）而镜头还是自动取景的：按新的宽高比重新取景。
+    if (this.autoFramed) this.frameContent();
   }
 
   private frame(): void {
@@ -399,6 +447,7 @@ export class SceneView {
     }
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
+    this.updateLabels();
     this.labels.render(this.scene, this.camera);
   }
 
@@ -640,6 +689,10 @@ export class SceneView {
     this.clearSelection();
     this.anchors = new Map();
     this.pickables = [];
+    this.frameSources = [];
+    // 换了内容，原来选中的物件（信息面板随之关闭）不再固定显示标签。
+    this.focusAnchor = null;
+    this.labelsDirty = true;
     let triangles = 0;
     let instancedBatches = 0;
     let instancedEntities = 0;
@@ -766,6 +819,7 @@ export class SceneView {
       }
 
       this.buildOverlay(member, overlay, content.members.length > 1);
+      this.frameSources.push(frameSourceOf(member, group));
     });
 
     this.links = content.links;
@@ -795,7 +849,11 @@ export class SceneView {
     };
     this.applyCut();
     this.setVisuals(this.lastVisuals);
-    if (!this.framed) this.frameContent();
+    // 第一次有内容时取景；镜头没动过时换了视图（例如加上虚拟区）也重新取景。
+    // 时间轴换版本不重新取景，免得回放时镜头跳来跳去。
+    const modeChanged = this.lastMode !== null && this.lastMode !== content.mode;
+    this.lastMode = content.mode;
+    if (!this.framed || (this.autoFramed && modeChanged)) this.frameContent();
     this.host.dataset.triangles = String(Math.round(triangles));
   }
 
@@ -837,9 +895,9 @@ export class SceneView {
       }
     }
 
-    // 挂在锚点上的物件包围盒（高亮用）。
+    // 挂在锚点上的物件包围盒（高亮用；方块画法下不画的重建层物件也算）。
     const bounds = new Map<string, THREE.Box3>();
-    for (const entity of member.view.entities) {
+    for (const entity of member.view.anchored) {
       if (entity.anchorId === undefined || entity.bounds === undefined) continue;
       const box = new THREE.Box3();
       for (const x of [entity.bounds.min[0], entity.bounds.max[0]]) {
@@ -878,13 +936,15 @@ export class SceneView {
         marker.position.set(...local);
         overlay.add(marker);
       }
+      const attached = bounds.get(anchor.anchorId) ?? null;
       this.anchors.set(anchorKey(ref), {
         ref,
         anchor,
         world,
         element,
         label,
-        bounds: bounds.get(anchor.anchorId) ?? null,
+        bounds: attached,
+        extent: anchor.box ? placedGridBox(placement, anchor.box) : attached,
         memberName: member.name,
       });
     }
@@ -975,6 +1035,21 @@ export class SceneView {
     const highlights = new Map<string, { color: readonly number[]; texts: string[] }>();
     const hudItems: { key: string; text: string; color: readonly number[]; icon?: string }[] = [];
 
+    // 有事件的锚点：标签最优先显示。
+    const eventAnchors = new Set<string>();
+    for (const visual of visuals) {
+      if (visual.kind === 'path') {
+        if (visual.from) eventAnchors.add(anchorKey(visual.from));
+        if (visual.to) eventAnchors.add(anchorKey(visual.to));
+      } else {
+        eventAnchors.add(anchorKey(visual.anchor));
+      }
+    }
+    if (!sameKeys(eventAnchors, this.eventAnchors)) {
+      this.eventAnchors = eventAnchors;
+      this.labelsDirty = true;
+    }
+
     for (const visual of visuals) {
       if (visual.kind === 'path') {
         seen.add(visual.id);
@@ -1025,13 +1100,15 @@ export class SceneView {
       if (info.element === null) continue;
       const highlight = highlights.get(key);
       info.element.classList.toggle('is-active', highlight !== undefined);
-      if (highlight) {
-        info.element.style.setProperty('--event-color', cssColor(highlight.color));
-        info.element.textContent =
-          highlight.texts.length > 0 ? `${info.label} · ${highlight.texts.join('，')}` : info.label;
-      } else {
-        info.element.style.removeProperty('--event-color');
-        info.element.textContent = info.label;
+      const text =
+        highlight && highlight.texts.length > 0
+          ? `${info.label} · ${highlight.texts.join('，')}`
+          : info.label;
+      if (highlight) info.element.style.setProperty('--event-color', cssColor(highlight.color));
+      else info.element.style.removeProperty('--event-color');
+      if (info.element.textContent !== text) {
+        info.element.textContent = text;
+        this.labelsDirty = true;
       }
     }
 
@@ -1296,29 +1373,56 @@ export class SceneView {
   // 相机、剖切、点选
   // ---------------------------------------------------------------------------
 
-  /** 镜头对准内容（第一次有内容时自动执行）。 */
+  /**
+   * 取景用的包围盒：每个成员里内容（物件、方块、扫描）的包围盒和它的取景范围（实体区，
+   * 优化 + 扩展视图再加虚拟区）求交后合并；没有定义实体区的成员用全部内容。
+   * 开着剖切时顶部压到剖切高度（上面的内容反正看不见）。
+   */
+  private frameTarget(): THREE.Box3 {
+    this.content.updateMatrixWorld(true);
+    const out = new THREE.Box3();
+    for (const source of this.frameSources) {
+      const box = new THREE.Box3();
+      source.group.traverse((object) => {
+        if ((object as THREE.Mesh).isMesh) box.union(new THREE.Box3().expandByObject(object));
+      });
+      for (const extra of source.extraBoxes) box.union(extra);
+      out.union(clipBox(box, source.clips));
+    }
+    if (out.isEmpty()) return out;
+    if (this.cutHeight !== null && this.cutHeight > out.min.y + 0.2) {
+      out.max.y = Math.min(out.max.y, this.cutHeight);
+    }
+    return out;
+  }
+
+  /**
+   * 镜头取景（第一次有内容时自动执行；"回到全景"也用它）：斜上方约 45° 俯视，
+   * 实体区里的内容占满画面，四边各留 6%（合计约 12%）的边距。
+   */
   frameContent(): void {
-    const box = new THREE.Box3().setFromObject(this.content);
-    if (box.isEmpty()) return;
-    const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3());
-    const radius = Math.max(size.x, size.z, size.y, 1) * 0.58;
-    this.controls.target.set(center.x, Math.min(center.y, 1), center.z);
-    const distance = radius / Math.tan((this.camera.fov * Math.PI) / 360);
-    this.camera.position.set(
-      center.x + distance * 0.55,
-      center.y + distance * 0.75,
-      center.z + distance * 0.75,
-    );
-    this.camera.near = Math.max(0.02, distance / 500);
-    this.camera.far = distance * 20;
+    const box = this.frameTarget();
+    const frame = frameBox(box, { fov: this.camera.fov, aspect: this.camera.aspect });
+    if (frame === null) return;
+    this.flight = null;
+    this.controls.target.copy(frame.target);
+    this.camera.position.copy(frame.position);
+    const diagonal = box.getSize(new THREE.Vector3()).length();
+    this.camera.near = Math.max(0.02, frame.distance / 500);
+    this.camera.far = Math.max(50, frame.distance * 20 + diagonal * 2);
     this.camera.updateProjectionMatrix();
     this.controls.update();
     this.framed = true;
+    this.autoFramed = true;
+    this.labelsDirty = true;
+    this.host.dataset.frame = [...box.min.toArray(), ...box.max.toArray()]
+      .map((v) => v.toFixed(2))
+      .join(',');
   }
 
   /** 镜头飞到某一点（连接的另一端）。 */
   flyTo(point: THREE.Vector3): void {
+    this.autoFramed = false;
     const offset = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
     offset.setLength(Math.min(offset.length(), 6));
     this.flight = {
@@ -1343,13 +1447,158 @@ export class SceneView {
   private applyCut(): void {
     // 所有内容材质共用同一个平面对象，只改常数，不用重新编译着色器。
     this.cut.constant = this.cutHeight ?? 1e6;
-    const hidden = (y: number) => this.cutHeight !== null && y > this.cutHeight + 0.3;
-    for (const info of this.anchors.values()) {
-      if (info.element && info.world) info.element.hidden = hidden(info.world.y);
-    }
+    // 剖切高度以上的锚点标签隐藏，在标签布局里统一处理。
+    this.labelsDirty = true;
+    this.updateLabels();
   }
 
-  private raycast(event: PointerEvent): Selection | null {
+  // ---------------------------------------------------------------------------
+  // 锚点标签
+  // ---------------------------------------------------------------------------
+
+  /** 显示全部标签（不做取舍）；关掉时按 labelLayout.ts 的规则精简。 */
+  setShowAllLabels(all: boolean): void {
+    if (this.showAllLabels === all) return;
+    this.showAllLabels = all;
+    this.labelsDirty = true;
+    this.updateLabels();
+  }
+
+  private cutHides(world: THREE.Vector3): boolean {
+    return this.cutHeight !== null && world.y > this.cutHeight + 0.3;
+  }
+
+  /** 锚点在屏幕上的大小（像素）：范围盒 8 个角投影后的外接矩形的长边。 */
+  private screenSize(info: AnchorInfo, width: number, height: number): number {
+    const world = info.world!;
+    if (info.extent === null) {
+      const depth = -world.clone().applyMatrix4(this.camera.matrixWorldInverse).z;
+      if (depth <= 0) return 0;
+      const halfFov = THREE.MathUtils.degToRad(this.camera.fov) / 2;
+      return (NOMINAL_ANCHOR_SIZE * height) / 2 / (depth * Math.tan(halfFov));
+    }
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    const corner = new THREE.Vector3();
+    const box = info.extent;
+    for (const x of [box.min.x, box.max.x]) {
+      for (const y of [box.min.y, box.max.y]) {
+        for (const z of [box.min.z, box.max.z]) {
+          corner.set(x, y, z).project(this.camera);
+          // 有角在镜头后面：离得非常近，当作很大。
+          if (corner.z > 1) return Math.max(width, height);
+          minX = Math.min(minX, corner.x);
+          maxX = Math.max(maxX, corner.x);
+          minY = Math.min(minY, corner.y);
+          maxY = Math.max(maxY, corner.y);
+        }
+      }
+    }
+    return Math.max(((maxX - minX) * width) / 2, ((maxY - minY) * height) / 2);
+  }
+
+  /**
+   * 决定哪些锚点标签显示：剖切和画面外的隐藏；其余按优先级、屏幕大小、避让和上限取舍。
+   * 镜头在动时最多每 100 毫秒算一次；锚点、事件、剖切、悬停变了时马上算。
+   */
+  private updateLabels(): void {
+    if (this.disposed) return;
+    this.camera.updateMatrixWorld();
+    const cameraMoved =
+      !this.labelCamera.equals(this.camera.matrixWorld) ||
+      !this.labelProjection.equals(this.camera.projectionMatrix);
+    if (!this.labelsDirty && !cameraMoved) return;
+    const now = performance.now();
+    if (!this.labelsDirty && now - this.labelsAt < LABEL_LAYOUT_MS) return;
+    this.labelsDirty = false;
+    this.labelsAt = now;
+    this.labelCamera.copy(this.camera.matrixWorld);
+    this.labelProjection.copy(this.camera.projectionMatrix);
+
+    const width = Math.max(1, this.host.clientWidth);
+    const height = Math.max(1, this.host.clientHeight);
+    const candidates: LabelCandidate[] = [];
+    const point = new THREE.Vector3();
+    let total = 0;
+    for (const [key, info] of this.anchors) {
+      if (info.element === null || info.world === null) continue;
+      total += 1;
+      if (this.cutHides(info.world)) continue;
+      point.copy(info.world).project(this.camera);
+      if (point.z > 1 || point.z < -1 || Math.abs(point.x) > 1.05 || Math.abs(point.y) > 1.05) {
+        continue;
+      }
+      const size = estimateLabelSize(info.element.textContent ?? '');
+      candidates.push({
+        key,
+        x: ((point.x + 1) / 2) * width,
+        y: ((1 - point.y) / 2) * height,
+        width: size.width,
+        height: size.height,
+        priority: anchorLabelPriority(info.anchor.kind, this.eventAnchors.has(key)),
+        screenSize: this.screenSize(info, width, height),
+        forced: key === this.hoverAnchor || key === this.focusAnchor,
+      });
+    }
+    const shown = layoutLabels(candidates, {
+      showAll: this.showAllLabels,
+      maxLabels: maxLabelsFor(width, height),
+      minScreenSize: MIN_SCREEN_SIZE,
+      padding: LABEL_PADDING,
+    });
+    for (const [key, info] of this.anchors) {
+      if (info.element === null) continue;
+      const hidden = !shown.has(key);
+      if (info.element.hidden !== hidden) info.element.hidden = hidden;
+    }
+    const labels = String(shown.size);
+    if (this.host.dataset.labels !== labels) this.host.dataset.labels = labels;
+    if (this.host.dataset.anchors !== String(total)) this.host.dataset.anchors = String(total);
+  }
+
+  /** 离屏幕上某一点最近、在 radius 像素以内的锚点（剖切掉的不算）。 */
+  private anchorNear(clientX: number, clientY: number, radius: number): string | null {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const point = new THREE.Vector3();
+    let best: string | null = null;
+    let bestDistance = radius;
+    for (const [key, info] of this.anchors) {
+      if (info.element === null || info.world === null || this.cutHides(info.world)) continue;
+      point.copy(info.world).project(this.camera);
+      if (point.z > 1 || point.z < -1) continue;
+      const x = rect.left + ((point.x + 1) / 2) * rect.width;
+      const y = rect.top + ((1 - point.y) / 2) * rect.height;
+      const distance = Math.hypot(x - clientX, y - clientY);
+      if (distance <= bestDistance) {
+        bestDistance = distance;
+        best = key;
+      }
+    }
+    return best;
+  }
+
+  /** 物件挂的锚点（有标签的才算）。 */
+  private anchorOf(selection: Selection | null): string | null {
+    if (selection === null || selection.entity.anchorId === undefined) return null;
+    const key = anchorKey({ spaceId: selection.spaceId, anchorId: selection.entity.anchorId });
+    return this.anchors.get(key)?.element ? key : null;
+  }
+
+  private setHover(key: string | null): void {
+    if (this.hoverAnchor === key) return;
+    this.hoverAnchor = key;
+    this.labelsDirty = true;
+  }
+
+  private setFocus(key: string | null): void {
+    if (this.focusAnchor === key) return;
+    this.focusAnchor = key;
+    this.labelsDirty = true;
+  }
+
+  private raycast(event: { readonly clientX: number; readonly clientY: number }): Selection | null {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const pointer = new THREE.Vector2(
       ((event.clientX - rect.left) / rect.width) * 2 - 1,
@@ -1382,6 +1631,8 @@ export class SceneView {
   /** 选中的物件画一个包围盒。 */
   select(selection: Selection | null): void {
     this.clearSelection();
+    // 选中的物件挂着锚点时，它的标签一直显示（手机上点按物件就能看到标签）。
+    this.setFocus(this.anchorOf(selection));
     if (selection === null || selection.entity.bounds === undefined) return;
     const group = this.content.children.find((g) => g.name === `member:${selection.spaceId}`);
     const box = new THREE.Box3(
@@ -1403,16 +1654,38 @@ export class SceneView {
     if (down === null || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 5) return;
     const picked = this.raycast(event);
     this.select(picked);
+    // 点在锚点附近（没点到物件，或物件没挂锚点）：显示这个锚点的标签。
+    if (this.focusAnchor === null) {
+      this.setFocus(
+        this.anchorNear(event.clientX, event.clientY, event.pointerType === 'mouse' ? 18 : 28),
+      );
+    }
     this.options.onSelect?.(picked);
+  };
+
+  private onControlsStart = () => {
+    this.autoFramed = false;
   };
 
   /** 悬浮标签：props.label（保留键），没有时用物件的 label。 */
   private onPointerMove = (event: PointerEvent) => {
     if (event.pointerType !== 'mouse' || this.pointerDown !== null) return;
-    const now = performance.now();
-    if (now - this.hoverAt < 80) return;
-    this.hoverAt = now;
+    this.hoverPoint = { clientX: event.clientX, clientY: event.clientY };
+    if (this.hoverTimer !== null) return;
+    const wait = Math.max(0, this.hoverAt + 80 - performance.now());
+    this.hoverTimer = setTimeout(() => {
+      this.hoverTimer = null;
+      this.hover();
+    }, wait);
+  };
+
+  private hover(): void {
+    const event = this.hoverPoint;
+    if (this.disposed || event === null) return;
+    this.hoverAt = performance.now();
     const picked = this.raycast(event);
+    // 悬停在物件或锚点上：显示它的锚点标签。
+    this.setHover(this.anchorOf(picked) ?? this.anchorNear(event.clientX, event.clientY, 18));
     const text = picked
       ? ((typeof picked.entity.props?.label === 'string' ? picked.entity.props.label : undefined) ??
         picked.entity.label)
@@ -1426,15 +1699,18 @@ export class SceneView {
     this.tooltip.style.left = `${event.clientX - rect.left + 12}px`;
     this.tooltip.style.top = `${event.clientY - rect.top + 12}px`;
     this.tooltip.hidden = false;
-  };
+  }
 
   private onPointerLeave = () => {
+    this.hoverPoint = null;
     this.tooltip.hidden = true;
+    this.setHover(null);
   };
 
   dispose(): void {
     this.disposed = true;
     this.generation += 1;
+    if (this.hoverTimer !== null) clearTimeout(this.hoverTimer);
     this.renderer.setAnimationLoop(null);
     this.resize.disconnect();
     this.themeObserver.disconnect();
@@ -1443,6 +1719,7 @@ export class SceneView {
     canvas.removeEventListener('pointerup', this.onPointerUp);
     canvas.removeEventListener('pointermove', this.onPointerMove);
     canvas.removeEventListener('pointerleave', this.onPointerLeave);
+    this.controls.removeEventListener('start', this.onControlsStart);
     this.controls.dispose();
     this.clearVisuals();
     this.clearSelection();
@@ -1465,3 +1742,52 @@ export class SceneView {
 }
 
 type LinkLike = Parameters<typeof linkRoute>[2][number];
+
+function sameKeys(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const key of a) if (!b.has(key)) return false;
+  return true;
+}
+
+/** 成员坐标里的米制盒子 → 世界坐标的盒子（摆放只绕 y 轴转 90° 的倍数，外接盒就是精确的）。 */
+function placedBox(
+  placement: Placement,
+  min: readonly number[],
+  max: readonly number[],
+): THREE.Box3 {
+  const box = new THREE.Box3();
+  for (const x of [min[0] ?? 0, max[0] ?? 0]) {
+    for (const y of [min[1] ?? 0, max[1] ?? 0]) {
+      for (const z of [min[2] ?? 0, max[2] ?? 0]) {
+        box.expandByPoint(new THREE.Vector3(...placePoint(placement, [x, y, z])));
+      }
+    }
+  }
+  return box;
+}
+
+/** 格子盒（格）→ 世界坐标的盒子。 */
+function placedGridBox(placement: Placement, box: readonly number[]): THREE.Box3 {
+  return placedBox(
+    placement,
+    [0, 1, 2].map((k) => (box[k] ?? 0) * GRID_UNIT),
+    [3, 4, 5].map((k) => (box[k] ?? 0) * GRID_UNIT),
+  );
+}
+
+/** 成员的取景来源：取景范围（实体区，扩展视图加虚拟区），只有模型、可能还没加载完的物件，虚拟区。 */
+function frameSourceOf(member: MemberContent, group: THREE.Object3D): FrameSource {
+  return {
+    group,
+    clips: member.view.frameBoxes.map((box) => placedGridBox(member.placement, box)),
+    extraBoxes: [
+      ...member.view.entities
+        .filter((e) => e.shape === undefined && e.bounds !== undefined)
+        .map((e) => placedBox(member.placement, e.bounds!.min, e.bounds!.max)),
+      // 优化 + 扩展视图画出了虚拟区的边界光效，整块虚拟区都纳入取景。
+      ...member.view.virtualRegions.flatMap((r) =>
+        r.boxes.map((box) => placedGridBox(member.placement, box)),
+      ),
+    ],
+  };
+}
