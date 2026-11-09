@@ -22,7 +22,7 @@ import {
 import { materialKey } from '../core/shapes/build';
 import type { VoxelPart } from '../core/voxels';
 import { anchorKey, linkRoute, type AnchorRef, type Visual } from '../core/visuals';
-import { clipBox, frameBox, scanFrameBox } from './framing';
+import { clipBox, frameBox, scanCeilingHeight, scanFrameBox } from './framing';
 import { iconElement } from './icons';
 import { applyTexturedLook, createLights } from './lighting';
 import {
@@ -85,6 +85,8 @@ export interface SceneStats {
   readonly triangles: number;
   readonly voxelFaces: number;
   readonly hasScan: boolean;
+  /** 原始视图里扫描天花板的高度（米，见 framing.ts 的 scanCeilingHeight）；没有扫描或没扫到天花板时是 null。 */
+  readonly scanCeiling: number | null;
   /** 画成 InstancedMesh 的批数（同款物件共用几何体）。 */
   readonly instancedBatches: number;
   /** 共用几何体的物件数。 */
@@ -100,6 +102,7 @@ const EMPTY_STATS: SceneStats = {
   triangles: 0,
   voxelFaces: 0,
   hasScan: false,
+  scanCeiling: null,
   instancedBatches: 0,
   instancedEntities: 0,
   textured: 0,
@@ -935,11 +938,21 @@ export class SceneView {
       }
     }
 
+    // 扫描天花板的高度：几个成员都有扫描时取最低的（剖切要把每一份的天花板都切掉）。
+    let scanCeiling: number | null = null;
+    for (const source of this.frameSources) {
+      if (source.scan === null) continue;
+      source.scan.updateWorldMatrix(true, true);
+      const height = scanCeilingHeight(source.scan);
+      if (height !== null)
+        scanCeiling = scanCeiling === null ? height : Math.min(scanCeiling, height);
+    }
     this.stats = {
       entities: entityCount,
       triangles,
       voxelFaces,
       hasScan,
+      scanCeiling,
       instancedBatches,
       instancedEntities,
       textured,

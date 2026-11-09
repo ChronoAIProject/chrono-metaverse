@@ -415,6 +415,20 @@ export function ceilingCutHeight(scene: SceneDocument): number | null {
 /** 找不到结构墙时的默认剖切高度（米）：比常见的天花板低，保证从上往下能看见屋里。 */
 export const FALLBACK_CUT_HEIGHT = 2.2;
 
+/**
+ * 默认剖切高度按视图算：原始视图看的是扫描，扫描里有天花板（含比墙顶低的吊顶），按扫描天花板的高度
+ * 再低 {@link CEILING_CUT_MARGIN}；优化视图里没有天花板，按结构墙的顶部（{@link ceilingCutHeight}）。
+ */
+export function defaultCutHeight(
+  mode: ViewMode,
+  wallCeiling: number | null,
+  scanCeiling: number | null,
+): number | null {
+  if (mode === 'raw' && scanCeiling !== null)
+    return Math.max(scanCeiling - CEILING_CUT_MARGIN, 0.5);
+  return wallCeiling;
+}
+
 /** 剖切高度：用户拖过滑块就用用户的，否则按天花板算（算不出来用 {@link FALLBACK_CUT_HEIGHT}）。 */
 export function effectiveCutHeight(chosen: number | null, ceiling: number | null): number {
   return chosen ?? ceiling ?? FALLBACK_CUT_HEIGHT;

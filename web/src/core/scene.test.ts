@@ -16,6 +16,7 @@ import {
   sceneHeightRange,
   ceilingCutHeight,
   effectiveCutHeight,
+  defaultCutHeight,
   CEILING_CUT_MARGIN,
   FALLBACK_CUT_HEIGHT,
   selectView,
@@ -113,6 +114,13 @@ describe('三种视图', () => {
     ).toBeCloseTo(2.85 - CEILING_CUT_MARGIN, 5);
     expect(ceilingCutHeight(doc([floor, wall('low', 1.2)]))).toBeNull();
     expect(ceilingCutHeight(doc([]))).toBeNull();
+  });
+
+  it('默认剖切按视图：原始视图按扫描天花板再低 5 厘米，其他视图按墙顶', () => {
+    expect(defaultCutHeight('raw', 2.75, 2.65)).toBeCloseTo(2.6, 5);
+    expect(defaultCutHeight('raw', 2.75, null)).toBe(2.75);
+    expect(defaultCutHeight('optimized', 2.75, 2.65)).toBe(2.75);
+    expect(defaultCutHeight('extended', null, 2.65)).toBeNull();
   });
 
   it('剖切高度：拖过滑块用用户的，否则用天花板高度，算不出来用后备高度', () => {

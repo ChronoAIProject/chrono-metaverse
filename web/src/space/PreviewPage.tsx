@@ -6,6 +6,7 @@ import {
   hasStyleChoice,
   loadScene,
   ceilingCutHeight,
+  defaultCutHeight,
   effectiveCutHeight,
   sceneHeightRange,
   selectView,
@@ -55,6 +56,8 @@ export function PreviewPage({
   const [cutEnabled, setCutEnabled] = useState(true);
   // 剖切高度：null 表示用户还没拖过滑块，按天花板算默认值（只切掉天花板）。
   const [cutChoice, setCutHeight] = useState<number | null>(null);
+  // 原始视图里扫描天花板的高度（查看器生成完场景后报告）。
+  const [scanCeiling, setScanCeiling] = useState<number | null>(null);
   const [preview, setPreview] = useState<PreviewView | null>(null);
   const [scene, setScene] = useState<SceneDocument | null>(null);
   const [error, setError] = useState<RuntimeError | null>(null);
@@ -143,7 +146,7 @@ export function PreviewPage({
   }, [scene, mode, style, scan, scanHash]);
   const heights = useMemo(() => (scene ? sceneHeightRange(scene) : { min: 0, max: 3 }), [scene]);
   const ceiling = useMemo(() => (scene ? ceilingCutHeight(scene) : null), [scene]);
-  const cutHeight = effectiveCutHeight(cutChoice, ceiling);
+  const cutHeight = effectiveCutHeight(cutChoice, defaultCutHeight(mode, ceiling, scanCeiling));
 
   if (token === null) {
     return (
@@ -208,6 +211,7 @@ export function PreviewPage({
         <Viewer
           content={content}
           cutaway={cutEnabled ? cutHeight : null}
+          onScanCeiling={setScanCeiling}
           loadTexture={loaders.loadTexture}
           loadModel={loaders.loadModel}
           createView={createView}

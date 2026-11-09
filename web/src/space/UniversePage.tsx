@@ -5,6 +5,7 @@ import { toMillis } from '../core/events';
 import {
   hasStyleChoice,
   ceilingCutHeight,
+  defaultCutHeight,
   effectiveCutHeight,
   sceneHeightRange,
   selectView,
@@ -66,6 +67,8 @@ export function UniversePage({
   const [cutEnabled, setCutEnabled] = useState(true);
   // 剖切高度：null 表示用户还没拖过滑块，按各成员的天花板算默认值（取最高的，只切掉天花板）。
   const [cutChoice, setCutHeight] = useState<number | null>(null);
+  // 原始视图里扫描天花板的高度（查看器生成完场景后报告）。
+  const [scanCeiling, setScanCeiling] = useState<number | null>(null);
   const [view, setView] = useState<UniverseView | null>(null);
   const [error, setError] = useState<RuntimeError | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -266,7 +269,7 @@ export function UniversePage({
     }
     return top;
   }, [states]);
-  const cutHeight = effectiveCutHeight(cutChoice, ceiling);
+  const cutHeight = effectiveCutHeight(cutChoice, defaultCutHeight(mode, ceiling, scanCeiling));
 
   if (error !== null && view === null) {
     return (
@@ -325,6 +328,7 @@ export function UniversePage({
           content={content}
           visuals={visuals}
           cutaway={cutEnabled ? cutHeight : null}
+          onScanCeiling={setScanCeiling}
           loadTexture={loaders.loadTexture}
           loadModel={loaders.loadModel}
           createView={createView}

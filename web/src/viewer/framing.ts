@@ -312,3 +312,75 @@ export function scanFrameBox(
   }
   return percentileBox(points, low, areas);
 }
+
+/** 只看这个高度（米）以上朝下的表面：低于它的多半是桌底、门洞上沿这类东西，不是天花板。 */
+export const CEILING_MIN_HEIGHT = 1.8;
+/** 朝下的面：法线和竖直向下的夹角小于约 45°。 */
+const CEILING_NORMAL_Y = -0.7;
+/** 天花板面积至少这么多（平方米）才算扫到了天花板。 */
+const CEILING_MIN_AREA = 2;
+/** 天花板高度取朝下表面按面积的这个分位：吊顶、灯槽比主天花板低，取低分位才能切干净。 */
+export const CEILING_PERCENTILE = 0.05;
+
+/**
+ * 扫描里天花板的高度（米，世界坐标）：高于 {@link CEILING_MIN_HEIGHT}、朝下的三角形，按面积取
+ * {@link CEILING_PERCENTILE} 分位。剖切切在它下面一点，原始视图里的天花板（包括比主天花板低的吊顶）
+ * 就能切干净。朝下的面太少（没扫到天花板）时返回 null。三角形太多时按步长抽样，和 {@link scanFrameBox} 一样；
+ * 调用前要先更新世界矩阵。
+ */
+export function scanCeilingHeight(
+  scan: THREE.Object3D,
+  maxSamples = SCAN_MAX_SAMPLES * 3,
+): number | null {
+  const meshes: { mesh: THREE.Mesh; triangles: number }[] = [];
+  let total = 0;
+  scan.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (mesh.isMesh !== true || mesh.geometry?.getAttribute('position') === undefined) return;
+    const index = mesh.geometry.getIndex();
+    const triangles = Math.floor(
+      (index !== null ? index.count : mesh.geometry.getAttribute('position').count) / 3,
+    );
+    meshes.push({ mesh, triangles });
+    total += triangles;
+  });
+  if (total === 0) return null;
+  const stride = Math.max(1, Math.ceil(total / Math.max(1, maxSamples)));
+  const heights: number[] = [];
+  const weights: number[] = [];
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const normal = new THREE.Vector3();
+  const triangle = new THREE.Triangle(a, b, c);
+  let area = 0;
+  for (const { mesh, triangles } of meshes) {
+    const position = mesh.geometry.getAttribute('position');
+    const index = mesh.geometry.getIndex();
+    const vertex = (t: number) => (index !== null ? index.getX(t) : t);
+    for (let t = 0; t < triangles; t += stride) {
+      a.fromBufferAttribute(position, vertex(t * 3)).applyMatrix4(mesh.matrixWorld);
+      b.fromBufferAttribute(position, vertex(t * 3 + 1)).applyMatrix4(mesh.matrixWorld);
+      c.fromBufferAttribute(position, vertex(t * 3 + 2)).applyMatrix4(mesh.matrixWorld);
+      const y = (a.y + b.y + c.y) / 3;
+      if (y < CEILING_MIN_HEIGHT) continue;
+      triangle.getNormal(normal);
+      if (normal.y > CEILING_NORMAL_Y) continue;
+      const s = triangle.getArea();
+      if (!(s > 0)) continue;
+      heights.push(y);
+      weights.push(s);
+      area += s;
+    }
+  }
+  // 抽样时面积按步长放大，和阈值比较的是整个扫描的估计面积。
+  if (area * stride < CEILING_MIN_AREA) return null;
+  const order = heights.map((_, i) => i).sort((i, j) => heights[i]! - heights[j]!);
+  const target = area * CEILING_PERCENTILE;
+  let sum = 0;
+  for (const i of order) {
+    sum += weights[i]!;
+    if (sum >= target) return heights[i]!;
+  }
+  return heights[order[order.length - 1]!]!;
+}

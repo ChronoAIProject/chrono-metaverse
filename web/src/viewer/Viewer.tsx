@@ -39,6 +39,8 @@ export interface ViewerProps {
   readonly loadTexture?: (hash: string) => Promise<Texture>;
   readonly loadModel?: (hash: string) => Promise<ArrayBuffer>;
   readonly createView?: SceneViewFactory;
+  /** 场景生成完以后报告扫描天花板的高度（米；没有扫描或没扫到天花板时是 null），页面据此定默认剖切高度。 */
+  readonly onScanCeiling?: (height: number | null) => void;
 }
 
 /** 内容对应的提示：原始视图那时还没有扫描、优化视图那时还没有模型。 */
@@ -62,11 +64,13 @@ export function Viewer({
   loadTexture,
   loadModel,
   createView = createSceneView,
+  onScanCeiling,
 }: ViewerProps) {
   const viewRef = useRef<SceneViewLike | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const textureRef = useRef(loadTexture);
   const modelRef = useRef(loadModel);
+  const ceilingRef = useRef(onScanCeiling);
   const [unsupported, setUnsupported] = useState<string | null>(null);
   const [step, setStep] = useState<LoadStep | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -80,7 +84,8 @@ export function Viewer({
   useEffect(() => {
     textureRef.current = loadTexture;
     modelRef.current = loadModel;
-  }, [loadTexture, loadModel]);
+    ceilingRef.current = onScanCeiling;
+  }, [loadTexture, loadModel, onScanCeiling]);
 
   // 场景在宿主元素挂上时创建一次（回调 ref，React 19 支持返回清理函数）。
   const attach = useCallback(
@@ -138,6 +143,8 @@ export function Viewer({
         host.dataset.threaded = String(stats.threaded);
         host.dataset.members = String(stats.members);
         host.dataset.scan = String(stats.hasScan);
+        host.dataset.scanCeiling = stats.scanCeiling === null ? '' : stats.scanCeiling.toFixed(3);
+        ceilingRef.current?.(stats.scanCeiling);
         host.dataset.sources = String(sceneSources(content).length);
         host.dataset.ready = 'true';
       })

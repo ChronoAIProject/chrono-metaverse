@@ -48,6 +48,8 @@ export function fakeViewFactory(): { factory: SceneViewFactory; views: FakeView[
           triangles: 0,
           voxelFaces: last?.members.reduce((n, m) => n + m.view.voxels.chunks.length, 0) ?? 0,
           hasScan: last?.members.some((m) => m.view.showScan) ?? false,
+          // 假的扫描天花板：有扫描时按 2.65 米算，用来测页面的默认剖切高度。
+          scanCeiling: last?.members.some((m) => m.view.showScan && m.scan) ? 2.65 : null,
           instancedBatches: 0,
           instancedEntities: 0,
           textured: 0,

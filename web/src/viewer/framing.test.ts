@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import {
+  scanCeilingHeight,
   DEFAULT_MARGIN,
   clipBox,
   frameBox,
@@ -254,5 +255,39 @@ describe('扫描的取景范围（去掉离群点）', () => {
     expect(sampled.max.z).toBeLessThan(5.01);
     expect(sampled.max.x).toBeGreaterThan(5.5);
     expect(scanFrameBox(new THREE.Group()).isEmpty()).toBe(true);
+  });
+});
+
+describe('扫描天花板的高度', () => {
+  /** 一块水平的面：法线朝下（天花板）或朝上（地面），面积 w × d。 */
+  const slab = (y: number, w: number, d: number, down: boolean) => {
+    const g = new THREE.PlaneGeometry(w, d);
+    g.rotateX(down ? Math.PI / 2 : -Math.PI / 2);
+    g.translate(0, y, 0);
+    return new THREE.Mesh(g);
+  };
+
+  it('取朝下的面按面积的低分位：主天花板 2.75 米、一小块吊顶 2.6 米时切到吊顶下面', () => {
+    const scan = new THREE.Group();
+    scan.add(slab(0, 10, 10, false)); // 地面朝上，不算
+    scan.add(slab(2.75, 10, 9.5, true)); // 主天花板 95 平方米
+    scan.add(slab(2.6, 10, 0.6, true)); // 吊顶 6 平方米（6%）
+    scan.add(slab(1.2, 2, 1, true)); // 桌底朝下，低于 1.8 米不算
+    scan.updateMatrixWorld(true);
+    expect(scanCeilingHeight(scan)).toBeCloseTo(2.6, 5);
+  });
+
+  it('按世界坐标算（扫描带对齐变换）；没扫到天花板时是 null', () => {
+    const scan = new THREE.Group();
+    scan.add(slab(2.0, 10, 10, true));
+    scan.position.y = 0.8;
+    scan.updateMatrixWorld(true);
+    expect(scanCeilingHeight(scan)).toBeCloseTo(2.8, 5);
+
+    const floorOnly = new THREE.Group();
+    floorOnly.add(slab(0, 10, 10, false));
+    floorOnly.add(slab(2.7, 1, 1, true)); // 只有 1 平方米朝下，不够
+    floorOnly.updateMatrixWorld(true);
+    expect(scanCeilingHeight(floorOnly)).toBeNull();
   });
 });

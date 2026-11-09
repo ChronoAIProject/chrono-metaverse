@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { App, FIXTURE_LINK, FIXTURE_PREVIEW_LINK, FIXTURE_UNIVERSE_LINK } from './App';
@@ -157,6 +157,18 @@ describe('应用外壳', () => {
     await waitFor(() => expect(last().mode).toBe('raw'));
     expect(member().scan).toBeInstanceOf(ArrayBuffer);
     expect(member().scanTransform).toHaveLength(16);
+    // 原始视图按扫描天花板定默认剖切（假场景报告 2.65 米，再低 5 厘米），切回优化视图又按墙顶
+    await waitFor(() => expect(view.cutaway).toBeCloseTo(2.6));
+    await userEvent.click(screen.getByRole('button', { name: '优化' }));
+    await waitFor(() => expect(view.cutaway).toBeCloseTo(2.75));
+    // 拖过滑块就按用户的，换视图也不变
+    fireEvent.change(screen.getByRole('slider', { name: '剖切高度' }), {
+      target: { value: '1.5' },
+    });
+    await waitFor(() => expect(view.cutaway).toBeCloseTo(1.5));
+    await userEvent.click(screen.getByRole('button', { name: '原始' }));
+    await waitFor(() => expect(last().mode).toBe('raw'));
+    expect(view.cutaway).toBeCloseTo(1.5);
 
     await userEvent.click(screen.getByRole('checkbox', { name: '剖切' }));
     await waitFor(() => expect(view.cutaway).toBeNull());
