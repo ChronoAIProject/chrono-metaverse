@@ -43,6 +43,10 @@
         "UPLOAD_MAX_OPEN_PER_SPACE": "16",
         "UPLOAD_MAX_CONCURRENT_PARTS": "8",
         "JOB_MAX_PENDING_PER_SPACE": "8",
+        "PUBLIC_RATE_LIMIT_PER_MINUTE": "12000",
+        "PUBLIC_RATE_LIMIT_BURST": "2000",
+        "PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE": "120000",
+        "PUBLIC_BLOB_RATE_LIMIT_BURST": "20000",
         "RUST_LOG": "info"
       },
       "addon_env": {

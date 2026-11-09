@@ -52,12 +52,36 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 | `NYXID_JWT_AUDIENCE` | `urn:chrono-metaverse:api` | 必须和 NyxID 注册时的 `identity_jwt_audience` 一字不差 |
 | `ALLOWED_NYX_SERVICE_IDS` | `pending-nyxid-registration` | **占位值**：NyxID 注册要先有应用地址，所以第一次部署时还没有服务编号。占位值能让服务正常启动（网站和公开读接口可用），但所有 `/api/v1/*` 都会 401，直到第 7 步换成真实编号 |
 | `METAVERSE_REQUIRE_PERMISSIONS` | `false` | 第一步不启用功能级权限 |
-| `UPLOAD_MAX_SCAN_BYTES` / `_MODEL_` / `_TEXTURE_` / `_OPS_` / `_SCRIPT_BYTES` | 1GiB / 50MiB / 50MiB / 256MiB / 4MiB | 各用途上传的大小上限（与处理服务的上限一致；改大时处理服务的 `WORKER_MAX_*` 也要改） |
+| `UPLOAD_MAX_SCAN_BYTES` / `UPLOAD_MAX_MODEL_BYTES` / `UPLOAD_MAX_TEXTURE_BYTES` / `UPLOAD_MAX_OPS_BYTES` / `UPLOAD_MAX_SCRIPT_BYTES` | 1GiB / 50MiB / 50MiB / 256MiB / 4MiB | 各用途上传的大小上限（与处理服务的上限一致；改大时处理服务的 `WORKER_MAX_*` 也要改） |
 | `UPLOAD_MAX_TEXTURE_SIDE` | `8192` | 图片单边像素上限（第 0 片按文件头检查） |
 | `UPLOAD_MAX_OPEN_PER_SPACE` | `16` | 每个空间进行中的上传数，超过返回 429 |
 | `UPLOAD_MAX_CONCURRENT_PARTS` | `8` | 每个副本同时处理的分片数（每片最多 32MiB 在内存里，与 `memory_limit` 一起考虑） |
 | `JOB_MAX_PENDING_PER_SPACE` | `8` | 每个空间排队和运行中的任务数，超过返回 429 |
+| `PUBLIC_RATE_LIMIT_PER_MINUTE` / `PUBLIC_RATE_LIMIT_BURST` | `12000` / `2000` | 公开 JSON 接口的限流额度。**目前按网关地址计、所有访客共用**（见下面"公开接口限流"），所以比接口服务按单个访客设计的默认值（1200 / 200）高 10 倍 |
+| `PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE` / `PUBLIC_BLOB_RATE_LIMIT_BURST` | `120000` / `20000` | 区块和资源（`/api/public/chunks/`、`/assets/`）的限流额度，同上（默认 12000 / 2000） |
+| `TRUSTED_CLIENT_IP_HEADER` | **不设（待向平台确认）** | 可信的客户端地址请求头。确认之前不设，接口服务按 TCP 连接地址限流，连接地址是网关或 nginx 的地址（见下面"公开接口限流"） |
 | `RUST_LOG` | `info` | |
+
+#### 公开接口限流（待向平台确认可信的客户端地址头）
+
+设计 8.2 要求公开接口按来源地址限流，并在第 0 阶段向平台确认哪个请求头里是可信的客户端地址（设计 16.2）。确认之前的情况：
+
+- **链路**：公网请求先到 Cloudflare，再到平台的 Google 负载均衡，最后到 `metaverse-api`（2026-11-09 实测 `https://chrono-metaverse-chronoai.apps.nyxid.ai/api/healthz` 的响应头：`server: cloudflare`、`cf-ray`、`via: 1.1 google`）；`/api` 走 nginx 兜底时还要再经过网站的 nginx。
+- **所以限流按网关地址计**：接口服务默认用 TCP 连接地址当来源，这个地址是 Google 前端代理（`35.191.0.0/16`、`130.211.0.0/22`）或 nginx 副本的地址，所有访客落进少数几个桶，限流只能当兜底。接口服务按单个访客设计的默认额度（每分钟 1200、突发 200）在这种情况下几十个同时在线的访客就会触发 429，所以 `app.json` 显式调高了 `PUBLIC_*` 四个额度。
+- **额度怎么来的**：网站"现在"模式每个访客每 5 秒带 If-None-Match 查一次 `/head`（多数 304），有变化时再拉增量事件、状态，约每分钟 24–36 次；打开一个空间约 10–20 次 JSON 请求，再加几百个区块和资源（前厅 5 厘米格约 155–195 个区块）。每分钟 12000 次按 200 个同时在线访客留了余量，突发 2000 约等于 100 个访客同时打开；区块和资源按同样的人数放大 10 倍。真正保护进程的是每个空间的并发上限（`PUBLIC_SPACE_CONCURRENCY`，默认 64）和进程内缓存，这里的额度只防一个来源把接口打满。
+- **为什么暂时不设 `TRUSTED_CLIENT_IP_HEADER=cf-connecting-ip`**：接口服务对配置的头无条件信任。只要有人能绕过 Cloudflare 直接连到平台的负载均衡，就可以每个请求写一个不同的 `cf-connecting-ip`，每次都拿到新额度，限流完全失效。所以要先向平台确认两件事：① 负载均衡只接受 Cloudflare 的流量（或者会覆盖外来的 `cf-connecting-ip`）；② `cf-connecting-ip` 原样到达容器。
+- **`X-Forwarded-For` 不能用**：Google 负载均衡和 nginx 都会在后面追加地址，值是多个 IP；接口服务只认恰好一个 IP 的值，会退回连接地址。要按转发链取客户端地址（只信任来自 Google 前端代理网段的连接、跳过负载均衡自己追加的那一段，参照 CMA 的 `CHRONO_SERVER_TRUSTED_PROXY_CIDRS`），需要接口服务先支持。
+
+平台确认之后：在 `app.json` 里设 `"TRUSTED_CLIENT_IP_HEADER": "cf-connecting-ip"`，四个 `PUBLIC_*` 可以删掉（回到按单个访客的默认额度），再用 `PATCH` 只改这几项（JSON 合并补丁里写 `null` 表示删除这一项；改完 `GET` 一次确认）：
+
+```bash
+nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --data '{"services":{"metaverse-api":{"env":{
+  "TRUSTED_CLIENT_IP_HEADER":"cf-connecting-ip",
+  "PUBLIC_RATE_LIMIT_PER_MINUTE":null,"PUBLIC_RATE_LIMIT_BURST":null,
+  "PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE":null,"PUBLIC_BLOB_RATE_LIMIT_BURST":null}}}}'
+```
+
+改完用第 6 步的命令看 `metaverse-api` 的日志：被限流时会打印"公开接口限流"。
 
 `metaverse-worker`（完整说明见 `worker/src/metaverse_worker/config.py`）：
 
