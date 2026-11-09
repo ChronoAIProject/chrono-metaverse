@@ -21,6 +21,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use metaverse_core::authored::MAX_AUTHORED_BYTES;
+use metaverse_core::limits::{DEFAULT_MAX_BUNDLE_BYTES, DEFAULT_WEBMODEL};
 use metaverse_core::model::UploadFormat;
 use metaverse_core::scope::UploadPurpose;
 use tokio::sync::Semaphore;
@@ -181,6 +182,9 @@ impl IngestConfig {
             UploadPurpose::Ops => self.max_ops_bytes,
             UploadPurpose::Script => self.max_script_bytes,
             UploadPurpose::Authored => MAX_AUTHORED_BYTES,
+            // 重建路径的两种用途：加上它们的配置项之前，先用核心库的默认上限。
+            UploadPurpose::WebModel => DEFAULT_WEBMODEL.max_bytes,
+            UploadPurpose::Bundle => DEFAULT_MAX_BUNDLE_BYTES,
         }
     }
 
@@ -192,7 +196,8 @@ impl IngestConfig {
             UploadPurpose::Texture => &self.texture_formats,
             UploadPurpose::Ops => &[UploadFormat::Ndjson, UploadFormat::Gzip],
             UploadPurpose::Script => &[UploadFormat::Text],
-            UploadPurpose::Authored => &[UploadFormat::Json],
+            UploadPurpose::Authored | UploadPurpose::Bundle => &[UploadFormat::Json],
+            UploadPurpose::WebModel => &[UploadFormat::Glb],
         }
     }
 }
@@ -211,14 +216,7 @@ pub fn purpose_from_path(value: &str) -> Option<UploadPurpose> {
 }
 
 pub fn purpose_name(purpose: UploadPurpose) -> &'static str {
-    match purpose {
-        UploadPurpose::Scan => "scan",
-        UploadPurpose::Model => "model",
-        UploadPurpose::Texture => "texture",
-        UploadPurpose::Ops => "ops",
-        UploadPurpose::Script => "script",
-        UploadPurpose::Authored => "authored",
-    }
+    purpose.name()
 }
 
 /// 进程内状态：分片并发上限、`/head` 的短缓存。

@@ -114,6 +114,71 @@ describe('板、凸包和材质外观', () => {
     expect(() => kit.box([1, 1, 1], { opacity: 0.5 })).toThrow('color 或 texture');
     expect(() => kit.box([1, 1, 1], { color: [1, 1, 1], opacity: 1.5 })).toThrow('不透明度');
   });
+
+  it('平铺、着色、法线、粗糙度：贴图材质和颜色材质都能带，tile 写一个数是正方形', () => {
+    const floor = kit.box([4, 0.02, 3], {
+      texture: { hash: 'ab'.repeat(32), uv: 'planar' },
+      tile: 0.6,
+      rotate: 90,
+      offset: [0.3, 0],
+      shading: 'albedo',
+      normalMap: 'cd'.repeat(32),
+      normalScale: 0.8,
+      roughnessMap: 'ef'.repeat(32),
+      roughness: 0.9,
+    });
+    expect(floor.material).toEqual({
+      texture: 'ab'.repeat(32),
+      uv: 'planar',
+      tile: [0.6, 0.6],
+      rotate: 90,
+      offset: [0.3, 0],
+      shading: 'albedo',
+      normalMap: 'cd'.repeat(32),
+      normalScale: 0.8,
+      roughnessMap: 'ef'.repeat(32),
+      roughness: 0.9,
+    });
+    const leather = kit.box([1, 0.1, 0.5], {
+      color: '#5a3d2b',
+      uv: 'box',
+      tile: [0.25, 0.4],
+      normalMap: 'cd'.repeat(32),
+    });
+    expect(leather.material).toEqual({
+      color: [90, 61, 43],
+      uv: 'box',
+      tile: [0.25, 0.4],
+      normalMap: 'cd'.repeat(32),
+    });
+    const steel = kit.cylinder(0.02, 1, { color: [180, 180, 186], roughness: 0.55, metalness: 1 });
+    expect(steel.material).toEqual({ color: [180, 180, 186], roughness: 0.55, metalness: 1 });
+    // withOptions 只换位置时保留整个材质（含新字段）。
+    expect(kit.withOptions(floor, { at: [1, 0, 1] }).material).toEqual(floor.material);
+  });
+
+  it('材质选项写错立刻报错', () => {
+    expect(() => kit.box([1, 1, 1], { tile: 1 })).toThrow('材质选项 tile 要和 color 或 texture');
+    expect(() => kit.box([1, 1, 1], { uv: 'box', normalMap: 'cd'.repeat(32) })).toThrow(
+      '材质选项 normalMap、uv 要和 color 或 texture 一起给',
+    );
+    expect(() =>
+      kit.box([1, 1, 1], { texture: { hash: 'ab'.repeat(32), uv: 'box' }, uv: 'planar' }),
+    ).toThrow('texture.uv');
+    // 颜色材质带法线贴图却没给 uv、没有贴图坐标却带 tile、越界：按形状规则报错，带路径。
+    expect(() => kit.box([1, 1, 1], { color: [1, 2, 3], normalMap: 'cd'.repeat(32) })).toThrow(
+      '必须给出 uv',
+    );
+    expect(() => kit.box([1, 1, 1], { color: [1, 2, 3], tile: 1 })).toThrow(
+      '$.material.tile: tile、offset、rotate 只用于有贴图坐标（uv）的材质',
+    );
+    expect(() =>
+      kit.box([1, 1, 1], { texture: { hash: 'ab'.repeat(32), uv: 'box' }, tile: 0 }),
+    ).toThrow(ShapeError);
+    expect(() =>
+      kit.box([1, 1, 1], { texture: { hash: 'ab'.repeat(32), uv: 'box' }, rotate: 30 }),
+    ).toThrow('只能和 tile 一起给');
+  });
 });
 
 describe('形状构造', () => {

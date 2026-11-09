@@ -97,6 +97,8 @@ def test_material_extras_validation_and_parts():
         ({"bake": "mesh"}, "bake"),
         ({"texture": "a" * 64, "uv": "box", "bake": "box"}, "texture"),
         ({"color": [1, 2, 3], "tint": [1, 2, 3], "bake": "box"}, "tint"),
+        ({"color": [1, 2, 3], "tile": [1, 1], "bake": "box"}, "tile"),
+        ({"bake": "planar", "normalMap": "b" * 64}, "normalMap"),
     ):
         with pytest.raises(ShapeError, match=msg):
             sx.validate_shape({"type": "box", "size": [1, 1, 1], "material": bad})

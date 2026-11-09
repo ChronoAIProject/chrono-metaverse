@@ -1,5 +1,6 @@
 {
   "base": {
+    "anchorHistory": [],
     "anchors": [],
     "entities": [
       {
@@ -267,7 +268,8 @@
         "id": "garden",
         "kind": "virtual"
       }
-    ]
+    ],
+    "scopeKind": "ext"
   },
   "description": "改模板等于改所有用到它的物件：有一把椅子在地块外，改模板就超出范围",
   "expect": {

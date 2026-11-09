@@ -14,19 +14,21 @@
 - **坐标**：空间坐标，与处理服务 `scan_import` 对齐后的坐标系相同；
 - **物件**（SHAPES 3 的 body，`layer` 省略时按 `rebuilt`）：
   - **形状物件**：`shape` + 材质。材质里可以带烘焙指令 `"bake": "planar" | "box" | "cylindrical"`（不能和
-    `texture` 同时出现，可以带 `color` 作为采不到颜色时的后备），处理服务从扫描烘焙贴图后换成
+    `texture`、`uv`、`tint`、`tile`、`offset`、`rotate`、`normalMap`、`normalScale`、`roughnessMap` 同时出现，
+    可以带 `color` 作为采不到颜色时的后备），处理服务从扫描烘焙贴图后换成
     `{texture, uv}`；模板里不能带烘焙指令（模板在自己的局部坐标里，不知道对应扫描的哪一处）；
   - **外部模型物件**：没有 `shape`，带 `model: {url, sha256, size, format}`、`transform`（含 `scale`）、
-    `props.source`（署名）、可选的 `material: {tint, opacity, unlit}`（`tint` 烘进模型，`opacity`、
-    `unlit` 留在处理后物件的 `material` 里，网站按它画半透明或不打光）。`format` 是 `glb`、
-    `gltf-zip`（zip 里一个 `.gltf` 和它引用的文件），或 `gltf`（`url` 指向 `.gltf`，另给
-    `files: {相对路径: {url, sha256, size}}`，即 Poly Haven 文件列表里的 `include`）。处理服务下载、
-    核对哈希和大小，把 `transform` 和 `tint` 烘进模型（±1000 米的坐标上限按缩放之后检查，厘米单位的
-    模型缩放后也能用）、按物件模型的限制重新导出 glb，写成 `assetHash`；工作台 `place` 写的 `fit` 可以
-    留着，处理服务会重算；
+    `props.source`（署名）、可选的 `material: {tint, opacity, unlit, shading}`（`tint` 烘进模型，
+    `opacity`、`unlit`、`shading` 留在处理后物件的 `material` 里，网站按它画半透明、不打光、按固有色
+    受光）。`format` 是 `glb`、`gltf-zip`（zip 里一个 `.gltf` 和它引用的文件），或 `gltf`（`url` 指向
+    `.gltf`，另给 `files: {相对路径: {url, sha256, size}}`，即 Poly Haven 文件列表里的 `include`）。
+    处理服务下载、核对哈希和大小，把 `transform` 和 `tint` 烘进模型（±1000 米的坐标上限按缩放之后检查，
+    厘米单位的模型缩放后也能用）、按物件模型的限制重新导出 glb，写成 `assetHash`；工作台 `place` 写的
+    `fit` 可以留着，处理服务会重算；
   - `bounds` 可以省略（形状物件按形状算；外部模型按导出后的网格算），`fit` 和 `textures` 一律由处理服务重算；
-  - 形状里引用的贴图（`material.texture`）是本空间已登记的贴图资源；不是的话必须是本次任务算出的贴图，
-    结构物件可以回退到本次算法结构里同编号、同部件路径的贴图（`processing/authored_build.resolve_textures`）；
+  - 形状里引用的贴图（材质的 `texture`、`normalMap`、`roughnessMap`）是本空间已登记的贴图资源；不是的话
+    必须是本次任务算出的贴图，结构物件的 `texture` 可以回退到本次算法结构里同编号、同部件路径的贴图
+    （`processing/authored_build.resolve_textures`）；
 - **`structure`**：`keep`（默认）时结构（地面、墙、玻璃）沿用算法结果，物件集里不能有 `kind: structure`；
   `replace` 时结构就是物件集里 `kind: structure` 的物件，不用结构算法的结果（贴图待定时才跑一次算法核对）；
 - **署名** `props.source = {library, id, page, author, license, title}`：`library` 是 `polyhaven`、
@@ -53,7 +55,15 @@ from .canonical import CanonicalError, canonical_json, is_sha256_hex
 from .errors import PermanentJobError
 from .ids import is_object_id
 from .records import RecordError, validate_entity_body, validate_model_source
-from .shapes import ShapeError, _validate_transform, rounded_bounds, shape_bounds, validate_opacity
+from .shapes import (
+    SHADING_MODES,
+    ShapeError,
+    _validate_transform,
+    material_textures,
+    rounded_bounds,
+    shape_bounds,
+    validate_opacity,
+)
 
 AUTHORED_VERSION = 1
 MAX_AUTHORED_BYTES = 4 << 20
@@ -67,6 +77,19 @@ MAX_URL = 2048
 
 STRUCTURE_MODES = ("keep", "replace")
 BAKE_MODES = ("planar", "box", "cylindrical")
+# 不能和烘焙指令一起出现的材质字段：烘焙出的是一张按包围盒铺满的颜色贴图（SHAPES 2 的平铺、法线、粗糙度贴图
+# 都用不上）；opacity、unlit、shading、roughness、metalness 烘焙后原样保留
+BAKE_EXCLUSIVE = (
+    "texture",
+    "uv",
+    "tint",
+    "tile",
+    "offset",
+    "rotate",
+    "normalMap",
+    "normalScale",
+    "roughnessMap",
+)
 MODEL_FORMATS = ("glb", "gltf-zip", "gltf")
 LIBRARIES = ("polyhaven", "objaverse", "sketchfab")
 # 只收可商用、不传染的许可（SPDX 写法）；CC-BY 要署名
@@ -168,8 +191,8 @@ def extract_bakes(shape: dict[str, Any], what: str) -> list[dict[str, Any]]:
         mode = material["bake"]
         if mode not in BAKE_MODES:
             raise AuthoredError(f"{what} {path}.material.bake 必须是 {'、'.join(BAKE_MODES)} 之一")
-        if any(material.get(k) is not None for k in ("texture", "uv", "tint")):
-            raise AuthoredError(f"{what} {path}.material：bake 只能出现在没有 texture、uv、tint 的材质里")
+        if any(material.get(k) is not None for k in BAKE_EXCLUSIVE):
+            raise AuthoredError(f"{what} {path}.material：bake 不能和 {'、'.join(BAKE_EXCLUSIVE)} 一起出现")
         keep = {k: v for k, v in material.items() if k not in ("bake", "color", "tint")}
         fallback = material.get("color") if material.get("color") is not None else list(FALLBACK_COLOR)
         node["material"] = {"color": fallback, **keep}  # type: ignore[index]
@@ -178,13 +201,11 @@ def extract_bakes(shape: dict[str, Any], what: str) -> list[dict[str, Any]]:
 
 
 def shape_textures(shape: Any) -> set[str]:
-    """形状树里引用的贴图哈希（`material.texture`）。"""
+    """形状树里引用的贴图哈希（材质的 `texture`、`normalMap`、`roughnessMap`，SHAPES 2"资源引用"）。"""
     out: set[str] = set()
     if isinstance(shape, Mapping):
         for _, node in _walk(shape):
-            material = node.get("material")
-            if isinstance(material, Mapping) and isinstance(material.get("texture"), str):
-                out.add(material["texture"])
+            out.update(material_textures(node.get("material")))
     return out
 
 
@@ -253,11 +274,14 @@ def source_key(model: Mapping[str, Any]) -> str:
 
 
 def model_material(value: Any, what: str) -> tuple[list[int] | None, dict[str, Any] | None]:
-    """外部模型物件的 `material: {tint?, opacity?, unlit?}` → (烘进模型的 tint, 留在物件上的 material)。"""
+    """外部模型物件的 `material: {tint?, opacity?, unlit?, shading?}`
+    → (烘进模型的 tint, 留在物件上的 material)。"""
     if value is None:
         return None, None
-    if not isinstance(value, Mapping) or set(value) - {"tint", "opacity", "unlit"}:
-        raise AuthoredError(f"{what} 只能是 {{tint?: [r, g, b], opacity?: 0–1, unlit?: 布尔}}")
+    if not isinstance(value, Mapping) or set(value) - {"tint", "opacity", "unlit", "shading"}:
+        raise AuthoredError(
+            f"{what} 只能是 {{tint?: [r, g, b], opacity?: 0–1, unlit?: 布尔, shading?: baked | albedo}}"
+        )
     tint = value.get("tint")
     if tint is not None and not (
         isinstance(tint, list)
@@ -272,7 +296,9 @@ def model_material(value: Any, what: str) -> tuple[list[int] | None, dict[str, A
             validate_opacity(f"{what}.opacity", value["opacity"])
         except ShapeError as error:
             raise AuthoredError(str(error)) from error
-    look = {k: value[k] for k in ("opacity", "unlit") if value.get(k) is not None}
+    if value.get("shading") is not None and value["shading"] not in SHADING_MODES:
+        raise AuthoredError(f"{what}.shading 只能是 baked 或 albedo")
+    look = {k: value[k] for k in ("opacity", "unlit", "shading") if value.get(k) is not None}
     return (list(tint) if tint is not None else None), (look or None)
 
 

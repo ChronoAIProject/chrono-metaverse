@@ -1,5 +1,6 @@
 {
   "base": {
+    "anchorHistory": [],
     "anchors": [],
     "entities": [
       {
@@ -104,12 +105,14 @@
         "id": "garden",
         "kind": "virtual"
       }
-    ]
+    ],
+    "scopeKind": "ext"
   },
   "description": "同编号再放一次：影响范围包括旧位置和新位置；删除物件的范围是它原来的位置",
   "expect": {
     "anchors": [],
     "baseChunks": [],
+    "brokenTemplateRefs": [],
     "chunkChanges": [],
     "chunks": [],
     "entities": [
@@ -170,6 +173,7 @@
     "ok": true,
     "probes": [],
     "provisionalBlocks": [],
+    "scan": null,
     "touched": {
       "anchors": [],
       "chunks": [],
@@ -177,7 +181,10 @@
         "box-1",
         "old-1"
       ],
-      "palette": false
+      "palette": false,
+      "rebuiltLayer": false,
+      "scan": false,
+      "skippedAnchors": []
     }
   },
   "kind": "ops",

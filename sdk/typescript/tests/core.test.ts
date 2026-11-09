@@ -312,6 +312,165 @@ describe('外部模型：material 和 props.source', () => {
     ).toThrow('material');
     expect(() => validateEntityBody(model({ material: { opacity: 2 } }), {})).toThrow('不透明度');
   });
+
+  it('material.shading 只能是 baked 或 albedo（模型库的模型用 albedo）', () => {
+    for (const shading of ['baked', 'albedo']) {
+      const body = model({ material: { shading, tint: [200, 190, 180] } });
+      expect(body.material).toEqual({ shading, tint: [200, 190, 180] });
+      validateEntityBody(body, new Map());
+    }
+    for (const shading of ['pbr', 1, true]) {
+      expect(() => model({ material: { shading } }), String(shading)).toThrow(
+        'material.shading 只能是 baked 或 albedo',
+      );
+    }
+    // 只属于形状材质的字段，模型的 material 里不收。
+    for (const extra of [{ tile: [1, 1] }, { normalMap: 'ab'.repeat(32) }, { roughness: 0.5 }]) {
+      expect(() => model({ material: extra }), JSON.stringify(extra)).toThrow('不认识的字段');
+    }
+  });
+});
+
+describe('形状材质：平铺、着色、法线、粗糙度', () => {
+  const HASH = 'ab'.repeat(32);
+  const NORMAL = 'cd'.repeat(32);
+  const ROUGH = 'ef'.repeat(32);
+  const shape = (material: Record<string, unknown>) => ({
+    type: 'box',
+    size: [2, 1, 0.5],
+    material,
+  });
+  const rejects = (material: Record<string, unknown>, path: string, message: string) => {
+    let caught: unknown;
+    try {
+      validateShape(shape(material));
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught, JSON.stringify(material)).toBeInstanceOf(ShapeError);
+    expect((caught as ShapeError).path, JSON.stringify(material)).toBe(path);
+    expect((caught as ShapeError).detail, JSON.stringify(material)).toContain(message);
+  };
+
+  it('合法的写法：贴图材质全套字段、颜色材质带贴图或只带标量、边界值', () => {
+    for (const material of [
+      {
+        texture: HASH,
+        uv: 'planar',
+        tile: [1.2, 0.6],
+        offset: [0.1, -0.2],
+        rotate: 15,
+        shading: 'albedo',
+        normalMap: NORMAL,
+        normalScale: 1.5,
+        roughnessMap: ROUGH,
+        roughness: 0.9,
+        metalness: 0,
+        tint: [255, 250, 240],
+        opacity: 1,
+        unlit: false,
+      },
+      { color: [182, 140, 96], uv: 'box', tile: [0.3, 0.3], normalMap: NORMAL },
+      { color: [182, 140, 96], uv: 'mesh', roughnessMap: ROUGH, roughness: 0.6 },
+      { color: [90, 90, 96], roughness: 0.55, metalness: 0.8, shading: 'baked' },
+      // 带了贴图坐标但不平铺：沿用按包围盒归一化的旧算法。
+      { texture: HASH, uv: 'cylindrical', normalMap: NORMAL, normalScale: 0 },
+      {
+        texture: HASH,
+        uv: 'mesh',
+        tile: [100, 0.001],
+        offset: [-1000, 1000],
+        rotate: 360,
+        normalMap: NORMAL,
+        normalScale: 4,
+        roughness: 0,
+        metalness: 1,
+      },
+    ]) {
+      expect(() => validateShape(shape(material)), JSON.stringify(material)).not.toThrow();
+    }
+  });
+
+  it('取值越界、缺少前提、类型不对都被拒绝，错误带路径', () => {
+    rejects({ texture: HASH, uv: 'box', tile: [Number.NaN, 1] }, '$.material.tile', '大于 0');
+    rejects({ texture: HASH, uv: 'box', tile: [1, Infinity] }, '$.material.tile', '不超过 100');
+    rejects({ texture: HASH, uv: 'box', tile: [1, 1, 1] }, '$.material.tile', '2 个数字');
+    rejects({ texture: HASH, uv: 'box', tile: '1' }, '$.material.tile', '2 个数字');
+    rejects(
+      { texture: HASH, uv: 'box', tile: [1, 1], offset: [0, -1001] },
+      '$.material.offset',
+      '1000',
+    );
+    rejects({ texture: HASH, uv: 'box', tile: [1, 1], offset: [0] }, '$.material.offset', '2 个');
+    rejects(
+      { texture: HASH, uv: 'box', tile: [1, 1], rotate: -360.5 },
+      '$.material.rotate',
+      '−360 到 360',
+    );
+    rejects(
+      { texture: HASH, uv: 'box', tile: [1, 1], rotate: Number.NaN },
+      '$.material.rotate',
+      '−360 到 360',
+    );
+    rejects({ texture: HASH, uv: 'box', rotate: '90' }, '$.material.rotate', '必须是数字');
+    // 颜色材质：有法线、粗糙度贴图才有贴图坐标，两样都没有时不能带 uv、tile；tint 一律不行。
+    rejects({ color: [1, 2, 3], roughnessMap: ROUGH }, '$.material', '必须给出 uv');
+    rejects({ color: [1, 2, 3], uv: 'box' }, '$.material', '纯色材质不能带 uv 或 tint');
+    rejects(
+      { color: [1, 2, 3], uv: 'box', normalMap: NORMAL, tint: [1, 1, 1] },
+      '$.material',
+      '纯色材质不能带 uv 或 tint',
+    );
+    rejects({ color: [1, 2, 3], offset: [1, 1] }, '$.material.offset', '只能和 tile 一起给');
+    // 法线、粗糙度贴图只收资源哈希；外链对象只在 AI 物件集里。
+    rejects({ texture: HASH, uv: 'box', roughnessMap: 'x' }, '$.material.roughnessMap', '哈希');
+    rejects(
+      { texture: HASH, uv: 'box', normalMap: { url: 'https://a.b/n.png', sha256: HASH, size: 1 } },
+      '$.material.normalMap',
+      'AI 物件集',
+    );
+    rejects({ texture: HASH, uv: 'box', roughnessMap: 7 }, '$.material.roughnessMap', '资源哈希');
+    rejects(
+      { texture: HASH, uv: 'box', normalMap: NORMAL, normalScale: -0.1 },
+      '$.material.normalScale',
+      '0 到 4',
+    );
+    rejects({ texture: HASH, uv: 'box', roughness: -0.01 }, '$.material.roughness', '0 到 1');
+    rejects({ color: [1, 2, 3], metalness: Number.NaN }, '$.material.metalness', '0 到 1');
+    rejects({ color: [1, 2, 3], metalness: '0' }, '$.material.metalness', '必须是数字');
+    rejects({ color: [1, 2, 3], shading: 1 }, '$.material.shading', 'baked 或 albedo');
+    rejects({ color: [1, 2, 3], specular: 1 }, '$.material', '不认识的字段 specular');
+  });
+
+  it('物件记录原样保留新字段（规范化不丢、不改）', () => {
+    const material = {
+      texture: HASH,
+      uv: 'box',
+      tile: [0.5, 0.5],
+      shading: 'albedo',
+      normalMap: NORMAL,
+      roughnessMap: ROUGH,
+      roughness: 0.8,
+    };
+    const body = parseEntityBody({
+      entityId: 'floor-01',
+      layer: 'ext',
+      kind: 'structure',
+      shape: shape(material),
+      bounds: { min: [-1, 0, -0.25], max: [1, 1, 0.25] },
+    });
+    expect(body.shape!.material).toEqual(material);
+    validateEntityBody(body, new Map());
+    expect(() =>
+      parseEntityBody({
+        entityId: 'floor-01',
+        layer: 'ext',
+        kind: 'structure',
+        shape: shape({ ...material, normalScale: 5 }),
+        bounds: { min: [-1, 0, -0.25], max: [1, 1, 0.25] },
+      }),
+    ).toThrow('normalScale 必须在 0 到 4 之间');
+  });
 });
 
 describe('板和凸包的判定', () => {

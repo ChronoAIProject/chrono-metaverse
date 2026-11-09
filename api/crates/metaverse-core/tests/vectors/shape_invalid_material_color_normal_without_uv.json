@@ -1,0 +1,25 @@
+{
+  "description": "颜色材质带了 normalMap 就必须给 uv",
+  "errorMessage": "$.material: 颜色材质带 normalMap 或 roughnessMap 时必须给出 uv",
+  "errorPath": "$.material",
+  "kind": "shape",
+  "name": "invalid-material-color-normal-without-uv",
+  "shape": {
+    "material": {
+      "color": [
+        1,
+        2,
+        3
+      ],
+      "normalMap": "4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d9f2c7d"
+    },
+    "size": [
+      2,
+      1,
+      0.5
+    ],
+    "type": "box"
+  },
+  "templates": {},
+  "valid": false
+}

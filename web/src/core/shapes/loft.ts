@@ -190,10 +190,17 @@ export function loftMesh(shape: LoftShape): MeshData {
         }
       }
     }
+    // 米版本：截面上的弧长（参数 × 这一截面的周长），高度从首截面量起
     const ids = rings.map((ring, r) =>
       cols.map((col, c) => {
         const u = from + c >= columns ? 1 : params[col]!;
-        return builder.vertex(ring[col]!, norm3(normals[r]![c]!), [u, vOf(ring[col]![1])]);
+        const y = ring[col]![1];
+        return builder.vertex(
+          ring[col]!,
+          norm3(normals[r]![c]!),
+          [u, vOf(y)],
+          [u * sections[r]!.perimeter, y - y0],
+        );
       }),
     );
     for (let r = 0; r < rings.length - 1; r += 1) {

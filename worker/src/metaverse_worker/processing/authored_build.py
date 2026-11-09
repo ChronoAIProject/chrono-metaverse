@@ -362,9 +362,9 @@ def _shifted(mesh: Mesh, offset: np.ndarray) -> Mesh:
 
 
 def _texture_nodes(shape: Mapping[str, Any], path: str = "$"):
-    """形状树里带贴图的节点：(部件路径, 节点)。"""
+    """形状树里引用贴图（`texture`、`normalMap`、`roughnessMap`）的节点：(部件路径, 节点)。"""
     material = shape.get("material")
-    if isinstance(material, Mapping) and isinstance(material.get("texture"), str):
+    if sh.material_textures(material):
         yield path, shape
     if shape.get("type") == "group":
         for i, child in enumerate(shape.get("children") or []):
@@ -409,6 +409,19 @@ def resolve_textures(
                 continue
             changed = False
             for path, node in list(_texture_nodes(shape)):
+                # 法线、粗糙度贴图没有回退（算法结构里没有）：本次算出了就用，否则失败
+                for key in ("normalMap", "roughnessMap"):
+                    sha = node["material"].get(key)
+                    if not isinstance(sha, str) or sha not in pending:
+                        continue
+                    if sha not in algorithm_textures:
+                        raise PermanentJobError(
+                            f"{what} {eid} 的 {path} 引用的 {key} {sha} 不是本空间的贴图资源，"
+                            "本次任务也没有算出"
+                        )
+                    used[sha] = algorithm_textures[sha]
+                if not isinstance(node["material"].get("texture"), str):
+                    continue
                 sha = node["material"]["texture"]
                 if sha not in pending:
                     continue

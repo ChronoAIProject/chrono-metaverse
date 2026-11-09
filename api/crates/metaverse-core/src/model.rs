@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::grid::GridBox;
 use crate::ids::{is_object_id, is_subject_id};
@@ -313,8 +313,10 @@ pub enum ActorKind {
     Plot,
     /// 数据源路径。
     Source,
-    /// 处理服务的任务。
+    /// 处理服务的任务（旧提交）和接口服务的后台任务。
     Job,
+    /// 重建路径（重建包展开出的重建草稿，含部署种子），docs/design/server-slim.md 2.7。
+    Rebuild,
 }
 
 /// 发布者（设计 5.2、9.5）。NyxID 在令牌里补上 agent key 编号后增加 `agentKeyId`。
@@ -342,6 +344,69 @@ pub struct ScanRef {
     pub web_model_hashes: Vec<String>,
     /// 4×4 列主序变换矩阵（扫描坐标 → 空间坐标）。
     pub transform: [f64; 16],
+    /// 本地工具记下的对齐信息（任意 JSON 对象，规范化后 ≤ 4 KiB）：服务端原样保存、不解释，
+    /// 只在 `/api/v1` 的快照里返回。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alignment: Option<Map<String, Value>>,
+}
+
+/// `scan.alignment` 规范化后的字节数上限。
+pub const MAX_ALIGNMENT_BYTES: usize = 4 * 1024;
+
+/// 对齐变换线性部分（左上 3×3）行列式的下限（不含）：不大于它就是退化或镜像。
+/// 与本地工具 `processing/align.py` 的 `matrix_from_params`（`det > 1e-6`）相同。
+pub const MIN_TRANSFORM_DET: f64 = 1e-6;
+/// 对齐变换平移分量的绝对值上限（米，含），等于形状坐标的上限 [`crate::shape::MAX_COORD`]。
+pub const MAX_TRANSFORM_TRANSLATION: f64 = crate::shape::MAX_COORD;
+/// 线性部分各元素的绝对值上限（防止溢出）。
+pub const MAX_TRANSFORM_ELEMENT: f64 = 1e7;
+
+/// 扫描变换不合规。
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("transform 必须是 16 个有限数（列主序 4×4），最后一行 [0,0,0,1]，线性部分可逆且不镜像（行列式 > 1e-6），平移的绝对值不超过 100000 米")]
+pub struct TransformError;
+
+/// 4×4 列主序仿射变换：16 个有限数（绝对值 ≤ [`MAX_TRANSFORM_ELEMENT`]），最后一行 [0,0,0,1]，
+/// 线性部分可逆且不镜像（行列式 > [`MIN_TRANSFORM_DET`]），平移的绝对值 ≤ [`MAX_TRANSFORM_TRANSLATION`]。
+pub fn check_transform(values: &[f64]) -> Result<[f64; 16], TransformError> {
+    let matrix: [f64; 16] = values.try_into().map_err(|_| TransformError)?;
+    if !matrix
+        .iter()
+        .all(|v| v.is_finite() && v.abs() <= MAX_TRANSFORM_ELEMENT)
+    {
+        return Err(TransformError);
+    }
+    if matrix[3] != 0.0 || matrix[7] != 0.0 || matrix[11] != 0.0 || matrix[15] != 1.0 {
+        return Err(TransformError);
+    }
+    if matrix[12..15]
+        .iter()
+        .any(|t| t.abs() > MAX_TRANSFORM_TRANSLATION)
+    {
+        return Err(TransformError);
+    }
+    let m = |row: usize, col: usize| matrix[col * 4 + row];
+    let det = m(0, 0) * (m(1, 1) * m(2, 2) - m(1, 2) * m(2, 1))
+        - m(0, 1) * (m(1, 0) * m(2, 2) - m(1, 2) * m(2, 0))
+        + m(0, 2) * (m(1, 0) * m(2, 1) - m(1, 1) * m(2, 0));
+    // 不能镜像，也不能退化。
+    if det <= MIN_TRANSFORM_DET {
+        return Err(TransformError);
+    }
+    Ok(matrix)
+}
+
+/// `scan.alignment`：任意 JSON 对象，规范化后不超过 [`MAX_ALIGNMENT_BYTES`]。
+pub fn check_alignment(alignment: &Map<String, Value>) -> Result<(), String> {
+    let bytes = crate::canonical::canonical_json_of(alignment)
+        .map_err(|error| format!("alignment 无法规范化：{error}"))?
+        .len();
+    if bytes > MAX_ALIGNMENT_BYTES {
+        return Err(format!(
+            "alignment 规范化后 {bytes} 字节，超过 {MAX_ALIGNMENT_BYTES}"
+        ));
+    }
+    Ok(())
 }
 
 /// 提交（设计 5.2）。`at` 由服务端赋值 = max(当前时间, head.at)，随 seq 单调不减。
@@ -387,6 +452,9 @@ pub struct Commit {
     pub draft_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub script_ref: Option<String>,
+    /// 重建草稿发布的提交：重建包清单的资源哈希（提交的出处，不公开）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bundle_ref: Option<String>,
 }
 
 /// 每隔多少次提交存一个关键帧。
@@ -595,6 +663,12 @@ pub struct Touched {
     pub plots: bool,
     #[serde(default)]
     pub palette: bool,
+    /// 草稿有 `setScan`（只在重建草稿里）。旧文档没有这一项，为 false 时也不写。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub scan: bool,
+    /// 草稿有 `clearRebuilt`，或者重建草稿改过重建层（只在重建草稿里）。为 false 时不写。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub rebuilt_layer: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -782,6 +856,8 @@ pub enum JobStatus {
     Failed,
 }
 
+/// 任务种类。`scan_import`、`align`、`rebuild`、`voxelize`、`web_model`、`model_import` 是处理服务
+/// 下线前的种类，不再新建，只留着读旧记录（docs/design/server-slim.md 2.1）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum JobKind {
@@ -793,6 +869,23 @@ pub enum JobKind {
     WebModel,
     ModelImport,
     OpsFromUpload,
+    /// 部署种子导入重建包（docs/design/server-slim.md 第 7 节）。
+    BundleImport,
+}
+
+impl JobKind {
+    /// 已下线的种类：不再新建，清理时把还在排队或运行的标记失败。
+    pub fn is_retired(self) -> bool {
+        matches!(
+            self,
+            JobKind::ScanImport
+                | JobKind::Align
+                | JobKind::Rebuild
+                | JobKind::Voxelize
+                | JobKind::WebModel
+                | JobKind::ModelImport
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1191,5 +1284,114 @@ mod tests {
     fn commit_at_is_monotonic() {
         assert_eq!(next_commit_at(ts(5), ts(10)), ts(10));
         assert_eq!(next_commit_at(ts(15), ts(10)), ts(15));
+    }
+
+    #[test]
+    fn transforms_must_be_affine_and_invertible() {
+        let identity = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 2.0, 0.0, 3.0, 1.0,
+        ];
+        assert_eq!(check_transform(&identity), Ok(identity));
+        assert!(check_transform(&identity[..15]).is_err());
+        let mut projective = identity;
+        projective[3] = 0.5;
+        assert!(check_transform(&projective).is_err());
+        let mut flat = identity;
+        flat[0] = 0.0;
+        assert!(check_transform(&flat).is_err());
+        let mut mirrored = identity;
+        mirrored[0] = -1.0;
+        assert!(check_transform(&mirrored).is_err());
+        let mut nan = identity;
+        nan[12] = f64::NAN;
+        assert!(check_transform(&nan).is_err());
+        let mut huge = identity;
+        huge[0] = 2e7;
+        assert!(check_transform(&huge).is_err());
+    }
+
+    /// 边界值与本地工具 `matrix_from_params` 相同：行列式必须 > 1e-6，平移绝对值 ≤ 1e5。
+    #[test]
+    fn transform_limits_match_the_local_tool() {
+        let scaled = |s: f64| {
+            [
+                s, 0.0, 0.0, 0.0, 0.0, s, 0.0, 0.0, 0.0, 0.0, s, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ]
+        };
+        // 毫米 → 米（0.001 倍，行列式 1e-9）：拒绝。
+        assert!(check_transform(&scaled(0.001)).is_err());
+        // 0.0099³ ≈ 9.7e-7：不大于下限，拒绝；0.011³ ≈ 1.33e-6：通过。
+        assert!(check_transform(&scaled(0.0099)).is_err());
+        assert!(check_transform(&scaled(0.011)).is_ok());
+        let translated = |x: f64, y: f64, z: f64| {
+            let mut m = scaled(1.0);
+            m[12] = x;
+            m[13] = y;
+            m[14] = z;
+            m
+        };
+        assert!(check_transform(&translated(1e5, -1e5, 0.0)).is_ok());
+        assert!(check_transform(&translated(1e5 + 1.0, 0.0, 0.0)).is_err());
+        assert!(check_transform(&translated(0.0, -100_000.5, 0.0)).is_err());
+        assert!(check_transform(&translated(0.0, 0.0, 2e6)).is_err());
+        assert_eq!(MAX_TRANSFORM_TRANSLATION, 1e5);
+        assert_eq!(MIN_TRANSFORM_DET, 1e-6);
+    }
+
+    #[test]
+    fn alignment_is_a_small_object() {
+        let small = json!({"method": "auto", "rotationDeg": -61.42, "errorCm": 0.8});
+        assert!(check_alignment(small.as_object().unwrap()).is_ok());
+        // 规范化后正好 4096 字节可以，多一个字节不行。
+        let exact = |n: usize| json!({"n": "x".repeat(n)});
+        let overhead = r#"{"n":""}"#.len();
+        assert!(
+            check_alignment(exact(MAX_ALIGNMENT_BYTES - overhead).as_object().unwrap()).is_ok()
+        );
+        assert!(check_alignment(
+            exact(MAX_ALIGNMENT_BYTES - overhead + 1)
+                .as_object()
+                .unwrap()
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn new_enum_values_and_retired_job_kinds() {
+        assert_eq!(serde_json::to_value(ActorKind::Rebuild).unwrap(), "rebuild");
+        assert_eq!(
+            serde_json::to_value(JobKind::BundleImport).unwrap(),
+            "bundle_import"
+        );
+        for kind in [
+            JobKind::ScanImport,
+            JobKind::Align,
+            JobKind::Rebuild,
+            JobKind::Voxelize,
+            JobKind::WebModel,
+            JobKind::ModelImport,
+        ] {
+            assert!(kind.is_retired(), "{kind:?}");
+        }
+        for kind in [
+            JobKind::UploadVerify,
+            JobKind::OpsFromUpload,
+            JobKind::BundleImport,
+        ] {
+            assert!(!kind.is_retired(), "{kind:?}");
+        }
+        // 草稿碰过的键：新的两项为 false 时不写，旧文档原样往返。
+        let old = json!({"chunks": [], "entities": ["a"], "anchors": [], "regions": false,
+            "plots": false, "palette": false});
+        let touched: Touched = serde_json::from_value(old.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&touched).unwrap(), old);
+        let rebuilt = Touched {
+            scan: true,
+            rebuilt_layer: true,
+            ..touched
+        };
+        let value = serde_json::to_value(&rebuilt).unwrap();
+        assert_eq!(value["scan"], true);
+        assert_eq!(value["rebuiltLayer"], true);
     }
 }

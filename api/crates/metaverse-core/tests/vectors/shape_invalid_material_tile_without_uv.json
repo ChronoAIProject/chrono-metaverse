@@ -1,0 +1,28 @@
+{
+  "description": "颜色材质没有法线、粗糙度贴图时没有贴图坐标，不能带 tile",
+  "errorMessage": "$.material.tile: tile、offset、rotate 只用于有贴图坐标（uv）的材质",
+  "errorPath": "$.material.tile",
+  "kind": "shape",
+  "name": "invalid-material-tile-without-uv",
+  "shape": {
+    "material": {
+      "color": [
+        1,
+        2,
+        3
+      ],
+      "tile": [
+        1,
+        1
+      ]
+    },
+    "size": [
+      2,
+      1,
+      0.5
+    ],
+    "type": "box"
+  },
+  "templates": {},
+  "valid": false
+}

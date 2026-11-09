@@ -2,8 +2,9 @@
 
 与 `processing.preview_glb` 的区别：逐个材质写 `opacity`（半透明：`alphaMode: BLEND`）和 `unlit`
 （`KHR_materials_unlit`），可以按部件着色，可以把外部模型物件按 transform 合并进来（整房预览）。
-带贴图的材质不打光（扫描烘焙的贴图自带光照；外部模型的贴图带 `lit` 标记，照常打光），纯色材质由渲染页按网站的
-灯光着色。
+带贴图的材质不打光（扫描烘焙的贴图自带光照；外部模型的贴图带 `lit` 标记、`shading: "albedo"` 的贴图是
+固有色，照常打光），纯色材质由渲染页按网站的灯光着色。平铺、法线、粗糙度的写法与 `preview_glb` 相同
+（SHAPES 2"glb 导出"）。
 """
 
 from __future__ import annotations
@@ -30,12 +31,9 @@ class Writer(_Writer):
         opacity = float(mat.get("opacity", 1.0))
         textured = h is not None and h in self.textures
         if textured:
-            if h not in self.tex_index:
-                data = self.textures[h]
-                mime = "image/png" if data[:4] == b"\x89PNG" else "image/jpeg"
-                self.images.append({"bufferView": self.view(data), "mimeType": mime})
-                self.tex_index[h] = len(self.images) - 1
-            pbr["baseColorTexture"] = {"index": self.tex_index[h]}
+            pbr["baseColorTexture"] = {
+                "index": self.texture_index(h, self.textures[h], mat.get("tile") is not None)
+            }
             tint = mat.get("tint") or [255, 255, 255]
             pbr["baseColorFactor"] = [*(_srgb_to_linear(c) for c in tint), opacity]
         else:
@@ -44,9 +42,11 @@ class Writer(_Writer):
         m: dict[str, Any] = {"pbrMetallicRoughness": pbr, "doubleSided": True}
         if opacity < 0.999:
             m["alphaMode"] = "BLEND"
-        # 扫描烘焙的贴图自带光照，不打光；模型库的贴图（材质带 lit）是固有色，要打光
-        if (textured and not mat.get("lit")) or mat.get("unlit"):
+        # 扫描烘焙的贴图自带光照，不打光；模型库的贴图（材质带 lit）和 albedo 的贴图是固有色，要打光
+        if (textured and not mat.get("lit") and mat.get("shading") != "albedo") or mat.get("unlit"):
             m["extensions"] = {"KHR_materials_unlit": {}}
+        else:
+            self.lit_maps(mat, m, pbr)
         self.materials.append(m)
         self.mat_index[key] = len(self.materials) - 1
         return self.mat_index[key]
@@ -130,10 +130,7 @@ def export_glb(
         "buffers": [{"byteLength": w.offset}],
         "extensionsUsed": ["KHR_materials_unlit"],
     }
-    if w.images:
-        doc["images"] = w.images
-        doc["textures"] = [{"source": i, "sampler": 0} for i in range(len(w.images))]
-        doc["samplers"] = [{"magFilter": 9729, "minFilter": 9987, "wrapS": 33071, "wrapT": 33071}]
+    w.write_textures(doc)
     data = glb_bytes(doc, w.chunks)
     with open(path, "wb") as fh:
         fh.write(data)

@@ -3,15 +3,17 @@
 跨语言向量（三角形数、包围盒、不合法的数据）在 test_shared_vectors.py 里核对，这里补边界情况。
 """
 
+import io
 import json
 import struct
 
 import numpy as np
 import pytest
+from PIL import Image
 
 from metaverse_worker import shapes as sh
 from metaverse_worker.processing import shape_mesh as sm
-from metaverse_worker.processing.preview_glb import export_glb
+from metaverse_worker.processing.preview_glb import export_glb, gltf_image, roughness_png
 
 SLANTED = [[0, 0, 0], [2, 0, 0], [2, 0.9, 0.3], [0, 0.9, 0.3]]
 BOW = [
@@ -204,3 +206,58 @@ def test_preview_glb_writes_blend_and_unlit(tmp_path):
     # 都不打光、也没有不打光的材质时，不写 extensionsUsed。
     export_glb({"wedge": entities["wedge"]}, {}, str(path), unlit=False)
     assert "extensionsUsed" not in _read_glb(path)
+
+
+def test_preview_glb_tiling_normal_and_roughness_maps(tmp_path):
+    """SHAPES 2"glb 导出"：平铺的材质重复采样；受光照的材质写法线贴图、粗糙度贴图（G 通道）和标量。"""
+
+    def image(fmt: str, value: tuple[int, int, int]) -> bytes:
+        out = io.BytesIO()
+        Image.new("RGB", (4, 4), value).save(out, fmt)
+        return out.getvalue()
+
+    color, normal, rough = "c" * 64, "d" * 64, "e" * 64
+    textures = {
+        color: image("JPEG", (200, 180, 160)),
+        normal: image("PNG", (128, 128, 255)),
+        rough: image("WEBP", (10, 90, 200)),
+    }
+    maps = {"normalMap": normal, "normalScale": 0.5, "roughnessMap": rough, "roughness": 0.8}
+    tiled = {"texture": color, "uv": "box", "tile": [0.5, 0.5], "shading": "albedo", **maps}
+    entities = {
+        "floor": {"kind": "object", "shape": sh.box([2, 0.02, 2], material=tiled)},
+        "scan": {"kind": "object", "shape": sh.box([1, 1, 1], material={"texture": color, "uv": "box"})},
+        "metal": {
+            "kind": "object",
+            "shape": sh.box([1, 1, 1], material={"color": [90, 90, 96], "metalness": 0.7}),
+        },
+    }
+    path = tmp_path / "maps.glb"
+    export_glb(entities, textures, str(path), unlit=False)
+    doc = _read_glb(path)
+    floor = next(m for m in doc["materials"] if "normalTexture" in m)
+    pbr = floor["pbrMetallicRoughness"]
+    assert pbr["roughnessFactor"] == pytest.approx(0.8) and pbr["metallicFactor"] == 0
+    assert floor["normalTexture"]["scale"] == 0.5
+    sampler = {i: doc["samplers"][t["sampler"]] for i, t in enumerate(doc["textures"])}
+    for ref in (pbr["baseColorTexture"], floor["normalTexture"], pbr["metallicRoughnessTexture"]):
+        assert sampler[ref["index"]]["wrapS"] == 10497 and sampler[ref["index"]]["wrapT"] == 10497
+    # 同一张颜色贴图：平铺的和不平铺的各一个 texture，图片只嵌一次
+    others = [
+        m for m in doc["materials"] if m is not floor and "baseColorTexture" in m["pbrMetallicRoughness"]
+    ]
+    assert [sampler[m["pbrMetallicRoughness"]["baseColorTexture"]["index"]]["wrapS"] for m in others] == [
+        33071
+    ]
+    assert len(doc["images"]) == 3 and len(doc["textures"]) == 4
+    assert {img["mimeType"] for img in doc["images"]} == {"image/jpeg", "image/png"}
+    metal = next(
+        m for m in doc["materials"] if m["pbrMetallicRoughness"]["metallicFactor"] == pytest.approx(0.7)
+    )
+    assert metal["pbrMetallicRoughness"]["roughnessFactor"] == pytest.approx(0.9)
+    # 粗糙度贴图：R、B 是 255，G 取原图的 G 通道；webp 转成 PNG
+    with Image.open(io.BytesIO(roughness_png(textures[rough]))) as img:
+        r, g, b = img.convert("RGB").getpixel((1, 1))
+    assert r == 255 and b == 255 and abs(g - 90) <= 3
+    data, mime = gltf_image(textures[rough])
+    assert mime == "image/png" and data[:4] == b"\x89PNG"

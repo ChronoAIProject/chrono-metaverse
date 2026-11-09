@@ -490,6 +490,7 @@ impl Repo {
             job_id: None,
             draft_id: plan.draft_id.clone(),
             script_ref: plan.script_ref.clone(),
+            bundle_ref: None,
         };
         let commits = self.collection(collections::COMMITS);
         match commits

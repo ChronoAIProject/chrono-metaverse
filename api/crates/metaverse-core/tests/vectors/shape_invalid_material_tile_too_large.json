@@ -1,0 +1,25 @@
+{
+  "description": "tile 的每个数都不能超过 100（米）",
+  "errorMessage": "$.material.tile: tile 的两个数都必须大于 0、不超过 100（米）",
+  "errorPath": "$.material.tile",
+  "kind": "shape",
+  "name": "invalid-material-tile-too-large",
+  "shape": {
+    "material": {
+      "texture": "9f2c7d4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d",
+      "tile": [
+        1,
+        100.5
+      ],
+      "uv": "box"
+    },
+    "size": [
+      2,
+      1,
+      0.5
+    ],
+    "type": "box"
+  },
+  "templates": {},
+  "valid": false
+}

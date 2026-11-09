@@ -122,11 +122,7 @@ pub fn needed_chunks(op: &Op, keys: &mut BTreeSet<ChunkKey>) -> Result<(), ApiEr
 }
 
 fn with_index(error: OpError, index: usize) -> OpError {
-    match error {
-        OpError::Invalid { message, .. } => OpError::Invalid { index, message },
-        OpError::Scope { source, .. } => OpError::Scope { index, source },
-        other => other,
-    }
+    error.at(index)
 }
 
 /// 读出 `hashes` 对应的记录 body，解析成具体类型。
@@ -228,6 +224,8 @@ impl Workspace {
                 anchors,
                 palette,
                 provisional_blocks: provisional,
+                // 范围种类、锚点历史、草稿的扫描：接上重建路径时按草稿填（现在都是扩展草稿）。
+                ..WorkingState::default()
             },
             manifest,
             loaded: BTreeSet::new(),

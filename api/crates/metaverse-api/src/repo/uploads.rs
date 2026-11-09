@@ -57,14 +57,7 @@ pub(super) fn to_bson<T: serde::Serialize>(value: &T) -> Result<Bson, RepoError>
 }
 
 fn purpose_name(purpose: UploadPurpose) -> &'static str {
-    match purpose {
-        UploadPurpose::Scan => "scan",
-        UploadPurpose::Model => "model",
-        UploadPurpose::Texture => "texture",
-        UploadPurpose::Ops => "ops",
-        UploadPurpose::Script => "script",
-        UploadPurpose::Authored => "authored",
-    }
+    purpose.name()
 }
 
 /// 进行中的上传（`open`、`complete`）的数量和声明的总字节数。

@@ -376,6 +376,9 @@ pub async fn append_ops(
         entities: draft.touched.entities.iter().cloned().collect(),
         anchors: draft.touched.anchors.iter().cloned().collect(),
         palette: draft.touched.palette,
+        scan: draft.touched.scan,
+        rebuilt_layer: draft.touched.rebuilt_layer,
+        ..TouchedSet::default()
     };
     all_touched.merge(touched);
     draft.touched = Touched {

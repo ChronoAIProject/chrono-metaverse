@@ -12,7 +12,7 @@ use crate::grid::{Aabb, GridBox};
 use crate::ids::{is_object_id, SPACE_ANCHOR_ID};
 use crate::is_sha256_hex;
 use crate::model::{DataVisibility, Layer};
-use crate::shape::{Shape, TemplateSource};
+use crate::shape::{Shading, Shape, TemplateSource};
 
 /// 物件 `props` 规范化后的最大字节数。
 pub const MAX_PROPS_BYTES: usize = 16 * 1024;
@@ -20,6 +20,14 @@ pub const MAX_PROPS_BYTES: usize = 16 * 1024;
 pub const MAX_LABEL_CHARS: usize = 200;
 /// 声明的包围盒允许比计算结果小这么多（米），用来吸收浮点误差。
 pub const BOUNDS_TOLERANCE: f64 = 1e-6;
+/// 重建层新放的物件（含模板）编号的前缀；扩展层新放的物件不能用它（docs/design/server-slim.md
+/// 2.5 第 1 条）。物件和模板共用一个编号空间，两层各用一段，地块合作方抢不走重建包要用的编号。
+pub const REBUILT_ID_PREFIX: &str = "rb.";
+
+/// 编号是不是重建层的编号（以 [`REBUILT_ID_PREFIX`] 开头）。
+pub fn is_rebuilt_id(id: &str) -> bool {
+    id.starts_with(REBUILT_ID_PREFIX)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RecordError {
@@ -128,7 +136,7 @@ pub fn validate_props(props: &Map<String, Value>) -> Result<(), RecordError> {
     Ok(())
 }
 
-/// 物件模型（`assetHash`）整体的外观：调色、半透明、不受光照（SHAPES 3）。
+/// 物件模型（`assetHash`）整体的外观：调色、半透明、不受光照、着色方式（SHAPES 3）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ModelMaterial {
@@ -139,6 +147,10 @@ pub struct ModelMaterial {
     pub opacity: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unlit: Option<bool>,
+    /// 网站怎么画模型里的材质：`baked`（不给时，扫描切出来的模型）按扫描烘焙的看法，`albedo`
+    /// （模型库的模型）按 glb 里的材质原样完整受光。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shading: Option<Shading>,
 }
 
 /// 物件记录的 body。
@@ -160,7 +172,7 @@ pub struct EntityBody {
     /// 处理服务校验并重新导出的模型。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asset_hash: Option<String>,
-    /// 模型（`assetHash`）整体的调色、半透明、不受光照；只能和 `assetHash` 一起给。
+    /// 模型（`assetHash`）整体的调色、半透明、不受光照、着色方式；只能和 `assetHash` 一起给。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub material: Option<ModelMaterial>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -418,6 +430,46 @@ mod tests {
     fn model_entities_with_source_and_material() {
         let valid = entity(model_entity(json!({"material": {"tint": [200, 190, 180]}})));
         valid.validate(&NoTemplates).unwrap();
+        // 着色方式：模型库的模型写 albedo，不给时按 baked；只认这两个值。
+        for shading in ["albedo", "baked"] {
+            let body = entity(model_entity(
+                json!({"material": {"tint": [200, 190, 180], "shading": shading}}),
+            ));
+            body.validate(&NoTemplates).unwrap();
+            let back = serde_json::to_value(&body).unwrap();
+            assert_eq!(back["material"]["shading"], json!(shading));
+        }
+        assert_eq!(
+            entity(model_entity(json!({"material": {"shading": "albedo"}})))
+                .material
+                .and_then(|m| m.shading),
+            Some(Shading::Albedo)
+        );
+        for bad in [json!("pbr"), json!("Albedo"), json!(true)] {
+            assert!(
+                serde_json::from_value::<EntityBody>(model_entity(
+                    json!({"material": {"shading": bad.clone()}})
+                ))
+                .is_err(),
+                "{bad}"
+            );
+        }
+        // 形状材质的平铺、法线、粗糙度不能写在模型的 material 上。
+        for field in ["tile", "normalMap", "roughness"] {
+            assert!(
+                serde_json::from_value::<EntityBody>(model_entity(
+                    json!({"material": {field: [1, 1]}})
+                ))
+                .is_err(),
+                "{field}"
+            );
+        }
+        // 只有 assetHash 的物件才有 material，带着色方式也一样。
+        let shape_only = entity(model_entity(json!({
+            "assetHash": null, "material": {"shading": "albedo"},
+            "shape": {"type": "box", "size": [2, 0.8, 0.9], "transform": {"position": [1, 0, 0.45]}}
+        })));
+        assert!(shape_only.validate(&NoTemplates).is_err());
         // 旧数据里 source 是识别来源的字符串，照旧当不透明的值。
         entity(model_entity(json!({"props": {"source": "hint"}})))
             .validate(&NoTemplates)

@@ -44,6 +44,14 @@ export {
   type Plot,
   type Footprint,
 } from './core/scope.js';
+export {
+  checkBundle,
+  checkBundleText,
+  BundleError,
+  type CheckedBundle,
+  type BundleCheckOptions,
+} from './core/bundle.js';
+export { DEFAULT_UPLOAD_LIMITS, type UploadLimits } from './core/limits.js';
 export { canonicalJson, contentHash } from './core/canonical.js';
 export { chunkHash, compressChunk, decompressChunk, type Layer } from './core/chunk.js';
 export type {

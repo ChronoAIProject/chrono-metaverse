@@ -1,5 +1,6 @@
 {
   "base": {
+    "anchorHistory": [],
     "anchors": [],
     "entities": [],
     "fills": [],
@@ -85,12 +86,14 @@
         "id": "garden",
         "kind": "virtual"
       }
-    ]
+    ],
+    "scopeKind": "ext"
   },
   "description": "负坐标按向下取整定位区块：-1 落在区块 -1 的第 31 格",
   "expect": {
     "anchors": [],
     "baseChunks": [],
+    "brokenTemplateRefs": [],
     "chunkChanges": [
       {
         "cx": -2,
@@ -323,6 +326,7 @@
       }
     ],
     "provisionalBlocks": [],
+    "scan": null,
     "touched": {
       "anchors": [],
       "chunks": [
@@ -382,7 +386,10 @@
         }
       ],
       "entities": [],
-      "palette": false
+      "palette": false,
+      "rebuiltLayer": false,
+      "scan": false,
+      "skippedAnchors": []
     }
   },
   "kind": "ops",

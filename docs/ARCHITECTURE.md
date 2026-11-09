@@ -192,7 +192,7 @@ palettes { _id: 内容哈希, spaceId, blocks: [ { id, name, kind: solid|glass|e
 records { _id: 内容哈希, kind: entity | anchor, spaceId, body }
 // 物件 body：{ entityId, layer: rebuilt | ext, kind: structure | object,
 //             shape?（参数化定义：基本形体、轮廓放样、板、凸包、模板实例）, assetHash?（生成的模型）,
-//             material?（模型整体的调色、半透明、不受光照）, textures?,
+//             material?（模型整体的调色、半透明、不受光照、着色方式）, textures?,
 //             position, rotation, scale（连续值）, regionId, anchorId?, props }
 // 锚点 body：{ anchorId, kind: table|seat|zone|door|camera|counter|space,
 //             box | position, label, visibility: public|internal }
@@ -418,7 +418,7 @@ draftChunks（草稿生成的区块，随草稿过期删除，不写进 chunks�
 
 ### 6.3 重建包与重建草稿
 
-- **重建包** = `manifest.json` + 文件。清单写：格式和版本号、生成工具和版本、说明、可选的基础版本 `base: {spaceId, seq}`、扫描元数据（扫描资源、网页用模型、对齐变换、对齐信息）、重建层记录（结构、物体、模板；整体替换或逐件合并）、锚点、建模记录、文件清单（相对路径、用途、sha256、大小）。清单与托管位置无关，不写任何下载地址；包里不能有本地路径；记录里的模型和贴图都写资源哈希，并且每个哈希都在文件清单里。格式见 `docs/design/server-slim.md` 第 6 节（实现时写进 SHAPES）。
+- **重建包** = `manifest.json` + 文件。清单写：格式和版本号、生成工具和版本、说明、可选的基础版本 `base: {spaceId, seq}`、扫描元数据（扫描资源、网页用模型、对齐变换、对齐信息）、重建层记录（结构、物体、模板；整体替换或逐件合并）、锚点、建模记录、文件清单（相对路径、用途、sha256、大小）。清单与托管位置无关，不写任何下载地址；包里不能有本地路径；记录里的模型和贴图都写资源哈希，并且每个哈希都在文件清单里。格式和校验规则见 SHAPES 第 7 节，资源核对记录和各用途上限见 SHAPES 第 8 节。
 - **写入路径**：重建层有自己的路径范围 `rebuild`：上传（`/api/v1/spaces/{space_id}/rebuild/uploads/{purpose}`）、草稿（`.../rebuild/drafts...`）和任务查询（`.../rebuild/jobs...`）都在这个前缀下，NyxID 可以单独授权（9.3）。命令行上传包里的文件（按哈希复用已有资源）和清单，建重建草稿，把清单交进去（**重建草稿只收一个重建包**，没有内联操作）；服务端按固定规则把清单展开成操作：
   - `setScan`：这次提交的扫描层（扫描资源、网页用模型、变换，可选的对齐信息和拍摄时间）；
   - `clearRebuilt`：清掉重建层的全部物件（整体替换时）；

@@ -1,5 +1,6 @@
 {
   "base": {
+    "anchorHistory": [],
     "anchors": [],
     "entities": [],
     "fills": [],
@@ -85,12 +86,14 @@
         "id": "garden",
         "kind": "virtual"
       }
-    ]
+    ],
+    "scopeKind": "ext"
   },
   "description": "地块路径：放模板和两把实例椅子，再放一盏带圆弧轮廓、旋转体和标签的灯；记录哈希按服务端的存法（null 可选字段去掉，props 缺省为 {}）",
   "expect": {
     "anchors": [],
     "baseChunks": [],
+    "brokenTemplateRefs": [],
     "chunkChanges": [],
     "chunks": [],
     "entities": [
@@ -159,6 +162,7 @@
     "ok": true,
     "probes": [],
     "provisionalBlocks": [],
+    "scan": null,
     "touched": {
       "anchors": [],
       "chunks": [],
@@ -168,7 +172,10 @@
         "chair-a",
         "lamp-1"
       ],
-      "palette": false
+      "palette": false,
+      "rebuiltLayer": false,
+      "scan": false,
+      "skippedAnchors": []
     }
   },
   "kind": "ops",
