@@ -442,7 +442,7 @@ v = (−a·sin θ + b·cos θ) / tile[1]
 
 校验按上表的顺序做（先 `format`、`version`，再整体结构，再逐项），出错时给出字段的 JSON 路径（如
 `rebuilt.entities[3].assetHash`；整体结构不对时是 `$`）。Rust（`metaverse_core::bundle`）和命令行
-（`sdk/typescript/src/core/bundle.ts`）给出同样的字段，向量核对。
+（`sdk/typescript/src/core/bundle.ts`）给出同样的字段，向量核对（同一条记录里同时错几处时，命令行可能报在记录本身上）。
 
 ### 展开成操作
 

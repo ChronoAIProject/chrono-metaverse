@@ -212,7 +212,7 @@ Rust 实现之后重新生成，文件没有变化）。接口服务、本地工
 | `spaceTemplates` | 目标空间重建层已有的模板 `{ 编号: 形状 }`，只在 `merge` 模式下可以引用；`null` 没有 |
 | `apply` | 可选：`{ base, runs }`。`base` 是基础状态（`entities`、`anchors`、`anchorHistory`、`regions`、`plots`），在上面按重建草稿的规则作用展开的操作 `runs` 次，每次以上一次的结果为基础（锚点历史加上已经出现过的锚点） |
 | `expect.valid` | 是否合法 |
-| `expect.field`、`expect.message` | 不合法时出错的字段（JSON 路径，`$` 表示整体结构）和 Rust 的说明。各边要给出相同的 `field` |
+| `expect.field`、`expect.message` | 不合法时出错的字段（JSON 路径，`$` 表示整体结构）和 Rust 的说明。各边要给出相同的 `field`（向量每个只错一处；同一条记录里同时错几处时，命令行解析记录就做形状的取值检查，可能报在记录本身上） |
 | `expect.references` | 合法时记录里引用到的全部资源 `{ 哈希: 用途 }` |
 | `expect.ops` | 合法时展开成的操作（SHAPES 7"展开成操作"） |
 | `expect.runs` | 有 `apply` 时每次作用的结果：`touched`（同 4.1，只有物件、锚点、扫描、重建层和跳过的锚点）、作用后的 `entities`、`anchors`（`{ id, hash }`）、`brokenTemplateRefs`、`unchanged`（物件和锚点与作用前完全相同） |

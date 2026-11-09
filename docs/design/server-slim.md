@@ -977,6 +977,9 @@ S1 做完后的状态（实施记录）：
   4. 线上前厅的核对没有用公开快照（分享令牌是部署密钥，拿不到），改用线上第 3 版的来源：`lobby-authored.json` 的 52 个
      物件和 1 个模板都在重建层、没有 `rb.` 开头的编号，结构由处理服务的结构算法写入（编号如 `floor`，也不用 `rb.`）；NyxID 注册之前线上只有种子
      能写，扩展层没有物件，也就没有跨层的模板引用。R2 上线前用分享链接的快照再核对一次（S10 的工作区 `pull --share`）。
+- 留给后面几步接上的（核心库已经备好）：每次追加之后和发布时的模板引用完整性检查（`broken_template_refs` → 409
+  `broken_template_ref`）、按核对记录判断资源角色（`check::fits`）和模型与记录一致（`check::model_fits_bounds`）、工作状态按
+  草稿填范围种类和锚点历史、重建草稿的交包和展开（`Bundle::parse`、`for_each_op`）都在 S3；各用途上限的配置项在 S2，`GET /api/v1/spaces/{space_id}` 返回 `uploadLimits` 在 S3。
 
 #### S2 后台执行器、上传核对、清理
 
