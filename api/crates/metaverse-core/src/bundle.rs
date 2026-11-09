@@ -381,6 +381,10 @@ impl<'a> Bundle<'a> {
         if text.len() as u64 > limits.bundle.max_bytes {
             return fail("$", format!("清单超过 {} 字节", limits.bundle.max_bytes));
         }
+        // serde 也能把 JSON 数组读成结构体，这里先确认是对象（与命令行相同）。
+        if !text.trim_start().starts_with('{') {
+            return fail("$", "清单必须是 JSON 对象");
+        }
         let header: Header = serde_json::from_str(text)
             .or_else(|error| fail("$", format!("清单必须是 JSON 对象：{error}")))?;
         if header.format.as_ref().and_then(Value::as_str) != Some(BUNDLE_FORMAT) {
@@ -957,6 +961,11 @@ mod tests {
         }
         for fine in ["4.31", "rb.chair", "https://example.com", "C:x", "a/b"] {
             assert!(!looks_like_local_path(fine), "{fine}");
+        }
+        // 清单必须是 JSON 对象（serde 也能把数组读成结构体，这里与命令行一样报在 $ 上）。
+        for text in [r#"["chrono-metaverse-rebuild-bundle", 1]"#, r#""x""#, "{"] {
+            let error = Bundle::parse(text, &UploadLimits::default(), None).unwrap_err();
+            assert_eq!(error.field, "$", "{text}");
         }
     }
 }
