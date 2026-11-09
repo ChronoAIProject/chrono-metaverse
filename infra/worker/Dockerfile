@@ -8,7 +8,7 @@
 FROM ghcr.io/astral-sh/uv:0.11.32@sha256:df4cae8f3a96d175e2e5f992e597550000edbe78fdc2594d5cd8de1a217f504c AS uv
 
 # ---- 构建 ----
-FROM python:3.13.18-slim-trixie@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90 AS build
+FROM python:3.15.0-slim-trixie@sha256:f5b92f2a669a4c347044f29367f31983280b648250ca94dea66f98c53bc87e58 AS build
 COPY --from=uv /uv /usr/local/bin/uv
 WORKDIR /src/worker
 COPY worker/ ./
@@ -36,7 +36,7 @@ fi
 INSTALL
 
 # ---- 运行 ----
-FROM python:3.13.18-slim-trixie@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90 AS runtime
+FROM python:3.15.0-slim-trixie@sha256:f5b92f2a669a4c347044f29367f31983280b648250ca94dea66f98c53bc87e58 AS runtime
 LABEL org.opencontainers.image.source="https://github.com/ChronoAIProject/chrono-metaverse" \
       org.opencontainers.image.title="chrono-metaverse-worker" \
       org.opencontainers.image.description="chrono-metaverse 处理服务：上传校验、扫描对齐、重建、体素化、清理"
