@@ -179,13 +179,16 @@ def mark_done(
     *,
     result_commit_id: str | None = None,
     result: Mapping[str, Any] | None = None,
+    extra: Mapping[str, Any] | None = None,
     session: ClientSession | None = None,
 ) -> None:
     """按栅栏条件把任务标记为完成。写回提交时必须和插入提交放在同一个事务里（传 session）。
 
+    `extra` 是同时写到任务文档上的其他字段（例如计入空间用量的 `storageBytes`）。
     匹配不到时抛 LeaseLost，调用方据此中止事务、丢弃结果。
     """
     update: dict[str, Any] = {
+        **(extra or {}),
         "status": JobStatus.DONE,
         "finishedAt": format_ts(store.clock()),
     }

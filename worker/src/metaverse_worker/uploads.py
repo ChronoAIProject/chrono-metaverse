@@ -14,7 +14,9 @@
 **空间的存储用量 `spaces.storageUsedBytes`**（设计 4.1、6.1）由处理服务累加：上传 `complete → done` 时，
 在同一个事务里给上传写 `storageBytes`（计入的字节数）并把空间的用量加上它（复用已有资源也算本空间的
 用量）；资源被定期清理删掉以后，`release_upload_storage` 把还没减回的上传（`storageReleasedAt` 不存在）
-从各自空间的用量里减回去。处理服务写的提交新登记派生资源时也计入（见 `jobs/writeback.py`）。
+从各自空间的用量里减回去。处理服务写的提交新登记派生资源时也计入（见 `jobs/writeback.py`）。`model_import`
+处理后的模型在任务完成时计入发起任务的空间（记在任务的 `storageBytes` 上），被清理后由
+`release_model_storage` 成对减回（见 `handlers/model_import.py`）。
 
 加减用量都只对上传所在的那个**空间实例**：条件按上传的 `createdAt` 比较空间的 `createdAt`（见
 `store.space_filter`）。空间被删除后又用同一个编号重建时，旧空间的上传既不能完成到新空间里，也不能从新
@@ -134,15 +136,45 @@ def release_upload_storage(store: Store, sha: str) -> int:
             continue
         # 只减上传所在的空间实例：同一个编号重建的空间从没计入过这个上传
         space = upload_space_filter(upload.get("spaceId"), owner, upload)
-        if _release_one(store, upload["_id"], space, int(upload["storageBytes"])):
+        if _release_one(store, C.UPLOADS, upload["_id"], space, int(upload["storageBytes"])):
             released += 1
     return released
 
 
-def _release_one(store: Store, upload_id: Any, space_filter: dict[str, Any], size: int) -> bool:
+def release_model_storage(store: Store, sha: str) -> int:
+    """`model_import` 处理后的模型被清理删掉以后，把计入的字节从发起任务的空间减回去（与计入成对）。
+
+    计入记在任务上（`storageBytes`），减回时写 `storageReleasedAt`，规则与上传相同。返回减回了几个任务。
+    """
+    released = 0
+    counted = store.jobs.find(
+        {
+            "kind": "model_import",
+            "status": JobStatus.DONE,
+            "result.modelHash": sha,
+            "storageBytes": {"$gt": 0},
+            "storageReleasedAt": {"$exists": False},
+        },
+        {"_id": 1, "spaceId": 1, "owner": 1, "storageBytes": 1, "createdAt": 1},
+    )
+    for job in list(counted):
+        try:
+            owner = Owner.from_doc(job)
+        except ValueError as error:
+            log.error("任务 %s 记录不合法，不减回用量：%s", job["_id"], error)
+            continue
+        space = space_filter(job.get("spaceId"), owner, job.get("createdAt"))
+        if _release_one(store, C.JOBS, job["_id"], space, int(job["storageBytes"])):
+            released += 1
+    return released
+
+
+def _release_one(
+    store: Store, collection: str, record_id: Any, space_filter: dict[str, Any], size: int
+) -> bool:
     def txn(session: ClientSession) -> bool:
-        moved = store.uploads.update_one(
-            {"_id": upload_id, "storageReleasedAt": {"$exists": False}},
+        moved = store.col(collection).update_one(
+            {"_id": record_id, "storageReleasedAt": {"$exists": False}},
             {"$set": {"storageReleasedAt": now_ts(store.clock)}},
             session=session,
         )

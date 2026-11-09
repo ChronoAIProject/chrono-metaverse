@@ -6,7 +6,7 @@
    校验任务已经失败、上传却还停在 `complete` 的（`uploads.settle_stuck_uploads`），免得它一直占着配额。
 2. **没人引用的资源**：上传（或最近一次被复用）已超过 7 天、仍没有被任何提交、草稿（`opsRefs.assetHash`、
    `assets`）、物件记录、方块表、资源引用表或未结束的任务引用的资源：先删 `files` 文档（不再可见），
-   再删数据块，最后把上传时计入的存储用量从各自空间的 `storageUsedBytes` 里减回去。
+   再删数据块，最后把上传时（以及物件模型导出时）计入的存储用量从各自空间的 `storageUsedBytes` 里减回去。
 3. **过期的草稿、草稿区块、预览令牌**（设计 5.6、13.2）：接口服务把 `drafts`、`draftChunks`、`previews` 的
    `expiresAt` 写成 RFC 3339 字符串（固定格式，字符串比较就是时间比较），不建 TTL 索引，由这里清理。
    过期的草稿（不论是否已发布）先删草稿本身，再删它的预览令牌和草稿区块；预览令牌（最长 7 天）和草稿区块
@@ -28,7 +28,7 @@ from typing import Any
 from ..assets import delete_file_chunks
 from ..store import C, JobStatus, Store, UploadStatus
 from ..timeutil import format_ts
-from ..uploads import release_upload_storage, settle_stuck_uploads
+from ..uploads import release_model_storage, release_upload_storage, settle_stuck_uploads
 from .writeback import backfill_published_chunks
 
 log = logging.getLogger(__name__)
@@ -148,8 +148,9 @@ def cleanup_assets(store: Store, grace_days: float) -> int:
         )
         if gone.deleted_count == 1:
             delete_file_chunks(store, doc["_id"])
-            # 这份内容不再占空间：把计过用量的上传从各自空间的 storageUsedBytes 里减回去
+            # 这份内容不再占空间：把计过用量的上传、物件模型导出从各自空间的 storageUsedBytes 里减回去
             release_upload_storage(store, sha)
+            release_model_storage(store, sha)
             removed += 1
     if removed:
         log.info("清理了 %d 个没人引用的资源", removed)

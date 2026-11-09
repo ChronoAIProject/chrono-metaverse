@@ -291,7 +291,8 @@ uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceI
 读 glb / obj / drc（或含它们的 zip）→ 解析前检查（三角形数、贴图像素、坐标不超过 ±1000 米）→ 超过
 `WORKER_MODEL_MAX_TRIANGLES` 就减面、贴图缩到 `WORKER_MODEL_MAX_TEXTURE_SIDE` 以内（有透明就存 PNG，否则
 JPEG）→ 重新导出 glb（没有贴图时保留顶点颜色或材质底色）。登记处理后的资源（`metadata.kind = model`，
-`metadata.sourceHash` = 原资源），不写提交：
+`metadata.sourceHash` = 原资源），不写提交；同一个事务里任务标记完成、处理后的模型计入发起任务的空间用量
+（任务的 `storageBytes`，见"空间存储用量"）：
 
 `result = {modelHash, sourceHash, bytes, triangles, vertices, sourceTriangles, textureSide, bounds: {min, max}}`。
 
@@ -329,11 +330,16 @@ result.metrics  # 任意 JSON，原样放进 result.objects
 |---|---|
 | `upload_verify` 把上传改成 `done`（新登记或复用已有资源都算） | `+size`，上传写 `storageBytes = size` |
 | 处理服务写的提交（`scan_import`、`rebuild`）在 `assetRefs` 里**新**登记本空间的派生资源（网页用模型、贴图） | `+资源字节数`（同一空间同一资源只计一次） |
-| 定期清理删掉没人引用的资源 | 对每个 `assetHash` 是它、带 `storageBytes`、还没有 `storageReleasedAt` 的上传：写 `storageReleasedAt`，所属空间 `-storageBytes`（减到 0 为止，接口服务按 u64 读） |
+| `model_import` 完成（处理后的模型新登记或复用已有资源都算） | `+模型字节数`，任务写 `storageBytes`；和任务完成在同一个事务里 |
+| 定期清理删掉没人引用的资源 | 对每个 `assetHash` 是它、带 `storageBytes`、还没有 `storageReleasedAt` 的上传，以及 `result.modelHash` 是它的同样的 `model_import` 任务：写 `storageReleasedAt`，所属空间 `-storageBytes`（减到 0 为止，接口服务按 u64 读） |
 
-不计入的：区块、物件记录、方块表（在各自的集合里，不在 GridFS）；`model_import` 重新导出的模型（它的来源
-上传已经计入）。接口服务在"哈希已存在、直接复用"创建上传（创建即 `done`）时也应 `+size` 并写
-`storageBytes`，这样资源被清理时能一并减回。
+规则是"谁在 GridFS 里产生一份新的资源，谁就在产生时计入、在资源被删时成对减回"：原始上传过了宽限期没人
+引用就会被清理、减回，而处理后的模型可以被提交永久引用，所以它必须单独计入，不能靠"来源上传已经计入"。
+引用已经计过的资源（接口服务发布草稿时登记 `assetRefs`、放物件引用 `modelHash`）不再计。
+
+不计入的：区块、物件记录、方块表（在各自的集合里，不在 GridFS）。接口服务自己产生的资源也应按同一规则
+计入：在"哈希已存在、直接复用"创建上传（创建即 `done`）时 `+size` 并写 `storageBytes`；发布草稿时把多个
+操作文件合并成一个新资源（`put_asset_bytes`）时，在提交事务里计入并记下来，资源被清理时才能一并减回。
 
 ## 定期清理
 
