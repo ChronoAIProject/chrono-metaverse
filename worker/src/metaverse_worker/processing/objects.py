@@ -13,10 +13,12 @@ structure 是同一网格上 `extract_structure` 的结果。
 2. **识别**：有提示用提示的 `kind`、`label`；没有就按规则（尺寸、座面、台面、颜色、圆度）；
 3. **朝向和原点**：最小外接矩形（接近墙的方向时取墙的方向），椅子按靠背定正面，沙发靠背朝 −z；
    原点在物体底面中心的地面上，偏航是连续值；
-4. **拟合**（`fit_templates`）：按类型组合圆角盒、带圆弧的挤出、旋转体、扫掠、截面放样；
+4. **拟合**（`fit_templates`，前台在 `fit_counter`）：按类型组合圆角盒、带圆弧的挤出、旋转体、扫掠、
+   截面放样；
 5. **同款合并**：同类型、尺寸相近的物体（例如一排会议椅）对齐后合并点云拟合一个模板，各处用实例摆放；
    对齐后与其他成员差得多的退出合并、单独拟合；
 6. **上色和贴图**（`fit_texture`）：颜色单一的部件用纯色，其余按部件的投影烘焙小贴图；
+   杂物和小柜子（最长边不到 0.8 米）只用纯色；
 7. **自查**：每个物体的扫描点到模型的距离（均值、90% 分位、3 厘米内的比例）写进 `fit`，总体写进指标。
 """
 
@@ -39,6 +41,7 @@ from ..canonical import canonical_json
 from ..ids import slug_id
 from ..records import entity_body
 from .bake import FaceTable
+from .fit_counter import fit_counter
 from .fit_measure import Rect, dirs_to_local, fit_circle, height_peaks, min_area_rect, to_local
 from .fit_segment import ObjectPoints, Segment, SegmentParams, segment_objects
 from .fit_templates import (
@@ -46,6 +49,7 @@ from .fit_templates import (
     circularity,
     fit_box,
     fit_chair,
+    fit_faces_box,
     fit_plant,
     fit_round,
     fit_sofa,
@@ -73,6 +77,7 @@ LABELS = {
     "clutter": "杂物",
 }
 FURNITURE = {"chair", "table", "sofa", "counter", "cabinet"}
+SMALL = 0.8  # 小件：最长边不到 0.8 米（小柜子只用纯色；杂物和小件的俯视轮廓偏向简单的）
 # 提示里常见的别名
 KIND_ALIASES = {
     "desk": "table",
@@ -387,6 +392,10 @@ def _fit_local_raw(o: Local, kind: str) -> tuple[dict[str, Any], str]:
     if kind == "sofa":
         return fit_sofa(o), "sofa"
     if kind == "counter":
+        # 外壳 + 台面 + 工作台面的多面体；量不出外壳时退回分层挤出
+        shell = fit_counter(o)
+        if shell is not None:
+            return shell, "counter"
         return _best_of(
             o,
             [
@@ -399,10 +408,17 @@ def _fit_local_raw(o: Local, kind: str) -> tuple[dict[str, Any], str]:
         return fit_plant(o), "lathe"
     if kind in ("round", "lamp"):
         return fit_round(o), "lathe"
+    if kind == "cabinet":
+        # 只扫到两个相邻面的高柜（镜面的虚像散在外面）：按看到的面定尺寸的竖直圆角盒
+        faces = fit_faces_box(o)
+        if faces is not None:
+            return faces, "faces"
     ext = np.ptp(o.L, axis=0)
     dims = sorted(ext)
     uv = "planar" if dims[0] < 0.4 * dims[1] else "cylindrical"
-    cands = [("box", lambda: fit_box(o, uv=uv))]
+    # 杂物和小件的俯视轮廓偏向简单的（圆角矩形、凸包），不追一堆东西拼出来的凹凸
+    small = kind == "clutter" or max(ext[0], ext[2]) < SMALL
+    cands = [("box", lambda: fit_box(o, uv=uv, complexity=0.015 if small else 0.004))]
     if kind in ("cabinet", "clutter") and float(np.percentile(o.y, 99)) > 0.3:
         cands.append(("stack", lambda: fit_stack(o, uv=uv)))
         if float(np.percentile(o.y, 99)) > 1.5:
@@ -604,6 +620,14 @@ def _groups(objs: list[Obj], prm: ObjectParams) -> list[list[Obj]]:
     return out
 
 
+def _textured(kind: str, size: float, min_size: float = SMALL) -> bool:
+    """杂物和小柜子（最长边不到 0.8 米）只用纯色：它们身上的"图案"多半是反光、粘连进来的桌面和扫描噪声，
+    贴上去像一块块玻璃；纯色的圆角盒干净。桌子（边几的大理石台面）等照旧按颜色是否单一决定。"""
+    if kind == "clutter":
+        return False
+    return not (kind == "cabinet" and size < min_size)
+
+
 def _world_shape(local_shape: dict[str, Any], origin: np.ndarray, yaw: float) -> dict[str, Any]:
     shape = dict(local_shape)
     shape["transform"] = sh.transform(position=origin.tolist(), yaw=yaw)
@@ -706,7 +730,17 @@ def reconstruct_objects(mesh: ScanMesh, structure, *, params: dict | None = None
                     np.concatenate([s[1] for s in srcs]),
                 )
                 size = float(np.ptp(pooled.L, axis=0).max())
-                finalize_materials(tshape, pooled.L, pooled.C, pooled.N, csrc, prm.texture, size, textures)
+                finalize_materials(
+                    tshape,
+                    pooled.L,
+                    pooled.C,
+                    pooled.N,
+                    csrc,
+                    prm.texture,
+                    size,
+                    textures,
+                    allow_textures=_textured(ref.kind, size),
+                )
                 tshape = _clean_shape(tshape)
                 templates[tid] = tshape
                 entities[tid] = entity_body(
@@ -740,7 +774,17 @@ def reconstruct_objects(mesh: ScanMesh, structure, *, params: dict | None = None
             wshape = _world_shape(lshape, o.origin, o.yaw)
             csrc = _color_source(table, o.faces, prm, seed=zlib.crc32(o.entity_id.encode()) % 1000)
             size = float(np.ptp(o.local.L, axis=0).max())
-            finalize_materials(wshape, o.P, o.C, o.N, csrc, prm.texture, size, textures)
+            finalize_materials(
+                wshape,
+                o.P,
+                o.C,
+                o.N,
+                csrc,
+                prm.texture,
+                size,
+                textures,
+                allow_textures=_textured(o.kind, size),
+            )
             wshape = _clean_shape(wshape)
             d = _distances(wshape, o.P, templates)
             fits[o.entity_id] = d

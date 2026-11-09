@@ -2,6 +2,8 @@
 
 - **部件归属**：模型每个叶子形状（部件）的网格密集采样，扫描点归最近的部件；
 - **纯色还是贴图**：部件附近扫描点的亮度标准差小（颜色单一）就用纯色（中位数）；否则烘焙贴图；
+  同一材质组（`_part.group`）的部件取整组扫描点的同一个颜色；声明浅色单一材质（`_part.albedo = "bright"`）
+  的取亮的那一半的中位色（烘焙的阴影不算进颜色）；
 - **贴图转移**：部件按网站同样的投影（`planar` 沿最薄的轴、`cylindrical` 绕竖直中轴）展开 UV，
   每个纹素落到模型表面的一点，取原扫描最近表面（法线朝向相容）的颜色；正反两面落在同一纹素时，
   扫描里看得更多的那一面优先；没采到的纹素用 push-pull 补；JPEG 编码，内容哈希作资源编号；
@@ -288,6 +290,29 @@ def finalize_materials(
             color_src = ColorSource(color_src.P[keep], color_src.C[keep], color_src.N[keep])
     texel = float(np.interp(size_hint, [1.0, 3.0], [tp.texel_small, tp.texel_large]))
     max_px = tp.max_px_large if size_hint > 1.5 else tp.max_px
+
+    def base_color(cols: np.ndarray, bright: bool) -> np.ndarray:
+        if bright and len(cols) > 20:
+            # 单一的浅色材质（前台的白色外壳）：扫描里烘焙的阴影把中位色压暗，
+            # 取亮的那一半（按亮度排序的后一半）的中位色
+            order = np.argsort(luminance(cols), kind="stable")
+            return np.median(cols[order[len(order) // 2 :]].astype(float), axis=0)
+        return np.median(cols.astype(float), axis=0)
+
+    # 同一材质组的部件（沙发的坐垫、靠背、扶手；前台的外壳和台面）用整组扫描点的同一个颜色
+    groups: dict[str, list[np.ndarray]] = {}
+    bright_groups: set[str] = set()
+    for k, path in enumerate(paths):
+        info = parts_info.get(path, {})
+        if info.get("group"):
+            groups.setdefault(info["group"], []).append(scan_C[(owner == k) & (d < tp.assign_dist)])
+            if info.get("albedo") == "bright":
+                bright_groups.add(info["group"])
+    group_color = {
+        g: base_color(np.concatenate(v), g in bright_groups)
+        for g, v in groups.items()
+        if sum(len(a) for a in v) > 0
+    }
     for k, path in enumerate(paths):
         leaf = leaf_at(shape, path)
         info = parts_info.get(path, {"uv": "planar"})
@@ -296,8 +321,10 @@ def finalize_materials(
         if len(cols) == 0:
             near = np.argsort(d)[: max(1, min(50, len(d)))]
             cols = scan_C[near]
-        med = np.median(cols.astype(float), axis=0)
         lum_std = float(np.std(luminance(cols))) if len(cols) > 5 else 0.0
+        med = base_color(cols, info.get("albedo") == "bright")
+        if info.get("group") in group_color:
+            med = group_color[info["group"]]
         area = meshes[k].area()
         # 部件可以声明"偏向纯色"（椅子壳、椅腿这类单一材质的部件），门槛提高
         limit = math.inf if info.get("prefer") == "color" else tp.lum_std_texture
