@@ -380,16 +380,13 @@ def test_end_to_end_recognizes_and_fits(scene_result):
     assert res.metrics["templates"] == 1
 
 
-def test_small_objects_and_clutter_use_plain_colors(scene_result):
-    """杂物和最长边不到 0.8 米的小件只用纯色（贴上去的多半是反光和粘连进来的表面）。"""
+def test_clutter_and_small_cabinets_use_plain_colors():
+    """杂物和最长边不到 0.8 米的小柜子只用纯色（贴上去的多半是反光和粘连进来的表面）；
+    大柜子、边几（大理石台面是真的图案）照旧可以烘焙贴图。"""
     assert not _textured("clutter", 2.0)
     assert not _textured("cabinet", 0.6)
     assert _textured("cabinet", 1.2)
-    objs = [b for b in scene_result.entities.values() if b["kind"] == "object"]
-    small = [b for b in objs if max(np.subtract(b["bounds"]["max"], b["bounds"]["min"])[[0, 2]]) < 0.7]
-    assert small
-    for b in small:
-        assert not b.get("textures"), b["entityId"]
+    assert _textured("table", 0.6)
 
 
 def test_hints_override_kind_and_label():

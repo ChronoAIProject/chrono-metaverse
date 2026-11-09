@@ -18,7 +18,7 @@ structure 是同一网格上 `extract_structure` 的结果。
 5. **同款合并**：同类型、尺寸相近的物体（例如一排会议椅）对齐后合并点云拟合一个模板，各处用实例摆放；
    对齐后与其他成员差得多的退出合并、单独拟合；
 6. **上色和贴图**（`fit_texture`）：颜色单一的部件用纯色，其余按部件的投影烘焙小贴图；
-   杂物和小件（最长边不到 0.8 米）只用纯色；
+   杂物和小柜子（最长边不到 0.8 米）只用纯色；
 7. **自查**：每个物体的扫描点到模型的距离（均值、90% 分位、3 厘米内的比例）写进 `fit`，总体写进指标。
 """
 
@@ -77,7 +77,7 @@ LABELS = {
     "clutter": "杂物",
 }
 FURNITURE = {"chair", "table", "sofa", "counter", "cabinet"}
-SMALL = 0.8  # 小件：最长边不到 0.8 米（只用纯色，俯视轮廓偏向简单的）
+SMALL = 0.8  # 小件：最长边不到 0.8 米（小柜子只用纯色；杂物和小件的俯视轮廓偏向简单的）
 # 提示里常见的别名
 KIND_ALIASES = {
     "desk": "table",
@@ -621,9 +621,11 @@ def _groups(objs: list[Obj], prm: ObjectParams) -> list[list[Obj]]:
 
 
 def _textured(kind: str, size: float, min_size: float = SMALL) -> bool:
-    """杂物和小件（最长边不到 0.8 米）只用纯色：它们身上的"图案"多半是反光、粘连进来的桌面和扫描噪声，
-    贴上去像一块块玻璃；纯色的圆角盒干净。"""
-    return kind != "clutter" and size >= min_size
+    """杂物和小柜子（最长边不到 0.8 米）只用纯色：它们身上的"图案"多半是反光、粘连进来的桌面和扫描噪声，
+    贴上去像一块块玻璃；纯色的圆角盒干净。桌子（边几的大理石台面）等照旧按颜色是否单一决定。"""
+    if kind == "clutter":
+        return False
+    return not (kind == "cabinet" and size < min_size)
 
 
 def _world_shape(local_shape: dict[str, Any], origin: np.ndarray, yaw: float) -> dict[str, Any]:
