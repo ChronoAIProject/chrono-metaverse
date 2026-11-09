@@ -1,0 +1,281 @@
+{
+  "base": {
+    "anchorHistory": [],
+    "anchors": [],
+    "entities": [
+      {
+        "bounds": {
+          "max": [
+            0.225,
+            0.87,
+            0.225
+          ],
+          "min": [
+            -0.225,
+            0,
+            -0.225
+          ]
+        },
+        "entityId": "rb.chair-a",
+        "kind": "template",
+        "layer": "rebuilt",
+        "shape": {
+          "children": [
+            {
+              "fillet": 0.01,
+              "size": [
+                0.45,
+                0.04,
+                0.45
+              ],
+              "transform": {
+                "position": [
+                  0,
+                  0.43,
+                  0
+                ]
+              },
+              "type": "box"
+            },
+            {
+              "size": [
+                0.45,
+                0.4,
+                0.03
+              ],
+              "transform": {
+                "position": [
+                  0,
+                  0.47,
+                  -0.21
+                ]
+              },
+              "type": "box"
+            },
+            {
+              "path": [
+                [
+                  -0.2,
+                  0.015,
+                  -0.2
+                ],
+                [
+                  -0.2,
+                  0.43,
+                  -0.2
+                ]
+              ],
+              "section": {
+                "circle": 0.015
+              },
+              "type": "sweep"
+            },
+            {
+              "path": [
+                [
+                  0.2,
+                  0.015,
+                  -0.2
+                ],
+                [
+                  0.2,
+                  0.43,
+                  -0.2
+                ]
+              ],
+              "section": {
+                "circle": 0.015
+              },
+              "type": "sweep"
+            },
+            {
+              "path": [
+                [
+                  -0.2,
+                  0.015,
+                  0.2
+                ],
+                [
+                  -0.2,
+                  0.43,
+                  0.2
+                ]
+              ],
+              "section": {
+                "circle": 0.015
+              },
+              "type": "sweep"
+            },
+            {
+              "path": [
+                [
+                  0.2,
+                  0.015,
+                  0.2
+                ],
+                [
+                  0.2,
+                  0.43,
+                  0.2
+                ]
+              ],
+              "section": {
+                "circle": 0.015
+              },
+              "type": "sweep"
+            }
+          ],
+          "type": "group"
+        }
+      }
+    ],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ],
+    "scopeKind": "ext"
+  },
+  "description": "模板只能被同一层引用：扩展层的物件引用重建层的模板，按模板不存在拒绝",
+  "expect": {
+    "baseChunks": [],
+    "error": {
+      "index": 0,
+      "kind": "invalid",
+      "message": "第 0 条操作：$: 找不到模板 rb.chair-a"
+    },
+    "footprints": [
+      {
+        "cells": [
+          [
+            15,
+            0,
+            15,
+            25,
+            18,
+            25
+          ]
+        ],
+        "spaceWide": false
+      }
+    ],
+    "ok": false
+  },
+  "kind": "ops",
+  "name": "invalid-cross-layer-template",
+  "ops": [
+    {
+      "entity": {
+        "bounds": {
+          "max": [
+            1.225,
+            0.87,
+            1.225
+          ],
+          "min": [
+            0.775,
+            0,
+            0.775
+          ]
+        },
+        "entityId": "chair-9",
+        "kind": "object",
+        "layer": "ext",
+        "shape": {
+          "template": "rb.chair-a",
+          "transform": {
+            "position": [
+              1,
+              0,
+              1
+            ]
+          },
+          "type": "instance"
+        }
+      },
+      "op": "placeEntity"
+    }
+  ],
+  "probeCells": [],
+  "scope": "physical",
+  "spaceId": "vec-space"
+}

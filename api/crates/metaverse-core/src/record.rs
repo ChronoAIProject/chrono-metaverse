@@ -20,6 +20,14 @@ pub const MAX_PROPS_BYTES: usize = 16 * 1024;
 pub const MAX_LABEL_CHARS: usize = 200;
 /// 声明的包围盒允许比计算结果小这么多（米），用来吸收浮点误差。
 pub const BOUNDS_TOLERANCE: f64 = 1e-6;
+/// 重建层新放的物件（含模板）编号的前缀；扩展层新放的物件不能用它（docs/design/server-slim.md
+/// 2.5 第 1 条）。物件和模板共用一个编号空间，两层各用一段，地块合作方抢不走重建包要用的编号。
+pub const REBUILT_ID_PREFIX: &str = "rb.";
+
+/// 编号是不是重建层的编号（以 [`REBUILT_ID_PREFIX`] 开头）。
+pub fn is_rebuilt_id(id: &str) -> bool {
+    id.starts_with(REBUILT_ID_PREFIX)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RecordError {

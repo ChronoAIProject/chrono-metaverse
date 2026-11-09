@@ -1,5 +1,6 @@
 {
   "base": {
+    "anchorHistory": [],
     "anchors": [
       {
         "anchorId": "t1",
@@ -99,7 +100,8 @@
         "id": "garden",
         "kind": "virtual"
       }
-    ]
+    ],
+    "scopeKind": "ext"
   },
   "description": "锚点编号已存在",
   "expect": {

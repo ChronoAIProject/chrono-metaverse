@@ -1,5 +1,6 @@
 {
   "base": {
+    "anchorHistory": [],
     "anchors": [],
     "entities": [
       {
@@ -111,7 +112,8 @@
         "id": "garden",
         "kind": "virtual"
       }
-    ]
+    ],
+    "scopeKind": "ext"
   },
   "description": "同编号的重建层物件只能由任务修改",
   "expect": {
@@ -119,7 +121,7 @@
     "error": {
       "index": 0,
       "kind": "invalid",
-      "message": "第 0 条操作：物件 wall-1 属于重建层，只能由任务修改"
+      "message": "第 0 条操作：物件 wall-1 属于重建层，只能经重建路径修改"
     },
     "footprints": [],
     "ok": false

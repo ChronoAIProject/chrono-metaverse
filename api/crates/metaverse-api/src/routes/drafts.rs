@@ -203,6 +203,11 @@ fn op_error(error: OpError) -> ApiError {
             "invalid_op",
             error.to_string(),
         ),
+        OpError::NotAllowed { .. } => ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "op_not_allowed",
+            error.to_string(),
+        ),
     }
 }
 

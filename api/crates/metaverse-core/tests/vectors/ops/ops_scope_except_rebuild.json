@@ -1,0 +1,134 @@
+{
+  "base": {
+    "anchorHistory": [],
+    "anchors": [],
+    "entities": [],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [],
+    "regions": [],
+    "scopeKind": "rebuild"
+  },
+  "description": "空间没有定义任何区域：重建路径哪里都能放物件",
+  "expect": {
+    "anchors": [],
+    "baseChunks": [],
+    "brokenTemplateRefs": [],
+    "chunkChanges": [],
+    "chunks": [],
+    "entities": [
+      {
+        "hash": "33075c30354aab33fd8e3d427346a7f657bdb02d9a07439301b1629174ab8abc",
+        "id": "rb.box-1"
+      }
+    ],
+    "footprints": [
+      {
+        "cells": [
+          [
+            -1005,
+            0,
+            1595,
+            -995,
+            10,
+            1605
+          ]
+        ],
+        "spaceWide": false
+      }
+    ],
+    "ok": true,
+    "probes": [],
+    "provisionalBlocks": [],
+    "scan": null,
+    "touched": {
+      "anchors": [],
+      "chunks": [],
+      "entities": [
+        "rb.box-1"
+      ],
+      "palette": false,
+      "rebuiltLayer": false,
+      "scan": false,
+      "skippedAnchors": []
+    }
+  },
+  "kind": "ops",
+  "name": "scope-except-rebuild",
+  "ops": [
+    {
+      "entity": {
+        "bounds": {
+          "max": [
+            -49.75,
+            0.5,
+            80.25
+          ],
+          "min": [
+            -50.25,
+            0.0,
+            79.75
+          ]
+        },
+        "entityId": "rb.box-1",
+        "kind": "object",
+        "layer": "rebuilt",
+        "shape": {
+          "size": [
+            0.5,
+            0.5,
+            0.5
+          ],
+          "transform": {
+            "position": [
+              -50.0,
+              0,
+              80.0
+            ]
+          },
+          "type": "box"
+        }
+      },
+      "op": "placeEntity"
+    }
+  ],
+  "probeCells": [],
+  "scope": "rebuild",
+  "spaceId": "vec-space"
+}

@@ -17,7 +17,9 @@ use std::path::{Path, PathBuf};
 use metaverse_core::chunk::{locate_cell, ChunkKey};
 use metaverse_core::grid::GridBox;
 use metaverse_core::model::{Layer, Plot, Region};
-use metaverse_core::ops::{Footprint, Op, OpError, PaletteBlock, TouchedSet, WorkingState};
+use metaverse_core::ops::{
+    Footprint, Op, OpError, PaletteBlock, ScopeKind, TouchedSet, WorkingState,
+};
 use metaverse_core::record::{record_hash, AnchorBody, EntityBody, RecordKind};
 use metaverse_core::scope::{AllowedArea, PathScope};
 use serde_json::{json, Value};
@@ -41,6 +43,11 @@ struct Base {
 fn build_base(base: &Value) -> Base {
     let mut state = WorkingState {
         palette: serde_json::from_value::<Vec<PaletteBlock>>(base["palette"].clone()).unwrap(),
+        kind: match base["scopeKind"].as_str() {
+            Some("rebuild") => ScopeKind::Rebuild,
+            _ => ScopeKind::Ext,
+        },
+        anchor_history: serde_json::from_value(base["anchorHistory"].clone()).unwrap_or_default(),
         ..WorkingState::default()
     };
     for fill in base["fills"].as_array().into_iter().flatten() {
@@ -105,16 +112,25 @@ fn touched_json(touched: &TouchedSet) -> Value {
         "entities": touched.entities,
         "anchors": touched.anchors,
         "palette": touched.palette,
+        "scan": touched.scan,
+        "rebuiltLayer": touched.rebuilt_layer,
+        "skippedAnchors": touched
+            .skipped_anchors
+            .iter()
+            .map(|(id, reason)| json!({"id": id, "reason": reason}))
+            .collect::<Vec<_>>(),
     })
 }
 
-fn error_json(kind: &str, index: usize, error: &OpError) -> Value {
-    let message = match error {
-        OpError::Invalid { message, .. } => format!("第 {index} 条操作：{message}"),
-        OpError::Scope { source, .. } => format!("第 {index} 条操作：{source}"),
-        OpError::TooManyOps => error.to_string(),
+/// 错误类别：`invalid`（操作本身不合法）、`notAllowed`（这种草稿不能用这个操作）、`scope`（超出路径范围）。
+fn error_json(index: usize, error: &OpError) -> Value {
+    let error = error.clone().at(index);
+    let kind = match error {
+        OpError::Invalid { .. } | OpError::TooManyOps => "invalid",
+        OpError::NotAllowed { .. } => "notAllowed",
+        OpError::Scope { .. } => "scope",
     };
-    json!({"kind": kind, "index": index, "message": message})
+    json!({"kind": kind, "index": index, "message": error.to_string()})
 }
 
 /// 按向量的规则逐条作用：先按当前状态算影响范围；给了范围就检查；再作用。
@@ -130,18 +146,18 @@ fn run(
     for (index, op) in ops.iter().enumerate() {
         let footprint = match state.footprint(op) {
             Ok(footprint) => footprint,
-            Err(error) => return (footprints, Err(error_json("invalid", index, &error))),
+            Err(error) => return (footprints, Err(error_json(index, &error))),
         };
         footprints.push(footprint_json(&footprint));
         if let Some(area) = area {
             if let Err(source) = area.check(&footprint) {
                 let error = OpError::Scope { index, source };
-                return (footprints, Err(error_json("scope", index, &error)));
+                return (footprints, Err(error_json(index, &error)));
             }
         }
         match state.apply(op) {
             Ok(more) => touched.merge(more),
-            Err(error) => return (footprints, Err(error_json("invalid", index, &error))),
+            Err(error) => return (footprints, Err(error_json(index, &error))),
         }
     }
     (footprints, Ok((state, touched)))
@@ -181,7 +197,9 @@ fn expect(vector: &Value) -> Value {
             (Ok((state, _)), Ok(_)) => assert_eq!(chunk_hashes(state), chunk_hashes(&scoped)),
             (Err(expected), Err(actual)) => {
                 let index = match actual {
-                    OpError::Invalid { index, .. } | OpError::Scope { index, .. } => index,
+                    OpError::Invalid { index, .. }
+                    | OpError::Scope { index, .. }
+                    | OpError::NotAllowed { index, .. } => index,
                     OpError::TooManyOps => 0,
                 };
                 assert_eq!(expected["index"], json!(index), "{}", vector["name"]);
@@ -240,6 +258,15 @@ fn expect(vector: &Value) -> Value {
             provisional.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
             result["provisionalBlocks"] = json!(provisional);
             result["probes"] = json!(probe_json(&state, &vector["probeCells"]));
+            result["scan"] = match &state.scan {
+                Some(draft) => json!({"scan": draft.scan, "observedAt": draft.observed_at}),
+                None => Value::Null,
+            };
+            result["brokenTemplateRefs"] = json!(state
+                .broken_template_refs()
+                .into_iter()
+                .map(|(entity, template)| json!({"entityId": entity, "template": template}))
+                .collect::<Vec<_>>());
         }
     }
     result
@@ -278,6 +305,9 @@ struct Case {
     scope: Option<&'static str>,
     ops: Value,
     probes: Value,
+    scope_kind: &'static str,
+    anchor_history: Value,
+    layout: Option<(Value, Value)>,
 }
 
 impl Case {
@@ -291,7 +321,27 @@ impl Case {
             scope: None,
             ops,
             probes: json!([]),
+            scope_kind: "ext",
+            anchor_history: json!([]),
+            layout: None,
         }
+    }
+
+    /// 重建草稿（范围种类"重建"，路径范围 `rebuild`）。
+    fn rebuild(mut self) -> Self {
+        self.scope_kind = "rebuild";
+        self.scope = Some("rebuild");
+        self
+    }
+
+    fn history(mut self, ids: Value) -> Self {
+        self.anchor_history = ids;
+        self
+    }
+
+    fn layout(mut self, regions: Value, plots: Value) -> Self {
+        self.layout = Some((regions, plots));
+        self
     }
 
     fn fills(mut self, fills: Value) -> Self {
@@ -320,7 +370,7 @@ impl Case {
     }
 
     fn vector(self) -> (String, Value) {
-        let (regions, plots) = layout();
+        let (regions, plots) = self.layout.clone().unwrap_or_else(layout);
         let name = self.file.trim_start_matches("ops_").replace('_', "-");
         let mut vector = json!({
             "kind": "ops",
@@ -334,6 +384,8 @@ impl Case {
                 "anchors": self.anchors,
                 "regions": regions,
                 "plots": plots,
+                "scopeKind": self.scope_kind,
+                "anchorHistory": self.anchor_history,
             },
             "scope": self.scope,
             "ops": self.ops,
@@ -586,7 +638,241 @@ fn cases() -> Vec<Case> {
         )
         .anchors(json!([{"anchorId": "_space", "kind": "space", "visibility": "public"}]))
         .scope("physical"),
+        Case::new(
+            "ops_remove_if_present",
+            "removeEntity 带 ifPresent：不存在就什么都不做（影响范围为空、不算碰过）；存在时与原来相同",
+            json!([
+                {"op": "removeEntity", "entityId": "ghost", "ifPresent": true},
+                {"op": "removeEntity", "entityId": "old-1", "ifPresent": true}
+            ]),
+        )
+        .entities(json!([{"entityId": "old-1", "layer": "ext", "kind": "object",
+            "assetHash": "9f2c7d4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d",
+            "bounds": {"min": [3, 0, 3], "max": [3.2, 0.5, 3.2]}}]))
+        .scope("physical"),
+        Case::new(
+            "ops_anchor_if_new_history",
+            "createAnchor 带 ifNew：现在就有（t1，exists）、时间线上出现过（gone，existed）都跳过，影响范围为空、不算碰过；从没出现过的 t2 新建",
+            json!([
+                {"op": "createAnchor", "ifNew": true, "anchor": {"anchorId": "t1", "kind": "table", "box": [40, 0, 40, 50, 15, 50], "visibility": "public"}},
+                {"op": "createAnchor", "ifNew": true, "anchor": {"anchorId": "gone", "kind": "door", "position": [1, 0, 1], "visibility": "public"}},
+                {"op": "createAnchor", "ifNew": true, "anchor": {"anchorId": "t2", "kind": "table", "box": [10, 0, 10, 20, 15, 20], "visibility": "internal"}}
+            ]),
+        )
+        .anchors(json!([{"anchorId": "t1", "kind": "table", "box": [0, 0, 0, 10, 15, 10], "visibility": "public"}]))
+        .history(json!(["gone", "t1"]))
+        .scope("physical"),
+        Case::new(
+            "ops_invalid_ext_rb_prefix",
+            "扩展层新放的物件编号不能以 rb. 开头（rb. 留给重建层）",
+            json!([{"op": "placeEntity", "entity": {"entityId": "rb.lamp", "layer": "ext", "kind": "object",
+                "shape": {"type": "box", "size": [0.5, 0.5, 0.5], "transform": {"position": [1, 0, 1]}}, "bounds": {"min": [0.75, 0, 0.75], "max": [1.25, 0.5, 1.25]}}}]),
+        )
+        .scope("physical"),
+        Case::new(
+            "ops_ext_rb_legacy_edit",
+            "已有的扩展层旧编号（rb. 开头）照常可以改",
+            json!([{"op": "placeEntity", "entity": {"entityId": "rb.legacy", "layer": "ext", "kind": "object",
+                "shape": {"type": "box", "size": [0.5, 0.6, 0.5], "transform": {"position": [1, 0, 1]}}, "bounds": {"min": [0.75, 0, 0.75], "max": [1.25, 0.6, 1.25]}}}]),
+        )
+        .entities(json!([{"entityId": "rb.legacy", "layer": "ext", "kind": "object",
+            "shape": {"type": "box", "size": [0.5, 0.5, 0.5], "transform": {"position": [1, 0, 1]}}, "bounds": {"min": [0.75, 0, 0.75], "max": [1.25, 0.5, 1.25]}}]))
+        .scope("physical"),
+        Case::new(
+            "ops_invalid_cross_layer_template",
+            "模板只能被同一层引用：扩展层的物件引用重建层的模板，按模板不存在拒绝",
+            json!([{"op": "placeEntity", "entity": {"entityId": "chair-9", "layer": "ext", "kind": "object",
+                "shape": {"type": "instance", "template": "rb.chair-a", "transform": {"position": [1, 0, 1]}},
+                "bounds": {"min": [0.775, 0, 0.775], "max": [1.225, 0.87, 1.225]}}}]),
+        )
+        .entities(json!([rebuilt_template("rb.chair-a")]))
+        .scope("physical"),
+        Case::new(
+            "ops_template_users_same_layer",
+            "模板的影响范围只算同一层的使用者：重建草稿改重建层模板，扩展层里引用它的旧物件（在虚拟区里）不算；跨层的旧引用由完整性检查列出",
+            json!([{"op": "placeEntity", "entity": rebuilt_template("rb.chair-a")}]),
+        )
+        .entities(json!([rebuilt_template("rb.chair-a"), rebuilt_chair("rb.chair-01", 2.0, 2.0),
+            {"entityId": "chair-ext", "layer": "ext", "kind": "object",
+             "shape": {"type": "instance", "template": "rb.chair-a", "transform": {"position": [6, 0, 1]}},
+             "bounds": {"min": [5.775, 0, 0.775], "max": [6.225, 0.87, 1.225]}}]))
+        .rebuild(),
+        Case::new(
+            "ops_rebuild_replace",
+            "重建草稿：setScan、clearRebuilt（删掉重建层全部物件，含旧编号和模板；扩展层的灯不动）、放模板和实例、带 ifNew 的锚点",
+            json!([
+                scan_op(),
+                {"op": "clearRebuilt"},
+                {"op": "placeEntity", "entity": rebuilt_template("rb.chair-a")},
+                {"op": "placeEntity", "entity": rebuilt_chair("rb.chair-01", 1.0, 1.0)},
+                {"op": "createAnchor", "ifNew": true, "anchor": {"anchorId": "seat-1", "kind": "seat", "position": [1, 0, 1], "visibility": "public"}}
+            ]),
+        )
+        .entities(json!([
+            {"entityId": "wall-01", "layer": "rebuilt", "kind": "structure",
+             "shape": {"type": "box", "size": [4, 3, 0.1], "transform": {"position": [2, 0, 0.05]}},
+             "bounds": {"min": [0, 0, 0], "max": [4, 3, 0.1]}},
+            {"entityId": "chair-a", "layer": "rebuilt", "kind": "template",
+             "shape": {"type": "box", "size": [0.4, 0.8, 0.4]}, "bounds": {"min": [-0.2, 0, -0.2], "max": [0.2, 0.8, 0.2]}},
+            {"entityId": "chair-01", "layer": "rebuilt", "kind": "object",
+             "shape": {"type": "instance", "template": "chair-a", "transform": {"position": [2, 0, 2]}},
+             "bounds": {"min": [1.8, 0, 1.8], "max": [2.2, 0.8, 2.2]}},
+            {"entityId": "lamp", "layer": "ext", "kind": "object",
+             "shape": {"type": "cylinder", "radius": 0.2, "height": 1.5, "transform": {"position": [3, 0, 3]}},
+             "bounds": {"min": [2.8, 0, 2.8], "max": [3.2, 1.5, 3.2]}}
+        ]))
+        .rebuild(),
+        Case::new(
+            "ops_rebuild_clear_breaks_cross_layer",
+            "clearRebuilt 之后，扩展层里跨层引用重建层模板的旧物件引用不到模板：操作本身成功，完整性检查列出缺的引用（接口服务据此 409 broken_template_ref）",
+            json!([{"op": "clearRebuilt"}]),
+        )
+        .entities(json!([
+            {"entityId": "chair-a", "layer": "rebuilt", "kind": "template",
+             "shape": {"type": "box", "size": [0.4, 0.8, 0.4]}, "bounds": {"min": [-0.2, 0, -0.2], "max": [0.2, 0.8, 0.2]}},
+            {"entityId": "chair-ext", "layer": "ext", "kind": "object",
+             "shape": {"type": "instance", "template": "chair-a", "transform": {"position": [2, 0, 2]}},
+             "bounds": {"min": [1.8, 0, 1.8], "max": [2.2, 0.8, 2.2]}}
+        ]))
+        .rebuild(),
+        Case::new(
+            "ops_invalid_rebuild_set_scan_twice",
+            "一个草稿最多一次 setScan",
+            json!([scan_op(), scan_op()]),
+        )
+        .rebuild(),
+        Case::new(
+            "ops_invalid_rebuild_old_id",
+            "重建层新放的物件编号必须以 rb. 开头，旧编号（wall-01）只能删",
+            json!([{"op": "placeEntity", "entity": {"entityId": "wall-01", "layer": "rebuilt", "kind": "structure",
+                "shape": {"type": "box", "size": [4, 3, 0.1], "transform": {"position": [2, 0, 0.05]}},
+                "bounds": {"min": [0, 0, 0], "max": [4, 3, 0.1]}}}]),
+        )
+        .rebuild(),
+        Case::new(
+            "ops_invalid_rebuild_ext_layer",
+            "重建草稿只能放重建层的物件，也不能删扩展层的物件（带 ifPresent 也一样）",
+            json!([{"op": "removeEntity", "entityId": "lamp", "ifPresent": true}]),
+        )
+        .entities(json!([{"entityId": "lamp", "layer": "ext", "kind": "object",
+            "shape": {"type": "cylinder", "radius": 0.2, "height": 1.5, "transform": {"position": [3, 0, 3]}},
+            "bounds": {"min": [2.8, 0, 2.8], "max": [3.2, 1.5, 3.2]}}]))
+        .rebuild(),
+        Case::new(
+            "ops_invalid_rebuild_template_in_use",
+            "重建草稿删重建层的模板：同一层还有物件在用，拒绝",
+            json!([{"op": "removeEntity", "entityId": "rb.chair-a", "ifPresent": true}]),
+        )
+        .entities(json!([rebuilt_template("rb.chair-a"), rebuilt_chair("rb.chair-01", 1.0, 1.0)]))
+        .rebuild(),
+        Case::new(
+            "ops_not_allowed_rebuild_fill",
+            "重建草稿里不能有方块操作（重建包不写方块）",
+            json!([{"op": "fill", "box": [0, 0, 0, 1, 1, 1], "block": 2}]),
+        )
+        .rebuild(),
+        Case::new(
+            "ops_not_allowed_rebuild_move_anchor",
+            "重建草稿里锚点只能新建，不能移动、修改、删除",
+            json!([{"op": "moveAnchor", "anchorId": "t1", "position": [1, 0, 1]}]),
+        )
+        .anchors(json!([{"anchorId": "t1", "kind": "table", "box": [0, 0, 0, 10, 15, 10], "visibility": "public"}]))
+        .rebuild(),
+        Case::new(
+            "ops_not_allowed_rebuild_anchor_without_if_new",
+            "重建草稿里新建锚点必须带 ifNew",
+            json!([{"op": "createAnchor", "anchor": {"anchorId": "t2", "kind": "table", "box": [0, 0, 0, 10, 15, 10], "visibility": "public"}}]),
+        )
+        .rebuild(),
+        Case::new(
+            "ops_not_allowed_ext_set_scan",
+            "实体区草稿不能用 setScan（只由重建包展开产生）",
+            json!([scan_op()]),
+        )
+        .scope("physical"),
+        Case::new(
+            "ops_not_allowed_ext_clear_rebuilt",
+            "地块草稿不能用 clearRebuilt",
+            json!([{"op": "clearRebuilt"}]),
+        )
+        .scope("plot:p1"),
+        Case::new(
+            "ops_scope_rebuild_space_anchor",
+            "重建路径不能动空间级锚点（_space 只允许实体区路径）",
+            json!([{"op": "createAnchor", "ifNew": true, "anchor": {"anchorId": "_space", "kind": "space", "visibility": "public"}}]),
+        )
+        .rebuild(),
+        Case::new(
+            "ops_scope_rebuild_outside_physical",
+            "重建路径的允许范围与实体区路径相同：物件放到虚拟区里超出范围",
+            json!([{"op": "placeEntity", "entity": rebuilt_box("rb.box-1", 6.0, 1.0)}]),
+        )
+        .rebuild(),
+        Case::new(
+            "ops_scope_except_without_physical",
+            "空间没有定义实体区：实体区路径可以改虚拟区和地块以外的任何地方（\"除去\"模式），锚点能挪",
+            json!([
+                {"op": "fill", "box": [-40, 0, -40, -30, 1, -30], "block": 2},
+                {"op": "moveAnchor", "anchorId": "t1", "box": [10, 0, 10, 20, 15, 20]},
+                {"op": "fill", "box": [90, 0, 0, 100, 1, 10], "block": 3}
+            ]),
+        )
+        .anchors(json!([{"anchorId": "t1", "kind": "table", "box": [0, 0, 0, 10, 15, 10], "visibility": "public"}]))
+        .layout(
+            json!([{"id": "garden", "kind": "virtual", "boxes": [[100, 0, 0, 200, 60, 100]]}]),
+            json!([{"id": "p1", "regionId": "garden", "boxes": [[100, 0, 0, 140, 40, 40]]}]),
+        )
+        .scope("physical"),
+        Case::new(
+            "ops_scope_except_rejects_virtual",
+            "空间没有定义实体区：实体区路径碰到虚拟区就超出范围（只碰边界不算）",
+            json!([
+                {"op": "fill", "box": [95, 0, 0, 100, 1, 1], "block": 2},
+                {"op": "fill", "box": [99, 0, 0, 101, 1, 1], "block": 2}
+            ]),
+        )
+        .layout(
+            json!([{"id": "garden", "kind": "virtual", "boxes": [[100, 0, 0, 200, 60, 100]]}]),
+            json!([]),
+        )
+        .scope("physical"),
+        Case::new(
+            "ops_scope_except_rebuild",
+            "空间没有定义任何区域：重建路径哪里都能放物件",
+            json!([{"op": "placeEntity", "entity": rebuilt_box("rb.box-1", -50.0, 80.0)}]),
+        )
+        .layout(json!([]), json!([]))
+        .rebuild(),
     ]
+}
+
+fn rebuilt_template(id: &str) -> Value {
+    let mut template = chair_template();
+    template["entityId"] = json!(id);
+    template["layer"] = json!("rebuilt");
+    template
+}
+
+fn rebuilt_chair(id: &str, x: f64, z: f64) -> Value {
+    let mut chair = chair_at(id, x, z);
+    chair["layer"] = json!("rebuilt");
+    chair["shape"]["template"] = json!("rb.chair-a");
+    chair
+}
+
+/// 不用模板的重建层盒子（0.5 米见方）。
+fn rebuilt_box(id: &str, x: f64, z: f64) -> Value {
+    json!({"entityId": id, "layer": "rebuilt", "kind": "object",
+        "shape": {"type": "box", "size": [0.5, 0.5, 0.5], "transform": {"position": [x, 0, z]}},
+        "bounds": {"min": [x - 0.25, 0.0, z - 0.25], "max": [x + 0.25, 0.5, z + 0.25]}})
+}
+
+fn scan_op() -> Value {
+    json!({"op": "setScan", "observedAt": "2026-10-20T00:00:00.000Z", "scan": {
+        "assetHash": "1111111111111111111111111111111111111111111111111111111111111111",
+        "webModelHashes": ["2222222222222222222222222222222222222222222222222222222222222222"],
+        "transform": [0.5, 0, -0.8660254037844386, 0, 0, 1, 0, 0, 0.8660254037844386, 0, 0.5, 0, 3.25, -0.01, 7.5, 1],
+        "alignment": {"method": "auto", "rotationDeg": -60, "errorCm": 0.8}}})
 }
 
 /// 结构检查：每条输入是否应当被服务端接受（`serde` 反序列化成 `Op`）。
@@ -638,6 +924,53 @@ fn parse_vector() -> (String, Value) {
         json!({"op": "updateAnchor", "anchorId": "t1", "label": "1 号桌", "kind": "counter"}),
         json!({"op": "removeAnchor", "anchorId": "t1"}),
         json!({"op": "removeAnchor"}),
+        // 新字段和新操作。
+        json!({"op": "removeEntity", "entityId": "x", "ifPresent": true}),
+        json!({"op": "removeEntity", "entityId": "x", "ifPresent": null}),
+        json!({"op": "removeEntity", "entityId": "x", "ifPresent": "yes"}),
+        json!({"op": "removeEntity", "entityId": "x", "if_present": true}),
+        json!({"op": "createAnchor", "ifNew": true, "anchor": {"anchorId": "t1", "kind": "table", "box": [0, 0, 0, 1, 1, 1], "visibility": "public"}}),
+        json!({"op": "createAnchor", "ifNew": 1, "anchor": {"anchorId": "t1", "kind": "table", "box": [0, 0, 0, 1, 1, 1], "visibility": "public"}}),
+        json!({"op": "clearRebuilt"}),
+        json!({"op": "clearRebuilt", "chunks": true}),
+        json!({"op": "clear_rebuilt"}),
+        scan_op(),
+        {
+            let mut op = scan_op();
+            op.as_object_mut().unwrap().remove("observedAt");
+            op["scan"].as_object_mut().unwrap().remove("alignment");
+            op
+        },
+        {
+            let mut op = scan_op();
+            op["observedAt"] = json!("2026-10-20");
+            op
+        },
+        {
+            let mut op = scan_op();
+            op["scan"]["transform"] = json!([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0]);
+            op
+        },
+        {
+            let mut op = scan_op();
+            op["scan"]["alignment"] = json!("auto");
+            op
+        },
+        {
+            let mut op = scan_op();
+            op["scan"]["webModelHash"] = op["scan"]["webModelHashes"][0].clone();
+            op
+        },
+        {
+            let mut op = scan_op();
+            op["scan"].as_object_mut().unwrap().remove("webModelHashes");
+            op
+        },
+        {
+            let mut op = scan_op();
+            op["scan"]["chunks"] = json!([]);
+            op
+        },
     ];
     let cases: Vec<Value> = inputs
         .into_iter()
@@ -651,7 +984,7 @@ fn parse_vector() -> (String, Value) {
         json!({
             "kind": "ops-parse",
             "name": "parse",
-            "description": "结构检查：字段名、类型、未知字段、方块编号范围、盒子是否合法。valid = false 的输入必须在解析阶段被拒绝",
+            "description": "结构检查：字段名、类型、未知字段、方块编号范围、盒子是否合法，以及 ifPresent、ifNew、setScan、clearRebuilt 的写法。valid = false 的输入必须在解析阶段被拒绝",
             "cases": cases,
         }),
     )

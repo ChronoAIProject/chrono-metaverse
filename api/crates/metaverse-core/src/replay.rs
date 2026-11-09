@@ -232,6 +232,7 @@ mod tests {
             job_id: None,
             draft_id: None,
             script_ref: None,
+            bundle_ref: None,
         }
     }
 

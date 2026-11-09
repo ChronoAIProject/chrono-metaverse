@@ -263,8 +263,24 @@ async fn authorize(
     }
     let grant = state.authorizer.space(caller, space_id, access).await?;
     let (scope, space) = path_scope(state, &grant, plot_id).await?;
-    check_upload_purpose(&scope, purpose).map_err(|error| scope_violation(error.to_string()))?;
+    check_legacy_upload_purpose(&scope, purpose)
+        .map_err(|error| scope_violation(error.to_string()))?;
     Ok((grant, scope, space))
+}
+
+/// 上传用途与路径范围。核心库的表（`check_upload_purpose`）已经是瘦身后的规则：扫描只经重建路径、
+/// AI 物件集不能再上传。旧的扫描导入和物件集导入删掉之前（docs/design/server-slim.md S4），
+/// 实体区路径照旧收这两种，其余按核心库的表。
+fn check_legacy_upload_purpose(
+    scope: &PathScope,
+    purpose: UploadPurpose,
+) -> Result<(), metaverse_core::scope::ScopeError> {
+    if *scope == PathScope::Physical
+        && matches!(purpose, UploadPurpose::Scan | UploadPurpose::Authored)
+    {
+        return Ok(());
+    }
+    check_upload_purpose(scope, purpose)
 }
 
 /// 读上传会话：必须是经同一路径范围、同一用途创建的，否则 404。

@@ -1,0 +1,171 @@
+{
+  "base": {
+    "anchorHistory": [],
+    "anchors": [],
+    "entities": [
+      {
+        "assetHash": "9f2c7d4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d",
+        "bounds": {
+          "max": [
+            3.2,
+            0.5,
+            3.2
+          ],
+          "min": [
+            3,
+            0,
+            3
+          ]
+        },
+        "entityId": "old-1",
+        "kind": "object",
+        "layer": "ext"
+      }
+    ],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ],
+    "scopeKind": "ext"
+  },
+  "description": "removeEntity 带 ifPresent：不存在就什么都不做（影响范围为空、不算碰过）；存在时与原来相同",
+  "expect": {
+    "anchors": [],
+    "baseChunks": [],
+    "brokenTemplateRefs": [],
+    "chunkChanges": [],
+    "chunks": [],
+    "entities": [],
+    "footprints": [
+      {
+        "cells": [],
+        "spaceWide": false
+      },
+      {
+        "cells": [
+          [
+            60,
+            0,
+            60,
+            64,
+            10,
+            64
+          ]
+        ],
+        "spaceWide": false
+      }
+    ],
+    "ok": true,
+    "probes": [],
+    "provisionalBlocks": [],
+    "scan": null,
+    "touched": {
+      "anchors": [],
+      "chunks": [],
+      "entities": [
+        "old-1"
+      ],
+      "palette": false,
+      "rebuiltLayer": false,
+      "scan": false,
+      "skippedAnchors": []
+    }
+  },
+  "kind": "ops",
+  "name": "remove-if-present",
+  "ops": [
+    {
+      "entityId": "ghost",
+      "ifPresent": true,
+      "op": "removeEntity"
+    },
+    {
+      "entityId": "old-1",
+      "ifPresent": true,
+      "op": "removeEntity"
+    }
+  ],
+  "probeCells": [],
+  "scope": "physical",
+  "spaceId": "vec-space"
+}

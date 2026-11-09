@@ -1,5 +1,6 @@
 {
   "base": {
+    "anchorHistory": [],
     "anchors": [],
     "entities": [],
     "fills": [],
@@ -85,7 +86,8 @@
         "id": "garden",
         "kind": "virtual"
       }
-    ]
+    ],
+    "scopeKind": "ext"
   },
   "description": "操作只能放扩展层的物件",
   "expect": {

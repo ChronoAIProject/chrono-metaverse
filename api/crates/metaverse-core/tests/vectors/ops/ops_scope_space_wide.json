@@ -1,5 +1,6 @@
 {
   "base": {
+    "anchorHistory": [],
     "anchors": [
       {
         "anchorId": "_space",
@@ -91,7 +92,8 @@
         "id": "garden",
         "kind": "virtual"
       }
-    ]
+    ],
+    "scopeKind": "ext"
   },
   "description": "地块路径不能改 _space 锚点（影响整个空间）",
   "expect": {
