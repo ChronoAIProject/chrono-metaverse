@@ -1,4 +1,4 @@
-import type { Rgb, Shape, Vec3 } from '../shapes/types';
+import type { Rgb, Shading, Shape, Vec3 } from '../shapes/types';
 
 /**
  * 公开读接口（设计 8.2）的数据类型。字段名照抄设计文档第 4、5 节（驼峰），
@@ -69,13 +69,15 @@ export interface EntityBody {
    */
   readonly assetHash?: string;
   /**
-   * 模型（assetHash）整体的外观：`tint` 乘到模型原来的颜色上，`opacity` 半透明，`unlit` 不受光照。
+   * 模型（assetHash）整体的外观：`tint` 乘到模型原来的颜色上，`opacity` 半透明，`unlit` 不受光照，
+   * `shading` 是模型里贴图材质的着色方式（`baked` 默认、`albedo` 按 glb 原样完整受光）。
    * 只和 assetHash 一起出现（docs/SHAPES.md 第 3 节）。
    */
   readonly material?: {
     readonly tint?: Rgb;
     readonly opacity?: number;
     readonly unlit?: boolean;
+    readonly shading?: Shading;
   };
   readonly textures?: readonly string[];
   readonly bounds?: { readonly min: Vec3; readonly max: Vec3 };

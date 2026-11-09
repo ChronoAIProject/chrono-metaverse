@@ -24,7 +24,7 @@ import type { VoxelPart } from '../core/voxels';
 import { anchorKey, linkRoute, type AnchorRef, type Visual } from '../core/visuals';
 import { clipBox, frameBox, scanCeilingHeight, scanFrameBox } from './framing';
 import { iconElement } from './icons';
-import { applyTexturedLook, createLights } from './lighting';
+import { createLights } from './lighting';
 import {
   LABEL_PADDING,
   MIN_SCREEN_SIZE,
@@ -34,6 +34,13 @@ import {
   maxLabelsFor,
   type LabelCandidate,
 } from './labelLayout';
+import {
+  bakeGlbMaterial,
+  createShapeMaterial,
+  srgb,
+  TextureCache,
+  type TextureRole,
+} from './materials';
 import { createMeshService, type MeshService } from './meshService';
 import type { ShapeJob } from './meshJobs';
 import { applyModelFit, modelBox, modelFit, modelFitWarning, type BoxLike } from './modelFit';
@@ -45,8 +52,9 @@ import { applyModelFit, modelBox, modelFit, modelFitWarning, type BoxLike } from
  * - 物件：形状词表 → 网格在后台线程里生成（meshService），主线程只组装 BufferGeometry；
  *   最外层的 transform 拆出来当实例矩阵，同样的局部形状（同款椅子）共用一份几何体，
  *   两个以上时画成 InstancedMesh；
- * - 材质：颜色或贴图（按资源哈希下载，uv 投影在网格生成时算好，tint 作颜色）；
- * - 灯光：半球光 + 主光 + 补光，强度按物理单位（π 的倍数）；贴图材质一部分按自发光显示，
+ * - 材质：颜色或贴图（按资源哈希和用途下载，uv 投影和平铺在网格生成时算好，tint 作颜色），
+ *   着色方式、法线、粗糙度见 materials.ts；
+ * - 灯光：半球光 + 主光 + 补光，强度按物理单位（π 的倍数）；扫描烘焙的贴图材质（默认）一部分按自发光显示，
  *   亮度接近不打光的原始扫描（lighting.ts）；
  * - 方块：叠加后的区块 → 可见面网格（后台线程），玻璃半透明、发光方块不受光照、贴图方块按贴图分块；
  * - 扫描：网页用 glb，按对齐变换（列主序 4×4）摆放；
@@ -144,15 +152,6 @@ const LABEL_LAYOUT_MS = 100;
 interface VisualObject {
   readonly objects: THREE.Object3D[];
   update(visual: Visual): void;
-}
-
-function srgb(color: readonly number[]): THREE.Color {
-  return new THREE.Color().setRGB(
-    (color[0] ?? 200) / 255,
-    (color[1] ?? 200) / 255,
-    (color[2] ?? 200) / 255,
-    THREE.SRGBColorSpace,
-  );
 }
 
 function cssColor(color: readonly number[], alpha = 1): string {
@@ -287,10 +286,13 @@ export class SceneView {
   private readonly ownsMeshes: boolean;
   private readonly geometryCache = new Map<string, ShapeGeometry & { triangles: number }>();
   private readonly materialCache = new Map<string, THREE.Material>();
-  private readonly textureCache = new Map<string, Promise<THREE.Texture>>();
+  /** 贴图按（用途，哈希）缓存：颜色贴图 sRGB，法线、粗糙度贴图是线性数据。 */
+  private readonly textureCache: TextureCache | null;
   private readonly modelCache = new Map<string, Promise<THREE.Object3D>>();
   /** 模型按顶点算的实际包围盒（兜底摆放用），按解析出的模型记。 */
   private readonly modelBoxes = new WeakMap<THREE.Object3D, BoxLike>();
+  /** glb 里按扫描烘焙看法改过的材质 → 改之前的副本（`material.shading: "albedo"` 用）。 */
+  private readonly albedoOf = new WeakMap<THREE.Material, THREE.Material>();
   private readonly scanCache = new WeakMap<ArrayBuffer, Promise<THREE.Object3D>>();
   private readonly cut = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e6);
   private readonly clipping = [this.cut];
@@ -339,6 +341,13 @@ export class SceneView {
   ) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const loadTexture = options.loadTexture;
+    this.textureCache =
+      loadTexture === undefined
+        ? null
+        : new TextureCache(loadTexture, () =>
+            Math.min(8, this.renderer.capabilities.getMaxAnisotropy()),
+          );
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
@@ -464,92 +473,23 @@ export class SceneView {
   // 材质、贴图、模型
   // ---------------------------------------------------------------------------
 
-  private texture(hash: string): Promise<THREE.Texture> | null {
-    const load = this.options.loadTexture;
-    if (load === undefined) return null;
-    let texture = this.textureCache.get(hash);
-    if (texture === undefined) {
-      texture = load(hash).then((map) => {
-        map.colorSpace = THREE.SRGBColorSpace;
-        map.wrapS = THREE.RepeatWrapping;
-        map.wrapT = THREE.RepeatWrapping;
-        map.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
-        map.needsUpdate = true;
-        return map;
-      });
-      this.textureCache.set(hash, texture);
-      texture.catch(() => this.textureCache.delete(hash));
-    }
-    return texture;
+  /** 按（哈希，用途）取贴图：颜色贴图设成 sRGB，法线、粗糙度贴图是线性数据；一律重复采样。 */
+  private texture(hash: string, role: TextureRole): Promise<THREE.Texture> | null {
+    return this.textureCache?.get(hash, role) ?? null;
   }
 
-  /**
-   * 形状材质（按材质和"玻璃"共用一份）。
-   *
-   * - `opacity < 1`：半透明，不写深度、双面；three.js 把透明的材质组放到不透明物体之后、
-   *   按远近排序再画，所以玻璃后面的东西能透出来；
-   * - `unlit`：不打光的 MeshBasicMaterial，按颜色或贴图原样显示（不做色调映射），用于屏幕、灯箱；
-   * - 旧数据里的 `props.glass === true` 仍按原来的玻璃外观画。
-   */
+  /** 形状材质（按材质和"玻璃"共用一份；画法见 materials.ts）。 */
   private shapeMaterial(material: Material, glass: boolean): THREE.Material {
     const key = `${materialKey(material)}|${glass ? 'g' : 'o'}`;
     const cached = this.materialCache.get(key);
     if (cached !== undefined) return cached;
-    const opacity = glass ? 0.32 : Math.min(1, Math.max(0, material.opacity ?? 1));
-    const transparent = opacity < 1;
-    const side = transparent ? THREE.DoubleSide : THREE.FrontSide;
-    if (material.unlit === true && !glass) {
-      const basic = new THREE.MeshBasicMaterial({
-        transparent,
-        opacity,
-        depthWrite: !transparent,
-        side,
-        clippingPlanes: this.clipping,
-        toneMapped: false,
-      });
-      if (isTextureMaterial(material)) {
-        basic.color = material.tint ? srgb(material.tint) : new THREE.Color(0xffffff);
-        this.texture(material.texture)
-          ?.then((map) => {
-            if (this.disposed) return;
-            basic.map = map;
-            basic.needsUpdate = true;
-          })
-          .catch(() => undefined);
-      } else {
-        basic.color = srgb(material.color);
-      }
-      this.materialCache.set(key, basic);
-      return basic;
-    }
-    const base = new THREE.MeshStandardMaterial({
-      roughness: transparent ? 0.1 : 0.82,
-      metalness: 0.02,
-      transparent,
-      opacity,
-      depthWrite: !transparent,
-      side,
-      clippingPlanes: this.clipping,
+    const created = createShapeMaterial(material, glass, {
+      clipping: this.clipping,
+      texture: (hash, role) => this.texture(hash, role),
+      disposed: () => this.disposed,
     });
-    if (isTextureMaterial(material)) {
-      // 贴图材质只有一部分受光照（另一部分按自发光直接显示贴图），亮度接近原始扫描。
-      const tint = material.tint ? srgb(material.tint) : new THREE.Color(0xffffff);
-      // 贴图到之前先用色调的灰一点的版本占位。
-      applyTexturedLook(base, tint.clone().multiplyScalar(0.8), null);
-      const texture = this.texture(material.texture);
-      texture
-        ?.then((map) => {
-          if (this.disposed) return;
-          applyTexturedLook(base, tint, map);
-        })
-        .catch(() => {
-          applyTexturedLook(base, tint, null);
-        });
-    } else {
-      base.color = srgb(material.color);
-    }
-    this.materialCache.set(key, base);
-    return base;
+    this.materialCache.set(key, created);
+    return created;
   }
 
   private voxelMaterial(part: VoxelPart): THREE.Material {
@@ -571,7 +511,7 @@ export class SceneView {
         clippingPlanes: this.clipping,
       });
       if (part.texture !== undefined) {
-        this.texture(part.texture)
+        this.texture(part.texture, 'color')
           ?.then((map) => {
             if (this.disposed) return;
             standard.map = map;
@@ -585,8 +525,15 @@ export class SceneView {
     return material;
   }
 
-  /** glb → three.js 对象；材质都加上剖切平面。 */
-  private parseGlb(bytes: ArrayBuffer, doubleSided: boolean): Promise<THREE.Object3D> {
+  /**
+   * glb → three.js 对象；材质都加上剖切平面。受光照的贴图材质（不是 unlit 的扫描）同样只让一部分受光照
+   * （扫描烘焙的看法）；物件模型（`model` 为真）另外记下改之前的材质，`material.shading: "albedo"` 时用。
+   */
+  private parseGlb(
+    bytes: ArrayBuffer,
+    doubleSided: boolean,
+    model = false,
+  ): Promise<THREE.Object3D> {
     return new Promise((resolve, reject) => {
       new GLTFLoader().parse(
         bytes,
@@ -599,16 +546,9 @@ export class SceneView {
             for (const material of materials) {
               if (doubleSided) material.side = THREE.DoubleSide;
               material.clippingPlanes = this.clipping;
-              // 受光照的贴图材质（不是 unlit 的扫描）同样只让一部分受光照。
-              // 原来的颜色记下来：物件要求不打光（unlit）时按原色显示，不用调暗后的颜色。
-              if (
-                material instanceof THREE.MeshStandardMaterial &&
-                material.map !== null &&
-                material.emissiveMap === null
-              ) {
-                material.userData.baseColor = material.color.clone();
-                applyTexturedLook(material, material.color.clone(), material.map);
-              }
+              // 同一个材质可能被几个网格共用：改过一次以后有了自发光贴图，不会再改
+              const albedo = bakeGlbMaterial(material, this.clipping);
+              if (albedo !== null && model) this.albedoOf.set(material, albedo);
             }
           });
           resolve(gltf.scene);
@@ -623,7 +563,7 @@ export class SceneView {
     if (load === undefined) return null;
     let model = this.modelCache.get(hash);
     if (model === undefined) {
-      model = load(hash).then((bytes) => this.parseGlb(bytes, false));
+      model = load(hash).then((bytes) => this.parseGlb(bytes, false, true));
       this.modelCache.set(hash, model);
       model.catch(() => this.modelCache.delete(hash));
     }
@@ -632,21 +572,25 @@ export class SceneView {
 
   /**
    * 共用的模型实例：几何体和材质属于缓存，释放时跳过。
-   * 物件给了 `material`（tint / opacity / unlit）时，换成按这组外观派生的材质（也进缓存）。
+   * 物件给了 `material.shading: "albedo"`（且不要求不打光）时，按扫描烘焙看法改过的材质换回 glb 原样的材质；
+   * 给了 tint / opacity / unlit 时，再换成按这组外观派生的材质（也进缓存）。
    */
   private sharedClone(model: THREE.Object3D, look?: EntityBody['material']): THREE.Object3D {
     const clone = model.clone(true);
+    const albedo = look?.shading === 'albedo' && look.unlit !== true;
     const derive =
       look !== undefined &&
       (look.tint !== undefined || (look.opacity ?? 1) < 1 || look.unlit === true);
+    const pick = (source: THREE.Material): THREE.Material => {
+      const base = albedo ? (this.albedoOf.get(source) ?? source) : source;
+      return derive ? this.lookMaterial(base, look) : base;
+    };
     clone.traverse((object) => {
       object.userData.sharedGeometry = true;
       object.userData.sharedMaterial = true;
       const mesh = object as THREE.Mesh;
-      if (!derive || !mesh.isMesh) return;
-      mesh.material = Array.isArray(mesh.material)
-        ? mesh.material.map((m) => this.lookMaterial(m, look))
-        : this.lookMaterial(mesh.material, look);
+      if ((!derive && !albedo) || !mesh.isMesh) return;
+      mesh.material = Array.isArray(mesh.material) ? mesh.material.map(pick) : pick(mesh.material);
     });
     return clone;
   }
@@ -1879,9 +1823,7 @@ export class SceneView {
     this.geometryCache.clear();
     for (const material of this.materialCache.values()) material.dispose();
     this.materialCache.clear();
-    for (const texture of this.textureCache.values()) {
-      texture.then((t) => t.dispose()).catch(() => undefined);
-    }
+    this.textureCache?.dispose();
     if (this.ownsMeshes) this.meshes.dispose();
     this.renderer.dispose();
     canvas.remove();
