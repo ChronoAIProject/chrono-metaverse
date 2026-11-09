@@ -320,6 +320,84 @@
   overflow-wrap: anywhere;
 }
 
+/* 模型来源：外部模型的署名（标题链到来源页、作者、许可、模型库），在右下角按钮的上方展开。 */
+.viewer__sources {
+  position: absolute;
+  right: var(--space-4);
+  bottom: calc(var(--space-4) + var(--control-h) + var(--space-2));
+  z-index: 2;
+  width: min(360px, calc(100% - 32px));
+  max-height: calc(100% - 140px);
+  overflow: auto;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  box-shadow: var(--lift-plate);
+  color: var(--ink);
+  font-size: var(--text-note);
+}
+
+.viewer__sources header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.viewer__sources h2 {
+  font-size: var(--text-ui);
+}
+
+.viewer__sources-note {
+  margin-bottom: 8px;
+  color: var(--ink-2);
+}
+
+.viewer__sources ul {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  padding: 0;
+}
+
+.viewer__sources li {
+  display: grid;
+  gap: 2px;
+}
+
+.viewer__source-title {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--rule-2);
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+
+.viewer__source-title:hover {
+  text-decoration-color: var(--accent);
+}
+
+.viewer__source-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+.viewer__source-used {
+  color: var(--ink-2);
+  font-size: var(--text-meta);
+}
+
+.viewer__info-source {
+  display: grid;
+  gap: 2px;
+}
+
 @media (max-width: 720px) {
   .viewer__progress {
     top: auto;
@@ -330,5 +408,11 @@
     left: var(--space-4);
     right: var(--space-4);
     width: auto;
+  }
+
+  .viewer__sources {
+    left: var(--space-4);
+    width: auto;
+    bottom: calc(var(--space-4) + 2 * var(--control-h) + 2 * var(--space-2));
   }
 }

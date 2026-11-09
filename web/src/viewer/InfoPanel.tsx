@@ -1,3 +1,5 @@
+import { modelSourceOf } from '../core/sources';
+import { SourceLine } from './ModelSources';
 import type { Selection } from './sceneView';
 
 const LAYER: Record<string, string> = { rebuilt: '重建层', ext: '扩展层' };
@@ -13,6 +15,7 @@ function plain(value: unknown): string {
 /**
  * 点选物件后的信息面板（设计 4.4）：物件的 `props` 是不透明的键值，
  * 这里只按纯文本列出（React 文本节点，不解释成 HTML），不做其他解释。
+ * 例外：`props.source` 是合规的外部模型署名时，显示成来源（标题链到来源页、作者、许可）。
  */
 export function InfoPanel({
   selection,
@@ -22,7 +25,10 @@ export function InfoPanel({
   readonly onClose: () => void;
 }) {
   const { entity } = selection;
-  const props = Object.entries(entity.props ?? {}).filter(([key]) => key !== 'glass');
+  const source = modelSourceOf(entity);
+  const props = Object.entries(entity.props ?? {}).filter(
+    ([key]) => key !== 'glass' && !(key === 'source' && source !== null),
+  );
   const fit = entity.fit;
   return (
     <aside className="viewer__info" aria-label="物件信息">
@@ -50,6 +56,14 @@ export function InfoPanel({
             <dt>拟合偏差</dt>
             <dd>
               平均 {fit.meanCm} 厘米{fit.p90Cm !== undefined ? `，90% ≤ ${fit.p90Cm} 厘米` : ''}
+            </dd>
+          </>
+        )}
+        {source !== null && (
+          <>
+            <dt>来源</dt>
+            <dd className="viewer__info-source">
+              <SourceLine source={source} />
             </dd>
           </>
         )}

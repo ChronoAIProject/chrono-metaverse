@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Texture } from 'three';
 import { viewHasGeometry, type SceneContent } from '../core/scene';
+import { sceneSources } from '../core/sources';
 import type { Visual } from '../core/visuals';
 import { InfoPanel } from './InfoPanel';
+import { ModelSources } from './ModelSources';
 import {
   SceneView,
   type LoadStep,
@@ -69,6 +71,9 @@ export function Viewer({
   const [step, setStep] = useState<LoadStep | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [allLabels, setAllLabels] = useState(false);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+  // 场景里外部模型的署名（CC-BY 必须可见）：有就一直显示模型来源按钮。
+  const credits = useMemo(() => sceneSources(content), [content]);
 
   useEffect(() => {
     textureRef.current = loadTexture;
@@ -131,6 +136,7 @@ export function Viewer({
         host.dataset.threaded = String(stats.threaded);
         host.dataset.members = String(stats.members);
         host.dataset.scan = String(stats.hasScan);
+        host.dataset.sources = String(sceneSources(content).length);
         host.dataset.ready = 'true';
       })
       .catch((error: unknown) => {
@@ -191,8 +197,21 @@ export function Viewer({
           }}
         />
       )}
+      <ModelSources credits={credits} open={sourcesOpen} onClose={() => setSourcesOpen(false)} />
       {content !== null && unsupported === null && (
         <div className="viewer__tools">
+          {credits.length > 0 && (
+            <button
+              type="button"
+              className="viewer__tool"
+              aria-expanded={sourcesOpen}
+              aria-controls="viewer-model-sources"
+              title="场景里外部模型的标题、作者、许可和来源页"
+              onClick={() => setSourcesOpen((open) => !open)}
+            >
+              模型来源 · {credits.length}
+            </button>
+          )}
           <label
             className="viewer__tool viewer__tool--check"
             title="默认只显示桌子、前台、区域、门和有事件的锚点"
