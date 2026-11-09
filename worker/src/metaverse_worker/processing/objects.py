@@ -13,10 +13,12 @@ structure 是同一网格上 `extract_structure` 的结果。
 2. **识别**：有提示用提示的 `kind`、`label`；没有就按规则（尺寸、座面、台面、颜色、圆度）；
 3. **朝向和原点**：最小外接矩形（接近墙的方向时取墙的方向），椅子按靠背定正面，沙发靠背朝 −z；
    原点在物体底面中心的地面上，偏航是连续值；
-4. **拟合**（`fit_templates`）：按类型组合圆角盒、带圆弧的挤出、旋转体、扫掠、截面放样；
+4. **拟合**（`fit_templates`，前台在 `fit_counter`）：按类型组合圆角盒、带圆弧的挤出、旋转体、扫掠、
+   截面放样；
 5. **同款合并**：同类型、尺寸相近的物体（例如一排会议椅）对齐后合并点云拟合一个模板，各处用实例摆放；
    对齐后与其他成员差得多的退出合并、单独拟合；
 6. **上色和贴图**（`fit_texture`）：颜色单一的部件用纯色，其余按部件的投影烘焙小贴图；
+   杂物和小件（最长边不到 0.8 米）只用纯色；
 7. **自查**：每个物体的扫描点到模型的距离（均值、90% 分位、3 厘米内的比例）写进 `fit`，总体写进指标。
 """
 
@@ -615,6 +617,12 @@ def _groups(objs: list[Obj], prm: ObjectParams) -> list[list[Obj]]:
     return out
 
 
+def _textured(kind: str, size: float, min_size: float = 0.8) -> bool:
+    """杂物和小件（最长边不到 0.8 米）只用纯色：它们身上的"图案"多半是反光、粘连进来的桌面和扫描噪声，
+    贴上去像一块块玻璃；纯色的圆角盒干净。"""
+    return kind != "clutter" and size >= min_size
+
+
 def _world_shape(local_shape: dict[str, Any], origin: np.ndarray, yaw: float) -> dict[str, Any]:
     shape = dict(local_shape)
     shape["transform"] = sh.transform(position=origin.tolist(), yaw=yaw)
@@ -717,7 +725,17 @@ def reconstruct_objects(mesh: ScanMesh, structure, *, params: dict | None = None
                     np.concatenate([s[1] for s in srcs]),
                 )
                 size = float(np.ptp(pooled.L, axis=0).max())
-                finalize_materials(tshape, pooled.L, pooled.C, pooled.N, csrc, prm.texture, size, textures)
+                finalize_materials(
+                    tshape,
+                    pooled.L,
+                    pooled.C,
+                    pooled.N,
+                    csrc,
+                    prm.texture,
+                    size,
+                    textures,
+                    allow_textures=_textured(ref.kind, size),
+                )
                 tshape = _clean_shape(tshape)
                 templates[tid] = tshape
                 entities[tid] = entity_body(
@@ -751,7 +769,17 @@ def reconstruct_objects(mesh: ScanMesh, structure, *, params: dict | None = None
             wshape = _world_shape(lshape, o.origin, o.yaw)
             csrc = _color_source(table, o.faces, prm, seed=zlib.crc32(o.entity_id.encode()) % 1000)
             size = float(np.ptp(o.local.L, axis=0).max())
-            finalize_materials(wshape, o.P, o.C, o.N, csrc, prm.texture, size, textures)
+            finalize_materials(
+                wshape,
+                o.P,
+                o.C,
+                o.N,
+                csrc,
+                prm.texture,
+                size,
+                textures,
+                allow_textures=_textured(o.kind, size),
+            )
             wshape = _clean_shape(wshape)
             d = _distances(wshape, o.P, templates)
             fits[o.entity_id] = d
