@@ -1,8 +1,11 @@
-import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { main } from '../src/commands/index.js';
+import { BundleError } from '../src/core/bundle.js';
 import { DEFAULT_UPLOAD_LIMITS } from '../src/core/limits.js';
+import type { Shape } from '../src/core/shape.js';
+import { checkBundleDir } from '../src/workspace/bundle.js';
 import { readDrafts } from '../src/workspace/drafts.js';
 import { readBase, writeBase } from '../src/workspace/files.js';
 import { sha256, writeBundle } from './helpers/bundle.js';
@@ -211,6 +214,46 @@ describe('metaverse bundle check', () => {
     expect(await main(ctx, ['bundle', 'check'])).toBe(0);
     expect(ctx.lines.join('\n')).toContain('合并，模板 0 个、物件 3 件、删除 1 个编号');
   });
+});
+
+/** 向量 tests/vectors/bundle/ 经 bundle check 的目录检查跑一遍（文件都不在本地，只查清单），结果与 Rust 相同。 */
+const BUNDLE_VECTORS = resolve(
+  process.env.METAVERSE_VECTORS_DIR ??
+    join(import.meta.dirname, '../../../api/crates/metaverse-core/tests/vectors'),
+  'bundle',
+);
+
+describe.skipIf(!existsSync(BUNDLE_VECTORS))('bundle check 跑重建包清单向量', () => {
+  const names = existsSync(BUNDLE_VECTORS)
+    ? readdirSync(BUNDLE_VECTORS).filter((n) => n.startsWith('bundle_') && n.endsWith('.json'))
+    : [];
+  for (const name of names.sort()) {
+    it(name, async () => {
+      const vector = JSON.parse(readFileSync(join(BUNDLE_VECTORS, name), 'utf8'));
+      if (vector.kind === 'bundle-limits') return;
+      const dir = tempDir();
+      dirs.push(dir);
+      writeFileSync(join(dir, 'manifest.json'), JSON.stringify(vector.manifest));
+      const templates = vector.spaceTemplates
+        ? new Map(Object.entries(vector.spaceTemplates as Record<string, Shape>))
+        : null;
+      try {
+        const report = await checkBundleDir(dir, {
+          ...(vector.limits ? { limits: vector.limits } : {}),
+          spaceTemplates: templates,
+        });
+        expect(vector.expect.valid).toBe(true);
+        expect(report.files.every((f) => !f.local)).toBe(true);
+        expect(Object.fromEntries(report.bundle.references)).toEqual(vector.expect.references);
+      } catch (error) {
+        expect(error).toBeInstanceOf(BundleError);
+        expect({ valid: false, field: (error as BundleError).field }).toEqual({
+          valid: vector.expect.valid,
+          field: vector.expect.field,
+        });
+      }
+    });
+  }
 });
 
 describe('metaverse bundle push', () => {
