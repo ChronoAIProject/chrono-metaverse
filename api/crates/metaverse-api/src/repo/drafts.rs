@@ -213,26 +213,27 @@ impl Repo {
         Ok(result.matched_count == 1)
     }
 
-    /// 发布后：标记已发布，记下提交编号；预览令牌和草稿区块随即作废。
-    pub async fn mark_draft_published(
+    /// 发布后（草稿已在提交事务里标记为已发布）：预览令牌和草稿区块随即作废。只在草稿确实
+    /// 已发布时才删，避免误删仍在使用的草稿的区块。
+    pub async fn clear_published_draft(
         &self,
         grant: &Grant,
         draft_id: &str,
-        rev: u64,
-        commit_id: &str,
-        now: Timestamp,
     ) -> Result<(), RepoError> {
         if !grant.can_manage() {
             return Err(RepoError::GrantMismatch);
         }
         let mut filter = draft_filter(grant, draft_id);
-        filter.insert("rev", rev as i64);
-        self.collection(collections::DRAFTS)
-            .update_one(
-                filter,
-                doc! {"$set": {"status": "published", "commitId": commit_id, "updatedAt": now.to_rfc3339()}},
-            )
-            .await?;
+        filter.insert("status", "published");
+        let published = self
+            .collection(collections::DRAFTS)
+            .find_one(filter)
+            .projection(doc! {"_id": 1})
+            .await?
+            .is_some();
+        if !published {
+            return Ok(());
+        }
         self.delete_draft_children(grant, draft_id).await
     }
 

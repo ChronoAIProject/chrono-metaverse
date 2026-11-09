@@ -63,6 +63,9 @@ pub struct CommitPlan {
     pub keyframe: Option<String>,
     pub asset_refs: Vec<String>,
     pub draft_id: Option<String>,
+    /// 发布草稿时草稿的 rev：在提交事务里按 `{rev, status: open}` 条件把草稿标记为已发布，
+    /// 草稿期间被追加、丢弃或已被别的请求发布时整个提交作废（[`CommitError::DraftChanged`]）。
+    pub draft_rev: Option<u64>,
     pub script_ref: Option<String>,
 }
 
@@ -87,6 +90,7 @@ impl CommitPlan {
             keyframe: None,
             asset_refs: Vec::new(),
             draft_id: None,
+            draft_rev: None,
             script_ref: None,
         }
     }
@@ -108,6 +112,9 @@ pub enum CommitError {
     /// 空间不存在，或主人与凭据不一致。
     #[error("空间不存在")]
     Missing,
+    /// 要发布的草稿已经变了（被追加、丢弃，或已被别的请求发布）。
+    #[error("草稿已经变了")]
+    DraftChanged,
     #[error(transparent)]
     Repo(#[from] RepoError),
 }
@@ -507,6 +514,28 @@ impl Repo {
             .await?;
         if moved.matched_count != 1 {
             return Err(CommitError::HeadMoved.into());
+        }
+        // 发布草稿：在同一个事务里占用草稿（rev 不变、仍是 open），与追加、丢弃、重复发布互斥。
+        if let (Some(draft_id), Some(rev)) = (&plan.draft_id, plan.draft_rev) {
+            let mut filter = granted_children(grant);
+            filter.insert("_id", draft_id);
+            filter.insert("rev", rev as i64);
+            filter.insert("status", "open");
+            let claimed = self
+                .collection(collections::DRAFTS)
+                .update_one(
+                    filter,
+                    doc! {"$set": {
+                        "status": "published",
+                        "commitId": commit_id,
+                        "updatedAt": at.to_rfc3339(),
+                    }},
+                )
+                .session(&mut *session)
+                .await?;
+            if claimed.matched_count != 1 {
+                return Err(CommitError::DraftChanged.into());
+            }
         }
         let owner = owner_document(grant).map_err(CommitError::from)?;
         // 删除时是内部级的锚点：记在空间文档的 `withdrawnAnchors` 里，公开投影把它当作"当前是

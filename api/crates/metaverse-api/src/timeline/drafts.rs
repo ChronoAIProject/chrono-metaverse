@@ -885,6 +885,7 @@ pub async fn publish(
         plan.observed_at = options.observed_at;
         plan.script_ref = options.script_ref.clone();
         plan.draft_id = Some(draft.id.clone());
+        plan.draft_rev = Some(draft.rev);
         plan.ops = ops.clone();
         plan.ops_ref = ops_ref.clone();
         plan.changed_chunks = changes.chunks;
@@ -909,11 +910,21 @@ pub async fn publish(
         attach_keyframe(repo, grant, &mut plan, &head_manifest).await?;
         match commit(repo, grant, &plan, now).await {
             Ok(outcome) => {
-                repo.mark_draft_published(grant, &draft.id, draft.rev, &outcome.commit_id, now)
-                    .await?;
+                if let Err(error) = repo.clear_published_draft(grant, &draft.id).await {
+                    // 提交和草稿状态已经写成；预览令牌和草稿区块留给过期清理。
+                    tracing::warn!(space = %grant.space_id(), draft = %draft.id, error = %error, "清理已发布草稿的预览和区块失败");
+                }
                 return Ok(outcome);
             }
             Err(CommitError::HeadMoved) => continue,
+            Err(CommitError::DraftChanged) => {
+                return Err(ApiError::new(
+                    axum::http::StatusCode::CONFLICT,
+                    "draft_changed",
+                    "草稿在发布期间被追加、丢弃或已被发布；请重新读取草稿后再发布",
+                )
+                .into())
+            }
             Err(CommitError::Missing) => return Err(ApiError::not_found().into()),
             Err(CommitError::Repo(error)) => return Err(error.into()),
         }

@@ -2258,3 +2258,127 @@ async fn percent_encoded_space_ids_are_rejected_before_counting() {
         assert_eq!(reply.header(header::CACHE_CONTROL), "no-store");
     }
 }
+
+/// 发布在提交事务里占用草稿（rev 不变、仍是 open）：发布期间被追加、丢弃或已被别的请求
+/// 发布时整个提交作废（409），草稿和它的区块不受影响。
+#[tokio::test]
+async fn publish_claims_the_draft_inside_the_commit_transaction() {
+    use metaverse_api::repo::{CommitError, CommitPlan};
+    use metaverse_core::model::{Actor, ActorKind, Owner};
+    use metaverse_core::scope::PathScope;
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    app.define_layout(SPACE).await;
+    let draft_id = new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await;
+    let path = draft_path(SPACE, &draft_id);
+    let reply = append(
+        &app,
+        &path,
+        json!([{"op": "fill", "box": [0, 0, 0, 2, 1, 2], "block": 2}]),
+    )
+    .await;
+    assert_eq!(reply.body["rev"], 1);
+    // 发布方读到 rev 1 之后，另一个请求又追加了一批（rev 2，碰了另一个区块）。
+    let reply = append(
+        &app,
+        &path,
+        json!([{"op": "fill", "box": [40, 0, 40, 42, 1, 42], "block": 2}]),
+    )
+    .await;
+    assert_eq!(reply.body["rev"], 2);
+    let chunks_before = app
+        .collection("draftChunks")
+        .count_documents(doc! {"draftId": &draft_id})
+        .await
+        .unwrap();
+    assert!(chunks_before >= 2);
+    let grant = app
+        .state
+        .authorizer
+        .system_space(SPACE, &Owner::org(ORG.to_owned()), "测试", "publish")
+        .await
+        .unwrap();
+    let head = app.state.repo.head_seq(&grant).await.unwrap().unwrap();
+    let actor = Actor {
+        sub: ORG.to_owned(),
+        nyx_service_id: "svc".to_owned(),
+        scope: PathScope::Physical,
+        kind: ActorKind::Admin,
+    };
+    let plan = |rev: u64| {
+        let mut plan = CommitPlan::new(head, actor.clone(), "发布");
+        plan.draft_id = Some(draft_id.clone());
+        plan.draft_rev = Some(rev);
+        plan
+    };
+    let now = metaverse_core::Timestamp::from_system_time(std::time::SystemTime::now()).unwrap();
+    // 按旧 rev 发布：提交作废，时间线不前进，草稿和区块原样。
+    assert!(matches!(
+        app.state.repo.write_commit(&grant, &plan(1), now).await,
+        Err(CommitError::DraftChanged)
+    ));
+    assert_eq!(app.state.repo.head_seq(&grant).await.unwrap(), Some(head));
+    let draft = app
+        .collection("drafts")
+        .find_one(doc! {"_id": &draft_id})
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(draft.get_str("status").unwrap(), "open");
+    assert_eq!(
+        app.collection("draftChunks")
+            .count_documents(doc! {"draftId": &draft_id})
+            .await
+            .unwrap(),
+        chunks_before
+    );
+    // 当前 rev：发布成功，草稿在同一事务里标记为已发布。
+    let outcome = app.state.repo.write_commit(&grant, &plan(2), now).await;
+    assert!(outcome.is_ok(), "{outcome:?}");
+    let draft = app
+        .collection("drafts")
+        .find_one(doc! {"_id": &draft_id})
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(draft.get_str("status").unwrap(), "published");
+    // 同一草稿再发布一次（并发的第二个发布请求）：作废，不会写出第二个提交。
+    let mut again = plan(2);
+    again.base_seq = head + 1;
+    assert!(matches!(
+        app.state.repo.write_commit(&grant, &again, now).await,
+        Err(CommitError::DraftChanged)
+    ));
+    assert_eq!(
+        app.state.repo.head_seq(&grant).await.unwrap(),
+        Some(head + 1)
+    );
+    // 经接口：已发布的草稿再追加、再发布都是 409。
+    let reply = append(
+        &app,
+        &path,
+        json!([{"op": "fill", "box": [0, 0, 0, 1, 1, 1], "block": 2}]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::CONFLICT, "{:?}", reply.body);
+    // 丢弃之后的草稿同样不能被发布。
+    let discarded = new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await;
+    let discarded_path = draft_path(SPACE, &discarded);
+    append(
+        &app,
+        &discarded_path,
+        json!([{"op": "fill", "box": [0, 0, 0, 1, 1, 1], "block": 2}]),
+    )
+    .await;
+    let reply = app.org(Method::DELETE, &discarded_path, None).await;
+    assert!(reply.status.is_success(), "{:?}", reply.body);
+    let mut gone = CommitPlan::new(head + 1, actor.clone(), "发布");
+    gone.draft_id = Some(discarded);
+    gone.draft_rev = Some(1);
+    assert!(matches!(
+        app.state.repo.write_commit(&grant, &gone, now).await,
+        Err(CommitError::DraftChanged)
+    ));
+}
