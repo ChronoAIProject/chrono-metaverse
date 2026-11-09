@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS shards(shard TEXT PRIMARY KEY, objects INTEGER, kept 
 CREATE TABLE IF NOT EXISTS lvis(uid TEXT, category TEXT);
 CREATE INDEX IF NOT EXISTS lvis_uid ON lvis(uid);
 CREATE INDEX IF NOT EXISTS lvis_cat ON lvis(category);
-CREATE TABLE IF NOT EXISTS paths(uid TEXT PRIMARY KEY, shard TEXT);
+CREATE TABLE IF NOT EXISTS paths(uid TEXT PRIMARY KEY, shard TEXT) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
 CREATE VIRTUAL TABLE IF NOT EXISTS objects USING fts5(
   uid UNINDEXED, name, tags, categories, lvis, description,
@@ -52,12 +52,35 @@ def db_path() -> Path:
     return Path(os.environ.get("METAVERSE_RECON_OBJAVERSE_DB") or cache_dir() / "objaverse" / "index.sqlite")
 
 
+SCHEMA_VERSION = "2"
+SKETCHFAB = "https://sketchfab.com/"
+THUMBS = "https://media.sketchfab.com/models/"
+
+
 def connect() -> sqlite3.Connection:
     path = db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(path, check_same_thread=False)
     con.executescript(SCHEMA)
+    row = con.execute("SELECT value FROM meta WHERE key = 'schema'").fetchone()
+    if row is None or row[0] != SCHEMA_VERSION:
+        # 索引格式变了：对象表重建（LVIS 和路径表不受影响）
+        with con:
+            con.execute("DROP TABLE IF EXISTS objects")
+            con.execute("DELETE FROM shards")
+        con.executescript(SCHEMA)
+        with con:
+            con.execute("INSERT OR REPLACE INTO meta VALUES ('schema', ?)", (SCHEMA_VERSION,))
     return con
+
+
+def _pack(url: str, prefix: str) -> str:
+    """常见的地址前缀不存（索引小一半）：存成 ~ 加剩下的部分。"""
+    return "~" + url[len(prefix) :] if url.startswith(prefix) else url
+
+
+def _unpack(value: str, prefix: str) -> str:
+    return prefix + value[1:] if value.startswith("~") else value
 
 
 # ---------------------------------------------------------------------------- 元数据下载与入索引
@@ -125,15 +148,15 @@ def object_rows(shard: str, data: dict, lvis: dict[str, str]) -> tuple[list[tupl
                 " ".join(t.get("name", "") for t in info.get("tags") or []),
                 " ".join(c.get("name", "") for c in info.get("categories") or []),
                 lvis.get(uid, "").replace("_", " "),
-                (info.get("description") or "")[:400],
+                (info.get("description") or "")[:200],
                 user.get("displayName") or user.get("username") or "",
-                user.get("profileUrl") or "",
+                _pack(user.get("profileUrl") or "", SKETCHFAB),
                 lic,
                 int(info.get("faceCount") or 0),
-                _thumb(info),
+                _pack(_thumb(info), f"{THUMBS}{uid}/"),
                 shard,
                 int(info.get("likeCount") or 0),
-                info.get("viewerUrl") or f"https://sketchfab.com/3d-models/{uid}",
+                _pack(info.get("viewerUrl") or f"{SKETCHFAB}3d-models/{uid}", f"{SKETCHFAB}3d-models/"),
             )
         )
     return rows, len(data)
@@ -279,12 +302,12 @@ def search(
                 "id": uid,
                 "title": name or uid,
                 "author": author or "unknown",
-                "authorUrl": author_url,
+                "authorUrl": _unpack(author_url, SKETCHFAB),
                 "license": lic,
-                "page": page,
+                "page": _unpack(page, f"{SKETCHFAB}3d-models/"),
                 "faceCount": faces or None,
                 "download": {"url": f"{HF}/glbs/{shard}/{uid}.glb", "format": "glb"},
-                "thumbnail": thumb,
+                "thumbnail": _unpack(thumb, f"{THUMBS}{uid}/"),
                 "tags": tags.split()[:12],
                 "category": lvis or cats_,
                 "description": desc[:240],
@@ -319,12 +342,12 @@ def lookup(uid: str) -> dict | None:
         "id": uid,
         "title": name or uid,
         "author": author or "unknown",
-        "authorUrl": author_url,
+        "authorUrl": _unpack(author_url, SKETCHFAB),
         "license": lic,
-        "page": page,
+        "page": _unpack(page, f"{SKETCHFAB}3d-models/"),
         "faceCount": faces or None,
         "download": {"url": f"{HF}/glbs/{shard}/{uid}.glb", "format": "glb"},
-        "thumbnail": thumb,
+        "thumbnail": _unpack(thumb, f"{THUMBS}{uid}/"),
     }
 
 
