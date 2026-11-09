@@ -5,7 +5,7 @@
   },
   "services": {
     "metaverse-web": {
-      "image": "ghcr.io/chronoaiproject/chrono-metaverse-web:aabf88f@sha256:31dff47bbda6656e1dfd1e55e241612b8120de11060ebcbc4ea0285a4faaee76",
+      "image": "ghcr.io/chronoaiproject/chrono-metaverse-web:0fccf1d@sha256:0bd8b2a58b0316ff01dd053fbd05e17a4a41b9596d53e9bc6ac736d728b9000c",
       "port": 8080,
       "routes": ["/"],
       "expose": "public",
@@ -19,7 +19,7 @@
       }
     },
     "metaverse-api": {
-      "image": "ghcr.io/chronoaiproject/chrono-metaverse-api:aabf88f@sha256:e87c4fd2f6dbb4d98da83611b33991f36384980f46dfb6ac2b7bd86b7ad5aeb3",
+      "image": "ghcr.io/chronoaiproject/chrono-metaverse-api:0fccf1d@sha256:508c798efd26d6c0045d132f6fe8762b5646b9519fb58d24fce73469200b16d0",
       "port": 8080,
       "routes": ["/api"],
       "expose": "public",
@@ -65,7 +65,7 @@
       }
     },
     "metaverse-worker": {
-      "image": "ghcr.io/chronoaiproject/chrono-metaverse-worker:aabf88f@sha256:8ad4bbc10806ae74b5a4f3836554afec625933a20723d1ba160c9c9adbe1c6e0",
+      "image": "ghcr.io/chronoaiproject/chrono-metaverse-worker:0fccf1d@sha256:e83c3600e4c268505b364b9965d52aba32d3f3b9706624b7925f965495f83771",
       "port": 8080,
       "expose": "internal",
       "health_path": "/healthz",

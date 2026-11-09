@@ -152,7 +152,7 @@ gh run list -R ChronoAIProject/chrono-metaverse --workflow Images --commit <完�
 gh run view <运行编号> -R ChronoAIProject/chrono-metaverse --log | grep -oE '(api|web|worker)=sha256:[0-9a-f]{64}' | sort -u
 ```
 
-`app.json` 里写的是已经上线验证过的版本（目前是 `aabf88f`，摘要与 chrono-cd 修订 2 记录的一致）；`check-app.mjs` 拒绝只有标签、标签不是 7 位提交哈希、或仓库和服务对不上的镜像。
+`app.json` 里写的是已经上线验证过的版本（目前是 `0fccf1d`，摘要与 chrono-cd 修订 3 记录的一致）；`check-app.mjs` 拒绝只有标签、标签不是 7 位提交哈希、或仓库和服务对不上的镜像。
 
 按摘要部署只保证"部署的就是那次运行构建的镜像"，管不到谁能推镜像、推代码。还没做、要仓库管理员在 GitHub 上决定的：建受保护的 `main` 作为部署分支（现在唯一的分支 `claude/happy-ritchie-oly5hx` 没有保护）；在包设置的 Manage Actions access 里收回本仓库工作流的写权限，改用只在受保护分支的 GitHub Environment 里可用的凭证推镜像（工作流自己声明的 `packages: write` 拦不住改过的工作流）；用组织规则集限制谁能改 `.github/workflows`。
 
@@ -341,7 +341,7 @@ nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --
 
 上线后同步改 `app.json` 的三个镜像（同一条命令去掉 `--patch` 的输出里就是新的镜像引用），让仓库里记的是线上验证过的版本。
 
-**线上规格还是按标签写的时候（只做一次）**：2026-11-09 部署的修订 1、2 用的是 `:b957be0`、`:aabf88f` 这类标签。在做任何只改环境变量的 `PATCH` 之前，先用上面的命令把镜像换成按摘要固定，摘要取 `revisions` 里**当前修订记录的** `ImageDigest`（部署时解析出来的，不受之后改写标签的影响；与那次 `Images` 运行的摘要核对一次）。之后再按需要用 `PATCH` 同步 `app.json` 里改过的环境变量（例如第 1 节"公开接口限流"的四个额度）。
+**线上规格还是按标签写的时候（只做一次）**：2026-11-09 部署的修订 1–3 用的是 `:b957be0`、`:aabf88f`、`:0fccf1d` 这类标签。在做任何只改环境变量的 `PATCH` 之前，先用上面的命令把镜像换成按摘要固定，摘要取 `revisions` 里**当前修订记录的** `ImageDigest`（部署时解析出来的，不受之后改写标签的影响；与那次 `Images` 运行的摘要核对一次）。之后再按需要用 `PATCH` 同步 `app.json` 里改过的环境变量（例如第 1 节"公开接口限流"的四个额度）。
 
 改了 `app.json` 的其他内容（环境变量、资源）时用第 4 步的 `PUT` 整份提交；`PUT` 会整份替换，提交前先 `GET` 一次，把线上手工改过的值（`PUBLIC_BASE_URL`、`ALLOWED_NYX_SERVICE_IDS`）同步回来，再带上 `If-Match: <generation>`。
 
