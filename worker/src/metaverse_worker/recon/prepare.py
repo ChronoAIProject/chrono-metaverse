@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 import hashlib
 import io
 import os
@@ -21,8 +20,8 @@ import zipfile
 import numpy as np
 from PIL import Image
 
-from ..config import Config
 from ..processing import tasks
+from ..processing.limits import default_limits
 from ..processing.rebuild import OBJECTS_TARGET, body_textures
 from ..processing.scan import matrix_from_column_major, sniff_file
 from ..records import detected_by
@@ -43,24 +42,6 @@ CATEGORY_PLAN = {
     "cabinet": ("author", ""),
     "pillar": ("author", ""),
 }
-
-
-def default_limits() -> dict[str, int]:
-    """处理服务默认的解析前检查上限：与 `handlers.context.JobContext.limits` 同样的键，
-    取 `Config` 的默认值。"""
-    d = {f.name: f.default for f in dataclasses.fields(Config) if f.default is not dataclasses.MISSING}
-    return {
-        "max_scan_bytes": d["max_scan_bytes"],
-        "max_zip_bytes": d["max_scan_bytes"] * 2,
-        "max_triangles": d["max_triangles"],
-        "max_texture_pixels": d["max_texture_pixels"],
-        "max_texture_side": d["max_texture_side"],
-        "max_grid_cells": d["max_grid_cells"],
-        "max_ops_bytes": d["max_ops_bytes"],
-        "max_model_bytes": d["max_model_bytes"],
-        "model_max_triangles": d["model_max_triangles"],
-        "model_max_texture_side": d["model_max_texture_side"],
-    }
 
 
 def sha256_file(path: str) -> str:

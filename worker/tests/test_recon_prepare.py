@@ -1,4 +1,4 @@
-"""重建工作台 prepare 与处理服务 scan_import 坐标一致；reframe 在两种对齐之间换算。"""
+"""重建工作台 prepare 与本地重建编排（`bundle.rebuild`）坐标、物件一致；reframe 在两种对齐之间换算。"""
 
 from __future__ import annotations
 
@@ -9,14 +9,17 @@ import os
 import numpy as np
 import pytest
 
-from conftest import jpeg_bytes, scan_zip, upload_asset
+from conftest import jpeg_bytes, scan_zip
+from metaverse_worker.bundle.rebuild import rebuild_scan
+from metaverse_worker.processing import limits as lim
 from metaverse_worker.processing import tasks
 from metaverse_worker.processing.align import auto_align
+from metaverse_worker.processing.limits import default_limits
 from metaverse_worker.processing.scan import compute_alignment, rotation_y
 from metaverse_worker.recon import core as wc
 from metaverse_worker.recon import reframe as rf
 from metaverse_worker.recon.cli import build_parser
-from metaverse_worker.recon.prepare import candidate_list, cmd_prepare, default_limits
+from metaverse_worker.recon.prepare import candidate_list, cmd_prepare
 from recon_support import object_body
 from synthetic import room_mesh
 
@@ -116,29 +119,35 @@ def test_prepare_drc_with_texture_is_zipped_like_the_seed(tmp_path):
     assert wc.load_scan(str(out / "scan.glb")).image is not None
 
 
-@pytest.mark.mongo
-def test_prepare_matches_real_scan_import_commit(tmp_path, scan_file, store, db_config, monkeypatch):
-    """真实的 scan_import 任务（首次导入）写进提交的变换和重建层物件，与 prepare 完全一致。"""
-    from conftest import make_space
-    from metaverse_worker.handlers import scan as scan_handlers
-    from metaverse_worker.runner import Runner
-    from test_pipeline_mongo import run_job
-
-    monkeypatch.setattr(scan_handlers, "OBJECTS_TARGET", FAKE)
-    make_space(store)
-    runner = Runner(db_config, store, isolate=False, on_stall=lambda: None)
-    asset = upload_asset(store, scan_file.read_bytes(), "scan")
-    doc = run_job(runner, store, "scan_import", {"assetHash": asset})
-    assert doc["status"] == "done", doc.get("lastError")
-    commit = store.commits.find_one({"jobId": doc["_id"]})
+def test_prepare_matches_the_local_rebuild(tmp_path, scan_file):
+    """本地重建编排（原来处理服务首次导入扫描的那条路径）得到的变换和重建层物件，与 prepare 完全一致。"""
+    res = rebuild_scan(str(scan_file), str(tmp_path / "work"), objects_target=FAKE, web_models=False)
     out = prepare(tmp_path, scan_file)
     transform = json.loads((out / "transform.json").read_text())
-    assert commit["scan"]["transform"] == transform["transform"]
-    ids = {c["id"] for c in commit["changedEntities"]}
-    base_ids = set(json.loads((out / "structure.json").read_text())) | set(
-        json.loads((out / "objects.json").read_text())
-    )
-    assert ids == base_ids
+    assert res["transform"] == transform["transform"]
+    structure = json.loads((out / "structure.json").read_text())
+    objects = json.loads((out / "objects.json").read_text())
+    assert {k: v for k, v in res["entities"].items() if k in res["structureIds"]} == structure
+    assert {k: v for k, v in res["entities"].items() if k not in res["structureIds"]} == objects
+
+
+def test_default_limits_keep_the_old_service_defaults():
+    """解析上限从处理服务的配置搬到 processing.limits，数值不变（同一份扫描算出同样的结果）。"""
+    assert default_limits() == {
+        "max_scan_bytes": 1 << 30,
+        "max_zip_bytes": 2 << 30,
+        "max_triangles": 5_000_000,
+        "max_texture_pixels": 8192 * 8192,
+        "max_texture_side": 8192,
+        "max_grid_cells": 400_000_000,
+        "max_ops_bytes": 256 << 20,
+        "max_model_bytes": 50 << 20,
+        "model_max_triangles": 100_000,
+        "model_max_texture_side": 2048,
+    }
+    first = default_limits()
+    first["max_triangles"] = 1
+    assert default_limits()["max_triangles"] == lim.MAX_TRIANGLES == 5_000_000
 
 
 def test_reframe_compute_to_scan_import(tmp_path, scan_file):

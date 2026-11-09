@@ -1,4 +1,4 @@
-"""扫描导入 / 重新重建时给哪些物体建锚点（`handlers.scan.anchor_proposals`）。
+"""本地重建时给哪些物体建议锚点（`bundle.anchors.anchor_proposals`，原来是处理服务导入扫描的规则）。
 
 只给有意义的物体建：桌子 → table、前台 → counter、沙发 → zone；椅子只在提示 `anchor: true` 时 → seat；
 柜子、杂物、绿植、灯、立柱、圆形物件等不建。标签用物体的标签，没有就用类别的中文名。
@@ -9,8 +9,8 @@ from __future__ import annotations
 import pytest
 
 from metaverse_worker import shapes as sh
+from metaverse_worker.bundle.anchors import anchor_proposals, grid_cover, requested_seats
 from metaverse_worker.errors import PermanentJobError
-from metaverse_worker.handlers.scan import anchor_proposals, grid_cover, requested_seats
 from metaverse_worker.records import entity_body, validate_anchor_body
 
 
