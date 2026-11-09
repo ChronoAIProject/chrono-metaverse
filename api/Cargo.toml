@@ -17,6 +17,8 @@ axum = { version = "0.8", features = ["macros"] }
 base64 = "0.22"
 flate2 = "1"
 futures-util = "0.3"
+# 公开接口按来源地址限流（与 CMA 相同的版本和特性）。
+governor = { version = "0.10", default-features = false, features = ["std", "dashmap"] }
 mongodb = { version = "3", default-features = false, features = [
     "bson-3",
     "compat-3-3-0",

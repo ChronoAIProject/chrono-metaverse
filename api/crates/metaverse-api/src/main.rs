@@ -36,10 +36,14 @@ async fn serve() -> Result<(), String> {
         services = ?config.nyxid.allowed_service_ids,
         "接口服务启动"
     );
-    axum::serve(listener, app(state))
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .map_err(|error| format!("HTTP 服务出错：{error}"))
+    // 带上连接地址：公开接口默认按连接地址限流（设计 8.2）。
+    axum::serve(
+        listener,
+        app(state).into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .map_err(|error| format!("HTTP 服务出错：{error}"))
 }
 
 /// 收到 SIGTERM（滚动更新）或 Ctrl-C 时停止接收新连接，处理完进行中的请求再退出。
