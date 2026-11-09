@@ -518,8 +518,26 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
         ))
     ) {
       const tail = m[1] ?? '';
-      if (tail === '' && request.method === 'PATCH')
-        return json(200, { space: { ...state.space, ...parsed() } });
+      if (tail === '' && request.method === 'PATCH') {
+        const req = parsed();
+        if (invalidFields(req, ['name', 'description', 'visibility', 'confirmPublicHistory']))
+          return;
+        if (
+          state.space.visibility !== 'public' &&
+          req.visibility === 'public' &&
+          req.confirmPublicHistory !== true
+        )
+          return problem(
+            409,
+            'confirmation_required',
+            '改成公开后全部历史都会公开；确认后请带 confirmPublicHistory: true 重试',
+          );
+        const changes = { ...req };
+        delete changes.confirmPublicHistory;
+        state.space = { ...state.space, ...changes };
+        // 接口服务直接返回修改后的 SpaceView（不是 { space }）。
+        return json(200, state.space);
+      }
       if (tail === '/share-tokens')
         return json(201, { shareToken: { id: 'st_2', token: 'share-secret-2' } });
       if (tail === '/layout' && request.method === 'PUT') return json(200, { seq: 7 });

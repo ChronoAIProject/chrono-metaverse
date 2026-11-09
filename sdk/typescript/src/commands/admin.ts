@@ -158,13 +158,17 @@ async function updateSpace(ctx: CliContext, values: Values): Promise<number> {
       ? { description: str(values, 'description') }
       : {}),
     ...(visibility !== undefined ? { visibility: visibility as 'unlisted' | 'public' } : {}),
-    ...(visibility === 'public' ? { confirmPublic: true } : {}),
+    // 接口服务要求显式确认公开全部历史（字段名 confirmPublicHistory）。
+    ...(visibility === 'public' ? { confirmPublicHistory: true } : {}),
   };
   if (Object.keys(request).length === 0)
     throw new CliError('至少给出 --name、--description 或 --visibility 之一');
-  const result = await makeApi(ctx, ws, values).updateSpace(request);
-  if (flag(values, 'json')) printJson(ctx, result);
-  else ctx.out(`已更新空间 ${ws.config.spaceId}`);
+  const space = await makeApi(ctx, ws, values).updateSpace(request);
+  if (flag(values, 'json')) printJson(ctx, space);
+  else
+    ctx.out(
+      `已更新空间 ${space.id ?? ws.config.spaceId}：名称 ${space.name ?? '（未知）'}，可见性 ${space.visibility ?? '（未知）'}`,
+    );
   return 0;
 }
 

@@ -571,6 +571,20 @@ describe('metaverse admin', () => {
 
     const root = directWorkspace(fake);
     const ws = makeContext(root);
+    // 不带确认字段时接口服务返回 409；字段名不对（例如 confirmPublic）时 422。
+    const admin = new MetaverseApi(
+      new ApiClient({ mode: 'direct', api: fake.url, devTokenUrl: fake.devTokenUrl }),
+      'demo-space',
+    );
+    await expect(admin.updateSpace({ visibility: 'public' })).rejects.toMatchObject({
+      status: 409,
+      code: 'confirmation_required',
+    });
+    await expect(
+      admin.updateSpace({ visibility: 'public', confirmPublic: true } as unknown as {
+        visibility: 'public';
+      }),
+    ).rejects.toMatchObject({ status: 422 });
     expect(await main(ws, ['admin', 'update-space', '--visibility', 'public'])).toBe(1);
     expect(ws.errors.at(-1)).toContain('--yes');
     expect(
@@ -587,8 +601,18 @@ describe('metaverse admin', () => {
     expect(JSON.parse(fake.requests.at(-1)!.body.toString())).toEqual({
       name: '新名字',
       visibility: 'public',
-      confirmPublic: true,
+      confirmPublicHistory: true,
     });
+    expect(ws.lines.at(-1)).toBe('已更新空间 demo-space：名称 新名字，可见性 public');
+    expect(await main(ws, ['admin', 'update-space', '--description', '新说明', '--json'])).toBe(0);
+    expect(JSON.parse(fake.requests.at(-1)!.body.toString())).toEqual({ description: '新说明' });
+    expect(JSON.parse(ws.lines.at(-1)!)).toMatchObject({
+      id: 'demo-space',
+      description: '新说明',
+      visibility: 'public',
+    });
+    expect(await main(ws, ['admin', 'update-space'])).toBe(1);
+    expect(await main(ws, ['admin', 'update-space', '--visibility', 'secret'])).toBe(1);
     expect(
       await main(ws, ['admin', 'rotate-share-token', '--revoke', 'st_1', '--revoke', 'st_0']),
     ).toBe(0);

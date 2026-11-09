@@ -393,13 +393,17 @@ export class MetaverseApi {
     return `/api/v1/admin/spaces/${seg(this.spaceId)}`;
   }
 
-  /** `PATCH /api/v1/admin/spaces/{space_id}`，请求体 `{ name?, description?, visibility?, confirmPublic? }`。 */
+  /**
+   * `PATCH /api/v1/admin/spaces/{space_id}`，请求体 `{ name?, description?, visibility?,
+   * confirmPublicHistory? }`（接口服务拒绝未知字段）→ 修改后的空间（SpaceView 本身）。
+   * 凭链接查看 → 公开时必须带 `confirmPublicHistory: true`，否则 409 `confirmation_required`。
+   */
   updateSpace(request: {
     name?: string;
     description?: string;
     visibility?: 'unlisted' | 'public';
-    confirmPublic?: boolean;
-  }): Promise<{ space?: SpaceView } & Record<string, unknown>> {
+    confirmPublicHistory?: boolean;
+  }): Promise<SpaceView> {
     return this.client.json('PATCH', this.admin, { json: request });
   }
 
