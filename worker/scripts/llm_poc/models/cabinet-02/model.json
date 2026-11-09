@@ -1,0 +1,470 @@
+{
+ "entityId": "cabinet-02",
+ "layer": "rebuilt",
+ "kind": "object",
+ "label": "入口门框",
+ "anchorId": "cabinet-02",
+ "shape": {
+  "type": "group",
+  "children": [
+   {
+    "type": "group",
+    "children": [
+     {
+      "type": "extrude",
+      "outline": {
+       "points": [
+        [
+         3.22,
+         0.42
+        ],
+        [
+         3.33,
+         0.42
+        ],
+        [
+         3.33,
+         1.475
+        ],
+        [
+         3.22,
+         1.475
+        ]
+       ],
+       "arcs": [
+        {
+         "from": 2,
+         "bulge": 1.0
+        }
+       ]
+      },
+      "height": 2.738,
+      "transform": {
+       "position": [
+        0,
+        0.06,
+        0
+       ]
+      },
+      "material": {
+       "color": [
+        158,
+        106,
+        62
+       ]
+      }
+     },
+     {
+      "type": "box",
+      "size": [
+       0.025,
+       0.115,
+       0.15
+      ],
+      "transform": {
+       "position": [
+        3.3425,
+        1.19,
+        1.395
+       ]
+      },
+      "material": {
+       "color": [
+        34,
+        34,
+        36
+       ]
+      }
+     },
+     {
+      "type": "box",
+      "size": [
+       0.02,
+       0.08,
+       0.075
+      ],
+      "transform": {
+       "position": [
+        3.34,
+        1.21,
+        1.2825
+       ]
+      },
+      "material": {
+       "color": [
+        214,
+        214,
+        208
+       ]
+      }
+     }
+    ]
+   },
+   {
+    "type": "group",
+    "children": [
+     {
+      "type": "box",
+      "size": [
+       0.41,
+       2.14,
+       0.03
+      ],
+      "transform": {
+       "position": [
+        3.045,
+        0.06,
+        1.406
+       ]
+      },
+      "material": {
+       "color": [
+        138,
+        156,
+        152
+       ]
+      }
+     },
+     {
+      "type": "box",
+      "size": [
+       0.03,
+       2.14,
+       0.252
+      ],
+      "transform": {
+       "position": [
+        1.4,
+        0.06,
+        2.884
+       ]
+      },
+      "material": {
+       "color": [
+        138,
+        156,
+        152
+       ]
+      }
+     },
+     {
+      "type": "box",
+      "size": [
+       0.1,
+       2.738,
+       0.18
+      ],
+      "transform": {
+       "position": [
+        1.392,
+        0.06,
+        3.09
+       ]
+      },
+      "material": {
+       "color": [
+        158,
+        106,
+        62
+       ]
+      }
+     }
+    ]
+   },
+   {
+    "type": "group",
+    "children": [
+     {
+      "type": "group",
+      "children": [
+       {
+        "type": "extrude",
+        "outline": {
+         "points": [
+          [
+           -1.28,
+           -0.03
+          ],
+          [
+           1.15,
+           -0.03
+          ],
+          [
+           1.15,
+           0.18
+          ],
+          [
+           1.11,
+           0.18
+          ],
+          [
+           1.11,
+           0.01
+          ],
+          [
+           -1.28,
+           0.01
+          ]
+         ]
+        },
+        "height": 0.2,
+        "transform": {
+         "position": [
+          0,
+          2.2,
+          0
+         ]
+        },
+        "material": {
+         "color": [
+          122,
+          136,
+          133
+         ]
+        }
+       },
+       {
+        "type": "extrude",
+        "outline": {
+         "points": [
+          [
+           -1.28,
+           -0.03
+          ],
+          [
+           1.15,
+           -0.03
+          ],
+          [
+           1.15,
+           0.18
+          ],
+          [
+           1.11,
+           0.18
+          ],
+          [
+           1.11,
+           0.02
+          ],
+          [
+           -1.28,
+           0.02
+          ]
+         ]
+        },
+        "height": 0.2,
+        "transform": {
+         "position": [
+          0,
+          2.4,
+          0
+         ]
+        },
+        "material": {
+         "color": [
+          172,
+          165,
+          153
+         ]
+        }
+       },
+       {
+        "type": "extrude",
+        "outline": {
+         "points": [
+          [
+           -1.28,
+           -0.03
+          ],
+          [
+           1.15,
+           -0.03
+          ],
+          [
+           1.15,
+           0.18
+          ],
+          [
+           1.11,
+           0.18
+          ],
+          [
+           1.11,
+           0.01
+          ],
+          [
+           -1.28,
+           0.01
+          ]
+         ]
+        },
+        "height": 0.198,
+        "transform": {
+         "position": [
+          0,
+          2.6,
+          0
+         ]
+        },
+        "material": {
+         "color": [
+          122,
+          136,
+          133
+         ]
+        }
+       }
+      ]
+     },
+     {
+      "type": "group",
+      "children": [
+       {
+        "type": "box",
+        "size": [
+         0.4,
+         0.17,
+         0.03
+        ],
+        "transform": {
+         "position": [
+          -0.09,
+          2.59,
+          0.025
+         ]
+        },
+        "material": {
+         "color": [
+          52,
+          150,
+          214
+         ]
+        }
+       },
+       {
+        "type": "box",
+        "size": [
+         0.25,
+         0.07,
+         0.04
+        ],
+        "transform": {
+         "position": [
+          -0.25,
+          2.47,
+          0.03
+         ]
+        },
+        "material": {
+         "color": [
+          196,
+          196,
+          192
+         ]
+        }
+       },
+       {
+        "type": "box",
+        "size": [
+         0.25,
+         0.07,
+         0.04
+        ],
+        "transform": {
+         "position": [
+          0.17,
+          2.47,
+          0.03
+         ]
+        },
+        "material": {
+         "color": [
+          196,
+          196,
+          192
+         ]
+        }
+       }
+      ]
+     },
+     {
+      "type": "group",
+      "children": [
+       {
+        "type": "box",
+        "size": [
+         0.05,
+         2.14,
+         0.12
+        ],
+        "transform": {
+         "position": [
+          -1.08,
+          0.06,
+          -0.08
+         ]
+        },
+        "material": {
+         "color": [
+          82,
+          88,
+          90
+         ]
+        }
+       },
+       {
+        "type": "box",
+        "size": [
+         0.05,
+         2.14,
+         0.12
+        ],
+        "transform": {
+         "position": [
+          0.865,
+          0.06,
+          -0.08
+         ]
+        },
+        "material": {
+         "color": [
+          82,
+          88,
+          90
+         ]
+        }
+       }
+      ]
+     }
+    ],
+    "transform": {
+     "position": [
+      2.2773,
+      0.0,
+      2.0833
+     ],
+     "yaw": 42.858
+    }
+   }
+  ]
+ },
+ "bounds": {
+  "min": [
+   1.2437,
+   0.0599,
+   0.4199
+  ],
+  "max": [
+   3.3551,
+   2.7981,
+   3.1801
+  ]
+ },
+ "props": {
+  "category": "doorway",
+  "source": "llm-handwritten",
+  "version": "v4",
+  "parts": "右侧木饰面墙（圆头）+读卡器；左右玻璃侧板；左侧木饰面；门头三段（深色玻璃带/浅色横条/上亮）+EXIT 灯+2 个闭门器；两根门框立柱。玻璃门扇透明、扫描里没有，不建。"
+ }
+}

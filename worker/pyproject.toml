@@ -38,6 +38,8 @@ markers = [
 ]
 
 [tool.ruff]
+# 概念验证代码（大语言模型看图写模型的工作台），以后会改写成正式的命令行功能，暂不纳入静态检查。
+extend-exclude = ["scripts/llm_poc"]
 line-length = 110
 target-version = "py313"
 src = ["src", "tests"]
