@@ -11,6 +11,14 @@ export const CONFIG_FILE = 'metaverse.json';
 export const DEFAULT_NYX_BASE = 'https://nyx-api.chrono-ai.fun';
 export const DEFAULT_SLUG = 'chrono-metaverse';
 
+/**
+ * metaverse.json 里允许写的 NyxID 地址。nyxid 模式会把令牌（agent key，或者人的登录态）
+ * 发到 nyxBase，而工作区可能来自别人（git 仓库、压缩包），命令行还会从上级目录找
+ * metaverse.json，所以工作区配置只能在这几个地址里选。别的地址只能由用户自己在命令行用
+ * `--nyx-base` 或环境变量 `METAVERSE_NYX_BASE` 指定。
+ */
+export const TRUSTED_NYX_BASES: readonly string[] = [DEFAULT_NYX_BASE, 'https://api.nyxid.ai'];
+
 export type TransportMode = 'nyxid' | 'direct';
 
 export interface WorkspaceConfig {
@@ -18,11 +26,14 @@ export interface WorkspaceConfig {
   readonly spaceId: string;
   /** `nyxid`（默认，经 NyxID 代理调用线上服务）或 `direct`（直连本地接口服务，开发和测试用）。 */
   readonly mode: TransportMode;
-  /** NyxID 地址（nyxid 模式）。 */
+  /**
+   * NyxID 地址（nyxid 模式）。写在 metaverse.json 里时只能是 TRUSTED_NYX_BASES 之一；
+   * 命令行 `--nyx-base` 和环境变量 `METAVERSE_NYX_BASE` 可以指定别的 https 地址。
+   */
   readonly nyxBase?: string;
-  /** 服务在 NyxID 里的 slug（nyxid 模式），默认 chrono-metaverse。 */
+  /** 服务在 NyxID 里的 slug（nyxid 模式），默认 chrono-metaverse。只能用字母、数字、_ 和 -。 */
   readonly slug?: string;
-  /** nyxid 命令行的配置名（读 ~/.nyxid/profiles/<名称>/access_token）。 */
+  /** nyxid 命令行的配置名（读 ~/.nyxid/profiles/<名称>/access_token）。只能用字母、数字、_ 和 -。 */
   readonly profile?: string;
   /** 接口服务地址（direct 模式），例如 http://127.0.0.1:8080。 */
   readonly api?: string;
@@ -46,6 +57,55 @@ export class ConfigError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'ConfigError';
+  }
+}
+
+/** 只有显式指定的 NyxID 地址可以用这些主机的 http（令牌不出本机，方便本地调试）。 */
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+/** profile 和 slug 允许的字符：profile 用来拼 `~/.nyxid/profiles/<名称>/` 路径，slug 拼代理路径。 */
+const SAFE_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+
+export function isSafeName(value: unknown): value is string {
+  return typeof value === 'string' && SAFE_NAME.test(value);
+}
+
+/**
+ * 检查 NyxID 地址并规整成"协议 + 主机 + 端口"（去掉末尾的 /）。不能带账号密码、路径、
+ * 查询参数和片段；协议必须是 https，`allowLoopbackHttp` 时另外接受本机回环地址的 http。
+ * 不合格时抛出 ConfigError，`what` 说明地址从哪里来。
+ */
+export function normalizeNyxBase(value: string, what: string, allowLoopbackHttp = false): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new ConfigError(`${what} 不是合法的地址`);
+  }
+  if (url.username !== '' || url.password !== '') {
+    throw new ConfigError(`${what} 不能带账号密码`);
+  }
+  const where = `${url.protocol}//${url.host}`;
+  if (url.pathname !== '/' || url.search !== '' || url.hash !== '') {
+    throw new ConfigError(`${what} 只能是协议、主机和端口，不能带路径、查询参数和片段（${where}）`);
+  }
+  if (url.protocol === 'https:') return url.origin;
+  if (url.protocol === 'http:' && allowLoopbackHttp && LOOPBACK_HOSTS.has(url.hostname)) {
+    return url.origin;
+  }
+  throw new ConfigError(
+    `${what} 必须是 https（令牌会发到这个地址，明文传输会泄露令牌${
+      allowLoopbackHttp ? '；只有本机回环地址 127.0.0.1、localhost、[::1] 可以用 http' : ''
+    }）：${where}`,
+  );
+}
+
+/** 是不是内置的可信 NyxID 地址（见 TRUSTED_NYX_BASES）。 */
+export function isTrustedNyxBase(value: string): boolean {
+  try {
+    return TRUSTED_NYX_BASES.includes(normalizeNyxBase(value, 'NyxID 地址'));
+  } catch {
+    return false;
   }
 }
 
@@ -80,6 +140,18 @@ export function validateConfig(value: unknown): WorkspaceConfig {
   }
   if (config.plot !== undefined && !isObjectId(config.plot)) {
     throw new ConfigError(`${CONFIG_FILE} 里的 plot 不是合法的地块编号`);
+  }
+  if (config.nyxBase !== undefined && !isTrustedNyxBase(config.nyxBase as string)) {
+    throw new ConfigError(
+      `${CONFIG_FILE} 里的 nyxBase 只能是 ${TRUSTED_NYX_BASES.join('、')} 之一：` +
+        '令牌会发到这个地址，而工作区配置可能来自别人。' +
+        '要用别的 NyxID 地址，请删掉这一项，每次运行时自己用 --nyx-base 或环境变量 METAVERSE_NYX_BASE 指定',
+    );
+  }
+  for (const key of ['slug', 'profile']) {
+    if (config[key] !== undefined && !isSafeName(config[key])) {
+      throw new ConfigError(`${CONFIG_FILE} 里的 ${key} 只能用 1–64 个字母、数字、_ 和 -`);
+    }
   }
   return { ...(config as unknown as WorkspaceConfig), mode };
 }

@@ -68,6 +68,19 @@ describe('令牌来源顺序', () => {
     ).toEqual(['/f']);
   });
 
+  it('profile 名称不能拼出别的路径', () => {
+    const read = (path: string) => (path === '/x/access_token' ? 'stolen' : null);
+    for (const profile of ['../../../x', '..', 'a/b', '', 'x'.repeat(65)]) {
+      expect(() => tokenFileCandidates({ home: '/home/me', env: {}, profile })).toThrow(TokenError);
+      expect(() =>
+        resolveNyxToken({ home: '/home/me/.nyxid/profiles', env: {}, profile, readFile: read }),
+      ).toThrow('profile');
+    }
+    expect(tokenFileCandidates({ home: '/h', env: {}, profile: 'metaverse-builder_1' })).toEqual([
+      '/h/.nyxid/profiles/metaverse-builder_1/access_token',
+    ]);
+  });
+
   it('文件内容：原文或 JSON 字段', () => {
     expect(tokenFromFileContent('abc\nsecond line')).toBe('abc');
     expect(tokenFromFileContent('{"accessToken":"x"}')).toBe('x');
@@ -155,6 +168,33 @@ describe('nyxid 模式的请求构造', () => {
     });
     expect(client.url('/api/v1/x')).toBe('https://nyx.example/api/v1/proxy/s/my%20svc/api/v1/x');
     expect(() => client.url('/v1/x')).toThrow(ApiError);
+  });
+
+  it('NyxID 地址必须是 https（回环地址除外），不合格时构造就报错，不发请求', () => {
+    for (const nyxBase of [
+      'http://evil.example',
+      'http://10.0.0.5:8080',
+      'https://nyx.example/prefix',
+      'https://u:p@nyx.example',
+      'not a url',
+    ]) {
+      expect(() => new ApiClient({ mode: 'nyxid', nyxBase, token: () => 't' })).toThrow(ApiError);
+    }
+    expect(
+      new ApiClient({ mode: 'nyxid', nyxBase: 'http://127.0.0.1:9', token: () => 't' }).url(
+        '/api/v1/x',
+      ),
+    ).toBe('http://127.0.0.1:9/api/v1/proxy/s/chrono-metaverse/api/v1/x');
+    // direct 模式不用 nyxBase，不检查。
+    expect(
+      () =>
+        new ApiClient({
+          mode: 'direct',
+          nyxBase: 'http://evil.example',
+          api: 'http://127.0.0.1:9',
+          devTokenUrl: 'http://127.0.0.1:9/dev/token',
+        }),
+    ).not.toThrow();
   });
 
   it('没有令牌函数时报错', async () => {

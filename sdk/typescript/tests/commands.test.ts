@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { main } from '../src/commands/index.js';
@@ -159,22 +159,152 @@ describe('metaverse pull', () => {
   it('nyxid 模式经代理路径，令牌按顺序取', async () => {
     const remote = remoteSnapshot();
     fake = await startFakeApi(remote.state);
-    const root = makeWorkspace({
-      config: { mode: 'nyxid', nyxBase: fake.url, slug: 'chrono-metaverse' },
-    });
+    const root = makeWorkspace({ config: { mode: 'nyxid', slug: 'chrono-metaverse' } });
     dirs.push(root);
+    // 假 NyxID 在本机回环地址上，只能由用户自己用 --nyx-base / METAVERSE_NYX_BASE 指定。
     const ctx = makeContext(root, { NYXID_TOKEN: 'agent-key-1', HOME: '/nonexistent' });
-    expect(await main(ctx, ['pull', '--token', 'flag-key'])).toBe(0);
+    expect(await main(ctx, ['pull', '--token', 'flag-key', '--nyx-base', fake.url])).toBe(0);
     const request = fake.requests.find((r) => r.path.endsWith('/api/v1/spaces/demo-space'))!;
     expect(request.path).toBe('/api/v1/proxy/s/chrono-metaverse/api/v1/spaces/demo-space');
     expect(request.headers.authorization).toBe('Bearer flag-key');
     expect(request.headers['x-nyxid-identity-token']).toBeUndefined();
-    expect(await main(makeContext(root, { NYXID_TOKEN: 'agent-key-1' }), ['pull'])).toBe(0);
+    // 不是内置的可信地址：提示令牌的去向（不含令牌本身）。
+    expect(ctx.errors.join('\n')).toContain(`NyxID 令牌（命令行 --token）将发给 ${fake.url}`);
+    expect(ctx.errors.join('\n')).not.toContain('flag-key');
+    const envCtx = makeContext(root, { NYXID_TOKEN: 'agent-key-1', METAVERSE_NYX_BASE: fake.url });
+    expect(await main(envCtx, ['pull'])).toBe(0);
     expect(fake.requests.at(-1)!.headers.authorization).toBe('Bearer agent-key-1');
     // 找不到令牌。
-    const noToken = makeContext(root, { NYXID_TOKEN_FILE: join(root, 'missing') });
+    const noToken = makeContext(root, {
+      NYXID_TOKEN_FILE: join(root, 'missing'),
+      METAVERSE_NYX_BASE: fake.url,
+    });
     expect(await main(noToken, ['pull'])).toBe(1);
     expect(noToken.errors.at(-1)).toContain('找不到 NyxID 令牌');
+  });
+});
+
+/** 记录请求地址的 fetch：每个请求都回 404，命令以退出码 1 结束。 */
+function recordingFetch(urls: string[]): typeof fetch {
+  return (async (input: string | URL | Request) => {
+    urls.push(String(input));
+    return new Response(JSON.stringify({ code: 'not_found', detail: '没有' }), {
+      status: 404,
+      headers: { 'content-type': 'application/problem+json' },
+    });
+  }) as typeof fetch;
+}
+
+describe('nyxid 模式的令牌只发给可信地址或用户自己指定的地址', () => {
+  it('上级目录的 metaverse.json 把 nyxBase 指到别处（明文 http）：拒绝，一个请求都不发', async () => {
+    fake = await startFakeApi(remoteSnapshot().state);
+    const root = makeWorkspace({
+      spaceId: 'lobby',
+      config: { mode: 'nyxid', nyxBase: fake.url },
+    });
+    dirs.push(root);
+    const sub = join(root, 'sub');
+    mkdirSync(sub);
+    const env = { NYXID_TOKEN: 'secret-nyxid-agent-key', HOME: '/nonexistent' };
+    for (const args of [
+      ['pull'],
+      ['admin', 'rotate-share-token'],
+      ['admin', 'update-space', '--name', '改名'],
+      ['admin', 'create-space', 'lobby', '--name', '大厅', '--owner', 'org-1'],
+      // 用户自己给了 --nyx-base 也不行：工作区配置本身不合格，要先改掉。
+      ['pull', '--nyx-base', 'https://nyx-api.chrono-ai.fun'],
+    ]) {
+      const ctx = makeContext(sub, env);
+      expect(await main(ctx, args)).toBe(1);
+      expect(ctx.errors.at(-1)).toContain('nyxBase 只能是');
+      expect(ctx.errors.join('\n')).not.toContain('secret-nyxid-agent-key');
+    }
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it('metaverse.json 的 nyxBase 是 https 但不在可信列表里：同样拒绝', async () => {
+    for (const nyxBase of [
+      'https://evil.example',
+      'https://nyx-api.chrono-ai.fun.evil.example',
+      'https://nyx-api.chrono-ai.fun:8443',
+      'https://api.nyxid.ai/proxy',
+    ]) {
+      const root = makeWorkspace({ config: { mode: 'nyxid', nyxBase } });
+      dirs.push(root);
+      const urls: string[] = [];
+      const ctx = { ...makeContext(root, { NYXID_TOKEN: 'k' }), fetch: recordingFetch(urls) };
+      expect(await main(ctx, ['pull'])).toBe(1);
+      expect(ctx.errors.at(-1)).toContain('nyxBase 只能是');
+      expect(urls).toEqual([]);
+    }
+  });
+
+  it('metaverse.json 写可信地址时照常使用，不提示', async () => {
+    const root = makeWorkspace({ config: { mode: 'nyxid', nyxBase: 'https://api.nyxid.ai/' } });
+    dirs.push(root);
+    const urls: string[] = [];
+    const ctx = { ...makeContext(root, { NYXID_TOKEN: 'k' }), fetch: recordingFetch(urls) };
+    expect(await main(ctx, ['pull'])).toBe(1); // 假服务回 404
+    expect(urls[0]).toBe(
+      'https://api.nyxid.ai/api/v1/proxy/s/chrono-metaverse/api/v1/spaces/demo-space',
+    );
+    expect(ctx.errors.join('\n')).not.toContain('注意');
+    // 没写 nyxBase 时用默认地址。
+    const plain = makeWorkspace({ config: { mode: 'nyxid' } });
+    dirs.push(plain);
+    const plainUrls: string[] = [];
+    const plainCtx = {
+      ...makeContext(plain, { NYXID_TOKEN: 'k' }),
+      fetch: recordingFetch(plainUrls),
+    };
+    expect(await main(plainCtx, ['pull'])).toBe(1);
+    expect(plainUrls[0]).toMatch(/^https:\/\/nyx-api\.chrono-ai\.fun\/api\/v1\/proxy\/s\//);
+  });
+
+  it('--nyx-base 优先于 METAVERSE_NYX_BASE；自定义的 https 地址可以用，但会提示', async () => {
+    const root = makeWorkspace({ config: { mode: 'nyxid' } });
+    dirs.push(root);
+    const urls: string[] = [];
+    const env = { NYXID_TOKEN: 'k', METAVERSE_NYX_BASE: 'https://env.example/' };
+    const ctx = { ...makeContext(root, env), fetch: recordingFetch(urls) };
+    expect(await main(ctx, ['pull'])).toBe(1);
+    expect(urls[0]).toMatch(/^https:\/\/env\.example\/api\/v1\/proxy\/s\/chrono-metaverse\//);
+    expect(ctx.errors[0]).toContain('将发给 https://env.example，它不是内置的可信地址');
+    expect(await main(ctx, ['pull', '--nyx-base', 'https://flag.example'])).toBe(1);
+    expect(urls.at(-1)).toMatch(/^https:\/\/flag\.example\//);
+    // 空的环境变量当作没设。
+    const emptyCtx = {
+      ...makeContext(root, { NYXID_TOKEN: 'k', METAVERSE_NYX_BASE: '' }),
+      fetch: recordingFetch(urls),
+    };
+    expect(await main(emptyCtx, ['pull'])).toBe(1);
+    expect(urls.at(-1)).toMatch(/^https:\/\/nyx-api\.chrono-ai\.fun\//);
+  });
+
+  it('显式指定的地址也必须是 https（回环地址除外）；profile、slug 不能拼路径', async () => {
+    const root = makeWorkspace({ config: { mode: 'nyxid' } });
+    dirs.push(root);
+    const urls: string[] = [];
+    const cases: [Record<string, string>, string[], string][] = [
+      [{}, ['--nyx-base', 'http://evil.example'], '--nyx-base 必须是 https'],
+      [{ METAVERSE_NYX_BASE: 'http://10.0.0.5:8080' }, [], 'METAVERSE_NYX_BASE 必须是 https'],
+      [{}, ['--nyx-base', 'https://user:hunter2@nyx.example'], '不能带账号密码'],
+      [{}, ['--nyx-base', 'https://nyx.example/x?y=1'], '不能带路径'],
+      [{}, ['--nyx-base', 'nyx.example'], '不是合法的地址'],
+      [{}, ['--nyx-base', 'ftp://nyx.example'], '必须是 https'],
+      [{}, ['--profile', '../../x'], '--profile 只能用'],
+      [{}, ['--slug', '..'], '--slug 只能用'],
+    ];
+    for (const [env, args, message] of cases) {
+      const ctx = {
+        ...makeContext(root, { NYXID_TOKEN: 'k', ...env }),
+        fetch: recordingFetch(urls),
+      };
+      expect(await main(ctx, ['pull', ...args])).toBe(1);
+      expect(ctx.errors.at(-1)).toContain(message);
+      expect(ctx.errors.at(-1)).not.toContain('hunter2');
+    }
+    expect(urls).toEqual([]);
   });
 });
 

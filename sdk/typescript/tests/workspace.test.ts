@@ -12,7 +12,10 @@ import {
 } from '../src/workspace/build.js';
 import {
   ConfigError,
+  TRUSTED_NYX_BASES,
   findWorkspaceRoot,
+  isTrustedNyxBase,
+  normalizeNyxBase,
   readConfig,
   validateConfig,
   writeConfig,
@@ -73,6 +76,92 @@ describe('工作区配置', () => {
   });
 });
 
+describe('工作区配置里的 NyxID 地址、slug 和 profile', () => {
+  it('nyxBase 只能是内置的可信地址（令牌会发到这里）', () => {
+    expect(TRUSTED_NYX_BASES).toEqual(['https://nyx-api.chrono-ai.fun', 'https://api.nyxid.ai']);
+    for (const nyxBase of [
+      'https://nyx-api.chrono-ai.fun',
+      'https://nyx-api.chrono-ai.fun/',
+      'https://NYX-API.chrono-ai.fun:443',
+      'https://api.nyxid.ai',
+    ]) {
+      expect(validateConfig({ spaceId: 'abc', nyxBase }).nyxBase).toBe(nyxBase);
+    }
+    for (const nyxBase of [
+      'http://127.0.0.1:18777',
+      'http://nyx-api.chrono-ai.fun',
+      'https://evil.example',
+      'https://nyx-api.chrono-ai.fun.evil.example',
+      'https://evil.example/https://nyx-api.chrono-ai.fun',
+      'https://user:pw@nyx-api.chrono-ai.fun',
+      'https://nyx-api.chrono-ai.fun/api',
+      'https://nyx-api.chrono-ai.fun?x=1',
+      'https://nyx-api.chrono-ai.fun#x',
+      'https://nyx-api.chrono-ai.fun:8443',
+      'nyx-api.chrono-ai.fun',
+      '',
+    ]) {
+      expect(() => validateConfig({ spaceId: 'abc', nyxBase })).toThrow('nyxBase 只能是');
+    }
+    expect(() => validateConfig({ spaceId: 'abc', nyxBase: 1 })).toThrow('必须是字符串');
+    // 读文件时一样检查。
+    const root = track(tempDir());
+    writeFileSync(
+      join(root, 'metaverse.json'),
+      JSON.stringify({ spaceId: 'lobby', nyxBase: 'http://127.0.0.1:18777' }),
+    );
+    expect(() => readConfig(root)).toThrow(ConfigError);
+    expect(() =>
+      writeConfig(root, { spaceId: 'lobby', mode: 'nyxid', nyxBase: 'https://x.example' }),
+    ).toThrow('nyxBase');
+  });
+
+  it('slug 和 profile 只能用字母、数字、_ 和 -', () => {
+    expect(
+      validateConfig({ spaceId: 'abc', slug: 'chrono-metaverse', profile: 'metaverse_builder-2' }),
+    ).toMatchObject({
+      slug: 'chrono-metaverse',
+      profile: 'metaverse_builder-2',
+    });
+    for (const bad of [
+      '../../x',
+      '..',
+      '.',
+      'a/b',
+      'a\\b',
+      'my svc',
+      '',
+      'x'.repeat(65),
+      '%2e%2e',
+    ]) {
+      expect(() => validateConfig({ spaceId: 'abc', profile: bad })).toThrow('profile 只能用');
+      expect(() => validateConfig({ spaceId: 'abc', slug: bad })).toThrow('slug 只能用');
+    }
+  });
+
+  it('normalizeNyxBase：只留协议、主机和端口；显式指定时回环地址可以用 http', () => {
+    expect(normalizeNyxBase('https://nyx.example/', '地址')).toBe('https://nyx.example');
+    expect(normalizeNyxBase('https://nyx.example:8443', '地址')).toBe('https://nyx.example:8443');
+    for (const loopback of ['http://127.0.0.1:8090', 'http://localhost:1', 'http://[::1]:2']) {
+      expect(normalizeNyxBase(loopback, '地址', true)).toBe(loopback);
+      expect(() => normalizeNyxBase(loopback, '地址')).toThrow('必须是 https');
+    }
+    for (const bad of [
+      'http://10.0.0.1',
+      'http://localhost.evil.example',
+      'http://127.0.0.1.nip.io',
+    ]) {
+      expect(() => normalizeNyxBase(bad, '地址', true)).toThrow('只有本机回环地址');
+    }
+    expect(() => normalizeNyxBase('https://u:secret@nyx.example', '地址')).toThrow(
+      /^地址 不能带账号密码$/,
+    );
+    expect(isTrustedNyxBase('https://api.nyxid.ai/')).toBe(true);
+    expect(isTrustedNyxBase('https://nyx.example')).toBe(false);
+    expect(isTrustedNyxBase('not a url')).toBe(false);
+  });
+});
+
 describe('metaverse init', () => {
   it('写入配置、示例脚本、技能说明、tsconfig、.gitignore 和工具包链接', async () => {
     const cwd = track(tempDir());
@@ -116,6 +205,29 @@ describe('metaverse init', () => {
     expect(await main(ctx, ['init', 'front-hall', '--force'])).toBe(0);
     expect(readFileSync(join(root, 'build/main.ts'), 'utf8')).toBe('// 我的脚本');
     expect(readConfig(root).mode).toBe('nyxid');
+  });
+
+  it('--nyx-base 只把可信地址写进 metaverse.json；slug、profile 不合格时不留下工作区', async () => {
+    const cwd = track(tempDir());
+    const ctx = makeContext(cwd);
+    expect(await main(ctx, ['init', 'front-hall', '--nyx-base', 'https://api.nyxid.ai/'])).toBe(0);
+    expect(readConfig(join(cwd, 'front-hall')).nyxBase).toBe('https://api.nyxid.ai');
+    for (const args of [
+      ['--nyx-base', 'https://evil.example'],
+      ['--nyx-base', 'http://127.0.0.1:18777'],
+      ['--nyx-base', 'http://evil.example'],
+      ['--profile', '../../x'],
+      ['--slug', 'a/b'],
+    ]) {
+      expect(await main(ctx, ['init', 'other-hall', ...args])).toBe(1);
+      expect(existsSync(join(cwd, 'other-hall'))).toBe(false);
+    }
+    expect(await main(ctx, ['init', 'other-hall', '--nyx-base', 'https://evil.example'])).toBe(1);
+    expect(ctx.errors.at(-1)).toContain('不能写进 metaverse.json');
+    // 环境变量是这台机器自己的设置，不写进工作区。
+    const envCtx = makeContext(cwd, { METAVERSE_NYX_BASE: 'https://evil.example' });
+    expect(await main(envCtx, ['init', 'third-hall'])).toBe(0);
+    expect(readConfig(join(cwd, 'third-hall')).nyxBase).toBeUndefined();
   });
 
   it('参数检查', async () => {

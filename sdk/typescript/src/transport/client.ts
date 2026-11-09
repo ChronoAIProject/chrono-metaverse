@@ -1,4 +1,9 @@
-import { DEFAULT_NYX_BASE, DEFAULT_SLUG, type TransportMode } from '../workspace/config.js';
+import {
+  DEFAULT_NYX_BASE,
+  DEFAULT_SLUG,
+  normalizeNyxBase,
+  type TransportMode,
+} from '../workspace/config.js';
 
 /**
  * 调用接口服务的两种方式：
@@ -6,7 +11,8 @@ import { DEFAULT_NYX_BASE, DEFAULT_SLUG, type TransportMode } from '../workspace
  * - `nyxid`（默认，线上）：`https://nyx-api.chrono-ai.fun/api/v1/proxy/s/<slug>/<路径>`，
  *   带 `Authorization: Bearer <令牌>`。NyxID 代理会丢掉自定义请求头，所以这里只发标准头
  *   （Authorization、Content-Type、Accept、If-Match、Idempotency-Key、Range）；基准版本放在
- *   If-Match 或请求体里。
+ *   If-Match 或请求体里。NyxID 地址必须是 https（本机回环地址可以用 http），否则构造时就报错，
+ *   令牌不会以明文发出。
  * - `direct`（本地开发和测试）：直连 `--api` 地址。每个请求先向模拟 NyxID 的取令牌地址
  *   （`POST <devTokenUrl>`，请求体 `{ sub, orgRole? }`）要一对新令牌（服务端按 jti 防重放，
  *   不能复用），再带上 `X-NyxID-Identity-Token` 和 `Authorization: Bearer <accessToken>`。
@@ -14,7 +20,7 @@ import { DEFAULT_NYX_BASE, DEFAULT_SLUG, type TransportMode } from '../workspace
 
 export interface TransportConfig {
   readonly mode: TransportMode;
-  /** nyxid 模式：NyxID 地址。 */
+  /** nyxid 模式：NyxID 地址（https；本机回环地址可以用 http）。 */
   readonly nyxBase?: string;
   /** nyxid 模式：服务 slug。 */
   readonly slug?: string;
@@ -73,9 +79,18 @@ function sleep(ms: number): Promise<void> {
 
 export class ApiClient {
   private readonly fetcher: typeof fetch;
+  /** nyxid 模式：检查过的 NyxID 地址（只有协议、主机和端口）；direct 模式不用。 */
+  private readonly nyxBase: string = '';
 
   constructor(readonly config: TransportConfig) {
     this.fetcher = config.fetch ?? ((input, init) => globalThis.fetch(input, init));
+    if (config.mode === 'nyxid') {
+      try {
+        this.nyxBase = normalizeNyxBase(config.nyxBase ?? DEFAULT_NYX_BASE, 'NyxID 地址', true);
+      } catch (error) {
+        throw new ApiError(0, (error as Error).message);
+      }
+    }
     if (config.mode === 'direct' && !config.api) {
       throw new ApiError(0, 'direct 模式需要接口服务地址（--api 或 metaverse.json 的 api）');
     }
@@ -92,9 +107,8 @@ export class ApiClient {
     if (!path.startsWith('/api/')) throw new ApiError(0, `接口路径必须以 /api/ 开头：${path}`);
     let base: string;
     if (this.config.mode === 'nyxid') {
-      const nyx = (this.config.nyxBase ?? DEFAULT_NYX_BASE).replace(/\/+$/, '');
       const slug = encodeURIComponent(this.config.slug ?? DEFAULT_SLUG);
-      base = `${nyx}/api/v1/proxy/s/${slug}`;
+      base = `${this.nyxBase}/api/v1/proxy/s/${slug}`;
     } else {
       base = this.config.api!.replace(/\/+$/, '');
     }
