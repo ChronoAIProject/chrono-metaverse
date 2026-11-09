@@ -4,12 +4,12 @@
 //! |---|---|---|
 //! | `UPLOAD_MAX_SCAN_BYTES` | 1 GiB | 扫描（设计 6.1） |
 //! | `UPLOAD_MAX_MODEL_BYTES` | 50 MiB | 物件模型 |
-//! | `UPLOAD_MAX_TEXTURE_BYTES` | 128 MiB | 单张贴图的文件大小 |
+//! | `UPLOAD_MAX_TEXTURE_BYTES` | 50 MiB | 单张贴图的文件大小（与处理服务的上限相同） |
 //! | `UPLOAD_MAX_OPS_BYTES` | 256 MiB | 大批量操作（NDJSON，可 gzip） |
 //! | `UPLOAD_MAX_SCRIPT_BYTES` | 4 MiB | 建造脚本（纯文本） |
-//! | `UPLOAD_MAX_TEXTURE_PIXELS` | 8192×8192 | 图片宽 × 高的上限（收到第 0 片时按文件头检查） |
-//! | `UPLOAD_SCAN_FORMATS` | `glb,drc,obj,png,jpeg,webp` | 扫描用途接受的格式（扫描的贴图也走扫描用途） |
-//! | `UPLOAD_MODEL_FORMATS` | `glb,drc,obj` | 物件模型用途接受的格式 |
+//! | `UPLOAD_MAX_TEXTURE_SIDE` | 8192 | 图片单边像素上限（收到第 0 片时按文件头检查） |
+//! | `UPLOAD_SCAN_FORMATS` | `glb,drc,obj,zip` | 扫描用途接受的格式（zip = 模型 + 贴图，例如 Scaniverse 导出；单独的贴图走 texture 用途） |
+//! | `UPLOAD_MODEL_FORMATS` | `glb,drc,obj,zip` | 物件模型用途接受的格式 |
 //! | `UPLOAD_TEXTURE_FORMATS` | `png,jpeg,webp` | 贴图用途接受的格式 |
 //! | `UPLOAD_MAX_OPEN_PER_SPACE` | 16 | 每个空间同时进行中的上传数，超过返回 429 |
 //! | `UPLOAD_MAX_CONCURRENT_PARTS` | 8 | 本进程同时处理的分片数（每片最多 32MiB 在内存里） |
@@ -39,7 +39,7 @@ pub struct IngestConfig {
     pub max_texture_bytes: u64,
     pub max_ops_bytes: u64,
     pub max_script_bytes: u64,
-    pub max_texture_pixels: u64,
+    pub max_texture_side: u64,
     pub scan_formats: Vec<UploadFormat>,
     pub model_formats: Vec<UploadFormat>,
     pub texture_formats: Vec<UploadFormat>,
@@ -48,14 +48,23 @@ pub struct IngestConfig {
     pub max_pending_jobs_per_space: u64,
 }
 
-/// 模型和贴图只接受这几种格式（设计 6.1）。
-const MEDIA_FORMATS: [UploadFormat; 6] = [
+/// 模型和贴图只接受这几种格式（设计 6.1；zip 是模型 + 贴图的打包，与处理服务相同）。
+const MEDIA_FORMATS: [UploadFormat; 7] = [
     UploadFormat::Glb,
     UploadFormat::Drc,
     UploadFormat::Obj,
+    UploadFormat::Zip,
     UploadFormat::Png,
     UploadFormat::Jpeg,
     UploadFormat::Webp,
+];
+
+/// 扫描和物件模型的默认格式（处理服务接受的）。
+const MODEL_FORMATS: [UploadFormat; 4] = [
+    UploadFormat::Glb,
+    UploadFormat::Drc,
+    UploadFormat::Obj,
+    UploadFormat::Zip,
 ];
 
 impl Default for IngestConfig {
@@ -63,12 +72,12 @@ impl Default for IngestConfig {
         Self {
             max_scan_bytes: 1 << 30,
             max_model_bytes: 50 << 20,
-            max_texture_bytes: 128 << 20,
+            max_texture_bytes: 50 << 20,
             max_ops_bytes: 256 << 20,
             max_script_bytes: 4 << 20,
-            max_texture_pixels: 8192 * 8192,
-            scan_formats: MEDIA_FORMATS.to_vec(),
-            model_formats: vec![UploadFormat::Glb, UploadFormat::Drc, UploadFormat::Obj],
+            max_texture_side: 8192,
+            scan_formats: MODEL_FORMATS.to_vec(),
+            model_formats: MODEL_FORMATS.to_vec(),
             texture_formats: vec![UploadFormat::Png, UploadFormat::Jpeg, UploadFormat::Webp],
             max_open_uploads_per_space: 16,
             max_concurrent_parts: 8,
@@ -130,11 +139,11 @@ impl IngestConfig {
                 1,
                 TIB,
             )?,
-            max_texture_pixels: number(
-                "UPLOAD_MAX_TEXTURE_PIXELS",
-                defaults.max_texture_pixels,
+            max_texture_side: number(
+                "UPLOAD_MAX_TEXTURE_SIDE",
+                defaults.max_texture_side,
                 1,
-                1 << 34,
+                1 << 20,
             )?,
             scan_formats: formats("UPLOAD_SCAN_FORMATS", &defaults.scan_formats)?,
             model_formats: formats("UPLOAD_MODEL_FORMATS", &defaults.model_formats)?,

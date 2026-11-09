@@ -101,17 +101,20 @@ pub fn routes() -> Router<crate::AppState> {
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateUploadRequest {
-    /// 文件总字节数。上限按用途（默认扫描 1GiB、物件模型 50MiB、贴图 128MiB、ops 256MiB、脚本 4MiB）。
+    /// 文件总字节数（也接受字段名 `totalSize`）。上限按用途（默认扫描 1GiB、物件模型 50MiB、
+    /// 贴图 50MiB、ops 256MiB、脚本 4MiB）。
+    #[serde(alias = "totalSize")]
     #[schema(example = 734003200)]
-    pub total_size: u64,
+    pub size: u64,
     /// 整个文件的 SHA-256（64 位小写十六进制）。已存在时直接复用，不再接收数据。
     #[schema(example = "9f2c...（64 位十六进制）")]
     pub sha256: String,
     /// 分片大小：256KiB（262144）的整数倍，最大 32MiB（33554432）。
     #[schema(example = 8388608)]
     pub part_size: u64,
-    /// 文件格式：scan 用途 glb/drc/obj/png/jpeg/webp；model 用途 glb/drc/obj；texture 用途 png/jpeg/webp；
-    /// ops 用途 ndjson/gzip；script 用途 text。服务端按格式固定资源的 Content-Type。
+    /// 文件格式：scan、model 用途 glb/drc/obj/zip（zip = 模型 + 贴图，例如 Scaniverse 导出）；
+    /// texture 用途 png/jpeg/webp（单边 ≤ 8192）；ops 用途 ndjson/gzip；script 用途 text。
+    /// 收到第 0 片时按它核对文件头；处理服务校验时再嗅探一遍。
     #[schema(example = "drc")]
     pub format: String,
 }
@@ -126,11 +129,18 @@ pub struct UploadView {
     pub purpose: String,
     /// 创建时的路径范围：`physical` 或 `plot:<编号>`。
     pub scope: String,
-    pub format: String,
-    pub content_type: String,
+    /// 创建时声明的格式。
+    pub declared_format: String,
+    /// 处理服务嗅探出的格式（`glb | draco | obj | zip | png | jpeg | webp | ndjson | ndjson+gzip | text`），
+    /// 校验通过后才有。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
     /// `open`（接收分片中）、`complete`（校验中）、`done`（已登记成资源）、`failed`、`expired`。
     pub status: String,
-    pub total_size: u64,
+    /// 声明的总字节数。
+    pub size: u64,
     pub sha256: String,
     pub part_size: u64,
     /// 片数 = ceil(总大小 / 分片大小)；片号从 0 开始。
@@ -147,8 +157,9 @@ pub struct UploadView {
     pub asset_hash: Option<String>,
     /// 哈希已存在，直接复用了已有资源。
     pub reused: bool,
+    /// 校验失败的原因。
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_error: Option<String>,
+    pub error: Option<String>,
     #[schema(value_type = String, format = DateTime)]
     pub created_at: Timestamp,
     /// 没完成的上传在这个时间之后被清理。
@@ -168,10 +179,11 @@ impl UploadView {
             space_id: upload.space_id.clone(),
             purpose: purpose_name(upload.purpose).to_owned(),
             scope: upload.scope.to_string(),
-            format: upload.format.name().to_owned(),
+            declared_format: upload.declared_format.name().to_owned(),
+            format: upload.format.clone(),
             content_type: upload.content_type.clone(),
             status: status_name(upload.status).to_owned(),
-            total_size: upload.total_size,
+            size: upload.size,
             sha256: upload.sha256.clone(),
             part_size: upload.part_size,
             part_count: upload.part_count,
@@ -185,7 +197,7 @@ impl UploadView {
             job_id: upload.job_id.clone(),
             asset_hash: upload.asset_hash.clone(),
             reused: upload.reused,
-            last_error: upload.last_error.clone(),
+            error: upload.error.clone(),
             created_at: upload.created_at,
             expires_at: upload.created_at.saturating_add_seconds(UPLOAD_TTL_SECONDS),
         }
@@ -276,7 +288,7 @@ async fn load_upload(
 
 fn expected_part_size(upload: &Upload, n: u64) -> u64 {
     if n + 1 == upload.part_count {
-        upload.total_size - n * upload.part_size
+        upload.size - n * upload.part_size
     } else {
         upload.part_size
     }
@@ -330,17 +342,17 @@ async fn create(
             "partSize 必须是 256KiB（262144）的整数倍，最大 32MiB（33554432）",
         ));
     }
-    if request.total_size == 0 {
-        return Err(ApiError::invalid("totalSize 必须大于 0"));
+    if request.size == 0 {
+        return Err(ApiError::invalid("size 必须大于 0"));
     }
     let max = limits.max_bytes(purpose);
-    if request.total_size > max {
+    if request.size > max {
         return Err(too_large(
             "upload_too_large",
             format!("{} 用途的文件最大 {max} 字节", purpose_name(purpose)),
         ));
     }
-    let part_count = request.total_size.div_ceil(request.part_size);
+    let part_count = request.size.div_ceil(request.part_size);
     if part_count > MAX_PARTS {
         return Err(invalid_with(
             "too_many_parts",
@@ -354,10 +366,9 @@ async fn create(
         owner: grant.owner().clone(),
         scope,
         purpose,
-        format,
-        content_type: format.content_type().to_owned(),
+        declared_format: format,
         status: UploadStatus::Open,
-        total_size: request.total_size,
+        size: request.size,
         sha256: request.sha256.clone(),
         part_size: request.part_size,
         part_count,
@@ -368,16 +379,21 @@ async fn create(
         updated_at: now,
         completed_at: None,
         job_id: None,
-        asset_hash: None,
         reused: false,
-        last_error: None,
+        asset_hash: None,
+        format: None,
+        content_type: None,
+        verified_at: None,
+        verified_sha256: None,
+        error: None,
+        failed_at: None,
     };
     // 哈希已经存在：直接复用，不再接收数据（设计 6.1）。
     if let Some(length) = state.repo.asset_length(&grant, &request.sha256).await? {
-        if length != request.total_size {
+        if length != request.size {
             return Err(invalid_with(
                 "size_mismatch",
-                "同一哈希的已有资源大小与声明的 totalSize 不一致",
+                "同一哈希的已有资源大小与声明的 size 不一致",
             ));
         }
         state.repo.touch_asset(&grant, &request.sha256).await?;
@@ -405,7 +421,7 @@ async fn create(
     let projected = space
         .storage_used_bytes
         .saturating_add(pending.bytes)
-        .saturating_add(request.total_size);
+        .saturating_add(request.size);
     if projected > space.storage_limit_bytes {
         return Err(too_large(
             "storage_limit_exceeded",
@@ -417,7 +433,7 @@ async fn create(
         space = %upload.space_id,
         upload = %upload.id,
         purpose = purpose_name(purpose),
-        size = upload.total_size,
+        size = upload.size,
         by = %caller.subject,
         "创建上传"
     );
@@ -581,13 +597,13 @@ async fn put_part(
     }
     if n == 0 {
         formats::check_header(
-            upload.format,
+            upload.declared_format,
             &data,
-            upload.total_size,
-            state.ingest.config.max_texture_pixels,
+            upload.size,
+            state.ingest.config.max_texture_side,
         )
         .map_err(|error| match error {
-            formats::FormatError::TooManyPixels { .. } => {
+            formats::FormatError::TextureTooLarge { .. } => {
                 too_large("texture_too_large", error.to_string())
             }
             other => invalid_with("format_mismatch", other.to_string()),

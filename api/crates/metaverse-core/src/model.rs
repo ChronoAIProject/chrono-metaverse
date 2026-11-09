@@ -849,13 +849,18 @@ pub enum UploadStatus {
     Expired,
 }
 
-/// 文件格式。上传时声明，服务端按格式固定资源的 Content-Type，并在收到第 0 片时核对文件头。
+/// 上传时声明的文件格式（`declaredFormat`）。接口服务在收到第 0 片时按它核对文件头；
+/// 处理服务校验时再嗅探一遍，把实际格式写进 `format`（`glb | draco | obj | zip | png | jpeg |
+/// webp | ndjson | ndjson+gzip | text`）和 `contentType`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum UploadFormat {
     Glb,
+    /// Draco 网格（也接受名称 `draco`）。
     Drc,
     Obj,
+    /// zip：里面一个 glb / drc / obj + 贴图（例如 Scaniverse 导出）。
+    Zip,
     Png,
     Jpeg,
     Webp,
@@ -868,10 +873,11 @@ pub enum UploadFormat {
 }
 
 impl UploadFormat {
-    pub const ALL: [UploadFormat; 9] = [
+    pub const ALL: [UploadFormat; 10] = [
         UploadFormat::Glb,
         UploadFormat::Drc,
         UploadFormat::Obj,
+        UploadFormat::Zip,
         UploadFormat::Png,
         UploadFormat::Jpeg,
         UploadFormat::Webp,
@@ -885,6 +891,7 @@ impl UploadFormat {
             UploadFormat::Glb => "glb",
             UploadFormat::Drc => "drc",
             UploadFormat::Obj => "obj",
+            UploadFormat::Zip => "zip",
             UploadFormat::Png => "png",
             UploadFormat::Jpeg => "jpeg",
             UploadFormat::Webp => "webp",
@@ -894,16 +901,22 @@ impl UploadFormat {
         }
     }
 
+    /// 按名称找格式；也接受处理服务的叫法 `draco`、`ndjson+gzip`。
     pub fn from_name(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|format| format.name() == name)
+        match name {
+            "draco" => Some(UploadFormat::Drc),
+            "ndjson+gzip" => Some(UploadFormat::Gzip),
+            _ => Self::ALL.into_iter().find(|format| format.name() == name),
+        }
     }
 
-    /// 服务端固定的 Content-Type（设计 8.2：资源的 Content-Type 由服务端按用途固定）。
+    /// 这种格式的 Content-Type（与处理服务 `processing/sniff.py` 的 `CONTENT_TYPES` 相同）。
     pub fn content_type(self) -> &'static str {
         match self {
             UploadFormat::Glb => "model/gltf-binary",
-            UploadFormat::Drc => "application/octet-stream",
+            UploadFormat::Drc => "application/x-draco",
             UploadFormat::Obj => "model/obj",
+            UploadFormat::Zip => "application/zip",
             UploadFormat::Png => "image/png",
             UploadFormat::Jpeg => "image/jpeg",
             UploadFormat::Webp => "image/webp",
@@ -923,6 +936,10 @@ pub struct UploadPart {
 
 /// 上传会话（`uploads` 集合）。`_id` 同时是 GridFS 数据块的 `files_id`；
 /// 第 n 片（从 0 开始）切成 256KiB 的数据块，序号 = `n × (partSize / 256KiB) + i`。
+///
+/// 处理服务（`handlers/upload_verify.py`）读 `{_id, spaceId, owner, purpose, size, sha256, status}`，
+/// 只处理 `status: complete` 的上传，回写 `status: done|failed`、`assetHash`、`format`、
+/// `contentType`、`verifiedAt`、`verifiedSha256`、`error`、`failedAt`。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Upload {
@@ -933,11 +950,11 @@ pub struct Upload {
     /// 创建时的路径范围：`physical` 或 `plot:<编号>`；之后的分片、完成、查询必须走同一路径。
     pub scope: PathScope,
     pub purpose: crate::scope::UploadPurpose,
-    pub format: UploadFormat,
-    /// 按格式固定的 Content-Type，处理服务登记资源时写进 `metadata.contentType`。
-    pub content_type: String,
+    /// 调用方声明的格式。
+    pub declared_format: UploadFormat,
     pub status: UploadStatus,
-    pub total_size: u64,
+    /// 调用方声明的总字节数。
+    pub size: u64,
     /// 调用方声明的整体 SHA-256（小写十六进制）。
     pub sha256: String,
     pub part_size: u64,
@@ -956,14 +973,27 @@ pub struct Upload {
     /// "完成上传"时创建的 `upload_verify` 任务。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub job_id: Option<String>,
-    /// 校验通过后由处理服务写入（等于 `sha256`）。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub asset_hash: Option<String>,
     /// 创建时哈希已存在，直接复用了已有资源，没有接收数据。
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub reused: bool,
+    // ---- 以下由处理服务写入（复用时由接口服务写 assetHash） ----
+    /// 校验通过后的资源哈希（等于 `sha256`）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_error: Option<String>,
+    pub asset_hash: Option<String>,
+    /// 处理服务嗅探出的实际格式。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verified_at: Option<Timestamp>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verified_sha256: Option<String>,
+    /// 校验失败的原因。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failed_at: Option<Timestamp>,
 }
 
 /// GridFS 数据块大小，固定 256KiB（与处理服务 `assets.py` 的 `ASSET_CHUNK_SIZE` 相同）。

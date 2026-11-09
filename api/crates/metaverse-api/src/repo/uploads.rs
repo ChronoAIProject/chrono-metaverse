@@ -133,7 +133,7 @@ impl Repo {
             .collection(collections::UPLOADS)
             .aggregate([
                 doc! {"$match": filter},
-                doc! {"$group": {"_id": Bson::Null, "count": {"$sum": 1}, "bytes": {"$sum": "$totalSize"}}},
+                doc! {"$group": {"_id": Bson::Null, "count": {"$sum": 1}, "bytes": {"$sum": "$size"}}},
             ])
             .await?;
         if !cursor.advance().await? {

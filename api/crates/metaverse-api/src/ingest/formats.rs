@@ -11,8 +11,8 @@ pub enum FormatError {
     Mismatch(&'static str),
     #[error("glb 头里的总长度 {declared} 与声明的总大小 {total} 不一致")]
     GlbLength { declared: u64, total: u64 },
-    #[error("图片 {width}×{height} 超过像素上限 {max}")]
-    TooManyPixels { width: u64, height: u64, max: u64 },
+    #[error("图片 {width}×{height} 超过单边上限 {max} 像素")]
+    TextureTooLarge { width: u64, height: u64, max: u64 },
 }
 
 /// 检查第 0 片（`head`）。`total_size` 是声明的总大小。
@@ -20,7 +20,7 @@ pub fn check_header(
     format: UploadFormat,
     head: &[u8],
     total_size: u64,
-    max_pixels: u64,
+    max_side: u64,
 ) -> Result<(), FormatError> {
     let mismatch = || FormatError::Mismatch(format.name());
     match format {
@@ -50,6 +50,11 @@ pub fn check_header(
                 return Err(mismatch());
             }
         }
+        UploadFormat::Zip => {
+            if !head.starts_with(b"PK\x03\x04") {
+                return Err(mismatch());
+            }
+        }
         UploadFormat::Png | UploadFormat::Jpeg | UploadFormat::Webp => {
             let size = match format {
                 UploadFormat::Png => png_size(head),
@@ -58,11 +63,11 @@ pub fn check_header(
             }
             .ok_or_else(mismatch)?;
             if let Some((width, height)) = size {
-                if width.saturating_mul(height) > max_pixels {
-                    return Err(FormatError::TooManyPixels {
+                if width > max_side || height > max_side {
+                    return Err(FormatError::TextureTooLarge {
                         width,
                         height,
-                        max: max_pixels,
+                        max: max_side,
                     });
                 }
             }
@@ -204,7 +209,7 @@ fn webp_size(head: &[u8]) -> Option<Option<(u64, u64)>> {
 mod tests {
     use super::*;
 
-    const MAX: u64 = 8192 * 8192;
+    const MAX: u64 = 8192;
 
     fn png(width: u32, height: u32) -> Vec<u8> {
         let mut bytes = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec();
@@ -235,6 +240,8 @@ mod tests {
         ));
         assert!(check_header(UploadFormat::Glb, b"DRACO...", 100, MAX).is_err());
         assert!(check_header(UploadFormat::Drc, b"DRACO\x02\x02", 10, MAX).is_ok());
+        assert!(check_header(UploadFormat::Zip, b"PK\x03\x04rest", 10, MAX).is_ok());
+        assert!(check_header(UploadFormat::Zip, b"DRACO", 10, MAX).is_err());
     }
 
     #[test]
@@ -242,7 +249,7 @@ mod tests {
         assert!(check_header(UploadFormat::Png, &png(8192, 8192), 1, MAX).is_ok());
         assert!(matches!(
             check_header(UploadFormat::Png, &png(8193, 8192), 1, MAX),
-            Err(FormatError::TooManyPixels { .. })
+            Err(FormatError::TextureTooLarge { .. })
         ));
         assert_eq!(jpeg_size(&jpeg(640, 480)), Some(Some((640, 480))));
         assert!(check_header(UploadFormat::Jpeg, &jpeg(16384, 8192), 1, MAX).is_err());
