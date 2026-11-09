@@ -14,9 +14,13 @@
 5. **地面补全**：把墙线画进占用图当作边界，填满被地面和墙围住的区域（桌下、沙发下），
    但不超出已扫到地面 1.2 米。
 6. **贴图**：每个元素按 1 厘米/像素正交投影烘焙（地面剔除与周围地面颜色差异大的采样，去掉印在地上的椅子）。
+   墙面没扫到的纹素：离已扫到区域 5 厘米内推拉补洞，30 厘米外用同一面墙沿墙每 0.5 米的中位色
+   （`bake.fill_unobserved`），不再从远处不相关的点（墙前的椅子、门框）取色。
 
-输出 `StructureResult`，再由 `structure_entities` 写成 SHAPES 物件记录（`kind: structure`，带贴图的 `box`
-或 `extrude`）。贴图约定（与网站的 `planar` 投影一致，图片第 0 行 = v 最大）：
+输出 `StructureResult`，再由 `structure_entities` 写成 SHAPES 物件记录（`kind: structure`）：地面是带贴图的
+`box` 或 `extrude`；墙是 `group` = 朝房间一侧 1 厘米厚的贴图面板 + 纯色墙体（背面扫到过就用背面的中位色，
+否则用正面的中位色），从房间外面看不会再看到镜像的贴图。
+贴图约定（与网站的 `planar` 投影一致，图片第 0 行 = v 最大）：
 - 墙：第 0 列 = 从房间里看的左端（局部 −x），第 0 行 = 顶部；
 - 地面：第 0 列 = x 最小，第 0 行 = z 最大。
 """
@@ -35,7 +39,7 @@ from scipy import ndimage
 
 from .. import shapes as sh
 from ..ids import slug_id
-from .bake import FaceTable, bake
+from .bake import FaceTable, bake, fill_unobserved
 from .scan import ScanMesh, sample_surface
 
 log = logging.getLogger(__name__)
@@ -59,7 +63,13 @@ class StructureParams:
     floor_band: float = 0.035  # 地面烘焙只取局部高度 ±3.5 厘米内的点（去掉椅子底座、地毯）
     floor_dark: float = 0.72  # 比周围地面暗这么多倍以上的采样点去掉
     floor_hue: float = 0.05  # 色度偏离周围地面超过这么多的采样点去掉
+    wall_fill_near: float = 0.05  # 墙面没扫到的纹素：离已扫到区域这么近的用推拉补洞（米）
+    wall_fill_far: float = 0.3  # 这么远以外用同一面墙沿墙分段的中位色，中间线性过渡（米）
+    wall_fill_band: float = 0.5  # 沿墙分段取中位色的段长（米）
     wall_thickness: float = 0.1
+    wall_face_thickness: float = 0.01  # 墙朝房间一侧的贴图面板厚度，其余墙体用纯色（背面不再显示镜像的贴图）
+    wall_back_depth: float = 0.3  # 墙背面的扫描最多在墙面后这么远（米），用来取墙体颜色
+    wall_back_min_area: float = 0.5  # 背面扫到这么多面积（平方米）才用背面的颜色
     floor_thickness: float = 0.05
     jpeg_quality: int = 85
     seed: int = 0
@@ -576,7 +586,33 @@ def extract_structure(mesh: ScanMesh, params: StructureParams | None = None) -> 
             keep=keep,
             density=prm.bake_density,
             seed=prm.seed + 2 + len(elements),
+            fill=False,
         )
+        filled = fill_unobserved(
+            rgb,
+            obs,
+            near_px=prm.wall_fill_near / pxw,
+            far_px=prm.wall_fill_far / pxw,
+            band_px=max(1, round(prm.wall_fill_band / pxw)),
+        )
+        rgb = np.clip(np.round(filled), 0, 255).astype(np.uint8)
+        # 墙体颜色：背面扫到过（独立的隔墙、背后是走廊）就用背面的中位色，否则用正面已扫到部分的中位色
+        sp = P[:, [0, 2]] @ n2 - np.interp(P[:, [0, 2]] @ t2, prof_u, prof_v)
+        back = (
+            (N[:, [0, 2]] @ n2 < -0.85)
+            & (sp < -0.01)
+            & (sp > -(prm.wall_thickness + prm.wall_back_depth))
+            & (P[:, [0, 2]] @ t2 > u0)
+            & (P[:, [0, 2]] @ t2 < u1)
+            & (P[:, 1] > y0)
+            & (P[:, 1] < y1)
+        )
+        if back.sum() >= pts(prm.wall_back_min_area):
+            body = np.median(C[back], axis=0)
+        elif obs.any():
+            body = np.median(rgb[obs], axis=0)
+        else:
+            body = np.median(rgb.reshape(-1, 3), axis=0)
         pu = np.linspace(u0, u1, max(2, int((u1 - u0) / 0.5) + 1))
         drift = np.interp(pu, prof_u, prof_v) - off
         elements.append(
@@ -593,6 +629,8 @@ def extract_structure(mesh: ScanMesh, params: StructureParams | None = None) -> 
                     "y": [float(y0), float(y1)],
                     "px": pxw,
                     "thickness": prm.wall_thickness,
+                    "face_thickness": prm.wall_face_thickness,
+                    "body_color": [int(v) for v in np.round(body)],
                     "axis": axis,
                     "direction_deg": float(c["dir"]),
                     "support_pts": int(c["npts"]),
@@ -690,7 +728,12 @@ def encode_texture(rgb: np.ndarray, quality: int = 85) -> bytes:
 
 
 def element_shape(element: Element, texture_hash: str) -> dict[str, Any]:
-    """一个结构元素 → SHAPES 形状（带贴图的 box，或非矩形地面的 extrude）。"""
+    """一个结构元素 → SHAPES 形状。
+
+    - 地面：带贴图的 box，非矩形时用 extrude；
+    - 墙：group = 朝房间一侧的薄贴图面板 + 纯色墙体。整块 box 用 planar 贴图时背面、顶面、侧面也会印上
+      （镜像的）贴图，从房间外面看就是一面印着反字和斑点的墙，所以贴图只放在面板上，墙体用这面墙的中位色。
+    """
     material = sh.texture_material(texture_hash, "planar")
     info = element.info
     if element.kind == "floor":
@@ -708,12 +751,27 @@ def element_shape(element: Element, texture_hash: str) -> dict[str, Any]:
     u0, u1 = info["u"]
     y0, y1 = info["y"]
     t = info["thickness"]
-    mid = n * info["offset"] + tvec * (u0 + u1) / 2 - n * (t / 2)  # 可见面在房间一侧，墙体向后延伸
+    face = n * info["offset"] + tvec * (u0 + u1) / 2  # 可见面（房间一侧）的中点，墙体向后延伸
     yaw = math.degrees(math.atan2(n[0], n[1]))  # 局部 +z 指向房间，局部 +x = 切向
-    return sh.box(
-        [u1 - u0, y1 - y0, t],
-        xf=sh.transform(position=[mid[0], y0, mid[1]], yaw=yaw),
-        material=material,
+    xf = sh.transform(position=[face[0], y0, face[1]], yaw=yaw)
+    w, h = u1 - u0, y1 - y0
+    ft = min(float(info.get("face_thickness") or 0.0), t / 2)
+    if ft <= 0 or "body_color" not in info:
+        return sh.box(
+            [w, h, t],
+            xf=sh.transform(position=[face[0] - n[0] * t / 2, y0, face[1] - n[1] * t / 2], yaw=yaw),
+            material=material,
+        )
+    return sh.group(
+        [
+            sh.box([w, h, ft], xf=sh.transform(position=[0, 0, -ft / 2]), material=material),
+            sh.box(
+                [w, h, t - ft],
+                xf=sh.transform(position=[0, 0, -ft - (t - ft) / 2]),
+                material=sh.color_material(info["body_color"]),
+            ),
+        ],
+        xf=xf,
     )
 
 
