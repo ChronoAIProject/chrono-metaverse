@@ -18,6 +18,8 @@ use crate::auth::{BlobGrant, Grant};
 
 /// GridFS 数据块大小（与处理服务 `ASSET_CHUNK_SIZE` 相同）。
 pub const ASSET_CHUNK_SIZE: usize = 256 * 1024;
+/// 登记资源时同名资源恰好被清理删掉、重新插入的次数（与处理服务 `_REGISTER_ATTEMPTS` 相同）。
+const REGISTER_ATTEMPTS: usize = 3;
 
 /// 资源的元数据。
 #[derive(Debug, Clone)]
@@ -77,11 +79,15 @@ pub struct UnusableAsset {
     pub reason: AssetRejection,
 }
 
+/// 资源不在时给调用方看的说明：可能从没登记过，也可能已被处理服务的定期清理删掉。
+pub const MISSING_ASSET: &str =
+    "不存在（上传后 7 天内没被引用的资源会被清理，请重新上传；内容相同，哈希也相同）";
+
 impl UnusableAsset {
     /// 给调用方看的说明。
     pub fn describe(&self) -> String {
         let reason = match (self.reason, self.role) {
-            (AssetRejection::Missing, _) => "不存在",
+            (AssetRejection::Missing, _) => MISSING_ASSET,
             (AssetRejection::Foreign, _) => "不属于本空间",
             (AssetRejection::UnprocessedModel, _) => {
                 "是原始模型上传；物件只能引用处理后的模型，请先调用 import_model，再引用任务结果里的 modelHash"
@@ -527,7 +533,8 @@ impl Repo {
     ///
     /// 布局与处理服务完全一致：`assets.files {_id: ObjectId, length, chunkSize: 262144, uploadDate,
     /// filename: 内容哈希, metadata: {sha256, contentType, kind, spaceId, ...extra}}`，数据块
-    /// `assets.chunks {files_id, n, data}`；已存在时只写 `metadata.touchedAt`（清理按它计算宽限）。
+    /// `assets.chunks {files_id, n, data}`；已存在时只写 `metadata.touchedAt`（清理按它计算宽限），
+    /// 并且要求匹配到（清理的栅栏，见 [`Repo::touch_asset`]），匹配不到就当作不存在、重新登记。
     pub async fn put_asset_bytes_with(
         &self,
         grant: &Grant,
@@ -594,35 +601,51 @@ impl Repo {
         let length = i32::try_from(bytes.len())
             .map(Bson::Int32)
             .unwrap_or(Bson::Int64(bytes.len() as i64));
-        let inserted = files
-            .insert_one(doc! {
-                "_id": files_id,
-                "length": length,
-                "chunkSize": ASSET_CHUNK_SIZE as i32,
-                "uploadDate": mongodb::bson::DateTime::now(),
-                "filename": &hash,
-                "metadata": metadata,
-            })
-            .await;
-        match inserted {
-            Ok(_) => Ok(PutAsset {
-                hash,
-                reused: false,
-            }),
-            Err(error) if super::is_duplicate_key(&error) => {
-                chunk_collection
-                    .delete_many(doc! {"files_id": files_id})
-                    .await?;
-                files.update_one(doc! {"filename": &hash}, touched).await?;
-                Ok(PutAsset { hash, reused: true })
-            }
-            Err(error) => {
-                let _ = chunk_collection
-                    .delete_many(doc! {"files_id": files_id})
-                    .await;
-                Err(error.into())
+        // 同一内容已经登记过（并发登记）：先刷新它，刷新成功才删掉本次的数据块、复用它；刷新不到
+        // 说明那一份在这期间被清理删掉了，本次的数据块还在，重新插入（与处理服务
+        // `assets._insert_files_doc` 相同，不能返回一个已经不在的资源）。
+        let files_doc = doc! {
+            "_id": files_id,
+            "length": length,
+            "chunkSize": ASSET_CHUNK_SIZE as i32,
+            "uploadDate": mongodb::bson::DateTime::now(),
+            "filename": &hash,
+            "metadata": metadata,
+        };
+        for _ in 0..REGISTER_ATTEMPTS {
+            match files.insert_one(files_doc.clone()).await {
+                Ok(_) => {
+                    return Ok(PutAsset {
+                        hash,
+                        reused: false,
+                    })
+                }
+                Err(error) if super::is_duplicate_key(&error) => {
+                    if files
+                        .update_one(doc! {"filename": &hash}, touched.clone())
+                        .await?
+                        .matched_count
+                        == 1
+                    {
+                        chunk_collection
+                            .delete_many(doc! {"files_id": files_id})
+                            .await?;
+                        return Ok(PutAsset { hash, reused: true });
+                    }
+                }
+                Err(error) => {
+                    let _ = chunk_collection
+                        .delete_many(doc! {"files_id": files_id})
+                        .await;
+                    return Err(error.into());
+                }
             }
         }
+        let _ = chunk_collection
+            .delete_many(doc! {"files_id": files_id})
+            .await;
+        tracing::warn!(asset = %hash, "登记资源时反复遇到正在被清理的同名资源");
+        Err(RepoError::Unavailable)
     }
 
     /// 读整份资源（不超过 `max_bytes`），并核对内容哈希。

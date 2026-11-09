@@ -39,7 +39,9 @@ mod commits;
 mod drafts;
 mod space_admin;
 
-pub use blobs::{AssetMeta, AssetRejection, AssetRole, AssetStream, PutAsset, UnusableAsset};
+pub use blobs::{
+    AssetMeta, AssetRejection, AssetRole, AssetStream, PutAsset, UnusableAsset, MISSING_ASSET,
+};
 pub use commits::{
     palette_hash, state_blob_hash, BlobKind, CommitError, CommitOutcome, CommitPlan, Layout,
     StoredChunk,

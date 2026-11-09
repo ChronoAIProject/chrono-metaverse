@@ -28,7 +28,7 @@ use crate::auth::permissions::Capability;
 use crate::auth::{Authorizer, Caller, Purpose};
 use crate::error::{ApiError, ProblemDocument};
 use crate::ingest::schema::CompiledSchema;
-use crate::repo::{AssetRole, RepoError};
+use crate::repo::{AssetRole, RepoError, MISSING_ASSET};
 use crate::AppState;
 
 pub fn routes() -> axum::Router<AppState> {
@@ -259,6 +259,13 @@ pub async fn register_event_type(
             return Err(invalid_with(
                 "unknown_asset",
                 format!("display.entityAsset 不能用：{}", problem.describe()),
+            ));
+        }
+        // 清理的栅栏：登记 assetRefs 之前刷新 touchedAt 并确认还在（刷新不到 = 刚被清理删掉）。
+        if !state.repo.touch_asset(&grant, asset).await? {
+            return Err(invalid_with(
+                "unknown_asset",
+                format!("display.entityAsset 不能用：{asset}：{MISSING_ASSET}"),
             ));
         }
         state

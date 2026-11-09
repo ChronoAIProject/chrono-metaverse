@@ -15,6 +15,11 @@
 //! 4. 更新物件和锚点的当前状态 `entities` / `anchors`（`{spaceId, id, owner, hash, body, seq}`）；
 //! 5. 登记资源引用 `assetRefs {hash, spaceId, owner, createdAt, commitId}`。
 //!
+//! 第 1 步之后先过清理的栅栏：提交引用的每个资源（`opsRef`、`scriptRef`、`assetRefs`）按文件名刷新
+//! `assets.files` 的 `metadata.touchedAt`，必须全部匹配到，否则整个提交作废
+//! （[`CommitError::AssetsGone`]）。与处理服务定期清理的条件删除在同一个文档上互斥：清理先删了，
+//! 这里匹配不到；这里先刷新了，清理"`touchedAt` 早于 7 天前"的条件就不再成立。
+//!
 //! **事务后**：给本次新引用的区块打上 `publishedAt`（[`Repo::publish_chunks`]，幂等，失败可以补做）。
 
 use std::collections::BTreeMap;
@@ -115,6 +120,10 @@ pub enum CommitError {
     /// 要发布的草稿已经变了（被追加、丢弃，或已被别的请求发布）。
     #[error("草稿已经变了")]
     DraftChanged,
+    /// 提交引用的资源（`opsRef`、`scriptRef`、`assetRefs`）已经不在了：被处理服务的定期清理删掉，
+    /// 事务里的栅栏没刷新到（升序去重的哈希）。整个提交作废。
+    #[error("提交引用的资源已经被清理")]
+    AssetsGone(Vec<String>),
     #[error(transparent)]
     Repo(#[from] RepoError),
 }
@@ -456,6 +465,7 @@ impl Repo {
         if space.head.seq != plan.base_seq {
             return Err(CommitError::HeadMoved.into());
         }
+        self.fence_assets(session, plan).await?;
         let seq = plan.base_seq + 1;
         let at = metaverse_core::model::next_commit_at(now, space.head.at);
         let commit = Commit {
@@ -648,6 +658,45 @@ impl Repo {
             seq,
             at,
         })
+    }
+
+    /// 事务里的清理栅栏：刷新提交引用的全部资源的 `metadata.touchedAt`，有没匹配到的就作废提交。
+    async fn fence_assets(
+        &self,
+        session: &mut ClientSession,
+        plan: &CommitPlan,
+    ) -> Result<(), TxError> {
+        let mut hashes: Vec<&String> = plan.asset_refs.iter().collect();
+        hashes.extend(plan.ops_ref.iter());
+        hashes.extend(plan.script_ref.iter());
+        hashes.sort();
+        hashes.dedup();
+        if hashes.is_empty() {
+            return Ok(());
+        }
+        let files = self.collection(collections::ASSET_FILES);
+        let filter = doc! {"filename": {"$in": &hashes}};
+        let touched = files
+            .update_many(
+                filter.clone(),
+                doc! {"$set": {"metadata.touchedAt": bson::DateTime::now()}},
+            )
+            .session(&mut *session)
+            .await?;
+        // `filename` 上有唯一索引：匹配数等于还在的资源数。
+        if touched.matched_count == hashes.len() as u64 {
+            return Ok(());
+        }
+        let present = files
+            .distinct("filename", filter)
+            .session(&mut *session)
+            .await?;
+        let gone: Vec<String> = hashes
+            .into_iter()
+            .filter(|hash| !present.contains(&Bson::String((*hash).clone())))
+            .cloned()
+            .collect();
+        Err(CommitError::AssetsGone(gone).into())
     }
 
     /// 事务后：给本次新引用的区块打上 `publishedAt`（幂等）。

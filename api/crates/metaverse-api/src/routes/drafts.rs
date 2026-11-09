@@ -621,6 +621,15 @@ pub struct OpsJobView {
     pub status: String,
 }
 
+/// ops 上传的资源已经不在（被处理服务的定期清理删掉）。
+fn ops_asset_gone() -> ApiError {
+    ApiError::new(
+        StatusCode::NOT_FOUND,
+        "not_found",
+        "这个 ops 上传的资源已经不存在（上传后 7 天内没被引用的资源会被清理），请重新上传",
+    )
+}
+
 async fn from_upload(
     state: AppState,
     caller: Caller,
@@ -659,13 +668,7 @@ async fn from_upload(
     // 处理时整份读入，超过上限的文件（例如调小上限之前传的）在返回 202 之前就拒绝，
     // 不要等后台任务才失败。
     match state.repo.asset_length(&grant, &upload.asset_hash).await? {
-        None => {
-            return Err(ApiError::new(
-                StatusCode::NOT_FOUND,
-                "not_found",
-                "这个 ops 上传的资源已经不存在（可能已被清理）",
-            ))
-        }
+        None => return Err(ops_asset_gone()),
         Some(length) if length > MAX_OPS_FILE_BYTES => {
             return Err(ApiError::new(
                 StatusCode::PAYLOAD_TOO_LARGE,
@@ -694,6 +697,11 @@ async fn from_upload(
             "too_many_jobs",
             format!("这个空间排队和运行中的任务最多 {limit} 个，请稍后再试"),
         ));
+    }
+    // 清理的栅栏：任务参数和之后的草稿都会引用这个文件，插入任务之前先刷新 touchedAt 并确认
+    // 还在；刷新不到说明它刚被清理删掉，和资源不存在一样 404，不建一个注定读不到文件的任务。
+    if !state.repo.touch_asset(&grant, &upload.asset_hash).await? {
+        return Err(ops_asset_gone());
     }
     let job_id = uuid::Uuid::new_v4().simple().to_string();
     let now = crate::now()?;
@@ -868,7 +876,7 @@ async fn process_ops_job(
     responses(
         (status = 202, description = "已开始处理", body = OpsJobView),
         (status = 403, description = "只有只读权限", body = ProblemDocument),
-        (status = 404, description = "草稿或上传不存在", body = ProblemDocument),
+        (status = 404, description = "草稿或上传不存在，或上传的资源已被清理", body = ProblemDocument),
         (status = 409, description = "草稿已发布", body = ProblemDocument),
         (status = 413, description = "操作文件超过 64MiB", body = ProblemDocument),
         (status = 422, description = "请求体不合法", body = ProblemDocument),
@@ -899,7 +907,7 @@ pub async fn draft_ops_from_upload(
     responses(
         (status = 202, description = "已开始处理", body = OpsJobView),
         (status = 403, description = "只有只读权限", body = ProblemDocument),
-        (status = 404, description = "草稿或上传不存在", body = ProblemDocument),
+        (status = 404, description = "草稿或上传不存在，或上传的资源已被清理", body = ProblemDocument),
         (status = 409, description = "草稿已发布", body = ProblemDocument),
         (status = 413, description = "操作文件超过 64MiB", body = ProblemDocument),
         (status = 422, description = "请求体不合法", body = ProblemDocument),
@@ -1065,7 +1073,8 @@ pub struct PublishRequest {
     /// 现实中发生的时间（只用于显示），RFC 3339。
     #[schema(value_type = Option<String>)]
     pub observed_at: Option<Timestamp>,
-    /// 生成这些操作的建造脚本（资源哈希，只为追溯）。
+    /// 生成这些操作的建造脚本（只为追溯）：本空间 script 用途上传的资源哈希，否则 422
+    /// `unknown_asset`。
     pub script_ref: Option<String>,
 }
 
@@ -1148,6 +1157,18 @@ async fn publish_draft_inner(
             format!("在最新版本上重放失败：{error}"),
             json!({}),
         )),
+        Err(PublishError::AssetsGone(gone)) => {
+            tracing::info!(space = %space_id, draft = %draft.id, assets = ?gone, "发布时引用的资源已被清理，没有发布");
+            Ok(problem_with(
+                StatusCode::CONFLICT,
+                "asset_gone",
+                format!(
+                    "草稿引用的 {} 个资源已经被清理（上传后 7 天内没被引用的资源会被删除），没有发布；请重新上传 assets 里列出的资源（内容相同，哈希也相同）后再发布",
+                    gone.len()
+                ),
+                json!({"assets": gone}),
+            ))
+        }
     }
 }
 
@@ -1167,7 +1188,8 @@ async fn publish_draft_inner(
         (status = 200, description = "已发布", body = PublishView),
         (status = 403, description = "只有只读权限", body = ProblemDocument),
         (status = 404, description = "草稿不存在或不属于实体区", body = ProblemDocument),
-        (status = 409, description = "冲突（conflicts 列出冲突的键）、越界、已发布或 rev 不一致", body = ProblemDocument),
+        (status = 409, description = "冲突（conflicts 列出冲突的键）、越界、已发布或 rev 不一致；asset_gone：引用的资源已被清理（assets 列出哈希，重新上传后再发布）", body = ProblemDocument),
+        (status = 422, description = "scriptRef 不是本空间的脚本资源", body = ProblemDocument),
     )
 )]
 pub async fn publish_draft(
@@ -1196,7 +1218,8 @@ pub async fn publish_draft(
         (status = 200, description = "已发布", body = PublishView),
         (status = 403, description = "只有只读权限", body = ProblemDocument),
         (status = 404, description = "草稿不存在或不属于这个地块", body = ProblemDocument),
-        (status = 409, description = "冲突、越界、已发布或 rev 不一致", body = ProblemDocument),
+        (status = 409, description = "冲突、越界、已发布或 rev 不一致；asset_gone：引用的资源已被清理", body = ProblemDocument),
+        (status = 422, description = "scriptRef 不是本空间的脚本资源", body = ProblemDocument),
     )
 )]
 pub async fn publish_plot_draft(
