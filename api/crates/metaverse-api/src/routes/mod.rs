@@ -27,6 +27,11 @@ pub mod public_spaces;
 pub mod spaces;
 pub mod views;
 
+// 上传、任务、事件、组合（各自的文件里有说明）。
+pub mod ingest_common;
+pub mod jobs;
+pub mod uploads;
+
 use crate::error::{self, ApiError};
 use crate::AppState;
 
@@ -54,6 +59,8 @@ pub fn router(state: AppState) -> Router {
     let v1 = Router::new()
         .route("/api/v1/spaces/{space_id}", get(spaces::get_space))
         .route("/api/v1/admin/spaces", post(admin_spaces::create_space))
+        .merge(uploads::routes())
+        .merge(jobs::routes())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             crate::auth::require_identity,
