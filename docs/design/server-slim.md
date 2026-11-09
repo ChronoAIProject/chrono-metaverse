@@ -1037,6 +1037,42 @@ S1 做完后的状态（实施记录）：
 - **接口与数据**：6.5、6.6、8.4、8.5。
 - **验收**：`bundle check` 跑 `tests/vectors/bundle/` 的结构部分和 `tests/vectors/check/` 全部样本，结果与 Rust 相同；`bundle push` 对着模拟接口跑通：没有 `base` 拒绝、空间不符拒绝、复用、上传、等待、交包、预览、发布、`unchanged`、冲突后 `--replay`、本地缺文件且不能复用时停下；`pull --scan` 断点续传；`pull --share` 不写令牌进工作区；sdk 的 lint、typecheck、format、测试、构建全过。
 
+S5 做完后的状态（实施记录）：
+
+- 命令行：删掉 `scan`、`rebuild`、`voxelize` 和 `commands/authored.ts`（运行它们时说明改用本地工具和重建包，不只说"不认识"）；
+  新 `bundle check`、`bundle push`（`commands/bundle.ts`，目录检查在 `workspace/bundle.ts`）；`publish` 按 `out/drafts.json` 的
+  记录或 `--rebuild` 走重建路径，显示"没有变化"，409 的冲突、`broken_template_ref`、`asset_gone` 分别说明处理办法；`pull` 写
+  `limits.json`、`--scan`（`transport/download.ts`）、`--share`（`transport/public.ts`）。传输层的路径范围扩成实体区、地块、
+  重建三种（`ScopeRef`），请求可以带 `Range`，任务的 `lastError` 兼容 `{class, message, at}`。
+- 资源核对的命令行实现 `src/core/check/`（`glb.ts`、`image.ts`、`zip.ts`，`index.ts` 里是按用途分派、`fits`、
+  `modelFitsBounds`、`limits.json` 的形状检查），按 4.4–4.6 和 SHAPES 8 写。
+- 测试对着假接口服务（`tests/helpers/fakeApi.ts` 补了重建路径、重建权限、交包、`unchanged`、`Range`、公开读），验收列的
+  每一项都有；资源核对按 6.5 列出的样本在内存里生成（`tests/helpers/samples.ts`）。
+- 设计没写到、实现时定下的（最小的写法）：
+  1. **拒绝码**（`CheckError.code`）：glb 的 `glb_header`、`glb_json_too_large`、`glb_json`、`glb_external_uri`、`glb_buffer`、
+     `glb_extension`、`glb_unsupported`、`glb_position`、`glb_scene`、`glb_node_graph`、`glb_triangles`、`glb_too_many_triangles`、
+     `glb_bounds_mismatch`、`glb_coord_range`、`glb_image`、`glb_texture_too_large`；图片的 `image_format`、`image_header`、
+     `image_too_large`；zip 的 `zip_format`、`zip_too_large`、`zip64`、`zip_encrypted`、`zip_method`、`zip_path`、`zip_members`、
+     `zip_local_header`、`zip_overlap`；另有 `drc_header`、`obj_header`、`text_encoding`、`too_large`、`format`。
+     S2 生成 `tests/vectors/check/` 时用同一套码，`expected.json` 是 `[{file, purpose, ok, code?, check?}]`（或
+     `{samples: [...]}`），上限一律默认值——命令行的运行器 `tests/check-vectors.test.ts` 按这个格式读，目录还没有时跳过；
+  2. glb 检查的细节：`check.nodes` 是 JSON 里 `nodes` 的个数；没有场景（`scenes[scene]` 不存在）拒绝；场景里没有三角形拒绝；
+     `POSITION` 没有 `bufferView` 拒绝；`min`/`max` 按分量的原始值与数据核对（glTF 规定 `normalized` 不影响它们），还原后的
+     值才进世界包围盒；成环对全部节点查（不只是场景走得到的）；扫描用途的轻量检查不读 BIN 块，`images` 为空、
+     `maxTextureSide`、`texturePixels` 为 0；
+  3. zip：名称以 `/` 结尾的目录项与 `__MACOSX/`、`.DS_Store` 一样忽略（仍查路径安全，macOS 压缩文件夹会带目录项）；有数据
+     描述符时本地头里的大小可以是 0；drc 的主版本认 1 和 2，编码类型必须是网格；
+  4. `bundle push` 必须在工作区里运行（要用 `metaverse.json` 的调用方式和空间编号），`bundle check` 可以在工作区外给出目录；
+     本地缺的文件先逐个做复用探测，全部能复用才开始传别的（探测不能复用时留下一个打开的上传会话，24 小时后被清理收走）；
+     本地缺的文件按扩展名定上传格式；`base.seq` 超过最新版本时拒绝；`--replay` 只能和 `--publish` 一起用；
+  5. 交包任务结果里的 `anchors.created` 认个数或编号列表两种写法，`skipped[]` 的编号认 `id` 或 `anchorId`。
+- 与设计的偏离（都是最小的）：
+  1. `pull --scan` 只有 zip 写成 `scan/scan.zip`；旧空间的扫描是 glb、drc、obj 时按格式写成 `scan/scan.glb` 等并提示（本地
+     工具要用 `--scan` 指定），不把别的格式存成 `.zip`；
+  2. `pull --share` 要在已有的工作区里运行，链接的空间要与工作区相同；除了设计列的文件，也写方块表和区块（公开快照里就有），
+     这样只读工作区照样能 `build`、`dev`；
+  3. `tests/vectors/check/` 由 S2 生成，S5 时还没有：验收里"结果与 Rust 相同"等 S2 合并后由运行器自动核对（见上面第 1 条）。
+
 #### S6a 本地工具去掉服务端部分
 
 - **改哪些文件**：`worker/src/metaverse_worker/` 按 8.2 删左列；`worker/src/metaverse_worker/processing/limits.py`（新，接住 `config.Config` 里的解析上限），工作台的 `recon/prepare.py`、`recon/reframe.py` 改用它；Mongo 测试按 8.2 分流；`worker/pyproject.toml` 去掉 pymongo 和服务入口；删 `infra/worker/`、`.github/scripts/pytest_require_mongo.py` 及测试；`.github/workflows/images.yml` 去掉 worker；`.github/workflows/ci.yml` 的 worker 任务不再起 MongoDB、hadolint 只查两个 Dockerfile；`.github/dependabot.yml` 删 worker 两项；`infra/chrono-cd/check-pins.mjs` 去掉处理服务构建后端的检查。`app.json`、`check-app` 留到 S9。
