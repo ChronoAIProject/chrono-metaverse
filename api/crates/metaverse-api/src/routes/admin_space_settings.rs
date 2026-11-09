@@ -277,7 +277,10 @@ pub async fn set_layout(
             return Err(ApiError::conflict("时间线在写入期间前进了，请重试"))
         }
         Err(CommitError::Missing) => return Err(ApiError::not_found()),
-        Err(CommitError::DraftChanged) => return Err(ApiError::internal()),
+        // 改区域和地块的提交不引用资源，这两种都不会发生。
+        Err(CommitError::DraftChanged | CommitError::AssetsGone(_)) => {
+            return Err(ApiError::internal())
+        }
         Err(CommitError::Repo(error)) => return Err(error.into()),
     };
     state.public.cache.invalidate_space(&space_id);

@@ -243,7 +243,8 @@ pub async fn ensure_genesis_as(
         }
         Err(CommitError::HeadMoved) => Ok(None),
         Err(CommitError::Missing) => Err(ApiError::not_found()),
-        Err(CommitError::DraftChanged) => Err(ApiError::internal()),
+        // 第一次提交不引用资源，这两种都不会发生。
+        Err(CommitError::DraftChanged | CommitError::AssetsGone(_)) => Err(ApiError::internal()),
         Err(CommitError::Repo(error)) => Err(error.into()),
     }
 }

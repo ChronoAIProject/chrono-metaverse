@@ -37,7 +37,7 @@ use crate::auth::{Caller, Grant};
 use crate::error::ApiError;
 use crate::repo::{
     AssetRole, CommitError, CommitOutcome, CommitPlan, DraftDoc, DraftStatus, OpsAsset, OpsRef,
-    ProvisionalBlock, Repo, UnusableAsset,
+    ProvisionalBlock, Repo, UnusableAsset, MISSING_ASSET,
 };
 
 /// 一个草稿最多的操作条数（内联 + 上传）。
@@ -341,6 +341,30 @@ pub async fn append_ops(
         .into());
     }
     let new_assets: Vec<String> = assets.into_iter().map(|(hash, _)| hash).collect();
+    // 清理的栅栏（处理服务 `jobs/cleanup.py`）：写下记录（`body.assetHash` / `textures`）和草稿
+    // （`assets`、`opsRefs`）这些引用之前，先刷新这一批引用的全部资源的 touchedAt 并确认都还在。
+    // 刷新之后清理的条件删除就删不掉它们；刷新不到说明刚被清理删掉，整批不生效，让调用方重新上传。
+    let mut fenced = new_assets.clone();
+    if let OpsSource::Upload(hash) = &source {
+        fenced.push(hash.clone());
+    }
+    let gone = repo.touch_assets(grant, &fenced).await?;
+    if !gone.is_empty() {
+        tracing::info!(space = %grant.space_id(), draft = %draft.id, assets = ?gone, "追加时引用的资源刚被清理");
+        let describe = |hash: &String| match &source {
+            OpsSource::Upload(file) if file == hash => format!("操作文件 {hash}：{MISSING_ASSET}"),
+            _ => format!("{hash}：{MISSING_ASSET}"),
+        };
+        return Err(ApiError::new(
+            axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+            "unknown_asset",
+            format!(
+                "引用的资源不能这样用：{}",
+                gone.iter().map(describe).collect::<Vec<_>>().join("；")
+            ),
+        )
+        .into());
+    }
 
     repo.put_draft_chunks(grant, &draft.id, &new_chunks, draft.expires_at)
         .await?;
@@ -418,7 +442,17 @@ pub async fn draft_ops(repo: &Repo, grant: &Grant, draft: &DraftDoc) -> Result<V
             .await?
         {
             OpsAsset::Bytes(bytes) => bytes,
-            OpsAsset::Missing | OpsAsset::TooLarge(_) => {
+            OpsAsset::Missing => {
+                return Err(ApiError::new(
+                    axum::http::StatusCode::CONFLICT,
+                    "asset_gone",
+                    format!(
+                        "草稿引用的操作文件 {} 已经被清理，请重新上传同一个文件（哈希不变）后再试",
+                        reference.asset_hash
+                    ),
+                ))
+            }
+            OpsAsset::TooLarge(_) => {
                 return Err(ApiError::conflict(format!(
                     "草稿引用的操作文件 {} 已经不可用",
                     reference.asset_hash
@@ -538,6 +572,9 @@ pub enum PublishError {
     OutOfScope(OpError),
     /// 在最新版本上重放失败。
     ReplayFailed(OpError),
+    /// 草稿或提交引用的资源已经被处理服务的定期清理删掉（升序去重的哈希）。重新上传同一内容
+    /// （哈希不变）后可以再发布。
+    AssetsGone(Vec<String>),
 }
 
 impl From<ApiError> for PublishError {
@@ -846,6 +883,22 @@ async fn replay_changes(
     Ok(changes)
 }
 
+/// 发布时附带的 `scriptRef`：必须是本空间的脚本资源（script 用途上传并经处理服务校验，
+/// `metadata.kind = script`）。提交引用它，清理就不会删它，所以不能拿别的空间的资源或不存在的
+/// 哈希充数。
+async fn check_script_ref(repo: &Repo, grant: &Grant, hash: &str) -> Result<(), ApiError> {
+    let reason = match repo.space_owned_asset(grant, hash).await? {
+        Some(meta) if meta.kind.as_deref() == Some("script") => return Ok(()),
+        Some(_) => "不是脚本（只能引用 script 用途上传的资源）".to_owned(),
+        None => format!("{MISSING_ASSET}，或不属于本空间"),
+    };
+    Err(ApiError::new(
+        axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+        "unknown_asset",
+        format!("scriptRef {hash}：{reason}"),
+    ))
+}
+
 /// 草稿操作在提交里的存法：内联（≤ 1MB）、原上传文件，或者合并写成一个 NDJSON 资源。
 async fn commit_ops(
     repo: &Repo,
@@ -891,6 +944,21 @@ pub async fn publish(
     }
     if draft.op_count() == 0 {
         return Err(ApiError::invalid("草稿里还没有任何操作").into());
+    }
+    if let Some(script) = &options.script_ref {
+        check_script_ref(repo, grant, script).await?;
+    }
+    // 事务前先确认一次：草稿引用的操作文件和脚本都还在（并刷新 touchedAt），缺了就不必算下去。
+    // 物件模型、贴图由提交事务里的栅栏确认（见 `Repo::write_commit`）。
+    let mut fenced: Vec<String> = draft
+        .ops_refs
+        .iter()
+        .map(|reference| reference.asset_hash.clone())
+        .collect();
+    fenced.extend(options.script_ref.iter().cloned());
+    let gone = repo.touch_assets(grant, &fenced).await?;
+    if !gone.is_empty() {
+        return Err(PublishError::AssetsGone(gone));
     }
     let (ops, ops_ref) = commit_ops(repo, grant, draft).await?;
     let kind = match draft.scope {
@@ -1002,6 +1070,7 @@ pub async fn publish(
                 .into())
             }
             Err(CommitError::Missing) => return Err(ApiError::not_found().into()),
+            Err(CommitError::AssetsGone(gone)) => return Err(PublishError::AssetsGone(gone)),
             Err(CommitError::Repo(error)) => return Err(error.into()),
         }
     }
