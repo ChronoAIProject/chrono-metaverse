@@ -249,10 +249,11 @@ impl DemoSeedConfig {
                 .map(|v| v.trim().to_owned())
                 .filter(|v| !v.is_empty())
         };
-        let token = parse_share_token(optional(SHARE_TOKEN_ENV))?;
+        // 没有种子时令牌用不上，也不检查（不能因为一个用不上的密钥启动失败）。
         let Some(text) = optional(SEED_ENV) else {
             return Ok(None);
         };
+        let token = parse_share_token(optional(SHARE_TOKEN_ENV))?;
         let raw: RawSeed = serde_json::from_str(&text)
             .map_err(|error| invalid(format!("不是合法的种子配置 JSON：{error}")))?;
         Self::from_raw(raw, token, max_total_bytes).map(Some)
@@ -447,6 +448,12 @@ mod tests {
         let blank = BTreeMap::from([(SEED_ENV, "  ".to_owned())]);
         assert_eq!(
             DemoSeedConfig::from_lookup(&|name| blank.get(name).cloned(), 1 << 30),
+            Ok(None)
+        );
+        // 没有种子时，令牌即使格式不对也不检查。
+        let stray = BTreeMap::from([(SHARE_TOKEN_ENV, "short".to_owned())]);
+        assert_eq!(
+            DemoSeedConfig::from_lookup(&|name| stray.get(name).cloned(), 1 << 30),
             Ok(None)
         );
     }
