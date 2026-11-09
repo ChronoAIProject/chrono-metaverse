@@ -2,9 +2,14 @@
 # 一键起本地全套（只监听 127.0.0.1）：
 #   MongoDB 副本集（已有就复用）→ 模拟 NyxID → 接口服务 → 处理服务 → 网站开发服务器（/api 转给本地接口服务）
 #
-# 用法：infra/dev/up.sh [--no-worker] [--no-web]
+# 用法：infra/dev/up.sh [--no-worker] [--no-web] [--demo-seed[=<种子.json>]]
 # 停止：infra/dev/down.sh
 # 日志和进程号：infra/dev/.run/
+#
+# --demo-seed：接口服务启动后按部署配置种子建演示空间、导入扫描（默认用线上的 infra/chrono-cd/demo-seed.json，
+#   会从种子里的地址下载扫描）。也可以用环境变量 METAVERSE_DEV_DEMO_SEED=<种子.json>；
+#   METAVERSE_DEV_DEMO_SEED_OWNER=chronoai 把主人换成本地模拟 NyxID 的组织（alice 就能管理它）；
+#   分享令牌取 METAVERSE_DEMO_SHARE_TOKEN，没设时生成一个存在 infra/dev/.run/demo-share-token（之后复用）。
 #
 # 可用环境变量改端口和库名（默认值在括号里）：
 #   METAVERSE_MONGODB_URI（自动找 127.0.0.1:27017 / 27018 上的 rs0 副本集）
@@ -30,16 +35,19 @@ mongo_port=${METAVERSE_DEV_MONGO_PORT:-27017}
 
 with_worker=1
 with_web=1
+seed_file=${METAVERSE_DEV_DEMO_SEED:-}
 for arg in "$@"; do
   case "$arg" in
     --no-worker) with_worker=0 ;;
     --no-web) with_web=0 ;;
+    --demo-seed) seed_file="$repo/infra/chrono-cd/demo-seed.json" ;;
+    --demo-seed=*) seed_file=${arg#--demo-seed=} ;;
     -h | --help)
-      sed -n '2,17p' "${BASH_SOURCE[0]}"
+      sed -n '2,22p' "${BASH_SOURCE[0]}"
       exit 0
       ;;
     *)
-      echo "不认识的参数：$arg（可用 --no-worker、--no-web）" >&2
+      echo "不认识的参数：$arg（可用 --no-worker、--no-web、--demo-seed[=<种子.json>]）" >&2
       exit 2
       ;;
   esac
@@ -220,6 +228,32 @@ start mock-nyxid node "$repo/infra/dev/mock-nyxid.mjs" --port "$mock_port" --rol
 wait_http mock-nyxid "$nyx/healthz" 15
 
 # ---------------------------------------------------------------------------
+# 部署配置种子（可选）：压缩成一行交给接口服务，分享令牌生成一次后复用
+# ---------------------------------------------------------------------------
+seed_json=""
+seed_token=""
+seed_space=""
+if [[ -n "$seed_file" ]]; then
+  [[ -f "$seed_file" ]] || die "种子配置不存在：$seed_file"
+  owner_args=()
+  if [[ -n "${METAVERSE_DEV_DEMO_SEED_OWNER:-}" ]]; then
+    owner_args=(--owner "$METAVERSE_DEV_DEMO_SEED_OWNER")
+  fi
+  seed_json=$(node "$repo/infra/dev/demo-seed.mjs" compact "$seed_file" "${owner_args[@]}") || die "种子配置读不出来：$seed_file"
+  seed_space=$(node "$repo/infra/dev/demo-seed.mjs" space-id "$seed_file") || die "种子配置没有 spaceId：$seed_file"
+  seed_token=${METAVERSE_DEMO_SHARE_TOKEN:-}
+  if [[ -z "$seed_token" ]]; then
+    if [[ -s "$run/demo-share-token" ]]; then
+      seed_token=$(cat "$run/demo-share-token")
+    else
+      seed_token=$(node "$repo/infra/dev/demo-seed.mjs" token)
+      (umask 077 && printf '%s\n' "$seed_token" >"$run/demo-share-token")
+    fi
+  fi
+  say "部署配置种子：$seed_file（空间 $seed_space），接口服务建好索引后在后台导入"
+fi
+
+# ---------------------------------------------------------------------------
 # 接口服务
 # ---------------------------------------------------------------------------
 say "编译接口服务（第一次要几分钟）"
@@ -241,6 +275,8 @@ MONGODB_URI="$mongo_uri" \
   UPLOAD_MAX_OPEN_PER_SPACE="${UPLOAD_MAX_OPEN_PER_SPACE:-16}" \
   UPLOAD_MAX_CONCURRENT_PARTS="${UPLOAD_MAX_CONCURRENT_PARTS:-4}" \
   JOB_MAX_PENDING_PER_SPACE="${JOB_MAX_PENDING_PER_SPACE:-16}" \
+  METAVERSE_DEMO_SEED="$seed_json" \
+  METAVERSE_DEMO_SHARE_TOKEN="$seed_token" \
   RUST_LOG="${RUST_LOG:-info}" \
   start api "$target/debug/metaverse-api"
 wait_http api "$api/api/healthz" 120
@@ -298,6 +334,12 @@ cat <<EOF
 EOF
 [[ $with_web -eq 1 ]] && echo "  网站         http://127.0.0.1:$web_port/"
 alive worker && echo "  处理服务     http://127.0.0.1:$worker_health_port/healthz"
+if [[ -n "$seed_space" ]]; then
+  cat <<EOF
+  演示空间     http://127.0.0.1:$web_port/s/$seed_space#share=$seed_token
+               （种子在后台下载、导入，进度看 infra/dev/.run/api.log 和 worker.log；分享令牌在 infra/dev/.run/demo-share-token）
+EOF
+fi
 cat <<EOF
 
 调用示例（每次自动取新令牌，详见 infra/dev/README.md）：

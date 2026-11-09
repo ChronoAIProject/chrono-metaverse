@@ -316,11 +316,12 @@ test('e2e.mjs：没给扫描文件、文件不存在、格式不对时退出码 
   assert.equal(absent.status, 2);
   assert.match(absent.stderr, /找不到扫描文件/);
 
-  const wrong = join(rolesDir, 'scan.zip');
-  await writeFile(wrong, 'zip');
+  // zip（网格 + 贴图）也是合法的扫描格式，用别的扩展名。
+  const wrong = join(rolesDir, 'scan.ply');
+  await writeFile(wrong, 'ply');
   const format = runScript([], { METAVERSE_E2E_SCAN: wrong });
   assert.equal(format.status, 2);
-  assert.match(format.stderr, /扫描文件必须是 \.glb、\.drc、\.obj/);
+  assert.match(format.stderr, /扫描文件必须是 \.glb、\.drc、\.obj、\.zip/);
 
   const unknown = runScript(['--bogus']);
   assert.equal(unknown.status, 2);

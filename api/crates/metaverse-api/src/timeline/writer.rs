@@ -176,6 +176,18 @@ pub async fn ensure_genesis(
     caller: &Caller,
     now: Timestamp,
 ) -> Result<Option<CommitOutcome>, ApiError> {
+    ensure_genesis_as(repo, grant, &caller.subject, &caller.service_id, now).await
+}
+
+/// 同 [`ensure_genesis`]，发布者直接给出（部署配置种子没有调用者，用
+/// [`metaverse_core::model::OPERATOR_SEED_SUBJECT`]）。
+pub async fn ensure_genesis_as(
+    repo: &Repo,
+    grant: &Grant,
+    sub: &str,
+    nyx_service_id: &str,
+    now: Timestamp,
+) -> Result<Option<CommitOutcome>, ApiError> {
     let space = repo.space(grant).await?.ok_or_else(ApiError::not_found)?;
     if space.head.seq != 0 {
         return Ok(None);
@@ -207,7 +219,12 @@ pub async fn ensure_genesis(
     .await?;
     let mut plan = CommitPlan::new(
         0,
-        actor(caller, PathScope::Physical, ActorKind::Admin),
+        Actor {
+            sub: sub.to_owned(),
+            nyx_service_id: nyx_service_id.to_owned(),
+            scope: PathScope::Physical,
+            kind: ActorKind::Admin,
+        },
         "创建空间：空间级锚点与通用方块表",
     );
     plan.changed_anchors = vec![IdChange {

@@ -3,10 +3,29 @@
 //! 接口服务自己做的后台写入（例如公开读时顺带保存的状态快照）不属于调用者的权限，
 //! 所以不用调用者的凭据写，而是由已有凭据派生一个只针对同一空间、写明用途的
 //! [`SystemGrant`]；每次派生都写一条审计日志（`target = "audit"`）。
+//!
+//! 部署配置种子（`crate::demo_seed`）也在这里拿凭据：建空间的 [`CreateGrant`]（归属证据的依据是
+//! `operator_seed`）和已有种子空间的"管理"凭据，同样每次都写审计日志。
 
-use metaverse_core::model::Owner;
+use metaverse_core::model::{
+    EvidenceBasis, Owner, OwnerEvidence, OwnerKind, OPERATOR_SEED_SUBJECT,
+};
+use metaverse_core::Timestamp;
 
-use super::{Authorizer, Grant};
+use super::{Authorizer, CreateGrant, Grant, GrantAccess};
+use crate::error::ApiError;
+
+/// 部署配置种子看到的空间状态。
+#[derive(Debug)]
+pub enum SeedSpace {
+    /// 空间不存在。
+    Missing,
+    /// 空间是部署配置种子为同一个组织建的（`operator_seed` 证据、主人一致）：可以接着做
+    /// （补登记扫描资源、补建导入任务）。
+    Seeded(Grant),
+    /// 空间存在，但不是部署配置种子建的，或主人与配置不同：种子什么都不做。
+    Foreign,
+}
 
 /// 后台用途的授权凭据：空间编号、主人、用途。只有授权层能构造。
 #[derive(Debug, Clone)]
@@ -45,5 +64,83 @@ impl Authorizer {
             owner: grant.owner.clone(),
             purpose,
         }
+    }
+}
+
+impl Authorizer {
+    /// 部署配置种子建空间的凭据（设计 9.2"部署配置种子是运维行为"）：主人只能是配置里写的组织，
+    /// 归属证据的依据是 `operator_seed`、核验人是 [`OPERATOR_SEED_SUBJECT`]。写审计日志。
+    pub fn seed_create_grant(
+        &self,
+        owner: &Owner,
+        reference: &str,
+        now: Timestamp,
+    ) -> Result<CreateGrant, ApiError> {
+        if owner.kind != OwnerKind::Org || !owner.is_valid() {
+            return Err(ApiError::invalid(
+                "部署配置种子的主人必须是组织（NyxID 规范编号）",
+            ));
+        }
+        tracing::info!(
+            target: "audit",
+            owner = %owner.id,
+            purpose = "demo_seed",
+            reference,
+            "签发部署配置种子的建空间凭据"
+        );
+        Ok(CreateGrant {
+            owner: owner.clone(),
+            evidence: Some(OwnerEvidence {
+                issuer: self.issuer.clone(),
+                org_id: owner.id.clone(),
+                verified_by: OPERATOR_SEED_SUBJECT.to_owned(),
+                verified_at: now,
+                basis: EvidenceBasis::OperatorSeed,
+                role_at_verification: None,
+            }),
+        })
+    }
+
+    /// 部署配置种子查看空间：不存在、是种子为同一组织建的（签发"管理"凭据并写审计日志）、
+    /// 或是别人的空间（种子不碰）。
+    pub async fn seed_space(
+        &self,
+        space_id: &str,
+        owner: &Owner,
+        reference: &str,
+    ) -> Result<SeedSpace, ApiError> {
+        let Some(policy) = self.repo.space_policy(&Self::key(), space_id).await? else {
+            return Ok(SeedSpace::Missing);
+        };
+        let seeded = &policy.owner == owner
+            && policy.owner_evidence.as_ref().is_some_and(|evidence| {
+                evidence.basis == EvidenceBasis::OperatorSeed
+                    && evidence.org_id == owner.id
+                    && evidence.verified_by == OPERATOR_SEED_SUBJECT
+            });
+        if !seeded {
+            tracing::warn!(
+                target: "audit",
+                space = %space_id,
+                purpose = "demo_seed",
+                reference,
+                "空间已存在且不是部署配置种子为这个组织建的，种子不处理"
+            );
+            return Ok(SeedSpace::Foreign);
+        }
+        tracing::info!(
+            target: "audit",
+            space = %space_id,
+            owner = %policy.owner.id,
+            purpose = "demo_seed",
+            reference,
+            "签发系统范围"
+        );
+        Ok(SeedSpace::Seeded(Grant {
+            space_id: space_id.to_owned(),
+            owner: policy.owner,
+            access: GrantAccess::Manage,
+            public_basis: None,
+        }))
     }
 }

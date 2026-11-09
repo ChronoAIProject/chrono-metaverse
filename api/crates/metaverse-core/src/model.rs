@@ -65,7 +65,15 @@ pub enum EvidenceBasis {
     OrgSubject,
     /// 调用者经 NyxID 组织授权接口确认是该组织的 admin。
     OrgAdmin,
+    /// 部署配置种子（运维行为，设计 9.2）：接口服务启动时按部署配置（`METAVERSE_DEMO_SEED`）
+    /// 建的演示空间。没有调用者，核验人固定是 [`OPERATOR_SEED_SUBJECT`]，主人只能是配置里写的组织。
+    /// 依据是"部署这套服务的组织 admin 写进了部署配置"（chrono-cd 里改应用规格要求组织 admin）。
+    OperatorSeed,
 }
+
+/// 部署配置种子的核验人（`ownerEvidence.verifiedBy`）和它发起的任务、提交的 `actor.sub`。
+/// 带 `:`，不可能是 NyxID 的主体编号，所以不会和真实调用者混淆。
+pub const OPERATOR_SEED_SUBJECT: &str = "system:demo-seed";
 
 /// 组织归属证据（与 CMA `OrganizationOwnershipEvidence` 对应），创建后只读。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -232,6 +240,9 @@ pub struct Space {
 impl Space {
     /// 主人与证据的一致性（CMA `ResourcePolicyRecord::validate` 的规则）：
     /// 组织空间必须带同一组织的证据；个人空间不能带证据。
+    ///
+    /// 部署配置种子（`operator_seed`）只接受：组织主人、核验人是 [`OPERATOR_SEED_SUBJECT`]、
+    /// 没有角色、证据里的组织编号就是主人（也就是部署配置里写的组织）。
     pub fn ownership_is_consistent(&self) -> bool {
         match (&self.owner.kind, &self.owner_evidence) {
             (OwnerKind::Person, None) => self.owner.is_valid(),
@@ -239,14 +250,18 @@ impl Space {
                 self.owner.is_valid()
                     && evidence.org_id == self.owner.id
                     && !evidence.issuer.trim().is_empty()
-                    && is_subject_id(&evidence.verified_by)
                     && match evidence.basis {
                         EvidenceBasis::OrgSubject => {
                             evidence.verified_by == evidence.org_id
                                 && evidence.role_at_verification.is_none()
                         }
                         EvidenceBasis::OrgAdmin => {
-                            evidence.role_at_verification == Some(OrgRole::Admin)
+                            is_subject_id(&evidence.verified_by)
+                                && evidence.role_at_verification == Some(OrgRole::Admin)
+                        }
+                        EvidenceBasis::OperatorSeed => {
+                            evidence.verified_by == OPERATOR_SEED_SUBJECT
+                                && evidence.role_at_verification.is_none()
                         }
                     }
             }
@@ -1067,7 +1082,47 @@ mod tests {
             role_at_verification: None,
             ..evidence
         };
-        assert!(space(Owner::org("org-1"), Some(subject)).ownership_is_consistent());
+        assert!(space(Owner::org("org-1"), Some(subject.clone())).ownership_is_consistent());
+        let mut spoofed = subject.clone();
+        spoofed.verified_by = "org-2".into();
+        assert!(!space(Owner::org("org-1"), Some(spoofed)).ownership_is_consistent());
+    }
+
+    #[test]
+    fn operator_seed_evidence_only_for_the_configured_org() {
+        let seed = OwnerEvidence {
+            issuer: "https://nyx.example".into(),
+            org_id: "org-1".into(),
+            verified_by: OPERATOR_SEED_SUBJECT.into(),
+            verified_at: ts(1),
+            basis: EvidenceBasis::OperatorSeed,
+            role_at_verification: None,
+        };
+        assert!(space(Owner::org("org-1"), Some(seed.clone())).ownership_is_consistent());
+        // 证据里的组织必须就是主人（部署配置里的组织）。
+        assert!(!space(Owner::org("org-2"), Some(seed.clone())).ownership_is_consistent());
+        // 只给组织主人。
+        assert!(!space(Owner::person("org-1"), Some(seed.clone())).ownership_is_consistent());
+        // 核验人只能是固定的种子身份，不能冒用真实调用者，也不能带角色。
+        let mut by_person = seed.clone();
+        by_person.verified_by = "alice".into();
+        assert!(!space(Owner::org("org-1"), Some(by_person)).ownership_is_consistent());
+        let mut with_role = seed.clone();
+        with_role.role_at_verification = Some(OrgRole::Admin);
+        assert!(!space(Owner::org("org-1"), Some(with_role)).ownership_is_consistent());
+        let mut no_issuer = seed.clone();
+        no_issuer.issuer = " ".into();
+        assert!(!space(Owner::org("org-1"), Some(no_issuer)).ownership_is_consistent());
+        // 别的依据不能借用种子身份。
+        let mut admin_basis = seed.clone();
+        admin_basis.basis = EvidenceBasis::OrgAdmin;
+        admin_basis.role_at_verification = Some(OrgRole::Admin);
+        assert!(!space(Owner::org("org-1"), Some(admin_basis)).ownership_is_consistent());
+        // 存储形式。
+        let value = serde_json::to_value(&seed).unwrap();
+        assert_eq!(value["basis"], "operator_seed");
+        assert_eq!(value["verifiedBy"], "system:demo-seed");
+        assert!(value.get("roleAtVerification").is_none());
     }
 
     #[test]

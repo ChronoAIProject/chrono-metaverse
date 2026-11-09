@@ -12,11 +12,13 @@ import { spawnSync } from 'node:child_process';
 import {
   API_SERVICE,
   WORKER_SERVICE,
+  canonicalJson,
   checkApp,
   checkRepository,
   parseCpu,
   parseMemoryMiB,
   parsePositiveInt,
+  seedProblems,
 } from './check-app.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -45,7 +47,7 @@ function assertProblem(problems, pattern) {
   );
 }
 
-test('仓库里的 app.json、README、up.sh 通过检查', () => {
+test('仓库里的 app.json、README、up.sh、demo-seed.json 通过检查', () => {
   assert.deepEqual(checkRepository(), []);
   assert.deepEqual(checkApp(spec, { readme, upScript }), []);
 });
@@ -219,4 +221,120 @@ test('缺服务或没有 services 时报错', () => {
   const problems = checkApp(variant((copy) => delete copy.services[WORKER_SERVICE]));
   assertProblem(problems, /缺少服务 metaverse-worker/);
   assertProblem(checkApp(variant((copy) => delete copy.services[API_SERVICE])), /缺少服务 metaverse-api/);
+});
+
+// ---------------------------------------------------------------------------
+// 部署配置种子（demo-seed.json 与接口服务的 METAVERSE_DEMO_SEED）
+// ---------------------------------------------------------------------------
+
+const seedText = readFileSync(join(here, 'demo-seed.json'), 'utf8');
+const seed = JSON.parse(seedText);
+
+/** 改种子，同时把 app.json 的 METAVERSE_DEMO_SEED 同步成改后的一行（只测种子本身的规则）。 */
+function seedVariant(edit) {
+  const copy = structuredClone(seed);
+  edit(copy);
+  const app = variant((spec) => (apiEnv(spec).METAVERSE_DEMO_SEED = JSON.stringify(copy)));
+  return checkApp(app, { seed: JSON.stringify(copy, null, 2) });
+}
+
+test('种子：app.json 的 METAVERSE_DEMO_SEED 就是 demo-seed.json 压缩成的一行', () => {
+  assert.equal(apiEnv(structuredClone(spec)).METAVERSE_DEMO_SEED, JSON.stringify(seed));
+  assert.deepEqual(checkApp(spec, { seed: seedText }), []);
+
+  const drifted = variant((copy) => {
+    const changed = { ...seed, name: '别的名字' };
+    apiEnv(copy).METAVERSE_DEMO_SEED = JSON.stringify(changed);
+  });
+  assertProblem(checkApp(drifted, { seed: seedText }), /METAVERSE_DEMO_SEED 与 infra\/chrono-cd\/demo-seed\.json 不一致/);
+
+  const pretty = variant((copy) => (apiEnv(copy).METAVERSE_DEMO_SEED = JSON.stringify(seed, null, 2)));
+  assertProblem(checkApp(pretty, { seed: seedText }), /必须是压缩成一行的 JSON/);
+
+  const reordered = variant((copy) => {
+    const { spaceId, ...rest } = seed;
+    apiEnv(copy).METAVERSE_DEMO_SEED = JSON.stringify({ ...rest, spaceId });
+  });
+  assertProblem(checkApp(reordered, { seed: seedText }), /内容相同但不是它压缩成的一行/);
+
+  const missing = variant((copy) => delete apiEnv(copy).METAVERSE_DEMO_SEED);
+  assertProblem(checkApp(missing, { seed: seedText }), /没有 METAVERSE_DEMO_SEED/);
+  assertProblem(checkApp(spec, { seed: null }), /demo-seed\.json 不存在/);
+  assertProblem(checkApp(spec, { seed: '{"spaceId": ' }), /demo-seed\.json 不是合法的 JSON/);
+
+  // 两处都没有：不用种子，不报。
+  assert.deepEqual(checkApp(missing, { seed: null }), []);
+});
+
+test('种子：按接口服务的规则静态校验', () => {
+  assertProblem(seedVariant((s) => (s.extra = 1)), /不认识的字段 extra/);
+  assertProblem(seedVariant((s) => (s.spaceId = 'ChronoAI_Lobby')), /spaceId 必须是/);
+  assertProblem(seedVariant((s) => (s.name = ' ')), /name 不能为空/);
+  assertProblem(seedVariant((s) => (s.owner = { kind: 'person', id: 'alice' })), /owner 必须是/);
+  assertProblem(seedVariant((s) => (s.owner.id = 'chronoai')), /不是部署这个应用的组织/);
+  assertProblem(seedVariant((s) => (s.owner.slug = 'chronoai')), /owner 有不认识的字段 slug/);
+  assertProblem(seedVariant((s) => (s.visibility = 'private')), /visibility 只能是/);
+  assertProblem(seedVariant((s) => (s.observedAt = '昨天')), /observedAt 必须是 RFC 3339/);
+  assertProblem(seedVariant((s) => (s.rebuild = 'yes')), /rebuild 必须是 true 或 false/);
+  assertProblem(seedVariant((s) => (s.revision = 0)), /revision 必须是从 1 开始的整数/);
+  assertProblem(seedVariant((s) => (s.hints = [])), /hints 必须是 JSON 对象/);
+  assertProblem(
+    seedVariant((s) => (s.hints = { objects: [{ label: 'x'.repeat(5000) }] })),
+    /hints 规范化后超过 4096 字节/,
+  );
+  assertProblem(seedVariant((s) => (s.files[0].url = 'http://scaniverse.com/mesh.drc')), /url 必须是 https/);
+  assertProblem(seedVariant((s) => (s.files[0].url = 'https://u:p@scaniverse.com/mesh.drc')), /url 必须是 https/);
+  assertProblem(seedVariant((s) => (s.files[0].url = 'not a url')), /url 不是合法地址/);
+  assertProblem(seedVariant((s) => (s.files[0].sha256 = 'ABC')), /sha256 必须是 64 位小写十六进制/);
+  assertProblem(seedVariant((s) => (s.files[0].size = 0)), /size 必须是/);
+  assertProblem(seedVariant((s) => (s.files[0].contentType = 'x')), /有不认识的字段 contentType/);
+  assertProblem(seedVariant((s) => (s.files[1].name = 'MESH.drc')), /name 重复/);
+  assertProblem(seedVariant((s) => (s.files[1].name = 'tex.exe')), /name 不合法/);
+  assertProblem(seedVariant((s) => (s.files[1].name = 'other.glb')), /要么是单独一个/);
+  // 总大小上限取 256MiB（种子全在内存里处理）和 UPLOAD_MAX_SCAN_BYTES 中较小的。
+  assertProblem(
+    seedVariant((s) => {
+      s.files[0].size = 128 * 1024 * 1024;
+      s.files[1].size = 128 * 1024 * 1024 + 1;
+    }),
+    /文件总大小 \d+ 超过上限 268435456/,
+  );
+  assertProblem(seedVariant((s) => (s.files[0].size = 300 * 1024 * 1024)), /size 必须是 1–268435456 的整数/);
+  assertProblem(
+    seedProblems(seed, { targetOrg: spec.target_org_id, maxScanBytes: 5 * 1024 * 1024 }),
+    /文件总大小 \d+ 超过上限 5242880/,
+  );
+  assertProblem(seedVariant((s) => (s.files = [])), /files 要有 1–32 个文件/);
+  // 本机 http（本地开发的种子）和单独一个 zip 都可以。
+  assert.deepEqual(
+    seedVariant((s) => {
+      s.files = [{ ...s.files[0], url: 'http://127.0.0.1:9000/scan.zip', name: 'scan.zip' }];
+    }),
+    [],
+  );
+  // 规范化 JSON：键按码点排序、没有空白。
+  assert.equal(canonicalJson({ b: [1, { d: 2, c: 'x' }], a: null }), '{"a":null,"b":[1,{"c":"x","d":2}]}');
+  assert.deepEqual(seedProblems(seed, { targetOrg: spec.target_org_id }), []);
+  assertProblem(seedProblems(null), /必须是 JSON 对象/);
+});
+
+test('种子：凭链接查看要声明分享令牌密钥，令牌不能写进 env，README 要写明 set_app_secrets', () => {
+  const noSecret = variant((copy) => delete copy.services[API_SERVICE].secret_keys);
+  assertProblem(checkApp(noSecret, { seed: seedText }), /secret_keys 里要有 METAVERSE_DEMO_SHARE_TOKEN/);
+
+  const leaked = variant((copy) => (apiEnv(copy).METAVERSE_DEMO_SHARE_TOKEN = 'x'.repeat(43)));
+  assertProblem(checkApp(leaked, { seed: seedText }), /是密钥，不能写进 env/);
+
+  // 公开空间不需要令牌。
+  const publicSeed = { ...seed, visibility: 'public' };
+  const publicApp = variant((copy) => {
+    delete copy.services[API_SERVICE].secret_keys;
+    apiEnv(copy).METAVERSE_DEMO_SEED = JSON.stringify(publicSeed);
+  });
+  assert.deepEqual(checkApp(publicApp, { seed: JSON.stringify(publicSeed) }), []);
+
+  const withoutSecretDoc = readme.replaceAll('`METAVERSE_DEMO_SHARE_TOKEN`', '分享令牌');
+  assertProblem(checkApp(spec, { readme: withoutSecretDoc }), /没有 metaverse-api 的 `METAVERSE_DEMO_SHARE_TOKEN`/);
+  const withoutTool = readme.replaceAll('set_app_secrets', '设置密钥的工具');
+  assertProblem(checkApp(spec, { readme: withoutTool }), /README 要写明密钥怎么设置/);
 });
