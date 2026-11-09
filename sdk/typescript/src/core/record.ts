@@ -38,6 +38,16 @@ export const MAX_PROPS_BYTES = 16 * 1024;
 export const MAX_LABEL_CHARS = 200;
 /** 声明的包围盒允许比计算结果小这么多（米）。 */
 export const BOUNDS_TOLERANCE = 1e-6;
+/**
+ * 重建层新放的物件（含模板）编号的前缀；扩展层新放的物件不能用它（docs/design/server-slim.md 2.5
+ * 第 1 条）。物件和模板共用一个编号空间，两层各用一段。
+ */
+export const REBUILT_ID_PREFIX = 'rb.';
+
+/** 编号是不是重建层的编号（以 `rb.` 开头）。 */
+export function isRebuiltId(id: string): boolean {
+  return id.startsWith(REBUILT_ID_PREFIX);
+}
 
 export type EntityKind = 'structure' | 'object' | 'template';
 export type DataVisibility = 'public' | 'internal';

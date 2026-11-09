@@ -962,6 +962,25 @@ function stripNulls(value: unknown): unknown {
   return value;
 }
 
+/**
+ * 引用到的全部贴图资源：本形状和全部子形状（含模板实例自己的材质，不展开模板本身）材质里的
+ * `texture`、`normalMap`、`roughnessMap`（Rust `Shape::texture_refs`）。
+ */
+export function textureRefs(shape: Shape): Set<string> {
+  const refs = new Set<string>();
+  const walk = (node: Shape) => {
+    const material = node.material as Json | undefined;
+    if (material !== undefined) {
+      for (const key of MATERIAL_TEXTURE_FIELDS) {
+        if (typeof material[key] === 'string') refs.add(material[key]);
+      }
+    }
+    if (node.type === 'group') node.children.forEach(walk);
+  };
+  walk(shape);
+  return refs;
+}
+
 /** 引用到的全部模板编号（不展开模板本身）。 */
 export function templateRefs(shape: Shape): Set<string> {
   const refs = new Set<string>();

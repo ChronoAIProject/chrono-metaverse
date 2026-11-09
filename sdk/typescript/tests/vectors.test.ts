@@ -15,7 +15,14 @@ import {
   type Layer,
 } from '../src/core/chunk.js';
 import { sha256Hex } from '../src/core/hash.js';
-import { parseOp, parseOps, OpError, WorkingState, type PaletteBlock } from '../src/core/ops.js';
+import {
+  parseOp,
+  parseOps,
+  OpError,
+  WorkingState,
+  type PaletteBlock,
+  type ScopeKind,
+} from '../src/core/ops.js';
 import {
   anchorRecordHash,
   entityRecordHash,
@@ -124,7 +131,11 @@ describe.skipIf(!present)('形状向量', () => {
 
 /** 按向量的 base 构造工作状态（与 tests/ops_vectors.rs 的 build_base 相同）。 */
 function buildBase(base: Json): { state: WorkingState; regions: Region[]; plots: Plot[] } {
-  const state = new WorkingState({ palette: base.palette as PaletteBlock[] });
+  const state = new WorkingState({
+    palette: base.palette as PaletteBlock[],
+    kind: (base.scopeKind ?? 'ext') as ScopeKind,
+    anchorHistory: (base.anchorHistory ?? []) as string[],
+  });
   for (const fill of base.fills) {
     const [x0, y0, z0, x1, y1, z1] = fill.box as number[];
     for (let y = y0!; y < y1!; y += 1)
@@ -227,6 +238,19 @@ describe.skipIf(!existsSync(OPS))('操作向量', () => {
       expect([...touched.entities].sort()).toEqual(expected.touched.entities);
       expect([...touched.anchors].sort()).toEqual(expected.touched.anchors);
       expect(touched.palette).toBe(expected.touched.palette);
+      expect(touched.scan).toBe(expected.touched.scan);
+      expect(touched.rebuiltLayer).toBe(expected.touched.rebuiltLayer);
+      expect(
+        [...touched.skippedAnchors.entries()]
+          .sort(([a], [b]) => (a < b ? -1 : 1))
+          .map(([id, reason]) => ({ id, reason })),
+      ).toEqual(expected.touched.skippedAnchors);
+      expect(
+        state.scan === null
+          ? null
+          : { scan: state.scan.scan, observedAt: state.scan.observedAt ?? null },
+      ).toEqual(expected.scan);
+      expect(state.brokenTemplateRefs()).toEqual(expected.brokenTemplateRefs);
       expect(state.chunkChanges(baseHashes, touched.chunks)).toEqual(expected.chunkChanges);
       expect(chunkList(state, true)).toEqual(expected.chunks);
       const spaceId = vector.spaceId as string;
