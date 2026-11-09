@@ -465,7 +465,17 @@ async fn upload_rules_scope_and_access() {
     assert_eq!(reply.status, StatusCode::NOT_FOUND);
 }
 
-/// 上传并让"处理服务"校验通过，返回内容哈希。
+/// 只有 glb 文件头的假模型（第 0 片的文件头检查只看魔数、版本、总长度；物件模型只收 glb）。
+fn fake_glb(label: &[u8]) -> Vec<u8> {
+    let total = (12 + label.len()) as u32;
+    let mut bytes = b"glTF".to_vec();
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&total.to_le_bytes());
+    bytes.extend_from_slice(label);
+    bytes
+}
+
+/// 上传并模拟核对通过（直接写资源和上传的完成状态），返回内容哈希。
 async fn uploaded(app: &TestApp, base: &str, purpose: &str, format: &str, data: &[u8]) -> String {
     let sha = sha256_hex(data);
     let created = create_upload(
@@ -756,7 +766,7 @@ async fn scan_and_model_jobs() {
     assert_eq!(reply.body["params"], json!({"scanAssetHash": scan}));
 
     // 物件模型：地块路径要求是同一地块上传的。
-    let model = uploaded(&app, base, "model", "drc", b"DRACO a lamp").await;
+    let model = uploaded(&app, base, "model", "glb", &fake_glb(b"a lamp")).await;
     let reply = app
         .call(
             who(ORG),
@@ -770,8 +780,8 @@ async fn scan_and_model_jobs() {
         &app,
         &format!("{base}/plots/p1"),
         "model",
-        "drc",
-        b"DRACO a bench",
+        "glb",
+        &fake_glb(b"a bench"),
     )
     .await;
     let reply = app
@@ -1001,7 +1011,7 @@ async fn scan_jobs_write_the_missing_first_commit_before_queueing() {
     front_hall(&app).await;
     let base = "/api/v1/spaces/front-hall";
     let scan = uploaded(&app, base, "scan", "drc", b"DRACO genesis scan").await;
-    let model = uploaded(&app, base, "model", "drc", b"DRACO genesis lamp").await;
+    let model = uploaded(&app, base, "model", "glb", &fake_glb(b"genesis lamp")).await;
     drop_genesis(&app, "front-hall").await;
 
     // 物件模型导入不写提交，不需要补写第一次提交。

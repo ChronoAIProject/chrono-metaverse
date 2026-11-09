@@ -389,10 +389,13 @@ glb 的头和 JSON 块在文件开头，访问器的数据和图片在 BIN 块�
 | 公开接口的进程内缓存 | 128 MiB | `PUBLIC_CACHE_BYTES` 在 `app.json` 里从默认 256 MiB 调成 128 MiB |
 | 分片上传 | 4 × 32 MiB | `UPLOAD_MAX_CONCURRENT_PARTS` 从 8 调成 4，多出的请求排队 |
 | 核对 × 2 | 约 2 × 16 MB | 一批数据块（4 MiB）+ glb 的 JSON 块（≤ 4 MiB，带类型解析）+ 访问器计划 |
-| 重任务 × 1 | 约 450 MB | `ops_from_upload`：边读边解压、逐行解析，不留压缩原文和解压后的全文；解析出的操作（解压后 ≤ 256 MiB 的文本，按 1.5 倍算）+ 工作状态。`bundle_import`：清单原文 ≤ 16 MiB + 原始片段 + 当前一条记录；成员打包一次只有一个成员（≤ 128 MiB） |
+| 重任务 × 1 | 约 450 MB | `ops_from_upload`：边读边解压、逐行解析，不留压缩原文和解压后的全文；**每攒够 2000 条就先作用到工作状态上**，不把全部解析出的操作同时留着，结果记录每 500 条写一批；主要是工作状态（解压后 ≤ 256 MiB 的操作作用出的物件，按 1.5 倍算）。`bundle_import`：清单原文 ≤ 16 MiB + 原始片段 + 当前一条记录；成员打包一次只有一个成员（≤ 128 MiB） |
 | 合计 | 约 840 MB | |
 
 `metaverse-api` 的内存改成申请 384Mi、上限 1536Mi（原来 256Mi / 1Gi；去掉处理服务省下 3Gi 申请，组织配额足够）。CPU 不变（250m / 1）。上线前在本机按"2 个最坏的核对 + 1 个最坏的重任务 + 4 片并发上传 + 缓存装满"实测峰值，写进 `api/README.md` 和设计 16.2；峰值超过 1.2 GB 就先调低上面的上限再上线。
+
+S2 实测（`api/README.md`）：重任务按原来的写法（解析出全部操作再作用、全部记录一起写）峰值约 2.9 GB，超了；改成上表的
+分批作用、分批写记录以后约 0.95 GB（含测试进程本身），没超过 1.2 GB，上面的上限不用再调。
 
 ### 4.9 配置项对照
 
@@ -806,7 +809,7 @@ Python 3.13；numpy、scipy、pillow、trimesh、DracoPy、fast-simplification�
 | `.github/workflows/ci.yml` | `worker` 任务改成本地工具：不再起 MongoDB，`uv sync --frozen --extra dev`、ruff、pytest；删掉"持续集成插件的测试"；hadolint 只查两个 Dockerfile |
 | `.github/dependabot.yml` | 删掉 docker 的 `/infra/worker` 和 pip 的 `/infra/worker`（S6a）；加 `/recon`（S7） |
 | `.github/scripts/pytest_require_mongo.py`、`test_pytest_require_mongo.py` | 删除 |
-| `infra/chrono-cd/check-app.mjs` 及测试 | 删掉处理服务的检查；加：`METAVERSE_DEMO_SEED_HOSTS` 显式写出且每项合法；种子是新格式（旧字段报错）；清单和来源表的地址是 https、主机在列表里、sha256 和大小齐全；上面列出的上限和缓存配置显式写出且是正整数；不允许出现 `metaverse-worker` |
+| `infra/chrono-cd/check-app.mjs` 及测试 | 删掉处理服务的检查（其中"`up.sh` 给处理服务设线程变量"一条 S2 已改成只在 `up.sh` 起处理服务时检查）；加：`METAVERSE_DEMO_SEED_HOSTS` 显式写出且每项合法；种子是新格式（旧字段报错）；清单和来源表的地址是 https、主机在列表里、sha256 和大小齐全；上面列出的上限和缓存配置显式写出且是正整数；不允许出现 `metaverse-worker` |
 | `infra/chrono-cd/pin-images.mjs`、`check-pins.mjs` 及测试 | 只认 `api=`、`web=`；删掉处理服务构建后端的检查 |
 | `infra/chrono-cd/README.md`、`demo/README.md` | 删掉处理服务、线程数一节；"演示数据"一节改成重建包（7.4）；回滚一节按 11.5；更新镜像时注意种子格式和镜像要在同一次 `PUT` 里一起换 |
 
@@ -1000,6 +1003,48 @@ S1 做完后的状态（实施记录）：
   - glb、图片、zip、NDJSON 检查跑完 `tests/vectors/check/` 全部样本；拿一份真实的 Scaniverse 导出 zip 和一份 macOS"压缩"生成的 zip 各试一次（结果记进 `api/README.md`）；
   - 补核对迁移：中途停止后从游标继续；检查不过的写 `checkError`；
   - 预算：本机实测"2 个最坏核对 + 1 个最坏重任务 + 4 片并发上传 + 缓存装满"的峰值和 1 GiB 扫描核对的耗时，记进 `api/README.md`；核对期间 `/api/healthz` 的响应都在 1 秒内。
+
+S2 做完后的状态（实施记录）：
+
+- 接口服务：`runner/`（`mod.rs` 循环、两类名额、进程内通知、停止；`config.rs`；`upload_verify.rs`；`verify/` 的 glb、zip、图片、
+  NDJSON、文本和小格式检查器；`ops_job.rs`；`cleanup.rs`；`migrations.rs`），`repo/runner.rs`（领取、续约、栅栏、核对的收尾事务）、
+  `repo/cleanup.rs`（清理和迁移的跨空间查询、带租约的锁）；`repo/uploads.rs` 登记资源和补写核对记录、直接复用按核对记录判断；
+  `repo/drafts.rs` 保存草稿按字段 `$set`、后台任务带栅栏保存；`routes/drafts.rs` 的 `ops-from-upload` 只插 `queued` 任务；完成上传叫醒
+  执行器；`main.rs` 至少 2 个工作线程、停止时等执行器；4.9 的配置项；`commits` 的 `(spaceId, changedAnchors.id)` 索引。核心库：
+  `Job.lastError` 带类别（旧记录的一段文字照样能读）、`notBefore`、`history`、按种类的 `maxAttempts`、`AssetRole::for_purpose`。
+- 二进制样本 `tests/vectors/check/`：43 个文件、45 个用例（同一个文件可以按几个用途检查），拒绝码表写在向量 README 第 9 节，
+  命令行（S5）用同一套码。
+- 本地设施：`up.sh` 不再起处理服务，副本集的探测和初始化改用新的 `infra/dev/mongo.mjs`（不需要 Python）；`e2e.mjs --only`，默认
+  `1,8,9`，本机跑了两次全部通过。
+- 实测（`api/README.md`）：最坏负载的峰值第一次约 2.9 GB——重任务同时留着全部解析出的操作、工作状态、全部记录的 JSON 和对应的
+  数据库文档；改成下面第 3 条以后约 0.95 GB（含测试进程本身）；1 GiB 扫描核对 2.9 秒；核对期间健康检查最慢 12 毫秒。真实的
+  Scaniverse 导出 zip 通过；macOS"压缩"的 zip 没有真机，按它的布局（deflate、数据描述符、目录项、`__MACOSX/`、`.DS_Store`）造了
+  一份，通过。
+- 实现时补上的细节（设计没写到，按最小的写法定下）：
+  1. 新凭据 `BackgroundGrant`（授权层签发、写审计日志），领取、清理、迁移的跨空间查询只接受它；具体到某个空间仍用
+     `Authorizer::system_space`；
+  2. 任务视图的 `lastError` 照旧是一段文字（命令行不用改），另加 `errorClass`、`notBefore`；
+  3. `ops_from_upload` 边解析边作用：每次喂 16 KiB 原文，攒够 2000 条就先作用（`timeline::drafts::AppendSession`），最后核对整份
+     文件的哈希；结果记录先只收集资源做检查，通过后每 500 条写一批（4.8 的预算原来按"解析出的全部操作 + 工作状态"算，实测超了）；
+  4. 检查器的细则：扫描的 glb 只做轻量检查，不按扩展白名单查（扫描可能用 Draco）；JPEG 只认 SOF0–SOF2，无损、分层、算术编码
+     拒绝（`jpeg_unsupported`）；zip 的目录项忽略，成员名不是 UTF-8 拒绝，带数据描述符时本地头的大小可以是 0；OBJ 只要求不含 NUL；
+     glb 里图片的拒绝码保留图片本身的码；上传核对通过后再按用途的上限判断（`check::fits`，超出是 `over_limit`）；
+  5. 后台迁移只补核对记录、不按上限判断（上限在引用时按当前配置判断）；
+  6. `authored` 用途：核对一律拒绝（`retired_purpose`），清理第 1 步把还没完成的标记失败——旧的物件集导入在 S4 删掉之前也没有
+     处理服务能执行，与其让上传白白占着配额；
+  7. 卡在 `complete` 的上传所在空间已经不在（或换了主人）时，清理用跨空间凭据直接标记失败、删数据块；
+  8. `UPLOAD_MAX_BUNDLE_BYTES` 不能比核心库的 16 MiB 大（交包时整份读入）；`UPLOAD_MODEL_FORMATS` 只接受 `glb`。
+- 与设计的偏离：
+  1. **按核对记录判断引用的角色没在 S2 做**：13.2 S2 的文件清单写了 `repo/blobs.rs` 的 `kind_fits` 改成按 `check` 判断，但 13.1 的
+     S3 一行和 S1 的实施记录都把它放在 S3；S3 正在并行开发，为了不在同一处冲突，S2 只让资源元数据带上核对记录、Content-Type 按
+     `check.format`、创建上传时的直接复用按核对记录判断。所以 S2 合并以后到 S3 合并之前，新上传的物件模型（没有 `sourceHash`）还
+     不能被物件引用（`model_import` 已下线），这是中间状态；
+  2. `upload_verify` 的处理放在 `runner/upload_verify.rs`（文件清单写在 `verify/mod.rs` 里），`verify/` 只放检查器；
+  3. **部署检查 `check-app` 提前改了一处**（10.2 原定 S9 改）：`up.sh` 不再起处理服务以后，`check-app` 仍要求它给处理服务设
+     `OPENBLAS_NUM_THREADS`、`OMP_NUM_THREADS`、`MALLOC_ARENA_MAX`，持续集成会失败。改成只在 `up.sh` 起处理服务时检查；
+     `app.json` 里处理服务自己的线程变量照旧检查（R2 之前线上仍跑旧的处理服务），S9 删处理服务时连同这条规则一起删。
+- 中断后的收尾（这一步做到快结束时机器重启，之后接着做）：补上上面第 3 条；执行器在索引就绪之前收到停止信号也直接退出
+  （原来等就绪的循环不看停止信号，数据库一直连不上时停止会卡住），加了测试；重新跑了全部检查和本机验收（结果见合并请求说明）。
 
 #### S3 重建路径
 

@@ -114,13 +114,32 @@ export function randomSuffix(bytes = 4) {
  * 每个步骤是 `{name, run}`，`run(context)` 返回给人看的说明（字符串）。
  * 返回 `{ok, results}`，results 里每项 `{name, ok, detail, ms, error?}`；没执行的步骤标 `skipped`。
  */
+/**
+ * `--only` 的写法：逗号分隔的步骤编号或区间（`1,8,9`、`1-9`、`2-4,8`），编号 1 到 `max`。
+ * 返回编号的集合（升序）。
+ */
+export function parseOnly(text, max) {
+  const numbers = new Set();
+  for (const part of String(text).split(',').map((item) => item.trim()).filter(Boolean)) {
+    const match = /^(\d+)(?:-(\d+))?$/.exec(part);
+    if (!match) throw new Error(`--only 写法不对：${part}（例如 1,8,9 或 1-9）`);
+    const from = Number(match[1]);
+    const to = Number(match[2] ?? match[1]);
+    if (from < 1 || to > max || from > to) throw new Error(`--only 的步骤编号要在 1 到 ${max} 之间：${part}`);
+    for (let number = from; number <= to; number += 1) numbers.add(number);
+  }
+  if (numbers.size === 0) throw new Error('--only 至少要选一步');
+  return new Set([...numbers].sort((a, b) => a - b));
+}
+
 export async function runSteps(steps, context, { log = () => {} } = {}) {
   const results = [];
   let failed = false;
   for (const [index, step] of steps.entries()) {
-    const label = `${index + 1}. ${step.name}`;
+    // 只跑部分步骤时保留原来的编号（`step.number`）。
+    const label = `${step.number ?? index + 1}. ${step.name}`;
     if (failed) {
-      results.push({ name: step.name, ok: false, skipped: true, detail: '前面的步骤失败，没有执行', ms: 0 });
+      results.push({ name: step.name, number: step.number, ok: false, skipped: true, detail: '前面的步骤失败，没有执行', ms: 0 });
       continue;
     }
     log(`▶ ${label}`);
@@ -128,13 +147,14 @@ export async function runSteps(steps, context, { log = () => {} } = {}) {
     try {
       const detail = (await step.run(context)) ?? '';
       const ms = Date.now() - started;
-      results.push({ name: step.name, ok: true, detail, ms });
+      results.push({ name: step.name, number: step.number, ok: true, detail, ms });
       log(`✔ ${label}（${(ms / 1000).toFixed(1)} 秒）${detail ? `：${detail}` : ''}`);
     } catch (error) {
       failed = true;
       const ms = Date.now() - started;
       results.push({
         name: step.name,
+        number: step.number,
         ok: false,
         detail: error.message,
         error: error instanceof E2eError ? error.detail : error.stack,
@@ -155,7 +175,7 @@ export function formatReport(results) {
   for (const [index, result] of results.entries()) {
     const state = result.skipped ? '未执行' : result.ok ? '通过' : '失败';
     const detail = String(result.detail ?? '').replaceAll('|', '\\|').replaceAll('\n', ' ');
-    lines.push(`| ${index + 1}. ${result.name} | ${state} | ${(result.ms / 1000).toFixed(1)} 秒 | ${detail} |`);
+    lines.push(`| ${result.number ?? index + 1}. ${result.name} | ${state} | ${(result.ms / 1000).toFixed(1)} 秒 | ${detail} |`);
   }
   return lines.join('\n');
 }

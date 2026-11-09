@@ -363,7 +363,7 @@ impl Authorizer {
 mod system;
 mod universes;
 
-pub use system::{SeedSpace, SystemGrant};
+pub use system::{BackgroundGrant, SeedSpace, SystemGrant};
 pub use universes::{
     CreateUniverseGrant, MembershipBasis, MembershipChange, MembershipGrant, MembershipPeriods,
     UniverseGrant,

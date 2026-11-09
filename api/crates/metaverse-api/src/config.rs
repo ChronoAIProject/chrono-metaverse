@@ -16,6 +16,7 @@
 //! | `UPLOAD_*`、`JOB_MAX_PENDING_PER_SPACE` | 否 | 上传大小、格式和任务数的上限，见 [`crate::ingest`] |
 //! | `PUBLIC_*`、`TRUSTED_CLIENT_IP_HEADER` | 否 | 公开接口的限流、并发、缓存和可信客户端地址头，见 [`crate::public::PublicConfig`] |
 //! | `METAVERSE_DEMO_SEED`、`METAVERSE_DEMO_SHARE_TOKEN` | 否 | 部署配置种子（演示空间）和它的分享令牌原文，见 [`crate::demo_seed`] |
+//! | `RUNNER_*`、`METAVERSE_INSTANCE_ID`、`CLEANUP_*` | 否 | 后台执行器和定期清理，见 [`crate::runner::RunnerConfig`] |
 
 use std::net::SocketAddr;
 
@@ -48,6 +49,8 @@ pub struct Config {
     pub public: crate::public::PublicConfig,
     /// 部署配置种子（`METAVERSE_DEMO_SEED`，没设时为空），见 [`crate::demo_seed`]。
     pub demo_seed: Option<crate::demo_seed::DemoSeedConfig>,
+    /// 后台执行器和定期清理（`RUNNER_*`、`CLEANUP_*`）。
+    pub runner: crate::runner::RunnerConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -147,6 +150,7 @@ impl Config {
         let ingest = crate::ingest::IngestConfig::from_lookup(&lookup)?;
         let demo_seed =
             crate::demo_seed::DemoSeedConfig::from_lookup(&lookup, ingest.max_scan_bytes)?;
+        let runner = crate::runner::RunnerConfig::from_lookup(&lookup)?;
         let mut public = crate::public::PublicConfig::from_lookup(&lookup)?;
         public.site_base_url = public_base_url.as_str().trim_end_matches('/').to_owned();
         Ok(Self {
@@ -165,6 +169,7 @@ impl Config {
             require_permissions,
             ingest,
             demo_seed,
+            runner,
         })
     }
 

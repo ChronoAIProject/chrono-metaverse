@@ -4,7 +4,7 @@
 
 - **由 Rust 实现生成**：`tests/vectors.rs` 里定义用例，运行
   `METAVERSE_WRITE_VECTORS=1 cargo test -p metaverse-core --test vectors` 重新生成顶层的全部文件
-  （`ops/` 见第 4 节，`bundle/` 见第 8 节）。
+  （`ops/` 见第 4 节，`bundle/` 见第 8 节，`check/` 的二进制样本由接口服务的测试生成，见第 9 节）。
 - **平时 `cargo test` 会核对**：每个文件都用 Rust 实现重算一遍；用例和文件对不上（忘了重新生成）时测试失败。
 - **不要手改这些文件**。要加用例，改 `tests/vectors.rs` 再重新生成。
 - **例外**：`uv/`（贴图坐标）和 `authored/`（AI 物件集的外链贴图）由 `tools/texture_vectors.py` 按 SHAPES 独立算出
@@ -192,6 +192,7 @@ Rust 实现之后重新生成，文件没有变化）。接口服务、本地工
 | `uv/` | —（不生成网格） | `src/core/shapes/uv.test.ts` | `tests/test_shared_vectors.py`（`test_uv_vectors`） | —（不生成网格） |
 | `authored/` | —（不收物件集） | — | 本地工具 `bundle` 的物件集校验（设计 13.2 S6b 接上，合法的还要核对 `textureUrls`） | — |
 | `bundle/` | `tests/bundle_vectors.rs`（校验、引用表、展开、作用一次和两次） | — | —（只在生成时守住上限） | `tests/vectors.test.ts`（结构校验：合法与否、出错的字段、引用表；默认上限） |
+| `check/` | `metaverse-api/tests/check_vectors.rs`（接口服务的上传核对 `runner::verify`；也是样本的生成器） | — | — | 设计 13.2 S5 接上（`bundle check` 的文件检查） |
 
 顶层的运行器按文件名前缀（`chunk_`、`canonical_`、`shape_`）挑文件，不会读到 `uv/`、`authored/`；这两类各边单独接上。
 `shape_material_*`、`shape_invalid_material_*` 在顶层，现有的形状运行器直接读到：接口服务
@@ -233,3 +234,54 @@ Rust 实现之后重新生成，文件没有变化）。接口服务、本地工
 命令行（`sdk/typescript/src/core/bundle.ts`）只做结构校验，不展开：`checkBundleText(JSON.stringify(manifest), { limits,
 spaceTemplates })`，核对合法与否、不合法时的 `field`、合法时的引用表。单条记录的大小按记录的紧凑 JSON 算（Rust 按清单
 原文里这条记录的文本算，向量里两者相同）。
+
+## 9. 资源核对的二进制样本：`check/`
+
+对应 SHAPES 8资源核对记录与各用途上限和 docs/design/server-slim.md 4.4–4.6。目录里是一批几 KB 的小文件和
+`expected.json`：
+
+```json
+{ "version": 1, "limits": "default",
+  "cases": [ { "file": "glb_model_triangle.glb", "purpose": "model", "format": "glb", "ok": true, "check": { … } },
+             { "file": "glb_bounds_mismatch.glb", "purpose": "model", "format": "glb", "ok": false, "code": "glb_bounds_mismatch" } ] }
+```
+
+- `purpose` 是按哪个上传用途检查，`format` 是上传时声明的格式；同一个文件可以按几个用途各出现一次（例如
+  `glb_far_coordinates.glb` 当网页用模型通过、当物件模型超出坐标上限）；
+- 上限一律用默认值（SHAPES 8、`bundle/limits_default.json`）。检查通过以后再按用途的上限判断（与引用时按角色判断
+  是同一套规则，见核心库 `check::fits`），超出上限的拒绝码是 `over_limit`；
+- `check` 是通过时的核对记录（`metadata.check`），各边算出的要逐字段相同（数字按 JSON 数值比较）；
+- 同一个文件按任意大小切块流式喂入，结果都一样（Rust 的测试按 1、7、4096 字节和整块各跑一遍）。
+
+拒绝码：
+
+| 码 | 含义 |
+|---|---|
+| `format_mismatch` | 内容与声明的格式不符（例如声明 gzip 却没有 gzip 头），或这个用途不收这种格式 |
+| `chunk_layout`、`hash_mismatch` | 数据块的序号、大小、总长度不对；整体哈希与声明的不符（只在服务端读 GridFS 时出现） |
+| `glb_header` | 魔数、版本、总长度、块结构不对（只能有 JSON 和 BIN 两个块） |
+| `glb_json` | JSON 块超过这个用途的上限、不合规、数组超过长度上限、`asset.version` 不是 2.0 |
+| `glb_external_ref` | 缓冲区或图片引用外部文件（`uri`，外部地址和 `data:` 都不行），或不止一个缓冲区 |
+| `glb_extension` | 用了白名单以外的扩展（`extensionsUsed`、`extensionsRequired`、任何对象上的 `extensions` 键） |
+| `glb_unsupported` | 骨骼、动画、相机、变形目标、稀疏访问器、三角形以外的图元 |
+| `glb_node_graph` | 节点成环、有两个父节点、场景的根节点有父节点或被重复引用 |
+| `glb_triangles` | 图元的顶点数或索引数不是 3 的倍数 |
+| `glb_accessor`、`glb_image`、`glb_empty` | 访问器、缓冲区视图超出范围或类型不对；图片的 `mimeType` 不是 png、jpeg；场景里没有网格 |
+| `glb_bounds_mismatch` | `POSITION` 声明的 `min`、`max` 与数据实测的相差超过 max(1e-4 × \|值\|, 1e-6) |
+| `glb_coords` | 世界坐标不是有限数（坐标超出上限是 `over_limit`） |
+| `image_header`、`image_mime_mismatch` | 图片头读不出宽高；魔数与声明的格式（或 glb 里的 `mimeType`）不符 |
+| `jpeg_no_sof`、`jpeg_unsupported` | JPEG 走完都没找到 SOF0–SOF2（先遇到图像数据或结束）；用了无损、分层或算术编码 |
+| `zip_structure`、`zip_zip64`、`zip_path`、`zip_encrypted`、`zip_method`、`zip_members`、`zip_local_header` | 中央目录、zip64、成员名（绝对路径、盘符、`..`）、加密、压缩方式、成员组成（正好一个网格，其余只能是 jpg、png、mtl）、本地头与中央目录不一致 |
+| `drc_header`、`obj_header` | 不是 Draco 三角网格；OBJ 第一行数据不是几何关键字 |
+| `ndjson_line`、`ndjson_too_large`、`gzip` | 某行不是 JSON 对象、超过 64 KiB 或不是 UTF-8；解压后超过 256 MiB；gzip 不完整或成员后面还有数据 |
+| `text_encoding` | 不是 UTF-8，或含 NUL |
+| `json_structure` | 清单的外层不对（`format`、`version`、`files`） |
+| `over_limit` | 检查通过，但超出这个用途的上限（三角形、贴图边长、像素合计、坐标、大小） |
+
+样本由 `metaverse-api/tests/check_vectors.rs` 里的生成器写出：`METAVERSE_WRITE_CHECK_VECTORS=1 cargo test -p
+metaverse-api --test check_vectors`。平时运行时先确认目录里的样本与生成器逐字节相同，再核对 `expected.json`。期望的
+拒绝码写在生成器里（人定的），通过时的 `check` 由检查器算出，写进来以后人工复核过（例如绕竖直轴转 45 度的节点，
+包围盒是 ±0.7071；量化坐标 ×2 缩放后是 ±0.99997）。gzip 样本用不压缩的存储块，输出与压缩库的版本无关。
+
+`scan_macos.zip` 按 macOS"压缩"的成员布局造（目录项、`__MACOSX/` 下的 `._` 文件、`.DS_Store`），不是在 macOS 上
+实际生成的；真实文件的试验结果见 `api/README.md`。

@@ -20,7 +20,9 @@ use axum::{
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use metaverse_core::chunk::ChunkKey;
 use metaverse_core::ids::is_object_id;
-use metaverse_core::model::{Author, Touched, DRAFT_TTL_SECONDS};
+use metaverse_core::model::{
+    Author, Job, JobKind, JobStatus, RequestActor, Touched, DRAFT_TTL_SECONDS,
+};
 use metaverse_core::ops::{OpError, MAX_OPS_PER_BATCH};
 use metaverse_core::scope::PathScope;
 use metaverse_core::{is_sha256_hex, sha256_hex, Timestamp};
@@ -33,10 +35,11 @@ use super::admin_spaces::check_text;
 use crate::auth::permissions::Capability;
 use crate::auth::{Caller, Grant, Purpose};
 use crate::error::{ApiError, ProblemDocument, PROBLEM_TYPE_PREFIX};
+use crate::ingest::new_id;
 use crate::repo::{DraftDoc, DraftStatus, NewPreview, OpsRef};
 use crate::timeline::drafts::{
-    append_ops, ops_job_result, parse_op_values, parse_ops_file_blocking, publish, OpsSource,
-    PublishError, PublishOptions, MAX_DRAFT_OPS, MAX_DRAFT_OPS_REFS, MAX_OPS_FILE_BYTES,
+    append_ops, parse_op_values, publish, OpsSource, PublishError, PublishOptions,
+    MAX_DRAFT_OPS_REFS, MAX_OPS_FILE_BYTES,
 };
 use crate::timeline::state::ApplyError;
 use crate::timeline::writer::ensure_genesis;
@@ -50,8 +53,6 @@ pub const SMALL_BODY_LIMIT: usize = 64 * 1024;
 pub const PREVIEW_TTL_DEFAULT: i64 = 24 * 3600;
 /// 预览令牌最长有效期（秒）。
 pub const PREVIEW_TTL_MAX: i64 = 7 * 24 * 3600;
-/// ops_from_upload 任务的租约（接口服务进程中途退出时，由处理服务回收为失败）。
-const OPS_JOB_LEASE_SECONDS: i64 = 30 * 60;
 
 // ---------------------------------------------------------------------------
 // 视图
@@ -622,7 +623,7 @@ pub struct OpsFromUploadRequest {
 pub struct OpsJobView {
     pub job_id: String,
     pub draft_id: String,
-    /// `running`：进度和结果用 `GET /api/v1/spaces/{space_id}/jobs/{job_id}` 查询。
+    /// `queued`：由后台执行器处理，进度和结果用 `GET /api/v1/spaces/{space_id}/jobs/{job_id}` 查询。
     pub status: String,
 }
 
@@ -708,162 +709,53 @@ async fn from_upload(
     if !state.repo.touch_asset(&grant, &upload.asset_hash).await? {
         return Err(ops_asset_gone());
     }
-    let job_id = uuid::Uuid::new_v4().simple().to_string();
     let now = crate::now()?;
-    let params = json!({
-        "draftId": draft.id,
-        "assetHash": upload.asset_hash,
-        "uploadId": upload.upload_id,
-    });
-    state
-        .repo
-        .insert_ops_job(
-            &grant,
-            &job_id,
-            &draft.scope,
-            &params,
-            &caller.subject,
-            &caller.service_id,
-            now,
-            now.saturating_add_seconds(OPS_JOB_LEASE_SECONDS),
-        )
-        .await?;
-    tracing::info!(space = %space_id, draft = %draft.id, job = %job_id, asset = %upload.asset_hash, "ops_from_upload 已开始");
-    let background = state.clone();
-    let owner = grant.owner().clone();
-    let job = job_id.clone();
-    let draft_id = draft.id.clone();
-    let asset_hash = upload.asset_hash.clone();
-    tokio::spawn(async move {
-        run_ops_job(background, space_id, owner, job, draft_id, asset_hash).await;
-    });
+    let job = Job {
+        id: new_id("job"),
+        space_id: grant.space_id().to_owned(),
+        owner: grant.owner().clone(),
+        kind: JobKind::OpsFromUpload,
+        params: json!({
+            "draftId": draft.id,
+            "assetHash": upload.asset_hash,
+            "uploadId": upload.upload_id,
+        }),
+        status: JobStatus::Queued,
+        lease_owner: None,
+        lease_until: None,
+        attempt: 0,
+        max_attempts: JobKind::OpsFromUpload.max_attempts(),
+        last_error: None,
+        not_before: None,
+        history: Vec::new(),
+        result_commit_id: None,
+        created_at: now,
+        actor: Some(RequestActor {
+            sub: caller.subject.clone(),
+            nyx_service_id: caller.service_id.clone(),
+        }),
+        scope: Some(draft.scope.clone()),
+        result: None,
+        progress: None,
+        started_at: None,
+        finished_at: None,
+    };
+    state.repo.insert_job(&grant, &job).await?;
+    // 叫醒本进程的后台执行器（重任务名额），不等轮询。
+    state.job_signal.notify();
+    tracing::info!(space = %space_id, draft = %draft.id, job = %job.id, asset = %upload.asset_hash, "ops_from_upload 已排队");
     let mut response = json_response(
         StatusCode::ACCEPTED,
         &OpsJobView {
-            job_id,
+            job_id: job.id,
             draft_id: draft.id,
-            status: "running".to_owned(),
+            status: "queued".to_owned(),
         },
     );
     response
         .headers_mut()
         .insert(header::RETRY_AFTER, HeaderValue::from_static("2"));
     Ok(response)
-}
-
-/// 接口服务进程内处理 ops_from_upload（处理服务不领取这个种类）。后台用途走显式系统范围。
-async fn run_ops_job(
-    state: AppState,
-    space_id: String,
-    owner: metaverse_core::model::Owner,
-    job_id: String,
-    draft_id: String,
-    asset_hash: String,
-) {
-    let grant = match state
-        .authorizer
-        .system_space(&space_id, &owner, "ops_from_upload", &job_id)
-        .await
-    {
-        Ok(grant) => grant,
-        Err(error) => {
-            tracing::warn!(space = %space_id, job = %job_id, error = ?error, "ops_from_upload 拿不到系统范围");
-            return;
-        }
-    };
-    let outcome = process_ops_job(&state, &grant, &job_id, &draft_id, &asset_hash).await;
-    let now = crate::now().unwrap_or_else(|_| epoch());
-    let finished = match &outcome {
-        Ok(result) => {
-            state
-                .repo
-                .finish_ops_job(&grant, &job_id, Ok(result), now)
-                .await
-        }
-        Err(message) => {
-            tracing::info!(space = %space_id, job = %job_id, error = %message, "ops_from_upload 失败");
-            state
-                .repo
-                .finish_ops_job(&grant, &job_id, Err(message), now)
-                .await
-        }
-    };
-    if let Err(error) = finished {
-        tracing::warn!(space = %space_id, job = %job_id, error = %error, "ops_from_upload 结果没有写成");
-    }
-}
-
-/// 进程里同时处理的 ops-from-upload 任务数。
-const MAX_CONCURRENT_OPS_JOBS: usize = 1;
-
-fn ops_job_slots() -> &'static tokio::sync::Semaphore {
-    static SLOTS: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
-    SLOTS.get_or_init(|| tokio::sync::Semaphore::new(MAX_CONCURRENT_OPS_JOBS))
-}
-
-fn epoch() -> Timestamp {
-    Timestamp::from_millis(0).expect("纪元时间在合法范围内")
-}
-
-async fn process_ops_job(
-    state: &AppState,
-    grant: &Grant,
-    job_id: &str,
-    draft_id: &str,
-    asset_hash: &str,
-) -> Result<Value, String> {
-    use crate::repo::OpsAsset;
-    // 进程里同时只处理 [`MAX_CONCURRENT_OPS_JOBS`] 个：每个都要把文件读进内存、解析、计算。
-    // 等名额的任务只占一个空闲的异步任务，不占内存。
-    let _slot = ops_job_slots()
-        .acquire()
-        .await
-        .map_err(|_| "处理名额不可用".to_owned())?;
-    let bytes = match state
-        .repo
-        .read_ops_asset(grant, asset_hash, MAX_OPS_FILE_BYTES)
-        .await
-        .map_err(|error| error.to_string())?
-    {
-        OpsAsset::Bytes(bytes) => bytes,
-        OpsAsset::Missing => return Err("操作文件不存在".to_owned()),
-        OpsAsset::TooLarge(length) => {
-            return Err(format!(
-                "操作文件 {length} 字节，超过上限 {MAX_OPS_FILE_BYTES} 字节"
-            ))
-        }
-    };
-    let ops = parse_ops_file_blocking(bytes, MAX_DRAFT_OPS).await?;
-    let total = ops.len();
-    let _ = state
-        .repo
-        .ops_job_progress(grant, job_id, 0, total as u64)
-        .await;
-    let draft = state
-        .repo
-        .draft(grant, draft_id)
-        .await
-        .map_err(|error| error.to_string())?
-        .ok_or_else(|| "草稿不存在".to_owned())?;
-    let now = crate::now().map_err(|error| error.detail.to_string())?;
-    let draft = append_ops(
-        &state.repo,
-        grant,
-        draft,
-        ops,
-        OpsSource::Upload(asset_hash.to_owned()),
-        now,
-    )
-    .await
-    .map_err(|error| match error {
-        ApplyError::Op(error) => error.to_string(),
-        ApplyError::Api(error) => error.detail.to_string(),
-    })?;
-    let _ = state
-        .repo
-        .ops_job_progress(grant, job_id, total as u64, total as u64)
-        .await;
-    Ok(ops_job_result(&draft, total))
 }
 
 #[utoipa::path(

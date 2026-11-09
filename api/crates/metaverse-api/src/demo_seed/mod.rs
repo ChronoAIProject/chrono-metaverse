@@ -355,6 +355,8 @@ async fn import(
         attempt: 0,
         max_attempts: JOB_MAX_ATTEMPTS,
         last_error: None,
+        not_before: None,
+        history: Vec::new(),
         result_commit_id: None,
         created_at: now,
         actor: Some(RequestActor {

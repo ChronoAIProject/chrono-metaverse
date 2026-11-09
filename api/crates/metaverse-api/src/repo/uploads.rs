@@ -10,7 +10,9 @@
 //!
 //! 每个方法都要求空间的授权凭据（写入要求"管理"），条件自动带上空间编号和主人。
 
-use metaverse_core::model::{Job, Upload, UploadPart, ASSET_CHUNK_SIZE};
+use metaverse_core::check::{fits, AssetCheck, AssetRole, CheckBody, CHECK_VERSION};
+use metaverse_core::limits::UploadLimits;
+use metaverse_core::model::{Job, Upload, UploadFormat, UploadPart, ASSET_CHUNK_SIZE};
 use metaverse_core::scope::{PathScope, UploadPurpose};
 use metaverse_core::Timestamp;
 use mongodb::bson::{self, doc, spec::BinarySubtype, Binary, Bson, DateTime, Document};
@@ -93,16 +95,31 @@ pub enum AssetAvailability {
     Missing,
 }
 
+/// 核对通过的上传登记成资源的结果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Registered {
+    /// 本次新登记（`files._id` = 上传编号）。
+    New,
+    /// 之前已经登记过就是这一份（重做的任务）。
+    AlreadyThis,
+    /// 同一内容已经登记过：删掉了本次的数据块，复用已有资源。
+    Reused,
+}
+
+/// 登记时同名资源恰好被清理删掉、重新插入的次数。
+const REGISTER_ATTEMPTS: usize = 3;
+
 impl Repo {
-    /// 本空间可以"直接复用、不收数据"的资源的长度：资源必须**已经属于本空间**（见
-    /// [`Repo::owned_assets`]），并且种类与这次上传的用途相同。只凭知道哈希和大小不能把别的主人的
-    /// 资源变成自己的（设计 8.2：原始扫描、ops、脚本只能由有权限的调用者读到）；不属于本空间时
-    /// 返回空，调用方照常要求上传完整数据、由处理服务核对整体哈希。
+    /// 本空间可以"直接复用、不收数据"的资源的长度（docs/design/server-slim.md 4.4）：资源必须
+    /// **已经属于本空间**（见 [`Repo::owned_assets`]），并且它的核对记录是当前版本、满足这个用途的
+    /// 上限（与引用时按角色判断是同一个函数）。没有核对记录的旧资源不算，照常要求完整上传，登记时
+    /// 撞名就补写核对记录。只凭知道哈希和大小不能把别的主人的资源变成自己的（设计 8.2）。
     pub async fn reusable_asset_length(
         &self,
         grant: &Grant,
         hash: &str,
         purpose: UploadPurpose,
+        limits: &UploadLimits,
     ) -> Result<Option<u64>, RepoError> {
         if !grant.can_manage() {
             return Err(RepoError::GrantMismatch);
@@ -110,7 +127,115 @@ impl Repo {
         let Some(meta) = self.space_owned_asset(grant, hash).await? else {
             return Ok(None);
         };
-        Ok((meta.kind.as_deref() == Some(purpose_name(purpose))).then_some(meta.length))
+        let (Some(check), Some(role)) = (meta.current_check(), AssetRole::for_purpose(purpose))
+        else {
+            return Ok(None);
+        };
+        if meta.check_failed {
+            return Ok(None);
+        }
+        Ok(fits(role, check, limits).is_ok().then_some(meta.length))
+    }
+
+    /// 把核对通过的上传登记成资源（docs/design/server-slim.md 4.3 第 5 步）：插入 GridFS `files`
+    /// 文档（`_id` = 上传编号，`filename` = 内容哈希，`metadata` 带核对记录）。文件名唯一键冲突
+    /// 说明同一内容已存在：先刷新它的 `touchedAt`（清理的栅栏）、刷新到了才删本次的数据块、复用它，
+    /// 必要时补写核对记录；刷新不到说明它刚被清理删掉，重新插入本次的。
+    pub async fn register_upload_asset(
+        &self,
+        grant: &Grant,
+        upload: &Upload,
+        check: &AssetCheck,
+    ) -> Result<Registered, RepoError> {
+        if !grant.can_manage()
+            || upload.space_id != grant.space_id()
+            || &upload.owner != grant.owner()
+        {
+            return Err(RepoError::GrantMismatch);
+        }
+        let format = UploadFormat::from_name(check.body.format());
+        let metadata = doc! {
+            "sha256": &upload.sha256,
+            "contentType": format.map_or("application/octet-stream", UploadFormat::content_type),
+            "kind": purpose_name(upload.purpose),
+            "spaceId": grant.space_id(),
+            "uploadId": &upload.id,
+            "format": check.body.format(),
+            "touchedAt": DateTime::now(),
+            "check": to_bson(check)?,
+        };
+        let length = i64::try_from(upload.size).map_err(|_| RepoError::GrantMismatch)?;
+        let files = self.collection(collections::ASSET_FILES);
+        for _ in 0..REGISTER_ATTEMPTS {
+            let inserted = files
+                .insert_one(doc! {
+                    "_id": &upload.id,
+                    "length": length,
+                    "chunkSize": ASSET_CHUNK_SIZE as i32,
+                    "uploadDate": DateTime::now(),
+                    "filename": &upload.sha256,
+                    "metadata": metadata.clone(),
+                })
+                .await;
+            match inserted {
+                Ok(_) => return Ok(Registered::New),
+                Err(error) if super::is_duplicate_key(&error) => {}
+                Err(error) => return Err(error.into()),
+            }
+            if files
+                .find_one(doc! {"_id": &upload.id})
+                .projection(doc! {"_id": 1})
+                .await?
+                .is_some()
+            {
+                return Ok(Registered::AlreadyThis);
+            }
+            let touched = files
+                .update_one(
+                    doc! {"filename": &upload.sha256},
+                    doc! {"$set": {"metadata.touchedAt": DateTime::now()}},
+                )
+                .await?;
+            if touched.matched_count == 1 {
+                self.collection(collections::ASSET_CHUNKS)
+                    .delete_many(doc! {"files_id": &upload.id})
+                    .await?;
+                self.upgrade_asset_check(&upload.sha256, check).await?;
+                return Ok(Registered::Reused);
+            }
+            // 已有的那一份在这期间被清理删掉了：本次的数据块还在，重新插入。
+        }
+        tracing::warn!(asset = %upload.sha256, "登记资源时反复遇到正在被清理的同名资源");
+        Err(RepoError::Unavailable)
+    }
+
+    /// 已有资源没有核对记录、记录的版本比现在低，或者只做过扫描用途的轻量检查（glb 的三角形数为空）
+    /// 而这次做了完整检查时，补写这次算出的核对记录（只取决于文件内容，谁算都一样）。
+    pub(super) async fn upgrade_asset_check(
+        &self,
+        hash: &str,
+        check: &AssetCheck,
+    ) -> Result<bool, RepoError> {
+        let mut weaker = vec![
+            doc! {"metadata.check": {"$exists": false}},
+            doc! {"metadata.check.v": {"$lt": i64::from(CHECK_VERSION)}},
+        ];
+        if matches!(&check.body, CheckBody::Glb(glb) if glb.triangles.is_some()) {
+            weaker.push(
+                doc! {"metadata.check.format": "glb", "metadata.check.triangles": Bson::Null},
+            );
+        }
+        let result = self
+            .collection(collections::ASSET_FILES)
+            .update_one(
+                doc! {"filename": hash, "$or": weaker},
+                doc! {
+                    "$set": {"metadata.check": to_bson(check)?},
+                    "$unset": {"metadata.checkError": ""},
+                },
+            )
+            .await?;
+        Ok(result.modified_count == 1)
     }
 
     /// 资源（GridFS 文件名 = 内容哈希）的长度；不存在时为空。调用方已经核对过资源属于本空间。

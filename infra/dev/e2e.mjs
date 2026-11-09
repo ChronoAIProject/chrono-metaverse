@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // 九步端到端验收（docs/BUILD_PLAN.md 第 5.2 节）：用 up.sh 在本机起全套（真实 MongoDB 副本集、
-// 模拟 NyxID、接口服务、处理服务、网站开发服务器），再按九步依次执行并断言：
+// 模拟 NyxID、接口服务、网站开发服务器），再按九步依次执行并断言：
 //
 //   1. 用测试令牌建组织空间（再定义实体区、虚拟区和地块 p1）
 //   2. 分片上传前厅扫描（metaverse scan，0.25MiB 一片）
@@ -13,8 +13,11 @@
 //   9. 越权操作返回 403 或 404
 //
 // 用法：
-//   node infra/dev/e2e.mjs --scan <扫描文件> [--voxelize] [--keep]
+//   node infra/dev/e2e.mjs [--only 1,8,9] [--scan <扫描文件>] [--voxelize] [--keep]
 //
+// - 处理服务已下线（docs/design/server-slim.md 13.3）：第 2–7 步依赖处理服务的重建结果，改造完成（S9）
+//   之前默认只跑第 1、8、9 步（`--only` 的默认值）；`--only 1-9` 照旧跑全部九步（要有处理服务的旧镜像）；
+//   只有选了第 2 步才需要扫描文件；
 // - 扫描文件不进版本库：用 --scan 或环境变量 METAVERSE_E2E_SCAN 指定（glb、drc、obj、zip，命令行
 //   metaverse scan 接受的格式）；
 // - 每次用随机库名和空闲端口，结束时停掉全套（down.sh）并删除这个库；--keep 保留现场排查；
@@ -22,7 +25,7 @@
 // - 浏览器：METAVERSE_E2E_BROWSER_PATH，没有时用 /opt/pw-browsers/chromium（存在的话），
 //   再没有就交给网站依赖里的 Playwright 自己找；
 // - 其他环境变量照 up.sh：METAVERSE_MONGODB_URI（副本集地址）等；
-//   METAVERSE_E2E_JOB_TIMEOUT 处理任务的等待上限（秒，默认 1800，与处理服务的子进程超时一致）。
+//   METAVERSE_E2E_JOB_TIMEOUT 任务的等待上限（秒，默认 1800）。
 //
 // 退出码：0 全部通过，1 有步骤失败，2 参数或环境不对（没开始验收）。
 
@@ -36,6 +39,7 @@ import { parseArgs } from 'node:util';
 import {
   E2eError,
   check,
+  parseOnly,
   decodePng,
   devClient,
   expectStatus,
@@ -62,15 +66,21 @@ const PLOT = 'p1';
 
 function usage(message, code = 2) {
   if (message) console.error(message);
-  console.error('用法：node infra/dev/e2e.mjs --scan <扫描文件（glb/drc/obj/zip）> [--voxelize] [--keep]');
+  console.error(
+    '用法：node infra/dev/e2e.mjs [--only 1,8,9] [--scan <扫描文件（glb/drc/obj/zip）>] [--voxelize] [--keep]',
+  );
   process.exit(code);
 }
+
+/** `--only` 的默认值：处理服务下线后、九步改完之前只跑不依赖重建结果的三步。 */
+const DEFAULT_ONLY = '1,8,9';
 
 let parsed;
 try {
   parsed = parseArgs({
     options: {
       scan: { type: 'string' },
+      only: { type: 'string', default: DEFAULT_ONLY },
       voxelize: { type: 'boolean', default: false },
       keep: { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h', default: false },
@@ -84,12 +94,21 @@ if (parsed.help) {
   process.exit(0);
 }
 
+let only;
+try {
+  only = parseOnly(parsed.only, 9);
+} catch (error) {
+  usage(error.message);
+}
 const scanPath = parsed.scan ?? process.env.METAVERSE_E2E_SCAN;
-if (!scanPath) usage('缺少扫描文件：用 --scan <文件> 或环境变量 METAVERSE_E2E_SCAN 指定（前厅扫描不进版本库）');
-const scanFile = resolve(scanPath);
-if (!existsSync(scanFile)) usage(`找不到扫描文件 ${scanFile}`);
-if (!SCAN_FORMATS.includes(extname(scanFile).toLowerCase())) {
-  usage(`扫描文件必须是 ${SCAN_FORMATS.join('、')}（metaverse scan 接受的格式）：${scanFile}`);
+let scanFile = null;
+if (only.has(2)) {
+  if (!scanPath) usage('缺少扫描文件：用 --scan <文件> 或环境变量 METAVERSE_E2E_SCAN 指定（前厅扫描不进版本库）');
+  scanFile = resolve(scanPath);
+  if (!existsSync(scanFile)) usage(`找不到扫描文件 ${scanFile}`);
+  if (!SCAN_FORMATS.includes(extname(scanFile).toLowerCase())) {
+    usage(`扫描文件必须是 ${SCAN_FORMATS.join('、')}（metaverse scan 接受的格式）：${scanFile}`);
+  }
 }
 for (const name of ['mongod', 'mock-nyxid', 'api', 'worker', 'web']) {
   const pidFile = join(run, `${name}.pid`);
@@ -115,7 +134,6 @@ const ports = {
   MOCK_NYXID_PORT: process.env.MOCK_NYXID_PORT ?? String(await freePort()),
   METAVERSE_API_PORT: process.env.METAVERSE_API_PORT ?? String(await freePort()),
   METAVERSE_WEB_PORT: process.env.METAVERSE_WEB_PORT ?? String(await freePort()),
-  WORKER_HEALTH_PORT: process.env.WORKER_HEALTH_PORT ?? String(await freePort()),
 };
 const urls = {
   nyx: `http://127.0.0.1:${ports.MOCK_NYXID_PORT}`,
@@ -193,17 +211,10 @@ async function cleanup() {
   log('停止全套（down.sh）');
   spawnSync('bash', [join(here, 'down.sh')], { stdio: 'inherit' });
   if (mongo) {
-    const python = join(repo, 'worker', '.venv', 'bin', 'python');
-    const drop = spawnSync(
-      python,
-      [
-        '-c',
-        'import sys, pymongo; pymongo.MongoClient(sys.argv[1], serverSelectionTimeoutMS=5000).drop_database(sys.argv[2])',
-        mongo.mongoUri,
-        database,
-      ],
-      { stdio: 'inherit' },
-    );
+    const port = /:(\d+)\//.exec(mongo.mongoUri)?.[1] ?? '27017';
+    const drop = spawnSync(process.execPath, [join(here, 'mongo.mjs'), 'drop', port, database], {
+      stdio: 'inherit',
+    });
     log(drop.status === 0 ? `已删除库 ${database}` : `删除库 ${database} 失败，请手动删除`);
   }
 }
@@ -226,17 +237,19 @@ async function startStack() {
   mongo = parseUpOutput(result.stdout);
   if (result.code !== 0) throw new E2eError(`up.sh 失败（退出码 ${result.code}），日志在 infra/dev/.run/*.log`);
   check(mongo !== null, '没从 up.sh 的输出里找到 MongoDB 连接串');
-  const workerPid = join(run, 'worker.pid');
-  check(existsSync(workerPid), '处理服务没有启动（worker/.venv 缺少 metaverse-worker 入口？）');
-  try {
-    process.kill(Number(readFileSync(workerPid, 'utf8')), 0);
-  } catch {
-    throw new E2eError('处理服务启动后退出了，看 infra/dev/.run/worker.log');
-  }
-  await waitFor(
-    async () => (await fetch(`http://127.0.0.1:${ports.WORKER_HEALTH_PORT}/healthz`).catch(() => null))?.ok,
-    { timeout: 60_000, what: '处理服务健康检查' },
-  );
+}
+
+/** 页面（第 5 步打开；只跑部分步骤时由第 8 步按需打开）。 */
+async function ensurePage(ctx) {
+  if (ctx.page) return ctx.page;
+  browser = await launchBrowser();
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  ctx.page = page;
+  ctx.pageErrors = [];
+  page.on('pageerror', (error) => ctx.pageErrors.push(error.message));
+  await page.goto(`${urls.web}/s/${spaceId}#share=${ctx.share}`);
+  await page.getByRole('heading', { level: 1, name: '验收前厅' }).waitFor({ timeout: 60_000 });
+  return page;
 }
 
 async function buildSdk() {
@@ -627,6 +640,17 @@ const steps = [
   {
     name: '命令行在地块内 pull → build → push → publish',
     async run(ctx) {
+      if (ctx.latestSeq === undefined) {
+        // 只跑部分步骤时：最新版本从空间信息读，扩展视图先记下物件数。
+        const space = expectStatus(await call('GET', `/api/v1/spaces/${spaceId}`), 200, '读空间');
+        ctx.latestSeq = space.body.head.seq;
+      }
+      const page = await ensurePage(ctx);
+      if (ctx.scanEntities === undefined) {
+        await page.getByRole('button', { name: '优化 + 扩展', exact: true }).click();
+        await waitForScene(page, 'extended');
+        ctx.scanEntities = await viewerNumber(page, 'data-entities');
+      }
       await metaverse(['pull'], { cwd: ws });
       await metaverse(['build', '--plot', PLOT], { cwd: ws });
       await metaverse(['check', '--plot', PLOT], { cwd: ws });
@@ -645,7 +669,6 @@ const steps = [
       const ids = new Set((snapshot.body.entities ?? []).map((entity) => entity.id));
       check(ids.has('demo-table'), '发布后的快照里没有示例脚本放的桌子', [...ids]);
       // 页面在"现在"模式：拉到新提交，扩展视图里能看到地块上的物件。
-      const { page } = ctx;
       await waitFor(async () => (await versionText(page)).startsWith(`版本 #${seq} `), {
         timeout: 30_000,
         what: `页面换到版本 #${seq}`,
@@ -691,6 +714,10 @@ const steps = [
         lines.push(`${what} ${reply.status}`);
       }
       expectStatus(await call('GET', `/api/public/spaces/${carolSpace}`), 404, '没带令牌读别人的空间');
+      if (!ctx.scanUpload) {
+        // 没跑第 2 步（没有上传过扫描）：凭哈希复用的两组断言跳过。
+        return lines.join('；');
+      }
       // 凭哈希拿不到别的空间的资源：carol 用前厅扫描的哈希建上传，必须完整上传（不复用、不说明别处有没有）；
       // 不上传就直接导入，没有本空间的已校验上传，422。
       const foreign = expectStatus(
@@ -724,15 +751,18 @@ let exitCode = 1;
 try {
   await startStack();
   await buildSdk();
-  log(`开始九步验收（扫描 ${scanFile}）`);
+  const selected = steps
+    .map((step, index) => ({ ...step, number: index + 1 }))
+    .filter((step) => only.has(step.number));
+  log(`开始九步验收：第 ${[...only].join('、')} 步${scanFile ? `（扫描 ${scanFile}）` : ''}`);
   const context = {};
-  const { ok, results } = await runSteps(steps, context, { log });
+  const { ok, results } = await runSteps(selected, context, { log });
   if (!ok && context.page) {
     // 失败时留一张整页截图，方便看当时页面的样子。
     await context.page.screenshot({ path: join(out, 'failure.png') }).catch(() => {});
   }
   const report = formatReport(results);
-  writeFileSync(join(out, 'report.md'), `# 九步验收\n\n- 库：${database}\n- 扫描：${scanFile}\n\n${report}\n`);
+  writeFileSync(join(out, 'report.md'), `# 九步验收\n\n- 库：${database}\n- 扫描：${scanFile ?? '（没跑第 2 步）'}\n\n${report}\n`);
   writeFileSync(join(out, 'report.json'), JSON.stringify({ ok, database, scan: scanFile, urls, results }, null, 2));
   console.log(`\n${report}\n`);
   log(ok ? `九步全部通过（结果和截图在 ${out}）` : `验收失败（结果、截图和日志在 ${out}、infra/dev/.run/*.log）`);

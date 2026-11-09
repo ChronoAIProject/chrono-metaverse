@@ -16,6 +16,7 @@ import {
   canonicalJson,
   checkApp,
   checkRepository,
+  devScriptStartsWorker,
   parseCpu,
   parseMemoryMiB,
   parsePinnedImage,
@@ -259,8 +260,21 @@ test('README 必须列出 app.json 里的每个环境变量', () => {
   assertProblem(problemsOf(spec, { readme: withoutPending }), /要写明 `TRUSTED_CLIENT_IP_HEADER` 还没设置/);
 });
 
-test('up.sh 必须给处理服务设同样的线程变量', () => {
-  const stripped = upScript
+test('up.sh 起处理服务时必须给它设同样的线程变量', () => {
+  // 处理服务下线以前 up.sh 起它的写法（docs/design/server-slim.md 13.3 以后仓库里的 up.sh 不再起它）。
+  const workerUpScript = [
+    'MONGODB_URI="$mongo_uri" \\',
+    '  OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-2}" \\',
+    '  OMP_NUM_THREADS="${OMP_NUM_THREADS:-2}" \\',
+    '  MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}" \\',
+    '  start worker "$venv/bin/metaverse-worker"',
+  ].join('\n');
+  assert.ok(devScriptStartsWorker(workerUpScript));
+  assert.deepEqual(
+    problemsOf(spec, { upScript: workerUpScript }).filter((problem) => problem.includes('up.sh')),
+    [],
+  );
+  const stripped = workerUpScript
     .split('\n')
     .filter((line) => !/^\s*(OPENBLAS_NUM_THREADS|MALLOC_ARENA_MAX)=/.test(line))
     .join('\n');
@@ -268,6 +282,13 @@ test('up.sh 必须给处理服务设同样的线程变量', () => {
   assertProblem(problems, /up\.sh 没有给处理服务设 OPENBLAS_NUM_THREADS/);
   assertProblem(problems, /up\.sh 没有给处理服务设 MALLOC_ARENA_MAX/);
   assert.ok(!problems.some((problem) => problem.includes('OMP_NUM_THREADS')), '没删的不报');
+});
+
+test('up.sh 不起处理服务时不查它的线程变量', () => {
+  assert.ok(!devScriptStartsWorker(upScript), '仓库里的 up.sh 已不再起处理服务');
+  assert.ok(!devScriptStartsWorker('# 以前这里 start worker，现在不起了\nstart api "$target/debug/metaverse-api"'));
+  const problems = problemsOf(spec, { upScript: 'start api "$target/debug/metaverse-api"\n' });
+  assert.ok(!problems.some((problem) => problem.includes('up.sh')), problems.join('\n'));
 });
 
 test('镜像：每个服务都按摘要固定，标签只能是 7 位提交哈希，仓库与服务对应', () => {

@@ -60,6 +60,8 @@ pub const MAX_APPEND_CELLS: u64 = 1 << 24;
 pub const MAX_DRAFT_CELLS: u64 = 1 << 26;
 /// 一个草稿最多引用几个 ops 文件（预览、发布时每个都要重新解压解析）。
 pub const MAX_DRAFT_OPS_REFS: usize = 20;
+/// 追加时每批写多少条结果记录。
+const RECORD_BATCH: usize = 500;
 
 fn too_large(detail: impl Into<String>) -> ApiError {
     ApiError::new(
@@ -73,7 +75,11 @@ fn too_large(detail: impl Into<String>) -> ApiError {
 #[derive(Debug, Clone)]
 pub enum OpsSource {
     Inline,
-    Upload(String),
+    /// 经上传的操作文件（后台任务 `ops_from_upload` 追加，`opsRefs` 记下任务编号）。
+    Upload {
+        asset_hash: String,
+        job_id: String,
+    },
 }
 
 fn json_size<T: serde::Serialize>(value: &T) -> usize {
@@ -206,223 +212,364 @@ fn block_textures(block: &metaverse_core::ops::BlockDef, into: &mut BTreeSet<(St
 pub async fn append_ops(
     repo: &Repo,
     grant: &Grant,
-    mut draft: DraftDoc,
+    draft: DraftDoc,
     ops: Vec<Op>,
     source: OpsSource,
     now: Timestamp,
 ) -> Result<DraftDoc, ApplyError> {
-    if draft.status != DraftStatus::Open {
-        return Err(ApiError::conflict("草稿已经发布，不能再追加操作").into());
+    let prepared = prepare_append(repo, grant, draft, ops, source, now).await?;
+    if !repo
+        .save_draft(grant, &prepared.draft, prepared.expected_rev)
+        .await?
+    {
+        return Err(ApiError::conflict("草稿在处理期间被修改或已发布，请重新读取后再试").into());
     }
+    Ok(prepared.draft)
+}
+
+/// 算好、还没保存的追加结果。
+#[derive(Debug, Clone)]
+pub struct PreparedAppend {
+    /// 追加以后的草稿（`rev` 已加一）。
+    pub draft: DraftDoc,
+    /// 保存时按这个 `rev` 条件更新。
+    pub expected_rev: u64,
+}
+
+/// 在草稿的工作状态上作用操作，写好结果区块和结果记录（内容寻址、可以重写），返回追加以后的草稿，
+/// 由调用方保存：请求里直接按 `rev` 条件保存，后台任务在带租约栅栏的事务里保存
+/// （docs/design/server-slim.md 4.10）。
+pub async fn prepare_append(
+    repo: &Repo,
+    grant: &Grant,
+    draft: DraftDoc,
+    ops: Vec<Op>,
+    source: OpsSource,
+    now: Timestamp,
+) -> Result<PreparedAppend, ApplyError> {
     if ops.is_empty() {
         return Err(ApiError::invalid("没有要追加的操作").into());
     }
-    if draft.op_count() + ops.len() as u64 > MAX_DRAFT_OPS {
-        return Err(too_large(format!("一个草稿最多 {MAX_DRAFT_OPS} 条操作")).into());
-    }
-    if matches!(source, OpsSource::Inline)
-        && json_size(&draft.ops) + json_size(&ops) > MAX_INLINE_OPS_BYTES
-    {
-        return Err(too_large(
-            "草稿里内联的操作已超过 4MB，请把操作写成 NDJSON 文件分片上传，再调用 ops-from-upload",
-        )
-        .into());
-    }
-    if matches!(source, OpsSource::Upload(_)) && draft.ops_refs.len() >= MAX_DRAFT_OPS_REFS {
-        return Err(too_large(format!(
-            "一个草稿最多引用 {MAX_DRAFT_OPS_REFS} 个操作文件，请合并成更大的文件或另建草稿"
-        ))
-        .into());
-    }
-    // 计算量：先按几何算好，超出上限就不开始算。
-    let cells = ops_cells(&ops);
-    if matches!(source, OpsSource::Inline) && cells > MAX_APPEND_CELLS {
-        return Err(too_large(format!(
-            "这一批操作要处理 {cells} 格，超过单次追加的上限 {MAX_APPEND_CELLS} 格；请拆成几批，或把操作写成文件走 ops-from-upload"
-        ))
-        .into());
-    }
-    if draft.work_cells.saturating_add(cells) > MAX_DRAFT_CELLS {
-        return Err(too_large(format!(
-            "草稿的操作累计要处理超过 {MAX_DRAFT_CELLS} 格（发布时可能要全部重放），请先发布这个草稿，再建新草稿继续"
-        ))
-        .into());
-    }
-    let area = allowed_area(repo, grant, &draft.scope).await?;
-    let mut workspace = Workspace::for_draft(repo, grant, &draft).await?;
-    let touched = workspace.apply_ops(repo, grant, &ops, &area, 0).await?;
-
-    // 结果区块。
-    let mut results: BTreeMap<ChunkKey, String> = draft
-        .result_chunks
-        .iter()
-        .map(|c| {
-            (
-                ChunkKey {
-                    layer: c.layer,
-                    cx: c.cx,
-                    cy: c.cy,
-                    cz: c.cz,
-                },
-                c.hash.clone(),
+    if matches!(source, OpsSource::Inline) {
+        if json_size(&draft.ops) + json_size(&ops) > MAX_INLINE_OPS_BYTES {
+            return Err(too_large(
+                "草稿里内联的操作已超过 4MB，请把操作写成 NDJSON 文件分片上传，再调用 ops-from-upload",
             )
-        })
-        .collect();
-    let mut new_chunks = Vec::new();
-    for key in &touched.chunks {
-        match workspace.chunk_result(key) {
-            Some((hash, data)) => {
-                results.insert(*key, hash.clone());
-                new_chunks.push((hash, data));
-            }
-            None => {
-                results.remove(key);
-            }
+            .into());
+        }
+        // 计算量：先按几何算好，超出上限就不开始算。
+        let cells = ops_cells(&ops);
+        if cells > MAX_APPEND_CELLS {
+            return Err(too_large(format!(
+                "这一批操作要处理 {cells} 格，超过单次追加的上限 {MAX_APPEND_CELLS} 格；请拆成几批，或把操作写成文件走 ops-from-upload"
+            ))
+            .into());
         }
     }
-    // 结果记录。
-    let mut records = Vec::new();
-    let mut assets: BTreeSet<(String, AssetRole)> = BTreeSet::new();
-    let mut entity_results: BTreeMap<String, Option<String>> = draft
-        .result_entities
-        .iter()
-        .map(|c| (c.id.clone(), c.hash.clone()))
-        .collect();
-    for id in &touched.entities {
-        let hash = match workspace.state.entities.get(id) {
-            Some(body) => {
-                entity_asset_roles(body, &mut assets);
-                let (hash, value) = record_of(RecordKind::Entity, grant.space_id(), body)?;
-                records.push((hash.clone(), "entity", value));
-                Some(hash)
-            }
-            None => None,
-        };
-        entity_results.insert(id.clone(), hash);
-    }
-    let mut anchor_results: BTreeMap<String, Option<String>> = draft
-        .result_anchors
-        .iter()
-        .map(|c| (c.id.clone(), c.hash.clone()))
-        .collect();
-    for id in &touched.anchors {
-        let hash = match workspace.state.anchors.get(id) {
-            Some(body) => {
-                let (hash, value) = record_of(RecordKind::Anchor, grant.space_id(), body)?;
-                records.push((hash.clone(), "anchor", value));
-                Some(hash)
-            }
-            None => None,
-        };
-        anchor_results.insert(id.clone(), hash);
-    }
-    let provisional = provisional_list(&workspace.state.provisional_blocks);
-    for block in &provisional {
-        block_textures(&block.block, &mut assets);
-    }
-    // 物件模型和贴图只能按用途引用本空间的资源（发布后登记到 assetRefs、公开可读）：物件模型
-    // 必须是 model_import 处理后的版本，贴图必须是贴图。这一批碰过的物件和新增方块都重新检查
-    // （同一个哈希以前按别的用途引用过也一样）。
-    let wanted: Vec<(String, AssetRole)> = assets.iter().cloned().collect();
-    let unusable = repo.unusable_assets(grant, &wanted).await?;
-    if !unusable.is_empty() {
-        return Err(ApiError::new(
-            axum::http::StatusCode::UNPROCESSABLE_ENTITY,
-            "unknown_asset",
-            format!(
-                "引用的资源不能这样用：{}",
-                unusable
-                    .iter()
-                    .map(UnusableAsset::describe)
-                    .collect::<Vec<_>>()
-                    .join("；")
-            ),
-        )
-        .into());
-    }
-    let new_assets: Vec<String> = assets.into_iter().map(|(hash, _)| hash).collect();
-    // 清理的栅栏（处理服务 `jobs/cleanup.py`）：写下记录（`body.assetHash` / `textures`）和草稿
-    // （`assets`、`opsRefs`）这些引用之前，先刷新这一批引用的全部资源的 touchedAt 并确认都还在。
-    // 刷新之后清理的条件删除就删不掉它们；刷新不到说明刚被清理删掉，整批不生效，让调用方重新上传。
-    let mut fenced = new_assets.clone();
-    if let OpsSource::Upload(hash) = &source {
-        fenced.push(hash.clone());
-    }
-    let gone = repo.touch_assets(grant, &fenced).await?;
-    if !gone.is_empty() {
-        tracing::info!(space = %grant.space_id(), draft = %draft.id, assets = ?gone, "追加时引用的资源刚被清理");
-        let describe = |hash: &String| match &source {
-            OpsSource::Upload(file) if file == hash => format!("操作文件 {hash}：{MISSING_ASSET}"),
-            _ => format!("{hash}：{MISSING_ASSET}"),
-        };
-        return Err(ApiError::new(
-            axum::http::StatusCode::UNPROCESSABLE_ENTITY,
-            "unknown_asset",
-            format!(
-                "引用的资源不能这样用：{}",
-                gone.iter().map(describe).collect::<Vec<_>>().join("；")
-            ),
-        )
-        .into());
-    }
+    let mut session = AppendSession::begin(repo, grant, draft, &source).await?;
+    session.apply(repo, grant, ops).await?;
+    session.finish(repo, grant, source, now).await
+}
 
-    repo.put_draft_chunks(grant, &draft.id, &new_chunks, draft.expires_at)
-        .await?;
-    repo.put_records(grant, &records).await?;
+/// 分批作用操作的追加：大的操作文件边解析边作用，不把全部操作同时留在内存里
+/// （docs/design/server-slim.md 4.8、4.10）。条数和计算量按累计检查，任何一批出错整份都不生效。
+pub struct AppendSession {
+    draft: DraftDoc,
+    area: AllowedArea,
+    workspace: Workspace,
+    touched: TouchedSet,
+    count: u64,
+    cells: u64,
+    /// 内联追加时保留操作（写进草稿的 `ops`）；经上传追加的作用完就放掉。
+    keep: bool,
+    inline_ops: Vec<Op>,
+}
 
-    let expected_rev = draft.rev;
-    let mut all_touched = TouchedSet {
-        chunks: draft.touched.chunks.iter().copied().collect(),
-        entities: draft.touched.entities.iter().cloned().collect(),
-        anchors: draft.touched.anchors.iter().cloned().collect(),
-        palette: draft.touched.palette,
-        scan: draft.touched.scan,
-        rebuilt_layer: draft.touched.rebuilt_layer,
-        ..TouchedSet::default()
-    };
-    all_touched.merge(touched);
-    draft.touched = Touched {
-        regions: false,
-        plots: false,
-        ..all_touched.to_model()
-    };
-    draft.result_chunks = results
-        .into_iter()
-        .map(|(key, hash)| DraftChunk {
-            layer: key.layer,
-            cx: key.cx,
-            cy: key.cy,
-            cz: key.cz,
-            hash,
+impl AppendSession {
+    /// 检查草稿还能追加，载入草稿的工作状态。
+    pub async fn begin(
+        repo: &Repo,
+        grant: &Grant,
+        draft: DraftDoc,
+        source: &OpsSource,
+    ) -> Result<Self, ApplyError> {
+        if draft.status != DraftStatus::Open {
+            return Err(ApiError::conflict("草稿已经发布，不能再追加操作").into());
+        }
+        if matches!(source, OpsSource::Upload { .. }) && draft.ops_refs.len() >= MAX_DRAFT_OPS_REFS
+        {
+            return Err(too_large(format!(
+                "一个草稿最多引用 {MAX_DRAFT_OPS_REFS} 个操作文件，请合并成更大的文件或另建草稿"
+            ))
+            .into());
+        }
+        let area = allowed_area(repo, grant, &draft.scope).await?;
+        let workspace = Workspace::for_draft(repo, grant, &draft).await?;
+        Ok(Self {
+            draft,
+            area,
+            workspace,
+            touched: TouchedSet::default(),
+            count: 0,
+            cells: 0,
+            keep: matches!(source, OpsSource::Inline),
+            inline_ops: Vec::new(),
         })
-        .collect();
-    draft.result_entities = entity_results
-        .into_iter()
-        .map(|(id, hash)| IdChange { id, hash })
-        .collect();
-    draft.result_anchors = anchor_results
-        .into_iter()
-        .map(|(id, hash)| IdChange { id, hash })
-        .collect();
-    draft.provisional_blocks = provisional;
-    draft.assets.extend(new_assets);
-    draft.assets.sort();
-    draft.assets.dedup();
-    match source {
-        OpsSource::Inline => draft.ops.extend(ops),
-        OpsSource::Upload(asset_hash) => draft.ops_refs.push(OpsRef {
-            asset_hash,
-            after: draft.ops.len() as u64,
-            count: ops.len() as u64,
-        }),
     }
-    draft.work_cells = draft.work_cells.saturating_add(cells);
-    draft.rev += 1;
-    draft.updated_at = now;
-    if !repo.save_draft(grant, &draft, expected_rev).await? {
-        return Err(ApiError::conflict("草稿在处理期间被修改或已发布，请重新读取后再试").into());
+
+    /// 已作用的操作条数。
+    pub fn applied(&self) -> u64 {
+        self.count
     }
-    Ok(draft)
+
+    /// 作用一批操作（检查范围、累计条数和计算量）。
+    pub async fn apply(
+        &mut self,
+        repo: &Repo,
+        grant: &Grant,
+        ops: Vec<Op>,
+    ) -> Result<(), ApplyError> {
+        if self.draft.op_count() + self.count + ops.len() as u64 > MAX_DRAFT_OPS {
+            return Err(too_large(format!("一个草稿最多 {MAX_DRAFT_OPS} 条操作")).into());
+        }
+        let cells = ops_cells(&ops);
+        if self
+            .draft
+            .work_cells
+            .saturating_add(self.cells)
+            .saturating_add(cells)
+            > MAX_DRAFT_CELLS
+        {
+            return Err(too_large(format!(
+                "草稿的操作累计要处理超过 {MAX_DRAFT_CELLS} 格（发布时可能要全部重放），请先发布这个草稿，再建新草稿继续"
+            ))
+            .into());
+        }
+        let touched = self
+            .workspace
+            .apply_ops(repo, grant, &ops, &self.area, self.count as usize)
+            .await?;
+        self.touched.merge(touched);
+        self.count += ops.len() as u64;
+        self.cells = self.cells.saturating_add(cells);
+        if self.keep {
+            self.inline_ops.extend(ops);
+        }
+        Ok(())
+    }
+
+    /// 全部作用完：写结果区块和结果记录（内容寻址、可以重写），返回追加以后的草稿（还没保存）。
+    pub async fn finish(
+        self,
+        repo: &Repo,
+        grant: &Grant,
+        source: OpsSource,
+        now: Timestamp,
+    ) -> Result<PreparedAppend, ApplyError> {
+        let AppendSession {
+            mut draft,
+            workspace,
+            touched,
+            count: op_count,
+            cells,
+            inline_ops,
+            ..
+        } = self;
+        if op_count == 0 {
+            return Err(ApiError::invalid("没有要追加的操作").into());
+        }
+        // 结果区块。
+        let mut results: BTreeMap<ChunkKey, String> = draft
+            .result_chunks
+            .iter()
+            .map(|c| {
+                (
+                    ChunkKey {
+                        layer: c.layer,
+                        cx: c.cx,
+                        cy: c.cy,
+                        cz: c.cz,
+                    },
+                    c.hash.clone(),
+                )
+            })
+            .collect();
+        let mut new_chunks = Vec::new();
+        for key in &touched.chunks {
+            match workspace.chunk_result(key) {
+                Some((hash, data)) => {
+                    results.insert(*key, hash.clone());
+                    new_chunks.push((hash, data));
+                }
+                None => {
+                    results.remove(key);
+                }
+            }
+        }
+        // 结果记录：先只收集引用的资源（检查用途、刷新栅栏），通过以后再分批算哈希、写记录，
+        // 不把全部记录同时留在内存里。
+        let mut assets: BTreeSet<(String, AssetRole)> = BTreeSet::new();
+        for id in &touched.entities {
+            if let Some(body) = workspace.state.entities.get(id) {
+                entity_asset_roles(body, &mut assets);
+            }
+        }
+        let provisional = provisional_list(&workspace.state.provisional_blocks);
+        for block in &provisional {
+            block_textures(&block.block, &mut assets);
+        }
+        // 物件模型和贴图只能按用途引用本空间的资源（发布后登记到 assetRefs、公开可读）：物件模型
+        // 必须是 model_import 处理后的版本，贴图必须是贴图。这一批碰过的物件和新增方块都重新检查
+        // （同一个哈希以前按别的用途引用过也一样）。
+        let wanted: Vec<(String, AssetRole)> = assets.iter().cloned().collect();
+        let unusable = repo.unusable_assets(grant, &wanted).await?;
+        if !unusable.is_empty() {
+            return Err(ApiError::new(
+                axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+                "unknown_asset",
+                format!(
+                    "引用的资源不能这样用：{}",
+                    unusable
+                        .iter()
+                        .map(UnusableAsset::describe)
+                        .collect::<Vec<_>>()
+                        .join("；")
+                ),
+            )
+            .into());
+        }
+        let new_assets: Vec<String> = assets.into_iter().map(|(hash, _)| hash).collect();
+        // 清理的栅栏（处理服务 `jobs/cleanup.py`）：写下记录（`body.assetHash` / `textures`）和草稿
+        // （`assets`、`opsRefs`）这些引用之前，先刷新这一批引用的全部资源的 touchedAt 并确认都还在。
+        // 刷新之后清理的条件删除就删不掉它们；刷新不到说明刚被清理删掉，整批不生效，让调用方重新上传。
+        let mut fenced = new_assets.clone();
+        if let OpsSource::Upload { asset_hash, .. } = &source {
+            fenced.push(asset_hash.clone());
+        }
+        let gone = repo.touch_assets(grant, &fenced).await?;
+        if !gone.is_empty() {
+            tracing::info!(space = %grant.space_id(), draft = %draft.id, assets = ?gone, "追加时引用的资源刚被清理");
+            let describe = |hash: &String| match &source {
+                OpsSource::Upload { asset_hash, .. } if asset_hash == hash => {
+                    format!("操作文件 {hash}：{MISSING_ASSET}")
+                }
+                _ => format!("{hash}：{MISSING_ASSET}"),
+            };
+            return Err(ApiError::new(
+                axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+                "unknown_asset",
+                format!(
+                    "引用的资源不能这样用：{}",
+                    gone.iter().map(describe).collect::<Vec<_>>().join("；")
+                ),
+            )
+            .into());
+        }
+
+        repo.put_draft_chunks(grant, &draft.id, &new_chunks, draft.expires_at)
+            .await?;
+        drop(new_chunks);
+        let mut entity_results: BTreeMap<String, Option<String>> = draft
+            .result_entities
+            .iter()
+            .map(|c| (c.id.clone(), c.hash.clone()))
+            .collect();
+        let mut anchor_results: BTreeMap<String, Option<String>> = draft
+            .result_anchors
+            .iter()
+            .map(|c| (c.id.clone(), c.hash.clone()))
+            .collect();
+        let mut batch = Vec::with_capacity(RECORD_BATCH);
+        for id in &touched.entities {
+            let hash = match workspace.state.entities.get(id) {
+                Some(body) => {
+                    let (hash, value) = record_of(RecordKind::Entity, grant.space_id(), body)?;
+                    batch.push((hash.clone(), "entity", value));
+                    Some(hash)
+                }
+                None => None,
+            };
+            entity_results.insert(id.clone(), hash);
+            if batch.len() >= RECORD_BATCH {
+                repo.put_records(grant, &batch).await?;
+                batch.clear();
+            }
+        }
+        for id in &touched.anchors {
+            let hash = match workspace.state.anchors.get(id) {
+                Some(body) => {
+                    let (hash, value) = record_of(RecordKind::Anchor, grant.space_id(), body)?;
+                    batch.push((hash.clone(), "anchor", value));
+                    Some(hash)
+                }
+                None => None,
+            };
+            anchor_results.insert(id.clone(), hash);
+            if batch.len() >= RECORD_BATCH {
+                repo.put_records(grant, &batch).await?;
+                batch.clear();
+            }
+        }
+        if !batch.is_empty() {
+            repo.put_records(grant, &batch).await?;
+        }
+        drop(batch);
+
+        let expected_rev = draft.rev;
+        let mut all_touched = TouchedSet {
+            chunks: draft.touched.chunks.iter().copied().collect(),
+            entities: draft.touched.entities.iter().cloned().collect(),
+            anchors: draft.touched.anchors.iter().cloned().collect(),
+            palette: draft.touched.palette,
+            scan: draft.touched.scan,
+            rebuilt_layer: draft.touched.rebuilt_layer,
+            ..TouchedSet::default()
+        };
+        all_touched.merge(touched);
+        draft.touched = Touched {
+            regions: false,
+            plots: false,
+            ..all_touched.to_model()
+        };
+        draft.result_chunks = results
+            .into_iter()
+            .map(|(key, hash)| DraftChunk {
+                layer: key.layer,
+                cx: key.cx,
+                cy: key.cy,
+                cz: key.cz,
+                hash,
+            })
+            .collect();
+        draft.result_entities = entity_results
+            .into_iter()
+            .map(|(id, hash)| IdChange { id, hash })
+            .collect();
+        draft.result_anchors = anchor_results
+            .into_iter()
+            .map(|(id, hash)| IdChange { id, hash })
+            .collect();
+        draft.provisional_blocks = provisional;
+        draft.assets.extend(new_assets);
+        draft.assets.sort();
+        draft.assets.dedup();
+        match source {
+            OpsSource::Inline => draft.ops.extend(inline_ops),
+            OpsSource::Upload { asset_hash, job_id } => draft.ops_refs.push(OpsRef {
+                asset_hash,
+                after: draft.ops.len() as u64,
+                count: op_count,
+                job_id: Some(job_id),
+            }),
+        }
+        draft.work_cells = draft.work_cells.saturating_add(cells);
+        draft.rev += 1;
+        draft.updated_at = now;
+        Ok(PreparedAppend {
+            draft,
+            expected_rev,
+        })
+    }
 }
 
 /// 草稿的全部操作（内联操作和上传的操作按追加顺序穿插）。
