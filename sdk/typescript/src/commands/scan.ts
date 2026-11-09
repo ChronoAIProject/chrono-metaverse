@@ -1,7 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { basename, extname, resolve } from 'node:path';
 import { isSha256Hex } from '../core/hash.js';
-import { idOf } from '../transport/api.js';
+import { idOf, type UploadFormat } from '../transport/api.js';
 import { describeJob, upload, waitForJob } from '../transport/upload.js';
 import {
   CliError,
@@ -18,8 +18,10 @@ import {
 
 export const SCAN_HELP = `metaverse scan <文件> [选项]
 
-分片上传扫描（glb / drc / obj），完成后发起导入任务（scan_import：对齐 → 网页用模型 →
+分片上传扫描（glb / drc / obj / zip），完成后发起导入任务（scan_import：对齐 → 网页用模型 →
 AI 重建 → 写提交，可选体素化），等待并显示任务进度。扫描只能经实体区路径上传。
+带贴图的 OBJ 扫描请把模型和贴图打包成 zip 再上传（例如 Scaniverse 导出的 zip），否则贴图转移拿不到原贴图；
+glb 内嵌贴图，直接上传即可。
 
 选项：
   --observed-at <时间>    扫描拍摄时间（RFC 3339），只用于显示
@@ -30,11 +32,18 @@ AI 重建 → 写提交，可选体素化），等待并显示任务进度。扫
   --asset <哈希>          不上传，直接用已上传的扫描资源发起导入（例如重新对齐）
   --no-wait               发起任务后立刻返回`;
 
-const CONTENT_TYPES: Record<string, string> = {
-  '.glb': 'model/gltf-binary',
-  '.drc': 'application/octet-stream',
-  '.obj': 'text/plain',
+/** 扩展名 → 上传格式（接口服务 scan 用途默认接受 glb、drc、obj、zip）。 */
+export const SCAN_FORMATS: Readonly<Record<string, UploadFormat>> = {
+  '.glb': 'glb',
+  '.drc': 'drc',
+  '.obj': 'obj',
+  '.zip': 'zip',
 };
+
+/** 按扩展名判断扫描文件的格式；不认识时返回 null。 */
+export function scanFormat(path: string): UploadFormat | null {
+  return SCAN_FORMATS[extname(path).toLowerCase()] ?? null;
+}
 
 export function parseTransform(text: string): number[] {
   const values = text
@@ -80,8 +89,12 @@ export async function runScan(ctx: CliContext, args: readonly string[]): Promise
     if (file === undefined) throw new CliError('用法：metaverse scan <文件>');
     const path = resolve(ctx.cwd, file);
     if (!existsSync(path) || !statSync(path).isFile()) throw new CliError(`找不到文件 ${path}`);
-    const ext = extname(path).toLowerCase();
-    if (!(ext in CONTENT_TYPES)) throw new CliError('扫描只接受 glb、drc、obj 文件');
+    const format = scanFormat(path);
+    if (format === null) {
+      throw new CliError(
+        '扫描只接受 glb、drc、obj、zip 文件（OBJ 带贴图时把模型和贴图打包成 zip）',
+      );
+    }
     const partMiB = num(values, 'part-size');
     const size = statSync(path).size;
     if (!json) ctx.out(`上传 ${basename(path)}（${formatBytes(size)}）……`);
@@ -90,8 +103,7 @@ export async function runScan(ctx: CliContext, args: readonly string[]): Promise
       purpose: 'scan',
       source: { path },
       ...(partMiB !== undefined ? { partSize: Math.round(partMiB * 1024 * 1024) } : {}),
-      contentType: CONTENT_TYPES[ext]!,
-      fileName: basename(path),
+      format,
       onProgress: (sent, total) => {
         const percent = Math.floor((sent / total) * 100);
         if (!json && percent >= lastPercent + 10) {

@@ -143,8 +143,7 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
       purpose: 'ops',
       source: { bytes: ndjson },
       plot,
-      contentType: 'application/x-ndjson',
-      fileName: 'ops.ndjson',
+      format: 'ndjson',
       ...(partMiB !== undefined ? { partSize: Math.round(partMiB * 1024 * 1024) } : {}),
     });
     say(

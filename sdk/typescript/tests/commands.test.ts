@@ -4,13 +4,13 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { main } from '../src/commands/index.js';
 import { previewLink } from '../src/commands/push.js';
-import { parseTransform } from '../src/commands/scan.js';
+import { parseTransform, scanFormat } from '../src/commands/scan.js';
 import { runVoxelize } from '../src/commands/voxelize.js';
 import { validateLayout } from '../src/commands/admin.js';
 import { chunkHash, compressChunk, emptyChunk } from '../src/core/chunk.js';
 import { readConfig, writeConfig } from '../src/workspace/config.js';
 import { readBase } from '../src/workspace/files.js';
-import { startFakeApi, type FakeApi } from './helpers/fakeApi.js';
+import { fakeGlb, startFakeApi, type FakeApi } from './helpers/fakeApi.js';
 import {
   PALETTE,
   PLOTS,
@@ -204,10 +204,9 @@ describe('metaverse push / publish', () => {
       'placeEntity',
     ]);
     const upload = fake.requests.find((r) => r.path.endsWith('/plots/p1/uploads/ops'))!;
-    expect(JSON.parse(upload.body.toString())).toMatchObject({
-      contentType: 'application/x-ndjson',
-      partSize: 8388608,
-    });
+    const uploadBody = JSON.parse(upload.body.toString()) as Record<string, unknown>;
+    expect(Object.keys(uploadBody).sort()).toEqual(['format', 'partSize', 'sha256', 'size']);
+    expect(uploadBody).toMatchObject({ format: 'ndjson', partSize: 8388608 });
     const drafts = JSON.parse(readFileSync(join(root, 'out/drafts.json'), 'utf8')) as Record<
       string,
       { plot: string }
@@ -286,7 +285,7 @@ describe('metaverse scan', () => {
   it('上传扫描、等校验、发起导入并等任务完成', async () => {
     fake = await startFakeApi();
     const root = directWorkspace(fake);
-    writeFileSync(join(root, 'lobby.glb'), Buffer.alloc(600 * 1024, 3));
+    writeFileSync(join(root, 'lobby.glb'), fakeGlb(600 * 1024, 3));
     const ctx = makeContext(root);
     expect(
       await main(ctx, [
@@ -304,6 +303,8 @@ describe('metaverse scan', () => {
     expect(text).toContain('已发起导入任务');
     expect(text).toContain('导入完成，提交 commit-9');
     expect(fake.requests.filter((r) => r.method === 'PUT')).toHaveLength(3);
+    const create = fake.requests.find((r) => r.path.endsWith('/uploads/scan'))!;
+    expect(JSON.parse(create.body.toString())).toMatchObject({ format: 'glb' });
     const scan = fake.requests.find((r) => r.path.endsWith('/scans'))!;
     expect(JSON.parse(scan.body.toString())).toMatchObject({
       observedAt: '2026-11-01T10:00:00Z',
@@ -331,6 +332,24 @@ describe('metaverse scan', () => {
     expect(() => parseTransform('1,2,3')).toThrow('16 个数');
   });
 
+  it('带贴图的扫描打包成 zip 上传（format: zip）', async () => {
+    fake = await startFakeApi();
+    const root = directWorkspace(fake);
+    const zip = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(2000, 1)]);
+    writeFileSync(join(root, 'scaniverse.ZIP'), zip);
+    const ctx = makeContext(root);
+    expect(await main(ctx, ['scan', 'scaniverse.ZIP', '--no-wait', '--json'])).toBe(0);
+    const create = fake.requests.find((r) => r.path.endsWith('/uploads/scan'))!;
+    expect(JSON.parse(create.body.toString())).toMatchObject({ format: 'zip', size: zip.length });
+    expect(scanFormat('a/b.obj')).toBe('obj');
+    expect(scanFormat('a/b.drc')).toBe('drc');
+    expect(scanFormat('a/b.ply')).toBeNull();
+    // 扩展名和内容不符时，接口服务按文件头拒绝。
+    writeFileSync(join(root, 'fake.zip'), 'v 0 0 0\n');
+    expect(await main(ctx, ['scan', 'fake.zip'])).toBe(1);
+    expect(ctx.errors.at(-1)).toContain('format_mismatch');
+  });
+
   it('参数检查', async () => {
     fake = await startFakeApi();
     const root = directWorkspace(fake);
@@ -339,6 +358,7 @@ describe('metaverse scan', () => {
     expect(await main(ctx, ['scan', 'nope.glb'])).toBe(1);
     writeFileSync(join(root, 'x.txt'), 'x');
     expect(await main(ctx, ['scan', 'x.txt'])).toBe(1);
+    expect(ctx.errors.at(-1)).toContain('zip');
     expect(await main(ctx, ['scan', '--asset', 'xyz'])).toBe(1);
     expect(await main(ctx, ['scan', '--help'])).toBe(0);
   });

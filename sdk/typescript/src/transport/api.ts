@@ -55,6 +55,15 @@ export interface SnapshotView {
   } | null;
 }
 
+/**
+ * 上传文件的格式（名称与 metaverse-core 的 `UploadFormat` 相同）。各用途接受的格式：
+ * scan、model 用途 glb / drc / obj / zip（zip = 模型 + 贴图，例如 Scaniverse 导出，默认值，服务端可配置）；
+ * texture 用途 png / jpeg / webp；ops 用途 ndjson / gzip；script 用途 text。
+ */
+export type UploadFormat =
+  'glb' | 'drc' | 'obj' | 'zip' | 'png' | 'jpeg' | 'webp' | 'ndjson' | 'gzip' | 'text';
+
+/** `POST {范围}/uploads/{purpose}` 的请求体（接口服务拒绝未知字段）。 */
 export interface CreateUploadRequest {
   /** 总字节数。 */
   readonly size: number;
@@ -62,8 +71,8 @@ export interface CreateUploadRequest {
   readonly sha256: string;
   /** 分片大小：256KiB 的整数倍，最大 32MiB。 */
   readonly partSize: number;
-  readonly contentType?: string;
-  readonly fileName?: string;
+  /** 文件格式：服务端按用途核对白名单（不在白名单里 422 `unsupported_format`），收到第 0 片时按它核对文件头。 */
+  readonly format: UploadFormat;
 }
 
 /** 创建上传的响应。内容已存在时直接给 `assetHash`（`status: "done"`），不用再传数据。 */

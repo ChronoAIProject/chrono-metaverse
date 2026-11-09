@@ -3,9 +3,98 @@ import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
 /**
- * 测试用的假接口服务：按命令行假设的路径和字段（src/transport/api.ts）回答，
- * 记录每个请求，检查分片上传的分片大小和整体哈希。也带一个模拟 NyxID 的 /dev/token。
+ * 测试用的假接口服务：按接口服务的实际路径和字段（api/crates/metaverse-api/src/routes/）回答，
+ * 记录每个请求，检查分片上传的分片大小、格式、文件头和整体哈希。也带一个模拟 NyxID 的 /dev/token。
+ *
+ * 接口服务的请求体都带 `deny_unknown_fields`：这里同样对未知字段和缺少的必填字段返回 422
+ * `invalid_request`，免得命令行按假设的字段测试通过、对真服务却一律 422。
  */
+
+/** 各用途默认接受的格式（接口服务 `ingest/mod.rs` 的默认值）。 */
+export const UPLOAD_FORMATS: Readonly<Record<string, readonly string[]>> = {
+  scan: ['glb', 'drc', 'obj', 'zip'],
+  model: ['glb', 'drc', 'obj', 'zip'],
+  texture: ['png', 'jpeg', 'webp'],
+  ops: ['ndjson', 'gzip'],
+  script: ['text'],
+};
+
+/** 有未知字段或缺必填字段时返回说明（与 serde 的 `deny_unknown_fields` 相同的效果）。 */
+export function fieldError(
+  body: Record<string, unknown>,
+  allowed: readonly string[],
+  required: readonly string[] = [],
+): string | null {
+  const unknown = Object.keys(body).filter((key) => !allowed.includes(key));
+  if (unknown.length > 0) return `未知字段 ${unknown.join('、')}`;
+  const missing = required.filter((key) => body[key] === undefined || body[key] === null);
+  if (missing.length > 0) return `缺少字段 ${missing.join('、')}`;
+  return null;
+}
+
+const OBJ_KEYWORDS = new Set([
+  'v',
+  'vt',
+  'vn',
+  'vp',
+  'f',
+  'l',
+  'p',
+  'o',
+  'g',
+  's',
+  'mtllib',
+  'usemtl',
+]);
+
+/** 第 0 片的文件头与声明的格式不符时返回 true（规则同接口服务 `ingest/formats.rs`，图片只看魔数）。 */
+export function headerMismatch(format: string, head: Buffer, totalSize: number): boolean {
+  switch (format) {
+    case 'glb':
+      return (
+        head.length < 12 ||
+        head.toString('latin1', 0, 4) !== 'glTF' ||
+        head.readUInt32LE(4) !== 2 ||
+        head.readUInt32LE(8) !== totalSize
+      );
+    case 'drc':
+      return head.toString('latin1', 0, 5) !== 'DRACO';
+    case 'zip':
+      return !head.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+    case 'gzip':
+      return !head.subarray(0, 3).equals(Buffer.from([0x1f, 0x8b, 0x08]));
+    case 'png':
+      return !head.subarray(0, 8).equals(Buffer.from('\x89PNG\r\n\x1a\n', 'latin1'));
+    case 'jpeg':
+      return !head.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]));
+    case 'webp':
+      return head.toString('latin1', 0, 4) !== 'RIFF' || head.toString('latin1', 8, 12) !== 'WEBP';
+    case 'ndjson':
+      return head.includes(0) || head.toString('utf8').trimStart()[0] !== '{';
+    case 'text':
+      return head.includes(0);
+    case 'obj': {
+      if (head.includes(0)) return true;
+      for (const line of head.toString('utf8').split('\n')) {
+        const text = line.trim();
+        if (text === '' || text.startsWith('#')) continue;
+        return !OBJ_KEYWORDS.has(text.split(/\s+/)[0]!);
+      }
+      return false;
+    }
+    default:
+      return true;
+  }
+}
+
+/** 文件头合法的假 glb（总长度写在头里）。 */
+export function fakeGlb(size: number, fill = 7): Buffer {
+  const bytes = Buffer.alloc(size, fill);
+  bytes.write('glTF', 0, 'latin1');
+  bytes.writeUInt32LE(2, 4);
+  bytes.writeUInt32LE(size, 8);
+  return bytes;
+}
 
 export interface RecordedRequest {
   readonly method: string;
@@ -18,11 +107,14 @@ export interface RecordedRequest {
 interface Upload {
   id: string;
   purpose: string;
+  format: string;
   size: number;
   sha256: string;
   partSize: number;
   parts: Map<number, Buffer>;
   scopePath: string;
+  status: 'open' | 'done';
+  reused: boolean;
 }
 
 interface Job {
@@ -124,6 +216,16 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
     };
     const parsed = () =>
       body.length === 0 ? {} : (JSON.parse(body.toString('utf8')) as Record<string, unknown>);
+    /** 请求体字段不合法时回 422 并返回 true（调用处直接 return）。 */
+    const invalidFields = (
+      req: Record<string, unknown>,
+      allowed: readonly string[],
+      required: readonly string[] = [],
+    ): boolean => {
+      const error = fieldError(req, allowed, required);
+      if (error !== null) problem(422, 'invalid_request', `请求体不合法：${error}`);
+      return error !== null;
+    };
     const path = url.pathname;
 
     if (path === '/dev/token' && request.method === 'POST') {
@@ -191,29 +293,48 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
         return problem(403, 'forbidden', '地块路径下不能上传扫描');
       if (uploadId === undefined && request.method === 'POST') {
         const req = parsed();
+        if (
+          invalidFields(
+            req,
+            ['size', 'sha256', 'partSize', 'format'],
+            ['size', 'sha256', 'partSize', 'format'],
+          )
+        )
+          return;
         const size = Number(req.size);
         const partSize = Number(req.partSize);
+        const format = String(req.format);
+        if (!(UPLOAD_FORMATS[purpose!] ?? []).includes(format))
+          return problem(422, 'unsupported_format', `${purpose} 用途不接受格式 ${format}`);
         if (partSize % (256 * 1024) !== 0 || partSize > 32 * 1024 * 1024)
-          return problem(422, 'invalid', '分片大小不对');
-        if (state.assets.has(String(req.sha256))) {
-          return json(200, { status: 'done', reused: true, assetHash: req.sha256 });
-        }
+          return problem(422, 'invalid_part_size', '分片大小不对');
+        const reused = state.assets.has(String(req.sha256));
         const upload: Upload = {
           id: nextId('up'),
           purpose: purpose!,
+          format,
           size,
           sha256: String(req.sha256),
           partSize,
           parts: new Map(),
           scopePath: scopePath!,
+          status: reused ? 'done' : 'open',
+          reused,
         };
         state.uploads.set(upload.id, upload);
-        return json(201, {
+        const view = {
           uploadId: upload.id,
-          status: 'open',
+          purpose: upload.purpose,
+          declaredFormat: format,
+          status: upload.status,
+          size,
+          sha256: upload.sha256,
           partSize,
           partCount: Math.ceil(size / partSize),
-        });
+          reused,
+          ...(reused ? { assetHash: upload.sha256 } : {}),
+        };
+        return json(reused ? 200 : 201, view);
       }
       const upload = state.uploads.get(uploadId ?? '');
       if (upload === undefined) return problem(404, 'not_found', '没有上传');
@@ -226,6 +347,8 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
         const expected = Math.min(upload.partSize, upload.size - index * upload.partSize);
         if (body.length !== expected)
           return problem(422, 'invalid', `第 ${index} 片大小 ${body.length}，应为 ${expected}`);
+        if (index === 0 && headerMismatch(upload.format, body, upload.size))
+          return problem(422, 'format_mismatch', `文件头与声明的格式 ${upload.format} 不符`);
         upload.parts.set(index, body);
         return json(200, {
           n: index,
@@ -243,9 +366,12 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
           'upload_verify',
           sha === upload.sha256 ? {} : { fail: '整体哈希不一致' },
         );
-        if (sha === upload.sha256) state.assets.set(sha, all);
+        if (sha === upload.sha256) {
+          state.assets.set(sha, all);
+          upload.status = 'done';
+        }
         response.writeHead(202, { 'content-type': 'application/json' });
-        response.end(JSON.stringify({ jobId: job.id, uploadId: upload.id }));
+        response.end(JSON.stringify({ uploadId: upload.id, status: 'complete', jobId: job.id }));
         return;
       }
     }
