@@ -79,6 +79,14 @@ def make_config(database: str = "unused", **overrides: Any) -> Config:
     return Config(**values)
 
 
+@pytest.fixture(autouse=True)
+def _restore_pil_pixel_limit():
+    """读模型时按任务的上限设置 PIL 的进程级像素上限（`scan.guard_pixels`）；测试之间恢复原值。"""
+    saved = Image.MAX_IMAGE_PIXELS
+    yield
+    Image.MAX_IMAGE_PIXELS = saved
+
+
 @pytest.fixture
 def config(tmp_path) -> Config:
     return make_config(workdir=str(tmp_path))

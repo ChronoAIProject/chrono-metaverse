@@ -21,10 +21,16 @@ from PIL import Image
 
 from ..errors import InputRejected
 from .glb import GlbMesh, vertex_normals, write_glb
-from .scan import ScanMesh, inspect_glb, inspect_image, load_draco, sniff_file
+from .scan import (
+    ScanMesh,
+    decoded_image,
+    guard_pixels,
+    inspect_glb,
+    inspect_image,
+    load_draco,
+    sniff_file,
+)
 from .webmodel import shrink_texture, simplify_mesh
-
-Image.MAX_IMAGE_PIXELS = None
 
 
 @dataclass
@@ -54,9 +60,16 @@ def load_model(
     max_triangles: int,
     max_texture_pixels: int,
 ) -> tuple[ScanMesh, np.ndarray | None, tuple[float, float, float, float]]:
-    """读模型：返回 (网格 + 可选贴图, 顶点颜色 (N,4) uint8 或 None, 材质底色)。"""
+    """读模型：返回 (网格 + 可选贴图, 顶点颜色 (N,4) uint8 或 None, 材质底色)。
+
+    像素上限在任何解码之前检查：单独给的贴图在加载模型之前（obj 的材质可能引用同一张图），glb 内嵌的贴图
+    由 `inspect_glb` 读文件头，trimesh 打开的贴图在转换成数组之前再按尺寸查一次。
+    """
     import trimesh
 
+    guard_pixels(max_texture_pixels)
+    if texture_path is not None:
+        inspect_image(texture_path, max_texture_pixels)
     fmt = sniff_file(model_path)
     colors = None
     base = (1.0, 1.0, 1.0, 1.0)
@@ -64,9 +77,8 @@ def load_model(
         vertices, faces, uv = load_draco(model_path, max_triangles)
         texture = None
         if texture_path is not None:
-            inspect_image(texture_path, max_texture_pixels)
             with Image.open(texture_path) as img:
-                texture = np.asarray(img.convert("RGBA" if "A" in img.getbands() else "RGB"))
+                texture = decoded_image(img, max_texture_pixels, _texture_mode(img))
         mesh = ScanMesh(vertices, faces, uv, texture)
     elif fmt in ("glb", "obj"):
         if fmt == "glb":
@@ -91,11 +103,10 @@ def load_model(
                 uv = np.asarray(visual.uv, np.float64).copy()
                 uv[:, 1] = 1.0 - uv[:, 1]  # trimesh 内部是左下角原点
                 if image is not None:
-                    texture = np.asarray(image.convert("RGBA" if "A" in image.getbands() else "RGB"))
+                    texture = decoded_image(image, max_texture_pixels, _texture_mode(image))
                 else:
-                    inspect_image(texture_path, max_texture_pixels)
                     with Image.open(texture_path) as img:
-                        texture = np.asarray(img.convert("RGB"))
+                        texture = decoded_image(img, max_texture_pixels, "RGB")
             else:
                 vertex_colors = (getattr(visual, "vertex_attributes", None) or {}).get("color")
                 if vertex_colors is not None and len(vertex_colors) == len(vertices):
@@ -133,6 +144,10 @@ def _load_trimesh(path: str, fmt: str):
             return mesh
         return loaded.to_geometry() if hasattr(loaded, "to_geometry") else loaded.dump(concatenate=True)
     return loaded
+
+
+def _texture_mode(image) -> str:
+    return "RGBA" if "A" in image.getbands() else "RGB"
 
 
 def _material_image(material):

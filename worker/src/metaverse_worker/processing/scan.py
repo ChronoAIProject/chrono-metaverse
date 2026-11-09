@@ -11,10 +11,13 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import io
 import json
 import struct
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 from PIL import Image
@@ -22,7 +25,34 @@ from scipy import ndimage
 
 from ..errors import InputRejected
 
-Image.MAX_IMAGE_PIXELS = None  # 像素上限由我们自己在解码前检查
+_GLB_BIN = 0x004E4942
+_IMAGE_HEAD_BYTES = 1 << 20  # 读图片尺寸只需要文件头
+
+
+def guard_pixels(max_pixels: int) -> None:
+    """让 PIL 自带的解压炸弹检查兜底：像素超过上限两倍的图片在 `Image.open` 时就报错，不会解码。
+
+    像素上限首先由我们自己在解码前按文件头检查（`inspect_image`、`inspect_glb`）；这里防的是漏网的路径，
+    例如第三方库在内部打开的贴图。`Image.MAX_IMAGE_PIXELS` 是进程级的值；解析都在子进程里做，每个子进程
+    只跑一个任务，所以按本次任务的上限设置。不能设成 None（那样 PIL 的检查就被关掉了）。
+    """
+    Image.MAX_IMAGE_PIXELS = max(1, int(max_pixels))
+
+
+def image_dimensions(source: Any, what: str = "贴图") -> tuple[int, int]:
+    """只读文件头取图片尺寸（不解码）。`source` 是路径或文件对象；认不出、或大到 PIL 拒绝打开都算不合规。"""
+    try:
+        with Image.open(source) as img:
+            return img.size
+    except Image.DecompressionBombError as error:
+        raise InputRejected(f"{what}像素超过上限：{error}") from error
+    except Exception as error:
+        raise InputRejected(f"{what}无法识别：{error}") from error
+
+
+def check_pixels(width: int, height: int, max_pixels: int) -> None:
+    if width * height > max_pixels:
+        raise InputRejected(f"贴图像素 {width}×{height} 超过上限 {max_pixels}")
 
 
 @dataclass
@@ -69,18 +99,80 @@ def sniff_file(path: str) -> str | None:
 
 def inspect_image(path: str, max_pixels: int) -> tuple[int, int]:
     """只读文件头取尺寸（不解码），超过像素上限就拒绝。"""
-    try:
-        with Image.open(path) as img:
-            w, h = img.size
-    except Exception as error:
-        raise InputRejected(f"贴图无法识别：{error}") from error
-    if w * h > max_pixels:
-        raise InputRejected(f"贴图像素 {w}×{h} 超过上限 {max_pixels}")
+    w, h = image_dimensions(path)
+    check_pixels(w, h, max_pixels)
     return w, h
 
 
+def decoded_image(image: Any, max_pixels: int, mode: str) -> np.ndarray:
+    """把第三方库打开的图片（`Image.open` 只读了文件头）解码成数组；解码前先按尺寸检查像素上限。"""
+    w, h = image.size
+    check_pixels(w, h, max_pixels)
+    return np.asarray(image.convert(mode))
+
+
+def _base64_uri(uri: Any, what: str) -> bytes:
+    """与 trimesh 相同的判断：含 `base64,` 的 uri 按 base64 解码；其他 uri 指向外部文件，一律拒绝。"""
+    if not isinstance(uri, str):
+        raise InputRejected(f"glb 里{what}的 uri 不合法")
+    index = uri.find("base64,")
+    if index < 0:
+        raise InputRejected(f"glb 里{what}引用了外部文件，只接受内嵌的数据")
+    try:
+        return base64.b64decode(uri[index + 7 :])
+    except (binascii.Error, ValueError) as error:
+        raise InputRejected(f"glb 里{what}的 base64 数据不合法：{error}") from error
+
+
+def _index(value: Any, size: int, what: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value < size:
+        raise InputRejected(f"glb 里{what}的编号不合法")
+    return value
+
+
+def _glb_image_head(
+    path: str, image: dict[str, Any], doc: dict[str, Any], bin_offset: int, bin_len: int
+) -> bytes | None:
+    """一张贴图的开头（最多 1MB，够读尺寸）。取数据的位置与 trimesh 加载时相同：
+
+    - 有 `bufferView`：所在数据块写了 `uri` 的按 base64 解码；没写的只能是第一个数据块，即 glb 的 BIN 块；
+    - 只有 `uri`：按 base64 解码（`data:` 内嵌）；
+    - 两样都没有：trimesh 会跳过这张图，返回 None。
+
+    指向外部文件、或者我们找不到对应位置的贴图都直接拒绝：检查不了尺寸的贴图不能交给解码。
+    """
+    if "bufferView" in image:
+        views = doc.get("bufferViews") or []
+        view = views[_index(image["bufferView"], len(views), "贴图的 bufferView")]
+        buffers = doc.get("buffers") or []
+        buffer_index = _index(view.get("buffer"), len(buffers), "bufferView 的数据块")
+        start = view.get("byteOffset", 0)
+        length = view.get("byteLength", 0)
+        if not all(isinstance(v, int) and not isinstance(v, bool) and v >= 0 for v in (start, length)):
+            raise InputRejected("glb 里贴图的 bufferView 范围不合法")
+        buffer = buffers[buffer_index]
+        if "uri" in buffer:
+            data = _base64_uri(buffer["uri"], "数据块")
+            if start + length > len(data):
+                raise InputRejected("glb 里的贴图超出了数据块")
+            return data[start : start + min(length, _IMAGE_HEAD_BYTES)]
+        if buffer_index != 0:
+            raise InputRejected("glb 里只有第一个数据块可以不写 uri")
+        if start + length > bin_len:
+            raise InputRejected("glb 里的贴图超出了数据块")
+        with open(path, "rb") as fh:
+            fh.seek(bin_offset + start)
+            return fh.read(min(length, _IMAGE_HEAD_BYTES))
+    if "uri" in image:
+        return _base64_uri(image["uri"], "贴图")[:_IMAGE_HEAD_BYTES]
+    return None
+
+
 def inspect_glb(path: str, max_triangles: int, max_pixels: int) -> int:
-    """读 glb 的 JSON 块，按访问器数量估算三角形数；贴图尺寸在解码前按 bufferView 读文件头检查。"""
+    """读 glb 的 JSON 块，按访问器数量估算三角形数；每张贴图的尺寸在解码前读文件头检查。
+
+    贴图内嵌在 BIN 块、`data:` 数据块还是 `data:` 图片里都要检查；引用外部文件的直接拒绝。
+    """
     with open(path, "rb") as fh:
         header = fh.read(20)
         if len(header) < 20:
@@ -90,10 +182,20 @@ def inspect_glb(path: str, max_triangles: int, max_pixels: int) -> int:
             raise InputRejected("不是 glTF 2.0 的 glb 文件")
         if json_len > 64 << 20:
             raise InputRejected("glb 的 JSON 块过大")
-        doc = json.loads(fh.read(json_len))
+        try:
+            doc = json.loads(fh.read(json_len))
+        except ValueError as error:
+            raise InputRejected(f"glb 的 JSON 块不合法：{error}") from error
+        if not isinstance(doc, dict):
+            raise InputRejected("glb 的 JSON 块不是对象")
         bin_header = fh.read(8)
         bin_offset = 20 + json_len + 8
-        bin_len = struct.unpack("<II", bin_header)[0] if len(bin_header) == 8 else 0
+        bin_len = 0
+        if len(bin_header) == 8:
+            bin_len, bin_type = struct.unpack("<II", bin_header)
+            # trimesh 把第一个没写 uri 的数据块对到 JSON 之后的那个块；这里读贴图的位置必须和它一致
+            if bin_type != _GLB_BIN:
+                raise InputRejected("glb 的 JSON 块之后不是 BIN 数据块")
     if "KHR_draco_mesh_compression" in (doc.get("extensionsRequired") or []):
         raise InputRejected("暂不支持 Draco 压缩的 glb，请上传 .drc + 贴图或未压缩的 glb")
     accessors = doc.get("accessors") or []
@@ -112,26 +214,14 @@ def inspect_glb(path: str, max_triangles: int, max_pixels: int) -> int:
                     triangles += int(accessors[pos].get("count", 0)) // 3
     if triangles > max_triangles:
         raise InputRejected(f"三角形数 {triangles} 超过上限 {max_triangles}")
-    views = doc.get("bufferViews") or []
     for image in doc.get("images") or []:
-        view = image.get("bufferView")
-        if view is None:
+        if not isinstance(image, dict):
+            raise InputRejected("glb 里的贴图记录不合法")
+        head = _glb_image_head(path, image, doc, bin_offset, bin_len)
+        if head is None:
             continue
-        bv = views[view]
-        start = int(bv.get("byteOffset", 0))
-        length = int(bv.get("byteLength", 0))
-        if start + length > bin_len:
-            raise InputRejected("glb 里的贴图超出了数据块")
-        with open(path, "rb") as fh:
-            fh.seek(bin_offset + start)
-            data = fh.read(min(length, 1 << 20))
-        try:
-            with Image.open(io.BytesIO(data)) as img:
-                w, h = img.size
-        except Exception as error:
-            raise InputRejected(f"glb 里的贴图无法识别：{error}") from error
-        if w * h > max_pixels:
-            raise InputRejected(f"贴图像素 {w}×{h} 超过上限 {max_pixels}")
+        w, h = image_dimensions(io.BytesIO(head), "glb 里的贴图")
+        check_pixels(w, h, max_pixels)
     return triangles
 
 
@@ -143,7 +233,7 @@ def _load_texture(path: str | None, max_pixels: int) -> np.ndarray | None:
         return None
     inspect_image(path, max_pixels)
     with Image.open(path) as img:
-        return np.asarray(img.convert("RGB"))
+        return decoded_image(img, max_pixels, "RGB")
 
 
 def load_draco(path: str, max_triangles: int) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
@@ -160,7 +250,7 @@ def load_draco(path: str, max_triangles: int) -> tuple[np.ndarray, np.ndarray, n
     return vertices, faces, uv
 
 
-def _from_trimesh(path: str, fmt: str, max_triangles: int) -> ScanMesh:
+def _from_trimesh(path: str, fmt: str, max_triangles: int, max_pixels: int) -> ScanMesh:
     import trimesh
 
     loaded = trimesh.load(path, file_type=fmt, process=False, force="mesh")
@@ -176,7 +266,7 @@ def _from_trimesh(path: str, fmt: str, max_triangles: int) -> ScanMesh:
         uv[:, 1] = 1.0 - uv[:, 1]  # trimesh 内部是左下角原点
         image = getattr(visual.material, "baseColorTexture", None) or getattr(visual.material, "image", None)
         if image is not None:
-            texture = np.asarray(image.convert("RGB"))
+            texture = decoded_image(image, max_pixels, "RGB")
     return ScanMesh(np.asarray(loaded.vertices, np.float64), np.asarray(loaded.faces, np.int64), uv, texture)
 
 
@@ -187,7 +277,13 @@ def load_scan(
     max_triangles: int = 5_000_000,
     max_texture_pixels: int = 8192 * 8192,
 ) -> ScanMesh:
-    """读扫描模型：`.drc`（+ 单独的贴图）、`.glb`（内嵌贴图）或 `.obj`。"""
+    """读扫描模型：`.drc`（+ 单独的贴图）、`.glb`（内嵌贴图）或 `.obj`。
+
+    单独给的贴图在加载模型之前就检查：obj 的材质可能引用同一张图，trimesh 加载模型时就会打开它。
+    """
+    guard_pixels(max_texture_pixels)
+    if texture_path is not None:
+        inspect_image(texture_path, max_texture_pixels)
     fmt = sniff_file(mesh_path)
     if fmt == "draco":
         vertices, faces, uv = load_draco(mesh_path, max_triangles)
@@ -195,11 +291,11 @@ def load_scan(
         mesh = ScanMesh(vertices, faces, uv, texture)
     elif fmt == "glb":
         inspect_glb(mesh_path, max_triangles, max_texture_pixels)
-        mesh = _from_trimesh(mesh_path, "glb", max_triangles)
+        mesh = _from_trimesh(mesh_path, "glb", max_triangles, max_texture_pixels)
         if texture_path is not None:
             mesh.texture = _load_texture(texture_path, max_texture_pixels)
     elif fmt == "obj":
-        mesh = _from_trimesh(mesh_path, "obj", max_triangles)
+        mesh = _from_trimesh(mesh_path, "obj", max_triangles, max_texture_pixels)
         if texture_path is not None:
             mesh.texture = _load_texture(texture_path, max_texture_pixels)
     else:
