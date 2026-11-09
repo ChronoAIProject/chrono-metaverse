@@ -129,7 +129,7 @@ def validate_plate(shape: Mapping[str, Any], path: str = "$") -> None:
         raise ExtShapeError(f"{path}.thickness", "厚度必须大于 0、不超过 1 米")
     n = newell_normal(P)
     if not np.any(n):
-        raise ExtShapeError(f"{path}.points", "点共线，围不成多边形")
+        raise ExtShapeError(f"{path}.points", "点共线（或自相交的两半面积抵消），围不成多边形")
     # 最佳拟合平面（过质心、法向取协方差最小特征向量）
     c = P.mean(0)
     _, _, vt = np.linalg.svd(P - c)

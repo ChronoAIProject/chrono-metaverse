@@ -137,8 +137,8 @@ def merge(paths: list[str]) -> tuple[dict[str, dict], dict[str, dict], list[str]
 def validate(
     templates: dict[str, dict], entities: dict[str, dict], structure: str, models_dirs: list[str] | None
 ) -> tuple[list[dict], dict[str, str]]:
-    """逐个校验，补默认字段、重算包围盒（原地改 entities / templates）。返回 (每个物件的校验结果, "
-    "外部模型的本地文件)。"""
+    """逐个校验，补默认字段、重算包围盒（原地改 entities / templates）。返回 (每个物件的校验结果,
+    外部模型的本地文件)。"""
     shapes = {k: b.get("shape") for k, b in templates.items()}
     checks: list[dict] = []
     locals_: dict[str, str] = {}
@@ -416,7 +416,7 @@ def cmd_assemble(args) -> dict:
     for e in errors:
         print(f"  错误：{e}")
     report: dict = {"authored": path, "checks": checks, "errors": errors, "ok": not errors and not bad}
-    if not args.no_render and report["ok"]:
+    if report["ok"]:
         report.update(room_outputs(args, base, templates, entities, locals_, out_dir))
     elif not report["ok"]:
         print("有错误，先修好再出整房预览和对比图")
@@ -462,7 +462,7 @@ def room_outputs(args, base: Base, templates, entities, locals_, out_dir: str) -
                 f"  {c['points']:5d} 点  {c['min']} – {c['max']}  现有算法里："
                 f"{', '.join(c['baseObjects']) or '无'}"
             )
-    if render_available():
+    if not args.no_render and render_available():
         out["image"] = room_image(args, base, entities, glb, textures, out_dir, cut, rep)
         print(f"\n对比图：{out['image']}")
     return out

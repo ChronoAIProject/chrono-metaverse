@@ -45,8 +45,8 @@ CATEGORY_PLAN = {
 
 
 def default_limits() -> dict[str, int]:
-    """处理服务默认的解析前检查上限（与 `handlers.context.JobContext.limits` 同样的键，取 `Config` 的默认值）"
-    "。"""
+    """处理服务默认的解析前检查上限：与 `handlers.context.JobContext.limits` 同样的键，
+    取 `Config` 的默认值。"""
     d = {f.name: f.default for f in dataclasses.fields(Config) if f.default is not dataclasses.MISSING}
     return {
         "max_scan_bytes": d["max_scan_bytes"],

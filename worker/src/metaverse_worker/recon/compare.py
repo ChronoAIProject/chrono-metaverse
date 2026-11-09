@@ -32,6 +32,7 @@ from .base import Base, RecordSet, from_args, is_model_entity, load_records, par
 from .core import r
 from .glbout import export_glb
 from .i18n import t
+from .render import available as render_available
 from .render import run_render
 from .views import VIEWS, prepare_scan, view_spec, view_title
 
@@ -380,8 +381,8 @@ def dist_colors(d: np.ndarray) -> np.ndarray:
 def error_map(
     P: np.ndarray, results: list[tuple[str, np.ndarray | None]], box: wc.Box, path: str, title: str
 ) -> None:
-    """扫描点按到模型的距离上色（绿 ≤1 厘米，黄 1–3，橙 3–6，红 >6），三个正交投影，每个模型一行；"
-    "差的点画在上面。"""
+    """扫描点按到模型的距离上色（绿 ≤1 厘米，黄 1–3，橙 3–6，红 >6），三个正交投影，每个模型一行；
+    差的点画在上面。"""
     lo, hi = box.lo - 0.05, box.hi + 0.05
     sx_, sy, sz = hi - lo
     projs = [
@@ -488,8 +489,8 @@ def render_sheet(
     near_clip: bool = True,
     header: str | None = None,
 ) -> Image.Image:
-    """角度 × 列 的并排图（同一相机、同一贴地网格和黄框）。columns：(组名, 列标题)；models："
-    "渲染任务的模型表。"""
+    """角度 × 列 的并排图（同一相机、同一贴地网格和黄框）。columns：(组名, 列标题)；models：
+    渲染任务的模型表。"""
     cw, ch = cell
     present = {(v.get("group") if isinstance(v, dict) else None) or k for k, v in models.items()}
     specs, slots = [], []
@@ -630,6 +631,65 @@ def load_model_arg(args) -> RecordSet:
     return merged
 
 
+def render_compare(
+    args,
+    base: Base,
+    new: ModelSet,
+    old: ModelSet,
+    res_new,
+    base_ids,
+    name,
+    scan_glb,
+    angles,
+    box,
+    clip,
+    floor_y,
+    grid,
+    out_dir,
+) -> tuple[int, Image.Image]:
+    new_glb = os.path.join(out_dir, "_new.glb") if new.shape_bodies else None
+    base_glb = os.path.join(out_dir, "_base.glb") if old.parts else None
+    textures = base.textures()
+    tri_new = 0
+    if new_glb:
+        tri_new = export_glb(
+            {**new.shape_bodies},
+            new.templates,
+            textures,
+            new_glb,
+            color_parts=args.color_parts,
+            material_override=bake_overrides(new, res_new),
+        )["triangles"]
+    if base_glb:
+        export_glb(old.shape_bodies, old.templates, textures, base_glb)
+    cw, ch = (int(v) for v in args.cell.lower().split("x"))
+    columns = [
+        ("scan", t("扫描（只看包围盒附近）", "scan (near the box)")),
+        (
+            "base",
+            t(f"现有算法 {', '.join(base_ids)[:40] or '（无）'}", f"current {', '.join(base_ids)[:40]}"),
+        ),
+        ("new", t(f"新模型 {name}", f"new {name}")),
+    ]
+    if args.columns:
+        want = [c.strip() for c in args.columns.split(",")]
+        columns = [c for c in columns if c[0] in want]
+    models = render_models(base_glb, new, new_glb, scan_glb, args.color_parts)
+    sheet = render_sheet(
+        columns=columns,
+        models=models,
+        angles=angles,
+        box=box,
+        clip=clip,
+        floor_y=floor_y,
+        grid=grid,
+        cut=args.cut,
+        cell=(cw, ch),
+        workdir=out_dir,
+    )
+    return tri_new, sheet
+
+
 def cmd_compare(args) -> dict:
     start = time.time()
     out_dir = os.path.abspath(args.out)
@@ -702,56 +762,37 @@ def cmd_compare(args) -> dict:
             f"{time.time() - t1:.1f} 秒"
         )
 
-        # 并排渲染
-        new_glb = os.path.join(out_dir, "_new.glb") if new.shape_bodies else None
-        base_glb = os.path.join(out_dir, "_base.glb") if old.parts else None
-        textures = base.textures()
-        tri_new = 0
-        if new_glb:
-            tri_new = export_glb(
-                {**new.shape_bodies},
-                new.templates,
-                textures,
-                new_glb,
-                color_parts=args.color_parts,
-                material_override=bake_overrides(new, res_new),
-            )["triangles"]
-        if base_glb:
-            export_glb(old.shape_bodies, old.templates, textures, base_glb)
         angles = parse_angles(
             args.angles or ("oblique,top,front" if args.scene else "oblique,front,top"), args.front
         )
-        cw, ch = (int(v) for v in args.cell.lower().split("x"))
-        columns = [
-            ("scan", t("扫描（只看包围盒附近）", "scan (near the box)")),
-            (
-                "base",
-                t(f"现有算法 {', '.join(base_ids)[:40] or '（无）'}", f"current {', '.join(base_ids)[:40]}"),
-            ),
-            ("new", t(f"新模型 {name}", f"new {name}")),
-        ]
-        if args.columns:
-            want = [c.strip() for c in args.columns.split(",")]
-            columns = [c for c in columns if c[0] in want]
-        models = render_models(base_glb, new, new_glb, scan_glb, args.color_parts)
-        sheet = render_sheet(
-            columns=columns,
-            models=models,
-            angles=angles,
-            box=box,
-            clip=clip,
-            floor_y=floor_y,
-            grid=grid,
-            cut=args.cut,
-            cell=(cw, ch),
-            workdir=out_dir,
-        )
+        tri_new = 0
+        sheet = None
+        if args.no_render or not render_available():
+            wc.log("  不出并排图（--no-render，或没有渲染工具：metaverse-recon doctor 查看）")
+        else:
+            tri_new, sheet = render_compare(
+                args,
+                base,
+                new,
+                old,
+                res_new,
+                base_ids,
+                name,
+                scan_glb,
+                angles,
+                box,
+                clip,
+                floor_y,
+                grid,
+                out_dir,
+            )
     finally:
         os.remove(scan_glb)
-    lines = [summary_line(t("现有算法", "current"), res_base), summary_line(t("新模型", "new"), res_new)]
-    full = add_footer(sheet, lines)
-    cmp_path = os.path.join(out_dir, "compare.jpg")
-    nbytes, _ = wc.save_jpeg(full, cmp_path, 900_000)
+    cmp_path, nbytes = None, 0
+    if sheet is not None:
+        lines = [summary_line(t("现有算法", "current"), res_base), summary_line(t("新模型", "new"), res_new)]
+        cmp_path = os.path.join(out_dir, "compare.jpg")
+        nbytes, _ = wc.save_jpeg(add_footer(sheet, lines), cmp_path, 900_000)
 
     err_path = os.path.join(out_dir, "compare_error.jpg")
     error_map(
@@ -779,6 +820,7 @@ def cmd_compare(args) -> dict:
         "excluded": [e.as_dict() for e in excludes],
         "scanPoints": len(P),
         "images": {"compare": cmp_path, "error": err_path},
+        "rendered": cmp_path is not None,
         "angles": [a[:4] for a in angles],
         "validation": new.checks,
         "triangles": {"new": tri_new},
@@ -801,7 +843,7 @@ def cmd_compare(args) -> dict:
     return out
 
 
-def print_compare(out: dict, cmp_path: str, nbytes: int, err_path: str, out_dir: str) -> None:
+def print_compare(out: dict, cmp_path: str | None, nbytes: int, err_path: str, out_dir: str) -> None:
     p = print
     p("\n== 校验")
     for c in out["validation"]:
@@ -853,7 +895,6 @@ def print_compare(out: dict, cmp_path: str, nbytes: int, err_path: str, out_dir:
         p("\n== 新模型漏掉的扫描块（离模型 >5 厘米）")
         for m in out["missingFromNew"]:
             p(f"  {m['points']} 点  范围 {m['min']} – {m['max']}  平均距离 {m['meanDistCm']} 厘米")
-    p(
-        f"\n图：{cmp_path}（{nbytes // 1024} KB）\n    {err_path}\n数字："
-        f"{os.path.join(out_dir, 'compare.json')}"
-    )
+    if cmp_path:
+        p(f"\n图：{cmp_path}（{nbytes // 1024} KB）")
+    p(f"偏差图：{err_path}\n数字：{os.path.join(out_dir, 'compare.json')}")

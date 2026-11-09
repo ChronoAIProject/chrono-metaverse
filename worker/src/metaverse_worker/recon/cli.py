@@ -156,6 +156,9 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--floor-gap", type=float, default=0.02, help="算偏差时去掉地面以上这个高度以内的扫描点")
     c.add_argument("--density", type=float, default=3000, help="算偏差的扫描采样密度，点/平方米（默认 3000）")
     c.add_argument("--cell", default="600x460", help="并排图每格尺寸（默认 600x460）")
+    c.add_argument(
+        "--no-render", action="store_true", help="只算数字和偏差图，不出并排图（没有 Chromium 时自动跳过）"
+    )
 
     _library_parsers(sub)
     _assemble_parsers(sub)
@@ -256,7 +259,7 @@ def _assemble_parsers(sub) -> None:
     a.add_argument("--cut", type=float, help="对比图的剖切高度（默认按结构自动去掉天花板）")
     a.add_argument("--density", type=float, default=600, help="偏差的扫描采样密度，点/平方米（默认 600）")
     a.add_argument("--cell", default="560x420", help="对比图每格尺寸")
-    a.add_argument("--no-render", action="store_true", help="只合并和校验，不出图")
+    a.add_argument("--no-render", action="store_true", help="不出对比图（整房预览 glb 和偏差表照出）")
 
     r = sub.add_parser("reframe", help="把物件在两个对齐坐标系之间换算（compute ↔ scan_import 或任意变换）")
     r.add_argument("--scan", required=True, help="两种对齐都基于的原始扫描（drc / glb / zip）")

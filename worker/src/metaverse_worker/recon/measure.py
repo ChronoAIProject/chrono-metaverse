@@ -272,8 +272,8 @@ def footprints(
     points: np.ndarray | None = None,
     min_thick: float = 0.04,
 ):
-    """截面折线（二维）或散点 → 栅格化 → 闭合 close_r → 填洞后的外轮廓 + 原本的洞。"
-    "返回组件列表（面积从大到小）。"""
+    """截面折线（二维）或散点 → 栅格化 → 闭合 close_r → 填洞后的外轮廓 + 原本的洞。
+    返回组件列表（面积从大到小）。"""
     if points is not None and len(points):
         segs2d = [*segs2d, points]
     if not segs2d:

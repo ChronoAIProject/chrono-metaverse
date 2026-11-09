@@ -34,8 +34,8 @@ RENDER_DIR = HERE / "render"
 
 
 def repo_root() -> Path | None:
-    """从源码位置推出平台仓库根目录（`worker/src/metaverse_worker/recon/` 往上四级）；不是从源码装的就返回 "
-    "None。"""
+    """从源码位置推出平台仓库根目录（`worker/src/metaverse_worker/recon/` 往上四级）；不是从源码装的就返回
+    None。"""
     root = HERE.parents[3]
     return root if (root / "worker").is_dir() and (root / "web").is_dir() else None
 
