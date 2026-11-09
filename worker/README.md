@@ -140,8 +140,10 @@ uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceI
    `KHR_materials_unlit`）：`[0]` ≤ 30 万三角形、贴图 ≤ 4096²（网页加载这一档）；`[1]` ≤ 6 万三角形、
    贴图 ≤ 1024²。减面用 fast-simplification 的折叠历史，顶点取原始顶点的位置和贴图坐标；
    资源 `metadata.kind = web_model`；
-6. **结构 + 物体重建**（`rebuild: false` 时跳过）：结构见 `processing/structure.py`，物体调用
-   `processing.objects.reconstruct_objects`（见下）；
+6. **结构 + 物体重建**（`rebuild: false` 时跳过）：结构见 `processing/structure.py`（地面带贴图；墙是朝房间
+   一侧的贴图面板 + 纯色墙体，没扫到的墙面用同一面墙的中位色补；玻璃是浅蓝灰纯色玻璃 + 竖梃 + 窗台，不用贴图；
+   墙顶统一高度）。任务参数里的 `hints` 也交给结构：内点大多落在某个提示物体盒子里的大平面（LED 大屏）不当墙，
+   靠墙放的提示物体不印进墙面贴图。物体调用 `processing.objects.reconstruct_objects`（见下）；
 7. **一次提交**（事务外先按内容哈希登记资源、物件记录、锚点记录）：
 
    ```
@@ -213,7 +215,7 @@ from metaverse_worker.processing.objects import reconstruct_objects
 
 result = reconstruct_objects(mesh_space, structure, params=hints)
 # mesh_space：已用提交里的 transform 变到空间坐标的 ScanMesh（贴图坐标左上角原点）
-# structure：同一网格上 extract_structure 的 StructureResult
+# structure：同一网格上 extract_structure(mesh_space, hints=hints) 的 StructureResult
 # params：任务参数里的 hints（没给时是 {}）
 result.entities  # {entityId: body}，SHAPES 第 3 节，layer 必须是 rebuilt，kind 是 object 或 template
 result.textures  # {sha256 十六进制: 图片字节（jpeg/png/webp）}，被 material.texture 引用
