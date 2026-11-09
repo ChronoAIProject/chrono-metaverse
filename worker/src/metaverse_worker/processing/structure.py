@@ -703,7 +703,9 @@ def extract_structure(
 
         def keep(p, col, n2=n2, t2=t2, prof_u=prof_u, prof_v=prof_v, bf=bf, bb=bb):
             d_ = p[:, [0, 2]] @ n2 - np.interp(p[:, [0, 2]] @ t2, prof_u, prof_v)
-            return (d_ < bf) & (d_ > -bb)
+            # 靠墙放的提示物体（椅子、行李箱、前台）离墙不到 5 厘米，会被当成墙面印进贴图；去掉提示物体盒子
+            # （放宽 hint_margin，盒子常常差几厘米够不到墙）里的采样，那块由补洞填成墙的颜色
+            return (d_ < bf) & (d_ > -bb) & ~inside_hints(p, boxes, prm.hint_margin)
 
         rgb, obs = bake(
             table,

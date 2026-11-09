@@ -295,3 +295,33 @@ def test_hinted_object_is_not_a_wall():
     # 只盖住墙的一小段的提示物体不影响墙
     small = {"objects": [{"center": [4.85, 0.4, 2.0], "size": [0.4, 0.8, 0.6]}]}
     assert normals(extract_structure(room, hints=small)) == normals(plain)
+
+
+def test_hinted_object_against_wall_is_not_baked_into_wall():
+    """贴着西墙（x = 0）2 厘米放一块绿色的椅背：不给提示时会印进墙面贴图，给了提示就补成墙的颜色。"""
+    b = _Builder()
+    b.plane([0, 0, 0], [0, 0, 4], [5, 0, 0], ROOM_COLORS["floor"])
+    for name, (x0, z0), (x1, z1) in (
+        ("south", (0, 0), (5, 0)),
+        ("east", (5, 0), (5, 4)),
+        ("north", (5, 4), (0, 4)),
+        ("west", (0, 4), (0, 0)),
+    ):
+        b.plane([x0, 0, z0], [x1 - x0, 0, z1 - z0], [0, 2.6, 0], ROOM_COLORS[name])
+    green = (60, 200, 60)
+    b.plane([0.02, 0.2, 2.0], [0, 0, -0.5], [0, 0.7, 0], green, cell=0.1)  # 法线 +x，朝房间
+    mesh = b.build()
+    hints = {"objects": [{"center": [0.3, 0.5, 1.75], "size": [0.5, 1.0, 0.6], "label": "椅子"}]}
+
+    def chair_texel(res):
+        (west,) = [e for e in res.elements if e.kind == "wall" and e.info["normal"][0] > 0.9]
+        u0 = west.info["u"][0]
+        y1 = west.info["y"][1]
+        u = np.array(west.info["tangent"]) @ [0.02, 1.75]
+        col, row = int((u - u0) / west.info["px"]), int((y1 - 0.55) / west.info["px"])
+        return west.texture[row, col].astype(int)
+
+    plain = chair_texel(extract_structure(mesh))
+    assert plain[1] - ROOM_COLORS["west"][1] > 50  # 不给提示：椅背和墙面混在一起印进贴图（明显偏绿）
+    hinted = chair_texel(extract_structure(mesh, hints=hints))
+    assert np.abs(hinted - ROOM_COLORS["west"]).max() < 20  # 给了提示：墙的颜色
