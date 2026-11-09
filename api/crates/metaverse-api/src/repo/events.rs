@@ -6,7 +6,7 @@
 //! - 事件类型只追加版本，`(spaceId, type, version)` 唯一，文档上冗余主人；
 //! - 读写都要求空间的授权凭据，条件带上空间编号和主人；状态快照由系统范围写入。
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use metaverse_core::model::{Event, EventType, Owner, StateSnapshot};
 use metaverse_core::Timestamp;
@@ -188,11 +188,13 @@ impl Repo {
         collect(cursor).await
     }
 
-    /// 指向这些原事件的全部更正。
+    /// 指向这些原事件的更正，最多 `limit` 条（取记录时间最新的；调用方事先按
+    /// [`Repo::correction_counts`] 控制总量，这里只防计数之后又写入的）。
     pub async fn corrections_for(
         &self,
         grant: &Grant,
         ids: &[String],
+        limit: i64,
     ) -> Result<Vec<Event>, RepoError> {
         if ids.is_empty() {
             return Ok(Vec::new());
@@ -202,9 +204,49 @@ impl Repo {
         let cursor = self
             .collection(collections::EVENTS)
             .find(filter)
-            .sort(doc! {"recordedAt": 1, "_id": 1})
+            .sort(doc! {"recordedAt": -1, "_id": -1})
+            .limit(limit)
             .await?;
         collect(cursor).await
+    }
+
+    /// 每条原事件已有的更正条数（不算 `exclude` 里的编号：同一批重试时不重复计数）。
+    pub async fn correction_counts(
+        &self,
+        grant: &Grant,
+        ids: &[String],
+        exclude: &[String],
+    ) -> Result<BTreeMap<String, u64>, RepoError> {
+        let mut counts = BTreeMap::new();
+        if ids.is_empty() {
+            return Ok(counts);
+        }
+        let mut filter = space_children(grant);
+        filter.insert("corrects", doc! {"$in": ids});
+        if !exclude.is_empty() {
+            filter.insert("_id", doc! {"$nin": exclude});
+        }
+        let mut cursor = self
+            .collection(collections::EVENTS)
+            .aggregate([
+                doc! {"$match": filter},
+                doc! {"$group": {"_id": "$corrects", "count": {"$sum": 1}}},
+            ])
+            .await?;
+        while cursor.advance().await? {
+            let row: Document = cursor
+                .deserialize_current()
+                .map_err(|error| RepoError::Corrupt(error.to_string()))?;
+            let count = match row.get("count") {
+                Some(Bson::Int32(n)) => u64::try_from(*n).unwrap_or(0),
+                Some(Bson::Int64(n)) => u64::try_from(*n).unwrap_or(0),
+                _ => 0,
+            };
+            if let Ok(id) = row.get_str("_id") {
+                counts.insert(id.to_owned(), count);
+            }
+        }
+        Ok(counts)
     }
 
     /// 时间窗 `[from, to)` 里的原事件，按 (at, 编号) 排序分页。

@@ -55,6 +55,8 @@ use crate::AppState;
 /// `/api/v1` 查询每页默认几条、最多几条。
 const DEFAULT_PAGE: i64 = 200;
 const MAX_PAGE: i64 = 1000;
+/// 一条原事件最多有多少条更正：更正没有别的配额，读取时要连同全部更正一起读进内存。
+pub const MAX_CORRECTIONS_PER_EVENT: u64 = 100;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -635,7 +637,7 @@ pub async fn write_events(
     path = "/api/v1/spaces/{space_id}/sources/{source}/corrections",
     operation_id = "write_corrections",
     tag = "events",
-    description = "更正事件（每批 1–1000 条）：替换（完整的新记录，at 与原事件相同）或撤回（retracted: true，不带内容）。corrects 指向最初那条事件的编号（或用 correctsSourceEventId 指定同一数据源的事件编号）；只能更正同一数据源的事件。同一事件有多条更正时以记录时间最新的为准。把公开事件改成内部级，它就从公开接口消失。",
+    description = "更正事件（每批 1–1000 条）：替换（完整的新记录，at 与原事件相同）或撤回（retracted: true，不带内容）。corrects 指向最初那条事件的编号（或用 correctsSourceEventId 指定同一数据源的事件编号）；只能更正同一数据源的事件。同一事件有多条更正时以记录时间最新的为准，所以同一批里不能有两条更正指向同一条原事件（422 duplicate_target，请分批写）；每条原事件最多 100 条更正（422 too_many_corrections）。把公开事件改成内部级，它就从公开接口消失。",
     params(
         ("space_id" = String, Path, description = "空间编号"),
         ("source" = String, Path, description = "数据源名称（必须是原事件的数据源）"),
@@ -647,7 +649,7 @@ pub async fn write_events(
         (status = 403, description = "没有写权限，或更正别的数据源的事件", body = ProblemDocument),
         (status = 404, description = "空间不存在或无权查看", body = ProblemDocument),
         (status = 413, description = "一批超过 1000 条", body = ProblemDocument),
-        (status = 422, description = "更正不合法", body = ProblemDocument),
+        (status = 422, description = "更正不合法、同一批重复指向同一事件，或更正条数超过上限", body = ProblemDocument),
     )
 )]
 pub async fn write_corrections(
@@ -682,12 +684,21 @@ pub async fn write_corrections(
         };
         inputs.push((index, input, target));
     }
-    let targets: Vec<String> = inputs
-        .iter()
-        .map(|(_, _, target)| target.clone())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
+    // 同一批里多条更正指向同一条原事件时，它们的记录时间相同，生效的是编号大的那条，与调用方
+    // 的先后顺序无关：直接拒绝，请分批写（后写的生效）。
+    let mut target_set = BTreeSet::new();
+    for (index, _, target) in &inputs {
+        if !target_set.insert(target.clone()) {
+            return Err(at_index(
+                *index,
+                invalid_with(
+                    "duplicate_target",
+                    "同一批里不能有多条更正指向同一条原事件（记录时间相同，无法确定哪条生效）；请分批写，后写的生效",
+                ),
+            ));
+        }
+    }
+    let targets: Vec<String> = target_set.into_iter().collect();
     let mut originals: BTreeMap<String, Event> = BTreeMap::new();
     for event in state.repo.originals(&grant, &targets).await? {
         originals.insert(event.id.clone(), event);
@@ -706,6 +717,22 @@ pub async fn write_corrections(
     let corrections = build_corrections(
         &grant, &source, &caller, &types, &anchors, inputs, &originals, now,
     )?;
+    // 每条原事件的更正有上限（不算这一批自己的编号：重试同一批不会被误拒）。
+    let batch_ids: Vec<String> = corrections.iter().map(|c| c.id.clone()).collect();
+    let existing = state
+        .repo
+        .correction_counts(&grant, &targets, &batch_ids)
+        .await?;
+    for target in &targets {
+        if existing.get(target).copied().unwrap_or(0) + 1 > MAX_CORRECTIONS_PER_EVENT {
+            return Err(invalid_with(
+                "too_many_corrections",
+                format!(
+                    "事件 {target} 已经有 {MAX_CORRECTIONS_PER_EVENT} 条更正，不能再更正；需要时撤回它再写一条新事件"
+                ),
+            ));
+        }
+    }
     let results = state.repo.insert_events(&grant, &corrections).await?;
     state.ingest.head_cache.invalidate(grant.space_id());
     tracing::info!(space = %space_id, source = %source, count = corrections.len(), by = %caller.subject, "写入更正");

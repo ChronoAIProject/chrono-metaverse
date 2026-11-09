@@ -166,7 +166,7 @@ NyxID 地址只接受 https；明文 http 只允许本机地址（本地测试�
 | `GET /api/v1/spaces/{space_id}[/plots/{plot_id}]/jobs/{job_id}` | `get_job` / `get_plot_job` | 任务状态、进度（`progress`，例如 `ops_from_upload` 的 `{opsApplied, opsTotal}`）和结果；地块路径只看得到本地块发起的任务（含地块草稿的 `ops_from_upload`） |
 | `GET /api/v1/spaces/{space_id}[/plots/{plot_id}]/jobs?status=&limit=` | `list_jobs` / `list_plot_jobs` | 最近的任务（≤ 100） |
 | `POST /api/v1/spaces/{space_id}/sources/{source}/events` | `write_events` | `{events: [...]}`，每批 ≤ 1000；source 来自路径（请求体填 source 403）；按 `(spaceId, source, sourceEventId)` 去重（重复的返回 `duplicate`）；整批校验，任何一条不合法 422 |
-| `POST /api/v1/spaces/{space_id}/sources/{source}/corrections` | `write_corrections` | `{corrections: [...]}`：替换或撤回，`corrects`（事件编号）或 `correctsSourceEventId`；只能更正同一数据源的事件 |
+| `POST /api/v1/spaces/{space_id}/sources/{source}/corrections` | `write_corrections` | `{corrections: [...]}`：替换或撤回，`corrects`（事件编号）或 `correctsSourceEventId`；只能更正同一数据源的事件；同一批里多条更正指向同一条原事件时 422 `duplicate_target`（它们的记录时间相同，无法按调用方的先后顺序决定哪条生效，请分批写，后写的生效）；每条原事件最多 100 条更正，超过 422 `too_many_corrections`（同一批重试不算） |
 | `GET /api/v1/spaces/{space_id}/events?from=&to=&since=&types=&after=&limit=&raw=` | `list_events` | 含内部级，更正已应用（`raw=true` 返回原始记录）；时间窗 ≤ 24 小时；每页默认 200、最多 1000 |
 | `GET /api/v1/spaces/{space_id}/event-types` | `list_event_types` | 事件类型全部版本（含 schema） |
 | `POST /api/v1/universes` | `create_universe` | `{id, name, owner?, visibility?}`；默认主人是调用者本人；分享令牌原文只返回一次 |
@@ -296,6 +296,7 @@ stateSnapshots { _id: "ss_<空间>_<毫秒>", spaceId, owner, at, computedAt, st
 - 更正也是一条事件（`at` 与原事件相同），所以按 `at` 扫描时原事件和它的全部更正总在一起。
 - 公开状态只由公开事件算出（值按公开字段投影），只返回公开锚点上的；状态快照在折叠超过 2000 条记录、且时刻早于现在 10 分钟时保存（系统范围），`computedAt` 之后记录的、`at ≤ 快照时刻` 的事件（晚到、更正）让快照失效并删除。
 - 锚点必须是本空间现有的锚点（或 `_space`）；`correlationId` 起点规则用显示规则的 `pathRole`。
+- 读取有内存上限：一页最多读进 20000 条记录（原事件连同指向它们的更正），超过时本页提前结束、`nextAfter` 接着读；单条原事件的更正就超过上限（只有旧数据会这样）时 503 `too_many_corrections`。状态计算时同一时刻的记录（要一起折叠）最多 20000 条，超过 503 `state_computing`。
 - 公开读只算公开锚点上的事件：事件、密度、状态，以及 `/head` 和空间信息里的 `recordedAt`（内部锚点上的活动不能从 recordedAt 和 ETag 里看出来）。空间级锚点 `_space` 默认算公开锚点；主人把它改成内部级之后，它上面的事件和状态同样不公开。
 - 删除时是内部级的锚点记在空间文档的 `withdrawnAnchors` 里（提交事务内维护，同一编号重新写成公开级时去掉），快照和提交列表的公开投影把它当作"当前是内部级"：改成内部级再删除，不会让它在历史版本里重新公开。
 - spawnEntity 显示方式的 `entityAsset` 在登记事件类型时就按物件模型的规则检查并登记到 `assetRefs`（不等提交），所以专门为事件上传、导入的模型也能公开读取。
