@@ -5,7 +5,7 @@
 # 配置全部由部署时的环境变量注入（worker/src/metaverse_worker/config.py），这里不写 ENV。
 # 构建前端和基础镜像都按摘要固定（标签只作记号），更新时取同一标签的新摘要（Dependabot 会提）。
 
-FROM ghcr.io/astral-sh/uv:0.11.32@sha256:df4cae8f3a96d175e2e5f992e597550000edbe78fdc2594d5cd8de1a217f504c AS uv
+FROM ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490 AS uv
 
 # ---- 构建 ----
 FROM python:3.13.18-slim-trixie@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90 AS build
