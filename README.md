@@ -53,6 +53,6 @@ infra/dev/down.sh     # 停止
 
 ## 文档
 
-- [整体设计](docs/ARCHITECTURE.md)、[建设计划](docs/BUILD_PLAN.md)、[进度报告](docs/PROGRESS.md)、[形状词表](docs/SHAPES.md)
+- [整体设计](docs/ARCHITECTURE.md)、[建设计划](docs/BUILD_PLAN.md)、[进度报告](docs/PROGRESS.md)、[形状词表](docs/SHAPES.md)、[重建开源方案调研](docs/research/scan-to-model.md)
 - [建造教程](docs/tutorials/build-space.md)：用 Claude Code / Codex 建造空间、给 AI 配 agent key、写事件、组合空间
 - [开发教程](docs/tutorials/cloud-claude-code-nyxid.md)：在云端用 Claude Code 连接 NyxID 开发、部署、注册 NyxID 服务
