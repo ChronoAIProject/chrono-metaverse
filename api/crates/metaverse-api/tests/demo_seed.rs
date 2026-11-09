@@ -13,18 +13,24 @@ use std::sync::{
 use std::time::Duration;
 
 use axum::{
+    body::Body,
     extract::{Path, State},
     http::{Method, StatusCode},
-    response::IntoResponse,
+    response::{IntoResponse, Redirect},
     routing::get,
     Router,
 };
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use futures_util::TryStreamExt;
 use ingest_support::*;
 use metaverse_api::demo_seed::{
-    self, config::DemoSeedConfig, pack::stored_zip, RetryPolicy, SeedError, SeedOutcome,
+    self,
+    config::{DemoSeedConfig, FileRole, SeedFile},
+    pack::{scan_asset, stored_zip},
+    RetryPolicy, SeedError, SeedOutcome,
 };
 use metaverse_api::AppState;
+use metaverse_core::model::UploadFormat;
 use mongodb::bson::{doc, Bson, Document};
 use serde_json::{json, Value};
 
@@ -113,6 +119,33 @@ impl FileServer {
                     },
                 ),
             )
+            // 本机内的重定向（本机 http → 本机 http，允许跟随）。
+            .route(
+                "/hop/{name}",
+                get(|Path(name): Path<String>| async move {
+                    Redirect::temporary(&format!("/files/{name}"))
+                }),
+            )
+            // 重定向到公网的明文 http（不允许跟随）。
+            .route(
+                "/away/{name}",
+                get(|Path(name): Path<String>| async move {
+                    Redirect::temporary(&format!("http://downgrade.example/files/{name}"))
+                }),
+            )
+            // 不带 Content-Length 的分块响应（只能边收边数字节）。
+            .route(
+                "/stream/{name}",
+                get(
+                    |State(served): State<Served>, Path(name): Path<String>| async move {
+                        served.hits.fetch_add(1, Ordering::SeqCst);
+                        let bytes = served.files.get(&name).cloned().unwrap_or_default();
+                        let parts: Vec<Result<Vec<u8>, std::io::Error>> =
+                            bytes.chunks(64 * 1024).map(|c| Ok(c.to_vec())).collect();
+                        Body::from_stream(futures_util::stream::iter(parts)).into_response()
+                    },
+                ),
+            )
             .with_state(served.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
@@ -132,7 +165,12 @@ impl FileServer {
 
     /// 种子配置里的一项文件（哈希和大小取自 `bytes`，可以和服务上的内容不同）。
     fn file(&self, name: &str, bytes: &[u8]) -> Value {
-        json!({"url": format!("{}/files/{name}", self.base), "name": name,
+        self.file_at("files", name, bytes)
+    }
+
+    /// 同 [`FileServer::file`]，地址走 `/<route>/<name>`（`hop`、`away`、`stream`）。
+    fn file_at(&self, route: &str, name: &str, bytes: &[u8]) -> Value {
+        json!({"url": format!("{}/{route}/{name}", self.base), "name": name,
                "sha256": sha256_hex(bytes), "size": bytes.len()})
     }
 }
@@ -159,6 +197,20 @@ fn seed_json(files: Vec<Value>, extra: Value) -> String {
         seed[key] = value.clone();
     }
     seed.to_string()
+}
+
+/// 解析一份种子配置（用来在同一个库上换配置再执行）。
+fn parse_seed(seed: &str, token: Option<&str>) -> DemoSeedConfig {
+    DemoSeedConfig::from_lookup(
+        &|name| match name {
+            SEED_ENV => Some(seed.to_owned()),
+            TOKEN_ENV => token.map(str::to_owned),
+            _ => None,
+        },
+        1 << 30,
+    )
+    .unwrap()
+    .unwrap()
 }
 
 /// 按同一份配置"重新启动"：新建 `AppState` 连同一个库。
@@ -786,8 +838,72 @@ async fn existing_space_not_created_by_the_seed_is_left_alone() {
     );
 }
 
+/// 跨语言向量 `tests/vectors/demo_seed_zip.json`：种子打包出的 zip 字节，以及登记资源时写的
+/// `metadata.format` / `contentType`。这里用 Rust 实现重算并核对（`METAVERSE_WRITE_VECTORS=1` 时重新
+/// 生成）；处理服务的 `worker/tests/test_demo_seed_zip.py` 读同一个文件，用处理服务自己的格式嗅探和
+/// 解包核对。两边都在持续集成里跑，不依赖本机有没有装处理服务。
+#[test]
+fn packed_zip_vector_matches_the_implementation() {
+    let mut mesh = b"DRACO\x02\x02\x01\x01".to_vec();
+    mesh.extend((0..600_u32).map(|i| (i % 251) as u8));
+    let mut texture = b"\xff\xd8\xff\xe0".to_vec();
+    texture.extend((0..900_u32).map(|i| (i % 253) as u8));
+    let file = |name: &str, bytes: &[u8], role, format| SeedFile {
+        url: url::Url::parse(&format!("https://scaniverse.example/x/{name}")).unwrap(),
+        name: name.to_owned(),
+        sha256: sha256_hex(bytes),
+        size: bytes.len() as u64,
+        role,
+        format,
+    };
+    let drc = file("mesh.drc", &mesh, FileRole::Mesh, UploadFormat::Drc);
+    let jpg = file("tex.jpg", &texture, FileRole::Texture, UploadFormat::Jpeg);
+    let zipped = scan_asset(
+        &[drc.clone(), jpg],
+        vec![mesh.clone(), texture.clone()],
+        1 << 20,
+    )
+    .unwrap();
+    let single = scan_asset(std::slice::from_ref(&drc), vec![mesh.clone()], 1 << 20).unwrap();
+    let member = |name: &str, bytes: &[u8]| json!({"name": name, "base64": STANDARD.encode(bytes), "sha256": sha256_hex(bytes)});
+    let vector = json!({
+        "kind": "demo-seed-zip",
+        "description": "部署配置种子把网格 + 贴图打包成的 stored zip（固定时间 1980-01-01），以及登记资源时 metadata 里的 format / contentType；处理服务对同一份内容嗅探出的结果必须相同",
+        "members": [member("mesh.drc", &mesh), member("tex.jpg", &texture)],
+        "zipBase64": STANDARD.encode(&zipped.bytes),
+        "zipSha256": sha256_hex(&zipped.bytes),
+        "registered": {
+            "format": zipped.worker_format(),
+            "contentType": zipped.format.content_type(),
+            "detail": {"model": "draco", "texture": true},
+        },
+        "single": {
+            "name": "mesh.drc",
+            "format": single.worker_format(),
+            "contentType": single.format.content_type(),
+        },
+    });
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/demo_seed_zip.json");
+    if std::env::var_os("METAVERSE_WRITE_VECTORS").is_some() {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let text = serde_json::to_string_pretty(&vector).unwrap();
+        std::fs::write(&path, format!("{text}\n")).unwrap();
+    }
+    let stored: Value = serde_json::from_str(
+        &std::fs::read_to_string(&path)
+            .expect("缺少向量文件，用 METAVERSE_WRITE_VECTORS=1 运行这个测试生成"),
+    )
+    .unwrap();
+    assert_eq!(
+        stored, vector,
+        "向量与实现不一致：确认改动无误后用 METAVERSE_WRITE_VECTORS=1 重新生成"
+    );
+}
+
 /// 打包出来的 zip 处理服务读得懂：用处理服务自己的格式嗅探和解包（`processing/sniff.py`）核对。
-/// 需要 `worker/.venv`（或 `METAVERSE_WORKER_PYTHON` 指向装了处理服务的 Python）；没有就跳过。
+/// 需要 `worker/.venv`（或 `METAVERSE_WORKER_PYTHON` 指向装了处理服务的 Python）；没有就跳过
+/// （持续集成里由上面的跨语言向量和处理服务的 `test_demo_seed_zip.py` 覆盖）。
 #[test]
 fn packed_zip_is_readable_by_the_worker_sniffer() {
     let python = std::env::var("METAVERSE_WORKER_PYTHON")
@@ -839,4 +955,169 @@ print(json.dumps({"format": found.format, "contentType": found.content_type, "de
         result["texture"],
         json!(["texture.jpg", sha256_hex(&texture)])
     );
+}
+
+#[tokio::test]
+async fn redirects_and_oversized_downloads_are_checked() {
+    let (mesh, texture) = (drc(), jpg());
+    let server = FileServer::start(
+        &[("mesh.drc", mesh.clone()), ("tex.jpg", texture.clone())],
+        0,
+    )
+    .await;
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    // 重定向到公网的明文 http：不跟随，按失败处理（不重试），不建空间。
+    let away = seed_json(
+        vec![
+            server.file_at("away", "mesh.drc", &mesh),
+            server.file("tex.jpg", &texture),
+        ],
+        json!({}),
+    );
+    let error = demo_seed::run(&app.state, &parse_seed(&away, Some(TOKEN)), once())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, SeedError::Permanent(reason) if reason.contains("重定向")),
+        "{error:?}"
+    );
+    assert!(
+        !format!("{error:?}").contains("downgrade.example"),
+        "错误信息里不带地址：{error:?}"
+    );
+    // 分块响应（没有 Content-Length）比配置的大：边收边数，超过就停，不建空间。
+    let short = &texture[..texture.len() - 1];
+    let oversized = seed_json(
+        vec![
+            server.file("mesh.drc", &mesh),
+            server.file_at("stream", "tex.jpg", short),
+        ],
+        json!({}),
+    );
+    let error = demo_seed::run(&app.state, &parse_seed(&oversized, Some(TOKEN)), once())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, SeedError::Permanent(reason) if reason.contains("比配置的")),
+        "{error:?}"
+    );
+    // 带 Content-Length 的响应与配置的大小不符：读之前就拒绝。
+    let mismatched = seed_json(
+        vec![
+            server.file("mesh.drc", &mesh),
+            server.file("tex.jpg", short),
+        ],
+        json!({}),
+    );
+    let error = demo_seed::run(&app.state, &parse_seed(&mismatched, Some(TOKEN)), once())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, SeedError::Permanent(reason) if reason.contains("不符")),
+        "{error:?}"
+    );
+    for collection in ["spaces", "jobs", "assets.files", "assets.chunks", "commits"] {
+        assert_eq!(count(&app, collection, doc! {}).await, 0, "{collection}");
+    }
+    // 本机内的重定向和分块响应（大小、哈希都对）：正常建成。
+    let fine = seed_json(
+        vec![
+            server.file_at("hop", "mesh.drc", &mesh),
+            server.file_at("stream", "tex.jpg", &texture),
+        ],
+        json!({}),
+    );
+    let outcome = demo_seed::run(&app.state, &parse_seed(&fine, Some(TOKEN)), once())
+        .await
+        .unwrap();
+    assert!(
+        matches!(outcome, SeedOutcome::Created { .. }),
+        "{outcome:?}"
+    );
+}
+
+#[tokio::test]
+async fn seeded_space_keeps_its_owner_and_share_tokens() {
+    let (mesh, texture) = (drc(), jpg());
+    let server = FileServer::start(
+        &[("mesh.drc", mesh.clone()), ("tex.jpg", texture.clone())],
+        0,
+    )
+    .await;
+    let files = vec![
+        server.file("mesh.drc", &mesh),
+        server.file("tex.jpg", &texture),
+    ];
+    let seed = seed_json(files.clone(), json!({}));
+    let Some(app) = TestApp::start(&[(SEED_ENV, &seed), (TOKEN_ENV, TOKEN)]).await else {
+        return;
+    };
+    let config = app.config.demo_seed.clone().unwrap();
+    assert!(matches!(
+        demo_seed::run(&app.state, &config, once()).await.unwrap(),
+        SeedOutcome::Created { .. }
+    ));
+    let before = app
+        .collection("spaces")
+        .find_one(doc! {"_id": SPACE})
+        .await
+        .unwrap()
+        .unwrap();
+    let hits = server.hits();
+
+    // 配置换了主人（别的组织）：种子建的空间也不归它，什么都不做、不下载。
+    let other_owner = seed_json(
+        files.clone(),
+        json!({"owner": {"kind": "org", "id": OTHER_ORG}, "revision": 2}),
+    );
+    assert_eq!(
+        demo_seed::run(&app.state, &parse_seed(&other_owner, Some(TOKEN)), once())
+            .await
+            .unwrap(),
+        SeedOutcome::Foreign
+    );
+    assert_eq!(server.hits(), hits);
+
+    // 换了分享令牌、改成公开、改了名字：已有空间都不改（令牌只在第一次建空间时写入）。
+    let other_token = "another-share-token_0123456789abcdefghijklmn";
+    let changed = seed_json(
+        files,
+        json!({"name": "改过的名字", "visibility": "public", "revision": 2}),
+    );
+    assert!(matches!(
+        demo_seed::run(&app.state, &parse_seed(&changed, Some(other_token)), once())
+            .await
+            .unwrap(),
+        SeedOutcome::Resumed { .. }
+    ));
+    let after = app
+        .collection("spaces")
+        .find_one(doc! {"_id": SPACE})
+        .await
+        .unwrap()
+        .unwrap();
+    for field in [
+        "owner",
+        "ownerEvidence",
+        "visibility",
+        "shareTokens",
+        "name",
+        "createdAt",
+    ] {
+        assert_eq!(before.get(field), after.get(field), "{field}");
+    }
+    let everything = format!("{after:?}");
+    assert!(!everything.contains(other_token));
+    assert!(!everything.contains(&sha256_hex(other_token.as_bytes())));
+    // 旧令牌照常能读，新令牌读不到。
+    let public = |token: &str| {
+        let path = format!("/api/public/spaces/{SPACE}");
+        let header = format!("Share {token}");
+        let app = &app;
+        async move { app.public(&path, Some(&header), &[]).await.status }
+    };
+    assert_eq!(public(TOKEN).await, StatusCode::OK);
+    assert_eq!(public(other_token).await, StatusCode::NOT_FOUND);
 }

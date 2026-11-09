@@ -131,7 +131,7 @@ NyxID 地址只接受 https；明文 http 只允许本机地址（本地测试�
 | `tests/api.rs` | 集成测试：本地 MongoDB + 模拟 NyxID（公钥列表、组织授权接口） |
 | `tests/timeline.rs`、`tests/timeline_support/` | 时间线、草稿、公开读、管理接口的集成测试（同样的设施，另加直接写库模拟上传和处理服务） |
 | `tests/uploads_jobs.rs`、`tests/events.rs`、`tests/universes.rs`、`tests/ingest_support/` | 上传与任务、事件、组合的集成测试（同样的设施；处理服务的结果按约定的文档格式直接写库模拟） |
-| `tests/demo_seed.rs` | 部署配置种子的集成测试：本机 HTTP 服务提供文件；首次建空间、登记资源、建任务，再次启动不重复，哈希不符不建空间，重试，多副本并发，补建与新版本，别人的空间不碰；有 `worker/.venv` 时用处理服务的格式嗅探核对打包的 zip |
+| `tests/demo_seed.rs` | 部署配置种子的集成测试：本机 HTTP 服务提供文件；首次建空间、登记资源、建任务，再次启动不重复，哈希不符、404、重定向到不允许的地址、响应比声明的大都不建空间，重试，多副本并发，补建与新版本，别人的空间不碰，配置换了主人 / 令牌 / 可见性也不改已有空间；跨语言向量 `tests/vectors/demo_seed_zip.json`（打包的 zip 字节和登记的 `format` / `contentType`，处理服务的 `tests/test_demo_seed_zip.py` 用自己的嗅探和解包核对）；有 `worker/.venv` 时另外直接调用处理服务核对 |
 
 ### 目前实现的接口
 
