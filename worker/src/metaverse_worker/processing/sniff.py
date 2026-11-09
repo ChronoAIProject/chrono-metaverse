@@ -18,10 +18,8 @@ import os
 import zipfile
 from dataclasses import dataclass
 
-from PIL import Image
-
 from ..errors import InputRejected
-from .scan import sniff_format
+from .scan import guard_pixels, image_dimensions, sniff_format
 
 PURPOSES = ("scan", "model", "texture", "ops", "script")
 MODEL_FORMATS = ("glb", "draco", "obj")
@@ -42,8 +40,6 @@ CONTENT_TYPES = {
 
 MAX_ZIP_MEMBERS = 256
 MAX_LINE_BYTES = 16 << 20
-
-Image.MAX_IMAGE_PIXELS = None  # 像素上限由我们自己在解码前检查
 
 
 @dataclass(frozen=True)
@@ -67,15 +63,12 @@ def image_size(path: str) -> tuple[str, int, int]:
         fmt = sniff_format(fh.read(64))
     if fmt not in IMAGE_FORMATS:
         raise InputRejected("贴图只接受 png、jpeg、webp")
-    try:
-        with Image.open(path) as img:
-            w, h = img.size
-    except Exception as error:
-        raise InputRejected(f"贴图无法识别：{error}") from error
+    w, h = image_dimensions(path)
     return fmt, w, h
 
 
 def check_texture(path: str, max_side: int, max_pixels: int) -> Sniffed:
+    guard_pixels(max_pixels)
     fmt, w, h = image_size(path)
     if w < 1 or h < 1 or w > max_side or h > max_side:
         raise InputRejected(f"贴图尺寸 {w}×{h} 超过上限 {max_side}×{max_side}")

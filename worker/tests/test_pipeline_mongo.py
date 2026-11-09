@@ -36,7 +36,7 @@ from metaverse_worker.processing.glb import read_glb_json
 from metaverse_worker.processing.scan import ScanMesh, rotation_y
 from metaverse_worker.runner import Runner
 from metaverse_worker.store import C
-from metaverse_worker.timeutil import format_ts
+from metaverse_worker.timeutil import format_ts, parse_ts
 from synthetic import room_mesh
 from test_voxelize_rebuild import dense_box_glb
 
@@ -468,6 +468,36 @@ def test_rescan_with_large_error_needs_alignment(runner, store):
     c2 = commits(store)[1]
     assert c2["scan"]["transform"] == given and doc["result"]["alignment"]["method"] == "given"
     assert c2["changedEntities"] == []
+
+
+def test_scan_waiting_for_manual_alignment_survives_cleanup(runner, store, db_config):
+    """转人工的扫描没有提交引用：保留到 result.retainUntil（WORKER_ALIGN_HOLD_DAYS），之后才按宽限期清理。"""
+    import_room(runner, store, rebuild=False)
+    other = room_mesh(diagonal=False)
+    other = ScanMesh(other.vertices * np.array([1.6, 1.0, 0.7]), other.faces, other.uv, other.texture)
+    asset, doc = import_room(runner, store, other, rebuild=False)
+    result = doc["result"]
+    assert result["needsAlignment"] is True and len(commits(store)) == 1
+    hold_ms = int(db_config.align_hold_days * 24 * 3600 * 1000)
+    retain = parse_ts(result["retainUntil"]) - store.clock()
+    assert hold_ms - 60_000 < retain <= hold_ms
+    assert find_asset(store, asset)["metadata"]["touchedAt"] is not None
+
+    # 上传和最近复用都已超过宽限期：保留期内不删
+    long_ago = {
+        "$set": {
+            "uploadDate": datetime(2020, 1, 1, tzinfo=UTC),
+            "metadata.touchedAt": datetime(2020, 1, 1, tzinfo=UTC),
+        }
+    }
+    store.col(C.ASSET_FILES).update_one({"filename": asset}, long_ago)
+    assert cleanup_assets(store, 7) == 0 and find_asset(store, asset) is not None
+
+    # 保留期过了还没人对齐：按宽限期清理
+    store.jobs.update_one(
+        {"_id": doc["_id"]}, {"$set": {"result.retainUntil": format_ts(store.clock() - 1000)}}
+    )
+    assert cleanup_assets(store, 7) == 1 and find_asset(store, asset) is None
 
 
 def test_scan_import_reuses_previous_transform_and_validates(runner, store):

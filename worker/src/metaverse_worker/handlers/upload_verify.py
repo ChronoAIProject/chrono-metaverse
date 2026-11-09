@@ -28,11 +28,18 @@ import logging
 from typing import Any
 
 from ..assets import AssetError, find_asset, iter_file_chunks, register_upload, touch_asset
-from ..errors import InputRejected, PermanentJobError
+from ..errors import InputRejected, PermanentJobError, SpaceGone
 from ..jobs.lease import Lease, mark_done
 from ..processing.sniff import PURPOSES
 from ..store import C, Store, UploadStatus
-from ..uploads import declared, fail_upload, find_upload, finish_upload, settle_upload
+from ..uploads import (
+    declared,
+    fail_upload,
+    find_upload,
+    finish_upload,
+    settle_upload,
+    upload_space_filter,
+)
 from .context import JobContext
 
 log = logging.getLogger(__name__)
@@ -71,6 +78,12 @@ def run(ctx: JobContext) -> dict[str, Any]:
         return result
     if status != UploadStatus.COMPLETE:
         raise PermanentJobError(f"上传 {upload_id} 的状态是 {status}，不能校验")
+    space = upload_space_filter(ctx.lease.space_id, ctx.lease.owner, doc)
+    if store.spaces.find_one(space, {"_id": 1}) is None:
+        # 上传所在的空间实例不在了（被删除，或删除后用同一个编号重建）：不登记、不计用量
+        gone = SpaceGone(ctx.lease.space_id)
+        _fail_upload(ctx, files_id, str(gone))
+        raise gone
 
     sha, size, purpose = declared(doc)
     try:
@@ -93,8 +106,12 @@ def run(ctx: JobContext) -> dict[str, Any]:
         return _finish(ctx, files_id, sha, size, meta.get("format"), meta.get("contentType"), reused=False)
     has_chunks = store.col(C.ASSET_CHUNKS).find_one({"files_id": files_id}, {"_id": 1}) is not None
     if existing is not None and not has_chunks and doc.get("verifiedSha256") == sha:
-        # 上次已核对通过、登记时发现重名并删掉了本次数据块，只差收尾
-        touch_asset(store, sha)
+        # 上次已核对通过、登记时发现重名并删掉了本次数据块，只差收尾。复用前先刷新那份资源：刷新没匹配到
+        # 说明它刚被清理删掉，本次的数据块也已经没了，只能让调用方重新上传
+        if not touch_asset(store, sha):
+            reason = "内容相同的已有资源刚被清理，本次的数据也已删除，请重新上传"
+            _fail_upload(ctx, files_id, reason)
+            raise PermanentJobError(reason)
         meta = existing.get("metadata") or {}
         return _finish(ctx, files_id, sha, size, meta.get("format"), meta.get("contentType"), reused=True)
 
@@ -171,7 +188,12 @@ def _finish(
         )
         mark_done(ctx.store, ctx.lease, result=result, session=session)
 
-    ctx.store.run_transaction(txn)
+    try:
+        ctx.store.run_transaction(txn)
+    except SpaceGone as error:
+        # 校验期间空间被删除（或删除后重建）：上传不完成到别的空间实例里
+        _fail_upload(ctx, files_id, str(error))
+        raise
     log.info("上传 %s 校验通过：%s（%s）", files_id, sha, "复用已有资源" if reused else "新登记")
     return result
 

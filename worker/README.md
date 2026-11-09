@@ -89,6 +89,7 @@ uv lock --upgrade-package numpy     # 只升级某一个依赖
 | `WORKER_MODEL_MAX_TRIANGLES` | 10 万 | 物件模型重新导出的三角形上限 |
 | `WORKER_MODEL_MAX_TEXTURE_SIDE` | 2048 | 物件模型重新导出的贴图长边上限 |
 | `WORKER_ALIGN_MAX_ERROR_CM` | 3 | 重扫配准误差超过它就不自动提交，转人工 |
+| `WORKER_ALIGN_HOLD_DAYS` | 30 | 转人工的扫描保留多久等人工对齐（这期间定期清理不删它，见"定期清理"） |
 | `WORKER_WORKDIR` | 系统临时目录 | 下载扫描、子进程交换数据的本地目录（每个任务一个子目录，结束就删） |
 | `LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL` |
 
@@ -101,9 +102,18 @@ uv lock --upgrade-package numpy     # 只升级某一个依赖
 失败分类：参数不合法、输入超限 / 格式不对、子进程内存超限或超时 → 不可重试，直接 `failed`；其他错误
 （数据库抖动、子进程崩溃等）→ 退回队列，`maxAttempts`（默认 3）用完后 `failed`。`lastError` 写原因。
 
+**空间实例**：接口服务删除空间时不清理任务和上传，同一个主人之后可以用同一个编号重建空间。所以处理服务
+读写 `spaces` 的条件除了 `{_id, owner.kind, owner.id}`，还要求空间的 `createdAt` 不晚于记录（任务或上传）
+的 `createdAt`（`store.space_filter`，固定格式的 RFC 3339 字符串直接比较）：空间更新，说明记录是在被删掉的
+那个空间里建的。这样的任务（`scan_import`、`rebuild`、`voxelize`、`model_import`）直接失败，不可重试，
+不会把旧扫描写进新空间的时间线、固定它的坐标系；这样的上传标记 `failed`，不登记、不计用量；资源被清理时
+也不会从新空间的用量里减回旧上传计过的字节。处理服务在提交事务里建的后续任务用提交的 `at`（不早于 head），
+不受影响。没有 `createdAt` 的空间不做这项比较。
+
 ### `upload_verify` `{uploadId}`
 
-1. 上传已是 `done`：直接完成；状态不是 `complete`：失败；
+1. 上传已是 `done`：直接完成；状态不是 `complete`：失败；上传所在的空间实例不在了（见上面的"空间实例"）：
+   上传标记 `failed`、任务失败；
 2. 流式读出全部数据块（`assets.chunks`，`files_id` = 上传编号），核对序号连续、块大小、总长度，边算
    sha256 边写临时文件；不完整或哈希不符 → 上传标记 `failed`、删数据块、任务失败；
 3. 按用途嗅探格式（子进程里）：
@@ -162,11 +172,18 @@ uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceI
 
    ```json
    {"needsAlignment": true, "scanAssetHash": "…", "referenceScan": "…", "proposedTransform": [16 个数],
-    "errorCm": 4.7, "maxErrorCm": 3, "alignment": {…}, "candidates": [{"quarterTurns": 0, "score": …, "errorCm": …, "overlap": …}], "timings": {…}}
+    "errorCm": 4.7, "maxErrorCm": 3, "alignment": {…}, "candidates": [{"quarterTurns": 0, "score": …, "errorCm": …, "overlap": …}], "timings": {…},
+    "retainUntil": "2026-12-09T08:00:00.000Z"}
    ```
 
-   人工确认后由接口服务用 `{assetHash, transform}` 重新发起 `scan_import`；
-4. **解析前检查**：三角形数、贴图像素（读文件头）、对齐后包围盒与实体区交集的格数；
+   人工确认后由接口服务用 `{assetHash, transform}` 重新发起 `scan_import`。这份扫描此时还没被任何提交引用，
+   所以在 `retainUntil`（完成时间 + `WORKER_ALIGN_HOLD_DAYS`，默认 30 天）之前定期清理把它算作被引用，
+   任务完成时也刷新资源的 `touchedAt`；过了保留期还没人对齐，就按宽限期规则清理；
+4. **解析前检查**：三角形数、贴图像素（读文件头）、对齐后包围盒与实体区交集的格数。贴图像素在任何解码
+   之前检查：glb 的每张贴图不论放在 BIN 块、`data:` 数据块还是 `data:` 图片里都读文件头查尺寸，引用外部
+   文件或读不到对应位置的直接拒绝；zip 里单独给的贴图在加载模型之前就查（obj 的材质可能引用它）；trimesh
+   打开的贴图在转成数组之前再按尺寸查一次。PIL 自带的解压炸弹检查按 `WORKER_MAX_TEXTURE_PIXELS` 打开
+   （超过两倍时 `Image.open` 直接报错），作为兜底；
 5. **网页用模型**：两档 glb（单网格、内嵌 JPEG 底色贴图、不压缩、坐标保持扫描原坐标、材质声明
    `KHR_materials_unlit`）：`[0]` ≤ 30 万三角形、贴图 ≤ 4096²（网页加载这一档）；`[1]` ≤ 6 万三角形、
    贴图 ≤ 1024²。减面用 fast-simplification 的折叠历史，顶点取原始顶点的位置和贴图坐标。扫描网格按贴图分块，
@@ -282,7 +299,8 @@ uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceI
 读 glb / obj / drc（或含它们的 zip）→ 解析前检查（三角形数、贴图像素、坐标不超过 ±1000 米）→ 超过
 `WORKER_MODEL_MAX_TRIANGLES` 就减面、贴图缩到 `WORKER_MODEL_MAX_TEXTURE_SIDE` 以内（有透明就存 PNG，否则
 JPEG）→ 重新导出 glb（没有贴图时保留顶点颜色或材质底色）。登记处理后的资源（`metadata.kind = model`，
-`metadata.sourceHash` = 原资源），不写提交：
+`metadata.sourceHash` = 原资源），不写提交；同一个事务里任务标记完成、处理后的模型计入发起任务的空间用量
+（任务的 `storageBytes`，见"空间存储用量"）：
 
 `result = {modelHash, sourceHash, bytes, triangles, vertices, sourceTriangles, textureSide, bounds: {min, max}}`。
 
@@ -313,17 +331,23 @@ result.metrics  # 任意 JSON，原样放进 result.objects
 ## 空间存储用量
 
 `spaces.storageUsedBytes`（设计 4.1；接口服务创建上传时按"已用 + 进行中的上传 + 本次大小 > storageLimitBytes"
-返回 413）由处理服务累加，都按 `{_id, owner.kind, owner.id}` 条件更新，和引起变化的写入在同一个事务里：
+返回 413）由处理服务累加，都按 `{_id, owner.kind, owner.id}` 加空间实例（见"空间实例"）条件更新，和引起
+变化的写入在同一个事务里：
 
 | 时机 | 变化 |
 |---|---|
 | `upload_verify` 把上传改成 `done`（新登记或复用已有资源都算） | `+size`，上传写 `storageBytes = size` |
 | 处理服务写的提交（`scan_import`、`rebuild`）在 `assetRefs` 里**新**登记本空间的派生资源（网页用模型、贴图） | `+资源字节数`（同一空间同一资源只计一次） |
-| 定期清理删掉没人引用的资源 | 对每个 `assetHash` 是它、带 `storageBytes`、还没有 `storageReleasedAt` 的上传：写 `storageReleasedAt`，所属空间 `-storageBytes`（减到 0 为止，接口服务按 u64 读） |
+| `model_import` 完成（处理后的模型新登记或复用已有资源都算） | `+模型字节数`，任务写 `storageBytes`；和任务完成在同一个事务里 |
+| 定期清理删掉没人引用的资源 | 对每个 `assetHash` 是它、带 `storageBytes`、还没有 `storageReleasedAt` 的上传，以及 `result.modelHash` 是它的同样的 `model_import` 任务：写 `storageReleasedAt`，所属空间 `-storageBytes`（减到 0 为止，接口服务按 u64 读） |
 
-不计入的：区块、物件记录、方块表（在各自的集合里，不在 GridFS）；`model_import` 重新导出的模型（它的来源
-上传已经计入）。接口服务在"哈希已存在、直接复用"创建上传（创建即 `done`）时也应 `+size` 并写
-`storageBytes`，这样资源被清理时能一并减回。
+规则是"谁在 GridFS 里产生一份新的资源，谁就在产生时计入、在资源被删时成对减回"：原始上传过了宽限期没人
+引用就会被清理、减回，而处理后的模型可以被提交永久引用，所以它必须单独计入，不能靠"来源上传已经计入"。
+引用已经计过的资源（接口服务发布草稿时登记 `assetRefs`、放物件引用 `modelHash`）不再计。
+
+不计入的：区块、物件记录、方块表（在各自的集合里，不在 GridFS）。接口服务自己产生的资源也应按同一规则
+计入：在"哈希已存在、直接复用"创建上传（创建即 `done`）时 `+size` 并写 `storageBytes`；发布草稿时把多个
+操作文件合并成一个新资源（`put_asset_bytes`）时，在提交事务里计入并记下来，资源被清理时才能一并减回。
 
 ## 定期清理
 
@@ -340,8 +364,14 @@ result.metrics  # 任意 JSON，原样放进 result.objects
    （`{draftId, spaceId}`）；预览令牌（最长 7 天）和草稿区块再各自按自己的 `expiresAt` 扫一遍。每轮最多
    200 个草稿；
 3. **没人引用的资源**：上传或最近复用超过 `WORKER_ASSET_GRACE_DAYS`（7 天）、没有被引用的资源，先删 `files`
-   文档再删数据块，再把计过用量的上传从各自空间的 `storageUsedBytes` 里减回（见上）。草稿在第 2 步先删，
-   过期草稿引用的资源本轮就不再算被引用；
+   文档再删数据块，再把计过用量的上传、物件模型导出从各自空间的 `storageUsedBytes` 里减回（见上）。草稿在
+   第 2 步先删，过期草稿引用的资源本轮就不再算被引用。
+
+   查引用和删除之间没有锁，删除带"`metadata.touchedAt` 仍早于截止时间"的条件，这是唯一的栅栏。**引用一个
+   已有资源的一方**（处理服务复用已有资源登记、上传复用已有资源收尾；接口服务的草稿追加、发布登记
+   `assetRefs`、"哈希已存在、直接复用"的上传）**必须先按 `filename` 刷新 `metadata.touchedAt` 并要求匹配到
+   1 条**：刷新之后清理就删不掉它；匹配不到说明它刚被删掉，按资源不存在处理（处理服务重新登记本次的内容，
+   或让上传失败、要求重新上传）；
 4. **补打区块的 `publishedAt`**（设计 5.7："幂等，失败可以补做"）：最近 48 小时的提交（处理服务和接口服务
    写的都算，按空间走 `(spaceId, at)` 索引）引用、还没有 `publishedAt` 的区块，按提交的 `at` 补上。写回在
    事务提交之后才打 `publishedAt`，进程恰好在两步之间退出时，这些区块在公开接口上会一直 404。任务被重新
@@ -361,6 +391,7 @@ draftChunks, assets, publishedChunks}`。
 | `palettes` | `blocks.texture.top / side / bottom` |
 | `drafts`（接口服务的草稿文档） | `opsRefs.assetHash`（经上传追加的操作文件）、`assets` |
 | 排队中 / 运行中的 `jobs` | `params` 里任意位置的字符串 |
+| 已完成、等人工对齐的 `scan_import` 任务 | `result.scanAssetHash`（`result.needsAlignment` 为真、`result.retainUntil` 还没到） |
 
 ## 测试
 

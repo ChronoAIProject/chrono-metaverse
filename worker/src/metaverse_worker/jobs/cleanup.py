@@ -6,7 +6,9 @@
    校验任务已经失败、上传却还停在 `complete` 的（`uploads.settle_stuck_uploads`），免得它一直占着配额。
 2. **没人引用的资源**：上传（或最近一次被复用）已超过 7 天、仍没有被任何提交、草稿（`opsRefs.assetHash`、
    `assets`）、物件记录、方块表、资源引用表或未结束的任务引用的资源：先删 `files` 文档（不再可见），
-   再删数据块，最后把上传时计入的存储用量从各自空间的 `storageUsedBytes` 里减回去。
+   再删数据块，最后把上传时（以及物件模型导出时）计入的存储用量从各自空间的 `storageUsedBytes` 里减回去。
+   重扫配准误差过大、等人工对齐的扫描（完成的 `scan_import` 任务 `result.needsAlignment`）在任务的
+   `result.retainUntil` 之前也算被引用。
 3. **过期的草稿、草稿区块、预览令牌**（设计 5.6、13.2）：接口服务把 `drafts`、`draftChunks`、`previews` 的
    `expiresAt` 写成 RFC 3339 字符串（固定格式，字符串比较就是时间比较），不建 TTL 索引，由这里清理。
    过期的草稿（不论是否已发布）先删草稿本身，再删它的预览令牌和草稿区块；预览令牌（最长 7 天）和草稿区块
@@ -28,7 +30,7 @@ from typing import Any
 from ..assets import delete_file_chunks
 from ..store import C, JobStatus, Store, UploadStatus
 from ..timeutil import format_ts
-from ..uploads import release_upload_storage, settle_stuck_uploads
+from ..uploads import release_model_storage, release_upload_storage, settle_stuck_uploads
 from .writeback import backfill_published_chunks
 
 log = logging.getLogger(__name__)
@@ -68,8 +70,11 @@ def cleanup_uploads(store: Store, ttl_hours: float) -> int:
     return removed
 
 
-def _referenced(store: Store, sha: str) -> bool:
-    """资源是否仍被引用。这些查询在资源少的第一版可以接受；量大以后再给相应字段加索引。"""
+def _referenced(store: Store, sha: str, now: str) -> bool:
+    """资源是否仍被引用。这些查询在资源少的第一版可以接受；量大以后再给相应字段加索引。
+
+    `now` 是当前时间（RFC 3339 字符串），判断转人工的扫描是否还在保留期内。
+    """
     checks: list[tuple[str, dict[str, Any]]] = [
         (C.ASSET_REFS, {"hash": sha}),
         (
@@ -104,7 +109,18 @@ def _referenced(store: Store, sha: str) -> bool:
             return True
     # 未结束的任务的参数里提到了它（例如排队中的对齐任务）
     pending = store.jobs.find({"status": {"$in": [JobStatus.QUEUED, JobStatus.RUNNING]}}, {"params": 1})
-    return any(sha in _strings(job.get("params")) for job in pending)
+    if any(sha in _strings(job.get("params")) for job in pending):
+        return True
+    # 重扫配准误差过大、等人工对齐的扫描（设计 6.2）：任务已经完成但没有提交引用它，保留到 retainUntil。
+    # 放在未结束任务之后查：任务在两次查询之间结束时，前一次看到它还在运行，后一次看到完成的结果。
+    held = {
+        "kind": "scan_import",
+        "status": JobStatus.DONE,
+        "result.needsAlignment": True,
+        "result.scanAssetHash": sha,
+        "result.retainUntil": {"$gt": now},
+    }
+    return store.jobs.find_one(held, {"_id": 1}) is not None
 
 
 def _strings(value: Any) -> set[str]:
@@ -122,7 +138,9 @@ def _strings(value: Any) -> set[str]:
 
 
 def cleanup_assets(store: Store, grace_days: float) -> int:
-    cutoff = datetime.fromtimestamp(store.clock() / 1000, tz=UTC) - timedelta(days=grace_days)
+    now_ms = store.clock()
+    now = format_ts(now_ms)
+    cutoff = datetime.fromtimestamp(now_ms / 1000, tz=UTC) - timedelta(days=grace_days)
     removed = 0
     candidates = (
         store.col(C.ASSET_FILES)
@@ -137,9 +155,11 @@ def cleanup_assets(store: Store, grace_days: float) -> int:
     )
     for doc in list(candidates):
         sha = doc.get("filename")
-        if not isinstance(sha, str) or _referenced(store, sha):
+        if not isinstance(sha, str) or _referenced(store, sha, now):
             continue
-        # 条件删除：期间被复用（touchedAt 更新）就不删。
+        # 条件删除：期间被复用（touchedAt 更新）就不删。查引用和删除之间没有锁，这是唯一的栅栏：
+        # 引用已有资源的一方必须先刷新 touchedAt 并确认匹配到 1 条（assets.touch_asset），匹配不到就按资源
+        # 不存在处理。处理服务自己的复用路径都这样做；接口服务的草稿追加、发布、复用上传也要遵守。
         gone = store.col(C.ASSET_FILES).delete_one(
             {
                 "_id": doc["_id"],
@@ -148,8 +168,9 @@ def cleanup_assets(store: Store, grace_days: float) -> int:
         )
         if gone.deleted_count == 1:
             delete_file_chunks(store, doc["_id"])
-            # 这份内容不再占空间：把计过用量的上传从各自空间的 storageUsedBytes 里减回去
+            # 这份内容不再占空间：把计过用量的上传、物件模型导出从各自空间的 storageUsedBytes 里减回去
             release_upload_storage(store, sha)
+            release_model_storage(store, sha)
             removed += 1
     if removed:
         log.info("清理了 %d 个没人引用的资源", removed)

@@ -86,17 +86,33 @@ class Owner:
         return {"kind": self.kind, "id": self.id}
 
 
+def space_filter(space_id: Any, owner: Owner, record_created_at: Any = None) -> dict[str, Any]:
+    """`spaces` 文档的条件：`{_id, owner.kind, owner.id}`，主人变了就匹配不到。
+
+    空间编号在删除后可以被同一个主人重新使用（接口服务删除空间时不清理任务和上传）。任务、上传都是在某个
+    空间"实例"里建的：给了记录的创建时间 `record_created_at`（RFC 3339 字符串，固定格式，字符串比较就是
+    时间比较）时，再要求空间的 `createdAt` 不晚于它。空间的 `createdAt` 更晚，说明记录建好之后空间被删除、
+    又用同一个编号重建了，那是另一个空间，旧任务不能写进它的时间线，旧上传也不能改它的存储用量。
+    没有 `createdAt` 的空间（旧数据）不做这项比较。
+    """
+    filt: dict[str, Any] = {"_id": space_id, "owner.kind": owner.kind, "owner.id": owner.id}
+    if isinstance(record_created_at, str) and record_created_at:
+        filt["createdAt"] = {"$not": {"$gt": record_created_at}}
+    return filt
+
+
 @dataclass(frozen=True)
 class SystemScope:
-    """后台任务的"系统范围"：某个空间、某个主人，附带产生它的任务编号（审计用）。"""
+    """后台任务的"系统范围"：某个空间、某个主人，附带产生它的任务编号（审计用）和任务的创建时间。"""
 
     space_id: str
     owner: Owner
     job_id: str
+    created_at: str | None = None  # 任务记录的 createdAt：只认这之前建的空间实例（见 `space_filter`）
 
     def space_filter(self) -> dict[str, Any]:
-        """`spaces` 文档：`{_id, owner.kind, owner.id}`，主人变了就匹配不到。"""
-        return {"_id": self.space_id, "owner.kind": self.owner.kind, "owner.id": self.owner.id}
+        """`spaces` 文档的条件：主人变了、或空间在任务创建之后被删除重建，都匹配不到。"""
+        return space_filter(self.space_id, self.owner, self.created_at)
 
     def child_filter(self, **extra: Any) -> dict[str, Any]:
         """子集合：`{spaceId, owner.kind, owner.id, ...}`。"""
