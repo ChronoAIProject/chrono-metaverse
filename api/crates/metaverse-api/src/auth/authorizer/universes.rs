@@ -407,6 +407,54 @@ impl Authorizer {
         })
     }
 
+    /// 公开读空间，同时返回授权信息（`/head` 把它放进进程内缓存）。规则同 [`Authorizer::public_space`]。
+    pub async fn public_space_with_policy(
+        &self,
+        space_id: &str,
+        share_token: Option<&str>,
+    ) -> Result<(Grant, crate::repo::SpacePolicy), ApiError> {
+        if !is_space_id(space_id) {
+            return Err(ApiError::not_found());
+        }
+        let policy = self
+            .repo
+            .space_policy(&Self::key(), space_id)
+            .await?
+            .ok_or_else(ApiError::not_found)?;
+        let grant = Self::public_space_from_policy(space_id, &policy, share_token)?;
+        Ok((grant, policy))
+    }
+
+    /// 组合在 T 时刻的修订，以及读取各成员空间公开数据的凭据（成员资格就是同意被凭组合
+    /// 查看，设计 8.2、12）。T 之前没有修订时返回空。
+    pub async fn universe_member_grants_at(
+        &self,
+        universe: &UniverseGrant,
+        at: Timestamp,
+    ) -> Result<(Option<metaverse_core::model::UniverseRevision>, Vec<Grant>), ApiError> {
+        let Some(revision) = self.repo.universe_revision_at(universe, at).await? else {
+            return Ok((None, Vec::new()));
+        };
+        let mut grants = Vec::with_capacity(revision.state.members.len());
+        for member in &revision.state.members {
+            let policy = self
+                .repo
+                .space_policy(&Self::key(), &member.space_id)
+                .await?
+                .ok_or_else(|| {
+                    tracing::error!(universe = %universe.universe_id, space = %member.space_id, "组合成员空间不存在");
+                    ApiError::internal()
+                })?;
+            grants.push(Grant {
+                space_id: member.space_id.clone(),
+                owner: policy.owner,
+                access: GrantAccess::Public,
+                public_basis: Some(PublicBasis::ShareToken),
+            });
+        }
+        Ok((Some(revision), grants))
+    }
+
     /// 用缓存的空间授权信息签发公开凭据（`/head` 的进程内缓存命中时用，令牌照样要校验）。
     pub fn public_space_from_policy(
         space_id: &str,
