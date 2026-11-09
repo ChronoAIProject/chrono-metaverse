@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { MAX_OPS_PER_BATCH } from '../core/ops.js';
-import { idOf } from '../transport/api.js';
+import { idOf, PREVIEW_TTL_MAX, PREVIEW_TTL_MIN } from '../transport/api.js';
 import { ApiError } from '../transport/client.js';
 import { describeJob, upload, waitForJob } from '../transport/upload.js';
 import { opsToNdjson, runBuild } from '../workspace/build.js';
@@ -27,23 +27,44 @@ metaverse publish <草稿编号>。
 
 选项：
   --plot <地块>       目标地块（不给就是实体区，或 metaverse.json 的 plot）
-  --message <说明>    提交说明（默认用建造脚本返回的 message）
+  --message <说明>    提交说明（默认用建造脚本返回的 message）。说明记进 out/drafts.json，
+                      发布时作为提交说明（接口服务在发布时才收说明，建草稿不收）
   --inline            不上传文件，直接分批（每批 ≤ ${MAX_OPS_PER_BATCH} 条）调用批量操作接口
   --no-preview        不生成预览链接
-  --preview-ttl <秒>  预览链接有效期（默认 24 小时，最长 7 天）
+  --preview-ttl <秒>  预览链接有效期，60–604800 秒的整数（默认 24 小时，最长 7 天）
   --part-size <MiB>   上传分片大小（默认 8）`;
 
 export const PUBLISH_HELP = `metaverse publish <草稿编号> [--plot <地块>] [--message <说明>] [--replay]
 
 发布草稿（所用 agent key 的操作范围要包含发布接口）。草稿属于创建时的路径范围：push 时记下了
 草稿的地块，也可以用 --plot 指定。时间线已前进且与草稿冲突时返回冲突的键；--replay 请服务端
-在最新版本上重放草稿的操作。`;
+在最新版本上重放草稿的操作。
+
+选项：
+  --plot <地块>       草稿所属的地块（默认用 push 时记下的）
+  --message <说明>    提交说明（默认用 push 时记下的说明：--message 或建造脚本返回的 message）
+  --replay            冲突时在最新版本上重放`;
+
+/** 提交说明的上限（接口服务按字符数检查）。 */
+export const MAX_MESSAGE_CHARS = 2000;
+
+/** 与接口服务相同的提交说明检查：不能为空、≤ 2000 字、除换行外不含控制字符。 */
+export function messageError(message: string): string | null {
+  if (message.trim() === '') return '提交说明不能为空';
+  if ([...message].length > MAX_MESSAGE_CHARS) return `提交说明最多 ${MAX_MESSAGE_CHARS} 字`;
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/.test(message))
+    return '提交说明不能含控制字符（换行除外）';
+  return null;
+}
 
 interface DraftRecord {
   readonly plot: string | null;
   readonly baseSeq: number;
   readonly opCount: number;
   readonly createdAt: string;
+  /** 提交说明：发布时没给 --message 就用它。 */
+  readonly message?: string;
   readonly preview?: string;
 }
 
@@ -109,23 +130,49 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
     return 0;
   }
   if (!result.base.pulled) throw new CliError('工作区还没有拉取：先运行 metaverse pull');
+  // 预览有效期也先检查：草稿建好、操作应用之后才发现不合法就晚了。
+  const ttl = flag(values, 'no-preview') ? undefined : num(values, 'preview-ttl');
+  if (
+    ttl !== undefined &&
+    (!Number.isInteger(ttl) || ttl < PREVIEW_TTL_MIN || ttl > PREVIEW_TTL_MAX)
+  ) {
+    throw new CliError(
+      `--preview-ttl 必须是 ${PREVIEW_TTL_MIN} 到 ${PREVIEW_TTL_MAX} 之间的整数（秒）`,
+    );
+  }
+  // 接口服务建草稿时不收说明，说明记进 drafts.json，发布时再给。先在本地检查，免得发布时才失败。
+  const message = str(values, 'message') ?? result.message ?? undefined;
+  if (message !== undefined) {
+    const error = messageError(message);
+    if (error !== null) throw new CliError(`没有推送：${error}`);
+  }
   const api = makeApi(ctx, ws, values);
+  // 上传校验和 ops_from_upload 任务都属于草稿所在的路径范围，查任务也走同一范围的路径。
   const waitOptions = {
+    plot,
     onUpdate: (job: Parameters<typeof describeJob>[0]) => say(describeJob(job)),
     ...(ctx.sleep ? { sleep: ctx.sleep } : {}),
   };
   const baseSeq = result.base.space.seq;
-  const space = await api.getSpace();
-  if (space.head.seq !== baseSeq) {
+  let headSeq: number | null = null;
+  try {
+    headSeq = (await api.getSpace()).head.seq;
+  } catch (error) {
+    // 地块合作方的 agent key 一般只开放地块路径（设计 9.3），读不了实体区路径的空间信息：
+    // 跳过这项提示，发布时服务端照样检查冲突。
+    if (!(plot && error instanceof ApiError && (error.status === 403 || error.status === 404))) {
+      throw error;
+    }
     say(
-      `注意：时间线已从 seq ${baseSeq} 前进到 ${space.head.seq}；发布时服务端会检查冲突（冲突就先 pull 再 build、push）`,
+      `注意：读不了空间信息（HTTP ${error.status}，地块 key 一般只开放地块路径），跳过时间线检查；发布时服务端会检查冲突`,
     );
   }
-  const message = str(values, 'message') ?? result.message ?? undefined;
-  const draft = await api.createDraft(
-    { baseSeq, ...(message !== undefined ? { message } : {}) },
-    plot,
-  );
+  if (headSeq !== null && headSeq !== baseSeq) {
+    say(
+      `注意：时间线已从 seq ${baseSeq} 前进到 ${headSeq}；发布时服务端会检查冲突（冲突就先 pull 再 build、push）`,
+    );
+  }
+  const draft = await api.createDraft({ baseSeq }, plot);
   const draftId = idOf(draft, 'draftId');
   if (draftId === undefined) throw new CliError('建草稿的响应里没有草稿编号');
   say(`已建草稿 ${draftId}（${plot ? `地块 ${plot}` : '实体区'}，基于 seq ${baseSeq}）`);
@@ -143,20 +190,19 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
       purpose: 'ops',
       source: { bytes: ndjson },
       plot,
-      contentType: 'application/x-ndjson',
-      fileName: 'ops.ndjson',
+      format: 'ndjson',
       ...(partMiB !== undefined ? { partSize: Math.round(partMiB * 1024 * 1024) } : {}),
     });
     say(
       `已上传操作文件（${result.ops.length} 条，${ndjson.length} 字节，资源 ${uploaded.assetHash}）`,
     );
     if (uploaded.jobId !== null) await waitForJob(api, uploaded.jobId, waitOptions);
+    // 接口服务只接受 { uploadId } 或 { assetHash } 之一：有上传编号（包括复用已有内容时）就用它。
     const started = await api.opsFromUpload(
       draftId,
-      {
-        assetHash: uploaded.assetHash,
-        ...(uploaded.uploadId !== null ? { uploadId: uploaded.uploadId } : {}),
-      },
+      uploaded.uploadId !== null
+        ? { uploadId: uploaded.uploadId }
+        : { assetHash: uploaded.assetHash },
       plot,
     );
     const jobId = idOf(started, 'jobId');
@@ -169,8 +215,7 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
   }
   let link: string | null = null;
   if (!flag(values, 'no-preview')) {
-    const ttl = num(values, 'preview-ttl');
-    const preview = await api.preview(draftId, ttl !== undefined ? { ttlSec: ttl } : {}, plot);
+    const preview = await api.preview(draftId, ttl !== undefined ? { ttlSeconds: ttl } : {}, plot);
     link = previewLink(ws.config.webUrl, preview);
   }
   saveDraft(ws.root, draftId, {
@@ -178,6 +223,7 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
     baseSeq,
     opCount: result.ops.length,
     createdAt: new Date().toISOString(),
+    ...(message !== undefined ? { message } : {}),
     ...(link !== null ? { preview: link } : {}),
   });
   const summary = diffSummary(result);
@@ -187,6 +233,7 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
       plot,
       baseSeq,
       opCount: result.ops.length,
+      message: message ?? null,
       summary,
       applied,
       preview: link,
@@ -197,6 +244,7 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
   ctx.out(formatDiff(summary));
   ctx.out('');
   ctx.out(`草稿编号：${draftId}`);
+  if (message !== undefined) ctx.out(`提交说明（发布时使用）：${message}`);
   if (link !== null) ctx.out(`预览链接：${link}`);
   ctx.out(`请人看过预览后再发布：metaverse publish ${draftId}`);
   return 0;
@@ -218,7 +266,12 @@ export async function runPublish(ctx: CliContext, args: readonly string[]): Prom
   const record = readDrafts(ws.root)[draftId];
   const plot = str(values, 'plot') ?? record?.plot ?? null;
   const api = makeApi(ctx, ws, values);
-  const message = str(values, 'message');
+  // 没给 --message 时用 push 时记下的说明。
+  const message = str(values, 'message') ?? record?.message;
+  if (message !== undefined) {
+    const error = messageError(message);
+    if (error !== null) throw new CliError(error);
+  }
   try {
     const result = await api.publish(
       draftId,

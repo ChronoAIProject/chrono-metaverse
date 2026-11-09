@@ -5,9 +5,10 @@ import type { Plot, Region } from '../core/scope.js';
 import type { ApiClient } from './client.js';
 
 /**
- * 命令行用到的接口（设计 8.3、8.4）。路径和字段集中写在这里，接口服务定稿后只改这一个文件。
- * 请求体字段按 metaverse-core 的 serde 定义（小驼峰）；响应解析尽量宽松（编号字段同时认
- * `id` / `xxxId`）。
+ * 命令行用到的接口（设计 8.3、8.4）。路径和字段集中写在这里，已与接口服务的实现
+ * （`api/crates/metaverse-api/src/routes/`）逐项核对。接口服务的请求体都带
+ * `deny_unknown_fields`：只发它定义的字段（小驼峰），多一个字段就 422。响应解析尽量宽松
+ * （编号字段同时认 `id` / `xxxId`）。
  *
  * 作用范围放在路径里：实体区 `/api/v1/spaces/{space_id}/…`，地块
  * `/api/v1/spaces/{space_id}/plots/{plot_id}/…`。
@@ -55,6 +56,15 @@ export interface SnapshotView {
   } | null;
 }
 
+/**
+ * 上传文件的格式（名称与 metaverse-core 的 `UploadFormat` 相同）。各用途接受的格式：
+ * scan、model 用途 glb / drc / obj / zip（zip = 模型 + 贴图，例如 Scaniverse 导出，默认值，服务端可配置）；
+ * texture 用途 png / jpeg / webp；ops 用途 ndjson / gzip；script 用途 text。
+ */
+export type UploadFormat =
+  'glb' | 'drc' | 'obj' | 'zip' | 'png' | 'jpeg' | 'webp' | 'ndjson' | 'gzip' | 'text';
+
+/** `POST {范围}/uploads/{purpose}` 的请求体（接口服务拒绝未知字段）。 */
 export interface CreateUploadRequest {
   /** 总字节数。 */
   readonly size: number;
@@ -62,8 +72,8 @@ export interface CreateUploadRequest {
   readonly sha256: string;
   /** 分片大小：256KiB 的整数倍，最大 32MiB。 */
   readonly partSize: number;
-  readonly contentType?: string;
-  readonly fileName?: string;
+  /** 文件格式：服务端按用途核对白名单（不在白名单里 422 `unsupported_format`），收到第 0 片时按它核对文件头。 */
+  readonly format: UploadFormat;
 }
 
 /** 创建上传的响应。内容已存在时直接给 `assetHash`（`status: "done"`），不用再传数据。 */
@@ -104,14 +114,43 @@ export interface DraftView {
 export interface PreviewView {
   readonly token?: string;
   readonly url?: string;
+  /** 绑定的草稿版本。 */
+  readonly rev?: number;
   readonly expiresAt?: string;
 }
+
+/** 预览链接有效期的范围（秒），与接口服务相同。 */
+export const PREVIEW_TTL_MIN = 60;
+export const PREVIEW_TTL_MAX = 7 * 24 * 3600;
 
 export interface PublishView {
   readonly seq?: number;
   readonly at?: string;
   readonly commitId?: string;
   readonly id?: string;
+}
+
+/** 导入扫描的共同选项（`scans` 和 `scans/{scan_id}/alignment` 都收）。 */
+export interface ScanImportOptions {
+  /** 现实中拍摄的时间（RFC 3339，只用于显示）。 */
+  readonly observedAt?: string;
+  /** 导入后做 AI 重建，默认 true。 */
+  readonly rebuild?: boolean;
+  /** 导入后体素化，默认 false。 */
+  readonly voxelize?: boolean;
+  /** 给处理服务的提示（JSON 对象，≤ 4KB）。 */
+  readonly hints?: unknown;
+}
+
+/** ops-from-upload 的请求体：上传编号和资源哈希只能给一个。 */
+export type OpsFromUploadRequest =
+  | { readonly uploadId: string; readonly assetHash?: never }
+  | { readonly assetHash: string; readonly uploadId?: never };
+
+/** 分享令牌：编号和原文（原文只在创建、轮换时返回这一次）。 */
+export interface ShareTokenView {
+  readonly id: string;
+  readonly token: string;
 }
 
 export interface CreateSpaceRequest {
@@ -188,9 +227,13 @@ export class MetaverseApi {
     return new Uint8Array(await response.arrayBuffer());
   }
 
-  /** `GET /api/v1/spaces/{space_id}/jobs/{job_id}` */
-  getJob(jobId: string): Promise<JobView> {
-    return this.client.json('GET', `${this.space}/jobs/${seg(jobId)}`);
+  /**
+   * `GET {范围}/jobs/{job_id}`。经地块路径只能查到经这个地块路径发起的任务（上传校验、
+   * ops_from_upload 等）；地块合作方的 agent key 一般只开放地块路径（设计 9.3），所以地块
+   * 范围的任务要经地块路径查。
+   */
+  getJob(jobId: string, plot?: string | null): Promise<JobView> {
+    return this.client.json('GET', `${scopePath(this.spaceId, plot)}/jobs/${seg(jobId)}`);
   }
 
   // ---- 上传 -----------------------------------------------------------------
@@ -241,22 +284,24 @@ export class MetaverseApi {
 
   // ---- 扫描 -----------------------------------------------------------------
 
-  /** `POST /api/v1/spaces/{space_id}/scans` → 202 `{ jobId }`（scan_import 任务）。 */
-  importScan(request: {
-    assetHash: string;
-    observedAt?: string;
-    transform?: readonly number[];
-    rebuild?: boolean;
-    voxelize?: boolean;
-    hints?: unknown;
-  }): Promise<{ jobId?: string; id?: string }> {
+  /**
+   * `POST /api/v1/spaces/{space_id}/scans` → 202 任务（scan_import，响应里的 `id` 是任务编号）。
+   * 请求体没有 `transform`（接口服务拒绝未知字段）：带变换的导入走 `alignScan`。
+   */
+  importScan(request: ScanImportOptions & { assetHash: string }): Promise<{
+    jobId?: string;
+    id?: string;
+  }> {
     return this.client.json('POST', `${this.space}/scans`, { json: request });
   }
 
-  /** `POST /api/v1/spaces/{space_id}/scans/{scan_id}/alignment`，请求体 `{ transform }`：用给定变换重新导入。 */
+  /**
+   * `POST /api/v1/spaces/{space_id}/scans/{scan_id}/alignment`，请求体 `{ transform, observedAt?,
+   * rebuild?, voxelize?, hints? }`：用给定变换导入（首次导入或重新对齐都可以；只要求资源已校验）。
+   */
   alignScan(
     scanId: string,
-    request: { transform: readonly number[] },
+    request: ScanImportOptions & { transform: readonly number[] },
   ): Promise<{ jobId?: string; id?: string }> {
     return this.client.json('POST', `${this.space}/scans/${seg(scanId)}/alignment`, {
       json: request,
@@ -275,11 +320,11 @@ export class MetaverseApi {
 
   // ---- 草稿 -----------------------------------------------------------------
 
-  /** `POST {范围}/drafts`，请求体 `{ baseSeq, message? }`。 */
-  createDraft(
-    request: { baseSeq: number; message?: string },
-    plot?: string | null,
-  ): Promise<DraftView> {
+  /**
+   * `POST {范围}/drafts`，请求体只有 `{ baseSeq }`（接口服务拒绝未知字段）。提交说明在发布时
+   * 才给（`publish` 的 `message`）。
+   */
+  createDraft(request: { baseSeq: number }, plot?: string | null): Promise<DraftView> {
     return this.client.json('POST', `${scopePath(this.spaceId, plot)}/drafts`, { json: request });
   }
 
@@ -294,10 +339,14 @@ export class MetaverseApi {
     });
   }
 
-  /** `POST {范围}/drafts/{draft_id}/ops-from-upload`，请求体 `{ assetHash }` → 202 `{ jobId }`（ops_from_upload 任务）。 */
+  /**
+   * `POST {范围}/drafts/{draft_id}/ops-from-upload` → 202 `{ jobId, draftId, status }`（ops_from_upload 任务）。
+   * 请求体是 `{ uploadId }` 或 `{ assetHash }` 二者之一（两个都给接口服务返回 422）；优先用上传编号，
+   * 服务端能核对它是本空间 ops 用途、已完成校验的上传。
+   */
   opsFromUpload(
     draftId: string,
-    request: { assetHash: string; uploadId?: string },
+    request: OpsFromUploadRequest,
     plot?: string | null,
   ): Promise<{ jobId?: string; id?: string } & Record<string, unknown>> {
     return this.client.json(
@@ -309,10 +358,13 @@ export class MetaverseApi {
     );
   }
 
-  /** `POST {范围}/drafts/{draft_id}/preview` → `{ token, url?, expiresAt }`。 */
+  /**
+   * `POST {范围}/drafts/{draft_id}/preview`，请求体 `{ ttlSeconds? }`（60–604800 秒，默认 86400；
+   * 接口服务拒绝未知字段）→ 201 `{ token, url, rev, expiresAt }`。
+   */
   preview(
     draftId: string,
-    request: { ttlSec?: number } = {},
+    request: { ttlSeconds?: number } = {},
     plot?: string | null,
   ): Promise<PreviewView> {
     return this.client.json(
@@ -324,7 +376,7 @@ export class MetaverseApi {
     );
   }
 
-  /** `POST {范围}/drafts/{draft_id}/publish`，请求体 `{ message?, replay? }`。 */
+  /** `POST {范围}/drafts/{draft_id}/publish`，请求体 `{ message?, replay? }`（提交说明 ≤ 2000 字，不给时服务端写"发布草稿"）。 */
   publish(
     draftId: string,
     request: { message?: string; replay?: boolean } = {},
@@ -341,10 +393,10 @@ export class MetaverseApi {
 
   // ---- 管理（设计 8.4，不进 AI 工具） ------------------------------------------
 
-  /** `POST /api/v1/admin/spaces` */
+  /** `POST /api/v1/admin/spaces` → 201 `{ space, shareToken: { id, token } }`。 */
   createSpace(
     request: CreateSpaceRequest,
-  ): Promise<{ space?: SpaceView; shareToken?: { id: string; token: string } }> {
+  ): Promise<{ space?: SpaceView; shareToken?: ShareTokenView }> {
     return this.client.json('POST', '/api/v1/admin/spaces', { json: request });
   }
 
@@ -352,21 +404,26 @@ export class MetaverseApi {
     return `/api/v1/admin/spaces/${seg(this.spaceId)}`;
   }
 
-  /** `PATCH /api/v1/admin/spaces/{space_id}`，请求体 `{ name?, description?, visibility?, confirmPublic? }`。 */
+  /**
+   * `PATCH /api/v1/admin/spaces/{space_id}`，请求体 `{ name?, description?, visibility?,
+   * confirmPublicHistory? }`（接口服务拒绝未知字段）→ 修改后的空间（SpaceView 本身）。
+   * 凭链接查看 → 公开时必须带 `confirmPublicHistory: true`，否则 409 `confirmation_required`。
+   */
   updateSpace(request: {
     name?: string;
     description?: string;
     visibility?: 'unlisted' | 'public';
-    confirmPublic?: boolean;
-  }): Promise<{ space?: SpaceView } & Record<string, unknown>> {
+    confirmPublicHistory?: boolean;
+  }): Promise<SpaceView> {
     return this.client.json('PATCH', this.admin, { json: request });
   }
 
-  /** `POST /api/v1/admin/spaces/{space_id}/share-tokens`，请求体 `{ revoke?: [编号], revokeAll? }` → `{ shareToken: { id, token } }`。 */
-  rotateShareToken(request: { revoke?: readonly string[]; revokeAll?: boolean }): Promise<{
-    shareToken?: { id: string; token: string };
-  }> {
-    return this.client.json('POST', `${this.admin}/share-tokens`, { json: request });
+  /**
+   * `POST /api/v1/admin/spaces/{space_id}/share-tokens`（没有请求体）→ 201 `{ id, token }`。
+   * 接口服务先吊销全部现有令牌再建新令牌，新令牌原文只返回这一次。
+   */
+  rotateShareToken(): Promise<Partial<ShareTokenView>> {
+    return this.client.json('POST', `${this.admin}/share-tokens`);
   }
 
   /** `PUT /api/v1/admin/spaces/{space_id}/layout`，请求体 `{ baseSeq, regions, plots, message? }`（写一次提交）。 */
@@ -384,11 +441,12 @@ export class MetaverseApi {
     return this.client.json('POST', `${this.admin}/event-types`, { json: request });
   }
 
-  /** `POST /api/v1/admin/spaces/{space_id}/events/{event_id}/redact`，请求体 `{ reason? }`。 */
-  redactEvent(eventId: string, request: { reason?: string } = {}): Promise<unknown> {
-    return this.client.json('POST', `${this.admin}/events/${seg(eventId)}/redact`, {
-      json: request,
-    });
+  /**
+   * `POST /api/v1/admin/spaces/{space_id}/events/{event_id}/redact`（没有请求体，接口服务不读）
+   * → `{ id, redacted, records }`（records = 一起抹除的记录数，含指向它的更正）。
+   */
+  redactEvent(eventId: string): Promise<{ id?: string; redacted?: boolean; records?: number }> {
+    return this.client.json('POST', `${this.admin}/events/${seg(eventId)}/redact`);
   }
 }
 

@@ -116,7 +116,8 @@ metaverse publish <草稿编号>   # 人确认后发布（实体区的改动一�
 ## 8. 建造脚本
 
 `build/main.ts` 默认导出一个函数，参数是基础状态 `base` 和工具包 `kit`，返回操作列表（可以嵌套数组，`null` 会被跳过），
-或 `{ message, ops }`。每次 build 都从基础状态重新生成，不要在脚本里保存状态。
+或 `{ message, ops }`（`message` 是提交说明：push 时记下，publish 时作为提交说明发出）。每次 build 都从基础状态重新生成，
+不要在脚本里保存状态。
 
 ```ts
 import type { BuildBase, Kit } from '@chrono-metaverse/sdk';

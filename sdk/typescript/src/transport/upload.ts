@@ -1,11 +1,17 @@
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { open, stat } from 'node:fs/promises';
-import { idOf, type JobView, type MetaverseApi, type UploadPurpose } from './api.js';
+import {
+  idOf,
+  type JobView,
+  type MetaverseApi,
+  type UploadFormat,
+  type UploadPurpose,
+} from './api.js';
 import { ApiError } from './client.js';
 
 /**
- * 分片上传（设计 6.1）：声明总大小、整体 SHA-256 和分片大小 → 逐片 PUT → 完成，
+ * 分片上传（设计 6.1）：声明总大小、整体 SHA-256、分片大小和格式 → 逐片 PUT → 完成，
  * 返回 upload_verify 任务。内容已存在时服务端直接给出资源哈希，不再传数据。
  *
  * 分片大小必须是 256KiB 的整数倍、最大 32MiB；除最后一片外各片大小相同。经 NyxID
@@ -42,8 +48,8 @@ export interface UploadOptions {
   readonly source: UploadSource;
   readonly plot?: string | null;
   readonly partSize?: number;
-  readonly contentType?: string;
-  readonly fileName?: string;
+  /** 文件格式（必填）：服务端按用途核对，并按它核对第 0 片的文件头。 */
+  readonly format: UploadFormat;
   readonly onProgress?: (sentBytes: number, totalBytes: number) => void;
 }
 
@@ -96,13 +102,7 @@ export async function upload(api: MetaverseApi, options: UploadOptions): Promise
   const parts = Math.ceil(size / partSize);
   const session = await api.createUpload(
     options.purpose,
-    {
-      size,
-      sha256,
-      partSize,
-      ...(options.contentType !== undefined ? { contentType: options.contentType } : {}),
-      ...(options.fileName !== undefined ? { fileName: options.fileName } : {}),
-    },
+    { size, sha256, partSize, format: options.format },
     options.plot,
   );
   const uploadId = idOf(session, 'uploadId') ?? null;
@@ -145,6 +145,8 @@ export async function upload(api: MetaverseApi, options: UploadOptions): Promise
 }
 
 export interface WaitOptions {
+  /** 任务是经哪个地块路径发起的（不给就是实体区路径）：查任务也走同一范围的路径。 */
+  readonly plot?: string | null;
   readonly intervalMs?: number;
   readonly timeoutMs?: number;
   readonly onUpdate?: (job: JobView) => void;
@@ -166,7 +168,7 @@ export async function waitForJob(
   for (;;) {
     let job: JobView;
     try {
-      job = await api.getJob(jobId);
+      job = await api.getJob(jobId, options.plot);
     } catch (error) {
       if (error instanceof ApiError && error.status >= 500) {
         await sleep(interval);

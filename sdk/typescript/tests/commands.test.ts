@@ -3,14 +3,17 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { main } from '../src/commands/index.js';
-import { previewLink } from '../src/commands/push.js';
-import { parseTransform } from '../src/commands/scan.js';
+import { messageError, previewLink } from '../src/commands/push.js';
+import { parseTransform, scanFormat } from '../src/commands/scan.js';
 import { runVoxelize } from '../src/commands/voxelize.js';
 import { validateLayout } from '../src/commands/admin.js';
 import { chunkHash, compressChunk, emptyChunk } from '../src/core/chunk.js';
+import { MetaverseApi } from '../src/transport/api.js';
+import { ApiClient } from '../src/transport/client.js';
+import { upload } from '../src/transport/upload.js';
 import { readConfig, writeConfig } from '../src/workspace/config.js';
 import { readBase } from '../src/workspace/files.js';
-import { startFakeApi, type FakeApi } from './helpers/fakeApi.js';
+import { fakeGlb, startFakeApi, type FakeApi } from './helpers/fakeApi.js';
 import {
   PALETTE,
   PLOTS,
@@ -196,7 +199,9 @@ describe('metaverse push / publish', () => {
     const create = fake.requests.find(
       (r) => r.path === '/api/v1/spaces/demo-space/plots/p1/drafts',
     )!;
-    expect(JSON.parse(create.body.toString())).toEqual({ baseSeq: 3, message: '放两张桌子' });
+    // 建草稿只带 baseSeq（接口服务拒绝未知字段）；说明记进 drafts.json，发布时再给。
+    expect(JSON.parse(create.body.toString())).toEqual({ baseSeq: 3 });
+    expect(text).toContain('提交说明（发布时使用）：放两张桌子');
     const draft = [...fake.state.drafts.values()][0]!;
     expect(draft.scopePath).toBe('/api/v1/spaces/demo-space/plots/p1');
     expect(draft.ops.map((op) => (op as { op: string }).op)).toEqual([
@@ -204,16 +209,21 @@ describe('metaverse push / publish', () => {
       'placeEntity',
     ]);
     const upload = fake.requests.find((r) => r.path.endsWith('/plots/p1/uploads/ops'))!;
-    expect(JSON.parse(upload.body.toString())).toMatchObject({
-      contentType: 'application/x-ndjson',
-      partSize: 8388608,
+    const uploadBody = JSON.parse(upload.body.toString()) as Record<string, unknown>;
+    expect(Object.keys(uploadBody).sort()).toEqual(['format', 'partSize', 'sha256', 'size']);
+    expect(uploadBody).toMatchObject({ format: 'ndjson', partSize: 8388608 });
+    // ops-from-upload 只带上传编号（接口服务要求 uploadId 和 assetHash 二选一）。
+    const fromUpload = fake.requests.find((r) => r.path.endsWith('/ops-from-upload'))!;
+    expect(fromUpload.path).toMatch(/^\/api\/v1\/spaces\/demo-space\/plots\/p1\/drafts\//);
+    expect(JSON.parse(fromUpload.body.toString())).toEqual({
+      uploadId: [...fake.state.uploads.values()][0]!.id,
     });
     const drafts = JSON.parse(readFileSync(join(root, 'out/drafts.json'), 'utf8')) as Record<
       string,
-      { plot: string }
+      { plot: string; message?: string }
     >;
     const draftId = Object.keys(drafts)[0]!;
-    expect(drafts[draftId]!.plot).toBe('p1');
+    expect(drafts[draftId]).toMatchObject({ plot: 'p1', message: '放两张桌子' });
     // 发布：草稿记住了地块，走同一范围的路径。
     const publishCtx = makeContext(root);
     expect(await main(publishCtx, ['publish', draftId, '--message', '确认'])).toBe(0);
@@ -221,6 +231,154 @@ describe('metaverse push / publish', () => {
     const publish = fake.requests.at(-1)!;
     expect(publish.path).toBe(`/api/v1/spaces/demo-space/plots/p1/drafts/${draftId}/publish`);
     expect(JSON.parse(publish.body.toString())).toEqual({ message: '确认' });
+    // 不给 --message 时用 push 时记下的说明（建造脚本返回的 message）。
+    expect(await main(makeContext(root), ['publish', draftId])).toBe(0);
+    expect(JSON.parse(fake.requests.at(-1)!.body.toString())).toEqual({ message: '放两张桌子' });
+  });
+
+  it('--message 覆盖脚本的说明；说明不合法时不推送、不发布', async () => {
+    fake = await startFakeApi(remoteSnapshot().state);
+    const root = directWorkspace(fake, PUSH_SCRIPT);
+    const ctx = makeContext(root);
+    expect(
+      await main(ctx, ['push', '--plot', 'p1', '--no-preview', '--json', '--message', '改说明']),
+    ).toBe(0);
+    const out = JSON.parse(ctx.lines.at(-1)!) as { draftId: string; message: string };
+    expect(out.message).toBe('改说明');
+    expect(await main(ctx, ['publish', out.draftId])).toBe(0);
+    expect(JSON.parse(fake.requests.at(-1)!.body.toString())).toEqual({ message: '改说明' });
+    const before = fake.requests.length;
+    expect(await main(ctx, ['push', '--plot', 'p1', '--message', '  '])).toBe(1);
+    expect(ctx.errors.at(-1)).toContain('不能为空');
+    expect(await main(ctx, ['push', '--plot', 'p1', '--message', 'x'.repeat(2001)])).toBe(1);
+    expect(ctx.errors.at(-1)).toContain('2000');
+    expect(await main(ctx, ['publish', out.draftId, '--message', 'a\u0007b'])).toBe(1);
+    expect(ctx.errors.at(-1)).toContain('控制字符');
+    expect(fake.requests.length).toBe(before);
+    expect(messageError('第一行\n第二行')).toBeNull();
+    expect(messageError('回车\r')).not.toBeNull();
+  });
+
+  it('操作文件已经传过（复用已有内容）时，ops-from-upload 仍然只带上传编号', async () => {
+    fake = await startFakeApi(remoteSnapshot().state);
+    const root = directWorkspace(fake, PUSH_SCRIPT);
+    expect(await main(makeContext(root), ['push', '--plot', 'p1', '--no-preview'])).toBe(0);
+    expect(await main(makeContext(root), ['push', '--plot', 'p1', '--no-preview'])).toBe(0);
+    const uploads = [...fake.state.uploads.values()];
+    expect(uploads.map((u) => u.reused)).toEqual([false, true]);
+    const bodies = fake.requests
+      .filter((r) => r.path.endsWith('/ops-from-upload'))
+      .map((r) => JSON.parse(r.body.toString()) as unknown);
+    expect(bodies).toEqual([{ uploadId: uploads[0]!.id }, { uploadId: uploads[1]!.id }]);
+    expect(fake.requests.filter((r) => r.method === 'PUT')).toHaveLength(1);
+  });
+
+  it('ops-from-upload 两个字段都给、都不给时，接口服务返回 422；只给资源哈希也行', async () => {
+    fake = await startFakeApi(remoteSnapshot().state);
+    const api = new MetaverseApi(
+      new ApiClient({ mode: 'direct', api: fake.url, devTokenUrl: fake.devTokenUrl }),
+      'demo-space',
+    );
+    const ndjson = new TextEncoder().encode('{"op":"removeEntity","entityId":"x"}\n');
+    const uploaded = await upload(api, {
+      purpose: 'ops',
+      source: { bytes: ndjson },
+      format: 'ndjson',
+    });
+    const draft = await api.createDraft({ baseSeq: 5 });
+    const both = { uploadId: uploaded.uploadId!, assetHash: uploaded.assetHash } as unknown as {
+      uploadId: string;
+    };
+    await expect(api.opsFromUpload(draft.id!, both)).rejects.toMatchObject({ status: 422 });
+    await expect(
+      api.opsFromUpload(draft.id!, {} as unknown as { uploadId: string }),
+    ).rejects.toMatchObject({ status: 422 });
+    expect(await api.opsFromUpload(draft.id!, { assetHash: uploaded.assetHash })).toMatchObject({
+      jobId: expect.any(String),
+    });
+  });
+
+  it('--preview-ttl 发 ttlSeconds；超出 60–604800 秒时什么也不建', async () => {
+    fake = await startFakeApi(remoteSnapshot().state);
+    const root = directWorkspace(fake, PUSH_SCRIPT);
+    const ctx = makeContext(root);
+    expect(await main(ctx, ['push', '--plot', 'p1', '--preview-ttl', '3600'])).toBe(0);
+    const preview = fake.requests.find((r) => r.path.endsWith('/preview'))!;
+    expect(JSON.parse(preview.body.toString())).toEqual({ ttlSeconds: 3600 });
+    expect(ctx.lines.join('\n')).toContain('预览链接：');
+    const before = fake.requests.length;
+    for (const bad of ['59', '604801', '90.5']) {
+      expect(await main(ctx, ['push', '--plot', 'p1', '--preview-ttl', bad])).toBe(1);
+      expect(ctx.errors.at(-1)).toContain('60 到 604800');
+    }
+    expect(fake.requests.length).toBe(before);
+    expect(fake.state.drafts.size).toBe(1);
+    // 不给时请求体是 {}，服务端用默认的 24 小时。
+    expect(await main(ctx, ['push', '--plot', 'p1'])).toBe(0);
+    expect(
+      JSON.parse(
+        fake.requests
+          .filter((r) => r.path.endsWith('/preview'))
+          .at(-1)!
+          .body.toString(),
+      ),
+    ).toEqual({});
+  });
+
+  it('只开放地块路径的 agent key（设计 9.3）也能 push、publish：任务经地块路径查', async () => {
+    const plotPrefix = '/api/v1/spaces/demo-space/plots/p1/';
+    fake = await startFakeApi({ ...remoteSnapshot().state, allowedPrefixes: [plotPrefix] });
+    const root = directWorkspace(fake, PUSH_SCRIPT);
+    const ctx = makeContext(root);
+    expect(await main(ctx, ['push', '--plot', 'p1', '--json'])).toBe(0);
+    const out = JSON.parse(ctx.lines.at(-1)!) as { draftId: string; preview: string };
+    expect(out.preview).toContain('#t=preview-token-abc');
+    const api = fake.requests.filter((r) => r.path.startsWith('/api/'));
+    // 只有读空间信息走了实体区路径（被拦下后跳过时间线检查），其余都在地块路径下。
+    expect(api.filter((r) => !r.path.startsWith(plotPrefix)).map((r) => r.path)).toEqual([
+      '/api/v1/spaces/demo-space',
+    ]);
+    const jobPolls = api.filter((r) => r.path.includes('/jobs/'));
+    expect(jobPolls.length).toBeGreaterThan(0);
+    expect(jobPolls.every((r) => r.path.startsWith(`${plotPrefix}jobs/`))).toBe(true);
+    expect(new Set([...fake.state.jobs.values()].map((j) => j.kind))).toEqual(
+      new Set(['upload_verify', 'ops_from_upload']),
+    );
+    const textCtx = makeContext(root);
+    expect(await main(textCtx, ['push', '--plot', 'p1', '--no-preview'])).toBe(0);
+    expect(textCtx.lines.join('\n')).toContain('跳过时间线检查');
+    expect(await main(makeContext(root), ['publish', out.draftId])).toBe(0);
+    expect(fake.requests.at(-1)!.path).toBe(`${plotPrefix}drafts/${out.draftId}/publish`);
+  });
+
+  it('实体区 push 读不了空间信息时照样报错（只有地块范围才跳过这项检查）', async () => {
+    fake = await startFakeApi({
+      ...remoteSnapshot().state,
+      allowedPrefixes: ['/api/v1/spaces/demo-space/drafts', '/api/v1/spaces/demo-space/uploads'],
+    });
+    const root = directWorkspace(
+      fake,
+      "export default (base, kit) => [kit.fill([1, 0, 1, 3, 1, 3], base.block('stone'))];",
+    );
+    const ctx = makeContext(root);
+    expect(await main(ctx, ['push'])).toBe(1);
+    expect(ctx.errors.at(-1)).toContain('HTTP 403');
+    expect(fake.state.drafts.size).toBe(0);
+  });
+
+  it('地块路径查不到别的范围发起的任务', async () => {
+    fake = await startFakeApi();
+    fake.state.jobs.set('job-e', { id: 'job-e', kind: 'scan_import', polls: 0, runningPolls: 0 });
+    const api = new MetaverseApi(
+      new ApiClient({ mode: 'direct', api: fake.url, devTokenUrl: fake.devTokenUrl }),
+      'demo-space',
+    );
+    await expect(api.getJob('job-e', 'p1')).rejects.toMatchObject({ status: 404 });
+    expect(await api.getJob('job-e')).toMatchObject({ status: 'done' });
+    expect(fake.requests.filter((r) => r.path.includes('/jobs/')).map((r) => r.path)).toEqual([
+      '/api/v1/spaces/demo-space/plots/p1/jobs/job-e',
+      '/api/v1/spaces/demo-space/jobs/job-e',
+    ]);
   });
 
   it('--inline 分批调用批量操作接口；--json 输出', async () => {
@@ -286,7 +444,7 @@ describe('metaverse scan', () => {
   it('上传扫描、等校验、发起导入并等任务完成', async () => {
     fake = await startFakeApi();
     const root = directWorkspace(fake);
-    writeFileSync(join(root, 'lobby.glb'), Buffer.alloc(600 * 1024, 3));
+    writeFileSync(join(root, 'lobby.glb'), fakeGlb(600 * 1024, 3));
     const ctx = makeContext(root);
     expect(
       await main(ctx, [
@@ -304,6 +462,8 @@ describe('metaverse scan', () => {
     expect(text).toContain('已发起导入任务');
     expect(text).toContain('导入完成，提交 commit-9');
     expect(fake.requests.filter((r) => r.method === 'PUT')).toHaveLength(3);
+    const create = fake.requests.find((r) => r.path.endsWith('/uploads/scan'))!;
+    expect(JSON.parse(create.body.toString())).toMatchObject({ format: 'glb' });
     const scan = fake.requests.find((r) => r.path.endsWith('/scans'))!;
     expect(JSON.parse(scan.body.toString())).toMatchObject({
       observedAt: '2026-11-01T10:00:00Z',
@@ -328,7 +488,100 @@ describe('metaverse scan', () => {
       await main(ctx, ['scan', '--asset', hash, '--transform', transform, '--no-wait', '--json']),
     ).toBe(0);
     expect(fake.requests.at(-1)!.path).toBe(`/api/v1/spaces/demo-space/scans/${hash}/alignment`);
+    expect(JSON.parse(fake.requests.at(-1)!.body.toString())).toEqual({
+      transform: transform.split(',').map(Number),
+      rebuild: true,
+      voxelize: false,
+    });
+    // 重新对齐时 --no-rebuild、--voxelize、--observed-at 也带上（原来被静默丢掉）。
+    expect(
+      await main(ctx, [
+        'scan',
+        '--asset',
+        hash,
+        '--transform',
+        transform,
+        '--no-rebuild',
+        '--voxelize',
+        '--observed-at',
+        '2026-11-02T08:00:00Z',
+        '--no-wait',
+      ]),
+    ).toBe(0);
+    expect(JSON.parse(fake.requests.at(-1)!.body.toString())).toEqual({
+      transform: transform.split(',').map(Number),
+      observedAt: '2026-11-02T08:00:00Z',
+      rebuild: false,
+      voxelize: true,
+    });
     expect(() => parseTransform('1,2,3')).toThrow('16 个数');
+  });
+
+  it('首次导入带 --transform：上传后走 alignment，不把 transform 发给 /scans', async () => {
+    fake = await startFakeApi();
+    const root = directWorkspace(fake);
+    writeFileSync(join(root, 'lobby.glb'), fakeGlb(4096));
+    const ctx = makeContext(root);
+    const transform = '1,0,0,0, 0,1,0,0, 0,0,1,0, 2,0,3,1';
+    expect(
+      await main(ctx, [
+        'scan',
+        'lobby.glb',
+        '--transform',
+        transform,
+        '--observed-at',
+        '2026-11-01T10:00:00Z',
+      ]),
+    ).toBe(0);
+    expect(fake.requests.some((r) => r.path.endsWith('/scans'))).toBe(false);
+    const hash = [...fake.state.uploads.values()][0]!.sha256;
+    const align = fake.requests.find((r) => r.path.endsWith('/alignment'))!;
+    expect(align.path).toBe(`/api/v1/spaces/demo-space/scans/${hash}/alignment`);
+    expect(JSON.parse(align.body.toString())).toEqual({
+      transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2, 0, 3, 1],
+      observedAt: '2026-11-01T10:00:00Z',
+      rebuild: true,
+      voxelize: false,
+    });
+    expect(ctx.lines.join('\n')).toContain('导入完成，提交 commit-9');
+    // /scans 收到 transform 时，接口服务（和假接口）返回 422。
+    const api = new MetaverseApi(
+      new ApiClient({ mode: 'direct', api: fake.url, devTokenUrl: fake.devTokenUrl }),
+      'demo-space',
+    );
+    await expect(
+      api.importScan({ assetHash: hash, transform: [1] } as unknown as { assetHash: string }),
+    ).rejects.toMatchObject({ status: 422 });
+  });
+
+  it('--transform、--observed-at 不合法时，上传之前就报错', async () => {
+    fake = await startFakeApi();
+    const root = directWorkspace(fake);
+    writeFileSync(join(root, 'lobby.glb'), fakeGlb(4096));
+    const ctx = makeContext(root);
+    expect(await main(ctx, ['scan', 'lobby.glb', '--transform', '1,2,3'])).toBe(1);
+    expect(ctx.errors.at(-1)).toContain('16 个数');
+    expect(await main(ctx, ['scan', 'lobby.glb', '--observed-at', '昨天'])).toBe(1);
+    expect(ctx.errors.at(-1)).toContain('RFC 3339');
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it('带贴图的扫描打包成 zip 上传（format: zip）', async () => {
+    fake = await startFakeApi();
+    const root = directWorkspace(fake);
+    const zip = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(2000, 1)]);
+    writeFileSync(join(root, 'scaniverse.ZIP'), zip);
+    const ctx = makeContext(root);
+    expect(await main(ctx, ['scan', 'scaniverse.ZIP', '--no-wait', '--json'])).toBe(0);
+    const create = fake.requests.find((r) => r.path.endsWith('/uploads/scan'))!;
+    expect(JSON.parse(create.body.toString())).toMatchObject({ format: 'zip', size: zip.length });
+    expect(scanFormat('a/b.obj')).toBe('obj');
+    expect(scanFormat('a/b.drc')).toBe('drc');
+    expect(scanFormat('a/b.ply')).toBeNull();
+    // 扩展名和内容不符时，接口服务按文件头拒绝。
+    writeFileSync(join(root, 'fake.zip'), 'v 0 0 0\n');
+    expect(await main(ctx, ['scan', 'fake.zip'])).toBe(1);
+    expect(ctx.errors.at(-1)).toContain('format_mismatch');
   });
 
   it('参数检查', async () => {
@@ -339,6 +592,7 @@ describe('metaverse scan', () => {
     expect(await main(ctx, ['scan', 'nope.glb'])).toBe(1);
     writeFileSync(join(root, 'x.txt'), 'x');
     expect(await main(ctx, ['scan', 'x.txt'])).toBe(1);
+    expect(ctx.errors.at(-1)).toContain('zip');
     expect(await main(ctx, ['scan', '--asset', 'xyz'])).toBe(1);
     expect(await main(ctx, ['scan', '--help'])).toBe(0);
   });
@@ -373,6 +627,20 @@ describe('metaverse admin', () => {
 
     const root = directWorkspace(fake);
     const ws = makeContext(root);
+    // 不带确认字段时接口服务返回 409；字段名不对（例如 confirmPublic）时 422。
+    const admin = new MetaverseApi(
+      new ApiClient({ mode: 'direct', api: fake.url, devTokenUrl: fake.devTokenUrl }),
+      'demo-space',
+    );
+    await expect(admin.updateSpace({ visibility: 'public' })).rejects.toMatchObject({
+      status: 409,
+      code: 'confirmation_required',
+    });
+    await expect(
+      admin.updateSpace({ visibility: 'public', confirmPublic: true } as unknown as {
+        visibility: 'public';
+      }),
+    ).rejects.toMatchObject({ status: 422 });
     expect(await main(ws, ['admin', 'update-space', '--visibility', 'public'])).toBe(1);
     expect(ws.errors.at(-1)).toContain('--yes');
     expect(
@@ -389,13 +657,33 @@ describe('metaverse admin', () => {
     expect(JSON.parse(fake.requests.at(-1)!.body.toString())).toEqual({
       name: '新名字',
       visibility: 'public',
-      confirmPublic: true,
+      confirmPublicHistory: true,
     });
-    expect(
-      await main(ws, ['admin', 'rotate-share-token', '--revoke', 'st_1', '--revoke', 'st_0']),
-    ).toBe(0);
-    expect(JSON.parse(fake.requests.at(-1)!.body.toString())).toEqual({ revoke: ['st_1', 'st_0'] });
-    expect(ws.lines.join('\n')).toContain('share-secret-2');
+    expect(ws.lines.at(-1)).toBe('已更新空间 demo-space：名称 新名字，可见性 public');
+    expect(await main(ws, ['admin', 'update-space', '--description', '新说明', '--json'])).toBe(0);
+    expect(JSON.parse(fake.requests.at(-1)!.body.toString())).toEqual({ description: '新说明' });
+    expect(JSON.parse(ws.lines.at(-1)!)).toMatchObject({
+      id: 'demo-space',
+      description: '新说明',
+      visibility: 'public',
+    });
+    expect(await main(ws, ['admin', 'update-space'])).toBe(1);
+    expect(await main(ws, ['admin', 'update-space', '--visibility', 'secret'])).toBe(1);
+    // 轮换：不带请求体，按顶层的 { id, token } 打印新令牌。
+    expect(await main(ws, ['admin', 'rotate-share-token'])).toBe(0);
+    const rotate = fake.requests.at(-1)!;
+    expect(rotate.path).toBe('/api/v1/admin/spaces/demo-space/share-tokens');
+    expect(rotate.body.length).toBe(0);
+    expect(ws.lines.slice(-3)).toEqual([
+      '新的分享令牌（只显示这一次，旧令牌已全部吊销）：share-secret-2',
+      '令牌编号：st_2',
+      '查看链接：/s/demo-space#share=share-secret-2',
+    ]);
+    expect(await main(ws, ['admin', 'rotate-share-token', '--json'])).toBe(0);
+    expect(JSON.parse(ws.lines.at(-1)!)).toEqual({ id: 'st_3', token: 'share-secret-3' });
+    // 接口服务不支持按编号吊销，选项已经去掉。
+    expect(await main(ws, ['admin', 'rotate-share-token', '--revoke', 'st_1'])).toBe(1);
+    expect(fake.state.shareTokenRotations).toBe(2);
 
     writeFileSync(join(root, 'layout.json'), JSON.stringify({ regions: REGIONS, plots: PLOTS }));
     expect(await main(ws, ['admin', 'set-layout', 'layout.json', '--message', '划地块'])).toBe(0);
@@ -423,11 +711,33 @@ describe('metaverse admin', () => {
     );
     expect(await main(ws, ['admin', 'register-event-type', 'event-type.json'])).toBe(0);
     expect(ws.lines.at(-1)).toContain('table.occupancy 第 1 版');
-    expect(await main(ws, ['admin', 'redact-event', 'ev-1', '--reason', '个人信息'])).toBe(0);
+    expect(await main(ws, ['admin', 'redact-event', 'ev-1'])).toBe(0);
     expect(fake.requests.at(-1)!.path).toBe('/api/v1/admin/spaces/demo-space/events/ev-1/redact');
+    expect(fake.requests.at(-1)!.body.length).toBe(0);
+    expect(ws.lines.at(-1)).toBe('已抹除事件 ev-1 的内容（共 2 条记录，含指向它的更正）');
+    expect(await main(ws, ['admin', 'redact-event', 'ev-2', '--json'])).toBe(0);
+    expect(JSON.parse(ws.lines.at(-1)!)).toEqual({ id: 'ev-2', redacted: true, records: 2 });
+    // 接口服务不读原因，选项已经去掉（原来会被静默丢掉）。
+    expect(await main(ws, ['admin', 'redact-event', 'ev-1', '--reason', '个人信息'])).toBe(1);
+    expect(await main(ws, ['admin', 'redact-event'])).toBe(1);
     expect(await main(ws, ['admin'])).toBe(1);
     expect(await main(ws, ['admin', 'explode'])).toBe(1);
     expect(await main(ws, ['admin', 'create-space', 'x'])).toBe(1);
+  });
+
+  it('轮换的响应里没有令牌原文时报错，不静默输出', async () => {
+    fake = await startFakeApi({
+      ...remoteSnapshot().state,
+      shareTokenResponse: { shareToken: { id: 'st_9', token: 'nested' } },
+    });
+    const root = directWorkspace(fake);
+    const ctx = makeContext(root);
+    expect(await main(ctx, ['admin', 'rotate-share-token'])).toBe(1);
+    expect(ctx.errors.at(-1)).toContain('旧令牌已全部吊销');
+    expect(ctx.lines.join('\n')).not.toContain('已处理');
+    // --json 时先把原始响应打印出来，再报错。
+    expect(await main(ctx, ['admin', 'rotate-share-token', '--json'])).toBe(1);
+    expect(JSON.parse(ctx.lines.at(-1)!)).toEqual({ shareToken: { id: 'st_9', token: 'nested' } });
   });
 
   it('区域和地块的本地检查', () => {

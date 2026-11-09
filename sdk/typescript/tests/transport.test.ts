@@ -17,7 +17,13 @@ import {
   UploadError,
   waitForJob,
 } from '../src/transport/upload.js';
-import { startFakeApi, type FakeApi } from './helpers/fakeApi.js';
+import {
+  fakeGlb,
+  fieldError,
+  headerMismatch,
+  startFakeApi,
+  type FakeApi,
+} from './helpers/fakeApi.js';
 import { removeDir, tempDir } from './helpers/workspace.js';
 
 describe('令牌来源顺序', () => {
@@ -323,13 +329,16 @@ describe('分片上传（本地假服务器）', () => {
 
   it('按片上传、最后一片较小、完成后等校验任务', async () => {
     fake = await startFakeApi();
-    const bytes = new Uint8Array(256 * 1024 * 2 + 1000).map((_, i) => i % 251);
+    // 文件头要像 NDJSON（第一个非空字符是 {），接口服务收到第 0 片时会核对。
+    const bytes = new Uint8Array(256 * 1024 * 2 + 1000).map((_, i) =>
+      i === 0 ? 0x7b : 97 + (i % 26),
+    );
     const progress: number[] = [];
     const result = await upload(api(), {
       purpose: 'ops',
       source: { bytes },
       partSize: 256 * 1024,
-      contentType: 'application/x-ndjson',
+      format: 'ndjson',
       onProgress: (sent) => progress.push(sent),
     });
     const sha = createHash('sha256').update(bytes).digest('hex');
@@ -341,11 +350,12 @@ describe('分片上传（本地假服务器）', () => {
     const create = fake.requests.find(
       (r) => r.path.endsWith('/uploads/ops') && r.method === 'POST',
     )!;
+    // 请求体正好是接口服务 CreateUploadRequest 的四个字段（它拒绝未知字段）。
     expect(JSON.parse(create.body.toString())).toEqual({
       size: bytes.length,
       sha256: sha,
       partSize: 262144,
-      contentType: 'application/x-ndjson',
+      format: 'ndjson',
     });
     // 每个请求都带了新的开发令牌。
     const tokens = fake.requests
@@ -361,9 +371,44 @@ describe('分片上传（本地假服务器）', () => {
     const bytes = new TextEncoder().encode('{"op":"fill"}\n');
     const sha = createHash('sha256').update(bytes).digest('hex');
     fake = await startFakeApi({ assets: new Map([[sha, Buffer.from(bytes)]]) });
-    const result = await upload(api(), { purpose: 'ops', source: { bytes } });
+    const result = await upload(api(), { purpose: 'ops', source: { bytes }, format: 'ndjson' });
+    // 复用时接口服务同样返回上传编号（status: done），ops-from-upload 可以直接用它。
     expect(result).toMatchObject({ reused: true, jobId: null, assetHash: sha, parts: 0 });
+    expect(result.uploadId).toMatch(/^up-\d+$/);
     expect(fake.requests.some((r) => r.method === 'PUT')).toBe(false);
+  });
+
+  it('格式不在用途的白名单里、文件头与格式不符时，接口服务拒绝', async () => {
+    fake = await startFakeApi();
+    const ndjson = new TextEncoder().encode('{"op":"fill"}\n');
+    await expect(
+      upload(api(), { purpose: 'ops', source: { bytes: ndjson }, format: 'glb' }),
+    ).rejects.toMatchObject({ status: 422, code: 'unsupported_format' });
+    await expect(
+      upload(api(), { purpose: 'model', source: { bytes: ndjson }, format: 'glb' }),
+    ).rejects.toMatchObject({ status: 422, code: 'format_mismatch' });
+    await expect(
+      upload(api(), { purpose: 'scan', source: { bytes: ndjson }, format: 'zip' }),
+    ).rejects.toMatchObject({ status: 422, code: 'format_mismatch' });
+  });
+
+  it('假接口按接口服务的规则拒绝未知字段、缺少的字段和不符的文件头', () => {
+    expect(fieldError({ size: 1, format: 'glb' }, ['size', 'format'], ['size'])).toBeNull();
+    expect(fieldError({ size: 1, contentType: 'x' }, ['size', 'format'])).toContain('contentType');
+    expect(fieldError({ size: 1 }, ['size', 'format'], ['format'])).toContain('format');
+    expect(headerMismatch('glb', fakeGlb(64), 64)).toBe(false);
+    expect(headerMismatch('glb', fakeGlb(64), 65)).toBe(true);
+    expect(headerMismatch('zip', Buffer.from('PK\x03\x04rest', 'latin1'), 8)).toBe(false);
+    expect(headerMismatch('drc', Buffer.from('DRACO..'), 7)).toBe(false);
+    expect(headerMismatch('obj', Buffer.from('# 注释\nv 0 0 0\n'), 16)).toBe(false);
+    expect(headerMismatch('obj', Buffer.from('hello'), 5)).toBe(true);
+    expect(headerMismatch('gzip', Buffer.from([0x1f, 0x8b, 0x08, 0]), 4)).toBe(false);
+    expect(headerMismatch('png', Buffer.from('\x89PNG\r\n\x1a\n', 'latin1'), 8)).toBe(false);
+    expect(headerMismatch('jpeg', Buffer.from([0xff, 0xd8, 0xff, 0xe0]), 4)).toBe(false);
+    expect(headerMismatch('webp', Buffer.from('RIFF\0\0\0\0WEBP', 'latin1'), 12)).toBe(false);
+    expect(headerMismatch('text', Buffer.from('a\0'), 2)).toBe(true);
+    expect(headerMismatch('ndjson', Buffer.from('  {"a":1}'), 9)).toBe(false);
+    expect(headerMismatch('exe', Buffer.from('MZ'), 2)).toBe(true);
   });
 
   it('从文件上传，地块路径；分片 503 时重试', async () => {
@@ -371,12 +416,13 @@ describe('分片上传（本地假服务器）', () => {
     const dir = tempDir();
     try {
       const file = join(dir, 'model.glb');
-      writeFileSync(file, Buffer.alloc(300 * 1024, 7));
+      writeFileSync(file, fakeGlb(300 * 1024));
       const result = await upload(api(), {
         purpose: 'model',
         source: { path: file },
         plot: 'p1',
         partSize: 256 * 1024,
+        format: 'glb',
       });
       expect(result.parts).toBe(2);
       const puts = fake.requests.filter((r) => r.method === 'PUT');
@@ -392,10 +438,15 @@ describe('分片上传（本地假服务器）', () => {
   it('空文件和地块路径下上传扫描都被拒绝', async () => {
     fake = await startFakeApi();
     await expect(
-      upload(api(), { purpose: 'ops', source: { bytes: new Uint8Array() } }),
+      upload(api(), { purpose: 'ops', source: { bytes: new Uint8Array() }, format: 'ndjson' }),
     ).rejects.toThrow('空文件');
     await expect(
-      upload(api(), { purpose: 'scan', source: { bytes: new Uint8Array([1]) }, plot: 'p1' }),
+      upload(api(), {
+        purpose: 'scan',
+        source: { bytes: new Uint8Array([1]) },
+        plot: 'p1',
+        format: 'glb',
+      }),
     ).rejects.toMatchObject({ status: 403 });
   });
 
