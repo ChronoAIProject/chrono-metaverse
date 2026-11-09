@@ -58,6 +58,8 @@ pub struct PublicConfig {
     pub space_concurrency: usize,
     pub cache_bytes: usize,
     pub trusted_client_ip_header: Option<HeaderName>,
+    /// 网站的对外地址（取自 `PUBLIC_BASE_URL`，不带结尾的 `/`），用来拼预览链接。
+    pub site_base_url: String,
 }
 
 impl Default for PublicConfig {
@@ -68,6 +70,7 @@ impl Default for PublicConfig {
             space_concurrency: DEFAULT_SPACE_CONCURRENCY,
             cache_bytes: DEFAULT_CACHE_BYTES,
             trusted_client_ip_header: None,
+            site_base_url: crate::config::DEFAULT_PUBLIC_BASE_URL.to_owned(),
         }
     }
 }
@@ -130,6 +133,7 @@ impl PublicConfig {
             space_concurrency,
             cache_bytes,
             trusted_client_ip_header,
+            site_base_url: defaults.site_base_url,
         })
     }
 }

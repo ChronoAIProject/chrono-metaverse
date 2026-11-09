@@ -178,11 +178,12 @@ mod tests {
         assert!(cache.get(&c).is_none());
         // 用过 a，满了以后先淘汰 b。
         assert!(cache.get(&a).is_some());
-        for i in 0..6 {
+        for i in 0..7 {
             cache.insert(&CacheKey::Asset(format!("x{i}")), bytes(100));
         }
         assert!(cache.used_bytes() <= 800);
         assert!(cache.get(&b).is_none());
+        assert!(cache.get(&a).is_some());
         // 同一个键覆盖时不重复计数。
         cache.insert(&a, bytes(50));
         assert!(cache.used_bytes() <= 800);

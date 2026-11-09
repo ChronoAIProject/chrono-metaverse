@@ -70,7 +70,7 @@ pub struct CreateSpaceResponse {
     pub share_token: ShareTokenView,
 }
 
-fn check_text(
+pub(crate) fn check_text(
     name: &'static str,
     value: &str,
     max: usize,
@@ -87,7 +87,7 @@ fn check_text(
 }
 
 /// 生成分享令牌：256 位随机数（设计要求至少 128 位），base64url。
-fn new_share_token() -> Result<(String, String), ApiError> {
+pub(crate) fn new_share_token() -> Result<(String, String), ApiError> {
     let random = SystemRandom::new();
     let mut secret = [0u8; 32];
     let mut id = [0u8; 9];
@@ -177,9 +177,30 @@ pub async fn create_space(
         by = %caller.subject,
         "空间已创建"
     );
+    // 第一次提交：`_space` 锚点 + 通用方块表（设计 4.3、4.4）。失败也不影响建空间：
+    // 之后第一次建草稿或改区域时会补写（只在 head.seq == 0 时写）。
+    let space_grant = state.authorizer.grant_for_created_space(&grant, &space.id);
+    let (space, anchors) = match crate::timeline::writer::ensure_genesis(
+        &state.repo,
+        &space_grant,
+        &caller,
+        now,
+    )
+    .await
+    {
+        Ok(_) => {
+            let current = state.repo.space(&space_grant).await.ok().flatten();
+            let anchors = state.repo.anchors(&space_grant).await.unwrap_or_default();
+            (current.unwrap_or(space), anchors)
+        }
+        Err(error) => {
+            tracing::warn!(space = %space.id, error = ?error, "第一次提交没有写成，稍后补写");
+            (space, Vec::new())
+        }
+    };
     let location = format!("/api/v1/spaces/{}", space.id);
     let body = CreateSpaceResponse {
-        space: SpaceView::new(space, Vec::new()),
+        space: SpaceView::new(space, anchors),
         share_token: ShareTokenView {
             id: token_id,
             token,

@@ -9,10 +9,12 @@
 //! | [`writer`] | 关键帧、写提交、第一次提交（`_space` 锚点 + 通用方块表）、资源引用 |
 //! | [`drafts`] | 草稿：追加操作、预览状态、发布（冲突检测、叠加或重放） |
 //! | [`snapshot`] | 快照组装、提交列表的公开投影 |
+//! | [`region_text`] | 区域内容的分层文字 |
 //! | [`views`] | 接口视图 |
 
 pub mod drafts;
 pub mod palette;
+pub mod region_text;
 pub mod snapshot;
 pub mod state;
 pub mod views;

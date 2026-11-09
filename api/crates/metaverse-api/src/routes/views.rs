@@ -101,10 +101,10 @@ pub struct PublicSpaceView {
     #[schema(value_type = String, example = "unlisted")]
     pub visibility: Visibility,
     pub head: HeadView,
-    #[schema(value_type = Vec<Object>)]
-    pub regions: Vec<Region>,
-    #[schema(value_type = Vec<Object>)]
-    pub plots: Vec<Plot>,
+    /// 区域（公开形状：`{id, kind, label?, boxes}`）。
+    pub regions: Vec<crate::timeline::views::RegionView>,
+    /// 地块（公开形状：`{id, regionId, label?, boxes}`）。
+    pub plots: Vec<crate::timeline::views::PlotView>,
     /// 只含公开级锚点。
     #[schema(value_type = Vec<Object>)]
     pub anchors: Vec<AnchorBody>,
@@ -122,8 +122,8 @@ impl PublicSpaceView {
                 at: space.head.at,
                 commit_id: None,
             },
-            regions: space.regions,
-            plots: space.plots,
+            regions: space.regions.into_iter().map(Into::into).collect(),
+            plots: space.plots.into_iter().map(Into::into).collect(),
             anchors,
         }
     }

@@ -138,7 +138,8 @@ impl Config {
                 ))
             }
         };
-        let public = crate::public::PublicConfig::from_lookup(&lookup)?;
+        let mut public = crate::public::PublicConfig::from_lookup(&lookup)?;
+        public.site_base_url = public_base_url.as_str().trim_end_matches('/').to_owned();
         Ok(Self {
             public,
             bind,
