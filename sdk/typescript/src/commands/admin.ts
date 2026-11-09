@@ -27,8 +27,8 @@ export const ADMIN_HELP = `metaverse admin <子命令> …（管理接口 /api/v
       分享令牌原文只在创建时返回这一次，请妥善保存。
   update-space [--name <名称>] [--description <说明>] [--visibility unlisted|public] [--yes]
       修改名称、说明或可见性。改成 public 会公开全部历史，必须加 --yes 确认。
-  rotate-share-token [--revoke <令牌编号>]… [--revoke-all]
-      新建一个分享令牌（原文只显示这一次），可同时吊销旧令牌。
+  rotate-share-token
+      轮换分享令牌：吊销全部现有令牌（旧的查看链接立即失效），新建一个令牌，原文只显示这一次。
   set-layout <layout.json> [--message <说明>] [--base-seq <n>]
       定义区域和地块（写一次提交）。文件格式：{ "regions": [...], "plots": [...] }，
       盒子单位是格 [x0,y0,z0,x1,y1,z1]。默认基于工作区拉取的 seq。
@@ -174,21 +174,20 @@ async function updateSpace(ctx: CliContext, values: Values): Promise<number> {
 
 async function rotateShareToken(ctx: CliContext, values: Values): Promise<number> {
   const ws = openWorkspace(ctx, values);
-  const revoke = (values.revoke as string[] | undefined) ?? [];
-  const result = await makeApi(ctx, ws, values).rotateShareToken({
-    ...(revoke.length > 0 ? { revoke } : {}),
-    ...(flag(values, 'revoke-all') ? { revokeAll: true } : {}),
-  });
+  // 接口服务不收请求体：先吊销全部现有令牌，再返回 201 { id, token }（原文只返回这一次）。
+  const result = await makeApi(ctx, ws, values).rotateShareToken();
   if (flag(values, 'json')) {
     printJson(ctx, result);
-    return 0;
+  } else if (typeof result.token === 'string' && result.token !== '') {
+    ctx.out(`新的分享令牌（只显示这一次，旧令牌已全部吊销）：${result.token}`);
+    if (result.id !== undefined) ctx.out(`令牌编号：${result.id}`);
+    ctx.out(`查看链接：/s/${ws.config.spaceId}#share=${result.token}`);
   }
-  if (result.shareToken) {
-    ctx.out(`新的分享令牌（只显示这一次）：${result.shareToken.token}`);
-    ctx.out(`令牌编号：${result.shareToken.id}`);
-    ctx.out(`查看链接：/s/${ws.config.spaceId}#share=${result.shareToken.token}`);
-  } else {
-    ctx.out('已处理');
+  if (typeof result.token !== 'string' || result.token === '') {
+    // 旧令牌这时已经吊销了，不能当作成功：凭链接查看的空间没有任何有效链接。
+    throw new CliError(
+      `轮换的响应里没有新令牌原文（${JSON.stringify(result)}）。旧令牌已全部吊销，请再轮换一次。`,
+    );
   }
   return 0;
 }
@@ -270,8 +269,6 @@ export async function runAdmin(ctx: CliContext, args: readonly string[]): Promis
     owner: { type: 'string' },
     visibility: { type: 'string' },
     yes: { type: 'boolean' },
-    revoke: { type: 'string', multiple: true },
-    'revoke-all': { type: 'boolean' },
     message: { type: 'string' },
     'base-seq': { type: 'string' },
     reason: { type: 'string' },

@@ -140,6 +140,9 @@ export interface FakeState {
   publishConflict: boolean;
   scanResult?: unknown;
   failNextPart: boolean;
+  shareTokenRotations: number;
+  /** 轮换分享令牌时改用这个响应（测试响应缺字段的情况）。 */
+  shareTokenResponse?: unknown;
 }
 
 export interface FakeApi {
@@ -179,6 +182,8 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
     publishConflict: init.publishConflict ?? false,
     scanResult: init.scanResult,
     failNextPart: init.failNextPart ?? false,
+    shareTokenRotations: 0,
+    shareTokenResponse: init.shareTokenResponse,
   };
   const requests: RecordedRequest[] = [];
   let counter = 0;
@@ -538,8 +543,13 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
         // 接口服务直接返回修改后的 SpaceView（不是 { space }）。
         return json(200, state.space);
       }
-      if (tail === '/share-tokens')
-        return json(201, { shareToken: { id: 'st_2', token: 'share-secret-2' } });
+      if (tail === '/share-tokens' && request.method === 'POST') {
+        // 接口服务不读请求体，吊销全部现有令牌后返回顶层的 { id, token }。
+        state.shareTokenRotations += 1;
+        if (state.shareTokenResponse !== undefined) return json(201, state.shareTokenResponse);
+        const n = state.shareTokenRotations + 1;
+        return json(201, { id: `st_${n}`, token: `share-secret-${n}` });
+      }
       if (tail === '/layout' && request.method === 'PUT') return json(200, { seq: 7 });
       if (tail === '/event-types') return json(201, { type: parsed().type, version: 1 });
       if (tail.endsWith('/redact')) return json(200, { redacted: true });

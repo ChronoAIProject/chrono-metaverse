@@ -146,6 +146,12 @@ export type OpsFromUploadRequest =
   | { readonly uploadId: string; readonly assetHash?: never }
   | { readonly assetHash: string; readonly uploadId?: never };
 
+/** 分享令牌：编号和原文（原文只在创建、轮换时返回这一次）。 */
+export interface ShareTokenView {
+  readonly id: string;
+  readonly token: string;
+}
+
 export interface CreateSpaceRequest {
   readonly id: string;
   readonly name: string;
@@ -382,10 +388,10 @@ export class MetaverseApi {
 
   // ---- 管理（设计 8.4，不进 AI 工具） ------------------------------------------
 
-  /** `POST /api/v1/admin/spaces` */
+  /** `POST /api/v1/admin/spaces` → 201 `{ space, shareToken: { id, token } }`。 */
   createSpace(
     request: CreateSpaceRequest,
-  ): Promise<{ space?: SpaceView; shareToken?: { id: string; token: string } }> {
+  ): Promise<{ space?: SpaceView; shareToken?: ShareTokenView }> {
     return this.client.json('POST', '/api/v1/admin/spaces', { json: request });
   }
 
@@ -407,11 +413,12 @@ export class MetaverseApi {
     return this.client.json('PATCH', this.admin, { json: request });
   }
 
-  /** `POST /api/v1/admin/spaces/{space_id}/share-tokens`，请求体 `{ revoke?: [编号], revokeAll? }` → `{ shareToken: { id, token } }`。 */
-  rotateShareToken(request: { revoke?: readonly string[]; revokeAll?: boolean }): Promise<{
-    shareToken?: { id: string; token: string };
-  }> {
-    return this.client.json('POST', `${this.admin}/share-tokens`, { json: request });
+  /**
+   * `POST /api/v1/admin/spaces/{space_id}/share-tokens`（没有请求体）→ 201 `{ id, token }`。
+   * 接口服务先吊销全部现有令牌再建新令牌，新令牌原文只返回这一次。
+   */
+  rotateShareToken(): Promise<Partial<ShareTokenView>> {
+    return this.client.json('POST', `${this.admin}/share-tokens`);
   }
 
   /** `PUT /api/v1/admin/spaces/{space_id}/layout`，请求体 `{ baseSeq, regions, plots, message? }`（写一次提交）。 */

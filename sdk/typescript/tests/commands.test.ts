@@ -613,11 +613,21 @@ describe('metaverse admin', () => {
     });
     expect(await main(ws, ['admin', 'update-space'])).toBe(1);
     expect(await main(ws, ['admin', 'update-space', '--visibility', 'secret'])).toBe(1);
-    expect(
-      await main(ws, ['admin', 'rotate-share-token', '--revoke', 'st_1', '--revoke', 'st_0']),
-    ).toBe(0);
-    expect(JSON.parse(fake.requests.at(-1)!.body.toString())).toEqual({ revoke: ['st_1', 'st_0'] });
-    expect(ws.lines.join('\n')).toContain('share-secret-2');
+    // 轮换：不带请求体，按顶层的 { id, token } 打印新令牌。
+    expect(await main(ws, ['admin', 'rotate-share-token'])).toBe(0);
+    const rotate = fake.requests.at(-1)!;
+    expect(rotate.path).toBe('/api/v1/admin/spaces/demo-space/share-tokens');
+    expect(rotate.body.length).toBe(0);
+    expect(ws.lines.slice(-3)).toEqual([
+      '新的分享令牌（只显示这一次，旧令牌已全部吊销）：share-secret-2',
+      '令牌编号：st_2',
+      '查看链接：/s/demo-space#share=share-secret-2',
+    ]);
+    expect(await main(ws, ['admin', 'rotate-share-token', '--json'])).toBe(0);
+    expect(JSON.parse(ws.lines.at(-1)!)).toEqual({ id: 'st_3', token: 'share-secret-3' });
+    // 接口服务不支持按编号吊销，选项已经去掉。
+    expect(await main(ws, ['admin', 'rotate-share-token', '--revoke', 'st_1'])).toBe(1);
+    expect(fake.state.shareTokenRotations).toBe(2);
 
     writeFileSync(join(root, 'layout.json'), JSON.stringify({ regions: REGIONS, plots: PLOTS }));
     expect(await main(ws, ['admin', 'set-layout', 'layout.json', '--message', '划地块'])).toBe(0);
@@ -650,6 +660,21 @@ describe('metaverse admin', () => {
     expect(await main(ws, ['admin'])).toBe(1);
     expect(await main(ws, ['admin', 'explode'])).toBe(1);
     expect(await main(ws, ['admin', 'create-space', 'x'])).toBe(1);
+  });
+
+  it('轮换的响应里没有令牌原文时报错，不静默输出', async () => {
+    fake = await startFakeApi({
+      ...remoteSnapshot().state,
+      shareTokenResponse: { shareToken: { id: 'st_9', token: 'nested' } },
+    });
+    const root = directWorkspace(fake);
+    const ctx = makeContext(root);
+    expect(await main(ctx, ['admin', 'rotate-share-token'])).toBe(1);
+    expect(ctx.errors.at(-1)).toContain('旧令牌已全部吊销');
+    expect(ctx.lines.join('\n')).not.toContain('已处理');
+    // --json 时先把原始响应打印出来，再报错。
+    expect(await main(ctx, ['admin', 'rotate-share-token', '--json'])).toBe(1);
+    expect(JSON.parse(ctx.lines.at(-1)!)).toEqual({ shareToken: { id: 'st_9', token: 'nested' } });
   });
 
   it('区域和地块的本地检查', () => {
