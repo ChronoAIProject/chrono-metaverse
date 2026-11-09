@@ -1743,3 +1743,176 @@ async fn draft_writes_require_content_write_when_permissions_are_enforced() {
     let reply = app.org_with(&[EVENTS], Method::POST, &redact, None).await;
     assert_eq!(reply.status, StatusCode::NOT_FOUND);
 }
+
+/// 物件模型只能引用 model_import 处理后的版本（设计 4.4、6.1），贴图只能是贴图；资源按内容
+/// 全局去重，本空间上传过或导入过的同一份内容也算本空间的。
+#[tokio::test]
+async fn draft_assets_are_checked_by_role_and_by_space_ownership() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    app.define_layout(SPACE).await;
+    let set_metadata = |hash: String, metadata: mongodb::bson::Document| {
+        let files = app.collection("assets.files");
+        async move {
+            files
+                .update_one(doc! {"filename": &hash}, doc! {"$set": metadata})
+                .await
+                .unwrap();
+        }
+    };
+    // 原始的 model 用途上传（处理服务登记时 kind = 用途、带 uploadId）。
+    let raw = app
+        .put_space_asset(SPACE, b"glTF raw upload", "model/gltf-binary", "model")
+        .await;
+    set_metadata(raw.clone(), doc! {"metadata.uploadId": "up_raw"}).await;
+    // model_import 重新导出的模型（kind = model、带 sourceHash）。
+    let processed = app
+        .put_space_asset(SPACE, b"glTF processed", "model/gltf-binary", "model")
+        .await;
+    set_metadata(processed.clone(), doc! {"metadata.sourceHash": &raw}).await;
+    let texture = app
+        .put_space_asset(SPACE, b"\x89PNG texture", "image/png", "texture")
+        .await;
+    let web_model = app
+        .put_space_asset(SPACE, b"glTF web model", "model/gltf-binary", "web_model")
+        .await;
+    let place = |id: &str, model: &str| {
+        json!([{"op": "placeEntity", "entity": {"entityId": id, "layer": "ext", "kind": "object",
+            "assetHash": model, "bounds": {"min": [1, 0, 1], "max": [1.5, 0.5, 1.5]}}}])
+    };
+    let rug = |id: &str, texture: &str| {
+        json!([{"op": "placeEntity", "entity": {"entityId": id, "layer": "ext", "kind": "object",
+            "shape": {"type": "box", "size": [1, 0.02, 1], "transform": {"position": [2, 0, 2]},
+                      "material": {"texture": texture, "uv": "planar"}},
+            "bounds": {"min": [1.5, 0, 1.5], "max": [2.5, 0.02, 2.5]}}}])
+    };
+    let path = draft_path(
+        SPACE,
+        &new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await,
+    );
+    // 原始模型上传：422，并提示先导入。
+    let reply = append(&app, &path, place("lamp", &raw)).await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(reply.body["code"], "unknown_asset");
+    assert!(
+        reply.body["detail"]
+            .as_str()
+            .unwrap()
+            .contains("import_model"),
+        "{:?}",
+        reply.body
+    );
+    // 贴图、网页用模型当物件模型；处理后的模型当贴图：422。
+    for ops in [
+        place("lamp", &texture),
+        place("lamp", &web_model),
+        rug("rug", &processed),
+    ] {
+        let reply = append(&app, &path, ops).await;
+        assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(reply.body["code"], "unknown_asset");
+    }
+    assert_eq!(app.org(Method::GET, &path, None).await.body["rev"], 0);
+    // 处理后的模型和贴图：可以。
+    let reply = append(&app, &path, place("lamp", &processed)).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let reply = append(&app, &path, rug("rug", &texture)).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+
+    // 别的空间先登记了同一份内容（metadata.spaceId 是别的空间）：
+    // 本空间有完成的上传或 model_import 任务就算本空间的，否则 422。
+    let shared_texture = app
+        .put_space_asset(
+            "other-space",
+            b"\xff\xd8\xff shared",
+            "image/jpeg",
+            "texture",
+        )
+        .await;
+    let shared_model = app
+        .put_space_asset(
+            "other-space",
+            b"glTF shared chair",
+            "model/gltf-binary",
+            "model",
+        )
+        .await;
+    set_metadata(
+        shared_model.clone(),
+        doc! {"metadata.sourceHash": "f".repeat(64)},
+    )
+    .await;
+    for ops in [place("chair", &shared_model), rug("mat", &shared_texture)] {
+        let reply = append(&app, &path, ops).await;
+        assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            reply.body["detail"]
+                .as_str()
+                .unwrap()
+                .contains("不属于本空间"),
+            "{:?}",
+            reply.body
+        );
+    }
+    let owner = doc! {"kind": "org", "id": ORG};
+    app.collection("uploads")
+        .insert_one(doc! {
+            "_id": "up_shared_texture", "spaceId": SPACE, "owner": owner.clone(),
+            "purpose": "texture", "status": "done", "assetHash": &shared_texture,
+            "reused": true, "createdAt": "2026-01-01T00:00:00.000Z",
+        })
+        .await
+        .unwrap();
+    app.collection("jobs")
+        .insert_one(doc! {
+            "_id": "job_shared_model", "spaceId": SPACE, "owner": owner.clone(),
+            "kind": "model_import", "status": "done", "params": {"assetHash": "f".repeat(64)},
+            "result": {"modelHash": &shared_model, "sourceHash": "f".repeat(64)},
+            "attempt": 1, "maxAttempts": 3, "createdAt": "2026-01-01T00:00:00.000Z",
+        })
+        .await
+        .unwrap();
+    // 失败的任务、别的空间的上传不算。
+    let foreign_texture = app
+        .put_space_asset(
+            "other-space",
+            b"\xff\xd8\xff not ours",
+            "image/jpeg",
+            "texture",
+        )
+        .await;
+    app.collection("uploads")
+        .insert_one(doc! {
+            "_id": "up_failed", "spaceId": SPACE, "owner": owner.clone(),
+            "purpose": "texture", "status": "failed", "assetHash": &foreign_texture,
+            "createdAt": "2026-01-01T00:00:00.000Z",
+        })
+        .await
+        .unwrap();
+    let reply = append(&app, &path, rug("doormat", &foreign_texture)).await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let reply = append(&app, &path, place("chair", &shared_model)).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let reply = append(&app, &path, rug("mat", &shared_texture)).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+
+    // 发布后登记到 assetRefs，公开可读。
+    let reply = app
+        .org(Method::POST, &format!("{path}/publish"), None)
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    for hash in [&processed, &texture, &shared_model, &shared_texture] {
+        let reply = app
+            .public(&format!("/api/public/assets/{hash}.bin"), None)
+            .await;
+        assert_eq!(reply.status, StatusCode::OK, "{hash}");
+    }
+    assert_eq!(
+        app.public(&format!("/api/public/assets/{raw}.bin"), None)
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+}

@@ -5,6 +5,7 @@
 //! - 资源是标准 GridFS 文件：`assets.files {_id, length, chunkSize, filename = 内容哈希, metadata}`
 //!   + `assets.chunks {files_id, n, data}`（与处理服务 `assets.py` 相同）。分段读取只取用到的数据块。
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::pin::Pin;
 
 use axum::body::Bytes;
@@ -28,10 +29,104 @@ pub struct AssetMeta {
     /// 登记时写入的 `metadata.contentType`（只作参考，响应的 Content-Type 由服务端按白名单固定）。
     pub content_type: Option<String>,
     pub kind: Option<String>,
+    /// 第一个登记它的空间（`metadata.spaceId`）。资源按内容全局去重，别的空间上传或导入了
+    /// 同一份内容时这里不变，所以"属于哪些空间"要看 [`Repo::owned_assets`]。
+    pub space_id: Option<String>,
+}
+
+/// 资源在草稿、事件类型里被引用的用途（设计 4.4、6.1）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum AssetRole {
+    /// 物件的 `assetHash`、spawnEntity 显示方式的 `entityAsset`：只接受处理服务 `model_import`
+    /// 校验并重新导出的受限 glb（`metadata.kind = model`、带 `metadata.sourceHash`、
+    /// `metadata.contentType = model/gltf-binary`）。原始的 model 用途上传（`metadata.kind = model`、
+    /// 带 `uploadId`、没有 `sourceHash`）不行。
+    Model,
+    /// 贴图（物件的 `textures`、形状材质的 `texture`、新增方块的贴图）：`metadata.kind = texture`
+    /// （texture 用途上传并经处理服务校验的图片，或处理服务生成的贴图）。
+    Texture,
+}
+
+/// 资源不能按某个用途引用的原因。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssetRejection {
+    /// 没有这个资源。
+    Missing,
+    /// 不属于本空间：本空间没有登记、上传、导入或在提交里引用过它。
+    Foreign,
+    /// 物件模型引用了原始上传：要先经 `model_import` 校验并重新导出，再引用任务结果的 `modelHash`。
+    UnprocessedModel,
+    /// 种类与用途不符（原始扫描、操作文件、脚本、网页用模型，或把模型当贴图、贴图当模型）。
+    WrongKind,
+}
+
+/// 一个不能引用的资源。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnusableAsset {
+    pub hash: String,
+    pub role: AssetRole,
+    pub reason: AssetRejection,
+}
+
+impl UnusableAsset {
+    /// 给调用方看的说明。
+    pub fn describe(&self) -> String {
+        let reason = match (self.reason, self.role) {
+            (AssetRejection::Missing, _) => "不存在",
+            (AssetRejection::Foreign, _) => "不属于本空间",
+            (AssetRejection::UnprocessedModel, _) => {
+                "是原始模型上传；物件只能引用处理后的模型，请先调用 import_model，再引用任务结果里的 modelHash"
+            }
+            (AssetRejection::WrongKind, AssetRole::Model) => {
+                "不是处理后的物件模型（原始扫描、网页用模型、贴图、操作文件、脚本都不行）"
+            }
+            (AssetRejection::WrongKind, AssetRole::Texture) => {
+                "不是贴图（只能引用 texture 用途上传的图片或处理服务生成的贴图）"
+            }
+        };
+        format!("{}：{reason}", self.hash)
+    }
+}
+
+/// 资源的种类能不能按这个用途引用（只看 `metadata`，归属另外判断）。
+fn kind_fits(metadata: Option<&Document>, role: AssetRole) -> Result<(), AssetRejection> {
+    let text = |key: &str| metadata.and_then(|m| m.get_str(key).ok());
+    match (role, text("kind")) {
+        (AssetRole::Model, Some("model")) => {
+            let processed = text("sourceHash").is_some_and(|hash| !hash.is_empty())
+                && text("contentType") == Some("model/gltf-binary");
+            if processed {
+                Ok(())
+            } else {
+                Err(AssetRejection::UnprocessedModel)
+            }
+        }
+        (AssetRole::Texture, Some("texture")) => Ok(()),
+        _ => Err(AssetRejection::WrongKind),
+    }
 }
 
 /// 资源字节流。
 pub type AssetStream = Pin<Box<dyn Stream<Item = Result<Bytes, std::io::Error>> + Send>>;
+
+/// 点分路径上的字符串（值是数组时取其中的字符串）。
+fn strings_at(document: &Document, path: &str, into: &mut Vec<String>) {
+    let mut current = Some(Bson::Document(document.clone()));
+    for segment in path.split('.') {
+        current = match current {
+            Some(Bson::Document(inner)) => inner.get(segment).cloned(),
+            _ => None,
+        };
+    }
+    match current {
+        Some(Bson::String(value)) => into.push(value),
+        Some(Bson::Array(items)) => into.extend(items.into_iter().filter_map(|item| match item {
+            Bson::String(value) => Some(value),
+            _ => None,
+        })),
+        _ => {}
+    }
+}
 
 fn number(document: &Document, key: &str) -> Option<u64> {
     match document.get(key)? {
@@ -90,6 +185,9 @@ impl Repo {
             kind: metadata
                 .and_then(|m| m.get_str("kind").ok())
                 .map(str::to_owned),
+            space_id: metadata
+                .and_then(|m| m.get_str("spaceId").ok())
+                .map(str::to_owned),
         }))
     }
 
@@ -131,61 +229,217 @@ impl Repo {
         self.asset_meta_unchecked(hash).await
     }
 
-    /// 草稿里的物件模型、贴图能不能引用这些资源。返回不能用的哈希。
+    /// 本空间拥有 `hashes` 里的哪些资源。资源按内容全局去重，`metadata.spaceId` 只记第一个登记
+    /// 的空间，所以按下面任何一条都算本空间的（依次查，查到的不再往下查）：
     ///
-    /// 发布时这些资源会登记到 `assetRefs`、经公开接口可读，所以必须：已登记（GridFS 里有）；
-    /// 属于本空间（登记时 `metadata.spaceId` 是本空间，或本空间已经引用过）；不是原始扫描、
-    /// 操作文件或脚本（`metadata.kind` 为 `scan`、`ops`、`script` 的一律不行）。
-    pub async fn unusable_assets(
+    /// 1. `metadata.spaceId` 是本空间（调用方已经从 `assets.files` 读出，传在 `registered_here`）；
+    /// 2. 本空间的 `assetRefs` 登记过（提交或事件类型引用过）；
+    /// 3. 本空间有 `status: done`、`assetHash` 是它的上传（含哈希已存在时复用的上传）；
+    /// 4. 本空间有 `status: done` 的 `model_import` 任务，结果 `modelHash` 是它；
+    /// 5. 本空间的提交引用过它（`scan.assetHash`、`scan.webModelHashes`、`opsRef`）。
+    pub async fn owned_assets(
         &self,
         grant: &Grant,
         hashes: &[String],
-    ) -> Result<Vec<String>, RepoError> {
-        const PRIVATE_KINDS: [&str; 3] = ["scan", "ops", "script"];
+        registered_here: BTreeSet<String>,
+    ) -> Result<BTreeSet<String>, RepoError> {
+        if !grant.can_read_internal() {
+            return Err(RepoError::GrantMismatch);
+        }
+        let mut owned: BTreeSet<String> = registered_here
+            .into_iter()
+            .filter(|hash| hashes.contains(hash))
+            .collect();
+        let remaining = |owned: &BTreeSet<String>| -> Vec<String> {
+            let mut left: Vec<String> = hashes
+                .iter()
+                .filter(|hash| !owned.contains(*hash))
+                .cloned()
+                .collect();
+            left.sort();
+            left.dedup();
+            left
+        };
+        // 2. assetRefs
+        let left = remaining(&owned);
+        if left.is_empty() {
+            return Ok(owned);
+        }
+        self.collect_strings(
+            collections::ASSET_REFS,
+            doc! {"hash": {"$in": &left}, "spaceId": grant.space_id()},
+            &["hash"],
+            &left,
+            &mut owned,
+        )
+        .await?;
+        // 3. 本空间完成的上传
+        let left = remaining(&owned);
+        if left.is_empty() {
+            return Ok(owned);
+        }
+        let mut filter = granted_children(grant);
+        filter.insert("status", "done");
+        filter.insert("assetHash", doc! {"$in": &left});
+        self.collect_strings(
+            collections::UPLOADS,
+            filter,
+            &["assetHash"],
+            &left,
+            &mut owned,
+        )
+        .await?;
+        // 4. 本空间完成的 model_import
+        let left = remaining(&owned);
+        if left.is_empty() {
+            return Ok(owned);
+        }
+        let mut filter = granted_children(grant);
+        filter.insert("kind", "model_import");
+        filter.insert("status", "done");
+        filter.insert("result.modelHash", doc! {"$in": &left});
+        self.collect_strings(
+            collections::JOBS,
+            filter,
+            &["result.modelHash"],
+            &left,
+            &mut owned,
+        )
+        .await?;
+        // 5. 本空间的提交
+        let left = remaining(&owned);
+        if left.is_empty() {
+            return Ok(owned);
+        }
+        let mut filter = granted_children(grant);
+        filter.insert(
+            "$or",
+            vec![
+                doc! {"scan.assetHash": {"$in": &left}},
+                doc! {"scan.webModelHashes": {"$in": &left}},
+                doc! {"opsRef": {"$in": &left}},
+            ],
+        );
+        self.collect_strings(
+            collections::COMMITS,
+            filter,
+            &["scan.assetHash", "scan.webModelHashes", "opsRef"],
+            &left,
+            &mut owned,
+        )
+        .await?;
+        Ok(owned)
+    }
+
+    /// 查 `filter` 匹配的文档，把 `paths`（点分路径，值是字符串或字符串数组）里出现在 `wanted`
+    /// 中的值加进 `into`。
+    async fn collect_strings(
+        &self,
+        collection: &str,
+        filter: Document,
+        paths: &[&str],
+        wanted: &[String],
+        into: &mut BTreeSet<String>,
+    ) -> Result<(), RepoError> {
+        let mut projection = doc! {"_id": 0};
+        for path in paths {
+            projection.insert(*path, 1);
+        }
+        let mut cursor = self
+            .collection(collection)
+            .find(filter)
+            .projection(projection)
+            .limit(1000)
+            .await?;
+        while cursor.advance().await? {
+            let document: Document = cursor.deserialize_current().map_err(corrupt)?;
+            for path in paths {
+                let mut values = Vec::new();
+                strings_at(&document, path, &mut values);
+                into.extend(values.into_iter().filter(|value| wanted.contains(value)));
+            }
+        }
+        Ok(())
+    }
+
+    /// 草稿、事件类型里能不能按各自的用途引用这些资源。返回不能用的（每个哈希和用途一条）。
+    ///
+    /// 被引用的资源发布后登记到 `assetRefs`、经公开接口可读，所以必须：已登记（GridFS 里有）；
+    /// 属于本空间（见 [`Repo::owned_assets`]）；种类符合用途（见 [`AssetRole`]）——物件模型只能是
+    /// `model_import` 处理后的 glb，贴图只能是贴图；原始扫描、操作文件、脚本、网页用模型一律不行。
+    pub async fn unusable_assets(
+        &self,
+        grant: &Grant,
+        wanted: &[(String, AssetRole)],
+    ) -> Result<Vec<UnusableAsset>, RepoError> {
         if !grant.can_manage() {
             return Err(RepoError::GrantMismatch);
         }
-        if hashes.is_empty() {
+        if wanted.is_empty() {
             return Ok(Vec::new());
         }
+        let mut hashes: Vec<String> = wanted.iter().map(|(hash, _)| hash.clone()).collect();
+        hashes.sort();
+        hashes.dedup();
         let mut cursor = self
             .collection(collections::ASSET_FILES)
-            .find(doc! {"filename": {"$in": hashes}})
+            .find(doc! {"filename": {"$in": &hashes}})
             .projection(doc! {"filename": 1, "metadata": 1})
             .await?;
-        let mut usable_here = std::collections::BTreeSet::new();
-        let mut public_kind = std::collections::BTreeSet::new();
+        let mut metadata: BTreeMap<String, Option<Document>> = BTreeMap::new();
+        let mut registered_here = BTreeSet::new();
         while cursor.advance().await? {
             let document: Document = cursor.deserialize_current().map_err(corrupt)?;
             let Ok(name) = document.get_str("filename") else {
                 continue;
             };
-            let metadata = document.get_document("metadata").ok();
-            let kind = metadata.and_then(|m| m.get_str("kind").ok());
-            if kind.is_some_and(|kind| PRIVATE_KINDS.contains(&kind)) {
-                continue;
+            let meta = document.get_document("metadata").ok().cloned();
+            if meta.as_ref().and_then(|m| m.get_str("spaceId").ok()) == Some(grant.space_id()) {
+                registered_here.insert(name.to_owned());
             }
-            public_kind.insert(name.to_owned());
-            if metadata.and_then(|m| m.get_str("spaceId").ok()) == Some(grant.space_id()) {
-                usable_here.insert(name.to_owned());
+            metadata.insert(name.to_owned(), meta);
+        }
+        let existing: Vec<String> = metadata.keys().cloned().collect();
+        let owned = self.owned_assets(grant, &existing, registered_here).await?;
+        let mut unusable = Vec::new();
+        for (hash, role) in wanted {
+            let reason = match metadata.get(hash) {
+                None => Some(AssetRejection::Missing),
+                Some(_) if !owned.contains(hash) => Some(AssetRejection::Foreign),
+                Some(meta) => kind_fits(meta.as_ref(), *role).err(),
+            };
+            if let Some(reason) = reason {
+                unusable.push(UnusableAsset {
+                    hash: hash.clone(),
+                    role: *role,
+                    reason,
+                });
             }
         }
-        let mut cursor = self
-            .collection(collections::ASSET_REFS)
-            .find(doc! {"hash": {"$in": hashes}, "spaceId": grant.space_id()})
-            .projection(doc! {"hash": 1})
+        Ok(unusable)
+    }
+
+    /// `/api/v1` 下载资源（设计 8.2：原始扫描、大块操作文件和脚本只能由有权限的调用者经
+    /// `/api/v1` 下载）：资源必须属于本空间（见 [`Repo::owned_assets`]），否则当作不存在。
+    pub async fn space_owned_asset(
+        &self,
+        grant: &Grant,
+        hash: &str,
+    ) -> Result<Option<AssetMeta>, RepoError> {
+        if !grant.can_read_internal() {
+            return Err(RepoError::GrantMismatch);
+        }
+        let Some(meta) = self.asset_meta_unchecked(hash).await? else {
+            return Ok(None);
+        };
+        let mut registered_here = BTreeSet::new();
+        if meta.space_id.as_deref() == Some(grant.space_id()) {
+            registered_here.insert(hash.to_owned());
+        }
+        let owned = self
+            .owned_assets(grant, &[hash.to_owned()], registered_here)
             .await?;
-        while cursor.advance().await? {
-            let document: Document = cursor.deserialize_current().map_err(corrupt)?;
-            if let Ok(hash) = document.get_str("hash") {
-                usable_here.insert(hash.to_owned());
-            }
-        }
-        Ok(hashes
-            .iter()
-            .filter(|hash| !(public_kind.contains(*hash) && usable_here.contains(*hash)))
-            .cloned()
-            .collect())
+        Ok(owned.contains(hash).then_some(meta))
     }
 
     /// 把一段字节登记成资源（按内容哈希去重），与处理服务 `assets.put_asset` 的布局相同：
@@ -336,5 +590,100 @@ impl Repo {
             Ok(Bytes::copy_from_slice(&data[from..to]))
         });
         Ok(Box::pin(stream))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn metadata(pairs: &[(&str, &str)]) -> Document {
+        let mut document = Document::new();
+        for (key, value) in pairs {
+            document.insert(*key, *value);
+        }
+        document
+    }
+
+    #[test]
+    fn models_must_be_processed_and_textures_must_be_textures() {
+        let processed = metadata(&[
+            ("kind", "model"),
+            ("sourceHash", "a"),
+            ("contentType", "model/gltf-binary"),
+        ]);
+        let raw = metadata(&[
+            ("kind", "model"),
+            ("uploadId", "up_1"),
+            ("contentType", "model/gltf-binary"),
+        ]);
+        let texture = metadata(&[("kind", "texture"), ("contentType", "image/png")]);
+        assert_eq!(kind_fits(Some(&processed), AssetRole::Model), Ok(()));
+        assert_eq!(
+            kind_fits(Some(&raw), AssetRole::Model),
+            Err(AssetRejection::UnprocessedModel)
+        );
+        // 带 sourceHash 但不是 glb：也不是 model_import 的输出。
+        let odd = metadata(&[
+            ("kind", "model"),
+            ("sourceHash", "a"),
+            ("contentType", "model/obj"),
+        ]);
+        assert_eq!(
+            kind_fits(Some(&odd), AssetRole::Model),
+            Err(AssetRejection::UnprocessedModel)
+        );
+        assert_eq!(kind_fits(Some(&texture), AssetRole::Texture), Ok(()));
+        // 用途不符：贴图当模型、模型当贴图、原始扫描、网页用模型、操作文件、脚本、没有 metadata。
+        assert_eq!(
+            kind_fits(Some(&texture), AssetRole::Model),
+            Err(AssetRejection::WrongKind)
+        );
+        assert_eq!(
+            kind_fits(Some(&processed), AssetRole::Texture),
+            Err(AssetRejection::WrongKind)
+        );
+        for kind in ["scan", "web_model", "ops", "script"] {
+            let other = metadata(&[("kind", kind)]);
+            for role in [AssetRole::Model, AssetRole::Texture] {
+                assert_eq!(
+                    kind_fits(Some(&other), role),
+                    Err(AssetRejection::WrongKind),
+                    "{kind} {role:?}"
+                );
+            }
+        }
+        assert_eq!(
+            kind_fits(None, AssetRole::Texture),
+            Err(AssetRejection::WrongKind)
+        );
+    }
+
+    #[test]
+    fn strings_are_read_from_dotted_paths_and_arrays() {
+        let document = mongodb::bson::doc! {
+            "scan": {"assetHash": "s", "webModelHashes": ["w1", 3, "w2"]},
+            "opsRef": "o",
+        };
+        let mut found = Vec::new();
+        for path in [
+            "scan.assetHash",
+            "scan.webModelHashes",
+            "opsRef",
+            "missing.path",
+        ] {
+            strings_at(&document, path, &mut found);
+        }
+        assert_eq!(found, ["s", "w1", "w2", "o"]);
+    }
+
+    #[test]
+    fn rejections_explain_what_to_do() {
+        let unusable = UnusableAsset {
+            hash: "h".into(),
+            role: AssetRole::Model,
+            reason: AssetRejection::UnprocessedModel,
+        };
+        assert!(unusable.describe().contains("import_model"));
     }
 }

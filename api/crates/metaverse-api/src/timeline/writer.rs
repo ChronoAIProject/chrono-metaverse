@@ -18,7 +18,9 @@ use serde_json::Value;
 use super::palette::{builtin_palette, palette_value};
 use crate::auth::{Caller, Grant};
 use crate::error::ApiError;
-use crate::repo::{BlobKind, CommitError, CommitOutcome, CommitPlan, Layout, Repo, RepoError};
+use crate::repo::{
+    AssetRole, BlobKind, CommitError, CommitOutcome, CommitPlan, Layout, Repo, RepoError,
+};
 
 /// 本次提交之后的完整状态清单。
 pub fn manifest_after(head: &StateManifest, plan: &CommitPlan) -> StateManifest {
@@ -112,17 +114,27 @@ pub fn actor(caller: &Caller, scope: PathScope, kind: ActorKind) -> Actor {
 
 /// 一条物件里引用的资源：模型、贴图（含形状材质里的贴图）。
 pub fn entity_assets(body: &EntityBody, into: &mut BTreeSet<String>) {
+    let mut roles = BTreeSet::new();
+    entity_asset_roles(body, &mut roles);
+    into.extend(roles.into_iter().map(|(hash, _)| hash));
+}
+
+/// 一条物件里引用的资源和它们的用途：`assetHash` 是物件模型；`textures` 和形状材质里的
+/// `texture` 是贴图。
+pub fn entity_asset_roles(body: &EntityBody, into: &mut BTreeSet<(String, AssetRole)>) {
     if let Some(hash) = &body.asset_hash {
-        into.insert(hash.clone());
+        into.insert((hash.clone(), AssetRole::Model));
     }
+    let mut textures = BTreeSet::new();
     for hash in body.textures.iter().flatten() {
-        into.insert(hash.clone());
+        textures.insert(hash.clone());
     }
     if let Some(shape) = &body.shape {
         if let Ok(value) = serde_json::to_value(shape) {
-            collect_textures(&value, into);
+            collect_textures(&value, &mut textures);
         }
     }
+    into.extend(textures.into_iter().map(|hash| (hash, AssetRole::Texture)));
 }
 
 fn collect_textures(value: &Value, into: &mut BTreeSet<String>) {
@@ -238,6 +250,12 @@ mod tests {
         let mut assets = BTreeSet::new();
         entity_assets(&body, &mut assets);
         assert_eq!(assets.len(), 3);
+        let mut roles = BTreeSet::new();
+        entity_asset_roles(&body, &mut roles);
+        assert!(roles.contains(&("a".repeat(64), AssetRole::Model)));
+        assert!(roles.contains(&("b".repeat(64), AssetRole::Texture)));
+        assert!(roles.contains(&("c".repeat(64), AssetRole::Texture)));
+        assert_eq!(roles.len(), 3);
     }
 
     #[test]
