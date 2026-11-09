@@ -30,7 +30,7 @@ from bson import Binary
 from pymongo.client_session import ClientSession
 
 from ..canonical import content_hash
-from ..errors import PermanentJobError
+from ..errors import PermanentJobError, SpaceGone
 from ..records import record_hash
 from ..store import C, Store, SystemScope, is_duplicate_key
 from ..timeutil import format_ts, parse_ts
@@ -334,7 +334,7 @@ def write_back(
     def callback(session: ClientSession) -> None:
         space = store.spaces.find_one(scope.space_filter(), session=session)
         if space is None:
-            raise PermanentJobError(f"空间 {scope.space_id} 不存在，或主人与任务记录不一致")
+            raise SpaceGone(scope.space_id)
         plan = build(session, space) if callable(build) else build
         head = space.get("head") or {}
         head_seq = int(head.get("seq") or 0)

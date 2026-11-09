@@ -54,7 +54,10 @@ class Lease:
 
     @property
     def scope(self) -> SystemScope:
-        return SystemScope(self.space_id, self.owner, str(self.job_id))
+        created_at = self.doc.get("createdAt")
+        return SystemScope(
+            self.space_id, self.owner, str(self.job_id), created_at if isinstance(created_at, str) else None
+        )
 
     def fence(self, **extra: Any) -> dict[str, Any]:
         """栅栏条件：任务编号 + 租约持有者 + 重试次数 + 运行中。"""

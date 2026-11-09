@@ -28,11 +28,18 @@ import logging
 from typing import Any
 
 from ..assets import AssetError, find_asset, iter_file_chunks, register_upload, touch_asset
-from ..errors import InputRejected, PermanentJobError
+from ..errors import InputRejected, PermanentJobError, SpaceGone
 from ..jobs.lease import Lease, mark_done
 from ..processing.sniff import PURPOSES
 from ..store import C, Store, UploadStatus
-from ..uploads import declared, fail_upload, find_upload, finish_upload, settle_upload
+from ..uploads import (
+    declared,
+    fail_upload,
+    find_upload,
+    finish_upload,
+    settle_upload,
+    upload_space_filter,
+)
 from .context import JobContext
 
 log = logging.getLogger(__name__)
@@ -71,6 +78,12 @@ def run(ctx: JobContext) -> dict[str, Any]:
         return result
     if status != UploadStatus.COMPLETE:
         raise PermanentJobError(f"上传 {upload_id} 的状态是 {status}，不能校验")
+    space = upload_space_filter(ctx.lease.space_id, ctx.lease.owner, doc)
+    if store.spaces.find_one(space, {"_id": 1}) is None:
+        # 上传所在的空间实例不在了（被删除，或删除后用同一个编号重建）：不登记、不计用量
+        gone = SpaceGone(ctx.lease.space_id)
+        _fail_upload(ctx, files_id, str(gone))
+        raise gone
 
     sha, size, purpose = declared(doc)
     try:
@@ -171,7 +184,12 @@ def _finish(
         )
         mark_done(ctx.store, ctx.lease, result=result, session=session)
 
-    ctx.store.run_transaction(txn)
+    try:
+        ctx.store.run_transaction(txn)
+    except SpaceGone as error:
+        # 校验期间空间被删除（或删除后重建）：上传不完成到别的空间实例里
+        _fail_upload(ctx, files_id, str(error))
+        raise
     log.info("上传 %s 校验通过：%s（%s）", files_id, sha, "复用已有资源" if reused else "新登记")
     return result
 

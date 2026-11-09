@@ -32,7 +32,7 @@ from typing import Any
 
 from ..assets import put_asset
 from ..chunk import GRID_UNIT
-from ..errors import PermanentJobError
+from ..errors import PermanentJobError, SpaceGone
 from ..ids import is_object_id
 from ..jobs.lease import mark_done
 from ..jobs.writeback import (
@@ -208,9 +208,10 @@ def _texture_content_type(data: bytes) -> str:
 
 
 def _space(ctx: JobContext) -> dict[str, Any]:
+    """任务所属的空间实例。不存在、主人对不上、或任务创建之后空间被删除重建时，任务直接失败（不可重试）。"""
     space = ctx.store.spaces.find_one(ctx.lease.scope.space_filter())
     if space is None:
-        raise PermanentJobError(f"空间 {ctx.lease.space_id} 不存在，或主人与任务记录不一致")
+        raise SpaceGone(ctx.lease.space_id)
     return space
 
 

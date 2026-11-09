@@ -13,12 +13,16 @@ from __future__ import annotations
 from typing import Any
 
 from ..assets import put_asset
+from ..errors import SpaceGone
 from ..jobs.lease import mark_done
 from .context import JobContext, require_hash
 
 
 def run(ctx: JobContext) -> dict[str, Any]:
     asset_hash = require_hash(ctx.params, "assetHash")
+    if ctx.store.spaces.find_one(ctx.lease.scope.space_filter(), {"_id": 1}) is None:
+        # 空间不在了、或任务创建之后被删除重建：结果不能成为新空间里"本空间完成的物件模型"
+        raise SpaceGone(ctx.lease.space_id)
     path = ctx.download(asset_hash, "model.bin", ctx.config.max_model_bytes)
     out = ctx.compute(
         "metaverse_worker.processing.tasks:model_task", path=path, workdir=ctx.workdir, limits=ctx.limits()

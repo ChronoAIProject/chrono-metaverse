@@ -101,9 +101,18 @@ uv lock --upgrade-package numpy     # 只升级某一个依赖
 失败分类：参数不合法、输入超限 / 格式不对、子进程内存超限或超时 → 不可重试，直接 `failed`；其他错误
 （数据库抖动、子进程崩溃等）→ 退回队列，`maxAttempts`（默认 3）用完后 `failed`。`lastError` 写原因。
 
+**空间实例**：接口服务删除空间时不清理任务和上传，同一个主人之后可以用同一个编号重建空间。所以处理服务
+读写 `spaces` 的条件除了 `{_id, owner.kind, owner.id}`，还要求空间的 `createdAt` 不晚于记录（任务或上传）
+的 `createdAt`（`store.space_filter`，固定格式的 RFC 3339 字符串直接比较）：空间更新，说明记录是在被删掉的
+那个空间里建的。这样的任务（`scan_import`、`rebuild`、`voxelize`、`model_import`）直接失败，不可重试，
+不会把旧扫描写进新空间的时间线、固定它的坐标系；这样的上传标记 `failed`，不登记、不计用量；资源被清理时
+也不会从新空间的用量里减回旧上传计过的字节。处理服务在提交事务里建的后续任务用提交的 `at`（不早于 head），
+不受影响。没有 `createdAt` 的空间不做这项比较。
+
 ### `upload_verify` `{uploadId}`
 
-1. 上传已是 `done`：直接完成；状态不是 `complete`：失败；
+1. 上传已是 `done`：直接完成；状态不是 `complete`：失败；上传所在的空间实例不在了（见上面的"空间实例"）：
+   上传标记 `failed`、任务失败；
 2. 流式读出全部数据块（`assets.chunks`，`files_id` = 上传编号），核对序号连续、块大小、总长度，边算
    sha256 边写临时文件；不完整或哈希不符 → 上传标记 `failed`、删数据块、任务失败；
 3. 按用途嗅探格式（子进程里）：
@@ -313,7 +322,8 @@ result.metrics  # 任意 JSON，原样放进 result.objects
 ## 空间存储用量
 
 `spaces.storageUsedBytes`（设计 4.1；接口服务创建上传时按"已用 + 进行中的上传 + 本次大小 > storageLimitBytes"
-返回 413）由处理服务累加，都按 `{_id, owner.kind, owner.id}` 条件更新，和引起变化的写入在同一个事务里：
+返回 413）由处理服务累加，都按 `{_id, owner.kind, owner.id}` 加空间实例（见"空间实例"）条件更新，和引起
+变化的写入在同一个事务里：
 
 | 时机 | 变化 |
 |---|---|
