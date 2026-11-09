@@ -81,3 +81,22 @@ export function imageStats(png: DecodedPng): { brightRatio: number; colors: numb
   }
   return { brightRatio: bright / Math.max(1, total), colors: colors.size };
 }
+
+/**
+ * 整幅画面里亮像素（亮度 > threshold）的比例。深色主题下背景（亮度约 10）和地面网格线
+ * （约 35）都比阈值暗，房间（地面、墙、家具）比阈值亮，所以这个比例近似"房间占画面多少"。
+ */
+export function brightCoverage(png: DecodedPng, threshold = 45): number {
+  const { width, height, channels, pixels } = png;
+  let bright = 0;
+  let total = 0;
+  for (let y = 0; y < height; y += 2) {
+    for (let x = 0; x < width; x += 2) {
+      const i = (y * width + x) * channels;
+      const luma = 0.2126 * pixels[i]! + 0.7152 * pixels[i + 1]! + 0.0722 * pixels[i + 2]!;
+      if (luma > threshold) bright += 1;
+      total += 1;
+    }
+  }
+  return bright / Math.max(1, total);
+}
