@@ -13,7 +13,10 @@ export interface TestContext extends CliContext {
   readonly errors: string[];
 }
 
-export function makeContext(cwd: string, env: Record<string, string | undefined> = {}): TestContext {
+export function makeContext(
+  cwd: string,
+  env: Record<string, string | undefined> = {},
+): TestContext {
   const lines: string[] = [];
   const errors: string[] = [];
   return {
@@ -86,7 +89,13 @@ export function makeWorkspace(
     anchors: [
       { anchorId: '_space', kind: 'space', visibility: 'public' },
       { anchorId: 'cam-1', kind: 'camera', position: [1, 2.5, 1], visibility: 'internal' },
-      { anchorId: 't1', kind: 'table', box: [10, 0, 10, 26, 15, 20], label: '1 号桌', visibility: 'public' },
+      {
+        anchorId: 't1',
+        kind: 'table',
+        box: [10, 0, 10, 26, 15, 20],
+        label: '1 号桌',
+        visibility: 'public',
+      },
     ],
     entities: [
       {

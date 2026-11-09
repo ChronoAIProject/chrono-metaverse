@@ -1,4 +1,6 @@
 import { CanonicalError } from '../core/canonical.js';
+import { ChunkError } from '../core/chunk.js';
+import { GridError } from '../core/grid.js';
 import { OpError } from '../core/ops.js';
 import { RecordError } from '../core/record.js';
 import { ShapeError } from '../core/shape.js';
@@ -76,6 +78,8 @@ const KNOWN_ERRORS = [
   RecordError,
   ShapeError,
   CanonicalError,
+  ChunkError,
+  GridError,
 ];
 
 /** 运行一条命令，返回退出码。已知的错误打印说明，不打印调用栈。 */

@@ -3,7 +3,13 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { main } from '../src/commands/index.js';
 import { decompressChunk } from '../src/core/chunk.js';
-import { runBuild, flattenOps, findScript, BuildError, type BuildManifest } from '../src/workspace/build.js';
+import {
+  runBuild,
+  flattenOps,
+  findScript,
+  BuildError,
+  type BuildManifest,
+} from '../src/workspace/build.js';
 import {
   ConfigError,
   findWorkspaceRoot,
@@ -46,7 +52,11 @@ describe('工作区配置', () => {
   it('校验、读写、往上找 metaverse.json', () => {
     const root = track(tempDir());
     writeConfig(root, { spaceId: 'front-hall', mode: 'nyxid', slug: 'chrono-metaverse' });
-    expect(readConfig(root)).toEqual({ spaceId: 'front-hall', mode: 'nyxid', slug: 'chrono-metaverse' });
+    expect(readConfig(root)).toEqual({
+      spaceId: 'front-hall',
+      mode: 'nyxid',
+      slug: 'chrono-metaverse',
+    });
     const nested = join(root, 'build', 'deep');
     mkdirSync(nested, { recursive: true });
     expect(findWorkspaceRoot(nested)).toBe(root);
@@ -67,7 +77,18 @@ describe('metaverse init', () => {
   it('写入配置、示例脚本、技能说明、tsconfig、.gitignore 和工具包链接', async () => {
     const cwd = track(tempDir());
     const ctx = makeContext(cwd);
-    expect(await main(ctx, ['init', 'front-hall', '--mode', 'direct', '--plot', 'p1', '--web-url', 'https://m.example'])).toBe(0);
+    expect(
+      await main(ctx, [
+        'init',
+        'front-hall',
+        '--mode',
+        'direct',
+        '--plot',
+        'p1',
+        '--web-url',
+        'https://m.example',
+      ]),
+    ).toBe(0);
     const root = join(cwd, 'front-hall');
     const config = readConfig(root);
     expect(config).toMatchObject({
@@ -82,7 +103,9 @@ describe('metaverse init', () => {
     const skill = readFileSync(join(root, '.claude/skills/metaverse-builder/SKILL.md'), 'utf8');
     expect(skill).toBe(readFileSync(join(SDK_ROOT, 'skills/metaverse-builder/SKILL.md'), 'utf8'));
     expect(skill).toContain('GRID_UNIT = 0.05');
-    expect(readFileSync(join(root, 'build/main.ts'), 'utf8')).toContain('export default function build');
+    expect(readFileSync(join(root, 'build/main.ts'), 'utf8')).toContain(
+      'export default function build',
+    );
     expect(existsSync(join(root, 'tsconfig.json'))).toBe(true);
     expect(readFileSync(join(root, '.gitignore'), 'utf8')).toContain('out/');
     expect(lstatSync(join(root, 'node_modules/@chrono-metaverse/sdk')).isSymbolicLink()).toBe(true);
@@ -131,22 +154,38 @@ describe('metaverse build', () => {
     const config = readConfig(root);
     const result = await runBuild(root, config);
     expect(result.message).toBe('地块里放桌子');
-    expect(result.ops.map((op) => op.op)).toEqual(['addBlock', 'hollowBox', 'placeEntity', 'createAnchor']);
+    expect(result.ops.map((op) => op.op)).toEqual([
+      'addBlock',
+      'hollowBox',
+      'placeEntity',
+      'createAnchor',
+    ]);
     expect(result.target).toMatchObject({ scope: 'plot:p1', plotId: 'p1', origin: [5, 0, 0] });
     expect(result.outside).toEqual([]);
-    expect(result.provisionalBlocks).toEqual([{ id: 4, name: 'brick', kind: 'solid', color: [180, 80, 60], tags: [] }]);
+    expect(result.provisionalBlocks).toEqual([
+      { id: 4, name: 'brick', kind: 'solid', color: [180, 80, 60], tags: [] },
+    ]);
     expect(result.entityChanges.map((c) => c.id)).toEqual(['table-1']);
     expect(result.anchorChanges.map((c) => c.id)).toEqual(['t9']);
     const ndjson = readFileSync(join(root, 'out/ops.ndjson'), 'utf8').trim().split('\n');
     expect(ndjson).toHaveLength(4);
-    expect(JSON.parse(ndjson[1]!)).toEqual({ op: 'hollowBox', box: [100, 0, 0, 110, 2, 10], block: 'brick' });
-    const manifest = JSON.parse(readFileSync(join(root, 'out/result.json'), 'utf8')) as BuildManifest;
+    expect(JSON.parse(ndjson[1]!)).toEqual({
+      op: 'hollowBox',
+      box: [100, 0, 0, 110, 2, 10],
+      block: 'brick',
+    });
+    const manifest = JSON.parse(
+      readFileSync(join(root, 'out/result.json'), 'utf8'),
+    ) as BuildManifest;
     expect(manifest.baseSeq).toBe(3);
     expect(manifest.opCount).toBe(4);
     expect(manifest.final.palette.map((b) => b.name)).toEqual(['stone', 'oak', 'brick']);
     expect(manifest.final.chunks.length).toBe(2);
     const ext = manifest.chunkChanges.find((c) => c.layer === 'ext')!;
-    const cells = decompressChunk(readFileSync(join(root, 'out/chunks', `${ext.hash}.bin`)), ext.hash!);
+    const cells = decompressChunk(
+      readFileSync(join(root, 'out/chunks', `${ext.hash}.bin`)),
+      ext.hash!,
+    );
     expect(cells[4]).toBe(4); // x = 100 落在区块 3 的第 4 格
     // 反复运行结果一样。
     const again = await runBuild(root, config, { write: false });
@@ -230,9 +269,15 @@ describe('metaverse build', () => {
     await expect(runBuild(root, config)).rejects.toThrow('找不到建造脚本');
     writeFileSync(join(root, 'build/main.ts'), 'export const x = 1;');
     await expect(runBuild(root, config)).rejects.toThrow('默认导出');
-    writeFileSync(join(root, 'build/main.ts'), 'export default () => { throw new Error("坏了"); };');
+    writeFileSync(
+      join(root, 'build/main.ts'),
+      'export default () => { throw new Error("坏了"); };',
+    );
     await expect(runBuild(root, config)).rejects.toThrow('建造脚本出错：坏了');
-    writeFileSync(join(root, 'build/main.ts'), 'export default () => [{ op: "fill", box: [0,0,0,1,1,1] }];');
+    writeFileSync(
+      join(root, 'build/main.ts'),
+      'export default () => [{ op: "fill", box: [0,0,0,1,1,1] }];',
+    );
     await expect(runBuild(root, config)).rejects.toThrow(BuildError);
     writeFileSync(
       join(root, 'build/main.ts'),
@@ -247,7 +292,10 @@ describe('metaverse build', () => {
 
   it('脚本可以是 .mjs，也可以用 --script 指定；返回值可以是 Promise', async () => {
     const root = track(makeWorkspace());
-    writeFileSync(join(root, 'build/alt.mjs'), 'export default async (base) => base.seq > 0 ? [] : null;');
+    writeFileSync(
+      join(root, 'build/alt.mjs'),
+      'export default async (base) => base.seq > 0 ? [] : null;',
+    );
     const config = readConfig(root);
     expect(findScript(root, config, 'build/alt.mjs')).toBe(join(root, 'build/alt.mjs'));
     const result = await runBuild(root, config, { script: 'build/alt.mjs', write: false });

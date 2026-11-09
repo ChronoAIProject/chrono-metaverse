@@ -272,7 +272,13 @@ export async function runAdmin(ctx: CliContext, args: readonly string[]): Promis
     'base-seq': { type: 'string' },
     reason: { type: 'string' },
   });
-  if (sub === undefined || sub === 'help' || flag(values, 'help')) {
+  if (
+    sub === undefined ||
+    sub === 'help' ||
+    sub === '--help' ||
+    sub === '-h' ||
+    flag(values, 'help')
+  ) {
     ctx.out(ADMIN_HELP);
     return sub === undefined ? 1 : 0;
   }

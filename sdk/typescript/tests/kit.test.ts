@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { aabbGridCover } from '../src/core/grid.js';
 import { parseOp, WorkingState } from '../src/core/ops.js';
 import { entityFootprint, validateEntityBody } from '../src/core/record.js';
-import { shapeBounds, ShapeError, signedArea, validateShape, type Shape } from '../src/core/shape.js';
+import {
+  shapeBounds,
+  ShapeError,
+  signedArea,
+  validateShape,
+  type Shape,
+} from '../src/core/shape.js';
 import * as kit from '../src/kit/index.js';
 
 function close(actual: readonly number[], expected: readonly number[], eps = 1e-9) {
@@ -34,7 +40,12 @@ describe('单位换算', () => {
 
 describe('形状构造', () => {
   it('box 带圆角、倒角、位置、旋转和颜色', () => {
-    const shape = kit.box([1.2, 0.03, 0.75], { at: [1, 0.72, 2], yaw: 90, fillet: 0.01, color: '#B08A5A' });
+    const shape = kit.box([1.2, 0.03, 0.75], {
+      at: [1, 0.72, 2],
+      yaw: 90,
+      fillet: 0.01,
+      color: '#B08A5A',
+    });
     expect(shape).toEqual({
       type: 'box',
       size: [1.2, 0.03, 0.75],
@@ -50,10 +61,27 @@ describe('形状构造', () => {
   it('构造时就按服务端规则校验，错误带路径', () => {
     expect(() => kit.box([1, 0, 1])).toThrow(ShapeError);
     expect(() => kit.box([1, 1, 1], { color: '#12345' })).toThrow('颜色格式不对');
-    expect(() => kit.box([1, 1, 1], { color: [1, 2, 3], texture: { hash: 'a'.repeat(64), uv: 'box' } })).toThrow();
+    expect(() =>
+      kit.box([1, 1, 1], { color: [1, 2, 3], texture: { hash: 'a'.repeat(64), uv: 'box' } }),
+    ).toThrow();
     expect(() => kit.cylinder(0.3, 1, { segments: 2 })).toThrow('分段数');
-    expect(() => kit.extrude([[0, 0], [0, 1], [1, 1], [1, 0]], 1)).toThrow('逆时针');
-    expect(() => kit.lathe([[0, 0], [0, 1]])).toThrow('不在轴上');
+    expect(() =>
+      kit.extrude(
+        [
+          [0, 0],
+          [0, 1],
+          [1, 1],
+          [1, 0],
+        ],
+        1,
+      ),
+    ).toThrow('逆时针');
+    expect(() =>
+      kit.lathe([
+        [0, 0],
+        [0, 1],
+      ]),
+    ).toThrow('不在轴上');
     expect(() => kit.loft([{ y: 0, outline: kit.rect(1, 1) }])).toThrow('2 到 8');
     expect(() => kit.group([])).toThrow('至少');
     expect(() => kit.instance('bad id')).toThrow('模板编号');
@@ -71,7 +99,11 @@ describe('形状构造', () => {
       roll: 5,
       scale: [1, 2, 1],
     });
-    expect(shape.material).toEqual({ texture: 'b'.repeat(64), uv: 'planar', tint: [250, 250, 250] });
+    expect(shape.material).toEqual({
+      texture: 'b'.repeat(64),
+      uv: 'planar',
+      tint: [250, 250, 250],
+    });
     expect(shape.transform).toEqual({ pitch: 10, roll: 5, scale: [1, 2, 1] });
     // 角度为 0 的不写进 JSON。
     expect(kit.box([1, 1, 1], { yaw: 0 }).transform).toBeUndefined();
@@ -80,12 +112,32 @@ describe('形状构造', () => {
   it('圆柱、圆台、圆锥、旋转体、扫掠、放样', () => {
     close([...shapeBounds(kit.cylinder(0.2, 1, { radiusTop: 0.5 })).max], [0.5, 1, 0.5]);
     close([...shapeBounds(kit.cone(0.15, 0.4, { at: [1, 0.8, 1] })).min], [0.85, 0.8, 0.85]);
-    const lathe = kit.lathe([[0, 0], [0.3, 0.1], [0.1, 0.9]], { angle: 90, segments: 24 });
+    const lathe = kit.lathe(
+      [
+        [0, 0],
+        [0.3, 0.1],
+        [0.1, 0.9],
+      ],
+      { angle: 90, segments: 24 },
+    );
     close([...shapeBounds(lathe).min], [-0.3, 0, -0.3]);
-    const leg = kit.sweep([[0, 0.015, 0], [0, 0.43, 0]], 0.015, { smooth: 0.02, caps: true });
+    const leg = kit.sweep(
+      [
+        [0, 0.015, 0],
+        [0, 0.43, 0],
+      ],
+      0.015,
+      { smooth: 0.02, caps: true },
+    );
     expect(leg.section).toEqual({ circle: 0.015 });
     close([...shapeBounds(leg).min], [-0.015, 0, -0.015]);
-    const rail = kit.sweep([[0, 0, 0], [1, 0, 0]], { rect: [0.06, 0.08] });
+    const rail = kit.sweep(
+      [
+        [0, 0, 0],
+        [1, 0, 0],
+      ],
+      { rect: [0.06, 0.08] },
+    );
     close([shapeBounds(rail).max[0]], [1.05]);
     const vase = kit.loft([
       { y: 0, outline: kit.circle(0.1) },
@@ -138,7 +190,22 @@ describe('二维轮廓', () => {
     ];
     expect(signedArea(kit.ccw(clockwise))).toBeGreaterThan(0);
     expect(kit.ccw(kit.ccw(clockwise))).toEqual(kit.ccw(clockwise));
-    expect(kit.outline([[0, 0], [1, 0], [0, 1]], { arcs: [] })).toEqual({ points: [[0, 0], [1, 0], [0, 1]] });
+    expect(
+      kit.outline(
+        [
+          [0, 0],
+          [1, 0],
+          [0, 1],
+        ],
+        { arcs: [] },
+      ),
+    ).toEqual({
+      points: [
+        [0, 0],
+        [1, 0],
+        [0, 1],
+      ],
+    });
   });
 });
 
@@ -162,14 +229,20 @@ describe('物件、模板和锚点记录', () => {
     const tpl = kit.template('chair-a', chairShape, { label: '餐椅' });
     expect(tpl.kind).toBe('template');
     const templates = new Map([['chair-a', chairShape]]);
-    const one = kit.entity('chair-1', kit.instance('chair-a', { at: [2, 0, 3], color: [10, 20, 30] }), {
-      templates,
-    });
+    const one = kit.entity(
+      'chair-1',
+      kit.instance('chair-a', { at: [2, 0, 3], color: [10, 20, 30] }),
+      {
+        templates,
+      },
+    );
     const local = shapeBounds(chairShape);
     close([...one.bounds.min], [2 + local.min[0], local.min[1], 3 + local.min[2]], 1e-6);
     expect(() => kit.entity('chair-2', kit.instance('chair-b'))).toThrow('找不到模板');
     // 模板引用别的模板。
-    const row = kit.template('row', kit.group([kit.instance('chair-a', { at: [-0.6, 0, 0] })]), { templates });
+    const row = kit.template('row', kit.group([kit.instance('chair-a', { at: [-0.6, 0, 0] })]), {
+      templates,
+    });
     expect(row.bounds.min[0]).toBeLessThan(-0.6);
   });
 
@@ -181,9 +254,9 @@ describe('物件、模板和锚点记录', () => {
       label: '2 号桌',
       visibility: 'public',
     });
-    expect(kit.anchor('d1', 'door', { position: [1, 0, 2] }, { visibility: 'internal' }).visibility).toBe(
-      'internal',
-    );
+    expect(
+      kit.anchor('d1', 'door', { position: [1, 0, 2] }, { visibility: 'internal' }).visibility,
+    ).toBe('internal');
     expect(() => kit.anchor('_x', 'door', { position: [0, 0, 0] })).toThrow('anchorId');
     expect(() => kit.anchor('t3', 'table', { box: [0, 0, 0, 0, 1, 1] })).toThrow();
   });
@@ -198,7 +271,9 @@ describe('操作构造', () => {
       kit.replace([0, 0, 0, 4, 4, 4], 2, 1),
       kit.copyRegion([0, 0, 0, 4, 4, 4], [10, 0, 0]),
       kit.addBlock('brick', 'solid', { color: '#b4503c' }, ['wall']),
-      kit.addBlock('tile', 'solid', { texture: { top: 'c'.repeat(64), side: 'c'.repeat(64), bottom: 'c'.repeat(64) } }),
+      kit.addBlock('tile', 'solid', {
+        texture: { top: 'c'.repeat(64), side: 'c'.repeat(64), bottom: 'c'.repeat(64) },
+      }),
       kit.place('lamp', kit.cylinder(0.1, 1.5)),
       kit.removeEntity('lamp'),
       kit.createAnchor(kit.anchor('t9', 'seat', { position: [1, 0, 1] })),
@@ -220,11 +295,15 @@ describe('操作构造', () => {
     expect(() => kit.fill([0, 0, 0, 1, 1, 1], 70000)).toThrow('方块编号');
     expect(() => kit.copyRegion([0, 0, 0, 1, 1, 1], [0.5, 0, 0])).toThrow('整数');
     expect(() => kit.addBlock('bad name', 'solid', { color: [1, 2, 3] })).toThrow('方块名称');
-    expect(() => kit.addBlock('ok', 'solid', { texture: { top: 'x', side: 'x', bottom: 'x' } })).toThrow('贴图');
+    expect(() =>
+      kit.addBlock('ok', 'solid', { texture: { top: 'x', side: 'x', bottom: 'x' } }),
+    ).toThrow('贴图');
   });
 
   it('构造的操作能在本地作用', () => {
-    const state = new WorkingState({ palette: [{ id: 2, name: 'stone', kind: 'solid', color: [1, 1, 1], tags: [] }] });
+    const state = new WorkingState({
+      palette: [{ id: 2, name: 'stone', kind: 'solid', color: [1, 1, 1], tags: [] }],
+    });
     const touched = state.applySequence(
       [
         kit.addBlock('brick', 'solid', { color: '#b4503c' }),
@@ -248,7 +327,9 @@ describe('家具和结构', () => {
     close([...rect.max], [0.6, 0.75, 0.375]);
     const round = shapeBounds(kit.table({ top: 'round', width: 0.9, at: [1, 0, 1] }));
     close([round.min[0], round.max[0], round.max[1]], [0.55, 1.45, 0.75]);
-    const stadium = shapeBounds(kit.table({ top: 'stadium', width: 1.8, depth: 0.9, height: 0.74 }));
+    const stadium = shapeBounds(
+      kit.table({ top: 'stadium', width: 1.8, depth: 0.9, height: 0.74 }),
+    );
     close([stadium.min[0], stadium.max[0], stadium.max[1]], [-0.9, 0.9, 0.74]);
   });
 
@@ -303,9 +384,9 @@ describe('家具和结构', () => {
     expect(() =>
       kit.wall({ from: [0, 0], to: [3, 0], openings: [kit.doorOpening(0.5), kit.doorOpening(1)] }),
     ).toThrow('重叠');
-    expect(() => kit.wall({ from: [0, 0], to: [3, 0], height: 2, openings: [kit.doorOpening(0.5)] })).toThrow(
-      '比墙还高',
-    );
+    expect(() =>
+      kit.wall({ from: [0, 0], to: [3, 0], height: 2, openings: [kit.doorOpening(0.5)] }),
+    ).toThrow('比墙还高');
     const diagonal = kit.wall({ from: [0, 0], to: [3, 3] });
     expect(diagonal.transform?.yaw).toBe(-45);
   });

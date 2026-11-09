@@ -36,16 +36,18 @@ describe('令牌来源顺序', () => {
       source: '命令行 --token',
     });
     expect(resolveNyxToken({ ...base, env }).token).toBe('env-token');
-    expect(resolveNyxToken({ ...base, env: { NYXID_TOKEN_FILE: '/tmp/custom-token' } }).token).toBe('custom-token');
+    expect(resolveNyxToken({ ...base, env: { NYXID_TOKEN_FILE: '/tmp/custom-token' } }).token).toBe(
+      'custom-token',
+    );
     expect(resolveNyxToken({ ...base, env: {} })).toEqual({
       token: 'profile-token',
       source: '文件 /home/me/.nyxid/profiles/builder/access_token',
     });
     expect(resolveNyxToken({ home: '/home/me', readFile, env: {} }).token).toBe('default-token');
     // 空白值视为没有。
-    expect(resolveNyxToken({ home: '/home/me', readFile, env: { NYXID_TOKEN: '  ' }, token: ' ' }).token).toBe(
-      'default-token',
-    );
+    expect(
+      resolveNyxToken({ home: '/home/me', readFile, env: { NYXID_TOKEN: '  ' }, token: ' ' }).token,
+    ).toBe('default-token');
   });
 
   it('都没有时报错并列出找过的位置', () => {
@@ -55,7 +57,9 @@ describe('令牌来源顺序', () => {
     } catch (error) {
       expect((error as Error).message).toContain('/nowhere/.nyxid/profiles/x/access_token');
     }
-    expect(tokenFileCandidates({ home: '/h', env: { NYXID_TOKEN_FILE: '/f' }, profile: 'p' })).toEqual(['/f']);
+    expect(
+      tokenFileCandidates({ home: '/h', env: { NYXID_TOKEN_FILE: '/f' }, profile: 'p' }),
+    ).toEqual(['/f']);
   });
 
   it('文件内容：原文或 JSON 字段', () => {
@@ -71,7 +75,9 @@ describe('令牌来源顺序', () => {
     const dir = tempDir();
     try {
       writeFileSync(join(dir, 'tok'), 'file-token');
-      expect(resolveNyxToken({ env: { NYXID_TOKEN_FILE: join(dir, 'tok') } }).token).toBe('file-token');
+      expect(resolveNyxToken({ env: { NYXID_TOKEN_FILE: join(dir, 'tok') } }).token).toBe(
+        'file-token',
+      );
     } finally {
       removeDir(dir);
     }
@@ -99,8 +105,13 @@ function capturingFetch(responses: (() => Response)[], captured: Captured[]): ty
   }) as typeof fetch;
 }
 
-const ok = (value: unknown, status = 200) => () =>
-  new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
+const ok =
+  (value: unknown, status = 200) =>
+  () =>
+    new Response(JSON.stringify(value), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    });
 
 describe('nyxid 模式的请求构造', () => {
   it('经 NyxID 代理的地址、Bearer 令牌，只发标准请求头', async () => {
@@ -130,7 +141,12 @@ describe('nyxid 模式的请求构造', () => {
   });
 
   it('自定义 NyxID 地址和 slug；路径必须以 /api/ 开头', () => {
-    const client = new ApiClient({ mode: 'nyxid', nyxBase: 'https://nyx.example/', slug: 'my svc', token: () => 't' });
+    const client = new ApiClient({
+      mode: 'nyxid',
+      nyxBase: 'https://nyx.example/',
+      slug: 'my svc',
+      token: () => 't',
+    });
     expect(client.url('/api/v1/x')).toBe('https://nyx.example/api/v1/proxy/s/my%20svc/api/v1/x');
     expect(() => client.url('/v1/x')).toThrow(ApiError);
   });
@@ -181,7 +197,9 @@ describe('direct 模式的请求构造', () => {
   });
 
   it('缺少地址或取令牌失败时报错', async () => {
-    expect(() => new ApiClient({ mode: 'direct', devTokenUrl: 'http://x' })).toThrow('接口服务地址');
+    expect(() => new ApiClient({ mode: 'direct', devTokenUrl: 'http://x' })).toThrow(
+      '接口服务地址',
+    );
     expect(() => new ApiClient({ mode: 'direct', api: 'http://x' })).toThrow('取令牌地址');
     const client = new ApiClient({
       mode: 'direct',
@@ -229,12 +247,22 @@ describe('错误和重试', () => {
     let calls = 0;
     const flaky = (async (input: string | URL | Request, init?: RequestInit) => {
       calls += 1;
-      captured.push({ url: String(input), method: init?.method ?? 'GET', headers: {}, body: undefined });
+      captured.push({
+        url: String(input),
+        method: init?.method ?? 'GET',
+        headers: {},
+        body: undefined,
+      });
       if (calls === 1) throw new Error('connection reset');
       if (calls === 2) return new Response('busy', { status: 503 });
       return ok({ fine: true })();
     }) as typeof fetch;
-    const client = new ApiClient({ mode: 'nyxid', token: () => 't', fetch: flaky, retryDelayMs: 0 });
+    const client = new ApiClient({
+      mode: 'nyxid',
+      token: () => 't',
+      fetch: flaky,
+      retryDelayMs: 0,
+    });
     expect(await client.json('GET', '/api/v1/x')).toEqual({ fine: true });
     expect(calls).toBe(3);
     const once = new ApiClient({
@@ -259,7 +287,10 @@ describe('错误和重试', () => {
     const client = new ApiClient({
       mode: 'nyxid',
       token: () => 't',
-      fetch: capturingFetch([() => new Response(null, { status: 404 }), () => new Response('', { status: 200 })], []),
+      fetch: capturingFetch(
+        [() => new Response(null, { status: 404 }), () => new Response('', { status: 200 })],
+        [],
+      ),
     });
     expect((await client.request('GET', '/api/v1/x', { allow: [404] })).status).toBe(404);
     expect(await client.json('PUT', '/api/v1/y', { body: new Uint8Array([1]) })).toEqual({});
@@ -274,7 +305,12 @@ describe('分片上传（本地假服务器）', () => {
 
   function api(): MetaverseApi {
     return new MetaverseApi(
-      new ApiClient({ mode: 'direct', api: fake.url, devTokenUrl: fake.devTokenUrl, retryDelayMs: 0 }),
+      new ApiClient({
+        mode: 'direct',
+        api: fake.url,
+        devTokenUrl: fake.devTokenUrl,
+        retryDelayMs: 0,
+      }),
       'demo-space',
     );
   }
@@ -302,7 +338,9 @@ describe('分片上传（本地假服务器）', () => {
     const parts = fake.requests.filter((r) => r.method === 'PUT');
     expect(parts.map((r) => r.path.split('/').pop())).toEqual(['0', '1', '2']);
     expect(parts.map((r) => r.body.length)).toEqual([262144, 262144, 1000]);
-    const create = fake.requests.find((r) => r.path.endsWith('/uploads/ops') && r.method === 'POST')!;
+    const create = fake.requests.find(
+      (r) => r.path.endsWith('/uploads/ops') && r.method === 'POST',
+    )!;
     expect(JSON.parse(create.body.toString())).toEqual({
       size: bytes.length,
       sha256: sha,
@@ -310,7 +348,9 @@ describe('分片上传（本地假服务器）', () => {
       contentType: 'application/x-ndjson',
     });
     // 每个请求都带了新的开发令牌。
-    const tokens = fake.requests.filter((r) => r.headers['x-nyxid-identity-token']).map((r) => r.headers['x-nyxid-identity-token']);
+    const tokens = fake.requests
+      .filter((r) => r.headers['x-nyxid-identity-token'])
+      .map((r) => r.headers['x-nyxid-identity-token']);
     expect(new Set(tokens).size).toBe(tokens.length);
     const job = await waitForJob(api(), result.jobId!, { sleep: async () => {} });
     expect(job.status).toBe('done');
@@ -332,11 +372,18 @@ describe('分片上传（本地假服务器）', () => {
     try {
       const file = join(dir, 'model.glb');
       writeFileSync(file, Buffer.alloc(300 * 1024, 7));
-      const result = await upload(api(), { purpose: 'model', source: { path: file }, plot: 'p1', partSize: 256 * 1024 });
+      const result = await upload(api(), {
+        purpose: 'model',
+        source: { path: file },
+        plot: 'p1',
+        partSize: 256 * 1024,
+      });
       expect(result.parts).toBe(2);
       const puts = fake.requests.filter((r) => r.method === 'PUT');
       expect(puts).toHaveLength(3);
-      expect(puts[0]!.path).toMatch(/^\/api\/v1\/spaces\/demo-space\/plots\/p1\/uploads\/model\/up-\d+\/parts\/0$/);
+      expect(puts[0]!.path).toMatch(
+        /^\/api\/v1\/spaces\/demo-space\/plots\/p1\/uploads\/model\/up-\d+\/parts\/0$/,
+      );
     } finally {
       removeDir(dir);
     }
@@ -344,7 +391,9 @@ describe('分片上传（本地假服务器）', () => {
 
   it('空文件和地块路径下上传扫描都被拒绝', async () => {
     fake = await startFakeApi();
-    await expect(upload(api(), { purpose: 'ops', source: { bytes: new Uint8Array() } })).rejects.toThrow('空文件');
+    await expect(
+      upload(api(), { purpose: 'ops', source: { bytes: new Uint8Array() } }),
+    ).rejects.toThrow('空文件');
     await expect(
       upload(api(), { purpose: 'scan', source: { bytes: new Uint8Array([1]) }, plot: 'p1' }),
     ).rejects.toMatchObject({ status: 403 });
@@ -352,10 +401,19 @@ describe('分片上传（本地假服务器）', () => {
 
   it('任务失败时报出 lastError；状态说明', async () => {
     fake = await startFakeApi();
-    fake.state.jobs.set('job-x', { id: 'job-x', kind: 'scan_import', polls: 0, runningPolls: 1, fail: '解析失败' });
+    fake.state.jobs.set('job-x', {
+      id: 'job-x',
+      kind: 'scan_import',
+      polls: 0,
+      runningPolls: 1,
+      fail: '解析失败',
+    });
     const updates: string[] = [];
     await expect(
-      waitForJob(api(), 'job-x', { sleep: async () => {}, onUpdate: (job) => updates.push(describeJob(job)) }),
+      waitForJob(api(), 'job-x', {
+        sleep: async () => {},
+        onUpdate: (job) => updates.push(describeJob(job)),
+      }),
     ).rejects.toThrow('解析失败');
     expect(updates[0]).toContain('处理中');
     expect(updates[1]).toContain('失败');

@@ -100,21 +100,38 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
   const server: Server = createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://fake');
     const body = await readBody(request);
-    requests.push({ method: request.method ?? 'GET', path: url.pathname, query: url.searchParams, headers: request.headers, body });
+    requests.push({
+      method: request.method ?? 'GET',
+      path: url.pathname,
+      query: url.searchParams,
+      headers: request.headers,
+      body,
+    });
     const json = (status: number, value: unknown) => {
       response.writeHead(status, { 'content-type': 'application/json' });
       response.end(JSON.stringify(value));
     };
-    const problem = (status: number, code: string, detail: string, extra: Record<string, unknown> = {}) => {
+    const problem = (
+      status: number,
+      code: string,
+      detail: string,
+      extra: Record<string, unknown> = {},
+    ) => {
       response.writeHead(status, { 'content-type': 'application/problem+json' });
-      response.end(JSON.stringify({ type: 'about:blank', title: code, status, code, detail, ...extra }));
+      response.end(
+        JSON.stringify({ type: 'about:blank', title: code, status, code, detail, ...extra }),
+      );
     };
-    const parsed = () => (body.length === 0 ? {} : (JSON.parse(body.toString('utf8')) as Record<string, unknown>));
+    const parsed = () =>
+      body.length === 0 ? {} : (JSON.parse(body.toString('utf8')) as Record<string, unknown>);
     const path = url.pathname;
 
     if (path === '/dev/token' && request.method === 'POST') {
       state.devTokens += 1;
-      json(200, { identityToken: `identity-${state.devTokens}`, accessToken: `access-${state.devTokens}` });
+      json(200, {
+        identityToken: `identity-${state.devTokens}`,
+        accessToken: `access-${state.devTokens}`,
+      });
       return;
     }
     // 去掉 NyxID 代理前缀，剩下的就是接口路径。
@@ -163,20 +180,40 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
       });
     }
     // 上传：{范围}/uploads/{purpose}[/{id}/parts/{n} | /{id}/complete]
-    if ((m = /^(\/api\/v1\/spaces\/[^/]+(?:\/plots\/[^/]+)?)\/uploads\/([a-z]+)(?:\/([^/]+)(\/parts\/(\d+)|\/complete))?$/.exec(apiPath))) {
+    if (
+      (m =
+        /^(\/api\/v1\/spaces\/[^/]+(?:\/plots\/[^/]+)?)\/uploads\/([a-z]+)(?:\/([^/]+)(\/parts\/(\d+)|\/complete))?$/.exec(
+          apiPath,
+        ))
+    ) {
       const [, scopePath, purpose, uploadId, tail, n] = m;
-      if (scopePath!.includes('/plots/') && purpose === 'scan') return problem(403, 'forbidden', '地块路径下不能上传扫描');
+      if (scopePath!.includes('/plots/') && purpose === 'scan')
+        return problem(403, 'forbidden', '地块路径下不能上传扫描');
       if (uploadId === undefined && request.method === 'POST') {
         const req = parsed();
         const size = Number(req.size);
         const partSize = Number(req.partSize);
-        if (partSize % (256 * 1024) !== 0 || partSize > 32 * 1024 * 1024) return problem(422, 'invalid', '分片大小不对');
+        if (partSize % (256 * 1024) !== 0 || partSize > 32 * 1024 * 1024)
+          return problem(422, 'invalid', '分片大小不对');
         if (state.assets.has(String(req.sha256))) {
           return json(200, { status: 'done', reused: true, assetHash: req.sha256 });
         }
-        const upload: Upload = { id: nextId('up'), purpose: purpose!, size, sha256: String(req.sha256), partSize, parts: new Map(), scopePath: scopePath! };
+        const upload: Upload = {
+          id: nextId('up'),
+          purpose: purpose!,
+          size,
+          sha256: String(req.sha256),
+          partSize,
+          parts: new Map(),
+          scopePath: scopePath!,
+        };
         state.uploads.set(upload.id, upload);
-        return json(201, { uploadId: upload.id, status: 'open', partSize, partCount: Math.ceil(size / partSize) });
+        return json(201, {
+          uploadId: upload.id,
+          status: 'open',
+          partSize,
+          partCount: Math.ceil(size / partSize),
+        });
       }
       const upload = state.uploads.get(uploadId ?? '');
       if (upload === undefined) return problem(404, 'not_found', '没有上传');
@@ -187,15 +224,25 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
         }
         const index = Number(n);
         const expected = Math.min(upload.partSize, upload.size - index * upload.partSize);
-        if (body.length !== expected) return problem(422, 'invalid', `第 ${index} 片大小 ${body.length}，应为 ${expected}`);
+        if (body.length !== expected)
+          return problem(422, 'invalid', `第 ${index} 片大小 ${body.length}，应为 ${expected}`);
         upload.parts.set(index, body);
-        return json(200, { n: index, size: body.length, sha256: createHash('sha256').update(body).digest('hex') });
+        return json(200, {
+          n: index,
+          size: body.length,
+          sha256: createHash('sha256').update(body).digest('hex'),
+        });
       }
       if (tail === '/complete' && request.method === 'POST') {
         const count = Math.ceil(upload.size / upload.partSize);
-        const all = Buffer.concat(Array.from({ length: count }, (_, i) => upload.parts.get(i) ?? Buffer.alloc(0)));
+        const all = Buffer.concat(
+          Array.from({ length: count }, (_, i) => upload.parts.get(i) ?? Buffer.alloc(0)),
+        );
         const sha = createHash('sha256').update(all).digest('hex');
-        const job = newJob('upload_verify', sha === upload.sha256 ? {} : { fail: '整体哈希不一致' });
+        const job = newJob(
+          'upload_verify',
+          sha === upload.sha256 ? {} : { fail: '整体哈希不一致' },
+        );
         if (sha === upload.sha256) state.assets.set(sha, all);
         response.writeHead(202, { 'content-type': 'application/json' });
         response.end(JSON.stringify({ jobId: job.id, uploadId: upload.id }));
@@ -204,24 +251,41 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
     }
     if (apiPath === `${space}/scans` && request.method === 'POST') {
       const req = parsed();
-      if (!state.assets.has(String(req.assetHash))) return problem(404, 'not_found', '没有这个资源');
-      const job = newJob('scan_import', { result: state.scanResult ?? {}, resultCommitId: 'commit-9', runningPolls: 2 });
+      if (!state.assets.has(String(req.assetHash)))
+        return problem(404, 'not_found', '没有这个资源');
+      const job = newJob('scan_import', {
+        result: state.scanResult ?? {},
+        resultCommitId: 'commit-9',
+        runningPolls: 2,
+      });
       response.writeHead(202, { 'content-type': 'application/json' });
       response.end(JSON.stringify({ jobId: job.id }));
       return;
     }
-    if ((m = /^\/api\/v1\/spaces\/[^/]+\/scans\/([0-9a-f]{64})\/(voxelize|alignment)$/.exec(apiPath))) {
+    if (
+      (m = /^\/api\/v1\/spaces\/[^/]+\/scans\/([0-9a-f]{64})\/(voxelize|alignment)$/.exec(apiPath))
+    ) {
       const job = newJob(m[2] === 'voxelize' ? 'voxelize' : 'scan_import');
       return json(202, { jobId: job.id });
     }
     // 草稿：{范围}/drafts[/{id}/(ops|ops-from-upload|preview|publish)]
-    if ((m = /^(\/api\/v1\/spaces\/[^/]+(?:\/plots\/[^/]+)?)\/drafts(?:\/([^/]+)\/(ops|ops-from-upload|preview|publish))?$/.exec(apiPath))) {
+    if (
+      (m =
+        /^(\/api\/v1\/spaces\/[^/]+(?:\/plots\/[^/]+)?)\/drafts(?:\/([^/]+)\/(ops|ops-from-upload|preview|publish))?$/.exec(
+          apiPath,
+        ))
+    ) {
       const [, scopePath, draftId, action] = m;
       if (draftId === undefined && request.method === 'POST') {
         const req = parsed();
         const id = nextId('draft');
         state.drafts.set(id, { scopePath: scopePath!, baseSeq: Number(req.baseSeq), ops: [] });
-        return json(201, { id, scope: scopePath!.includes('/plots/') ? 'plot' : 'physical', baseSeq: req.baseSeq, rev: 0 });
+        return json(201, {
+          id,
+          scope: scopePath!.includes('/plots/') ? 'plot' : 'physical',
+          baseSeq: req.baseSeq,
+          rev: 0,
+        });
       }
       const draft = state.drafts.get(draftId ?? '');
       if (draft === undefined) return problem(404, 'not_found', '没有草稿');
@@ -234,7 +298,11 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
         case 'ops-from-upload': {
           const bytes = state.assets.get(String(req.assetHash));
           if (bytes === undefined) return problem(404, 'not_found', '没有这个资源');
-          const ops = bytes.toString('utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line) as unknown);
+          const ops = bytes
+            .toString('utf8')
+            .split('\n')
+            .filter(Boolean)
+            .map((line) => JSON.parse(line) as unknown);
           draft.ops.push(...ops);
           const job = newJob('ops_from_upload', { result: { applied: ops.length, rev: 1 } });
           return json(202, { jobId: job.id });
@@ -243,19 +311,35 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
           return json(201, { token: 'preview-token-abc', expiresAt: '2026-11-10T00:00:00.000Z' });
         case 'publish':
           if (state.publishConflict) {
-            return problem(409, 'draft_conflict', '时间线已前进，与草稿冲突', { conflicts: { entities: ['table-1'] } });
+            return problem(409, 'draft_conflict', '时间线已前进，与草稿冲突', {
+              conflicts: { entities: ['table-1'] },
+            });
           }
-          return json(200, { seq: Number((state.space.head as { seq: number }).seq) + 1, at: '2026-11-09T01:00:00.000Z', commitId: 'commit-10' });
+          return json(200, {
+            seq: Number((state.space.head as { seq: number }).seq) + 1,
+            at: '2026-11-09T01:00:00.000Z',
+            commitId: 'commit-10',
+          });
       }
     }
     if (apiPath === '/api/v1/admin/spaces' && request.method === 'POST') {
       const req = parsed();
-      return json(201, { space: { id: req.id, name: req.name }, shareToken: { id: 'st_1', token: 'share-secret-1' } });
+      return json(201, {
+        space: { id: req.id, name: req.name },
+        shareToken: { id: 'st_1', token: 'share-secret-1' },
+      });
     }
-    if ((m = /^\/api\/v1\/admin\/spaces\/[^/]+(\/share-tokens|\/layout|\/event-types|\/events\/[^/]+\/redact)?$/.exec(apiPath))) {
+    if (
+      (m =
+        /^\/api\/v1\/admin\/spaces\/[^/]+(\/share-tokens|\/layout|\/event-types|\/events\/[^/]+\/redact)?$/.exec(
+          apiPath,
+        ))
+    ) {
       const tail = m[1] ?? '';
-      if (tail === '' && request.method === 'PATCH') return json(200, { space: { ...state.space, ...parsed() } });
-      if (tail === '/share-tokens') return json(201, { shareToken: { id: 'st_2', token: 'share-secret-2' } });
+      if (tail === '' && request.method === 'PATCH')
+        return json(200, { space: { ...state.space, ...parsed() } });
+      if (tail === '/share-tokens')
+        return json(201, { shareToken: { id: 'st_2', token: 'share-secret-2' } });
       if (tail === '/layout' && request.method === 'PUT') return json(200, { seq: 7 });
       if (tail === '/event-types') return json(201, { type: parsed().type, version: 1 });
       if (tail.endsWith('/redact')) return json(200, { redacted: true });
