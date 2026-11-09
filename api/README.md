@@ -314,7 +314,7 @@ universeRevisions { _id: "<组合编号>:<seq>", universeId, owner, seq, at, act
 
 ### 公开接口的公共设施（`src/public/`，其他公开接口也用）
 
-- `public::guard` 中间件已经套在整个 `/api/public` 路由上：按来源地址限流（区块和资源单独一档），`/api/public/spaces/{id}/...` 每空间并发上限；拒绝一律 `no-store`（429 带 `Retry-After`）。
+- `public::guard` 中间件已经套在整个 `/api/public` 路由上：按来源地址限流（区块和资源单独一档），`/api/public/spaces/{id}/...` 每空间并发上限（按原始路径里的编号计数，所以编号段不是规范的空间编号——例如百分号编码的 `rest%61urant`——时直接 404，不让同一空间的不同写法各占一个计数桶）；拒绝一律 `no-store`（429 带 `Retry-After`）。
 - `public::headers::{share_token, preview_token, cache_control, IMMUTABLE, NO_STORE}`：令牌解析与缓存头（`cache_control(&grant, 秒)` 按授权依据给 `public` / `private` / `no-store`）。
 - `state.public.cache`（`ByteCache`）：按 `CacheKey`（`Snapshot`、`Chunk`、`Asset`、`Other {purpose, space_id, key}`）存编码好的响应体；**先拿到授权凭据再查缓存**；`invalidate_space` 清掉某空间的全部缓存。
 

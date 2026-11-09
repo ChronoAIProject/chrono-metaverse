@@ -2235,3 +2235,26 @@ async fn preview_hides_anchors_made_internal_after_the_draft_base() {
     let view = app.public("/api/public/previews", Some(&auth)).await;
     assert!(ids(&view.body["anchors"], "anchorId").contains(&"x".to_owned()));
 }
+
+/// 百分号编码的空间编号不经过解码直接 404：路由提取路径参数时会解码，按原始字符串计数的
+/// 每空间并发上限可以被同一空间的任意多种写法放大。
+#[tokio::test]
+async fn percent_encoded_space_ids_are_rejected_before_counting() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    let share = format!("Share {}", app.create_space(SPACE).await);
+    let reply = app
+        .public(&format!("/api/public/spaces/{SPACE}/head"), Some(&share))
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    for path in [
+        "/api/public/spaces/fr%6Fnt-hall/head",
+        "/api/public/spaces/%66ront-hall",
+        "/api/public/spaces/FRONT-HALL/head",
+    ] {
+        let reply = app.public(path, Some(&share)).await;
+        assert_eq!(reply.status, StatusCode::NOT_FOUND, "{path}");
+        assert_eq!(reply.header(header::CACHE_CONTROL), "no-store");
+    }
+}
