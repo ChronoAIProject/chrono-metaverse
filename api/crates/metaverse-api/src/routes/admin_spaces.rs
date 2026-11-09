@@ -13,14 +13,15 @@ use axum::{
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use metaverse_core::ids::is_space_id;
 use metaverse_core::model::{Head, Owner, OwnerKind, ShareTokenRecord, Space, Visibility};
-use metaverse_core::sha256_hex;
+use metaverse_core::record::AnchorBody;
+use metaverse_core::{sha256_hex, Timestamp};
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::views::SpaceView;
 use super::ApiJson;
-use crate::auth::Caller;
+use crate::auth::{Caller, CreateGrant};
 use crate::error::{ApiError, ProblemDocument};
 use crate::repo::RepoError;
 use crate::AppState;
@@ -120,18 +121,13 @@ pub async fn create_space(
     caller: Caller,
     ApiJson(request): ApiJson<CreateSpaceRequest>,
 ) -> Result<Response, ApiError> {
-    if !is_space_id(&request.id) {
-        return Err(ApiError::invalid(
-            "id 必须是 3–64 个字符的小写字母、数字和 -，首尾不能是 -",
-        ));
-    }
-    check_text("name", &request.name, MAX_NAME_CHARS, false)?;
-    check_text(
-        "description",
-        &request.description,
-        MAX_DESCRIPTION_CHARS,
-        true,
-    )?;
+    let new = NewSpace {
+        id: request.id,
+        name: request.name,
+        description: request.description,
+        visibility: request.visibility,
+    };
+    new.validate()?;
     let owner = Owner {
         kind: request.owner.kind,
         id: request.owner.id,
@@ -139,65 +135,24 @@ pub async fn create_space(
     let now = crate::now()?;
     let grant = state.authorizer.create_space(&caller, &owner, now).await?;
     let (token_id, token) = new_share_token()?;
-    let space = Space {
-        id: request.id,
-        name: request.name.trim().to_owned(),
-        description: request.description,
-        owner,
-        owner_evidence: grant.evidence().cloned(),
-        visibility: request.visibility,
-        share_tokens: vec![ShareTokenRecord {
-            id: token_id.clone(),
-            hash: sha256_hex(token.as_bytes()),
-            created_at: now,
-            revoked_at: None,
-        }],
-        frame: None,
-        head: Head {
-            seq: 0,
-            at: now,
-            commit_id: None,
-        },
-        regions: Vec::new(),
-        plots: Vec::new(),
-        storage_limit_bytes: DEFAULT_STORAGE_LIMIT_BYTES,
-        storage_used_bytes: 0,
+    let share_tokens = vec![ShareTokenRecord {
+        id: token_id.clone(),
+        hash: sha256_hex(token.as_bytes()),
         created_at: now,
-        updated_at: now,
-    };
-    match state.repo.insert_space(&grant, &space).await {
-        Ok(()) => {}
-        Err(RepoError::Duplicate) => return Err(ApiError::conflict("空间编号已存在")),
-        Err(error) => return Err(error.into()),
-    }
-    tracing::info!(
-        space = %space.id,
-        owner_kind = ?space.owner.kind,
-        owner = %space.owner.id,
-        by = %caller.subject,
-        "空间已创建"
-    );
-    // 第一次提交：`_space` 锚点 + 通用方块表（设计 4.3、4.4）。失败也不影响建空间：
-    // 之后第一次建草稿、改区域，或建会写提交的任务（导入扫描、体素化、重建）时会补写
-    // （只在 head.seq == 0 时写）。
-    let space_grant = state.authorizer.grant_for_created_space(&grant, &space.id);
-    let (space, anchors) = match crate::timeline::writer::ensure_genesis(
-        &state.repo,
-        &space_grant,
-        &caller,
+        revoked_at: None,
+    }];
+    let (space, anchors) = match create_space_with(
+        &state,
+        &grant,
+        new,
+        share_tokens,
+        (&caller.subject, &caller.service_id),
         now,
     )
-    .await
+    .await?
     {
-        Ok(_) => {
-            let current = state.repo.space(&space_grant).await.ok().flatten();
-            let anchors = state.repo.anchors(&space_grant).await.unwrap_or_default();
-            (current.unwrap_or(space), anchors)
-        }
-        Err(error) => {
-            tracing::warn!(space = %space.id, error = ?error, "第一次提交没有写成，稍后补写");
-            (space, Vec::new())
-        }
+        SpaceCreation::Created { space, anchors } => (*space, anchors),
+        SpaceCreation::Duplicate => return Err(ApiError::conflict("空间编号已存在")),
     };
     let location = format!("/api/v1/spaces/{}", space.id);
     let body = CreateSpaceResponse {
@@ -214,4 +169,118 @@ pub async fn create_space(
         headers.insert(header::LOCATION, value);
     }
     Ok(response)
+}
+
+/// 新空间的内容。管理接口和部署配置种子（`crate::demo_seed`）用同一套校验和写入。
+#[derive(Debug, Clone)]
+pub(crate) struct NewSpace {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub visibility: Visibility,
+}
+
+impl NewSpace {
+    /// 建空间的校验：编号格式、名称和说明的长度与字符。
+    pub(crate) fn validate(&self) -> Result<(), ApiError> {
+        if !is_space_id(&self.id) {
+            return Err(ApiError::invalid(
+                "id 必须是 3–64 个字符的小写字母、数字和 -，首尾不能是 -",
+            ));
+        }
+        check_text("name", &self.name, MAX_NAME_CHARS, false)?;
+        check_text(
+            "description",
+            &self.description,
+            MAX_DESCRIPTION_CHARS,
+            true,
+        )
+    }
+}
+
+/// [`create_space_with`] 的结果。
+#[derive(Debug)]
+pub(crate) enum SpaceCreation {
+    /// 已创建；`space` 是写完第一次提交后的空间文档，`anchors` 是当前锚点。
+    Created {
+        space: Box<Space>,
+        anchors: Vec<AnchorBody>,
+    },
+    /// 空间编号已存在（唯一键：多副本同时建同一个空间也只有一个成功）。
+    Duplicate,
+}
+
+/// 写空间文档（主人和归属证据取自创建凭据），再写第一次提交（`_space` 锚点 + 通用方块表，
+/// 设计 4.3、4.4）。管理接口 `admin_create_space` 和部署配置种子共用这一条路径；
+/// `genesis_by` 是第一次提交的发布者 `(sub, nyxServiceId)`。
+pub(crate) async fn create_space_with(
+    state: &AppState,
+    grant: &CreateGrant,
+    new: NewSpace,
+    share_tokens: Vec<ShareTokenRecord>,
+    genesis_by: (&str, &str),
+    now: Timestamp,
+) -> Result<SpaceCreation, ApiError> {
+    new.validate()?;
+    let space = Space {
+        id: new.id,
+        name: new.name.trim().to_owned(),
+        description: new.description,
+        owner: grant.owner().clone(),
+        owner_evidence: grant.evidence().cloned(),
+        visibility: new.visibility,
+        share_tokens,
+        frame: None,
+        head: Head {
+            seq: 0,
+            at: now,
+            commit_id: None,
+        },
+        regions: Vec::new(),
+        plots: Vec::new(),
+        storage_limit_bytes: DEFAULT_STORAGE_LIMIT_BYTES,
+        storage_used_bytes: 0,
+        created_at: now,
+        updated_at: now,
+    };
+    match state.repo.insert_space(grant, &space).await {
+        Ok(()) => {}
+        Err(RepoError::Duplicate) => return Ok(SpaceCreation::Duplicate),
+        Err(error) => return Err(error.into()),
+    }
+    tracing::info!(
+        space = %space.id,
+        owner_kind = ?space.owner.kind,
+        owner = %space.owner.id,
+        by = %genesis_by.0,
+        "空间已创建"
+    );
+    // 第一次提交失败也不影响建空间：之后第一次建草稿、改区域，或建会写提交的任务（导入扫描、
+    // 体素化、重建）时会补写（只在 head.seq == 0 时写）。
+    let space_grant = state.authorizer.grant_for_created_space(grant, &space.id);
+    match crate::timeline::writer::ensure_genesis_as(
+        &state.repo,
+        &space_grant,
+        genesis_by.0,
+        genesis_by.1,
+        now,
+    )
+    .await
+    {
+        Ok(_) => {
+            let current = state.repo.space(&space_grant).await.ok().flatten();
+            let anchors = state.repo.anchors(&space_grant).await.unwrap_or_default();
+            Ok(SpaceCreation::Created {
+                space: Box::new(current.unwrap_or(space)),
+                anchors,
+            })
+        }
+        Err(error) => {
+            tracing::warn!(space = %space.id, error = ?error, "第一次提交没有写成，稍后补写");
+            Ok(SpaceCreation::Created {
+                space: Box::new(space),
+                anchors: Vec::new(),
+            })
+        }
+    }
 }

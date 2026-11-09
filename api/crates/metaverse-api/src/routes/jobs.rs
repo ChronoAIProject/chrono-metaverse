@@ -256,7 +256,7 @@ fn check_hash(name: &str, value: &str) -> Result<(), ApiError> {
     }
 }
 
-fn check_hints(hints: &Option<Value>) -> Result<(), ApiError> {
+pub(crate) fn check_hints(hints: &Option<Value>) -> Result<(), ApiError> {
     match hints {
         None => Ok(()),
         Some(Value::Object(_)) => match canonical_json(hints.as_ref().expect("已匹配")) {
@@ -450,7 +450,7 @@ fn idempotent_reply(
 }
 
 /// scan_import 的参数。
-fn scan_params(
+pub(crate) fn scan_params(
     asset_hash: &str,
     observed_at: Option<Timestamp>,
     rebuild: Option<bool>,
