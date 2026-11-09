@@ -304,6 +304,7 @@ async fn import(
             Some(seed.voxelize),
             seed.hints.clone(),
             None,
+            None,
         ),
         status: JobStatus::Queued,
         lease_owner: None,
