@@ -10,15 +10,22 @@ import type { AddressInfo } from 'node:net';
  * `invalid_request`，免得命令行按假设的字段测试通过、对真服务却一律 422。
  */
 
-/** 各用途默认接受的格式（接口服务 `ingest/mod.rs` 的默认值）。 */
+/** 各用途接受的格式（docs/SHAPES.md 第 8 节）。 */
 export const UPLOAD_FORMATS: Readonly<Record<string, readonly string[]>> = {
   scan: ['glb', 'drc', 'obj', 'zip'],
-  model: ['glb', 'drc', 'obj', 'zip'],
+  webmodel: ['glb'],
+  model: ['glb'],
   texture: ['png', 'jpeg', 'webp'],
   ops: ['ndjson', 'gzip'],
   script: ['text'],
-  authored: ['json'],
+  bundle: ['json'],
 };
+
+/** 各路径范围收的上传用途（docs/design/server-slim.md 2.9）。 */
+export const SCOPE_PURPOSES = {
+  physical: ['model', 'texture', 'ops', 'script'],
+  rebuild: ['scan', 'webmodel', 'model', 'texture', 'script', 'bundle'],
+} as const;
 
 /** 有未知字段或缺必填字段时返回说明（与 serde 的 `deny_unknown_fields` 相同的效果）。 */
 export function fieldError(
@@ -140,9 +147,33 @@ export interface FakeState {
   assets: Map<string, Buffer>;
   uploads: Map<string, Upload>;
   jobs: Map<string, Job>;
-  drafts: Map<string, { scopePath: string; baseSeq: number; ops: unknown[] }>;
+  drafts: Map<
+    string,
+    { scopePath: string; baseSeq: number; ops: unknown[]; bundle?: string; published?: boolean }
+  >;
   devTokens: number;
   publishConflict: boolean;
+  /** 和 publishConflict 一起用：带 replay 时在最新版本上重放成功。 */
+  replayResolves?: boolean;
+  /** 重建草稿发布过的包（清单哈希）：同一个包再发布返回 unchanged。 */
+  publishedBundles: Set<string>;
+  /** 令牌带不带 metaverse:rebuild:write（默认带）；不带时重建路径的写操作 403。 */
+  rebuildPermission: boolean;
+  /** 公开读用的分享令牌。 */
+  shareToken: string;
+  /** 资源下载时每段最多给这么多字节（模拟服务端按 Range 分段）；0 表示不支持 Range、整份返回。 */
+  rangeChunk?: number;
+  /** 接下来这么多个资源请求直接断开连接（模拟代理断开）。 */
+  dropAssetRequests: number;
+  /** 交包任务的结果（不给就按清单算）。 */
+  bundleResult?: unknown;
+  /** 给了就让发布返回这个问题文档（例如 409 `broken_template_ref`）。 */
+  publishProblem?: {
+    status: number;
+    code: string;
+    detail: string;
+    extra?: Record<string, unknown>;
+  };
   /** 给了就让发布返回 409 `asset_gone`（与接口服务相同：`assets` 列出已被定期清理的资源）。 */
   publishAssetsGone?: readonly string[];
   failNextPart: boolean;
@@ -190,6 +221,14 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
     drafts: new Map(),
     devTokens: 0,
     publishConflict: init.publishConflict ?? false,
+    ...(init.replayResolves !== undefined ? { replayResolves: init.replayResolves } : {}),
+    publishedBundles: init.publishedBundles ?? new Set(),
+    rebuildPermission: init.rebuildPermission ?? true,
+    shareToken: init.shareToken ?? 'share-secret-1',
+    ...(init.rangeChunk !== undefined ? { rangeChunk: init.rangeChunk } : {}),
+    dropAssetRequests: init.dropAssetRequests ?? 0,
+    ...(init.bundleResult !== undefined ? { bundleResult: init.bundleResult } : {}),
+    ...(init.publishProblem !== undefined ? { publishProblem: init.publishProblem } : {}),
     ...(init.publishAssetsGone !== undefined ? { publishAssetsGone: init.publishAssetsGone } : {}),
     failNextPart: init.failNextPart ?? false,
     shareTokenRotations: 0,
@@ -252,6 +291,48 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
       });
       return;
     }
+    // 公开读（/api/public）：不要 NyxID 令牌；凭链接查看的空间要 `Authorization: Share <分享令牌>`。
+    if (path.startsWith('/api/public/')) {
+      const publicSpace = state.space.visibility === 'public';
+      const shared = request.headers.authorization === `Share ${state.shareToken}`;
+      const id = String(state.space.id);
+      if (path === `/api/public/spaces/${id}`) {
+        if (!publicSpace && !shared) return problem(404, 'not_found', '空间不存在');
+        const rest = { ...state.space };
+        delete rest.uploadLimits;
+        return json(200, {
+          ...rest,
+          anchors: ((state.space.anchors ?? []) as { visibility?: string }[]).filter(
+            (a) => a.visibility !== 'internal',
+          ),
+        });
+      }
+      if (path === `/api/public/spaces/${id}/snapshot`) {
+        if (!publicSpace && !shared) return problem(404, 'not_found', '空间不存在');
+        if (state.snapshot === null) return problem(404, 'not_found', '没有快照');
+        const scan = state.snapshot.scan as Record<string, unknown> | null | undefined;
+        return json(200, {
+          ...state.snapshot,
+          seq: Number(url.searchParams.get('seq')),
+          anchors: ((state.snapshot.anchors ?? []) as { visibility?: string }[]).filter(
+            (a) => a.visibility !== 'internal',
+          ),
+          scan:
+            scan === null || scan === undefined
+              ? null
+              : { webModelHashes: scan.webModelHashes, transform: scan.transform },
+        });
+      }
+      const blob = /^\/api\/public\/(chunks|assets)\/([0-9a-f]{64})\.bin$/.exec(path);
+      if (blob !== null) {
+        const bytes = (blob[1] === 'chunks' ? state.chunks : state.assets).get(blob[2]!);
+        if (bytes === undefined) return problem(404, 'not_found', '没有');
+        response.writeHead(200, { 'content-type': 'application/octet-stream' });
+        response.end(bytes);
+        return;
+      }
+      return problem(404, 'not_found', `假服务器没有 ${path}`);
+    }
     // 去掉 NyxID 代理前缀，剩下的就是接口路径。
     const apiPath = path.replace(/^\/api\/v1\/proxy\/s\/[^/]+/, '');
     const auth = request.headers.authorization;
@@ -271,6 +352,10 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
       return;
     }
     let m: RegExpExecArray | null;
+    // 重建路径的写操作要 metaverse:rebuild:write（docs/design/server-slim.md 3.1 第 3 层）。
+    if (apiPath.includes('/rebuild/') && request.method !== 'GET' && !state.rebuildPermission) {
+      return problem(403, 'rebuild_permission_required', '令牌没有 metaverse:rebuild:write');
+    }
     const spaceId = String(state.space.id);
     const space = `/api/v1/spaces/${spaceId}`;
     if (apiPath === space && request.method === 'GET') return json(200, state.space);
@@ -286,18 +371,43 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
       return;
     }
     if ((m = /^\/api\/v1\/spaces\/[^/]+\/assets\/([0-9a-f]{64})$/.exec(apiPath))) {
+      if (state.dropAssetRequests > 0) {
+        state.dropAssetRequests -= 1;
+        request.socket.destroy();
+        return;
+      }
       const bytes = state.assets.get(m[1]!);
       if (bytes === undefined) return problem(404, 'not_found', '没有资源');
+      const range = /^bytes=(\d+)-(\d+)$/.exec(String(request.headers.range ?? ''));
+      if (range !== null && state.rangeChunk !== 0) {
+        const start = Number(range[1]);
+        if (start >= bytes.length) {
+          response.writeHead(416, { 'content-range': `bytes */${bytes.length}` });
+          response.end();
+          return;
+        }
+        // 与接口服务相同：结尾超出时截到文件末尾；另外按 rangeChunk 模拟每段更小。
+        let end = Math.min(Number(range[2]) + 1, bytes.length);
+        if (state.rangeChunk !== undefined) end = Math.min(end, start + state.rangeChunk);
+        response.writeHead(206, {
+          'content-type': 'application/octet-stream',
+          'content-range': `bytes ${start}-${end - 1}/${bytes.length}`,
+        });
+        response.end(bytes.subarray(start, end));
+        return;
+      }
       response.writeHead(200, { 'content-type': 'model/gltf-binary' });
       response.end(bytes);
       return;
     }
-    if ((m = /^(\/api\/v1\/spaces\/[^/]+(?:\/plots\/[^/]+)?)\/jobs\/([^/]+)$/.exec(apiPath))) {
+    if (
+      (m = /^(\/api\/v1\/spaces\/[^/]+(?:\/plots\/[^/]+|\/rebuild)?)\/jobs\/([^/]+)$/.exec(apiPath))
+    ) {
       const job = state.jobs.get(m[2]!);
       if (job === undefined) return problem(404, 'not_found', '没有任务');
-      // 与接口服务相同：经地块路径只能查到经这个地块路径发起的任务；实体区路径都能查。
-      if (m[1]!.includes('/plots/') && job.scopePath !== m[1])
-        return problem(404, 'not_found', '任务不存在或不属于这个地块');
+      // 与接口服务相同：经地块、重建路径只能查到经同一路径发起的任务；实体区路径都能查。
+      if ((m[1]!.includes('/plots/') || m[1]!.endsWith('/rebuild')) && job.scopePath !== m[1])
+        return problem(404, 'not_found', '任务不存在或不属于这个范围');
       job.polls += 1;
       const status = job.polls <= job.runningPolls ? 'running' : job.fail ? 'failed' : 'done';
       return json(200, {
@@ -311,16 +421,24 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
         ...(status === 'done' && job.resultCommitId ? { resultCommitId: job.resultCommitId } : {}),
       });
     }
-    // 上传：{范围}/uploads/{purpose}[/{id}/parts/{n} | /{id}/complete]
+    // 上传：{范围}/uploads/{purpose}[/{id}[/parts/{n} | /complete]]
     if (
       (m =
-        /^(\/api\/v1\/spaces\/[^/]+(?:\/plots\/[^/]+)?)\/uploads\/([a-z]+)(?:\/([^/]+)(\/parts\/(\d+)|\/complete))?$/.exec(
+        /^(\/api\/v1\/spaces\/[^/]+(?:\/plots\/[^/]+|\/rebuild)?)\/uploads\/([a-z]+)(?:\/([^/]+)(\/parts\/(\d+)|\/complete)?)?$/.exec(
           apiPath,
         ))
     ) {
       const [, scopePath, purpose, uploadId, tail, n] = m;
-      if (scopePath!.includes('/plots/') && (purpose === 'scan' || purpose === 'authored'))
-        return problem(403, 'scope_violation', '地块路径下不能上传扫描和 AI 物件集');
+      const allowed: readonly string[] = scopePath!.endsWith('/rebuild')
+        ? SCOPE_PURPOSES.rebuild
+        : SCOPE_PURPOSES.physical;
+      if (!allowed.includes(purpose!))
+        return problem(422, 'purpose_not_allowed', `这条路径不收 ${purpose} 用途的上传`);
+      if (uploadId !== undefined && tail === undefined && request.method === 'GET') {
+        const upload = state.uploads.get(uploadId);
+        if (upload === undefined) return problem(404, 'not_found', '没有上传');
+        return json(200, { uploadId: upload.id, status: upload.status, assetHash: upload.sha256 });
+      }
       if (uploadId === undefined && request.method === 'POST') {
         const req = parsed();
         if (
@@ -407,14 +525,33 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
         return;
       }
     }
-    // 草稿：{范围}/drafts[/{id}/(ops|ops-from-upload|preview|publish)]
+    // 草稿：{范围}/drafts[/{id}[/(ops|ops-from-upload|bundle|preview|publish)]]
     if (
       (m =
-        /^(\/api\/v1\/spaces\/[^/]+(?:\/plots\/[^/]+)?)\/drafts(?:\/([^/]+)\/(ops|ops-from-upload|preview|publish))?$/.exec(
+        /^(\/api\/v1\/spaces\/[^/]+(?:\/plots\/[^/]+|\/rebuild)?)\/drafts(?:\/([^/]+)(?:\/(ops|ops-from-upload|bundle|preview|publish))?)?$/.exec(
           apiPath,
         ))
     ) {
       const [, scopePath, draftId, action] = m;
+      const rebuild = scopePath!.endsWith('/rebuild');
+      // 重建路径没有内联操作和操作文件；交包只在重建路径。
+      if (
+        (rebuild && (action === 'ops' || action === 'ops-from-upload')) ||
+        (!rebuild && action === 'bundle')
+      )
+        return problem(404, 'not_found', `假服务器没有 ${request.method} ${apiPath}`);
+      if (draftId !== undefined && action === undefined) {
+        const found = state.drafts.get(draftId);
+        if (found === undefined || found.scopePath !== scopePath)
+          return problem(404, 'not_found', '没有草稿');
+        if (request.method === 'DELETE') {
+          state.drafts.delete(draftId);
+          response.writeHead(204);
+          response.end();
+          return;
+        }
+        return json(200, { id: draftId, baseSeq: found.baseSeq });
+      }
       if (draftId === undefined && request.method === 'POST') {
         const req = parsed();
         // CreateDraftRequest 只有 baseSeq（提交说明在发布时给）。
@@ -423,7 +560,7 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
         state.drafts.set(id, { scopePath: scopePath!, baseSeq: Number(req.baseSeq), ops: [] });
         return json(201, {
           id,
-          scope: scopePath!.includes('/plots/') ? 'plot' : 'physical',
+          scope: rebuild ? 'rebuild' : scopePath!.includes('/plots/') ? 'plot' : 'physical',
           baseSeq: req.baseSeq,
           rev: 0,
         });
@@ -467,6 +604,46 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
           });
           return json(202, { jobId: job.id });
         }
+        case 'bundle': {
+          if (invalidFields(req, ['uploadId', 'assetHash'])) return;
+          if ((req.uploadId === undefined) === (req.assetHash === undefined))
+            return problem(422, 'invalid_request', '请求体必须是 {uploadId} 或 {assetHash} 之一');
+          if (draft.bundle !== undefined)
+            return problem(409, 'bundle_already_applied', '这个重建草稿已经交过包');
+          const source = [...state.uploads.values()].find(
+            (u) =>
+              u.purpose === 'bundle' &&
+              u.status === 'done' &&
+              u.scopePath === scopePath &&
+              (req.uploadId !== undefined ? u.id === req.uploadId : u.sha256 === req.assetHash),
+          );
+          const bytes = source === undefined ? undefined : state.assets.get(source.sha256);
+          if (bytes === undefined)
+            return problem(404, 'not_found', '没有找到本空间重建范围、核对通过的清单');
+          const manifest = JSON.parse(bytes.toString('utf8')) as {
+            rebuilt?: { templates?: unknown[]; entities?: unknown[]; remove?: unknown[] };
+            anchors?: { anchorId: string }[];
+          };
+          draft.bundle = source!.sha256;
+          const job = newJob('ops_from_upload', {
+            scopePath: draft.scopePath,
+            result: state.bundleResult ?? {
+              applied: 1,
+              entities: {
+                placed:
+                  (manifest.rebuilt?.templates?.length ?? 0) +
+                  (manifest.rebuilt?.entities?.length ?? 0),
+                removed: manifest.rebuilt?.remove?.length ?? 0,
+              },
+              anchors: {
+                created: (manifest.anchors ?? []).map((a) => a.anchorId),
+                skipped: [],
+              },
+              anchorDrift: [],
+            },
+          });
+          return json(202, { jobId: job.id, status: 'queued' });
+        }
         case 'preview': {
           if (invalidFields(req, ['ttlSeconds'])) return;
           const ttl = req.ttlSeconds === undefined ? 86400 : Number(req.ttlSeconds);
@@ -480,7 +657,11 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
         }
         case 'publish':
           if (invalidFields(req, ['message', 'replay', 'rev', 'observedAt', 'scriptRef'])) return;
-          if (state.publishConflict) {
+          if (state.publishProblem !== undefined) {
+            const { status, code, detail, extra } = state.publishProblem;
+            return problem(status, code, detail, extra ?? {});
+          }
+          if (state.publishConflict && !(state.replayResolves === true && req.replay === true)) {
             return problem(409, 'draft_conflict', '时间线已前进，与草稿冲突', {
               conflicts: { entities: ['table-1'] },
             });
@@ -493,6 +674,16 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
               { assets: state.publishAssetsGone },
             );
           }
+          if (rebuild && draft.bundle !== undefined && state.publishedBundles.has(draft.bundle)) {
+            // 内容没有变化：不写提交（docs/design/server-slim.md 2.7）。
+            draft.published = true;
+            return json(200, {
+              unchanged: true,
+              seq: Number((state.space.head as { seq: number }).seq),
+            });
+          }
+          if (rebuild && draft.bundle !== undefined) state.publishedBundles.add(draft.bundle);
+          draft.published = true;
           return json(200, {
             seq: Number((state.space.head as { seq: number }).seq) + 1,
             at: '2026-11-09T01:00:00.000Z',
