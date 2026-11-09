@@ -23,7 +23,12 @@
   ],
   "rebuild": true,
   "voxelize": false,
-  "revision": 2,
+  "revision": 3,
+  "authored": {
+    "url": "https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/c882bca20dec26cb6314cfa8643a3172ee85684d/infra/chrono-cd/demo/lobby-authored.json",
+    "sha256": "9563890eecd103eb86469917dc165ca5e5a1e207aaf6f412356256559c59fc6d",
+    "size": 285415
+  },
   "hints": {
     "objects": [
       {

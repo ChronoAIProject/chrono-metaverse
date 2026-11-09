@@ -153,7 +153,7 @@ gh run list -R ChronoAIProject/chrono-metaverse --workflow Images --commit <完�
 gh run view <运行编号> -R ChronoAIProject/chrono-metaverse --log | grep -oE '(api|web|worker)=sha256:[0-9a-f]{64}' | sort -u
 ```
 
-`app.json` 里写的是已经上线验证过的版本（目前是 `0fccf1d`，摘要与 chrono-cd 修订 3 记录的一致）；`check-app.mjs` 拒绝只有标签、标签不是 7 位提交哈希、或仓库和服务对不上的镜像。
+`app.json` 里写的是已经上线验证过的版本（目前是 `c882bca`，摘要与 chrono-cd 修订 4 记录的一致）；`check-app.mjs` 拒绝只有标签、标签不是 7 位提交哈希、或仓库和服务对不上的镜像。
 
 按摘要部署只保证"部署的就是那次运行构建的镜像"，管不到谁能推镜像、推代码。还没做、要仓库管理员在 GitHub 上决定的：建受保护的 `main` 作为部署分支（现在唯一的分支 `claude/happy-ritchie-oly5hx` 没有保护）；在包设置的 Manage Actions access 里收回本仓库工作流的写权限，改用只在受保护分支的 GitHub Environment 里可用的凭证推镜像（工作流自己声明的 `packages: write` 拦不住改过的工作流）；用组织规则集限制谁能改 `.github/workflows`。
 
