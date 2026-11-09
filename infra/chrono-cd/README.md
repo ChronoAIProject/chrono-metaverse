@@ -52,7 +52,7 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 | `NYXID_JWKS_URL` | `https://api.nyxid.ai/.well-known/jwks.json` | 取自 NyxID `/.well-known/openid-configuration` 的 `jwks_uri` |
 | `NYXID_JWT_ISSUER` | `https://nyx-api.chrono-ai.fun` | 同上的 `issuer`（两个 NyxID 域名返回的都是它） |
 | `NYXID_JWT_AUDIENCE` | `urn:chrono-metaverse:api` | 必须和 NyxID 注册时的 `identity_jwt_audience` 一字不差 |
-| `ALLOWED_NYX_SERVICE_IDS` | `pending-nyxid-registration` | **占位值**：NyxID 注册要先有应用地址，所以第一次部署时还没有服务编号。占位值能让服务正常启动（网站和公开读接口可用），但所有 `/api/v1/*` 都会 401，直到第 7 步换成真实编号 |
+| `ALLOWED_NYX_SERVICE_IDS` | `362df1f5-8135-4a05-aa85-d929a5fd9f73` | 已注册（2026-11-09）：ChronoAI 组织的自定义服务 `chrono-metaverse` 的连接编号（自定义服务没有目录编号，身份令牌里的 `nyx_service_id` 就是它）。第一次部署时还没有编号，用的是占位值 `pending-nyxid-registration`：服务能启动，但所有 `/api/v1/*` 都 401，直到第 7 步换成真实编号 |
 | `METAVERSE_REQUIRE_PERMISSIONS` | `false` | 第一步不启用功能级权限 |
 | `UPLOAD_MAX_SCAN_BYTES` / `UPLOAD_MAX_MODEL_BYTES` / `UPLOAD_MAX_TEXTURE_BYTES` / `UPLOAD_MAX_OPS_BYTES` / `UPLOAD_MAX_SCRIPT_BYTES` | 1GiB / 50MiB / 50MiB / 256MiB / 4MiB | 各用途上传的大小上限（与处理服务的上限一致；改大时处理服务的 `WORKER_MAX_*` 也要改） |
 | `UPLOAD_MAX_TEXTURE_SIDE` | `8192` | 图片单边像素上限（第 0 片按文件头检查） |

@@ -66,7 +66,7 @@
 
 1. **把服务注册成 NyxID 自定义服务**（组织管理员在自己电脑上用 `nyxid` 命令行操作，命令见 [开发教程 9.3](tutorials/cloud-claude-code-nyxid.md)）：
    - 注册时开启身份令牌（受众 `urn:chrono-metaverse:api`）和"转发调用者令牌"；
-   - 注册后，把服务编号填进 chrono-cd 规格里 `metaverse-api` 的 `ALLOWED_NYX_SERVICE_IDS`（现在是占位值 `pending-nyxid-registration`，所有 `/api/v1` 都返回 401）。
+   - 注册后，把服务编号填进 chrono-cd 规格里 `metaverse-api` 的 `ALLOWED_NYX_SERVICE_IDS`。**已完成（2026-11-09）**：服务编号 `362df1f5-8135-4a05-aa85-d929a5fd9f73`，经 NyxID MCP 调 `chrono-metaverse__get_space` 返回真实数据，NyxID 读到了接口文档（47 个工具）。
    - 完成之前，写入只能走部署配置种子；AI 和命令行还不能经 NyxID 写入。
 2. **ghcr.io 镜像公开**：不需要处理，三个镜像已经可以匿名拉取。
 3. **向平台确认可信的客户端地址请求头**：确认负载均衡只接受 Cloudflare 的流量、`cf-connecting-ip` 原样到达容器后，按 [infra/chrono-cd/README.md](../infra/chrono-cd/README.md)"公开接口限流"一节设置 `TRUSTED_CLIENT_IP_HEADER`，并调回公开接口的限流额度。在此之前，限流按连接地址计算，只能当兜底。

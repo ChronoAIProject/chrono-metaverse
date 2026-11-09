@@ -32,7 +32,7 @@
         "NYXID_JWKS_URL": "https://api.nyxid.ai/.well-known/jwks.json",
         "NYXID_JWT_ISSUER": "https://nyx-api.chrono-ai.fun",
         "NYXID_JWT_AUDIENCE": "urn:chrono-metaverse:api",
-        "ALLOWED_NYX_SERVICE_IDS": "pending-nyxid-registration",
+        "ALLOWED_NYX_SERVICE_IDS": "362df1f5-8135-4a05-aa85-d929a5fd9f73",
         "METAVERSE_REQUIRE_PERMISSIONS": "false",
         "UPLOAD_MAX_SCAN_BYTES": "1073741824",
         "UPLOAD_MAX_MODEL_BYTES": "52428800",
