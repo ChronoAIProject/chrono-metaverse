@@ -140,6 +140,8 @@ struct Fixture {
     verifier: Verifier,
     body: Arc<RwLock<String>>,
     status: Arc<RwLock<StatusCode>>,
+    /// 公钥地址每次响应前等多久（模拟 NyxID 变慢）。
+    delay: Arc<RwLock<Duration>>,
     calls: Arc<AtomicUsize>,
     server: tokio::task::JoinHandle<()>,
 }
@@ -149,14 +151,22 @@ impl Fixture {
         let body = Arc::new(RwLock::new(key_set().to_string()));
         let status = Arc::new(RwLock::new(StatusCode::OK));
         let calls = Arc::new(AtomicUsize::new(0));
-        let (returned, response_status, counter) = (body.clone(), status.clone(), calls.clone());
+        let delay = Arc::new(RwLock::new(Duration::ZERO));
+        let (returned, response_status, counter, wait) =
+            (body.clone(), status.clone(), calls.clone(), delay.clone());
         let app = Router::new().route(
             "/jwks",
             get(move || {
-                let (body, status, counter) =
-                    (returned.clone(), response_status.clone(), counter.clone());
+                let (body, status, counter, wait) = (
+                    returned.clone(),
+                    response_status.clone(),
+                    counter.clone(),
+                    wait.clone(),
+                );
                 async move {
                     counter.fetch_add(1, Ordering::SeqCst);
+                    let pause = *wait.read().await;
+                    tokio::time::sleep(pause).await;
                     (*status.read().await, body.read().await.clone())
                 }
             }),
@@ -170,6 +180,7 @@ impl Fixture {
             verifier: Verifier::new(config(url)).unwrap(),
             body,
             status,
+            delay,
             calls,
             server,
         }
@@ -180,15 +191,16 @@ impl Fixture {
     }
 
     async fn permit_refresh(&self) {
-        self.verifier.cache.lock().await.next_refresh = None;
+        self.verifier.update(|cache| cache.next_refresh = None);
     }
 
     async fn expire_cache(&self) {
-        let mut cache = self.verifier.cache.lock().await;
-        cache.next_refresh = None;
-        if let Some((_, expiry)) = cache.keys.as_mut() {
-            *expiry = Instant::now();
-        }
+        self.verifier.update(|cache| {
+            cache.next_refresh = None;
+            if let Some((_, expiry)) = cache.keys.as_mut() {
+                *expiry = Instant::now();
+            }
+        });
     }
 }
 
@@ -429,6 +441,55 @@ async fn unknown_kid_refresh_is_rate_limited() {
         );
     }
     // 第一次未知 kid 触发一次刷新，之后 5 秒内不再刷新。
+    assert_eq!(fixture.requests(), 2);
+}
+
+/// 未认证的请求带随机 kid 触发刷新、而公钥地址很慢时，命中缓存的验签不能排在刷新后面。
+#[tokio::test]
+async fn slow_refresh_for_unknown_kid_does_not_block_cached_keys() {
+    let fixture = Fixture::new().await;
+    let value = claims(super::now().unwrap());
+    let known = Signer::primary().token(&value, "key-1");
+    fixture.verifier.verify(&known).await.unwrap();
+    fixture.permit_refresh().await;
+    *fixture.delay.write().await = Duration::from_secs(2);
+    let verifier = &fixture.verifier;
+    let forged = Signer::primary().token(&value, "attacker-kid");
+    let slow = async {
+        let started = std::time::Instant::now();
+        let result = verifier.verify(&forged).await;
+        (result, started.elapsed())
+    };
+    let fast = async {
+        // 等刷新真正开始（单飞锁已被拿走、请求已发出）。
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let started = std::time::Instant::now();
+        for _ in 0..5 {
+            verifier.verify(&known).await.unwrap();
+        }
+        started.elapsed()
+    };
+    let ((slow_result, slow_elapsed), fast_elapsed) = tokio::join!(slow, fast);
+    assert_eq!(
+        slow_result.unwrap_err(),
+        VerifyError::Rejected("signing_key_unknown")
+    );
+    assert!(slow_elapsed >= Duration::from_secs(2), "{slow_elapsed:?}");
+    assert!(
+        fast_elapsed < Duration::from_millis(500),
+        "命中缓存的验签被刷新挡住了：{fast_elapsed:?}"
+    );
+    // 冷却期里别的未知 kid 不再排队等刷新，立即拒绝。
+    let started = std::time::Instant::now();
+    assert_eq!(
+        fixture
+            .verifier
+            .verify(&Signer::primary().token(&value, "attacker-kid-2"))
+            .await
+            .unwrap_err(),
+        VerifyError::Rejected("signing_key_unknown")
+    );
+    assert!(started.elapsed() < Duration::from_millis(500));
     assert_eq!(fixture.requests(), 2);
 }
 

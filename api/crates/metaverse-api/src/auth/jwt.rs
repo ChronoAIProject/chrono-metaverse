@@ -8,7 +8,10 @@
 //!   同一把密钥、同一个签发方签名，访问令牌带 `token_type`）；
 //! - 去掉 CMA 的个人资料（`Profile`）投影；
 //! - 增加 [`Verifier::verify_forwarded_access_token`]：查组织角色前，若 NyxID 转发来的
-//!   调用者令牌是 JWT，先验签并要求它的 sub 等于身份令牌的 sub（设计 9.2）。
+//!   调用者令牌是 JWT，先验签并要求它的 sub 等于身份令牌的 sub（设计 9.2）；
+//! - 刷新公钥列表改成单飞、网络请求期间不持有缓存锁：命中缓存的验签只读内存，不会排在
+//!   未知 kid 触发的刷新后面（否则未认证的请求每 5 秒带一个随机 kid，就能在 NyxID 公钥地址
+//!   变慢时卡住全部验签）。
 //!
 //! 其余规则与 CMA 相同：只接受 RS256 并按 kid 选公钥；公钥列表缓存 5 分钟；遇到未知
 //! kid 最多每 5 秒刷新一次；已知 kid 签名不对时不刷新；签发方、受众精确匹配；
@@ -23,6 +26,9 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::{sync::Mutex, time::Instant};
+
+/// 缓存锁只在内存里读写时持有（从不跨越网络请求），所以用标准库的读写锁。
+type CacheLock = std::sync::RwLock<Cached>;
 
 /// NyxID 代理注入的身份令牌请求头。
 pub const HEADER: &str = "x-nyxid-identity-token";
@@ -84,7 +90,10 @@ pub fn identity_token(headers: &axum::http::HeaderMap) -> Result<Option<&str>, V
 pub struct Verifier {
     config: Config,
     client: reqwest::Client,
-    cache: Mutex<Cached>,
+    cache: CacheLock,
+    /// 刷新公钥列表的单飞锁：同一时间只有一个请求去拉，其余需要刷新的请求等它的结果。
+    /// 命中缓存的请求不碰这把锁，所以公钥地址变慢时不会被未知 kid 的刷新挡住。
+    refresh: Mutex<()>,
 }
 
 #[derive(Default)]
@@ -115,7 +124,8 @@ impl Verifier {
         Ok(Self {
             config,
             client,
-            cache: Mutex::new(Cached::default()),
+            cache: CacheLock::new(Cached::default()),
+            refresh: Mutex::new(()),
         })
     }
 
@@ -159,32 +169,63 @@ impl Verifier {
         Ok(())
     }
 
-    async fn keys_for(&self, kid: &str) -> Result<Arc<KeySet>, VerifyError> {
-        // 每个校验器一个公钥地址、一份有界缓存。刷新期间持有锁，
-        // 并发的未命中和失败会合并成一次请求。
-        let mut cache = self.cache.lock().await;
-        let now = Instant::now();
+    /// 有效期内的公钥列表，以及现在是否还在刷新冷却期里。
+    fn snapshot(&self, now: Instant) -> (Option<Arc<KeySet>>, bool) {
+        let cache = self.cache.read().unwrap_or_else(|error| error.into_inner());
         let current = cache
             .keys
             .as_ref()
             .filter(|(_, until)| *until > now)
             .map(|(keys, _)| keys.clone());
+        let throttled = cache.next_refresh.is_some_and(|after| after > now);
+        (current, throttled)
+    }
+
+    fn update(&self, change: impl FnOnce(&mut Cached)) {
+        let mut cache = self
+            .cache
+            .write()
+            .unwrap_or_else(|error| error.into_inner());
+        change(&mut cache);
+    }
+
+    async fn keys_for(&self, kid: &str) -> Result<Arc<KeySet>, VerifyError> {
+        let throttled_error = |current: &Option<Arc<KeySet>>| {
+            if current.is_some() {
+                VerifyError::Rejected("signing_key_unknown")
+            } else {
+                VerifyError::Unavailable("jwks_refresh_throttled")
+            }
+        };
+        // 1. 命中缓存：只读一下内存，不等任何网络请求。
+        let (current, throttled) = self.snapshot(Instant::now());
+        if let Some(keys) = &current {
+            if keys.0.contains_key(kid) {
+                return Ok(keys.clone());
+            }
+            // 公钥列表还有效、只是不认识这个 kid，并且在冷却期里：直接拒绝，不排队。
+            if throttled {
+                return Err(throttled_error(&current));
+            }
+        }
+        // 2. 需要刷新（未知 kid，或公钥列表过期）：单飞。等到锁之后重新看缓存——别的请求
+        //    可能刚刷新过。网络请求期间只持有单飞锁，不持有缓存锁。
+        let _flight = self.refresh.lock().await;
+        let now = Instant::now();
+        let (current, throttled) = self.snapshot(now);
         if let Some(keys) = &current {
             if keys.0.contains_key(kid) {
                 return Ok(keys.clone());
             }
         }
-        if cache.next_refresh.is_some_and(|after| after > now) {
-            return Err(if current.is_some() {
-                VerifyError::Rejected("signing_key_unknown")
-            } else {
-                VerifyError::Unavailable("jwks_refresh_throttled")
-            });
+        if throttled {
+            return Err(throttled_error(&current));
         }
-        cache.next_refresh = Some(now + REFRESH_COOLDOWN);
+        self.update(|cache| cache.next_refresh = Some(now + REFRESH_COOLDOWN));
         // 未知 kid 刷新失败时不丢弃仍在有效期内的公钥；过期的公钥在拉取失败后不再使用。
         let keys = Arc::new(self.fetch().await?);
-        cache.keys = Some((keys.clone(), Instant::now() + CACHE_TTL));
+        let expires = Instant::now() + CACHE_TTL;
+        self.update(|cache| cache.keys = Some((keys.clone(), expires)));
         if !keys.0.contains_key(kid) {
             return Err(VerifyError::Rejected("signing_key_unknown"));
         }
