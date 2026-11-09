@@ -18,7 +18,9 @@
 //! | [`replay`] | 按时刻求 seq、关键帧、叠加变化 | 设计 5.2 |
 //! | [`events`] | 事件更正、可见性、状态事件、瞬时事件 | 设计 5.3–5.5 |
 //! | [`scope`] | 请求内容必须落在路径范围内 | 设计 9.4 |
+//! | [`authored`] | AI 物件集的浅层校验 | 设计 6.3 |
 
+pub mod authored;
 pub mod canonical;
 pub mod chunk;
 pub mod events;
