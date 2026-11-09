@@ -382,6 +382,8 @@ result = reconstruct_objects(mesh_space, structure, params=hints)
 # params：任务参数里的 hints（没给时是 {}）
 result.entities  # {entityId: body}，SHAPES 第 3 节，layer 必须是 rebuilt，kind 是 object 或 template
 #   物体的 props.category 写类别（chair、table、sofa、counter、cabinet、clutter……），决定建不建锚点；
+#   props.detectedBy 写识别来源（hint 按提示、rules 按规则；旧数据写在 props.source 这个字符串里，
+#   读取时一并认，见 records.detected_by——props.source 现在只用于外部模型的署名对象）；
 #   anchorId 写建议的锚点编号；label 写中文标签（有提示用提示的 label）
 result.textures  # {sha256 十六进制: 图片字节（jpeg/png/webp）}，被 material.texture 引用
 result.metrics  # 任意 JSON，原样放进 result.objects
@@ -572,7 +574,7 @@ cd worker && uv venv .venv && uv pip install --python .venv/bin/python -e .
 
 | 命令 | 作用 | 输出 |
 |---|---|---|
-| `prepare` | 扫描（zip、glb，或 drc + 贴图）+ 可选提示 → 基线目录。**直接调用 `scan_import` 首次导入的同一条代码路径**（`processing.tasks.scan_task` → `processing.align.auto_align` → 结构 + 物体重建），坐标、结构、物体编号与线上导入同一份扫描完全一致 | `scan.glb`、`transform.json`、`structure.json`、`objects.json`、`candidates.json`（编号、类别、标签、包围盒、点数、偏差、建议先搜还是手写、同款）、`base.json` |
+| `prepare` | 扫描（zip、glb，或 drc + 贴图）+ 可选提示 → 基线目录。**直接调用 `scan_import` 首次导入的同一条代码路径**（`processing.tasks.scan_task` → `processing.align.auto_align` → 结构 + 物体重建），坐标、结构、物体编号与线上导入同一份扫描完全一致 | `scan.glb`、`transform.json`、`structure.json`、`objects.json`、`candidates.json`（编号、类别、标签、包围盒、点数、偏差、识别来源 `detectedBy`、建议先搜还是手写、同款）、`base.json` |
 | `views` | 只渲染包围盒附近的扫描，6 个角度 + 任意相机，带米制刻度、像素 ↔ 坐标换算 | JPEG + `views.json` |
 | `measure` | 外接框、最小外接矩形、按高度剖面、水平/竖直截面（网格精确求交）、俯视占用图、圆拟合、颜色；**平面拟合**（`--plane`：法向、坡度、方位、残差、可直接作 `plate` 的角点）、**高度图数字表**（`--heightmap`）、排除框（`--exclude`）、局部坐标（`--frame`） | `measure.json` + 截面图、占用图 |
 | `compare` | 物件记录（形状物件或外部模型物件）与扫描、现有算法并排渲染，偏差（扫描→模型、模型→扫描、分部件、漏建团块、逐件的写回 `fit`——与处理服务写回时同一个函数），校验；`--exclude`、`--color-parts`、`--scene`（多物件 / 整房） | `compare.jpg`、`compare_error.jpg`、`compare.json` |

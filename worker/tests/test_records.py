@@ -6,6 +6,7 @@ from metaverse_worker import shapes as sh
 from metaverse_worker.records import (
     RecordError,
     check_label,
+    detected_by,
     entity_body,
     is_https_url,
     model_source,
@@ -105,6 +106,17 @@ def test_model_entity_with_source_and_tint():
     # 旧数据里 source 是识别来源的字符串，照旧当不透明的值。
     _model(props={"source": "hint"})
     validate_props({"category": "chair"})
+
+
+def test_detected_by_reads_new_and_old_data():
+    """识别来源：新数据在 props.detectedBy，旧数据在 props.source（字符串）；署名对象不是识别来源。"""
+    assert detected_by({"category": "chair", "detectedBy": "hint"}) == "hint"
+    assert detected_by({"category": "chair", "source": "rules"}) == "rules"  # 旧数据
+    assert detected_by({"detectedBy": "hint", "source": "rules"}) == "hint"  # 两个都有时以新键为准
+    assert detected_by({"source": dict(SOURCE)}) is None
+    assert detected_by({"detectedBy": "rules", "source": dict(SOURCE)}) == "rules"
+    assert detected_by({}) is None and detected_by(None) is None
+    validate_props({"detectedBy": "hint", "source": dict(SOURCE)})  # 两个键互不干扰
 
 
 @pytest.mark.parametrize(

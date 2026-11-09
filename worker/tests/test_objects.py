@@ -490,6 +490,7 @@ def test_end_to_end_recognizes_and_fits(scene_result):
     assert abs(((yaws[1] - yaws[0]) % 360) - 180) < 15
     for b in objs.values():
         assert b["fit"]["meanCm"] < 2.5, (b["entityId"], b["fit"])
+        assert b["props"]["detectedBy"] == "rules" and "source" not in b["props"]  # 没有提示：按规则识别
     assert res.metrics["furnitureMeanCm"] < 2.5
     assert res.metrics["templates"] == 1
 
@@ -559,7 +560,8 @@ def test_hints_override_kind_and_label():
     assert len(objs) == 1
     assert objs[0]["label"] == "文件柜"
     assert objs[0]["props"]["category"] == "cabinet"
-    assert objs[0]["props"]["source"] == "hint"
+    # 识别来源写在 props.detectedBy；props.source 只留给外部模型的署名
+    assert objs[0]["props"]["detectedBy"] == "hint" and "source" not in objs[0]["props"]
     color = objs[0]["shape"]["children"][0]["material"]
     assert "color" in color and np.allclose(color["color"], [90, 120, 200], atol=12)
 

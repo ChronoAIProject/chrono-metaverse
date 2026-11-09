@@ -109,9 +109,20 @@ def validate_model_source(source: Any) -> None:
 
 def validate_props(props: Mapping[str, Any]) -> None:
     """`props` 里有结构的键：`source` 是对象时按署名校验；不是对象的 `source`（旧数据里识别来源的字符串
-    `hint` / `rules`）照旧当不透明的值。"""
+    `hint` / `rules`，现在写在 `detectedBy`）照旧当不透明的值。"""
     if isinstance(props.get("source"), dict):
         validate_model_source(props["source"])
+
+
+def detected_by(props: Mapping[str, Any] | None) -> str | None:
+    """物体的识别来源（`hint` 按提示、`rules` 按规则；只有物体重建算法写）。新数据写在 `props.detectedBy`；
+    旧数据写在 `props.source`（字符串），一并认。`props.source` 是对象时是外部模型的署名，不是识别来源。"""
+    props = props or {}
+    for key in ("detectedBy", "source"):
+        value = props.get(key)
+        if isinstance(value, str):
+            return value
+    return None
 
 
 def _validate_model_material(material: Any) -> None:

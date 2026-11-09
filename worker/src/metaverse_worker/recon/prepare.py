@@ -25,6 +25,7 @@ from ..config import Config
 from ..processing import tasks
 from ..processing.rebuild import OBJECTS_TARGET, body_textures
 from ..processing.scan import matrix_from_column_major, sniff_file
+from ..records import detected_by
 from . import core as wc
 from .core import r
 
@@ -141,6 +142,7 @@ def candidate_list(objects: dict[str, dict], metrics: dict) -> list[dict]:
             "yaw": (shape.get("transform") or {}).get("yaw"),
             "points": (per.get(eid) or {}).get("points"),
             "fit": b.get("fit"),
+            "detectedBy": detected_by(props),
             "suggest": plan,
             "query": query,
         }

@@ -132,7 +132,8 @@
   | `license` | SPDX 风格的许可名，只能是 `CC0-1.0`、`CC-BY-4.0`、`CC-BY-3.0`（明确可商用、不传染；NC、ND、SA 一律不收） |
   | `title` | 标题，1 到 200 个字符，不含控制字符 |
 
-  六个字段都必须给，不能有别的字段。`props.source` 不是对象时（旧数据里识别来源的字符串 `hint` / `rules`）照旧当不透明的值。
+  六个字段都必须给，不能有别的字段。`props.source` 不是对象时（旧数据里识别来源的字符串 `hint` / `rules`）照旧当不透明的值；
+  物体重建算法现在把识别来源写在 `props.detectedBy`，`props.source` 只留给署名。
 - **署名必须可见**：网站的"模型来源"面板列出场景里所有 `props.source` 的标题、作者、许可和来源页链接（纯文本，链接只接受 https，带 `rel="noopener noreferrer"`）；点选物件时信息面板也显示它的来源。CC-BY 的模型必须这样署名。
 - 模型库只用许可明确可商用的：Poly Haven（全部 CC0）和 Objaverse 里许可为 CC0 / CC-BY 的对象（每个对象有自己的许可字段，NC、ND、SA 一律排除，SA 也排除以免传染）；Sketchfab 只在设置了 `SKETCHFAB_TOKEN` 时可选。
 

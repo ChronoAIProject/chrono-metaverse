@@ -16,7 +16,8 @@ from metaverse_worker.processing.scan import compute_alignment, rotation_y
 from metaverse_worker.recon import core as wc
 from metaverse_worker.recon import reframe as rf
 from metaverse_worker.recon.cli import build_parser
-from metaverse_worker.recon.prepare import cmd_prepare, default_limits
+from metaverse_worker.recon.prepare import candidate_list, cmd_prepare, default_limits
+from recon_support import object_body
 from synthetic import room_mesh
 
 FAKE = "fake_objects:reconstruct_objects"
@@ -77,6 +78,20 @@ def test_prepare_matches_scan_task_and_auto_align(tmp_path, scan_file):
     assert chairs and all(c["suggest"] == "search" and c["sameAs"] for c in chairs)
     manifest = json.loads((out / "base.json").read_text())
     assert manifest["source"]["processedAs"] == "zip" or manifest["source"]["processedAs"]
+
+
+def test_candidates_show_detection_source_for_new_and_old_records():
+    """候选清单列出识别来源：新数据读 props.detectedBy，旧数据读字符串 props.source；署名对象不算。"""
+    objs = {
+        "chair-01": object_body("chair-01", [0, 0, 0], [0.5, 0.9, 0.5]),
+        "table-01": object_body("table-01", [1, 0, 0], [2.6, 0.75, 0.8], "table", "会议桌"),
+        "sofa-01": object_body("sofa-01", [3, 0, 0], [4.8, 0.8, 0.9], "sofa", "沙发"),
+    }
+    objs["chair-01"]["props"]["detectedBy"] = "hint"
+    objs["table-01"]["props"]["source"] = "rules"  # 旧数据
+    objs["sofa-01"]["props"]["source"] = {"library": "polyhaven", "id": "x"}  # 署名，不是识别来源
+    got = {c["id"]: c["detectedBy"] for c in candidate_list(objs, {})}
+    assert got == {"chair-01": "hint", "table-01": "rules", "sofa-01": None}
 
 
 def test_prepare_drc_with_texture_is_zipped_like_the_seed(tmp_path):
