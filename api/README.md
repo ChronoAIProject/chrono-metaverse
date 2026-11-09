@@ -197,8 +197,8 @@ NyxID 地址只接受 https；明文 http 只允许本机地址（本地测试�
 | `GET /api/public/spaces/{space_id}/head` | `get_public_head` | `Head` `{seq, at, recordedAt}`（最新公开可见变化的记录时间）；ETag、304；进程内缓存 1.5 秒（先验令牌）；公开空间 `public, max-age=1`，凭令牌 `private, no-cache` |
 | `GET /api/public/spaces/{space_id}/events?from=&to=&since=&types=&after=` | `list_public_events` | `Page<SpaceEvent>`：先更正后按可见级别过滤，只含公开字段、公开锚点上的事件；增量结果带 `withdrawn` 标记；≤ 24 小时、每页 ≤ 5000；`max-age=5` |
 | `GET /api/public/spaces/{space_id}/events/density?from=&to=&bucket=` | `get_public_event_density` | `EventDensity`，≤ 90 天、≤ 10000 个桶；`max-age=5` |
-| `GET /api/public/spaces/{space_id}/state?at=` | `get_public_state` | `StateAt`：T 时刻各公开锚点的状态（快照 + 增量折叠）；`max-age=5` |
-| `GET /api/public/universes/{universe_id}?at=` | `get_public_universe` | `UniverseView`：T 时刻生效的修订 + 各成员在 T 时刻的 seq；`no-store` |
+| `GET /api/public/spaces/{space_id}/state?at=` | `get_public_state` | `StateAt`：T 时刻各公开锚点的状态（快照 + 增量折叠），每条带 `typeVersion` 和产生它的事件的公开字段 `data`；`max-age=5` |
+| `GET /api/public/universes/{universe_id}?at=` | `get_public_universe` | `UniverseView`：T 时刻生效的修订 + 各成员在 T 时刻的 seq（还没有提交时为 null）和名称；`no-store` |
 | `GET /api/public/universes/{universe_id}/revisions/{seq}` | `get_public_universe_revision` | `UniverseRevision`；`max-age=86400`（凭令牌 `private`） |
 
 其他：`GET /api/healthz`（`healthz`，索引建好前 503）、`GET /api/openapi.json`（`get_openapi`，注册给 NyxID 的文档）。
