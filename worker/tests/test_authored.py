@@ -43,7 +43,7 @@ from metaverse_worker.processing.glb import read_glb_json
 from metaverse_worker.processing.modelimport import inspect_gltf, load_model
 from metaverse_worker.processing.shape_mesh import build_parts
 from metaverse_worker.records import validate_entity_body
-from synthetic import box_mesh, room_mesh
+from synthetic import box_mesh, merged, room_mesh
 
 LIMITS = {
     "max_triangles": 1_000_000,
@@ -536,13 +536,18 @@ def test_inspect_gltf_rejects_outside_files_and_compression(tmp_path):
 # ---------------------------------------------------------------------------- 烘焙、偏差、结构
 
 
+def room_with_table():
+    """带斜墙的房间 + 会议桌（与 `doc()` 里的 table-01 一样大、一样位置）。"""
+    return merged(room_mesh(), box_mesh([1.2, 0, 2.6], [2.8, 0.75, 3.4], color=(90, 70, 50)))
+
+
 def test_authored_rebuild_bakes_fits_and_keeps_structure(tmp_path):
     src = tmp_path / "chair.glb"
     src.write_bytes(model_glb())
     parsed = parse_authored(doc())
     key = parsed["models"]["chair-01"]["source"]
     out = authored_rebuild(
-        room_mesh(),
+        room_with_table(),
         {k: v for k, v in parsed.items() if k != "notes"},
         {key: {"format": "glb", "path": str(src)}},
         workdir=str(tmp_path / "w"),
@@ -565,17 +570,20 @@ def test_authored_rebuild_bakes_fits_and_keeps_structure(tmp_path):
     r, g, b = img.astype(float).mean(0)
     assert r > 160 and g < 110 and b < 110, (r, g, b)
     assert out["bake"] == {"entities": 1, "parts": 1, "textured": 1, "fallback": 0}
-    # 偏差：面板背面贴着墙，几乎为零；外部模型附近只有地面（不算），不写 fit
-    assert panel["fit"]["meanCm"] < 1.0 and panel["fit"]["coverage3cm"] > 0.95
+    # 偏差：扫描里有会议桌，几乎为零；面板贴着墙（扫描里分不出来）、外部模型附近只有地面：范围里的点都算到
+    # 背景上，没有这件物件的证据，不写 fit
+    table = out["entities"]["table-01"]
+    assert table["fit"]["meanCm"] < 0.5 and table["fit"]["coverage3cm"] > 0.98
     chair = out["entities"]["chair-01"]
-    assert "fit" not in chair and chair["assetHash"] in out["models"]
+    assert "fit" not in chair and "fit" not in panel and chair["assetHash"] in out["models"]
     lo, hi = chair["bounds"]["min"], chair["bounds"]["max"]
     assert np.allclose([(lo[0] + hi[0]) / 2, lo[1], (lo[2] + hi[2]) / 2], [2.5, 0, 2.0], atol=1e-3)
     fits = {f["entityId"]: f for f in out["fit"]}
-    assert fits["chair-01"]["points"] < 20 and fits["panel-01"]["points"] > 1000
+    assert fits["panel-01"]["points"] > 1000 and fits["chair-01"]["points"] > 100
+    assert "meanCm" not in fits["panel-01"] and fits["table-01"]["meanCm"] == table["fit"]["meanCm"]
     # 同样的输入，同样的结果（重新重建没有变化就不提交）
     again = authored_rebuild(
-        room_mesh(),
+        room_with_table(),
         {k: v for k, v in parsed.items() if k != "notes"},
         {key: {"format": "glb", "path": str(src)}},
         workdir=str(tmp_path / "w2"),
@@ -614,31 +622,3 @@ def test_uv_extents_follow_projection():
     eu, ev = uv_extents(mesh)
     assert eu == pytest.approx(2.0, rel=1e-6) and ev == pytest.approx(1.0, rel=1e-6)
     assert png_bytes(np.zeros((2, 2, 3), np.uint8))  # 夹具可用
-
-
-def test_fit_counts_wall_points_against_the_wall():
-    """偏差的背景：贴墙物件范围里的墙面扫描点算到墙上（与工作台 compare 相同），地面不当背景。"""
-    from metaverse_worker.processing.authored_build import background_meshes, entity_fit
-    from metaverse_worker.processing.bake import FaceTable
-
-    table = FaceTable(room_mesh())
-    # 离南墙（z = 0）4 厘米的矮柜；扫描里没有它，偏差范围（外扩 5 厘米）里只有墙面的点
-    cabinet = sh.box([1.0, 0.75, 0.56], xf=sh.transform(position=[1.5, 0, 0.32]))
-    meshes = [p.mesh for p in build_parts(cabinet)]
-    bounds = {"min": [1.0, 0.0, 0.04], "max": [2.0, 0.75, 0.6]}
-    wall = sh.box([5.0, 2.6, 0.01], xf=sh.transform(position=[2.5, 0, -0.005]))
-    floor = sh.box([5.0, 0.01, 4.0], xf=sh.transform(position=[2.5, -0.01, 2.0]))
-    background = background_meshes(
-        {
-            "wall-south": {"kind": "structure", "props": {"structure": "wall"}, "shape": wall},
-            "floor": {"kind": "structure", "props": {"structure": "floor"}, "shape": floor},
-            "desk": {"kind": "object", "shape": sh.box([1, 1, 1])},
-        },
-        {},
-    )
-    assert len(background) == 1  # 只有墙：地面和物体不当背景
-    alone, n = entity_fit(meshes, table, bounds, "cabinet")
-    with_wall, n2 = entity_fit(meshes, table, bounds, "cabinet", background)
-    assert n == n2 > 20
-    assert alone["meanCm"] > 3.5
-    assert with_wall["meanCm"] < 0.5 and with_wall["coverage3cm"] > 0.99

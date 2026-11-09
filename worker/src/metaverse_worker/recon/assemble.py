@@ -35,13 +35,22 @@ from scipy.spatial import cKDTree
 
 from ..authored import AuthoredError, parse_authored
 from ..canonical import canonical_json
+from ..processing import object_fit as of
 from ..processing import shape_mesh as sm
 from ..processing.fit_texture import SurfaceIndex
 from . import core as wc
 from . import models as md
 from . import shapes_ext as sx
 from .base import Base, from_args, load_records
-from .compare import add_footer, check_model_body, check_shape_body, render_sheet, stats
+from .compare import (
+    add_footer,
+    check_model_body,
+    check_shape_body,
+    fit_background,
+    render_sheet,
+    scan_table,
+    stats,
+)
 from .core import r
 from .glbout import export_glb
 from .i18n import t
@@ -331,11 +340,16 @@ def room_report(base: Base, scan: wc.Scan, entities, templates, extra, density: 
     d_ai, _, idx_ai = dist(a_parts + s_parts)
     d_base, _, _ = dist(b_parts + s_parts)
     tree = cKDTree(P)
+    table = scan_table(scan)
+    background = fit_background(base, entities, templates)
     per = []
     for eid, body in entities.items():
         ks = [i for i, lab in enumerate(a_labels) if lab == eid]
         if not ks or "bounds" not in body:
             continue
+        # 写回时处理服务写进记录的 fit（同一个函数）
+        bg = [] if body.get("kind") == "structure" else background
+        fit, fit_points = of.entity_fit([a_parts[i].mesh for i in ks], table, eid, bg)
         own = wc.Box.of(body["bounds"]).grow(0.02).contains(P)
         S = idx_ai.samples[np.isin(idx_ai.tri_part[idx_ai.sample_tri], ks)]
         S = S[S[:, 1] > floor + 0.02]
@@ -352,6 +366,8 @@ def room_report(base: Base, scan: wc.Scan, entities, templates, extra, density: 
                 "scanToModel": stats(d_ai[own]) if own.any() else None,
                 "baseScanToModel": stats(base_d) if own.any() else None,
                 "modelToScan": stats(m2s) if len(m2s) else None,
+                "fit": fit,
+                "fitPoints": fit_points,
             }
         )
     far = d_ai > 0.05
@@ -369,7 +385,8 @@ def room_report(base: Base, scan: wc.Scan, entities, templates, extra, density: 
         "note": "扫描点：地面 3 厘米以上、剖切高度以下；AI 和现有算法都带上结构（墙、地面、玻璃）一起算；"
         "uncovered = 离 AI 重建超过 5 厘米的扫描点按 10 厘米体素连成的团块（漏建或放错），baseObjects = "
         "现有算法里"
-        "和它重叠的物体",
+        "和它重叠的物体；entities.fit = 写回时处理服务写进记录的偏差（同一个函数：按物件朝向取范围，"
+        "墙、玻璃、地面作背景，只计 10 厘米以内的点；null = 不写）",
     }
 
 
@@ -462,14 +479,15 @@ def room_outputs(args, base: Base, templates, entities, locals_, out_dir: str) -
     print(f"\n== 整房偏差（{rep['points']} 个扫描点，剖切 y ≤ {cut:.2f}；单位厘米）")
     for name, s in (("现有算法", rep["base"]), ("AI 重建", rep["ai"])):
         print(f"  {name}：扫描→模型 均值 {s['meanCm']}，P90 {s['p90Cm']}，3 厘米内 {s['coverage3cm']:.1%}")
-    print("\n== 逐件（包围盒内的扫描点 → AI 重建 / 现有算法；模型 → 扫描）")
+    print("\n== 逐件（包围盒内的扫描点 → AI 重建 / 现有算法；模型 → 扫描；写回的 fit）")
     for e in rep["entities"]:
-        a, b, m = e["scanToModel"], e["baseScanToModel"], e["modelToScan"]
+        a, b, m, f = e["scanToModel"], e["baseScanToModel"], e["modelToScan"], e["fit"]
         print(
             f"  {e['entityId']:<16} {e['kind']:<5} {e['source'] or '':<24} "
             f"扫描→AI {a['meanCm'] if a else '-':>6} "
             f"（3cm内 {a['coverage3cm'] if a else '-'}）  扫描→现有 {b['meanCm'] if b else '-':>6}  "
-            f"模型→扫描 {m['meanCm'] if m else '-'}"
+            f"模型→扫描 {m['meanCm'] if m else '-'}  "
+            f"写回 fit {f['meanCm'] if f else '不写'}"
         )
     if rep["uncovered"]:
         print("\n== 没被任何物件覆盖的扫描团块（离 AI 重建 >5 厘米）")

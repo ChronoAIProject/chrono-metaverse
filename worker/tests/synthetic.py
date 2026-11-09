@@ -109,3 +109,21 @@ def box_mesh(lo, hi, color=(200, 100, 50)) -> ScanMesh:
     b.plane(lo, ey, ex, color, cell=0.1)  # z = lo，法线 −z
     b.plane(lo + ez, ex, ey, color, cell=0.1)  # z = hi，法线 +z
     return b.build()
+
+
+def merged(a: ScanMesh, b: ScanMesh) -> ScanMesh:
+    """两块带贴图的网格拼成一块：贴图左右并排，贴图坐标按各自的位置换算（左上角原点）。"""
+    ha, wa = a.texture.shape[:2]
+    hb, wb = b.texture.shape[:2]
+    H, W = max(ha, hb), wa + wb
+    tex = np.zeros((H, W, 3), np.uint8)
+    tex[:ha, :wa] = a.texture[..., :3]
+    tex[:hb, wa:] = b.texture[..., :3]
+    uv_a = a.uv * [wa / W, ha / H]
+    uv_b = (b.uv * [wb, hb] + [wa, 0]) / [W, H]
+    return ScanMesh(
+        np.vstack([a.vertices, b.vertices]),
+        np.vstack([a.faces, b.faces + len(a.vertices)]),
+        np.vstack([uv_a, uv_b]),
+        tex,
+    )

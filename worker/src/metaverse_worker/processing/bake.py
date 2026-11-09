@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import itertools
 from collections.abc import Callable
+from functools import cached_property
 
 import numpy as np
 from scipy import ndimage
@@ -31,6 +32,21 @@ class FaceTable:
         if normal is not None and cos_min is not None:
             m &= self.normals @ np.asarray(normal, float) > cos_min
         return np.nonzero(m)[0]
+
+    @cached_property
+    def radius(self) -> np.ndarray:
+        """每个面的外包球半径（面中心到最远顶点的距离）。"""
+        V, F = self.mesh.vertices, self.mesh.faces
+        out = np.zeros(len(F))
+        for k in range(3):
+            out = np.maximum(out, np.linalg.norm(V[F[:, k]] - self.centers, axis=1))
+        return out
+
+    def faces_touching(self, lo, hi) -> np.ndarray:
+        """外包球碰到盒子 [lo, hi] 的面（比只看面中心宽，大三角形的一部分落在盒子里也算），按编号排好。"""
+        lo, hi = np.asarray(lo, float), np.asarray(hi, float)
+        gap = np.maximum(lo - self.centers, 0.0) + np.maximum(self.centers - hi, 0.0)
+        return np.nonzero(np.einsum("ij,ij->i", gap, gap) <= self.radius**2)[0]
 
     def dense(self, face_ids: np.ndarray, density: float, rng: np.random.Generator):
         """在给定的面上按面积密集采样：返回 (点, 颜色 uint8, 法线)。每个面至少一个点。"""

@@ -6,7 +6,10 @@
   逐个物件给偏差；
 - `--exclude`：不算这些框里的扫描点（相邻物体、墙上的东西）；
 - `--color-parts`：新模型按部件着色（编号与 `compare.json` 的 parts 一致），找哪一块放歪了；
-- 结构（墙、玻璃）默认作为背景参与偏差计算（两列都算），贴墙的扫描点不会被当成"没建"。`--no-structure` 关掉。
+- 结构（墙、玻璃）默认作为背景参与偏差计算（两列都算），贴墙的扫描点不会被当成"没建"。`--no-structure` 关掉；
+- 逐件的 `fit` 是写回时处理服务写进记录的偏差，与写回路径用同一个函数（`processing.object_fit.entity_fit`：
+  按物件自身朝向的包围盒取点，墙、玻璃、地面作背景，只计 10 厘米以内的点），不看 `--box`、`--exclude`、
+  `--no-structure`，与写回后网站和命令行显示的数字一致（外部模型写回时按减面后的模型算，可能差一点）。
 """
 
 from __future__ import annotations
@@ -21,8 +24,11 @@ from PIL import Image, ImageDraw
 from scipy import ndimage
 from scipy.spatial import cKDTree
 
+from ..processing import object_fit as of
 from ..processing import shape_mesh as sm
+from ..processing.bake import FaceTable
 from ..processing.fit_texture import SurfaceIndex, fit_stats
+from ..processing.scan import ScanMesh
 from ..records import RecordError, validate_entity_body
 from ..shapes import ShapeError
 from . import core as wc
@@ -194,6 +200,31 @@ def structure_parts(base: Base, box: wc.Box) -> list[sm.Part]:
         if np.any(bb.hi < grown.lo) or np.any(bb.lo > grown.hi):
             continue
         out += sm.build_parts(body["shape"], {})
+    return out
+
+
+def fit_background(base: Base, bodies: dict[str, dict], templates: dict[str, dict]) -> list[sm.Mesh]:
+    """写回时逐件偏差的背景：记录里有 `kind: structure` 的物件（`structure: replace`）时就是它们，否则是基线
+    的结构（`keep`，处理服务重跑的结构算法与 prepare 相同）。墙、玻璃、地面都算。"""
+    own = {k: sx.lower_body(b) for k, b in bodies.items() if b.get("kind") == "structure"}
+    if own:
+        return of.background_meshes(own, sx.lower_templates(templates))
+    return of.background_meshes(base.structure, {})
+
+
+def scan_table(scan: wc.Scan) -> FaceTable:
+    return FaceTable(ScanMesh(scan.V, scan.F))
+
+
+def writeback_fits(ms: ModelSet, table: FaceTable, background: list[sm.Mesh]) -> dict[str, dict]:
+    """逐件的写回偏差：{物件编号: {fit（或 None）, points}}，与处理服务写进记录的 `fit` 同一个函数。
+    结构物件自己不带背景（与写回路径相同）。"""
+    out: dict[str, dict] = {}
+    for eid in dict.fromkeys(ms.labels):
+        meshes = [p.mesh for p, lab in zip(ms.parts, ms.labels, strict=True) if lab == eid]
+        own = [] if (ms.bodies.get(eid) or {}).get("kind") == "structure" else background
+        fit, points = of.entity_fit(meshes, table, eid, own)
+        out[eid] = {"fit": fit, "points": points}
     return out
 
 
@@ -759,6 +790,18 @@ def cmd_compare(args) -> dict:
         background = [] if args.no_structure else structure_parts(base, fit_box)
         res_new = evaluate(new, P, C, ref_tree, floor_y, background) if new.parts else None
         res_base = evaluate(old, P, C, ref_tree, floor_y, background) if old.parts else None
+        # 写回口径的逐件 fit（范围附近的扫描；裁剪保持面的先后顺序，采到的点与处理服务相同）
+        table = scan_table(near)
+        for ms, res, bg in (
+            (new, res_new, fit_background(base, rs.bodies, new.templates)),
+            (old, res_base, of.background_meshes(base.structure, {})),
+        ):
+            if res is None:
+                continue
+            for eid, wf in writeback_fits(ms, table, bg).items():
+                if eid in res["entities"]:
+                    res["entities"][eid]["fit"] = wf["fit"]
+                    res["entities"][eid]["fitPoints"] = wf["points"]
         if res_base is not None and len(base_ids) == 1 and base.objects[base_ids[0]].get("fit"):
             res_base["recordedFit"] = base.objects[base_ids[0]]["fit"]
         wc.log(
@@ -841,6 +884,9 @@ def cmd_compare(args) -> dict:
             "被挡住的背面没被扫到也会偏大）",
             "missingFromNew": "离新模型（和背景结构）超过 5 厘米的扫描点连成的块（漏建或位置不对的地方）",
             "parts.index": "部件编号；--color-parts 时第 i 个部件用调色板第 i 种颜色",
+            "entities.fit": "写回时处理服务写进记录的偏差（同一个函数）：按物件自身朝向的包围盒（局部坐标"
+            "水平外扩 5 厘米，底面以下、顶面以上各 2 厘米）取点，墙、玻璃、地面作背景，只计 10 厘米以内的点；"
+            "不看 --box、--exclude、--no-structure；null = 扫描里没有这件物件的证据，写回时不写 fit",
         },
     }
     wc.write_json(os.path.join(out_dir, "compare.json"), out)
@@ -877,6 +923,29 @@ def print_compare(out: dict, cmp_path: str | None, nbytes: int, err_path: str, o
             f"  （现有算法自己记录的 fit：{out['base']['recordedFit']}，在它分割出的点上算，口径不同，"
             "只作参考）"
         )
+    rows = [
+        (name, eid, e)
+        for name, res in (("现有算法", out["base"]), ("新模型", out["new"]))
+        if res
+        for eid, e in res["entities"].items()
+        if "fitPoints" in e
+    ]
+    if rows:
+        p(
+            "\n== 写回偏差（处理服务写进记录的 fit，同一个函数：按物件朝向取范围，墙、玻璃、地面作背景，"
+            "只计 10 厘米以内）"
+        )
+        for name, eid, e in rows:
+            f = e["fit"]
+            p(
+                f"  {name:<6} {eid:<24} "
+                + (
+                    f"均值 {f['meanCm']:6.2f}  P90 {f['p90Cm']:6.2f}  3cm内 {f['coverage3cm']:6.1%}"
+                    f"（{e['fitPoints']} 点）"
+                    if f
+                    else f"不写（{e['fitPoints']} 点，扫描里没有这件物件的证据）"
+                )
+            )
     res = out["new"]
     if res and len(res["entities"]) > 1:
         p("\n== 逐个物件（包围盒内的扫描点到整个新模型；模型→扫描）")

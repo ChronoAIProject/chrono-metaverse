@@ -59,6 +59,10 @@ def test_exact_box_fits_and_shift_shows(tmp_path, base):
     assert res["base"]["scanToModel"]["meanCm"] > res["new"]["scanToModel"]["meanCm"]
     assert res["missingFromNew"] == []
     assert not res["rendered"] and (tmp_path / "cmp" / "compare_error.jpg").exists()
+    # 逐件的写回 fit（与处理服务写进记录的同一个函数）：新模型几乎为零，现有算法短了 10 厘米
+    new_fit, base_fit = res["new"]["entities"]["box-01"]["fit"], res["base"]["entities"]["box-01"]["fit"]
+    assert new_fit["meanCm"] < 0.3 and new_fit["coverage3cm"] > 0.98
+    assert base_fit["meanCm"] > new_fit["meanCm"] and res["new"]["entities"]["box-01"]["fitPoints"] > 1000
 
     shifted = {**good, "shape": box_shape([0.55, 0, 0.5], [1.55, 0.8, 1.1])}
     res2 = run(tmp_path, base, shifted, *rng)
@@ -74,6 +78,8 @@ def test_exclude_removes_neighbour_points(tmp_path, base):
     assert b["scanPoints"] < a["scanPoints"]
     assert b["new"]["scanToModel"]["meanCm"] < a["new"]["scanToModel"]["meanCm"]
     assert any(m["max"][0] > 1.6 for m in a["missingFromNew"])  # 没排除时，旁边的小盒子是"漏建"
+    # 写回的 fit 不看 --box、--exclude（处理服务写回时也不知道这些框）
+    assert a["new"]["entities"]["box-01"]["fit"] == b["new"]["entities"]["box-01"]["fit"]
     assert "layer" in a["validation"][0]["filled"]  # 缺的字段按默认补上并提示
 
 
