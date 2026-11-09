@@ -17,6 +17,7 @@ import { runDev } from './dev.js';
 import { runInit } from './init.js';
 import { runPublish, runPush } from './push.js';
 import { runPull } from './pull.js';
+import { runRebuild } from './rebuild.js';
 import { runScan } from './scan.js';
 import { runShot } from './shot.js';
 import { runVoxelize } from './voxelize.js';
@@ -27,7 +28,8 @@ export const HELP = `metaverse —— chrono-metaverse 的本地工作区和建�
 
   init <空间编号>        创建工作区，写入技能说明 .claude/skills/metaverse-builder/SKILL.md
   admin …                管理命令：建空间、改名和可见性、轮换分享令牌、定义区域和地块、登记事件类型、抹除事件
-  scan <文件>            分片上传扫描，发起导入任务并等待
+  scan <文件>            分片上传扫描，发起导入任务并等待（--authored 带 AI 物件集）
+  rebuild                对已导入的扫描重跑 AI 重建；--authored <文件> 写入 AI 物件集
   pull                   下载空间的当前状态
   build                  运行建造脚本（每次从基础状态重新生成）
   dev                    本地查看器（脚本改了自动重建）
@@ -57,6 +59,7 @@ const COMMANDS: Record<string, Command> = {
   init: runInit,
   admin: runAdmin,
   scan: runScan,
+  rebuild: runRebuild,
   pull: runPull,
   build: runBuildCommand,
   dev: runDev,

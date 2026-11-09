@@ -3,6 +3,7 @@ import { basename, extname, resolve } from 'node:path';
 import { isSha256Hex } from '../core/hash.js';
 import { idOf, type UploadFormat } from '../transport/api.js';
 import { describeJob, upload, waitForJob } from '../transport/upload.js';
+import { authoredRequest, describeAuthored, readAuthored } from './authored.js';
 import {
   CliError,
   flag,
@@ -28,6 +29,8 @@ glb 内嵌贴图，直接上传即可。
   --transform <16 个数>   扫描坐标 → 空间坐标的 4×4 列主序矩阵（逗号分隔）；不给就自动对齐。
                           给了就用对齐接口（scans/{哈希}/alignment）按这个变换导入
   --no-rebuild            不做 AI 重建
+  --authored <文件>       AI 物件集（JSON）：不跑物体重建算法，重建层换成物件集里的物件
+                          （规则见 metaverse rebuild --help）；不能和 --no-rebuild 一起用
   --voxelize              同时体素化（方块风格）
   --part-size <MiB>       分片大小（默认 8，必须是 0.25 的整数倍，最大 32）
   --asset <哈希>          不上传，直接用已上传的扫描资源发起导入（加 --transform 就是重新对齐）
@@ -65,6 +68,7 @@ export async function runScan(ctx: CliContext, args: readonly string[]): Promise
     voxelize: { type: 'boolean' },
     'part-size': { type: 'string' },
     asset: { type: 'string' },
+    authored: { type: 'string' },
     'no-wait': { type: 'boolean' },
   });
   if (flag(values, 'help')) {
@@ -87,6 +91,11 @@ export async function runScan(ctx: CliContext, args: readonly string[]): Promise
   const observedAt = str(values, 'observed-at');
   if (observedAt !== undefined && Number.isNaN(Date.parse(observedAt))) {
     throw new CliError('--observed-at 必须是 RFC 3339 时间，例如 2026-11-01T10:00:00Z');
+  }
+  const authoredFile = str(values, 'authored');
+  if (authoredFile !== undefined) {
+    if (flag(values, 'no-rebuild')) throw new CliError('--authored 不能和 --no-rebuild 一起用');
+    readAuthored(ctx, authoredFile);
   }
   let assetHash = str(values, 'asset');
   let uploadInfo: Record<string, unknown> = {};
@@ -131,10 +140,15 @@ export async function runScan(ctx: CliContext, args: readonly string[]): Promise
   }
   // 导入扫描（scans）不收变换：给了 --transform 时（首次导入或重新对齐都一样）一律走
   // scans/{scan_id}/alignment，它只要求资源已校验，不要求扫描已经提交过。
+  const authored =
+    authoredFile !== undefined
+      ? await authoredRequest(ctx, api, authoredFile, { json, wait: waitOptions })
+      : undefined;
   const options = {
     ...(observedAt !== undefined ? { observedAt } : {}),
     rebuild: !flag(values, 'no-rebuild'),
     voxelize: flag(values, 'voxelize'),
+    ...(authored?.request ?? {}),
   };
   const started =
     transform !== undefined
@@ -144,18 +158,32 @@ export async function runScan(ctx: CliContext, args: readonly string[]): Promise
   if (jobId === undefined) throw new CliError('导入扫描的响应里没有任务编号');
   if (!json) ctx.out(`已发起导入任务 ${jobId}（扫描编号 = 资源哈希 ${assetHash}）`);
   if (!wait) {
-    if (json) printJson(ctx, { assetHash, jobId, upload: uploadInfo });
+    if (json) {
+      printJson(ctx, {
+        assetHash,
+        jobId,
+        upload: uploadInfo,
+        ...(authored ? { authored: authored.info } : {}),
+      });
+    }
     return 0;
   }
   const job = await waitForJob(api, jobId, waitOptions);
   const result = (job.result ?? {}) as Record<string, unknown>;
   if (json) {
-    printJson(ctx, { assetHash, jobId, job, upload: uploadInfo });
+    printJson(ctx, {
+      assetHash,
+      jobId,
+      job,
+      upload: uploadInfo,
+      ...(authored ? { authored: authored.info } : {}),
+    });
   } else if (result.needsAlignment === true) {
     ctx.out(`重扫配准误差 ${String(result.errorCm ?? '?')} 厘米，超过阈值，没有自动提交。`);
     ctx.out(`建议的变换：${JSON.stringify(result.proposedTransform ?? null)}`);
     ctx.out(`确认后用：metaverse scan --asset ${assetHash} --transform <16 个数>`);
   } else {
+    for (const line of describeAuthored(result)) ctx.out(line);
     ctx.out(
       `导入完成${job.resultCommitId ? `，提交 ${job.resultCommitId}` : ''}。运行 metaverse pull 更新工作区。`,
     );
