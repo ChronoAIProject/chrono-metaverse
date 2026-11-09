@@ -556,19 +556,17 @@ impl Background {
 pub fn spawn_background(state: AppState, config: RunnerConfig) -> Background {
     let (shutdown, receiver) = watch::channel(false);
     let mut tasks = Vec::new();
-    let ready = {
-        let state = state.clone();
-        async move {
-            while !state.is_ready() {
-                tokio::time::sleep(Duration::from_millis(500)).await;
-            }
-        }
-    };
     let runner_receiver = receiver.clone();
     let runner_state = state.clone();
     let runner_config = config.clone();
     tasks.push(tokio::spawn(async move {
-        ready.await;
+        // 索引建好以后才开始；数据库一直连不上时收到停止信号也要能退出（不然停止会一直等在这里）。
+        while !runner_state.is_ready() {
+            if *runner_receiver.borrow() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
         let runner = Runner::new(runner_state, runner_config);
         tracing::info!(instance = %runner.instance_id(), "后台执行器启动");
         let _ = runner.spawn(runner_receiver).await;

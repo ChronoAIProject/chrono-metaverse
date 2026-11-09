@@ -434,6 +434,26 @@ async fn stop_requeues_unfinished_jobs() {
     assert_eq!(super_runner(&app).run_until_idle().await, [Outcome::Done]);
 }
 
+/// 索引还没建好（数据库一直连不上时就是这样）就收到停止信号：三个后台循环都直接退出，停止不会卡住。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stop_before_ready_does_not_hang() {
+    let Some(app) = TestApp::start(&[]).await else {
+        return;
+    };
+    let state = metaverse_api::AppState::from_config(&app.config)
+        .await
+        .unwrap();
+    assert!(!state.is_ready());
+    let background = metaverse_api::runner::spawn_background(
+        state,
+        metaverse_api::runner::RunnerConfig::default(),
+    );
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    tokio::time::timeout(Duration::from_secs(5), background.stop())
+        .await
+        .expect("还没就绪时停止也要在几秒内返回");
+}
+
 fn super_runner(app: &TestApp) -> std::sync::Arc<metaverse_api::runner::Runner> {
     runner(app, "runner-b")
 }
