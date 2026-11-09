@@ -3,8 +3,10 @@ import { createReadStream } from 'node:fs';
 import { open, stat } from 'node:fs/promises';
 import {
   idOf,
+  jobErrorText,
   type JobView,
   type MetaverseApi,
+  type ScopeRef,
   type UploadFormat,
   type UploadPurpose,
 } from './api.js';
@@ -46,10 +48,13 @@ export type UploadSource = { readonly bytes: Uint8Array } | { readonly path: str
 export interface UploadOptions {
   readonly purpose: UploadPurpose;
   readonly source: UploadSource;
-  readonly plot?: string | null;
+  /** 路径范围（不给是实体区；地块编号；重建路径 `REBUILD`）。 */
+  readonly scope?: ScopeRef;
   readonly partSize?: number;
   /** 文件格式（必填）：服务端按用途核对，并按它核对第 0 片的文件头。 */
   readonly format: UploadFormat;
+  /** 已经算过的大小和哈希（例如 `bundle check` 刚核对过），给了就不再读一遍文件。 */
+  readonly known?: { readonly size: number; readonly sha256: string };
   readonly onProgress?: (sentBytes: number, totalBytes: number) => void;
 }
 
@@ -97,13 +102,13 @@ async function readPart(source: UploadSource, offset: number, length: number): P
 export async function upload(api: MetaverseApi, options: UploadOptions): Promise<UploadResult> {
   const partSize = options.partSize ?? DEFAULT_PART_SIZE;
   checkPartSize(partSize);
-  const { size, sha256 } = await describe(options.source);
+  const { size, sha256 } = options.known ?? (await describe(options.source));
   if (size === 0) throw new UploadError('不能上传空文件');
   const parts = Math.ceil(size / partSize);
   const session = await api.createUpload(
     options.purpose,
     { size, sha256, partSize, format: options.format },
-    options.plot,
+    options.scope,
   );
   const uploadId = idOf(session, 'uploadId') ?? null;
   if (
@@ -129,11 +134,11 @@ export async function upload(api: MetaverseApi, options: UploadOptions): Promise
     const offset = n * partSize;
     const length = Math.min(partSize, size - offset);
     const bytes = await readPart(options.source, offset, length);
-    await api.putPart(options.purpose, uploadId, n, bytes, options.plot);
+    await api.putPart(options.purpose, uploadId, n, bytes, options.scope);
     sent += length;
     options.onProgress?.(sent, size);
   }
-  const done = await api.completeUpload(options.purpose, uploadId, options.plot);
+  const done = await api.completeUpload(options.purpose, uploadId, options.scope);
   return {
     assetHash: sha256,
     uploadId,
@@ -145,8 +150,8 @@ export async function upload(api: MetaverseApi, options: UploadOptions): Promise
 }
 
 export interface WaitOptions {
-  /** 任务是经哪个地块路径发起的（不给就是实体区路径）：查任务也走同一范围的路径。 */
-  readonly plot?: string | null;
+  /** 任务是经哪个范围的路径发起的（不给就是实体区路径）：查任务也走同一范围的路径。 */
+  readonly scope?: ScopeRef;
   readonly intervalMs?: number;
   readonly timeoutMs?: number;
   readonly onUpdate?: (job: JobView) => void;
@@ -168,7 +173,7 @@ export async function waitForJob(
   for (;;) {
     let job: JobView;
     try {
-      job = await api.getJob(jobId, options.plot);
+      job = await api.getJob(jobId, options.scope);
     } catch (error) {
       if (error instanceof ApiError && error.status >= 500) {
         await sleep(interval);
@@ -183,7 +188,9 @@ export async function waitForJob(
     }
     if (job.status === 'done') return job;
     if (job.status === 'failed') {
-      throw new UploadError(`任务 ${jobId}（${job.kind}）失败：${job.lastError ?? '没有说明'}`);
+      throw new UploadError(
+        `任务 ${jobId}（${job.kind}）失败：${jobErrorText(job.lastError) ?? '没有说明'}`,
+      );
     }
     if (Date.now() - started > timeout) throw new UploadError(`等待任务 ${jobId} 超时`);
     await sleep(interval);
@@ -203,6 +210,7 @@ export function describeJob(job: JobView): string {
     job.progress === undefined || job.progress === null
       ? ''
       : `，进度 ${JSON.stringify(job.progress)}`;
-  const error = job.lastError ? `，上次错误：${job.lastError}` : '';
+  const lastError = jobErrorText(job.lastError);
+  const error = lastError !== null ? `，上次错误：${lastError}` : '';
   return `任务 ${job.id ?? job.jobId ?? ''}（${job.kind}）${status}${attempt}${progress}${error}`;
 }

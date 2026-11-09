@@ -17,10 +17,7 @@ import { runDev } from './dev.js';
 import { runInit } from './init.js';
 import { runPublish, runPush } from './push.js';
 import { runPull } from './pull.js';
-import { runRebuild } from './rebuild.js';
-import { runScan } from './scan.js';
 import { runShot } from './shot.js';
-import { runVoxelize } from './voxelize.js';
 
 export const HELP = `metaverse —— chrono-metaverse 的本地工作区和建造命令行
 
@@ -29,8 +26,6 @@ export const HELP = `metaverse —— chrono-metaverse 的本地工作区和建�
   init <空间编号>        创建工作区，写入技能说明 .claude/skills/ 下的 metaverse-builder（建造）
                          和 metaverse-reconstruct（AI 重建实体空间）
   admin …                管理命令：建空间、改名和可见性、轮换分享令牌、定义区域和地块、登记事件类型、抹除事件
-  scan <文件>            分片上传扫描，发起导入任务并等待（--authored 带 AI 物件集）
-  rebuild                对已导入的扫描重跑 AI 重建；--authored <文件> 写入 AI 物件集
   pull                   下载空间的当前状态
   build                  运行建造脚本（每次从基础状态重新生成）
   dev                    本地查看器（脚本改了自动重建）
@@ -38,8 +33,7 @@ export const HELP = `metaverse —— chrono-metaverse 的本地工作区和建�
   diff                   与拉取的版本对比
   check                  检查改动是否都落在目标地块或实体区内
   push [--plot <地块>]   推成草稿，打印草稿编号和预览链接
-  publish <草稿编号>     发布草稿
-  voxelize               体素化（本地试跑需要 Docker；--remote 发起云端任务）
+  publish <草稿编号>     发布草稿（实体区、地块或重建草稿）
 
 通用选项：
   --dir <目录>           工作区目录（默认从当前目录往上找 metaverse.json）
@@ -59,8 +53,6 @@ type Command = (ctx: CliContext, args: readonly string[]) => number | Promise<nu
 const COMMANDS: Record<string, Command> = {
   init: runInit,
   admin: runAdmin,
-  scan: runScan,
-  rebuild: runRebuild,
   pull: runPull,
   build: runBuildCommand,
   dev: runDev,
@@ -69,8 +61,21 @@ const COMMANDS: Record<string, Command> = {
   check: runCheck,
   push: runPush,
   publish: runPublish,
-  voxelize: (ctx, args) => runVoxelize(ctx, args),
 };
+
+/**
+ * 删掉的命令（docs/design/server-slim.md 8.5）：服务端不再做重建，扫描、AI 物件集、体素化都改在本地，
+ * 结果打成重建包推送。运行它们时说明改用什么，而不是只说"不认识"。
+ */
+const RETIRED: Readonly<Record<string, string>> = {
+  scan: '上传扫描、发起导入',
+  rebuild: '服务端 AI 重建、写入 AI 物件集',
+  voxelize: '体素化',
+};
+
+const RETIRED_HINT =
+  '重建改在本地完成：metaverse pull --scan 下载扫描 → metaverse-recon（prepare、assemble、bundle）打包 → ' +
+  'metaverse bundle check → metaverse bundle push。见技能说明 metaverse-reconstruct 和 docs/design/server-slim.md';
 
 const KNOWN_ERRORS = [
   CliError,
@@ -99,7 +104,13 @@ export async function main(ctx: CliContext, argv: readonly string[]): Promise<nu
     ctx.out('0.1.0');
     return 0;
   }
-  const command = COMMANDS[name];
+  // 只认自己的键（`toString` 这类原型上的名字不算命令）。
+  const retired = Object.hasOwn(RETIRED, name) ? RETIRED[name] : undefined;
+  if (retired !== undefined) {
+    ctx.err(`命令 ${name}（${retired}）已经删除，服务端不再做重建。${RETIRED_HINT}`);
+    return 1;
+  }
+  const command = Object.hasOwn(COMMANDS, name) ? COMMANDS[name] : undefined;
   if (command === undefined) {
     ctx.err(`不认识的命令 ${name}\n\n${HELP}`);
     return 1;

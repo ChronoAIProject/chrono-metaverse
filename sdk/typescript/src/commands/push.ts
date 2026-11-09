@@ -149,7 +149,7 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
   const api = makeApi(ctx, ws, values);
   // 上传校验和 ops_from_upload 任务都属于草稿所在的路径范围，查任务也走同一范围的路径。
   const waitOptions = {
-    plot,
+    scope: plot,
     onUpdate: (job: Parameters<typeof describeJob>[0]) => say(describeJob(job)),
     ...(ctx.sleep ? { sleep: ctx.sleep } : {}),
   };
@@ -189,7 +189,7 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
     const uploaded = await upload(api, {
       purpose: 'ops',
       source: { bytes: ndjson },
-      plot,
+      scope: plot,
       format: 'ndjson',
       ...(partMiB !== undefined ? { partSize: Math.round(partMiB * 1024 * 1024) } : {}),
     });

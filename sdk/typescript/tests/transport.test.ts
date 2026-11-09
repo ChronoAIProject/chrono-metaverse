@@ -460,7 +460,7 @@ describe('分片上传（本地假服务器）', () => {
       const result = await upload(api(), {
         purpose: 'model',
         source: { path: file },
-        plot: 'p1',
+        scope: 'p1',
         partSize: 256 * 1024,
         format: 'glb',
       });
@@ -484,7 +484,7 @@ describe('分片上传（本地假服务器）', () => {
       upload(api(), {
         purpose: 'scan',
         source: { bytes: new Uint8Array([1]) },
-        plot: 'p1',
+        scope: 'p1',
         format: 'glb',
       }),
     ).rejects.toMatchObject({ status: 403 });
