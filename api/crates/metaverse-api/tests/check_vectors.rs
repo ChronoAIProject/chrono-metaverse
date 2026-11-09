@@ -794,3 +794,34 @@ fn required_samples_are_present() {
         assert!(names.contains(&required), "缺少样本 {required}");
     }
 }
+
+/// 拿真实文件试检查器（不进持续集成）：`METAVERSE_CHECK_FILES="scan:zip:/路径/a.zip,model:glb:/路径/b.glb"
+/// cargo test -p metaverse-api --test check_vectors -- --ignored --nocapture`。结果记进 `api/README.md`。
+#[test]
+#[ignore]
+fn inspect_real_files() {
+    let list = std::env::var("METAVERSE_CHECK_FILES").unwrap_or_default();
+    for item in list.split(',').filter(|item| !item.is_empty()) {
+        let mut parts = item.splitn(3, ':');
+        let (purpose, format, path) = (
+            parts.next().unwrap(),
+            parts.next().unwrap(),
+            parts.next().unwrap(),
+        );
+        let bytes = std::fs::read(path).unwrap();
+        let started = std::time::Instant::now();
+        let result = run(
+            &bytes,
+            purpose_of(purpose),
+            UploadFormat::from_name(format).unwrap(),
+            1 << 18,
+        );
+        let mut text = result.to_string();
+        text.truncate(400);
+        println!(
+            "{path}（{purpose}，{} 字节，{:?}）：{text}",
+            bytes.len(),
+            started.elapsed()
+        );
+    }
+}

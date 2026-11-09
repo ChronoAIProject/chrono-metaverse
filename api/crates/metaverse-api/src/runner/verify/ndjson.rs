@@ -215,6 +215,15 @@ impl<F: LineSink> NdjsonStream<F> {
         }
     }
 
+    /// 接收行的那一方（边读边取走已经解析出的内容）。
+    pub fn sink_mut(&mut self) -> &mut F {
+        match &mut self.inner {
+            Inner::Pending(lines, _) => &mut lines.as_mut().expect("待定状态总有分行器").on_line,
+            Inner::Plain(lines) => &mut lines.on_line,
+            Inner::Gzip(decoder) => &mut decoder.get_mut().0.on_line,
+        }
+    }
+
     /// 全部字节都喂完了：处理最后一行（可以没有换行），返回接收行的那一方。
     pub fn finish(self) -> Result<F, Reject> {
         let expect_gzip = self.expect_gzip;
