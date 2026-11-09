@@ -153,7 +153,7 @@ NyxID 地址只接受 https；明文 http 只允许本机地址（本地测试�
 | `POST .../uploads/{purpose}/{upload_id}/complete`（两组路径） | `complete_upload` / `complete_plot_upload` | 全部分片到齐后 202 + `upload_verify` 任务；还缺片 409 `upload_incomplete`；重复调用返回同一任务 |
 | `GET .../uploads/{purpose}/{upload_id}`（两组路径） | `get_upload` / `get_plot_upload` | 上传状态（已收到/缺的片、任务、资源哈希、处理服务写回的格式和失败原因） |
 | `POST /api/v1/spaces/{space_id}/scans` | `import_scan` | `{assetHash, observedAt?, rebuild?(true), voxelize?(false), hints?}` → `scan_import` 任务（202）；资源必须是本空间校验通过的 scan 上传 |
-| `POST .../scans/{scan_id}/alignment` | `align_scan` | `{transform, observedAt?, rebuild?, voxelize?, hints?}` → 带 transform 的 `scan_import`；变换须为列主序仿射、不镜像 |
+| `POST .../scans/{scan_id}/alignment` | `align_scan` | `{transform, observedAt?, rebuild?, voxelize?, hints?}` → 带 transform 的 `scan_import`；变换须为列主序仿射、不镜像，阈值与处理服务 `align.py` 的 `matrix_from_params` 相同：线性部分行列式 > 1e-6（`MIN_TRANSFORM_DET`）、平移绝对值 ≤ 1e5 米（`MAX_TRANSFORM_TRANSLATION`），不合法 422 `invalid_transform` |
 | `POST .../scans/{scan_id}/voxelize` | `voxelize_scan` | `{style?}` → `voxelize`；扫描必须已有提交引用 |
 | `POST .../scans/{scan_id}/rebuild` | `rebuild_scan` | `{hints?}` → `rebuild` |
 | `POST /api/v1/spaces/{space_id}[/plots/{plot_id}]/models` | `import_model` / `import_plot_model` | `{assetHash}` → `model_import`；地块路径要求是同一地块上传的 |

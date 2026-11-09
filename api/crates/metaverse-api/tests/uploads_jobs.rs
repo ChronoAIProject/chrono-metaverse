@@ -656,6 +656,29 @@ async fn scan_and_model_jobs() {
         .await;
     assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(reply.body["code"], "invalid_transform");
+    // 处理服务会拒绝的变换（平移超过 1e5 米、毫米单位的 0.001 缩放）在请求时就是 422。
+    let mut far = identity_matrix;
+    far[12] = 200_000.0;
+    let mut millimetres = identity_matrix;
+    for i in [0, 5, 10] {
+        millimetres[i] = 0.001;
+    }
+    for transform in [far, millimetres] {
+        let reply = app
+            .call(
+                who(ORG),
+                Method::POST,
+                &format!("{base}/scans/{scan}/alignment"),
+                Some(json!({ "transform": transform })),
+            )
+            .await;
+        assert_eq!(
+            reply.status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{transform:?}"
+        );
+        assert_eq!(reply.body["code"], "invalid_transform");
+    }
     let reply = app
         .call(
             who(ORG),

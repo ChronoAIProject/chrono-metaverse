@@ -294,27 +294,47 @@ async fn require_asset(
     }
 }
 
-/// 4×4 列主序仿射变换：16 个有限数，最后一行 [0,0,0,1]，线性部分可逆且不镜像（行列式 > 0）。
+/// 对齐变换线性部分（左上 3×3）行列式的下限（不含）：不大于它就是退化或镜像。
+/// 与处理服务 `processing/align.py` 的 `matrix_from_params`（`det > 1e-6`）相同。
+pub const MIN_TRANSFORM_DET: f64 = 1e-6;
+/// 对齐变换平移分量的绝对值上限（米，含）。与处理服务相同，也等于形状坐标的上限
+/// `metaverse_core::shape::MAX_COORD`。
+pub const MAX_TRANSFORM_TRANSLATION: f64 = metaverse_core::shape::MAX_COORD;
+/// 线性部分各元素的绝对值上限（防止溢出；处理服务不限，这里更严不会让它拒绝）。
+const MAX_TRANSFORM_ELEMENT: f64 = 1e7;
+
+/// 4×4 列主序仿射变换：16 个有限数，最后一行 [0,0,0,1]，线性部分可逆且不镜像
+/// （行列式 > [`MIN_TRANSFORM_DET`]），平移的绝对值 ≤ [`MAX_TRANSFORM_TRANSLATION`]。
+/// 阈值与处理服务完全相同：这里放行的变换，处理服务不会再以参数不合法拒绝。
 fn check_transform(values: &[f64]) -> Result<[f64; 16], ApiError> {
     let invalid = || {
         invalid_with(
             "invalid_transform",
-            "transform 必须是 16 个有限数（列主序 4×4），最后一行 [0,0,0,1]，线性部分可逆且不镜像",
+            "transform 必须是 16 个有限数（列主序 4×4），最后一行 [0,0,0,1]，线性部分可逆且不镜像（行列式 > 1e-6），平移的绝对值不超过 100000 米",
         )
     };
     let matrix: [f64; 16] = values.try_into().map_err(|_| invalid())?;
-    if !matrix.iter().all(|v| v.is_finite() && v.abs() <= 1e7) {
+    if !matrix
+        .iter()
+        .all(|v| v.is_finite() && v.abs() <= MAX_TRANSFORM_ELEMENT)
+    {
         return Err(invalid());
     }
     if matrix[3] != 0.0 || matrix[7] != 0.0 || matrix[11] != 0.0 || matrix[15] != 1.0 {
+        return Err(invalid());
+    }
+    if matrix[12..15]
+        .iter()
+        .any(|t| t.abs() > MAX_TRANSFORM_TRANSLATION)
+    {
         return Err(invalid());
     }
     let m = |row: usize, col: usize| matrix[col * 4 + row];
     let det = m(0, 0) * (m(1, 1) * m(2, 2) - m(1, 2) * m(2, 1))
         - m(0, 1) * (m(1, 0) * m(2, 2) - m(1, 2) * m(2, 0))
         + m(0, 2) * (m(1, 0) * m(2, 1) - m(1, 1) * m(2, 0));
-    // 不能镜像（与处理服务相同），也不能退化。
-    if det < 1e-9 {
+    // 不能镜像，也不能退化（与处理服务相同）。
+    if det <= MIN_TRANSFORM_DET {
         return Err(invalid());
     }
     Ok(matrix)
@@ -501,7 +521,7 @@ pub async fn import_scan(
     path = "/api/v1/spaces/{space_id}/scans/{scan_id}/alignment",
     operation_id = "align_scan",
     tag = "scans",
-    description = "用给定的对齐变换重新导入扫描（重扫配准误差过大、需要人工微调时用）：建带 transform 的 scan_import 任务。transform 是 4×4 列主序矩阵（扫描坐标 → 空间坐标），通常取任务结果里的 proposedTransform 微调。",
+    description = "用给定的对齐变换重新导入扫描（重扫配准误差过大、需要人工微调时用）：建带 transform 的 scan_import 任务。transform 是 4×4 列主序矩阵（扫描坐标 → 空间坐标），通常取任务结果里的 proposedTransform 微调；最后一行 [0,0,0,1]，线性部分行列式 > 1e-6（不能镜像或退化），平移绝对值 ≤ 100000 米，否则 422。",
     params(
         ("space_id" = String, Path, description = "空间编号"),
         ("scan_id" = String, Path, description = "扫描编号（扫描资源的内容哈希）"),
@@ -939,6 +959,34 @@ mod tests {
         let mut nan = identity;
         nan[12] = f64::NAN;
         assert!(check_transform(&nan).is_err());
+    }
+
+    /// 边界值与处理服务 `matrix_from_params` 相同：行列式必须 > 1e-6，平移绝对值 ≤ 1e5。
+    #[test]
+    fn transform_limits_match_the_worker() {
+        let scaled = |s: f64| {
+            [
+                s, 0.0, 0.0, 0.0, 0.0, s, 0.0, 0.0, 0.0, 0.0, s, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ]
+        };
+        // 毫米 → 米（0.001 倍，行列式 1e-9）：两边都拒绝。
+        assert!(check_transform(&scaled(0.001)).is_err());
+        // 0.0099³ ≈ 9.7e-7：不大于下限，拒绝（原来的 1e-9 下限会放行）；0.011³ ≈ 1.33e-6：通过。
+        assert!(check_transform(&scaled(0.0099)).is_err());
+        assert!(check_transform(&scaled(0.011)).is_ok());
+        let translated = |x: f64, y: f64, z: f64| {
+            let mut m = scaled(1.0);
+            m[12] = x;
+            m[13] = y;
+            m[14] = z;
+            m
+        };
+        assert!(check_transform(&translated(1e5, -1e5, 0.0)).is_ok());
+        assert!(check_transform(&translated(1e5 + 1.0, 0.0, 0.0)).is_err());
+        assert!(check_transform(&translated(0.0, -100_000.5, 0.0)).is_err());
+        assert!(check_transform(&translated(0.0, 0.0, 2e6)).is_err());
+        assert_eq!(MAX_TRANSFORM_TRANSLATION, 1e5);
+        assert_eq!(MIN_TRANSFORM_DET, 1e-6);
     }
 
     #[test]
