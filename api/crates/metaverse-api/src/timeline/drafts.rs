@@ -560,9 +560,12 @@ impl AppendSession {
         if op_count == 0 {
             return Err(ApiError::invalid("没有要追加的操作").into());
         }
-        // 模板引用的完整性（docs/design/server-slim.md 2.5 第 3 条）：全部作用完之后，工作状态里每个
-        // 物件引用的模板都要在同一层存在。
-        let broken = workspace.state.broken_template_refs();
+        // 模板引用的完整性（docs/design/server-slim.md 2.5 第 3 条）：全部作用完之后，工作状态里物件
+        // 引用的模板都要在同一层存在。只报与这个草稿碰过的编号有关的缺口（碰过的物件引用的模板不在，
+        // 或碰过的模板还被引用）；基础版本里已有的旧缺口不是这个草稿造成的，不挡追加。
+        let mut changed: BTreeSet<String> = draft.touched.entities.iter().cloned().collect();
+        changed.extend(touched.entities.iter().cloned());
+        let broken = relevant_broken_refs(&workspace.state, &changed);
         if !broken.is_empty() {
             return Err(broken_template_error(&broken).into());
         }

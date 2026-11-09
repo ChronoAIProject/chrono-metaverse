@@ -1107,6 +1107,28 @@ async fn templates_are_per_layer_and_checked_when_publishing() {
             .status,
         StatusCode::OK
     );
+    // 同一批里把模板换成普通物件、而它还有使用者：追加后的完整性检查 409，草稿不变。
+    let c = ext_draft(&app, SPACE).await;
+    let template = json!({"op": "placeEntity", "entity": {"entityId": "table", "layer": "ext",
+        "kind": "template", "shape": {"type": "box", "size": [0.4, 0.45, 0.4]},
+        "bounds": {"min": [-0.2, 0, -0.2], "max": [0.2, 0.45, 0.2]}}});
+    let object = json!({"op": "placeEntity", "entity": {"entityId": "table", "layer": "ext",
+        "kind": "object",
+        "shape": {"type": "box", "size": [0.4, 0.45, 0.4], "transform": {"position": [3, 0, 3]}},
+        "bounds": {"min": [2.8, 0, 2.8], "max": [3.2, 0.45, 3.2]}}});
+    let reply = append(
+        &app,
+        &c,
+        json!([template, instance("table-1", "table"), object]),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::CONFLICT, "{:?}", reply.body);
+    assert_eq!(reply.body["code"], "broken_template_ref");
+    assert!(reply.body["detail"]
+        .as_str()
+        .unwrap()
+        .contains("table-1 → table"));
+    assert_eq!(app.org(Method::GET, &c, None).await.body["rev"], 0);
     // A 删模板，B 加使用者；先发布 B，再发布 A：409 broken_template_ref。
     let a = ext_draft(&app, SPACE).await;
     let b = ext_draft(&app, SPACE).await;
