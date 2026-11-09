@@ -32,7 +32,7 @@ from bson import ObjectId
 from bson.int64 import Int64
 from pymongo.client_session import ClientSession
 
-from .assets import delete_file_chunks, find_asset
+from .assets import delete_file_chunks, find_asset, touch_asset
 from .errors import SpaceGone
 from .store import C, JobStatus, Owner, Store, SystemScope, UploadStatus, space_filter
 from .timeutil import format_ts, now_ts
@@ -218,6 +218,8 @@ def settle_upload(store: Store, scope: SystemScope, upload_id: Any, reason: str)
     files_id = doc["_id"]
     sha, _size, _purpose = declared(doc)
     asset = find_asset(store, sha) if isinstance(sha, str) and doc.get("verifiedSha256") == sha else None
+    if asset is not None and not touch_asset(store, sha):
+        asset = None  # 刚被清理删掉：不能完成到一个已经没有的资源上（见 assets 模块说明的栅栏）
     if asset is not None:
         meta = asset.get("metadata") or {}
         if asset["_id"] != files_id:

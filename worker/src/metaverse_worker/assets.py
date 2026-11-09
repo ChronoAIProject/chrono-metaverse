@@ -9,6 +9,11 @@
 - 同一内容被并发登记时，唯一索引冲突的一方删掉自己的数据块，复用已有资源。
 
 先写数据块、最后插入 `files` 文档：`files` 文档出现时，数据块一定已经完整。
+
+**复用已有资源的栅栏**：定期清理（`jobs/cleanup.py`）先查引用、再按 `touchedAt` 仍早于截止时间的条件删除
+`files` 文档，两步之间没有锁。所以复用一个已有资源之前，先按文件名刷新 `metadata.touchedAt` 并要求匹配到
+1 条（`touch_asset` 返回 True）：刷新以后清理的条件删除就删不掉它；匹配不到说明它刚被清理删掉，按资源
+不存在处理（重新登记本次的内容，或让调用方失败），不能引用一个已经没有的资源。
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ from .store import C, Store, is_duplicate_key
 
 ASSET_CHUNK_SIZE = 256 * 1024
 _INSERT_BATCH = 32  # 一次 insert_many 最多 8MiB
+_REGISTER_ATTEMPTS = 3  # 登记时同名资源恰好被清理删掉，重新插入的次数
 
 
 class AssetError(RuntimeError):
@@ -53,9 +59,15 @@ def find_asset(store: Store, sha256: str, session: ClientSession | None = None) 
     return store.col(C.ASSET_FILES).find_one({"filename": sha256}, session=session)
 
 
-def touch_asset(store: Store, sha256: str) -> None:
-    """标记资源刚被复用，清理时按 max(上传时间, touchedAt) 计算 7 天宽限。"""
-    store.col(C.ASSET_FILES).update_one({"filename": sha256}, {"$set": {"metadata.touchedAt": _now()}})
+def touch_asset(store: Store, sha256: str) -> bool:
+    """标记资源刚被复用，清理时按 max(上传时间, touchedAt) 计算 7 天宽限。
+
+    返回是否匹配到了资源。False 表示资源已经不在（可能刚被清理删掉），调用方不能再引用它（见模块说明）。
+    """
+    touched = store.col(C.ASSET_FILES).update_one(
+        {"filename": sha256}, {"$set": {"metadata.touchedAt": _now()}}
+    )
+    return touched.matched_count == 1
 
 
 def delete_file_chunks(store: Store, files_id: Any) -> int:
@@ -125,9 +137,9 @@ def put_asset(
             return open(path, "rb")  # 由调用方 with 关闭
 
     existing = find_asset(store, sha)
-    if existing is not None:
-        touch_asset(store, sha)
+    if existing is not None and touch_asset(store, sha):
         return AssetInfo(sha, int(existing["length"]), existing["_id"], False)
+    # 不存在，或刚被清理删掉（刷新没匹配到）：登记本次的内容
     files_id = ObjectId()
     try:
         with opener() as stream:
@@ -162,22 +174,23 @@ def _insert_files_doc(
         "filename": sha,
         "metadata": metadata,
     }
-    try:
-        store.col(C.ASSET_FILES).insert_one(doc, session=session)
-    except Exception as error:
-        if not is_duplicate_key(error):
-            raise
-        # 同一内容被并发登记：删掉本次的数据块，复用已有资源。
+    for _ in range(_REGISTER_ATTEMPTS):
+        try:
+            store.col(C.ASSET_FILES).insert_one(doc, session=session)
+            return AssetInfo(sha, length, files_id, True)
+        except Exception as error:
+            if not is_duplicate_key(error):
+                raise
+        # 同一内容已经登记过（并发登记，或之前就有）：先刷新它，刷新成功才删掉本次的数据块、复用它。
         existing = find_asset(store, sha)
-        if existing is None:
-            raise
-        if existing["_id"] == files_id:
+        if existing is not None and existing["_id"] == files_id:
             # 重做的任务：上次已经登记过，就是这一份。
             return AssetInfo(sha, int(existing["length"]), files_id, True)
-        delete_file_chunks(store, files_id)
-        touch_asset(store, sha)
-        return AssetInfo(sha, int(existing["length"]), existing["_id"], False)
-    return AssetInfo(sha, length, files_id, True)
+        if existing is not None and touch_asset(store, sha):
+            delete_file_chunks(store, files_id)
+            return AssetInfo(sha, int(existing["length"]), existing["_id"], False)
+        # 已有的那份在这期间被清理删掉了：本次的数据块还在，重新插入 files 文档
+    raise AssetError(f"登记资源 {sha} 时反复遇到正在被清理的同名资源")
 
 
 def iter_file_chunks(

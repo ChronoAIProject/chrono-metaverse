@@ -106,8 +106,12 @@ def run(ctx: JobContext) -> dict[str, Any]:
         return _finish(ctx, files_id, sha, size, meta.get("format"), meta.get("contentType"), reused=False)
     has_chunks = store.col(C.ASSET_CHUNKS).find_one({"files_id": files_id}, {"_id": 1}) is not None
     if existing is not None and not has_chunks and doc.get("verifiedSha256") == sha:
-        # 上次已核对通过、登记时发现重名并删掉了本次数据块，只差收尾
-        touch_asset(store, sha)
+        # 上次已核对通过、登记时发现重名并删掉了本次数据块，只差收尾。复用前先刷新那份资源：刷新没匹配到
+        # 说明它刚被清理删掉，本次的数据块也已经没了，只能让调用方重新上传
+        if not touch_asset(store, sha):
+            reason = "内容相同的已有资源刚被清理，本次的数据也已删除，请重新上传"
+            _fail_upload(ctx, files_id, reason)
+            raise PermanentJobError(reason)
         meta = existing.get("metadata") or {}
         return _finish(ctx, files_id, sha, size, meta.get("format"), meta.get("contentType"), reused=True)
 

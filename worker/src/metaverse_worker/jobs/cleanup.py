@@ -157,7 +157,9 @@ def cleanup_assets(store: Store, grace_days: float) -> int:
         sha = doc.get("filename")
         if not isinstance(sha, str) or _referenced(store, sha, now):
             continue
-        # 条件删除：期间被复用（touchedAt 更新）就不删。
+        # 条件删除：期间被复用（touchedAt 更新）就不删。查引用和删除之间没有锁，这是唯一的栅栏：
+        # 引用已有资源的一方必须先刷新 touchedAt 并确认匹配到 1 条（assets.touch_asset），匹配不到就按资源
+        # 不存在处理。处理服务自己的复用路径都这样做；接口服务的草稿追加、发布、复用上传也要遵守。
         gone = store.col(C.ASSET_FILES).delete_one(
             {
                 "_id": doc["_id"],
