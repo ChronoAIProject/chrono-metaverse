@@ -122,8 +122,18 @@ jobs:
         run: .venv/bin/ruff check .
       - name: 格式
         run: .venv/bin/ruff format --check .
-      - name: 测试（含 MongoDB 测试）
-        run: .venv/bin/pytest
+      # store 夹具在 MongoDB 连不上时会 skip；这里加载 .github/scripts/pytest_require_mongo.py，
+      # 设置了 METAVERSE_TEST_MONGODB_URI 时把 MongoDB 测试的跳过改判为失败，副本集出问题不会静默通过。
+      - name: 测试（含 MongoDB 测试，不许跳过）
+        env:
+          PYTHONPATH: ${{ github.workspace }}/.github/scripts
+        run: .venv/bin/pytest -p pytest_require_mongo
+      - name: 持续集成插件的测试与静态检查
+        working-directory: .
+        run: |
+          worker/.venv/bin/pytest -p pytester -p no:cacheprovider .github/scripts/test_pytest_require_mongo.py
+          worker/.venv/bin/ruff check --config worker/pyproject.toml .github/scripts
+          worker/.venv/bin/ruff format --check --config worker/pyproject.toml .github/scripts
 
   sdk-typescript:
     name: 命令行（sdk/typescript）
