@@ -3,8 +3,9 @@
 1. **没完成的上传**：创建超过 24 小时仍是 `open` 的上传会话。先按条件把状态改成 `expired`（之后接口服务
    的"完成上传"按 `status: open` 条件更新就会失败，不会和清理赛跑），再删除 `files_id` = 上传编号的
    GridFS 数据块，最后删除上传会话。校验失败（`failed`）超过 24 小时的会话同样删除。
-2. **没人引用的资源**：上传（或最近一次被复用）已超过 7 天、仍没有被任何提交、草稿、物件记录、
-   方块表、资源引用表或未结束的任务引用的资源：先删 `files` 文档（不再可见），再删数据块。
+2. **没人引用的资源**：上传（或最近一次被复用）已超过 7 天、仍没有被任何提交、草稿（`opsRefs.assetHash`、
+   `assets`）、物件记录、方块表、资源引用表或未结束的任务引用的资源：先删 `files` 文档（不再可见），
+   再删数据块。
 
 这些数据还没进时间线，删除它们不违反只追加原则。
 """
@@ -82,7 +83,9 @@ def _referenced(store: Store, sha: str) -> bool:
                 ]
             },
         ),
-        (C.DRAFTS, {"$or": [{"opsRef": sha}, {"scriptRef": sha}, {"assets": sha}]}),
+        # 草稿（接口服务 repo/drafts.rs）：经上传追加的操作文件在 opsRefs[].assetHash，引用的资源在 assets。
+        # 草稿没有 opsRef / scriptRef（发布时才写到提交上）；过期草稿已在本轮先删掉。
+        (C.DRAFTS, {"$or": [{"opsRefs.assetHash": sha}, {"assets": sha}]}),
     ]
     for collection, filt in checks:
         if store.col(collection).find_one(filt, {"_id": 1}) is not None:

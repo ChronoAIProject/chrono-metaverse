@@ -242,8 +242,19 @@ result.metrics  # 任意 JSON，原样放进 result.objects
 ## 定期清理
 
 后台线程每 `WORKER_CLEANUP_INTERVAL_SECONDS` 秒一次（设计 6.1）：超过 24 小时仍 `open` 的上传先改成 `expired`
-再删数据块和会话（`failed` / `expired` 的同样删除）；上传或最近复用超过 7 天、没有被提交、草稿、物件记录、
-方块表、资源引用表或未结束任务引用的资源，先删 `files` 文档再删数据块；租约过期且重试次数用完的任务标记失败。
+再删数据块和会话（`failed` / `expired` 的同样删除）；上传或最近复用超过 7 天、没有被引用的资源，先删 `files`
+文档再删数据块；租约过期且重试次数用完的任务标记失败。
+
+资源"被引用"指出现在下面任何一处：
+
+| 集合 | 字段 |
+|---|---|
+| `assetRefs` | `hash` |
+| `commits` | `scan.assetHash`、`scan.textureHash`、`scan.webModelHashes`、`opsRef`、`scriptRef` |
+| `records` | `body.assetHash`、`body.textures` |
+| `palettes` | `blocks.texture.top / side / bottom` |
+| `drafts`（接口服务的草稿文档） | `opsRefs.assetHash`（经上传追加的操作文件）、`assets` |
+| 排队中 / 运行中的 `jobs` | `params` 里任意位置的字符串 |
 
 ## 测试
 
