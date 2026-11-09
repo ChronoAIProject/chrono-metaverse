@@ -252,7 +252,8 @@ jobs:
         run: shellcheck infra/dev/*.sh .github/scripts/*.sh
       - name: hadolint（Dockerfile）
         run: |
-          curl -fsSL -o "$RUNNER_TEMP/hadolint" \
+          # GitHub 的发布下载偶尔返回 5xx，重试几次再判失败（校验和不变，重试不影响安全）。
+          curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors -o "$RUNNER_TEMP/hadolint" \
             https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-linux-x86_64
           echo "6bf226944684f56c84dd014e8b979d27425c0148f61b3bd99bcc6f39e9dc5a47  $RUNNER_TEMP/hadolint" | sha256sum -c -
           chmod +x "$RUNNER_TEMP/hadolint"
