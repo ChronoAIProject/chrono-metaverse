@@ -425,9 +425,11 @@ draftChunks（草稿生成的区块，随草稿过期删除，不写进 chunks�
   深层校验（形状、记录、模板引用、署名许可）在处理服务，不合格时任务失败；
 - 结构按 `structure` 沿用算法结果或用物件集里的结构；带烘焙指令 `bake` 的部件从扫描烘焙贴图；
 - 外部模型（Poly Haven、Objaverse 里许可为 CC0、CC-BY 的）只从配置的主机经 https 下载（重定向逐跳检查），
-  核对大小和 sha256，把旋转、缩放、调色烘进网格，按物件模型的限制重新导出 glb，写成 `assetHash`；
-  `props.source` 记作者、来源页、许可，网站显示"模型来源"；
-- 逐件计算扫描到物件的偏差写进 `fit`；`notes` 存成脚本资源，提交的 `scriptRef` 指向它；
+  核对大小和 sha256，把旋转、缩放、调色烘进网格（坐标上限按缩放后检查），按物件模型的限制重新导出 glb，
+  写成 `assetHash`，`opacity`、`unlit` 留在物件的 `material` 里；`props.source` 记作者、来源页、许可（规则与
+  物件记录相同），网站显示"模型来源"；
+- 物件集就是本地重建工作台 `metaverse-recon assemble` 的输出，它最后跑一遍处理服务的同一套校验，通过了才交；
+- 逐件计算扫描到物件的偏差写进 `fit`（墙和玻璃作为背景，与工作台口径一致）；`notes` 存成脚本资源，提交的 `scriptRef` 指向它；
 - 重建层全部换成这次的结果，锚点规则不变。部署种子可以带物件集（`infra/chrono-cd/README.md`）。
 
 格式和规则见 `worker/README.md`"AI 物件集"。
