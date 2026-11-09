@@ -10,6 +10,7 @@ import {
   mergeIncremental,
   stateAt,
   stateMapFrom,
+  valueAtPath,
 } from './events';
 
 const T0 = Date.parse('2026-11-01T12:00:00Z');
@@ -187,6 +188,26 @@ describe('T 时刻的状态', () => {
     expect(states.get('table-02')?.get('occupancy')?.value).toBe(4);
   });
 
+  it('state.value 是 data 里的点分路径（与接口服务相同）；取不到时状态值是 null', () => {
+    const nested: EventTypeDef[] = [
+      {
+        type: 'party.seated',
+        version: 1,
+        state: { key: 'party', value: 'party.size' },
+        display: { kind: 'label', labelTemplate: '{party.size} 位' },
+      },
+    ];
+    const events = effectiveEvents([
+      event('p1', 0, { type: 'party.seated', data: { party: { size: 4 } } }),
+      event('p2', 0, { type: 'party.seated', anchorId: 'table-02', data: { party: 3 } }),
+      event('p3', 0, { type: 'party.seated', anchorId: 'table-03', data: { other: 1 } }),
+    ]);
+    const states = stateAt(events, nested, iso(1));
+    expect(states.get('table-01')?.get('party')?.value).toBe(4);
+    expect(states.get('table-02')?.get('party')?.value).toBeNull();
+    expect(states.get('table-03')?.get('party')?.value).toBeNull();
+  });
+
   it('更正后的状态按更正后的内容算', () => {
     const events = effectiveEvents([
       event('e1', 0),
@@ -292,6 +313,32 @@ describe('"现在"模式：在 state?at= 的结果上叠加增量事件', () => 
     });
   });
 
+  it('增量事件的状态值也按点分路径取（不再只看顶层键）', () => {
+    const nested: EventTypeDef[] = [
+      {
+        type: 'party.seated',
+        version: 1,
+        state: { key: 'party', value: 'party.size' },
+        display: { kind: 'label' },
+      },
+    ];
+    const seated = event('p1', 10, {
+      type: 'party.seated',
+      typeVersion: 1,
+      data: { party: { size: 4 } },
+    });
+    const missing = event('p2', 11, {
+      type: 'party.seated',
+      typeVersion: 1,
+      anchorId: 'seat-02',
+      data: { party: 'x' },
+    });
+    const { states, refetch } = advanceStates(base, baseAt, [seated, missing], nested, now);
+    expect(refetch).toBe(false);
+    expect(states.get('table-01')?.get('party')).toMatchObject({ value: 4, eventId: 'p1' });
+    expect(states.get('seat-02')?.get('party')?.value).toBeNull();
+  });
+
   it('撤回、撤下当前状态的事件，或早于 baseAt 又没有状态的晚到事件：要重新取', () => {
     const retracted = event('c2', 0, { corrects: 'e1', retracted: true, recordedAt: iso(20) });
     expect(advanceStates(base, baseAt, [retracted], types, now).refetch).toBe(true);
@@ -304,5 +351,18 @@ describe('"现在"模式：在 state?at= 的结果上叠加增量事件', () => 
     expect(advanceStates(base, baseAt, [unrelated], types, now).refetch).toBe(false);
     const future = event('f', 60, { anchorId: 'seat-03' });
     expect(advanceStates(base, baseAt, [future], types, now).states.has('seat-03')).toBe(false);
+  });
+});
+
+describe('点分路径取值', () => {
+  it('逐层取对象里的字段；中途不是对象（包括数组）时取不到', () => {
+    const data = { a: { b: { c: 1 } }, list: [{ x: 1 }], n: null, s: 'text' };
+    expect(valueAtPath(data, 'a.b.c')).toBe(1);
+    expect(valueAtPath(data, 'a.b')).toEqual({ c: 1 });
+    expect(valueAtPath(data, 'a.missing.c')).toBeUndefined();
+    expect(valueAtPath(data, 'n.x')).toBeUndefined();
+    expect(valueAtPath(data, 's.length')).toBeUndefined();
+    expect(valueAtPath(data, 'list.0.x')).toBeUndefined();
+    expect(valueAtPath(undefined, 'a')).toBeUndefined();
   });
 });

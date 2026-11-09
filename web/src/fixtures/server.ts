@@ -1,5 +1,5 @@
 import type { SpaceEvent } from '../core/api/types';
-import { densityBuckets, effectiveEvents, stateAt, toMillis } from '../core/events';
+import { densityBuckets, effectiveEvents, stateAt, toMillis, valueAtPath } from '../core/events';
 import {
   emitFixture,
   fixtureStore,
@@ -94,16 +94,6 @@ function page<T>(items: readonly T[], size: number, after: string | null) {
   return { items: slice, nextAfter: next };
 }
 
-/** 按点分路径取值。 */
-function valueAt(data: Readonly<Record<string, unknown>>, path: string): unknown {
-  let current: unknown = data;
-  for (const part of path.split('.')) {
-    if (current === null || typeof current !== 'object') return undefined;
-    current = (current as Record<string, unknown>)[part];
-  }
-  return current;
-}
-
 /** 只留登记的公开字段（点分路径还原成嵌套对象；没登记任何字段时是空对象）。 */
 function projectFields(
   data: Readonly<Record<string, unknown>>,
@@ -111,7 +101,7 @@ function projectFields(
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const path of fields) {
-    const value = valueAt(data, path);
+    const value = valueAtPath(data, path);
     if (value === undefined) continue;
     const parts = path.split('.');
     let target = out;

@@ -156,7 +156,7 @@ export interface EventTypeDef {
   /** 有 state 表示"从此刻起该锚点处于某状态"，直到同一 key 的下一条。 */
   readonly state?: {
     readonly key: string;
-    /** 状态值取自 data 里的哪个字段；不给时状态值就是事件类型本身。 */
+    /** 状态值取自 data 里的哪个字段（点分路径，例如 `party.size`）；不给时状态值就是事件类型本身。 */
     readonly value?: string;
     /** 这类事件清除状态（例如离座）。 */
     readonly clears?: boolean;

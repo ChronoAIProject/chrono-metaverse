@@ -152,7 +152,7 @@ src/
 
 - 分页结果是 `{ items, nextAfter }`，`nextAfter` 为 null 表示没有更多；**只以 `nextAfter` 判断有没有下一页**：公开事件接口先按原始记录分页、再做公开投影，一整页都是内部级事件（或内部锚点上的事件）时 `items` 为空而 `nextAfter` 不为 null，网站照样往下翻（`allEvents`、`allTimeline` 共用同一个翻页函数；游标不前进时停，最多 200 页）；
 - `GET /api/public/spaces/{id}` 带上全部事件类型 `eventTypes`（显示规则；包括默认内部级的类型，同一类型可以有多个版本），查看器据此可视化事件；
-- 事件类型的 `state.value` 是 data 里的字段名，`state.clears: true` 表示这类事件清除状态；事件带 `typeVersion` 时按版本选显示规则；
+- 事件类型的 `state.value` 是 data 里的点分路径（例如 `party.size`，与接口服务的状态折叠相同；"现在"模式推进状态、本地算状态、标签模板都按同一个 `valueAtPath` 取值，取不到时状态值是 null），`state.clears: true` 表示这类事件清除状态；事件带 `typeVersion` 时按版本选显示规则；
 - `state?at=` 的每条状态可以带 `data`（产生该状态的事件的公开字段）和 `typeVersion`，标签模板用它；
 - 公开事件是服务端的公开投影：已经应用更正、按每条事件生效的可见级别过滤（事件自己写的 `visibility` 优先，没写才用该 `typeVersion` 版本的 `defaultVisibility`）、只留公开锚点上的事件和公开字段，**不带 `visibility`**。所以网站不再按类型的默认级别过滤（否则默认内部级、写入时显式标成公开的事件会被丢掉），只丢掉显式写了 `visibility: "internal"` 的记录；
 - 事件列表可以直接返回更正记录（`corrects`、`retracted`），也可以返回已经应用更正的结果（接口服务是后者）；增量结果里的"撤下"标记是 `{ id, recordedAt, withdrawn: true }`；

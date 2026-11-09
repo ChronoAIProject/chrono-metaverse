@@ -121,11 +121,30 @@ export function eventsInWindow<E extends SpaceEvent>(
   });
 }
 
-/** 事件的状态值：类型定义了 `state.value` 字段名时取 data 里那个字段，否则就是事件类型。 */
+/**
+ * 按点分路径取 data 里的值，例如 `status` 或 `party.size`（与接口服务的 `value_at_path` 相同）。
+ * 路径中途不是对象时返回 undefined。
+ */
+export function valueAtPath(
+  data: Readonly<Record<string, unknown>> | undefined,
+  path: string,
+): unknown {
+  let current: unknown = data;
+  for (const part of path.split('.')) {
+    if (current === null || typeof current !== 'object' || Array.isArray(current)) return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+
+/**
+ * 事件的状态值：类型定义了 `state.value`（data 里的点分路径）时取那个值，取不到是 null；
+ * 没定义时就是事件类型。与接口服务的状态折叠相同。
+ */
 function stateValue(event: SpaceEvent, def: EventTypeDef): unknown {
-  const field = def.state?.value;
-  if (field === undefined) return event.type;
-  const value = event.data?.[field];
+  const path = def.state?.value;
+  if (path === undefined) return event.type;
+  const value = valueAtPath(event.data, path);
   return value === undefined ? null : value;
 }
 
@@ -315,7 +334,7 @@ export function advanceStates(
       entry.set(def.state.key, {
         anchorId: event.anchorId,
         key: def.state.key,
-        value: def.state.value === undefined ? event.type : (event.data?.[def.state.value] ?? null),
+        value: stateValue(event, def),
         at: event.at,
         eventId: target,
         type: event.type,
