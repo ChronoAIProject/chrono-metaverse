@@ -53,6 +53,94 @@ pub struct Fit {
     pub coverage3cm: f64,
 }
 
+/// 外部模型的可选库（SHAPES 3）。
+pub const SOURCE_LIBRARIES: [&str; 3] = ["polyhaven", "objaverse", "sketchfab"];
+/// 外部模型允许的许可：明确可商用、不传染（NC、ND、SA 一律排除）。
+pub const SOURCE_LICENSES: [&str; 3] = ["CC0-1.0", "CC-BY-4.0", "CC-BY-3.0"];
+/// 来源里编号、作者、标题的最大字符数。
+pub const MAX_SOURCE_TEXT_CHARS: usize = 200;
+/// 来源页地址的最大字符数。
+pub const MAX_SOURCE_URL_CHARS: usize = 2000;
+
+/// 外部模型的来源（`props.source` 是对象时），网站据此显示署名。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelSource {
+    pub library: String,
+    pub id: String,
+    /// 来源页（https 地址）。
+    pub page: String,
+    pub author: String,
+    /// SPDX 风格的许可名，只能是 [`SOURCE_LICENSES`] 之一。
+    pub license: String,
+    pub title: String,
+}
+
+impl ModelSource {
+    pub fn validate(&self) -> Result<(), RecordError> {
+        if !SOURCE_LIBRARIES.contains(&self.library.as_str()) {
+            return Err(invalid(
+                "props.source.library 只能是 polyhaven、objaverse 或 sketchfab",
+            ));
+        }
+        if !SOURCE_LICENSES.contains(&self.license.as_str()) {
+            return Err(invalid(
+                "props.source.license 只能是 CC0-1.0、CC-BY-4.0 或 CC-BY-3.0（可商用、不传染）",
+            ));
+        }
+        for (name, text) in [
+            ("id", &self.id),
+            ("author", &self.author),
+            ("title", &self.title),
+        ] {
+            let chars = text.chars().count();
+            if chars == 0 || chars > MAX_SOURCE_TEXT_CHARS || text.chars().any(char::is_control) {
+                return Err(invalid(format!(
+                    "props.source.{name} 必须是 1 到 200 个字符，不含控制字符"
+                )));
+            }
+        }
+        if !is_https_url(&self.page) {
+            return Err(invalid(
+                "props.source.page 必须是 https 地址（不超过 2000 个字符，不含空白和控制字符）",
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// 来源页地址：`https://` 开头、后面至少一个字符，不超过 2000 个字符，不含空白和控制字符。
+pub fn is_https_url(url: &str) -> bool {
+    url.len() > "https://".len()
+        && url.starts_with("https://")
+        && url.chars().count() <= MAX_SOURCE_URL_CHARS
+        && !url.chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
+/// `props` 里有结构的键：`source` 是对象时按 [`ModelSource`] 校验。
+/// 不是对象的 `source`（旧数据里识别来源的字符串 `hint` / `rules`）照旧当不透明的值。
+pub fn validate_props(props: &Map<String, Value>) -> Result<(), RecordError> {
+    if let Some(source @ Value::Object(_)) = props.get("source") {
+        let source: ModelSource = serde_json::from_value(source.clone())
+            .map_err(|error| invalid(format!("props.source 格式不对：{error}")))?;
+        source.validate()?;
+    }
+    Ok(())
+}
+
+/// 物件模型（`assetHash`）整体的外观：调色、半透明、不受光照（SHAPES 3）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelMaterial {
+    /// 整个模型乘上这个颜色（sRGB 0–255）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tint: Option<[u8; 3]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opacity: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unlit: Option<bool>,
+}
+
 /// 物件记录的 body。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -72,6 +160,9 @@ pub struct EntityBody {
     /// 处理服务校验并重新导出的模型。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asset_hash: Option<String>,
+    /// 模型（`assetHash`）整体的调色、半透明、不受光照；只能和 `assetHash` 一起给。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub material: Option<ModelMaterial>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub textures: Option<Vec<String>>,
     /// 由生成方计算，用于权限范围检查和网站裁剪。
@@ -110,6 +201,12 @@ impl EntityBody {
         {
             return Err(invalid("assetHash 必须是 64 位小写十六进制"));
         }
+        if let Some(material) = &self.material {
+            if self.asset_hash.is_none() {
+                return Err(invalid("material 只用于模型，必须和 assetHash 一起给"));
+            }
+            crate::shape::validate_opacity("material.opacity", material.opacity)?;
+        }
         if self
             .textures
             .iter()
@@ -134,6 +231,7 @@ impl EntityBody {
         if canonical_json_of(&self.props)?.len() > MAX_PROPS_BYTES {
             return Err(invalid("props 超过 16KB"));
         }
+        validate_props(&self.props)?;
         if let Some(shape) = &self.shape {
             shape.validate()?;
             let computed = shape.bounds(templates)?;
@@ -295,6 +393,83 @@ mod tests {
             "bounds": {"min": [-0.1, 0, -0.2], "max": [0.2, 1, 0.2]}
         }));
         assert!(body.validate(&NoTemplates).is_err());
+    }
+
+    fn model_entity(extra: Value) -> Value {
+        let mut body = json!({
+            "entityId": "sofa-01", "layer": "rebuilt", "kind": "object",
+            "assetHash": "ab".repeat(32),
+            "bounds": {"min": [0, 0, 0], "max": [2, 0.8, 0.9]},
+            "props": {"source": {"library": "objaverse", "id": "0123abcd",
+                "page": "https://sketchfab.com/3d-models/0123abcd", "author": "某作者",
+                "license": "CC-BY-4.0", "title": "布艺沙发"}}
+        });
+        for (key, value) in extra.as_object().unwrap() {
+            if value.is_null() {
+                body.as_object_mut().unwrap().remove(key);
+            } else {
+                body[key] = value.clone();
+            }
+        }
+        body
+    }
+
+    #[test]
+    fn model_entities_with_source_and_material() {
+        let valid = entity(model_entity(json!({"material": {"tint": [200, 190, 180]}})));
+        valid.validate(&NoTemplates).unwrap();
+        // 旧数据里 source 是识别来源的字符串，照旧当不透明的值。
+        entity(model_entity(json!({"props": {"source": "hint"}})))
+            .validate(&NoTemplates)
+            .unwrap();
+        let source = |field: &str, value: Value| {
+            let mut body = model_entity(json!({}));
+            body["props"]["source"][field] = value;
+            entity(body)
+        };
+        for (field, value) in [
+            ("license", json!("CC-BY-NC-4.0")),
+            ("license", json!("CC-BY-SA-4.0")),
+            ("library", json!("thingiverse")),
+            ("page", json!("javascript:alert(1)")),
+            ("page", json!("http://example.com/x")),
+            ("page", json!("https://example.com/a b")),
+            ("author", json!("")),
+            ("title", json!("a\u{7}b")),
+            ("id", json!(7)),
+            ("extra", json!("x")),
+        ] {
+            assert!(
+                source(field, value.clone()).validate(&NoTemplates).is_err(),
+                "{field} = {value}"
+            );
+        }
+        let mut missing = model_entity(json!({}));
+        missing["props"]["source"]
+            .as_object_mut()
+            .unwrap()
+            .remove("author");
+        assert!(entity(missing).validate(&NoTemplates).is_err());
+        // material 只能和 assetHash 一起给；opacity 在 0–1 之间。
+        let shape_only = entity(model_entity(json!({
+            "assetHash": null, "material": {"tint": [1, 2, 3]},
+            "shape": {"type": "box", "size": [2, 0.8, 0.9], "transform": {"position": [1, 0, 0.45]}}
+        })));
+        assert!(shape_only.validate(&NoTemplates).is_err());
+        let opaque = entity(model_entity(json!({"material": {"opacity": 2}})));
+        assert!(opaque.validate(&NoTemplates).is_err());
+        assert!(serde_json::from_value::<EntityBody>(model_entity(
+            json!({"material": {"color": [1, 2, 3]}})
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn https_urls() {
+        assert!(is_https_url("https://polyhaven.com/a/sofa"));
+        assert!(!is_https_url("https://"));
+        assert!(!is_https_url("HTTPS://polyhaven.com"));
+        assert!(!is_https_url(&format!("https://a.b/{}", "x".repeat(2000))));
     }
 
     #[test]
