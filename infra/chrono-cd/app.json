@@ -1,0 +1,85 @@
+{
+  "target_org_id": "52aa284c-b5b2-49bd-9d12-79f24772dbd7",
+  "addons": {
+    "mongodb": {}
+  },
+  "services": {
+    "metaverse-web": {
+      "image": "ghcr.io/chronoaiproject/chrono-metaverse-web:main",
+      "port": 8080,
+      "routes": ["/"],
+      "expose": "public",
+      "health_path": "/healthz",
+      "replicas": 2,
+      "resources": {
+        "cpu_request": "25m",
+        "memory_request": "32Mi",
+        "cpu_limit": "250m",
+        "memory_limit": "128Mi"
+      }
+    },
+    "metaverse-api": {
+      "image": "ghcr.io/chronoaiproject/chrono-metaverse-api:main",
+      "port": 8080,
+      "routes": ["/api"],
+      "expose": "public",
+      "health_path": "/api/healthz",
+      "replicas": 1,
+      "env": {
+        "BIND": "0.0.0.0:8080",
+        "PUBLIC_BASE_URL": "https://chrono-metaverse-chronoai.apps.nyxid.ai",
+        "NYXID_BASE_URL": "https://nyx-api.chrono-ai.fun",
+        "NYXID_JWKS_URL": "https://api.nyxid.ai/.well-known/jwks.json",
+        "NYXID_JWT_ISSUER": "https://nyx-api.chrono-ai.fun",
+        "NYXID_JWT_AUDIENCE": "urn:chrono-metaverse:api",
+        "ALLOWED_NYX_SERVICE_IDS": "pending-nyxid-registration",
+        "METAVERSE_REQUIRE_PERMISSIONS": "false",
+        "RUST_LOG": "info"
+      },
+      "addon_env": {
+        "mongodb": {
+          "uri": "MONGODB_URI",
+          "database": "MONGODB_DATABASE"
+        }
+      },
+      "resources": {
+        "cpu_request": "250m",
+        "memory_request": "256Mi",
+        "cpu_limit": "1",
+        "memory_limit": "1Gi"
+      }
+    },
+    "metaverse-worker": {
+      "image": "ghcr.io/chronoaiproject/chrono-metaverse-worker:main",
+      "port": 8080,
+      "expose": "internal",
+      "health_path": "/healthz",
+      "replicas": 1,
+      "env": {
+        "WORKER_HEALTH_PORT": "8080",
+        "WORKER_JOB_MEMORY_MB": "6144",
+        "PYTHONUNBUFFERED": "1"
+      },
+      "addon_env": {
+        "mongodb": {
+          "uri": "MONGODB_URI",
+          "database": "MONGODB_DATABASE"
+        }
+      },
+      "volumes": [
+        {
+          "name": "scratch",
+          "mount_path": "/tmp",
+          "type": "emptydir",
+          "size": "8Gi"
+        }
+      ],
+      "resources": {
+        "cpu_request": "500m",
+        "memory_request": "3Gi",
+        "cpu_limit": "2",
+        "memory_limit": "8Gi"
+      }
+    }
+  }
+}
