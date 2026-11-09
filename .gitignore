@@ -18,6 +18,8 @@ dist/
 coverage/
 test-results/
 playwright-report/
+web/e2e/screenshots/
+*.tsbuildinfo
 
 # 本地密钥与环境
 .env

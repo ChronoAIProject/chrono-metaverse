@@ -74,141 +74,242 @@ export function voxelAt(world: VoxelWorld, gx: number, gy: number, gz: number): 
   );
 }
 
-export interface VoxelMesh {
+/** 方块网格按材质分块：不透明、玻璃（半透明）、发光，以及按贴图分开的块。 */
+export type VoxelPartKind = 'solid' | 'glass' | 'emissive';
+
+export interface VoxelPart {
+  /** 分块键：`<类别>:<贴图哈希或空>`。 */
+  readonly key: string;
+  readonly kind: VoxelPartKind;
+  /** 贴图资源哈希；没有时用顶点颜色。 */
+  readonly texture?: string;
   readonly positions: Float32Array;
   readonly normals: Float32Array;
-  /** sRGB 0–1。 */
+  /** sRGB 0–1。有贴图时是色调（方块颜色，没有就是白色）。 */
   readonly colors: Float32Array;
+  /** 每个面 0–1。 */
+  readonly uvs: Float32Array;
   readonly indices: Uint32Array;
 }
 
 export interface VoxelMeshes {
-  readonly opaque: VoxelMesh;
-  /** 玻璃类方块单独一块，用半透明材质画。 */
-  readonly glass: VoxelMesh;
+  readonly parts: readonly VoxelPart[];
   readonly faceCount: number;
 }
 
-const FACES: readonly { normal: [number, number, number]; corners: [number, number, number][] }[] =
-  [
-    {
-      normal: [1, 0, 0],
-      corners: [
-        [1, 0, 0],
-        [1, 1, 0],
-        [1, 1, 1],
-        [1, 0, 1],
-      ],
-    },
-    {
-      normal: [-1, 0, 0],
-      corners: [
-        [0, 0, 1],
-        [0, 1, 1],
-        [0, 1, 0],
-        [0, 0, 0],
-      ],
-    },
-    {
-      normal: [0, 1, 0],
-      corners: [
-        [0, 1, 1],
-        [1, 1, 1],
-        [1, 1, 0],
-        [0, 1, 0],
-      ],
-    },
-    {
-      normal: [0, -1, 0],
-      corners: [
-        [0, 0, 0],
-        [1, 0, 0],
-        [1, 0, 1],
-        [0, 0, 1],
-      ],
-    },
-    {
-      normal: [0, 0, 1],
-      corners: [
-        [1, 0, 1],
-        [1, 1, 1],
-        [0, 1, 1],
-        [0, 0, 1],
-      ],
-    },
-    {
-      normal: [0, 0, -1],
-      corners: [
-        [0, 0, 0],
-        [0, 1, 0],
-        [1, 1, 0],
-        [1, 0, 0],
-      ],
-    },
-  ];
+type Face = {
+  readonly normal: [number, number, number];
+  readonly corners: [number, number, number][];
+  /** 贴图取方块表里的哪一张。 */
+  readonly side: 'top' | 'side' | 'bottom';
+};
+
+const FACES: readonly Face[] = [
+  {
+    normal: [1, 0, 0],
+    side: 'side',
+    corners: [
+      [1, 0, 0],
+      [1, 1, 0],
+      [1, 1, 1],
+      [1, 0, 1],
+    ],
+  },
+  {
+    normal: [-1, 0, 0],
+    side: 'side',
+    corners: [
+      [0, 0, 1],
+      [0, 1, 1],
+      [0, 1, 0],
+      [0, 0, 0],
+    ],
+  },
+  {
+    normal: [0, 1, 0],
+    side: 'top',
+    corners: [
+      [0, 1, 1],
+      [1, 1, 1],
+      [1, 1, 0],
+      [0, 1, 0],
+    ],
+  },
+  {
+    normal: [0, -1, 0],
+    side: 'bottom',
+    corners: [
+      [0, 0, 0],
+      [1, 0, 0],
+      [1, 0, 1],
+      [0, 0, 1],
+    ],
+  },
+  {
+    normal: [0, 0, 1],
+    side: 'side',
+    corners: [
+      [1, 0, 1],
+      [1, 1, 1],
+      [0, 1, 1],
+      [0, 0, 1],
+    ],
+  },
+  {
+    normal: [0, 0, -1],
+    side: 'side',
+    corners: [
+      [0, 0, 0],
+      [0, 1, 0],
+      [1, 1, 0],
+      [1, 0, 0],
+    ],
+  },
+];
+
+/** 面内的贴图坐标：侧面 v 朝上，顶面和底面按 x、z。 */
+function faceUv(face: Face, corner: readonly number[]): [number, number] {
+  const [dx, dy, dz] = corner as [number, number, number];
+  if (face.side !== 'side') return [dx, dz];
+  return face.normal[0] !== 0 ? [dz, dy] : [dx, dy];
+}
 
 /** 方块表里找不到的编号用这个颜色（品红，便于发现）。 */
 const MISSING: [number, number, number] = [1, 0, 1];
+const WHITE: [number, number, number] = [1, 1, 1];
 
 function blockTable(palette: Palette): Map<number, PaletteBlock> {
   return new Map(palette.blocks.map((block) => [block.id, block]));
 }
 
+function blockKind(block: PaletteBlock | undefined): VoxelPartKind {
+  if (block?.kind === 'glass') return 'glass';
+  if (block?.kind === 'emissive') return 'emissive';
+  return 'solid';
+}
+
+/** 某个面用的贴图：缺哪一张就用侧面的，侧面也没有时用顶面的。 */
+function blockTexture(block: PaletteBlock | undefined, side: Face['side']): string | undefined {
+  const t = block?.texture;
+  if (t === undefined) return undefined;
+  return t[side] ?? t.side ?? t.top ?? t.bottom;
+}
+
+class PartBuilder {
+  readonly positions: number[] = [];
+  readonly normals: number[] = [];
+  readonly colors: number[] = [];
+  readonly uvs: number[] = [];
+  readonly indices: number[] = [];
+  constructor(
+    readonly kind: VoxelPartKind,
+    readonly texture: string | undefined,
+  ) {}
+  build(key: string): VoxelPart {
+    return {
+      key,
+      kind: this.kind,
+      ...(this.texture !== undefined ? { texture: this.texture } : {}),
+      positions: new Float32Array(this.positions),
+      normals: new Float32Array(this.normals),
+      colors: new Float32Array(this.colors),
+      uvs: new Float32Array(this.uvs),
+      indices: new Uint32Array(this.indices),
+    };
+  }
+}
+
 /**
  * 生成可见面：挨着不透明方块的面不画；玻璃挨着任何方块的面都不画。
- * 每个面的四个顶点按"从外面看逆时针"排列。
+ * 每个面的四个顶点按"从外面看逆时针"排列。按（类别，贴图）分块，玻璃单独半透明，
+ * 发光方块单独一块，带贴图的方块按贴图分块。
  */
 export function voxelMeshes(world: VoxelWorld, palette: Palette): VoxelMeshes {
   const blocks = blockTable(palette);
-  const isGlass = (id: number) => blocks.get(id)?.kind === 'glass';
-  const out = {
-    opaque: {
-      positions: [] as number[],
-      normals: [] as number[],
-      colors: [] as number[],
-      indices: [] as number[],
-    },
-    glass: {
-      positions: [] as number[],
-      normals: [] as number[],
-      colors: [] as number[],
-      indices: [] as number[],
-    },
-  };
+  const glassIds = new Set(palette.blocks.filter((b) => b.kind === 'glass').map((b) => b.id));
+  const parts = new Map<string, PartBuilder>();
   let faceCount = 0;
   for (const { cx, cy, cz, cells } of world.values()) {
     for (let i = 0; i < CHUNK_CELLS; i += 1) {
       const id = cells[i]!;
       if (id < 2) continue;
-      const x = cx * CHUNK_SIZE + (i % CHUNK_SIZE);
-      const z = cz * CHUNK_SIZE + (Math.floor(i / CHUNK_SIZE) % CHUNK_SIZE);
-      const y = cy * CHUNK_SIZE + Math.floor(i / (CHUNK_SIZE * CHUNK_SIZE));
-      const glass = isGlass(id);
+      const lx = i % CHUNK_SIZE;
+      const lz = Math.floor(i / CHUNK_SIZE) % CHUNK_SIZE;
+      const ly = Math.floor(i / (CHUNK_SIZE * CHUNK_SIZE));
+      const x = cx * CHUNK_SIZE + lx;
+      const y = cy * CHUNK_SIZE + ly;
+      const z = cz * CHUNK_SIZE + lz;
       const block = blocks.get(id);
-      const color = block?.color
+      const glass = glassIds.has(id);
+      const kind = blockKind(block);
+      const tint = block?.color
         ? (block.color.map((c) => c / 255) as [number, number, number])
-        : MISSING;
-      const target = glass ? out.glass : out.opaque;
+        : null;
       for (const face of FACES) {
-        const neighbor = voxelAt(world, x + face.normal[0], y + face.normal[1], z + face.normal[2]);
+        const nx = lx + face.normal[0];
+        const ny = ly + face.normal[1];
+        const nz = lz + face.normal[2];
+        // 区块内的邻居直接读，越界才查别的区块。
+        const neighbor =
+          nx >= 0 && ny >= 0 && nz >= 0 && nx < CHUNK_SIZE && ny < CHUNK_SIZE && nz < CHUNK_SIZE
+            ? cells[chunkIndex(nx, ny, nz)]!
+            : voxelAt(world, x + face.normal[0], y + face.normal[1], z + face.normal[2]);
         // 不透明方块只被不透明方块挡住；玻璃挨着任何方块都不画（贴着不透明面的玻璃面看不见）。
-        if (neighbor >= 2 && (glass || !isGlass(neighbor))) continue;
+        if (neighbor >= 2 && (glass || !glassIds.has(neighbor))) continue;
+        const texture = blockTexture(block, face.side);
+        const color = texture !== undefined ? (tint ?? WHITE) : (tint ?? MISSING);
+        const key = `${kind}:${texture ?? ''}`;
+        let target = parts.get(key);
+        if (target === undefined) {
+          target = new PartBuilder(kind, texture);
+          parts.set(key, target);
+        }
         const base = target.positions.length / 3;
-        for (const [dx, dy, dz] of face.corners) {
-          target.positions.push((x + dx) * GRID_UNIT, (y + dy) * GRID_UNIT, (z + dz) * GRID_UNIT);
+        for (const corner of face.corners) {
+          target.positions.push(
+            (x + corner[0]) * GRID_UNIT,
+            (y + corner[1]) * GRID_UNIT,
+            (z + corner[2]) * GRID_UNIT,
+          );
           target.normals.push(...face.normal);
           target.colors.push(...color);
+          target.uvs.push(...faceUv(face, corner));
         }
         target.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
         faceCount += 1;
       }
     }
   }
-  const pack = (m: typeof out.opaque): VoxelMesh => ({
-    positions: new Float32Array(m.positions),
-    normals: new Float32Array(m.normals),
-    colors: new Float32Array(m.colors),
-    indices: new Uint32Array(m.indices),
-  });
-  return { opaque: pack(out.opaque), glass: pack(out.glass), faceCount };
+  return {
+    parts: [...parts.entries()]
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([key, builder]) => builder.build(key)),
+    faceCount,
+  };
+}
+
+/** 方块风格内容的来源：两层区块和（优化视图的）实体区格子盒；在后台线程里叠加和生成网格。 */
+export interface VoxelSource {
+  readonly chunks: readonly LayerChunk[];
+  /** 只保留落在这些格子盒里的方块；null 表示不过滤。 */
+  readonly keepBoxes: readonly (readonly [number, number, number, number, number, number])[] | null;
+  readonly palette: Palette;
+}
+
+/** 叠加 + 过滤 + 可见面网格，一步完成（后台线程调用）。 */
+export function voxelSourceMeshes(source: VoxelSource): VoxelMeshes {
+  const boxes = source.keepBoxes;
+  const keep =
+    boxes === null
+      ? undefined
+      : (gx: number, gy: number, gz: number) =>
+          boxes.some(
+            (b) => gx >= b[0] && gy >= b[1] && gz >= b[2] && gx < b[3] && gy < b[4] && gz < b[5],
+          );
+  return voxelMeshes(composeVoxels(source.chunks, keep), source.palette);
+}
+
+/** 某一类的块合在一起（测试用）。 */
+export function voxelPartsOfKind(meshes: VoxelMeshes, kind: VoxelPartKind): VoxelPart[] {
+  return meshes.parts.filter((part) => part.kind === kind);
 }

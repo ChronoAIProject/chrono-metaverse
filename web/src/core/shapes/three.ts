@@ -25,6 +25,17 @@ export interface ShapeGeometry {
 /** 形状 → 一个带材质分组的 BufferGeometry。 */
 export function shapeToGeometry(shape: Shape, options: BuildOptions = {}): ShapeGeometry {
   const { parts, warnings } = buildShape(shape, options);
+  return partsToGeometry(parts, warnings);
+}
+
+/**
+ * 按材质分好的网格块 → 一个带材质分组的 BufferGeometry（`geometry.groups[i]` 对应 `materials[i]`）。
+ * 网格在后台线程里生成，主线程只做这一步组装。
+ */
+export function partsToGeometry(
+  parts: readonly { readonly mesh: MeshData; readonly material: Material }[],
+  warnings: readonly string[] = [],
+): ShapeGeometry {
   const vertexTotal = parts.reduce((sum, part) => sum + part.mesh.positions.length / 3, 0);
   const indexTotal = parts.reduce((sum, part) => sum + part.mesh.indices.length, 0);
   const positions = new Float32Array(vertexTotal * 3);
@@ -51,5 +62,5 @@ export function shapeToGeometry(shape: Shape, options: BuildOptions = {}): Shape
   geometry.setIndex(new BufferAttribute(indices, 1));
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
-  return { geometry, materials: parts.map((part) => part.material), warnings };
+  return { geometry, materials: parts.map((part) => part.material), warnings: [...warnings] };
 }

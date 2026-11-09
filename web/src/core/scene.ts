@@ -7,11 +7,12 @@ import type {
   Region,
   ScanRef,
   Snapshot,
+  UniverseLink,
 } from './api/types';
 import type { PublicClient } from './api/client';
 import { GRID_UNIT } from './chunk';
-import type { TemplateTable } from './shapes/types';
-import { composeVoxels, type LayerChunk, type VoxelWorld } from './voxels';
+import type { TemplateTable, Vec3 } from './shapes/types';
+import type { LayerChunk, VoxelSource } from './voxels';
 
 /**
  * 查看器渲染的场景文档：某个 seq 的快照，区块已经下载并解码。
@@ -34,15 +35,21 @@ export interface SceneDocument {
 /** 同时下载的区块数上限。 */
 const CHUNK_CONCURRENCY = 6;
 
+/** 加载进度：已完成的区块数和总数。 */
+export type ChunkProgress = (done: number, total: number) => void;
+
 /** 快照 → 场景文档：并发下载区块（每个都核对哈希）。 */
 export async function loadScene(
   client: Pick<PublicClient, 'chunk'>,
   snapshot: Snapshot,
   name?: string,
+  onProgress?: ChunkProgress,
 ): Promise<SceneDocument> {
   const refs = [...snapshot.chunks];
   const chunks: LayerChunk[] = new Array(refs.length);
   let next = 0;
+  let done = 0;
+  onProgress?.(0, refs.length);
   const worker = async () => {
     while (next < refs.length) {
       const index = next;
@@ -55,6 +62,8 @@ export async function loadScene(
         cz: ref.cz,
         cells: await client.chunk(ref.hash),
       };
+      done += 1;
+      onProgress?.(done, refs.length);
     }
   };
   await Promise.all(Array.from({ length: Math.min(CHUNK_CONCURRENCY, refs.length) }, worker));
@@ -143,15 +152,26 @@ export interface ViewContent {
   readonly showScan: boolean;
   /** 原始视图下 T 之前没有扫描时为 true，界面提示。 */
   readonly scanMissing: boolean;
-  /** 要画的物件（不含模板）。 */
+  /** 要画的物件（不含模板）：有形状的，或者有处理后模型（assetHash）的。 */
   readonly entities: readonly EntityBody[];
   readonly templates: TemplateTable;
-  readonly voxels: VoxelWorld;
-  /** 方块表（方块编号 → 颜色、类别）。 */
-  readonly palette: Palette;
+  /** 方块风格内容的来源（两层区块、区域过滤、方块表），在后台线程里叠加并生成网格。 */
+  readonly voxels: VoxelSource;
   /** 需要画边界光效和"虚拟"标签的区域。 */
   readonly virtualRegions: readonly Region[];
   readonly anchors: readonly Anchor[];
+}
+
+/** 视图里有没有可画的内容（物件或方块）。 */
+export function viewHasGeometry(view: ViewContent): boolean {
+  return view.entities.length > 0 || view.voxels.chunks.length > 0;
+}
+
+/** 物件能不能画：有形状，或者有处理后的模型。模板只作为实例的来源。 */
+export function isDrawable(entity: EntityBody): boolean {
+  return (
+    entity.kind !== 'template' && (entity.shape !== undefined || entity.assetHash !== undefined)
+  );
 }
 
 /**
@@ -167,6 +187,7 @@ export interface ViewContent {
 export function selectView(scene: SceneDocument, mode: ViewMode): ViewContent {
   const templates = templatesOf(scene.entities);
   const anchors = scene.anchors.filter((a) => a.visibility !== 'internal');
+  const palette = scene.palette;
   if (mode === 'raw') {
     const hasScan = (scene.scan?.webModelHashes.length ?? 0) > 0;
     return {
@@ -175,13 +196,12 @@ export function selectView(scene: SceneDocument, mode: ViewMode): ViewContent {
       scanMissing: !hasScan,
       entities: [],
       templates,
-      voxels: new Map(),
-      palette: scene.palette,
+      voxels: { chunks: [], keepBoxes: null, palette },
       virtualRegions: [],
       anchors,
     };
   }
-  const drawable = scene.entities.filter((e) => e.kind !== 'template' && e.shape !== undefined);
+  const drawable = scene.entities.filter(isDrawable);
   if (mode === 'extended') {
     return {
       mode,
@@ -189,29 +209,93 @@ export function selectView(scene: SceneDocument, mode: ViewMode): ViewContent {
       scanMissing: false,
       entities: drawable,
       templates,
-      voxels: composeVoxels(scene.chunks),
-      palette: scene.palette,
+      voxels: { chunks: scene.chunks, keepBoxes: null, palette },
       virtualRegions: scene.regions.filter((r) => r.kind === 'virtual'),
       anchors,
     };
   }
   const physical = scene.regions.filter((r) => r.kind === 'physical');
-  const keep =
-    physical.length === 0
-      ? undefined
-      : (gx: number, gy: number, gz: number) =>
-          physical.some((r) => r.boxes.some((b) => boxContainsCell(b, gx, gy, gz)));
+  const keepBoxes = physical.length === 0 ? null : physical.flatMap((r) => r.boxes);
+  // 只取实体区：区块里完全落在实体区外的整块直接不送去生成网格。
+  const chunks =
+    keepBoxes === null
+      ? scene.chunks
+      : scene.chunks.filter((chunk) => keepBoxes.some((box) => chunkTouchesBox(chunk, box)));
   return {
     mode,
     showScan: false,
     scanMissing: false,
     entities: drawable.filter((e) => entityRegionKind(e, scene.regions) === 'physical'),
     templates,
-    voxels: composeVoxels(scene.chunks, keep),
-    palette: scene.palette,
+    voxels: { chunks, keepBoxes, palette },
     virtualRegions: [],
     anchors,
   };
+}
+
+/** 区块（32³ 格）和格子盒是否相交。 */
+function chunkTouchesBox(chunk: LayerChunk, box: GridBox): boolean {
+  const size = 32;
+  const min = [chunk.cx * size, chunk.cy * size, chunk.cz * size];
+  return [0, 1, 2].every((k) => min[k]! < box[k + 3]! && min[k]! + size > box[k]!);
+}
+
+/** 组合里一个成员的摆放：偏移（格）和绕 y 轴的旋转（度）。单个空间是零摆放。 */
+export interface Placement {
+  readonly offset: Vec3;
+  readonly rotation: number;
+}
+
+export const IDENTITY_PLACEMENT: Placement = { offset: [0, 0, 0], rotation: 0 };
+
+/**
+ * 成员空间坐标（米）→ 组合坐标（米）：先绕成员原点按 y 轴旋转，再平移 offset·GRID_UNIT。
+ * 旋转方向与形状的 yaw 相同（x' = x cos + z sin，z' = −x sin + z cos）。
+ */
+export function placePoint(
+  placement: Placement,
+  point: readonly number[],
+): [number, number, number] {
+  const theta = (placement.rotation * Math.PI) / 180;
+  const cos = Math.round(Math.cos(theta) * 1e12) / 1e12;
+  const sin = Math.round(Math.sin(theta) * 1e12) / 1e12;
+  const x = point[0] ?? 0;
+  const y = point[1] ?? 0;
+  const z = point[2] ?? 0;
+  return [
+    x * cos + z * sin + placement.offset[0] * GRID_UNIT,
+    y + placement.offset[1] * GRID_UNIT,
+    -x * sin + z * cos + placement.offset[2] * GRID_UNIT,
+  ];
+}
+
+/** 锚点的位置（米，成员空间坐标）：点锚点取点，盒子锚点取顶面中心；空间级锚点没有位置。 */
+export function anchorPosition(anchor: Anchor): [number, number, number] | null {
+  if (anchor.position) return [anchor.position[0], anchor.position[1], anchor.position[2]];
+  if (anchor.box) {
+    const b = anchor.box;
+    return [((b[0] + b[3]) / 2) * GRID_UNIT, b[4] * GRID_UNIT, ((b[2] + b[5]) / 2) * GRID_UNIT];
+  }
+  return null;
+}
+
+/** 交给三维场景的一个成员：某个空间在某个视图下的内容和它的摆放。 */
+export interface MemberContent {
+  readonly spaceId: string;
+  /** 组合页给成员标名字（纯文本）。 */
+  readonly name?: string;
+  readonly view: ViewContent;
+  /** 原始视图的扫描模型（glb 字节）和对齐变换（列主序 4×4）。 */
+  readonly scan?: ArrayBuffer | null;
+  readonly scanTransform?: readonly number[];
+  readonly placement: Placement;
+}
+
+/** 三维场景的全部内容：单个空间就是一个零摆放的成员；组合页有多个成员和连接。 */
+export interface SceneContent {
+  readonly mode: ViewMode;
+  readonly members: readonly MemberContent[];
+  readonly links: readonly UniverseLink[];
 }
 
 /** 场景的高度范围（米），用于剖切滑块的上下限。 */

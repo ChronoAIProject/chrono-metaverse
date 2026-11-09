@@ -42,20 +42,22 @@ describe('应用外壳', () => {
     expect(await screen.findByRole('heading', { name: '演示前厅' })).toBeInTheDocument();
     await waitFor(() => expect(views[0]?.contents.length).toBeGreaterThan(0));
     const view = views[0]!;
-    const last = () => view.contents[view.contents.length - 1]!;
+    const last = () => view.last();
+    const member = () => last().members[0]!;
     expect(last().mode).toBe('optimized');
-    expect(last().entities.some((e) => e.entityId === 'kiosk-01')).toBe(false);
+    expect(member().view.entities.some((e) => e.entityId === 'kiosk-01')).toBe(false);
     expect(view.cutaway).toBeCloseTo(2.2);
     expect(screen.getByText(/版本 #4/)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: '优化 + 扩展' }));
     await waitFor(() => expect(last().mode).toBe('extended'));
-    expect(last().entities.some((e) => e.entityId === 'kiosk-01')).toBe(true);
+    expect(member().view.entities.some((e) => e.entityId === 'kiosk-01')).toBe(true);
     expect(screen.getByText('虚拟区')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: '原始' }));
     await waitFor(() => expect(last().mode).toBe('raw'));
-    expect(view.scans[view.scans.length - 1]).toBeInstanceOf(ArrayBuffer);
+    expect(member().scan).toBeInstanceOf(ArrayBuffer);
+    expect(member().scanTransform).toHaveLength(16);
 
     await userEvent.click(screen.getByRole('checkbox', { name: '剖切' }));
     await waitFor(() => expect(view.cutaway).toBeNull());
@@ -70,7 +72,7 @@ describe('应用外壳', () => {
     await waitFor(() => expect(screen.getByText(/版本 #1/)).toBeInTheDocument());
     await waitFor(() => {
       const view = views[0]!;
-      expect(view.contents[view.contents.length - 1]!.entities).toEqual([]);
+      expect(view.last().members[0]!.view.entities).toEqual([]);
     });
     expect(await screen.findByText(/还没有优化模型/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '现在' })).toHaveAttribute('aria-pressed', 'false');
@@ -91,7 +93,6 @@ describe('查看器外壳', () => {
       <Viewer
         content={null}
         cutaway={null}
-        states={new Map()}
         createView={() => {
           throw new Error('WebGL unavailable');
         }}
@@ -102,9 +103,7 @@ describe('查看器外壳', () => {
 
   it('卸载时释放场景', async () => {
     const { factory, views } = fakeViewFactory();
-    const { unmount } = render(
-      <Viewer content={null} cutaway={1} states={new Map()} createView={factory} />,
-    );
+    const { unmount } = render(<Viewer content={null} cutaway={1} createView={factory} />);
     await act(async () => undefined);
     unmount();
     expect(views[0]!.dispose).toHaveBeenCalled();
