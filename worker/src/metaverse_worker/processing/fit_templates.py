@@ -63,9 +63,11 @@ class Local:
         return Local(self.L[m], self.N[m], self.C[m], self.info)
 
 
-def part(shape: dict[str, Any], name: str, uv: str = "planar") -> dict[str, Any]:
+def part(shape: dict[str, Any], name: str, uv: str = "planar", prefer: str | None = None) -> dict[str, Any]:
     shape["material"] = sh.color_material(GRAY)
     shape["_part"] = {"name": name, "uv": uv}
+    if prefer:
+        shape["_part"]["prefer"] = prefer
     return shape
 
 
@@ -207,13 +209,17 @@ def _band_level(xz: np.ndarray, bin_deg: float = 12.0) -> list[float] | None:
     k = np.floor((phi + math.pi) / (2 * math.pi) * nb).astype(int) % nb
     rout = np.full(nb, np.nan)
     rin = np.full(nb, np.nan)
+    counts = np.bincount(k, minlength=nb)
+    back = nb // 2  # φ = 0（正后方）所在的格子
+    # 有效格子要有足够的点：不少于正后方 ±30° 格子点数中位数的 30%（稀疏的杂点、相邻物体的边角不算）
+    near_back = counts[[(back + d) % nb for d in range(-2, 3)]]
+    need = max(3, int(0.3 * np.median(near_back)))
     for b in range(nb):
         rb = r[k == b]
-        if len(rb) >= 3 and np.percentile(rb, 85) > 0.1:
+        if len(rb) >= need and np.percentile(rb, 85) > 0.1:
             rout[b] = np.percentile(rb, 85)
             near = rb[rb > rout[b] - 0.2]
             rin[b] = np.percentile(near, 15) if len(near) >= 3 else rout[b] - 0.04
-    back = nb // 2  # φ = 0（正后方）所在的格子
     valid = ~np.isnan(rout)
     if not (valid[back] or valid[back - 1] or valid[(back + 1) % nb]):
         return None
@@ -272,24 +278,27 @@ def fit_chair(o: Local) -> dict[str, Any]:
     if len(levels) >= 2:
         A = np.array(levels)
         sm = A.copy()
-        # 各参数随高度线性变化（规整，不追扫描噪声）；厚度取中位数
-        for j in range(1, A.shape[1]):
+        # 规整：圆心、半径、厚度各层取同一个值（中位数），只有圆弧两端的角度随高度线性变化（扶手往上收）
+        for j in (1, 2, 3, 4):
+            sm[:, j] = float(np.median(A[:, j]))
+        for j in (5, 6):
             sm[:, j] = np.polyval(np.polyfit(A[:, 0], A[:, j], 1), A[:, 0])
-        sm[:, 4] = float(np.median(A[:, 4]))
         # 最低一层延到座面以下，和座面接上
         first = sm[0].copy()
         first[0] = hs - 0.03
         sm = np.vstack([first, sm])
         sections = []
         for yk, cx, cz, R, t, p0, p1 in sm:
-            p0, p1 = float(max(p0, -2.7)), float(min(p1, 2.7))
+            t = float(np.clip(t, 0.03, 0.14))
+            R = max(float(R), t + 0.05)
+            p0, p1 = float(max(p0, -2.3)), float(min(p1, 2.3))
             if p1 - p0 < 0.4:
                 mid = (p0 + p1) / 2
                 p0, p1 = mid - 0.2, mid + 0.2
             sections.append(
                 {"y": sh.r4(yk), "outline": _band_outline((cx, cz), R - t / 2, max(t, 0.03), p0, p1)}
             )
-        children.append(part({"type": "loft", "sections": sections}, "back", "cylindrical"))
+        children.append(part({"type": "loft", "sections": sections}, "back", "cylindrical", "color"))
     # ---- 座面：靠背内侧、座高附近的点
     seat_m = (y > hs - 0.06) & (y < hs + 0.015)
     if sm is not None:
@@ -330,7 +339,7 @@ def fit_chair(o: Local) -> dict[str, Any]:
             seat_outline = sh.outline([(lo[0], lo[1]), (hi[0], lo[1]), (hi[0], hi[1]), (lo[0], hi[1])])
     seat = sh.extrude(seat_outline, th, xf=sh.transform(position=[0, hs - th, 0]))
     seat["fillet"] = sh.r4(min(0.02, th * 0.35))
-    children.append(part(seat, "seat", "planar"))
+    children.append(part(seat, "seat", "planar", "color"))
     # ---- 底座：立柱 + 4 爪，或 4 条腿
     bottom = hs - th
     poly = outline_polygon(seat_outline)
@@ -406,24 +415,32 @@ def fit_sofa(o: Local) -> dict[str, Any]:
                     inner.append(length / 2 - np.percentile(np.abs(x[q] - cx), 5))
             if inner:
                 arm_w = float(np.clip(np.median(inner), 0.08, 0.35))
-    # 靠背：后部高于座面的部分
-    backm = (y > hs + 0.12) & (np.abs(x - cx) < length / 2 - arm_w - 0.02)
-    if backm.sum() > 30:
-        back_top = float(np.percentile(y[backm], 97))
-        front = (
-            np.percentile(z[backm & (y > hs + 0.1) & (y < hs + 0.25)], 95)
-            if (backm & (y > hs + 0.1) & (y < hs + 0.25)).sum() > 10
-            else zlo + 0.2
-        )
-        back_d = float(np.clip(front - zlo, 0.12, depth * 0.5))
-        # 后仰：靠背前表面在上下两段的 z
-        hi_q = backm & (y > back_top - 0.12)
-        lean = 0.0
-        if hi_q.sum() > 10:
-            ztop = np.percentile(z[hi_q], 95)
-            lean = float(np.clip(math.degrees(math.atan2(front - ztop, back_top - hs - 0.17)), 0, 20))
-    else:
-        back_top, back_d, lean = max(top, hs + 0.3), 0.18, 0.0
+    # 靠背：中段（扶手之间）的侧面轮廓——按 z 分格的最高点，高过"座面和靠背顶的中间"的格子是靠背；
+    # 靠背前表面在三个高度上的位置给出侧面轮廓（保留后仰和靠背顶的圆角）
+    central = np.abs(x - cx) < length / 2 - arm_w - 0.02
+    back_top = max(top, hs + 0.3)
+    prof: list[tuple[float, float]] = []
+    if (central & (y > hs + 0.12)).sum() > 30:
+        back_top = float(np.percentile(y[central & (y > hs + 0.12)], 97))
+        cut = (hs + back_top) / 2
+        fronts = []
+        for yk in (hs + 0.06, (hs + back_top) / 2, back_top - 0.04):
+            q = central & (np.abs(y - yk) < 0.03) & (z < zlo + depth * 0.6)
+            if q.sum() < 10:
+                continue
+            bins = np.arange(zlo, zlo + depth * 0.6 + 0.02, 0.02)
+            hist, _ = np.histogram(z[q], bins=bins)
+            occ = np.nonzero(hist >= max(2, hist.max() * 0.15))[0]
+            if len(occ):
+                # 从后往前第一段连续占用的前沿
+                k = occ[0]
+                while k + 1 < len(hist) and hist[k + 1] >= max(2, hist.max() * 0.15):
+                    k += 1
+                fronts.append((yk, float(bins[k + 1])))
+        if fronts and max(f for _, f in fronts) > zlo + 0.08:
+            prof = fronts
+        del cut
+    back_d = float(np.clip(max((f for _, f in prof), default=zlo + 0.2) - zlo, 0.12, depth * 0.55))
     # 底座离地：正面朝前的点最低处
     front_pts = (o.N[:, 2] > 0.6) & (z > zhi - 0.15)
     base0 = float(np.clip(np.percentile(y[front_pts], 3), 0.0, 0.2)) if front_pts.sum() > 20 else 0.0
@@ -457,19 +474,38 @@ def fit_sofa(o: Local) -> dict[str, Any]:
         )
     bh = back_top - base0 - base_h
     if bh > 0.05:
-        children.append(
-            part(
-                sh.box(
-                    [inner_l, bh, back_d],
-                    fillet=min(0.06, back_d / 2.2),
-                    xf=sh.transform(
-                        position=[cx, base0 + base_h, zlo + back_d / 2], pitch=-lean if lean > 2 else None
-                    ),
-                ),
-                "back",
-                "planar",
+        y0 = base0 + base_h
+        if len(prof) >= 2:
+            # 侧面轮廓（u = 高度 y，v = 深度 z）沿 x 挤出：roll 90° 把挤出方向转到 −x
+            fr = sorted(prof)
+            pts = (
+                [(y0, zlo), (y0, fr[0][1])]
+                + [(yy, zz) for yy, zz in fr]
+                + [(back_top, fr[-1][1]), (back_top, zlo)]
             )
-        )
+            pts = [
+                p
+                for i, p in enumerate(pts)
+                if i == 0 or abs(p[0] - pts[i - 1][0]) + abs(p[1] - pts[i - 1][1]) > 1e-3
+            ]
+            if sh.signed_area(pts) < 0:
+                pts = pts[::-1]
+            n = len(pts)
+            top_ids = [i for i, p in enumerate(pts) if abs(p[0] - back_top) < 1e-6]
+            fil = [{"at": i, "radius": min(0.06, back_d / 2.5)} for i in top_ids if 0 <= i < n]
+            back = sh.extrude(
+                sh.outline(pts, fillets=fil),
+                inner_l,
+                xf=sh.transform(position=[cx + inner_l / 2, 0, 0], roll=90),
+            )
+            back["fillet"] = 0.03
+        else:
+            back = sh.box(
+                [inner_l, bh, back_d],
+                fillet=min(0.06, back_d / 2.2),
+                xf=sh.transform(position=[cx, y0, zlo + back_d / 2]),
+            )
+        children.append(part(back, "back", "planar"))
     if arm_w > 0:
         ah = arm_h - base0
         for side in (-1, 1):
@@ -561,6 +597,15 @@ def fit_terrace(o: Local, *, cell: float = 0.03, max_levels: int = 4, name: str 
         fit = fit_footprint(cxz, tol_for(size) * 1.2, mask=Mask2D(rm, m.x0, m.z0, cell))
         top = float(h)
         if rm is main[1]:
+            # 主体：区域里的点再按高度分段挤出（踢脚线内收、上部外扩的立面），分不出段时试截面放样
+            inside = Mask2D(ndimage.binary_dilation(rm, iterations=1), m.x0, m.z0, cell)
+            iz2 = np.clip(((o.L[:, 2] - m.z0) / cell).astype(int), 0, rm.shape[0] - 1)
+            ix2 = np.clip(((o.L[:, 0] - m.x0) / cell).astype(int), 0, rm.shape[1] - 1)
+            sub = o.sub(inside.mask[iz2, ix2] & (o.y <= top + 0.03))
+            stack = fit_stack(sub, max_bands=4, name=f"{name}-{i + 1}") if len(sub.L) > 200 else None
+            if stack is not None:
+                children.extend(stack["children"])
+                continue
             shape = _facade_loft(o, fit.outline, top) or sh.extrude(fit.outline, top)
         else:
             shape = sh.extrude(fit.outline, top)
@@ -664,6 +709,79 @@ def fit_box(o: Local, name: str = "body", uv: str = "cylindrical") -> dict[str, 
         xf=sh.transform(position=[(lo[0] + hi[0]) / 2, bottom, (lo[1] + hi[1]) / 2]),
     )
     return sh.group([part(shape, name, uv)])
+
+
+def fit_stack(
+    o: Local, *, max_bands: int = 4, name: str = "body", uv: str = "cylindrical"
+) -> dict[str, Any] | None:
+    """按高度分段的轮廓挤出：俯视轮廓在哪些高度明显变化（相邻 10 厘米切片的占用交并比低于 0.6）就在哪里分段，
+    每段把这一段的俯视轮廓（圆角矩形 / 带圆弧的折线）挤出到这一段的高度。用于柜子、展示架、前台这类
+    上下不一样宽的东西。只有一段时返回 None。"""
+    y = o.y
+    top = float(np.percentile(y, 99.5))
+    bottom = max(0.0, float(np.percentile(y, 0.3)))
+    if bottom < 0.06:
+        bottom = 0.0
+    xz = o.xz
+    cell = 0.02
+    m_all = occupancy(xz, cell, close=0, fill=False)
+    edges = np.arange(bottom, top + 0.1, 0.1)
+    masks = []
+    for a, b in zip(edges[:-1], edges[1:], strict=False):
+        q = (y >= a) & (y < b)
+        mk = np.zeros_like(m_all.mask)
+        if q.sum():
+            mk[((xz[q, 1] - m_all.z0) / cell).astype(int), ((xz[q, 0] - m_all.x0) / cell).astype(int)] = True
+        masks.append(ndimage.binary_closing(mk, iterations=2))
+    if len(masks) < 2:
+        return None
+    bands: list[list[int]] = [[0]]
+    acc = masks[0].copy()
+    for k in range(1, len(masks)):
+        inter = (acc & masks[k]).sum()
+        union = (acc | masks[k]).sum()
+        iou = inter / union if union else 1.0
+        if iou < 0.6 and masks[k].sum() > 0 and len(bands) < max_bands:
+            bands.append([k])
+            acc = masks[k].copy()
+        else:
+            bands[-1].append(k)
+            acc |= masks[k]
+    # 太薄的段并到相邻段
+    merged: list[list[int]] = []
+    for band in bands:
+        if merged and (len(band) < 2 or len(merged[-1]) < 2):
+            merged[-1].extend(band)
+        else:
+            merged.append(list(band))
+    if len(merged) < 2:
+        return None
+    children = []
+    for i, band in enumerate(merged):
+        y0 = float(edges[band[0]]) if i > 0 else bottom
+        y1 = float(edges[band[-1] + 1]) if i < len(merged) - 1 else top
+        q = (y >= y0) & (y < y1)
+        if q.sum() < 20 or y1 - y0 < 0.03:
+            continue
+        pts = xz[q]
+        size = float(np.ptp(pts, axis=0).max())
+        fit = fit_footprint(pts, tol_for(size) * 1.5)
+        if fit.kind == "rect":
+            hx, hz = fit.info["half"]
+            c = fit.info["center"]
+            r = float(fit.info.get("radius", 0.0))
+            shape = sh.box(
+                [2 * hx, y1 - y0, 2 * hz],
+                fillet=sh.r4(min(max(0.008, r), min(hx, hz, (y1 - y0) / 2) * 0.9)),
+                xf=sh.transform(position=[c[0], y0, c[1]]),
+            )
+        else:
+            shape = sh.extrude(fit.outline, y1 - y0, xf=sh.transform(position=[0, y0, 0]))
+            shape["fillet"] = 0.008
+        children.append(part(shape, f"{name}-{i + 1}", uv))
+    if len(children) < 2:
+        return None
+    return sh.group(children)
 
 
 def radial_profile(o: Local, n_max: int = 10) -> list[list[float]]:

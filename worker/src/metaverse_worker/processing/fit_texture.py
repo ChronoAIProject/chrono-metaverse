@@ -251,7 +251,7 @@ class TextureParams:
     jpeg_quality: int = 82
     lum_std_texture: float = 16.0  # 亮度标准差超过这个就烘焙贴图
     min_texture_area: float = 0.03  # 部件表面积小于这个只用纯色
-    assign_dist: float = 0.05
+    assign_dist: float = 0.03  # 部件取色只用离它 3 厘米以内的扫描点（相邻物体粘连进来的点不算）
 
 
 def finalize_materials(
@@ -280,6 +280,12 @@ def finalize_materials(
     index = SurfaceIndex.build(meshes, spacing=0.008)
     d, _, t = index.query(scan_P, k=4)
     owner = index.tri_part[t]
+    # 取色只用模型附近（5 厘米内）的扫描：相邻物体粘连进来的表面不会被印到这个物体上
+    if color_src.tree is not None and len(color_src.P):
+        near, _ = index.tree.query(color_src.P, k=1)
+        keep = near < 0.05
+        if keep.sum() >= 100:
+            color_src = ColorSource(color_src.P[keep], color_src.C[keep], color_src.N[keep])
     texel = float(np.interp(size_hint, [1.0, 3.0], [tp.texel_small, tp.texel_large]))
     max_px = tp.max_px_large if size_hint > 1.5 else tp.max_px
     for k, path in enumerate(paths):
@@ -293,9 +299,9 @@ def finalize_materials(
         med = np.median(cols.astype(float), axis=0)
         lum_std = float(np.std(luminance(cols))) if len(cols) > 5 else 0.0
         area = meshes[k].area()
-        want = (
-            allow_textures and lum_std > tp.lum_std_texture and area >= tp.min_texture_area and m.sum() >= 150
-        )
+        # 部件可以声明"偏向纯色"（椅子壳、椅腿这类单一材质的部件），门槛提高
+        limit = tp.lum_std_texture * (2.0 if info.get("prefer") == "color" else 1.0)
+        want = allow_textures and lum_std > limit and area >= tp.min_texture_area and m.sum() >= 150
         if not want:
             leaf["material"] = sh.color_material(med)
             continue

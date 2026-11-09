@@ -20,6 +20,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import time
@@ -27,6 +28,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
+from scipy import ndimage
 from scipy.spatial import cKDTree
 
 from .. import shapes as sh
@@ -44,6 +46,7 @@ from .fit_templates import (
     fit_plant,
     fit_round,
     fit_sofa,
+    fit_stack,
     fit_table,
     fit_terrace,
 )
@@ -98,7 +101,8 @@ class ObjectParams:
     texture: TextureParams = field(default_factory=TextureParams)
     merge_size_tol: float = 0.15  # 同款：尺寸相差不超过 15%
     merge_height_tol: float = 0.08
-    merge_residual: float = 0.035  # 对齐后与其他成员的中位距离超过 3.5 厘米就退出合并
+    merge_residual: float = 0.02  # 对齐后 40% 分位的最近距离超过 2 厘米就退出合并
+    merge_residual_hinted: float = 0.045  # 提示认定同款时的放宽值
     color_density: float = 60_000.0  # 取色用的扫描重采样密度（点/平方米）
     max_color_points: int = 600_000
 
@@ -320,6 +324,35 @@ def _prepare(op: ObjectPoints, seg: Segment, wall_yaws: list[float]) -> Obj | No
 
 
 def _fit_local(o: Local, kind: str) -> tuple[dict[str, Any], str]:
+    shape, method = _fit_local_raw(o, kind)
+    shape = _sanitize(shape)
+    if shape is None:
+        return _sanitize(fit_box(o)) or fit_box(o), "box"
+    return shape, method
+
+
+def _sanitize(shape: dict[str, Any] | None) -> dict[str, Any] | None:
+    """去掉校验不过的部件（退化的截面、轮廓方向错的放样等），保证输出的每个形状都合法。"""
+    if shape is None:
+        return None
+    kids = []
+    for child in shape.get("children") or []:
+        probe = json.loads(json.dumps(child))
+        probe.pop("_part", None)
+        try:
+            sh.validate_shape(probe)
+            sh.shape_bounds(probe)
+        except sh.ShapeError as err:
+            log.debug("丢掉不合法的部件：%s", err)
+            continue
+        kids.append(child)
+    if not kids:
+        return None
+    shape["children"] = kids
+    return shape
+
+
+def _fit_local_raw(o: Local, kind: str) -> tuple[dict[str, Any], str]:
     if kind == "table":
         return fit_table(o, o.info.get("top"), o.info.get("thickness")), "table"
     if kind == "chair":
@@ -327,7 +360,7 @@ def _fit_local(o: Local, kind: str) -> tuple[dict[str, Any], str]:
     if kind == "sofa":
         return fit_sofa(o), "sofa"
     if kind == "counter":
-        return fit_terrace(o), "terrace"
+        return _best_of(o, [("terrace", lambda: fit_terrace(o)), ("stack", lambda: fit_stack(o))])
     if kind == "plant":
         return fit_plant(o), "lathe"
     if kind in ("round", "lamp"):
@@ -335,7 +368,35 @@ def _fit_local(o: Local, kind: str) -> tuple[dict[str, Any], str]:
     ext = np.ptp(o.L, axis=0)
     dims = sorted(ext)
     uv = "planar" if dims[0] < 0.4 * dims[1] else "cylindrical"
-    return fit_box(o, uv=uv), "box"
+    cands = [("box", lambda: fit_box(o, uv=uv))]
+    if kind in ("cabinet", "clutter") and float(np.percentile(o.y, 99)) > 0.3:
+        cands.append(("stack", lambda: fit_stack(o, uv=uv)))
+    return _best_of(o, cands)
+
+
+def _best_of(o: Local, cands) -> tuple[dict[str, Any], str]:
+    """几种拟合里选偏差最小的（每多一个部件加 0.3 厘米的代价，偏向简单的形状）。"""
+    from .fit_texture import strip_parts
+
+    rng = np.random.default_rng(5)
+    P = o.L if len(o.L) <= 4000 else o.L[rng.choice(len(o.L), 4000, replace=False)]
+    best = None
+    for name, make in cands:
+        shape = make()
+        if shape is None:
+            continue
+        probe = json.loads(json.dumps(shape))
+        strip_parts(probe)
+        mesh = merge_meshes([p.mesh for p in build_parts(probe)])
+        if len(mesh.indices) == 0:
+            continue
+        d, _, _ = SurfaceIndex.build([mesh], spacing=0.015).query(P, k=3)
+        score = float(d.mean()) + 0.003 * len(shape.get("children") or [shape])
+        if best is None or score < best[0]:
+            best = (score, shape, name)
+    if best is None:
+        return fit_box(o), "box"
+    return best[1], best[2]
 
 
 def _color_source(table: FaceTable, faces: np.ndarray, prm: ObjectParams, seed: int) -> ColorSource:
@@ -347,32 +408,124 @@ def _color_source(table: FaceTable, faces: np.ndarray, prm: ObjectParams, seed: 
     return ColorSource(P, C, N)
 
 
-def _icp_2d(src: np.ndarray, ref_tree: cKDTree, iters: int = 6, max_d: float = 0.06):
-    """把 src（局部坐标点）在 xz 平面里对齐到参考：返回 (偏航度, dx, dz, 中位残差)。"""
+def _icp_2d(src: np.ndarray, ref_tree: cKDTree, iters: int = 12, max_d: float = 0.08):
+    """把 src（局部坐标点）在 xz 平面里对齐到参考：截尾 ICP，偏航修正限制在 ±8° 内（各物体自己的朝向
+    已经量过——椅子按靠背、桌边的椅子朝桌子；圆的外形让 ICP 自由转会转错）。
+    残差是 40% 分位的最近距离（不怕遮挡和杂点）。返回 (偏航度, dx, dz, 残差, 对齐后的点)。"""
+    best = None
+    for start in (0.0,):
+        a = math.radians(start)
+        c, s = math.cos(a), math.sin(a)
+        R = np.array([[c, -s], [s, c]])
+        xz = src[:, [0, 2]] @ R.T
+        init = np.c_[xz[:, 0], src[:, 1], xz[:, 1]]
+        yaw, tx, tz, res, cur = _icp_once(init, ref_tree, iters, max_d)
+        if best is None or res < best[3]:
+            # 合成：先转 start 再做 ICP 的 (yaw, t)
+            best = (yaw + start, tx, tz, res, cur)
+    if best is None:
+        d, _ = ref_tree.query(src, k=1)
+        best = (0.0, 0.0, 0.0, float(np.percentile(d, 40)), src)
+    return best
+
+
+def _icp_once(src: np.ndarray, ref_tree: cKDTree, iters: int, max_d: float, max_yaw: float = 8.0):
     yaw, tx, tz = 0.0, 0.0, 0.0
     cur = src.copy()
     res = np.inf
     for _ in range(iters):
         d, j = ref_tree.query(cur, k=1)
-        ok = d < max_d
+        # 截尾：只用最近的 70%（遮挡、粘连进来的杂点不参与）
+        ok = (d < max_d) & (d <= np.percentile(d, 70))
         if ok.sum() < 20:
             break
-        res = float(np.median(d))
         a = cur[ok][:, [0, 2]]
         b = ref_tree.data[j[ok]][:, [0, 2]]
         ca, cb = a.mean(0), b.mean(0)
         Hm = (a - ca).T @ (b - cb)
         ang = math.atan2(Hm[0, 1] - Hm[1, 0], Hm[0, 0] + Hm[1, 1])
+        lim = math.radians(max_yaw)
+        ang = float(np.clip(ang, -lim - math.radians(yaw), lim - math.radians(yaw)))
         c, s = math.cos(ang), math.sin(ang)
         R = np.array([[c, -s], [s, c]])
-        t = cb - R @ ca
+        t = cb - R @ ca  # 转角被限制时，平移仍取对应点重心之差
         xz = cur[:, [0, 2]] @ R.T + t
         cur = np.c_[xz[:, 0], cur[:, 1], xz[:, 1]]
         yaw += math.degrees(ang)
         tx, tz = (np.array([tx, tz]) @ R.T + t).tolist()
     d, _ = ref_tree.query(cur, k=1)
-    res = float(np.median(d))
+    res = float(np.percentile(d, 40))
     return yaw, tx, tz, res, cur
+
+
+def _apply_icp(o: Obj, dyaw: float, dx: float, dz: float) -> None:
+    """把局部坐标里的修正（先转 dyaw，再平移 (dx, dz)）换回物体的世界原点和偏航。"""
+    a = math.radians(dyaw)
+    c, s = math.cos(a), math.sin(a)
+    R = np.array([[c, -s], [s, c]])
+    inv_t = -R.T @ np.array([dx, dz])
+    yw = math.radians(o.yaw)
+    wx = inv_t[0] * math.cos(yw) + inv_t[1] * math.sin(yw)
+    wz = -inv_t[0] * math.sin(yw) + inv_t[1] * math.cos(yw)
+    o.origin = o.origin + np.array([wx, 0.0, wz])
+    o.yaw = o.yaw + dyaw
+    o.local = Local(to_local(o.P, o.origin, o.yaw), dirs_to_local(o.N, o.yaw), o.C, o.local.info)
+
+
+def _model_tree(local: Local, kind: str) -> cKDTree:
+    from .fit_texture import strip_parts
+
+    shape, _ = _fit_local(local, kind)
+    strip_parts(shape)
+    mesh = merge_meshes([p.mesh for p in build_parts(shape)])
+    idx = SurfaceIndex.build([mesh], spacing=0.01)
+    return cKDTree(idx.samples)
+
+
+def _pool(members: list[Obj]) -> Local:
+    return Local(
+        np.concatenate([o.local.L for o in members]),
+        np.concatenate([o.local.N for o in members]),
+        np.concatenate([o.C for o in members]),
+        dict(members[0].local.info),
+    )
+
+
+def _merge_members(members: list[Obj], prm: ObjectParams) -> list[Obj]:
+    """同款合并：
+    1. 点最多的成员做参考，其他成员 ICP 对齐到它，残差小的组成核心；
+    2. 核心合并点云拟合出第一版模板；所有成员（包括被遮挡、只扫到一部分的）再 ICP 对齐到模板表面——
+       残部对完整模型的距离只看自己有的那部分，所以遮挡不影响；
+    3. 对得上的成员合并点云，返回（第一个是参考）。对不上的留给单独拟合。"""
+    ref = max(members, key=lambda o: len(o.P))
+    tree = cKDTree(ref.local.L)
+    core = [ref]
+    scored = []
+    for o in members:
+        if o is ref:
+            continue
+        dyaw, dx, dz, res, _ = _icp_2d(o.local.L, tree)
+        scored.append((res, o, dyaw, dx, dz))
+    scored.sort(key=lambda t: t[0])
+    for res, o, dyaw, dx, dz in scored:
+        if res <= prm.merge_residual or len(core) < 2:
+            _apply_icp(o, dyaw, dx, dz)
+            core.append(o)
+    mtree = _model_tree(_pool(core), ref.kind)
+    accepted = [ref]
+    # 提示里说是同一款（本地 AI 看图认定）时，被遮挡得厉害的成员也用模板，放宽对齐残差
+    hinted = all(
+        (o.seg.hint or {}).get("label") == (ref.seg.hint or {}).get("label") for o in members
+    ) and bool((ref.seg.hint or {}).get("label"))
+    limit = prm.merge_residual_hinted if hinted else prm.merge_residual
+    for o in members:
+        if o is ref:
+            continue
+        dyaw, dx, dz, res, _ = _icp_2d(o.local.L, mtree)
+        if res <= limit:
+            _apply_icp(o, dyaw, dx, dz)
+            accepted.append(o)
+    return accepted
 
 
 def _dims(o: Obj) -> np.ndarray:
@@ -402,7 +555,8 @@ def _groups(objs: list[Obj], prm: ObjectParams) -> list[list[Obj]]:
                 ):
                     continue
                 db = _dims(b)
-                if (
+                same_hint = bool((a.seg.hint or {}).get("label")) and a.kind == "chair"
+                if same_hint or (
                     np.all(
                         np.abs(da[[0, 2]] - db[[0, 2]]) <= prm.merge_size_tol * np.maximum(da[[0, 2]], 0.3)
                     )
@@ -428,6 +582,44 @@ def _clean_shape(shape: dict[str, Any]) -> dict[str, Any]:
     return shape
 
 
+def _face_tables(objs: list[Obj], reach: float = 0.6, agree: float = 40.0) -> None:
+    """桌边的椅子朝向桌子：椅子中心离某张桌子的台面投影不到 0.6 米时，正面取指向台面最近点的方向
+    （椅子被桌面挡住、只扫到靠背时，自己的点定不准朝向）；与椅子自己量出来的朝向相差不到 40° 时保留自己的。"""
+    tops = []
+    for o in objs:
+        top = o.seg.top
+        if o.kind == "table" and top is not None and "mask" in top:
+            grid = top["grid"]
+            mask = top["mask"]
+            zz, xx = np.nonzero(mask)
+            cells = np.c_[grid.x0 + (xx + 0.5) * grid.cell, grid.z0 + (zz + 0.5) * grid.cell]
+            # 台面的"芯"：离台面边缘 0.25 米以上（窄桌取最深的一圈），椅子朝芯上最近的点
+            depth = ndimage.distance_transform_edt(np.pad(mask, 1))[1:-1, 1:-1][zz, xx] * grid.cell
+            core = cells[depth >= min(0.25, 0.8 * depth.max())]
+            tops.append((cells, core))
+    if not tops:
+        return
+    for o in objs:
+        if o.kind != "chair":
+            continue
+        c = o.origin[[0, 2]]
+        best = None
+        for cells, core in tops:
+            d = float(np.hypot(*(cells - c).T).min())
+            if d < reach and (best is None or d < best[0]):
+                j = int(np.argmin(np.hypot(*(core - c).T)))
+                best = (d, core[j])
+        if best is None or np.hypot(*(best[1] - c)) < 0.05:
+            continue
+        f = best[1] - c
+        yaw_t = math.degrees(math.atan2(f[0], f[1]))
+        diff = ((o.yaw - yaw_t) + 180) % 360 - 180
+        if abs(diff) > agree:
+            o.yaw = yaw_t
+            o.local = Local(to_local(o.P, o.origin, o.yaw), dirs_to_local(o.N, o.yaw), o.C, o.local.info)
+            o.info["facing"] = "table"
+
+
 def _name(objs: list[Obj]) -> None:
     counters: dict[str, int] = {}
     for o in sorted(objs, key=lambda o: (o.kind, round(o.origin[2], 1), round(o.origin[0], 1))):
@@ -443,6 +635,7 @@ def reconstruct_objects(mesh: ScanMesh, structure, *, params: dict | None = None
     t_seg = time.time()
     wall_yaws = _wall_yaws(structure)
     objs = [o for o in (_prepare(op, s, wall_yaws) for s in segs) if o is not None]
+    _face_tables(objs)
     _name(objs)
     table = FaceTable(mesh)
     entities: dict[str, dict] = {}
@@ -454,31 +647,9 @@ def reconstruct_objects(mesh: ScanMesh, structure, *, params: dict | None = None
     for group in _groups(objs, prm):
         members = list(group)
         if len(members) >= 2:
-            # ---- 同款合并：对齐到中位成员，合并点云
-            ref = max(members, key=lambda o: len(o.P))
-            tree = cKDTree(ref.local.L)
-            aligned = []
-            for o in members:
-                if o is ref:
-                    aligned.append((o, o.local.L, 0.0))
-                    continue
-                dyaw, dx, dz, res, cur = _icp_2d(o.local.L, tree)
-                if res > prm.merge_residual:
-                    continue
-                # 局部坐标的修正换回世界：新原点 = 旧原点 + Ry(yaw)·(−R⁻¹ t)，新偏航 = yaw − dyaw
-                a = math.radians(dyaw)
-                c, s = math.cos(a), math.sin(a)
-                R = np.array([[c, -s], [s, c]])
-                inv_t = -R.T @ np.array([dx, dz])
-                yw = math.radians(o.yaw)
-                wx = inv_t[0] * math.cos(yw) + inv_t[1] * math.sin(yw)
-                wz = -inv_t[0] * math.sin(yw) + inv_t[1] * math.cos(yw)
-                o.origin = o.origin + np.array([wx, 0.0, wz])
-                o.yaw = o.yaw + dyaw
-                o.local = Local(to_local(o.P, o.origin, o.yaw), dirs_to_local(o.N, o.yaw), o.C, o.local.info)
-                aligned.append((o, o.local.L, res))
-            members = [a[0] for a in aligned]
+            members = _merge_members(members, prm)
             if len(members) >= 2:
+                ref = members[0]
                 n_templates += 1
                 tid = slug_id(f"tpl-{ref.kind}-{n_templates:02d}")
                 pooled = Local(

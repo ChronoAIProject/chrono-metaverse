@@ -491,7 +491,11 @@ def fit_footprint(
     cands: list[OutlineFit] = []
     cont = trace_contour(m)
     if cont is not None and len(cont) >= 8:
-        cands.append(fit_outline(smooth_contour(cont, m.cell, 5), tol, allow_circle=allow_circle))
+        sc = smooth_contour(cont, m.cell, 5)
+        first = fit_outline(sc, tol, allow_circle=allow_circle)
+        cands.append(first)
+        if first.kind != "poly":
+            cands.append(OutlineFit("poly", poly_outline(sc, tol), 0.0, {}))
     try:
         hull = xz[ConvexHull(xz).vertices]
         keep = _dp(np.vstack([hull, hull[:1]]), tol)[:-1]

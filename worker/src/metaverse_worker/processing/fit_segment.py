@@ -682,6 +682,22 @@ def apply_hints(
                 best_k, best_n = k, n
         if best_k >= 0:
             claim.setdefault(best_k, []).append((h, c))
+    # 框认领剩下的规则块：比物体小、一半以上的点在某个框认领的物体 8 厘米内（三维），就并进那个物体
+    # （同一把椅子被框切掉的边角）
+    hinted = [o for o in out if o.hint is not None]
+    htrees = [cKDTree(op.P[o.idx]) for o in hinted]
+    for k in range(len(segs)):
+        idx = remaining[k]
+        if not len(idx) or k in claim or not hinted or segs[k].top is not None:
+            continue
+        fr = [
+            float((t.query(op.P[idx], k=1)[0] < 0.08).mean()) if len(idx) < 0.6 * len(o.idx) else 0.0
+            for t, o in zip(htrees, hinted, strict=True)
+        ]
+        j = int(np.argmax(fr))
+        if fr[j] > 0.5:
+            hinted[j].idx = np.concatenate([hinted[j].idx, idx])
+            remaining[k] = idx[:0]
     for k, seg in enumerate(segs):
         idx = remaining[k]
         if len(idx) < prm.min_area * prm.density:
