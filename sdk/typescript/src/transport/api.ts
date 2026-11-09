@@ -14,7 +14,7 @@ import type { ApiClient } from './client.js';
  * `/api/v1/spaces/{space_id}/plots/{plot_id}/…`。
  */
 
-export type UploadPurpose = 'scan' | 'model' | 'texture' | 'ops' | 'script';
+export type UploadPurpose = 'scan' | 'model' | 'texture' | 'ops' | 'script' | 'authored';
 
 export interface SpaceView {
   readonly id: string;
@@ -59,10 +59,10 @@ export interface SnapshotView {
 /**
  * 上传文件的格式（名称与 metaverse-core 的 `UploadFormat` 相同）。各用途接受的格式：
  * scan、model 用途 glb / drc / obj / zip（zip = 模型 + 贴图，例如 Scaniverse 导出，默认值，服务端可配置）；
- * texture 用途 png / jpeg / webp；ops 用途 ndjson / gzip；script 用途 text。
+ * texture 用途 png / jpeg / webp；ops 用途 ndjson / gzip；script 用途 text；authored 用途（AI 物件集）json。
  */
 export type UploadFormat =
-  'glb' | 'drc' | 'obj' | 'zip' | 'png' | 'jpeg' | 'webp' | 'ndjson' | 'gzip' | 'text';
+  'glb' | 'drc' | 'obj' | 'zip' | 'png' | 'jpeg' | 'webp' | 'ndjson' | 'gzip' | 'text' | 'json';
 
 /** `POST {范围}/uploads/{purpose}` 的请求体（接口服务拒绝未知字段）。 */
 export interface CreateUploadRequest {
@@ -140,6 +140,15 @@ export interface ScanImportOptions {
   readonly voxelize?: boolean;
   /** 给处理服务的提示（JSON 对象，≤ 4KB）。 */
   readonly hints?: unknown;
+}
+
+/**
+ * AI 物件集（设计 6.3），二选一：`authored` 内联（规范化后 ≤ 4MB，接口服务登记成资源），
+ * `authoredAsset` 是 authored 用途上传的资源哈希。导入（`scans`、`alignment`）和重建（`rebuild`）都收。
+ */
+export interface AuthoredOptions {
+  readonly authored?: unknown;
+  readonly authoredAsset?: string;
 }
 
 /** ops-from-upload 的请求体：上传编号和资源哈希只能给一个。 */
@@ -288,7 +297,7 @@ export class MetaverseApi {
    * `POST /api/v1/spaces/{space_id}/scans` → 202 任务（scan_import，响应里的 `id` 是任务编号）。
    * 请求体没有 `transform`（接口服务拒绝未知字段）：带变换的导入走 `alignScan`。
    */
-  importScan(request: ScanImportOptions & { assetHash: string }): Promise<{
+  importScan(request: ScanImportOptions & AuthoredOptions & { assetHash: string }): Promise<{
     jobId?: string;
     id?: string;
   }> {
@@ -301,7 +310,7 @@ export class MetaverseApi {
    */
   alignScan(
     scanId: string,
-    request: ScanImportOptions & { transform: readonly number[] },
+    request: ScanImportOptions & AuthoredOptions & { transform: readonly number[] },
   ): Promise<{ jobId?: string; id?: string }> {
     return this.client.json('POST', `${this.space}/scans/${seg(scanId)}/alignment`, {
       json: request,
@@ -314,6 +323,19 @@ export class MetaverseApi {
     request: { style?: string },
   ): Promise<{ jobId?: string; id?: string }> {
     return this.client.json('POST', `${this.space}/scans/${seg(scanId)}/voxelize`, {
+      json: request,
+    });
+  }
+
+  /**
+   * `POST /api/v1/spaces/{space_id}/scans/{scan_id}/rebuild`，请求体 `{ hints?, authored?,
+   * authoredAsset? }` → 202 任务（rebuild）。扫描必须已经导入过。
+   */
+  rebuildScan(
+    scanId: string,
+    request: AuthoredOptions & { hints?: unknown },
+  ): Promise<{ jobId?: string; id?: string }> {
+    return this.client.json('POST', `${this.space}/scans/${seg(scanId)}/rebuild`, {
       json: request,
     });
   }

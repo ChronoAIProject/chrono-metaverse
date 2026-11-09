@@ -6,6 +6,7 @@ import { main } from '../src/commands/index.js';
 import { messageError, previewLink } from '../src/commands/push.js';
 import { parseTransform, scanFormat } from '../src/commands/scan.js';
 import { runVoxelize } from '../src/commands/voxelize.js';
+import { describeAuthored, INLINE_AUTHORED_BYTES } from '../src/commands/authored.js';
 import { validateLayout } from '../src/commands/admin.js';
 import { chunkHash, compressChunk, emptyChunk } from '../src/core/chunk.js';
 import { MetaverseApi } from '../src/transport/api.js';
@@ -951,6 +952,161 @@ describe('metaverse voxelize', () => {
     expect(await main(ctx, ['voxelize'])).toBe(1);
     expect(await main(ctx, ['voxelize', '--scan', 'xyz'])).toBe(1);
     expect(await main(ctx, ['voxelize', '--scan', scan, '--style', 'Bad Style'])).toBe(1);
+  });
+});
+
+function authoredDoc(extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    version: 1,
+    entities: [
+      {
+        entityId: 'panel-01',
+        kind: 'object',
+        shape: { type: 'box', size: [0.02, 1, 1], material: { bake: 'planar' } },
+      },
+    ],
+    notes: '面板贴着西墙，烘焙',
+    ...extra,
+  };
+}
+
+const AUTHORED_RESULT = {
+  authored: {
+    entities: 3,
+    templates: 1,
+    structure: 'keep',
+    fit: [
+      { entityId: 'panel-01', points: 900, meanCm: 0.4, p90Cm: 0.9, coverage3cm: 0.99 },
+      { entityId: 'counter-01', points: 20000, meanCm: 3.6, p90Cm: 7.1, coverage3cm: 0.71 },
+      { entityId: 'chair-01', points: 3 },
+    ],
+    downloads: { models: 1, files: 5, bytes: 770000, redirects: 0 },
+    bake: { entities: 1, parts: 2, textured: 1, fallback: 1 },
+  },
+};
+
+describe('metaverse rebuild', () => {
+  it('小的物件集随请求内联，等任务完成，列出偏差最大的几件', async () => {
+    const pulled = remoteSnapshot();
+    fake = await startFakeApi({ ...pulled.state, rebuildResult: AUTHORED_RESULT });
+    const root = directWorkspace(fake);
+    const ctx = makeContext(root);
+    expect(await main(ctx, ['pull'])).toBe(0);
+    writeFileSync(join(root, 'authored.json'), JSON.stringify(authoredDoc()));
+    expect(await main(ctx, ['rebuild', '--authored', 'authored.json', '--hints', '{"x":1}'])).toBe(
+      0,
+    );
+    const scan = 'c'.repeat(64);
+    const call = fake.requests.find((r) => r.path.endsWith(`/scans/${scan}/rebuild`))!;
+    expect(JSON.parse(call.body.toString())).toEqual({ hints: { x: 1 }, authored: authoredDoc() });
+    expect(fake.requests.some((r) => r.path.includes('/uploads/'))).toBe(false);
+    const text = ctx.lines.join('\n');
+    expect(text).toContain('随请求内联提交');
+    expect(text).toContain('counter-01：3.6 / 7.1 厘米，71%');
+    expect(text.indexOf('counter-01')).toBeLessThan(text.indexOf('panel-01：'));
+    expect(text).toContain('另有 1 件附近没有扫描');
+    expect(text).toContain('外部模型：下载 1 个（5 个文件');
+    expect(text).toContain('1 处附近没有扫描、用了后备纯色');
+    expect(text).toContain('重建完成，提交 commit-10');
+  });
+
+  it('大的物件集先经 authored 用途上传，等校验，再用资源哈希；不带物件集就是普通重建', async () => {
+    fake = await startFakeApi();
+    const root = directWorkspace(fake);
+    const scan = 'e'.repeat(64);
+    const big = authoredDoc({ notes: '长'.repeat(Math.ceil(INLINE_AUTHORED_BYTES / 3) + 10) });
+    writeFileSync(join(root, 'big.json'), JSON.stringify(big, null, 2));
+    const ctx = makeContext(root);
+    expect(await main(ctx, ['rebuild', '--authored', 'big.json', '--scan', scan, '--json'])).toBe(
+      0,
+    );
+    const create = fake.requests.find((r) => r.path.endsWith('/uploads/authored'))!;
+    const declared = JSON.parse(create.body.toString()) as { format: string; sha256: string };
+    expect(declared.format).toBe('json');
+    expect(fake.requests.some((r) => r.path.endsWith('/complete'))).toBe(true);
+    const call = fake.requests.find((r) => r.path.endsWith(`/scans/${scan}/rebuild`))!;
+    expect(JSON.parse(call.body.toString())).toEqual({ authoredAsset: declared.sha256 });
+    const out = JSON.parse(ctx.lines.at(-1)!) as { authored: { inline: boolean }; jobId: string };
+    expect(out.authored.inline).toBe(false);
+    // 不带物件集：请求体是空对象
+    const plain = makeContext(root);
+    expect(await main(plain, ['rebuild', '--scan', scan, '--no-wait'])).toBe(0);
+    const calls = fake.requests.filter((r) => r.path.endsWith(`/scans/${scan}/rebuild`));
+    expect(JSON.parse(calls.at(-1)!.body.toString())).toEqual({});
+  });
+
+  it('参数和物件集的本地检查', async () => {
+    fake = await startFakeApi();
+    const root = directWorkspace(fake);
+    const ctx = makeContext(root);
+    const scan = 'e'.repeat(64);
+    writeFileSync(join(root, 'bad.json'), '{"version": 2, "entities": [1]}');
+    writeFileSync(join(root, 'empty.json'), '{"version": 1, "entities": []}');
+    writeFileSync(join(root, 'notjson.json'), 'nope');
+    writeFileSync(join(root, 'array.json'), '[1]');
+    for (const args of [
+      ['rebuild'],
+      ['rebuild', '--scan', 'xyz'],
+      ['rebuild', '--scan', scan, '--hints', '[1]'],
+      ['rebuild', '--scan', scan, '--hints', 'nope'],
+      ['rebuild', '--scan', scan, '--authored', 'bad.json'],
+      ['rebuild', '--scan', scan, '--authored', 'empty.json'],
+      ['rebuild', '--scan', scan, '--authored', 'notjson.json'],
+      ['rebuild', '--scan', scan, '--authored', 'array.json'],
+      ['rebuild', '--scan', scan, '--authored', 'missing.json'],
+    ]) {
+      expect(await main(ctx, args), args.join(' ')).toBe(1);
+    }
+    expect(fake.requests.some((r) => r.path.includes('/rebuild'))).toBe(false);
+    const help = makeContext(root);
+    expect(await main(help, ['rebuild', '--help'])).toBe(0);
+    expect(help.lines.join('\n')).toContain('--authored');
+  });
+
+  it('describeAuthored 对没有物件集的结果什么也不输出', () => {
+    expect(describeAuthored({})).toEqual([]);
+    expect(describeAuthored(null)).toEqual([]);
+  });
+});
+
+describe('metaverse scan --authored', () => {
+  it('上传扫描后带物件集发起导入；--transform 时一并发给 alignment；不能和 --no-rebuild 一起用', async () => {
+    fake = await startFakeApi({ scanResult: AUTHORED_RESULT });
+    const root = directWorkspace(fake);
+    writeFileSync(join(root, 'lobby.glb'), fakeGlb(300 * 1024, 5));
+    writeFileSync(join(root, 'authored.json'), JSON.stringify(authoredDoc()));
+    const ctx = makeContext(root);
+    expect(await main(ctx, ['scan', 'lobby.glb', '--authored', 'authored.json'])).toBe(0);
+    const scanCall = fake.requests.find((r) => r.path.endsWith('/scans'))!;
+    expect(JSON.parse(scanCall.body.toString())).toMatchObject({
+      rebuild: true,
+      authored: authoredDoc(),
+    });
+    expect(ctx.lines.join('\n')).toContain('counter-01：3.6 / 7.1 厘米');
+    const identity = '1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1';
+    const again = makeContext(root);
+    expect(
+      await main(again, [
+        'scan',
+        'lobby.glb',
+        '--authored',
+        'authored.json',
+        '--transform',
+        identity,
+        '--no-wait',
+      ]),
+    ).toBe(0);
+    const align = fake.requests.find((r) => r.path.endsWith('/alignment'))!;
+    expect(JSON.parse(align.body.toString())).toMatchObject({ authored: authoredDoc() });
+    const puts = fake.requests.filter((r) => r.method === 'PUT').length;
+    const bad = makeContext(root);
+    expect(
+      await main(bad, ['scan', 'lobby.glb', '--authored', 'authored.json', '--no-rebuild']),
+    ).toBe(1);
+    writeFileSync(join(root, 'bad.json'), '{"version": 1}');
+    expect(await main(bad, ['scan', 'lobby.glb', '--authored', 'bad.json'])).toBe(1);
+    // 物件集不对时扫描也不上传
+    expect(fake.requests.filter((r) => r.method === 'PUT')).toHaveLength(puts);
   });
 });
 

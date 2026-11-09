@@ -23,6 +23,7 @@ def test_config_defaults_and_overrides(tmp_path):
     assert c.health_port == 8080 and c.health_host == "0.0.0.0"
     assert c.model_max_triangles == 100_000 and c.align_max_error_cm == 3.0 and c.align_hold_days == 30.0
     assert c.workdir is None and c.log_level == "INFO"
+    assert "dl.polyhaven.org" in c.model_hosts and ".hf.co" in c.model_hosts
     c = Config.from_env(
         {
             **BASE_ENV,
@@ -32,8 +33,10 @@ def test_config_defaults_and_overrides(tmp_path):
             "WORKER_MODEL_MAX_TRIANGLES": "5000",
             "WORKER_WORKDIR": str(tmp_path),
             "LOG_LEVEL": "debug",
+            "WORKER_MODEL_HOSTS": "dl.polyhaven.org, .HF.co",
         }
     )
+    assert c.model_hosts == ("dl.polyhaven.org", ".hf.co")
     assert (c.health_port, c.align_max_error_cm, c.model_max_triangles) == (9001, 2.5, 5000)
     assert c.align_hold_days == 14.0
     assert c.workdir == str(tmp_path) and c.log_level == "DEBUG"
@@ -52,6 +55,8 @@ def test_config_defaults_and_overrides(tmp_path):
         {**BASE_ENV, "LOG_LEVEL": "LOUD"},
         {**BASE_ENV, "WORKER_MODEL_MAX_TRIANGLES": "0"},
         {**BASE_ENV, "WORKER_HEARTBEAT_SECONDS": "100"},
+        {**BASE_ENV, "WORKER_MODEL_HOSTS": "http://dl.polyhaven.org"},
+        {**BASE_ENV, "WORKER_MODEL_HOSTS": ","},
     ],
 )
 def test_config_rejects(env):

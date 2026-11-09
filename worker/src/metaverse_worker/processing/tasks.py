@@ -4,7 +4,8 @@
 解析不可信的文件、重计算都在这里做，父进程只负责数据库读写。每个入口都可以在测试里直接调用。
 
 - `sniff_task`：上传文件的格式检查；
-- `scan_task`：扫描读取 → 对齐（给定 / 复用 / 首次自动 / 重扫配准）→ 网页用模型 → 结构 + 物体重建；
+- `scan_task`：扫描读取 → 对齐（给定 / 复用 / 首次自动 / 重扫配准）→ 网页用模型 → 结构 + 物体重建
+  （给了 AI 物件集 `authored` 时换成 `authored_build.authored_rebuild`）；
 - `voxelize_task`：体素化 → 方块表分配 → 区块编码；
 - `model_task`：物件模型重新导出。
 """
@@ -23,6 +24,7 @@ import numpy as np
 from ..chunk import GRID_UNIT
 from ..errors import InputRejected
 from .align import AlignResult, auto_align, column_major, matrix_from_params, register_rescan
+from .authored_build import authored_rebuild
 from .modelimport import _count_obj_faces, export_model, load_model
 from .rebuild import OBJECTS_TARGET, rebuild
 from .scan import ScanMesh, apply_matrix, load_scan, sniff_file
@@ -108,8 +110,13 @@ def scan_task(
     physical_boxes: list[list[int]] | None = None,
     objects_target: str | None = OBJECTS_TARGET,
     align_max_error_cm: float = 3.0,
+    authored: Mapping[str, Any] | None = None,
+    authored_sources: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict:
-    """见模块说明。`reference = {"path", "transform"}` 时做重扫配准；`transform` 给了就直接用。"""
+    """见模块说明。`reference = {"path", "transform"}` 时做重扫配准；`transform` 给了就直接用。
+
+    `authored` 是 `authored.parse_authored` 整理过的物件集，`authored_sources` 是父进程下载好的外部模型
+    （`{来源键: {format, path}}`）。"""
     os.makedirs(workdir, exist_ok=True)
     timings: dict[str, float] = {}
     t0 = time.monotonic()
@@ -180,7 +187,18 @@ def scan_task(
         out["webModels"] = models
         timings["webModels"] = round(time.monotonic() - t, 2)
 
-    if do_rebuild:
+    if do_rebuild and authored is not None:
+        t = time.monotonic()
+        out["rebuild"] = authored_rebuild(
+            mesh.transformed(align.matrix),
+            authored,
+            authored_sources or {},
+            workdir=os.path.join(workdir, "authored"),
+            limits=limits,
+            hints=hints,
+        )
+        timings["rebuild"] = round(time.monotonic() - t, 2)
+    elif do_rebuild:
         t = time.monotonic()
         result = rebuild(mesh.transformed(align.matrix), hints=hints, objects_target=objects_target)
         out["rebuild"] = {

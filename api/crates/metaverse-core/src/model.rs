@@ -892,10 +892,12 @@ pub enum UploadFormat {
     Gzip,
     /// UTF-8 纯文本（script 用途）。
     Text,
+    /// UTF-8 JSON 对象（authored 用途：AI 物件集）。
+    Json,
 }
 
 impl UploadFormat {
-    pub const ALL: [UploadFormat; 10] = [
+    pub const ALL: [UploadFormat; 11] = [
         UploadFormat::Glb,
         UploadFormat::Drc,
         UploadFormat::Obj,
@@ -906,6 +908,7 @@ impl UploadFormat {
         UploadFormat::Ndjson,
         UploadFormat::Gzip,
         UploadFormat::Text,
+        UploadFormat::Json,
     ];
 
     pub fn name(self) -> &'static str {
@@ -920,6 +923,7 @@ impl UploadFormat {
             UploadFormat::Ndjson => "ndjson",
             UploadFormat::Gzip => "gzip",
             UploadFormat::Text => "text",
+            UploadFormat::Json => "json",
         }
     }
 
@@ -945,6 +949,7 @@ impl UploadFormat {
             UploadFormat::Ndjson => "application/x-ndjson",
             UploadFormat::Gzip => "application/gzip",
             UploadFormat::Text => "text/plain; charset=utf-8",
+            UploadFormat::Json => "application/json",
         }
     }
 }

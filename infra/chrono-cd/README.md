@@ -66,7 +66,7 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 | `METAVERSE_DEMO_SHARE_TOKEN` | **密钥**（`secret_keys`，不在 `env` 里） | 演示空间的分享令牌原文，接口服务只存它的 sha256、不写日志；用 `set_app_secrets` 设置（第 5 步）。种子是凭链接查看（`unlisted`）时必须有，缺了接口服务启动失败 |
 | `RUST_LOG` | `info` | |
 
-种子要从 `scaniverse.com` 下载扫描（约 6MB），所以接口服务需要能访问公网（chrono-cd 默认 `egress` 允许）；下载的文件在内存里核对、打包，内存峰值约为文件总大小的两倍；种子文件总量上限是 256MiB（比扫描上传的 1GiB 严，免得超内存被杀后每次启动都再超一次），`memory_limit` 1Gi 足够。
+种子要从 `scaniverse.com` 下载扫描（约 6MB）、带 AI 物件集时还要从 `raw.githubusercontent.com` 下载物件集，所以接口服务需要能访问公网（chrono-cd 默认 `egress` 允许）；下载的文件在内存里核对、打包，内存峰值约为文件总大小的两倍；种子文件总量上限是 256MiB（比扫描上传的 1GiB 严，免得超内存被杀后每次启动都再超一次），`memory_limit` 1Gi 足够。
 
 #### 公开接口限流（待向平台确认可信的客户端地址头）
 
@@ -102,6 +102,7 @@ nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --
 | `OMP_NUM_THREADS` | `2` | 同上，给 OpenMP 库（OpenBLAS 在没有自己的变量时也读它） |
 | `MALLOC_ARENA_MAX` | `2` | glibc 的分配区个数上限；不设时最多 8×节点核数个，每个预留 64MB 地址空间 |
 | `PYTHONUNBUFFERED` | `1` | 日志不缓冲，立即出现在 chrono-cd 日志里 |
+| `WORKER_MODEL_HOSTS` | `dl.polyhaven.org,huggingface.co,cdn-lfs.huggingface.co,.hf.co` | AI 物件集里外部模型允许下载的主机（只用 https，重定向的每一跳都要在列表里）：Poly Haven 的文件在 `dl.polyhaven.org`；Objaverse 在 Hugging Face，`huggingface.co` 的下载地址会重定向到 `hf.co` 的 CDN 子域名（`us.aws.cdn.hf.co`、`cas-bridge.xethub.hf.co` 等，随地区和存储方式变化），所以用以点开头的后缀 `.hf.co` 放行。处理服务需要能访问这些主机（chrono-cd 默认 `egress` 允许公网）；Sketchfab 要另配令牌和它的下载主机，默认不开。`check-app.mjs` 要求显式写出 |
 
 #### 处理服务的线程数
 
@@ -309,9 +310,24 @@ curl -s -H "Authorization: Share <令牌>" https://<应用域名>/api/public/spa
 
 **物体提示的坐标**：种子里的 `hints`（物体中心、尺寸、类别）必须是处理服务 `scan_import` 实际对齐出来的空间坐标。`worker/scripts/lobby_hints.json` 是在 `reconstruct_lobby.py` 的坐标系里标的（对齐方法不同，前厅差约 29 厘米平移和 0.09° 倾斜），所以由 [`worker/scripts/demo_seed_hints.py`](../../worker/scripts/demo_seed_hints.py) 用处理服务的对齐换算后写进 `demo-seed.json`。本地实测（任务结果的 `objects.furnitureMeanCm`）：换算后 3.14 厘米、41 个物体（`reconstruct_lobby.py` 自己的坐标系里是 3.08 厘米、41 个）；不换算是 4.51 厘米、59 个物体，沙发、桌子、前台被重复识别，LED 大屏又被当成墙。
 
+**AI 物件集**（可选，设计 6.3）：本地的 AI 逐件完成前厅的物件——先去模型库（Poly Haven、Objaverse 里许可可商用的）找一个看起来差不多的现成模型，找不到或差太多（前台、LED 大屏墙、入口门框、嵌入柜）再手写参数形状——整套写成一个 JSON 文件（格式见 [`worker/README.md`](../../worker/README.md)“AI 物件集”），种子导入时重建层就换成这些物件，不跑物体重建算法。做法：
+
+1. 物件集放在仓库的 `infra/chrono-cd/demo/` 下（例如 `infra/chrono-cd/demo/authored.json`），合并到默认分支，记下这次提交的 **40 位提交哈希**；
+2. `demo-seed.json` 加一项（地址必须按提交哈希固定，不能写分支名：分支上的文件会变，内容就和 sha256 对不上，接口服务按失败处理）：
+
+   ```json
+   "authored": {"url": "https://raw.githubusercontent.com/<组织>/<仓库>/<40 位提交哈希>/infra/chrono-cd/demo/authored.json",
+                "sha256": "<sha256sum 的结果>", "size": <字节数>}
+   ```
+
+   `sha256`、`size` 用 `sha256sum infra/chrono-cd/demo/authored.json`、`wc -c` 算；大小 ≤ 4MB；带物件集时 `rebuild` 不能是 false；
+3. 和改提示一样把 `revision` 加一，再按下面"重新导入"的第 2、3 步同步 `app.json`、只改 `METAVERSE_DEMO_SEED`。
+
+接口服务下载物件集、核对大小和 sha256、做浅层校验（结构、数量、地址必须 https、烘焙指令的位置），原样登记成资源，`scan_import` 任务带 `authoredAsset`；不合法就什么都不建、不重试（日志里有原因）。处理服务按物件集里的地址从模型库下载外部模型（`WORKER_MODEL_HOSTS`），核对哈希、重新导出成受限 glb，烘焙贴图、逐件算偏差，任务结果的 `authored.fit` 是逐件偏差；形状、署名许可（只收 CC0、CC-BY）等深层校验不通过时任务失败（第 6 步的日志命令看 `lastError`）。`check-app.mjs` 检查 `authored` 的字段、地址形式和大小。
+
 **重新导入**（换扫描、改提示、处理服务的重建改进了想重跑）：
 
-1. 改 `demo-seed.json`，把 `revision` 加一。提示坐标是**这个空间**的坐标系：坐标系在第一次导入时固定，之后导入的扫描（哪怕换了一份）都配准到这个坐标系里，所以在同一个空间里重新导入时提示**不要**重算；只有"从头重建"（删掉空间）并且换了扫描时，才用新扫描跑一遍 `demo_seed_hints.py`（它算的是首次导入的对齐）。换了扫描时，配准误差超过 3 厘米处理服务不会自动提交（任务结果是 `needsAlignment`），要等第 7 步做完后经接口 `align_scan` 给出变换；
+1. 改 `demo-seed.json`（扫描、提示、物件集都可以），把 `revision` 加一。提示坐标是**这个空间**的坐标系：坐标系在第一次导入时固定，之后导入的扫描（哪怕换了一份）都配准到这个坐标系里，所以在同一个空间里重新导入时提示**不要**重算；只有"从头重建"（删掉空间）并且换了扫描时，才用新扫描跑一遍 `demo_seed_hints.py`（它算的是首次导入的对齐）。换了扫描时，配准误差超过 3 厘米处理服务不会自动提交（任务结果是 `needsAlignment`），要等第 7 步做完后经接口 `align_scan` 给出变换；
 2. 同步 `app.json`：`node infra/dev/demo-seed.mjs compact infra/chrono-cd/demo-seed.json` 的输出就是 `METAVERSE_DEMO_SEED` 的值，再跑 `node infra/chrono-cd/check-app.mjs`；
 3. 只改这一项（滚动更新会重启接口服务，种子在同一个空间里再建一个导入任务，空间和演示链接不变）：
 

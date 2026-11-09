@@ -63,6 +63,7 @@ fn purpose_name(purpose: UploadPurpose) -> &'static str {
         UploadPurpose::Texture => "texture",
         UploadPurpose::Ops => "ops",
         UploadPurpose::Script => "script",
+        UploadPurpose::Authored => "authored",
     }
 }
 

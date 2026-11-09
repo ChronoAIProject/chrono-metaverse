@@ -1121,3 +1121,93 @@ async fn seeded_space_keeps_its_owner_and_share_tokens() {
     assert_eq!(public(TOKEN).await, StatusCode::OK);
     assert_eq!(public(other_token).await, StatusCode::NOT_FOUND);
 }
+
+/// AI 物件集：和扫描一起下载、核对、浅层校验，登记成 authored 资源，导入任务带 authoredAsset。
+#[tokio::test]
+async fn seed_with_authored_set_registers_it_and_passes_it_to_the_import() {
+    let model = glb();
+    let authored = serde_json::to_vec(&json!({
+        "version": 1,
+        "entities": [{"entityId": "panel-01", "kind": "object",
+                      "shape": {"type": "box", "size": [1, 1, 0.02], "material": {"bake": "planar"}}}],
+        "notes": "演示用的物件集"
+    }))
+    .unwrap();
+    let bad = br#"{"version": 1, "entities": []}"#.to_vec();
+    let server = FileServer::start(
+        &[
+            ("scan.glb", model.clone()),
+            ("authored.json", authored.clone()),
+            ("bad.json", bad.clone()),
+        ],
+        0,
+    )
+    .await;
+    let entry = |name: &str, bytes: &[u8]| {
+        let file = server.file(name, bytes);
+        json!({"url": file["url"], "sha256": file["sha256"], "size": file["size"]})
+    };
+
+    // 物件集不合法（浅层校验不通过）：什么都不建，也不重试。
+    let seed = seed_json(
+        vec![server.file("scan.glb", &model)],
+        json!({"authored": entry("bad.json", &bad)}),
+    );
+    let Some(app) = TestApp::start(&[(SEED_ENV, &seed), (TOKEN_ENV, TOKEN)]).await else {
+        return;
+    };
+    let config = app.config.demo_seed.clone().unwrap();
+    let error = demo_seed::run(&app.state, &config, once())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, SeedError::Permanent(reason) if reason.contains("authored.json") && reason.contains("entities")),
+        "{error:?}"
+    );
+    for collection in ["spaces", "jobs", "assets.files"] {
+        assert_eq!(count(&app, collection, doc! {}).await, 0, "{collection}");
+    }
+
+    // 哈希对不上：同样不建。
+    let mismatch = seed_json(
+        vec![server.file("scan.glb", &model)],
+        json!({"authored": entry("authored.json", b"{}")}),
+    );
+    let error = demo_seed::run(&app.state, &parse_seed(&mismatch, Some(TOKEN)), once())
+        .await
+        .unwrap_err();
+    assert!(matches!(&error, SeedError::Permanent(_)), "{error:?}");
+    assert_eq!(count(&app, "spaces", doc! {}).await, 0);
+
+    // 合法：空间、扫描、物件集都登记，任务参数带 authoredAsset。
+    let good = seed_json(
+        vec![server.file("scan.glb", &model)],
+        json!({"authored": entry("authored.json", &authored)}),
+    );
+    let outcome = demo_seed::run(&app.state, &parse_seed(&good, Some(TOKEN)), once())
+        .await
+        .unwrap();
+    let SeedOutcome::Created { job_id } = outcome else {
+        panic!("应当建空间：{outcome:?}");
+    };
+    let authored_hash = sha256_hex(&authored);
+    let files = app
+        .collection("assets.files")
+        .find_one(doc! {"filename": &authored_hash})
+        .await
+        .unwrap()
+        .expect("物件集已登记");
+    let metadata = files.get_document("metadata").unwrap();
+    assert_eq!(metadata.get_str("kind").unwrap(), "authored");
+    assert_eq!(metadata.get_str("spaceId").unwrap(), SPACE);
+    let job = app
+        .collection("jobs")
+        .find_one(doc! {"_id": &job_id})
+        .await
+        .unwrap()
+        .unwrap();
+    let params = job.get_document("params").unwrap();
+    assert_eq!(params.get_str("authoredAsset").unwrap(), authored_hash);
+    assert!(params.get_bool("rebuild").unwrap());
+    assert_eq!(params.get_str("assetHash").unwrap(), sha256_hex(&model));
+}

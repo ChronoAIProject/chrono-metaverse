@@ -76,7 +76,8 @@
         "OPENBLAS_NUM_THREADS": "2",
         "OMP_NUM_THREADS": "2",
         "MALLOC_ARENA_MAX": "2",
-        "PYTHONUNBUFFERED": "1"
+        "PYTHONUNBUFFERED": "1",
+        "WORKER_MODEL_HOSTS": "dl.polyhaven.org,huggingface.co,cdn-lfs.huggingface.co,.hf.co"
       },
       "addon_env": {
         "mongodb": {

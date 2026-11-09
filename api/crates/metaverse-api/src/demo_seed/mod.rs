@@ -11,14 +11,16 @@
 //!    配置里的组织，归属证据的依据是 `operator_seed`、核验人 `system:demo-seed`；第一次提交照常写
 //!    `_space` 锚点和通用方块表；凭链接查看时分享令牌取 `METAVERSE_DEMO_SHARE_TOKEN`，只存哈希；
 //! 4. 把扫描登记成资源（布局和元数据与处理服务 `assets.put_asset` 相同，`kind = scan`），已存在就复用；
+//!    配置了 AI 物件集（`authored`）时，下载、核对大小和 sha256、做浅层校验
+//!    （`metaverse_core::authored::check_authored`），原样登记成 `kind = authored` 的资源；
 //! 5. 插入 `scan_import` 任务，字段与 `POST /scans` 建的任务完全一致，`actor = {sub: "system:demo-seed",
-//!    nyxServiceId: ""}`；任务编号由（空间编号、空间创建时间、导入版本）算出，同一个空间的同一个版本
+//!    nyxServiceId: ""}`，带物件集时参数里另有 `authoredAsset`；任务编号由（空间编号、空间创建时间、导入版本）算出，同一个空间的同一个版本
 //!    只会有一个任务（唯一键）。
 //!
 //! 全程用授权层签发的显式系统范围（`Authorizer::seed_create_grant`、`Authorizer::seed_space`，都写审计
 //! 日志），数据访问只在 `repo/` 里。分享令牌原文不写日志。
 //!
-//! **重新导入**：把 `revision` 加一（扫描文件、提示可以一起改），重启接口服务，就会在同一个空间里再建
+//! **重新导入**：把 `revision` 加一（扫描文件、提示、物件集可以一起改），重启接口服务，就会在同一个空间里再建
 //! 一个导入任务（空间和分享链接不变）。空间被删掉以后重启，会按配置重新建（任务编号随空间创建时间变）。
 
 pub mod config;
@@ -42,7 +44,7 @@ use crate::auth::{Grant, SeedSpace};
 use crate::error::ApiError;
 use crate::repo::{JobInsert, RepoError};
 use crate::routes::admin_spaces::{create_space_with, new_share_token, SpaceCreation};
-use crate::routes::jobs::scan_params;
+use crate::routes::jobs::{scan_params, AUTHORED_KIND};
 use crate::AppState;
 
 /// 种子失败的原因。
@@ -243,8 +245,14 @@ async fn seeded_space(state: &AppState, grant: &Grant) -> Result<Space, SeedErro
         .ok_or_else(|| SeedError::Transient("空间刚被删除".into()))
 }
 
-/// 下载全部文件，核对后组成扫描资源。
-async fn download(state: &AppState, seed: &DemoSeedConfig) -> Result<ScanAsset, SeedError> {
+/// 种子要登记的内容：扫描，和可选的 AI 物件集（原始字节，已核对和浅层校验）。
+struct Download {
+    scan: ScanAsset,
+    authored: Option<Vec<u8>>,
+}
+
+/// 下载全部文件，核对后组成扫描资源；配置了物件集时一并下载、核对。
+async fn download(state: &AppState, seed: &DemoSeedConfig) -> Result<Download, SeedError> {
     let fetcher = Fetcher::new()?;
     let max_side = state.ingest.config.max_texture_side;
     let started = std::time::Instant::now();
@@ -264,7 +272,24 @@ async fn download(state: &AppState, seed: &DemoSeedConfig) -> Result<ScanAsset, 
         seconds = started.elapsed().as_secs_f32(),
         "部署配置种子：扫描已准备好"
     );
-    Ok(asset)
+    let authored = match &seed.authored {
+        None => None,
+        Some(file) => {
+            let bytes = fetcher.fetch(file).await?;
+            let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
+                SeedError::Permanent(format!("{} 不是 JSON：{error}", file.name))
+            })?;
+            let summary = metaverse_core::authored::check_authored(&value).map_err(|error| {
+                SeedError::Permanent(format!("{} 不是合法的 AI 物件集：{error}", file.name))
+            })?;
+            tracing::info!(space = %seed.space_id, entities = summary.entities, models = summary.models, "部署配置种子：AI 物件集已下载并核对");
+            Some(bytes)
+        }
+    };
+    Ok(Download {
+        scan: asset,
+        authored,
+    })
 }
 
 /// 登记扫描资源、补写第一次提交、插入 `scan_import` 任务。
@@ -273,9 +298,10 @@ async fn import(
     grant: &Grant,
     space: &Space,
     seed: &DemoSeedConfig,
-    asset: &ScanAsset,
+    download: &Download,
     created: bool,
 ) -> Result<SeedOutcome, SeedError> {
+    let asset = &download.scan;
     let job_id = seed_job_id(space, seed.revision);
     let put = state
         .repo
@@ -288,6 +314,23 @@ async fn import(
         )
         .await?;
     tracing::info!(space = %space.id, asset = %put.hash, reused = put.reused, "部署配置种子：扫描已登记成资源");
+    let authored = match &download.authored {
+        None => None,
+        Some(bytes) => {
+            let put = state
+                .repo
+                .put_asset_bytes_with(
+                    grant,
+                    bytes,
+                    "application/json",
+                    AUTHORED_KIND,
+                    &[("format", "json")],
+                )
+                .await?;
+            tracing::info!(space = %space.id, asset = %put.hash, reused = put.reused, "部署配置种子：AI 物件集已登记成资源");
+            Some(put.hash)
+        }
+    };
     // 与 POST /scans 相同：会写提交的任务之前先补写第一次提交（建空间时没写成的话）。
     let now = crate::now()?;
     crate::timeline::writer::ensure_genesis_as(&state.repo, grant, OPERATOR_SEED_SUBJECT, "", now)
@@ -304,6 +347,7 @@ async fn import(
             Some(seed.voxelize),
             seed.hints.clone(),
             None,
+            authored.as_deref(),
         ),
         status: JobStatus::Queued,
         lease_owner: None,

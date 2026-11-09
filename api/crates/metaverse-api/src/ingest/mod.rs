@@ -20,6 +20,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use metaverse_core::authored::MAX_AUTHORED_BYTES;
 use metaverse_core::model::UploadFormat;
 use metaverse_core::scope::UploadPurpose;
 use tokio::sync::Semaphore;
@@ -179,6 +180,7 @@ impl IngestConfig {
             UploadPurpose::Texture => self.max_texture_bytes,
             UploadPurpose::Ops => self.max_ops_bytes,
             UploadPurpose::Script => self.max_script_bytes,
+            UploadPurpose::Authored => MAX_AUTHORED_BYTES,
         }
     }
 
@@ -190,6 +192,7 @@ impl IngestConfig {
             UploadPurpose::Texture => &self.texture_formats,
             UploadPurpose::Ops => &[UploadFormat::Ndjson, UploadFormat::Gzip],
             UploadPurpose::Script => &[UploadFormat::Text],
+            UploadPurpose::Authored => &[UploadFormat::Json],
         }
     }
 }
@@ -202,6 +205,7 @@ pub fn purpose_from_path(value: &str) -> Option<UploadPurpose> {
         "texture" => Some(UploadPurpose::Texture),
         "ops" => Some(UploadPurpose::Ops),
         "script" => Some(UploadPurpose::Script),
+        "authored" => Some(UploadPurpose::Authored),
         _ => None,
     }
 }
@@ -213,6 +217,7 @@ pub fn purpose_name(purpose: UploadPurpose) -> &'static str {
         UploadPurpose::Texture => "texture",
         UploadPurpose::Ops => "ops",
         UploadPurpose::Script => "script",
+        UploadPurpose::Authored => "authored",
     }
 }
 
@@ -277,6 +282,14 @@ mod tests {
             [UploadFormat::Ndjson, UploadFormat::Gzip]
         );
         assert_eq!(config.formats(UploadPurpose::Script), [UploadFormat::Text]);
+        assert_eq!(
+            config.formats(UploadPurpose::Authored),
+            [UploadFormat::Json]
+        );
+        assert_eq!(
+            config.max_bytes(UploadPurpose::Authored),
+            MAX_AUTHORED_BYTES
+        );
     }
 
     #[test]
@@ -316,7 +329,7 @@ mod tests {
 
     #[test]
     fn purposes_round_trip() {
-        for name in ["scan", "model", "texture", "ops", "script"] {
+        for name in ["scan", "model", "texture", "ops", "script", "authored"] {
             assert_eq!(purpose_name(purpose_from_path(name).unwrap()), name);
         }
         assert!(purpose_from_path("exe").is_none());

@@ -23,6 +23,11 @@
 //   一行）；种子按接口服务的规则静态校验（拒绝未知字段、https 地址、sha256 和大小、主人是部署这个
 //   应用的组织、提示不超过 4KB）；凭链接查看时 `secret_keys` 里要有 `METAVERSE_DEMO_SHARE_TOKEN`，
 //   README 要写明用 `set_app_secrets` 设置它（README 第 5 步"密钥"、"演示数据"一节）。
+//   种子可选带 AI 物件集 `authored: {url, sha256, size}`：地址必须是 raw.githubusercontent.com 上按
+//   40 位提交哈希固定的 `infra/chrono-cd/demo/*.json`（分支名会变，内容就和 sha256 对不上），大小 ≤ 4MB，
+//   这时 `rebuild` 不能是 false（README 第 8 步"AI 物件集"）。
+// - 处理服务的 `WORKER_MODEL_HOSTS`（AI 物件集外部模型允许下载的主机）必须显式写出，每项是主机名、
+//   以点开头的后缀或 `主机:端口`，不带协议和路径（规则同 worker/src/metaverse_worker/fetch.py）。
 
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -121,8 +126,20 @@ const SEED_KEYS = [
   'voxelize',
   'hints',
   'revision',
+  'authored',
 ];
 const SEED_FILE_KEYS = ['url', 'name', 'sha256', 'size'];
+const SEED_AUTHORED_KEYS = ['url', 'sha256', 'size'];
+/** AI 物件集的大小上限（接口服务 `metaverse_core::authored::MAX_AUTHORED_BYTES`）。 */
+export const MAX_AUTHORED_BYTES = 4 * 1024 * 1024;
+/**
+ * 种子里物件集的地址：raw.githubusercontent.com 上按 40 位提交哈希固定的 infra/chrono-cd/demo/*.json。
+ * 用分支名的地址内容会变，sha256 就对不上了（接口服务按失败处理，演示空间建不起来）。
+ */
+export const AUTHORED_URL =
+  /^https:\/\/raw\.githubusercontent\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/[0-9a-f]{40}\/infra\/chrono-cd\/demo\/[A-Za-z0-9_.-]+\.json$/;
+/** 处理服务 `WORKER_MODEL_HOSTS` 的一项（规则同 worker/src/metaverse_worker/fetch.py 的 parse_hosts）。 */
+const MODEL_HOST = /^(?:\.?[a-z0-9-]+(?:\.[a-z0-9-]+)+|[a-z0-9-]+(?:\.[a-z0-9-]+)*:[0-9]{1,5})$/;
 const MESH_EXTENSIONS = ['glb', 'drc', 'obj'];
 const SIDE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'mtl'];
 /** 提示规范化后的上限（接口服务 `MAX_HINTS_BYTES`）。 */
@@ -208,6 +225,23 @@ function checkWorker(spec, problems) {
     problems.push(`${WORKER_SERVICE}：缺少 ${WORKER_ARENA_VAR}（glibc 每个分配区预留 64MB 地址空间，最多 8×核数个）`);
   } else if (parsePositiveInt(env[WORKER_ARENA_VAR]) === null) {
     problems.push(`${WORKER_SERVICE}：${WORKER_ARENA_VAR} 必须是正整数（现在是 ${JSON.stringify(env[WORKER_ARENA_VAR])}）`);
+  }
+
+  const hosts = env.WORKER_MODEL_HOSTS;
+  if (hosts === undefined) {
+    problems.push(
+      `${WORKER_SERVICE}：缺少 WORKER_MODEL_HOSTS（AI 物件集外部模型允许下载的主机）。显式写出来，` +
+        `部署规格里就能看到处理服务要访问哪些模型库`,
+    );
+  } else {
+    const entries = typeof hosts === 'string' ? hosts.split(',').map((item) => item.trim().toLowerCase()) : [];
+    const bad = entries.filter((entry) => !MODEL_HOST.test(entry));
+    if (entries.length === 0 || entries.every((entry) => entry === '') || bad.length > 0) {
+      problems.push(
+        `${WORKER_SERVICE}：WORKER_MODEL_HOSTS 每项必须是主机名、以点开头的后缀或 主机:端口，不带协议和路径` +
+          `（${bad.length > 0 ? `不合法：${bad.map((entry) => JSON.stringify(entry)).join('、')}` : '现在是空的'}）`,
+      );
+    }
   }
 
   const limitMiB = parseMemoryMiB(service.resources?.memory_limit);
@@ -362,6 +396,29 @@ export function seedProblems(seed, { targetOrg, maxScanBytes = DEFAULT_MAX_SCAN_
       bad('hints 必须是 JSON 对象');
     } else if (Buffer.byteLength(canonicalJson(seed.hints)) > MAX_HINTS_BYTES) {
       bad(`hints 规范化后超过 ${MAX_HINTS_BYTES} 字节`);
+    }
+  }
+  if (seed.authored !== undefined && seed.authored !== null) {
+    const authored = seed.authored;
+    if (typeof authored !== 'object' || Array.isArray(authored)) {
+      bad('authored 必须是 {url, sha256, size}');
+    } else {
+      for (const key of Object.keys(authored)) {
+        if (!SEED_AUTHORED_KEYS.includes(key)) bad(`authored 有不认识的字段 ${key}`);
+      }
+      if (typeof authored.url !== 'string' || !AUTHORED_URL.test(authored.url)) {
+        bad(
+          `authored.url 必须是 https://raw.githubusercontent.com/<组织>/<仓库>/<40 位提交哈希>/infra/chrono-cd/demo/<文件>.json` +
+            `（按提交哈希固定，不能用分支名；现在是 ${JSON.stringify(authored.url)}）`,
+        );
+      }
+      if (typeof authored.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(authored.sha256)) {
+        bad('authored.sha256 必须是 64 位小写十六进制');
+      }
+      if (!Number.isSafeInteger(authored.size) || authored.size <= 0 || authored.size > MAX_AUTHORED_BYTES) {
+        bad(`authored.size 必须是 1–${MAX_AUTHORED_BYTES} 的整数`);
+      }
+      if (seed.rebuild === false) bad('带 authored（AI 物件集）时 rebuild 不能是 false');
     }
   }
   const files = Array.isArray(seed.files) ? seed.files : [];

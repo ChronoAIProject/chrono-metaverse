@@ -24,6 +24,9 @@
 - `WORKER_MAX_OPS_BYTES`（256 MiB）：ops 上传解压后的大小上限（防压缩炸弹）；
 - `WORKER_ALIGN_MAX_ERROR_CM`（3）：重扫配准误差超过它就不自动提交，转人工（设计 6.2）；
 - `WORKER_ALIGN_HOLD_DAYS`（30）：转人工的扫描保留多久等人工对齐（这期间定期清理不删它）；
+- `WORKER_MODEL_HOSTS`（`dl.polyhaven.org,huggingface.co,cdn-lfs.huggingface.co,.hf.co`）：AI 物件集里外部模型
+  允许下载的主机，逗号分隔；以点开头的条目匹配它的所有子域名，`主机:端口` 只匹配那个端口；只用 https，
+  重定向的每一跳都要在列表里（`fetch.py`）；
 - `WORKER_HEALTH_HOST`（0.0.0.0）、`WORKER_HEALTH_PORT`（8080）：健康检查 `GET /healthz` 的监听地址；
 - `WORKER_WORKDIR`（系统临时目录）：下载扫描、子进程交换数据用的本地目录；
 - `LOG_LEVEL`（INFO）：日志级别。
@@ -36,6 +39,8 @@ import secrets
 import socket
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+
+from .fetch import DEFAULT_MODEL_HOSTS, parse_hosts
 
 
 class ConfigError(ValueError):
@@ -74,6 +79,7 @@ class Config:
     max_ops_bytes: int = 256 << 20
     align_max_error_cm: float = 3.0
     align_hold_days: float = 30.0
+    model_hosts: tuple[str, ...] = DEFAULT_MODEL_HOSTS
     health_host: str = "0.0.0.0"
     health_port: int = 8080
     workdir: str | None = None
@@ -125,6 +131,8 @@ class Config:
             raise ConfigError("WORKER_ALIGN_MAX_ERROR_CM 必须大于 0")
         if not self.align_hold_days > 0:
             raise ConfigError("WORKER_ALIGN_HOLD_DAYS 必须大于 0")
+        if not self.model_hosts:
+            raise ConfigError("WORKER_MODEL_HOSTS 不能为空")
         if not 0 <= self.health_port <= 65535:
             raise ConfigError("WORKER_HEALTH_PORT 必须在 0–65535 之间")
         if not self.health_host:
@@ -167,6 +175,10 @@ class Config:
                 raise ConfigError(f"{name} 不是整数") from error
 
         worker_id = env.get("WORKER_ID", "").strip() or _default_worker_id()
+        try:
+            model_hosts = parse_hosts(env.get("WORKER_MODEL_HOSTS"))
+        except ValueError as error:
+            raise ConfigError(str(error)) from error
         defaults = cls.__dataclass_fields__
         return cls(
             mongodb_uri=required("MONGODB_URI"),
@@ -200,6 +212,7 @@ class Config:
             max_ops_bytes=integer("WORKER_MAX_OPS_BYTES", defaults["max_ops_bytes"].default),
             align_max_error_cm=number("WORKER_ALIGN_MAX_ERROR_CM", defaults["align_max_error_cm"].default),
             align_hold_days=number("WORKER_ALIGN_HOLD_DAYS", defaults["align_hold_days"].default),
+            model_hosts=model_hosts,
             health_host=env.get("WORKER_HEALTH_HOST", "").strip() or defaults["health_host"].default,
             health_port=integer("WORKER_HEALTH_PORT", defaults["health_port"].default),
             workdir=env.get("WORKER_WORKDIR", "").strip() or None,

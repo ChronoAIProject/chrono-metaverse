@@ -17,6 +17,7 @@ export const UPLOAD_FORMATS: Readonly<Record<string, readonly string[]>> = {
   texture: ['png', 'jpeg', 'webp'],
   ops: ['ndjson', 'gzip'],
   script: ['text'],
+  authored: ['json'],
 };
 
 /** 有未知字段或缺必填字段时返回说明（与 serde 的 `deny_unknown_fields` 相同的效果）。 */
@@ -73,6 +74,8 @@ export function headerMismatch(format: string, head: Buffer, totalSize: number):
       return head.includes(0) || head.toString('utf8').trimStart()[0] !== '{';
     case 'text':
       return head.includes(0);
+    case 'json':
+      return head.includes(0) || head.toString('utf8').trimStart()[0] !== '{';
     case 'obj': {
       if (head.includes(0)) return true;
       for (const line of head.toString('utf8').split('\n')) {
@@ -143,6 +146,8 @@ export interface FakeState {
   /** 给了就让发布返回 409 `asset_gone`（与接口服务相同：`assets` 列出已被定期清理的资源）。 */
   publishAssetsGone?: readonly string[];
   scanResult?: unknown;
+  /** rebuild 任务的结果（不给就是空对象）。 */
+  rebuildResult?: unknown;
   failNextPart: boolean;
   shareTokenRotations: number;
   /**
@@ -190,6 +195,7 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
     publishConflict: init.publishConflict ?? false,
     ...(init.publishAssetsGone !== undefined ? { publishAssetsGone: init.publishAssetsGone } : {}),
     scanResult: init.scanResult,
+    rebuildResult: init.rebuildResult,
     failNextPart: init.failNextPart ?? false,
     shareTokenRotations: 0,
     shareTokenResponse: init.shareTokenResponse,
@@ -231,6 +237,34 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
     };
     const parsed = () =>
       body.length === 0 ? {} : (JSON.parse(body.toString('utf8')) as Record<string, unknown>);
+    /**
+     * AI 物件集的浅层校验（规则同接口服务 `metaverse_core::authored`，这里只查命令行可能弄错的几项）：
+     * 两个字段只能给一个；内联的必须是 version 1、entities 非空；authoredAsset 必须是已上传的资源。
+     */
+    const authoredProblem = (req: Record<string, unknown>): boolean => {
+      const inline = req.authored;
+      const asset = req.authoredAsset;
+      if (inline !== undefined && asset !== undefined) {
+        problem(422, 'invalid_authored', 'authored 和 authoredAsset 只能给一个');
+        return true;
+      }
+      if (inline !== undefined) {
+        const doc = inline as { version?: unknown; entities?: unknown };
+        if (doc.version !== 1 || !Array.isArray(doc.entities) || doc.entities.length === 0) {
+          problem(422, 'invalid_authored', 'authored 不合法');
+          return true;
+        }
+        if (req.rebuild === false) {
+          problem(422, 'invalid_authored', '带 AI 物件集时 rebuild 不能是 false');
+          return true;
+        }
+      }
+      if (asset !== undefined && !state.assets.has(String(asset))) {
+        problem(422, 'asset_unknown', '本空间没有这个物件集资源');
+        return true;
+      }
+      return false;
+    };
     /** 请求体字段不合法时回 422 并返回 true（调用处直接 return）。 */
     const invalidFields = (
       req: Record<string, unknown>,
@@ -318,8 +352,8 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
         ))
     ) {
       const [, scopePath, purpose, uploadId, tail, n] = m;
-      if (scopePath!.includes('/plots/') && purpose === 'scan')
-        return problem(403, 'forbidden', '地块路径下不能上传扫描');
+      if (scopePath!.includes('/plots/') && (purpose === 'scan' || purpose === 'authored'))
+        return problem(403, 'scope_violation', '地块路径下不能上传扫描和 AI 物件集');
       if (uploadId === undefined && request.method === 'POST') {
         const req = parsed();
         if (
@@ -412,13 +446,14 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
       if (
         invalidFields(
           req,
-          ['assetHash', 'observedAt', 'rebuild', 'voxelize', 'hints'],
+          ['assetHash', 'observedAt', 'rebuild', 'voxelize', 'hints', 'authored', 'authoredAsset'],
           ['assetHash'],
         )
       )
         return;
       if (!state.assets.has(String(req.assetHash)))
         return problem(404, 'not_found', '没有这个资源');
+      if (authoredProblem(req)) return;
       const job = newJob('scan_import', {
         result: state.scanResult ?? {},
         resultCommitId: 'commit-9',
@@ -429,21 +464,34 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
       return;
     }
     if (
-      (m = /^\/api\/v1\/spaces\/[^/]+\/scans\/([0-9a-f]{64})\/(voxelize|alignment)$/.exec(apiPath))
+      (m = /^\/api\/v1\/spaces\/[^/]+\/scans\/([0-9a-f]{64})\/(voxelize|alignment|rebuild)$/.exec(
+        apiPath,
+      ))
     ) {
       const req = parsed();
       if (m[2] === 'voxelize') {
         if (invalidFields(req, ['style'])) return;
         return json(202, { jobId: newJob('voxelize').id });
       }
+      if (m[2] === 'rebuild') {
+        if (invalidFields(req, ['hints', 'authored', 'authoredAsset'])) return;
+        if (authoredProblem(req)) return;
+        const job = newJob('rebuild', {
+          result: state.rebuildResult ?? {},
+          resultCommitId: 'commit-10',
+          runningPolls: 1,
+        });
+        return json(202, { id: job.id, kind: job.kind, status: 'queued', params: req });
+      }
       if (
         invalidFields(
           req,
-          ['transform', 'observedAt', 'rebuild', 'voxelize', 'hints'],
+          ['transform', 'observedAt', 'rebuild', 'voxelize', 'hints', 'authored', 'authoredAsset'],
           ['transform'],
         )
       )
         return;
+      if (authoredProblem(req)) return;
       if (!Array.isArray(req.transform) || req.transform.length !== 16)
         return problem(422, 'invalid_transform', 'transform 必须是 16 个数');
       // 只要求资源已校验（不要求扫描已经提交过）。
