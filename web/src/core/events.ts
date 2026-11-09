@@ -1,0 +1,216 @@
+import type {
+  AnchorState,
+  CommitSummary,
+  DensityBucket,
+  EventTypeDef,
+  SpaceEvent,
+  Timestamp,
+} from './api/types';
+
+/**
+ * 事件回放的纯函数（设计 5.3–5.5）。
+ *
+ * - 更正：`corrects` 一律指向最初那条事件；同一事件有多条更正时，以 recordedAt 最新的为准。
+ *   替换是完整的新记录（at 与原事件相同），撤回是 `retracted: true`。
+ * - 公开过滤顺序：先应用更正，再按可见级别过滤。
+ * - 状态事件：对每个 (锚点, 状态 key) 取 at ≤ T 的最后一条有效事件，不受时间窗限制；
+ *   超过 maxAgeSec 没有更新的状态自动失效。
+ */
+
+export function toMillis(time: Timestamp | number | Date): number {
+  if (typeof time === 'number') return time;
+  if (time instanceof Date) return time.getTime();
+  const value = Date.parse(time);
+  if (Number.isNaN(value)) throw new RangeError(`无效的时间：${time}`);
+  return value;
+}
+
+/** 生效的事件：保留最初那条的编号，内容取最新的替换版本。 */
+export interface EffectiveEvent extends SpaceEvent {
+  /** 生效内容来自哪条记录（原事件或某条更正）。 */
+  readonly revisionId: string;
+}
+
+export interface EffectiveOptions {
+  /** 只要公开级的（在应用更正之后过滤）。 */
+  readonly publicOnly?: boolean;
+  /** 事件类型的默认可见级别，事件没写 visibility 时用。 */
+  readonly types?: readonly EventTypeDef[];
+}
+
+function visibilityOf(event: SpaceEvent, types?: readonly EventTypeDef[]): 'public' | 'internal' {
+  if (event.visibility) return event.visibility;
+  return types?.find((t) => t.type === event.type)?.defaultVisibility ?? 'public';
+}
+
+/** 应用更正和撤回，按 at（再按编号）排序。 */
+export function effectiveEvents(
+  events: readonly SpaceEvent[],
+  options: EffectiveOptions = {},
+): EffectiveEvent[] {
+  const originals = new Map<string, SpaceEvent>();
+  const latestCorrection = new Map<string, SpaceEvent>();
+  for (const event of events) {
+    if (event.withdrawn) continue;
+    if (event.corrects === undefined) {
+      originals.set(event.id, event);
+      continue;
+    }
+    const current = latestCorrection.get(event.corrects);
+    if (
+      current === undefined ||
+      toMillis(event.recordedAt) > toMillis(current.recordedAt) ||
+      (toMillis(event.recordedAt) === toMillis(current.recordedAt) && event.id > current.id)
+    ) {
+      latestCorrection.set(event.corrects, event);
+    }
+  }
+  const out: EffectiveEvent[] = [];
+  for (const [id, original] of originals) {
+    const correction = latestCorrection.get(id);
+    if (correction?.retracted) continue;
+    const source = correction ?? original;
+    const effective: EffectiveEvent = {
+      ...source,
+      id,
+      corrects: undefined,
+      // 替换版本的 at 与原事件相同；以原事件为准，防止更正把事件挪到别的时刻。
+      at: original.at,
+      revisionId: source.id,
+    };
+    if (options.publicOnly && visibilityOf(effective, options.types) !== 'public') continue;
+    if (effective.redacted) out.push({ ...effective, data: undefined });
+    else out.push(effective);
+  }
+  return out.sort(
+    (a, b) => toMillis(a.at) - toMillis(b.at) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  );
+}
+
+/** T 附近时间窗内的瞬时事件：[T - before, T + after]。 */
+export function eventsInWindow<E extends SpaceEvent>(
+  events: readonly E[],
+  at: Timestamp | number,
+  beforeMs: number,
+  afterMs = 0,
+): E[] {
+  const t = toMillis(at);
+  return events.filter((event) => {
+    const time = toMillis(event.at);
+    return time >= t - beforeMs && time <= t + afterMs;
+  });
+}
+
+/** 事件的状态值：类型定义了 `state.value` 字段名时取 data 里那个字段，否则就是事件类型。 */
+function stateValue(event: SpaceEvent, def: EventTypeDef): unknown {
+  const field = def.state?.value;
+  if (field === undefined) return event.type;
+  const value = event.data?.[field];
+  return value === undefined ? null : value;
+}
+
+/**
+ * T 时刻各锚点的状态（设计 5.5）。传入的事件应当已经应用过更正（effectiveEvents）。
+ * 返回 锚点 → 状态 key → 状态。
+ */
+export function stateAt(
+  events: readonly SpaceEvent[],
+  types: readonly EventTypeDef[],
+  at: Timestamp | number,
+): Map<string, Map<string, AnchorState>> {
+  const t = toMillis(at);
+  const byType = new Map(types.filter((d) => d.state !== undefined).map((d) => [d.type, d]));
+  const latest = new Map<string, { event: SpaceEvent; def: EventTypeDef }>();
+  for (const event of events) {
+    const def = byType.get(event.type);
+    if (def?.state === undefined) continue;
+    const time = toMillis(event.at);
+    if (time > t) continue;
+    const key = `${event.anchorId}\u0000${def.state.key}`;
+    const current = latest.get(key);
+    if (current === undefined || time >= toMillis(current.event.at))
+      latest.set(key, { event, def });
+  }
+  const result = new Map<string, Map<string, AnchorState>>();
+  for (const { event, def } of latest.values()) {
+    if (def.state?.clears) continue;
+    if (def.maxAgeSec !== undefined && t - toMillis(event.at) > def.maxAgeSec * 1000) continue;
+    const states = result.get(event.anchorId) ?? new Map<string, AnchorState>();
+    states.set(def.state!.key, {
+      anchorId: event.anchorId,
+      key: def.state!.key,
+      value: stateValue(event, def),
+      at: event.at,
+      eventId: event.id,
+      type: event.type,
+    });
+    result.set(event.anchorId, states);
+  }
+  return result;
+}
+
+/** 本地计算事件密度（聚合接口不可用时的兜底，也用于测试夹具）。 */
+export function densityBuckets(
+  events: readonly SpaceEvent[],
+  from: Timestamp | number,
+  to: Timestamp | number,
+  bucketMs: number,
+): DensityBucket[] {
+  const start = toMillis(from);
+  const end = toMillis(to);
+  if (!(bucketMs > 0) || end <= start) return [];
+  const count = Math.ceil((end - start) / bucketMs);
+  const buckets = Array.from({ length: count }, (_, i) => ({
+    start: new Date(start + i * bucketMs).toISOString(),
+    count: 0,
+  }));
+  for (const event of events) {
+    const time = toMillis(event.at);
+    if (time < start || time >= end) continue;
+    buckets[Math.floor((time - start) / bucketMs)]!.count += 1;
+  }
+  return buckets;
+}
+
+/**
+ * "现在"模式的增量合并：按编号去重（游标回退几秒会拿到重复的），
+ * 新的覆盖旧的；带"撤下"标记的从结果里删掉。
+ */
+export function mergeIncremental(
+  existing: readonly SpaceEvent[],
+  incoming: readonly SpaceEvent[],
+): SpaceEvent[] {
+  const byId = new Map(existing.map((event) => [event.id, event]));
+  for (const event of incoming) {
+    if (event.withdrawn) {
+      byId.delete(event.id);
+      for (const [id, other] of byId) if (other.corrects === event.id) byId.delete(id);
+    } else {
+      byId.set(event.id, event);
+    }
+  }
+  return [...byId.values()];
+}
+
+/** 增量拉取的游标：最新的 recordedAt 往回退 `backoffMs`（默认 5 秒），再按编号去重。 */
+export function incrementalCursor(
+  events: readonly SpaceEvent[],
+  backoffMs = 5000,
+): Timestamp | null {
+  let latest = -Infinity;
+  for (const event of events) latest = Math.max(latest, toMillis(event.recordedAt));
+  return Number.isFinite(latest) ? new Date(latest - backoffMs).toISOString() : null;
+}
+
+/** T 时刻生效的提交：at ≤ T 的最后一个（提交按 seq 排序，at 随 seq 单调不减）。 */
+export function commitAt(
+  commits: readonly CommitSummary[],
+  at: Timestamp | number,
+): CommitSummary | null {
+  const t = toMillis(at);
+  let found: CommitSummary | null = null;
+  for (const commit of commits) {
+    if (toMillis(commit.at) <= t && (found === null || commit.seq > found.seq)) found = commit;
+  }
+  return found;
+}

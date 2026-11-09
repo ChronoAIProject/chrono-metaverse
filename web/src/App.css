@@ -1,0 +1,55 @@
+#root {
+  display: block;
+}
+
+.home {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: 24px;
+  background: var(--ground);
+}
+
+.home__card {
+  display: grid;
+  gap: 12px;
+  max-width: 520px;
+  padding: 28px;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  box-shadow: var(--lift-rest);
+}
+
+.home__card h1 {
+  font-size: var(--text-page);
+}
+
+.home__card p {
+  color: var(--ink-2);
+  line-height: var(--leading-read);
+}
+
+.home__hint code {
+  font-family: var(--font-mono);
+  font-size: var(--text-note);
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--inset);
+}
+
+.home__link {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  height: var(--control-h-md);
+  padding: 0 14px;
+  border-radius: 8px;
+  background: var(--primary-fill);
+  color: var(--on-primary);
+  text-decoration: none;
+}
+
+.home__link:hover {
+  background: var(--primary-fill-hover);
+}
