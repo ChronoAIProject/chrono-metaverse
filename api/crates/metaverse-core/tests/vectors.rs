@@ -609,6 +609,7 @@ fn shape_cases() -> Vec<(String, Value)> {
         none.clone(),
     ));
     cases.extend(plate_hull_material_cases());
+    cases.extend(texture_material_cases());
     // 凸包的三角形数 = 2V − 4（V 是凸包顶点数），只在点处于一般位置（没有四点共面）时有定义，
     // 由用例作者给出（已用 scipy 的 ConvexHull 核对过）。
     let hull_triangles: BTreeMap<&str, u64> = [
@@ -776,6 +777,151 @@ fn plate_hull_material_cases() -> Vec<(&'static str, &'static str, Value, Value)
             "shape_invalid_material_unlit_type",
             "unlit 必须是布尔值",
             json!({"type":"box","size":[1,1,1],"material":{"color":[1,2,3],"unlit":"yes"}}),
+            none,
+        ),
+    ]
+}
+
+/// 平铺、着色、法线和粗糙度（SHAPES 2「贴图坐标的平铺、着色、法线与粗糙度」）的材质用例。
+///
+/// 这批向量先按规格写好（`errorMessage` 是暂定的说明），实现跟上之后用 `METAVERSE_WRITE_VECTORS=1`
+/// 重新生成时，只允许 `errorPath = null` 的解析错误和 `errorMessage` 的措辞变化。
+fn texture_material_cases() -> Vec<(&'static str, &'static str, Value, Value)> {
+    const TEXTURE: &str = "9f2c7d4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d";
+    const NORMAL_MAP: &str = "4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d9f2c7d";
+    const ROUGHNESS_MAP: &str = "0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d9f2c7d4b1e";
+    let none = json!({});
+    vec![
+        (
+            "shape_material_tile",
+            "tile：贴图按米平铺（每 0.5 米重复一次）；offset、rotate 只能和 tile 一起给",
+            json!({"type":"box","size":[2,1,0.5],"material":{"texture":TEXTURE,"uv":"box","tile":[0.5,0.5],"offset":[0.1,-0.2],"rotate":15}}),
+            none.clone(),
+        ),
+        (
+            "shape_material_albedo_maps",
+            "固有色贴图（shading albedo）带法线贴图和粗糙度贴图，三张图共用同一套贴图坐标",
+            json!({"type":"box","size":[2,1,0.5],"material":{"texture":TEXTURE,"uv":"planar","tile":[1.2,0.6],"shading":"albedo","normalMap":NORMAL_MAP,"normalScale":1.5,"roughnessMap":ROUGHNESS_MAP,"roughness":0.9,"metalness":0}}),
+            none.clone(),
+        ),
+        (
+            "shape_material_color_normal_map",
+            "颜色材质带法线贴图：必须给 uv，可以带 tile",
+            json!({"type":"box","size":[2,1,0.5],"material":{"color":[182,140,96],"uv":"box","tile":[0.3,0.3],"normalMap":NORMAL_MAP,"roughness":0.7}}),
+            none.clone(),
+        ),
+        (
+            "shape_material_color_roughness",
+            "颜色材质只带标量粗糙度、金属度（没有贴图就不用 uv）；shading 对颜色材质没有影响但可以写",
+            json!({"type":"box","size":[2,1,0.5],"material":{"color":[90,90,96],"roughness":0.55,"metalness":0.8,"shading":"albedo"}}),
+            none.clone(),
+        ),
+        (
+            "shape_material_baked_explicit",
+            "shading 写明 baked（默认值），与不写相同：扫描烘焙贴图的看法",
+            json!({"type":"box","size":[2,1,0.5],"material":{"texture":TEXTURE,"uv":"planar","shading":"baked","tint":[255,250,240]}}),
+            none.clone(),
+        ),
+        (
+            "shape_material_limits",
+            "边界值都合法：tile 0 < x ≤ 100、offset 绝对值 ≤ 1000、rotate −360 到 360、normalScale 0 到 4、roughness 和 metalness 0 到 1",
+            json!({"type":"box","size":[2,1,0.5],"material":{"texture":TEXTURE,"uv":"mesh","tile":[100,0.001],"offset":[-1000,1000],"rotate":-360,"normalMap":NORMAL_MAP,"normalScale":4,"roughnessMap":ROUGHNESS_MAP,"roughness":1,"metalness":1}}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_material_tile_zero",
+            "tile 的每个数都必须大于 0",
+            json!({"type":"box","size":[2,1,0.5],"material":{"texture":TEXTURE,"uv":"box","tile":[0,1]}}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_material_tile_too_large",
+            "tile 的每个数都不能超过 100（米）",
+            json!({"type":"box","size":[2,1,0.5],"material":{"texture":TEXTURE,"uv":"box","tile":[1,100.5]}}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_material_tile_length",
+            "tile 必须正好两个数",
+            json!({"type":"box","size":[2,1,0.5],"material":{"texture":TEXTURE,"uv":"box","tile":[1]}}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_material_offset_without_tile",
+            "offset 只能和 tile 一起给",
+            json!({"type":"box","size":[2,1,0.5],"material":{"texture":TEXTURE,"uv":"box","offset":[0.1,0]}}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_material_rotate_without_tile",
+            "rotate 只能和 tile 一起给",
+            json!({"type":"box","size":[2,1,0.5],"material":{"texture":TEXTURE,"uv":"box","rotate":90}}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_material_rotate_range",
+            "rotate 必须在 −360 到 360 度之间",
+            json!({"type":"box","size":[2,1,0.5],"material":{"texture":TEXTURE,"uv":"box","tile":[1,1],"rotate":400}}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_material_offset_range",
+            "offset 的绝对值不能超过 1000（米）",
+            json!({"type":"box","size":[2,1,0.5],"material":{"texture":TEXTURE,"uv":"box","tile":[1,1],"offset":[1000.5,0]}}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_material_tile_without_uv",
+            "颜色材质没有法线、粗糙度贴图时没有贴图坐标，不能带 tile",
+            json!({"type":"box","size":[2,1,0.5],"material":{"color":[1,2,3],"tile":[1,1]}}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_material_color_normal_without_uv",
+            "颜色材质带了 normalMap 就必须给 uv",
+            json!({"type":"box","size":[2,1,0.5],"material":{"color":[1,2,3],"normalMap":NORMAL_MAP}}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_material_normal_map_hash",
+            "normalMap 必须是 64 位小写十六进制的资源哈希",
+            json!({"type":"box","size":[2,1,0.5],"material":{"texture":TEXTURE,"uv":"box","normalMap":"NORMAL-MAP"}}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_material_texture_url_object",
+            "外链对象 {url, sha256, size} 只能出现在 AI 物件集里，形状本身只收资源哈希",
+            json!({"type":"box","size":[2,1,0.5],"material":{"texture":{"url":"https://raw.githubusercontent.com/o/r/0123456789abcdef0123456789abcdef01234567/t.jpg","sha256":"e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5","size":1024},"uv":"box"}}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_material_normal_scale_range",
+            "normalScale 必须在 0 到 4 之间",
+            json!({"type":"box","size":[2,1,0.5],"material":{"texture":TEXTURE,"uv":"box","normalMap":NORMAL_MAP,"normalScale":4.5}}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_material_normal_scale_without_map",
+            "normalScale 只能和 normalMap 一起给",
+            json!({"type":"box","size":[2,1,0.5],"material":{"texture":TEXTURE,"uv":"box","normalScale":1}}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_material_roughness_range",
+            "roughness 必须在 0 到 1 之间",
+            json!({"type":"box","size":[2,1,0.5],"material":{"texture":TEXTURE,"uv":"box","roughness":1.2}}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_material_metalness_range",
+            "metalness 必须在 0 到 1 之间",
+            json!({"type":"box","size":[2,1,0.5],"material":{"color":[1,2,3],"metalness":-0.1}}),
+            none.clone(),
+        ),
+        (
+            "shape_invalid_material_shading_value",
+            "shading 只能是 baked 或 albedo",
+            json!({"type":"box","size":[2,1,0.5],"material":{"texture":TEXTURE,"uv":"box","shading":"pbr"}}),
             none,
         ),
     ]

@@ -1,0 +1,41 @@
+{
+  "bounds": {
+    "max": [
+      1.0,
+      1.0,
+      0.25
+    ],
+    "min": [
+      -1.0,
+      0.0,
+      -0.25
+    ]
+  },
+  "description": "tile：贴图按米平铺（每 0.5 米重复一次）；offset、rotate 只能和 tile 一起给",
+  "kind": "shape",
+  "name": "material-tile",
+  "shape": {
+    "material": {
+      "offset": [
+        0.1,
+        -0.2
+      ],
+      "rotate": 15,
+      "texture": "9f2c7d4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d",
+      "tile": [
+        0.5,
+        0.5
+      ],
+      "uv": "box"
+    },
+    "size": [
+      2,
+      1,
+      0.5
+    ],
+    "type": "box"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "valid": true
+}
