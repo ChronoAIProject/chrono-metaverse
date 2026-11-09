@@ -220,7 +220,9 @@ CHAIR = ["entities", 3]
         (_set([*PANEL, "entityId"], "table-01"), "重复"),
         (_set([*PANEL, "assetHash"], SHA), "不认识的字段"),
         (_set([*PANEL, "shape", "material"], {"bake": "spherical"}), "bake 必须是"),
-        (_set([*PANEL, "shape", "material"], {"bake": "box", "texture": SHA, "uv": "box"}), "没有 texture"),
+        (_set([*PANEL, "shape", "material"], {"bake": "box", "texture": SHA, "uv": "box"}), "不能和 texture"),
+        (_set([*PANEL, "shape", "material"], {"bake": "box", "tile": [1, 1]}), "不能和 texture"),
+        (_set([*PANEL, "shape", "material"], {"bake": "planar", "normalMap": SHA}), "不能和 texture"),
         (_set([*PANEL, "bounds"], {"min": [0, 0, 0], "max": [0.01, 0.01, 0.01]}), "bounds"),
         (_set(["entities", 0, "shape", "template"], "missing"), "找不到模板"),
         (_set(["templates", 0, "shape", "material"], {"bake": "box"}), "模板"),
@@ -417,7 +419,20 @@ def test_model_material_tint_is_baked_and_look_stays_on_the_entity():
     )
     assert parsed["models"]["c-1"]["tint"] == [10, 20, 30]
     assert parsed["entities"]["c-1"]["material"] == {"opacity": 0.4, "unlit": True}
-    for bad, message in (({"opacity": 1.5}, "opacity"), ({"unlit": 1}, "unlit"), ({"shine": 1}, "只能是")):
+    shaded = parse_authored(
+        doc(
+            templates=[],
+            entities=[model_entity("c-1", model, material={"tint": [1, 2, 3], "shading": "albedo"})],
+        )
+    )
+    assert shaded["entities"]["c-1"]["material"] == {"shading": "albedo"}
+    for bad, message in (
+        ({"opacity": 1.5}, "opacity"),
+        ({"unlit": 1}, "unlit"),
+        ({"shine": 1}, "只能是"),
+        ({"shading": "pbr"}, "shading"),
+        ({"tile": [1, 1]}, "只能是"),
+    ):
         with pytest.raises(AuthoredError, match=message):
             parse_authored(doc(templates=[], entities=[model_entity("c-1", model, material=bad)]))
 

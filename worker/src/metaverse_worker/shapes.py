@@ -19,7 +19,9 @@
 `bulge` = tan(圆心角 / 4)，正值表示逆时针转的圆弧（对逆时针轮廓就是向外凸）。
 
 板和凸包的合法性（docs/SHAPES.md 第 2 节）与 Rust 用同样的公式和比较顺序：板的 Newell 法向、1 毫米平面度、
-投影平面上的简单多边形检查；凸包的 1 毫米退化判定（重合、共线、共面）。材质可以带 `opacity`（0–1）和 `unlit`。
+投影平面上的简单多边形检查；凸包的 1 毫米退化判定（重合、共线、共面）。材质可以带 `opacity`（0–1）和 `unlit`，
+以及平铺、着色、法线、粗糙度（`tile`、`offset`、`rotate`、`shading`、`normalMap`、`normalScale`、`roughnessMap`、
+`roughness`、`metalness`，SHAPES 2"贴图坐标的平铺、着色、法线与粗糙度"），校验规则和先后顺序与 Rust 相同。
 """
 
 from __future__ import annotations
@@ -52,6 +54,19 @@ MIN_HULL_POINTS = 4
 MAX_HULL_POINTS = 256
 
 UV_MODES = ("box", "planar", "cylindrical", "mesh")
+SHADING_MODES = ("baked", "albedo")
+# 材质的平铺、着色、法线、粗糙度（SHAPES 2"贴图坐标的平铺、着色、法线与粗糙度"）
+MAX_TILE = 100.0  # tile 每个分量的上限（米），下限是大于 0
+MAX_UV_OFFSET = 1000.0  # offset 每个分量的绝对值上限（米）
+MAX_UV_ROTATE = 360.0  # rotate 的绝对值上限（度）
+MAX_NORMAL_SCALE = 4.0
+MATERIAL_FIELDS = {
+    "color", "texture", "uv", "tint", "opacity", "unlit",
+    "tile", "offset", "rotate", "shading",
+    "normalMap", "normalScale", "roughnessMap", "roughness", "metalness",
+}  # fmt: skip
+# 引用贴图资源的材质字段（资源引用：物件的 textures、提交的 assetRefs、清理都要算上）
+TEXTURE_FIELDS = ("texture", "normalMap", "roughnessMap")
 
 Vec3 = list[float]
 Bounds = dict[str, list[float]]  # {"min": [x,y,z], "max": [x,y,z]}
@@ -352,29 +367,82 @@ def validate_opacity(path: str, value: Any) -> None:
         raise ShapeError(path, "不透明度必须在 0 到 1 之间")
 
 
+def _in_range(path: str, name: str, value: float | None, lo: float, hi: float, message: str) -> None:
+    if value is not None and not (math.isfinite(value) and lo <= value <= hi):
+        raise ShapeError(f"{path}.{name}", message)
+
+
 def _validate_material(path: str, value: Any) -> None:
-    obj = _fields(value, set(), {"color", "texture", "uv", "tint", "opacity", "unlit"}, "material")
-    if obj.get("unlit") is not None and not isinstance(obj["unlit"], bool):
+    """形状材质（SHAPES 2），与 Rust `Material::validate` 同样的规则和先后顺序。"""
+    obj = _fields(value, set(), MATERIAL_FIELDS, "material")
+
+    def given(key: str) -> bool:
+        return obj.get(key) is not None
+
+    # 解析阶段（对应 Rust 的反序列化）：字段类型。
+    if given("unlit") and not isinstance(obj["unlit"], bool):
         raise ShapeError(None, "unlit 必须是布尔值")
-    validate_opacity(f"{path}.opacity", obj.get("opacity"))
     for key in ("color", "tint"):
-        if obj.get(key) is not None:
+        if given(key):
             _rgb(obj[key], key)
-    if obj.get("uv") is not None and obj["uv"] not in UV_MODES:
+    if given("uv") and obj["uv"] not in UV_MODES:
         raise ShapeError(None, "uv 不认识")
-    if obj.get("texture") is not None and not isinstance(obj["texture"], str):
-        raise ShapeError(None, "texture 必须是字符串")
-    has_color, has_texture = obj.get("color") is not None, obj.get("texture") is not None
+    for key in TEXTURE_FIELDS:
+        if given(key) and not isinstance(obj[key], str):
+            raise ShapeError(
+                None, f"{key} 必须是资源哈希字符串（外链对象 {{url, sha256, size}} 只能写在 AI 物件集里）"
+            )
+    if given("shading") and obj["shading"] not in SHADING_MODES:
+        raise ShapeError(None, "shading 只能是 baked 或 albedo")
+    tile = _vec(obj["tile"], 2, "tile") if given("tile") else None
+    offset = _vec(obj["offset"], 2, "offset") if given("offset") else None
+    rotate, normal_scale, roughness, metalness = (
+        _num(obj[key], key) if given(key) else None
+        for key in ("rotate", "normalScale", "roughness", "metalness")
+    )
+
+    # 取值和搭配。
+    validate_opacity(f"{path}.opacity", obj.get("opacity"))
+    if tile is not None and not all(math.isfinite(x) and 0 < x <= MAX_TILE for x in tile):
+        raise ShapeError(f"{path}.tile", "tile 的两个数都必须大于 0、不超过 100（米）")
+    for key in ("offset", "rotate"):
+        if given(key) and tile is None:
+            raise ShapeError(f"{path}.{key}", "offset、rotate 只能和 tile 一起给")
+    if offset is not None and not all(math.isfinite(x) and abs(x) <= MAX_UV_OFFSET for x in offset):
+        raise ShapeError(f"{path}.offset", "offset 的两个数绝对值都不能超过 1000（米）")
+    _in_range(path, "rotate", rotate, -MAX_UV_ROTATE, MAX_UV_ROTATE, "rotate 必须在 −360 到 360 度之间")
+    if normal_scale is not None and not given("normalMap"):
+        raise ShapeError(f"{path}.normalScale", "normalScale 只能和 normalMap 一起给")
+    _in_range(path, "normalScale", normal_scale, 0, MAX_NORMAL_SCALE, "normalScale 必须在 0 到 4 之间")
+    _in_range(path, "roughness", roughness, 0, 1, "roughness 必须在 0 到 1 之间")
+    _in_range(path, "metalness", metalness, 0, 1, "metalness 必须在 0 到 1 之间")
+    for key in ("normalMap", "roughnessMap"):
+        if given(key) and not is_sha256_hex(obj[key]):
+            raise ShapeError(f"{path}.{key}", f"{key} 必须是 64 位小写十六进制的资源哈希")
+    has_color, has_texture = given("color"), given("texture")
+    has_maps = given("normalMap") or given("roughnessMap")
     if has_color and not has_texture:
-        if obj.get("uv") is not None or obj.get("tint") is not None:
+        if given("tint") or (given("uv") and not has_maps):
             raise ShapeError(path, "纯色材质不能带 uv 或 tint")
+        if has_maps and not given("uv"):
+            raise ShapeError(path, "颜色材质带 normalMap 或 roughnessMap 时必须给出 uv")
     elif has_texture and not has_color:
         if not is_sha256_hex(obj["texture"]):
             raise ShapeError(f"{path}.texture", "贴图必须是 64 位小写十六进制的资源哈希")
-        if obj.get("uv") is None:
+        if not given("uv"):
             raise ShapeError(path, "贴图材质必须给出 uv")
     else:
         raise ShapeError(path, "材质必须且只能给出 color 或 texture")
+    # 上面已经保证：有 uv 的只有贴图材质和带法线、粗糙度贴图的颜色材质。
+    if tile is not None and not given("uv"):
+        raise ShapeError(f"{path}.tile", "tile、offset、rotate 只用于有贴图坐标（uv）的材质")
+
+
+def material_textures(material: Any) -> list[str]:
+    """材质引用的贴图资源：`texture`、`normalMap`、`roughnessMap`（SHAPES 2"资源引用"），只取字符串。"""
+    if not isinstance(material, Mapping):
+        return []
+    return [material[key] for key in TEXTURE_FIELDS if isinstance(material.get(key), str)]
 
 
 def _parse_outline(value: Any) -> dict[str, Any]:

@@ -5,7 +5,8 @@
 
 `bake`（`planar` | `box` | `cylindrical`）只出现在 AI 物件集里，表示"把扫描的颜色烘焙成贴图"，可以带一个
 `color` 作为预览色（也是写回时采不到颜色的后备色）。规则与写回路径相同（`metaverse_worker.authored`）：
-不能和 `texture`、`uv`、`tint` 同时出现，模板里不能写。校验和包围盒时把它换成纯色材质（保留 `opacity`、
+不能和 `texture`、`uv`、`tint`，以及平铺、法线、粗糙度贴图（`tile`、`offset`、`rotate`、`normalMap`、
+`normalScale`、`roughnessMap`）同时出现，模板里不能写。校验和包围盒时把它换成纯色材质（保留 `opacity`、
 `unlit` 等其他字段）；生成网格时材质里留着 `bake` 标记，对比图按它从扫描取色预览。
 """
 
@@ -15,7 +16,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from .. import shapes as sh
-from ..authored import BAKE_MODES
+from ..authored import BAKE_EXCLUSIVE, BAKE_MODES
 from ..processing import shape_mesh as sm
 
 NEW_TYPES = ("plate", "hull")
@@ -28,8 +29,10 @@ def check_bake(material: Any, path: str) -> None:
         return
     if material["bake"] not in BAKE_MODES:
         raise sh.ShapeError(f"{path}.bake", f"bake 必须是 {'、'.join(BAKE_MODES)} 之一")
-    if any(material.get(k) is not None for k in ("texture", "uv", "tint")):
-        raise sh.ShapeError(path, "bake 只能出现在没有 texture、uv、tint 的材质里（处理服务烘焙后换成贴图）")
+    if any(material.get(k) is not None for k in BAKE_EXCLUSIVE):
+        raise sh.ShapeError(
+            path, f"bake 不能和 {'、'.join(BAKE_EXCLUSIVE)} 一起出现（烘焙出的是一张按包围盒铺满的颜色贴图）"
+        )
 
 
 def baked_material(material: Mapping[str, Any], *, mark: bool) -> dict[str, Any]:

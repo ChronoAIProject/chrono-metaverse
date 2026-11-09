@@ -16,7 +16,15 @@ from typing import Any
 
 from .canonical import canonical_json, content_hash, is_sha256_hex
 from .ids import SPACE_ANCHOR_ID, is_object_id
-from .shapes import Bounds, ShapeError, rounded_bounds, shape_bounds, validate_opacity, validate_shape
+from .shapes import (
+    SHADING_MODES,
+    Bounds,
+    ShapeError,
+    rounded_bounds,
+    shape_bounds,
+    validate_opacity,
+    validate_shape,
+)
 
 MAX_PROPS_BYTES = 16 * 1024
 MAX_LABEL_CHARS = 200
@@ -128,9 +136,11 @@ def detected_by(props: Mapping[str, Any] | None) -> str | None:
 def _validate_model_material(material: Any) -> None:
     if not isinstance(material, dict):
         raise RecordError("material 必须是对象")
-    unknown = set(material) - {"tint", "opacity", "unlit"}
+    unknown = set(material) - {"tint", "opacity", "unlit", "shading"}
     if unknown:
         raise RecordError(f"material 有不认识的字段：{sorted(unknown)}")
+    if material.get("shading") is not None and material["shading"] not in SHADING_MODES:
+        raise RecordError("material.shading 只能是 baked 或 albedo")
     tint = material.get("tint")
     if tint is not None and not (
         isinstance(tint, list) and len(tint) == 3 and all(_is_int(c) and 0 <= c <= 255 for c in tint)
