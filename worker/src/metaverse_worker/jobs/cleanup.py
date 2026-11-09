@@ -6,8 +6,13 @@
 2. **没人引用的资源**：上传（或最近一次被复用）已超过 7 天、仍没有被任何提交、草稿（`opsRefs.assetHash`、
    `assets`）、物件记录、方块表、资源引用表或未结束的任务引用的资源：先删 `files` 文档（不再可见），
    再删数据块。
+3. **过期的草稿、草稿区块、预览令牌**（设计 5.6、13.2）：接口服务把 `drafts`、`draftChunks`、`previews` 的
+   `expiresAt` 写成 RFC 3339 字符串（固定格式，字符串比较就是时间比较），不建 TTL 索引，由这里清理。
+   过期的草稿（不论是否已发布）先删草稿本身，再删它的预览令牌和草稿区块；预览令牌（最长 7 天）和草稿区块
+   （与草稿同时过期）再各自按 `expiresAt` 扫一遍，收拾上一轮删了草稿、没来得及删的。草稿删掉后，它
+   引用的资源不再算被草稿引用，按第 2 条处理。
 
-这些数据还没进时间线，删除它们不违反只追加原则。
+这些数据还没进时间线（已发布草稿的内容已经在提交里），删除它们不违反只追加原则。
 """
 
 from __future__ import annotations
@@ -142,8 +147,29 @@ def cleanup_assets(store: Store, grace_days: float) -> int:
     return removed
 
 
+def cleanup_drafts(store: Store) -> dict[str, int]:
+    """删除过期的草稿、预览令牌和草稿区块，返回各删了多少。"""
+    expired = {"expiresAt": {"$lt": format_ts(store.clock())}}
+    drafts = previews = chunks = 0
+    stale = store.col(C.DRAFTS).find(expired, {"_id": 1, "spaceId": 1}).limit(_BATCH)
+    for draft in list(stale):
+        # 先删草稿（接口服务按编号读不到，就不能再追加、预览或发布），再删它的子文档。
+        gone = store.col(C.DRAFTS).delete_one({"_id": draft["_id"], **expired})
+        if gone.deleted_count != 1:
+            continue
+        drafts += 1
+        children = {"draftId": draft["_id"], "spaceId": draft.get("spaceId")}
+        previews += store.col(C.PREVIEWS).delete_many(children).deleted_count
+        chunks += store.col(C.DRAFT_CHUNKS).delete_many(children).deleted_count
+    previews += store.col(C.PREVIEWS).delete_many(expired).deleted_count
+    chunks += store.col(C.DRAFT_CHUNKS).delete_many(expired).deleted_count
+    if drafts or previews or chunks:
+        log.info("清理了 %d 个过期草稿、%d 个预览令牌、%d 个草稿区块", drafts, previews, chunks)
+    return {"drafts": drafts, "previews": previews, "draftChunks": chunks}
+
+
 def run_cleanup(store: Store, *, upload_ttl_hours: float, asset_grace_days: float) -> dict[str, int]:
-    return {
-        "uploads": cleanup_uploads(store, upload_ttl_hours),
-        "assets": cleanup_assets(store, asset_grace_days),
-    }
+    # 先清草稿：过期草稿引用的资源在同一轮里就不再算被引用（仍要过资源自己的宽限期）。
+    uploads = cleanup_uploads(store, upload_ttl_hours)
+    drafts = cleanup_drafts(store)
+    return {"uploads": uploads, **drafts, "assets": cleanup_assets(store, asset_grace_days)}

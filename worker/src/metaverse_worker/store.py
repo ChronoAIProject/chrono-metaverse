@@ -38,6 +38,8 @@ class C:
     ANCHORS = "anchors"
     ASSET_REFS = "assetRefs"
     DRAFTS = "drafts"
+    DRAFT_CHUNKS = "draftChunks"
+    PREVIEWS = "previews"
     UPLOADS = "uploads"
     JOBS = "jobs"
     ASSET_BUCKET = "assets"
@@ -171,6 +173,19 @@ class Store:
             C.ENTITIES: [named([("spaceId", ASCENDING), ("id", ASCENDING)], "space_id", unique=True)],
             C.ANCHORS: [named([("spaceId", ASCENDING), ("id", ASCENDING)], "space_id", unique=True)],
             C.ASSET_REFS: [named([("hash", ASCENDING), ("spaceId", ASCENDING)], "hash_space", unique=True)],
+            # 草稿、草稿区块、预览令牌：定期清理按 expiresAt 删除过期的（与接口服务的定义相同）
+            C.DRAFTS: [
+                named([("spaceId", ASCENDING)], "space"),
+                named([("expiresAt", ASCENDING)], "expires_at"),
+            ],
+            C.DRAFT_CHUNKS: [
+                named([("draftId", ASCENDING)], "draft"),
+                named([("expiresAt", ASCENDING)], "expires_at"),
+            ],
+            C.PREVIEWS: [
+                named([("spaceId", ASCENDING)], "space"),
+                named([("expiresAt", ASCENDING)], "expires_at"),
+            ],
             C.UPLOADS: [
                 named([("spaceId", ASCENDING)], "space"),
                 named([("createdAt", ASCENDING)], "created_at"),

@@ -1,8 +1,8 @@
 # 处理服务（metaverse-worker）
 
 chrono-metaverse 的后台处理服务（设计第 6 节）：从 MongoDB 的 `jobs` 集合领取任务，做上传校验、扫描对齐、
-网页用模型、结构 + 物体重建、体素化、物件模型导出，把结果写成时间线上的提交；同时定期清理过期上传和
-没人引用的资源。
+网页用模型、结构 + 物体重建、体素化、物件模型导出，把结果写成时间线上的提交；同时定期清理过期上传、
+过期草稿（连同草稿区块、预览令牌）和没人引用的资源。
 
 - 只有 `store.py`、`assets.py`、`jobs/`、`handlers/` 碰数据库；`processing/` 是纯计算，在子进程里运行；
 - 每个任务的重计算放进子进程（`resource.setrlimit` 内存上限 + 超时，可随时取消）；
@@ -36,7 +36,8 @@ export MONGODB_DATABASE=metaverse
 {"status": "ok", "service": "metaverse-worker", "version": "0.1.0", "workerId": "host-1234-ab12cd",
  "timestamp": "2026-11-09T08:00:00.000Z", "kinds": ["model_import", "rebuild", "scan_import", "upload_verify", "voxelize"],
  "currentJob": {"jobId": "…", "kind": "scan_import", "spaceId": "front-hall", "since": "…"},
- "jobs": {"done": 3, "failed": 0}, "lastCleanup": {"at": "…", "uploads": 0, "assets": 0, "exhaustedJobs": 0}}
+ "jobs": {"done": 3, "failed": 0},
+ "lastCleanup": {"at": "…", "uploads": 0, "drafts": 0, "previews": 0, "draftChunks": 0, "assets": 0, "exhaustedJobs": 0}}
 ```
 
 ## 环境变量
@@ -241,9 +242,21 @@ result.metrics  # 任意 JSON，原样放进 result.objects
 
 ## 定期清理
 
-后台线程每 `WORKER_CLEANUP_INTERVAL_SECONDS` 秒一次（设计 6.1）：超过 24 小时仍 `open` 的上传先改成 `expired`
-再删数据块和会话（`failed` / `expired` 的同样删除）；上传或最近复用超过 7 天、没有被引用的资源，先删 `files`
-文档再删数据块；租约过期且重试次数用完的任务标记失败。
+后台线程每 `WORKER_CLEANUP_INTERVAL_SECONDS` 秒一次（设计 6.1），按顺序：
+
+1. **上传会话**：超过 `WORKER_UPLOAD_TTL_HOURS`（24 小时）仍 `open` 的上传先改成 `expired` 再删数据块和会话
+   （`failed` / `expired` 的同样删除）；
+2. **草稿、草稿区块、预览令牌**（设计 5.6、13.2）：接口服务把 `drafts`、`draftChunks`、`previews` 的
+   `expiresAt` 写成 RFC 3339 字符串、不建 TTL 索引，由处理服务按 `expiresAt < 现在`（字符串比较）删除：
+   过期的草稿（`open` 和已发布的都删；草稿 30 天过期）先删草稿本身，再删它的预览令牌和草稿区块
+   （`{draftId, spaceId}`）；预览令牌（最长 7 天）和草稿区块再各自按自己的 `expiresAt` 扫一遍。每轮最多
+   200 个草稿；
+3. **没人引用的资源**：上传或最近复用超过 `WORKER_ASSET_GRACE_DAYS`（7 天）、没有被引用的资源，先删 `files`
+   文档再删数据块（草稿在第 2 步先删，过期草稿引用的资源本轮就不再算被引用）；
+4. 租约过期且重试次数用完的任务标记失败。
+
+处理服务启动时也幂等地建 `drafts`、`draftChunks`、`previews` 的 `expiresAt` 索引（名字和定义与接口服务相同）。
+健康检查的 `lastCleanup` 带每一项删了多少：`{at, uploads, drafts, previews, draftChunks, assets, exhaustedJobs}`。
 
 资源"被引用"指出现在下面任何一处：
 
