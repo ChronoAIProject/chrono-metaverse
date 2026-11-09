@@ -89,6 +89,7 @@ uv lock --upgrade-package numpy     # 只升级某一个依赖
 | `WORKER_MODEL_MAX_TRIANGLES` | 10 万 | 物件模型重新导出的三角形上限 |
 | `WORKER_MODEL_MAX_TEXTURE_SIDE` | 2048 | 物件模型重新导出的贴图长边上限 |
 | `WORKER_ALIGN_MAX_ERROR_CM` | 3 | 重扫配准误差超过它就不自动提交，转人工 |
+| `WORKER_ALIGN_HOLD_DAYS` | 30 | 转人工的扫描保留多久等人工对齐（这期间定期清理不删它，见"定期清理"） |
 | `WORKER_WORKDIR` | 系统临时目录 | 下载扫描、子进程交换数据的本地目录（每个任务一个子目录，结束就删） |
 | `LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL` |
 
@@ -171,10 +172,13 @@ uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceI
 
    ```json
    {"needsAlignment": true, "scanAssetHash": "…", "referenceScan": "…", "proposedTransform": [16 个数],
-    "errorCm": 4.7, "maxErrorCm": 3, "alignment": {…}, "candidates": [{"quarterTurns": 0, "score": …, "errorCm": …, "overlap": …}], "timings": {…}}
+    "errorCm": 4.7, "maxErrorCm": 3, "alignment": {…}, "candidates": [{"quarterTurns": 0, "score": …, "errorCm": …, "overlap": …}], "timings": {…},
+    "retainUntil": "2026-12-09T08:00:00.000Z"}
    ```
 
-   人工确认后由接口服务用 `{assetHash, transform}` 重新发起 `scan_import`；
+   人工确认后由接口服务用 `{assetHash, transform}` 重新发起 `scan_import`。这份扫描此时还没被任何提交引用，
+   所以在 `retainUntil`（完成时间 + `WORKER_ALIGN_HOLD_DAYS`，默认 30 天）之前定期清理把它算作被引用，
+   任务完成时也刷新资源的 `touchedAt`；过了保留期还没人对齐，就按宽限期规则清理；
 4. **解析前检查**：三角形数、贴图像素（读文件头）、对齐后包围盒与实体区交集的格数。贴图像素在任何解码
    之前检查：glb 的每张贴图不论放在 BIN 块、`data:` 数据块还是 `data:` 图片里都读文件头查尺寸，引用外部
    文件或读不到对应位置的直接拒绝；zip 里单独给的贴图在加载模型之前就查（obj 的材质可能引用它）；trimesh
@@ -377,6 +381,7 @@ draftChunks, assets, publishedChunks}`。
 | `palettes` | `blocks.texture.top / side / bottom` |
 | `drafts`（接口服务的草稿文档） | `opsRefs.assetHash`（经上传追加的操作文件）、`assets` |
 | 排队中 / 运行中的 `jobs` | `params` 里任意位置的字符串 |
+| 已完成、等人工对齐的 `scan_import` 任务 | `result.scanAssetHash`（`result.needsAlignment` 为真、`result.retainUntil` 还没到） |
 
 ## 测试
 

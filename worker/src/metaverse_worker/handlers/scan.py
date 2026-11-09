@@ -5,7 +5,9 @@
 1. 选对齐方式：给了 `transform` 就直接用；没给时，这个扫描以前提交过就沿用它最近一次的变换；空间还没有
    坐标系（`frame`）就首次自动对齐；否则和参考扫描（`frame.referenceScan` 最近一次提交的变换）配准；
 2. 子进程里：读取 → 解析前检查 → 对齐 → 网页用模型两档 → 结构 + 物体重建（`rebuild: false` 时跳过）；
-3. 重扫配准误差超过阈值：不提交，任务完成，`result = {needsAlignment: true, proposedTransform, errorCm, …}`；
+3. 重扫配准误差超过阈值：不提交，任务完成，`result = {needsAlignment: true, proposedTransform, errorCm,
+   retainUntil, …}`。这份扫描还没被任何提交引用，定期清理到 `retainUntil`（`WORKER_ALIGN_HOLD_DAYS` 天后）
+   之前都把它算作被引用，等人工对齐；同时刷新资源的 `touchedAt`；
 4. 事务外登记资源（网页用模型、贴图）和物件、锚点记录（按内容哈希幂等）；
 5. 一次提交：`scan = {assetHash, webModelHashes, transform}`、`observedAt`、重建层物件替换（扩展层不动）、
    新锚点、资源引用（只登记网页用模型和贴图，原始扫描不登记）；首次扫描固定坐标系；`voxelize: true` 时
@@ -30,7 +32,7 @@ import math
 from collections.abc import Mapping
 from typing import Any
 
-from ..assets import put_asset
+from ..assets import put_asset, touch_asset
 from ..chunk import GRID_UNIT
 from ..errors import PermanentJobError, SpaceGone
 from ..ids import is_object_id
@@ -58,6 +60,8 @@ log = logging.getLogger(__name__)
 
 # 物体重建函数（'模块:函数'）。测试里换成假实现。
 OBJECTS_TARGET: str | None = DEFAULT_OBJECTS_TARGET
+
+DAY_MS = 24 * 3600 * 1000
 
 # 只给"有意义"的物体建锚点，按物体模块输出的类别（`props.category`）定锚点类型。
 # 椅子只在提示里明确要求（`hints.objects[].anchor: true`）时才建座位锚点；
@@ -331,8 +335,11 @@ def run_import(ctx: JobContext) -> dict[str, Any]:
             "alignment": out.get("alignment"),
             "candidates": out.get("candidates"),
             "timings": out.get("timings"),
+            # 人工对齐要时间：这之前定期清理不删这份扫描（jobs/cleanup.py 的 _referenced）
+            "retainUntil": format_ts(store.clock() + int(config.align_hold_days * DAY_MS)),
         }
         mark_done(store, ctx.lease, result=result)
+        touch_asset(store, asset_hash)
         log.warning("扫描 %s 配准误差 %.2f 厘米超过阈值，不提交，等人工确认", asset_hash, out["errorCm"])
         return result
     ctx.check_cancel()

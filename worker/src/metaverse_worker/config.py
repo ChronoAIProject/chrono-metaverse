@@ -23,6 +23,7 @@
 - `WORKER_MODEL_MAX_TRIANGLES`（10 万）、`WORKER_MODEL_MAX_TEXTURE_SIDE`（2048）：物件模型重新导出时的上限；
 - `WORKER_MAX_OPS_BYTES`（256 MiB）：ops 上传解压后的大小上限（防压缩炸弹）；
 - `WORKER_ALIGN_MAX_ERROR_CM`（3）：重扫配准误差超过它就不自动提交，转人工（设计 6.2）；
+- `WORKER_ALIGN_HOLD_DAYS`（30）：转人工的扫描保留多久等人工对齐（这期间定期清理不删它）；
 - `WORKER_HEALTH_HOST`（0.0.0.0）、`WORKER_HEALTH_PORT`（8080）：健康检查 `GET /healthz` 的监听地址；
 - `WORKER_WORKDIR`（系统临时目录）：下载扫描、子进程交换数据用的本地目录；
 - `LOG_LEVEL`（INFO）：日志级别。
@@ -72,6 +73,7 @@ class Config:
     model_max_texture_side: int = 2048
     max_ops_bytes: int = 256 << 20
     align_max_error_cm: float = 3.0
+    align_hold_days: float = 30.0
     health_host: str = "0.0.0.0"
     health_port: int = 8080
     workdir: str | None = None
@@ -121,6 +123,8 @@ class Config:
                 raise ConfigError(f"{name} 必须是正整数")
         if not self.align_max_error_cm > 0:
             raise ConfigError("WORKER_ALIGN_MAX_ERROR_CM 必须大于 0")
+        if not self.align_hold_days > 0:
+            raise ConfigError("WORKER_ALIGN_HOLD_DAYS 必须大于 0")
         if not 0 <= self.health_port <= 65535:
             raise ConfigError("WORKER_HEALTH_PORT 必须在 0–65535 之间")
         if not self.health_host:
@@ -195,6 +199,7 @@ class Config:
             ),
             max_ops_bytes=integer("WORKER_MAX_OPS_BYTES", defaults["max_ops_bytes"].default),
             align_max_error_cm=number("WORKER_ALIGN_MAX_ERROR_CM", defaults["align_max_error_cm"].default),
+            align_hold_days=number("WORKER_ALIGN_HOLD_DAYS", defaults["align_hold_days"].default),
             health_host=env.get("WORKER_HEALTH_HOST", "").strip() or defaults["health_host"].default,
             health_port=integer("WORKER_HEALTH_PORT", defaults["health_port"].default),
             workdir=env.get("WORKER_WORKDIR", "").strip() or None,
