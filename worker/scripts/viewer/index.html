@@ -26,14 +26,18 @@ renderer.localClippingEnabled = true;
 document.body.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x2b2d31);
-// 与网站（web/src/viewer/sceneView.ts）相同的灯光，只作用于纯色部件
-scene.add(new THREE.HemisphereLight(0xf4f1ea, 0x3a3d44, 1.6));
-const sun = new THREE.DirectionalLight(0xffffff, 1.6);
-sun.position.set(6, 12, 8);
-scene.add(sun);
-const fill = new THREE.DirectionalLight(0xdfe8ff, 0.5);
-fill.position.set(-8, 6, -4);
-scene.add(fill);
+// 与网站（web/src/viewer/lighting.ts）相同的灯光，只作用于纯色部件：物理单位，强度 = 系数 × π
+const LIGHTS = {
+  hemisphere: { sky: 0xffffff, ground: 0xb3ada2, factor: 0.62 },
+  key: { color: 0xfff7ec, factor: 0.55, direction: [0.45, 0.8, 0.4] },
+  fill: { color: 0xe6edff, factor: 0.28, direction: [-0.55, 0.5, -0.6] },
+};
+scene.add(new THREE.HemisphereLight(LIGHTS.hemisphere.sky, LIGHTS.hemisphere.ground, LIGHTS.hemisphere.factor * Math.PI));
+for (const spec of [LIGHTS.key, LIGHTS.fill]) {
+  const light = new THREE.DirectionalLight(spec.color, spec.factor * Math.PI);
+  light.position.copy(new THREE.Vector3(...spec.direction).normalize().multiplyScalar(20));
+  scene.add(light);
+}
 for (const f of (q.get('m') || '').split(',').filter(Boolean)) {
   const g = await new GLTFLoader().loadAsync('./models/' + f);
   g.scene.traverse((o) => {
