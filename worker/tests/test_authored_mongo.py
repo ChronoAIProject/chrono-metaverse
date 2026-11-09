@@ -245,6 +245,10 @@ def test_invalid_authored_inputs_fail(runner, store, library):
     wrong_kind = put_asset(store, json.dumps(doc).encode(), content_type="application/json", kind="script",
                            space_id=SPACE).hash  # fmt: skip
     failed({"authoredAsset": wrong_kind}, "authored 用途")
+    # 物件集的归属由接口服务建任务时检查：别的空间先登记的同一份内容也能用（资源全局去重）
+    shared = put_asset(store, json.dumps({"version": 1}).encode(), content_type="application/json",
+                       kind="authored", space_id="other-space").hash  # fmt: skip
+    failed({"authoredAsset": shared}, "entities")
     other_space = put_asset(store, jpeg_bytes(np.full((8, 8, 3), 7, np.uint8)), content_type="image/jpeg",
                             kind="texture", space_id="other-space").hash  # fmt: skip
     failed({"authored": authored_doc(library, texture=other_space)}, "不是本空间的贴图资源")

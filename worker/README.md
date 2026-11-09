@@ -279,7 +279,9 @@ uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceI
 的定制件再手写参数形状；完成后把整套物件交给任务写进时间线。两种任务都可以带：
 
 - `authored`：物件集本身（内联 JSON，规范化后 ≤ 4MB）；
-- `authoredAsset`：本空间 `authored` 用途上传（或部署种子登记）的资源哈希，内容是物件集的 UTF-8 JSON。
+- `authoredAsset`：`authored` 用途的资源哈希（本空间上传的，或接口服务、部署种子登记的），内容是物件集的
+  UTF-8 JSON。归属由接口服务建任务时检查，这里只认用途（`metadata.kind = authored`）；接口服务收到内联的物件集
+  时也登记成资源、改传这个，任务参数不会太大。
 
 ```json
 { "version": 1,

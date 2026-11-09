@@ -3,7 +3,8 @@
 任务参数二选一：
 
 - `authored`：物件集本身（内联 JSON，规范化后 ≤ 4MB）；
-- `authoredAsset`：本空间 authored 用途上传（或部署种子登记）的资源哈希，内容是物件集的 UTF-8 JSON。
+- `authoredAsset`：authored 用途的资源哈希（本空间上传的，或接口服务、部署种子登记的），内容是物件集的
+  UTF-8 JSON。接口服务收到内联的物件集时也登记成资源、改传这个，任务参数不会太大。
 
 格式和校验规则见 `authored.py`；计算（结构、模型重新导出、烘焙、偏差）在子进程里做，见
 `processing/authored_build.py`。这里负责：
@@ -67,11 +68,14 @@ def load_authored(ctx: JobContext) -> dict[str, Any] | None:
     if inline is not None and asset is not None:
         raise PermanentJobError("参数 authored 和 authoredAsset 只能给一个")
     if asset is not None:
+        # 归属由接口服务建任务时检查（调用方给的哈希必须是本空间的；内联的物件集由接口服务登记成资源，
+        # 内容相同的资源全局只有一份，可能最早是别的空间登记的），这里只认用途
         asset_hash = require_hash(params, "authoredAsset")
-        if find_asset(ctx.store, asset_hash) is None:
+        doc = find_asset(ctx.store, asset_hash)
+        if doc is None:
             raise PermanentJobError("物件集资源不存在（可能已被定期清理，请重新上传）")
-        if not space_asset(ctx, asset_hash, AUTHORED_ASSET_KIND):
-            raise PermanentJobError("authoredAsset 必须是本空间 authored 用途上传的资源")
+        if (doc.get("metadata") or {}).get("kind") != AUTHORED_ASSET_KIND:
+            raise PermanentJobError("authoredAsset 必须是 authored 用途的资源")
         try:
             data = read_asset(ctx.store, asset_hash, MAX_AUTHORED_BYTES)
         except AssetError as error:
