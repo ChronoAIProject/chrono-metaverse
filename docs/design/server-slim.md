@@ -712,7 +712,7 @@ out/bundle/
 - `recon/pyproject.toml`：项目名、命令入口、`package-data` 的键；
 - `uv lock` 重新生成 `recon/uv.lock`（持续集成的 `uv sync --frozen` 才过得去）；
 - `bench/env.py` 的 `repo_root()`：`(root / "worker").is_dir()` 改成 `recon`（按目录名机械替换改不到它，改漏了渲染会找不到 `web/node_modules`）；
-- `.github/workflows/ci.yml` 的 `working-directory` 和缓存路径；`.github/dependabot.yml` 加 `/recon` 的 pip（uv）一项（worker 的两项在 S6a 已删）；`infra/dev/up.sh`；`infra/dev/README.md`；`docs/` 里的路径。
+- `.github/workflows/ci.yml` 的 `working-directory` 和缓存路径；`.github/dependabot.yml` 加 `/recon` 的 `uv` 一项（读 `uv.lock`；worker 的两项在 S6a 已删）；`infra/dev/up.sh`；`infra/dev/README.md`；`docs/` 里的路径。
 
 不改任何逻辑。git 按内容识别改名，`git log --follow`、`git blame -M` 都能追到之前的历史。
 
@@ -1125,13 +1125,42 @@ S6a 做完后的状态（实施记录）：
 #### S7 改名
 
 - **改哪些文件**：8.1 的清单。
-- **验收**：`git diff -M --stat` 除清单里列出的几处外全是改名；全部测试和持续集成通过；在仓库外的临时目录 `uv tool install ./recon` 后跑 `metaverse-recon doctor --install` 和一次 `prepare`。
+- **验收**：`git diff -M --stat` 除清单里列出的几处外全是改名；全部测试和持续集成通过；在仓库外的临时目录 `uv tool install ./recon` 后跑 `metaverse-recon doctor` 和一次 `prepare`（`doctor --install` 是 S6b 的新参数，挪到 S6b 验收）。
+
+S7 做完后的状态（实施记录）：
+
+- 两个提交：第一个只改名——`git mv` 目录、包和工作台子包，`recon/` 里的导入路径、模块路径字符串（物体重建模块入口
+  `OBJECTS_TARGET`）、测试里的文件路径、README 和注释里的路径，导入改名后按字母序重排；`pyproject.toml` 的项目名、命令入口、
+  `package-data` 的键；`uv.lock` 重新锁定（只有本项目的名字变了）；`bench/env.py` 的 `repo_root()`；CI 和 Dependabot。第二个改
+  仓库里其余指向 `worker/` 的路径：接口服务测试 `demo_seed.rs` 里直接调用本地工具嗅探 zip 的用例（改读 `recon/.venv`、导入
+  `metaverse_recon`，环境变量改叫 `METAVERSE_RECON_PYTHON`，不改的话这个用例会一直跳过）、`api/README`、根 README 的目录说明、
+  `infra/dev` 的 `up.sh` 和 README、`check-app` 的注释、`infra/chrono-cd` 的 README 和 `demo/README`、跨语言向量 README、
+  PROGRESS 的链接、教程 `reconstruct-with-ai.md` 的安装命令、网站 `scene.ts` 的一处注释。
+- `git diff -M`：131 个文件全部识别成改名（82 个内容不变，其余只改了路径；相似度最低的是 7 行的 `bench/__main__.py`），另有
+  14 个文件只改路径；`git log --follow`、`git blame -M` 都追到改名前的历史。
+- 实测：ruff、pytest 562 个通过、3 个跳过（渲染工具不全时跳过，指定 three 后渲染相关的 41 个全过）；仓库外用 `uv tool install`
+  装到临时目录，`doctor` 如实报告缺 three，按它的提示 `npm install --prefix <缓存>/node three@0.184.0` 后能渲染；前厅 `prepare`
+  （drc + 贴图 + 提示）36 秒，输出与 S6a 的基线逐字节相同（`base.json` 只有耗时不同）。
+- 与设计的偏离：
+  1. Dependabot 用的是 `package-ecosystem: uv`（`pip` 那一种不读 `uv.lock`），一周的更新合成一个合并请求；
+  2. CI 的任务名从 `worker` 改成 `recon`，显示名"本地重建工具（recon）"：分支保护里如果把旧名字设成了必须通过的检查，要跟着改；
+  3. 写进输出的生成者名称（glb 的 `generator`：`chrono-metaverse-worker`、`metaverse-worker preview`）和下载时的 User-Agent 没改：
+     改了输出就不再逐字节相同，不算纯改名；`reframe` 坐标系名里的别名 `worker` 和 Python 测试函数名里的 worker 也照旧。
+     这几处留给 S6b（和 `scan_import` 坐标系改名一起）决定；
+  4. 即将被别的步骤删除或重写的地方没动，免得合并时冲突：命令行的技能说明、README 和 `authored`、`rebuild`、`voxelize` 三个命令
+     （S5 已改写或删除，S5 分支里已经没有 `worker/` 的路径）；接口服务里物件集相关的代码、注释和 README 段落，`repo/commits.rs`、
+     `repo/jobs.rs` 指向已删文件的注释（S4）；处理服务的部署部分（`app.json`、`check-app` 的规则、`pin-images`、chrono-cd README
+     的处理服务各节、`down.sh`、`e2e.mjs`、`.dockerignore` 第一行、教程 `cloud-claude-code-nyxid.md`、PROGRESS 的表）（S9）；
+     `docs/BUILD_PLAN.md` 是第一版的计划，按历史保留；
+  5. 根 README 的目录说明顺带把 `infra/` 下改成两个 Dockerfile（S6a 删掉处理服务镜像时漏改）。
+- 注意：从本地路径 `uv tool install ./recon` 时 setuptools 在源码目录里留下 `recon/build/`（不在 `.gitignore` 里），装完要删；
+  从 git 地址装（8.4）不受影响。
 
 #### S6b 本地工具新命令
 
 - **改哪些文件**：`recon/src/metaverse_recon/bundle/`（新子包：编排、清单写出、`rb.` 编号、`--seed`、`--from-snapshot`、`base`）、`processing/` 下 `align`、`webmodel`、`modelimport` 的命令入口和导出修正、`bench/cli.py`（新命令注册：`align`、`webmodel`、`models`、`bake`、`fit`、`scan-zip`、`bundle`、`doctor --install`）、`bench/env.py`（往上找 `space.json`、缓存安装）、`recon/README.md`、`docs/tutorials/reconstruct-with-ai.md`。
 - **接口与数据**：6.1–6.4、6.8、8.3、8.4。
-- **验收**：用现在的 `lobby-authored.json` 打出的包：外部模型 glb 的三角形数、包围盒与处理服务现在写回的一致（容差 1 毫米），逐件偏差与现在一致；所有模型过 4.5 的检查（`metaverse bundle check` 通过）；`scan-zip` 跑 `demo_seed_zip.json` 向量；`--from-snapshot` 打出的包展开后，重建层与快照的形状一致（编号除外）；`--seed` 的包里没有内部锚点和建模记录。
+- **验收**：用现在的 `lobby-authored.json` 打出的包：外部模型 glb 的三角形数、包围盒与处理服务现在写回的一致（容差 1 毫米），逐件偏差与现在一致；所有模型过 4.5 的检查（`metaverse bundle check` 通过）；`scan-zip` 跑 `demo_seed_zip.json` 向量；`--from-snapshot` 打出的包展开后，重建层与快照的形状一致（编号除外）；`--seed` 的包里没有内部锚点和建模记录；仓库外 `uv tool install` 后 `metaverse-recon doctor --install` 装好 three 和 Playwright，`doctor` 报告可以渲染（从 S7 挪来）。
 
 #### S8 网站
 
