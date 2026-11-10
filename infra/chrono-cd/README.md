@@ -163,8 +163,8 @@ gh run view <运行编号> -R ChronoAIProject/chrono-metaverse --log | grep -oE 
 
 - 工作流里的 action 固定到 40 位提交哈希，注释里写版本；install-action 装的工具写明版本。上游的标签或分支被改写（例如上游被入侵）时，不会在拿着 `packages: write` 令牌的任务里跑新代码。
 - `Images` 不读写 Actions 缓存：缓存按仓库和分支共用、不分工作流，同一分支上任何 CI 任务里的 action 都能写进构建层。每次从头构建，api 镜像会慢几分钟。
-- 三个 Dockerfile 的 `# syntax=` 构建前端和基础镜像写成"标签@摘要"（构建时 BuildKit 只按摘要拉）。
-- 处理服务的依赖按 `worker/uv.lock` 的哈希装（`--require-hashes`）；worker 包自己的构建后端 setuptools 按 [`infra/worker/build-requirements.txt`](../worker/build-requirements.txt) 的版本和哈希装进虚拟环境、关掉构建隔离再装 worker 包，装完删掉。不这样做时构建隔离每次从 PyPI 拉最新的 setuptools（`uv.lock` 不锁构建依赖）。
+- 两个 Dockerfile 的 `# syntax=` 构建前端和基础镜像写成"标签@摘要"（构建时 BuildKit 只按摘要拉）。
+- 处理服务已下线：它的镜像（`infra/worker/`）和"构建后端按版本和哈希固定"的检查都已删掉，`Images` 不再构建它；线上在换成瘦身后的版本之前，处理服务仍按 `app.json` 里固定的摘要运行以前构建的镜像。
 
 更新由 Dependabot 每周提（[`.github/dependabot.yml`](../../.github/dependabot.yml)，新版本发布满一周才提）；`# syntax=` 的摘要要手工换。
 
@@ -308,7 +308,7 @@ https://<应用域名>/s/chronoai-lobby#share=<第 5 步的令牌>
 curl -s -H "Authorization: Share <令牌>" https://<应用域名>/api/public/spaces/chronoai-lobby/head
 ```
 
-**物体提示的坐标**：种子里的 `hints`（物体中心、尺寸、类别）必须是处理服务 `scan_import` 实际对齐出来的空间坐标。`worker/scripts/lobby_hints.json` 是在 `reconstruct_lobby.py` 的坐标系里标的（对齐方法不同，前厅差约 29 厘米平移和 0.09° 倾斜），所以由 [`worker/scripts/demo_seed_hints.py`](../../worker/scripts/demo_seed_hints.py) 用处理服务的对齐换算后写进 `demo-seed.json`。本地实测（任务结果的 `objects.furnitureMeanCm`）：换算后 3.14 厘米、41 个物体（`reconstruct_lobby.py` 自己的坐标系里是 3.08 厘米、41 个）；不换算是 4.51 厘米、59 个物体，沙发、桌子、前台被重复识别，LED 大屏又被当成墙。
+**物体提示的坐标**：种子里的 `hints`（物体中心、尺寸、类别）必须是处理服务 `scan_import` 实际对齐出来的空间坐标。`worker/scripts/lobby_hints.json` 是在 `reconstruct_lobby.py` 的坐标系里标的（对齐方法不同，前厅差约 29 厘米平移和 0.09° 倾斜），所以当时由 `worker/scripts/demo_seed_hints.py`（处理服务下线时已删）用处理服务的对齐换算后写进 `demo-seed.json`。本地实测（任务结果的 `objects.furnitureMeanCm`）：换算后 3.14 厘米、41 个物体（`reconstruct_lobby.py` 自己的坐标系里是 3.08 厘米、41 个）；不换算是 4.51 厘米、59 个物体，沙发、桌子、前台被重复识别，LED 大屏又被当成墙。
 
 **AI 物件集**（可选，设计 6.3）：本地的 AI 逐件完成前厅的物件——先去模型库（Poly Haven、Objaverse 里许可可商用的）找一个看起来差不多的现成模型，找不到或差太多（前台、LED 大屏墙、入口门框、嵌入柜）再手写参数形状——整套写成一个 JSON 文件（格式见 [`worker/README.md`](../../worker/README.md)“AI 物件集”），种子导入时重建层就换成这些物件，不跑物体重建算法。
 

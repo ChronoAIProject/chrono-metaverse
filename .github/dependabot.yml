@@ -1,8 +1,8 @@
 # 构建发布镜像的外部输入都固定到不可改写的引用（infra/chrono-cd/check-pins.mjs 检查），
 # 由 Dependabot 每周提更新：
 # - 工作流里的 action（固定到提交哈希，注释里是版本）；
-# - 三个 Dockerfile 的基础镜像（标签@摘要）；
-# - 处理服务的构建后端（infra/worker/build-requirements.txt，版本和哈希）。
+# - 两个 Dockerfile 的基础镜像（标签@摘要）。
+# 处理服务已下线，它的镜像和构建后端两项已删；本地重建工具的依赖（uv.lock）等目录改名为 recon/ 时再加一项。
 # 新版本发布后先等一周再提，避开刚发布就被撤回或被替换的版本。合并前照常看变更说明。
 # `# syntax=` 构建前端的摘要 Dependabot 不管，更新时手工取 docker/dockerfile:1 的新摘要。
 
@@ -22,7 +22,6 @@ updates:
     directories:
       - /infra/api
       - /infra/web
-      - /infra/worker
     schedule:
       interval: weekly
     cooldown:
@@ -34,10 +33,3 @@ updates:
           - version-update:semver-major
           - version-update:semver-minor
           - version-update:semver-patch
-
-  - package-ecosystem: pip
-    directory: /infra/worker
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7

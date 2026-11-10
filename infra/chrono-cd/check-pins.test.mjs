@@ -1,5 +1,5 @@
 // 固定版本检查（check-pins.mjs）的测试：node --test infra/chrono-cd/*.test.mjs
-// 先确认仓库里的工作流、Dockerfile 和构建后端通过检查，再逐条改坏，确认每条规则都能报出来。
+// 先确认仓库里的工作流和 Dockerfile 通过检查，再逐条改坏，确认每条规则都能报出来。
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,15 +9,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-import { checkPins, dockerfileProblems, requirementsProblems, workflowProblems } from './check-pins.mjs';
+import { checkPins, dockerfileProblems, workflowProblems } from './check-pins.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
 const read = (path) => readFileSync(join(root, path), 'utf8');
 const ci = read('.github/workflows/ci.yml');
 const images = read('.github/workflows/images.yml');
-const workerDockerfile = read('infra/worker/Dockerfile');
-const buildRequirements = read('infra/worker/build-requirements.txt');
+const apiDockerfile = read('infra/api/Dockerfile');
 
 const SHA = '0123456789abcdef0123456789abcdef01234567';
 const DIGEST = `sha256:${'a'.repeat(64)}`;
@@ -29,7 +28,7 @@ function assertProblem(problems, pattern) {
   );
 }
 
-test('仓库里的工作流、Dockerfile 和构建后端通过检查', () => {
+test('仓库里的工作流和 Dockerfile 通过检查', () => {
   assert.deepEqual(checkPins(root), []);
 });
 
@@ -72,15 +71,13 @@ test('工作流：发布镜像不读写 Actions 缓存', () => {
   const dir = mkdtempSync(join(tmpdir(), 'check-pins-'));
   try {
     cpSync(join(root, '.github', 'workflows'), join(dir, '.github', 'workflows'), { recursive: true });
-    for (const service of ['api', 'web', 'worker']) {
+    for (const service of ['api', 'web']) {
       cpSync(join(root, 'infra', service), join(dir, 'infra', service), { recursive: true });
     }
     writeFileSync(join(dir, '.github', 'workflows', 'images.yml'), withCache.replace(/docker\/login-action@[0-9a-f]{40} # \S+/, 'docker/login-action@v3'));
     const found = checkPins(dir);
     assertProblem(found, /images\.yml:\d+：docker\/login-action@v3 要固定/);
     assertProblem(found, /images\.yml:\d+：发布镜像不能读写 Actions 缓存/);
-    rmSync(join(dir, 'infra', 'worker', 'build-requirements.txt'));
-    assertProblem(checkPins(dir), /缺少 infra\/worker\/build-requirements\.txt/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -107,46 +104,11 @@ test('Dockerfile：构建前端、基础镜像和外部 COPY --from 都按摘要
   assertProblem(dockerfileProblems('FROM \\\n  node:22 AS build\n', 'D'), /D:1：基础镜像 node:22 要按摘要固定/);
 });
 
-test('Dockerfile：uv pip install 要按哈希装，或者不解析依赖、不用构建隔离（heredoc 里也查）', () => {
-  assert.deepEqual(dockerfileProblems(workerDockerfile, 'worker'), []);
+test('Dockerfile：heredoc 里的文字不当指令，heredoc 结束后的指令照常检查', () => {
+  assert.deepEqual(dockerfileProblems(apiDockerfile, 'api'), []);
   const heredoc = (body, tail = '') => `FROM a@${DIGEST}\nRUN <<'INSTALL'\nset -eu\n${body}\nINSTALL\n${tail}`;
-  // heredoc 结束后的 FROM 照常检查，heredoc 里的文字不当指令。
   assertProblem(dockerfileProblems(heredoc('true', 'FROM unpinned\n'), 'D'), /D:6：基础镜像 unpinned 要按摘要固定/);
   assert.ok(!dockerfileProblems(`FROM a@${DIGEST}\nRUN <<'X'\nFROM looks-like-an-instruction\nX\n`, 'D').length);
-
-  for (const command of [
-    'uv pip install --python /opt/venv/bin/python -r /tmp/requirements.txt',
-    'uv pip install --python /opt/venv/bin/python --no-deps .',
-    'uv pip install --python /opt/venv/bin/python .',
-    'uv pip install --no-build-isolation .',
-  ]) {
-    assertProblem(dockerfileProblems(heredoc(command), 'D'), /D:4：uv pip install 要么按哈希装/);
-  }
-  assert.deepEqual(dockerfileProblems(heredoc('uv pip install --require-hashes -r /tmp/r.txt'), 'D'), []);
-  assert.deepEqual(dockerfileProblems(heredoc('uv pip install --no-deps --no-build-isolation .'), 'D'), []);
-  // 不在 heredoc 里的 RUN 同样检查。
-  assertProblem(dockerfileProblems(`FROM a@${DIGEST}\nRUN uv pip install \\\n  numpy\n`, 'D'), /D:2：uv pip install 要么按哈希装/);
-
-  // 仓库里的 worker Dockerfile 退回构建隔离（会从 PyPI 拉最新的 setuptools）时报错。
-  const reverted = workerDockerfile.replace('--no-deps --no-build-isolation .', '--no-deps .');
-  assert.notEqual(reverted, workerDockerfile);
-  assertProblem(dockerfileProblems(reverted, 'worker'), /uv pip install 要么按哈希装/);
-});
-
-test('构建后端：每一项都是 名字==版本 并带 sha256 哈希', () => {
-  assert.deepEqual(requirementsProblems(buildRequirements, 'b.txt'), []);
-  assertProblem(requirementsProblems('setuptools>=75\n', 'b.txt'), /b\.txt:1：setuptools>=75 要写成 名字==确切版本/);
-  assertProblem(requirementsProblems('setuptools>=75\n', 'b.txt'), /要带 --hash=sha256/);
-  assertProblem(requirementsProblems('setuptools==84.2.1\n', 'b.txt'), /setuptools==84\.2\.1 要带 --hash=sha256/);
-  assertProblem(
-    requirementsProblems('# 说明\n\nsetuptools==84.2.1 \\\n    --hash=sha256:abc\n', 'b.txt'),
-    /b\.txt:3：setuptools==84\.2\.1 要带 --hash/,
-  );
-  assertProblem(requirementsProblems('# 只有注释\n', 'b.txt'), /没有任何依赖/);
-  assert.deepEqual(requirementsProblems(`wheel==0.45.1 --hash=${DIGEST}\n`, 'b.txt'), []);
-  // 仓库里的文件删掉哈希后报错。
-  const unhashed = buildRequirements.replace(/ \\\n\s+--hash=sha256:[0-9a-f]{64}/g, '');
-  assertProblem(requirementsProblems(unhashed, 'b.txt'), /要带 --hash=sha256/);
 });
 
 test('命令行：通过时退出码 0，发现问题时退出码 1，读不到时退出码 2', () => {
@@ -158,12 +120,14 @@ test('命令行：通过时退出码 0，发现问题时退出码 1，读不到�
   const dir = mkdtempSync(join(tmpdir(), 'check-pins-'));
   try {
     cpSync(join(root, '.github', 'workflows'), join(dir, '.github', 'workflows'), { recursive: true });
-    cpSync(join(root, 'infra', 'worker'), join(dir, 'infra', 'worker'), { recursive: true });
-    writeFileSync(join(dir, 'infra', 'worker', 'Dockerfile'), workerDockerfile.replace(/python:3\.13\.18-slim-trixie@sha256:[0-9a-f]{64} AS runtime/, 'python:3.13.18-slim-trixie AS runtime'));
+    cpSync(join(root, 'infra', 'api'), join(dir, 'infra', 'api'), { recursive: true });
+    const unpinned = apiDockerfile.replace(/(rust:1\.97\.0-slim-trixie)@sha256:[0-9a-f]{64} AS build/, '$1 AS build');
+    assert.notEqual(unpinned, apiDockerfile);
+    writeFileSync(join(dir, 'infra', 'api', 'Dockerfile'), unpinned);
     const failed = spawnSync(process.execPath, [script, dir], { encoding: 'utf8' });
     assert.equal(failed.status, 1);
     assert.match(failed.stderr, /发现 1 个问题/);
-    assert.match(failed.stderr, /基础镜像 python:3\.13\.18-slim-trixie 要按摘要固定/);
+    assert.match(failed.stderr, /基础镜像 rust:1\.97\.0-slim-trixie 要按摘要固定/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
