@@ -51,6 +51,13 @@ infra/dev/down.sh     # 停止
 - 镜像：推送到 `main` 或开发分支时由 GitHub Actions 构建，推到 `ghcr.io/chronoaiproject/chrono-metaverse-{api,web}`（标签：7 位提交哈希、分支名；`latest` 只给 `main`；部署一律按摘要固定）。
 - 部署：chrono-cd 的 ChronoAI 组织下，项目 `metaverse`、应用 `chrono-metaverse`，服务 `metaverse-web` / `metaverse-api` 加 MongoDB 插件（处理服务已下线，重建在本地做，见 [docs/design/server-slim.md](docs/design/server-slim.md)）。规格和完整步骤（设为公开、提交、NyxID 注册、导入演示数据、回滚）见 [infra/chrono-cd/README.md](infra/chrono-cd/README.md)。
 
+## 持续集成与分支保护
+
+`main` 的必过检查只绑定 GitHub Actions 的 `CI Gate`（名称保持固定）。它等待
+[ci.yml](.github/workflows/ci.yml) 中的全部 CI 任务，只有所有任务都成功才通过；失败、取消或跳过均不通过。
+因此，调整各任务的显示名称无需再修改 GitHub 分支保护。新增、删除或修改 job ID 时，同步维护
+`ci-gate.needs`，让它覆盖所有 CI 任务。可选组件的跳过在任务内部处理，使任务本身正常成功。
+
 ## 文档
 
 - [整体设计](docs/ARCHITECTURE.md)、[建设计划](docs/BUILD_PLAN.md)、[进度报告](docs/PROGRESS.md)、[形状词表](docs/SHAPES.md)、[重建开源方案调研](docs/research/scan-to-model.md)

@@ -246,3 +246,29 @@ jobs:
         run: |
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           "$(go env GOPATH)/bin/actionlint" -color
+
+  # 分支保护只要求这个固定名称；各任务的显示名称可以自由调整。
+  # 新增、删除或修改 job ID 时，同步维护 needs，覆盖上面所有 CI 任务。
+  ci-gate:
+    name: CI Gate
+    if: ${{ always() }}
+    needs: [api, api-deny, web, web-e2e, recon, sdk-typescript, repo]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 确认全部 CI 任务成功
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          results = json.loads(os.environ["NEEDS_JSON"])
+          for job, value in results.items():
+              print(f"{job}: {value['result']}")
+          if not results or any(value["result"] != "success" for value in results.values()):
+              print("::error::CI 未全部成功（失败、取消、跳过均不通过）")
+              sys.exit(1)
+          PY
