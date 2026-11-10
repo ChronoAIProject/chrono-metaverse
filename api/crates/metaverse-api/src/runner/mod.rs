@@ -1,5 +1,5 @@
 //! 后台执行器（docs/design/server-slim.md 4.2）：接口服务进程里一个常驻的异步循环，执行上传核对
-//! （`upload_verify`）和重任务（`ops_from_upload`；部署种子的 `bundle_import` 由后面的步骤接上）。
+//! （`upload_verify`）和重任务（`ops_from_upload`，含交包；部署种子的 `bundle_import`）。
 //! 状态和租约都存在库里，进程重启、换副本后照样接着做。
 //!
 //! - **名额**：两类，各有进程内的信号量：核对 `RUNNER_VERIFY_SLOTS`（默认 2），重任务
@@ -13,7 +13,8 @@
 //!   （上传核对：上传不能停在 `complete`）；
 //! - **停止**：收到停止信号后不再领取；手上的任务等最多 20 秒，做不完就取消、按栅栏退回队列并把
 //!   `attempt` 减 1；进程被直接杀掉时，租约过期后由别的进程重新领取；
-//! - **通知**：完成上传、`ops-from-upload` 建好任务后用 [`JobSignal`] 叫醒本进程的执行器，不等轮询；
+//! - **通知**：完成上传、`ops-from-upload` 和交包建好任务、部署种子插入导入任务后用 [`JobSignal`] 叫醒
+//!   本进程的执行器，不等轮询；
 //! - **健康检查不带后台状态**：执行器的状态只写结构化日志（每次领取、完成、失败各一条，带任务种类、
 //!   空间、耗时）；循环异常退出时记错误日志、5 秒后重启。
 //!
@@ -34,6 +35,7 @@ use crate::error::ApiError;
 use crate::repo::{JobFence, RepoError};
 use crate::AppState;
 
+pub mod bundle_import;
 pub mod bundle_job;
 pub mod cleanup;
 pub mod config;
@@ -68,11 +70,11 @@ pub enum SlotClass {
 }
 
 impl SlotClass {
-    /// 这一类领取哪些种类。部署种子的 `bundle_import` 等它的处理代码接上以后再加进来。
+    /// 这一类领取哪些种类。
     pub fn kinds(self) -> &'static [JobKind] {
         match self {
             SlotClass::Verify => &[JobKind::UploadVerify],
-            SlotClass::Heavy => &[JobKind::OpsFromUpload],
+            SlotClass::Heavy => &[JobKind::OpsFromUpload, JobKind::BundleImport],
         }
     }
 
@@ -288,6 +290,7 @@ impl Runner {
         match lease.job.kind {
             JobKind::UploadVerify => upload_verify::run(self, lease).await,
             JobKind::OpsFromUpload => ops_job::run(self, lease).await,
+            JobKind::BundleImport => bundle_import::run(self, lease).await,
             other => Err(JobFailure::Content(format!(
                 "执行器不处理 {} 任务",
                 other.name()

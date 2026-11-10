@@ -544,6 +544,77 @@ impl Repo {
         })
     }
 
+    /// 后台任务自己写完的上传会话（部署种子下载的文件，docs/design/server-slim.md 7.2）改成
+    /// `complete`：条件同"完成上传"（`open`、没有正在写入的分片），但不建 `upload_verify` 任务——
+    /// 由这个后台任务接着核对、登记。返回是否改成了。
+    pub async fn complete_upload_inline(
+        &self,
+        grant: &Grant,
+        upload: &Upload,
+        now: Timestamp,
+    ) -> Result<bool, RepoError> {
+        if !grant.can_manage() || upload.space_id != grant.space_id() {
+            return Err(RepoError::GrantMismatch);
+        }
+        let mut filter = space_children(grant);
+        filter.insert("_id", &upload.id);
+        filter.insert("status", "open");
+        filter.insert(
+            "$or",
+            vec![
+                doc! {"writing": {"$exists": false}},
+                doc! {"writing": {"$lte": 0}},
+                doc! {"writeLeaseUntil": {"$lt": now.to_rfc3339()}},
+            ],
+        );
+        let result = self
+            .collection(collections::UPLOADS)
+            .update_one(
+                filter,
+                doc! {"$set": {
+                    "status": "complete",
+                    "completedAt": now.to_rfc3339(),
+                    "updatedAt": now.to_rfc3339(),
+                }},
+            )
+            .await?;
+        Ok(result.matched_count == 1)
+    }
+
+    /// 删掉一个已经失败或过期的上传会话和它的数据块（部署种子重做时换一个新的会话）。已登记成资源
+    /// 的数据块不删。返回是否删了会话。
+    pub async fn remove_dead_upload(
+        &self,
+        grant: &Grant,
+        upload_id: &str,
+    ) -> Result<bool, RepoError> {
+        if !grant.can_manage() {
+            return Err(RepoError::GrantMismatch);
+        }
+        let mut filter = space_children(grant);
+        filter.insert("_id", upload_id);
+        filter.insert("status", doc! {"$in": ["failed", "expired"]});
+        let removed = self
+            .collection(collections::UPLOADS)
+            .delete_one(filter)
+            .await?
+            .deleted_count
+            == 1;
+        if removed
+            && self
+                .collection(collections::ASSET_FILES)
+                .find_one(doc! {"_id": upload_id})
+                .projection(doc! {"_id": 1})
+                .await?
+                .is_none()
+        {
+            self.collection(collections::ASSET_CHUNKS)
+                .delete_many(doc! {"files_id": upload_id})
+                .await?;
+        }
+        Ok(removed)
+    }
+
     /// 某个资源对这个空间是否可用：本空间有这个哈希、用途在 `purposes` 里的上传
     /// （给了 `scope` 时还要求是同一路径范围创建的）。校验通过且资源仍在才算可用。
     pub async fn asset_availability(

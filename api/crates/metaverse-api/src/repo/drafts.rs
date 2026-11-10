@@ -388,8 +388,10 @@ impl Repo {
         let mut filter = draft_filter(grant, draft_id);
         filter.insert("rev", rev as i64);
         filter.insert("status", "open");
+        // 先查租约：租约丢了就报租约丢失（新的持有者可能已经发布了这个草稿）。
         let outcome = self
             .run_transaction(&[
+                fence.done_op(result, now)?,
                 TxnOp::Update {
                     collection: collections::DRAFTS,
                     filter,
@@ -399,13 +401,12 @@ impl Repo {
                         "updatedAt": now.to_rfc3339(),
                     }},
                 },
-                fence.done_op(result, now)?,
             ])
             .await?;
         Ok(match outcome {
             TxnOutcome::Committed => JobDraftSave::Saved,
-            TxnOutcome::NotMatched(0) => JobDraftSave::DraftChanged,
-            TxnOutcome::NotMatched(_) => JobDraftSave::LeaseLost,
+            TxnOutcome::NotMatched(0) => JobDraftSave::LeaseLost,
+            TxnOutcome::NotMatched(_) => JobDraftSave::DraftChanged,
         })
     }
 

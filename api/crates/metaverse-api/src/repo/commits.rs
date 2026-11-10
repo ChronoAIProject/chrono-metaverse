@@ -499,6 +499,34 @@ impl Repo {
         self.fence_assets(session, plan).await?;
         let seq = plan.base_seq + 1;
         let at = metaverse_core::model::next_commit_at(now, space.head.at);
+        // 由后台任务发布：同一个事务里按租约栅栏把任务标记完成，提交和任务完成一起成功或一起作废。
+        // 先查租约：租约丢了就报租约丢失（不报草稿变了，新的持有者可能已经发布了这个草稿）。
+        if let Some(job) = &plan.job_done {
+            let mut result = job.result.clone();
+            if let Value::Object(map) = &mut result {
+                map.insert("commitId".into(), Value::String(commit_id.to_owned()));
+                map.insert("seq".into(), Value::from(seq));
+            }
+            let done = self
+                .collection(collections::JOBS)
+                .update_one(
+                    job.fence.filter(),
+                    doc! {
+                        "$set": {
+                            "status": "done",
+                            "result": to_bson(&result).map_err(CommitError::from)?,
+                            "resultCommitId": commit_id,
+                            "finishedAt": at.to_rfc3339(),
+                        },
+                        "$unset": {"leaseUntil": "", "notBefore": ""},
+                    },
+                )
+                .session(&mut *session)
+                .await?;
+            if done.matched_count != 1 {
+                return Err(CommitError::LeaseLost.into());
+            }
+        }
         let commit = Commit {
             id: commit_id.to_owned(),
             space_id: grant.space_id().to_owned(),
@@ -592,33 +620,6 @@ impl Repo {
                 .await?;
             if claimed.matched_count != 1 {
                 return Err(CommitError::DraftChanged.into());
-            }
-        }
-        // 由后台任务发布：同一个事务里按租约栅栏把任务标记完成，提交和任务完成一起成功或一起作废。
-        if let Some(job) = &plan.job_done {
-            let mut result = job.result.clone();
-            if let Value::Object(map) = &mut result {
-                map.insert("commitId".into(), Value::String(commit_id.to_owned()));
-                map.insert("seq".into(), Value::from(seq));
-            }
-            let done = self
-                .collection(collections::JOBS)
-                .update_one(
-                    job.fence.filter(),
-                    doc! {
-                        "$set": {
-                            "status": "done",
-                            "result": to_bson(&result).map_err(CommitError::from)?,
-                            "resultCommitId": commit_id,
-                            "finishedAt": at.to_rfc3339(),
-                        },
-                        "$unset": {"leaseUntil": "", "notBefore": ""},
-                    },
-                )
-                .session(&mut *session)
-                .await?;
-            if done.matched_count != 1 {
-                return Err(CommitError::LeaseLost.into());
             }
         }
         let owner = owner_document(grant).map_err(CommitError::from)?;
