@@ -406,3 +406,53 @@ for (const loseUpload of [false, true])
       false,
     );
   });
+
+test('恢复旧任务：手机直接看到沙箱阶段的授权阻塞', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 720 });
+  await page.addInitScript(() =>
+    sessionStorage.setItem(
+      'metaverse-worker:startup-owner',
+      JSON.stringify({
+        spaceId: 'fixture-space',
+        orgId: '',
+        instruction: '',
+        operationId: 'op_waiting',
+      }),
+    ),
+  );
+  await page.route('**/api/auth/nyxid/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/session'))
+      return route.fulfill({
+        json: {
+          enabled: true,
+          connected: true,
+          subject: 'startup-owner',
+          csrfToken: 'fixture',
+          workerAvailable: true,
+          workerEnabled: true,
+        },
+      });
+    if (path.endsWith('/spaces'))
+      return route.fulfill({ json: { items: [], organizations: [], next: null } });
+    if (path.endsWith('/observe'))
+      return route.fulfill({
+        json: {
+          operation: {
+            id: 'op_waiting',
+            status: 'waiting_for_connection',
+            phase: 'sandbox_ready',
+            connection: { services: ['chrono-metaverse'], target: {} },
+            events: [],
+          },
+        },
+      });
+    return route.fulfill({ status: 404, json: { code: 'not_found' } });
+  });
+  await page.goto('/workspace');
+  await page.getByRole('button', { name: '打开 CMA 聊天' }).click();
+  await expect(page.getByText('需要完成 CMA 服务授权', { exact: true })).toBeInViewport();
+  await expect(page.getByRole('button', { name: '刷新启动进度' })).toBeInViewport();
+  await expect(page.getByText('准备任务', { exact: false }).first()).toBeInViewport();
+  await expect(page.getByRole('heading', { name: '你想怎样调整这个空间？' })).toHaveCount(0);
+});

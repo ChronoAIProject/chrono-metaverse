@@ -767,7 +767,17 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
       : '';
   useEffect(() => {
     if (chatOpen) chatEnd.current?.scrollIntoView?.({ block: 'nearest' });
-  }, [transcript, output, busy, note.sent, note.pending, chatOpen]);
+  }, [
+    transcript,
+    output,
+    busy,
+    note.sent,
+    note.pending,
+    note.operationId,
+    operation?.status,
+    operation?.phase,
+    chatOpen,
+  ]);
   const cmaBase = session?.workerUrl ?? CMA;
   const observedAgentId = note.agentId || operation?.agent_id;
   const cmaLink = observedAgentId
@@ -1402,6 +1412,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                 aria-relevant="additions text"
               >
                 {!note.creation &&
+                  !note.operationId &&
                   conversation.length === 0 &&
                   unobserved.length === 0 &&
                   !pendingText && (
@@ -1480,6 +1491,39 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                     ))}
                   </div>
                 )}
+                {note.operationId && (
+                  <StartupProgress
+                    operation={operation}
+                    operationId={note.operationId}
+                    cmaUrl={cmaBase}
+                    busy={disabled}
+                    onRefresh={() => {
+                      setError('');
+                      setNotice('');
+                      setPoll((v) => v + 1);
+                    }}
+                    onResume={note.startup ? () => void runIntent(note.startup!) : undefined}
+                    onRestart={
+                      note.startup && !operation?.agent_id
+                        ? () => {
+                            autoUpload.current = Boolean(
+                              note.creation?.source?.kind === 'file' && sourceFile,
+                            );
+                            void runIntent(
+                              {
+                                ...note.startup!,
+                                body: {
+                                  ...note.startup!.body,
+                                  idempotencyKey: crypto.randomUUID(),
+                                },
+                              },
+                              { ...note, operationId: undefined },
+                            );
+                          }
+                        : undefined
+                    }
+                  />
+                )}
                 <div ref={chatEnd} />
               </div>
               {note.pending && !busy && (
@@ -1522,36 +1566,6 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                     </button>
                   </details>
                 </section>
-              )}
-              {note.operationId && (
-                <StartupProgress
-                  operation={operation}
-                  operationId={note.operationId}
-                  cmaUrl={cmaBase}
-                  busy={disabled}
-                  onRefresh={() => {
-                    setError('');
-                    setNotice('');
-                    setPoll((v) => v + 1);
-                  }}
-                  onResume={note.startup ? () => void runIntent(note.startup!) : undefined}
-                  onRestart={
-                    note.startup && !operation?.agent_id
-                      ? () => {
-                          autoUpload.current = Boolean(
-                            note.creation?.source?.kind === 'file' && sourceFile,
-                          );
-                          void runIntent(
-                            {
-                              ...note.startup!,
-                              body: { ...note.startup!.body, idempotencyKey: crypto.randomUUID() },
-                            },
-                            { ...note, operationId: undefined },
-                          );
-                        }
-                      : undefined
-                  }
-                />
               )}
               {preview.startsWith('/preview') && note.agentId && (
                 <section className="workspace__publish">

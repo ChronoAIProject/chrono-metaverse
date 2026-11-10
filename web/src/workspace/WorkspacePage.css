@@ -518,6 +518,9 @@
 .workspace__notice--error {
   color: var(--dsw-alias-state-error-primary, var(--dsw-alias-label-primary));
 }
+.workspace__conversation > .workspace__startup {
+  margin: 0;
+}
 .workspace__creation {
   padding: 14px 16px;
   display: grid;
