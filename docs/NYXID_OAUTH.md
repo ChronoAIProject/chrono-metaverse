@@ -42,7 +42,7 @@ OAuth 回调成功后返回 `/connect?connected=1`；取消、过期、provider 
 
 在 NyxID 注册一个专用于此部署的**保密 OAuth 客户端**，支持 `authorization_code`、`refresh_token`、PKCE S256、`client_secret_post`，允许 scopes `openid offline_access`。不用为这个客户端授予业务服务的代理访问范围；它不代理业务请求。现有 NyxID 的普通用户组织查询接口以用户身份判定成员权限，不要求新增组织 scope。此结论根据 NyxID 源码核对；实际部署仍需完成下文的线上验收。
 
-`openid offline_access` 是当前申请的最小 scope 集合，但 NyxID 现有普通用户组织接口没有“仅查询角色”的专用 scope。本文所说的“只用于查询”是 metaverse 的代码使用边界，不代表 provider 已将令牌硬限制到这一个接口；令牌仍须按敏感用户凭据保护，其他接口能否接受它取决于 NyxID 各路由的身份、scope 及资源检查。
+`openid offline_access` 是当前申请的最小 scope 集合，但 NyxID 现有普通用户组织接口没有“仅查询角色”的专用 scope。组织查询及用户明确启用后的固定 CMA 操作是 metaverse 的代码使用边界，不代表 provider 已将令牌硬限制到这些接口；令牌仍须按敏感用户凭据保护，其他接口能否接受它取决于各服务路由的身份、scope 及资源检查。
 
 回调地址必须精确注册为：
 
@@ -139,3 +139,10 @@ CMA 接口要求普通用户 OAuth access token。带服务 resource/allowed_ser
 网页在发送前保存原请求内容与幂等编号至按账号隔离的 sessionStorage；不保存令牌、CSRF 或 provider 诊断。未知结果不自动重试；用户可核对状态后重试同一请求。仅在 CMA 明确返回 `sandbox_credential_setup_required` 时，提供官方 CMA 登录入口，用户完成后显式以新编号重试同一需求。网页不代替用户完成 CMA 的可续期授权。自动状态观察串行、最多 120 次，失败或终态暂停，手动刷新可恢复。
 
 网页取得预览绑定的空间、草稿编号、rev 和 baseSeq 后，发布委托只携带这些非秘密编号与版本，不保存或转发预览令牌至恢复记录。草稿预览链接是短期读取能力，结果链接只保留在当前页面内存。只允许本站 `/preview`、`/s/…`、`/u/…` 查看器地址进入 iframe；模型回复作为文本渲染。先草稿后发布是任务指令，不能视为 NyxID 操作范围的替代。
+
+## 在线工作台部署记录（2026-11-10）
+
+- chrono-cd 修订 `12`；功能源码提交 `1df1a2400e863d078595fe336e0501a5915edccb`，分支 `feat/web-console-20261110`。[CI](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/42845299344) 全部成功，[Images](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/42845299254) 的 API/web 镜像按摘要部署。
+- 部署前后规格逐字段比对，仅更新 API/web 镜像、CD 解析摘要和 `CMA_BASE_URL`；OAuth scopes 仍为 `openid offline_access`。API 单副本、web 双副本全部更新就绪，既有组织空间 `chronoai-lobby` 可继续通过原 NyxID 用户代理读取。
+- 已在线核对：`/workspace` 的桌面和手机真实渲染，无脚本错误或横向溢出；匿名状态返回 `enabled:true,connected:false,workerAvailable:true`；无会话的 CMA 同意、创建、观察调用均返回 401 且不缓存；业务 API 继续拒绝未签名请求；OAuth 回调地址、PKCE、Secure/HttpOnly/SameSite Cookie 正确。
+- 本地真实 MongoDB + 模拟 NyxID/CMA 的集成测试，以及浏览器测试，覆盖同意、任务创建、异步准备、对话、版本核验、发布委托和断网恢复。线上尚未代替用户完成浏览器同意或创建真实 CMA 任务；首次使用须在网页启用，CMA 要求可续期环境授权时再以同一账号登录其官方页面。

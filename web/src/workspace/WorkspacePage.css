@@ -120,7 +120,7 @@
   outline-offset: 3px;
 }
 .workspace button,
-.workspace__button {
+.workspace .workspace__button {
   cursor: pointer;
   border: 1px solid transparent;
   border-radius: 7px;
