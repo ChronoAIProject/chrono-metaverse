@@ -52,10 +52,10 @@ function Home({ showFixtureLink }: { readonly showFixtureLink: boolean }) {
   return (
     <main className="home">
       <div className="home__card">
-        <h1>chrono-metaverse 查看器</h1>
+        <h1>你的空间，聊着改</h1>
         <p>
-          实体空间的数字孪生和虚拟扩展，按一条时间线记录和回放。描述需求，由在线 CMA worker
-          建造；凭分享链接查看与回放。
+          登录后选择你的个人或组织空间，和在线 CMA worker 持续聊天，边调整边看三维预览。
+          空间的每次发布都可以沿时间线回放。
         </p>
         <p className="home__hint">
           空间链接形如 <code>/s/空间编号#share=分享令牌</code>，组合链接形如{' '}

@@ -1,6 +1,11 @@
 import { render, screen, waitFor, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+vi.mock('../space/SpacePage', () => ({
+  SpacePage: ({ spaceId }: { spaceId: string }) => (
+    <div data-testid="private-viewer">{spaceId}</div>
+  ),
+}));
 import { WorkspacePage } from './WorkspacePage';
 import { resultLinks, viewerLink, type Transcript } from './client';
 
@@ -30,15 +35,43 @@ const transcript: Transcript = {
     },
   ],
 };
-function mockApi(options: { enabled?: boolean; loseCreate?: boolean; setup?: boolean } = {}) {
+function mockApi(
+  options: { enabled?: boolean; loseCreate?: boolean; setup?: boolean; followUp?: boolean } = {},
+) {
   const writes: { action: string; body: Record<string, unknown> }[] = [];
   let creates = 0;
+  let messages = 0;
   const request = vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input);
     if (url === '/api/public/previews')
       return reply({
         spaceId: 'my-lobby',
         preview: { draftId: 'draft_one', rev: 3, baseSeq: 1, scope: 'physical' },
+      });
+    if (url === '/api/auth/nyxid/spaces')
+      return reply({
+        items: [
+          {
+            id: 'my-lobby',
+            name: '我的前厅',
+            description: '',
+            owner: { kind: 'org', id: 'org-one' },
+            visibility: 'unlisted',
+            access: 'manage',
+            updatedAt: '2026-11-11T00:00:00Z',
+          },
+          {
+            id: 'my-garden',
+            name: '我的花园',
+            description: '',
+            owner: { kind: 'person', id: 'owner-a' },
+            visibility: 'unlisted',
+            access: 'manage',
+            updatedAt: '2026-11-11T00:00:00Z',
+          },
+        ],
+        organizations: [{ id: 'org-one', name: 'ChronoAI', role: 'admin' }],
+        next: null,
       });
     if (url.endsWith('/session'))
       return reply({ ...connected, workerEnabled: options.enabled ?? true });
@@ -59,10 +92,31 @@ function mockApi(options: { enabled?: boolean; loseCreate?: boolean; setup?: boo
       });
     if (action === 'observe')
       return reply({ agent: { id: 'agt_one', status: 'ready' }, transcript });
-    if (action === 'message') return reply({ responseId: 'resp_one', commandId: 'cmd_one' }, 202);
+    if (action === 'message') {
+      messages++;
+      return reply({ responseId: 'resp_one', commandId: 'cmd_one' }, 202);
+    }
     if (action === 'response')
       return reply({
-        response: { status: 'completed' },
+        response: {
+          status: 'completed',
+          output:
+            options.followUp && messages
+              ? [
+                  {
+                    id: 'msg_live',
+                    type: 'message',
+                    role: 'assistant',
+                    content: [
+                      {
+                        type: 'output_text',
+                        text: '已改为暖色，预览 /preview#t=preview-next-token',
+                      },
+                    ],
+                  },
+                ]
+              : [],
+        },
         controls: { target_active: false, agent_revision: 2 },
       });
     if (action === 'agents')
@@ -75,13 +129,13 @@ function mockApi(options: { enabled?: boolean; loseCreate?: boolean; setup?: boo
   return { request, writes };
 }
 async function fillTask() {
-  await userEvent.type(screen.getByLabelText('目标空间编号'), 'my-lobby');
-  await userEvent.type(
-    screen.getByLabelText('你想让空间发生什么变化'),
-    '在入口建欢迎区，先给我预览',
-  );
+  await userEvent.click(await screen.findByRole('button', { name: /我的前厅/ }));
+  await userEvent.type(screen.getByLabelText('给空间发消息'), '在入口建欢迎区，先给我预览');
 }
-beforeEach(() => sessionStorage.clear());
+beforeEach(() => {
+  sessionStorage.clear();
+  window.history.replaceState(null, '', '/workspace');
+});
 afterEach(cleanup);
 
 describe('CMA workspace', () => {
@@ -93,19 +147,20 @@ describe('CMA workspace', () => {
     expect(api.writes).toEqual([]);
     await userEvent.click(screen.getByRole('checkbox', { name: /允许此浏览器/ }));
     await userEvent.click(enable);
-    await screen.findByRole('button', { name: '创建 worker 并开始' });
+    await screen.findByRole('button', { name: /我的前厅/ });
     await fillTask();
-    await userEvent.click(screen.getByRole('button', { name: '创建 worker 并开始' }));
+    await userEvent.click(screen.getByRole('button', { name: '发送' }));
     await screen.findByText(/<script>danger/);
     expect(container.querySelector('script')).toBeNull();
     expect(api.writes.filter((w) => w.action === 'create')).toHaveLength(1);
-    await userEvent.click(screen.getByRole('button', { name: '草稿预览 1' }));
+    // Latest preview opens automatically.
     expect(screen.getByTitle('三维空间预览')).toHaveAttribute(
       'src',
       '/preview#t=preview-safe-token',
     );
     const publish = screen.getByRole('button', { name: '请 worker 发布此草稿' });
     expect(publish).toBeDisabled();
+    await waitFor(() => expect(screen.getByText(/draft_one/)).toBeVisible());
     await userEvent.click(screen.getByRole('checkbox', { name: /我已查看预览/ }));
     await userEvent.click(publish);
     await waitFor(() => expect(api.writes.filter((w) => w.action === 'message')).toHaveLength(1));
@@ -117,12 +172,59 @@ describe('CMA workspace', () => {
     expect(sessionStorage.getItem('metaverse-worker:owner-a')).not.toContain('csrf-secret');
     expect(sessionStorage.getItem('metaverse-worker:owner-a')).not.toContain('preview-safe-token');
   });
+  it('lists spaces before consent and opens the authenticated viewer without writes', async () => {
+    const api = mockApi({ enabled: false });
+    render(<WorkspacePage request={api.request} />);
+    await userEvent.click(await screen.findByRole('button', { name: /我的前厅/ }));
+    expect(screen.getByTestId('private-viewer')).toHaveTextContent('my-lobby');
+    expect(screen.getByLabelText('给空间发消息')).toBeDisabled();
+    expect(api.writes).toEqual([]);
+    await userEvent.selectOptions(screen.getByLabelText('空间归属'), 'person');
+    expect(screen.queryByRole('button', { name: /我的前厅/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /我的花园/ })).toBeVisible();
+  });
+  it('keeps independent conversations and unsent messages for each space', async () => {
+    const api = mockApi();
+    render(<WorkspacePage request={api.request} />);
+    await fillTask();
+    await userEvent.click(screen.getByRole('button', { name: '发送' }));
+    await screen.findByText(/<script>danger/);
+    await userEvent.type(screen.getByLabelText('给空间发消息'), '未发送的追问');
+    await userEvent.click(screen.getByRole('button', { name: /我的花园/ }));
+    expect(screen.getByLabelText('给空间发消息')).toHaveValue('');
+    expect(screen.getByTestId('private-viewer')).toHaveTextContent('my-garden');
+    expect(screen.queryByText(/<script>danger/)).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: /我的前厅/ }));
+    expect(screen.getByLabelText('给空间发消息')).toHaveValue('未发送的追问');
+    await screen.findByText(/<script>danger/);
+    expect(api.writes.filter((w) => w.action === 'create')).toHaveLength(1);
+  });
+  it('sends follow-up chat to the same worker, follows the new preview and requires fresh confirmation', async () => {
+    const api = mockApi({ followUp: true });
+    render(<WorkspacePage request={api.request} />);
+    await fillTask();
+    await userEvent.click(screen.getByRole('button', { name: '发送' }));
+    await screen.findByText(/<script>danger/);
+    await waitFor(() => expect(screen.getByText(/draft_one/)).toBeVisible());
+    await userEvent.click(screen.getByRole('checkbox', { name: /我已查看预览/ }));
+    await userEvent.type(screen.getByLabelText('给空间发消息'), '暖色一些');
+    await userEvent.click(screen.getByRole('button', { name: '发送' }));
+    await screen.findByText(/已改为暖色/);
+    expect(screen.getByTitle('三维空间预览')).toHaveAttribute(
+      'src',
+      '/preview#t=preview-next-token',
+    );
+    expect(screen.getByRole('checkbox', { name: /我已查看预览/ })).not.toBeChecked();
+    expect(api.writes.filter((w) => w.action === 'create')).toHaveLength(1);
+    expect(api.writes.find((w) => w.action === 'message')!.body.agentId).toBe('agt_one');
+    expect(api.writes.find((w) => w.action === 'message')!.body.instruction).toBe('暖色一些');
+  });
   it('recovers an uncertain creation after reload with identical body and key, and never automatically retries writes', async () => {
     const api = mockApi({ loseCreate: true });
     const mounted = render(<WorkspacePage request={api.request} />);
-    await screen.findByRole('button', { name: '创建 worker 并开始' });
+    await screen.findByRole('button', { name: /我的前厅/ });
     await fillTask();
-    await userEvent.click(screen.getByRole('button', { name: '创建 worker 并开始' }));
+    await userEvent.click(screen.getByRole('button', { name: '发送' }));
     await screen.findByRole('button', { name: '重试原请求' });
     expect(api.writes).toHaveLength(1);
     mounted.unmount();
@@ -137,9 +239,9 @@ describe('CMA workspace', () => {
   it('uses a new key only after CMA definitively refuses creation for missing setup', async () => {
     const api = mockApi({ setup: true });
     render(<WorkspacePage request={api.request} />);
-    await screen.findByRole('button', { name: '创建 worker 并开始' });
+    await screen.findByRole('button', { name: /我的前厅/ });
     await fillTask();
-    await userEvent.click(screen.getByRole('button', { name: '创建 worker 并开始' }));
+    await userEvent.click(screen.getByRole('button', { name: '发送' }));
     const retry = await screen.findByRole('button', { name: '已完成授权，重新提交' });
     expect(screen.getByRole('link', { name: '登录 CMA ↗' })).toHaveAttribute(
       'href',
@@ -164,8 +266,8 @@ describe('CMA workspace', () => {
     );
     const api = mockApi();
     render(<WorkspacePage request={api.request} />);
-    expect(await screen.findByLabelText('目标空间编号')).toHaveValue('');
-    await userEvent.click(screen.getByText('网页授权'));
+    expect(await screen.findByLabelText('给空间发消息')).toHaveValue('');
+    await userEvent.click(screen.getByText('会话与 worker'));
     await userEvent.click(screen.getByRole('button', { name: '关闭网页 CMA 调用' }));
     await screen.findByText('已关闭网页 CMA 调用。已受理的任务仍在 CMA 中运行。');
     expect(api.writes).toEqual([{ action: 'consent', body: { enabled: false } }]);

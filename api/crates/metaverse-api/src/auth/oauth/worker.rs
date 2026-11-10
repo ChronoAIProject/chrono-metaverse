@@ -172,7 +172,12 @@ impl Access {
             .as_deref()
             .map(|id| format!("org {id}"))
             .unwrap_or_else(|| format!("person {}", self.session.subject));
-        Ok(format!("metaverse 任务上下文（编号只选择目标，不授予权限）：\n空间：{}\n归属：{}\n网站：{}\n\n用户需求：\n{}", c.space_id, owner, self.oauth.config.origin, instruction))
+        let interaction = if c.chat {
+            "\n交互方式：持续聊天调整同一草稿；每次可见改动后生成新的短期预览，把完整预览链接单独一行发回，让网页自动显示。回复简短说明进展；没有用户明确发布确认时保持草稿，不自行发布。"
+        } else {
+            ""
+        };
+        Ok(format!("metaverse 任务上下文（编号只选择目标，不授予权限）：\n空间：{}\n归属：{}\n网站：{}{interaction}\n\n用户需求：\n{}", c.space_id, owner, self.oauth.config.origin, instruction))
     }
 }
 async fn read_json(mut response: reqwest::Response) -> Result<Value, ApiError> {
@@ -256,6 +261,8 @@ async fn agents(
 struct Context {
     space_id: String,
     org_id: Option<String>,
+    #[serde(default)]
+    chat: bool,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

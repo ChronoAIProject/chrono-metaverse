@@ -34,6 +34,7 @@ export interface SpacePageProps {
   readonly client: PublicClient;
   /** 有分享令牌时为 true；没有时提示链接可能不完整。 */
   readonly hasShareToken: boolean;
+  readonly embedded?: boolean;
   readonly createView?: SceneViewFactory;
   readonly now?: () => number;
   /** 默认视图：地址里没有（或不认识）`?view=` 时用它；切回它时地址里不写 view。 */
@@ -54,6 +55,7 @@ export function SpacePage({
   spaceId,
   client,
   hasShareToken,
+  embedded = false,
   createView,
   now = Date.now,
   initialMode = 'optimized',
@@ -218,7 +220,7 @@ export function SpacePage({
           onToggle={setCutEnabled}
           onHeight={setCutHeight}
         />
-        {window.self === window.top && (
+        {!embedded && window.self === window.top && (
           <a
             className="space__worker-link"
             href={`/workspace?space=${encodeURIComponent(spaceId)}`}

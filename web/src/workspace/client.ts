@@ -21,6 +21,7 @@ export type Notebook = {
   operationId?: string;
   responseId?: string;
   pending?: Intent;
+  sent?: { key: string; text: string }[];
 };
 export type Agent = { id: string; title?: string; owner_title?: string; status: string };
 export type Operation = {
@@ -92,30 +93,45 @@ export async function workerRequest<T>(
 }
 const id = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9_-]{1,256}$/.test(v);
 export const emptyNotebook = (): Notebook => ({ spaceId: '', orgId: '', instruction: '' });
-export function readNotebook(subject: string): Notebook {
+function parseNotebook(raw: string | null, spaceId = ''): Notebook {
+  const fallback = () => ({ ...emptyNotebook(), spaceId });
   try {
-    const raw = sessionStorage.getItem(`metaverse-worker:${subject}`);
-    if (!raw || raw.length > 200_000) return emptyNotebook();
+    if (!raw || raw.length > 200_000) return fallback();
     const v = JSON.parse(raw) as Notebook;
     if (
       typeof v.spaceId !== 'string' ||
+      (spaceId && v.spaceId !== spaceId) ||
       typeof v.orgId !== 'string' ||
       typeof v.instruction !== 'string' ||
       [v.agentId, v.operationId, v.responseId].some((n) => n !== undefined && !id(n)) ||
+      (v.sent !== undefined &&
+        (!Array.isArray(v.sent) ||
+          v.sent.length > 30 ||
+          v.sent.some((m) => !id(m.key) || typeof m.text !== 'string'))) ||
       (v.pending !== undefined &&
         (!['create', 'message', 'cancel'].includes(v.pending.action) ||
           typeof v.pending.body !== 'object' ||
           v.pending.body === null ||
           !id(v.pending.body.idempotencyKey)))
     )
-      return emptyNotebook();
+      return fallback();
     return v;
+  } catch {
+    return fallback();
+  }
+}
+export function readNotebook(subject: string): Notebook {
+  try {
+    return parseNotebook(sessionStorage.getItem(`metaverse-worker:${subject}`));
   } catch {
     return emptyNotebook();
   }
 }
 export function saveNotebook(subject: string, value: Notebook) {
-  sessionStorage.setItem(`metaverse-worker:${subject}`, JSON.stringify(value));
+  const text = JSON.stringify(value);
+  sessionStorage.setItem(`metaverse-worker:${subject}`, text);
+  if (value.spaceId)
+    sessionStorage.setItem(`metaverse-worker:${subject}:space:${value.spaceId}`, text);
 }
 /** Only this application's viewer routes may be embedded. Never render arbitrary worker HTML. */
 export function viewerLink(value: string, origin = window.location.origin): string | null {
@@ -175,4 +191,81 @@ export function statusText(value: string): string {
     deleted: '已删除',
   };
   return Object.hasOwn(names, value) ? names[value]! : value;
+}
+
+export type SpaceSummary = {
+  id: string;
+  name: string;
+  description: string;
+  owner: { kind: 'person' | 'org'; id: string };
+  visibility: string;
+  updatedAt: string;
+  access: 'read' | 'manage';
+};
+export type Catalog = {
+  items: SpaceSummary[];
+  next: string | null;
+  organizations: { id: string; name: string; role: string }[];
+};
+export type ResponseOutput = {
+  id: string;
+  type: string;
+  role?: string;
+  name?: string;
+  status?: string;
+  content?: { type: string; text?: string }[];
+};
+export function outputMessages(output: ResponseOutput[]): string[] {
+  return output
+    .filter((o) => o.type === 'message' && o.role === 'assistant')
+    .map((o) =>
+      (o.content ?? [])
+        .filter((c) => c.type === 'output_text')
+        .map((c) => c.text ?? '')
+        .join(''),
+    )
+    .filter(Boolean);
+}
+export function userText(text: string): string {
+  return text.startsWith('metaverse 任务上下文（编号只选择目标，不授予权限）：')
+    ? text.slice(text.indexOf('\n用户需求：\n') + '\n用户需求：\n'.length)
+    : text;
+}
+export async function readCatalog(
+  session: Session,
+  after?: string,
+  signal?: AbortSignal,
+  request = fetch,
+): Promise<Catalog> {
+  const r = await request('/api/auth/nyxid/spaces', {
+    method: 'POST',
+    credentials: 'same-origin',
+    cache: 'no-store',
+    signal,
+    headers: { 'Content-Type': 'application/json', 'x-csrf-token': session.csrfToken ?? '' },
+    body: JSON.stringify(after ? { after } : {}),
+  });
+  if (!r.ok) {
+    const v = (await r.json()) as { code?: string; detail?: string };
+    throw new WorkerError(v.code ?? 'catalog_error', v.detail ?? '暂时无法读取空间列表。');
+  }
+  return (await r.json()) as Catalog;
+}
+export function readSpaceNotebook(subject: string, spaceId: string): Notebook {
+  const key = `metaverse-worker:${subject}:space:${spaceId}`;
+  const raw = sessionStorage.getItem(key);
+  if (!raw) return { ...emptyNotebook(), spaceId };
+  // Reuse the same schema checks, without replacing the active notebook in storage.
+  return parseNotebook(raw, spaceId);
+}
+
+export function recordSent(
+  note: Notebook,
+  key: string,
+  text: string,
+): NonNullable<Notebook['sent']> {
+  const sent = [...(note.sent ?? []), { key, text }].slice(-30);
+  let size = sent.reduce((total, m) => total + m.text.length, 0);
+  while (size > 64000 && sent.length > 1) size -= sent.shift()!.text.length;
+  return sent;
 }

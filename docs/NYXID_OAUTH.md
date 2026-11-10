@@ -147,3 +147,11 @@ CMA 接口要求普通用户 OAuth access token。带服务 resource/allowed_ser
 - 已在线核对：`/workspace` 的桌面和手机真实渲染，无脚本错误或横向溢出；匿名状态返回 `enabled:true,connected:false,workerAvailable:true`；无会话的 CMA 同意、创建、观察调用均返回 401 且不缓存；业务 API 继续拒绝未签名请求；OAuth 回调地址、PKCE、Secure/HttpOnly/SameSite Cookie 正确。
 - 本地真实 MongoDB + 模拟 NyxID/CMA 的集成测试，以及浏览器测试，覆盖同意、任务创建、异步准备、对话、版本核验、发布委托和断网恢复。线上尚未代替用户完成浏览器同意或创建真实 CMA 任务；首次使用须在网页启用，CMA 要求可续期环境授权时再以同一账号登录其官方页面。
 - 后续修订 `13` 仅更新 web 镜像至 `491812f362bcab73718b49102b33cba72b5e0702`，修正连接按钮被通用链接颜色覆盖的问题；API 保留修订 12 的镜像。web 摘要来自该提交的 [Images](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/42847921094)，对应 [CI](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/42847781315)。最终线上按钮对比度为 `15.55:1`，桌面/手机页面与匿名鉴权检查再次通过；`app.json` 固定最终两份镜像。
+
+## 已有空间与聊天（2026-11-11）
+
+`/workspace` 登录后自动发现当前账号的个人和组织空间。选择空间即可读取已发布场景，不需要分享令牌，也不需要先启用 CMA。空间目录仅返回编号、名称、说明、归属、可见性、更新时间和当前只读/管理级别；每页 40 条，`{after}` 按编号继续。组织信息来自当前用户的实时 NyxID 组织列表，数据库查询按相应主人及一致的组织归属证据过滤，跳过正在删除的空间。
+
+固定只读路径为 `POST /api/auth/nyxid/spaces` 及 `/api/auth/nyxid/view/spaces/{spaceId}` 下的查看器读取。要求当前浏览器会话、同源 Origin、CSRF、实时 userinfo 和资源 ACL；返回公开查看器投影并强制 `no-store`，不暴露内部锚点、不生成分享能力。读取结束前检查授权版本，断开不能被在途响应越过。浏览器 Cookie 仍不能认证业务 `/api/v1/*`。
+
+启用 CMA 后在同一聊天框持续追加要求，复用当前空间的 worker；切换空间恢复它自己的记录。网页每 2 秒串行读取已产生的对话、Responses v2 输出与工具状态，并自动显示 worker 发回的新预览。它不会伪装逐 token 流，也不会自动重试写操作。发布确认绑定具体预览，更新预览后必须重新确认。完整流程和边界见 [WEB_CONSOLE_PLAN.md](WEB_CONSOLE_PLAN.md)。

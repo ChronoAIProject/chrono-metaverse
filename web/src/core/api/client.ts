@@ -51,6 +51,8 @@ export interface PublicClientOptions {
   /** 组合页：用组合的分享令牌读成员空间时，每个请求都带 `?universe=<组合编号>`。 */
   readonly universe?: string | null;
   readonly fetch?: typeof fetch;
+  /** Authenticated, read-only space viewer; no session credential enters public blob requests. */
+  readonly browser?: { readonly csrfToken: string };
 }
 
 /** 下载进度：已收到的字节数和总字节数（服务端没给 Content-Length 时总数为 null）。 */
@@ -278,14 +280,22 @@ export function createPublicClient(options: PublicClientOptions = {}): PublicCli
     extra?: Record<string, string>,
     preview?: string,
   ): Promise<Response> {
-    const response = await fetcher(`${base}/api/public${path}`, {
-      method: 'GET',
-      headers: preview === undefined ? headers(extra) : { Authorization: `Preview ${preview}` },
-      ...(preview === undefined ? {} : { cache: 'no-store' as const }),
-      // 链接里的令牌不随 Referer 带出去（设计 7.2）。
-      referrerPolicy: 'no-referrer',
-      credentials: 'omit',
-    });
+    const browser = options.browser && path.startsWith('/spaces/') ? options.browser : undefined;
+    const response = await fetcher(
+      `${base}${browser ? '/api/auth/nyxid/view' : '/api/public'}${path}`,
+      {
+        method: browser ? 'POST' : 'GET',
+        headers: browser
+          ? { ...extra, 'x-csrf-token': browser.csrfToken }
+          : preview === undefined
+            ? headers(extra)
+            : { Authorization: `Preview ${preview}` },
+        ...(preview === undefined && !browser ? {} : { cache: 'no-store' as const }),
+        // 链接里的令牌不随 Referer 带出去（设计 7.2）。
+        referrerPolicy: 'no-referrer',
+        credentials: browser ? 'same-origin' : 'omit',
+      },
+    );
     if (!response.ok && response.status !== 304) throw await problem(response);
     return response;
   }

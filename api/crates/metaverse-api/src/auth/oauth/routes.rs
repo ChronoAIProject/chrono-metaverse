@@ -22,7 +22,7 @@ const FLOW_COOKIE: &str = "mv_nyx_flow";
 const SESSION_COOKIE: &str = "mv_nyx_session";
 const SESSION_TTL: i64 = 30 * 24 * 60 * 60;
 
-pub fn router(state: AppState) -> Router<AppState> {
+pub fn router(state: AppState, viewer: Router<AppState>) -> Router<AppState> {
     Router::new()
         .route("/api/auth/nyxid/login", get(login))
         .route("/api/auth/nyxid/callback", get(callback))
@@ -30,6 +30,8 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/api/auth/nyxid/check", post(check))
         .route("/api/auth/nyxid/organizations", post(organizations))
         .route("/api/auth/nyxid/disconnect", post(disconnect))
+        .route("/api/auth/nyxid/spaces", post(super::catalog::list))
+        .merge(viewer)
         .merge(super::worker::router())
         .route_layer(axum::middleware::from_fn_with_state(
             state,

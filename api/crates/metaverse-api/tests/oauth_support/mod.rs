@@ -4,6 +4,7 @@ use axum::{extract::Form, routing::post};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
+mod catalog_tests;
 mod worker_tests;
 
 const ROOT: &str = "/api/auth/nyxid";

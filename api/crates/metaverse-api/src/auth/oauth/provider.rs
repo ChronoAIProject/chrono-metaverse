@@ -5,9 +5,9 @@ use super::{seconds, OAuthError, OAuthService, Tokens};
 
 #[derive(Serialize)]
 pub(super) struct OrganizationSummary {
-    id: String,
-    name: String,
-    role: metaverse_core::model::OrgRole,
+    pub(super) id: String,
+    pub(super) name: String,
+    pub(super) role: metaverse_core::model::OrgRole,
 }
 
 #[derive(Deserialize)]

@@ -22,16 +22,59 @@
 //! 校验本身在 `auth/authorizer/universes.rs`：`Authorizer::public_space_via_universe`、
 //! `public_space_via_universe_during`、`public_space_via_universe_for_seq`。
 
-use axum::http::HeaderMap;
+use axum::{
+    extract::FromRequestParts,
+    http::{request::Parts, HeaderMap},
+};
 use metaverse_core::ids::is_space_id;
 use metaverse_core::Timestamp;
 use serde::Deserialize;
+use std::ops::Deref;
 use utoipa::IntoParams;
 
 use crate::auth::Grant;
 use crate::error::ApiError;
 pub use crate::public::headers::share_token;
 use crate::AppState;
+
+/// Headers plus an unforgeable, request-local grant from the browser viewer middleware.
+/// Client-supplied headers can never create this grant.
+pub struct ViewerHeaders {
+    headers: HeaderMap,
+    grant: Option<Grant>,
+}
+impl Deref for ViewerHeaders {
+    type Target = HeaderMap;
+    fn deref(&self) -> &HeaderMap {
+        &self.headers
+    }
+}
+impl<S: Send + Sync> FromRequestParts<S> for ViewerHeaders {
+    type Rejection = std::convert::Infallible;
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
+        Ok(Self {
+            headers: parts.headers.clone(),
+            grant: parts
+                .extensions
+                .get::<crate::auth::oauth::catalog::BrowserViewerGrant>()
+                .map(|g| g.0.clone()),
+        })
+    }
+}
+impl ViewerHeaders {
+    pub fn browser_grant(
+        &self,
+        space_id: &str,
+        universe: Option<&str>,
+    ) -> Result<Option<Grant>, ApiError> {
+        if let Some(grant) = &self.grant {
+            if grant.space_id() != space_id || universe.is_some() {
+                return Err(ApiError::not_found());
+            }
+        }
+        Ok(self.grant.clone())
+    }
+}
 
 /// 凭组合的分享令牌读取时的组合编号。
 #[derive(Debug, Default, Deserialize, IntoParams)]
@@ -52,10 +95,13 @@ fn universe_id(universe: Option<&str>) -> Result<Option<&str>, ApiError> {
 pub async fn public_space_grant(
     state: &AppState,
     space_id: &str,
-    headers: &HeaderMap,
+    headers: &ViewerHeaders,
     universe: Option<&str>,
     at: Timestamp,
 ) -> Result<Grant, ApiError> {
+    if let Some(grant) = headers.browser_grant(space_id, universe)? {
+        return Ok(grant);
+    }
     match universe_id(universe)? {
         Some(universe_id) => {
             state
@@ -78,10 +124,13 @@ pub async fn public_space_grant(
 pub async fn public_space_grant_ever(
     state: &AppState,
     space_id: &str,
-    headers: &HeaderMap,
+    headers: &ViewerHeaders,
     universe: Option<&str>,
     now: Timestamp,
 ) -> Result<(Grant, bool), ApiError> {
+    if let Some(grant) = headers.browser_grant(space_id, universe)? {
+        return Ok((grant, true));
+    }
     match universe_id(universe)? {
         Some(universe_id) => {
             state
@@ -101,11 +150,14 @@ pub async fn public_space_grant_ever(
 pub async fn public_space_grant_during(
     state: &AppState,
     space_id: &str,
-    headers: &HeaderMap,
+    headers: &ViewerHeaders,
     universe: Option<&str>,
     from: Timestamp,
     to: Timestamp,
 ) -> Result<Grant, ApiError> {
+    if let Some(grant) = headers.browser_grant(space_id, universe)? {
+        return Ok(grant);
+    }
     match universe_id(universe)? {
         Some(universe_id) => {
             state
@@ -132,10 +184,13 @@ pub async fn public_space_grant_during(
 pub async fn public_space_grant_for_seq(
     state: &AppState,
     space_id: &str,
-    headers: &HeaderMap,
+    headers: &ViewerHeaders,
     universe: Option<&str>,
     seq: u64,
 ) -> Result<Grant, ApiError> {
+    if let Some(grant) = headers.browser_grant(space_id, universe)? {
+        return Ok(grant);
+    }
     match universe_id(universe)? {
         Some(universe_id) => {
             state

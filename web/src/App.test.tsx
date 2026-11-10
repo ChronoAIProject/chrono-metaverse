@@ -33,7 +33,7 @@ describe('应用外壳', () => {
   it('首页在夹具模式下给出演示空间的链接', () => {
     visit('/');
     render(<App createClient={createClient} showFixtureLink />);
-    expect(screen.getByRole('heading', { name: 'chrono-metaverse 查看器' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '你的空间，聊着改' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /演示前厅/ })).toHaveAttribute('href', FIXTURE_LINK);
   });
 

@@ -459,3 +459,5 @@ universeRevisions { _id: "<组合编号>:<seq>", universeId, owner, seq, at, act
 - `/head` 用自己的进程内缓存（要连同授权信息一起缓存才能先验令牌），没有用 `state.public.cache`。
 - 迁移锁（`migrations` 集合）。
 - 草稿、草稿区块、预览、上传会话的过期清理：这些集合的 `expiresAt` 是 RFC 3339 字符串，由接口服务的定期清理（`runner/cleanup.rs`）删除，不用 TTL 索引；只有 `replay` 用 BSON 日期和 TTL 索引。
+
+网页空间目录与只读场景使用 `/api/auth/nyxid/spaces` 和固定的 `/api/auth/nyxid/view/spaces/{id}` 子路径（均为 POST，浏览器会话 + Origin + CSRF），经过 OAuth userinfo、主人/组织权限与授权版本检查；不认证业务写入、不签发分享令牌。见 [空间聊天工作台](../docs/WEB_CONSOLE_PLAN.md)。

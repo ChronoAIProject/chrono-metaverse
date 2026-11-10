@@ -18,6 +18,7 @@ use mongodb::{
     Client, Collection, Database, IndexModel,
 };
 
+mod catalog;
 mod oauth;
 mod spaces;
 pub(crate) use oauth::{OAuthGrantRecord, OAuthSessionRecord};
@@ -194,10 +195,16 @@ impl Repo {
         let plan: Vec<(&str, Vec<IndexModel>)> = vec![
             (
                 SPACES,
-                vec![index(
-                    doc! {"owner.kind": 1, "owner.id": 1, "updatedAt": 1},
-                    named("owner_updated"),
-                )],
+                vec![
+                    index(
+                        doc! {"owner.kind": 1, "owner.id": 1, "updatedAt": 1},
+                        named("owner_updated"),
+                    ),
+                    index(
+                        doc! {"owner.kind":1,"owner.id":1,"_id":1},
+                        named("owner_catalog"),
+                    ),
+                ],
             ),
             (
                 COMMITS,

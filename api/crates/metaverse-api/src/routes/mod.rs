@@ -123,6 +123,39 @@ pub fn router(state: AppState) -> Router {
             state.clone(),
             crate::auth::require_identity,
         ));
+    let browser_view = Router::new()
+        .route(
+            "/api/auth/nyxid/view/spaces/{space_id}",
+            post(public_spaces::get_public_space),
+        )
+        .route(
+            "/api/auth/nyxid/view/spaces/{space_id}/snapshot",
+            post(public_timeline::get_public_snapshot),
+        )
+        .route(
+            "/api/auth/nyxid/view/spaces/{space_id}/timeline",
+            post(public_timeline::get_public_timeline),
+        )
+        .route(
+            "/api/auth/nyxid/view/spaces/{space_id}/head",
+            post(public_events::get_public_head),
+        )
+        .route(
+            "/api/auth/nyxid/view/spaces/{space_id}/events",
+            post(public_events::list_public_events),
+        )
+        .route(
+            "/api/auth/nyxid/view/spaces/{space_id}/events/density",
+            post(public_events::get_public_event_density),
+        )
+        .route(
+            "/api/auth/nyxid/view/spaces/{space_id}/state",
+            post(public_events::get_public_state),
+        )
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::auth::oauth::catalog::read,
+        ));
     let public = Router::new()
         .route(
             "/api/public/spaces/{space_id}",
@@ -164,7 +197,7 @@ pub fn router(state: AppState) -> Router {
         ));
     let gated = v1
         .merge(public)
-        .merge(crate::auth::oauth::router(state.clone()))
+        .merge(crate::auth::oauth::router(state.clone(), browser_view))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_ready));
     Router::new()
         .route("/api/healthz", get(crate::health::healthz))

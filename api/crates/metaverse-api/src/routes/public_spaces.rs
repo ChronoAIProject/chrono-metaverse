@@ -6,7 +6,7 @@
 
 use axum::{
     extract::{Path, Query, State},
-    http::{header, HeaderMap},
+    http::header,
     response::{IntoResponse, Response},
     Json,
 };
@@ -38,7 +38,7 @@ pub async fn get_public_space(
     State(state): State<AppState>,
     Path(space_id): Path<String>,
     Query(universe): Query<UniverseParam>,
-    headers: HeaderMap,
+    headers: super::public_access::ViewerHeaders,
 ) -> Result<Response, ApiError> {
     // 凭组合令牌（`?universe=`）时：曾经是组合成员即可（组合页回看历史时，后来离开组合的
     // 成员也要取得到名称和事件显示规则）；现在已经不是成员时，不给离开之后的当前内容。

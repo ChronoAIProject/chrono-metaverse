@@ -34,6 +34,16 @@ pub enum GrantAccess {
     Manage,
 }
 
+/// A request-local catalog scope, created only from a verified OAuth browser identity.
+pub(crate) struct BrowserCatalogGrant {
+    owners: Vec<(Owner, OrgRole)>,
+}
+impl BrowserCatalogGrant {
+    pub(crate) fn owners(&self) -> &[(Owner, OrgRole)] {
+        &self.owners
+    }
+}
+
 /// 公开访问的依据，决定响应能不能被共享缓存。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PublicBasis {
@@ -282,6 +292,58 @@ impl Authorizer {
             space_id: space_id.to_owned(),
             owner: policy.owner,
             access,
+            public_basis: None,
+            membership: None,
+        })
+    }
+
+    pub(crate) fn browser_catalog(
+        identity: &super::oauth::catalog::BrowserIdentity,
+        owners: Vec<(Owner, OrgRole)>,
+    ) -> BrowserCatalogGrant {
+        BrowserCatalogGrant {
+            owners: owners
+                .into_iter()
+                .filter(|(o, _)| o.kind == OwnerKind::Org || o.id == identity.subject())
+                .collect(),
+        }
+    }
+
+    /// Browser viewers get the public scene projection, after the same resource ACL.
+    /// This grant cannot manage content and is never accepted as a business identity.
+    pub(crate) async fn browser_space(
+        &self,
+        identity: &super::oauth::catalog::BrowserIdentity,
+        space_id: &str,
+    ) -> Result<Grant, ApiError> {
+        if !is_space_id(space_id) {
+            return Err(ApiError::not_found());
+        }
+        let policy = self
+            .repo
+            .space_policy(&Self::key(), space_id)
+            .await?
+            .ok_or_else(ApiError::not_found)?;
+        let owner = policy.effective_owner();
+        let level = match direct_access(&owner, identity.subject()) {
+            Some(level) => level,
+            None => match self
+                .organizations
+                .membership(identity.subject(), Some(identity.credential()), &owner.id)
+                .await
+            {
+                MembershipLookup::Member(member) => level_for_role(member.role),
+                MembershipLookup::NotMember => AccessLevel::None,
+                MembershipLookup::Unavailable => return Err(ApiError::org_membership_unavailable()),
+            },
+        };
+        if level == AccessLevel::None {
+            return Err(ApiError::not_found());
+        }
+        Ok(Grant {
+            space_id: space_id.into(),
+            owner: policy.owner,
+            access: GrantAccess::Public,
             public_basis: None,
             membership: None,
         })
