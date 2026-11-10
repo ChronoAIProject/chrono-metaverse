@@ -47,6 +47,8 @@ pub mod universes;
 pub mod uploads;
 // 重建路径（docs/design/server-slim.md 2.3）。
 pub mod rebuild;
+// 已下线的接口：一律 410（docs/design/server-slim.md 2.1）。
+pub mod retired;
 
 use crate::error::{self, ApiError};
 use crate::AppState;
@@ -113,6 +115,7 @@ pub fn router(state: AppState) -> Router {
         .merge(uploads::routes())
         .merge(jobs::routes())
         .merge(rebuild::routes())
+        .merge(retired::routes())
         .merge(events::routes())
         .merge(admin_events::routes())
         .merge(universes::routes())

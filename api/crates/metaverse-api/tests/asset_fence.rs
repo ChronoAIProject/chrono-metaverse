@@ -350,8 +350,8 @@ async fn script_ref_must_be_a_script_of_the_space_and_is_fenced() {
     assert!(!app.cleanup_delete(&script).await);
 }
 
-/// "哈希已存在、直接复用"的上传、导入扫描建任务、事件类型的 spawnEntity 模型：都先刷新资源，
-/// 之后清理删不掉；资源已被清理时按不存在处理（复用改为完整上传，建任务 422）。
+/// "哈希已存在、直接复用"的上传、事件类型的 spawnEntity 模型：都先刷新资源，之后清理删不掉；
+/// 资源已被清理时按不存在处理（复用改为完整上传）。
 #[tokio::test]
 async fn reuse_jobs_and_event_types_refresh_touched_at() {
     let Some(app) = setup().await else {
@@ -380,52 +380,6 @@ async fn reuse_jobs_and_event_types_refresh_touched_at() {
     assert_eq!(reply.status, StatusCode::CREATED, "{:?}", reply.body);
     assert_eq!(reply.body["reused"], false);
     assert_eq!(reply.body["status"], "open");
-
-    // 导入扫描：建任务之前刷新扫描资源。
-    let scan = app
-        .put_old_upload(
-            SPACE,
-            "scan",
-            b"DRACO\x02\x02 old scan",
-            doc! {"kind": "scan", "contentType": "application/x-draco", "format": "draco"},
-            8,
-        )
-        .await;
-    let scans = format!("/api/v1/spaces/{SPACE}/scans");
-    let reply = app
-        .org(Method::POST, &scans, Some(json!({"assetHash": scan})))
-        .await;
-    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
-    assert_fresh(&app, &scan).await;
-    assert!(!app.cleanup_delete(&scan).await);
-    // 扫描已被清理：422，不建任务。
-    let cleaned = app
-        .put_old_upload(
-            SPACE,
-            "scan",
-            b"DRACO\x02\x02 cleaned scan",
-            doc! {"kind": "scan", "contentType": "application/x-draco", "format": "draco"},
-            8,
-        )
-        .await;
-    assert!(app.cleanup_delete(&cleaned).await);
-    let jobs = app
-        .collection("jobs")
-        .count_documents(doc! {})
-        .await
-        .unwrap();
-    let reply = app
-        .org(Method::POST, &scans, Some(json!({"assetHash": cleaned})))
-        .await;
-    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(reply.body["code"], "asset_unknown");
-    assert_eq!(
-        app.collection("jobs")
-            .count_documents(doc! {})
-            .await
-            .unwrap(),
-        jobs
-    );
 
     // 事件类型的 spawnEntity 模型：登记 assetRefs 之前刷新。
     let model = app

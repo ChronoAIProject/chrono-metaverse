@@ -143,16 +143,4 @@ impl Repo {
             .await?;
         Ok(result.modified_count == 1)
     }
-
-    /// 这个扫描（资源哈希）是否已经导入过本空间（有提交引用了它）。
-    pub async fn scan_committed(&self, grant: &Grant, scan_hash: &str) -> Result<bool, RepoError> {
-        let mut filter = space_children(grant);
-        filter.insert("scan.assetHash", scan_hash);
-        Ok(self
-            .collection(collections::COMMITS)
-            .find_one(filter)
-            .projection(doc! {"_id": 1})
-            .await?
-            .is_some())
-    }
 }

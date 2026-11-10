@@ -13,7 +13,7 @@
 use metaverse_core::check::{fits, AssetCheck, AssetRole, CheckBody, CHECK_VERSION};
 use metaverse_core::limits::UploadLimits;
 use metaverse_core::model::{Job, Upload, UploadFormat, UploadPart, ASSET_CHUNK_SIZE};
-use metaverse_core::scope::{PathScope, UploadPurpose};
+use metaverse_core::scope::UploadPurpose;
 use metaverse_core::Timestamp;
 use mongodb::bson::{self, doc, spec::BinarySubtype, Binary, Bson, DateTime, Document};
 
@@ -83,16 +83,6 @@ pub enum CompleteWrite {
     Completed,
     /// 会话已经不是 `open`，或者还有分片正在写入（调用方重新读会话区分）。
     NotOpen,
-}
-
-/// 某个资源对这个空间是否可用。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AssetAvailability {
-    /// 本空间有校验通过的上传，资源也还在。
-    Ready,
-    /// 本空间有已完成、正在校验的上传。
-    Pending,
-    Missing,
 }
 
 /// 核对通过的上传登记成资源的结果。
@@ -613,67 +603,5 @@ impl Repo {
                 .await?;
         }
         Ok(removed)
-    }
-
-    /// 某个资源对这个空间是否可用：本空间有这个哈希、用途在 `purposes` 里的上传
-    /// （给了 `scope` 时还要求是同一路径范围创建的）。校验通过且资源仍在才算可用。
-    pub async fn asset_availability(
-        &self,
-        grant: &Grant,
-        hash: &str,
-        purposes: &[UploadPurpose],
-        scope: Option<&PathScope>,
-    ) -> Result<AssetAvailability, RepoError> {
-        let mut filter = space_children(grant);
-        filter.insert("sha256", hash);
-        filter.insert(
-            "purpose",
-            doc! {"$in": purposes.iter().map(|p| purpose_name(*p)).collect::<Vec<_>>()},
-        );
-        filter.insert("status", doc! {"$in": ["complete", "done"]});
-        if let Some(scope) = scope {
-            filter.insert("scope", scope.to_string());
-        }
-        let mut cursor = self
-            .collection(collections::UPLOADS)
-            .find(filter)
-            .projection(doc! {"status": 1, "reused": 1})
-            .limit(20)
-            .await?;
-        let mut pending = false;
-        let mut done = false;
-        let mut reused = false;
-        while cursor.advance().await? {
-            let document: Document = cursor
-                .deserialize_current()
-                .map_err(|error| RepoError::Corrupt(error.to_string()))?;
-            match document.get_str("status") {
-                Ok("done") if document.get_bool("reused").unwrap_or(false) => reused = true,
-                Ok("done") => done = true,
-                Ok("complete") => pending = true,
-                _ => {}
-            }
-        }
-        // "直接复用"的上传没有传过数据：资源还要另外按所有权规则属于本空间才算（旧版本按哈希就
-        // 允许复用，留下的这类上传不能让别的主人的资源变成可用）。
-        if !done && reused {
-            done = self.space_owned_asset(grant, hash).await?.is_some();
-        }
-        if done {
-            let exists = self
-                .collection(collections::ASSET_FILES)
-                .find_one(doc! {"filename": hash})
-                .projection(doc! {"_id": 1})
-                .await?
-                .is_some();
-            if exists {
-                return Ok(AssetAvailability::Ready);
-            }
-        }
-        Ok(if pending {
-            AssetAvailability::Pending
-        } else {
-            AssetAvailability::Missing
-        })
     }
 }

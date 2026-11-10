@@ -1054,6 +1054,7 @@ async fn physical_and_rebuild_drafts_stay_apart() {
         );
         assert_eq!(reply.body["code"], "scope_violation");
     }
+    // AI 物件集上传已下线：410。
     let reply = rebuilder(
         &app,
         Method::POST,
@@ -1061,7 +1062,8 @@ async fn physical_and_rebuild_drafts_stay_apart() {
         Some(json!({"size": 10, "sha256": "a".repeat(64), "partSize": 262144, "format": "json"})),
     )
     .await;
-    assert_eq!(reply.status, StatusCode::FORBIDDEN);
+    assert_eq!(reply.status, StatusCode::GONE);
+    assert_eq!(reply.body["code"], "endpoint_retired");
 }
 
 // ---------------------------------------------------------------------------

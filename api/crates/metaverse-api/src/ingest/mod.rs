@@ -32,7 +32,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use metaverse_core::authored::MAX_AUTHORED_BYTES;
 use metaverse_core::limits::{
     GlbLimits, ImageLimits, SizeLimit, UploadLimits, DEFAULT_MAX_BUNDLE_BYTES,
     DEFAULT_MAX_SCAN_BYTES, DEFAULT_MAX_SCRIPT_BYTES, DEFAULT_MODEL, DEFAULT_TEXTURE,
@@ -277,7 +276,8 @@ impl IngestConfig {
             UploadPurpose::Ops => self.max_ops_bytes,
             UploadPurpose::Script => self.max_script_bytes,
             UploadPurpose::Bundle => self.max_bundle_bytes,
-            UploadPurpose::Authored => MAX_AUTHORED_BYTES,
+            // AI 物件集已经不能上传（410）。
+            UploadPurpose::Authored => 0,
         }
     }
 
@@ -289,7 +289,8 @@ impl IngestConfig {
             UploadPurpose::Texture => &self.texture_formats,
             UploadPurpose::Ops => &[UploadFormat::Ndjson, UploadFormat::Gzip],
             UploadPurpose::Script => &[UploadFormat::Text],
-            UploadPurpose::Authored | UploadPurpose::Bundle => &[UploadFormat::Json],
+            UploadPurpose::Bundle => &[UploadFormat::Json],
+            UploadPurpose::Authored => &[],
             UploadPurpose::WebModel => &[UploadFormat::Glb],
         }
     }
@@ -405,14 +406,8 @@ mod tests {
             [UploadFormat::Ndjson, UploadFormat::Gzip]
         );
         assert_eq!(config.formats(UploadPurpose::Script), [UploadFormat::Text]);
-        assert_eq!(
-            config.formats(UploadPurpose::Authored),
-            [UploadFormat::Json]
-        );
-        assert_eq!(
-            config.max_bytes(UploadPurpose::Authored),
-            MAX_AUTHORED_BYTES
-        );
+        assert!(config.formats(UploadPurpose::Authored).is_empty());
+        assert_eq!(config.max_bytes(UploadPurpose::Authored), 0);
         // 默认值与核心库的默认上限一致（命令行没有 limits.json 时用的也是这一份）。
         assert_eq!(config.upload_limits(), UploadLimits::default());
         assert_eq!(config.max_texture_side, 4096);

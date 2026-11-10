@@ -11,15 +11,18 @@
 //! 复用这里的步骤：写操作始终要求 `metaverse:rebuild:write`，用途是 `scan`、`webmodel`、`model`、
 //! `texture`、`script`、`bundle`。
 //!
-//! - 用途写在路径里（NyxID 操作范围按路径限制能传哪类文件）；地块路径不能上传扫描（403）；
+//! - 用途写在路径里（NyxID 操作范围按路径限制能传哪类文件）：实体区、地块路径收 `model`、`texture`、
+//!   `ops`、`script`；扫描只经重建路径上传（实体区、地块路径上传扫描 422 `purpose_not_allowed`）；
+//!   `webmodel`、`bundle` 也只经重建路径（403 `scope_violation`）；AI 物件集 `authored` 已下线，三组
+//!   路径一律 410 `endpoint_retired`（docs/design/server-slim.md 2.1）；
 //! - 创建时声明总大小、整体 SHA-256、分片大小、格式；哈希已经存在就直接复用（200，`status: done`、
 //!   `reused: true`），不再接收数据；
 //! - 分片大小是 256KiB 的整数倍、最大 32MiB；片号从 0 开始；除最后一片外各片大小都等于分片大小，
 //!   最后一片是余下的字节；第 n 片按 256KiB 切块写进 GridFS（布局见 `repo/uploads.rs`），重传幂等；
 //! - 第 0 片按声明的格式核对文件头（glb 头里的总长度、图片像素上限等）；
 //! - 配额：超过用途的大小上限或空间存储上限 413；进行中的上传太多 429；
-//! - 完成：全部分片到齐后建 `upload_verify` 任务（参数 `{uploadId}`），由处理服务流式核对整体哈希、
-//!   登记成资源（GridFS 文件名 = 内容哈希），把上传标记为 done 并写 `assetHash`；
+//! - 完成：全部分片到齐后建 `upload_verify` 任务（参数 `{uploadId}`），由接口服务的后台执行器流式
+//!   核对整体哈希和内容、登记成资源（GridFS 文件名 = 内容哈希），把上传标记为 done 并写 `assetHash`；
 //! - 先验身份（中间件）、再查资源级权限、最后才读分片的请求体；分片请求体上限 32MiB + 1KiB，
 //!   本进程同时处理的分片数有上限（`UPLOAD_MAX_CONCURRENT_PARTS`）。
 
@@ -37,7 +40,7 @@ use metaverse_core::model::{
     Job, JobKind, JobStatus, Upload, UploadFormat, UploadPart, UploadStatus, ASSET_CHUNK_SIZE,
     MAX_UPLOAD_PART_SIZE, UPLOAD_TTL_SECONDS,
 };
-use metaverse_core::scope::{check_upload_purpose, PathScope, UploadPurpose};
+use metaverse_core::scope::{check_upload_purpose, PathScope, ScopeError, UploadPurpose};
 use metaverse_core::{is_sha256_hex, sha256_hex, Timestamp};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -267,8 +270,15 @@ fn status_name(status: UploadStatus) -> &'static str {
 // 共用步骤
 // ---------------------------------------------------------------------------
 
+/// 路径里的用途。AI 物件集 `authored` 已下线：410 `endpoint_retired`（不看路径范围和权限）。
 fn purpose_of(path: &str) -> Result<UploadPurpose, ApiError> {
-    purpose_from_path(path).ok_or_else(ApiError::not_found)
+    match purpose_from_path(path) {
+        Some(UploadPurpose::Authored) => Err(super::retired::retired(
+            "AI 物件集上传（uploads/authored；物件集只在本地，打成重建包后经重建路径上传）",
+        )),
+        Some(purpose) => Ok(purpose),
+        None => Err(ApiError::not_found()),
+    }
 }
 
 /// 上传经哪条路径。
@@ -335,24 +345,15 @@ async fn authorize(
             (grant, scope, space)
         }
     };
-    check_legacy_upload_purpose(&scope, purpose)
-        .map_err(|error| scope_violation(error.to_string()))?;
+    check_upload_purpose(&scope, purpose).map_err(|error| match error {
+        // 扫描改经重建路径上传（docs/design/server-slim.md 2.1）。
+        ScopeError::ScanOutsideRebuild => invalid_with(
+            "purpose_not_allowed",
+            "扫描改经 /rebuild/uploads/scan 上传（重建路径，要求 metaverse:rebuild:write）",
+        ),
+        other => scope_violation(other.to_string()),
+    })?;
     Ok((grant, scope, space))
-}
-
-/// 上传用途与路径范围。核心库的表（`check_upload_purpose`）已经是瘦身后的规则：扫描只经重建路径、
-/// AI 物件集不能再上传。旧的扫描导入和物件集导入删掉之前（docs/design/server-slim.md S4），
-/// 实体区路径照旧收这两种，其余按核心库的表。
-fn check_legacy_upload_purpose(
-    scope: &PathScope,
-    purpose: UploadPurpose,
-) -> Result<(), metaverse_core::scope::ScopeError> {
-    if *scope == PathScope::Physical
-        && matches!(purpose, UploadPurpose::Scan | UploadPurpose::Authored)
-    {
-        return Ok(());
-    }
-    check_upload_purpose(scope, purpose)
 }
 
 /// 读上传会话：必须是经同一路径范围、同一用途创建的，否则 404。
@@ -545,10 +546,10 @@ pub(super) async fn create(
     path = "/api/v1/spaces/{space_id}/uploads/{purpose}",
     operation_id = "create_upload",
     tag = "uploads",
-    description = "创建分片上传（实体区路径）。声明总大小、整体 SHA-256、分片大小（256KiB 的整数倍，≤32MiB）和格式；用途写在路径里（scan、model、texture、ops、script、authored；authored 是 AI 物件集 JSON，交给 import_scan、rebuild_scan 的 authoredAsset）。本空间已经拥有同一用途的这份资源时直接复用（status=done、reused=true），否则返回上传编号（两种情况都是 201；别的空间有同一份内容也要完整上传），之后按片号（从 0 开始）PUT 原始字节，最后调用 complete。大小上限：扫描 1GiB、物件模型 50MiB、贴图 50MiB、ops 64MiB（接口服务应用操作时整份读入，不能调大）、脚本 4MiB（可配置）、AI 物件集 4MiB（固定）；超过上限或空间存储上限返回 413，进行中的上传太多返回 429。大文件请用命令行，不要经 AI 工具传二进制。",
+    description = "创建分片上传（实体区路径）。声明总大小、整体 SHA-256、分片大小（256KiB 的整数倍，≤32MiB）和格式；用途写在路径里（model、texture、ops、script；扫描、网页用模型和重建包只经重建路径 create_rebuild_upload 上传）。本空间已经拥有同一用途的这份资源时直接复用（status=done、reused=true），否则返回上传编号（两种情况都是 201；别的空间有同一份内容也要完整上传），之后按片号（从 0 开始）PUT 原始字节，最后调用 complete。大小上限：扫描 1GiB、物件模型 50MiB、贴图 50MiB、ops 64MiB（接口服务应用操作时整份读入，不能调大）、脚本 4MiB（可配置）、AI 物件集 4MiB（固定）；超过上限或空间存储上限返回 413，进行中的上传太多返回 429。大文件请用命令行，不要经 AI 工具传二进制。",
     params(
         ("space_id" = String, Path, description = "空间编号", example = "front-hall"),
-        ("purpose" = String, Path, description = "用途：scan | model | texture | ops | script | authored（AI 物件集，JSON，≤ 4MB，只经实体区路径）", example = "scan"),
+        ("purpose" = String, Path, description = "用途：model | texture | ops | script", example = "model"),
     ),
     request_body = CreateUploadRequest,
     security(("nyxid_identity" = [])),
@@ -557,7 +558,7 @@ pub(super) async fn create(
         (status = 403, description = "没有写权限", body = ProblemDocument),
         (status = 404, description = "空间不存在或无权查看", body = ProblemDocument),
         (status = 413, description = "超过大小上限或空间存储上限", body = ProblemDocument),
-        (status = 422, description = "参数不合法（哈希、分片大小、格式）", body = ProblemDocument),
+        (status = 422, description = "参数不合法（哈希、分片大小、格式）；扫描改经重建路径上传（purpose_not_allowed）", body = ProblemDocument),
         (status = 429, description = "进行中的上传太多", body = ProblemDocument),
     )
 )]
@@ -583,7 +584,7 @@ pub async fn create_upload(
     path = "/api/v1/spaces/{space_id}/plots/{plot_id}/uploads/{purpose}",
     operation_id = "create_plot_upload",
     tag = "uploads",
-    description = "创建分片上传（地块路径）。与 create_upload 相同，但地块路径下不能上传扫描（403 scope_violation）；地块合作方的 agent key 一般只开放这一组路径。",
+    description = "创建分片上传（地块路径）。与 create_upload 相同；地块合作方的 agent key 一般只开放这一组路径。",
     params(
         ("space_id" = String, Path, description = "空间编号", example = "restaurant"),
         ("plot_id" = String, Path, description = "地块编号", example = "p1"),
@@ -593,7 +594,7 @@ pub async fn create_upload(
     security(("nyxid_identity" = [])),
     responses(
         (status = 201, description = "已创建", body = UploadView),
-        (status = 403, description = "没有写权限，或地块路径上传扫描", body = ProblemDocument),
+        (status = 403, description = "没有写权限，或用途只能经重建路径上传", body = ProblemDocument),
         (status = 404, description = "空间或地块不存在", body = ProblemDocument),
         (status = 413, description = "超过大小上限或空间存储上限", body = ProblemDocument),
         (status = 422, description = "参数不合法", body = ProblemDocument),
@@ -987,7 +988,7 @@ pub(super) async fn complete(
     path = "/api/v1/spaces/{space_id}/uploads/{purpose}/{upload_id}/complete",
     operation_id = "complete_upload",
     tag = "uploads",
-    description = "完成上传（实体区路径）。全部分片到齐后返回 202 和 upload_verify 任务编号；处理服务流式核对整体哈希，通过后登记成资源并把上传标记为 done（assetHash = sha256），失败则删除分片、标记 failed。重复调用返回同一个任务。还有缺片时返回 409。",
+    description = "完成上传（实体区路径）。全部分片到齐后返回 202 和 upload_verify 任务编号；接口服务的后台执行器流式核对整体哈希和内容，通过后登记成资源并把上传标记为 done（assetHash = sha256），失败则删除分片、标记 failed。重复调用返回同一个任务。还有缺片时返回 409。",
     params(
         ("space_id" = String, Path, description = "空间编号"),
         ("purpose" = String, Path, description = "用途"),
