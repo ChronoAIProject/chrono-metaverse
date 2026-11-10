@@ -355,7 +355,7 @@ nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --
 4. 第 6 步查状态：`get_app_status` 里只剩 `metaverse-web`、`metaverse-api` 两个服务（处理服务已删除）；接口服务日志里有建索引、后台执行器和清理启动、后台迁移 `backfill-asset-check-v1` 的进度，种子什么都不做（`AlreadyDone`）；
 5. 打开演示链接，确认前厅照常显示、时间线能回到第 1–3 版的任何时刻。
 
-NyxID 已经注册，`/api/v1` 现在就能写（设计 11.2 说的"注册早于 R2"）：R2 上线以后，任何经接口写进来的新格式数据都会让退回瘦身前不再安全（第 4 节）。上线以后同步改 `app.json` 的两个镜像（第 3 节开头）。
+NyxID 已经注册，`/api/v1` 现在就能写（设计 11.2 说的"注册早于 R2"）：R2 上线以后，任何组织 admin 的一次实体区写入、一次核对不过的上传，都可能写进瘦身前的版本读不了的数据，所以退回瘦身前只在上线以后还没有任何经接口的写入时才安全（第 4 节的检查）。记下 `PUT` 成功的时刻，退回时要用。上线以后同步改 `app.json` 的两个镜像（第 3 节开头）。
 
 ## 4. 回滚
 
@@ -373,7 +373,35 @@ NyxID 已经注册，`/api/v1` 现在就能写（设计 11.2 说的"注册早于
 
 回滚不回滚数据：如果新版本已经跑过不兼容旧版本的迁移，单纯换镜像不够，先看迁移说明。
 
-**从瘦身后的版本退回瘦身前**（`docs/design/server-slim.md` 11.5）：只有在**还没写过新格式数据**时才可以——没有 `actor.kind = rebuild` 的提交，没有新种类的任务（`bundle_import`、`upload_verify`），没有带 `heldAssets`、`bundleRef` 的草稿。退的时候不能只换镜像：处理服务、旧的环境变量和资源要一起回来，所以用 `revisions` 找到瘦身前的那份完整规格，整份 `PUT` 回去。瘦身后的版本写的 `metadata.check`、`checkError` 和迁移记录，旧版本都会忽略。写过新格式数据以后只能前滚修正。
+**从瘦身后的版本退回瘦身前**（`docs/design/server-slim.md` 11.5）：瘦身前的版本（R0，`77bbdb8`）按带类型、不收未知字段的结构读
+提交里的操作、物件记录、草稿和任务，认不得瘦身后新加的写法，读到就报错：这个空间的草稿新建、追加、发布 500（读空间状态时
+物件记录解析失败），任务列表和任务查询报错，网站把转过的模型画成没转。R2 能写出这类数据的途径有：
+
+1. **重建路径写的一切**（要重建权限）：`actor.kind = rebuild` 的提交、范围 `rebuild` 的草稿、上传和任务；种子第 4 版
+   （`bundle_import` 任务和它的提交）也算；
+2. **对象形式的 `lastError`**（不要任何特别的权限）：R2 里任何失败过或重试过的任务都这样写——核对不过的上传
+   （`upload_verify`，R0 就有这个种类，但 R0 只认文字形式的 `lastError`）、失败的 `ops_from_upload`、清理第 0 步收掉的
+   旧种类任务（线上预计 0 条）；
+3. **实体区、地块草稿和提交里的新写法**（任何组织 admin 都能写）：`removeEntity` 带 `ifPresent`、`createAnchor` 带 `ifNew`；
+   物件记录带 `transform`（转过的模型）、形状材质带 `tile`、`offset`、`rotate`、`shading`、`normalMap`、`normalScale`、
+   `roughnessMap`、`roughness`、`metalness`，模型物件的 `material.shading`。
+
+第 2、3 种不经重建路径也会出现，而且逐条查全很难（操作可能在 `opsRef` 指向的文件里），所以判断标准是：**R2 上线以后
+没有任何经 `/api/v1` 的写入**。设上线时刻为 `T`（与库里的写法相同：UTC、毫秒三位，例如 `"2026-11-12T08:00:00.000Z"`），
+在数据库里这几条都必须是 0：
+
+```js
+db.commits.countDocuments({ at: { $gt: T } })
+db.drafts.countDocuments({ createdAt: { $gt: T } })
+db.uploads.countDocuments({ createdAt: { $gt: T } })
+db.jobs.countDocuments({ $or: [{ createdAt: { $gt: T } }, { lastError: { $type: "object" } }] })
+```
+
+R2 自己在启动和后台写的东西 R0 都会忽略：索引、清理锁、迁移记录、资源的 `metadata.check` / `checkError`、`assetRefs.seq`；
+种子第 3 版什么都不写。只要有一条不是 0，就只能前滚修正（或者先发一个能读新写法的兼容读版本 R1 再退，设计 11.2）。
+
+退的时候不能只换镜像：处理服务、旧的环境变量和资源要一起回来，所以用 `revisions` 找到瘦身前的那份完整规格，整份 `PUT`
+回去。
 
 ## 5. 不要做的事
 
