@@ -237,6 +237,8 @@ def test_texture_calibrate_and_preview(tmp_path):
     assert metrics["after"]["dE"] < 6 and metrics["after"]["dE"] < metrics["before"]["dE"]
     mat = json.loads(path.read_text())["shape"]["children"][0]["material"]
     assert (path.parent / mat["texture"]["file"]).exists() and preview.exists()
+    # 标定只留下最后一轮的副本（另一张是复制进来的原图）
+    assert len(list((path.parent / "textures").iterdir())) == 2
 
 
 def test_texsearch_and_texfetch_with_stubbed_libraries(tmp_path, monkeypatch):

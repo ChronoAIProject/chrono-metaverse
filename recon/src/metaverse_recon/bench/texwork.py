@@ -33,6 +33,7 @@ from typing import Any
 
 import numpy as np
 from PIL import Image, ImageDraw
+from scipy.ndimage import binary_erosion
 
 from . import core as wc
 from .core import Box, ReconError
@@ -47,6 +48,7 @@ GAIN_ITERATIONS = 3
 # 建议平铺：亮度高频部分的剖面起伏小于它（线性亮度）时，当作没有纹理周期
 MIN_PROFILE_STD = 0.003
 BACKGROUND = 0xFF00FF
+SHEET_BACKGROUND = (58, 60, 66)
 
 
 # ---------------------------------------------------------------------------- 颜色
@@ -585,6 +587,8 @@ def _calibrate(args, base, rs, body: dict, material: dict, ref: dict, model_dir:
         original = fh.read()
     gain = np.ones(3)
     log = []
+    folder = os.path.join(model_dir, args.textures_dir)
+    existing = set(os.listdir(folder))
     with tempfile.TemporaryDirectory() as work:
         for it in range(GAIN_ITERATIONS + 1):
             data, ext = (
@@ -615,6 +619,10 @@ def _calibrate(args, base, rs, body: dict, material: dict, ref: dict, model_dir:
             ratio = target_lin / np.maximum(srgb_to_linear(got), 1e-4)
             lr = float(luminance(target_lin[None])[0] / max(luminance(srgb_to_linear(got)[None])[0], 1e-4))
             gain = gain * np.clip(ratio, lr * 0.8, lr * 1.25)
+    # 中间几轮写出的副本只是试探，留下最后一轮（和标定前已有的文件）
+    final = os.path.basename(material["texture"]["file"])
+    for name in set(os.listdir(folder)) - existing - {final}:
+        os.remove(os.path.join(folder, name))
     return {"target": [round(float(c), 1) for c in target], "iterations": log, "texture": material["texture"]}
 
 
@@ -669,7 +677,11 @@ def _preview(args, base, rs, before: dict, after: dict, ref: dict | None, model_
         y = 30 + r * (ch + 24)
         for c, (name, label) in enumerate(cols):
             d.text((c * cw + 6, y + 3), label, font=wc.font(13), fill=(255, 220, 120))
-            sheet.paste(Image.fromarray(np.clip(imgs[name], 0, 255).astype(np.uint8)), (c * cw, y + 22))
+            # 渲染用品红底色分出部件，拼图里换成中性灰，免得品红干扰看颜色（边缘抗锯齿混了品红的
+            # 一圈像素也去掉）
+            keep = binary_erosion(_mask(imgs[name]), iterations=1)
+            shown = np.where(keep[..., None], imgs[name], np.array(SHEET_BACKGROUND, float))
+            sheet.paste(Image.fromarray(np.clip(shown, 0, 255).astype(np.uint8)), (c * cw, y + 22))
     os.makedirs(os.path.dirname(os.path.abspath(args.preview)) or ".", exist_ok=True)
     wc.save_jpeg(sheet, args.preview, 600_000)
     metrics["image"] = args.preview
