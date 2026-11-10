@@ -1,18 +1,20 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Query, State},
+    extract::{rejection::QueryRejection, Query, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Redirect, Response},
     routing::{get, post},
     Json, Router,
 };
+use metaverse_core::{ids::is_subject_id, model::OrgRole};
 use serde::Deserialize;
 use serde_json::json;
 use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
 
 use super::{crypto, seconds, OAuthError, OAuthService, STORE};
+use crate::auth::organizations::MembershipLookup;
 use crate::{error::ApiError, repo::OAuthSessionRecord, AppState};
 
 const ROOT: &str = "/api/auth/nyxid";
@@ -25,6 +27,8 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/api/auth/nyxid/login", get(login))
         .route("/api/auth/nyxid/callback", get(callback))
         .route("/api/auth/nyxid/session", get(session))
+        .route("/api/auth/nyxid/check", post(check))
+        .route("/api/auth/nyxid/organizations", post(organizations))
         .route("/api/auth/nyxid/disconnect", post(disconnect))
         .route_layer(axum::middleware::from_fn_with_state(
             state,
@@ -162,13 +166,47 @@ impl Drop for Callback {
 async fn callback(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Query(query): Query<Callback>,
+    query: Result<Query<Callback>, QueryRejection>,
+) -> Response {
+    // 浏览器回到可恢复的页面；绝不把授权码、state 或 provider 错误原文带到网页。
+    let result = match query {
+        Ok(Query(query)) => finish_callback(&state, &headers, query).await,
+        Err(_) => Err(ApiError::invalid("NyxID 授权请求已失效")),
+    };
+    match result {
+        Ok(response) => response,
+        Err(error) => {
+            let target = match error.code {
+                "nyxid_oauth_disabled" => "/connect?error=disabled",
+                "invalid_request" => "/connect?error=expired",
+                "nyxid_reconnect_required" => "/connect?error=reconnect",
+                _ => "/connect?error=unavailable",
+            };
+            let mut response = Redirect::to(target).into_response();
+            if let Some(oauth) = &state.oauth {
+                set_cookie(
+                    &mut response,
+                    FLOW_COOKIE,
+                    "",
+                    0,
+                    oauth.config.secure_cookie,
+                );
+            }
+            private(response)
+        }
+    }
+}
+
+async fn finish_callback(
+    state: &AppState,
+    headers: &HeaderMap,
+    query: Callback,
 ) -> Result<Response, ApiError> {
-    let oauth = service(&state)?;
+    let oauth = service(state)?;
     if query.state.len() != 43 {
         return Err(ApiError::invalid("NyxID 授权请求已失效，请重新连接"));
     }
-    let browser = cookie(&headers, FLOW_COOKIE)
+    let browser = cookie(headers, FLOW_COOKIE)
         .ok_or_else(|| ApiError::invalid("NyxID 授权请求已失效，请重新连接"))?;
     let id = crypto::digest(&query.state);
     let browser_hash = crypto::digest(&browser);
@@ -177,8 +215,13 @@ async fn callback(
         .oauth_flow_take(&STORE, &id, &browser_hash, seconds()?)
         .await?
         .ok_or_else(|| ApiError::invalid("NyxID 授权请求已失效，请重新连接"))?;
-    if query.error.is_some() {
-        let mut response = Redirect::to("/connect?error=denied").into_response();
+    if let Some(error) = &query.error {
+        let target = if error == "access_denied" {
+            "/connect?error=denied"
+        } else {
+            "/connect?error=unavailable"
+        };
+        let mut response = Redirect::to(target).into_response();
         set_cookie(
             &mut response,
             FLOW_COOKIE,
@@ -214,7 +257,7 @@ async fn callback(
             seconds()? + SESSION_TTL,
         )
         .await?;
-    let mut response = Redirect::to("/connect").into_response();
+    let mut response = Redirect::to("/connect?connected=1").into_response();
     set_cookie(
         &mut response,
         FLOW_COOKIE,
@@ -271,12 +314,12 @@ async fn session(State(state): State<AppState>, headers: HeaderMap) -> Result<Re
     }).into_response()))
 }
 
-async fn disconnect(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Response, ApiError> {
-    let oauth = service(&state)?;
-    let raw = cookie(&headers, SESSION_COOKIE).ok_or_else(ApiError::forbidden)?;
+async fn browser_action(
+    oauth: &OAuthService,
+    headers: &HeaderMap,
+) -> Result<OAuthSessionRecord, ApiError> {
+    let raw =
+        cookie(headers, SESSION_COOKIE).ok_or_else(|| ApiError::from(OAuthError::Reconnect))?;
     let expected = crypto::digest(&format!("csrf/{}", raw.as_str()));
     let csrf = headers
         .get("x-csrf-token")
@@ -288,10 +331,99 @@ async fn disconnect(
     {
         return Err(ApiError::forbidden());
     }
-    let session = oauth
+    oauth
         .browser_session(&raw)
         .await?
-        .ok_or_else(ApiError::forbidden)?;
+        .ok_or_else(|| ApiError::from(OAuthError::Reconnect))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CheckRequest {
+    org_id: Option<String>,
+}
+
+async fn verified_browser(
+    oauth: &Arc<OAuthService>,
+    headers: &HeaderMap,
+) -> Result<(OAuthSessionRecord, super::HeldCredential), ApiError> {
+    let session = browser_action(oauth, headers).await?;
+    let held = oauth
+        .credential(&session.subject)
+        .await?
+        .ok_or(OAuthError::Reconnect)?;
+    if held.record.incarnation != session.incarnation {
+        return Err(OAuthError::Reconnect.into());
+    }
+    let tokens = oauth.tokens(&held.record)?;
+    match oauth.subject(&tokens.access_token).await {
+        Ok(subject) if subject == session.subject => {}
+        Ok(_) | Err(OAuthError::Reconnect) => {
+            oauth.repo.oauth_grant_disable(&STORE, &held.record).await?;
+            return Err(OAuthError::Reconnect.into());
+        }
+        Err(error) => return Err(error.into()),
+    }
+    Ok((session, held))
+}
+
+async fn organizations(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let oauth = service(&state)?;
+    let (session, held) = verified_browser(&oauth, &headers).await?;
+    let tokens = oauth.tokens(&held.record)?;
+    let organizations = oauth.organizations(&tokens.access_token).await?;
+    if !oauth.current(&held).await? {
+        return Err(OAuthError::Reconnect.into());
+    }
+    Ok(private(
+        Json(json!({"subject":session.subject,"organizations":organizations})).into_response(),
+    ))
+}
+
+async fn check(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<CheckRequest>,
+) -> Result<Response, ApiError> {
+    if input.org_id.as_deref().is_some_and(|id| !is_subject_id(id)) {
+        return Err(ApiError::invalid("请输入组织编号，不是组织名称或链接"));
+    }
+    let oauth = service(&state)?;
+    let (session, held) = verified_browser(&oauth, &headers).await?;
+    let organization = match input.org_id {
+        Some(org_id) => match state
+            .authorizer
+            .connection_membership(&session.subject, &org_id)
+            .await
+        {
+            MembershipLookup::Member(member) => json!({
+                "id": org_id, "role": member.role,
+                "access": if member.role == OrgRole::Admin { "manage" } else { "read" },
+            }),
+            MembershipLookup::NotMember => json!({"id": org_id, "role": null, "access": "none"}),
+            MembershipLookup::Unavailable => return Err(ApiError::org_membership_unavailable()),
+        },
+        None => serde_json::Value::Null,
+    };
+    // 检查不能越过并发断开/换号；与此操作开始时的授权实例保持一致。
+    if held.record.incarnation != session.incarnation || !oauth.current(&held).await? {
+        return Err(OAuthError::Reconnect.into());
+    }
+    Ok(private(
+        Json(json!({"subject": session.subject, "status": "ready", "organization": organization}))
+            .into_response(),
+    ))
+}
+
+async fn disconnect(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let oauth = service(&state)?;
+    let session = browser_action(&oauth, &headers).await?;
     // 先本地失效：刷新和正在进行的组织查询都须通过版本围栏。不会退出用户其他应用。
     oauth.repo.oauth_disconnect(&STORE, &session).await?;
     let mut response = StatusCode::NO_CONTENT.into_response();

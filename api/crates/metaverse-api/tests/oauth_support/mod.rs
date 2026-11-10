@@ -77,6 +77,7 @@ impl MockProvider {
     pub(super) fn routes(&self, app: Router) -> Router {
         let token = self.clone();
         let user = self.clone();
+        let orgs = self.clone();
         app.route("/oauth/token", post(move |Form(fields): Form<HashMap<String,String>>| {
             let provider = token.clone();
             async move {
@@ -115,6 +116,16 @@ impl MockProvider {
                 state.access.insert(access.clone(), subject.clone());
                 state.refresh.insert(refresh.clone(), subject);
                 Json(json!({"access_token":access,"refresh_token":refresh,"token_type":"Bearer","expires_in":ttl})).into_response()
+            }
+        }))
+        .route("/api/v1/orgs", get(move |headers: HeaderMap| {
+            let provider = orgs.clone();
+            async move {
+                let state = provider.0.lock().unwrap();
+                let token = headers.get(header::AUTHORIZATION).unwrap().to_str().unwrap().strip_prefix("Bearer ").unwrap();
+                if !state.access.contains_key(token) { return StatusCode::UNAUTHORIZED.into_response(); }
+                let orgs = state.role.as_ref().map(|role| vec![json!({"id":ORG,"slug":"chronoai","display_name":"ChronoAI","your_role":role,"contact_email":"not-forwarded@example.com"})]).unwrap_or_default();
+                Json(json!({"orgs":orgs})).into_response()
             }
         }))
         .route("/oauth/userinfo", get(move |headers: HeaderMap| {
@@ -184,7 +195,7 @@ async fn connect(app: &TestApp, subject: &str, ttl: i64) -> String {
         .send(Method::GET, &path, &[("cookie", &cookie)], None)
         .await;
     assert_eq!(reply.status, StatusCode::SEE_OTHER, "{}", reply.body);
-    assert_eq!(reply.headers[header::LOCATION], "/connect");
+    assert_eq!(reply.headers[header::LOCATION], "/connect?connected=1");
     assert!(!format!("{:?}", reply.headers).contains("oauth-access"));
     response_cookie(&reply, "mv_nyx_session")
 }
@@ -231,15 +242,15 @@ async fn oauth_state_is_browser_bound_one_time_and_pkce_protected() {
     };
     let (path, cookie) = begin(&app, "alice", 3600).await;
     assert_eq!(
-        app.send(Method::GET, &path, &[], None).await.status,
-        StatusCode::UNPROCESSABLE_ENTITY
+        app.send(Method::GET, &path, &[], None).await.headers[header::LOCATION],
+        "/connect?error=expired"
     );
     let other = format!("mv_nyx_flow={}", "a".repeat(43));
     assert_eq!(
         app.send(Method::GET, &path, &[("cookie", &other)], None)
             .await
-            .status,
-        StatusCode::UNPROCESSABLE_ENTITY
+            .headers[header::LOCATION],
+        "/connect?error=expired"
     );
     let linked = app
         .send(Method::GET, &path, &[("cookie", &cookie)], None)
@@ -248,8 +259,8 @@ async fn oauth_state_is_browser_bound_one_time_and_pkce_protected() {
     assert_eq!(
         app.send(Method::GET, &path, &[("cookie", &cookie)], None)
             .await
-            .status,
-        StatusCode::UNPROCESSABLE_ENTITY
+            .headers[header::LOCATION],
+        "/connect?error=expired"
     );
     let cookie = response_cookie(&linked, "mv_nyx_session");
     let status = session(&app, &cookie).await;
@@ -536,7 +547,7 @@ async fn oauth_reconnect_invalidates_old_browser_session() {
         )
         .await
         .status,
-        StatusCode::FORBIDDEN
+        StatusCode::UNAUTHORIZED
     );
     assert_eq!(session(&app, &new).await.body["connected"], true);
     assert_eq!(
@@ -675,8 +686,8 @@ async fn oauth_disabled_denied_and_expired_browser_flows_do_not_authorize() {
     assert_eq!(
         app.send(Method::GET, &path, &[("cookie", &cookie)], None)
             .await
-            .status,
-        StatusCode::UNPROCESSABLE_ENTITY
+            .headers[header::LOCATION],
+        "/connect?error=expired"
     );
     let cookie = connect(&app, "alice", 3600).await;
     db.collection::<mongodb::bson::Document>("oauthSessions")
@@ -687,4 +698,254 @@ async fn oauth_disabled_denied_and_expired_browser_flows_do_not_authorize() {
         .await
         .unwrap();
     assert_eq!(session(&app, &cookie).await.body["connected"], false);
+}
+
+async fn check_connection(app: &TestApp, cookie: &str, body: Value) -> Reply {
+    let status = session(app, cookie).await;
+    let csrf = status.body["csrfToken"].as_str().unwrap_or_default();
+    app.send(
+        Method::POST,
+        &format!("{ROOT}/check"),
+        &[
+            ("cookie", cookie),
+            ("origin", ORIGIN),
+            ("x-csrf-token", csrf),
+        ],
+        Some(body),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn oauth_browser_lists_only_connected_account_organizations_and_safe_fields() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let cookie = connect(&app, "alice", 3600).await;
+    let session = session(&app, &cookie).await;
+    let csrf = session.body["csrfToken"].as_str().unwrap();
+    assert_eq!(
+        app.send(
+            Method::POST,
+            &format!("{ROOT}/organizations"),
+            &[("cookie", &cookie)],
+            None
+        )
+        .await
+        .status,
+        StatusCode::FORBIDDEN
+    );
+    let list = app
+        .send(
+            Method::POST,
+            &format!("{ROOT}/organizations"),
+            &[
+                ("cookie", &cookie),
+                ("origin", ORIGIN),
+                ("x-csrf-token", csrf),
+                ("authorization", "Bearer bob-token"),
+            ],
+            None,
+        )
+        .await;
+    assert_eq!(list.status, StatusCode::OK);
+    assert_eq!(
+        list.body,
+        json!({"subject":"alice","organizations":[{"id":ORG,"name":"ChronoAI","role":"admin"}]})
+    );
+    assert_eq!(list.headers[header::CACHE_CONTROL], "no-store");
+    assert!(!list.body.to_string().contains("not-forwarded"));
+    app.nyx.oauth.0.lock().unwrap().role = None;
+    let list = app
+        .send(
+            Method::POST,
+            &format!("{ROOT}/organizations"),
+            &[
+                ("cookie", &cookie),
+                ("origin", ORIGIN),
+                ("x-csrf-token", csrf),
+            ],
+            None,
+        )
+        .await;
+    assert_eq!(list.body["organizations"], json!([]));
+}
+
+#[tokio::test]
+async fn oauth_browser_checks_use_own_identity_and_live_organization_roles() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let cookie = connect(&app, "alice", 3600).await;
+    let checked = check_connection(&app, &cookie, json!({})).await;
+    assert_eq!(checked.status, StatusCode::OK);
+    assert_eq!(
+        checked.body,
+        json!({"subject":"alice","status":"ready","organization":null})
+    );
+    assert_eq!(checked.headers[header::CACHE_CONTROL], "no-store");
+    assert!(!checked.body.to_string().contains("oauth-access"));
+    for (role, access) in [
+        (Some("admin"), "manage"),
+        (Some("member"), "read"),
+        (Some("viewer"), "read"),
+        (None, "none"),
+    ] {
+        app.nyx.oauth.0.lock().unwrap().role = role.map(str::to_owned);
+        let checked = check_connection(&app, &cookie, json!({"orgId":ORG})).await;
+        assert_eq!(checked.status, StatusCode::OK, "{}", checked.body);
+        assert_eq!(checked.body["subject"], "alice");
+        assert_eq!(
+            checked.body["organization"],
+            json!({"id":ORG,"role":role,"access":access})
+        );
+    }
+    // 不能由网页指定另一用户或注入任意 URL；业务接口仍然不接受浏览器 Cookie。
+    assert_eq!(
+        check_connection(&app, &cookie, json!({"subject":"bob"}))
+            .await
+            .status,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        check_connection(&app, &cookie, json!({"orgId":"https://evil.example"}))
+            .await
+            .status,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        app.send(
+            Method::GET,
+            "/api/v1/spaces/oauth-hall",
+            &[("cookie", &cookie)],
+            None
+        )
+        .await
+        .status,
+        StatusCode::UNAUTHORIZED
+    );
+}
+
+#[tokio::test]
+async fn oauth_browser_checks_require_session_origin_csrf_and_handle_revocation() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    assert_eq!(
+        app.send(Method::POST, &format!("{ROOT}/check"), &[], Some(json!({})))
+            .await
+            .status,
+        StatusCode::UNAUTHORIZED
+    );
+    let cookie = connect(&app, "alice", 3600).await;
+    let status = session(&app, &cookie).await;
+    let csrf = status.body["csrfToken"].as_str().unwrap();
+    for headers in [
+        vec![("cookie", cookie.as_str()), ("origin", ORIGIN)],
+        vec![
+            ("cookie", cookie.as_str()),
+            ("origin", "https://evil.example"),
+            ("x-csrf-token", csrf),
+        ],
+    ] {
+        assert_eq!(
+            app.send(
+                Method::POST,
+                &format!("{ROOT}/check"),
+                &headers,
+                Some(json!({}))
+            )
+            .await
+            .status,
+            StatusCode::FORBIDDEN
+        );
+    }
+    app.nyx.oauth.0.lock().unwrap().userinfo_down = true;
+    assert_eq!(
+        check_connection(&app, &cookie, json!({})).await.status,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert_eq!(session(&app, &cookie).await.body["connected"], true);
+    app.nyx.oauth.0.lock().unwrap().userinfo_down = false;
+    app.nyx.oauth.0.lock().unwrap().access.clear();
+    assert_eq!(
+        check_connection(&app, &cookie, json!({})).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(session(&app, &cookie).await.body["connected"], false);
+}
+
+#[tokio::test]
+async fn oauth_browser_organization_check_cannot_outlive_disconnect() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let cookie = connect(&app, "alice", 3600).await;
+    let gate = Arc::new(tokio::sync::Notify::new());
+    let entered = Arc::new(tokio::sync::Notify::new());
+    {
+        let mut provider = app.nyx.oauth.0.lock().unwrap();
+        provider.role_gate = Some(gate.clone());
+        provider.role_entered = Some(entered.clone());
+    }
+    let check = check_connection(&app, &cookie, json!({"orgId":ORG}));
+    let stop = async {
+        entered.notified().await;
+        assert_eq!(
+            disconnect(&app, &cookie).await.status,
+            StatusCode::NO_CONTENT
+        );
+        gate.notify_one();
+    };
+    let (checked, _) = tokio::join!(check, stop);
+    assert!(matches!(
+        checked.status,
+        StatusCode::UNAUTHORIZED | StatusCode::SERVICE_UNAVAILABLE
+    ));
+    assert!(checked.body.get("organization").is_none());
+}
+
+#[tokio::test]
+async fn oauth_callback_failures_return_safe_recoverable_browser_routes() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let missing = app
+        .send(
+            Method::GET,
+            &format!("{ROOT}/callback?code=secret"),
+            &[],
+            None,
+        )
+        .await;
+    assert_eq!(missing.status, StatusCode::SEE_OTHER);
+    assert_eq!(missing.headers[header::LOCATION], "/connect?error=expired");
+    assert_eq!(missing.headers[header::CACHE_CONTROL], "no-store");
+    let (path, cookie) = begin(&app, "alice", 3600).await;
+    app.nyx.oauth.0.lock().unwrap().userinfo_down = true;
+    let failed = app
+        .send(Method::GET, &path, &[("cookie", &cookie)], None)
+        .await;
+    assert_eq!(
+        failed.headers[header::LOCATION],
+        "/connect?error=unavailable"
+    );
+    assert!(!failed.headers[header::LOCATION]
+        .to_str()
+        .unwrap()
+        .contains("code="));
+    assert_eq!(session(&app, &cookie).await.body["connected"], false);
+    let (path, cookie) = begin(&app, "alice", 3600).await;
+    let failed = app
+        .send(
+            Method::GET,
+            &format!("{path}&error=server_error&error_description=private-detail"),
+            &[("cookie", &cookie)],
+            None,
+        )
+        .await;
+    assert_eq!(
+        failed.headers[header::LOCATION],
+        "/connect?error=unavailable"
+    );
 }

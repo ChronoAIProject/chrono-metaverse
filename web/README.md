@@ -215,4 +215,4 @@ src/
 
 ## NyxID 连接
 
-`/connect` 提供用户授权和断开入口，后端在 `/api/auth/nyxid/*` 管理 OAuth 状态及 Cookie。网站空间查看仍走现有公开/分享链接；连接 Cookie 不赋予业务 API 身份。配置及 Agent 组织访问流程见 [NyxID OAuth 接入](../docs/NYXID_OAUTH.md)。
+`/connect` 提供账号核对、用户授权、实时连接检查、组织选择和角色查询、重新授权、确认断开，以及回调失败恢复和权限范围说明。页面区分本地保存的授权和 provider 实时有效性；组织列表仅供选择，角色每次重新检查。后端在 `/api/auth/nyxid/*` 管理 OAuth 状态及 Cookie，POST 操作均使用同源 Cookie 和 CSRF 令牌；OAuth 令牌不进入网页。网站空间查看仍走现有公开/分享链接，连接 Cookie 不赋予业务 API 身份。配置及 Agent 组织访问流程见 [NyxID OAuth 接入](../docs/NYXID_OAUTH.md)。

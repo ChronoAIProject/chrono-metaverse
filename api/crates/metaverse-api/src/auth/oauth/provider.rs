@@ -1,7 +1,14 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, Zeroizing};
 
 use super::{seconds, OAuthError, OAuthService, Tokens};
+
+#[derive(Serialize)]
+pub(super) struct OrganizationSummary {
+    id: String,
+    name: String,
+    role: metaverse_core::model::OrgRole,
+}
 
 #[derive(Deserialize)]
 struct TokenResponse {
@@ -36,6 +43,58 @@ async fn bytes(mut response: reqwest::Response) -> Result<Zeroizing<Vec<u8>>, OA
 }
 
 impl OAuthService {
+    pub(super) async fn organizations(
+        &self,
+        token: &str,
+    ) -> Result<Vec<OrganizationSummary>, OAuthError> {
+        let response = self
+            .http
+            .get(self.endpoint("/api/v1/orgs"))
+            .bearer_auth(token)
+            .send()
+            .await
+            .map_err(|_| OAuthError::Unavailable)?;
+        if matches!(response.status().as_u16(), 401 | 403) {
+            return Err(OAuthError::Reconnect);
+        }
+        if !response.status().is_success() {
+            return Err(OAuthError::Unavailable);
+        }
+        #[derive(Deserialize)]
+        struct Organization {
+            id: String,
+            slug: String,
+            display_name: Option<String>,
+            your_role: metaverse_core::model::OrgRole,
+        }
+        #[derive(Deserialize)]
+        struct List {
+            orgs: Vec<Organization>,
+        }
+        let list: List =
+            serde_json::from_slice(&bytes(response).await?).map_err(|_| OAuthError::Unavailable)?;
+        list.orgs
+            .into_iter()
+            .map(|org| {
+                if !metaverse_core::ids::is_subject_id(&org.id) {
+                    return Err(OAuthError::Unavailable);
+                }
+                let name = org
+                    .display_name
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or(org.slug);
+                if name.len() > 1024 {
+                    return Err(OAuthError::Unavailable);
+                }
+                Ok(OrganizationSummary {
+                    id: org.id,
+                    name,
+                    role: org.your_role,
+                })
+            })
+            .collect()
+    }
+
     async fn token(
         &self,
         fields: &[(&str, &str)],

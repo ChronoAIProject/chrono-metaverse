@@ -145,6 +145,15 @@ fn plausible_share_token(token: &str) -> bool {
 }
 
 impl Authorizer {
+    /// 连接管理页只查询当前浏览器已核验主体的组织角色，不签发业务访问凭据。
+    pub(crate) async fn connection_membership(
+        &self,
+        subject: &str,
+        org_id: &str,
+    ) -> MembershipLookup {
+        self.organizations.membership(subject, None, org_id).await
+    }
+
     pub fn new(
         repo: Repo,
         organizations: OrganizationClient,
