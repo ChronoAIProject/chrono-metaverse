@@ -253,7 +253,9 @@ def cmd_prepare(args) -> dict:
     }
     wc.write_json(os.path.join(out_dir, "base.json"), manifest)
     print(f"基线 → {out_dir}")
-    print(f"  对齐：{res['alignment']}（与原处理服务首次导入相同）")
+    method = (res.get("alignment") or {}).get("method")
+    note = "用给定的变换，没有重新对齐" if method == "given" else "自动对齐，与原处理服务首次导入相同"
+    print(f"  对齐：{res['alignment']}（{note}）")
     print(
         f"  结构 {manifest['counts']['structure']} 个，物体 {manifest['counts']['objects']} 个，模板 "
         f"{manifest['counts']['templates']} 个；地面 y={manifest['floorY']}"

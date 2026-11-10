@@ -39,7 +39,8 @@ from .core import ReconError
 
 def _common_base(p: argparse.ArgumentParser) -> None:
     p.add_argument(
-        "--base", help="基线目录（prepare 的输出；默认环境变量 METAVERSE_RECON_BASE，再默认 ./base）"
+        "--base",
+        help="基线目录（prepare 的输出；默认 METAVERSE_RECON_BASE，工作区里是 out/recon，否则 ./base）",
     )
     p.add_argument("--scan", help="换一个对齐后的扫描 glb（默认 <基线>/scan.glb）")
     p.add_argument("--objects", help="换一个现有算法结果文件（默认 <基线>/objects.json）")
