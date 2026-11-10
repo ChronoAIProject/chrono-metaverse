@@ -7,7 +7,7 @@
 
 # ---- 构建 ----
 # 用 glibc 的 Debian 镜像：锁文件里 rollup 等原生包的 gnu 版本最常用，少一类 musl 问题。
-FROM node:22.23.4-trixie-slim@sha256:be1e2a3dc2c4fd68cdfadad2a696a280e0d2749098bee509230174d72fb768c6 AS build
+FROM node:26.12.1-trixie-slim@sha256:94816674c62774da0d099a947bf4613b9e1972a2733abd0d0cd80e795f8411d0 AS build
 WORKDIR /build/web
 COPY web/package.json web/package-lock.json ./
 RUN --mount=type=cache,id=metaverse-web-npm,target=/root/.npm,sharing=locked \
