@@ -51,7 +51,7 @@
         "PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE": "60000000",
         "PUBLIC_BLOB_RATE_LIMIT_BURST": "1000000",
         "PUBLIC_CACHE_BYTES": "134217728",
-        "METAVERSE_DEMO_SEED": "{\"spaceId\":\"chronoai-lobby\",\"name\":\"ChronoAI 前厅\",\"description\":\"ChronoAI 办公室前厅：Scaniverse 扫描 + AI 重建的演示空间（由部署配置自动导入）\",\"owner\":{\"kind\":\"org\",\"id\":\"52aa284c-b5b2-49bd-9d12-79f24772dbd7\"},\"visibility\":\"unlisted\",\"revision\":3}",
+        "METAVERSE_DEMO_SEED": "{\"spaceId\":\"chronoai-lobby\",\"name\":\"ChronoAI 前厅\",\"description\":\"ChronoAI 办公室前厅：Scaniverse 扫描 + AI 重建的演示空间（由部署配置自动导入）\",\"owner\":{\"kind\":\"org\",\"id\":\"52aa284c-b5b2-49bd-9d12-79f24772dbd7\"},\"visibility\":\"unlisted\",\"revision\":4,\"bundle\":{\"manifest\":{\"url\":\"https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/5092c2c43dc52eb235534b0d691aa39dba808764/infra/chrono-cd/demo/lobby-r4/manifest.json\",\"sha256\":\"2a25a714b75c2042db6642d85d27ae990eb1cb00114c44cecaf3a0468c048bc1\",\"size\":68882},\"sources\":{\"url\":\"https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/5092c2c43dc52eb235534b0d691aa39dba808764/infra/chrono-cd/demo/lobby-r4/sources.json\",\"sha256\":\"2badd7241ffb688e68cc0f6ffb6860887c0aa7d79fc2db7a4d6625e31d09d496\",\"size\":9962}}}",
         "METAVERSE_DEMO_SEED_HOSTS": "raw.githubusercontent.com,github.com,release-assets.githubusercontent.com,objects.githubusercontent.com,scaniverse.com",
         "RUST_LOG": "info"
       },

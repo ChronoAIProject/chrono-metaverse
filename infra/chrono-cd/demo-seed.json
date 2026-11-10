@@ -7,5 +7,17 @@
     "id": "52aa284c-b5b2-49bd-9d12-79f24772dbd7"
   },
   "visibility": "unlisted",
-  "revision": 3
+  "revision": 4,
+  "bundle": {
+    "manifest": {
+      "url": "https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/5092c2c43dc52eb235534b0d691aa39dba808764/infra/chrono-cd/demo/lobby-r4/manifest.json",
+      "sha256": "2a25a714b75c2042db6642d85d27ae990eb1cb00114c44cecaf3a0468c048bc1",
+      "size": 68882
+    },
+    "sources": {
+      "url": "https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/5092c2c43dc52eb235534b0d691aa39dba808764/infra/chrono-cd/demo/lobby-r4/sources.json",
+      "sha256": "2badd7241ffb688e68cc0f6ffb6860887c0aa7d79fc2db7a4d6625e31d09d496",
+      "size": 9962
+    }
+  }
 }
