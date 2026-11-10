@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 use axum::http::{Method, StatusCode};
 use ingest_support::*;
-use metaverse_api::repo::JobDraftSave;
+use metaverse_api::repo::{JobDraftSave, JobStep};
 use metaverse_api::runner::{JobFailure, Outcome, SlotClass};
 use metaverse_core::model::ErrorClass;
 use metaverse_core::Timestamp;
@@ -598,7 +598,7 @@ async fn zombie_ops_job_cannot_write_the_draft() {
             &prepared.draft,
             prepared.expected_rev,
             &lease_a.fence,
-            &json!({}),
+            JobStep::Done(&json!({})),
             now(),
         )
         .await

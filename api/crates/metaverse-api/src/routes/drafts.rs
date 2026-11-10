@@ -41,7 +41,7 @@ use crate::ingest::new_id;
 use crate::repo::{DraftDoc, DraftScanDoc, DraftStatus, NewPreview, OpsRef};
 use crate::timeline::drafts::{
     append_ops, parse_op_values, publish, OpsSource, PublishError, PublishOptions, PublishOutcome,
-    MAX_DRAFT_OPS_REFS, MAX_OPS_FILE_BYTES,
+    Publisher, MAX_DRAFT_OPS_REFS, MAX_OPS_FILE_BYTES,
 };
 use crate::timeline::state::ApplyError;
 use crate::timeline::writer::ensure_genesis;
@@ -1089,9 +1089,11 @@ pub(super) async fn publish_draft_inner(
         observed_at: request.observed_at,
         script_ref: request.script_ref,
         limits: state.ingest.config.upload_limits(),
+        job: None,
     };
     let now = crate::now()?;
-    match publish(&state.repo, &grant, &caller, &draft, &options, now).await {
+    let publisher = Publisher::of(&caller);
+    match publish(&state.repo, &grant, &publisher, &draft, &options, now).await {
         Ok(PublishOutcome::Committed(outcome)) => {
             state.public.cache.invalidate_space(&space_id);
             tracing::info!(space = %space_id, draft = %draft.id, seq = outcome.seq, by = %caller.subject, "草稿已发布");
@@ -1120,6 +1122,8 @@ pub(super) async fn publish_draft_inner(
             ))
         }
         Err(PublishError::Api(error)) => Err(error),
+        // 只有后台任务发布时才会出现。
+        Err(PublishError::LeaseLost) => Err(ApiError::internal()),
         Err(PublishError::Conflicts { keys, head_seq }) => Ok(problem_with(
             StatusCode::CONFLICT,
             "draft_conflict",

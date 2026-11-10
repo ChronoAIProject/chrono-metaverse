@@ -47,12 +47,12 @@ pub use blobs::{
     MISSING_ASSET,
 };
 pub use commits::{
-    palette_hash, state_blob_hash, BlobKind, CommitError, CommitOutcome, CommitPlan, Layout,
-    StoredChunk,
+    palette_hash, state_blob_hash, BlobKind, CommitError, CommitOutcome, CommitPlan, JobDone,
+    Layout, StoredChunk,
 };
 pub use drafts::{
-    DraftDoc, DraftScanDoc, DraftStatus, JobDraftSave, NewPreview, OpsAsset, OpsRef, OpsUpload,
-    PreviewRecord, ProvisionalBlock,
+    DraftDoc, DraftScanDoc, DraftStatus, JobDraftSave, JobStep, NewPreview, OpsAsset, OpsRef,
+    OpsUpload, PreviewRecord, ProvisionalBlock,
 };
 pub use space_admin::{SpaceSettings, MAX_SHARE_TOKEN_RECORDS};
 
