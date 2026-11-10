@@ -828,6 +828,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 - **教程**：
   - `docs/tutorials/cloud-claude-code-nyxid.md` 是平台开发教程；
   - 给建造者的教程另写（`docs/tutorials/build-space.md`），内容是在本地或云端用 Claude Code / Codex 建造空间，以及怎么给 AI 配置 agent key。
+  - 用 AI 重建实体空间：命令一步步的用法见 `docs/tutorials/reconstruct-with-ai.md`；从采集、逐件建模、多人评审、贴图到写回上线的完整做法见方法论 `docs/methodology/`。
 
 ---
 

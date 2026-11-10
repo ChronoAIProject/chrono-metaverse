@@ -11,6 +11,10 @@
 [开源方案调研](../research/scan-to-model.md)。命令的完整说明在 `worker/README.md` 的"重建工作台"一节，给 AI 的
 技能说明是 `sdk/typescript/skills/metaverse-reconstruct/SKILL.md`。
 
+完整的方法论（流程和分工、采集、基线和结构、逐件建模、多人建模与评审、贴图手册、写回上线、常见坑）见
+[方法论：从扫描到逼真的数字前厅](../methodology/README.md)，本教程只讲工作台命令一步步怎么用。方法论按服务端瘦身后的流程写：
+本教程第 1 节的安装和第 5 节"提交"还是处理服务时的写法，瘦身后改成本地打包、`metaverse bundle push` 推送（方法论第 7 章）。
+
 读完你会：
 
 1. 装好重建工作台 `metaverse-recon`，确认能出图；
