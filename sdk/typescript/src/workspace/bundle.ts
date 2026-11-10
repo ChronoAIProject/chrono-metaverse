@@ -7,7 +7,7 @@ import {
   CheckError,
   describeCheck,
   fileSource,
-  modelFitsBounds,
+  modelFitsEntity,
   type AssetCheck,
 } from '../core/check/index.js';
 import {
@@ -174,13 +174,13 @@ export async function checkBundleDir(
     }
   }
 
-  // 只有模型的物件：模型的实测包围盒与 bounds 一致。
+  // 只有模型的物件：模型的实测包围盒按物件的 transform 转过之后与 bounds 一致。
   const byHash = new Map(files.map((file) => [file.sha256, file]));
   const records = [...(bundle.rebuilt?.templates ?? []), ...(bundle.rebuilt?.entities ?? [])];
   for (const entity of modelOnly(records)) {
     const model = byHash.get(entity.assetHash!);
     if (model?.check?.format !== 'glb' || model.check.bounds === null) continue;
-    const mismatch = modelFitsBounds(model.check.bounds, entity.bounds);
+    const mismatch = modelFitsEntity(model.check.bounds, entity.bounds, entity.transform);
     if (mismatch !== null) problems.push(`物件 ${entity.entityId}（${model.path}）：${mismatch}`);
   }
   if (problems.length > 0) throw new BundleFilesError(problems);

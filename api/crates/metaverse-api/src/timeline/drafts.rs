@@ -27,7 +27,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 
-use metaverse_core::check::{model_fits_bounds, AssetCheck, CheckBody};
+use metaverse_core::check::{model_fits_entity, AssetCheck, CheckBody};
 use metaverse_core::chunk::{Chunk, ChunkKey};
 use metaverse_core::limits::UploadLimits;
 use metaverse_core::model::{
@@ -641,7 +641,8 @@ impl AppendSession {
             )
             .into());
         }
-        // 模型与记录一致（2.5 第 5 条）：只有模型、没有形状的物件，模型的实测包围盒与物件 bounds 一致。
+        // 模型与记录一致（2.5 第 5 条）：只有模型、没有形状的物件，模型的实测包围盒按物件的 transform
+        // 转过之后的外包盒与物件 bounds 一致（SHAPES 第 3 节）。
         let mut mismatched = Vec::new();
         for id in &touched.entities {
             let Some(body) = workspace.state.entities.get(id) else {
@@ -652,7 +653,8 @@ impl AppendSession {
             };
             let bounds = checked.checks.get(hash).and_then(glb_bounds);
             let fits = match bounds {
-                Some(bounds) => model_fits_bounds(&bounds, &body.bounds).map_err(|e| e.0),
+                Some(bounds) => model_fits_entity(&bounds, &body.bounds, body.transform.as_ref())
+                    .map_err(|e| e.0),
                 None => Err("模型没有实测的包围盒".to_owned()),
             };
             if let Err(message) = fits {

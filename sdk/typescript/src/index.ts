@@ -56,6 +56,8 @@ export {
   checkAsset,
   fits,
   modelFitsBounds,
+  modelFitsEntity,
+  rotatedModelBounds,
   fileSource,
   bytesSource,
   CheckError,

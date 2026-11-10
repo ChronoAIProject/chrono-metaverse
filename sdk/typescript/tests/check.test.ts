@@ -12,6 +12,8 @@ import {
   fits,
   imageSize,
   modelFitsBounds,
+  modelFitsEntity,
+  rotatedModelBounds,
   uploadFormatFromPath,
   type AssetCheck,
   type AssetFormat,
@@ -678,6 +680,31 @@ describe('按角色判断、模型与记录一致、上限文件', () => {
         { min: [0, 0, 0], max: [1, 0.9, 0.8] },
       ),
     ).toContain('底面中心');
+  });
+
+  it('modelFitsEntity：按物件的 transform 转过之后比（与 Rust check::model_fits_entity 相同）', () => {
+    const chair = { min: [-0.3, 0, -0.2], max: [0.3, 0.9, 0.2] } as const;
+    // 偏航 90°：x、z 对调
+    const entity = { min: [4.8, 0, 1.7], max: [5.2, 0.9, 2.3] } as const;
+    expect(modelFitsEntity(chair, entity, { yaw: 90 })).toBeNull();
+    expect(modelFitsBounds(chair, entity)).toContain('x 轴');
+    // 偏航 30°：8 个角点转过之后的外包
+    const rotated = rotatedModelBounds(chair, { yaw: 30 });
+    const [s, c] = [0.5, Math.sqrt(3) / 2];
+    const halfX = 0.3 * c + 0.2 * s;
+    const halfZ = 0.3 * s + 0.2 * c;
+    expect(rotated.max[0]).toBeCloseTo(halfX, 12);
+    expect(rotated.max[2]).toBeCloseTo(halfZ, 12);
+    const placed = { min: [1 - halfX, 0, 2 - halfZ], max: [1 + halfX, 0.9, 2 + halfZ] } as const;
+    expect(modelFitsEntity(chair, placed, { yaw: 30 })).toBeNull();
+    expect(modelFitsEntity(chair, placed)).not.toBeNull();
+    // 原点仍按模型自己的包围盒查
+    const shifted = { min: [0, 0, -0.2], max: [0.6, 0.9, 0.2] } as const;
+    expect(modelFitsEntity(shifted, entity, { yaw: 90 })).toContain('底面中心');
+    // 位置、缩放即使给了也不参与
+    expect(
+      modelFitsEntity(chair, entity, { yaw: 90, position: [9, 9, 9], scale: [2, 2, 2] }),
+    ).toBeNull();
   });
 
   it('本地文件按需读取；按扩展名猜上传格式', async () => {

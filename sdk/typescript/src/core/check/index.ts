@@ -9,6 +9,7 @@ import {
   type GlbLimits,
   type UploadLimits,
 } from '../limits.js';
+import { transformAabb, type Transform } from '../shape.js';
 import { checkGlb, checkGlbLight } from './glb.js';
 import { checkTexture, sniffImage } from './image.js';
 import { checkBundleOuter, checkDraco, checkObj, checkOps, checkScript, readAll } from './text.js';
@@ -25,7 +26,7 @@ import { checkZip } from './zip.js';
 /**
  * 资源核对的命令行实现（docs/design/server-slim.md 4.4–4.6，docs/SHAPES.md 第 8 节）：按用途检查本地文件，
  * 算出与服务端相同的核对记录 `check`，再按用途的上限判断（{@link fits}）；另有"模型与记录一致"
- * （{@link modelFitsBounds}）。`metaverse bundle check` 用它在上传之前发现不合规的文件；服务端（Rust
+ * （{@link modelFitsEntity}）。`metaverse bundle check` 用它在上传之前发现不合规的文件；服务端（Rust
  * `runner/verify/`）的检查是权威，两边跑同一批二进制样本（`tests/vectors/check/`）。
  *
  * 拒绝码（`CheckError.code`，与服务端相同，测试向量 README 第 9 节）：
@@ -263,22 +264,21 @@ export function fits(role: AssetRole, check: AssetCheck, limits: UploadLimits): 
 }
 
 /**
- * 只有模型、没有形状的物件：模型的实测包围盒与物件 `bounds` 一致（与 Rust `check::model_fits_bounds` 相同，
- * docs/design/server-slim.md 2.5 第 5 条）。三边长之差不超过 max(2 厘米, 物件边长的 1%)，模型原点在底面中心
- * （`|min.y|`、x 和 z 的中点都不超过 2 厘米）。一致时返回 null，否则返回说明。
+ * 模型按物件的 `transform`（只用 `yaw`、`pitch`、`roll`）绕原点转过之后的包围盒：模型包围盒的 8 个角点
+ * 转过之后取外包（docs/SHAPES.md 第 3 节，与 Rust `check::rotated_model_bounds` 相同）。
  */
-export function modelFitsBounds(model: Aabb, entity: Aabb): string | null {
-  for (let axis = 0; axis < 3; axis += 1) {
-    const modelSide = model.max[axis]! - model.min[axis]!;
-    const entitySide = entity.max[axis]! - entity.min[axis]!;
-    const tolerance = Math.max(MODEL_FIT_ABS, MODEL_FIT_REL * Math.abs(entitySide));
-    if (Math.abs(modelSide - entitySide) > tolerance) {
-      return (
-        `模型的实测尺寸 ${modelSide.toFixed(3)} 米与物件 bounds 的 ${entitySide.toFixed(3)} 米` +
-        `相差超过 ${tolerance.toFixed(3)} 米（第 ${['x', 'y', 'z'][axis]} 轴）`
-      );
-    }
-  }
+export function rotatedModelBounds(model: Aabb, transform?: Transform): Aabb {
+  if (transform === undefined) return model;
+  return transformAabb({ yaw: transform.yaw, pitch: transform.pitch, roll: transform.roll }, model);
+}
+
+/**
+ * 只有模型、没有形状的物件：模型的实测包围盒与物件 `bounds` 一致（与 Rust `check::model_fits_entity` 相同，
+ * docs/design/server-slim.md 2.5 第 5 条，docs/SHAPES.md 第 3 节）。原点在底面中心按模型自己的包围盒查
+ * （`|min.y|`、x 和 z 的中点都不超过 2 厘米）；三边长按转过之后的包围盒（{@link rotatedModelBounds}）与
+ * 物件 `bounds` 比，之差不超过 max(2 厘米, 物件边长的 1%)。一致时返回 null，否则返回说明。
+ */
+export function modelFitsEntity(model: Aabb, entity: Aabb, transform?: Transform): string | null {
   const centerX = (model.min[0] + model.max[0]) / 2;
   const centerZ = (model.min[2] + model.max[2]) / 2;
   if (
@@ -288,7 +288,24 @@ export function modelFitsBounds(model: Aabb, entity: Aabb): string | null {
   ) {
     return '模型的原点要在底面中心（导出时把节点变换烘进顶点，原点放在底面中心）';
   }
+  const rotated = rotatedModelBounds(model, transform);
+  for (let axis = 0; axis < 3; axis += 1) {
+    const modelSide = rotated.max[axis]! - rotated.min[axis]!;
+    const entitySide = entity.max[axis]! - entity.min[axis]!;
+    const tolerance = Math.max(MODEL_FIT_ABS, MODEL_FIT_REL * Math.abs(entitySide));
+    if (Math.abs(modelSide - entitySide) > tolerance) {
+      return (
+        `模型的实测尺寸 ${modelSide.toFixed(3)} 米与物件 bounds 的 ${entitySide.toFixed(3)} 米` +
+        `相差超过 ${tolerance.toFixed(3)} 米（第 ${['x', 'y', 'z'][axis]} 轴）`
+      );
+    }
+  }
   return null;
+}
+
+/** 不带旋转的 {@link modelFitsEntity}（与 Rust `check::model_fits_bounds` 相同）。 */
+export function modelFitsBounds(model: Aabb, entity: Aabb): string | null {
+  return modelFitsEntity(model, entity);
 }
 
 /** 给人看的核对结果摘要（一行）。 */
