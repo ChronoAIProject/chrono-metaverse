@@ -77,6 +77,15 @@ export interface EntityBody {
     readonly opacity?: number;
     readonly unlit?: boolean;
   };
+  /**
+   * 模型（assetHash）绕自己的原点转的角度（只有旋转，位置由 `bounds` 定）：转过之后模型包围盒的外包盒
+   * 底面中心对齐 `bounds` 的底面中心（docs/SHAPES.md 第 3 节，`viewer/modelPlacement.ts`）。
+   */
+  readonly transform?: {
+    readonly yaw?: number;
+    readonly pitch?: number;
+    readonly roll?: number;
+  };
   readonly textures?: readonly string[];
   readonly bounds?: { readonly min: Vec3; readonly max: Vec3 };
   readonly fit?: {

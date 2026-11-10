@@ -329,6 +329,33 @@ describe('外部模型：material 和 props.source', () => {
       expect(() => model({ material: extra }), JSON.stringify(extra)).toThrow('不认识的字段');
     }
   });
+
+  it('模型的 transform 只有旋转，只能和 assetHash 一起给', () => {
+    const body = model({ transform: { yaw: 6.84 } });
+    expect(body.transform).toEqual({ yaw: 6.84 });
+    validateEntityBody(body, new Map());
+    validateEntityBody(model({ transform: { yaw: -90, pitch: 0, roll: 180 } }), new Map());
+    for (const bad of [{ position: [1, 0, 0] }, { scale: [1, 1, 1] }]) {
+      expect(() => validateEntityBody(model({ transform: bad }), new Map())).toThrow(
+        '模型的 transform 只能有 yaw、pitch、roll',
+      );
+    }
+    expect(() => validateEntityBody(model({ transform: { yaw: 3601 } }), new Map())).toThrow(
+      'transform.yaw: 角度必须是有限值且绝对值不超过 3600',
+    );
+    expect(() => model({ transform: { heading: 90 } })).toThrow('不认识的字段');
+    expect(() => model({ transform: { yaw: '90' } })).toThrow('transform.yaw 必须是数字');
+    expect(() =>
+      validateEntityBody(
+        model({
+          assetHash: undefined,
+          transform: { yaw: 90 },
+          shape: { type: 'box', size: [2, 0.8, 0.9], transform: { position: [1, 0, 0.45] } },
+        }),
+        {},
+      ),
+    ).toThrow('transform 只用于模型');
+  });
 });
 
 describe('形状材质：平铺、着色、法线、粗糙度', () => {

@@ -310,20 +310,28 @@ v = (−a·sin θ + b·cos θ) / tile[1]
 ```json
 { "entityId": "sofa-01", "layer": "rebuilt", "kind": "object", "label": "沙发",
   "assetHash": "<处理后的 glb 的资源哈希>",
-  "material": { "tint": [214, 196, 176] },
+  "material": { "tint": [214, 196, 176], "shading": "albedo" },
+  "transform": { "yaw": 178.5 },
   "bounds": { "min": [1.1, 0, 2.4], "max": [3.0, 0.82, 3.3] },
   "props": { "source": { "library": "polyhaven", "id": "<库里的编号>",
                          "page": "https://polyhaven.com/a/<库里的编号>",
                          "author": "<作者>", "license": "CC0-1.0", "title": "<标题>" } } }
 ```
 
-- 物件可以只有 `assetHash` 没有 `shape`：网站加载模型，按 `bounds` 的底面中心摆放（模型坐标的原点在底面中心），所以模型的大小、朝向在重新导出时就要摆好。
+- 物件可以只有 `assetHash` 没有 `shape`：网站加载模型，按 `bounds` 的底面中心摆放（模型坐标的原点在底面中心），所以模型的大小在重新导出时就要摆好；朝向可以烘进模型，也可以写在 `transform` 里。
+- `transform`（可选，只能和 `assetHash` 一起给）：`{yaw?, pitch?, roll?}`，模型绕自己的原点转的角度（度，规则同形状的
+  `transform`：有限值、绝对值不超过 3600，顺序同第 1 节 `Ry(yaw) · Rx(pitch) · Rz(roll)`）。没有 `position`、`scale`：
+  位置由 `bounds` 定，缩放烘进模型；给了就拒绝。同一个模型摆几个朝向（会议室的一排椅子）时只要导出、上传一份 glb。
+  **摆放**：模型包围盒的 8 个角点转过之后取外包盒，把这个盒子的底面中心对齐 `bounds` 的底面中心。只有偏航、模型原点
+  在底面中心时，这就是"原点放在 `bounds` 的底面中心、绕竖直轴转"。本地工具 `models` 导出时把缩放、俯仰、翻滚和调色
+  烘进模型，只把偏航写进 `transform`，`bounds` 就是这个外包盒（比模型实际占的地方略大，偏航 45° 时最多大约四成）。
 - **物件模型 glb 的要求**（上传时按第 8 节核对，引用时按核对结果判断能不能当物件模型用）：只有三角形；节点用单位
   变换——节点变换和调色烘进顶点（服务端按顶点数据实测包围盒，带旋转的节点会让包围盒偏大）；原点在底面中心；扩展只能用
   `KHR_texture_transform`、`KHR_mesh_quantization`、`KHR_materials_unlit`、`KHR_materials_emissive_strength`；
   不能有骨骼、动画、变形目标、相机、灯光和外部图片；三角形数、贴图边长、贴图像素合计在物件模型的上限内（第 8 节）。
-- **模型与记录一致**：只有模型、没有形状的物件，模型的实测包围盒（`check.bounds`）三边长与物件 `bounds` 三边长
-  之差不超过 max(2 厘米, 物件边长的 1%)，模型原点在底面中心（`|min.y|`、x 和 z 的中点都不超过 2 厘米），否则
+- **模型与记录一致**：只有模型、没有形状的物件，模型的实测包围盒（`check.bounds`）按物件的 `transform` 转过之后的
+  外包盒（同上，没有 `transform` 就是它本身）三边长与物件 `bounds` 三边长之差不超过 max(2 厘米, 物件边长的 1%)，
+  模型原点在底面中心（按模型自己的包围盒查：`|min.y|`、x 和 z 的中点都不超过 2 厘米），否则
   422 `model_bounds_mismatch`。这条保证网站摆出来和记录一致，范围检查用的 `bounds` 也就是真实的。
 - `material`（可选，只能和 `assetHash` 一起给）给整个模型调外观：`tint: [r,g,b]`（sRGB 0–255，乘到模型原来的颜色上）、`opacity`（0–1）、`unlit`（布尔），含义与形状材质相同；没有 `color`、`texture`、`uv`，也没有 `tile`、法线、粗糙度这些形状材质的字段（模型自带的贴图和材质原样用）。
 - `material.shading`：`"baked"`（默认）或 `"albedo"`，只影响网站怎么画模型里的材质：

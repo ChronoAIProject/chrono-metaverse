@@ -365,7 +365,8 @@ export function signedArea(points: readonly Vec2[]): number {
   return sum / 2;
 }
 
-function validateTransform(value: unknown, path: string): void {
+/** 变换的校验（形状的 `transform`；物件模型的 `transform` 另外只许旋转，见 record.ts）。 */
+export function validateTransform(value: unknown, path: string): void {
   if (!isPlainObject(value)) throw new ShapeError(path, 'transform 必须是对象');
   onlyKeys(value, ['position', 'yaw', 'pitch', 'roll', 'scale'], path);
   if (present(value, 'position')) {

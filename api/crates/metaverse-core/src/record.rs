@@ -12,7 +12,7 @@ use crate::grid::{Aabb, GridBox};
 use crate::ids::{is_object_id, SPACE_ANCHOR_ID};
 use crate::is_sha256_hex;
 use crate::model::{DataVisibility, Layer};
-use crate::shape::{Shading, Shape, TemplateSource};
+use crate::shape::{Shading, Shape, TemplateSource, Transform};
 
 /// 物件 `props` 规范化后的最大字节数。
 pub const MAX_PROPS_BYTES: usize = 16 * 1024;
@@ -175,6 +175,11 @@ pub struct EntityBody {
     /// 模型（`assetHash`）整体的调色、半透明、不受光照、着色方式；只能和 `assetHash` 一起给。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub material: Option<ModelMaterial>,
+    /// 模型（`assetHash`）绕自己的原点转的角度：只有 `yaw`、`pitch`、`roll`，只能和 `assetHash` 一起给。
+    /// 位置由 `bounds` 定，缩放烘进模型（SHAPES 3"引用外部模型的物件"）。同一个模型摆几个朝向时
+    /// 只要导出一份 glb。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform: Option<Transform>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub textures: Option<Vec<String>>,
     /// 由生成方计算，用于权限范围检查和网站裁剪。
@@ -218,6 +223,17 @@ impl EntityBody {
                 return Err(invalid("material 只用于模型，必须和 assetHash 一起给"));
             }
             crate::shape::validate_opacity("material.opacity", material.opacity)?;
+        }
+        if let Some(transform) = &self.transform {
+            if self.asset_hash.is_none() {
+                return Err(invalid("transform 只用于模型，必须和 assetHash 一起给"));
+            }
+            if transform.position.is_some() || transform.scale.is_some() {
+                return Err(invalid(
+                    "模型的 transform 只能有 yaw、pitch、roll（位置由 bounds 定，缩放烘进模型）",
+                ));
+            }
+            transform.validate("transform")?;
         }
         if self
             .textures
@@ -424,6 +440,42 @@ mod tests {
             }
         }
         body
+    }
+
+    #[test]
+    fn model_entities_with_rotation() {
+        // 只有旋转：同一个模型摆几个朝向，只导出一份 glb
+        let body = entity(model_entity(json!({"transform": {"yaw": 6.84}})));
+        body.validate(&NoTemplates).unwrap();
+        let back = serde_json::to_value(&body).unwrap();
+        assert_eq!(back["transform"], json!({"yaw": 6.84}));
+        entity(model_entity(
+            json!({"transform": {"yaw": -90, "pitch": 0, "roll": 180}}),
+        ))
+        .validate(&NoTemplates)
+        .unwrap();
+        // 位置、缩放不收；角度按形状变换的规则（|x| ≤ 3600）
+        for bad in [
+            json!({"position": [1, 0, 0]}),
+            json!({"scale": [1, 1, 1]}),
+            json!({"yaw": 3601}),
+        ] {
+            let body = entity(model_entity(json!({"transform": bad.clone()})));
+            assert!(body.validate(&NoTemplates).is_err(), "{bad}");
+        }
+        // 不认识的字段在反序列化时就拒绝
+        assert!(serde_json::from_value::<EntityBody>(model_entity(
+            json!({"transform": {"heading": 90}})
+        ))
+        .is_err());
+        // 只能和 assetHash 一起给
+        let shape_only = entity(json!({
+            "entityId": "box", "layer": "ext", "kind": "object",
+            "shape": {"type": "box", "size": [1, 1, 1]},
+            "transform": {"yaw": 90},
+            "bounds": {"min": [-0.5, 0, -0.5], "max": [0.5, 1, 0.5]}
+        }));
+        assert!(shape_only.validate(&NoTemplates).is_err());
     }
 
     #[test]

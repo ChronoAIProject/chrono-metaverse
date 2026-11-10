@@ -35,6 +35,7 @@ import {
   type LabelCandidate,
 } from './labelLayout';
 import { createMeshService, type MeshService } from './meshService';
+import { placeRotatedModel } from './modelPlacement';
 import type { ShapeJob } from './meshJobs';
 
 /**
@@ -875,7 +876,9 @@ export class SceneView {
         this.model(entity.assetHash)
           ?.then((model) => {
             if (!this.disposed && holder.parent !== null) {
-              holder.add(this.sharedClone(model, entity.material));
+              const clone = this.sharedClone(model, entity.material);
+              placeRotatedModel(clone, entity.transform);
+              holder.add(clone);
             }
           })
           .catch(() => warnings.push(`${entity.entityId}：模型下载失败`));
