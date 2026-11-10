@@ -134,8 +134,22 @@ def candidate_list(objects: dict[str, dict], metrics: dict) -> list[dict]:
     return out
 
 
+def _inputs(args) -> tuple[str, str, list[float] | None]:
+    """扫描、输出目录、给定的变换：参数给了就用；在命令行工作区里时默认 scan/scan.zip、out/recon、
+    scan/transform.json（`--auto-align` 时不用工作区的变换，重新自动对齐）。"""
+    from .workspace import BASE_DIR, SCAN_ZIP, TRANSFORM_FILE, default_path, read_transform, require_path
+
+    scan = require_path(args.scan, SCAN_ZIP, "扫描（--scan）")
+    out = require_path(args.out, BASE_DIR, "输出目录（--out）", must_exist=False)
+    transform_file = getattr(args, "transform", None)
+    if transform_file is None and not getattr(args, "auto_align", False):
+        transform_file = default_path(None, TRANSFORM_FILE)
+    return scan, out, (read_transform(transform_file) if transform_file else None)
+
+
 def cmd_prepare(args) -> dict:
     start = time.time()
+    args.scan, args.out, transform = _inputs(args)
     out_dir = os.path.abspath(args.out)
     os.makedirs(out_dir, exist_ok=True)
     work = os.path.join(out_dir, "_work")
@@ -148,13 +162,14 @@ def cmd_prepare(args) -> dict:
         wc.log(
             f"prepare：{args.scan}"
             + (f" + {args.texture}" if args.texture else "")
-            + "（与 scan_import 首次导入相同的处理）"
+            + ("（给定的变换，不重新对齐）" if transform is not None else "（首次自动对齐）")
         )
         res = tasks.scan_task(
             scan_path=source,
             workdir=os.path.join(work, "task"),
             limits=limits,
-            transform=None,
+            transform=transform,
+            transform_method="given",
             reference=None,
             web_models=False,
             do_rebuild=True,

@@ -1,7 +1,8 @@
-"""`metaverse-recon`：给 AI 模型师（本地的 Claude Code / Codex）用的重建工作台。
+"""`metaverse-recon`：本地重建工具（设计 8.3）。一切重建都在本地做，产出重建包，由命令行
+`metaverse bundle push` 交给服务端；本工具只读写本地文件，不连接本服务，也不需要任何凭证。
 
-大模型逐件重建一个空间：先去模型库搜一个看起来差不多的现成模型摆进扫描里对照，搜不到或差太多（定制件）
-再自己手写参数形状。这里只做眼睛、尺子和裁判：
+工作台（给 AI 模型师——本地的 Claude Code / Codex 用）：大模型逐件重建一个空间，先去模型库搜一个看起来差不多的
+现成模型摆进扫描里对照，搜不到或差太多（定制件）再自己手写参数形状。这里只做眼睛、尺子和裁判：
 
     metaverse-recon prepare  --scan mesh.drc --texture tex.jpg --hints hints.json --out base
     metaverse-recon views    --object sofa-01 --out out/sofa/views
@@ -13,7 +14,16 @@
     metaverse-recon compare  --object counter-01 --model counter.json --out out/counter/compare
     metaverse-recon assemble --entities out/*/entity.json --out out/authored
     metaverse-recon reframe  --scan mesh.drc --from compute --to scan_import --in model.json --out model2.json
-    metaverse-recon doctor   （检查渲染要用的 node、three、Playwright、Chromium、字体）
+    metaverse-recon refshot  --object table-01 --face top --out out/table/refshot
+    metaverse-recon texture  --model table.json --part '$' --color tile.jpg --tile 1.3,1.0 --calibrate ...
+    metaverse-recon texsearch --query "white marble" --out out/tex ；texfetch --from out/tex/candidates.json#2
+    metaverse-recon doctor [--install]（检查渲染要用的 node、three、Playwright、Chromium、字体；装进缓存目录）
+
+打包（在命令行工作区里时，扫描、变换、上限、基线、包目录都有默认值）：
+
+    metaverse-recon align / webmodel / models / bake / fit / scan-zip
+    metaverse-recon bundle --authored authored.json [--seed] [--webmodel scan-0.glb]
+    metaverse-recon bundle --algorithm ；bundle --from-snapshot <工作区>
 
 每个命令的参数见 `metaverse-recon <命令> -h`；完整教程见 docs/tutorials/reconstruct-with-ai.md。
 """
@@ -55,10 +65,18 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser(
         "prepare", help="扫描 → 基线目录（与处理服务 scan_import 首次导入相同的对齐、结构、物体）"
     )
-    p.add_argument("--scan", required=True, help="扫描：Scaniverse 式 zip、glb，或 drc（配 --texture）")
+    p.add_argument(
+        "--scan", help="扫描：Scaniverse 式 zip、glb，或 drc（配 --texture）；工作区里默认 scan/scan.zip"
+    )
     p.add_argument("--texture", help="drc 的贴图（打包成 zip 后按处理服务的方式读）")
+    p.add_argument(
+        "--transform",
+        help="给定的变换（scan/transform.json 或 16 个数；已有空间重建时不重新对齐）；"
+        "工作区里有 scan/transform.json 时默认用它",
+    )
+    p.add_argument("--auto-align", action="store_true", help="不用工作区的 scan/transform.json，重新自动对齐")
     p.add_argument("--hints", help="物体提示 JSON（处理服务坐标系，与 scan_import 的 hints 参数相同）")
-    p.add_argument("--out", required=True, help="输出的基线目录")
+    p.add_argument("--out", help="输出的基线目录（工作区里默认 out/recon）")
     p.add_argument("--max-texture", type=int, default=4096, help="scan.glb 贴图的最长边（默认 4096）")
     p.add_argument("--objects-target", help=argparse.SUPPRESS)
 
@@ -162,9 +180,140 @@ def build_parser() -> argparse.ArgumentParser:
 
     _library_parsers(sub)
     _assemble_parsers(sub)
+    _pipeline_parsers(sub)
+    _texture_parsers(sub)
 
-    sub.add_parser("doctor", help="检查渲染要用的 node、three、Playwright、Chromium、字体和缓存目录")
+    d = sub.add_parser("doctor", help="检查渲染要用的 node、three、Playwright、Chromium、字体和缓存目录")
+    d.add_argument(
+        "--install",
+        action="store_true",
+        help="把 three 和 Playwright（含 Chromium）装进缓存目录（不在平台仓库里时用；要 node 和 npm）",
+    )
     return ap
+
+
+def _limits_arg(p) -> None:
+    p.add_argument(
+        "--limits", help="上传上限 limits.json（metaverse pull 写的；工作区里默认 limits.json，没有用默认值）"
+    )
+
+
+def _pipeline_parsers(sub) -> None:
+    a = sub.add_parser("align", help="只算对齐：首次自动对齐，或重扫配准到参考扫描；写 transform.json")
+    a.add_argument("--scan", help="扫描（工作区里默认 scan/scan.zip）")
+    a.add_argument("--reference", help="参考扫描（重扫配准时）")
+    a.add_argument("--reference-transform", help="参考扫描的变换（transform.json 或 16 个数）")
+    a.add_argument(
+        "--max-error-cm", type=float, default=3.0, help="配准误差超过它（厘米）时退出码非 0（默认 3）"
+    )
+    a.add_argument("--out", help="输出（工作区里默认 scan/transform.json）")
+
+    w = sub.add_parser("webmodel", help="生成网页用模型（两档 glb，保持扫描原坐标）")
+    w.add_argument("--scan", help="扫描（工作区里默认 scan/scan.zip）")
+    w.add_argument("--out", required=True, help="输出目录（scan-0.glb、scan-1.glb）")
+    _limits_arg(w)
+
+    m = sub.add_parser("models", help="外部模型：找本地文件或下载、核对，按物件模型的上限导出 glb")
+    m.add_argument("--authored", required=True, help="AI 物件集（authored.json）")
+    m.add_argument("--out", required=True, help="输出目录（<哈希前 12 位>.glb、models.json）")
+    m.add_argument(
+        "--models-dir", action="append", help="另外到这个目录找模型文件（fetch 的旁注 model.json）"
+    )
+    m.add_argument("--only", help="只导出这些物件，逗号分隔")
+    m.add_argument("--offline", action="store_true", help="不下载，本地没有就报错")
+    m.add_argument("--render", action="store_true", help="每个导出的文件出一张对照图（导出后 | 原文件）")
+    _limits_arg(m)
+
+    b = sub.add_parser("bake", help="烘焙：物件集里带 bake 的部件从扫描取色写成贴图，输出新的物件集")
+    b.add_argument("--authored", required=True, help="AI 物件集")
+    b.add_argument("--out", required=True, help="输出目录（authored.json、textures/）")
+    _common_base(b)
+
+    f = sub.add_parser("fit", help="逐件偏差（与 compare、打包写进记录的 fit 同一个函数）")
+    f.add_argument("--authored", required=True, help="物件集或物件文件")
+    f.add_argument("--out", help="输出 JSON")
+    f.add_argument("--models-dir", action="append", help="另外到这个目录找外部模型文件")
+    _common_base(f)
+
+    z = sub.add_parser("scan-zip", help="把扫描成员按接口服务部署种子的规则打成 zip（哈希与线上相同）")
+    z.add_argument("--sources", help="来源表 sources.json（按 --hash 或唯一的 zip 条目下载成员）")
+    z.add_argument("--hash", help="期望的 zip 哈希（来源表的键）；打出来不同就报错")
+    z.add_argument("--member", action="append", help="成员名=本地文件（按给出的顺序）；可重复")
+    z.add_argument("--out", help="输出（工作区里默认 scan/scan.zip）")
+
+    k = sub.add_parser("bundle", help="打包：物件集或算法结果 → 重建包目录（manifest.json + 文件）")
+    k.add_argument("--authored", help="AI 物件集")
+    k.add_argument("--algorithm", action="store_true", help="不用物件集，直接用算法的结构和物体")
+    k.add_argument("--from-snapshot", help="用拉下来的快照（工作区目录）生成整体替换的包，不读扫描、不重建")
+    k.add_argument("--scan", help="扫描（工作区里默认 scan/scan.zip）")
+    k.add_argument("--transform", help="变换（工作区里默认 scan/transform.json）")
+    k.add_argument(
+        "--webmodel", action="append", help="用已有的网页用模型（第一个是默认档，可再给低细节档）；不给就生成"
+    )
+    k.add_argument("--hints", help="物体提示 JSON（--algorithm 时）")
+    k.add_argument("--out", help="包目录（工作区里默认 out/bundle）")
+    k.add_argument("--note", help="清单的说明（发布时的默认提交说明）")
+    k.add_argument("--notes", help="建模记录（Markdown，作为提交的 scriptRef；默认用物件集的 notes）")
+    k.add_argument("--observed-at", help="扫描的拍摄时间（RFC 3339；不给时服务端沿用上一次）")
+    k.add_argument(
+        "--seed", action="store_true", help="种子用的包：去掉内部级锚点和建模记录，report 只留偏差统计"
+    )
+    k.add_argument("--no-base", action="store_true", help="清单不写 base（推送时要 --base latest）")
+    k.add_argument("--no-check", action="store_true", help="不调用 metaverse bundle check")
+    k.add_argument("--models-dir", action="append", help="另外到这个目录找外部模型文件")
+    k.add_argument("--textures-dir", action="append", help="另外到这个目录按哈希找贴图（<哈希>.<扩展名>）")
+    _limits_arg(k)
+    k.add_argument("--base", help="基线目录（按哈希找基线算出的贴图；工作区里默认 out/recon）")
+
+
+def _texture_parsers(sub) -> None:
+    r = sub.add_parser(
+        "refshot", help="从扫描对物件的一个面做正交展开：参考图 + 每像素米数、中位色、建议平铺"
+    )
+    _common_range(r, 0.0)
+    r.add_argument(
+        "--face", default="top", help="面：top、bottom、front、back、left、right（物件朝向用 --front）"
+    )
+    r.add_argument("--front", type=float, default=0.0, help="物件正面方位角（度，同 views）")
+    r.add_argument("--depth", type=float, default=0.03, help="面前后取多厚的扫描表面，米（默认 0.03）")
+    r.add_argument("--px", type=float, default=0.003, help="每像素米数（默认 0.003）")
+    r.add_argument("--texture", help="扫描的原始贴图（更清楚；贴图坐标与基线 scan.glb 相同）")
+    r.add_argument("--out", required=True, help="输出目录（refshot.png、refshot.json）")
+
+    x = sub.add_parser(
+        "texture", help="把颜色、法线、粗糙度贴图写进物件的工作副本（{file} 引用），可标定、出对比图"
+    )
+    x.add_argument("--model", required=True, help="物件文件（会写回这个文件，旧的存成 .bak）")
+    x.add_argument("--entity", help="物件编号（文件里有几个时）")
+    x.add_argument("--part", default="$", help="部件路径（$ 是整个形状，$.children[2] 是第三个子形状）")
+    x.add_argument("--color", help="颜色贴图（png/jpg/webp）")
+    x.add_argument("--normal", help="法线贴图（OpenGL 约定）")
+    x.add_argument("--roughness", help="粗糙度贴图（灰度，白 = 粗糙）")
+    x.add_argument("--uv", default="planar", help="贴图坐标：box、planar、cylindrical、mesh（默认 planar）")
+    x.add_argument("--tile", help="每重复一次的尺寸，米：u,v")
+    x.add_argument("--offset", help="贴图坐标平移，米：u,v")
+    x.add_argument("--rotate", type=float, help="贴图逆时针转的角度")
+    x.add_argument("--shading", choices=("albedo", "baked"), default="albedo", help="着色方式（默认 albedo）")
+    x.add_argument("--refshot", help="refshot.json：--calibrate 用它的中位色")
+    x.add_argument("--calibrate", action="store_true", help="在网站光照下标定整体增益，烘进贴图副本")
+    x.add_argument("--preview", help="对比图输出（扫描 | 之前 | 之后），给了就出图并算色差")
+    x.add_argument(
+        "--textures-dir", default="textures", help="贴图副本放在物件文件旁边的这个目录（默认 textures）"
+    )
+    _common_base(x)
+
+    s = sub.add_parser("texsearch", help="在材质库（Poly Haven、ambientCG，只要 CC0）里找贴图")
+    s.add_argument("--query", required=True, help="描述（英文，如 'white marble'）")
+    s.add_argument("--library", action="append", choices=("polyhaven", "ambientcg"), help="材质库，可重复")
+    s.add_argument("--limit", type=int, default=12, help="候选数（默认 12）")
+    s.add_argument("--out", required=True, help="输出目录（candidates.json、sheet.jpg）")
+
+    f = sub.add_parser("texfetch", help="下载材质：颜色、法线（转 OpenGL 约定）、粗糙度，记录实际尺寸和许可")
+    f.add_argument("--from", dest="source", help="texsearch 的 candidates.json#编号")
+    f.add_argument("--library", choices=("polyhaven", "ambientcg"), help="不用候选清单时：材质库")
+    f.add_argument("--id", help="不用候选清单时：材质编号")
+    f.add_argument("--resolution", default="1k", help="分辨率（默认 1k）")
+    f.add_argument("--out", help="输出目录（默认 <缓存>/textures/<库>/<编号>）")
 
 
 def _library_parsers(sub) -> None:
@@ -284,6 +433,17 @@ def _assemble_parsers(sub) -> None:
     )
 
 
+PIPELINE = {
+    "align": "cmd_align",
+    "webmodel": "cmd_webmodel",
+    "models": "cmd_models",
+    "bake": "cmd_bake",
+    "fit": "cmd_fit",
+    "scan-zip": "cmd_scan_zip",
+    "bundle": "cmd_bundle",
+}
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
@@ -327,9 +487,23 @@ def main(argv: list[str] | None = None) -> int:
             from .reframe import cmd_reframe
 
             cmd_reframe(args)
-        elif args.cmd == "doctor":
-            from .env import describe
+        elif args.cmd in PIPELINE:
+            from . import commands
 
+            getattr(commands, PIPELINE[args.cmd])(args)
+        elif args.cmd in ("refshot", "texture"):
+            from . import texwork
+
+            getattr(texwork, f"cmd_{args.cmd}")(args)
+        elif args.cmd in ("texsearch", "texfetch"):
+            from .library import textures
+
+            getattr(textures, f"cmd_{args.cmd}")(args)
+        elif args.cmd == "doctor":
+            from .env import describe, install
+
+            if args.install:
+                install()
             print(json.dumps(describe(), ensure_ascii=False, indent=1))
     except ReconError as e:
         print(f"错误：{e.message}", file=sys.stderr)

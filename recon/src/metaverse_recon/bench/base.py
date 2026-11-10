@@ -31,7 +31,16 @@ TEXTURE_DIRS = ("textures", "structure_textures")
 
 
 def default_base() -> str:
-    return os.environ.get("METAVERSE_RECON_BASE") or "base"
+    """基线目录：环境变量 `METAVERSE_RECON_BASE`；在命令行工作区里时是 `out/recon/`；再默认 `./base`。"""
+    env = os.environ.get("METAVERSE_RECON_BASE")
+    if env:
+        return env
+    from .workspace import BASE_DIR, find_workspace
+
+    ws = find_workspace()
+    if ws is not None and ws.path(BASE_DIR).is_dir():
+        return str(ws.path(BASE_DIR))
+    return "base"
 
 
 @dataclass

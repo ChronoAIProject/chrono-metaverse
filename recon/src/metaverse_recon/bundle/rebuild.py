@@ -32,6 +32,7 @@ from ..processing import tasks
 from ..processing.limits import default_limits
 from ..processing.rebuild import OBJECTS_TARGET
 from .anchors import anchor_proposals
+from .models import sidecar_files
 from .sources import download_sources
 
 # 重扫配准的误差超过它（厘米）就不往下做，等人确认变换
@@ -55,21 +56,33 @@ def prepare_authored(
     max_model_bytes: int | None = None,
     opener: Any = None,
     check_cancel: Callable[[], None] | None = None,
+    model_dirs: Iterable[str] = (),
 ) -> tuple[dict[str, Any], dict[str, dict[str, str]], dict[str, int]]:
-    """物件集 → (整理过的物件集，带 `existingTextures`、`pendingTextures`；下载好的外部模型；下载统计)。"""
+    """物件集 → (整理过的物件集，带 `existingTextures`、`pendingTextures`；外部模型的本地文件；下载统计)。
+
+    外部模型先在 `model_dirs`（工作台 `fetch` 的缓存等，按旁注里的 sha256 找）里找，找不到再下载。"""
     parsed = parse_authored(raw)
     known = set(known_textures)
     parsed["existingTextures"] = sorted(sha for sha in parsed["textures"] if sha in known)
     parsed["pendingTextures"] = sorted(sha for sha in parsed["textures"] if sha not in known)
     limit = default_limits()["max_model_bytes"] if max_model_bytes is None else max_model_bytes
-    sources, downloads = download_sources(
-        parsed,
+    local = sidecar_files(model_dirs)
+    pending = {k: v for k, v in parsed["sources"].items() if v["sha256"] not in local}
+    sources = {
+        k: {"format": "glb", "path": local[v["sha256"]]}
+        for k, v in parsed["sources"].items()
+        if v["sha256"] in local
+    }
+    got, downloads = download_sources(
+        {"sources": pending},
         os.path.join(workdir, "downloads"),
         hosts=hosts,
         max_model_bytes=limit,
         opener=opener,
         check_cancel=check_cancel,
     )
+    sources.update(got)
+    downloads["local"] = len(parsed["sources"]) - len(pending)
     return parsed, sources, downloads
 
 
@@ -129,6 +142,7 @@ def rebuild_scan(
     align_max_error_cm: float = ALIGN_MAX_ERROR_CM,
     hosts: Iterable[str] | None = None,
     opener: Any = None,
+    model_dirs: Iterable[str] = (),
 ) -> dict[str, Any]:
     """见模块说明。
 
@@ -157,6 +171,7 @@ def rebuild_scan(
             hosts=hosts,
             max_model_bytes=int(limits["max_model_bytes"]),
             opener=opener,
+            model_dirs=model_dirs,
         )
     out = tasks.scan_task(
         scan_path=scan_path,
