@@ -146,3 +146,4 @@ CMA 接口要求普通用户 OAuth access token。带服务 resource/allowed_ser
 - 部署前后规格逐字段比对，仅更新 API/web 镜像、CD 解析摘要和 `CMA_BASE_URL`；OAuth scopes 仍为 `openid offline_access`。API 单副本、web 双副本全部更新就绪，既有组织空间 `chronoai-lobby` 可继续通过原 NyxID 用户代理读取。
 - 已在线核对：`/workspace` 的桌面和手机真实渲染，无脚本错误或横向溢出；匿名状态返回 `enabled:true,connected:false,workerAvailable:true`；无会话的 CMA 同意、创建、观察调用均返回 401 且不缓存；业务 API 继续拒绝未签名请求；OAuth 回调地址、PKCE、Secure/HttpOnly/SameSite Cookie 正确。
 - 本地真实 MongoDB + 模拟 NyxID/CMA 的集成测试，以及浏览器测试，覆盖同意、任务创建、异步准备、对话、版本核验、发布委托和断网恢复。线上尚未代替用户完成浏览器同意或创建真实 CMA 任务；首次使用须在网页启用，CMA 要求可续期环境授权时再以同一账号登录其官方页面。
+- 后续修订 `13` 仅更新 web 镜像至 `491812f362bcab73718b49102b33cba72b5e0702`，修正连接按钮被通用链接颜色覆盖的问题；API 保留修订 12 的镜像。web 摘要来自该提交的 [Images](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/42847921094)，对应 [CI](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/42847781315)。最终线上按钮对比度为 `15.55:1`，桌面/手机页面与匿名鉴权检查再次通过；`app.json` 固定最终两份镜像。
