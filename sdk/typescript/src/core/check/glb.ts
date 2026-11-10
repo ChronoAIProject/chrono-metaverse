@@ -436,10 +436,47 @@ function multiply(a: Mat4, b: Mat4): Mat4 {
   return out;
 }
 
+/** 节点矩阵最后一行与 (0, 0, 0, 1) 允许的差。 */
+const MATRIX_ROW_TOLERANCE = 1e-6;
+/** 节点矩阵左上 3×3 的两列之间夹角余弦允许的绝对值。 */
+const MATRIX_SHEAR_TOLERANCE = 1e-4;
+
+/**
+ * glTF 规范要求节点的 `matrix` 能分解成平移、旋转、缩放；网站（three.js 的 GLTFLoader）也是先分解再组合，
+ * 最后一行完全不看、切变被抹掉。所以只收最后一行是 (0, 0, 0, 1)、左上 3×3 三列两两正交的矩阵，
+ * 否则实测的包围盒会和网站画出来的不一样（与接口服务相同）。
+ */
+function decomposable(m: Mat4): boolean {
+  if (
+    Math.abs(m[3]!) > MATRIX_ROW_TOLERANCE ||
+    Math.abs(m[7]!) > MATRIX_ROW_TOLERANCE ||
+    Math.abs(m[11]!) > MATRIX_ROW_TOLERANCE ||
+    Math.abs(m[15]! - 1) > MATRIX_ROW_TOLERANCE
+  ) {
+    return false;
+  }
+  const column = (c: number): Vec3 => [m[c * 4]!, m[c * 4 + 1]!, m[c * 4 + 2]!];
+  const dot = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  return (
+    [
+      [0, 1],
+      [0, 2],
+      [1, 2],
+    ] as const
+  ).every(([i, j]) => {
+    const a = column(i);
+    const b = column(j);
+    return Math.abs(dot(a, b)) <= MATRIX_SHEAR_TOLERANCE * Math.sqrt(dot(a, a) * dot(b, b));
+  });
+}
+
 /** 节点的局部变换：`matrix`，或 平移 · 旋转（四元数）· 缩放。 */
 function localMatrix(node: Node): Mat4 {
   if (node.matrix !== undefined) {
     if (!node.matrix.every(Number.isFinite)) reject('glb_json', '节点矩阵里有不是有限数的值');
+    if (!decomposable(node.matrix)) {
+      reject('glb_json', '节点矩阵不能分解成平移、旋转、缩放（最后一行要是 0 0 0 1，不能有切变）');
+    }
     return node.matrix;
   }
   const t = node.translation ?? [0, 0, 0];
@@ -470,13 +507,12 @@ function localMatrix(node: Node): Mat4 {
   ];
 }
 
+/** 按仿射变换算：与网站一样不看最后一行（节点矩阵的最后一行已查过是 0 0 0 1）。 */
 function transformPoint(m: Mat4, p: Vec3): Vec3 {
-  let w = m[3]! * p[0] + m[7]! * p[1] + m[11]! * p[2] + m[15]!;
-  if (!(Math.abs(w) > 1e-12)) w = 1;
   return [
-    (m[0]! * p[0] + m[4]! * p[1] + m[8]! * p[2] + m[12]!) / w,
-    (m[1]! * p[0] + m[5]! * p[1] + m[9]! * p[2] + m[13]!) / w,
-    (m[2]! * p[0] + m[6]! * p[1] + m[10]! * p[2] + m[14]!) / w,
+    m[0]! * p[0] + m[4]! * p[1] + m[8]! * p[2] + m[12]!,
+    m[1]! * p[0] + m[5]! * p[1] + m[9]! * p[2] + m[13]!,
+    m[2]! * p[0] + m[6]! * p[1] + m[10]! * p[2] + m[14]!,
   ];
 }
 

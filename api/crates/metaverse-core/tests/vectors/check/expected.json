@@ -134,6 +134,57 @@
       "check": {
         "bounds": {
           "max": [
+            2.0,
+            2.0,
+            1.0
+          ],
+          "min": [
+            0.0,
+            0.0,
+            -1.0
+          ]
+        },
+        "extensions": [],
+        "format": "glb",
+        "images": [],
+        "materials": 0,
+        "maxTextureSide": 0,
+        "meshes": 1,
+        "nodes": 1,
+        "texturePixels": 0,
+        "triangles": 1,
+        "v": 1
+      },
+      "file": "glb_matrix_node.glb",
+      "format": "glb",
+      "ok": true,
+      "purpose": "model"
+    },
+    {
+      "code": "glb_json",
+      "file": "glb_matrix_w.glb",
+      "format": "glb",
+      "ok": false,
+      "purpose": "model"
+    },
+    {
+      "code": "glb_json",
+      "file": "glb_matrix_perspective.glb",
+      "format": "glb",
+      "ok": false,
+      "purpose": "model"
+    },
+    {
+      "code": "glb_json",
+      "file": "glb_matrix_shear.glb",
+      "format": "glb",
+      "ok": false,
+      "purpose": "model"
+    },
+    {
+      "check": {
+        "bounds": {
+          "max": [
             5000.5,
             5001.0,
             5000.5

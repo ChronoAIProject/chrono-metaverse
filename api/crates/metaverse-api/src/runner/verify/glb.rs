@@ -500,10 +500,41 @@ fn multiply(a: &[f64; 16], b: &[f64; 16]) -> [f64; 16] {
     out
 }
 
+/// 节点矩阵最后一行与 (0, 0, 0, 1) 允许的差。
+const MATRIX_ROW_TOLERANCE: f64 = 1e-6;
+/// 节点矩阵左上 3×3 的两列之间夹角余弦允许的绝对值（不到 0.006 度）。
+const MATRIX_SHEAR_TOLERANCE: f64 = 1e-4;
+
+/// glTF 规范要求节点的 `matrix` 能分解成平移、旋转、缩放。网站（three.js 的 GLTFLoader）也是这样用它的：
+/// 先分解再组合，最后一行完全不看，切变也被抹掉。所以只收这样的矩阵：最后一行是 (0, 0, 0, 1)，
+/// 左上 3×3 的三列两两正交（缩放为 0 的列不算）。否则服务端实测的包围盒会和网站画出来的不一样
+/// （例如最后一个数写成 100，按齐次坐标算会把包围盒缩小 100 倍，网站却照原大小画）。
+fn decomposable(m: &[f64; 16]) -> bool {
+    if m[3].abs() > MATRIX_ROW_TOLERANCE
+        || m[7].abs() > MATRIX_ROW_TOLERANCE
+        || m[11].abs() > MATRIX_ROW_TOLERANCE
+        || (m[15] - 1.0).abs() > MATRIX_ROW_TOLERANCE
+    {
+        return false;
+    }
+    let column = |c: usize| [m[c * 4], m[c * 4 + 1], m[c * 4 + 2]];
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    [(0, 1), (0, 2), (1, 2)].iter().all(|&(i, j)| {
+        let (a, b) = (column(i), column(j));
+        dot(a, b).abs() <= MATRIX_SHEAR_TOLERANCE * (dot(a, a) * dot(b, b)).sqrt()
+    })
+}
+
 fn local_matrix(node: &Node) -> Result<[f64; 16], Reject> {
     if let Some(matrix) = node.matrix {
         if matrix.iter().any(|v| !v.is_finite()) {
             return Err(reject("glb_json", "节点矩阵里有不是有限数的值"));
+        }
+        if !decomposable(&matrix) {
+            return Err(reject(
+                "glb_json",
+                "节点矩阵不能分解成平移、旋转、缩放（最后一行要是 0 0 0 1，不能有切变）",
+            ));
         }
         return Ok(matrix);
     }
@@ -541,13 +572,12 @@ fn local_matrix(node: &Node) -> Result<[f64; 16], Reject> {
     Ok(out)
 }
 
+/// 按仿射变换算：与网站一样不看最后一行（节点矩阵的最后一行已查过是 0 0 0 1）。
 fn transform_point(m: &[f64; 16], p: [f64; 3]) -> [f64; 3] {
-    let w = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
-    let w = if w.abs() > 1e-12 { w } else { 1.0 };
     [
-        (m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12]) / w,
-        (m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13]) / w,
-        (m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14]) / w,
+        m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12],
+        m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13],
+        m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14],
     ]
 }
 

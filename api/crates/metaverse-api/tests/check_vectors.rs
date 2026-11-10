@@ -328,6 +328,58 @@ fn samples() -> Vec<Sample> {
             None,
         ));
     }
+    // 节点用 `matrix`（缩放 2 倍、平移 x 1 米）：按仿射变换算世界包围盒。
+    {
+        let json = triangle_json(
+            [-0.5, 0.0, -0.5],
+            [0.5, 1.0, 0.5],
+            json!({"nodes": [{"mesh": 0, "matrix": [
+                2.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 1.0, 0.0, 0.0, 1.0]}]}),
+        );
+        list.push(sample(
+            "glb_matrix_node.glb",
+            glb(&json, &floats(&TRIANGLE)),
+            "model",
+            None,
+        ));
+    }
+    // 不能分解成平移、旋转、缩放的节点矩阵：网站（three.js）不看最后一行、抹掉切变，
+    // 按齐次坐标算的包围盒会和画出来的不一样，一律拒绝。
+    for (file, matrix) in [
+        // 最后一个数是 100：按齐次坐标算会缩小 100 倍。
+        (
+            "glb_matrix_w.glb",
+            [
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 100.0,
+            ],
+        ),
+        // 透视项（最后一行第 2 列是 5）。
+        (
+            "glb_matrix_perspective.glb",
+            [
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 5.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ],
+        ),
+        // 切变：y 轴那一列带 x 分量。
+        (
+            "glb_matrix_shear.glb",
+            [
+                1.0, 0.0, 0.0, 0.0, 0.5, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ],
+        ),
+    ] {
+        let json = triangle_json(
+            [-0.5, 0.0, -0.5],
+            [0.5, 1.0, 0.5],
+            json!({"nodes": [{"mesh": 0, "matrix": matrix}]}),
+        );
+        list.push(sample(
+            file,
+            glb(&json, &floats(&TRIANGLE)),
+            "model",
+            Some("glb_json"),
+        ));
+    }
     // 保持扫描原坐标的网页用模型（5000 米外）：当网页用模型可以，当物件模型超出坐标上限。
     {
         let far: Vec<f32> = TRIANGLE.iter().map(|v| v + 5000.0).collect();
@@ -779,6 +831,10 @@ fn required_samples_are_present() {
         "glb_bounds_mismatch.glb",
         "glb_quantized.glb",
         "glb_rotated_node.glb",
+        "glb_matrix_node.glb",
+        "glb_matrix_w.glb",
+        "glb_matrix_perspective.glb",
+        "glb_matrix_shear.glb",
         "glb_coords_out_of_range.glb",
         "texture_long_exif.jpg",
         "texture_no_sof.jpg",
