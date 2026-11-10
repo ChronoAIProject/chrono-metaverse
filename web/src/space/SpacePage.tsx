@@ -218,6 +218,14 @@ export function SpacePage({
           onToggle={setCutEnabled}
           onHeight={setCutHeight}
         />
+        {window.self === window.top && (
+          <a
+            className="space__worker-link"
+            href={`/workspace?space=${encodeURIComponent(spaceId)}`}
+          >
+            请 worker 调整
+          </a>
+        )}
         <ThemeToggle />
       </header>
 

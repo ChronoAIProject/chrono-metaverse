@@ -23,6 +23,8 @@ pub struct OAuthConfig {
     pub origin: String,
     pub redirect_uri: String,
     pub secure_cookie: bool,
+    /// 固定的 CMA 服务器；不接受浏览器指定转发目标。
+    pub cma_base_url: Option<String>,
 }
 
 impl OAuthConfig {
@@ -70,6 +72,17 @@ impl OAuthConfig {
             return Err(invalid("PUBLIC_BASE_URL"));
         }
         let origin = public_url.origin().ascii_serialization();
+        let cma_base_url = lookup("CMA_BASE_URL")
+            .filter(|v| !v.trim().is_empty())
+            .map(|value| {
+                jwt::validate_endpoint(&value).map_err(|_| invalid("CMA_BASE_URL"))?;
+                let url = url::Url::parse(&value).map_err(|_| invalid("CMA_BASE_URL"))?;
+                if url.path() != "/" {
+                    return Err(invalid("CMA_BASE_URL"));
+                }
+                Ok(url.origin().ascii_serialization())
+            })
+            .transpose()?;
         Ok(Some(Self {
             client_id,
             client_secret: Secret(secret.clone()),
@@ -77,6 +90,7 @@ impl OAuthConfig {
             redirect_uri: format!("{origin}/api/auth/nyxid/callback"),
             origin,
             secure_cookie: public_url.scheme() == "https",
+            cma_base_url,
         }))
     }
 }
@@ -138,6 +152,26 @@ mod tests {
                 .unwrap()
                 .unwrap()
                 .secure_cookie
+        );
+        for endpoint in [
+            "http://external.test",
+            "https://cma.example/api",
+            "https://user:secret@cma.example",
+            "https://cma.example/?target=x",
+        ] {
+            let mut cma = pairs.to_vec();
+            cma.push(("CMA_BASE_URL", endpoint));
+            assert!(config(&cma, "https://metaverse.example").is_err());
+        }
+        let mut cma = pairs.to_vec();
+        cma.push(("CMA_BASE_URL", "https://cma.example"));
+        assert_eq!(
+            config(&cma, "https://metaverse.example")
+                .unwrap()
+                .unwrap()
+                .cma_base_url
+                .as_deref(),
+            Some("https://cma.example")
         );
         let mut invalid = pairs;
         invalid[2].1 = "invalid-key-material";

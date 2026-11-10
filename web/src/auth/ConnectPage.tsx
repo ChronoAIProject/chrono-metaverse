@@ -241,6 +241,9 @@ export function ConnectPage({ request = fetch }: { readonly request?: typeof fet
     <main className="connect">
       <div className="connect__shell">
         <header className="connect__header">
+          <a className="connect__text-link" href="/workspace">
+            在线工作台
+          </a>
           <a className="connect__brand" href="/">
             chrono-metaverse
           </a>
@@ -518,6 +521,7 @@ export function ConnectPage({ request = fetch }: { readonly request?: typeof fet
               <h2 id="permissions-title">授权用途与范围</h2>
               <p className="connect__muted">
                 metaverse 保存这份授权，用于核验账号、刷新连接、读取组织列表和查询组织角色。
+                若在在线工作台明确启用，还可通过 CMA 创建与使用当前账号有权限的 worker。
               </p>
               <dl className="connect__scopes">
                 <div>

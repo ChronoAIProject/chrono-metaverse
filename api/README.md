@@ -53,6 +53,7 @@ cargo run -p metaverse-api
 | `ALLOWED_NYX_SERVICE_IDS` | 是 | 允许的 NyxID 服务编号，逗号分隔（过渡期可同时填自定义服务和目录服务的编号） |
 | `BIND` | 否 | 默认 `0.0.0.0:8080` |
 | `PUBLIC_BASE_URL` | 否 | 默认 `http://localhost:8080`；用于预览链接和 OAuth 回调；OAuth 启用时须为 HTTPS 根地址（本机可用 HTTP） |
+| `CMA_BASE_URL` | 否 | 固定 CMA 根地址；设置后可在 `/workspace` 明确同意调用在线 worker，要求已配置 OAuth；HTTPS，本机测试可用 HTTP |
 | `NYXID_OAUTH_CLIENT_ID` | 否 | 专用保密 OAuth 客户端 ID；三个 OAuth 变量须同时配置，否则默认禁用 |
 | `NYXID_OAUTH_CLIENT_SECRET` | 启用 OAuth 时必填 | 客户端秘密，使用应用密钥注入 |
 | `NYXID_OAUTH_ENCRYPTION_KEY` | 启用 OAuth 时必填 | 32 字节随机密钥的标准 base64 编码，使用应用密钥注入 |
@@ -434,7 +435,7 @@ universeRevisions { _id: "<组合编号>:<seq>", universeId, owner, seq, at, act
    **重建权限**（始终生效，docs/design/server-slim.md 3.1）：重建路径（`/api/v1/spaces/{space_id}/rebuild/`）上的写操作（建上传、传片、完成上传、建草稿、交包、预览、发布、丢弃）一律要求 `metaverse:rebuild:write`，不看上面的开关，也没有关掉它的配置，没有就 403 `rebuild_permission_required`；重建路径不要求 `metaverse:content:write`，读操作只按访问级别。NyxID 里配好这个权限之前，通过接口谁都写不了重建层，只有部署种子（系统范围）能写。
 3. **资源级**：读出主人（没有一致归属证据的组织空间按个人所有处理）→ 主人本人或组织本身直接是"管理"→ 否则优先用调用者转发来的 `Authorization: Bearer`，没有转发凭据时按签名 `sub` 获取同一用户保存的 OAuth 凭据，再调 NyxID `GET /api/v1/orgs/{id}/authorization`（转发的是 JWT 时先验签并要求 sub 一致；返回编号必须等于组织编号；401/403/404 判为不是成员，其他判为查不到；15 秒截止；不跨请求缓存；证据最多用 60 秒）→ admin 是"管理"，member/viewer 是"只读"。看不到 404，能看不能写 403，写操作查不到角色 503 `org_membership_unavailable`。
 
-用户连接入口为 `/connect`，OAuth 管理端点在 `/api/auth/nyxid/*`，独立于业务身份中间件；浏览器 Cookie 不能调用 `/api/v1/*`。凭据加密存储、自动刷新和断开流程见 [NyxID OAuth 接入](../docs/NYXID_OAUTH.md)。
+用户连接入口为 `/connect`，OAuth 管理端点在 `/api/auth/nyxid/*`，独立于业务身份中间件；浏览器 Cookie 不能调用 `/api/v1/*`。在线工作台另有经同意的固定 CMA 操作集合，见 [工作台规划](../docs/WEB_CONSOLE_PLAN.md)。凭据加密存储、自动刷新和断开流程见 [NyxID OAuth 接入](../docs/NYXID_OAUTH.md)。
 
 ### 从 CMA 复用了什么
 

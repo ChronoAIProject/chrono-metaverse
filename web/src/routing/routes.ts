@@ -18,6 +18,7 @@ import { VIEW_MODES, type RebuiltStyle, type ViewMode } from '../core/scene';
 export type AppRoute =
   | { readonly kind: 'home' }
   | { readonly kind: 'connect' }
+  | { readonly kind: 'workspace' }
   | { readonly kind: 'space'; readonly spaceId: string }
   | { readonly kind: 'universe'; readonly universeId: string }
   | { readonly kind: 'preview' }
@@ -38,6 +39,7 @@ function decodeSegment(value: string): string | null {
 export function parseRoute(pathname: string): AppRoute {
   if (pathname === '/' || pathname === '') return { kind: 'home' };
   if (pathname === '/connect') return { kind: 'connect' };
+  if (pathname === '/workspace') return { kind: 'workspace' };
   if (pathname === '/preview') return { kind: 'preview' };
   if (!pathname.startsWith('/') || pathname.endsWith('/')) return { kind: 'not_found', pathname };
   const segments = pathname.slice(1).split('/').map(decodeSegment);
@@ -56,6 +58,8 @@ export function routePath(route: AppRoute): string {
       return '/';
     case 'connect':
       return '/connect';
+    case 'workspace':
+      return '/workspace';
     case 'space':
       return `/s/${encodeURIComponent(route.spaceId)}`;
     case 'universe':

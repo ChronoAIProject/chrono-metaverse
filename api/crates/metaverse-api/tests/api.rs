@@ -267,6 +267,7 @@ impl TestApp {
         ];
         if oauth {
             values.extend(oauth_tests::config_values());
+            values.push(("CMA_BASE_URL", nyx.base_url.clone()));
         }
         let config = Config::from_lookup(|name| {
             values

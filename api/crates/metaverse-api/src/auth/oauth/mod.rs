@@ -1,8 +1,10 @@
-//! 用户 OAuth 只托管组织查询权限，不作为业务接口的登录态或 Agent 执行凭据。
+//! 用户 OAuth 托管组织查询；经浏览器明确同意后，可调用固定 CMA 操作。
+//! metaverse 业务接口仍只接受 NyxID 签名身份，worker 凭据由 CMA 管理。
 mod config;
 mod crypto;
 mod provider;
 mod routes;
+mod worker;
 
 use std::{
     sync::Arc,

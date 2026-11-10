@@ -4,6 +4,8 @@ use axum::{extract::Form, routing::post};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
+mod worker_tests;
+
 const ROOT: &str = "/api/auth/nyxid";
 const ORIGIN: &str = "http://localhost:8080";
 
@@ -32,6 +34,10 @@ struct ProviderState {
     refresh: HashMap<String, String>,
     serial: u64,
     refreshes: usize,
+    worker_calls: Vec<(String, String, Value)>,
+    worker_setup_required: bool,
+    worker_gate: Option<Arc<tokio::sync::Notify>>,
+    worker_entered: Option<Arc<tokio::sync::Notify>>,
     role: Option<String>,
     userinfo_down: bool,
     refresh_rejected: bool,
@@ -78,7 +84,7 @@ impl MockProvider {
         let token = self.clone();
         let user = self.clone();
         let orgs = self.clone();
-        app.route("/oauth/token", post(move |Form(fields): Form<HashMap<String,String>>| {
+        let app = app.route("/oauth/token", post(move |Form(fields): Form<HashMap<String,String>>| {
             let provider = token.clone();
             async move {
                     if fields["grant_type"] == "refresh_token" {
@@ -139,7 +145,8 @@ impl MockProvider {
                     None => StatusCode::UNAUTHORIZED.into_response(),
                 }
             }
-        }))
+        }));
+        worker_tests::routes(self.clone(), app)
     }
 }
 

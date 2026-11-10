@@ -58,7 +58,8 @@
         "METAVERSE_DEMO_SEED": "{\"spaceId\":\"chronoai-lobby\",\"name\":\"ChronoAI 前厅\",\"description\":\"ChronoAI 办公室前厅：Scaniverse 扫描 + AI 重建的演示空间（由部署配置自动导入）\",\"owner\":{\"kind\":\"org\",\"id\":\"52aa284c-b5b2-49bd-9d12-79f24772dbd7\"},\"visibility\":\"unlisted\",\"revision\":3}",
         "METAVERSE_DEMO_SEED_HOSTS": "raw.githubusercontent.com,github.com,release-assets.githubusercontent.com,objects.githubusercontent.com,scaniverse.com",
         "RUST_LOG": "info",
-        "NYXID_OAUTH_CLIENT_ID": "be885bc0-94fd-4a30-bb5e-613723cd0eef"
+        "NYXID_OAUTH_CLIENT_ID": "be885bc0-94fd-4a30-bb5e-613723cd0eef",
+        "CMA_BASE_URL": "https://cma.nyxid.ai"
       },
       "addon_env": {
         "mongodb": {

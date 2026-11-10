@@ -30,6 +30,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/api/auth/nyxid/check", post(check))
         .route("/api/auth/nyxid/organizations", post(organizations))
         .route("/api/auth/nyxid/disconnect", post(disconnect))
+        .merge(super::worker::router())
         .route_layer(axum::middleware::from_fn_with_state(
             state,
             crate::public::guard,
@@ -58,7 +59,7 @@ impl From<OAuthError> for ApiError {
     }
 }
 
-fn service(state: &AppState) -> Result<Arc<OAuthService>, ApiError> {
+pub(super) fn service(state: &AppState) -> Result<Arc<OAuthService>, ApiError> {
     state.oauth.clone().ok_or_else(|| {
         ApiError::new(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -309,8 +310,8 @@ async fn session(State(state): State<AppState>, headers: HeaderMap) -> Result<Re
         None => None,
     };
     Ok(private(Json(match session {
-        Some(session)=>json!({"enabled":true,"connected":true,"subject":session.subject,"csrfToken":crypto::digest(&format!("csrf/{}",raw.as_ref().unwrap().as_str()))}),
-        None=>json!({"enabled":true,"connected":false}),
+        Some(session)=>json!({"enabled":true,"connected":true,"subject":session.subject,"csrfToken":crypto::digest(&format!("csrf/{}",raw.as_ref().unwrap().as_str())),"workerAvailable":oauth.config.cma_base_url.is_some(),"workerUrl":oauth.config.cma_base_url,"workerEnabled":session.worker_enabled}),
+        None=>json!({"enabled":true,"connected":false,"workerAvailable":oauth.config.cma_base_url.is_some()}),
     }).into_response()))
 }
 
@@ -343,7 +344,7 @@ struct CheckRequest {
     org_id: Option<String>,
 }
 
-async fn verified_browser(
+pub(super) async fn verified_browser(
     oauth: &Arc<OAuthService>,
     headers: &HeaderMap,
 ) -> Result<(OAuthSessionRecord, super::HeldCredential), ApiError> {

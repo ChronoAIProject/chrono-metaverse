@@ -20,7 +20,7 @@ Agent 原有 Key → NyxID（Key / 服务 / 操作范围检查）
                  metaverse 资源 ACL → 执行业务操作
 ```
 
-OAuth 凭据只用于 `/oauth/userinfo`、`/oauth/token`、当前用户的组织列表和组织角色查询；业务操作仍以本次 NyxID 签名身份执行。浏览器连接 Cookie 不能认证 `/api/v1/*`。个人资源、组织主体直接访问自己的资源，以及公开/分享链接的原有规则继续生效。
+OAuth 默认用于 `/oauth/userinfo`、`/oauth/token`、当前用户的组织列表和组织角色查询。用户在 `/workspace` 明确启用后，当前浏览器还可通过固定 CMA 接口创建、查看和使用本人有权使用的 worker；不增加 OAuth scope，也不开放任意代理。metaverse 业务操作仍以本次 NyxID 签名身份执行。浏览器连接 Cookie 不能认证 `/api/v1/*`。个人资源、组织主体直接访问自己的资源，以及公开/分享链接的原有规则继续生效。
 
 ## 网页管理
 
@@ -116,3 +116,26 @@ nyxid proxy request chrono-cd "$APP/services/metaverse-api/secrets?org_id=$ORG" 
 - 已在线核对：新页面真实渲染、手机布局与滚动、未连接时组织查询不可操作、权限范围说明可展开、回调失败返回固定恢复页面且清理地址参数、点击授权可到 NyxID 登录页；未执行用户同意步骤。
 - 新增 `check`、`organizations` 接口对无会话请求返回 401，回调错误和状态响应不缓存；授权跳转仍包含原客户端、最小 scopes、精确回调与 PKCE；业务接口仍拒绝未签名请求，既有 NyxID OAuth 代理仍能读取 `chronoai-lobby`。
 - 连接后的账号检查、组织列表和角色查询、断开流程已通过本地真实 MongoDB + 模拟 NyxID 的集成测试及桌面/手机浏览器测试。线上完整连接链路仍需用户以与 Agent Key 相同的账号授权后验收。
+
+
+## 在线 CMA worker 工作台
+
+`/workspace` 提供自然语言委托、准备与执行状态、对话、追加需求、停止当前响应、结果链接及三维预览。查看预览后可明确要求同一 worker 发布。详细规划与权限边界见 [WEB_CONSOLE_PLAN.md](WEB_CONSOLE_PLAN.md)。没有手工编辑方块、坐标或业务 JSON 的控制台。
+
+部署设置 `CMA_BASE_URL`（固定 HTTPS 根地址，生产为 `https://cma.nyxid.ai`）。现有用户 OAuth 客户端继续只请求 `openid offline_access`，不增加 proxy、broker 或 delegation scopes。浏览器会话默认 `workerEnabled:false`，必须通过工作台复选框同意。只允许固定 CMA 操作集合；每次操作要求同源 Origin、CSRF、实时 userinfo、同主体授权和当前浏览器同意版本。在发送前、收到响应头和返回正文前复核；关闭后再次启用也不能恢复旧的在途调用权限。已受理的远端工作无法回滚，关闭网页授权不等于停止 worker。
+
+CMA 接口要求普通用户 OAuth access token。带服务 resource/allowed_service_ids 的 OAuth 令牌当前不能提交独立 CMA 命令，因此不使用“proxy scope + 服务资源”的方案调用它。此适配器直接调用 CMA，CMA 校验用户与资源权限。CMA 本身托管 worker 的服务 Agent Key；网页后端不发行或传递 worker key，OAuth 凭据不会进入任务、浏览器存储或 worker 环境。新 worker 请求 `chrono-metaverse`，并由 CMA 添加自己的必需基线；复用已有 worker 不更改其已有服务范围。
+
+| 网页私有接口（均为 POST） | 输入与行为 |
+|---|---|
+| `/api/auth/nyxid/worker/consent` | `{enabled}`；同意仅绑定当前浏览器和当前 OAuth 授权实例 |
+| `…/agents` | `{cursor?}`；个人可访问的 CMA Agent 列表 |
+| `…/create` | `{context:{spaceId,orgId?},instruction,idempotencyKey}`；创建 worker，初始任务一次入队 |
+| `…/observe` | `{operationId}` 或 `{agentId}`；准备任务或 Agent 状态及对话 |
+| `…/message` | `{agentId,context,instruction,idempotencyKey}`；Responses v2 接收头后返回响应与命令编号，断开流不取消任务 |
+| `…/response` | `{agentId,responseId}`；响应状态及当前停止控制版本 |
+| `…/cancel` | `{agentId,responseId,turnSequence,agentRevision,idempotencyKey}`；使用已观察的并发版本请求停止 |
+
+网页在发送前保存原请求内容与幂等编号至按账号隔离的 sessionStorage；不保存令牌、CSRF 或 provider 诊断。未知结果不自动重试；用户可核对状态后重试同一请求。仅在 CMA 明确返回 `sandbox_credential_setup_required` 时，提供官方 CMA 登录入口，用户完成后显式以新编号重试同一需求。网页不代替用户完成 CMA 的可续期授权。自动状态观察串行、最多 120 次，失败或终态暂停，手动刷新可恢复。
+
+网页取得预览绑定的空间、草稿编号、rev 和 baseSeq 后，发布委托只携带这些非秘密编号与版本，不保存或转发预览令牌至恢复记录。草稿预览链接是短期读取能力，结果链接只保留在当前页面内存。只允许本站 `/preview`、`/s/…`、`/u/…` 查看器地址进入 iframe；模型回复作为文本渲染。先草稿后发布是任务指令，不能视为 NyxID 操作范围的替代。
