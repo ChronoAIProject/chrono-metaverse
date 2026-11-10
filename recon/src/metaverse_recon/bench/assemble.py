@@ -18,12 +18,19 @@ AI 物件集（打包 `metaverse-recon bundle` 接收的格式）：
 或模型重算；最后整份交给打包流程的校验（`metaverse_recon.authored.parse_authored`，`bundle` 跑的就是它），
 通过了才算合格。输出目录：`authored.json`、`room.glb`（整房预览：结构 + 物件）、`room.jpg`（扫描 | 现有算法 |
 AI 重建：总览、俯视、四个角）、`report.json`（逐件偏差表、漏建的扫描团块）。
+
+贴图工作台（`texture`）写进物件文件的本地贴图 `{file: 相对路径}` 是相对那个物件文件的：合并时把文件复制到输出
+目录的 `textures/`（文件名是内容哈希前 12 位），引用改写成相对 `authored.json` 的路径，`bundle` 照样能读。外链
+`{url, sha256, size}` 原样保留，打包时下载。
 """
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 import os
+import shutil
 import time
 from collections.abc import Iterator
 
@@ -31,7 +38,16 @@ import numpy as np
 from scipy import ndimage
 from scipy.spatial import cKDTree
 
-from ..authored import AuthoredError, parse_authored
+from ..authored import AuthoredError
+from ..bundle.textures import (
+    check_authored,
+    file_texture_path,
+    image_info,
+    inline_file_textures,
+    placeholder_refs,
+    ref_kind,
+    texture_slots,
+)
 from ..canonical import canonical_json
 from ..processing import object_fit as of
 from ..processing import shape_mesh as sm
@@ -56,6 +72,7 @@ from .render import available as render_available
 
 MAX_NOTES_BYTES = 64 * 1024
 ENTITY_FILES = ("entity.json", "model.json")
+TEXTURE_DIR = "textures"
 MODEL_KEYS = {
     "entityId",
     "layer",
@@ -100,8 +117,32 @@ def template_refs(shape) -> set[str]:
     return out
 
 
-def merge(paths: list[str]) -> tuple[dict[str, dict], dict[str, dict], list[str], list[str]]:
-    """返回 (模板编号 → 模板物件 body, 物件编号 → body, 错误, 提示)。"""
+def relocate_textures(doc: dict, src_dir: str, out_dir: str | None) -> None:
+    """原地把本地贴图 `{file}`（相对 `src_dir`）复制到 `out_dir/textures/<哈希前 12 位>.<扩展名>`，引用改写成
+    相对 `out_dir` 的路径；`out_dir` 为 None 时只查文件在不在。写法不对、文件不在、不是贴图时抛
+    `AuthoredError`。"""
+    for where, material, key in list(texture_slots(doc)):
+        value = material[key]
+        if not isinstance(value, dict) or ref_kind(value, f"{where}.{key}") != "file":
+            continue
+        src = file_texture_path(src_dir, value, f"{where}.{key}")
+        with open(src, "rb") as fh:
+            data = fh.read()
+        ext, _, _, _ = image_info(data)
+        name = f"{hashlib.sha256(data).hexdigest()[:12]}.{ext}"
+        if out_dir is not None:
+            dest = os.path.join(out_dir, TEXTURE_DIR, name)
+            if not os.path.exists(dest):
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                shutil.copyfile(src, dest)
+        material[key] = {"file": f"{TEXTURE_DIR}/{name}"}
+
+
+def merge(
+    paths: list[str], out_dir: str | None = None
+) -> tuple[dict[str, dict], dict[str, dict], list[str], list[str]]:
+    """返回 (模板编号 → 模板物件 body, 物件编号 → body, 错误, 提示)。本地贴图 `{file}` 复制进 `out_dir`
+    （见 `relocate_textures`）。"""
     templates: dict[str, dict] = {}
     entities: dict[str, dict] = {}
     origin: dict[str, str] = {}
@@ -113,6 +154,18 @@ def merge(paths: list[str]) -> tuple[dict[str, dict], dict[str, dict], list[str]
             notes.append(f"{path} 是 fetch 的模型旁注，不是物件记录，跳过")
             continue
         rs = load_records(path)
+        try:
+            relocate_textures(
+                {
+                    "entities": list(rs.bodies.values()),
+                    "templates": [{"shape": shape} for shape in rs.templates.values() if shape is not None],
+                },
+                os.path.dirname(os.path.abspath(path)),
+                out_dir,
+            )
+        except AuthoredError as e:
+            errors.append(f"{path}：贴图引用：{e}")
+            continue
         for tid, shape in rs.templates.items():
             body = rs.template_bodies.get(tid) or {
                 "entityId": tid,
@@ -154,8 +207,10 @@ def validate(
     for tid, body in templates.items():
         chk = {"entityId": tid, "type": "template", "errors": [], "warnings": []}
         try:
-            sx.validate_shape(body.get("shape"))
-            body["bounds"] = sx.rounded_shape_bounds(body["shape"], shapes)
+            lowered = copy.deepcopy(body.get("shape"))
+            placeholder_refs({"templates": [{"shape": lowered}]})  # 贴图的外链、本地文件写法
+            sx.validate_shape(lowered)
+            body["bounds"] = sx.rounded_shape_bounds(lowered, shapes)
         except Exception as e:
             chk["errors"].append(f"模板形状不合法：{e}")
         missing = template_refs(body.get("shape")) - set(templates)
@@ -414,7 +469,7 @@ def cmd_assemble(args) -> dict:
     out_dir = os.path.abspath(args.out)
     os.makedirs(out_dir, exist_ok=True)
     base = from_args(args)
-    templates, entities, errors, notes = merge(args.entities)
+    templates, entities, errors, notes = merge(args.entities, out_dir)
     for n in notes:
         wc.log("  " + n)
     checks, locals_ = validate(templates, entities, args.structure, args.models_dir)
@@ -439,7 +494,7 @@ def cmd_assemble(args) -> dict:
     if not errors and not bad:
         # 打包（bundle）对同一份文件的完整校验：通过了，bundle 就会原样接受
         try:
-            parse_authored(authored)
+            check_authored(authored)
         except AuthoredError as e:
             errors.append(f"打包校验不通过：{e}")
     size = len(json.dumps(authored, ensure_ascii=False).encode())
@@ -473,6 +528,14 @@ def cmd_assemble(args) -> dict:
 
 def room_outputs(args, base: Base, templates, entities, locals_, out_dir: str) -> dict:
     textures = base.textures()
+    # 看图用的副本：本地贴图 {file}（已复制到输出目录）换成内容哈希，外链换成声明的哈希（不下载，按纯色画）
+    entities = copy.deepcopy(entities)
+    templates = copy.deepcopy(templates)
+    textures.update(
+        inline_file_textures(
+            {"entities": list(entities.values()), "templates": list(templates.values())}, out_dir
+        )
+    )
     tpl_shapes = {k: b["shape"] for k, b in templates.items()}
     extra = external_parts(entities, locals_, textures)
     structure = base.structure if args.structure == "keep" else {}

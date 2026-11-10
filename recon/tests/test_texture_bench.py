@@ -201,6 +201,84 @@ def test_texture_writes_file_references(tmp_path):
     assert path.read_text() == before
 
 
+def test_texture_then_compare_assemble_and_bundle(tmp_path):
+    """texture 写的本地贴图 {file} 一路走得通：compare 校验、算偏差（不出图）；assemble 把贴图搬进输出
+    目录的 textures/、引用改成相对 authored.json；打包按这个路径读到同一张贴图。外链 {url} 原样保留；
+    文件不在时报错。"""
+    from metaverse_recon.bench import assemble as asm
+    from metaverse_recon.bench.cli import build_parser
+    from metaverse_recon.bench.compare import texture_label
+    from metaverse_recon.bundle.limits import default_upload_limits
+    from metaverse_recon.bundle.textures import resolve_texture_refs
+
+    table = object_body("table-01", [1.0, 0.0, 2.0], [2.5, 0.75, 2.75])
+    base = make_base(tmp_path, merged(room_mesh(), striped_top()), {"table-01": table})
+    path = model_file(tmp_path)
+    (tmp_path / "c.jpg").write_bytes(jpeg((220, 210, 200)))
+    (tmp_path / "n.jpg").write_bytes(jpeg((128, 128, 255)))
+    texture = ["texture", "--model", str(path), "--part", "$.children[0]", "--tile", "1.3,1.0"]
+    assert cli.main([*texture, "--color", str(tmp_path / "c.jpg"), "--normal", str(tmp_path / "n.jpg")]) == 0
+    mat = json.loads(path.read_text())["shape"]["children"][0]["material"]
+    assert set(mat["texture"]) == {"file"}
+    # compare：不再因为 {file} 报"必须是资源哈希"或崩溃
+    out = tmp_path / "cmp"
+    box = "1.0,0.0,2.0,2.5,0.8,2.75"
+    args = ["compare", "--base", str(base), "--model", str(path), "--box", box, "--out", str(out)]
+    assert cli.main([*args, "--no-render"]) == 0
+    report = json.loads((out / "compare.json").read_text())
+    assert report["validation"][0]["errors"] == [], report["validation"]
+    assert texture_label(mat["texture"]) == Path(mat["texture"]["file"]).name
+    assert texture_label({"url": "https://x", "sha256": "a" * 64, "size": 1}).startswith("url:aaaa")
+    # assemble：搬贴图、改引用、整份过打包的校验
+    url_ref = {"url": "https://dl.polyhaven.org/x.jpg", "sha256": "b" * 64, "size": 100}
+    body = json.loads(path.read_text())
+    body["shape"]["children"][1]["material"] = {"texture": url_ref, "uv": "planar"}
+    path.write_text(json.dumps(body))
+    parsed = build_parser().parse_args(
+        [
+            "assemble",
+            "--base",
+            str(base),
+            "--entities",
+            str(path),
+            "--out",
+            str(tmp_path / "out"),
+            "--no-render",
+        ]
+    )
+    rep = asm.cmd_assemble(parsed)
+    assert rep["ok"], rep
+    authored = json.loads((tmp_path / "out" / "authored.json").read_text())
+    top = authored["entities"][0]["shape"]["children"][0]["material"]
+    assert top["texture"]["file"].startswith("textures/") and top["normalMap"]["file"].startswith("textures/")
+    assert (tmp_path / "out" / top["texture"]["file"]).read_bytes() == (tmp_path / "c.jpg").read_bytes()
+    assert authored["entities"][0]["shape"]["children"][1]["material"]["texture"] == url_ref
+    assert check_authored(authored) == {
+        "entities": 1,
+        "templates": 0,
+        "models": 0,
+        "textureUrls": 1,
+        "textureFiles": 2,
+    }
+    # 打包按 authored.json 所在目录读本地贴图（外链这里不下载：只留本地贴图那一份）
+    del authored["entities"][0]["shape"]["children"][1]["material"]
+    resolved, files, stats = resolve_texture_refs(
+        authored,
+        base_dir=str(tmp_path / "out"),
+        workdir=str(tmp_path / "bundle-work"),
+        texture_limits=default_upload_limits()["texture"],
+    )
+    rmat = resolved["entities"][0]["shape"]["children"][0]["material"]
+    assert stats["files"] == 2 and rmat["texture"] in files and rmat["normalMap"] in files
+    # 物件文件引用的贴图不在：assemble 报错，不写出半份
+    (path.parent / mat["texture"]["file"]).unlink()
+    with pytest.raises(ReconError, match="处错误"):
+        asm.cmd_assemble(parsed)
+    errors = json.loads((tmp_path / "out" / "report.json").read_text())["errors"]
+    assert any("找不到" in e for e in errors), errors
+    assert cli.main([*args, "--no-render"]) == 2
+
+
 @pytest.mark.skipif(not available(), reason="没有渲染工具（metaverse-recon doctor）")
 def test_texture_calibrate_and_preview(tmp_path):
     mesh = merged(room_mesh(), striped_top())

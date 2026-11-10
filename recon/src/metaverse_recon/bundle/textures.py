@@ -122,6 +122,56 @@ def ref_kind(value: Any, where: str) -> str:
     return "url"
 
 
+def placeholder_refs(doc: Mapping[str, Any]) -> tuple[set[str], set[str]]:
+    """原地把物件集（或 `{entities: [...]}`、`{templates: [...]}`）里的外链贴图换成它声明的 `sha256`、本地文件
+    换成按路径算的占位哈希，只为让形状和记录的校验（那里只收哈希）跑得下去；写法不对时抛 `AuthoredError`。
+    返回 (外链地址, 本地文件路径)。调用方要先深拷贝。"""
+    urls: set[str] = set()
+    files: set[str] = set()
+    for where, material, key in list(texture_slots(doc)):
+        value = material[key]
+        if isinstance(value, str):
+            continue  # 哈希写错了由形状校验报
+        kind = ref_kind(value, f"{where}.{key}")
+        if kind == "url":
+            urls.add(value["url"])
+            material[key] = value["sha256"]
+        elif kind == "file":
+            files.add(value["file"])
+            material[key] = hashlib.sha256(value["file"].encode()).hexdigest()
+    return urls, files
+
+
+def file_texture_path(base_dir: str, value: Mapping[str, Any], where: str) -> str:
+    """本地贴图 `{file}` 的实际路径：相对 `base_dir`，不能出这个目录，文件要在；否则抛 `AuthoredError`。"""
+    root = os.path.realpath(base_dir)
+    path = os.path.realpath(os.path.join(base_dir, value["file"]))
+    if not path.startswith(root + os.sep) or not os.path.isfile(path):
+        raise AuthoredError(f"{where}.file：找不到 {value['file']}（相对 {base_dir}）")
+    return path
+
+
+def inline_file_textures(doc: Mapping[str, Any], base_dir: str) -> dict[str, bytes]:
+    """原地把本地贴图 `{file}`（相对 `base_dir`）换成文件内容的哈希、外链换成它声明的 `sha256`（不下载）；
+    返回 {哈希: 字节}，看图、对比时按哈希取贴图用（外链的没有字节，按纯色画）。写法不对、文件不在时抛
+    `AuthoredError`。调用方要先深拷贝。"""
+    textures: dict[str, bytes] = {}
+    for where, material, key in list(texture_slots(doc)):
+        value = material[key]
+        if isinstance(value, str):
+            continue
+        kind = ref_kind(value, f"{where}.{key}")
+        if kind == "url":
+            material[key] = value["sha256"]
+            continue
+        with open(file_texture_path(base_dir, value, f"{where}.{key}"), "rb") as fh:
+            data = fh.read()
+        sha = hashlib.sha256(data).hexdigest()
+        textures[sha] = data
+        material[key] = sha
+    return textures
+
+
 def check_authored(doc: Any) -> dict[str, int]:
     """物件集的完整校验（贴图引用的三种写法 + `authored.parse_authored`），不下载、不读文件。
 
@@ -130,17 +180,9 @@ def check_authored(doc: Any) -> dict[str, int]:
     if not isinstance(doc, Mapping):
         raise AuthoredError("物件集必须是 JSON 对象")
     placeholder = copy.deepcopy(dict(doc))
-    urls: set[str] = set()
-    files: set[str] = set()
     for where, material, key in texture_slots(placeholder):
-        value = material[key]
-        kind = ref_kind(value, f"{where}.{key}")
-        if kind == "url":
-            urls.add(value["url"])
-            material[key] = value["sha256"]
-        elif kind == "file":
-            files.add(value["file"])
-            material[key] = hashlib.sha256(value["file"].encode()).hexdigest()
+        ref_kind(material[key], f"{where}.{key}")  # 哈希写错也在这里报（说明里带字段路径）
+    urls, files = placeholder_refs(placeholder)
     parsed = parse_authored(placeholder)
     return {
         "entities": len(parsed["entities"]),
@@ -242,7 +284,7 @@ def resolve_texture_refs(
                         cache[value] = keep(fh.read())
                 material[key] = cache[value]
             continue
-        ident = value["url"] if kind == "url" else os.path.realpath(os.path.join(base_dir, value["file"]))
+        ident = value["url"] if kind == "url" else file_texture_path(base_dir, value, f"{where}.{key}")
         if ident not in cache:
             if kind == "url":
                 dest = os.path.join(workdir, "downloads", value["sha256"])
@@ -257,10 +299,7 @@ def resolve_texture_refs(
                 )
                 stats["urls"] += 1
             else:
-                root = os.path.realpath(base_dir)
                 dest = ident
-                if not dest.startswith(root + os.sep) or not os.path.isfile(dest):
-                    raise AuthoredError(f"{where}.{key}.file：找不到 {value['file']}（相对 {base_dir}）")
                 stats["files"] += 1
             with open(dest, "rb") as fh:
                 cache[ident] = keep(fh.read())
@@ -285,8 +324,11 @@ __all__ = [
     "DEFAULT_MAX_TEXTURE_BYTES",
     "TEXTURE_KEYS",
     "check_authored",
+    "file_texture_path",
     "fit_texture",
     "image_info",
+    "inline_file_textures",
+    "placeholder_refs",
     "ref_kind",
     "resolve_texture_refs",
     "texture_slots",

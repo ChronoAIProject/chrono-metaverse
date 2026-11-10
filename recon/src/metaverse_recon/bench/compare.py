@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import copy
 import os
 import re
 import time
@@ -24,6 +25,8 @@ from PIL import Image, ImageDraw
 from scipy import ndimage
 from scipy.spatial import cKDTree
 
+from ..authored import AuthoredError
+from ..bundle.textures import inline_file_textures, placeholder_refs
 from ..processing import object_fit as of
 from ..processing import shape_mesh as sm
 from ..processing.bake import FaceTable
@@ -60,7 +63,13 @@ def check_shape_body(eid: str, body: dict, templates: dict) -> dict:
     """形状物件：SHAPES 结构校验（含 plate、hull、opacity、unlit、bake）+ 包围盒 + 按接口服务规则校验整条记录
     （缺的 layer/kind/bounds/props 先补上再校验）。"""
     out: dict = {"entityId": eid, "errors": [], "warnings": [], "filled": [], "type": "shape"}
-    shape = body.get("shape")
+    # AI 物件集里贴图还可以写成外链 {url, sha256, size} 或本地文件 {file}（打包时才换成哈希）：
+    # 校验前先换成占位哈希（形状和记录的校验只收哈希），写法本身在这里查。
+    shape = copy.deepcopy(body.get("shape"))
+    try:
+        placeholder_refs({"entities": [{"shape": shape}]})
+    except AuthoredError as e:
+        out["errors"].append(f"贴图引用：{e}")
     out["nodes"] = count_nodes(shape)
     ext = sx.uses_ext(shape)
     if ext:
@@ -72,7 +81,7 @@ def check_shape_body(eid: str, body: dict, templates: dict) -> dict:
         out["computedBounds"] = b
     except ShapeError as e:
         out["errors"].append(f"形状校验：{e}")
-    full = dict(body)
+    full = dict(body, shape=shape)
     full.setdefault("entityId", eid)
     for k, v in (("layer", "rebuilt"), ("kind", "object"), ("props", {})):
         if k not in full:
@@ -87,9 +96,13 @@ def check_shape_body(eid: str, body: dict, templates: dict) -> dict:
         if diff > 0.005:
             out["warnings"].append(f"记录里的 bounds 与形状算出的差 {diff:.3f} 米（以算出的为准：{b}）")
             full["bounds"] = b
-    if b is not None:
+    if b is not None and not out["errors"]:
+        tpl = copy.deepcopy(sx.lower_templates(templates))
         try:
-            validate_entity_body(sx.lower_body(full), sx.lower_templates(templates))
+            placeholder_refs({"templates": [{"shape": v} for v in tpl.values()]})
+            validate_entity_body(sx.lower_body(full), tpl)
+        except AuthoredError as e:
+            out["errors"].append(f"模板的贴图引用：{e}")
         except (RecordError, ShapeError) as e:
             out["errors"].append(f"记录校验：{e}")
     out["ok"] = not out["errors"]
@@ -140,6 +153,7 @@ class ModelSet:
     labels: list[str] = field(default_factory=list)
     externals: dict[str, dict] = field(default_factory=dict)  # 物件编号 → 渲染页的模型选项（导出后的 glb）
     checks: list[dict] = field(default_factory=list)
+    textures: dict[str, bytes] = field(default_factory=dict)  # 物件文件里本地贴图 {file} 的内容（按哈希）
 
     @property
     def shape_bodies(self) -> dict[str, dict]:
@@ -154,7 +168,7 @@ def build_modelset(
     check: bool = True,
 ) -> ModelSet:
     templates = {**(extra_templates or {}), **{k: v for k, v in rs.templates.items() if v is not None}}
-    ms = ModelSet(name, dict(rs.bodies), templates)
+    ms = ModelSet(name, dict(rs.bodies), templates, textures=dict(rs.textures))
     for eid, body in rs.bodies.items():
         if body.get("shape") is not None:
             chk = check_shape_body(eid, body, templates) if check else {"entityId": eid, "errors": []}
@@ -257,12 +271,23 @@ def node_at(shape, path: str, templates: dict):
     return node
 
 
+def texture_label(value) -> str:
+    """材质里贴图引用的简短说明：哈希取前 12 位；本地文件给文件名；外链给声明的哈希前 12 位。"""
+    if isinstance(value, str):
+        return value[:12] + "…"
+    if isinstance(value, dict) and isinstance(value.get("file"), str):
+        return os.path.basename(value["file"])
+    if isinstance(value, dict) and isinstance(value.get("sha256"), str):
+        return "url:" + value["sha256"][:12] + "…"
+    return "?"
+
+
 def describe_part(part: sm.Part, eid: str, shape=None, templates=None) -> dict:
     lo, hi = part.mesh.bounds()
     mat = part.material or {}
     leaf = node_at(shape, part.path, templates or {}) if shape is not None else None
     kind = "model" if part.path == "$model" else (leaf or {}).get("type")
-    material = mat.get("color") or (mat.get("texture", "")[:12] + "…" if mat.get("texture") else None)
+    material = mat.get("color") or (texture_label(mat["texture"]) if mat.get("texture") else None)
     out = {
         "path": f"{eid}{part.path[1:]}" if part.path != "$model" else eid,
         "type": kind,
@@ -641,10 +666,10 @@ def bake_overrides(ms: ModelSet, res: dict | None) -> dict[str, dict]:
 def load_model_arg(args) -> RecordSet:
     paths = args.model if isinstance(args.model, list) else [args.model]
     if len(paths) == 1:
-        return load_records(paths[0])
+        return load_with_textures(paths[0])
     merged = RecordSet({}, {}, {}, [], {})
     for p in paths:
-        rs = load_records(p)
+        rs = load_with_textures(p)
         clash = set(rs.bodies) & set(merged.bodies)
         if clash:
             raise wc.ReconError(f"{p} 里的物件编号和前面的文件重复：{sorted(clash)[:5]}")
@@ -652,7 +677,23 @@ def load_model_arg(args) -> RecordSet:
         merged.templates.update(rs.templates)
         merged.template_bodies.update(rs.template_bodies)
         merged.notes += rs.notes
+        merged.textures.update(rs.textures)
     return merged
+
+
+def load_with_textures(path: str) -> RecordSet:
+    """读物件文件，本地贴图 `{file}`（工作台 `texture` 写的，相对这个文件）换成内容哈希、外链换成声明的哈希，
+    贴图内容放进 `textures`：对比、看图按哈希取贴图。只改内存里的副本，文件不动。"""
+    rs = load_records(path)
+    doc = {
+        "entities": list(rs.bodies.values()),
+        "templates": [{"shape": shape} for shape in rs.templates.values() if shape is not None],
+    }
+    try:
+        rs.textures.update(inline_file_textures(doc, os.path.dirname(os.path.abspath(path))))
+    except AuthoredError as error:
+        raise wc.ReconError(f"{path}：{error}") from error
+    return rs
 
 
 def render_compare(
@@ -673,7 +714,7 @@ def render_compare(
 ) -> tuple[int, Image.Image]:
     new_glb = os.path.join(out_dir, "_new.glb") if new.shape_bodies else None
     base_glb = os.path.join(out_dir, "_base.glb") if old.parts else None
-    textures = base.textures()
+    textures = {**base.textures(), **new.textures}
     tri_new = 0
     if new_glb:
         tri_new = export_glb(

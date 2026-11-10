@@ -367,18 +367,10 @@ def _write_bytes(data: bytes, ext: str, folder: str, model_dir: str) -> dict[str
 def preview_body(body: dict, model_dir: str) -> tuple[dict, dict[str, bytes]]:
     """物件的预览副本：`{file}` 贴图换成内容哈希，返回 (副本, {哈希: 字节})（工作台的 glb 导出
     按哈希取贴图）。"""
-    from ..bundle.textures import texture_slots
+    from ..bundle.textures import inline_file_textures
 
     doc = {"entities": [copy.deepcopy(body)]}
-    textures: dict[str, bytes] = {}
-    for _, material, key in texture_slots(doc):
-        value = material[key]
-        if isinstance(value, dict) and "file" in value:
-            with open(os.path.join(model_dir, value["file"]), "rb") as fh:
-                data = fh.read()
-            sha = hashlib.sha256(data).hexdigest()
-            textures[sha] = data
-            material[key] = sha
+    textures = inline_file_textures(doc, model_dir)
     return doc["entities"][0], textures
 
 

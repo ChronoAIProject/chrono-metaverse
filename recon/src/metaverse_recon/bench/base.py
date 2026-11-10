@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Any
 
@@ -153,6 +153,8 @@ class RecordSet:
     template_bodies: dict[str, dict]  # 模板编号 → 模板物件 body（有的话）
     notes: list[str]
     meta: dict  # authored 格式的其他字段（notes、structure、version）
+    #: 本地贴图 {file} 换成哈希后的内容（对比、看图用）
+    textures: dict[str, bytes] = field(default_factory=dict)
 
 
 def parse_records(data: Any, name: str = "model") -> RecordSet:
