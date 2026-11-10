@@ -12,6 +12,9 @@ use axum::body::Bytes;
 use futures_util::{Stream, StreamExt};
 use mongodb::bson::{doc, Bson, Document};
 
+use metaverse_core::check::{fits, AssetCheck};
+use metaverse_core::limits::UploadLimits;
+
 use super::commits::{corrupt, granted_children, stored_chunk, StoredChunk};
 use super::{collections, Repo, RepoError};
 use crate::auth::{BlobGrant, Grant};
@@ -63,18 +66,10 @@ pub(super) fn parse_check(
     mongodb::bson::deserialize_from_document(check.clone()).ok()
 }
 
-/// 资源在草稿、事件类型里被引用的用途（设计 4.4、6.1）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum AssetRole {
-    /// 物件的 `assetHash`、spawnEntity 显示方式的 `entityAsset`：只接受处理服务 `model_import`
-    /// 校验并重新导出的受限 glb（`metadata.kind = model`、带 `metadata.sourceHash`、
-    /// `metadata.contentType = model/gltf-binary`）。原始的 model 用途上传（`metadata.kind = model`、
-    /// 带 `uploadId`、没有 `sourceHash`）不行。
-    Model,
-    /// 贴图（物件的 `textures`、形状材质的 `texture`、新增方块的贴图）：`metadata.kind = texture`
-    /// （texture 用途上传并经处理服务校验的图片，或处理服务生成的贴图）。
-    Texture,
-}
+/// 资源被引用时的角色（docs/design/server-slim.md 4.6）：核心库的 [`metaverse_core::check::AssetRole`]。
+/// 能不能按某个角色引用，看服务端实测的核对记录（`metadata.check`）是否满足这个角色的条件
+/// （[`metaverse_core::check::fits`]，上限按当前配置），不看第一次登记的人写的 `metadata.kind`。
+pub use metaverse_core::check::AssetRole;
 
 /// [`Repo::put_asset_bytes_with`] 的结果。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,16 +81,16 @@ pub struct PutAsset {
 }
 
 /// 资源不能按某个用途引用的原因。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AssetRejection {
     /// 没有这个资源。
     Missing,
     /// 不属于本空间：本空间没有登记、上传、导入或在提交里引用过它。
     Foreign,
-    /// 物件模型引用了原始上传：要先经 `model_import` 校验并重新导出，再引用任务结果的 `modelHash`。
-    UnprocessedModel,
-    /// 种类与用途不符（原始扫描、操作文件、脚本、网页用模型，或把模型当贴图、贴图当模型）。
-    WrongKind,
+    /// 没有当前版本的核对记录（旧资源还没补上，或补核对时检查不过）。
+    Unchecked,
+    /// 核对记录不合这个角色（格式不对，或超出当前配置的上限）。
+    Unfit(String),
 }
 
 /// 一个不能引用的资源。
@@ -106,46 +101,63 @@ pub struct UnusableAsset {
     pub reason: AssetRejection,
 }
 
-/// 资源不在时给调用方看的说明：可能从没登记过，也可能已被处理服务的定期清理删掉。
+/// 资源不在时给调用方看的说明：可能从没登记过，也可能已被定期清理删掉。
 pub const MISSING_ASSET: &str =
     "不存在（上传后 7 天内没被引用的资源会被清理，请重新上传；内容相同，哈希也相同）";
+
+fn role_name(role: AssetRole) -> &'static str {
+    match role {
+        AssetRole::Scan => "原始扫描",
+        AssetRole::WebModel => "网页用模型",
+        AssetRole::Model => "物件模型",
+        AssetRole::Texture => "贴图",
+        AssetRole::Script => "文本",
+        AssetRole::Bundle => "重建包清单",
+        AssetRole::Ops => "操作文件",
+    }
+}
 
 impl UnusableAsset {
     /// 给调用方看的说明。
     pub fn describe(&self) -> String {
-        let reason = match (self.reason, self.role) {
-            (AssetRejection::Missing, _) => MISSING_ASSET,
-            (AssetRejection::Foreign, _) => "不属于本空间",
-            (AssetRejection::UnprocessedModel, _) => {
-                "是原始模型上传；物件只能引用处理后的模型，请先调用 import_model，再引用任务结果里的 modelHash"
-            }
-            (AssetRejection::WrongKind, AssetRole::Model) => {
-                "不是处理后的物件模型（原始扫描、网页用模型、贴图、操作文件、脚本都不行）"
-            }
-            (AssetRejection::WrongKind, AssetRole::Texture) => {
-                "不是贴图（只能引用 texture 用途上传的图片或处理服务生成的贴图）"
+        let reason = match &self.reason {
+            AssetRejection::Missing => MISSING_ASSET.to_owned(),
+            AssetRejection::Foreign => "不属于本空间".to_owned(),
+            AssetRejection::Unchecked => format!(
+                "还没有服务端的核对记录，不能当{}引用（请按用途重新上传同一份文件，核对通过后再引用）",
+                role_name(self.role)
+            ),
+            AssetRejection::Unfit(message) => {
+                format!("不能当{}引用：{message}", role_name(self.role))
             }
         };
         format!("{}：{reason}", self.hash)
     }
 }
 
-/// 资源的种类能不能按这个用途引用（只看 `metadata`，归属另外判断）。
-fn kind_fits(metadata: Option<&Document>, role: AssetRole) -> Result<(), AssetRejection> {
-    let text = |key: &str| metadata.and_then(|m| m.get_str(key).ok());
-    match (role, text("kind")) {
-        (AssetRole::Model, Some("model")) => {
-            let processed = text("sourceHash").is_some_and(|hash| !hash.is_empty())
-                && text("contentType") == Some("model/gltf-binary");
-            if processed {
-                Ok(())
-            } else {
-                Err(AssetRejection::UnprocessedModel)
-            }
-        }
-        (AssetRole::Texture, Some("texture")) => Ok(()),
-        _ => Err(AssetRejection::WrongKind),
+/// 按角色检查一批引用的结果：不能用的，以及能用的资源的核对记录和长度（调用方再按需要做
+/// 模型与记录一致之类的检查）。
+#[derive(Debug, Clone, Default)]
+pub struct AssetRoleCheck {
+    pub unusable: Vec<UnusableAsset>,
+    pub checks: BTreeMap<String, AssetCheck>,
+    pub lengths: BTreeMap<String, u64>,
+}
+
+/// 一份资源的核对记录能不能按这个角色引用（只看 `metadata`，归属另外判断）。
+fn check_fits(
+    metadata: Option<&Document>,
+    role: AssetRole,
+    limits: &UploadLimits,
+) -> Result<AssetCheck, AssetRejection> {
+    if metadata.is_some_and(|m| m.contains_key("checkError")) {
+        return Err(AssetRejection::Unchecked);
     }
+    let check = parse_check(metadata)
+        .filter(|check| check.v >= metaverse_core::check::CHECK_VERSION)
+        .ok_or(AssetRejection::Unchecked)?;
+    fits(role, &check, limits).map_err(|error| AssetRejection::Unfit(error.0))?;
+    Ok(check)
 }
 
 /// 资源字节流。
@@ -468,60 +480,84 @@ impl Repo {
     }
 
     /// 草稿、事件类型里能不能按各自的用途引用这些资源。返回不能用的（每个哈希和用途一条）。
-    ///
-    /// 被引用的资源发布后登记到 `assetRefs`、经公开接口可读，所以必须：已登记（GridFS 里有）；
-    /// 属于本空间（见 [`Repo::owned_assets`]）；种类符合用途（见 [`AssetRole`]）——物件模型只能是
-    /// `model_import` 处理后的 glb，贴图只能是贴图；原始扫描、操作文件、脚本、网页用模型一律不行。
     pub async fn unusable_assets(
         &self,
         grant: &Grant,
         wanted: &[(String, AssetRole)],
+        limits: &UploadLimits,
     ) -> Result<Vec<UnusableAsset>, RepoError> {
+        Ok(self
+            .check_asset_roles(grant, wanted, limits)
+            .await?
+            .unusable)
+    }
+
+    /// 按角色检查一批引用（docs/design/server-slim.md 2.5 第 4 条、4.6）。被引用的资源发布后可能
+    /// 登记到 `assetRefs`、经公开接口可读，所以必须：已登记（GridFS 里有）；属于本空间（见
+    /// [`Repo::owned_assets`]）；有当前版本的核对记录，并且满足这个角色的条件（上限按当前配置）。
+    /// 别的空间抢先以别的用途登记同一份字节不影响本空间按核对结果引用。
+    pub async fn check_asset_roles(
+        &self,
+        grant: &Grant,
+        wanted: &[(String, AssetRole)],
+        limits: &UploadLimits,
+    ) -> Result<AssetRoleCheck, RepoError> {
         if !grant.can_manage() {
             return Err(RepoError::GrantMismatch);
         }
+        let mut result = AssetRoleCheck::default();
         if wanted.is_empty() {
-            return Ok(Vec::new());
+            return Ok(result);
         }
         let mut hashes: Vec<String> = wanted.iter().map(|(hash, _)| hash.clone()).collect();
         hashes.sort();
         hashes.dedup();
-        let mut cursor = self
-            .collection(collections::ASSET_FILES)
-            .find(doc! {"filename": {"$in": &hashes}})
-            .projection(doc! {"filename": 1, "metadata": 1})
-            .await?;
         let mut metadata: BTreeMap<String, Option<Document>> = BTreeMap::new();
         let mut registered_here = BTreeSet::new();
-        while cursor.advance().await? {
-            let document: Document = cursor.deserialize_current().map_err(corrupt)?;
-            let Ok(name) = document.get_str("filename") else {
-                continue;
-            };
-            let meta = document.get_document("metadata").ok().cloned();
-            if meta.as_ref().and_then(|m| m.get_str("spaceId").ok()) == Some(grant.space_id()) {
-                registered_here.insert(name.to_owned());
+        for batch in hashes.chunks(1000) {
+            let mut cursor = self
+                .collection(collections::ASSET_FILES)
+                .find(doc! {"filename": {"$in": batch}})
+                .projection(doc! {"filename": 1, "metadata": 1, "length": 1})
+                .await?;
+            while cursor.advance().await? {
+                let document: Document = cursor.deserialize_current().map_err(corrupt)?;
+                let Ok(name) = document.get_str("filename") else {
+                    continue;
+                };
+                let meta = document.get_document("metadata").ok().cloned();
+                if meta.as_ref().and_then(|m| m.get_str("spaceId").ok()) == Some(grant.space_id()) {
+                    registered_here.insert(name.to_owned());
+                }
+                if let Some(length) = number(&document, "length") {
+                    result.lengths.insert(name.to_owned(), length);
+                }
+                metadata.insert(name.to_owned(), meta);
             }
-            metadata.insert(name.to_owned(), meta);
         }
         let existing: Vec<String> = metadata.keys().cloned().collect();
         let owned = self.owned_assets(grant, &existing, registered_here).await?;
-        let mut unusable = Vec::new();
         for (hash, role) in wanted {
             let reason = match metadata.get(hash) {
                 None => Some(AssetRejection::Missing),
                 Some(_) if !owned.contains(hash) => Some(AssetRejection::Foreign),
-                Some(meta) => kind_fits(meta.as_ref(), *role).err(),
+                Some(meta) => match check_fits(meta.as_ref(), *role, limits) {
+                    Ok(check) => {
+                        result.checks.insert(hash.clone(), check);
+                        None
+                    }
+                    Err(reason) => Some(reason),
+                },
             };
             if let Some(reason) = reason {
-                unusable.push(UnusableAsset {
+                result.unusable.push(UnusableAsset {
                     hash: hash.clone(),
                     role: *role,
                     reason,
                 });
             }
         }
-        Ok(unusable)
+        Ok(result)
     }
 
     /// `/api/v1` 下载资源（设计 8.2：原始扫描、大块操作文件和脚本只能由有权限的调用者经
@@ -800,57 +836,52 @@ mod tests {
         document
     }
 
+    /// 角色只看核对记录，不看 `kind`、`sourceHash`（docs/design/server-slim.md 4.6）。
     #[test]
-    fn models_must_be_processed_and_textures_must_be_textures() {
-        let processed = metadata(&[
-            ("kind", "model"),
-            ("sourceHash", "a"),
-            ("contentType", "model/gltf-binary"),
-        ]);
-        let raw = metadata(&[
-            ("kind", "model"),
-            ("uploadId", "up_1"),
-            ("contentType", "model/gltf-binary"),
-        ]);
-        let texture = metadata(&[("kind", "texture"), ("contentType", "image/png")]);
-        assert_eq!(kind_fits(Some(&processed), AssetRole::Model), Ok(()));
+    fn roles_follow_the_check_not_the_kind() {
+        let limits = UploadLimits::default();
+        let glb = mongodb::bson::doc! {"kind": "texture", "check": {
+        "v": 1, "format": "glb", "triangles": 1200, "nodes": 1, "meshes": 1, "materials": 1,
+        "images": [], "maxTextureSide": 0, "texturePixels": 0, "extensions": [],
+        "bounds": {"min": [-0.5, 0.0, -0.5], "max": [0.5, 1.0, 0.5]}}};
+        let png = mongodb::bson::doc! {"kind": "model", "sourceHash": "a",
+        "check": {"v": 1, "format": "png", "width": 64, "height": 64}};
+        // 第一次登记的人写的 kind 不算数。
+        assert!(check_fits(Some(&glb), AssetRole::Model, &limits).is_ok());
+        assert!(check_fits(Some(&glb), AssetRole::WebModel, &limits).is_ok());
+        assert!(matches!(
+            check_fits(Some(&glb), AssetRole::Texture, &limits),
+            Err(AssetRejection::Unfit(_))
+        ));
+        assert!(check_fits(Some(&png), AssetRole::Texture, &limits).is_ok());
+        assert!(matches!(
+            check_fits(Some(&png), AssetRole::Model, &limits),
+            Err(AssetRejection::Unfit(_))
+        ));
+        // 没有核对记录、旧版本的记录、补核对时检查不过：都不能引用。
+        let old = metadata(&[("kind", "model"), ("sourceHash", "a")]);
         assert_eq!(
-            kind_fits(Some(&raw), AssetRole::Model),
-            Err(AssetRejection::UnprocessedModel)
-        );
-        // 带 sourceHash 但不是 glb：也不是 model_import 的输出。
-        let odd = metadata(&[
-            ("kind", "model"),
-            ("sourceHash", "a"),
-            ("contentType", "model/obj"),
-        ]);
-        assert_eq!(
-            kind_fits(Some(&odd), AssetRole::Model),
-            Err(AssetRejection::UnprocessedModel)
-        );
-        assert_eq!(kind_fits(Some(&texture), AssetRole::Texture), Ok(()));
-        // 用途不符：贴图当模型、模型当贴图、原始扫描、网页用模型、操作文件、脚本、没有 metadata。
-        assert_eq!(
-            kind_fits(Some(&texture), AssetRole::Model),
-            Err(AssetRejection::WrongKind)
+            check_fits(Some(&old), AssetRole::Model, &limits).unwrap_err(),
+            AssetRejection::Unchecked
         );
         assert_eq!(
-            kind_fits(Some(&processed), AssetRole::Texture),
-            Err(AssetRejection::WrongKind)
+            check_fits(None, AssetRole::Texture, &limits).unwrap_err(),
+            AssetRejection::Unchecked
         );
-        for kind in ["scan", "web_model", "ops", "script"] {
-            let other = metadata(&[("kind", kind)]);
-            for role in [AssetRole::Model, AssetRole::Texture] {
-                assert_eq!(
-                    kind_fits(Some(&other), role),
-                    Err(AssetRejection::WrongKind),
-                    "{kind} {role:?}"
-                );
-            }
-        }
+        let mut failed = png.clone();
+        failed.insert("checkError", mongodb::bson::doc! {"v": 1, "reason": "x"});
         assert_eq!(
-            kind_fits(None, AssetRole::Texture),
-            Err(AssetRejection::WrongKind)
+            check_fits(Some(&failed), AssetRole::Texture, &limits).unwrap_err(),
+            AssetRejection::Unchecked
+        );
+        let mut older = png;
+        older.insert(
+            "check",
+            mongodb::bson::doc! {"v": 0, "format": "png", "width": 64, "height": 64},
+        );
+        assert_eq!(
+            check_fits(Some(&older), AssetRole::Texture, &limits).unwrap_err(),
+            AssetRejection::Unchecked
         );
     }
 
@@ -877,8 +908,14 @@ mod tests {
         let unusable = UnusableAsset {
             hash: "h".into(),
             role: AssetRole::Model,
-            reason: AssetRejection::UnprocessedModel,
+            reason: AssetRejection::Unchecked,
         };
-        assert!(unusable.describe().contains("import_model"));
+        assert!(unusable.describe().contains("重新上传"));
+        let unusable = UnusableAsset {
+            hash: "h".into(),
+            role: AssetRole::Texture,
+            reason: AssetRejection::Unfit("glb 不能当贴图".into()),
+        };
+        assert!(unusable.describe().contains("不能当贴图引用：glb"));
     }
 }

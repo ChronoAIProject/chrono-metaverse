@@ -585,6 +585,7 @@ async fn zombie_ops_job_cannot_write_the_draft() {
             asset_hash: sha256_hex(ops.as_bytes()),
             job_id: job_id.clone(),
         },
+        &app.state.ingest.config.upload_limits(),
         now(),
     )
     .await

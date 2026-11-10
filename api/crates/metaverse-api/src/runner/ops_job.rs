@@ -1,4 +1,5 @@
-//! `ops_from_upload` 进执行器（docs/design/server-slim.md 4.10）。参数 `{draftId, assetHash, uploadId?}`。
+//! `ops_from_upload` 进执行器（docs/design/server-slim.md 4.10）。参数 `{draftId, assetHash, uploadId?}`；
+//! 交包（`{draftId, source: "bundle", manifestHash}`，2.6）也是这个种类，由 [`super::bundle_job`] 处理。
 //!
 //! 请求只插入 `queued` 的任务并通知执行器；执行器按重任务名额领取后：
 //!
@@ -169,6 +170,17 @@ fn param<'a>(params: &'a Value, key: &str) -> Option<&'a str> {
 pub async fn run(runner: &Arc<Runner>, lease: &Lease) -> Result<(), JobFailure> {
     let job = &lease.job;
     let fence = &lease.fence;
+    if param(&job.params, "source") == Some("bundle") {
+        let (Some(draft_id), Some(manifest_hash)) = (
+            param(&job.params, "draftId"),
+            param(&job.params, "manifestHash"),
+        ) else {
+            return Err(JobFailure::Content(
+                "参数必须有 draftId 和 manifestHash".to_owned(),
+            ));
+        };
+        return super::bundle_job::run(runner, lease, draft_id, manifest_hash).await;
+    }
     let (Some(draft_id), Some(asset_hash)) = (
         param(&job.params, "draftId"),
         param(&job.params, "assetHash"),
@@ -202,7 +214,8 @@ pub async fn run(runner: &Arc<Runner>, lease: &Lease) -> Result<(), JobFailure> 
         job_id: job.id.clone(),
     };
     let room = MAX_DRAFT_OPS.saturating_sub(draft.op_count());
-    let mut session = AppendSession::begin(repo, &grant, draft, &source)
+    let limits = runner.state.ingest.config.upload_limits();
+    let mut session = AppendSession::begin(repo, &grant, draft, &source, &limits)
         .await
         .map_err(apply_failure)?;
     let total = apply_file(runner, &grant, &meta, &mut session, fence, room.max(1)).await? as usize;
@@ -248,7 +261,7 @@ pub async fn run(runner: &Arc<Runner>, lease: &Lease) -> Result<(), JobFailure> 
 }
 
 /// 读草稿。`Ok(None)`：草稿的 `opsRefs` 里已经有本任务（已经做过，任务已按栅栏标记完成）。
-async fn load_draft(
+pub(super) async fn load_draft(
     runner: &Arc<Runner>,
     grant: &Grant,
     draft_id: &str,

@@ -238,6 +238,22 @@ impl Repo {
         Ok(result.modified_count == 1)
     }
 
+    /// 本空间一次已完成的上传登记的资源的核对记录（查询上传时返回，docs/design/server-slim.md 2.2）。
+    /// 调用方已经按上传会话核对过资源属于本空间；资源不在或没有当前版本的核对记录时为空。
+    pub async fn uploaded_asset_check(
+        &self,
+        grant: &Grant,
+        hash: &str,
+    ) -> Result<Option<AssetCheck>, RepoError> {
+        if !grant.can_read_internal() {
+            return Err(RepoError::GrantMismatch);
+        }
+        Ok(self
+            .asset_meta_unchecked(hash)
+            .await?
+            .and_then(|meta| meta.current_check().cloned()))
+    }
+
     /// 资源（GridFS 文件名 = 内容哈希）的长度；不存在时为空。调用方已经核对过资源属于本空间。
     pub async fn asset_length(&self, grant: &Grant, hash: &str) -> Result<Option<u64>, RepoError> {
         if !grant.can_manage() {

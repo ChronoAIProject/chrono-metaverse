@@ -13,9 +13,12 @@
 //! 2. 插入提交：`seq = head.seq + 1`，`at = max(当前时间, head.at)`（`(spaceId, seq)` 唯一）；
 //! 3. 按 `head.seq == 旧值` 条件推进 `spaces.head`（区域和地块的当前状态一起更新）；
 //! 4. 更新物件和锚点的当前状态 `entities` / `anchors`（`{spaceId, id, owner, hash, body, seq}`）；
-//! 5. 登记资源引用 `assetRefs {hash, spaceId, owner, createdAt, commitId}`。
+//! 5. 登记资源引用 `assetRefs {hash, spaceId, owner, createdAt, commitId}`；
+//! 6. 提交带扫描、而空间还没有坐标系时，按 `{_id, frame: 不存在}` 条件固定坐标系
+//!    `frame = {fixedAt: 提交的 at, referenceScan: scan.assetHash}`（docs/design/server-slim.md 2.7）。
 //!
-//! 第 1 步之后先过清理的栅栏：提交引用的每个资源（`opsRef`、`scriptRef`、`assetRefs`）按文件名刷新
+//! 第 1 步之后先过清理的栅栏：提交引用的每个资源（`opsRef`、`scriptRef`、`assetRefs`、`bundleRef`、
+//! 扫描、草稿只为防清理而持有的资源）按文件名刷新
 //! `assets.files` 的 `metadata.touchedAt`，必须全部匹配到，否则整个提交作废
 //! （[`CommitError::AssetsGone`]）。与处理服务定期清理的条件删除在同一个文档上互斥：清理先删了，
 //! 这里匹配不到；这里先刷新了，清理"`touchedAt` 早于 7 天前"的条件就不再成立。
@@ -25,7 +28,7 @@
 use std::collections::BTreeMap;
 
 use metaverse_core::model::{
-    Actor, Author, ChunkChange, Commit, Head, IdChange, Plot, Region, Space,
+    Actor, Author, ChunkChange, Commit, Head, IdChange, Plot, Region, ScanRef, Space,
 };
 use metaverse_core::ops::Op;
 use metaverse_core::replay::{replay, StateManifest, StoredManifest};
@@ -72,6 +75,15 @@ pub struct CommitPlan {
     /// 草稿期间被追加、丢弃或已被别的请求发布时整个提交作废（[`CommitError::DraftChanged`]）。
     pub draft_rev: Option<u64>,
     pub script_ref: Option<String>,
+    /// 这次提交的扫描层（重建草稿的 `setScan`，与最新版本完全相同时不写）。
+    pub scan: Option<ScanRef>,
+    /// 重建包清单（提交的出处，不公开、不登记到 `assetRefs`）。
+    pub bundle_ref: Option<String>,
+    /// 由后台任务发布时（部署种子）的任务编号（`commits.jobId` 有部分唯一索引）。
+    pub job_id: Option<String>,
+    /// 只为防清理而在事务里一起确认的资源（草稿的 `heldAssets`、原始扫描）：过栅栏，但不登记到
+    /// `assetRefs`、不公开。
+    pub held_assets: Vec<String>,
 }
 
 impl CommitPlan {
@@ -97,6 +109,10 @@ impl CommitPlan {
             draft_id: None,
             draft_rev: None,
             script_ref: None,
+            scan: None,
+            bundle_ref: None,
+            job_id: None,
+            held_assets: Vec::new(),
         }
     }
 }
@@ -485,12 +501,12 @@ impl Repo {
             changed_anchors: plan.changed_anchors.clone(),
             regions_hash: plan.layout.as_ref().map(|(hash, _, _)| hash.clone()),
             palette_hash: plan.palette_hash.clone(),
-            scan: None,
+            scan: plan.scan.clone(),
             keyframe: plan.keyframe.clone(),
-            job_id: None,
+            job_id: plan.job_id.clone(),
             draft_id: plan.draft_id.clone(),
             script_ref: plan.script_ref.clone(),
-            bundle_ref: None,
+            bundle_ref: plan.bundle_ref.clone(),
         };
         let commits = self.collection(collections::COMMITS);
         match commits
@@ -525,6 +541,21 @@ impl Repo {
             .await?;
         if moved.matched_count != 1 {
             return Err(CommitError::HeadMoved.into());
+        }
+        // 第一次带扫描的提交固定坐标系，之后不变（条件写：已经有坐标系就什么都不做）。
+        if let Some(scan) = &plan.scan {
+            let mut unfixed = granted_space(grant);
+            unfixed.insert("frame", doc! {"$exists": false});
+            spaces
+                .update_one(
+                    unfixed,
+                    doc! {"$set": {"frame": {
+                        "fixedAt": at.to_rfc3339(),
+                        "referenceScan": &scan.asset_hash,
+                    }}},
+                )
+                .session(&mut *session)
+                .await?;
         }
         // 发布草稿：在同一个事务里占用草稿（rev 不变、仍是 open），与追加、丢弃、重复发布互斥。
         if let (Some(draft_id), Some(rev)) = (&plan.draft_id, plan.draft_rev) {
@@ -670,6 +701,12 @@ impl Repo {
         let mut hashes: Vec<&String> = plan.asset_refs.iter().collect();
         hashes.extend(plan.ops_ref.iter());
         hashes.extend(plan.script_ref.iter());
+        hashes.extend(plan.bundle_ref.iter());
+        hashes.extend(plan.held_assets.iter());
+        if let Some(scan) = &plan.scan {
+            hashes.push(&scan.asset_hash);
+            hashes.extend(scan.web_model_hashes.iter());
+        }
         hashes.sort();
         hashes.dedup();
         if hashes.is_empty() {
@@ -987,6 +1024,40 @@ impl Repo {
             .await?
             .into_iter()
             .next())
+    }
+
+    /// `createAnchor` 的 `ifNew`（docs/design/server-slim.md 2.4）：`ids` 里哪些编号在本空间
+    /// `seq ≤ upto` 的提交里出现过（新建、改过或删过，不论现在还在不在）。按
+    /// `(spaceId, changedAnchors.id)` 索引查，只在一批操作里有 `ifNew` 时才调用。
+    pub async fn anchor_history(
+        &self,
+        grant: &Grant,
+        upto: u64,
+        ids: &[String],
+    ) -> Result<std::collections::BTreeSet<String>, RepoError> {
+        let mut seen = std::collections::BTreeSet::new();
+        if ids.is_empty() || upto == 0 {
+            return Ok(seen);
+        }
+        for batch in ids.chunks(1000) {
+            let mut filter = granted_children(grant);
+            filter.insert("seq", doc! {"$lte": upto as i64});
+            filter.insert("changedAnchors.id", doc! {"$in": batch});
+            let found = self
+                .collection(collections::COMMITS)
+                .distinct("changedAnchors.id", filter)
+                .await?;
+            seen.extend(
+                found
+                    .into_iter()
+                    .filter_map(|value| match value {
+                        Bson::String(id) => Some(id),
+                        _ => None,
+                    })
+                    .filter(|id| batch.contains(id)),
+            );
+        }
+        Ok(seen)
     }
 
     /// 提交列表（时间线）：`at` 在 [from, to] 内、`seq > after`，按 seq 升序，最多 `limit` 条。

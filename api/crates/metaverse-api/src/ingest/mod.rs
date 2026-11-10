@@ -337,15 +337,7 @@ impl IngestConfig {
 
 /// 路径里的用途名。
 pub fn purpose_from_path(value: &str) -> Option<UploadPurpose> {
-    match value {
-        "scan" => Some(UploadPurpose::Scan),
-        "model" => Some(UploadPurpose::Model),
-        "texture" => Some(UploadPurpose::Texture),
-        "ops" => Some(UploadPurpose::Ops),
-        "script" => Some(UploadPurpose::Script),
-        "authored" => Some(UploadPurpose::Authored),
-        _ => None,
-    }
+    UploadPurpose::from_name(value)
 }
 
 pub fn purpose_name(purpose: UploadPurpose) -> &'static str {
@@ -496,7 +488,9 @@ mod tests {
 
     #[test]
     fn purposes_round_trip() {
-        for name in ["scan", "model", "texture", "ops", "script", "authored"] {
+        for name in [
+            "scan", "webmodel", "model", "texture", "ops", "script", "bundle", "authored",
+        ] {
             assert_eq!(purpose_name(purpose_from_path(name).unwrap()), name);
         }
         assert!(purpose_from_path("exe").is_none());

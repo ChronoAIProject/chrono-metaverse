@@ -54,6 +54,10 @@ pub fn manifest_after(head: &StateManifest, plan: &CommitPlan) -> StateManifest 
     if let Some(hash) = &plan.palette_hash {
         next.palette_hash = Some(hash.clone());
     }
+    // 关键帧的状态清单也要带上扫描（docs/design/server-slim.md 2.7）。
+    if let Some(scan) = &plan.scan {
+        next.scan = Some(scan.clone());
+    }
     next
 }
 
@@ -318,5 +322,19 @@ mod tests {
         assert_eq!(next.chunks.len(), 1);
         assert!(next.entities.is_empty());
         assert_eq!(next.palette_hash.as_deref(), Some("p"));
+        assert!(next.scan.is_none());
+        // 带扫描的提交：关键帧的清单里有扫描。
+        let mut transform = [0.0; 16];
+        for i in [0, 5, 10, 15] {
+            transform[i] = 1.0;
+        }
+        plan.scan = Some(metaverse_core::model::ScanRef {
+            asset_hash: "s".repeat(64),
+            web_model_hashes: vec!["w".repeat(64)],
+            transform,
+            alignment: None,
+        });
+        let next = manifest_after(&head, &plan);
+        assert_eq!(next.scan, plan.scan);
     }
 }

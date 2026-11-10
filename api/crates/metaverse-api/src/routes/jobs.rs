@@ -181,7 +181,8 @@ pub struct ImportModelRequest {
 pub struct JobView {
     pub id: String,
     pub space_id: String,
-    /// `upload_verify`、`scan_import`、`rebuild`、`voxelize`、`model_import`、`ops_from_upload` 等。
+    /// `upload_verify`、`ops_from_upload`（含交包）、`bundle_import`；处理服务下线前的旧种类
+    /// （`scan_import`、`rebuild`、`voxelize`、`model_import` 等）照样能查。
     pub kind: String,
     /// `queued`、`running`、`done`、`failed`。
     pub status: String,
@@ -925,28 +926,35 @@ pub async fn import_plot_model(
 // 查任务
 // ---------------------------------------------------------------------------
 
-async fn readable(
+/// 读任务的凭据和路径范围。`rebuild` 为真时是重建路径（只看得到重建范围的任务）。
+pub(super) async fn readable(
     state: &AppState,
     caller: &Caller,
     space_id: &str,
     plot_id: Option<&str>,
+    rebuild: bool,
 ) -> Result<(Grant, PathScope), ApiError> {
     let grant = state
         .authorizer
         .space(caller, space_id, Purpose::Read)
         .await?;
+    if rebuild {
+        return Ok((grant, PathScope::Rebuild));
+    }
     let (scope, _) = path_scope(state, &grant, plot_id).await?;
     Ok((grant, scope))
 }
 
-async fn show(
+/// 查一个任务。实体区路径看得到本空间所有范围的任务；地块路径、重建路径只看得到各自范围发起的。
+pub(super) async fn show(
     state: AppState,
     caller: Caller,
     space_id: String,
     plot_id: Option<String>,
+    rebuild: bool,
     job_id: String,
 ) -> Result<Response, ApiError> {
-    let (grant, scope) = readable(&state, &caller, &space_id, plot_id.as_deref()).await?;
+    let (grant, scope) = readable(&state, &caller, &space_id, plot_id.as_deref(), rebuild).await?;
     if !is_object_id(&job_id) {
         return Err(ApiError::not_found());
     }
@@ -980,7 +988,7 @@ pub async fn get_job(
     caller: Caller,
     Path((space_id, job_id)): Path<(String, String)>,
 ) -> Result<Response, ApiError> {
-    show(state, caller, space_id, None, job_id).await
+    show(state, caller, space_id, None, false, job_id).await
 }
 
 #[utoipa::path(
@@ -1005,17 +1013,19 @@ pub async fn get_plot_job(
     caller: Caller,
     Path((space_id, plot_id, job_id)): Path<(String, String, String)>,
 ) -> Result<Response, ApiError> {
-    show(state, caller, space_id, Some(plot_id), job_id).await
+    show(state, caller, space_id, Some(plot_id), false, job_id).await
 }
 
-async fn list(
+/// 最近的任务。地块路径、重建路径只列各自范围发起的。
+pub(super) async fn list(
     state: AppState,
     caller: Caller,
     space_id: String,
     plot_id: Option<String>,
+    rebuild: bool,
     query: JobListQuery,
 ) -> Result<Response, ApiError> {
-    let (grant, scope) = readable(&state, &caller, &space_id, plot_id.as_deref()).await?;
+    let (grant, scope) = readable(&state, &caller, &space_id, plot_id.as_deref(), rebuild).await?;
     let status = match query.status.as_deref() {
         None => None,
         Some(text) => Some(
@@ -1023,7 +1033,7 @@ async fn list(
                 .map_err(|_| ApiError::invalid("status 只能是 queued、running、done、failed"))?,
         ),
     };
-    let scope_filter = matches!(scope, PathScope::Plot(_)).then_some(&scope);
+    let scope_filter = matches!(scope, PathScope::Plot(_) | PathScope::Rebuild).then_some(&scope);
     let jobs = state
         .repo
         .recent_jobs(&grant, scope_filter, status, query.limit.unwrap_or(20))
@@ -1055,7 +1065,7 @@ pub async fn list_jobs(
     Path(space_id): Path<String>,
     Query(query): Query<JobListQuery>,
 ) -> Result<Response, ApiError> {
-    list(state, caller, space_id, None, query).await
+    list(state, caller, space_id, None, false, query).await
 }
 
 #[utoipa::path(
@@ -1081,7 +1091,7 @@ pub async fn list_plot_jobs(
     Path((space_id, plot_id)): Path<(String, String)>,
     Query(query): Query<JobListQuery>,
 ) -> Result<Response, ApiError> {
-    list(state, caller, space_id, Some(plot_id), query).await
+    list(state, caller, space_id, Some(plot_id), false, query).await
 }
 
 #[cfg(test)]

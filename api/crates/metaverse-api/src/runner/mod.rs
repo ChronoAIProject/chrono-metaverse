@@ -34,6 +34,7 @@ use crate::error::ApiError;
 use crate::repo::{JobFence, RepoError};
 use crate::AppState;
 
+pub mod bundle_job;
 pub mod cleanup;
 pub mod config;
 pub mod migrations;

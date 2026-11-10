@@ -45,6 +45,8 @@ pub mod public_events;
 pub mod public_universes;
 pub mod universes;
 pub mod uploads;
+// 重建路径（docs/design/server-slim.md 2.3）。
+pub mod rebuild;
 
 use crate::error::{self, ApiError};
 use crate::AppState;
@@ -110,6 +112,7 @@ pub fn router(state: AppState) -> Router {
         // 上传、任务、事件、组合。
         .merge(uploads::routes())
         .merge(jobs::routes())
+        .merge(rebuild::routes())
         .merge(events::routes())
         .merge(admin_events::routes())
         .merge(universes::routes())

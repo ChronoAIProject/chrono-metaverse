@@ -623,6 +623,57 @@ impl Drop for TestApp {
     }
 }
 
+/// 上传核对写的核对记录（`metadata.check`，docs/SHAPES.md 第 8 节）：图片。
+pub fn image_check(format: &str, width: i32, height: i32) -> Document {
+    doc! {"v": 1, "format": format, "width": width, "height": height}
+}
+
+/// 核对记录：文本（script 用途）。
+pub fn text_check() -> Document {
+    doc! {"v": 1, "format": "text"}
+}
+
+/// 核对记录：完整检查过的 glb（`bounds` 是实测的世界包围盒，原点在底面中心时可以当物件模型）。
+pub fn glb_check(min: [f64; 3], max: [f64; 3], triangles: i64) -> Document {
+    doc! {"v": 1, "format": "glb", "triangles": triangles, "nodes": 1, "meshes": 1,
+    "materials": 1, "images": [], "maxTextureSide": 0, "texturePixels": 0,
+    "extensions": [], "bounds": {"min": min.to_vec(), "max": max.to_vec()}}
+}
+
+/// 核对记录：扫描用途只做轻量检查的 glb（没有三角形数和包围盒，只能当原始扫描）。
+pub fn scan_glb_check() -> Document {
+    doc! {"v": 1, "format": "glb", "triangles": null, "nodes": 1, "meshes": 1,
+    "materials": 1, "images": [], "maxTextureSide": 0, "texturePixels": 0,
+    "extensions": [], "bounds": null}
+}
+
+impl TestApp {
+    /// 给已登记的资源写上核对记录。
+    pub async fn set_check(&self, hash: &str, check: Document) {
+        self.collection("assets.files")
+            .update_one(
+                doc! {"filename": hash},
+                doc! {"$set": {"metadata.check": check}},
+            )
+            .await
+            .unwrap();
+    }
+
+    /// 把一段字节登记成某个空间的资源并写上核对记录（模拟核对通过的上传）。
+    pub async fn put_checked_asset(
+        &self,
+        space: &str,
+        bytes: &[u8],
+        content_type: &str,
+        kind: &str,
+        check: Document,
+    ) -> String {
+        let hash = self.put_space_asset(space, bytes, content_type, kind).await;
+        self.set_check(&hash, check).await;
+        hash
+    }
+}
+
 /// 解压区块并核对哈希，返回方块编号（下标 x + 32·(z + 32·y)）。
 pub fn decode_chunk(compressed: &[u8], hash: &str) -> Vec<u16> {
     let chunk = metaverse_core::chunk::Chunk::decompress(compressed).expect("区块能解压");
