@@ -171,3 +171,14 @@ CMA 接口要求普通用户 OAuth access token。带服务 resource/allowed_ser
 创建聊天在 `context.creation` 中提交 `{name,source}`，来源为 `{kind:"scaniverse",url}` 或 `{kind:"file",name,size,sha256,attachment?}`。文件先以 `prepareOnly:true` 创建环境，再经 `POST /api/auth/nyxid/worker/attachment?agentId=…&name=…` 上传二进制，核对 CMA 回执后以 `message` 提交同一 worker；链接直接以 `create` 提交。固定官方仓库版本和离线命令见 [WEB_CONSOLE_PLAN.md](WEB_CONSOLE_PLAN.md)。
 
 附件入口要求当前浏览器会话、同源 Origin、CSRF、CMA 同意版本和幂等编号；同进程最多两次上传，单文件最大 20 MiB，读取请求体最多 30 秒，转发最多 45 秒，不落盘。成功响应前再次校验授权版本和回执的 worker、名称、路径、大小、SHA-256。CMA 继续独立检查当前用户对目标 worker 的权限。此路径不新增 OAuth scopes，也不把用户 OAuth 凭据交给 worker。
+
+
+## 浮动聊天与来源创建部署记录（2026-11-11）
+
+- chrono-cd 修订 `15`；功能提交 `d90dfe3e28b8d4870ddd85b60bdfca40de6d246b`，分支 `feat/floating-space-create-20261111`。[Images](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/42882047317) 的 API/web 镜像摘要取自这次运行的构建日志，已固定到 `app.json`。
+- [完整 CI](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/42882030504) 的 7 个任务全部成功，包括 API 全量测试、网页测试、全站浏览器测试、重建工具、SDK 和仓库检查。
+- 顶栏空间菜单、满幅场景、右下角可收起的 CMA 聊天、自动编号和来源创建聊天已经部署。Scaniverse 由 CMA 下载，GLB/ZIP 通过当前 worker 的附件上传；现有离线重建工具固定为包含 source 命令的官方提交。
+- API `1/1`、web `2/2` 都已更新就绪。上线前后逐字段核对，应用规格只更新两个镜像及 CD 解析摘要；已有前厅空间通过原 NyxID 代理读取的完整响应保持一致。
+- 本地网页 450 个测试、23 个真实 MongoDB 的 OAuth/CMA 集成测试、8 个来源工具测试、32 个部署检查，以及 4 个浏览器场景通过。浏览器覆盖 1280×720、手机、连续聊天、文件无文字创建、上传中断后刷新恢复原文件与请求编号。
+- 线上构建身份与功能提交一致；健康、匿名会话、未授权创建/附件拒绝、OAuth 的最小 scopes/PKCE/安全 Cookie 检查通过；运行日志无 panic 或 ERROR。生产页面无浏览器脚本错误；使用模拟会话和空目录核对了发布页面的创建入口、浮动聊天和手机布局，没有由该浏览器检查创建真实 worker 或空间。
+- 用户首次使用仍须连接 NyxID 并启用 CMA；如 CMA 需要运行环境续期授权，使用同一账号完成官方登录。真实用户授权后的在线重建不以浏览器夹具测试冒充验收。
