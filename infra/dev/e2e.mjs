@@ -535,9 +535,9 @@ const steps = [
       ctx.latestSeq = seq;
       ctx.scanEntities = entities.length;
 
-      // 同一个包再推一次：所有文件按哈希复用；草稿的基础版本已经落后（上一次发布改了重建层），
-      // --replay 在最新版本上重放，内容没变 → unchanged，不写提交。
-      const again = await metaverse(['bundle', 'push', '--publish', '--replay', '--sub', REBUILDER, '--json'], { cwd: ws });
+      // 同一个包再推一次（不带 --replay）：所有文件按哈希复用；草稿的基础版本还是清单的 base，中途只有
+      // 同一个包清单的提交，不算冲突 → unchanged，不写提交（设计 6.7）。
+      const again = await metaverse(['bundle', 'push', '--publish', '--sub', REBUILDER, '--json'], { cwd: ws });
       check(again.json?.published?.unchanged === true, '同一个包再推一次应当是 unchanged', again.json?.published);
       check((again.json.files ?? []).every((file) => file.reused), '再推一次时文件应当全部复用', again.json.files);
       const head = expectStatus(await call('GET', `/api/v1/spaces/${spaceId}`), 200, '读空间');

@@ -1117,13 +1117,24 @@ fn changes_rebuilt_layer(commit: &Commit) -> bool {
 /// 草稿碰过的键与 (baseSeq, head] 的变化的交集。重建草稿另有两个键（docs/design/server-slim.md
 /// 2.7）：每个重建草稿都登记 `layer:rebuilt`，与中途任何改过重建层的提交冲突（重建层整体是一个
 /// 冲突单位）；草稿有 `setScan` 时登记 `scan`，与中途带扫描的提交冲突。
+///
+/// 同一个包重推（6.7 的幂等）：中途由**同一个包清单**（`bundleRef` 相同）发布的提交整个不算——
+/// 清单按哈希固定了全部文件，两次展开的基础版本又相同（清单的 `base`），那次提交写进去的正是这个
+/// 草稿要写的内容；叠加到最新版本上没有变化，就得到 `unchanged`。中途只要还有别的提交改过重建层，
+/// 照样登记 `layer:rebuilt`。
 fn conflict_keys(draft: &DraftDoc, commits: &[Commit]) -> Vec<String> {
     let mut chunks = BTreeSet::new();
     let mut entities = BTreeSet::new();
     let mut anchors = BTreeSet::new();
     let mut keys = Vec::new();
+    let same_bundle = |commit: &Commit| {
+        draft.scope == PathScope::Rebuild
+            && draft.bundle_ref.is_some()
+            && commit.bundle_ref == draft.bundle_ref
+    };
+    let commits: Vec<&Commit> = commits.iter().filter(|c| !same_bundle(c)).collect();
     if draft.scope == PathScope::Rebuild {
-        if commits.iter().any(changes_rebuilt_layer) {
+        if commits.iter().any(|commit| changes_rebuilt_layer(commit)) {
             keys.push("layer:rebuilt".to_owned());
         }
         if draft.scan.is_some() && commits.iter().any(|commit| commit.scan.is_some()) {

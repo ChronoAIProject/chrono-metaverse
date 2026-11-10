@@ -1299,6 +1299,62 @@ async fn rebuild_layer_is_one_conflict_unit() {
 // 幂等、锚点
 // ---------------------------------------------------------------------------
 
+/// 同一个包重推（清单带 `base`，两个草稿都从同一个版本出发，docs/design/server-slim.md 6.7）：
+/// 第一次发布以后，第二次不带 `replay` 也得到 `unchanged`——中途只有同一个包清单的提交；
+/// 中途还有别的包改过重建层时，照样 409 `layer:rebuilt`。
+#[tokio::test]
+async fn same_bundle_from_the_same_base_is_unchanged() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    app.define_layout(SPACE).await;
+    let files = register_files(&app, SPACE, "again").await;
+    let full = full_manifest(&files, "整体替换");
+    let hash = put_manifest(&app, SPACE, &full).await;
+    let base = head_seq(&app, SPACE).await;
+    let from_base = || async {
+        let draft = new_rebuild_draft(&app, SPACE, Some(json!({"baseSeq": base}))).await;
+        job_result(&apply_bundle(&app, &draft, json!({"assetHash": hash})).await);
+        draft
+    };
+    let first = from_base().await;
+    let second = from_base().await;
+    let reply = publish(&app, &first, None).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    let seq = head_seq(&app, SPACE).await;
+    assert_eq!(seq, base + 1);
+    let reply = publish(&app, &second, None).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert_eq!(reply.body["unchanged"], true, "{:?}", reply.body);
+    assert_eq!(head_seq(&app, SPACE).await, seq);
+
+    // 第三个草稿也从 base 出发；中途又发布了另一个包：冲突在 layer:rebuilt（不带 replay）。
+    let third = from_base().await;
+    let other = manifest(
+        "另一个包",
+        json!({"rebuilt": {"mode": "merge", "entities": [boxy("rb.other", 9.0, 9.0)]}}),
+        vec![],
+    );
+    let (draft, job) = push(&app, SPACE, &other).await;
+    job_result(&job);
+    assert_eq!(publish(&app, &draft, None).await.status, StatusCode::OK);
+    let reply = publish(&app, &third, None).await;
+    assert_eq!(reply.status, StatusCode::CONFLICT, "{:?}", reply.body);
+    let conflicts = reply.body["conflicts"].as_array().unwrap().clone();
+    assert!(
+        conflicts.contains(&json!("layer:rebuilt")),
+        "{:?}",
+        reply.body
+    );
+    // 重放：整体替换回这个包的内容，另一个包新增的物件被清掉。
+    let reply = publish(&app, &third, Some(json!({"replay": true}))).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    assert!(!rebuilt_ids(&app, SPACE)
+        .await
+        .contains(&"rb.other".to_owned()));
+}
+
 /// 合并包推两次，第二次没有变化；实体区草稿删掉的锚点，之后重建包不会把它重新建出来；锚点漂移
 /// 列在展开结果里。
 #[tokio::test]
