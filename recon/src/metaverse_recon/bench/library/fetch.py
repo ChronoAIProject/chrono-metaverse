@@ -144,7 +144,7 @@ def fetch_one(c: dict, resolution: str = "1k", max_bytes: int = 50 << 20) -> dic
         )
     if m.triangles > PROCESSING_MAX_TRIANGLES:
         warnings.append(f"三角形 {m.triangles} 个，写回时处理服务会减到 {PROCESSING_MAX_TRIANGLES} 以内")
-    if m.texture is None:
+    if not m.textured:
         warnings.append("没有贴图（颜色来自顶点色或材质底色）")
     side = {
         **src,
@@ -157,7 +157,7 @@ def fetch_one(c: dict, resolution: str = "1k", max_bytes: int = 50 << 20) -> dic
             "size": os.path.getsize(glb),
             "triangles": m.triangles,
             "vertices": len(m.vertices),
-            "textureSide": int(max(m.texture.shape[:2])) if m.texture is not None else 0,
+            "textureSide": max(m.texture_sides(), default=0),
             "bounds": {"min": wc.r(lo, 4), "max": wc.r(hi, 4)},
             "extent": wc.r(hi - lo, 4),
         },

@@ -11,8 +11,8 @@
 // 重建工作台的无头渲染页（由 render.js 驱动，不单独使用）。
 // window.wbSetup({font, strings}) 设字体和文字；window.wbLoad([[名字, 地址, 选项], ...]) 加载 glb；
 // window.wbRender(参数) 渲染一张图并返回 PNG 的 dataURL。
-// 带贴图的材质不打光（扫描本身带烘焙光照），纯色材质按网站同样的灯光、材质和色调映射着色；
-// 模型库模型（lit）的贴图与网站一样一部分受光、一部分按自发光显示。
+// 扫描和烘焙贴图不打光（自带光照），纯色材质按网站同样的灯光、材质和色调映射着色；
+// 模型和固有色贴图的画法与网站 web/src/viewer/materials.ts 相同（见 wbLoad 的说明）。
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
@@ -63,9 +63,12 @@ window.wbSetup = async (s) => {
   }
 };
 
-// 选项：matrix（列主序 16 个数，模型坐标 → 空间坐标）、tint（[r,g,b] 0–255，乘到贴图上）、
-// group（显示时按组名选）、lit（贴图也打光：模型库的模型；默认贴图不打光：扫描和烘焙贴图自带光照）、
-// opacity（0–1，乘到整个模型上）、unlit（整个模型不打光）：与网站画外部模型物件的 material 相同。
+// 选项：matrix（列主序 16 个数，模型坐标 → 空间坐标）、tint（[r,g,b] 0–255，乘到颜色上）、
+// group（显示时按组名选）、lit（模型库的模型：贴图也打光）、shading（模型的着色方式，与网站画外部模型物件的
+// material.shading 相同：albedo 按 glb 里的材质原样完整受光，baked 或不给时 0.3 倍受光 + 0.72 倍自发光）、
+// opacity（0–1，乘到整个模型上）、unlit（整个模型不打光）。
+// 形状导出的 glb（glbout.py）：扫描烘焙的贴图材质带 KHR_materials_unlit（读进来是 MeshBasicMaterial），按原样显示；
+// 其余贴图材质（albedo）和带法线、粗糙度贴图的材质按 glb 里的参数完整受光，与网站 materials.ts 相同。
 window.wbLoad = async (list) => {
   for (const [name, url, opt] of list) {
     const g = await new GLTFLoader().loadAsync(url);
@@ -73,6 +76,7 @@ window.wbLoad = async (list) => {
     const tint = opt && opt.tint ? new THREE.Color().setRGB(opt.tint[0] / 255, opt.tint[1] / 255, opt.tint[2] / 255, THREE.SRGBColorSpace) : null;
     const extraOpacity = opt && typeof opt.opacity === 'number' ? Math.min(1, Math.max(0, opt.opacity)) : 1;
     const unlit = !!(opt && opt.unlit);
+    const albedo = !!(opt && opt.lit && opt.shading === 'albedo');
     g.scene.traverse((o) => {
       if (!o.isMesh) return;
       const src = Array.isArray(o.material) ? o.material : [o.material];
@@ -81,11 +85,29 @@ window.wbLoad = async (list) => {
         const opacity = (m.opacity !== undefined ? m.opacity : 1) * extraOpacity;
         const transparent = m.transparent || opacity < 0.999;
         const common = { color, side: THREE.DoubleSide, transparent, opacity, depthWrite: !transparent };
+        if (m.alphaTest) common.alphaTest = m.alphaTest;
+        if (m.vertexColors) common.vertexColors = true;
+        if (tint) common.color = color.clone().multiply(tint);
+        const ownLook = m.isMeshStandardMaterial && !unlit && (albedo || (!(opt && opt.lit) && (m.map || m.normalMap || m.roughnessMap)));
         let r;
         if (m.map) {
           m.map.colorSpace = THREE.SRGBColorSpace;
           m.map.anisotropy = 4;
-          if (tint) common.color = color.clone().multiply(tint);
+        }
+        if (ownLook) {
+          // 固有色：按 glb 里的材质原样完整受光（贴图、法线、粗糙度、金属度照用），没有自发光贴图
+          r = new THREE.MeshStandardMaterial({
+            ...common,
+            map: m.map || null,
+            normalMap: m.normalMap || null,
+            roughnessMap: m.roughnessMap || null,
+            metalnessMap: m.metalnessMap || null,
+            roughness: m.roughness,
+            metalness: m.metalness,
+            emissive: m.emissive ? m.emissive.clone() : new THREE.Color(0),
+          });
+          if (m.normalMap) r.normalScale.copy(m.normalScale);
+        } else if (m.map) {
           if (opt && opt.lit && !unlit && !m.isMeshBasicMaterial) {
             // 与网站 applyTexturedLook 相同：颜色 = 色调 × 受光部分，自发光 = 色调 × 不受光部分（同一张贴图）
             r = new THREE.MeshStandardMaterial({
@@ -102,10 +124,8 @@ window.wbLoad = async (list) => {
           }
         } else if (unlit || (m.isMeshBasicMaterial && !(opt && opt.forceLit))) {
           // 不受光照的纯色（屏幕、灯箱：材质 unlit）
-          if (tint) common.color = color.clone().multiply(tint);
           r = new THREE.MeshBasicMaterial({ ...common, toneMapped: false });
         } else {
-          if (tint) common.color = color.clone().multiply(tint);
           r = new THREE.MeshStandardMaterial({ ...common, roughness: 0.82, metalness: 0.02 });
         }
         if (transparent) o.renderOrder = 3;

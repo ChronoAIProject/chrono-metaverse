@@ -557,13 +557,7 @@ def cmd_place(args) -> dict:
             {},
             md.model_parts(body, model),
             [body["entityId"]],
-            {
-                body["entityId"]: {
-                    "path": local,
-                    "matrix": md.column_major(md.transform_matrix(xf)),
-                    "tint": None,
-                }
-            },
+            {body["entityId"]: md.exported_render(body, local)},
         )
         res_new = evaluate(new, P, C, ref_tree, floor_y, background)
         old = base_modelset(base, [eid] if eid in base.objects else [])
@@ -591,7 +585,8 @@ def cmd_place(args) -> dict:
             cw, ch = (int(v) for v in args.cell.lower().split("x"))
             models = render_models(None, new, None, scan_glb, False)
             if body.get("material", {}).get("tint"):
-                models[f"new#{body['entityId']}"]["tint"] = body["material"]["tint"]
+                # 调色烘进导出的模型（与打包相同）
+                models[f"new#{body['entityId']}"] = md.exported_render(body, local, group="new")
             # 正面默认看水平外接矩形的长边（--front 可改）
             front = float(args.front) if args.front is not None else float(sm["rect"]["yaw"])
             angles = parse_angles("oblique,front,top", front)

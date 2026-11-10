@@ -22,14 +22,12 @@ AI 重建：总览、俯视、四个角）、`report.json`（逐件偏差表、�
 
 from __future__ import annotations
 
-import io
 import json
 import os
 import time
 from collections.abc import Iterator
 
 import numpy as np
-from PIL import Image
 from scipy import ndimage
 from scipy.spatial import cKDTree
 
@@ -223,33 +221,44 @@ def validate(
 
 
 def external_parts(entities: dict[str, dict], locals_: dict[str, str], textures: dict[str, bytes]) -> dict:
-    """外部模型 → 空间坐标里的网格块（带贴图，整房预览 glb 用）。"""
+    """外部模型 → 空间坐标里的网格块（整房预览 glb 用）：按打包时同样的步骤导出，每个材质一块，各用各的贴图
+    （按重复采样，平铺贴图照样对），调色已经烘进去。"""
     import hashlib
+
+    from ..processing.modelexport import read_gltf
 
     out = {}
     for eid, path in locals_.items():
         body = entities[eid]
-        m = md.load_model_file(path)
-        mesh = md.world_mesh(body, m)
         look = body.get("material") or {}
-        tint = look.get("tint")
-        color = [c * 255 for c in m.base_color[:3]]
-        if tint:
-            color = [c * t / 255 for c, t in zip(color, tint, strict=True)]
-        mat: dict = {"color": [round(c) for c in color]}
-        if m.texture is not None and m.uv is not None:
-            buf = io.BytesIO()
-            img = Image.fromarray(m.texture[:, :, :3])
-            img.thumbnail((1024, 1024))
-            img.save(buf, "JPEG", quality=85)
-            key = hashlib.sha256(buf.getvalue()).hexdigest()
-            textures[key] = buf.getvalue()
-            mat = {"texture": key, "uv": "mesh", "lit": True}
-            if tint:
-                mat["tint"] = tint
-        # 与网站相同：opacity、unlit 作用于整个模型
-        mat.update({k: look[k] for k in ("opacity", "unlit") if look.get(k) is not None})
-        out[eid] = [sm.Part(mesh, mat, "$model")]
+        ex = md.export_model_file(path, body.get("transform"), look.get("tint"))
+        src = read_gltf(ex.path, max_triangles=md.MAX_MODEL_TRIANGLES, max_pixels=md.MAX_MODEL_PIXELS)
+        m = ex.matrix
+        parts = []
+        for prim in src.primitives:
+            mat_src = src.materials[prim.material]
+            V = prim.positions @ m[:3, :3].T + m[:3, 3]
+            normals = prim.normals if prim.normals is not None else np.zeros_like(V)
+            uv = np.zeros((len(V), 2)) if prim.uv is None else np.c_[prim.uv[:, 0], 1.0 - prim.uv[:, 1]]
+            mesh = sm.Mesh(V, normals @ m[:3, :3].T, uv, prim.faces.astype(np.int64))
+            rgb = [round(255 * min(1.0, c) ** (1 / 2.2)) for c in mat_src.base_color[:3]]
+            mat: dict = {"color": rgb}
+            if mat_src.image is not None and prim.uv is not None:
+                data = src.images[mat_src.image]
+                key = hashlib.sha256(data).hexdigest()
+                textures[key] = data
+                mat = {
+                    "texture": key,
+                    "uv": "mesh",
+                    "shading": look.get("shading") or "albedo",
+                    "repeat": True,
+                }
+                if any(c < 0.999 for c in mat_src.base_color[:3]):
+                    mat["tint"] = rgb
+            # 与网站相同：opacity、unlit 作用于整个模型
+            mat.update({k: look[k] for k in ("opacity", "unlit") if look.get(k) is not None})
+            parts.append(sm.Part(mesh, mat, "$model"))
+        out[eid] = parts
     return out
 
 

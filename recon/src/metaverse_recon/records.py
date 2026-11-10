@@ -292,7 +292,7 @@ def validate_model_transform(transform: Any) -> None:
 
 
 def model_rotation(transform: Mapping[str, Any] | None) -> dict[str, float]:
-    """物件模型 `transform` 里的旋转（不给的角度按 0），按 SHAPES 1 的顺序 `Ry(yaw) · Rx(pitch) · Rz(roll)`。"""
+    """物件模型 `transform` 里的旋转（不给的角度按 0），顺序同 SHAPES 1：`Ry(yaw) · Rx(pitch) · Rz(roll)`。"""
     return {k: float((transform or {}).get(k) or 0.0) for k in ("yaw", "pitch", "roll")}
 
 
@@ -301,7 +301,11 @@ def rotated_model_bounds(model: Bounds, transform: Mapping[str, Any] | None) -> 
     相同。网站把这个盒子的底面中心对齐物件 `bounds` 的底面中心。"""
     rot = model_rotation(transform)
     corners = [
-        [model["max" if i & 1 else "min"][0], model["max" if i & 2 else "min"][1], model["max" if i & 4 else "min"][2]]
+        [
+            model["max" if i & 1 else "min"][0],
+            model["max" if i & 2 else "min"][1],
+            model["max" if i & 4 else "min"][2],
+        ]
         for i in range(8)
     ]
     return bounds_of_points(apply_transform(rot, p) for p in corners)

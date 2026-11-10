@@ -144,6 +144,7 @@ def test_default_limits_keep_the_old_service_defaults():
         "max_model_bytes": 50 << 20,
         "model_max_triangles": 100_000,
         "model_max_texture_side": 2048,
+        "model_max_texture_pixels": 4 * 2048 * 2048,
     }
     first = default_limits()
     first["max_triangles"] = 1

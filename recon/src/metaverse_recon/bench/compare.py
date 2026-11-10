@@ -138,7 +138,7 @@ class ModelSet:
     templates: dict[str, dict]
     parts: list[sm.Part] = field(default_factory=list)
     labels: list[str] = field(default_factory=list)
-    externals: dict[str, dict] = field(default_factory=dict)  # 物件编号 → {path, matrix, tint}
+    externals: dict[str, dict] = field(default_factory=dict)  # 物件编号 → 渲染页的模型选项（导出后的 glb）
     checks: list[dict] = field(default_factory=list)
 
     @property
@@ -174,14 +174,8 @@ def build_modelset(
                 ps = md.model_parts(body, m)
                 ms.parts += ps
                 ms.labels += [eid] * len(ps)
-                look = body.get("material") or {}
-                ms.externals[eid] = {
-                    "path": local,
-                    "matrix": md.column_major(md.transform_matrix(body.get("transform"))),
-                    "tint": look.get("tint"),
-                    "opacity": look.get("opacity"),
-                    "unlit": look.get("unlit"),
-                }
+                # 按打包时同样的步骤导出后的 glb 和摆法（调色已经烘进去）
+                ms.externals[eid] = md.exported_render(body, local)
         else:
             chk = {"entityId": eid, "errors": ["既没有 shape 也没有 model"], "ok": False}
         if check:
@@ -624,16 +618,9 @@ def render_models(
     if new_glb:
         models["new"] = new_glb
     for i, (eid, ext) in enumerate(new.externals.items()):
-        tint = list(wc.PALETTE[i % len(wc.PALETTE)]) if color_parts else ext.get("tint")
-        models[f"new#{eid}"] = {
-            "path": ext["path"],
-            "matrix": ext["matrix"],
-            "group": "new",
-            "lit": True,
-            "tint": tint,
-            "opacity": ext.get("opacity"),
-            "unlit": ext.get("unlit"),
-        }
+        models[f"new#{eid}"] = {**ext, "group": "new"}
+        if color_parts:
+            models[f"new#{eid}"]["tint"] = list(wc.PALETTE[i % len(wc.PALETTE)])
     return models
 
 

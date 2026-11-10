@@ -40,13 +40,13 @@ import numpy as np
 
 from .. import shapes as sh
 from ..authored import node_at, shape_textures
-from ..canonical import canonical_json
 from ..errors import InputRejected, PermanentJobError
-from ..records import RecordError, validate_entity_body
+from ..records import RecordError, rotated_model_bounds, validate_entity_body
 from ..shapes import ShapeError
 from .bake import FaceTable, push_pull
 from .fit_texture import ColorSource, TextureParams, _rasterize, encode_jpeg
-from .modelimport import MAX_MODEL_COORD, load_model, simplify_for_export, write_model
+from .limits import MODEL_MAX_TEXTURE_PIXELS
+from .modelexport import SourceModel, export_model, read_model, variant_key
 from .object_fit import background_meshes, entity_fit
 from .rebuild import structure_entities
 from .scan import ScanMesh
@@ -237,8 +237,9 @@ def extract_gltf_zip(path: str, out_dir: str, max_total_bytes: int) -> str:
         return os.path.join(root, gltfs[0])
 
 
-def load_source(source: Mapping[str, Any], workdir: str, limits: Mapping[str, int]):
-    """父进程下载好的外部模型 → (网格 + 可选贴图, 顶点颜色或 None, 材质底色)。"""
+def load_source(source: Mapping[str, Any], workdir: str, limits: Mapping[str, int]) -> SourceModel:
+    """下载好的外部模型 → 读进来的模型（`processing.modelexport.read_model`：按材质分开，节点变换已烘进
+    顶点）。"""
     fmt, path = source["format"], source["path"]
     if fmt == "gltf-zip":
         path = extract_gltf_zip(path, os.path.join(workdir, "unzipped"), int(limits["max_model_bytes"]) * 4)
@@ -247,12 +248,10 @@ def load_source(source: Mapping[str, Any], workdir: str, limits: Mapping[str, in
     elif fmt != "glb":
         raise PermanentJobError(f"不认识的模型格式 {fmt}")
     try:
-        return load_model(
+        return read_model(
             path,
-            None,
             max_triangles=int(limits["max_triangles"]),
-            max_texture_pixels=int(limits["max_texture_pixels"]),
-            coord_limit=None,  # 模型库的模型常用厘米等单位：缩放之后再检查（placed_mesh）
+            max_pixels=int(limits["max_texture_pixels"]),
         )
     except InputRejected:
         raise
@@ -260,32 +259,22 @@ def load_source(source: Mapping[str, Any], workdir: str, limits: Mapping[str, in
         raise InputRejected(f"读不了模型：{type(error).__name__}: {error}") from error
 
 
-def _linear(transform: Mapping[str, Any]) -> np.ndarray:
-    xf = {k: v for k, v in transform.items() if k != "position"}
-    return transform_matrix(xf)[:3, :3]
+def split_transform(transform: Mapping[str, Any]) -> tuple[np.ndarray, float, np.ndarray]:
+    """物件集里外部模型的 `transform`（`M = T · Ry(yaw) · Rx(pitch) · Rz(roll) · S`）拆成
+    (烘进模型的线性部分 `Rx · Rz · S`, 偏航, 平移)。偏航写进物件记录的 `transform`（SHAPES 3），所以同一个模型
+    只因偏航不同的几处摆放共用一份 glb。"""
+    xf = {k: v for k, v in transform.items() if k not in ("position", "yaw")}
+    lin = transform_matrix(xf)[:3, :3]
+    return lin, float(transform.get("yaw") or 0.0), np.asarray(transform.get("position") or [0, 0, 0], float)
 
 
-def placed_mesh(
-    mesh: ScanMesh, colors: np.ndarray | None, base: tuple, transform: Mapping[str, Any], tint: Any
-) -> tuple[ScanMesh, np.ndarray | None, tuple]:
-    """把旋转、缩放（不含平移）和调色烘进网格。镜像时翻转三角形绕向。缩放后的坐标超出 ±1000 米时拒收。"""
-    lin = _linear(transform)
-    faces = mesh.faces if np.linalg.det(lin) > 0 else mesh.faces[:, [0, 2, 1]]
-    out = ScanMesh(mesh.vertices @ lin.T, faces, mesh.uv, mesh.texture)
-    if np.abs(out.vertices).max() > MAX_MODEL_COORD:
-        raise InputRejected(f"模型缩放后的坐标超出 ±{MAX_MODEL_COORD:g} 米（scale 是不是没按模型单位换算）")
-    if tint is not None:
-        k = np.asarray(tint, np.float64) / 255.0
-        if out.texture is not None:
-            tex = out.texture.astype(np.float64)
-            tex[..., :3] *= k
-            out.texture = np.clip(np.round(tex), 0, 255).astype(np.uint8)
-        if colors is not None:
-            c = colors.astype(np.float64)
-            c[:, :3] *= k
-            colors = np.clip(np.round(c), 0, 255).astype(np.uint8)
-        base = (base[0] * k[0], base[1] * k[1], base[2] * k[2], base[3])
-    return out, colors, base
+def export_limits(limits: Mapping[str, int]) -> dict[str, int]:
+    """导出物件模型用的上限：三角形、贴图边长、贴图像素合计（也是导出结果去重的键的一部分）。"""
+    return {
+        "triangles": int(limits["model_max_triangles"]),
+        "side": int(limits["model_max_texture_side"]),
+        "pixels": int(limits.get("model_max_texture_pixels", MODEL_MAX_TEXTURE_PIXELS)),
+    }
 
 
 def export_models(
@@ -294,15 +283,19 @@ def export_models(
     workdir: str,
     limits: Mapping[str, int],
 ) -> tuple[dict[str, dict], dict[str, dict]]:
-    """外部模型物件 → glb 文件。返回 ({资源哈希: 文件信息}, {物件编号: {hash, origin, mesh}})。
+    """外部模型物件 → glb 文件。返回 ({资源哈希: 文件信息}, {物件编号: 摆放})。
 
-    `origin` 是 glb 原点在空间里的位置（物件平移 + 包围盒底面中心），`mesh` 是导出后的网格（局部坐标）。
+    摆放 `{hash, yaw, origin, bounds, mesh}`：`origin` 是 glb 原点在空间里的位置（物件平移 + 偏航转过的
+    底面中心），
+    `bounds` 是记录要写的包围盒（模型包围盒按偏航转过之后的外包，底面中心在 `origin`），`mesh` 是摆好之后的
+    网格（空间坐标，偏差计算用）。同一个模型、同样的缩放、俯仰、翻滚和调色只导出一次（偏航不同也共用）。
     """
     os.makedirs(os.path.join(workdir, "models"), exist_ok=True)
-    loaded: dict[str, Any] = {}
-    exported: dict[str, tuple[str, np.ndarray, Mesh]] = {}
+    loaded: dict[str, SourceModel] = {}
+    exported: dict[str, tuple[str, Any]] = {}
     files: dict[str, dict] = {}
     placed: dict[str, dict] = {}
+    caps = export_limits(limits)
     for eid, item in sorted(authored["models"].items()):
         key = item["source"]
         if key not in loaded:
@@ -310,26 +303,17 @@ def export_models(
                 raise PermanentJobError(f"物件 {eid} 的模型没有下载")
             loaded[key] = load_source(sources[key], os.path.join(workdir, f"src-{key[:16]}"), limits)
         transform = item.get("transform") or {}
-        variant = canonical_json(
-            {
-                "source": key,
-                "xf": {k: v for k, v in transform.items() if k != "position"},
-                "tint": item.get("tint"),
-            }
-        )
+        lin, yaw, position = split_transform(transform)
+        variant = variant_key(key, lin, item.get("tint"), caps)
         if variant not in exported:
-            mesh, colors, base = placed_mesh(*loaded[key], transform, item.get("tint"))
-            source_triangles = mesh.triangle_count
-            mesh, colors = simplify_for_export(mesh, colors, int(limits["model_max_triangles"]))
-            lo, hi = mesh.vertices.min(axis=0), mesh.vertices.max(axis=0)
-            c0 = np.array([(lo[0] + hi[0]) / 2, lo[1], (lo[2] + hi[2]) / 2])
-            local = ScanMesh(mesh.vertices - c0, mesh.faces, mesh.uv, mesh.texture)
-            model = write_model(
-                local,
-                colors,
-                base,
-                max_texture_side=int(limits["model_max_texture_side"]),
-                source_triangles=source_triangles,
+            model = export_model(
+                loaded[key],
+                linear=lin,
+                tint=item.get("tint"),
+                max_triangles=caps["triangles"],
+                max_texture_side=caps["side"],
+                max_texture_pixels=caps["pixels"],
+                max_decode_pixels=int(limits["max_texture_pixels"]),
             )
             sha = hashlib.sha256(model.data).hexdigest()
             path = os.path.join(workdir, "models", f"{sha}.glb")
@@ -340,17 +324,32 @@ def export_models(
                 "bytes": len(model.data),
                 "triangles": model.triangles,
                 "vertices": model.vertices,
+                "materials": model.materials,
                 "textureSide": model.texture_side,
+                "texturePixels": model.texture_pixels,
                 "sourceTriangles": model.source_triangles,
+                "bounds": model.bounds,
                 "source": key,
             }
-            fit_mesh = Mesh(
-                local.vertices, np.zeros_like(local.vertices), np.zeros((len(local.vertices), 2)), local.faces
-            )
-            exported[variant] = (sha, c0, fit_mesh)
-        sha, c0, fit_mesh = exported[variant]
-        position = np.asarray(transform.get("position") or [0, 0, 0], float)
-        placed[eid] = {"hash": sha, "origin": c0 + position, "mesh": fit_mesh}
+            exported[variant] = (sha, model)
+        sha, model = exported[variant]
+        rot = {"yaw": yaw} if yaw else {}
+        local = rotated_model_bounds(model.bounds, rot)
+        # glb 原点（烘焙后坐标里的底面中心 c0）摆到空间里：T + Ry(yaw) · c0
+        origin = position + transform_matrix(rot)[:3, :3] @ np.asarray(model.origin)
+        world = model.positions @ transform_matrix(rot)[:3, :3].T + origin
+        placed[eid] = {
+            "hash": sha,
+            "yaw": yaw,
+            "origin": origin,
+            "bounds": sh.rounded_bounds(
+                {
+                    "min": (np.asarray(local["min"]) + origin).tolist(),
+                    "max": (np.asarray(local["max"]) + origin).tolist(),
+                }
+            ),
+            "mesh": Mesh(world, np.zeros_like(world), np.zeros((len(world), 2)), model.faces),
+        }
     return files, placed
 
 
@@ -510,11 +509,12 @@ def authored_rebuild(
         if eid in placed:
             item = placed[eid]
             body["assetHash"] = item["hash"]
-            local = item["mesh"].bounds()
-            body["bounds"] = sh.rounded_bounds(
-                {"min": (local[0] + item["origin"]).tolist(), "max": (local[1] + item["origin"]).tolist()}
-            )
-            meshes = [_shifted(item["mesh"], item["origin"])]
+            if item["yaw"]:
+                body["transform"] = {"yaw": item["yaw"]}
+            body["bounds"] = item["bounds"]
+            # 模型库的模型按固有色完整受光（SHAPES 3 `material.shading`）；物件集里写了就照写
+            body["material"] = {"shading": "albedo", **(body.get("material") or {})}
+            meshes = [item["mesh"]]
         else:
             if eid in authored["bakes"]:
                 stats = bake_entity(eid, body, authored["bakes"][eid], template_shapes, table, textures)
