@@ -1,7 +1,7 @@
 # 前厅 AI 物件集（演示空间 `chronoai-lobby`）
 
 [`lobby-authored.json`](lobby-authored.json) 是 ChronoAI 办公室前厅的 **AI 物件集**（设计 6.3"AI 逐件建模"，格式见
-[`worker/README.md`](../../../worker/README.md)"AI 物件集"）：本地的 AI 对着 Scaniverse 扫描逐件做出来的前厅，
+[`recon/README.md`](../../../recon/README.md)"AI 物件集"）：本地的 AI 对着 Scaniverse 扫描逐件做出来的前厅，
 部署配置种子导入扫描时带上它，重建层就换成这些物件（"优化模型"视图里看到的就是它们），不再用物体重建算法的结果。
 
 | 内容 | 数量 |
@@ -147,7 +147,7 @@ Sketchfab 上发布的原页面。**改动**：处理服务把物件集里的旋
 结构物件里的地面和墙面贴图面板引用的是本地基线（`prepare`）算出的贴图哈希。线上处理服务在提交这份物件集的任务里
 会再跑一次结构算法：算出的贴图与基线相同就直接用；依赖版本稍有不同、哈希对不上时，处理服务按**同编号、同部件
 路径**换成本次算出的贴图（`uv` 保持物件集里写的），替换清单写在任务结果的 `authored.textureFallback` 里
-（[`worker/README.md`](../../../worker/README.md)"AI 物件集"的"已有贴图"）。5 处贴图（`floor` 的 `$`，4 面墙的
+（[`recon/README.md`](../../../recon/README.md)"AI 物件集"的"已有贴图"）。5 处贴图（`floor` 的 `$`，4 面墙的
 `$.children[0]`）的编号和部件路径与基线结构一一对应；`wall-x1.14-1`、`wall-a211-1` 截短后保留了原投影范围的定位块，
 回退后贴图坐标不变。
 
@@ -157,7 +157,7 @@ Sketchfab 上发布的原页面。**改动**：处理服务把物件集里的旋
 
 ## 如何复现
 
-需要处理服务的虚拟环境（`cd worker && uv venv .venv && uv pip install --python .venv/bin/python -e '.[dev]'`，带
+需要本地重建工具的虚拟环境（`cd recon && uv venv .venv && uv pip install --python .venv/bin/python -e '.[dev]'`，带
 `metaverse-recon`）和渲染工具（`metaverse-recon doctor` 查看；`web/` 下 `npm ci` 后就有 three）。扫描用种子里的
 两个文件（[`../demo-seed.json`](../demo-seed.json) 的 `files`，下载后核对 sha256），提示就是种子里的 `hints`：
 
@@ -188,7 +188,7 @@ metaverse-recon assemble --entities work/set/*.json --structure replace --notes 
 整房三列对比、`report.json` 是逐件偏差和漏建的扫描团块。要直接核对本目录的定稿：
 
 ```bash
-cd worker && .venv/bin/python -c "import json; from metaverse_worker.authored import parse_authored; \
+cd recon && .venv/bin/python -c "import json; from metaverse_recon.authored import parse_authored; \
 p = parse_authored(json.load(open('../infra/chrono-cd/demo/lobby-authored.json'))); \
 print(len(p['templates']), len(p['entities']), len(p['models']))"      # 1 52 10
 ```

@@ -117,7 +117,7 @@ nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --
 | 不设（4 核） | 7 | 471MB |
 | 只设 `OMP_NUM_THREADS=2` | 3 | 307MB |
 
-每多一个线程约 +40MB，两份 OpenBLAS 各算一次。线程数设成 `cpu_limit`（2），地址空间与节点大小无关。Dockerfile 按约定不写 `ENV`，所以这几个变量只在这里设；处理服务下线以前 `infra/dev/up.sh` 本地也设同样的值，本地测的内存和线上一致（现在 up.sh 不再起处理服务，见 `docs/design/server-slim.md` 13.3）。`worker/README.md` 的内存数据（RSS 1,263MB）是在 4 核机器上测的，上线后按子进程实测的 `VmPeak` 复核 `WORKER_JOB_MEMORY_MB`。改 `cpu_limit` 时同步改这两个线程数（`check-app.mjs` 会检查线程数不超过 `cpu_limit`）。
+每多一个线程约 +40MB，两份 OpenBLAS 各算一次。线程数设成 `cpu_limit`（2），地址空间与节点大小无关。Dockerfile 按约定不写 `ENV`，所以这几个变量只在这里设；处理服务下线以前 `infra/dev/up.sh` 本地也设同样的值，本地测的内存和线上一致（现在 up.sh 不再起处理服务，见 `docs/design/server-slim.md` 13.3）。`recon/README.md` 的内存数据（RSS 1,263MB）是在 4 核机器上测的，上线后按子进程实测的 `VmPeak` 复核 `WORKER_JOB_MEMORY_MB`。改 `cpu_limit` 时同步改这两个线程数（`check-app.mjs` 会检查线程数不超过 `cpu_limit`）。
 
 `metaverse-web`：不需要环境变量。
 
@@ -308,9 +308,9 @@ https://<应用域名>/s/chronoai-lobby#share=<第 5 步的令牌>
 curl -s -H "Authorization: Share <令牌>" https://<应用域名>/api/public/spaces/chronoai-lobby/head
 ```
 
-**物体提示的坐标**：种子里的 `hints`（物体中心、尺寸、类别）必须是处理服务 `scan_import` 实际对齐出来的空间坐标。`worker/scripts/lobby_hints.json` 是在 `reconstruct_lobby.py` 的坐标系里标的（对齐方法不同，前厅差约 29 厘米平移和 0.09° 倾斜），所以当时由 `worker/scripts/demo_seed_hints.py`（处理服务下线时已删）用处理服务的对齐换算后写进 `demo-seed.json`。本地实测（任务结果的 `objects.furnitureMeanCm`）：换算后 3.14 厘米、41 个物体（`reconstruct_lobby.py` 自己的坐标系里是 3.08 厘米、41 个）；不换算是 4.51 厘米、59 个物体，沙发、桌子、前台被重复识别，LED 大屏又被当成墙。
+**物体提示的坐标**：种子里的 `hints`（物体中心、尺寸、类别）必须是处理服务 `scan_import` 实际对齐出来的空间坐标。`recon/scripts/lobby_hints.json` 是在 `reconstruct_lobby.py` 的坐标系里标的（对齐方法不同，前厅差约 29 厘米平移和 0.09° 倾斜），所以当时由 `worker/scripts/demo_seed_hints.py`（处理服务下线时已删）用处理服务的对齐换算后写进 `demo-seed.json`。本地实测（任务结果的 `objects.furnitureMeanCm`）：换算后 3.14 厘米、41 个物体（`reconstruct_lobby.py` 自己的坐标系里是 3.08 厘米、41 个）；不换算是 4.51 厘米、59 个物体，沙发、桌子、前台被重复识别，LED 大屏又被当成墙。
 
-**AI 物件集**（可选，设计 6.3）：本地的 AI 逐件完成前厅的物件——先去模型库（Poly Haven、Objaverse 里许可可商用的）找一个看起来差不多的现成模型，找不到或差太多（前台、LED 大屏墙、入口门框、嵌入柜）再手写参数形状——整套写成一个 JSON 文件（格式见 [`worker/README.md`](../../worker/README.md)“AI 物件集”），种子导入时重建层就换成这些物件，不跑物体重建算法。
+**AI 物件集**（可选，设计 6.3）：本地的 AI 逐件完成前厅的物件——先去模型库（Poly Haven、Objaverse 里许可可商用的）找一个看起来差不多的现成模型，找不到或差太多（前台、LED 大屏墙、入口门框、嵌入柜）再手写参数形状——整套写成一个 JSON 文件（格式见 [`recon/README.md`](../../recon/README.md)“AI 物件集”），种子导入时重建层就换成这些物件，不跑物体重建算法。
 
 前厅的物件集已经做好：[`demo/lobby-authored.json`](demo/lobby-authored.json)（1 个模板、52 个物件，其中 Objaverse 的 CC-BY 外部模型 10 个，连结构一起换 `structure: "replace"`；整房扫描到模型的平均偏差 7.11 → 4.31 厘米）。它是什么、怎么做出来的、逐件清单、完整的 CC-BY 署名、怎么复现、本地全流程验证的结果见 [`demo/README.md`](demo/README.md)。物件集里结构的贴图哈希是本地基线算的，线上算出的哈希不同时处理服务按同编号、同部件路径换成本次算出的贴图（任务结果的 `authored.textureFallback` 列出替换），不用手改。上线做法：
 

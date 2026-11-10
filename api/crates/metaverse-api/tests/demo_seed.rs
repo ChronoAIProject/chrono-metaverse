@@ -840,8 +840,8 @@ async fn existing_space_not_created_by_the_seed_is_left_alone() {
 
 /// 跨语言向量 `tests/vectors/demo_seed_zip.json`：种子打包出的 zip 字节，以及登记资源时写的
 /// `metadata.format` / `contentType`。这里用 Rust 实现重算并核对（`METAVERSE_WRITE_VECTORS=1` 时重新
-/// 生成）；处理服务的 `worker/tests/test_demo_seed_zip.py` 读同一个文件，用处理服务自己的格式嗅探和
-/// 解包核对。两边都在持续集成里跑，不依赖本机有没有装处理服务。
+/// 生成）；本地重建工具的 `recon/tests/test_demo_seed_zip.py` 读同一个文件，用它自己的格式嗅探和
+/// 解包核对。两边都在持续集成里跑，不依赖本机有没有装本地重建工具。
 #[test]
 fn packed_zip_vector_matches_the_implementation() {
     let mut mesh = b"DRACO\x02\x02\x01\x01".to_vec();
@@ -901,19 +901,18 @@ fn packed_zip_vector_matches_the_implementation() {
     );
 }
 
-/// 打包出来的 zip 处理服务读得懂：用处理服务自己的格式嗅探和解包（`processing/sniff.py`）核对。
-/// 需要 `worker/.venv`（或 `METAVERSE_WORKER_PYTHON` 指向装了处理服务的 Python）；没有就跳过
-/// （持续集成里由上面的跨语言向量和处理服务的 `test_demo_seed_zip.py` 覆盖）。
+/// 打包出来的 zip 本地重建工具读得懂：用它自己的格式嗅探和解包（`processing/sniff.py`）核对。
+/// 需要 `recon/.venv`（或 `METAVERSE_RECON_PYTHON` 指向装了本地重建工具的 Python）；没有就跳过
+/// （持续集成里由上面的跨语言向量和本地重建工具的 `test_demo_seed_zip.py` 覆盖）。
 #[test]
-fn packed_zip_is_readable_by_the_worker_sniffer() {
-    let python = std::env::var("METAVERSE_WORKER_PYTHON")
+fn packed_zip_is_readable_by_the_recon_sniffer() {
+    let python = std::env::var("METAVERSE_RECON_PYTHON")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| {
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../../worker/.venv/bin/python")
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../recon/.venv/bin/python")
         });
     if !python.exists() {
-        eprintln!("跳过：没有处理服务的 Python（{}）", python.display());
+        eprintln!("跳过：没有本地重建工具的 Python（{}）", python.display());
         return;
     }
     let (mesh, texture) = (drc(), jpg());
@@ -924,7 +923,7 @@ fn packed_zip_is_readable_by_the_worker_sniffer() {
     std::fs::write(&path, &zip).unwrap();
     let script = r#"
 import hashlib, json, sys
-from metaverse_worker.processing.sniff import check_model_file, extract_model
+from metaverse_recon.processing.sniff import check_model_file, extract_model
 found = check_model_file(sys.argv[1], 1 << 30)
 model, texture = extract_model(sys.argv[1], sys.argv[2], 1 << 30)
 digest = lambda p: hashlib.sha256(open(p, "rb").read()).hexdigest()

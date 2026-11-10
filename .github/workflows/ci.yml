@@ -135,20 +135,20 @@ jobs:
           retention-days: 7
 
   # 本地重建工具（处理服务已下线）：只读写本地文件，测试不需要数据库。
-  worker:
-    name: 本地重建工具（worker）
+  recon:
+    name: 本地重建工具（recon）
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
       run:
-        working-directory: worker
+        working-directory: recon
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         with:
           version: 0.11.32
           enable-cache: true
-          cache-dependency-glob: worker/uv.lock
+          cache-dependency-glob: recon/uv.lock
       # 按 uv.lock 的锁定版本装（含开发依赖）；锁文件和 pyproject.toml 对不上时直接失败。
       - name: 安装（含开发依赖）
         run: uv sync --frozen --extra dev --python 3.13

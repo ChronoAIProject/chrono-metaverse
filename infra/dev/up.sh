@@ -247,7 +247,7 @@ cat <<EOF
   接口服务     $api/api/healthz
 EOF
 [[ $with_web -eq 1 ]] && echo "  网站         http://127.0.0.1:$web_port/"
-echo "  本地重建工具 worker/.venv/bin/metaverse-recon（没有就 cd worker && uv sync --frozen --extra dev）"
+echo "  本地重建工具 recon/.venv/bin/metaverse-recon（没有就 cd recon && uv sync --frozen --extra dev）"
 if [[ -n "$seed_space" ]]; then
   cat <<EOF
   演示空间     http://127.0.0.1:$web_port/s/$seed_space#share=$seed_token

@@ -15,10 +15,10 @@ api/          接口服务：Rust 工作区（axum + mongodb + utoipa）
   crates/metaverse-core   区块编码、内容哈希、回放、操作、形状词表（纯计算）
   crates/metaverse-api    公开读、写、管理接口；NyxID 身份令牌校验与组织角色查询
 web/          只读查看器：React + Vite + three.js（沿用 CMA 前端工程），nginx 托管
-worker/       处理服务：Python（上传校验、扫描对齐、重建、体素化、网页用模型、清理）
+recon/        本地重建工具：Python（扫描对齐、网页用模型、结构和物体、AI 物件集、重建工作台 metaverse-recon）
 sdk/typescript  metaverse 命令行与建造脚本工具包
 infra/
-  api/ web/ worker/   三个镜像的 Dockerfile（构建上下文是仓库根目录）
+  api/ web/           两个镜像的 Dockerfile（构建上下文是仓库根目录）
   chrono-cd/          chrono-cd 应用规格（app.json）与部署说明
   dev/                本地全套：模拟 NyxID、一键启动脚本
 docs/         整体设计、建设计划、形状词表、教程

@@ -2,7 +2,7 @@
 
 在自己电脑（或云端会话）上起一套完整的 chrono-metaverse：MongoDB 副本集、模拟 NyxID、接口服务（含后台执行器：上传核对、`ops_from_upload`、定期清理）、网站开发服务器。全部只监听 `127.0.0.1`，不连真实的 NyxID，也不需要任何密钥。
 
-处理服务已下线（[`docs/design/server-slim.md`](../../docs/design/server-slim.md)）：上传核对由接口服务自己做，重建改在本地用重建工具（`worker/.venv/bin/metaverse-recon`，改名后在 `recon/`）做，`up.sh` 不再起处理服务，也不再需要 Python。
+处理服务已下线（[`docs/design/server-slim.md`](../../docs/design/server-slim.md)）：上传核对由接口服务自己做，重建改在本地用重建工具（`recon/.venv/bin/metaverse-recon`）做，`up.sh` 不再起处理服务，也不再需要 Python。
 
 | 文件 | 作用 |
 |---|---|

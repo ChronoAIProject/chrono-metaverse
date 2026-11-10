@@ -143,7 +143,7 @@ NyxID 地址只接受 https；明文 http 只允许本机地址（本地测试�
 | `tests/runner.rs`、`tests/runner_cleanup.rs`、`tests/runner_support/` | 后台执行器、上传核对、`ops_from_upload`、定期清理、后台迁移的集成测试（从处理服务移植的场景，另加僵尸执行器、名额、重试分类、核对期间健康检查） |
 | `tests/check_vectors.rs` | 资源核对的二进制样本（`metaverse-core/tests/vectors/check/`）的生成器和核对；`inspect_real_files`（忽略的测试）拿真实文件试检查器 |
 | `tests/runner_budget.rs` | 内存和 1 GiB 核对耗时的实测（忽略的测试，用 `--release` 跑，结果见下文） |
-| `tests/demo_seed.rs` | 部署配置种子的集成测试：本机 HTTP 服务提供文件；首次建空间、登记资源、建任务，再次启动不重复，哈希不符、404、重定向到不允许的地址、响应比声明的大都不建空间，重试，多副本并发，补建与新版本，别人的空间不碰，配置换了主人 / 令牌 / 可见性也不改已有空间；跨语言向量 `tests/vectors/demo_seed_zip.json`（打包的 zip 字节和登记的 `format` / `contentType`，处理服务的 `tests/test_demo_seed_zip.py` 用自己的嗅探和解包核对）；有 `worker/.venv` 时另外直接调用处理服务核对 |
+| `tests/demo_seed.rs` | 部署配置种子的集成测试：本机 HTTP 服务提供文件；首次建空间、登记资源、建任务，再次启动不重复，哈希不符、404、重定向到不允许的地址、响应比声明的大都不建空间，重试，多副本并发，补建与新版本，别人的空间不碰，配置换了主人 / 令牌 / 可见性也不改已有空间；跨语言向量 `tests/vectors/demo_seed_zip.json`（打包的 zip 字节和登记的 `format` / `contentType`，本地重建工具的 `recon/tests/test_demo_seed_zip.py` 用自己的嗅探和解包核对）；有 `recon/.venv` 时另外直接调用本地重建工具核对 |
 
 ### 目前实现的接口
 

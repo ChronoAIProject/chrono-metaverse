@@ -8,7 +8,7 @@
 定制件库里没有，才手写。计算只做眼睛、尺子和裁判（渲染、测量、对齐、偏差）。
 
 依据：[整体设计](../ARCHITECTURE.md) 第 6.3 节（AI 重建）、[形状词表](../SHAPES.md)、
-[开源方案调研](../research/scan-to-model.md)。命令的完整说明在 `worker/README.md` 的"重建工作台"一节，给 AI 的
+[开源方案调研](../research/scan-to-model.md)。命令的完整说明在 `recon/README.md` 的"重建工作台"一节，给 AI 的
 技能说明是 `sdk/typescript/skills/metaverse-reconstruct/SKILL.md`。
 
 读完你会：
@@ -24,14 +24,14 @@
 
 ### 1.1 装工作台
 
-工作台是处理服务（`worker/`）里的一个命令，从平台仓库的源码装（Mac、Linux 都可以）：
+工作台是本地重建工具（`recon/`）里的一个命令，从平台仓库的源码装（Mac、Linux 都可以）：
 
 ```bash
 git clone <平台仓库> chrono-metaverse && cd chrono-metaverse
-cd worker && uv venv .venv && uv pip install --python .venv/bin/python -e . && cd ..
+cd recon && uv venv .venv && uv pip install --python .venv/bin/python -e . && cd ..
 cd web && npm ci && cd ..           # 渲染用网站同一份 three.js 和 Playwright
 npx playwright install chromium     # 已经有 Chromium 就不用
-export PATH=$PWD/worker/.venv/bin:$PATH   # 之后直接用 metaverse-recon
+export PATH=$PWD/recon/.venv/bin:$PATH   # 之后直接用 metaverse-recon
 metaverse-recon doctor
 ```
 
@@ -84,7 +84,7 @@ export METAVERSE_RECON_BASE=$PWD/base
 `base/candidates.json` 就是 AI 的任务清单：每件物体的编号、类别、尺寸、建议（`search` 先搜库 / `author` 手写）、
 同款（`sameAs`：8 把会议椅只做一次）。
 
-> 以前在 `scripts/reconstruct_lobby.py` 坐标系里写的东西（比如 `worker/scripts/llm_poc/models/`）用
+> 以前在 `scripts/reconstruct_lobby.py` 坐标系里写的东西（比如 `recon/scripts/llm_poc/models/`）用
 > `metaverse-recon reframe --scan mesh.drc --from compute --to scan_import --in … --out …` 换过来。
 
 ---
