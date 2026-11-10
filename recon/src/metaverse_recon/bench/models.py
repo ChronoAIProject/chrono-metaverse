@@ -42,23 +42,21 @@ from PIL import Image
 
 from .. import shapes as sh
 from ..authored import AuthoredError, model_material, parse_model, validate_source
+from ..fetch import host_allowed, parse_hosts
 from ..processing import shape_mesh as sm
 from ..processing.modelexport import SourceModel, read_model
 from ..records import rotated_model_bounds
 from .core import Box, ReconError, r
 from .env import cache_dir
 
-DEFAULT_HOSTS = ("dl.polyhaven.org", "huggingface.co")
 MAX_MODEL_TRIANGLES = 3_000_000
 MAX_MODEL_PIXELS = 8192 * 8192
 PROCESSING_COORD_LIMIT = 1000.0  # 处理服务拒收缩放后坐标超过 ±1000 米的外部模型
 
 
 def allowed_hosts() -> tuple[str, ...]:
-    env = os.environ.get("METAVERSE_RECON_MODEL_HOSTS")
-    if env:
-        return tuple(h.strip().lower() for h in env.split(",") if h.strip())
-    return DEFAULT_HOSTS
+    """外部模型允许的主机：与打包下载用同一份列表和匹配规则（`fetch.parse_hosts`、`fetch.host_allowed`）。"""
+    return parse_hosts(os.environ.get("METAVERSE_RECON_MODEL_HOSTS"))
 
 
 def models_dir() -> str:
@@ -419,7 +417,7 @@ def _check_url(url: Any, what: str, hosts: tuple[str, ...], errors: list[str]) -
     if not isinstance(url, str) or not url.startswith("https://"):
         return  # 结构问题由 parse_model 报
     host = (urlparse(url).hostname or "").lower()
-    if host not in hosts:
+    if not host_allowed(url, hosts):
         errors.append(f"{what} 的主机 {host} 不在允许的列表里（{', '.join(hosts)}）")
 
 
