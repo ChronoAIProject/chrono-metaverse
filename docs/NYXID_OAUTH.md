@@ -176,7 +176,7 @@ CMA 接口要求普通用户 OAuth access token。带服务 resource/allowed_ser
 ## 浮动聊天与来源创建部署记录（2026-11-11）
 
 - chrono-cd 修订 `15`；功能提交 `d90dfe3e28b8d4870ddd85b60bdfca40de6d246b`，分支 `feat/floating-space-create-20261111`。[Images](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/42882047317) 的 API/web 镜像摘要取自这次运行的构建日志，已固定到 `app.json`。
-- [完整 CI](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/42882030504) 的 7 个任务全部成功，包括 API 全量测试、网页测试、全站浏览器测试、重建工具、SDK 和仓库检查。
+- [完整 CI](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/42882030504) 的 8 个任务全部成功，包括 API 全量测试、网页测试、全站浏览器测试、重建工具、SDK 和仓库检查。
 - 顶栏空间菜单、满幅场景、右下角可收起的 CMA 聊天、自动编号和来源创建聊天已经部署。Scaniverse 由 CMA 下载，GLB/ZIP 通过当前 worker 的附件上传；现有离线重建工具固定为包含 source 命令的官方提交。
 - API `1/1`、web `2/2` 都已更新就绪。上线前后逐字段核对，应用规格只更新两个镜像及 CD 解析摘要；已有前厅空间通过原 NyxID 代理读取的完整响应保持一致。
 - 本地网页 450 个测试、23 个真实 MongoDB 的 OAuth/CMA 集成测试、8 个来源工具测试、32 个部署检查，以及 4 个浏览器场景通过。浏览器覆盖 1280×720、手机、连续聊天、文件无文字创建、上传中断后刷新恢复原文件与请求编号。
