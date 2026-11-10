@@ -59,7 +59,7 @@ MongoDB（普通集合 + GridFS）
 - `processing/fit_counter.py`（前台：折面外壳、台面、踢脚线）；
 - `processing/objects.py` 的分类规则和阈值，`fit_segment.py`、`fit_templates.py`、`fit_texture.py`；
 - `processing/structure.py` 的结构算法常量（墙顶统一高度、玻璃的颜色和竖梃、提示里的大屏不当墙……）；
-- `jobs/writeback.py` 的锚点规则（按 `props.category` 建 `table`、`counter`、`zone`……）；
+- `handlers/scan.py` 的锚点规则（按 `props.category` 建 `table`、`counter`、`zone`……）；
 - AI 物件集写回里的结构贴图回退、烘焙指令 `bake`、外部模型的 `model: {url, ...}` 写法；
 - 接口服务里跟着这些走的东西：任务参数 `hints`（`MAX_HINTS_BYTES`）、`authored` / `authoredAsset`、核心库 `metaverse_core::authored`。
 
@@ -170,7 +170,7 @@ MongoDB（普通集合 + GridFS）
 2. **模板只能被同一层引用**：物件形状里引用的模板必须是同一层的模板（`EntityBody::validate` 拿到的模板表按层过滤：`WorkingState::templates_of(layer)`）；模板的影响范围也只算同一层的使用者（`users_of_template` 按层）。扩展层要用重建层的款式，就复制一份成扩展层模板。线上前厅只有处理服务写的重建层，没有扩展层物件，所以没有跨层引用的旧数据（S1 用公开快照核对一遍，记在合并请求里）。
 3. **完整性检查**：每次追加（一批内联操作、一个操作文件、一个重建包）全部作用完之后，工作状态里每个物件引用的模板都要存在；发布时在"最新版本 + 本次变化"上再查一遍：本次放进去的物件引用的模板都在，本次删掉的模板没有被合并后状态里的任何物件引用。不满足返回 409 `broken_template_ref`，列出编号（叠加发布时可能遇到，用 `replay` 在最新版本上重放可以得到准确的错误或结果）。
 4. **资源按核对结果判断用途**：引用的每个哈希先要属于本空间（现有的 `Foreign` 规则），再看资源的 `metadata.check`（服务端从内容实测的核对结果）是否满足这个角色的条件（4.6）。不再看 `metadata.kind`——它是第一次登记的人写的，别的空间可以抢先用别的用途登记同一份字节。
-5. **模型与记录一致**：只有模型、没有形状的物件，引用的模型的实测包围盒（`check.bounds`）三边长与物件 `bounds` 三边长之差不超过 max(2 厘米, 1%)，模型原点在底面中心（`|min.y|`、x 和 z 的中点都 ≤ 2 厘米）；否则 422 `model_bounds_mismatch`。网站按 `bounds` 的底面中心摆放只有模型的物件，这条保证摆出来和记录一致，也就保证范围检查用的 `bounds` 是真实的。
+5. **模型与记录一致**：只有模型、没有形状的物件，引用的模型的实测包围盒（`check.bounds`）三边长与物件 `bounds` 三边长之差不超过 max(2 厘米, 1%)，模型原点在底面中心（`|min.y|`、x 和 z 的中点都 ≤ 2 厘米）；否则 422 `model_bounds_mismatch`。网站按 `bounds` 的底面中心摆放只有模型的物件，这条保证摆出来和记录一致，也就保证范围检查用的 `bounds` 是真实的。物件带 `transform`（只有 `yaw`、`pitch`、`roll`，S6b 加的，SHAPES 3）时，三边长按模型包围盒 8 个角转过之后的外包盒比，原点仍按模型自己的包围盒查（`check::model_fits_entity`）。
 6. **没有实体区时的范围**：空间没有定义实体区（`regions` 里没有 `kind: physical`）时，实体区路径和重建路径的允许范围都是"不与任何虚拟区、地块的盒子相交"（核心库 `AllowedArea` 加一种"除去"模式）。这与网站现在的理解一致（`web/src/core/scene.ts`："没有定义任何实体区时，整个空间都算实体区"）；前厅这样没定义区域的空间，锚点就能经实体区草稿修改。定义了实体区以后与现在相同。空间级锚点 `_space` 仍只允许实体区路径。
 
 ### 2.6 重建包的展开（任务）
@@ -198,6 +198,8 @@ MongoDB（普通集合 + GridFS）
   - `scan`：草稿有 `setScan`，而中途有提交带了 `scan`；
   - `anchor:<编号>`：草稿新建的锚点在中途被别人建过、改过或删过。
 
+  中途由**同一个包清单**（`bundleRef` 相同）发布的提交整个不参与冲突判断（6.7 的幂等）：清单按哈希固定了全部文件，两次展开的基础版本又都是清单的 `base`，那次提交写的正是这个草稿要写的内容。中途只要还有别的提交改过重建层，照样是 `layer:rebuilt`。
+
   实体区草稿只改扩展层和锚点；它和重建草稿只在"同一个锚点编号"上才会冲突。
 - **重放**：`replay: true` 时在最新版本上重新作用展开的操作（`clearRebuilt` 在最新版本上执行，`ifNew` 按最新版本的历史判断）。种子发布遇到冲突时自动重放（7.2）。
 - **完整性检查**：2.5 第 3 条。
@@ -216,7 +218,7 @@ MongoDB（普通集合 + GridFS）
 | 位置 | 变化 |
 |---|---|
 | `scope::PathScope` | 加 `Rebuild`，存储写 `rebuild` |
-| `scope::UploadPurpose`、`model::UploadFormat` | 加 `WebModel`（路径里写 `webmodel`）、`Bundle`；`Authored` 只留着读旧记录。`check_upload_purpose`：实体区和地块 `{model, texture, ops, script}`；重建 `{scan, webmodel, model, texture, script, bundle}` |
+| `scope::UploadPurpose`、`model::UploadFormat` | `UploadPurpose` 加 `WebModel`（路径里写 `webmodel`）、`Bundle`；`Authored` 只留着读旧记录。`check_upload_purpose`：实体区和地块 `{model, texture, ops, script}`；重建 `{scan, webmodel, model, texture, script, bundle}`。`UploadFormat` 不用加新值：网页用模型是 glb，清单是 json，都已有 |
 | `scope::AllowedArea` | 加"除去"模式（2.5 第 6 条）；`for_scope(Rebuild)` |
 | `model::ActorKind` | 加 `Rebuild`；`Job` 留给旧提交和后台任务 |
 | `model::JobKind` | 加 `BundleImport`；旧种类留着反序列化 |
@@ -304,7 +306,7 @@ TypeScript 核心库（`sdk/typescript/src/core/`）实现扩展层用得到的�
 2. 只对 zip：先按序号读文件末尾的数据块（≤ 1 MiB），解析中央目录（4.4）。
 3. 从头按序号流式读出全部数据块（`files_id` = 上传编号，按 `n` 升序），核对序号连续、除最后一块外每块 256 KiB、总长度等于声明的大小；边读边算 sha256，同时把字节交给这个用途的检查器（glb：JSON 块、`POSITION` 访问器的数据、图片头；zip：在中央目录给出的偏移处核对本地头；图片：头和段；ops：流式解压、逐行检查；script：UTF-8）。内存只有一批数据块加上检查器留的少量状态。
 4. 哈希不符或检查不通过：上传 `failed`、写原因（`content`）、删数据块，任务失败。
-5. 登记资源：插入 GridFS `files` 文档（`_id` = 上传编号，`filename` = 内容哈希，`metadata = {sha256, contentType, kind, spaceId, uploadId, format, touchedAt, check}`）。文件名唯一键冲突说明同一内容已存在：删本次的数据块、复用已有资源（先刷新它的 `touchedAt`；它没有 `check` 或版本比现在低时，按条件 `$set` 补写本次算出的 `check`——检查结果只取决于文件内容，谁算都一样）。
+5. 登记资源：插入 GridFS `files` 文档（`_id` = 上传编号，`filename` = 内容哈希，`metadata = {sha256, contentType, kind, spaceId, uploadId, format, touchedAt, check}`）。文件名唯一键冲突说明同一内容已存在：删本次的数据块、复用已有资源（先刷新它的 `touchedAt`；它没有 `check`、版本比现在低，或者只是扫描用途的轻量检查（glb 的 `triangles`、`bounds` 为空）而本次做了完整检查时，按条件 `$set` 补写本次算出的 `check`——检查结果只取决于文件内容，谁算都一样）。
 6. 同一个事务里：上传 `done` 并写 `assetHash`、`format`、`storageBytes`，空间 `storageUsedBytes` 加上大小，任务完成（带租约条件）。
 
 任务最终失败、上传停在 `complete` 时的收尾（`settle_upload`：内容已核对通过且资源存在就补做第 6 步，否则 `failed` 并删数据块）照搬，由执行器在标记失败后立即做，清理第 1 步兜底。
@@ -346,6 +348,7 @@ glb 的头和 JSON 块在文件开头，访问器的数据和图片在 BIN 块�
 4. **实测包围盒**：对场景里用到的每个 `POSITION` 访问器，按"缓冲区视图偏移 + 访问器偏移、步长（`byteStride` 或元素大小）、个数、分量类型"算出它在 BIN 块里的字节位置；流式读到这些位置时逐个元素解码（浮点数，或按规范把量化整数还原），累计每个访问器的实际最小、最大值。只保留每个访问器的两个三维点和一个跨数据块的小缓冲（小于一个步长），不缓存数据。
    - 实测值与 JSON 声明的 `min`、`max` 相差超过 max(1e-4 × |值|, 1e-6) 就拒绝（`glb_bounds_mismatch`）；
    - 世界包围盒 = 每个访问器的实测盒子的 8 个角点经所在节点的世界变换后取外包。节点带旋转时这个盒子会偏大，所以物件模型的导出工具要把节点变换烘进顶点、节点用单位变换（本地工具 `models` 就这样导出，SHAPES 3 写明）；
+   - 节点写 `matrix` 时必须能分解成平移、旋转、缩放（glTF 规范的要求）：最后一行是 (0, 0, 0, 1)（差 ≤ 1e-6），左上 3×3 的三列两两正交（夹角余弦 ≤ 1e-4），否则 `glb_json`。网站（three.js 的 GLTFLoader）把 `matrix` 先分解再组合，最后一行不看、切变被抹掉；按齐次坐标除以最后一行会让实测包围盒比画出来的小任意倍（S9 复核）。角点按仿射变换算；
    - 坐标上限按世界包围盒查。
 5. **图片头**：按 JSON 算出每张图片在文件里的位置，流式读到时解析：PNG 读 `IHDR`；JPEG 从 `SOI` 起按段长度逐段跳过（EXIF、ICC、XMP 段多长都行，跨数据块接着走），直到 `SOF0`–`SOF2` 拿宽高——走完这张图的范围还没找到就拒绝；魔数必须与 `mimeType` 一致。单张边长、全部像素合计按用途的上限查。贴图用途的 webp 读 `VP8`、`VP8L`、`VP8X` 头。
 6. **记下**：`metadata.check`（4.6）。
@@ -389,10 +392,13 @@ glb 的头和 JSON 块在文件开头，访问器的数据和图片在 BIN 块�
 | 公开接口的进程内缓存 | 128 MiB | `PUBLIC_CACHE_BYTES` 在 `app.json` 里从默认 256 MiB 调成 128 MiB |
 | 分片上传 | 4 × 32 MiB | `UPLOAD_MAX_CONCURRENT_PARTS` 从 8 调成 4，多出的请求排队 |
 | 核对 × 2 | 约 2 × 16 MB | 一批数据块（4 MiB）+ glb 的 JSON 块（≤ 4 MiB，带类型解析）+ 访问器计划 |
-| 重任务 × 1 | 约 450 MB | `ops_from_upload`：边读边解压、逐行解析，不留压缩原文和解压后的全文；解析出的操作（解压后 ≤ 256 MiB 的文本，按 1.5 倍算）+ 工作状态。`bundle_import`：清单原文 ≤ 16 MiB + 原始片段 + 当前一条记录；成员打包一次只有一个成员（≤ 128 MiB） |
+| 重任务 × 1 | 约 450 MB | `ops_from_upload`：边读边解压、逐行解析，不留压缩原文和解压后的全文；**每攒够 2000 条就先作用到工作状态上**，不把全部解析出的操作同时留着，结果记录每 500 条写一批；主要是工作状态（解压后 ≤ 256 MiB 的操作作用出的物件，按 1.5 倍算）。`bundle_import`：清单原文 ≤ 16 MiB + 原始片段 + 当前一条记录；成员打包一次只有一个成员（≤ 128 MiB） |
 | 合计 | 约 840 MB | |
 
 `metaverse-api` 的内存改成申请 384Mi、上限 1536Mi（原来 256Mi / 1Gi；去掉处理服务省下 3Gi 申请，组织配额足够）。CPU 不变（250m / 1）。上线前在本机按"2 个最坏的核对 + 1 个最坏的重任务 + 4 片并发上传 + 缓存装满"实测峰值，写进 `api/README.md` 和设计 16.2；峰值超过 1.2 GB 就先调低上面的上限再上线。
+
+S2 实测（`api/README.md`）：重任务按原来的写法（解析出全部操作再作用、全部记录一起写）峰值约 2.9 GB，超了；改成上表的
+分批作用、分批写记录以后约 0.95 GB（含测试进程本身），没超过 1.2 GB，上面的上限不用再调。
 
 ### 4.9 配置项对照
 
@@ -455,7 +461,7 @@ out/bundle/
   scan/scan.zip            原始扫描
   web/scan-0.glb           网页用模型默认档（网站加载这一档；可以直接用线上已有的那份）
   web/scan-1.glb           低细节档（可选）
-  models/<哈希前 12 位>.glb 物件模型（节点变换和调色烘进网格，原点在底面中心）
+  models/<哈希前 12 位>.glb 物件模型（俯仰、横滚、缩放和调色烘进网格，偏航在记录的 transform 里；原点在底面中心）
   textures/<哈希前 12 位>.jpg 烘焙贴图、结构贴图、下载的外链贴图
   notes.md                 建模过程记录（可选，作为提交的 scriptRef）
 ```
@@ -561,7 +567,7 @@ out/bundle/
 
 - **文件**：按哈希复用，重复上传不重复存储。
 - **包展开**：同一份清单展开得到同一个操作文件哈希。
-- **发布**：同一个草稿重复发布返回同一个结果（现有规则）。同一个包在内容没变时再推一次，发布结果是 `unchanged: true`，不写新提交：整体替换是"清掉再放同样的内容"，差异为空；合并模式的删除带 `ifPresent`，第二次删不存在的编号什么都不做；锚点带 `ifNew`，已经建过（或建过又被删了）都跳过。先后发布 A、B、A 时第二次的 A 是真正的变化，照常提交——所以不按包哈希做唯一键，而按"内容有没有变化"判断。
+- **发布**：同一个草稿重复发布返回同一个结果（现有规则）。同一个包在内容没变时再推一次（不用 `--replay`），发布结果是 `unchanged: true`，不写新提交：两次的草稿都从清单的 `base` 出发，中途同一个清单发布的提交不算冲突（2.7）；整体替换是"清掉再放同样的内容"，差异为空；合并模式的删除带 `ifPresent`，第二次删不存在的编号什么都不做；锚点带 `ifNew`，已经建过（或建过又被删了）都跳过。先后发布 A、B、A 时第二次的 A 是真正的变化，照常提交——所以不按包哈希做唯一键，而按"内容有没有变化"判断。
 - **锚点不复活**：实体区草稿删掉的锚点，之后任何重建包都不会再把它建出来。
 - **种子**：任务编号由（空间、空间创建时间、版本）算出，同一版本只导入一次（7.2）。
 
@@ -709,7 +715,7 @@ out/bundle/
 - `recon/pyproject.toml`：项目名、命令入口、`package-data` 的键；
 - `uv lock` 重新生成 `recon/uv.lock`（持续集成的 `uv sync --frozen` 才过得去）；
 - `bench/env.py` 的 `repo_root()`：`(root / "worker").is_dir()` 改成 `recon`（按目录名机械替换改不到它，改漏了渲染会找不到 `web/node_modules`）；
-- `.github/workflows/ci.yml` 的 `working-directory` 和缓存路径；`.github/dependabot.yml` 加 `/recon` 的 pip（uv）一项（worker 的两项在 S6a 已删）；`infra/dev/up.sh`；`infra/dev/README.md`；`docs/` 里的路径。
+- `.github/workflows/ci.yml` 的 `working-directory` 和缓存路径；`.github/dependabot.yml` 加 `/recon` 的 `uv` 一项（读 `uv.lock`；worker 的两项在 S6a 已删）；`infra/dev/up.sh`；`infra/dev/README.md`；`docs/` 里的路径。
 
 不改任何逻辑。git 按内容识别改名，`git log --follow`、`git blame -M` 都能追到之前的历史。
 
@@ -724,7 +730,7 @@ out/bundle/
 | 依赖 `pymongo`；`scripts/demo_seed_hints.py` | 工作台 `recon/` 整个（S7 改名 `bench/`）；`scripts/` 里的验收脚本、提示、结果图 |
 
 - `config.py` 删掉之前，工作台 `prepare.py`、`reframe.py` 从 `config.Config` 取的解析上限搬到 `processing/limits.py` 的常量（默认值不变）。
-- `handlers/scan.py` 里"导入扫描"的编排、`jobs/writeback.py` 里的锚点规则、`handlers/authored.py` 里的物件集写回（下载外部模型、烘焙、逐件偏差、结构贴图回退），去掉数据库部分后搬进新的 `bundle/` 子包，输出从"写提交"变成"写重建包"。
+- `handlers/scan.py` 里"导入扫描"的编排和锚点规则（第一稿误写成在 `jobs/writeback.py`）、`handlers/authored.py` 里的物件集写回（下载外部模型、烘焙、逐件偏差、结构贴图回退），去掉数据库部分后搬进新的 `bundle/` 子包，输出从"写提交"变成"写重建包"。
 - 测试：用到 MongoDB 的测试（约 60 个）按内容分两路：服务端语义（核对、清理、栅栏、空间实例、用量）移植成接口服务的 Rust 测试（S2）；重建语义（锚点规则、物件集写回、外部模型、烘焙）改成本地 `bundle` 的测试，不再需要数据库。`.github/scripts/pytest_require_mongo.py` 和它的测试删掉。
 
 ### 8.3 本地命令（`metaverse-recon`）
@@ -733,26 +739,27 @@ out/bundle/
 |---|---|---|
 | `doctor [--install]` | 检查渲染要用的 node、three、Playwright、Chromium、字体；`--install` 把 three 和 Playwright 装进缓存目录（不在平台仓库里时用） | 现有；`--install` 是新的 |
 | `prepare` | 扫描 + 可选提示 → 基线目录（对齐、算法结构和物体、候选清单）；`--transform <文件>` 用给定变换（已有空间重建时不重新对齐） | 现有；变换参数是新的 |
-| `align` | 只算对齐：首次自动对齐；或重扫配准到参考扫描（`--reference <参考扫描> --reference-transform <文件>`），输出 `transform.json`、误差和候选；误差超过 `--max-error-cm`（默认 3）时退出码非 0 | `processing/align.py` |
-| `webmodel` | 生成网页用模型（接缝不裂开的减面、贴图补边） | `processing/webmodel.py` |
+| `align` | 只算对齐：首次自动对齐；或重扫配准到参考扫描（`--reference <参考扫描> --reference-transform <文件>`），输出 `transform.json`、误差和候选；误差超过 `--max-error-cm`（默认 3）时退出码非 0、**不写**输出文件（结果写到旁边的 `*.candidate.json`）；输出文件是 `pull` 写的线上变换时不覆盖，除非 `--force`（S9 复核） | `processing/align.py` |
+| `webmodel` | 生成网页用模型（接缝不裂开的减面、贴图补边）；工作区里默认写到 `web/` | `processing/webmodel.py` |
 | `views`、`measure`、`compare`、`search`、`index`、`fetch`、`place`、`reframe` | 不变 | 现有 |
 | `assemble` | 合并成 AI 物件集 | 现有 |
-| `models` | 外部模型：下载、核对，把摆放的旋转、缩放、调色烘进网格（节点用单位变换），按物件模型的上限减面、缩小贴图，只用白名单里的扩展，原点放在底面中心，写成 glb；多材质、平铺贴图、相同偏航的去重导出在这里修（第 12 节） | 原物件集写回 |
+| `models` | 外部模型：下载、核对，把摆放的俯仰、横滚、缩放、调色烘进网格（节点用单位变换），**偏航写进物件记录的 `transform`**（只差偏航的物件共用一个 glb），按物件模型的上限减面（保贴图接缝）、缩小贴图，只用白名单里的扩展，原点放在底面中心，写成 glb；按材质分开导出（多材质、平铺贴图）；外部模型物件的 `material` 默认加 `shading: albedo`（第 12 节） | 原物件集写回 |
 | `bake`、`fit` | 烘焙贴图；逐件偏差（与 `compare` 同一个函数） | 原物件集写回 |
 | `scan-zip` | 新：把扫描成员按 `pack.rs` 的规则打成 zip（成员列表来自来源表或命令行参数，先下载、核对）；读别人的扫描 zip 时限制成员解压后 ≤ 2 GiB、拒绝 `..` 和绝对路径 | 新 |
-| `bundle` | 打包：物件集（或 `--algorithm`：直接用基线里的算法结构和物体）→ `models`、外链贴图下载、`bake`、`fit`、按类别建议锚点、网页用模型（`--webmodel <文件>` 用已有的，否则生成）、`scan-zip` → `out/bundle/`；编号统一加 `rb.`；`base` 取工作区 `space.json`；`--seed` 去掉内部锚点和建模记录；`--from-snapshot <工作区>` 用拉下来的快照（重建层物件、模板、扫描元数据）生成整体替换的包（编号改成 `rb.` 开头，模板引用一起改）；最后调用 `metaverse bundle check` | 原 `scan_import` + 物件集写回的编排 |
+| `bundle` | 打包：物件集（或 `--algorithm`：直接用基线里的算法结构和物体；按类别建议的锚点默认只列出、不进包，`--anchors` 才放进去）→ `models`、外链贴图下载、`bake`、`fit`、按类别建议锚点、网页用模型（`--webmodel <文件>` 用已有的，否则生成）、`scan-zip` → `out/bundle/`；编号统一加 `rb.`；`base` 取工作区 `space.json`；`--seed` 去掉内部锚点和建模记录；`--from-snapshot <工作区>` 用拉下来的快照（重建层物件、模板、扫描元数据）生成整体替换的包（编号改成 `rb.` 开头，模板引用一起改）；最后调用 `metaverse bundle check` | 原 `scan_import` + 物件集写回的编排 |
 | `voxelize` | 保留为本地实验命令，结果不能进包（重建包第一版没有方块） | `processing/voxelize.py` |
 
-所有命令只读写本地文件，**不连接本服务**，也不需要任何凭证；只有 `search`、`fetch`、`models`、`bundle`、`scan-zip` 会去模型库、贴图地址和扫描地址下载（主机列表 `METAVERSE_RECON_MODEL_HOSTS`）。
+所有命令只读写本地文件，**不连接本服务**，也不需要任何凭证；只有 `search`、`fetch`、`models`、`bundle`、`scan-zip` 会去模型库、贴图地址和扫描地址下载（模型库和贴图的主机列表 `METAVERSE_RECON_MODEL_HOSTS`；扫描成员的主机列表 `METAVERSE_RECON_SCAN_HOSTS`，默认与种子的 `METAVERSE_DEMO_SEED_HOSTS` 相同）。
 
 ### 8.4 安装与交接
 
 - **安装**：平台仓库是公开的。仓库外：`uv tool install "git+https://github.com/ChronoAIProject/chrono-metaverse@<标签>#subdirectory=recon"`，再 `metaverse-recon doctor --install`（`bench/env.py` 已经支持缓存位置，不再依赖仓库的 `web/node_modules`）。在仓库里开发：`cd recon && uv sync --frozen`。
-- **在命令行工作区里做**：`metaverse init` 建的目录（有 `space.json`）。`metaverse-recon` 从当前目录往上找 `space.json` 来定默认值：
+- **在命令行工作区里做**：`metaverse init` 建的目录，`metaverse pull` 写 `space.json`。`metaverse-recon` 从当前目录往上找 `space.json` 来定默认值（只 `init` 没 `pull` 时认 `metaverse.json`：默认路径都有，只是没有基础版本，S9 复核）：
   - `--scan` 默认 `scan/scan.zip`（`metaverse pull --scan` 写的）；
   - `--transform` 默认 `scan/transform.json`（`pull` 写的，格式与 `align` 的输出相同：`{transform: [16 个数], source: "pull" | "align", seq}`）；
   - `--limits` 默认 `limits.json`（`pull` 写的服务端上限；没有就用内置默认值，与服务端默认相同）；
-  - 基线默认 `out/recon/`，包默认 `out/bundle/`，包的 `base` 取 `space.json` 的 `{spaceId, seq}`。
+  - 网页用模型默认 `web/`，基线默认 `out/recon/`，包默认 `out/bundle/`，包的 `base` 取 `space.json` 的 `{spaceId, seq}`；
+  - 工作区的 `.gitignore` 忽略 `scan/`（原始扫描不公开）、`work/`、`web/`、`out/`、`chunks/`、`assets/`；`init` 写，`pull` 发现旧的缺行时补上。
 - `metaverse bundle push` 默认读 `out/bundle/`。不在工作区里时，所有路径都要显式给。
 
 ### 8.5 命令行（`metaverse`）的分工
@@ -763,11 +770,11 @@ TypeScript 命令行负责一切和本服务打交道的事（NyxID 凭证只在
 |---|---|
 | `scan`、`rebuild`、`voxelize` | 删除（连同 `commands/authored.ts`、传输层里调这些接口的方法） |
 | `bundle check [目录] [--seed]` | 新（6.5） |
-| `bundle push [目录]` | 新（6.6） |
+| `bundle push [目录]` | 新（6.6）；包的扫描和线上相同、变换不同时，`--publish` 停下，要 `--realign` 才发布（S9 复核） |
 | `publish <草稿编号>` | 认得范围是 `rebuild` 的草稿（走 `/rebuild/drafts/...`），显示 `unchanged` |
-| `pull` | 多写 `limits.json`（来自 `GET /api/v1/spaces/{space_id}` 的 `uploadLimits`） |
+| `pull` | 多写 `limits.json`（来自 `GET /api/v1/spaces/{space_id}` 的 `uploadLimits`）；`--assets` 下载这个版本引用的网页用模型、物件模型和贴图（S9 复核：回滚用的 `--from-snapshot` 要它们） |
 | `pull --scan` | 新：经 `/api/v1/spaces/{space_id}/assets/{hash}` **分段下载**当前的原始扫描（每段 64 MiB 的 `Range` 请求，能断点续传，避开 NyxID 代理约 100 秒的断开），写 `scan/scan.zip` 和 `scan/transform.json` |
-| `pull --share <分享链接> [--seq N] [--assets]` | 新：只读公开快照（`/api/public`），不需要 NyxID：写 `space.json`（带只读标记，不能 `push`）、`entities.json`、`anchors.json`（只有公开锚点）、`scan/transform.json`；`--assets` 另外下载网页用模型和物件模型。分享令牌只在内存里用，不写进工作区（也可以用环境变量 `METAVERSE_SHARE_TOKEN` 给） |
+| `pull --share <分享链接> [--seq N] [--assets]` | 新：只读公开快照（`/api/public`），不需要 NyxID：写 `space.json`（带只读标记，不能 `push`）、`entities.json`、`anchors.json`（只有公开锚点）、`scan/transform.json`；`--assets` 另外下载网页用模型、物件模型和贴图（贴图按文件头起扩展名）。分享令牌只在内存里用，不写进工作区（也可以用环境变量 `METAVERSE_SHARE_TOKEN` 给） |
 | `init` | 技能说明 `metaverse-reconstruct` 改成本地工具 + `bundle push` 的流程 |
 | 其余（`admin`、`build`、`dev`、`shot`、`diff`、`check`、`push`） | 不变；扩展层的编号不能用 `rb.`（核心库规则） |
 
@@ -780,7 +787,8 @@ Python 3.13；numpy、scipy、pillow、trimesh、DracoPy、fast-simplification�
 ## 9. 网站
 
 - 网站不调用任何任务接口，也没有"处理中"的状态，这次不用改结构。
-- **模型的兜底摆放**（`web/src/viewer/sceneView.ts`）：只有模型的物件，模型加载后用 three.js 算实际包围盒（精确模式）；尺寸超出记录 `bounds` 的尺寸超过 max(2 厘米, 1%) 时，整体等比缩小、平移进 `bounds`（底面中心对齐），并在控制台记警告。服务端已经按顶点数据实测包围盒，这一层只是兜底。
+- **模型的兜底摆放**（`web/src/viewer/sceneView.ts`，实现在 `modelFit.ts`）：只有模型的物件，模型加载后用 three.js 算实际包围盒（精确模式）；尺寸超出记录 `bounds` 的尺寸超过 max(2 厘米, 1%) 时，整体等比缩小、平移进 `bounds`（底面中心对齐），并在控制台记警告。服务端已经按顶点数据实测包围盒，这一层只是兜底。
+- **贴图材质新字段的画法**（第 12 节原列为以后的增强，S8 一起做了）：形状材质的 `shading`、`normalMap`、`roughnessMap`、`roughness`、`metalness` 和物件模型的 `material.shading` 按 SHAPES 2、3 画（`web/src/viewer/materials.ts`）；新字段都不给时画法与以前相同。
 - **改动说明**：`ModelSources.tsx` 的 `MODIFIED_NOTE` 现在写"经本服务处理后重新导出"，改成不依赖工具的说法："这些模型可能经过调整（摆放烘进模型、减面、调色、缩小贴图）后重新导出，与原文件不同"；同步改它的测试和 SHAPES 3（并写明署名是写入方的声明，服务端只校验格式）。
 - 公开提交列表的 `actor.kind` 会出现新值 `rebuild`，网站按字符串处理，不用改。
 - 剖切默认高度（`a8e49d3`、`45befcb`）与谁写重建层无关。
@@ -805,7 +813,7 @@ Python 3.13；numpy、scipy、pillow、trimesh、DracoPy、fast-simplification�
 | `.github/workflows/ci.yml` | `worker` 任务改成本地工具：不再起 MongoDB，`uv sync --frozen --extra dev`、ruff、pytest；删掉"持续集成插件的测试"；hadolint 只查两个 Dockerfile |
 | `.github/dependabot.yml` | 删掉 docker 的 `/infra/worker` 和 pip 的 `/infra/worker`（S6a）；加 `/recon`（S7） |
 | `.github/scripts/pytest_require_mongo.py`、`test_pytest_require_mongo.py` | 删除 |
-| `infra/chrono-cd/check-app.mjs` 及测试 | 删掉处理服务的检查；加：`METAVERSE_DEMO_SEED_HOSTS` 显式写出且每项合法；种子是新格式（旧字段报错）；清单和来源表的地址是 https、主机在列表里、sha256 和大小齐全；上面列出的上限和缓存配置显式写出且是正整数；不允许出现 `metaverse-worker` |
+| `infra/chrono-cd/check-app.mjs` 及测试 | 删掉处理服务的检查（其中"`up.sh` 给处理服务设线程变量"一条 S2 已改成只在 `up.sh` 起处理服务时检查）；加：`METAVERSE_DEMO_SEED_HOSTS` 显式写出且每项合法；种子是新格式（旧字段报错）；清单和来源表的地址是 https、主机在列表里、sha256 和大小齐全；上面列出的上限和缓存配置显式写出且是正整数；不允许出现 `metaverse-worker` |
 | `infra/chrono-cd/pin-images.mjs`、`check-pins.mjs` 及测试 | 只认 `api=`、`web=`；删掉处理服务构建后端的检查 |
 | `infra/chrono-cd/README.md`、`demo/README.md` | 删掉处理服务、线程数一节；"演示数据"一节改成重建包（7.4）；回滚一节按 11.5；更新镜像时注意种子格式和镜像要在同一次 `PUT` 里一起换 |
 
@@ -848,6 +856,16 @@ NyxID 服务还没注册（`ALLOWED_NYX_SERVICE_IDS` 是占位值，`/api/v1` �
 | R2 瘦身 | S1–S9 全部合并、新的九步验收通过后发布：接口服务带上执行器、核对、清理、重建路径、新用途、410 的旧接口；规格里删掉处理服务；种子换成新格式、**版本仍是 3、不带包**（空间已存在，什么都不做） | 基本不写：`/api/v1` 一律 401，种子什么都不做；只写清理锁、迁移记录、旧任务退役（预计 0 条）和旧资源补上的 `metadata.check` |
 | R3 前厅第 4 版 | **同一镜像**，只把种子改成版本 4、带包 | 写一次 `actor.kind = rebuild` 的提交 |
 
+**现状（2026-11-10）**：NyxID 已经注册（2026-11-09，服务编号已填进线上的 `ALLOWED_NYX_SERVICE_IDS`，经 NyxID 已能读到
+真实数据），也就是下面说的"注册早于 R2"。线上 R0 的 `/api/v1` 现在就能写，但写进去的都是 R0 格式，R2 读得了；风险只在
+R2 上线以后：R2 一旦写进 R0 读不了的数据，就退不回 R0。这类数据不只是重建提交和 `bundle_import` 任务——R2 里任何失败过或
+重试过的任务（例如一次核对不过的上传）都写对象形式的 `lastError`，任何组织 admin 的实体区、地块草稿都可以写 `ifPresent`、
+`ifNew`、物件的 `transform` 和新材质字段（S9 复核核对过 R0 的结构：操作、物件记录、模型材质都不收未知字段，任务的
+`lastError` 是文字）。S9 没有另做 R1，两条路留给用户拍板：① 照原计划先发 R1；② 直接发 R2，把"退回 R0"的窗口限定在 R2
+上线以后**第一次经接口写入之前**（`metaverse-rebuilder` 角色建好之前没有人能写重建层，种子第 3 版什么都不写；但实体区写入
+和普通上传随时可能发生），之后只能前滚。本机演练（S9 的
+实施记录）里，改造前的代码写出的数据换成 R2 后读、回放、迁移都正常，第 4 版也能追加上去。
+
 R2 读得了它自己和 R3 写的一切，所以不需要单独的"兼容读"版本。**前提**是 NyxID 注册晚于 R2：注册以后 `/api/v1` 能写，R2 上线当天就可能写进 R0（现在的版本）读不了的数据。如果注册早于 R2，先发 **R1**：核心库能读新枚举和新字段（`rebuild`、`bundle_import`、`webmodel`、`bundle`、`bundleRef`、`alignment`、新操作、草稿的新字段）；保存草稿改成按字段 `$set`；处理服务的清理认得 `heldAssets`、`bundleRef`（R1 照样运行处理服务，这一处是小改动）。
 
 ### 11.3 第一次部署 R2 时发生什么
@@ -868,8 +886,8 @@ R2 读得了它自己和 R3 写的一切，所以不需要单独的"兼容读"�
 
 | 从 | 退到 | 条件和做法 |
 |---|---|---|
-| R3 | R2 | 随时可以：把种子配置退回版本 3（同一镜像）。第 4 版的提交只追加，R2 读得了。内容有问题就发布第 5 版包修正；要让重建层和扫描回到第 3 版的样子：`metaverse pull --share <链接> --seq <第 3 版>`，`metaverse-recon bundle --from-snapshot` 打成整体替换的包，再发布（编号会换成 `rb.` 开头）。**包不能删锚点**：第 4 版新建的锚点要用实体区草稿另外删 |
-| R2 | R0（现在） | 只在**还没写过新格式数据**时可以：R3 还没发、NyxID 还没注册。在 chrono-cd 把应用规格退回 R0 的版本（`list_app_revisions` 找到、`put_app` 那一份；镜像、环境变量、处理服务一起回来）。R2 写的 `metadata.check`、`checkError`、迁移记录，R0 都会忽略 |
+| R3 | R2 | 随时可以：把种子配置退回版本 3（同一镜像）。第 4 版的提交只追加，R2 读得了。内容有问题就发布第 5 版包修正；要让重建层和扫描回到第 3 版的样子：`metaverse pull --share <链接> --seq <第 3 版> --assets`（下载那一版的网页用模型、物件模型和贴图），`metaverse-recon bundle --from-snapshot` 打成整体替换的包，再发布（编号会换成 `rb.` 开头）。**包不能删锚点**：第 4 版新建的锚点要用实体区草稿另外删 |
+| R2 | R0（现在） | 只在 R2 上线以后**还没有任何经 `/api/v1` 的写入**时可以（R3 自然也还没发）。NyxID 已经注册（11.2），R0 读不了的写法不只来自重建路径：R2 里任何失败过或重试过的任务都写对象形式的 `lastError`（R0 只认文字），实体区、地块草稿可以写 `ifPresent`、`ifNew`、物件的 `transform` 和新材质字段（R0 的操作和记录结构不收未知字段）；逐条查全很难，所以按"上线以后 `commits`、`drafts`、`uploads`、`jobs` 没有新文档、`jobs` 没有对象形式的 `lastError`"判断（检查写法见 `infra/chrono-cd/README.md` 第 4 节）。在 chrono-cd 把应用规格退回 R0 的版本（`list_app_revisions` 找到、`put_app` 那一份；镜像、环境变量、处理服务一起回来）。R2 自己写的 `metadata.check`、`checkError`、`assetRefs.seq`、清理锁、迁移记录，R0 都会忽略 |
 | R3 之后 | R0 | **不可以**：R0 读不了 `actor.kind = rebuild` 的提交，回放会坏。只能前滚修正，或退到 R2 |
 
 镜像都按摘要固定，处理服务的旧镜像仍在 ghcr.io。如果走了 R1 路线：R2 → R1 时，R1 的处理服务不领取 `bundle_import`，R2 建的、还在排队的 `ops_from_upload`（`attempt = 0`）在 R1 里没人执行也不会被回收——退回前先确认没有这类任务，或退回后用一次运维操作把它们标记失败。
@@ -888,6 +906,13 @@ R2 读得了它自己和 R3 写的一切，所以不需要单独的"兼容读"�
 
 本地工具这边：外链贴图 `{url, sha256, size}` 只出现在物件集（本地文件）里，`bundle` 按外部模型同样的下载规则下载，按贴图用途的上限（4096）检查，作为 `texture` 文件进包，记录里换成哈希。外部模型的导入修正在 `processing/modelimport.py` 和 `models` 命令里做，接口服务只看导出的 glb 合不合 4.5 的检查。
 
+T 做完后的状态（实施记录）：
+
+- 三边的形状校验（Rust、命令行、本地工具的 `shapes.py`）都认新字段，错误路径一致；资源引用（`Shape::texture_refs`、本地工具的 `material_textures`）都算上 `normalMap`、`roughnessMap`。
+- 贴图坐标：网站（`web/src/core/shapes/`）和本地工具（`processing/shape_mesh.py`）都按 SHAPES 算平铺，跑 `uv/` 向量；本地工具查看用的 glb 按 SHAPES 2"glb 导出"写采样器、法线和粗糙度。
+- `authored/` 向量现在没有运行器：接口服务的物件集浅层校验（S4 连同 `metaverse_core::authored` 一起删）和命令行的 `commands/authored.ts`（S5 删）都不接；S6b 的 `bundle` 下载外链贴图时接上，物件集里外部模型的 `shading` 默认写成 `albedo` 也在那里做（现在物件集里写了就原样保留）。——S6b 已接上：本地工具 `tests/test_bundle_build.py` 跑这批向量（另加了工作台写的本地贴图 `{file}`）；打包时外部模型物件的 `material` 默认 `shading: albedo`。
+- **网站的画法没有接上**：`shading`（`albedo` 完整受光、不加自发光）、`normalMap`、`roughnessMap`、`roughness`、`metalness` 以及物件模型的 `material.shading`，网站现在都按原来的看法画（`sceneView.ts` 的形状材质和模型材质；贴图缓存要按（哈希，用途）区分颜色空间）。这次改造的各步原本都不包括它（列在第 14 节"以后的增强"）；**S8 已经一起接上**，见 13.2 S8 的实施记录。
+
 ---
 
 ## 13. 实施计划
@@ -905,7 +930,7 @@ R2 读得了它自己和 R3 写的一切，所以不需要单独的"兼容读"�
 | S6a | 本地工具去掉服务端部分；删 `infra/worker/`；工作流和 Dependabot 去掉处理服务 | S2 | Python −4,000 / +600 |
 | S7 | 改名 `worker/` → `recon/`（8.1，纯机械） | S6a | 约 120 个文件改路径 |
 | S6b | 本地工具新命令：`align`、`webmodel`、`models`、`bake`、`fit`、`scan-zip`、`bundle`、`doctor --install`、工作区交接 | S1（清单格式）、S7 | Python +2,200 |
-| S8 | 网站：改动说明、模型兜底摆放 | — | 约 80 行 |
+| S8 | 网站：改动说明、模型兜底摆放；实施时加上贴图材质新字段的画法（第 12 节） | — | 约 80 行（加上画法后约 +1,300，其中测试和夹具约 900） |
 | S9 | 部署与开发设施、九步验收、各 README 和教程 | S2–S8（含 S6b） | +900 / −1,200 |
 | S10 | 前厅第 4 版：本地打包 → 托管 → 清单和来源表进仓库 → 种子版本 4 | S4、S6b、S9；用户确认托管方式 | 数据 + 配置 |
 
@@ -940,6 +965,40 @@ S8 ─────────────────────────�
 - **接口与数据**：2.4、2.5、2.9、4.6、6.2–6.4。不改任何路由。
 - **验收**：新操作和规则的 `ops/` 向量 Rust、TypeScript 结果一致；`bundle/` 向量 Rust 展开结果与期望相同，TypeScript 对合法、不合法的判断与 Rust 相同；旧的提交、任务、草稿文档（取自现有测试夹具）往返读写不变；`metaverse-api` 全部测试照过；用公开快照确认线上前厅没有扩展层物件、没有 `rb.` 开头的编号（写进合并请求说明）。
 
+S1 做完后的状态（实施记录）：
+
+- 核心库（Rust）：`scope`（`PathScope::Rebuild`、上传用途表、"除去"模式）、`model`（新取值和新字段、`check_transform`、
+  `check_alignment`）、`ops`（`setScan`、`clearRebuilt`、`ifPresent`、`ifNew`、范围种类、锚点历史、草稿的扫描、
+  `broken_template_refs`）、`record`（`rb.` 前缀）、新模块 `limits`、`check`、`bundle`；接口服务只跟着改到能编译，
+  路由不变。TypeScript 核心库：`scope.ts`、`ops.ts`、`record.ts`、`shape.ts`（`textureRefs`），新 `bundle.ts`（结构校验，
+  不展开）、`limits.ts`、`timestamp.ts`。向量：`ops/` 新增 22 个（共 48 个），`bundle/` 29 个；`tests/compat.rs` 核对旧文档往返。
+  SHAPES 第 3 节加了图层与编号、草稿的种类与操作、物件模型的要求，新第 7、8 节。
+- 实现时补上的细节（设计没写到，按最小的写法定下）：
+  1. 新错误类别 `OpError::NotAllowed`（接口返回 422 `op_not_allowed`），向量里的错误类别 `notAllowed`；
+  2. 重建草稿里 `createAnchor` 不带 `ifNew` 也拒绝（防御，展开时一律带上）；`setScan` 没有格子上的影响范围；
+     `clearRebuilt` 的影响范围是被删的非模板物件；带 `ifNew` 被跳过的锚点、带 `ifPresent` 而不存在的物件影响范围为空；
+  3. 模板引用的完整性按"同一层存在"判断，跨层的旧引用也算缺；
+  4. 清单的 `rebuilt.remove` 上限 2000；字段为 `null` 等于没给（数组字段除外）；每条记录 64 KiB 按清单原文算，
+     本地工具写清单时记录不缩进（命令行按记录的紧凑 JSON 算）；
+  5. `uploadLimits` 的形状（`{v, scan, webmodel, model, texture, ops, script, bundle}`）定在 SHAPES 8；
+  6. 扫描用途的 glb 只做轻量检查，`check.triangles`、`check.bounds` 为空，不能当网页用模型或物件模型；同一份字节再按
+     完整用途上传时补写 `check`（4.3 第 5 步已改）；
+  7. RFC 3339 的写法按 Rust `time` 库（`T`、`t` 或空格，时区偏移 ≤ 23:59，只认 23:59:60 这个闰秒），TypeScript 照着实现。
+- 与设计的偏离（都是多做或提前生效）：
+  1. TypeScript 的工作状态也实现了重建范围的操作（`setScan`、`clearRebuilt` 的作用），`ops/` 向量两边全部一致；
+     清单仍只做结构校验，不展开；
+  2. 通用新规则对现有的实体区、地块草稿已经生效：编号不能以 `rb.` 开头、模板只能同层引用、没定义实体区的空间实体区路径
+     是"除去"模式（2.5 第 6 条原定随 S3 的验收）；命令行的本地建造目标同样按"除去"模式算，建造脚本只拿到扩展层的模板；
+  3. 上传用途表已是瘦身后的规则，但旧的扫描导入和物件集导入删掉之前（S4），接口服务的实体区上传照旧收 `scan`、
+     `authored`（`routes/uploads.rs` 的 `check_legacy_upload_purpose`，S4 删掉）；`webmodel`、`bundle` 在实体区、地块
+     路径上仍是 404，S3 的重建路径接上；
+  4. 线上前厅的核对没有用公开快照（分享令牌是部署密钥，拿不到），改用线上第 3 版的来源：`lobby-authored.json` 的 52 个
+     物件和 1 个模板都在重建层、没有 `rb.` 开头的编号，结构由处理服务的结构算法写入（编号如 `floor`，也不用 `rb.`）；NyxID 注册之前线上只有种子
+     能写，扩展层没有物件，也就没有跨层的模板引用。R2 上线前用分享链接的快照再核对一次（S10 的工作区 `pull --share`）。
+- 留给后面几步接上的（核心库已经备好）：每次追加之后和发布时的模板引用完整性检查（`broken_template_refs` → 409
+  `broken_template_ref`）、按核对记录判断资源角色（`check::fits`）和模型与记录一致（`check::model_fits_bounds`）、工作状态按
+  草稿填范围种类和锚点历史、重建草稿的交包和展开（`Bundle::parse`、`for_each_op`）都在 S3；各用途上限的配置项在 S2，`GET /api/v1/spaces/{space_id}` 返回 `uploadLimits` 在 S3。
+
 #### S2 后台执行器、上传核对、清理
 
 - **改哪些文件**：
@@ -958,6 +1017,48 @@ S8 ─────────────────────────�
   - glb、图片、zip、NDJSON 检查跑完 `tests/vectors/check/` 全部样本；拿一份真实的 Scaniverse 导出 zip 和一份 macOS"压缩"生成的 zip 各试一次（结果记进 `api/README.md`）；
   - 补核对迁移：中途停止后从游标继续；检查不过的写 `checkError`；
   - 预算：本机实测"2 个最坏核对 + 1 个最坏重任务 + 4 片并发上传 + 缓存装满"的峰值和 1 GiB 扫描核对的耗时，记进 `api/README.md`；核对期间 `/api/healthz` 的响应都在 1 秒内。
+
+S2 做完后的状态（实施记录）：
+
+- 接口服务：`runner/`（`mod.rs` 循环、两类名额、进程内通知、停止；`config.rs`；`upload_verify.rs`；`verify/` 的 glb、zip、图片、
+  NDJSON、文本和小格式检查器；`ops_job.rs`；`cleanup.rs`；`migrations.rs`），`repo/runner.rs`（领取、续约、栅栏、核对的收尾事务）、
+  `repo/cleanup.rs`（清理和迁移的跨空间查询、带租约的锁）；`repo/uploads.rs` 登记资源和补写核对记录、直接复用按核对记录判断；
+  `repo/drafts.rs` 保存草稿按字段 `$set`、后台任务带栅栏保存；`routes/drafts.rs` 的 `ops-from-upload` 只插 `queued` 任务；完成上传叫醒
+  执行器；`main.rs` 至少 2 个工作线程、停止时等执行器；4.9 的配置项；`commits` 的 `(spaceId, changedAnchors.id)` 索引。核心库：
+  `Job.lastError` 带类别（旧记录的一段文字照样能读）、`notBefore`、`history`、按种类的 `maxAttempts`、`AssetRole::for_purpose`。
+- 二进制样本 `tests/vectors/check/`：43 个文件、45 个用例（同一个文件可以按几个用途检查），拒绝码表写在向量 README 第 9 节，
+  命令行（S5）用同一套码。
+- 本地设施：`up.sh` 不再起处理服务，副本集的探测和初始化改用新的 `infra/dev/mongo.mjs`（不需要 Python）；`e2e.mjs --only`，默认
+  `1,8,9`，本机跑了两次全部通过。
+- 实测（`api/README.md`）：最坏负载的峰值第一次约 2.9 GB——重任务同时留着全部解析出的操作、工作状态、全部记录的 JSON 和对应的
+  数据库文档；改成下面第 3 条以后约 0.95 GB（含测试进程本身）；1 GiB 扫描核对 2.9 秒；核对期间健康检查最慢 12 毫秒。真实的
+  Scaniverse 导出 zip 通过；macOS"压缩"的 zip 没有真机，按它的布局（deflate、数据描述符、目录项、`__MACOSX/`、`.DS_Store`）造了
+  一份，通过。
+- 实现时补上的细节（设计没写到，按最小的写法定下）：
+  1. 新凭据 `BackgroundGrant`（授权层签发、写审计日志），领取、清理、迁移的跨空间查询只接受它；具体到某个空间仍用
+     `Authorizer::system_space`；
+  2. 任务视图的 `lastError` 照旧是一段文字（命令行不用改），另加 `errorClass`、`notBefore`；
+  3. `ops_from_upload` 边解析边作用：每次喂 16 KiB 原文，攒够 2000 条就先作用（`timeline::drafts::AppendSession`），最后核对整份
+     文件的哈希；结果记录先只收集资源做检查，通过后每 500 条写一批（4.8 的预算原来按"解析出的全部操作 + 工作状态"算，实测超了）；
+  4. 检查器的细则：扫描的 glb 只做轻量检查，不按扩展白名单查（扫描可能用 Draco）；JPEG 只认 SOF0–SOF2，无损、分层、算术编码
+     拒绝（`jpeg_unsupported`）；zip 的目录项忽略，成员名不是 UTF-8 拒绝，带数据描述符时本地头的大小可以是 0；OBJ 只要求不含 NUL；
+     glb 里图片的拒绝码保留图片本身的码；上传核对通过后再按用途的上限判断（`check::fits`，超出是 `over_limit`）；
+  5. 后台迁移只补核对记录、不按上限判断（上限在引用时按当前配置判断）；
+  6. `authored` 用途：核对一律拒绝（`retired_purpose`），清理第 1 步把还没完成的标记失败——旧的物件集导入在 S4 删掉之前也没有
+     处理服务能执行，与其让上传白白占着配额；
+  7. 卡在 `complete` 的上传所在空间已经不在（或换了主人）时，清理用跨空间凭据直接标记失败、删数据块；
+  8. `UPLOAD_MAX_BUNDLE_BYTES` 不能比核心库的 16 MiB 大（交包时整份读入）；`UPLOAD_MODEL_FORMATS` 只接受 `glb`。
+- 与设计的偏离：
+  1. **按核对记录判断引用的角色没在 S2 做**：13.2 S2 的文件清单写了 `repo/blobs.rs` 的 `kind_fits` 改成按 `check` 判断，但 13.1 的
+     S3 一行和 S1 的实施记录都把它放在 S3；S3 正在并行开发，为了不在同一处冲突，S2 只让资源元数据带上核对记录、Content-Type 按
+     `check.format`、创建上传时的直接复用按核对记录判断。所以 S2 合并以后到 S3 合并之前，新上传的物件模型（没有 `sourceHash`）还
+     不能被物件引用（`model_import` 已下线），这是中间状态；
+  2. `upload_verify` 的处理放在 `runner/upload_verify.rs`（文件清单写在 `verify/mod.rs` 里），`verify/` 只放检查器；
+  3. **部署检查 `check-app` 提前改了一处**（10.2 原定 S9 改）：`up.sh` 不再起处理服务以后，`check-app` 仍要求它给处理服务设
+     `OPENBLAS_NUM_THREADS`、`OMP_NUM_THREADS`、`MALLOC_ARENA_MAX`，持续集成会失败。改成只在 `up.sh` 起处理服务时检查；
+     `app.json` 里处理服务自己的线程变量照旧检查（R2 之前线上仍跑旧的处理服务），S9 删处理服务时连同这条规则一起删。
+- 中断后的收尾（这一步做到快结束时机器重启，之后接着做）：补上上面第 3 条；执行器在索引就绪之前收到停止信号也直接退出
+  （原来等就绪的循环不看停止信号，数据库一直连不上时停止会卡住），加了测试；重新跑了全部检查和本机验收（结果见合并请求说明）。
 
 #### S3 重建路径
 
@@ -980,6 +1081,58 @@ S8 ─────────────────────────�
   - 没定义实体区的空间：实体区草稿能挪锚点，虚拟区和地块里的操作被拒；
   - OpenAPI 里出现 12 个新 `operationId`。
 
+S3 做完后的状态（实施记录）：
+
+- 接口服务：新 `routes/rebuild.rs`（2.3 的 12 个接口，标签 `rebuild`，复用实体区的上传、草稿、任务步骤：`routes/uploads.rs` 的
+  `UploadPath`、`routes/drafts.rs` 和 `routes/jobs.rs` 的内部函数按范围参数化）；鉴权 `Capability::WriteRebuild` 与
+  `Authorizer::require_rebuild_write` / `rebuild_space`；交包任务 `runner/bundle_job.rs`（`ops_job.rs` 按 `source: "bundle"` 分派）
+  和展开 `timeline/bundle_apply.rs`（`apply_bundle`，S4 的 `bundle_import` 直接复用）；`timeline/drafts.rs` 的追加按核对记录判断
+  角色、模型与记录一致、模板完整性、两类资源，发布的 `layer:rebuilt`、`scan`、`unchanged`、`observedAt`、默认说明和脚本；
+  `timeline/state.rs` 工作状态带范围种类、草稿的扫描、按需加载的锚点历史；`repo/blobs.rs` 的 `AssetRole` 换成核心库的角色、
+  `kind_fits` 换成按核对记录判断（`check_asset_roles`）；`repo/commits.rs` 的 `CommitPlan` 加 `scan`、`bundle_ref`、`job_id`、
+  `held_assets`，提交事务里条件写 `frame`、栅栏带上包清单和扫描，`anchor_history`；`GET space` 返回 `uploadLimits`，查询上传返回
+  `check`，`/api/v1` 快照带 `scan.alignment`。
+- 测试：`tests/rebuild.rs` 8 个用例覆盖上面的验收各项（权限两种配置、member、真实上传清单到发布、两种草稿互不相通、模板、冲突与
+  重放、没有变化和锚点不复活、文件角色、没有实体区）；`openapi.rs` 单元测试核对 12 个 `operationId`；原有测试里按 `kind`、
+  `sourceHash` 判断角色的用例改成按核对记录（`tests/timeline.rs`、`tests/events.rs`、`tests/asset_fence.rs`）。
+- 实现时补上的细节（设计没写到，按最小的写法定下）：
+  1. 交包时除了草稿已有 `bundleRef`，这个草稿还有排队或运行中的 `ops_from_upload` 任务也 409 `bundle_already_applied`（两个交包
+     请求挨着来时，第二个在返回 202 之前就被拒；并发漏过去的仍由执行器第 1 步拦住）；清单超过上限在返回 202 之前 413
+     `bundle_too_large`；
+  2. 展开时清单不合规、文件不合用途、作用操作被拒，任务都按 `content` 失败，说明写进 `lastError`（接口层的 422 码是
+     `invalid_bundle`）；展开的操作文件按规范 JSON 一行一条，登记成 `kind: ops`、`format: ndjson` 的资源（不写核对记录，只被草稿
+     和提交引用），同一份清单展开得到同一个哈希；
+  3. 任务结果在 2.6 第 7 步之外另有 `manifestHash`、`opsHash`、`draftId`、`rev`；`anchors.created` 是编号列表（命令行按列表或
+     个数都能显示）；`entities.placed` 含模板；
+  4. 锚点漂移只看这次碰过的物件所关联的锚点：关联物件（不含模板）的格子范围合起来与锚点的盒子不相交；锚点没有盒子（只有
+     `position`）时按它所在的一格算；
+  5. `layer:rebuilt` 判断"改过重建层"时，除了 `actor.scope = rebuild` 和旧的 `actor.kind = job`，`actor.kind = rebuild` 也算；
+     一个重建草稿只有锚点、没有重建层内容时同样登记 `layer:rebuilt`（2.7"每个重建草稿都登记"）；
+  6. 重建草稿碰过物件就把 `touched.rebuiltLayer` 记为 true（不只是有 `clearRebuilt` 时）；
+  7. 发布结果 `PublishView` 的 `commitId`、`at` 改成可省略（`unchanged` 时没有）；草稿视图多 `heldAssets`、`bundleRef`、`scan`、
+     `defaultMessage`、`defaultScriptRef`、`unchanged`，`touched` 多 `scan`、`rebuiltLayer`；
+  8. 路径里的用途按核心库的名字认（含 `webmodel`、`bundle`）：实体区、地块路径上传这两种从 404 变成 403 `scope_violation`，
+     重建路径上传 `ops`、`authored` 也是 403；
+  9. 提交事务里写 `frame` 放在 `repo/commits.rs`（事务代码在那里），没有改 `repo/spaces.rs`。
+- 与设计的偏离：
+  1. **追加后的模板完整性只报与本草稿有关的缺口**：2.5 第 3 条写的是"工作状态里每个物件引用的模板都要存在"，实现成"碰过的
+     物件引用的模板不在、或碰过的模板还被引用"才 409（发布时本来就是这样）。基础版本里已有的旧缺口（例如跨层的旧引用）不是这个
+     草稿造成的，按原文会让这个空间之后的每个草稿都追加不进去。线上没有这类旧数据（S1 的核对），新写入的缺口照样被拦住。
+     SHAPES 第 3 节同步改了；核心库的 `broken_template_refs`（Rust、TypeScript）仍是整份状态的检查，向量不变；
+  2. **`scriptRef` 也按核对记录判断**（角色"文本"）：原来看 `metadata.kind = script`。后台迁移 `backfill-asset-check-v1` 只补
+     扫描、网页用模型、物件模型、贴图，所以 R2 之前上传的旧脚本不能再当新提交的 `scriptRef`（重新按 script 用途上传同一内容即可，
+     登记时撞名会补写核对记录）；线上只有处理服务写过 `scriptRef`，已有提交不受影响；
+  3. 交包展开和写回放在 `timeline/bundle_apply.rs`、`runner/bundle_job.rs`，没有都写进 `timeline/drafts.rs`（13.2 的文件清单）：
+     S4 的种子导入要复用同一个展开函数，单独成文件更清楚。
+- 留给后面几步接上的：
+  1. S4：`bundle_import` 用 `timeline::bundle_apply::apply_bundle` 展开、再按 2.7 发布；"由后台任务发布时再加任务状态的条件
+     更新、提交带 `jobId`"还没做（`CommitPlan.job_id` 已有，提交事务里还没有任务栅栏），种子发布遇到冲突自动重放也在 S4；
+  2. S4 删旧接口之前，实体区路径照旧收 `scan`、`authored` 上传（`check_legacy_upload_purpose`），旧的扫描导入接口照旧能建任务；
+  3. 预览资源接口仍是"草稿的 `assets` + 本空间任何时候登记过的 `assetRefs`"（现有规则，没有收窄到基础版本及更早）；
+     ——S9 复核后已收窄：`assetRefs` 加 `seq`（最早引用它的版本号），旧数据按 `commitId` 查提交的版本；
+  4. S9：本机设施 `infra/dev/mock-nyxid.mjs` 还没有带 `metaverse:rebuild:write` 的身份，九步验收还不经过重建路径；
+  5. 网站对提交的发布者类别 `rebuild`、预览的范围 `rebuild` 只按原文显示（没有专门的文案），S8 或以后按需要补。
+
 #### S4 演示种子 + 删除旧代码
 
 - **改哪些文件**：
@@ -990,41 +1143,385 @@ S8 ─────────────────────────�
 - **接口与数据**：第 7 节；任务参数 `{manifest, sources, revision}`。
 - **验收**：本机 https 测试服务器当 GitHub 和 Scaniverse：新库全流程（建空间、下载、打包扫描、登记、展开、发布）；已有旧任务的版本什么都不做；版本加一在同一空间追加；**第一次 404、重启后成功**（重新排队）；403、429 先重试；**租约丢失后在"追加"和"发布"之间重做**，结果只有一个提交；发布时有冲突自动重放；没有变化写 `unchanged`；主机不在列表、重定向到列表外、哈希不符、清单不合规、来源表缺文件各自失败且不重试；空间不是种子建的不碰；旧格式配置只记错误、服务照常就绪；6 个旧路由和 `authored` 上传返回 410。
 
+S4 做完后的状态（实施记录）：
+
+- 部署种子：`demo_seed/config.rs`（7.1 的新格式，旧格式记错误日志、跳过）、新 `demo_seed/hosts.rs`（`METAVERSE_DEMO_SEED_HOSTS`，
+  写法同本地工具，每一跳重定向都查）、新 `demo_seed/sources.rs`（来源表）、`demo_seed/fetch.rs`（流式下载，`fetch` 与 `content`
+  两类失败）、`demo_seed/pack.rs`（`ZipBuilder` 逐个成员写本地头和数据、最后写中央目录，`stored_zip` 只给测试和向量用）、
+  `demo_seed/mod.rs`（7.2 的启动流程，下载失败的任务重新排队并写 `history`）；新 `runner/bundle_import.rs`（7.2"执行器做
+  `bundle_import`"，`SlotClass::Heavy` 领取它）；`runner/upload_verify.rs` 的核对拆成 `verify`，种子在自己的任务里调用（只核对
+  租约、不完成任务）。
+- 发布：`timeline::drafts::publish` 改按 `Publisher`（调用者或系统发布者）写提交，`PublishOptions.job` 带任务栅栏；提交事务里
+  按租约栅栏把任务标记完成（`CommitPlan.job_done`，结果补上 `commitId`、`seq`），"没有变化"时草稿标记已发布和任务完成在同一个
+  事务里（`Repo::mark_draft_unchanged_for_job`）；后台任务保存草稿可以只写进度（`JobStep::Progress`）。
+- 旧接口：新 `routes/retired.rs`，6 个路由 410 `endpoint_retired`；`authored` 用途在实体区、地块、重建三组路径的创建、传片、完成、
+  查询都是 410；实体区、地块路径上传 `scan` 422 `purpose_not_allowed`；`routes/jobs.rs` 只留任务查询（标签 `jobs`），`hints`、
+  `scan_params`、`AUTHORED_KIND`、`MAX_HINTS_BYTES`、`check_legacy_upload_purpose`、核心库 `metaverse_core::authored` 和
+  `tests/demo_authored.rs`、上传核对的 `retired_purpose`，以及只给旧接口用的数据访问方法（`scan_committed`、`asset_availability`）
+  都删了。
+- 部署：`infra/chrono-cd/demo-seed.json` 和 `app.json` 的 `METAVERSE_DEMO_SEED` 换成新格式（版本 3、不带 `bundle`）；
+  `check-app.mjs` 按新格式校验；`infra/dev/demo-seed.mjs` 遇到旧格式直接报错；`up.sh` 给接口服务设默认的种子主机列表。
+- 测试：`tests/demo_seed.rs` 按上面的验收重写（10 个用例）；`tests/uploads_jobs.rs` 加旧接口和物件集上传 410、旧任务记录照样能查；
+  用到扫描上传的测试改走重建路径（`runner_support::upload_declared` 按用途选路径，测试设施加了带重建权限的调用者）。
+- 实现时补上的细节（设计没写到，按最小的写法定下）：
+  1. 种子的上传会话编号由（任务、文件哈希）算出，重做时接着用：`open` 的重写全部分片（8 MiB 一片），`complete` 的直接核对，
+     `failed`、`expired` 的删掉重建；会话不带 `jobId`，卡在 `complete` 时由清理第 1 步按"任务记录不存在、完成超过 24 小时"收尾；
+  2. 文件的上传格式按清单路径的扩展名定，规则与命令行 `bundle push` 相同（扫描 zip/glb/drc/obj，模型 glb，贴图
+     png/jpg/jpeg/webp，建模记录文本）；清单本身也走一个上传会话（用途 `bundle`），展开时从 GridFS 读；
+  3. 下载前按要下载的文件总量查空间的存储上限，超了按 `content` 失败；
+  4. 种子的草稿编号由任务编号算出；展开、追加以后在同一个事务里把结果摘要写进任务的 `progress`，重做时草稿的 `bundleRef` 已经是
+     这份清单就不再下载，结果摘要取进度里的；草稿已发布而任务没完成（正常不会出现）时按草稿补完成任务；
+  5. 提交事务和"没有变化"的事务里**先查任务租约、再占草稿**：新的持有者可能已经发布了同一个草稿，旧的持有者应当得到"租约丢了"
+     而不是"草稿变了"；
+  6. 种子的包不能引用目标空间已有的模板（解析清单时不传空间的模板表）：种子要在新库里也能展开；
+  7. 来源表的键必须在清单的 `files` 里；`zip` 只用于 `scan` 用途、`.zip` 结尾的文件，按成员算出的打包长度必须等于清单写的大小，
+     启动时就能查出成员、顺序或大小写错；
+  8. 主机列表在读配置时就核对清单和来源表的地址；带 `bundle` 却没设主机列表、主机列表本身写错，都与别的不合法配置一样启动失败；
+  9. 发布说明是 `note` 加"（部署配置种子第 N 版）"，超过 2000 字时截断 `note`；结果摘要里的 `anchors` 是展开时（基础版本上）的
+     结果，发布时自动重放的话以提交为准；
+  10. 410 的旧接口不解析请求体；`authored` 在解析路径里的用途时就返回 410，不看权限。
+- 与设计的偏离：
+  1. **`check-app` 的种子规则、`up.sh` 的种子主机列表、chrono-cd 和本地设施 README 的种子一节提前到 S4 改**（10.2、10.3 原定
+     S9）：`demo-seed.json` 换成新格式以后必须与 `app.json` 一致并通过检查，文档也不能还写着旧流程。`METAVERSE_DEMO_SEED_HOSTS`
+     只在种子带 `bundle` 时要求（10.2 写的是"显式写出"，S9 把它加进 `app.json` 时改成始终要求）。**`app.json` 只换了种子这一项，
+     镜像没换**：按现在的 `app.json` 部署会让旧镜像读不了新格式的种子而启动失败，种子格式和镜像必须在 R2 的同一次 `PUT` 里一起换；
+  2. 跨语言向量 `tests/vectors/demo_seed_zip.json` 字节不变：Rust 测试按新的打包代码重算 zip 字节，`registered`、`single` 两段是
+     本地工具嗅探的结果，改成按字面值写（`single.format` 是本地工具的叫法 `draco`）；本地工具那边的测试照旧读它。
+- 留给后面几步接上的：
+  1. S9：`app.json` 加 `METAVERSE_DEMO_SEED_HOSTS`（README 环境变量表同步）并让 `check-app` 始终要求；镜像换成 R2 的；九步验收和
+     `mock-nyxid.mjs` 的重建身份（S3 留下的）；`infra/chrono-cd/demo/README.md` 里物件集的旧流程；
+  2. S10：前厅第 4 版的清单和来源表（`infra/chrono-cd/demo/lobby-r4/`）、种子改成版本 4 带包；
+  3. S3 留下的"预览资源接口的范围没有收窄到基础版本及更早"仍在。
+
 #### S5 命令行
 
 - **改哪些文件**：`sdk/typescript/src/commands/`：删 `scan.ts`、`rebuild.ts`、`voxelize.ts`、`authored.ts`；新 `bundle.ts`（`check`、`push`）；改 `publish`（在 `common.ts` 或所在文件）认重建草稿；改 `pull.ts`（`--scan` 分段下载、`--share`、`limits.json`）；`index.ts` 注册。`src/transport/api.ts`（重建路径、`Range` 分段下载、公开快照）、`src/transport/upload.ts`（重建上传）；新 `src/core/check/{glb.ts, image.ts, zip.ts}`；技能说明 `metaverse-reconstruct`；`sdk/typescript/README.md`。
 - **接口与数据**：6.5、6.6、8.4、8.5。
 - **验收**：`bundle check` 跑 `tests/vectors/bundle/` 的结构部分和 `tests/vectors/check/` 全部样本，结果与 Rust 相同；`bundle push` 对着模拟接口跑通：没有 `base` 拒绝、空间不符拒绝、复用、上传、等待、交包、预览、发布、`unchanged`、冲突后 `--replay`、本地缺文件且不能复用时停下；`pull --scan` 断点续传；`pull --share` 不写令牌进工作区；sdk 的 lint、typecheck、format、测试、构建全过。
 
+S5 做完后的状态（实施记录）：
+
+- 命令行：删掉 `scan`、`rebuild`、`voxelize` 和 `commands/authored.ts`（运行它们时说明改用本地工具和重建包，不只说"不认识"）；
+  新 `bundle check`、`bundle push`（`commands/bundle.ts`，目录检查在 `workspace/bundle.ts`）；`publish` 按 `out/drafts.json` 的
+  记录或 `--rebuild` 走重建路径，显示"没有变化"，409 的冲突、`broken_template_ref`、`asset_gone` 分别说明处理办法；`pull` 写
+  `limits.json`、`--scan`（`transport/download.ts`）、`--share`（`transport/public.ts`）。传输层的路径范围扩成实体区、地块、
+  重建三种（`ScopeRef`），请求可以带 `Range`，任务的 `lastError` 兼容 `{class, message, at}`。
+- 资源核对的命令行实现 `src/core/check/`（`glb.ts`、`image.ts`、`zip.ts`、`text.ts`（drc、obj、文本、操作文件、清单外层），
+  `index.ts` 里是按用途和声明的格式分派、`fits`、`modelFitsBounds`），按 4.4–4.6 和 SHAPES 8 写，再逐条对齐 S2 的检查器
+  （`runner/verify/`）：检查的先后、拒绝码、"先检查、再按用途的上限判断（超出是 `over_limit`）"都相同。
+- 测试对着假接口服务（`tests/helpers/fakeApi.ts` 补了重建路径、重建权限、交包、`unchanged`、`Range`、公开读），验收列的
+  每一项都有；资源核对按 6.5 列出的样本在内存里生成（`tests/helpers/samples.ts`），另跑 S2 的二进制样本（见下面第 1 条）。
+- 设计没写到、实现时定下的（最小的写法）：
+  1. **拒绝码和样本**：用 S2 定下的那一套（向量 README 第 9 节）。`checkAsset(用途, 文件, 上限, 声明的格式?)` 不给格式时按
+     内容认（命令行上传时就声明这个格式）。`tests/check-vectors.test.ts` 读 `expected.json` 的 `{version, limits, cases}`，
+     按声明的格式和按内容认各跑一遍；目录还没有时跳过。S5 收尾时 S2 还没合进来，用 `METAVERSE_VECTORS_DIR` 指向 S2 分支
+     导出的 `check/` 跑过：45 个用例（含操作文件和清单外层）的核对记录和拒绝码全部与 Rust 相同；
+  2. glb 检查的细节（与 Rust 相同）：`check.nodes` 是 JSON 里 `nodes` 的个数；没有场景、场景里没有网格或顶点是 `glb_empty`；
+     `POSITION` 没有 `bufferView` 拒绝；`min`/`max` 按分量的原始值与数据核对（glTF 规定 `normalized` 不影响它们），还原后的
+     值才进世界包围盒；成环对全部节点查（不只是场景走得到的）；扩展的键在整个 JSON 里找（含 `extras` 里的）；扫描用途的
+     轻量检查也查缓冲区视图的范围和图片的引用，但不读 BIN 块的数据，`images` 为空、`maxTextureSide`、`texturePixels` 为 0；
+  3. zip：名称以 `/` 结尾的目录项与 `__MACOSX/`、`.DS_Store` 一样忽略（仍查路径安全，macOS 压缩文件夹会带目录项）；有数据
+     描述符时本地头里的大小和校验值可以是 0；成员名必须是 UTF-8、不含控制字符；drc 的主版本认 1 和 2，编码类型必须是网格；
+     obj 整份不含 NUL、开头 1 MiB 里要有几何关键字；操作文件的 gzip 只认一个成员并核对校验值；
+  4. `bundle push` 必须在工作区里运行（要用 `metaverse.json` 的调用方式和空间编号），`bundle check` 可以在工作区外给出目录；
+     本地缺的文件先逐个做复用探测，全部能复用才开始传别的（探测不能复用时留下一个打开的上传会话，24 小时后被清理收走）；
+     本地缺的文件按扩展名定上传格式；`base.seq` 超过最新版本时拒绝；`--replay` 只能和 `--publish` 一起用；
+  5. 交包任务结果里的 `anchors.created` 认个数或编号列表两种写法，`skipped[]` 的编号认 `id` 或 `anchorId`。
+- 与设计的偏离（都是最小的）：
+  1. `pull --scan` 只有 zip 写成 `scan/scan.zip`；旧空间的扫描是 glb、drc、obj 时按格式写成 `scan/scan.glb` 等并提示（本地
+     工具要用 `--scan` 指定），不把别的格式存成 `.zip`；
+  2. `pull --share` 要在已有的工作区里运行，链接的空间要与工作区相同；除了设计列的文件，也写方块表和区块（公开快照里就有），
+     这样只读工作区照样能 `build`、`dev`；
+  3. `tests/vectors/check/` 由 S2 生成，S5 的分支里还没有：验收里"结果与 Rust 相同"按上面第 1 条的办法对着 S2 分支的样本
+     做过；两步合并后运行器自动读仓库里的目录。向量 README 第 7 节表里 `check/` 一行的命令行一栏到时改成
+     `tests/check-vectors.test.ts`。
+  4. 资源核对也收 `ops`、`bundle` 两个用途（设计只要求命令行查重建包里的五种文件），为了跑全部样本；
+  5. 文档：除了 `sdk/typescript/README.md` 和技能说明，`docs/tutorials/build-space.md` 的命令表也换掉了删掉的三个命令
+     （其余教程按计划在 S6b、S9 改）。
+
 #### S6a 本地工具去掉服务端部分
 
 - **改哪些文件**：`worker/src/metaverse_worker/` 按 8.2 删左列；`worker/src/metaverse_worker/processing/limits.py`（新，接住 `config.Config` 里的解析上限），工作台的 `recon/prepare.py`、`recon/reframe.py` 改用它；Mongo 测试按 8.2 分流；`worker/pyproject.toml` 去掉 pymongo 和服务入口；删 `infra/worker/`、`.github/scripts/pytest_require_mongo.py` 及测试；`.github/workflows/images.yml` 去掉 worker；`.github/workflows/ci.yml` 的 worker 任务不再起 MongoDB、hadolint 只查两个 Dockerfile；`.github/dependabot.yml` 删 worker 两项；`infra/chrono-cd/check-pins.mjs` 去掉处理服务构建后端的检查。`app.json`、`check-app` 留到 S9。
 - **验收**：剩下的 pytest 不连数据库全过；`metaverse-recon prepare` 在前厅上的结果（变换、结构、物体编号）与改动前完全相同；持续集成全绿。
 
+S6a 做完后的状态（实施记录）：
+
+- 删掉：`__main__`、`runner`、`health`、`config`、`store`、`assets`、`uploads`、`jobs/`（含子进程隔离）、`handlers/`、
+  `scripts/demo_seed_hints.py`；`errors.py` 只留 `PermanentJobError`、`InputRejected`；`pyproject.toml` 去掉 pymongo 和
+  `metaverse-worker` 命令，`uv.lock` 重新锁定（少了 pymongo、dnspython）。
+- 新增 `processing/limits.py`（常量 + `default_limits()`，键和数值与原来 `JobContext.limits()` 相同）；工作台 `prepare`、
+  `reframe` 改用它。
+- 新子包 `bundle/`，接住原来处理服务里与数据库无关的重建知识，输出普通数据和工作目录里的文件、不写提交：
+  `anchors.py`（锚点规则）、`sources.py`（下载外部模型，主机列表取 `METAVERSE_RECON_MODEL_HOSTS`，没设时用
+  `fetch.DEFAULT_MODEL_HOSTS`）、`rebuild.py`（`rebuild_scan`：对齐 → 网页用模型 → 结构和物体或 AI 物件集 → 核对贴图和
+  模型的哈希 → 建议锚点；重扫配准误差超限时返回 `needsAlignment`；物件集引用的贴图本地有文件的列进 `existingTextures`，
+  没有的照旧交给计算部分判断能不能回退）。S6b 在它上面加清单写出、`rb.` 编号、`--seed`、`--from-snapshot`、`base` 和命令。
+- 测试：Mongo 测试 7 个文件（约 60 个用例）里，服务端语义的已在 S2 移植成 Rust 测试，直接删；重建语义的（物件集写回、
+  外部模型下载失败、结构贴图回退、锚点提示、重扫配准和转人工、物体模块缺失只交结构、prepare 与导入一致）改成
+  `tests/test_bundle_rebuild.py` 和 `test_recon_prepare.py` 里不连数据库的用例。`conftest` 去掉数据库夹具。
+- 部署与持续集成：删 `infra/worker/`、`.github/scripts/pytest_require_mongo.py` 及测试；`Images` 只构建 `api`、`web`；CI 的
+  worker 任务不起 MongoDB，按 10.2 改成 `uv sync --frozen --extra dev`、ruff、pytest；hadolint 只查两个 Dockerfile；
+  Dependabot 删 `/infra/worker` 的 docker、pip 两项；`check-pins` 删掉处理服务那两条规则。
+- 实测：pytest 562 个通过、3 个跳过（渲染工具不全时跳过；指定 three 的位置后这 3 个和其余渲染相关的用例都通过）；
+  前厅 `prepare`（drc + 贴图 + 提示）改动前后的 `transform.json`、`structure.json`、`objects.json`、`candidates.json`、
+  `scan.glb`、两个贴图目录逐字节相同，`base.json` 只有耗时不同。
+- 与设计的偏离：
+  1. 锚点规则原来在 `handlers/scan.py`（1.3、8.2 原来写的是 `jobs/writeback.py`，那里只有写提交，已改正），搬进
+     `bundle/anchors.py`；
+  2. `check-pins` 除了"构建后端按版本和哈希固定"，把"`uv pip install` 不从 PyPI 拉没固定的包"也删了：它只为处理服务的
+     Dockerfile 而设，剩下的两个镜像不装 Python 包；
+  3. 体素化风格名（`default` / `coarse` / `fine` → 颜色数）只给已下线的 `voxelize` 任务用，随 `handlers/` 删掉；本地的
+     `voxelize_task` 直接收颜色数；
+  4. `worker/README.md` 这一步就改写了（13.2 原定 S9 改各 README）：原来写的是服务的启动、环境变量、任务、清理，
+     代码删了再留着会误导；`infra/chrono-cd/README.md` 里指向已删文件的三处也改成文字说明，其余处理服务的部分仍留到 S9；
+  5. 外部模型主机列表：`bundle.sources` 的默认值是 `fetch.DEFAULT_MODEL_HOSTS`，工作台 `recon/models.py` 读同一个环境变量
+     但默认值更窄（只有 `dl.polyhaven.org`、`huggingface.co`），S6b 做 `models` 命令时统一。
+- 中间状态（到 S9 之前）：`app.json` 里仍有处理服务，固定在以前构建的镜像摘要上；`Images` 不再构建它，所以部署接口服务或
+  网站的新版本时用 `pin-images.mjs --patch` 只换 `api`、`web`（完整规格要三个摘要时，处理服务填现在线上那个）。
+
 #### S7 改名
 
 - **改哪些文件**：8.1 的清单。
-- **验收**：`git diff -M --stat` 除清单里列出的几处外全是改名；全部测试和持续集成通过；在仓库外的临时目录 `uv tool install ./recon` 后跑 `metaverse-recon doctor --install` 和一次 `prepare`。
+- **验收**：`git diff -M --stat` 除清单里列出的几处外全是改名；全部测试和持续集成通过；在仓库外的临时目录 `uv tool install ./recon` 后跑 `metaverse-recon doctor` 和一次 `prepare`（`doctor --install` 是 S6b 的新参数，挪到 S6b 验收）。
+
+S7 做完后的状态（实施记录）：
+
+- 两个提交：第一个只改名——`git mv` 目录、包和工作台子包，`recon/` 里的导入路径、模块路径字符串（物体重建模块入口
+  `OBJECTS_TARGET`）、测试里的文件路径、README 和注释里的路径，导入改名后按字母序重排；`pyproject.toml` 的项目名、命令入口、
+  `package-data` 的键；`uv.lock` 重新锁定（只有本项目的名字变了）；`bench/env.py` 的 `repo_root()`；CI 和 Dependabot。第二个改
+  仓库里其余指向 `worker/` 的路径：接口服务测试 `demo_seed.rs` 里直接调用本地工具嗅探 zip 的用例（改读 `recon/.venv`、导入
+  `metaverse_recon`，环境变量改叫 `METAVERSE_RECON_PYTHON`，不改的话这个用例会一直跳过）、`api/README`、根 README 的目录说明、
+  `infra/dev` 的 `up.sh` 和 README、`check-app` 的注释、`infra/chrono-cd` 的 README 和 `demo/README`、跨语言向量 README、
+  PROGRESS 的链接、教程 `reconstruct-with-ai.md` 的安装命令、网站 `scene.ts` 的一处注释。
+- `git diff -M`：131 个文件全部识别成改名（82 个内容不变，其余只改了路径；相似度最低的是 7 行的 `bench/__main__.py`），另有
+  14 个文件只改路径；`git log --follow`、`git blame -M` 都追到改名前的历史。
+- 实测：ruff、pytest 562 个通过、3 个跳过（渲染工具不全时跳过，指定 three 后渲染相关的 41 个全过）；仓库外用 `uv tool install`
+  装到临时目录，`doctor` 如实报告缺 three，按它的提示 `npm install --prefix <缓存>/node three@0.184.0` 后能渲染；前厅 `prepare`
+  （drc + 贴图 + 提示）36 秒，输出与 S6a 的基线逐字节相同（`base.json` 只有耗时不同）。
+- 与设计的偏离：
+  1. Dependabot 用的是 `package-ecosystem: uv`（`pip` 那一种不读 `uv.lock`），一周的更新合成一个合并请求；
+  2. CI 的任务名从 `worker` 改成 `recon`，显示名"本地重建工具（recon）"：分支保护里如果把旧名字设成了必须通过的检查，要跟着改；
+  3. 写进输出的生成者名称（glb 的 `generator`：`chrono-metaverse-worker`、`metaverse-worker preview`）和下载时的 User-Agent 没改：
+     改了输出就不再逐字节相同，不算纯改名；`reframe` 坐标系名里的别名 `worker` 和 Python 测试函数名里的 worker 也照旧。
+     这几处留给 S6b（和 `scan_import` 坐标系改名一起）决定；
+  4. 即将被别的步骤删除或重写的地方没动，免得合并时冲突：命令行的技能说明、README 和 `authored`、`rebuild`、`voxelize` 三个命令
+     （S5 已改写或删除，S5 分支里已经没有 `worker/` 的路径）；接口服务里物件集相关的代码、注释和 README 段落，`repo/commits.rs`、
+     `repo/jobs.rs` 指向已删文件的注释（S4）；处理服务的部署部分（`app.json`、`check-app` 的规则、`pin-images`、chrono-cd README
+     的处理服务各节、`down.sh`、`e2e.mjs`、`.dockerignore` 第一行、教程 `cloud-claude-code-nyxid.md`、PROGRESS 的表）（S9）；
+     `docs/BUILD_PLAN.md` 是第一版的计划，按历史保留；
+  5. 根 README 的目录说明顺带把 `infra/` 下改成两个 Dockerfile（S6a 删掉处理服务镜像时漏改）。
+- 注意：从本地路径 `uv tool install ./recon` 时 setuptools 在源码目录里留下 `recon/build/`（不在 `.gitignore` 里），装完要删；
+  从 git 地址装（8.4）不受影响。
 
 #### S6b 本地工具新命令
 
 - **改哪些文件**：`recon/src/metaverse_recon/bundle/`（新子包：编排、清单写出、`rb.` 编号、`--seed`、`--from-snapshot`、`base`）、`processing/` 下 `align`、`webmodel`、`modelimport` 的命令入口和导出修正、`bench/cli.py`（新命令注册：`align`、`webmodel`、`models`、`bake`、`fit`、`scan-zip`、`bundle`、`doctor --install`）、`bench/env.py`（往上找 `space.json`、缓存安装）、`recon/README.md`、`docs/tutorials/reconstruct-with-ai.md`。
 - **接口与数据**：6.1–6.4、6.8、8.3、8.4。
-- **验收**：用现在的 `lobby-authored.json` 打出的包：外部模型 glb 的三角形数、包围盒与处理服务现在写回的一致（容差 1 毫米），逐件偏差与现在一致；所有模型过 4.5 的检查（`metaverse bundle check` 通过）；`scan-zip` 跑 `demo_seed_zip.json` 向量；`--from-snapshot` 打出的包展开后，重建层与快照的形状一致（编号除外）；`--seed` 的包里没有内部锚点和建模记录。
+- **验收**：用现在的 `lobby-authored.json` 打出的包：外部模型 glb 的三角形数、包围盒与处理服务现在写回的一致（容差 1 毫米），逐件偏差与现在一致；所有模型过 4.5 的检查（`metaverse bundle check` 通过）；`scan-zip` 跑 `demo_seed_zip.json` 向量；`--from-snapshot` 打出的包展开后，重建层与快照的形状一致（编号除外）；`--seed` 的包里没有内部锚点和建模记录；仓库外 `uv tool install` 后 `metaverse-recon doctor --install` 装好 three 和 Playwright，`doctor` 报告可以渲染（从 S7 挪来）。
+
+S6b 做完后的状态（实施记录）：
+
+- 合并：S7（`worktree-wf_ca4ee70c-68a-9`）和 S1（`worktree-wf_ca4ee70c-68a-2`），快进。
+- **模型物件的旋转**（规格变更）：物件记录多了 `transform`，只能有 `yaw`、`pitch`、`roll`，必须有 `assetHash`、不能有形状；
+  位置由 `bounds` 定，缩放烘进模型（SHAPES 3）。摆法：模型包围盒的 8 个角按 YXZ 顺序转过以后取外包盒，外包盒的底面
+  中心对齐 `bounds` 的底面中心。三边都改了：Rust `record.rs`（校验）、`check.rs`（`rotated_model_bounds`、
+  `model_fits_entity`；`model_fits_bounds` 等于不转）；TypeScript `core/record.ts`、`core/shape.ts`（同样的错误说明）；
+  Python `records.py`（`entity_body(transform=…)`、`validate_model_transform`、`rotated_model_bounds`）；网站
+  `viewer/modelPlacement.ts`（新）和 `sceneView.ts`；操作向量 `ops_place_rotated_models`、`ops_invalid_model_transform`。
+- **外部模型导出**（`processing/modelexport.py`，新）：按材质分开读 glb / glTF（每个材质一组三角形；`REPEAT` 采样器、
+  `KHR_texture_transform` 烘进贴图坐标；法线按 `n · M⁻¹` 变换），调色写进 `baseColorFactor`（sRGB → 线性），金属度 0、
+  粗糙度 = 系数 × 粗糙度贴图 G 通道的平均值；贴图 JPEG（质量 90，用到透明时 PNG），全部贴图像素合计 ≤ 4×2048²
+  （`MODEL_MAX_TEXTURE_PIXELS`，新）。减面：按位置焊接后用 fast-simplification 的折叠历史，**多轮小步**（侵略度
+  1、1、2、3、5、7；一次用默认的 7 会把光滑曲面压平），每个角点的贴图坐标和法线取自原来的角点，位置挪过的角点在
+  同一块贴图里按最近点的重心坐标重新插值（保住接缝）。`authored_build.export_models` 按（模型、俯仰横滚缩放、调色、
+  上限）去重，偏航写进记录；物件的 `material` 默认加 `shading: albedo`。工作台 `place`、`compare`、`views`、`assemble`、
+  渲染页都走这条导出（缓存在 `<缓存>/exports/`）；渲染页 `shading: albedo` 用 glb 自己的材质完整受光（与 S8 网站的
+  画法相同）。
+- **贴图引用**（`bundle/textures.py`）：物件集里贴图三种写法——哈希、外链 `{url, sha256, size}`、本地文件 `{file}`
+  （新，相对物件集文件）——打包时都变成进包的贴图文件，记录里换成哈希；超过上限的图缩小、重新编码。向量
+  `authored/` 跟着改（`{file}` 合法，绝对路径、`..`、多余字段不合法；`summary` 多了 `textureFiles`）。
+- **命令**（`bench/commands.py`、`bench/cli.py`）：`align`、`webmodel`、`models`、`bake`、`fit`、`scan-zip`、`bundle`；
+  `prepare` 加 `--transform`、`--auto-align`。新模块：`bench/workspace.py`（往上找 `space.json`，默认路径）、
+  `bundle/limits.py`（`limits.json`，默认值与向量 `bundle_limits_default.json` 核对）、`bundle/models.py`、
+  `bundle/scanzip.py`（与 `pack.rs` 相同的不压缩 zip，跑 `demo_seed_zip.json` 向量）、`bundle/manifest.py`（`rb.`
+  编号、清单写出、`--seed` 过滤、偏差统计）、`bundle/build.py`、`bundle/snapshot.py`（`--from-snapshot`）。
+  `doctor --install`（`bench/env.py`）：three 0.184.0、playwright-core 1.58.2 装进 `<缓存>/node/`，Chromium 装进
+  `<缓存>/ms-playwright/`。
+- **贴图工作台**（`bench/texwork.py`、`bench/library/textures.py`）：`refshot`（扫描的面正交展开、中位色、建议平铺）、
+  `texture`（`--tile/--offset/--rotate/--shading/--calibrate/--preview`，贴图写成 `{file}`）、`texsearch`、`texfetch`
+  （Poly Haven、ambientCG，只要 CC0；ambientCG 的 DirectX 法线翻成 OpenGL）。
+- **名字**（S7 留下的）：glb 的 `generator` 改成 `metaverse-recon`（预览 `metaverse-recon preview`），User-Agent 改成
+  `metaverse-recon`；`reframe` 的自动对齐坐标系改叫 `align`（旧名 `scan_import`、`worker` 照旧认）；工作台的外部模型
+  主机列表与打包统一（S6a 偏离 5）；工作台输出里"写回时处理服务……"的说法改成打包。
+- 文档：`recon/README.md`、教程 `reconstruct-with-ai.md`、SHAPES 2 第 5 条和第 3 节、向量 README 第 6 节。
+- 实测与验收：
+  1. **前厅打包**（`lobby-authored.json`，扫描 zip 与线上种子同样的成员和顺序，哈希 `bfda42ee…`，给了现有的网页用模型）：
+     物件 52 件、模板 1 个、锚点 5 个、物件模型 8 个（10 件外部模型物件）、贴图 23 张、两档网页用模型，24 MB，约 30 秒。
+     与改动前（`f72558b`）的写回编排逐件比：10 件外部模型的三角形数全部相同，摆好以后的空间包围盒最大差 **0.168 毫米**；
+     逐件偏差 52 件里 51 件完全相同，`chair-06` 的 90% 分位差 0.01 厘米。
+  2. **`metaverse bundle check`**：用 S5 分支的命令行（打上本分支 `record.ts`、`shape.ts` 的改动和 `modelFitsBounds`
+     的旋转，补丁只在验收副本里）检查前厅的包和 `--seed` 包：都"检查通过"。不打旋转补丁时 7 件带偏航的模型物件报
+     尺寸不一致——S5 的 `bundle check` 必须跟着改（见下面的"合并时"）。
+  3. **`--seed`**：前厅的种子包没有 `notes.md`、`report` 只有偏差，5 个锚点都是公开的；去掉内部锚点由单元测试覆盖。
+  4. **`scan-zip`** 跑 `demo_seed_zip.json` 向量（单元测试）；**`--from-snapshot`**：合成的快照打包后，重建层除编号外与
+     快照相同（单元测试）。真实的演示快照没有跑（这个环境没有分享链接）。
+  5. **外部模型回归**：原来坏的 4 个（多材质、平铺贴图）和最终版物件集的 16 个模型逐个渲染对比：4 个修好，其余不变差。
+     外观有三处变化要在 S10 看：机器狗（`clutter-09`）原来的导出丢了贴图（白色），现在带回原文件的黑色贴图，再加上物件集
+     的 tint 后几乎全黑；前台两个键盘按原文件是白色（原来是灰色）；前台显示器原文件的屏幕是白色自发光，新旧导出都是黑的。
+  6. **`doctor --install`**：仓库外 `uv tool install` 到临时目录、空的缓存目录，`doctor --install` 装好 three、
+     playwright-core 和 Chromium，`doctor` 报告"可用"，用缓存里的 Chromium 渲染 `views` 成功。
+  7. **贴图工作台**：前厅会议桌台面 `refshot`（8K 原始贴图，中位色 sRGB (193, 185, 168)）→ `texture --tile 1.3,1.0
+     --calibrate --preview`（概念验证提取的大理石平铺图）：纯色 ΔE 13.99 → 标定后 0.72；`texsearch "white marble"`、
+     `texfetch` 对真实的 ambientCG 跑通。
+- 与设计的偏离：
+  1. 物件记录加了模型物件的 `transform`（8.3 原写"把摆放的旋转烘进网格"）：只差偏航的物件要共用一个 glb，偏航只能
+     放进记录；俯仰、横滚、缩放仍烘进网格。这是 S1 规格的变更，影响 S3、S5、S8（见"合并时"）；
+  2. 物件集的贴图多了 `{file}` 写法（工作台写副本用，打包时进包），`authored/` 向量随之改；
+  3. `processing/limits.py` 新增 `MODEL_MAX_TEXTURE_PIXELS`（4×2048²，与 `limits.json` 的 `model.maxTexturePixels` 对应）；
+  4. `bundle` 在 `PATH` 里找不到 `metaverse` 时不失败，只打印要运行的检查命令；打包报告写在包目录旁边的
+     `bundle-report.json`（同一个工作区打两次会覆盖）；
+  5. `models` 先在缓存和 `--models-dir` 里按 sha256 找本地文件，找不到才下载（`--offline` 不下载）；前厅验收用的是本机
+     缓存里与线上同一哈希的模型文件；
+  6. `doctor --install` 装的是 `playwright-core`（不是 `playwright`），只看缓存目录：别处已经装好的不算，仍装一份固定版本；
+  7. 外部模型只导出颜色贴图：法线、金属粗糙度贴图不导出，金属度一律 0，自发光丢掉；
+  8. 设计没提的：`reframe` 坐标系改名、`texture` 改写原物件文件（旧的存成 `.bak`）、`compare`/`assemble` 输出里偏差的
+     叫法（"记录的 fit"）。
+- **合并时**（别的步骤要跟着改）：
+  1. S3：提交和交包核对只有模型的物件时调 `check::model_fits_entity(model, bounds, body.transform.as_ref())`，不再用
+     `model_fits_bounds`（否则带偏航的物件会被 422）；
+  2. S5：`bundle check` 的 `modelFitsBounds` 要带上 `entity.transform`（算法与 Rust 相同；验收时打的补丁见上），
+     `core/record.ts`、`core/shape.ts` 与本分支合并（本分支改的是同一处校验）；技能说明加上贴图工作台和 `reframe` 的新名字；
+     `pull --share --assets` 不下载贴图，`--from-snapshot` 要另给 `--textures-dir`；
+  3. S8：`sceneView.ts` 的模型摆放本分支已改成 `placeRotatedModel`；兜底缩放要按转过之后的外包盒比（和 `bounds` 比）。
 
 #### S8 网站
 
 - **改哪些文件**：`web/src/viewer/sceneView.ts`（只有模型的物件按实际包围盒兜底摆放）、`ModelSources.tsx` 及测试。
 - **验收**：网站测试里改动说明的断言更新后通过；新测试：一个实际比 `bounds` 大很多的模型被缩进 `bounds`，符合的模型不动。
 
+S8 做完后的状态（实施记录）：
+
+- **改动说明**：`ModelSources.tsx` 的 `MODIFIED_NOTE` 改成"这些模型可能经过调整（摆放烘进模型、减面、调色、缩小贴图）后
+  重新导出，与原文件不同"；组件测试断言新说法并确认面板里不再出现"本服务""处理服务"，端到端测试、SHAPES 3、网站
+  README 同步改。
+- **兜底摆放**（新 `web/src/viewer/modelFit.ts`）：模型加载后逐个顶点算实际包围盒（含节点变换和根节点自己的变换，
+  按模型缓存，时间轴来回拖动不重算）；任何一条边比记录的边长出 max(2 厘米, 记录边长的 1%) 以上时，按 `bounds` 与实际
+  三边之比的最小值等比缩小，再平移让实际包围盒的底面中心落在 `bounds` 的底面中心；控制台和场景警告各记一条。尺寸符合的
+  模型原样挂上（原点有小偏差也不挪），与以前画得完全一样。新测试 `modelFit.test.ts` 用夹具 glb 走 GLTFLoader：三倍大且
+  原点偏了的模型被缩进 `bounds`、符合的不动、容差的两条边界、退化的记录、转过的节点。
+- **贴图材质新字段的画法**（第 12 节原列为以后的增强，按用户这一步的要求一起做了）：
+  - 新 `web/src/core/shapes/look.ts`：按 SHAPES 2 补默认值（`baked`；粗糙度不透明 0.82、半透明 0.1、有粗糙度贴图时 1；
+    金属度 0.02；`normalScale` 1）；网站只管画，不合法的字段按没给处理、不报错；跑 `shape_material_*`、
+    `shape_invalid_material_*` 向量（合法的逐字段相同，不合法的结果仍在取值范围里）。
+  - 新 `web/src/viewer/materials.ts`（`sceneView.ts` 的形状材质、模型材质挪过来）：`baked` 照旧 0.3 受光 + 0.72 自发光；
+    `albedo` 是标准材质完整受光、没有自发光；颜色材质两种取值一样；法线贴图（切线按贴图坐标在着色时推出，
+    `normalScale` 乘到 x、y 上）、粗糙度贴图、粗糙度、金属度作用在受光照的部分；`unlit` 优先，也不下载法线、粗糙度贴图。
+    贴图缓存按（哈希，用途）：颜色贴图 sRGB，法线、粗糙度贴图线性；同一资源只下载一次，别的用途复制一份共用图片；
+    一律重复采样（给了 `tile` 按米重复；不给的网站一直是重复）。
+  - 物件模型解析后不再就地改材质，按每个物件的 `material.shading` 派生：`baked` 照旧烘焙看法，`albedo` 直接用 glb 里的
+    原材质；`tint`、`opacity`、`unlit` 规则不变；扫描照旧一律烘焙看法。`EntityBody.material` 加 `shading`。
+  - 贴图坐标的 `tile`、`offset`、`rotate`（`uv.ts`，跑 `uv/` 向量）T 步已经做了，这次没改。
+  - 新夹具空间"材质样板"（`demo-materials`，首页多一个链接）：按米平铺的地砖（`albedo` + 法线 + 粗糙度贴图）、平铺与
+    不平铺（旧画法）并排的砖墙、颜色材质带法线贴图的墙、柱面平铺的砖柱、同一个带贴图的物件模型按 `baked` / `albedo`
+    两种看法画、记录比模型小一半的木箱（兜底摆放）。端到端测试核对地砖沿 x 每 25 厘米深浅交替（拉伸时 2 米内最多变一次，
+    也核对了贴图 v 向上）和兜底摆放的警告；截图人工看过，不拉伸，不进版本库。
+- **旧数据画出来不变**：新字段都不给时走原来的分支，材质参数与以前相同（单元测试逐项核对）；另把改动前（`6869d16`）和
+  改动后的网站各跑一遍"三种视图""灯光""板、凸包、外部模型""预览页"四个端到端测试，三维画面的截图逐像素比较：
+  前厅三种视图、近景、灯光、花店（含调色的外部模型）、预览页的最大差 ≤ 14、差异超过 8 的像素为 0（灯光背面视角的拖动
+  有 48 个抗锯齿像素不同）；只有"模型来源"面板因为改动说明换了文字而不同。
+- **与设计的偏离**：
+  1. 多做了第 12 节、第 14 节列为以后增强的"网站按 SHAPES 2 画着色方式、法线和粗糙度"（用户这一步的要求），第 14 节
+     相应删掉这一条；
+  2. 兜底摆放只看尺寸（与本节和第 9 节一致），模型尺寸合格而原点偏了的不挪——服务端的"模型与记录一致"已经要求原点在
+     底面中心，网站再挪会让旧数据的画法变化；
+  3. 实际包围盒连模型根节点自己的变换一起量（网站挂模型时根节点的变换也生效）；
+  4. SHAPES 2 补一句：网站没有环境贴图，金属度高了同样发暗（夹具里金属台面因此取 0.4）。
+
 #### S9 部署与开发设施
 
 - **改哪些文件**：10.1–10.4 列出的全部；`infra/dev/mock-nyxid.mjs`（重建权限的身份）；`infra/dev/e2e.mjs` 九步改完、去掉 `--only` 的默认值；各 README；教程 `docs/tutorials/build-space.md`、`reconstruct-with-ai.md`；`docs/SHAPES.md` 里"处理服务"的说法；`docs/PROGRESS.md`。
 - **验收**：新的九步验收在本机全过；`check-app`、`check-pins`、`pin-images` 的测试过；持续集成全绿；`up.sh --demo-seed` 在新库里只建演示空间（R2 的种子不带包）。
 
+S9 做完后的状态（实施记录）：
+
+- **合并**：开发分支已含 S1–S8（S4 含 S1–S3，S6b 含 S6a、S7）；本步再合并 S6b。冲突三处：网站 `sceneView.ts`（S6b 的旋转摆放和
+  S8 的兜底缩放都保留，兜底改按转过之后的外包盒比，新的 `placedModelBox`）、SHAPES 3、本文第 12 节。S6b 留下的"合并时必须
+  一起改"也做了：接口服务的提交和交包核对改调 `check::model_fits_entity` 并传入物件的 `transform`；命令行新增
+  `modelFitsEntity`、`rotatedModelBounds`，`bundle check` 传入 `entity.transform`；两边都补了带偏航的测试。
+- **部署**（10.1、10.2）：`app.json` 删掉 `metaverse-worker`；接口服务 384Mi / 1536Mi；显式写出物件模型、网页用模型、贴图的上限，
+  `PUBLIC_CACHE_BYTES`、`UPLOAD_MAX_CONCURRENT_PARTS`；加 `METAVERSE_DEMO_SEED_HOSTS`。`check-app` 删掉处理服务的检查，加：规格里
+  出现 `metaverse-worker` 报错、上面几项必须显式写出且是正整数、有种子就要有主机列表并且和 `up.sh` 的默认值相同；`pin-images`
+  只认 `api`、`web`。`Images` 工作流在 S6a 已经只构建两个镜像。README 重写了规格、配额、内存预算、NyxID 已注册、
+  "换成瘦身后的版本"一节和回滚条件。
+- **本地设施**（10.3、10.4）：模拟 NyxID 的角色文件加 `permissions`，重建身份 `rita`（组织 admin + `metaverse:rebuild:write`），
+  `alice` 是没有重建权限的组织 admin；`call.mjs` 加 `--permission`。九步验收按 10.4 改完，默认九步，去掉 `--voxelize`；第 2 步
+  `pull` → `align` → `prepare` → `bundle --algorithm` → `bundle check`，第 3 步 `bundle push --publish --part-size 0.25`，第 9 步加了
+  重建路径的反例。
+- **文档**：各 README、重建教程、`PROGRESS.md`（第 7 节）、SHAPES、向量 README 里"处理服务"的说法改成新流程（历史记录保留并注明）；
+  `infra/chrono-cd/demo/README.md` 的物件集流程改成本地打包，整房偏差改成线上第 3 版的 4.19 / 8.18 / 68.2%；方法论用
+  `metaverse-recon` 的解析器逐条核对了命令和参数（没有对不上的），贴图命令已实现、NyxID 已注册的说法跟着改；技能说明加贴图工作台、
+  `reframe --to align`。
+- **本地全流程验证**（4 核）：
+  1. 九步验收第一次就全过：出包 118 秒、推送发布 26 秒，17 种反例都按预期返回；
+  2. 前厅精致模型版（`rebuild/final2/authored.json`）：打包 40 秒、推送发布 28 秒；物件模型 17 个文件（8 把会议椅只差偏航，共用
+     一个 glb），网站优化视图的接口数据 18.7 MB（物件模型 18.3 MB；以前按处理服务的导出估计约 47.6 MB，其中物件模型 38.2 MB）；
+  3. 种子导入同一个包（本机 https、自签证书、新库）：4.8 秒导入完成，结果与命令行发布逐项相同，重启 `AlreadyDone`；
+  4. 旧数据：用 `origin/main`（`77bbdb8`，改造前）的接口服务和处理服务按旧种子写出第 1 版（扫描导入）、第 3 版（扫描 + AI 物件集），
+     再留一个排队中的 `voxelize` 任务；换成新代码以后，第 1–3 版的公开快照和提交列表逐字节相同，种子 `AlreadyDone`，清理第 0 步
+     把 `voxelize` 标记失败，`backfill-asset-check-v1` 给 53 个旧资源补上核对结果、0 失败；再按第 4 版的做法（`pull --scan`、
+     线上两档网页用模型、`lobby-authored.json`）推一个包：扫描、网页用模型和 23 张贴图按哈希复用，锚点 5 个全部跳过，第 1–3 版
+     回放不变；
+  5. `up.sh --demo-seed` 在新库里只建演示空间（`outcome=Created { job_id: None }`）。
+- **与设计的偏离**：
+  1. 10.4 第 2 步写的是 `prepare --scan` → `bundle --algorithm`；`bundle` 要求工作区里有 `scan/transform.json`，新空间第一次重建
+     要先 `align`，所以九步验收、技能说明和方法论都写成 `align` → `prepare` → `bundle`；
+  2. 10.4 第 3 步"同一个包再推一次得到 `unchanged`"要加 `--replay`：清单的 `base` 还是第一次推送时的版本，第一次发布改了重建层，
+     第二次的草稿与它冲突，重放到最新版本后内容没变，才是 `unchanged`；——S9 复核后改了服务端：中途同一个包清单（`bundleRef`
+     相同）发布的提交不参与冲突判断（2.7），同一个包重推不加 `--replay` 就是 `unchanged`，九步验收第 3 步也不再带 `--replay`；
+  3. 预览令牌的反例只查了原始扫描和包清单：`bundle --algorithm` 的包没有建模记录；
+  4. 模拟 NyxID 的重建身份另起了 `rita`，没有给 `alice` 加权限：`alice` 留作"组织 admin 但没有重建权限"的反例，与线上平台管理员
+     建角色之前的情形一致；
+  5. `METAVERSE_DEMO_SEED_HOSTS` 只在有种子时要求写出（不要种子时两处一起删，主机列表也不需要）；另加了"与 `up.sh` 的默认值相同"；
+  6. `UPLOAD_MAX_TEXTURE_SIDE` 在 `app.json` 里由 8192 改成 4096（设计 4.9 的默认值）；第 3 版的贴图都在 4096 以内，后台迁移的
+     核对结果 0 失败。
+
+S9 复核后的修改（两位复核者：接口安全与正确性、本地工具与通用性，共 16 条，全部成立）：
+
+- **接口**：glb 节点的 `matrix` 必须能分解成平移、旋转、缩放（4.5，最后一行 0 0 0 1、不能有切变），角点按仿射算——以前除以
+  最后一行，包围盒能伪造得比网站画的小任意倍；样本加 4 个，两边都跑。预览令牌读资源按草稿的基础版本过滤（`assetRefs` 加
+  `seq`，旧数据按 `commitId` 查）。同一个包从清单的 `base` 重推不加 `--replay` 就是 `unchanged`（2.7：中途同一个包清单发布的
+  提交不参与冲突判断；偏离第 2 条随之取消）。
+- **回滚条件**：退回 R0 的条件按 R0 的实际读法重写（11.2、11.5、`infra/chrono-cd/README.md` 第 4 节）：R0 的操作、物件记录、
+  模型材质不收未知字段，任务的 `lastError` 是文字，任何组织 admin 的实体区写入、一次核对不过的上传都可能写进 R0 读不了的
+  数据，所以判断标准改成"上线以后没有任何经接口的写入"，给了四条数据库计数。
+- **命令行**：`bundle push --publish` 遇到"扫描和线上相同、变换不同"时停下，`--realign` 才发布；`pull --assets` 两种拉取都
+  能用，另外下载贴图（回滚用的 `--from-snapshot` 要它们）；工作区的 `.gitignore` 忽略 `scan/`、`work/`、`web/`。
+- **本地工具**：`align` 不覆盖 `pull` 写的线上变换（`--force` 才覆盖），误差超限时不写输出文件（结果在 `*.candidate.json`）；
+  只做过 `init` 的目录也认作工作区；`webmodel` 默认写 `web/`；`compare`、`assemble` 认贴图工作台写的 `{file}`，`assemble`
+  把贴图搬进输出目录；`scan-zip` 的扫描成员用种子的主机列表（`METAVERSE_RECON_SCAN_HOSTS`，默认含 `scaniverse.com`）；
+  `bundle --algorithm` 建议的锚点默认不进包（`--anchors` 才放），打包后列出全部公开锚点的标签。
+- **文档**：方法论按"偏航写进记录"改了导出个数和加载量（不再建议偏航取整）；生图模型名按来源更新；演示说明的复现步骤分
+  "已有空间"（不跑 `align`）和"新空间"两段。
+- **数据**（S10 要处理，见下）：精致模型版的标签带建模术语；机器狗的深色调色。
+- **验证**：接口服务 fmt、clippy、全部测试（连本机 MongoDB）；本地工具 ruff、格式、全部测试（615 个，渲染工具齐全，没有跳过）；
+  网站 lint、类型、格式、单元测试、构建、端到端 16 个；命令行 lint、类型、格式、485 个测试、构建；`infra` 的 node 测试、`check-app`、
+  `check-pins`；九步验收全过（出包 113 秒、推送发布 26 秒，同一个包再推不带 `--replay` 得到 `unchanged`）。另用前厅扫描在本机
+  实走了一遍复核者的复现：`texture` 写的会议桌贴图 → `compare` → `assemble`（贴图搬进 `out/authored/textures/`）→ `bundle`
+  （3 张本地贴图进包，打包后列出 5 个公开锚点）→ `metaverse bundle check` 通过；`align` 拒绝覆盖 `pull` 写的变换，配准误差超限
+  时只写 `*.candidate.json`。
+
 #### S10 前厅第 4 版
 
-- **做法**：在一个工作区里 `metaverse pull --share <演示链接> --assets`（变换、网页用模型）→ `metaverse-recon scan-zip`（按来源表的成员打包，哈希应等于线上的扫描）→ `metaverse-recon bundle --seed --webmodel <线上那份> --authored infra/chrono-cd/demo/lobby-authored.json` → `metaverse bundle check --seed` → 上传发布页 → 写来源表 → `infra/chrono-cd/demo/lobby-r4/{manifest.json, sources.json}` 提交 → 本机 `up.sh --demo-seed`（新库）用新配置全流程跑一遍 → `app.json` 种子改成版本 4，更新 `infra/chrono-cd/demo/README.md`。
+- **做法**：在一个工作区里 `metaverse pull --share <演示链接> --assets`（变换、网页用模型；**不跑 `align`**）→ `metaverse-recon scan-zip`（按来源表的成员打包，哈希应等于线上的扫描）→ `metaverse-recon bundle --seed --webmodel <线上那份> --authored infra/chrono-cd/demo/lobby-authored.json` → `metaverse bundle check --seed` → 上传发布页 → 写来源表 → `infra/chrono-cd/demo/lobby-r4/{manifest.json, sources.json}` 提交 → 本机 `up.sh --demo-seed`（新库）用新配置全流程跑一遍 → `app.json` 种子改成版本 4，更新 `infra/chrono-cd/demo/README.md`。
+- **如果第 4 版改用精致模型版**（`rebuild/final2/authored.json`，S9 的本地验证用的就是它），打包前先改两处数据（S9 复核）：
+  1. **标签**：12 件物件的 `label` 带着建模说明——会议椅 8 把"会议椅（库：皮面桶形餐椅）"、休闲椅 2 把"休闲椅（库：米色皮高背扶手椅）"、
+     `sofa-01`"米色沙发（库：浅灰两人位，tint 米色）"、`sofa-02`"灰色布艺沙发（库：浅灰两人位）"。打包时锚点的 `label` 取物件的
+     `label`，`sofa-01`、`sofa-02` 是公开锚点，字样会浮在场景上；"模型来源"面板的"用于"也显示它。锚点只增不删，建出来以后后面的包
+     改不掉，所以要在第一次打包前把括号里的说明挪进 `notes`，标签只留"会议椅""休闲椅""米色沙发""灰色布艺沙发"；`bundle` 打包后会
+     列出全部公开锚点的标签，发布前再看一遍；
+  2. **机器狗**（`clutter-09`）：`material.tint = [72, 70, 67]` 是对着旧导出的灰模调的。新导出保留了原文件的材质和贴图（黑身白面板），
+     这个调色换成线性约 0.065 再乘上去，白面板也被压成深灰（S9 遗留里"几乎全黑"的原因，不是导出的问题）。去掉 `tint`，或按带贴图的
+     模型重调。
 - **验收**：本机新库从 Scaniverse 和发布页下载约 23 MB，导入成功；线上：时间线有第 1–4 版，能回到第 1–3 版的任何时刻；"优化"视图是第 4 版；"原始"视图与第 3 版完全相同（网页用模型哈希不变）；第 4 版提交的 `observedAt` 是扫描拍摄日；分享链接不变；接口服务日志里种子任务 `done`。
 
 ### 13.3 中间状态

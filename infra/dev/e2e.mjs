@@ -1,41 +1,50 @@
 #!/usr/bin/env node
-// 九步端到端验收（docs/BUILD_PLAN.md 第 5.2 节）：用 up.sh 在本机起全套（真实 MongoDB 副本集、
-// 模拟 NyxID、接口服务、处理服务、网站开发服务器），再按九步依次执行并断言：
+// 九步端到端验收（docs/BUILD_PLAN.md 第 5.2 节，按 docs/design/server-slim.md 10.4 改成"本地重建 → 命令行上传发布"）：
+// 用 up.sh 在本机起全套（真实 MongoDB 副本集、模拟 NyxID、接口服务、网站开发服务器），再按九步依次执行并断言：
 //
 //   1. 用测试令牌建组织空间（再定义实体区、虚拟区和地块 p1）
-//   2. 分片上传前厅扫描（metaverse scan，0.25MiB 一片）
-//   3. 处理服务完成对齐和 AI 重建，写入提交
-//   4. 公开读接口按 seq 返回快照（重建前后两个版本、区块和资源、没带令牌 404）
+//   2. 本地工具产出重建包：metaverse pull → metaverse-recon align → prepare → bundle --algorithm --anchors →
+//      metaverse bundle check 通过（不需要服务）
+//   3. 带重建权限的身份上传并发布：metaverse bundle push --publish（0.25MiB 一片，等后台核对和包展开），
+//      提交的类别是 rebuild；同一个包再推一次得到 unchanged；按哈希复用只在本空间成立
+//   4. 公开读接口按 seq 返回快照（重建前后两个版本、资源、没带令牌 404）
 //   5. 网站三种视图都能渲染（无头浏览器截图，检查不是空白）
 //   6. 时间轴能回到重建前
 //   7. 写事件后"现在"模式能拉到（/head 变化、增量事件、页面状态栏）
 //   8. 命令行 pull → build → check → push → publish 在地块内完成一次建造
-//   9. 越权操作返回 403 或 404
+//   9. 越权操作返回 403、404 或 422（含重建路径的权限、上传用途、rb. 编号、预览不给原始扫描和清单、旧接口 410）
 //
 // 用法：
-//   node infra/dev/e2e.mjs --scan <扫描文件> [--voxelize] [--keep]
+//   node infra/dev/e2e.mjs [--only 1-9] [--scan <扫描文件>] [--keep]
 //
-// - 扫描文件不进版本库：用 --scan 或环境变量 METAVERSE_E2E_SCAN 指定（glb、drc、obj、zip，命令行
-//   metaverse scan 接受的格式）；
+// - 默认跑全部九步；`--only 1,8,9` 只跑不需要扫描的三步。选了某一步就要连同它依赖的步骤一起选（第 3 步要
+//   第 2 步打的包，第 4 步要第 3 步的提交，第 6、7 步在第 5 步打开的页面上操作），否则报错；
+// - 扫描文件不进版本库：用 --scan 或环境变量 METAVERSE_E2E_SCAN 指定（Scaniverse 式 zip 或 glb，本地工具
+//   prepare / bundle 直接读的格式）。前厅扫描约 1 分 45 秒打完包（4 核）；
+// - 本地工具用 recon/.venv/bin/metaverse-recon，没有时先 `uv sync --frozen`（要装好 uv）；命令行从
+//   sdk/typescript 构建；
+// - 重建身份是 rita（模拟 NyxID 按 infra/dev/org-roles.json 给 metaverse:rebuild:write），alice 是没有
+//   重建权限的组织 admin；
 // - 每次用随机库名和空闲端口，结束时停掉全套（down.sh）并删除这个库；--keep 保留现场排查；
 // - 截图、工作区、日志和结果在 infra/dev/.run/e2e-<后缀>/（不进版本库）；
 // - 浏览器：METAVERSE_E2E_BROWSER_PATH，没有时用 /opt/pw-browsers/chromium（存在的话），
 //   再没有就交给网站依赖里的 Playwright 自己找；
 // - 其他环境变量照 up.sh：METAVERSE_MONGODB_URI（副本集地址）等；
-//   METAVERSE_E2E_JOB_TIMEOUT 处理任务的等待上限（秒，默认 1800，与处理服务的子进程超时一致）。
+//   METAVERSE_E2E_JOB_TIMEOUT 等上传核对和包展开的上限（秒，默认 600）。
 //
 // 退出码：0 全部通过，1 有步骤失败，2 参数或环境不对（没开始验收）。
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, extname, join, resolve } from 'node:path';
+import { delimiter, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
 import {
   E2eError,
   check,
+  parseOnly,
   decodePng,
   devClient,
   expectStatus,
@@ -43,7 +52,9 @@ import {
   freePort,
   imageStats,
   looksRendered,
+  missingSteps,
   parseUpOutput,
+  previewToken,
   randomSuffix,
   runSteps,
   waitFor,
@@ -52,9 +63,13 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '..', '..');
 const run = join(here, '.run');
-const SCAN_FORMATS = ['.glb', '.drc', '.obj', '.zip'];
+const SCAN_FORMATS = ['.zip', '.glb'];
 const ORG = 'chronoai';
 const PLOT = 'p1';
+/** 带重建权限的身份（infra/dev/org-roles.json 的 permissions）。 */
+const REBUILDER = 'rita';
+const REBUILD_PERMISSION = 'metaverse:rebuild:write';
+const PART_SIZE = 256 * 1024;
 
 // ---------------------------------------------------------------------------
 // 参数与环境
@@ -62,7 +77,7 @@ const PLOT = 'p1';
 
 function usage(message, code = 2) {
   if (message) console.error(message);
-  console.error('用法：node infra/dev/e2e.mjs --scan <扫描文件（glb/drc/obj/zip）> [--voxelize] [--keep]');
+  console.error('用法：node infra/dev/e2e.mjs [--only 1-9] [--scan <扫描文件（zip/glb）>] [--keep]');
   process.exit(code);
 }
 
@@ -71,7 +86,7 @@ try {
   parsed = parseArgs({
     options: {
       scan: { type: 'string' },
-      voxelize: { type: 'boolean', default: false },
+      only: { type: 'string', default: '1-9' },
       keep: { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h', default: false },
     },
@@ -80,18 +95,31 @@ try {
   usage(error.message);
 }
 if (parsed.help) {
-  console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 30).join('\n'));
+  console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 36).join('\n'));
   process.exit(0);
 }
 
-const scanPath = parsed.scan ?? process.env.METAVERSE_E2E_SCAN;
-if (!scanPath) usage('缺少扫描文件：用 --scan <文件> 或环境变量 METAVERSE_E2E_SCAN 指定（前厅扫描不进版本库）');
-const scanFile = resolve(scanPath);
-if (!existsSync(scanFile)) usage(`找不到扫描文件 ${scanFile}`);
-if (!SCAN_FORMATS.includes(extname(scanFile).toLowerCase())) {
-  usage(`扫描文件必须是 ${SCAN_FORMATS.join('、')}（metaverse scan 接受的格式）：${scanFile}`);
+let only;
+try {
+  only = parseOnly(parsed.only, 9);
+} catch (error) {
+  usage(error.message);
 }
-for (const name of ['mongod', 'mock-nyxid', 'api', 'worker', 'web']) {
+const orphans = missingSteps(only);
+if (orphans.length > 0) {
+  usage(orphans.map(([step, needs]) => `第 ${step} 步要连同第 ${needs.join('、')} 步一起跑`).join('；'));
+}
+const scanPath = parsed.scan ?? process.env.METAVERSE_E2E_SCAN;
+let scanFile = null;
+if (only.has(2)) {
+  if (!scanPath) usage('缺少扫描文件：用 --scan <文件> 或环境变量 METAVERSE_E2E_SCAN 指定（前厅扫描不进版本库）');
+  scanFile = resolve(scanPath);
+  if (!existsSync(scanFile)) usage(`找不到扫描文件 ${scanFile}`);
+  if (!SCAN_FORMATS.includes(extname(scanFile).toLowerCase())) {
+    usage(`扫描文件必须是 ${SCAN_FORMATS.join('、')}（本地工具直接读的格式）：${scanFile}`);
+  }
+}
+for (const name of ['mongod', 'mock-nyxid', 'api', 'web']) {
   const pidFile = join(run, `${name}.pid`);
   if (!existsSync(pidFile)) continue;
   const pid = Number(readFileSync(pidFile, 'utf8'));
@@ -105,7 +133,7 @@ for (const name of ['mongod', 'mock-nyxid', 'api', 'worker', 'web']) {
   if (alive) usage(`本地全套已经在运行（${name}，进程号 ${pid}）。先运行 infra/dev/down.sh，验收脚本要自己起一套`);
 }
 
-const jobTimeout = Number(process.env.METAVERSE_E2E_JOB_TIMEOUT ?? '1800') * 1000;
+const jobTimeout = Number(process.env.METAVERSE_E2E_JOB_TIMEOUT ?? '600') * 1000;
 const suffix = randomSuffix();
 const database = `metaverse_e2e_${suffix}`;
 const out = join(run, `e2e-${suffix}`);
@@ -115,7 +143,6 @@ const ports = {
   MOCK_NYXID_PORT: process.env.MOCK_NYXID_PORT ?? String(await freePort()),
   METAVERSE_API_PORT: process.env.METAVERSE_API_PORT ?? String(await freePort()),
   METAVERSE_WEB_PORT: process.env.METAVERSE_WEB_PORT ?? String(await freePort()),
-  WORKER_HEALTH_PORT: process.env.WORKER_HEALTH_PORT ?? String(await freePort()),
 };
 const urls = {
   nyx: `http://127.0.0.1:${ports.MOCK_NYXID_PORT}`,
@@ -130,9 +157,11 @@ const log = (line) => console.log(`[e2e] ${line}`);
 // ---------------------------------------------------------------------------
 
 /** 运行命令，输出同时转给终端（加前缀）并收集起来。 */
-function runCommand(command, args, { cwd = repo, env = process.env, prefix = '', quiet = false } = {}) {
+function runCommand(command, args, { cwd = repo, env = process.env, prefix = '', quiet = false, timeout } = {}) {
   return new Promise((resolvePromise) => {
     const child = spawn(command, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    // 超时就停掉子进程（退出码记成 null，调用方按失败处理）。
+    const timer = timeout === undefined ? null : setTimeout(() => child.kill('SIGTERM'), timeout);
     let stdout = '';
     let stderr = '';
     const forward = (stream, chunk) => {
@@ -147,15 +176,31 @@ function runCommand(command, args, { cwd = repo, env = process.env, prefix = '',
       stderr += chunk;
       forward(process.stderr, chunk);
     });
-    child.on('close', (code) => resolvePromise({ code, stdout, stderr }));
+    child.on('error', (error) => resolvePromise({ code: -1, stdout, stderr: `${stderr}${error.message}` }));
+    child.on('close', (code) => {
+      if (timer) clearTimeout(timer);
+      resolvePromise({ code, stdout, stderr });
+    });
   });
 }
 
 const cliPath = join(repo, 'sdk', 'typescript', 'dist', 'cli.js');
+const reconPath = join(repo, 'recon', '.venv', 'bin', 'metaverse-recon');
+/** `metaverse` 命令的垫片目录：本地工具 bundle 最后会调用 PATH 里的 `metaverse bundle check`。 */
+const shimDir = join(out, 'bin');
 
-/** metaverse 命令行；`--json` 时解析标准输出最后一个 JSON 值。 */
+/**
+ * metaverse 命令行；`--json` 时解析标准输出最后一个 JSON 值。`bundle push` 要等后台核对和包展开，
+ * 最多等 METAVERSE_E2E_JOB_TIMEOUT 秒。
+ */
 async function metaverse(args, { cwd, expectCode = 0 } = {}) {
-  const result = await runCommand(process.execPath, [cliPath, ...args], { cwd, prefix: '    │ ', quiet: args.includes('--json') });
+  const timeout = args[0] === 'bundle' && args[1] === 'push' ? jobTimeout : undefined;
+  const result = await runCommand(process.execPath, [cliPath, ...args], {
+    cwd,
+    prefix: '    │ ',
+    quiet: args.includes('--json'),
+    timeout,
+  });
   let json;
   if (args.includes('--json')) {
     const text = result.stdout.trim();
@@ -166,12 +211,22 @@ async function metaverse(args, { cwd, expectCode = 0 } = {}) {
       json = start >= 0 ? JSON.parse(text.slice(start + 1)) : undefined;
     }
   }
+  const name = args.slice(0, args[0] === 'bundle' ? 2 : 1).join(' ');
   check(
     result.code === expectCode,
-    `metaverse ${args[0]} 退出码 ${result.code}（期望 ${expectCode}）`,
+    `metaverse ${name} 退出码 ${result.code}（期望 ${expectCode}）`,
     (result.stderr || result.stdout).slice(-2000),
   );
   return { ...result, json };
+}
+
+/** 本地重建工具 metaverse-recon（不连接服务）。 */
+async function recon(args, { cwd }) {
+  const env = { ...process.env, PATH: `${shimDir}${delimiter}${process.env.PATH ?? ''}` };
+  const result = await runCommand(reconPath, args, { cwd, env, prefix: '    │ ' });
+  writeFileSync(join(out, `recon-${args[0]}.log`), result.stdout + result.stderr);
+  check(result.code === 0, `metaverse-recon ${args[0]} 退出码 ${result.code}`, (result.stderr || result.stdout).slice(-2000));
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -193,17 +248,10 @@ async function cleanup() {
   log('停止全套（down.sh）');
   spawnSync('bash', [join(here, 'down.sh')], { stdio: 'inherit' });
   if (mongo) {
-    const python = join(repo, 'worker', '.venv', 'bin', 'python');
-    const drop = spawnSync(
-      python,
-      [
-        '-c',
-        'import sys, pymongo; pymongo.MongoClient(sys.argv[1], serverSelectionTimeoutMS=5000).drop_database(sys.argv[2])',
-        mongo.mongoUri,
-        database,
-      ],
-      { stdio: 'inherit' },
-    );
+    const port = /:(\d+)\//.exec(mongo.mongoUri)?.[1] ?? '27017';
+    const drop = spawnSync(process.execPath, [join(here, 'mongo.mjs'), 'drop', port, database], {
+      stdio: 'inherit',
+    });
     log(drop.status === 0 ? `已删除库 ${database}` : `删除库 ${database} 失败，请手动删除`);
   }
 }
@@ -226,17 +274,19 @@ async function startStack() {
   mongo = parseUpOutput(result.stdout);
   if (result.code !== 0) throw new E2eError(`up.sh 失败（退出码 ${result.code}），日志在 infra/dev/.run/*.log`);
   check(mongo !== null, '没从 up.sh 的输出里找到 MongoDB 连接串');
-  const workerPid = join(run, 'worker.pid');
-  check(existsSync(workerPid), '处理服务没有启动（worker/.venv 缺少 metaverse-worker 入口？）');
-  try {
-    process.kill(Number(readFileSync(workerPid, 'utf8')), 0);
-  } catch {
-    throw new E2eError('处理服务启动后退出了，看 infra/dev/.run/worker.log');
-  }
-  await waitFor(
-    async () => (await fetch(`http://127.0.0.1:${ports.WORKER_HEALTH_PORT}/healthz`).catch(() => null))?.ok,
-    { timeout: 60_000, what: '处理服务健康检查' },
-  );
+}
+
+/** 页面（第 5 步打开；只跑部分步骤时由第 8 步按需打开）。 */
+async function ensurePage(ctx) {
+  if (ctx.page) return ctx.page;
+  browser = await launchBrowser();
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  ctx.page = page;
+  ctx.pageErrors = [];
+  page.on('pageerror', (error) => ctx.pageErrors.push(error.message));
+  await page.goto(`${urls.web}/s/${spaceId}#share=${ctx.share}`);
+  await page.getByRole('heading', { level: 1, name: '验收前厅' }).waitFor({ timeout: 60_000 });
+  return page;
 }
 
 async function buildSdk() {
@@ -249,6 +299,19 @@ async function buildSdk() {
   log('构建命令行（npm run build）');
   const build = await runCommand('npm', ['run', 'build'], { cwd: sdk, prefix: '  │ ' });
   if (build.code !== 0) throw new E2eError('sdk/typescript 的 npm run build 失败');
+  mkdirSync(shimDir, { recursive: true });
+  const shim = join(shimDir, 'metaverse');
+  writeFileSync(shim, `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(cliPath)} "$@"\n`);
+  chmodSync(shim, 0o755);
+}
+
+/** 本地重建工具的虚拟环境：没有就按锁文件装（设计 10.3：由需要它的地方准备）。 */
+async function ensureRecon() {
+  if (existsSync(reconPath)) return;
+  log('准备本地重建工具（cd recon && uv sync --frozen）');
+  const sync = await runCommand('uv', ['sync', '--frozen'], { cwd: join(repo, 'recon'), prefix: '  │ ' });
+  if (sync.code !== 0) throw new E2eError('recon 的 uv sync --frozen 失败（要先装 uv：https://docs.astral.sh/uv/）', sync.stderr.slice(-2000));
+  if (!existsSync(reconPath)) throw new E2eError(`uv sync 之后还是没有 ${reconPath}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -300,12 +363,14 @@ async function renderedStats(page, file) {
 
 const call = devClient({ api: urls.api, nyx: urls.nyx });
 const spaceId = `e2e-hall-${suffix}`;
+const carolSpace = `e2e-carol-${suffix}`;
 const ws = join(out, 'workspace');
+const rebuildBase = `/api/v1/spaces/${spaceId}/rebuild`;
 
 const LAYOUT = {
   message: '验收：实体区、虚拟区和地块',
   regions: [
-    // 实体区要盖住对齐后的扫描（体素化只保留实体区里的格子），给足 ±30 米。
+    // 实体区要盖住对齐后的扫描，给足 ±30 米。
     { id: 'hall', kind: 'physical', name: '前厅', boxes: [[-600, -40, -600, 600, 200, 600]] },
     { id: 'garden', kind: 'virtual', name: '花园', boxes: [[640, 0, -200, 840, 80, 200]] },
   ],
@@ -329,6 +394,26 @@ const STATUS_TYPE = {
 
 function statusEvent(id, status) {
   return { sourceEventId: id, type: 'shop.status', anchorId: '_space', at: new Date().toISOString(), data: { status } };
+}
+
+/** 建上传会话的请求体（与命令行相同：总大小、整体 sha256、分片大小、格式）。 */
+function uploadBody(file, format) {
+  return { size: file.size, sha256: file.sha256, partSize: PART_SIZE, format };
+}
+
+/** carol 的个人空间（凭哈希复用、越权的对照）；建过就不再建。 */
+async function ensureCarolSpace(ctx) {
+  if (ctx.carolSpace) return ctx.carolSpace;
+  expectStatus(
+    await call('POST', '/api/v1/admin/spaces', {
+      as: 'carol',
+      body: { id: carolSpace, name: 'carol 的房间', owner: { kind: 'person', id: 'carol' } },
+    }),
+    201,
+    'carol 建个人空间',
+  );
+  ctx.carolSpace = carolSpace;
+  return carolSpace;
 }
 
 const steps = [
@@ -362,73 +447,130 @@ const steps = [
     },
   },
   {
-    name: '分片上传扫描',
+    name: '本地工具产出重建包',
     async run(ctx) {
       const space = expectStatus(await call('GET', `/api/v1/spaces/${spaceId}`), 200, '读空间');
       ctx.preScanSeq = space.body.head.seq;
-      const args = ['scan', scanFile, '--part-size', '0.25', '--no-wait', '--json'];
-      if (parsed.voxelize) args.push('--voxelize');
-      const { json } = await metaverse(args, { cwd: ws });
-      check(json && /^[0-9a-f]{64}$/.test(json.assetHash ?? ''), '命令行没有返回资源哈希', json);
-      check(typeof json.jobId === 'string', '命令行没有返回导入任务编号', json);
-      check(json.upload?.reused || json.upload?.parts > 1, '扫描没有分成多片上传', json.upload);
-      ctx.scanJob = json.jobId;
-      ctx.scanAsset = json.assetHash;
-      // 同一份内容再建一次上传：本空间已经拥有（真正传过数据的上传已校验通过），直接复用，不再收数据。
-      // 两种情况都是 201，不同只在 reused / status（别的空间凭哈希复用不到，见第 9 步）。
-      ctx.scanUpload = {
-        size: statSync(scanFile).size,
-        sha256: json.assetHash,
-        partSize: 256 * 1024,
-        format: extname(scanFile).slice(1).toLowerCase(),
-      };
-      const again = expectStatus(
-        await call('POST', `/api/v1/spaces/${spaceId}/uploads/scan`, { as: 'alice', body: ctx.scanUpload }),
-        201,
-        '同一空间再上传同一份扫描',
-      );
+      // pull 写 space.json（包的 base）和 limits.json（服务端的上传上限，本地工具按它检查）。
+      await metaverse(['pull'], { cwd: ws });
+      check(existsSync(join(ws, 'limits.json')), 'metaverse pull 没有写 limits.json');
+      mkdirSync(join(ws, 'scan'), { recursive: true });
+      const scanCopy = join(ws, 'scan', `scan${extname(scanFile).toLowerCase()}`);
+      copyFileSync(scanFile, scanCopy);
+      const seconds = {};
+      for (const [name, args] of [
+        // 第一次扫描：自动对齐，写 scan/transform.json；prepare 和 bundle 都用它。
+        ['align', ['align', '--scan', scanCopy]],
+        ['prepare', ['prepare', '--scan', scanCopy]],
+        // --anchors：按类别建议的锚点也进包（默认只列出建议；验收要看锚点建出来、按 ifNew 跳过）。
+        ['bundle', ['bundle', '--algorithm', '--anchors', '--scan', scanCopy, '--note', '验收：算法重建']],
+      ]) {
+        const started = Date.now();
+        await recon(args, { cwd: ws });
+        seconds[name] = Math.round((Date.now() - started) / 1000);
+      }
+      check(existsSync(join(ws, 'out', 'bundle', 'manifest.json')), '本地工具没有写出 out/bundle/manifest.json');
+      const { json } = await metaverse(['bundle', 'check', '--json'], { cwd: ws });
+      check(json?.ok === true, 'metaverse bundle check 没通过', json);
       check(
-        again.body?.reused === true && again.body?.status === 'done' && again.body?.assetHash === json.assetHash,
-        '本空间已有的扫描没有直接复用',
-        again.body,
+        json.base?.spaceId === spaceId && json.base?.seq === ctx.preScanSeq,
+        '清单的 base 不是工作区拉取的版本',
+        { base: json.base, want: { spaceId, seq: ctx.preScanSeq } },
       );
-      return `${json.upload?.parts ?? 0} 片（${json.upload?.size ?? '?'} 字节），资源 ${json.assetHash.slice(0, 12)}…，任务 ${json.jobId}；同一空间再上传直接复用`;
+      const files = json.files ?? [];
+      const scan = files.find((file) => file.purpose === 'scan');
+      const webmodels = files.filter((file) => file.purpose === 'webmodel');
+      check(scan !== undefined && webmodels.length > 0, '包里没有扫描或网页用模型', files);
+      ctx.bundle = { manifestHash: json.manifestHash, files, scan, webmodels };
+      const kinds = {};
+      for (const file of files) kinds[file.purpose] = (kinds[file.purpose] ?? 0) + 1;
+      return (
+        `align ${seconds.align} 秒、prepare ${seconds.prepare} 秒、bundle ${seconds.bundle} 秒；` +
+        `包里 ${files.length} 个文件（${Object.entries(kinds).map(([kind, count]) => `${kind} ${count}`).join('、')}），` +
+        `清单 ${json.manifestHash.slice(0, 12)}…，base seq ${json.base.seq}；bundle check 通过`
+      );
     },
   },
   {
-    name: '处理服务完成对齐和 AI 重建',
+    name: '带重建权限的身份上传并发布',
     async run(ctx) {
-      const job = await waitFor(
-        async () => {
-          const reply = expectStatus(await call('GET', `/api/v1/spaces/${spaceId}/jobs/${ctx.scanJob}`), 200, '查任务');
-          return ['done', 'failed'].includes(reply.body.status) ? reply.body : null;
-        },
-        { timeout: jobTimeout, interval: 3000, what: 'scan_import 任务完成' },
+      const pushed = await metaverse(
+        ['bundle', 'push', '--publish', '--part-size', '0.25', '--sub', REBUILDER, '--json'],
+        { cwd: ws },
       );
-      check(job.status === 'done', `scan_import 任务失败：${job.lastError?.message ?? JSON.stringify(job.lastError)}`, job);
-      check(job.result?.needsAlignment !== true, '第一次扫描不应要求人工对齐', job.result);
-      // 体素化等后续任务也做完。
-      await waitFor(
-        async () => {
-          const reply = expectStatus(await call('GET', `/api/v1/spaces/${spaceId}/jobs?limit=100`), 200, '列任务');
-          const items = Array.isArray(reply.body) ? reply.body : (reply.body.items ?? reply.body.jobs ?? []);
-          const failed = items.find((item) => item.status === 'failed');
-          if (failed) throw new E2eError(`任务 ${failed.id}（${failed.kind}）失败`, failed);
-          return items.every((item) => item.status === 'done');
-        },
-        { timeout: jobTimeout, interval: 3000, what: '全部任务完成' },
+      const result = pushed.json;
+      check(typeof result?.draftId === 'string', 'bundle push 没有返回草稿编号', result);
+      const seq = result.published?.seq;
+      check(Number.isInteger(seq) && seq > ctx.preScanSeq, '发布没有产生新的 seq', result.published);
+      check(result.published?.unchanged !== true, '第一次发布不应是 unchanged', result.published);
+      // 扫描按 0.25MiB 分片上传，后台核对通过。
+      const scanOutcome = (result.files ?? []).find((file) => file.path === ctx.bundle.scan.path);
+      check(scanOutcome?.uploadId, '扫描没有上传会话', result.files);
+      const session = expectStatus(
+        await call('GET', `${rebuildBase}/uploads/scan/${scanOutcome.uploadId}`, { as: REBUILDER }),
+        200,
+        '读扫描的上传会话',
       );
+      check(
+        session.body.partSize === PART_SIZE && session.body.partCount > 1 && session.body.status === 'done',
+        '扫描没有按 0.25MiB 分成多片上传，或核对没有完成',
+        session.body,
+      );
+      // 提交：类别 rebuild，带扫描和网页用模型，重建层有物件，锚点建好了。
+      const timeline = expectStatus(
+        await call('GET', `/api/public/spaces/${spaceId}/timeline?limit=500`, { share: ctx.share }),
+        200,
+        '公开提交列表',
+      );
+      const commit = (timeline.body.items ?? []).find((item) => item.seq === seq);
+      check(commit?.actor?.kind === 'rebuild', '提交的类别不是 rebuild', commit);
       const snapshot = expectStatus(await call('GET', `/api/v1/spaces/${spaceId}/snapshot`), 200, '读最新快照');
       const entities = snapshot.body.entities ?? [];
-      check(entities.length > 0, '重建后没有物件', { seq: snapshot.body.seq });
-      check((snapshot.body.scan?.webModelHashes ?? []).length > 0, '没有网页用模型', snapshot.body.scan);
-      check(snapshot.body.seq > ctx.preScanSeq, '导入后 seq 没有前进', { before: ctx.preScanSeq, after: snapshot.body.seq });
+      check(entities.length > 0, '发布后没有物件', { seq: snapshot.body.seq });
+      check(entities.every((entity) => entity.id.startsWith('rb.') || entity.layer !== 'rebuilt'), '重建层编号不是 rb. 开头');
+      check(snapshot.body.scan?.assetHash === ctx.bundle.scan.sha256, '提交的扫描不是包里的扫描', snapshot.body.scan);
+      check((snapshot.body.scan?.webModelHashes ?? []).length === ctx.bundle.webmodels.length, '网页用模型的档数不对', snapshot.body.scan);
+      const anchors = (snapshot.body.anchors ?? []).filter((anchor) => anchor.id !== '_space');
+      check(anchors.length > 0, '包里的建议锚点没有建出来', snapshot.body.anchors);
+      ctx.scanSeq = seq;
+      ctx.latestSeq = seq;
       ctx.scanEntities = entities.length;
-      // --voxelize：导入任务另建一个 voxelize 任务，它写的提交带重建层区块。
-      const chunks = (snapshot.body.chunks ?? []).length;
-      if (parsed.voxelize) check(chunks > 0, '体素化后最新快照没有区块', { seq: snapshot.body.seq });
-      const timings = job.result?.timings ? `，耗时 ${JSON.stringify(job.result.timings)}` : '';
-      return `seq ${ctx.preScanSeq} → ${snapshot.body.seq}，物件 ${entities.length} 个，区块 ${chunks} 个，网页用模型 ${snapshot.body.scan.webModelHashes.length} 档${timings}`;
+
+      // 同一个包再推一次（不带 --replay）：所有文件按哈希复用；草稿的基础版本还是清单的 base，中途只有
+      // 同一个包清单的提交，不算冲突 → unchanged，不写提交（设计 6.7）。
+      const again = await metaverse(['bundle', 'push', '--publish', '--sub', REBUILDER, '--json'], { cwd: ws });
+      check(again.json?.published?.unchanged === true, '同一个包再推一次应当是 unchanged', again.json?.published);
+      check((again.json.files ?? []).every((file) => file.reused), '再推一次时文件应当全部复用', again.json.files);
+      const head = expectStatus(await call('GET', `/api/v1/spaces/${spaceId}`), 200, '读空间');
+      check(head.body.head.seq === seq, 'unchanged 不应写提交', { head: head.body.head.seq, seq });
+
+      // 按哈希复用只在本空间成立：本空间同一份扫描直接复用；carol 的空间凭这个哈希拿不到，要完整上传。
+      const scanUpload = uploadBody(ctx.bundle.scan, extname(ctx.bundle.scan.path).slice(1).toLowerCase());
+      const same = expectStatus(
+        await call('POST', `${rebuildBase}/uploads/scan`, { as: REBUILDER, body: scanUpload }),
+        [200, 201],
+        '本空间再上传同一份扫描',
+      );
+      check(same.body?.reused === true && same.body?.status === 'done', '本空间已有的扫描没有直接复用', same.body);
+      const carol = await ensureCarolSpace(ctx);
+      const foreign = expectStatus(
+        await call('POST', `/api/v1/spaces/${carol}/rebuild/uploads/scan`, {
+          as: 'carol',
+          permissions: [REBUILD_PERMISSION],
+          body: scanUpload,
+        }),
+        201,
+        'carol 用前厅扫描的哈希建上传',
+      );
+      check(
+        foreign.body?.reused !== true && foreign.body?.status === 'open' && foreign.body?.assetHash === undefined,
+        '凭哈希复用了别的空间的扫描',
+        foreign.body,
+      );
+      return (
+        `草稿 ${result.draftId} 发布为 seq ${seq}（rebuild），扫描 ${session.body.partCount} 片；物件 ${entities.length} 件、` +
+        `锚点 ${anchors.length} 个；再推一次 unchanged；本空间复用、carol 的空间要完整上传`
+      );
     },
   },
   {
@@ -440,9 +582,7 @@ const steps = [
         '公开提交列表',
       );
       const commits = timeline.body.items ?? [];
-      const scanCommit = commits.find((commit) => commit.seq > ctx.preScanSeq);
-      check(scanCommit !== undefined, '提交列表里没有导入扫描的提交', commits);
-      ctx.scanSeq = scanCommit.seq;
+      check(commits.some((commit) => commit.seq === ctx.scanSeq), '提交列表里没有重建的提交', commits);
       ctx.latestSeq = Math.max(...commits.map((commit) => commit.seq));
       const after = expectStatus(
         await call('GET', `/api/public/spaces/${spaceId}/snapshot?seq=${ctx.scanSeq}`, { share: ctx.share }),
@@ -463,21 +603,10 @@ const steps = [
       const asset = await call('GET', `/api/public/assets/${models[0]}.bin`, { share: ctx.share });
       expectStatus(asset, 200, '网页用模型');
       check(/immutable/.test(asset.headers.get('cache-control') ?? ''), '资源响应不是 immutable', asset.headers.get('cache-control'));
-      let chunks = after.body.chunks ?? [];
-      let chunkSeq = ctx.scanSeq;
-      if (parsed.voxelize) {
-        // 体素化结果在导入之后的另一次提交里（voxelize 任务写的），按最新版本读。
-        chunkSeq = ctx.latestSeq;
-        const voxelized = expectStatus(
-          await call('GET', `/api/public/spaces/${spaceId}/snapshot?seq=${chunkSeq}`, { share: ctx.share }),
-          200,
-          `公开快照 seq=${chunkSeq}`,
-        );
-        chunks = voxelized.body.chunks ?? [];
-        check(chunks.length > 0, '体素化后的公开快照没有区块', { seq: chunkSeq });
-      }
+      // 原始扫描不公开：提交里登记的只有网页用模型、物件模型和贴图。
+      expectStatus(await call('GET', `/api/public/assets/${ctx.bundle.scan.sha256}.bin`, { share: ctx.share }), 404, '公开接口读原始扫描');
+      const chunks = after.body.chunks ?? [];
       if (chunks.length > 0) {
-        // 区块按内容哈希公开读取，不带分享令牌；处理服务写回后要补上 publishedAt 才读得到。
         const chunk = expectStatus(await call('GET', `/api/public/chunks/${chunks[0].hash}.bin`), 200, '公开区块');
         check(/immutable/.test(chunk.headers.get('cache-control') ?? ''), '区块响应不是 immutable', chunk.headers.get('cache-control'));
       }
@@ -487,9 +616,7 @@ const steps = [
         404,
         '分享令牌不对',
       );
-      const chunkNote =
-        chunkSeq === ctx.scanSeq ? `、区块 ${chunks.length} 个` : `；seq ${chunkSeq}：区块 ${chunks.length} 个`;
-      return `seq ${ctx.scanSeq}：物件 ${after.body.entities.length} 个${chunkNote}；seq ${ctx.preScanSeq}：空；没带或带错令牌 404`;
+      return `seq ${ctx.scanSeq}：物件 ${after.body.entities.length} 个、区块 ${chunks.length} 个；seq ${ctx.preScanSeq}：空；原始扫描、没带或带错令牌 404`;
     },
   },
   {
@@ -522,28 +649,6 @@ const steps = [
           check((await page.locator('.viewer').getAttribute('data-scan')) === 'true', '原始视图没有扫描模型');
         }
         notes.push(`${mode}（${stats.colors} 种颜色，亮 ${(stats.brightRatio * 100).toFixed(0)}%）`);
-      }
-      if (parsed.voxelize) {
-        // 重建层既有物件又有区块：优化视图切到"方块"画法，区块画出来、重建层物件不画，再换回"形状"。
-        await page.getByRole('button', { name: '优化', exact: true }).click();
-        await waitForScene(page, 'optimized');
-        const styles = page.getByRole('group', { name: '重建层画法' });
-        await styles.getByRole('button', { name: '方块' }).click();
-        const faces = await waitFor(
-          async () => {
-            const count = await viewerNumber(page, 'data-voxel-faces');
-            return count > 0 ? count : null;
-          },
-          { timeout: 60_000, what: '方块画法画出区块' },
-        );
-        await waitForScene(page, 'optimized');
-        await overview(page);
-        const entities = await viewerNumber(page, 'data-entities');
-        check(entities === 0, '方块画法不应再画重建层物件', { entities });
-        const stats = await renderedStats(page, 'view-optimized-blocks.png');
-        check(looksRendered(stats), '方块画法的截图像是空白', stats);
-        notes.push(`方块（${faces} 个面，${stats.colors} 种颜色，亮 ${(stats.brightRatio * 100).toFixed(0)}%）`);
-        await styles.getByRole('button', { name: '形状' }).click();
       }
       check(ctx.pageErrors.length === 0, '页面有未捕获的错误', ctx.pageErrors);
       await page.getByRole('button', { name: '优化', exact: true }).click();
@@ -627,6 +732,15 @@ const steps = [
   {
     name: '命令行在地块内 pull → build → push → publish',
     async run(ctx) {
+      if (ctx.latestSeq === undefined) {
+        // 只跑部分步骤时：最新版本从空间信息读，扩展视图先记下物件数。
+        const space = expectStatus(await call('GET', `/api/v1/spaces/${spaceId}`), 200, '读空间');
+        ctx.latestSeq = space.body.head.seq;
+      }
+      const page = await ensurePage(ctx);
+      await page.getByRole('button', { name: '优化 + 扩展', exact: true }).click();
+      await waitForScene(page, 'extended');
+      const before = await viewerNumber(page, 'data-entities');
       await metaverse(['pull'], { cwd: ws });
       await metaverse(['build', '--plot', PLOT], { cwd: ws });
       await metaverse(['check', '--plot', PLOT], { cwd: ws });
@@ -645,72 +759,105 @@ const steps = [
       const ids = new Set((snapshot.body.entities ?? []).map((entity) => entity.id));
       check(ids.has('demo-table'), '发布后的快照里没有示例脚本放的桌子', [...ids]);
       // 页面在"现在"模式：拉到新提交，扩展视图里能看到地块上的物件。
-      const { page } = ctx;
       await waitFor(async () => (await versionText(page)).startsWith(`版本 #${seq} `), {
         timeout: 30_000,
         what: `页面换到版本 #${seq}`,
       });
-      await page.getByRole('button', { name: '优化 + 扩展', exact: true }).click();
       await waitForScene(page, 'extended');
       await overview(page);
       const entities = await viewerNumber(page, 'data-entities');
-      check(entities > ctx.scanEntities, '扩展视图里没有多出地块上的物件', { entities, before: ctx.scanEntities });
+      check(entities > before, '扩展视图里没有多出地块上的物件', { entities, before });
       await page.screenshot({ path: join(out, 'plot-build-extended.png') });
       ctx.latestSeq = seq;
-      return `草稿 ${draftId}（${pushed.json.opCount} 个操作）发布为 seq ${seq}；页面扩展视图物件 ${entities} 个`;
+      return `草稿 ${draftId}（${pushed.json.opCount} 个操作）发布为 seq ${seq}；页面扩展视图物件 ${before} → ${entities} 个`;
     },
   },
   {
-    name: '越权操作返回 403 或 404',
+    name: '越权操作返回 403、404 或 422',
     async run(ctx) {
-      const carolSpace = `e2e-carol-${suffix}`;
-      expectStatus(
-        await call('POST', '/api/v1/admin/spaces', {
-          as: 'carol',
-          body: { id: carolSpace, name: 'carol 的房间', owner: { kind: 'person', id: 'carol' } },
-        }),
-        201,
-        'carol 建个人空间',
-      );
+      const carol = await ensureCarolSpace(ctx);
+      const space = expectStatus(await call('GET', `/api/v1/spaces/${spaceId}`), 200, '读空间');
+      const baseSeq = space.body.head.seq;
+      // 扫描和清单的上传请求体：跑过第 2 步就用包里的真实文件，否则用一份合法的假声明（越权必须由授权层或
+      // 用途规则拒绝，而不是因为请求体不合法被挡掉）。
+      const scanUpload = ctx.bundle
+        ? uploadBody(ctx.bundle.scan, extname(ctx.bundle.scan.path).slice(1).toLowerCase())
+        : { size: 4 * PART_SIZE, sha256: 'a'.repeat(64), partSize: PART_SIZE, format: 'zip' };
+      const bundleUpload = { size: 1024, sha256: 'b'.repeat(64), partSize: PART_SIZE, format: 'json' };
       const cases = [
-        ['bob（组织 member）建地块草稿', 403, 'POST', `/api/v1/spaces/${spaceId}/plots/${PLOT}/drafts`, 'bob', {}],
-        ['bob（组织 member）建实体区草稿', 403, 'POST', `/api/v1/spaces/${spaceId}/drafts`, 'bob', {}],
-        // 请求体都是合法的：越权必须由授权层拒绝，而不是因为请求体不合法被 422 挡掉。
-        ['bob（组织 member）写事件', 403, 'POST', `/api/v1/spaces/${spaceId}/sources/e2e/events`, 'bob', { events: [statusEvent(`bob-${suffix}`, 'bob 写的')] }],
-        ['bob（组织 member）登记事件类型', 403, 'POST', `/api/v1/admin/spaces/${spaceId}/event-types`, 'bob', STATUS_TYPE],
-        ['dave（不是组织成员）读空间', 404, 'GET', `/api/v1/spaces/${spaceId}`, 'dave', undefined],
-        ['dave（不是组织成员）建草稿', 404, 'POST', `/api/v1/spaces/${spaceId}/plots/${PLOT}/drafts`, 'dave', {}],
-        ['alice 读 carol 的个人空间', 404, 'GET', `/api/v1/spaces/${carolSpace}`, 'alice', undefined],
-        ['alice 在 carol 的个人空间建草稿', 404, 'POST', `/api/v1/spaces/${carolSpace}/drafts`, 'alice', {}],
-        ['bob 冒充组织建组织空间', 403, 'POST', '/api/v1/admin/spaces', 'bob', { id: `e2e-bob-${suffix}`, name: 'x', owner: { kind: 'org', id: ORG } }],
+        { what: 'bob（组织 member）建地块草稿', status: 403, method: 'POST', path: `/api/v1/spaces/${spaceId}/plots/${PLOT}/drafts`, as: 'bob', body: {} },
+        { what: 'bob（组织 member）建实体区草稿', status: 403, method: 'POST', path: `/api/v1/spaces/${spaceId}/drafts`, as: 'bob', body: {} },
+        { what: 'bob（组织 member）写事件', status: 403, method: 'POST', path: `/api/v1/spaces/${spaceId}/sources/e2e/events`, as: 'bob', body: { events: [statusEvent(`bob-${suffix}`, 'bob 写的')] } },
+        { what: 'bob（组织 member）登记事件类型', status: 403, method: 'POST', path: `/api/v1/admin/spaces/${spaceId}/event-types`, as: 'bob', body: STATUS_TYPE },
+        { what: 'dave（不是组织成员）读空间', status: 404, method: 'GET', path: `/api/v1/spaces/${spaceId}`, as: 'dave' },
+        { what: 'dave（不是组织成员）建草稿', status: 404, method: 'POST', path: `/api/v1/spaces/${spaceId}/plots/${PLOT}/drafts`, as: 'dave', body: {} },
+        { what: 'alice 读 carol 的个人空间', status: 404, method: 'GET', path: `/api/v1/spaces/${carol}`, as: 'alice' },
+        { what: 'alice 在 carol 的个人空间建草稿', status: 404, method: 'POST', path: `/api/v1/spaces/${carol}/drafts`, as: 'alice', body: {} },
+        { what: 'bob 冒充组织建组织空间', status: 403, method: 'POST', path: '/api/v1/admin/spaces', as: 'bob', body: { id: `e2e-bob-${suffix}`, name: 'x', owner: { kind: 'org', id: ORG } } },
+        // 重建路径（设计 3.1）：写操作要 metaverse:rebuild:write，并且要"管理"级别。
+        { what: 'alice（组织 admin，没有重建权限）建重建草稿', status: 403, code: 'rebuild_permission_required', method: 'POST', path: `${rebuildBase}/drafts`, as: 'alice', body: { baseSeq } },
+        { what: 'alice（没有重建权限）经重建路径上传扫描', status: 403, code: 'rebuild_permission_required', method: 'POST', path: `${rebuildBase}/uploads/scan`, as: 'alice', body: scanUpload },
+        { what: 'bob（组织 member，带重建权限）建重建草稿', status: 403, method: 'POST', path: `${rebuildBase}/drafts`, as: 'bob', permissions: [REBUILD_PERMISSION], body: { baseSeq } },
+        // 上传用途按路径（设计 2.3）：扫描只经重建路径，重建包清单不能经地块路径。
+        { what: 'alice 经实体区路径上传扫描', status: 422, code: 'purpose_not_allowed', method: 'POST', path: `/api/v1/spaces/${spaceId}/uploads/scan`, as: 'alice', body: scanUpload },
+        { what: 'alice 经地块路径上传重建包清单', status: 403, code: 'scope_violation', method: 'POST', path: `/api/v1/spaces/${spaceId}/plots/${PLOT}/uploads/bundle`, as: 'alice', body: bundleUpload },
+        // 下线的旧接口一律 410。
+        { what: 'alice 调已下线的扫描导入', status: 410, code: 'endpoint_retired', method: 'POST', path: `/api/v1/spaces/${spaceId}/scans`, as: 'alice', body: { assetHash: scanUpload.sha256 } },
       ];
       const lines = [];
-      for (const [what, expected, method, path, as, body] of cases) {
-        const reply = await call(method, path, { as, ...(body !== undefined ? { body } : {}) });
-        expectStatus(reply, expected, what);
-        lines.push(`${what} ${reply.status}`);
+      for (const item of cases) {
+        const reply = await call(item.method, item.path, {
+          as: item.as,
+          ...(item.body !== undefined ? { body: item.body } : {}),
+          ...(item.permissions ? { permissions: item.permissions } : {}),
+        });
+        expectStatus(reply, item.status, item.what);
+        if (item.code) check(reply.body?.code === item.code, `${item.what}：错误码不是 ${item.code}`, reply.body);
+        lines.push(`${item.what} ${reply.status}`);
       }
-      expectStatus(await call('GET', `/api/public/spaces/${carolSpace}`), 404, '没带令牌读别人的空间');
-      // 凭哈希拿不到别的空间的资源：carol 用前厅扫描的哈希建上传，必须完整上传（不复用、不说明别处有没有）；
-      // 不上传就直接导入，没有本空间的已校验上传，422。
-      const foreign = expectStatus(
-        await call('POST', `/api/v1/spaces/${carolSpace}/uploads/scan`, { as: 'carol', body: ctx.scanUpload }),
+      expectStatus(await call('GET', `/api/public/spaces/${carol}`), 404, '没带令牌读别人的空间');
+
+      // 地块草稿不能放 rb. 开头的编号（留给重建层，核心库规则）。
+      const plotDraft = expectStatus(
+        await call('POST', `/api/v1/spaces/${spaceId}/plots/${PLOT}/drafts`, { as: 'alice', body: {} }),
         201,
-        'carol 用别的空间的扫描哈希建上传',
+        'alice 建地块草稿',
       );
-      check(
-        foreign.body?.reused !== true && foreign.body?.status === 'open' && foreign.body?.assetHash === undefined,
-        '凭哈希复用了别的空间的扫描',
-        foreign.body,
-      );
-      lines.push('carol 用前厅扫描的哈希建上传 201（要完整上传）');
-      const imported = expectStatus(
-        await call('POST', `/api/v1/spaces/${carolSpace}/scans`, { as: 'carol', body: { assetHash: ctx.scanAsset } }),
-        422,
-        'carol 凭哈希导入别的空间的扫描',
-      );
-      check(imported.body?.code === 'asset_unknown', '错误码不是 asset_unknown', imported.body);
-      lines.push('carol 凭哈希导入前厅扫描 422');
+      const draftId = plotDraft.body?.draftId ?? plotDraft.body?.id;
+      check(typeof draftId === 'string', '建地块草稿没有返回草稿编号', plotDraft.body);
+      const rbOp = {
+        op: 'placeEntity',
+        entity: {
+          entityId: `rb.e2e-${suffix}`,
+          layer: 'ext',
+          kind: 'object',
+          shape: { type: 'box', size: [1, 1, 1], transform: { position: [35.5, 0, 0] } },
+          bounds: { min: [35, 0, -0.5], max: [36, 1, 0.5] },
+        },
+      };
+      const rejected = await call('POST', `/api/v1/spaces/${spaceId}/plots/${PLOT}/drafts/${draftId}/ops`, {
+        as: 'alice',
+        body: { ops: [rbOp] },
+      });
+      expectStatus(rejected, 422, '地块草稿放 rb. 编号');
+      check(rejected.body?.code === 'invalid_op', '地块草稿放 rb. 编号：错误码不是 invalid_op', rejected.body);
+      lines.push('地块草稿放 rb. 编号 422');
+
+      if (!ctx.bundle) {
+        // 没跑第 2、3 步：预览令牌的断言跳过。
+        return lines.join('；');
+      }
+      // 预览令牌只能读可预览的资源（网页用模型、物件模型、贴图）：原始扫描和包清单 404（设计 2.8）。
+      // 同一个包推一次但不发布，拿到预览链接。
+      const preview = await metaverse(['bundle', 'push', '--sub', REBUILDER, '--json'], { cwd: ws });
+      const token = previewToken(preview.json?.preview);
+      check(token !== null, 'bundle push 没有给出预览链接', preview.json);
+      const asPreview = { headers: { authorization: `Preview ${token}` } };
+      expectStatus(await call('GET', '/api/public/previews', asPreview), 200, '预览快照');
+      expectStatus(await call('GET', `/api/public/previews/assets/${ctx.bundle.webmodels[0].sha256}`, asPreview), 200, '预览读网页用模型');
+      expectStatus(await call('GET', `/api/public/previews/assets/${ctx.bundle.scan.sha256}`, asPreview), 404, '预览读原始扫描');
+      expectStatus(await call('GET', `/api/public/previews/assets/${ctx.bundle.manifestHash}`, asPreview), 404, '预览读包清单');
+      lines.push('预览令牌读网页用模型 200、读原始扫描和包清单 404');
       return lines.join('；');
     },
   },
@@ -722,17 +869,21 @@ const steps = [
 
 let exitCode = 1;
 try {
+  if (only.has(2)) await ensureRecon();
   await startStack();
   await buildSdk();
-  log(`开始九步验收（扫描 ${scanFile}）`);
+  const selected = steps
+    .map((step, index) => ({ ...step, number: index + 1 }))
+    .filter((step) => only.has(step.number));
+  log(`开始九步验收：第 ${[...only].join('、')} 步${scanFile ? `（扫描 ${scanFile}）` : ''}`);
   const context = {};
-  const { ok, results } = await runSteps(steps, context, { log });
+  const { ok, results } = await runSteps(selected, context, { log });
   if (!ok && context.page) {
     // 失败时留一张整页截图，方便看当时页面的样子。
     await context.page.screenshot({ path: join(out, 'failure.png') }).catch(() => {});
   }
   const report = formatReport(results);
-  writeFileSync(join(out, 'report.md'), `# 九步验收\n\n- 库：${database}\n- 扫描：${scanFile}\n\n${report}\n`);
+  writeFileSync(join(out, 'report.md'), `# 九步验收\n\n- 库：${database}\n- 扫描：${scanFile ?? '（没跑第 2 步）'}\n\n${report}\n`);
   writeFileSync(join(out, 'report.json'), JSON.stringify({ ok, database, scan: scanFile, urls, results }, null, 2));
   console.log(`\n${report}\n`);
   log(ok ? `九步全部通过（结果和截图在 ${out}）` : `验收失败（结果、截图和日志在 ${out}、infra/dev/.run/*.log）`);

@@ -65,5 +65,11 @@ export function applyMatrix(mesh: MeshData, matrix: Matrix4): MeshData {
       indices[t + 2] = mesh.indices[t + 1]!;
     }
   }
-  return { positions, normals, uvs: mesh.uvs, indices };
+  return {
+    positions,
+    normals,
+    uvs: mesh.uvs,
+    indices,
+    ...(mesh.meters !== undefined ? { meters: mesh.meters } : {}),
+  };
 }

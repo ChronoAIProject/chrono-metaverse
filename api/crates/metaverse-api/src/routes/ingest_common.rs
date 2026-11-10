@@ -135,20 +135,6 @@ pub fn if_match_seq(headers: &HeaderMap) -> Result<Option<u64>, ApiError> {
         .map_err(|_| ApiError::invalid("If-Match 必须是 seq，例如 \"3\""))
 }
 
-/// `Idempotency-Key`：1–200 个可见 ASCII 字符。
-pub fn idempotency_key(headers: &HeaderMap) -> Result<Option<String>, ApiError> {
-    let Some(value) = headers.get("idempotency-key") else {
-        return Ok(None);
-    };
-    let text = value.to_str().unwrap_or_default().trim();
-    if text.is_empty() || text.len() > 200 || !text.bytes().all(|b| b.is_ascii_graphic()) {
-        return Err(ApiError::invalid(
-            "Idempotency-Key 必须是 1–200 个可见 ASCII 字符",
-        ));
-    }
-    Ok(Some(text.to_owned()))
-}
-
 /// 分页游标：`base64url("<RFC 3339 时间>|<编号>")`，对调用方不透明。
 pub fn encode_cursor(cursor: &Cursor) -> String {
     URL_SAFE_NO_PAD.encode(format!("{}|{}", cursor.at, cursor.id))

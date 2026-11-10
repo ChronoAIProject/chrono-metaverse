@@ -1,5 +1,6 @@
 {
   "base": {
+    "anchorHistory": [],
     "anchors": [],
     "entities": [],
     "fills": [],
@@ -85,7 +86,8 @@
         "id": "garden",
         "kind": "virtual"
       }
-    ]
+    ],
+    "scopeKind": "ext"
   },
   "description": "声明的 bounds 没有包住形状（圆柱半径 0.2，bounds 只到 x = 0.1）",
   "expect": {

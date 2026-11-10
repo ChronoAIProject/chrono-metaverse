@@ -1,0 +1,505 @@
+{
+  "cases": [
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "floor",
+            "kind": "structure",
+            "label": "地面",
+            "shape": {
+              "material": {
+                "normalMap": {
+                  "sha256": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+                  "size": 1523087,
+                  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/example_wood_floor/example_wood_floor_nor_gl_1k.png"
+                },
+                "roughnessMap": {
+                  "sha256": "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+                  "size": 402559,
+                  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/example_wood_floor/example_wood_floor_rough_1k.png"
+                },
+                "shading": "albedo",
+                "texture": {
+                  "sha256": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+                  "size": 734211,
+                  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/example_wood_floor/example_wood_floor_diff_1k.jpg"
+                },
+                "tile": [
+                  0.6,
+                  0.6
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                8,
+                0.02,
+                6
+              ],
+              "transform": {
+                "position": [
+                  4,
+                  -0.02,
+                  3
+                ]
+              },
+              "type": "box"
+            }
+          },
+          {
+            "entityId": "wall-north",
+            "kind": "structure",
+            "label": "北墙",
+            "shape": {
+              "material": {
+                "texture": "9f2c7d4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d",
+                "uv": "planar"
+              },
+              "size": [
+                8,
+                2.8,
+                0.1
+              ],
+              "transform": {
+                "position": [
+                  4,
+                  0,
+                  0
+                ]
+              },
+              "type": "box"
+            }
+          },
+          {
+            "entityId": "counter-01",
+            "kind": "object",
+            "label": "前台",
+            "shape": {
+              "children": [
+                {
+                  "material": {
+                    "rotate": 90,
+                    "roughness": 0.6,
+                    "shading": "albedo",
+                    "texture": {
+                      "sha256": "e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5",
+                      "size": 268321,
+                      "url": "https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/0123456789abcdef0123456789abcdef01234567/infra/chrono-cd/demo/textures/counter-marble.jpg"
+                    },
+                    "tile": [
+                      0.8,
+                      0.8
+                    ],
+                    "uv": "box"
+                  },
+                  "size": [
+                    2.4,
+                    0.04,
+                    0.6
+                  ],
+                  "transform": {
+                    "position": [
+                      0,
+                      1.06,
+                      0
+                    ]
+                  },
+                  "type": "box"
+                },
+                {
+                  "material": {
+                    "color": [
+                      182,
+                      140,
+                      96
+                    ],
+                    "normalMap": {
+                      "sha256": "f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6",
+                      "size": 1048576,
+                      "url": "https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/0123456789abcdef0123456789abcdef01234567/infra/chrono-cd/demo/textures/counter-wood-normal.png"
+                    },
+                    "normalScale": 0.8,
+                    "roughness": 0.8,
+                    "tile": [
+                      0.4,
+                      0.4
+                    ],
+                    "uv": "box"
+                  },
+                  "size": [
+                    2.4,
+                    1.06,
+                    0.5
+                  ],
+                  "type": "box"
+                },
+                {
+                  "material": {
+                    "bake": "planar",
+                    "color": [
+                      40,
+                      40,
+                      44
+                    ],
+                    "roughness": 0.9,
+                    "shading": "baked"
+                  },
+                  "size": [
+                    0.6,
+                    0.02,
+                    0.4
+                  ],
+                  "transform": {
+                    "position": [
+                      0.6,
+                      1.08,
+                      0
+                    ]
+                  },
+                  "type": "box"
+                }
+              ],
+              "transform": {
+                "position": [
+                  2,
+                  0,
+                  1.5
+                ]
+              },
+              "type": "group"
+            }
+          },
+          {
+            "entityId": "table-01",
+            "kind": "object",
+            "label": "边几",
+            "shape": {
+              "height": 0.44,
+              "material": {
+                "shading": "albedo",
+                "texture": {
+                  "sha256": "e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5",
+                  "size": 268321,
+                  "url": "https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/0123456789abcdef0123456789abcdef01234567/infra/chrono-cd/demo/textures/counter-marble.jpg"
+                },
+                "tile": [
+                  0.8,
+                  0.8
+                ],
+                "uv": "planar"
+              },
+              "radius": 0.33,
+              "transform": {
+                "position": [
+                  5,
+                  0,
+                  4.2
+                ]
+              },
+              "type": "cylinder"
+            }
+          },
+          {
+            "entityId": "rug-01",
+            "kind": "object",
+            "label": "地垫",
+            "shape": {
+              "material": {
+                "shading": "albedo",
+                "texture": {
+                  "sha256": "0707070707070707070707070707070707070707070707070707070707070707",
+                  "size": 98304,
+                  "url": "https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/0123456789abcdef0123456789abcdef01234567/infra/chrono-cd/demo/textures/rug-carpet.webp"
+                },
+                "tile": [
+                  0.5,
+                  0.5
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.6,
+                0.01,
+                1.0
+              ],
+              "transform": {
+                "position": [
+                  3,
+                  0,
+                  3
+                ]
+              },
+              "type": "box"
+            }
+          },
+          {
+            "entityId": "stool-01",
+            "kind": "object",
+            "label": "圆凳",
+            "shape": {
+              "template": "tpl-stool",
+              "transform": {
+                "position": [
+                  2,
+                  0,
+                  4
+                ]
+              },
+              "type": "instance"
+            }
+          },
+          {
+            "entityId": "sofa-01",
+            "kind": "object",
+            "label": "沙发",
+            "material": {
+              "shading": "albedo",
+              "tint": [
+                214,
+                196,
+                176
+              ]
+            },
+            "model": {
+              "format": "glb",
+              "sha256": "1818181818181818181818181818181818181818181818181818181818181818",
+              "size": 123456,
+              "url": "https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-000/0000000000000000000000000000000a.glb"
+            },
+            "props": {
+              "source": {
+                "author": "示例作者",
+                "id": "0000000000000000000000000000000a",
+                "library": "objaverse",
+                "license": "CC-BY-4.0",
+                "page": "https://sketchfab.com/3d-models/0000000000000000000000000000000a",
+                "title": "示例沙发"
+              }
+            },
+            "transform": {
+              "position": [
+                5,
+                0,
+                4
+              ],
+              "yaw": 90
+            }
+          }
+        ],
+        "notes": "外链贴图示例：地面用材质库的木地板（颜色 + 法线 + 粗糙度）按 0.6 米平铺；前台台面的大理石放在本仓库",
+        "structure": "replace",
+        "templates": [
+          {
+            "entityId": "tpl-stool",
+            "kind": "template",
+            "label": "圆凳",
+            "shape": {
+              "height": 0.45,
+              "material": {
+                "roughness": 0.7,
+                "shading": "albedo",
+                "texture": {
+                  "sha256": "d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4",
+                  "size": 512000,
+                  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/example_leather/example_leather_diff_1k.jpg"
+                },
+                "tile": [
+                  0.3,
+                  0.3
+                ],
+                "uv": "cylindrical"
+              },
+              "radius": 0.18,
+              "segments": 24,
+              "type": "cylinder"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "结构、组合、模板、实例、外部模型、烘焙指令和外链贴图混用；同一个外链（大理石）用了两次，只算一个",
+      "name": "full-example",
+      "summary": {
+        "entities": 7,
+        "models": 1,
+        "templates": 1,
+        "textureFiles": 0,
+        "textureUrls": 7
+      },
+      "valid": true
+    },
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "panel-01",
+            "kind": "object",
+            "label": "木饰面板",
+            "shape": {
+              "material": {
+                "color": [
+                  150,
+                  112,
+                  80
+                ],
+                "normalMap": {
+                  "sha256": "f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6",
+                  "size": 1048576,
+                  "url": "https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/0123456789abcdef0123456789abcdef01234567/infra/chrono-cd/demo/textures/counter-wood-normal.png"
+                },
+                "roughnessMap": {
+                  "sha256": "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+                  "size": 402559,
+                  "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/example_wood_floor/example_wood_floor_rough_1k.png"
+                },
+                "tile": [
+                  0.6,
+                  0.6
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.2,
+                2.4,
+                0.03
+              ],
+              "type": "box"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "颜色材质带外链的法线贴图和粗糙度贴图（必须给 uv）",
+      "name": "color-with-maps",
+      "summary": {
+        "entities": 1,
+        "models": 0,
+        "templates": 0,
+        "textureFiles": 0,
+        "textureUrls": 2
+      },
+      "valid": true
+    },
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "panel-01",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "shading": "albedo",
+                "texture": {
+                  "sha256": "e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5",
+                  "size": 268321,
+                  "url": "https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/0123456789abcdef0123456789abcdef01234567/infra/chrono-cd/demo/textures/counter-marble.jpg"
+                },
+                "tile": [
+                  0.8,
+                  0.8
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "type": "box"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "只有一个带外链颜色贴图的物件（不合法的用例都从它改一处得来）",
+      "name": "minimal",
+      "summary": {
+        "entities": 1,
+        "models": 0,
+        "templates": 0,
+        "textureFiles": 0,
+        "textureUrls": 1
+      },
+      "valid": true
+    },
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "panel-01",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "shading": "albedo",
+                "texture": {
+                  "file": "textures/3f9a0c12ab45.jpg"
+                },
+                "tile": [
+                  0.8,
+                  0.8
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "type": "box"
+            }
+          },
+          {
+            "entityId": "panel-02",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "normalMap": {
+                  "file": "textures/8be8d2e0aa17.png"
+                },
+                "shading": "albedo",
+                "texture": {
+                  "file": "textures/3f9a0c12ab45.jpg"
+                },
+                "tile": [
+                  0.8,
+                  0.8
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "transform": {
+                "position": [
+                  2.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "type": "box"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "工作台 texture 命令写进工作副本的本地文件引用 {file}（相对物件集文件）：颜色贴图和法线贴图各一个文件，同一个文件用了两次只算一个；本地工具打包时读文件、作为贴图进包",
+      "name": "workbench-files",
+      "summary": {
+        "entities": 2,
+        "models": 0,
+        "templates": 0,
+        "textureFiles": 2,
+        "textureUrls": 0
+      },
+      "valid": true
+    }
+  ],
+  "description": "形状材质的 texture、normalMap、roughnessMap 可以写成外链对象 {url, sha256, size} 或本地文件 {file}；本地工具的物件集校验要接受（打包时下载或读文件，作为贴图文件进重建包）",
+  "kind": "authored",
+  "name": "texture-urls-valid"
+}

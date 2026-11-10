@@ -6,7 +6,8 @@
 //   GET  /.well-known/jwks.json              公钥列表（启动时生成的 RSA 密钥，只在内存里）
 //   GET  /api/v1/orgs/{id}/authorization     组织角色查询：Authorization: Bearer <accessToken>
 //   POST /dev/token                          {sub, orgRole?, org?, permissions?}
-//                                            → {identityToken, accessToken, ...}，每次一个新的 jti
+//                                            → {identityToken, accessToken, ...}，每次一个新的 jti；
+//                                            不带 permissions 时按角色文件给这个 sub 的权限
 //   GET  /healthz                            启动检查用
 //
 // 身份令牌与接口服务的验签要求一致（api/crates/metaverse-api/src/auth/jwt.rs）：
@@ -16,7 +17,12 @@
 //   验签并核对 sub（auth/organizations.rs），然后原样转给这里的组织授权接口。
 //
 // 组织角色来自 JSON 文件（默认 infra/dev/org-roles.json，每次查询时重新读取，改了不用重启）：
-//   {"orgs": {"chronoai": {"alice": "admin", "bob": "member", "carol": "viewer"}}}
+//   {"orgs": {"chronoai": {"alice": "admin", "bob": "member", "carol": "viewer", "rita": "admin"}},
+//    "permissions": {"rita": ["metaverse:rebuild:write"]}}
+// permissions 是可选的"谁带哪些权限"（相当于 NyxID 里挂在角色上的权限，例如平台管理员建的
+// metaverse-rebuilder 角色）：/dev/token 不带 permissions 时，身份令牌的 permissions 按这里给，
+// 没列的 sub 是空数组。本地的重建身份是 rita（组织 admin + 重建权限）；alice 是没有重建权限的
+// 组织 admin（docs/design/server-slim.md 3.1、10.3）。
 // /dev/token 带 orgRole 时，这个访问令牌查任何组织（或只查 org 指定的那个）都返回该角色，
 //   orgRole = "none" 表示不是成员；不带时按文件查。
 //
@@ -81,6 +87,14 @@ function verifyJwt(key, token) {
 
 /** 读组织角色文件：{"orgs": {"<组织编号>": {"<sub>": "admin" | "member" | "viewer"}}}。 */
 export async function loadRoles(path) {
+  return (await loadIdentities(path)).orgs;
+}
+
+/**
+ * 读角色文件的全部内容：组织角色 `orgs`，以及可选的 `permissions`（{"<sub>": ["<权限>", …]}，
+ * /dev/token 不带 permissions 时用）。
+ */
+export async function loadIdentities(path) {
   const parsed = JSON.parse(await readFile(path, 'utf8'));
   const orgs = parsed?.orgs;
   if (typeof orgs !== 'object' || orgs === null || Array.isArray(orgs)) {
@@ -97,7 +111,22 @@ export async function loadRoles(path) {
       }
     }
   }
-  return orgs;
+  const permissions = parsed.permissions ?? {};
+  if (typeof permissions !== 'object' || permissions === null || Array.isArray(permissions)) {
+    throw new Error(`${path}：permissions 必须是对象`);
+  }
+  for (const [sub, list] of Object.entries(permissions)) {
+    if (!SUBJECT_ID.test(sub) || !validPermissions(list)) {
+      throw new Error(`${path}：permissions.${sub} 必须是权限字符串数组`);
+    }
+  }
+  return { orgs, permissions };
+}
+
+function validPermissions(list) {
+  return (
+    Array.isArray(list) && list.length <= 256 && list.every((p) => typeof p === 'string' && PERMISSION.test(p))
+  );
 }
 
 function send(res, status, body, extraHeaders = {}) {
@@ -242,7 +271,7 @@ export async function startMockNyxid({
       } catch (error) {
         return send(res, 400, { error: 'bad_request', message: error.message });
       }
-      const { sub, orgRole, org: onlyOrg, permissions = [] } = body ?? {};
+      const { sub, orgRole, org: onlyOrg } = body ?? {};
       if (typeof sub !== 'string' || !SUBJECT_ID.test(sub)) {
         return send(res, 400, { error: 'bad_request', message: 'sub 必须是 1–256 个字母、数字、- 或 _' });
       }
@@ -252,11 +281,16 @@ export async function startMockNyxid({
       if (onlyOrg !== undefined && (typeof onlyOrg !== 'string' || !SUBJECT_ID.test(onlyOrg))) {
         return send(res, 400, { error: 'bad_request', message: 'org 必须是组织编号' });
       }
-      if (!Array.isArray(permissions) || permissions.length > 256 || !permissions.every((p) => typeof p === 'string' && PERMISSION.test(p))) {
+      if (body?.permissions !== undefined && !validPermissions(body.permissions)) {
         return send(res, 400, { error: 'bad_request', message: 'permissions 必须是字符串数组' });
       }
+      // 不带 permissions 时按角色文件给（命令行取令牌只带 sub）。
+      const permissions = body?.permissions ?? (await loadIdentities(rolesPath)).permissions[sub] ?? [];
       const override = orgRole === undefined ? undefined : { role: orgRole, ...(onlyOrg ? { org: onlyOrg } : {}) };
-      log(`签发令牌：sub=${sub}${override ? ` orgRole=${orgRole}${onlyOrg ? `@${onlyOrg}` : ''}` : ''}`);
+      log(
+        `签发令牌：sub=${sub}${override ? ` orgRole=${orgRole}${onlyOrg ? `@${onlyOrg}` : ''}` : ''}` +
+          `${permissions.length > 0 ? ` permissions=${permissions.join(',')}` : ''}`,
+      );
       return send(res, 200, {
         identityToken: identityToken(sub, permissions),
         accessToken: accessToken(sub, override),
@@ -285,7 +319,7 @@ export async function startMockNyxid({
   const shownHost = host.includes(':') ? `[${host}]` : host;
   issuer = `http://${shownHost}:${address.port}`;
   // 启动时就检查一遍角色文件，写错了直接失败。
-  await loadRoles(rolesPath);
+  await loadIdentities(rolesPath);
   return {
     url: issuer,
     issuer,

@@ -2,7 +2,8 @@
 //!
 //! 每个形状是一个 JSON 对象，`type` 决定其余字段；所有形状都可以带
 //! `transform` 和 `material`。这里不生成网格（网格由网站和处理服务生成），
-//! 只做结构校验和包围盒计算。
+//! 只做结构校验和包围盒计算；材质的平铺（`tile`、`offset`、`rotate`）只校验取值，
+//! 贴图坐标由网站和处理服务算（测试向量 `uv/`）。
 //!
 //! **包围盒规则**（三种语言必须一致，测试向量 `shape_*.json` 按此生成）：
 //!
@@ -85,6 +86,14 @@ pub const FLAT_TOLERANCE: f64 = 0.001;
 /// 凸包的点数范围。
 pub const MIN_HULL_POINTS: usize = 4;
 pub const MAX_HULL_POINTS: usize = 256;
+/// 材质 `tile`（贴图每重复一次的实际尺寸）每个分量的上限（米）；下限是大于 0。
+pub const MAX_TILE: f64 = 100.0;
+/// 材质 `offset`（贴图坐标的平移）每个分量的绝对值上限（米）。
+pub const MAX_UV_OFFSET: f64 = 1000.0;
+/// 材质 `rotate`（贴图在表面上逆时针转的角度）的绝对值上限（度）。
+pub const MAX_UV_ROTATE: f64 = 360.0;
+/// 材质 `normalScale`（法线贴图强度）的上限；下限是 0。
+pub const MAX_NORMAL_SCALE: f64 = 4.0;
 
 /// 校验或计算失败：`path` 是 JSON 路径，例如 `$.children[2].outline.points[3]`。
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -167,7 +176,7 @@ impl Transform {
             .expect("8 个角点不会为空")
     }
 
-    fn validate(&self, path: &str) -> Result<(), ShapeError> {
+    pub(crate) fn validate(&self, path: &str) -> Result<(), ShapeError> {
         if let Some(position) = self.position {
             coords(&format!("{path}.position"), &position)?;
         }
@@ -209,11 +218,23 @@ pub enum UvMode {
     Mesh,
 }
 
+/// 着色方式（SHAPES 2"着色、法线、粗糙度"）。不给时按 `baked`。
+///
+/// 只影响贴图材质（以及物件模型，SHAPES 3）：`baked` 是扫描烘焙贴图的看法，贴图里已经带了光照；
+/// `albedo` 是固有色、完整受光。颜色材质两种取值画法一样。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Shading {
+    Baked,
+    Albedo,
+}
+
 /// 材质：`{ "color": [r,g,b] }`，或 `{ "texture": "<资源哈希>", "uv": …, "tint"?: [r,g,b] }`。
 /// 两种都可以带 `opacity`（0–1，默认 1，小于 1 时半透明，用于玻璃）和 `unlit`
-/// （默认 false，为真时不受光照，用于屏幕、灯箱）。
+/// （默认 false，为真时不受光照，用于屏幕、灯箱），以及平铺、着色方式、法线和粗糙度
+/// （SHAPES 2"贴图坐标的平铺、着色、法线与粗糙度"）。新字段都不给时与旧数据完全相同。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Material {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<[u8; 3]>,
@@ -227,6 +248,33 @@ pub struct Material {
     pub opacity: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unlit: Option<bool>,
+    /// 贴图在表面上每重复一次的实际尺寸 `[u, v]`（米，0 < x ≤ 100）：给了就按米算贴图坐标、
+    /// 重复采样；不给就是旧的按包围盒归一化。只用于有贴图坐标的材质。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tile: Option<[f64; 2]>,
+    /// 贴图坐标的平移 `[u, v]`（米，绝对值 ≤ 1000），只能和 `tile` 一起给。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<[f64; 2]>,
+    /// 贴图在表面上逆时针转的角度（度，−360 到 360），只能和 `tile` 一起给。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotate: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shading: Option<Shading>,
+    /// 切线空间法线贴图（资源哈希，OpenGL 约定，与 glTF 相同）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub normal_map: Option<String>,
+    /// 法线贴图的强度（0 到 4，默认 1），只能和 `normalMap` 一起给。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub normal_scale: Option<f64>,
+    /// 粗糙度贴图（资源哈希，灰度，白 = 粗糙）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roughness_map: Option<String>,
+    /// 粗糙度（0 到 1）；和 `roughnessMap` 一起给时是乘数。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roughness: Option<f64>,
+    /// 金属度（0 到 1），只有标量。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metalness: Option<f64>,
 }
 
 /// 不透明度必须是 0 到 1 之间的有限值。
@@ -239,13 +287,89 @@ pub fn validate_opacity(path: &str, opacity: Option<f64>) -> Result<(), ShapeErr
     }
 }
 
+/// 可选的数是 `[min, max]` 之内的有限值，否则在 `{path}.{name}` 报 `message`。
+fn in_range(
+    path: &str,
+    name: &str,
+    value: Option<f64>,
+    [min, max]: [f64; 2],
+    message: &str,
+) -> Result<(), ShapeError> {
+    match value {
+        Some(value) if !(value.is_finite() && min <= value && value <= max) => {
+            Err(ShapeError::new(&format!("{path}.{name}"), message))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// 可选的资源哈希必须是 64 位小写十六进制。
+fn asset_hash(path: &str, name: &str, value: Option<&String>) -> Result<(), ShapeError> {
+    match value {
+        Some(hash) if !is_sha256_hex(hash) => Err(ShapeError::new(
+            &format!("{path}.{name}"),
+            format!("{name} 必须是 64 位小写十六进制的资源哈希"),
+        )),
+        _ => Ok(()),
+    }
+}
+
 impl Material {
+    /// 带了法线贴图或粗糙度贴图（颜色材质这时也要有贴图坐标）。
+    fn has_maps(&self) -> bool {
+        self.normal_map.is_some() || self.roughness_map.is_some()
+    }
+
+    /// 材质引用的贴图资源：`texture`、`normalMap`、`roughnessMap`（SHAPES 2"资源引用"）。
+    pub fn texture_refs(&self) -> impl Iterator<Item = &str> {
+        [&self.texture, &self.normal_map, &self.roughness_map]
+            .into_iter()
+            .flatten()
+            .map(String::as_str)
+    }
+
     fn validate(&self, path: &str) -> Result<(), ShapeError> {
         validate_opacity(&format!("{path}.opacity"), self.opacity)?;
+        self.validate_mapping(path)?;
+        if self.normal_scale.is_some() && self.normal_map.is_none() {
+            return Err(ShapeError::new(
+                &format!("{path}.normalScale"),
+                "normalScale 只能和 normalMap 一起给",
+            ));
+        }
+        in_range(
+            path,
+            "normalScale",
+            self.normal_scale,
+            [0.0, MAX_NORMAL_SCALE],
+            "normalScale 必须在 0 到 4 之间",
+        )?;
+        in_range(
+            path,
+            "roughness",
+            self.roughness,
+            [0.0, 1.0],
+            "roughness 必须在 0 到 1 之间",
+        )?;
+        in_range(
+            path,
+            "metalness",
+            self.metalness,
+            [0.0, 1.0],
+            "metalness 必须在 0 到 1 之间",
+        )?;
+        asset_hash(path, "normalMap", self.normal_map.as_ref())?;
+        asset_hash(path, "roughnessMap", self.roughness_map.as_ref())?;
         match (&self.color, &self.texture) {
             (Some(_), None) => {
-                if self.uv.is_some() || self.tint.is_some() {
+                if self.tint.is_some() || (self.uv.is_some() && !self.has_maps()) {
                     return Err(ShapeError::new(path, "纯色材质不能带 uv 或 tint"));
+                }
+                if self.has_maps() && self.uv.is_none() {
+                    return Err(ShapeError::new(
+                        path,
+                        "颜色材质带 normalMap 或 roughnessMap 时必须给出 uv",
+                    ));
                 }
             }
             (None, Some(texture)) => {
@@ -261,7 +385,58 @@ impl Material {
             }
             _ => return Err(ShapeError::new(path, "材质必须且只能给出 color 或 texture")),
         }
+        // 上面已经保证：有 uv 的只有贴图材质和带法线、粗糙度贴图的颜色材质。
+        if self.tile.is_some() && self.uv.is_none() {
+            return Err(ShapeError::new(
+                &format!("{path}.tile"),
+                "tile、offset、rotate 只用于有贴图坐标（uv）的材质",
+            ));
+        }
         Ok(())
+    }
+
+    /// `tile`、`offset`、`rotate` 的取值和搭配。
+    fn validate_mapping(&self, path: &str) -> Result<(), ShapeError> {
+        if let Some(tile) = self.tile {
+            if !tile
+                .iter()
+                .all(|x| x.is_finite() && *x > 0.0 && *x <= MAX_TILE)
+            {
+                return Err(ShapeError::new(
+                    &format!("{path}.tile"),
+                    "tile 的两个数都必须大于 0、不超过 100（米）",
+                ));
+            }
+        }
+        for (name, given) in [
+            ("offset", self.offset.is_some()),
+            ("rotate", self.rotate.is_some()),
+        ] {
+            if given && self.tile.is_none() {
+                return Err(ShapeError::new(
+                    &format!("{path}.{name}"),
+                    "offset、rotate 只能和 tile 一起给",
+                ));
+            }
+        }
+        if let Some(offset) = self.offset {
+            if !offset
+                .iter()
+                .all(|x| x.is_finite() && x.abs() <= MAX_UV_OFFSET)
+            {
+                return Err(ShapeError::new(
+                    &format!("{path}.offset"),
+                    "offset 的两个数绝对值都不能超过 1000（米）",
+                ));
+            }
+        }
+        in_range(
+            path,
+            "rotate",
+            self.rotate,
+            [-MAX_UV_ROTATE, MAX_UV_ROTATE],
+            "rotate 必须在 −360 到 360 度之间",
+        )
     }
 }
 
@@ -1073,6 +1248,25 @@ impl Shape {
         }
     }
 
+    /// 引用到的全部贴图资源：本形状和全部子形状（含模板实例自己的材质，不展开模板本身）材质里的
+    /// `texture`、`normalMap`、`roughnessMap`（SHAPES 2"资源引用"）。
+    pub fn texture_refs(&self) -> BTreeSet<String> {
+        let mut refs = BTreeSet::new();
+        self.collect_texture_refs(&mut refs);
+        refs
+    }
+
+    fn collect_texture_refs(&self, refs: &mut BTreeSet<String>) {
+        if let Some(material) = &self.material {
+            refs.extend(material.texture_refs().map(str::to_owned));
+        }
+        if let ShapeKind::Group { children } = &self.kind {
+            children
+                .iter()
+                .for_each(|child| child.collect_texture_refs(refs));
+        }
+    }
+
     /// 包围盒（含本形状自己的 `transform`），规则见模块文档。
     /// 模板的包围盒只算一次并缓存；模板循环引用或嵌套过深时报错。
     pub fn bounds(&self, templates: &dyn TemplateSource) -> Result<Aabb, ShapeError> {
@@ -1531,6 +1725,133 @@ mod tests {
             json!({"type":"box","size":[1,1,1],"material":{"color":[1,1,1],"unlit":1}})
         )
         .is_err());
+    }
+
+    #[test]
+    fn material_tiling_shading_and_maps_round_trip() {
+        let hash = |c: char| c.to_string().repeat(64);
+        let value = json!({"type":"box","size":[2,1,0.5],"material":{
+            "texture":hash('a'),"uv":"box","tile":[0.5,0.25],"offset":[0.1,-0.2],"rotate":30,
+            "shading":"albedo","normalMap":hash('b'),"normalScale":1.5,"roughnessMap":hash('c'),
+            "roughness":0.9,"metalness":0}});
+        let parsed = shape(value.clone());
+        parsed.validate().unwrap();
+        let material = parsed.material.as_ref().unwrap();
+        assert_eq!(material.shading, Some(Shading::Albedo));
+        assert_eq!(material.tile, Some([0.5, 0.25]));
+        let canonical = |v: &Value| crate::canonical::canonical_json(v).unwrap();
+        assert_eq!(
+            canonical(&serde_json::to_value(&parsed).unwrap()),
+            canonical(&value)
+        );
+        // 字段名是 camelCase，下划线写法不认。
+        assert!(
+            serde_json::from_value::<Shape>(json!({"type":"box","size":[1,1,1],
+            "material":{"color":[1,2,3],"uv":"box","normal_map":hash('b')}}))
+            .is_err()
+        );
+        // 都不给时与旧数据相同（不多出任何字段）。
+        let old =
+            json!({"type":"box","size":[1,1,1],"material":{"texture":hash('a'),"uv":"planar"}});
+        assert_eq!(
+            canonical(&serde_json::to_value(shape(old.clone())).unwrap()),
+            canonical(&old)
+        );
+    }
+
+    #[test]
+    fn material_maps_and_tiling_rules() {
+        let hash = |c: char| c.to_string().repeat(64);
+        let box_with =
+            |material: Value| shape(json!({"type":"box","size":[1,1,1],"material":material}));
+        // 合法：颜色材质带粗糙度贴图（必须有 uv，可以平铺）、边界值、颜色材质只带标量。
+        for material in [
+            json!({"color":[1,2,3],"uv":"planar","roughnessMap":hash('c'),"tile":[1,1],"rotate":360}),
+            json!({"color":[1,2,3],"uv":"box","normalMap":hash('b'),"normalScale":0}),
+            json!({"texture":hash('a'),"uv":"mesh","tile":[0.001,100],"offset":[1000,-1000],"rotate":-360}),
+            json!({"color":[1,2,3],"roughness":0,"metalness":1,"shading":"baked"}),
+            json!({"texture":hash('a'),"uv":"box","unlit":true,"shading":"albedo","roughness":1}),
+        ] {
+            box_with(material.clone())
+                .validate()
+                .unwrap_or_else(|error| panic!("{material}: {error}"));
+        }
+        // 不合法：路径指向出错的字段。
+        for (material, path) in [
+            (
+                json!({"texture":hash('a'),"uv":"box","roughnessMap":"C".repeat(64)}),
+                "$.material.roughnessMap",
+            ),
+            (
+                json!({"color":[1,2,3],"uv":"box","roughnessMap":hash('c'),"tint":[1,1,1]}),
+                "$.material",
+            ),
+            (
+                json!({"color":[1,2,3],"roughnessMap":hash('c')}),
+                "$.material",
+            ),
+            (
+                json!({"texture":hash('a'),"uv":"box","tile":[-1,1]}),
+                "$.material.tile",
+            ),
+            (
+                json!({"texture":hash('a'),"uv":"box","tile":[1,1],"rotate":-360.5}),
+                "$.material.rotate",
+            ),
+            (
+                json!({"texture":hash('a'),"uv":"box","tile":[1,1],"offset":[0,-1001]}),
+                "$.material.offset",
+            ),
+            (
+                json!({"texture":hash('a'),"uv":"box","normalMap":hash('b'),"normalScale":-0.1}),
+                "$.material.normalScale",
+            ),
+            (
+                json!({"color":[1,2,3],"metalness":1.5}),
+                "$.material.metalness",
+            ),
+        ] {
+            assert_eq!(
+                box_with(material.clone()).validate().unwrap_err().path,
+                path,
+                "{material}"
+            );
+        }
+        // 外链对象只有 AI 物件集收，形状里在解析阶段就拒绝；着色方式只认两个值。
+        for material in [
+            json!({"texture":hash('a'),"uv":"box","normalMap":{"url":"https://x.org/n.png","sha256":hash('b'),"size":1}}),
+            json!({"color":[1,2,3],"shading":"unlit"}),
+            json!({"texture":hash('a'),"uv":"box","tile":[1,1,1]}),
+        ] {
+            assert!(
+                serde_json::from_value::<Shape>(
+                    json!({"type":"box","size":[1,1,1],"material":material})
+                )
+                .is_err(),
+                "{material}"
+            );
+        }
+    }
+
+    #[test]
+    fn texture_refs_cover_every_material_field() {
+        let hash = |c: char| c.to_string().repeat(64);
+        let tree = shape(
+            json!({"type":"group","material":{"color":[1,2,3],"uv":"box","normalMap":hash('a')},
+            "children":[
+                {"type":"box","size":[1,1,1],"material":{"texture":hash('b'),"uv":"box","roughnessMap":hash('c')}},
+                {"type":"group","children":[
+                    {"type":"instance","template":"chair","material":{"texture":hash('d'),"uv":"mesh","normalMap":hash('a')}},
+                    {"type":"box","size":[1,1,1],"material":{"color":[1,2,3]}}
+                ]}
+            ]}),
+        );
+        tree.validate().unwrap();
+        let expected: BTreeSet<String> = ['a', 'b', 'c', 'd'].map(hash).into_iter().collect();
+        assert_eq!(tree.texture_refs(), expected);
+        assert!(shape(json!({"type":"box","size":[1,1,1]}))
+            .texture_refs()
+            .is_empty());
     }
 
     #[test]

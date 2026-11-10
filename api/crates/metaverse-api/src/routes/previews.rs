@@ -165,7 +165,7 @@ pub async fn get_preview_chunk(
     path = "/api/public/previews/assets/{hash}",
     operation_id = "get_preview_asset",
     tag = "public",
-    description = "预览用的资源：草稿引用的资源（新上传的模型、贴图），或本空间已登记的资源。支持 `Range`；响应不缓存。",
+    description = "预览用的资源：草稿引用的资源（新上传的模型、贴图），或本空间基础版本及以前的提交登记过的资源。支持 `Range`；响应不缓存。",
     params(
         ("hash" = String, Path, description = "资源哈希"),
         ("Authorization" = String, Header, description = "`Preview <预览令牌>`"),
@@ -188,7 +188,7 @@ pub async fn get_preview_asset(
         Some(meta) => meta,
         None => state
             .repo
-            .space_asset(&grant, hash)
+            .space_asset_upto(&grant, hash, draft.base_seq)
             .await?
             .ok_or_else(ApiError::not_found)?,
     };

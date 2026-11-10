@@ -1,21 +1,28 @@
 //! 分片上传（设计 6.1、8.3、8.5）。
 //!
 //! ```text
-//! POST /api/v1/spaces/{space_id}[/plots/{plot_id}]/uploads/{purpose}                    创建
-//! PUT  /api/v1/spaces/{space_id}[/plots/{plot_id}]/uploads/{purpose}/{upload_id}/parts/{n}  传一片（原始字节）
-//! POST /api/v1/spaces/{space_id}[/plots/{plot_id}]/uploads/{purpose}/{upload_id}/complete  完成 → 202 + 任务编号
-//! GET  /api/v1/spaces/{space_id}[/plots/{plot_id}]/uploads/{purpose}/{upload_id}           查状态
+//! POST /api/v1/spaces/{space_id}[/plots/{plot_id} | /rebuild]/uploads/{purpose}                    创建
+//! PUT  /api/v1/spaces/{space_id}[/plots/{plot_id} | /rebuild]/uploads/{purpose}/{upload_id}/parts/{n}  传一片（原始字节）
+//! POST /api/v1/spaces/{space_id}[/plots/{plot_id} | /rebuild]/uploads/{purpose}/{upload_id}/complete  完成 → 202 + 任务编号
+//! GET  /api/v1/spaces/{space_id}[/plots/{plot_id} | /rebuild]/uploads/{purpose}/{upload_id}           查状态
 //! ```
 //!
-//! - 用途写在路径里（NyxID 操作范围按路径限制能传哪类文件）；地块路径不能上传扫描（403）；
+//! 重建路径（`/rebuild/uploads/...`，docs/design/server-slim.md 2.3）的处理函数在 `routes/rebuild.rs`，
+//! 复用这里的步骤：写操作始终要求 `metaverse:rebuild:write`，用途是 `scan`、`webmodel`、`model`、
+//! `texture`、`script`、`bundle`。
+//!
+//! - 用途写在路径里（NyxID 操作范围按路径限制能传哪类文件）：实体区、地块路径收 `model`、`texture`、
+//!   `ops`、`script`；扫描只经重建路径上传（实体区、地块路径上传扫描 422 `purpose_not_allowed`）；
+//!   `webmodel`、`bundle` 也只经重建路径（403 `scope_violation`）；AI 物件集 `authored` 已下线，三组
+//!   路径一律 410 `endpoint_retired`（docs/design/server-slim.md 2.1）；
 //! - 创建时声明总大小、整体 SHA-256、分片大小、格式；哈希已经存在就直接复用（200，`status: done`、
 //!   `reused: true`），不再接收数据；
 //! - 分片大小是 256KiB 的整数倍、最大 32MiB；片号从 0 开始；除最后一片外各片大小都等于分片大小，
 //!   最后一片是余下的字节；第 n 片按 256KiB 切块写进 GridFS（布局见 `repo/uploads.rs`），重传幂等；
 //! - 第 0 片按声明的格式核对文件头（glb 头里的总长度、图片像素上限等）；
 //! - 配额：超过用途的大小上限或空间存储上限 413；进行中的上传太多 429；
-//! - 完成：全部分片到齐后建 `upload_verify` 任务（参数 `{uploadId}`），由处理服务流式核对整体哈希、
-//!   登记成资源（GridFS 文件名 = 内容哈希），把上传标记为 done 并写 `assetHash`；
+//! - 完成：全部分片到齐后建 `upload_verify` 任务（参数 `{uploadId}`），由接口服务的后台执行器流式
+//!   核对整体哈希和内容、登记成资源（GridFS 文件名 = 内容哈希），把上传标记为 done 并写 `assetHash`；
 //! - 先验身份（中间件）、再查资源级权限、最后才读分片的请求体；分片请求体上限 32MiB + 1KiB，
 //!   本进程同时处理的分片数有上限（`UPLOAD_MAX_CONCURRENT_PARTS`）。
 
@@ -31,9 +38,9 @@ use axum::{
 };
 use metaverse_core::model::{
     Job, JobKind, JobStatus, Upload, UploadFormat, UploadPart, UploadStatus, ASSET_CHUNK_SIZE,
-    JOB_MAX_ATTEMPTS, MAX_UPLOAD_PART_SIZE, UPLOAD_TTL_SECONDS,
+    MAX_UPLOAD_PART_SIZE, UPLOAD_TTL_SECONDS,
 };
-use metaverse_core::scope::{check_upload_purpose, PathScope, UploadPurpose};
+use metaverse_core::scope::{check_upload_purpose, PathScope, ScopeError, UploadPurpose};
 use metaverse_core::{is_sha256_hex, sha256_hex, Timestamp};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -114,7 +121,7 @@ pub struct CreateUploadRequest {
     pub part_size: u64,
     /// 文件格式：scan、model 用途 glb/drc/obj/zip（zip = 模型 + 贴图，例如 Scaniverse 导出）；
     /// texture 用途 png/jpeg/webp（单边 ≤ 8192）；ops 用途 ndjson/gzip；script 用途 text。
-    /// 收到第 0 片时按它核对文件头；处理服务校验时再嗅探一遍。
+    /// 收到第 0 片时按它核对文件头；完成后后台核对（`upload_verify`）按全文再认一遍。
     #[schema(example = "drc")]
     pub format: String,
 }
@@ -125,13 +132,13 @@ pub struct CreateUploadRequest {
 pub struct UploadView {
     pub upload_id: String,
     pub space_id: String,
-    /// `scan`、`model`、`texture`、`ops`、`script`。
+    /// `scan`、`webmodel`、`model`、`texture`、`ops`、`script`、`bundle`。
     pub purpose: String,
-    /// 创建时的路径范围：`physical` 或 `plot:<编号>`。
+    /// 创建时的路径范围：`physical`、`plot:<编号>` 或 `rebuild`。
     pub scope: String,
     /// 创建时声明的格式。
     pub declared_format: String,
-    /// 处理服务嗅探出的格式（`glb | draco | obj | zip | png | jpeg | webp | ndjson | ndjson+gzip | text`），
+    /// 后台核对认出的格式（`glb | draco | obj | zip | png | jpeg | webp | ndjson | ndjson+gzip | text`），
     /// 校验通过后才有。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub format: Option<String>,
@@ -160,6 +167,10 @@ pub struct UploadView {
     /// 校验失败的原因。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// 服务端从内容实测的核对记录（docs/SHAPES.md 第 8 节）：`{v, format, …}`，核对通过后才有。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<Object>)]
+    pub check: Option<metaverse_core::check::AssetCheck>,
     #[schema(value_type = String, format = DateTime)]
     pub created_at: Timestamp,
     /// 没完成的上传在这个时间之后被清理。
@@ -198,6 +209,7 @@ impl UploadView {
             asset_hash: upload.asset_hash.clone(),
             reused: upload.reused,
             error: upload.error.clone(),
+            check: None,
             created_at: upload.created_at,
             expires_at: upload.created_at.saturating_add_seconds(UPLOAD_TTL_SECONDS),
         }
@@ -229,6 +241,21 @@ pub struct CompleteUploadResponse {
     pub asset_hash: Option<String>,
 }
 
+impl UploadView {
+    /// 已经登记成资源的上传，带上资源的核对记录。
+    async fn with_check(
+        mut self,
+        state: &AppState,
+        grant: &Grant,
+        upload: &Upload,
+    ) -> Result<Self, ApiError> {
+        if let (UploadStatus::Done, Some(hash)) = (upload.status, &upload.asset_hash) {
+            self.check = state.repo.uploaded_asset_check(grant, hash).await?;
+        }
+        Ok(self)
+    }
+}
+
 fn status_name(status: UploadStatus) -> &'static str {
     match status {
         UploadStatus::Open => "open",
@@ -243,27 +270,89 @@ fn status_name(status: UploadStatus) -> &'static str {
 // 共用步骤
 // ---------------------------------------------------------------------------
 
+/// 路径里的用途。AI 物件集 `authored` 已下线：410 `endpoint_retired`（不看路径范围和权限）。
 fn purpose_of(path: &str) -> Result<UploadPurpose, ApiError> {
-    purpose_from_path(path).ok_or_else(ApiError::not_found)
+    match purpose_from_path(path) {
+        Some(UploadPurpose::Authored) => Err(super::retired::retired(
+            "AI 物件集上传（uploads/authored；物件集只在本地，打成重建包后经重建路径上传）",
+        )),
+        Some(purpose) => Ok(purpose),
+        None => Err(ApiError::not_found()),
+    }
 }
 
-/// 资源级授权 + 路径范围 + 用途与范围一致。
+/// 上传经哪条路径。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum UploadPath {
+    Physical,
+    Plot(String),
+    /// 重建路径（`/rebuild/uploads/...`）。
+    Rebuild,
+}
+
+impl UploadPath {
+    /// 这条路径下的地址前缀（`Location` 头用）。
+    fn base(&self, space_id: &str) -> String {
+        match self {
+            UploadPath::Physical => format!("/api/v1/spaces/{space_id}"),
+            UploadPath::Plot(plot) => format!("/api/v1/spaces/{space_id}/plots/{plot}"),
+            UploadPath::Rebuild => format!("/api/v1/spaces/{space_id}/rebuild"),
+        }
+    }
+}
+
+/// 资源级授权 + 路径范围 + 用途与范围一致。实体区、地块的写操作在功能级开关打开时要求
+/// `metaverse:content:write`；重建路径的写操作始终要求 `metaverse:rebuild:write`
+/// （docs/design/server-slim.md 3.1），读操作只按访问级别。
 async fn authorize(
     state: &AppState,
     caller: &Caller,
     space_id: &str,
-    plot_id: Option<&str>,
+    path: &UploadPath,
     purpose: UploadPurpose,
     access: Purpose,
 ) -> Result<(Grant, PathScope, metaverse_core::model::Space), ApiError> {
-    if access == Purpose::Manage {
-        state
-            .authorizer
-            .require_capability(caller, Capability::WriteContent)?;
-    }
-    let grant = state.authorizer.space(caller, space_id, access).await?;
-    let (scope, space) = path_scope(state, &grant, plot_id).await?;
-    check_upload_purpose(&scope, purpose).map_err(|error| scope_violation(error.to_string()))?;
+    let (grant, scope, space) = match path {
+        UploadPath::Rebuild => {
+            let grant = match access {
+                Purpose::Manage => state.authorizer.rebuild_space(caller, space_id).await?,
+                Purpose::Read => {
+                    state
+                        .authorizer
+                        .space(caller, space_id, Purpose::Read)
+                        .await?
+                }
+            };
+            let space = state
+                .repo
+                .space(&grant)
+                .await?
+                .ok_or_else(ApiError::not_found)?;
+            (grant, PathScope::Rebuild, space)
+        }
+        UploadPath::Physical | UploadPath::Plot(_) => {
+            if access == Purpose::Manage {
+                state
+                    .authorizer
+                    .require_capability(caller, Capability::WriteContent)?;
+            }
+            let grant = state.authorizer.space(caller, space_id, access).await?;
+            let plot_id = match path {
+                UploadPath::Plot(plot) => Some(plot.as_str()),
+                _ => None,
+            };
+            let (scope, space) = path_scope(state, &grant, plot_id).await?;
+            (grant, scope, space)
+        }
+    };
+    check_upload_purpose(&scope, purpose).map_err(|error| match error {
+        // 扫描改经重建路径上传（docs/design/server-slim.md 2.1）。
+        ScopeError::ScanOutsideRebuild => invalid_with(
+            "purpose_not_allowed",
+            "扫描改经 /rebuild/uploads/scan 上传（重建路径，要求 metaverse:rebuild:write）",
+        ),
+        other => scope_violation(other.to_string()),
+    })?;
     Ok((grant, scope, space))
 }
 
@@ -298,24 +387,17 @@ fn expected_part_size(upload: &Upload, n: u64) -> u64 {
 // 创建
 // ---------------------------------------------------------------------------
 
-async fn create(
+pub(super) async fn create(
     state: AppState,
     caller: Caller,
     space_id: String,
-    plot_id: Option<String>,
+    path: UploadPath,
     purpose: String,
     request: CreateUploadRequest,
 ) -> Result<Response, ApiError> {
     let purpose = purpose_of(&purpose)?;
-    let (grant, scope, space) = authorize(
-        &state,
-        &caller,
-        &space_id,
-        plot_id.as_deref(),
-        purpose,
-        Purpose::Manage,
-    )
-    .await?;
+    let (grant, scope, space) =
+        authorize(&state, &caller, &space_id, &path, purpose, Purpose::Manage).await?;
     let limits = &state.ingest.config;
     if !is_sha256_hex(&request.sha256) {
         return Err(ApiError::invalid("sha256 必须是 64 位小写十六进制"));
@@ -390,10 +472,10 @@ async fn create(
     };
     // 本空间已经拥有同一用途的这份资源：直接复用，不再接收数据（设计 6.1）。只凭哈希不行——
     // 别的主人的资源（或全系统里有没有某个文件）都不能这样拿到：其他情况一律照常上传完整数据，
-    // 由处理服务核对整体哈希后在存储层去重，所有权只靠真正传过数据确立。两种情况都返回 201。
+    // 由后台核对整体哈希后在存储层去重，所有权只靠真正传过数据确立。两种情况都返回 201。
     if let Some(length) = state
         .repo
-        .reusable_asset_length(&grant, &request.sha256, purpose)
+        .reusable_asset_length(&grant, &request.sha256, purpose, &limits.upload_limits())
         .await?
     {
         if length != request.size {
@@ -413,9 +495,10 @@ async fn create(
             upload.completed_at = Some(now);
             state.repo.insert_upload(&grant, &upload).await?;
             tracing::info!(space = %upload.space_id, upload = %upload.id, purpose = purpose_name(purpose), "复用本空间已有的资源");
-            return Ok(no_store(
-                (StatusCode::CREATED, Json(UploadView::new(&upload))).into_response(),
-            ));
+            let view = UploadView::new(&upload)
+                .with_check(&state, &grant, &upload)
+                .await?;
+            return Ok(no_store((StatusCode::CREATED, Json(view)).into_response()));
         }
         tracing::info!(space = %upload.space_id, purpose = purpose_name(purpose), "可复用的资源刚被清理，改为完整上传");
     }
@@ -449,10 +532,7 @@ async fn create(
         "创建上传"
     );
     let mut response = (StatusCode::CREATED, Json(UploadView::new(&upload))).into_response();
-    let base = match &upload.scope {
-        PathScope::Plot(plot) => format!("/api/v1/spaces/{}/plots/{plot}", upload.space_id),
-        _ => format!("/api/v1/spaces/{}", upload.space_id),
-    };
+    let base = path.base(&upload.space_id);
     set_header(
         &mut response,
         header::LOCATION,
@@ -466,10 +546,10 @@ async fn create(
     path = "/api/v1/spaces/{space_id}/uploads/{purpose}",
     operation_id = "create_upload",
     tag = "uploads",
-    description = "创建分片上传（实体区路径）。声明总大小、整体 SHA-256、分片大小（256KiB 的整数倍，≤32MiB）和格式；用途写在路径里（scan、model、texture、ops、script、authored；authored 是 AI 物件集 JSON，交给 import_scan、rebuild_scan 的 authoredAsset）。本空间已经拥有同一用途的这份资源时直接复用（status=done、reused=true），否则返回上传编号（两种情况都是 201；别的空间有同一份内容也要完整上传），之后按片号（从 0 开始）PUT 原始字节，最后调用 complete。大小上限：扫描 1GiB、物件模型 50MiB、贴图 50MiB、ops 64MiB（接口服务应用操作时整份读入，不能调大）、脚本 4MiB（可配置）、AI 物件集 4MiB（固定）；超过上限或空间存储上限返回 413，进行中的上传太多返回 429。大文件请用命令行，不要经 AI 工具传二进制。",
+    description = "创建分片上传（实体区路径）。声明总大小、整体 SHA-256、分片大小（256KiB 的整数倍，≤32MiB）和格式；用途写在路径里（model、texture、ops、script；扫描、网页用模型和重建包只经重建路径 create_rebuild_upload 上传）。本空间已经拥有同一用途的这份资源时直接复用（status=done、reused=true），否则返回上传编号（两种情况都是 201；别的空间有同一份内容也要完整上传），之后按片号（从 0 开始）PUT 原始字节，最后调用 complete。大小上限：扫描 1GiB、物件模型 50MiB、贴图 50MiB、ops 64MiB（接口服务应用操作时整份读入，不能调大）、脚本 4MiB（可配置）、AI 物件集 4MiB（固定）；超过上限或空间存储上限返回 413，进行中的上传太多返回 429。大文件请用命令行，不要经 AI 工具传二进制。",
     params(
         ("space_id" = String, Path, description = "空间编号", example = "front-hall"),
-        ("purpose" = String, Path, description = "用途：scan | model | texture | ops | script | authored（AI 物件集，JSON，≤ 4MB，只经实体区路径）", example = "scan"),
+        ("purpose" = String, Path, description = "用途：model | texture | ops | script", example = "model"),
     ),
     request_body = CreateUploadRequest,
     security(("nyxid_identity" = [])),
@@ -478,7 +558,7 @@ async fn create(
         (status = 403, description = "没有写权限", body = ProblemDocument),
         (status = 404, description = "空间不存在或无权查看", body = ProblemDocument),
         (status = 413, description = "超过大小上限或空间存储上限", body = ProblemDocument),
-        (status = 422, description = "参数不合法（哈希、分片大小、格式）", body = ProblemDocument),
+        (status = 422, description = "参数不合法（哈希、分片大小、格式）；扫描改经重建路径上传（purpose_not_allowed）", body = ProblemDocument),
         (status = 429, description = "进行中的上传太多", body = ProblemDocument),
     )
 )]
@@ -488,7 +568,15 @@ pub async fn create_upload(
     Path((space_id, purpose)): Path<(String, String)>,
     ApiJson(request): ApiJson<CreateUploadRequest>,
 ) -> Result<Response, ApiError> {
-    create(state, caller, space_id, None, purpose, request).await
+    create(
+        state,
+        caller,
+        space_id,
+        UploadPath::Physical,
+        purpose,
+        request,
+    )
+    .await
 }
 
 #[utoipa::path(
@@ -496,7 +584,7 @@ pub async fn create_upload(
     path = "/api/v1/spaces/{space_id}/plots/{plot_id}/uploads/{purpose}",
     operation_id = "create_plot_upload",
     tag = "uploads",
-    description = "创建分片上传（地块路径）。与 create_upload 相同，但地块路径下不能上传扫描（403 scope_violation）；地块合作方的 agent key 一般只开放这一组路径。",
+    description = "创建分片上传（地块路径）。与 create_upload 相同；地块合作方的 agent key 一般只开放这一组路径。",
     params(
         ("space_id" = String, Path, description = "空间编号", example = "restaurant"),
         ("plot_id" = String, Path, description = "地块编号", example = "p1"),
@@ -506,7 +594,7 @@ pub async fn create_upload(
     security(("nyxid_identity" = [])),
     responses(
         (status = 201, description = "已创建", body = UploadView),
-        (status = 403, description = "没有写权限，或地块路径上传扫描", body = ProblemDocument),
+        (status = 403, description = "没有写权限，或用途只能经重建路径上传", body = ProblemDocument),
         (status = 404, description = "空间或地块不存在", body = ProblemDocument),
         (status = 413, description = "超过大小上限或空间存储上限", body = ProblemDocument),
         (status = 422, description = "参数不合法", body = ProblemDocument),
@@ -519,7 +607,15 @@ pub async fn create_plot_upload(
     Path((space_id, plot_id, purpose)): Path<(String, String, String)>,
     ApiJson(request): ApiJson<CreateUploadRequest>,
 ) -> Result<Response, ApiError> {
-    create(state, caller, space_id, Some(plot_id), purpose, request).await
+    create(
+        state,
+        caller,
+        space_id,
+        UploadPath::Plot(plot_id),
+        purpose,
+        request,
+    )
+    .await
 }
 
 // ---------------------------------------------------------------------------
@@ -527,11 +623,11 @@ pub async fn create_plot_upload(
 // ---------------------------------------------------------------------------
 
 #[allow(clippy::too_many_arguments)]
-async fn put_part(
+pub(super) async fn put_part(
     state: AppState,
     caller: Caller,
     space_id: String,
-    plot_id: Option<String>,
+    path: UploadPath,
     purpose: String,
     upload_id: String,
     n: String,
@@ -539,15 +635,8 @@ async fn put_part(
     body: Body,
 ) -> Result<Response, ApiError> {
     let purpose = purpose_of(&purpose)?;
-    let (grant, scope, _) = authorize(
-        &state,
-        &caller,
-        &space_id,
-        plot_id.as_deref(),
-        purpose,
-        Purpose::Manage,
-    )
-    .await?;
+    let (grant, scope, _) =
+        authorize(&state, &caller, &space_id, &path, purpose, Purpose::Manage).await?;
     let upload = load_upload(&state, &grant, &scope, purpose, &upload_id).await?;
     if upload.status != UploadStatus::Open {
         return Err(conflict_with(
@@ -681,7 +770,15 @@ pub async fn put_upload_part(
     body: Body,
 ) -> Result<Response, ApiError> {
     put_part(
-        state, caller, space_id, None, purpose, upload_id, n, headers, body,
+        state,
+        caller,
+        space_id,
+        UploadPath::Physical,
+        purpose,
+        upload_id,
+        n,
+        headers,
+        body,
     )
     .await
 }
@@ -726,7 +823,7 @@ pub async fn put_plot_upload_part(
         state,
         caller,
         space_id,
-        Some(plot_id),
+        UploadPath::Plot(plot_id),
         purpose,
         upload_id,
         n,
@@ -740,24 +837,17 @@ pub async fn put_plot_upload_part(
 // 完成
 // ---------------------------------------------------------------------------
 
-async fn complete(
+pub(super) async fn complete(
     state: AppState,
     caller: Caller,
     space_id: String,
-    plot_id: Option<String>,
+    path: UploadPath,
     purpose: String,
     upload_id: String,
 ) -> Result<Response, ApiError> {
     let purpose = purpose_of(&purpose)?;
-    let (grant, scope, _) = authorize(
-        &state,
-        &caller,
-        &space_id,
-        plot_id.as_deref(),
-        purpose,
-        Purpose::Manage,
-    )
-    .await?;
+    let (grant, scope, _) =
+        authorize(&state, &caller, &space_id, &path, purpose, Purpose::Manage).await?;
     let upload = load_upload(&state, &grant, &scope, purpose, &upload_id).await?;
     let reply = |status: StatusCode, upload: &Upload| {
         no_store(
@@ -831,8 +921,10 @@ async fn complete(
         lease_owner: None,
         lease_until: None,
         attempt: 0,
-        max_attempts: JOB_MAX_ATTEMPTS,
+        max_attempts: JobKind::UploadVerify.max_attempts(),
         last_error: None,
+        not_before: None,
+        history: Vec::new(),
         result_commit_id: None,
         created_at: now,
         actor: Some(request_actor(&caller)),
@@ -848,16 +940,15 @@ async fn complete(
         .await?
     {
         CompleteWrite::Completed => {
-            tracing::info!(space = %upload.space_id, upload = %upload.id, job = %job.id, "上传完成，等待校验");
+            tracing::info!(space = %upload.space_id, upload = %upload.id, job = %job.id, "上传完成，等待核对");
+            // 叫醒本进程的后台执行器，不等轮询。
+            state.job_signal.notify();
             let mut done = upload;
             done.status = UploadStatus::Complete;
             done.job_id = Some(job.id);
             let mut response = reply(StatusCode::ACCEPTED, &done);
             if let Some(job_id) = &done.job_id {
-                let base = match &scope {
-                    PathScope::Plot(plot) => format!("/api/v1/spaces/{space_id}/plots/{plot}"),
-                    _ => format!("/api/v1/spaces/{space_id}"),
-                };
+                let base = path.base(&space_id);
                 set_header(
                     &mut response,
                     header::LOCATION,
@@ -897,7 +988,7 @@ async fn complete(
     path = "/api/v1/spaces/{space_id}/uploads/{purpose}/{upload_id}/complete",
     operation_id = "complete_upload",
     tag = "uploads",
-    description = "完成上传（实体区路径）。全部分片到齐后返回 202 和 upload_verify 任务编号；处理服务流式核对整体哈希，通过后登记成资源并把上传标记为 done（assetHash = sha256），失败则删除分片、标记 failed。重复调用返回同一个任务。还有缺片时返回 409。",
+    description = "完成上传（实体区路径）。全部分片到齐后返回 202 和 upload_verify 任务编号；接口服务的后台执行器流式核对整体哈希和内容，通过后登记成资源并把上传标记为 done（assetHash = sha256），失败则删除分片、标记 failed。重复调用返回同一个任务。还有缺片时返回 409。",
     params(
         ("space_id" = String, Path, description = "空间编号"),
         ("purpose" = String, Path, description = "用途"),
@@ -917,7 +1008,15 @@ pub async fn complete_upload(
     caller: Caller,
     Path((space_id, purpose, upload_id)): Path<(String, String, String)>,
 ) -> Result<Response, ApiError> {
-    complete(state, caller, space_id, None, purpose, upload_id).await
+    complete(
+        state,
+        caller,
+        space_id,
+        UploadPath::Physical,
+        purpose,
+        upload_id,
+    )
+    .await
 }
 
 #[utoipa::path(
@@ -945,33 +1044,37 @@ pub async fn complete_plot_upload(
     caller: Caller,
     Path((space_id, plot_id, purpose, upload_id)): Path<(String, String, String, String)>,
 ) -> Result<Response, ApiError> {
-    complete(state, caller, space_id, Some(plot_id), purpose, upload_id).await
+    complete(
+        state,
+        caller,
+        space_id,
+        UploadPath::Plot(plot_id),
+        purpose,
+        upload_id,
+    )
+    .await
 }
 
 // ---------------------------------------------------------------------------
 // 查状态
 // ---------------------------------------------------------------------------
 
-async fn show(
+pub(super) async fn show(
     state: AppState,
     caller: Caller,
     space_id: String,
-    plot_id: Option<String>,
+    path: UploadPath,
     purpose: String,
     upload_id: String,
 ) -> Result<Response, ApiError> {
     let purpose = purpose_of(&purpose)?;
-    let (grant, scope, _) = authorize(
-        &state,
-        &caller,
-        &space_id,
-        plot_id.as_deref(),
-        purpose,
-        Purpose::Read,
-    )
-    .await?;
+    let (grant, scope, _) =
+        authorize(&state, &caller, &space_id, &path, purpose, Purpose::Read).await?;
     let upload = load_upload(&state, &grant, &scope, purpose, &upload_id).await?;
-    Ok(no_store(Json(UploadView::new(&upload)).into_response()))
+    let view = UploadView::new(&upload)
+        .with_check(&state, &grant, &upload)
+        .await?;
+    Ok(no_store(Json(view).into_response()))
 }
 
 #[utoipa::path(
@@ -996,7 +1099,15 @@ pub async fn get_upload(
     caller: Caller,
     Path((space_id, purpose, upload_id)): Path<(String, String, String)>,
 ) -> Result<Response, ApiError> {
-    show(state, caller, space_id, None, purpose, upload_id).await
+    show(
+        state,
+        caller,
+        space_id,
+        UploadPath::Physical,
+        purpose,
+        upload_id,
+    )
+    .await
 }
 
 #[utoipa::path(
@@ -1022,5 +1133,13 @@ pub async fn get_plot_upload(
     caller: Caller,
     Path((space_id, plot_id, purpose, upload_id)): Path<(String, String, String, String)>,
 ) -> Result<Response, ApiError> {
-    show(state, caller, space_id, Some(plot_id), purpose, upload_id).await
+    show(
+        state,
+        caller,
+        space_id,
+        UploadPath::Plot(plot_id),
+        purpose,
+        upload_id,
+    )
+    .await
 }

@@ -3,7 +3,13 @@
     "chronoai": {
       "alice": "admin",
       "bob": "member",
-      "carol": "viewer"
+      "carol": "viewer",
+      "rita": "admin"
     }
+  },
+  "permissions": {
+    "rita": [
+      "metaverse:rebuild:write"
+    ]
   }
 }

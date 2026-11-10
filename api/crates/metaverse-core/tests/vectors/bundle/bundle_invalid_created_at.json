@@ -1,0 +1,39 @@
+{
+  "apply": null,
+  "description": "createdAt 必须是 RFC 3339 时间",
+  "expect": {
+    "field": "createdAt",
+    "message": "必须是 RFC 3339 时间",
+    "valid": false
+  },
+  "kind": "bundle",
+  "limits": null,
+  "manifest": {
+    "anchors": [
+      {
+        "anchorId": "counter-01",
+        "box": [
+          100,
+          0,
+          100,
+          140,
+          25,
+          180
+        ],
+        "kind": "counter",
+        "visibility": "public"
+      }
+    ],
+    "createdAt": "2026-11-20 08:00",
+    "files": [],
+    "format": "chrono-metaverse-rebuild-bundle",
+    "note": "只加锚点",
+    "tool": {
+      "name": "metaverse-recon",
+      "version": "0.2.0"
+    },
+    "version": 1
+  },
+  "name": "invalid-created-at",
+  "spaceTemplates": null
+}

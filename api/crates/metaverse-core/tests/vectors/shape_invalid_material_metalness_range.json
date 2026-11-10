@@ -1,0 +1,25 @@
+{
+  "description": "metalness 必须在 0 到 1 之间",
+  "errorMessage": "$.material.metalness: metalness 必须在 0 到 1 之间",
+  "errorPath": "$.material.metalness",
+  "kind": "shape",
+  "name": "invalid-material-metalness-range",
+  "shape": {
+    "material": {
+      "color": [
+        1,
+        2,
+        3
+      ],
+      "metalness": -0.1
+    },
+    "size": [
+      2,
+      1,
+      0.5
+    ],
+    "type": "box"
+  },
+  "templates": {},
+  "valid": false
+}

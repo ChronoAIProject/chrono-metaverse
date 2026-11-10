@@ -57,6 +57,10 @@ pub struct SpaceView {
     pub anchors: Vec<AnchorBody>,
     pub storage_limit_bytes: u64,
     pub storage_used_bytes: u64,
+    /// 各用途的上传上限（当前配置；只在 `GET /api/v1/spaces/{space_id}` 返回）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<Object>)]
+    pub upload_limits: Option<metaverse_core::limits::UploadLimits>,
     #[schema(value_type = String, format = DateTime)]
     pub created_at: Timestamp,
     #[schema(value_type = String, format = DateTime)]
@@ -85,6 +89,7 @@ impl SpaceView {
             anchors,
             storage_limit_bytes: space.storage_limit_bytes,
             storage_used_bytes: space.storage_used_bytes,
+            upload_limits: None,
             created_at: space.created_at,
             updated_at: space.updated_at,
         }

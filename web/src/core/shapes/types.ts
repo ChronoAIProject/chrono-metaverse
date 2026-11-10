@@ -22,17 +22,39 @@ export interface Transform {
 
 export type UvMode = 'box' | 'planar' | 'cylindrical' | 'mesh';
 
-/** 两种材质都可以带的外观选项（docs/SHAPES.md 第 2 节）。 */
+/** 着色方式：`baked` 是扫描烘焙贴图的看法（默认），`albedo` 是固有色、完整受光。 */
+export type Shading = 'baked' | 'albedo';
+
+/**
+ * 两种材质都可以带的外观选项（docs/SHAPES.md 第 2 节）。平铺、着色、法线、粗糙度
+ * （"贴图坐标的平铺、着色、法线与粗糙度"）都不给时与旧数据完全相同。
+ */
 export interface MaterialLook {
   /** 不透明度 0–1，默认 1；小于 1 时半透明（玻璃）。 */
   readonly opacity?: number;
   /** 不受光照，按颜色或贴图原样显示（屏幕、灯箱），默认 false。 */
   readonly unlit?: boolean;
+  /** 贴图在表面上每重复一次的实际尺寸 `[u, v]`（米）；给了就按米算贴图坐标、重复采样。 */
+  readonly tile?: Vec2;
+  /** 贴图坐标的平移（米），只和 `tile` 一起出现。 */
+  readonly offset?: Vec2;
+  /** 贴图在表面上逆时针转的角度（度），只和 `tile` 一起出现。 */
+  readonly rotate?: number;
+  readonly shading?: Shading;
+  /** 切线空间法线贴图的资源哈希。 */
+  readonly normalMap?: string;
+  readonly normalScale?: number;
+  /** 粗糙度贴图的资源哈希（灰度，白 = 粗糙）。 */
+  readonly roughnessMap?: string;
+  readonly roughness?: number;
+  readonly metalness?: number;
 }
 
 export interface ColorMaterial extends MaterialLook {
   /** sRGB 0–255。 */
   readonly color: Rgb;
+  /** 贴图坐标方式：只在带法线贴图或粗糙度贴图时有。 */
+  readonly uv?: UvMode;
 }
 
 export interface TextureMaterial extends MaterialLook {

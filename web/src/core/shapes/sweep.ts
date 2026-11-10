@@ -26,6 +26,8 @@ interface SectionPoint {
   readonly normal: V2;
   /** 截面上的周向参数 0–1，作为 u。 */
   readonly u: number;
+  /** u 的米版本：沿截面边界从起点量的长度（圆：角度 × 半径；矩形：从 (w/2, −h/2) 起依次量四条边）。 */
+  readonly meters: number;
 }
 
 function sectionPoints(shape: SweepShape): SectionPoint[] {
@@ -56,9 +58,10 @@ function sectionPoints(shape: SweepShape): SectionPoint[] {
         [0, -1],
       ],
     ];
+    const along = [0, 2 * h, 2 * h + 2 * w, 4 * h + 2 * w, 4 * h + 4 * w];
     return sides.flatMap(([a, b, n], i) => [
-      { offset: a, normal: n, u: i / 4 },
-      { offset: b, normal: n, u: (i + 1) / 4 },
+      { offset: a, normal: n, u: i / 4, meters: along[i]! },
+      { offset: b, normal: n, u: (i + 1) / 4, meters: along[i + 1]! },
     ]);
   }
   const radius = positiveOr('circle' in section ? section.circle : undefined, 0.02);
@@ -68,7 +71,12 @@ function sectionPoints(shape: SweepShape): SectionPoint[] {
     const angle = (k / segments) * Math.PI * 2;
     const c = Math.cos(angle);
     const s = Math.sin(angle);
-    points.push({ offset: [radius * c, radius * s], normal: [c, s], u: k / segments });
+    points.push({
+      offset: [radius * c, radius * s],
+      normal: [c, s],
+      u: k / segments,
+      meters: angle * radius,
+    });
   }
   return points;
 }
@@ -210,12 +218,17 @@ export function sweepMesh(shape: SweepShape): MeshData {
     const cosHalf = Math.max(dot3(tAvg, tOut), 0.2);
     const bend = interior ? norm3(sub3(tOut, tIn), nAxis) : nAxis;
     const tSegment = tangents[segment]!;
-    return section.map(({ offset, normal, u }) => {
+    return section.map(({ offset, normal, u, meters }) => {
       const o = add3(scale3(bAxis, offset[0]), scale3(nAxis, offset[1]));
       const stretched = add3(o, scale3(bend, dot3(o, bend) * (1 / cosHalf - 1)));
       let n = add3(scale3(bAxis, normal[0]), scale3(nAxis, normal[1]));
       if (hard) n = norm3(sub3(n, scale3(tSegment, dot3(n, tSegment))), n);
-      return builder.vertex(add3(path[i]!, stretched), norm3(n), [u, lengths[i]! / total]);
+      return builder.vertex(
+        add3(path[i]!, stretched),
+        norm3(n),
+        [u, lengths[i]! / total],
+        [meters, lengths[i]!],
+      );
     });
   };
 
@@ -235,7 +248,7 @@ export function sweepMesh(shape: SweepShape): MeshData {
       const n = segmentNormals[segment]!;
       const t = tangents[segment]!;
       const bAxis = norm3(cross3(t, n));
-      const center = builder.vertex(path[i]!, normal, [0.5, 0.5]);
+      const center = builder.vertex(path[i]!, normal, [0.5, 0.5], [0, 0]);
       const rim = section
         .filter((_, k) => 'rect' in (shape.section ?? {}) || k < section.length - 1)
         .filter((_, k) => !('rect' in (shape.section ?? {})) || k % 2 === 0)
@@ -244,6 +257,7 @@ export function sweepMesh(shape: SweepShape): MeshData {
             add3(path[i]!, add3(scale3(bAxis, offset[0]), scale3(n, offset[1]))),
             normal,
             [0.5 + offset[0], 0.5 + offset[1]],
+            [offset[0], offset[1]],
           ),
         );
       for (let k = 0; k < rim.length; k += 1) {

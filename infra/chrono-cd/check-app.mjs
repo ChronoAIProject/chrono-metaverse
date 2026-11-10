@@ -5,42 +5,42 @@
 //
 // 检查的都是"写错了服务也能启动、但线上行为不对"的配置：
 //
-// - 处理服务：BLAS / OpenMP 线程数不超过 cpu_limit，并限制 malloc 分配区。重计算子进程用
-//   RLIMIT_AS 限的是地址空间，OpenBLAS 按节点可见核数建线程、每个线程约占 41MB 地址空间，
-//   不限制时大节点上空闲就吃掉大半额度（README 第 1 节"处理服务的线程数"）；
-//   子进程内存上限要小于容器内存上限。
+// - 服务：只有 `metaverse-web`、`metaverse-api` 两个。处理服务已下线（docs/design/server-slim.md 10.1），
+//   规格里出现 `metaverse-worker` 就报错——chrono-cd 的 PUT 是整份替换，规格里留着它就还会跑旧镜像。
 // - 接口服务：公开接口的限流额度必须是合法正整数（否则接口服务启动失败）；可信客户端地址头
 //   只能是单值头（接口服务只认恰好一个 IP 的值，X-Forwarded-For 这类转发链会被忽略）；
 //   没有可信头时限流按网关地址计，所有访客共用几个桶，一个来源持续多发请求就能耗尽它们、让所有
 //   访客都 429。所以这时四个额度必须显式设到单个进程处理不了的高度（每核每秒 100 万次），
 //   等于关掉限流，靠每空间并发上限和进程内缓存兜底（README 第 1 节"公开接口限流"）。
+// - 接口服务的内存预算（设计 4.8）：物件模型、网页用模型、贴图的上限，公开接口缓存和并发分片数
+//   必须显式写出且是正整数，部署规格里就能看到按哪组数估的内存（README 第 1 节"内存预算"）。
 // - 镜像：每个服务都按摘要固定（`仓库[:7 位提交哈希]@sha256:<64 位>`），仓库与服务名对应。ghcr 的标签
 //   可以被任何分支里改过的工作流改写，chrono-cd 每次 PUT / PATCH 都把标签重新解析成摘要，按标签
 //   写的规格在一次只改环境变量的 PATCH 里也会换成别人推上去的镜像（README 第 1 步"镜像按摘要固定"）。
-// - README 的环境变量表列出了 app.json 里的每一个环境变量和密钥名；本地 up.sh 给处理服务设了同样的
-//   线程变量，本地测的内存和线上一致。
+// - README 的环境变量表列出了 app.json 里的每一个环境变量和密钥名。
 // - 部署配置种子：`demo-seed.json` 和接口服务的 `METAVERSE_DEMO_SEED` 内容一致（后者是前者压缩成的
-//   一行）；种子按接口服务的规则静态校验（拒绝未知字段、https 地址、sha256 和大小、主人是部署这个
-//   应用的组织、提示不超过 4KB）；凭链接查看时 `secret_keys` 里要有 `METAVERSE_DEMO_SHARE_TOKEN`，
-//   README 要写明用 `set_app_secrets` 设置它（README 第 5 步"密钥"、"演示数据"一节）。
-//   种子可选带 AI 物件集 `authored: {url, sha256, size}`：地址必须是 raw.githubusercontent.com 上按
-//   40 位提交哈希固定的 `infra/chrono-cd/demo/*.json`（分支名会变，内容就和 sha256 对不上），大小 ≤ 4MB，
-//   这时 `rebuild` 不能是 false（README 第 8 步"AI 物件集"）。
-// - 处理服务的 `WORKER_MODEL_HOSTS`（AI 物件集外部模型允许下载的主机）必须显式写出，每项是主机名、
-//   以点开头的后缀或 `主机:端口`，不带协议和路径（规则同 worker/src/metaverse_worker/fetch.py）。
+//   一行）；种子按接口服务的规则静态校验（docs/design/server-slim.md 7.1：拒绝未知字段，旧格式的
+//   `files`、`rebuild`、`hints`、`authored` 等报错——接口服务遇到旧格式会跳过种子；主人是部署这个应用
+//   的组织；带 `bundle` 时清单和来源表按地址、sha256、大小固定，地址是 https、主机在
+//   `METAVERSE_DEMO_SEED_HOSTS` 里，raw.githubusercontent.com 的地址按 40 位提交哈希固定）；有种子时
+//   `METAVERSE_DEMO_SEED_HOSTS` 必须显式写出、每项合法，并且和本地 `infra/dev/up.sh` 的默认值相同
+//   （本地 `--demo-seed` 和线上下载同一组主机）；凭链接查看时 `secret_keys` 里要有
+//   `METAVERSE_DEMO_SHARE_TOKEN`，README 要写明用 `set_app_secrets` 设置它（README 第 5 步"密钥"、
+//   第 8 步"演示数据"）。
 
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const API_SERVICE = 'metaverse-api';
-export const WORKER_SERVICE = 'metaverse-worker';
+export const WEB_SERVICE = 'metaverse-web';
+/** 已下线的服务：规格里不能再出现（docs/design/server-slim.md 10.1）。 */
+export const RETIRED_SERVICES = ['metaverse-worker'];
 
 /** 每个服务的镜像仓库（images.yml 推送的包）。 */
 export const IMAGE_REPOSITORIES = {
-  'metaverse-web': 'ghcr.io/chronoaiproject/chrono-metaverse-web',
+  [WEB_SERVICE]: 'ghcr.io/chronoaiproject/chrono-metaverse-web',
   [API_SERVICE]: 'ghcr.io/chronoaiproject/chrono-metaverse-api',
-  [WORKER_SERVICE]: 'ghcr.io/chronoaiproject/chrono-metaverse-worker',
 };
 
 /**
@@ -59,9 +59,18 @@ export function parsePinnedImage(image) {
   return { repo, tag: tag ?? null, digest };
 }
 
-/** 处理服务必须设置的线程相关变量。 */
-export const WORKER_THREAD_VARS = ['OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS'];
-export const WORKER_ARENA_VAR = 'MALLOC_ARENA_MAX';
+/**
+ * 接口服务必须显式写出的上限和缓存配置（设计 4.8、10.1）：内存预算按这组数估算，写在部署规格里
+ * 才看得到；值必须是正整数（接口服务读到 0 或非数字会启动失败，见 api/crates/metaverse-api/src/ingest/mod.rs）。
+ */
+export const EXPLICIT_API_VARS = [
+  'UPLOAD_MODEL_MAX_TRIANGLES',
+  'UPLOAD_MODEL_MAX_TEXTURE_SIDE',
+  'UPLOAD_WEBMODEL_MAX_TRIANGLES',
+  'UPLOAD_MAX_TEXTURE_SIDE',
+  'PUBLIC_CACHE_BYTES',
+  'UPLOAD_MAX_CONCURRENT_PARTS',
+];
 
 /**
  * 接口服务公开接口的限流变量和接口服务里按"每个访客"设计的默认值
@@ -114,43 +123,19 @@ export const CHAIN_HEADERS = ['x-forwarded-for', 'forwarded', 'x-forwarded', 'x-
 /** 部署配置种子（api/crates/metaverse-api/src/demo_seed/config.rs）。 */
 export const SEED_VAR = 'METAVERSE_DEMO_SEED';
 export const SEED_TOKEN_VAR = 'METAVERSE_DEMO_SHARE_TOKEN';
-const SEED_KEYS = [
-  'spaceId',
-  'name',
-  'description',
-  'owner',
-  'visibility',
-  'observedAt',
-  'files',
-  'rebuild',
-  'voxelize',
-  'hints',
-  'revision',
-  'authored',
-];
-const SEED_FILE_KEYS = ['url', 'name', 'sha256', 'size'];
-const SEED_AUTHORED_KEYS = ['url', 'sha256', 'size'];
-/** AI 物件集的大小上限（接口服务 `metaverse_core::authored::MAX_AUTHORED_BYTES`）。 */
-export const MAX_AUTHORED_BYTES = 4 * 1024 * 1024;
-/**
- * 种子里物件集的地址：raw.githubusercontent.com 上按 40 位提交哈希固定的 infra/chrono-cd/demo/*.json。
- * 用分支名的地址内容会变，sha256 就对不上了（接口服务按失败处理，演示空间建不起来）。
- */
-export const AUTHORED_URL =
-  /^https:\/\/raw\.githubusercontent\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/[0-9a-f]{40}\/infra\/chrono-cd\/demo\/[A-Za-z0-9_.-]+\.json$/;
-/** 处理服务 `WORKER_MODEL_HOSTS` 的一项（规则同 worker/src/metaverse_worker/fetch.py 的 parse_hosts）。 */
-const MODEL_HOST = /^(?:\.?[a-z0-9-]+(?:\.[a-z0-9-]+)+|[a-z0-9-]+(?:\.[a-z0-9-]+)*:[0-9]{1,5})$/;
-const MESH_EXTENSIONS = ['glb', 'drc', 'obj'];
-const SIDE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'mtl'];
-/** 提示规范化后的上限（接口服务 `MAX_HINTS_BYTES`）。 */
-export const MAX_HINTS_BYTES = 4096;
-/** 扫描上传的默认上限（接口服务 `UPLOAD_MAX_SCAN_BYTES` 的默认值）。 */
-const DEFAULT_MAX_SCAN_BYTES = 1 << 30;
-/**
- * 种子文件总大小的固定上限（接口服务 `MAX_SEED_TOTAL_BYTES`，256MiB）：文件和打包的 zip 都在内存里，
- * 实际上限取它和扫描上传上限中较小的一个。
- */
-export const MAX_SEED_TOTAL_BYTES = 256 * 1024 * 1024;
+const SEED_KEYS = ['spaceId', 'name', 'description', 'owner', 'visibility', 'revision', 'bundle'];
+/** 旧格式（处理服务下线前）的字段：接口服务记错误日志、跳过种子。 */
+export const LEGACY_SEED_KEYS = ['files', 'rebuild', 'voxelize', 'hints', 'authored', 'observedAt'];
+const SEED_BUNDLE_KEYS = ['manifest', 'sources'];
+const SEED_PINNED_KEYS = ['url', 'sha256', 'size'];
+/** 部署种子允许下载的主机（接口服务 `demo_seed::hosts`）。 */
+export const SEED_HOSTS_VAR = 'METAVERSE_DEMO_SEED_HOSTS';
+/** 清单的大小上限（接口服务 `UPLOAD_MAX_BUNDLE_BYTES` 的默认值，也是它的最大值）。 */
+export const MAX_MANIFEST_BYTES = 16 * 1024 * 1024;
+/** 来源表的大小上限（接口服务 `demo_seed::sources::MAX_SOURCES_BYTES`）。 */
+export const MAX_SOURCES_BYTES = 1024 * 1024;
+/** raw.githubusercontent.com 的地址：`/<组织>/<仓库>/<40 位提交哈希>/…`（分支名会变，内容就和 sha256 对不上）。 */
+const RAW_GITHUB_PATH = /^\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/[0-9a-f]{40}\//;
 
 const U32_MAX = 4_294_967_295;
 const HEADER_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
@@ -194,77 +179,31 @@ function serviceEnv(spec, name) {
   return spec?.services?.[name]?.env ?? {};
 }
 
-function checkWorker(spec, problems) {
-  const service = spec?.services?.[WORKER_SERVICE];
-  if (!service) {
-    problems.push(`缺少服务 ${WORKER_SERVICE}`);
-    return;
-  }
-  const env = service.env ?? {};
-  const cpu = parseCpu(service.resources?.cpu_limit);
-  const cores = cpu === null ? null : Math.max(1, Math.ceil(cpu));
-  if (cores === null) problems.push(`${WORKER_SERVICE}：resources.cpu_limit 不合法（${service.resources?.cpu_limit}）`);
-
-  for (const name of WORKER_THREAD_VARS) {
-    if (!(name in env)) {
+function checkServices(spec, problems) {
+  for (const name of RETIRED_SERVICES) {
+    if (name in spec.services) {
       problems.push(
-        `${WORKER_SERVICE}：缺少 ${name}。OpenBLAS / OpenMP 默认按节点可见核数建线程，每个线程约占 41MB 地址空间，` +
-          `会挤占重计算子进程的 RLIMIT_AS 额度；设成与 cpu_limit 一致`,
-      );
-      continue;
-    }
-    const threads = parsePositiveInt(env[name]);
-    if (threads === null) {
-      problems.push(`${WORKER_SERVICE}：${name} 必须是正整数（现在是 ${JSON.stringify(env[name])}）`);
-    } else if (cores !== null && threads > cores) {
-      problems.push(`${WORKER_SERVICE}：${name}=${threads} 超过 cpu_limit（${cores} 核），多出的线程只会被 CFS 限流`);
-    }
-  }
-
-  if (!(WORKER_ARENA_VAR in env)) {
-    problems.push(`${WORKER_SERVICE}：缺少 ${WORKER_ARENA_VAR}（glibc 每个分配区预留 64MB 地址空间，最多 8×核数个）`);
-  } else if (parsePositiveInt(env[WORKER_ARENA_VAR]) === null) {
-    problems.push(`${WORKER_SERVICE}：${WORKER_ARENA_VAR} 必须是正整数（现在是 ${JSON.stringify(env[WORKER_ARENA_VAR])}）`);
-  }
-
-  const hosts = env.WORKER_MODEL_HOSTS;
-  if (hosts === undefined) {
-    problems.push(
-      `${WORKER_SERVICE}：缺少 WORKER_MODEL_HOSTS（AI 物件集外部模型允许下载的主机）。显式写出来，` +
-        `部署规格里就能看到处理服务要访问哪些模型库`,
-    );
-  } else {
-    const entries = typeof hosts === 'string' ? hosts.split(',').map((item) => item.trim().toLowerCase()) : [];
-    const bad = entries.filter((entry) => !MODEL_HOST.test(entry));
-    if (entries.length === 0 || entries.every((entry) => entry === '') || bad.length > 0) {
-      problems.push(
-        `${WORKER_SERVICE}：WORKER_MODEL_HOSTS 每项必须是主机名、以点开头的后缀或 主机:端口，不带协议和路径` +
-          `（${bad.length > 0 ? `不合法：${bad.map((entry) => JSON.stringify(entry)).join('、')}` : '现在是空的'}）`,
+        `${name} 已下线（docs/design/server-slim.md 10.1）：从规格里删掉。chrono-cd 的 PUT 整份替换，` +
+          `留着它就还会按旧镜像跑处理服务、占配额`,
       );
     }
   }
-
-  const limitMiB = parseMemoryMiB(service.resources?.memory_limit);
-  const jobMiB = parsePositiveInt(env.WORKER_JOB_MEMORY_MB);
-  if (limitMiB === null) {
-    problems.push(`${WORKER_SERVICE}：resources.memory_limit 不合法（${service.resources?.memory_limit}）`);
-  }
-  if ('WORKER_JOB_MEMORY_MB' in env && jobMiB === null) {
-    problems.push(`${WORKER_SERVICE}：WORKER_JOB_MEMORY_MB 必须是正整数（现在是 ${JSON.stringify(env.WORKER_JOB_MEMORY_MB)}）`);
-  } else if (jobMiB !== null && limitMiB !== null && jobMiB >= limitMiB) {
-    problems.push(
-      `${WORKER_SERVICE}：WORKER_JOB_MEMORY_MB=${jobMiB} 不小于容器内存上限（${limitMiB}MiB），` +
-        `子进程超限前容器就会被系统杀掉`,
-    );
+  for (const name of [WEB_SERVICE, API_SERVICE]) {
+    if (!spec.services[name]) problems.push(`缺少服务 ${name}`);
   }
 }
 
 function checkApi(spec, problems) {
-  if (!spec?.services?.[API_SERVICE]) {
-    problems.push(`缺少服务 ${API_SERVICE}`);
-    return;
-  }
+  if (!spec?.services?.[API_SERVICE]) return;
   const env = serviceEnv(spec, API_SERVICE);
+
+  for (const name of EXPLICIT_API_VARS) {
+    if (!(name in env)) {
+      problems.push(`${API_SERVICE}：缺少 ${name}。内存预算按这组上限估算（设计 4.8），要在部署规格里显式写出`);
+    } else if (parsePositiveInt(env[name]) === null) {
+      problems.push(`${API_SERVICE}：${name} 必须是正整数（现在是 ${JSON.stringify(env[name])}），否则接口服务启动失败`);
+    }
+  }
 
   for (const name of Object.keys(PUBLIC_RATE_DEFAULTS)) {
     if (name in env && parsePositiveInt(env[name], U32_MAX) === null) {
@@ -347,19 +286,64 @@ function isLoopbackHost(hostname) {
 }
 
 /**
- * 按接口服务的规则静态校验种子（不下载文件）。`targetOrg` 是部署这个应用的组织，`maxScanBytes` 是
- * 接口服务的扫描上传上限。返回问题列表。
+ * 解析主机列表（规则同接口服务 `demo_seed::hosts` 和本地工具的主机列表）：逗号分隔；`主机名` 精确
+ * 匹配且只许 443 端口；`.后缀` 匹配子域名；`主机:端口` 只匹配那个端口。返回 `{entries, bad}`。
  */
-export function seedProblems(seed, { targetOrg, maxScanBytes = DEFAULT_MAX_SCAN_BYTES } = {}) {
+export function parseSeedHosts(text) {
+  const entries = [];
+  const bad = [];
+  for (const item of String(text ?? '').split(',')) {
+    const raw = item.trim().toLowerCase();
+    if (raw === '') continue;
+    const suffix = raw.startsWith('.');
+    const name = suffix ? raw.slice(1) : raw;
+    const [host, port, ...extra] = name.split(':');
+    const portOk = port === undefined || (/^[0-9]{1,5}$/.test(port) && Number(port) > 0 && Number(port) < 65536);
+    const hostOk = /^[a-z0-9-]+(?:\.[a-z0-9-]+)*$/.test(host ?? '');
+    if (extra.length > 0 || !portOk || !hostOk || (suffix && (port !== undefined || !host.includes('.')))) {
+      bad.push(item.trim());
+      continue;
+    }
+    entries.push(suffix ? { suffix: `.${host}` } : { host, port: port === undefined ? null : Number(port) });
+  }
+  return { entries, bad };
+}
+
+/** 地址能不能下载：https（或本机 http），不带用户名、密码和片段，主机和端口在列表里。 */
+export function seedUrlAllowed(url, entries) {
+  const https = url.protocol === 'https:';
+  if (!(https || (url.protocol === 'http:' && isLoopbackHost(url.hostname)))) return false;
+  if (url.username !== '' || url.password !== '' || url.hash !== '') return false;
+  const host = url.hostname.toLowerCase().replace(/\.$/, '');
+  const port = url.port === '' ? (https ? 443 : 80) : Number(url.port);
+  return entries.some((entry) =>
+    entry.suffix !== undefined
+      ? https && port === 443 && host.length > entry.suffix.length && host.endsWith(entry.suffix)
+      : entry.host === host && (entry.port === null ? https && port === 443 : port === entry.port),
+  );
+}
+
+/**
+ * 按接口服务的规则静态校验种子（不下载文件）。`targetOrg` 是部署这个应用的组织，`hosts` 是
+ * `METAVERSE_DEMO_SEED_HOSTS` 的值（没设时为 undefined），`maxManifestBytes` 是清单的上限。返回问题列表。
+ */
+export function seedProblems(seed, { targetOrg, hosts, maxManifestBytes = MAX_MANIFEST_BYTES } = {}) {
   const problems = [];
-  const limit = Math.min(maxScanBytes, MAX_SEED_TOTAL_BYTES);
   const bad = (text) => problems.push(`demo-seed.json：${text}`);
   if (seed === null || typeof seed !== 'object' || Array.isArray(seed)) {
     bad('必须是 JSON 对象');
     return problems;
   }
+  const legacy = Object.keys(seed).filter((key) => LEGACY_SEED_KEYS.includes(key));
+  if (legacy.length > 0) {
+    bad(
+      `是旧格式（${legacy.join('、')}）：旧格式的种子要处理服务，已不支持，改成 bundle（docs/design/server-slim.md 7.1）；接口服务会跳过种子`,
+    );
+  }
   for (const key of Object.keys(seed)) {
-    if (!SEED_KEYS.includes(key)) bad(`不认识的字段 ${key}（接口服务会拒绝，启动失败）`);
+    if (!SEED_KEYS.includes(key) && !LEGACY_SEED_KEYS.includes(key)) {
+      bad(`不认识的字段 ${key}（接口服务会拒绝，启动失败）`);
+    }
   }
   if (typeof seed.spaceId !== 'string' || !/^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(seed.spaceId)) {
     bad('spaceId 必须是 3–64 个字符的小写字母、数字和 -，首尾不能是 -');
@@ -382,96 +366,58 @@ export function seedProblems(seed, { targetOrg, maxScanBytes = DEFAULT_MAX_SCAN_
   }
   const visibility = seed.visibility ?? 'unlisted';
   if (!['unlisted', 'public'].includes(visibility)) bad('visibility 只能是 unlisted 或 public');
-  if (seed.observedAt !== undefined && (typeof seed.observedAt !== 'string' || Number.isNaN(Date.parse(seed.observedAt)))) {
-    bad('observedAt 必须是 RFC 3339 时间');
-  }
-  for (const key of ['rebuild', 'voxelize']) {
-    if (seed[key] !== undefined && typeof seed[key] !== 'boolean') bad(`${key} 必须是 true 或 false`);
-  }
   if (seed.revision !== undefined && !(Number.isInteger(seed.revision) && seed.revision >= 1 && seed.revision <= U32_MAX)) {
     bad('revision 必须是从 1 开始的整数');
   }
-  if (seed.hints !== undefined && seed.hints !== null) {
-    if (typeof seed.hints !== 'object' || Array.isArray(seed.hints)) {
-      bad('hints 必须是 JSON 对象');
-    } else if (Buffer.byteLength(canonicalJson(seed.hints)) > MAX_HINTS_BYTES) {
-      bad(`hints 规范化后超过 ${MAX_HINTS_BYTES} 字节`);
-    }
+  const parsedHosts = hosts === undefined ? null : parseSeedHosts(hosts);
+  if (parsedHosts !== null && parsedHosts.bad.length > 0) {
+    bad(`${SEED_HOSTS_VAR} 里的 ${parsedHosts.bad.map((item) => JSON.stringify(item)).join('、')} 不是合法的主机（写主机名、.后缀 或 主机:端口，不带协议和路径）`);
   }
-  if (seed.authored !== undefined && seed.authored !== null) {
-    const authored = seed.authored;
-    if (typeof authored !== 'object' || Array.isArray(authored)) {
-      bad('authored 必须是 {url, sha256, size}');
-    } else {
-      for (const key of Object.keys(authored)) {
-        if (!SEED_AUTHORED_KEYS.includes(key)) bad(`authored 有不认识的字段 ${key}`);
-      }
-      if (typeof authored.url !== 'string' || !AUTHORED_URL.test(authored.url)) {
-        bad(
-          `authored.url 必须是 https://raw.githubusercontent.com/<组织>/<仓库>/<40 位提交哈希>/infra/chrono-cd/demo/<文件>.json` +
-            `（按提交哈希固定，不能用分支名；现在是 ${JSON.stringify(authored.url)}）`,
-        );
-      }
-      if (typeof authored.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(authored.sha256)) {
-        bad('authored.sha256 必须是 64 位小写十六进制');
-      }
-      if (!Number.isSafeInteger(authored.size) || authored.size <= 0 || authored.size > MAX_AUTHORED_BYTES) {
-        bad(`authored.size 必须是 1–${MAX_AUTHORED_BYTES} 的整数`);
-      }
-      if (seed.rebuild === false) bad('带 authored（AI 物件集）时 rebuild 不能是 false');
+  if (seed.bundle !== undefined && seed.bundle !== null) {
+    const bundle = seed.bundle;
+    if (typeof bundle !== 'object' || Array.isArray(bundle)) {
+      bad('bundle 必须是 {manifest, sources}');
+      return problems;
     }
-  }
-  const files = Array.isArray(seed.files) ? seed.files : [];
-  if (files.length === 0 || files.length > 32) bad('files 要有 1–32 个文件');
-  let total = 0;
-  const names = new Set();
-  const extensions = [];
-  for (const [index, file] of files.entries()) {
-    const label = `files[${index}]`;
-    if (file === null || typeof file !== 'object') {
-      bad(`${label} 必须是对象`);
-      continue;
+    for (const key of Object.keys(bundle)) {
+      if (!SEED_BUNDLE_KEYS.includes(key)) bad(`bundle 有不认识的字段 ${key}`);
     }
-    for (const key of Object.keys(file)) {
-      if (!SEED_FILE_KEYS.includes(key)) bad(`${label} 有不认识的字段 ${key}`);
+    if (parsedHosts === null || parsedHosts.entries.length === 0) {
+      bad(`带 bundle 时 metaverse-api 必须设 ${SEED_HOSTS_VAR}（允许下载的主机，逗号分隔）`);
     }
-    let url = null;
-    try {
-      url = new URL(file.url);
-    } catch {
-      bad(`${label}.url 不是合法地址`);
-    }
-    if (url !== null) {
-      const httpsOk = url.protocol === 'https:' || (url.protocol === 'http:' && isLoopbackHost(url.hostname));
-      if (!httpsOk || url.username !== '' || url.password !== '' || url.hash !== '') {
-        bad(`${label}.url 必须是 https，不带用户名、密码和片段（${file.url}）`);
+    for (const [what, max] of [
+      ['manifest', maxManifestBytes],
+      ['sources', MAX_SOURCES_BYTES],
+    ]) {
+      const pinned = bundle[what];
+      const label = `bundle.${what}`;
+      if (pinned === null || typeof pinned !== 'object' || Array.isArray(pinned)) {
+        bad(`${label} 必须是 {url, sha256, size}`);
+        continue;
+      }
+      for (const key of Object.keys(pinned)) {
+        if (!SEED_PINNED_KEYS.includes(key)) bad(`${label} 有不认识的字段 ${key}`);
+      }
+      let url = null;
+      try {
+        url = new URL(pinned.url);
+      } catch {
+        bad(`${label}.url 不是合法地址`);
+      }
+      if (url !== null) {
+        if (!seedUrlAllowed(url, parsedHosts?.entries ?? [])) {
+          bad(`${label}.url 必须是 https、不带用户名密码和片段，主机在 ${SEED_HOSTS_VAR} 里（现在是 ${url.host}）`);
+        } else if (url.hostname === 'raw.githubusercontent.com' && !RAW_GITHUB_PATH.test(url.pathname)) {
+          bad(`${label}.url 要按 40 位提交哈希固定（raw.githubusercontent.com/<组织>/<仓库>/<提交哈希>/…，不能用分支名）`);
+        }
+      }
+      if (typeof pinned.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(pinned.sha256)) {
+        bad(`${label}.sha256 必须是 64 位小写十六进制`);
+      }
+      if (!Number.isSafeInteger(pinned.size) || pinned.size <= 0 || pinned.size > max) {
+        bad(`${label}.size 必须是 1–${max} 的整数`);
       }
     }
-    const name = typeof file.name === 'string' ? file.name : '';
-    const extension = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$/.test(name) ? name.split('.').pop().toLowerCase() : '';
-    if (![...MESH_EXTENSIONS, ...SIDE_EXTENSIONS, 'zip'].includes(extension) || !name.includes('.')) {
-      bad(`${label}.name 不合法（${JSON.stringify(file.name)}）：扩展名只能是 glb、drc、obj、jpg、jpeg、png、webp、mtl、zip`);
-    }
-    if (names.has(name.toLowerCase())) bad(`${label}.name 重复：${name}`);
-    names.add(name.toLowerCase());
-    extensions.push(extension);
-    if (typeof file.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(file.sha256)) {
-      bad(`${label}.sha256 必须是 64 位小写十六进制`);
-    }
-    if (!Number.isSafeInteger(file.size) || file.size <= 0 || file.size > limit) {
-      bad(`${label}.size 必须是 1–${limit} 的整数`);
-    } else {
-      total += file.size;
-    }
-  }
-  if (total > limit) {
-    bad(`文件总大小 ${total} 超过上限 ${limit}（种子在内存里处理，取 256MiB 和 UPLOAD_MAX_SCAN_BYTES 中较小的）`);
-  }
-  const meshes = extensions.filter((extension) => MESH_EXTENSIONS.includes(extension)).length;
-  const archives = extensions.filter((extension) => extension === 'zip').length;
-  const usable = files.length === 1 ? meshes + archives === 1 : meshes === 1 && archives === 0;
-  if (files.length > 0 && !usable) {
-    bad('files 要么是单独一个 glb / drc / obj / zip，要么是一个网格加贴图和材质（会打包成 zip）');
   }
   return problems;
 }
@@ -510,8 +456,16 @@ function checkSeed(spec, seedText, problems) {
         : `${API_SERVICE}：${SEED_VAR} 与 infra/chrono-cd/demo-seed.json 不一致（用 node infra/dev/demo-seed.mjs compact infra/chrono-cd/demo-seed.json 重新生成）`,
     );
   }
-  const maxScanBytes = parsePositiveInt(env.UPLOAD_MAX_SCAN_BYTES) ?? DEFAULT_MAX_SCAN_BYTES;
-  problems.push(...seedProblems(seed, { targetOrg: spec.target_org_id, maxScanBytes }));
+  if (!(SEED_HOSTS_VAR in env)) {
+    problems.push(
+      `${API_SERVICE}：有种子时必须显式写出 ${SEED_HOSTS_VAR}（允许下载的主机，逗号分隔）。种子带重建包时` +
+        `接口服务按它下载清单、来源表和文件；不带包时也写上，换成带包的种子时就只改种子一项`,
+    );
+  } else if (parseSeedHosts(env[SEED_HOSTS_VAR]).entries.length === 0) {
+    problems.push(`${API_SERVICE}：${SEED_HOSTS_VAR} 是空的`);
+  }
+  const maxManifestBytes = Math.min(parsePositiveInt(env.UPLOAD_MAX_BUNDLE_BYTES) ?? MAX_MANIFEST_BYTES, MAX_MANIFEST_BYTES);
+  problems.push(...seedProblems(seed, { targetOrg: spec.target_org_id, hosts: env[SEED_HOSTS_VAR], maxManifestBytes }));
   const secrets = service.secret_keys ?? [];
   if ((seed.visibility ?? 'unlisted') === 'unlisted' && !secrets.includes(SEED_TOKEN_VAR)) {
     problems.push(
@@ -551,11 +505,22 @@ function checkReadme(spec, readme, problems) {
   }
 }
 
-function checkDevScript(upScript, problems) {
-  for (const name of [...WORKER_THREAD_VARS, WORKER_ARENA_VAR]) {
-    if (!new RegExp(`(^|\\s)${name}=`, 'm').test(upScript)) {
-      problems.push(`infra/dev/up.sh 没有给处理服务设 ${name}：本地测的内存和线上不一致`);
-    }
+/** up.sh 里接口服务 `METAVERSE_DEMO_SEED_HOSTS` 的默认值（`${METAVERSE_DEMO_SEED_HOSTS:-<默认>}`）；没有时返回 null。 */
+export function devSeedHosts(upScript) {
+  const match = /METAVERSE_DEMO_SEED_HOSTS="\$\{METAVERSE_DEMO_SEED_HOSTS:-([^}"]*)\}"/.exec(upScript);
+  return match ? match[1] : null;
+}
+
+function checkDevScript(spec, upScript, problems) {
+  // 本地 `up.sh --demo-seed` 默认用线上的 demo-seed.json，下载的主机也要和线上一样，
+  // 本地能导入的种子线上才一定能导入（设计 10.3）。
+  const online = serviceEnv(spec, API_SERVICE)[SEED_HOSTS_VAR];
+  if (online === undefined) return;
+  const local = devSeedHosts(upScript);
+  if (local === null) {
+    problems.push(`infra/dev/up.sh 没有给接口服务设 ${SEED_HOSTS_VAR} 的默认值（要和 app.json 的相同）`);
+  } else if (local !== online) {
+    problems.push(`infra/dev/up.sh 的 ${SEED_HOSTS_VAR} 默认值（${local}）和 app.json 的（${online}）不同`);
   }
 }
 
@@ -569,11 +534,11 @@ export function checkApp(spec, { readme, upScript, seed } = {}) {
   if (spec === null || typeof spec !== 'object' || typeof spec.services !== 'object' || spec.services === null) {
     return ['app.json 没有 services'];
   }
+  checkServices(spec, problems);
   checkImages(spec, problems);
-  checkWorker(spec, problems);
   checkApi(spec, problems);
   if (readme !== undefined) checkReadme(spec, readme, problems);
-  if (upScript !== undefined) checkDevScript(upScript, problems);
+  if (upScript !== undefined) checkDevScript(spec, upScript, problems);
   if (seed !== undefined) checkSeed(spec, seed, problems);
   return problems;
 }

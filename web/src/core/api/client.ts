@@ -255,8 +255,17 @@ export async function allEvents(
   return allPages((after) => client.events(spaceId, { ...q, after }));
 }
 
+/**
+ * 去掉末尾的斜杠。逐字符往回数，不用 `/\/+$/` 这样的正则：那种写法遇到很长一串斜杠时回溯是平方级的。
+ */
+export function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1;
+  return value.slice(0, end);
+}
+
 export function createPublicClient(options: PublicClientOptions = {}): PublicClient {
-  const base = (options.baseUrl ?? '').replace(/\/+$/, '');
+  const base = trimTrailingSlashes(options.baseUrl ?? '');
   const universe = options.universe ?? undefined;
   const fetcher = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
   const headers = (extra: Record<string, string> = {}): Record<string, string> => ({

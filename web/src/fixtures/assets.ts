@@ -1,11 +1,18 @@
 import { sha256Hex } from '../core/hash';
 import type { Shape } from '../core/shapes/types';
-import { shapeToGlb } from './glb';
+import { shapeToGlb, texturedShapeToGlb } from './glb';
 import {
+  brickNormalTexture,
   brickTexture,
+  brickWallTexture,
+  checkerNormalTexture,
+  checkerRoughnessTexture,
+  checkerTexture,
+  crateTexture,
   fabricTexture,
   grassTexture,
   marbleTexture,
+  plasterNormalTexture,
   stripeTexture,
   tileTexture,
   woodTexture,
@@ -33,6 +40,13 @@ export const TEXTURES = {
   stripe: asset(stripeTexture(), 'image/png'),
   brick: asset(brickTexture(), 'image/png'),
   grass: asset(grassTexture(), 'image/png'),
+  // 材质样板（materials.ts）：按米平铺的地砖、砖墙，各带法线贴图；地砖另有粗糙度贴图。
+  checker: asset(checkerTexture(), 'image/png'),
+  checkerNormal: asset(checkerNormalTexture(), 'image/png'),
+  checkerRoughness: asset(checkerRoughnessTexture(), 'image/png'),
+  brickWall: asset(brickWallTexture(), 'image/png'),
+  brickNormal: asset(brickNormalTexture(), 'image/png'),
+  plasterNormal: asset(plasterNormalTexture(), 'image/png'),
 } as const;
 
 /** 花束：送花到达后放在前台上（spawnEntity 的模型）。原点在底面中心。 */
@@ -120,9 +134,19 @@ const shelfShape: Shape = {
   ],
 };
 
+/** 木箱：0.6 米见方，原点在底面中心，六个面各铺一次贴图。 */
+export const CRATE_SIZE = 0.6;
+const crateShape: Shape = {
+  type: 'box',
+  size: [CRATE_SIZE, CRATE_SIZE, CRATE_SIZE],
+  material: { texture: 'crate', uv: 'mesh' },
+};
+
 export const MODELS = {
   bouquet: asset(shapeToGlb(bouquetShape, {}, 'bouquet'), 'model/gltf-binary'),
   shelf: asset(shapeToGlb(shelfShape, {}, 'shelf'), 'model/gltf-binary'),
+  // 带内嵌颜色贴图、受光照的模型：同一个模型按 material.shading 两种看法画（材质样板）。
+  crate: asset(texturedShapeToGlb(crateShape, crateTexture(), 'crate'), 'model/gltf-binary'),
 } as const;
 
 /** 草稿里新上传的贴图（大理石纹）：还没发布，只能经预览接口读取。 */

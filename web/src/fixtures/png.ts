@@ -164,3 +164,120 @@ export function marbleTexture(): Uint8Array {
     return [236 * t, 232 * t, 226 * t];
   });
 }
+
+/**
+ * 高度场 → 切线空间法线贴图（SHAPES 2：OpenGL 约定，红 = +u，绿 = +v 即图片上方，`RGB = (n + 1) / 2`）。
+ * 按周期取邻居，所以平铺时接缝处的法线也连续。`strength` 是高度差换成斜率的倍数。
+ */
+function normalFromHeight(
+  size: number,
+  height: (x: number, y: number) => number,
+  strength: number,
+): Uint8Array {
+  const h = (x: number, y: number) =>
+    height(((x % size) + size) % size, ((y % size) + size) % size);
+  return render(size, (x, y) => {
+    const du = (h(x + 1, y) - h(x - 1, y)) / 2;
+    // 图片的行从上往下，v 向上：沿 v 的变化是"上一行减下一行"。
+    const dv = (h(x, y - 1) - h(x, y + 1)) / 2;
+    const nx = -strength * du;
+    const ny = -strength * dv;
+    const length = Math.hypot(nx, ny, 1);
+    return [(nx / length + 1) * 127.5, (ny / length + 1) * 127.5, (1 / length + 1) * 127.5];
+  });
+}
+
+/** 地砖贴图的格子边长（像素）：128 像素一张图 4 × 4 块。 */
+const CHECKER_CELL = 32;
+
+/** 到最近一条砖缝的距离（像素）。 */
+function checkerGrout(x: number, y: number): number {
+  const fx = x % CHECKER_CELL;
+  const fy = y % CHECKER_CELL;
+  return Math.min(fx, CHECKER_CELL - 1 - fx, fy, CHECKER_CELL - 1 - fy);
+}
+
+function checkerLight(x: number, y: number): boolean {
+  return (Math.floor(x / CHECKER_CELL) + Math.floor(y / CHECKER_CELL)) % 2 === 0;
+}
+
+/**
+ * 深浅相间的方地砖（材质样板的地面）：一张图 4 × 4 块，每块是正方形。按米平铺时砖应该是正方形，
+ * 拉伸了一眼就看得出来。
+ */
+export function checkerTexture(): Uint8Array {
+  const rand = random(61);
+  const noise = Array.from({ length: 128 * 128 }, () => rand());
+  return render(128, (x, y) => {
+    if (checkerGrout(x, y) < 1) return [96, 90, 84];
+    const t = 0.95 + noise[y * 128 + x]! * 0.05;
+    return checkerLight(x, y) ? [226 * t, 216 * t, 198 * t] : [150 * t, 128 * t, 106 * t];
+  });
+}
+
+/** 地砖的法线贴图：砖面平，砖缝凹下去，边缘 3 像素倒角。 */
+export function checkerNormalTexture(): Uint8Array {
+  return normalFromHeight(128, (x, y) => Math.min(1, checkerGrout(x, y) / 3), 2);
+}
+
+/** 地砖的粗糙度贴图（G 通道，白 = 粗糙）：浅色砖较光，深色砖次之，砖缝最粗糙。 */
+export function checkerRoughnessTexture(): Uint8Array {
+  return render(128, (x, y) => {
+    const value = checkerGrout(x, y) < 1 ? 255 : checkerLight(x, y) ? 150 : 200;
+    return [value, value, value];
+  });
+}
+
+/** 到最近一道灰缝的距离（像素）：一张图 4 行砖，每行两块，隔行错开半块。 */
+function brickMortar(x: number, y: number): number {
+  const shift = Math.floor(y / 32) % 2 === 0 ? 0 : 32;
+  const fx = (x + shift) % 64;
+  const fy = y % 32;
+  return Math.min(fx, 63 - fx, fy, 31 - fy);
+}
+
+/** 清水砖墙（材质样板的墙）：每块砖宽是高的两倍。 */
+export function brickWallTexture(): Uint8Array {
+  const rand = random(71);
+  const noise = Array.from({ length: 128 * 128 }, () => rand());
+  const shade = Array.from({ length: 8 }, () => 0.82 + rand() * 0.2);
+  return render(128, (x, y) => {
+    if (brickMortar(x, y) < 2) return [206, 200, 188];
+    const row = Math.floor(y / 32);
+    const brick = Math.floor((x + (row % 2 === 0 ? 0 : 32)) / 64) % 2;
+    const t = shade[row * 2 + brick]! * (0.92 + noise[y * 128 + x]! * 0.08);
+    return [176 * t, 92 * t, 66 * t];
+  });
+}
+
+/** 砖墙的法线贴图：灰缝凹下去。 */
+export function brickNormalTexture(): Uint8Array {
+  return normalFromHeight(128, (x, y) => Math.min(1, brickMortar(x, y) / 3), 2.5);
+}
+
+/** 拉毛墙面的法线贴图：几组周期正好是图片边长整数分之一的起伏，平铺时没有接缝。 */
+export function plasterNormalTexture(): Uint8Array {
+  const a = (2 * Math.PI) / 64;
+  return normalFromHeight(
+    64,
+    (x, y) =>
+      0.5 * Math.sin(a * 3 * x) * Math.cos(a * 2 * y) +
+      0.3 * Math.sin(a * 5 * (x + y)) +
+      0.2 * Math.cos(a * 7 * x - a * 4 * y),
+    3,
+  );
+}
+
+/** 木箱（物件模型里内嵌的贴图）：横向木板，四周深色的框。 */
+export function crateTexture(): Uint8Array {
+  const rand = random(83);
+  const noise = Array.from({ length: 64 }, () => rand());
+  return render(64, (x, y) => {
+    const edge = Math.min(x, 63 - x, y, 63 - y);
+    if (edge < 5) return [104, 70, 44];
+    const plank = Math.floor(y / 11);
+    const grain = Math.sin((x + noise[(y * 3 + plank) % 64]! * 8) * 0.4) * 0.06;
+    const t = (y % 11 === 0 ? 0.7 : 0.94) + grain + noise[plank % 64]! * 0.08;
+    return [196 * t, 150 * t, 98 * t];
+  });
+}

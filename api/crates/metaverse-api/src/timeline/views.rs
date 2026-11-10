@@ -103,6 +103,10 @@ pub struct ScanView {
     /// 原始扫描资源（只在 `/api/v1` 返回）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub asset_hash: Option<String>,
+    /// 本地工具记下的对齐信息（任意 JSON 对象，服务端不解释；只在 `/api/v1` 返回）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<Object>)]
+    pub alignment: Option<serde_json::Map<String, Value>>,
 }
 
 /// 某个版本的完整状态（快照）。
@@ -129,7 +133,7 @@ pub struct SnapshotView {
 /// 公开接口的操作人：只给类别。
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ActorKindView {
-    /// `admin`、`physical`、`plot`、`source`、`job`。
+    /// `admin`、`physical`、`plot`、`source`、`job`、`rebuild`。
     pub kind: String,
 }
 
@@ -198,6 +202,9 @@ pub struct CommitView {
     pub ops_ref: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub script_ref: Option<String>,
+    /// 重建草稿发布的提交：重建包清单的资源哈希（提交的出处）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bundle_ref: Option<String>,
 }
 
 impl From<metaverse_core::model::Commit> for CommitView {
@@ -221,6 +228,7 @@ impl From<metaverse_core::model::Commit> for CommitView {
             draft_id: commit.draft_id,
             ops_ref: commit.ops_ref,
             script_ref: commit.script_ref,
+            bundle_ref: commit.bundle_ref,
         }
     }
 }

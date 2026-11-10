@@ -41,16 +41,23 @@ use utoipa::{
         crate::routes::uploads::complete_plot_upload,
         crate::routes::uploads::get_upload,
         crate::routes::uploads::get_plot_upload,
-        crate::routes::jobs::import_scan,
-        crate::routes::jobs::align_scan,
-        crate::routes::jobs::voxelize_scan,
-        crate::routes::jobs::rebuild_scan,
-        crate::routes::jobs::import_model,
-        crate::routes::jobs::import_plot_model,
         crate::routes::jobs::get_job,
         crate::routes::jobs::get_plot_job,
         crate::routes::jobs::list_jobs,
         crate::routes::jobs::list_plot_jobs,
+        // 重建路径（docs/design/server-slim.md 2.3）
+        crate::routes::rebuild::create_rebuild_upload,
+        crate::routes::rebuild::upload_rebuild_part,
+        crate::routes::rebuild::complete_rebuild_upload,
+        crate::routes::rebuild::get_rebuild_upload,
+        crate::routes::rebuild::create_rebuild_draft,
+        crate::routes::rebuild::get_rebuild_draft,
+        crate::routes::rebuild::apply_rebuild_bundle,
+        crate::routes::rebuild::create_rebuild_draft_preview,
+        crate::routes::rebuild::publish_rebuild_draft,
+        crate::routes::rebuild::discard_rebuild_draft,
+        crate::routes::rebuild::list_rebuild_jobs,
+        crate::routes::rebuild::get_rebuild_job,
         crate::routes::events::write_events,
         crate::routes::events::write_corrections,
         crate::routes::events::list_events,
@@ -104,11 +111,12 @@ use utoipa::{
     tags(
         (name = "spaces", description = "空间：查看"),
         (name = "uploads", description = "分片上传"),
-        (name = "scans", description = "扫描、物件模型和任务"),
+        (name = "jobs", description = "任务查询：上传核对、操作文件追加、交包、部署种子导入"),
         (name = "events", description = "现实事件"),
         (name = "universes", description = "组合宇宙"),
         (name = "timeline", description = "时间线：提交列表、快照、区块、区域内容"),
         (name = "drafts", description = "草稿：建草稿、批量操作、预览、发布（实体区和地块两组路径）"),
+        (name = "rebuild", description = "重建路径：上传、重建草稿（只收一个重建包）、交包、预览、发布、任务查询；写操作要求 metaverse:rebuild:write"),
         (name = "admin", description = "管理接口（不进 AI 工具）"),
         (name = "public", description = "公开读接口（不经过 NyxID）"),
         (name = "health", description = "健康检查"),
@@ -269,6 +277,81 @@ mod tests {
         }
         let response = &document["paths"]["/api/public/previews"]["get"]["responses"]["200"];
         assert!(response.to_string().contains("PreviewSnapshotView"));
+    }
+
+    /// 重建路径的 12 个接口都在注册给 NyxID 的文档里（docs/design/server-slim.md 2.3）。
+    #[test]
+    fn rebuild_operations_are_registered() {
+        let document = nyxid_document();
+        let all = operations(&document);
+        let expected = [
+            (
+                "post /api/v1/spaces/{space_id}/rebuild/uploads/{purpose}",
+                "create_rebuild_upload",
+            ),
+            (
+                "put /api/v1/spaces/{space_id}/rebuild/uploads/{purpose}/{upload_id}/parts/{n}",
+                "upload_rebuild_part",
+            ),
+            (
+                "post /api/v1/spaces/{space_id}/rebuild/uploads/{purpose}/{upload_id}/complete",
+                "complete_rebuild_upload",
+            ),
+            (
+                "get /api/v1/spaces/{space_id}/rebuild/uploads/{purpose}/{upload_id}",
+                "get_rebuild_upload",
+            ),
+            (
+                "post /api/v1/spaces/{space_id}/rebuild/drafts",
+                "create_rebuild_draft",
+            ),
+            (
+                "get /api/v1/spaces/{space_id}/rebuild/drafts/{draft_id}",
+                "get_rebuild_draft",
+            ),
+            (
+                "post /api/v1/spaces/{space_id}/rebuild/drafts/{draft_id}/bundle",
+                "apply_rebuild_bundle",
+            ),
+            (
+                "post /api/v1/spaces/{space_id}/rebuild/drafts/{draft_id}/preview",
+                "create_rebuild_draft_preview",
+            ),
+            (
+                "post /api/v1/spaces/{space_id}/rebuild/drafts/{draft_id}/publish",
+                "publish_rebuild_draft",
+            ),
+            (
+                "delete /api/v1/spaces/{space_id}/rebuild/drafts/{draft_id}",
+                "discard_rebuild_draft",
+            ),
+            (
+                "get /api/v1/spaces/{space_id}/rebuild/jobs",
+                "list_rebuild_jobs",
+            ),
+            (
+                "get /api/v1/spaces/{space_id}/rebuild/jobs/{job_id}",
+                "get_rebuild_job",
+            ),
+        ];
+        for (operation, id) in expected {
+            assert!(
+                all.iter().any(|(op, found)| op == operation && found == id),
+                "{operation} {id}"
+            );
+        }
+        let rebuild: Vec<_> = all
+            .iter()
+            .filter(|(op, _)| op.contains("/rebuild/"))
+            .collect();
+        assert_eq!(rebuild.len(), 12, "{rebuild:?}");
+        // 写操作都声明了身份令牌。
+        let body = &document["paths"]["/api/v1/spaces/{space_id}/rebuild/drafts/{draft_id}/bundle"]
+            ["post"];
+        assert!(body["security"].to_string().contains("nyxid_identity"));
+        assert!(document["components"]["schemas"]
+            .get("ApplyBundleRequest")
+            .is_some());
     }
 
     #[test]

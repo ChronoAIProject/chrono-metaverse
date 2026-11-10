@@ -284,3 +284,15 @@ describe('分页：只以 nextAfter 判断有没有下一页', () => {
     expect(events.every((e) => Date.parse(e.at) < Date.parse(day.to))).toBe(true);
   });
 });
+
+describe('去掉地址末尾的斜杠', () => {
+  it('逐字符往回数，长串斜杠也是线性时间', async () => {
+    const { trimTrailingSlashes } = await import('./client');
+    expect(trimTrailingSlashes('https://a.example//')).toBe('https://a.example');
+    expect(trimTrailingSlashes('')).toBe('');
+    const long = 'x' + '/'.repeat(200_000) + 'y';
+    const started = Date.now();
+    expect(trimTrailingSlashes(long + '/'.repeat(200_000))).toBe(long);
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+});

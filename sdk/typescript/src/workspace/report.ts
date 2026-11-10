@@ -126,7 +126,7 @@ export interface CheckReport {
 export function checkReport(result: BuildResult): CheckReport {
   const target = result.target;
   const where = target.plotId ? `地块 ${target.plotId} ` : '实体区';
-  if (target.boxes.length === 0 && result.ops.length > 0) {
+  if (target.mode === 'within' && target.boxes.length === 0 && result.ops.length > 0) {
     return {
       ok: false,
       text: `${where}没有任何盒子（还没有定义区域或地块，或者工作区没有拉取）：所有改动都会被服务端拒绝`,
@@ -145,6 +145,12 @@ export function checkReport(result: BuildResult): CheckReport {
     lines.push(`  第 ${violation.index} 条 ${violation.op}：${parts.join('、')}`);
   }
   if (result.outside.length > 20) lines.push(`  …… 还有 ${result.outside.length - 20} 条`);
-  lines.push(`允许的盒子（格）：${target.boxes.map((b) => JSON.stringify(b)).join('、')}`);
+  if (target.mode === 'except') {
+    lines.push(
+      `空间没有定义实体区：除了虚拟区和地块都可以改；不能碰的盒子（格）：${target.excluded.map((b) => JSON.stringify(b)).join('、')}`,
+    );
+  } else {
+    lines.push(`允许的盒子（格）：${target.boxes.map((b) => JSON.stringify(b)).join('、')}`);
+  }
   return { ok: false, text: lines.join('\n') };
 }

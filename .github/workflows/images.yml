@@ -1,7 +1,8 @@
 name: Images
 
-# 推送到 main 和开发分支时，构建三个镜像并推到 ghcr.io：
-#   ghcr.io/chronoaiproject/chrono-metaverse-{api,web,worker}
+# 推送到 main 和开发分支时，构建两个镜像并推到 ghcr.io：
+#   ghcr.io/chronoaiproject/chrono-metaverse-{api,web}
+# （处理服务已下线，不再构建 worker 镜像；线上在换成瘦身后的版本之前仍按摘要跑以前构建的那个。）
 # 标签：短提交哈希（7 位）、分支名（/ 换成 -）；latest 只给 main。
 # 只构建 linux/amd64（chrono-cd 的节点架构）。部署不在这里做，见 infra/chrono-cd/README.md。
 #
@@ -34,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [api, web, worker]
+        image: [api, web]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
@@ -63,7 +64,7 @@ jobs:
             type=ref,event=branch
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
-      # 构建参数只有网站用（web/build/identity.ts 的构建身份）；另外两个镜像忽略它们。
+      # 构建参数只有网站用（web/build/identity.ts 的构建身份）；接口服务的镜像忽略它们。
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         id: push
         with:

@@ -23,6 +23,7 @@ const LINK = '/s/demo-lobby#share=fixture-share-token-0123456789abcdef';
 const UNIVERSE = '/u/demo-street#share=fixture-universe-token-00112233445566778899';
 const PREVIEW = '/preview#t=fixture-preview-token-aabbccddeeff00112233445566778899';
 const FLORIST = '/s/demo-florist#share=fixture-florist-token-fedcba9876543210';
+const MATERIALS = '/s/demo-materials#share=fixture-materials-token-13579bdf2468ace0';
 
 function watchErrors(page: Page): string[] {
   const errors: string[] = [];
@@ -657,8 +658,8 @@ test('板、凸包、玻璃、灯箱和外部模型：画得出来，底部常�
   await expect(panel.getByText('CC BY 4.0（须署名）')).toBeVisible();
   await expect(panel.getByText('作者 夹具作者乙')).toBeVisible();
   await expect(panel.getByRole('link', { name: '木质花架（示例）' })).toBeVisible();
-  // 注明改动（CC BY 的要求）：网站上的模型是处理服务重新导出的
-  await expect(panel.getByText(/经本服务处理后重新导出.*与原文件不同/)).toBeVisible();
+  // 注明改动（CC BY 的要求）：说明不依赖具体工具
+  await expect(panel.getByText(/可能经过调整.*后重新导出，与原文件不同/)).toBeVisible();
   await page.screenshot({ path: join(SHOTS, 'florist-sources.png') });
   await toggle.click();
   await expect(panel).toHaveCount(0);
@@ -673,6 +674,45 @@ test('板、凸包、玻璃、灯箱和外部模型：画得出来，底部常�
   expect(narrowLine.x).toBeGreaterThanOrEqual(0);
   expect(narrowLine.x + narrowLine.width).toBeLessThanOrEqual(390);
   await page.screenshot({ path: join(SHOTS, 'florist-credit-line-narrow.png') });
+  expect(errors).toEqual([]);
+});
+
+test('材质样板：按米平铺的地砖不拉伸，法线、粗糙度贴图和两种着色方式画得出来，过大的模型兜进记录', async ({
+  page,
+}) => {
+  const errors = watchErrors(page);
+  const warnings: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'warning') warnings.push(message.text());
+  });
+  await page.goto(MATERIALS);
+  await waitForScene(page, 'optimized');
+  // 地面、两段砖墙、拉毛墙（颜色 + 法线）、砖柱、金属台面是形状；三个木箱是物件模型
+  await expect(page.locator('.viewer')).toHaveAttribute('data-entities', '9');
+  await expectRendered(page);
+  const png = await sceneOnly(page);
+  const project = await projector(page);
+  // 地砖按米平铺（tile [1, 1]，一张图 4 × 4 块）：沿 x 每 25 厘米深浅交替。
+  // 不平铺时这张图铺满整个 6 米的地面，每块砖 1.5 米，这 2 米里最多变一次。
+  // 贴图的 v 向上：z = 1.125 米是图里从下往上第一行，x = 0.375 米那块是浅色。
+  const lumas = [0, 1, 2, 3, 4, 5, 6, 7].map((k) => {
+    const point = project([0.375 + 0.25 * k, 0, 1.125]);
+    return patchLuma(png, point.x, point.y, 2);
+  });
+  for (let k = 0; k + 1 < lumas.length; k += 1) {
+    const step = lumas[k]! - lumas[k + 1]!;
+    expect(Math.abs(step), `第 ${k} 块和第 ${k + 1} 块`).toBeGreaterThan(12);
+    expect(Math.sign(step), `第 ${k} 块和第 ${k + 1} 块`).toBe(k % 2 === 0 ? 1 : -1);
+  }
+  // 记录比模型小一半的木箱：等比缩进记录的范围，控制台有警告
+  expect(warnings.some((w) => w.includes('crate-oversized') && w.includes('50.0%'))).toBe(true);
+  expect(warnings.filter((w) => w.includes('已等比缩小'))).toHaveLength(1);
+  await page.screenshot({ path: join(SHOTS, 'materials.png') });
+  // 近看：地砖的砖缝（法线贴图）和木箱的两种看法
+  await page.locator('.viewer__canvas').hover();
+  for (let i = 0; i < 4; i += 1) await page.mouse.wheel(0, -400);
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: join(SHOTS, 'materials-close.png') });
   expect(errors).toEqual([]);
 });
 

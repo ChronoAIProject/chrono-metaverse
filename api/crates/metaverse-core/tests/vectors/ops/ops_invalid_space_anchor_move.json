@@ -1,5 +1,6 @@
 {
   "base": {
+    "anchorHistory": [],
     "anchors": [
       {
         "anchorId": "_space",
@@ -91,7 +92,8 @@
         "id": "garden",
         "kind": "virtual"
       }
-    ]
+    ],
+    "scopeKind": "ext"
   },
   "description": "空间级锚点不能移动（给了位置，校验失败）",
   "expect": {

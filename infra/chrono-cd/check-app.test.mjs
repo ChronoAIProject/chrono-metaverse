@@ -11,16 +11,20 @@ import { spawnSync } from 'node:child_process';
 
 import {
   API_SERVICE,
+  EXPLICIT_API_VARS,
+  RETIRED_SERVICES,
   SHARED_BUCKET_PER_CORE_PER_SECOND,
-  WORKER_SERVICE,
   canonicalJson,
   checkApp,
   checkRepository,
+  devSeedHosts,
   parseCpu,
   parseMemoryMiB,
   parsePinnedImage,
   parsePositiveInt,
+  parseSeedHosts,
   seedProblems,
+  seedUrlAllowed,
   sharedBucketFloor,
 } from './check-app.mjs';
 
@@ -37,7 +41,6 @@ function variant(edit) {
 }
 
 const apiEnv = (copy) => copy.services[API_SERVICE].env;
-const workerEnv = (copy) => copy.services[WORKER_SERVICE].env;
 
 function problemsOf(edited, options = {}) {
   return checkApp(edited, options);
@@ -64,11 +67,11 @@ test('命令行：通过时退出码 0，发现问题时退出码 1 并列出问
   const dir = mkdtempSync(join(tmpdir(), 'check-app-'));
   try {
     const path = join(dir, 'app.json');
-    writeFileSync(path, JSON.stringify(variant((copy) => delete workerEnv(copy).OPENBLAS_NUM_THREADS)));
+    writeFileSync(path, JSON.stringify(variant((copy) => delete apiEnv(copy).PUBLIC_CACHE_BYTES)));
     const failed = spawnSync(process.execPath, [script, path], { encoding: 'utf8' });
     assert.equal(failed.status, 1);
     assert.match(failed.stderr, /发现 \d+ 个问题/);
-    assert.match(failed.stderr, /缺少 OPENBLAS_NUM_THREADS/);
+    assert.match(failed.stderr, /缺少 PUBLIC_CACHE_BYTES/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -109,63 +112,50 @@ test('共用桶的额度下限：每核每秒 100 万次，按 cpu_limit 向上�
   assert.equal(SHARED_BUCKET_PER_CORE_PER_SECOND, 1_000_000);
 });
 
-test('处理服务：缺少线程变量时报错', () => {
-  for (const name of ['OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS']) {
-    const problems = problemsOf(variant((copy) => delete workerEnv(copy)[name]));
-    assertProblem(problems, new RegExp(`缺少 ${name}.*RLIMIT_AS`));
-  }
-  const problems = problemsOf(variant((copy) => delete workerEnv(copy).MALLOC_ARENA_MAX));
-  assertProblem(problems, /缺少 MALLOC_ARENA_MAX/);
-});
-
-test('处理服务：线程数不是正整数或超过 cpu_limit 时报错', () => {
-  assertProblem(
-    problemsOf(variant((copy) => (workerEnv(copy).OPENBLAS_NUM_THREADS = '0'))),
-    /OPENBLAS_NUM_THREADS 必须是正整数/,
-  );
-  assertProblem(
-    problemsOf(variant((copy) => (workerEnv(copy).OMP_NUM_THREADS = 'auto'))),
-    /OMP_NUM_THREADS 必须是正整数/,
-  );
-  assertProblem(
-    problemsOf(variant((copy) => (workerEnv(copy).OPENBLAS_NUM_THREADS = '8'))),
-    /OPENBLAS_NUM_THREADS=8 超过 cpu_limit（2 核）/,
-  );
-  assertProblem(
-    problemsOf(variant((copy) => (workerEnv(copy).MALLOC_ARENA_MAX = '-1'))),
-    /MALLOC_ARENA_MAX 必须是正整数/,
-  );
-});
-
-test('处理服务：cpu_limit 按向上取整算核数，不足 1 核按 1 核', () => {
-  const at = (cpu, threads) =>
-    problemsOf(
-      variant((copy) => {
-        copy.services[WORKER_SERVICE].resources.cpu_limit = cpu;
-        workerEnv(copy).OPENBLAS_NUM_THREADS = threads;
-        workerEnv(copy).OMP_NUM_THREADS = threads;
+test('服务：只有网站和接口服务，已下线的处理服务出现在规格里就报错', () => {
+  assert.deepEqual(Object.keys(spec.services).sort(), ['metaverse-api', 'metaverse-web']);
+  assert.deepEqual(RETIRED_SERVICES, ['metaverse-worker']);
+  const withWorker = variant(
+    (copy) =>
+      (copy.services['metaverse-worker'] = {
+        image: `ghcr.io/chronoaiproject/chrono-metaverse-worker:c882bca@sha256:${'7'.repeat(64)}`,
+        port: 8080,
       }),
-    );
-  assert.deepEqual(at('1500m', '2'), []);
-  assert.deepEqual(at('500m', '1'), []);
-  assertProblem(at('500m', '2'), /超过 cpu_limit（1 核）/);
-  assertProblem(at('two', '2'), /cpu_limit 不合法/);
+  );
+  assertProblem(problemsOf(withWorker), /metaverse-worker 已下线.*从规格里删掉/);
+  // 处理服务的镜像仓库不再认：也按"仓库与服务对应"之外的服务处理，只要求按摘要固定。
+  assert.ok(!problemsOf(withWorker).some((problem) => problem.includes('image')), problemsOf(withWorker).join('\n'));
 });
 
-test('处理服务：子进程内存上限不小于容器上限时报错', () => {
-  assertProblem(
-    problemsOf(variant((copy) => (workerEnv(copy).WORKER_JOB_MEMORY_MB = '8192'))),
-    /WORKER_JOB_MEMORY_MB=8192 不小于容器内存上限（8192MiB）/,
-  );
-  assertProblem(
-    problemsOf(variant((copy) => (workerEnv(copy).WORKER_JOB_MEMORY_MB = '6GB'))),
-    /WORKER_JOB_MEMORY_MB 必须是正整数/,
-  );
-  assertProblem(
-    problemsOf(variant((copy) => (copy.services[WORKER_SERVICE].resources.memory_limit = 'lots'))),
-    /memory_limit 不合法/,
-  );
-  assert.deepEqual(problemsOf(variant((copy) => (workerEnv(copy).WORKER_JOB_MEMORY_MB = '8191'))), []);
+test('接口服务：内存预算用到的上限和缓存配置必须显式写出且是正整数', () => {
+  assert.deepEqual(EXPLICIT_API_VARS, [
+    'UPLOAD_MODEL_MAX_TRIANGLES',
+    'UPLOAD_MODEL_MAX_TEXTURE_SIDE',
+    'UPLOAD_WEBMODEL_MAX_TRIANGLES',
+    'UPLOAD_MAX_TEXTURE_SIDE',
+    'PUBLIC_CACHE_BYTES',
+    'UPLOAD_MAX_CONCURRENT_PARTS',
+  ]);
+  for (const name of EXPLICIT_API_VARS) {
+    assertProblem(problemsOf(variant((copy) => delete apiEnv(copy)[name])), new RegExp(`缺少 ${name}。内存预算`));
+    for (const bad of ['0', '-1', '128MiB', '']) {
+      assertProblem(
+        problemsOf(variant((copy) => (apiEnv(copy)[name] = bad))),
+        new RegExp(`${name} 必须是正整数`),
+      );
+    }
+  }
+  // 线上的值就是设计 4.8 估算用的那组。
+  const env = apiEnv(structuredClone(spec));
+  assert.equal(env.PUBLIC_CACHE_BYTES, String(128 * 1024 * 1024));
+  assert.equal(env.UPLOAD_MAX_CONCURRENT_PARTS, '4');
+  assert.equal(env.UPLOAD_MAX_TEXTURE_SIDE, '4096');
+  assert.deepEqual(spec.services[API_SERVICE].resources, {
+    cpu_request: '250m',
+    memory_request: '384Mi',
+    cpu_limit: '1',
+    memory_limit: '1536Mi',
+  });
 });
 
 test('接口服务：没有可信地址头时，限流额度必须显式设到进程处理不了的高度（共用的桶不能被一个来源耗尽）', () => {
@@ -224,7 +214,9 @@ test('接口服务：设了平台确认的单值头后，限流额度可以回�
   const confirmed = variant((copy) => {
     const env = apiEnv(copy);
     env.TRUSTED_CLIENT_IP_HEADER = 'CF-Connecting-IP';
-    for (const name of Object.keys(env).filter((key) => key.startsWith('PUBLIC_'))) delete env[name];
+    for (const name of Object.keys(env).filter((key) => key.startsWith('PUBLIC_') && key.includes('RATE_LIMIT'))) {
+      delete env[name];
+    }
   });
   assert.deepEqual(problemsOf(confirmed, { readme, upScript }), []);
 
@@ -249,8 +241,8 @@ test('README 必须列出 app.json 里的每个环境变量', () => {
   const withExtra = variant((copy) => (apiEnv(copy).SOME_NEW_SETTING = '1'));
   assertProblem(problemsOf(withExtra, { readme }), /README 的环境变量表里没有 metaverse-api 的 `SOME_NEW_SETTING`/);
 
-  const withoutThreads = readme.replaceAll('`OPENBLAS_NUM_THREADS`', 'OPENBLAS 线程数');
-  assertProblem(problemsOf(spec, { readme: withoutThreads }), /没有 metaverse-worker 的 `OPENBLAS_NUM_THREADS`/);
+  const withoutCache = readme.replaceAll('`PUBLIC_CACHE_BYTES`', '缓存上限');
+  assertProblem(problemsOf(spec, { readme: withoutCache }), /没有 metaverse-api 的 `PUBLIC_CACHE_BYTES`/);
 
   const withoutAddon = readme.replaceAll('`MONGODB_DATABASE`', '库名');
   assertProblem(problemsOf(spec, { readme: withoutAddon }), /没有 metaverse-api 的 `MONGODB_DATABASE`/);
@@ -259,15 +251,19 @@ test('README 必须列出 app.json 里的每个环境变量', () => {
   assertProblem(problemsOf(spec, { readme: withoutPending }), /要写明 `TRUSTED_CLIENT_IP_HEADER` 还没设置/);
 });
 
-test('up.sh 必须给处理服务设同样的线程变量', () => {
-  const stripped = upScript
-    .split('\n')
-    .filter((line) => !/^\s*(OPENBLAS_NUM_THREADS|MALLOC_ARENA_MAX)=/.test(line))
-    .join('\n');
-  const problems = problemsOf(spec, { upScript: stripped });
-  assertProblem(problems, /up\.sh 没有给处理服务设 OPENBLAS_NUM_THREADS/);
-  assertProblem(problems, /up\.sh 没有给处理服务设 MALLOC_ARENA_MAX/);
-  assert.ok(!problems.some((problem) => problem.includes('OMP_NUM_THREADS')), '没删的不报');
+test('up.sh 的种子主机列表默认值与 app.json 相同', () => {
+  assert.equal(devSeedHosts(upScript), apiEnv(structuredClone(spec)).METAVERSE_DEMO_SEED_HOSTS);
+  const changed = upScript.replace('scaniverse.com}', 'example.com}');
+  assert.notEqual(changed, upScript);
+  assertProblem(problemsOf(spec, { upScript: changed }), /up\.sh 的 METAVERSE_DEMO_SEED_HOSTS 默认值（.*example\.com）和 app\.json 的（.*scaniverse\.com）不同/);
+  assertProblem(
+    problemsOf(spec, { upScript: 'start api "$target/debug/metaverse-api"\n' }),
+    /up\.sh 没有给接口服务设 METAVERSE_DEMO_SEED_HOSTS 的默认值/,
+  );
+  // 不用种子（app.json 里没有主机列表）时不查。
+  const noHosts = variant((copy) => delete apiEnv(copy).METAVERSE_DEMO_SEED_HOSTS);
+  assert.ok(!problemsOf(noHosts, { upScript: '' }).some((problem) => problem.includes('up.sh')));
+  assert.equal(devSeedHosts(''), null);
 });
 
 test('镜像：每个服务都按摘要固定，标签只能是 7 位提交哈希，仓库与服务对应', () => {
@@ -295,10 +291,10 @@ test('镜像：每个服务都按摘要固定，标签只能是 7 位提交哈�
   }
   // 分支名当记号会误导人。
   assertProblem(
-    image(WORKER_SERVICE, `ghcr.io/chronoaiproject/chrono-metaverse-worker:main@${digest}`),
-    /metaverse-worker：image 的标签 main 不是 7 位提交哈希/,
+    image('metaverse-web', `ghcr.io/chronoaiproject/chrono-metaverse-web:main@${digest}`),
+    /metaverse-web：image 的标签 main 不是 7 位提交哈希/,
   );
-  // 换成别的仓库（例如把处理服务的镜像写到接口服务上，或者别人的包）。
+  // 换成别的仓库（例如把已下线的处理服务的镜像写到接口服务上，或者别人的包）。
   assertProblem(
     image(API_SERVICE, `ghcr.io/chronoaiproject/chrono-metaverse-worker:aabf88f@${digest}`),
     /metaverse-api：image 的仓库应当是 ghcr\.io\/chronoaiproject\/chrono-metaverse-api（现在是 ghcr\.io\/chronoaiproject\/chrono-metaverse-worker）/,
@@ -328,8 +324,7 @@ test('镜像：每个服务都按摘要固定，标签只能是 7 位提交哈�
 test('缺服务或没有 services 时报错', () => {
   assert.deepEqual(checkApp(null), ['app.json 没有 services']);
   assert.deepEqual(checkApp({}), ['app.json 没有 services']);
-  const problems = checkApp(variant((copy) => delete copy.services[WORKER_SERVICE]));
-  assertProblem(problems, /缺少服务 metaverse-worker/);
+  assertProblem(checkApp(variant((copy) => delete copy.services['metaverse-web'])), /缺少服务 metaverse-web/);
   assertProblem(checkApp(variant((copy) => delete copy.services[API_SERVICE])), /缺少服务 metaverse-api/);
 });
 
@@ -384,106 +379,112 @@ test('种子：按接口服务的规则静态校验', () => {
   assertProblem(seedVariant((s) => (s.owner.id = 'chronoai')), /不是部署这个应用的组织/);
   assertProblem(seedVariant((s) => (s.owner.slug = 'chronoai')), /owner 有不认识的字段 slug/);
   assertProblem(seedVariant((s) => (s.visibility = 'private')), /visibility 只能是/);
-  assertProblem(seedVariant((s) => (s.observedAt = '昨天')), /observedAt 必须是 RFC 3339/);
-  assertProblem(seedVariant((s) => (s.rebuild = 'yes')), /rebuild 必须是 true 或 false/);
   assertProblem(seedVariant((s) => (s.revision = 0)), /revision 必须是从 1 开始的整数/);
-  assertProblem(seedVariant((s) => (s.hints = [])), /hints 必须是 JSON 对象/);
-  assertProblem(
-    seedVariant((s) => (s.hints = { objects: [{ label: 'x'.repeat(5000) }] })),
-    /hints 规范化后超过 4096 字节/,
-  );
-  assertProblem(seedVariant((s) => (s.files[0].url = 'http://scaniverse.com/mesh.drc')), /url 必须是 https/);
-  assertProblem(seedVariant((s) => (s.files[0].url = 'https://u:p@scaniverse.com/mesh.drc')), /url 必须是 https/);
-  assertProblem(seedVariant((s) => (s.files[0].url = 'not a url')), /url 不是合法地址/);
-  assertProblem(seedVariant((s) => (s.files[0].sha256 = 'ABC')), /sha256 必须是 64 位小写十六进制/);
-  assertProblem(seedVariant((s) => (s.files[0].size = 0)), /size 必须是/);
-  assertProblem(seedVariant((s) => (s.files[0].contentType = 'x')), /有不认识的字段 contentType/);
-  assertProblem(seedVariant((s) => (s.files[1].name = 'MESH.drc')), /name 重复/);
-  assertProblem(seedVariant((s) => (s.files[1].name = 'tex.exe')), /name 不合法/);
-  assertProblem(seedVariant((s) => (s.files[1].name = 'other.glb')), /要么是单独一个/);
-  // 总大小上限取 256MiB（种子全在内存里处理）和 UPLOAD_MAX_SCAN_BYTES 中较小的。
-  assertProblem(
-    seedVariant((s) => {
-      s.files[0].size = 128 * 1024 * 1024;
-      s.files[1].size = 128 * 1024 * 1024 + 1;
-    }),
-    /文件总大小 \d+ 超过上限 268435456/,
-  );
-  assertProblem(seedVariant((s) => (s.files[0].size = 300 * 1024 * 1024)), /size 必须是 1–268435456 的整数/);
-  assertProblem(
-    seedProblems(seed, { targetOrg: spec.target_org_id, maxScanBytes: 5 * 1024 * 1024 }),
-    /文件总大小 \d+ 超过上限 5242880/,
-  );
-  assertProblem(seedVariant((s) => (s.files = [])), /files 要有 1–32 个文件/);
-  // 本机 http（本地开发的种子）和单独一个 zip 都可以。
-  assert.deepEqual(
-    seedVariant((s) => {
-      s.files = [{ ...s.files[0], url: 'http://127.0.0.1:9000/scan.zip', name: 'scan.zip' }];
-    }),
-    [],
-  );
   // 规范化 JSON：键按码点排序、没有空白。
   assert.equal(canonicalJson({ b: [1, { d: 2, c: 'x' }], a: null }), '{"a":null,"b":[1,{"c":"x","d":2}]}');
   assert.deepEqual(seedProblems(seed, { targetOrg: spec.target_org_id }), []);
   assertProblem(seedProblems(null), /必须是 JSON 对象/);
 });
 
-test('种子：AI 物件集按提交哈希固定在 raw.githubusercontent.com 的 infra/chrono-cd/demo/ 下', () => {
-  const commit = '0123456789abcdef0123456789abcdef01234567';
-  const good = {
-    url: `https://raw.githubusercontent.com/chronoaiproject/chrono-metaverse/${commit}/infra/chrono-cd/demo/authored.json`,
-    sha256: 'a'.repeat(64),
-    size: 123456,
-  };
-  assert.deepEqual(
-    seedVariant((s) => (s.authored = { ...good })),
-    [],
-  );
-  assertProblem(
-    seedVariant((s) => (s.authored = { ...good, url: good.url.replace(commit, 'main') })),
-    /authored\.url 必须是 .*40 位提交哈希/,
-  );
-  assertProblem(
-    seedVariant((s) => (s.authored = { ...good, url: good.url.replace('https:', 'http:') })),
-    /authored\.url 必须是/,
-  );
-  assertProblem(
-    seedVariant((s) => (s.authored = { ...good, url: good.url.replace('infra/chrono-cd/demo', 'tmp') })),
-    /authored\.url 必须是/,
-  );
-  assertProblem(
-    seedVariant((s) => (s.authored = { ...good, url: good.url.replace('raw.githubusercontent.com', 'example.com') })),
-    /authored\.url 必须是/,
-  );
-  assertProblem(seedVariant((s) => (s.authored = { ...good, sha256: 'ABC' })), /authored\.sha256/);
-  assertProblem(seedVariant((s) => (s.authored = { ...good, size: 0 })), /authored\.size 必须是 1–4194304/);
-  assertProblem(seedVariant((s) => (s.authored = { ...good, size: 4 * 1024 * 1024 + 1 })), /authored\.size/);
-  assertProblem(seedVariant((s) => (s.authored = { ...good, name: 'x.json' })), /authored 有不认识的字段 name/);
-  assertProblem(seedVariant((s) => (s.authored = [good])), /authored 必须是/);
-  assertProblem(
-    seedVariant((s) => {
-      s.authored = { ...good };
-      s.rebuild = false;
-    }),
-    /rebuild 不能是 false/,
-  );
+test('种子：旧格式（处理服务时代的 files、rebuild、hints、authored……）报错', () => {
+  for (const key of ['files', 'rebuild', 'voxelize', 'hints', 'authored', 'observedAt']) {
+    const problems = seedVariant((s) => (s[key] = key === 'files' ? [] : true));
+    assertProblem(problems, new RegExp(`是旧格式（${key}）.*改成 bundle`));
+    assert.ok(!problems.some((problem) => problem.includes('不认识的字段')), problems.join('\n'));
+  }
 });
 
-test('处理服务：WORKER_MODEL_HOSTS 必须显式写出，每项是主机名、后缀或 主机:端口', () => {
-  assertProblem(
-    problemsOf(variant((copy) => delete workerEnv(copy).WORKER_MODEL_HOSTS)),
-    /缺少 WORKER_MODEL_HOSTS/,
-  );
-  for (const bad of ['https://dl.polyhaven.org', 'dl.polyhaven.org/models', '*.hf.co', '', ' , ', '.hf.co:443', 'localhost']) {
-    assertProblem(
-      problemsOf(variant((copy) => (workerEnv(copy).WORKER_MODEL_HOSTS = bad))),
-      /WORKER_MODEL_HOSTS 每项必须是/,
-    );
-  }
+test('种子：bundle 的清单和来源表按地址、sha256、大小固定，主机在 METAVERSE_DEMO_SEED_HOSTS 里', () => {
+  const commit = '0123456789abcdef0123456789abcdef01234567';
+  const raw = `https://raw.githubusercontent.com/chronoaiproject/chrono-metaverse/${commit}/infra/chrono-cd/demo/lobby-r4`;
+  const bundle = {
+    manifest: { url: `${raw}/manifest.json`, sha256: 'a'.repeat(64), size: 312345 },
+    sources: { url: `${raw}/sources.json`, sha256: 'b'.repeat(64), size: 4567 },
+  };
+  const hosts = 'raw.githubusercontent.com,github.com,scaniverse.com';
+  const check = (edit, hostList = hosts) => {
+    const copy = structuredClone({ ...seed, revision: 4, bundle });
+    edit(copy);
+    // null 表示没设主机列表。
+    return seedProblems(copy, { targetOrg: spec.target_org_id, hosts: hostList ?? undefined });
+  };
   assert.deepEqual(
-    problemsOf(variant((copy) => (workerEnv(copy).WORKER_MODEL_HOSTS = 'dl.polyhaven.org, .HF.co,localhost:8443'))),
+    check(() => {}),
     [],
   );
+  assertProblem(check(() => {}, null), /带 bundle 时 metaverse-api 必须设 METAVERSE_DEMO_SEED_HOSTS/);
+  assertProblem(check(() => {}, 'github.com'), /bundle\.manifest\.url 必须是 https.*主机在 METAVERSE_DEMO_SEED_HOSTS 里/);
+  assertProblem(check(() => {}, 'https://raw.githubusercontent.com/'), /不是合法的主机/);
+  assertProblem(
+    check((s) => (s.bundle.manifest.url = s.bundle.manifest.url.replace('https:', 'http:'))),
+    /manifest\.url 必须是 https/,
+  );
+  assertProblem(
+    check((s) => (s.bundle.sources.url = s.bundle.sources.url.replace(commit, 'main'))),
+    /sources\.url 要按 40 位提交哈希固定/,
+  );
+  assertProblem(check((s) => (s.bundle.manifest.url = 'not a url')), /manifest\.url 不是合法地址/);
+  assertProblem(check((s) => (s.bundle.manifest.sha256 = 'ABC')), /manifest\.sha256 必须是 64 位小写十六进制/);
+  assertProblem(check((s) => (s.bundle.manifest.size = 0)), /manifest\.size 必须是 1–16777216 的整数/);
+  assertProblem(check((s) => (s.bundle.sources.size = 1024 * 1024 + 1)), /sources\.size 必须是 1–1048576 的整数/);
+  assertProblem(check((s) => (s.bundle.manifest.name = 'x')), /bundle\.manifest 有不认识的字段 name/);
+  assertProblem(check((s) => (s.bundle.zip = [])), /bundle 有不认识的字段 zip/);
+  assertProblem(check((s) => delete s.bundle.sources), /bundle\.sources 必须是/);
+  assertProblem(check((s) => (s.bundle = [])), /bundle 必须是/);
+  // 清单上限跟着 UPLOAD_MAX_BUNDLE_BYTES（调小时）。
+  assertProblem(
+    seedProblems({ ...seed, bundle }, { targetOrg: spec.target_org_id, hosts, maxManifestBytes: 1000 }),
+    /manifest\.size 必须是 1–1000 的整数/,
+  );
+  // app.json 里的配置一起核对：带 bundle 却没设主机列表。
+  const withBundle = { ...seed, revision: 4, bundle };
+  const app = variant((copy) => {
+    apiEnv(copy).METAVERSE_DEMO_SEED = JSON.stringify(withBundle);
+    delete apiEnv(copy).METAVERSE_DEMO_SEED_HOSTS;
+  });
+  assertProblem(checkApp(app, { seed: JSON.stringify(withBundle) }), /必须设 METAVERSE_DEMO_SEED_HOSTS/);
+  const listed = variant((copy) => {
+    apiEnv(copy).METAVERSE_DEMO_SEED = JSON.stringify(withBundle);
+    apiEnv(copy).METAVERSE_DEMO_SEED_HOSTS = hosts;
+  });
+  assert.deepEqual(checkApp(listed, { seed: JSON.stringify(withBundle) }), []);
+});
+
+test('种子：主机列表的写法同接口服务（主机名只许 443，.后缀匹配子域名，主机:端口只匹配那个端口）', () => {
+  const { entries, bad } = parseSeedHosts(
+    ' raw.githubusercontent.com, .GitHubUserContent.com,127.0.0.1:9000 ,, x/y, *.a.com, .com, .a.com:443',
+  );
+  assert.deepEqual(bad, ['x/y', '*.a.com', '.com', '.a.com:443']);
+  for (const [text, ok] of [
+    ['https://raw.githubusercontent.com/o/r/x', true],
+    ['https://raw.githubusercontent.com:8443/x', false],
+    ['https://objects.githubusercontent.com/x', true],
+    ['https://githubusercontent.com/x', false],
+    ['http://127.0.0.1:9000/x', true],
+    ['http://127.0.0.1:9001/x', false],
+    ['http://raw.githubusercontent.com/x', false],
+    ['https://u:p@raw.githubusercontent.com/x', false],
+    ['https://raw.githubusercontent.com/x#y', false],
+  ]) {
+    assert.equal(seedUrlAllowed(new URL(text), entries), ok, text);
+  }
+});
+
+test('种子：有种子时 METAVERSE_DEMO_SEED_HOSTS 必须显式写出（不带包也一样）', () => {
+  // 现在的种子不带包，主机列表照样要写：换成带包的种子时只改种子一项。
+  assert.equal(seed.bundle, undefined);
+  const missing = variant((copy) => delete apiEnv(copy).METAVERSE_DEMO_SEED_HOSTS);
+  assertProblem(checkApp(missing, { seed: seedText }), /有种子时必须显式写出 METAVERSE_DEMO_SEED_HOSTS/);
+  const empty = variant((copy) => (apiEnv(copy).METAVERSE_DEMO_SEED_HOSTS = ' , '));
+  assertProblem(checkApp(empty, { seed: seedText }), /METAVERSE_DEMO_SEED_HOSTS 是空的/);
+  const bad = variant((copy) => (apiEnv(copy).METAVERSE_DEMO_SEED_HOSTS = 'https://github.com/'));
+  assertProblem(checkApp(bad, { seed: seedText }), /不是合法的主机/);
+  // 两处都不用种子时不要求。
+  const noSeed = variant((copy) => {
+    delete apiEnv(copy).METAVERSE_DEMO_SEED;
+    delete apiEnv(copy).METAVERSE_DEMO_SEED_HOSTS;
+  });
+  assert.deepEqual(checkApp(noSeed, { seed: null }), []);
 });
 
 test('种子：凭链接查看要声明分享令牌密钥，令牌不能写进 env，README 要写明 set_app_secrets', () => {

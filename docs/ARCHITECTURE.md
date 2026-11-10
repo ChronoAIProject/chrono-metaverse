@@ -192,7 +192,7 @@ palettes { _id: 内容哈希, spaceId, blocks: [ { id, name, kind: solid|glass|e
 records { _id: 内容哈希, kind: entity | anchor, spaceId, body }
 // 物件 body：{ entityId, layer: rebuilt | ext, kind: structure | object,
 //             shape?（参数化定义：基本形体、轮廓放样、板、凸包、模板实例）, assetHash?（生成的模型）,
-//             material?（模型整体的调色、半透明、不受光照）, textures?,
+//             material?（模型整体的调色、半透明、不受光照、着色方式）, textures?,
 //             position, rotation, scale（连续值）, regionId, anchorId?, props }
 // 锚点 body：{ anchorId, kind: table|seat|zone|door|camera|counter|space,
 //             box | position, label, visibility: public|internal }
@@ -344,7 +344,7 @@ draftChunks（草稿生成的区块，随草稿过期删除，不写进 chunks�
   - 默认有效 24 小时，最长 7 天；草稿发布或丢弃时，令牌立即失效。
   - 链接形如 `/preview#t=<令牌>`，令牌放在 `#` 后面，不会进入服务器和网络层的日志。
   - 预览和公开接口一样，只显示公开锚点和公开事件；响应不缓存。
-  - 预览用到的全部区块和资源都走预览专用接口（8.2），凭预览令牌读取。服务端只返回属于这次预览的内容：草稿生成的区块、草稿引用的可预览资源（`assets`；`heldAssets` 里的原始扫描、清单、建模记录一律 404），以及草稿基础版本及更早（seq ≤ `baseSeq`）的提交引用过、已发布的区块和本空间已登记（`assetRefs`）的资源；其他哈希一律 404。草稿区块和草稿新上传的资源在发布前只能这样读到。
+  - 预览用到的全部区块和资源都走预览专用接口（8.2），凭预览令牌读取。服务端只返回属于这次预览的内容：草稿生成的区块、草稿引用的可预览资源（`assets`；`heldAssets` 里的原始扫描、清单、建模记录一律 404），以及草稿基础版本及更早（seq ≤ `baseSeq`）的提交引用过、已发布的区块和登记进 `assetRefs` 的资源（`assetRefs.seq` 记最早引用它的版本号）；其他哈希一律 404。草稿区块和草稿新上传的资源在发布前只能这样读到。
 - **草稿范围**：草稿属于创建时的路径范围（实体区、某个地块，或重建 `rebuild`）。追加操作、生成预览、发布都必须走同一范围的路径，谁能调这些路径由 NyxID 操作范围决定。实体区和地块草稿只写扩展层和锚点；重建草稿只收一个重建包，只写重建层、扫描层和新锚点（6.3）。
 - **发布**：
   - 如果时间线已经前进，就拿 (baseSeq, head] 之间各提交的变化和草稿的 `touched` 求交集：没有交集就直接叠加到最新版本上发布；有交集才返回 409，并列出冲突的键。
@@ -418,7 +418,7 @@ draftChunks（草稿生成的区块，随草稿过期删除，不写进 chunks�
 
 ### 6.3 重建包与重建草稿
 
-- **重建包** = `manifest.json` + 文件。清单写：格式和版本号、生成工具和版本、说明、可选的基础版本 `base: {spaceId, seq}`、扫描元数据（扫描资源、网页用模型、对齐变换、对齐信息）、重建层记录（结构、物体、模板；整体替换或逐件合并）、锚点、建模记录、文件清单（相对路径、用途、sha256、大小）。清单与托管位置无关，不写任何下载地址；包里不能有本地路径；记录里的模型和贴图都写资源哈希，并且每个哈希都在文件清单里。格式见 `docs/design/server-slim.md` 第 6 节（实现时写进 SHAPES）。
+- **重建包** = `manifest.json` + 文件。清单写：格式和版本号、生成工具和版本、说明、可选的基础版本 `base: {spaceId, seq}`、扫描元数据（扫描资源、网页用模型、对齐变换、对齐信息）、重建层记录（结构、物体、模板；整体替换或逐件合并）、锚点、建模记录、文件清单（相对路径、用途、sha256、大小）。清单与托管位置无关，不写任何下载地址；包里不能有本地路径；记录里的模型和贴图都写资源哈希，并且每个哈希都在文件清单里。格式和校验规则见 SHAPES 第 7 节，资源核对记录和各用途上限见 SHAPES 第 8 节。
 - **写入路径**：重建层有自己的路径范围 `rebuild`：上传（`/api/v1/spaces/{space_id}/rebuild/uploads/{purpose}`）、草稿（`.../rebuild/drafts...`）和任务查询（`.../rebuild/jobs...`）都在这个前缀下，NyxID 可以单独授权（9.3）。命令行上传包里的文件（按哈希复用已有资源）和清单，建重建草稿，把清单交进去（**重建草稿只收一个重建包**，没有内联操作）；服务端按固定规则把清单展开成操作：
   - `setScan`：这次提交的扫描层（扫描资源、网页用模型、变换，可选的对齐信息和拍摄时间）；
   - `clearRebuilt`：清掉重建层的全部物件（整体替换时）；
@@ -497,6 +497,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
   - 页面脚本把令牌放在请求头 `Authorization: Share <令牌>` 里调用公开读接口。
   - 页面设置 `Referrer-Policy: no-referrer`。
 - **加载**：区块和资源按内容哈希命名，可以永久缓存；网格在浏览器的后台线程里生成。
+- **画法**：形状和物件模型按 SHAPES 2、3 的着色方式画——`baked`（默认，扫描烘焙的贴图：一部分受光、一部分原样显示，亮度接近原始扫描）、`albedo`（固有色、完整受光，可带法线和粗糙度贴图），贴图可以按米平铺；只有模型的物件按模型实际的包围盒兜进记录的 `bounds`（服务端已经实测，网站只是兜底）。
 
 ---
 
@@ -771,21 +772,22 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
   chunks/         拉取下来的区块
   build/          建造脚本（可用 git 管理）
   assets/         网页用模型、贴图缓存
+  scan/  work/    原始扫描（不公开）、重建的工作目录；.gitignore 连同 assets/、chunks/、out/ 一起忽略
 ```
 
 | 命令 | 作用 |
 |---|---|
 | `metaverse init` | 创建工作区，并写入技能说明 `.claude/skills/metaverse-builder/`（建造）和 `metaverse-reconstruct/`（用 AI 重建实体空间） |
 | `metaverse admin …` | 管理命令：建空间、轮换分享令牌、定义区域和地块、登记事件类型、抹除事件（调用 8.4） |
-| `metaverse pull [--scan]` | 下载空间的当前状态和各用途的上传上限（`limits.json`）；`--scan` 另外分段下载当前的原始扫描（能断点续传），写 `scan/scan.zip` 和 `scan/transform.json`（本地重建、重扫配准要用） |
-| `metaverse pull --share <分享链接> [--seq N] [--assets]` | 只读公开快照，不需要 NyxID：变换、物件、公开锚点，`--assets` 另外下载网页用模型和物件模型；工作区标记为只读，分享令牌不写进工作区 |
+| `metaverse pull [--scan] [--assets]` | 下载空间的当前状态和各用途的上传上限（`limits.json`）；`--scan` 另外分段下载当前的原始扫描（能断点续传），写 `scan/scan.zip` 和 `scan/transform.json`（本地重建、重扫配准要用）；`--assets` 另外下载这个版本引用的网页用模型、物件模型和贴图（按快照重新打包要用） |
+| `metaverse pull --share <分享链接> [--seq N] [--assets]` | 只读公开快照，不需要 NyxID：变换、物件、公开锚点，`--assets` 另外下载网页用模型、物件模型和贴图；工作区标记为只读，分享令牌不写进工作区 |
 | `metaverse build` | 运行建造脚本。脚本每次都从拉取的基础状态重新生成，可以反复运行 |
 | `metaverse dev` | 本地查看器，和网站同一套代码；脚本改了自动刷新 |
 | `metaverse shot` | 本地截图（无头浏览器软件渲染，不需要显卡），AI 直接看图自查 |
 | `metaverse diff` / `check` | 和拉取时的版本对比；在本地检查改动是否都落在目标地块或实体区内 |
 | `metaverse push [--plot <地块>]` | 操作写成文件 → 分片上传 → "从上传应用操作"生成草稿 → 打印草稿编号、统计和预览链接 |
 | `metaverse bundle check [目录] [--seed]` | 在本地按服务端同一套规则校验重建包（清单结构、文件的哈希和格式检查、记录；6.3）；`--seed` 时对内部锚点和建模记录给出警告（种子包会公开） |
-| `metaverse bundle push [目录] [--publish]` | 默认读 `out/bundle/`：以清单的 `base` 为基础版本，上传文件（按哈希复用已有资源）和清单 → 建重建草稿 → 交包展开 → 列出跳过和漂移的锚点 → 预览链接；`--publish` 直接发布 |
+| `metaverse bundle push [目录] [--publish]` | 默认读 `out/bundle/`：以清单的 `base` 为基础版本，上传文件（按哈希复用已有资源）和清单 → 建重建草稿 → 交包展开 → 列出跳过和漂移的锚点 → 预览链接；`--publish` 直接发布（包的扫描和线上相同、变换却不同时停下，有意重新对齐要加 `--realign`） |
 | `metaverse publish <草稿编号>` | 发布草稿，包括重建草稿（所用 agent key 的操作范围要包含发布接口） |
 
 本地重建工具 `metaverse-recon`（Python，`recon/` 目录；Mac、Linux 都能跑，不需要显卡，渲染要 node 和 Playwright 的 Chromium）只读写本地文件，不连接本服务、不需要凭证；和本服务打交道一律由命令行 `metaverse` 做。仓库外用 `uv tool install "git+https://github.com/ChronoAIProject/chrono-metaverse@<标签>#subdirectory=recon"` 安装，`doctor --install` 把渲染要的工具装进缓存目录。它在命令行工作区里运行，往上找 `space.json` 来定默认的扫描（`scan/scan.zip`）、变换（`scan/transform.json`）、上限（`limits.json`）和输出目录（`out/recon/`、`out/bundle/`）：
@@ -793,7 +795,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 | 命令 | 作用 |
 |---|---|
 | `prepare` | 扫描 → 基线目录：对齐、算法结构和物体、逐件候选清单；`--transform` 用线上的变换 |
-| `align` | 只算对齐：首次自动对齐，或重扫配准到参考扫描，输出变换和误差 |
+| `align` | 只算对齐：首次自动对齐，或重扫配准到参考扫描，输出变换和误差；不覆盖 `pull` 写的线上变换，误差超限时不写输出文件 |
 | `webmodel` | 生成网页用模型 |
 | `views`、`measure`、`compare` | 看（只渲染范围内的扫描）、量（截面、平面、高度图）、比（物件与扫描并排，算偏差） |
 | `search`、`index`、`fetch`、`place` | 模型库检索（只要 CC0、CC-BY）、下载、摆进扫描 |
@@ -828,6 +830,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 - **教程**：
   - `docs/tutorials/cloud-claude-code-nyxid.md` 是平台开发教程；
   - 给建造者的教程另写（`docs/tutorials/build-space.md`），内容是在本地或云端用 Claude Code / Codex 建造空间，以及怎么给 AI 配置 agent key。
+  - 用 AI 重建实体空间：命令一步步的用法见 `docs/tutorials/reconstruct-with-ai.md`；从采集、逐件建模、多人评审、贴图到写回上线的完整做法见方法论 `docs/methodology/`。
 
 ---
 

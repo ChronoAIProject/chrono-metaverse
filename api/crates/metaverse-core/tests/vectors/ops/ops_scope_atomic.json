@@ -1,5 +1,6 @@
 {
   "base": {
+    "anchorHistory": [],
     "anchors": [],
     "entities": [],
     "fills": [],
@@ -85,7 +86,8 @@
         "id": "garden",
         "kind": "virtual"
       }
-    ]
+    ],
+    "scopeKind": "ext"
   },
   "description": "地块路径下第 3 条把锚点移出地块：整批失败（kind = scope，index = 2），前两条也不生效",
   "expect": {

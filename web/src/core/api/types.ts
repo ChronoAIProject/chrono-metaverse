@@ -1,4 +1,4 @@
-import type { Rgb, Shape, Vec3 } from '../shapes/types';
+import type { Rgb, Shading, Shape, Vec3 } from '../shapes/types';
 
 /**
  * 公开读接口（设计 8.2）的数据类型。字段名照抄设计文档第 4、5 节（驼峰），
@@ -64,18 +64,29 @@ export interface EntityBody {
   readonly regionId?: string;
   readonly shape?: Shape;
   /**
-   * 处理服务重新导出的物件模型（glb，`/api/public/assets/{hash}.bin`）。没有 `shape` 时，
-   * 查看器加载这个模型，按 `bounds` 的底面中心摆放（模型坐标的原点在底面中心）。
+   * 物件模型（glb，`/api/public/assets/{hash}.bin`）。没有 `shape` 时，查看器加载这个模型，
+   * 按 `bounds` 的底面中心摆放（模型坐标的原点在底面中心；实际比 `bounds` 大时兜底缩进去）。
    */
   readonly assetHash?: string;
   /**
-   * 模型（assetHash）整体的外观：`tint` 乘到模型原来的颜色上，`opacity` 半透明，`unlit` 不受光照。
-   * 只和 assetHash 一起出现（docs/SHAPES.md 第 3 节）。
+   * 模型（assetHash）整体的外观：`tint` 乘到模型原来的颜色上，`opacity` 半透明，`unlit` 不受光照；
+   * `shading` 是模型里材质的看法：`baked`（默认）按扫描烘焙的看法画带颜色贴图的材质，`albedo`
+   * 按 glb 里的材质原样完整受光。只和 assetHash 一起出现（docs/SHAPES.md 第 3 节）。
    */
   readonly material?: {
     readonly tint?: Rgb;
     readonly opacity?: number;
     readonly unlit?: boolean;
+    readonly shading?: Shading;
+  };
+  /**
+   * 模型（assetHash）绕自己的原点转的角度（只有旋转，位置由 `bounds` 定）：转过之后模型包围盒的外包盒
+   * 底面中心对齐 `bounds` 的底面中心（docs/SHAPES.md 第 3 节，`viewer/modelPlacement.ts`）。
+   */
+  readonly transform?: {
+    readonly yaw?: number;
+    readonly pitch?: number;
+    readonly roll?: number;
   };
   readonly textures?: readonly string[];
   readonly bounds?: { readonly min: Vec3; readonly max: Vec3 };

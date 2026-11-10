@@ -165,39 +165,45 @@ async fn event_types_are_versioned_and_validated() {
     assert!(items[0].get("spaceId").is_none());
 }
 
-/// spawnEntity 的模型（`display.entityAsset`）：必须是本空间 model_import 处理后的模型，登记时
-/// 写进 assetRefs，网页经公开资源接口能读到。
+/// spawnEntity 的模型（`display.entityAsset`）：必须是本空间的、核对记录合乎物件模型上限的 glb
+/// （按服务端实测的核对记录判断，不看 `kind`，docs/design/server-slim.md 4.6），登记时写进 assetRefs，
+/// 网页经公开资源接口能读到。
 #[tokio::test]
 async fn spawn_entity_models_are_checked_and_become_public() {
     let Some(app) = TestApp::start(&[]).await else {
         return;
     };
     let token = restaurant(&app).await;
+    let glb = mongodb::bson::doc! {"v": 1, "format": "glb", "triangles": 800, "nodes": 1,
+    "meshes": 1, "materials": 1, "images": [], "maxTextureSide": 0, "texturePixels": 0,
+    "extensions": [], "bounds": {"min": [-0.3, 0.0, -0.3], "max": [0.3, 1.2, 0.3]}};
     let processed = app
         .put_asset(
-            b"glTF processed robot",
+            b"glTF checked robot",
             doc! {"kind": "model", "contentType": "model/gltf-binary", "spaceId": "restaurant",
-            "sourceHash": "e".repeat(64)},
+            "check": glb.clone()},
         )
         .await;
+    // 没有核对记录的旧资源（例如处理服务时代的原始上传）：不能引用。
     let raw = app
         .put_asset(
             b"glTF raw robot upload",
             doc! {"kind": "model", "contentType": "model/gltf-binary", "spaceId": "restaurant",
-            "uploadId": "up_robot"},
+            "uploadId": "up_robot", "sourceHash": "e".repeat(64)},
         )
         .await;
     let foreign = app
         .put_asset(
             b"glTF someone else's robot",
             doc! {"kind": "model", "contentType": "model/gltf-binary", "spaceId": "flower-shop",
-            "sourceHash": "d".repeat(64)},
+            "check": glb.clone()},
         )
         .await;
     let texture = app
         .put_asset(
             b"\x89PNG not a model",
-            doc! {"kind": "texture", "contentType": "image/png", "spaceId": "restaurant"},
+            doc! {"kind": "texture", "contentType": "image/png", "spaceId": "restaurant",
+            "check": {"v": 1, "format": "png", "width": 64, "height": 64}},
         )
         .await;
     let spawn = |asset: &str| {
@@ -222,10 +228,20 @@ async fn spawn_entity_models_are_checked_and_become_public() {
         );
     }
     let reply = register(&app, who(ORG), spawn(&raw)).await;
-    assert!(reply.body["detail"]
-        .as_str()
-        .unwrap()
-        .contains("import_model"));
+    assert!(
+        reply.body["detail"].as_str().unwrap().contains("核对记录"),
+        "{:?}",
+        reply.body
+    );
+    let reply = register(&app, who(ORG), spawn(&texture)).await;
+    assert!(
+        reply.body["detail"]
+            .as_str()
+            .unwrap()
+            .contains("不能当物件模型"),
+        "{:?}",
+        reply.body
+    );
     // 只读成员不能登记（也就不能借此公开资源）。
     let reply = register(&app, who_with("bob", "member-token"), spawn(&processed)).await;
     assert_eq!(reply.status, StatusCode::FORBIDDEN);

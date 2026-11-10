@@ -1,5 +1,6 @@
 {
   "base": {
+    "anchorHistory": [],
     "anchors": [],
     "entities": [],
     "fills": [],
@@ -85,12 +86,14 @@
         "id": "garden",
         "kind": "virtual"
       }
-    ]
+    ],
+    "scopeKind": "ext"
   },
   "description": "空心盒：默认壁厚 1，只写外壳；壁厚 2 的 6×6×6；壁厚超过一半时整盒填满",
   "expect": {
     "anchors": [],
     "baseChunks": [],
+    "brokenTemplateRefs": [],
     "chunkChanges": [
       {
         "cx": 0,
@@ -236,6 +239,7 @@
       }
     ],
     "provisionalBlocks": [],
+    "scan": null,
     "touched": {
       "anchors": [],
       "chunks": [
@@ -247,7 +251,10 @@
         }
       ],
       "entities": [],
-      "palette": false
+      "palette": false,
+      "rebuiltLayer": false,
+      "scan": false,
+      "skippedAnchors": []
     }
   },
   "kind": "ops",

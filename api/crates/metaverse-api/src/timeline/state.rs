@@ -5,13 +5,17 @@
 //! 最多加载 [`MAX_WORKSPACE_CHUNKS`] 个区块（每个 64KiB），超出就拒绝，提示拆成多个草稿。
 //!
 //! 出错时整份工作状态直接丢弃，从不保存一半的结果，所以这里不需要逐批复制状态。
+//!
+//! 工作状态带草稿的**范围种类**（扩展 / 重建，决定能用哪些操作、写哪一层）和草稿的 `setScan`；
+//! 一批操作里有带 `ifNew` 的 `createAnchor` 时，才按需查这些编号在时间线上出现过没有
+//! （草稿基础版本及更早，重放时是最新版本及更早，docs/design/server-slim.md 2.4）。
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use metaverse_core::chunk::{locate_cell, Chunk, ChunkKey};
 use metaverse_core::grid::GridBox;
 use metaverse_core::model::Layer;
-use metaverse_core::ops::{Op, OpError, TouchedSet, WorkingState};
+use metaverse_core::ops::{Op, OpError, ScopeKind, TouchedSet, WorkingState};
 use metaverse_core::record::{AnchorBody, EntityBody};
 use metaverse_core::replay::StateManifest;
 use metaverse_core::scope::AllowedArea;
@@ -69,6 +73,10 @@ pub struct Workspace {
     pub manifest: StateManifest,
     loaded: BTreeSet<ChunkKey>,
     source: ChunkSource,
+    /// 锚点历史查到哪个版本为止（`ifNew` 用）。
+    history_upto: u64,
+    /// 已经查过历史的锚点编号。
+    history_checked: BTreeSet<String>,
 }
 
 /// 盒子横跨多少个区块。
@@ -122,11 +130,7 @@ pub fn needed_chunks(op: &Op, keys: &mut BTreeSet<ChunkKey>) -> Result<(), ApiEr
 }
 
 fn with_index(error: OpError, index: usize) -> OpError {
-    match error {
-        OpError::Invalid { message, .. } => OpError::Invalid { index, message },
-        OpError::Scope { source, .. } => OpError::Scope { index, source },
-        other => other,
-    }
+    error.at(index)
 }
 
 /// 读出 `hashes` 对应的记录 body，解析成具体类型。
@@ -153,16 +157,61 @@ async fn load_bodies<T: serde::de::DeserializeOwned>(
 }
 
 impl Workspace {
-    /// 某个版本的工作状态。
-    pub async fn at_seq(repo: &Repo, grant: &Grant, seq: u64) -> Result<Self, ApiError> {
+    /// 某个版本的工作状态（`kind` 是这些操作所属草稿的范围种类）。
+    pub async fn at_seq(
+        repo: &Repo,
+        grant: &Grant,
+        seq: u64,
+        kind: ScopeKind,
+    ) -> Result<Self, ApiError> {
         let manifest = repo.manifest_at(grant, seq).await?;
-        Self::from_manifest(repo, grant, manifest, None).await
+        let mut workspace = Self::from_manifest(repo, grant, manifest, None).await?;
+        workspace.state.kind = kind;
+        workspace.history_upto = seq;
+        Ok(workspace)
     }
 
-    /// 草稿的工作状态：基础版本叠加草稿已有的结果。
+    /// 草稿的工作状态：基础版本叠加草稿已有的结果，带草稿的范围种类和 `setScan`。
     pub async fn for_draft(repo: &Repo, grant: &Grant, draft: &DraftDoc) -> Result<Self, ApiError> {
         let manifest = repo.manifest_at(grant, draft.base_seq).await?;
-        Self::from_manifest(repo, grant, manifest, Some(draft)).await
+        let mut workspace = Self::from_manifest(repo, grant, manifest, Some(draft)).await?;
+        workspace.state.kind = ScopeKind::of(&draft.scope);
+        workspace.state.scan = draft.scan.as_ref().map(|scan| scan.to_state());
+        workspace.history_upto = draft.base_seq;
+        Ok(workspace)
+    }
+
+    /// 这批操作里带 `ifNew` 的 `createAnchor`：还没查过的编号，查它们在时间线上
+    /// （`seq ≤ history_upto`）出现过没有，放进工作状态的锚点历史。
+    pub async fn ensure_anchor_history(
+        &mut self,
+        repo: &Repo,
+        grant: &Grant,
+        ops: &[Op],
+    ) -> Result<(), ApiError> {
+        let wanted: Vec<String> = ops
+            .iter()
+            .filter_map(|op| match op {
+                Op::CreateAnchor {
+                    anchor,
+                    if_new: Some(true),
+                } if !self.history_checked.contains(&anchor.anchor_id) => {
+                    Some(anchor.anchor_id.clone())
+                }
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        if wanted.is_empty() {
+            return Ok(());
+        }
+        let seen = repo
+            .anchor_history(grant, self.history_upto, &wanted)
+            .await?;
+        self.state.anchor_history.extend(seen);
+        self.history_checked.extend(wanted);
+        Ok(())
     }
 
     async fn from_manifest(
@@ -228,10 +277,14 @@ impl Workspace {
                 anchors,
                 palette,
                 provisional_blocks: provisional,
+                // 范围种类、草稿的扫描由调用方按草稿填；锚点历史按需加载。
+                ..WorkingState::default()
             },
             manifest,
             loaded: BTreeSet::new(),
             source,
+            history_upto: 0,
+            history_checked: BTreeSet::new(),
         })
     }
 
@@ -319,6 +372,7 @@ impl Workspace {
         offset: usize,
     ) -> Result<TouchedSet, ApplyError> {
         let _slot = compute_slot().await?;
+        self.ensure_anchor_history(repo, grant, ops).await?;
         let mut touched = TouchedSet::default();
         let mut since_yield = 0u64;
         for (batch_index, batch) in ops.chunks(64).enumerate() {
@@ -346,6 +400,9 @@ impl Workspace {
                     tokio::task::yield_now().await;
                 }
             }
+            // 放物件、模板这类 0 格的操作不按格数让出：每 64 条至少让出一次
+            // （docs/design/server-slim.md 4.2）。
+            tokio::task::yield_now().await;
         }
         Ok(touched)
     }

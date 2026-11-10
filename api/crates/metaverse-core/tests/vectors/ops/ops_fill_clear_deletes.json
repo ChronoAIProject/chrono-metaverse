@@ -1,5 +1,6 @@
 {
   "base": {
+    "anchorHistory": [],
     "anchors": [],
     "entities": [],
     "fills": [
@@ -98,7 +99,8 @@
         "id": "garden",
         "kind": "virtual"
       }
-    ]
+    ],
+    "scopeKind": "ext"
   },
   "description": "扩展层原有内容被写成 0（不覆盖）后整块为空：变化记为删除（hash = null）；从未有内容的区块写 0 不算变化",
   "expect": {
@@ -112,6 +114,7 @@
         "layer": "ext"
       }
     ],
+    "brokenTemplateRefs": [],
     "chunkChanges": [
       {
         "cx": 0,
@@ -175,6 +178,7 @@
       }
     ],
     "provisionalBlocks": [],
+    "scan": null,
     "touched": {
       "anchors": [],
       "chunks": [
@@ -192,7 +196,10 @@
         }
       ],
       "entities": [],
-      "palette": false
+      "palette": false,
+      "rebuiltLayer": false,
+      "scan": false,
+      "skippedAnchors": []
     }
   },
   "kind": "ops",
