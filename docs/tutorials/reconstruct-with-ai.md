@@ -56,13 +56,15 @@ metaverse-recon doctor
 
 ### 1.2 准备扫描和工作区
 
-- **工作区**：`metaverse init <空间编号>` 建工作区（有 `space.json`），并把技能说明
-  `.claude/skills/metaverse-reconstruct/SKILL.md` 写进去，AI 打开工作区就能读到规则。`metaverse-recon` 在工作区的
-  任何子目录里都会往上找 `space.json`，扫描、变换、上限、基线和包目录都有默认值（`recon/README.md` 的"本地流水线"）。
+- **工作区**：`metaverse init <空间编号>` 建工作区，再 `metaverse pull`（写 `space.json`、`limits.json` 和包的基础版本；
+  新空间也要拉一次），并把技能说明 `.claude/skills/metaverse-reconstruct/SKILL.md` 写进去，AI 打开工作区就能读到规则。
+  `metaverse-recon` 在工作区的任何子目录里都会往上找 `space.json`（还没 `pull` 时找 `metaverse.json`，只是没有基础版本），
+  扫描、变换、上限、网页用模型、基线和包目录都有默认值（`recon/README.md` 的"本地流水线"）。工作区的 `.gitignore`
+  忽略 `scan/`、`work/`、`web/`、`out/`：原始扫描不公开，工作区放进 git 时也不会被带进去。
 - **扫描和变换**：已经有扫描的空间，`metaverse pull --scan` 下载当前的原始扫描 `scan/scan.zip` 和它的变换
-  `scan/transform.json`（扫描坐标 → 空间坐标），重建结果就落在空间的坐标系里；`pull` 还会写服务端的上传上限
-  `limits.json`。新空间：把 Scaniverse 导出的 zip 放到 `scan/scan.zip`，`metaverse-recon align` 首次自动对齐，写
-  `scan/transform.json`。
+  `scan/transform.json`（扫描坐标 → 空间坐标），重建结果就落在空间的坐标系里。**已有空间不要跑 `align`**（它也不会
+  覆盖 `pull` 写的变换，除非 `--force`）。新空间：把 Scaniverse 导出的 zip 放到 `scan/scan.zip`，`metaverse-recon align`
+  首次自动对齐，写 `scan/transform.json`。
 - **提示**（可选）：物体提示 `hints.json`（空间坐标，格式与原来导入扫描时的 `hints` 相同）。
 
 ---
@@ -208,7 +210,7 @@ metaverse bundle push                       # 默认读 out/bundle/
 网页用模型写成重建包 `out/bundle/`（清单 `manifest.json` + 文件，重建层编号加 `rb.`），最后调用
 `metaverse bundle check` 按服务端的规则检查一遍。
 
-- `--webmodel` 给空间现在的网页用模型（`metaverse pull --share … --assets` 能下载），"原始"视图就不变；不给就重新生成；
+- `--webmodel` 给空间现在的网页用模型（`metaverse pull --assets` 或 `pull --share … --assets` 能下载），"原始"视图就不变；不给就重新生成；
 - 种子用的包（会公开）加 `--seed`：去掉内部锚点和建模记录；
 - `metaverse bundle push` 建重建草稿、上传文件和清单、等服务端展开，给出预览链接；看过预览后
   `metaverse publish <草稿编号>` 发布。令牌要带 `metaverse:rebuild:write`；

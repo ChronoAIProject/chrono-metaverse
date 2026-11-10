@@ -23,11 +23,11 @@
 
 | 步 | 谁 | 输入 | 输出 | 命令 | 章 |
 |---|---|---|---|---|---|
-| 0 准备 | 人、平台管理员 | — | 有 `metaverse-rebuilder` 角色的账号；命令行工作区 `space.json` | NyxID 里分角色；`metaverse init <空间编号>` | 7.4 |
+| 0 准备 | 人、平台管理员 | — | 有 `metaverse-rebuilder` 角色的账号；命令行工作区 `space.json` | NyxID 里分角色；`metaverse init <空间编号>` 后 `metaverse pull`（新空间也要拉一次：写 `space.json`、`limits.json` 和包的基础版本） | 7.4 |
 | 1 采集 | 人（现场） | 空间本身 | Scaniverse 扫描（网格 + 贴图）、Scaniverse 里保留的原始数据、补拍的照片和视频 | Scaniverse | 2 |
 | 2 取扫描 | AI 或人 | 线上空间；或刚扫的文件 | `scan/scan.zip`、`scan/transform.json`、`limits.json` | `metaverse pull --scan`；只有分享链接时 `metaverse pull --share <链接> --assets` | 3.1 |
 | 3 对齐和基线 | AI 模型师 | 扫描、变换、可选的物体提示 | 基线 `out/recon/`：对齐、算法结构和物体、候选清单 `candidates.json` | `metaverse-recon prepare`（首次或重扫先 `align`） | 3.2–3.3 |
-| 4 网页用模型 | AI 模型师 | 扫描 | `web/scan-0.glb`（"原始"视图加载这一档） | `metaverse-recon webmodel`；扫描没变就用线上那份 | 3.4 |
+| 4 网页用模型 | AI 模型师 | 扫描 | `web/scan-0.glb`、`web/scan-1.glb`（"原始"视图加载默认档） | `metaverse-recon webmodel`（工作区里默认写到 `web/`）；扫描没变就用线上那份 | 3.4 |
 | 5 结构 | AI 模型师 | 基线结构、测量 | 改正后的地面、墙、玻璃（`kind: "structure"`） | `measure`、`compare` | 3.5 |
 | 6 逐件建模 | AI 模型师（按区域分组并行） | 候选清单 | 每件 `work/<编号>/entity.json` 和过程记录 | `views`、`measure`、`search`、`fetch`、`place`、`compare` | 4、5 |
 | 7 贴图 | AI 模型师 | 扫描、材质库、生图工具 | 贴图文件和材质字段（`tile`、`shading`、法线、粗糙度） | `refshot`、`texsearch`、`texfetch`、`texture`；清理、去光照、无缝、生成法线用脚本 | 6 |
@@ -38,14 +38,17 @@
 | 12 演示种子（可选） | 部署者 | 种子用的包 | `infra/chrono-cd/demo/<空间>-r<版本>/` 的清单和来源表；发布页上的大文件；种子配置 | `metaverse-recon bundle --seed`、`gh release upload`、改 `app.json` | 7.5 |
 | 13 验证 | 人 | 网站 | 三种视图、署名、时间线、拍摄时间都对 | 浏览器 | 7.6 |
 
-工作区里的目录（`metaverse init` 建的目录，本地工具往上找 `space.json` 定默认值）：
+工作区里的目录（`metaverse init` 建的目录，本地工具往上找 `space.json` 定默认值；还没 `pull` 时认 `metaverse.json`，只是没有
+基础版本）：
 
 ```
 <空间编号>/
+  metaverse.json  .gitignore                             metaverse init 写的（.gitignore 忽略 scan/、work/、web/、out/ 等）
   space.json  limits.json  entities.json  anchors.json   metaverse pull 写的
   scan/scan.zip  scan/transform.json                     metaverse pull --scan 写的（原始扫描不公开，不进任何仓库）
+  web/                                                   网页用模型（webmodel）
   out/recon/                                             基线（prepare）
-  work/<编号>/                                           逐件：views、m.json、search、place、entity.json、notes
+  work/<编号>/                                           逐件：views、m.json、search、place、entity.json、notes、贴图
   out/authored/                                          AI 物件集、整房对比图、逐件偏差（assemble）
   out/bundle/                                            重建包（bundle）
   out/drafts.json                                        推送过的草稿（bundle push 写，publish 读）
@@ -89,7 +92,7 @@
 | 模型→扫描 | 模型表面到扫描的距离 | 查多建、摆错（贴墙、被挡住的背面没扫到也会偏大，只作参考） |
 | 贴图色差 ΔE | 同一相机、网站同一套灯光下，表面掩码里的平均颜色换到 Lab，与扫描的距离（CIE76）；越小越接近 | 贴图评审（第 6.13 节） |
 | 贴图细节比 | 对数亮度去掉低频（高斯 3 像素）后的标准差，除以扫描的同一个量；低于 1 = 比扫描平、糊，高于 1 = 纹理比扫描多（扫描本身是糊的，只作参考） | 贴图评审 |
-| 网站加载量 | 网站打开优化视图时接口返回的数据合计（模型 glb + 贴图 + 快照） | 第 3 版本地全流程实测 2.85 MB（外部模型 2.44 MB）。精致模型版按文件大小估计约 48 MB（模型 38.2 MB，其中 8 把会议椅偏航各不同，导出 8 个文件共 18.4 MB），同一估计口径下第 3 版约 12 MB |
+| 网站加载量 | 网站打开优化视图时接口返回的数据合计（模型 glb + 贴图 + 快照） | 第 3 版本地全流程实测 2.85 MB（外部模型 2.44 MB）。精致模型版实测 18.7 MB（物件模型 18.3 MB；偏航写进记录、只差偏航的共用一个文件，8 把会议椅只导出 1 个；以前按偏航烘进模型估计约 48 MB） |
 
 **贴图**（概念验证，前厅 6 类表面、24 个机位，第 6.13 节）：按表面类型选做法的"推荐组合"，在标定没用到的 18 个机位上
 平均色差 ΔE 从第 3 版的 7.2 降到 3.6，细节比的中位数从 0.72 升到 0.90。

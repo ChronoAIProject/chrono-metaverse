@@ -7,7 +7,7 @@
 
 ```bash
 metaverse-recon bundle --authored out/authored/authored.json --webmodel <网页用模型.glb>
-# 不用物件集、直接用基线里的算法结构和物体：metaverse-recon bundle --algorithm
+# 不用物件集、直接用基线里的算法结构和物体：metaverse-recon bundle --algorithm（建议的锚点默认不进包，见下）
 ```
 
 `bundle` 依次做：外部模型下载、核对并重新导出成物件模型 glb（`models`：摆放和调色烘进网格、节点单位变换、原点在底面中心、按上限减面
@@ -30,6 +30,12 @@ out/bundle/
 - **整体替换**：`rebuilt.mode: "replace"`——发布后重建层整体换成这一份（先清空、再放），扩展层的修改原样保留。清单也支持逐件合并
   （`"merge"`：只放、改列出的物件，再删 `remove` 里的编号，不存在的跳过），只改几件时用；前厅各版一律整体替换。
 - **锚点只新建、不覆盖**：同编号的锚点已经存在或**曾经存在过**，都跳过。所以重推不会多写，被人删掉的锚点也不会被包重新建出来。
+  反过来，锚点一旦建出来，后面的包改不了它的标签、也删不掉（只能用实体区草稿另外改、删）。所以：
+  - **锚点标签只写给访客看的名称**（"米色沙发"），不要写建模说明（"库：浅灰两人位，tint 米色"）——标签就是锚点的 `label`，取自物件
+    的 `label`，公开锚点的标签浮在场景里，"模型来源"面板的"用于"也显示它。建模说明写进 `notes`；
+  - `bundle` 打包后列出全部公开锚点的编号、类型和标签，发布前看一遍；
+  - `--algorithm` 按类别建议的锚点默认**不进包**，只列出建议：算法的分类会错（前厅不带提示时把前台内部认成桌子和沙发）。看过确认
+    要建再加 `--anchors`，或者用实体区草稿另建。
 - **基础版本** `base` 取打包时工作区的 `{spaceId, seq}`；推送和发布按它查冲突（7.3 节）。
 - **不要手改 `out/bundle/`**：清单里每个文件都有大小和 sha256，改了就过不了检查。要改就改物件集、重新打包。
 - **清单不写任何下载地址、不含本地路径**：同一个包在本地、推送和种子里是同一份字节、同一个哈希。
@@ -46,7 +52,8 @@ metaverse bundle push           # 默认读 out/bundle/
 
 1. 再跑一遍检查，不过就停；
 2. 核对基础版本：清单没有 `base` 时拒绝（除非 `--base latest`，会警告"冲突检查只覆盖从现在起的变化"）；`base.spaceId` 和工作区的空间
-   不同就拒绝；时间线已经前进时提示"发布时会检查冲突"；包的扫描和线上相同、变换却不同时提示（重扫要先对齐）；
+   不同就拒绝；时间线已经前进时提示"发布时会检查冲突"；包的扫描和线上相同、变换却不同时提示，带 `--publish` 时停下（确实要重新
+   对齐才加 `--realign`）；包换了扫描时提示变换必须是配准到线上扫描的结果；
 3. 经重建路径逐个上传文件（同时 4 个）：**空间里已有、核对结果合乎用途的直接复用**，不传数据；本地没有又不能复用就停下报错
    （通常是原始扫描，先 `metaverse pull --scan`）；其余分片上传、等服务端核对；
 4. 上传清单，建重建草稿，交包，等服务端展开；打印放了、删了多少物件，新建了哪些锚点，**跳过了哪些锚点**（写明"已存在"还是
@@ -101,10 +108,11 @@ metaverse publish <草稿编号> --replay      # 冲突时：在最新版本上�
 （每个文件从哪里下载）——执行器下载、核对、登记，再走与命令行相同的展开和发布。
 
 ```bash
-# 1. 在工作区里取线上的变换和网页用模型（只有分享链接、不是组织成员时也能用）
+# 1. 在工作区里取线上的变换、网页用模型、物件模型和贴图（只有分享链接、不是组织成员时也能用）；不要再跑 align
 metaverse pull --share <演示链接> --assets
-# 2. 扫描按来源表的成员、同样的顺序打包（哈希应等于线上已有的扫描）
-metaverse-recon scan-zip ...
+# 2. 扫描按来源表的成员、同样的顺序打包（哈希应等于线上已有的扫描）；成员在 Scaniverse，主机列表 METAVERSE_RECON_SCAN_HOSTS
+#    默认就含 scaniverse.com（与种子的 METAVERSE_DEMO_SEED_HOSTS 相同）
+metaverse-recon scan-zip --sources infra/chrono-cd/demo/<空间>-r<上一版>/sources.json --hash <线上扫描的 sha256>
 # 3. 打种子用的包：去掉内部级锚点和建模记录，report 只留偏差统计
 metaverse-recon bundle --seed --webmodel <线上那份> --authored <物件集>
 metaverse bundle check --seed     # 发现内部级锚点或建模记录会警告
@@ -112,7 +120,8 @@ metaverse bundle check --seed     # 发现内部级锚点或建模记录会警�
 
 4. 大文件改名成 `<sha256>.<扩展名>`，上传到本仓库的发布页 `demo-assets`（`gh release upload demo-assets ...`，同名已存在就跳过）；扫描 zip
    不重新托管，来源表的 `zip` 指向 Scaniverse 原地址的成员；
-5. 写来源表 `sources.json`（键是清单里的 sha256，值是 `url` 或 `zip` 成员表）；
+5. 写来源表 `sources.json`：`{"format": "chrono-metaverse-bundle-sources", "version": 1, "files": {...}}`，`files` 的键是清单里的 sha256，
+   值是 `{"url": ...}` 或 `{"zip": [{name, url, sha256, size}, ...]}`（设计 7.1；`scan-zip --sources` 读的是同一个格式）；
 6. 清单和来源表提交进 `infra/chrono-cd/demo/<空间>-r<版本>/`；
 7. 种子配置（`METAVERSE_DEMO_SEED`）的 `revision` 加一，`bundle.manifest`、`bundle.sources` 写按提交哈希固定的 raw 地址、sha256 和大小；
    跑 `node infra/chrono-cd/check-app.mjs`；
@@ -143,8 +152,10 @@ metaverse bundle check --seed     # 发现内部级锚点或建模记录会警�
 ## 7.7 回滚和修正
 
 - **时间线只追加**：发布错了，再发布一个修正的包。
-- **回到某一版的重建层和扫描**：`metaverse pull --share <链接> --seq <那一版>`，`metaverse-recon bundle --from-snapshot <工作区>` 打成整体
-  替换的包（编号换成 `rb.` 开头），再推送发布。
+- **回到某一版的重建层和扫描**：`metaverse pull --share <链接> --seq <那一版> --assets`（组织成员也可以 `metaverse pull --seq <那一版>
+  --assets`），`--assets` 把那一版引用的网页用模型、物件模型和贴图都下到 `assets/`；再 `metaverse-recon bundle --from-snapshot <工作区>`
+  打成整体替换的包（编号换成 `rb.` 开头），推送发布。包里要带扫描（扫描层也回到那一版）时，工作区还要有那一版的原始扫描
+  `scan/scan.zip`（`metaverse pull --seq <那一版> --scan`，或按来源表 `scan-zip`）；没有就不带扫描，只换重建层。
 - **包不能删锚点**：重建包新建的锚点要删，用实体区草稿另外删。
 - 演示空间：把种子配置退回上一个版本只是不再导入新版本，已经发布的提交仍然是最新的一版；要让内容回到上一版，按上面
   `--from-snapshot` 的做法发布一个修正的包（种子版本再加一）。

@@ -6,20 +6,25 @@
 ## 3.1 工作区和取扫描
 
 所有本地命令都在命令行工作区（`metaverse init <空间编号>` 建的目录）里运行，`metaverse-recon` 从当前目录往上找
-`space.json` 定默认值：扫描 `scan/scan.zip`、变换 `scan/transform.json`、上限 `limits.json`、基线 `out/recon/`、
-重建包 `out/bundle/`，包的基础版本取 `space.json` 的 `{spaceId, seq}`（设计 8.4）。
+`space.json`（`metaverse pull` 写的）定默认值：扫描 `scan/scan.zip`、变换 `scan/transform.json`、上限 `limits.json`、
+网页用模型 `web/`、基线 `out/recon/`、重建包 `out/bundle/`，包的基础版本取 `space.json` 的 `{spaceId, seq}`（设计 8.4）。
+**新空间也先 `metaverse pull` 一次**：只 `init` 没 `pull` 时本地工具照样认得这个工作区（找 `metaverse.json`），路径默认值
+都有，但没有基础版本，打出的包推送时要 `--base latest`。工作区的 `.gitignore` 忽略 `scan/`、`work/`、`web/`、`out/`：
+原始扫描不公开，不能随 `git add` 进仓库。
 
 | 情况 | 怎么取 | 得到 |
 |---|---|---|
 | 已有空间，线上有扫描 | `metaverse pull --scan` | `scan/scan.zip`（分段下载，每段 64 MiB，断了再运行一次接着下）、`scan/transform.json`（线上的变换）、`limits.json` |
 | 只有分享链接（不是组织成员，或线上还是瘦身前的版本） | `metaverse pull --share <链接> --assets` | 只读工作区：变换、物件、公开锚点、网页用模型和物件模型；**没有原始扫描**——用 Scaniverse 的原文件，`metaverse-recon scan-zip` 打包后哈希与线上相同（第 2.5 节） |
-| 新空间，第一次重建 | 第 2 章导出的扫描文件 | 放到 `scan/scan.zip`，`align` 自动对齐、写 `scan/transform.json`（`bundle` 要用它），再 `prepare` |
+| 新空间，第一次重建 | `metaverse pull`（写 `space.json`、`limits.json`），再放第 2 章导出的扫描文件 | 放到 `scan/scan.zip`，`align` 自动对齐、写 `scan/transform.json`（`bundle` 要用它），再 `prepare` |
 
 ## 3.2 对齐
 
 **已有空间不要重新对齐**。空间的坐标系在第一次发布带扫描的提交时固定（`spaces.frame`），之后扩展层的物件、锚点、
 事件都挂在这个坐标系上。已有空间重建时一律用线上的变换（`scan/transform.json`，`prepare` 默认就读它），否则整个
-重建层会和锚点、扩展层错开。
+重建层会和锚点、扩展层错开。工具上有三道保护：`align` 不覆盖 `pull` 写的线上变换（`source: "pull"`），除非加 `--force`；
+`metaverse bundle push --publish` 遇到"扫描和线上相同、变换不同"的包会停下，确实要重新对齐才加 `--realign`；没带
+`--publish` 时只提示，人看预览。
 
 **首次自动对齐**（`prepare --scan <文件>` 或 `align`）：
 
@@ -29,8 +34,10 @@
 
 **重扫配准**（同一空间隔一段时间再扫，`align --reference <参考扫描> --reference-transform <参考变换>`）：先按同样的方法
 粗对齐（主墙的 4 个 90° 朝向都试），再和参考扫描做点云配准——只求绕竖直轴的旋转和平移，只用地面、墙这些稳定的结构，
-剔除离群点。误差超过 `--max-error-cm`（默认 3 厘米）时命令以非 0 退出，由人看过再决定（家具挪了不要紧，墙动了就要
-重新想）。输出与 `pull` 相同格式的 `transform.json`（`{transform: [16 个数], source: "align", seq}`）、误差和候选。
+剔除离群点。输出与 `pull` 相同格式的 `transform.json`（`{transform: [16 个数], source: "align", seq, errorCm}`）。工作区的
+`scan/transform.json` 是线上的变换，配准结果先用 `--out` 写到别的文件，人看过再替换。误差超过 `--max-error-cm`（默认 3 厘米）
+时命令以非 0 退出、**不写**输出文件，结果和候选写到旁边的 `*.candidate.json`，由人看过再决定（家具挪了不要紧，墙动了就要
+重新想）——`prepare` 和 `bundle` 默认读 `scan/transform.json`，没确认的变换不能落到那里。
 
 ## 3.3 基线：`prepare`
 
@@ -53,7 +60,7 @@ cat out/recon/candidates.json
 ## 3.4 网页用模型
 
 网站"原始"视图加载的是扫描的**网页用模型**：单个网格、内嵌贴图的 glb，两档（默认档、低细节档）。`metaverse-recon webmodel`
-生成：接缝不裂开的减面、贴图补边（块外空白不会在缩小时被采进来）。
+生成（工作区里默认写到 `web/scan-0.glb`、`web/scan-1.glb`）：接缝不裂开的减面、贴图补边（块外空白不会在缩小时被采进来）。
 
 - 上限（`limits.json` 的 `webmodel`）：三角形 ≤ 50 万、贴图边长 ≤ 4096、全部贴图像素 ≤ 2 × 4096²、坐标保持扫描原坐标
   （绝对值 ≤ 100000 米）。现在默认档 30 万三角形，前厅约 13.4 MB。

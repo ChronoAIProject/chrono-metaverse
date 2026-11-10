@@ -3,7 +3,7 @@
 // 用 up.sh 在本机起全套（真实 MongoDB 副本集、模拟 NyxID、接口服务、网站开发服务器），再按九步依次执行并断言：
 //
 //   1. 用测试令牌建组织空间（再定义实体区、虚拟区和地块 p1）
-//   2. 本地工具产出重建包：metaverse pull → metaverse-recon align → prepare → bundle --algorithm →
+//   2. 本地工具产出重建包：metaverse pull → metaverse-recon align → prepare → bundle --algorithm --anchors →
 //      metaverse bundle check 通过（不需要服务）
 //   3. 带重建权限的身份上传并发布：metaverse bundle push --publish（0.25MiB 一片，等后台核对和包展开），
 //      提交的类别是 rebuild；同一个包再推一次得到 unchanged；按哈希复用只在本空间成立

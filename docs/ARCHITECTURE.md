@@ -772,21 +772,22 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
   chunks/         拉取下来的区块
   build/          建造脚本（可用 git 管理）
   assets/         网页用模型、贴图缓存
+  scan/  work/    原始扫描（不公开）、重建的工作目录；.gitignore 连同 assets/、chunks/、out/ 一起忽略
 ```
 
 | 命令 | 作用 |
 |---|---|
 | `metaverse init` | 创建工作区，并写入技能说明 `.claude/skills/metaverse-builder/`（建造）和 `metaverse-reconstruct/`（用 AI 重建实体空间） |
 | `metaverse admin …` | 管理命令：建空间、轮换分享令牌、定义区域和地块、登记事件类型、抹除事件（调用 8.4） |
-| `metaverse pull [--scan]` | 下载空间的当前状态和各用途的上传上限（`limits.json`）；`--scan` 另外分段下载当前的原始扫描（能断点续传），写 `scan/scan.zip` 和 `scan/transform.json`（本地重建、重扫配准要用） |
-| `metaverse pull --share <分享链接> [--seq N] [--assets]` | 只读公开快照，不需要 NyxID：变换、物件、公开锚点，`--assets` 另外下载网页用模型和物件模型；工作区标记为只读，分享令牌不写进工作区 |
+| `metaverse pull [--scan] [--assets]` | 下载空间的当前状态和各用途的上传上限（`limits.json`）；`--scan` 另外分段下载当前的原始扫描（能断点续传），写 `scan/scan.zip` 和 `scan/transform.json`（本地重建、重扫配准要用）；`--assets` 另外下载这个版本引用的网页用模型、物件模型和贴图（按快照重新打包要用） |
+| `metaverse pull --share <分享链接> [--seq N] [--assets]` | 只读公开快照，不需要 NyxID：变换、物件、公开锚点，`--assets` 另外下载网页用模型、物件模型和贴图；工作区标记为只读，分享令牌不写进工作区 |
 | `metaverse build` | 运行建造脚本。脚本每次都从拉取的基础状态重新生成，可以反复运行 |
 | `metaverse dev` | 本地查看器，和网站同一套代码；脚本改了自动刷新 |
 | `metaverse shot` | 本地截图（无头浏览器软件渲染，不需要显卡），AI 直接看图自查 |
 | `metaverse diff` / `check` | 和拉取时的版本对比；在本地检查改动是否都落在目标地块或实体区内 |
 | `metaverse push [--plot <地块>]` | 操作写成文件 → 分片上传 → "从上传应用操作"生成草稿 → 打印草稿编号、统计和预览链接 |
 | `metaverse bundle check [目录] [--seed]` | 在本地按服务端同一套规则校验重建包（清单结构、文件的哈希和格式检查、记录；6.3）；`--seed` 时对内部锚点和建模记录给出警告（种子包会公开） |
-| `metaverse bundle push [目录] [--publish]` | 默认读 `out/bundle/`：以清单的 `base` 为基础版本，上传文件（按哈希复用已有资源）和清单 → 建重建草稿 → 交包展开 → 列出跳过和漂移的锚点 → 预览链接；`--publish` 直接发布 |
+| `metaverse bundle push [目录] [--publish]` | 默认读 `out/bundle/`：以清单的 `base` 为基础版本，上传文件（按哈希复用已有资源）和清单 → 建重建草稿 → 交包展开 → 列出跳过和漂移的锚点 → 预览链接；`--publish` 直接发布（包的扫描和线上相同、变换却不同时停下，有意重新对齐要加 `--realign`） |
 | `metaverse publish <草稿编号>` | 发布草稿，包括重建草稿（所用 agent key 的操作范围要包含发布接口） |
 
 本地重建工具 `metaverse-recon`（Python，`recon/` 目录；Mac、Linux 都能跑，不需要显卡，渲染要 node 和 Playwright 的 Chromium）只读写本地文件，不连接本服务、不需要凭证；和本服务打交道一律由命令行 `metaverse` 做。仓库外用 `uv tool install "git+https://github.com/ChronoAIProject/chrono-metaverse@<标签>#subdirectory=recon"` 安装，`doctor --install` 把渲染要的工具装进缓存目录。它在命令行工作区里运行，往上找 `space.json` 来定默认的扫描（`scan/scan.zip`）、变换（`scan/transform.json`）、上限（`limits.json`）和输出目录（`out/recon/`、`out/bundle/`）：
@@ -794,7 +795,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 | 命令 | 作用 |
 |---|---|
 | `prepare` | 扫描 → 基线目录：对齐、算法结构和物体、逐件候选清单；`--transform` 用线上的变换 |
-| `align` | 只算对齐：首次自动对齐，或重扫配准到参考扫描，输出变换和误差 |
+| `align` | 只算对齐：首次自动对齐，或重扫配准到参考扫描，输出变换和误差；不覆盖 `pull` 写的线上变换，误差超限时不写输出文件 |
 | `webmodel` | 生成网页用模型 |
 | `views`、`measure`、`compare` | 看（只渲染范围内的扫描）、量（截面、平面、高度图）、比（物件与扫描并排，算偏差） |
 | `search`、`index`、`fetch`、`place` | 模型库检索（只要 CC0、CC-BY）、下载、摆进扫描 |

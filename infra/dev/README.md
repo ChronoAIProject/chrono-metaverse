@@ -151,7 +151,7 @@ node infra/dev/e2e.mjs --only 1,8,9                 # 不要扫描的三步
 | 步骤 | 做法 | 断言 |
 |---|---|---|
 | 1. 建组织空间 | alice（`chronoai` 的 admin）`POST /api/v1/admin/spaces`，再 `PUT .../layout` 定义实体区、虚拟区和地块 `p1`；`metaverse init`（direct 模式，从模拟 NyxID 取令牌） | 201、分享令牌、归属证据 `org_admin` |
-| 2. 本地工具产出重建包 | 工作区里 `metaverse pull`（写 `space.json`、`limits.json`）；扫描复制到 `scan/`；`metaverse-recon align`（首次自动对齐，写 `scan/transform.json`）→ `prepare` → `bundle --algorithm`（最后经 `PATH` 里的 `metaverse` 调 `bundle check`）；再 `metaverse bundle check --json` | 不需要服务；包里有扫描、网页用模型和贴图；清单的 `base` 是拉取时的版本；检查通过 |
+| 2. 本地工具产出重建包 | 工作区里 `metaverse pull`（写 `space.json`、`limits.json`）；扫描复制到 `scan/`；`metaverse-recon align`（首次自动对齐，写 `scan/transform.json`）→ `prepare` → `bundle --algorithm --anchors`（`--anchors`：按类别建议的锚点也进包，默认只列出建议；最后经 `PATH` 里的 `metaverse` 调 `bundle check`）；再 `metaverse bundle check --json` | 不需要服务；包里有扫描、网页用模型和贴图；清单的 `base` 是拉取时的版本；检查通过 |
 | 3. 上传并发布 | rita（带 `metaverse:rebuild:write`）`metaverse bundle push --publish --part-size 0.25 --json`；同一个包 `--publish` 再推一次（不带 `--replay`）；本空间、carol 的空间各按扫描的哈希建一次上传 | 扫描分成多片、核对完成；提交的类别 `rebuild`，带扫描和网页用模型，重建层编号 `rb.` 开头，建议锚点建好；再推一次文件全部复用、`unchanged`、不写提交；本空间直接复用，carol 的空间要完整上传 |
 | 4. 公开快照 | 凭分享令牌读公开提交列表、`snapshot?seq=` 重建前后两个版本、网页用模型、原始扫描 | 重建后有物件、重建前为空；资源 `immutable`；原始扫描不公开（404）；没带或带错令牌 404 |
 | 5. 三种视图 | 无头 Chromium 打开 `/s/<空间>#share=<令牌>`，依次切"优化""优化 + 扩展""原始" | 每种视图就绪；画布截图不是空白；优化有物件、扩展有"虚拟"标识、原始有扫描 |

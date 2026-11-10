@@ -171,7 +171,11 @@ OpenAI 的图像接口：
 - `POST /v1/images/generations`：只有文字提示；
 - `POST /v1/images/edits`：带图片（GPT Image 模型可以给一张或多张，最多 16 张）和提示，可选遮罩；还有 `size`、`quality`、`background`、
   `output_format`、`input_fidelity` 等参数。以参考图生成贴图用这个。
-- 模型名以官方 SDK 的说明为准：查证时列出的有 `gpt-image-1-mini`、`gpt-image-1.5`、`gpt-image-2`，`gpt-image-1` 已于 2026-10-23 停用。
+- 模型名以官方 SDK（`openai-python` 的 `src/openai/resources/images.py`，main 分支）的说明为准，会随时变。2026-11-10 查证时编辑
+  接口列出的有：`gpt-image-1-mini`、`gpt-image-1.5`、`gpt-image-2`（及 `-2026-04-21` 快照）、`gpt-image-2.5-sunburst`、
+  `gpt-image-2.5-flare`（及各自的 `-2026-09-08` 快照）、`gpt-image-2.6-sunburst`、`gpt-image-2.6-flare`、`chatgpt-image-latest`。
+  `gpt-image-1` 已于 2026-10-23 停用，来源写明改用 `gpt-image-2.5-sunburst` 或 `gpt-image-2.5-flare`；`dall-e-2`、`dall-e-3` 已于
+  2026-05-12 退役。用之前再查一次。
 
 "OpenAI 兼容"的其他服务（第三方的生图服务、本地起的兼容服务器）用同样的路径和字段，换掉地址和模型名就能用；它们背后的模型许可要
 单独按 6.7.2 节查。
@@ -314,8 +318,9 @@ The left edge must continue seamlessly into the right edge, and the top edge int
 ```
 
 - **AI 物件集里贴图的三种写法**：已在空间里的资源写哈希；材质库的外链写 `{url, sha256, size}`（`bundle` 下载、核对后进包）；本地生成的文件写
-  `{"file": "<相对路径>"}`（工作台的约定，`bundle` 读文件、算哈希、进包）。重建包和提交里的记录**只有哈希**，打包时全部换掉，物件的
-  `textures` 列表也由 `bundle` 写。
+  `{"file": "<相对路径>"}`（工作台的约定，相对物件文件；`bundle` 读文件、算哈希、进包）。三种写法 `compare`、`assemble` 都认：`assemble`
+  把 `{file}` 指的文件复制到输出目录的 `textures/`，引用改成相对 `authored.json`，外链原样保留。重建包和提交里的记录**只有哈希**，
+  打包时全部换掉，物件的 `textures` 列表也由 `bundle` 写。
 - **上限**：贴图 png、jpeg 或 webp，边长 ≤ 4096、像素 ≤ 4096²（`limits.json` 的 `texture`）；物件模型 glb 里内嵌的贴图边长 ≤ 2048。
 - **模板实例**：实例给颜色材质时只覆盖颜色，模板部件保留自己的贴图、平铺、法线；实例给贴图材质时整个材质换掉。
 - 贴好以后按第 5.5 节出人眼视角和近景的"扫描 | 现在 | 新"对比图，再打包。

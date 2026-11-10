@@ -159,15 +159,31 @@ Sketchfab 上发布的原页面。**改动**：把物件集里的摆放和调色
 
 需要本地重建工具（`cd recon && uv sync --frozen`，或仓库外 `uv tool install …#subdirectory=recon` 再
 `metaverse-recon doctor --install`，见[重建教程](../../../docs/tutorials/reconstruct-with-ai.md)）和命令行 `metaverse`。
-在命令行的工作区里做（`metaverse init`；只读的话 `metaverse pull --share <演示链接> --assets` 也能建出工作区）：
+在命令行的工作区里做（`metaverse init <空间编号>` 建目录，再按下面两种情况之一取数据）。
+
+**前厅这样的已有空间**（坐标系已经固定，**不要跑 `align`**：物件、锚点、扩展层都按线上的变换摆，`align` 也不会覆盖
+`pull` 写的变换）：
 
 ```bash
+metaverse pull --share <演示链接> --assets      # 写 space.json、scan/transform.json（source: pull）、assets/（网页用模型、物件模型、贴图）
 # 扫描：线上的扫描 zip 是种子按来源表把两个 Scaniverse 文件按固定规则打成的，本地照样打包，哈希与线上相同
-metaverse-recon scan-zip --member mesh.drc=<下载的 mesh.drc> --member tex.jpg=<下载的 tex.jpg>   # 写 scan/scan.zip
-# 提示是线上第 1–3 版种子里的 hints（git show 77bbdb8:infra/chrono-cd/demo-seed.json | jq .hints）
-metaverse-recon align                                 # 首次自动对齐，写 scan/transform.json（已有空间用 pull 写的）
+metaverse-recon scan-zip --sources lobby-r4/sources.json --hash <线上扫描的 sha256>   # 写 scan/scan.zip（第 4 版以后有来源表）
+# 或者手里有两个原文件：metaverse-recon scan-zip --member mesh.drc=<文件> --member tex.jpg=<文件>
+```
 
-# 1. 基线（与线上第 1 版导入扫描时同一条代码路径）
+**新空间**（还没有坐标系；新空间也先 `metaverse pull` 一次，写 `space.json`、`limits.json` 和包的基础版本）：
+
+```bash
+metaverse pull
+cp <Scaniverse 导出的 zip> scan/scan.zip
+metaverse-recon align                       # 首次自动对齐，写 scan/transform.json（source: align）
+```
+
+之后两种情况一样：
+
+```bash
+# 提示是线上第 1–3 版种子里的 hints（git show 77bbdb8:infra/chrono-cd/demo-seed.json | jq .hints）
+# 1. 基线（与线上第 1 版导入扫描时同一条代码路径；读 scan/transform.json，不重新对齐）
 metaverse-recon prepare --hints hints.json            # 写 out/recon/
 
 # 2. 逐件：看、量 → 搜、摆 → 搜不到就手写、对比（每件一个目录）
@@ -179,13 +195,16 @@ metaverse-recon place   --object <编号> --candidate work/<编号>/search/candi
 metaverse-recon compare --object counter-01 --model work/counter-01/entity.json --color-parts \
     --out work/counter-01/cmp                     # 手写：扫描 | 现有算法 | 新模型
 
-# 3. 合并、整房检查（连结构一起换）
+# 3. 合并、整房检查（连结构一起换；工作台贴图 {file} 复制到 out/textures/）
 metaverse-recon assemble --entities work/set/*.json --structure replace --notes report.md --out out
 
-# 4. 打包、检查（--seed：种子用的公开包；--webmodel 用线上那份网页用模型，"原始"视图不变）
-metaverse-recon bundle --authored out/authored.json --webmodel <网页用模型.glb>
+# 4. 打包、检查（--seed：种子用的包；--webmodel 用线上那份网页用模型，"原始"视图不变）
+metaverse-recon bundle --authored out/authored.json --webmodel assets/<网页用模型哈希>.glb
 metaverse bundle check
 ```
+
+物件的 `label` 会成为公开锚点的标签和"模型来源"面板的"用于"：只写给访客看的名称，建模说明（用了哪个库模型、怎么调色）
+写进 `notes`。`bundle` 打包后会列出全部公开锚点的标签，发布前看一遍——锚点只增不删，建出来以后后面的包改不掉。
 
 `assemble` 最后跑一遍打包时对物件集的校验（`parse_authored`），通过了就是 `out/authored.json`，`room.jpg` 是
 整房三列对比、`report.json` 是逐件偏差和漏建的扫描团块。要直接核对本目录的定稿：

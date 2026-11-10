@@ -28,11 +28,12 @@ metaverse-recon doctor --install  # 查 node、three、Playwright、Chromium、�
 
 # 命令行工作区（metaverse init 建的目录）：本地工具从当前目录往上找 space.json 定默认值
 metaverse init <空间编号> && cd <空间编号>
-metaverse pull --scan             # 原始扫描 scan/scan.zip、变换 scan/transform.json、上传上限 limits.json
+metaverse pull --scan             # 原始扫描 scan/scan.zip、变换 scan/transform.json、上传上限 limits.json（新空间也先 pull 一次）
 ```
 
 - `pull --scan` 分段下载（原始扫描可能有 1 GiB），断了再运行一次接着下。只有分享链接、还没有 NyxID 凭证时，
-  `metaverse pull --share <链接> --assets` 能拿到变换、网页用模型和物件模型（只读，不能推送，也没有原始扫描）。
+  `metaverse pull --share <链接> --assets` 能拿到变换、网页用模型、物件模型和贴图（只读，不能推送，也没有原始扫描）。
+- 原始扫描不公开：工作区的 `.gitignore` 忽略 `scan/`、`work/`、`web/`、`out/`，不要改掉它、也不要把扫描拷到别处提交。
 
 - 渲染找不到工具时，`doctor` 会写出缺什么、怎么装；路径都可以用环境变量指定（`METAVERSE_RECON_THREE`、
   `METAVERSE_RECON_PLAYWRIGHT`、`METAVERSE_RECON_CHROMIUM`、`METAVERSE_RECON_FONT`）。没有中文字体时图上用英文标注。
@@ -43,9 +44,10 @@ metaverse pull --scan             # 原始扫描 scan/scan.zip、变换 scan/tra
 
 ```bash
 # ① 基线：对齐、算法结构和物体、候选清单 → out/recon/
-#    已有空间：默认用 scan/scan.zip 和 scan/transform.json（线上的变换，不重新对齐，物件和锚点才对得上）
+#    已有空间：默认用 scan/scan.zip 和 scan/transform.json（线上的变换，不重新对齐，物件和锚点才对得上；不要跑 align，
+#    它也不会覆盖 pull 写的变换）
 #    新空间第一次重建：扫描放到 scan/scan.zip，先 align 自动对齐（写 scan/transform.json，prepare 和 bundle 都用它）；
-#    重扫要先 align --reference 配准到参考扫描
+#    重扫要先 align --reference … --out scan/new-transform.json 配准到参考扫描，人看过再替换；误差超限时不写输出文件
 metaverse-recon prepare --hints hints.json
 export METAVERSE_RECON_BASE=$PWD/out/recon
 cat out/recon/candidates.json   # 每件物体：编号、类别、尺寸、suggest（search 先搜 / author 手写）、同款 sameAs
@@ -60,6 +62,7 @@ metaverse-recon place   --object sofa-01 --candidate work/sofa-01/search/candida
 #    满意：work/sofa-01/place/entity.json 就是这件的记录
 #    不满意：换候选再 place；都不行就手写形状，用 compare 对照
 metaverse-recon compare --object counter-01 --model work/counter-01/entity.json --out work/counter-01/cmp
+#    贴图：refshot → texsearch / texfetch → texture（材质写成 {file}）→ compare 复查；assemble 会把贴图搬进 out/authored/textures/
 
 # ③ 合并、整房检查
 metaverse-recon assemble --entities work/ --notes work/notes.md --out out/authored
@@ -81,27 +84,27 @@ metaverse publish <草稿编号>
 
 ## 3. 命令速查
 
-| 命令        | 用途                                          | 常用参数                                                                                                                                  |
-| ----------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `prepare`   | 扫描 → 基线目录                               | `--scan`（默认 `scan/scan.zip`）`--transform`（默认 `scan/transform.json`）`--hints` `--out`（默认 `out/recon/`）                         |
-| `align`     | 只算对齐（首次或重扫配准）                    | `--reference <参考扫描> --reference-transform <文件>` `--max-error-cm 3`；输出 `transform.json`、误差                                     |
-| `views`     | 只渲染包围盒附近的扫描，带米制刻度            | `--object`/`--box` `--front 偏航` `--only top` `--cut 高度` `--cam 名:方位,仰角`                                                          |
-| `measure`   | 尺寸、截面、剖面、圆、颜色                    | `--hslice` `--vslice x=…/z=…/p=x,z@yaw` `--circle` `--color 名=框` `--frame x,y,z,yaw`                                                    |
-|             | 斜面朝向                                      | `--plane 名=x0,y0,z0,x1,y1,z1`：法向、坡度、方位、残差，外接矩形角点可直接当 plate 的点                                                   |
-|             | 高度图数字表                                  | `--heightmap y0:y1[@x0,z0,x1,z1]` `--hm-cell 0.05` `--hm-stat top/bottom`                                                                 |
-|             | 去掉相邻物体                                  | `--exclude x0,y0,z0,x1,y1,z1`（可重复）                                                                                                   |
-| `search`    | 模型库检索（只有 CC0 / CC-BY）                | `--query 英文描述` `--category` `--library polyhaven/objaverse/sketchfab` `--size 宽,高,深` `--max-faces` `--limit`                       |
-| `fetch`     | 下载候选、记哈希和署名                        | `--from candidates.json --pick 3,5`，或 `--library objaverse --id <uid>`                                                                  |
-| `place`     | 候选摆到扫描里的物体上                        | `--candidate candidates.json#3` `--up auto/+y/+z…` `--scale uniform/axis/none` `--yaw 角 --yaw-range 20` `--tint` `--exclude`             |
-| `compare`   | 记录 vs 扫描 vs 现有算法                      | `--model` `--front` `--exclude` `--color-parts` `--scene`（多物件/整房） `--cut`                                                          |
-| `assemble`  | 合并成 AI 物件集 + 整房检查                   | `--entities 文件或目录…` `--structure keep/replace` `--notes`                                                                             |
-| `reframe`   | 物件在两种对齐之间换算                        | `--scan` `--from compute --to align --in … --out …`（`--to` 默认 `align`，旧名 `scan_import` 照旧认）                                     |
-| `bundle`    | 物件集 → 重建包 `out/bundle/`                 | `--authored` 或 `--algorithm` `--webmodel <文件>` `--seed`（种子用，去掉内部锚点和建模记录）`--from-snapshot <工作区>`                    |
-|             | 单独的步骤                                    | `models`（外部模型重新导出）`bake`（烘焙）`fit`（逐件偏差）`webmodel`（网页用模型）`scan-zip`（扫描打包）                                 |
-| `refshot`   | 从扫描取参考图（正交展开一个面）              | `--object`/`--box` `--face top/front/…` `--front 偏航` `--px 0.003` `--texture <原始贴图>`；输出中位色、建议平铺                          |
-| `texsearch` | 材质库检索（Poly Haven、ambientCG，只要 CC0） | `--query 英文描述` `--library` `--limit`；看 `sheet.jpg` 挑                                                                               |
-| `texfetch`  | 下载材质（颜色、法线、粗糙度）                | `--from candidates.json#3` 或 `--library --id` `--resolution 1k`                                                                          |
-| `texture`   | 贴图写进物件的一个部件（`{file}` 引用）       | `--model` `--part '$.children[0]'` `--color` `--normal` `--roughness` `--tile u,v` `--shading albedo` `--calibrate --refshot` `--preview` |
+| 命令        | 用途                                          | 常用参数                                                                                                                                          |
+| ----------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prepare`   | 扫描 → 基线目录                               | `--scan`（默认 `scan/scan.zip`）`--transform`（默认 `scan/transform.json`）`--hints` `--out`（默认 `out/recon/`）                                 |
+| `align`     | 只算对齐（首次或重扫配准）                    | `--reference <参考扫描> --reference-transform <文件>` `--max-error-cm 3`；输出 `transform.json`、误差；不覆盖 `pull` 写的（`--force`）            |
+| `views`     | 只渲染包围盒附近的扫描，带米制刻度            | `--object`/`--box` `--front 偏航` `--only top` `--cut 高度` `--cam 名:方位,仰角`                                                                  |
+| `measure`   | 尺寸、截面、剖面、圆、颜色                    | `--hslice` `--vslice x=…/z=…/p=x,z@yaw` `--circle` `--color 名=框` `--frame x,y,z,yaw`                                                            |
+|             | 斜面朝向                                      | `--plane 名=x0,y0,z0,x1,y1,z1`：法向、坡度、方位、残差，外接矩形角点可直接当 plate 的点                                                           |
+|             | 高度图数字表                                  | `--heightmap y0:y1[@x0,z0,x1,z1]` `--hm-cell 0.05` `--hm-stat top/bottom`                                                                         |
+|             | 去掉相邻物体                                  | `--exclude x0,y0,z0,x1,y1,z1`（可重复）                                                                                                           |
+| `search`    | 模型库检索（只有 CC0 / CC-BY）                | `--query 英文描述` `--category` `--library polyhaven/objaverse/sketchfab` `--size 宽,高,深` `--max-faces` `--limit`                               |
+| `fetch`     | 下载候选、记哈希和署名                        | `--from candidates.json --pick 3,5`，或 `--library objaverse --id <uid>`                                                                          |
+| `place`     | 候选摆到扫描里的物体上                        | `--candidate candidates.json#3` `--up auto/+y/+z…` `--scale uniform/axis/none` `--yaw 角 --yaw-range 20` `--tint` `--exclude`                     |
+| `compare`   | 记录 vs 扫描 vs 现有算法                      | `--model` `--front` `--exclude` `--color-parts` `--scene`（多物件/整房） `--cut`                                                                  |
+| `assemble`  | 合并成 AI 物件集 + 整房检查                   | `--entities 文件或目录…` `--structure keep/replace` `--notes`                                                                                     |
+| `reframe`   | 物件在两种对齐之间换算                        | `--scan` `--from compute --to align --in … --out …`（`--to` 默认 `align`，旧名 `scan_import` 照旧认）                                             |
+| `bundle`    | 物件集 → 重建包 `out/bundle/`                 | `--authored` 或 `--algorithm`（`--anchors` 才放建议锚点）`--webmodel <文件>` `--seed`（种子用，去掉内部锚点和建模记录）`--from-snapshot <工作区>` |
+|             | 单独的步骤                                    | `models`（外部模型重新导出）`bake`（烘焙）`fit`（逐件偏差）`webmodel`（网页用模型）`scan-zip`（扫描打包）                                         |
+| `refshot`   | 从扫描取参考图（正交展开一个面）              | `--object`/`--box` `--face top/front/…` `--front 偏航` `--px 0.003` `--texture <原始贴图>`；输出中位色、建议平铺                                  |
+| `texsearch` | 材质库检索（Poly Haven、ambientCG，只要 CC0） | `--query 英文描述` `--library` `--limit`；看 `sheet.jpg` 挑                                                                                       |
+| `texfetch`  | 下载材质（颜色、法线、粗糙度）                | `--from candidates.json#3` 或 `--library --id` `--resolution 1k`                                                                                  |
+| `texture`   | 贴图写进物件的一个部件（`{file}` 引用）       | `--model` `--part '$.children[0]'` `--color` `--normal` `--roughness` `--tile u,v` `--shading albedo` `--calibrate --refshot` `--preview`         |
 
 命令行 `metaverse` 这一侧：
 
@@ -154,6 +157,10 @@ metaverse publish <草稿编号>
     - 重建层的编号以 `rb.` 开头（`bundle` 自动加，模板引用一起改）；锚点编号不变；
     - 锚点只新建、不覆盖：同编号的锚点已经存在或曾经存在，都会跳过，`bundle push` 列出跳过了哪些——可能是被
       别人占了，请人判断；重建挪了物件而锚点没动时列出"锚点漂移"，锚点要用实体区草稿去挪（`metaverse build` + `push`）；
+    - 锚点一旦建出来，后面的包改不了也删不掉：物件的 `label` 就是锚点的标签（公开锚点浮在场景里），只写给访客看的名称，
+      "用了哪个库模型、怎么调色"写进 `notes`；`bundle` 打包后列出全部公开锚点的标签，推送前看一遍；`--algorithm` 建议的锚点
+      默认不进包（分类会错），确认后加 `--anchors`；
+    - 包里的扫描和线上相同、变换却不同时，`bundle push --publish` 会停下：多半是误跑了 `align`，用 `pull` 写的变换重新打包；
     - 不要手改 `out/bundle/`：清单里每个文件都有大小和 sha256，改了就过不了 `bundle check`；要改就改物件集重新打包；
     - 清单的 `base` 是打包时工作区的版本；推送时时间线前进了，发布会检查冲突（重建层整体是一个冲突单位），冲突时
       `metaverse publish <草稿编号> --replay` 在最新版本上重放，或 `metaverse pull` 后重新打包。

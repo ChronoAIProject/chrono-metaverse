@@ -739,26 +739,27 @@ out/bundle/
 |---|---|---|
 | `doctor [--install]` | 检查渲染要用的 node、three、Playwright、Chromium、字体；`--install` 把 three 和 Playwright 装进缓存目录（不在平台仓库里时用） | 现有；`--install` 是新的 |
 | `prepare` | 扫描 + 可选提示 → 基线目录（对齐、算法结构和物体、候选清单）；`--transform <文件>` 用给定变换（已有空间重建时不重新对齐） | 现有；变换参数是新的 |
-| `align` | 只算对齐：首次自动对齐；或重扫配准到参考扫描（`--reference <参考扫描> --reference-transform <文件>`），输出 `transform.json`、误差和候选；误差超过 `--max-error-cm`（默认 3）时退出码非 0 | `processing/align.py` |
-| `webmodel` | 生成网页用模型（接缝不裂开的减面、贴图补边） | `processing/webmodel.py` |
+| `align` | 只算对齐：首次自动对齐；或重扫配准到参考扫描（`--reference <参考扫描> --reference-transform <文件>`），输出 `transform.json`、误差和候选；误差超过 `--max-error-cm`（默认 3）时退出码非 0、**不写**输出文件（结果写到旁边的 `*.candidate.json`）；输出文件是 `pull` 写的线上变换时不覆盖，除非 `--force`（S9 复核） | `processing/align.py` |
+| `webmodel` | 生成网页用模型（接缝不裂开的减面、贴图补边）；工作区里默认写到 `web/` | `processing/webmodel.py` |
 | `views`、`measure`、`compare`、`search`、`index`、`fetch`、`place`、`reframe` | 不变 | 现有 |
 | `assemble` | 合并成 AI 物件集 | 现有 |
 | `models` | 外部模型：下载、核对，把摆放的俯仰、横滚、缩放、调色烘进网格（节点用单位变换），**偏航写进物件记录的 `transform`**（只差偏航的物件共用一个 glb），按物件模型的上限减面（保贴图接缝）、缩小贴图，只用白名单里的扩展，原点放在底面中心，写成 glb；按材质分开导出（多材质、平铺贴图）；外部模型物件的 `material` 默认加 `shading: albedo`（第 12 节） | 原物件集写回 |
 | `bake`、`fit` | 烘焙贴图；逐件偏差（与 `compare` 同一个函数） | 原物件集写回 |
 | `scan-zip` | 新：把扫描成员按 `pack.rs` 的规则打成 zip（成员列表来自来源表或命令行参数，先下载、核对）；读别人的扫描 zip 时限制成员解压后 ≤ 2 GiB、拒绝 `..` 和绝对路径 | 新 |
-| `bundle` | 打包：物件集（或 `--algorithm`：直接用基线里的算法结构和物体）→ `models`、外链贴图下载、`bake`、`fit`、按类别建议锚点、网页用模型（`--webmodel <文件>` 用已有的，否则生成）、`scan-zip` → `out/bundle/`；编号统一加 `rb.`；`base` 取工作区 `space.json`；`--seed` 去掉内部锚点和建模记录；`--from-snapshot <工作区>` 用拉下来的快照（重建层物件、模板、扫描元数据）生成整体替换的包（编号改成 `rb.` 开头，模板引用一起改）；最后调用 `metaverse bundle check` | 原 `scan_import` + 物件集写回的编排 |
+| `bundle` | 打包：物件集（或 `--algorithm`：直接用基线里的算法结构和物体；按类别建议的锚点默认只列出、不进包，`--anchors` 才放进去）→ `models`、外链贴图下载、`bake`、`fit`、按类别建议锚点、网页用模型（`--webmodel <文件>` 用已有的，否则生成）、`scan-zip` → `out/bundle/`；编号统一加 `rb.`；`base` 取工作区 `space.json`；`--seed` 去掉内部锚点和建模记录；`--from-snapshot <工作区>` 用拉下来的快照（重建层物件、模板、扫描元数据）生成整体替换的包（编号改成 `rb.` 开头，模板引用一起改）；最后调用 `metaverse bundle check` | 原 `scan_import` + 物件集写回的编排 |
 | `voxelize` | 保留为本地实验命令，结果不能进包（重建包第一版没有方块） | `processing/voxelize.py` |
 
-所有命令只读写本地文件，**不连接本服务**，也不需要任何凭证；只有 `search`、`fetch`、`models`、`bundle`、`scan-zip` 会去模型库、贴图地址和扫描地址下载（主机列表 `METAVERSE_RECON_MODEL_HOSTS`）。
+所有命令只读写本地文件，**不连接本服务**，也不需要任何凭证；只有 `search`、`fetch`、`models`、`bundle`、`scan-zip` 会去模型库、贴图地址和扫描地址下载（模型库和贴图的主机列表 `METAVERSE_RECON_MODEL_HOSTS`；扫描成员的主机列表 `METAVERSE_RECON_SCAN_HOSTS`，默认与种子的 `METAVERSE_DEMO_SEED_HOSTS` 相同）。
 
 ### 8.4 安装与交接
 
 - **安装**：平台仓库是公开的。仓库外：`uv tool install "git+https://github.com/ChronoAIProject/chrono-metaverse@<标签>#subdirectory=recon"`，再 `metaverse-recon doctor --install`（`bench/env.py` 已经支持缓存位置，不再依赖仓库的 `web/node_modules`）。在仓库里开发：`cd recon && uv sync --frozen`。
-- **在命令行工作区里做**：`metaverse init` 建的目录（有 `space.json`）。`metaverse-recon` 从当前目录往上找 `space.json` 来定默认值：
+- **在命令行工作区里做**：`metaverse init` 建的目录，`metaverse pull` 写 `space.json`。`metaverse-recon` 从当前目录往上找 `space.json` 来定默认值（只 `init` 没 `pull` 时认 `metaverse.json`：默认路径都有，只是没有基础版本，S9 复核）：
   - `--scan` 默认 `scan/scan.zip`（`metaverse pull --scan` 写的）；
   - `--transform` 默认 `scan/transform.json`（`pull` 写的，格式与 `align` 的输出相同：`{transform: [16 个数], source: "pull" | "align", seq}`）；
   - `--limits` 默认 `limits.json`（`pull` 写的服务端上限；没有就用内置默认值，与服务端默认相同）；
-  - 基线默认 `out/recon/`，包默认 `out/bundle/`，包的 `base` 取 `space.json` 的 `{spaceId, seq}`。
+  - 网页用模型默认 `web/`，基线默认 `out/recon/`，包默认 `out/bundle/`，包的 `base` 取 `space.json` 的 `{spaceId, seq}`；
+  - 工作区的 `.gitignore` 忽略 `scan/`（原始扫描不公开）、`work/`、`web/`、`out/`、`chunks/`、`assets/`；`init` 写，`pull` 发现旧的缺行时补上。
 - `metaverse bundle push` 默认读 `out/bundle/`。不在工作区里时，所有路径都要显式给。
 
 ### 8.5 命令行（`metaverse`）的分工
@@ -769,11 +770,11 @@ TypeScript 命令行负责一切和本服务打交道的事（NyxID 凭证只在
 |---|---|
 | `scan`、`rebuild`、`voxelize` | 删除（连同 `commands/authored.ts`、传输层里调这些接口的方法） |
 | `bundle check [目录] [--seed]` | 新（6.5） |
-| `bundle push [目录]` | 新（6.6） |
+| `bundle push [目录]` | 新（6.6）；包的扫描和线上相同、变换不同时，`--publish` 停下，要 `--realign` 才发布（S9 复核） |
 | `publish <草稿编号>` | 认得范围是 `rebuild` 的草稿（走 `/rebuild/drafts/...`），显示 `unchanged` |
-| `pull` | 多写 `limits.json`（来自 `GET /api/v1/spaces/{space_id}` 的 `uploadLimits`） |
+| `pull` | 多写 `limits.json`（来自 `GET /api/v1/spaces/{space_id}` 的 `uploadLimits`）；`--assets` 下载这个版本引用的网页用模型、物件模型和贴图（S9 复核：回滚用的 `--from-snapshot` 要它们） |
 | `pull --scan` | 新：经 `/api/v1/spaces/{space_id}/assets/{hash}` **分段下载**当前的原始扫描（每段 64 MiB 的 `Range` 请求，能断点续传，避开 NyxID 代理约 100 秒的断开），写 `scan/scan.zip` 和 `scan/transform.json` |
-| `pull --share <分享链接> [--seq N] [--assets]` | 新：只读公开快照（`/api/public`），不需要 NyxID：写 `space.json`（带只读标记，不能 `push`）、`entities.json`、`anchors.json`（只有公开锚点）、`scan/transform.json`；`--assets` 另外下载网页用模型和物件模型。分享令牌只在内存里用，不写进工作区（也可以用环境变量 `METAVERSE_SHARE_TOKEN` 给） |
+| `pull --share <分享链接> [--seq N] [--assets]` | 新：只读公开快照（`/api/public`），不需要 NyxID：写 `space.json`（带只读标记，不能 `push`）、`entities.json`、`anchors.json`（只有公开锚点）、`scan/transform.json`；`--assets` 另外下载网页用模型、物件模型和贴图（贴图按文件头起扩展名）。分享令牌只在内存里用，不写进工作区（也可以用环境变量 `METAVERSE_SHARE_TOKEN` 给） |
 | `init` | 技能说明 `metaverse-reconstruct` 改成本地工具 + `bundle push` 的流程 |
 | 其余（`admin`、`build`、`dev`、`shot`、`diff`、`check`、`push`） | 不变；扩展层的编号不能用 `rb.`（核心库规则） |
 
@@ -885,7 +886,7 @@ R2 读得了它自己和 R3 写的一切，所以不需要单独的"兼容读"�
 
 | 从 | 退到 | 条件和做法 |
 |---|---|---|
-| R3 | R2 | 随时可以：把种子配置退回版本 3（同一镜像）。第 4 版的提交只追加，R2 读得了。内容有问题就发布第 5 版包修正；要让重建层和扫描回到第 3 版的样子：`metaverse pull --share <链接> --seq <第 3 版>`，`metaverse-recon bundle --from-snapshot` 打成整体替换的包，再发布（编号会换成 `rb.` 开头）。**包不能删锚点**：第 4 版新建的锚点要用实体区草稿另外删 |
+| R3 | R2 | 随时可以：把种子配置退回版本 3（同一镜像）。第 4 版的提交只追加，R2 读得了。内容有问题就发布第 5 版包修正；要让重建层和扫描回到第 3 版的样子：`metaverse pull --share <链接> --seq <第 3 版> --assets`（下载那一版的网页用模型、物件模型和贴图），`metaverse-recon bundle --from-snapshot` 打成整体替换的包，再发布（编号会换成 `rb.` 开头）。**包不能删锚点**：第 4 版新建的锚点要用实体区草稿另外删 |
 | R2 | R0（现在） | 只在 R2 上线以后**还没有任何经 `/api/v1` 的写入**时可以（R3 自然也还没发）。NyxID 已经注册（11.2），R0 读不了的写法不只来自重建路径：R2 里任何失败过或重试过的任务都写对象形式的 `lastError`（R0 只认文字），实体区、地块草稿可以写 `ifPresent`、`ifNew`、物件的 `transform` 和新材质字段（R0 的操作和记录结构不收未知字段）；逐条查全很难，所以按"上线以后 `commits`、`drafts`、`uploads`、`jobs` 没有新文档、`jobs` 没有对象形式的 `lastError`"判断（检查写法见 `infra/chrono-cd/README.md` 第 4 节）。在 chrono-cd 把应用规格退回 R0 的版本（`list_app_revisions` 找到、`put_app` 那一份；镜像、环境变量、处理服务一起回来）。R2 自己写的 `metadata.check`、`checkError`、`assetRefs.seq`、清理锁、迁移记录，R0 都会忽略 |
 | R3 之后 | R0 | **不可以**：R0 读不了 `actor.kind = rebuild` 的提交，回放会坏。只能前滚修正，或退到 R2 |
 
@@ -1484,9 +1485,37 @@ S9 做完后的状态（实施记录）：
   6. `UPLOAD_MAX_TEXTURE_SIDE` 在 `app.json` 里由 8192 改成 4096（设计 4.9 的默认值）；第 3 版的贴图都在 4096 以内，后台迁移的
      核对结果 0 失败。
 
+S9 复核后的修改（两位复核者：接口安全与正确性、本地工具与通用性，共 16 条，全部成立）：
+
+- **接口**：glb 节点的 `matrix` 必须能分解成平移、旋转、缩放（4.5，最后一行 0 0 0 1、不能有切变），角点按仿射算——以前除以
+  最后一行，包围盒能伪造得比网站画的小任意倍；样本加 4 个，两边都跑。预览令牌读资源按草稿的基础版本过滤（`assetRefs` 加
+  `seq`，旧数据按 `commitId` 查）。同一个包从清单的 `base` 重推不加 `--replay` 就是 `unchanged`（2.7：中途同一个包清单发布的
+  提交不参与冲突判断；偏离第 2 条随之取消）。
+- **回滚条件**：退回 R0 的条件按 R0 的实际读法重写（11.2、11.5、`infra/chrono-cd/README.md` 第 4 节）：R0 的操作、物件记录、
+  模型材质不收未知字段，任务的 `lastError` 是文字，任何组织 admin 的实体区写入、一次核对不过的上传都可能写进 R0 读不了的
+  数据，所以判断标准改成"上线以后没有任何经接口的写入"，给了四条数据库计数。
+- **命令行**：`bundle push --publish` 遇到"扫描和线上相同、变换不同"时停下，`--realign` 才发布；`pull --assets` 两种拉取都
+  能用，另外下载贴图（回滚用的 `--from-snapshot` 要它们）；工作区的 `.gitignore` 忽略 `scan/`、`work/`、`web/`。
+- **本地工具**：`align` 不覆盖 `pull` 写的线上变换（`--force` 才覆盖），误差超限时不写输出文件（结果在 `*.candidate.json`）；
+  只做过 `init` 的目录也认作工作区；`webmodel` 默认写 `web/`；`compare`、`assemble` 认贴图工作台写的 `{file}`，`assemble`
+  把贴图搬进输出目录；`scan-zip` 的扫描成员用种子的主机列表（`METAVERSE_RECON_SCAN_HOSTS`，默认含 `scaniverse.com`）；
+  `bundle --algorithm` 建议的锚点默认不进包（`--anchors` 才放），打包后列出全部公开锚点的标签。
+- **文档**：方法论按"偏航写进记录"改了导出个数和加载量（不再建议偏航取整）；生图模型名按来源更新；演示说明的复现步骤分
+  "已有空间"（不跑 `align`）和"新空间"两段。
+- **数据**（S10 要处理，见下）：精致模型版的标签带建模术语；机器狗的深色调色。
+
 #### S10 前厅第 4 版
 
-- **做法**：在一个工作区里 `metaverse pull --share <演示链接> --assets`（变换、网页用模型）→ `metaverse-recon scan-zip`（按来源表的成员打包，哈希应等于线上的扫描）→ `metaverse-recon bundle --seed --webmodel <线上那份> --authored infra/chrono-cd/demo/lobby-authored.json` → `metaverse bundle check --seed` → 上传发布页 → 写来源表 → `infra/chrono-cd/demo/lobby-r4/{manifest.json, sources.json}` 提交 → 本机 `up.sh --demo-seed`（新库）用新配置全流程跑一遍 → `app.json` 种子改成版本 4，更新 `infra/chrono-cd/demo/README.md`。
+- **做法**：在一个工作区里 `metaverse pull --share <演示链接> --assets`（变换、网页用模型；**不跑 `align`**）→ `metaverse-recon scan-zip`（按来源表的成员打包，哈希应等于线上的扫描）→ `metaverse-recon bundle --seed --webmodel <线上那份> --authored infra/chrono-cd/demo/lobby-authored.json` → `metaverse bundle check --seed` → 上传发布页 → 写来源表 → `infra/chrono-cd/demo/lobby-r4/{manifest.json, sources.json}` 提交 → 本机 `up.sh --demo-seed`（新库）用新配置全流程跑一遍 → `app.json` 种子改成版本 4，更新 `infra/chrono-cd/demo/README.md`。
+- **如果第 4 版改用精致模型版**（`rebuild/final2/authored.json`，S9 的本地验证用的就是它），打包前先改两处数据（S9 复核）：
+  1. **标签**：12 件物件的 `label` 带着建模说明——会议椅 8 把"会议椅（库：皮面桶形餐椅）"、休闲椅 2 把"休闲椅（库：米色皮高背扶手椅）"、
+     `sofa-01`"米色沙发（库：浅灰两人位，tint 米色）"、`sofa-02`"灰色布艺沙发（库：浅灰两人位）"。打包时锚点的 `label` 取物件的
+     `label`，`sofa-01`、`sofa-02` 是公开锚点，字样会浮在场景上；"模型来源"面板的"用于"也显示它。锚点只增不删，建出来以后后面的包
+     改不掉，所以要在第一次打包前把括号里的说明挪进 `notes`，标签只留"会议椅""休闲椅""米色沙发""灰色布艺沙发"；`bundle` 打包后会
+     列出全部公开锚点的标签，发布前再看一遍；
+  2. **机器狗**（`clutter-09`）：`material.tint = [72, 70, 67]` 是对着旧导出的灰模调的。新导出保留了原文件的材质和贴图（黑身白面板），
+     这个调色换成线性约 0.065 再乘上去，白面板也被压成深灰（S9 遗留里"几乎全黑"的原因，不是导出的问题）。去掉 `tint`，或按带贴图的
+     模型重调。
 - **验收**：本机新库从 Scaniverse 和发布页下载约 23 MB，导入成功；线上：时间线有第 1–4 版，能回到第 1–3 版的任何时刻；"优化"视图是第 4 版；"原始"视图与第 3 版完全相同（网页用模型哈希不变）；第 4 版提交的 `observedAt` 是扫描拍摄日；分享链接不变；接口服务日志里种子任务 `done`。
 
 ### 13.3 中间状态
