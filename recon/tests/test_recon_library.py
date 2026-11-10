@@ -248,8 +248,8 @@ def test_pack_gltf_is_deterministic_and_keeps_base_color(tmp_path):
     assert doc["materials"][0]["pbrMetallicRoughness"]["baseColorTexture"]["index"] == 0
     path = tmp_path / "m.glb"
     path.write_bytes(a)
-    m = md.load_model_file(str(path))  # 和处理服务同样的读法：节点变换展开
-    assert m.triangles == 1 and m.texture is not None
+    m = md.load_model_file(str(path))  # 和打包同样的读法：节点变换展开
+    assert m.triangles == 1 and m.textured
     assert m.vertices[:, 2] == pytest.approx([5, 5, 5])
     with pytest.raises(ReconError, match="没有下载"):
         gltf.pack_gltf(g, {"m.bin": files["m.bin"]})

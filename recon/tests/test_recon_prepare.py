@@ -144,6 +144,7 @@ def test_default_limits_keep_the_old_service_defaults():
         "max_model_bytes": 50 << 20,
         "model_max_triangles": 100_000,
         "model_max_texture_side": 2048,
+        "model_max_texture_pixels": 4 * 2048 * 2048,
     }
     first = default_limits()
     first["max_triangles"] = 1
@@ -155,6 +156,10 @@ def test_reframe_compute_to_scan_import(tmp_path, scan_file):
     M_c = compute_alignment(mesh.vertices, mesh.faces).matrix
     M_a = auto_align(mesh).matrix
     C = M_a @ np.linalg.inv(M_c)
+    # 新名 align 和旧名 scan_import、worker 是同一个坐标系（--to 的默认值是 align）
+    for name in ("align", "scan_import", "worker"):
+        assert np.allclose(rf.frame_matrix(name, mesh), M_a)
+    assert build_parser().parse_args(["reframe", "--scan", "s", "--in", "a", "--out", "b"]).dst == "align"
     body = {
         "entityId": "b",
         "layer": "rebuilt",

@@ -20,7 +20,7 @@
 1. 装好重建工作台 `metaverse-recon`，确认能出图；
 2. 用 `prepare` 得到和线上完全一致的基线；
 3. 让 AI 按"先搜后写"逐件重建，学会看它交回来的对比图和数字；
-4. 合并成 AI 物件集、做整房检查，提交给处理服务。
+4. 合并成 AI 物件集、做整房检查，在本地打成重建包，推送到平台成为重建草稿。
 
 ---
 
@@ -28,16 +28,16 @@
 
 ### 1.1 装工作台
 
-工作台是本地重建工具（`recon/`）里的一个命令，从平台仓库的源码装（Mac、Linux 都可以）：
+工作台是本地重建工具 `metaverse-recon`（平台仓库的 `recon/`），Mac、Linux 都可以，不需要显卡。不用拉整个仓库：
 
 ```bash
-git clone <平台仓库> chrono-metaverse && cd chrono-metaverse
-cd recon && uv venv .venv && uv pip install --python .venv/bin/python -e . && cd ..
-cd web && npm ci && cd ..           # 渲染用网站同一份 three.js 和 Playwright
-npx playwright install chromium     # 已经有 Chromium 就不用
-export PATH=$PWD/recon/.venv/bin:$PATH   # 之后直接用 metaverse-recon
+uv tool install "git+https://github.com/ChronoAIProject/chrono-metaverse@<标签>#subdirectory=recon"
+metaverse-recon doctor --install    # 渲染用的 three、Playwright 和 Chromium 装进缓存目录（要 node 22 和 npm）
 metaverse-recon doctor
 ```
+
+在平台仓库里开发时：`cd recon && uv sync --frozen`，渲染直接用 `web/node_modules` 里的 three 和 Playwright
+（`cd web && npm ci`）。另外要装命令行 `metaverse`（推送重建包用，见 `sdk/typescript/README.md`）。
 
 `doctor` 输出每样工具找到了没有：
 
@@ -55,27 +55,29 @@ metaverse-recon doctor
 
 ### 1.2 准备扫描和工作区
 
-- **扫描**：Scaniverse 导出的 zip（Draco 网格 + 贴图），或者 `mesh.drc` + `tex.jpg`，或者 glb。必须是这个空间**首次
-  导入**用的那一份（重建结果要落在空间的坐标系里）。
-- **提示**（可选）：空间导入时用过物体提示（`scan_import` 的 `hints`，处理服务坐标系），这里也用同一份。
-- **工作区**：`metaverse init <空间编号>` 会把技能说明 `.claude/skills/metaverse-reconstruct/SKILL.md` 写进工作区，
-  AI 打开工作区就能读到规则。重建的中间文件建议放在工作区的 `recon/` 下。
+- **工作区**：`metaverse init <空间编号>` 建工作区（有 `space.json`），并把技能说明
+  `.claude/skills/metaverse-reconstruct/SKILL.md` 写进去，AI 打开工作区就能读到规则。`metaverse-recon` 在工作区的
+  任何子目录里都会往上找 `space.json`，扫描、变换、上限、基线和包目录都有默认值（`recon/README.md` 的"本地流水线"）。
+- **扫描和变换**：已经有扫描的空间，`metaverse pull --scan` 下载当前的原始扫描 `scan/scan.zip` 和它的变换
+  `scan/transform.json`（扫描坐标 → 空间坐标），重建结果就落在空间的坐标系里；`pull` 还会写服务端的上传上限
+  `limits.json`。新空间：把 Scaniverse 导出的 zip 放到 `scan/scan.zip`，`metaverse-recon align` 首次自动对齐，写
+  `scan/transform.json`。
+- **提示**（可选）：物体提示 `hints.json`（空间坐标，格式与原来导入扫描时的 `hints` 相同）。
 
 ---
 
 ## 2. 基线：prepare
 
 ```bash
-cd <工作区>/recon
-metaverse-recon prepare --scan mesh.drc --texture tex.jpg --hints hints.json --out base
-export METAVERSE_RECON_BASE=$PWD/base
+cd <工作区>
+metaverse-recon prepare --hints hints.json     # 默认读 scan/scan.zip、scan/transform.json，写 out/recon/
 ```
 
-`prepare` 调用的就是处理服务首次导入扫描的那条代码路径（对齐 → 结构 → 现有算法的物体），只是不写数据库。
-所以基线的坐标、结构、物体编号和线上完全一致，AI 写的东西提交时不用换算。前厅实测 46 秒：
+`prepare` 走的是打包用的同一条重建路径（对齐或工作区的变换 → 结构 → 现有算法的物体），与原来处理服务首次导入
+扫描的代码相同。基线的坐标、结构、物体编号和线上一致，AI 写的东西打包时不用换算。前厅实测 46 秒：
 
 ```
-对齐：{'method': 'auto', 'rotationDeg': -61.423, 'tiltDeg': 0.094}（与 scan_import 首次导入相同）
+对齐：{'method': 'auto', 'rotationDeg': -61.423, 'tiltDeg': 0.094}（与原处理服务首次导入相同）
 结构 6 个，物体 41 个，模板 2 个；地面 y=-0.0029
 候选（suggest = search 先搜库，author 手写）：
   cabinet-01     cabinet  LED 大屏     尺寸 [5.032, 2.605, 0.585]  author
@@ -85,11 +87,12 @@ export METAVERSE_RECON_BASE=$PWD/base
   …
 ```
 
-`base/candidates.json` 就是 AI 的任务清单：每件物体的编号、类别、尺寸、建议（`search` 先搜库 / `author` 手写）、
+`out/recon/candidates.json` 就是 AI 的任务清单：每件物体的编号、类别、尺寸、建议（`search` 先搜库 / `author` 手写）、
 同款（`sameAs`：8 把会议椅只做一次）。
 
 > 以前在 `scripts/reconstruct_lobby.py` 坐标系里写的东西（比如 `recon/scripts/llm_poc/models/`）用
-> `metaverse-recon reframe --scan mesh.drc --from compute --to scan_import --in … --out …` 换过来。
+> `metaverse-recon reframe --scan mesh.drc --from compute --in … --out …` 换过来（`--to` 默认 `align`，即 `prepare`
+> 的自动对齐；旧名 `scan_import` 照旧认）。
 
 ---
 
@@ -142,11 +145,30 @@ metaverse-recon compare --object counter-01 --model work/counter-01/entity.json 
 ```
 
 `compare` 出三列对比图（扫描 | 现有算法 | 新模型）、偏差上色图和分部件的数字；`--color-parts` 让每个部件一种颜色，
-对着部件表找哪一块歪了；相邻的东西混进来就加 `--exclude`。改到偏差不再下降为止。逐件的"写回偏差"就是提交后
-处理服务写进记录的 `fit`（同一个函数：按物件自身朝向取范围，墙、玻璃、地面作背景，只计 10 厘米以内的点，
+对着部件表找哪一块歪了；相邻的东西混进来就加 `--exclude`。改到偏差不再下降为止。逐件的"记录的偏差"就是打包时
+写进记录的 `fit`（同一个函数：按物件自身朝向取范围，墙、玻璃、地面作背景，只计 10 厘米以内的点，
 不看 `--box`、`--exclude`），网站信息面板和命令行显示的也是它。
 
-### 3.4 怎么判断一件做好了
+### 3.4 贴图：取样、贴上、标定
+
+纯色看着假的面（大理石台面、木纹、地毯）换成平铺贴图：
+
+```bash
+metaverse-recon refshot --object table-01 --face top --texture <扫描的原始贴图> --out work/table-01/ref
+metaverse-recon texsearch --query "white marble" --out work/table-01/tex       # Poly Haven、ambientCG，只要 CC0
+metaverse-recon texfetch --from work/table-01/tex/candidates.json#4
+metaverse-recon texture --model work/table-01/entity.json --part '$.children[0]' --color <color.jpg> \
+    --normal <normal.jpg> --roughness <roughness.jpg> --tile 1.3,1.0 \
+    --refshot work/table-01/ref/refshot.json --calibrate --preview work/table-01/tex.jpg
+```
+
+- `refshot` 把扫描里这个面正交展开成一张参考图（每像素 3 毫米），给出去掉高光和暗斑后的中位色和建议的平铺尺寸；
+  也可以直接从参考图里裁一块无缝的图当贴图；
+- `texture` 把贴图复制到物件文件旁的 `textures/`，材质写成 `{file}` 引用（打包时作为贴图文件进包）；`--calibrate`
+  在网站的光照下渲染这个部件，调贴图的整体增益，让渲染出的颜色对上扫描的中位色；`--preview` 出扫描 | 之前 | 之后
+  的对比图和色差 ΔE。前厅会议桌台面：纯色 ΔE 13.99，贴上标定后的大理石 ΔE 0.72。
+
+### 3.5 怎么判断一件做好了
 
 - 扫描→模型均值 ≤ 3 厘米、3 厘米内 ≥ 70%（库里的模型外形和实物总有差别，**不比现有算法差**也可以接受）；
 - 图上外形、朝向一眼对得上；靠背、扶手、腿的位置对；
@@ -161,9 +183,9 @@ metaverse-recon assemble --entities work/ --notes work/notes.md --out out/author
 ```
 
 - 合并成 AI 物件集 `authored.json`：模板去重、编号唯一、引用的模板必须存在、逐个校验、包围盒重算，最后整份跑一遍
-  处理服务收到物件集时的校验（`parse_authored`）。有错误会列出来并以退出码 2 结束；通过了，处理服务就会原样接受；
+  打包时对物件集的校验（`parse_authored`）。有错误会列出来并以退出码 2 结束；通过了，`bundle` 就会原样接受；
 - `room.jpg`：扫描 | 现有算法 | AI 重建，总览、俯视、四个角；`room.glb` 可以拖进任何 glTF 查看器；
-- `report.json` 和终端输出：逐件偏差表（含写回后记录里的 `fit`），以及"没被任何物件覆盖的扫描团块"（漏建），后面
+- `report.json` 和终端输出：逐件偏差表（含打包后记录里的 `fit`），以及"没被任何物件覆盖的扫描团块"（漏建），后面
   写着现有算法里和它重叠的物体编号，照着补。
 
 `--structure keep`（默认）沿用算法做的地面、墙、玻璃；要连结构一起换就 `--structure replace`，并把 `kind:
@@ -171,32 +193,35 @@ metaverse-recon assemble --entities work/ --notes work/notes.md --out out/author
 
 ---
 
-## 5. 提交
-
-`authored.json` 用命令行 `metaverse` 交给处理服务（写回路径）：处理服务逐个校验物件、按地址下载外部模型并核对
-哈希和大小、把旋转缩放和调色烘进模型、重新导出成受限的 glb 登记成资源、把烘焙指令换成贴图、逐件算偏差，然后
-替换重建层写成一次提交。
+## 5. 打包、推送
 
 ```bash
-cd <工作区>                                   # metaverse init / pull 过的那个
-metaverse rebuild --authored recon/out/authored/authored.json
+cd <工作区>
+metaverse-recon bundle --authored out/authored/authored.json --webmodel <空间现在的网页用模型>
+metaverse bundle push                       # 默认读 out/bundle/
 ```
 
-- 扫描已经导入过：`metaverse rebuild` 默认对工作区拉取的最新扫描重建（`--scan <扫描哈希>` 指定别的），调用的是
-  `POST /api/v1/spaces/{space_id}/scans/{scan_id}/rebuild`；
-- 第一次导入扫描时就带上：`metaverse scan <扫描文件> --authored recon/out/authored/authored.json`（`prepare` 用的
-  必须是同一份扫描，物件集的坐标就是它首次导入的对齐结果）；
-- 物件集规范化后不超过 1MB 时随请求内联，更大的（≤ 4MB）命令行先分片上传、等校验通过再引用；
-- 命令行等任务完成，列出偏差最大的几件、外部模型下载和烘焙的统计。任务失败时错误说明会指出是哪个物件、哪一条
-  规则（例如许可不允许、哈希对不上、地址的主机不在处理服务的 `WORKER_MODEL_HOSTS` 里）。
+`bundle` 在本地做原来处理服务写回物件集时做的事：逐个校验物件；外部模型先在缓存里按哈希找，没有才按地址下载并
+核对哈希和大小，按材质重新导出成受限的 glb（俯仰、横滚、缩放和调色烘进模型，偏航写进记录，只差偏航的共用一个
+文件）；烘焙指令换成贴图，`{file}` 本地贴图和外链贴图换成进包的贴图；逐件算偏差，按类别建议锚点；连同扫描和
+网页用模型写成重建包 `out/bundle/`（清单 `manifest.json` + 文件，重建层编号加 `rb.`），最后调用
+`metaverse bundle check` 按服务端的规则检查一遍。
+
+- `--webmodel` 给空间现在的网页用模型（`metaverse pull --share … --assets` 能下载），"原始"视图就不变；不给就重新生成；
+- 种子用的包（会公开）加 `--seed`：去掉内部锚点和建模记录；
+- `metaverse bundle push` 建重建草稿、上传文件和清单、等服务端展开，给出预览链接；看过预览后
+  `metaverse publish <草稿编号>` 发布。令牌要带 `metaverse:rebuild:write`；
+- 不通过时错误说明会指出是哪个物件、哪一条规则（例如许可不允许、哈希对不上、地址的主机不在
+  `METAVERSE_RECON_MODEL_HOSTS` 里、模型和 `bounds` 的尺寸对不上）。
 
 提交前确认：
 
 - 对比图里没有悬空、穿地、穿墙的东西；
 - 每个外部模型都来自 `fetch` / `place`，没有手改 `model` 和 `props.source`；
-- `notes.md` 写清每件是哪个库的哪个模型、还是手写，以及为什么（它会随提交存成脚本资源）。
+- `notes.md` 写清每件是哪个库的哪个模型、还是手写，以及为什么（打包时写成建模记录，随提交存成脚本资源；
+  `--seed` 的包不带）。
 
-提交后在网站上打开空间，"优化模型"视图里能看到外部模型、手写形状和烘焙的贴图；有 CC-BY 模型时画面底边常驻一行
+发布后在网站上打开空间，"优化模型"视图里能看到外部模型、手写形状和烘焙的贴图；有 CC-BY 模型时画面底边常驻一行
 简短署名，点"全部来源"（只有 CC0 模型时是"模型来源 · N"按钮）列出所有外部模型的标题、作者、许可和来源页，点选
 物件时信息面板里也有它的来源。
 
@@ -210,6 +235,8 @@ metaverse rebuild --authored recon/out/authored/authored.json
 | 候选面朝墙、前后反了 | 看高度图确认靠背在哪边，`place --yaw <角度> --yaw-range 20` 限定。别只凭"正面"图：贴墙家具背面扫不到，从背后看扫描像正面（前厅实测里就把对的朝向"纠正"反了，网站上和原始扫描一对才发现） |
 | 候选比例不对 | `--scale axis`；还不行就换候选 |
 | 候选颜色差太多 | `place` 会提示 tint 帮不上（只能调暗）：换颜色接近或更浅的候选再 `--tint` |
-| `fetch` 提示坐标超过 ±1000 米 | 模型多半是厘米单位：`place` 会按扫描缩放，处理服务按缩放后的坐标检查，可以照常用 |
-| `assemble` 报"写回路径校验不通过" | 按错误说明改对应物件（常见：署名缺字段、`material` 写了 `tint`/`opacity`/`unlit` 以外的键） |
+| `fetch` 提示坐标超过 ±1000 米 | 模型多半是厘米单位：`place` 会按扫描缩放，打包时按缩放后的坐标检查，可以照常用 |
+| `assemble` 报"打包校验不通过" | 按错误说明改对应物件（常见：署名缺字段、`material` 写了 `tint`/`opacity`/`unlit`/`shading` 以外的键） |
+| `bundle` 说没有找到 `metaverse` 命令 | 包已经打好，只是没检查：装好命令行后运行它打印的 `metaverse bundle check …` |
+| `metaverse bundle check` 说模型的实测尺寸与 `bounds` 相差太多 | 物件的 `bounds` 要按摆好的模型算：手改了 `transform` 以后用 `place` 或 `assemble` 重算包围盒再打包 |
 | Objaverse 第一次检索很慢 | 在下载元数据分片（每个约 3.6 MB）；`metaverse-recon index --category chair` 可以提前下 |

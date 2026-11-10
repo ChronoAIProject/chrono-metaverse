@@ -3,7 +3,7 @@
 - 检索：`GET https://api.sketchfab.com/v3/search?type=models&downloadable=true&q=…`，结果按许可过滤，只要
   CC0 和 CC-BY（`licenses.normalize`，Standard / Editorial / NC / ND / SA 一律不要）；
 - 下载：`GET /v3/models/<uid>/download`（请求头 `Authorization: Token <令牌>`）给出临时地址（几分钟后失效）。
-  所以写回处理服务时不能用这个地址：模型在 Objaverse 镜像里时改用 huggingface.co 上的镜像地址，否则 place
+  所以打包时不能用这个地址：模型在 Objaverse 镜像里时改用 huggingface.co 上的镜像地址，否则 place
   会提示先把模型作为物件模型上传。
 
 令牌只放在请求头里，不写进任何文件、日志或物件记录。

@@ -596,6 +596,30 @@ fn cases() -> Vec<Case> {
                 "shape": {"type": "cylinder", "radius": 0.2, "height": 1}, "bounds": {"min": [-0.1, 0, -0.2], "max": [0.2, 1, 0.2]}}}]),
         ),
         Case::new(
+            "ops_place_rotated_models",
+            "同一个物件模型摆两个朝向：记录带 transform（只有 yaw、pitch、roll），影响范围按 bounds 算",
+            json!([
+                {"op": "placeEntity", "entity": {"entityId": "chair-1", "layer": "ext", "kind": "object",
+                    "assetHash": "9f2c7d4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d",
+                    "transform": {"yaw": 6.84},
+                    "bounds": {"min": [1.7, 0, 0.75], "max": [2.3, 0.9, 1.25]}}},
+                {"op": "placeEntity", "entity": {"entityId": "chair-2", "layer": "ext", "kind": "object",
+                    "assetHash": "9f2c7d4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d",
+                    "transform": {"yaw": 180, "pitch": 0, "roll": 0},
+                    "material": {"shading": "albedo"},
+                    "bounds": {"min": [2.7, 0, 0.75], "max": [3.3, 0.9, 1.25]}}}
+            ]),
+        )
+        .scope("physical"),
+        Case::new(
+            "ops_invalid_model_transform",
+            "模型物件的 transform 只能有旋转：给了 position 就拒绝（位置由 bounds 定）",
+            json!([{"op": "placeEntity", "entity": {"entityId": "chair-1", "layer": "ext", "kind": "object",
+                "assetHash": "9f2c7d4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d",
+                "transform": {"position": [2, 0, 1], "yaw": 90},
+                "bounds": {"min": [1.7, 0, 0.75], "max": [2.3, 0.9, 1.25]}}}]),
+        ),
+        Case::new(
             "ops_invalid_thickness",
             "壁厚必须在 1 到 64 之间",
             json!([{"op": "hollowBox", "box": [0, 0, 0, 4, 4, 4], "block": 2, "thickness": 0}]),

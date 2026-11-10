@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::grid::Aabb;
 use crate::limits::{GlbLimits, UploadLimits, GLB_EXTENSIONS_USED};
+use crate::shape::Transform;
 
 /// `check` 的格式版本。
 pub const CHECK_VERSION: u32 = 1;
@@ -267,10 +268,44 @@ fn glb_fits(glb: &GlbCheck, limits: &GlbLimits, what: &str) -> Result<(), CheckM
 /// 只有模型、没有形状的物件：模型的实测包围盒与物件 `bounds` 一致（docs/design/server-slim.md
 /// 2.5 第 5 条）。三边长之差不超过 max(2 厘米, 物件边长的 1%)，模型原点在底面中心
 /// （`|min.y|`、x 和 z 的中点都不超过 2 厘米）。网站按 `bounds` 的底面中心摆放只有模型的物件，
-/// 这条保证摆出来和记录一致，范围检查用的 `bounds` 也就是真实的。
+/// 这条保证摆出来和记录一致，范围检查用的 `bounds` 也就是真实的。物件不带 `transform` 时用它；
+/// 带了旋转的用 [`model_fits_entity`]。
 pub fn model_fits_bounds(model: &Aabb, entity: &Aabb) -> Result<(), CheckMismatch> {
+    model_fits_entity(model, entity, None)
+}
+
+/// 模型按物件的 `transform`（只有 `yaw`、`pitch`、`roll`）绕原点转过之后的包围盒：模型包围盒的
+/// 8 个角点转过之后取外包（SHAPES 3）。网站把这个盒子的底面中心对齐物件 `bounds` 的底面中心。
+pub fn rotated_model_bounds(model: &Aabb, transform: Option<&Transform>) -> Aabb {
+    match transform {
+        Some(transform) => Transform {
+            position: None,
+            scale: None,
+            ..transform.clone()
+        }
+        .apply_aabb(model),
+        None => *model,
+    }
+}
+
+/// [`model_fits_bounds`] 加上物件的旋转：原点在底面中心按模型自己的包围盒查，三边长按转过之后的
+/// 包围盒（[`rotated_model_bounds`]）与物件 `bounds` 比。只有偏航时转过之后的盒子仍以原点为底面中心。
+pub fn model_fits_entity(
+    model: &Aabb,
+    entity: &Aabb,
+    transform: Option<&Transform>,
+) -> Result<(), CheckMismatch> {
+    let center_x = (model.min[0] + model.max[0]) / 2.0;
+    let center_z = (model.min[2] + model.max[2]) / 2.0;
+    if model.min[1].abs() > MODEL_ORIGIN_TOLERANCE
+        || center_x.abs() > MODEL_ORIGIN_TOLERANCE
+        || center_z.abs() > MODEL_ORIGIN_TOLERANCE
+    {
+        return mismatch("模型的原点要在底面中心（导出时把节点变换烘进顶点，原点放在底面中心）");
+    }
+    let rotated = rotated_model_bounds(model, transform);
     for axis in 0..3 {
-        let model_side = model.max[axis] - model.min[axis];
+        let model_side = rotated.max[axis] - rotated.min[axis];
         let entity_side = entity.max[axis] - entity.min[axis];
         let tolerance = MODEL_FIT_ABS.max(MODEL_FIT_REL * entity_side.abs());
         if (model_side - entity_side).abs() > tolerance {
@@ -282,14 +317,6 @@ pub fn model_fits_bounds(model: &Aabb, entity: &Aabb) -> Result<(), CheckMismatc
                 ["x", "y", "z"][axis]
             ));
         }
-    }
-    let center_x = (model.min[0] + model.max[0]) / 2.0;
-    let center_z = (model.min[2] + model.max[2]) / 2.0;
-    if model.min[1].abs() > MODEL_ORIGIN_TOLERANCE
-        || center_x.abs() > MODEL_ORIGIN_TOLERANCE
-        || center_z.abs() > MODEL_ORIGIN_TOLERANCE
-    {
-        return mismatch("模型的原点要在底面中心（导出时把节点变换烘进顶点，原点放在底面中心）");
     }
     Ok(())
 }
@@ -420,5 +447,52 @@ mod tests {
         };
         assert!(model_fits_bounds(&model([-5.04, 0.0, -0.1], [5.04, 3.0, 0.1]), &wall).is_ok());
         assert!(model_fits_bounds(&model([-5.06, 0.0, -0.1], [5.06, 3.0, 0.1]), &wall).is_err());
+    }
+
+    #[test]
+    fn rotated_model_fits_entity() {
+        let model = |min: [f64; 3], max: [f64; 3]| Aabb { min, max };
+        let chair = model([-0.3, 0.0, -0.2], [0.3, 0.9, 0.2]);
+        let yaw90 = Transform {
+            yaw: Some(90.0),
+            ..Transform::default()
+        };
+        // 偏航 90°：x、z 对调
+        let entity = Aabb {
+            min: [4.8, 0.0, 1.7],
+            max: [5.2, 0.9, 2.3],
+        };
+        assert!(model_fits_entity(&chair, &entity, Some(&yaw90)).is_ok());
+        assert!(model_fits_bounds(&chair, &entity).is_err());
+        // 偏航 30°：8 个角点转过之后的外包
+        let yaw30 = Transform {
+            yaw: Some(30.0),
+            ..Transform::default()
+        };
+        let rotated = rotated_model_bounds(&chair, Some(&yaw30));
+        let (s, c) = (0.5_f64, 3.0_f64.sqrt() / 2.0);
+        let half_x = 0.3 * c + 0.2 * s;
+        let half_z = 0.3 * s + 0.2 * c;
+        assert!((rotated.max[0] - half_x).abs() < 1e-12 && (rotated.min[0] + half_x).abs() < 1e-12);
+        assert!((rotated.max[2] - half_z).abs() < 1e-12 && rotated.min[1] == 0.0);
+        let placed = Aabb {
+            min: [1.0 - half_x, 0.0, 2.0 - half_z],
+            max: [1.0 + half_x, 0.9, 2.0 + half_z],
+        };
+        assert!(model_fits_entity(&chair, &placed, Some(&yaw30)).is_ok());
+        assert!(model_fits_entity(&chair, &placed, None).is_err());
+        // 原点仍按模型自己的包围盒查
+        let shifted = model([0.0, 0.0, -0.2], [0.6, 0.9, 0.2]);
+        assert!(model_fits_entity(&shifted, &entity, Some(&yaw90)).is_err());
+        // 位置、缩放即使给了也不参与（记录校验已经拒绝它们）
+        let with_position = Transform {
+            position: Some([9.0, 9.0, 9.0]),
+            scale: Some([2.0, 2.0, 2.0]),
+            ..yaw90.clone()
+        };
+        assert_eq!(
+            rotated_model_bounds(&chair, Some(&with_position)),
+            rotated_model_bounds(&chair, Some(&yaw90))
+        );
     }
 }

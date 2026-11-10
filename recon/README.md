@@ -12,14 +12,17 @@ AI 物件集（外部模型下载和重新导出、烘焙、逐件偏差）、�
 - `processing/`：纯计算（扫描读取与对齐、网页用模型、结构、物体、AI 物件集、体素化、物件模型），解析前检查的
   上限在 `processing/limits.py`；
 - `bundle/`：重建包的本地部分——`anchors`（按类别建议锚点）、`sources`（下载外部模型）、`rebuild`（一份扫描 →
-  重建结果，见"重建流程"）；
+  重建结果，见"重建流程"）、`models`（外部模型找本地文件或下载、导出）、`textures`（物件集贴图的三种写法 →
+  进包的贴图）、`scanzip`（按部署种子的规则打扫描 zip）、`manifest`（清单、`rb.` 编号、种子过滤）、`build` 和
+  `snapshot`（打包的编排）、`limits`（上传上限 `limits.json`）；
 - `bench/`：重建工作台 `metaverse-recon`（给 AI 模型师用的眼睛、尺子和裁判，见"重建工作台"）；
 - `canonical`、`chunk`、`shapes`、`records`：与接口服务（Rust）、网站、命令行（TypeScript）共用的数据格式
   （[`docs/SHAPES.md`](../docs/SHAPES.md)）；`authored`：AI 物件集的解析和校验；`fetch`：按主机列表下载。
 
-还没做的（设计 8.3）：新命令 `align`、
-`webmodel`、`models`、`bake`、`fit`、`scan-zip`、`bundle`（写清单 `manifest.json`、编号加 `rb.`、`--seed`、
-`--from-snapshot`）、`doctor --install`，以及从命令行工作区往上找 `space.json` 定默认值。
+本地流水线的命令（设计 8.3）：`align`、`webmodel`、`models`、`bake`、`fit`、`scan-zip`、`bundle`（写清单
+`manifest.json`、编号加 `rb.`、`--seed`、`--from-snapshot`，最后调用 `metaverse bundle check`）、`doctor --install`，
+在命令行工作区里往上找 `space.json` 定默认值，见"本地流水线"；贴图工作台 `refshot`、`texture`、`texsearch`、
+`texfetch` 见"贴图工作台"。
 
 ## 安装
 
@@ -31,6 +34,18 @@ uv sync --frozen --extra dev        # 按 uv.lock 的锁定版本建 .venv（含
 
 Python 3.13；依赖 numpy、scipy、pillow、trimesh、DracoPy、fast-simplification，都有 macOS（Apple 芯片和 Intel）
 和 Linux 的预编译包，不需要编译器和显卡。渲染另要 node 22、Playwright 和 Chromium。
+
+不在平台仓库里时（AI 模型师的电脑）：
+
+```bash
+uv tool install "git+https://github.com/ChronoAIProject/chrono-metaverse@<标签>#subdirectory=recon"
+metaverse-recon doctor --install    # three、playwright-core 装进 <缓存>/node/，Chromium 装进 <缓存>/ms-playwright/
+metaverse-recon doctor              # "render": "可用"
+```
+
+`doctor --install` 要 node 22 以上和 npm，装固定版本的 three 0.184.0、playwright-core 1.58.2 和与它配套的 Chromium；
+缓存目录里已经有的跳过（只看缓存目录，别处装的不算）。从本地路径 `uv tool install ./recon` 时 setuptools 会在
+源码目录里留下 `recon/build/` 和 `recon/src/metaverse_recon.egg-info/`，装完删掉。
 
 ### 依赖锁定
 
@@ -50,7 +65,8 @@ uv lock --upgrade-package numpy     # 只升级某一个依赖
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `METAVERSE_RECON_MODEL_HOSTS` | `dl.polyhaven.org,huggingface.co,cdn-lfs.huggingface.co,.hf.co`（`bundle.sources`）；工作台 `dl.polyhaven.org,huggingface.co` | 外部模型允许下载的主机（逗号分隔）：写主机名精确匹配（只许默认的 443 端口），以点开头（如 `.hf.co`）匹配它的所有子域名，`主机:端口` 只匹配那个端口。只用 https，重定向的每一跳都要在列表里 |
+| `METAVERSE_RECON_MODEL_HOSTS` | `dl.polyhaven.org,huggingface.co,cdn-lfs.huggingface.co,.hf.co` | 外部模型、外链贴图、扫描成员允许下载的主机（逗号分隔；打包、`scan-zip` 和工作台的检查用同一份列表和规则）：写主机名精确匹配（只许默认的 443 端口），以点开头（如 `.hf.co`）匹配它的所有子域名，`主机:端口` 只匹配那个端口。只用 https，重定向的每一跳都要在列表里 |
+| `METAVERSE_RECON_MAX_TEXTURE_BYTES` | 16 MiB | 物件集里一张外链贴图下载的大小上限 |
 | `METAVERSE_RECON_*`、`SKETCHFAB_TOKEN` | — | 重建工作台的缓存、渲染工具、字体等，见"重建工作台" |
 
 解析前检查的上限是 `processing/limits.py` 的常量（原来是处理服务的 `WORKER_MAX_*` 配置，默认值不变）：
@@ -64,7 +80,53 @@ uv lock --upgrade-package numpy     # 只升级某一个依赖
 | `MAX_GRID_CELLS` | 4 亿 | 包围盒与实体区的交集 / GRID_UNIT³ |
 | `MAX_OPS_BYTES` | 256 MiB | 操作文件（NDJSON，可 gzip）解压后的大小 |
 | `MAX_MODEL_BYTES` | 50 MiB | 一个外部模型（含附属文件） |
-| `MODEL_MAX_TRIANGLES`、`MODEL_MAX_TEXTURE_SIDE` | 10 万、2048 | 物件模型重新导出的三角形数和贴图长边 |
+| `MODEL_MAX_TRIANGLES`、`MODEL_MAX_TEXTURE_SIDE`、`MODEL_MAX_TEXTURE_PIXELS` | 10 万、2048、4×2048² | 物件模型重新导出的三角形数、贴图长边、全部贴图的像素合计（打包时取 `limits.json` 里 `model` 的上限，没有就用这些值） |
+
+## 本地流水线（命令）
+
+在命令行 `metaverse init` 建的工作区里做（有 `space.json`；`metaverse pull --scan` 写 `scan/scan.zip` 和
+`scan/transform.json`，`pull` 写 `limits.json`）。`metaverse-recon` 从当前目录往上找 `space.json` 定默认值
+（`bench/workspace.py`）；不在工作区里时路径都要显式给。
+
+| 参数 | 工作区里的默认值 |
+|---|---|
+| `--scan` | `scan/scan.zip` |
+| `--transform` | `scan/transform.json`（`{transform: [16 个数], source: "pull" \| "align", seq}`） |
+| `--limits` | `limits.json`（没有就用内置默认值，与服务端默认相同） |
+| `--base`（基线） | `out/recon/` |
+| `--out`（包目录） | `out/bundle/`，打包报告写在旁边的 `out/bundle-report.json` |
+| 清单的 `base` | `space.json` 的 `{spaceId, seq}`（`--no-base` 不写） |
+
+| 命令 | 作用 |
+|---|---|
+| `align` | 首次自动对齐，或 `--reference <参考扫描> --reference-transform <文件>` 重扫配准；写 `scan/transform.json`（`source: "align"`）。配准误差超过 `--max-error-cm`（默认 3）时退出码非 0，输出建议的变换和候选 |
+| `prepare` | 基线（见"重建工作台"）；工作区里有 `scan/transform.json` 时默认用它，`--auto-align` 重新自动对齐 |
+| `webmodel` | 两档网页用模型 `scan-0.glb`、`scan-1.glb`（保持扫描原坐标，见"重建流程"第 5 步） |
+| `models` | 物件集里的外部模型：先在缓存（`fetch` 下的）和 `--models-dir` 里按 sha256 找，没有才下载（`--offline` 不下载）→ 导出 glb（见"AI 物件集"第 3 步），输出 `<哈希前 12 位>.glb` 和 `models.json`；`--render` 每个导出出一张转台对照图（导出后 \| 原文件） |
+| `bake` | 物件集里带 `bake` 的部件从扫描取色写成贴图，输出新的物件集（贴图写成 `{file}` 引用） |
+| `fit` | 逐件偏差（与 `compare`、打包写进记录的 `fit` 同一个函数） |
+| `scan-zip` | 扫描成员按部署种子（接口服务 `pack.rs`）的规则打成 zip：不压缩、固定的时间、按给出的顺序。`--sources sources.json --hash <键>` 按来源表下载成员，`--member 名=文件` 用本地文件；打出来的哈希与 `--hash` 不同就报错 |
+| `bundle` | 打包，见下 |
+
+**`bundle`**（设计 6.1–6.4、6.8，清单格式 SHAPES 7）：
+
+- `--authored <物件集>`（或 `--algorithm`：直接用算法的结构和物体）→ 重建流程（`bundle.rebuild`）：外部模型导出、
+  外链贴图下载、`{file}` 本地贴图、烘焙、逐件偏差、建议锚点 → 网页用模型（`--webmodel <文件>` 用已有的，可以给两次；
+  不给就生成）→ 扫描 zip 原样进包 → 包目录：`manifest.json` 和 `scan/`、`web/`、`models/`、`textures/`、`notes.md`；
+- 编号统一加 `rb.`（模板引用一起改）；物件集里贴图的三种写法（哈希、`{url, sha256, size}`、`{file}`）都换成进包的
+  贴图文件的哈希，超过上限的图缩小、重新编码；记录按规范化 JSON 写，每条 ≤ 64 KiB；
+- 清单的 `report` 带逐件偏差；`notes`（建模记录）写成 `notes.md`；
+- `--seed`：种子用的包（会公开，设计 6.8）：去掉内部级锚点和建模记录，`report` 只留偏差；
+- `--from-snapshot <工作区>`：用 `metaverse pull --share … --assets` 拉下来的快照（重建层物件、模板、扫描元数据）生成
+  整体替换的包，不读扫描、不重建；物件模型和贴图在快照的 `assets/` 和 `--textures-dir` 里按哈希找，缺了就报错；
+- 文件按 `limits.json` 各用途的上限检查（大小、三角形、贴图），清单整体不超过 `bundle.maxBytes`；
+- 最后调用 `metaverse bundle check <包目录> [--seed]`（`PATH` 里有 `metaverse` 时；没有就打印要运行的命令），没通过时
+  退出码非 0。之后用 `metaverse bundle push` 推送。
+
+前厅（`infra/chrono-cd/demo/lobby-authored.json`，给了现有的网页用模型）：物件 52 件、模板 1 个、建议锚点 5 个、
+物件模型 8 个（10 件外部模型物件，只差偏航的共用一个）、贴图 23 张，包 24 MB，4 核约 30 秒；`metaverse bundle check`
+通过。外部模型的三角形数和摆好以后的包围盒与原来处理服务写回的结果一致（最大差 0.17 毫米），逐件偏差 52 件里 51 件
+完全相同（`chair-06` 的 90% 分位差 0.01 厘米）。
 
 ## 重建流程（`bundle.rebuild.rebuild_scan`）
 
@@ -198,10 +260,12 @@ out = rebuild_scan("scan.zip", "work3/", transform=transform, authored=authored,
    不在列表、不是 https、大小或哈希不符、4xx 是 `DownloadRejected`（地址或内容不对）；网络错误、超时、5xx 是
    `DownloadFailed`（可以稍后再试）。错误说明只写主机，不带完整地址；
 3. 计算（`processing/authored_build.py`）：结构（keep 时跑算法；replace 时有待定的贴图也跑一次，核对和回退贴图）→
-   外部模型：把 `transform` 的旋转、缩放和 `tint` 烘进网格（缩放后的坐标超出 ±1000 米才拒收），按物件模型的限制
-   （`MODEL_MAX_TRIANGLES`、`MODEL_MAX_TEXTURE_SIDE`）减面、缩小贴图，**以包围盒的底面中心为原点**写成 glb（网站按
-   物件 `bounds` 的底面中心摆放只有 `assetHash` 的物件，所以平移落在 `bounds` 上；旋转、缩放、调色都相同的物件共用
-   一个 glb）→ 烘焙 → **逐件偏差**（`processing/object_fit.py`，与重建工作台 `compare`、`assemble`、`place` 用同一个
+   外部模型（`processing/modelexport.py`）：按材质分开读（每个材质一组三角形，平铺贴图保留重复采样，
+   `KHR_texture_transform` 烘进贴图坐标），把 `transform` 里的俯仰、横滚、缩放和 `tint` 烘进网格（缩放后的坐标超出
+   ±1000 米才拒收），**偏航不烘**——写进物件记录的 `transform: {yaw}`（SHAPES 3），只差偏航的物件共用一个 glb；按物件
+   模型的上限减面（多轮小步折叠，保住贴图接缝，挪过位置的角点在同一块贴图里重新取贴图坐标和法线）、缩小贴图，
+   **以包围盒的底面中心为原点**写成 glb（网站把模型按记录的偏航转过以后，外包盒的底面中心对齐 `bounds` 的底面中心）；
+   外部模型物件的 `material` 默认加 `shading: albedo`（按 glb 自己的材质完整受光；物件集里写了别的就照写的）→ 烘焙 → **逐件偏差**（`processing/object_fit.py`，与重建工作台 `compare`、`assemble`、`place` 用同一个
    函数，数字一致）：范围按**物件自身的朝向**取——水平朝向是物件网格水平投影的最小外接矩形，在这个局部坐标里水平
    外扩 5 厘米，竖直方向只取底面以下 2 厘米到顶面以上 2 厘米（斜放的入口门框不会把轴对齐包围盒角落里的门外走廊算
    进来，顶到天花的物件不会把天花板算进来）；范围里的扫描表面密集采样（最多 2 万点），求到物件网格和**背景**（全部
@@ -217,7 +281,7 @@ out = rebuild_scan("scan.zip", "work3/", transform=transform, authored=authored,
 ```json
 {"structure": "keep", "entities": 24, "templates": 1,
  "fit": [{"entityId": "counter-01", "points": 20000, "meanCm": 1.8, "p90Cm": 4.2, "coverage3cm": 0.81}, …],
- "downloads": {"models": 3, "files": 9, "bytes": 5123456, "redirects": 2},
+ "downloads": {"models": 3, "files": 9, "bytes": 5123456, "redirects": 2, "local": 0},
  "models": {"files": 3, "bytes": 1234567, "triangles": 54321},
  "bake": {"entities": 4, "parts": 6, "textured": 6, "fallback": 0},
  "textureFallback": [{"entityId": "floor", "path": "$", "from": "6fbe5e44…", "to": "0b7c19a2…"}, …]}
@@ -227,7 +291,7 @@ out = rebuild_scan("scan.zip", "work3/", transform=transform, authored=authored,
 
 `processing/tasks.py` 的 `voxelize_task`（按 `GRID_UNIT` 体素化、Lab 空间 k-means 量化、方块表只追加、按 `chunk.py`
 编码区块）和 `model_task`（读 glb / obj / drc 或含它们的 zip → 减面、缩小贴图 → 重新导出 glb）留作本地实验：重建包
-第一版没有方块，物件模型由 AI 物件集的外部模型流程导出（设计 8.3）。
+第一版没有方块，物件模型由 AI 物件集的外部模型流程（`models`、`bundle`，`processing/modelexport.py`）导出（设计 8.3）。
 
 ## 物体重建接口
 
@@ -377,7 +441,7 @@ cd recon && uv sync --frozen
 | `fetch` | 下载候选（Poly Haven 的 glTF 打包成 glb），记 sha256、大小、署名；上限 50 MB | `<缓存>/models/<库>/<编号>/model.glb` + `model.json` |
 | `place` | 候选摆到扫描里的物体上：自动判断向上轴、按量出的尺寸缩放（等比，或逐轴 ±15%）、偏航粗搜 + 只求偏航和平移的迭代最近点 + 顶面高度图分朝向、落地；可按扫描颜色给 tint 建议 | `entity.json`（外部模型物件记录）、`place.jpg`（扫描 \| 候选）、`place.json` |
 | `assemble` | 合并物件文件成 AI 物件集（模板去重、编号唯一、引用的模板存在、逐个校验、重算包围盒），最后整份跑一遍重建流程的校验 `metaverse_recon.authored.parse_authored`，通过了才算合格 | `authored.json`、`room.glb`、`room.jpg`（扫描 \| 现有算法 \| AI 重建：总览、俯视、四个角）、`report.json`（逐件偏差和 `fit`、漏建团块） |
-| `reframe` | 物件在两种对齐之间换算：`compute`（`reconstruct_lobby.py`）↔ `scan_import`（prepare），或任意变换文件 | 同格式的物件文件 |
+| `reframe` | 物件在两种对齐之间换算：`compute`（`reconstruct_lobby.py`）↔ `align`（prepare 的自动对齐；旧名 `scan_import`），或任意变换文件 | 同格式的物件文件 |
 
 **形状**：`plate`、`hull`、材质 `opacity`、`unlit` 和平铺、着色、法线、粗糙度（SHAPES 2）的校验、包围盒、网格和
 贴图坐标直接用本包的 `shapes.py`、`shape_mesh.py`（与接口服务、网站、命令行逐条对过同一批测试向量，贴图坐标
@@ -388,14 +452,31 @@ cd recon && uv sync --frozen
 （`url`、`sha256`、`size`、`format`：`glb`、`gltf`（Poly Haven：另有 `files: {相对路径: {url, sha256, size}}` 列出
 .bin 和贴图）或 `gltf-zip`）、`transform`（作用于 `processing.modelimport.load_model` 读出的模型坐标，顺序同
 SHAPES，含 `scale`）、`bounds`、`props.source`（`library、id、page、author、license、title` 六个非空字符串，CC0 也写
-作者；网站据此显示"模型来源"）、可选 `material: {tint, opacity, unlit}`（`tint` 重建时烘进模型，`opacity`、`unlit`
-留在物件上）。`place` 写的 `fit` 可以留着，重建时重算。地址只允许 `dl.polyhaven.org`、`huggingface.co`
-（`METAVERSE_RECON_MODEL_HOSTS` 可改，重建流程下载外部模型用同一个变量）。模型库里常见厘米单位的模型：
-重建流程把旋转、缩放烘进模型之后才检查 ±1000 米的坐标上限。
+作者；网站据此显示"模型来源"）、可选 `material: {tint, opacity, unlit, shading}`（`tint` 重建时烘进模型，其余
+留在物件上，`shading` 不写时打包写成 `albedo`）。`place` 写的 `fit` 可以留着，重建时重算。地址的主机按
+`METAVERSE_RECON_MODEL_HOSTS`（与打包下载同一份列表）。模型库里常见厘米单位的模型：重建流程把旋转、缩放烘进模型
+之后才检查 ±1000 米的坐标上限。`place`、`compare`、`views`、`assemble` 画外部模型时走与打包相同的导出（按材质、
+平铺贴图、减面以后的样子，偏航由记录转），导出结果按内容缓存在 `<缓存>/exports/`。
 
-**提交**：处理服务下线后，`metaverse rebuild --authored`、`metaverse scan … --authored` 这条路不再可用。`assemble` 的
-`authored.json` 要交给重建流程（`bundle.rebuild.rebuild_scan(..., authored=…)`）打成重建包，再用命令行
-`metaverse bundle push` 推送；打包命令 `metaverse-recon bundle` 还没有做（设计 8.3）。
+**提交**：`assemble` 的 `authored.json` 用 `metaverse-recon bundle --authored authored.json` 打成重建包（见"本地
+流水线"），再用命令行 `metaverse bundle push` 推送。处理服务下线后，`metaverse rebuild --authored`、
+`metaverse scan … --authored` 这条路不再可用。
+
+### 贴图工作台
+
+| 命令 | 作用 | 输出 |
+|---|---|---|
+| `refshot` | 从扫描对物件的一个面（`--face top\|bottom\|front\|back\|left\|right`，物件朝向 `--front`）做正交展开：面前后 `--depth`（默认 3 厘米）以内的扫描表面，每像素 `--px` 米（默认 3 毫米）；`--texture` 给扫描的原始贴图时更清楚。算去掉高光和暗斑后的中位色（sRGB 和线性）、覆盖率、建议的平铺尺寸（亮度起伏的周期；没有周期时取面的尺寸） | `refshot.png`、`refshot.json` |
+| `texture` | 把颜色、法线（OpenGL 约定）、粗糙度贴图写进物件文件的一个部件（`--part`，如 `$.children[2]`）：贴图复制到物件文件旁的 `textures/`（文件名是内容哈希），材质写成 `{file}` 引用，加 `uv`、`tile`、`offset`、`rotate`、`shading`（默认 `albedo`），旧文件存成 `.bak`。`--calibrate --refshot <refshot.json>`：在网站的光照下渲染这个部件，按渲染出的中位色和扫描中位色的比例调整贴图的整体增益（各通道相对亮度比限制在 0.8–1.25 倍，3 轮），烘进贴图副本（只留最后一轮）；`--preview <图>`：扫描 \| 之前 \| 之后的正视和斜视对比图，以及色差 ΔE | 改写的物件文件、`textures/`、对比图和同名 `.json` |
+| `texsearch` | 在材质库里找贴图：Poly Haven、ambientCG（只要 CC0），BM25 排序 | `candidates.json`、带编号的拼图 `sheet.jpg` |
+| `texfetch` | 下载一个材质的颜色、法线（ambientCG 的 DirectX 约定翻成 OpenGL）、粗糙度，记录实际尺寸（库里有的话）和许可 | 默认 `<缓存>/textures/<库>/<编号>/`：`color.jpg`、`normal.jpg`、`roughness.jpg`、`texture.json` |
+
+物件文件里的 `{file}` 贴图（相对物件文件的路径，不能是绝对路径、不能有 `..`）在打包时读进来，核对格式和上限，作为
+`texture` 文件进包，记录里换成哈希（SHAPES 2）。
+
+前厅会议桌台面实测：`refshot --box 2.3,0.70,10.6,6.3,0.80,11.75 --face top --texture <8K 原始贴图>`，扫描中位色 sRGB
+(193, 185, 168)；`texture --part '$.children[0]' --color <概念验证提取的大理石平铺图> --tile 1.3,1.0 --calibrate --preview`：
+原来的纯色台面 ΔE 13.99，贴上标定后的大理石 ΔE 0.72（增益 0.65 / 0.60 / 0.56），约 20 秒。
 
 | 环境变量 | 用途 |
 |---|---|
@@ -429,6 +510,8 @@ Sofa"（gla_bot，两人位、枕式扶手，4.53 厘米），但它是深棕色
 - 低细节档减面时要跨过贴图块的接缝（块边上的顶点太多，只合并块内部减不到 6 万），跨过接缝的大三角形上
   贴图有拉伸（地面能看出成片的模糊三角形，但没有洞）；默认档不受影响；
 - 单独的 `.drc` 扫描没有贴图（Draco 文件不带图片），网页用模型和重建贴图都是灰色；带贴图请上传 zip；
-- 多网格的 glb 物件模型由 trimesh 合并（贴图拼成图集），顶点颜色可能丢失；
+- 外部模型导出只带颜色贴图：法线贴图、金属粗糙度贴图不导出（粗糙度取系数乘粗糙度贴图的平均值，金属度一律 0），
+  自发光丢掉（前台显示器的原文件是白色自发光屏幕，导出后是黑的）；
+- 带偏航的模型物件，服务端按转过之后的外包盒核对尺寸，斜放的长条物件比不转的宽松（外包盒比实物大）；
 - 配准只求偏航和平移：扫描本身有倾斜时先由摆正步骤修正（10° 以内）；
 - 解析前检查里 Draco 的三角形数要解码后才知道（本地没有子进程内存上限，靠机器本身的内存）。

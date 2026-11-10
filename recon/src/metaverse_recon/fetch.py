@@ -34,7 +34,7 @@ DEFAULT_MODEL_HOSTS = (
 )
 MAX_REDIRECTS = 5
 READ_BLOCK = 1 << 20
-USER_AGENT = "chrono-metaverse-worker"
+USER_AGENT = "metaverse-recon"
 
 
 class DownloadRejected(PermanentJobError):

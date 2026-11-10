@@ -25,6 +25,8 @@ MAX_MODEL_BYTES = 50 << 20
 # 物件模型重新导出时的三角形数和贴图长边上限
 MODEL_MAX_TRIANGLES = 100_000
 MODEL_MAX_TEXTURE_SIDE = 2048
+# 物件模型全部贴图的像素合计上限（与接口服务 `UPLOAD_MODEL_MAX_TEXTURE_PIXELS` 的默认值相同）
+MODEL_MAX_TEXTURE_PIXELS = 4 * 2048 * 2048
 
 
 def default_limits() -> dict[str, int]:
@@ -40,6 +42,7 @@ def default_limits() -> dict[str, int]:
         "max_model_bytes": MAX_MODEL_BYTES,
         "model_max_triangles": MODEL_MAX_TRIANGLES,
         "model_max_texture_side": MODEL_MAX_TEXTURE_SIDE,
+        "model_max_texture_pixels": MODEL_MAX_TEXTURE_PIXELS,
     }
 
 
@@ -51,6 +54,7 @@ __all__ = [
     "MAX_TEXTURE_PIXELS",
     "MAX_TEXTURE_SIDE",
     "MAX_TRIANGLES",
+    "MODEL_MAX_TEXTURE_PIXELS",
     "MODEL_MAX_TEXTURE_SIDE",
     "MODEL_MAX_TRIANGLES",
     "default_limits",

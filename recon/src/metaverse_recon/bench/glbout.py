@@ -32,7 +32,9 @@ class Writer(_Writer):
         textured = h is not None and h in self.textures
         if textured:
             pbr["baseColorTexture"] = {
-                "index": self.texture_index(h, self.textures[h], mat.get("tile") is not None)
+                "index": self.texture_index(
+                    h, self.textures[h], mat.get("tile") is not None or bool(mat.get("repeat"))
+                )
             }
             tint = mat.get("tint") or [255, 255, 255]
             pbr["baseColorFactor"] = [*(_srgb_to_linear(c) for c in tint), opacity]

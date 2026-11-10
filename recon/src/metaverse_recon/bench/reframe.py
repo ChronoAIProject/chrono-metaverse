@@ -3,11 +3,10 @@
 两种对齐都从同一份原始扫描算出（`--scan`）：
 
 - `compute`：`processing.scan.compute_alignment`（`scripts/reconstruct_lobby.py` 和概念验证用的：
-只绕竖直轴旋转，
-  地面取 y 的 1% 分位，原点取 x、z 的最小值）；
-- `scan_import`：`processing.align.auto_align`（处理服务首次导入，也就是 prepare 的坐标系：先摆正倾斜，
-地面取低处
-  朝上面的众数，原点取 x、z 的 0.05% 分位）；
+  只绕竖直轴旋转，地面取 y 的 1% 分位，原点取 x、z 的最小值）；
+- `align`：`processing.align.auto_align`（`align`、`prepare` 首次自动对齐的坐标系，原处理服务的
+  `scan_import` 也用它：先摆正倾斜，地面取低处朝上面的众数，原点取 x、z 的 0.05% 分位；
+  旧名 `scan_import`、`worker` 照旧认）；
 - 也可以给变换文件（prepare 的 `transform.json`，或 16 个数的列主序 4×4，扫描坐标 → 空间坐标）。
 
 换算 `C = M_目标 · M_原⁻¹`。每个物件只改最外层的 `transform`：
@@ -36,7 +35,8 @@ from .prepare import scan_input
 def frame_matrix(spec: str, mesh) -> np.ndarray:
     if spec == "compute":
         return compute_alignment(mesh.vertices, mesh.faces).matrix
-    if spec in ("scan_import", "worker", "prepare"):
+    # scan_import、worker 是改名前的叫法，照旧认
+    if spec in ("align", "prepare", "scan_import", "worker"):
         return auto_align(mesh).matrix
     data = wc.read_json(spec)
     values = data.get("transform") if isinstance(data, dict) else data

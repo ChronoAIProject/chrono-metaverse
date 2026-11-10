@@ -43,7 +43,7 @@ from metaverse_recon.processing.authored_build import (
     uv_extents,
 )
 from metaverse_recon.processing.glb import read_glb_json
-from metaverse_recon.processing.modelimport import inspect_gltf, load_model
+from metaverse_recon.processing.modelimport import inspect_gltf
 from metaverse_recon.processing.rebuild import structure_entities
 from metaverse_recon.processing.shape_mesh import build_parts
 from metaverse_recon.processing.structure import extract_structure
@@ -394,17 +394,24 @@ def test_export_bakes_rotation_scale_and_tint(tmp_path):
     assert len(files) == 1  # 旋转、缩放、调色相同：共用一个 glb
     sha = next(iter(files))
     assert placed["chair-01"]["hash"] == placed["chair-02"]["hash"] == sha
-    # 偏航 90°：模型的 x 方向（缩放 2 倍后 1 米）转到 z 方向；原点在底面中心
-    local = placed["chair-01"]["mesh"].bounds()
-    assert np.allclose(local[0], [-0.25, 0, -0.5], atol=1e-6) and np.allclose(
-        local[1], [0.25, 0.4, 0.5], atol=1e-6
-    )
+    # glb 里只烘了缩放（模型的 x 方向缩放 2 倍后 1 米），原点在底面中心；偏航写进记录的 transform
+    assert np.allclose(files[sha]["bounds"]["min"], [-0.5, 0, -0.25], atol=1e-6)
+    assert np.allclose(files[sha]["bounds"]["max"], [0.5, 0.4, 0.25], atol=1e-6)
+    assert placed["chair-01"]["yaw"] == 90
+    # 摆好以后（偏航 90°）x 方向转到 z 方向；记录的 bounds 是转过之后的外包盒，底面中心在原点
+    world = placed["chair-01"]["mesh"].bounds()
+    origin = placed["chair-01"]["origin"]
+    assert np.allclose(world[0] - origin, [-0.25, 0, -0.5], atol=1e-6)
+    assert np.allclose(world[1] - origin, [0.25, 0.4, 0.5], atol=1e-6)
+    assert np.allclose(placed["chair-01"]["bounds"]["min"], world[0], atol=1e-4)
     assert np.allclose(placed["chair-02"]["origin"], [4.0, 0.5, 1.0])
     with open(files[sha]["path"], "rb") as fh:
-        assert read_glb_json(fh.read())["asset"]
-    mesh, _, _ = load_model(files[sha]["path"], None, max_triangles=10_000, max_texture_pixels=1 << 24)
-    red, green, _ = mesh.texture.reshape(-1, 3)[:, :3].astype(float).mean(0)
-    assert 90 < red < 110 and 90 < green < 110  # 橙色 (200, 100, 50) 的红色减半
+        doc_ = read_glb_json(fh.read())
+    # 调色乘到材质底色上（线性值），贴图原样保留
+    factor = doc_["materials"][0]["pbrMetallicRoughness"]["baseColorFactor"]
+    assert factor[0] == pytest.approx(((128 / 255 + 0.055) / 1.055) ** 2.4, abs=1e-5)
+    assert factor[1:] == [1.0, 1.0, 1.0]
+    assert "baseColorTexture" in doc_["materials"][0]["pbrMetallicRoughness"]
 
 
 def test_model_material_tint_is_baked_and_look_stays_on_the_entity():
@@ -499,17 +506,15 @@ def test_gltf_zip_and_gltf_files_load(tmp_path):
             zf.writestr(f"chair/{name}", data)
         zf.writestr("chair/.DS_Store", b"x")
     (tmp_path / "m.zip").write_bytes(buf.getvalue())
-    mesh, _, _ = load_source(
-        {"format": "gltf-zip", "path": str(tmp_path / "m.zip")}, str(tmp_path / "w"), LIMITS
-    )
-    assert mesh.triangle_count == 12 and mesh.texture is not None
+    model = load_source({"format": "gltf-zip", "path": str(tmp_path / "m.zip")}, str(tmp_path / "w"), LIMITS)
+    assert model.triangles == 12 and model.materials[0].image is not None and model.images
     # format gltf：父进程按相对路径摆好的目录
     folder = tmp_path / "dir"
     folder.mkdir()
     for name, data in files.items():
         (folder / (GLTF_MAIN if name == main else name)).write_bytes(data)
-    mesh, _, _ = load_source({"format": "gltf", "path": str(folder)}, str(tmp_path / "w2"), LIMITS)
-    assert mesh.triangle_count == 12
+    model = load_source({"format": "gltf", "path": str(folder)}, str(tmp_path / "w2"), LIMITS)
+    assert model.triangles == 12
 
 
 @pytest.mark.parametrize(

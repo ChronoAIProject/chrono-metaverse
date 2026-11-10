@@ -10,6 +10,7 @@ from metaverse_recon.records import (
     entity_body,
     is_https_url,
     model_source,
+    rotated_model_bounds,
     validate_anchor_body,
     validate_model_source,
     validate_props,
@@ -161,3 +162,32 @@ def test_model_material_rules():
             _model(material=bad)
     assert is_https_url("https://polyhaven.com/a/sofa")
     assert not is_https_url(None)
+
+
+def test_model_transform_only_rotation():
+    """外部模型物件的 transform 只有旋转（SHAPES 3），与 Rust `record.rs`、TypeScript `record.ts` 相同。"""
+    body = _model(transform={"yaw": 6.84})
+    assert body["transform"] == {"yaw": 6.84}
+    _model(transform={"yaw": -90, "pitch": 0, "roll": 180})
+    for bad, message in (
+        ({"position": [1, 0, 0]}, "只能有 yaw、pitch、roll"),
+        ({"scale": [1, 1, 1]}, "只能有 yaw、pitch、roll"),
+        ({"yaw": 3601}, "transform.yaw"),
+        ({"heading": 90}, "不认识"),
+    ):
+        with pytest.raises(RecordError, match=message):
+            _model(transform=bad)
+    with pytest.raises(RecordError, match="transform 只用于模型"):
+        entity_body(entity_id="box", kind="object", shape=BOX, transform={"yaw": 90})
+
+
+def test_rotated_model_bounds_matches_server():
+    """转过之后的外包盒：8 个角点旋转后取外包（接口服务 `check::rotated_model_bounds`）。"""
+    chair = {"min": [-0.3, 0.0, -0.2], "max": [0.3, 0.9, 0.2]}
+    assert rotated_model_bounds(chair, None) == chair
+    assert rotated_model_bounds(chair, {"yaw": 90}) == {"min": [-0.2, 0.0, -0.3], "max": [0.2, 0.9, 0.3]}
+    turned = rotated_model_bounds(chair, {"yaw": 30})
+    c, s = 3**0.5 / 2, 0.5
+    assert turned["max"][0] == pytest.approx(0.3 * c + 0.2 * s, abs=1e-12)
+    assert turned["max"][2] == pytest.approx(0.3 * s + 0.2 * c, abs=1e-12)
+    assert turned["min"][1] == 0.0

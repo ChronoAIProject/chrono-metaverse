@@ -1,7 +1,8 @@
 """AI 物件集（authored）：格式、校验与整理（设计 6.3「AI 逐件建模」）。
 
 本地的 AI（大语言模型）逐件完成前厅的物件：先去模型库找一个看起来差不多的现成模型摆进扫描里对照，找不到
-或差太多的定制件再手写参数形状；完成后把整套物件交给 `scan_import` / `rebuild` 任务写进时间线。
+或差太多的定制件再手写参数形状；完成后用 `metaverse-recon bundle` 打成重建包，
+`metaverse bundle push` 交给平台。
 
 ```json
 { "version": 1,

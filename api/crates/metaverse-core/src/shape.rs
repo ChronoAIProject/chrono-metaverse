@@ -176,7 +176,7 @@ impl Transform {
             .expect("8 个角点不会为空")
     }
 
-    fn validate(&self, path: &str) -> Result<(), ShapeError> {
+    pub(crate) fn validate(&self, path: &str) -> Result<(), ShapeError> {
         if let Some(position) = self.position {
             coords(&format!("{path}.position"), &position)?;
         }

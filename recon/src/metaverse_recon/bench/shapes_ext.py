@@ -4,7 +4,7 @@
 处理服务的实现（`shapes.py`、`processing/shape_mesh.py`），与接口服务、网站、命令行逐条对过同一批测试向量。
 
 `bake`（`planar` | `box` | `cylindrical`）只出现在 AI 物件集里，表示"把扫描的颜色烘焙成贴图"，可以带一个
-`color` 作为预览色（也是写回时采不到颜色的后备色）。规则与写回路径相同（`metaverse_recon.authored`）：
+`color` 作为预览色（也是打包时采不到颜色的后备色）。规则与打包流程相同（`metaverse_recon.authored`）：
 不能和 `texture`、`uv`、`tint`，以及平铺、法线、粗糙度贴图（`tile`、`offset`、`rotate`、`normalMap`、
 `normalScale`、`roughnessMap`）同时出现，模板里不能写。校验和包围盒时把它换成纯色材质（保留 `opacity`、
 `unlit` 等其他字段）；生成网格时材质里留着 `bake` 标记，对比图按它从扫描取色预览。

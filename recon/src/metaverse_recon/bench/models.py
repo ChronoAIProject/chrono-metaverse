@@ -1,6 +1,6 @@
 """外部模型物件（模型库里找来的现成模型）：读取、变换、包围盒、本地文件查找、记录校验。
 
-物件记录（AI 物件集的外部模型物件，写回路径按它下载、核对、重新导出、登记成 assetHash）：
+物件记录（AI 物件集的外部模型物件，打包时按它下载、核对、重新导出，换成 assetHash）：
 
 ```json
 { "entityId": "sofa-01", "layer": "rebuilt", "kind": "object", "label": "沙发",
@@ -18,8 +18,9 @@
   `pitch` / `roll` 的 90° 倍数摆正，`scale` 是沿模型原始坐标轴的缩放。
 - **格式**：`glb`（一个文件）；`gltf`（Poly Haven：`url` 是 .gltf 文件，`files` 是
   `{相对 .gltf 的路径: {url, sha256, size}}`，列出它引用的 .bin 和贴图；`pack_gltf` 把它们打包成 glb）；
-  `gltf-zip`（压缩包里一个 .gltf 加它引用的文件）。与写回路径收的格式相同（`metaverse_recon.authored`）。
-- **material**：`{tint?, opacity?, unlit?}`，`tint` 写回时烘进模型，`opacity`、`unlit` 留在物件上。
+  `gltf-zip`（压缩包里一个 .gltf 加它引用的文件）。与打包流程收的格式相同（`metaverse_recon.authored`）。
+- **material**：`{tint?, opacity?, unlit?, shading?}`，`tint` 打包时烘进模型，其余留在物件上（`shading`
+  不写时打包写成 `albedo`）。
 - **单位**：处理服务把旋转、缩放烘进模型之后才检查 ±1000 米的坐标上限，厘米单位的模型缩放后可以用。
 - **bounds** 按变换后的模型算（`world_bounds`）。
 """
@@ -27,6 +28,8 @@
 from __future__ import annotations
 
 import functools
+import hashlib
+import io
 import json
 import math
 import os
@@ -36,24 +39,25 @@ from typing import Any
 from urllib.parse import urlparse
 
 import numpy as np
+from PIL import Image
 
 from .. import shapes as sh
 from ..authored import AuthoredError, model_material, parse_model, validate_source
+from ..fetch import host_allowed, parse_hosts
 from ..processing import shape_mesh as sm
+from ..processing.modelexport import SourceModel, read_model
+from ..records import rotated_model_bounds
 from .core import Box, ReconError, r
 from .env import cache_dir
 
-DEFAULT_HOSTS = ("dl.polyhaven.org", "huggingface.co")
 MAX_MODEL_TRIANGLES = 3_000_000
 MAX_MODEL_PIXELS = 8192 * 8192
 PROCESSING_COORD_LIMIT = 1000.0  # 处理服务拒收缩放后坐标超过 ±1000 米的外部模型
 
 
 def allowed_hosts() -> tuple[str, ...]:
-    env = os.environ.get("METAVERSE_RECON_MODEL_HOSTS")
-    if env:
-        return tuple(h.strip().lower() for h in env.split(",") if h.strip())
-    return DEFAULT_HOSTS
+    """外部模型允许的主机：与打包下载用同一份列表和匹配规则（`fetch.parse_hosts`、`fetch.host_allowed`）。"""
+    return parse_hosts(os.environ.get("METAVERSE_RECON_MODEL_HOSTS"))
 
 
 def models_dir() -> str:
@@ -72,13 +76,13 @@ def column_major(m: np.ndarray) -> list[float]:
 
 @dataclass
 class LoadedModel:
+    """读进来的外部模型（`processing.modelexport.read_model`：节点变换已经展开，按材质分开）。"""
+
     path: str
-    vertices: np.ndarray  # 模型坐标
+    source: SourceModel
+    vertices: np.ndarray  # 模型坐标，全部图元合在一起
     faces: np.ndarray
-    uv: np.ndarray | None
-    texture: np.ndarray | None
-    colors: np.ndarray | None
-    base_color: tuple[float, float, float, float]
+    face_material: np.ndarray
 
     @property
     def triangles(self) -> int:
@@ -87,52 +91,241 @@ class LoadedModel:
     def bounds(self) -> tuple[np.ndarray, np.ndarray]:
         return self.vertices.min(0), self.vertices.max(0)
 
+    @property
+    def textured(self) -> bool:
+        return any(m.image is not None for m in self.source.materials)
+
+    def texture_sides(self) -> list[int]:
+        """每张底色贴图的长边（只读文件头）。"""
+        out = []
+        for i in sorted({m.image for m in self.source.materials if m.image is not None}):
+            with Image.open(io.BytesIO(self.source.images[i])) as img:
+                out.append(int(max(img.size)))
+        return out
+
     def surface_colors(self, n: int = 20000, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
-        """表面采样点（模型坐标）和颜色（sRGB 0–255，没有贴图时用顶点色或底色）。"""
+        """表面采样点（模型坐标）和颜色（sRGB 0–255）：贴图按重复采样（平铺贴图照样对），乘上材质底色。"""
         V, F = self.vertices, self.faces
         a, b, c = V[F[:, 0]], V[F[:, 1]], V[F[:, 2]]
         area = np.linalg.norm(np.cross(b - a, c - a), axis=1) / 2
         rng = np.random.default_rng(seed)
-        p = area / max(area.sum(), 1e-12)
-        idx = rng.choice(len(F), size=n, p=p)
+        idx = rng.choice(len(F), size=n, p=area / max(area.sum(), 1e-12))
         r1, r2 = rng.random(n), rng.random(n)
         s = np.sqrt(r1)
         w = np.c_[1 - s, s * (1 - r2), s * r2]
-        f = F[idx]
-        P = (V[f] * w[:, :, None]).sum(1)
-        if self.texture is not None and self.uv is not None:
-            t = (self.uv[f] * w[:, :, None]).sum(1)
-            H, W = self.texture.shape[:2]
-            px = np.clip((np.mod(t[:, 0], 1.0) * W).astype(int), 0, W - 1)
-            py = np.clip((np.mod(t[:, 1], 1.0) * H).astype(int), 0, H - 1)
-            C = self.texture[py, px][:, :3].astype(float)
-            C *= np.array(self.base_color[:3])
-        elif self.colors is not None:
-            C = (self.colors[f][:, :, :3].astype(float) * w[:, :, None]).sum(1)
-        else:
-            C = np.tile(np.array(self.base_color[:3]) * 255, (n, 1))
-        return P, np.clip(C, 0, 255)
+        P = (V[F[idx]] * w[:, :, None]).sum(1)
+        out = np.zeros((n, 3))
+        offsets = np.cumsum([0] + [len(p.faces) for p in self.source.primitives])
+        bases = np.cumsum([0] + [len(p.positions) for p in self.source.primitives])
+        prim_of = np.searchsorted(offsets, idx, side="right") - 1
+        for pi, prim in enumerate(self.source.primitives):
+            rows = np.nonzero(prim_of == pi)[0]
+            if not len(rows):
+                continue
+            mat = self.source.materials[prim.material]
+            lin = np.asarray(mat.base_color[:3], float)
+            local = F[idx[rows]] - bases[pi]
+            if mat.image is not None and prim.uv is not None:
+                tex = self._texture(mat.image)
+                t = (prim.uv[local] * w[rows][:, :, None]).sum(1)
+                H, W = tex.shape[:2]
+                px = np.clip((np.mod(t[:, 0], 1.0) * W).astype(int), 0, W - 1)
+                py = np.clip((np.mod(t[:, 1], 1.0) * H).astype(int), 0, H - 1)
+                rgb = _srgb_to_linear(tex[py, px][:, :3] / 255.0) * lin
+            elif prim.colors is not None:
+                rgb = (prim.colors[local][:, :, :3] * w[rows][:, :, None]).sum(1) * lin
+            else:
+                rgb = np.tile(lin, (len(rows), 1))
+            out[rows] = _linear_to_srgb(rgb) * 255
+        return P, np.clip(out, 0, 255)
+
+    def _texture(self, image: int) -> np.ndarray:
+        cache = self.__dict__.setdefault("_textures", {})
+        if image not in cache:
+            with Image.open(io.BytesIO(self.source.images[image])) as img:
+                img.thumbnail((1024, 1024))
+                cache[image] = np.asarray(img.convert("RGB"))
+        return cache[image]
+
+
+def _srgb_to_linear(c: np.ndarray) -> np.ndarray:
+    return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+
+
+def _linear_to_srgb(c: np.ndarray) -> np.ndarray:
+    c = np.clip(c, 0.0, 1.0)
+    return np.where(c <= 0.0031308, c * 12.92, 1.055 * c ** (1 / 2.4) - 0.055)
 
 
 @functools.lru_cache(maxsize=8)
 def _load_cached(path: str, mtime: float) -> LoadedModel:
     from ..errors import InputRejected
-    from ..processing.modelimport import load_model
 
     try:
-        mesh, colors, base = load_model(
-            path, None, max_triangles=MAX_MODEL_TRIANGLES, max_texture_pixels=MAX_MODEL_PIXELS
-        )
+        source = read_model(path, max_triangles=MAX_MODEL_TRIANGLES, max_pixels=MAX_MODEL_PIXELS)
     except InputRejected as e:
         raise ReconError(f"读不了模型 {path}：{e}") from e
-    return LoadedModel(path, mesh.vertices, mesh.faces, mesh.uv, mesh.texture, colors, base)
+    vertices, faces, face_material = source.merged()
+    return LoadedModel(path, source, vertices, faces, face_material)
 
 
 def load_model_file(path: str) -> LoadedModel:
-    """用处理服务同一个函数读模型（坐标与写回时一致）。"""
+    """用打包同一个读取函数读模型（坐标与 `models`、`bundle` 导出时一致）。"""
     if not os.path.exists(path):
         raise ReconError(f"找不到模型文件 {path}")
     return _load_cached(os.path.abspath(path), os.path.getmtime(path))
+
+
+# ---------------------------------------------------------------------------- 按导出后的样子看
+
+
+@dataclass(frozen=True)
+class Exported:
+    """外部模型按打包时同样的步骤导出后的 glb（缓存在 `<缓存>/exports/`）和它在空间里的摆法。"""
+
+    path: str  # 导出的 glb
+    sha256: str
+    yaw: float  # 写进物件记录 transform 的偏航
+    origin: np.ndarray  # glb 原点在空间里的位置
+    local_bounds: dict  # glb 自己的包围盒（原点在底面中心）
+    bounds: dict  # 记录要写的 bounds（模型包围盒按偏航转过之后的外包，摆到 origin）
+    triangles: int
+    bytes: int
+    textures: list
+    materials: int
+    source_triangles: int
+
+    @property
+    def matrix(self) -> np.ndarray:
+        """glb 坐标 → 空间坐标：`T(origin) · Ry(yaw)`。"""
+        m = transform_matrix({"yaw": self.yaw})
+        m[:3, 3] = self.origin
+        return m
+
+
+def _file_sha(path: str) -> str:
+    return _file_sha_cached(os.path.abspath(path), os.path.getmtime(path), os.path.getsize(path))
+
+
+@functools.lru_cache(maxsize=64)
+def _file_sha_cached(path: str, mtime: float, size: int) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def export_limits() -> dict[str, int]:
+    """工作台导出用的上限：工作区里有 limits.json 时按它（与打包相同），否则用默认值。"""
+    from ..bundle.limits import load_upload_limits, processing_limits
+    from ..processing.authored_build import export_limits as caps
+    from .workspace import LIMITS_FILE, default_path
+
+    return caps(processing_limits(load_upload_limits(default_path(None, LIMITS_FILE))))
+
+
+def export_model_file(local: str, transform: Mapping[str, Any] | None, tint: Any) -> Exported:
+    """外部模型按打包时同样的步骤导出（`processing.modelexport.export_model`：缩放、俯仰、翻滚、调色烘进模型，
+    减面、缩小贴图），导出结果按（文件、烘进去的变换、调色、上限）缓存；偏航和平移只决定摆法。"""
+    from ..processing.authored_build import split_transform
+    from ..processing.modelexport import export_model, variant_key
+
+    xf = dict(transform or {})
+    lin, yaw, position = split_transform(xf)
+    caps = export_limits()
+    key = variant_key(_file_sha(local), lin, tint, caps)
+    folder = os.path.join(cache_dir(), "exports")
+    os.makedirs(folder, exist_ok=True)
+    glb, meta = os.path.join(folder, f"{key}.glb"), os.path.join(folder, f"{key}.json")
+    info = None
+    if os.path.exists(glb) and os.path.exists(meta):
+        try:
+            with open(meta, encoding="utf-8") as fh:
+                info = json.load(fh)
+        except (OSError, ValueError):
+            info = None
+    if info is None:
+        from ..errors import InputRejected
+
+        try:
+            model = export_model(
+                load_model_file(local).source,
+                linear=lin,
+                tint=tint,
+                max_triangles=caps["triangles"],
+                max_texture_side=caps["side"],
+                max_texture_pixels=caps["pixels"],
+                max_decode_pixels=MAX_MODEL_PIXELS,
+            )
+        except InputRejected as e:
+            raise ReconError(f"导出模型 {local} 失败：{e}") from e
+        with open(glb, "wb") as fh:
+            fh.write(model.data)
+        info = {
+            "sha256": hashlib.sha256(model.data).hexdigest(),
+            "origin": model.origin,
+            "bounds": model.bounds,
+            "triangles": model.triangles,
+            "bytes": len(model.data),
+            "textures": model.textures,
+            "materials": model.materials,
+            "sourceTriangles": model.source_triangles,
+        }
+        with open(meta, "w", encoding="utf-8") as fh:
+            json.dump(info, fh)
+    rot = {"yaw": yaw} if yaw else {}
+    origin = position + transform_matrix(rot)[:3, :3] @ np.asarray(info["origin"], float)
+    turned = rotated_model_bounds(info["bounds"], rot)
+    bounds = sh.rounded_bounds(
+        {
+            "min": (np.asarray(turned["min"]) + origin).tolist(),
+            "max": (np.asarray(turned["max"]) + origin).tolist(),
+        }
+    )
+    return Exported(
+        path=glb,
+        sha256=info["sha256"],
+        yaw=yaw,
+        origin=origin,
+        local_bounds=info["bounds"],
+        bounds=bounds,
+        triangles=int(info["triangles"]),
+        bytes=int(info["bytes"]),
+        textures=list(info["textures"]),
+        materials=int(info["materials"]),
+        source_triangles=int(info["sourceTriangles"]),
+    )
+
+
+def exported_render(body: Mapping[str, Any], local: str, **extra: Any) -> dict[str, Any]:
+    """渲染页的模型选项：导出后的 glb，按记录的摆法放好；着色方式按物件的 `material.shading`（打包时外部模型
+    默认 albedo），调色已经烘进模型。"""
+    look = body.get("material") or {}
+    ex = export_model_file(local, body.get("transform"), look.get("tint"))
+    out = {
+        "path": ex.path,
+        "matrix": column_major(ex.matrix),
+        "lit": True,
+        "shading": look.get("shading") or "albedo",
+        "opacity": look.get("opacity"),
+        "unlit": look.get("unlit"),
+    }
+    out.update(extra)
+    return out
+
+
+def exported_mesh(body: Mapping[str, Any], local: str) -> sm.Mesh:
+    """导出后的模型摆好以后的网格（空间坐标），偏差计算用：与打包时算 `fit` 的网格相同。"""
+    from ..processing.modelexport import read_gltf
+
+    look = body.get("material") or {}
+    ex = export_model_file(local, body.get("transform"), look.get("tint"))
+    src = read_gltf(ex.path, max_triangles=MAX_MODEL_TRIANGLES, max_pixels=MAX_MODEL_PIXELS)
+    V, F, _ = src.merged()
+    m = ex.matrix
+    W = V @ m[:3, :3].T + m[:3, 3]
+    return sm.Mesh(W, np.zeros_like(W), np.zeros((len(W), 2)), F.astype(np.int64))
 
 
 def world_vertices(body: Mapping[str, Any], model: LoadedModel) -> np.ndarray:
@@ -151,9 +344,7 @@ def world_mesh(body: Mapping[str, Any], model: LoadedModel) -> sm.Mesh:
     for k in range(3):
         np.add.at(vn, F[:, k], fn)
     vn /= np.maximum(np.linalg.norm(vn, axis=1, keepdims=True), 1e-12)
-    # load_model 的贴图坐标是左上角原点（glTF），网格模块用 v 向上
-    uv = np.c_[model.uv[:, 0], 1.0 - model.uv[:, 1]] if model.uv is not None else np.zeros((len(V), 2))
-    return sm.Mesh(V, vn, uv, F.astype(np.int64))
+    return sm.Mesh(V, vn, np.zeros((len(V), 2)), F.astype(np.int64))
 
 
 def world_bounds(body: Mapping[str, Any], model: LoadedModel) -> dict:
@@ -162,8 +353,8 @@ def world_bounds(body: Mapping[str, Any], model: LoadedModel) -> dict:
 
 
 def model_parts(body: Mapping[str, Any], model: LoadedModel) -> list[sm.Part]:
-    mat = {"color": [round(c * 255) for c in model.base_color[:3]]}
-    return [sm.Part(world_mesh(body, model), mat, "$model")]
+    """偏差计算用的网格块：按导出后的样子（与打包时算 `fit` 的网格相同）。"""
+    return [sm.Part(exported_mesh(body, model.path), {"color": [200, 200, 200]}, "$model")]
 
 
 # ---------------------------------------------------------------------------- 本地文件
@@ -213,7 +404,7 @@ def _check_transform(xf: Any, errors: list[str]) -> None:
 
 
 def check_source(src: Any) -> list[str]:
-    """署名：规则与写回路径、物件记录相同（`authored.validate_source` → `records.validate_model_source`）。"""
+    """署名：规则与打包流程、物件记录相同（`authored.validate_source` → `records.validate_model_source`）。"""
     if not isinstance(src, Mapping):
         return ["缺少 props.source（署名：library、id、page、author、license、title）"]
     try:
@@ -227,12 +418,12 @@ def _check_url(url: Any, what: str, hosts: tuple[str, ...], errors: list[str]) -
     if not isinstance(url, str) or not url.startswith("https://"):
         return  # 结构问题由 parse_model 报
     host = (urlparse(url).hostname or "").lower()
-    if host not in hosts:
+    if not host_allowed(url, hosts):
         errors.append(f"{what} 的主机 {host} 不在允许的列表里（{', '.join(hosts)}）")
 
 
 def model_ref(model: Mapping[str, Any]) -> dict[str, Any]:
-    """写回用的 `model`：只留 url、sha256、size、format，gltf 的附属文件写成 `{相对路径: {url, sha256, size}}`
+    """打包用的 `model`：只留 url、sha256、size、format，gltf 的附属文件写成 `{相对路径: {url, sha256, size}}`
     （旧版 fetch 旁注里是 `[{path, url, sha256, size}]`，这里一并换过来）。"""
     out = {k: model[k] for k in ("url", "sha256", "size", "format") if k in model}
     files = model.get("files")
@@ -250,7 +441,7 @@ def model_ref(model: Mapping[str, Any]) -> dict[str, Any]:
 def check_model_entity(
     body: Mapping[str, Any], hosts: tuple[str, ...] | None = None
 ) -> tuple[list[str], list[str]]:
-    """外部模型物件的校验：返回 (错误, 提示)。`model`、`material`、署名按写回路径的规则
+    """外部模型物件的校验：返回 (错误, 提示)。`model`、`material`、署名按打包流程的规则
     （`metaverse_recon.authored`），另外检查地址的主机在允许列表里、bounds 已经算好。"""
     hosts = hosts or allowed_hosts()
     errors: list[str] = []

@@ -20,6 +20,9 @@ from .shapes import (
     SHADING_MODES,
     Bounds,
     ShapeError,
+    _validate_transform,
+    apply_transform,
+    bounds_of_points,
     rounded_bounds,
     shape_bounds,
     validate_opacity,
@@ -170,6 +173,7 @@ def entity_body(
     region_id: str | None = None,
     asset_hash: str | None = None,
     material: Mapping[str, Any] | None = None,
+    transform: Mapping[str, Any] | None = None,
     textures: Sequence[str] | None = None,
     bounds: Bounds | None = None,
     fit: Mapping[str, float] | None = None,
@@ -178,8 +182,9 @@ def entity_body(
 ) -> dict[str, Any]:
     """构造物件记录的 body 并校验。不给 `bounds` 时按形状算出来（向外取整到 0.1 毫米）。
 
-    引用外部模型时给 `asset_hash`（处理后的 glb）和 `bounds`，可以带 `material`（tint / opacity / unlit，
-    给整个模型调外观），署名放进 `props={"source": model_source(...)}`。"""
+    引用外部模型时给 `asset_hash`（处理后的 glb）和 `bounds`，可以带 `material`（tint / opacity / unlit /
+    shading，给整个模型调外观）和 `transform`（只有 yaw / pitch / roll：模型绕自己的原点转的角度），署名放进
+    `props={"source": model_source(...)}`。"""
     body: dict[str, Any] = {"entityId": entity_id, "layer": layer, "kind": kind}
     if label is not None:
         body["label"] = label
@@ -193,6 +198,8 @@ def entity_body(
         body["assetHash"] = asset_hash
     if material is not None:
         body["material"] = dict(material) if isinstance(material, Mapping) else material
+    if transform is not None:
+        body["transform"] = dict(transform) if isinstance(transform, Mapping) else transform
     if textures:
         body["textures"] = sorted(set(textures))
     if bounds is None:
@@ -219,7 +226,7 @@ def validate_entity_body(
 ) -> None:
     allowed = {
         "entityId", "layer", "kind", "label", "anchorId", "regionId", "shape",
-        "assetHash", "material", "textures", "bounds", "fit", "props",
+        "assetHash", "material", "transform", "textures", "bounds", "fit", "props",
     }  # fmt: skip
     unknown = set(body) - allowed
     if unknown:
@@ -245,6 +252,10 @@ def validate_entity_body(
         _validate_model_material(body["material"])
         if body.get("assetHash") is None:
             raise RecordError("material 只用于模型，必须和 assetHash 一起给")
+    if body.get("transform") is not None:
+        validate_model_transform(body["transform"])
+        if body.get("assetHash") is None:
+            raise RecordError("transform 只用于模型，必须和 assetHash 一起给")
     textures = body.get("textures")
     if textures is not None and (len(textures) > 64 or not all(is_sha256_hex(t) for t in textures)):
         raise RecordError("textures 必须是至多 64 个资源哈希")
@@ -268,6 +279,36 @@ def validate_entity_body(
         validate_shape(shape)
         if not _contains(bounds, shape_bounds(shape, templates), BOUNDS_TOLERANCE):
             raise RecordError("bounds 没有包住形状的实际范围")
+
+
+def validate_model_transform(transform: Any) -> None:
+    """物件模型的 `transform`：只有 `yaw`、`pitch`、`roll`（位置由 `bounds` 定，缩放烘进模型；SHAPES 3）。"""
+    try:
+        _validate_transform("transform", transform)
+    except ShapeError as error:
+        raise RecordError(str(error)) from error
+    if transform.get("position") is not None or transform.get("scale") is not None:
+        raise RecordError("模型的 transform 只能有 yaw、pitch、roll（位置由 bounds 定，缩放烘进模型）")
+
+
+def model_rotation(transform: Mapping[str, Any] | None) -> dict[str, float]:
+    """物件模型 `transform` 里的旋转（不给的角度按 0），顺序同 SHAPES 1：`Ry(yaw) · Rx(pitch) · Rz(roll)`。"""
+    return {k: float((transform or {}).get(k) or 0.0) for k in ("yaw", "pitch", "roll")}
+
+
+def rotated_model_bounds(model: Bounds, transform: Mapping[str, Any] | None) -> Bounds:
+    """模型包围盒按物件 `transform` 的旋转转过之后的外包（8 个角点），与接口服务 `check::rotated_model_bounds`
+    相同。网站把这个盒子的底面中心对齐物件 `bounds` 的底面中心。"""
+    rot = model_rotation(transform)
+    corners = [
+        [
+            model["max" if i & 1 else "min"][0],
+            model["max" if i & 2 else "min"][1],
+            model["max" if i & 4 else "min"][2],
+        ]
+        for i in range(8)
+    ]
+    return bounds_of_points(apply_transform(rot, p) for p in corners)
 
 
 def _is_int(value: Any) -> bool:

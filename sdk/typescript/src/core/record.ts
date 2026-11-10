@@ -19,9 +19,11 @@ import {
   ShapeError,
   validateOpacity,
   validateShape,
+  validateTransform,
   type Shading,
   type Shape,
   type TemplateTable,
+  type Transform,
 } from './shape.js';
 
 /**
@@ -82,6 +84,11 @@ export interface EntityBody {
   readonly assetHash?: string;
   /** 模型（assetHash）整体的调色、半透明、不受光照、着色方式；只能和 assetHash 一起给。 */
   readonly material?: ModelMaterial;
+  /**
+   * 模型（assetHash）绕自己的原点转的角度：只有 yaw、pitch、roll，只能和 assetHash 一起给；位置由 bounds 定，
+   * 缩放烘进模型（docs/SHAPES.md 第 3 节）。
+   */
+  readonly transform?: Transform;
   readonly textures?: readonly string[];
   /** 由生成方计算，用于权限范围检查和网站裁剪。 */
   readonly bounds: Aabb;
@@ -284,6 +291,7 @@ const ENTITY_FIELDS = [
   'shape',
   'assetHash',
   'material',
+  'transform',
   'textures',
   'bounds',
   'fit',
@@ -323,6 +331,18 @@ export function parseEntityBody(value: unknown): EntityBody {
   }
   if (given(value, 'props') && !isPlainObject(value.props)) {
     throw new RecordError('props 必须是对象');
+  }
+  if (given(value, 'transform')) {
+    const transform = value.transform;
+    if (!isPlainObject(transform)) throw new RecordError('transform 必须是对象');
+    onlyKeys(transform, ['position', 'yaw', 'pitch', 'roll', 'scale'], 'transform');
+    for (const key of ['yaw', 'pitch', 'roll']) {
+      if (given(transform, key) && typeof transform[key] !== 'number') {
+        throw new RecordError(`transform.${key} 必须是数字`);
+      }
+    }
+    if (given(transform, 'position')) numberTuple(transform.position, 3, 'transform.position');
+    if (given(transform, 'scale')) numberTuple(transform.scale, 3, 'transform.scale');
   }
   if (given(value, 'material')) {
     const material = value.material;
@@ -399,6 +419,22 @@ export function validateEntityBody(body: EntityBody, templates: TemplateTable): 
     }
     try {
       validateOpacity('material.opacity', body.material.opacity);
+    } catch (error) {
+      if (error instanceof ShapeError) throw new RecordError(error.message);
+      throw error;
+    }
+  }
+  if (body.transform !== undefined) {
+    if (body.assetHash === undefined) {
+      throw new RecordError('transform 只用于模型，必须和 assetHash 一起给');
+    }
+    if (body.transform.position !== undefined || body.transform.scale !== undefined) {
+      throw new RecordError(
+        '模型的 transform 只能有 yaw、pitch、roll（位置由 bounds 定，缩放烘进模型）',
+      );
+    }
+    try {
+      validateTransform(body.transform, 'transform');
     } catch (error) {
       if (error instanceof ShapeError) throw new RecordError(error.message);
       throw error;

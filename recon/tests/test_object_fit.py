@@ -1,4 +1,4 @@
-"""逐件偏差的口径（`processing/object_fit.py`）：物件自身朝向的范围、背景、距离上限、证据；写回路径与重建工作台
+"""逐件偏差的口径（`processing/object_fit.py`）：物件自身朝向的范围、背景、距离上限、证据；打包流程与重建工作台
 compare 在同一份合成场景上算出同样的数字。"""
 
 from __future__ import annotations
@@ -210,7 +210,7 @@ def ceiling_sign_scene():
 
 @pytest.mark.parametrize("scene", [door_frame_scene, ceiling_sign_scene])
 def test_writeback_fit_matches_workbench_compare(tmp_path, scene):
-    """斜放薄板、贴天花物件：写回路径写进记录的 fit 很小（轴对齐包围盒的口径会被走廊、天花拉到 8–10 厘米），
+    """斜放薄板、贴天花物件：打包流程写进记录的 fit 很小（轴对齐包围盒的口径会被走廊、天花拉到 8–10 厘米），
     与工作台 compare 的逐件 fit 完全相同。"""
     builder, height, entity = scene()
     built = builder.build()
@@ -218,7 +218,7 @@ def test_writeback_fit_matches_workbench_compare(tmp_path, scene):
     loaded = wc.load_scan(str(base / "scan.glb"))  # 两边用同一份扫描（glb 里是 float32）
     mesh = ScanMesh(loaded.V, loaded.F)
 
-    # 写回路径：结构用物件集里的（replace），背景是墙和地面
+    # 打包流程：结构用物件集里的（replace），背景是墙和地面
     parsed = parse_authored(
         {
             "version": 1,

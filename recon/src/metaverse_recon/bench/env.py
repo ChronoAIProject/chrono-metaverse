@@ -16,6 +16,12 @@ CJK |
 | `METAVERSE_RECON_CACHE` | 缓存目录（模型库索引、下载的模型、缩略图） | `~/.cache/metaverse-recon` |
 
 找不到中文字体时图上的标注改用英文（`i18n.py`）。
+
+不在平台仓库里时（`uv tool install` 装的），
+`metaverse-recon doctor --install` 把 three 和 playwright-core 装进
+`<缓存>/node/`、Chromium 装进 `<缓存>/ms-playwright/`（版本与仓库 `web/`、`sdk/typescript/` 用的相同），
+之后按上面的
+查找顺序就能找到。要有 node 和 npm（Node.js 22 以上）。
 """
 
 from __future__ import annotations
@@ -31,6 +37,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 RENDER_DIR = HERE / "render"
+# doctor --install 装的版本（与仓库 web/package.json 的 three、sdk/typescript/package.json 的
+# playwright-core 相同）
+#
+THREE_VERSION = "0.184.0"
+PLAYWRIGHT_VERSION = "1.58.2"
 
 
 def repo_root() -> Path | None:
@@ -115,6 +126,7 @@ def find_chromium() -> str | None:
         return env if os.path.exists(env) else None
     roots = [
         os.environ.get("PLAYWRIGHT_BROWSERS_PATH"),
+        str(cache_dir() / "ms-playwright"),
         "/opt/pw-browsers",
         str(Path.home() / ".cache" / "ms-playwright"),
         str(Path.home() / "Library" / "Caches" / "ms-playwright"),
@@ -206,6 +218,51 @@ def render_tools() -> tuple[RenderTools | None, str]:
     if missing:
         return None, "渲染需要：" + "；".join(missing)
     return RenderTools(node, three, pw, find_chromium(), find_font()), ""
+
+
+def install(run=subprocess.run) -> dict:
+    """`doctor --install`：three 和 playwright-core 装进 `<缓存>/node/`，Chromium 装进
+    `<缓存>/ms-playwright/`。
+
+    已经装好的跳过；npm 或下载失败时报错（写明要运行的命令）。返回做了哪些事。"""
+    from .core import ReconError, log
+
+    node = find_node()
+    npm = shutil.which("npm")
+    if node is None or npm is None:
+        raise ReconError("要先装 Node.js 22 以上（带 npm），或用 METAVERSE_RECON_NODE 指定 node")
+    prefix = cache_dir() / "node"
+    prefix.mkdir(parents=True, exist_ok=True)
+    done: dict[str, str] = {}
+    want = []
+    if not (prefix / "node_modules" / "three" / "build" / "three.module.js").exists():
+        want.append(f"three@{THREE_VERSION}")
+    if not (prefix / "node_modules" / "playwright-core" / "package.json").exists():
+        want.append(f"playwright-core@{PLAYWRIGHT_VERSION}")
+    if want:
+        cmd = [npm, "install", "--no-audit", "--no-fund", "--prefix", str(prefix), *want]
+        log("  " + " ".join(cmd))
+        proc = run(cmd, capture_output=True, text=True, timeout=900)
+        if proc.returncode != 0:
+            raise ReconError(f"npm install 失败：\n{proc.stdout}\n{proc.stderr}")
+        done["npm"] = " ".join(want)
+    browsers = cache_dir() / "ms-playwright"
+    if not any(browsers.glob("chromium*")):
+        cli = prefix / "node_modules" / "playwright-core" / "cli.js"
+        cmd = [node, str(cli), "install", "chromium"]
+        log(f"  PLAYWRIGHT_BROWSERS_PATH={browsers} " + " ".join(cmd))
+        proc = run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=1800,
+            env={**os.environ, "PLAYWRIGHT_BROWSERS_PATH": str(browsers)},
+        )
+        if proc.returncode != 0:
+            raise ReconError(f"Chromium 下载失败：\n{proc.stdout}\n{proc.stderr}")
+        done["chromium"] = str(browsers)
+    _npm_root_global.cache_clear()
+    return done
 
 
 def describe() -> dict:

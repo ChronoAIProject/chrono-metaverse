@@ -117,8 +117,9 @@ glb 导出都不变。
 3. `tile` 只用于有贴图坐标的材质：贴图材质（本来就必须有 `uv`），或者带了 `normalMap` / `roughnessMap` 的颜色材质；
 4. 颜色材质带了 `normalMap` 或 `roughnessMap` 就必须给 `uv`；两样都没带时仍然不能有 `uv`，也仍然不能有 `tint`（与原来相同）；
 5. `normalMap`、`roughnessMap` 和 `texture` 一样是 64 位小写十六进制的资源哈希。只有 AI 物件集（本地文件）里可以
-   写成外链对象 `{url, sha256, size}`，由本地工具 `bundle` 下载、核对后作为 `texture` 文件进重建包，记录里换成
-   哈希（`docs/design/server-slim.md` 第 12 节）；形状本身（重建包和提交里的物件记录）只收哈希。
+   写成外链对象 `{url, sha256, size}`，或本地文件 `{file}`（相对物件集文件的路径，不能是绝对路径、不能有 `..`，
+   重建工作台 `texture`、`bake` 写的），由本地工具 `bundle` 下载或读取、核对后作为 `texture` 文件进重建包，记录里
+   换成哈希（`docs/design/server-slim.md` 第 12 节）；形状本身（重建包和提交里的物件记录）只收哈希。
 
 **资源引用**：`normalMap`、`roughnessMap` 和 `texture` 一样是物件引用的贴图资源。物件的 `textures` 列出形状里这三个
 字段的全部哈希（去重，至多 64 个）。接口服务按形状收集引用（`Shape::texture_refs`：草稿追加时查用途和归属、
@@ -312,20 +313,28 @@ v = (−a·sin θ + b·cos θ) / tile[1]
 ```json
 { "entityId": "sofa-01", "layer": "rebuilt", "kind": "object", "label": "沙发",
   "assetHash": "<处理后的 glb 的资源哈希>",
-  "material": { "tint": [214, 196, 176] },
+  "material": { "tint": [214, 196, 176], "shading": "albedo" },
+  "transform": { "yaw": 178.5 },
   "bounds": { "min": [1.1, 0, 2.4], "max": [3.0, 0.82, 3.3] },
   "props": { "source": { "library": "polyhaven", "id": "<库里的编号>",
                          "page": "https://polyhaven.com/a/<库里的编号>",
                          "author": "<作者>", "license": "CC0-1.0", "title": "<标题>" } } }
 ```
 
-- 物件可以只有 `assetHash` 没有 `shape`：网站加载模型，按 `bounds` 的底面中心摆放（模型坐标的原点在底面中心），所以模型的大小、朝向在重新导出时就要摆好。网站另有兜底：模型实际包围盒的某条边比 `bounds` 长出 max(2 厘米, 边长的 1%) 以上时，整体等比缩小、底面中心对齐放进 `bounds`，并在控制台记警告（服务端已经按下面"模型与记录一致"拒收这种模型，兜底只防旧数据和坏数据）。
+- 物件可以只有 `assetHash` 没有 `shape`：网站加载模型，按 `bounds` 的底面中心摆放（模型坐标的原点在底面中心），所以模型的大小在重新导出时就要摆好；朝向可以烘进模型，也可以写在 `transform` 里。网站另有兜底：模型实际包围盒按 `transform` 转过之后的外包盒（下面"摆放"），某条边比 `bounds` 长出 max(2 厘米, 边长的 1%) 以上时，整体等比缩小、底面中心对齐放进 `bounds`，并在控制台记警告（服务端已经按下面"模型与记录一致"拒收这种模型，兜底只防旧数据和坏数据）。
+- `transform`（可选，只能和 `assetHash` 一起给）：`{yaw?, pitch?, roll?}`，模型绕自己的原点转的角度（度，规则同形状的
+  `transform`：有限值、绝对值不超过 3600，顺序同第 1 节 `Ry(yaw) · Rx(pitch) · Rz(roll)`）。没有 `position`、`scale`：
+  位置由 `bounds` 定，缩放烘进模型；给了就拒绝。同一个模型摆几个朝向（会议室的一排椅子）时只要导出、上传一份 glb。
+  **摆放**：模型包围盒的 8 个角点转过之后取外包盒，把这个盒子的底面中心对齐 `bounds` 的底面中心。只有偏航、模型原点
+  在底面中心时，这就是"原点放在 `bounds` 的底面中心、绕竖直轴转"。本地工具 `models` 导出时把缩放、俯仰、翻滚和调色
+  烘进模型，只把偏航写进 `transform`，`bounds` 就是这个外包盒（比模型实际占的地方略大，偏航 45° 时最多大约四成）。
 - **物件模型 glb 的要求**（上传时按第 8 节核对，引用时按核对结果判断能不能当物件模型用）：只有三角形；节点用单位
   变换——节点变换和调色烘进顶点（服务端按顶点数据实测包围盒，带旋转的节点会让包围盒偏大）；原点在底面中心；扩展只能用
   `KHR_texture_transform`、`KHR_mesh_quantization`、`KHR_materials_unlit`、`KHR_materials_emissive_strength`；
   不能有骨骼、动画、变形目标、相机、灯光和外部图片；三角形数、贴图边长、贴图像素合计在物件模型的上限内（第 8 节）。
-- **模型与记录一致**：只有模型、没有形状的物件，模型的实测包围盒（`check.bounds`）三边长与物件 `bounds` 三边长
-  之差不超过 max(2 厘米, 物件边长的 1%)，模型原点在底面中心（`|min.y|`、x 和 z 的中点都不超过 2 厘米），否则
+- **模型与记录一致**：只有模型、没有形状的物件，模型的实测包围盒（`check.bounds`）按物件的 `transform` 转过之后的
+  外包盒（同上，没有 `transform` 就是它本身）三边长与物件 `bounds` 三边长之差不超过 max(2 厘米, 物件边长的 1%)，
+  模型原点在底面中心（按模型自己的包围盒查：`|min.y|`、x 和 z 的中点都不超过 2 厘米），否则
   422 `model_bounds_mismatch`。这条保证网站摆出来和记录一致，范围检查用的 `bounds` 也就是真实的。
 - `material`（可选，只能和 `assetHash` 一起给）给整个模型调外观：`tint: [r,g,b]`（sRGB 0–255，乘到模型原来的颜色上）、`opacity`（0–1）、`unlit`（布尔），含义与形状材质相同；没有 `color`、`texture`、`uv`，也没有 `tile`、法线、粗糙度这些形状材质的字段（模型自带的贴图和材质原样用）。
 - `material.shading`：`"baked"`（默认）或 `"albedo"`，只影响网站怎么画模型里的材质：
@@ -374,7 +383,7 @@ v = (−a·sin θ + b·cos θ) / tile[1]
 - `shape_*.json`：给定形状，写明期望的包围盒和三角形数（网站和处理服务据此核对网格生成）。三角形数目前只给 `plate`（4n − 4）和点处于一般位置的 `hull`（2V − 4）；`shape_plate_*`、`shape_hull_*`、`shape_material_*` 和对应的 `shape_invalid_*` 覆盖本文新增的板、凸包、`opacity`、`unlit`，以及第 2 节"贴图坐标的平铺、着色、法线与粗糙度"的新字段（合法的取值和越界、类型错、缺少前提的写法）。
 - `canonical_entity_model_source.json`：引用外部模型、带 `material.tint` 和 `props.source` 的物件记录的内容哈希。
 - `uv/uv_*.json`：贴图坐标。给定形状和材质，按顶点的局部位置和法线找到顶点，写明期望的最终贴图坐标；覆盖 `box`、`planar`、`cylindrical`、`mesh`（盒子、圆柱、挤出、板、扫掠）× 有无 `tile`、`offset`、`rotate`，以及组合上的材质和颜色材质的法线贴图。期望值由 `tests/vectors/tools/texture_vectors.py` 按本文独立算出。网站和处理服务核对（接口服务不生成网格）。
-- `authored/authored_*.json`：带外链贴图对象 `{url, sha256, size}` 的 AI 物件集，合法和不合法各一份，由本地工具的物件集校验按 `valid` 接受或拒绝（接口服务不收物件集）。
+- `authored/authored_*.json`：带外链贴图对象 `{url, sha256, size}` 和本地贴图 `{file}` 的 AI 物件集，合法和不合法各一份，由本地工具的物件集校验按 `valid` 接受或拒绝（接口服务不收物件集）。
 - `ops/ops_*.json`：高层操作作用到工作状态的结果，含第 3 节"草稿的种类与操作"的规则（`ifPresent`、带历史的 `ifNew`、编号分区、同层模板、重建草稿的操作、"除去"范围、模板引用的完整性）。Rust 生成，命令行核对。
 - `bundle/bundle_*.json`：第 7 节的重建包清单，合法和不合法的写法、出错的字段、引用表、展开成的操作，以及在旧重建层上推一次、推两次的结果（第二次没有变化）；`bundle_limits_default.json` 是第 8 节的默认上限。Rust 跑全部，命令行只跑结构校验和默认上限。
 

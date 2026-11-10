@@ -7,9 +7,9 @@
 - `--exclude`：不算这些框里的扫描点（相邻物体、墙上的东西）；
 - `--color-parts`：新模型按部件着色（编号与 `compare.json` 的 parts 一致），找哪一块放歪了；
 - 结构（墙、玻璃）默认作为背景参与偏差计算（两列都算），贴墙的扫描点不会被当成"没建"。`--no-structure` 关掉；
-- 逐件的 `fit` 是写回时处理服务写进记录的偏差，与写回路径用同一个函数（`processing.object_fit.entity_fit`：
+- 逐件的 `fit` 是打包时写进记录的偏差，与打包流程用同一个函数（`processing.object_fit.entity_fit`：
   按物件自身朝向的包围盒取点，墙、玻璃、地面作背景，只计 10 厘米以内的点），不看 `--box`、`--exclude`、
-  `--no-structure`，与写回后网站和命令行显示的数字一致（外部模型写回时按减面后的模型算，可能差一点）。
+  `--no-structure`，与发布后网站和命令行显示的数字一致（外部模型按导出后的模型算，与打包相同）。
 """
 
 from __future__ import annotations
@@ -138,7 +138,7 @@ class ModelSet:
     templates: dict[str, dict]
     parts: list[sm.Part] = field(default_factory=list)
     labels: list[str] = field(default_factory=list)
-    externals: dict[str, dict] = field(default_factory=dict)  # 物件编号 → {path, matrix, tint}
+    externals: dict[str, dict] = field(default_factory=dict)  # 物件编号 → 渲染页的模型选项（导出后的 glb）
     checks: list[dict] = field(default_factory=list)
 
     @property
@@ -174,14 +174,8 @@ def build_modelset(
                 ps = md.model_parts(body, m)
                 ms.parts += ps
                 ms.labels += [eid] * len(ps)
-                look = body.get("material") or {}
-                ms.externals[eid] = {
-                    "path": local,
-                    "matrix": md.column_major(md.transform_matrix(body.get("transform"))),
-                    "tint": look.get("tint"),
-                    "opacity": look.get("opacity"),
-                    "unlit": look.get("unlit"),
-                }
+                # 按打包时同样的步骤导出后的 glb 和摆法（调色已经烘进去）
+                ms.externals[eid] = md.exported_render(body, local)
         else:
             chk = {"entityId": eid, "errors": ["既没有 shape 也没有 model"], "ok": False}
         if check:
@@ -204,7 +198,7 @@ def structure_parts(base: Base, box: wc.Box) -> list[sm.Part]:
 
 
 def fit_background(base: Base, bodies: dict[str, dict], templates: dict[str, dict]) -> list[sm.Mesh]:
-    """写回时逐件偏差的背景：记录里有 `kind: structure` 的物件（`structure: replace`）时就是它们，否则是基线
+    """打包时逐件偏差的背景：记录里有 `kind: structure` 的物件（`structure: replace`）时就是它们，否则是基线
     的结构（`keep`，处理服务重跑的结构算法与 prepare 相同）。墙、玻璃、地面都算。"""
     own = {k: sx.lower_body(b) for k, b in bodies.items() if b.get("kind") == "structure"}
     if own:
@@ -217,8 +211,8 @@ def scan_table(scan: wc.Scan) -> FaceTable:
 
 
 def writeback_fits(ms: ModelSet, table: FaceTable, background: list[sm.Mesh]) -> dict[str, dict]:
-    """逐件的写回偏差：{物件编号: {fit（或 None）, points}}，与处理服务写进记录的 `fit` 同一个函数。
-    结构物件自己不带背景（与写回路径相同）。"""
+    """逐件偏差：{物件编号: {fit（或 None）, points}}，与打包时写进记录的 `fit` 同一个函数。
+    结构物件自己不带背景（与打包流程相同）。"""
     out: dict[str, dict] = {}
     for eid in dict.fromkeys(ms.labels):
         meshes = [p.mesh for p, lab in zip(ms.parts, ms.labels, strict=True) if lab == eid]
@@ -624,16 +618,9 @@ def render_models(
     if new_glb:
         models["new"] = new_glb
     for i, (eid, ext) in enumerate(new.externals.items()):
-        tint = list(wc.PALETTE[i % len(wc.PALETTE)]) if color_parts else ext.get("tint")
-        models[f"new#{eid}"] = {
-            "path": ext["path"],
-            "matrix": ext["matrix"],
-            "group": "new",
-            "lit": True,
-            "tint": tint,
-            "opacity": ext.get("opacity"),
-            "unlit": ext.get("unlit"),
-        }
+        models[f"new#{eid}"] = {**ext, "group": "new"}
+        if color_parts:
+            models[f"new#{eid}"]["tint"] = list(wc.PALETTE[i % len(wc.PALETTE)])
     return models
 
 
@@ -790,7 +777,7 @@ def cmd_compare(args) -> dict:
         background = [] if args.no_structure else structure_parts(base, fit_box)
         res_new = evaluate(new, P, C, ref_tree, floor_y, background) if new.parts else None
         res_base = evaluate(old, P, C, ref_tree, floor_y, background) if old.parts else None
-        # 写回口径的逐件 fit（范围附近的扫描；裁剪保持面的先后顺序，采到的点与处理服务相同）
+        # 打包口径的逐件 fit（范围附近的扫描；裁剪保持面的先后顺序，采到的点与打包相同）
         table = scan_table(near)
         for ms, res, bg in (
             (new, res_new, fit_background(base, rs.bodies, new.templates)),
@@ -884,9 +871,9 @@ def cmd_compare(args) -> dict:
             "被挡住的背面没被扫到也会偏大）",
             "missingFromNew": "离新模型（和背景结构）超过 5 厘米的扫描点连成的块（漏建或位置不对的地方）",
             "parts.index": "部件编号；--color-parts 时第 i 个部件用调色板第 i 种颜色",
-            "entities.fit": "写回时处理服务写进记录的偏差（同一个函数）：按物件自身朝向的包围盒（局部坐标"
+            "entities.fit": "打包时写进记录的偏差（同一个函数）：按物件自身朝向的包围盒（局部坐标"
             "水平外扩 5 厘米，底面以下、顶面以上各 2 厘米）取点，墙、玻璃、地面作背景，只计 10 厘米以内的点；"
-            "不看 --box、--exclude、--no-structure；null = 扫描里没有这件物件的证据，写回时不写 fit",
+            "不看 --box、--exclude、--no-structure；null = 扫描里没有这件物件的证据，打包时不写 fit",
         },
     }
     wc.write_json(os.path.join(out_dir, "compare.json"), out)
@@ -932,7 +919,7 @@ def print_compare(out: dict, cmp_path: str | None, nbytes: int, err_path: str, o
     ]
     if rows:
         p(
-            "\n== 写回偏差（处理服务写进记录的 fit，同一个函数：按物件朝向取范围，墙、玻璃、地面作背景，"
+            "\n== 记录的偏差（打包时写进记录的 fit，同一个函数：按物件朝向取范围，墙、玻璃、地面作背景，"
             "只计 10 厘米以内）"
         )
         for name, eid, e in rows:

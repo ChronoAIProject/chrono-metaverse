@@ -270,6 +270,22 @@ def test_model_entity_checks(over, message):
         assert any(message in e for e in errors), errors
 
 
+def test_model_hosts_match_the_bundle_download_rules(monkeypatch):
+    # 工作台与打包下载用同一份主机列表：默认就放行 Hugging Face 的 CDN 子域名（以点开头的条目）
+    monkeypatch.delenv("METAVERSE_RECON_MODEL_HOSTS", raising=False)
+    cdn = {
+        "model": {
+            "url": "https://cas-bridge.xethub.hf.co/m.glb",
+            "sha256": "a" * 64,
+            "size": 10,
+            "format": "glb",
+        }
+    }
+    assert md.check_model_entity(model_body(**cdn))[0] == []
+    monkeypatch.setenv("METAVERSE_RECON_MODEL_HOSTS", "dl.polyhaven.org")
+    assert any("主机" in e for e in md.check_model_entity(model_body(**cdn))[0])
+
+
 def test_missing_clusters_groups_far_points():
     import numpy as np
 

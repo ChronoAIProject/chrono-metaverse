@@ -128,8 +128,8 @@ def fetch_one(c: dict, resolution: str = "1k", max_bytes: int = 50 << 20) -> dic
             sha, size = _fetch_glb(url, max_bytes, d)
             model = {"url": None, "sha256": sha, "size": size, "format": "glb"}
             warnings.append(
-                "Sketchfab 的下载地址是临时的、处理服务也没有令牌：这个模型不能按地址写回"
-                "（AI 物件集只收按地址下载的模型），只能本地对照，写回请换候选"
+                "Sketchfab 的下载地址是临时的：这个模型不能按地址打包"
+                "（AI 物件集只收按地址下载的模型），只能本地对照，打包请换候选"
             )
     else:
         raise wc.ReconError(f"不认识的模型库 {lib}")
@@ -139,12 +139,11 @@ def fetch_one(c: dict, resolution: str = "1k", max_bytes: int = 50 << 20) -> dic
     lo, hi = m.bounds()
     if max(abs(lo).max(), abs(hi).max()) > PROCESSING_COORD_LIMIT:
         warnings.append(
-            "模型原始坐标超过 ±1000 米（单位多半是厘米）：place 会按扫描缩放，"
-            "写回时处理服务按缩放后的坐标检查"
+            "模型原始坐标超过 ±1000 米（单位多半是厘米）：place 会按扫描缩放，打包时按缩放后的坐标检查"
         )
     if m.triangles > PROCESSING_MAX_TRIANGLES:
-        warnings.append(f"三角形 {m.triangles} 个，写回时处理服务会减到 {PROCESSING_MAX_TRIANGLES} 以内")
-    if m.texture is None:
+        warnings.append(f"三角形 {m.triangles} 个，打包时会减到 {PROCESSING_MAX_TRIANGLES} 以内")
+    if not m.textured:
         warnings.append("没有贴图（颜色来自顶点色或材质底色）")
     side = {
         **src,
@@ -157,13 +156,13 @@ def fetch_one(c: dict, resolution: str = "1k", max_bytes: int = 50 << 20) -> dic
             "size": os.path.getsize(glb),
             "triangles": m.triangles,
             "vertices": len(m.vertices),
-            "textureSide": int(max(m.texture.shape[:2])) if m.texture is not None else 0,
+            "textureSide": max(m.texture_sides(), default=0),
             "bounds": {"min": wc.r(lo, 4), "max": wc.r(hi, 4)},
             "extent": wc.r(hi - lo, 4),
         },
         "warnings": warnings,
         "fetchedAt": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-        "note": "model 是写回用的来源文件（处理服务按 url 下载、核对 sha256 和 size）；local 是本机打包好的 "
+        "note": "model 是打包用的来源文件（打包时按 url 下载、核对 sha256 和 size）；local 是本机打包好的 "
         "glb",
     }
     wc.write_json(side_path, side)

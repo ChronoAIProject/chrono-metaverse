@@ -231,7 +231,13 @@ def test_authored_bakes_downloads_fits_and_keeps_structure(tmp_path, library):
     assert set(out["anchors"]) == {"table-01"}
     summary = out["authored"]
     assert summary["structure"] == "keep" and summary["entities"] == 4
-    assert summary["downloads"] == {"models": 1, "files": 1, "bytes": len(model_glb()), "redirects": 0}
+    assert summary["downloads"] == {
+        "models": 1,
+        "files": 1,
+        "bytes": len(model_glb()),
+        "redirects": 0,
+        "local": 0,
+    }
     assert summary["models"]["files"] == 1 and summary["bake"]["textured"] == 1
     fits = {f["entityId"]: f for f in summary["fit"]}
     assert fits["table-01"]["meanCm"] == entities["table-01"]["fit"]["meanCm"]

@@ -46,6 +46,7 @@ import {
 } from './materials';
 import { createMeshService, type MeshService } from './meshService';
 import { fitModelInto, measureModel, modelFit, modelFitWarning, type BoxLike } from './modelFit';
+import { placedModelBox, placeRotatedModel } from './modelPlacement';
 import type { ShapeJob } from './meshJobs';
 
 /**
@@ -772,8 +773,9 @@ export class SceneView {
         entityCount += batch.items.length;
       }
 
-      // 只有物件模型（assetHash）的物件：按包围盒的底面中心摆放；模型实际比 bounds 大时
-      // 等比缩小兜进 bounds（modelFit.ts，服务端已经实测过，这里只是兜底）。
+      // 只有物件模型（assetHash）的物件：按物件的 transform 转好，转过之后的外包盒底面中心对齐 bounds 的
+      // 底面中心（modelPlacement.ts）；这个外包盒实际比 bounds 大时等比缩小兜进 bounds（modelFit.ts，
+      // 服务端已经实测过，这里只是兜底）。
       for (const { entity } of entities) {
         if (entity.shape !== undefined || entity.assetHash === undefined) continue;
         entityCount += 1;
@@ -793,13 +795,16 @@ export class SceneView {
           ?.then((model) => {
             if (this.disposed || holder.parent === null) return;
             const box = bounds ? this.modelBox(model) : null;
-            const fit = bounds && box ? modelFit(box, bounds) : null;
+            const placed = box ? placedModelBox(box, entity.transform) : null;
+            const fit = bounds && placed ? modelFit(placed, bounds) : null;
             if (fit !== null) {
               const warning = modelFitWarning(entity.entityId, fit);
               console.warn(warning);
               warnings.push(warning);
             }
-            holder.add(fitModelInto(this.sharedClone(model, entity.material), fit));
+            const clone = this.sharedClone(model, entity.material);
+            placeRotatedModel(clone, entity.transform, box ?? undefined);
+            holder.add(fitModelInto(clone, fit));
           })
           .catch(() => warnings.push(`${entity.entityId}：模型下载失败`));
       }
