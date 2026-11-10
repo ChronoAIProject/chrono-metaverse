@@ -145,7 +145,7 @@ gh run list -R ChronoAIProject/chrono-metaverse --workflow Images --commit <完�
 gh run view <运行编号> -R ChronoAIProject/chrono-metaverse --log | grep -oE '(api|web)=sha256:[0-9a-f]{64}' | sort -u
 ```
 
-`app.json` 里的镜像是已经上线验证过的版本（接口服务目前是 `c882bca`、网站是 `45befcb`，摘要与线上修订记录的一致）。**注意**：仓库里的 `app.json` 已经是瘦身后的规格（没有处理服务、新的上限、新格式的种子），而接口服务的镜像还是瘦身前的——旧镜像读不了新格式的种子，会启动失败。所以这份规格要等瘦身后的镜像构建出来，用 `pin-images.mjs` 换上新摘要以后，**在同一次 `PUT` 里**整份提交（第 3 节"换成瘦身后的版本"），不能直接提交 `app.json`。`check-app.mjs` 拒绝只有标签、标签不是 7 位提交哈希、或仓库和服务对不上的镜像。
+`app.json` 里的镜像是已经上线验证过的版本（瘦身后的版本 R2：接口服务和网站都是 `413b28f`，摘要与线上第 8 次修订记录的一致，2026-11-10 上线）。`check-app.mjs` 拒绝只有标签、标签不是 7 位提交哈希、或仓库和服务对不上的镜像。
 
 按摘要部署只保证"部署的就是那次运行构建的镜像"，管不到谁能推镜像、推代码。`main` 已经建好（2026-11-09，从开发分支 `claude/happy-ritchie-oly5hx` 的 `77bbdb8` 建出），以后作为部署分支：日常开发在开发分支，上线前开合并请求进 `main`，部署只用 `main` 上构建的镜像。还没做、要仓库管理员在 GitHub 上决定的：把默认分支改成 `main` 并加保护（禁止直接推送、必须经合并请求、CI 必须通过）；在包设置的 Manage Actions access 里收回本仓库工作流的写权限，改用只在受保护分支的 GitHub Environment 里可用的凭证推镜像（工作流自己声明的 `packages: write` 拦不住改过的工作流）；用组织规则集限制谁能改 `.github/workflows`。
 
