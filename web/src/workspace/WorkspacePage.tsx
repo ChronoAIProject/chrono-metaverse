@@ -29,6 +29,7 @@ import {
 } from './client';
 import './WorkspacePage.css';
 import { modelDigest, scaniverseLink, uploadModel } from './creation';
+import { StartupProgress } from './StartupProgress';
 
 type PreviewIdentity = {
   spaceId: string;
@@ -265,6 +266,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
     let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let reads = 0;
+    let failures = 0;
     async function observe() {
       try {
         if (operationId) {
@@ -276,17 +278,18 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
             request,
           );
           if (!active) return;
+          if (failures) setError('');
+          failures = 0;
           setOperation(v.operation);
-          if (v.operation.agent_id) {
+          if (['succeeded', 'completed'].includes(v.operation.status) && v.operation.agent_id) {
             commit({
               ...noteRef.current,
               agentId: v.operation.agent_id,
-              ...(terminal(v.operation.status) ? { operationId: undefined } : {}),
+              operationId: undefined,
+              startup: undefined,
             });
-            if (terminal(v.operation.status)) {
-              setOperation(null);
-              return;
-            }
+            setOperation(null);
+            return;
           }
           if (terminal(v.operation.status)) return;
         } else if (agentId) {
@@ -323,11 +326,26 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
           )
             return;
         }
+        if (failures) setError('');
+        failures = 0;
         reads++;
         if (reads < 120 && active) timer = setTimeout(() => void observe(), 2000);
-        else if (active) setNotice('自动刷新已暂停。任务仍在 CMA 运行，可点击刷新继续查看。');
+        else if (active) setNotice('自动刷新已暂停，尚未确认任务完成。点击刷新进度继续查看。');
       } catch (e) {
-        if (active) report(e);
+        if (!active) return;
+        if (
+          e instanceof WorkerError &&
+          (e.code === 'network' ||
+            e.code === 'cma_unavailable' ||
+            e.status === 408 ||
+            e.status === 429 ||
+            (e.status ?? 0) >= 500) &&
+          failures < 4
+        ) {
+          failures++;
+          setError('暂时无法读取 CMA 进度，正在重新连接。原任务已保留。');
+          timer = setTimeout(() => void observe(), Math.min(1000 * 2 ** failures, 10000));
+        } else report(e);
       }
     }
     void observe();
@@ -446,10 +464,13 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
           if (pending.action === 'create') {
             if (typeof value.id !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/.test(value.id))
               throw new Error('创建结果缺少任务编号，请重试原请求恢复。');
+            if (base.operationId && value.id !== base.operationId)
+              throw new Error('CMA 返回的任务编号与原任务不一致，请先核对原任务状态。');
             commit({
               ...base,
               pending: undefined,
               operationId: value.id,
+              startup: pending,
               instruction: '',
               sent: pending.body.prepareOnly
                 ? base.sent
@@ -748,7 +769,10 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
     if (chatOpen) chatEnd.current?.scrollIntoView?.({ block: 'nearest' });
   }, [transcript, output, busy, note.sent, note.pending, chatOpen]);
   const cmaBase = session?.workerUrl ?? CMA;
-  const cmaLink = note.agentId ? `${cmaBase}/agents/${encodeURIComponent(note.agentId)}` : cmaBase;
+  const observedAgentId = note.agentId || operation?.agent_id;
+  const cmaLink = observedAgentId
+    ? `${cmaBase}/agents/${encodeURIComponent(observedAgentId)}`
+    : cmaBase;
   const checkedPreview = previewIdentity?.url === preview ? previewIdentity.value : null;
   const ready = session?.connected && session.workerEnabled;
   const disabled = busy || Boolean(note.pending);
@@ -771,7 +795,6 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
   const activity = output.filter((o) => o.type === 'mcp_call' && o.name).slice(-3);
   const awaiting =
     busy ||
-    Boolean(note.operationId) ||
     ['queued', 'in_progress', 'running'].includes(responseStatus) ||
     ['working', 'busy', 'running'].includes(agent?.status ?? '');
   const creating = note.creation?.phase === 'draft';
@@ -1125,7 +1148,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
         <section className="workspace__welcome workspace__ui">
           <span>YOUR SPACES, ONE CONVERSATION</span>
           <h1>打开空间，聊着就能改</h1>
-          <p>把空间铺满眼前，让 CMA 在右下角陪你建造。</p>
+          <p>把空间铺满眼前，让 CMA 在左下角陪你建造。</p>
           <a className="workspace__button" href="/connect">
             连接 NyxID，查看我的空间
           </a>
@@ -1149,7 +1172,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                   <h1>{note.creation.name}</h1>
                   <p>
                     {creating
-                      ? '在右下角放入扫描链接或模型，开始创建你的空间。'
+                      ? '在左下角放入扫描链接或模型，开始创建你的空间。'
                       : 'CMA 正在准备空间；重建完成后，预览会出现在这里。'}
                   </p>
                   <div className="workspace__ui">
@@ -1175,7 +1198,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                       创建第一个空间
                     </button>
                   </div>
-                  <small>需要调整时，打开右下角的 CMA 聊天</small>
+                  <small>需要调整时，打开左下角的 CMA 聊天</small>
                 </div>
               )}
             </div>
@@ -1449,9 +1472,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                 {awaiting && (
                   <div className="workspace__activity" role="status">
                     <span className="workspace__pulse" />
-                    {note.operationId
-                      ? `正在准备在线 worker · ${statusText(operation?.phase ?? 'preparing')}`
-                      : 'worker 正在处理，回复和预览会自动更新。'}
+                    worker 正在处理，回复和预览会自动更新。
                     {activity.map((a) => (
                       <p key={a.id}>
                         {a.name} · {statusText(a.status ?? 'in_progress')}
@@ -1502,7 +1523,36 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                   </details>
                 </section>
               )}
-              {operation?.error && <p role="alert">环境准备未完成：{operation.error}</p>}
+              {note.operationId && (
+                <StartupProgress
+                  operation={operation}
+                  operationId={note.operationId}
+                  cmaUrl={cmaBase}
+                  busy={disabled}
+                  onRefresh={() => {
+                    setError('');
+                    setNotice('');
+                    setPoll((v) => v + 1);
+                  }}
+                  onResume={note.startup ? () => void runIntent(note.startup!) : undefined}
+                  onRestart={
+                    note.startup && !operation?.agent_id
+                      ? () => {
+                          autoUpload.current = Boolean(
+                            note.creation?.source?.kind === 'file' && sourceFile,
+                          );
+                          void runIntent(
+                            {
+                              ...note.startup!,
+                              body: { ...note.startup!.body, idempotencyKey: crypto.randomUUID() },
+                            },
+                            { ...note, operationId: undefined },
+                          );
+                        }
+                      : undefined
+                  }
+                />
+              )}
               {preview.startsWith('/preview') && note.agentId && (
                 <section className="workspace__publish">
                   <h2>验收这次草稿</h2>

@@ -313,7 +313,7 @@
 }
 .workspace .workspace__chat-launcher {
   position: absolute;
-  right: 20px;
+  left: 20px;
   bottom: 84px;
   z-index: 35;
   display: flex;
@@ -332,7 +332,7 @@
 }
 .workspace__chat {
   position: absolute;
-  right: 20px;
+  left: 20px;
   bottom: 84px;
   z-index: 40;
   width: min(380px, calc(100% - 32px));
@@ -644,14 +644,14 @@
     max-height: calc(100dvh - 80px);
   }
   .workspace__chat {
-    right: 12px;
+    left: 12px;
     bottom: 80px;
     width: calc(100% - 24px);
     height: min(620px, calc(100% - 100px));
     border-radius: 14px;
   }
   .workspace .workspace__chat-launcher {
-    right: 12px;
+    left: 12px;
     bottom: 80px;
   }
   .workspace__composer textarea {

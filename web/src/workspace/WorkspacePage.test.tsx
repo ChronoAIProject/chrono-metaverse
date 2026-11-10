@@ -7,7 +7,7 @@ vi.mock('../space/SpacePage', () => ({
   ),
 }));
 import { WorkspacePage } from './WorkspacePage';
-import { resultLinks, viewerLink, type Transcript } from './client';
+import { resultLinks, viewerLink, type Transcript, type Operation } from './client';
 
 const connected = {
   enabled: true,
@@ -36,11 +36,19 @@ const transcript: Transcript = {
   ],
 };
 function mockApi(
-  options: { enabled?: boolean; loseCreate?: boolean; setup?: boolean; followUp?: boolean } = {},
+  options: {
+    enabled?: boolean;
+    loseCreate?: boolean;
+    setup?: boolean;
+    followUp?: boolean;
+    operation?: Operation | ((creates: number) => Operation);
+    observeFailures?: number;
+  } = {},
 ) {
   const writes: { action: string; body: Record<string, unknown> }[] = [];
   let creates = 0;
   let messages = 0;
+  let observeFailures = options.observeFailures ?? 0;
   const request = vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input);
     if (url === '/api/public/previews')
@@ -86,10 +94,21 @@ function mockApi(
         return reply({ code: 'cma_setup_required', detail: '请先登录 CMA 完成运行环境授权' }, 409);
       return reply({ id: 'op_one', status: 'pending' }, 202);
     }
-    if (action === 'observe' && body.operationId)
+    if (action === 'observe' && body.operationId) {
+      if (observeFailures-- > 0)
+        return reply({ code: 'cma_unavailable', detail: 'temporary upstream error' }, 503);
       return reply({
-        operation: { id: 'op_one', status: 'succeeded', phase: 'ready', agent_id: 'agt_one' },
+        operation:
+          typeof options.operation === 'function'
+            ? options.operation(creates)
+            : (options.operation ?? {
+                id: 'op_one',
+                status: 'succeeded',
+                phase: 'ready',
+                agent_id: 'agt_one',
+              }),
       });
+    }
     if (action === 'observe')
       return reply({ agent: { id: 'agt_one', status: 'ready' }, transcript });
     if (action === 'message') {
@@ -329,4 +348,100 @@ it('creates from a Scaniverse link with an automatic space id and selected owner
     name: '我的新家',
     source: { kind: 'scaniverse', url: 'https://scaniverse.com/scan/abc123' },
   });
+});
+
+it('shows the sandbox event state and resumes a connection wait with the original request', async () => {
+  const api = mockApi({
+    operation: (creates) =>
+      creates < 2
+        ? {
+            id: 'op_one',
+            status: 'waiting_for_connection',
+            phase: 'sandbox_ready',
+            connection: { services: ['chrono-metaverse'], target: { type: 'sandbox_profile' } },
+            events: [
+              {
+                sequence: 1,
+                phase: 'sandbox_ready',
+                status: 'running',
+                message: 'Preparing the Agent Sandbox',
+              },
+            ],
+          }
+        : { id: 'op_one', status: 'succeeded', phase: 'ready', agent_id: 'agt_one' },
+  });
+  render(<WorkspacePage request={api.request} />);
+  await fillTask();
+  await userEvent.click(screen.getByRole('button', { name: '发送' }));
+  await screen.findByText('需要完成 CMA 服务授权');
+  expect(screen.queryByText('正在准备在线 worker')).toBeNull();
+  expect(screen.getByText('待授权服务：chrono-metaverse')).toBeVisible();
+  await userEvent.click(screen.getByText('启动详情'));
+  expect(screen.getByText('Preparing the Agent Sandbox')).toBeVisible();
+  expect(screen.getByText('准备沙箱 · 执行中')).toBeVisible();
+  await userEvent.click(screen.getByRole('button', { name: '已完成授权，继续原任务' }));
+  await screen.findByText(/<script>danger/);
+  const creates = api.writes.filter((w) => w.action === 'create');
+  expect(creates).toHaveLength(2);
+  expect(creates[1]!.body).toEqual(creates[0]!.body);
+});
+
+it('retains a failed startup and its agent without treating that agent as ready', async () => {
+  const api = mockApi({
+    operation: {
+      id: 'op_one',
+      status: 'failed',
+      phase: 'sandbox_ready',
+      agent_id: 'agt_not_ready',
+      error: 'Sandbox provisioning failed',
+    },
+  });
+  render(<WorkspacePage request={api.request} />);
+  await fillTask();
+  await userEvent.click(screen.getByRole('button', { name: '发送' }));
+  await screen.findByText('在线 worker 准备未完成');
+  expect(screen.getByText('Sandbox provisioning failed')).toBeVisible();
+  expect(screen.queryByText('正在准备在线 worker')).toBeNull();
+  expect(screen.queryByTitle('三维空间预览')).toBeNull();
+  const saved = JSON.parse(sessionStorage.getItem('metaverse-worker:owner-a')!);
+  expect(saved.operationId).toBe('op_one');
+  expect(saved.agentId).toBeUndefined();
+  expect(screen.queryByRole('button', { name: '重新准备 worker' })).toBeNull();
+  expect(api.writes.filter((w) => w.action === 'create')).toHaveLength(1);
+});
+
+it('recovers from a transient progress read failure without resubmitting creation', async () => {
+  const api = mockApi({ observeFailures: 1 });
+  render(<WorkspacePage request={api.request} />);
+  await fillTask();
+  await userEvent.click(screen.getByRole('button', { name: '发送' }));
+  await screen.findByText('暂时无法读取 CMA 进度，正在重新连接。原任务已保留。');
+  await screen.findByText(/<script>danger/, {}, { timeout: 3500 });
+  expect(screen.queryByText('暂时无法读取 CMA 进度，正在重新连接。原任务已保留。')).toBeNull();
+  expect(api.writes.filter((w) => w.action === 'create')).toHaveLength(1);
+});
+
+it('only starts a replacement after explicit action when startup failed before allocating an agent', async () => {
+  const api = mockApi({
+    operation: (creates) =>
+      creates < 2
+        ? {
+            id: 'op_one',
+            status: 'failed',
+            phase: 'sandbox_ready',
+            error: 'Sandbox provisioning failed',
+          }
+        : { id: 'op_one', status: 'succeeded', phase: 'ready', agent_id: 'agt_one' },
+  });
+  render(<WorkspacePage request={api.request} />);
+  await fillTask();
+  await userEvent.click(screen.getByRole('button', { name: '发送' }));
+  await screen.findByText('在线 worker 准备未完成');
+  expect(api.writes.filter((w) => w.action === 'create')).toHaveLength(1);
+  await userEvent.click(screen.getByRole('button', { name: '重新准备 worker' }));
+  await screen.findByText(/<script>danger/);
+  const creates = api.writes.filter((w) => w.action === 'create');
+  expect(creates).toHaveLength(2);
+  expect(creates[1]!.body.idempotencyKey).not.toBe(creates[0]!.body.idempotencyKey);
+  expect(creates[1]!.body.instruction).toBe(creates[0]!.body.instruction);
 });

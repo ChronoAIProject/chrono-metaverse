@@ -21,6 +21,7 @@ export type Notebook = {
   operationId?: string;
   responseId?: string;
   pending?: Intent;
+  startup?: Intent;
   sent?: { key: string; text: string }[];
   creation?: CreationDraft;
 };
@@ -49,7 +50,14 @@ export type Operation = {
   status: string;
   phase: string;
   error?: string | null;
-  events?: { phase?: string; detail?: string }[];
+  events?: {
+    sequence?: number;
+    phase: string;
+    status: string;
+    message: string;
+    occurred_at?: string;
+  }[];
+  connection?: { services: string[]; target: unknown };
 };
 export type Transcript = {
   turns: {
@@ -68,6 +76,7 @@ export class WorkerError extends Error {
   constructor(
     readonly code: string,
     message: string,
+    readonly status?: number,
   ) {
     super(message);
   }
@@ -99,6 +108,7 @@ export async function workerRequest<T>(
       throw new WorkerError(
         problem.code ?? 'cma_error',
         problem.detail ?? '请求未完成，请核对 CMA 状态。',
+        r.status,
       );
     }
     return result as T;
@@ -135,7 +145,12 @@ function parseNotebook(raw: string | null, spaceId = ''): Notebook {
         (!['create', 'message', 'cancel', 'attachment'].includes(v.pending.action) ||
           typeof v.pending.body !== 'object' ||
           v.pending.body === null ||
-          !id(v.pending.body.idempotencyKey)))
+          !id(v.pending.body.idempotencyKey))) ||
+      (v.startup !== undefined &&
+        (v.startup.action !== 'create' ||
+          typeof v.startup.body !== 'object' ||
+          v.startup.body === null ||
+          !id(v.startup.body.idempotencyKey)))
     )
       return fallback();
     return v;

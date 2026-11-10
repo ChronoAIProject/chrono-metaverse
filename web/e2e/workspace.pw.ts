@@ -165,6 +165,7 @@ test('在线工作台：明确授权、创建 worker、查看结果并确认发�
   const stage = await page.locator('.workspace__stage').boundingBox();
   const scene = await page.locator('.workspace__scene').boundingBox();
   const chat = await page.getByRole('dialog', { name: 'CMA 空间聊天' }).boundingBox();
+  expect(chat!.x).toBe(20);
   expect(stage!.width).toBe(1280);
   expect(scene!.width).toBe(1280);
   expect(chat!.x + chat!.width).toBeLessThanOrEqual(1280);
