@@ -1,4 +1,4 @@
-"""`uv.lock` 与 `pyproject.toml` 一致：镜像按锁定版本装依赖（infra/worker/Dockerfile 的 uv export --frozen），
+"""`uv.lock` 与 `pyproject.toml` 一致：持续集成和本地都按锁定版本装依赖（`uv sync --frozen`），
 改了依赖范围却忘了重新 `uv lock` 时这里先失败。"""
 
 import tomllib

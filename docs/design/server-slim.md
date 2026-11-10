@@ -59,7 +59,7 @@ MongoDB（普通集合 + GridFS）
 - `processing/fit_counter.py`（前台：折面外壳、台面、踢脚线）；
 - `processing/objects.py` 的分类规则和阈值，`fit_segment.py`、`fit_templates.py`、`fit_texture.py`；
 - `processing/structure.py` 的结构算法常量（墙顶统一高度、玻璃的颜色和竖梃、提示里的大屏不当墙……）；
-- `jobs/writeback.py` 的锚点规则（按 `props.category` 建 `table`、`counter`、`zone`……）；
+- `handlers/scan.py` 的锚点规则（按 `props.category` 建 `table`、`counter`、`zone`……）；
 - AI 物件集写回里的结构贴图回退、烘焙指令 `bake`、外部模型的 `model: {url, ...}` 写法；
 - 接口服务里跟着这些走的东西：任务参数 `hints`（`MAX_HINTS_BYTES`）、`authored` / `authoredAsset`、核心库 `metaverse_core::authored`。
 
@@ -727,7 +727,7 @@ out/bundle/
 | 依赖 `pymongo`；`scripts/demo_seed_hints.py` | 工作台 `recon/` 整个（S7 改名 `bench/`）；`scripts/` 里的验收脚本、提示、结果图 |
 
 - `config.py` 删掉之前，工作台 `prepare.py`、`reframe.py` 从 `config.Config` 取的解析上限搬到 `processing/limits.py` 的常量（默认值不变）。
-- `handlers/scan.py` 里"导入扫描"的编排、`jobs/writeback.py` 里的锚点规则、`handlers/authored.py` 里的物件集写回（下载外部模型、烘焙、逐件偏差、结构贴图回退），去掉数据库部分后搬进新的 `bundle/` 子包，输出从"写提交"变成"写重建包"。
+- `handlers/scan.py` 里"导入扫描"的编排和锚点规则（第一稿误写成在 `jobs/writeback.py`）、`handlers/authored.py` 里的物件集写回（下载外部模型、烘焙、逐件偏差、结构贴图回退），去掉数据库部分后搬进新的 `bundle/` 子包，输出从"写提交"变成"写重建包"。
 - 测试：用到 MongoDB 的测试（约 60 个）按内容分两路：服务端语义（核对、清理、栅栏、空间实例、用量）移植成接口服务的 Rust 测试（S2）；重建语义（锚点规则、物件集写回、外部模型、烘焙）改成本地 `bundle` 的测试，不再需要数据库。`.github/scripts/pytest_require_mongo.py` 和它的测试删掉。
 
 ### 8.3 本地命令（`metaverse-recon`）
@@ -1178,6 +1178,41 @@ S5 做完后的状态（实施记录）：
 
 - **改哪些文件**：`worker/src/metaverse_worker/` 按 8.2 删左列；`worker/src/metaverse_worker/processing/limits.py`（新，接住 `config.Config` 里的解析上限），工作台的 `recon/prepare.py`、`recon/reframe.py` 改用它；Mongo 测试按 8.2 分流；`worker/pyproject.toml` 去掉 pymongo 和服务入口；删 `infra/worker/`、`.github/scripts/pytest_require_mongo.py` 及测试；`.github/workflows/images.yml` 去掉 worker；`.github/workflows/ci.yml` 的 worker 任务不再起 MongoDB、hadolint 只查两个 Dockerfile；`.github/dependabot.yml` 删 worker 两项；`infra/chrono-cd/check-pins.mjs` 去掉处理服务构建后端的检查。`app.json`、`check-app` 留到 S9。
 - **验收**：剩下的 pytest 不连数据库全过；`metaverse-recon prepare` 在前厅上的结果（变换、结构、物体编号）与改动前完全相同；持续集成全绿。
+
+S6a 做完后的状态（实施记录）：
+
+- 删掉：`__main__`、`runner`、`health`、`config`、`store`、`assets`、`uploads`、`jobs/`（含子进程隔离）、`handlers/`、
+  `scripts/demo_seed_hints.py`；`errors.py` 只留 `PermanentJobError`、`InputRejected`；`pyproject.toml` 去掉 pymongo 和
+  `metaverse-worker` 命令，`uv.lock` 重新锁定（少了 pymongo、dnspython）。
+- 新增 `processing/limits.py`（常量 + `default_limits()`，键和数值与原来 `JobContext.limits()` 相同）；工作台 `prepare`、
+  `reframe` 改用它。
+- 新子包 `bundle/`，接住原来处理服务里与数据库无关的重建知识，输出普通数据和工作目录里的文件、不写提交：
+  `anchors.py`（锚点规则）、`sources.py`（下载外部模型，主机列表取 `METAVERSE_RECON_MODEL_HOSTS`，没设时用
+  `fetch.DEFAULT_MODEL_HOSTS`）、`rebuild.py`（`rebuild_scan`：对齐 → 网页用模型 → 结构和物体或 AI 物件集 → 核对贴图和
+  模型的哈希 → 建议锚点；重扫配准误差超限时返回 `needsAlignment`；物件集引用的贴图本地有文件的列进 `existingTextures`，
+  没有的照旧交给计算部分判断能不能回退）。S6b 在它上面加清单写出、`rb.` 编号、`--seed`、`--from-snapshot`、`base` 和命令。
+- 测试：Mongo 测试 7 个文件（约 60 个用例）里，服务端语义的已在 S2 移植成 Rust 测试，直接删；重建语义的（物件集写回、
+  外部模型下载失败、结构贴图回退、锚点提示、重扫配准和转人工、物体模块缺失只交结构、prepare 与导入一致）改成
+  `tests/test_bundle_rebuild.py` 和 `test_recon_prepare.py` 里不连数据库的用例。`conftest` 去掉数据库夹具。
+- 部署与持续集成：删 `infra/worker/`、`.github/scripts/pytest_require_mongo.py` 及测试；`Images` 只构建 `api`、`web`；CI 的
+  worker 任务不起 MongoDB，按 10.2 改成 `uv sync --frozen --extra dev`、ruff、pytest；hadolint 只查两个 Dockerfile；
+  Dependabot 删 `/infra/worker` 的 docker、pip 两项；`check-pins` 删掉处理服务那两条规则。
+- 实测：pytest 562 个通过、3 个跳过（渲染工具不全时跳过；指定 three 的位置后这 3 个和其余渲染相关的用例都通过）；
+  前厅 `prepare`（drc + 贴图 + 提示）改动前后的 `transform.json`、`structure.json`、`objects.json`、`candidates.json`、
+  `scan.glb`、两个贴图目录逐字节相同，`base.json` 只有耗时不同。
+- 与设计的偏离：
+  1. 锚点规则原来在 `handlers/scan.py`（1.3、8.2 原来写的是 `jobs/writeback.py`，那里只有写提交，已改正），搬进
+     `bundle/anchors.py`；
+  2. `check-pins` 除了"构建后端按版本和哈希固定"，把"`uv pip install` 不从 PyPI 拉没固定的包"也删了：它只为处理服务的
+     Dockerfile 而设，剩下的两个镜像不装 Python 包；
+  3. 体素化风格名（`default` / `coarse` / `fine` → 颜色数）只给已下线的 `voxelize` 任务用，随 `handlers/` 删掉；本地的
+     `voxelize_task` 直接收颜色数；
+  4. `worker/README.md` 这一步就改写了（13.2 原定 S9 改各 README）：原来写的是服务的启动、环境变量、任务、清理，
+     代码删了再留着会误导；`infra/chrono-cd/README.md` 里指向已删文件的三处也改成文字说明，其余处理服务的部分仍留到 S9；
+  5. 外部模型主机列表：`bundle.sources` 的默认值是 `fetch.DEFAULT_MODEL_HOSTS`，工作台 `recon/models.py` 读同一个环境变量
+     但默认值更窄（只有 `dl.polyhaven.org`、`huggingface.co`），S6b 做 `models` 命令时统一。
+- 中间状态（到 S9 之前）：`app.json` 里仍有处理服务，固定在以前构建的镜像摘要上；`Images` 不再构建它，所以部署接口服务或
+  网站的新版本时用 `pin-images.mjs --patch` 只换 `api`、`web`（完整规格要三个摘要时，处理服务填现在线上那个）。
 
 #### S7 改名
 

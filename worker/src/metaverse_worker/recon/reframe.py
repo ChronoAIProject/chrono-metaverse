@@ -10,7 +10,7 @@
   朝上面的众数，原点取 x、z 的 0.05% 分位）；
 - 也可以给变换文件（prepare 的 `transform.json`，或 16 个数的列主序 4×4，扫描坐标 → 空间坐标）。
 
-换算 `C = M_目标 · M_原⁻¹`（与 `scripts/demo_seed_hints.py` 相同）。每个物件只改最外层的 `transform`：
+换算 `C = M_目标 · M_原⁻¹`。每个物件只改最外层的 `transform`：
 `位置' = C · 位置`；旋转在两个坐标系倾斜差不超过 `--max-tilt` 度时只加偏航差（数字干净，误差在毫米级），
 否则精确合成（`Ry·Rx·Rz` 按 YXZ 顺序重新分解）。模板是局部坐标，不变；包围盒重算。
 """
@@ -24,12 +24,13 @@ import tempfile
 import numpy as np
 
 from ..processing.align import auto_align
+from ..processing.limits import default_limits
 from ..processing.scan import compute_alignment, matrix_from_column_major
 from . import core as wc
 from . import models as md
 from . import shapes_ext as sx
 from .base import parse_records
-from .prepare import default_limits, scan_input
+from .prepare import scan_input
 
 
 def frame_matrix(spec: str, mesh) -> np.ndarray:
