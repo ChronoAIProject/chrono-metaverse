@@ -1,3 +1,4 @@
+import { trimTrailingSlashes } from '../workspace/config.js';
 import { MAX_OPS_PER_BATCH } from '../core/ops.js';
 import {
   idOf,
@@ -79,7 +80,7 @@ export function previewLink(
 ): string | null {
   if (preview.url) return preview.url;
   if (!preview.token) return null;
-  const base = (webUrl ?? '').replace(/\/+$/, '');
+  const base = trimTrailingSlashes(webUrl ?? '');
   return `${base}/preview#t=${preview.token}`;
 }
 

@@ -465,3 +465,19 @@ describe('技能说明里的示例脚本', () => {
     expect(result.outside).toEqual([]);
   });
 });
+
+describe('去掉地址末尾的斜杠', () => {
+  it('逐字符往回数，长串斜杠也是线性时间', async () => {
+    const { trimTrailingSlashes } = await import('../src/workspace/config.js');
+    expect(trimTrailingSlashes('https://a.example/')).toBe('https://a.example');
+    expect(trimTrailingSlashes('https://a.example///')).toBe('https://a.example');
+    expect(trimTrailingSlashes('https://a.example')).toBe('https://a.example');
+    expect(trimTrailingSlashes('////')).toBe('');
+    expect(trimTrailingSlashes('')).toBe('');
+    const long = 'x' + '/'.repeat(200_000) + 'y';
+    const started = Date.now();
+    expect(trimTrailingSlashes(long)).toBe(long);
+    expect(trimTrailingSlashes(long + '/'.repeat(200_000))).toBe(long);
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+});

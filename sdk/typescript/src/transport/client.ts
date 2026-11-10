@@ -1,4 +1,5 @@
 import {
+  trimTrailingSlashes,
   DEFAULT_NYX_BASE,
   DEFAULT_SLUG,
   normalizeNyxBase,
@@ -112,7 +113,7 @@ export class ApiClient {
       const slug = encodeURIComponent(this.config.slug ?? DEFAULT_SLUG);
       base = `${this.nyxBase}/api/v1/proxy/s/${slug}`;
     } else {
-      base = this.config.api!.replace(/\/+$/, '');
+      base = trimTrailingSlashes(this.config.api!);
     }
     const search = new URLSearchParams();
     for (const [key, value] of Object.entries(query ?? {})) {

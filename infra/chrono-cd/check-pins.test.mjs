@@ -11,6 +11,9 @@ import { spawnSync } from 'node:child_process';
 
 import { checkPins, dockerfileProblems, workflowProblems } from './check-pins.mjs';
 
+/** 把任意文字转成正则里按原样匹配的写法（反斜杠也转义）。 */
+const escapeRegExp = (text) => text.replace(/[\\^$.*+?()[\]{}|/@-]/g, '\\$&');
+
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
 const read = (path) => readFileSync(join(root, path), 'utf8');
@@ -35,7 +38,7 @@ test('仓库里的工作流和 Dockerfile 通过检查', () => {
 test('工作流：action 必须固定到 40 位提交哈希并注明版本', () => {
   for (const ref of ['actions/checkout@v5', 'dtolnay/rust-toolchain@master', 'docker/login-action@v3.7.0', 'actions/checkout@0123456']) {
     const problems = workflowProblems(`steps:\n      - uses: ${ref}\n`, 'w.yml');
-    assertProblem(problems, new RegExp(`w\\.yml:2：${ref.replace(/[.@/]/g, '\\$&')} 要固定到 40 位提交哈希`));
+    assertProblem(problems, new RegExp(`w\\.yml:2：${escapeRegExp(ref)} 要固定到 40 位提交哈希`));
   }
   // 带引号、在 with 之前的写法同样检查。
   assertProblem(workflowProblems(`      - name: x\n        uses: "astral-sh/setup-uv@v6"\n`, 'w.yml'), /w\.yml:2：astral-sh\/setup-uv@v6 要固定/);
