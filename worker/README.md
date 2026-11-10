@@ -1,40 +1,44 @@
-# 处理服务（metaverse-worker）
+# 本地重建工具（metaverse-worker）
 
-chrono-metaverse 的后台处理服务（设计第 6 节）：从 MongoDB 的 `jobs` 集合领取任务，做上传校验、扫描对齐、
-网页用模型、结构 + 物体重建、体素化、物件模型导出，把结果写成时间线上的提交；同时定期清理过期上传、
-过期草稿（连同草稿区块、预览令牌）和没人引用的资源。
+chrono-metaverse 的重建都在本地做（人或 AI 的电脑，Mac 也行，不需要显卡）：对齐、网页用模型、结构和物体、
+AI 物件集（外部模型下载和重新导出、烘焙、逐件偏差）、建议锚点，结果打成重建包，由命令行 `metaverse` 推送到
+接口服务。服务端只做鉴权、存储、时间线和通用把关，不含任何"某类场景怎么重建"的知识（设计
+[`docs/design/server-slim.md`](../docs/design/server-slim.md)）。
 
-- 只有 `store.py`、`assets.py`、`uploads.py`、`jobs/`、`handlers/` 碰数据库；`processing/` 是纯计算，在子进程里运行；
-- 每个任务的重计算放进子进程（`resource.setrlimit` 内存上限 + 超时，可随时取消）；
-- 写回按设计 6.4：提交带 `jobId`，同一事务里按 `{_id, attempt, leaseOwner, status: running}` 把任务标记为完成；
-  事务后给新引用的区块打 `publishedAt`，没打上的由重新领取和定期清理补做（设计 5.7）。
+原来的处理服务（从 MongoDB 领取任务、写回提交、定期清理）已经下线：上传核对、过期清理、中断任务的回收都并进了
+接口服务的后台执行器（`api/README.md`）。这个目录只剩本地部分，所有模块只读写本地文件，**不连接数据库，也不连接
+本服务**，不需要任何凭证。
 
-## 启动
+- `processing/`：纯计算（扫描读取与对齐、网页用模型、结构、物体、AI 物件集、体素化、物件模型），解析前检查的
+  上限在 `processing/limits.py`；
+- `bundle/`：重建包的本地部分——`anchors`（按类别建议锚点）、`sources`（下载外部模型）、`rebuild`（一份扫描 →
+  重建结果，见"重建流程"）；
+- `recon/`：重建工作台 `metaverse-recon`（给 AI 模型师用的眼睛、尺子和裁判，见"重建工作台"）；
+- `canonical`、`chunk`、`shapes`、`records`：与接口服务（Rust）、网站、命令行（TypeScript）共用的数据格式
+  （[`docs/SHAPES.md`](../docs/SHAPES.md)）；`authored`：AI 物件集的解析和校验；`fetch`：按主机列表下载。
+
+还没做的（设计 8.1、8.3）：目录改名 `recon/`（包 `metaverse_recon`，工作台子包改叫 `bench`）；新命令 `align`、
+`webmodel`、`models`、`bake`、`fit`、`scan-zip`、`bundle`（写清单 `manifest.json`、编号加 `rb.`、`--seed`、
+`--from-snapshot`）、`doctor --install`，以及从命令行工作区往上找 `space.json` 定默认值。
+
+## 安装
 
 ```bash
 cd worker
-uv venv .venv && uv pip install --python .venv/bin/python -e '.[dev]'
-
-export MONGODB_URI='mongodb://127.0.0.1:27018/?replicaSet=rs0'
-export MONGODB_DATABASE=metaverse
-.venv/bin/metaverse-worker          # 或 .venv/bin/python -m metaverse_worker
+uv sync --frozen --extra dev        # 按 uv.lock 的锁定版本建 .venv（含开发依赖）
+.venv/bin/metaverse-recon doctor    # 渲染要用的 node、three、Playwright、Chromium、中文字体在不在
 ```
 
-启动顺序：读配置（缺必填项或不合法就以退出码 2 退出）→ 起健康检查 → 幂等地建索引（数据库暂时不可用时每
-5 秒重试，2 分钟后仍失败就退出，交给平台重启）→ 主循环。收到 `SIGTERM` / `SIGINT` 后不再领取新任务，手上
-的任务最多再等 `WORKER_STOP_GRACE_SECONDS` 秒，来不及就取消子进程、把任务退回队列（退还这一次的重试次数）。
-
-数据库必须是副本集（写回用事务）。本地的 MongoDB 副本集见 `infra/dev/`。
+Python 3.13；依赖 numpy、scipy、pillow、trimesh、DracoPy、fast-simplification，都有 macOS（Apple 芯片和 Intel）
+和 Linux 的预编译包，不需要编译器和显卡。渲染另要 node 22、Playwright 和 Chromium。
 
 ### 依赖锁定
 
-`pyproject.toml` 只写版本范围，实际版本锁在 `uv.lock`（用 uv 0.11.32 生成，提交进仓库）。镜像
-（`infra/worker/Dockerfile`）有 `uv.lock` 时按 `uv export --frozen` 的锁定版本装，镜像、持续集成、本地用的
-就是同一组经过测试的版本，回滚重建旧提交也得到当时的依赖。
+`pyproject.toml` 只写版本范围，实际版本锁在 `uv.lock`（用 uv 0.11.32 生成，提交进仓库）。持续集成和本地都按
+`uv sync --frozen` 装，用的是同一组经过测试的版本，回到旧提交也得到当时的依赖。
 
 ```bash
 cd worker
-uv sync --frozen --extra dev        # 按锁定版本建 .venv（含开发依赖）
 uv lock                             # 改了 pyproject.toml 的依赖以后重新锁定，连同 uv.lock 一起提交
 uv lock --upgrade-package numpy     # 只升级某一个依赖
 ```
@@ -42,246 +46,130 @@ uv lock --upgrade-package numpy     # 只升级某一个依赖
 `tests/test_lockfile.py` 检查 `uv.lock` 覆盖了 `pyproject.toml` 的全部依赖、锁定版本都在声明的范围内；
 改了依赖范围却忘了重新锁定时，测试会失败。
 
-## 健康检查
-
-`GET /healthz`，端口 `WORKER_HEALTH_PORT`（默认 8080），不需要鉴权：
-
-- 200：索引已建好、主循环在运行、看门狗没有超时；
-- 503：启动中（建索引）、正在停止，或主循环停滞。
-
-```json
-{"status": "ok", "service": "metaverse-worker", "version": "0.1.0", "workerId": "host-1234-ab12cd",
- "timestamp": "2026-11-09T08:00:00.000Z", "kinds": ["model_import", "rebuild", "scan_import", "upload_verify", "voxelize"],
- "currentJob": {"jobId": "…", "kind": "scan_import", "spaceId": "front-hall", "since": "…"},
- "jobs": {"done": 3, "failed": 0},
- "lastCleanup": {"at": "…", "exhaustedJobs": 0, "stuckUploads": 0, "uploads": 0, "drafts": 0, "previews": 0,
-                 "draftChunks": 0, "assets": 0, "publishedChunks": 0}}
-```
-
 ## 环境变量
-
-只从环境变量读配置。日志里不输出连接串（配置摘要只有数据库主机名）。
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `MONGODB_URI` | **必填** | `mongodb://` 或 `mongodb+srv://` 连接串（chrono-cd 的 MongoDB 插件注入） |
-| `MONGODB_DATABASE` | **必填** | 数据库名 |
-| `WORKER_ID` | `主机名-进程号-随机数` | 租约持有者编号，每个进程必须不同 |
-| `WORKER_HEALTH_HOST` / `WORKER_HEALTH_PORT` | `0.0.0.0` / `8080` | 健康检查监听地址 |
-| `WORKER_LEASE_SECONDS` | 180 | 任务租约时长 |
-| `WORKER_HEARTBEAT_SECONDS` | 45 | 续约间隔（必须小于租约的一半） |
-| `WORKER_WATCHDOG_SECONDS` | 150 | 主循环 / 续约多久没成功就退出进程（大于续约间隔、不超过租约） |
-| `WORKER_POLL_SECONDS` | 2 | 没有任务时多久再查一次 |
-| `WORKER_STOP_GRACE_SECONDS` | 20 | 收到停止信号后等手上任务的最长时间 |
-| `WORKER_MAX_JOBS_PER_SPACE` | 2 | 每个空间同时运行的任务数上限 |
-| `WORKER_JOB_MEMORY_MB` | 6144 | 任务子进程的内存上限（地址空间） |
-| `WORKER_JOB_TIMEOUT_SECONDS` | 1800 | 任务子进程超时 |
-| `WORKER_CLEANUP_INTERVAL_SECONDS` | 600 | 定期清理的间隔 |
-| `WORKER_UPLOAD_TTL_HOURS` | 24 | 超过这么久没完成的上传被清理 |
-| `WORKER_ASSET_GRACE_DAYS` | 7 | 超过这么久没被引用的资源被清理 |
-| `WORKER_MAX_SCAN_BYTES` | 1 GiB | 扫描资源大小上限 |
-| `WORKER_MAX_MODEL_BYTES` | 50 MiB | 物件模型、贴图上传的大小上限 |
-| `WORKER_MAX_TRIANGLES` | 500 万 | 解析前检查：三角形数上限 |
-| `WORKER_MAX_TEXTURE_PIXELS` | 8192×8192 | 解析前检查：贴图像素上限 |
-| `WORKER_MAX_TEXTURE_SIDE` | 8192 | 贴图上传的单边像素上限 |
-| `WORKER_MAX_GRID_CELLS` | 4 亿 | 解析前检查：包围盒与实体区的交集 / GRID_UNIT³ 上限 |
-| `WORKER_MAX_OPS_BYTES` | 256 MiB | ops 上传解压后的大小上限（防压缩炸弹） |
-| `WORKER_MODEL_MAX_TRIANGLES` | 10 万 | 物件模型重新导出的三角形上限 |
-| `WORKER_MODEL_MAX_TEXTURE_SIDE` | 2048 | 物件模型重新导出的贴图长边上限 |
-| `WORKER_ALIGN_MAX_ERROR_CM` | 3 | 重扫配准误差超过它就不自动提交，转人工 |
-| `WORKER_ALIGN_HOLD_DAYS` | 30 | 转人工的扫描保留多久等人工对齐（这期间定期清理不删它，见"定期清理"） |
-| `WORKER_MODEL_HOSTS` | `dl.polyhaven.org,huggingface.co,cdn-lfs.huggingface.co,.hf.co` | AI 物件集里外部模型允许下载的主机（逗号分隔）：写主机名精确匹配（只许默认的 443 端口），以点开头（如 `.hf.co`）匹配它的所有子域名，`主机:端口` 只匹配那个端口。只用 https，重定向的每一跳都要在列表里，见"AI 物件集" |
-| `WORKER_WORKDIR` | 系统临时目录 | 下载扫描、子进程交换数据的本地目录（每个任务一个子目录，结束就删） |
-| `LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL` |
+| `METAVERSE_RECON_MODEL_HOSTS` | `dl.polyhaven.org,huggingface.co,cdn-lfs.huggingface.co,.hf.co`（`bundle.sources`）；工作台 `dl.polyhaven.org,huggingface.co` | 外部模型允许下载的主机（逗号分隔）：写主机名精确匹配（只许默认的 443 端口），以点开头（如 `.hf.co`）匹配它的所有子域名，`主机:端口` 只匹配那个端口。只用 https，重定向的每一跳都要在列表里 |
+| `METAVERSE_RECON_*`、`SKETCHFAB_TOKEN` | — | 重建工作台的缓存、渲染工具、字体等，见"重建工作台" |
 
-## 任务
+解析前检查的上限是 `processing/limits.py` 的常量（原来是处理服务的 `WORKER_MAX_*` 配置，默认值不变）：
 
-任务文档（`jobs`）在接口服务的 `Job` 基础上带 `actor: {sub, nyxServiceId}`（发起者，写提交时作为
-`actor.sub`、`actor.nyxServiceId`，`actor.scope = physical`、`actor.kind = job`）和 `result`（非提交结果）。
-处理服务领取以下五种，**不领取 `ops_from_upload`**（接口服务自己处理）。
+| 常量 | 值 | 说明 |
+|---|---|---|
+| `MAX_SCAN_BYTES` | 1 GiB | 扫描大小上限；zip 解压后合计 ≤ 它的 2 倍 |
+| `MAX_TRIANGLES` | 500 万 | 读网格前检查：三角形数 |
+| `MAX_TEXTURE_PIXELS` | 8192×8192 | 读网格前检查：贴图像素 |
+| `MAX_TEXTURE_SIDE` | 8192 | 贴图单边像素 |
+| `MAX_GRID_CELLS` | 4 亿 | 包围盒与实体区的交集 / GRID_UNIT³ |
+| `MAX_OPS_BYTES` | 256 MiB | 操作文件（NDJSON，可 gzip）解压后的大小 |
+| `MAX_MODEL_BYTES` | 50 MiB | 一个外部模型（含附属文件） |
+| `MODEL_MAX_TRIANGLES`、`MODEL_MAX_TEXTURE_SIDE` | 10 万、2048 | 物件模型重新导出的三角形数和贴图长边 |
 
-失败分类：参数不合法、输入超限 / 格式不对、子进程内存超限或超时 → 不可重试，直接 `failed`；其他错误
-（数据库抖动、子进程崩溃等）→ 退回队列，`maxAttempts`（默认 3）用完后 `failed`。`lastError` 写原因。
+## 重建流程（`bundle.rebuild.rebuild_scan`）
 
-**空间实例**：接口服务删除空间时不清理任务和上传，同一个主人之后可以用同一个编号重建空间。所以处理服务
-读写 `spaces` 的条件除了 `{_id, owner.kind, owner.id}`，还要求空间的 `createdAt` 不晚于记录（任务或上传）
-的 `createdAt`（`store.space_filter`，固定格式的 RFC 3339 字符串直接比较）：空间更新，说明记录是在被删掉的
-那个空间里建的。这样的任务（`scan_import`、`rebuild`、`voxelize`、`model_import`）直接失败，不可重试，
-不会把旧扫描写进新空间的时间线、固定它的坐标系；这样的上传标记 `failed`，不登记、不计用量；资源被清理时
-也不会从新空间的用量里减回旧上传计过的字节。处理服务在提交事务里建的后续任务用提交的 `at`（不早于 head），
-不受影响。没有 `createdAt` 的空间不做这项比较。
+一份扫描（zip、glb、drc、obj）→ 重建包要放的东西。步骤和原来处理服务的"导入扫描"相同，只是结果留在本地
+（普通数据 + 工作目录里的文件），不写提交：
 
-### `upload_verify` `{uploadId}`
+```python
+from metaverse_worker.bundle.rebuild import rebuild_scan
 
-1. 上传已是 `done`：直接完成；状态不是 `complete`：失败；上传所在的空间实例不在了（见上面的"空间实例"）：
-   上传标记 `failed`、任务失败；
-2. 流式读出全部数据块（`assets.chunks`，`files_id` = 上传编号），核对序号连续、块大小、总长度，边算
-   sha256 边写临时文件；不完整或哈希不符 → 上传标记 `failed`、删数据块、任务失败；
-3. 按用途嗅探格式（子进程里）：
-
-   | 用途 | 接受 |
-   |---|---|
-   | `scan`、`model` | glb、drc、obj，或 zip（里面一个 glb / drc / obj + 贴图，如 Scaniverse 导出） |
-   | `texture` | png、jpeg、webp，单边 ≤ 8192 |
-   | `ops` | NDJSON（每行一个 JSON 对象），可 gzip |
-   | `script` | UTF-8 纯文本，不含 NUL |
-   | `authored` | AI 物件集：UTF-8 JSON，≤ 4MB，按"AI 物件集"的格式完整校验一遍（资源 `kind: authored`，格式 `json`） |
-
-   不合规同样标记失败、删数据块；
-4. 登记资源（`assets.files`：`_id` = 上传编号，`filename` = 内容哈希，`metadata = {sha256, contentType,
-   kind: 用途, spaceId, uploadId, format}`）。文件名冲突就删本次数据块、复用已有资源；
-5. 同一个事务里：上传标记 `done` 并写 `assetHash`、`storageBytes`，空间的 `storageUsedBytes` 加上上传的大小
-   （见"空间存储用量"），任务标记完成。租约丢了就一起放弃，新的持有者重新收尾，不会多计或漏计。
-
-**任务因为别的原因最终失败**（嗅探子进程超时或内存超限、子进程反复崩溃、数据库抖动导致重试次数用完）时，
-上传不能一直停在 `complete`：接口服务把 `open`、`complete` 都算作进行中的上传（每个空间的上限、存储上限的
-预估），资源可用性也把 `complete` 当成"还在校验"。所以任务标记为 `failed` 以后，主循环马上按
-`{_id: uploadId, status: complete}` 条件收尾（`uploads.settle_upload`）：
-
-- 内容已经核对通过（`verifiedSha256` = 声明的哈希）并且这个哈希的资源已经存在 → 补做第 5 步，标记 `done`；
-- 否则 → 标记 `failed`，`error = "校验任务失败：<原因>"`，删掉数据块。
-
-主循环来不及做的（重试次数用完由 `reap_exhausted` 回收、进程在标记失败后退出）由定期清理兜底，见下。
-
-`result = {assetHash, reused, bytes, format, contentType}`，`format` 是 `glb | draco | obj | zip | png | jpeg |
-webp | ndjson | ndjson+gzip | text`。
-
-**上传会话文档**（接口服务创建，处理服务读写的字段）：
-
-```
-uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceId, owner: {kind, id},
-          purpose: scan|model|texture|ops|script|authored, size: 声明的总字节数, sha256: 声明的整体哈希, partSize,
-          status: open|complete|done|failed|expired, createdAt, completedAt?, jobId?: upload_verify 任务编号,
-          // 处理服务写入：
-          assetHash?, format?, contentType?, verifiedAt?, verifiedSha256?, error?, failedAt?,
-          storageBytes?: 计入空间用量的字节数, storageReleasedAt?: 资源被清理、用量已减回的时间 }
+out = rebuild_scan("scan.zip", "work/", hints=hints)  # 首次自动对齐、算法结构和物体
+out = rebuild_scan("rescan.zip", "work2/", transform=transform)  # 用给定的变换
+out = rebuild_scan("scan.zip", "work3/", transform=transform, authored=authored, known_textures=local)
 ```
 
-处理服务只处理 `status: complete` 的上传（接口服务"完成上传"时把 `open` 改成 `complete` 并建任务）。
-读取时也接受 `totalSize`、`hash` 作为 `size`、`sha256` 的别名。
-
-### `scan_import` `{assetHash, observedAt?, transform?, rebuild?: true, voxelize?: false, hints?: {...}, authored? | authoredAsset?}`
-
-1. **对齐方式**：给了 `transform`（16 个数，列主序，扫描坐标 → 空间坐标；最后一行必须是 0 0 0 1，
-   不能镜像）就直接用；没给时，这个扫描以前提交过就沿用它最近一次的变换；空间还没有 `frame` 就首次自动
-   对齐；否则和参考扫描（`frame.referenceScan` 最近一次提交的变换）配准；
+1. **对齐方式**：给了 `transform`（16 个数，列主序，扫描坐标 → 空间坐标；最后一行必须是 0 0 0 1，不能镜像）就
+   直接用；给了 `reference = {path, transform}`（参考扫描和它的变换）就和参考扫描配准；都没给时首次自动对齐；
 2. **首次自动对齐**：朝上的面求平均法线把地面摆正（倾斜 0.05°–10° 时修正）→ 墙面法线模 90° 的面积加权
    直方图峰值（圆周平均精化）绕竖直轴旋转 → 地面高度取低处朝上面的众数 → 原点 = 顶点 x、z 的 0.05% 分位数；
 3. **重扫配准**：只用地面和墙的上部（离地 1.1 米以上）；按首次的方法摆正后，主墙 4 个 90° 朝向都试：
    俯视墙占用图做 FFT 互相关得平移初值，再做只求偏航和平移的点到面 ICP（阈值 25→4 厘米、Huber 权重）；
-   误差 = 每个稳定点的点到面距离（10 厘米封顶）去掉最差 20% 后的平均。误差超过
-   `WORKER_ALIGN_MAX_ERROR_CM`：**不提交**，任务 `done`，
+   误差 = 每个稳定点的点到面距离（10 厘米封顶）去掉最差 20% 后的平均。误差超过 `align_max_error_cm`（默认 3）
+   时**不往下做**，返回
 
    ```json
-   {"needsAlignment": true, "scanAssetHash": "…", "referenceScan": "…", "proposedTransform": [16 个数],
-    "errorCm": 4.7, "maxErrorCm": 3, "alignment": {…}, "candidates": [{"quarterTurns": 0, "score": …, "errorCm": …, "overlap": …}], "timings": {…},
-    "retainUntil": "2026-12-09T08:00:00.000Z"}
+   {"needsAlignment": true, "proposedTransform": [16 个数], "errorCm": 4.7, "maxErrorCm": 3,
+    "alignment": {…}, "candidates": [{"quarterTurns": 0, "score": …, "errorCm": …, "overlap": …}], "timings": {…}}
    ```
 
-   人工确认后由接口服务用 `{assetHash, transform}` 重新发起 `scan_import`。这份扫描此时还没被任何提交引用，
-   所以在 `retainUntil`（完成时间 + `WORKER_ALIGN_HOLD_DAYS`，默认 30 天）之前定期清理把它算作被引用，
-   任务完成时也刷新资源的 `touchedAt`；过了保留期还没人对齐，就按宽限期规则清理；
-4. **解析前检查**：三角形数、贴图像素（读文件头）、对齐后包围盒与实体区交集的格数。贴图像素在任何解码
-   之前检查：glb 的每张贴图不论放在 BIN 块、`data:` 数据块还是 `data:` 图片里都读文件头查尺寸，引用外部
-   文件或读不到对应位置的直接拒绝；zip 里单独给的贴图在加载模型之前就查（obj 的材质可能引用它）；trimesh
-   打开的贴图在转成数组之前再按尺寸查一次。PIL 自带的解压炸弹检查按 `WORKER_MAX_TEXTURE_PIXELS` 打开
-   （超过两倍时 `Image.open` 直接报错），作为兜底；
-5. **网页用模型**：两档 glb（单网格、内嵌 JPEG 底色贴图、不压缩、坐标保持扫描原坐标、材质声明
-   `KHR_materials_unlit`）：`[0]` ≤ 30 万三角形、贴图 ≤ 4096²（网页加载这一档）；`[1]` ≤ 6 万三角形、
+   人确认（或改正）以后用 `transform` 重来；
+4. **解析前检查**：三角形数、贴图像素（读文件头）、对齐后包围盒与实体区交集的格数（`physical_boxes`，没给时
+   是整个包围盒）。贴图像素在任何解码之前检查：glb 的每张贴图不论放在 BIN 块、`data:` 数据块还是 `data:` 图片里
+   都读文件头查尺寸，引用外部文件或读不到对应位置的直接拒绝；zip 里单独给的贴图在加载模型之前就查（obj 的材质
+   可能引用它）；trimesh 打开的贴图在转成数组之前再按尺寸查一次。PIL 自带的解压炸弹检查按 `MAX_TEXTURE_PIXELS`
+   打开（超过两倍时 `Image.open` 直接报错），作为兜底；
+5. **网页用模型**（`web_models=True`）：两档 glb（单网格、内嵌 JPEG 底色贴图、不压缩、坐标保持扫描原坐标、材质
+   声明 `KHR_materials_unlit`）：`[0]` ≤ 30 万三角形、贴图 ≤ 4096²（网页加载这一档）；`[1]` ≤ 6 万三角形、
    贴图 ≤ 1024²。减面用 fast-simplification 的折叠历史，顶点取原始顶点的位置和贴图坐标。扫描网格按贴图分块，
    块与块之间的接缝在网格里是开放边界，两侧各自简化会裂出三角形小洞（网页上地面的黑斑），所以先只合并块内部
    的顶点（块边上的顶点都不动，默认档这一步就够了），还不够时把位置相同的顶点焊起来再减面（接缝两侧共用
    顶点，每个面的贴图坐标仍取它原来那块贴图里的）。贴图先按原始网格的贴图坐标标出用到的纹素，缩小时只平均
    用到的纹素，再把块外的空白都换成最近的用到的纹素的颜色（补边），双线性过滤和逐级缩小的贴图不会采到
-   块外的深灰底色（见 `processing/webmodel.py`）；资源 `metadata.kind = web_model`；
-6. **结构 + 物体重建**（`rebuild: false` 时跳过）：结构见 `processing/structure.py`（地面带贴图；墙是朝房间
-   一侧的贴图面板 + 纯色墙体，没扫到的墙面用同一面墙的中位色补；玻璃是浅蓝灰纯色玻璃 + 竖梃 + 窗台，不用贴图；
-   墙顶统一高度）。任务参数里的 `hints` 也交给结构：内点大多落在某个提示物体盒子里的大平面（LED 大屏）不当墙，
-   靠墙放的提示物体不印进墙面贴图。物体调用 `processing.objects.reconstruct_objects`（见下），效果见
-   "前厅重建效果"。`hints` 原样传给物体模块。`hints.objects` 是逐个物体的提示
-   （本地 AI 看图给出，最多看前 500 项，格式不对的项忽略）：
+   块外的深灰底色（见 `processing/webmodel.py`）；
+6. **结构 + 物体重建**：结构见 `processing/structure.py`（地面带贴图；墙是朝房间一侧的贴图面板 + 纯色墙体，
+   没扫到的墙面用同一面墙的中位色补；玻璃是浅蓝灰纯色玻璃 + 竖梃 + 窗台，不用贴图；墙顶统一高度）。提示
+   `hints` 也交给结构：内点大多落在某个提示物体盒子里的大平面（LED 大屏）不当墙，靠墙放的提示物体不印进墙面
+   贴图。物体调用 `processing.objects.reconstruct_objects`（见"物体重建接口"），效果见"前厅重建效果"。
+   `hints` 原样传给物体模块。`hints.objects` 是逐个物体的提示（本地 AI 看图给出，最多看前 500 项，格式不对的项
+   忽略）：
 
    ```
    {center: [x, y, z] 或 [x, z]（空间坐标，米）, kind?: chair|table|sofa|counter|cabinet|…, label?: "会议桌",
     size?: [宽, 高, 深], yaw?: 角度, anchor?: true}
    ```
 
-   `center`、`kind`、`label`、`size`、`yaw` 由物体模块读取（改写分割和类型，`label` 成为物体的标签）；
-   `anchor` 由处理服务读取，只对椅子起作用（见下面的"锚点"）；
-7. **一次提交**（事务外先按内容哈希登记资源、物件记录、锚点记录）：
+   `center`、`kind`、`label`、`size`、`yaw` 由物体模块读取（改写分割和类型，`label` 成为物体的标签）；`anchor`
+   由锚点建议读取，只对椅子起作用（见下面的"锚点"）。物体重建模块导入失败、只交了结构时，结果的
+   `objectsSkipped` 写明原因：这时只有结构可信，打包时不能把它当成整个重建层；
+7. **AI 物件集**（给了 `authored`）：重建层的物体不由算法重建，换成物件集里的物件，见下一节；
+8. **核对**：每张贴图、每个处理后的模型都按内容核对哈希，网页用模型算出哈希；
+9. **锚点**（`bundle/anchors.py`）：只给"有意义"的物体建议锚点，不再每个物体都建（前厅以前建了 58 个，标签把
+   场景盖住了）。`kind: object`、带 `anchorId`（建议的锚点编号，就用它）的物体按类别 `props.category` 决定：
 
-   ```
-   scan: { assetHash, webModelHashes: [默认档, 低细节档], transform: [16 个数，列主序] }
-   observedAt: 参数里的时间规范化成 UTC 毫秒（YYYY-MM-DDTHH:MM:SS.mmmZ）
-   changedEntities: 重建层物件的变化（新增 / 变化写新哈希，消失的写 null）；扩展层不动
-   changedAnchors: 新建的锚点（只给有意义的物体建，见下；已存在的锚点不动）
-   assetRefs: 两档网页用模型、所有贴图（原始扫描不登记，见下）
-   frame: 空间还没有坐标系时固定为 {fixedAt, referenceScan: assetHash}
-   ```
+   | 类别 | 锚点类型 |
+   |---|---|
+   | `table`（桌子） | `table` |
+   | `counter`（前台） | `counter` |
+   | `sofa`（沙发） | `zone` |
+   | `chair`（椅子） | 只在提示里明确要求时建 `seat`（见下） |
+   | `cabinet`、`clutter`、`plant`、`lamp`、`pillar`、`round` 等，以及没有类别的物体 | 不建 |
 
-   - **资源引用表**：`assetRefs` 是公开资源接口 `GET /api/public/assets/{hash}.bin` 的白名单（设计 8.2），
-     只登记网页要用的资源。原始扫描可能含个人信息，**不登记**，只能经 `/api/v1` 下载；它被提交的
-     `scan.assetHash` 引用，定期清理不会删它。本空间新登记的网页用模型、贴图计入空间存储用量（见下）；
-   - **重建层替换规则**：物体重建正常运行时，重建层的全部旧物件（structure / object / template）换成这次的
-     结果；物体重建模块导入失败、只交了结构时，只替换 `kind: structure` 的物件，旧物体保留；
-   - **锚点**：只给"有意义"的物体建，不再每个物体都建（前厅以前建了 58 个，标签把场景盖住了）。
-     `kind: object`、带 `anchorId`（建议的锚点编号，就用它）的物体按类别 `props.category` 决定：
+   **椅子的座位锚点**：`hints.objects[]` 里写了 `anchor: true`（必须是布尔值 true）、没写 `kind` 或 `kind` 是
+   `chair` / `armchair` / `stool` 的项，按中心点的 x、z 找椅子：中心落在椅子包围盒里或离它不超过 0.3 米的算指的
+   是它，几把都符合时取离包围盒最近、再取离盒子中心最近的那把。例如
+   `{"center": [2.4, 0.45, 1.0], "kind": "chair", "label": "主持人座位", "anchor": true}`。`anchor` 对别的类别
+   不起作用（柜子、杂物等写了也不建）。
 
-     | 类别 | 锚点类型 |
-     |---|---|
-     | `table`（桌子） | `table` |
-     | `counter`（前台） | `counter` |
-     | `sofa`（沙发） | `zone` |
-     | `chair`（椅子） | 只在提示里明确要求时建 `seat`（见下） |
-     | `cabinet`、`clutter`、`plant`、`lamp`、`pillar`、`round` 等，以及没有类别的物体 | 不建 |
+   `box` = 物体 `bounds` 覆盖的格子（同接口服务 `Aabb::grid_cover`），`visibility: public`，`label` 用物体的中文
+   标签（提示里的 `label`，如"会议桌""前台"），物体没有标签就用类别的中文名（桌子、前台、沙发、椅子）；生成后
+   按接口服务 `AnchorBody::validate` 的规则校验（不合格就失败）。这只是建议：写进重建包的 `anchors`，服务端按
+   `ifNew` 只建本空间时间线上从没出现过的锚点，已经有的、曾经有过又被删掉的都不动。
 
-     **椅子的座位锚点**：`hints.objects[]` 里写了 `anchor: true`（必须是布尔值 true）、没写 `kind` 或
-     `kind` 是 `chair` / `armchair` / `stool` 的项，按中心点的 x、z 找椅子：中心落在椅子包围盒里或离它
-     不超过 0.3 米的算指的是它，几把都符合时取离包围盒最近、再取离盒子中心最近的那把。例如
-     `{"center": [2.4, 0.45, 1.0], "kind": "chair", "label": "主持人座位", "anchor": true}`。
-     `anchor` 对别的类别不起作用（柜子、杂物等写了也不建）。
-
-     `box` = 物体 `bounds` 覆盖的格子（同接口服务 `Aabb::grid_cover`），`visibility: public`，`label` 用物体
-     的中文标签（提示里的 `label`，如"会议桌""前台"），物体没有标签就用类别的中文名（桌子、前台、沙发、
-     椅子）；生成后按接口服务 `AnchorBody::validate` 的规则校验（不合格 → 任务失败）。**已存在的锚点不动**：
-     同编号的锚点已经有了就不再写，以前按旧规则建的锚点（例如杂物、柜子的）也不会被删掉或改掉。
-     锚点当前状态写进 `anchors`（`{spaceId, id, owner, hash, body, seq}`）；
-   - **体素化**：`voxelize: true` 时在**同一个事务里插入一个 `voxelize` 任务**（编号
-     `<本任务编号>-voxelize`，参数 `{scanAssetHash}`，`parentJobId` 指向本任务），不在本任务里写第二次提交。
-
-`result`（写在任务上，同一事务）：
+返回：
 
 ```json
-{"scanAssetHash": "…", "transform": [16 个数],
- "alignment": {"method": "auto|registered|given|reused", "rotationDeg": -61.4, "tiltDeg": 0.09, "errorCm": 0.8, "overlap": 0.95},
- "webModels": [{"hash": "…", "bytes": 12431904, "triangles": 294000, "vertices": 207619, "textureSide": 4096}, {…}],
+{"transform": [16 个数],
+ "alignment": {"method": "auto|registered|given", "rotationDeg": -61.4, "tiltDeg": 0.09, "errorCm": 0.8, "overlap": 0.95},
+ "boundsSpace": {"min": […], "max": […]},
  "scan": {"triangles": 335661, "vertices": 249134, "textureSide": 8192},
- "structure": {"entities": 7, "walls": 5, "glazing": 1, "floorM2": 128.25, "wallDirections": […]},
- "objects": {"entities": 12, "furnitureMeanCm": 1.9, …} 或 {"skipped": "原因"},
- "entities": {"structure": 7, "objects": 12, "changed": 19, "removed": 0},
- "anchorsCreated": ["counter-01", …], "voxelizeJobId": "…（可选）",
+ "webModels": [{"hash": "…", "path": "work/task/web-0.glb", "bytes": 12431904, "triangles": 294000, "vertices": 207619, "textureSide": 4096}, {…}],
+ "entities": {"floor": {…}, "chair-01": {…}}, "structureIds": […], "objectIds": […], "objectsSkipped": null,
+ "metrics": {"structure": {"walls": 5, …}, "objects": {"furnitureMeanCm": 1.9, …}},
+ "textures": {"<sha256>": "图片字节"}, "models": {"<sha256>": {"path": "…", "bytes": …, "triangles": …}},
+ "existingTextures": ["本地已有、被物件集引用的贴图哈希"],
+ "anchors": {"table-01": {"anchorId": "table-01", "kind": "table", "box": […], "label": "会议桌", "visibility": "public"}},
+ "notes": "物件集的建模过程记录或 null", "authored": "物件集的统计（见下）或 null",
  "timings": {"load": 1.3, "align": 0.5, "webModels": 2.2, "rebuild": 9.2, "total": 13.2}}
 ```
 
-提交说明形如 `导入扫描 8be81ec5ccf2（首次自动对齐）`。
+`path` 都在工作目录里，删掉工作目录之前要拷走。
 
-### `rebuild` `{scanAssetHash?, hints?, authored? | authoredAsset?}`
-
-对指定扫描（默认最新扫描）用它最近一次提交的变换重跑结构 + 物体重建并提交，不重新生成网页用模型。
-指定的不是当前扫描时，提交里带上这个扫描的 `scan` 引用，让扫描层和重建层一致。锚点规则同上：可以用
-`hints.objects[].anchor: true` 给已经导入的椅子补建座位锚点（物件没变、只有新锚点时也提交）。结果与当前
-状态完全相同（物件没变、也没有要新建的锚点）时不提交，任务直接完成（`result.unchanged = true`）。
-`result` 同上（没有 `webModels`）。
-
-### AI 物件集（`scan_import`、`rebuild` 带 `authored` 或 `authoredAsset`）
+### AI 物件集（`authored`）
 
 本地的 AI（大语言模型）逐件完成物件：先去模型库找一个看起来差不多的现成模型摆进扫描里对照，找不到或差太多
-的定制件再手写参数形状；完成后把整套物件交给任务写进时间线。两种任务都可以带：
-
-- `authored`：物件集本身（内联 JSON，规范化后 ≤ 4MB）；
-- `authoredAsset`：`authored` 用途的资源哈希（本空间上传的，或接口服务、部署种子登记的），内容是物件集的
-  UTF-8 JSON。归属由接口服务建任务时检查，这里只认用途（`metadata.kind = authored`）；接口服务收到内联的物件集
-  时也登记成资源、改传这个，任务参数不会太大。
+的定制件再手写参数形状；`metaverse-recon assemble` 把整套物件合并成一个 JSON（规范化后 ≤ 4MB），交给
+`rebuild_scan(..., authored=物件集)`，重建层就换成这些物件。
 
 ```json
 { "version": 1,
@@ -293,190 +181,100 @@ uploads { _id: 上传编号（字符串，也是数据块的 files_id）, spaceI
 
 | 部分 | 规则 |
 |---|---|
-| 坐标 | 空间坐标，与 `scan_import` 对齐后的坐标系相同 |
+| 坐标 | 空间坐标，与这份扫描的对齐结果相同（重建工作台 `prepare` 的坐标系） |
 | 物件 | SHAPES 3 的 body，`layer` 省略时按 `rebuilt`（只能是 rebuilt）；`kind` 是 object 或 structure（模板放 `templates`）；`bounds` 可省略；`fit`、`textures` 一律重算；不能带 `assetHash`（外部模型用 `model`）；≤ 2000 个物件、≤ 200 个模板，编号不重复 |
-| 烘焙指令 | 材质里 `"bake": "planar" \| "box" \| "cylindrical"`，不能和 `texture`、`uv`、`tint`、`tile`、`offset`、`rotate`、`normalMap`、`normalScale`、`roughnessMap` 同时出现（烘焙出的是一张按包围盒铺满的颜色贴图），可以带 `color` 作为后备；`opacity`、`unlit`、`shading`、`roughness`、`metalness` 烘焙后原样保留。按网站同样的投影展开 UV（同一个材质节点下的部件共用一张图），每个纹素取扫描最近表面（法线相容优先）的颜色，push-pull 补洞，JPEG 登记成贴图资源，材质换成 `{texture, uv}`；附近完全没有扫描时退回后备纯色。模板里不能带（模板在局部坐标里）；≤ 500 处 |
+| 烘焙指令 | 材质里 `"bake": "planar" \| "box" \| "cylindrical"`，不能和 `texture`、`uv`、`tint`、`tile`、`offset`、`rotate`、`normalMap`、`normalScale`、`roughnessMap` 同时出现（烘焙出的是一张按包围盒铺满的颜色贴图），可以带 `color` 作为后备；`opacity`、`unlit`、`shading`、`roughness`、`metalness` 烘焙后原样保留。按网站同样的投影展开 UV（同一个材质节点下的部件共用一张图），每个纹素取扫描最近表面（法线相容优先）的颜色，push-pull 补洞，编码成 JPEG 贴图，材质换成 `{texture, uv}`；附近完全没有扫描时退回后备纯色。模板里不能带（模板在局部坐标里）；≤ 500 处 |
 | 外部模型 | 没有 `shape`，带 `model: {url, sha256, size, format}`、`transform`（含 `scale`）、`props.source`、可选的 `material: {tint, opacity, unlit, shading}`（`tint` 烘进模型；`opacity`、`unlit`、`shading` 原样留在处理后物件的 `material` 里，网站按它画半透明、不打光、按固有色受光，SHAPES 3）；重建工作台 `place` 写的 `fit` 可以留着（重算）。`format`：`glb`；`gltf-zip`（zip 里正好一个 `.gltf` 和它引用的文件，按相对路径安全解压）；`gltf`（`url` 指向 `.gltf`，另给 `files: {相对路径: {url, sha256, size}}`，就是 Poly Haven 文件列表里的 `include`）。gltf 只能引用模型目录里的相对文件，必需扩展只放行材质和贴图坐标类（Draco、meshopt 压缩的请换版本）。模型库里常见厘米单位的模型：±1000 米的坐标上限在旋转、缩放烘进模型之后才检查 |
-| 已有贴图 | 形状里的 `material.texture`、`normalMap`、`roughnessMap` 是本空间已登记的贴图资源时，任务先过清理的栅栏（刷新 `touchedAt`），再登记进 `assetRefs`；不是本空间的（例如本地基线算的结构贴图，线上依赖版本稍有不同、哈希就不同）先不拒：本次任务算出了同样的贴图就直接用，`kind: structure` 的物件还可以**回退**到本次算法结构里同编号、同部件路径上的贴图（只换哈希，`uv` 等保持物件集里写的），替换清单写进结果的 `textureFallback`（回退只用于 `texture`，算法结构没有法线、粗糙度贴图）；都不行时任务失败 |
+| 已有贴图 | 形状里的 `material.texture`、`normalMap`、`roughnessMap` 是调用方本地有文件的贴图（`known_textures`，比如从空间拉下来的贴图）时原样引用，列进结果的 `existingTextures`（打包时带上这些文件）；本地没有的（例如本地基线用别的依赖版本算的结构贴图，字节稍有不同、哈希就不同）先不拒：本次算出了同样的贴图就直接用，`kind: structure` 的物件还可以**回退**到本次算法结构里同编号、同部件路径上的贴图（只换哈希，`uv` 等保持物件集里写的），替换清单写进`authored.textureFallback`（回退只用于 `texture`，算法结构没有法线、粗糙度贴图）；都不行时失败 |
 | `structure` | `keep`（默认）：结构跑算法（地面、墙、玻璃），物件集里不能有 `kind: structure`；`replace`：结构就是物件集里 `kind: structure` 的物件，不用算法的结果（只在有待定的贴图时跑一次算法，用来核对和回退贴图） |
 | 署名 | `props.source = {library, id, page, author, license, title}`：`library` 是 `polyhaven`、`objaverse`、`sketchfab`；`license` 只收 `CC0-1.0`、`CC-BY-4.0`、`CC-BY-3.0`（NC、ND、SA 一律拒绝，SA 也排除以免传染）；六个字段都是非空字符串（CC0 也写模型库标注的作者，CC-BY 署名必须有作者），`page` 是 https 来源页——与物件记录 `props.source` 的规则相同（`records.validate_model_source`，接口服务提交时也按它查）。外部模型物件必须带，形状物件可选；不是对象的 `source`（手写模型里标来源的字符串，如 `"llm-modeler"`）与物件记录一样原样放行 |
 
 处理：
 
-1. 读物件集并校验（`authored.py`），不合法直接失败（不可重试）；`scan_import` 带物件集时 `rebuild` 不能是 false；
-2. **下载外部模型**（父进程，`fetch.py`）：只用 https，主机在 `WORKER_MODEL_HOSTS` 里；不自动跟随重定向，每一跳
-   的 `Location` 都按同样的规则检查，最多 5 跳；`Content-Length` 与声明的大小不一致就不读，边读边数，读完核对
-   sha256。同一个文件只下载一次；单个模型（含附属文件）≤ `WORKER_MAX_MODEL_BYTES`，全部 ≤ 1 GiB。主机不在列表、
-   不是 https、大小或哈希不符、4xx 都不可重试；网络错误、超时、5xx 稍后重试。错误说明只写主机，不带完整地址；
-3. 子进程里（`processing/authored_build.py`）：结构（keep 时跑算法；replace 时有待定的贴图也跑一次，核对和回退贴图）→ 外部模型：把 `transform` 的旋转、缩放和
-   `tint` 烘进网格（缩放后的坐标超出 ±1000 米才拒收），按物件模型的限制（`WORKER_MODEL_MAX_TRIANGLES`、`WORKER_MODEL_MAX_TEXTURE_SIDE`）减面、缩小
-   贴图，**以包围盒的底面中心为原点**写成 glb（网站按物件 `bounds` 的底面中心摆放只有 `assetHash` 的物件，所以
-   平移落在 `bounds` 上；旋转、缩放、调色都相同的物件共用一个 glb）→ 烘焙 → **逐件偏差**（`processing/object_fit.py`，
-   与重建工作台 `compare`、`assemble`、`place` 用同一个函数，数字一致）：范围按**物件自身的朝向**取——水平朝向是
-   物件网格水平投影的最小外接矩形，在这个局部坐标里水平外扩 5 厘米，竖直方向只取底面以下 2 厘米到顶面以上 2 厘米
-   （斜放的入口门框不会把轴对齐包围盒角落里的门外走廊算进来，顶到天花的物件不会把天花板算进来）；范围里的扫描
-   表面密集采样（最多 2 万点），求到物件网格和**背景**（全部结构：墙、玻璃、地面）的最近距离（贴墙、落地的扫描点
-   算到墙和地面上；相邻的其他物件不当背景），**只计 10 厘米以内的点**（更远的是范围里别的东西），写成
-   `fit {meanCm, p90Cm, coverage3cm}`；离物件 10 厘米以内、离背景超过 2 厘米的点不到 20 个（扫描里没有这件物件
-   的证据，例如完全贴墙的饰面、扫描里没有的东西）时不写。采样的随机数按物件编号固定，同样的输入得到同样的贴图、
-   偏差和记录哈希；
-4. 登记：处理后的模型（`kind: model`，`metadata.authoredSource`）、烘焙的贴图（`kind: texture`）进 `assetRefs`
-   （计入空间存储用量）；`notes` 存成本空间的脚本资源（`kind: script`），提交的 `scriptRef` 指向它；
-5. **重建层替换**：重建层全部旧物件（结构、物体、模板）换成这次的结果；锚点规则不变（按 `props.category`）。
+1. 读物件集并校验（`authored.py`），不合法直接失败；
+2. **下载外部模型**（`bundle/sources.py` → `fetch.py`）：只用 https，主机在 `METAVERSE_RECON_MODEL_HOSTS` 里；不自动
+   跟随重定向，每一跳的 `Location` 都按同样的规则检查，最多 5 跳；`Content-Length` 与声明的大小不一致就不读，边读
+   边数，读完核对 sha256。同一个文件只下载一次；单个模型（含附属文件）≤ `MAX_MODEL_BYTES`，全部 ≤ 1 GiB。主机
+   不在列表、不是 https、大小或哈希不符、4xx 是 `DownloadRejected`（地址或内容不对）；网络错误、超时、5xx 是
+   `DownloadFailed`（可以稍后再试）。错误说明只写主机，不带完整地址；
+3. 计算（`processing/authored_build.py`）：结构（keep 时跑算法；replace 时有待定的贴图也跑一次，核对和回退贴图）→
+   外部模型：把 `transform` 的旋转、缩放和 `tint` 烘进网格（缩放后的坐标超出 ±1000 米才拒收），按物件模型的限制
+   （`MODEL_MAX_TRIANGLES`、`MODEL_MAX_TEXTURE_SIDE`）减面、缩小贴图，**以包围盒的底面中心为原点**写成 glb（网站按
+   物件 `bounds` 的底面中心摆放只有 `assetHash` 的物件，所以平移落在 `bounds` 上；旋转、缩放、调色都相同的物件共用
+   一个 glb）→ 烘焙 → **逐件偏差**（`processing/object_fit.py`，与重建工作台 `compare`、`assemble`、`place` 用同一个
+   函数，数字一致）：范围按**物件自身的朝向**取——水平朝向是物件网格水平投影的最小外接矩形，在这个局部坐标里水平
+   外扩 5 厘米，竖直方向只取底面以下 2 厘米到顶面以上 2 厘米（斜放的入口门框不会把轴对齐包围盒角落里的门外走廊算
+   进来，顶到天花的物件不会把天花板算进来）；范围里的扫描表面密集采样（最多 2 万点），求到物件网格和**背景**（全部
+   结构：墙、玻璃、地面）的最近距离（贴墙、落地的扫描点算到墙和地面上；相邻的其他物件不当背景），**只计 10 厘米
+   以内的点**（更远的是范围里别的东西），写成 `fit {meanCm, p90Cm, coverage3cm}`；离物件 10 厘米以内、离背景超过
+   2 厘米的点不到 20 个（扫描里没有这件物件的证据，例如完全贴墙的饰面、扫描里没有的东西）时不写。采样的随机数按
+   物件编号固定，同样的输入得到同样的贴图、偏差和记录哈希；
+4. 结果：处理后的模型在 `models`（哈希 → glb 文件），烘焙的贴图在 `textures`，`notes` 原样返回（打包时写成建模
+   过程记录）；锚点规则不变（按 `props.category`）。
 
-提交说明形如 `导入扫描 8be81ec5ccf2（指定变换，AI 物件集）`、`写入 AI 物件集（扫描 8be81ec5ccf2）`。`result` 另加：
+`authored` 统计：
 
 ```json
-{"authored": {"origin": {"kind": "inline"} 或 {"kind": "asset", "assetHash": "…"}, "structure": "keep",
-  "entities": 24, "templates": 1,
-  "fit": [{"entityId": "counter-01", "points": 20000, "meanCm": 1.8, "p90Cm": 4.2, "coverage3cm": 0.81}, …],
-  "downloads": {"models": 3, "files": 9, "bytes": 5123456, "redirects": 2},
-  "models": {"files": 3, "bytes": 1234567, "triangles": 54321},
-  "bake": {"entities": 4, "parts": 6, "textured": 6, "fallback": 0},
-  "textureFallback": [{"entityId": "floor", "path": "$", "from": "6fbe5e44…", "to": "0b7c19a2…"}, …],
-  "scriptRef": "…"}}
+{"structure": "keep", "entities": 24, "templates": 1,
+ "fit": [{"entityId": "counter-01", "points": 20000, "meanCm": 1.8, "p90Cm": 4.2, "coverage3cm": 0.81}, …],
+ "downloads": {"models": 3, "files": 9, "bytes": 5123456, "redirects": 2},
+ "models": {"files": 3, "bytes": 1234567, "triangles": 54321},
+ "bake": {"entities": 4, "parts": 6, "textured": 6, "fallback": 0},
+ "textureFallback": [{"entityId": "floor", "path": "$", "from": "6fbe5e44…", "to": "0b7c19a2…"}, …]}
 ```
 
-### `voxelize` `{scanAssetHash?, style?}`
+### 体素化、物件模型重新导出（本地实验）
 
-`style` 可以是风格名（字符串，接口服务 `POST .../scans/{scan_id}/voxelize {style}` 和命令行
-`metaverse voxelize --style` 传的就是它），也可以是对象 `{paletteSize?}`（直接给颜色数，1–1024，默认 64）：
-
-| 风格名 | 颜色数 |
-|---|---|
-| `default`（不给 `style` 时也是它） | 64 |
-| `coarse` | 16 |
-| `fine` | 256 |
-
-不认识的风格名、对象里有别的字段、颜色数超出范围 → 任务失败（不可重试），`lastError` 列出可用的风格名。
-
-按 `GRID_UNIT`（5 厘米）体素化（每格面积约 9 个采样点、线性空间平均色、去掉少于 2 个采样点的格子和小连通块），
-空间定义了实体区（`regions` 里 `kind: physical` 的盒子）时只保留实体区里的格子；Lab 空间 k-means 量化成
-`paletteSize` 种颜色。方块表只追加：编号 0、1 保留，从 2 开始；当前方块表里颜色相同的
-扫描方块（`tags` 含 `scan`）复用编号，否则追加 `{id, name: "扫描色 #rrggbb", kind: solid, color, tags: ["scan"]}`。
-区块按 `chunk.py` 编码（32³），写到**重建层**；旧清单里有、新结果里没有的区块写 null；方块表变了才带
-`paletteHash`。事务里发现方块表在计算期间变了就放弃、稍后重试。没有变化时不提交（`result.unchanged = true`）。
-
-`result = {scanAssetHash, style?, paletteSize, newBlocks, samples, rawCells, cells, colors, chunks, seconds, paletteHash?, changedChunks}`
-（`style` 只在传了风格名时出现）。
-
-### `model_import` `{assetHash}`
-
-读 glb / obj / drc（或含它们的 zip）→ 解析前检查（三角形数、贴图像素、坐标不超过 ±1000 米）→ 超过
-`WORKER_MODEL_MAX_TRIANGLES` 就减面、贴图缩到 `WORKER_MODEL_MAX_TEXTURE_SIDE` 以内（有透明就存 PNG，否则
-JPEG）→ 重新导出 glb（没有贴图时保留顶点颜色或材质底色）。登记处理后的资源（`metadata.kind = model`，
-`metadata.sourceHash` = 原资源），不写提交；同一个事务里任务标记完成、处理后的模型计入发起任务的空间用量
-（任务的 `storageBytes`，见"空间存储用量"）：
-
-`result = {modelHash, sourceHash, bytes, triangles, vertices, sourceTriangles, textureSide, bounds: {min, max}}`。
+`processing/tasks.py` 的 `voxelize_task`（按 `GRID_UNIT` 体素化、Lab 空间 k-means 量化、方块表只追加、按 `chunk.py`
+编码区块）和 `model_task`（读 glb / obj / drc 或含它们的 zip → 减面、缩小贴图 → 重新导出 glb）留作本地实验：重建包
+第一版没有方块，物件模型由 AI 物件集的外部模型流程导出（设计 8.3）。
 
 ## 物体重建接口
 
-物体重建模块 `metaverse_worker/processing/objects.py` 由另一个模块实现，处理服务这样调用（子进程里）：
+物体重建模块 `metaverse_worker/processing/objects.py` 由另一个模块实现，重建流程这样调用：
 
 ```python
 from metaverse_worker.processing.objects import reconstruct_objects
 
 result = reconstruct_objects(mesh_space, structure, params=hints)
-# mesh_space：已用提交里的 transform 变到空间坐标的 ScanMesh（贴图坐标左上角原点）
+# mesh_space：已用对齐的 transform 变到空间坐标的 ScanMesh（贴图坐标左上角原点）
 # structure：同一网格上 extract_structure(mesh_space, hints=hints) 的 StructureResult
-# params：任务参数里的 hints（没给时是 {}）
+# params：提示 hints（没给时是 {}）
 result.entities  # {entityId: body}，SHAPES 第 3 节，layer 必须是 rebuilt，kind 是 object 或 template
 #   物体的 props.category 写类别（chair、table、sofa、counter、cabinet、clutter……），决定建不建锚点；
 #   props.detectedBy 写识别来源（hint 按提示、rules 按规则；旧数据写在 props.source 这个字符串里，
 #   读取时一并认，见 records.detected_by——props.source 现在只用于外部模型的署名对象）；
 #   anchorId 写建议的锚点编号；label 写中文标签（有提示用提示的 label）
 result.textures  # {sha256 十六进制: 图片字节（jpeg/png/webp）}，被 material.texture 引用
-result.metrics  # 任意 JSON，原样放进 result.objects
+result.metrics  # 任意 JSON，原样放进结果的 metrics.objects
 ```
 
-处理服务会校验：body 合法（规则与接口服务 `EntityBody::validate` 相同，`records.py`；模板实例按同一批结果里的
+重建流程会校验：body 合法（规则与接口服务 `EntityBody::validate` 相同，`records.py`；模板实例按同一批结果里的
 模板算包围盒；`label` 不超过 200 个字符、**不能含控制字符**，如换行、制表符）、贴图字节的哈希与键一致、
-引用的贴图都随结果给出、编号不和结构元素（`floor`、`wall-*`、`glazing-*`）重复。不合格 → 任务失败
-（不可重试）；模块导入失败 → 记录警告、只提交结构。规则必须和接口服务一致：接口服务读取记录时不校验，
-但之后草稿对这些物件、锚点做任何修改都会重新校验整个 body，不合格的记录就改不动了。
-
-## 空间存储用量
-
-`spaces.storageUsedBytes`（设计 4.1；接口服务创建上传时按"已用 + 进行中的上传 + 本次大小 > storageLimitBytes"
-返回 413）由处理服务累加，都按 `{_id, owner.kind, owner.id}` 加空间实例（见"空间实例"）条件更新，和引起
-变化的写入在同一个事务里：
-
-| 时机 | 变化 |
-|---|---|
-| `upload_verify` 把上传改成 `done`（新登记或复用已有资源都算） | `+size`，上传写 `storageBytes = size` |
-| 处理服务写的提交（`scan_import`、`rebuild`）在 `assetRefs` 里**新**登记本空间的派生资源（网页用模型、贴图、AI 物件集的外部模型） | `+资源字节数`（同一空间同一资源只计一次） |
-| `model_import` 完成（处理后的模型新登记或复用已有资源都算） | `+模型字节数`，任务写 `storageBytes`；和任务完成在同一个事务里 |
-| 定期清理删掉没人引用的资源 | 对每个 `assetHash` 是它、带 `storageBytes`、还没有 `storageReleasedAt` 的上传，以及 `result.modelHash` 是它的同样的 `model_import` 任务：写 `storageReleasedAt`，所属空间 `-storageBytes`（减到 0 为止，接口服务按 u64 读） |
-
-规则是"谁在 GridFS 里产生一份新的资源，谁就在产生时计入、在资源被删时成对减回"：原始上传过了宽限期没人
-引用就会被清理、减回，而处理后的模型可以被提交永久引用，所以它必须单独计入，不能靠"来源上传已经计入"。
-引用已经计过的资源（接口服务发布草稿时登记 `assetRefs`、放物件引用 `modelHash`）不再计。
-
-不计入的：区块、物件记录、方块表（在各自的集合里，不在 GridFS）。接口服务自己产生的资源也应按同一规则
-计入：在"哈希已存在、直接复用"创建上传（创建即 `done`）时 `+size` 并写 `storageBytes`；发布草稿时把多个
-操作文件合并成一个新资源（`put_asset_bytes`）时，在提交事务里计入并记下来，资源被清理时才能一并减回。
-
-## 定期清理
-
-后台线程每 `WORKER_CLEANUP_INTERVAL_SECONDS` 秒一次（设计 6.1），按顺序：
-
-0. **重试次数用完的任务**：租约过期且重试次数用完的任务标记失败；
-1. **上传会话**：先兜底处理停在 `complete`、但校验任务（上传的 `jobId`）已经 `failed` 的上传（任务记录
-   不存在、完成上传又超过 24 小时的也算），收尾规则同 `upload_verify` 一节；然后超过
-   `WORKER_UPLOAD_TTL_HOURS`（24 小时）仍 `open` 的上传先改成 `expired` 再删数据块和会话（`failed` /
-   `expired` 的同样删除）；
-2. **草稿、草稿区块、预览令牌**（设计 5.6、13.2）：接口服务把 `drafts`、`draftChunks`、`previews` 的
-   `expiresAt` 写成 RFC 3339 字符串、不建 TTL 索引，由处理服务按 `expiresAt < 现在`（字符串比较）删除：
-   过期的草稿（`open` 和已发布的都删；草稿 30 天过期）先删草稿本身，再删它的预览令牌和草稿区块
-   （`{draftId, spaceId}`）；预览令牌（最长 7 天）和草稿区块再各自按自己的 `expiresAt` 扫一遍。每轮最多
-   200 个草稿；
-3. **没人引用的资源**：上传或最近复用超过 `WORKER_ASSET_GRACE_DAYS`（7 天）、没有被引用的资源，先删 `files`
-   文档再删数据块，再把计过用量的上传、物件模型导出从各自空间的 `storageUsedBytes` 里减回（见上）。草稿在
-   第 2 步先删，过期草稿引用的资源本轮就不再算被引用。
-
-   查引用和删除之间没有锁，删除带"`metadata.touchedAt` 仍早于截止时间"的条件，这是唯一的栅栏。**引用一个
-   已有资源的一方**（处理服务复用已有资源登记、上传复用已有资源收尾；接口服务的草稿追加、发布登记
-   `assetRefs`、"哈希已存在、直接复用"的上传）**必须先按 `filename` 刷新 `metadata.touchedAt` 并要求匹配到
-   1 条**：刷新之后清理就删不掉它；匹配不到说明它刚被删掉，按资源不存在处理（处理服务重新登记本次的内容，
-   或让上传失败、要求重新上传）；
-4. **补打区块的 `publishedAt`**（设计 5.7："幂等，失败可以补做"）：最近 48 小时的提交（处理服务和接口服务
-   写的都算，按空间走 `(spaceId, at)` 索引）引用、还没有 `publishedAt` 的区块，按提交的 `at` 补上。写回在
-   事务提交之后才打 `publishedAt`，进程恰好在两步之间退出时，这些区块在公开接口上会一直 404。任务被重新
-   领取、发现已经有提交时也先补打一次再标记完成。
-
-处理服务启动时也幂等地建 `drafts`、`draftChunks`、`previews` 的 `expiresAt` 索引（名字和定义与接口服务相同）。
-健康检查的 `lastCleanup` 带每一项处理了多少：`{at, exhaustedJobs, stuckUploads, uploads, drafts, previews,
-draftChunks, assets, publishedChunks}`。
-
-资源"被引用"指出现在下面任何一处：
-
-| 集合 | 字段 |
-|---|---|
-| `assetRefs` | `hash` |
-| `commits` | `scan.assetHash`、`scan.textureHash`、`scan.webModelHashes`、`opsRef`、`scriptRef` |
-| `records` | `body.assetHash`、`body.textures` |
-| `palettes` | `blocks.texture.top / side / bottom` |
-| `drafts`（接口服务的草稿文档） | `opsRefs.assetHash`（经上传追加的操作文件）、`assets` |
-| 排队中 / 运行中的 `jobs` | `params` 里任意位置的字符串 |
-| 已完成、等人工对齐的 `scan_import` 任务 | `result.scanAssetHash`（`result.needsAlignment` 为真、`result.retainUntil` 还没到） |
+引用的贴图都随结果给出、编号不和结构元素（`floor`、`wall-*`、`glazing-*`）重复。不合格 → 失败；模块导入失败 →
+记录警告、只交结构（`objectsSkipped`）。规则必须和接口服务一致：接口服务交包时按同样的规则校验，不合格的包推不上去。
 
 ## 测试
 
 ```bash
 cd worker
 .venv/bin/ruff check . && .venv/bin/ruff format --check .
-.venv/bin/python -m pytest -q                 # 全部（需要本地 MongoDB 副本集的会自动跳过）
-.venv/bin/python -m pytest -q -m mongo        # 只跑集成测试
-METAVERSE_TEST_MONGODB_URI='mongodb://127.0.0.1:27018/?replicaSet=rs0' .venv/bin/python -m pytest -q
+.venv/bin/pytest -q
 ```
 
-集成测试每个用例建一个随机库，结束时删除。`tests/fake_objects.py` 是物体重建的假实现，集成测试把
-`handlers.scan.OBJECTS_TARGET` 换成它（其中一个用例在真实子进程里导入它）。AI 物件集的测试用本机 https 服务
-（`tests/https_server.py`，用 `openssl` 命令行在临时目录里现做自签名证书，不进仓库）当模型库，把
-`handlers.authored.OPENER_FACTORY` 换成信任这张证书、不走代理的下载器。
+测试只读写临时目录，不需要数据库。`tests/fake_objects.py` 是物体重建的假实现，重建流程的测试把
+`objects_target` 换成它。AI 物件集的测试用本机 https 服务（`tests/https_server.py`，用 `openssl` 命令行在临时目录里
+现做自签名证书，不进仓库）当模型库，下载器换成信任这张证书、不走代理的。渲染相关的测试在找不到 node、three、
+Playwright、Chromium 时跳过（`metaverse-recon doctor` 查看缺什么）。
+
+原来要 MongoDB 的测试按内容分了两路：上传核对、清理、栅栏、空间实例、存储用量这些服务端语义已经移植成接口服务的
+Rust 测试（`api/crates/metaverse-api/tests/runner*.rs`、`asset_fence.rs`）；锚点规则、物件集写回、外部模型、烘焙、
+重扫配准这些重建语义改成了 `tests/test_bundle_rebuild.py`、`tests/test_anchors.py`。
 
 ## 实测：公司前厅扫描
+
+处理服务下线之前在它里面测的（上传核对、导入扫描、体素化都是当时的任务）；计算部分的代码没变，读取、对齐、
+网页用模型、结构重建的耗时在本地照样适用。
 
 输入：Scaniverse 导出的 Draco 网格（24.9 万顶点、33.6 万三角面）+ 8192² 贴图，打成 zip（5.9MB）上传。
 本地 4 核机器，真实子进程（内存上限 6144MB），物体重建模块不存在时跳过（只交结构）。
@@ -551,57 +349,53 @@ cd worker
 | 处理服务坐标系，换算后（部署配置种子） | 3.14 厘米 | 8.41 | 41 | 入口附近一块 13 厘米厚的薄板被规则识别成"前台"（多一个锚点） |
 | 处理服务坐标系，不换算 | 4.51 厘米 | 11.51 | 59 | 沙发、桌子、前台重复识别；LED 大屏的提示没对上，又被当成墙 |
 
-所以部署配置种子（`infra/chrono-cd/demo-seed.json` 的 `hints`）里的是换算后的坐标，由 `scripts/demo_seed_hints.py` 生成：
-它在同一份扫描上分别算两种对齐，按 `M_auto · M_compute⁻¹` 换算物体中心（尺寸不变，`yaw` 加上偏航差），并打印处理服务将得到的
-`transform`（导入后和任务 `result.transform` 对照，本地全流程实测完全一致）。
-
-```bash
-.venv/bin/python scripts/demo_seed_hints.py --scan mesh.drc --texture tex.jpg \
-    --hints scripts/lobby_hints.json --seed ../infra/chrono-cd/demo-seed.json     # --check 只核对
-```
+所以部署配置种子（`infra/chrono-cd/demo-seed.json` 的 `hints`）里的是换算后的坐标：在同一份扫描上分别算两种对齐，按
+`M_auto · M_compute⁻¹` 换算物体中心（尺寸不变，`yaw` 加上偏航差）。当时做这件事的 `scripts/demo_seed_hints.py` 跟着
+处理服务一起删掉了（新的演示种子导入按哈希固定的重建包，不再带提示）；以后要在两种坐标系之间换算物件，用重建工作台的
+`reframe`。
 
 ## 重建工作台（metaverse-recon）
 
 给本地的 AI 模型师（Claude Code / Codex）用的命令行，`worker/src/metaverse_worker/recon/`。前厅的"优化模型"由
 大模型逐件完成：每件物体**先去模型库搜一个看起来差不多的现成模型**摆进扫描里对照，搜不到或差太多的定制件
 （前台、LED 大屏墙、入口门框、嵌入柜）再手写参数形状。工作台只做眼睛、尺子和裁判（渲染、测量、对齐、偏差），
-结果合并成 AI 物件集交给处理服务写进时间线。教程见 `docs/tutorials/reconstruct-with-ai.md`，给模型师的技能说明是
+结果合并成 AI 物件集，再打成重建包推送。教程见 `docs/tutorials/reconstruct-with-ai.md`，给模型师的技能说明是
 `sdk/typescript/skills/metaverse-reconstruct/SKILL.md`（`metaverse init` 写进工作区）。
 
 ```bash
-cd worker && uv venv .venv && uv pip install --python .venv/bin/python -e .
+cd worker && uv sync --frozen
 .venv/bin/metaverse-recon doctor     # 渲染要用的 node、three、Playwright、Chromium、中文字体在不在
 ```
 
 | 命令 | 作用 | 输出 |
 |---|---|---|
-| `prepare` | 扫描（zip、glb，或 drc + 贴图）+ 可选提示 → 基线目录。**直接调用 `scan_import` 首次导入的同一条代码路径**（`processing.tasks.scan_task` → `processing.align.auto_align` → 结构 + 物体重建），坐标、结构、物体编号与线上导入同一份扫描完全一致 | `scan.glb`、`transform.json`、`structure.json`、`objects.json`、`candidates.json`（编号、类别、标签、包围盒、点数、偏差、识别来源 `detectedBy`、建议先搜还是手写、同款）、`base.json` |
+| `prepare` | 扫描（zip、glb，或 drc + 贴图）+ 可选提示 → 基线目录。**与重建流程（`bundle.rebuild`）首次自动对齐是同一条代码路径**（`processing.tasks.scan_task` → `processing.align.auto_align` → 结构 + 物体重建），坐标、结构、物体编号完全一致（也与原来处理服务首次导入同一份扫描的结果一致） | `scan.glb`、`transform.json`、`structure.json`、`objects.json`、`candidates.json`（编号、类别、标签、包围盒、点数、偏差、识别来源 `detectedBy`、建议先搜还是手写、同款）、`base.json` |
 | `views` | 只渲染包围盒附近的扫描，6 个角度 + 任意相机，带米制刻度、像素 ↔ 坐标换算 | JPEG + `views.json` |
 | `measure` | 外接框、最小外接矩形、按高度剖面、水平/竖直截面（网格精确求交）、俯视占用图、圆拟合、颜色；**平面拟合**（`--plane`：法向、坡度、方位、残差、可直接作 `plate` 的角点）、**高度图数字表**（`--heightmap`）、排除框（`--exclude`）、局部坐标（`--frame`） | `measure.json` + 截面图、占用图 |
-| `compare` | 物件记录（形状物件或外部模型物件）与扫描、现有算法并排渲染，偏差（扫描→模型、模型→扫描、分部件、漏建团块、逐件的写回 `fit`——与处理服务写回时同一个函数），校验；`--exclude`、`--color-parts`、`--scene`（多物件 / 整房） | `compare.jpg`、`compare_error.jpg`、`compare.json` |
+| `compare` | 物件记录（形状物件或外部模型物件）与扫描、现有算法并排渲染，偏差（扫描→模型、模型→扫描、分部件、漏建团块、逐件的 `fit`——与重建流程同一个函数），校验；`--exclude`、`--color-parts`、`--scene`（多物件 / 整房） | `compare.jpg`、`compare_error.jpg`、`compare.json` |
 | `search` / `index` | 模型库检索，许可硬过滤：Poly Haven（全部 CC0）、Objaverse（逐个对象读许可，只要 CC0 / CC-BY）、Sketchfab（设了 `SKETCHFAB_TOKEN` 才启用） | `candidates.json` + 带编号的缩略图拼图 `sheet.jpg` |
 | `fetch` | 下载候选（Poly Haven 的 glTF 打包成 glb），记 sha256、大小、署名；上限 50 MB | `<缓存>/models/<库>/<编号>/model.glb` + `model.json` |
 | `place` | 候选摆到扫描里的物体上：自动判断向上轴、按量出的尺寸缩放（等比，或逐轴 ±15%）、偏航粗搜 + 只求偏航和平移的迭代最近点 + 顶面高度图分朝向、落地；可按扫描颜色给 tint 建议 | `entity.json`（外部模型物件记录）、`place.jpg`（扫描 \| 候选）、`place.json` |
-| `assemble` | 合并物件文件成 AI 物件集（模板去重、编号唯一、引用的模板存在、逐个校验、重算包围盒），最后整份跑一遍写回路径的校验 `metaverse_worker.authored.parse_authored`（处理服务收到时跑的就是它），通过了才算合格 | `authored.json`、`room.glb`、`room.jpg`（扫描 \| 现有算法 \| AI 重建：总览、俯视、四个角）、`report.json`（逐件偏差和写回 `fit`、漏建团块） |
+| `assemble` | 合并物件文件成 AI 物件集（模板去重、编号唯一、引用的模板存在、逐个校验、重算包围盒），最后整份跑一遍重建流程的校验 `metaverse_worker.authored.parse_authored`，通过了才算合格 | `authored.json`、`room.glb`、`room.jpg`（扫描 \| 现有算法 \| AI 重建：总览、俯视、四个角）、`report.json`（逐件偏差和 `fit`、漏建团块） |
 | `reframe` | 物件在两种对齐之间换算：`compute`（`reconstruct_lobby.py`）↔ `scan_import`（prepare），或任意变换文件 | 同格式的物件文件 |
 
 **形状**：`plate`、`hull`、材质 `opacity`、`unlit` 和平铺、着色、法线、粗糙度（SHAPES 2）的校验、包围盒、网格和
-贴图坐标直接用处理服务的 `shapes.py`、`shape_mesh.py`（与接口服务、网站、命令行逐条对过同一批测试向量，贴图坐标
+贴图坐标直接用本包的 `shapes.py`、`shape_mesh.py`（与接口服务、网站、命令行逐条对过同一批测试向量，贴图坐标
 对过 `uv/` 向量）；AI 物件集独有的烘焙指令 `bake` 由
-`recon/shapes_ext.py` 按写回路径的规则处理（预览时按扫描颜色上色）。
+`recon/shapes_ext.py` 按重建流程的规则处理（预览时按扫描颜色上色）。
 
-**外部模型物件**（`place` 输出，AI 物件集的外部模型格式，与写回路径收的完全相同）：没有 `shape`，带 `model`
+**外部模型物件**（`place` 输出，AI 物件集的外部模型格式，与重建流程收的完全相同）：没有 `shape`，带 `model`
 （`url`、`sha256`、`size`、`format`：`glb`、`gltf`（Poly Haven：另有 `files: {相对路径: {url, sha256, size}}` 列出
 .bin 和贴图）或 `gltf-zip`）、`transform`（作用于 `processing.modelimport.load_model` 读出的模型坐标，顺序同
 SHAPES，含 `scale`）、`bounds`、`props.source`（`library、id、page、author、license、title` 六个非空字符串，CC0 也写
-作者；网站据此显示"模型来源"）、可选 `material: {tint, opacity, unlit}`（`tint` 写回时烘进模型，`opacity`、`unlit`
-留在物件上）。`place` 写的 `fit` 可以留着，写回时重算。地址只允许 `dl.polyhaven.org`、`huggingface.co`
-（`METAVERSE_RECON_MODEL_HOSTS` 可改，要和处理服务的 `WORKER_MODEL_HOSTS` 对得上）。模型库里常见厘米单位的模型：
-处理服务把旋转、缩放烘进模型之后才检查 ±1000 米的坐标上限。
+作者；网站据此显示"模型来源"）、可选 `material: {tint, opacity, unlit}`（`tint` 重建时烘进模型，`opacity`、`unlit`
+留在物件上）。`place` 写的 `fit` 可以留着，重建时重算。地址只允许 `dl.polyhaven.org`、`huggingface.co`
+（`METAVERSE_RECON_MODEL_HOSTS` 可改，重建流程下载外部模型用同一个变量）。模型库里常见厘米单位的模型：
+重建流程把旋转、缩放烘进模型之后才检查 ±1000 米的坐标上限。
 
-**提交**：`assemble` 的 `authored.json` 用命令行交给处理服务——扫描已经导入时在工作区里
-`metaverse rebuild --authored out/authored/authored.json`，第一次导入时 `metaverse scan <扫描> --authored …`
-（物件集的坐标就是 `prepare` 的坐标，也就是这份扫描首次导入的对齐结果）。
+**提交**：处理服务下线后，`metaverse rebuild --authored`、`metaverse scan … --authored` 这条路不再可用。`assemble` 的
+`authored.json` 要交给重建流程（`bundle.rebuild.rebuild_scan(..., authored=…)`）打成重建包，再用命令行
+`metaverse bundle push` 推送；打包命令 `metaverse-recon bundle` 还没有做（设计 8.3）。
 
 | 环境变量 | 用途 |
 |---|---|
@@ -619,7 +413,7 @@ Cap3D 的描述（ODC-By 1.0，要署名）暂未接入。
 ### 前厅实测（2026-11-09）
 
 `prepare`（drc + 贴图 + 部署种子里的提示，打包成和种子相同的 zip）46 秒：自动对齐 −61.423°、倾斜 0.094°，结构 6
-个、物体 41 个、模板 2 个，与 `scan_import` 的变换一致；概念验证的四个模型用 `reframe --from compute` 换过来，沙发
+个、物体 41 个、模板 2 个，与原来处理服务首次导入（`scan_import`）的变换一致；概念验证的四个模型用 `reframe --from compute` 换过来，沙发
 在新基线上 2.87 厘米（概念验证报告 2.83）。
 
 | 物体 | 检索 | 选中的候选 | 摆放 | 扫描→模型（候选 / 现有算法） |
@@ -637,4 +431,4 @@ Sofa"（gla_bot，两人位、枕式扶手，4.53 厘米），但它是深棕色
 - 单独的 `.drc` 扫描没有贴图（Draco 文件不带图片），网页用模型和重建贴图都是灰色；带贴图请上传 zip；
 - 多网格的 glb 物件模型由 trimesh 合并（贴图拼成图集），顶点颜色可能丢失；
 - 配准只求偏航和平移：扫描本身有倾斜时先由摆正步骤修正（10° 以内）；
-- 解析前检查里 Draco 的三角形数要解码后才知道（受子进程内存上限保护）。
+- 解析前检查里 Draco 的三角形数要解码后才知道（本地没有子进程内存上限，靠机器本身的内存）。

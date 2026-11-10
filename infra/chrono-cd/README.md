@@ -91,7 +91,7 @@ nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --
 
 改完用第 6 步的命令看 `metaverse-api` 的日志：被限流时会打印"公开接口限流"。
 
-`metaverse-worker`（完整说明见 `worker/src/metaverse_worker/config.py`）：
+`metaverse-worker`（线上换成瘦身后的版本之前仍在跑的旧处理服务；它的配置说明在仓库里已随代码删掉，要看就查 `worker/src/metaverse_worker/config.py` 删除前的历史版本）：
 
 | 变量 | 值 | 说明 |
 |---|---|---|
