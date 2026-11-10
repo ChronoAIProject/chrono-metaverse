@@ -155,3 +155,12 @@ CMA 接口要求普通用户 OAuth access token。带服务 resource/allowed_ser
 固定只读路径为 `POST /api/auth/nyxid/spaces` 及 `/api/auth/nyxid/view/spaces/{spaceId}` 下的查看器读取。要求当前浏览器会话、同源 Origin、CSRF、实时 userinfo 和资源 ACL；返回公开查看器投影并强制 `no-store`，不暴露内部锚点、不生成分享能力。读取结束前检查授权版本，断开不能被在途响应越过。浏览器 Cookie 仍不能认证业务 `/api/v1/*`。
 
 启用 CMA 后在同一聊天框持续追加要求，复用当前空间的 worker；切换空间恢复它自己的记录。网页每 2 秒串行读取已产生的对话、Responses v2 输出与工具状态，并自动显示 worker 发回的新预览。它不会伪装逐 token 流，也不会自动重试写操作。发布确认绑定具体预览，更新预览后必须重新确认。完整流程和边界见 [WEB_CONSOLE_PLAN.md](WEB_CONSOLE_PLAN.md)。
+
+
+## 空间聊天部署记录（2026-11-11）
+
+- chrono-cd 修订 `14`；源码提交 `b644c7a04b2539b4631a2d6227d975ee50f4a3f4`，分支 `feat/space-chat-20261111`。[完整 CI](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/42871727829) 的 8 个任务全部成功，[Images](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/42871785581) 两个镜像均成功，摘要取自该运行的对应构建日志并固定到 `app.json`。
+- 部署前后逐字段比对，应用规格仅改变 API/web 的镜像及 CD 解析摘要。API `1/1`、web `2/2` 全部更新并就绪。既有 `chronoai-lobby` 经原 NyxID 用户代理读取，空间响应与部署前一致。
+- 线上工作台桌面/手机真实渲染，未出现脚本错误或横向溢出。匿名目录、私有查看器和 CMA 操作均返回 `401` 且 `no-store`；业务接口仍拒绝未签名请求。OAuth 客户端、最小 scopes、回调、PKCE 和安全 Cookie 已核对。
+- 本地 449 个网页测试、21 个 OAuth 集成测试（包括 4 个空间发现/查看器用例）及桌面/手机工作台流程通过。全站端到端测试和 API 全量测试在该 CI 中通过。浏览器夹具验证了已有场景渲染、连续追问复用 worker、自动跟随新预览和重新确认发布。
+- 未代替用户完成浏览器 OAuth 同意、CMA 同意或真实 worker 修改。线上已验证匿名入口与原有代理读取；登录后的真实空间列表和 worker 编辑仍需用户以自己的账号首次使用验收。
