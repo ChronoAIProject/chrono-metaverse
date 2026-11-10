@@ -1,4 +1,4 @@
-/* 场景始终占满主区域；菜单和聊天覆盖画布，不参与场景宽度计算。 */
+/* 聊天展开后占用右侧独立一列，画布和聊天不重叠。 */
 .workspace {
   height: 100%;
   min-width: 0;
@@ -258,18 +258,29 @@
 }
 .workspace__stage {
   position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
-.workspace__preview,
+.workspace__stage--chat-open {
+  grid-template-columns: minmax(0, 1fr) clamp(320px, 30vw, 380px);
+}
+.workspace__preview {
+  position: relative;
+  grid-column: 1;
+  grid-row: 1;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+}
 .workspace__scene {
   position: absolute;
   inset: 0;
   min-width: 0;
   min-height: 0;
-}
-.workspace__scene {
   isolation: isolate;
   background: var(--ground);
 }
@@ -312,17 +323,15 @@
   font-size: 11px;
 }
 .workspace .workspace__chat-launcher {
-  position: absolute;
-  left: 20px;
-  bottom: 84px;
-  z-index: 35;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  border-radius: 28px;
-  box-shadow: 0 8px 32px #0005;
-  min-height: 46px;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  height: 34px;
+  white-space: nowrap;
+  font-size: 12px;
 }
 .workspace__chat-launcher small {
   font-size: 10px;
@@ -331,20 +340,14 @@
   font-weight: 400;
 }
 .workspace__chat {
-  position: absolute;
-  left: 20px;
-  bottom: 84px;
-  z-index: 40;
-  width: min(380px, calc(100% - 32px));
-  height: min(580px, calc(100% - 156px));
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--dsw-alias-bg-base);
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 16px;
-  box-shadow: 0 16px 60px #0007;
+  border-left: 1px solid var(--dsw-alias-border-l1);
   overflow: hidden;
 }
 .workspace__chat-heading {
@@ -647,35 +650,98 @@
     max-height: calc(100dvh - 80px);
   }
   .workspace__chat {
-    left: 12px;
-    bottom: 80px;
-    width: calc(100% - 24px);
-    height: min(620px, calc(100% - 100px));
-    border-radius: 14px;
+    grid-column: 1;
+    grid-row: 2;
+    border-left: 0;
+    border-top: 1px solid var(--dsw-alias-border-l1);
+  }
+  .workspace__stage--chat-open {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(260px, 1fr) minmax(0, 1.5fr);
+  }
+  .workspace__stage--chat-open:has(.workspace__empty) {
+    grid-template-rows: minmax(120px, 1fr) minmax(0, 2fr);
   }
   .workspace .workspace__chat-launcher {
-    left: 12px;
-    bottom: 80px;
+    width: 34px;
+    padding: 6px;
+    justify-content: center;
+  }
+  .workspace__chat-launcher span,
+  .workspace__chat-launcher small {
+    display: none;
+  }
+  .workspace__space-trigger {
+    width: 100px;
+  }
+  .workspace__stage--chat-open .workspace__empty {
+    gap: 8px;
+    padding: 12px;
+  }
+  .workspace__stage--chat-open .workspace__empty > span,
+  .workspace__stage--chat-open .workspace__empty small {
+    display: none;
+  }
+  .workspace__stage--chat-open .workspace__empty h1 {
+    font-size: 18px;
   }
   .workspace__composer textarea {
     font-size: 16px;
+    min-height: 36px;
+  }
+  .workspace__composer {
+    margin: 8px;
+    padding: 8px;
   }
   .workspace__composer small {
     font-size: 8px;
   }
   .workspace__scene .space__bar {
-    padding: 8px 12px;
+    padding: 6px 12px;
     gap: 8px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  .workspace__scene .space__bar > * {
+    flex-shrink: 0;
+  }
+  .workspace__scene .space__title {
+    flex: 0 0 160px;
+    min-width: 160px;
+  }
+  .workspace__scene .space__switches {
+    flex-wrap: nowrap;
+  }
+  .workspace__scene .timeline {
+    display: grid;
+    grid-template-columns: 32px 56px minmax(0, 1fr) auto;
+    gap: 4px 8px;
+    padding: 6px 12px;
+  }
+  .workspace__scene .timeline__play {
+    width: 32px;
+    height: 32px;
+  }
+  .workspace__scene .timeline__step {
+    width: 27px;
+  }
+  .workspace__scene .timeline__speed select {
+    width: 100%;
+  }
+  .workspace__scene .timeline__track {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    min-width: 0;
+    height: 24px;
+  }
+  .workspace__scene .timeline__time {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    font-size: 10px;
+    white-space: nowrap;
   }
 }
 @media (max-height: 600px) {
-  .workspace__chat {
-    bottom: 72px;
-    height: calc(100% - 90px);
-  }
-  .workspace .workspace__chat-launcher {
-    bottom: 72px;
-  }
   .workspace__chat-empty {
     padding: 0;
   }

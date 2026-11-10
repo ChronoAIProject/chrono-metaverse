@@ -12,6 +12,7 @@ export type Intent = {
   action: 'create' | 'message' | 'cancel' | 'attachment';
   body: Record<string, unknown> & { idempotencyKey: string };
   setupRequired?: boolean;
+  lastError?: { code: string; message: string; status?: number };
 };
 export type Notebook = {
   spaceId: string;
@@ -145,7 +146,15 @@ function parseNotebook(raw: string | null, spaceId = ''): Notebook {
         (!['create', 'message', 'cancel', 'attachment'].includes(v.pending.action) ||
           typeof v.pending.body !== 'object' ||
           v.pending.body === null ||
-          !id(v.pending.body.idempotencyKey))) ||
+          !id(v.pending.body.idempotencyKey) ||
+          (v.pending.lastError !== undefined &&
+            (typeof v.pending.lastError.code !== 'string' ||
+              typeof v.pending.lastError.message !== 'string' ||
+              v.pending.lastError.message.length > 2048 ||
+              (v.pending.lastError.status !== undefined &&
+                (!Number.isInteger(v.pending.lastError.status) ||
+                  v.pending.lastError.status < 100 ||
+                  v.pending.lastError.status > 599)))))) ||
       (v.startup !== undefined &&
         (v.startup.action !== 'create' ||
           typeof v.startup.body !== 'object' ||

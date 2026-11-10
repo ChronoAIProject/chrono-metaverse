@@ -165,11 +165,12 @@ test('在线工作台：明确授权、创建 worker、查看结果并确认发�
   const stage = await page.locator('.workspace__stage').boundingBox();
   const scene = await page.locator('.workspace__scene').boundingBox();
   const chat = await page.getByRole('dialog', { name: 'CMA 空间聊天' }).boundingBox();
-  expect(chat!.x).toBe(20);
+  expect(chat!.x).toBeGreaterThanOrEqual(scene!.x + scene!.width);
+  expect(scene!.width).toBeGreaterThanOrEqual(850);
   expect(stage!.width).toBe(1280);
-  expect(scene!.width).toBe(1280);
+  expect(scene!.width + chat!.width).toBe(1280);
   expect(chat!.x + chat!.width).toBeLessThanOrEqual(1280);
-  expect(chat!.y + chat!.height).toBeLessThan(720);
+  expect(chat!.y + chat!.height).toBeLessThanOrEqual(720);
   await page.getByRole('button', { name: '收起 CMA 聊天' }).click();
   await expect(page.getByRole('dialog', { name: 'CMA 空间聊天' })).toBeHidden();
   expect((await page.locator('.workspace__scene').boundingBox())!.width).toBe(1280);
@@ -279,6 +280,8 @@ test('手机端：创建回复丢失后刷新页面，恢复原请求不会重�
   expect(requests).toHaveLength(2);
   expect(requests[0]).toEqual(requests[1]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  const canvasArea = await page.locator('.workspace__scene .viewer').boundingBox();
+  expect(canvasArea!.height).toBeGreaterThan(80);
   await page.screenshot({ path: testInfo.outputPath('workspace-mobile.png'), fullPage: true });
 });
 
@@ -451,8 +454,14 @@ test('恢复旧任务：手机直接看到沙箱阶段的授权阻塞', async ({
   });
   await page.goto('/workspace');
   await page.getByRole('button', { name: '打开 CMA 聊天' }).click();
+  const scene = await page.locator('.workspace__scene').boundingBox();
+  const chat = await page.getByRole('dialog', { name: 'CMA 空间聊天' }).boundingBox();
+  expect(scene!.y + scene!.height).toBeLessThanOrEqual(chat!.y);
+  expect(scene!.height).toBeGreaterThanOrEqual(120);
+  await page.getByText('需要完成 CMA 服务授权', { exact: true }).waitFor();
   await expect(page.getByText('需要完成 CMA 服务授权', { exact: true })).toBeInViewport();
   await expect(page.getByRole('button', { name: '刷新启动进度' })).toBeInViewport();
+  await page.getByText('准备任务', { exact: false }).first().scrollIntoViewIfNeeded();
   await expect(page.getByText('准备任务', { exact: false }).first()).toBeInViewport();
   await expect(page.getByRole('heading', { name: '你想怎样调整这个空间？' })).toHaveCount(0);
 });

@@ -401,8 +401,9 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
               ...intent,
               body: { ...intent.body, idempotencyKey: crypto.randomUUID() },
               setupRequired: false,
+              lastError: undefined,
             }
-          : intent;
+          : { ...intent, lastError: undefined };
         commit({ ...base, pending });
         try {
           if (pending.action === 'attachment') {
@@ -516,8 +517,21 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
               : '请求已受理，正在跟进进度。',
           );
         } catch (e) {
-          if (e instanceof WorkerError && e.code === 'cma_setup_required')
-            commit({ ...base, pending: { ...pending, setupRequired: true } });
+          if (!signal.aborted)
+            commit({
+              ...base,
+              pending: {
+                ...pending,
+                ...(e instanceof WorkerError && e.code === 'cma_setup_required'
+                  ? { setupRequired: true }
+                  : {}),
+                lastError: {
+                  code: e instanceof WorkerError ? e.code : 'unconfirmed_response',
+                  message: (e instanceof Error ? e.message : '请求结果尚未确认。').slice(0, 2048),
+                  ...(e instanceof WorkerError && e.status ? { status: e.status } : {}),
+                },
+              },
+            });
           throw e;
         }
       });
@@ -766,7 +780,12 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
       ? String(note.pending.body.instruction ?? '')
       : '';
   useEffect(() => {
-    if (chatOpen) chatEnd.current?.scrollIntoView?.({ block: 'nearest' });
+    if (!chatOpen) return;
+    const statusCard = chatPanel.current?.querySelector<HTMLElement>(
+      note.pending && !busy ? '.workspace__recovery' : '.workspace__startup',
+    );
+    if (statusCard) statusCard.scrollIntoView?.({ block: 'start' });
+    else chatEnd.current?.scrollIntoView?.({ block: 'nearest' });
   }, [
     transcript,
     output,
@@ -1139,80 +1158,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
             </button>
           </>
         )}
-        <nav className="workspace__account-nav">
-          <a href="/connect">账号与组织</a>
-        </nav>
-      </header>
-      {!session && (
-        <section className="workspace__panel workspace__ui">
-          <p>正在读取连接状态…</p>
-          {error && (
-            <>
-              <p role="alert">{error}</p>
-              <button onClick={() => setReload((v) => v + 1)}>重新读取</button>
-            </>
-          )}
-        </section>
-      )}
-      {session && !session.connected && (
-        <section className="workspace__welcome workspace__ui">
-          <span>YOUR SPACES, ONE CONVERSATION</span>
-          <h1>打开空间，聊着就能改</h1>
-          <p>把空间铺满眼前，让 CMA 在左下角陪你建造。</p>
-          <a className="workspace__button" href="/connect">
-            连接 NyxID，查看我的空间
-          </a>
-        </section>
-      )}
-      {session?.connected && (
-        <div className="workspace__stage">
-          <section className="workspace__preview" aria-label="空间视图">
-            <div className="workspace__scene">
-              {preview ? (
-                <iframe
-                  className="workspace__frame"
-                  title="三维空间预览"
-                  src={preview}
-                  referrerPolicy="no-referrer"
-                  sandbox="allow-scripts allow-same-origin allow-pointer-lock"
-                />
-              ) : note.creation && !selected ? (
-                <div className="workspace__empty" role="status">
-                  <span aria-hidden="true">◇</span>
-                  <h1>{note.creation.name}</h1>
-                  <p>
-                    {creating
-                      ? '在左下角放入扫描链接或模型，开始创建你的空间。'
-                      : 'CMA 正在准备空间；重建完成后，预览会出现在这里。'}
-                  </p>
-                  <div className="workspace__ui">
-                    <button onClick={() => setChatOpen(true)}>打开创建聊天</button>
-                  </div>
-                </div>
-              ) : note.spaceId && browserClient ? (
-                <SpacePage
-                  key={note.spaceId}
-                  spaceId={note.spaceId}
-                  client={browserClient}
-                  hasShareToken
-                  embedded
-                />
-              ) : (
-                <div className="workspace__empty">
-                  <span aria-hidden="true">◇</span>
-                  <h1>让你的空间占满眼前</h1>
-                  <p>选择已有空间，或从扫描与模型创建一个新空间。</p>
-                  <div className="workspace__ui workspace__actions">
-                    <button onClick={() => setMenu('spaces')}>选择已有空间</button>
-                    <button className="workspace__secondary" onClick={startCreation}>
-                      创建第一个空间
-                    </button>
-                  </div>
-                  <small>需要调整时，打开左下角的 CMA 聊天</small>
-                </div>
-              )}
-            </div>
-          </section>
+        {session?.connected && (
           <button
             ref={chatButton}
             className="workspace__chat-launcher workspace__button"
@@ -1241,6 +1187,81 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
               <small>查看草稿</small>
             ) : null}
           </button>
+        )}
+        <nav className="workspace__account-nav">
+          <a href="/connect">账号与组织</a>
+        </nav>
+      </header>
+      {!session && (
+        <section className="workspace__panel workspace__ui">
+          <p>正在读取连接状态…</p>
+          {error && (
+            <>
+              <p role="alert">{error}</p>
+              <button onClick={() => setReload((v) => v + 1)}>重新读取</button>
+            </>
+          )}
+        </section>
+      )}
+      {session && !session.connected && (
+        <section className="workspace__welcome workspace__ui">
+          <span>YOUR SPACES, ONE CONVERSATION</span>
+          <h1>打开空间，聊着就能改</h1>
+          <p>把空间铺满眼前，让 CMA 在右侧陪你建造。</p>
+          <a className="workspace__button" href="/connect">
+            连接 NyxID，查看我的空间
+          </a>
+        </section>
+      )}
+      {session?.connected && (
+        <div className={`workspace__stage${chatOpen ? ' workspace__stage--chat-open' : ''}`}>
+          <section className="workspace__preview" aria-label="空间视图">
+            <div className="workspace__scene">
+              {preview ? (
+                <iframe
+                  className="workspace__frame"
+                  title="三维空间预览"
+                  src={preview}
+                  referrerPolicy="no-referrer"
+                  sandbox="allow-scripts allow-same-origin allow-pointer-lock"
+                />
+              ) : note.creation && !selected ? (
+                <div className="workspace__empty" role="status">
+                  <span aria-hidden="true">◇</span>
+                  <h1>{note.creation.name}</h1>
+                  <p>
+                    {creating
+                      ? '在右侧聊天中放入扫描链接或模型，开始创建你的空间。'
+                      : 'CMA 正在准备空间；重建完成后，预览会出现在这里。'}
+                  </p>
+                  <div className="workspace__ui">
+                    <button onClick={() => setChatOpen(true)}>打开创建聊天</button>
+                  </div>
+                </div>
+              ) : note.spaceId && browserClient ? (
+                <SpacePage
+                  key={note.spaceId}
+                  spaceId={note.spaceId}
+                  client={browserClient}
+                  hasShareToken
+                  embedded
+                />
+              ) : (
+                <div className="workspace__empty">
+                  <span aria-hidden="true">◇</span>
+                  <h1>让你的空间占满眼前</h1>
+                  <p>选择已有空间，或从扫描与模型创建一个新空间。</p>
+                  <div className="workspace__ui workspace__actions">
+                    <button onClick={() => setMenu('spaces')}>选择已有空间</button>
+                    <button className="workspace__secondary" onClick={startCreation}>
+                      创建第一个空间
+                    </button>
+                  </div>
+                  <small>需要调整时，打开右侧的 CMA 聊天</small>
+                </div>
+              )}
+            </div>
+          </section>
           <section
             id="workspace-chat"
             ref={chatPanel}
@@ -1534,6 +1555,13 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                       ? '请用相同账号登录 CMA，完成运行环境授权后回到这里重新提交。'
                       : '发送结果尚未确认。重试会使用相同内容和原请求编号。'}
                   </p>
+                  {note.pending.lastError ? (
+                    <p className="workspace__notice--error">
+                      上次请求反馈：{note.pending.lastError.message}
+                    </p>
+                  ) : (
+                    <p>旧记录没有保留错误详情。重试原请求可取回结果或新的错误原因。</p>
+                  )}
                   <div className="workspace__actions">
                     {note.pending.setupRequired && (
                       <a href={`${cmaBase}/auth/login`} target="_blank" rel="noopener noreferrer">
@@ -1543,7 +1571,34 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                     <button disabled={busy} onClick={() => void runIntent(note.pending!)}>
                       {note.pending.setupRequired ? '已完成授权，重新提交' : '重试原请求'}
                     </button>
+                    <a href={cmaLink} target="_blank" rel="noopener noreferrer">
+                      在 CMA 核对进度 ↗
+                    </a>
                   </div>
+                  <details>
+                    <summary>请求详情</summary>
+                    <p>
+                      操作：
+                      {
+                        {
+                          create: '准备在线 worker',
+                          message: '发送聊天消息',
+                          attachment: '上传模型',
+                          cancel: '停止任务',
+                        }[note.pending.action]
+                      }
+                    </p>
+                    <p>
+                      请求编号 <code>{note.pending.body.idempotencyKey}</code>
+                    </p>
+                    {note.pending.lastError && (
+                      <p>
+                        错误类型 <code>{note.pending.lastError.code}</code>
+                        {note.pending.lastError.status &&
+                          ` · HTTP ${note.pending.lastError.status}`}
+                      </p>
+                    )}
+                  </details>
                   <details>
                     <summary>已在 CMA 核对结果</summary>
                     <label>

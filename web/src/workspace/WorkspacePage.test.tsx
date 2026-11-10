@@ -39,6 +39,7 @@ function mockApi(
   options: {
     enabled?: boolean;
     loseCreate?: boolean;
+    loseMessage?: boolean;
     setup?: boolean;
     followUp?: boolean;
     operation?: Operation | ((creates: number) => Operation);
@@ -113,6 +114,11 @@ function mockApi(
       return reply({ agent: { id: 'agt_one', status: 'ready' }, transcript });
     if (action === 'message') {
       messages++;
+      if (messages === 1 && options.loseMessage)
+        return reply(
+          { code: 'cma_outcome_unknown', detail: 'CMA 消息回执超时，请保留原编号重试' },
+          503,
+        );
       return reply({ responseId: 'resp_one', commandId: 'cmd_one' }, 202);
     }
     if (action === 'response')
@@ -251,6 +257,31 @@ describe('CMA workspace', () => {
     expect(api.writes.find((w) => w.action === 'message')!.body.agentId).toBe('agt_one');
     expect(api.writes.find((w) => w.action === 'message')!.body.instruction).toBe('暖色一些');
   });
+  it('retains a failed second message and its error across reload, then retries the same worker and request', async () => {
+    const api = mockApi({ loseMessage: true, followUp: true });
+    const mounted = render(<WorkspacePage request={api.request} />);
+    await fillTask();
+    await userEvent.click(screen.getByRole('button', { name: '发送' }));
+    await screen.findByText(/<script>danger/);
+    await userEvent.type(screen.getByLabelText('给空间发消息'), '把机器狗挪动到门口');
+    await userEvent.click(screen.getByRole('button', { name: '发送' }));
+    await screen.findByRole('button', { name: '重试原请求' });
+    const original = api.writes.find((w) => w.action === 'message')!;
+    mounted.unmount();
+    render(<WorkspacePage request={api.request} />);
+    await screen.findByText('上次请求反馈：CMA 消息回执超时，请保留原编号重试');
+    await userEvent.click(screen.getByText('请求详情'));
+    expect(screen.getByText('操作：发送聊天消息')).toBeVisible();
+    expect(screen.getByText(/HTTP 503/)).toBeVisible();
+    expect(screen.getByText(String(original.body.idempotencyKey))).toBeVisible();
+    expect(api.writes.filter((w) => w.action === 'message')).toHaveLength(1);
+    await userEvent.click(screen.getByRole('button', { name: '重试原请求' }));
+    await screen.findByText(/已改为暖色/);
+    expect(api.writes.filter((w) => w.action === 'message')).toEqual([original, original]);
+    expect(original.body.agentId).toBe('agt_one');
+    expect(original.body.instruction).toBe('把机器狗挪动到门口');
+    expect(api.writes.filter((w) => w.action === 'create')).toHaveLength(1);
+  });
   it('recovers an uncertain creation after reload with identical body and key, and never automatically retries writes', async () => {
     const api = mockApi({ loseCreate: true });
     const mounted = render(<WorkspacePage request={api.request} />);
@@ -261,6 +292,10 @@ describe('CMA workspace', () => {
     expect(api.writes).toHaveLength(1);
     mounted.unmount();
     render(<WorkspacePage request={api.request} />);
+    await screen.findByText(/^上次请求反馈：连接中断/);
+    await userEvent.click(screen.getByText('请求详情'));
+    expect(screen.getByText('操作：准备在线 worker')).toBeVisible();
+    expect(screen.getByText('network')).toBeVisible();
     const retry = await screen.findByRole('button', { name: '重试原请求' });
     expect(api.writes).toHaveLength(1);
     await userEvent.click(retry);
