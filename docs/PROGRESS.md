@@ -45,7 +45,7 @@
 | 模型大小（物体 + 结构，含贴图） | 0.37MB | ≤ 3MB |
 | 物体 / 模板 | 41 个物体、2 个模板（会议椅、休闲椅） | — |
 
-前台是折面外壳 + 台面 + 踢脚线，桌面圆角、椅子靠背弧度、沙发扶手卷边都按常见形状拟合；墙是贴图面板 + 墙体，玻璃带竖梃和窗台。对比图见 [worker/scripts/results/](../worker/scripts/results/)，做法和已知不足见 [worker/README.md](../worker/README.md) 的"前厅重建效果"。
+前台是折面外壳 + 台面 + 踢脚线，桌面圆角、椅子靠背弧度、沙发扶手卷边都按常见形状拟合；墙是贴图面板 + 墙体，玻璃带竖梃和窗台。对比图见 [recon/scripts/results/](../recon/scripts/results/)，做法和已知不足见 [recon/README.md](../recon/README.md) 的"前厅重建效果"。
 
 ### 2.4 部署
 

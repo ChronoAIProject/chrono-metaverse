@@ -28,7 +28,7 @@
 //   40 位提交哈希固定的 `infra/chrono-cd/demo/*.json`（分支名会变，内容就和 sha256 对不上），大小 ≤ 4MB，
 //   这时 `rebuild` 不能是 false（README 第 8 步"AI 物件集"）。
 // - 处理服务的 `WORKER_MODEL_HOSTS`（AI 物件集外部模型允许下载的主机）必须显式写出，每项是主机名、
-//   以点开头的后缀或 `主机:端口`，不带协议和路径（规则同 worker/src/metaverse_worker/fetch.py）。
+//   以点开头的后缀或 `主机:端口`，不带协议和路径（规则同 recon/src/metaverse_recon/fetch.py）。
 
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -139,7 +139,7 @@ export const MAX_AUTHORED_BYTES = 4 * 1024 * 1024;
  */
 export const AUTHORED_URL =
   /^https:\/\/raw\.githubusercontent\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/[0-9a-f]{40}\/infra\/chrono-cd\/demo\/[A-Za-z0-9_.-]+\.json$/;
-/** 处理服务 `WORKER_MODEL_HOSTS` 的一项（规则同 worker/src/metaverse_worker/fetch.py 的 parse_hosts）。 */
+/** 处理服务 `WORKER_MODEL_HOSTS` 的一项（规则同 recon/src/metaverse_recon/fetch.py 的 parse_hosts）。 */
 const MODEL_HOST = /^(?:\.?[a-z0-9-]+(?:\.[a-z0-9-]+)+|[a-z0-9-]+(?:\.[a-z0-9-]+)*:[0-9]{1,5})$/;
 const MESH_EXTENSIONS = ['glb', 'drc', 'obj'];
 const SIDE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'mtl'];

@@ -85,7 +85,7 @@
 `metalness` 越界，`shading` 不认识，形状里写了只有 AI 物件集才收的外链对象 `{url, sha256, size}`。
 
 这批用例在 `tests/vectors.rs` 的 `texture_material_cases` 里，和其他形状向量一样由 Rust 实现生成（先按规格写好，
-Rust 实现之后重新生成，文件没有变化）。接口服务、本地工具（`worker/`）、命令行三边都按同样的规则接受或拒绝，
+Rust 实现之后重新生成，文件没有变化）。接口服务、本地工具（`recon/`）、命令行三边都按同样的规则接受或拒绝，
 错误路径一致。
 
 ## 4. 高层操作：`ops/ops_*.json`
@@ -184,7 +184,7 @@ Rust 实现之后重新生成，文件没有变化）。接口服务、本地工
 
 ## 7. 各边的运行器
 
-| 向量 | 接口服务（Rust，`metaverse-core`） | 网站（`web/`） | 本地工具（`worker/`） | 命令行（`sdk/typescript`） |
+| 向量 | 接口服务（Rust，`metaverse-core`） | 网站（`web/`） | 本地工具（`recon/`） | 命令行（`sdk/typescript`） |
 |---|---|---|---|---|
 | `chunk_*`、`canonical_*` | `tests/vectors.rs` | —（`src/core/codec.test.ts` 用内联的向量） | `tests/test_shared_vectors.py` | `tests/vectors.test.ts` |
 | `shape_*` | `tests/vectors.rs` | `src/core/shapes/solid.test.ts`（板、凸包、材质的网格） | `tests/test_shared_vectors.py` | `tests/vectors.test.ts` |
