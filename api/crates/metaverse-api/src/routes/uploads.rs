@@ -121,7 +121,7 @@ pub struct CreateUploadRequest {
     pub part_size: u64,
     /// 文件格式：scan、model 用途 glb/drc/obj/zip（zip = 模型 + 贴图，例如 Scaniverse 导出）；
     /// texture 用途 png/jpeg/webp（单边 ≤ 8192）；ops 用途 ndjson/gzip；script 用途 text。
-    /// 收到第 0 片时按它核对文件头；处理服务校验时再嗅探一遍。
+    /// 收到第 0 片时按它核对文件头；完成后后台核对（`upload_verify`）按全文再认一遍。
     #[schema(example = "drc")]
     pub format: String,
 }
@@ -138,7 +138,7 @@ pub struct UploadView {
     pub scope: String,
     /// 创建时声明的格式。
     pub declared_format: String,
-    /// 处理服务嗅探出的格式（`glb | draco | obj | zip | png | jpeg | webp | ndjson | ndjson+gzip | text`），
+    /// 后台核对认出的格式（`glb | draco | obj | zip | png | jpeg | webp | ndjson | ndjson+gzip | text`），
     /// 校验通过后才有。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub format: Option<String>,
@@ -472,7 +472,7 @@ pub(super) async fn create(
     };
     // 本空间已经拥有同一用途的这份资源：直接复用，不再接收数据（设计 6.1）。只凭哈希不行——
     // 别的主人的资源（或全系统里有没有某个文件）都不能这样拿到：其他情况一律照常上传完整数据，
-    // 由处理服务核对整体哈希后在存储层去重，所有权只靠真正传过数据确立。两种情况都返回 201。
+    // 由后台核对整体哈希后在存储层去重，所有权只靠真正传过数据确立。两种情况都返回 201。
     if let Some(length) = state
         .repo
         .reusable_asset_length(&grant, &request.sha256, purpose, &limits.upload_limits())

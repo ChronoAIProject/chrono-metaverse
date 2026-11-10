@@ -686,7 +686,7 @@ pub struct OpsJobView {
     pub status: String,
 }
 
-/// ops 上传的资源已经不在（被处理服务的定期清理删掉）。
+/// ops 上传的资源已经不在（被定期清理删掉）。
 fn ops_asset_gone() -> ApiError {
     ApiError::new(
         StatusCode::NOT_FOUND,
