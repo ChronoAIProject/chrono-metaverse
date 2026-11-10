@@ -5,25 +5,26 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 
 规格格式以 chrono-cd 的接口文档为准（`docs/protocol/api.md`、技能文件 `skills/chrono-cd/SKILL.md`），并对照了组织下已有应用（`omega/mathesis`、`integrations/frigate-events-test`）的实际配置。
 
-改 `app.json` 后先跑静态检查（持续集成里也跑）：`node infra/chrono-cd/check-app.mjs`。它检查每个服务的镜像都按摘要固定（第 1 步"镜像按摘要固定"）、处理服务的线程数和内存上限、接口服务的限流额度和可信地址头、README 的环境变量表和密钥是否列全、`infra/dev/up.sh` 起处理服务时是否设了同样的线程变量（处理服务下线以后 up.sh 不再起它，这条不再检查，见 `docs/design/server-slim.md` 13.3），以及演示数据的种子（[`demo-seed.json`](demo-seed.json)）和接口服务的 `METAVERSE_DEMO_SEED` 是否一致、种子本身是否合法（第 8 步）；测试在 `check-app.test.mjs`（`node --test infra/chrono-cd/*.test.mjs`）。镜像换版本用 [`pin-images.mjs`](pin-images.mjs) 生成规格或补丁（测试在 `pin-images.test.mjs`）。
+改 `app.json` 后先跑静态检查（持续集成里也跑）：`node infra/chrono-cd/check-app.mjs`。它检查规格里只有网站和接口服务两个服务（处理服务已下线，出现 `metaverse-worker` 就报错）、每个服务的镜像都按摘要固定（第 1 步"镜像按摘要固定"）、接口服务的限流额度和可信地址头、内存预算用到的上限和缓存配置都显式写出（第 1 节"内存预算"）、README 的环境变量表和密钥是否列全，以及演示数据的种子（[`demo-seed.json`](demo-seed.json)）和接口服务的 `METAVERSE_DEMO_SEED` 是否一致、种子本身是否合法、`METAVERSE_DEMO_SEED_HOSTS` 是否写出并与 `infra/dev/up.sh` 的默认值相同（第 8 步）；测试在 `check-app.test.mjs`（`node --test infra/chrono-cd/*.test.mjs`）。镜像换版本用 [`pin-images.mjs`](pin-images.mjs) 生成规格或补丁（测试在 `pin-images.test.mjs`）。
 
 ## 1. 规格要点
 
 | 服务 | 镜像 | 路由 | 暴露 | 端口 | 健康检查 | 副本 | 资源申请 / 上限 |
 |---|---|---|---|---|---|---|---|
 | `metaverse-web` | `ghcr.io/chronoaiproject/chrono-metaverse-web` | `/` | 公网 | 8080 | `/healthz` | 2 | 25m / 32Mi，上限 250m / 128Mi |
-| `metaverse-api` | `ghcr.io/chronoaiproject/chrono-metaverse-api` | `/api` | 公网 | 8080 | `/api/healthz` | 1 | 250m / 256Mi，上限 1 核 / 1Gi |
-| `metaverse-worker` | `ghcr.io/chronoaiproject/chrono-metaverse-worker` | — | 集群内（`internal`） | 8080 | `/healthz` | 1 | 500m / 3Gi，上限 2 核 / 8Gi；`/tmp` 挂 8Gi 临时盘 |
+| `metaverse-api` | `ghcr.io/chronoaiproject/chrono-metaverse-api` | `/api` | 公网 | 8080 | `/api/healthz` | 1 | 250m / 384Mi，上限 1 核 / 1536Mi |
 
-再加 MongoDB 插件（`"addons": {"mongodb": {}}`）：一个库加一个只能访问这个库的用户，连接串和库名由 `addon_env` 注入接口服务和处理服务的 `MONGODB_URI`、`MONGODB_DATABASE`。
+再加 MongoDB 插件（`"addons": {"mongodb": {}}`）：一个库加一个只能访问这个库的用户，连接串和库名由 `addon_env` 注入接口服务的 `MONGODB_URI`、`MONGODB_DATABASE`。
+
+**没有处理服务**（`docs/design/server-slim.md`）：上传核对、操作文件展开、重建包展开、定期清理都在接口服务的后台执行器里做；重建（对齐、结构、物件、外部模型、烘焙）全部在本地用 `metaverse-recon` 做，产出重建包再用命令行 `metaverse bundle push` 上传发布。以前的 `metaverse-worker` 从规格里删掉了（第 3 节"换成瘦身后的版本"）。
 
 **为什么服务名带 `metaverse-` 前缀**：chrono-cd 里服务名在同一个主人（ChronoAI 组织）的所有应用之间必须唯一，否则 `409 service_name_taken`。组织里的 `omega/mathesis` 已经占用了 `web` 和 `worker`。
 
 **服务之间怎么访问**：同一个主人的服务在集群里按服务名互相访问，地址是 `http://<服务名>:<端口>`（也可以用 `:80`）。所以网站镜像里 nginx 把 `/api/` 转给 `http://metaverse-api:8080`（[`web/nginx.conf`](../../web/nginx.conf)，地址写死，与这里的服务名一致）。公网上 `/api` 开头的请求由平台网关按最长前缀直接转给 `metaverse-api`，nginx 的转发只是兜底；页面始终同源访问接口。
 
-**探针**：chrono-cd 用 `health_path` 同时做就绪、存活、启动探针和负载均衡健康检查（存活每 15 秒、超时 5 秒；启动最多等 300 秒）。接口服务建好索引前 `/api/healthz` 返回 503，平台不会把流量导过来。网站用 nginx 自己的 `/healthz`（不读文件、不记访问日志）。处理服务不对外，`expose: internal` 只建集群内地址，不进公网路由。
+**探针**：chrono-cd 用 `health_path` 同时做就绪、存活、启动探针和负载均衡健康检查（存活每 15 秒、超时 5 秒；启动最多等 300 秒）。接口服务建好索引前 `/api/healthz` 返回 503，平台不会把流量导过来。网站用 nginx 自己的 `/healthz`（不读文件、不记访问日志）。
 
-**镜像要求**（Dockerfile 在 [`infra/`](..) 下）：只能来自 ghcr.io；数字形式的非 root 用户（api 65532、web 101、worker 10001）；linux/amd64。规格里的镜像**一律按摘要固定**（`仓库:<7 位提交哈希>@sha256:<摘要>`，标签只作记号），原因见第 1 步。
+**镜像要求**（Dockerfile 在 [`infra/`](..) 下）：只能来自 ghcr.io；数字形式的非 root 用户（api 65532、web 101）；linux/amd64。规格里的镜像**一律按摘要固定**（`仓库:<7 位提交哈希>@sha256:<摘要>`，标签只作记号），原因见第 1 步。
 
 ### 配额
 
@@ -31,11 +32,11 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 
 | | CPU | 内存 | 容器 |
 |---|---|---|---|
-| 本应用申请 | 2×25m + 250m + 500m = 800m | 2×32Mi + 256Mi + 3Gi ≈ 3.31Gi | 4 |
-| 滚动更新预留 | 500m（worker） | 3Gi（worker） | 1 |
-| **合计** | **1.3 核** | **约 6.31Gi** | **5** |
+| 本应用申请 | 2×25m + 250m = 300m | 2×32Mi + 384Mi = 448Mi | 3 |
+| 滚动更新预留 | 250m（api） | 384Mi（api） | 1 |
+| **合计** | **550m** | **832Mi** | **4** |
 
-按 2026-11-09 查到的组织现有应用估算，已用约 2.8 核 / 5.3Gi / 11 个容器，放得下。部署前仍要按第 3 步实际查一次。
+去掉处理服务以后比以前（1.3 核 / 约 6.31Gi / 5 个容器）少占 750m CPU、约 5.5Gi 内存和 8Gi 临时盘。部署前仍要按第 3 步实际查一次。
 
 ### 环境变量与密钥
 
@@ -52,21 +53,40 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 | `NYXID_JWKS_URL` | `https://api.nyxid.ai/.well-known/jwks.json` | 取自 NyxID `/.well-known/openid-configuration` 的 `jwks_uri` |
 | `NYXID_JWT_ISSUER` | `https://nyx-api.chrono-ai.fun` | 同上的 `issuer`（两个 NyxID 域名返回的都是它） |
 | `NYXID_JWT_AUDIENCE` | `urn:chrono-metaverse:api` | 必须和 NyxID 注册时的 `identity_jwt_audience` 一字不差 |
-| `ALLOWED_NYX_SERVICE_IDS` | `362df1f5-8135-4a05-aa85-d929a5fd9f73` | 已注册（2026-11-09）：ChronoAI 组织的自定义服务 `chrono-metaverse` 的连接编号（自定义服务没有目录编号，身份令牌里的 `nyx_service_id` 就是它）。第一次部署时还没有编号，用的是占位值 `pending-nyxid-registration`：服务能启动，但所有 `/api/v1/*` 都 401，直到第 7 步换成真实编号 |
+| `ALLOWED_NYX_SERVICE_IDS` | `362df1f5-8135-4a05-aa85-d929a5fd9f73` | 已注册（2026-11-09，第 7 步）：ChronoAI 组织的自定义服务 `chrono-metaverse` 的连接编号（自定义服务没有目录编号，身份令牌里的 `nyx_service_id` 就是它），线上第 7 次修订起生效，经 NyxID 调接口已能读到真实数据 |
 | `METAVERSE_REQUIRE_PERMISSIONS` | `false` | 第一步不启用功能级权限 |
-| `UPLOAD_MAX_SCAN_BYTES` / `UPLOAD_MAX_MODEL_BYTES` / `UPLOAD_MAX_TEXTURE_BYTES` / `UPLOAD_MAX_OPS_BYTES` / `UPLOAD_MAX_SCRIPT_BYTES` | 1GiB / 50MiB / 50MiB / 256MiB / 4MiB | 各用途上传的大小上限（与处理服务的上限一致；改大时处理服务的 `WORKER_MAX_*` 也要改） |
-| `UPLOAD_MAX_TEXTURE_SIDE` | `8192` | 图片单边像素上限（第 0 片按文件头检查） |
+| `UPLOAD_MAX_SCAN_BYTES` / `UPLOAD_MAX_MODEL_BYTES` / `UPLOAD_MAX_TEXTURE_BYTES` / `UPLOAD_MAX_OPS_BYTES` / `UPLOAD_MAX_SCRIPT_BYTES` | 1GiB / 50MiB / 50MiB / 64MiB / 4MiB | 各用途上传的大小上限（其余用途——网页用模型、重建包清单——用接口服务的默认值 64MiB、16MiB，见 [`api/README.md`](../../api/README.md)） |
+| `UPLOAD_MAX_TEXTURE_SIDE` | `4096` | 贴图单边像素上限（第 0 片按文件头检查，后台核对再按全文查）。很多手机的贴图上限是 4096，本地工具打包时按同样的上限检查 |
+| `UPLOAD_MODEL_MAX_TRIANGLES` / `UPLOAD_MODEL_MAX_TEXTURE_SIDE` | `100000` / `2048` | 物件模型（外部模型重新导出的 glb）接受的三角形数和单张贴图边长 |
+| `UPLOAD_WEBMODEL_MAX_TRIANGLES` | `500000` | 网页用模型（"原始"视图的扫描网格）接受的三角形数 |
 | `UPLOAD_MAX_OPEN_PER_SPACE` | `16` | 每个空间进行中的上传数，超过返回 429 |
-| `UPLOAD_MAX_CONCURRENT_PARTS` | `8` | 每个副本同时处理的分片数（每片最多 32MiB 在内存里，与 `memory_limit` 一起考虑） |
+| `UPLOAD_MAX_CONCURRENT_PARTS` | `4` | 每个副本同时处理的分片数（每片最多 32MiB 在内存里，见下面"内存预算"；多出的请求排队） |
 | `JOB_MAX_PENDING_PER_SPACE` | `8` | 每个空间排队和运行中的任务数，超过返回 429 |
 | `PUBLIC_RATE_LIMIT_PER_MINUTE` / `PUBLIC_RATE_LIMIT_BURST` | `60000000` / `1000000` | 公开 JSON 接口的限流额度。**目前按网关地址计、所有访客共用几个桶**，额度只要是进程处理得了的速率，一台机器就能把桶耗尽、让所有访客都 429，所以设成每秒 100 万次，**等于关掉限流**（见下面"公开接口限流"；接口服务按单个访客设计的默认值是 1200 / 200） |
 | `PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE` / `PUBLIC_BLOB_RATE_LIMIT_BURST` | `60000000` / `1000000` | 区块和资源（`/api/public/chunks/`、`/assets/`）的限流额度，同上（默认 12000 / 2000） |
 | `TRUSTED_CLIENT_IP_HEADER` | **不设（待向平台确认）** | 可信的客户端地址请求头。确认之前不设，接口服务按 TCP 连接地址限流，连接地址是网关或 nginx 的地址（见下面"公开接口限流"） |
-| `METAVERSE_DEMO_SEED` | [`demo-seed.json`](demo-seed.json) 压缩成的一行 | 部署配置种子：接口服务启动、建好索引后在后台建演示空间 `chronoai-lobby`，带重建包时导入它（第 8 步）。改种子时两处一起改，`check-app.mjs` 检查一致 |
+| `PUBLIC_CACHE_BYTES` | `134217728` | 公开接口进程内缓存的字节上限（128MiB；接口服务默认 256MiB，按"内存预算"调小） |
+| `METAVERSE_DEMO_SEED` | [`demo-seed.json`](demo-seed.json) 压缩成的一行 | 部署配置种子：接口服务启动、建好索引后在后台建演示空间 `chronoai-lobby`，带重建包时导入它（第 8 步）。改种子时两处一起改，`check-app.mjs` 检查一致。现在是第 3 版、不带包（空间已存在，什么都不做） |
+| `METAVERSE_DEMO_SEED_HOSTS` | `raw.githubusercontent.com,github.com,release-assets.githubusercontent.com,objects.githubusercontent.com,scaniverse.com` | 种子允许下载的主机（只用 https，重定向的每一跳都查，最多 5 跳）：清单和来源表在 `raw.githubusercontent.com`，发布页的文件从 `github.com` 重定向到 `release-assets.githubusercontent.com` 或 `objects.githubusercontent.com`，扫描成员在 `scaniverse.com`。有种子时 `check-app.mjs` 要求显式写出，并且和 `infra/dev/up.sh` 的默认值相同 |
 | `METAVERSE_DEMO_SHARE_TOKEN` | **密钥**（`secret_keys`，不在 `env` 里） | 演示空间的分享令牌原文，接口服务只存它的 sha256、不写日志；用 `set_app_secrets` 设置（第 5 步）。种子是凭链接查看（`unlisted`）时必须有，缺了接口服务启动失败 |
 | `RUST_LOG` | `info` | |
 
 种子带重建包时要从 `raw.githubusercontent.com`、GitHub 发布页和 `scaniverse.com` 下载清单、来源表和包里空间还没有的文件（主机列表 `METAVERSE_DEMO_SEED_HOSTS`），所以接口服务需要能访问公网（chrono-cd 默认 `egress` 允许）；文件边下载边写进上传会话的数据块，扫描 zip 一次只有一个成员在内存里（单个成员 ≤ 128MiB）。
+
+#### 内存预算
+
+处理服务有子进程和内存上限做隔离；它下线以后，上传核对和包展开都在唯一的公开接口进程里做，所以按最坏情况估（设计 4.8）：
+
+| 部分 | 最坏 | 配置 |
+|---|---|---|
+| 进程本身、数据库驱动 | 约 80MB | |
+| 公开接口的进程内缓存 | 128MiB | `PUBLIC_CACHE_BYTES` |
+| 分片上传 | 4 × 32MiB | `UPLOAD_MAX_CONCURRENT_PARTS` |
+| 上传核对 × 2 | 约 2 × 16MB | 后台执行器的核对名额（`RUNNER_VERIFY_SLOTS`，默认 2） |
+| 重任务 × 1 | 约 450MB | 操作文件展开、重建包导入（`RUNNER_HEAVY_SLOTS`，默认 1） |
+| 合计 | 约 840MB | `memory_limit` 1536Mi |
+
+本机实测（`api/README.md`）：分批作用、分批写记录以后重任务峰值约 0.95GB（含测试进程本身），在 1.2GB 以内。改这几项的任何一个都要重新估算；`check-app.mjs` 要求它们显式写出。
 
 #### 公开接口限流（待向平台确认可信的客户端地址头）
 
@@ -91,34 +111,6 @@ nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --
 
 改完用第 6 步的命令看 `metaverse-api` 的日志：被限流时会打印"公开接口限流"。
 
-`metaverse-worker`（线上换成瘦身后的版本之前仍在跑的旧处理服务；它的配置说明在仓库里已随代码删掉，要看就查 `recon/src/metaverse_recon/config.py` 删除前的历史版本）：
-
-| 变量 | 值 | 说明 |
-|---|---|---|
-| `MONGODB_URI`、`MONGODB_DATABASE` | 插件注入 | `addon_env` |
-| `WORKER_HEALTH_PORT` | `8080` | 健康检查端口（`/healthz`），与 `port` 一致 |
-| `WORKER_JOB_MEMORY_MB` | `6144` | 重计算子进程的内存上限，要小于容器上限 8Gi。这是**地址空间**上限（`RLIMIT_AS`），不是常驻内存，线程栈和预留的堆都算在里面（见下面"处理服务的线程数"） |
-| `OPENBLAS_NUM_THREADS` | `2` | 与 `cpu_limit` 一致。numpy、scipy 各带一份 OpenBLAS，不设时按**节点**可见核数建线程 |
-| `OMP_NUM_THREADS` | `2` | 同上，给 OpenMP 库（OpenBLAS 在没有自己的变量时也读它） |
-| `MALLOC_ARENA_MAX` | `2` | glibc 的分配区个数上限；不设时最多 8×节点核数个，每个预留 64MB 地址空间 |
-| `PYTHONUNBUFFERED` | `1` | 日志不缓冲，立即出现在 chrono-cd 日志里 |
-| `WORKER_MODEL_HOSTS` | `dl.polyhaven.org,huggingface.co,cdn-lfs.huggingface.co,.hf.co` | AI 物件集里外部模型允许下载的主机（只用 https，重定向的每一跳都要在列表里）：Poly Haven 的文件在 `dl.polyhaven.org`；Objaverse 在 Hugging Face，`huggingface.co` 的下载地址会重定向到 `hf.co` 的 CDN 子域名（`us.aws.cdn.hf.co`、`cas-bridge.xethub.hf.co` 等，随地区和存储方式变化），所以用以点开头的后缀 `.hf.co` 放行。处理服务需要能访问这些主机（chrono-cd 默认 `egress` 允许公网）；Sketchfab 要另配令牌和它的下载主机，默认不开。`check-app.mjs` 要求显式写出 |
-
-#### 处理服务的线程数
-
-重计算子进程用 `resource.setrlimit(RLIMIT_AS)` 限内存（`recon/src/metaverse_recon/jobs/isolate.py`），限的是虚拟地址空间。numpy 和 scipy 各自带一份 OpenBLAS，**导入时**就按可见核数建线程，每个线程约占 41MB 地址空间（8MiB 栈加缓冲区）。Kubernetes 只用 CFS 配额限 CPU，容器里看到的是整台节点的核数，与 `cpu_limit` 无关：不设线程数时，32 核节点上子进程一启动就占掉约 2.5GB，64 核节点约 5.2GB，6144MB 的额度只剩约 1GB；2 核配额下跑上百个 BLAS 线程还会被 CFS 严重限流，任务更容易撞上 1800 秒超时。
-
-2026-11-09 在 4 核机器上实测（numpy 2.5.4、scipy 1.18.1，只导入 `numpy`、`scipy.linalg`、`scipy.spatial`，读 `/proc/self/status`）：
-
-| 设置 | 线程数 | VmSize |
-|---|---|---|
-| `OPENBLAS_NUM_THREADS=1` | 1 | 227MB |
-| `OPENBLAS_NUM_THREADS=2` | 3 | 307MB |
-| 不设（4 核） | 7 | 471MB |
-| 只设 `OMP_NUM_THREADS=2` | 3 | 307MB |
-
-每多一个线程约 +40MB，两份 OpenBLAS 各算一次。线程数设成 `cpu_limit`（2），地址空间与节点大小无关。Dockerfile 按约定不写 `ENV`，所以这几个变量只在这里设；处理服务下线以前 `infra/dev/up.sh` 本地也设同样的值，本地测的内存和线上一致（现在 up.sh 不再起处理服务，见 `docs/design/server-slim.md` 13.3）。`recon/README.md` 的内存数据（RSS 1,263MB）是在 4 核机器上测的，上线后按子进程实测的 `VmPeak` 复核 `WORKER_JOB_MEMORY_MB`。改 `cpu_limit` 时同步改这两个线程数（`check-app.mjs` 会检查线程数不超过 `cpu_limit`）。
-
 `metaverse-web`：不需要环境变量。
 
 ## 2. 首次部署
@@ -132,9 +124,9 @@ APP=api/v1/projects/metaverse/apps/chrono-metaverse
 
 ### 第 1 步：推送镜像
 
-推送到 `main` 或开发分支 `claude/happy-ritchie-oly5hx` 时，GitHub Actions 的 `Images` 工作流（[`.github/workflows/images.yml`](../../.github/workflows/images.yml)）构建三个镜像并推到 ghcr.io：
+推送到 `main` 或开发分支 `claude/happy-ritchie-oly5hx` 时，GitHub Actions 的 `Images` 工作流（[`.github/workflows/images.yml`](../../.github/workflows/images.yml)）构建两个镜像并推到 ghcr.io（处理服务已下线，不再构建 `chrono-metaverse-worker`）：
 
-- `ghcr.io/chronoaiproject/chrono-metaverse-{api,web,worker}:<7 位提交哈希>`
+- `ghcr.io/chronoaiproject/chrono-metaverse-{api,web}:<7 位提交哈希>`
 - `…:<分支名>`（`/` 换成 `-`，例如 `claude-happy-ritchie-oly5hx`、`main`）
 - `…:latest`（只有 `main`）
 
@@ -146,14 +138,14 @@ APP=api/v1/projects/metaverse/apps/chrono-metaverse
 - **chrono-cd 每次 `PUT` 和 `PATCH` 都会重新解析标签**（`Put` 对每个服务调用 `resolveImages`，不管镜像字段改没改；`set_app_secrets` 和重启用已存的摘要）。按标签写的规格，下一次只改环境变量的 `PATCH`（例如第 4 步改 `PUBLIC_BASE_URL`、第 7 步改 `ALLOWED_NYX_SERVICE_IDS`）就会把标签当时指向的镜像部署上线，修订记录里标签名不变、只有摘要变了。
 - **按摘要写时**：chrono-cd 在标签和摘要都有时只按摘要拉取，重新解析也还是同一个镜像。
 
-摘要从**这次提交在部署分支上的 `Images` 运行**里取：GitHub 的 Actions 页面打开那次运行（核对分支和提交哈希），三个任务的摘要里各有一行 `api=sha256:…`、`web=sha256:…`、`worker=sha256:…`，原样交给 [`pin-images.mjs`](pin-images.mjs)。不要按标签去 ghcr 查摘要，那查到的是标签现在指向的镜像。命令行也可以这样取（`gh` 登录后）：
+摘要从**这次提交在部署分支上的 `Images` 运行**里取：GitHub 的 Actions 页面打开那次运行（核对分支和提交哈希），两个任务的摘要里各有一行 `api=sha256:…`、`web=sha256:…`，原样交给 [`pin-images.mjs`](pin-images.mjs)。不要按标签去 ghcr 查摘要，那查到的是标签现在指向的镜像。命令行也可以这样取（`gh` 登录后）：
 
 ```bash
 gh run list -R ChronoAIProject/chrono-metaverse --workflow Images --commit <完整提交哈希> --json databaseId,headBranch,conclusion
-gh run view <运行编号> -R ChronoAIProject/chrono-metaverse --log | grep -oE '(api|web|worker)=sha256:[0-9a-f]{64}' | sort -u
+gh run view <运行编号> -R ChronoAIProject/chrono-metaverse --log | grep -oE '(api|web)=sha256:[0-9a-f]{64}' | sort -u
 ```
 
-`app.json` 里写的是已经上线验证过的版本（目前是 `c882bca`，摘要与 chrono-cd 修订 4 记录的一致）；`check-app.mjs` 拒绝只有标签、标签不是 7 位提交哈希、或仓库和服务对不上的镜像。
+`app.json` 里的镜像是已经上线验证过的版本（接口服务目前是 `c882bca`、网站是 `45befcb`，摘要与线上修订记录的一致）。**注意**：仓库里的 `app.json` 已经是瘦身后的规格（没有处理服务、新的上限、新格式的种子），而接口服务的镜像还是瘦身前的——旧镜像读不了新格式的种子，会启动失败。所以这份规格要等瘦身后的镜像构建出来，用 `pin-images.mjs` 换上新摘要以后，**在同一次 `PUT` 里**整份提交（第 3 节"换成瘦身后的版本"），不能直接提交 `app.json`。`check-app.mjs` 拒绝只有标签、标签不是 7 位提交哈希、或仓库和服务对不上的镜像。
 
 按摘要部署只保证"部署的就是那次运行构建的镜像"，管不到谁能推镜像、推代码。`main` 已经建好（2026-11-09，从开发分支 `claude/happy-ritchie-oly5hx` 的 `77bbdb8` 建出），以后作为部署分支：日常开发在开发分支，上线前开合并请求进 `main`，部署只用 `main` 上构建的镜像。还没做、要仓库管理员在 GitHub 上决定的：把默认分支改成 `main` 并加保护（禁止直接推送、必须经合并请求、CI 必须通过）；在包设置的 Manage Actions access 里收回本仓库工作流的写权限，改用只在受保护分支的 GitHub Environment 里可用的凭证推镜像（工作流自己声明的 `packages: write` 拦不住改过的工作流）；用组织规则集限制谁能改 `.github/workflows`。
 
@@ -164,13 +156,13 @@ gh run view <运行编号> -R ChronoAIProject/chrono-metaverse --log | grep -oE 
 - 工作流里的 action 固定到 40 位提交哈希，注释里写版本；install-action 装的工具写明版本。上游的标签或分支被改写（例如上游被入侵）时，不会在拿着 `packages: write` 令牌的任务里跑新代码。
 - `Images` 不读写 Actions 缓存：缓存按仓库和分支共用、不分工作流，同一分支上任何 CI 任务里的 action 都能写进构建层。每次从头构建，api 镜像会慢几分钟。
 - 两个 Dockerfile 的 `# syntax=` 构建前端和基础镜像写成"标签@摘要"（构建时 BuildKit 只按摘要拉）。
-- 处理服务已下线：它的镜像（`infra/worker/`）和"构建后端按版本和哈希固定"的检查都已删掉，`Images` 不再构建它；线上在换成瘦身后的版本之前，处理服务仍按 `app.json` 里固定的摘要运行以前构建的镜像。
+- 处理服务已下线：它的镜像（`infra/worker/`）和"构建后端按版本和哈希固定"的检查都已删掉，`Images` 不再构建它；线上在换成瘦身后的版本之前，处理服务仍按线上规格里固定的摘要运行以前构建的镜像。
 
 更新由 Dependabot 每周提（[`.github/dependabot.yml`](../../.github/dependabot.yml)，新版本发布满一周才提）；`# syntax=` 的摘要要手工换。
 
-### 第 2 步：把三个包设为公开（只做一次）
+### 第 2 步：把两个包设为公开（只做一次）
 
-第一次推送出来的包默认是私有的，chrono-cd 拉不下来（`400 image_unauthorized`）。到 GitHub 组织的 Packages 页面，分别打开 `chrono-metaverse-api`、`chrono-metaverse-web`、`chrono-metaverse-worker` → Package settings → Danger Zone → Change visibility → Public。
+第一次推送出来的包默认是私有的，chrono-cd 拉不下来（`400 image_unauthorized`）。到 GitHub 组织的 Packages 页面，分别打开 `chrono-metaverse-api`、`chrono-metaverse-web` → Package settings → Danger Zone → Change visibility → Public。
 
 确认匿名可拉（返回 200 即可）：
 
@@ -189,20 +181,20 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" \
 nyxid proxy request chrono-cd "api/v1/account?org_id=$ORG" --output json
 ```
 
-看 `quota` 和 `usage`：剩余至少要有 1.3 核、6.4Gi、5 个容器（见第 1 节）。不够就先 `POST api/v1/quota-requests` 申请，由平台管理员批准。
+看 `quota` 和 `usage`：剩余至少要有 550m、832Mi、4 个容器（见第 1 节）。不够就先 `POST api/v1/quota-requests` 申请，由平台管理员批准。
 
 ### 第 4 步：提交应用规格
 
-先跑 `node infra/chrono-cd/check-app.mjs`，再用 `pin-images.mjs` 把三个镜像换成要部署那次提交的摘要（第 1 步"镜像按摘要固定"；它输出整份规格，并且只有通过 `check-app` 的检查才输出），然后提交：
+先跑 `node infra/chrono-cd/check-app.mjs`，再用 `pin-images.mjs` 把两个镜像换成要部署那次提交的摘要（第 1 步"镜像按摘要固定"；它输出整份规格，并且只有通过 `check-app` 的检查才输出），然后提交：
 
 ```bash
 node infra/chrono-cd/pin-images.mjs <提交哈希> \
-  api=sha256:<摘要> web=sha256:<摘要> worker=sha256:<摘要> > /tmp/chrono-metaverse.json
+  api=sha256:<摘要> web=sha256:<摘要> > /tmp/chrono-metaverse.json
 nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PUT \
   --data "$(cat /tmp/chrono-metaverse.json)" --output json
 ```
 
-部署 `app.json` 里写的那个版本时不用换，直接提交 `app.json`。
+部署 `app.json` 里写的那个版本时不用换，直接提交 `app.json`（瘦身前后交接的那一次除外，见第 1 步的"注意"）。
 
 在 Claude 会话里：让它用 `chrono-cd__put_app` 提交，参数是 `project=metaverse`、`app=chrono-metaverse`、`org_id=<ORG>`，`addons` 和 `services` 取自 `pin-images.mjs` 的输出或 `app.json`（`target_org_id` 与 `org_id` 一致；镜像必须带 `@sha256:`）。先让它把要提交的内容给你看。
 
@@ -248,11 +240,10 @@ nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH \
 ```bash
 nyxid proxy request chrono-cd "$APP/status?org_id=$ORG" --output json            # 每 15 秒查一次，直到 phase = ready
 nyxid proxy request chrono-cd "$APP/logs?service=metaverse-api&tail=200&org_id=$ORG" --output json
-nyxid proxy request chrono-cd "$APP/logs?service=metaverse-worker&tail=200&org_id=$ORG" --output json
 nyxid proxy request chrono-cd "$APP/telemetry/logs?preset=errors&service=metaverse-api&org_id=$ORG" --output json
 ```
 
-`phase = ready` 表示公网入口已经能访问（新主机名的路由要几分钟才生效）。`pods[].reason` 里是容器自己的原因：`ImagePullBackOff`（镜像或权限）、`CrashLoopBackOff`（看日志，常见是环境变量不对，接口服务会打印"配置不可用：…"）、`OOMKilled`（调大 `memory_limit`）、`CreateContainerConfigError`（镜像用了 root 或非数字用户）。
+`phase = ready` 表示公网入口已经能访问（新主机名的路由要几分钟才生效）。`pods[].reason` 里是容器自己的原因：`ImagePullBackOff`（镜像或权限）、`CrashLoopBackOff`（看日志，常见是环境变量不对，接口服务会打印"配置不可用：…"；旧镜像配上新格式的种子也是这样）、`OOMKilled`（调大 `memory_limit`）、`CreateContainerConfigError`（镜像用了 root 或非数字用户）。
 
 就绪后自检：
 
@@ -265,6 +256,8 @@ curl -s -o /dev/null -w '%{http_code}\n' $URL/api/v1/spaces/x   # 401（没有�
 ```
 
 ### 第 7 步：注册成 NyxID 服务（组织管理员，在自己电脑上）
+
+**已完成**（2026-11-09）：ChronoAI 组织的自定义服务 `chrono-metaverse`，服务编号 `362df1f5-8135-4a05-aa85-d929a5fd9f73`，已填进 `ALLOWED_NYX_SERVICE_IDS`（线上第 7 次修订），也已接进 NyxID 的 MCP 服务；经 NyxID 调接口已能读到真实数据。下面留作重新注册或换环境时的步骤。
 
 完整命令见开发教程 [`docs/tutorials/cloud-claude-code-nyxid.md`](../../docs/tutorials/cloud-claude-code-nyxid.md) 第 9.3 节。要点：
 
@@ -287,7 +280,7 @@ nyxid proxy request chrono-metaverse api/v1/spaces/front-hall --output json
 
 ### 第 8 步：演示数据（部署配置种子，自动完成）
 
-写接口 `/api/v1` 只认 NyxID 身份令牌，第 7 步做完之前没法经接口建空间、发布重建包。所以演示空间由部署配置驱动（设计 9.2"部署配置种子是运维行为"，`docs/design/server-slim.md` 第 7 节）：[`demo-seed.json`](demo-seed.json) 压缩成一行放在接口服务的 `METAVERSE_DEMO_SEED`，接口服务每次启动、建好索引后在后台执行一次，**不经过任何网络接口，也不跑任何重建**——重建在本地完成，种子只导入一个按哈希固定的**重建包**：
+写接口 `/api/v1` 只认 NyxID 身份令牌；演示空间不依赖任何人的身份，由部署配置驱动（设计 9.2"部署配置种子是运维行为"，`docs/design/server-slim.md` 第 7 节）：[`demo-seed.json`](demo-seed.json) 压缩成一行放在接口服务的 `METAVERSE_DEMO_SEED`，接口服务每次启动、建好索引后在后台执行一次，**不经过任何网络接口，也不跑任何重建**——重建在本地完成，种子只导入一个按哈希固定的**重建包**：
 
 ```json
 {"spaceId": "chronoai-lobby", "name": "ChronoAI 前厅", "description": "…",
@@ -308,7 +301,7 @@ nyxid proxy request chrono-metaverse api/v1/spaces/front-hall --output json
 
 **旧格式的种子**（`files`、`rebuild`、`hints`、`authored` 这些处理服务时代的字段）已不支持：接口服务记错误日志、跳过种子、照常启动；`check-app.mjs` 和 `infra/dev/demo-seed.mjs` 都会报错。
 
-**确认**（第 6 步的日志命令）：接口服务日志里有 `部署配置种子完成 … outcome=Created`（之后重启是 `AlreadyDone`）和 `部署配置种子：已发布`。然后打开演示链接：
+**确认**（第 6 步的日志命令）：带包的种子第一次导入时，接口服务日志里有 `部署配置种子完成 … outcome=Created`（之后重启是 `AlreadyDone`）和 `部署配置种子：已发布`。现在的种子是第 3 版、不带包：线上空间已存在，第 3 版的任务也已存在，什么都不做。然后打开演示链接：
 
 ```
 https://<应用域名>/s/chronoai-lobby#share=<第 5 步的令牌>
@@ -320,7 +313,7 @@ https://<应用域名>/s/chronoai-lobby#share=<第 5 步的令牌>
 curl -s -H "Authorization: Share <令牌>" https://<应用域名>/api/public/spaces/chronoai-lobby/head
 ```
 
-**换一版演示数据**（设计 7.4）：本地打包（种子用的包是公开的：`metaverse-recon bundle --seed` 去掉内部锚点和建模记录）→ 大文件按 `<sha256>.<扩展名>` 传到发布页 → 写来源表 → 清单和来源表提交进 `infra/chrono-cd/demo/` → 种子配置引用这次提交的 raw 地址和两个哈希，`revision` 加一 → `node infra/dev/demo-seed.mjs compact infra/chrono-cd/demo-seed.json` 的输出就是 `METAVERSE_DEMO_SEED` 的值，跑 `node infra/chrono-cd/check-app.mjs` → 只改这一项（滚动更新会重启接口服务，种子在同一个空间里追加一次提交，空间和演示链接不变）：
+**换一版演示数据**（设计 7.4，前厅第 4 版的托管方式待定，见设计第 14 节）：本地打包（种子用的包是公开的：`metaverse-recon bundle --seed` 去掉内部锚点和建模记录，`metaverse bundle check --seed` 会提示）→ 大文件按 `<sha256>.<扩展名>` 传到发布页 → 写来源表 → 清单和来源表提交进 `infra/chrono-cd/demo/` → 种子配置引用这次提交的 raw 地址和两个哈希，`revision` 加一 → `node infra/dev/demo-seed.mjs compact infra/chrono-cd/demo-seed.json` 的输出就是 `METAVERSE_DEMO_SEED` 的值，跑 `node infra/chrono-cd/check-app.mjs` → 只改这一项（滚动更新会重启接口服务，种子在同一个空间里追加一次提交，空间和演示链接不变）：
 
 ```bash
 SEED=$(node infra/dev/demo-seed.mjs compact infra/chrono-cd/demo-seed.json)
@@ -328,11 +321,11 @@ SEED=$(node infra/dev/demo-seed.mjs compact infra/chrono-cd/demo-seed.json)
 --data "$(jq -n --arg seed "$SEED" '{services:{"metaverse-api":{env:{METAVERSE_DEMO_SEED:$seed}}}}')"
 ```
 
-**从头重建**（连空间一起）：第 7 步做完以后，组织 admin 用管理接口删空间（`DELETE /api/v1/admin/spaces/chronoai-lobby?confirm=chronoai-lobby`），再重启接口服务，种子按当前配置和密钥重建（分享令牌是当时的密钥）。
+**从头重建**（连空间一起）：组织 admin 用管理接口删空间（`DELETE /api/v1/admin/spaces/chronoai-lobby?confirm=chronoai-lobby`），再重启接口服务，种子按当前配置和密钥重建（分享令牌是当时的密钥）。
 
 **不再要演示数据**：从 `app.json` 删掉 `METAVERSE_DEMO_SEED`（连同 `demo-seed.json`、`secret_keys` 里的令牌），已建的空间留着，要删用上面的管理接口。
 
-第 7 步做完以后，别的空间照常经接口建：以组织 admin 身份 `POST /api/v1/admin/spaces`（主人写组织的**规范编号**），再用命令行 `metaverse init <空间>`、`metaverse scan <扫描文件>`（设计 10.1、建造教程 [`docs/tutorials/build-space.md`](../../docs/tutorials/build-space.md)）。
+NyxID 注册以后，别的空间照常经接口建：以组织 admin 身份 `POST /api/v1/admin/spaces`（主人写组织的**规范编号**），再用命令行 `metaverse init <空间>`；重建层在本地用 `metaverse-recon` 打包、`metaverse bundle push --publish` 上传发布（要有 `metaverse:rebuild:write` 权限，`docs/design/server-slim.md` 第 3 节），扩展层用 `metaverse build` / `push`（建造教程 [`docs/tutorials/build-space.md`](../../docs/tutorials/build-space.md)、重建教程 [`docs/tutorials/reconstruct-with-ai.md`](../../docs/tutorials/reconstruct-with-ai.md)）。
 
 ## 3. 日常更新
 
@@ -340,17 +333,29 @@ SEED=$(node infra/dev/demo-seed.mjs compact infra/chrono-cd/demo-seed.json)
 
 ```bash
 PATCH_BODY=$(node infra/chrono-cd/pin-images.mjs --patch <新的提交哈希> \
-  api=sha256:<摘要> web=sha256:<摘要> worker=sha256:<摘要>)
+  api=sha256:<摘要> web=sha256:<摘要>)
 nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --data "$PATCH_BODY"
 ```
 
-上线后同步改 `app.json` 的三个镜像（同一条命令去掉 `--patch` 的输出里就是新的镜像引用），让仓库里记的是线上验证过的版本。
+上线后同步改 `app.json` 的两个镜像（同一条命令去掉 `--patch` 的输出里就是新的镜像引用），让仓库里记的是线上验证过的版本。
 
 **线上规格还是按标签写的时候（只做一次）**：2026-11-09 部署的修订 1–3 用的是 `:b957be0`、`:aabf88f`、`:0fccf1d` 这类标签。在做任何只改环境变量的 `PATCH` 之前，先用上面的命令把镜像换成按摘要固定，摘要取 `revisions` 里**当前修订记录的** `ImageDigest`（部署时解析出来的，不受之后改写标签的影响；与那次 `Images` 运行的摘要核对一次）。之后再按需要用 `PATCH` 同步 `app.json` 里改过的环境变量（例如第 1 节"公开接口限流"的四个额度）。
 
 改了 `app.json` 的其他内容（环境变量、资源）时用第 4 步的 `PUT` 整份提交；`PUT` 会整份替换，提交前先 `GET` 一次，把线上手工改过的值（`PUBLIC_BASE_URL`、`ALLOWED_NYX_SERVICE_IDS`）同步回来，再带上 `If-Match: <generation>`。
 
-滚动更新时新旧副本会同时运行（`maxUnavailable 0`、`maxSurge 1`，终止宽限 30 秒）：数据库迁移必须先扩后收，处理服务的任务靠租约和幂等重做（设计 6.4、13.1）。
+滚动更新时新旧副本会同时运行（`maxUnavailable 0`、`maxSurge 1`，终止宽限 30 秒）：数据库迁移必须先扩后收；后台执行器的任务靠租约和幂等重做，旧副本收到终止信号后最多等 20 秒让手上的任务写完，没写完的租约过期后由新副本接着做（`docs/design/server-slim.md` 4.2）。
+
+### 换成瘦身后的版本（R2，只做一次）
+
+`docs/design/server-slim.md` 第 11 节。这一次和日常更新不同：处理服务要从规格里删掉、接口服务的资源和环境变量都变了，种子格式也换了（旧镜像读不了新格式的种子），所以必须用第 4 步的 `PUT` **整份**提交，并且镜像、环境变量、删掉处理服务在**同一次**里完成：
+
+1. 新的九步验收在本机全过（`infra/dev/README.md`），开发分支合并进 `main`，取这次提交在 `main` 上的 `Images` 运行里的两个摘要；
+2. `GET` 一次线上规格，把线上手工改过的值同步进 `app.json`（目前没有：`PUBLIC_BASE_URL`、`ALLOWED_NYX_SERVICE_IDS` 都已和线上一致）；
+3. `node infra/chrono-cd/pin-images.mjs <提交哈希> api=sha256:<摘要> web=sha256:<摘要>` 生成整份规格（只有通过 `check-app` 才输出），带上 `If-Match: <generation>` `PUT`；
+4. 第 6 步查状态：`get_app_status` 里只剩 `metaverse-web`、`metaverse-api` 两个服务（处理服务已删除）；接口服务日志里有建索引、后台执行器和清理启动、后台迁移 `backfill-asset-check-v1` 的进度，种子什么都不做（`AlreadyDone`）；
+5. 打开演示链接，确认前厅照常显示、时间线能回到第 1–3 版的任何时刻。
+
+NyxID 已经注册，`/api/v1` 现在就能写（设计 11.2 说的"注册早于 R2"）：R2 上线以后，任何经接口写进来的新格式数据都会让退回瘦身前不再安全（第 4 节）。上线以后同步改 `app.json` 的两个镜像（第 3 节开头）。
 
 ## 4. 回滚
 
@@ -367,6 +372,8 @@ nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --
 在 Claude 会话里没有 `PATCH`：先 `chrono-cd__get_app` 读出当前完整配置，只把对应服务的 `image` 换成旧版本（`仓库:<旧提交哈希>@sha256:<旧摘要>`），其他字段（全部服务、`env`、`addon_env`、`addons`、`volumes`）原样保留，再用 `chrono-cd__put_app` 提交。漏了服务，那个服务会被删掉；漏了 `addons`，MongoDB 插件会被撤掉（数据保留，但应用随即连不上数据库）。
 
 回滚不回滚数据：如果新版本已经跑过不兼容旧版本的迁移，单纯换镜像不够，先看迁移说明。
+
+**从瘦身后的版本退回瘦身前**（`docs/design/server-slim.md` 11.5）：只有在**还没写过新格式数据**时才可以——没有 `actor.kind = rebuild` 的提交，没有新种类的任务（`bundle_import`、`upload_verify`），没有带 `heldAssets`、`bundleRef` 的草稿。退的时候不能只换镜像：处理服务、旧的环境变量和资源要一起回来，所以用 `revisions` 找到瘦身前的那份完整规格，整份 `PUT` 回去。瘦身后的版本写的 `metadata.check`、`checkError` 和迁移记录，旧版本都会忽略。写过新格式数据以后只能前滚修正。
 
 ## 5. 不要做的事
 

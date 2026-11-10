@@ -39,15 +39,20 @@
         "UPLOAD_MAX_TEXTURE_BYTES": "52428800",
         "UPLOAD_MAX_OPS_BYTES": "67108864",
         "UPLOAD_MAX_SCRIPT_BYTES": "4194304",
-        "UPLOAD_MAX_TEXTURE_SIDE": "8192",
+        "UPLOAD_MAX_TEXTURE_SIDE": "4096",
+        "UPLOAD_MODEL_MAX_TRIANGLES": "100000",
+        "UPLOAD_MODEL_MAX_TEXTURE_SIDE": "2048",
+        "UPLOAD_WEBMODEL_MAX_TRIANGLES": "500000",
         "UPLOAD_MAX_OPEN_PER_SPACE": "16",
-        "UPLOAD_MAX_CONCURRENT_PARTS": "8",
+        "UPLOAD_MAX_CONCURRENT_PARTS": "4",
         "JOB_MAX_PENDING_PER_SPACE": "8",
         "PUBLIC_RATE_LIMIT_PER_MINUTE": "60000000",
         "PUBLIC_RATE_LIMIT_BURST": "1000000",
         "PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE": "60000000",
         "PUBLIC_BLOB_RATE_LIMIT_BURST": "1000000",
+        "PUBLIC_CACHE_BYTES": "134217728",
         "METAVERSE_DEMO_SEED": "{\"spaceId\":\"chronoai-lobby\",\"name\":\"ChronoAI 前厅\",\"description\":\"ChronoAI 办公室前厅：Scaniverse 扫描 + AI 重建的演示空间（由部署配置自动导入）\",\"owner\":{\"kind\":\"org\",\"id\":\"52aa284c-b5b2-49bd-9d12-79f24772dbd7\"},\"visibility\":\"unlisted\",\"revision\":3}",
+        "METAVERSE_DEMO_SEED_HOSTS": "raw.githubusercontent.com,github.com,release-assets.githubusercontent.com,objects.githubusercontent.com,scaniverse.com",
         "RUST_LOG": "info"
       },
       "addon_env": {
@@ -59,45 +64,9 @@
       "secret_keys": ["METAVERSE_DEMO_SHARE_TOKEN"],
       "resources": {
         "cpu_request": "250m",
-        "memory_request": "256Mi",
+        "memory_request": "384Mi",
         "cpu_limit": "1",
-        "memory_limit": "1Gi"
-      }
-    },
-    "metaverse-worker": {
-      "image": "ghcr.io/chronoaiproject/chrono-metaverse-worker:c882bca@sha256:78b8897ca8b880254e3eb8fcc14b259a4dca29037cc23128a217546833521e99",
-      "port": 8080,
-      "expose": "internal",
-      "health_path": "/healthz",
-      "replicas": 1,
-      "env": {
-        "WORKER_HEALTH_PORT": "8080",
-        "WORKER_JOB_MEMORY_MB": "6144",
-        "OPENBLAS_NUM_THREADS": "2",
-        "OMP_NUM_THREADS": "2",
-        "MALLOC_ARENA_MAX": "2",
-        "PYTHONUNBUFFERED": "1",
-        "WORKER_MODEL_HOSTS": "dl.polyhaven.org,huggingface.co,cdn-lfs.huggingface.co,.hf.co"
-      },
-      "addon_env": {
-        "mongodb": {
-          "uri": "MONGODB_URI",
-          "database": "MONGODB_DATABASE"
-        }
-      },
-      "volumes": [
-        {
-          "name": "scratch",
-          "mount_path": "/tmp",
-          "type": "emptydir",
-          "size": "8Gi"
-        }
-      ],
-      "resources": {
-        "cpu_request": "500m",
-        "memory_request": "3Gi",
-        "cpu_limit": "2",
-        "memory_limit": "8Gi"
+        "memory_limit": "1536Mi"
       }
     }
   }
