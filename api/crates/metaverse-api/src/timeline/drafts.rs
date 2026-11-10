@@ -13,16 +13,30 @@
 //!
 //! 只是重新重建了实体区、草稿只改扩展层的情况不算冲突：区块的键带图层，重建层的物件
 //! 编号也不会和扩展层相同。
+//!
+//! **重建草稿**（docs/design/server-slim.md 2.6、2.7）：只收一个重建包，由后台任务展开成操作追加；
+//! 发布时多三条规则——每个重建草稿都登记冲突键 `layer:rebuilt`（与中途任何改过重建层的提交冲突，
+//! 重建层整体是一个冲突单位），有 `setScan` 时登记 `scan`；内容与最新版本相比没有变化就不写提交，
+//! 草稿标记为已发布、`unchanged: true`；提交带扫描、包清单，第一次带扫描的提交固定坐标系。
+//!
+//! **所有草稿通用**（2.5）：每次追加全部作用完以后，工作状态里每个物件引用的模板都要在同一层存在；
+//! 发布时在"最新版本 + 本次变化"上再查一遍（409 `broken_template_ref`）。引用的资源按服务端实测的
+//! 核对记录判断角色；只有模型、没有形状的物件，模型的实测包围盒要与物件 `bounds` 一致
+//! （422 `model_bounds_mismatch`）。
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 
+use metaverse_core::check::{model_fits_entity, AssetCheck, CheckBody};
 use metaverse_core::chunk::{Chunk, ChunkKey};
+use metaverse_core::limits::UploadLimits;
 use metaverse_core::model::{
-    ActorKind, Author, ChunkChange, Commit, DraftChunk, IdChange, Touched,
+    Actor, ActorKind, Author, ChunkChange, Commit, DraftChunk, IdChange, Layer, Touched,
 };
-use metaverse_core::ops::{Op, OpError, PaletteBlock, TouchedSet};
-use metaverse_core::record::{EntityBody, RecordKind};
+use metaverse_core::ops::{
+    AnchorSkip, Op, OpError, PaletteBlock, ScopeKind, TouchedSet, WorkingState,
+};
+use metaverse_core::record::{AnchorFootprint, EntityBody, EntityKind, RecordKind};
 use metaverse_core::replay::StateManifest;
 use metaverse_core::scope::{AllowedArea, PathScope, ScopeError};
 use metaverse_core::Timestamp;
@@ -32,12 +46,13 @@ use super::palette::{assign_final_ids, palette_value, parse_palette};
 use super::snapshot::{assemble, Audience};
 use super::state::{check_scope_only, ops_cells, ApplyError, Workspace};
 use super::views::SnapshotView;
-use super::writer::{actor, attach_keyframe, commit, entity_asset_roles, entity_assets, record_of};
+use super::writer::{attach_keyframe, commit, entity_asset_roles, entity_assets, record_of};
 use crate::auth::{Caller, Grant};
 use crate::error::ApiError;
 use crate::repo::{
-    AssetRole, CommitError, CommitOutcome, CommitPlan, DraftDoc, DraftStatus, OpsAsset, OpsRef,
-    ProvisionalBlock, Repo, UnusableAsset, MISSING_ASSET,
+    AssetRole, CommitError, CommitOutcome, CommitPlan, DraftDoc, DraftScanDoc, DraftStatus,
+    JobDone, JobDraftSave, JobFence, OpsAsset, OpsRef, ProvisionalBlock, Repo, UnusableAsset,
+    MISSING_ASSET,
 };
 
 /// 一个草稿最多的操作条数（内联 + 上传）。
@@ -60,6 +75,10 @@ pub const MAX_APPEND_CELLS: u64 = 1 << 24;
 pub const MAX_DRAFT_CELLS: u64 = 1 << 26;
 /// 一个草稿最多引用几个 ops 文件（预览、发布时每个都要重新解压解析）。
 pub const MAX_DRAFT_OPS_REFS: usize = 20;
+/// 追加时每批写多少条结果记录。
+const RECORD_BATCH: usize = 500;
+/// 错误说明里最多列出几项。
+const LIST_IN_ERROR: usize = 20;
 
 fn too_large(detail: impl Into<String>) -> ApiError {
     ApiError::new(
@@ -73,7 +92,56 @@ fn too_large(detail: impl Into<String>) -> ApiError {
 #[derive(Debug, Clone)]
 pub enum OpsSource {
     Inline,
-    Upload(String),
+    /// 经上传的操作文件（后台任务 `ops_from_upload` 追加，`opsRefs` 记下任务编号）。
+    Upload {
+        asset_hash: String,
+        job_id: String,
+    },
+    /// 由重建包展开的操作文件（docs/design/server-slim.md 2.6）：`opsRefs` 记下展开文件、任务编号
+    /// 和清单哈希；草稿记下 `bundleRef`、默认说明（清单的 `note`）和默认脚本（清单的 `notes`），
+    /// 清单和建模记录放进 `heldAssets`。
+    Bundle {
+        asset_hash: String,
+        job_id: String,
+        manifest_hash: String,
+        note: String,
+        notes: Option<String>,
+    },
+}
+
+impl OpsSource {
+    /// 经文件追加时的操作文件哈希。
+    fn file(&self) -> Option<&str> {
+        match self {
+            OpsSource::Inline => None,
+            OpsSource::Upload { asset_hash, .. } | OpsSource::Bundle { asset_hash, .. } => {
+                Some(asset_hash)
+            }
+        }
+    }
+}
+
+/// 409 `broken_template_ref`：物件引用的模板不在同一层（docs/design/server-slim.md 2.5 第 3 条）。
+pub fn broken_template_error(broken: &[(String, String)]) -> ApiError {
+    let listed: Vec<String> = broken
+        .iter()
+        .take(LIST_IN_ERROR)
+        .map(|(entity, template)| format!("{entity} → {template}"))
+        .collect();
+    ApiError::new(
+        axum::http::StatusCode::CONFLICT,
+        "broken_template_ref",
+        format!(
+            "{} 处模板引用找不到同一层的模板（物件 → 模板）：{}{}",
+            broken.len(),
+            listed.join("、"),
+            if broken.len() > LIST_IN_ERROR {
+                "……"
+            } else {
+                ""
+            }
+        ),
+    )
 }
 
 fn json_size<T: serde::Serialize>(value: &T) -> usize {
@@ -202,224 +270,610 @@ fn block_textures(block: &metaverse_core::ops::BlockDef, into: &mut BTreeSet<(St
     }
 }
 
-/// 给草稿追加操作并保存。返回保存后的草稿。
+/// 给草稿追加操作并保存。返回保存后的草稿。`limits` 是当前配置的各用途上限（按核对记录判断
+/// 引用的资源能不能当某个角色用）。
 pub async fn append_ops(
     repo: &Repo,
     grant: &Grant,
-    mut draft: DraftDoc,
+    draft: DraftDoc,
     ops: Vec<Op>,
     source: OpsSource,
+    limits: &UploadLimits,
     now: Timestamp,
 ) -> Result<DraftDoc, ApplyError> {
-    if draft.status != DraftStatus::Open {
-        return Err(ApiError::conflict("草稿已经发布，不能再追加操作").into());
-    }
-    if ops.is_empty() {
-        return Err(ApiError::invalid("没有要追加的操作").into());
-    }
-    if draft.op_count() + ops.len() as u64 > MAX_DRAFT_OPS {
-        return Err(too_large(format!("一个草稿最多 {MAX_DRAFT_OPS} 条操作")).into());
-    }
-    if matches!(source, OpsSource::Inline)
-        && json_size(&draft.ops) + json_size(&ops) > MAX_INLINE_OPS_BYTES
+    let prepared = prepare_append(repo, grant, draft, ops, source, limits, now).await?;
+    if !repo
+        .save_draft(grant, &prepared.draft, prepared.expected_rev)
+        .await?
     {
-        return Err(too_large(
-            "草稿里内联的操作已超过 4MB，请把操作写成 NDJSON 文件分片上传，再调用 ops-from-upload",
-        )
-        .into());
+        return Err(ApiError::conflict("草稿在处理期间被修改或已发布，请重新读取后再试").into());
     }
-    if matches!(source, OpsSource::Upload(_)) && draft.ops_refs.len() >= MAX_DRAFT_OPS_REFS {
-        return Err(too_large(format!(
-            "一个草稿最多引用 {MAX_DRAFT_OPS_REFS} 个操作文件，请合并成更大的文件或另建草稿"
-        ))
-        .into());
-    }
-    // 计算量：先按几何算好，超出上限就不开始算。
-    let cells = ops_cells(&ops);
-    if matches!(source, OpsSource::Inline) && cells > MAX_APPEND_CELLS {
-        return Err(too_large(format!(
-            "这一批操作要处理 {cells} 格，超过单次追加的上限 {MAX_APPEND_CELLS} 格；请拆成几批，或把操作写成文件走 ops-from-upload"
-        ))
-        .into());
-    }
-    if draft.work_cells.saturating_add(cells) > MAX_DRAFT_CELLS {
-        return Err(too_large(format!(
-            "草稿的操作累计要处理超过 {MAX_DRAFT_CELLS} 格（发布时可能要全部重放），请先发布这个草稿，再建新草稿继续"
-        ))
-        .into());
-    }
-    let area = allowed_area(repo, grant, &draft.scope).await?;
-    let mut workspace = Workspace::for_draft(repo, grant, &draft).await?;
-    let touched = workspace.apply_ops(repo, grant, &ops, &area, 0).await?;
+    Ok(prepared.draft)
+}
 
-    // 结果区块。
-    let mut results: BTreeMap<ChunkKey, String> = draft
-        .result_chunks
-        .iter()
-        .map(|c| {
-            (
-                ChunkKey {
-                    layer: c.layer,
-                    cx: c.cx,
-                    cy: c.cy,
-                    cz: c.cz,
-                },
-                c.hash.clone(),
-            )
+/// 算好、还没保存的追加结果。
+#[derive(Debug, Clone)]
+pub struct PreparedAppend {
+    /// 追加以后的草稿（`rev` 已加一）。
+    pub draft: DraftDoc,
+    /// 保存时按这个 `rev` 条件更新。
+    pub expected_rev: u64,
+    /// 这一次追加放了什么、跳过了什么（重建包的展开结果用）。
+    pub report: AppendReport,
+}
+
+/// 一次追加的结果摘要（docs/design/server-slim.md 2.6 第 7 步）。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AppendReport {
+    /// 放置（新建或替换）的物件数，含模板。
+    pub placed: u64,
+    /// 删掉的物件数。
+    pub removed: u64,
+    /// 新建或改动过的锚点。
+    pub anchors: Vec<String>,
+    /// 带 `ifNew` 而跳过的锚点：现在就有（`exists`），或曾经有过（`existed`）。
+    pub skipped_anchors: BTreeMap<String, AnchorSkip>,
+    /// 锚点漂移：关联物件（`entity.anchorId`）的包围盒合起来与锚点的盒子不相交的锚点，
+    /// `(锚点编号, 物件编号)`。重建换了物件位置、锚点没动时出现。
+    pub anchor_drift: Vec<(String, Vec<String>)>,
+}
+
+impl AppendReport {
+    /// 展开任务结果里的 `entities`、`anchors`、`anchorDrift`。
+    pub fn to_json(&self) -> Value {
+        json!({
+            "entities": {"placed": self.placed, "removed": self.removed},
+            "anchors": {
+                "created": self.anchors,
+                "skipped": self.skipped_anchors.iter().map(|(id, reason)| json!({
+                    "id": id,
+                    "reason": match reason {
+                        AnchorSkip::Exists => "exists",
+                        AnchorSkip::Existed => "existed",
+                    },
+                })).collect::<Vec<_>>(),
+            },
+            "anchorDrift": self.anchor_drift.iter().map(|(anchor, entities)| json!({
+                "anchorId": anchor,
+                "entityIds": entities,
+            })).collect::<Vec<_>>(),
         })
+    }
+}
+
+/// 锚点漂移：这次碰过的物件按 `anchorId` 分组，看每组的包围盒合起来是否与锚点的盒子相交。
+fn anchor_drift(state: &WorkingState, touched: &BTreeSet<String>) -> Vec<(String, Vec<String>)> {
+    let anchors: BTreeSet<&String> = touched
+        .iter()
+        .filter_map(|id| state.entities.get(id))
+        .filter_map(|entity| entity.anchor_id.as_ref())
         .collect();
-    let mut new_chunks = Vec::new();
-    for key in &touched.chunks {
-        match workspace.chunk_result(key) {
-            Some((hash, data)) => {
-                results.insert(*key, hash.clone());
-                new_chunks.push((hash, data));
-            }
-            None => {
-                results.remove(key);
+    let mut drift = Vec::new();
+    for anchor_id in anchors {
+        let Some(anchor) = state.anchors.get(anchor_id) else {
+            continue;
+        };
+        let Ok(AnchorFootprint::Cells(anchor_box)) = anchor.footprint() else {
+            continue;
+        };
+        let mut ids = Vec::new();
+        let mut union: Option<metaverse_core::grid::GridBox> = None;
+        for entity in state.entities.values().filter(|entity| {
+            entity.anchor_id.as_ref() == Some(anchor_id) && entity.kind != EntityKind::Template
+        }) {
+            let Ok(cells) = entity.footprint() else {
+                continue;
+            };
+            ids.push(entity.entity_id.clone());
+            union = Some(match union {
+                None => cells,
+                Some(current) => metaverse_core::grid::GridBox {
+                    min: [0, 1, 2].map(|axis| current.min[axis].min(cells.min[axis])),
+                    max: [0, 1, 2].map(|axis| current.max[axis].max(cells.max[axis])),
+                },
+            });
+        }
+        if let Some(union) = union {
+            if !union.intersects(&anchor_box) {
+                drift.push((anchor_id.clone(), ids));
             }
         }
     }
-    // 结果记录。
-    let mut records = Vec::new();
-    let mut assets: BTreeSet<(String, AssetRole)> = BTreeSet::new();
-    let mut entity_results: BTreeMap<String, Option<String>> = draft
-        .result_entities
-        .iter()
-        .map(|c| (c.id.clone(), c.hash.clone()))
-        .collect();
-    for id in &touched.entities {
-        let hash = match workspace.state.entities.get(id) {
-            Some(body) => {
-                entity_asset_roles(body, &mut assets);
-                let (hash, value) = record_of(RecordKind::Entity, grant.space_id(), body)?;
-                records.push((hash.clone(), "entity", value));
-                Some(hash)
-            }
-            None => None,
-        };
-        entity_results.insert(id.clone(), hash);
-    }
-    let mut anchor_results: BTreeMap<String, Option<String>> = draft
-        .result_anchors
-        .iter()
-        .map(|c| (c.id.clone(), c.hash.clone()))
-        .collect();
-    for id in &touched.anchors {
-        let hash = match workspace.state.anchors.get(id) {
-            Some(body) => {
-                let (hash, value) = record_of(RecordKind::Anchor, grant.space_id(), body)?;
-                records.push((hash.clone(), "anchor", value));
-                Some(hash)
-            }
-            None => None,
-        };
-        anchor_results.insert(id.clone(), hash);
-    }
-    let provisional = provisional_list(&workspace.state.provisional_blocks);
-    for block in &provisional {
-        block_textures(&block.block, &mut assets);
-    }
-    // 物件模型和贴图只能按用途引用本空间的资源（发布后登记到 assetRefs、公开可读）：物件模型
-    // 必须是 model_import 处理后的版本，贴图必须是贴图。这一批碰过的物件和新增方块都重新检查
-    // （同一个哈希以前按别的用途引用过也一样）。
-    let wanted: Vec<(String, AssetRole)> = assets.iter().cloned().collect();
-    let unusable = repo.unusable_assets(grant, &wanted).await?;
-    if !unusable.is_empty() {
-        return Err(ApiError::new(
-            axum::http::StatusCode::UNPROCESSABLE_ENTITY,
-            "unknown_asset",
-            format!(
-                "引用的资源不能这样用：{}",
-                unusable
-                    .iter()
-                    .map(UnusableAsset::describe)
-                    .collect::<Vec<_>>()
-                    .join("；")
-            ),
-        )
-        .into());
-    }
-    let new_assets: Vec<String> = assets.into_iter().map(|(hash, _)| hash).collect();
-    // 清理的栅栏（处理服务 `jobs/cleanup.py`）：写下记录（`body.assetHash` / `textures`）和草稿
-    // （`assets`、`opsRefs`）这些引用之前，先刷新这一批引用的全部资源的 touchedAt 并确认都还在。
-    // 刷新之后清理的条件删除就删不掉它们；刷新不到说明刚被清理删掉，整批不生效，让调用方重新上传。
-    let mut fenced = new_assets.clone();
-    if let OpsSource::Upload(hash) = &source {
-        fenced.push(hash.clone());
-    }
-    let gone = repo.touch_assets(grant, &fenced).await?;
-    if !gone.is_empty() {
-        tracing::info!(space = %grant.space_id(), draft = %draft.id, assets = ?gone, "追加时引用的资源刚被清理");
-        let describe = |hash: &String| match &source {
-            OpsSource::Upload(file) if file == hash => format!("操作文件 {hash}：{MISSING_ASSET}"),
-            _ => format!("{hash}：{MISSING_ASSET}"),
-        };
-        return Err(ApiError::new(
-            axum::http::StatusCode::UNPROCESSABLE_ENTITY,
-            "unknown_asset",
-            format!(
-                "引用的资源不能这样用：{}",
-                gone.iter().map(describe).collect::<Vec<_>>().join("；")
-            ),
-        )
-        .into());
-    }
+    drift
+}
 
-    repo.put_draft_chunks(grant, &draft.id, &new_chunks, draft.expires_at)
-        .await?;
-    repo.put_records(grant, &records).await?;
+/// 在草稿的工作状态上作用操作，写好结果区块和结果记录（内容寻址、可以重写），返回追加以后的草稿，
+/// 由调用方保存：请求里直接按 `rev` 条件保存，后台任务在带租约栅栏的事务里保存
+/// （docs/design/server-slim.md 4.10）。
+pub async fn prepare_append(
+    repo: &Repo,
+    grant: &Grant,
+    draft: DraftDoc,
+    ops: Vec<Op>,
+    source: OpsSource,
+    limits: &UploadLimits,
+    now: Timestamp,
+) -> Result<PreparedAppend, ApplyError> {
+    if ops.is_empty() {
+        return Err(ApiError::invalid("没有要追加的操作").into());
+    }
+    if matches!(source, OpsSource::Inline) {
+        if json_size(&draft.ops) + json_size(&ops) > MAX_INLINE_OPS_BYTES {
+            return Err(too_large(
+                "草稿里内联的操作已超过 4MB，请把操作写成 NDJSON 文件分片上传，再调用 ops-from-upload",
+            )
+            .into());
+        }
+        // 计算量：先按几何算好，超出上限就不开始算。
+        let cells = ops_cells(&ops);
+        if cells > MAX_APPEND_CELLS {
+            return Err(too_large(format!(
+                "这一批操作要处理 {cells} 格，超过单次追加的上限 {MAX_APPEND_CELLS} 格；请拆成几批，或把操作写成文件走 ops-from-upload"
+            ))
+            .into());
+        }
+    }
+    let mut session = AppendSession::begin(repo, grant, draft, &source, limits).await?;
+    session.apply(repo, grant, ops).await?;
+    session.finish(repo, grant, source, now).await
+}
 
-    let expected_rev = draft.rev;
-    let mut all_touched = TouchedSet {
-        chunks: draft.touched.chunks.iter().copied().collect(),
-        entities: draft.touched.entities.iter().cloned().collect(),
-        anchors: draft.touched.anchors.iter().cloned().collect(),
-        palette: draft.touched.palette,
-    };
-    all_touched.merge(touched);
-    draft.touched = Touched {
-        regions: false,
-        plots: false,
-        ..all_touched.to_model()
-    };
-    draft.result_chunks = results
-        .into_iter()
-        .map(|(key, hash)| DraftChunk {
-            layer: key.layer,
-            cx: key.cx,
-            cy: key.cy,
-            cz: key.cz,
-            hash,
+/// 分批作用操作的追加：大的操作文件边解析边作用，不把全部操作同时留在内存里
+/// （docs/design/server-slim.md 4.8、4.10）。条数和计算量按累计检查，任何一批出错整份都不生效。
+pub struct AppendSession {
+    draft: DraftDoc,
+    area: AllowedArea,
+    workspace: Workspace,
+    touched: TouchedSet,
+    count: u64,
+    cells: u64,
+    /// 内联追加时保留操作（写进草稿的 `ops`）；经上传追加的作用完就放掉。
+    keep: bool,
+    inline_ops: Vec<Op>,
+    /// 当前配置的各用途上限（按核对记录判断资源角色）。
+    limits: UploadLimits,
+}
+
+impl AppendSession {
+    /// 检查草稿还能追加，载入草稿的工作状态。
+    pub async fn begin(
+        repo: &Repo,
+        grant: &Grant,
+        draft: DraftDoc,
+        source: &OpsSource,
+        limits: &UploadLimits,
+    ) -> Result<Self, ApplyError> {
+        if draft.status != DraftStatus::Open {
+            return Err(ApiError::conflict("草稿已经发布，不能再追加操作").into());
+        }
+        // 重建草稿只收一个重建包（docs/design/server-slim.md 2.3）：没有内联操作、操作文件；
+        // 实体区、地块草稿不收重建包。
+        let rebuild = draft.scope == PathScope::Rebuild;
+        match source {
+            OpsSource::Bundle { .. } if !rebuild => {
+                return Err(ApiError::invalid("只有重建草稿能交重建包").into())
+            }
+            OpsSource::Inline | OpsSource::Upload { .. } if rebuild => {
+                return Err(ApiError::new(
+                    axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+                    "op_not_allowed",
+                    "重建草稿只收一个重建包，不收内联操作和操作文件",
+                )
+                .into())
+            }
+            OpsSource::Bundle { .. }
+                if draft.bundle_ref.is_some() || !draft.ops_refs.is_empty() =>
+            {
+                return Err(ApiError::new(
+                    axum::http::StatusCode::CONFLICT,
+                    "bundle_already_applied",
+                    "这个重建草稿已经交过一个重建包；要换包请丢弃草稿，另建一个",
+                )
+                .into())
+            }
+            _ => {}
+        }
+        if source.file().is_some() && draft.ops_refs.len() >= MAX_DRAFT_OPS_REFS {
+            return Err(too_large(format!(
+                "一个草稿最多引用 {MAX_DRAFT_OPS_REFS} 个操作文件，请合并成更大的文件或另建草稿"
+            ))
+            .into());
+        }
+        let area = allowed_area(repo, grant, &draft.scope).await?;
+        let workspace = Workspace::for_draft(repo, grant, &draft).await?;
+        Ok(Self {
+            draft,
+            area,
+            workspace,
+            touched: TouchedSet::default(),
+            count: 0,
+            cells: 0,
+            keep: matches!(source, OpsSource::Inline),
+            inline_ops: Vec::new(),
+            limits: *limits,
         })
-        .collect();
-    draft.result_entities = entity_results
-        .into_iter()
-        .map(|(id, hash)| IdChange { id, hash })
-        .collect();
-    draft.result_anchors = anchor_results
-        .into_iter()
-        .map(|(id, hash)| IdChange { id, hash })
-        .collect();
-    draft.provisional_blocks = provisional;
-    draft.assets.extend(new_assets);
-    draft.assets.sort();
-    draft.assets.dedup();
-    match source {
-        OpsSource::Inline => draft.ops.extend(ops),
-        OpsSource::Upload(asset_hash) => draft.ops_refs.push(OpsRef {
-            asset_hash,
-            after: draft.ops.len() as u64,
-            count: ops.len() as u64,
-        }),
     }
-    draft.work_cells = draft.work_cells.saturating_add(cells);
-    draft.rev += 1;
-    draft.updated_at = now;
-    if !repo.save_draft(grant, &draft, expected_rev).await? {
-        return Err(ApiError::conflict("草稿在处理期间被修改或已发布，请重新读取后再试").into());
+
+    /// 已作用的操作条数。
+    pub fn applied(&self) -> u64 {
+        self.count
     }
-    Ok(draft)
+
+    /// 草稿工作状态里某一层的模板（交包时，清单的 `merge` 模式可以引用目标空间重建层已有的模板）。
+    pub fn templates_of(&self, layer: Layer) -> BTreeMap<String, metaverse_core::shape::Shape> {
+        self.workspace.state.templates_of(layer)
+    }
+
+    /// 作用一批操作（检查范围、累计条数和计算量）。
+    pub async fn apply(
+        &mut self,
+        repo: &Repo,
+        grant: &Grant,
+        ops: Vec<Op>,
+    ) -> Result<(), ApplyError> {
+        if self.draft.op_count() + self.count + ops.len() as u64 > MAX_DRAFT_OPS {
+            return Err(too_large(format!("一个草稿最多 {MAX_DRAFT_OPS} 条操作")).into());
+        }
+        let cells = ops_cells(&ops);
+        if self
+            .draft
+            .work_cells
+            .saturating_add(self.cells)
+            .saturating_add(cells)
+            > MAX_DRAFT_CELLS
+        {
+            return Err(too_large(format!(
+                "草稿的操作累计要处理超过 {MAX_DRAFT_CELLS} 格（发布时可能要全部重放），请先发布这个草稿，再建新草稿继续"
+            ))
+            .into());
+        }
+        let touched = self
+            .workspace
+            .apply_ops(repo, grant, &ops, &self.area, self.count as usize)
+            .await?;
+        self.touched.merge(touched);
+        self.count += ops.len() as u64;
+        self.cells = self.cells.saturating_add(cells);
+        if self.keep {
+            self.inline_ops.extend(ops);
+        }
+        Ok(())
+    }
+
+    /// 全部作用完：写结果区块和结果记录（内容寻址、可以重写），返回追加以后的草稿（还没保存）。
+    pub async fn finish(
+        self,
+        repo: &Repo,
+        grant: &Grant,
+        source: OpsSource,
+        now: Timestamp,
+    ) -> Result<PreparedAppend, ApplyError> {
+        let AppendSession {
+            mut draft,
+            workspace,
+            touched,
+            count: op_count,
+            cells,
+            inline_ops,
+            limits,
+            ..
+        } = self;
+        if op_count == 0 {
+            return Err(ApiError::invalid("没有要追加的操作").into());
+        }
+        // 模板引用的完整性（docs/design/server-slim.md 2.5 第 3 条）：全部作用完之后，工作状态里物件
+        // 引用的模板都要在同一层存在。只报与这个草稿碰过的编号有关的缺口（碰过的物件引用的模板不在，
+        // 或碰过的模板还被引用）；基础版本里已有的旧缺口不是这个草稿造成的，不挡追加。
+        let mut changed: BTreeSet<String> = draft.touched.entities.iter().cloned().collect();
+        changed.extend(touched.entities.iter().cloned());
+        let broken = relevant_broken_refs(&workspace.state, &changed);
+        if !broken.is_empty() {
+            return Err(broken_template_error(&broken).into());
+        }
+        // 结果区块。
+        let mut results: BTreeMap<ChunkKey, String> = draft
+            .result_chunks
+            .iter()
+            .map(|c| {
+                (
+                    ChunkKey {
+                        layer: c.layer,
+                        cx: c.cx,
+                        cy: c.cy,
+                        cz: c.cz,
+                    },
+                    c.hash.clone(),
+                )
+            })
+            .collect();
+        let mut new_chunks = Vec::new();
+        for key in &touched.chunks {
+            match workspace.chunk_result(key) {
+                Some((hash, data)) => {
+                    results.insert(*key, hash.clone());
+                    new_chunks.push((hash, data));
+                }
+                None => {
+                    results.remove(key);
+                }
+            }
+        }
+        // 结果记录：先只收集引用的资源（检查角色、刷新栅栏），通过以后再分批算哈希、写记录，
+        // 不把全部记录同时留在内存里。
+        let mut assets: BTreeSet<(String, AssetRole)> = BTreeSet::new();
+        for id in &touched.entities {
+            if let Some(body) = workspace.state.entities.get(id) {
+                entity_asset_roles(body, &mut assets);
+            }
+        }
+        let provisional = provisional_list(&workspace.state.provisional_blocks);
+        for block in &provisional {
+            block_textures(&block.block, &mut assets);
+        }
+        // 重建草稿的 setScan：原始扫描按角色 Scan、网页用模型按角色 WebModel。
+        if touched.scan {
+            if let Some(scan) = &workspace.state.scan {
+                assets.insert((scan.scan.asset_hash.clone(), AssetRole::Scan));
+                for hash in &scan.scan.web_model_hashes {
+                    assets.insert((hash.clone(), AssetRole::WebModel));
+                }
+            }
+        }
+        // 引用的资源（发布后可能登记到 assetRefs、公开可读）先要属于本空间，再看服务端实测的核对
+        // 记录是否满足这个角色的条件（docs/design/server-slim.md 2.5 第 4 条、4.6）。这一批碰过的
+        // 物件和新增方块都重新检查（同一个哈希以前按别的用途引用过也一样）。
+        let wanted: Vec<(String, AssetRole)> = assets.iter().cloned().collect();
+        let checked = repo.check_asset_roles(grant, &wanted, &limits).await?;
+        if !checked.unusable.is_empty() {
+            return Err(ApiError::new(
+                axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+                "unknown_asset",
+                format!(
+                    "引用的资源不能这样用：{}",
+                    checked
+                        .unusable
+                        .iter()
+                        .take(LIST_IN_ERROR)
+                        .map(UnusableAsset::describe)
+                        .collect::<Vec<_>>()
+                        .join("；")
+                ),
+            )
+            .into());
+        }
+        // 模型与记录一致（2.5 第 5 条）：只有模型、没有形状的物件，模型的实测包围盒按物件的 transform
+        // 转过之后的外包盒与物件 bounds 一致（SHAPES 第 3 节）。
+        let mut mismatched = Vec::new();
+        for id in &touched.entities {
+            let Some(body) = workspace.state.entities.get(id) else {
+                continue;
+            };
+            let (None, Some(hash)) = (&body.shape, &body.asset_hash) else {
+                continue;
+            };
+            let bounds = checked.checks.get(hash).and_then(glb_bounds);
+            let fits = match bounds {
+                Some(bounds) => model_fits_entity(&bounds, &body.bounds, body.transform.as_ref())
+                    .map_err(|e| e.0),
+                None => Err("模型没有实测的包围盒".to_owned()),
+            };
+            if let Err(message) = fits {
+                mismatched.push(format!("{id}：{message}"));
+            }
+        }
+        if !mismatched.is_empty() {
+            let count = mismatched.len();
+            mismatched.truncate(LIST_IN_ERROR);
+            return Err(ApiError::new(
+                axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+                "model_bounds_mismatch",
+                format!(
+                    "{count} 件只有模型的物件与模型的实测包围盒不一致：{}",
+                    mismatched.join("；")
+                ),
+            )
+            .into());
+        }
+        // 两类资源（2.8）：可预览的（网页用模型、物件模型、贴图）进 assets；只为防清理而持有的
+        // （原始扫描、包清单、建模记录）进 heldAssets，预览拿不到。
+        let mut new_assets = Vec::new();
+        let mut new_held = Vec::new();
+        for (hash, role) in assets {
+            match role {
+                AssetRole::WebModel | AssetRole::Model | AssetRole::Texture => {
+                    new_assets.push(hash)
+                }
+                _ => new_held.push(hash),
+            }
+        }
+        if let OpsSource::Bundle {
+            manifest_hash,
+            notes,
+            ..
+        } = &source
+        {
+            new_held.push(manifest_hash.clone());
+            new_held.extend(notes.iter().cloned());
+        }
+        // 清理的栅栏（`runner/cleanup.rs`）：写下记录（`body.assetHash` / `textures`）和草稿
+        // （`assets`、`heldAssets`、`opsRefs`）这些引用之前，先刷新这一批引用的全部资源的 touchedAt
+        // 并确认都还在。刷新之后清理的条件删除就删不掉它们；刷新不到说明刚被清理删掉，整批不生效，
+        // 让调用方重新上传。
+        let mut fenced = new_assets.clone();
+        fenced.extend(new_held.iter().cloned());
+        if let Some(file) = source.file() {
+            fenced.push(file.to_owned());
+        }
+        let gone = repo.touch_assets(grant, &fenced).await?;
+        if !gone.is_empty() {
+            tracing::info!(space = %grant.space_id(), draft = %draft.id, assets = ?gone, "追加时引用的资源刚被清理");
+            let describe = |hash: &String| match source.file() {
+                Some(file) if file == hash => format!("操作文件 {hash}：{MISSING_ASSET}"),
+                _ => format!("{hash}：{MISSING_ASSET}"),
+            };
+            return Err(ApiError::new(
+                axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+                "unknown_asset",
+                format!(
+                    "引用的资源不能这样用：{}",
+                    gone.iter().map(describe).collect::<Vec<_>>().join("；")
+                ),
+            )
+            .into());
+        }
+
+        repo.put_draft_chunks(grant, &draft.id, &new_chunks, draft.expires_at)
+            .await?;
+        drop(new_chunks);
+        let mut entity_results: BTreeMap<String, Option<String>> = draft
+            .result_entities
+            .iter()
+            .map(|c| (c.id.clone(), c.hash.clone()))
+            .collect();
+        let mut anchor_results: BTreeMap<String, Option<String>> = draft
+            .result_anchors
+            .iter()
+            .map(|c| (c.id.clone(), c.hash.clone()))
+            .collect();
+        let mut report = AppendReport {
+            skipped_anchors: touched.skipped_anchors.clone(),
+            anchor_drift: anchor_drift(&workspace.state, &touched.entities),
+            ..AppendReport::default()
+        };
+        let mut batch = Vec::with_capacity(RECORD_BATCH);
+        for id in &touched.entities {
+            let hash = match workspace.state.entities.get(id) {
+                Some(body) => {
+                    let (hash, value) = record_of(RecordKind::Entity, grant.space_id(), body)?;
+                    batch.push((hash.clone(), "entity", value));
+                    report.placed += 1;
+                    Some(hash)
+                }
+                None => {
+                    report.removed += 1;
+                    None
+                }
+            };
+            entity_results.insert(id.clone(), hash);
+            if batch.len() >= RECORD_BATCH {
+                repo.put_records(grant, &batch).await?;
+                batch.clear();
+            }
+        }
+        for id in &touched.anchors {
+            let hash = match workspace.state.anchors.get(id) {
+                Some(body) => {
+                    let (hash, value) = record_of(RecordKind::Anchor, grant.space_id(), body)?;
+                    batch.push((hash.clone(), "anchor", value));
+                    report.anchors.push(id.clone());
+                    Some(hash)
+                }
+                None => None,
+            };
+            anchor_results.insert(id.clone(), hash);
+            if batch.len() >= RECORD_BATCH {
+                repo.put_records(grant, &batch).await?;
+                batch.clear();
+            }
+        }
+        if !batch.is_empty() {
+            repo.put_records(grant, &batch).await?;
+        }
+        drop(batch);
+
+        let expected_rev = draft.rev;
+        let rebuild = draft.scope == PathScope::Rebuild;
+        let mut all_touched = TouchedSet {
+            chunks: draft.touched.chunks.iter().copied().collect(),
+            entities: draft.touched.entities.iter().cloned().collect(),
+            anchors: draft.touched.anchors.iter().cloned().collect(),
+            palette: draft.touched.palette,
+            scan: draft.touched.scan,
+            rebuilt_layer: draft.touched.rebuilt_layer,
+            ..TouchedSet::default()
+        };
+        // 重建草稿碰过物件就是改过重建层（发布时整层是一个冲突单位）。
+        let rebuilt_layer = rebuild && !touched.entities.is_empty();
+        all_touched.merge(touched);
+        all_touched.rebuilt_layer |= rebuilt_layer;
+        draft.touched = Touched {
+            regions: false,
+            plots: false,
+            ..all_touched.to_model()
+        };
+        draft.result_chunks = results
+            .into_iter()
+            .map(|(key, hash)| DraftChunk {
+                layer: key.layer,
+                cx: key.cx,
+                cy: key.cy,
+                cz: key.cz,
+                hash,
+            })
+            .collect();
+        draft.result_entities = entity_results
+            .into_iter()
+            .map(|(id, hash)| IdChange { id, hash })
+            .collect();
+        draft.result_anchors = anchor_results
+            .into_iter()
+            .map(|(id, hash)| IdChange { id, hash })
+            .collect();
+        draft.provisional_blocks = provisional;
+        if let Some(scan) = &workspace.state.scan {
+            draft.scan = Some(DraftScanDoc::from_state(scan));
+        }
+        draft.assets.extend(new_assets);
+        draft.assets.sort();
+        draft.assets.dedup();
+        draft.held_assets.extend(new_held);
+        draft.held_assets.sort();
+        draft.held_assets.dedup();
+        match source {
+            OpsSource::Inline => draft.ops.extend(inline_ops),
+            OpsSource::Upload { asset_hash, job_id } => draft.ops_refs.push(OpsRef {
+                asset_hash,
+                after: draft.ops.len() as u64,
+                count: op_count,
+                job_id: Some(job_id),
+                source: None,
+            }),
+            OpsSource::Bundle {
+                asset_hash,
+                job_id,
+                manifest_hash,
+                note,
+                notes,
+            } => {
+                draft.ops_refs.push(OpsRef {
+                    asset_hash,
+                    after: draft.ops.len() as u64,
+                    count: op_count,
+                    job_id: Some(job_id),
+                    source: Some(manifest_hash.clone()),
+                });
+                draft.bundle_ref = Some(manifest_hash);
+                draft.default_message = Some(note);
+                draft.default_script_ref = notes;
+            }
+        }
+        draft.work_cells = draft.work_cells.saturating_add(cells);
+        draft.rev += 1;
+        draft.updated_at = now;
+        Ok(PreparedAppend {
+            draft,
+            expected_rev,
+            report,
+        })
+    }
+}
+
+/// glb 核对记录里实测的世界包围盒。
+fn glb_bounds(check: &AssetCheck) -> Option<metaverse_core::grid::Aabb> {
+    match &check.body {
+        CheckBody::Glb(glb) => glb.bounds,
+        _ => None,
+    }
 }
 
 /// 草稿的全部操作（内联操作和上传的操作按追加顺序穿插）。
@@ -543,20 +997,71 @@ pub async fn preview_snapshot(
         &extra,
         &draft_anchors,
         Audience::Preview,
+        draft.scan.as_ref(),
     )
     .await
+}
+
+/// 谁在发布：调用者，或部署种子这类没有调用者的系统发布者（docs/design/server-slim.md 3.5）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Publisher {
+    pub sub: String,
+    pub service_id: String,
+}
+
+impl Publisher {
+    pub fn of(caller: &Caller) -> Self {
+        Self {
+            sub: caller.subject.clone(),
+            service_id: caller.service_id.clone(),
+        }
+    }
+
+    /// 没有调用者的系统发布者（服务编号为空）。
+    pub fn system(sub: &str) -> Self {
+        Self {
+            sub: sub.to_owned(),
+            service_id: String::new(),
+        }
+    }
+}
+
+/// 由后台任务发布（部署种子，docs/design/server-slim.md 2.7）：提交带任务编号，任务完成与提交
+/// 在同一个事务里按租约栅栏写；没有变化时任务完成与"草稿标记已发布"在同一个事务里写。`result`
+/// 是任务结果的底稿，发布时再加上 `commitId`、`seq` 或 `unchanged`。
+#[derive(Debug, Clone)]
+pub struct JobPublish {
+    pub fence: JobFence,
+    pub result: Value,
 }
 
 /// 发布选项。
 #[derive(Debug, Clone, Default)]
 pub struct PublishOptions {
-    pub message: String,
+    /// 提交说明；没给时用草稿的默认说明（重建包的 `note`），再没有就是"发布草稿"。
+    pub message: Option<String>,
     /// 有冲突时在最新版本上重放草稿的全部操作。
     pub replay: bool,
     /// 调用方看到的草稿版本；给了就必须一致。
     pub expected_rev: Option<u64>,
     pub observed_at: Option<Timestamp>,
+    /// 建造脚本或建模记录；没给时用草稿的默认脚本（重建包的 `notes`）。
     pub script_ref: Option<String>,
+    /// 当前配置的各用途上限（按核对记录判断 `scriptRef` 是不是文本）。
+    pub limits: UploadLimits,
+    /// 由后台任务发布时的任务栅栏和结果底稿。
+    pub job: Option<JobPublish>,
+}
+
+/// 发布的结果。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PublishOutcome {
+    Committed(CommitOutcome),
+    /// 重建草稿的内容与最新版本相比没有变化（docs/design/server-slim.md 2.7）：没写提交，
+    /// 草稿标记为已发布、`unchanged: true`；`seq` 是最新版本。同一个草稿再发布还是这个结果。
+    Unchanged {
+        seq: u64,
+    },
 }
 
 /// 发布失败的原因。
@@ -572,9 +1077,14 @@ pub enum PublishError {
     OutOfScope(OpError),
     /// 在最新版本上重放失败。
     ReplayFailed(OpError),
-    /// 草稿或提交引用的资源已经被处理服务的定期清理删掉（升序去重的哈希）。重新上传同一内容
+    /// 草稿或提交引用的资源已经被定期清理删掉（升序去重的哈希）。重新上传同一内容
     /// （哈希不变）后可以再发布。
     AssetsGone(Vec<String>),
+    /// 在"最新版本 + 本次变化"上，模板引用不完整：本次放进去的物件引用的模板不在同一层，或本次
+    /// 删掉的模板还被物件引用（`(物件编号, 模板编号)`，docs/design/server-slim.md 2.5 第 3 条）。
+    BrokenTemplates(Vec<(String, String)>),
+    /// 由后台任务发布时，任务的租约已经丢了：什么都没写。
+    LeaseLost,
 }
 
 impl From<ApiError> for PublishError {
@@ -597,11 +1107,40 @@ fn chunk_key_text(key: &ChunkKey) -> String {
     format!("chunk:{layer}:{},{},{}", key.cx, key.cy, key.cz)
 }
 
-/// 草稿碰过的键与 (baseSeq, head] 的变化的交集。
+/// 这次提交改过重建层：重建路径的提交（`actor.scope = rebuild`），以及处理服务写的旧提交
+/// （`actor.kind = job`）。
+fn changes_rebuilt_layer(commit: &Commit) -> bool {
+    commit.actor.scope == PathScope::Rebuild
+        || matches!(commit.actor.kind, ActorKind::Job | ActorKind::Rebuild)
+}
+
+/// 草稿碰过的键与 (baseSeq, head] 的变化的交集。重建草稿另有两个键（docs/design/server-slim.md
+/// 2.7）：每个重建草稿都登记 `layer:rebuilt`，与中途任何改过重建层的提交冲突（重建层整体是一个
+/// 冲突单位）；草稿有 `setScan` 时登记 `scan`，与中途带扫描的提交冲突。
+///
+/// 同一个包重推（6.7 的幂等）：中途由**同一个包清单**（`bundleRef` 相同）发布的提交整个不算——
+/// 清单按哈希固定了全部文件，两次展开的基础版本又相同（清单的 `base`），那次提交写进去的正是这个
+/// 草稿要写的内容；叠加到最新版本上没有变化，就得到 `unchanged`。中途只要还有别的提交改过重建层，
+/// 照样登记 `layer:rebuilt`。
 fn conflict_keys(draft: &DraftDoc, commits: &[Commit]) -> Vec<String> {
     let mut chunks = BTreeSet::new();
     let mut entities = BTreeSet::new();
     let mut anchors = BTreeSet::new();
+    let mut keys = Vec::new();
+    let same_bundle = |commit: &Commit| {
+        draft.scope == PathScope::Rebuild
+            && draft.bundle_ref.is_some()
+            && commit.bundle_ref == draft.bundle_ref
+    };
+    let commits: Vec<&Commit> = commits.iter().filter(|c| !same_bundle(c)).collect();
+    if draft.scope == PathScope::Rebuild {
+        if commits.iter().any(|commit| changes_rebuilt_layer(commit)) {
+            keys.push("layer:rebuilt".to_owned());
+        }
+        if draft.scan.is_some() && commits.iter().any(|commit| commit.scan.is_some()) {
+            keys.push("scan".to_owned());
+        }
+    }
     for commit in commits {
         for change in &commit.changed_chunks {
             chunks.insert(ChunkKey {
@@ -614,13 +1153,14 @@ fn conflict_keys(draft: &DraftDoc, commits: &[Commit]) -> Vec<String> {
         entities.extend(commit.changed_entities.iter().map(|c| c.id.clone()));
         anchors.extend(commit.changed_anchors.iter().map(|c| c.id.clone()));
     }
-    let mut keys: Vec<String> = draft
-        .touched
-        .chunks
-        .iter()
-        .filter(|key| chunks.contains(key))
-        .map(chunk_key_text)
-        .collect();
+    keys.extend(
+        draft
+            .touched
+            .chunks
+            .iter()
+            .filter(|key| chunks.contains(key))
+            .map(chunk_key_text),
+    );
     keys.extend(
         draft
             .touched
@@ -801,7 +1341,8 @@ async fn replay_changes(
         )
         .into());
     }
-    let mut workspace = Workspace::at_seq(repo, grant, head_seq).await?;
+    let mut workspace =
+        Workspace::at_seq(repo, grant, head_seq, ScopeKind::of(&draft.scope)).await?;
     let touched = match workspace.apply_ops(repo, grant, &ops, area, 0).await {
         Ok(touched) => touched,
         Err(ApplyError::Api(error)) => return Err(error.into()),
@@ -810,6 +1351,11 @@ async fn replay_changes(
         }
         Err(ApplyError::Op(error)) => return Err(PublishError::ReplayFailed(error)),
     };
+    // 模板完整性：在最新版本上重放的结果就是"最新版本 + 本次变化"。
+    let broken = relevant_broken_refs(&workspace.state, &touched.entities);
+    if !broken.is_empty() {
+        return Err(PublishError::BrokenTemplates(broken));
+    }
     let head = workspace.manifest.clone();
     let mut changes = Changes {
         chunks: Vec::new(),
@@ -883,20 +1429,117 @@ async fn replay_changes(
     Ok(changes)
 }
 
-/// 发布时附带的 `scriptRef`：必须是本空间的脚本资源（script 用途上传并经处理服务校验，
-/// `metadata.kind = script`）。提交引用它，清理就不会删它，所以不能拿别的空间的资源或不存在的
-/// 哈希充数。
-async fn check_script_ref(repo: &Repo, grant: &Grant, hash: &str) -> Result<(), ApiError> {
-    let reason = match repo.space_owned_asset(grant, hash).await? {
-        Some(meta) if meta.kind.as_deref() == Some("script") => return Ok(()),
-        Some(_) => "不是脚本（只能引用 script 用途上传的资源）".to_owned(),
-        None => format!("{MISSING_ASSET}，或不属于本空间"),
+/// 发布时附带的 `scriptRef`：必须是本空间的、核对结果是文本的资源（script 用途上传核对过的
+/// UTF-8 文本，按核对记录判断，docs/design/server-slim.md 4.6）。提交引用它，清理就不会删它，
+/// 所以不能拿别的空间的资源或不存在的哈希充数。
+async fn check_script_ref(
+    repo: &Repo,
+    grant: &Grant,
+    hash: &str,
+    limits: &UploadLimits,
+) -> Result<(), ApiError> {
+    let unusable = repo
+        .unusable_assets(grant, &[(hash.to_owned(), AssetRole::Script)], limits)
+        .await?;
+    match unusable.first() {
+        None => Ok(()),
+        Some(problem) => Err(ApiError::new(
+            axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+            "unknown_asset",
+            format!("scriptRef {}", problem.describe()),
+        )),
+    }
+}
+
+/// 合并后的物件里，与这次变化有关的模板引用缺口：碰过的物件引用的模板不在同一层，或碰过的模板
+/// （删掉、改成别的层或别的种类）还被物件引用。之前就有的旧缺口不算这次的。
+fn relevant_broken_refs(state: &WorkingState, changed: &BTreeSet<String>) -> Vec<(String, String)> {
+    state
+        .broken_template_refs()
+        .into_iter()
+        .filter(|(entity, template)| changed.contains(entity) || changed.contains(template))
+        .collect()
+}
+
+/// 没有冲突、叠加发布时的模板完整性（docs/design/server-slim.md 2.5 第 3 条）：在"最新版本 + 本次
+/// 变化"上查。叠加发布时可能遇到（例如这个草稿删了模板，另一个草稿刚加了它的使用者）；用 `replay`
+/// 在最新版本上重放可以得到准确的错误或结果。
+async fn check_merged_templates(
+    repo: &Repo,
+    grant: &Grant,
+    head: &StateManifest,
+    changes: &Changes,
+) -> Result<(), PublishError> {
+    if changes.entities.is_empty() {
+        return Ok(());
+    }
+    let hashes: Vec<&str> = head.entities.values().map(String::as_str).collect();
+    let bodies = repo.record_bodies(grant, &hashes).await?;
+    let mut state = WorkingState::default();
+    for (id, hash) in &head.entities {
+        let body = bodies.get(hash).ok_or_else(|| {
+            tracing::error!(record = %hash, "记录不存在");
+            ApiError::internal()
+        })?;
+        let entity: EntityBody = serde_json::from_value(body.clone()).map_err(|error| {
+            tracing::error!(record = %hash, error = %error, "记录格式不对");
+            ApiError::internal()
+        })?;
+        state.entities.insert(id.clone(), entity);
+    }
+    let mut changed = BTreeSet::new();
+    for change in &changes.entities {
+        changed.insert(change.id.clone());
+        match changes.entity_bodies.get(&change.id) {
+            Some(body) => {
+                let entity: EntityBody = serde_json::from_value(body.clone()).map_err(|error| {
+                    tracing::error!(entity = %change.id, error = %error, "草稿结果记录格式不对");
+                    ApiError::internal()
+                })?;
+                state.entities.insert(change.id.clone(), entity);
+            }
+            None => {
+                state.entities.remove(&change.id);
+            }
+        }
+    }
+    let broken = relevant_broken_refs(&state, &changed);
+    if broken.is_empty() {
+        Ok(())
+    } else {
+        Err(PublishError::BrokenTemplates(broken))
+    }
+}
+
+/// 发布时的拍摄时间（docs/design/server-slim.md 2.7）：先取请求的，再取 `setScan` 的；都没有、而
+/// `setScan` 的扫描资源与最近一次带扫描的提交相同，就沿用那次提交的（同一扫描重新打包时，快照
+/// 照样显示拍摄时间）。
+async fn publish_observed_at(
+    repo: &Repo,
+    grant: &Grant,
+    draft: &DraftDoc,
+    requested: Option<Timestamp>,
+    head_seq: u64,
+) -> Result<Option<Timestamp>, ApiError> {
+    if requested.is_some() {
+        return Ok(requested);
+    }
+    let Some(scan) = &draft.scan else {
+        return Ok(None);
     };
-    Err(ApiError::new(
-        axum::http::StatusCode::UNPROCESSABLE_ENTITY,
-        "unknown_asset",
-        format!("scriptRef {hash}：{reason}"),
-    ))
+    if scan.observed_at.is_some() {
+        return Ok(scan.observed_at);
+    }
+    Ok(repo
+        .latest_scan_commit(grant, head_seq)
+        .await?
+        .filter(|commit| {
+            commit
+                .scan
+                .as_ref()
+                .is_some_and(|previous| previous.asset_hash == scan.scan.asset_hash)
+        })
+        .and_then(|commit| commit.observed_at))
 }
 
 /// 草稿操作在提交里的存法：内联（≤ 1MB）、原上传文件，或者合并写成一个 NDJSON 资源。
@@ -924,15 +1567,27 @@ async fn commit_ops(
 }
 
 /// 发布草稿（设计 5.6）。成功后草稿标记为已发布，预览令牌和草稿区块作废。
+///
+/// 重建草稿（docs/design/server-slim.md 2.7）：发布者类别 `rebuild`；提交带草稿的 `setScan`
+/// （与最新版本的扫描完全相同就不写）和 `bundleRef`；`assetRefs` 只登记可预览的资源；内容与最新
+/// 版本相比没有变化就不写提交（[`PublishOutcome::Unchanged`]）。
 pub async fn publish(
     repo: &Repo,
     grant: &Grant,
-    caller: &Caller,
+    publisher: &Publisher,
     draft: &DraftDoc,
     options: &PublishOptions,
     now: Timestamp,
-) -> Result<CommitOutcome, PublishError> {
+) -> Result<PublishOutcome, PublishError> {
+    let rebuild = draft.scope == PathScope::Rebuild;
     if draft.status != DraftStatus::Open {
+        if rebuild && draft.unchanged {
+            let seq = repo
+                .head_seq(grant)
+                .await?
+                .ok_or_else(ApiError::not_found)?;
+            return Ok(PublishOutcome::Unchanged { seq });
+        }
         return Err(ApiError::conflict(format!(
             "草稿已经发布（提交 {}）",
             draft.commit_id.as_deref().unwrap_or("?")
@@ -943,19 +1598,35 @@ pub async fn publish(
         return Err(ApiError::conflict("草稿已经被修改，请重新读取后再发布").into());
     }
     if draft.op_count() == 0 {
-        return Err(ApiError::invalid("草稿里还没有任何操作").into());
+        return Err(ApiError::invalid(if rebuild {
+            "重建草稿还没有交重建包"
+        } else {
+            "草稿里还没有任何操作"
+        })
+        .into());
     }
-    if let Some(script) = &options.script_ref {
-        check_script_ref(repo, grant, script).await?;
+    let message = options
+        .message
+        .clone()
+        .or_else(|| draft.default_message.clone())
+        .unwrap_or_else(|| "发布草稿".to_owned());
+    let script_ref = options
+        .script_ref
+        .clone()
+        .or_else(|| draft.default_script_ref.clone());
+    if let Some(script) = &script_ref {
+        check_script_ref(repo, grant, script, &options.limits).await?;
     }
-    // 事务前先确认一次：草稿引用的操作文件和脚本都还在（并刷新 touchedAt），缺了就不必算下去。
-    // 物件模型、贴图由提交事务里的栅栏确认（见 `Repo::write_commit`）。
+    // 事务前先确认一次：草稿引用的操作文件、脚本、包清单和只为防清理而持有的资源都还在（并刷新
+    // touchedAt），缺了就不必算下去。物件模型、贴图由提交事务里的栅栏确认（见 `Repo::write_commit`）。
     let mut fenced: Vec<String> = draft
         .ops_refs
         .iter()
         .map(|reference| reference.asset_hash.clone())
         .collect();
-    fenced.extend(options.script_ref.iter().cloned());
+    fenced.extend(script_ref.iter().cloned());
+    fenced.extend(draft.bundle_ref.iter().cloned());
+    fenced.extend(draft.held_assets.iter().cloned());
     let gone = repo.touch_assets(grant, &fenced).await?;
     if !gone.is_empty() {
         return Err(PublishError::AssetsGone(gone));
@@ -963,8 +1634,10 @@ pub async fn publish(
     let (ops, ops_ref) = commit_ops(repo, grant, draft).await?;
     let kind = match draft.scope {
         PathScope::Plot(_) => ActorKind::Plot,
+        PathScope::Rebuild => ActorKind::Rebuild,
         _ => ActorKind::Physical,
     };
+    let scope_kind = ScopeKind::of(&draft.scope);
     for _ in 0..PUBLISH_ATTEMPTS {
         let space = repo.space(grant).await?.ok_or_else(ApiError::not_found)?;
         let head_seq = space.head.seq;
@@ -990,11 +1663,13 @@ pub async fn publish(
         let changes = if conflicts.is_empty() {
             // 按最新的区域和地块重新校验全部操作（影子重放，不碰区块）。
             let ops = draft_ops(repo, grant, draft).await?;
-            let mut base = Workspace::at_seq(repo, grant, draft.base_seq).await?;
+            let mut base = Workspace::at_seq(repo, grant, draft.base_seq, scope_kind).await?;
+            base.ensure_anchor_history(repo, grant, &ops).await?;
             check_scope_only(&mut base.state, &ops, &area).map_err(|error| match error {
                 OpError::Scope { .. } => PublishError::OutOfScope(error),
                 other => PublishError::ReplayFailed(other),
             })?;
+            drop(base);
             match overlay_changes(repo, grant, draft, &head_manifest, &head_palette).await {
                 // 新增方块与最新方块表重名：同样按冲突处理。
                 Err(PublishError::Conflicts { .. }) if options.replay => {
@@ -1003,7 +1678,11 @@ pub async fn publish(
                 Err(PublishError::Conflicts { keys, .. }) => {
                     return Err(PublishError::Conflicts { keys, head_seq })
                 }
-                other => other?,
+                Ok(changes) => {
+                    check_merged_templates(repo, grant, &head_manifest, &changes).await?;
+                    changes
+                }
+                Err(other) => return Err(other),
             }
         } else if options.replay {
             replay_changes(repo, grant, draft, head_seq, &area).await?
@@ -1014,20 +1693,80 @@ pub async fn publish(
             });
         };
 
+        // 扫描：草稿的 setScan；与最新版本的扫描完全相同就不写（回放沿用上一次）。
+        let scan = draft
+            .scan
+            .as_ref()
+            .map(|scan| scan.scan.to_scan_ref())
+            .filter(|scan| head_manifest.scan.as_ref() != Some(scan));
+        // 没有变化就不提交（只对重建草稿）。
+        if rebuild
+            && changes.chunks.is_empty()
+            && changes.entities.is_empty()
+            && changes.anchors.is_empty()
+            && changes.new_blocks.is_empty()
+            && scan.is_none()
+        {
+            match &options.job {
+                None => {
+                    if !repo
+                        .mark_draft_unchanged(grant, &draft.id, draft.rev, now)
+                        .await?
+                    {
+                        return Err(draft_changed().into());
+                    }
+                }
+                Some(job) => {
+                    let mut result = job.result.clone();
+                    if let Value::Object(map) = &mut result {
+                        map.insert("unchanged".into(), json!(true));
+                        map.insert("seq".into(), json!(head_seq));
+                    }
+                    match repo
+                        .mark_draft_unchanged_for_job(
+                            grant, &draft.id, draft.rev, &job.fence, &result, now,
+                        )
+                        .await?
+                    {
+                        JobDraftSave::Saved => {}
+                        JobDraftSave::DraftChanged => return Err(draft_changed().into()),
+                        JobDraftSave::LeaseLost => return Err(PublishError::LeaseLost),
+                    }
+                }
+            }
+            if let Err(error) = repo.clear_published_draft(grant, &draft.id).await {
+                tracing::warn!(space = %grant.space_id(), draft = %draft.id, error = %error, "清理已发布草稿的预览和区块失败");
+            }
+            return Ok(PublishOutcome::Unchanged { seq: head_seq });
+        }
+
         repo.put_chunks(grant, &changes.chunk_data, now).await?;
         repo.put_records(grant, &changes.records).await?;
         let mut plan = CommitPlan::new(
             head_seq,
-            actor(caller, draft.scope.clone(), kind),
-            options.message.clone(),
+            Actor {
+                sub: publisher.sub.clone(),
+                nyx_service_id: publisher.service_id.clone(),
+                scope: draft.scope.clone(),
+                kind,
+            },
+            message.clone(),
         );
-        if draft.created_by.sub != caller.subject {
+        if let Some(job) = &options.job {
+            plan.job_id = Some(job.fence.job_id.clone());
+            plan.job_done = Some(JobDone {
+                fence: job.fence.clone(),
+                result: job.result.clone(),
+            });
+        }
+        if draft.created_by.sub != publisher.sub {
             plan.author = Some(Author {
                 sub: draft.created_by.sub.clone(),
             });
         }
-        plan.observed_at = options.observed_at;
-        plan.script_ref = options.script_ref.clone();
+        plan.observed_at =
+            publish_observed_at(repo, grant, draft, options.observed_at, head_seq).await?;
+        plan.script_ref = script_ref.clone();
         plan.draft_id = Some(draft.id.clone());
         plan.draft_rev = Some(draft.rev);
         plan.ops = ops.clone();
@@ -1037,7 +1776,15 @@ pub async fn publish(
         plan.changed_anchors = changes.anchors;
         plan.entity_bodies = changes.entity_bodies;
         plan.anchor_bodies = changes.anchor_bodies;
+        plan.bundle_ref = draft.bundle_ref.clone();
+        plan.held_assets = draft.held_assets.clone();
+        // assetRefs 只登记可预览的资源（网页用模型、物件模型、贴图）；原始扫描、包清单、建模记录、
+        // 展开的操作文件都只被提交引用（不会被清理，也不会公开）。
         let mut assets = changes.assets;
+        if let Some(scan) = &scan {
+            assets.extend(scan.web_model_hashes.iter().cloned());
+        }
+        plan.scan = scan;
         if !changes.new_blocks.is_empty() {
             let mut blocks = head_palette.clone();
             for block in &changes.new_blocks {
@@ -1058,23 +1805,25 @@ pub async fn publish(
                     // 提交和草稿状态已经写成；预览令牌和草稿区块留给过期清理。
                     tracing::warn!(space = %grant.space_id(), draft = %draft.id, error = %error, "清理已发布草稿的预览和区块失败");
                 }
-                return Ok(outcome);
+                return Ok(PublishOutcome::Committed(outcome));
             }
             Err(CommitError::HeadMoved) => continue,
-            Err(CommitError::DraftChanged) => {
-                return Err(ApiError::new(
-                    axum::http::StatusCode::CONFLICT,
-                    "draft_changed",
-                    "草稿在发布期间被追加、丢弃或已被发布；请重新读取草稿后再发布",
-                )
-                .into())
-            }
+            Err(CommitError::DraftChanged) => return Err(draft_changed().into()),
             Err(CommitError::Missing) => return Err(ApiError::not_found().into()),
             Err(CommitError::AssetsGone(gone)) => return Err(PublishError::AssetsGone(gone)),
+            Err(CommitError::LeaseLost) => return Err(PublishError::LeaseLost),
             Err(CommitError::Repo(error)) => return Err(error.into()),
         }
     }
     Err(ApiError::conflict("时间线前进太快，发布没能完成，请重试").into())
+}
+
+fn draft_changed() -> ApiError {
+    ApiError::new(
+        axum::http::StatusCode::CONFLICT,
+        "draft_changed",
+        "草稿在发布期间被追加、丢弃或已被发布；请重新读取草稿后再发布",
+    )
 }
 
 /// ops-from-upload 的后台处理结果（任务的 `result`）。

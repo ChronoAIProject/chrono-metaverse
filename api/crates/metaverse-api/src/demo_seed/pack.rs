@@ -1,78 +1,22 @@
-//! 把下载好的文件变成一份扫描资源：单个 glb / drc / obj / zip 直接用；网格加贴图时打包成 zip
-//! （stored，不压缩），布局与 Scaniverse 导出的 zip 相同——处理服务 `processing/sniff.py` 的
-//! `inspect_zip` 从里面找出网格（glb > drc > obj）和最大的那张图当贴图。
+//! 按来源表的 `zip` 打包扫描（docs/design/server-slim.md 7.1、7.2）：成员按数组顺序，存储不压缩，
+//! 时间固定为 1980-01-01 00:00，同样的成员总是得到同样的字节——线上第 1–3 版的扫描 zip 就是这样打的，
+//! 来源表指向同样的两个 Scaniverse 文件、同样的顺序，打包结果字节相同、哈希相同。本地工具的
+//! `metaverse-recon scan-zip` 按同样的规则打包（跨语言向量 `tests/vectors/demo_seed_zip.json`）。
 //!
-//! zip 写得最简单：每个成员一个本地文件头（大小和 CRC-32 直接写在头里，不用数据描述符）、
-//! 中央目录、目录结束记录；时间固定为 1980-01-01 00:00，同样的文件总是得到同样的字节（内容哈希
-//! 稳定，重复导入时复用同一个资源）。不支持 zip64：总大小必须小于 4GiB（扫描上限默认 1GiB）。
+//! zip 写得最简单：每个成员一个本地文件头（大小和 CRC-32 直接写在头里，不用数据描述符）、中央目录、
+//! 目录结束记录。不支持 zip64：总大小必须小于 4GiB（扫描上限默认 1GiB）。
+//!
+//! 种子导入时**逐个成员**写进上传会话的数据块：先下载一个成员（整个在内存里，≤ 128 MiB）、核对哈希
+//! 和大小、算 CRC，写出 [`local_header`] 和成员数据，然后释放；全部成员写完再写 [`central_directory`]。
+//! 同一时刻只有一个成员在内存里，整个 zip 不在内存里。
 
-use metaverse_core::model::UploadFormat;
-
-use super::config::{FileRole, SeedFile};
-use crate::ingest::formats::check_header;
-
-/// 一份扫描资源。
+/// 一个已经写出的成员：名字、CRC-32、大小、本地头的偏移。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ScanAsset {
-    pub bytes: Vec<u8>,
-    pub format: UploadFormat,
-}
-
-impl ScanAsset {
-    /// 登记资源时 `metadata.format` 的写法（处理服务 `processing/sniff.py` 的叫法：drc 写成 `draco`）。
-    pub fn worker_format(&self) -> &'static str {
-        match self.format {
-            UploadFormat::Drc => "draco",
-            other => other.name(),
-        }
-    }
-}
-
-/// 核对下载的文件头与扩展名声明的格式相符（与上传时第 0 片的检查相同）。
-pub fn check_file(file: &SeedFile, bytes: &[u8], max_texture_side: u64) -> Result<(), String> {
-    check_header(file.format, bytes, bytes.len() as u64, max_texture_side)
-        .map_err(|error| format!("文件 {} 的内容与扩展名不符：{error}", file.name))
-}
-
-/// 按文件组成扫描资源。`files` 与 `contents` 一一对应，都已核对过哈希和文件头。
-pub fn scan_asset(
-    files: &[SeedFile],
-    contents: Vec<Vec<u8>>,
-    max_total_bytes: u64,
-) -> Result<ScanAsset, String> {
-    if files.len() != contents.len() || files.is_empty() {
-        return Err("文件与内容的数量不一致".into());
-    }
-    if files.len() == 1 {
-        let file = &files[0];
-        if !matches!(file.role, FileRole::Mesh | FileRole::Archive) {
-            return Err(format!(
-                "单独一个文件只能是 glb、drc、obj 或 zip：{}",
-                file.name
-            ));
-        }
-        let bytes = contents.into_iter().next().unwrap_or_default();
-        return Ok(ScanAsset {
-            bytes,
-            format: file.format,
-        });
-    }
-    let entries: Vec<(&str, &[u8])> = files
-        .iter()
-        .zip(&contents)
-        .map(|(file, bytes)| (file.name.as_str(), bytes.as_slice()))
-        .collect();
-    let bytes = stored_zip(&entries)?;
-    if bytes.len() as u64 > max_total_bytes {
-        return Err(format!(
-            "打包后的 zip {} 字节超过上限 {max_total_bytes}",
-            bytes.len()
-        ));
-    }
-    Ok(ScanAsset {
-        bytes,
-        format: UploadFormat::Zip,
-    })
+pub struct Written {
+    pub name: String,
+    pub crc: u32,
+    pub size: u32,
+    pub offset: u32,
 }
 
 const LOCAL_HEADER: u32 = 0x0403_4b50;
@@ -84,51 +28,64 @@ const VERSION_MADE_BY: u16 = 20;
 /// 1980-01-01（DOS 日期：年份从 1980 起算 << 9 | 月 << 5 | 日），00:00:00。
 const DOS_DATE: u16 = (1 << 5) | 1;
 const DOS_TIME: u16 = 0;
+/// 本地文件头、中央目录项、目录结束记录的固定长度。
+const LOCAL_FIXED: u64 = 30;
+const CENTRAL_FIXED: u64 = 46;
+const END_FIXED: u64 = 22;
 
-fn crc32(bytes: &[u8]) -> u32 {
+pub fn crc32(bytes: &[u8]) -> u32 {
     let mut crc = flate2::Crc::new();
     crc.update(bytes);
     crc.sum()
 }
 
-/// 不压缩的 zip。成员名必须是 ASCII（种子配置已经限制）。
-pub fn stored_zip(entries: &[(&str, &[u8])]) -> Result<Vec<u8>, String> {
-    let too_large = || "zip 超过 4GiB（不支持 zip64）".to_owned();
-    let to_u32 = |value: usize| u32::try_from(value).map_err(|_| too_large());
+fn too_large() -> String {
+    "zip 超过 4GiB（不支持 zip64）".to_owned()
+}
+
+/// 按成员（名字、大小）算出打包后的总长度。
+pub fn zip_size(members: &[(&str, u64)]) -> u64 {
+    members
+        .iter()
+        .map(|(name, size)| LOCAL_FIXED + CENTRAL_FIXED + 2 * name.len() as u64 + size)
+        .sum::<u64>()
+        + END_FIXED
+}
+
+fn check_name(name: &str) -> Result<u16, String> {
+    if !name.is_ascii() || name.is_empty() {
+        return Err(format!("zip 成员名必须是 ASCII：{name:?}"));
+    }
+    u16::try_from(name.len()).map_err(|_| too_large())
+}
+
+/// 一个成员的本地文件头（紧接着写成员数据）。
+pub fn local_header(name: &str, crc: u32, size: u32) -> Result<Vec<u8>, String> {
+    let name_len = check_name(name)?;
+    let mut out = Vec::with_capacity(LOCAL_FIXED as usize + name.len());
+    out.extend_from_slice(&LOCAL_HEADER.to_le_bytes());
+    out.extend_from_slice(&VERSION_NEEDED.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes()); // 标志
+    out.extend_from_slice(&0u16.to_le_bytes()); // stored
+    out.extend_from_slice(&DOS_TIME.to_le_bytes());
+    out.extend_from_slice(&DOS_DATE.to_le_bytes());
+    out.extend_from_slice(&crc.to_le_bytes());
+    out.extend_from_slice(&size.to_le_bytes()); // 压缩后大小
+    out.extend_from_slice(&size.to_le_bytes()); // 原始大小
+    out.extend_from_slice(&name_len.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes()); // 扩展字段长度
+    out.extend_from_slice(name.as_bytes());
+    Ok(out)
+}
+
+/// 中央目录和目录结束记录。`offset` 是中央目录在文件里的位置（= 全部本地头和数据的长度）。
+pub fn central_directory(entries: &[Written], offset: u64) -> Result<Vec<u8>, String> {
     if entries.len() > usize::from(u16::MAX) {
         return Err("zip 成员太多".into());
     }
-    let total: usize = entries
-        .iter()
-        .map(|(name, data)| 30 + 46 + 2 * name.len() + data.len())
-        .sum::<usize>()
-        + 22;
-    to_u32(total)?;
-    let mut out = Vec::with_capacity(total);
     let mut central = Vec::new();
-    for (name, data) in entries {
-        if !name.is_ascii() || name.is_empty() {
-            return Err(format!("zip 成员名必须是 ASCII：{name:?}"));
-        }
-        let offset = to_u32(out.len())?;
-        let crc = crc32(data);
-        let size = to_u32(data.len())?;
-        let name_len = u16::try_from(name.len()).map_err(|_| too_large())?;
-        // 本地文件头
-        out.extend_from_slice(&LOCAL_HEADER.to_le_bytes());
-        out.extend_from_slice(&VERSION_NEEDED.to_le_bytes());
-        out.extend_from_slice(&0u16.to_le_bytes()); // 标志
-        out.extend_from_slice(&0u16.to_le_bytes()); // stored
-        out.extend_from_slice(&DOS_TIME.to_le_bytes());
-        out.extend_from_slice(&DOS_DATE.to_le_bytes());
-        out.extend_from_slice(&crc.to_le_bytes());
-        out.extend_from_slice(&size.to_le_bytes()); // 压缩后大小
-        out.extend_from_slice(&size.to_le_bytes()); // 原始大小
-        out.extend_from_slice(&name_len.to_le_bytes());
-        out.extend_from_slice(&0u16.to_le_bytes()); // 扩展字段长度
-        out.extend_from_slice(name.as_bytes());
-        out.extend_from_slice(data);
-        // 中央目录项
+    for entry in entries {
+        let name_len = check_name(&entry.name)?;
         central.extend_from_slice(&CENTRAL_HEADER.to_le_bytes());
         central.extend_from_slice(&VERSION_MADE_BY.to_le_bytes());
         central.extend_from_slice(&VERSION_NEEDED.to_le_bytes());
@@ -136,30 +93,76 @@ pub fn stored_zip(entries: &[(&str, &[u8])]) -> Result<Vec<u8>, String> {
         central.extend_from_slice(&0u16.to_le_bytes()); // stored
         central.extend_from_slice(&DOS_TIME.to_le_bytes());
         central.extend_from_slice(&DOS_DATE.to_le_bytes());
-        central.extend_from_slice(&crc.to_le_bytes());
-        central.extend_from_slice(&size.to_le_bytes());
-        central.extend_from_slice(&size.to_le_bytes());
+        central.extend_from_slice(&entry.crc.to_le_bytes());
+        central.extend_from_slice(&entry.size.to_le_bytes());
+        central.extend_from_slice(&entry.size.to_le_bytes());
         central.extend_from_slice(&name_len.to_le_bytes());
         central.extend_from_slice(&0u16.to_le_bytes()); // 扩展字段长度
         central.extend_from_slice(&0u16.to_le_bytes()); // 注释长度
         central.extend_from_slice(&0u16.to_le_bytes()); // 起始分卷
         central.extend_from_slice(&0u16.to_le_bytes()); // 内部属性
         central.extend_from_slice(&0u32.to_le_bytes()); // 外部属性
-        central.extend_from_slice(&offset.to_le_bytes());
-        central.extend_from_slice(name.as_bytes());
+        central.extend_from_slice(&entry.offset.to_le_bytes());
+        central.extend_from_slice(entry.name.as_bytes());
     }
-    let directory_offset = to_u32(out.len())?;
-    let directory_size = to_u32(central.len())?;
+    let directory_offset = u32::try_from(offset).map_err(|_| too_large())?;
+    let directory_size = u32::try_from(central.len()).map_err(|_| too_large())?;
+    u32::try_from(offset + central.len() as u64 + END_FIXED).map_err(|_| too_large())?;
     let count = entries.len() as u16;
-    out.extend_from_slice(&central);
-    out.extend_from_slice(&END_OF_DIRECTORY.to_le_bytes());
-    out.extend_from_slice(&0u16.to_le_bytes()); // 本分卷号
-    out.extend_from_slice(&0u16.to_le_bytes()); // 目录所在分卷
-    out.extend_from_slice(&count.to_le_bytes());
-    out.extend_from_slice(&count.to_le_bytes());
-    out.extend_from_slice(&directory_size.to_le_bytes());
-    out.extend_from_slice(&directory_offset.to_le_bytes());
-    out.extend_from_slice(&0u16.to_le_bytes()); // 注释长度
+    central.extend_from_slice(&END_OF_DIRECTORY.to_le_bytes());
+    central.extend_from_slice(&0u16.to_le_bytes()); // 本分卷号
+    central.extend_from_slice(&0u16.to_le_bytes()); // 目录所在分卷
+    central.extend_from_slice(&count.to_le_bytes());
+    central.extend_from_slice(&count.to_le_bytes());
+    central.extend_from_slice(&directory_size.to_le_bytes());
+    central.extend_from_slice(&directory_offset.to_le_bytes());
+    central.extend_from_slice(&0u16.to_le_bytes()); // 注释长度
+    Ok(central)
+}
+
+/// 增量打包：每个成员写出本地头和数据，最后写中央目录。种子导入和测试共用。
+#[derive(Debug, Default)]
+pub struct ZipBuilder {
+    written: Vec<Written>,
+    offset: u64,
+}
+
+impl ZipBuilder {
+    /// 一个成员要写出的本地头（调用方接着写 `data`）。
+    pub fn member(&mut self, name: &str, data: &[u8]) -> Result<Vec<u8>, String> {
+        self.member_with_crc(name, crc32(data), data.len() as u64)
+    }
+
+    /// 同 [`ZipBuilder::member`]，CRC-32 由调用方算好（大成员在阻塞线程池里算）。
+    pub fn member_with_crc(&mut self, name: &str, crc: u32, len: u64) -> Result<Vec<u8>, String> {
+        let size = u32::try_from(len).map_err(|_| too_large())?;
+        let header = local_header(name, crc, size)?;
+        let offset = u32::try_from(self.offset).map_err(|_| too_large())?;
+        self.written.push(Written {
+            name: name.to_owned(),
+            crc,
+            size,
+            offset,
+        });
+        self.offset += header.len() as u64 + len;
+        Ok(header)
+    }
+
+    /// 中央目录和目录结束记录。
+    pub fn finish(self) -> Result<Vec<u8>, String> {
+        central_directory(&self.written, self.offset)
+    }
+}
+
+/// 整个打包进内存（测试和跨语言向量用；种子导入逐个成员写，见 [`ZipBuilder`]）。
+pub fn stored_zip(entries: &[(&str, &[u8])]) -> Result<Vec<u8>, String> {
+    let mut builder = ZipBuilder::default();
+    let mut out = Vec::new();
+    for (name, data) in entries {
+        out.extend(builder.member(name, data)?);
+        out.extend_from_slice(data);
+    }
+    out.extend(builder.finish()?);
     Ok(out)
 }
 
@@ -225,6 +228,13 @@ mod tests {
             zip,
             "同样的输入得到同样的字节"
         );
+        assert_eq!(
+            zip.len() as u64,
+            zip_size(&[
+                ("mesh.drc", mesh.len() as u64),
+                ("tex.jpg", texture.len() as u64)
+            ])
+        );
         // 已知向量：空文件的 CRC 是 0，一个成员的 zip 长度 = 30 + 46 + 2×名称 + 数据 + 22。
         let empty = stored_zip(&[("a.txt", b"")]).unwrap();
         assert_eq!(empty.len(), 30 + 46 + 2 * 5 + 22);
@@ -235,53 +245,5 @@ mod tests {
     fn names_must_be_ascii() {
         assert!(stored_zip(&[("贴图.jpg", b"x")]).is_err());
         assert!(stored_zip(&[("", b"x")]).is_err());
-    }
-
-    fn file(name: &str, role: FileRole, format: UploadFormat) -> SeedFile {
-        SeedFile {
-            url: url::Url::parse("https://x.example/f").unwrap(),
-            name: name.into(),
-            sha256: "a".repeat(64),
-            size: 1,
-            role,
-            format,
-        }
-    }
-
-    #[test]
-    fn single_file_is_used_directly_and_several_are_zipped() {
-        let mesh = file("scan.glb", FileRole::Mesh, UploadFormat::Glb);
-        let single =
-            scan_asset(std::slice::from_ref(&mesh), vec![b"glb".to_vec()], 1 << 20).unwrap();
-        assert_eq!(single.bytes, b"glb");
-        assert_eq!(single.worker_format(), "glb");
-        let drc = file("mesh.drc", FileRole::Mesh, UploadFormat::Drc);
-        let tex = file("tex.jpg", FileRole::Texture, UploadFormat::Jpeg);
-        let zipped = scan_asset(
-            &[drc.clone(), tex.clone()],
-            vec![b"DRACO".to_vec(), b"\xff\xd8".to_vec()],
-            1 << 20,
-        )
-        .unwrap();
-        assert_eq!(zipped.format, UploadFormat::Zip);
-        assert_eq!(zipped.worker_format(), "zip");
-        assert_eq!(read_back(&zipped.bytes).len(), 2);
-        let alone =
-            scan_asset(std::slice::from_ref(&drc), vec![b"DRACO".to_vec()], 1 << 20).unwrap();
-        assert_eq!(alone.worker_format(), "draco");
-        // 打包后超过上限。
-        assert!(scan_asset(&[drc, tex.clone()], vec![vec![0; 100], vec![0; 100]], 150).is_err());
-        // 单独一张贴图不是扫描。
-        assert!(scan_asset(&[tex], vec![b"\xff\xd8".to_vec()], 1 << 20).is_err());
-    }
-
-    #[test]
-    fn file_header_must_match_extension() {
-        let drc = file("mesh.drc", FileRole::Mesh, UploadFormat::Drc);
-        assert!(check_file(&drc, b"DRACO\x02\x02", 8192).is_ok());
-        let error = check_file(&drc, b"<html>not found</html>", 8192).unwrap_err();
-        assert!(error.contains("mesh.drc"), "{error}");
-        let jpg = file("tex.jpg", FileRole::Texture, UploadFormat::Jpeg);
-        assert!(check_file(&jpg, b"\x89PNG\r\n\x1a\n", 8192).is_err());
     }
 }

@@ -54,7 +54,8 @@ export function latheProfileMesh(
   const total = Math.max(lengths[lengths.length - 1]!, 1e-9);
 
   const builder = new MeshBuilder();
-  const ring = (point: V2, normal: V2, v: number): number[] => {
+  // 自然坐标（转过的比例，轮廓长 / 总长）；米版本（θ·r：这一圈上的弧长，轮廓累计长）
+  const ring = (point: V2, normal: V2, length: number): number[] => {
     const ids: number[] = [];
     for (let i = 0; i <= steps; i += 1) {
       const theta = (i / steps) * angle;
@@ -64,15 +65,16 @@ export function latheProfileMesh(
         builder.vertex(
           [point[0] * s, point[1], point[0] * c],
           [normal[0] * s, normal[1], normal[0] * c],
-          [i / steps, v],
+          [i / steps, length / total],
+          [theta * point[0], length],
         ),
       );
     }
     return ids;
   };
   for (let j = 0; j < profile.length - 1; j += 1) {
-    const a = ring(profile[j]!, vertexNormal(j, j), lengths[j]! / total);
-    const b = ring(profile[j + 1]!, vertexNormal(j + 1, j), lengths[j + 1]! / total);
+    const a = ring(profile[j]!, vertexNormal(j, j), lengths[j]!);
+    const b = ring(profile[j + 1]!, vertexNormal(j + 1, j), lengths[j + 1]!);
     for (let i = 0; i < steps; i += 1) builder.orientedQuad(a[i]!, a[i + 1]!, b[i + 1]!, b[i]!);
   }
 

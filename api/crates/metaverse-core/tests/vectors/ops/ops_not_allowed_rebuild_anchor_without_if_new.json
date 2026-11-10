@@ -1,0 +1,126 @@
+{
+  "base": {
+    "anchorHistory": [],
+    "anchors": [],
+    "entities": [],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ],
+    "scopeKind": "rebuild"
+  },
+  "description": "重建草稿里新建锚点必须带 ifNew",
+  "expect": {
+    "baseChunks": [],
+    "error": {
+      "index": 0,
+      "kind": "notAllowed",
+      "message": "第 0 条操作：重建草稿里新建锚点必须带 ifNew"
+    },
+    "footprints": [],
+    "ok": false
+  },
+  "kind": "ops",
+  "name": "not-allowed-rebuild-anchor-without-if-new",
+  "ops": [
+    {
+      "anchor": {
+        "anchorId": "t2",
+        "box": [
+          0,
+          0,
+          0,
+          10,
+          15,
+          10
+        ],
+        "kind": "table",
+        "visibility": "public"
+      },
+      "op": "createAnchor"
+    }
+  ],
+  "probeCells": [],
+  "scope": "rebuild",
+  "spaceId": "vec-space"
+}

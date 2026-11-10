@@ -201,7 +201,11 @@ describe('metaverse init', () => {
       'export default function build',
     );
     expect(existsSync(join(root, 'tsconfig.json'))).toBe(true);
-    expect(readFileSync(join(root, '.gitignore'), 'utf8')).toContain('out/');
+    const ignore = readFileSync(join(root, '.gitignore'), 'utf8').split('\n');
+    // 原始扫描（不公开）、重建工作目录、本地输出都不进版本库。
+    for (const entry of ['out/', 'chunks/', 'assets/', 'scan/', 'work/', 'web/']) {
+      expect(ignore).toContain(entry);
+    }
     expect(lstatSync(join(root, 'node_modules/@chrono-metaverse/sdk')).isSymbolicLink()).toBe(true);
     // 再来一次要 --force；--force 不覆盖已有的建造脚本。
     writeFileSync(join(root, 'build/main.ts'), '// 我的脚本');
@@ -459,5 +463,21 @@ describe('技能说明里的示例脚本', () => {
     const result = await runBuild(ws, readConfig(ws), { write: false });
     expect(result.ops).toHaveLength(3);
     expect(result.outside).toEqual([]);
+  });
+});
+
+describe('去掉地址末尾的斜杠', () => {
+  it('逐字符往回数，长串斜杠也是线性时间', async () => {
+    const { trimTrailingSlashes } = await import('../src/workspace/config.js');
+    expect(trimTrailingSlashes('https://a.example/')).toBe('https://a.example');
+    expect(trimTrailingSlashes('https://a.example///')).toBe('https://a.example');
+    expect(trimTrailingSlashes('https://a.example')).toBe('https://a.example');
+    expect(trimTrailingSlashes('////')).toBe('');
+    expect(trimTrailingSlashes('')).toBe('');
+    const long = 'x' + '/'.repeat(200_000) + 'y';
+    const started = Date.now();
+    expect(trimTrailingSlashes(long)).toBe(long);
+    expect(trimTrailingSlashes(long + '/'.repeat(200_000))).toBe(long);
+    expect(Date.now() - started).toBeLessThan(500);
   });
 });

@@ -11,9 +11,9 @@
 //   上任何 CI 任务里的 action 都能写进构建层。
 // - Dockerfile（infra/*/Dockerfile）：`# syntax=` 构建前端、`FROM` 和 `COPY --from=` 的外部镜像都按
 //   摘要固定（`镜像:标签@sha256:<64 位>`，标签只作记号）。
-// - 处理服务：构建后端（infra/worker/build-requirements.txt）按版本和哈希固定；Dockerfile 里每条
-//   `uv pip install` 要么按哈希装（`--require-hashes`），要么不解析依赖、不用构建隔离
-//   （`--no-deps --no-build-isolation`），不从 PyPI 拉没固定的包。
+//
+// 处理服务的镜像下线后，它那两条规则（构建后端按版本和哈希固定、`uv pip install` 不从 PyPI 拉没固定的包）
+// 一起删掉了：剩下的两个镜像（接口服务、网站）都不装 Python 包。
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -63,11 +63,8 @@ export function workflowProblems(text, name, { publishesImages = false } = {}) {
   return problems;
 }
 
-/**
- * Dockerfile 的逻辑行（接上续行），带起始行号。`heredocs` 为 false 时跳过 heredoc 的内容（只要指令），
- * 为 true 时 heredoc 里的命令也逐行返回（`RUN <<'X'` 里的 shell 命令）。
- */
-function dockerfileLines(text, { heredocs }) {
+/** Dockerfile 的逻辑指令（接上续行），带起始行号；heredoc 的内容（`RUN <<'X'` 里的 shell 命令）跳过。 */
+function dockerfileLines(text) {
   const lines = text.split('\n');
   const result = [];
   let heredoc = null;
@@ -77,7 +74,7 @@ function dockerfileLines(text, { heredocs }) {
       heredoc = null;
       return;
     }
-    if (heredoc !== null && !heredocs) return;
+    if (heredoc !== null) return;
     if (current === null) current = { line: index + 1, text: '' };
     const continued = /\\\s*$/.test(line);
     current.text += `${continued ? line.replace(/\\\s*$/, '') : line} `;
@@ -102,7 +99,7 @@ export function dockerfileProblems(text, name) {
   if (syntax && !DIGEST.test(syntax[1])) {
     problems.push(`${name}:1：构建前端 ${syntax[1]} 要按摘要固定（构建时它在 BuildKit 里执行）`);
   }
-  for (const { line, text: instruction } of dockerfileLines(text, { heredocs: false })) {
+  for (const { line, text: instruction } of dockerfileLines(text)) {
     const at = `${name}:${line}`;
     const from = /^FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?/i.exec(instruction);
     if (from) {
@@ -119,55 +116,10 @@ export function dockerfileProblems(text, name) {
       }
     }
   }
-  // 安装命令多半写在 RUN 的 heredoc 里，所以这一条连 heredoc 的内容一起看。
-  for (const { line, text: command } of dockerfileLines(text, { heredocs: true })) {
-    if (/^\s*#/.test(command) || !/\buv\s+pip\s+install\b/.test(command)) continue;
-    const hashed = /--require-hashes\b/.test(command);
-    const isolated = /--no-deps\b/.test(command) && /--no-build-isolation\b/.test(command);
-    if (!hashed && !isolated) {
-      problems.push(
-        `${name}:${line}：uv pip install 要么按哈希装（--require-hashes），要么 --no-deps --no-build-isolation；` +
-          `否则会从 PyPI 拉没固定的包（包括构建隔离里的 setuptools）`,
-      );
-    }
-  }
   return problems;
 }
 
-/** 要求文件（pip 格式）里的问题：每一项都是 `名字==版本` 并带 sha256 哈希。 */
-export function requirementsProblems(text, name) {
-  const problems = [];
-  const entries = [];
-  let current = null;
-  text.split('\n').forEach((line, index) => {
-    const content = line.replace(/(^|\s)#.*$/, '').trimEnd();
-    if (current === null) {
-      if (content.trim() === '') return;
-      current = { line: index + 1, text: '' };
-    }
-    const continued = content.endsWith('\\');
-    current.text += `${continued ? content.slice(0, -1) : content} `;
-    if (!continued) {
-      entries.push(current);
-      current = null;
-    }
-  });
-  if (current !== null) entries.push(current);
-  if (entries.length === 0) problems.push(`${name}：没有任何依赖`);
-  for (const entry of entries) {
-    const at = `${name}:${entry.line}`;
-    const [requirement = '', ...options] = entry.text.trim().split(/\s+/);
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*==[A-Za-z0-9.+!-]+$/.test(requirement)) {
-      problems.push(`${at}：${requirement} 要写成 名字==确切版本`);
-    }
-    if (!options.some((option) => /^--hash=sha256:[0-9a-f]{64}$/.test(option))) {
-      problems.push(`${at}：${requirement} 要带 --hash=sha256:<64 位>（Dockerfile 用 --require-hashes 安装）`);
-    }
-  }
-  return problems;
-}
-
-/** 检查仓库里的工作流、Dockerfile 和处理服务的构建后端，返回问题列表。 */
+/** 检查仓库里的工作流和 Dockerfile，返回问题列表。 */
 export function checkPins(root) {
   const problems = [];
   const workflows = join(root, '.github', 'workflows');
@@ -181,12 +133,6 @@ export function checkPins(root) {
   for (const service of readdirSync(infra).sort()) {
     const path = join(infra, service, 'Dockerfile');
     if (existsSync(path)) problems.push(...dockerfileProblems(readFileSync(path, 'utf8'), `infra/${service}/Dockerfile`));
-  }
-  const buildRequirements = join(infra, 'worker', 'build-requirements.txt');
-  if (existsSync(buildRequirements)) {
-    problems.push(...requirementsProblems(readFileSync(buildRequirements, 'utf8'), 'infra/worker/build-requirements.txt'));
-  } else {
-    problems.push('缺少 infra/worker/build-requirements.txt（处理服务的构建后端要按版本和哈希固定）');
   }
   return problems;
 }

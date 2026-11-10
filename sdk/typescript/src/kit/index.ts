@@ -25,4 +25,13 @@ export {
   type GridBox,
   type Vec3,
 } from '../core/grid.js';
-export { shapeBounds, validateShape, type Shape, type Vec2, type Rgb } from '../core/shape.js';
+export {
+  shapeBounds,
+  validateShape,
+  type Material,
+  type Shading,
+  type Shape,
+  type UvMode,
+  type Vec2,
+  type Rgb,
+} from '../core/shape.js';

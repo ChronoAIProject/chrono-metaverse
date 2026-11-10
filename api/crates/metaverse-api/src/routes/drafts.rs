@@ -1,6 +1,8 @@
 //! 草稿接口（设计 5.6、8.3）：实体区 `/api/v1/spaces/{space_id}/drafts...` 和地块
 //! `/api/v1/spaces/{space_id}/plots/{plot_id}/drafts...` 两组路径，每组一套 operationId，
 //! NyxID 的操作范围可以按路径分别授权（例如地块 key 可以发布，实体区 key 只能建草稿和预览）。
+//! 重建路径的一组（`/api/v1/spaces/{space_id}/rebuild/drafts...`）在 `routes/rebuild.rs`，
+//! 复用这里的步骤。
 //!
 //! - 草稿属于创建时的路径范围：经别的范围的路径访问一律 404；
 //! - 批量操作每次 ≤ 200 条、请求体 ≤ 1MB，超出返回 413 并提示改走上传；
@@ -20,7 +22,9 @@ use axum::{
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use metaverse_core::chunk::ChunkKey;
 use metaverse_core::ids::is_object_id;
-use metaverse_core::model::{Author, Touched, DRAFT_TTL_SECONDS};
+use metaverse_core::model::{
+    Author, Job, JobKind, JobStatus, RequestActor, Touched, DRAFT_TTL_SECONDS,
+};
 use metaverse_core::ops::{OpError, MAX_OPS_PER_BATCH};
 use metaverse_core::scope::PathScope;
 use metaverse_core::{is_sha256_hex, sha256_hex, Timestamp};
@@ -33,10 +37,11 @@ use super::admin_spaces::check_text;
 use crate::auth::permissions::Capability;
 use crate::auth::{Caller, Grant, Purpose};
 use crate::error::{ApiError, ProblemDocument, PROBLEM_TYPE_PREFIX};
-use crate::repo::{DraftDoc, DraftStatus, NewPreview, OpsRef};
+use crate::ingest::new_id;
+use crate::repo::{DraftDoc, DraftScanDoc, DraftStatus, NewPreview, OpsRef};
 use crate::timeline::drafts::{
-    append_ops, ops_job_result, parse_op_values, parse_ops_file_blocking, publish, OpsSource,
-    PublishError, PublishOptions, MAX_DRAFT_OPS, MAX_DRAFT_OPS_REFS, MAX_OPS_FILE_BYTES,
+    append_ops, parse_op_values, publish, OpsSource, PublishError, PublishOptions, PublishOutcome,
+    Publisher, MAX_DRAFT_OPS_REFS, MAX_OPS_FILE_BYTES,
 };
 use crate::timeline::state::ApplyError;
 use crate::timeline::writer::ensure_genesis;
@@ -50,8 +55,6 @@ pub const SMALL_BODY_LIMIT: usize = 64 * 1024;
 pub const PREVIEW_TTL_DEFAULT: i64 = 24 * 3600;
 /// 预览令牌最长有效期（秒）。
 pub const PREVIEW_TTL_MAX: i64 = 7 * 24 * 3600;
-/// ops_from_upload 任务的租约（接口服务进程中途退出时，由处理服务回收为失败）。
-const OPS_JOB_LEASE_SECONDS: i64 = 30 * 60;
 
 // ---------------------------------------------------------------------------
 // 视图
@@ -68,6 +71,10 @@ pub struct TouchedView {
     pub anchors: Vec<String>,
     /// 是否新增了方块。
     pub palette: bool,
+    /// 重建草稿有 `setScan`。
+    pub scan: bool,
+    /// 重建草稿改过重建层。
+    pub rebuilt_layer: bool,
 }
 
 impl From<&Touched> for TouchedView {
@@ -77,6 +84,8 @@ impl From<&Touched> for TouchedView {
             entities: touched.entities.clone(),
             anchors: touched.anchors.clone(),
             palette: touched.palette,
+            scan: touched.scan,
+            rebuilt_layer: touched.rebuilt_layer,
         }
     }
 }
@@ -94,7 +103,7 @@ pub struct ProvisionalBlockView {
 pub struct DraftView {
     pub id: String,
     pub space_id: String,
-    /// `physical` 或 `plot:<编号>`。
+    /// `physical`、`plot:<编号>` 或 `rebuild`。
     pub scope: String,
     /// 基于哪个版本。
     pub base_seq: u64,
@@ -109,8 +118,26 @@ pub struct DraftView {
     pub ops_refs: Vec<OpsRef>,
     pub touched: TouchedView,
     pub provisional_blocks: Vec<ProvisionalBlockView>,
-    /// 草稿引用的资源（模型、贴图）。
+    /// 草稿引用的可预览资源（网页用模型、物件模型、贴图）。
     pub assets: Vec<String>,
+    /// 只为防清理而持有的资源（包清单、原始扫描、建模记录）：预览读不到。
+    pub held_assets: Vec<String>,
+    /// 重建草稿交的包（清单的资源哈希）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bundle_ref: Option<String>,
+    /// 重建草稿的 `setScan`：`{scan: {assetHash, webModelHashes, transform, alignment?}, observedAt?}`。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<Object>)]
+    pub scan: Option<DraftScanDoc>,
+    /// 重建草稿发布时没给说明就用它（包的 `note`）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_message: Option<String>,
+    /// 重建草稿发布时没给 `scriptRef` 就用它（包的 `notes`）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_script_ref: Option<String>,
+    /// 重建草稿发布时内容与最新版本相比没有变化，没写提交。
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub unchanged: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commit_id: Option<String>,
     #[schema(value_type = String)]
@@ -147,6 +174,12 @@ impl From<&DraftDoc> for DraftView {
                 })
                 .collect(),
             assets: draft.assets.clone(),
+            held_assets: draft.held_assets.clone(),
+            bundle_ref: draft.bundle_ref.clone(),
+            scan: draft.scan.clone(),
+            default_message: draft.default_message.clone(),
+            default_script_ref: draft.default_script_ref.clone(),
+            unchanged: draft.unchanged,
             commit_id: draft.commit_id.clone(),
             created_at: draft.created_at,
             updated_at: draft.updated_at,
@@ -155,7 +188,7 @@ impl From<&DraftDoc> for DraftView {
     }
 }
 
-fn json_response<T: Serialize>(status: StatusCode, body: &T) -> Response {
+pub(super) fn json_response<T: Serialize>(status: StatusCode, body: &T) -> Response {
     let mut response = (status, Json(body)).into_response();
     response.headers_mut().insert(
         header::CACHE_CONTROL,
@@ -203,6 +236,11 @@ fn op_error(error: OpError) -> ApiError {
             "invalid_op",
             error.to_string(),
         ),
+        OpError::NotAllowed { .. } => ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "op_not_allowed",
+            error.to_string(),
+        ),
     }
 }
 
@@ -218,7 +256,7 @@ fn apply_error(error: ApplyError) -> ApiError {
 // ---------------------------------------------------------------------------
 
 /// 路径给出的草稿范围。地块编号格式不对就当作不存在。
-fn path_scope(plot_id: Option<String>) -> Result<PathScope, ApiError> {
+pub(super) fn path_scope(plot_id: Option<String>) -> Result<PathScope, ApiError> {
     match plot_id {
         None => Ok(PathScope::Physical),
         Some(id) if is_object_id(&id) && !id.starts_with('_') => Ok(PathScope::Plot(id)),
@@ -226,9 +264,18 @@ fn path_scope(plot_id: Option<String>) -> Result<PathScope, ApiError> {
     }
 }
 
-/// 草稿的写操作（建草稿、追加、从上传应用、预览、发布、丢弃）：功能级开关打开时先要求
-/// `metaverse:content:write`（与上传、扫描任务相同），再做资源级"管理"检查。
-async fn writable(state: &AppState, caller: &Caller, space_id: &str) -> Result<Grant, ApiError> {
+/// 草稿的写操作（建草稿、追加、从上传应用、交包、预览、发布、丢弃）。实体区、地块：功能级开关
+/// 打开时先要求 `metaverse:content:write`（与上传相同），再做资源级"管理"检查。重建路径：始终要求
+/// `metaverse:rebuild:write`，再做"管理"检查（docs/design/server-slim.md 3.1）。
+pub(super) async fn writable(
+    state: &AppState,
+    caller: &Caller,
+    space_id: &str,
+    scope: &PathScope,
+) -> Result<Grant, ApiError> {
+    if *scope == PathScope::Rebuild {
+        return state.authorizer.rebuild_space(caller, space_id).await;
+    }
     state
         .authorizer
         .require_capability(caller, Capability::WriteContent)?;
@@ -239,7 +286,7 @@ async fn writable(state: &AppState, caller: &Caller, space_id: &str) -> Result<G
 }
 
 /// 按路径读草稿：经别的范围的路径访问一律 404（不暴露草稿是否存在）。
-async fn scoped_draft(
+pub(super) async fn scoped_draft(
     state: &AppState,
     grant: &Grant,
     scope: &PathScope,
@@ -259,7 +306,9 @@ async fn scoped_draft(
     Ok(draft)
 }
 
-fn parse_optional<T: for<'de> Deserialize<'de> + Default>(body: &Bytes) -> Result<T, ApiError> {
+pub(super) fn parse_optional<T: for<'de> Deserialize<'de> + Default>(
+    body: &Bytes,
+) -> Result<T, ApiError> {
     if body.iter().all(u8::is_ascii_whitespace) {
         return Ok(T::default());
     }
@@ -283,15 +332,15 @@ pub struct CreateDraftRequest {
     pub base_seq: Option<u64>,
 }
 
-async fn create(
+pub(super) async fn create(
     state: AppState,
     caller: Caller,
     space_id: String,
-    plot_id: Option<String>,
+    scope: Result<PathScope, ApiError>,
     body: Bytes,
 ) -> Result<Response, ApiError> {
-    let scope = path_scope(plot_id)?;
-    let grant = writable(&state, &caller, &space_id).await?;
+    let scope = scope?;
+    let grant = writable(&state, &caller, &space_id, &scope).await?;
     let request: CreateDraftRequest = parse_optional(&body)?;
     let now = crate::now()?;
     ensure_genesis(&state.repo, &grant, &caller, now).await?;
@@ -331,6 +380,12 @@ async fn create(
         result_anchors: Vec::new(),
         provisional_blocks: Vec::new(),
         assets: Vec::new(),
+        held_assets: Vec::new(),
+        scan: None,
+        bundle_ref: None,
+        default_message: None,
+        default_script_ref: None,
+        unchanged: false,
         commit_id: None,
         work_cells: 0,
         created_at: now,
@@ -344,6 +399,7 @@ async fn create(
         PathScope::Plot(plot) => {
             format!("/api/v1/spaces/{space_id}/plots/{plot}/drafts/{}", draft.id)
         }
+        PathScope::Rebuild => format!("/api/v1/spaces/{space_id}/rebuild/drafts/{}", draft.id),
         _ => format!("/api/v1/spaces/{space_id}/drafts/{}", draft.id),
     };
     if let Ok(value) = HeaderValue::from_str(&location) {
@@ -375,7 +431,7 @@ pub async fn create_draft(
     Path(space_id): Path<String>,
     body: Bytes,
 ) -> Result<Response, ApiError> {
-    create(state, caller, space_id, None, body).await
+    create(state, caller, space_id, path_scope(None), body).await
 }
 
 #[utoipa::path(
@@ -404,21 +460,21 @@ pub async fn create_plot_draft(
     Path((space_id, plot_id)): Path<(String, String)>,
     body: Bytes,
 ) -> Result<Response, ApiError> {
-    create(state, caller, space_id, Some(plot_id), body).await
+    create(state, caller, space_id, path_scope(Some(plot_id)), body).await
 }
 
 // ---------------------------------------------------------------------------
 // 读草稿
 // ---------------------------------------------------------------------------
 
-async fn read(
+pub(super) async fn read(
     state: AppState,
     caller: Caller,
     space_id: String,
-    plot_id: Option<String>,
+    scope: Result<PathScope, ApiError>,
     draft_id: String,
 ) -> Result<Response, ApiError> {
-    let scope = path_scope(plot_id)?;
+    let scope = scope?;
     let grant = state
         .authorizer
         .space(&caller, &space_id, Purpose::Read)
@@ -448,7 +504,7 @@ pub async fn get_draft(
     caller: Caller,
     Path((space_id, draft_id)): Path<(String, String)>,
 ) -> Result<Response, ApiError> {
-    read(state, caller, space_id, None, draft_id).await
+    read(state, caller, space_id, path_scope(None), draft_id).await
 }
 
 #[utoipa::path(
@@ -473,7 +529,7 @@ pub async fn get_plot_draft(
     caller: Caller,
     Path((space_id, plot_id, draft_id)): Path<(String, String, String)>,
 ) -> Result<Response, ApiError> {
-    read(state, caller, space_id, Some(plot_id), draft_id).await
+    read(state, caller, space_id, path_scope(Some(plot_id)), draft_id).await
 }
 
 // ---------------------------------------------------------------------------
@@ -500,7 +556,7 @@ async fn append(
     body: Result<Bytes, axum::extract::rejection::BytesRejection>,
 ) -> Result<Response, ApiError> {
     let scope = path_scope(plot_id)?;
-    let grant = writable(&state, &caller, &space_id).await?;
+    let grant = writable(&state, &caller, &space_id, &scope).await?;
     let body = body.map_err(|rejection| {
         if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE {
             ApiError::new(
@@ -531,9 +587,18 @@ async fn append(
     }
     let ops = parse_op_values(&request.ops)?;
     let now = crate::now()?;
-    let draft = append_ops(&state.repo, &grant, draft, ops, OpsSource::Inline, now)
-        .await
-        .map_err(apply_error)?;
+    let limits = state.ingest.config.upload_limits();
+    let draft = append_ops(
+        &state.repo,
+        &grant,
+        draft,
+        ops,
+        OpsSource::Inline,
+        &limits,
+        now,
+    )
+    .await
+    .map_err(apply_error)?;
     Ok(json_response(StatusCode::OK, &DraftView::from(&draft)))
 }
 
@@ -617,11 +682,11 @@ pub struct OpsFromUploadRequest {
 pub struct OpsJobView {
     pub job_id: String,
     pub draft_id: String,
-    /// `running`：进度和结果用 `GET /api/v1/spaces/{space_id}/jobs/{job_id}` 查询。
+    /// `queued`：由后台执行器处理，进度和结果用 `GET /api/v1/spaces/{space_id}/jobs/{job_id}` 查询。
     pub status: String,
 }
 
-/// ops 上传的资源已经不在（被处理服务的定期清理删掉）。
+/// ops 上传的资源已经不在（被定期清理删掉）。
 fn ops_asset_gone() -> ApiError {
     ApiError::new(
         StatusCode::NOT_FOUND,
@@ -639,7 +704,7 @@ async fn from_upload(
     body: Bytes,
 ) -> Result<Response, ApiError> {
     let scope = path_scope(plot_id)?;
-    let grant = writable(&state, &caller, &space_id).await?;
+    let grant = writable(&state, &caller, &space_id, &scope).await?;
     let request: OpsFromUploadRequest = parse_optional(&body)?;
     let (upload_id, asset_hash) = match (&request.upload_id, &request.asset_hash) {
         (Some(id), None) if !id.is_empty() && id.len() <= 128 => (Some(id.as_str()), None),
@@ -703,162 +768,53 @@ async fn from_upload(
     if !state.repo.touch_asset(&grant, &upload.asset_hash).await? {
         return Err(ops_asset_gone());
     }
-    let job_id = uuid::Uuid::new_v4().simple().to_string();
     let now = crate::now()?;
-    let params = json!({
-        "draftId": draft.id,
-        "assetHash": upload.asset_hash,
-        "uploadId": upload.upload_id,
-    });
-    state
-        .repo
-        .insert_ops_job(
-            &grant,
-            &job_id,
-            &draft.scope,
-            &params,
-            &caller.subject,
-            &caller.service_id,
-            now,
-            now.saturating_add_seconds(OPS_JOB_LEASE_SECONDS),
-        )
-        .await?;
-    tracing::info!(space = %space_id, draft = %draft.id, job = %job_id, asset = %upload.asset_hash, "ops_from_upload 已开始");
-    let background = state.clone();
-    let owner = grant.owner().clone();
-    let job = job_id.clone();
-    let draft_id = draft.id.clone();
-    let asset_hash = upload.asset_hash.clone();
-    tokio::spawn(async move {
-        run_ops_job(background, space_id, owner, job, draft_id, asset_hash).await;
-    });
+    let job = Job {
+        id: new_id("job"),
+        space_id: grant.space_id().to_owned(),
+        owner: grant.owner().clone(),
+        kind: JobKind::OpsFromUpload,
+        params: json!({
+            "draftId": draft.id,
+            "assetHash": upload.asset_hash,
+            "uploadId": upload.upload_id,
+        }),
+        status: JobStatus::Queued,
+        lease_owner: None,
+        lease_until: None,
+        attempt: 0,
+        max_attempts: JobKind::OpsFromUpload.max_attempts(),
+        last_error: None,
+        not_before: None,
+        history: Vec::new(),
+        result_commit_id: None,
+        created_at: now,
+        actor: Some(RequestActor {
+            sub: caller.subject.clone(),
+            nyx_service_id: caller.service_id.clone(),
+        }),
+        scope: Some(draft.scope.clone()),
+        result: None,
+        progress: None,
+        started_at: None,
+        finished_at: None,
+    };
+    state.repo.insert_job(&grant, &job).await?;
+    // 叫醒本进程的后台执行器（重任务名额），不等轮询。
+    state.job_signal.notify();
+    tracing::info!(space = %space_id, draft = %draft.id, job = %job.id, asset = %upload.asset_hash, "ops_from_upload 已排队");
     let mut response = json_response(
         StatusCode::ACCEPTED,
         &OpsJobView {
-            job_id,
+            job_id: job.id,
             draft_id: draft.id,
-            status: "running".to_owned(),
+            status: "queued".to_owned(),
         },
     );
     response
         .headers_mut()
         .insert(header::RETRY_AFTER, HeaderValue::from_static("2"));
     Ok(response)
-}
-
-/// 接口服务进程内处理 ops_from_upload（处理服务不领取这个种类）。后台用途走显式系统范围。
-async fn run_ops_job(
-    state: AppState,
-    space_id: String,
-    owner: metaverse_core::model::Owner,
-    job_id: String,
-    draft_id: String,
-    asset_hash: String,
-) {
-    let grant = match state
-        .authorizer
-        .system_space(&space_id, &owner, "ops_from_upload", &job_id)
-        .await
-    {
-        Ok(grant) => grant,
-        Err(error) => {
-            tracing::warn!(space = %space_id, job = %job_id, error = ?error, "ops_from_upload 拿不到系统范围");
-            return;
-        }
-    };
-    let outcome = process_ops_job(&state, &grant, &job_id, &draft_id, &asset_hash).await;
-    let now = crate::now().unwrap_or_else(|_| epoch());
-    let finished = match &outcome {
-        Ok(result) => {
-            state
-                .repo
-                .finish_ops_job(&grant, &job_id, Ok(result), now)
-                .await
-        }
-        Err(message) => {
-            tracing::info!(space = %space_id, job = %job_id, error = %message, "ops_from_upload 失败");
-            state
-                .repo
-                .finish_ops_job(&grant, &job_id, Err(message), now)
-                .await
-        }
-    };
-    if let Err(error) = finished {
-        tracing::warn!(space = %space_id, job = %job_id, error = %error, "ops_from_upload 结果没有写成");
-    }
-}
-
-/// 进程里同时处理的 ops-from-upload 任务数。
-const MAX_CONCURRENT_OPS_JOBS: usize = 1;
-
-fn ops_job_slots() -> &'static tokio::sync::Semaphore {
-    static SLOTS: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
-    SLOTS.get_or_init(|| tokio::sync::Semaphore::new(MAX_CONCURRENT_OPS_JOBS))
-}
-
-fn epoch() -> Timestamp {
-    Timestamp::from_millis(0).expect("纪元时间在合法范围内")
-}
-
-async fn process_ops_job(
-    state: &AppState,
-    grant: &Grant,
-    job_id: &str,
-    draft_id: &str,
-    asset_hash: &str,
-) -> Result<Value, String> {
-    use crate::repo::OpsAsset;
-    // 进程里同时只处理 [`MAX_CONCURRENT_OPS_JOBS`] 个：每个都要把文件读进内存、解析、计算。
-    // 等名额的任务只占一个空闲的异步任务，不占内存。
-    let _slot = ops_job_slots()
-        .acquire()
-        .await
-        .map_err(|_| "处理名额不可用".to_owned())?;
-    let bytes = match state
-        .repo
-        .read_ops_asset(grant, asset_hash, MAX_OPS_FILE_BYTES)
-        .await
-        .map_err(|error| error.to_string())?
-    {
-        OpsAsset::Bytes(bytes) => bytes,
-        OpsAsset::Missing => return Err("操作文件不存在".to_owned()),
-        OpsAsset::TooLarge(length) => {
-            return Err(format!(
-                "操作文件 {length} 字节，超过上限 {MAX_OPS_FILE_BYTES} 字节"
-            ))
-        }
-    };
-    let ops = parse_ops_file_blocking(bytes, MAX_DRAFT_OPS).await?;
-    let total = ops.len();
-    let _ = state
-        .repo
-        .ops_job_progress(grant, job_id, 0, total as u64)
-        .await;
-    let draft = state
-        .repo
-        .draft(grant, draft_id)
-        .await
-        .map_err(|error| error.to_string())?
-        .ok_or_else(|| "草稿不存在".to_owned())?;
-    let now = crate::now().map_err(|error| error.detail.to_string())?;
-    let draft = append_ops(
-        &state.repo,
-        grant,
-        draft,
-        ops,
-        OpsSource::Upload(asset_hash.to_owned()),
-        now,
-    )
-    .await
-    .map_err(|error| match error {
-        ApplyError::Op(error) => error.to_string(),
-        ApplyError::Api(error) => error.detail.to_string(),
-    })?;
-    let _ = state
-        .repo
-        .ops_job_progress(grant, job_id, total as u64, total as u64)
-        .await;
-    Ok(ops_job_result(&draft, total))
 }
 
 #[utoipa::path(
@@ -947,16 +903,16 @@ pub struct PreviewView {
     pub expires_at: Timestamp,
 }
 
-async fn preview(
+pub(super) async fn preview(
     state: AppState,
     caller: Caller,
     space_id: String,
-    plot_id: Option<String>,
+    scope: Result<PathScope, ApiError>,
     draft_id: String,
     body: Bytes,
 ) -> Result<Response, ApiError> {
-    let scope = path_scope(plot_id)?;
-    let grant = writable(&state, &caller, &space_id).await?;
+    let scope = scope?;
+    let grant = writable(&state, &caller, &space_id, &scope).await?;
     let request: PreviewRequest = parse_optional(&body)?;
     let ttl = request.ttl_seconds.unwrap_or(PREVIEW_TTL_DEFAULT);
     if !(60..=PREVIEW_TTL_MAX).contains(&ttl) {
@@ -1024,7 +980,7 @@ pub async fn create_draft_preview(
     Path((space_id, draft_id)): Path<(String, String)>,
     body: Bytes,
 ) -> Result<Response, ApiError> {
-    preview(state, caller, space_id, None, draft_id, body).await
+    preview(state, caller, space_id, path_scope(None), draft_id, body).await
 }
 
 #[utoipa::path(
@@ -1053,7 +1009,15 @@ pub async fn create_plot_draft_preview(
     Path((space_id, plot_id, draft_id)): Path<(String, String, String)>,
     body: Bytes,
 ) -> Result<Response, ApiError> {
-    preview(state, caller, space_id, Some(plot_id), draft_id, body).await
+    preview(
+        state,
+        caller,
+        space_id,
+        path_scope(Some(plot_id)),
+        draft_id,
+        body,
+    )
+    .await
 }
 
 // ---------------------------------------------------------------------------
@@ -1063,7 +1027,7 @@ pub async fn create_plot_draft_preview(
 #[derive(Debug, Default, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PublishRequest {
-    /// 提交说明（≤ 2000 字）。
+    /// 提交说明（≤ 2000 字）。重建草稿没给时用包的 `note`。
     pub message: Option<String>,
     /// 与时间线上的新变化冲突时，在最新版本上重放草稿的全部操作，而不是返回 409。
     #[serde(default)]
@@ -1073,35 +1037,41 @@ pub struct PublishRequest {
     /// 现实中发生的时间（只用于显示），RFC 3339。
     #[schema(value_type = Option<String>)]
     pub observed_at: Option<Timestamp>,
-    /// 生成这些操作的建造脚本（只为追溯）：本空间 script 用途上传的资源哈希，否则 422
-    /// `unknown_asset`。
+    /// 生成这些操作的建造脚本（只为追溯）：本空间 script 用途上传、核对结果是文本的资源哈希，
+    /// 否则 422 `unknown_asset`。重建草稿没给时用包的 `notes`（建模记录）。
     pub script_ref: Option<String>,
 }
 
-/// 发布结果。
+/// 发布结果。重建草稿的内容与最新版本相比没有变化时不写提交：`{unchanged: true, seq: <最新 seq>}`，
+/// 没有 `commitId`、`at`。
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PublishView {
-    pub commit_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commit_id: Option<String>,
     pub seq: u64,
-    #[schema(value_type = String)]
-    pub at: Timestamp,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<String>)]
+    pub at: Option<Timestamp>,
     pub draft_id: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub unchanged: bool,
 }
 
-async fn publish_draft_inner(
+pub(super) async fn publish_draft_inner(
     state: AppState,
     caller: Caller,
     space_id: String,
-    plot_id: Option<String>,
+    scope: Result<PathScope, ApiError>,
     draft_id: String,
     body: Bytes,
 ) -> Result<Response, ApiError> {
-    let scope = path_scope(plot_id)?;
-    let grant = writable(&state, &caller, &space_id).await?;
+    let scope = scope?;
+    let grant = writable(&state, &caller, &space_id, &scope).await?;
     let request: PublishRequest = parse_optional(&body)?;
-    let message = request.message.unwrap_or_else(|| "发布草稿".to_owned());
-    check_text("message", &message, 2000, false)?;
+    if let Some(message) = &request.message {
+        check_text("message", message, 2000, false)?;
+    }
     if request
         .script_ref
         .as_deref()
@@ -1113,28 +1083,47 @@ async fn publish_draft_inner(
     }
     let draft = scoped_draft(&state, &grant, &scope, &draft_id).await?;
     let options = PublishOptions {
-        message,
+        message: request.message,
         replay: request.replay,
         expected_rev: request.rev,
         observed_at: request.observed_at,
         script_ref: request.script_ref,
+        limits: state.ingest.config.upload_limits(),
+        job: None,
     };
     let now = crate::now()?;
-    match publish(&state.repo, &grant, &caller, &draft, &options, now).await {
-        Ok(outcome) => {
+    let publisher = Publisher::of(&caller);
+    match publish(&state.repo, &grant, &publisher, &draft, &options, now).await {
+        Ok(PublishOutcome::Committed(outcome)) => {
             state.public.cache.invalidate_space(&space_id);
             tracing::info!(space = %space_id, draft = %draft.id, seq = outcome.seq, by = %caller.subject, "草稿已发布");
             Ok(json_response(
                 StatusCode::OK,
                 &PublishView {
-                    commit_id: outcome.commit_id,
+                    commit_id: Some(outcome.commit_id),
                     seq: outcome.seq,
-                    at: outcome.at,
+                    at: Some(outcome.at),
                     draft_id: draft.id,
+                    unchanged: false,
+                },
+            ))
+        }
+        Ok(PublishOutcome::Unchanged { seq }) => {
+            tracing::info!(space = %space_id, draft = %draft.id, seq, by = %caller.subject, "重建草稿内容没有变化，没写提交");
+            Ok(json_response(
+                StatusCode::OK,
+                &PublishView {
+                    commit_id: None,
+                    seq,
+                    at: None,
+                    draft_id: draft.id,
+                    unchanged: true,
                 },
             ))
         }
         Err(PublishError::Api(error)) => Err(error),
+        // 只有后台任务发布时才会出现。
+        Err(PublishError::LeaseLost) => Err(ApiError::internal()),
         Err(PublishError::Conflicts { keys, head_seq }) => Ok(problem_with(
             StatusCode::CONFLICT,
             "draft_conflict",
@@ -1156,6 +1145,15 @@ async fn publish_draft_inner(
             "replay_failed",
             format!("在最新版本上重放失败：{error}"),
             json!({}),
+        )),
+        Err(PublishError::BrokenTemplates(broken)) => Ok(problem_with(
+            StatusCode::CONFLICT,
+            "broken_template_ref",
+            format!(
+                "按最新版本合并以后，{} 处模板引用找不到同一层的模板（这个草稿删了模板而别人刚加了使用者，或反过来）；可以带 replay: true 在最新版本上重放得到准确的结果",
+                broken.len()
+            ),
+            json!({"brokenRefs": broken.iter().map(|(entity, template)| json!({"entityId": entity, "templateId": template})).collect::<Vec<_>>()}),
         )),
         Err(PublishError::AssetsGone(gone)) => {
             tracing::info!(space = %space_id, draft = %draft.id, assets = ?gone, "发布时引用的资源已被清理，没有发布");
@@ -1198,7 +1196,7 @@ pub async fn publish_draft(
     Path((space_id, draft_id)): Path<(String, String)>,
     body: Bytes,
 ) -> Result<Response, ApiError> {
-    publish_draft_inner(state, caller, space_id, None, draft_id, body).await
+    publish_draft_inner(state, caller, space_id, path_scope(None), draft_id, body).await
 }
 
 #[utoipa::path(
@@ -1228,22 +1226,30 @@ pub async fn publish_plot_draft(
     Path((space_id, plot_id, draft_id)): Path<(String, String, String)>,
     body: Bytes,
 ) -> Result<Response, ApiError> {
-    publish_draft_inner(state, caller, space_id, Some(plot_id), draft_id, body).await
+    publish_draft_inner(
+        state,
+        caller,
+        space_id,
+        path_scope(Some(plot_id)),
+        draft_id,
+        body,
+    )
+    .await
 }
 
 // ---------------------------------------------------------------------------
 // 丢弃
 // ---------------------------------------------------------------------------
 
-async fn discard(
+pub(super) async fn discard(
     state: AppState,
     caller: Caller,
     space_id: String,
-    plot_id: Option<String>,
+    scope: Result<PathScope, ApiError>,
     draft_id: String,
 ) -> Result<Response, ApiError> {
-    let scope = path_scope(plot_id)?;
-    let grant = writable(&state, &caller, &space_id).await?;
+    let scope = scope?;
+    let grant = writable(&state, &caller, &space_id, &scope).await?;
     let draft = scoped_draft(&state, &grant, &scope, &draft_id).await?;
     if !state.repo.delete_draft(&grant, &draft.id).await? {
         return Err(ApiError::not_found());
@@ -1274,7 +1280,7 @@ pub async fn discard_draft(
     caller: Caller,
     Path((space_id, draft_id)): Path<(String, String)>,
 ) -> Result<Response, ApiError> {
-    discard(state, caller, space_id, None, draft_id).await
+    discard(state, caller, space_id, path_scope(None), draft_id).await
 }
 
 #[utoipa::path(
@@ -1300,7 +1306,7 @@ pub async fn discard_plot_draft(
     caller: Caller,
     Path((space_id, plot_id, draft_id)): Path<(String, String, String)>,
 ) -> Result<Response, ApiError> {
-    discard(state, caller, space_id, Some(plot_id), draft_id).await
+    discard(state, caller, space_id, path_scope(Some(plot_id)), draft_id).await
 }
 
 /// 草稿接口的路由（`/api/v1` 下，由调用方套身份中间件）。

@@ -1,24 +1,29 @@
-//! 草稿、草稿区块、预览令牌，以及接口服务进程内处理的 `ops_from_upload` 任务记录（设计 5.6、6.4）。
+//! 草稿、草稿区块、预览令牌（设计 5.6）。`ops_from_upload` 由后台执行器处理（`runner/ops_job.rs`），
+//! 草稿和任务完成在同一个带租约栅栏的事务里保存（[`Repo::save_draft_for_job`]）。
 //!
 //! ```text
 //! drafts { _id, spaceId, owner, scope, baseSeq, rev, createdBy, status: open | published,
 //!          ops,                       // 经 /ops 追加的操作（内联）
-//!          opsRefs: [{assetHash, after, count}],  // 经上传追加的操作：在第 after 条内联操作之后
+//!          opsRefs: [{assetHash, after, count, jobId}],  // 经上传追加的操作：在第 after 条内联操作之后
 //!          touched, resultChunks,     // 草稿碰过的键、结果区块（全 0 的区块不列出 = 删除）
 //!          resultEntities, resultAnchors: [{id, hash|null}],   // 结果记录（body 在 records 里）
 //!          provisionalBlocks: [{name, id, block}],             // 草稿新增的方块（临时编号）
-//!          assets,                    // 草稿引用的资源（预览可读）
+//!          assets,                    // 草稿引用的可预览资源：网页用模型、物件模型、贴图（预览可读）
+//!          heldAssets,                // 只为防清理而持有的资源：包清单、原始扫描、建模记录（预览读不到）
+//!          scan?,                     // 重建草稿的 setScan：{scan, observedAt?}
+//!          bundleRef?, defaultMessage?, defaultScriptRef?,     // 重建草稿交的包、包的说明和建模记录
+//!          unchanged?,                // 重建草稿发布时内容没变、没写提交
 //!          commitId?, createdAt, updatedAt, expiresAt }        // 30 天过期
 //! draftChunks { _id: "<草稿编号>:<区块哈希>", draftId, spaceId, owner, hash, data, expiresAt }
 //! previews { _id: sha256(令牌), spaceId, owner, draftId, rev, createdBy, createdAt, expiresAt }
 //! ```
 //!
-//! 过期清理由处理服务的循环按 `expiresAt`（RFC 3339 字符串）进行，不用 TTL 索引。
+//! 过期清理由接口服务的定期清理（`runner/cleanup.rs`）按 `expiresAt`（RFC 3339 字符串）进行，不用 TTL 索引。
 
 use std::collections::BTreeMap;
 
 use metaverse_core::model::{Author, DraftChunk, IdChange, Owner, Touched};
-use metaverse_core::ops::{BlockDef, Op};
+use metaverse_core::ops::{BlockDef, DraftScan, Op, ScanSpec};
 use metaverse_core::scope::PathScope;
 use metaverse_core::Timestamp;
 use mongodb::bson::{doc, oid::ObjectId, spec::BinarySubtype, Binary, Bson, Document};
@@ -26,11 +31,31 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::commits::{
-    corrupt, from_document, granted_children, insert_ignoring_duplicates, owner_document, to_bson,
+    corrupt, from_document, granted_children, insert_ignoring_duplicates, owner_document,
     to_document,
 };
+use super::transactions::{TxnOp, TxnOutcome};
 use super::{collections, Repo, RepoError};
 use crate::auth::{AuthorizerKey, Grant};
+
+/// 后台任务保存草稿时，任务这一边写什么。
+#[derive(Debug, Clone, Copy)]
+pub enum JobStep<'a> {
+    /// 任务完成，写结果（交包、`ops_from_upload` 保存草稿就是最后一步）。
+    Done(&'a Value),
+    /// 只核对租约还在、写进度（部署种子展开以后还要发布）。
+    Progress(&'a Value),
+}
+
+/// 后台任务保存草稿的结果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JobDraftSave {
+    Saved,
+    /// 草稿已被别人改过、已发布或已丢弃（`rev`、`status` 对不上）。
+    DraftChanged,
+    /// 租约已经丢了。
+    LeaseLost,
+}
 
 /// 草稿状态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -49,6 +74,37 @@ pub struct OpsRef {
     /// 在第几条内联操作之后应用（重放时按这个顺序穿插）。
     pub after: u64,
     pub count: u64,
+    /// 追加它的后台任务（`ops_from_upload`）：任务被重新领取时据此判断已经做过。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_id: Option<String>,
+    /// 由重建包展开时：清单的资源哈希（docs/design/server-slim.md 2.6 第 6 步）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+}
+
+/// 重建草稿的 `setScan`（docs/design/server-slim.md 2.4）：发布时写进提交的 `scan`，预览快照用它。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DraftScanDoc {
+    pub scan: ScanSpec,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_at: Option<metaverse_core::Timestamp>,
+}
+
+impl DraftScanDoc {
+    pub fn from_state(scan: &DraftScan) -> Self {
+        Self {
+            scan: scan.scan.clone(),
+            observed_at: scan.observed_at,
+        }
+    }
+
+    pub fn to_state(&self) -> DraftScan {
+        DraftScan {
+            scan: self.scan.clone(),
+            observed_at: self.observed_at,
+        }
+    }
 }
 
 /// 草稿新增的方块：临时名称 → 临时编号。发布时按最新的方块表分配正式编号。
@@ -87,8 +143,28 @@ pub struct DraftDoc {
     pub result_anchors: Vec<IdChange>,
     #[serde(default)]
     pub provisional_blocks: Vec<ProvisionalBlock>,
+    /// 可预览的资源：按角色 `WebModel`、`Model`、`Texture` 引用的哈希（预览接口只认这些）。
     #[serde(default)]
     pub assets: Vec<String>,
+    /// 只为防清理而持有的资源：包清单、原始扫描、建模记录（docs/design/server-slim.md 2.8）。
+    /// 预览接口永远拿不到；发布时只被提交引用，不登记到 `assetRefs`。
+    #[serde(default)]
+    pub held_assets: Vec<String>,
+    /// 重建草稿的 `setScan`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scan: Option<DraftScanDoc>,
+    /// 重建草稿交的包（清单的资源哈希）；一个重建草稿只收一个包。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bundle_ref: Option<String>,
+    /// 发布时没给 `message` 就用它（清单的 `note`）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_message: Option<String>,
+    /// 发布时没给 `scriptRef` 就用它（清单的 `notes`）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_script_ref: Option<String>,
+    /// 重建草稿发布时内容与最新版本相比没有变化：没写提交，草稿照样标记为已发布。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unchanged: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub commit_id: Option<String>,
     /// 已追加的全部操作的计算量（格数，见 `timeline::state::ops_cells`）：发布时重放要把它们
@@ -195,12 +271,29 @@ impl Repo {
     }
 
     /// 按 `rev` 条件保存草稿（`rev` 由调用方加一）。草稿已被别人改过或已发布时返回 `false`。
+    ///
+    /// 按字段 `$set`（docs/design/server-slim.md 2.8），不整份替换：以后再给草稿加字段时，滚动更新
+    /// 期间的旧副本不会把新字段抹掉。
     pub async fn save_draft(
         &self,
         grant: &Grant,
         draft: &DraftDoc,
         expected_rev: u64,
     ) -> Result<bool, RepoError> {
+        let (filter, update) = self.draft_save(grant, draft, expected_rev)?;
+        let result = self
+            .collection(collections::DRAFTS)
+            .update_one(filter, update)
+            .await?;
+        Ok(result.matched_count == 1)
+    }
+
+    fn draft_save(
+        &self,
+        grant: &Grant,
+        draft: &DraftDoc,
+        expected_rev: u64,
+    ) -> Result<(Document, Document), RepoError> {
         if !grant.can_manage()
             || draft.space_id != grant.space_id()
             || &draft.owner != grant.owner()
@@ -210,11 +303,111 @@ impl Repo {
         let mut filter = draft_filter(grant, &draft.id);
         filter.insert("rev", expected_rev as i64);
         filter.insert("status", "open");
+        let mut set = to_document(draft)?;
+        set.remove("_id");
+        Ok((filter, doc! {"$set": set}))
+    }
+
+    /// 后台任务保存草稿（docs/design/server-slim.md 2.6 第 6 步、4.10）：一个事务里按
+    /// `{_id, rev, status: open}` 保存草稿，同时按租约栅栏把任务标记完成（或只写进度）；任何一个
+    /// 匹配不到就中止。
+    pub async fn save_draft_for_job(
+        &self,
+        grant: &Grant,
+        draft: &DraftDoc,
+        expected_rev: u64,
+        fence: &super::JobFence,
+        step: JobStep<'_>,
+        now: Timestamp,
+    ) -> Result<JobDraftSave, RepoError> {
+        let (filter, update) = self.draft_save(grant, draft, expected_rev)?;
+        let job = match step {
+            JobStep::Done(result) => fence.done_op(result, now)?,
+            JobStep::Progress(progress) => fence.progress_op(progress)?,
+        };
+        let outcome = self
+            .run_transaction(&[
+                TxnOp::Update {
+                    collection: collections::DRAFTS,
+                    filter,
+                    update,
+                },
+                job,
+            ])
+            .await?;
+        Ok(match outcome {
+            TxnOutcome::Committed => JobDraftSave::Saved,
+            TxnOutcome::NotMatched(0) => JobDraftSave::DraftChanged,
+            TxnOutcome::NotMatched(_) => JobDraftSave::LeaseLost,
+        })
+    }
+
+    /// 重建草稿发布时内容没有变化（docs/design/server-slim.md 2.7）：不写提交，按
+    /// `{_id, rev, status: open}` 条件把草稿标记为已发布、`unchanged: true`。返回是否匹配到。
+    pub async fn mark_draft_unchanged(
+        &self,
+        grant: &Grant,
+        draft_id: &str,
+        rev: u64,
+        now: metaverse_core::Timestamp,
+    ) -> Result<bool, RepoError> {
+        if !grant.can_manage() {
+            return Err(RepoError::GrantMismatch);
+        }
+        let mut filter = draft_filter(grant, draft_id);
+        filter.insert("rev", rev as i64);
+        filter.insert("status", "open");
         let result = self
             .collection(collections::DRAFTS)
-            .replace_one(filter, to_document(draft)?)
+            .update_one(
+                filter,
+                doc! {"$set": {
+                    "status": "published",
+                    "unchanged": true,
+                    "updatedAt": now.to_rfc3339(),
+                }},
+            )
             .await?;
         Ok(result.matched_count == 1)
+    }
+
+    /// 同 [`Repo::mark_draft_unchanged`]，由后台任务发布时（部署种子）：同一个事务里按租约栅栏把
+    /// 任务标记完成，任何一个匹配不到就中止。
+    pub async fn mark_draft_unchanged_for_job(
+        &self,
+        grant: &Grant,
+        draft_id: &str,
+        rev: u64,
+        fence: &super::JobFence,
+        result: &Value,
+        now: metaverse_core::Timestamp,
+    ) -> Result<JobDraftSave, RepoError> {
+        if !grant.can_manage() {
+            return Err(RepoError::GrantMismatch);
+        }
+        let mut filter = draft_filter(grant, draft_id);
+        filter.insert("rev", rev as i64);
+        filter.insert("status", "open");
+        // 先查租约：租约丢了就报租约丢失（新的持有者可能已经发布了这个草稿）。
+        let outcome = self
+            .run_transaction(&[
+                fence.done_op(result, now)?,
+                TxnOp::Update {
+                    collection: collections::DRAFTS,
+                    filter,
+                    update: doc! {"$set": {
+                        "status": "published",
+                        "unchanged": true,
+                        "updatedAt": now.to_rfc3339(),
+                    }},
+                },
+            ])
+            .await?;
+        Ok(match outcome {
+            TxnOutcome::Committed => JobDraftSave::Saved,
+            TxnOutcome::NotMatched(0) => JobDraftSave::LeaseLost,
+            TxnOutcome::NotMatched(_) => JobDraftSave::DraftChanged,
+        })
     }
 
     /// 发布后（草稿已在提交事务里标记为已发布）：预览令牌和草稿区块随即作废。只在草稿确实
@@ -423,9 +616,41 @@ impl Repo {
         upload_id: Option<&str>,
         asset_hash: Option<&str>,
     ) -> Result<Option<OpsUpload>, RepoError> {
+        self.done_upload(grant, "ops", None, upload_id, asset_hash)
+            .await
+    }
+
+    /// 交包（docs/design/server-slim.md 2.3）按上传编号找清单：必须是本空间重建路径（`scope: rebuild`）
+    /// 上传、用途 `bundle`、已核对完成的上传。
+    pub async fn bundle_upload(
+        &self,
+        grant: &Grant,
+        upload_id: &str,
+    ) -> Result<Option<OpsUpload>, RepoError> {
+        self.done_upload(
+            grant,
+            "bundle",
+            Some(&metaverse_core::scope::PathScope::Rebuild),
+            Some(upload_id),
+            None,
+        )
+        .await
+    }
+
+    async fn done_upload(
+        &self,
+        grant: &Grant,
+        purpose: &str,
+        scope: Option<&metaverse_core::scope::PathScope>,
+        upload_id: Option<&str>,
+        asset_hash: Option<&str>,
+    ) -> Result<Option<OpsUpload>, RepoError> {
         let mut filter = granted_children(grant);
-        filter.insert("purpose", "ops");
+        filter.insert("purpose", purpose);
         filter.insert("status", "done");
+        if let Some(scope) = scope {
+            filter.insert("scope", scope.to_string());
+        }
         match (upload_id, asset_hash) {
             (Some(id), None) => {
                 filter.insert("_id", upload_id_values(id));
@@ -485,7 +710,8 @@ impl Repo {
             .map(OpsAsset::Bytes)
     }
 
-    /// 草稿引用的资源（预览读草稿新上传的资源）：哈希必须在草稿的 `assets` 里。
+    /// 草稿引用的资源（预览读草稿新上传的资源）：哈希必须在草稿的 `assets` 里（只为防清理而持有的
+    /// `heldAssets`——包清单、原始扫描、建模记录——永远拿不到，docs/design/server-slim.md 2.8）。
     pub async fn draft_asset(
         &self,
         grant: &Grant,
@@ -496,102 +722,5 @@ impl Repo {
             return Ok(None);
         }
         self.asset_meta_unchecked(hash).await
-    }
-
-    // -----------------------------------------------------------------------
-    // ops_from_upload 任务记录（接口服务进程内处理，处理服务不领取）
-    // -----------------------------------------------------------------------
-
-    /// 新建 `ops_from_upload` 任务记录：状态直接是 `running`，`attempt = maxAttempts = 1`，
-    /// 处理服务的领取条件（`attempt < maxAttempts`、种类列表）不会选中它；租约过期后由
-    /// 处理服务的回收逻辑标记为失败（接口服务进程在处理中途退出时）。
-    ///
-    /// `scope` 是草稿的路径范围（与 `create_job` 存的格式相同：`physical` 或 `plot:<编号>`），
-    /// 经地块路径只能查到本地块的任务，所以必须写上。
-    #[allow(clippy::too_many_arguments)]
-    pub async fn insert_ops_job(
-        &self,
-        grant: &Grant,
-        job_id: &str,
-        scope: &PathScope,
-        params: &Value,
-        actor_sub: &str,
-        actor_service: &str,
-        now: Timestamp,
-        lease_until: Timestamp,
-    ) -> Result<(), RepoError> {
-        if !grant.can_manage() {
-            return Err(RepoError::GrantMismatch);
-        }
-        self.collection(collections::JOBS)
-            .insert_one(doc! {
-                "_id": job_id,
-                "spaceId": grant.space_id(),
-                "owner": owner_document(grant)?,
-                "kind": "ops_from_upload",
-                "params": to_bson(params)?,
-                "status": "running",
-                "leaseOwner": "api",
-                "leaseUntil": lease_until.to_rfc3339(),
-                "attempt": 1,
-                "maxAttempts": 1,
-                "actor": {"sub": actor_sub, "nyxServiceId": actor_service},
-                "scope": scope.to_string(),
-                "progress": {"opsApplied": 0},
-                "createdAt": now.to_rfc3339(),
-                "startedAt": now.to_rfc3339(),
-            })
-            .await?;
-        Ok(())
-    }
-
-    /// 更新进度（只在任务仍由接口服务持有时）。
-    pub async fn ops_job_progress(
-        &self,
-        grant: &Grant,
-        job_id: &str,
-        ops_applied: u64,
-        ops_total: u64,
-    ) -> Result<(), RepoError> {
-        let mut filter = granted_children(grant);
-        filter.insert("_id", job_id);
-        filter.insert("status", "running");
-        self.collection(collections::JOBS)
-            .update_one(
-                filter,
-                doc! {"$set": {"progress": {"opsApplied": ops_applied as i64, "opsTotal": ops_total as i64}}},
-            )
-            .await?;
-        Ok(())
-    }
-
-    /// 结束任务：成功写 `result`，失败写 `lastError`。
-    pub async fn finish_ops_job(
-        &self,
-        grant: &Grant,
-        job_id: &str,
-        outcome: Result<&Value, &str>,
-        now: Timestamp,
-    ) -> Result<(), RepoError> {
-        let mut filter = granted_children(grant);
-        filter.insert("_id", job_id);
-        filter.insert("status", "running");
-        let set = match outcome {
-            Ok(result) => doc! {
-                "status": "done",
-                "result": to_bson(result)?,
-                "finishedAt": now.to_rfc3339(),
-            },
-            Err(error) => doc! {
-                "status": "failed",
-                "lastError": error.chars().take(2000).collect::<String>(),
-                "lastErrorAt": now.to_rfc3339(),
-                "finishedAt": now.to_rfc3339(),
-            },
-        };
-        self.collection(collections::JOBS)
-            .update_one(filter, doc! {"$set": set, "$unset": {"leaseUntil": ""}})
-            .await?;
-        Ok(())
     }
 }

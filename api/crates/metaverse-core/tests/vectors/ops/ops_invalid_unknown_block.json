@@ -1,5 +1,6 @@
 {
   "base": {
+    "anchorHistory": [],
     "anchors": [],
     "entities": [],
     "fills": [],
@@ -85,7 +86,8 @@
         "id": "garden",
         "kind": "virtual"
       }
-    ]
+    ],
+    "scopeKind": "ext"
   },
   "description": "方块表里没有的编号",
   "expect": {

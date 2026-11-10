@@ -1,0 +1,554 @@
+{
+  "cases": [
+    {
+      "check": {
+        "bounds": {
+          "max": [
+            0.5,
+            1.0,
+            0.5
+          ],
+          "min": [
+            -0.5,
+            0.0,
+            -0.5
+          ]
+        },
+        "extensions": [],
+        "format": "glb",
+        "images": [],
+        "materials": 0,
+        "maxTextureSide": 0,
+        "meshes": 1,
+        "nodes": 1,
+        "texturePixels": 0,
+        "triangles": 1,
+        "v": 1
+      },
+      "file": "glb_model_triangle.glb",
+      "format": "glb",
+      "ok": true,
+      "purpose": "model"
+    },
+    {
+      "check": {
+        "bounds": {
+          "max": [
+            0.5,
+            1.0,
+            0.5
+          ],
+          "min": [
+            -0.5,
+            0.0,
+            -0.5
+          ]
+        },
+        "extensions": [
+          "KHR_texture_transform"
+        ],
+        "format": "glb",
+        "images": [
+          {
+            "h": 32,
+            "mime": "image/png",
+            "w": 64
+          }
+        ],
+        "materials": 1,
+        "maxTextureSide": 64,
+        "meshes": 1,
+        "nodes": 1,
+        "texturePixels": 2048,
+        "triangles": 1,
+        "v": 1
+      },
+      "file": "glb_model_png_texture.glb",
+      "format": "glb",
+      "ok": true,
+      "purpose": "model"
+    },
+    {
+      "check": {
+        "bounds": {
+          "max": [
+            0.999969481490524,
+            1.0,
+            0.999969481490524
+          ],
+          "min": [
+            -0.999969481490524,
+            0.0,
+            -0.999969481490524
+          ]
+        },
+        "extensions": [
+          "KHR_mesh_quantization"
+        ],
+        "format": "glb",
+        "images": [],
+        "materials": 0,
+        "maxTextureSide": 0,
+        "meshes": 1,
+        "nodes": 1,
+        "texturePixels": 0,
+        "triangles": 1,
+        "v": 1
+      },
+      "file": "glb_quantized.glb",
+      "format": "glb",
+      "ok": true,
+      "purpose": "model"
+    },
+    {
+      "check": {
+        "bounds": {
+          "max": [
+            0.7071067811865475,
+            1.0,
+            0.7071067811865475
+          ],
+          "min": [
+            -0.7071067811865475,
+            0.0,
+            -0.7071067811865475
+          ]
+        },
+        "extensions": [],
+        "format": "glb",
+        "images": [],
+        "materials": 0,
+        "maxTextureSide": 0,
+        "meshes": 1,
+        "nodes": 1,
+        "texturePixels": 0,
+        "triangles": 1,
+        "v": 1
+      },
+      "file": "glb_rotated_node.glb",
+      "format": "glb",
+      "ok": true,
+      "purpose": "model"
+    },
+    {
+      "check": {
+        "bounds": {
+          "max": [
+            2.0,
+            2.0,
+            1.0
+          ],
+          "min": [
+            0.0,
+            0.0,
+            -1.0
+          ]
+        },
+        "extensions": [],
+        "format": "glb",
+        "images": [],
+        "materials": 0,
+        "maxTextureSide": 0,
+        "meshes": 1,
+        "nodes": 1,
+        "texturePixels": 0,
+        "triangles": 1,
+        "v": 1
+      },
+      "file": "glb_matrix_node.glb",
+      "format": "glb",
+      "ok": true,
+      "purpose": "model"
+    },
+    {
+      "code": "glb_json",
+      "file": "glb_matrix_w.glb",
+      "format": "glb",
+      "ok": false,
+      "purpose": "model"
+    },
+    {
+      "code": "glb_json",
+      "file": "glb_matrix_perspective.glb",
+      "format": "glb",
+      "ok": false,
+      "purpose": "model"
+    },
+    {
+      "code": "glb_json",
+      "file": "glb_matrix_shear.glb",
+      "format": "glb",
+      "ok": false,
+      "purpose": "model"
+    },
+    {
+      "check": {
+        "bounds": {
+          "max": [
+            5000.5,
+            5001.0,
+            5000.5
+          ],
+          "min": [
+            4999.5,
+            5000.0,
+            4999.5
+          ]
+        },
+        "extensions": [],
+        "format": "glb",
+        "images": [],
+        "materials": 0,
+        "maxTextureSide": 0,
+        "meshes": 1,
+        "nodes": 1,
+        "texturePixels": 0,
+        "triangles": 1,
+        "v": 1
+      },
+      "file": "glb_far_coordinates.glb",
+      "format": "glb",
+      "ok": true,
+      "purpose": "webmodel"
+    },
+    {
+      "code": "over_limit",
+      "file": "glb_far_coordinates.glb",
+      "format": "glb",
+      "ok": false,
+      "purpose": "model"
+    },
+    {
+      "check": {
+        "bounds": null,
+        "extensions": [
+          "KHR_draco_mesh_compression"
+        ],
+        "format": "glb",
+        "images": [],
+        "materials": 0,
+        "maxTextureSide": 0,
+        "meshes": 1,
+        "nodes": 1,
+        "texturePixels": 0,
+        "triangles": null,
+        "v": 1
+      },
+      "file": "glb_scan_draco.glb",
+      "format": "glb",
+      "ok": true,
+      "purpose": "scan"
+    },
+    {
+      "code": "glb_extension",
+      "file": "glb_scan_draco.glb",
+      "format": "glb",
+      "ok": false,
+      "purpose": "model"
+    },
+    {
+      "code": "glb_external_ref",
+      "file": "glb_external_uri.glb",
+      "format": "glb",
+      "ok": false,
+      "purpose": "model"
+    },
+    {
+      "code": "glb_external_ref",
+      "file": "glb_data_uri_image.glb",
+      "format": "glb",
+      "ok": false,
+      "purpose": "model"
+    },
+    {
+      "code": "glb_extension",
+      "file": "glb_lights.glb",
+      "format": "glb",
+      "ok": false,
+      "purpose": "model"
+    },
+    {
+      "code": "glb_extension",
+      "file": "glb_object_extension.glb",
+      "format": "glb",
+      "ok": false,
+      "purpose": "model"
+    },
+    {
+      "code": "glb_unsupported",
+      "file": "glb_camera.glb",
+      "format": "glb",
+      "ok": false,
+      "purpose": "model"
+    },
+    {
+      "code": "glb_unsupported",
+      "file": "glb_skin.glb",
+      "format": "glb",
+      "ok": false,
+      "purpose": "model"
+    },
+    {
+      "code": "glb_node_graph",
+      "file": "glb_node_cycle.glb",
+      "format": "glb",
+      "ok": false,
+      "purpose": "model"
+    },
+    {
+      "code": "glb_node_graph",
+      "file": "glb_two_parents.glb",
+      "format": "glb",
+      "ok": false,
+      "purpose": "model"
+    },
+    {
+      "code": "glb_triangles",
+      "file": "glb_triangles_not_integer.glb",
+      "format": "glb",
+      "ok": false,
+      "purpose": "model"
+    },
+    {
+      "code": "glb_bounds_mismatch",
+      "file": "glb_bounds_mismatch.glb",
+      "format": "glb",
+      "ok": false,
+      "purpose": "model"
+    },
+    {
+      "code": "over_limit",
+      "file": "glb_coords_out_of_range.glb",
+      "format": "glb",
+      "ok": false,
+      "purpose": "model"
+    },
+    {
+      "code": "image_mime_mismatch",
+      "file": "glb_png_declared_jpeg.glb",
+      "format": "glb",
+      "ok": false,
+      "purpose": "model"
+    },
+    {
+      "code": "jpeg_no_sof",
+      "file": "glb_jpeg_without_sof.glb",
+      "format": "glb",
+      "ok": false,
+      "purpose": "model"
+    },
+    {
+      "code": "over_limit",
+      "file": "glb_texture_too_large.glb",
+      "format": "glb",
+      "ok": false,
+      "purpose": "model"
+    },
+    {
+      "check": {
+        "format": "png",
+        "height": 480,
+        "v": 1,
+        "width": 640
+      },
+      "file": "texture.png",
+      "format": "png",
+      "ok": true,
+      "purpose": "texture"
+    },
+    {
+      "check": {
+        "format": "jpeg",
+        "height": 3000,
+        "v": 1,
+        "width": 4000
+      },
+      "file": "texture_long_exif.jpg",
+      "format": "jpeg",
+      "ok": true,
+      "purpose": "texture"
+    },
+    {
+      "code": "jpeg_no_sof",
+      "file": "texture_no_sof.jpg",
+      "format": "jpeg",
+      "ok": false,
+      "purpose": "texture"
+    },
+    {
+      "check": {
+        "format": "webp",
+        "height": 1024,
+        "v": 1,
+        "width": 2048
+      },
+      "file": "texture.webp",
+      "format": "webp",
+      "ok": true,
+      "purpose": "texture"
+    },
+    {
+      "code": "over_limit",
+      "file": "texture_too_large.png",
+      "format": "png",
+      "ok": false,
+      "purpose": "texture"
+    },
+    {
+      "check": {
+        "format": "zip",
+        "members": 2,
+        "mesh": "mesh.drc",
+        "v": 1
+      },
+      "file": "scan.zip",
+      "format": "zip",
+      "ok": true,
+      "purpose": "scan"
+    },
+    {
+      "check": {
+        "format": "zip",
+        "members": 6,
+        "mesh": "lobby/mesh.drc",
+        "v": 1
+      },
+      "file": "scan_macos.zip",
+      "format": "zip",
+      "ok": true,
+      "purpose": "scan"
+    },
+    {
+      "code": "zip_path",
+      "file": "zip_dotdot.zip",
+      "format": "zip",
+      "ok": false,
+      "purpose": "scan"
+    },
+    {
+      "code": "zip_path",
+      "file": "zip_absolute.zip",
+      "format": "zip",
+      "ok": false,
+      "purpose": "scan"
+    },
+    {
+      "code": "zip_encrypted",
+      "file": "zip_encrypted.zip",
+      "format": "zip",
+      "ok": false,
+      "purpose": "scan"
+    },
+    {
+      "code": "zip_zip64",
+      "file": "zip64.zip",
+      "format": "zip",
+      "ok": false,
+      "purpose": "scan"
+    },
+    {
+      "code": "zip_members",
+      "file": "zip_two_meshes.zip",
+      "format": "zip",
+      "ok": false,
+      "purpose": "scan"
+    },
+    {
+      "code": "zip_local_header",
+      "file": "zip_local_header_mismatch.zip",
+      "format": "zip",
+      "ok": false,
+      "purpose": "scan"
+    },
+    {
+      "check": {
+        "format": "drc",
+        "v": 1
+      },
+      "file": "scan.drc",
+      "format": "drc",
+      "ok": true,
+      "purpose": "scan"
+    },
+    {
+      "code": "drc_header",
+      "file": "pointcloud.drc",
+      "format": "drc",
+      "ok": false,
+      "purpose": "scan"
+    },
+    {
+      "check": {
+        "format": "obj",
+        "v": 1
+      },
+      "file": "scan.obj",
+      "format": "obj",
+      "ok": true,
+      "purpose": "scan"
+    },
+    {
+      "check": {
+        "format": "ndjson",
+        "v": 1
+      },
+      "file": "ops.ndjson",
+      "format": "ndjson",
+      "ok": true,
+      "purpose": "ops"
+    },
+    {
+      "check": {
+        "format": "gzip",
+        "v": 1
+      },
+      "file": "ops.ndjson.gz",
+      "format": "gzip",
+      "ok": true,
+      "purpose": "ops"
+    },
+    {
+      "code": "ndjson_line",
+      "file": "ops_not_object.ndjson",
+      "format": "ndjson",
+      "ok": false,
+      "purpose": "ops"
+    },
+    {
+      "check": {
+        "format": "text",
+        "v": 1
+      },
+      "file": "notes.txt",
+      "format": "text",
+      "ok": true,
+      "purpose": "script"
+    },
+    {
+      "code": "text_encoding",
+      "file": "notes_bad_utf8.txt",
+      "format": "text",
+      "ok": false,
+      "purpose": "script"
+    },
+    {
+      "check": {
+        "format": "json",
+        "v": 1
+      },
+      "file": "bundle.json",
+      "format": "json",
+      "ok": true,
+      "purpose": "bundle"
+    },
+    {
+      "code": "json_structure",
+      "file": "bundle_wrong_version.json",
+      "format": "json",
+      "ok": false,
+      "purpose": "bundle"
+    }
+  ],
+  "limits": "default",
+  "version": 1
+}

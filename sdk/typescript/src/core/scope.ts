@@ -1,9 +1,10 @@
-import { coveredBy, type GridBox } from './grid.js';
+import { boxesIntersect, coveredBy, type GridBox } from './grid.js';
 import { isObjectId } from './ids.js';
 
 /**
  * 路径范围（设计 9.4；Rust `scope.rs` 的移植）：地块路径下的每个操作都必须落在该地块内；
- * 实体区路径下的操作只能改实体区。
+ * 实体区路径和重建路径下的操作只能改实体区。空间没有定义实体区时，实体区路径和重建路径
+ * 可以改"不与任何虚拟区、地块相交"的地方（"除去"模式，docs/design/server-slim.md 2.5 第 6 条）。
  */
 
 export type RegionKind = 'physical' | 'virtual';
@@ -22,8 +23,8 @@ export interface Plot {
   readonly name?: string;
 }
 
-/** 路径给出的作用范围：`physical`、`plot:<编号>`、`source:<名称>`。 */
-export type PathScope = 'physical' | `plot:${string}` | `source:${string}`;
+/** 路径给出的作用范围：`physical`、`plot:<编号>`、`source:<名称>`、`rebuild`。 */
+export type PathScope = 'physical' | 'rebuild' | `plot:${string}` | `source:${string}`;
 
 export class ScopeError extends Error {
   constructor(
@@ -36,7 +37,7 @@ export class ScopeError extends Error {
 }
 
 export function parsePathScope(value: string): PathScope {
-  if (value === 'physical') return value;
+  if (value === 'physical' || value === 'rebuild') return value;
   const at = value.indexOf(':');
   const kind = value.slice(0, at);
   const id = value.slice(at + 1);
@@ -56,46 +57,67 @@ export interface Footprint {
   readonly spaceWide: boolean;
 }
 
+/** 允许范围的两种写法：只能改这些盒子里的格子（`within`），或者不能碰这些盒子（`except`）。 */
+export type AreaMode = 'within' | 'except';
+
 /** 某个路径范围允许修改的格子范围。 */
 export class AllowedArea {
   private constructor(
     readonly scope: PathScope,
+    readonly mode: AreaMode,
     readonly boxes: readonly GridBox[],
   ) {}
 
-  /** 实体区路径 → 所有实体区的盒子；地块路径 → 该地块的盒子；数据源路径不能改几何。 */
+  /**
+   * 实体区路径、重建路径 → 所有实体区的盒子；空间没有定义实体区时 → 除去所有虚拟区和地块的盒子。
+   * 地块路径 → 该地块的盒子；数据源路径不能改几何。
+   */
   static forScope(
     scope: PathScope,
     regions: readonly Region[],
     plots: readonly Plot[],
   ): AllowedArea {
-    if (scope === 'physical') {
-      return new AllowedArea(
-        scope,
-        regions.filter((r) => r.kind === 'physical').flatMap((r) => r.boxes),
-      );
+    if (scope === 'physical' || scope === 'rebuild') {
+      if (regions.some((r) => r.kind === 'physical')) {
+        return new AllowedArea(
+          scope,
+          'within',
+          regions.filter((r) => r.kind === 'physical').flatMap((r) => r.boxes),
+        );
+      }
+      return new AllowedArea(scope, 'except', [
+        ...regions.flatMap((r) => r.boxes),
+        ...plots.flatMap((p) => p.boxes),
+      ]);
     }
     if (scope.startsWith('plot:')) {
       const id = scope.slice('plot:'.length);
       const plot = plots.find((p) => p.id === id);
       if (plot === undefined) throw new ScopeError('unknown_plot', `地块 ${id} 不存在`);
-      return new AllowedArea(scope, plot.boxes);
+      return new AllowedArea(scope, 'within', plot.boxes);
     }
     throw new ScopeError('no_geometry', '这个路径范围不能修改几何内容');
+  }
+
+  /** 一块格子是否完全在允许范围内。 */
+  allows(cells: GridBox): boolean {
+    return this.mode === 'within'
+      ? coveredBy(cells, this.boxes)
+      : !this.boxes.some((excluded) => boxesIntersect(excluded, cells));
   }
 
   /** 影响范围是否完全落在允许的范围内；空间级的影响只允许实体区路径。 */
   check(footprint: Footprint): void {
     const outOfScope = () => new ScopeError('out_of_scope', `操作超出了路径范围 ${this.scope}`);
     if (footprint.spaceWide && this.scope !== 'physical') throw outOfScope();
-    if (!footprint.cells.every((cells) => coveredBy(cells, this.boxes))) throw outOfScope();
+    if (!footprint.cells.every((cells) => this.allows(cells))) throw outOfScope();
   }
 
   /** 不抛异常的版本：返回落在范围外的盒子。 */
   outside(footprint: Footprint): { spaceWide: boolean; cells: GridBox[] } {
     return {
       spaceWide: footprint.spaceWide && this.scope !== 'physical',
-      cells: footprint.cells.filter((cells) => !coveredBy(cells, this.boxes)),
+      cells: footprint.cells.filter((cells) => !this.allows(cells)),
     };
   }
 }

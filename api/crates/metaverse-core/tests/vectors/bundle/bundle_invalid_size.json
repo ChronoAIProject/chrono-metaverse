@@ -1,0 +1,353 @@
+{
+  "apply": null,
+  "description": "files[].size 不能超过该用途的上传上限（这里把贴图上限调成 1 MiB）",
+  "expect": {
+    "field": "files[3].size",
+    "message": "必须在 1 到 65536 字节之间（texture 用途的上限）",
+    "valid": false
+  },
+  "kind": "bundle",
+  "limits": {
+    "bundle": {
+      "maxBytes": 16777216
+    },
+    "model": {
+      "maxBytes": 52428800,
+      "maxCoord": 1000.0,
+      "maxTexturePixels": 16777216,
+      "maxTextureSide": 2048,
+      "maxTriangles": 100000
+    },
+    "ops": {
+      "maxBytes": 67108864
+    },
+    "scan": {
+      "maxBytes": 1073741824
+    },
+    "script": {
+      "maxBytes": 4194304
+    },
+    "texture": {
+      "maxBytes": 65536,
+      "maxPixels": 16777216,
+      "maxSide": 4096
+    },
+    "v": 1,
+    "webmodel": {
+      "maxBytes": 67108864,
+      "maxCoord": 100000.0,
+      "maxTexturePixels": 33554432,
+      "maxTextureSide": 4096,
+      "maxTriangles": 500000
+    }
+  },
+  "manifest": {
+    "anchors": [
+      {
+        "anchorId": "seat-1",
+        "kind": "seat",
+        "label": "座位",
+        "position": [
+          1,
+          0,
+          1
+        ],
+        "visibility": "public"
+      },
+      {
+        "anchorId": "sofa-01",
+        "box": [
+          40,
+          0,
+          40,
+          78,
+          17,
+          58
+        ],
+        "kind": "zone",
+        "visibility": "internal"
+      }
+    ],
+    "base": {
+      "seq": 4,
+      "spaceId": "chronoai-lobby"
+    },
+    "createdAt": "2026-11-20T08:00:00.000Z",
+    "files": [
+      {
+        "path": "scan/scan.zip",
+        "purpose": "scan",
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "size": 5901234
+      },
+      {
+        "path": "web/scan-0.glb",
+        "purpose": "webmodel",
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "size": 13800000
+      },
+      {
+        "path": "textures/333333333333.jpg",
+        "purpose": "texture",
+        "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "size": 51234
+      },
+      {
+        "path": "textures/666666666666.png",
+        "purpose": "texture",
+        "sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+        "size": 81920
+      },
+      {
+        "path": "models/444444444444.glb",
+        "purpose": "model",
+        "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "size": 412345
+      },
+      {
+        "path": "notes.md",
+        "purpose": "script",
+        "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+        "size": 9876
+      }
+    ],
+    "format": "chrono-metaverse-rebuild-bundle",
+    "note": "前厅第 4 版：AI 物件集，结构按实测替换",
+    "notes": "5555555555555555555555555555555555555555555555555555555555555555",
+    "rebuilt": {
+      "entities": [
+        {
+          "anchorId": "seat-1",
+          "bounds": {
+            "max": [
+              1.225,
+              0.87,
+              1.225
+            ],
+            "min": [
+              0.775,
+              0.41,
+              0.775
+            ]
+          },
+          "entityId": "rb.chair-01",
+          "fit": {
+            "coverage3cm": 0.81,
+            "meanCm": 1.8,
+            "p90Cm": 4.2
+          },
+          "kind": "object",
+          "layer": "rebuilt",
+          "shape": {
+            "template": "rb.chair-a",
+            "transform": {
+              "position": [
+                1,
+                0,
+                1
+              ],
+              "yaw": 90
+            },
+            "type": "instance"
+          }
+        },
+        {
+          "assetHash": "4444444444444444444444444444444444444444444444444444444444444444",
+          "bounds": {
+            "max": [
+              3.9,
+              0.82,
+              2.9
+            ],
+            "min": [
+              2,
+              0,
+              2
+            ]
+          },
+          "entityId": "rb.sofa-01",
+          "kind": "object",
+          "label": "沙发",
+          "layer": "rebuilt",
+          "material": {
+            "shading": "albedo",
+            "tint": [
+              214,
+              196,
+              176
+            ]
+          },
+          "props": {
+            "source": {
+              "author": "某作者",
+              "id": "sofa_02",
+              "library": "polyhaven",
+              "license": "CC0-1.0",
+              "page": "https://polyhaven.com/a/sofa_02",
+              "title": "布艺沙发"
+            }
+          }
+        },
+        {
+          "bounds": {
+            "max": [
+              4,
+              3,
+              4.95
+            ],
+            "min": [
+              0,
+              0,
+              4.85
+            ]
+          },
+          "entityId": "rb.wall-01",
+          "kind": "structure",
+          "layer": "rebuilt",
+          "shape": {
+            "material": {
+              "texture": "3333333333333333333333333333333333333333333333333333333333333333",
+              "tile": [
+                1,
+                1
+              ],
+              "uv": "planar"
+            },
+            "size": [
+              4,
+              3,
+              0.1
+            ],
+            "transform": {
+              "position": [
+                2,
+                0,
+                4.9
+              ]
+            },
+            "type": "box"
+          }
+        }
+      ],
+      "mode": "replace",
+      "remove": [],
+      "templates": [
+        {
+          "bounds": {
+            "max": [
+              0.225,
+              0.87,
+              0.225
+            ],
+            "min": [
+              -0.225,
+              0.41,
+              -0.225
+            ]
+          },
+          "entityId": "rb.chair-a",
+          "kind": "template",
+          "layer": "rebuilt",
+          "shape": {
+            "children": [
+              {
+                "material": {
+                  "texture": "3333333333333333333333333333333333333333333333333333333333333333",
+                  "tile": [
+                    0.5,
+                    0.5
+                  ],
+                  "uv": "box"
+                },
+                "size": [
+                  0.45,
+                  0.04,
+                  0.45
+                ],
+                "transform": {
+                  "position": [
+                    0,
+                    0.43,
+                    0
+                  ]
+                },
+                "type": "box"
+              },
+              {
+                "material": {
+                  "color": [
+                    90,
+                    70,
+                    50
+                  ],
+                  "normalMap": "6666666666666666666666666666666666666666666666666666666666666666",
+                  "uv": "box"
+                },
+                "size": [
+                  0.45,
+                  0.4,
+                  0.03
+                ],
+                "transform": {
+                  "position": [
+                    0,
+                    0.47,
+                    -0.21
+                  ]
+                },
+                "type": "box"
+              }
+            ],
+            "type": "group"
+          }
+        }
+      ]
+    },
+    "report": {
+      "entities": 3,
+      "fit": {
+        "meanCm": 4.31,
+        "p90Cm": 8.71,
+        "within3cm": 0.67
+      }
+    },
+    "scan": {
+      "alignment": {
+        "method": "given",
+        "rotationDeg": -60,
+        "tiltDeg": 0.09
+      },
+      "assetHash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "observedAt": "2026-10-20T00:00:00.000Z",
+      "transform": [
+        0.5,
+        0,
+        -0.8660254037844386,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0.8660254037844386,
+        0,
+        0.5,
+        0,
+        3.25,
+        -0.01,
+        7.5,
+        1
+      ],
+      "webModelHashes": [
+        "2222222222222222222222222222222222222222222222222222222222222222"
+      ]
+    },
+    "tool": {
+      "name": "metaverse-recon",
+      "source": "git:0123456789abcdef0123456789abcdef01234567",
+      "version": "0.2.0"
+    },
+    "version": 1
+  },
+  "name": "invalid-size",
+  "spaceTemplates": null
+}

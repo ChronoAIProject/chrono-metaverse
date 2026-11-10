@@ -19,6 +19,7 @@ import {
   type Rgb,
   type Shape,
   type TemplateTable,
+  type UvMode,
 } from './types';
 import { projectUvs } from './uv';
 
@@ -85,18 +86,26 @@ function partsBounds(parts: readonly MeshPart[]): Bounds | null {
 }
 
 /**
- * 给还没有材质的块填上 `material`。贴图材质的 uv 不是 `mesh` 时，
- * 按这些块合起来的包围盒（当前形状的局部坐标）重新投影 UV。
+ * 材质的贴图坐标方式：给了 `uv` 就用它（贴图材质，或带法线、粗糙度贴图的颜色材质）；
+ * 贴图材质缺 `uv` 时按 box；颜色材质没有贴图坐标，保留网格的自然坐标。
+ */
+export function uvModeOf(material: Material): UvMode {
+  return material.uv ?? (isTextureMaterial(material) ? 'box' : 'mesh');
+}
+
+/**
+ * 给还没有材质的块填上 `material`。uv 不是 `mesh` 时，按这些块合起来的包围盒
+ * （当前形状的局部坐标）重新投影 UV；给了 `tile` 时按米算再平铺（`mesh` 模式也是）。
  */
 function assignMaterial(parts: MeshPart[], material: Material): MeshPart[] {
   const open = parts.filter((part) => part.material === null);
   if (open.length === 0) return parts;
-  const mode = isTextureMaterial(material) ? (material.uv ?? 'box') : 'mesh';
+  const mode = uvModeOf(material);
   const bounds = mode === 'mesh' ? null : partsBounds(open);
   return parts.map((part) =>
     part.material !== null
       ? part
-      : { mesh: mode === 'mesh' ? part.mesh : projectUvs(part.mesh, mode, bounds), material },
+      : { mesh: projectUvs(part.mesh, mode, bounds, material), material },
   );
 }
 
@@ -104,6 +113,7 @@ function assignMaterial(parts: MeshPart[], material: Material): MeshPart[] {
  * 实例的材质覆盖模板里的颜色（同款椅子不同颜色）：
  * 颜色部件换成实例的颜色；模板里的贴图保留，用实例颜色做色调；实例给的是贴图时整体换成实例的贴图。
  * 实例材质带了 opacity / unlit 时一并覆盖，没带的保留模板部件自己的（重新上色后玻璃仍然透明）。
+ * 平铺、着色、法线、粗糙度不参与颜色覆盖，模板部件保留自己的。
  */
 function overrideMaterial(parts: MeshPart[], material: Material): MeshPart[] {
   if (isTextureMaterial(material)) {
@@ -117,14 +127,10 @@ function overrideMaterial(parts: MeshPart[], material: Material): MeshPart[] {
     ...(material.unlit !== undefined ? { unlit: material.unlit } : {}),
   };
   return parts.map((part) => {
-    const own = {
-      ...(part.material?.opacity !== undefined ? { opacity: part.material.opacity } : {}),
-      ...(part.material?.unlit !== undefined ? { unlit: part.material.unlit } : {}),
-    };
     if (part.material !== null && isTextureMaterial(part.material)) {
       return { mesh: part.mesh, material: { ...part.material, tint: material.color, ...look } };
     }
-    return { mesh: part.mesh, material: { color: material.color, ...own, ...look } };
+    return { mesh: part.mesh, material: { ...part.material, color: material.color, ...look } };
   });
 }
 
@@ -187,11 +193,31 @@ function buildNode(shape: Shape, ctx: Context): MeshPart[] {
   return parts;
 }
 
-/** 材质的分组键：相同材质（含 opacity、unlit）的块合并成一个网格。 */
+/** 平铺、着色、法线、粗糙度：分组键要包含它们（采样方式、受光方式不同）。 */
+const LOOK_FIELDS = [
+  'tile',
+  'offset',
+  'rotate',
+  'shading',
+  'normalMap',
+  'normalScale',
+  'roughnessMap',
+  'roughness',
+  'metalness',
+] as const;
+
+/**
+ * 材质的分组键：相同材质（含 opacity、unlit 和平铺、着色、法线、粗糙度）的块合并成一个网格；
+ * 新字段都没有时与旧的键相同。
+ */
 export function materialKey(material: Material): string {
+  const extra = Object.fromEntries(
+    LOOK_FIELDS.filter((key) => material[key] !== undefined).map((key) => [key, material[key]]),
+  );
   const look =
     (material.opacity !== undefined && material.opacity !== 1 ? `:o${material.opacity}` : '') +
-    (material.unlit === true ? ':u' : '');
+    (material.unlit === true ? ':u' : '') +
+    (Object.keys(extra).length > 0 ? `:${JSON.stringify(extra)}` : '');
   if (isTextureMaterial(material)) {
     return `t:${material.texture}:${material.tint?.join(',') ?? ''}${look}`;
   }

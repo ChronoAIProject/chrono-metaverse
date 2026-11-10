@@ -1,5 +1,7 @@
 //! `GET /api/v1/spaces/{space_id}`：给 AI 和命令行的空间信息（设计 8.3 的"查看"），
-//! 含最新 seq（也作为 ETag）、区域、地块、锚点（含内部级）。主人和组织成员可读。
+//! 含最新 seq（也作为 ETag）、区域、地块、锚点（含内部级），以及各用途的上传上限 `uploadLimits`
+//! （命令行写进工作区的 `limits.json`，本地工具据此提前检查，docs/design/server-slim.md 2.2）。
+//! 主人和组织成员可读。
 
 use axum::{
     extract::{Path, State},
@@ -18,7 +20,7 @@ use crate::AppState;
     path = "/api/v1/spaces/{space_id}",
     operation_id = "get_space",
     tag = "spaces",
-    description = "读取空间信息：名称、主人、可见性、最新 seq（同时作为 ETag）、区域、地块和全部锚点（含内部级）。空间主人和主人组织的成员可读；其他人一律 404。",
+    description = "读取空间信息：名称、主人、可见性、最新 seq（同时作为 ETag）、区域、地块、全部锚点（含内部级）和各用途的上传上限 uploadLimits（{v, scan, webmodel, model, texture, ops, script, bundle}，见 SHAPES 第 8 节；本地重建工具按它提前检查）。空间主人和主人组织的成员可读；其他人一律 404。",
     params(("space_id" = String, Path, description = "空间编号", example = "front-hall")),
     security(("nyxid_identity" = [])),
     responses(
@@ -44,7 +46,9 @@ pub async fn get_space(
         .ok_or_else(ApiError::not_found)?;
     let anchors = state.repo.anchors(&grant).await?;
     let etag = format!("\"{}\"", space.head.seq);
-    let mut response = Json(SpaceView::new(space, anchors)).into_response();
+    let mut view = SpaceView::new(space, anchors);
+    view.upload_limits = Some(state.ingest.config.upload_limits());
+    let mut response = Json(view).into_response();
     let headers = response.headers_mut();
     headers.insert(
         header::CACHE_CONTROL,

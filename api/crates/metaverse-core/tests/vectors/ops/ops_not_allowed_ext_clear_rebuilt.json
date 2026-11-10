@@ -1,0 +1,113 @@
+{
+  "base": {
+    "anchorHistory": [],
+    "anchors": [],
+    "entities": [],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ],
+    "scopeKind": "ext"
+  },
+  "description": "地块草稿不能用 clearRebuilt",
+  "expect": {
+    "baseChunks": [],
+    "error": {
+      "index": 0,
+      "kind": "notAllowed",
+      "message": "第 0 条操作：clearRebuilt 只能出现在重建草稿里（由重建包展开产生）"
+    },
+    "footprints": [],
+    "ok": false
+  },
+  "kind": "ops",
+  "name": "not-allowed-ext-clear-rebuilt",
+  "ops": [
+    {
+      "op": "clearRebuilt"
+    }
+  ],
+  "probeCells": [],
+  "scope": "plot:p1",
+  "spaceId": "vec-space"
+}

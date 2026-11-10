@@ -122,15 +122,23 @@ fn unix_now() -> i64 {
 
 /// 一份合法的身份令牌；每次调用都是新的 jti。
 pub fn identity(subject: &str) -> String {
+    identity_with(subject, &[])
+}
+
+/// 同 [`identity`]，带功能级权限（例如重建路径要求的 `metaverse:rebuild:write`）。
+pub fn identity_with(subject: &str, permissions: &[&str]) -> String {
     let now = unix_now();
     Signer::shared().sign(&json!({
         "sub": subject, "iss": ISSUER, "aud": AUDIENCE,
         "iat": now, "exp": now + 60,
         "jti": uuid::Uuid::new_v4().to_string(),
         "nyx_service_id": SERVICE,
-        "permissions": [], "roles": [], "groups": []
+        "permissions": permissions, "roles": [], "groups": []
     }))
 }
+
+/// 重建路径的写操作要求的权限。
+pub const REBUILD_PERMISSION: &str = "metaverse:rebuild:write";
 
 /// 模拟 NyxID：公钥列表 + 组织授权接口（转发凭据 `admin-token` / `member-token` / `viewer-token`
 /// 分别是 admin / member / viewer，其他一律不是成员）。
@@ -210,17 +218,19 @@ pub struct Reply {
     pub body: Value,
 }
 
-/// 一个调用者：身份 sub + 可选的转发凭据。
+/// 一个调用者：身份 sub + 可选的转发凭据 + 令牌里的功能级权限。
 #[derive(Clone, Copy)]
 pub struct Who<'a> {
     pub sub: &'a str,
     pub forwarded: Option<&'a str>,
+    pub permissions: &'a [&'a str],
 }
 
 pub const fn who(sub: &str) -> Who<'_> {
     Who {
         sub,
         forwarded: None,
+        permissions: &[],
     }
 }
 
@@ -228,6 +238,16 @@ pub const fn who_with<'a>(sub: &'a str, forwarded: &'a str) -> Who<'a> {
     Who {
         sub,
         forwarded: Some(forwarded),
+        permissions: &[],
+    }
+}
+
+/// 带重建权限的调用者（重建路径的写操作要求它）。
+pub const fn rebuilder(sub: &str) -> Who<'_> {
+    Who {
+        sub,
+        forwarded: None,
+        permissions: &[REBUILD_PERMISSION],
     }
 }
 
@@ -313,7 +333,10 @@ impl TestApp {
     ) -> axum::http::request::Builder {
         let mut request = Request::builder().method(method).uri(path);
         if let Some(caller) = caller {
-            request = request.header("x-nyxid-identity-token", identity(caller.sub));
+            request = request.header(
+                "x-nyxid-identity-token",
+                identity_with(caller.sub, caller.permissions),
+            );
             if let Some(token) = caller.forwarded {
                 request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
             }
@@ -503,6 +526,7 @@ impl TestApp {
         assert_eq!(upload.get_str("sha256").unwrap(), sha256);
         assert_eq!(upload.get_i64("size").unwrap(), length);
         let purpose = upload.get_str("purpose").unwrap().to_owned();
+        let declared = upload.get_str("declaredFormat").unwrap_or("drc").to_owned();
         self.collection("assets.files")
             .insert_one(doc! {
                 "_id": upload_id,
@@ -511,7 +535,8 @@ impl TestApp {
                 "uploadDate": mongodb::bson::DateTime::now(),
                 "filename": sha256,
                 "metadata": {"sha256": sha256, "uploadId": upload_id, "kind": &purpose,
-                             "format": "draco", "contentType": "application/x-draco"},
+                             "format": "draco", "contentType": "application/x-draco",
+                             "check": check_for(&purpose, &declared)},
             })
             .await
             .unwrap();
@@ -588,6 +613,25 @@ impl Drop for TestApp {
             });
         })
         .join();
+    }
+}
+
+/// 模拟上传核对写的核对记录（`metadata.check`）：按用途和声明的格式给一份合乎这个用途的记录。
+pub fn check_for(purpose: &str, format: &str) -> Document {
+    match (purpose, format) {
+        ("model" | "webmodel", "glb") => doc! {
+            "v": 1, "format": "glb", "triangles": 12_i64, "nodes": 1, "meshes": 1, "materials": 1,
+            "images": [], "maxTextureSide": 0, "texturePixels": 0_i64, "extensions": [],
+            "bounds": {"min": [-0.5, 0.0, -0.5], "max": [0.5, 1.0, 0.5]},
+        },
+        (_, "glb") => doc! {
+            "v": 1, "format": "glb", "triangles": null, "nodes": 1, "meshes": 1, "materials": 0,
+            "images": [], "maxTextureSide": 0, "texturePixels": 0_i64, "extensions": [], "bounds": null,
+        },
+        (_, "zip") => doc! {"v": 1, "format": "zip", "mesh": "mesh.drc", "members": 2},
+        (_, "png" | "jpeg" | "webp") => doc! {"v": 1, "format": format, "width": 64, "height": 64},
+        (_, "drc" | "obj" | "ndjson" | "gzip" | "text" | "json") => doc! {"v": 1, "format": format},
+        _ => doc! {"v": 1, "format": "drc"},
     }
 }
 

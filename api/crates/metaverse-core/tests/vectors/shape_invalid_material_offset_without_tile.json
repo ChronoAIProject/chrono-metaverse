@@ -1,0 +1,25 @@
+{
+  "description": "offset 只能和 tile 一起给",
+  "errorMessage": "$.material.offset: offset、rotate 只能和 tile 一起给",
+  "errorPath": "$.material.offset",
+  "kind": "shape",
+  "name": "invalid-material-offset-without-tile",
+  "shape": {
+    "material": {
+      "offset": [
+        0.1,
+        0
+      ],
+      "texture": "9f2c7d4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d",
+      "uv": "box"
+    },
+    "size": [
+      2,
+      1,
+      0.5
+    ],
+    "type": "box"
+  },
+  "templates": {},
+  "valid": false
+}

@@ -1,0 +1,31 @@
+{
+  "apply": null,
+  "description": "锚点不能是 _space",
+  "expect": {
+    "field": "anchors[0].anchorId",
+    "message": "不能是 _space",
+    "valid": false
+  },
+  "kind": "bundle",
+  "limits": null,
+  "manifest": {
+    "anchors": [
+      {
+        "anchorId": "_space",
+        "kind": "space",
+        "visibility": "public"
+      }
+    ],
+    "createdAt": "2026-11-20T16:00:00+08:00",
+    "files": [],
+    "format": "chrono-metaverse-rebuild-bundle",
+    "note": "只加锚点",
+    "tool": {
+      "name": "metaverse-recon",
+      "version": "0.2.0"
+    },
+    "version": 1
+  },
+  "name": "invalid-space-anchor",
+  "spaceTemplates": null
+}

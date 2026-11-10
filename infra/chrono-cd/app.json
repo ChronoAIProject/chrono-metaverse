@@ -32,22 +32,27 @@
         "NYXID_JWKS_URL": "https://api.nyxid.ai/.well-known/jwks.json",
         "NYXID_JWT_ISSUER": "https://nyx-api.chrono-ai.fun",
         "NYXID_JWT_AUDIENCE": "urn:chrono-metaverse:api",
-        "ALLOWED_NYX_SERVICE_IDS": "pending-nyxid-registration",
+        "ALLOWED_NYX_SERVICE_IDS": "362df1f5-8135-4a05-aa85-d929a5fd9f73",
         "METAVERSE_REQUIRE_PERMISSIONS": "false",
         "UPLOAD_MAX_SCAN_BYTES": "1073741824",
         "UPLOAD_MAX_MODEL_BYTES": "52428800",
         "UPLOAD_MAX_TEXTURE_BYTES": "52428800",
         "UPLOAD_MAX_OPS_BYTES": "67108864",
         "UPLOAD_MAX_SCRIPT_BYTES": "4194304",
-        "UPLOAD_MAX_TEXTURE_SIDE": "8192",
+        "UPLOAD_MAX_TEXTURE_SIDE": "4096",
+        "UPLOAD_MODEL_MAX_TRIANGLES": "100000",
+        "UPLOAD_MODEL_MAX_TEXTURE_SIDE": "2048",
+        "UPLOAD_WEBMODEL_MAX_TRIANGLES": "500000",
         "UPLOAD_MAX_OPEN_PER_SPACE": "16",
-        "UPLOAD_MAX_CONCURRENT_PARTS": "8",
+        "UPLOAD_MAX_CONCURRENT_PARTS": "4",
         "JOB_MAX_PENDING_PER_SPACE": "8",
         "PUBLIC_RATE_LIMIT_PER_MINUTE": "60000000",
         "PUBLIC_RATE_LIMIT_BURST": "1000000",
         "PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE": "60000000",
         "PUBLIC_BLOB_RATE_LIMIT_BURST": "1000000",
-        "METAVERSE_DEMO_SEED": "{\"spaceId\":\"chronoai-lobby\",\"name\":\"ChronoAI 前厅\",\"description\":\"ChronoAI 办公室前厅：Scaniverse 扫描 + AI 重建的演示空间（由部署配置自动导入）\",\"owner\":{\"kind\":\"org\",\"id\":\"52aa284c-b5b2-49bd-9d12-79f24772dbd7\"},\"visibility\":\"unlisted\",\"files\":[{\"url\":\"https://scaniverse.com/api/media/p7tckeaqoqjhr6z7/mesh.drc\",\"name\":\"mesh.drc\",\"sha256\":\"b6c9e523d59120f00264f1424096133cd4d35b37d7cbc7ac9520f4338034a3e9\",\"size\":1003301},{\"url\":\"https://scaniverse.com/api/media/p7tckeaqoqjhr6z7/tex.jpg\",\"name\":\"tex.jpg\",\"sha256\":\"10faa8377973f24d134abd15c7bbfdaccab84fc8a24caec5d2fb398616315de2\",\"size\":4897711}],\"rebuild\":true,\"voxelize\":false,\"revision\":3,\"authored\":{\"url\":\"https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/c882bca20dec26cb6314cfa8643a3172ee85684d/infra/chrono-cd/demo/lobby-authored.json\",\"sha256\":\"9563890eecd103eb86469917dc165ca5e5a1e207aaf6f412356256559c59fc6d\",\"size\":285415},\"hints\":{\"objects\":[{\"center\":[6.722,0.646,5.645],\"label\":\"前台\",\"kind\":\"counter\",\"size\":[1.866,1.266,3.822]},{\"center\":[6.044,1.323,1.316],\"label\":\"LED 大屏\",\"kind\":\"cabinet\",\"size\":[5.07,2.704,0.604]},{\"center\":[4.207,0.359,11.088],\"label\":\"长会议桌\",\"kind\":\"table\"},{\"center\":[3.217,0.35,10.712],\"label\":\"会议椅\",\"kind\":\"chair\",\"size\":[0.58,0.846,0.63]},{\"center\":[3.996,0.336,10.735],\"label\":\"会议椅\",\"kind\":\"chair\",\"size\":[0.58,0.821,0.63]},{\"center\":[4.856,0.373,10.673],\"label\":\"会议椅\",\"kind\":\"chair\",\"size\":[0.58,0.914,0.63]},{\"center\":[5.507,0.376,10.614],\"label\":\"会议椅\",\"kind\":\"chair\",\"size\":[0.58,0.914,0.63]},{\"center\":[3.067,0.387,11.523],\"label\":\"会议椅\",\"kind\":\"chair\",\"size\":[0.58,0.846,0.63]},{\"center\":[3.64,0.384,11.558],\"label\":\"会议椅\",\"kind\":\"chair\",\"size\":[0.58,0.833,0.63]},{\"center\":[4.186,0.384,11.585],\"label\":\"会议椅\",\"kind\":\"chair\",\"size\":[0.58,0.806,0.63]},{\"center\":[4.795,0.386,11.599],\"label\":\"会议椅\",\"kind\":\"chair\",\"size\":[0.58,0.806,0.63]},{\"center\":[5.515,0.388,11.843],\"label\":\"灰色会议椅\",\"kind\":\"chair\",\"size\":[0.78,0.84,0.72]},{\"center\":[6.424,0.536,11.177],\"label\":\"休闲椅\",\"kind\":\"chair\",\"size\":[0.718,1.14,0.774]},{\"center\":[4.739,0.393,14.374],\"label\":\"灰色布艺沙发\",\"kind\":\"sofa\",\"size\":[2.126,0.854,1.023]},{\"center\":[2.111,0.394,14.389],\"label\":\"米色皮沙发\",\"kind\":\"sofa\",\"size\":[1.962,0.839,1.086]},{\"center\":[3.404,0.191,14.468],\"label\":\"圆形边几\",\"kind\":\"table\",\"size\":[0.66,0.44,0.66]},{\"center\":[1.534,0.521,12.532],\"label\":\"休闲椅\",\"kind\":\"chair\",\"size\":[0.805,1.112,0.756]},{\"center\":[6.571,1.227,13.989],\"label\":\"展示柜\",\"kind\":\"cabinet\",\"size\":[1.674,2.49,1.845]},{\"center\":[1.264,0.399,13.463],\"label\":\"行李箱\",\"kind\":\"clutter\",\"size\":[0.276,0.772,0.545]},{\"center\":[9.347,1.393,11.111],\"label\":\"墙垛\",\"kind\":\"pillar\",\"size\":[0.302,2.864,0.552]},{\"center\":[10.74,1.343,7.844],\"label\":\"落地绿植\",\"kind\":\"plant\",\"size\":[0.742,2.728,0.827]},{\"center\":[2.664,0.049,13.742],\"label\":\"机器狗\",\"kind\":\"clutter\",\"size\":[0.6,0.3,0.35]}]}}",
+        "PUBLIC_CACHE_BYTES": "134217728",
+        "METAVERSE_DEMO_SEED": "{\"spaceId\":\"chronoai-lobby\",\"name\":\"ChronoAI 前厅\",\"description\":\"ChronoAI 办公室前厅：Scaniverse 扫描 + AI 重建的演示空间（由部署配置自动导入）\",\"owner\":{\"kind\":\"org\",\"id\":\"52aa284c-b5b2-49bd-9d12-79f24772dbd7\"},\"visibility\":\"unlisted\",\"revision\":3}",
+        "METAVERSE_DEMO_SEED_HOSTS": "raw.githubusercontent.com,github.com,release-assets.githubusercontent.com,objects.githubusercontent.com,scaniverse.com",
         "RUST_LOG": "info"
       },
       "addon_env": {
@@ -59,45 +64,9 @@
       "secret_keys": ["METAVERSE_DEMO_SHARE_TOKEN"],
       "resources": {
         "cpu_request": "250m",
-        "memory_request": "256Mi",
+        "memory_request": "384Mi",
         "cpu_limit": "1",
-        "memory_limit": "1Gi"
-      }
-    },
-    "metaverse-worker": {
-      "image": "ghcr.io/chronoaiproject/chrono-metaverse-worker:c882bca@sha256:78b8897ca8b880254e3eb8fcc14b259a4dca29037cc23128a217546833521e99",
-      "port": 8080,
-      "expose": "internal",
-      "health_path": "/healthz",
-      "replicas": 1,
-      "env": {
-        "WORKER_HEALTH_PORT": "8080",
-        "WORKER_JOB_MEMORY_MB": "6144",
-        "OPENBLAS_NUM_THREADS": "2",
-        "OMP_NUM_THREADS": "2",
-        "MALLOC_ARENA_MAX": "2",
-        "PYTHONUNBUFFERED": "1",
-        "WORKER_MODEL_HOSTS": "dl.polyhaven.org,huggingface.co,cdn-lfs.huggingface.co,.hf.co"
-      },
-      "addon_env": {
-        "mongodb": {
-          "uri": "MONGODB_URI",
-          "database": "MONGODB_DATABASE"
-        }
-      },
-      "volumes": [
-        {
-          "name": "scratch",
-          "mount_path": "/tmp",
-          "type": "emptydir",
-          "size": "8Gi"
-        }
-      ],
-      "resources": {
-        "cpu_request": "500m",
-        "memory_request": "3Gi",
-        "cpu_limit": "2",
-        "memory_limit": "8Gi"
+        "memory_limit": "1536Mi"
       }
     }
   }

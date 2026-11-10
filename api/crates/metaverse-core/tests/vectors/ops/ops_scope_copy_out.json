@@ -1,5 +1,6 @@
 {
   "base": {
+    "anchorHistory": [],
     "anchors": [],
     "entities": [],
     "fills": [],
@@ -85,7 +86,8 @@
         "id": "garden",
         "kind": "virtual"
       }
-    ]
+    ],
+    "scopeKind": "ext"
   },
   "description": "复制的目标落到地块外：超出范围",
   "expect": {

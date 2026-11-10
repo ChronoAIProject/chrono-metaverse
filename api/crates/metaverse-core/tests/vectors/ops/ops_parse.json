@@ -656,9 +656,376 @@
         "op": "removeAnchor"
       },
       "valid": false
+    },
+    {
+      "input": {
+        "entityId": "x",
+        "ifPresent": true,
+        "op": "removeEntity"
+      },
+      "valid": true
+    },
+    {
+      "input": {
+        "entityId": "x",
+        "ifPresent": null,
+        "op": "removeEntity"
+      },
+      "valid": true
+    },
+    {
+      "input": {
+        "entityId": "x",
+        "ifPresent": "yes",
+        "op": "removeEntity"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "entityId": "x",
+        "if_present": true,
+        "op": "removeEntity"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "anchor": {
+          "anchorId": "t1",
+          "box": [
+            0,
+            0,
+            0,
+            1,
+            1,
+            1
+          ],
+          "kind": "table",
+          "visibility": "public"
+        },
+        "ifNew": true,
+        "op": "createAnchor"
+      },
+      "valid": true
+    },
+    {
+      "input": {
+        "anchor": {
+          "anchorId": "t1",
+          "box": [
+            0,
+            0,
+            0,
+            1,
+            1,
+            1
+          ],
+          "kind": "table",
+          "visibility": "public"
+        },
+        "ifNew": 1,
+        "op": "createAnchor"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "op": "clearRebuilt"
+      },
+      "valid": true
+    },
+    {
+      "input": {
+        "chunks": true,
+        "op": "clearRebuilt"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "op": "clear_rebuilt"
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "observedAt": "2026-10-20T00:00:00.000Z",
+        "op": "setScan",
+        "scan": {
+          "alignment": {
+            "errorCm": 0.8,
+            "method": "auto",
+            "rotationDeg": -60
+          },
+          "assetHash": "1111111111111111111111111111111111111111111111111111111111111111",
+          "transform": [
+            0.5,
+            0,
+            -0.8660254037844386,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0.8660254037844386,
+            0,
+            0.5,
+            0,
+            3.25,
+            -0.01,
+            7.5,
+            1
+          ],
+          "webModelHashes": [
+            "2222222222222222222222222222222222222222222222222222222222222222"
+          ]
+        }
+      },
+      "valid": true
+    },
+    {
+      "input": {
+        "op": "setScan",
+        "scan": {
+          "assetHash": "1111111111111111111111111111111111111111111111111111111111111111",
+          "transform": [
+            0.5,
+            0,
+            -0.8660254037844386,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0.8660254037844386,
+            0,
+            0.5,
+            0,
+            3.25,
+            -0.01,
+            7.5,
+            1
+          ],
+          "webModelHashes": [
+            "2222222222222222222222222222222222222222222222222222222222222222"
+          ]
+        }
+      },
+      "valid": true
+    },
+    {
+      "input": {
+        "observedAt": "2026-10-20",
+        "op": "setScan",
+        "scan": {
+          "alignment": {
+            "errorCm": 0.8,
+            "method": "auto",
+            "rotationDeg": -60
+          },
+          "assetHash": "1111111111111111111111111111111111111111111111111111111111111111",
+          "transform": [
+            0.5,
+            0,
+            -0.8660254037844386,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0.8660254037844386,
+            0,
+            0.5,
+            0,
+            3.25,
+            -0.01,
+            7.5,
+            1
+          ],
+          "webModelHashes": [
+            "2222222222222222222222222222222222222222222222222222222222222222"
+          ]
+        }
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "observedAt": "2026-10-20T00:00:00.000Z",
+        "op": "setScan",
+        "scan": {
+          "alignment": {
+            "errorCm": 0.8,
+            "method": "auto",
+            "rotationDeg": -60
+          },
+          "assetHash": "1111111111111111111111111111111111111111111111111111111111111111",
+          "transform": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "webModelHashes": [
+            "2222222222222222222222222222222222222222222222222222222222222222"
+          ]
+        }
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "observedAt": "2026-10-20T00:00:00.000Z",
+        "op": "setScan",
+        "scan": {
+          "alignment": "auto",
+          "assetHash": "1111111111111111111111111111111111111111111111111111111111111111",
+          "transform": [
+            0.5,
+            0,
+            -0.8660254037844386,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0.8660254037844386,
+            0,
+            0.5,
+            0,
+            3.25,
+            -0.01,
+            7.5,
+            1
+          ],
+          "webModelHashes": [
+            "2222222222222222222222222222222222222222222222222222222222222222"
+          ]
+        }
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "observedAt": "2026-10-20T00:00:00.000Z",
+        "op": "setScan",
+        "scan": {
+          "alignment": {
+            "errorCm": 0.8,
+            "method": "auto",
+            "rotationDeg": -60
+          },
+          "assetHash": "1111111111111111111111111111111111111111111111111111111111111111",
+          "transform": [
+            0.5,
+            0,
+            -0.8660254037844386,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0.8660254037844386,
+            0,
+            0.5,
+            0,
+            3.25,
+            -0.01,
+            7.5,
+            1
+          ],
+          "webModelHash": "2222222222222222222222222222222222222222222222222222222222222222",
+          "webModelHashes": [
+            "2222222222222222222222222222222222222222222222222222222222222222"
+          ]
+        }
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "observedAt": "2026-10-20T00:00:00.000Z",
+        "op": "setScan",
+        "scan": {
+          "alignment": {
+            "errorCm": 0.8,
+            "method": "auto",
+            "rotationDeg": -60
+          },
+          "assetHash": "1111111111111111111111111111111111111111111111111111111111111111",
+          "transform": [
+            0.5,
+            0,
+            -0.8660254037844386,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0.8660254037844386,
+            0,
+            0.5,
+            0,
+            3.25,
+            -0.01,
+            7.5,
+            1
+          ]
+        }
+      },
+      "valid": false
+    },
+    {
+      "input": {
+        "observedAt": "2026-10-20T00:00:00.000Z",
+        "op": "setScan",
+        "scan": {
+          "alignment": {
+            "errorCm": 0.8,
+            "method": "auto",
+            "rotationDeg": -60
+          },
+          "assetHash": "1111111111111111111111111111111111111111111111111111111111111111",
+          "chunks": [],
+          "transform": [
+            0.5,
+            0,
+            -0.8660254037844386,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0.8660254037844386,
+            0,
+            0.5,
+            0,
+            3.25,
+            -0.01,
+            7.5,
+            1
+          ],
+          "webModelHashes": [
+            "2222222222222222222222222222222222222222222222222222222222222222"
+          ]
+        }
+      },
+      "valid": false
     }
   ],
-  "description": "结构检查：字段名、类型、未知字段、方块编号范围、盒子是否合法。valid = false 的输入必须在解析阶段被拒绝",
+  "description": "结构检查：字段名、类型、未知字段、方块编号范围、盒子是否合法，以及 ifPresent、ifNew、setScan、clearRebuilt 的写法。valid = false 的输入必须在解析阶段被拒绝",
   "kind": "ops-parse",
   "name": "parse"
 }

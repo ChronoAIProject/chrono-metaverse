@@ -1,4 +1,5 @@
 import {
+  trimTrailingSlashes,
   DEFAULT_NYX_BASE,
   DEFAULT_SLUG,
   normalizeNyxBase,
@@ -69,6 +70,8 @@ export interface RequestOptions {
   readonly query?: Readonly<Record<string, string | number | undefined>>;
   readonly ifMatch?: string;
   readonly idempotencyKey?: string;
+  /** 分段下载：`[start, end)`，发 `Range: bytes=start-(end-1)`（NyxID 代理转发这个头）。 */
+  readonly range?: readonly [number, number];
   /** 这些状态码不当作错误（例如 404 时自己处理）。 */
   readonly allow?: readonly number[];
 }
@@ -110,7 +113,7 @@ export class ApiClient {
       const slug = encodeURIComponent(this.config.slug ?? DEFAULT_SLUG);
       base = `${this.nyxBase}/api/v1/proxy/s/${slug}`;
     } else {
-      base = this.config.api!.replace(/\/+$/, '');
+      base = trimTrailingSlashes(this.config.api!);
     }
     const search = new URLSearchParams();
     for (const [key, value] of Object.entries(query ?? {})) {
@@ -177,6 +180,10 @@ export class ApiClient {
         if (options.ifMatch !== undefined) headers['If-Match'] = options.ifMatch;
         if (options.idempotencyKey !== undefined)
           headers['Idempotency-Key'] = options.idempotencyKey;
+        if (options.range !== undefined) {
+          const [start, end] = options.range;
+          headers.Range = `bytes=${start}-${end - 1}`;
+        }
         if (this.config.mode === 'nyxid') {
           for (const key of Object.keys(headers)) {
             if (!PROXY_SAFE_HEADERS.has(key.toLowerCase())) delete headers[key];

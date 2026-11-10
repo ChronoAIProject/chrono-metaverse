@@ -1,0 +1,38 @@
+{
+  "bounds": {
+    "max": [
+      1.0,
+      1.0,
+      0.25
+    ],
+    "min": [
+      -1.0,
+      0.0,
+      -0.25
+    ]
+  },
+  "description": "颜色材质只带标量粗糙度、金属度（没有贴图就不用 uv）；shading 对颜色材质没有影响但可以写",
+  "kind": "shape",
+  "name": "material-color-roughness",
+  "shape": {
+    "material": {
+      "color": [
+        90,
+        90,
+        96
+      ],
+      "metalness": 0.8,
+      "roughness": 0.55,
+      "shading": "albedo"
+    },
+    "size": [
+      2,
+      1,
+      0.5
+    ],
+    "type": "box"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "valid": true
+}

@@ -1,6 +1,6 @@
 name: CI
 
-# 每次推送和每个合并请求都跑：接口服务、网站（含夹具模式的端到端测试）、处理服务、命令行（目录存在时）
+# 每次推送和每个合并请求都跑：接口服务、网站（含夹具模式的端到端测试）、本地重建工具、命令行（目录存在时）
 # 和仓库检查。跨服务的九步验收（infra/dev/e2e.mjs）要本地起全套并提供前厅扫描，不在这里跑。
 # 写法参照 CMA 的 .github/workflows/ci.yml，按本项目的规模收缩。
 #
@@ -134,45 +134,30 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  worker:
-    name: 处理服务（worker）
+  # 本地重建工具（处理服务已下线）：只读写本地文件，测试不需要数据库。
+  recon:
+    name: 本地重建工具（recon）
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      METAVERSE_TEST_MONGODB_URI: mongodb://127.0.0.1:27017/?replicaSet=rs0
     defaults:
       run:
-        working-directory: worker
+        working-directory: recon
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - name: 起 MongoDB 副本集
-        working-directory: .
-        run: bash .github/scripts/start-mongo.sh
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         with:
           version: 0.11.32
           enable-cache: true
-          cache-dependency-glob: worker/pyproject.toml
+          cache-dependency-glob: recon/uv.lock
+      # 按 uv.lock 的锁定版本装（含开发依赖）；锁文件和 pyproject.toml 对不上时直接失败。
       - name: 安装（含开发依赖）
-        run: |
-          uv venv --python 3.13 .venv
-          uv pip install --python .venv/bin/python -e '.[dev]'
+        run: uv sync --frozen --extra dev --python 3.13
       - name: 静态检查
         run: .venv/bin/ruff check .
       - name: 格式
         run: .venv/bin/ruff format --check .
-      # store 夹具在 MongoDB 连不上时会 skip；这里加载 .github/scripts/pytest_require_mongo.py，
-      # 设置了 METAVERSE_TEST_MONGODB_URI 时把 MongoDB 测试的跳过改判为失败，副本集出问题不会静默通过。
-      - name: 测试（含 MongoDB 测试，不许跳过）
-        env:
-          PYTHONPATH: ${{ github.workspace }}/.github/scripts
-        run: .venv/bin/pytest -p pytest_require_mongo
-      - name: 持续集成插件的测试与静态检查
-        working-directory: .
-        run: |
-          worker/.venv/bin/pytest -p pytester -p no:cacheprovider .github/scripts/test_pytest_require_mongo.py
-          worker/.venv/bin/ruff check --config worker/pyproject.toml .github/scripts
-          worker/.venv/bin/ruff format --check --config worker/pyproject.toml .github/scripts
+      - name: 测试
+        run: .venv/bin/pytest
 
   sdk-typescript:
     name: 命令行（sdk/typescript）
@@ -236,8 +221,7 @@ jobs:
         run: |
           node --test infra/chrono-cd/*.test.mjs
           node infra/chrono-cd/check-app.mjs
-      # action 按提交哈希、基础镜像和构建前端按摘要、处理服务的构建后端按哈希固定；
-      # 发布镜像不读共享的 Actions 缓存。
+      # action 按提交哈希、基础镜像和构建前端按摘要固定；发布镜像不读共享的 Actions 缓存。
       - name: 供应链固定检查
         run: node infra/chrono-cd/check-pins.mjs
       - name: 本地开发设施：JSON 与脚本语法
@@ -257,8 +241,34 @@ jobs:
             https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-linux-x86_64
           echo "6bf226944684f56c84dd014e8b979d27425c0148f61b3bd99bcc6f39e9dc5a47  $RUNNER_TEMP/hadolint" | sha256sum -c -
           chmod +x "$RUNNER_TEMP/hadolint"
-          "$RUNNER_TEMP/hadolint" infra/api/Dockerfile infra/web/Dockerfile infra/worker/Dockerfile
+          "$RUNNER_TEMP/hadolint" infra/api/Dockerfile infra/web/Dockerfile
       - name: actionlint（工作流）
         run: |
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           "$(go env GOPATH)/bin/actionlint" -color
+
+  # 分支保护只要求这个固定名称；各任务的显示名称可以自由调整。
+  # 新增、删除或修改 job ID 时，同步维护 needs，覆盖上面所有 CI 任务。
+  ci-gate:
+    name: CI Gate
+    if: ${{ always() }}
+    needs: [api, api-deny, web, web-e2e, recon, sdk-typescript, repo]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 确认全部 CI 任务成功
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          results = json.loads(os.environ["NEEDS_JSON"])
+          for job, value in results.items():
+              print(f"{job}: {value['result']}")
+          if not results or any(value["result"] != "success" for value in results.values()):
+              print("::error::CI 未全部成功（失败、取消、跳过均不通过）")
+              sys.exit(1)
+          PY

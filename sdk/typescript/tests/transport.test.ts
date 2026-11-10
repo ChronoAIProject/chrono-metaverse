@@ -1,8 +1,15 @@
 import { createHash } from 'node:crypto';
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { MetaverseApi, scopePath } from '../src/transport/api.js';
+import {
+  isRebuild,
+  jobErrorText,
+  MetaverseApi,
+  REBUILD,
+  scopeName,
+  scopePath,
+} from '../src/transport/api.js';
 import { ApiClient, ApiError, PROXY_SAFE_HEADERS } from '../src/transport/client.js';
 import {
   resolveNyxToken,
@@ -24,6 +31,7 @@ import {
   startFakeApi,
   type FakeApi,
 } from './helpers/fakeApi.js';
+import { downloadToPart } from '../src/transport/download.js';
 import { removeDir, tempDir } from './helpers/workspace.js';
 
 describe('令牌来源顺序', () => {
@@ -428,8 +436,12 @@ describe('分片上传（本地假服务器）', () => {
       upload(api(), { purpose: 'model', source: { bytes: ndjson }, format: 'glb' }),
     ).rejects.toMatchObject({ status: 422, code: 'format_mismatch' });
     await expect(
-      upload(api(), { purpose: 'scan', source: { bytes: ndjson }, format: 'zip' }),
+      upload(api(), { purpose: 'scan', source: { bytes: ndjson }, format: 'zip', scope: REBUILD }),
     ).rejects.toMatchObject({ status: 422, code: 'format_mismatch' });
+    // 物件模型只收 glb（docs/SHAPES.md 第 8 节）。
+    await expect(
+      upload(api(), { purpose: 'model', source: { bytes: ndjson }, format: 'zip' }),
+    ).rejects.toMatchObject({ status: 422, code: 'unsupported_format' });
   });
 
   it('假接口按接口服务的规则拒绝未知字段、缺少的字段和不符的文件头', () => {
@@ -460,7 +472,7 @@ describe('分片上传（本地假服务器）', () => {
       const result = await upload(api(), {
         purpose: 'model',
         source: { path: file },
-        plot: 'p1',
+        scope: 'p1',
         partSize: 256 * 1024,
         format: 'glb',
       });
@@ -475,7 +487,7 @@ describe('分片上传（本地假服务器）', () => {
     }
   });
 
-  it('空文件和地块路径下上传扫描都被拒绝', async () => {
+  it('空文件被拒绝；实体区、地块路径不收扫描、网页用模型和重建包清单', async () => {
     fake = await startFakeApi();
     await expect(
       upload(api(), { purpose: 'ops', source: { bytes: new Uint8Array() }, format: 'ndjson' }),
@@ -484,10 +496,24 @@ describe('分片上传（本地假服务器）', () => {
       upload(api(), {
         purpose: 'scan',
         source: { bytes: new Uint8Array([1]) },
-        plot: 'p1',
+        scope: 'p1',
         format: 'glb',
       }),
-    ).rejects.toMatchObject({ status: 403 });
+    ).rejects.toMatchObject({ status: 422, code: 'purpose_not_allowed' });
+    for (const purpose of ['webmodel', 'bundle'] as const) {
+      await expect(
+        upload(api(), { purpose, source: { bytes: new Uint8Array([1]) }, format: 'glb' }),
+      ).rejects.toMatchObject({ status: 422, code: 'purpose_not_allowed' });
+    }
+    // 重建路径不收操作文件。
+    await expect(
+      upload(api(), {
+        purpose: 'ops',
+        source: { bytes: new Uint8Array([0x7b]) },
+        format: 'ndjson',
+        scope: REBUILD,
+      }),
+    ).rejects.toMatchObject({ status: 422, code: 'purpose_not_allowed' });
   });
 
   it('任务失败时报出 lastError；状态说明', async () => {
@@ -509,5 +535,99 @@ describe('分片上传（本地假服务器）', () => {
     expect(updates[0]).toContain('处理中');
     expect(updates[1]).toContain('失败');
     expect(scopePath('a b', 'p/1')).toBe('/api/v1/spaces/a%20b/plots/p%2F1');
+    expect(scopePath('a', REBUILD)).toBe('/api/v1/spaces/a/rebuild');
+    expect(scopePath('a', null)).toBe('/api/v1/spaces/a');
+    expect([isRebuild(REBUILD), isRebuild('p1'), isRebuild(null)]).toEqual([true, false, false]);
+    expect([scopeName(REBUILD), scopeName('p1'), scopeName(undefined)]).toEqual([
+      '重建',
+      '地块 p1',
+      '实体区',
+    ]);
+  });
+
+  it('后台执行器写的 lastError 是 {class, message, at}', async () => {
+    expect(jobErrorText(null)).toBeNull();
+    expect(jobErrorText('')).toBeNull();
+    expect(jobErrorText('坏了')).toBe('坏了');
+    expect(jobErrorText({ class: 'content', message: '清单不合规' })).toBe('清单不合规（content）');
+    expect(jobErrorText({ at: 'x' })).toBe('{"at":"x"}');
+    fake = await startFakeApi();
+    fake.state.jobs.set('job-y', {
+      id: 'job-y',
+      kind: 'upload_verify',
+      polls: 0,
+      runningPolls: 0,
+      fail: { class: 'content', message: 'glb 头不对', at: 't' } as unknown as string,
+    });
+    await expect(waitForJob(api(), 'job-y', { sleep: async () => {} })).rejects.toThrow(
+      'glb 头不对（content）',
+    );
+  });
+
+  it('分段下载：Range 头、Content-Range、断开后接着下', async () => {
+    const bytes = Buffer.from(Array.from({ length: 1000 }, (_, i) => i % 251));
+    const hash = createHash('sha256').update(bytes).digest('hex');
+    fake = await startFakeApi({ assets: new Map([[hash, bytes]]), rangeChunk: 300 });
+    const range = await api().getAssetRange(hash, 100, 200);
+    expect(range).toMatchObject({ start: 100, total: 1000 });
+    expect(Buffer.from(range.bytes)).toEqual(bytes.subarray(100, 200));
+    expect(fake.requests.at(-1)!.headers.range).toBe('bytes=100-199');
+    const dir = tempDir();
+    try {
+      const part = join(dir, 'x.part');
+      writeFileSync(part, bytes.subarray(0, 250));
+      fake.state.dropAssetRequests = 1;
+      const progress: number[] = [];
+      const result = await downloadToPart({
+        fetchRange: (start, end) => api().getAssetRange(hash, start, end),
+        partFile: part,
+        sha256: hash,
+        segmentBytes: 400,
+        sleep: async () => {},
+        onProgress: (done) => progress.push(done),
+      });
+      expect(result).toEqual({ total: 1000, resumedFrom: 250, segments: 3 });
+      expect(progress).toEqual([550, 850, 1000]);
+      expect(readFileSync(part)).toEqual(bytes);
+      // 已经下完的 .part：服务端回 416，直接核对。
+      expect(
+        await downloadToPart({
+          fetchRange: (start, end) => api().getAssetRange(hash, start, end),
+          partFile: part,
+          sha256: hash,
+        }),
+      ).toEqual({ total: 1000, resumedFrom: 1000, segments: 0 });
+      // 内容不对：删掉 .part。
+      writeFileSync(part, Buffer.alloc(1000));
+      await expect(
+        downloadToPart({
+          fetchRange: (start, end) => api().getAssetRange(hash, start, end),
+          partFile: part,
+          sha256: hash,
+        }),
+      ).rejects.toThrow('sha256');
+      expect(existsSync(part)).toBe(false);
+      // 服务端不按 Range 回（整份）：从头写。
+      fake.state.rangeChunk = 0;
+      writeFileSync(part, bytes.subarray(0, 10));
+      expect(
+        await downloadToPart({
+          fetchRange: (start, end) => api().getAssetRange(hash, start, end),
+          partFile: part,
+          sha256: hash,
+        }),
+      ).toEqual({ total: 1000, resumedFrom: 10, segments: 1 });
+      expect(readFileSync(part)).toEqual(bytes);
+      // 4xx 不重试。
+      await expect(
+        downloadToPart({
+          fetchRange: (start, end) => api().getAssetRange('f'.repeat(64), start, end),
+          partFile: join(dir, 'y.part'),
+          sha256: hash,
+        }),
+      ).rejects.toMatchObject({ status: 404 });
+    } finally {
+      removeDir(dir);
+    }
   });
 });

@@ -11,7 +11,9 @@ use std::io::Write as _;
 use axum::http::{header, Method, StatusCode};
 use mongodb::bson::doc;
 use serde_json::{json, Value};
-use timeline_support::{decode_chunk, Payload, TestApp, ORG};
+use timeline_support::{
+    decode_chunk, glb_check, image_check, scan_glb_check, Payload, TestApp, ORG,
+};
 
 const SPACE: &str = "front-hall";
 
@@ -961,8 +963,11 @@ async fn ops_from_upload_runs_in_process_and_publishes_with_ops_ref() {
     assert_eq!(reply.status, StatusCode::ACCEPTED);
     let job = app.wait_job(reply.body["jobId"].as_str().unwrap()).await;
     assert_eq!(job.get_str("status").unwrap(), "failed");
+    // 执行器写的错误带类别：内容不合规，不重试。
+    let error = job.get_document("lastError").unwrap();
+    assert_eq!(error.get_str("class").unwrap(), "content");
     assert!(
-        job.get_str("lastError").unwrap().contains("超出"),
+        error.get_str("message").unwrap().contains("超出"),
         "{job:?}"
     );
     assert_eq!(
@@ -1548,17 +1553,30 @@ async fn draft_assets_must_belong_to_the_space_and_become_public_on_publish() {
     app.create_space(SPACE).await;
     app.define_layout(SPACE).await;
     let texture = app
-        .put_space_asset(SPACE, b"\xff\xd8\xff texture", "image/jpeg", "texture")
+        .put_checked_asset(
+            SPACE,
+            b"\xff\xd8\xff texture",
+            "image/jpeg",
+            "texture",
+            image_check("jpeg", 512, 512),
+        )
         .await;
     let scan = app
-        .put_space_asset(SPACE, b"raw scan bytes", "application/octet-stream", "scan")
+        .put_checked_asset(
+            SPACE,
+            b"raw scan bytes",
+            "application/octet-stream",
+            "scan",
+            scan_glb_check(),
+        )
         .await;
     let foreign = app
-        .put_space_asset(
+        .put_checked_asset(
             "other-space",
             b"someone else's texture",
             "image/png",
             "texture",
+            image_check("png", 64, 64),
         )
         .await;
     let entity = |hash: &str| {
@@ -1628,6 +1646,130 @@ async fn draft_assets_must_belong_to_the_space_and_become_public_on_publish() {
         .unwrap()
         .unwrap();
     assert_eq!(registered.get_str("commitId").unwrap(), commit_id);
+}
+
+/// 预览令牌读资源只到草稿的基础版本（设计 2.8）：基础版本之后才发布的模型和贴图一律 404，
+/// 令牌不记名、可转发，不能借它读到成员才看得到的新内容。
+#[tokio::test]
+async fn preview_assets_stop_at_the_draft_base_seq() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    app.define_layout(SPACE).await;
+    let older = app
+        .put_checked_asset(
+            SPACE,
+            b"\xff\xd8\xff older texture",
+            "image/jpeg",
+            "texture",
+            image_check("jpeg", 256, 256),
+        )
+        .await;
+    let newer = app
+        .put_checked_asset(
+            SPACE,
+            b"\xff\xd8\xff newer texture",
+            "image/jpeg",
+            "texture",
+            image_check("jpeg", 256, 256),
+        )
+        .await;
+    let entity = |id: &str, hash: &str, x: f64| {
+        json!([{"op": "placeEntity", "entity": {"entityId": id, "layer": "ext", "kind": "object",
+            "shape": {"type": "box", "size": [1, 0.02, 1], "transform": {"position": [x, 0, 2]},
+                      "material": {"texture": hash, "uv": "planar"}},
+            "bounds": {"min": [x - 0.5, 0, 1.5], "max": [x + 0.5, 0.02, 2.5]}}}])
+    };
+    let publish = |path: String| {
+        let app = &app;
+        async move {
+            let reply = app
+                .org(Method::POST, &format!("{path}/publish"), None)
+                .await;
+            assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+            reply.body["seq"].as_u64().unwrap()
+        }
+    };
+    let drafts = format!("/api/v1/spaces/{SPACE}/drafts");
+    // 第一版引用 older。
+    let first = draft_path(SPACE, &new_draft(&app, &drafts).await);
+    assert_eq!(
+        append(&app, &first, entity("rug-a", &older, 2.0))
+            .await
+            .status,
+        StatusCode::OK
+    );
+    let base = publish(first).await;
+    // 草稿 D 基于这一版，生成预览令牌。
+    let pending = draft_path(SPACE, &new_draft(&app, &drafts).await);
+    let token = app
+        .org(Method::POST, &format!("{pending}/preview"), None)
+        .await
+        .body["token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let preview_auth = format!("Preview {token}");
+    // 另一个草稿在 D 的基础版本之后发布，引用 newer。
+    let second = draft_path(SPACE, &new_draft(&app, &drafts).await);
+    assert_eq!(
+        append(&app, &second, entity("rug-b", &newer, 4.0))
+            .await
+            .status,
+        StatusCode::OK
+    );
+    assert_eq!(publish(second).await, base + 1);
+    let status = |hash: String| {
+        let app = &app;
+        let auth = preview_auth.clone();
+        async move {
+            app.public(&format!("/api/public/previews/assets/{hash}"), Some(&auth))
+                .await
+                .status
+        }
+    };
+    assert_eq!(status(older.clone()).await, StatusCode::OK);
+    assert_eq!(status(newer.clone()).await, StatusCode::NOT_FOUND);
+    // 新写的 assetRefs 带最早引用它的版本号。
+    let refs = app.collection("assetRefs");
+    let seq_of = |hash: String| {
+        let refs = refs.clone();
+        async move {
+            refs.find_one(doc! {"hash": hash, "spaceId": SPACE})
+                .await
+                .unwrap()
+                .unwrap()
+                .get_i64("seq")
+                .unwrap()
+        }
+    };
+    assert_eq!(seq_of(older.clone()).await, base as i64);
+    assert_eq!(seq_of(newer.clone()).await, base as i64 + 1);
+    // 瘦身前写的只有 commitId：按提交的版本号判断，结果相同。
+    refs.update_many(doc! {"spaceId": SPACE}, doc! {"$unset": {"seq": ""}})
+        .await
+        .unwrap();
+    assert_eq!(status(older.clone()).await, StatusCode::OK);
+    assert_eq!(status(newer.clone()).await, StatusCode::NOT_FOUND);
+    // 只由事件类型登记过（既没有 seq 也没有 commitId）：不给。
+    refs.update_one(
+        doc! {"hash": &older, "spaceId": SPACE},
+        doc! {"$unset": {"commitId": ""}, "$set": {"eventType": "visit"}},
+    )
+    .await
+    .unwrap();
+    assert_eq!(status(older.clone()).await, StatusCode::NOT_FOUND);
+    // 再被一次提交引用时，`$min` 补上版本号（事件类型先登记的也一样）。
+    let third = draft_path(SPACE, &new_draft(&app, &drafts).await);
+    assert_eq!(
+        append(&app, &third, entity("rug-c", &older, 6.0))
+            .await
+            .status,
+        StatusCode::OK
+    );
+    let latest = publish(third).await;
+    assert_eq!(seq_of(older.clone()).await, latest as i64);
 }
 
 /// 功能级开关打开时（`METAVERSE_REQUIRE_PERMISSIONS=true`），草稿的全部写操作和区域都要求
@@ -1744,8 +1886,10 @@ async fn draft_writes_require_content_write_when_permissions_are_enforced() {
     assert_eq!(reply.status, StatusCode::NOT_FOUND);
 }
 
-/// 物件模型只能引用 model_import 处理后的版本（设计 4.4、6.1），贴图只能是贴图；资源按内容
-/// 全局去重，本空间上传过或导入过的同一份内容也算本空间的。
+/// 资源按核对记录判断角色（docs/design/server-slim.md 2.5 第 4 条、4.6）：物件模型要核对记录是在物件
+/// 模型上限内的 glb，贴图要是在贴图上限内的图片；不看第一次登记时记的 `kind`。资源按内容全局去重，
+/// 本空间上传过或导入过的同一份内容也算本空间的；别的空间抢先以别的用途登记同一份 glb 之后，本空间
+/// 照样能按物件模型引用。只有模型的物件，模型的实测包围盒要与物件 `bounds` 一致。
 #[tokio::test]
 async fn draft_assets_are_checked_by_role_and_by_space_ownership() {
     let Some(app) = TestApp::start().await else {
@@ -1753,34 +1897,63 @@ async fn draft_assets_are_checked_by_role_and_by_space_ownership() {
     };
     app.create_space(SPACE).await;
     app.define_layout(SPACE).await;
-    let set_metadata = |hash: String, metadata: mongodb::bson::Document| {
-        let files = app.collection("assets.files");
-        async move {
-            files
-                .update_one(doc! {"filename": &hash}, doc! {"$set": metadata})
-                .await
-                .unwrap();
-        }
-    };
-    // 原始的 model 用途上传（处理服务登记时 kind = 用途、带 uploadId）。
-    let raw = app
-        .put_space_asset(SPACE, b"glTF raw upload", "model/gltf-binary", "model")
+    let lamp_bounds = ([-0.25, 0.0, -0.25], [0.25, 0.5, 0.25]);
+    // 核对过、在物件模型上限内的 glb（登记时 kind 写成什么都无所谓）。
+    let model = app
+        .put_checked_asset(
+            SPACE,
+            b"glTF checked lamp",
+            "model/gltf-binary",
+            "web_model",
+            glb_check(lamp_bounds.0, lamp_bounds.1, 2000),
+        )
         .await;
-    set_metadata(raw.clone(), doc! {"metadata.uploadId": "up_raw"}).await;
-    // model_import 重新导出的模型（kind = model、带 sourceHash）。
-    let processed = app
+    // 没有核对记录的旧资源（处理服务时代的模型）：不能再被新引用。
+    let unchecked = app
         .put_space_asset(SPACE, b"glTF processed", "model/gltf-binary", "model")
         .await;
-    set_metadata(processed.clone(), doc! {"metadata.sourceHash": &raw}).await;
-    let texture = app
-        .put_space_asset(SPACE, b"\x89PNG texture", "image/png", "texture")
+    // 三角形超过物件模型的上限（10 万），但在网页用模型的上限内。
+    let heavy = app
+        .put_checked_asset(
+            SPACE,
+            b"glTF heavy",
+            "model/gltf-binary",
+            "model",
+            glb_check(lamp_bounds.0, lamp_bounds.1, 300_000),
+        )
         .await;
-    let web_model = app
-        .put_space_asset(SPACE, b"glTF web model", "model/gltf-binary", "web_model")
+    // 扫描用途只做了轻量检查（没有包围盒）。
+    let scan_glb = app
+        .put_checked_asset(
+            SPACE,
+            b"glTF scan",
+            "model/gltf-binary",
+            "scan",
+            scan_glb_check(),
+        )
+        .await;
+    let texture = app
+        .put_checked_asset(
+            SPACE,
+            b"\x89PNG texture",
+            "image/png",
+            "model",
+            image_check("png", 256, 256),
+        )
+        .await;
+    // 边长超过贴图上限（4096）。
+    let huge_texture = app
+        .put_checked_asset(
+            SPACE,
+            b"\x89PNG huge",
+            "image/png",
+            "texture",
+            image_check("png", 8192, 64),
+        )
         .await;
     let place = |id: &str, model: &str| {
         json!([{"op": "placeEntity", "entity": {"entityId": id, "layer": "ext", "kind": "object",
-            "assetHash": model, "bounds": {"min": [1, 0, 1], "max": [1.5, 0.5, 1.5]}}}])
+            "assetHash": model, "bounds": {"min": [1.25, 0, 1.25], "max": [1.75, 0.5, 1.75]}}}])
     };
     let rug = |id: &str, texture: &str| {
         json!([{"op": "placeEntity", "entity": {"entityId": id, "layer": "ext", "kind": "object",
@@ -1792,58 +1965,113 @@ async fn draft_assets_are_checked_by_role_and_by_space_ownership() {
         SPACE,
         &new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await,
     );
-    // 原始模型上传：422，并提示先导入。
-    let reply = append(&app, &path, place("lamp", &raw)).await;
+    // 没有核对记录：422，提示重新上传。
+    let reply = append(&app, &path, place("lamp", &unchecked)).await;
     assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(reply.body["code"], "unknown_asset");
     assert!(
-        reply.body["detail"]
-            .as_str()
-            .unwrap()
-            .contains("import_model"),
+        reply.body["detail"].as_str().unwrap().contains("核对记录"),
         "{:?}",
         reply.body
     );
-    // 贴图、网页用模型当物件模型；处理后的模型当贴图：422。
+    // 角色表的反例：贴图、扫描的轻量 glb、超上限的 glb 当物件模型；模型、超上限的图片当贴图。
     for ops in [
         place("lamp", &texture),
-        place("lamp", &web_model),
-        rug("rug", &processed),
+        place("lamp", &scan_glb),
+        place("lamp", &heavy),
+        rug("rug", &model),
+        rug("rug", &huge_texture),
     ] {
-        let reply = append(&app, &path, ops).await;
-        assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+        let reply = append(&app, &path, ops.clone()).await;
+        assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY, "{ops}");
         assert_eq!(reply.body["code"], "unknown_asset");
     }
     assert_eq!(app.org(Method::GET, &path, None).await.body["rev"], 0);
-    // 处理后的模型和贴图：可以。
-    let reply = append(&app, &path, place("lamp", &processed)).await;
+    // 模型与记录一致：模型的实测尺寸与物件 bounds 不符、原点不在底面中心都拒绝。
+    let mismatched = |min: [f64; 3], max: [f64; 3]| {
+        json!([{"op": "placeEntity", "entity": {"entityId": "lamp", "layer": "ext", "kind": "object",
+            "assetHash": &model, "bounds": {"min": min, "max": max}}}])
+    };
+    for ops in [
+        mismatched([1.0, 0.0, 1.0], [2.0, 0.5, 2.0]),
+        mismatched([1.25, 0.0, 1.25], [1.75, 1.5, 1.75]),
+    ] {
+        let reply = append(&app, &path, ops).await;
+        assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            reply.body["code"], "model_bounds_mismatch",
+            "{:?}",
+            reply.body
+        );
+    }
+    let off_center = app
+        .put_checked_asset(
+            SPACE,
+            b"glTF off center",
+            "model/gltf-binary",
+            "model",
+            glb_check([0.0, 0.0, 0.0], [0.5, 0.5, 0.5], 100),
+        )
+        .await;
+    let reply = append(&app, &path, place("lamp", &off_center)).await;
+    assert_eq!(
+        reply.body["code"], "model_bounds_mismatch",
+        "{:?}",
+        reply.body
+    );
+    // 带偏航的物件（SHAPES 3）：按模型包围盒转过之后的外包盒和 bounds 比。长条模型 0.8 × 0.5 × 0.2 米，
+    // 偏航 90° 后 x、z 对调；不带 transform 时同样的 bounds 对不上。
+    let bench = app
+        .put_checked_asset(
+            SPACE,
+            b"glTF bench",
+            "model/gltf-binary",
+            "model",
+            glb_check([-0.4, 0.0, -0.1], [0.4, 0.5, 0.1], 100),
+        )
+        .await;
+    let turned = |id: &str, transform: Option<Value>| {
+        let mut entity = json!({"entityId": id, "layer": "ext", "kind": "object", "assetHash": &bench,
+            "bounds": {"min": [3.9, 0, 0.6], "max": [4.1, 0.5, 1.4]}});
+        if let Some(transform) = transform {
+            entity["transform"] = transform;
+        }
+        json!([{"op": "placeEntity", "entity": entity}])
+    };
+    let reply = append(&app, &path, turned("bench", None)).await;
+    assert_eq!(
+        reply.body["code"], "model_bounds_mismatch",
+        "{:?}",
+        reply.body
+    );
+    let reply = append(&app, &path, turned("bench", Some(json!({"yaw": 90})))).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+    // 正例：核对记录合乎角色。
+    let reply = append(&app, &path, place("lamp", &model)).await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     let reply = append(&app, &path, rug("rug", &texture)).await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
 
-    // 别的空间先登记了同一份内容（metadata.spaceId 是别的空间）：
+    // 别的空间先登记了同一份内容（metadata.spaceId 是别的空间，kind 也是别的用途）：
     // 本空间有完成的上传或 model_import 任务就算本空间的，否则 422。
     let shared_texture = app
-        .put_space_asset(
+        .put_checked_asset(
             "other-space",
             b"\xff\xd8\xff shared",
             "image/jpeg",
             "texture",
+            image_check("jpeg", 128, 128),
         )
         .await;
     let shared_model = app
-        .put_space_asset(
+        .put_checked_asset(
             "other-space",
             b"glTF shared chair",
             "model/gltf-binary",
-            "model",
+            "texture",
+            glb_check(lamp_bounds.0, lamp_bounds.1, 900),
         )
         .await;
-    set_metadata(
-        shared_model.clone(),
-        doc! {"metadata.sourceHash": "f".repeat(64)},
-    )
-    .await;
     for ops in [place("chair", &shared_model), rug("mat", &shared_texture)] {
         let reply = append(&app, &path, ops).await;
         assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -1873,7 +2101,8 @@ async fn draft_assets_are_checked_by_role_and_by_space_ownership() {
         "{:?}",
         reply.body
     );
-    // 真正传过数据、经处理服务校验的上传（存储层去重后同一份内容）算本空间的。
+    // 真正传过数据、核对通过的上传（存储层去重后同一份内容）算本空间的：别的空间按贴图登记的
+    // glb，本空间按 model 用途上传过，照样能当物件模型引用。
     app.collection("uploads")
         .insert_one(doc! {
             "_id": "up_shared_texture", "spaceId": SPACE, "owner": owner.clone(),
@@ -1882,22 +2111,22 @@ async fn draft_assets_are_checked_by_role_and_by_space_ownership() {
         })
         .await
         .unwrap();
-    app.collection("jobs")
+    app.collection("uploads")
         .insert_one(doc! {
-            "_id": "job_shared_model", "spaceId": SPACE, "owner": owner.clone(),
-            "kind": "model_import", "status": "done", "params": {"assetHash": "f".repeat(64)},
-            "result": {"modelHash": &shared_model, "sourceHash": "f".repeat(64)},
-            "attempt": 1, "maxAttempts": 3, "createdAt": "2026-01-01T00:00:00.000Z",
+            "_id": "up_shared_model", "spaceId": SPACE, "owner": owner.clone(),
+            "purpose": "model", "status": "done", "assetHash": &shared_model,
+            "createdAt": "2026-01-01T00:00:00.000Z",
         })
         .await
         .unwrap();
-    // 失败的任务、别的空间的上传不算。
+    // 失败的上传、别的空间的上传不算。
     let foreign_texture = app
-        .put_space_asset(
+        .put_checked_asset(
             "other-space",
             b"\xff\xd8\xff not ours",
             "image/jpeg",
             "texture",
+            image_check("jpeg", 64, 64),
         )
         .await;
     app.collection("uploads")
@@ -1920,14 +2149,14 @@ async fn draft_assets_are_checked_by_role_and_by_space_ownership() {
         .org(Method::POST, &format!("{path}/publish"), None)
         .await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
-    for hash in [&processed, &texture, &shared_model, &shared_texture] {
+    for hash in [&model, &texture, &shared_model, &shared_texture] {
         let reply = app
             .public(&format!("/api/public/assets/{hash}.bin"), None)
             .await;
         assert_eq!(reply.status, StatusCode::OK, "{hash}");
     }
     assert_eq!(
-        app.public(&format!("/api/public/assets/{raw}.bin"), None)
+        app.public(&format!("/api/public/assets/{unchecked}.bin"), None)
             .await
             .status,
         StatusCode::NOT_FOUND

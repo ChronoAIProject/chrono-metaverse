@@ -26,11 +26,11 @@ pub mod permissions;
 pub use authorizer::{
     Authorizer, AuthorizerKey, CreateGrant, Grant, GrantAccess, PublicBasis, Purpose,
 };
-pub use authorizer::{BlobGrant, PreviewTarget};
 pub use authorizer::{
-    CreateUniverseGrant, MembershipBasis, MembershipChange, MembershipGrant, MembershipPeriods,
-    SeedSpace, SystemGrant, UniverseGrant,
+    BackgroundGrant, CreateUniverseGrant, MembershipBasis, MembershipChange, MembershipGrant,
+    MembershipPeriods, SeedSpace, SystemGrant, UniverseGrant,
 };
+pub use authorizer::{BlobGrant, PreviewTarget};
 pub use organizations::ForwardedCredential;
 
 use crate::error::ApiError;

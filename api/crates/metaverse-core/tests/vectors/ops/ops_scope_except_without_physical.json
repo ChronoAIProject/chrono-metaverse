@@ -1,0 +1,342 @@
+{
+  "base": {
+    "anchorHistory": [],
+    "anchors": [
+      {
+        "anchorId": "t1",
+        "box": [
+          0,
+          0,
+          0,
+          10,
+          15,
+          10
+        ],
+        "kind": "table",
+        "visibility": "public"
+      }
+    ],
+    "entities": [],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ],
+    "scopeKind": "ext"
+  },
+  "description": "空间没有定义实体区：实体区路径可以改虚拟区和地块以外的任何地方（\"除去\"模式），锚点能挪",
+  "expect": {
+    "anchors": [
+      {
+        "hash": "1b9c81b416e2a183917870fd1ab048d8bd4d04129ef918be087e607db471efb6",
+        "id": "t1"
+      }
+    ],
+    "baseChunks": [],
+    "brokenTemplateRefs": [],
+    "chunkChanges": [
+      {
+        "cx": -2,
+        "cy": 0,
+        "cz": -2,
+        "hash": "5b91cf4dac104661ce51a90a67024efd92fad3fd2093a959e41bb0ef3362a4db",
+        "layer": "ext"
+      },
+      {
+        "cx": -2,
+        "cy": 0,
+        "cz": -1,
+        "hash": "aec51100bc47ee625e67eae8a68c7087e0ef7980019ddc96dc8c37f7d39370ba",
+        "layer": "ext"
+      },
+      {
+        "cx": -1,
+        "cy": 0,
+        "cz": -2,
+        "hash": "37ada96e746b9907b7b3a8715ac608553ac19ee705a250599b2dc1a754bf2937",
+        "layer": "ext"
+      },
+      {
+        "cx": -1,
+        "cy": 0,
+        "cz": -1,
+        "hash": "b93e4166d59b4fa0991c7ea905ff277042d45a33e6c81cc318d4bf358a4d08d5",
+        "layer": "ext"
+      },
+      {
+        "cx": 2,
+        "cy": 0,
+        "cz": 0,
+        "hash": "9e288c5793e75a86cb9dfa1c2c8d0f5ea3abd453c09cae1d76236a03c119bbd8",
+        "layer": "ext"
+      },
+      {
+        "cx": 3,
+        "cy": 0,
+        "cz": 0,
+        "hash": "3e627b5b95e016299daaee6aaeabc360bf74dd9121cfe2cd0720ab90f10053e8",
+        "layer": "ext"
+      }
+    ],
+    "chunks": [
+      {
+        "cx": -2,
+        "cy": 0,
+        "cz": -2,
+        "hash": "5b91cf4dac104661ce51a90a67024efd92fad3fd2093a959e41bb0ef3362a4db",
+        "layer": "ext",
+        "nonZeroCount": 64
+      },
+      {
+        "cx": -2,
+        "cy": 0,
+        "cz": -1,
+        "hash": "aec51100bc47ee625e67eae8a68c7087e0ef7980019ddc96dc8c37f7d39370ba",
+        "layer": "ext",
+        "nonZeroCount": 16
+      },
+      {
+        "cx": -1,
+        "cy": 0,
+        "cz": -2,
+        "hash": "37ada96e746b9907b7b3a8715ac608553ac19ee705a250599b2dc1a754bf2937",
+        "layer": "ext",
+        "nonZeroCount": 16
+      },
+      {
+        "cx": -1,
+        "cy": 0,
+        "cz": -1,
+        "hash": "b93e4166d59b4fa0991c7ea905ff277042d45a33e6c81cc318d4bf358a4d08d5",
+        "layer": "ext",
+        "nonZeroCount": 4
+      },
+      {
+        "cx": 2,
+        "cy": 0,
+        "cz": 0,
+        "hash": "9e288c5793e75a86cb9dfa1c2c8d0f5ea3abd453c09cae1d76236a03c119bbd8",
+        "layer": "ext",
+        "nonZeroCount": 60
+      },
+      {
+        "cx": 3,
+        "cy": 0,
+        "cz": 0,
+        "hash": "3e627b5b95e016299daaee6aaeabc360bf74dd9121cfe2cd0720ab90f10053e8",
+        "layer": "ext",
+        "nonZeroCount": 40
+      }
+    ],
+    "entities": [],
+    "footprints": [
+      {
+        "cells": [
+          [
+            -40,
+            0,
+            -40,
+            -30,
+            1,
+            -30
+          ]
+        ],
+        "spaceWide": false
+      },
+      {
+        "cells": [
+          [
+            0,
+            0,
+            0,
+            10,
+            15,
+            10
+          ],
+          [
+            10,
+            0,
+            10,
+            20,
+            15,
+            20
+          ]
+        ],
+        "spaceWide": false
+      },
+      {
+        "cells": [
+          [
+            90,
+            0,
+            0,
+            100,
+            1,
+            10
+          ]
+        ],
+        "spaceWide": false
+      }
+    ],
+    "ok": true,
+    "probes": [],
+    "provisionalBlocks": [],
+    "scan": null,
+    "touched": {
+      "anchors": [
+        "t1"
+      ],
+      "chunks": [
+        {
+          "cx": -2,
+          "cy": 0,
+          "cz": -2,
+          "layer": "ext"
+        },
+        {
+          "cx": -2,
+          "cy": 0,
+          "cz": -1,
+          "layer": "ext"
+        },
+        {
+          "cx": -1,
+          "cy": 0,
+          "cz": -2,
+          "layer": "ext"
+        },
+        {
+          "cx": -1,
+          "cy": 0,
+          "cz": -1,
+          "layer": "ext"
+        },
+        {
+          "cx": 2,
+          "cy": 0,
+          "cz": 0,
+          "layer": "ext"
+        },
+        {
+          "cx": 3,
+          "cy": 0,
+          "cz": 0,
+          "layer": "ext"
+        }
+      ],
+      "entities": [],
+      "palette": false,
+      "rebuiltLayer": false,
+      "scan": false,
+      "skippedAnchors": []
+    }
+  },
+  "kind": "ops",
+  "name": "scope-except-without-physical",
+  "ops": [
+    {
+      "block": 2,
+      "box": [
+        -40,
+        0,
+        -40,
+        -30,
+        1,
+        -30
+      ],
+      "op": "fill"
+    },
+    {
+      "anchorId": "t1",
+      "box": [
+        10,
+        0,
+        10,
+        20,
+        15,
+        20
+      ],
+      "op": "moveAnchor"
+    },
+    {
+      "block": 3,
+      "box": [
+        90,
+        0,
+        0,
+        100,
+        1,
+        10
+      ],
+      "op": "fill"
+    }
+  ],
+  "probeCells": [],
+  "scope": "physical",
+  "spaceId": "vec-space"
+}

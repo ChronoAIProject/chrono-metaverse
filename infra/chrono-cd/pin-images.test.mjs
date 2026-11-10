@@ -17,19 +17,15 @@ const spec = JSON.parse(readFileSync(join(here, 'app.json'), 'utf8'));
 
 const API = `sha256:${'1'.repeat(64)}`;
 const WEB = `sha256:${'2'.repeat(64)}`;
-const WORKER = `sha256:${'3'.repeat(64)}`;
 const COMMIT = '0123456789abcdef0123456789abcdef01234567';
-const ALL = [`api=${API}`, `web=${WEB}`, `worker=${WORKER}`];
+const ALL = [`api=${API}`, `web=${WEB}`];
 
-test('整份规格：三个服务换成"仓库:7 位提交哈希@摘要"，其余内容原样保留并通过检查', () => {
+test('整份规格：两个服务换成"仓库:7 位提交哈希@摘要"，其余内容原样保留并通过检查', () => {
   const output = run([COMMIT, ...ALL]);
   const pinned = JSON.parse(output);
   assert.equal(pinned.services['metaverse-api'].image, `ghcr.io/chronoaiproject/chrono-metaverse-api:0123456@${API}`);
   assert.equal(pinned.services['metaverse-web'].image, `ghcr.io/chronoaiproject/chrono-metaverse-web:0123456@${WEB}`);
-  assert.equal(
-    pinned.services['metaverse-worker'].image,
-    `ghcr.io/chronoaiproject/chrono-metaverse-worker:0123456@${WORKER}`,
-  );
+  assert.deepEqual(Object.keys(pinned.services).sort(), ['metaverse-api', 'metaverse-web']);
   // 除镜像以外和 app.json 完全一样。
   for (const service of Object.values(pinned.services)) delete service.image;
   const original = structuredClone(spec);
@@ -42,9 +38,9 @@ test('整份规格：三个服务换成"仓库:7 位提交哈希@摘要"，其�
 
 test('补丁：只含镜像，可以只换一部分服务', () => {
   assert.equal(
-    run(['--patch', 'abc1234', `worker=${WORKER}`]),
+    run(['--patch', 'abc1234', `web=${WEB}`]),
     `${JSON.stringify({
-      services: { 'metaverse-worker': { image: `ghcr.io/chronoaiproject/chrono-metaverse-worker:abc1234@${WORKER}` } },
+      services: { 'metaverse-web': { image: `ghcr.io/chronoaiproject/chrono-metaverse-web:abc1234@${WEB}` } },
     })}\n`,
   );
   const patch = imagePatch('abc1234', { 'metaverse-api': API, 'metaverse-web': WEB });
@@ -63,11 +59,13 @@ test('参数不合法时拒绝', () => {
   rejects(['abc123', ...ALL], /第一个参数要是提交哈希/);
   rejects(['abc1234'], /至少要给一个服务的摘要/);
   rejects(['abc1234', `db=${API}`], /不认识的服务 "db"/);
-  rejects(['abc1234', `api=${API}`, `api=${API}`, `web=${WEB}`, `worker=${WORKER}`], /api 写了两次/);
-  rejects(['abc1234', 'api=main', `web=${WEB}`, `worker=${WORKER}`], /api 的摘要要是 sha256:/);
-  rejects(['abc1234', `api=sha256:${'A'.repeat(64)}`, `web=${WEB}`, `worker=${WORKER}`], /api 的摘要要是/);
-  rejects(['abc1234', 'api', `web=${WEB}`, `worker=${WORKER}`], /api 的摘要要是/);
-  rejects(['abc1234', `api=${API}`], /要给全三个服务的摘要，缺 web、worker/);
+  // 处理服务已下线，不再认它的摘要。
+  rejects(['abc1234', ...ALL, `worker=sha256:${'3'.repeat(64)}`], /不认识的服务 "worker"（只能是 web、api）/);
+  rejects(['abc1234', `api=${API}`, `api=${API}`, `web=${WEB}`], /api 写了两次/);
+  rejects(['abc1234', 'api=main', `web=${WEB}`], /api 的摘要要是 sha256:/);
+  rejects(['abc1234', `api=sha256:${'A'.repeat(64)}`, `web=${WEB}`], /api 的摘要要是/);
+  rejects(['abc1234', 'api', `web=${WEB}`], /api 的摘要要是/);
+  rejects(['abc1234', `api=${API}`], /要给全两个服务的摘要，缺 web/);
   rejects(['--force', 'abc1234', ...ALL], /不认识的选项 --force/);
   rejects(['abc1234', ...ALL, '--app'], /--app 后面要跟/);
 
@@ -78,10 +76,17 @@ test('参数不合法时拒绝', () => {
 
 test('生成的整份规格没通过检查时不输出', () => {
   const broken = structuredClone(spec);
-  delete broken.services['metaverse-worker'].env.OPENBLAS_NUM_THREADS;
+  delete broken.services['metaverse-api'].env.PUBLIC_CACHE_BYTES;
   assert.throws(
     () => run(['--app', 'broken.json', 'abc1234', ...ALL], { readSpec: () => JSON.stringify(broken) }),
-    (error) => error instanceof UsageError && /没有通过检查[\s\S]*OPENBLAS_NUM_THREADS/.test(error.message),
+    (error) => error instanceof UsageError && /没有通过检查[\s\S]*PUBLIC_CACHE_BYTES/.test(error.message),
+  );
+  // 旧规格里还留着处理服务：生成的整份规格不通过检查。
+  const stale = structuredClone(spec);
+  stale.services['metaverse-worker'] = { image: `ghcr.io/chronoaiproject/chrono-metaverse-worker:c882bca@sha256:${'3'.repeat(64)}` };
+  assert.throws(
+    () => run(['--app', 'stale.json', 'abc1234', ...ALL], { readSpec: () => JSON.stringify(stale) }),
+    (error) => error instanceof UsageError && /metaverse-worker 已下线/.test(error.message),
   );
 });
 

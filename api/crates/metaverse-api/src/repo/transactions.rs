@@ -22,6 +22,12 @@ pub(super) enum TxnOp {
         filter: Document,
         update: Document,
     },
+    /// 同上，更新写成聚合管道（例如用量减到 0 为止）。
+    UpdatePipeline {
+        collection: &'static str,
+        filter: Document,
+        pipeline: Vec<Document>,
+    },
 }
 
 /// 事务结果。
@@ -60,6 +66,16 @@ impl Repo {
                     } => self
                         .collection(collection)
                         .update_one(filter.clone(), update.clone())
+                        .session(&mut session)
+                        .await
+                        .map(|result| result.matched_count == 1),
+                    TxnOp::UpdatePipeline {
+                        collection,
+                        filter,
+                        pipeline,
+                    } => self
+                        .collection(collection)
+                        .update_one(filter.clone(), pipeline.clone())
                         .session(&mut session)
                         .await
                         .map(|result| result.matched_count == 1),

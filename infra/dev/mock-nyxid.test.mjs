@@ -4,11 +4,13 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createPublicKey, verify } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { startMockNyxid, AUDIENCE, SERVICE_ID, loadRoles } from './mock-nyxid.mjs';
+import { startMockNyxid, AUDIENCE, SERVICE_ID, DEFAULT_ROLES_PATH, loadIdentities, loadRoles } from './mock-nyxid.mjs';
 
 let mock;
 let dir;
@@ -16,7 +18,13 @@ let dir;
 before(async () => {
   dir = await mkdtemp(join(tmpdir(), 'mock-nyxid-'));
   const roles = join(dir, 'roles.json');
-  await writeFile(roles, JSON.stringify({ orgs: { chronoai: { alice: 'admin', bob: 'member' } } }));
+  await writeFile(
+    roles,
+    JSON.stringify({
+      orgs: { chronoai: { alice: 'admin', bob: 'member', rita: 'admin' } },
+      permissions: { rita: ['metaverse:rebuild:write'] },
+    }),
+  );
   mock = await startMockNyxid({ port: 0, rolesPath: roles });
 });
 
@@ -105,6 +113,28 @@ test('每次签发都是新的 jti；权限字符串原样带上', async () => {
   assert.deepEqual(decode(second.body.identityToken.split('.')[1]).permissions, ['metaverse:space:create']);
 });
 
+test('不带 permissions 时按角色文件给权限（重建身份 rita），请求里写了就以请求为准', async () => {
+  const claims = async (body) => decode((await token(body)).body.identityToken.split('.')[1]);
+  assert.deepEqual((await claims({ sub: 'rita' })).permissions, ['metaverse:rebuild:write']);
+  assert.deepEqual((await claims({ sub: 'alice' })).permissions, []);
+  assert.deepEqual((await claims({ sub: 'rita', permissions: [] })).permissions, []);
+  assert.deepEqual((await claims({ sub: 'bob', permissions: ['metaverse:rebuild:write'] })).permissions, [
+    'metaverse:rebuild:write',
+  ]);
+});
+
+test('仓库里的角色文件：rita 是带重建权限的组织 admin，alice 是没有重建权限的组织 admin', async () => {
+  const { orgs, permissions } = await loadIdentities(DEFAULT_ROLES_PATH);
+  assert.equal(orgs.chronoai.rita, 'admin');
+  assert.equal(orgs.chronoai.alice, 'admin');
+  assert.deepEqual(permissions.rita, ['metaverse:rebuild:write']);
+  assert.equal(permissions.alice, undefined);
+  assert.equal(permissions.bob, undefined);
+  // README 写的是同一组身份。
+  const readme = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'README.md'), 'utf8');
+  assert.match(readme, /rita/);
+});
+
 test('访问令牌：同一把密钥、token_type = access、同一个 sub', async () => {
   const { body } = await token({ sub: 'bob' });
   const [header, claims] = body.accessToken.split('.').slice(0, 2).map(decode);
@@ -161,4 +191,8 @@ test('角色文件格式错误时拒绝加载', async () => {
   await assert.rejects(loadRoles(bad), /admin、member 或 viewer/);
   await writeFile(bad, JSON.stringify({ chronoai: {} }));
   await assert.rejects(loadRoles(bad), /缺少 orgs/);
+  await writeFile(bad, JSON.stringify({ orgs: {}, permissions: ['metaverse:rebuild:write'] }));
+  await assert.rejects(loadIdentities(bad), /permissions 必须是对象/);
+  await writeFile(bad, JSON.stringify({ orgs: {}, permissions: { rita: 'metaverse:rebuild:write' } }));
+  await assert.rejects(loadIdentities(bad), /permissions\.rita 必须是权限字符串数组/);
 });

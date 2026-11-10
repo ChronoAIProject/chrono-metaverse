@@ -1,28 +1,27 @@
 #!/usr/bin/env node
 // 把应用规格里的镜像换成按摘要固定的引用（README 第 4 步、第 3 节"日常更新"、第 4 节"回滚"）：
 //
-//   node infra/chrono-cd/pin-images.mjs <提交哈希> api=sha256:<64 位> web=sha256:<64 位> worker=sha256:<64 位>
+//   node infra/chrono-cd/pin-images.mjs <提交哈希> api=sha256:<64 位> web=sha256:<64 位>
 //       → 输出整份规格（PUT 的请求体），其余内容取自 infra/chrono-cd/app.json
-//   node infra/chrono-cd/pin-images.mjs --patch <提交哈希> api=sha256:<64 位> [web=…] [worker=…]
+//   node infra/chrono-cd/pin-images.mjs --patch <提交哈希> api=sha256:<64 位> [web=…]
 //       → 只输出镜像的 JSON 合并补丁（PATCH 的请求体），可以只换一部分服务
 //   --app <路径> 换一份基础规格（默认 infra/chrono-cd/app.json）
 //
 // 摘要取自这次提交在部署分支上的 Images 运行（.github/workflows/images.yml 的运行摘要里
 // `api=sha256:…` 这样的行），不要按标签去仓库查：ghcr 的标签可以被任何分支里改过的工作流改写。
 // 生成的引用是 `ghcr.io/chronoaiproject/chrono-metaverse-<服务>:<7 位提交哈希>@sha256:<摘要>`：
-// chrono-cd 标签和摘要都有时只按摘要拉取，标签只是给人看的记号。
+// chrono-cd 标签和摘要都有时只按摘要拉取，标签只是给人看的记号。处理服务已下线，只有 api、web 两个镜像。
 
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { API_SERVICE, IMAGE_REPOSITORIES, WORKER_SERVICE, checkApp } from './check-app.mjs';
+import { API_SERVICE, IMAGE_REPOSITORIES, WEB_SERVICE, checkApp } from './check-app.mjs';
 
 /** 命令行里的短名和服务名的对应。 */
 export const SHORT_NAMES = {
-  web: 'metaverse-web',
+  web: WEB_SERVICE,
   api: API_SERVICE,
-  worker: WORKER_SERVICE,
 };
 
 const COMMIT = /^[0-9a-f]{7,40}$/;
@@ -74,7 +73,7 @@ export function parseArgs(argv) {
       .filter(([, service]) => !(service in digests))
       .map(([short]) => short);
     if (missing.length > 0) {
-      throw new UsageError(`生成整份规格要给全三个服务的摘要，缺 ${missing.join('、')}（只换一部分用 --patch）`);
+      throw new UsageError(`生成整份规格要给全两个服务的摘要，缺 ${missing.join('、')}（只换一部分用 --patch）`);
     }
   }
   return { patch, appPath, commit, digests };

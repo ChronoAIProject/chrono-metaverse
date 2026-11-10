@@ -1,0 +1,40 @@
+{
+  "apply": null,
+  "description": "tool.source 只能是 git: 加 40 位小写十六进制",
+  "expect": {
+    "field": "tool.source",
+    "message": "只能是 git: 加 40 位小写十六进制",
+    "valid": false
+  },
+  "kind": "bundle",
+  "limits": null,
+  "manifest": {
+    "anchors": [
+      {
+        "anchorId": "counter-01",
+        "box": [
+          100,
+          0,
+          100,
+          140,
+          25,
+          180
+        ],
+        "kind": "counter",
+        "visibility": "public"
+      }
+    ],
+    "createdAt": "2026-11-20T16:00:00+08:00",
+    "files": [],
+    "format": "chrono-metaverse-rebuild-bundle",
+    "note": "只加锚点",
+    "tool": {
+      "name": "metaverse-recon",
+      "source": "git:main",
+      "version": "0.2.0"
+    },
+    "version": 1
+  },
+  "name": "invalid-tool-source",
+  "spaceTemplates": null
+}

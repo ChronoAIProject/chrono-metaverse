@@ -1,0 +1,229 @@
+{
+  "base": {
+    "anchorHistory": [
+      "gone",
+      "t1"
+    ],
+    "anchors": [
+      {
+        "anchorId": "t1",
+        "box": [
+          0,
+          0,
+          0,
+          10,
+          15,
+          10
+        ],
+        "kind": "table",
+        "visibility": "public"
+      }
+    ],
+    "entities": [],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ],
+    "scopeKind": "ext"
+  },
+  "description": "createAnchor 带 ifNew：现在就有（t1，exists）、时间线上出现过（gone，existed）都跳过，影响范围为空、不算碰过；从没出现过的 t2 新建",
+  "expect": {
+    "anchors": [
+      {
+        "hash": "4046668bd4ad50a1ef5728096927cee8a85dfd83f81e2a68500f5e31d015966f",
+        "id": "t1"
+      },
+      {
+        "hash": "4e269673e54af780fba25a8e10236b0c56a6d369f4822d57c211af9865c80f42",
+        "id": "t2"
+      }
+    ],
+    "baseChunks": [],
+    "brokenTemplateRefs": [],
+    "chunkChanges": [],
+    "chunks": [],
+    "entities": [],
+    "footprints": [
+      {
+        "cells": [],
+        "spaceWide": false
+      },
+      {
+        "cells": [],
+        "spaceWide": false
+      },
+      {
+        "cells": [
+          [
+            10,
+            0,
+            10,
+            20,
+            15,
+            20
+          ]
+        ],
+        "spaceWide": false
+      }
+    ],
+    "ok": true,
+    "probes": [],
+    "provisionalBlocks": [],
+    "scan": null,
+    "touched": {
+      "anchors": [
+        "t2"
+      ],
+      "chunks": [],
+      "entities": [],
+      "palette": false,
+      "rebuiltLayer": false,
+      "scan": false,
+      "skippedAnchors": [
+        {
+          "id": "gone",
+          "reason": "existed"
+        },
+        {
+          "id": "t1",
+          "reason": "exists"
+        }
+      ]
+    }
+  },
+  "kind": "ops",
+  "name": "anchor-if-new-history",
+  "ops": [
+    {
+      "anchor": {
+        "anchorId": "t1",
+        "box": [
+          40,
+          0,
+          40,
+          50,
+          15,
+          50
+        ],
+        "kind": "table",
+        "visibility": "public"
+      },
+      "ifNew": true,
+      "op": "createAnchor"
+    },
+    {
+      "anchor": {
+        "anchorId": "gone",
+        "kind": "door",
+        "position": [
+          1,
+          0,
+          1
+        ],
+        "visibility": "public"
+      },
+      "ifNew": true,
+      "op": "createAnchor"
+    },
+    {
+      "anchor": {
+        "anchorId": "t2",
+        "box": [
+          10,
+          0,
+          10,
+          20,
+          15,
+          20
+        ],
+        "kind": "table",
+        "visibility": "internal"
+      },
+      "ifNew": true,
+      "op": "createAnchor"
+    }
+  ],
+  "probeCells": [],
+  "scope": "physical",
+  "spaceId": "vec-space"
+}

@@ -25,6 +25,15 @@ import {
   floristRegions,
 } from './florist';
 import { SHARE_TOKEN, SPACE_ID, SPACE_NAME, anchors, entitiesAt, plots, regions } from './lobby';
+import {
+  MATERIALS_ID,
+  MATERIALS_NAME,
+  MATERIALS_SHARE_TOKEN,
+  materialsAnchors,
+  materialsCommits,
+  materialsEntities,
+  materialsRegions,
+} from './materials';
 import { SCAN_TRANSFORM, fixtureScanGlb } from './scanModel';
 import {
   commits,
@@ -37,6 +46,7 @@ import {
 
 export { SHARE_TOKEN, SPACE_ID, SPACE_NAME } from './lobby';
 export { FLORIST_ID, FLORIST_NAME, FLORIST_SHARE_TOKEN } from './florist';
+export { MATERIALS_ID, MATERIALS_NAME, MATERIALS_SHARE_TOKEN } from './materials';
 
 /** 组合宇宙"街角"：前厅和花店，中间隔一条街。 */
 export const UNIVERSE_ID = 'demo-street';
@@ -239,6 +249,27 @@ export function fixtureStore(now: number = Date.now()): FixtureStore {
     );
   }
 
+  // 材质样板：平铺、着色方式、法线和粗糙度贴图，物件模型的 material.shading 和兜底摆放。
+  const samples: FixtureSpace = {
+    id: MATERIALS_ID,
+    name: MATERIALS_NAME,
+    shareToken: MATERIALS_SHARE_TOKEN,
+    description: '本地夹具：按米平铺的贴图、法线和粗糙度贴图、两种着色方式。',
+    regions: materialsRegions,
+    plots: [],
+    anchors: materialsAnchors,
+    eventTypes: [],
+    commits: materialsCommits.map((c) => ({ ...c })),
+    events: [],
+    snapshots: new Map(),
+  };
+  for (const commit of samples.commits) {
+    samples.snapshots.set(
+      commit.seq,
+      snapshotFor(samples, commit.seq, commit.at, materialsEntities(), [], null),
+    );
+  }
+
   // 草稿预览：在前厅最新版本上，虚拟展区里加一张大理石长椅（新上传的贴图）和一座喷泉（草稿区块）。
   const base = lobby.snapshots.get(4)!;
   const fountain = storeChunks(
@@ -299,6 +330,7 @@ export function fixtureStore(now: number = Date.now()): FixtureStore {
   const spaces = new Map([
     [lobby.id, lobby],
     [florist.id, florist],
+    [samples.id, samples],
   ]);
   store = {
     now,
