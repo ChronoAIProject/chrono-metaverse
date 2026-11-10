@@ -21,12 +21,12 @@
 //   同样的线程变量，本地测的内存和线上一致（up.sh 已不再起处理服务，见 docs/design/server-slim.md 13.3，
 //   这条只在它起处理服务时检查）。
 // - 部署配置种子：`demo-seed.json` 和接口服务的 `METAVERSE_DEMO_SEED` 内容一致（后者是前者压缩成的
-//   一行）；种子按接口服务的规则静态校验（拒绝未知字段、https 地址、sha256 和大小、主人是部署这个
-//   应用的组织、提示不超过 4KB）；凭链接查看时 `secret_keys` 里要有 `METAVERSE_DEMO_SHARE_TOKEN`，
-//   README 要写明用 `set_app_secrets` 设置它（README 第 5 步"密钥"、"演示数据"一节）。
-//   种子可选带 AI 物件集 `authored: {url, sha256, size}`：地址必须是 raw.githubusercontent.com 上按
-//   40 位提交哈希固定的 `infra/chrono-cd/demo/*.json`（分支名会变，内容就和 sha256 对不上），大小 ≤ 4MB，
-//   这时 `rebuild` 不能是 false（README 第 8 步"AI 物件集"）。
+//   一行）；种子按接口服务的规则静态校验（docs/design/server-slim.md 7.1：拒绝未知字段，旧格式的
+//   `files`、`rebuild`、`hints`、`authored` 等报错——接口服务遇到旧格式会跳过种子；主人是部署这个应用
+//   的组织；带 `bundle` 时清单和来源表按地址、sha256、大小固定，地址是 https、主机在
+//   `METAVERSE_DEMO_SEED_HOSTS` 里，raw.githubusercontent.com 的地址按 40 位提交哈希固定）；凭链接查看
+//   时 `secret_keys` 里要有 `METAVERSE_DEMO_SHARE_TOKEN`，README 要写明用 `set_app_secrets` 设置它
+//   （README 第 5 步"密钥"、"演示数据"一节）。
 // - 处理服务的 `WORKER_MODEL_HOSTS`（AI 物件集外部模型允许下载的主机）必须显式写出，每项是主机名、
 //   以点开头的后缀或 `主机:端口`，不带协议和路径（规则同 worker/src/metaverse_worker/fetch.py）。
 
@@ -115,43 +115,21 @@ export const CHAIN_HEADERS = ['x-forwarded-for', 'forwarded', 'x-forwarded', 'x-
 /** 部署配置种子（api/crates/metaverse-api/src/demo_seed/config.rs）。 */
 export const SEED_VAR = 'METAVERSE_DEMO_SEED';
 export const SEED_TOKEN_VAR = 'METAVERSE_DEMO_SHARE_TOKEN';
-const SEED_KEYS = [
-  'spaceId',
-  'name',
-  'description',
-  'owner',
-  'visibility',
-  'observedAt',
-  'files',
-  'rebuild',
-  'voxelize',
-  'hints',
-  'revision',
-  'authored',
-];
-const SEED_FILE_KEYS = ['url', 'name', 'sha256', 'size'];
-const SEED_AUTHORED_KEYS = ['url', 'sha256', 'size'];
-/** AI 物件集的大小上限（接口服务 `metaverse_core::authored::MAX_AUTHORED_BYTES`）。 */
-export const MAX_AUTHORED_BYTES = 4 * 1024 * 1024;
-/**
- * 种子里物件集的地址：raw.githubusercontent.com 上按 40 位提交哈希固定的 infra/chrono-cd/demo/*.json。
- * 用分支名的地址内容会变，sha256 就对不上了（接口服务按失败处理，演示空间建不起来）。
- */
-export const AUTHORED_URL =
-  /^https:\/\/raw\.githubusercontent\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/[0-9a-f]{40}\/infra\/chrono-cd\/demo\/[A-Za-z0-9_.-]+\.json$/;
+const SEED_KEYS = ['spaceId', 'name', 'description', 'owner', 'visibility', 'revision', 'bundle'];
+/** 旧格式（处理服务下线前）的字段：接口服务记错误日志、跳过种子。 */
+export const LEGACY_SEED_KEYS = ['files', 'rebuild', 'voxelize', 'hints', 'authored', 'observedAt'];
+const SEED_BUNDLE_KEYS = ['manifest', 'sources'];
+const SEED_PINNED_KEYS = ['url', 'sha256', 'size'];
+/** 部署种子允许下载的主机（接口服务 `demo_seed::hosts`）。 */
+export const SEED_HOSTS_VAR = 'METAVERSE_DEMO_SEED_HOSTS';
+/** 清单的大小上限（接口服务 `UPLOAD_MAX_BUNDLE_BYTES` 的默认值，也是它的最大值）。 */
+export const MAX_MANIFEST_BYTES = 16 * 1024 * 1024;
+/** 来源表的大小上限（接口服务 `demo_seed::sources::MAX_SOURCES_BYTES`）。 */
+export const MAX_SOURCES_BYTES = 1024 * 1024;
+/** raw.githubusercontent.com 的地址：`/<组织>/<仓库>/<40 位提交哈希>/…`（分支名会变，内容就和 sha256 对不上）。 */
+const RAW_GITHUB_PATH = /^\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/[0-9a-f]{40}\//;
 /** 处理服务 `WORKER_MODEL_HOSTS` 的一项（规则同 worker/src/metaverse_worker/fetch.py 的 parse_hosts）。 */
 const MODEL_HOST = /^(?:\.?[a-z0-9-]+(?:\.[a-z0-9-]+)+|[a-z0-9-]+(?:\.[a-z0-9-]+)*:[0-9]{1,5})$/;
-const MESH_EXTENSIONS = ['glb', 'drc', 'obj'];
-const SIDE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'mtl'];
-/** 提示规范化后的上限（接口服务 `MAX_HINTS_BYTES`）。 */
-export const MAX_HINTS_BYTES = 4096;
-/** 扫描上传的默认上限（接口服务 `UPLOAD_MAX_SCAN_BYTES` 的默认值）。 */
-const DEFAULT_MAX_SCAN_BYTES = 1 << 30;
-/**
- * 种子文件总大小的固定上限（接口服务 `MAX_SEED_TOTAL_BYTES`，256MiB）：文件和打包的 zip 都在内存里，
- * 实际上限取它和扫描上传上限中较小的一个。
- */
-export const MAX_SEED_TOTAL_BYTES = 256 * 1024 * 1024;
 
 const U32_MAX = 4_294_967_295;
 const HEADER_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
@@ -348,19 +326,64 @@ function isLoopbackHost(hostname) {
 }
 
 /**
- * 按接口服务的规则静态校验种子（不下载文件）。`targetOrg` 是部署这个应用的组织，`maxScanBytes` 是
- * 接口服务的扫描上传上限。返回问题列表。
+ * 解析主机列表（规则同接口服务 `demo_seed::hosts` 和本地工具的主机列表）：逗号分隔；`主机名` 精确
+ * 匹配且只许 443 端口；`.后缀` 匹配子域名；`主机:端口` 只匹配那个端口。返回 `{entries, bad}`。
  */
-export function seedProblems(seed, { targetOrg, maxScanBytes = DEFAULT_MAX_SCAN_BYTES } = {}) {
+export function parseSeedHosts(text) {
+  const entries = [];
+  const bad = [];
+  for (const item of String(text ?? '').split(',')) {
+    const raw = item.trim().toLowerCase();
+    if (raw === '') continue;
+    const suffix = raw.startsWith('.');
+    const name = suffix ? raw.slice(1) : raw;
+    const [host, port, ...extra] = name.split(':');
+    const portOk = port === undefined || (/^[0-9]{1,5}$/.test(port) && Number(port) > 0 && Number(port) < 65536);
+    const hostOk = /^[a-z0-9-]+(?:\.[a-z0-9-]+)*$/.test(host ?? '');
+    if (extra.length > 0 || !portOk || !hostOk || (suffix && (port !== undefined || !host.includes('.')))) {
+      bad.push(item.trim());
+      continue;
+    }
+    entries.push(suffix ? { suffix: `.${host}` } : { host, port: port === undefined ? null : Number(port) });
+  }
+  return { entries, bad };
+}
+
+/** 地址能不能下载：https（或本机 http），不带用户名、密码和片段，主机和端口在列表里。 */
+export function seedUrlAllowed(url, entries) {
+  const https = url.protocol === 'https:';
+  if (!(https || (url.protocol === 'http:' && isLoopbackHost(url.hostname)))) return false;
+  if (url.username !== '' || url.password !== '' || url.hash !== '') return false;
+  const host = url.hostname.toLowerCase().replace(/\.$/, '');
+  const port = url.port === '' ? (https ? 443 : 80) : Number(url.port);
+  return entries.some((entry) =>
+    entry.suffix !== undefined
+      ? https && port === 443 && host.length > entry.suffix.length && host.endsWith(entry.suffix)
+      : entry.host === host && (entry.port === null ? https && port === 443 : port === entry.port),
+  );
+}
+
+/**
+ * 按接口服务的规则静态校验种子（不下载文件）。`targetOrg` 是部署这个应用的组织，`hosts` 是
+ * `METAVERSE_DEMO_SEED_HOSTS` 的值（没设时为 undefined），`maxManifestBytes` 是清单的上限。返回问题列表。
+ */
+export function seedProblems(seed, { targetOrg, hosts, maxManifestBytes = MAX_MANIFEST_BYTES } = {}) {
   const problems = [];
-  const limit = Math.min(maxScanBytes, MAX_SEED_TOTAL_BYTES);
   const bad = (text) => problems.push(`demo-seed.json：${text}`);
   if (seed === null || typeof seed !== 'object' || Array.isArray(seed)) {
     bad('必须是 JSON 对象');
     return problems;
   }
+  const legacy = Object.keys(seed).filter((key) => LEGACY_SEED_KEYS.includes(key));
+  if (legacy.length > 0) {
+    bad(
+      `是旧格式（${legacy.join('、')}）：旧格式的种子要处理服务，已不支持，改成 bundle（docs/design/server-slim.md 7.1）；接口服务会跳过种子`,
+    );
+  }
   for (const key of Object.keys(seed)) {
-    if (!SEED_KEYS.includes(key)) bad(`不认识的字段 ${key}（接口服务会拒绝，启动失败）`);
+    if (!SEED_KEYS.includes(key) && !LEGACY_SEED_KEYS.includes(key)) {
+      bad(`不认识的字段 ${key}（接口服务会拒绝，启动失败）`);
+    }
   }
   if (typeof seed.spaceId !== 'string' || !/^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(seed.spaceId)) {
     bad('spaceId 必须是 3–64 个字符的小写字母、数字和 -，首尾不能是 -');
@@ -383,96 +406,58 @@ export function seedProblems(seed, { targetOrg, maxScanBytes = DEFAULT_MAX_SCAN_
   }
   const visibility = seed.visibility ?? 'unlisted';
   if (!['unlisted', 'public'].includes(visibility)) bad('visibility 只能是 unlisted 或 public');
-  if (seed.observedAt !== undefined && (typeof seed.observedAt !== 'string' || Number.isNaN(Date.parse(seed.observedAt)))) {
-    bad('observedAt 必须是 RFC 3339 时间');
-  }
-  for (const key of ['rebuild', 'voxelize']) {
-    if (seed[key] !== undefined && typeof seed[key] !== 'boolean') bad(`${key} 必须是 true 或 false`);
-  }
   if (seed.revision !== undefined && !(Number.isInteger(seed.revision) && seed.revision >= 1 && seed.revision <= U32_MAX)) {
     bad('revision 必须是从 1 开始的整数');
   }
-  if (seed.hints !== undefined && seed.hints !== null) {
-    if (typeof seed.hints !== 'object' || Array.isArray(seed.hints)) {
-      bad('hints 必须是 JSON 对象');
-    } else if (Buffer.byteLength(canonicalJson(seed.hints)) > MAX_HINTS_BYTES) {
-      bad(`hints 规范化后超过 ${MAX_HINTS_BYTES} 字节`);
-    }
+  const parsedHosts = hosts === undefined ? null : parseSeedHosts(hosts);
+  if (parsedHosts !== null && parsedHosts.bad.length > 0) {
+    bad(`${SEED_HOSTS_VAR} 里的 ${parsedHosts.bad.map((item) => JSON.stringify(item)).join('、')} 不是合法的主机（写主机名、.后缀 或 主机:端口，不带协议和路径）`);
   }
-  if (seed.authored !== undefined && seed.authored !== null) {
-    const authored = seed.authored;
-    if (typeof authored !== 'object' || Array.isArray(authored)) {
-      bad('authored 必须是 {url, sha256, size}');
-    } else {
-      for (const key of Object.keys(authored)) {
-        if (!SEED_AUTHORED_KEYS.includes(key)) bad(`authored 有不认识的字段 ${key}`);
-      }
-      if (typeof authored.url !== 'string' || !AUTHORED_URL.test(authored.url)) {
-        bad(
-          `authored.url 必须是 https://raw.githubusercontent.com/<组织>/<仓库>/<40 位提交哈希>/infra/chrono-cd/demo/<文件>.json` +
-            `（按提交哈希固定，不能用分支名；现在是 ${JSON.stringify(authored.url)}）`,
-        );
-      }
-      if (typeof authored.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(authored.sha256)) {
-        bad('authored.sha256 必须是 64 位小写十六进制');
-      }
-      if (!Number.isSafeInteger(authored.size) || authored.size <= 0 || authored.size > MAX_AUTHORED_BYTES) {
-        bad(`authored.size 必须是 1–${MAX_AUTHORED_BYTES} 的整数`);
-      }
-      if (seed.rebuild === false) bad('带 authored（AI 物件集）时 rebuild 不能是 false');
+  if (seed.bundle !== undefined && seed.bundle !== null) {
+    const bundle = seed.bundle;
+    if (typeof bundle !== 'object' || Array.isArray(bundle)) {
+      bad('bundle 必须是 {manifest, sources}');
+      return problems;
     }
-  }
-  const files = Array.isArray(seed.files) ? seed.files : [];
-  if (files.length === 0 || files.length > 32) bad('files 要有 1–32 个文件');
-  let total = 0;
-  const names = new Set();
-  const extensions = [];
-  for (const [index, file] of files.entries()) {
-    const label = `files[${index}]`;
-    if (file === null || typeof file !== 'object') {
-      bad(`${label} 必须是对象`);
-      continue;
+    for (const key of Object.keys(bundle)) {
+      if (!SEED_BUNDLE_KEYS.includes(key)) bad(`bundle 有不认识的字段 ${key}`);
     }
-    for (const key of Object.keys(file)) {
-      if (!SEED_FILE_KEYS.includes(key)) bad(`${label} 有不认识的字段 ${key}`);
+    if (parsedHosts === null || parsedHosts.entries.length === 0) {
+      bad(`带 bundle 时 metaverse-api 必须设 ${SEED_HOSTS_VAR}（允许下载的主机，逗号分隔）`);
     }
-    let url = null;
-    try {
-      url = new URL(file.url);
-    } catch {
-      bad(`${label}.url 不是合法地址`);
-    }
-    if (url !== null) {
-      const httpsOk = url.protocol === 'https:' || (url.protocol === 'http:' && isLoopbackHost(url.hostname));
-      if (!httpsOk || url.username !== '' || url.password !== '' || url.hash !== '') {
-        bad(`${label}.url 必须是 https，不带用户名、密码和片段（${file.url}）`);
+    for (const [what, max] of [
+      ['manifest', maxManifestBytes],
+      ['sources', MAX_SOURCES_BYTES],
+    ]) {
+      const pinned = bundle[what];
+      const label = `bundle.${what}`;
+      if (pinned === null || typeof pinned !== 'object' || Array.isArray(pinned)) {
+        bad(`${label} 必须是 {url, sha256, size}`);
+        continue;
+      }
+      for (const key of Object.keys(pinned)) {
+        if (!SEED_PINNED_KEYS.includes(key)) bad(`${label} 有不认识的字段 ${key}`);
+      }
+      let url = null;
+      try {
+        url = new URL(pinned.url);
+      } catch {
+        bad(`${label}.url 不是合法地址`);
+      }
+      if (url !== null) {
+        if (!seedUrlAllowed(url, parsedHosts?.entries ?? [])) {
+          bad(`${label}.url 必须是 https、不带用户名密码和片段，主机在 ${SEED_HOSTS_VAR} 里（现在是 ${url.host}）`);
+        } else if (url.hostname === 'raw.githubusercontent.com' && !RAW_GITHUB_PATH.test(url.pathname)) {
+          bad(`${label}.url 要按 40 位提交哈希固定（raw.githubusercontent.com/<组织>/<仓库>/<提交哈希>/…，不能用分支名）`);
+        }
+      }
+      if (typeof pinned.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(pinned.sha256)) {
+        bad(`${label}.sha256 必须是 64 位小写十六进制`);
+      }
+      if (!Number.isSafeInteger(pinned.size) || pinned.size <= 0 || pinned.size > max) {
+        bad(`${label}.size 必须是 1–${max} 的整数`);
       }
     }
-    const name = typeof file.name === 'string' ? file.name : '';
-    const extension = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$/.test(name) ? name.split('.').pop().toLowerCase() : '';
-    if (![...MESH_EXTENSIONS, ...SIDE_EXTENSIONS, 'zip'].includes(extension) || !name.includes('.')) {
-      bad(`${label}.name 不合法（${JSON.stringify(file.name)}）：扩展名只能是 glb、drc、obj、jpg、jpeg、png、webp、mtl、zip`);
-    }
-    if (names.has(name.toLowerCase())) bad(`${label}.name 重复：${name}`);
-    names.add(name.toLowerCase());
-    extensions.push(extension);
-    if (typeof file.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(file.sha256)) {
-      bad(`${label}.sha256 必须是 64 位小写十六进制`);
-    }
-    if (!Number.isSafeInteger(file.size) || file.size <= 0 || file.size > limit) {
-      bad(`${label}.size 必须是 1–${limit} 的整数`);
-    } else {
-      total += file.size;
-    }
-  }
-  if (total > limit) {
-    bad(`文件总大小 ${total} 超过上限 ${limit}（种子在内存里处理，取 256MiB 和 UPLOAD_MAX_SCAN_BYTES 中较小的）`);
-  }
-  const meshes = extensions.filter((extension) => MESH_EXTENSIONS.includes(extension)).length;
-  const archives = extensions.filter((extension) => extension === 'zip').length;
-  const usable = files.length === 1 ? meshes + archives === 1 : meshes === 1 && archives === 0;
-  if (files.length > 0 && !usable) {
-    bad('files 要么是单独一个 glb / drc / obj / zip，要么是一个网格加贴图和材质（会打包成 zip）');
   }
   return problems;
 }
@@ -511,8 +496,8 @@ function checkSeed(spec, seedText, problems) {
         : `${API_SERVICE}：${SEED_VAR} 与 infra/chrono-cd/demo-seed.json 不一致（用 node infra/dev/demo-seed.mjs compact infra/chrono-cd/demo-seed.json 重新生成）`,
     );
   }
-  const maxScanBytes = parsePositiveInt(env.UPLOAD_MAX_SCAN_BYTES) ?? DEFAULT_MAX_SCAN_BYTES;
-  problems.push(...seedProblems(seed, { targetOrg: spec.target_org_id, maxScanBytes }));
+  const maxManifestBytes = Math.min(parsePositiveInt(env.UPLOAD_MAX_BUNDLE_BYTES) ?? MAX_MANIFEST_BYTES, MAX_MANIFEST_BYTES);
+  problems.push(...seedProblems(seed, { targetOrg: spec.target_org_id, hosts: env[SEED_HOSTS_VAR], maxManifestBytes }));
   const secrets = service.secret_keys ?? [];
   if ((seed.visibility ?? 'unlisted') === 'unlisted' && !secrets.includes(SEED_TOKEN_VAR)) {
     problems.push(

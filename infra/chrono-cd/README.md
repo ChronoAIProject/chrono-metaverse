@@ -62,11 +62,11 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 | `PUBLIC_RATE_LIMIT_PER_MINUTE` / `PUBLIC_RATE_LIMIT_BURST` | `60000000` / `1000000` | 公开 JSON 接口的限流额度。**目前按网关地址计、所有访客共用几个桶**，额度只要是进程处理得了的速率，一台机器就能把桶耗尽、让所有访客都 429，所以设成每秒 100 万次，**等于关掉限流**（见下面"公开接口限流"；接口服务按单个访客设计的默认值是 1200 / 200） |
 | `PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE` / `PUBLIC_BLOB_RATE_LIMIT_BURST` | `60000000` / `1000000` | 区块和资源（`/api/public/chunks/`、`/assets/`）的限流额度，同上（默认 12000 / 2000） |
 | `TRUSTED_CLIENT_IP_HEADER` | **不设（待向平台确认）** | 可信的客户端地址请求头。确认之前不设，接口服务按 TCP 连接地址限流，连接地址是网关或 nginx 的地址（见下面"公开接口限流"） |
-| `METAVERSE_DEMO_SEED` | [`demo-seed.json`](demo-seed.json) 压缩成的一行 | 部署配置种子：接口服务启动、建好索引后在后台建演示空间 `chronoai-lobby` 并导入前厅扫描（第 8 步）。改种子时两处一起改，`check-app.mjs` 检查一致 |
+| `METAVERSE_DEMO_SEED` | [`demo-seed.json`](demo-seed.json) 压缩成的一行 | 部署配置种子：接口服务启动、建好索引后在后台建演示空间 `chronoai-lobby`，带重建包时导入它（第 8 步）。改种子时两处一起改，`check-app.mjs` 检查一致 |
 | `METAVERSE_DEMO_SHARE_TOKEN` | **密钥**（`secret_keys`，不在 `env` 里） | 演示空间的分享令牌原文，接口服务只存它的 sha256、不写日志；用 `set_app_secrets` 设置（第 5 步）。种子是凭链接查看（`unlisted`）时必须有，缺了接口服务启动失败 |
 | `RUST_LOG` | `info` | |
 
-种子要从 `scaniverse.com` 下载扫描（约 6MB）、带 AI 物件集时还要从 `raw.githubusercontent.com` 下载物件集，所以接口服务需要能访问公网（chrono-cd 默认 `egress` 允许）；下载的文件在内存里核对、打包，内存峰值约为文件总大小的两倍；种子文件总量上限是 256MiB（比扫描上传的 1GiB 严，免得超内存被杀后每次启动都再超一次），`memory_limit` 1Gi 足够。
+种子带重建包时要从 `raw.githubusercontent.com`、GitHub 发布页和 `scaniverse.com` 下载清单、来源表和包里空间还没有的文件（主机列表 `METAVERSE_DEMO_SEED_HOSTS`），所以接口服务需要能访问公网（chrono-cd 默认 `egress` 允许）；文件边下载边写进上传会话的数据块，扫描 zip 一次只有一个成员在内存里（单个成员 ≤ 128MiB）。
 
 #### 公开接口限流（待向平台确认可信的客户端地址头）
 
@@ -287,59 +287,46 @@ nyxid proxy request chrono-metaverse api/v1/spaces/front-hall --output json
 
 ### 第 8 步：演示数据（部署配置种子，自动完成）
 
-写接口 `/api/v1` 只认 NyxID 身份令牌，第 7 步做完之前没法经接口建空间、上传扫描。所以演示空间由部署配置驱动（设计 9.2"部署配置种子是运维行为"）：[`demo-seed.json`](demo-seed.json) 压缩成一行放在接口服务的 `METAVERSE_DEMO_SEED`，接口服务每次启动、建好索引后在后台执行一次，**不经过任何网络接口**：
+写接口 `/api/v1` 只认 NyxID 身份令牌，第 7 步做完之前没法经接口建空间、发布重建包。所以演示空间由部署配置驱动（设计 9.2"部署配置种子是运维行为"，`docs/design/server-slim.md` 第 7 节）：[`demo-seed.json`](demo-seed.json) 压缩成一行放在接口服务的 `METAVERSE_DEMO_SEED`，接口服务每次启动、建好索引后在后台执行一次，**不经过任何网络接口，也不跑任何重建**——重建在本地完成，种子只导入一个按哈希固定的**重建包**：
 
-1. 空间 `chronoai-lobby` 已存在：是种子以前建的、这个导入版本（`revision`）的任务也建过 → 什么都不做；不是种子建的（例如有人经管理接口建了同名空间）→ 也不碰；
-2. 从 Scaniverse 下载 `mesh.drc`、`tex.jpg`，核对大小和 sha256，打包成 zip（网格 + 贴图，和 Scaniverse 导出的一样）；不对就不建空间；
-3. 建空间：主人是 ChronoAI 组织，归属证据的依据是 `operator_seed`（核验人 `system:demo-seed`），凭链接查看，分享令牌是第 5 步设置的密钥（只存哈希）；第一次提交照常写 `_space` 锚点和通用方块表；
-4. 扫描登记成资源，插入 `scan_import` 任务（发起者 `system:demo-seed`）；处理服务领取后自动对齐、生成网页用模型、重建结构和物体（4 核机器实测约 1 分钟）。
+```json
+{"spaceId": "chronoai-lobby", "name": "ChronoAI 前厅", "description": "…",
+ "owner": {"kind": "org", "id": "<组织的规范编号>"}, "visibility": "unlisted", "revision": 4,
+ "bundle": {"manifest": {"url": "https://raw.githubusercontent.com/<组织>/<仓库>/<40 位提交哈希>/infra/chrono-cd/demo/lobby-r4/manifest.json",
+                         "sha256": "<清单的 sha256>", "size": 312345},
+            "sources":  {"url": "https://raw.githubusercontent.com/<组织>/<仓库>/<40 位提交哈希>/infra/chrono-cd/demo/lobby-r4/sources.json",
+                         "sha256": "<来源表的 sha256>", "size": 4567}}}
+```
 
-失败（下载不了、数据库暂时不可用）按 10 秒、30 秒、90 秒、270 秒重试，最后记错误日志，接口服务照常提供服务。多副本同时启动也只建一次（空间编号和任务编号都是唯一键）。
+清单是本地重建工具打的包（与托管位置无关，只有相对路径、用途、sha256、大小）；来源表说明清单里的文件从哪里下载（整文件的地址，或扫描 zip 的各个成员——按数组顺序打包，与线上已有的扫描字节相同）。带 `bundle` 时接口服务要设 `METAVERSE_DEMO_SEED_HOSTS`（允许下载的主机，逗号分隔，写法同本地工具：主机名只许 443 端口、`.后缀` 匹配子域名、`主机:端口` 只匹配那个端口；每一跳重定向都查），线上写 `raw.githubusercontent.com,github.com,release-assets.githubusercontent.com,objects.githubusercontent.com,scaniverse.com`。不带 `bundle` 时种子只保证空间存在。
 
-**确认**（第 6 步的日志命令）：接口服务日志里有 `部署配置种子完成 … outcome=Created`（之后重启是 `AlreadyDone`），处理服务日志里有 `任务 job_… 结束：done`。然后打开演示链接：
+1. 空间 `chronoai-lobby` 已存在、不是种子为这个组织建的（例如有人经管理接口建了同名空间）→ 不碰；
+2. 这个导入版本（`revision`）的任务已经建过（线上第 1–3 版的 `scan_import` 任务用的是同一个编号公式）→ 什么都不做；上次因为下载失败（403、404、429、5xx、网络）重试用完而失败的 → 重新排队，修好来源以后重启接口服务就能接着导入，不用改版本号；
+3. 下载清单和来源表，核对大小、sha256 和结构；不对就不建空间、不插任务（日志里有原因，下次启动再试）；
+4. 建空间：主人是 ChronoAI 组织，归属证据的依据是 `operator_seed`（核验人 `system:demo-seed`），凭链接查看，分享令牌是第 5 步设置的密钥（只存哈希）；第一次提交照常写 `_space` 锚点和通用方块表；
+5. 插入 `bundle_import` 任务；接口服务的后台执行器领取后：空间里没有的文件按来源表下载进上传会话、核对、登记（计入存储用量），把包展开进一个重建草稿，发布成一次提交（发布者 `system:demo-seed`、类别 `rebuild`；中途有冲突自动在最新版本上重放；内容没变就不写提交）。
+
+**旧格式的种子**（`files`、`rebuild`、`hints`、`authored` 这些处理服务时代的字段）已不支持：接口服务记错误日志、跳过种子、照常启动；`check-app.mjs` 和 `infra/dev/demo-seed.mjs` 都会报错。
+
+**确认**（第 6 步的日志命令）：接口服务日志里有 `部署配置种子完成 … outcome=Created`（之后重启是 `AlreadyDone`）和 `部署配置种子：已发布`。然后打开演示链接：
 
 ```
 https://<应用域名>/s/chronoai-lobby#share=<第 5 步的令牌>
 ```
 
-不带令牌或令牌不对，公开接口一律 404。也可以只查头部（`seq` ≥ 2 说明扫描已导入）：
+不带令牌或令牌不对，公开接口一律 404。也可以只查头部：
 
 ```bash
 curl -s -H "Authorization: Share <令牌>" https://<应用域名>/api/public/spaces/chronoai-lobby/head
 ```
 
-**物体提示的坐标**：种子里的 `hints`（物体中心、尺寸、类别）必须是处理服务 `scan_import` 实际对齐出来的空间坐标。`worker/scripts/lobby_hints.json` 是在 `reconstruct_lobby.py` 的坐标系里标的（对齐方法不同，前厅差约 29 厘米平移和 0.09° 倾斜），所以由 [`worker/scripts/demo_seed_hints.py`](../../worker/scripts/demo_seed_hints.py) 用处理服务的对齐换算后写进 `demo-seed.json`。本地实测（任务结果的 `objects.furnitureMeanCm`）：换算后 3.14 厘米、41 个物体（`reconstruct_lobby.py` 自己的坐标系里是 3.08 厘米、41 个）；不换算是 4.51 厘米、59 个物体，沙发、桌子、前台被重复识别，LED 大屏又被当成墙。
+**换一版演示数据**（设计 7.4）：本地打包（种子用的包是公开的：`metaverse-recon bundle --seed` 去掉内部锚点和建模记录）→ 大文件按 `<sha256>.<扩展名>` 传到发布页 → 写来源表 → 清单和来源表提交进 `infra/chrono-cd/demo/` → 种子配置引用这次提交的 raw 地址和两个哈希，`revision` 加一 → `node infra/dev/demo-seed.mjs compact infra/chrono-cd/demo-seed.json` 的输出就是 `METAVERSE_DEMO_SEED` 的值，跑 `node infra/chrono-cd/check-app.mjs` → 只改这一项（滚动更新会重启接口服务，种子在同一个空间里追加一次提交，空间和演示链接不变）：
 
-**AI 物件集**（可选，设计 6.3）：本地的 AI 逐件完成前厅的物件——先去模型库（Poly Haven、Objaverse 里许可可商用的）找一个看起来差不多的现成模型，找不到或差太多（前台、LED 大屏墙、入口门框、嵌入柜）再手写参数形状——整套写成一个 JSON 文件（格式见 [`worker/README.md`](../../worker/README.md)“AI 物件集”），种子导入时重建层就换成这些物件，不跑物体重建算法。
-
-前厅的物件集已经做好：[`demo/lobby-authored.json`](demo/lobby-authored.json)（1 个模板、52 个物件，其中 Objaverse 的 CC-BY 外部模型 10 个，连结构一起换 `structure: "replace"`；整房扫描到模型的平均偏差 7.11 → 4.31 厘米）。它是什么、怎么做出来的、逐件清单、完整的 CC-BY 署名、怎么复现、本地全流程验证的结果见 [`demo/README.md`](demo/README.md)。物件集里结构的贴图哈希是本地基线算的，线上算出的哈希不同时处理服务按同编号、同部件路径换成本次算出的贴图（任务结果的 `authored.textureFallback` 列出替换），不用手改。上线做法：
-
-1. 物件集放在仓库的 `infra/chrono-cd/demo/` 下（前厅就是 `infra/chrono-cd/demo/lobby-authored.json`），合并到默认分支，记下这次提交的 **40 位提交哈希**；
-2. `demo-seed.json` 加一项（地址必须按提交哈希固定，不能写分支名：分支上的文件会变，内容就和 sha256 对不上，接口服务按失败处理）：
-
-   ```json
-   "authored": {"url": "https://raw.githubusercontent.com/<组织>/<仓库>/<40 位提交哈希>/infra/chrono-cd/demo/lobby-authored.json",
-                "sha256": "<sha256sum 的结果>", "size": <字节数>}
-   ```
-
-   `sha256`、`size` 用 `sha256sum infra/chrono-cd/demo/lobby-authored.json`、`wc -c` 算；大小 ≤ 4MB；带物件集时 `rebuild` 不能是 false；
-3. 和改提示一样把 `revision` 加一，再按下面"重新导入"的第 2、3 步同步 `app.json`、只改 `METAVERSE_DEMO_SEED`。
-
-接口服务下载物件集、核对大小和 sha256、做浅层校验（结构、数量、地址必须 https、烘焙指令的位置），原样登记成资源，`scan_import` 任务带 `authoredAsset`；不合法就什么都不建、不重试（日志里有原因）。处理服务按物件集里的地址从模型库下载外部模型（`WORKER_MODEL_HOSTS`），核对哈希、重新导出成受限 glb，烘焙贴图、逐件算偏差，任务结果的 `authored.fit` 是逐件偏差；形状、署名许可（只收 CC0、CC-BY）等深层校验不通过时任务失败（第 6 步的日志命令看 `lastError`）。`check-app.mjs` 检查 `authored` 的字段、地址形式和大小。
-
-**重新导入**（换扫描、改提示、处理服务的重建改进了想重跑）：
-
-1. 改 `demo-seed.json`（扫描、提示、物件集都可以），把 `revision` 加一。提示坐标是**这个空间**的坐标系：坐标系在第一次导入时固定，之后导入的扫描（哪怕换了一份）都配准到这个坐标系里，所以在同一个空间里重新导入时提示**不要**重算；只有"从头重建"（删掉空间）并且换了扫描时，才用新扫描跑一遍 `demo_seed_hints.py`（它算的是首次导入的对齐）。换了扫描时，配准误差超过 3 厘米处理服务不会自动提交（任务结果是 `needsAlignment`），要等第 7 步做完后经接口 `align_scan` 给出变换；
-2. 同步 `app.json`：`node infra/dev/demo-seed.mjs compact infra/chrono-cd/demo-seed.json` 的输出就是 `METAVERSE_DEMO_SEED` 的值，再跑 `node infra/chrono-cd/check-app.mjs`；
-3. 只改这一项（滚动更新会重启接口服务，种子在同一个空间里再建一个导入任务，空间和演示链接不变）：
-
-   ```bash
-   SEED=$(node infra/dev/demo-seed.mjs compact infra/chrono-cd/demo-seed.json)
-   nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json \
-     --data "$(jq -n --arg seed "$SEED" '{services:{"metaverse-api":{env:{METAVERSE_DEMO_SEED:$seed}}}}')"
-   ```
-
-   没改配置、只想重新执行一次种子（例如上次下载失败、重试次数用完）：`restart_app` 重启接口服务即可，已经建过的不会重复。
+```bash
+SEED=$(node infra/dev/demo-seed.mjs compact infra/chrono-cd/demo-seed.json)
+# chrono-cd 的 PATCH：只改接口服务的 METAVERSE_DEMO_SEED（种子格式和镜像要在同一次部署里一起换）
+--data "$(jq -n --arg seed "$SEED" '{services:{"metaverse-api":{env:{METAVERSE_DEMO_SEED:$seed}}}}')"
+```
 
 **从头重建**（连空间一起）：第 7 步做完以后，组织 admin 用管理接口删空间（`DELETE /api/v1/admin/spaces/chronoai-lobby?confirm=chronoai-lobby`），再重启接口服务，种子按当前配置和密钥重建（分享令牌是当时的密钥）。
 

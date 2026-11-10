@@ -9,8 +9,9 @@
 # 停止：infra/dev/down.sh
 # 日志和进程号：infra/dev/.run/
 #
-# --demo-seed：接口服务启动后按部署配置种子建演示空间、导入扫描（默认用线上的 infra/chrono-cd/demo-seed.json，
-#   会从种子里的地址下载扫描）。也可以用环境变量 METAVERSE_DEV_DEMO_SEED=<种子.json>；
+# --demo-seed：接口服务启动后按部署配置种子建演示空间（默认用线上的 infra/chrono-cd/demo-seed.json；种子带
+#   重建包时由后台执行器从来源表的地址下载、导入，允许的主机取 METAVERSE_DEMO_SEED_HOSTS，默认是线上那一组）。
+#   也可以用环境变量 METAVERSE_DEV_DEMO_SEED=<种子.json>；
 #   METAVERSE_DEV_DEMO_SEED_OWNER=chronoai 把主人换成本地模拟 NyxID 的组织（alice 就能管理它）；
 #   分享令牌取 METAVERSE_DEMO_SHARE_TOKEN，没设时生成一个存在 infra/dev/.run/demo-share-token（之后复用）。
 #
@@ -220,6 +221,7 @@ MONGODB_URI="$mongo_uri" \
   CLEANUP_INTERVAL_SECONDS="${CLEANUP_INTERVAL_SECONDS:-600}" \
   METAVERSE_DEMO_SEED="$seed_json" \
   METAVERSE_DEMO_SHARE_TOKEN="$seed_token" \
+  METAVERSE_DEMO_SEED_HOSTS="${METAVERSE_DEMO_SEED_HOSTS:-raw.githubusercontent.com,github.com,release-assets.githubusercontent.com,objects.githubusercontent.com,scaniverse.com}" \
   RUST_LOG="${RUST_LOG:-info}" \
   start api "$target/debug/metaverse-api"
 wait_http api "$api/api/healthz" 120
