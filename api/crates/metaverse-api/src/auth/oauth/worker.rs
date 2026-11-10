@@ -203,9 +203,28 @@ fn refusal(status: StatusCode, body: &Value) -> ApiError {
             "请先用相同 NyxID 账号登录 CMA 完成运行环境授权，再明确重试创建",
         );
     }
+    if status == StatusCode::FORBIDDEN {
+        match code {
+            Some("command_authority_required") => {
+                return ApiError::new(
+                    status,
+                    "cma_command_authority_required",
+                    "CMA 未接受此网页的后续聊天授权。请保留原请求，授权兼容问题修复后再重试",
+                );
+            }
+            Some("response_forbidden") => {
+                return ApiError::new(
+                    status,
+                    "cma_response_forbidden",
+                    "当前账号没有操作这个 CMA worker 的权限，请在 CMA 核对共享与操作权限",
+                );
+            }
+            _ => {}
+        }
+    }
     let detail = match status.as_u16() {
         401 => "CMA 未接受当前登录，请重新连接 NyxID",
-        403 => "当前账号没有此 CMA 操作的权限",
+        403 => "CMA 拒绝了这次操作的授权，请保留原请求并核对 CMA 权限",
         404 => "CMA 资源不存在，或当前账号无权访问",
         409 => "CMA 请求发生冲突，请核对当前状态后恢复原请求",
         429 => "CMA 请求过于频繁，请稍后重试原请求",
@@ -398,7 +417,15 @@ async fn message(
         .await?;
     if !r.status().is_success() {
         let s = r.status();
-        return Err(refusal(s, &read_json(r).await?));
+        let error = refusal(s, &read_json(r).await?);
+        tracing::warn!(
+            agent_id = id,
+            request_id = input.idempotency_key,
+            status = s.as_u16(),
+            code = error.code,
+            "CMA follow-up message refused"
+        );
+        return Err(error);
     }
     let get_id = |name| {
         r.headers()
@@ -581,6 +608,40 @@ async fn cancel(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn command_custody_refusal_is_distinct_from_worker_access() {
+        for body in [
+            json!({"error":{"code":"command_authority_required","message":"provider diagnostic"}}),
+            json!({"code":"command_authority_required","detail":"provider diagnostic"}),
+        ] {
+            let error = refusal(StatusCode::FORBIDDEN, &body);
+            assert_eq!(error.code, "cma_command_authority_required");
+            assert_eq!(error.status, StatusCode::FORBIDDEN);
+            assert!(error.detail.contains("后续聊天授权"));
+            assert!(!error.detail.contains("provider diagnostic"));
+        }
+        let error = refusal(
+            StatusCode::FORBIDDEN,
+            &json!({"error":{"code":"response_forbidden"}}),
+        );
+        assert_eq!(error.code, "cma_response_forbidden");
+        assert!(error.detail.contains("worker 的权限"));
+    }
+    #[test]
+    fn unknown_refusals_do_not_expose_provider_diagnostics_or_infer_missing_roles() {
+        let error = refusal(
+            StatusCode::FORBIDDEN,
+            &json!({"error":{"code":"unknown-private-diagnostic","message":"provider diagnostic"}}),
+        );
+        assert_eq!(error.code, "cma_request_refused");
+        assert!(!error.detail.contains("provider diagnostic"));
+        assert!(!error.detail.contains("当前账号没有"));
+        let error = refusal(
+            StatusCode::BAD_GATEWAY,
+            &json!({"error":{"code":"command_authority_required"}}),
+        );
+        assert_eq!(error.code, "cma_request_refused");
+    }
     #[test]
     fn identifiers_cannot_switch_destinations_or_paths() {
         for id in [

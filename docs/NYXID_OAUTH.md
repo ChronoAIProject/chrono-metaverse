@@ -124,7 +124,7 @@ nyxid proxy request chrono-cd "$APP/services/metaverse-api/secrets?org_id=$ORG" 
 
 部署设置 `CMA_BASE_URL`（固定 HTTPS 根地址，生产为 `https://cma.nyxid.ai`）。现有用户 OAuth 客户端继续只请求 `openid offline_access`，不增加 proxy、broker 或 delegation scopes。浏览器会话默认 `workerEnabled:false`，必须通过工作台复选框同意。只允许固定 CMA 操作集合；每次操作要求同源 Origin、CSRF、实时 userinfo、同主体授权和当前浏览器同意版本。在发送前、收到响应头和返回正文前复核；关闭后再次启用也不能恢复旧的在途调用权限。已受理的远端工作无法回滚，关闭网页授权不等于停止 worker。
 
-CMA 接口要求普通用户 OAuth access token。带服务 resource/allowed_service_ids 的 OAuth 令牌当前不能提交独立 CMA 命令，因此不使用“proxy scope + 服务资源”的方案调用它。此适配器直接调用 CMA，CMA 校验用户与资源权限。CMA 本身托管 worker 的服务 Agent Key；网页后端不发行或传递 worker key，OAuth 凭据不会进入任务、浏览器存储或 worker 环境。新 worker 请求 `chrono-metaverse`，并由 CMA 添加自己的必需基线；复用已有 worker 不更改其已有服务范围。
+当前适配器直接把此网页客户端的用户 OAuth access token 交给 CMA。2026-11-11 已确认这个方案对后续命令有兼容缺口：NyxID 为第三方客户端显式写入服务/节点范围元数据，CMA 的独立命令过滤器会拒绝这些字段，即使列表为空；只有身份授权的令牌也不能被升级为执行授权。需要明确允许 CMA 的服务授权及受支持的命令准入方式，详见 [CMA #1638](https://github.com/ChronoAIProject/cma/issues/1638)。首条任务成功不能证明后续命令已经获得授权；当前不能将真实连续聊天记为已验收。CMA 继续校验用户与资源权限。CMA 本身托管 worker 的服务 Agent Key；网页后端不发行或传递 worker key，OAuth 凭据不会进入任务、浏览器存储或 worker 环境。新 worker 请求 `chrono-metaverse`，并由 CMA 添加自己的必需基线；复用已有 worker 不更改其已有服务范围。
 
 | 网页私有接口（均为 POST） | 输入与行为 |
 |---|---|
