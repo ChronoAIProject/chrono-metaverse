@@ -76,9 +76,10 @@ cargo run -p metaverse-api
 | `UPLOAD_MAX_OPEN_PER_SPACE` | 否 | 每个空间进行中的上传数（`open`、`complete`），超过 429，默认 16 |
 | `UPLOAD_MAX_CONCURRENT_PARTS` | 否 | 每个进程同时处理的分片数（读请求体之前取名额，20 秒等不到返回 503），默认 8（部署时写 4，见"后台执行器"的内存实测） |
 | `JOB_MAX_PENDING_PER_SPACE` | 否 | 每个空间排队和运行中的任务数，超过 429，默认 8 |
-| `METAVERSE_DEMO_SEED` | 否 | 部署配置种子（JSON，见下文"部署配置种子"）：启动后在后台建演示空间、导入扫描。不设就什么都不做；设了但不合法时启动失败 |
+| `METAVERSE_DEMO_SEED` | 否 | 部署配置种子（JSON，见下文"部署配置种子"）：启动后在后台建演示空间、导入按哈希固定的重建包。不设就什么都不做；旧格式（`files`、`hints`、`authored`……）记错误日志、跳过；其他不合法时启动失败 |
+| `METAVERSE_DEMO_SEED_HOSTS` | 种子带 `bundle` 时必填 | 种子允许下载的主机，逗号分隔（主机名只许 443 端口、`.后缀` 匹配子域名、`主机:端口` 只匹配那个端口；每一跳重定向都查）；线上 `raw.githubusercontent.com,github.com,release-assets.githubusercontent.com,objects.githubusercontent.com,scaniverse.com` |
 | `METAVERSE_DEMO_SHARE_TOKEN` | 种子凭链接查看时必填 | 演示空间的分享令牌原文（32–256 个 base64url 字符），只用来算哈希存进空间，不写日志；线上是 chrono-cd 的应用密钥 |
-| `SSL_CERT_FILE` | 否 | 下载种子文件时额外信任的根证书（PEM，标准变量）；只在本地经过会重新签发证书的出口代理时需要，线上不设 |
+| `SSL_CERT_FILE` | 否 | 下载种子的清单、来源表和文件时额外信任的根证书（PEM，标准变量）；只在本地经过会重新签发证书的出口代理时需要，线上不设 |
 
 NyxID 地址只接受 https；明文 http 只允许本机地址（本地测试）。
 
@@ -131,7 +132,8 @@ NyxID 地址只接受 https；明文 http 只允许本机地址（本地测试�
 | `src/repo/uploads.rs`、`jobs.rs` | 上传会话、分片写成 GridFS 数据块（布局同处理服务 `assets.py` 的 `write_upload_part`）、"完成上传"事务、任务创建与查询、引用资源之前的清理栅栏（`touch_asset` / `touch_assets`） |
 | `src/repo/events.rs` | 事件类型版本、批量写事件（去重）、时间窗/增量查询、密度聚合、抹除、状态快照 |
 | `src/repo/universes.rs` | 组合的主人与令牌、修订事务、T 时刻的修订和成员、成员资格的时间段、成员空间在 T 时刻的 seq |
-| `src/demo_seed/*` | 部署配置种子：配置解析（`config`）、下载核对（`fetch`）、打包 stored zip（`pack`）、执行与重试（`mod`），见下文"部署配置种子" |
+| `src/demo_seed/*` | 部署配置种子：配置解析（`config`）、主机列表（`hosts`）、来源表（`sources`）、流式下载核对（`fetch`）、按成员打包 stored zip（`pack`）、启动流程与重试（`mod`），见下文"部署配置种子"；导入由后台执行器的 `runner/bundle_import.rs` 做 |
+| `src/routes/retired.rs` | 已下线的接口：`scans`、`scans/{id}/alignment\|rebuild\|voxelize`、`models` 一律 410 `endpoint_retired`（docs/design/server-slim.md 2.1） |
 | `src/repo/transactions.rs` | "插入 + 条件更新"的小事务（暂时性错误重试） |
 | `src/auth/authorizer/universes.rs` | 组合凭据 `UniverseGrant`、成员变更凭据 `MembershipGrant`、凭组合令牌读成员空间（`public_space_via_universe*`） |
 | `src/auth/authorizer/system.rs` | 由已有凭据派生的系统范围 `SystemGrant`（写审计日志），用于保存和删除状态快照；部署配置种子的建空间凭据 `seed_create_grant` 和种子空间凭据 `seed_space`；后台执行器、清理、迁移的跨空间凭据 `BackgroundGrant`（同样写审计日志） |
@@ -143,7 +145,7 @@ NyxID 地址只接受 https；明文 http 只允许本机地址（本地测试�
 | `tests/runner.rs`、`tests/runner_cleanup.rs`、`tests/runner_support/` | 后台执行器、上传核对、`ops_from_upload`、定期清理、后台迁移的集成测试（从处理服务移植的场景，另加僵尸执行器、名额、重试分类、核对期间健康检查） |
 | `tests/check_vectors.rs` | 资源核对的二进制样本（`metaverse-core/tests/vectors/check/`）的生成器和核对；`inspect_real_files`（忽略的测试）拿真实文件试检查器 |
 | `tests/runner_budget.rs` | 内存和 1 GiB 核对耗时的实测（忽略的测试，用 `--release` 跑，结果见下文） |
-| `tests/demo_seed.rs` | 部署配置种子的集成测试：本机 HTTP 服务提供文件；首次建空间、登记资源、建任务，再次启动不重复，哈希不符、404、重定向到不允许的地址、响应比声明的大都不建空间，重试，多副本并发，补建与新版本，别人的空间不碰，配置换了主人 / 令牌 / 可见性也不改已有空间；跨语言向量 `tests/vectors/demo_seed_zip.json`（打包的 zip 字节和登记的 `format` / `contentType`，处理服务的 `tests/test_demo_seed_zip.py` 用自己的嗅探和解包核对）；有 `worker/.venv` 时另外直接调用处理服务核对 |
+| `tests/demo_seed.rs` | 部署配置种子的集成测试（S4 验收）：本机 HTTP 服务当 GitHub 和 Scaniverse；新库全流程（建空间、下载、按成员打包扫描、核对登记、展开、发布），再次启动不重复；已有旧任务的版本什么都不做，版本加一在同一空间追加，内容没变写 `unchanged`；第一次 404、次数用完后重启重新排队、成功，403、429 先重试；租约丢失后在"追加"和"发布"之间重做只有一个提交；发布时冲突自动重放；主机不在列表、重定向到列表外、哈希不符、清单不合规、来源表缺文件各自失败且不重试；空间不是种子建的不碰；旧格式配置跳过、服务照常就绪；多副本并发只建一次；跨语言向量 `tests/vectors/demo_seed_zip.json`（打包的 zip 字节，本地工具的测试用自己的嗅探和解包核对）；有 `worker/.venv` 时另外直接调用本地工具核对 |
 
 ### 目前实现的接口
 
@@ -165,17 +167,13 @@ NyxID 地址只接受 https；明文 http 只允许本机地址（本地测试�
 | `POST .../drafts/{draft_id}/preview` | `create_draft_preview` / `create_plot_draft_preview` | `{ttlSeconds?}`，返回预览令牌（只返回一次）和链接 |
 | `POST .../drafts/{draft_id}/publish` | `publish_draft` / `publish_plot_draft` | `{message?, replay?, rev?, observedAt?, scriptRef?}`；`scriptRef` 必须是本空间的、核对记录是文本的资源，否则 422 `unknown_asset`；冲突 409 `draft_conflict` 带 `conflicts`；在"最新版本 + 本次变化"上模板引用不完整 409 `broken_template_ref`（`brokenRefs: [{entityId, templateId}]`，可以带 `replay` 在最新版本上重放）；草稿或提交引用的资源已被定期清理删掉时 409 `asset_gone`，`assets` 列出这些哈希，什么都不写（重新上传同一内容、哈希不变后再发布）；提交事务里按 `{rev, status: open}` 条件把草稿标记为已发布，发布期间草稿被追加、丢弃或已被别的请求发布时整个提交作废，409 `draft_changed`（草稿和草稿区块不受影响，重新读取后再发布） |
 | `DELETE .../drafts/{draft_id}` | `discard_draft` / `discard_plot_draft` | 丢弃草稿，预览令牌立即失效 |
-| `POST /api/v1/spaces/{space_id}/uploads/{purpose}` | `create_upload` | 创建分片上传 `{size, sha256, partSize, format}`（也接受 `totalSize`）；用途 `model\|texture\|ops\|script` 写在路径里（旧的 `scan`、`authored` 在 S4 删旧接口之前只经实体区路径收；`webmodel`、`bundle` 只经重建路径，实体区、地块路径 403 `scope_violation`）；本空间已经拥有同一用途的这份资源时直接复用（`status: done, reused: true`，先刷新资源的 `touchedAt`；刷新不到说明刚被清理删掉，改为照常上传），否则返回上传编号；两种情况都是 201（别的空间有同一份内容也要完整上传，不暴露全系统里有没有某个文件） |
-| `POST /api/v1/spaces/{space_id}/plots/{plot_id}/uploads/{purpose}` | `create_plot_upload` | 地块路径；不能传扫描（403 `scope_violation`） |
+| `POST /api/v1/spaces/{space_id}/uploads/{purpose}` | `create_upload` | 创建分片上传 `{size, sha256, partSize, format}`（也接受 `totalSize`）；用途 `model\|texture\|ops\|script` 写在路径里（扫描改经重建路径，实体区、地块路径上传 `scan` 422 `purpose_not_allowed`；`webmodel`、`bundle` 只经重建路径，实体区、地块路径 403 `scope_violation`；AI 物件集 `authored` 三组路径都是 410 `endpoint_retired`）；本空间已经拥有同一用途的这份资源时直接复用（`status: done, reused: true`，先刷新资源的 `touchedAt`；刷新不到说明刚被清理删掉，改为照常上传），否则返回上传编号；两种情况都是 201（别的空间有同一份内容也要完整上传，不暴露全系统里有没有某个文件） |
+| `POST /api/v1/spaces/{space_id}/plots/{plot_id}/uploads/{purpose}` | `create_plot_upload` | 地块路径；用途同实体区路径 |
 | `PUT .../uploads/{purpose}/{upload_id}/parts/{n}`（两组路径） | `put_upload_part` / `put_plot_upload_part` | 原始字节；片号从 0 开始；除最后一片外每片正好 `partSize`；重传幂等；片号越界、长度不对 422，超过声明的大小 413；第 0 片核对文件头（422 `format_mismatch`，图片超边长 413） |
 | `POST .../uploads/{purpose}/{upload_id}/complete`（两组路径） | `complete_upload` / `complete_plot_upload` | 全部分片到齐后 202 + `upload_verify` 任务；还缺片 409 `upload_incomplete`；还有分片请求正在写数据块时 409 `parts_in_progress`（带 `Retry-After`）；重复调用返回同一任务。写分片先按 `status: open` 条件给会话记"正在写入"（`writing` 计数 + 120 秒租期 `writeLeaseUntil`）再动数据块，完成上传要求没有正在写入的分片，所以完成之后数据块再也改不动（后台核对登记资源时直接用这些块） |
 | `GET .../uploads/{purpose}/{upload_id}`（两组路径） | `get_upload` / `get_plot_upload` | 上传状态（已收到/缺的片、任务、资源哈希、后台核对写回的格式和失败原因；核对通过后带资源的核对记录 `check`） |
-| `POST /api/v1/spaces/{space_id}/scans` | `import_scan` | `{assetHash, observedAt?, rebuild?(true), voxelize?(false), hints?, authored? \| authoredAsset?}` → `scan_import` 任务（202）；资源必须是本空间校验通过的 scan 上传；AI 物件集见下文，带物件集时 `rebuild` 不能是 false |
-| `POST .../scans/{scan_id}/alignment` | `align_scan` | `{transform, observedAt?, rebuild?, voxelize?, hints?}` → 带 transform 的 `scan_import`；变换须为列主序仿射、不镜像，阈值与处理服务 `align.py` 的 `matrix_from_params` 相同：线性部分行列式 > 1e-6（`MIN_TRANSFORM_DET`）、平移绝对值 ≤ 1e5 米（`MAX_TRANSFORM_TRANSLATION`），不合法 422 `invalid_transform` |
-| `POST .../scans/{scan_id}/voxelize` | `voxelize_scan` | `{style?}` → `voxelize`；扫描必须已有提交引用 |
-| `POST .../scans/{scan_id}/rebuild` | `rebuild_scan` | `{hints?, authored? \| authoredAsset?}` → `rebuild`；AI 物件集见下文 |
-| `POST /api/v1/spaces/{space_id}[/plots/{plot_id}]/models` | `import_model` / `import_plot_model` | `{assetHash}` → `model_import`；地块路径要求是同一地块上传的 |
-| `GET /api/v1/spaces/{space_id}[/plots/{plot_id}]/jobs/{job_id}` | `get_job` / `get_plot_job` | 任务状态、进度（`progress`，例如 `ops_from_upload` 的 `{opsApplied, opsTotal}`）和结果；地块路径只看得到本地块发起的任务（含地块草稿的 `ops_from_upload`） |
+| `POST /api/v1/spaces/{space_id}/scans`、`.../scans/{scan_id}/alignment\|rebuild\|voxelize`、`[/plots/{plot_id}]/models` | —（不在 OpenAPI 里） | 已下线：一律 410 `endpoint_retired`，说明改用重建包（docs/design/server-slim.md 2.1）；保留一个版本后删掉路由 |
+| `GET /api/v1/spaces/{space_id}[/plots/{plot_id}]/jobs/{job_id}` | `get_job` / `get_plot_job` | 任务状态、进度（`progress`，例如 `ops_from_upload` 的 `{opsApplied, opsTotal}`）和结果；地块路径只看得到本地块发起的任务（含地块草稿的 `ops_from_upload`）；处理服务下线前的旧种类照样能查（OpenAPI 标签 `jobs`） |
 | `GET /api/v1/spaces/{space_id}[/plots/{plot_id}]/jobs?status=&limit=` | `list_jobs` / `list_plot_jobs` | 最近的任务（≤ 100） |
 | `POST /api/v1/spaces/{space_id}/rebuild/uploads/{purpose}` | `create_rebuild_upload` | 重建路径的上传（docs/design/server-slim.md 2.3），用途 `scan\|webmodel\|model\|texture\|script\|bundle`（`ops` 403）；分片、完成、查状态是 `upload_rebuild_part`、`complete_rebuild_upload`、`get_rebuild_upload`，规则同实体区路径，范围记 `rebuild` |
 | `POST /api/v1/spaces/{space_id}/rebuild/drafts` | `create_rebuild_draft` | 重建草稿（`scope: rebuild`），可选 `{baseSeq}`；`get_rebuild_draft`、`discard_rebuild_draft`、`create_rebuild_draft_preview` 同实体区；没有内联操作和 `ops-from-upload` 的接口 |
@@ -241,15 +239,13 @@ NyxID 地址只接受 https；明文 http 只允许本机地址（本地测试�
 | `palettes` | `{_id: content_hash({blocks, spaceId}), spaceId, owner, blocks: [{id, name, kind, color?, texture?, tags}]}` |
 | `stateBlobs` | `{_id: content_hash({body, kind, spaceId}), kind: manifest\|regions, spaceId, owner, body}`；`manifest` 的 body 是 `{chunks: [{layer,cx,cy,cz,hash}], entities: [{id,hash}], anchors: [{id,hash}], regionsHash?, paletteHash?, scan?}`，`regions` 的 body 是 `{regions, plots}` |
 
-**AI 物件集**（设计 6.3，`import_scan`、`rebuild_scan` 的 `authored` / `authoredAsset`，二选一）：本地的 AI 逐件完成物件（先去模型库找看起来差不多的现成模型，找不到再手写参数形状），整套交给任务写进重建层。格式 `{version: 1, templates: [模板 body], entities: [物件 body], notes?, structure?: keep | replace}`，完整规则见 `worker/README.md`"AI 物件集"。接口服务只做浅层校验（`metaverse_core::authored`）：字段结构、`version`、≤ 2000 个物件、≤ 200 个模板、规范化后 ≤ 4MB、`notes` ≤ 64KB、外部模型 `model.url`（和 gltf 的 `files[].url`）与署名 `props.source.page` 必须是 https、`sha256` / `size` / `format`（glb、gltf-zip、gltf）形式对、`bake` 只能是 planar/box/cylindrical 且只能出现在没有 `texture`、`uv` 的材质里，不合格 422 `invalid_authored`。内联的物件集通过后按规范化 JSON 登记成本空间的 authored 资源（`put_asset_bytes_with`，`kind: authored`、`format: json`；不计入空间存储用量：它只是任务输入，任务结束 7 天后被定期清理删掉，排队任务数又有上限），任务参数里只放 `authoredAsset`，任务文档不会太大；`authoredAsset` 必须是本空间 authored 用途的资源（`Repo::space_owned_asset` + `kind`，422 `asset_unknown`；上传还在校验中 409 `asset_not_ready`），并过清理的栅栏。形状、记录、模板引用、署名许可、下载和哈希核对等深层校验由处理服务做，不合格时任务失败。
-
-**事务内**（`Repo::write_commit`，写冲突自动重试）：读空间（带主人）→ 要求 `head.seq == 基于的版本` → 清理的栅栏：提交引用的每个资源（`opsRef`、`scriptRef`、`assetRefs`、`bundleRef`、扫描、草稿的 `heldAssets`）按文件名刷新 `assets.files` 的 `metadata.touchedAt`，必须全部匹配到，否则整个提交作废（`CommitError::AssetsGone`，发布返回 409 `asset_gone`）→ 插入提交（`seq = head.seq + 1`，`at = max(当前时间, head.at)`）→ 按 `head.seq == 旧值` 推进 `spaces.head = {seq, at, commitId}`、`updatedAt`（改区域时同时写 `regions`、`plots`）→ 更新 `entities` / `anchors` 当前状态 `{spaceId, id, owner, hash, body, seq}`（null 删除）→ `assetRefs` upsert `{hash, spaceId}` + `$setOnInsert {owner, createdAt, commitId}` → 提交带扫描、空间还没有坐标系时按 `{frame: 不存在}` 条件写 `frame = {fixedAt: 提交的 at, referenceScan: scan.assetHash}`。**事务后**给新引用的区块打 `publishedAt`。
+**事务内**（`Repo::write_commit`，写冲突自动重试）：读空间（带主人）→ 要求 `head.seq == 基于的版本` → 由后台任务发布时（部署种子）先按租约栅栏把任务标记完成（结果带 `commitId`、`seq`，租约丢了整个提交作废）→ 清理的栅栏：提交引用的每个资源（`opsRef`、`scriptRef`、`assetRefs`、`bundleRef`、扫描、草稿的 `heldAssets`）按文件名刷新 `assets.files` 的 `metadata.touchedAt`，必须全部匹配到，否则整个提交作废（`CommitError::AssetsGone`，发布返回 409 `asset_gone`）→ 插入提交（`seq = head.seq + 1`，`at = max(当前时间, head.at)`）→ 按 `head.seq == 旧值` 推进 `spaces.head = {seq, at, commitId}`、`updatedAt`（改区域时同时写 `regions`、`plots`）→ 更新 `entities` / `anchors` 当前状态 `{spaceId, id, owner, hash, body, seq}`（null 删除）→ `assetRefs` upsert `{hash, spaceId}` + `$setOnInsert {owner, createdAt, commitId}` → 提交带扫描、空间还没有坐标系时按 `{frame: 不存在}` 条件写 `frame = {fixedAt: 提交的 at, referenceScan: scan.assetHash}`。**事务后**给新引用的区块打 `publishedAt`。
 
 **提交文档**（`commits`）：`_id`（32 位十六进制）、`spaceId`、`owner`、`seq`、`at`、`observedAt?`、`actor {sub, nyxServiceId, scope: physical|plot:<编号>|rebuild, kind: admin|physical|plot|job|rebuild}`、`author? {sub}`（草稿创建者与发布者不同时）、`message`、`ops?`（≤ 1MB 内联）或 `opsRef?`（ops 资源哈希）、`changedChunks [{layer, cx, cy, cz, hash|null}]`、`changedEntities [{id, hash|null}]`、`changedAnchors [{id, hash|null}]`、`regionsHash?`、`paletteHash?`、`scan? {assetHash, webModelHashes, transform, alignment?}`（重建草稿和旧的处理服务写）、`keyframe?`、`jobId?`（后台任务发布时写）、`draftId?`、`scriptRef?`、`bundleRef?`（重建包清单，不公开）。
 
 **关键帧**：`seq` 是 50 的倍数，或离上一个关键帧已满 50 次提交时（处理服务写的提交不带关键帧），写一份完整状态清单（`stateBlobs.kind = manifest`），哈希写在提交的 `keyframe`。读任意版本：取 `seq ≤ 目标` 的最近关键帧（没有就从头），叠加之后各提交的变化。
 
-**第一次提交**：建空间时（失败时在第一次建草稿、改区域，或建会写提交的任务——`scan_import`、`voxelize`、`rebuild`——时补写；任务种类的补写失败就不建任务，返回 503）写 seq 1：`_space` 锚点（`kind: space`、公开）、通用方块表（`stone` 是 2，共 20 种，见 `timeline/palette.rs`）、当前的区域清单。
+**第一次提交**：建空间时（失败时在第一次建草稿、改区域，或部署种子建导入任务、建草稿时补写）写 seq 1：`_space` 锚点（`kind: space`、公开）、通用方块表（`stone` 是 2，共 20 种，见 `timeline/palette.rs`）、当前的区域清单。
 
 ### 草稿
 
@@ -310,7 +306,7 @@ jobs { _id: "job_<32 位十六进制>", spaceId, owner, kind, params, status: qu
        result?, resultCommitId?, progress? }
 ```
 
-- 任务参数：`upload_verify {uploadId}`；`ops_from_upload {draftId, assetHash, uploadId?}`，交包时 `{draftId, source: "bundle", manifestHash}`。`scan_import`、`align`、`rebuild`、`voxelize`、`web_model`、`model_import` 已下线：旧接口（设计 13.2 S4 改成 410 之前）照旧能建，但没人执行，定期清理每轮把它们标记失败（`lastError.class = content`）。
+- 任务参数：`upload_verify {uploadId}`；`ops_from_upload {draftId, assetHash, uploadId?}`，交包时 `{draftId, source: "bundle", manifestHash}`；部署种子 `bundle_import {manifest: {url, sha256, size}, sources: {url, sha256, size}, revision}`（范围 `rebuild`，最多试 5 次）。`scan_import`、`align`、`rebuild`、`voxelize`、`web_model`、`model_import` 已下线：发起接口 410，旧记录只读；回滚期间旧接口建的这类任务由定期清理每轮标记失败（`lastError.class = content`）。
 - "完成上传"在一个事务里把 `open` 改成 `complete` 并插入 `upload_verify` 任务，然后叫醒本进程的后台执行器。分片写完数据块后才按 `status: open` 条件登记，登记失败（已过期、被清理）就删掉刚写的块。
 - 创建上传时"直接复用"：本空间已经拥有这个哈希，并且它的核对记录是当前版本、满足这个用途的上限（与引用时按角色判断是同一个函数 `check::fits`）。没有核对记录的旧资源不算，照常完整上传，登记时撞名就补写核对记录。
 - 任务视图（`GET .../jobs/{job_id}`）的 `lastError` 照旧是一段文字，另有 `errorClass` 和 `notBefore`。
@@ -385,35 +381,38 @@ universeRevisions { _id: "<组合编号>:<seq>", universeId, owner, seq, at, act
 - `public::headers::{share_token, preview_token, cache_control, IMMUTABLE, NO_STORE}`：令牌解析与缓存头（`cache_control(&grant, 秒)` 按授权依据给 `public` / `private` / `no-store`）。
 - `state.public.cache`（`ByteCache`）：按 `CacheKey`（`Snapshot`、`Chunk`、`Asset`、`Other {purpose, space_id, key}`）存编码好的响应体；**先拿到授权凭据再查缓存**；`invalidate_space` 清掉某空间的全部缓存。
 
-### 部署配置种子（`src/demo_seed/`）
+### 部署配置种子（`src/demo_seed/`、`src/runner/bundle_import.rs`）
 
-写接口只认 NyxID 身份令牌，注册 NyxID 服务又要组织管理员手工操作；为了部署时就能看到演示空间，接口服务可以按部署配置建一个空间并导入扫描，**不经过任何网络接口**（设计 9.2"部署配置种子是运维行为"）。线上的配置是 `infra/chrono-cd/demo-seed.json`，部署步骤见 `infra/chrono-cd/README.md` 第 8 步；本地用 `infra/dev/up.sh --demo-seed`。
+写接口只认 NyxID 身份令牌，注册 NyxID 服务又要组织管理员手工操作；为了部署时就能看到演示空间，接口服务可以按部署配置建一个空间并导入一个**按哈希固定的重建包**，**不经过任何网络接口，也不跑任何重建**（设计 9.2"部署配置种子是运维行为"，docs/design/server-slim.md 第 7 节）。线上的配置是 `infra/chrono-cd/demo-seed.json`，部署步骤见 `infra/chrono-cd/README.md` 第 8 步；本地用 `infra/dev/up.sh --demo-seed`。
 
 `METAVERSE_DEMO_SEED`（拒绝未知字段）：
 
 ```json
 {"spaceId": "chronoai-lobby", "name": "ChronoAI 前厅", "description": "…",
- "owner": {"kind": "org", "id": "<NyxID 组织编号>"}, "visibility": "unlisted", "observedAt": "（可选）RFC 3339",
- "files": [{"url": "https://…/mesh.drc", "name": "mesh.drc", "sha256": "<64 位十六进制>", "size": 1003301},
-           {"url": "https://…/tex.jpg", "name": "tex.jpg", "sha256": "…", "size": 4897711}],
- "rebuild": true, "voxelize": false, "revision": 1, "hints": {"objects": […]},
- "authored": {"url": "https://raw.githubusercontent.com/<组织>/<仓库>/<提交哈希>/infra/chrono-cd/demo/authored.json",
-              "sha256": "…", "size": 123456}}
+ "owner": {"kind": "org", "id": "<NyxID 组织编号>"}, "visibility": "unlisted", "revision": 4,
+ "bundle": {"manifest": {"url": "https://raw.githubusercontent.com/<组织>/<仓库>/<提交哈希>/infra/chrono-cd/demo/lobby-r4/manifest.json",
+                         "sha256": "<64 位十六进制>", "size": 312345},
+            "sources":  {"url": "https://raw.githubusercontent.com/<组织>/<仓库>/<提交哈希>/infra/chrono-cd/demo/lobby-r4/sources.json",
+                         "sha256": "…", "size": 4567}}}
 ```
 
-- `spaceId`、`name`、`description` 按建空间接口的规则校验；`owner` 只能是组织；`visibility` 默认 `unlisted`，这时必须设 `METAVERSE_DEMO_SHARE_TOKEN`（`public` 不需要，设了也存哈希）；
-- `files`：1–32 个，地址只接受 https（本机地址可用 http，测试用），不带用户名、密码、片段；文件名只能用字母、数字、`.`、`_`、`-`，扩展名决定作用：单独一个 `glb`/`drc`/`obj`/`zip` 直接用，否则必须是一个网格（`glb`/`drc`/`obj`）加贴图（`jpg`/`jpeg`/`png`/`webp`）和材质（`mtl`），打包成 stored zip（与 Scaniverse 导出的布局相同，时间固定，同样的文件总得到同样的哈希）；每个文件声明 `size` 和 `sha256`，总大小不超过 256MiB 和 `UPLOAD_MAX_SCAN_BYTES` 中较小的一个（文件和打包的 zip 都在内存里，峰值约为总大小的两倍；种子每次启动都执行，超内存被杀会让接口服务反复重启，所以比扫描上传的上限严）；
-- `rebuild`（默认 true）、`voxelize`（默认 false）、`hints`（≤ 4KB 的对象，坐标必须是处理服务对齐后的空间坐标）原样进 `scan_import` 的参数；`revision`（默认 1）是导入版本。
-- `authored`（可选）：AI 物件集 `{url, sha256, size}`，地址规则和下载、核对与扫描文件相同，大小 ≤ 4MB，带它时 `rebuild` 不能是 false。下载后做浅层校验（`metaverse_core::authored::check_authored`），原样登记成 `kind: authored` 的资源，`scan_import` 参数里带 `authoredAsset`；不合法就什么都不建、不重试。物件集改了要把 `revision` 加一才会重新导入。
+- `spaceId`、`name`、`description` 按建空间接口的规则校验；`owner` 只能是组织；`visibility` 默认 `unlisted`，这时必须设 `METAVERSE_DEMO_SHARE_TOKEN`（`public` 不需要，设了也存哈希）；`revision`（默认 1）是导入版本；
+- `bundle`（可选，不给时只保证空间存在）：清单 ≤ `UPLOAD_MAX_BUNDLE_BYTES`、来源表 ≤ 1 MiB，地址必须在 `METAVERSE_DEMO_SEED_HOSTS` 里（只用 https，本机测试可用 `http://127.0.0.1:<端口>`，列表里写带端口的本机地址）；
+- **来源表**（`chrono-metaverse-bundle-sources` 版本 1）：键是清单 `files[]` 的 sha256（不在清单里的键拒绝；空间里已有的文件可以不列），值是 `{url}` 或 `{zip: [{name, url, sha256, size}, …]}`（1–32 个成员、每个 ≤ 128 MiB，只用于 `scan` 用途、`.zip` 结尾的文件，按数组顺序打包成 stored zip，打包后的长度必须等于清单写的大小）；
+- **旧格式**（出现 `files`、`rebuild`、`voxelize`、`hints`、`authored`、`observedAt`）：记错误日志、跳过种子，服务照常启动；其他不合法时启动失败。
 
-执行（`main.rs` 在索引建好后后台调用 `demo_seed::spawn`；暂时性失败按 10/30/90/270 秒重试 4 次，最后记错误日志，不影响就绪）：
+**启动时**（`main.rs` 在索引建好后后台调用 `demo_seed::spawn`；暂时性失败按 10/30/90/270 秒重试 4 次，最后记错误日志，不影响就绪）：
 
-1. 授权层 `seed_space` 查空间：不存在 → 继续；是种子为同一组织建的（`ownerEvidence.basis = operator_seed`、主人一致）→ 这个版本的任务已存在就结束（`AlreadyDone`），否则补做 3、4；别的空间 → 不碰（`Foreign`）；
-2. 下载（跟随 ≤ 5 次重定向，新地址同样要合法，经过 https 之后不能再转到 http；超过声明大小立即停止；错误信息里不带地址）、核对大小和 sha256、按扩展名核对文件头（同上传第 0 片的检查）；任何一项不对都不建空间。4xx、内容不对不重试，网络错误、5xx、429 重试；
-3. `seed_create_grant` 签发建空间凭据（审计日志）→ `create_space_with`（与 `admin_create_space` 同一条路径）：主人取配置，归属证据 `{issuer, orgId, verifiedBy: "system:demo-seed", verifiedAt, basis: "operator_seed"}`，分享令牌只存 sha256；第一次提交的发布者 `sub = system:demo-seed`、`nyxServiceId = ""`。编号已存在（别的副本刚建好）就接着做；
-4. 扫描登记成资源（`put_asset_bytes_with`：`assets.files {_id: ObjectId, length, chunkSize: 262144, uploadDate, filename: 内容哈希, metadata: {sha256, contentType, kind: "scan", spaceId, format}}`，与处理服务 `put_asset(..., extra={"format"})` 相同；已存在就复用）→ 补写第一次提交 → 插入 `scan_import` 任务，字段与 `POST /scans` 相同：`{_id, spaceId, owner, kind, params {assetHash, observedAt?, rebuild, voxelize, hints?}, status: queued, attempt: 0, maxAttempts: 3, createdAt, actor {sub: "system:demo-seed", nyxServiceId: ""}, scope: physical}`。任务编号 = `job_` + sha256("demo-seed\0空间\0空间创建时间\0版本") 的前 32 位：同一个空间的同一个版本只有一个任务（唯一键），空间删掉重建后编号也变。
+1. 授权层 `seed_space` 查空间：别的空间（不是种子为同一组织建的）→ 不碰（`Foreign`）；
+2. 任务编号 = `job_` + sha256("demo-seed\0空间\0空间创建时间\0版本") 的前 32 位（线上第 1–3 版的 `scan_import` 任务用的是同一个公式）。这个编号的任务已存在：`done`、`queued`、`running` 或因内容问题失败 → 什么都不做（`AlreadyDone`）；因为下载失败（`lastError.class = fetch`）而失败 → 重新排队（`attempt` 归零、去掉 `notBefore`，上一次的错误追加进 `history`，最多 10 条；`Requeued`）；
+3. 没有 `bundle`：空间存在就什么都不做（`NothingToImport`），不存在就只建空间；
+4. 下载清单和来源表（跟随 ≤ 5 次重定向，每一跳都按主机列表查，经过 https 之后不能再转到 http；超过声明大小立即停止；错误信息里只写主机），核对大小、sha256，按 SHAPES 7 和来源表规则校验结构（种子的包要在新库里也能展开，所以不能引用目标空间已有的模板）。不对就不建空间、不插任务；
+5. 空间不存在：`seed_create_grant` 签发建空间凭据（审计日志）→ `create_space_with`（与 `admin_create_space` 同一条路径），主人取配置，归属证据 `{issuer, orgId, verifiedBy: "system:demo-seed", verifiedAt, basis: "operator_seed"}`，分享令牌只存 sha256；补写第一次提交；
+6. 插入 `bundle_import` 任务 `{kind, params {manifest, sources, revision}, scope: rebuild, maxAttempts: 5, actor {sub: "system:demo-seed", nyxServiceId: ""}}`（唯一键，多副本同时启动也只有一个），叫醒本进程的后台执行器（`Created`/`Queued`）。
 
-原始扫描不登记 `assetRefs`（公开接口读不到，同处理服务的规则），也不计入空间存储用量（没有上传会话）。改分享令牌的密钥不会改已有空间的令牌（要换就用 `admin_rotate_share_token`，或删空间让种子重建）。
+**后台执行器做 `bundle_import`**（重任务名额，`runner/bundle_import.rs`）：只碰种子为同一组织建的空间；下载并核对清单和来源表；清单 `files[]` 的每个文件（连同清单本身）本空间已拥有、核对记录合乎用途、长度对得上 → 刷新 `touchedAt`、跳过，否则按来源表下载进一个系统身份、重建范围的上传会话（编号由任务和文件哈希算出，重做时接着用；8 MiB 一片写数据块；`zip` 逐个成员下载、核对，按 `pack` 的布局写本地头和数据，最后写中央目录，同一时刻只有一个成员在内存里），再走与 `upload_verify` 相同的核对和登记（计入存储用量，按上传会话确立归属）；格式按路径扩展名定（与命令行 `bundle push` 相同）；来源表里没有 → 失败。然后建（或找到）编号由任务编号算出的重建草稿（基础版本取最新 seq），`bundleRef` 已经是这份清单就跳过展开，否则按交包的规则展开、追加（草稿保存和"写进度"在同一个事务里带租约栅栏，进度里记下结果摘要）。最后发布：说明 = 清单的 `note` +"（部署配置种子第 N 版）"，发布者 `system:demo-seed`、类别 `rebuild`，冲突时自动在最新版本上重放，提交带 `jobId` 且与任务完成在同一个事务里；内容没变就不写提交，草稿标记已发布、任务结果 `unchanged: true`。结果 `{manifest, files: {total, reused, downloaded, bytes}, draftId, entities, anchors: {created, skipped}, anchorDrift, commitId?, seq, unchanged?}`。失败分类：哈希或大小不符、清单或来源表不合规、展开或校验不过、主机不在列表、重定向到列表外 → `content`；403、404、408、429、5xx、网络错误、超时 → `fetch`（用完次数后失败，下次启动重新排队）；数据库 → `transient`。
+
+改分享令牌的密钥不会改已有空间的令牌（要换就用 `admin_rotate_share_token`，或删空间让种子重建）。
 
 ### 鉴权流程
 
