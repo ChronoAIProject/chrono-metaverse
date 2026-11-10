@@ -8,6 +8,7 @@ import {
   PREVIEW_TTL_MIN,
   REBUILD,
   type MetaverseApi,
+  type SnapshotView,
   type UploadFormat,
 } from '../transport/api.js';
 import { ApiError } from '../transport/client.js';
@@ -74,6 +75,7 @@ export const BUNDLE_HELP = `metaverse bundle <check | push> [目录] [选项]
       --base latest       清单没有 base 时，以空间的最新版本为基础（冲突检查只覆盖从现在起的变化）
       --publish           展开后直接发布（agent key 的操作范围要包含发布接口）
       --replay            和 --publish 一起用：冲突时在最新版本上重放
+      --realign           有意给线上同一份扫描换变换（重新对齐）时才加：不加时 --publish 遇到这种包会停下
       --message <说明>    提交说明（默认用清单的 note）
       --no-preview        不生成预览链接
       --preview-ttl <秒>  预览链接有效期，60–604800 秒（默认 24 小时）
@@ -287,6 +289,7 @@ export async function runBundlePush(ctx: CliContext, args: readonly string[]): P
     base: { type: 'string' },
     publish: { type: 'boolean' },
     replay: { type: 'boolean' },
+    realign: { type: 'boolean' },
     message: { type: 'string' },
     'no-preview': { type: 'boolean' },
     'preview-ttl': { type: 'string' },
@@ -374,22 +377,39 @@ export async function runBundlePush(ctx: CliContext, args: readonly string[]): P
     }
   }
   if (bundle.scan !== null && head > 0) {
+    let current: SnapshotView['scan'];
     try {
-      const current = (await api.getSnapshot(head)).scan;
-      const sameScan = current?.assetHash === bundle.scan.assetHash;
-      const sameTransform =
-        current?.transform !== undefined &&
-        current.transform.length === 16 &&
-        current.transform.every((v, i) => v === bundle.scan!.transform[i]);
-      if (sameScan && !sameTransform) {
-        ctx.err(
-          '注意：包里的扫描与线上相同，但变换不同：线上的物件和锚点是按线上的变换摆的，换变换会让它们与扫描错位。' +
-            '不是有意重新对齐的话，用 metaverse pull --scan 写的 scan/transform.json 重新打包（重扫的新扫描要先配准到参考扫描）',
-        );
-      }
+      current = (await api.getSnapshot(head)).scan;
     } catch (error) {
       if (!(error instanceof ApiError)) throw error;
       ctx.err(`注意：读不了最新快照（HTTP ${error.status}），跳过扫描变换的核对`);
+    }
+    if (current !== undefined && current !== null) {
+      const sameScan = current.assetHash === bundle.scan.assetHash;
+      const sameTransform =
+        current.transform !== undefined &&
+        current.transform.length === 16 &&
+        current.transform.every((v, i) => v === bundle.scan!.transform[i]);
+      if (sameScan && !sameTransform) {
+        const why =
+          '包里的扫描与线上相同，但变换不同：线上的物件、锚点和扩展层是按线上的变换摆的，换变换会让它们与扫描错位';
+        if (flag(values, 'publish') && !flag(values, 'realign')) {
+          throw new CliError(
+            `${why}。没有推送：用 metaverse pull 写的 scan/transform.json 重新打包；确实要重新对齐就加 --realign`,
+          );
+        }
+        ctx.err(
+          `注意：${why}。` +
+            (flag(values, 'realign')
+              ? '（--realign：按有意重新对齐处理）'
+              : '不是有意重新对齐的话，用 metaverse pull 写的 scan/transform.json 重新打包'),
+        );
+      } else if (!sameScan) {
+        ctx.err(
+          '注意：包换了扫描：它的变换必须是配准到线上扫描得到的（metaverse-recon align --reference），' +
+            '否则重建层会与锚点、扩展层错位；发布前看一眼预览',
+        );
+      }
     }
   }
 

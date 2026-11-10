@@ -358,6 +358,43 @@ describe('metaverse bundle push', () => {
     expect(ctx.errors.join('\n')).toContain('变换不同');
   });
 
+  it('同一扫描换了变换时 --publish 停下，--realign 才发布；换了扫描时提醒要配准', async () => {
+    const snapshot = (assetHash: string) => ({
+      seq: 5,
+      at: '2026-11-05T00:00:00.000Z',
+      chunks: [],
+      entities: [],
+      anchors: [],
+      regions: [],
+      plots: [],
+      scan: {
+        assetHash,
+        webModelHashes: [],
+        transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 5, 0, 0, 1],
+      },
+    });
+    const api = await startWith();
+    const first = setup();
+    const scanHash = (first.bundle.manifest.scan as { assetHash: string }).assetHash;
+    fake!.state.snapshot = snapshot(scanHash);
+    expect(await main(first.ctx, ['bundle', 'push', '--publish', '--no-preview'])).toBe(1);
+    expect(first.ctx.errors.at(-1)).toContain('没有推送');
+    expect(first.ctx.errors.at(-1)).toContain('--realign');
+    expect(api.requests.some((r) => r.path.endsWith('/rebuild/drafts'))).toBe(false);
+
+    const second = setup();
+    expect(
+      await main(second.ctx, ['bundle', 'push', '--publish', '--realign', '--no-preview']),
+    ).toBe(0);
+    expect(second.ctx.errors.join('\n')).toContain('有意重新对齐');
+    expect(api.requests.some((r) => r.path.endsWith('/publish'))).toBe(true);
+
+    const third = setup();
+    fake!.state.snapshot = snapshot('f'.repeat(64));
+    expect(await main(third.ctx, ['bundle', 'push', '--no-preview'])).toBe(0);
+    expect(third.ctx.errors.join('\n')).toContain('包换了扫描');
+  });
+
   it('读不了快照时跳过变换核对', async () => {
     await startWith({ space: { ...SPACE, head: { seq: 7, at: 'x' } } });
     const { ctx } = setup();
