@@ -985,6 +985,17 @@ def minimal_texture() -> dict:
     }
 
 
+def workbench_files() -> dict:
+    doc = minimal_texture()
+    _material(doc)["texture"] = {"file": "textures/3f9a0c12ab45.jpg"}
+    second = copy.deepcopy(doc["entities"][0])
+    second["entityId"] = "panel-02"
+    second["shape"]["transform"] = {"position": [2.0, 0.0, 0.0]}
+    second["shape"]["material"]["normalMap"] = {"file": "textures/8be8d2e0aa17.png"}
+    doc["entities"].append(second)
+    return doc
+
+
 def _invalid(name: str, description: str, where: str, mutate: Callable[[dict], None]) -> dict:
     doc = minimal_texture()
     mutate(doc)
@@ -1065,10 +1076,22 @@ def invalid_cases() -> list[dict]:
             _set_link("format", "jpeg"),
         ),
         _invalid(
-            "workbench-file",
-            "工作台的本地文件引用 {file} 不能出现在写回的物件集里（assemble --texture-base-url 换成外链）",
-            "material.texture",
-            put("texture", {"file": "textures/counter-marble.jpg"}),
+            "file-absolute",
+            "本地文件引用 {file} 必须是相对物件集文件的路径，不能是绝对路径",
+            "material.texture.file",
+            put("texture", {"file": "/etc/counter-marble.jpg"}),
+        ),
+        _invalid(
+            "file-parent",
+            "本地文件引用 {file} 不能有 .. 段（只能读物件集文件所在目录里的文件）",
+            "material.texture.file",
+            put("texture", {"file": "../textures/counter-marble.jpg"}),
+        ),
+        _invalid(
+            "file-extra-field",
+            "本地文件引用只能有 file 一个字段",
+            "material.texture.sha256",
+            put("texture", {"file": "textures/counter-marble.jpg", "sha256": "e5" * 32}),
         ),
         _invalid(
             "texture-number",
@@ -1108,8 +1131,8 @@ def authored_vectors() -> dict[str, dict]:
     valid = {
         "kind": "authored",
         "name": "texture-urls-valid",
-        "description": "形状材质的 texture、normalMap、roughnessMap 可以写成外链对象 {url, sha256, size}；"
-        "本地工具的物件集校验要接受（外链贴图由本地工具下载后作为贴图文件进重建包）",
+        "description": "形状材质的 texture、normalMap、roughnessMap 可以写成外链对象 {url, sha256, size} 或本地文件 "
+        "{file}；本地工具的物件集校验要接受（打包时下载或读文件，作为贴图文件进重建包）",
         "cases": [
             {
                 "name": "full-example",
@@ -1117,21 +1140,29 @@ def authored_vectors() -> dict[str, dict]:
                 "同一个外链（大理石）用了两次，只算一个",
                 "authored": full_example(),
                 "valid": True,
-                "summary": {"entities": 7, "templates": 1, "models": 1, "textureUrls": 7},
+                "summary": {"entities": 7, "templates": 1, "models": 1, "textureUrls": 7, "textureFiles": 0},
             },
             {
                 "name": "color-with-maps",
                 "description": "颜色材质带外链的法线贴图和粗糙度贴图（必须给 uv）",
                 "authored": minimal_color(),
                 "valid": True,
-                "summary": {"entities": 1, "templates": 0, "models": 0, "textureUrls": 2},
+                "summary": {"entities": 1, "templates": 0, "models": 0, "textureUrls": 2, "textureFiles": 0},
             },
             {
                 "name": "minimal",
                 "description": "只有一个带外链颜色贴图的物件（不合法的用例都从它改一处得来）",
                 "authored": minimal_texture(),
                 "valid": True,
-                "summary": {"entities": 1, "templates": 0, "models": 0, "textureUrls": 1},
+                "summary": {"entities": 1, "templates": 0, "models": 0, "textureUrls": 1, "textureFiles": 0},
+            },
+            {
+                "name": "workbench-files",
+                "description": "工作台 texture 命令写进工作副本的本地文件引用 {file}（相对物件集文件）：颜色贴图和法线贴图"
+                "各一个文件，同一个文件用了两次只算一个；本地工具打包时读文件、作为贴图进包",
+                "authored": workbench_files(),
+                "valid": True,
+                "summary": {"entities": 2, "templates": 0, "models": 0, "textureUrls": 0, "textureFiles": 2},
             },
         ],
     }

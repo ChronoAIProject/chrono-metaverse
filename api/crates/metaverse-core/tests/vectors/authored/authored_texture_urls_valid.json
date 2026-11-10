@@ -323,6 +323,7 @@
         "entities": 7,
         "models": 1,
         "templates": 1,
+        "textureFiles": 0,
         "textureUrls": 7
       },
       "valid": true
@@ -374,6 +375,7 @@
         "entities": 1,
         "models": 0,
         "templates": 0,
+        "textureFiles": 0,
         "textureUrls": 2
       },
       "valid": true
@@ -416,12 +418,88 @@
         "entities": 1,
         "models": 0,
         "templates": 0,
+        "textureFiles": 0,
         "textureUrls": 1
+      },
+      "valid": true
+    },
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "panel-01",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "shading": "albedo",
+                "texture": {
+                  "file": "textures/3f9a0c12ab45.jpg"
+                },
+                "tile": [
+                  0.8,
+                  0.8
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "type": "box"
+            }
+          },
+          {
+            "entityId": "panel-02",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "normalMap": {
+                  "file": "textures/8be8d2e0aa17.png"
+                },
+                "shading": "albedo",
+                "texture": {
+                  "file": "textures/3f9a0c12ab45.jpg"
+                },
+                "tile": [
+                  0.8,
+                  0.8
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "transform": {
+                "position": [
+                  2.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "type": "box"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "工作台 texture 命令写进工作副本的本地文件引用 {file}（相对物件集文件）：颜色贴图和法线贴图各一个文件，同一个文件用了两次只算一个；本地工具打包时读文件、作为贴图进包",
+      "name": "workbench-files",
+      "summary": {
+        "entities": 2,
+        "models": 0,
+        "templates": 0,
+        "textureFiles": 2,
+        "textureUrls": 0
       },
       "valid": true
     }
   ],
-  "description": "形状材质的 texture、normalMap、roughnessMap 可以写成外链对象 {url, sha256, size}；本地工具的物件集校验要接受（外链贴图由本地工具下载后作为贴图文件进重建包）",
+  "description": "形状材质的 texture、normalMap、roughnessMap 可以写成外链对象 {url, sha256, size} 或本地文件 {file}；本地工具的物件集校验要接受（打包时下载或读文件，作为贴图文件进重建包）",
   "kind": "authored",
   "name": "texture-urls-valid"
 }

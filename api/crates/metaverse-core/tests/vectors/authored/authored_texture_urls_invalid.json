@@ -381,7 +381,7 @@
               "material": {
                 "shading": "albedo",
                 "texture": {
-                  "file": "textures/counter-marble.jpg"
+                  "file": "/etc/counter-marble.jpg"
                 },
                 "tile": [
                   0.8,
@@ -400,10 +400,81 @@
         ],
         "version": 1
       },
-      "description": "工作台的本地文件引用 {file} 不能出现在写回的物件集里（assemble --texture-base-url 换成外链）",
-      "name": "workbench-file",
+      "description": "本地文件引用 {file} 必须是相对物件集文件的路径，不能是绝对路径",
+      "name": "file-absolute",
       "valid": false,
-      "where": "material.texture"
+      "where": "material.texture.file"
+    },
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "panel-01",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "shading": "albedo",
+                "texture": {
+                  "file": "../textures/counter-marble.jpg"
+                },
+                "tile": [
+                  0.8,
+                  0.8
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "type": "box"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "本地文件引用 {file} 不能有 .. 段（只能读物件集文件所在目录里的文件）",
+      "name": "file-parent",
+      "valid": false,
+      "where": "material.texture.file"
+    },
+    {
+      "authored": {
+        "entities": [
+          {
+            "entityId": "panel-01",
+            "kind": "object",
+            "label": "大理石板",
+            "shape": {
+              "material": {
+                "shading": "albedo",
+                "texture": {
+                  "file": "textures/counter-marble.jpg",
+                  "sha256": "e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5"
+                },
+                "tile": [
+                  0.8,
+                  0.8
+                ],
+                "uv": "planar"
+              },
+              "size": [
+                1.2,
+                0.03,
+                0.6
+              ],
+              "type": "box"
+            }
+          }
+        ],
+        "version": 1
+      },
+      "description": "本地文件引用只能有 file 一个字段",
+      "name": "file-extra-field",
+      "valid": false,
+      "where": "material.texture.sha256"
     },
     {
       "authored": {
