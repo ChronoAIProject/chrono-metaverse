@@ -12,8 +12,9 @@
 技能说明是 `sdk/typescript/skills/metaverse-reconstruct/SKILL.md`。
 
 完整的方法论（流程和分工、采集、基线和结构、逐件建模、多人建模与评审、贴图手册、写回上线、常见坑）见
-[方法论：从扫描到逼真的数字前厅](../methodology/README.md)，本教程只讲工作台命令一步步怎么用。方法论按服务端瘦身后的流程写：
-本教程第 1 节的安装和第 5 节"提交"还是处理服务时的写法，瘦身后改成本地打包、`metaverse bundle push` 推送（方法论第 7 章）。
+[方法论：从扫描到逼真的数字前厅](../methodology/README.md)，本教程只讲工作台命令一步步怎么用。服务端只做鉴权、存储、
+时间线和通用把关，重建全部在本地：本地工具打成重建包，命令行 `metaverse bundle push` 推送（方法论第 7 章，
+[服务端瘦身设计](../design/server-slim.md)）。
 
 读完你会：
 
@@ -73,11 +74,11 @@ cd <工作区>
 metaverse-recon prepare --hints hints.json     # 默认读 scan/scan.zip、scan/transform.json，写 out/recon/
 ```
 
-`prepare` 走的是打包用的同一条重建路径（对齐或工作区的变换 → 结构 → 现有算法的物体），与原来处理服务首次导入
-扫描的代码相同。基线的坐标、结构、物体编号和线上一致，AI 写的东西打包时不用换算。前厅实测 46 秒：
+`prepare` 走的是打包用的同一条重建路径（对齐或工作区的变换 → 结构 → 现有算法的物体），与线上第 1–3 版导入
+扫描时服务端用的代码相同（那时重建还在服务端）。基线的坐标、结构、物体编号和线上一致，AI 写的东西打包时不用换算。前厅实测 46 秒：
 
 ```
-对齐：{'method': 'auto', 'rotationDeg': -61.423, 'tiltDeg': 0.094}（与原处理服务首次导入相同）
+对齐：{'method': 'auto', 'rotationDeg': -61.423, 'tiltDeg': 0.094}（与线上第 1 版导入时相同）
 结构 6 个，物体 41 个，模板 2 个；地面 y=-0.0029
 候选（suggest = search 先搜库，author 手写）：
   cabinet-01     cabinet  LED 大屏     尺寸 [5.032, 2.605, 0.585]  author
@@ -201,7 +202,7 @@ metaverse-recon bundle --authored out/authored/authored.json --webmodel <空间�
 metaverse bundle push                       # 默认读 out/bundle/
 ```
 
-`bundle` 在本地做原来处理服务写回物件集时做的事：逐个校验物件；外部模型先在缓存里按哈希找，没有才按地址下载并
+`bundle` 在本地做以前服务端写回物件集时做的事：逐个校验物件；外部模型先在缓存里按哈希找，没有才按地址下载并
 核对哈希和大小，按材质重新导出成受限的 glb（俯仰、横滚、缩放和调色烘进模型，偏航写进记录，只差偏航的共用一个
 文件）；烘焙指令换成贴图，`{file}` 本地贴图和外链贴图换成进包的贴图；逐件算偏差，按类别建议锚点；连同扫描和
 网页用模型写成重建包 `out/bundle/`（清单 `manifest.json` + 文件，重建层编号加 `rb.`），最后调用

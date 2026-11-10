@@ -20,7 +20,7 @@
 
 - `material` 可以是 `{ "color": [r,g,b] }`（sRGB 0–255），也可以是 `{ "texture": "<资源哈希>", "uv": "box" | "planar" | "cylindrical" | "mesh" }`。贴图还可以带 `"tint": [r,g,b]`。
 - 两种材质都可以再带：
-  - `opacity`：0–1，默认 1。小于 1 时半透明，用于玻璃。网站画成透明材质（不写深度、双面、在不透明物体之后画）；处理服务导出 glb 时写成 `alphaMode: "BLEND"`，透明度放进 `baseColorFactor` 的第四个分量。
+  - `opacity`：0–1，默认 1。小于 1 时半透明，用于玻璃。网站画成透明材质（不写深度、双面、在不透明物体之后画）；本地工具导出 glb 时写成 `alphaMode: "BLEND"`，透明度放进 `baseColorFactor` 的第四个分量。
   - `unlit`：布尔，默认 false。为真时不受光照，按颜色或贴图原样显示，用于屏幕、灯箱。网站用不打光的材质；glb 里写 `KHR_materials_unlit`。
   - 平铺、着色方式、法线贴图和粗糙度：`tile`、`offset`、`rotate`、`shading`、`normalMap`、`normalScale`、`roughnessMap`、`roughness`、`metalness`，见本节末尾的"贴图坐标的平铺、着色、法线与粗糙度"。都不给时与旧数据完全相同。
 - 形状的局部原点：`box`、`cylinder`、`cone`、`extrude`、`lathe`、`loft` 的原点都在底面中心，形状向 +y 延伸。`sweep` 的原点就是路径坐标系的原点。`plate`、`hull` 直接用点的局部坐标，没有特别的原点。
@@ -213,7 +213,7 @@ v = (−a·sin θ + b·cos θ) / tile[1]
 
 #### glb 导出
 
-处理服务导出形状的 glb（查看和对比用的 `processing/preview_glb.py`、重建工作台的 `recon/glbout.py`）时：
+本地工具导出形状的 glb（查看和对比用的 `processing/preview_glb.py`、重建工作台的 `bench/glbout.py`）时：
 
 - `TEXCOORD_0` 写最终贴图坐标 `(u, 1 − v)`：`tile`、`offset`、`rotate` 已经算进去，不用 `KHR_texture_transform`；
 - 采样器：给了 `tile` 的材质用 `{magFilter: 9729, minFilter: 9987, wrapS: 10497, wrapT: 10497}`，其余仍是现在的
@@ -251,7 +251,7 @@ v = (−a·sin θ + b·cos θ) / tile[1]
 - `layer` 是 `rebuilt`（重建层：按扫描重建的结构和物体，只经重建路径、由重建包写入）或 `ext`（扩展层：人和 AI 的
   修改，经实体区、地块路径写入）。物件和模板共用一个编号空间，两层也共用。
 - **编号分区**：重建层新放的物件（含模板）编号必须以 `rb.` 开头；扩展层新放的物件编号不能以 `rb.` 开头。已有的
-  旧编号不受影响：扩展层的照常可以改；重建层的旧编号（处理服务写的）只能删，要重新放就换成 `rb.` 开头。这样两层
+  旧编号不受影响：扩展层的照常可以改；重建层的旧编号（瘦身前服务端写的）只能删，要重新放就换成 `rb.` 开头。这样两层
   各用一段编号，地块合作方抢不走重建包要用的编号。锚点不分区（锚点编号有现实含义，数据源按它写事件）。
 - **模板只能被同一层引用**：物件形状里 `instance` 引用的模板必须是同一层的模板；改模板的影响范围也只算同一层里
   用到它的物件。扩展层要用重建层的款式，就复制一份成扩展层模板。
@@ -380,9 +380,9 @@ v = (−a·sin θ + b·cos θ) / tile[1]
 
 - `chunk_*.json`：给定少量非零格子，写明期望的规范字节哈希和压缩后能解回原值；
 - `canonical_*.json`：给定 JSON，写明期望的规范化字符串和哈希；
-- `shape_*.json`：给定形状，写明期望的包围盒和三角形数（网站和处理服务据此核对网格生成）。三角形数目前只给 `plate`（4n − 4）和点处于一般位置的 `hull`（2V − 4）；`shape_plate_*`、`shape_hull_*`、`shape_material_*` 和对应的 `shape_invalid_*` 覆盖本文新增的板、凸包、`opacity`、`unlit`，以及第 2 节"贴图坐标的平铺、着色、法线与粗糙度"的新字段（合法的取值和越界、类型错、缺少前提的写法）。
+- `shape_*.json`：给定形状，写明期望的包围盒和三角形数（网站和本地工具据此核对网格生成）。三角形数目前只给 `plate`（4n − 4）和点处于一般位置的 `hull`（2V − 4）；`shape_plate_*`、`shape_hull_*`、`shape_material_*` 和对应的 `shape_invalid_*` 覆盖本文新增的板、凸包、`opacity`、`unlit`，以及第 2 节"贴图坐标的平铺、着色、法线与粗糙度"的新字段（合法的取值和越界、类型错、缺少前提的写法）。
 - `canonical_entity_model_source.json`：引用外部模型、带 `material.tint` 和 `props.source` 的物件记录的内容哈希。
-- `uv/uv_*.json`：贴图坐标。给定形状和材质，按顶点的局部位置和法线找到顶点，写明期望的最终贴图坐标；覆盖 `box`、`planar`、`cylindrical`、`mesh`（盒子、圆柱、挤出、板、扫掠）× 有无 `tile`、`offset`、`rotate`，以及组合上的材质和颜色材质的法线贴图。期望值由 `tests/vectors/tools/texture_vectors.py` 按本文独立算出。网站和处理服务核对（接口服务不生成网格）。
+- `uv/uv_*.json`：贴图坐标。给定形状和材质，按顶点的局部位置和法线找到顶点，写明期望的最终贴图坐标；覆盖 `box`、`planar`、`cylindrical`、`mesh`（盒子、圆柱、挤出、板、扫掠）× 有无 `tile`、`offset`、`rotate`，以及组合上的材质和颜色材质的法线贴图。期望值由 `tests/vectors/tools/texture_vectors.py` 按本文独立算出。网站和本地工具核对（接口服务不生成网格）。
 - `authored/authored_*.json`：带外链贴图对象 `{url, sha256, size}` 和本地贴图 `{file}` 的 AI 物件集，合法和不合法各一份，由本地工具的物件集校验按 `valid` 接受或拒绝（接口服务不收物件集）。
 - `ops/ops_*.json`：高层操作作用到工作状态的结果，含第 3 节"草稿的种类与操作"的规则（`ifPresent`、带历史的 `ifNew`、编号分区、同层模板、重建草稿的操作、"除去"范围、模板引用的完整性）。Rust 生成，命令行核对。
 - `bundle/bundle_*.json`：第 7 节的重建包清单，合法和不合法的写法、出错的字段、引用表、展开成的操作，以及在旧重建层上推一次、推两次的结果（第二次没有变化）；`bundle_limits_default.json` 是第 8 节的默认上限。Rust 跑全部，命令行只跑结构校验和默认上限。

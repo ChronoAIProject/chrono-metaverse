@@ -1,6 +1,6 @@
 # 跨语言测试向量
 
-接口服务（Rust）、网站（TypeScript）、处理服务（Python）各自实现 [SHAPES.md](../../../../../docs/SHAPES.md) 里的格式，用这里的同一批向量核对结果。
+接口服务（Rust）、网站和命令行（TypeScript）、本地重建工具（Python）各自实现 [SHAPES.md](../../../../../docs/SHAPES.md) 里的格式，用这里的同一批向量核对结果。
 
 - **由 Rust 实现生成**：`tests/vectors.rs` 里定义用例，运行
   `METAVERSE_WRITE_VECTORS=1 cargo test -p metaverse-core --test vectors` 重新生成顶层的全部文件
@@ -194,7 +194,7 @@ Rust 实现之后重新生成，文件没有变化）。接口服务、本地工
 | `uv/` | —（不生成网格） | `src/core/shapes/uv.test.ts` | `tests/test_shared_vectors.py`（`test_uv_vectors`） | —（不生成网格） |
 | `authored/` | —（不收物件集） | — | 本地工具 `bundle` 的物件集校验（设计 13.2 S6b 接上，合法的还要核对 `textureUrls`） | — |
 | `bundle/` | `tests/bundle_vectors.rs`（校验、引用表、展开、作用一次和两次） | — | —（只在生成时守住上限） | `tests/vectors.test.ts`（结构校验：合法与否、出错的字段、引用表；默认上限） |
-| `check/` | `metaverse-api/tests/check_vectors.rs`（接口服务的上传核对 `runner::verify`；也是样本的生成器） | — | — | 设计 13.2 S5 接上（`bundle check` 的文件检查） |
+| `check/` | `metaverse-api/tests/check_vectors.rs`（接口服务的上传核对 `runner::verify`；也是样本的生成器） | — | — | `tests/check-vectors.test.ts`（`bundle check` 的文件检查：按声明的格式和按内容认各跑一遍） |
 
 顶层的运行器按文件名前缀（`chunk_`、`canonical_`、`shape_`）挑文件，不会读到 `uv/`、`authored/`；这两类各边单独接上。
 `shape_material_*`、`shape_invalid_material_*` 在顶层，现有的形状运行器直接读到：接口服务
@@ -221,7 +221,7 @@ Rust 实现之后重新生成，文件没有变化）。接口服务、本地工
 | `expect.runs` | 有 `apply` 时每次作用的结果：`touched`（同 4.1，只有物件、锚点、扫描、重建层和跳过的锚点）、作用后的 `entities`、`anchors`（`{ id, hash }`）、`brokenTemplateRefs`、`unchanged`（物件和锚点与作用前完全相同） |
 
 用例：`bundle_valid_*` 是合法的写法（整体替换、"合并包推两次"、只有锚点、只有扫描、合并包引用目标空间的模板），其中
-整体替换和合并包在处理服务写的旧重建层上作用两次，第二次 `unchanged = true`；`bundle_invalid_*` 各错一处（版本、
+整体替换和合并包在瘦身前写的旧重建层（编号不带 `rb.`）上作用两次，第二次 `unchanged = true`；`bundle_invalid_*` 各错一处（版本、
 `chunks`、缺文件、用途不符、路径、重复哈希、超过上限、编号前缀、`layer`、`bounds`、模板的 `kind`、`remove` 的两条规则、
 整体替换引用空间的模板、`_space` 锚点、重复锚点、镜像变换、`notes` 的用途、报告里的本地路径、`tool.source`、什么都没给、
 `createdAt`、单条记录超过 64 KiB）。

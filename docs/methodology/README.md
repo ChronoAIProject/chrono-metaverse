@@ -51,8 +51,8 @@ Scaniverse 扫描      →   metaverse pull --scan        原始扫描、线上�
 - 命令名、参数和目录按服务端瘦身定稿（设计第 6、8 节）写。本地工具里 `align`、`webmodel`、`models`、`bake`、`fit`、
   `scan-zip`、`bundle`、`doctor --install` 是这次改造新加的命令（设计 13.2 的 S6b），参数以
   `metaverse-recon <命令> --help` 为准。
-- 贴图命令 `refshot`、`texsearch`、`texfetch`、`texture` **还没有实现**，第 6 章按约定写出它们要做的事，并给出现在的
-  替代做法（概念验证用的脚本）。
+- 贴图命令 `refshot`、`texsearch`、`texfetch`、`texture` 也已进本地工具（S6b）；提取时的清理、去光照、无缝和生成
+  法线、粗糙度还没有命令，第 6 章写了怎么自己做。
 
 ## 相关文档
 

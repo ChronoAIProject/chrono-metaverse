@@ -129,7 +129,7 @@ NyxID 地址只接受 https；明文 http 只允许本机地址（本地测试�
 | `src/public/*` | 公开接口基础设施：限流与每空间并发中间件、进程内缓存、分享/预览令牌解析和缓存头（见下文"公开接口的公共设施"） |
 | `src/routes/*` | 接口实现与视图；重建路径一组在 `routes/rebuild.rs`，复用实体区的上传、草稿、任务步骤 |
 | `src/ingest/*` | 上传与任务的上限配置、文件头核对（`formats`）、事件数据的 JSON Schema 校验（`schema`，boon，不加载外部资源）、公开状态的增量计算（`state`）、`/head` 的进程内短缓存（`head_cache`） |
-| `src/repo/uploads.rs`、`jobs.rs` | 上传会话、分片写成 GridFS 数据块（布局同处理服务 `assets.py` 的 `write_upload_part`）、"完成上传"事务、任务创建与查询、引用资源之前的清理栅栏（`touch_asset` / `touch_assets`） |
+| `src/repo/uploads.rs`、`jobs.rs` | 上传会话、分片写成 GridFS 数据块（布局与瘦身前的 `write_upload_part` 相同，旧数据照样能读）、"完成上传"事务、任务创建与查询、引用资源之前的清理栅栏（`touch_asset` / `touch_assets`） |
 | `src/repo/events.rs` | 事件类型版本、批量写事件（去重）、时间窗/增量查询、密度聚合、抹除、状态快照 |
 | `src/repo/universes.rs` | 组合的主人与令牌、修订事务、T 时刻的修订和成员、成员资格的时间段、成员空间在 T 时刻的 seq |
 | `src/demo_seed/*` | 部署配置种子：配置解析（`config`）、主机列表（`hosts`）、来源表（`sources`）、流式下载核对（`fetch`）、按成员打包 stored zip（`pack`）、启动流程与重试（`mod`），见下文"部署配置种子"；导入由后台执行器的 `runner/bundle_import.rs` 做 |
@@ -138,10 +138,10 @@ NyxID 地址只接受 https；明文 http 只允许本机地址（本地测试�
 | `src/auth/authorizer/universes.rs` | 组合凭据 `UniverseGrant`、成员变更凭据 `MembershipGrant`、凭组合令牌读成员空间（`public_space_via_universe*`） |
 | `src/auth/authorizer/system.rs` | 由已有凭据派生的系统范围 `SystemGrant`（写审计日志），用于保存和删除状态快照；部署配置种子的建空间凭据 `seed_create_grant` 和种子空间凭据 `seed_space`；后台执行器、清理、迁移的跨空间凭据 `BackgroundGrant`（同样写审计日志） |
 | `tests/api.rs` | 集成测试：本地 MongoDB + 模拟 NyxID（公钥列表、组织授权接口） |
-| `tests/timeline.rs`、`tests/timeline_support/` | 时间线、草稿、公开读、管理接口的集成测试（同样的设施，另加直接写库模拟上传和处理服务） |
+| `tests/timeline.rs`、`tests/timeline_support/` | 时间线、草稿、公开读、管理接口的集成测试（同样的设施，另加直接写库模拟上传和瘦身前写的旧数据） |
 | `tests/rebuild.rs` | 重建路径（docs/design/server-slim.md 13.2 S3 的验收）：重建权限、真实上传清单、交包展开、预览、发布规则、冲突和重放、没有变化、锚点不复活、文件角色、没定义实体区的范围（用 `tests/timeline_support/`，资源带核对记录直接登记） |
-| `tests/asset_fence.rs` | 与处理服务定期清理的栅栏（见"与定期清理的栅栏"）：模拟清理在追加、复用、建任务、发布之间删除资源（用 `tests/timeline_support/`） |
-| `tests/uploads_jobs.rs`、`tests/events.rs`、`tests/universes.rs`、`tests/ingest_support/` | 上传与任务、事件、组合的集成测试（同样的设施；处理服务的结果按约定的文档格式直接写库模拟） |
+| `tests/asset_fence.rs` | 与定期清理的栅栏（见"与定期清理的栅栏"）：模拟清理在追加、复用、建任务、发布之间删除资源（用 `tests/timeline_support/`） |
+| `tests/uploads_jobs.rs`、`tests/events.rs`、`tests/universes.rs`、`tests/ingest_support/` | 上传与任务、事件、组合的集成测试（同样的设施；后台任务的结果按约定的文档格式直接写库模拟） |
 | `tests/runner.rs`、`tests/runner_cleanup.rs`、`tests/runner_support/` | 后台执行器、上传核对、`ops_from_upload`、定期清理、后台迁移的集成测试（从处理服务移植的场景，另加僵尸执行器、名额、重试分类、核对期间健康检查） |
 | `tests/check_vectors.rs` | 资源核对的二进制样本（`metaverse-core/tests/vectors/check/`）的生成器和核对；`inspect_real_files`（忽略的测试）拿真实文件试检查器 |
 | `tests/runner_budget.rs` | 内存和 1 GiB 核对耗时的实测（忽略的测试，用 `--release` 跑，结果见下文） |
@@ -228,7 +228,7 @@ NyxID 地址只接受 https；明文 http 只允许本机地址（本地测试�
 
 **凭组合的分享令牌读成员空间**（设计 8.2、12）：`Authorization: Share <组合令牌>` + `?universe=<组合编号>`，适用于空间信息、`/head`、事件、密度、状态、快照、提交列表。服务端校验令牌属于这个组合，并且该空间在相关时刻是成员：按时刻（`state?at=`、`/head`、增量事件）看 T 时刻；按时间段（时间窗事件、密度、提交列表）看这段时间里有没有某个时刻是成员；快照 `?seq=` 看这个版本生效的时间段（seq=0 是 `[空间创建时间, 第一次提交)`；`?at=` 的 302 跳转保留 `universe`）；返回的内容再按成员期裁剪（见下文"组合宇宙"）；空间信息不按时刻索引，与不带时间段的提交列表相同，曾经是成员即可（组合页回看历史时，后来离开组合的成员也要取得到名称和事件显示规则），但现在已经不是成员时 `regions`、`plots`、`anchors` 返回空数组（不给离开之后的当前内容，历史状态按版本读快照）。区块和资源按内容哈希读取，本来就不校验令牌。校验函数：`Authorizer::public_space_via_universe` / `_during` / `_for_seq` / `_ever`（`src/auth/authorizer/universes.rs`），路由里用 `routes::public_access::public_space_grant*`。组合实际公开（组合和全部成员都公开）时不需要令牌。
 
-### 提交与时间线（与处理服务 `jobs/writeback.py` 一致）
+### 提交与时间线
 
 **事务外**（按内容哈希幂等写入，重复键忽略）：
 
@@ -243,7 +243,7 @@ NyxID 地址只接受 https；明文 http 只允许本机地址（本地测试�
 
 **提交文档**（`commits`）：`_id`（32 位十六进制）、`spaceId`、`owner`、`seq`、`at`、`observedAt?`、`actor {sub, nyxServiceId, scope: physical|plot:<编号>|rebuild, kind: admin|physical|plot|job|rebuild}`、`author? {sub}`（草稿创建者与发布者不同时）、`message`、`ops?`（≤ 1MB 内联）或 `opsRef?`（ops 资源哈希）、`changedChunks [{layer, cx, cy, cz, hash|null}]`、`changedEntities [{id, hash|null}]`、`changedAnchors [{id, hash|null}]`、`regionsHash?`、`paletteHash?`、`scan? {assetHash, webModelHashes, transform, alignment?}`（重建草稿和旧的处理服务写）、`keyframe?`、`jobId?`（后台任务发布时写）、`draftId?`、`scriptRef?`、`bundleRef?`（重建包清单，不公开）。
 
-**关键帧**：`seq` 是 50 的倍数，或离上一个关键帧已满 50 次提交时（处理服务写的提交不带关键帧），写一份完整状态清单（`stateBlobs.kind = manifest`），哈希写在提交的 `keyframe`。读任意版本：取 `seq ≤ 目标` 的最近关键帧（没有就从头），叠加之后各提交的变化。
+**关键帧**：`seq` 是 50 的倍数，或离上一个关键帧已满 50 次提交时（瘦身前处理服务写的提交不带关键帧），写一份完整状态清单（`stateBlobs.kind = manifest`），哈希写在提交的 `keyframe`。读任意版本：取 `seq ≤ 目标` 的最近关键帧（没有就从头），叠加之后各提交的变化。
 
 **第一次提交**：建空间时（失败时在第一次建草稿、改区域，或部署种子建导入任务、建草稿时补写）写 seq 1：`_space` 锚点（`kind: space`、公开）、通用方块表（`stone` 是 2，共 20 种，见 `timeline/palette.rs`）、当前的区域清单。
 

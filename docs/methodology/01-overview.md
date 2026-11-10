@@ -25,12 +25,12 @@
 |---|---|---|---|---|---|
 | 0 准备 | 人、平台管理员 | — | 有 `metaverse-rebuilder` 角色的账号；命令行工作区 `space.json` | NyxID 里分角色；`metaverse init <空间编号>` | 7.4 |
 | 1 采集 | 人（现场） | 空间本身 | Scaniverse 扫描（网格 + 贴图）、Scaniverse 里保留的原始数据、补拍的照片和视频 | Scaniverse | 2 |
-| 2 取扫描 | AI 或人 | 线上空间；或刚扫的文件 | `scan/scan.zip`、`scan/transform.json`、`limits.json` | `metaverse pull --scan`；NyxID 注册前 `metaverse pull --share <链接> --assets` | 3.1 |
+| 2 取扫描 | AI 或人 | 线上空间；或刚扫的文件 | `scan/scan.zip`、`scan/transform.json`、`limits.json` | `metaverse pull --scan`；只有分享链接时 `metaverse pull --share <链接> --assets` | 3.1 |
 | 3 对齐和基线 | AI 模型师 | 扫描、变换、可选的物体提示 | 基线 `out/recon/`：对齐、算法结构和物体、候选清单 `candidates.json` | `metaverse-recon prepare`（首次或重扫先 `align`） | 3.2–3.3 |
 | 4 网页用模型 | AI 模型师 | 扫描 | `web/scan-0.glb`（"原始"视图加载这一档） | `metaverse-recon webmodel`；扫描没变就用线上那份 | 3.4 |
 | 5 结构 | AI 模型师 | 基线结构、测量 | 改正后的地面、墙、玻璃（`kind: "structure"`） | `measure`、`compare` | 3.5 |
 | 6 逐件建模 | AI 模型师（按区域分组并行） | 候选清单 | 每件 `work/<编号>/entity.json` 和过程记录 | `views`、`measure`、`search`、`fetch`、`place`、`compare` | 4、5 |
-| 7 贴图 | AI 模型师 | 扫描、材质库、生图工具 | 贴图文件和材质字段（`tile`、`shading`、法线、粗糙度） | 现在用脚本；约定命令 `refshot`、`texsearch`、`texfetch`、`texture`（未实现） | 6 |
+| 7 贴图 | AI 模型师 | 扫描、材质库、生图工具 | 贴图文件和材质字段（`tile`、`shading`、法线、粗糙度） | `refshot`、`texsearch`、`texfetch`、`texture`；清理、去光照、无缝、生成法线用脚本 | 6 |
 | 8 合并和整房评审 | 合并者、独立评审者 | 各组产出 | AI 物件集 `out/authored/authored.json`、整房对比图、逐件偏差、漏建团块 | `assemble`；评审修正脚本 | 5 |
 | 9 打包 | AI 模型师 | 物件集、网页用模型、扫描 | 重建包 `out/bundle/`（`manifest.json` + 文件） | `metaverse-recon bundle`（内部调用 `models`、`bake`、`fit`、`scan-zip`） | 7.1 |
 | 10 检查和推送 | AI 模型师 | 重建包 | 重建草稿、预览链接、跳过的锚点、锚点漂移 | `metaverse bundle check`、`metaverse bundle push` | 7.2 |

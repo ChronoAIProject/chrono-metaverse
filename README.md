@@ -31,7 +31,7 @@ spikes/       第 0 阶段验证代码与结果
 需要 Node 22、Rust（`rustup`，版本由 `api/rust-toolchain.toml` 固定）、Python 3.13（推荐 [uv](https://docs.astral.sh/uv/)）和一个 MongoDB 副本集（没有的话脚本会提示怎么装）。
 
 ```bash
-infra/dev/up.sh       # MongoDB（复用或新起）+ 模拟 NyxID + 接口服务 + 处理服务 + 网站
+infra/dev/up.sh       # MongoDB（复用或新起）+ 模拟 NyxID + 接口服务 + 网站
 # 网站      http://127.0.0.1:5173/
 # 接口服务  http://127.0.0.1:8080/api/healthz
 # 模拟 NyxID http://127.0.0.1:8090（组织角色见 infra/dev/org-roles.json）
@@ -48,8 +48,8 @@ infra/dev/down.sh     # 停止
 
 ## 部署
 
-- 镜像：推送到 `main` 或开发分支时由 GitHub Actions 构建，推到 `ghcr.io/chronoaiproject/chrono-metaverse-{api,web,worker}`（标签：7 位提交哈希、分支名；`latest` 只给 `main`）。
-- 部署：chrono-cd 的 ChronoAI 组织下，项目 `metaverse`、应用 `chrono-metaverse`，服务 `metaverse-web` / `metaverse-api` / `metaverse-worker` 加 MongoDB 插件。规格和完整步骤（设为公开、提交、NyxID 注册、导入演示数据、回滚）见 [infra/chrono-cd/README.md](infra/chrono-cd/README.md)。
+- 镜像：推送到 `main` 或开发分支时由 GitHub Actions 构建，推到 `ghcr.io/chronoaiproject/chrono-metaverse-{api,web}`（标签：7 位提交哈希、分支名；`latest` 只给 `main`；部署一律按摘要固定）。
+- 部署：chrono-cd 的 ChronoAI 组织下，项目 `metaverse`、应用 `chrono-metaverse`，服务 `metaverse-web` / `metaverse-api` 加 MongoDB 插件（处理服务已下线，重建在本地做，见 [docs/design/server-slim.md](docs/design/server-slim.md)）。规格和完整步骤（设为公开、提交、NyxID 注册、导入演示数据、回滚）见 [infra/chrono-cd/README.md](infra/chrono-cd/README.md)。
 
 ## 文档
 

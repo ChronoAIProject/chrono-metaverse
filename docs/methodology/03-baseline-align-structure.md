@@ -12,8 +12,8 @@
 | 情况 | 怎么取 | 得到 |
 |---|---|---|
 | 已有空间，线上有扫描 | `metaverse pull --scan` | `scan/scan.zip`（分段下载，每段 64 MiB，断了再运行一次接着下）、`scan/transform.json`（线上的变换）、`limits.json` |
-| NyxID 还没注册，只有分享链接 | `metaverse pull --share <链接> --assets` | 只读工作区：变换、物件、公开锚点、网页用模型和物件模型；**没有原始扫描**——用 Scaniverse 的原文件，`metaverse-recon scan-zip` 打包后哈希与线上相同（第 2.5 节） |
-| 新空间，第一次重建 | 第 2 章导出的扫描文件 | `prepare --scan <文件>` 自动对齐 |
+| 只有分享链接（不是组织成员，或线上还是瘦身前的版本） | `metaverse pull --share <链接> --assets` | 只读工作区：变换、物件、公开锚点、网页用模型和物件模型；**没有原始扫描**——用 Scaniverse 的原文件，`metaverse-recon scan-zip` 打包后哈希与线上相同（第 2.5 节） |
+| 新空间，第一次重建 | 第 2 章导出的扫描文件 | 放到 `scan/scan.zip`，`align` 自动对齐、写 `scan/transform.json`（`bundle` 要用它），再 `prepare` |
 
 ## 3.2 对齐
 

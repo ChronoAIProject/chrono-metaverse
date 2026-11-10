@@ -320,15 +320,16 @@ The left edge must continue seamlessly into the right edge, and the top edge int
 - **模板实例**：实例给颜色材质时只覆盖颜色，模板部件保留自己的贴图、平铺、法线；实例给贴图材质时整个材质换掉。
 - 贴好以后按第 5.5 节出人眼视角和近景的"扫描 | 现在 | 新"对比图，再打包。
 
-**工作台的贴图命令（约定，尚未实现）**：下面四个命令是本文约定的名字和职责，参数以实现为准；实现时以本章为规格。在实现之前，按本章
-各节的方法自己写脚本（概念验证就是这样做的，只用 numpy、scipy、pillow 和工作台的渲染；那批脚本写死了本机路径，没有进仓库）。
+**工作台的贴图命令**：四个命令已经进了本地工具（设计 13.2 S6b，参数以 `metaverse-recon <命令> --help` 为准，说明在
+`recon/README.md`"贴图工作台"）。提取时的清理、去光照、无缝和生成法线、粗糙度还没有命令，按本章各节的方法自己做
+（概念验证就是这样做的，只用 numpy、scipy、pillow 和工作台的渲染；那批脚本写死了本机路径，没有进仓库），做好的图交给 `texture`。
 
-| 命令 | 要做的事 | 实现之前怎么做 |
+| 命令 | 做的事 | 还要自己做的 |
 |---|---|---|
-| `metaverse-recon refshot` | 从扫描取参考图：对一个物件部件或一个框做正交展开（3–4 毫米/像素），输出参考图、掩码、平均色和比例尺；给提取、选材质、生图、标定用 | 按 6.3 节第 1 步写正交展开 |
-| `metaverse-recon texsearch` | 在材质库（Poly Haven、ambientCG，只要 CC0）检索，输出与参考图**同一比例**并排的带编号色卡 | 按 6.4 节"挑"的三轮拼色卡 |
-| `metaverse-recon texfetch` | 下载选中的材质（颜色、法线、粗糙度），核对大小和 sha256，记下库、编号、许可 | 手工下载、记录 |
-| `metaverse-recon texture` | 加工并贴回：清理、去光照、无缝、调色、闭环标定、生成法线和粗糙度；写出贴图文件，改物件材质（`tile`、`offset`、`shading`、`normalMap`、`roughness`），出"扫描 \| 现在 \| 新"对比图 | 按 6.3、6.4、6.8–6.10 节加工，按 5.5 节出对比图 |
+| `metaverse-recon refshot` | 对物件的一个面（`--object` 或 `--box`，`--face top\|bottom\|front\|back\|left\|right`，朝向 `--front`）做正交展开：面前后 `--depth`（默认 3 厘米）以内的扫描表面，每像素 `--px` 米（默认 3 毫米），`--texture` 给原始 8K 贴图更清楚；输出参考图 `refshot.png` 和 `refshot.json`（去掉高光暗斑后的中位色、覆盖率、建议的平铺尺寸） | 6.3 节第 2–5 步（清理、去光照、无缝）在参考图上自己做 |
+| `metaverse-recon texsearch` | `--query` 在 Poly Haven、ambientCG（只要 CC0）检索，输出 `candidates.json` 和带编号的拼图 `sheet.jpg` | 与参考图同一比例并排比较（6.4 节"挑"的三轮） |
+| `metaverse-recon texfetch` | `--from candidates.json#<编号>`（或 `--library --id`）下载颜色、法线（ambientCG 的 DirectX 约定翻成 OpenGL）、粗糙度，记下实际尺寸和许可，默认放进缓存 | — |
+| `metaverse-recon texture` | 把颜色、法线、粗糙度贴图写进物件文件的一个部件（`--model`、`--part`）：贴图复制成 `{file}` 引用，材质写 `uv`、`tile`、`offset`、`rotate`、`shading`（默认 `albedo`）；`--calibrate --refshot <refshot.json>` 在网站光照下按扫描中位色标定整体增益（6.10）；`--preview` 出"扫描 \| 之前 \| 之后"对比图和色差 ΔE | 法线、粗糙度没有现成的要先生成（6.9） |
 
 ## 6.13 前厅的贴图概念验证
 
