@@ -852,6 +852,13 @@ NyxID 服务还没注册（`ALLOWED_NYX_SERVICE_IDS` 是占位值，`/api/v1` �
 | R2 瘦身 | S1–S9 全部合并、新的九步验收通过后发布：接口服务带上执行器、核对、清理、重建路径、新用途、410 的旧接口；规格里删掉处理服务；种子换成新格式、**版本仍是 3、不带包**（空间已存在，什么都不做） | 基本不写：`/api/v1` 一律 401，种子什么都不做；只写清理锁、迁移记录、旧任务退役（预计 0 条）和旧资源补上的 `metadata.check` |
 | R3 前厅第 4 版 | **同一镜像**，只把种子改成版本 4、带包 | 写一次 `actor.kind = rebuild` 的提交 |
 
+**现状（2026-11-10）**：NyxID 已经注册（2026-11-09，服务编号已填进线上的 `ALLOWED_NYX_SERVICE_IDS`，经 NyxID 已能读到
+真实数据），也就是下面说的"注册早于 R2"。线上 R0 的 `/api/v1` 现在就能写，但写进去的都是 R0 格式，R2 读得了；风险只在
+R2 上线以后：R2 一旦写进新格式的数据（重建提交、新种类的任务、带新字段的草稿），就退不回 R0。S9 没有另做 R1，两条路
+留给用户拍板：① 照原计划先发 R1；② 直接发 R2，把"退回 R0"的窗口限定在 R2 写进第一条新格式数据之前（`metaverse-rebuilder`
+角色建好之前没有人能写重建层，种子第 3 版什么都不写；实体区草稿的写入仍会带新字段），之后只能前滚。本机演练（S9 的
+实施记录）里，改造前的代码写出的数据换成 R2 后读、回放、迁移都正常，第 4 版也能追加上去。
+
 R2 读得了它自己和 R3 写的一切，所以不需要单独的"兼容读"版本。**前提**是 NyxID 注册晚于 R2：注册以后 `/api/v1` 能写，R2 上线当天就可能写进 R0（现在的版本）读不了的数据。如果注册早于 R2，先发 **R1**：核心库能读新枚举和新字段（`rebuild`、`bundle_import`、`webmodel`、`bundle`、`bundleRef`、`alignment`、新操作、草稿的新字段）；保存草稿改成按字段 `$set`；处理服务的清理认得 `heldAssets`、`bundleRef`（R1 照样运行处理服务，这一处是小改动）。
 
 ### 11.3 第一次部署 R2 时发生什么
@@ -1426,6 +1433,48 @@ S8 做完后的状态（实施记录）：
 
 - **改哪些文件**：10.1–10.4 列出的全部；`infra/dev/mock-nyxid.mjs`（重建权限的身份）；`infra/dev/e2e.mjs` 九步改完、去掉 `--only` 的默认值；各 README；教程 `docs/tutorials/build-space.md`、`reconstruct-with-ai.md`；`docs/SHAPES.md` 里"处理服务"的说法；`docs/PROGRESS.md`。
 - **验收**：新的九步验收在本机全过；`check-app`、`check-pins`、`pin-images` 的测试过；持续集成全绿；`up.sh --demo-seed` 在新库里只建演示空间（R2 的种子不带包）。
+
+S9 做完后的状态（实施记录）：
+
+- **合并**：开发分支已含 S1–S8（S4 含 S1–S3，S6b 含 S6a、S7）；本步再合并 S6b。冲突三处：网站 `sceneView.ts`（S6b 的旋转摆放和
+  S8 的兜底缩放都保留，兜底改按转过之后的外包盒比，新的 `placedModelBox`）、SHAPES 3、本文第 12 节。S6b 留下的"合并时必须
+  一起改"也做了：接口服务的提交和交包核对改调 `check::model_fits_entity` 并传入物件的 `transform`；命令行新增
+  `modelFitsEntity`、`rotatedModelBounds`，`bundle check` 传入 `entity.transform`；两边都补了带偏航的测试。
+- **部署**（10.1、10.2）：`app.json` 删掉 `metaverse-worker`；接口服务 384Mi / 1536Mi；显式写出物件模型、网页用模型、贴图的上限，
+  `PUBLIC_CACHE_BYTES`、`UPLOAD_MAX_CONCURRENT_PARTS`；加 `METAVERSE_DEMO_SEED_HOSTS`。`check-app` 删掉处理服务的检查，加：规格里
+  出现 `metaverse-worker` 报错、上面几项必须显式写出且是正整数、有种子就要有主机列表并且和 `up.sh` 的默认值相同；`pin-images`
+  只认 `api`、`web`。`Images` 工作流在 S6a 已经只构建两个镜像。README 重写了规格、配额、内存预算、NyxID 已注册、
+  "换成瘦身后的版本"一节和回滚条件。
+- **本地设施**（10.3、10.4）：模拟 NyxID 的角色文件加 `permissions`，重建身份 `rita`（组织 admin + `metaverse:rebuild:write`），
+  `alice` 是没有重建权限的组织 admin；`call.mjs` 加 `--permission`。九步验收按 10.4 改完，默认九步，去掉 `--voxelize`；第 2 步
+  `pull` → `align` → `prepare` → `bundle --algorithm` → `bundle check`，第 3 步 `bundle push --publish --part-size 0.25`，第 9 步加了
+  重建路径的反例。
+- **文档**：各 README、重建教程、`PROGRESS.md`（第 7 节）、SHAPES、向量 README 里"处理服务"的说法改成新流程（历史记录保留并注明）；
+  `infra/chrono-cd/demo/README.md` 的物件集流程改成本地打包，整房偏差改成线上第 3 版的 4.19 / 8.18 / 68.2%；方法论用
+  `metaverse-recon` 的解析器逐条核对了命令和参数（没有对不上的），贴图命令已实现、NyxID 已注册的说法跟着改；技能说明加贴图工作台、
+  `reframe --to align`。
+- **本地全流程验证**（4 核）：
+  1. 九步验收第一次就全过：出包 118 秒、推送发布 26 秒，17 种反例都按预期返回；
+  2. 前厅精致模型版（`rebuild/final2/authored.json`）：打包 40 秒、推送发布 28 秒；物件模型 17 个文件（8 把会议椅只差偏航，共用
+     一个 glb），网站优化视图的接口数据 18.7 MB（物件模型 18.3 MB；以前按处理服务的导出估计约 47.6 MB，其中物件模型 38.2 MB）；
+  3. 种子导入同一个包（本机 https、自签证书、新库）：4.8 秒导入完成，结果与命令行发布逐项相同，重启 `AlreadyDone`；
+  4. 旧数据：用 `origin/main`（`77bbdb8`，改造前）的接口服务和处理服务按旧种子写出第 1 版（扫描导入）、第 3 版（扫描 + AI 物件集），
+     再留一个排队中的 `voxelize` 任务；换成新代码以后，第 1–3 版的公开快照和提交列表逐字节相同，种子 `AlreadyDone`，清理第 0 步
+     把 `voxelize` 标记失败，`backfill-asset-check-v1` 给 53 个旧资源补上核对结果、0 失败；再按第 4 版的做法（`pull --scan`、
+     线上两档网页用模型、`lobby-authored.json`）推一个包：扫描、网页用模型和 23 张贴图按哈希复用，锚点 5 个全部跳过，第 1–3 版
+     回放不变；
+  5. `up.sh --demo-seed` 在新库里只建演示空间（`outcome=Created { job_id: None }`）。
+- **与设计的偏离**：
+  1. 10.4 第 2 步写的是 `prepare --scan` → `bundle --algorithm`；`bundle` 要求工作区里有 `scan/transform.json`，新空间第一次重建
+     要先 `align`，所以九步验收、技能说明和方法论都写成 `align` → `prepare` → `bundle`；
+  2. 10.4 第 3 步"同一个包再推一次得到 `unchanged`"要加 `--replay`：清单的 `base` 还是第一次推送时的版本，第一次发布改了重建层，
+     第二次的草稿与它冲突，重放到最新版本后内容没变，才是 `unchanged`；
+  3. 预览令牌的反例只查了原始扫描和包清单：`bundle --algorithm` 的包没有建模记录；
+  4. 模拟 NyxID 的重建身份另起了 `rita`，没有给 `alice` 加权限：`alice` 留作"组织 admin 但没有重建权限"的反例，与线上平台管理员
+     建角色之前的情形一致；
+  5. `METAVERSE_DEMO_SEED_HOSTS` 只在有种子时要求写出（不要种子时两处一起删，主机列表也不需要）；另加了"与 `up.sh` 的默认值相同"；
+  6. `UPLOAD_MAX_TEXTURE_SIDE` 在 `app.json` 里由 8192 改成 4096（设计 4.9 的默认值）；第 3 版的贴图都在 4096 以内，后台迁移的
+     核对结果 0 失败。
 
 #### S10 前厅第 4 版
 

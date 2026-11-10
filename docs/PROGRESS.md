@@ -1,12 +1,12 @@
 # 第一版进度报告
 
-依据：[建设计划](BUILD_PLAN.md)。本文记录第一版的完成情况、验收结果、线上部署和还需要人工完成的事。
+依据：[建设计划](BUILD_PLAN.md)。本文记录第一版的完成情况、验收结果、线上部署和还需要人工完成的事；第 7 节是服务端瘦身（整体设计第四版）的进度。
 
 ## 1. 线上地址
 
 - 网站与接口：<https://chrono-metaverse-chronoai.apps.nyxid.ai>（chrono-cd，ChronoAI 组织，项目 `metaverse`，应用 `chrono-metaverse`）。
 - 前厅演示空间：`/s/chronoai-lobby#share=<分享令牌>`。演示空间是"凭链接查看"，分享令牌只作为 chrono-cd 的密钥注入（`METAVERSE_DEMO_SHARE_TOKEN`），不在仓库里；需要链接请向部署人索取。
-- 演示数据由部署配置种子自动导入（[infra/chrono-cd/demo-seed.json](../infra/chrono-cd/demo-seed.json)）：接口服务启动时从 Scaniverse 下载前厅扫描、核对哈希、建空间并发起扫描导入，处理服务完成对齐和 AI 重建。改 `revision` 会在同一空间重新导入，时间线上能看到前后两个版本。
+- 演示数据由部署配置种子自动导入（[infra/chrono-cd/demo-seed.json](../infra/chrono-cd/demo-seed.json)）。线上第 1–3 版是处理服务时期导入的（接口服务从 Scaniverse 下载前厅扫描，处理服务对齐和 AI 重建）；服务端瘦身以后，种子只导入本地产出、按哈希固定的**重建包**（第 4 版起，见第 7 节），改 `revision` 在同一空间追加一次提交，时间线上能看到前后各版。
 - 健康检查：`/api/healthz`；注册给 NyxID 的接口文档：`/api/openapi.json`。
 
 ## 2. 验收结果（建设计划第 5 节）
@@ -16,16 +16,16 @@
 | 组件 | 检查 | 结果 |
 |---|---|---|
 | `api`（Rust） | fmt、clippy `-D warnings`、`cargo test`（连本地 MongoDB 副本集） | 全部通过，约 224 个测试 |
-| `worker`（Python） | ruff check、ruff format、pytest（含 MongoDB 集成测试） | 全部通过，333 个测试 |
+| `worker`（Python，瘦身后改名 `recon/`，见第 7 节） | ruff check、ruff format、pytest（含 MongoDB 集成测试） | 全部通过，333 个测试 |
 | `web`（React） | lint、typecheck、format、vitest、build、Playwright | 全部通过，265 个单元测试、14 个端到端用例 |
 | `sdk/typescript` | lint、typecheck、format、vitest、build | 全部通过，186 个测试 |
 | `infra` | 模拟 NyxID、部署规格检查、shellcheck、hadolint、actionlint | 全部通过 |
 
-持续集成（`.github/workflows/ci.yml`）每次推送都跑以上检查；`images.yml` 构建三个镜像推到 `ghcr.io/chronoaiproject/chrono-metaverse-{api,web,worker}`。
+持续集成（`.github/workflows/ci.yml`）每次推送都跑以上检查；`images.yml` 当时构建三个镜像推到 `ghcr.io/chronoaiproject/chrono-metaverse-{api,web,worker}`（瘦身后只构建 `api`、`web`）。
 
 ### 2.2 九步端到端（本地真实 MongoDB，前厅扫描）
 
-`node infra/dev/e2e.mjs --scan <前厅扫描.zip>`，默认模式和 `--voxelize` 模式都九步全过：
+第一版（处理服务时期）的写法，`node infra/dev/e2e.mjs --scan <前厅扫描.zip>`，默认模式和 `--voxelize` 模式都九步全过（瘦身后的九步见第 7 节）：
 
 1. 用测试令牌建组织空间；
 2. 分片上传前厅扫描（并验证本空间可按哈希复用、别的空间不能）；
@@ -67,8 +67,8 @@
 1. **把服务注册成 NyxID 自定义服务**（组织管理员在自己电脑上用 `nyxid` 命令行操作，命令见 [开发教程 9.3](tutorials/cloud-claude-code-nyxid.md)）：
    - 注册时开启身份令牌（受众 `urn:chrono-metaverse:api`）和"转发调用者令牌"；
    - 注册后，把服务编号填进 chrono-cd 规格里 `metaverse-api` 的 `ALLOWED_NYX_SERVICE_IDS`。**已完成（2026-11-09）**：服务编号 `362df1f5-8135-4a05-aa85-d929a5fd9f73`，经 NyxID MCP 调 `chrono-metaverse__get_space` 返回真实数据，NyxID 读到了接口文档（47 个工具）。
-   - 完成之前，写入只能走部署配置种子；AI 和命令行还不能经 NyxID 写入。
-2. **ghcr.io 镜像公开**：不需要处理，三个镜像已经可以匿名拉取。
+   - 注册之后，AI 和命令行可以经 NyxID 读写实体区、地块和管理接口；重建层要等瘦身后的版本上线、平台管理员建好 `metaverse-rebuilder` 角色（第 7 节）。
+2. **ghcr.io 镜像公开**：不需要处理，镜像已经可以匿名拉取（瘦身后只有 `api`、`web` 两个）。
 3. **向平台确认可信的客户端地址请求头**：确认负载均衡只接受 Cloudflare 的流量、`cf-connecting-ip` 原样到达容器后，按 [infra/chrono-cd/README.md](../infra/chrono-cd/README.md)"公开接口限流"一节设置 `TRUSTED_CLIENT_IP_HEADER`，并调回公开接口的限流额度。在此之前，限流按连接地址计算，只能当兜底。
 4. **Dependabot 告警**：GitHub 报告默认分支有 1 个中危依赖告警，合并到默认分支前看一下是否仍适用。
 
@@ -108,3 +108,29 @@
 **上线**：物件集合并到默认分支后，按 [`infra/chrono-cd/demo/README.md`](../infra/chrono-cd/demo/README.md)"如何更新线上"在 `demo-seed.json` 里加 `authored`（按提交哈希固定的地址、sha256、大小）并把 `revision` 加一，同步 `app.json` 的 `METAVERSE_DEMO_SEED`。
 
 **遗留**：镜面展示柜和玻璃没有反射材质；前台两台显示器（深色屏幕在扫描里是一团）和办公椅的偏差在 3.8–4.8 厘米；前台背后木门的烘焙贴图有几块灰斑；会议椅模板每把约 1.4 万个三角形，可以减半。
+
+## 7. 服务端瘦身（整体设计第四版）
+
+设计：[`docs/design/server-slim.md`](design/server-slim.md)。服务端只做鉴权、存储、时间线和通用把关，重建全部在本地：
+本地工具 `metaverse-recon`（`recon/`）把扫描和 AI 物件集打成**重建包**，命令行 `metaverse bundle check / push` 检查、
+上传、发布；处理服务下线，上传核对、操作文件和重建包的展开、过期清理并进接口服务的后台执行器；旧的发起接口返回 410。
+
+**完成情况**（2026-11-10，开发分支，还没部署）：S1–S9 全部合并。部署规格（`infra/chrono-cd/app.json`）已去掉处理服务、
+按新的内存预算调整接口服务、种子换成新格式（第 3 版、不带包）；要等瘦身后的镜像构建出来，在同一次 `PUT` 里一起换
+（[部署说明](../infra/chrono-cd/README.md)第 3 节"换成瘦身后的版本"）。
+
+**本地验收**（4 核机器，真实 MongoDB 副本集）：
+
+| 项目 | 结果 |
+|---|---|
+| 九步验收（`infra/dev/e2e.mjs`，前厅扫描 zip） | 第一次就全过：本地工具出包 118 秒（`align` 2、`prepare` 55、`bundle --algorithm` 60）；重建身份 `bundle push --publish` 26 秒，扫描分 23 片，发布为 `rebuild` 提交；同一个包再推得到 `unchanged`；17 种越权和反例（没有重建权限、member、上传用途、`rb.` 编号、预览读原始扫描和清单、旧接口 410）都按预期返回 |
+| 前厅精致模型版（本地打包 → 推送 → 网站） | 打包 40 秒、推送发布 28 秒；52 件物件、物件模型 17 个文件（8 把会议椅共用一个 glb）；网站优化视图的接口数据 18.7 MB（以前估计约 47.6 MB） |
+| 种子导入重建包（本机 https，新库） | 4.8 秒导入完成，与命令行发布的结果逐项相同；重启后 `AlreadyDone` |
+| 旧数据兼容（改造前的代码写出第 1–3 版，换成新代码） | 第 1–3 版的公开快照和提交列表逐字节相同；种子 `AlreadyDone`；排队中的旧种类任务被标记失败；后台迁移给 53 个旧资源补上核对结果、0 失败；按第 4 版的做法再推一个包，扫描、网页用模型和贴图都按哈希复用 |
+
+**还要人做的**：
+
+1. 上线顺序（设计 11.2）：NyxID 已经注册（早于瘦身版本上线），瘦身后的版本一旦写进新格式的数据就不能退回改造前的版本，
+   只能前滚；要不要先发只读兼容的过渡版本，需要拍板（设计 11.2 的"现状"）。
+2. 请平台管理员建角色 `metaverse-rebuilder`（只含 `metaverse:rebuild:write`），分给要写重建层的人。
+3. 前厅第 4 版的大文件托管方式（推荐本仓库发布页，设计 7.4、第 14 节）。
