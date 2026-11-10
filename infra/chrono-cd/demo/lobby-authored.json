@@ -3774,7 +3774,7 @@
      "library": "objaverse",
      "id": "e51ca8e20a3340b8aa44fa54f7bafe4f",
      "page": "https://sketchfab.com/3d-models/e51ca8e20a3340b8aa44fa54f7bafe4f",
-     "author": "sil3dfurniture",
+     "author": "deephouse（原 sil3dfurniture）",
      "license": "CC-BY-4.0",
      "title": "Ervin gray leather black legs"
     },
@@ -3827,7 +3827,7 @@
      "library": "objaverse",
      "id": "e51ca8e20a3340b8aa44fa54f7bafe4f",
      "page": "https://sketchfab.com/3d-models/e51ca8e20a3340b8aa44fa54f7bafe4f",
-     "author": "sil3dfurniture",
+     "author": "deephouse（原 sil3dfurniture）",
      "license": "CC-BY-4.0",
      "title": "Ervin gray leather black legs"
     },
@@ -3880,7 +3880,7 @@
      "library": "objaverse",
      "id": "e51ca8e20a3340b8aa44fa54f7bafe4f",
      "page": "https://sketchfab.com/3d-models/e51ca8e20a3340b8aa44fa54f7bafe4f",
-     "author": "sil3dfurniture",
+     "author": "deephouse（原 sil3dfurniture）",
      "license": "CC-BY-4.0",
      "title": "Ervin gray leather black legs"
     },
@@ -3933,7 +3933,7 @@
      "library": "objaverse",
      "id": "e51ca8e20a3340b8aa44fa54f7bafe4f",
      "page": "https://sketchfab.com/3d-models/e51ca8e20a3340b8aa44fa54f7bafe4f",
-     "author": "sil3dfurniture",
+     "author": "deephouse（原 sil3dfurniture）",
      "license": "CC-BY-4.0",
      "title": "Ervin gray leather black legs"
     },
@@ -4038,7 +4038,7 @@
      "library": "objaverse",
      "id": "e51ca8e20a3340b8aa44fa54f7bafe4f",
      "page": "https://sketchfab.com/3d-models/e51ca8e20a3340b8aa44fa54f7bafe4f",
-     "author": "sil3dfurniture",
+     "author": "deephouse（原 sil3dfurniture）",
      "license": "CC-BY-4.0",
      "title": "Ervin gray leather black legs"
     },
@@ -4091,7 +4091,7 @@
      "library": "objaverse",
      "id": "e51ca8e20a3340b8aa44fa54f7bafe4f",
      "page": "https://sketchfab.com/3d-models/e51ca8e20a3340b8aa44fa54f7bafe4f",
-     "author": "sil3dfurniture",
+     "author": "deephouse（原 sil3dfurniture）",
      "license": "CC-BY-4.0",
      "title": "Ervin gray leather black legs"
     },
@@ -4144,7 +4144,7 @@
      "library": "objaverse",
      "id": "e51ca8e20a3340b8aa44fa54f7bafe4f",
      "page": "https://sketchfab.com/3d-models/e51ca8e20a3340b8aa44fa54f7bafe4f",
-     "author": "sil3dfurniture",
+     "author": "deephouse（原 sil3dfurniture）",
      "license": "CC-BY-4.0",
      "title": "Ervin gray leather black legs"
     },
@@ -4197,7 +4197,7 @@
      "library": "objaverse",
      "id": "e51ca8e20a3340b8aa44fa54f7bafe4f",
      "page": "https://sketchfab.com/3d-models/e51ca8e20a3340b8aa44fa54f7bafe4f",
-     "author": "sil3dfurniture",
+     "author": "deephouse（原 sil3dfurniture）",
      "license": "CC-BY-4.0",
      "title": "Ervin gray leather black legs"
     },
@@ -5323,7 +5323,7 @@
    "entityId": "clutter-09",
    "layer": "rebuilt",
    "kind": "object",
-   "label": "机器狗（四足）",
+   "label": "机器狗",
    "model": {
     "url": "https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-100/71354fd599e34db898a7d083851b792a.glb",
     "sha256": "60e94375eee0bc20769216fd620fedcbb6ba9395d10cd3162ef712f9247a012d",
@@ -6628,7 +6628,7 @@
    "entityId": "lounge-robot",
    "layer": "rebuilt",
    "kind": "object",
-   "label": "人形机器人（站在米色沙发前）",
+   "label": "人形机器人",
    "model": {
     "url": "https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-129/82fcab4a190f4663ab2717dc5f40e40e.glb",
     "sha256": "81f35241162d1555f87db1bd0e22fbca18625869f3817d928255275f31a6c62b",
@@ -6877,51 +6877,96 @@
    "entityId": "reception-black-bag",
    "layer": "rebuilt",
    "kind": "object",
-   "label": "黑色纸袋（打印桌角、靠门）",
-   "model": {
-    "url": "https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-119/f7ac28c562b54b4db51ff5784a967bdb.glb",
-    "sha256": "0cdce115dadf8f077945a3c66a9ccd51e2ae27d8b9ba011f45dbf93e9002cc26",
-    "size": 307956,
-    "format": "glb"
-   },
-   "transform": {
-    "position": [
-     8.5009,
-     -0.0049,
-     6.565
+   "label": "黑色袋子（打印桌角、靠门）",
+   "shape": {
+    "type": "hull",
+    "points": [
+     [
+      7.8,
+      -0.003,
+      6.49
+     ],
+     [
+      8.08,
+      -0.003,
+      6.49
+     ],
+     [
+      8.04,
+      -0.003,
+      6.62
+     ],
+     [
+      7.8,
+      -0.003,
+      6.62
+     ],
+     [
+      7.76,
+      0.4,
+      6.48
+     ],
+     [
+      8.12,
+      0.4,
+      6.48
+     ],
+     [
+      8.06,
+      0.4,
+      6.63
+     ],
+     [
+      7.76,
+      0.4,
+      6.63
+     ],
+     [
+      7.8,
+      0.772,
+      6.49
+     ],
+     [
+      8.1,
+      0.772,
+      6.49
+     ],
+     [
+      8.05,
+      0.772,
+      6.61
+     ],
+     [
+      7.8,
+      0.772,
+      6.61
+     ]
     ],
-    "yaw": 180.0,
-    "pitch": 0.0,
-    "roll": 0.0,
-    "scale": [
-     0.011874,
-     0.016065,
-     0.012154
-    ]
+    "material": {
+     "bake": "box",
+     "color": [
+      36,
+      33,
+      28
+     ]
+    }
+   },
+   "props": {
+    "category": "clutter",
+    "source": "llm-modeler",
+    "group": "review"
    },
    "bounds": {
     "min": [
-     7.7499,
-     -0.003,
+     7.7599,
+     -0.0031,
      6.4799
     ],
     "max": [
-     8.13,
-     0.7723,
-     6.6501
+     8.1201,
+     0.7721,
+     6.6301
     ]
-   },
-   "props": {
-    "source": {
-     "library": "objaverse",
-     "id": "f7ac28c562b54b4db51ff5784a967bdb",
-     "page": "https://sketchfab.com/3d-models/f7ac28c562b54b4db51ff5784a967bdb",
-     "author": "Baha Sukkar",
-     "license": "CC-BY-4.0",
-     "title": "IVY Shopping Bag"
-    },
-    "category": "clutter",
-    "group": "props2"
    }
   },
   {
@@ -7213,7 +7258,7 @@
      "library": "objaverse",
      "id": "336de680dd9a4d84943d05d9c7dde1b0",
      "page": "https://sketchfab.com/3d-models/336de680dd9a4d84943d05d9c7dde1b0",
-     "author": "Skript47",
+     "author": "LiveToWin34（原 Skript47）",
      "license": "CC-BY-4.0",
      "title": "Computer Monitor 16:9 (Low Poly, Game Ready)"
     },
@@ -7264,7 +7309,7 @@
      "library": "objaverse",
      "id": "336de680dd9a4d84943d05d9c7dde1b0",
      "page": "https://sketchfab.com/3d-models/336de680dd9a4d84943d05d9c7dde1b0",
-     "author": "Skript47",
+     "author": "LiveToWin34（原 Skript47）",
      "license": "CC-BY-4.0",
      "title": "Computer Monitor 16:9 (Low Poly, Game Ready)"
     },
@@ -7516,57 +7561,120 @@
    "entityId": "reception-red-bag",
    "layer": "rebuilt",
    "kind": "object",
-   "label": "红白花纹纸袋",
-   "model": {
-    "url": "https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-104/d9fe4b53538c481084f0f6e78b5f59e4.glb",
-    "sha256": "95666c7378c329df546b728fcefd138404da9db739df192d13886ccd7954bb5c",
-    "size": 652052,
-    "format": "glb"
-   },
-   "transform": {
-    "position": [
-     7.5341,
-     -1.6114,
-     5.8879
+   "label": "红白花纹袋子（靠门立在打印桌上）",
+   "shape": {
+    "type": "hull",
+    "points": [
+     [
+      7.81,
+      0.776,
+      6.6
+     ],
+     [
+      7.84,
+      0.776,
+      6.55
+     ],
+     [
+      8.06,
+      0.776,
+      6.553
+     ],
+     [
+      8.063,
+      0.776,
+      6.63
+     ],
+     [
+      7.93,
+      0.776,
+      6.835
+     ],
+     [
+      7.85,
+      0.776,
+      6.856
+     ],
+     [
+      7.81,
+      0.776,
+      6.83
+     ],
+     [
+      7.886,
+      1.0,
+      6.65
+     ],
+     [
+      7.93,
+      1.0,
+      6.593
+     ],
+     [
+      8.068,
+      1.0,
+      6.633
+     ],
+     [
+      7.93,
+      1.0,
+      6.856
+     ],
+     [
+      7.886,
+      1.0,
+      6.69
+     ],
+     [
+      7.93,
+      1.19,
+      6.857
+     ],
+     [
+      7.95,
+      1.19,
+      6.72
+     ],
+     [
+      7.975,
+      1.19,
+      6.635
+     ],
+     [
+      8.063,
+      1.19,
+      6.633
+     ],
+     [
+      8.0,
+      1.19,
+      6.76
+     ]
     ],
-    "yaw": -114.31,
-    "pitch": 0.0,
-    "roll": 0.0,
-    "scale": [
-     0.728236,
-     0.728236,
-     0.728236
-    ]
+    "material": {
+     "bake": "box",
+     "color": [
+      150,
+      70,
+      60
+     ]
+    }
+   },
+   "props": {
+    "category": "clutter",
+    "source": "llm-modeler",
+    "group": "review"
    },
    "bounds": {
     "min": [
-     7.8258,
-     0.777,
-     6.533
+     7.8099,
+     0.7759,
+     6.5499
     ],
     "max": [
-     8.0343,
-     1.1772,
-     6.8169
-    ]
-   },
-   "props": {
-    "source": {
-     "library": "objaverse",
-     "id": "d9fe4b53538c481084f0f6e78b5f59e4",
-     "page": "https://sketchfab.com/3d-models/d9fe4b53538c481084f0f6e78b5f59e4",
-     "author": "nidhinobinu1",
-     "license": "CC-BY-4.0",
-     "title": "Covers & Wraps Paper Bag DEMO"
-    },
-    "category": "clutter",
-    "group": "props2"
-   },
-   "material": {
-    "tint": [
-     210,
-     115,
-     115
+     8.0681,
+     1.1901,
+     6.8571
     ]
    }
   },
@@ -8474,6 +8582,6 @@
    }
   }
  ],
- "notes": "# 前厅 AI 物件集（第二轮）：常见物件换成精致带贴图的现成模型\n\n本文件是 `assemble --notes` 的输入，写进物件集的 `notes`（建模过程记录）。\n\n坐标：处理服务 `scan_import` 坐标（基线 `rebuild/base`），米，y 向上。偏差口径：`assemble` 的\"扫描→模型\"均值（厘米）\n和 3 厘米内比例。原版 = `final/authored.json`；新版 = `final2/authored.json`。\n\n## 一、结论\n\n| 口径（整房 91110 个扫描点，剖切 y ≤ 2.20） | 扫描→模型 均值 | P90 | 3 厘米内 |\n|---|---|---|---|\n| 现有算法 | 7.11 | 15.13 | 51.3% |\n| 原版（同一次重算） | 4.19 | 8.18 | 68.2% |\n| 新版 | 4.40 | 8.96 | 64.8% |\n\n- 52 个物件（结构 6 个），模板 0 个（会议椅模板 `tpl-meeting-chair` 已删，8 把会议椅改成外部模型物件）；外部模型 26 个物件、\n  16 个不同的模型文件，全部 Objaverse、CC-BY-4.0，署名在各自的 `props.source`。`structure: \"replace\"`。\n- `assemble` 整份跑过写回路径的 `parse_authored`，0 错误。\n- 网站加载量估计约 48 MB（模型 38.2 MB + 其余约 9.5 MB）；原版约 12 MB。最重的是 8 把会议椅（18.4 MB）。\n- 处理服务导入外部模型后有几件贴图坏了（两组挑模型时看的是原文件）；按导入后的样子逐件看过，坏了的 4 件已改掉。\n\n## 二、合并\n\n- 以原版为底按编号整件替换：座椅组 14 件、小件组 8 件；两组没有重复认领。`props.group`：`seating2`、`props2`。\n- 8 把会议椅换成同一个外部模型摆 8 份，模板 `tpl-meeting-chair` 不再被引用，删掉。\n- 复核后退回原版：`table-02`、`chair-11`（理由在 `props.aiReview`）。\n- 机器狗用银灰色无贴图 Spot（小件组首选），黄色带贴图备选没用（颜色和扫描差太多）。\n\n## 三、复核改正\n\n| 编号 | 问题 | 处理 |\n|---|---|---|\n| `table-02` | Jeremy《Round Table Furniture Model》导入后（多材质合成图集）整张贴图成彩色噪点，不减面也一样 | 退回原版手写（白石面 + 铜色鼓形底座） |\n| `chair-11` | pnbdesign《Armchair》19.6 万面减到 10 万后外形塌成多面体、布纹拉丝；bigshape 黑皮桶椅导入同样成噪点，hcwiley 无贴图 | 退回原版手写 |\n| `sofa-02` | Alarus《Sofa Aura 2》平铺贴图（UV 到 ±65），导入后坐垫上黑色划痕、接缝发黑 | 换 catalinberta《Simple Light Gray Couch》（1.75 万面，导入干净），tint [195,190,178] |\n| `sofa-01` | AR Quick Look《Large 2 Seater Sofa》平铺贴图（UV 到 ±9.7），导入后左坐垫、靠垫方格压痕、正面竖条纹 | 换同一个 Simple Light Gray Couch，tint [215,198,153]；偏航 178.5、宽 1.85 / 深 0.97 / 高 0.79，靠背让开窗台前沿 |\n| `clutter-09` | 站姿机器狗和新米色沙发前沿相碰（狗 14% 采样点在沙发里，最深 0.9 厘米） | 往房间里挪 5 厘米（z −0.05） |\n\n穿模（形状件 `pencheck`、库模型之间广义缠绕数 `mmcheck`）：最终 0 处。落地、朝向、尺度、颜色逐件看过。\n\n## 四、遗留\n\n1. 休闲椅 `chair-06`、`chair-12`（markpi 照片扫描拉扣高背扶手椅）是古典款，背面偏白，和现代家具放在一起最显眼；实物是现代米色高背转椅。\n2. 机器人、机器狗是站姿（库里没有坐姿 / 靠姿的人形机器人），和扫描姿态不同。\n3. 两张沙发同款（一米色一灰色）；实物外形不同。\n4. 处理服务导入：多材质、平铺贴图的模型合成图集后会坏，工作台预览看的是原文件，看不出来。\n5. 网站加载：8 把会议椅偏航都不同，导出 8 个文件共 18.4 MB；两排各统一偏航可省 13.8 MB。\n6. 结构贴图沿用基线贴图哈希的风险同上一轮。\n\n## 五、署名（全部 Objaverse，CC-BY-4.0）\n\nErvin gray leather black legs — sil3dfurniture（会议椅 ×8）；Upholstered Chair — markpi（休闲椅 ×2）；\nSimple Light Gray Couch — catalinberta（沙发 ×2）；Robot A.L.E.X — shonwall360（人形机器人）；\nBoston Dynamics robot spot — ASHISH（机器狗）；Hard Trolley Bag With Adjustable Handle — adrian saputra（行李箱）；\nOakley Kitchen Sink Backpack Model — Quinn Kuslich（背包）；Tote Bag — Jeremy E. Grayson（蓝色收纳袋）；\nCovers & Wraps Paper Bag DEMO — nidhinobinu1（红白纸袋）；IVY Shopping Bag — Baha Sukkar（黑色纸袋）；\nPrinter — Radomir3D（打印机）；Computer Monitor 16:9 (Low Poly, Game Ready) — Skript47（显示器 ×2）；\nKeyboard — Arnau Rocher Alcayde；Keyboard 75% — Kenny Pang；Water Bottle Simple Textures — ethan.kowalchuk（水杯）；\nOffice (home) black chair. — Nik Vega（前台办公椅）。\n\n## 六、上线前的数据修正（线上第 4 版）\n\n打成种子包上线（`docs/design/server-slim.md` S10）之前改了两处数据，其余与上面的记录相同：\n\n1. **标签只留给访客看的名称**。打包时公开锚点的标签取物件的 `label`，\"模型来源\"面板的\"用于\"也显示它，所以括号里的建模\n   说明挪到这里：\n   - 会议椅 ×8（`chair-02`–`chair-05`、`chair-07`–`chair-10`）：库模型 sil3dfurniture《Ervin gray leather black legs》\n     （皮面桶形餐椅），原标签\"会议椅（库：皮面桶形餐椅）\"；\n   - 休闲椅 ×2（`chair-06`、`chair-12`）：库模型 markpi《Upholstered Chair》（米色皮高背扶手椅），原标签\n     \"休闲椅（库：米色皮高背扶手椅）\"；\n   - `sofa-01` 米色皮沙发（实物是米色皮沙发，与线上第 1–3 版建的公开锚点同名）：库模型 catalinberta《Simple Light Gray Couch》（浅灰两人位），tint [215,198,153] 调成米色，\n     原标签\"米色沙发（库：浅灰两人位，tint 米色）\"；\n   - `sofa-02` 灰色布艺沙发：同一个库模型，tint [195,190,178]，原标签\"灰色布艺沙发（库：浅灰两人位）\"。\n2. **机器狗 `clutter-09` 去掉 tint**。[72,70,67] 是对着旧导出（丢了贴图、整只白色）调的；现在的导出保留原文件的材质和\n   贴图（深灰机身、橙色关节），再乘这个调色就几乎全黑。tint 只能压暗、调不出扫描里的银灰色，所以去掉，按原模型显示。\n",
+ "notes": "# 前厅 AI 物件集（第二轮）：常见物件换成精致带贴图的现成模型\n\n本文件是 `assemble --notes` 的输入，写进物件集的 `notes`（建模过程记录）。\n\n坐标：处理服务 `scan_import` 坐标（基线 `rebuild/base`），米，y 向上。偏差口径：`assemble` 的\"扫描→模型\"均值（厘米）\n和 3 厘米内比例。原版 = `final/authored.json`；新版 = `final2/authored.json`。\n\n## 一、结论\n\n| 口径（整房 91110 个扫描点，剖切 y ≤ 2.20） | 扫描→模型 均值 | P90 | 3 厘米内 |\n|---|---|---|---|\n| 现有算法 | 7.11 | 15.13 | 51.3% |\n| 原版（同一次重算） | 4.19 | 8.18 | 68.2% |\n| 新版 | 4.40 | 8.96 | 64.8% |\n\n- 52 个物件（结构 6 个），模板 0 个（会议椅模板 `tpl-meeting-chair` 已删，8 把会议椅改成外部模型物件）；外部模型 26 个物件、\n  16 个不同的模型文件，全部 Objaverse、CC-BY-4.0，署名在各自的 `props.source`。`structure: \"replace\"`。\n- `assemble` 整份跑过写回路径的 `parse_authored`，0 错误。\n- 网站加载量估计约 48 MB（模型 38.2 MB + 其余约 9.5 MB）；原版约 12 MB。最重的是 8 把会议椅（18.4 MB）。\n- 处理服务导入外部模型后有几件贴图坏了（两组挑模型时看的是原文件）；按导入后的样子逐件看过，坏了的 4 件已改掉。\n\n## 二、合并\n\n- 以原版为底按编号整件替换：座椅组 14 件、小件组 8 件；两组没有重复认领。`props.group`：`seating2`、`props2`。\n- 8 把会议椅换成同一个外部模型摆 8 份，模板 `tpl-meeting-chair` 不再被引用，删掉。\n- 复核后退回原版：`table-02`、`chair-11`（理由在 `props.aiReview`）。\n- 机器狗用银灰色无贴图 Spot（小件组首选），黄色带贴图备选没用（颜色和扫描差太多）。\n\n## 三、复核改正\n\n| 编号 | 问题 | 处理 |\n|---|---|---|\n| `table-02` | Jeremy《Round Table Furniture Model》导入后（多材质合成图集）整张贴图成彩色噪点，不减面也一样 | 退回原版手写（白石面 + 铜色鼓形底座） |\n| `chair-11` | pnbdesign《Armchair》19.6 万面减到 10 万后外形塌成多面体、布纹拉丝；bigshape 黑皮桶椅导入同样成噪点，hcwiley 无贴图 | 退回原版手写 |\n| `sofa-02` | Alarus《Sofa Aura 2》平铺贴图（UV 到 ±65），导入后坐垫上黑色划痕、接缝发黑 | 换 catalinberta《Simple Light Gray Couch》（1.75 万面，导入干净），tint [195,190,178] |\n| `sofa-01` | AR Quick Look《Large 2 Seater Sofa》平铺贴图（UV 到 ±9.7），导入后左坐垫、靠垫方格压痕、正面竖条纹 | 换同一个 Simple Light Gray Couch，tint [215,198,153]；偏航 178.5、宽 1.85 / 深 0.97 / 高 0.79，靠背让开窗台前沿 |\n| `clutter-09` | 站姿机器狗和新米色沙发前沿相碰（狗 14% 采样点在沙发里，最深 0.9 厘米） | 往房间里挪 5 厘米（z −0.05） |\n\n穿模（形状件 `pencheck`、库模型之间广义缠绕数 `mmcheck`）：最终 0 处。落地、朝向、尺度、颜色逐件看过。\n\n## 四、遗留\n\n1. 休闲椅 `chair-06`、`chair-12`（markpi 照片扫描拉扣高背扶手椅）是古典款，背面偏白，和现代家具放在一起最显眼；实物是现代米色高背转椅。\n2. 机器人、机器狗是站姿（库里没有坐姿 / 靠姿的人形机器人），和扫描姿态不同。\n3. 两张沙发同款（一米色一灰色）；实物外形不同。\n4. 处理服务导入：多材质、平铺贴图的模型合成图集后会坏，工作台预览看的是原文件，看不出来。\n5. 网站加载：8 把会议椅偏航都不同，导出 8 个文件共 18.4 MB；两排各统一偏航可省 13.8 MB。\n6. 结构贴图沿用基线贴图哈希的风险同上一轮。\n\n## 五、署名（全部 Objaverse，CC-BY-4.0）\n\nErvin gray leather black legs — sil3dfurniture（会议椅 ×8）；Upholstered Chair — markpi（休闲椅 ×2）；\nSimple Light Gray Couch — catalinberta（沙发 ×2）；Robot A.L.E.X — shonwall360（人形机器人）；\nBoston Dynamics robot spot — ASHISH（机器狗）；Hard Trolley Bag With Adjustable Handle — adrian saputra（行李箱）；\nOakley Kitchen Sink Backpack Model — Quinn Kuslich（背包）；Tote Bag — Jeremy E. Grayson（蓝色收纳袋）；\nCovers & Wraps Paper Bag DEMO — nidhinobinu1（红白纸袋）；IVY Shopping Bag — Baha Sukkar（黑色纸袋）；\nPrinter — Radomir3D（打印机）；Computer Monitor 16:9 (Low Poly, Game Ready) — Skript47（显示器 ×2）；\nKeyboard — Arnau Rocher Alcayde；Keyboard 75% — Kenny Pang；Water Bottle Simple Textures — ethan.kowalchuk（水杯）；\nOffice (home) black chair. — Nik Vega（前台办公椅）。\n\n## 六、上线前的数据修正（线上第 4 版）\n\n打成种子包上线（`docs/design/server-slim.md` S10）之前改了下面几处数据，其余与上面的记录相同：\n\n1. **标签只留给访客看的名称**。打包时公开锚点的标签取物件的 `label`，\"模型来源\"面板的\"用于\"也显示它，所以括号里的建模\n   说明挪到这里：\n   - 会议椅 ×8（`chair-02`–`chair-05`、`chair-07`–`chair-10`）：库模型 sil3dfurniture《Ervin gray leather black legs》\n     （皮面桶形餐椅），原标签\"会议椅（库：皮面桶形餐椅）\"；\n   - 休闲椅 ×2（`chair-06`、`chair-12`）：库模型 markpi《Upholstered Chair》（米色皮高背扶手椅），原标签\n     \"休闲椅（库：米色皮高背扶手椅）\"；\n   - `sofa-01` 米色皮沙发（实物是米色皮沙发，与线上第 1–3 版建的公开锚点同名）：库模型 catalinberta《Simple Light Gray Couch》（浅灰两人位），tint [215,198,153] 调成米色，\n     原标签\"米色沙发（库：浅灰两人位，tint 米色）\"；\n   - `sofa-02` 灰色布艺沙发：同一个库模型，tint [195,190,178]，原标签\"灰色布艺沙发（库：浅灰两人位）\"。\n2. **两个纸袋退回第一轮的手写款**（`reception-red-bag`、`reception-black-bag`，形状加从扫描烘焙的贴图）。小件组选的\n   nidhinobinu1《Covers & Wraps Paper Bag DEMO》和 Baha Sukkar《IVY Shopping Bag》，贴图上印着别家的注册商标，红白纸袋\n   还印着那家商店的门店地址、电话和邮箱；CC BY 不授予商标权，演示空间也不该替别人公开联系方式。手写款按扫描实测，\n   和第二轮新换的打印机不相交（与门、打印桌的包围盒相交是一个立在桌上、一个靠在门边，第一轮就是这样）。\n3. **人形机器人、机器狗的标签去掉括号里的说明**：\"人形机器人（站在米色沙发前）\"改回\"人形机器人\"，\"机器狗（四足）\"改回\n   \"机器狗\"，与第一轮的叫法一致。\n4. **两个模型的作者署现在的名字**：会议椅的 sil3dfurniture 在 Sketchfab 上改名为 deephouse，显示器的 Skript47 改名为\n   LiveToWin34（作者编号与 Objaverse 元数据里的相同，是同一个人改了用户名），署名写成\"deephouse（原 sil3dfurniture）\"\n   \"LiveToWin34（原 Skript47）\"，访客点开来源页能对上。\n5. **机器狗 `clutter-09` 去掉 tint**。[72,70,67] 是对着旧导出（丢了贴图、整只白色）调的；现在的导出保留原文件的材质和\n   贴图（深灰机身、橙色关节），再乘这个调色就几乎全黑。tint 只能压暗、调不出扫描里的银灰色，所以去掉，按原模型显示。\n",
  "structure": "replace"
 }
