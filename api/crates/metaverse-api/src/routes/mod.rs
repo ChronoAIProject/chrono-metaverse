@@ -164,6 +164,7 @@ pub fn router(state: AppState) -> Router {
         ));
     let gated = v1
         .merge(public)
+        .merge(crate::auth::oauth::router(state.clone()))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_ready));
     Router::new()
         .route("/api/healthz", get(crate::health::healthz))
@@ -177,7 +178,10 @@ pub fn router(state: AppState) -> Router {
             REQUEST_TIMEOUT,
         ))
         // 与 CMA 相同：每个请求带 x-request-id，日志里只记方法、路径和状态，不记请求头。
-        .layer(TraceLayer::new_for_http())
+        .layer(TraceLayer::new_for_http().make_span_with(|request: &Request| {
+            // OAuth callback 的 code/state 在查询参数里，任何日志级别都不记录原始 URI。
+            tracing::info_span!("http_request", method = %request.method(), path = %request.uri().path())
+        }))
         .layer(PropagateRequestIdLayer::new(X_REQUEST_ID))
         .layer(SetRequestIdLayer::new(X_REQUEST_ID, MakeRequestUuid))
 }

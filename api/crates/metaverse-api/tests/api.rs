@@ -35,6 +35,9 @@ const SERVICE: &str = "svc-metaverse";
 const KID: &str = "test-key";
 const ORG: &str = "org-chronoai";
 
+#[path = "oauth_support/mod.rs"]
+mod oauth_tests;
+
 // ---------------------------------------------------------------------------
 // 测试签名密钥（改编自 CMA jwt_tests.rs）
 // ---------------------------------------------------------------------------
@@ -143,6 +146,7 @@ struct NyxMock {
     base_url: String,
     seen_credentials: Arc<Mutex<Vec<String>>>,
     server: tokio::task::JoinHandle<()>,
+    oauth: oauth_tests::MockProvider,
 }
 
 impl NyxMock {
@@ -150,12 +154,15 @@ impl NyxMock {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let recorder = seen.clone();
         let jwks = Signer::shared().jwks();
+        let oauth = oauth_tests::MockProvider::default();
+        let org_oauth = oauth.clone();
         let app = Router::new()
             .route("/nyx/jwks", get(move || async move { Json(jwks.clone()) }))
             .route(
                 "/api/v1/orgs/{org}/authorization",
                 get(move |Path(org): Path<String>, headers: HeaderMap| {
                     let recorder = recorder.clone();
+                    let oauth = org_oauth.clone();
                     async move {
                         let credential = headers
                             .get(header::AUTHORIZATION)
@@ -164,7 +171,12 @@ impl NyxMock {
                             .to_owned();
                         recorder.lock().unwrap().push(credential.clone());
                         let token = credential.strip_prefix("Bearer ").unwrap_or_default();
-                        let role = match token {
+                        let role = if token.starts_with("oauth-") {
+                            match oauth.role(token).await {
+                                Some(role) => role,
+                                None => return StatusCode::NOT_FOUND.into_response(),
+                            }
+                        } else { match token {
                             "admin-token" => "admin",
                             "member-token" => "member",
                             "viewer-token" => "viewer",
@@ -176,7 +188,7 @@ impl NyxMock {
                             // 转发来的 JWT：服务端已核对过 sub，这里当作 admin。
                             jwt if jwt.starts_with("eyJ") => "admin",
                             _ => return StatusCode::NOT_FOUND.into_response(),
-                        };
+                        }.to_owned() };
                         Json(json!({
                             "id": org, "your_role": role, "member_count": 3,
                             "is_primary": true, "active_invite_count": 0,
@@ -187,6 +199,7 @@ impl NyxMock {
                     }
                 }),
             );
+        let app = oauth.routes(app);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base_url = format!("http://{}", listener.local_addr().unwrap());
         let server = tokio::spawn(async move {
@@ -196,6 +209,7 @@ impl NyxMock {
             base_url,
             seen_credentials: seen,
             server,
+            oauth,
         }
     }
 }
@@ -229,6 +243,10 @@ impl TestApp {
     }
 
     async fn start_with(prepare: bool) -> Option<Self> {
+        Self::start_with_options(prepare, false).await
+    }
+
+    async fn start_with_options(prepare: bool, oauth: bool) -> Option<Self> {
         if std::env::var("METAVERSE_SKIP_MONGO_TESTS").as_deref() == Ok("1") {
             eprintln!("跳过：METAVERSE_SKIP_MONGO_TESTS=1");
             return None;
@@ -238,7 +256,7 @@ impl TestApp {
         let database = format!("metaverse_test_{}", uuid::Uuid::new_v4().simple());
         let nyx = NyxMock::start().await;
         // 签发方只是一个字符串，但校验器要求它是合法地址；用本机地址。
-        let values = [
+        let mut values = vec![
             ("MONGODB_URI", uri.clone()),
             ("MONGODB_DATABASE", database.clone()),
             ("NYXID_BASE_URL", nyx.base_url.clone()),
@@ -247,6 +265,9 @@ impl TestApp {
             ("NYXID_JWT_AUDIENCE", AUDIENCE.to_owned()),
             ("ALLOWED_NYX_SERVICE_IDS", format!("{SERVICE},svc-catalog")),
         ];
+        if oauth {
+            values.extend(oauth_tests::config_values());
+        }
         let config = Config::from_lookup(|name| {
             values
                 .iter()

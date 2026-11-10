@@ -7,7 +7,9 @@
     "metaverse-web": {
       "image": "ghcr.io/chronoaiproject/chrono-metaverse-web:413b28f@sha256:0eda546248a45a5a5ba2ef71dc82a8ebc32e45010cf1bf9fd8b1c0b80a514ce8",
       "port": 8080,
-      "routes": ["/"],
+      "routes": [
+        "/"
+      ],
       "expose": "public",
       "health_path": "/healthz",
       "replicas": 2,
@@ -21,7 +23,9 @@
     "metaverse-api": {
       "image": "ghcr.io/chronoaiproject/chrono-metaverse-api:413b28f@sha256:d6ff2aee81a8f42ac5be6a087fcf8b896d990fdfe30a0f36bf7e8dcbba78ed2d",
       "port": 8080,
-      "routes": ["/api"],
+      "routes": [
+        "/api"
+      ],
       "expose": "public",
       "health_path": "/api/healthz",
       "replicas": 1,
@@ -53,7 +57,8 @@
         "PUBLIC_CACHE_BYTES": "134217728",
         "METAVERSE_DEMO_SEED": "{\"spaceId\":\"chronoai-lobby\",\"name\":\"ChronoAI 前厅\",\"description\":\"ChronoAI 办公室前厅：Scaniverse 扫描 + AI 重建的演示空间（由部署配置自动导入）\",\"owner\":{\"kind\":\"org\",\"id\":\"52aa284c-b5b2-49bd-9d12-79f24772dbd7\"},\"visibility\":\"unlisted\",\"revision\":3}",
         "METAVERSE_DEMO_SEED_HOSTS": "raw.githubusercontent.com,github.com,release-assets.githubusercontent.com,objects.githubusercontent.com,scaniverse.com",
-        "RUST_LOG": "info"
+        "RUST_LOG": "info",
+        "NYXID_OAUTH_CLIENT_ID": "be885bc0-94fd-4a30-bb5e-613723cd0eef"
       },
       "addon_env": {
         "mongodb": {
@@ -61,7 +66,11 @@
           "database": "MONGODB_DATABASE"
         }
       },
-      "secret_keys": ["METAVERSE_DEMO_SHARE_TOKEN"],
+      "secret_keys": [
+        "METAVERSE_DEMO_SHARE_TOKEN",
+        "NYXID_OAUTH_CLIENT_SECRET",
+        "NYXID_OAUTH_ENCRYPTION_KEY"
+      ],
       "resources": {
         "cpu_request": "250m",
         "memory_request": "384Mi",

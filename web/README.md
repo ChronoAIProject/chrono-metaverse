@@ -118,7 +118,7 @@ npm run e2e            # Playwright（夹具模式）：三种视图和 ?view= �
 | 错误格式         | CMA 的 RFC 9457 问题文档（`code`、`detail`、`title`）                           | `src/core/api/client.ts`                          | 客户端按同样的格式解析                                                                                                                                                                                                                                                                         |
 | nginx            | `web/nginx.conf`                                                                | `nginx.conf`                                      | 保留安全头、带哈希文件永久缓存、入口页不缓存、缺文件不缓存、单页应用兜底；去掉 CMA 各服务的转发（包括根路径的 `/openapi.json`），改成 `/api/` 整体原样转给 `metaverse-api`（接口说明文档是 `/api/openapi.json`，`build/nginx.test.ts` 检查）；`Referrer-Policy` 改成 `no-referrer`（设计 7.2） |
 
-去掉的：所有 agent / 沙箱 / 事件网关 / 文档 / 用量相关的页面、组件和 e2e 检查，NyxID 登录（网站只读、不登录），CMA SDK，品牌图标。
+去掉的：所有 agent / 沙箱 / 事件网关 / 文档 / 用量相关的页面、组件和 e2e 检查，CMA 的通用登录流程，CMA SDK，品牌图标。
 
 ## 目录
 
@@ -212,3 +212,7 @@ src/
 - **草稿预览**：在前厅最新版本上加一张大理石长椅（新上传的贴图，只能经预览接口读取）和一座喷泉（草稿区块）。
 
 夹具接口故意把分页做小（提交每页 3 条、事件每页 400 条），并检查每次事件查询（时间窗 `[from, to)`）不超过 24 小时、密度不超过 90 天。事件和接口服务一样先按原始记录分页（时间窗按原事件的 `(at, 编号)`，增量按全部记录的 `(recordedAt, 编号)`），再对这一页做公开投影；前厅 10 月 2 日凌晨有 450 条内部级门磁事件（`sensor.door`），这天的第一页是空页。夹具存的是原始记录（`visibility` 只在写入时显式给了才有），公开投影和接口服务一样在夹具接口里做：先应用更正，再按生效的可见级别和公开锚点过滤，`data` 只留公开字段，输出不带 `visibility`、`corrects`；空间信息返回全部事件类型。
+
+## NyxID 连接
+
+`/connect` 提供用户授权和断开入口，后端在 `/api/auth/nyxid/*` 管理 OAuth 状态及 Cookie。网站空间查看仍走现有公开/分享链接；连接 Cookie 不赋予业务 API 身份。配置及 Agent 组织访问流程见 [NyxID OAuth 接入](../docs/NYXID_OAUTH.md)。

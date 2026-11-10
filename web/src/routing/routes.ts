@@ -8,6 +8,7 @@ import { VIEW_MODES, type RebuiltStyle, type ViewMode } from '../core/scene';
  * - `/s/<空间编号>#share=<分享令牌>`：查看一个空间；
  * - `/u/<组合编号>#share=<分享令牌>`：查看组合宇宙；
  * - `/preview#t=<预览令牌>`：草稿预览；
+ * - `/connect`：连接 NyxID 授权；
  * - `/`：首页。
  *
  * 令牌在 `#` 后面，不属于路由，也不会发给服务器。
@@ -16,6 +17,7 @@ import { VIEW_MODES, type RebuiltStyle, type ViewMode } from '../core/scene';
  */
 export type AppRoute =
   | { readonly kind: 'home' }
+  | { readonly kind: 'connect' }
   | { readonly kind: 'space'; readonly spaceId: string }
   | { readonly kind: 'universe'; readonly universeId: string }
   | { readonly kind: 'preview' }
@@ -35,6 +37,7 @@ function decodeSegment(value: string): string | null {
 
 export function parseRoute(pathname: string): AppRoute {
   if (pathname === '/' || pathname === '') return { kind: 'home' };
+  if (pathname === '/connect') return { kind: 'connect' };
   if (pathname === '/preview') return { kind: 'preview' };
   if (!pathname.startsWith('/') || pathname.endsWith('/')) return { kind: 'not_found', pathname };
   const segments = pathname.slice(1).split('/').map(decodeSegment);
@@ -51,6 +54,8 @@ export function routePath(route: AppRoute): string {
   switch (route.kind) {
     case 'home':
       return '/';
+    case 'connect':
+      return '/connect';
     case 'space':
       return `/s/${encodeURIComponent(route.spaceId)}`;
     case 'universe':

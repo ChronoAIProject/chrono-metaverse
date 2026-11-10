@@ -52,7 +52,10 @@ cargo run -p metaverse-api
 | `NYXID_JWT_AUDIENCE` | 是 | 身份令牌受众（注册服务时设置的 `identity_jwt_audience`） |
 | `ALLOWED_NYX_SERVICE_IDS` | 是 | 允许的 NyxID 服务编号，逗号分隔（过渡期可同时填自定义服务和目录服务的编号） |
 | `BIND` | 否 | 默认 `0.0.0.0:8080` |
-| `PUBLIC_BASE_URL` | 否 | 默认 `http://localhost:8080`；也用来拼草稿预览链接（`<地址>/preview#t=<令牌>`） |
+| `PUBLIC_BASE_URL` | 否 | 默认 `http://localhost:8080`；用于预览链接和 OAuth 回调；OAuth 启用时须为 HTTPS 根地址（本机可用 HTTP） |
+| `NYXID_OAUTH_CLIENT_ID` | 否 | 专用保密 OAuth 客户端 ID；三个 OAuth 变量须同时配置，否则默认禁用 |
+| `NYXID_OAUTH_CLIENT_SECRET` | 启用 OAuth 时必填 | 客户端秘密，使用应用密钥注入 |
+| `NYXID_OAUTH_ENCRYPTION_KEY` | 启用 OAuth 时必填 | 32 字节随机密钥的标准 base64 编码，使用应用密钥注入 |
 | `METAVERSE_REQUIRE_PERMISSIONS` | 否 | `true` 时启用功能级权限（`metaverse:*` 权限字符串），默认 `false` |
 | `PUBLIC_RATE_LIMIT_PER_MINUTE` | 否 | 公开接口每个来源地址每分钟的请求数，默认 1200 |
 | `PUBLIC_RATE_LIMIT_BURST` | 否 | 公开接口的突发额度，默认 200 |
@@ -429,14 +432,16 @@ universeRevisions { _id: "<组合编号>:<seq>", universeId, owner, seq, at, act
    读接口（含读草稿、查任务）不要求能力。管理接口里的改名称和可见性、轮换分享令牌、删除空间只要求资源级"管理"，不对应能力（它们只该由主人或组织 admin 经命令行调用，不进 AI 工具）。
 
    **重建权限**（始终生效，docs/design/server-slim.md 3.1）：重建路径（`/api/v1/spaces/{space_id}/rebuild/`）上的写操作（建上传、传片、完成上传、建草稿、交包、预览、发布、丢弃）一律要求 `metaverse:rebuild:write`，不看上面的开关，也没有关掉它的配置，没有就 403 `rebuild_permission_required`；重建路径不要求 `metaverse:content:write`，读操作只按访问级别。NyxID 里配好这个权限之前，通过接口谁都写不了重建层，只有部署种子（系统范围）能写。
-3. **资源级**：读出主人（没有一致归属证据的组织空间按个人所有处理）→ 主人本人或组织本身直接是"管理"→ 否则用调用者转发来的 `Authorization: Bearer` 凭据调 NyxID `GET /api/v1/orgs/{id}/authorization`（转发的是 JWT 时先验签并要求 sub 一致；返回编号必须等于组织编号；401/403/404 判为不是成员，其他判为查不到；15 秒截止；不跨请求缓存；证据最多用 60 秒）→ admin 是"管理"，member/viewer 是"只读"。看不到 404，能看不能写 403，写操作查不到角色 503 `org_membership_unavailable`。
+3. **资源级**：读出主人（没有一致归属证据的组织空间按个人所有处理）→ 主人本人或组织本身直接是"管理"→ 否则优先用调用者转发来的 `Authorization: Bearer`，没有转发凭据时按签名 `sub` 获取同一用户保存的 OAuth 凭据，再调 NyxID `GET /api/v1/orgs/{id}/authorization`（转发的是 JWT 时先验签并要求 sub 一致；返回编号必须等于组织编号；401/403/404 判为不是成员，其他判为查不到；15 秒截止；不跨请求缓存；证据最多用 60 秒）→ admin 是"管理"，member/viewer 是"只读"。看不到 404，能看不能写 403，写操作查不到角色 503 `org_membership_unavailable`。
+
+用户连接入口为 `/connect`，OAuth 管理端点在 `/api/auth/nyxid/*`，独立于业务身份中间件；浏览器 Cookie 不能调用 `/api/v1/*`。凭据加密存储、自动刷新和断开流程见 [NyxID OAuth 接入](../docs/NYXID_OAUTH.md)。
 
 ### 从 CMA 复用了什么
 
 | 本仓库 | CMA 原文件 | 怎么用的 |
 |---|---|---|
 | `metaverse-api/src/auth/jwt.rs`、`jwt_tests.rs` | `api/crates/cma/src/auth/nyxid_proxy/jwt.rs`、`jwt_tests.rs` | 照搬改名。改动：服务编号改成允许列表；显式拒绝 `token_type`；去掉个人资料投影；新增"转发来的访问令牌验签并核对 sub"。测试密钥生成、JWKS 模拟服务器、缓存与刷新的测试照搬 |
-| `metaverse-api/src/auth/organizations.rs` | `api/crates/cma/src/auth/organizations/{mod.rs,transport.rs}` | 照搬查询流程：`/orgs/{id}/authorization`、规范编号核对、三态结果、15 秒截止、1MB 响应上限、证据 60 秒、不跨请求缓存。改动：凭据来自 NyxID 转发的调用者令牌（本服务没有网页登录），JWT 形式的凭据先验签核对 sub |
+| `metaverse-api/src/auth/organizations.rs` | `api/crates/cma/src/auth/organizations/{mod.rs,transport.rs}` | 照搬查询流程：`/orgs/{id}/authorization`、规范编号核对、三态结果、15 秒截止、1MB 响应上限、证据 60 秒、不跨请求缓存。改动：凭据优先来自转发令牌，无转发时使用同主体 OAuth 授权；JWT 形式的凭据先验签核对 sub |
 | `metaverse-api/src/auth/permissions.rs` | `api/crates/cma/src/permissions.rs` | 参照：精确字符串映射成固定能力，未知字符串和通配不授予 |
 | `metaverse-api/src/auth/access.rs`、`authorizer.rs` | `api/crates/layer2-core/src/resource_access/`（`identity.rs`、`context.rs`、`store.rs`、`policy.rs`、`tests.rs`） | 参照：主人类型显式记录、组织归属证据、无证据按个人处理、admin 等同主人、member/viewer 只读、访问级别测试矩阵 |
 | `metaverse-core/src/model.rs` 的 `Space::ownership_is_consistent` | `layer2-core/src/resource_access/store.rs` 的 `ResourcePolicyRecord::validate` | 参照：主人与证据的一致性规则 |

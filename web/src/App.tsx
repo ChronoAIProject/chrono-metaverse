@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { ConnectPage } from './auth/ConnectPage';
 import {
   createPublicClient,
   previewTokenFromHash,
@@ -56,6 +57,9 @@ function Home({ showFixtureLink }: { readonly showFixtureLink: boolean }) {
           空间链接形如 <code>/s/空间编号#share=分享令牌</code>，组合链接形如{' '}
           <code>/u/组合编号#share=分享令牌</code>。
         </p>
+        <a className="home__link home__link--quiet" href="/connect">
+          连接 NyxID
+        </a>
         {showFixtureLink && (
           <div className="home__links">
             <a className="home__link" href={FIXTURE_LINK}>
@@ -108,6 +112,8 @@ export function App({
   switch (route.kind) {
     case 'home':
       return <Home showFixtureLink={showFixtureLink} />;
+    case 'connect':
+      return <ConnectPage />;
     case 'space':
       return (
         <SpacePage
