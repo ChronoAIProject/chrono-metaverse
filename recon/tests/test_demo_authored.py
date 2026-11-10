@@ -27,7 +27,8 @@ def load() -> dict:
 def test_lobby_authored_set_passes_the_worker_checks():
     parsed = parse_authored(load())
     assert parsed["structure"] == "replace"
-    assert len(parsed["templates"]) == 1 and len(parsed["entities"]) == 52 and len(parsed["models"]) == 10
+    # 线上第 4 版（精致模型版）：没有模板，外部模型物件 24 件
+    assert len(parsed["templates"]) == 0 and len(parsed["entities"]) == 52 and len(parsed["models"]) == 24
     assert parsed["notes"] and parsed["notes"].startswith("# ")
     # 结构贴图只在结构物件上（回退按同编号、同部件路径找本次算法结构的贴图）
     for eid, body in parsed["entities"].items():
@@ -42,10 +43,17 @@ def test_lobby_authored_set_passes_the_worker_checks():
 def test_readme_lists_every_model_attribution():
     readme = (DEMO / "README.md").read_text(encoding="utf-8")
     sources = {e["props"]["source"]["id"]: e["props"]["source"] for e in load()["entities"] if "model" in e}
-    assert len(sources) == 8
+    assert len(sources) == 14
     for source in sources.values():
         assert source["license"].startswith("CC-BY")
         row = next((line for line in readme.splitlines() if f"<{source['page']}>" in line), None)
         assert row is not None, source["title"]
         for key in ("title", "author", "license"):
             assert source[key] in row, (source["title"], key)
+
+
+def test_labels_are_visitor_names():
+    """标签会成为公开锚点的名称和"模型来源"面板的"用于"：建模说明（用了哪个库模型、怎么调色）只写进 notes。"""
+    for entity in load()["entities"]:
+        label = entity["label"]
+        assert "库：" not in label and "tint" not in label, (entity["entityId"], label)
