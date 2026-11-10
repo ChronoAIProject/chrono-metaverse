@@ -1,11 +1,11 @@
 """assemble：把逐件做好的物件文件合并成 AI 物件集（`authored.json`），并做整房检查。
 
-AI 物件集（写回路径接收的格式，`rebuild` 任务交给处理服务写进时间线）：
+AI 物件集（打包 `metaverse-recon bundle` 接收的格式）：
 
 ```json
 { "version": 1,
   "templates": [ 模板物件 body（kind "template"）… ],
-  "entities":  [ 物件 body … ],     // 空间坐标（与 scan_import 的对齐坐标系相同，也就是 prepare 的坐标系）
+  "entities":  [ 物件 body … ],     // 空间坐标（prepare 的坐标系，也就是工作区 scan/transform.json 的）
   "notes": "建模过程记录（可选，≤ 64KB）",
   "structure": "keep" | "replace" }
   // keep：结构沿用算法结果；replace：用 entities 里 kind "structure" 的物件
@@ -15,7 +15,7 @@ AI 物件集（写回路径接收的格式，`rebuild` 任务交给处理服务�
 `bounds` + `props.source`，见 `models.py`）。
 
 合并时：模板按编号去重（内容不同就报错）、物件编号唯一、引用的模板必须存在、每个物件逐个校验、包围盒按形状
-或模型重算；最后整份交给写回路径的校验（`metaverse_recon.authored.parse_authored`，处理服务收到时跑的就是它），
+或模型重算；最后整份交给打包流程的校验（`metaverse_recon.authored.parse_authored`，`bundle` 跑的就是它），
 通过了才算合格。输出目录：`authored.json`、`room.glb`（整房预览：结构 + 物件）、`room.jpg`（扫描 | 现有算法 |
 AI 重建：总览、俯视、四个角）、`report.json`（逐件偏差表、漏建的扫描团块）。
 """
@@ -196,7 +196,7 @@ def validate(
             if extra:
                 chk["errors"].append(f"外部模型物件有不认识的字段：{extra}")
             if local is None:
-                # 本机没有文件时不能重算包围盒；校验仍然报错（写回需要正确的包围盒）
+                # 本机没有文件时不能重算包围盒；校验仍然报错（打包需要正确的包围盒）
                 pass
             elif chk.get("computedBounds"):
                 body["bounds"] = chk["computedBounds"]
@@ -356,7 +356,7 @@ def room_report(base: Base, scan: wc.Scan, entities, templates, extra, density: 
         ks = [i for i, lab in enumerate(a_labels) if lab == eid]
         if not ks or "bounds" not in body:
             continue
-        # 写回时处理服务写进记录的 fit（同一个函数）
+        # 打包时写进记录的 fit（同一个函数）
         bg = [] if body.get("kind") == "structure" else background
         fit, fit_points = of.entity_fit([a_parts[i].mesh for i in ks], table, eid, bg)
         own = wc.Box.of(body["bounds"]).grow(0.02).contains(P)
@@ -394,7 +394,7 @@ def room_report(base: Base, scan: wc.Scan, entities, templates, extra, density: 
         "note": "扫描点：地面 3 厘米以上、剖切高度以下；AI 和现有算法都带上结构（墙、地面、玻璃）一起算；"
         "uncovered = 离 AI 重建超过 5 厘米的扫描点按 10 厘米体素连成的团块（漏建或放错），baseObjects = "
         "现有算法里"
-        "和它重叠的物体；entities.fit = 写回时处理服务写进记录的偏差（同一个函数：按物件朝向取范围，"
+        "和它重叠的物体；entities.fit = 打包时写进记录的偏差（同一个函数：按物件朝向取范围，"
         "墙、玻璃、地面作背景，只计 10 厘米以内的点；null = 不写）",
     }
 
@@ -441,7 +441,7 @@ def cmd_assemble(args) -> dict:
         try:
             parse_authored(authored)
         except AuthoredError as e:
-            errors.append(f"写回路径校验不通过：{e}")
+            errors.append(f"打包校验不通过：{e}")
     size = len(json.dumps(authored, ensure_ascii=False).encode())
     print(
         f"AI 物件集：{len(templates)} 个模板，{len(entities)} 个物件"
@@ -488,7 +488,7 @@ def room_outputs(args, base: Base, templates, entities, locals_, out_dir: str) -
     print(f"\n== 整房偏差（{rep['points']} 个扫描点，剖切 y ≤ {cut:.2f}；单位厘米）")
     for name, s in (("现有算法", rep["base"]), ("AI 重建", rep["ai"])):
         print(f"  {name}：扫描→模型 均值 {s['meanCm']}，P90 {s['p90Cm']}，3 厘米内 {s['coverage3cm']:.1%}")
-    print("\n== 逐件（包围盒内的扫描点 → AI 重建 / 现有算法；模型 → 扫描；写回的 fit）")
+    print("\n== 逐件（包围盒内的扫描点 → AI 重建 / 现有算法；模型 → 扫描；记录的 fit）")
     for e in rep["entities"]:
         a, b, m, f = e["scanToModel"], e["baseScanToModel"], e["modelToScan"], e["fit"]
         print(
@@ -496,7 +496,7 @@ def room_outputs(args, base: Base, templates, entities, locals_, out_dir: str) -
             f"扫描→AI {a['meanCm'] if a else '-':>6} "
             f"（3cm内 {a['coverage3cm'] if a else '-'}）  扫描→现有 {b['meanCm'] if b else '-':>6}  "
             f"模型→扫描 {m['meanCm'] if m else '-'}  "
-            f"写回 fit {f['meanCm'] if f else '不写'}"
+            f"记录 fit {f['meanCm'] if f else '不写'}"
         )
     if rep["uncovered"]:
         print("\n== 没被任何物件覆盖的扫描团块（离 AI 重建 >5 厘米）")

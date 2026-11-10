@@ -204,7 +204,7 @@ def test_entity_files_from_directories_skip_sidecars(tmp_path):
 
 
 def test_gltf_model_files_and_look_reach_the_writeback_format(tmp_path, base):
-    """旧版旁注里 gltf 的 files 是数组：assemble 换成写回路径收的 {相对路径: {url, sha256, size}}，
+    """旧版旁注里 gltf 的 files 是数组：assemble 换成打包流程收的 {相对路径: {url, sha256, size}}，
     material 的 opacity / unlit 原样带上，整份通过 parse_authored。"""
     from metaverse_recon.authored import parse_authored
 

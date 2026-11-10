@@ -441,7 +441,7 @@ def cmd_place(args) -> dict:
         f"{eid or '范围'} {r(box.lo, 3)} – {r(box.hi, 3)}"
     )
     if side["model"].get("url") is None:
-        wc.log("  提示：这个模型没有可写回的地址（见 fetch 的提示）")
+        wc.log("  提示：这个模型没有可打包的地址（见 fetch 的提示）")
 
     # 扫描点（范围里、地面以上、去掉排除框）
     clip, floor_y, scan_glb, near, grid, _, hm = prepare_scan(args, box, args.margin, out_dir, base)
@@ -562,7 +562,7 @@ def cmd_place(args) -> dict:
         res_new = evaluate(new, P, C, ref_tree, floor_y, background)
         old = base_modelset(base, [eid] if eid in base.objects else [])
         res_base = evaluate(old, P, C, ref_tree, floor_y, background) if old.parts else None
-        # 记录里的 fit 用写回口径（处理服务写回时用同一个函数按处理后的模型重算）
+        # 记录里的 fit 用打包的口径（打包时用同一个函数按导出后的模型重算）
         wf = writeback_fits(new, scan_table(near), of.background_meshes(base.structure, {}))[body["entityId"]]
         if wf["fit"] is not None:
             body["fit"] = wf["fit"]

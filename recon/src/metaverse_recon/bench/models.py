@@ -1,6 +1,6 @@
 """外部模型物件（模型库里找来的现成模型）：读取、变换、包围盒、本地文件查找、记录校验。
 
-物件记录（AI 物件集的外部模型物件，写回路径按它下载、核对、重新导出、登记成 assetHash）：
+物件记录（AI 物件集的外部模型物件，打包时按它下载、核对、重新导出，换成 assetHash）：
 
 ```json
 { "entityId": "sofa-01", "layer": "rebuilt", "kind": "object", "label": "沙发",
@@ -18,8 +18,9 @@
   `pitch` / `roll` 的 90° 倍数摆正，`scale` 是沿模型原始坐标轴的缩放。
 - **格式**：`glb`（一个文件）；`gltf`（Poly Haven：`url` 是 .gltf 文件，`files` 是
   `{相对 .gltf 的路径: {url, sha256, size}}`，列出它引用的 .bin 和贴图；`pack_gltf` 把它们打包成 glb）；
-  `gltf-zip`（压缩包里一个 .gltf 加它引用的文件）。与写回路径收的格式相同（`metaverse_recon.authored`）。
-- **material**：`{tint?, opacity?, unlit?}`，`tint` 写回时烘进模型，`opacity`、`unlit` 留在物件上。
+  `gltf-zip`（压缩包里一个 .gltf 加它引用的文件）。与打包流程收的格式相同（`metaverse_recon.authored`）。
+- **material**：`{tint?, opacity?, unlit?, shading?}`，`tint` 打包时烘进模型，其余留在物件上（`shading`
+  不写时打包写成 `albedo`）。
 - **单位**：处理服务把旋转、缩放烘进模型之后才检查 ±1000 米的坐标上限，厘米单位的模型缩放后可以用。
 - **bounds** 按变换后的模型算（`world_bounds`）。
 """
@@ -403,7 +404,7 @@ def _check_transform(xf: Any, errors: list[str]) -> None:
 
 
 def check_source(src: Any) -> list[str]:
-    """署名：规则与写回路径、物件记录相同（`authored.validate_source` → `records.validate_model_source`）。"""
+    """署名：规则与打包流程、物件记录相同（`authored.validate_source` → `records.validate_model_source`）。"""
     if not isinstance(src, Mapping):
         return ["缺少 props.source（署名：library、id、page、author、license、title）"]
     try:
@@ -422,7 +423,7 @@ def _check_url(url: Any, what: str, hosts: tuple[str, ...], errors: list[str]) -
 
 
 def model_ref(model: Mapping[str, Any]) -> dict[str, Any]:
-    """写回用的 `model`：只留 url、sha256、size、format，gltf 的附属文件写成 `{相对路径: {url, sha256, size}}`
+    """打包用的 `model`：只留 url、sha256、size、format，gltf 的附属文件写成 `{相对路径: {url, sha256, size}}`
     （旧版 fetch 旁注里是 `[{path, url, sha256, size}]`，这里一并换过来）。"""
     out = {k: model[k] for k in ("url", "sha256", "size", "format") if k in model}
     files = model.get("files")
@@ -440,7 +441,7 @@ def model_ref(model: Mapping[str, Any]) -> dict[str, Any]:
 def check_model_entity(
     body: Mapping[str, Any], hosts: tuple[str, ...] | None = None
 ) -> tuple[list[str], list[str]]:
-    """外部模型物件的校验：返回 (错误, 提示)。`model`、`material`、署名按写回路径的规则
+    """外部模型物件的校验：返回 (错误, 提示)。`model`、`material`、署名按打包流程的规则
     （`metaverse_recon.authored`），另外检查地址的主机在允许列表里、bounds 已经算好。"""
     hosts = hosts or allowed_hosts()
     errors: list[str] = []

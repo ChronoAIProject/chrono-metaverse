@@ -2,7 +2,7 @@
 
 与处理服务 `scan_import` 首次导入**完全相同**的代码路径：直接调用 `processing.tasks.scan_task`（读取 →
 `processing.align.auto_align` 对齐 → 结构 + 物体重建，带提示），只是不生成网页用模型、不写数据库。所以基线的
-坐标系、结构和物体编号与线上导入同一份扫描的结果一致，AI 物件集写回时不用换算。
+坐标系、结构和物体编号与线上导入同一份扫描的结果一致，AI 物件集打包时不用换算。
 
 输入：Scaniverse 式的 zip（Draco 网格 + 贴图）、glb，或 drc + 单独的贴图（打包成同样的 zip 再处理）。
 提示 `--hints` 用处理服务坐标系（与 `scan_import` 的 `hints` 参数相同）。
@@ -253,7 +253,7 @@ def cmd_prepare(args) -> dict:
     }
     wc.write_json(os.path.join(out_dir, "base.json"), manifest)
     print(f"基线 → {out_dir}")
-    print(f"  对齐：{res['alignment']}（与 scan_import 首次导入相同）")
+    print(f"  对齐：{res['alignment']}（与原处理服务首次导入相同）")
     print(
         f"  结构 {manifest['counts']['structure']} 个，物体 {manifest['counts']['objects']} 个，模板 "
         f"{manifest['counts']['templates']} 个；地面 y={manifest['floorY']}"

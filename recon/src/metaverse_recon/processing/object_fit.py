@@ -1,4 +1,4 @@
-"""物件的逐件偏差 `fit {meanCm, p90Cm, coverage3cm}`：写回路径（`authored_build`）和重建工作台（`compare`、
+"""物件的逐件偏差 `fit {meanCm, p90Cm, coverage3cm}`：打包流程（`authored_build`）和重建工作台（`compare`、
 `assemble`、`place`）共用这一个函数，同样的扫描、物件网格和背景算出同样的数字。
 
 1. **范围按物件自身的朝向取**：水平朝向是物件网格水平投影的最小外接矩形（竖直方向不转），在这个局部坐标里
