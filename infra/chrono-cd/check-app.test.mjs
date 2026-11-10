@@ -382,7 +382,10 @@ test('种子：按接口服务的规则静态校验', () => {
   assertProblem(seedVariant((s) => (s.revision = 0)), /revision 必须是从 1 开始的整数/);
   // 规范化 JSON：键按码点排序、没有空白。
   assert.equal(canonicalJson({ b: [1, { d: 2, c: 'x' }], a: null }), '{"a":null,"b":[1,{"c":"x","d":2}]}');
-  assert.deepEqual(seedProblems(seed, { targetOrg: spec.target_org_id }), []);
+  // 仓库里的种子（第 4 版带包）按 app.json 的主机列表校验通过；不给主机列表时带包的种子要报。
+  const hosts = apiEnv(spec).METAVERSE_DEMO_SEED_HOSTS;
+  assert.deepEqual(seedProblems(seed, { targetOrg: spec.target_org_id, hosts }), []);
+  assertProblem(seedProblems(seed, { targetOrg: spec.target_org_id }), /带 bundle 时 metaverse-api 必须设 METAVERSE_DEMO_SEED_HOSTS/);
   assertProblem(seedProblems(null), /必须是 JSON 对象/);
 });
 
@@ -471,14 +474,22 @@ test('种子：主机列表的写法同接口服务（主机名只许 443，.后
 });
 
 test('种子：有种子时 METAVERSE_DEMO_SEED_HOSTS 必须显式写出（不带包也一样）', () => {
-  // 现在的种子不带包，主机列表照样要写：换成带包的种子时只改种子一项。
-  assert.equal(seed.bundle, undefined);
-  const missing = variant((copy) => delete apiEnv(copy).METAVERSE_DEMO_SEED_HOSTS);
-  assertProblem(checkApp(missing, { seed: seedText }), /有种子时必须显式写出 METAVERSE_DEMO_SEED_HOSTS/);
-  const empty = variant((copy) => (apiEnv(copy).METAVERSE_DEMO_SEED_HOSTS = ' , '));
-  assertProblem(checkApp(empty, { seed: seedText }), /METAVERSE_DEMO_SEED_HOSTS 是空的/);
-  const bad = variant((copy) => (apiEnv(copy).METAVERSE_DEMO_SEED_HOSTS = 'https://github.com/'));
-  assertProblem(checkApp(bad, { seed: seedText }), /不是合法的主机/);
+  // 仓库里的种子（第 4 版）带包；去掉包的种子只保证空间存在，主机列表照样要写。
+  for (const current of [seed, (({ bundle, ...plain }) => plain)(seed)]) {
+    const text = JSON.stringify(current, null, 2);
+    const withSeed = (edit) =>
+      variant((copy) => {
+        apiEnv(copy).METAVERSE_DEMO_SEED = JSON.stringify(current);
+        edit(copy);
+      });
+    assert.deepEqual(checkApp(withSeed(() => {}), { seed: text }), []);
+    const missing = withSeed((copy) => delete apiEnv(copy).METAVERSE_DEMO_SEED_HOSTS);
+    assertProblem(checkApp(missing, { seed: text }), /有种子时必须显式写出 METAVERSE_DEMO_SEED_HOSTS/);
+    const empty = withSeed((copy) => (apiEnv(copy).METAVERSE_DEMO_SEED_HOSTS = ' , '));
+    assertProblem(checkApp(empty, { seed: text }), /METAVERSE_DEMO_SEED_HOSTS 是空的/);
+    const bad = withSeed((copy) => (apiEnv(copy).METAVERSE_DEMO_SEED_HOSTS = 'https://github.com/'));
+    assertProblem(checkApp(bad, { seed: text }), /不是合法的主机/);
+  }
   // 两处都不用种子时不要求。
   const noSeed = variant((copy) => {
     delete apiEnv(copy).METAVERSE_DEMO_SEED;
