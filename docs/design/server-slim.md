@@ -170,7 +170,7 @@ MongoDB（普通集合 + GridFS）
 2. **模板只能被同一层引用**：物件形状里引用的模板必须是同一层的模板（`EntityBody::validate` 拿到的模板表按层过滤：`WorkingState::templates_of(layer)`）；模板的影响范围也只算同一层的使用者（`users_of_template` 按层）。扩展层要用重建层的款式，就复制一份成扩展层模板。线上前厅只有处理服务写的重建层，没有扩展层物件，所以没有跨层引用的旧数据（S1 用公开快照核对一遍，记在合并请求里）。
 3. **完整性检查**：每次追加（一批内联操作、一个操作文件、一个重建包）全部作用完之后，工作状态里每个物件引用的模板都要存在；发布时在"最新版本 + 本次变化"上再查一遍：本次放进去的物件引用的模板都在，本次删掉的模板没有被合并后状态里的任何物件引用。不满足返回 409 `broken_template_ref`，列出编号（叠加发布时可能遇到，用 `replay` 在最新版本上重放可以得到准确的错误或结果）。
 4. **资源按核对结果判断用途**：引用的每个哈希先要属于本空间（现有的 `Foreign` 规则），再看资源的 `metadata.check`（服务端从内容实测的核对结果）是否满足这个角色的条件（4.6）。不再看 `metadata.kind`——它是第一次登记的人写的，别的空间可以抢先用别的用途登记同一份字节。
-5. **模型与记录一致**：只有模型、没有形状的物件，引用的模型的实测包围盒（`check.bounds`）三边长与物件 `bounds` 三边长之差不超过 max(2 厘米, 1%)，模型原点在底面中心（`|min.y|`、x 和 z 的中点都 ≤ 2 厘米）；否则 422 `model_bounds_mismatch`。网站按 `bounds` 的底面中心摆放只有模型的物件，这条保证摆出来和记录一致，也就保证范围检查用的 `bounds` 是真实的。
+5. **模型与记录一致**：只有模型、没有形状的物件，引用的模型的实测包围盒（`check.bounds`）三边长与物件 `bounds` 三边长之差不超过 max(2 厘米, 1%)，模型原点在底面中心（`|min.y|`、x 和 z 的中点都 ≤ 2 厘米）；否则 422 `model_bounds_mismatch`。网站按 `bounds` 的底面中心摆放只有模型的物件，这条保证摆出来和记录一致，也就保证范围检查用的 `bounds` 是真实的。物件带 `transform`（只有 `yaw`、`pitch`、`roll`，S6b 加的，SHAPES 3）时，三边长按模型包围盒 8 个角转过之后的外包盒比，原点仍按模型自己的包围盒查（`check::model_fits_entity`）。
 6. **没有实体区时的范围**：空间没有定义实体区（`regions` 里没有 `kind: physical`）时，实体区路径和重建路径的允许范围都是"不与任何虚拟区、地块的盒子相交"（核心库 `AllowedArea` 加一种"除去"模式）。这与网站现在的理解一致（`web/src/core/scene.ts`："没有定义任何实体区时，整个空间都算实体区"）；前厅这样没定义区域的空间，锚点就能经实体区草稿修改。定义了实体区以后与现在相同。空间级锚点 `_space` 仍只允许实体区路径。
 
 ### 2.6 重建包的展开（任务）
@@ -458,7 +458,7 @@ out/bundle/
   scan/scan.zip            原始扫描
   web/scan-0.glb           网页用模型默认档（网站加载这一档；可以直接用线上已有的那份）
   web/scan-1.glb           低细节档（可选）
-  models/<哈希前 12 位>.glb 物件模型（节点变换和调色烘进网格，原点在底面中心）
+  models/<哈希前 12 位>.glb 物件模型（俯仰、横滚、缩放和调色烘进网格，偏航在记录的 transform 里；原点在底面中心）
   textures/<哈希前 12 位>.jpg 烘焙贴图、结构贴图、下载的外链贴图
   notes.md                 建模过程记录（可选，作为提交的 scriptRef）
 ```
@@ -740,7 +740,7 @@ out/bundle/
 | `webmodel` | 生成网页用模型（接缝不裂开的减面、贴图补边） | `processing/webmodel.py` |
 | `views`、`measure`、`compare`、`search`、`index`、`fetch`、`place`、`reframe` | 不变 | 现有 |
 | `assemble` | 合并成 AI 物件集 | 现有 |
-| `models` | 外部模型：下载、核对，把摆放的旋转、缩放、调色烘进网格（节点用单位变换），按物件模型的上限减面、缩小贴图，只用白名单里的扩展，原点放在底面中心，写成 glb；多材质、平铺贴图、相同偏航的去重导出在这里修（第 12 节） | 原物件集写回 |
+| `models` | 外部模型：下载、核对，把摆放的俯仰、横滚、缩放、调色烘进网格（节点用单位变换），**偏航写进物件记录的 `transform`**（只差偏航的物件共用一个 glb），按物件模型的上限减面（保贴图接缝）、缩小贴图，只用白名单里的扩展，原点放在底面中心，写成 glb；按材质分开导出（多材质、平铺贴图）；外部模型物件的 `material` 默认加 `shading: albedo`（第 12 节） | 原物件集写回 |
 | `bake`、`fit` | 烘焙贴图；逐件偏差（与 `compare` 同一个函数） | 原物件集写回 |
 | `scan-zip` | 新：把扫描成员按 `pack.rs` 的规则打成 zip（成员列表来自来源表或命令行参数，先下载、核对）；读别人的扫描 zip 时限制成员解压后 ≤ 2 GiB、拒绝 `..` 和绝对路径 | 新 |
 | `bundle` | 打包：物件集（或 `--algorithm`：直接用基线里的算法结构和物体）→ `models`、外链贴图下载、`bake`、`fit`、按类别建议锚点、网页用模型（`--webmodel <文件>` 用已有的，否则生成）、`scan-zip` → `out/bundle/`；编号统一加 `rb.`；`base` 取工作区 `space.json`；`--seed` 去掉内部锚点和建模记录；`--from-snapshot <工作区>` 用拉下来的快照（重建层物件、模板、扫描元数据）生成整体替换的包（编号改成 `rb.` 开头，模板引用一起改）；最后调用 `metaverse bundle check` | 原 `scan_import` + 物件集写回的编排 |
@@ -895,7 +895,7 @@ T 做完后的状态（实施记录）：
 
 - 三边的形状校验（Rust、命令行、本地工具的 `shapes.py`）都认新字段，错误路径一致；资源引用（`Shape::texture_refs`、本地工具的 `material_textures`）都算上 `normalMap`、`roughnessMap`。
 - 贴图坐标：网站（`web/src/core/shapes/`）和本地工具（`processing/shape_mesh.py`）都按 SHAPES 算平铺，跑 `uv/` 向量；本地工具查看用的 glb 按 SHAPES 2"glb 导出"写采样器、法线和粗糙度。
-- `authored/` 向量现在没有运行器：接口服务的物件集浅层校验（S4 连同 `metaverse_core::authored` 一起删）和命令行的 `commands/authored.ts`（S5 删）都不接；S6b 的 `bundle` 下载外链贴图时接上，物件集里外部模型的 `shading` 默认写成 `albedo` 也在那里做（现在物件集里写了就原样保留）。
+- `authored/` 向量现在没有运行器：接口服务的物件集浅层校验（S4 连同 `metaverse_core::authored` 一起删）和命令行的 `commands/authored.ts`（S5 删）都不接；S6b 的 `bundle` 下载外链贴图时接上，物件集里外部模型的 `shading` 默认写成 `albedo` 也在那里做（现在物件集里写了就原样保留）。——S6b 已接上：本地工具 `tests/test_bundle_build.py` 跑这批向量（另加了工作台写的本地贴图 `{file}`）；打包时外部模型物件的 `material` 默认 `shading: albedo`。
 - **网站的画法没有接上**：`shading`（`albedo` 完整受光、不加自发光）、`normalMap`、`roughnessMap`、`roughness`、`metalness` 以及物件模型的 `material.shading`，网站现在都按原来的看法画（`sceneView.ts` 的形状材质和模型材质；贴图缓存要按（哈希，用途）区分颜色空间）。这次改造的各步都不包括它，列进第 14 节"以后的增强"；前厅第 4 版的物件集不用这些字段，不受影响。
 
 ---
@@ -1161,6 +1161,81 @@ S7 做完后的状态（实施记录）：
 - **改哪些文件**：`recon/src/metaverse_recon/bundle/`（新子包：编排、清单写出、`rb.` 编号、`--seed`、`--from-snapshot`、`base`）、`processing/` 下 `align`、`webmodel`、`modelimport` 的命令入口和导出修正、`bench/cli.py`（新命令注册：`align`、`webmodel`、`models`、`bake`、`fit`、`scan-zip`、`bundle`、`doctor --install`）、`bench/env.py`（往上找 `space.json`、缓存安装）、`recon/README.md`、`docs/tutorials/reconstruct-with-ai.md`。
 - **接口与数据**：6.1–6.4、6.8、8.3、8.4。
 - **验收**：用现在的 `lobby-authored.json` 打出的包：外部模型 glb 的三角形数、包围盒与处理服务现在写回的一致（容差 1 毫米），逐件偏差与现在一致；所有模型过 4.5 的检查（`metaverse bundle check` 通过）；`scan-zip` 跑 `demo_seed_zip.json` 向量；`--from-snapshot` 打出的包展开后，重建层与快照的形状一致（编号除外）；`--seed` 的包里没有内部锚点和建模记录；仓库外 `uv tool install` 后 `metaverse-recon doctor --install` 装好 three 和 Playwright，`doctor` 报告可以渲染（从 S7 挪来）。
+
+S6b 做完后的状态（实施记录）：
+
+- 合并：S7（`worktree-wf_ca4ee70c-68a-9`）和 S1（`worktree-wf_ca4ee70c-68a-2`），快进。
+- **模型物件的旋转**（规格变更）：物件记录多了 `transform`，只能有 `yaw`、`pitch`、`roll`，必须有 `assetHash`、不能有形状；
+  位置由 `bounds` 定，缩放烘进模型（SHAPES 3）。摆法：模型包围盒的 8 个角按 YXZ 顺序转过以后取外包盒，外包盒的底面
+  中心对齐 `bounds` 的底面中心。三边都改了：Rust `record.rs`（校验）、`check.rs`（`rotated_model_bounds`、
+  `model_fits_entity`；`model_fits_bounds` 等于不转）；TypeScript `core/record.ts`、`core/shape.ts`（同样的错误说明）；
+  Python `records.py`（`entity_body(transform=…)`、`validate_model_transform`、`rotated_model_bounds`）；网站
+  `viewer/modelPlacement.ts`（新）和 `sceneView.ts`；操作向量 `ops_place_rotated_models`、`ops_invalid_model_transform`。
+- **外部模型导出**（`processing/modelexport.py`，新）：按材质分开读 glb / glTF（每个材质一组三角形；`REPEAT` 采样器、
+  `KHR_texture_transform` 烘进贴图坐标；法线按 `n · M⁻¹` 变换），调色写进 `baseColorFactor`（sRGB → 线性），金属度 0、
+  粗糙度 = 系数 × 粗糙度贴图 G 通道的平均值；贴图 JPEG（质量 90，用到透明时 PNG），全部贴图像素合计 ≤ 4×2048²
+  （`MODEL_MAX_TEXTURE_PIXELS`，新）。减面：按位置焊接后用 fast-simplification 的折叠历史，**多轮小步**（侵略度
+  1、1、2、3、5、7；一次用默认的 7 会把光滑曲面压平），每个角点的贴图坐标和法线取自原来的角点，位置挪过的角点在
+  同一块贴图里按最近点的重心坐标重新插值（保住接缝）。`authored_build.export_models` 按（模型、俯仰横滚缩放、调色、
+  上限）去重，偏航写进记录；物件的 `material` 默认加 `shading: albedo`。工作台 `place`、`compare`、`views`、`assemble`、
+  渲染页都走这条导出（缓存在 `<缓存>/exports/`）；渲染页 `shading: albedo` 用 glb 自己的材质完整受光（与 S8 网站的
+  画法相同）。
+- **贴图引用**（`bundle/textures.py`）：物件集里贴图三种写法——哈希、外链 `{url, sha256, size}`、本地文件 `{file}`
+  （新，相对物件集文件）——打包时都变成进包的贴图文件，记录里换成哈希；超过上限的图缩小、重新编码。向量
+  `authored/` 跟着改（`{file}` 合法，绝对路径、`..`、多余字段不合法；`summary` 多了 `textureFiles`）。
+- **命令**（`bench/commands.py`、`bench/cli.py`）：`align`、`webmodel`、`models`、`bake`、`fit`、`scan-zip`、`bundle`；
+  `prepare` 加 `--transform`、`--auto-align`。新模块：`bench/workspace.py`（往上找 `space.json`，默认路径）、
+  `bundle/limits.py`（`limits.json`，默认值与向量 `bundle_limits_default.json` 核对）、`bundle/models.py`、
+  `bundle/scanzip.py`（与 `pack.rs` 相同的不压缩 zip，跑 `demo_seed_zip.json` 向量）、`bundle/manifest.py`（`rb.`
+  编号、清单写出、`--seed` 过滤、偏差统计）、`bundle/build.py`、`bundle/snapshot.py`（`--from-snapshot`）。
+  `doctor --install`（`bench/env.py`）：three 0.184.0、playwright-core 1.58.2 装进 `<缓存>/node/`，Chromium 装进
+  `<缓存>/ms-playwright/`。
+- **贴图工作台**（`bench/texwork.py`、`bench/library/textures.py`）：`refshot`（扫描的面正交展开、中位色、建议平铺）、
+  `texture`（`--tile/--offset/--rotate/--shading/--calibrate/--preview`，贴图写成 `{file}`）、`texsearch`、`texfetch`
+  （Poly Haven、ambientCG，只要 CC0；ambientCG 的 DirectX 法线翻成 OpenGL）。
+- **名字**（S7 留下的）：glb 的 `generator` 改成 `metaverse-recon`（预览 `metaverse-recon preview`），User-Agent 改成
+  `metaverse-recon`；`reframe` 的自动对齐坐标系改叫 `align`（旧名 `scan_import`、`worker` 照旧认）；工作台的外部模型
+  主机列表与打包统一（S6a 偏离 5）；工作台输出里"写回时处理服务……"的说法改成打包。
+- 文档：`recon/README.md`、教程 `reconstruct-with-ai.md`、SHAPES 2 第 5 条和第 3 节、向量 README 第 6 节。
+- 实测与验收：
+  1. **前厅打包**（`lobby-authored.json`，扫描 zip 与线上种子同样的成员和顺序，哈希 `bfda42ee…`，给了现有的网页用模型）：
+     物件 52 件、模板 1 个、锚点 5 个、物件模型 8 个（10 件外部模型物件）、贴图 23 张、两档网页用模型，24 MB，约 30 秒。
+     与改动前（`f72558b`）的写回编排逐件比：10 件外部模型的三角形数全部相同，摆好以后的空间包围盒最大差 **0.168 毫米**；
+     逐件偏差 52 件里 51 件完全相同，`chair-06` 的 90% 分位差 0.01 厘米。
+  2. **`metaverse bundle check`**：用 S5 分支的命令行（打上本分支 `record.ts`、`shape.ts` 的改动和 `modelFitsBounds`
+     的旋转，补丁只在验收副本里）检查前厅的包和 `--seed` 包：都"检查通过"。不打旋转补丁时 7 件带偏航的模型物件报
+     尺寸不一致——S5 的 `bundle check` 必须跟着改（见下面的"合并时"）。
+  3. **`--seed`**：前厅的种子包没有 `notes.md`、`report` 只有偏差，5 个锚点都是公开的；去掉内部锚点由单元测试覆盖。
+  4. **`scan-zip`** 跑 `demo_seed_zip.json` 向量（单元测试）；**`--from-snapshot`**：合成的快照打包后，重建层除编号外与
+     快照相同（单元测试）。真实的演示快照没有跑（这个环境没有分享链接）。
+  5. **外部模型回归**：原来坏的 4 个（多材质、平铺贴图）和最终版物件集的 16 个模型逐个渲染对比：4 个修好，其余不变差。
+     外观有三处变化要在 S10 看：机器狗（`clutter-09`）原来的导出丢了贴图（白色），现在带回原文件的黑色贴图，再加上物件集
+     的 tint 后几乎全黑；前台两个键盘按原文件是白色（原来是灰色）；前台显示器原文件的屏幕是白色自发光，新旧导出都是黑的。
+  6. **`doctor --install`**：仓库外 `uv tool install` 到临时目录、空的缓存目录，`doctor --install` 装好 three、
+     playwright-core 和 Chromium，`doctor` 报告"可用"，用缓存里的 Chromium 渲染 `views` 成功。
+  7. **贴图工作台**：前厅会议桌台面 `refshot`（8K 原始贴图，中位色 sRGB (193, 185, 168)）→ `texture --tile 1.3,1.0
+     --calibrate --preview`（概念验证提取的大理石平铺图）：纯色 ΔE 13.99 → 标定后 0.72；`texsearch "white marble"`、
+     `texfetch` 对真实的 ambientCG 跑通。
+- 与设计的偏离：
+  1. 物件记录加了模型物件的 `transform`（8.3 原写"把摆放的旋转烘进网格"）：只差偏航的物件要共用一个 glb，偏航只能
+     放进记录；俯仰、横滚、缩放仍烘进网格。这是 S1 规格的变更，影响 S3、S5、S8（见"合并时"）；
+  2. 物件集的贴图多了 `{file}` 写法（工作台写副本用，打包时进包），`authored/` 向量随之改；
+  3. `processing/limits.py` 新增 `MODEL_MAX_TEXTURE_PIXELS`（4×2048²，与 `limits.json` 的 `model.maxTexturePixels` 对应）；
+  4. `bundle` 在 `PATH` 里找不到 `metaverse` 时不失败，只打印要运行的检查命令；打包报告写在包目录旁边的
+     `bundle-report.json`（同一个工作区打两次会覆盖）；
+  5. `models` 先在缓存和 `--models-dir` 里按 sha256 找本地文件，找不到才下载（`--offline` 不下载）；前厅验收用的是本机
+     缓存里与线上同一哈希的模型文件；
+  6. `doctor --install` 装的是 `playwright-core`（不是 `playwright`），只看缓存目录：别处已经装好的不算，仍装一份固定版本；
+  7. 外部模型只导出颜色贴图：法线、金属粗糙度贴图不导出，金属度一律 0，自发光丢掉；
+  8. 设计没提的：`reframe` 坐标系改名、`texture` 改写原物件文件（旧的存成 `.bak`）、`compare`/`assemble` 输出里偏差的
+     叫法（"记录的 fit"）。
+- **合并时**（别的步骤要跟着改）：
+  1. S3：提交和交包核对只有模型的物件时调 `check::model_fits_entity(model, bounds, body.transform.as_ref())`，不再用
+     `model_fits_bounds`（否则带偏航的物件会被 422）；
+  2. S5：`bundle check` 的 `modelFitsBounds` 要带上 `entity.transform`（算法与 Rust 相同；验收时打的补丁见上），
+     `core/record.ts`、`core/shape.ts` 与本分支合并（本分支改的是同一处校验）；技能说明加上贴图工作台和 `reframe` 的新名字；
+     `pull --share --assets` 不下载贴图，`--from-snapshot` 要另给 `--textures-dir`；
+  3. S8：`sceneView.ts` 的模型摆放本分支已改成 `placeRotatedModel`；兜底缩放要按转过之后的外包盒比（和 `bounds` 比）。
 
 #### S8 网站
 
