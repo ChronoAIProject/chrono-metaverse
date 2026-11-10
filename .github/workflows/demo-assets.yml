@@ -1,0 +1,88 @@
+name: Demo assets
+
+# 把演示种子要下载的大文件传到本仓库的发布页 demo-assets（docs/design/server-slim.md 7.4 方案 B）。
+# 清单和来源表进仓库（infra/chrono-cd/demo/lobby-r<版本>/），大文件不进 git 历史，按 <sha256>.<扩展名> 命名放在这里，
+# 种子按来源表里的地址下载、按 sha256 核对。
+#
+# 用法（本地有 gh 写权限时也可以直接 `gh release upload demo-assets <文件>`，同名已存在就跳过）：
+#   1. 在当前分支的最新提交上另做一个提交（不要推到任何分支），只加一个目录 demo-assets-upload/，
+#      放进要上传的文件，文件名就是内容的 sha256 加扩展名；
+#   2. 给这个提交打标签 demo-assets-upload-<编号>，只推这个标签：git push origin refs/tags/demo-assets-upload-<编号>；
+#   3. 本工作流核对文件名与内容的 sha256 一致，没有发布页时先建，逐个上传（同名已存在就跳过），最后删掉这个标签。
+# 标签删掉以后这个提交不在任何分支和标签上，大文件不会进仓库历史。
+#
+# 发布页里的文件是公开的（设计 6.8）：只放种子包里的东西，种子用的包已经去掉内部锚点和建模记录。
+
+on:
+  push:
+    tags: ['demo-assets-upload-*']
+
+# 同一时刻只跑一个，避免两次上传同时建发布页。
+concurrency:
+  group: demo-assets
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  upload:
+    name: 上传演示种子文件
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 核对文件名就是内容的 sha256
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(demo-assets-upload/*)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::demo-assets-upload/ 里没有文件"
+            exit 1
+          fi
+          for path in "${files[@]}"; do
+            name=$(basename "$path")
+            if ! [[ "$name" =~ ^[0-9a-f]{64}\.(glb|jpg|png|webp|json)$ ]]; then
+              echo "::error::文件名不是 <sha256>.<扩展名>：$name"
+              exit 1
+            fi
+            hash=$(sha256sum "$path" | cut -c1-64)
+            if [ "${name%%.*}" != "$hash" ]; then
+              echo "::error::$name 的内容 sha256 是 $hash"
+              exit 1
+            fi
+          done
+          echo "共 ${#files[@]} 个文件，文件名都与内容一致"
+      - name: 没有发布页时先建
+        run: |
+          set -euo pipefail
+          if ! gh release view demo-assets >/dev/null 2>&1; then
+            gh release create demo-assets --latest=false --title "演示种子文件（demo-assets）" \
+              --notes "演示空间种子要下载的文件，文件名是内容的 sha256。清单和来源表在 infra/chrono-cd/demo/ 下；这些文件都是公开的。"
+          fi
+      - name: 上传（同名已存在就跳过）
+        run: |
+          set -euo pipefail
+          existing=$(gh release view demo-assets --json assets --jq '.assets[].name')
+          uploaded=0
+          skipped=0
+          for path in demo-assets-upload/*; do
+            name=$(basename "$path")
+            if grep -qxF "$name" <<<"$existing"; then
+              skipped=$((skipped + 1))
+            else
+              gh release upload demo-assets "$path"
+              uploaded=$((uploaded + 1))
+            fi
+          done
+          echo "上传 $uploaded 个，已存在跳过 $skipped 个" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: 删掉上传用的标签
+        if: ${{ always() }}
+        run: gh api -X DELETE "repos/$GH_REPO/git/refs/tags/$TAG"
