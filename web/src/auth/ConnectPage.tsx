@@ -232,7 +232,10 @@ export function ConnectPage({ request = fetch }: { readonly request?: typeof fet
 
   const busy = loading || action !== null;
   const organization = checked?.value.organization;
-  const callbackError = callback.error ? CALLBACK_MESSAGES[callback.error] : undefined;
+  const callbackError =
+    callback.error && Object.hasOwn(CALLBACK_MESSAGES, callback.error)
+      ? CALLBACK_MESSAGES[callback.error]
+      : undefined;
 
   return (
     <main className="connect">

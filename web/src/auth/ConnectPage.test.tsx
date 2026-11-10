@@ -5,6 +5,17 @@ import { ConnectPage } from './ConnectPage';
 
 afterEach(() => window.history.replaceState(null, '', '/'));
 
+it('忽略未知回调标记，包括对象原型属性名', async () => {
+  window.history.replaceState(null, '', '/connect?error=constructor');
+  const request = vi
+    .fn<typeof fetch>()
+    .mockResolvedValue(Response.json({ enabled: true, connected: false }));
+  render(<ConnectPage request={request} />);
+  await screen.findByRole('link', { name: '前往 NyxID 授权' });
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(window.location.search).toBe('');
+});
+
 it('授权入口只指向服务端，取消授权后可重试', async () => {
   window.history.replaceState(null, '', '/connect?error=denied');
   const request = vi
