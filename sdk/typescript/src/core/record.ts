@@ -15,11 +15,15 @@ import { isObjectId, SPACE_ANCHOR_ID } from './ids.js';
 import {
   normalizeShape,
   shapeBounds,
+  SHADING_MODES,
   ShapeError,
   validateOpacity,
   validateShape,
+  validateTransform,
+  type Shading,
   type Shape,
   type TemplateTable,
+  type Transform,
 } from './shape.js';
 
 /**
@@ -36,6 +40,16 @@ export const MAX_PROPS_BYTES = 16 * 1024;
 export const MAX_LABEL_CHARS = 200;
 /** 声明的包围盒允许比计算结果小这么多（米）。 */
 export const BOUNDS_TOLERANCE = 1e-6;
+/**
+ * 重建层新放的物件（含模板）编号的前缀；扩展层新放的物件不能用它（docs/design/server-slim.md 2.5
+ * 第 1 条）。物件和模板共用一个编号空间，两层各用一段。
+ */
+export const REBUILT_ID_PREFIX = 'rb.';
+
+/** 编号是不是重建层的编号（以 `rb.` 开头）。 */
+export function isRebuiltId(id: string): boolean {
+  return id.startsWith(REBUILT_ID_PREFIX);
+}
 
 export type EntityKind = 'structure' | 'object' | 'template';
 export type DataVisibility = 'public' | 'internal';
@@ -68,8 +82,13 @@ export interface EntityBody {
   readonly regionId?: string;
   readonly shape?: Shape;
   readonly assetHash?: string;
-  /** 模型（assetHash）整体的调色、半透明、不受光照；只能和 assetHash 一起给。 */
+  /** 模型（assetHash）整体的调色、半透明、不受光照、着色方式；只能和 assetHash 一起给。 */
   readonly material?: ModelMaterial;
+  /**
+   * 模型（assetHash）绕自己的原点转的角度：只有 yaw、pitch、roll，只能和 assetHash 一起给；位置由 bounds 定，
+   * 缩放烘进模型（docs/SHAPES.md 第 3 节）。
+   */
+  readonly transform?: Transform;
   readonly textures?: readonly string[];
   /** 由生成方计算，用于权限范围检查和网站裁剪。 */
   readonly bounds: Aabb;
@@ -85,6 +104,11 @@ export interface ModelMaterial {
   /** 0–1。 */
   readonly opacity?: number;
   readonly unlit?: boolean;
+  /**
+   * 网站怎么画模型里的材质，默认 `baked`：扫描切出来的模型按烘焙贴图的看法画（0.3 倍受光 + 0.72 倍自发光）；
+   * `albedo`：模型库（Poly Haven、Objaverse 等）的贴图是固有色，按 glb 里的材质原样完整受光。
+   */
+  readonly shading?: Shading;
 }
 
 /** 外部模型的可选库。 */
@@ -267,6 +291,7 @@ const ENTITY_FIELDS = [
   'shape',
   'assetHash',
   'material',
+  'transform',
   'textures',
   'bounds',
   'fit',
@@ -307,10 +332,22 @@ export function parseEntityBody(value: unknown): EntityBody {
   if (given(value, 'props') && !isPlainObject(value.props)) {
     throw new RecordError('props 必须是对象');
   }
+  if (given(value, 'transform')) {
+    const transform = value.transform;
+    if (!isPlainObject(transform)) throw new RecordError('transform 必须是对象');
+    onlyKeys(transform, ['position', 'yaw', 'pitch', 'roll', 'scale'], 'transform');
+    for (const key of ['yaw', 'pitch', 'roll']) {
+      if (given(transform, key) && typeof transform[key] !== 'number') {
+        throw new RecordError(`transform.${key} 必须是数字`);
+      }
+    }
+    if (given(transform, 'position')) numberTuple(transform.position, 3, 'transform.position');
+    if (given(transform, 'scale')) numberTuple(transform.scale, 3, 'transform.scale');
+  }
   if (given(value, 'material')) {
     const material = value.material;
     if (!isPlainObject(material)) throw new RecordError('material 必须是对象');
-    onlyKeys(material, ['tint', 'opacity', 'unlit'], 'material');
+    onlyKeys(material, ['tint', 'opacity', 'unlit', 'shading'], 'material');
     if (given(material, 'tint')) {
       const tint = material.tint;
       if (
@@ -326,6 +363,9 @@ export function parseEntityBody(value: unknown): EntityBody {
     }
     if (given(material, 'unlit') && typeof material.unlit !== 'boolean') {
       throw new RecordError('material.unlit 必须是布尔值');
+    }
+    if (given(material, 'shading') && !SHADING_MODES.includes(material.shading as Shading)) {
+      throw new RecordError('material.shading 只能是 baked 或 albedo');
     }
   }
   if (given(value, 'shape')) {
@@ -379,6 +419,22 @@ export function validateEntityBody(body: EntityBody, templates: TemplateTable): 
     }
     try {
       validateOpacity('material.opacity', body.material.opacity);
+    } catch (error) {
+      if (error instanceof ShapeError) throw new RecordError(error.message);
+      throw error;
+    }
+  }
+  if (body.transform !== undefined) {
+    if (body.assetHash === undefined) {
+      throw new RecordError('transform 只用于模型，必须和 assetHash 一起给');
+    }
+    if (body.transform.position !== undefined || body.transform.scale !== undefined) {
+      throw new RecordError(
+        '模型的 transform 只能有 yaw、pitch、roll（位置由 bounds 定，缩放烘进模型）',
+      );
+    }
+    try {
+      validateTransform(body.transform, 'transform');
     } catch (error) {
       if (error instanceof ShapeError) throw new RecordError(error.message);
       throw error;

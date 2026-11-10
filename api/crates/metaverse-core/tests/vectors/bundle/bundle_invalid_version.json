@@ -1,0 +1,39 @@
+{
+  "apply": null,
+  "description": "version 只认 1（以后加字段就升版本）",
+  "expect": {
+    "field": "version",
+    "message": "只认版本 1",
+    "valid": false
+  },
+  "kind": "bundle",
+  "limits": null,
+  "manifest": {
+    "anchors": [
+      {
+        "anchorId": "counter-01",
+        "box": [
+          100,
+          0,
+          100,
+          140,
+          25,
+          180
+        ],
+        "kind": "counter",
+        "visibility": "public"
+      }
+    ],
+    "createdAt": "2026-11-20T16:00:00+08:00",
+    "files": [],
+    "format": "chrono-metaverse-rebuild-bundle",
+    "note": "只加锚点",
+    "tool": {
+      "name": "metaverse-recon",
+      "version": "0.2.0"
+    },
+    "version": 2
+  },
+  "name": "invalid-version",
+  "spaceTemplates": null
+}

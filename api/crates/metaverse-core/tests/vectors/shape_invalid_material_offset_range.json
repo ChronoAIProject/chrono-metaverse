@@ -1,0 +1,29 @@
+{
+  "description": "offset 的绝对值不能超过 1000（米）",
+  "errorMessage": "$.material.offset: offset 的两个数绝对值都不能超过 1000（米）",
+  "errorPath": "$.material.offset",
+  "kind": "shape",
+  "name": "invalid-material-offset-range",
+  "shape": {
+    "material": {
+      "offset": [
+        1000.5,
+        0
+      ],
+      "texture": "9f2c7d4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d",
+      "tile": [
+        1,
+        1
+      ],
+      "uv": "box"
+    },
+    "size": [
+      2,
+      1,
+      0.5
+    ],
+    "type": "box"
+  },
+  "templates": {},
+  "valid": false
+}

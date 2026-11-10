@@ -12,6 +12,7 @@ import {
   type ChunkKey,
   type Layer,
 } from './chunk.js';
+import { canonicalJson, CanonicalError } from './canonical.js';
 import {
   boxIntersection,
   boxSubtract,
@@ -38,16 +39,24 @@ import {
   type DataVisibility,
   type EntityBody,
   ANCHOR_KINDS,
+  isRebuiltId,
+  REBUILT_ID_PREFIX,
 } from './record.js';
-import { ScopeError, type AllowedArea, type Footprint } from './scope.js';
-import { templateRefs, type Shape } from './shape.js';
+import { ScopeError, type AllowedArea, type Footprint, type PathScope } from './scope.js';
+import { MAX_COORD, templateRefs, type Shape } from './shape.js';
+import { isRfc3339 } from './timestamp.js';
 
 /**
  * 高层操作（设计 8.3；Rust `ops.rs` 的移植）、作用到工作状态、影响范围。
  *
- * 操作只能写扩展层。方块操作里 `0` 表示"不覆盖"（清掉扩展层在这一格的内容），
- * `1` 表示"空气覆盖"（删掉下层的方块）。每个操作先按当前状态算影响范围，判断是否落在
- * 路径范围内，再作用到工作状态；一批里任何一条失败，状态保持不变。
+ * 方块操作里 `0` 表示"不覆盖"（清掉扩展层在这一格的内容），`1` 表示"空气覆盖"（删掉下层的方块）。
+ * 每个操作先按当前状态算影响范围，判断是否落在路径范围内，再作用到工作状态；一批里任何一条失败，
+ * 状态保持不变。
+ *
+ * 工作状态带范围种类（docs/design/server-slim.md 2.4）：扩展（实体区、地块草稿，写扩展层）或重建
+ * （重建草稿，只由重建包展开产生）。所有草稿通用的规则（2.5）：重建层新放的编号以 `rb.` 开头、扩展层
+ * 新放的不能用 `rb.`；模板只能被同一层引用；`removeEntity` 可带 `ifPresent`；`createAnchor` 可带
+ * `ifNew`（出现过的锚点编号由调用方放进 `anchorHistory`）。
  */
 
 /** 每批操作的条数上限。 */
@@ -56,8 +65,17 @@ export const MAX_OPS_PER_BATCH = 200;
 export const MAX_OP_CELLS = 2 ** 22;
 /** 空心盒壁厚上限（格）。 */
 export const MAX_HOLLOW_THICKNESS = 64;
+/** `setScan` 的网页用模型最多几档。 */
+export const MAX_WEB_MODELS = 2;
+/** `scan.alignment` 规范化后的字节数上限。 */
+export const MAX_ALIGNMENT_BYTES = 4 * 1024;
+/** 扫描变换线性部分行列式的下限（不含）、平移的绝对值上限（米）、各元素的绝对值上限。 */
+export const MIN_TRANSFORM_DET = 1e-6;
+export const MAX_TRANSFORM_TRANSLATION = MAX_COORD;
+export const MAX_TRANSFORM_ELEMENT = 1e7;
 
-export type OpErrorKind = 'invalid' | 'scope' | 'tooManyOps';
+/** `invalid`：操作本身不合法；`notAllowed`：这种草稿不能用这个操作；`scope`：超出路径范围。 */
+export type OpErrorKind = 'invalid' | 'notAllowed' | 'scope' | 'tooManyOps';
 
 export class OpError extends Error {
   constructor(
@@ -72,6 +90,10 @@ export class OpError extends Error {
 
 function invalid(detail: string): OpError {
   return new OpError('invalid', 0, detail);
+}
+
+function notAllowed(detail: string): OpError {
+  return new OpError('notAllowed', 0, detail);
 }
 
 function atIndex(error: unknown, index: number): OpError {
@@ -148,10 +170,14 @@ export interface PlaceEntityOp {
 export interface RemoveEntityOp {
   readonly op: 'removeEntity';
   readonly entityId: string;
+  /** 为 true 时物件不存在就什么都不做。 */
+  readonly ifPresent?: boolean;
 }
 export interface CreateAnchorOp {
   readonly op: 'createAnchor';
   readonly anchor: AnchorBody;
+  /** 为 true 时编号在本空间时间线上出现过（不论现在还在不在）就什么都不做。 */
+  readonly ifNew?: boolean;
 }
 export interface MoveAnchorOp {
   readonly op: 'moveAnchor';
@@ -170,6 +196,23 @@ export interface RemoveAnchorOp {
   readonly op: 'removeAnchor';
   readonly anchorId: string;
 }
+/** `setScan` 的扫描层：扫描资源、网页用模型、变换和可选的对齐信息。 */
+export interface ScanSpec {
+  readonly assetHash: string;
+  readonly webModelHashes: readonly string[];
+  readonly transform: readonly number[];
+  readonly alignment?: Readonly<Record<string, unknown>>;
+}
+/** 设置这次提交的扫描层（只在重建草稿里，一个草稿最多一次）。 */
+export interface SetScanOp {
+  readonly op: 'setScan';
+  readonly scan: ScanSpec;
+  readonly observedAt?: string;
+}
+/** 删掉重建层的全部物件（只在重建草稿里）。 */
+export interface ClearRebuiltOp {
+  readonly op: 'clearRebuilt';
+}
 
 /** 一条高层操作。JSON 里用 `op` 区分类型。 */
 export type Op =
@@ -183,7 +226,9 @@ export type Op =
   | CreateAnchorOp
   | MoveAnchorOp
   | UpdateAnchorOp
-  | RemoveAnchorOp;
+  | RemoveAnchorOp
+  | SetScanOp
+  | ClearRebuiltOp;
 
 export type OpName = Op['op'];
 
@@ -204,11 +249,13 @@ const OP_FIELDS: Record<OpName, readonly string[]> = {
   copyRegion: ['source', 'to'],
   addBlock: ['block'],
   placeEntity: ['entity'],
-  removeEntity: ['entityId'],
-  createAnchor: ['anchor'],
+  removeEntity: ['entityId', 'ifPresent'],
+  createAnchor: ['anchor', 'ifNew'],
   moveAnchor: ['anchorId', 'box', 'position'],
   updateAnchor: ['anchorId', 'label', 'visibility', 'kind'],
   removeAnchor: ['anchorId'],
+  setScan: ['scan', 'observedAt'],
+  clearRebuilt: [],
 };
 
 export const OP_NAMES = Object.keys(OP_FIELDS) as OpName[];
@@ -283,6 +330,105 @@ function parseVec3(value: unknown, name: string, integer: boolean): Vec3 {
   return value as unknown as Vec3;
 }
 
+function parseOptionalBool(object: Json, key: string): boolean | undefined {
+  if (!given(object, key)) return undefined;
+  if (typeof object[key] !== 'boolean') throw invalid(`${key} 必须是布尔值`);
+  return object[key];
+}
+
+function parseScanSpec(value: unknown): ScanSpec {
+  if (!isPlainObject(value)) throw invalid('scan 必须是对象');
+  for (const key of Object.keys(value)) {
+    if (
+      value[key] !== undefined &&
+      !['assetHash', 'webModelHashes', 'transform', 'alignment'].includes(key)
+    ) {
+      throw invalid(`scan 里不认识的字段 ${key}`);
+    }
+  }
+  if (typeof value.assetHash !== 'string') throw invalid('scan.assetHash 必须是字符串');
+  if (
+    !Array.isArray(value.webModelHashes) ||
+    !value.webModelHashes.every((hash) => typeof hash === 'string')
+  ) {
+    throw invalid('scan.webModelHashes 必须是字符串数组');
+  }
+  if (
+    !Array.isArray(value.transform) ||
+    value.transform.length !== 16 ||
+    !value.transform.every((v) => typeof v === 'number')
+  ) {
+    throw invalid('scan.transform 必须是 16 个数');
+  }
+  const out: Json = {
+    assetHash: value.assetHash,
+    webModelHashes: value.webModelHashes,
+    transform: value.transform,
+  };
+  if (given(value, 'alignment')) {
+    if (!isPlainObject(value.alignment)) throw invalid('scan.alignment 必须是对象');
+    out.alignment = value.alignment;
+  }
+  return out as unknown as ScanSpec;
+}
+
+/**
+ * 4×4 列主序仿射变换（Rust `model::check_transform`）：16 个有限数（绝对值 ≤ 1e7），最后一行 [0,0,0,1]，
+ * 线性部分可逆且不镜像（行列式 > 1e-6），平移的绝对值 ≤ 100000 米。不合法时返回说明。
+ */
+export function transformError(values: readonly number[]): string | null {
+  const message =
+    'transform 必须是 16 个有限数（列主序 4×4），最后一行 [0,0,0,1]，线性部分可逆且不镜像（行列式 > 1e-6），平移的绝对值不超过 100000 米';
+  if (
+    values.length !== 16 ||
+    !values.every((v) => Number.isFinite(v) && Math.abs(v) <= MAX_TRANSFORM_ELEMENT)
+  ) {
+    return message;
+  }
+  const m = (row: number, col: number) => values[col * 4 + row]!;
+  if (m(3, 0) !== 0 || m(3, 1) !== 0 || m(3, 2) !== 0 || m(3, 3) !== 1) return message;
+  if ([m(0, 3), m(1, 3), m(2, 3)].some((t) => Math.abs(t) > MAX_TRANSFORM_TRANSLATION)) {
+    return message;
+  }
+  const det =
+    m(0, 0) * (m(1, 1) * m(2, 2) - m(1, 2) * m(2, 1)) -
+    m(0, 1) * (m(1, 0) * m(2, 2) - m(1, 2) * m(2, 0)) +
+    m(0, 2) * (m(1, 0) * m(2, 1) - m(1, 1) * m(2, 0));
+  return det > MIN_TRANSFORM_DET ? null : message;
+}
+
+/** 扫描层的取值检查（Rust `ScanSpec::validate`）。 */
+export function validateScanSpec(scan: ScanSpec): void {
+  if (!isSha256Hex(scan.assetHash)) throw invalid('scan.assetHash 必须是 64 位小写十六进制');
+  const count = scan.webModelHashes.length;
+  if (count === 0 || count > MAX_WEB_MODELS) {
+    throw invalid('scan.webModelHashes 必须是 1 到 2 个资源哈希');
+  }
+  if (!scan.webModelHashes.every((hash) => isSha256Hex(hash))) {
+    throw invalid('scan.webModelHashes 必须是资源哈希');
+  }
+  if (count === 2 && scan.webModelHashes[0] === scan.webModelHashes[1]) {
+    throw invalid('scan.webModelHashes 不能重复');
+  }
+  const transform = transformError(scan.transform);
+  if (transform !== null) throw invalid(`scan.${transform}`);
+  if (scan.alignment !== undefined) {
+    let text: string;
+    try {
+      text = canonicalJson(scan.alignment);
+    } catch (error) {
+      if (error instanceof CanonicalError) {
+        throw invalid(`scan.alignment 无法规范化：${error.message}`);
+      }
+      throw error;
+    }
+    const bytes = Buffer.byteLength(text, 'utf8');
+    if (bytes > MAX_ALIGNMENT_BYTES) {
+      throw invalid(`scan.alignment 规范化后 ${bytes} 字节，超过 ${MAX_ALIGNMENT_BYTES}`);
+    }
+  }
+}
+
 function wrapRecord<T>(make: () => T): T {
   try {
     return make();
@@ -351,10 +497,31 @@ export function parseOp(value: unknown): Op {
       return { op: 'addBlock', block: parseBlockDef(value.block) };
     case 'placeEntity':
       return { op: 'placeEntity', entity: wrapRecord(() => parseEntityBody(value.entity)) };
-    case 'removeEntity':
-      return { op: 'removeEntity', entityId: str('entityId') };
-    case 'createAnchor':
-      return { op: 'createAnchor', anchor: wrapRecord(() => parseAnchorBody(value.anchor)) };
+    case 'removeEntity': {
+      const op: Json = { op: 'removeEntity', entityId: str('entityId') };
+      const ifPresent = parseOptionalBool(value, 'ifPresent');
+      if (ifPresent !== undefined) op.ifPresent = ifPresent;
+      return op as unknown as RemoveEntityOp;
+    }
+    case 'createAnchor': {
+      const op: Json = {
+        op: 'createAnchor',
+        anchor: wrapRecord(() => parseAnchorBody(value.anchor)),
+      };
+      const ifNew = parseOptionalBool(value, 'ifNew');
+      if (ifNew !== undefined) op.ifNew = ifNew;
+      return op as unknown as CreateAnchorOp;
+    }
+    case 'setScan': {
+      const op: Json = { op: 'setScan', scan: parseScanSpec(value.scan) };
+      if (given(value, 'observedAt')) {
+        if (!isRfc3339(value.observedAt)) throw invalid('observedAt 必须是 RFC 3339 时间');
+        op.observedAt = value.observedAt;
+      }
+      return op as unknown as SetScanOp;
+    }
+    case 'clearRebuilt':
+      return { op: 'clearRebuilt' };
     case 'moveAnchor': {
       const op: Json = { op: 'moveAnchor', anchorId: str('anchorId') };
       if (given(value, 'box')) op.box = parseBox(value.box, 'box');
@@ -417,16 +584,33 @@ export function validateBlockDef(block: BlockDef): void {
 // 工作状态
 // ---------------------------------------------------------------------------
 
+/** `createAnchor` 带 `ifNew` 时为什么跳过：现在就有（`exists`），或曾经有过（`existed`）。 */
+export type AnchorSkip = 'exists' | 'existed';
+
 /** 一批操作碰过的键。区块键是 `layer:cx:cy:cz`。 */
 export interface TouchedSet {
   readonly chunks: Set<string>;
   readonly entities: Set<string>;
   readonly anchors: Set<string>;
   palette: boolean;
+  /** 有 `setScan`。 */
+  scan: boolean;
+  /** 有 `clearRebuilt`。 */
+  rebuiltLayer: boolean;
+  /** 带 `ifNew` 而跳过的锚点（不算碰过，只用来报告）。 */
+  readonly skippedAnchors: Map<string, AnchorSkip>;
 }
 
 export function emptyTouched(): TouchedSet {
-  return { chunks: new Set(), entities: new Set(), anchors: new Set(), palette: false };
+  return {
+    chunks: new Set(),
+    entities: new Set(),
+    anchors: new Set(),
+    palette: false,
+    scan: false,
+    rebuiltLayer: false,
+    skippedAnchors: new Map(),
+  };
 }
 
 export function mergeTouched(into: TouchedSet, other: TouchedSet): void {
@@ -434,6 +618,9 @@ export function mergeTouched(into: TouchedSet, other: TouchedSet): void {
   other.entities.forEach((key) => into.entities.add(key));
   other.anchors.forEach((key) => into.anchors.add(key));
   into.palette ||= other.palette;
+  into.scan ||= other.scan;
+  into.rebuiltLayer ||= other.rebuiltLayer;
+  other.skippedAnchors.forEach((reason, id) => into.skippedAnchors.set(id, reason));
 }
 
 /** 与 Rust `String` 的排序相同（按 UTF-8 字节，即按码点）。 */
@@ -441,19 +628,42 @@ export function compareIds(a: string, b: string): number {
   return Buffer.compare(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'));
 }
 
-/** 碰过的键，按 Rust 的顺序排好（草稿 `touched` 的 JSON 形状）。 */
+/** 碰过的键，按 Rust 的顺序排好（草稿 `touched` 的 JSON 形状；`scan`、`rebuiltLayer` 只在为 true 时写）。 */
 export function touchedToModel(touched: TouchedSet): {
   chunks: ChunkKey[];
   entities: string[];
   anchors: string[];
   palette: boolean;
+  scan?: true;
+  rebuiltLayer?: true;
 } {
   return {
     chunks: [...touched.chunks].map(parseChunkKey).sort(compareChunkKeys),
     entities: [...touched.entities].sort(compareIds),
     anchors: [...touched.anchors].sort(compareIds),
     palette: touched.palette,
+    ...(touched.scan ? { scan: true as const } : {}),
+    ...(touched.rebuiltLayer ? { rebuiltLayer: true as const } : {}),
   };
+}
+
+/** 工作状态的范围种类：扩展（实体区、地块草稿）或重建（重建草稿）。 */
+export type ScopeKind = 'ext' | 'rebuild';
+
+/** 路径范围对应的种类：重建路径是重建，其余都是扩展。 */
+export function scopeKindOf(scope: PathScope): ScopeKind {
+  return scope === 'rebuild' ? 'rebuild' : 'ext';
+}
+
+/** 这种草稿写的那一层。 */
+export function layerOfKind(kind: ScopeKind): Layer {
+  return kind === 'rebuild' ? 'rebuilt' : 'ext';
+}
+
+/** 草稿里的 `setScan`。 */
+export interface DraftScan {
+  readonly scan: ScanSpec;
+  readonly observedAt?: string;
 }
 
 /** 区块变化；`hash = null` 表示删除这个区块。 */
@@ -526,6 +736,15 @@ export class WorkingState {
   palette: PaletteBlock[];
   /** 草稿里新增的方块：临时名称 → (临时编号, 定义)。 */
   readonly provisionalBlocks: Map<string, { readonly id: number; readonly def: BlockDef }>;
+  /** 范围种类（默认扩展）。 */
+  kind: ScopeKind;
+  /**
+   * 本空间时间线上出现过的锚点编号（草稿基础版本及更早）。只在操作里有 `ifNew` 时才需要，
+   * 由调用方传入。
+   */
+  readonly anchorHistory: Set<string>;
+  /** 草稿的 `setScan`（一个草稿最多一次）。 */
+  scan: DraftScan | null;
   private readonly owned: Set<string>;
 
   constructor(init?: {
@@ -534,12 +753,18 @@ export class WorkingState {
     anchors?: Map<string, AnchorBody>;
     palette?: PaletteBlock[];
     provisionalBlocks?: Map<string, { readonly id: number; readonly def: BlockDef }>;
+    kind?: ScopeKind;
+    anchorHistory?: Iterable<string>;
+    scan?: DraftScan | null;
   }) {
     this.chunks = init?.chunks ?? new Map();
     this.entities = init?.entities ?? new Map();
     this.anchors = init?.anchors ?? new Map();
     this.palette = init?.palette ?? [];
     this.provisionalBlocks = init?.provisionalBlocks ?? new Map();
+    this.kind = init?.kind ?? 'ext';
+    this.anchorHistory = new Set(init?.anchorHistory ?? []);
+    this.scan = init?.scan ?? null;
     this.owned = new Set();
   }
 
@@ -552,6 +777,9 @@ export class WorkingState {
       anchors: new Map(this.anchors),
       palette: [...this.palette],
       provisionalBlocks: new Map(this.provisionalBlocks),
+      kind: this.kind,
+      anchorHistory: this.anchorHistory,
+      scan: this.scan,
     });
   }
 
@@ -600,7 +828,7 @@ export class WorkingState {
     return provisional.id;
   }
 
-  /** 空间里的模板（`kind: "template"` 的物件）。 */
+  /** 空间里的全部模板（`kind: "template"` 的物件，两层都算；放物件时只能引用同一层的）。 */
   templates(): Map<string, Shape> {
     const out = new Map<string, Shape>();
     for (const id of this.sortedEntityIds()) {
@@ -610,14 +838,30 @@ export class WorkingState {
     return out;
   }
 
+  /** 某一层的模板。物件只能引用同一层的模板。 */
+  templatesOf(layer: Layer): Map<string, Shape> {
+    const out = new Map<string, Shape>();
+    for (const id of this.sortedEntityIds()) {
+      const entity = this.entities.get(id)!;
+      if (entity.kind === 'template' && entity.layer === layer && entity.shape !== undefined) {
+        out.set(id, entity.shape);
+      }
+    }
+    return out;
+  }
+
   private sortedEntityIds(): string[] {
     return [...this.entities.keys()].sort(compareIds);
   }
 
-  /** 直接或间接引用了某个模板的物件（不含模板自己，也不含其他模板）。 */
-  usersOfTemplate(template: string): EntityBody[] {
+  /**
+   * 同一层里直接或间接引用了某个模板的物件（不含模板自己，也不含其他模板）。`layer` 不给时按模板
+   * 自己所在的层（模板不存在时按扩展层）。
+   */
+  usersOfTemplate(template: string, layer?: Layer): EntityBody[] {
+    const inLayer = layer ?? this.entities.get(template)?.layer ?? 'ext';
     const affected = new Set([template]);
-    const ids = this.sortedEntityIds();
+    const ids = this.sortedEntityIds().filter((id) => this.entities.get(id)!.layer === inLayer);
     for (;;) {
       const before = affected.size;
       for (const id of ids) {
@@ -638,18 +882,87 @@ export class WorkingState {
 
   private entityFootprints(entity: EntityBody): GridBox[] {
     if (entity.kind === 'template') {
-      // 模板没有世界坐标；改模板等于改所有用到它的物件。
-      return this.usersOfTemplate(entity.entityId).map(entityFootprint);
+      // 模板没有世界坐标；改模板等于改同一层里所有用到它的物件。
+      return this.usersOfTemplate(entity.entityId, entity.layer).map(entityFootprint);
     }
     return [entityFootprint(entity)];
   }
 
-  private existingExtEntity(id: string): EntityBody | undefined {
+  /** 这种草稿能不能用这个操作（Rust `check_allowed`）。 */
+  private checkAllowed(op: Op): void {
+    if (this.kind === 'ext') {
+      if (op.op === 'setScan' || op.op === 'clearRebuilt') {
+        throw notAllowed(`${op.op} 只能出现在重建草稿里（由重建包展开产生）`);
+      }
+      return;
+    }
+    switch (op.op) {
+      case 'fill':
+      case 'hollowBox':
+      case 'replace':
+      case 'copyRegion':
+      case 'addBlock':
+      case 'moveAnchor':
+      case 'updateAnchor':
+      case 'removeAnchor':
+        throw notAllowed(`重建草稿里不能有 ${op.op}（重建包不写方块，锚点只能新建）`);
+      case 'createAnchor':
+        if (op.ifNew !== true) throw notAllowed('重建草稿里新建锚点必须带 ifNew');
+        return;
+      default:
+        return;
+    }
+  }
+
+  /** 同编号的现有物件；属于另一层时报错（两层共用一个编号空间）。 */
+  private existingEntity(id: string): EntityBody | undefined {
     const entity = this.entities.get(id);
-    if (entity !== undefined && entity.layer !== 'ext') {
-      throw invalid(`物件 ${id} 属于重建层，只能由任务修改`);
+    if (entity !== undefined && entity.layer !== layerOfKind(this.kind)) {
+      throw invalid(
+        this.kind === 'ext'
+          ? `物件 ${id} 属于重建层，只能经重建路径修改`
+          : `物件 ${id} 属于扩展层，重建草稿不能修改`,
+      );
     }
     return entity;
+  }
+
+  /** 带 `ifNew` 的锚点要不要跳过；跳过时给出原因。 */
+  private anchorSkip(anchorId: string, ifNew: boolean | undefined): AnchorSkip | null {
+    if (ifNew !== true) return null;
+    if (this.anchors.has(anchorId)) return 'exists';
+    if (this.anchorHistory.has(anchorId)) return 'existed';
+    return null;
+  }
+
+  /** 物件编号分区：重建层新放的必须以 `rb.` 开头；扩展层新放的不能以 `rb.` 开头。 */
+  private checkEntityId(entity: EntityBody): void {
+    const id = entity.entityId;
+    if (this.kind === 'rebuild' && !isRebuiltId(id)) {
+      throw invalid(`重建层新放的物件编号必须以 ${REBUILT_ID_PREFIX} 开头（旧编号 ${id} 只能删）`);
+    }
+    if (this.kind === 'ext' && isRebuiltId(id) && !this.entities.has(id)) {
+      throw invalid(`${REBUILT_ID_PREFIX} 开头的编号留给重建层，扩展层不能新放 ${id}`);
+    }
+  }
+
+  /**
+   * 模板引用的完整性（Rust `broken_template_refs`）：每个物件（含模板）形状里引用的模板都要在
+   * 同一层存在。返回缺的引用（按物件编号排好）；空表示完整。
+   */
+  brokenTemplateRefs(): { entityId: string; template: string }[] {
+    const broken: { entityId: string; template: string }[] = [];
+    for (const id of this.sortedEntityIds()) {
+      const entity = this.entities.get(id)!;
+      if (entity.shape === undefined) continue;
+      for (const template of [...templateRefs(entity.shape)].sort(compareIds)) {
+        const target = this.entities.get(template);
+        if (target === undefined || target.kind !== 'template' || target.layer !== entity.layer) {
+          broken.push({ entityId: id, template });
+        }
+      }
+    }
+    return broken;
   }
 
   private existingAnchor(id: string): AnchorBody {
@@ -662,6 +975,7 @@ export class WorkingState {
   footprint(op: Op): Footprint {
     const footprint: FootprintBuilder = { cells: [], spaceWide: false };
     try {
+      this.checkAllowed(op);
       switch (op.op) {
         case 'fill':
         case 'hollowBox':
@@ -678,21 +992,32 @@ export class WorkingState {
           break;
         }
         case 'addBlock':
+        case 'setScan':
           break;
         case 'placeEntity': {
           footprint.cells.push(...this.entityFootprints(op.entity));
-          const old = this.existingExtEntity(op.entity.entityId);
+          const old = this.existingEntity(op.entity.entityId);
           if (old !== undefined) footprint.cells.push(...this.entityFootprints(old));
           break;
         }
         case 'removeEntity': {
-          const old = this.existingExtEntity(op.entityId);
-          if (old === undefined) throw invalid(`物件 ${op.entityId} 不存在`);
-          footprint.cells.push(...this.entityFootprints(old));
+          const old = this.existingEntity(op.entityId);
+          if (old !== undefined) footprint.cells.push(...this.entityFootprints(old));
+          else if (op.ifPresent !== true) throw invalid(`物件 ${op.entityId} 不存在`);
           break;
         }
+        case 'clearRebuilt':
+          for (const id of this.sortedEntityIds()) {
+            const entity = this.entities.get(id)!;
+            if (entity.layer === 'rebuilt' && entity.kind !== 'template') {
+              footprint.cells.push(entityFootprint(entity));
+            }
+          }
+          break;
         case 'createAnchor':
-          addAnchor(footprint, anchorFootprint(op.anchor));
+          if (this.anchorSkip(op.anchor.anchorId, op.ifNew) === null) {
+            addAnchor(footprint, anchorFootprint(op.anchor));
+          }
           break;
         case 'moveAnchor': {
           const old = this.existingAnchor(op.anchorId);
@@ -743,6 +1068,7 @@ export class WorkingState {
   }
 
   private applyUnchecked(op: Op): TouchedSet {
+    this.checkAllowed(op);
     const touched = emptyTouched();
     switch (op.op) {
       case 'fill': {
@@ -817,9 +1143,16 @@ export class WorkingState {
       }
       case 'placeEntity': {
         const entity = op.entity;
-        if (entity.layer !== 'ext') throw invalid('操作只能放扩展层的物件');
-        this.existingExtEntity(entity.entityId);
-        const templates = this.templates();
+        const layer = layerOfKind(this.kind);
+        if (entity.layer !== layer) {
+          throw invalid(
+            this.kind === 'ext' ? '操作只能放扩展层的物件' : '重建草稿只能放重建层的物件',
+          );
+        }
+        this.checkEntityId(entity);
+        this.existingEntity(entity.entityId);
+        // 模板只能被同一层引用：只把这一层的模板交给校验。
+        const templates = this.templatesOf(layer);
         if (entity.kind === 'template' && entity.shape !== undefined) {
           templates.set(entity.entityId, entity.shape);
         }
@@ -829,18 +1162,45 @@ export class WorkingState {
         break;
       }
       case 'removeEntity': {
-        if (this.existingExtEntity(op.entityId) === undefined) {
+        const existing = this.existingEntity(op.entityId);
+        if (existing === undefined) {
+          if (op.ifPresent === true) break;
           throw invalid(`物件 ${op.entityId} 不存在`);
         }
-        if (this.usersOfTemplate(op.entityId).length > 0) {
+        if (this.usersOfTemplate(op.entityId, existing.layer).length > 0) {
           throw invalid(`模板 ${op.entityId} 仍被物件使用`);
         }
         this.entities.delete(op.entityId);
         touched.entities.add(op.entityId);
         break;
       }
+      case 'clearRebuilt': {
+        for (const id of this.sortedEntityIds()) {
+          if (this.entities.get(id)!.layer === 'rebuilt') {
+            this.entities.delete(id);
+            touched.entities.add(id);
+          }
+        }
+        touched.rebuiltLayer = true;
+        break;
+      }
+      case 'setScan': {
+        if (this.scan !== null) throw invalid('一个草稿最多一次 setScan');
+        validateScanSpec(op.scan);
+        this.scan = {
+          scan: op.scan,
+          ...(op.observedAt !== undefined ? { observedAt: op.observedAt } : {}),
+        };
+        touched.scan = true;
+        break;
+      }
       case 'createAnchor': {
         validateAnchorBody(op.anchor);
+        const skip = this.anchorSkip(op.anchor.anchorId, op.ifNew);
+        if (skip !== null) {
+          touched.skippedAnchors.set(op.anchor.anchorId, skip);
+          break;
+        }
         if (this.anchors.has(op.anchor.anchorId)) {
           throw invalid(`锚点 ${op.anchor.anchorId} 已存在`);
         }
@@ -938,6 +1298,8 @@ export class WorkingState {
     this.palette = next.palette;
     this.provisionalBlocks.clear();
     next.provisionalBlocks.forEach((value, key) => this.provisionalBlocks.set(key, value));
+    this.kind = next.kind;
+    this.scan = next.scan;
     // next 复制或新建的数组只有它自己引用，next 用完即弃，这些数组转归本对象独占。
     this.owned.clear();
     next.owned.forEach((key) => this.owned.add(key));

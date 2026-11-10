@@ -29,17 +29,51 @@ export interface Transform {
 
 export type UvMode = 'box' | 'planar' | 'cylindrical' | 'mesh';
 
-/** 两种材质都可以带的外观选项。 */
+/**
+ * 着色方式（docs/SHAPES.md 第 2 节"着色、法线、粗糙度"）：`baked` 是扫描烘焙贴图的看法（贴图里已经带了光照，
+ * 默认），`albedo` 是固有色、完整受光。颜色材质两种取值画法一样。
+ */
+export type Shading = 'baked' | 'albedo';
+
+export const SHADING_MODES: readonly Shading[] = ['baked', 'albedo'];
+
+/**
+ * 两种材质都可以带的外观选项。平铺、着色、法线、粗糙度这些字段（SHAPES 2"贴图坐标的平铺、着色、法线与粗糙度"）
+ * 都不给时与旧数据完全相同。
+ */
 export interface MaterialLook {
   /** 不透明度 0–1，默认 1；小于 1 时半透明（玻璃）。 */
   readonly opacity?: number;
-  /** 不受光照（屏幕、灯箱），默认 false。 */
+  /** 不受光照（屏幕、灯箱），默认 false；为真时着色方式、法线、粗糙度、金属度都不起作用。 */
   readonly unlit?: boolean;
+  /** 着色方式，默认 `baked`。 */
+  readonly shading?: Shading;
+  /**
+   * 贴图在表面上每重复一次的实际尺寸 `[u, v]`（米，每个 0 < x ≤ 100）。给了就按米算贴图坐标、重复采样；
+   * 只用于有贴图坐标（`uv`）的材质。
+   */
+  readonly tile?: Vec2;
+  /** 贴图坐标的平移 `[u, v]`（米，绝对值 ≤ 1000），默认 `[0, 0]`；只能和 `tile` 一起给。 */
+  readonly offset?: Vec2;
+  /** 贴图在表面上逆时针转的角度（度，−360 到 360），默认 0；只能和 `tile` 一起给。 */
+  readonly rotate?: number;
+  /** 切线空间法线贴图的资源哈希（OpenGL 约定，绿色朝 +v，与 glTF 相同）。 */
+  readonly normalMap?: string;
+  /** 法线贴图的强度 0–4，默认 1；只能和 `normalMap` 一起给。 */
+  readonly normalScale?: number;
+  /** 粗糙度贴图的资源哈希（灰度，白 = 粗糙）。 */
+  readonly roughnessMap?: string;
+  /** 粗糙度 0–1；和 `roughnessMap` 一起给时是乘数（默认 1）。 */
+  readonly roughness?: number;
+  /** 金属度 0–1，只有标量。 */
+  readonly metalness?: number;
 }
 
 export interface ColorMaterial extends MaterialLook {
   /** sRGB 0–255。 */
   readonly color: Rgb;
+  /** 贴图坐标方式：带 `normalMap` 或 `roughnessMap` 时必须给，两样都没有时不能给。 */
+  readonly uv?: UvMode;
 }
 
 export interface TextureMaterial extends MaterialLook {
@@ -202,6 +236,14 @@ export const MIN_EDGE_LENGTH = 1e-6;
 export const FLAT_TOLERANCE = 0.001;
 export const MIN_HULL_POINTS = 4;
 export const MAX_HULL_POINTS = 256;
+/** 材质 `tile` 每个分量的上限（米）。 */
+export const MAX_TILE = 100;
+/** 材质 `offset` 每个分量绝对值的上限（米）。 */
+export const MAX_TEXTURE_OFFSET = 1000;
+/** 材质 `rotate` 绝对值的上限（度）。 */
+export const MAX_TEXTURE_ROTATE = 360;
+/** 材质 `normalScale` 的上限。 */
+export const MAX_NORMAL_SCALE = 4;
 
 /** 校验或计算失败：`path` 是 JSON 路径，例如 `$.children[2].outline.points[3]`。 */
 export class ShapeError extends Error {
@@ -323,7 +365,8 @@ export function signedArea(points: readonly Vec2[]): number {
   return sum / 2;
 }
 
-function validateTransform(value: unknown, path: string): void {
+/** 变换的校验（形状的 `transform`；物件模型的 `transform` 另外只许旋转，见 record.ts）。 */
+export function validateTransform(value: unknown, path: string): void {
   if (!isPlainObject(value)) throw new ShapeError(path, 'transform 必须是对象');
   onlyKeys(value, ['position', 'yaw', 'pitch', 'roll', 'scale'], path);
   if (present(value, 'position')) {
@@ -528,18 +571,49 @@ function validateHull(path: string, points: readonly Vec3[]): void {
   if (problem !== null) throw new ShapeError(at, problem);
 }
 
+const MATERIAL_FIELDS = [
+  'color',
+  'texture',
+  'uv',
+  'tint',
+  'opacity',
+  'unlit',
+  'shading',
+  'tile',
+  'offset',
+  'rotate',
+  'normalMap',
+  'normalScale',
+  'roughnessMap',
+  'roughness',
+  'metalness',
+];
+
+/** 引用贴图资源的材质字段：颜色贴图、法线贴图、粗糙度贴图（都是资源哈希）。 */
+const MATERIAL_TEXTURE_FIELDS = ['texture', 'normalMap', 'roughnessMap'] as const;
+
+/** 0 ≤ value ≤ max 的有限值。 */
+function zeroTo(value: number, max: number): boolean {
+  return Number.isFinite(value) && value >= 0 && value <= max;
+}
+
 function validateMaterial(value: unknown, path: string): void {
   if (!isPlainObject(value)) throw new ShapeError(path, 'material 必须是对象');
-  onlyKeys(value, ['color', 'texture', 'uv', 'tint', 'opacity', 'unlit'], path);
+  onlyKeys(value, MATERIAL_FIELDS, path);
+  // 先查字段类型（相当于服务端的反序列化）。
   if (present(value, 'unlit') && typeof value.unlit !== 'boolean') {
     throw new ShapeError(`${path}.unlit`, '必须是布尔值');
   }
   const opacity = optionalNumber(value, 'opacity', path);
-  validateOpacity(`${path}.opacity`, opacity);
   if (present(value, 'color')) expectRgb(value.color, `${path}.color`);
   if (present(value, 'tint')) expectRgb(value.tint, `${path}.tint`);
-  if (present(value, 'texture') && typeof value.texture !== 'string') {
-    throw new ShapeError(`${path}.texture`, '必须是字符串');
+  for (const key of MATERIAL_TEXTURE_FIELDS) {
+    if (present(value, key) && typeof value[key] !== 'string') {
+      throw new ShapeError(
+        `${path}.${key}`,
+        '必须是资源哈希字符串（外链对象 {url, sha256, size} 只能写在 AI 物件集里）',
+      );
+    }
   }
   if (
     present(value, 'uv') &&
@@ -547,11 +621,29 @@ function validateMaterial(value: unknown, path: string): void {
   ) {
     throw new ShapeError(`${path}.uv`, 'uv 只能是 box、planar、cylindrical、mesh');
   }
+  if (present(value, 'shading') && !SHADING_MODES.includes(value.shading as Shading)) {
+    throw new ShapeError(`${path}.shading`, 'shading 只能是 baked 或 albedo');
+  }
+  const tile = present(value, 'tile') ? expectTuple(value.tile, 2, `${path}.tile`) : undefined;
+  const offset = present(value, 'offset')
+    ? expectTuple(value.offset, 2, `${path}.offset`)
+    : undefined;
+  const rotate = optionalNumber(value, 'rotate', path);
+  const normalScale = optionalNumber(value, 'normalScale', path);
+  const roughness = optionalNumber(value, 'roughness', path);
+  const metalness = optionalNumber(value, 'metalness', path);
+
+  // 再查取值和搭配（SHAPES 2 的合法条件，Rust `Material::validate` 按同样的规则查）。
+  validateOpacity(`${path}.opacity`, opacity);
   const color = present(value, 'color');
   const texture = present(value, 'texture');
+  const maps = present(value, 'normalMap') || present(value, 'roughnessMap');
   if (color && !texture) {
-    if (present(value, 'uv') || present(value, 'tint')) {
+    if (present(value, 'tint') || (!maps && present(value, 'uv'))) {
       throw new ShapeError(path, '纯色材质不能带 uv 或 tint');
+    }
+    if (maps && !present(value, 'uv')) {
+      throw new ShapeError(path, '颜色材质带 normalMap 或 roughnessMap 时必须给出 uv');
     }
   } else if (!color && texture) {
     if (!isSha256Hex(value.texture)) {
@@ -560,6 +652,51 @@ function validateMaterial(value: unknown, path: string): void {
     if (!present(value, 'uv')) throw new ShapeError(path, '贴图材质必须给出 uv');
   } else {
     throw new ShapeError(path, '材质必须且只能给出 color 或 texture');
+  }
+  for (const key of ['normalMap', 'roughnessMap'] as const) {
+    if (present(value, key) && !isSha256Hex(value[key])) {
+      throw new ShapeError(`${path}.${key}`, `${key} 必须是 64 位小写十六进制的资源哈希`);
+    }
+  }
+  if (tile !== undefined) {
+    if (!tile.every((v) => Number.isFinite(v) && v > 0 && v <= MAX_TILE)) {
+      throw new ShapeError(`${path}.tile`, 'tile 的两个数都必须大于 0、不超过 100（米）');
+    }
+    // 走到这里时，有 uv 的就是贴图材质或带法线、粗糙度贴图的颜色材质。
+    if (!present(value, 'uv')) {
+      throw new ShapeError(`${path}.tile`, 'tile、offset、rotate 只用于有贴图坐标（uv）的材质');
+    }
+  }
+  for (const key of ['offset', 'rotate'] as const) {
+    if (present(value, key) && tile === undefined) {
+      throw new ShapeError(`${path}.${key}`, 'offset、rotate 只能和 tile 一起给');
+    }
+  }
+  if (
+    offset !== undefined &&
+    !offset.every((v) => Number.isFinite(v) && Math.abs(v) <= MAX_TEXTURE_OFFSET)
+  ) {
+    throw new ShapeError(`${path}.offset`, 'offset 的两个数绝对值都不能超过 1000（米）');
+  }
+  if (
+    rotate !== undefined &&
+    !(Number.isFinite(rotate) && Math.abs(rotate) <= MAX_TEXTURE_ROTATE)
+  ) {
+    throw new ShapeError(`${path}.rotate`, 'rotate 必须在 −360 到 360 度之间');
+  }
+  if (normalScale !== undefined) {
+    if (!present(value, 'normalMap')) {
+      throw new ShapeError(`${path}.normalScale`, 'normalScale 只能和 normalMap 一起给');
+    }
+    if (!zeroTo(normalScale, MAX_NORMAL_SCALE)) {
+      throw new ShapeError(`${path}.normalScale`, 'normalScale 必须在 0 到 4 之间');
+    }
+  }
+  if (roughness !== undefined && !zeroTo(roughness, 1)) {
+    throw new ShapeError(`${path}.roughness`, 'roughness 必须在 0 到 1 之间');
+  }
+  if (metalness !== undefined && !zeroTo(metalness, 1)) {
+    throw new ShapeError(`${path}.metalness`, 'metalness 必须在 0 到 1 之间');
   }
 }
 
@@ -824,6 +961,25 @@ function stripNulls(value: unknown): unknown {
     return out;
   }
   return value;
+}
+
+/**
+ * 引用到的全部贴图资源：本形状和全部子形状（含模板实例自己的材质，不展开模板本身）材质里的
+ * `texture`、`normalMap`、`roughnessMap`（Rust `Shape::texture_refs`）。
+ */
+export function textureRefs(shape: Shape): Set<string> {
+  const refs = new Set<string>();
+  const walk = (node: Shape) => {
+    const material = node.material as Json | undefined;
+    if (material !== undefined) {
+      for (const key of MATERIAL_TEXTURE_FIELDS) {
+        if (typeof material[key] === 'string') refs.add(material[key]);
+      }
+    }
+    if (node.type === 'group') node.children.forEach(walk);
+  };
+  walk(shape);
+  return refs;
 }
 
 /** 引用到的全部模板编号（不展开模板本身）。 */

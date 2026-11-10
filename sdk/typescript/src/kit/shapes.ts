@@ -18,6 +18,7 @@ import {
   type OutlineFillet,
   type PlateShape,
   type Rgb,
+  type Shading,
   type Shape,
   type SweepSection,
   type SweepShape,
@@ -37,8 +38,47 @@ import {
 /** 颜色：`[r, g, b]`（0–255）或 `'#rrggbb'`。 */
 export type ColorInput = Rgb | string;
 
+/**
+ * 材质的外观选项，都要和 `color` 或 `texture` 一起给。平铺、着色、法线、粗糙度见 docs/SHAPES.md 第 2 节
+ * "贴图坐标的平铺、着色、法线与粗糙度"；都不给时与旧数据完全相同。
+ */
+export interface MaterialOptions {
+  /** 不透明度 0–1（小于 1 时半透明，用于玻璃）。 */
+  readonly opacity?: number;
+  /** 不受光照（屏幕、灯箱）；为真时着色方式、法线、粗糙度、金属度都不起作用。 */
+  readonly unlit?: boolean;
+  /**
+   * 着色方式：`'baked'`（默认）是扫描烘焙贴图的看法（贴图里已经带了光照）；`'albedo'` 是固有色、完整受光，
+   * 材质库、模型库的贴图用它。颜色材质两种取值画法一样。
+   */
+  readonly shading?: Shading;
+  /**
+   * 贴图在表面上每重复一次的实际尺寸（米，0 < x ≤ 100）：一个数是正方形，`[u, v]` 分开给。给了就按米算
+   * 贴图坐标、重复平铺；只用于有贴图坐标的材质（`texture`，或带 `normalMap` / `roughnessMap` 的 `color`）。
+   */
+  readonly tile?: number | Vec2;
+  /** 贴图坐标的平移 `[u, v]`（米，绝对值 ≤ 1000）；只能和 `tile` 一起给。 */
+  readonly offset?: Vec2;
+  /** 贴图在表面上逆时针转的角度（度，−360 到 360）；只能和 `tile` 一起给。 */
+  readonly rotate?: number;
+  /** 法线贴图的资源哈希（切线空间，OpenGL 约定，绿色朝 +v，与 glTF 相同）。 */
+  readonly normalMap?: string;
+  /** 法线贴图的强度 0–4，默认 1；只能和 `normalMap` 一起给。 */
+  readonly normalScale?: number;
+  /** 粗糙度贴图的资源哈希（灰度，白 = 粗糙）。 */
+  readonly roughnessMap?: string;
+  /** 粗糙度 0–1；和 `roughnessMap` 一起给时是乘数。网站没有环境贴图，不透明面不要低于 0.5。 */
+  readonly roughness?: number;
+  /** 金属度 0–1（只有标量）。 */
+  readonly metalness?: number;
+  /**
+   * 颜色材质带 `normalMap` 或 `roughnessMap` 时的贴图坐标方式（这时必须给）；贴图材质写在 `texture.uv` 里。
+   */
+  readonly uv?: UvMode;
+}
+
 /** 所有形状共用的选项：位置、旋转、缩放和材质。 */
-export interface ShapeOptions {
+export interface ShapeOptions extends MaterialOptions {
   /** 位置（米）：局部原点放到哪里。 */
   readonly at?: Vec3;
   /** 绕 y 轴旋转（度）。 */
@@ -52,10 +92,6 @@ export interface ShapeOptions {
   readonly color?: ColorInput;
   /** 贴图材质：资源哈希 + 贴图坐标方式。 */
   readonly texture?: { readonly hash: string; readonly uv: UvMode; readonly tint?: ColorInput };
-  /** 不透明度 0–1（小于 1 时半透明，用于玻璃）；要和 color 或 texture 一起给。 */
-  readonly opacity?: number;
-  /** 不受光照（屏幕、灯箱）；要和 color 或 texture 一起给。 */
-  readonly unlit?: boolean;
 }
 
 /** `'#rrggbb'` 或 `[r, g, b]` → `[r, g, b]`。 */
@@ -76,24 +112,50 @@ function transformOf(options: ShapeOptions): Transform | undefined {
   return Object.keys(transform).length === 0 ? undefined : transform;
 }
 
+/** 材质 JSON 里外观字段的顺序（与 SHAPES 的表格相同）。 */
+const LOOK_FIELDS = [
+  'opacity',
+  'unlit',
+  'shading',
+  'tile',
+  'offset',
+  'rotate',
+  'normalMap',
+  'normalScale',
+  'roughnessMap',
+  'roughness',
+  'metalness',
+] as const;
+
 function materialOf(options: ShapeOptions): Material | undefined {
   if (options.color !== undefined && options.texture !== undefined) {
     throw new Error('color 和 texture 只能给一个');
   }
-  const look = {
-    ...(options.opacity !== undefined ? { opacity: options.opacity } : {}),
-    ...(options.unlit !== undefined ? { unlit: options.unlit } : {}),
-  };
-  if (options.color !== undefined) return { color: rgb(options.color), ...look };
+  const look: Record<string, unknown> = {};
+  for (const key of LOOK_FIELDS) {
+    const value = options[key];
+    if (value === undefined) continue;
+    look[key] = key === 'tile' && typeof value === 'number' ? [value, value] : value;
+  }
+  if (options.color !== undefined) {
+    return {
+      color: rgb(options.color),
+      ...(options.uv !== undefined ? { uv: options.uv } : {}),
+      ...look,
+    } as Material;
+  }
   if (options.texture !== undefined) {
+    if (options.uv !== undefined) throw new Error('贴图材质的 uv 写在 texture.uv 里');
     return {
       texture: options.texture.hash,
       uv: options.texture.uv,
       ...(options.texture.tint !== undefined ? { tint: rgb(options.texture.tint) } : {}),
       ...look,
-    };
+    } as Material;
   }
-  if (Object.keys(look).length > 0) throw new Error('opacity、unlit 要和 color 或 texture 一起给');
+  const stray = [...Object.keys(look), ...(options.uv !== undefined ? ['uv'] : [])];
+  if (stray.length > 0)
+    throw new Error(`材质选项 ${stray.join('、')} 要和 color 或 texture 一起给`);
   return undefined;
 }
 
@@ -263,7 +325,10 @@ export function group(children: readonly Shape[], options: ShapeOptions = {}): G
   return finish<GroupShape>({ type: 'group', children }, options);
 }
 
-/** 模板实例（同款椅子）：引用同一空间里 `kind: "template"` 的物件；`color` 覆盖模板颜色。 */
+/**
+ * 模板实例（同款椅子）：引用同一空间里 `kind: "template"` 的物件。`color` 只覆盖模板的颜色（以及 `opacity`、
+ * `unlit`），平铺、着色、法线、粗糙度不参与覆盖，模板部件保留自己的；`texture` 把全部部件换成这整个材质。
+ */
 export function instance(template: string, options: ShapeOptions = {}): InstanceShape {
   return finish<InstanceShape>({ type: 'instance', template }, options);
 }

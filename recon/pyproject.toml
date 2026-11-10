@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "metaverse-recon"
+version = "0.1.0"
+description = "chrono-metaverse 本地重建工具：扫描对齐、网页用模型、结构和物体重建、AI 物件集、重建工作台"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.5,<3",
+    "scipy>=1.18,<2",
+    "pillow>=13,<14",
+    "trimesh>=5.2,<6",
+    "DracoPy>=2.2,<3",
+    "fast-simplification>=0.2,<0.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.2,<10",
+    "ruff>=0.17,<0.18",
+]
+
+[project.scripts]
+metaverse-recon = "metaverse_recon.bench.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+# 重建工作台的无头渲染页（node + Playwright 加载）
+"metaverse_recon.bench" = ["render/*.html", "render/*.js"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 110
+target-version = "py313"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+# 注释和文档字符串按项目约定用中文，全角标点是有意的。
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]

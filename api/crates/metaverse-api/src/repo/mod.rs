@@ -23,16 +23,19 @@ mod spaces;
 pub use spaces::SpacePolicy;
 
 // 上传、任务、事件、组合（各自的文件里有说明）。
+mod cleanup;
 mod events;
 mod jobs;
+mod runner;
 mod transactions;
 mod universes;
 mod uploads;
 
 pub use events::{Cursor, EventInsert, Lower};
 pub use jobs::{JobInsert, MAX_JOB_LIST};
+pub use runner::{ChunkSource, JobFence, VerifyFinish};
 pub use universes::{UniverseFieldsUpdate, UniversePolicy, UniverseWrite};
-pub use uploads::{AssetAvailability, CompleteWrite, PartWrite, PendingUploads};
+pub use uploads::{CompleteWrite, PartWrite, PendingUploads, Registered};
 // 时间线、草稿、内容寻址数据、管理写入（时间线与公开读分工）。
 mod blobs;
 mod commits;
@@ -40,14 +43,16 @@ mod drafts;
 mod space_admin;
 
 pub use blobs::{
-    AssetMeta, AssetRejection, AssetRole, AssetStream, PutAsset, UnusableAsset, MISSING_ASSET,
+    AssetMeta, AssetRejection, AssetRole, AssetRoleCheck, AssetStream, PutAsset, UnusableAsset,
+    MISSING_ASSET,
 };
 pub use commits::{
-    palette_hash, state_blob_hash, BlobKind, CommitError, CommitOutcome, CommitPlan, Layout,
-    StoredChunk,
+    palette_hash, state_blob_hash, BlobKind, CommitError, CommitOutcome, CommitPlan, JobDone,
+    Layout, StoredChunk,
 };
 pub use drafts::{
-    DraftDoc, DraftStatus, NewPreview, OpsAsset, OpsRef, OpsUpload, PreviewRecord, ProvisionalBlock,
+    DraftDoc, DraftScanDoc, DraftStatus, JobDraftSave, JobStep, NewPreview, OpsAsset, OpsRef,
+    OpsUpload, PreviewRecord, ProvisionalBlock,
 };
 pub use space_admin::{SpaceSettings, MAX_SHARE_TOKEN_RECORDS};
 
@@ -203,6 +208,11 @@ impl Repo {
                             .unique(true)
                             .partial_filter_expression(doc! {"jobId": {"$type": "string"}})
                             .build(),
+                    ),
+                    // 锚点的 ifNew 查"这个编号在本空间的时间线上出现过没有"（docs/design/server-slim.md 2.4）。
+                    index(
+                        doc! {"spaceId": 1, "changedAnchors.id": 1},
+                        named("space_changed_anchor"),
                     ),
                 ],
             ),

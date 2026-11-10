@@ -1,0 +1,527 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>重建工作台渲染页（metaverse-recon）</title>
+<style>html,body{margin:0;background:#26282c}</style>
+<script type="importmap">{"imports":{"three":"./three/build/three.module.js","three/addons/":"./three/examples/jsm/"}}</script>
+</head>
+<body>
+<script type="module">
+// 重建工作台的无头渲染页（由 render.js 驱动，不单独使用）。
+// window.wbSetup({font, strings}) 设字体和文字；window.wbLoad([[名字, 地址, 选项], ...]) 加载 glb；
+// window.wbRender(参数) 渲染一张图并返回 PNG 的 dataURL。
+// 扫描和烘焙贴图不打光（自带光照），纯色材质按网站同样的灯光、材质和色调映射着色；
+// 模型和固有色贴图的画法与网站 web/src/viewer/materials.ts 相同（见 wbLoad 的说明）。
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+let FONT = '"WenQuanYi Zen Hei", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif';
+let STR = { toward: '朝你', away: '背离你', pxmm: '1 像素 = {v} 毫米', width: '宽', height: '高' };
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.localClippingEnabled = true;
+document.body.appendChild(renderer.domElement);
+
+// 灯光与网站 web/src/viewer/lighting.ts 相同（改一处要两处一起改）。three.js r155 以后灯光是物理单位：
+// 漫反射 = 反照率 / π × 辐照度，强度写成"系数 × π"，系数就是白色漫反射面拿到的亮度（1 = 原色）。
+// 以前这里的 1.6 只相当于系数 0.5 左右，纯色件比网站上暗约四成。
+const LIGHTS = {
+  hemisphere: { sky: 0xffffff, ground: 0xb3ada2, factor: 0.62 },
+  key: { color: 0xfff7ec, factor: 0.55, direction: [0.45, 0.8, 0.4] },
+  fill: { color: 0xe6edff, factor: 0.28, direction: [-0.55, 0.5, -0.6] },
+};
+// 受光照的贴图材质（模型库的模型）与网站一样只让一部分受光照，另一部分按自发光直接显示贴图
+const TEXTURE_DIFFUSE = 0.3;
+const TEXTURE_EMISSIVE = 0.72;
+
+const scene = new THREE.Scene();
+scene.add(new THREE.HemisphereLight(LIGHTS.hemisphere.sky, LIGHTS.hemisphere.ground, LIGHTS.hemisphere.factor * Math.PI));
+for (const spec of [LIGHTS.key, LIGHTS.fill]) {
+  const light = new THREE.DirectionalLight(spec.color, spec.factor * Math.PI);
+  light.position.copy(new THREE.Vector3(...spec.direction).normalize().multiplyScalar(20));
+  scene.add(light);
+}
+
+const models = {}; // 名字 → { root, mats: [材质], group }
+let helpers = []; // 每张图重建的辅助线
+
+window.wbSetup = async (s) => {
+  Object.assign(STR, s.strings || {});
+  if (s.font) {
+    try {
+      const face = new FontFace('wbfont', `url(${s.font})`);
+      await face.load();
+      document.fonts.add(face);
+      FONT = '"wbfont", ' + FONT;
+    } catch (e) {
+      console.error('字体加载失败', e && e.message);
+    }
+  }
+};
+
+// 选项：matrix（列主序 16 个数，模型坐标 → 空间坐标）、tint（[r,g,b] 0–255，乘到颜色上）、
+// group（显示时按组名选）、lit（模型库的模型：贴图也打光）、shading（模型的着色方式，与网站画外部模型物件的
+// material.shading 相同：albedo 按 glb 里的材质原样完整受光，baked 或不给时 0.3 倍受光 + 0.72 倍自发光）、
+// opacity（0–1，乘到整个模型上）、unlit（整个模型不打光）。
+// 形状导出的 glb（glbout.py）：扫描烘焙的贴图材质带 KHR_materials_unlit（读进来是 MeshBasicMaterial），按原样显示；
+// 其余贴图材质（albedo）和带法线、粗糙度贴图的材质按 glb 里的参数完整受光，与网站 materials.ts 相同。
+window.wbLoad = async (list) => {
+  for (const [name, url, opt] of list) {
+    const g = await new GLTFLoader().loadAsync(url);
+    const mats = [];
+    const tint = opt && opt.tint ? new THREE.Color().setRGB(opt.tint[0] / 255, opt.tint[1] / 255, opt.tint[2] / 255, THREE.SRGBColorSpace) : null;
+    const extraOpacity = opt && typeof opt.opacity === 'number' ? Math.min(1, Math.max(0, opt.opacity)) : 1;
+    const unlit = !!(opt && opt.unlit);
+    const albedo = !!(opt && opt.lit && opt.shading === 'albedo');
+    g.scene.traverse((o) => {
+      if (!o.isMesh) return;
+      const src = Array.isArray(o.material) ? o.material : [o.material];
+      const out = src.map((m) => {
+        const color = m.color ? m.color.clone() : new THREE.Color(0xffffff);
+        const opacity = (m.opacity !== undefined ? m.opacity : 1) * extraOpacity;
+        const transparent = m.transparent || opacity < 0.999;
+        const common = { color, side: THREE.DoubleSide, transparent, opacity, depthWrite: !transparent };
+        if (m.alphaTest) common.alphaTest = m.alphaTest;
+        if (m.vertexColors) common.vertexColors = true;
+        if (tint) common.color = color.clone().multiply(tint);
+        const ownLook = m.isMeshStandardMaterial && !unlit && (albedo || (!(opt && opt.lit) && (m.map || m.normalMap || m.roughnessMap)));
+        let r;
+        if (m.map) {
+          m.map.colorSpace = THREE.SRGBColorSpace;
+          m.map.anisotropy = 4;
+        }
+        if (ownLook) {
+          // 固有色：按 glb 里的材质原样完整受光（贴图、法线、粗糙度、金属度照用），没有自发光贴图
+          r = new THREE.MeshStandardMaterial({
+            ...common,
+            map: m.map || null,
+            normalMap: m.normalMap || null,
+            roughnessMap: m.roughnessMap || null,
+            metalnessMap: m.metalnessMap || null,
+            roughness: m.roughness,
+            metalness: m.metalness,
+            emissive: m.emissive ? m.emissive.clone() : new THREE.Color(0),
+          });
+          if (m.normalMap) r.normalScale.copy(m.normalScale);
+        } else if (m.map) {
+          if (opt && opt.lit && !unlit && !m.isMeshBasicMaterial) {
+            // 与网站 applyTexturedLook 相同：颜色 = 色调 × 受光部分，自发光 = 色调 × 不受光部分（同一张贴图）
+            r = new THREE.MeshStandardMaterial({
+              ...common,
+              map: m.map,
+              emissiveMap: m.map,
+              roughness: 0.82,
+              metalness: 0.02,
+            });
+            r.emissive.copy(common.color).multiplyScalar(TEXTURE_EMISSIVE);
+            r.color.copy(common.color).multiplyScalar(TEXTURE_DIFFUSE);
+          } else {
+            r = new THREE.MeshBasicMaterial({ ...common, map: m.map, toneMapped: false });
+          }
+        } else if (unlit || (m.isMeshBasicMaterial && !(opt && opt.forceLit))) {
+          // 不受光照的纯色（屏幕、灯箱：材质 unlit）
+          r = new THREE.MeshBasicMaterial({ ...common, toneMapped: false });
+        } else {
+          r = new THREE.MeshStandardMaterial({ ...common, roughness: 0.82, metalness: 0.02 });
+        }
+        if (transparent) o.renderOrder = 3;
+        mats.push(r);
+        return r;
+      });
+      o.material = Array.isArray(o.material) ? out : out[0];
+    });
+    if (opt && opt.matrix) {
+      const holder = new THREE.Group();
+      holder.matrixAutoUpdate = false;
+      holder.matrix.fromArray(opt.matrix);
+      holder.add(g.scene);
+      scene.add(holder);
+      holder.updateMatrixWorld(true);
+      models[name] = { root: holder, mats, group: (opt && opt.group) || name };
+    } else {
+      scene.add(g.scene);
+      models[name] = { root: g.scene, mats, group: (opt && opt.group) || name };
+    }
+  }
+  return Object.keys(models);
+};
+
+const V = (a) => new THREE.Vector3(a[0], a[1], a[2]);
+
+function planeKeep(normal, point) {
+  // three 的剖切：normal·p + constant < 0 的部分被裁掉；这里保留 normal·(p − point) ≥ 0 的一侧
+  const n = normal.clone().normalize();
+  return new THREE.Plane(n, -n.dot(point));
+}
+
+function lines(points, color, opacity, depthTest) {
+  const geo = new THREE.BufferGeometry().setFromPoints(points);
+  const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthTest, depthWrite: false });
+  const l = new THREE.LineSegments(geo, mat);
+  l.renderOrder = depthTest ? 1 : 2;
+  return l;
+}
+
+function floorGrid(x0, x1, z0, z1, y) {
+  const minor = [], major = [], unit = [];
+  const put = (v, a, b) => {
+    const k = Math.round(v * 10);
+    (k % 10 === 0 ? unit : k % 5 === 0 ? major : minor).push(a, b);
+  };
+  for (let x = Math.ceil(x0 * 10) / 10; x <= x1 + 1e-9; x = Math.round((x + 0.1) * 10) / 10)
+    put(x, new THREE.Vector3(x, y, z0), new THREE.Vector3(x, y, z1));
+  for (let z = Math.ceil(z0 * 10) / 10; z <= z1 + 1e-9; z = Math.round((z + 0.1) * 10) / 10)
+    put(z, new THREE.Vector3(x0, y, z), new THREE.Vector3(x1, y, z));
+  return [lines(minor, 0xd8dde6, 0.28, true), lines(major, 0xf0f3f8, 0.6, true), lines(unit, 0x7fd0ff, 0.9, true)];
+}
+
+function boxEdges(lo, hi) {
+  const c = [];
+  for (let i = 0; i < 8; i++) c.push(new THREE.Vector3(i & 1 ? hi.x : lo.x, i & 2 ? hi.y : lo.y, i & 4 ? hi.z : lo.z));
+  const e = [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]];
+  const pts = [];
+  for (const [a, b] of e) pts.push(c[a], c[b]);
+  return pts;
+}
+
+function cameraFor(p, W, H, margins) {
+  const az = (p.az * Math.PI) / 180, el = (p.el * Math.PI) / 180;
+  const dir = new THREE.Vector3(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az));
+  // 俯视（仰角接近 90°）时画面上方 = 远离相机方位一侧，正面（方位角 az 一侧）朝下
+  const up = Math.abs(dir.y) > 0.999 ? new THREE.Vector3(-Math.sin(az), 0, -Math.cos(az)) : new THREE.Vector3(0, 1, 0);
+  const fwd = dir.clone().negate();
+  const right = new THREE.Vector3().crossVectors(fwd, up).normalize();
+  const tup = new THREE.Vector3().crossVectors(right, fwd).normalize();
+  const lo = V(p.frame.min), hi = V(p.frame.max);
+  const t = p.target ? V(p.target) : lo.clone().add(hi).multiplyScalar(0.5);
+  const corners = [];
+  for (let i = 0; i < 8; i++) corners.push(new THREE.Vector3(i & 1 ? hi.x : lo.x, i & 2 ? hi.y : lo.y, i & 4 ? hi.z : lo.z));
+  if (p.ortho) {
+    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+    for (const c of corners) {
+      const d = c.clone().sub(t);
+      u0 = Math.min(u0, d.dot(right)); u1 = Math.max(u1, d.dot(right));
+      v0 = Math.min(v0, d.dot(tup)); v1 = Math.max(v1, d.dot(tup));
+    }
+    const aw = W - margins.l - margins.r, ah = H - margins.t - margins.b;
+    const s = Math.max((u1 - u0) / aw, (v1 - v0) / ah); // 每像素多少米
+    const uc = (u0 + u1) / 2, vc = (v0 + v1) / 2;
+    const cxp = margins.l + aw / 2, cyp = margins.t + ah / 2;
+    const left = uc - cxp * s, top = vc + cyp * s;
+    const cam = new THREE.OrthographicCamera(left, left + W * s, top, top - H * s, 0.01, 200);
+    cam.position.copy(t).addScaledVector(dir, 60);
+    cam.up.copy(up);
+    cam.lookAt(t);
+    cam.updateMatrixWorld();
+    return { cam, dir, right, up: tup, t, s, left, top, ortho: true };
+  }
+  const fov = p.fov || 32;
+  const cam = new THREE.PerspectiveCamera(fov, W / H, 0.02, 200);
+  // 距离：让外框的 8 个角都落在画面里（留边）
+  let dist = 0.5;
+  const tanV = Math.tan((fov * Math.PI) / 360) * 0.94, tanH = tanV * (W / H);
+  for (const c of corners) {
+    const d = c.clone().sub(t);
+    const x = Math.abs(d.dot(right)), y = Math.abs(d.dot(tup)), z = d.dot(dir);
+    dist = Math.max(dist, z + x / tanH, z + y / tanV);
+  }
+  cam.position.copy(t).addScaledVector(dir, dist);
+  cam.up.copy(up);
+  cam.lookAt(t);
+  cam.updateMatrixWorld();
+  return { cam, dir, right, up: tup, t, ortho: false };
+}
+
+const AXES = [
+  ['X', new THREE.Vector3(1, 0, 0), '#ff6b6b'],
+  ['Y', new THREE.Vector3(0, 1, 0), '#7ee07e'],
+  ['Z', new THREE.Vector3(0, 0, 1), '#6fb6ff'],
+];
+
+function axisOf(v) {
+  // 画面方向是否沿某个空间坐标轴：返回 [轴名, 下标, 符号] 或 null
+  for (const [name, a] of AXES.map(([n, a]) => [n, a])) {
+    const d = v.dot(a);
+    if (Math.abs(d) > 0.999) return [name, name === 'X' ? 0 : name === 'Y' ? 1 : 2, Math.sign(d)];
+  }
+  return null;
+}
+
+function label(ctx, text, x, y, opt = {}) {
+  ctx.font = `${opt.bold ? 'bold ' : ''}${opt.size || 13}px ${FONT}`;
+  const w = ctx.measureText(text).width, h = (opt.size || 13) + 4;
+  let bx = x, by = y;
+  if (opt.align === 'center') bx = x - w / 2 - 3;
+  else if (opt.align === 'right') bx = x - w - 6;
+  if (opt.valign === 'middle') by = y - h / 2;
+  else if (opt.valign === 'bottom') by = y - h;
+  if (opt.bg !== null) {
+    ctx.fillStyle = opt.bg || 'rgba(20,22,26,0.78)';
+    ctx.fillRect(bx, by, w + 6, h);
+  }
+  ctx.fillStyle = opt.color || '#f2f4f7';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, bx + 3, by + h / 2 + 0.5);
+}
+
+function fmt(v, d = 2) {
+  return (Math.abs(v) < 0.5 * 10 ** -d ? 0 : v).toFixed(d);
+}
+
+function rulers(ctx, cs, W, H, m, opt) {
+  // 正交图：底边、左边的米制刻度（10 厘米小刻度，50 厘米标数字），可选整幅淡网格
+  const s = cs.s;
+  const hAxis = axisOf(cs.right), vAxis = axisOf(cs.up);
+  const tv = [cs.t.x, cs.t.y, cs.t.z];
+  const step = s * 1000 > 25 ? 0.5 : 0.1; // 像素太密时只画 50 厘米
+  const labelEvery = s * 1000 > 30 ? 2.0 : s * 1000 > 12 ? 1.0 : s * 1000 > 5 ? 0.5 : 0.2;
+  const coordToPx = (ax, c, horiz) => {
+    // 坐标值 c → 沿画面右方/上方相对目标点的偏移 → 像素
+    const off = ax ? ax[2] * (c - tv[ax[1]]) : c;
+    return horiz ? (off - cs.left) / s : (cs.top - off) / s;
+  };
+  const range = (horiz, ax) => {
+    // 画面边缘对应的坐标值
+    const a = horiz ? cs.left : cs.top - H * s, b = horiz ? cs.left + W * s : cs.top;
+    if (!ax) return [a, b];
+    const i = ax[1];
+    const c1 = tv[i] + ax[2] * a, c2 = tv[i] + ax[2] * b;
+    return [Math.min(c1, c2), Math.max(c1, c2)];
+  };
+  ctx.save();
+  // 刻度带底色
+  ctx.fillStyle = 'rgba(20,22,26,0.92)';
+  ctx.fillRect(0, H - m.b, W, m.b);
+  ctx.fillRect(0, m.t, m.l, H - m.t - m.b);
+  for (const horiz of [true, false]) {
+    const ax = horiz ? hAxis : vAxis;
+    const [c0, c1] = range(horiz, ax);
+    const k0 = Math.ceil(c0 / 0.1 - 1e-6), k1 = Math.floor(c1 / 0.1 + 1e-6);
+    for (let k = k0; k <= k1; k++) {
+      const c = k / 10;
+      const isMajor = k % 5 === 0, isUnit = k % 10 === 0;
+      const px = coordToPx(ax, c, horiz);
+      if (horiz ? px < m.l || px > W : px < m.t || px > H - m.b) continue;
+      if (step > 0.1 && !isMajor) continue;
+      // 淡网格
+      if (opt.grid2d) {
+        ctx.strokeStyle = isUnit ? 'rgba(127,208,255,0.45)' : isMajor ? 'rgba(255,255,255,0.30)' : 'rgba(255,255,255,0.11)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        if (horiz) { ctx.moveTo(Math.round(px) + 0.5, m.t); ctx.lineTo(Math.round(px) + 0.5, H - m.b); }
+        else { ctx.moveTo(m.l, Math.round(px) + 0.5); ctx.lineTo(W, Math.round(px) + 0.5); }
+        ctx.stroke();
+      }
+      ctx.strokeStyle = '#e8ebf0';
+      ctx.lineWidth = 1;
+      const len = isUnit ? 12 : isMajor ? 9 : 4;
+      ctx.beginPath();
+      if (horiz) { ctx.moveTo(Math.round(px) + 0.5, H - m.b); ctx.lineTo(Math.round(px) + 0.5, H - m.b + len); }
+      else { ctx.moveTo(m.l, Math.round(px) + 0.5); ctx.lineTo(m.l - len, Math.round(px) + 0.5); }
+      ctx.stroke();
+      const every = Math.round(labelEvery * 10);
+      if (k % every === 0) {
+        const txt = c.toFixed(1);
+        if (horiz) label(ctx, txt, px, H - m.b + 13, { align: 'center', bg: null, size: 12 });
+        else label(ctx, txt, m.l - 13, px, { align: 'right', valign: 'middle', bg: null, size: 12 });
+      }
+    }
+  }
+  // 左下角：坐标增大的方向（例如 X→ 表示越往右 x 越大，Z← 表示越往左 z 越大）
+  const hd = hAxis ? `${hAxis[0]}${hAxis[2] > 0 ? '→' : '←'}` : 'Δ→';
+  const vd = vAxis ? `${vAxis[0]}${vAxis[2] > 0 ? '↑' : '↓'}` : 'Δ↑';
+  label(ctx, vd, 4, H - m.b + 9, { bg: null, size: 12, bold: true, color: '#9fd3ff', valign: 'middle' });
+  label(ctx, hd, 4, H - 10, { bg: null, size: 12, bold: true, color: '#9fd3ff', valign: 'middle' });
+  ctx.restore();
+  return { hAxis, vAxis };
+}
+
+function gizmo(ctx, cs, x, y) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(20,22,26,0.7)';
+  ctx.beginPath();
+  ctx.arc(x, y, 32, 0, Math.PI * 2);
+  ctx.fill();
+  for (const [name, a, col] of AXES) {
+    const dx = a.dot(cs.right), dy = -a.dot(cs.up), dz = a.dot(cs.dir);
+    const len = Math.hypot(dx, dy);
+    ctx.strokeStyle = col;
+    ctx.fillStyle = col;
+    ctx.lineWidth = 2.5;
+    if (len < 0.15) {
+      // 轴几乎沿视线：⊙ 指向观察者，⊗ 背离
+      ctx.beginPath();
+      ctx.arc(x, y, 6, 0, Math.PI * 2);
+      ctx.stroke();
+      if (dz > 0) { ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill(); }
+      else { ctx.beginPath(); ctx.moveTo(x - 4, y - 4); ctx.lineTo(x + 4, y + 4); ctx.moveTo(x + 4, y - 4); ctx.lineTo(x - 4, y + 4); ctx.stroke(); }
+      label(ctx, `+${name} ${dz > 0 ? STR.toward : STR.away}`, x, y + 20, { align: 'center', bg: null, size: 11, color: col, valign: 'middle' });
+      continue;
+    }
+    const ex = x + dx * 22, ey = y + dy * 22;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(ex, ey); ctx.stroke();
+    label(ctx, '+' + name, x + dx * 29, y + dy * 29, { align: 'center', valign: 'middle', bg: null, size: 12, bold: true, color: col });
+  }
+  ctx.restore();
+}
+
+function dims(ctx, cs, box, W, H, m) {
+  // 包围盒尺寸标注：正交图标在投影矩形外侧；透视图标在离相机最近的三条棱的中点
+  const lo = V(box.min), hi = V(box.max);
+  const size = hi.clone().sub(lo);
+  const proj = (p) => {
+    const q = p.clone().project(cs.cam);
+    return [(q.x + 1) / 2 * W, (1 - q.y) / 2 * H];
+  };
+  ctx.save();
+  ctx.font = `12px ${FONT}`;
+  const hAxis = axisOf(cs.right), vAxis = axisOf(cs.up);
+  if (cs.ortho && hAxis && vAxis) {
+    const xs = [], ys = [];
+    for (let i = 0; i < 8; i++) {
+      const [px, py] = proj(new THREE.Vector3(i & 1 ? hi.x : lo.x, i & 2 ? hi.y : lo.y, i & 4 ? hi.z : lo.z));
+      xs.push(px); ys.push(py);
+    }
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    ctx.strokeStyle = '#ffd400';
+    ctx.fillStyle = '#ffd400';
+    ctx.lineWidth = 1;
+    // 水平尺寸线：放在框下方
+    const yb = Math.min(y1 + 16, H - m.b - 8);
+    ctx.beginPath(); ctx.moveTo(x0, yb); ctx.lineTo(x1, yb); ctx.moveTo(x0, yb - 5); ctx.lineTo(x0, yb + 5); ctx.moveTo(x1, yb - 5); ctx.lineTo(x1, yb + 5); ctx.stroke();
+    const hLen = hAxis ? size.getComponent(hAxis[1]) : (x1 - x0) * cs.s;
+    const hName = hAxis ? hAxis[0] : STR.width || '宽';
+    const hr = hAxis ? `（${fmt(lo.getComponent(hAxis[1]))}–${fmt(hi.getComponent(hAxis[1]))}）` : '';
+    label(ctx, `${hName} ${fmt(hLen)} m ${hr}`, (x0 + x1) / 2, yb, { align: 'center', valign: 'middle', color: '#ffd400' });
+    // 竖直尺寸线：放在框右侧
+    const xr = Math.min(x1 + 16, W - 10);
+    ctx.beginPath(); ctx.moveTo(xr, y0); ctx.lineTo(xr, y1); ctx.moveTo(xr - 5, y0); ctx.lineTo(xr + 5, y0); ctx.moveTo(xr - 5, y1); ctx.lineTo(xr + 5, y1); ctx.stroke();
+    const vLen = vAxis ? size.getComponent(vAxis[1]) : (y1 - y0) * cs.s;
+    const vName = vAxis ? vAxis[0] : STR.height || '高';
+    const vr = vAxis ? `（${fmt(lo.getComponent(vAxis[1]))}–${fmt(hi.getComponent(vAxis[1]))}）` : '';
+    ctx.save();
+    ctx.translate(xr, (y0 + y1) / 2);
+    ctx.rotate(-Math.PI / 2);
+    label(ctx, `${vName} ${fmt(vLen)} m ${vr}`, 0, 0, { align: 'center', valign: 'middle', color: '#ffd400' });
+    ctx.restore();
+  } else {
+    // 透视：每个方向挑离相机最近的一条棱
+    const camp = cs.cam.position;
+    const pick = (axis) => {
+      let best = null;
+      for (let a = 0; a < 2; a++) for (let b = 0; b < 2; b++) {
+        const p0 = new THREE.Vector3(), p1 = new THREE.Vector3();
+        for (const [p, t] of [[p0, 0], [p1, 1]]) {
+          const comp = [0, 0, 0];
+          const others = [0, 1, 2].filter((k) => k !== axis);
+          comp[axis] = t;
+          comp[others[0]] = a;
+          comp[others[1]] = b;
+          p.set(comp[0] ? hi.x : lo.x, comp[1] ? hi.y : lo.y, comp[2] ? hi.z : lo.z);
+        }
+        const mid = p0.clone().add(p1).multiplyScalar(0.5);
+        // 竖直棱只取底边以上；水平棱取底面那一圈
+        if (axis !== 1 && mid.y > lo.y + 1e-6) continue;
+        const d = mid.distanceTo(camp);
+        if (!best || d < best[0]) best = [d, mid];
+      }
+      return best[1];
+    };
+    const names = ['X', 'Y', 'Z'];
+    for (const axis of [0, 2, 1]) {
+      const mid = pick(axis);
+      const [px, py] = proj(mid);
+      label(ctx, `${names[axis]} ${fmt(size.getComponent(axis))} m`, px, py + (axis === 1 ? 0 : 12), { align: 'center', valign: 'middle', color: '#ffd400' });
+    }
+  }
+  ctx.restore();
+}
+
+window.wbRender = (p) => {
+  const W = p.size[0], H = p.size[1];
+  renderer.setSize(W, H);
+  scene.background = new THREE.Color(p.background || 0x26282c);
+  const ov = p.overlay || {};
+  const m = ov.rulers && p.ortho ? { l: 46, r: 14, t: ov.header ? 46 : 10, b: 34 } : { l: 10, r: 10, t: ov.header ? 46 : 10, b: 10 };
+  const cs = cameraFor(p, W, H, m);
+
+  // 剖切：外框（每个被裁剪的模型）、视线近侧、高度剖切
+  const planes = [];
+  if (p.clip) {
+    const lo = V(p.clip.min), hi = V(p.clip.max);
+    planes.push(planeKeep(new THREE.Vector3(1, 0, 0), lo), planeKeep(new THREE.Vector3(-1, 0, 0), hi));
+    planes.push(planeKeep(new THREE.Vector3(0, 1, 0), lo), planeKeep(new THREE.Vector3(0, -1, 0), hi));
+    planes.push(planeKeep(new THREE.Vector3(0, 0, 1), lo), planeKeep(new THREE.Vector3(0, 0, -1), hi));
+  }
+  if (p.nearClip) {
+    // 保留 dir·(x − 近侧点) ≤ 0，dir 指向相机
+    const pt = V(p.nearClip.point);
+    planes.push(planeKeep(cs.dir.clone().negate(), pt));
+  }
+  const cutPlanes = [];
+  if (p.cut != null) cutPlanes.push(planeKeep(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, p.cut, 0)));
+  for (const [name, mdl] of Object.entries(models)) {
+    const show = (p.show || []).includes(name) || (p.show || []).includes(mdl.group);
+    mdl.root.visible = show;
+    if (!show) continue;
+    const clipped = (p.clipModels || []).includes(name) || (p.clipModels || []).includes(mdl.group);
+    for (const mat of mdl.mats) {
+      mat.clippingPlanes = clipped ? planes.concat(cutPlanes) : cutPlanes.slice();
+      mat.needsUpdate = true;
+    }
+  }
+
+  for (const h of helpers) {
+    scene.remove(h);
+    h.geometry.dispose();
+    h.material.dispose();
+  }
+  helpers = [];
+  if (p.floorGrid && p.floorGrid.minor) {
+    // 贴地网格：Python 按地面高度图算好的线段
+    const seg = (arr) => {
+      const pts = [];
+      for (let i = 0; i < arr.length; i += 3) pts.push(new THREE.Vector3(arr[i], arr[i + 1], arr[i + 2]));
+      return pts;
+    };
+    const g = p.floorGrid;
+    helpers.push(lines(seg(g.minor), 0xd8dde6, 0.3, true), lines(seg(g.major), 0xf0f3f8, 0.65, true), lines(seg(g.unit), 0x7fd0ff, 0.9, true));
+  } else if (p.floorGrid) {
+    const g = p.floorGrid;
+    helpers.push(...floorGrid(g.x0, g.x1, g.z0, g.z1, g.y));
+  }
+  if (p.box) {
+    const pts = boxEdges(V(p.box.min), V(p.box.max));
+    helpers.push(lines(pts, 0xffd400, 0.95, true), lines(pts, 0xffd400, 0.35, false));
+  }
+  for (const h of helpers) scene.add(h);
+
+  renderer.render(scene, cs.cam);
+
+  const out = document.createElement('canvas');
+  out.width = W;
+  out.height = H;
+  const ctx = out.getContext('2d');
+  ctx.drawImage(renderer.domElement, 0, 0);
+  if (ov.rulers && p.ortho) rulers(ctx, cs, W, H, m, ov);
+  if (ov.dims && p.box) dims(ctx, cs, p.box, W, H, m);
+  if (ov.gizmo) gizmo(ctx, cs, W - m.r - 40, m.t + 40);
+  if (ov.header) {
+    ctx.fillStyle = 'rgba(20,22,26,0.92)';
+    ctx.fillRect(0, 0, W, m.t - 4);
+    const hdr = (p.header || []).slice();
+    if (cs.ortho && hdr.length) hdr[0] += ' · ' + STR.pxmm.replace('{v}', (cs.s * 1000).toFixed(1));
+    hdr.forEach((t, i) => label(ctx, t, 6, 12 + i * 19, { bg: null, size: i ? 12 : 14, bold: i === 0, valign: 'middle', color: i ? '#c9ced6' : '#ffffff' }));
+  }
+  if (ov.tag) label(ctx, ov.tag, 8, m.t + 6, { size: 15, bold: true });
+  const info = { scale: cs.ortho ? cs.s : null, left: cs.left ?? null, top: cs.top ?? null, target: cs.t.toArray(), right: cs.right.toArray(), up: cs.up.toArray(), dir: cs.dir.toArray(), camera: cs.cam.position.toArray() };
+  return { png: out.toDataURL('image/png'), info };
+};
+window.__ready = true;
+</script>
+</body>
+</html>

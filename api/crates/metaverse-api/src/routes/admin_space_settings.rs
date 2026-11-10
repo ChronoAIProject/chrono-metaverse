@@ -277,8 +277,8 @@ pub async fn set_layout(
             return Err(ApiError::conflict("时间线在写入期间前进了，请重试"))
         }
         Err(CommitError::Missing) => return Err(ApiError::not_found()),
-        // 改区域和地块的提交不引用资源，这两种都不会发生。
-        Err(CommitError::DraftChanged | CommitError::AssetsGone(_)) => {
+        // 改区域和地块的提交不引用资源、不由后台任务写，这三种都不会发生。
+        Err(CommitError::DraftChanged | CommitError::AssetsGone(_) | CommitError::LeaseLost) => {
             return Err(ApiError::internal())
         }
         Err(CommitError::Repo(error)) => return Err(error.into()),

@@ -60,8 +60,15 @@ export type Kit = typeof kit;
 export interface BuildTarget {
   readonly scope: PathScope;
   readonly plotId: string | null;
-  /** 允许修改的格子盒子。 */
+  /** 允许修改的格子盒子（`except` 模式下为空）。 */
   readonly boxes: readonly GridBox[];
+  /**
+   * 空间没有定义实体区时，实体区路径是"除去"模式（`except`）：不能碰 `excluded` 里的盒子（虚拟区和
+   * 地块），其余地方都可以改。
+   */
+  readonly mode: 'within' | 'except';
+  /** `except` 模式下不能碰的盒子。 */
+  readonly excluded: readonly GridBox[];
   /** 允许范围在米坐标下的包围盒；没有盒子时为 null。 */
   readonly bounds: Aabb | null;
   /** `bounds.min`：地块的最小角（米），方便按地块内的相对位置摆放。 */
@@ -177,7 +184,8 @@ export function buildTarget(
       `${(error as Error).message}${base.pulled ? '' : '（工作区还没有拉取，先运行 metaverse pull）'}`,
     );
   }
-  const bounds = area.boxes
+  const boxes = area.mode === 'within' ? area.boxes : [];
+  const bounds = boxes
     .map(boxToMetres)
     .reduce<Aabb | null>((acc, box) => (acc === null ? box : aabbUnion(acc, box)), null);
   return {
@@ -185,7 +193,9 @@ export function buildTarget(
     target: {
       scope,
       plotId: plotId ?? null,
-      boxes: area.boxes,
+      boxes,
+      mode: area.mode,
+      excluded: area.mode === 'except' ? area.boxes : [],
       bounds,
       origin: bounds === null ? null : bounds.min,
     },
@@ -193,7 +203,8 @@ export function buildTarget(
 }
 
 function makeBuildBase(base: BaseState, state: WorkingState, target: BuildTarget): BuildBase {
-  const templates = state.templates();
+  // 建造脚本写扩展层：只能引用扩展层的模板。
+  const templates = state.templatesOf('ext');
   return {
     spaceId: base.space.spaceId,
     name: base.space.name,
@@ -261,6 +272,10 @@ function describeOp(op: Op): string {
       return `addBlock ${op.block.name}`;
     case 'copyRegion':
       return `copyRegion ${JSON.stringify(op.source)} → ${JSON.stringify(op.to)}`;
+    case 'setScan':
+      return `setScan ${op.scan.assetHash.slice(0, 12)}`;
+    case 'clearRebuilt':
+      return 'clearRebuilt';
     default:
       return `${op.op} ${JSON.stringify(op.box)}`;
   }

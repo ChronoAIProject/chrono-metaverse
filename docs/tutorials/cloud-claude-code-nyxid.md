@@ -205,7 +205,7 @@ jobs:
 
 第一次构建完成后，到 GitHub 组织的软件包页面打开这个包，进入设置把可见性改成公开（Public），否则部署时会报 `image_unauthorized`。镜像还没构建出来就部署，会报 `image_not_found`。
 
-上面是最小的写法。本项目实际用的是 `.github/workflows/images.yml`：一次构建三个镜像（Dockerfile 在 `infra/api/`、`infra/web/`、`infra/worker/`，构建上下文是仓库根目录），标签用 7 位提交哈希和分支名，带构建缓存。
+上面是最小的写法。本项目实际用的是 `.github/workflows/images.yml`：一次构建两个镜像（Dockerfile 在 `infra/api/`、`infra/web/`，构建上下文是仓库根目录；处理服务下线后不再有 `infra/worker/`），标签用 7 位提交哈希和分支名，部署时按摘要固定。
 
 ### 7.3 提交应用配置
 
@@ -230,8 +230,7 @@ Claude 会调用 `chrono-cd__put_app`，参数大致如下（节选；本项目�
       "health_path": "/api/healthz",
       "env": { "NYXID_JWT_AUDIENCE": "urn:chrono-metaverse:api", "…": "其余见 app.json" },
       "addon_env": { "mongodb": { "uri": "MONGODB_URI", "database": "MONGODB_DATABASE" } }
-    },
-    "metaverse-worker": { "…": "见 app.json" }
+    }
   }
 }
 ```

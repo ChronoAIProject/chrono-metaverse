@@ -1,25 +1,29 @@
 #!/usr/bin/env bash
 # 一键起本地全套（只监听 127.0.0.1）：
-#   MongoDB 副本集（已有就复用）→ 模拟 NyxID → 接口服务 → 处理服务 → 网站开发服务器（/api 转给本地接口服务）
+#   MongoDB 副本集（已有就复用）→ 模拟 NyxID → 接口服务（含后台执行器：上传核对、ops_from_upload、
+#   定期清理）→ 网站开发服务器（/api 转给本地接口服务）
 #
-# 用法：infra/dev/up.sh [--no-worker] [--no-web] [--demo-seed[=<种子.json>]]
+# 没有处理服务（docs/design/server-slim.md）：上传核对、包展开由接口服务的后台执行器做；重建在本地用
+# recon/ 的 metaverse-recon 做，产出重建包，再用命令行 metaverse bundle push 上传发布（重建身份 rita）。
+#
+# 用法：infra/dev/up.sh [--no-web] [--demo-seed[=<种子.json>]]
 # 停止：infra/dev/down.sh
 # 日志和进程号：infra/dev/.run/
 #
-# --demo-seed：接口服务启动后按部署配置种子建演示空间、导入扫描（默认用线上的 infra/chrono-cd/demo-seed.json，
-#   会从种子里的地址下载扫描）。也可以用环境变量 METAVERSE_DEV_DEMO_SEED=<种子.json>；
+# --demo-seed：接口服务启动后按部署配置种子建演示空间（默认用线上的 infra/chrono-cd/demo-seed.json；种子带
+#   重建包时由后台执行器从来源表的地址下载、导入，允许的主机取 METAVERSE_DEMO_SEED_HOSTS，默认是线上那一组）。
+#   也可以用环境变量 METAVERSE_DEV_DEMO_SEED=<种子.json>；
 #   METAVERSE_DEV_DEMO_SEED_OWNER=chronoai 把主人换成本地模拟 NyxID 的组织（alice 就能管理它）；
 #   分享令牌取 METAVERSE_DEMO_SHARE_TOKEN，没设时生成一个存在 infra/dev/.run/demo-share-token（之后复用）。
 #
 # 可用环境变量改端口和库名（默认值在括号里）：
 #   METAVERSE_MONGODB_URI（自动找 127.0.0.1:27017 / 27018 上的 rs0 副本集）
 #   METAVERSE_DEV_DATABASE（chrono_metaverse_dev）
-#   MOCK_NYXID_PORT（8090）、METAVERSE_API_PORT（8080）、METAVERSE_WEB_PORT（5173）、WORKER_HEALTH_PORT（8082）
+#   MOCK_NYXID_PORT（8090）、METAVERSE_API_PORT（8080）、METAVERSE_WEB_PORT（5173）
 #   METAVERSE_DEV_MONGO_PORT（27017，本脚本自己起 mongod 时用）、MONGOD_BIN（mongod 可执行文件）
 #   UPLOAD_MAX_SCAN_BYTES、UPLOAD_MAX_OPEN_PER_SPACE、UPLOAD_MAX_CONCURRENT_PARTS、JOB_MAX_PENDING_PER_SPACE
 #     （传给接口服务的上传和任务上限，其余 UPLOAD_* 用接口服务的默认值）
-#   OPENBLAS_NUM_THREADS、OMP_NUM_THREADS、MALLOC_ARENA_MAX（都是 2，传给处理服务；与 infra/chrono-cd/app.json
-#     一致，本地测的子进程内存才和线上一样，见 infra/chrono-cd/README.md"处理服务的线程数"）
+#   RUNNER_POLL_SECONDS、CLEANUP_INTERVAL_SECONDS（后台执行器和定期清理，默认用接口服务的默认值）
 set -euo pipefail
 
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
@@ -29,25 +33,23 @@ mkdir -p "$run"
 mock_port=${MOCK_NYXID_PORT:-8090}
 api_port=${METAVERSE_API_PORT:-8080}
 web_port=${METAVERSE_WEB_PORT:-5173}
-worker_health_port=${WORKER_HEALTH_PORT:-8082}
 database=${METAVERSE_DEV_DATABASE:-chrono_metaverse_dev}
 mongo_port=${METAVERSE_DEV_MONGO_PORT:-27017}
 
-with_worker=1
 with_web=1
 seed_file=${METAVERSE_DEV_DEMO_SEED:-}
 for arg in "$@"; do
   case "$arg" in
-    --no-worker) with_worker=0 ;;
+    --no-worker) echo "[up] 处理服务已下线，--no-worker 不再需要（忽略）" >&2 ;;
     --no-web) with_web=0 ;;
     --demo-seed) seed_file="$repo/infra/chrono-cd/demo-seed.json" ;;
     --demo-seed=*) seed_file=${arg#--demo-seed=} ;;
     -h | --help)
-      sed -n '2,22p' "${BASH_SOURCE[0]}"
+      sed -n '2,23p' "${BASH_SOURCE[0]}"
       exit 0
       ;;
     *)
-      echo "不认识的参数：$arg（可用 --no-worker、--no-web、--demo-seed[=<种子.json>]）" >&2
+      echo "不认识的参数：$arg（可用 --no-web、--demo-seed[=<种子.json>]）" >&2
       exit 2
       ;;
   esac
@@ -103,48 +105,15 @@ need npm "需要 npm（随 Node 安装）"
 need cargo "需要 Rust 工具链（https://rustup.rs），版本由 api/rust-toolchain.toml 固定"
 need curl "需要 curl"
 
-for name in mongod mock-nyxid api worker web; do
+for name in mongod mock-nyxid api web; do
   if alive "$name"; then
     die "$name 已经在运行（进程号 $(cat "$run/$name.pid")），先运行 infra/dev/down.sh"
   fi
 done
 
-# ---------------------------------------------------------------------------
-# 处理服务的虚拟环境（也用它的 pymongo 检查 MongoDB）
-# ---------------------------------------------------------------------------
-venv="$repo/worker/.venv"
-python="$venv/bin/python"
-stamp_file="$venv/.metaverse-dev-stamp"
-stamp=$({
-  cat "$repo/worker/pyproject.toml"
-  cat "$repo/worker/uv.lock" 2>/dev/null || true
-} | cksum)
-if [[ ! -x "$python" || "$(cat "$stamp_file" 2>/dev/null)" != "$stamp" ]]; then
-  say "准备处理服务的虚拟环境 worker/.venv（第一次要下载 numpy、scipy 等，稍等）"
-  if command -v uv >/dev/null 2>&1; then
-    uv venv --quiet --allow-existing --python 3.13 "$venv"
-    uv pip install --quiet --python "$python" -e "$repo/worker[dev]"
-  else
-    need python3.13 "需要 Python 3.13（或安装 uv：https://docs.astral.sh/uv/）"
-    python3.13 -m venv "$venv"
-    "$python" -m pip install --quiet --upgrade pip
-    "$python" -m pip install --quiet -e "$repo/worker[dev]"
-  fi
-  echo "$stamp" >"$stamp_file"
-fi
-
-# 打印副本集名；连不上或不是副本集时返回非 0。
+# 打印副本集名；连不上或不是副本集时返回非 0（infra/dev/mongo.mjs，不需要 MongoDB 驱动）。
 replica_set_name() {
-  "$python" - "$1" <<'PY' 2>/dev/null
-import sys
-import pymongo
-
-client = pymongo.MongoClient(sys.argv[1], directConnection=True, serverSelectionTimeoutMS=1500)
-name = client.admin.command("hello").get("setName")
-if not name:
-    sys.exit(2)
-print(name)
-PY
+  node "$repo/infra/dev/mongo.mjs" set-name "$1" 2>/dev/null
 }
 
 # ---------------------------------------------------------------------------
@@ -157,7 +126,7 @@ if [[ -n "${METAVERSE_MONGODB_URI:-}" ]]; then
 else
   for port in 27017 27018; do
     if port_busy "$port"; then
-      if name=$(replica_set_name "mongodb://127.0.0.1:$port/"); then
+      if name=$(replica_set_name "$port"); then
         mongo_uri="mongodb://127.0.0.1:$port/?replicaSet=$name"
         say "复用已有的 MongoDB 副本集：$mongo_uri"
         break
@@ -186,33 +155,7 @@ EOF
   mkdir -p "$run/mongo-data"
   say "启动 mongod（副本集 rs0，端口 $mongo_port，数据在 infra/dev/.run/mongo-data）"
   start mongod "$mongod_bin" --dbpath "$run/mongo-data" --port "$mongo_port" --bind_ip 127.0.0.1 --replSet rs0
-  "$python" - "$mongo_port" <<'PY' || die "mongod 没有选出主节点（日志：$run/mongod.log）"
-import sys
-import time
-
-import pymongo
-from pymongo.errors import OperationFailure, PyMongoError
-
-port = int(sys.argv[1])
-client = pymongo.MongoClient(f"mongodb://127.0.0.1:{port}/", directConnection=True, serverSelectionTimeoutMS=1000)
-deadline = time.time() + 60
-while time.time() < deadline:
-    try:
-        hello = client.admin.command("hello")
-        if hello.get("isWritablePrimary"):
-            sys.exit(0)
-        if not hello.get("setName"):
-            try:
-                client.admin.command(
-                    "replSetInitiate", {"_id": "rs0", "members": [{"_id": 0, "host": f"127.0.0.1:{port}"}]}
-                )
-            except OperationFailure:
-                pass
-    except PyMongoError:
-        pass
-    time.sleep(1)
-sys.exit(1)
-PY
+  node "$repo/infra/dev/mongo.mjs" init "$mongo_port" 60 || die "mongod 没有选出主节点（日志：$run/mongod.log）"
   mongo_uri="mongodb://127.0.0.1:$mongo_port/?replicaSet=rs0"
 fi
 
@@ -275,40 +218,14 @@ MONGODB_URI="$mongo_uri" \
   UPLOAD_MAX_OPEN_PER_SPACE="${UPLOAD_MAX_OPEN_PER_SPACE:-16}" \
   UPLOAD_MAX_CONCURRENT_PARTS="${UPLOAD_MAX_CONCURRENT_PARTS:-4}" \
   JOB_MAX_PENDING_PER_SPACE="${JOB_MAX_PENDING_PER_SPACE:-16}" \
+  RUNNER_POLL_SECONDS="${RUNNER_POLL_SECONDS:-2}" \
+  CLEANUP_INTERVAL_SECONDS="${CLEANUP_INTERVAL_SECONDS:-600}" \
   METAVERSE_DEMO_SEED="$seed_json" \
   METAVERSE_DEMO_SHARE_TOKEN="$seed_token" \
+  METAVERSE_DEMO_SEED_HOSTS="${METAVERSE_DEMO_SEED_HOSTS:-raw.githubusercontent.com,github.com,release-assets.githubusercontent.com,objects.githubusercontent.com,scaniverse.com}" \
   RUST_LOG="${RUST_LOG:-info}" \
   start api "$target/debug/metaverse-api"
 wait_http api "$api/api/healthz" 120
-
-# ---------------------------------------------------------------------------
-# 处理服务
-# ---------------------------------------------------------------------------
-if [[ $with_worker -eq 1 ]]; then
-  if [[ ! -x "$venv/bin/metaverse-worker" ]]; then
-    say "警告：worker/.venv 里没有 metaverse-worker 入口，跳过处理服务"
-  else
-    port_busy "$worker_health_port" && die "端口 $worker_health_port 已被占用（用 WORKER_HEALTH_PORT 换一个）"
-    say "启动处理服务（健康检查端口 $worker_health_port）"
-    # 线程数与线上（app.json 的 cpu_limit 2 核）一致：OpenBLAS 不设时按本机核数建线程，
-    # 每个线程约占 41MB 地址空间，会挤占重计算子进程的 RLIMIT_AS 额度。
-    MONGODB_URI="$mongo_uri" \
-      MONGODB_DATABASE="$database" \
-      WORKER_HEALTH_PORT="$worker_health_port" \
-      OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-2}" \
-      OMP_NUM_THREADS="${OMP_NUM_THREADS:-2}" \
-      MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}" \
-      PYTHONUNBUFFERED=1 \
-      start worker "$venv/bin/metaverse-worker"
-    sleep 3
-    if ! alive worker; then
-      tail -n 20 "$run/worker.log" >&2 || true
-      say "警告：处理服务启动后退出了（日志：$run/worker.log），其他服务照常运行"
-    elif ! curl -fsS -o /dev/null "http://127.0.0.1:$worker_health_port/healthz" 2>/dev/null; then
-      say "处理服务在运行，健康检查端口暂时没有响应（日志：$run/worker.log）"
-    fi
-  fi
-fi
 
 # ---------------------------------------------------------------------------
 # 网站开发服务器
@@ -329,15 +246,16 @@ cat <<EOF
 
 本地全套已启动（停止：infra/dev/down.sh；日志：infra/dev/.run/*.log）
   MongoDB      $mongo_uri（库 $database）
-  模拟 NyxID   $nyx（服务编号 dev-service，组织角色：infra/dev/org-roles.json）
+  模拟 NyxID   $nyx（服务编号 dev-service，组织角色和权限：infra/dev/org-roles.json；重建身份 rita）
   接口服务     $api/api/healthz
 EOF
 [[ $with_web -eq 1 ]] && echo "  网站         http://127.0.0.1:$web_port/"
-alive worker && echo "  处理服务     http://127.0.0.1:$worker_health_port/healthz"
+echo "  本地重建工具 recon/.venv/bin/metaverse-recon（没有就 cd recon && uv sync --frozen）"
 if [[ -n "$seed_space" ]]; then
   cat <<EOF
   演示空间     http://127.0.0.1:$web_port/s/$seed_space#share=$seed_token
-               （种子在后台下载、导入，进度看 infra/dev/.run/api.log 和 worker.log；分享令牌在 infra/dev/.run/demo-share-token）
+               （种子带重建包时由后台执行器下载、导入，不带包时只建空间；
+                分享令牌在 infra/dev/.run/demo-share-token）
 EOF
 fi
 cat <<EOF

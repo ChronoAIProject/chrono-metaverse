@@ -1,6 +1,6 @@
-import { MeshBuilder, dropDegenerate, flatShade, type MeshData } from './meshData';
+import { MeshBuilder, dropDegenerate, flatShade, meshBounds, type MeshData } from './meshData';
 import type { BoxShape } from './types';
-import { projectUvs } from './uv';
+import { surfaceCoords } from './uv';
 import { positiveOr, segmentsOr, type V3 } from './vec';
 
 /**
@@ -124,5 +124,9 @@ export function boxMesh(shape: BoxShape): MeshData {
 
   let mesh = dropDegenerate(builder.build());
   if (chamfer > 0) mesh = flatShade(mesh);
-  return projectUvs(mesh, 'box');
+  // 自然坐标是三面投影，按盒子自己的包围盒归一化；米版本从最小角 (−w/2, 0, −d/2) 量起
+  const bounds = meshBounds(mesh);
+  const uvs = surfaceCoords(mesh, 'box', bounds);
+  const meters = surfaceCoords(mesh, 'box', bounds, true);
+  return uvs === null || meters === null ? mesh : { ...mesh, uvs, meters };
 }

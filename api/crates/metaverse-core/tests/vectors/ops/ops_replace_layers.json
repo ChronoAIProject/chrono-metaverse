@@ -1,5 +1,6 @@
 {
   "base": {
+    "anchorHistory": [],
     "anchors": [],
     "entities": [],
     "fills": [
@@ -122,7 +123,8 @@
         "id": "garden",
         "kind": "virtual"
       }
-    ]
+    ],
+    "scopeKind": "ext"
   },
   "description": "替换看的是有效方块（扩展层优先，空气覆盖算空），写到扩展层：把重建层的石头换成空气覆盖，把空格换成橡木",
   "expect": {
@@ -143,6 +145,7 @@
         "layer": "ext"
       }
     ],
+    "brokenTemplateRefs": [],
     "chunkChanges": [
       {
         "cx": 0,
@@ -256,6 +259,7 @@
       }
     ],
     "provisionalBlocks": [],
+    "scan": null,
     "touched": {
       "anchors": [],
       "chunks": [
@@ -267,7 +271,10 @@
         }
       ],
       "entities": [],
-      "palette": false
+      "palette": false,
+      "rebuiltLayer": false,
+      "scan": false,
+      "skippedAnchors": []
     }
   },
   "kind": "ops",

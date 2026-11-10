@@ -1,0 +1,42 @@
+{
+  "bounds": {
+    "max": [
+      1.0,
+      1.0,
+      0.25
+    ],
+    "min": [
+      -1.0,
+      0.0,
+      -0.25
+    ]
+  },
+  "description": "颜色材质带法线贴图：必须给 uv，可以带 tile",
+  "kind": "shape",
+  "name": "material-color-normal-map",
+  "shape": {
+    "material": {
+      "color": [
+        182,
+        140,
+        96
+      ],
+      "normalMap": "4b1e0a3f5c6d8e7b9a0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d9f2c7d",
+      "roughness": 0.7,
+      "tile": [
+        0.3,
+        0.3
+      ],
+      "uv": "box"
+    },
+    "size": [
+      2,
+      1,
+      0.5
+    ],
+    "type": "box"
+  },
+  "templates": {},
+  "tolerance": 1e-9,
+  "valid": true
+}

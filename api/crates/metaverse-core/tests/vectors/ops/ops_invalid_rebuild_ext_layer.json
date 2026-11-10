@@ -1,0 +1,145 @@
+{
+  "base": {
+    "anchorHistory": [],
+    "anchors": [],
+    "entities": [
+      {
+        "bounds": {
+          "max": [
+            3.2,
+            1.5,
+            3.2
+          ],
+          "min": [
+            2.8,
+            0,
+            2.8
+          ]
+        },
+        "entityId": "lamp",
+        "kind": "object",
+        "layer": "ext",
+        "shape": {
+          "height": 1.5,
+          "radius": 0.2,
+          "transform": {
+            "position": [
+              3,
+              0,
+              3
+            ]
+          },
+          "type": "cylinder"
+        }
+      }
+    ],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ],
+    "scopeKind": "rebuild"
+  },
+  "description": "重建草稿只能放重建层的物件，也不能删扩展层的物件（带 ifPresent 也一样）",
+  "expect": {
+    "baseChunks": [],
+    "error": {
+      "index": 0,
+      "kind": "invalid",
+      "message": "第 0 条操作：物件 lamp 属于扩展层，重建草稿不能修改"
+    },
+    "footprints": [],
+    "ok": false
+  },
+  "kind": "ops",
+  "name": "invalid-rebuild-ext-layer",
+  "ops": [
+    {
+      "entityId": "lamp",
+      "ifPresent": true,
+      "op": "removeEntity"
+    }
+  ],
+  "probeCells": [],
+  "scope": "rebuild",
+  "spaceId": "vec-space"
+}

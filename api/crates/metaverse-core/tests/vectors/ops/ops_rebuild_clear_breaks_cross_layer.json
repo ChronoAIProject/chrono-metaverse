@@ -1,0 +1,196 @@
+{
+  "base": {
+    "anchorHistory": [],
+    "anchors": [],
+    "entities": [
+      {
+        "bounds": {
+          "max": [
+            0.2,
+            0.8,
+            0.2
+          ],
+          "min": [
+            -0.2,
+            0,
+            -0.2
+          ]
+        },
+        "entityId": "chair-a",
+        "kind": "template",
+        "layer": "rebuilt",
+        "shape": {
+          "size": [
+            0.4,
+            0.8,
+            0.4
+          ],
+          "type": "box"
+        }
+      },
+      {
+        "bounds": {
+          "max": [
+            2.2,
+            0.8,
+            2.2
+          ],
+          "min": [
+            1.8,
+            0,
+            1.8
+          ]
+        },
+        "entityId": "chair-ext",
+        "kind": "object",
+        "layer": "ext",
+        "shape": {
+          "template": "chair-a",
+          "transform": {
+            "position": [
+              2,
+              0,
+              2
+            ]
+          },
+          "type": "instance"
+        }
+      }
+    ],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ],
+    "scopeKind": "rebuild"
+  },
+  "description": "clearRebuilt 之后，扩展层里跨层引用重建层模板的旧物件引用不到模板：操作本身成功，完整性检查列出缺的引用（接口服务据此 409 broken_template_ref）",
+  "expect": {
+    "anchors": [],
+    "baseChunks": [],
+    "brokenTemplateRefs": [
+      {
+        "entityId": "chair-ext",
+        "template": "chair-a"
+      }
+    ],
+    "chunkChanges": [],
+    "chunks": [],
+    "entities": [
+      {
+        "hash": "f509697cc7826fc1f8686b105d8fcd52c343b60be91a6025b5ce721ae7b1ecc0",
+        "id": "chair-ext"
+      }
+    ],
+    "footprints": [
+      {
+        "cells": [],
+        "spaceWide": false
+      }
+    ],
+    "ok": true,
+    "probes": [],
+    "provisionalBlocks": [],
+    "scan": null,
+    "touched": {
+      "anchors": [],
+      "chunks": [],
+      "entities": [
+        "chair-a"
+      ],
+      "palette": false,
+      "rebuiltLayer": true,
+      "scan": false,
+      "skippedAnchors": []
+    }
+  },
+  "kind": "ops",
+  "name": "rebuild-clear-breaks-cross-layer",
+  "ops": [
+    {
+      "op": "clearRebuilt"
+    }
+  ],
+  "probeCells": [],
+  "scope": "rebuild",
+  "spaceId": "vec-space"
+}

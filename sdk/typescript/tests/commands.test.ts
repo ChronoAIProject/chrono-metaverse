@@ -4,9 +4,6 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { main } from '../src/commands/index.js';
 import { messageError, previewLink } from '../src/commands/push.js';
-import { parseTransform, scanFormat } from '../src/commands/scan.js';
-import { runVoxelize } from '../src/commands/voxelize.js';
-import { describeAuthored, INLINE_AUTHORED_BYTES } from '../src/commands/authored.js';
 import { validateLayout } from '../src/commands/admin.js';
 import { chunkHash, compressChunk, emptyChunk } from '../src/core/chunk.js';
 import { MetaverseApi } from '../src/transport/api.js';
@@ -14,7 +11,7 @@ import { ApiClient } from '../src/transport/client.js';
 import { upload } from '../src/transport/upload.js';
 import { readConfig, writeConfig } from '../src/workspace/config.js';
 import { readBase } from '../src/workspace/files.js';
-import { fakeGlb, startFakeApi, type FakeApi } from './helpers/fakeApi.js';
+import { startFakeApi, type FakeApi } from './helpers/fakeApi.js';
 import {
   PALETTE,
   PLOTS,
@@ -590,192 +587,6 @@ describe('metaverse push / publish', () => {
   });
 });
 
-describe('metaverse scan', () => {
-  it('上传扫描、等校验、发起导入并等任务完成', async () => {
-    fake = await startFakeApi();
-    const root = directWorkspace(fake);
-    writeFileSync(join(root, 'lobby.glb'), fakeGlb(600 * 1024, 3));
-    const ctx = makeContext(root);
-    expect(
-      await main(ctx, [
-        'scan',
-        'lobby.glb',
-        '--part-size',
-        '0.25',
-        '--observed-at',
-        '2026-11-01T10:00:00Z',
-        '--voxelize',
-      ]),
-    ).toBe(0);
-    const text = ctx.lines.join('\n');
-    expect(text).toContain('已上传 100%');
-    expect(text).toContain('已发起导入任务');
-    expect(text).toContain('导入完成，提交 commit-9');
-    expect(fake.requests.filter((r) => r.method === 'PUT')).toHaveLength(3);
-    const create = fake.requests.find((r) => r.path.endsWith('/uploads/scan'))!;
-    expect(JSON.parse(create.body.toString())).toMatchObject({ format: 'glb' });
-    const scan = fake.requests.find((r) => r.path.endsWith('/scans'))!;
-    expect(JSON.parse(scan.body.toString())).toMatchObject({
-      observedAt: '2026-11-01T10:00:00Z',
-      rebuild: true,
-      voxelize: true,
-    });
-  });
-
-  it('同一份扫描再导入：本空间已有就直接复用（同样是 201），不再传分片、不等校验', async () => {
-    fake = await startFakeApi();
-    const root = directWorkspace(fake);
-    writeFileSync(join(root, 'lobby.glb'), fakeGlb(300 * 1024, 4));
-    const ctx = makeContext(root);
-    expect(await main(ctx, ['scan', 'lobby.glb', '--part-size', '0.25', '--no-wait'])).toBe(0);
-    const putsBefore = fake.requests.filter((r) => r.method === 'PUT').length;
-    expect(putsBefore).toBe(2);
-    const second = makeContext(root);
-    expect(await main(second, ['scan', 'lobby.glb', '--no-wait', '--json'])).toBe(0);
-    const out = JSON.parse(second.lines.at(-1)!) as {
-      assetHash: string;
-      jobId: string;
-      upload: { reused: boolean; parts: number };
-    };
-    expect(out.upload).toMatchObject({ reused: true, parts: 0 });
-    expect(out.jobId).toBeTruthy();
-    // 复用时不传分片、不调用 complete，直接按哈希发起导入。
-    expect(fake.requests.filter((r) => r.method === 'PUT')).toHaveLength(putsBefore);
-    expect(fake.requests.filter((r) => r.path.endsWith('/complete'))).toHaveLength(1);
-    const imports = fake.requests.filter((r) => r.path.endsWith('/scans'));
-    expect(imports).toHaveLength(2);
-    expect(JSON.parse(imports[1]!.body.toString())).toMatchObject({ assetHash: out.assetHash });
-    const third = makeContext(root);
-    expect(await main(third, ['scan', 'lobby.glb', '--no-wait'])).toBe(0);
-    expect(third.lines.join('\n')).toContain('本空间已有同样的内容');
-  });
-
-  it('重扫配准误差超阈值时提示人工对齐；--asset + --transform 走重新对齐', async () => {
-    const asset = Buffer.from('scan');
-    const hash = createHash('sha256').update(asset).digest('hex');
-    fake = await startFakeApi({
-      assets: new Map([[hash, asset]]),
-      scanResult: { needsAlignment: true, proposedTransform: [1], errorCm: 7.5 },
-    });
-    const root = directWorkspace(fake);
-    const ctx = makeContext(root);
-    expect(await main(ctx, ['scan', '--asset', hash, '--no-rebuild'])).toBe(2);
-    expect(ctx.lines.join('\n')).toContain('7.5 厘米');
-    const transform = Array.from({ length: 16 }, (_, i) => (i % 5 === 0 ? 1 : 0)).join(',');
-    expect(
-      await main(ctx, ['scan', '--asset', hash, '--transform', transform, '--no-wait', '--json']),
-    ).toBe(0);
-    expect(fake.requests.at(-1)!.path).toBe(`/api/v1/spaces/demo-space/scans/${hash}/alignment`);
-    expect(JSON.parse(fake.requests.at(-1)!.body.toString())).toEqual({
-      transform: transform.split(',').map(Number),
-      rebuild: true,
-      voxelize: false,
-    });
-    // 重新对齐时 --no-rebuild、--voxelize、--observed-at 也带上（原来被静默丢掉）。
-    expect(
-      await main(ctx, [
-        'scan',
-        '--asset',
-        hash,
-        '--transform',
-        transform,
-        '--no-rebuild',
-        '--voxelize',
-        '--observed-at',
-        '2026-11-02T08:00:00Z',
-        '--no-wait',
-      ]),
-    ).toBe(0);
-    expect(JSON.parse(fake.requests.at(-1)!.body.toString())).toEqual({
-      transform: transform.split(',').map(Number),
-      observedAt: '2026-11-02T08:00:00Z',
-      rebuild: false,
-      voxelize: true,
-    });
-    expect(() => parseTransform('1,2,3')).toThrow('16 个数');
-  });
-
-  it('首次导入带 --transform：上传后走 alignment，不把 transform 发给 /scans', async () => {
-    fake = await startFakeApi();
-    const root = directWorkspace(fake);
-    writeFileSync(join(root, 'lobby.glb'), fakeGlb(4096));
-    const ctx = makeContext(root);
-    const transform = '1,0,0,0, 0,1,0,0, 0,0,1,0, 2,0,3,1';
-    expect(
-      await main(ctx, [
-        'scan',
-        'lobby.glb',
-        '--transform',
-        transform,
-        '--observed-at',
-        '2026-11-01T10:00:00Z',
-      ]),
-    ).toBe(0);
-    expect(fake.requests.some((r) => r.path.endsWith('/scans'))).toBe(false);
-    const hash = [...fake.state.uploads.values()][0]!.sha256;
-    const align = fake.requests.find((r) => r.path.endsWith('/alignment'))!;
-    expect(align.path).toBe(`/api/v1/spaces/demo-space/scans/${hash}/alignment`);
-    expect(JSON.parse(align.body.toString())).toEqual({
-      transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2, 0, 3, 1],
-      observedAt: '2026-11-01T10:00:00Z',
-      rebuild: true,
-      voxelize: false,
-    });
-    expect(ctx.lines.join('\n')).toContain('导入完成，提交 commit-9');
-    // /scans 收到 transform 时，接口服务（和假接口）返回 422。
-    const api = new MetaverseApi(
-      new ApiClient({ mode: 'direct', api: fake.url, devTokenUrl: fake.devTokenUrl }),
-      'demo-space',
-    );
-    await expect(
-      api.importScan({ assetHash: hash, transform: [1] } as unknown as { assetHash: string }),
-    ).rejects.toMatchObject({ status: 422 });
-  });
-
-  it('--transform、--observed-at 不合法时，上传之前就报错', async () => {
-    fake = await startFakeApi();
-    const root = directWorkspace(fake);
-    writeFileSync(join(root, 'lobby.glb'), fakeGlb(4096));
-    const ctx = makeContext(root);
-    expect(await main(ctx, ['scan', 'lobby.glb', '--transform', '1,2,3'])).toBe(1);
-    expect(ctx.errors.at(-1)).toContain('16 个数');
-    expect(await main(ctx, ['scan', 'lobby.glb', '--observed-at', '昨天'])).toBe(1);
-    expect(ctx.errors.at(-1)).toContain('RFC 3339');
-    expect(fake.requests).toHaveLength(0);
-  });
-
-  it('带贴图的扫描打包成 zip 上传（format: zip）', async () => {
-    fake = await startFakeApi();
-    const root = directWorkspace(fake);
-    const zip = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(2000, 1)]);
-    writeFileSync(join(root, 'scaniverse.ZIP'), zip);
-    const ctx = makeContext(root);
-    expect(await main(ctx, ['scan', 'scaniverse.ZIP', '--no-wait', '--json'])).toBe(0);
-    const create = fake.requests.find((r) => r.path.endsWith('/uploads/scan'))!;
-    expect(JSON.parse(create.body.toString())).toMatchObject({ format: 'zip', size: zip.length });
-    expect(scanFormat('a/b.obj')).toBe('obj');
-    expect(scanFormat('a/b.drc')).toBe('drc');
-    expect(scanFormat('a/b.ply')).toBeNull();
-    // 扩展名和内容不符时，接口服务按文件头拒绝。
-    writeFileSync(join(root, 'fake.zip'), 'v 0 0 0\n');
-    expect(await main(ctx, ['scan', 'fake.zip'])).toBe(1);
-    expect(ctx.errors.at(-1)).toContain('format_mismatch');
-  });
-
-  it('参数检查', async () => {
-    fake = await startFakeApi();
-    const root = directWorkspace(fake);
-    const ctx = makeContext(root);
-    expect(await main(ctx, ['scan'])).toBe(1);
-    expect(await main(ctx, ['scan', 'nope.glb'])).toBe(1);
-    writeFileSync(join(root, 'x.txt'), 'x');
-    expect(await main(ctx, ['scan', 'x.txt'])).toBe(1);
-    expect(ctx.errors.at(-1)).toContain('zip');
-    expect(await main(ctx, ['scan', '--asset', 'xyz'])).toBe(1);
-    expect(await main(ctx, ['scan', '--help'])).toBe(0);
-  });
-});
-
 describe('metaverse admin', () => {
   it('建空间（没有工作区也行）、改名、轮换令牌、定义区域和地块、登记事件类型、抹除事件', async () => {
     fake = await startFakeApi(remoteSnapshot().state);
@@ -933,183 +744,6 @@ describe('metaverse admin', () => {
   });
 });
 
-describe('metaverse voxelize', () => {
-  it('没有 Docker 时做参数检查并说明；--remote 发起云端任务', async () => {
-    fake = await startFakeApi();
-    const root = directWorkspace(fake);
-    const ctx = makeContext(root);
-    const scan = 'd'.repeat(64);
-    expect(await runVoxelize(ctx, ['--scan', scan, '--style', 'blocks'], () => false)).toBe(3);
-    expect(ctx.lines.join('\n')).toContain('需要 Docker');
-    expect(ctx.lines.join('\n')).toContain('--remote');
-    expect(await runVoxelize(ctx, ['--scan', scan], () => true)).toBe(0);
-    expect(await main(ctx, ['voxelize', '--scan', scan, '--remote'])).toBe(0);
-    expect(
-      fake.requests.some((r) => r.path === `/api/v1/spaces/demo-space/scans/${scan}/voxelize`),
-    ).toBe(true);
-    expect(ctx.lines.at(-1)).toContain('体素化完成');
-    // 工作区里没有扫描信息、格式不对。
-    expect(await main(ctx, ['voxelize'])).toBe(1);
-    expect(await main(ctx, ['voxelize', '--scan', 'xyz'])).toBe(1);
-    expect(await main(ctx, ['voxelize', '--scan', scan, '--style', 'Bad Style'])).toBe(1);
-  });
-});
-
-function authoredDoc(extra: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    version: 1,
-    entities: [
-      {
-        entityId: 'panel-01',
-        kind: 'object',
-        shape: { type: 'box', size: [0.02, 1, 1], material: { bake: 'planar' } },
-      },
-    ],
-    notes: '面板贴着西墙，烘焙',
-    ...extra,
-  };
-}
-
-const AUTHORED_RESULT = {
-  authored: {
-    entities: 3,
-    templates: 1,
-    structure: 'keep',
-    fit: [
-      { entityId: 'panel-01', points: 900, meanCm: 0.4, p90Cm: 0.9, coverage3cm: 0.99 },
-      { entityId: 'counter-01', points: 20000, meanCm: 3.6, p90Cm: 7.1, coverage3cm: 0.71 },
-      { entityId: 'chair-01', points: 3 },
-    ],
-    downloads: { models: 1, files: 5, bytes: 770000, redirects: 0 },
-    bake: { entities: 1, parts: 2, textured: 1, fallback: 1 },
-  },
-};
-
-describe('metaverse rebuild', () => {
-  it('小的物件集随请求内联，等任务完成，列出偏差最大的几件', async () => {
-    const pulled = remoteSnapshot();
-    fake = await startFakeApi({ ...pulled.state, rebuildResult: AUTHORED_RESULT });
-    const root = directWorkspace(fake);
-    const ctx = makeContext(root);
-    expect(await main(ctx, ['pull'])).toBe(0);
-    writeFileSync(join(root, 'authored.json'), JSON.stringify(authoredDoc()));
-    expect(await main(ctx, ['rebuild', '--authored', 'authored.json', '--hints', '{"x":1}'])).toBe(
-      0,
-    );
-    const scan = 'c'.repeat(64);
-    const call = fake.requests.find((r) => r.path.endsWith(`/scans/${scan}/rebuild`))!;
-    expect(JSON.parse(call.body.toString())).toEqual({ hints: { x: 1 }, authored: authoredDoc() });
-    expect(fake.requests.some((r) => r.path.includes('/uploads/'))).toBe(false);
-    const text = ctx.lines.join('\n');
-    expect(text).toContain('随请求内联提交');
-    expect(text).toContain('counter-01：3.6 / 7.1 厘米，71%');
-    expect(text.indexOf('counter-01')).toBeLessThan(text.indexOf('panel-01：'));
-    expect(text).toContain('另有 1 件附近没有扫描');
-    expect(text).toContain('外部模型：下载 1 个（5 个文件');
-    expect(text).toContain('1 处附近没有扫描、用了后备纯色');
-    expect(text).toContain('重建完成，提交 commit-10');
-  });
-
-  it('大的物件集先经 authored 用途上传，等校验，再用资源哈希；不带物件集就是普通重建', async () => {
-    fake = await startFakeApi();
-    const root = directWorkspace(fake);
-    const scan = 'e'.repeat(64);
-    const big = authoredDoc({ notes: '长'.repeat(Math.ceil(INLINE_AUTHORED_BYTES / 3) + 10) });
-    writeFileSync(join(root, 'big.json'), JSON.stringify(big, null, 2));
-    const ctx = makeContext(root);
-    expect(await main(ctx, ['rebuild', '--authored', 'big.json', '--scan', scan, '--json'])).toBe(
-      0,
-    );
-    const create = fake.requests.find((r) => r.path.endsWith('/uploads/authored'))!;
-    const declared = JSON.parse(create.body.toString()) as { format: string; sha256: string };
-    expect(declared.format).toBe('json');
-    expect(fake.requests.some((r) => r.path.endsWith('/complete'))).toBe(true);
-    const call = fake.requests.find((r) => r.path.endsWith(`/scans/${scan}/rebuild`))!;
-    expect(JSON.parse(call.body.toString())).toEqual({ authoredAsset: declared.sha256 });
-    const out = JSON.parse(ctx.lines.at(-1)!) as { authored: { inline: boolean }; jobId: string };
-    expect(out.authored.inline).toBe(false);
-    // 不带物件集：请求体是空对象
-    const plain = makeContext(root);
-    expect(await main(plain, ['rebuild', '--scan', scan, '--no-wait'])).toBe(0);
-    const calls = fake.requests.filter((r) => r.path.endsWith(`/scans/${scan}/rebuild`));
-    expect(JSON.parse(calls.at(-1)!.body.toString())).toEqual({});
-  });
-
-  it('参数和物件集的本地检查', async () => {
-    fake = await startFakeApi();
-    const root = directWorkspace(fake);
-    const ctx = makeContext(root);
-    const scan = 'e'.repeat(64);
-    writeFileSync(join(root, 'bad.json'), '{"version": 2, "entities": [1]}');
-    writeFileSync(join(root, 'empty.json'), '{"version": 1, "entities": []}');
-    writeFileSync(join(root, 'notjson.json'), 'nope');
-    writeFileSync(join(root, 'array.json'), '[1]');
-    for (const args of [
-      ['rebuild'],
-      ['rebuild', '--scan', 'xyz'],
-      ['rebuild', '--scan', scan, '--hints', '[1]'],
-      ['rebuild', '--scan', scan, '--hints', 'nope'],
-      ['rebuild', '--scan', scan, '--authored', 'bad.json'],
-      ['rebuild', '--scan', scan, '--authored', 'empty.json'],
-      ['rebuild', '--scan', scan, '--authored', 'notjson.json'],
-      ['rebuild', '--scan', scan, '--authored', 'array.json'],
-      ['rebuild', '--scan', scan, '--authored', 'missing.json'],
-    ]) {
-      expect(await main(ctx, args), args.join(' ')).toBe(1);
-    }
-    expect(fake.requests.some((r) => r.path.includes('/rebuild'))).toBe(false);
-    const help = makeContext(root);
-    expect(await main(help, ['rebuild', '--help'])).toBe(0);
-    expect(help.lines.join('\n')).toContain('--authored');
-  });
-
-  it('describeAuthored 对没有物件集的结果什么也不输出', () => {
-    expect(describeAuthored({})).toEqual([]);
-    expect(describeAuthored(null)).toEqual([]);
-  });
-});
-
-describe('metaverse scan --authored', () => {
-  it('上传扫描后带物件集发起导入；--transform 时一并发给 alignment；不能和 --no-rebuild 一起用', async () => {
-    fake = await startFakeApi({ scanResult: AUTHORED_RESULT });
-    const root = directWorkspace(fake);
-    writeFileSync(join(root, 'lobby.glb'), fakeGlb(300 * 1024, 5));
-    writeFileSync(join(root, 'authored.json'), JSON.stringify(authoredDoc()));
-    const ctx = makeContext(root);
-    expect(await main(ctx, ['scan', 'lobby.glb', '--authored', 'authored.json'])).toBe(0);
-    const scanCall = fake.requests.find((r) => r.path.endsWith('/scans'))!;
-    expect(JSON.parse(scanCall.body.toString())).toMatchObject({
-      rebuild: true,
-      authored: authoredDoc(),
-    });
-    expect(ctx.lines.join('\n')).toContain('counter-01：3.6 / 7.1 厘米');
-    const identity = '1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1';
-    const again = makeContext(root);
-    expect(
-      await main(again, [
-        'scan',
-        'lobby.glb',
-        '--authored',
-        'authored.json',
-        '--transform',
-        identity,
-        '--no-wait',
-      ]),
-    ).toBe(0);
-    const align = fake.requests.find((r) => r.path.endsWith('/alignment'))!;
-    expect(JSON.parse(align.body.toString())).toMatchObject({ authored: authoredDoc() });
-    const puts = fake.requests.filter((r) => r.method === 'PUT').length;
-    const bad = makeContext(root);
-    expect(
-      await main(bad, ['scan', 'lobby.glb', '--authored', 'authored.json', '--no-rebuild']),
-    ).toBe(1);
-    writeFileSync(join(root, 'bad.json'), '{"version": 1}');
-    expect(await main(bad, ['scan', 'lobby.glb', '--authored', 'bad.json'])).toBe(1);
-    // 物件集不对时扫描也不上传
-    expect(fake.requests.filter((r) => r.method === 'PUT')).toHaveLength(puts);
-  });
-});
-
 describe('命令行入口', () => {
   it('帮助、版本、未知命令', async () => {
     const ctx = makeContext(tempDir());
@@ -1120,7 +754,6 @@ describe('命令行入口', () => {
     expect(await main(ctx, ['explode'])).toBe(1);
     for (const name of [
       'admin',
-      'scan',
       'pull',
       'build',
       'dev',
@@ -1129,9 +762,13 @@ describe('命令行入口', () => {
       'check',
       'push',
       'publish',
-      'voxelize',
     ]) {
       expect(await main(ctx, [name, '--help'])).toBe(0);
+    }
+    // 删掉的命令说明改用什么。
+    for (const name of ['scan', 'rebuild', 'voxelize']) {
+      expect(await main(ctx, [name])).toBe(1);
+      expect(ctx.errors.at(-1)).toContain('bundle push');
     }
     // 不在工作区里。
     expect(await main(ctx, ['pull'])).toBe(1);

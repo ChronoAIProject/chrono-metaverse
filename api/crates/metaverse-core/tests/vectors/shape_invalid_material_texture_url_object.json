@@ -1,0 +1,25 @@
+{
+  "description": "外链对象 {url, sha256, size} 只能出现在 AI 物件集里，形状本身只收资源哈希",
+  "errorMessage": "material: invalid type: map, expected a string",
+  "errorPath": null,
+  "kind": "shape",
+  "name": "invalid-material-texture-url-object",
+  "shape": {
+    "material": {
+      "texture": {
+        "sha256": "e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5",
+        "size": 1024,
+        "url": "https://raw.githubusercontent.com/o/r/0123456789abcdef0123456789abcdef01234567/t.jpg"
+      },
+      "uv": "box"
+    },
+    "size": [
+      2,
+      1,
+      0.5
+    ],
+    "type": "box"
+  },
+  "templates": {},
+  "valid": false
+}

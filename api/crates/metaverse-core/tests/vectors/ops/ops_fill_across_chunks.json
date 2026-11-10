@@ -1,5 +1,6 @@
 {
   "base": {
+    "anchorHistory": [],
     "anchors": [],
     "entities": [],
     "fills": [],
@@ -85,12 +86,14 @@
         "id": "garden",
         "kind": "virtual"
       }
-    ]
+    ],
+    "scopeKind": "ext"
   },
   "description": "填充跨两个区块（x = 31 | 32）：两个区块都碰到，都有新哈希",
   "expect": {
     "anchors": [],
     "baseChunks": [],
+    "brokenTemplateRefs": [],
     "chunkChanges": [
       {
         "cx": 0,
@@ -205,6 +208,7 @@
       }
     ],
     "provisionalBlocks": [],
+    "scan": null,
     "touched": {
       "anchors": [],
       "chunks": [
@@ -222,7 +226,10 @@
         }
       ],
       "entities": [],
-      "palette": false
+      "palette": false,
+      "rebuiltLayer": false,
+      "scan": false,
+      "skippedAnchors": []
     }
   },
   "kind": "ops",

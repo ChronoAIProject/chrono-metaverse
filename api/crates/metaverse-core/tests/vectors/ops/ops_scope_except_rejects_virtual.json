@@ -1,0 +1,132 @@
+{
+  "base": {
+    "anchorHistory": [],
+    "anchors": [],
+    "entities": [],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [],
+    "regions": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ],
+    "scopeKind": "ext"
+  },
+  "description": "空间没有定义实体区：实体区路径碰到虚拟区就超出范围（只碰边界不算）",
+  "expect": {
+    "baseChunks": [],
+    "error": {
+      "index": 1,
+      "kind": "scope",
+      "message": "第 1 条操作：操作超出了路径范围 physical"
+    },
+    "footprints": [
+      {
+        "cells": [
+          [
+            95,
+            0,
+            0,
+            100,
+            1,
+            1
+          ]
+        ],
+        "spaceWide": false
+      },
+      {
+        "cells": [
+          [
+            99,
+            0,
+            0,
+            101,
+            1,
+            1
+          ]
+        ],
+        "spaceWide": false
+      }
+    ],
+    "ok": false
+  },
+  "kind": "ops",
+  "name": "scope-except-rejects-virtual",
+  "ops": [
+    {
+      "block": 2,
+      "box": [
+        95,
+        0,
+        0,
+        100,
+        1,
+        1
+      ],
+      "op": "fill"
+    },
+    {
+      "block": 2,
+      "box": [
+        99,
+        0,
+        0,
+        101,
+        1,
+        1
+      ],
+      "op": "fill"
+    }
+  ],
+  "probeCells": [],
+  "scope": "physical",
+  "spaceId": "vec-space"
+}

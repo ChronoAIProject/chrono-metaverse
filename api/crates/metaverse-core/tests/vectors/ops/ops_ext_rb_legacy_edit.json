@@ -1,0 +1,219 @@
+{
+  "base": {
+    "anchorHistory": [],
+    "anchors": [],
+    "entities": [
+      {
+        "bounds": {
+          "max": [
+            1.25,
+            0.5,
+            1.25
+          ],
+          "min": [
+            0.75,
+            0,
+            0.75
+          ]
+        },
+        "entityId": "rb.legacy",
+        "kind": "object",
+        "layer": "ext",
+        "shape": {
+          "size": [
+            0.5,
+            0.5,
+            0.5
+          ],
+          "transform": {
+            "position": [
+              1,
+              0,
+              1
+            ]
+          },
+          "type": "box"
+        }
+      }
+    ],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ],
+    "scopeKind": "ext"
+  },
+  "description": "已有的扩展层旧编号（rb. 开头）照常可以改",
+  "expect": {
+    "anchors": [],
+    "baseChunks": [],
+    "brokenTemplateRefs": [],
+    "chunkChanges": [],
+    "chunks": [],
+    "entities": [
+      {
+        "hash": "f3fb62ead52906fb50ba3b667dc920e7ad3fd7af17320a137f234ada6f561728",
+        "id": "rb.legacy"
+      }
+    ],
+    "footprints": [
+      {
+        "cells": [
+          [
+            15,
+            0,
+            15,
+            25,
+            12,
+            25
+          ],
+          [
+            15,
+            0,
+            15,
+            25,
+            10,
+            25
+          ]
+        ],
+        "spaceWide": false
+      }
+    ],
+    "ok": true,
+    "probes": [],
+    "provisionalBlocks": [],
+    "scan": null,
+    "touched": {
+      "anchors": [],
+      "chunks": [],
+      "entities": [
+        "rb.legacy"
+      ],
+      "palette": false,
+      "rebuiltLayer": false,
+      "scan": false,
+      "skippedAnchors": []
+    }
+  },
+  "kind": "ops",
+  "name": "ext-rb-legacy-edit",
+  "ops": [
+    {
+      "entity": {
+        "bounds": {
+          "max": [
+            1.25,
+            0.6,
+            1.25
+          ],
+          "min": [
+            0.75,
+            0,
+            0.75
+          ]
+        },
+        "entityId": "rb.legacy",
+        "kind": "object",
+        "layer": "ext",
+        "shape": {
+          "size": [
+            0.5,
+            0.6,
+            0.5
+          ],
+          "transform": {
+            "position": [
+              1,
+              0,
+              1
+            ]
+          },
+          "type": "box"
+        }
+      },
+      "op": "placeEntity"
+    }
+  ],
+  "probeCells": [],
+  "scope": "physical",
+  "spaceId": "vec-space"
+}

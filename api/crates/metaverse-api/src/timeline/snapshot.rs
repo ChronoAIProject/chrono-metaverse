@@ -20,7 +20,7 @@ use super::views::{
 };
 use crate::auth::Grant;
 use crate::error::ApiError;
-use crate::repo::{Layout, Repo};
+use crate::repo::{DraftScanDoc, Layout, Repo};
 
 /// 快照的读取范围。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,7 +38,8 @@ fn is_public_anchor(body: &Value) -> bool {
     body.get("visibility").and_then(Value::as_str) == Some("public")
 }
 
-/// 按清单组装快照（`extra_blocks` 是预览时草稿新增的方块，`draft_anchors` 是草稿改动过的锚点）。
+/// 按清单组装快照（`extra_blocks` 是预览时草稿新增的方块，`draft_anchors` 是草稿改动过的锚点，
+/// `draft_scan` 是预览时重建草稿的 `setScan`：预览快照的扫描用草稿的，docs/design/server-slim.md 2.8）。
 #[allow(clippy::too_many_arguments)]
 pub async fn assemble(
     repo: &Repo,
@@ -49,6 +50,7 @@ pub async fn assemble(
     extra_blocks: &[PaletteBlock],
     draft_anchors: &BTreeSet<String>,
     audience: Audience,
+    draft_scan: Option<&DraftScanDoc>,
 ) -> Result<SnapshotView, ApiError> {
     let space_id = grant.space_id();
     let mut blocks = repo
@@ -103,18 +105,49 @@ pub async fn assemble(
         }
         anchors.push(body.clone());
     }
-    let scan = match &manifest.scan {
-        None => None,
-        Some(scan) => {
+    let scan = match (draft_scan, &manifest.scan) {
+        (Some(draft), _) => {
+            // 拍摄时间按发布时的规则：草稿给了就用草稿的；没给而扫描资源与最近一次带扫描的提交
+            // 相同，就沿用那次提交的。
+            let observed_at = match draft.observed_at {
+                Some(at) => Some(at),
+                None => repo
+                    .latest_scan_commit(grant, seq)
+                    .await?
+                    .filter(|commit| {
+                        commit
+                            .scan
+                            .as_ref()
+                            .is_some_and(|scan| scan.asset_hash == draft.scan.asset_hash)
+                    })
+                    .and_then(|commit| commit.observed_at),
+            };
+            Some(ScanView {
+                web_model_hashes: draft.scan.web_model_hashes.clone(),
+                transform: draft.scan.transform.to_vec(),
+                observed_at,
+                asset_hash: None,
+                alignment: None,
+            })
+        }
+        (None, None) => None,
+        (None, Some(scan)) => {
             let observed_at = repo
                 .latest_scan_commit(grant, seq)
                 .await?
                 .and_then(|commit| commit.observed_at);
+            let internal = audience == Audience::Internal;
             Some(ScanView {
                 web_model_hashes: scan.web_model_hashes.clone(),
                 transform: scan.transform.to_vec(),
                 observed_at,
-                asset_hash: (audience == Audience::Internal).then(|| scan.asset_hash.clone()),
+                asset_hash: internal.then(|| scan.asset_hash.clone()),
+                // 对齐信息只在 `/api/v1` 的快照里返回（服务端原样保存、不解释）。
+                alignment: if internal {
+                    scan.alignment.clone()
+                } else {
+                    None
+                },
             })
         }
     };
@@ -175,6 +208,7 @@ pub async fn snapshot_at(
         &[],
         &BTreeSet::new(),
         audience,
+        None,
     )
     .await
 }

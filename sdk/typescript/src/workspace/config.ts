@@ -75,6 +75,16 @@ export function isSafeName(value: unknown): value is string {
  * 查询参数和片段；协议必须是 https，`allowLoopbackHttp` 时另外接受本机回环地址的 http。
  * 不合格时抛出 ConfigError，`what` 说明地址从哪里来。
  */
+/**
+ * 去掉末尾的斜杠。逐字符往回数，不用 `/\/+$/` 这样的正则：那种写法遇到很长一串斜杠时
+ * 回溯是平方级的，地址又来自用户配置和命令行参数。
+ */
+export function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1;
+  return value.slice(0, end);
+}
+
 export function normalizeNyxBase(value: string, what: string, allowLoopbackHttp = false): string {
   let url: URL;
   try {

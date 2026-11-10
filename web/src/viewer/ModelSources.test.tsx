@@ -97,8 +97,13 @@ describe('模型来源', () => {
     expect(toggle).toHaveTextContent('收起');
     const panel = screen.getByRole('region', { name: '模型来源' });
     expect(within(panel).getByText(/其中 1 个按 CC BY 许可署名/)).toBeInTheDocument();
-    // CC BY 要求注明改动：网站上的模型都是处理服务重新导出的，不是原文件
-    expect(within(panel).getByText(/经本服务处理后重新导出.*与原文件不同/)).toBeInTheDocument();
+    // CC BY 要求注明改动：说明不依赖具体工具，只说可能经过调整、与原文件不同
+    expect(
+      within(panel).getByText(
+        /可能经过调整（摆放烘进模型、减面、调色、缩小贴图）后重新导出，与原文件不同/,
+      ),
+    ).toBeInTheDocument();
+    expect(within(panel).queryByText(/本服务|处理服务/)).toBeNull();
     const cc = within(panel).getByRole('link', { name: '玻璃瓶花束（示例）' });
     expect(cc).toHaveAttribute('href', 'https://example.com/models/bouquet');
     expect(cc).toHaveAttribute('rel', 'noopener noreferrer');
@@ -145,7 +150,7 @@ describe('模型来源', () => {
     const panel = screen.getByRole('region', { name: '模型来源' });
     expect(within(panel).getByRole('link', { name: '木架' })).toBeInTheDocument();
     expect(within(panel).queryByText(/按 CC BY 许可署名/)).toBeNull();
-    expect(within(panel).getByText(/经本服务处理后重新导出/)).toBeInTheDocument();
+    expect(within(panel).getByText(/可能经过调整.*后重新导出/)).toBeInTheDocument();
   });
 
   it('没有外部模型的场景既没有署名行也没有按钮', async () => {

@@ -1,0 +1,328 @@
+{
+  "apply": {
+    "base": {
+      "anchorHistory": [
+        "sofa-01",
+        "counter-01"
+      ],
+      "anchors": [
+        {
+          "anchorId": "_space",
+          "kind": "space",
+          "visibility": "public"
+        },
+        {
+          "anchorId": "counter-01",
+          "box": [
+            100,
+            0,
+            100,
+            140,
+            25,
+            180
+          ],
+          "kind": "counter",
+          "visibility": "public"
+        }
+      ],
+      "entities": [
+        {
+          "bounds": {
+            "max": [
+              4,
+              3,
+              0.1
+            ],
+            "min": [
+              0,
+              0,
+              0
+            ]
+          },
+          "entityId": "wall-01",
+          "kind": "structure",
+          "layer": "rebuilt",
+          "shape": {
+            "size": [
+              4,
+              3,
+              0.1
+            ],
+            "transform": {
+              "position": [
+                2,
+                0,
+                0.05
+              ]
+            },
+            "type": "box"
+          }
+        },
+        {
+          "bounds": {
+            "max": [
+              0.2,
+              0.8,
+              0.2
+            ],
+            "min": [
+              -0.2,
+              0,
+              -0.2
+            ]
+          },
+          "entityId": "chair-a",
+          "kind": "template",
+          "layer": "rebuilt",
+          "shape": {
+            "size": [
+              0.4,
+              0.8,
+              0.4
+            ],
+            "type": "box"
+          }
+        },
+        {
+          "bounds": {
+            "max": [
+              2.2,
+              0.8,
+              2.2
+            ],
+            "min": [
+              1.8,
+              0,
+              1.8
+            ]
+          },
+          "entityId": "chair-01",
+          "kind": "object",
+          "layer": "rebuilt",
+          "shape": {
+            "template": "chair-a",
+            "transform": {
+              "position": [
+                2,
+                0,
+                2
+              ]
+            },
+            "type": "instance"
+          }
+        },
+        {
+          "bounds": {
+            "max": [
+              3.2,
+              1.5,
+              3.2
+            ],
+            "min": [
+              2.8,
+              0,
+              2.8
+            ]
+          },
+          "entityId": "lamp",
+          "kind": "object",
+          "layer": "ext",
+          "shape": {
+            "height": 1.5,
+            "radius": 0.2,
+            "transform": {
+              "position": [
+                3,
+                0,
+                3
+              ]
+            },
+            "type": "cylinder"
+          }
+        }
+      ],
+      "plots": [],
+      "regions": [
+        {
+          "boxes": [
+            [
+              0,
+              0,
+              0,
+              200,
+              80,
+              200
+            ]
+          ],
+          "id": "hall",
+          "kind": "physical"
+        }
+      ]
+    },
+    "runs": 1
+  },
+  "description": "只有锚点：已有的 counter-01 跳过（exists），曾经有过的 sofa-01 跳过（existed），新的 door-1 新建；时区偏移写法的 createdAt 也收",
+  "expect": {
+    "ops": [
+      {
+        "anchor": {
+          "anchorId": "counter-01",
+          "box": [
+            0,
+            0,
+            0,
+            10,
+            25,
+            10
+          ],
+          "kind": "counter",
+          "visibility": "public"
+        },
+        "ifNew": true,
+        "op": "createAnchor"
+      },
+      {
+        "anchor": {
+          "anchorId": "sofa-01",
+          "box": [
+            40,
+            0,
+            40,
+            78,
+            17,
+            58
+          ],
+          "kind": "zone",
+          "visibility": "public"
+        },
+        "ifNew": true,
+        "op": "createAnchor"
+      },
+      {
+        "anchor": {
+          "anchorId": "door-1",
+          "kind": "door",
+          "position": [
+            0.5,
+            0.0,
+            9.5
+          ],
+          "visibility": "internal"
+        },
+        "ifNew": true,
+        "op": "createAnchor"
+      }
+    ],
+    "references": {},
+    "runs": [
+      {
+        "anchors": [
+          {
+            "hash": "fdcc59c7365be830ca2785ad144ac116eca1f682a2dbd8f2254a77f2619e6dfd",
+            "id": "_space"
+          },
+          {
+            "hash": "ca18288894525da19ee8a975cc85bf1137e514cd6c19968016640d6046a11e22",
+            "id": "counter-01"
+          },
+          {
+            "hash": "2bb4432e146d45aa3b827e347809ec951a146c0b9b0facd84402d3c070819cc4",
+            "id": "door-1"
+          }
+        ],
+        "brokenTemplateRefs": [],
+        "entities": [
+          {
+            "hash": "5cc62339bb1d129d0242ea3d470e5610099d9a4e27a5f190878db9092e3cc36a",
+            "id": "chair-01"
+          },
+          {
+            "hash": "83000bbac8872d76b28c9b6351fe55fbb5961799839b51f8a2f8ea5f0c4e7ab9",
+            "id": "chair-a"
+          },
+          {
+            "hash": "d82de946591e3b1d34bacbfdcbbf85127757370c2aed1add605f9413f230b0fc",
+            "id": "lamp"
+          },
+          {
+            "hash": "5cab9f476516f03c960f35be44a2174dd0126484448ad7d59d16e7cca70dded3",
+            "id": "wall-01"
+          }
+        ],
+        "touched": {
+          "anchors": [
+            "door-1"
+          ],
+          "entities": [],
+          "rebuiltLayer": false,
+          "scan": false,
+          "skippedAnchors": [
+            {
+              "id": "counter-01",
+              "reason": "exists"
+            },
+            {
+              "id": "sofa-01",
+              "reason": "existed"
+            }
+          ]
+        },
+        "unchanged": false
+      }
+    ],
+    "valid": true
+  },
+  "kind": "bundle",
+  "limits": null,
+  "manifest": {
+    "anchors": [
+      {
+        "anchorId": "counter-01",
+        "box": [
+          0,
+          0,
+          0,
+          10,
+          25,
+          10
+        ],
+        "kind": "counter",
+        "visibility": "public"
+      },
+      {
+        "anchorId": "sofa-01",
+        "box": [
+          40,
+          0,
+          40,
+          78,
+          17,
+          58
+        ],
+        "kind": "zone",
+        "visibility": "public"
+      },
+      {
+        "anchorId": "door-1",
+        "kind": "door",
+        "position": [
+          0.5,
+          0,
+          9.5
+        ],
+        "visibility": "internal"
+      }
+    ],
+    "createdAt": "2026-11-20T16:00:00+08:00",
+    "files": [],
+    "format": "chrono-metaverse-rebuild-bundle",
+    "note": "只加锚点",
+    "tool": {
+      "name": "metaverse-recon",
+      "version": "0.2.0"
+    },
+    "version": 1
+  },
+  "name": "valid-anchors-only",
+  "spaceTemplates": null
+}

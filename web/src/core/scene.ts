@@ -394,7 +394,7 @@ export const CEILING_CUT_MARGIN = 0.05;
  * 默认的剖切高度：只切掉天花板，墙和高柜都留着。
  *
  * 天花板高度取结构墙（`kind: "structure"`、高于 1.5 米的墙和玻璃）顶部的中位数——处理服务把各面墙的
- * 顶部统一到了天花板线上（worker 的 structure.py），AI 物件集里的墙也是这样写的；再低
+ * 顶部统一到了天花板线上（本地重建工具的 `processing/structure.py`），AI 物件集里的墙也是这样写的；再低
  * {@link CEILING_CUT_MARGIN}，让原始视图里扫描的天花板切干净，优化视图里墙几乎完整。
  * 没有结构墙时（例如还没重建、只有扫描）返回 null，由调用方用 {@link FALLBACK_CUT_HEIGHT}。
  */

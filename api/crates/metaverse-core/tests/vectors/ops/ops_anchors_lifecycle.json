@@ -1,5 +1,6 @@
 {
   "base": {
+    "anchorHistory": [],
     "anchors": [
       {
         "anchorId": "_space",
@@ -101,7 +102,8 @@
         "id": "garden",
         "kind": "virtual"
       }
-    ]
+    ],
+    "scopeKind": "ext"
   },
   "description": "锚点：新建（盒子 / 点）、移动、改标签和可见级别、删除；_space 锚点的影响范围是整个空间（实体区路径允许）",
   "expect": {
@@ -120,6 +122,7 @@
       }
     ],
     "baseChunks": [],
+    "brokenTemplateRefs": [],
     "chunkChanges": [],
     "chunks": [],
     "entities": [],
@@ -205,6 +208,7 @@
     "ok": true,
     "probes": [],
     "provisionalBlocks": [],
+    "scan": null,
     "touched": {
       "anchors": [
         "_space",
@@ -214,7 +218,10 @@
       ],
       "chunks": [],
       "entities": [],
-      "palette": false
+      "palette": false,
+      "rebuiltLayer": false,
+      "scan": false,
+      "skippedAnchors": []
     }
   },
   "kind": "ops",

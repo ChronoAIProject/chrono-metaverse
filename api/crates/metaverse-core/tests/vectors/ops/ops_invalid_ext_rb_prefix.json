@@ -1,0 +1,159 @@
+{
+  "base": {
+    "anchorHistory": [],
+    "anchors": [],
+    "entities": [],
+    "fills": [],
+    "palette": [
+      {
+        "color": [
+          128,
+          128,
+          128
+        ],
+        "id": 2,
+        "kind": "solid",
+        "name": "stone",
+        "tags": []
+      },
+      {
+        "color": [
+          160,
+          120,
+          70
+        ],
+        "id": 3,
+        "kind": "solid",
+        "name": "oak",
+        "tags": [
+          "wood"
+        ]
+      },
+      {
+        "color": [
+          200,
+          230,
+          255
+        ],
+        "id": 7,
+        "kind": "glass",
+        "name": "glass",
+        "tags": []
+      }
+    ],
+    "plots": [
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            140,
+            40,
+            40
+          ]
+        ],
+        "id": "p1",
+        "regionId": "garden"
+      }
+    ],
+    "regions": [
+      {
+        "boxes": [
+          [
+            0,
+            0,
+            0,
+            100,
+            60,
+            100
+          ]
+        ],
+        "id": "hall",
+        "kind": "physical"
+      },
+      {
+        "boxes": [
+          [
+            100,
+            0,
+            0,
+            200,
+            60,
+            100
+          ]
+        ],
+        "id": "garden",
+        "kind": "virtual"
+      }
+    ],
+    "scopeKind": "ext"
+  },
+  "description": "扩展层新放的物件编号不能以 rb. 开头（rb. 留给重建层）",
+  "expect": {
+    "baseChunks": [],
+    "error": {
+      "index": 0,
+      "kind": "invalid",
+      "message": "第 0 条操作：rb. 开头的编号留给重建层，扩展层不能新放 rb.lamp"
+    },
+    "footprints": [
+      {
+        "cells": [
+          [
+            15,
+            0,
+            15,
+            25,
+            10,
+            25
+          ]
+        ],
+        "spaceWide": false
+      }
+    ],
+    "ok": false
+  },
+  "kind": "ops",
+  "name": "invalid-ext-rb-prefix",
+  "ops": [
+    {
+      "entity": {
+        "bounds": {
+          "max": [
+            1.25,
+            0.5,
+            1.25
+          ],
+          "min": [
+            0.75,
+            0,
+            0.75
+          ]
+        },
+        "entityId": "rb.lamp",
+        "kind": "object",
+        "layer": "ext",
+        "shape": {
+          "size": [
+            0.5,
+            0.5,
+            0.5
+          ],
+          "transform": {
+            "position": [
+              1,
+              0,
+              1
+            ]
+          },
+          "type": "box"
+        }
+      },
+      "op": "placeEntity"
+    }
+  ],
+  "probeCells": [],
+  "scope": "physical",
+  "spaceId": "vec-space"
+}
