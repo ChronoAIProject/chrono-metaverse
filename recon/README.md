@@ -1,5 +1,8 @@
 # 本地重建工具（metaverse-recon）
 
+网页创建空间时，CMA 在自己的运行环境中调用同一套工具。`metaverse-recon source <Scaniverse 分享链接或本地 GLB/ZIP> --out scan-source` 将网格与贴图准备成重建输入，并输出 `source.json`（扫描路径、大小、哈希）。Scaniverse 仅有高斯泼溅、没有网格时明确报错，需要用户导出 GLB/ZIP；不把网页或泼溅文件冒充网格。随后依次首次对齐、重建打包，再用 `metaverse bundle push` 上传草稿。此工具不会连接 metaverse，也不会自行创建或发布空间。
+
+
 chrono-metaverse 的重建都在本地做（人或 AI 的电脑，Mac 也行，不需要显卡）：对齐、网页用模型、结构和物体、
 AI 物件集（外部模型下载和重新导出、烘焙、逐件偏差）、建议锚点，结果打成重建包，由命令行 `metaverse` 推送到
 接口服务。服务端只做鉴权、存储、时间线和通用把关，不含任何"某类场景怎么重建"的知识（设计
