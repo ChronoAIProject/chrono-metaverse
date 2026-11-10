@@ -56,10 +56,15 @@ describe('回放', () => {
     runtime.setTime(Date.parse('2026-10-27T10:40:00Z'), false, 15 * 60_000);
     await until(() => runtime!.getState().scene?.seq === 3, '版本 3 的场景');
     await until(() => runtime!.getState().events.length > 0, '事件');
-    await until(() => runtime!.getState().states.size > 0, '锚点状态');
+    // 开场按"现在"取过一次状态，所以不能只等"有状态"：要等到这个时刻的那束花。
+    await until(
+      () =>
+        runtime!.getState().states.get('counter-01')?.get('decor')?.at ===
+        '2026-10-27T10:30:00.000Z',
+      '10 月 27 日的花束状态',
+    );
     const state = runtime.getState();
     expect(state.events.some((e) => e.type === 'delivery.arrived')).toBe(true);
-    expect(state.states.get('counter-01')?.get('decor')).toBeDefined();
 
     const snapshots = urls().filter((u) => u.includes('/snapshot'));
     expect(snapshots.length).toBeGreaterThan(0);
