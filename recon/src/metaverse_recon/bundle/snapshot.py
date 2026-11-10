@@ -1,6 +1,7 @@
 """`metaverse-recon bundle --from-snapshot <工作区>`：用拉下来的快照生成整体替换的包（设计 8.3、乙3）。
 
-用途：把一个空间（例如 `metaverse pull --share <链接> --assets` 拉下来的公开快照）的重建层原样搬进新格式——
+用途：把一个空间（例如 `metaverse pull --share <链接> --seq <版本> --assets` 拉下来的公开快照，连同物件模型和
+贴图）的重建层原样搬进新格式——
 重建层的物件和模板编号改成 `rb.` 开头（模板引用一起改），`rebuilt.mode = replace`；展开、作用以后重建层的形状
 与快照相同，只有编号不同。不读扫描、不重建，所以几秒钟就好。
 
@@ -90,8 +91,9 @@ def build_from_snapshot(
                 missing.append(f"贴图 {sha}（{body['entityId']}）")
     if missing:
         raise InputRejected(
-            "快照引用的这些文件本地没有（metaverse pull --share --assets 下载物件模型；贴图放进 assets/ 或用 "
-            "--textures-dir 指定）：" + "；".join(sorted(set(missing))[:10])
+            "快照引用的这些文件本地没有（metaverse pull --assets 或 pull --share <链接> --assets "
+            "下载物件模型和贴图，也可以用 --textures-dir 另给贴图目录）："
+            + "；".join(sorted(set(missing))[:10])
         )
     scan = None
     notes = []

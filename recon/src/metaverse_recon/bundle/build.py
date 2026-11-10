@@ -125,6 +125,13 @@ def collect_files(
         raise InputRejected("这些文件本地没有，包不完整：" + "；".join(missing[:10]))
 
 
+def _anchor_brief(anchor: Mapping[str, Any]) -> dict[str, Any]:
+    """锚点的简要说明（编号、类型、标签、可见性），打包后列出来给人看：标签会显示在场景里。"""
+    return {
+        k: anchor.get(k) for k in ("anchorId", "kind", "label", "visibility") if anchor.get(k) is not None
+    }
+
+
 def build_bundle(
     *,
     scan_path: str,
@@ -146,8 +153,13 @@ def build_bundle(
     opener: Any = None,
     check: bool = True,
     objects_target: str | None = OBJECTS_TARGET,
+    algorithm_anchors: bool = False,
 ) -> dict[str, Any]:
-    """见模块说明。`authored_path` 不给时用算法的结构和物体（`--algorithm`）。返回打包的统计。"""
+    """见模块说明。`authored_path` 不给时用算法的结构和物体（`--algorithm`）。返回打包的统计。
+
+    `--algorithm` 时按类别建议的锚点默认**不进包**，只列在返回的 `suggestedAnchors` 里：锚点公开、只增不删，
+    算法的分类可能是错的（把前台内部认成桌子、沙发），错的标签发布以后后面的包改不掉。人看过、确认要建时
+    才用 `algorithm_anchors`（命令行 `--anchors`）。"""
     prepare_out_dir(out_dir)
     os.makedirs(workdir, exist_ok=True)
     limits = processing_limits(upload_limits)
@@ -199,6 +211,9 @@ def build_bundle(
     templates, entities, mapping = prefixed_records(raw_templates, raw_entities)
     collect_files(writer, templates, entities, result["models"], result["textures"], texture_files)
     anchors = [dict(a) for _, a in sorted((result.get("anchors") or {}).items())]
+    suggested: list[dict[str, Any]] = []
+    if authored is None and not algorithm_anchors:
+        suggested, anchors = anchors, []
     summary = result.get("authored") or {}
     report: dict[str, Any] = {"entities": len(entities), "templates": len(templates)}
     fit = fit_report(summary.get("fit") or [])
@@ -239,6 +254,8 @@ def build_bundle(
         "entities": len(entities),
         "templates": len(templates),
         "anchors": len(anchors),
+        "anchorList": [_anchor_brief(a) for a in anchors],
+        "suggestedAnchors": [_anchor_brief(a) for a in suggested],
         "droppedInternalAnchors": dropped,
         "files": {
             p: sum(1 for f in writer.files if f["purpose"] == p)

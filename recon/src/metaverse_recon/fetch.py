@@ -45,10 +45,10 @@ class DownloadFailed(RuntimeError):
     """网络错误、超时、服务器错误（可重试）。"""
 
 
-def parse_hosts(text: str | None) -> tuple[str, ...]:
-    """逗号分隔的主机列表 → 小写去重的元组。空白时用默认列表。"""
+def parse_hosts(text: str | None, default: tuple[str, ...] = DEFAULT_MODEL_HOSTS) -> tuple[str, ...]:
+    """逗号分隔的主机列表 → 小写去重的元组。空白时用默认列表（`default`，默认是模型库的那一组）。"""
     if text is None or not text.strip():
-        return DEFAULT_MODEL_HOSTS
+        return default
     out: list[str] = []
     for item in text.split(","):
         entry = item.strip().lower()

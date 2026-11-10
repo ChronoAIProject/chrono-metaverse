@@ -10,6 +10,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import zipfile
 from pathlib import Path
 
@@ -109,6 +110,8 @@ def test_scan_zip_members_from_a_sources_table(tmp_path, monkeypatch):
     def fake_fetch(url, dest, *, sha256, size, hosts, timeout, opener):
         name = url.rsplit("/", 1)[1]
         assert hashlib.sha256(payload[name]).hexdigest() == sha256 and len(payload[name]) == size
+        # 扫描成员用种子的主机列表（含 scaniverse.com），不是模型库那一组
+        assert hosts == bz.DEFAULT_SCAN_HOSTS
         calls.append(url)
         Path(dest).write_bytes(payload[name])
 
@@ -137,6 +140,17 @@ def test_scan_zip_members_from_a_sources_table(tmp_path, monkeypatch):
     assert run_cli("scan-zip", "--sources", str(tmp_path / "sources.json"), "--out", str(out)) == 0
     assert hashlib.sha256(out.read_bytes()).hexdigest() == vector["zipSha256"]
     assert len(calls) == 2
+    # 顶层直接以哈希为键（少了 files 这一层）：说明正确的格式
+    (tmp_path / "flat.json").write_text(json.dumps(sources["files"]))
+    assert run_cli("scan-zip", "--sources", str(tmp_path / "flat.json"), "--out", str(out)) == 2
+
+
+def test_scan_hosts_default_matches_the_demo_seed():
+    """本地 scan-zip 的默认主机列表与本地设施（和线上，check-app 守着）的种子主机列表相同。"""
+    up = (Path(__file__).resolve().parents[2] / "infra" / "dev" / "up.sh").read_text("utf-8")
+    match = re.search(r'METAVERSE_DEMO_SEED_HOSTS:-([^}"]+)\}', up)
+    assert match is not None
+    assert tuple(match.group(1).split(",")) == bz.DEFAULT_SCAN_HOSTS
 
 
 def test_reading_someone_elses_scan_zip_is_bounded(tmp_path):
@@ -508,6 +522,22 @@ def test_bundle_for_the_seed_drops_internal_and_notes(tmp_path, monkeypatch):
     assert set(m["report"]) == {"fit"}
 
 
+def test_algorithm_bundle_only_suggests_anchors(tmp_path):
+    """--algorithm 的分类可能不对，锚点又公开、只增不删：默认只列出建议，不进包；--anchors 才放进去。"""
+    res = bundle_once(tmp_path, "a1-out", authored_path=None)
+    m = read_bundle(tmp_path / "a1-out")
+    assert m.get("anchors", []) == [] and res["anchors"] == 0 and res["anchorList"] == []
+    suggested = res["suggestedAnchors"]
+    assert suggested and all({"anchorId", "kind", "visibility"} <= set(a) for a in suggested)
+    res = bundle_once(tmp_path, "a2-out", authored_path=None, algorithm_anchors=True)
+    m = read_bundle(tmp_path / "a2-out")
+    assert [a["anchorId"] for a in m["anchors"]] == [a["anchorId"] for a in suggested]
+    assert res["suggestedAnchors"] == [] and res["anchorList"] == suggested
+    # 物件集的锚点照常进包，并列出来给人看标签
+    res = bundle_once(tmp_path, "a3-out")
+    assert [a["anchorId"] for a in res["anchorList"]] == ["table-01"] and res["suggestedAnchors"] == []
+
+
 def test_bundle_with_existing_webmodel_and_limits(tmp_path):
     web = tmp_path / "web.glb"
     web.write_bytes(model_glb())
@@ -661,6 +691,30 @@ def test_workspace_defaults(tmp_path, monkeypatch):
     assert ws.find_workspace() is None
 
 
+def test_init_only_workspace(tmp_path, monkeypatch):
+    """只做过 `metaverse init`（只有 metaverse.json）的目录也算工作区：路径默认值照样有，没有版本号；
+    离得近的 space.json 优先。"""
+    root = tmp_path / "fresh"
+    (root / "scan").mkdir(parents=True)
+    (root / "metaverse.json").write_text(json.dumps({"spaceId": "fresh-space", "mode": "nyxid"}))
+    (root / "scan" / "scan.zip").write_bytes(b"PK")
+    monkeypatch.chdir(root / "scan")
+    found = ws.find_workspace()
+    assert found is not None and found.root == root and not found.pulled
+    assert found.space_id == "fresh-space" and found.seq is None and found.base_ref() is None
+    assert ws.require_path(None, ws.SCAN_ZIP, "扫描") == str(root / "scan" / "scan.zip")
+    (root / "space.json").write_text(json.dumps({"spaceId": "fresh-space", "seq": 1}))
+    found = ws.find_workspace()
+    assert found is not None and found.pulled and found.base_ref() == {"spaceId": "fresh-space", "seq": 1}
+    (root / "metaverse.json").write_text("[]")
+    (root / "space.json").unlink()
+    with pytest.raises(ReconError, match="不是 JSON 对象"):
+        ws.find_workspace()
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ReconError, match=r"metaverse\.json"):
+        ws.require_path(None, ws.SCAN_ZIP, "扫描")
+
+
 # ---------------------------------------------------------------------------- 命令
 
 
@@ -713,26 +767,47 @@ def test_align_and_webmodel_commands(tmp_path):
     assert (
         doc_["source"] == "align" and len(doc_["transform"]) == 16 and doc_["alignment"]["method"] == "auto"
     )
-    # 与自己配准：误差接近 0；误差上限设成负数时退出码非 0，变换照样写出
+    # 与自己配准：误差接近 0，写进输出文件
     out2 = tmp_path / "t2.json"
-    assert (
-        run_cli(
-            "align",
-            "--scan",
-            str(scan),
-            "--reference",
-            str(scan),
-            "--reference-transform",
-            str(out),
-            "--out",
-            str(out2),
-            "--max-error-cm",
-            "-1",
-        )
-        == 2
-    )
-    assert json.loads(out2.read_text())["source"] == "align"
+    register = ["align", "--scan", str(scan), "--reference", str(scan), "--reference-transform", str(out)]
+    assert run_cli(*register, "--out", str(out2)) == 0
+    assert json.loads(out2.read_text())["errorCm"] is not None
+    # 误差上限设成负数：退出码非 0，输出文件不动，结果写到旁边的 *.candidate.json
+    before = out2.read_text()
+    assert run_cli(*register, "--out", str(out2), "--max-error-cm", "-1") == 2
+    assert out2.read_text() == before
+    candidate = json.loads((tmp_path / "t2.candidate.json").read_text())
+    assert candidate["source"] == "align" and len(candidate["transform"]) == 16
+    # 新的输出文件也一样：误差超限时根本不写
+    out3 = tmp_path / "t3.json"
+    assert run_cli(*register, "--out", str(out3), "--max-error-cm", "-1") == 2
+    assert not out3.exists() and (tmp_path / "t3.candidate.json").exists()
     assert run_cli("webmodel", "--scan", str(scan), "--out", str(tmp_path / "web")) == 0
+    assert sorted(os.listdir(tmp_path / "web")) == ["scan-0.glb", "scan-1.glb"]
+
+
+def test_align_keeps_the_pulled_transform_and_webmodel_defaults(tmp_path, monkeypatch):
+    """工作区里 `metaverse pull` 写的线上变换（`source: pull`）不被 align 覆盖，除非 --force；
+    webmodel 在工作区里默认写到 web/。"""
+    (tmp_path / "space.json").write_text(json.dumps({"spaceId": "lobby", "seq": 3}))
+    (tmp_path / "scan").mkdir()
+    (tmp_path / "scan" / "scan.zip").write_bytes(scan_zip(room_mesh()))
+    pulled = {"transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.5, 0, 0, 1], "source": "pull", "seq": 3}
+    transform = tmp_path / "scan" / "transform.json"
+    transform.write_text(json.dumps(pulled))
+    monkeypatch.chdir(tmp_path)
+    assert run_cli("align") == 2
+    assert json.loads(transform.read_text()) == pulled
+    # 写到别的文件可以（重扫配准的结果先放在旁边，确认后再替换）
+    assert run_cli("align", "--out", str(tmp_path / "scan" / "new.json")) == 0
+    assert json.loads(transform.read_text()) == pulled
+    # --force 才覆盖
+    assert run_cli("align", "--force") == 0
+    doc_ = json.loads(transform.read_text())
+    assert doc_["source"] == "align" and doc_["seq"] == 3
+    # 上一次 align 写的可以直接重算
+    assert run_cli("align") == 0
+    assert run_cli("webmodel") == 0
     assert sorted(os.listdir(tmp_path / "web")) == ["scan-0.glb", "scan-1.glb"]
 
 

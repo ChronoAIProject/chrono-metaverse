@@ -204,11 +204,19 @@ def _pipeline_parsers(sub) -> None:
     a.add_argument(
         "--max-error-cm", type=float, default=3.0, help="配准误差超过它（厘米）时退出码非 0（默认 3）"
     )
-    a.add_argument("--out", help="输出（工作区里默认 scan/transform.json）")
+    a.add_argument(
+        "--out",
+        help="输出（工作区里默认 scan/transform.json；误差超限时不写它，结果写到旁边的 *.candidate.json）",
+    )
+    a.add_argument(
+        "--force",
+        action="store_true",
+        help="输出文件是 metaverse pull 写的线上变换时也覆盖（已有空间一般不要重新对齐）",
+    )
 
     w = sub.add_parser("webmodel", help="生成网页用模型（两档 glb，保持扫描原坐标）")
     w.add_argument("--scan", help="扫描（工作区里默认 scan/scan.zip）")
-    w.add_argument("--out", required=True, help="输出目录（scan-0.glb、scan-1.glb）")
+    w.add_argument("--out", help="输出目录（scan-0.glb、scan-1.glb；工作区里默认 web/）")
     _limits_arg(w)
 
     m = sub.add_parser("models", help="外部模型：找本地文件或下载、核对，按物件模型的上限导出 glb")
@@ -249,6 +257,11 @@ def _pipeline_parsers(sub) -> None:
         "--webmodel", action="append", help="用已有的网页用模型（第一个是默认档，可再给低细节档）；不给就生成"
     )
     k.add_argument("--hints", help="物体提示 JSON（--algorithm 时）")
+    k.add_argument(
+        "--anchors",
+        action="store_true",
+        help="--algorithm 时把按类别建议的锚点也放进包（默认只列出建议，不建：锚点公开、只增不删）",
+    )
     k.add_argument("--out", help="包目录（工作区里默认 out/bundle）")
     k.add_argument("--note", help="清单的说明（发布时的默认提交说明）")
     k.add_argument("--notes", help="建模记录（Markdown，作为提交的 scriptRef；默认用物件集的 notes）")

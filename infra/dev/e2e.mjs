@@ -462,7 +462,8 @@ const steps = [
         // 第一次扫描：自动对齐，写 scan/transform.json；prepare 和 bundle 都用它。
         ['align', ['align', '--scan', scanCopy]],
         ['prepare', ['prepare', '--scan', scanCopy]],
-        ['bundle', ['bundle', '--algorithm', '--scan', scanCopy, '--note', '验收：算法重建']],
+        // --anchors：按类别建议的锚点也进包（默认只列出建议；验收要看锚点建出来、按 ifNew 跳过）。
+        ['bundle', ['bundle', '--algorithm', '--anchors', '--scan', scanCopy, '--note', '验收：算法重建']],
       ]) {
         const started = Date.now();
         await recon(args, { cwd: ws });

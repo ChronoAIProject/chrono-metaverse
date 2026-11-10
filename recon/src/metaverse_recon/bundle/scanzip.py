@@ -9,6 +9,9 @@
 
 **读别人的扫描 zip**：成员不能是绝对路径、不能含 `..` 段，不能加密，解压后合计不超过 2 GiB（`MAX_UNPACKED`），
 `__MACOSX/` 和 `.DS_Store` 忽略。
+
+**下载成员**的主机列表是 `METAVERSE_RECON_SCAN_HOSTS`，默认与线上部署种子的 `METAVERSE_DEMO_SEED_HOSTS` 相同
+（扫描成员通常是 Scaniverse 的原地址；来源表和种子用的是同一份），不是模型库那一组。
 """
 
 from __future__ import annotations
@@ -34,6 +37,16 @@ DOS_TIME = 0
 MAX_UNPACKED = 2 << 30
 MAX_MEMBERS = 64
 MEMBER_FETCH_TIMEOUT = 120.0
+SCAN_HOSTS_ENV = "METAVERSE_RECON_SCAN_HOSTS"
+#: 与 `infra/chrono-cd/app.json`、`infra/dev/up.sh` 的 `METAVERSE_DEMO_SEED_HOSTS` 相同（测试核对 `up.sh`，
+#: `check-app` 核对那两处）。
+DEFAULT_SCAN_HOSTS = (
+    "raw.githubusercontent.com",
+    "github.com",
+    "release-assets.githubusercontent.com",
+    "objects.githubusercontent.com",
+    "scaniverse.com",
+)
 
 
 def _crc32_file(path: str) -> int:
@@ -138,7 +151,7 @@ def fetch_members(
     if not 1 <= len(members) <= 32:
         raise InputRejected("zip 成员必须是 1–32 个")
     allowed = (
-        tuple(hosts) if hosts is not None else parse_hosts(os.environ.get("METAVERSE_RECON_MODEL_HOSTS"))
+        tuple(hosts) if hosts is not None else parse_hosts(os.environ.get(SCAN_HOSTS_ENV), DEFAULT_SCAN_HOSTS)
     )
     opener = opener if opener is not None else build_opener()
     os.makedirs(workdir, exist_ok=True)

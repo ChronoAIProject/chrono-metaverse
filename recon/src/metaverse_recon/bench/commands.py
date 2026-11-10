@@ -22,6 +22,7 @@ from .workspace import (
     LIMITS_FILE,
     SCAN_ZIP,
     TRANSFORM_FILE,
+    WEB_DIR,
     default_path,
     find_workspace,
     read_transform,
@@ -57,9 +58,30 @@ def _wrap(fn):
 # ---------------------------------------------------------------------------- align
 
 
+def _existing_transform_source(path: str) -> str | None:
+    """已有变换文件的 `source`（`pull`、`align`……）；文件不在、读不了或没写来源时返回 None。"""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    source = doc.get("source") if isinstance(doc, dict) else None
+    return source if isinstance(source, str) else None
+
+
+def candidate_path(out: str) -> str:
+    """误差超限时结果写到旁边的 `<名字>.candidate.json`，不动正式的变换文件。"""
+    root, ext = os.path.splitext(out)
+    return f"{root}.candidate{ext or '.json'}"
+
+
 @_wrap
 def cmd_align(args) -> dict:
-    """只算对齐：首次自动对齐，或重扫配准到参考扫描；写 `transform.json`，误差超限时退出码非 0。"""
+    """只算对齐：首次自动对齐，或重扫配准到参考扫描；写 `transform.json`，误差超限时退出码非 0。
+
+    两条保护（方法论 3.2）：输出文件是 `metaverse pull` 写的线上变换（`source: pull`）时不覆盖，除非
+    `--force`——已有空间的物件和锚点都是按线上变换摆的；配准误差超过 `--max-error-cm` 时不写输出文件，
+    结果写到旁边的 `*.candidate.json`，人工确认后再改名使用。"""
     from ..processing import tasks
     from ..processing.align import auto_align, matrix_from_params, register_rescan
     from ..processing.limits import default_limits
@@ -69,6 +91,11 @@ def cmd_align(args) -> dict:
     out = args.out or (str(ws.path(TRANSFORM_FILE)) if ws else None)
     if out is None:
         raise ReconError("缺少输出文件（--out；在工作区里默认 scan/transform.json）")
+    if _existing_transform_source(out) == "pull" and not args.force:
+        raise ReconError(
+            f"{out} 是 metaverse pull 写的线上变换：已有空间的物件和锚点都按它摆，不要重新对齐"
+            "（重扫要配准到参考扫描，结果用 --out 写到别的文件，确认后再替换）；确实要覆盖就加 --force"
+        )
     with tempfile.TemporaryDirectory() as work:
         mesh = tasks.read_scan(scan, os.path.join(work, "scan"), default_limits())
         if args.reference:
@@ -87,19 +114,23 @@ def cmd_align(args) -> dict:
         "maxErrorCm": args.max_error_cm,
         "candidates": align.candidates,
     }
+    too_far = result["errorCm"] is not None and result["errorCm"] > args.max_error_cm
+    target = candidate_path(out) if too_far else out
     write_transform(
-        out,
+        target,
         result["transform"],
         "align",
         ws.seq if ws else None,
         alignment=result["alignment"],
+        errorCm=result["errorCm"],
         **({"candidates": align.candidates} if align.candidates else {}),
     )
-    result["out"] = out
+    result["out"] = target
     _emit(result)
-    if result["errorCm"] is not None and result["errorCm"] > args.max_error_cm:
+    if too_far:
         raise ReconError(
-            f"配准误差 {result['errorCm']} 厘米超过 {args.max_error_cm} 厘米：变换已写进 {out}，请人工确认"
+            f"配准误差 {result['errorCm']} 厘米超过 {args.max_error_cm} 厘米：没有写 {out}；结果在 {target}，"
+            "人工确认后再改名使用（或换参考扫描、放宽 --max-error-cm 重跑）"
         )
     return result
 
@@ -116,7 +147,11 @@ def cmd_webmodel(args) -> dict:
 
     scan = require_path(args.scan, SCAN_ZIP, "扫描（--scan）")
     limits = _limits(args)["webmodel"]
-    os.makedirs(args.out, exist_ok=True)
+    ws = find_workspace()
+    out_dir = args.out or (str(ws.path(WEB_DIR)) if ws else None)
+    if out_dir is None:
+        raise ReconError("缺少输出目录（--out；在工作区里默认 web/）")
+    os.makedirs(out_dir, exist_ok=True)
     with tempfile.TemporaryDirectory() as work:
         mesh = tasks.read_scan(scan, work, default_limits())
         models = build_web_models(mesh)
@@ -124,7 +159,7 @@ def cmd_webmodel(args) -> dict:
     for i, m in enumerate(models):
         if m.triangles > int(limits["maxTriangles"]) or m.texture_side > int(limits["maxTextureSide"]):
             raise ReconError(f"网页用模型第 {i} 档超过上限（{m.triangles} 个三角形，贴图 {m.texture_side}）")
-        path = os.path.join(args.out, f"scan-{i}.glb")
+        path = os.path.join(out_dir, f"scan-{i}.glb")
         with open(path, "wb") as fh:
             fh.write(m.data)
         out.append(
@@ -348,9 +383,12 @@ def cmd_scan_zip(args) -> dict:
     with tempfile.TemporaryDirectory() as work:
         if args.sources:
             doc = wc.read_json(args.sources)
-            entries = {
-                k: v for k, v in (doc.get("files") or {}).items() if isinstance(v, dict) and "zip" in v
-            }
+            if not isinstance(doc, dict) or not isinstance(doc.get("files"), dict):
+                raise ReconError(
+                    '来源表要写成种子用的格式：{"format": "chrono-metaverse-bundle-sources", "version": 1, '
+                    '"files": {<sha256>: {"url": …} 或 {"zip": [成员…]}}}（设计 7.1）'
+                )
+            entries = {k: v for k, v in doc["files"].items() if isinstance(v, dict) and "zip" in v}
             if args.hash:
                 if args.hash not in entries:
                     raise ReconError(f"来源表里没有 {args.hash} 的 zip 成员")
@@ -395,6 +433,12 @@ def cmd_bundle(args) -> dict:
     base = None
     if not args.no_base and ws is not None:
         base = ws.base_ref()
+        if base is None and not args.from_snapshot:
+            print(
+                "注意：工作区还没有 metaverse pull 过（没有 space.json 或版本号），清单不写 base；"
+                "metaverse bundle push 时要加 --base latest，或者先 metaverse pull 再打包",
+                file=sys.stderr,
+            )
     if args.from_snapshot:
         snap_ws = find_workspace(args.from_snapshot)
         if base is None and not args.no_base and snap_ws is not None:
@@ -445,6 +489,7 @@ def cmd_bundle(args) -> dict:
             observed_at=args.observed_at,
             notes_path=args.notes,
             check=not args.no_check,
+            algorithm_anchors=args.anchors,
         )
     finally:
         shutil.rmtree(work, ignore_errors=True)
@@ -456,6 +501,23 @@ def cmd_bundle(args) -> dict:
 
 def _report_bundle(res: dict) -> dict:
     brief = {k: v for k, v in res.items() if k not in ("fit", "timings", "authored")}
+    public = [a for a in res.get("anchorList") or [] if a.get("visibility") == "public"]
+    if public:
+        print(
+            f"注意：包里有 {len(public)} 个公开锚点（服务端只建本空间从没出现过的编号；锚点只增不删，"
+            "标签会显示在场景里和来源面板上，后面的包改不掉），发布前看一遍标签：",
+            file=sys.stderr,
+        )
+        for a in public:
+            print(f"  {a.get('anchorId')}（{a.get('kind')}）：{a.get('label', '')}", file=sys.stderr)
+    if res.get("suggestedAnchors"):
+        print(
+            f"按类别建议了 {len(res['suggestedAnchors'])} 个锚点，没有放进包（--algorithm 的分类可能不对）；"
+            "看过确认要建再加 --anchors，或者用实体区草稿另建：",
+            file=sys.stderr,
+        )
+        for a in res["suggestedAnchors"]:
+            print(f"  {a.get('anchorId')}（{a.get('kind')}）：{a.get('label', '')}", file=sys.stderr)
     check = res.get("check") or {}
     if not check.get("ran"):
         brief["check"] = (

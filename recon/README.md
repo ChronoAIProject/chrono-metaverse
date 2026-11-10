@@ -65,7 +65,8 @@ uv lock --upgrade-package numpy     # 只升级某一个依赖
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `METAVERSE_RECON_MODEL_HOSTS` | `dl.polyhaven.org,huggingface.co,cdn-lfs.huggingface.co,.hf.co` | 外部模型、外链贴图、扫描成员允许下载的主机（逗号分隔；打包、`scan-zip` 和工作台的检查用同一份列表和规则）：写主机名精确匹配（只许默认的 443 端口），以点开头（如 `.hf.co`）匹配它的所有子域名，`主机:端口` 只匹配那个端口。只用 https，重定向的每一跳都要在列表里 |
+| `METAVERSE_RECON_MODEL_HOSTS` | `dl.polyhaven.org,huggingface.co,cdn-lfs.huggingface.co,.hf.co` | 外部模型、外链贴图允许下载的主机（逗号分隔；打包和工作台的检查用同一份列表和规则）：写主机名精确匹配（只许默认的 443 端口），以点开头（如 `.hf.co`）匹配它的所有子域名，`主机:端口` 只匹配那个端口。只用 https，重定向的每一跳都要在列表里 |
+| `METAVERSE_RECON_SCAN_HOSTS` | `raw.githubusercontent.com,github.com,release-assets.githubusercontent.com,objects.githubusercontent.com,scaniverse.com` | `scan-zip --sources` 下载扫描成员允许的主机，写法同上；默认与线上部署种子的 `METAVERSE_DEMO_SEED_HOSTS` 相同（来源表和种子是同一份，成员通常是 Scaniverse 的原地址） |
 | `METAVERSE_RECON_MAX_TEXTURE_BYTES` | 16 MiB | 物件集里一张外链贴图下载的大小上限 |
 | `METAVERSE_RECON_*`、`SKETCHFAB_TOKEN` | — | 重建工作台的缓存、渲染工具、字体等，见"重建工作台" |
 
@@ -84,9 +85,11 @@ uv lock --upgrade-package numpy     # 只升级某一个依赖
 
 ## 本地流水线（命令）
 
-在命令行 `metaverse init` 建的工作区里做（有 `space.json`；`metaverse pull --scan` 写 `scan/scan.zip` 和
-`scan/transform.json`，`pull` 写 `limits.json`）。`metaverse-recon` 从当前目录往上找 `space.json` 定默认值
-（`bench/workspace.py`）；不在工作区里时路径都要显式给。
+在命令行 `metaverse init` 建的工作区里做（`metaverse pull` 写 `space.json`、`limits.json`；`pull --scan` 写
+`scan/scan.zip` 和 `scan/transform.json`）。`metaverse-recon` 从当前目录往上找 `space.json` 定默认值；只做过
+`init`、还没 `pull` 的目录（只有 `metaverse.json`）也认，只是没有版本号，打出的包不写 `base`——新空间也先
+`metaverse pull` 一次（`bench/workspace.py`）。不在工作区里时路径都要显式给。工作区的 `.gitignore` 忽略 `scan/`
+（原始扫描不公开）、`work/`、`web/` 和 `out/`。
 
 | 参数 | 工作区里的默认值 |
 |---|---|
@@ -94,18 +97,19 @@ uv lock --upgrade-package numpy     # 只升级某一个依赖
 | `--transform` | `scan/transform.json`（`{transform: [16 个数], source: "pull" \| "align", seq}`） |
 | `--limits` | `limits.json`（没有就用内置默认值，与服务端默认相同） |
 | `--base`（基线） | `out/recon/` |
+| `webmodel --out` | `web/` |
 | `--out`（包目录） | `out/bundle/`，打包报告写在旁边的 `out/bundle-report.json` |
 | 清单的 `base` | `space.json` 的 `{spaceId, seq}`（`--no-base` 不写） |
 
 | 命令 | 作用 |
 |---|---|
-| `align` | 首次自动对齐，或 `--reference <参考扫描> --reference-transform <文件>` 重扫配准；写 `scan/transform.json`（`source: "align"`）。配准误差超过 `--max-error-cm`（默认 3）时退出码非 0，输出建议的变换和候选 |
+| `align` | 首次自动对齐，或 `--reference <参考扫描> --reference-transform <文件>` 重扫配准；写 `scan/transform.json`（`source: "align"`）。两条保护：输出文件是 `metaverse pull` 写的线上变换（`source: "pull"`）时不覆盖，除非 `--force`（已有空间的物件、锚点都按它摆，重扫的结果用 `--out` 写到别处，确认后再替换）；配准误差超过 `--max-error-cm`（默认 3）时退出码非 0、**不写**输出文件，结果写到旁边的 `*.candidate.json`（带候选），人工确认后再改名 |
 | `prepare` | 基线（见"重建工作台"）；工作区里有 `scan/transform.json` 时默认用它，`--auto-align` 重新自动对齐 |
 | `webmodel` | 两档网页用模型 `scan-0.glb`、`scan-1.glb`（保持扫描原坐标，见"重建流程"第 5 步） |
 | `models` | 物件集里的外部模型：先在缓存（`fetch` 下的）和 `--models-dir` 里按 sha256 找，没有才下载（`--offline` 不下载）→ 导出 glb（见"AI 物件集"第 3 步），输出 `<哈希前 12 位>.glb` 和 `models.json`；`--render` 每个导出出一张转台对照图（导出后 \| 原文件） |
 | `bake` | 物件集里带 `bake` 的部件从扫描取色写成贴图，输出新的物件集（贴图写成 `{file}` 引用） |
 | `fit` | 逐件偏差（与 `compare`、打包写进记录的 `fit` 同一个函数） |
-| `scan-zip` | 扫描成员按部署种子（接口服务 `pack.rs`）的规则打成 zip：不压缩、固定的时间、按给出的顺序。`--sources sources.json --hash <键>` 按来源表下载成员，`--member 名=文件` 用本地文件；打出来的哈希与 `--hash` 不同就报错 |
+| `scan-zip` | 扫描成员按部署种子（接口服务 `pack.rs`）的规则打成 zip：不压缩、固定的时间、按给出的顺序。`--sources sources.json --hash <键>` 按来源表下载成员（来源表与种子同一格式 `{format, version, files: {<sha256>: {zip: [成员…]}}}`，主机列表 `METAVERSE_RECON_SCAN_HOSTS`，默认含 `scaniverse.com`），`--member 名=文件` 用本地文件；打出来的哈希与 `--hash` 不同就报错 |
 | `bundle` | 打包，见下 |
 
 **`bundle`**（设计 6.1–6.4、6.8，清单格式 SHAPES 7）：
@@ -117,6 +121,10 @@ uv lock --upgrade-package numpy     # 只升级某一个依赖
   贴图文件的哈希，超过上限的图缩小、重新编码；记录按规范化 JSON 写，每条 ≤ 64 KiB；
 - 清单的 `report` 带逐件偏差；`notes`（建模记录）写成 `notes.md`；
 - `--seed`：种子用的包（会公开，设计 6.8）：去掉内部级锚点和建模记录，`report` 只留偏差；
+- 锚点：物件集的锚点（物件的 `anchorId`、按类别建议的）进包，打包后在错误输出里列出全部公开锚点的编号、类型和标签——
+  锚点只增不删，标签会显示在场景里和"模型来源"面板上，发布前要看一遍（标签只写给访客看的名称，建模说明写进
+  `notes`）；`--algorithm` 时按类别建议的锚点默认**不进包**，只列出建议（算法可能把前台内部认成桌子、沙发），
+  确认要建再加 `--anchors`；
 - `--from-snapshot <工作区>`：用 `metaverse pull --share … --assets` 拉下来的快照（重建层物件、模板、扫描元数据）生成
   整体替换的包，不读扫描、不重建；物件模型和贴图在快照的 `assets/` 和 `--textures-dir` 里按哈希找，缺了就报错；
 - 文件按 `limits.json` 各用途的上限检查（大小、三角形、贴图），清单整体不超过 `bundle.maxBytes`；
@@ -440,7 +448,7 @@ cd recon && uv sync --frozen
 | `search` / `index` | 模型库检索，许可硬过滤：Poly Haven（全部 CC0）、Objaverse（逐个对象读许可，只要 CC0 / CC-BY）、Sketchfab（设了 `SKETCHFAB_TOKEN` 才启用） | `candidates.json` + 带编号的缩略图拼图 `sheet.jpg` |
 | `fetch` | 下载候选（Poly Haven 的 glTF 打包成 glb），记 sha256、大小、署名；上限 50 MB | `<缓存>/models/<库>/<编号>/model.glb` + `model.json` |
 | `place` | 候选摆到扫描里的物体上：自动判断向上轴、按量出的尺寸缩放（等比，或逐轴 ±15%）、偏航粗搜 + 只求偏航和平移的迭代最近点 + 顶面高度图分朝向、落地；可按扫描颜色给 tint 建议 | `entity.json`（外部模型物件记录）、`place.jpg`（扫描 \| 候选）、`place.json` |
-| `assemble` | 合并物件文件成 AI 物件集（模板去重、编号唯一、引用的模板存在、逐个校验、重算包围盒），最后整份跑一遍重建流程的校验 `metaverse_recon.authored.parse_authored`，通过了才算合格 | `authored.json`、`room.glb`、`room.jpg`（扫描 \| 现有算法 \| AI 重建：总览、俯视、四个角）、`report.json`（逐件偏差和 `fit`、漏建团块） |
+| `assemble` | 合并物件文件成 AI 物件集（模板去重、编号唯一、引用的模板存在、逐个校验、重算包围盒），最后整份跑一遍打包的校验（贴图三种写法 + `metaverse_recon.authored.parse_authored`），通过了才算合格。贴图工作台写的本地贴图 `{file}`（相对各自的物件文件）复制到输出目录的 `textures/`，引用改成相对 `authored.json`；外链贴图原样保留 | `authored.json`、`room.glb`、`room.jpg`（扫描 \| 现有算法 \| AI 重建：总览、俯视、四个角）、`report.json`（逐件偏差和 `fit`、漏建团块） |
 | `reframe` | 物件在两种对齐之间换算：`compute`（`reconstruct_lobby.py`）↔ `align`（prepare 的自动对齐；旧名 `scan_import`），或任意变换文件 | 同格式的物件文件 |
 
 **形状**：`plate`、`hull`、材质 `opacity`、`unlit` 和平铺、着色、法线、粗糙度（SHAPES 2）的校验、包围盒、网格和

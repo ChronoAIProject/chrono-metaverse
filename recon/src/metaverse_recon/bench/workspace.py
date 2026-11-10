@@ -1,12 +1,15 @@
 """命令行工作区的交接（设计 8.4）。
 
-`metaverse init` 建的目录（有 `space.json`）就是工作区。本地工具从当前目录往上找 `space.json` 来定默认值：
+命令行的工作区就是本地工具的工作区。本地工具从当前目录往上找 `space.json`（`metaverse pull` 写的）
+来定默认值；只做过 `metaverse init`、还没有 `pull` 的目录（只有 `metaverse.json`）也算工作区，路径默认值
+照样有，只是没有版本号（包不写 `base`，要先 `metaverse pull`）：
 
 | 参数 | 默认 | 谁写的 |
 |---|---|---|
 | `--scan` | `scan/scan.zip` | `metaverse pull --scan`、`metaverse-recon scan-zip` |
 | `--transform` | `scan/transform.json`（`{transform: [16 个数], source, seq}`） | `pull`、`align` |
 | `--limits` | `limits.json`（服务端各用途的上传上限，没有就用内置默认值） | `pull` |
+| 网页用模型 | `web/`（`scan-0.glb`、`scan-1.glb`） | `webmodel` |
 | 基线 | `out/recon/` | `prepare` |
 | 包 | `out/bundle/` | `bundle` |
 | 包的 `base` | `space.json` 的 `{spaceId, seq}` | `pull` |
@@ -25,9 +28,11 @@ from typing import Any
 from .core import ReconError
 
 SPACE_FILE = "space.json"
+CONFIG_FILE = "metaverse.json"
 SCAN_ZIP = "scan/scan.zip"
 TRANSFORM_FILE = "scan/transform.json"
 LIMITS_FILE = "limits.json"
+WEB_DIR = "web"
 BASE_DIR = "out/recon"
 BUNDLE_DIR = "out/bundle"
 MAX_WALK = 64
@@ -37,6 +42,8 @@ MAX_WALK = 64
 class Workspace:
     root: Path
     space: dict[str, Any]
+    #: 有 `space.json`（拉取过）；只有 `metaverse.json` 时为 False。
+    pulled: bool = True
 
     def path(self, rel: str) -> Path:
         return self.root / rel
@@ -58,20 +65,29 @@ class Workspace:
         return {"spaceId": self.space_id, "seq": self.seq}
 
 
+def _read_object(path: Path) -> dict[str, Any]:
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as error:
+        raise ReconError(f"工作区的 {path} 读不了：{error}") from error
+    if not isinstance(doc, dict):
+        raise ReconError(f"工作区的 {path} 不是 JSON 对象")
+    return doc
+
+
 def find_workspace(start: str | os.PathLike[str] | None = None) -> Workspace | None:
-    """从 `start`（默认当前目录）往上找 `space.json`；找不到返回 None。`space.json` 读不了时报错。"""
+    """从 `start`（默认当前目录）往上找 `space.json` 或 `metaverse.json`（离得近的那个目录就是工作区）；
+    找不到返回 None。文件读不了时报错。只有 `metaverse.json` 时取它的 `spaceId`，没有版本号。"""
     here = Path(start or os.getcwd()).resolve()
     for folder in [here, *here.parents][:MAX_WALK]:
         candidate = folder / SPACE_FILE
         if candidate.is_file():
-            try:
-                with open(candidate, encoding="utf-8") as fh:
-                    space = json.load(fh)
-            except (OSError, ValueError) as error:
-                raise ReconError(f"工作区的 {candidate} 读不了：{error}") from error
-            if not isinstance(space, dict):
-                raise ReconError(f"工作区的 {candidate} 不是 JSON 对象")
-            return Workspace(folder, space)
+            return Workspace(folder, _read_object(candidate))
+        config = folder / CONFIG_FILE
+        if config.is_file():
+            space_id = _read_object(config).get("spaceId")
+            return Workspace(folder, {"spaceId": space_id} if isinstance(space_id, str) else {}, pulled=False)
     return None
 
 
@@ -93,7 +109,7 @@ def require_path(given: str | None, rel: str, what: str, *, must_exist: bool = T
     path = default_path(given, rel, must_exist=must_exist)
     if path is None:
         where = (
-            "（不在工作区里：往上找不到 space.json）"
+            "（不在工作区里：往上找不到 space.json 或 metaverse.json）"
             if find_workspace() is None
             else f"（工作区里没有 {rel}）"
         )
@@ -133,10 +149,12 @@ def write_transform(path: str, transform: list[float], source: str, seq: int | N
 __all__ = [
     "BASE_DIR",
     "BUNDLE_DIR",
+    "CONFIG_FILE",
     "LIMITS_FILE",
     "SCAN_ZIP",
     "SPACE_FILE",
     "TRANSFORM_FILE",
+    "WEB_DIR",
     "Workspace",
     "default_path",
     "find_workspace",
