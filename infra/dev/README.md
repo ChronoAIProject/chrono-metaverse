@@ -71,8 +71,8 @@ METAVERSE_DEMO_SEED_HOSTS=raw.githubusercontent.com,github.com,release-assets.gi
 - 种子压缩成一行交给接口服务的 `METAVERSE_DEMO_SEED`（`node infra/dev/demo-seed.mjs compact <种子.json>`）；
 - 分享令牌取 `METAVERSE_DEMO_SHARE_TOKEN`，没设时生成一个存在 `infra/dev/.run/demo-share-token`，之后复用（空间里只存第一次的哈希）；结束时打印演示链接 `http://127.0.0.1:5173/s/<空间>#share=<令牌>`；
 - 主人默认是配置里的线上组织编号（公开读不受影响，但本地没人能管理它）；`METAVERSE_DEV_DEMO_SEED_OWNER=chronoai` 换成模拟 NyxID 的组织，alice 就能经 `/api/v1` 管理；
-- 允许下载的主机取 `METAVERSE_DEMO_SEED_HOSTS`，没设时用线上那一组（GitHub 的 raw 地址和发布页、Scaniverse）；种子带重建包时后台执行器从来源表下载空间里还没有的文件（前厅第 4 版的新库约 23MB）；旧格式（`files`、`hints`、`authored` 等）`demo-seed.mjs` 直接报错；
-- 进度看 `infra/dev/.run/api.log`（`部署配置种子完成 … outcome=Created`、`部署配置种子：已发布`）。线上现在的种子是第 3 版、不带包，本地新库只建出空间、没有内容（日志是 `outcome=Created { job_id: None }`）；第 4 版的包上线以后（设计 S10）才有内容；
+- 允许下载的主机取 `METAVERSE_DEMO_SEED_HOSTS`，没设时用线上那一组（GitHub 的 raw 地址和发布页、Scaniverse）；种子带重建包时后台执行器从来源表下载空间里还没有的文件（前厅第 4 版的新库是 41 个文件、约 40MB）；旧格式（`files`、`hints`、`authored` 等）`demo-seed.mjs` 直接报错；
+- 进度看 `infra/dev/.run/api.log`（`部署配置种子完成 … outcome=Created`、`部署配置种子：已发布`）。线上现在的种子是第 4 版、带包：本地新库从 raw 地址、GitHub 发布页和 Scaniverse 下载、导入，发布为第 2 次提交（4 核机器约 17 秒）；
 - 要在本机试带包的种子：把包目录用本机 https 服务托管（自签证书，接口服务信任 `SSL_CERT_FILE` 里的根证书），写一份来源表和带 `bundle` 的种子，`METAVERSE_DEMO_SEED_HOSTS` 加上 `127.0.0.1:<端口>`；本机测试也可以用 `http://127.0.0.1:<端口>`（只有本机地址允许明文）；
 - 经过会重新签发证书的出口代理时，接口服务另外信任 `SSL_CERT_FILE`（PEM）里的根证书，从环境继承即可。
 

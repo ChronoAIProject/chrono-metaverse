@@ -66,7 +66,7 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 | `PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE` / `PUBLIC_BLOB_RATE_LIMIT_BURST` | `60000000` / `1000000` | 区块和资源（`/api/public/chunks/`、`/assets/`）的限流额度，同上（默认 12000 / 2000） |
 | `TRUSTED_CLIENT_IP_HEADER` | **不设（待向平台确认）** | 可信的客户端地址请求头。确认之前不设，接口服务按 TCP 连接地址限流，连接地址是网关或 nginx 的地址（见下面"公开接口限流"） |
 | `PUBLIC_CACHE_BYTES` | `134217728` | 公开接口进程内缓存的字节上限（128MiB；接口服务默认 256MiB，按"内存预算"调小） |
-| `METAVERSE_DEMO_SEED` | [`demo-seed.json`](demo-seed.json) 压缩成的一行 | 部署配置种子：接口服务启动、建好索引后在后台建演示空间 `chronoai-lobby`，带重建包时导入它（第 8 步）。改种子时两处一起改，`check-app.mjs` 检查一致。现在是第 3 版、不带包（空间已存在，什么都不做） |
+| `METAVERSE_DEMO_SEED` | [`demo-seed.json`](demo-seed.json) 压缩成的一行 | 部署配置种子：接口服务启动、建好索引后在后台建演示空间 `chronoai-lobby`，带重建包时导入它（第 8 步）。改种子时两处一起改，`check-app.mjs` 检查一致。现在是第 4 版，带前厅第 4 版的重建包（[`demo/lobby-r4/`](demo/lobby-r4/)），线上 2026-11-10 已导入（第 5 次提交），之后重启是 `AlreadyDone` |
 | `METAVERSE_DEMO_SEED_HOSTS` | `raw.githubusercontent.com,github.com,release-assets.githubusercontent.com,objects.githubusercontent.com,scaniverse.com` | 种子允许下载的主机（只用 https，重定向的每一跳都查，最多 5 跳）：清单和来源表在 `raw.githubusercontent.com`，发布页的文件从 `github.com` 重定向到 `release-assets.githubusercontent.com` 或 `objects.githubusercontent.com`，扫描成员在 `scaniverse.com`。有种子时 `check-app.mjs` 要求显式写出，并且和 `infra/dev/up.sh` 的默认值相同 |
 | `METAVERSE_DEMO_SHARE_TOKEN` | **密钥**（`secret_keys`，不在 `env` 里） | 演示空间的分享令牌原文，接口服务只存它的 sha256、不写日志；用 `set_app_secrets` 设置（第 5 步）。种子是凭链接查看（`unlisted`）时必须有，缺了接口服务启动失败 |
 | `CMA_BASE_URL` | `https://cma.nyxid.ai` | 网页在线 worker 的固定 CMA API 地址；不设置则关闭 worker 调用。沿用现有 OAuth scopes，用户需在工作台明确启用 |
@@ -148,7 +148,7 @@ gh run list -R ChronoAIProject/chrono-metaverse --workflow Images --commit <完�
 gh run view <运行编号> -R ChronoAIProject/chrono-metaverse --log | grep -oE '(api|web)=sha256:[0-9a-f]{64}' | sort -u
 ```
 
-`app.json` 里的镜像是已经上线验证过的版本；当前源码、构建运行和 chrono-cd 修订记录见 [OAuth 与工作台部署记录](../../docs/NYXID_OAUTH.md)。`check-app.mjs` 拒绝只有标签、标签不是 7 位提交哈希、或仓库和服务对不上的镜像。
+`app.json` 里的镜像是已经上线验证过的版本；当前源码、构建运行和 chrono-cd 修订记录见 [OAuth 与工作台部署记录](../../docs/NYXID_OAUTH.md)。前厅第 4 版（R3，线上第 16 次修订）的种子配置与功能分支的 OAuth 和浮动聊天配置已合并。`check-app.mjs` 拒绝只有标签、标签不是 7 位提交哈希、或仓库和服务对不上的镜像。
 
 按摘要部署只保证"部署的就是那次运行构建的镜像"，管不到谁能推镜像、推代码。`main` 已经建好（2026-11-09，从开发分支 `claude/happy-ritchie-oly5hx` 的 `77bbdb8` 建出），以后作为部署分支：日常开发在开发分支，上线前开合并请求进 `main`，部署只用 `main` 上构建的镜像。还没做、要仓库管理员在 GitHub 上决定的：把默认分支改成 `main` 并加保护（禁止直接推送、必须经合并请求、CI 必须通过）；在包设置的 Manage Actions access 里收回本仓库工作流的写权限，改用只在受保护分支的 GitHub Environment 里可用的凭证推镜像（工作流自己声明的 `packages: write` 拦不住改过的工作流）；用组织规则集限制谁能改 `.github/workflows`。
 
@@ -308,7 +308,7 @@ nyxid proxy request chrono-metaverse api/v1/spaces/front-hall --output json
 
 **旧格式的种子**（`files`、`rebuild`、`hints`、`authored` 这些处理服务时代的字段）已不支持：接口服务记错误日志、跳过种子、照常启动；`check-app.mjs` 和 `infra/dev/demo-seed.mjs` 都会报错。
 
-**确认**（第 6 步的日志命令）：带包的种子第一次导入时，接口服务日志里有 `部署配置种子完成 … outcome=Created`（之后重启是 `AlreadyDone`）和 `部署配置种子：已发布`。现在的种子是第 3 版、不带包：线上空间已存在，第 3 版的任务也已存在，什么都不做。然后打开演示链接：
+**确认**（第 6 步的日志命令）：带包的种子第一次导入时，接口服务日志里有 `部署配置种子完成 … outcome=Created`（之后重启是 `AlreadyDone`）和 `部署配置种子：已发布`。现在的种子是第 4 版、带包：线上第 16 次修订（2026-11-10）导入，下载 16 个文件（17.7 MB）、复用 25 个，12.8 秒发布为第 5 次提交；之后重启是 `AlreadyDone`。然后打开演示链接：
 
 ```
 https://<应用域名>/s/chronoai-lobby#share=<第 5 步的令牌>
@@ -320,7 +320,7 @@ https://<应用域名>/s/chronoai-lobby#share=<第 5 步的令牌>
 curl -s -H "Authorization: Share <令牌>" https://<应用域名>/api/public/spaces/chronoai-lobby/head
 ```
 
-**换一版演示数据**（设计 7.4，前厅第 4 版的托管方式待定，见设计第 14 节）：本地打包（种子用的包是公开的：`metaverse-recon bundle --seed` 去掉内部锚点和建模记录，`metaverse bundle check --seed` 会提示）→ 大文件按 `<sha256>.<扩展名>` 传到发布页 → 写来源表 → 清单和来源表提交进 `infra/chrono-cd/demo/` → 种子配置引用这次提交的 raw 地址和两个哈希，`revision` 加一 → `node infra/dev/demo-seed.mjs compact infra/chrono-cd/demo-seed.json` 的输出就是 `METAVERSE_DEMO_SEED` 的值，跑 `node infra/chrono-cd/check-app.mjs` → 只改这一项（滚动更新会重启接口服务，种子在同一个空间里追加一次提交，空间和演示链接不变）：
+**换一版演示数据**（设计 7.4；大文件放本仓库的发布页 `demo-assets`，上传方法见 [`demo/README.md`](demo/README.md)"如何更新线上"）：本地打包（种子用的包是公开的：`metaverse-recon bundle --seed` 去掉内部锚点和建模记录，`metaverse bundle check --seed` 会提示）→ 大文件按 `<sha256>.<扩展名>` 传到发布页 → 写来源表 → 清单和来源表提交进 `infra/chrono-cd/demo/` → 种子配置引用这次提交的 raw 地址和两个哈希，`revision` 加一 → `node infra/dev/demo-seed.mjs compact infra/chrono-cd/demo-seed.json` 的输出就是 `METAVERSE_DEMO_SEED` 的值，跑 `node infra/chrono-cd/check-app.mjs` → 只改这一项（滚动更新会重启接口服务，种子在同一个空间里追加一次提交，空间和演示链接不变）：
 
 ```bash
 SEED=$(node infra/dev/demo-seed.mjs compact infra/chrono-cd/demo-seed.json)
