@@ -148,15 +148,31 @@ test('在线工作台：明确授权、创建 worker、查看结果并确认发�
   await page.route('**/preview', (route) =>
     route.fulfill({ contentType: 'text/html', body: '<html><body>三维预览夹具</body></html>' }),
   );
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
   await page.getByRole('link', { name: '打开在线工作台' }).click();
+  await page.getByRole('button', { name: '打开 CMA 聊天' }).click();
   const enable = page.getByRole('button', { name: '同意并启用' });
   await expect(enable).toBeDisabled();
   expect(writes).toEqual([]);
   await page.getByRole('checkbox', { name: /允许此浏览器/ }).check();
   await enable.click();
+  await page.getByRole('button', { name: '选择空间', exact: true }).click();
   await page.getByRole('button', { name: /演示前厅/ }).click();
+  if (await page.getByRole('button', { name: '打开 CMA 聊天' }).isVisible())
+    await page.getByRole('button', { name: '打开 CMA 聊天' }).click();
   await expect(page.locator('.workspace__scene .viewer[data-ready="true"]')).toBeVisible();
+  const stage = await page.locator('.workspace__stage').boundingBox();
+  const scene = await page.locator('.workspace__scene').boundingBox();
+  const chat = await page.getByRole('dialog', { name: 'CMA 空间聊天' }).boundingBox();
+  expect(stage!.width).toBe(1280);
+  expect(scene!.width).toBe(1280);
+  expect(chat!.x + chat!.width).toBeLessThanOrEqual(1280);
+  expect(chat!.y + chat!.height).toBeLessThan(720);
+  await page.getByRole('button', { name: '收起 CMA 聊天' }).click();
+  await expect(page.getByRole('dialog', { name: 'CMA 空间聊天' })).toBeHidden();
+  expect((await page.locator('.workspace__scene').boundingBox())!.width).toBe(1280);
+  await page.getByRole('button', { name: '打开 CMA 聊天' }).click();
   await page.screenshot({
     path: testInfo.outputPath('existing-space-desktop.png'),
     fullPage: true,
@@ -247,7 +263,10 @@ test('手机端：创建回复丢失后刷新页面，恢复原请求不会重�
     await route.abort();
   });
   await page.goto('/workspace');
+  await page.getByRole('button', { name: '选择空间', exact: true }).click();
   await page.getByRole('button', { name: /演示前厅/ }).click();
+  if (await page.getByRole('button', { name: '打开 CMA 聊天' }).isVisible())
+    await page.getByRole('button', { name: '打开 CMA 聊天' }).click();
   await page.getByLabel('给空间发消息').fill('改成一个可以交流的小广场');
   await page.getByRole('button', { name: '发送' }).click();
   await expect(page.getByRole('button', { name: '重试原请求' })).toBeVisible();
@@ -261,3 +280,128 @@ test('手机端：创建回复丢失后刷新页面，恢复原请求不会重�
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
   await page.screenshot({ path: testInfo.outputPath('workspace-mobile.png'), fullPage: true });
 });
+
+for (const loseUpload of [false, true])
+  test(`创建模型：${loseUpload ? '上传断网后刷新并恢复原文件和请求' : '只上传文件也能启动，自动提交同一 worker'}`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    const bytes = Buffer.from('glTF\u0002\u0000\u0000\u0000');
+    const { createHash } = await import('node:crypto');
+    const sha = createHash('sha256').update(bytes).digest('hex');
+    const writes: { action: string; body: Record<string, unknown> }[] = [];
+    let uploads = 0;
+    const uploadKeys: string[] = [];
+    await page.route('**/api/auth/nyxid/**', async (route) => {
+      const url = new URL(route.request().url());
+      const action = url.pathname.split('/').at(-1)!;
+      if (action === 'session')
+        return route.fulfill({
+          json: {
+            enabled: true,
+            connected: true,
+            subject: 'owner-model',
+            csrfToken: 'csrf-model',
+            workerAvailable: true,
+            workerEnabled: true,
+          },
+        });
+      if (action === 'spaces')
+        return route.fulfill({ json: { items: [], organizations: [], next: null } });
+      expect(route.request().headers()['x-csrf-token']).toBe('csrf-model');
+      if (action === 'attachment') {
+        uploads++;
+        expect(url.searchParams.get('agentId')).toBe('agt_model');
+        expect(url.searchParams.get('name')).toBe('room.glb');
+        expect(route.request().headers()['idempotency-key']).toBeTruthy();
+        uploadKeys.push(route.request().headers()['idempotency-key']!);
+        if (loseUpload && uploads === 1) return route.abort('failed');
+        expect(route.request().postDataBuffer()).toEqual(bytes);
+        return route.fulfill({
+          status: 201,
+          json: {
+            id: 'att_model',
+            agent_id: 'agt_model',
+            name: 'room.glb',
+            path: '/home/attachments/agt_model/att_model/room.glb',
+            size_bytes: bytes.length,
+            media_type: 'model/gltf-binary',
+            sha256: sha,
+          },
+        });
+      }
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      if (['create', 'message'].includes(action)) writes.push({ action, body });
+      if (action === 'create')
+        return route.fulfill({ status: 202, json: { id: 'op_model', status: 'pending' } });
+      if (action === 'observe' && body.operationId)
+        return route.fulfill({
+          json: {
+            operation: {
+              id: 'op_model',
+              status: 'succeeded',
+              phase: 'ready',
+              agent_id: 'agt_model',
+            },
+          },
+        });
+      if (action === 'observe')
+        return route.fulfill({
+          json: { agent: { id: 'agt_model', status: 'ready' }, transcript: { turns: [] } },
+        });
+      if (action === 'message')
+        return route.fulfill({
+          status: 202,
+          json: { responseId: 'resp_model', commandId: 'cmd_model' },
+        });
+      if (action === 'response')
+        return route.fulfill({
+          json: {
+            response: { status: 'in_progress', output: [] },
+            controls: { target_active: false, agent_revision: 2 },
+          },
+        });
+      return route.abort();
+    });
+    await page.goto('/workspace');
+    await page.getByRole('button', { name: '创建空间', exact: true }).click();
+    await page
+      .getByLabel('选择模型文件')
+      .setInputFiles({ name: 'room.glb', mimeType: 'model/gltf-binary', buffer: bytes });
+    await expect(page.getByText(/room.glb ·/)).toBeVisible();
+    await expect(page.getByLabel('给空间发消息')).toHaveValue('');
+    await expect(page.getByRole('button', { name: '开始创建' })).toBeEnabled();
+    await page.screenshot({
+      path: testInfo.outputPath('create-model-13-inch.png'),
+      fullPage: true,
+    });
+    await page.getByRole('button', { name: '开始创建' }).click();
+    if (loseUpload) {
+      await expect(page.getByRole('button', { name: '重试原请求' })).toBeVisible();
+      await page.reload();
+      await expect(page.getByRole('button', { name: '重试原请求' })).toBeVisible();
+      expect(uploads).toBe(1);
+      expect(writes.filter((w) => w.action === 'create')).toHaveLength(1);
+      await page
+        .getByLabel('选择模型文件')
+        .setInputFiles({ name: 'room.glb', mimeType: 'model/gltf-binary', buffer: bytes });
+      await page.getByRole('button', { name: '重试原请求' }).click();
+    }
+    await expect.poll(() => writes.filter((w) => w.action === 'message').length).toBe(1);
+    expect(uploads).toBe(loseUpload ? 2 : 1);
+    expect(new Set(uploadKeys).size).toBe(1);
+    const prepared = writes.find((w) => w.action === 'create')!.body;
+    expect(prepared.prepareOnly).toBe(true);
+    expect(prepared.context).toMatchObject({
+      spaceId: expect.stringMatching(/^space-/),
+      creation: { source: { kind: 'file', name: 'room.glb', sha256: sha } },
+    });
+    const submitted = writes.find((w) => w.action === 'message')!.body;
+    expect(submitted.agentId).toBe('agt_model');
+    expect(submitted.context).toMatchObject({
+      creation: { source: { attachment: { id: 'att_model', sha256: sha } } },
+    });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(
+      false,
+    );
+  });

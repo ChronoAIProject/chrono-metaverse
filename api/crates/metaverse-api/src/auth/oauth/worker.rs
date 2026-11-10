@@ -2,7 +2,7 @@
 use super::{routes, seconds, HeldCredential, OAuthError, OAuthService, STORE};
 use crate::{error::ApiError, repo::OAuthSessionRecord, routes::ApiJson, AppState};
 use axum::{
-    extract::State,
+    extract::{Query, Request, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::post,
@@ -21,8 +21,9 @@ pub(super) fn router() -> Router<AppState> {
         .route("/api/auth/nyxid/worker/message", post(message))
         .route("/api/auth/nyxid/worker/response", post(response))
         .route("/api/auth/nyxid/worker/cancel", post(cancel))
+        .route("/api/auth/nyxid/worker/attachment", post(attachment))
 }
-fn identifier(v: &str) -> bool {
+pub(super) fn identifier(v: &str) -> bool {
     !v.is_empty()
         && v.len() <= 256
         && v.bytes()
@@ -263,6 +264,7 @@ struct Context {
     org_id: Option<String>,
     #[serde(default)]
     chat: bool,
+    creation: Option<super::creation::Creation>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -271,6 +273,8 @@ struct Task {
     instruction: String,
     idempotency_key: String,
     agent_id: Option<String>,
+    #[serde(default)]
+    prepare_only: bool,
 }
 async fn create(
     State(state): State<AppState>,
@@ -281,14 +285,29 @@ async fn create(
         return Err(ApiError::invalid("新建任务不能指定已有 worker"));
     }
     validate_key(&input.idempotency_key)?;
+    if let Some(creation) = &input.context.creation {
+        creation.validate(None, input.prepare_only)?;
+    } else if input.prepare_only {
+        return Err(ApiError::invalid("仅模型导入需要提前准备环境"));
+    }
     let a = Access::new(&state, &headers, true).await?;
-    let task = a.task(&input.context, &input.instruction)?;
+    let mut task = a.task(&input.context, &input.instruction)?;
+    if let Some(creation) = &input.context.creation {
+        if input.prepare_only {
+            task = "准备好创建空间的运行环境后等待用户模型文件；文件尚未上传，不创建空间、不执行重建。".into();
+        } else {
+            task.push_str(&creation.instructions());
+        }
+    }
     let prompt=format!("你是 chrono-metaverse 在线建造 worker。通过运行环境已有的 NyxID 服务工具访问 chrono-metaverse；先读取 {}/api/openapi.json 核实接口，不猜测路径或格式。先读目标空间及最新版本，404 不代表空间一定不存在，不得据此自行建空间。只有用户明确要求新建且已有相应权限时才可 POST /api/v1/admin/spaces，请求为 {{id,name,description,owner:{{kind:person或org,id}},visibility:unlisted或public}}，默认 unlisted；随后再按用户需求创建或编辑草稿，产出短期三维预览链接，说明具体修改并等待用户明确要求发布。后续修改继续当前草稿；发布冲突须说明，不自动覆盖或重放。已有空间沿用接口返回的真实归属，任务中的归属仅用于新建空间；建空间时严格使用任务指定归属；组织编号不代表权限。无服务权限时走 CMA 服务申请/用户授权流程，等待实际凭据更新；不使用用户 OAuth 令牌、不索取密钥、不绕过 NyxID。不要改仓库、部署或访问无关服务。将完整空间、组合或预览链接单独输出。已受理上传/展开任务须等实际完成，不能把 202 当作发布成功。",a.oauth.config.origin);
     let name = format!(
         "metaverse / {}",
         input.context.space_id.chars().take(40).collect::<String>()
     );
-    let body = json!({"name":name,"initial_message":task,"profile":{"permissions":{"services":["chrono-metaverse"]},"system_prompt":prompt}});
+    let mut body = json!({"name":name,"initial_message":task,"profile":{"permissions":{"services":["chrono-metaverse"]},"system_prompt":prompt}});
+    if input.context.creation.is_some() {
+        body["repository"] = json!({"url":"https://github.com/ChronoAIProject/chrono-metaverse.git","ref":super::creation::SOURCE_REF});
+    }
     let (s, v) = a
         .json(
             reqwest::Method::POST,
@@ -358,8 +377,17 @@ async fn message(
         .as_deref()
         .ok_or_else(|| ApiError::invalid("请选择 worker"))?;
     validate_id(id)?;
+    if input.prepare_only {
+        return Err(ApiError::invalid("追加消息不能再次准备环境"));
+    }
+    if let Some(creation) = &input.context.creation {
+        creation.validate(Some(id), false)?;
+    }
     let a = Access::new(&state, &headers, true).await?;
-    let task = a.task(&input.context, &input.instruction)?;
+    let mut task = a.task(&input.context, &input.instruction)?;
+    if let Some(creation) = &input.context.creation {
+        task.push_str(&creation.instructions());
+    }
     let r = a
         .send(
             reqwest::Method::POST,
@@ -388,6 +416,106 @@ async fn message(
         Json(json!({"responseId":response_id,"commandId":command_id})),
     )
         .into_response())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AttachmentQuery {
+    agent_id: String,
+    name: String,
+}
+/// 先鉴权再读二进制；不保存用户模型，也不把用户 OAuth 交给 worker。
+async fn attachment(
+    State(state): State<AppState>,
+    Query(input): Query<AttachmentQuery>,
+    request: Request,
+) -> Result<Response, ApiError> {
+    use super::creation::{valid_receipt, Attachment, MAX_ATTACHMENT_BYTES};
+    use std::time::Duration;
+    static UPLOADS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
+    validate_id(&input.agent_id)?;
+    if !super::creation::file_name(&input.name) {
+        return Err(ApiError::invalid(
+            "请选择 GLB 或 ZIP 文件，文件名不能包含路径",
+        ));
+    }
+    let headers = request.headers();
+    let key = headers
+        .get("idempotency-key")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| ApiError::invalid("请保留模型上传的原请求编号"))?
+        .to_owned();
+    validate_key(&key)?;
+    let a = Access::new(&state, headers, true).await?;
+    let _permit = UPLOADS.try_acquire().map_err(|_| {
+        ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "model_upload_busy",
+            "模型上传繁忙，请保留原文件后重试",
+        )
+    })?;
+    let bytes = tokio::time::timeout(
+        Duration::from_secs(30),
+        axum::body::to_bytes(request.into_body(), MAX_ATTACHMENT_BYTES),
+    )
+    .await
+    .map_err(|_| ApiError::invalid("模型上传超时，请保留原文件重试"))?
+    .map_err(|_| {
+        ApiError::new(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "model_too_large",
+            "模型上传不完整或超过 20 MiB",
+        )
+    })?;
+    if bytes.is_empty() {
+        return Err(ApiError::invalid("模型文件为空"));
+    }
+    use sha2::{Digest, Sha256};
+    let size = bytes.len();
+    let sha = format!("{:x}", Sha256::digest(&bytes));
+    a.current(true).await?;
+    let tokens = a.oauth.tokens(&a.held.record)?;
+    let mut target = url::Url::parse(&format!(
+        "{}/api/v1/agents/{}/attachments",
+        a.oauth.config.cma_base_url.as_ref().unwrap(),
+        input.agent_id
+    ))
+    .map_err(|_| unavailable())?;
+    target.query_pairs_mut().append_pair("name", &input.name);
+    let upstream = a
+        .oauth
+        .http
+        .post(target)
+        .bearer_auth(&tokens.access_token)
+        .header("Idempotency-Key", &key)
+        .header("Content-Type", "application/octet-stream")
+        .timeout(Duration::from_secs(45))
+        .body(bytes)
+        .send()
+        .await
+        .map_err(|_| {
+            ApiError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "cma_outcome_unknown",
+                "文件上传结果尚未确认，请保留同一文件与请求编号重试",
+            )
+        })?;
+    a.current(true).await?;
+    let status = upstream.status();
+    let body = read_json(upstream).await?;
+    a.current(true).await?;
+    if !status.is_success() {
+        return Err(refusal(status, &body));
+    }
+    let receipt: Attachment = serde_json::from_value(body).map_err(|_| unavailable())?;
+    if !valid_receipt(&receipt, &input.agent_id)
+        || receipt.name != input.name
+        || receipt.size_bytes != size
+        || receipt.sha256 != sha
+    {
+        return Err(unavailable());
+    }
+    Ok((StatusCode::CREATED, Json(receipt)).into_response())
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

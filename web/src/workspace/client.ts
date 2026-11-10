@@ -9,7 +9,7 @@ export type Session = {
 };
 export type Context = { spaceId: string; orgId?: string };
 export type Intent = {
-  action: 'create' | 'message' | 'cancel';
+  action: 'create' | 'message' | 'cancel' | 'attachment';
   body: Record<string, unknown> & { idempotencyKey: string };
   setupRequired?: boolean;
 };
@@ -22,6 +22,25 @@ export type Notebook = {
   responseId?: string;
   pending?: Intent;
   sent?: { key: string; text: string }[];
+  creation?: CreationDraft;
+};
+export type Attachment = {
+  id: string;
+  agent_id: string;
+  name: string;
+  path: string;
+  size_bytes: number;
+  media_type: string;
+  sha256: string;
+};
+export type CreationSource =
+  | { kind: 'scaniverse'; url: string }
+  | { kind: 'file'; name: string; size: number; sha256: string; attachment?: Attachment };
+export type CreationDraft = {
+  name: string;
+  phase: 'draft' | 'preparing' | 'uploaded' | 'submitted';
+  source?: CreationSource;
+  instruction?: string;
 };
 export type Agent = { id: string; title?: string; owner_title?: string; status: string };
 export type Operation = {
@@ -103,13 +122,17 @@ function parseNotebook(raw: string | null, spaceId = ''): Notebook {
       (spaceId && v.spaceId !== spaceId) ||
       typeof v.orgId !== 'string' ||
       typeof v.instruction !== 'string' ||
+      (v.creation !== undefined &&
+        (typeof v.creation.name !== 'string' ||
+          !['draft', 'preparing', 'uploaded', 'submitted'].includes(v.creation.phase) ||
+          (v.creation.instruction !== undefined && typeof v.creation.instruction !== 'string'))) ||
       [v.agentId, v.operationId, v.responseId].some((n) => n !== undefined && !id(n)) ||
       (v.sent !== undefined &&
         (!Array.isArray(v.sent) ||
           v.sent.length > 30 ||
           v.sent.some((m) => !id(m.key) || typeof m.text !== 'string'))) ||
       (v.pending !== undefined &&
-        (!['create', 'message', 'cancel'].includes(v.pending.action) ||
+        (!['create', 'message', 'cancel', 'attachment'].includes(v.pending.action) ||
           typeof v.pending.body !== 'object' ||
           v.pending.body === null ||
           !id(v.pending.body.idempotencyKey)))

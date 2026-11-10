@@ -128,8 +128,17 @@ function mockApi(
   });
   return { request, writes };
 }
+async function selectSpace(name = /我的前厅/) {
+  await userEvent.click(await screen.findByRole('button', { name: '选择空间' }));
+  await userEvent.click(await screen.findByRole('button', { name }));
+}
+async function openChat() {
+  const launcher = screen.queryByRole('button', { name: '打开 CMA 聊天' });
+  if (launcher) await userEvent.click(launcher);
+}
 async function fillTask() {
-  await userEvent.click(await screen.findByRole('button', { name: /我的前厅/ }));
+  await selectSpace();
+  await openChat();
   await userEvent.type(screen.getByLabelText('给空间发消息'), '在入口建欢迎区，先给我预览');
 }
 beforeEach(() => {
@@ -142,12 +151,14 @@ describe('CMA workspace', () => {
   it('requires explicit consent, submits one task, displays safe results and publishes only after confirmation', async () => {
     const api = mockApi({ enabled: false });
     const { container } = render(<WorkspacePage request={api.request} />);
+    await screen.findByRole('button', { name: '选择空间' });
+    await openChat();
     const enable = await screen.findByRole('button', { name: '同意并启用' });
     expect(enable).toBeDisabled();
     expect(api.writes).toEqual([]);
     await userEvent.click(screen.getByRole('checkbox', { name: /允许此浏览器/ }));
     await userEvent.click(enable);
-    await screen.findByRole('button', { name: /我的前厅/ });
+    await screen.findByRole('button', { name: '选择空间' });
     await fillTask();
     await userEvent.click(screen.getByRole('button', { name: '发送' }));
     await screen.findByText(/<script>danger/);
@@ -175,10 +186,12 @@ describe('CMA workspace', () => {
   it('lists spaces before consent and opens the authenticated viewer without writes', async () => {
     const api = mockApi({ enabled: false });
     render(<WorkspacePage request={api.request} />);
-    await userEvent.click(await screen.findByRole('button', { name: /我的前厅/ }));
+    await selectSpace();
+    await openChat();
     expect(screen.getByTestId('private-viewer')).toHaveTextContent('my-lobby');
     expect(screen.getByLabelText('给空间发消息')).toBeDisabled();
     expect(api.writes).toEqual([]);
+    await userEvent.click(screen.getByRole('button', { name: '选择空间' }));
     await userEvent.selectOptions(screen.getByLabelText('空间归属'), 'person');
     expect(screen.queryByRole('button', { name: /我的前厅/ })).toBeNull();
     expect(screen.getByRole('button', { name: /我的花园/ })).toBeVisible();
@@ -190,11 +203,11 @@ describe('CMA workspace', () => {
     await userEvent.click(screen.getByRole('button', { name: '发送' }));
     await screen.findByText(/<script>danger/);
     await userEvent.type(screen.getByLabelText('给空间发消息'), '未发送的追问');
-    await userEvent.click(screen.getByRole('button', { name: /我的花园/ }));
+    await selectSpace(/我的花园/);
     expect(screen.getByLabelText('给空间发消息')).toHaveValue('');
     expect(screen.getByTestId('private-viewer')).toHaveTextContent('my-garden');
     expect(screen.queryByText(/<script>danger/)).toBeNull();
-    await userEvent.click(screen.getByRole('button', { name: /我的前厅/ }));
+    await selectSpace();
     expect(screen.getByLabelText('给空间发消息')).toHaveValue('未发送的追问');
     await screen.findByText(/<script>danger/);
     expect(api.writes.filter((w) => w.action === 'create')).toHaveLength(1);
@@ -222,7 +235,7 @@ describe('CMA workspace', () => {
   it('recovers an uncertain creation after reload with identical body and key, and never automatically retries writes', async () => {
     const api = mockApi({ loseCreate: true });
     const mounted = render(<WorkspacePage request={api.request} />);
-    await screen.findByRole('button', { name: /我的前厅/ });
+    await screen.findByRole('button', { name: '选择空间' });
     await fillTask();
     await userEvent.click(screen.getByRole('button', { name: '发送' }));
     await screen.findByRole('button', { name: '重试原请求' });
@@ -239,7 +252,7 @@ describe('CMA workspace', () => {
   it('uses a new key only after CMA definitively refuses creation for missing setup', async () => {
     const api = mockApi({ setup: true });
     render(<WorkspacePage request={api.request} />);
-    await screen.findByRole('button', { name: /我的前厅/ });
+    await screen.findByRole('button', { name: '选择空间' });
     await fillTask();
     await userEvent.click(screen.getByRole('button', { name: '发送' }));
     const retry = await screen.findByRole('button', { name: '已完成授权，重新提交' });
@@ -266,6 +279,8 @@ describe('CMA workspace', () => {
     );
     const api = mockApi();
     render(<WorkspacePage request={api.request} />);
+    await screen.findByRole('button', { name: '选择空间' });
+    await openChat();
     expect(await screen.findByLabelText('给空间发消息')).toHaveValue('');
     await userEvent.click(screen.getByText('会话与 worker'));
     await userEvent.click(screen.getByRole('button', { name: '关闭网页 CMA 调用' }));
@@ -286,4 +301,32 @@ it('only embeds same-origin viewer routes and extracts links from assistant resu
     expect(viewerLink(url)).toBeNull();
   expect(viewerLink('/s/my-lobby#share=token-safe')).toBe('/s/my-lobby#share=token-safe');
   expect(resultLinks(transcript)).toEqual(['/preview#t=preview-safe-token']);
+});
+
+it('creates from a Scaniverse link with an automatic space id and selected owner', async () => {
+  const api = mockApi();
+  render(<WorkspacePage request={api.request} />);
+  await userEvent.click(await screen.findByRole('button', { name: '创建空间' }));
+  expect(screen.getByRole('dialog', { name: 'CMA 空间聊天' })).toBeVisible();
+  expect(screen.queryByLabelText('目标空间编号')).toBeNull();
+  expect(screen.queryByTestId('private-viewer')).toBeNull();
+  await userEvent.selectOptions(await screen.findByLabelText('空间归属'), 'org-one');
+  await userEvent.clear(screen.getByLabelText('空间名称'));
+  await userEvent.type(screen.getByLabelText('空间名称'), '我的新家');
+  await userEvent.type(
+    screen.getByLabelText('给空间发消息'),
+    'https://scaniverse.com/scan/abc123 保留家具布局',
+  );
+  await userEvent.click(screen.getByRole('button', { name: '开始创建' }));
+  await waitFor(() => expect(api.writes.filter((w) => w.action === 'create')).toHaveLength(1));
+  const context = api.writes.find((w) => w.action === 'create')!.body.context as Record<
+    string,
+    unknown
+  >;
+  expect(context.spaceId).toMatch(/^space-[0-9a-f]{16}$/);
+  expect(context.orgId).toBe('org-one');
+  expect(context.creation).toEqual({
+    name: '我的新家',
+    source: { kind: 'scaniverse', url: 'https://scaniverse.com/scan/abc123' },
+  });
 });

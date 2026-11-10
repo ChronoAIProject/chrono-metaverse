@@ -28,6 +28,7 @@ import {
   type ResponseOutput,
 } from './client';
 import './WorkspacePage.css';
+import { modelDigest, scaniverseLink, uploadModel } from './creation';
 
 type PreviewIdentity = {
   spaceId: string;
@@ -38,6 +39,20 @@ const terminal = (status: string) =>
   ['succeeded', 'completed', 'failed', 'cancelled', 'stopped', 'deleted', 'paused'].includes(
     status,
   );
+function fileUploadIntent(base: Notebook): Intent {
+  const source = base.creation!.source!;
+  if (source.kind !== 'file') throw new Error('没有待上传模型');
+  return {
+    action: 'attachment',
+    body: {
+      agentId: base.agentId,
+      name: source.name,
+      size: source.size,
+      sha256: source.sha256,
+      idempotencyKey: crypto.randomUUID(),
+    },
+  };
+}
 export function WorkspacePage({ request = fetch }: { readonly request?: typeof fetch }) {
   const [session, setSession] = useState<Session | null>(null);
   const [note, setNote] = useState<Notebook>(emptyNotebook);
@@ -55,9 +70,20 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
   const [catalogError, setCatalogError] = useState('');
   const [catalogReload, setCatalogReload] = useState(0);
   const [catalogBusy, setCatalogBusy] = useState(false);
-  const [mobilePane, setMobilePane] = useState('spaces');
+  const [chatOpen, setChatOpen] = useState(false);
+  const [menu, setMenu] = useState<'spaces' | 'view' | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const spaceButton = useRef<HTMLButtonElement>(null);
+  const viewButton = useRef<HTMLButtonElement>(null);
+  const chatButton = useRef<HTMLButtonElement>(null);
+  const chatPanel = useRef<HTMLElement>(null);
+  const autoUpload = useRef(false);
+  const [sourceFile, setSourceFile] = useState<{
+    spaceId: string;
+    file: File;
+    sha256: string;
+  } | null>(null);
   const [targetId, setTargetId] = useState('');
-  const [targetOrg, setTargetOrg] = useState('');
   const [search, setSearch] = useState('');
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [output, setOutput] = useState<ResponseOutput[]>([]);
@@ -136,7 +162,10 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
           /^[a-z0-9][a-z0-9-]{0,79}$/.test(selectedSpace)
         )
           recovered.spaceId = selectedSpace;
-        if (recovered.spaceId) setMobilePane('chat');
+        setChatOpen(Boolean(recovered.pending));
+        setMenu(null);
+        setSourceFile(null);
+        autoUpload.current = false;
         noteRef.current = recovered;
         setNote(recovered);
         setError('');
@@ -309,28 +338,31 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
     };
   }, [session, agentId, operationId, responseId, busy, request, poll, commit, report]);
 
-  async function action(run: (signal: AbortSignal) => Promise<void>) {
-    if (locked.current) return;
-    locked.current = true;
-    setBusy(true);
-    setError('');
-    setNotice('');
-    const c = new AbortController();
-    activeAction.current = c;
-    const generation = version.current;
-    try {
-      await run(c.signal);
-    } catch (e) {
-      if (!c.signal.aborted && version.current === generation) report(e);
-    } finally {
-      if (version.current === generation) {
-        setBusy(false);
-        setPoll((v) => v + 1);
+  const action = useCallback(
+    async (run: (signal: AbortSignal) => Promise<void>) => {
+      if (locked.current) return;
+      locked.current = true;
+      setBusy(true);
+      setError('');
+      setNotice('');
+      const c = new AbortController();
+      activeAction.current = c;
+      const generation = version.current;
+      try {
+        await run(c.signal);
+      } catch (e) {
+        if (!c.signal.aborted && version.current === generation) report(e);
+      } finally {
+        if (version.current === generation) {
+          setBusy(false);
+          setPoll((v) => v + 1);
+        }
+        locked.current = false;
+        activeAction.current = null;
       }
-      locked.current = false;
-      activeAction.current = null;
-    }
-  }
+    },
+    [report],
+  );
   async function enable(enabled: boolean) {
     await action(async (signal) => {
       await workerRequest(session!, 'consent', { enabled }, signal, request);
@@ -342,79 +374,210 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
       );
     });
   }
-  async function runIntent(intent: Intent, base = note) {
-    await action(async (signal) => {
-      const pending = intent.setupRequired
-        ? {
-            ...intent,
-            body: { ...intent.body, idempotencyKey: crypto.randomUUID() },
-            setupRequired: false,
+  const runIntent = useCallback(
+    async function runIntent(intent: Intent, base = noteRef.current) {
+      const chain: { next?: { intent: Intent; base: Notebook } } = {};
+      await action(async (signal) => {
+        const pending = intent.setupRequired
+          ? {
+              ...intent,
+              body: { ...intent.body, idempotencyKey: crypto.randomUUID() },
+              setupRequired: false,
+            }
+          : intent;
+        commit({ ...base, pending });
+        try {
+          if (pending.action === 'attachment') {
+            if (
+              !sourceFile ||
+              sourceFile.spaceId !== base.spaceId ||
+              sourceFile.file.name !== pending.body.name ||
+              sourceFile.file.size !== pending.body.size ||
+              sourceFile.sha256 !== pending.body.sha256
+            )
+              throw new Error('请重新选择同一模型文件，再重试原请求。');
+            const receipt = await uploadModel(
+              session!,
+              String(pending.body.agentId),
+              sourceFile.file,
+              pending.body.idempotencyKey,
+              sourceFile.sha256,
+              signal,
+              request,
+            );
+            if (signal.aborted) return;
+            const creation = base.creation!;
+            const source = {
+              kind: 'file' as const,
+              name: receipt.name,
+              size: receipt.size_bytes,
+              sha256: receipt.sha256,
+              attachment: receipt,
+            };
+            const follow: Intent = {
+              action: 'message',
+              body: {
+                agentId: base.agentId,
+                context: {
+                  chat: true,
+                  spaceId: base.spaceId,
+                  ...(base.orgId ? { orgId: base.orgId } : {}),
+                  creation: { name: creation.name, source },
+                },
+                instruction: creation.instruction || `从模型 ${receipt.name} 创建空间`,
+                idempotencyKey: crypto.randomUUID(),
+              },
+            };
+            const next = {
+              ...base,
+              creation: { ...creation, source, phase: 'uploaded' as const },
+              pending: follow,
+            };
+            commit(next);
+            chain.next = { intent: follow, base: next };
+            return;
           }
-        : intent;
-      commit({ ...base, pending });
-      try {
-        const value = await workerRequest<{ id?: string; responseId?: string; commandId?: string }>(
-          session!,
-          pending.action,
-          pending.body,
-          signal,
-          request,
-        );
-        if (signal.aborted) return;
-        if (pending.action === 'create') {
-          if (typeof value.id !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/.test(value.id))
-            throw new Error('创建结果缺少任务编号，请重试原请求恢复。');
-          commit({
-            ...base,
-            pending: undefined,
-            operationId: value.id,
-            instruction: '',
-            sent: recordSent(base, pending.body.idempotencyKey, String(pending.body.instruction)),
-            agentId: undefined,
-            responseId: undefined,
-          });
-          setOperation(null);
-          setAgent(null);
-          setTranscript(null);
-        } else if (pending.action === 'message') {
-          if (!value.responseId) throw new Error('结果缺少响应编号，请重试原请求恢复。');
-          commit({
-            ...base,
-            pending: undefined,
-            responseId: value.responseId,
-            instruction: '',
-            sent: recordSent(base, pending.body.idempotencyKey, String(pending.body.instruction)),
-          });
-          setOutput([]);
-          setResponseStatus('queued');
-          setControls(null);
-          setConfirmPublish('');
-        } else {
-          commit({ ...base, pending: undefined });
+          const value = await workerRequest<{
+            id?: string;
+            responseId?: string;
+            commandId?: string;
+          }>(session!, pending.action, pending.body, signal, request);
+          if (signal.aborted) return;
+          if (pending.action === 'create') {
+            if (typeof value.id !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/.test(value.id))
+              throw new Error('创建结果缺少任务编号，请重试原请求恢复。');
+            commit({
+              ...base,
+              pending: undefined,
+              operationId: value.id,
+              instruction: '',
+              sent: pending.body.prepareOnly
+                ? base.sent
+                : recordSent(base, pending.body.idempotencyKey, String(pending.body.instruction)),
+              ...(base.creation
+                ? {
+                    creation: {
+                      ...base.creation,
+                      phase: pending.body.prepareOnly
+                        ? ('preparing' as const)
+                        : ('submitted' as const),
+                    },
+                  }
+                : {}),
+              agentId: undefined,
+              responseId: undefined,
+            });
+            setOperation(null);
+            setAgent(null);
+            setTranscript(null);
+          } else if (pending.action === 'message') {
+            if (!value.responseId) throw new Error('结果缺少响应编号，请重试原请求恢复。');
+            commit({
+              ...base,
+              pending: undefined,
+              responseId: value.responseId,
+              instruction: '',
+              sent: recordSent(base, pending.body.idempotencyKey, String(pending.body.instruction)),
+              ...(base.creation
+                ? { creation: { ...base.creation, phase: 'submitted' as const } }
+                : {}),
+            });
+            setOutput([]);
+            setResponseStatus('queued');
+            setControls(null);
+            setConfirmPublish('');
+          } else {
+            commit({ ...base, pending: undefined });
+          }
+          setNotice(
+            pending.action === 'cancel'
+              ? '停止请求已受理，等待 CMA 确认实际状态。'
+              : '请求已受理，正在跟进进度。',
+          );
+        } catch (e) {
+          if (e instanceof WorkerError && e.code === 'cma_setup_required')
+            commit({ ...base, pending: { ...pending, setupRequired: true } });
+          throw e;
         }
-        setNotice(
-          pending.action === 'cancel'
-            ? '停止请求已受理，等待 CMA 确认实际状态。'
-            : '请求已受理，正在跟进进度。',
-        );
-      } catch (e) {
-        if (e instanceof WorkerError && e.code === 'cma_setup_required')
-          commit({ ...base, pending: { ...pending, setupRequired: true } });
-        throw e;
-      }
-    });
-  }
-  function submit(e: FormEvent) {
-    e.preventDefault();
+      });
+      if (chain.next) await runIntent(chain.next.intent, chain.next.base);
+    },
+    [action, commit, request, session, sourceFile],
+  );
+
+  useEffect(() => {
     if (
-      !session?.workerEnabled ||
-      busy ||
+      !autoUpload.current ||
+      !sourceFile ||
+      sourceFile.spaceId !== note.spaceId ||
+      !note.agentId ||
       note.operationId ||
       note.pending ||
-      !note.spaceId.trim() ||
-      !note.instruction.trim()
+      busy ||
+      note.creation?.phase !== 'preparing'
     )
       return;
+    // 只接续本次明确提交的创建流程；刷新页面或结果未知时必须手动恢复。
+    const timer = setTimeout(() => {
+      autoUpload.current = false;
+      void runIntent(fileUploadIntent(note), note);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [note, sourceFile, busy, runIntent]);
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!session?.workerEnabled || busy || note.operationId || note.pending || !note.spaceId.trim())
+      return;
+    if (note.creation?.phase === 'draft') {
+      const url = scaniverseLink(note.instruction);
+      const source =
+        sourceFile?.spaceId === note.spaceId
+          ? {
+              kind: 'file' as const,
+              name: sourceFile.file.name,
+              size: sourceFile.file.size,
+              sha256: sourceFile.sha256,
+            }
+          : url
+            ? { kind: 'scaniverse' as const, url }
+            : null;
+      if (!source || !note.creation.name.trim()) {
+        setError('填写空间名称，再粘贴 Scaniverse 链接或上传 GLB/ZIP 模型。');
+        return;
+      }
+      const base = {
+        ...note,
+        creation: {
+          ...note.creation,
+          name: note.creation.name.trim(),
+          source,
+          instruction:
+            note.instruction.trim() ||
+            `从模型 ${source.kind === 'file' ? source.name : source.url} 创建空间`,
+        },
+      };
+      autoUpload.current = source.kind === 'file';
+      void runIntent(
+        {
+          action: 'create',
+          body: {
+            context: {
+              chat: true,
+              spaceId: note.spaceId,
+              ...(note.orgId ? { orgId: note.orgId } : {}),
+              creation: { name: base.creation.name, source },
+            },
+            instruction: base.creation.instruction,
+            ...(source.kind === 'file' ? { prepareOnly: true } : {}),
+            idempotencyKey: crypto.randomUUID(),
+          },
+        },
+        base,
+      );
+      return;
+    }
+    if (note.creation && ['preparing', 'uploaded'].includes(note.creation.phase)) return;
+    if (!note.instruction.trim()) return;
     void runIntent({
       action: note.agentId ? 'message' : 'create',
       body: {
@@ -522,7 +685,9 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
       const next = readSpaceNotebook(session.subject, id);
       if (!next.agentId && orgId) next.orgId = orgId;
       commit(next);
-      setMobilePane('chat');
+      setMenu(null);
+      setSourceFile(null);
+      autoUpload.current = false;
       setTranscript(null);
       setAgent(null);
       setOperation(null);
@@ -580,8 +745,8 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
       ? String(note.pending.body.instruction ?? '')
       : '';
   useEffect(() => {
-    chatEnd.current?.scrollIntoView?.({ block: 'nearest' });
-  }, [transcript, output, busy, note.sent, note.pending]);
+    if (chatOpen) chatEnd.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [transcript, output, busy, note.sent, note.pending, chatOpen]);
   const cmaBase = session?.workerUrl ?? CMA;
   const cmaLink = note.agentId ? `${cmaBase}/agents/${encodeURIComponent(note.agentId)}` : cmaBase;
   const checkedPreview = previewIdentity?.url === preview ? previewIdentity.value : null;
@@ -609,22 +774,344 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
     Boolean(note.operationId) ||
     ['queued', 'in_progress', 'running'].includes(responseStatus) ||
     ['working', 'busy', 'running'].includes(agent?.status ?? '');
+  const creating = note.creation?.phase === 'draft';
+  const importing = Boolean(
+    note.creation && ['preparing', 'uploaded'].includes(note.creation.phase),
+  );
+  const spaceName = selected?.name ?? note.creation?.name ?? note.spaceId;
+  const canSend = Boolean(
+    ready &&
+    note.spaceId &&
+    !disabled &&
+    !note.operationId &&
+    !importing &&
+    (creating
+      ? note.creation!.name.trim() &&
+        (sourceFile?.spaceId === note.spaceId || scaniverseLink(note.instruction))
+      : note.instruction.trim()),
+  );
+  function startCreation() {
+    if (disabled || !session?.subject) return;
+    const org =
+      selected?.owner.kind === 'org' &&
+      catalog?.organizations.some((o) => o.id === selected.owner.id && o.role === 'admin')
+        ? selected.owner.id
+        : '';
+    const spaceId = `space-${crypto.randomUUID().replaceAll('-', '').slice(0, 16)}`;
+    openSpace(spaceId, org);
+    commit({
+      ...emptyNotebook(),
+      spaceId,
+      orgId: org,
+      creation: { name: '新空间', phase: 'draft' },
+    });
+    setChatOpen(true);
+  }
+  async function pickModel(file: File) {
+    if (!note.creation || busy || note.creation.phase === 'submitted') return;
+    const base = note;
+    await action(async () => {
+      const sha256 = await modelDigest(file);
+      if (base.spaceId !== noteRef.current.spaceId) return;
+      if (
+        base.creation!.phase !== 'draft' &&
+        base.creation!.source?.kind === 'file' &&
+        (base.creation!.source.name !== file.name ||
+          base.creation!.source.size !== file.size ||
+          base.creation!.source.sha256 !== sha256)
+      )
+        throw new Error('请选择原来提交的同一文件，文件名、大小和内容必须一致。');
+      setSourceFile({ spaceId: base.spaceId, file, sha256 });
+      if (base.creation!.phase === 'draft')
+        commit({
+          ...base,
+          creation: {
+            ...base.creation!,
+            source: { kind: 'file', name: file.name, size: file.size, sha256 },
+          },
+        });
+    });
+  }
+  function closeChat() {
+    setChatOpen(false);
+    requestAnimationFrame(() => chatButton.current?.focus());
+  }
+  useEffect(() => {
+    function outside(event: PointerEvent) {
+      if (menu && event.target instanceof Node && !menuRef.current?.contains(event.target))
+        setMenu(null);
+    }
+    function keyboard(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      if (menu) {
+        setMenu(null);
+        (menu === 'spaces' ? spaceButton : viewButton).current?.focus();
+      } else if (chatOpen && chatPanel.current?.contains(document.activeElement)) {
+        setChatOpen(false);
+        requestAnimationFrame(() => chatButton.current?.focus());
+      }
+    }
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', keyboard);
+    return () => {
+      document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('keydown', keyboard);
+    };
+  }, [menu, chatOpen]);
   return (
     <main className="workspace">
-      <header className="workspace__header">
-        <a href="/" className="workspace__brand">
-          chrono-metaverse
+      <header className="workspace__header workspace__ui">
+        <a href="/" className="workspace__brand" aria-label="chrono-metaverse 首页">
+          <span className="workspace__brand-full">chrono-metaverse</span>
+          <span className="workspace__brand-short" aria-hidden="true">
+            chrono
+          </span>
         </a>
-        <span className="workspace__tagline">和空间聊一聊</span>
-        <nav>
+        {session?.connected && (
+          <>
+            <div className="workspace__menus" ref={menuRef}>
+              <button
+                ref={spaceButton}
+                className="workspace__space-trigger workspace__secondary"
+                aria-label="选择空间"
+                aria-expanded={menu === 'spaces'}
+                aria-controls="workspace-spaces"
+                onClick={() => setMenu(menu === 'spaces' ? null : 'spaces')}
+              >
+                <span aria-hidden="true">▦</span>
+                <span>{spaceName || '选择空间'}</span>
+                <span aria-hidden="true">⌄</span>
+              </button>
+              <button
+                ref={viewButton}
+                className="workspace__view-trigger workspace__secondary"
+                aria-label="切换空间视图"
+                aria-expanded={menu === 'view'}
+                aria-controls="workspace-view-options"
+                onClick={() => setMenu(menu === 'view' ? null : 'view')}
+              >
+                <span aria-hidden="true">◈</span>
+                <span>{preview ? '草稿预览' : '当前空间'}</span>
+                <span aria-hidden="true">⌄</span>
+              </button>
+              {menu === 'spaces' && (
+                <section id="workspace-spaces" className="workspace__library" aria-label="已有空间">
+                  <div className="workspace__heading">
+                    <h2>我的空间</h2>
+                    <button
+                      className="workspace__icon-button workspace__secondary"
+                      aria-label="关闭空间菜单"
+                      onClick={() => setMenu(null)}
+                    >
+                      ×
+                    </button>
+                    <button
+                      className="workspace__secondary"
+                      disabled={catalogBusy}
+                      onClick={() => setCatalogReload((v) => v + 1)}
+                    >
+                      刷新空间
+                    </button>
+                  </div>
+                  <label>
+                    搜索空间
+                    <input
+                      type="search"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="名称或编号"
+                    />
+                  </label>
+                  <label>
+                    空间归属
+                    <select value={ownerFilter} onChange={(e) => setOwnerFilter(e.target.value)}>
+                      <option value="all">全部空间</option>
+                      <option value="person">我的个人空间</option>
+                      {catalog?.organizations.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {catalogError && <p role="alert">{catalogError}</p>}
+                  {!catalog && !catalogError && <p role="status">正在读取空间…</p>}
+                  <ul className="workspace__spaces">
+                    {visibleSpaces.map((space) => (
+                      <li key={space.id}>
+                        <button
+                          className="workspace__space-card"
+                          aria-pressed={note.spaceId === space.id}
+                          disabled={disabled}
+                          onClick={() =>
+                            openSpace(
+                              space.id,
+                              space.owner.kind === 'org' ? space.owner.id : undefined,
+                            )
+                          }
+                        >
+                          <strong>{space.name}</strong>
+                          <span>
+                            {space.owner.kind === 'person'
+                              ? '个人空间'
+                              : (catalog?.organizations.find((o) => o.id === space.owner.id)
+                                  ?.name ?? '组织空间')}{' '}
+                            · {space.access === 'read' ? '只读' : '可调整'}
+                          </span>
+                          <small>{space.id}</small>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  {catalog && visibleSpaces.length === 0 && (
+                    <p className="workspace__muted">
+                      {search || ownerFilter !== 'all'
+                        ? '当前筛选下没有空间。'
+                        : '还没有可访问的空间，可以点击顶部“创建空间”开始。'}
+                    </p>
+                  )}
+                  {catalog?.next && (
+                    <button
+                      className="workspace__secondary"
+                      disabled={catalogBusy}
+                      onClick={() => void moreSpaces()}
+                    >
+                      加载更多空间
+                    </button>
+                  )}
+
+                  <details className="workspace__open-space">
+                    <summary>按编号打开已有空间</summary>
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        openSpace(targetId);
+                      }}
+                    >
+                      <label>
+                        目标空间编号
+                        <input
+                          value={targetId}
+                          onChange={(e) => setTargetId(e.target.value)}
+                          required
+                          maxLength={80}
+                          pattern="[a-z0-9][a-z0-9-]*"
+                          placeholder="例如 chronoai-lobby"
+                        />
+                      </label>
+                      <button disabled={disabled || !targetId}>打开空间</button>
+                    </form>
+                  </details>
+                </section>
+              )}
+              {menu === 'view' && (
+                <section
+                  id="workspace-view-options"
+                  className="workspace__view-options"
+                  aria-label="查看选项"
+                >
+                  <div className="workspace__heading">
+                    <h2>{preview ? '草稿预览 · 尚未发布' : '当前已发布空间'}</h2>
+                    <button
+                      className="workspace__icon-button workspace__secondary"
+                      aria-label="关闭查看选项"
+                      onClick={() => setMenu(null)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {links.length > 0 && (
+                    <div className="workspace__results">
+                      <button
+                        className={!preview ? '' : 'workspace__secondary'}
+                        onClick={() => {
+                          setFollowPreview(false);
+                          setPreview('');
+                          setConfirmPublish('');
+                          setMenu(null);
+                        }}
+                      >
+                        当前空间
+                      </button>
+                      {links.slice(0, 5).map((url, i) => (
+                        <button
+                          key={url}
+                          className={preview === url ? '' : 'workspace__secondary'}
+                          onClick={() => {
+                            setFollowPreview(i === 0);
+                            setPreview(url);
+                            setPreviewIdentity(null);
+                            setConfirmPublish('');
+                            setMenu(null);
+                          }}
+                        >
+                          {url.startsWith('/preview') ? `草稿预览 ${i + 1}` : url.split('#')[0]}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {!followPreview && latest && (
+                    <button className="workspace__secondary" onClick={() => setFollowPreview(true)}>
+                      跟随最新预览
+                    </button>
+                  )}
+
+                  {preview && (
+                    <a href={preview} target="_blank" rel="noopener noreferrer">
+                      在新窗口打开 ↗
+                    </a>
+                  )}
+                  <details className="workspace__open-link">
+                    <summary>打开分享或预览链接</summary>
+                    <form
+                      className="workspace__viewer-form"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const url = viewerLink(viewerInput);
+                        if (url) {
+                          setFollowPreview(false);
+                          setConfirmPublish('');
+                          setPreviewIdentity(null);
+                          setPreview(url);
+                          setError('');
+                          setMenu(null);
+                        } else {
+                          setError('请输入本站的空间、组合或草稿预览链接。');
+                          setChatOpen(true);
+                        }
+                      }}
+                    >
+                      <label>
+                        打开已有查看链接
+                        <input
+                          value={viewerInput}
+                          onChange={(e) => setViewerInput(e.target.value)}
+                          placeholder="/s/空间编号#share=…"
+                        />
+                      </label>
+                      <button className="workspace__secondary">打开</button>
+                    </form>
+                  </details>
+                </section>
+              )}
+            </div>
+            <button
+              className="workspace__create-button"
+              aria-label="创建空间"
+              disabled={disabled}
+              onClick={startCreation}
+            >
+              <span aria-hidden="true">＋</span>
+              <span>创建空间</span>
+            </button>
+          </>
+        )}
+        <nav className="workspace__account-nav">
           <a href="/connect">账号与组织</a>
-          <a href={cmaLink} target="_blank" rel="noopener noreferrer">
-            在 CMA 中打开 ↗
-          </a>
         </nav>
       </header>
       {!session && (
-        <section className="workspace__panel">
+        <section className="workspace__panel workspace__ui">
           <p>正在读取连接状态…</p>
           {error && (
             <>
@@ -635,338 +1122,541 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
         </section>
       )}
       {session && !session.connected && (
-        <section className="workspace__welcome">
+        <section className="workspace__welcome workspace__ui">
           <span>YOUR SPACES, ONE CONVERSATION</span>
           <h1>打开空间，聊着就能改</h1>
-          <p>选择已有空间，向在线 CMA worker 描述变化，在旁边看见结果。</p>
+          <p>把空间铺满眼前，让 CMA 在右下角陪你建造。</p>
           <a className="workspace__button" href="/connect">
             连接 NyxID，查看我的空间
           </a>
         </section>
       )}
       {session?.connected && (
-        <nav className="workspace__mobile-nav" aria-label="工作台视图">
-          {[
-            ['spaces', '空间'],
-            ['chat', '聊天'],
-            ['preview', '预览'],
-          ].map(([pane, label]) => (
-            <button
-              key={pane}
-              className={mobilePane === pane ? '' : 'workspace__secondary'}
-              aria-pressed={mobilePane === pane}
-              onClick={() => setMobilePane(pane!)}
-            >
-              {label}
-            </button>
-          ))}
-        </nav>
-      )}
-      {session?.connected && (
-        <div className="workspace__grid" data-mobile-pane={mobilePane}>
-          <aside className="workspace__library" aria-label="已有空间">
-            <div className="workspace__heading">
-              <h2>我的空间</h2>
-              <button
-                className="workspace__secondary"
-                disabled={catalogBusy}
-                onClick={() => setCatalogReload((v) => v + 1)}
-              >
-                刷新空间
-              </button>
-            </div>
-            <label>
-              搜索空间
-              <input
-                type="search"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="名称或编号"
-              />
-            </label>
-            <label>
-              空间归属
-              <select value={ownerFilter} onChange={(e) => setOwnerFilter(e.target.value)}>
-                <option value="all">全部空间</option>
-                <option value="person">我的个人空间</option>
-                {catalog?.organizations.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {catalogError && <p role="alert">{catalogError}</p>}
-            {!catalog && !catalogError && <p role="status">正在读取空间…</p>}
-            <ul className="workspace__spaces">
-              {visibleSpaces.map((space) => (
-                <li key={space.id}>
-                  <button
-                    className="workspace__space-card"
-                    aria-pressed={note.spaceId === space.id}
-                    disabled={disabled}
-                    onClick={() => openSpace(space.id)}
-                  >
-                    <strong>{space.name}</strong>
-                    <span>
-                      {space.owner.kind === 'person'
-                        ? '个人空间'
-                        : (catalog?.organizations.find((o) => o.id === space.owner.id)?.name ??
-                          '组织空间')}{' '}
-                      · {space.access === 'read' ? '只读' : '可调整'}
-                    </span>
-                    <small>{space.id}</small>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            {catalog && visibleSpaces.length === 0 && (
-              <p className="workspace__muted">
-                {search || ownerFilter !== 'all'
-                  ? '当前筛选下没有空间。'
-                  : '还没有可访问的空间，可以在下方打开指定空间，或让 worker 创建。'}
-              </p>
-            )}
-            {catalog?.next && (
-              <button
-                className="workspace__secondary"
-                disabled={catalogBusy}
-                onClick={() => void moreSpaces()}
-              >
-                加载更多空间
-              </button>
-            )}
-            <details className="workspace__open-space">
-              <summary>按编号打开或新建</summary>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  openSpace(targetId, targetOrg);
-                }}
-              >
-                <label>
-                  目标空间编号
-                  <input
-                    value={targetId}
-                    onChange={(e) => setTargetId(e.target.value)}
-                    required
-                    maxLength={80}
-                    pattern="[a-z0-9][a-z0-9-]*"
-                    placeholder="例如 chronoai-lobby"
-                  />
-                </label>
-                <label>
-                  新空间归属
-                  <select value={targetOrg} onChange={(e) => setTargetOrg(e.target.value)}>
-                    <option value="">我的个人空间</option>
-                    {catalog?.organizations
-                      .filter((o) => o.role === 'admin')
-                      .map((o) => (
-                        <option key={o.id} value={o.id}>
-                          {o.name}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <button disabled={disabled || !targetId}>打开聊天</button>
-                <p className="workspace__fine">新建时请在聊天中明确说“创建空间”。</p>
-              </form>
-            </details>
-          </aside>
-          <section className="workspace__chat" aria-label="空间聊天">
-            <div className="workspace__chat-heading">
-              <div>
-                <h1>{selected?.name ?? (note.spaceId || '选择空间，开始聊天')}</h1>
-                <p>
-                  {note.spaceId
-                    ? `${note.spaceId}${selected?.access === 'read' ? ' · 当前账号只读' : ''}`
-                    : '从左侧选择已有空间，也可以按编号打开。'}
-                </p>
-              </div>
-              {note.spaceId && (
-                <span className="workspace__badge" role="status">
-                  {statusText(responseStatus || operation?.status || agent?.status || 'ready')}
-                </span>
-              )}
-            </div>
-            {querySpace &&
-              querySpace !== note.spaceId &&
-              /^[a-z0-9][a-z0-9-]{0,79}$/.test(querySpace) && (
-                <div className="workspace__notice">
-                  <p>已有会话已保留，可切换到链接指定的空间。</p>
-                  <button disabled={disabled} onClick={() => openSpace(querySpace)}>
-                    打开 {querySpace}
-                  </button>
-                </div>
-              )}
-            {error && (
-              <p className="workspace__notice workspace__notice--error" role="alert">
-                {error}
-              </p>
-            )}
-            {notice && (
-              <p className="workspace__notice" role="status">
-                {notice}
-              </p>
-            )}
-            {!session.workerAvailable && (
-              <div className="workspace__notice">
-                <p>在线 worker 尚未启用。你仍可以查看有权限的空间。</p>
-              </div>
-            )}
-            {session.workerAvailable && !session.workerEnabled && (
-              <div className="workspace__consent">
-                <h2>启用空间聊天</h2>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={consentChecked}
-                    onChange={(e) => setConsentChecked(e.target.checked)}
-                  />
-                  允许此浏览器通过 CMA 查看、创建和使用此账号有权限的 Agent，并发送我填写的任务。
-                </label>
-                <button disabled={!consentChecked || busy} onClick={() => void enable(true)}>
-                  同意并启用
-                </button>
-              </div>
-            )}
-            <div
-              className="workspace__conversation"
-              role="log"
-              aria-label="聊天记录"
-              aria-live="polite"
-              aria-relevant="additions text"
-            >
-              {conversation.length === 0 && unobserved.length === 0 && !pendingText && (
-                <div className="workspace__chat-empty">
-                  <span aria-hidden="true">✳</span>
-                  <h2>{note.spaceId ? '你想怎样调整这个空间？' : '先选一个空间'}</h2>
+        <div className="workspace__stage">
+          <section className="workspace__preview" aria-label="空间视图">
+            <div className="workspace__scene">
+              {preview ? (
+                <iframe
+                  className="workspace__frame"
+                  title="三维空间预览"
+                  src={preview}
+                  referrerPolicy="no-referrer"
+                  sandbox="allow-scripts allow-same-origin allow-pointer-lock"
+                />
+              ) : note.creation && !selected ? (
+                <div className="workspace__empty" role="status">
+                  <span aria-hidden="true">◇</span>
+                  <h1>{note.creation.name}</h1>
                   <p>
-                    可以说“把入口改得明亮一点”，再继续说“暖色一些”。worker
-                    会沿用当前草稿，给你新的预览。
+                    {creating
+                      ? '在右下角放入扫描链接或模型，开始创建你的空间。'
+                      : 'CMA 正在准备空间；重建完成后，预览会出现在这里。'}
                   </p>
-                  {note.spaceId && ready && (
-                    <div className="workspace__suggestions">
-                      {[
-                        '介绍一下这个空间',
-                        '把入口改得明亮一点，先给我预览',
-                        '保留现有布局，增加一个交流区',
-                      ].map((text) => (
-                        <button
-                          className="workspace__secondary"
-                          key={text}
-                          disabled={disabled}
-                          onClick={() => change('instruction', text)}
-                        >
-                          {text}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <div className="workspace__ui">
+                    <button onClick={() => setChatOpen(true)}>打开创建聊天</button>
+                  </div>
+                </div>
+              ) : note.spaceId && browserClient ? (
+                <SpacePage
+                  key={note.spaceId}
+                  spaceId={note.spaceId}
+                  client={browserClient}
+                  hasShareToken
+                  embedded
+                />
+              ) : (
+                <div className="workspace__empty">
+                  <span aria-hidden="true">◇</span>
+                  <h1>让你的空间占满眼前</h1>
+                  <p>选择已有空间，或从扫描与模型创建一个新空间。</p>
+                  <div className="workspace__ui workspace__actions">
+                    <button onClick={() => setMenu('spaces')}>选择已有空间</button>
+                    <button className="workspace__secondary" onClick={startCreation}>
+                      创建第一个空间
+                    </button>
+                  </div>
+                  <small>需要调整时，打开右下角的 CMA 聊天</small>
                 </div>
               )}
-              {conversation.map((m) => (
-                <article key={m.key} className={`workspace__message workspace__message--${m.role}`}>
-                  <strong>{m.role === 'assistant' ? 'CMA worker' : '你'}</strong>
-                  <p>{m.text}</p>
-                </article>
-              ))}
-              {unobserved.map((m) => (
-                <article key={m.key} className="workspace__message workspace__message--user">
-                  <strong>你</strong>
-                  <p>{m.text}</p>
-                </article>
-              ))}
-              {pendingText && (
-                <article className="workspace__message workspace__message--user">
-                  <strong>你 · {busy ? '正在发送' : '等待确认'}</strong>
-                  <p>{pendingText}</p>
-                </article>
-              )}
-              {extraTexts.map((text, i) => (
-                <article
-                  key={`live-${i}`}
-                  className="workspace__message workspace__message--assistant"
-                >
-                  <strong>CMA worker</strong>
-                  <p>{text}</p>
-                </article>
-              ))}
-              {awaiting && (
-                <div className="workspace__activity" role="status">
-                  <span className="workspace__pulse" />
-                  {note.operationId
-                    ? `正在准备在线 worker · ${statusText(operation?.phase ?? 'preparing')}`
-                    : 'worker 正在处理，回复和预览会自动更新。'}
-                  {activity.map((a) => (
-                    <p key={a.id}>
-                      {a.name} · {statusText(a.status ?? 'in_progress')}
-                    </p>
-                  ))}
-                </div>
-              )}
-              <div ref={chatEnd} />
             </div>
-            {note.pending && !busy && (
-              <section className="workspace__recovery">
-                <h2>保留了一次待确认请求</h2>
-                <p>
-                  {note.pending.setupRequired
-                    ? '请用相同账号登录 CMA，完成运行环境授权后回到这里重新提交。'
-                    : '发送结果尚未确认。重试会使用相同内容和原请求编号。'}
-                </p>
-                <div className="workspace__actions">
-                  {note.pending.setupRequired && (
-                    <a href={`${cmaBase}/auth/login`} target="_blank" rel="noopener noreferrer">
-                      登录 CMA ↗
-                    </a>
+          </section>
+          <button
+            ref={chatButton}
+            className="workspace__chat-launcher workspace__button"
+            aria-label="打开 CMA 聊天"
+            aria-expanded={chatOpen}
+            aria-controls="workspace-chat"
+            hidden={chatOpen}
+            onClick={() => setChatOpen(true)}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="20"
+              height="20"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              aria-hidden="true"
+            >
+              <path d="M20 11.5a8 8 0 0 1-8 8H4l1.4-4A8 8 0 1 1 20 11.5Z" />
+              <path d="M8 10h8M8 14h5" />
+            </svg>
+            <span>CMA 聊天</span>
+            {awaiting ? (
+              <small>处理中</small>
+            ) : preview.startsWith('/preview') ? (
+              <small>查看草稿</small>
+            ) : null}
+          </button>
+          <section
+            id="workspace-chat"
+            ref={chatPanel}
+            className="workspace__chat workspace__ui"
+            role="dialog"
+            aria-label="CMA 空间聊天"
+            aria-modal="false"
+            hidden={!chatOpen}
+            onDragOver={(e) => {
+              if (note.creation && e.dataTransfer.types.includes('Files')) e.preventDefault();
+            }}
+            onDrop={(e) => {
+              if (!note.creation) return;
+              e.preventDefault();
+              const file = e.dataTransfer.files[0];
+              if (file) void pickModel(file);
+            }}
+          >
+            <header className="workspace__chat-heading">
+              <div>
+                <h2>{note.creation?.phase === 'draft' ? '创建空间' : 'CMA 聊天'}</h2>
+                <p>{spaceName || '选择一个空间，或创建新空间'}</p>
+              </div>
+              <span className="workspace__badge" role="status">
+                {creating
+                  ? '待提交'
+                  : statusText(responseStatus || operation?.status || agent?.status || 'ready')}
+              </span>
+              <button
+                className="workspace__icon-button workspace__secondary"
+                aria-label="收起 CMA 聊天"
+                onClick={closeChat}
+              >
+                −
+              </button>
+            </header>
+            <div className="workspace__chat-scroll">
+              {note.creation && note.creation.phase !== 'submitted' && (
+                <section className="workspace__creation" aria-label="创建空间设置">
+                  {creating && (
+                    <>
+                      <h2>从扫描或模型开始</h2>
+                      <p>
+                        粘贴 Scaniverse 链接，或放入 GLB / 扫描 ZIP。CMA
+                        会完成重建和上传，先给你预览。
+                      </p>
+                      <div className="workspace__creation-fields">
+                        <label>
+                          空间名称
+                          <input
+                            value={note.creation.name}
+                            maxLength={80}
+                            disabled={disabled}
+                            onChange={(e) =>
+                              commit({
+                                ...note,
+                                creation: { ...note.creation!, name: e.target.value },
+                              })
+                            }
+                          />
+                        </label>
+                        <label>
+                          空间归属
+                          <select
+                            value={note.orgId}
+                            disabled={disabled}
+                            onChange={(e) => change('orgId', e.target.value)}
+                          >
+                            <option value="">我的个人空间</option>
+                            {catalog?.organizations
+                              .filter((o) => o.role === 'admin')
+                              .map((o) => (
+                                <option key={o.id} value={o.id}>
+                                  {o.name}
+                                </option>
+                              ))}
+                          </select>
+                        </label>
+                      </div>
+                    </>
                   )}
-                  <button disabled={busy} onClick={() => void runIntent(note.pending!)}>
-                    {note.pending.setupRequired ? '已完成授权，重新提交' : '重试原请求'}
-                  </button>
+                  <label className="workspace__file-picker">
+                    <input
+                      className="workspace__sr-only"
+                      type="file"
+                      aria-label="选择模型文件"
+                      accept=".glb,.zip"
+                      disabled={busy}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) void pickModel(file);
+                        e.target.value = '';
+                      }}
+                    />
+                    <span>
+                      {note.creation.source?.kind === 'file' ? '重新选择模型' : '上传模型'}
+                    </span>
+                    <small>GLB / ZIP · 最大 20 MiB，也可拖入聊天窗</small>
+                  </label>
+                  {note.creation.source?.kind === 'file' && (
+                    <p className="workspace__file-name">
+                      {note.creation.source.name} ·{' '}
+                      {(note.creation.source.size / 1024 / 1024).toFixed(1)} MiB
+                      {!sourceFile && ' · 继续时请重新选择原文件'}
+                    </p>
+                  )}
+                  {note.creation.phase === 'preparing' && (
+                    <p role="status">准备建模环境后会上传模型，随后自动开始重建。</p>
+                  )}
+                  {note.creation.phase === 'preparing' &&
+                    note.agentId &&
+                    !note.operationId &&
+                    !note.pending && (
+                      <button
+                        disabled={busy || !sourceFile}
+                        onClick={() => void runIntent(fileUploadIntent(note))}
+                      >
+                        继续上传模型
+                      </button>
+                    )}
+                </section>
+              )}
+              {querySpace &&
+                querySpace !== note.spaceId &&
+                /^[a-z0-9][a-z0-9-]{0,79}$/.test(querySpace) && (
+                  <div className="workspace__notice">
+                    <p>已有会话已保留，可切换到链接指定的空间。</p>
+                    <button disabled={disabled} onClick={() => openSpace(querySpace)}>
+                      打开 {querySpace}
+                    </button>
+                  </div>
+                )}
+              {error && (
+                <p className="workspace__notice workspace__notice--error" role="alert">
+                  {error}
+                </p>
+              )}
+              {notice && (
+                <p className="workspace__notice" role="status">
+                  {notice}
+                </p>
+              )}
+              {!session.workerAvailable && (
+                <div className="workspace__notice">
+                  <p>在线 worker 尚未启用。你仍可以查看有权限的空间。</p>
                 </div>
-                <details>
-                  <summary>已在 CMA 核对结果</summary>
+              )}
+              {session.workerAvailable && !session.workerEnabled && (
+                <div className="workspace__consent">
+                  <h2>启用空间聊天</h2>
                   <label>
                     <input
                       type="checkbox"
-                      checked={confirmForget}
-                      onChange={(e) => setConfirmForget(e.target.checked)}
+                      checked={consentChecked}
+                      onChange={(e) => setConsentChecked(e.target.checked)}
                     />
-                    我已在 CMA 核对结果，可以清除此恢复记录
+                    允许此浏览器通过 CMA 查看、创建和使用此账号有权限的 Agent，并发送我填写的任务。
+                  </label>
+                  <button disabled={!consentChecked || busy} onClick={() => void enable(true)}>
+                    同意并启用
+                  </button>
+                </div>
+              )}
+              <div
+                className="workspace__conversation"
+                role="log"
+                aria-label="聊天记录"
+                aria-live="polite"
+                aria-relevant="additions text"
+              >
+                {!note.creation &&
+                  conversation.length === 0 &&
+                  unobserved.length === 0 &&
+                  !pendingText && (
+                    <div className="workspace__chat-empty">
+                      <span aria-hidden="true">✳</span>
+                      <h2>
+                        {note.creation
+                          ? '给新空间一个起点'
+                          : note.spaceId
+                            ? '你想怎样调整这个空间？'
+                            : '先选一个空间'}
+                      </h2>
+                      <p>
+                        {note.creation
+                          ? '放入扫描链接或模型，也可以告诉 CMA 你希望保留的布局和风格。'
+                          : '可以说“把入口改得明亮一点”，再继续说“暖色一些”。worker 会沿用当前草稿，给你新的预览。'}
+                      </p>
+                      {note.spaceId && ready && !note.creation && (
+                        <div className="workspace__suggestions">
+                          {[
+                            '介绍一下这个空间',
+                            '把入口改得明亮一点，先给我预览',
+                            '保留现有布局，增加一个交流区',
+                          ].map((text) => (
+                            <button
+                              className="workspace__secondary"
+                              key={text}
+                              disabled={disabled}
+                              onClick={() => change('instruction', text)}
+                            >
+                              {text}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                {conversation.map((m) => (
+                  <article
+                    key={m.key}
+                    className={`workspace__message workspace__message--${m.role}`}
+                  >
+                    <strong>{m.role === 'assistant' ? 'CMA worker' : '你'}</strong>
+                    <p>{m.text}</p>
+                  </article>
+                ))}
+                {unobserved.map((m) => (
+                  <article key={m.key} className="workspace__message workspace__message--user">
+                    <strong>你</strong>
+                    <p>{m.text}</p>
+                  </article>
+                ))}
+                {pendingText && (
+                  <article className="workspace__message workspace__message--user">
+                    <strong>你 · {busy ? '正在发送' : '等待确认'}</strong>
+                    <p>{pendingText}</p>
+                  </article>
+                )}
+                {extraTexts.map((text, i) => (
+                  <article
+                    key={`live-${i}`}
+                    className="workspace__message workspace__message--assistant"
+                  >
+                    <strong>CMA worker</strong>
+                    <p>{text}</p>
+                  </article>
+                ))}
+                {awaiting && (
+                  <div className="workspace__activity" role="status">
+                    <span className="workspace__pulse" />
+                    {note.operationId
+                      ? `正在准备在线 worker · ${statusText(operation?.phase ?? 'preparing')}`
+                      : 'worker 正在处理，回复和预览会自动更新。'}
+                    {activity.map((a) => (
+                      <p key={a.id}>
+                        {a.name} · {statusText(a.status ?? 'in_progress')}
+                      </p>
+                    ))}
+                  </div>
+                )}
+                <div ref={chatEnd} />
+              </div>
+              {note.pending && !busy && (
+                <section className="workspace__recovery">
+                  <h2>保留了一次待确认请求</h2>
+                  <p>
+                    {note.pending.setupRequired
+                      ? '请用相同账号登录 CMA，完成运行环境授权后回到这里重新提交。'
+                      : '发送结果尚未确认。重试会使用相同内容和原请求编号。'}
+                  </p>
+                  <div className="workspace__actions">
+                    {note.pending.setupRequired && (
+                      <a href={`${cmaBase}/auth/login`} target="_blank" rel="noopener noreferrer">
+                        登录 CMA ↗
+                      </a>
+                    )}
+                    <button disabled={busy} onClick={() => void runIntent(note.pending!)}>
+                      {note.pending.setupRequired ? '已完成授权，重新提交' : '重试原请求'}
+                    </button>
+                  </div>
+                  <details>
+                    <summary>已在 CMA 核对结果</summary>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={confirmForget}
+                        onChange={(e) => setConfirmForget(e.target.checked)}
+                      />
+                      我已在 CMA 核对结果，可以清除此恢复记录
+                    </label>
+                    <button
+                      className="workspace__secondary"
+                      disabled={busy || !confirmForget}
+                      onClick={() => {
+                        commit({ ...note, pending: undefined });
+                        setConfirmForget(false);
+                      }}
+                    >
+                      清除恢复记录
+                    </button>
+                  </details>
+                </section>
+              )}
+              {operation?.error && <p role="alert">环境准备未完成：{operation.error}</p>}
+              {preview.startsWith('/preview') && note.agentId && (
+                <section className="workspace__publish">
+                  <h2>验收这次草稿</h2>
+                  {previewError && <p role="alert">{previewError}</p>}
+                  {checkedPreview && (
+                    <p>
+                      草稿 <code>{checkedPreview.preview.draftId}</code> · 修订{' '}
+                      {checkedPreview.preview.rev}
+                    </p>
+                  )}
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={confirmPublish === preview}
+                      onChange={(e) => setConfirmPublish(e.target.checked ? preview : '')}
+                    />
+                    我已查看预览，要求 worker 发布对应草稿
                   </label>
                   <button
+                    disabled={confirmPublish !== preview || disabled || !checkedPreview}
+                    onClick={() =>
+                      void runIntent({
+                        action: 'message',
+                        body: {
+                          agentId: note.agentId,
+                          context: {
+                            chat: true,
+                            spaceId: checkedPreview!.spaceId,
+                            ...(note.orgId ? { orgId: note.orgId } : {}),
+                          },
+                          instruction: `我已查看预览，确认发布空间 ${checkedPreview!.spaceId} 的草稿 ${checkedPreview!.preview.draftId}，范围 ${checkedPreview!.preview.scope}，草稿修订 rev=${checkedPreview!.preview.rev}，基础版本 baseSeq=${checkedPreview!.preview.baseSeq}。先核对上述编号和版本是否仍一致，并在发布请求中保留该 rev；如果已变化或冲突，请停止并说明，不要自动重放。`,
+                          idempotencyKey: crypto.randomUUID(),
+                        },
+                      })
+                    }
+                  >
+                    请 worker 发布此草稿
+                  </button>
+                </section>
+              )}
+              <details className="workspace__chat-options">
+                <summary>会话与 worker</summary>
+                <div className="workspace__actions">
+                  <button
                     className="workspace__secondary"
-                    disabled={busy || !confirmForget}
+                    disabled={busy}
                     onClick={() => {
-                      commit({ ...note, pending: undefined });
-                      setConfirmForget(false);
+                      setError('');
+                      setPoll((v) => v + 1);
                     }}
                   >
-                    清除恢复记录
+                    刷新进度
                   </button>
-                </details>
-              </section>
-            )}
-            {operation?.error && <p role="alert">环境准备未完成：{operation.error}</p>}
+                  <a href={cmaLink} target="_blank" rel="noopener noreferrer">
+                    完整进度与审批 ↗
+                  </a>
+                </div>
+                {note.agentId && (
+                  <p>
+                    worker <code>{note.agentId}</code>
+                  </p>
+                )}
+                {note.operationId && (
+                  <p>
+                    准备任务 <code>{note.operationId}</code>
+                  </p>
+                )}
+                <p>关闭页面不会停止云端任务；当前标签页保留每个空间的聊天恢复记录。</p>
+                {ready && !note.creation && (
+                  <>
+                    <button
+                      className="workspace__secondary"
+                      disabled={disabled}
+                      onClick={() => void list()}
+                    >
+                      读取我的 CMA workers
+                    </button>
+                    {agents && (
+                      <ul className="workspace__agents">
+                        {agents.map((a) => (
+                          <li key={a.id}>
+                            <button
+                              disabled={disabled}
+                              className="workspace__secondary"
+                              onClick={() => selectAgent(a.id)}
+                            >
+                              {a.owner_title ?? a.title ?? a.id}
+                              <span>{statusText(a.status)}</span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {nextCursor && (
+                      <button disabled={disabled} onClick={() => void list(nextCursor)}>
+                        加载更多
+                      </button>
+                    )}
+                    <button
+                      className="workspace__secondary"
+                      disabled={disabled}
+                      onClick={() => {
+                        commit({
+                          ...note,
+                          agentId: undefined,
+                          operationId: undefined,
+                          responseId: undefined,
+                          sent: [],
+                        });
+                        setAgent(null);
+                        setTranscript(null);
+                        setOperation(null);
+                        setControls(null);
+                        setOutput([]);
+                        setResponseStatus('');
+                      }}
+                    >
+                      换一个 worker 开始新对话
+                    </button>
+                    <button
+                      className="workspace__secondary"
+                      disabled={busy}
+                      onClick={() => void enable(false)}
+                    >
+                      关闭网页 CMA 调用
+                    </button>
+                    <p>关闭授权后，已受理任务仍在运行；已有 worker 的权限仍由 CMA 管理。</p>
+                  </>
+                )}
+              </details>
+            </div>
             <form onSubmit={submit} className="workspace__composer">
               <label>
                 <span className="workspace__sr-only">给空间发消息</span>
                 <textarea
-                  required
-                  rows={3}
+                  required={!creating}
+                  rows={2}
                   maxLength={16000}
                   value={note.instruction}
-                  disabled={!ready || !note.spaceId || disabled}
+                  disabled={!ready || !note.spaceId || disabled || importing}
                   onChange={(e) => change('instruction', e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                       e.preventDefault();
-                      if (!disabled && !note.operationId && note.instruction.trim())
-                        e.currentTarget.form?.requestSubmit();
+                      if (canSend) e.currentTarget.form?.requestSubmit();
                     }
                   }}
-                  placeholder={note.spaceId ? '描述你想要的变化…' : '先选择一个空间'}
+                  placeholder={
+                    creating
+                      ? '粘贴 Scaniverse 分享链接，或上传模型后说说你的想法…'
+                      : note.spaceId
+                        ? '描述你想要的变化…'
+                        : '先选择一个空间'
+                  }
                 />
               </label>
               <div className="workspace__actions">
@@ -992,253 +1682,12 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                     停止响应
                   </button>
                 )}
-                <button
-                  type="submit"
-                  disabled={
-                    !ready ||
-                    disabled ||
-                    Boolean(note.operationId) ||
-                    !note.spaceId ||
-                    !note.instruction.trim()
-                  }
-                >
-                  发送
+                <button type="submit" disabled={!canSend}>
+                  {creating ? '开始创建' : '发送'}
                 </button>
               </div>
             </form>
-            <details className="workspace__chat-options">
-              <summary>会话与 worker</summary>
-              <div className="workspace__actions">
-                <button
-                  className="workspace__secondary"
-                  disabled={busy}
-                  onClick={() => {
-                    setError('');
-                    setPoll((v) => v + 1);
-                  }}
-                >
-                  刷新进度
-                </button>
-                <a href={cmaLink} target="_blank" rel="noopener noreferrer">
-                  完整进度与审批 ↗
-                </a>
-              </div>
-              {note.agentId && (
-                <p>
-                  worker <code>{note.agentId}</code>
-                </p>
-              )}
-              {note.operationId && (
-                <p>
-                  准备任务 <code>{note.operationId}</code>
-                </p>
-              )}
-              <p>关闭页面不会停止云端任务；当前标签页保留每个空间的聊天恢复记录。</p>
-              {ready && (
-                <>
-                  <button
-                    className="workspace__secondary"
-                    disabled={disabled}
-                    onClick={() => void list()}
-                  >
-                    读取我的 CMA workers
-                  </button>
-                  {agents && (
-                    <ul className="workspace__agents">
-                      {agents.map((a) => (
-                        <li key={a.id}>
-                          <button
-                            disabled={disabled}
-                            className="workspace__secondary"
-                            onClick={() => selectAgent(a.id)}
-                          >
-                            {a.owner_title ?? a.title ?? a.id}
-                            <span>{statusText(a.status)}</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {nextCursor && (
-                    <button disabled={disabled} onClick={() => void list(nextCursor)}>
-                      加载更多
-                    </button>
-                  )}
-                  <button
-                    className="workspace__secondary"
-                    disabled={disabled}
-                    onClick={() => {
-                      commit({
-                        ...note,
-                        agentId: undefined,
-                        operationId: undefined,
-                        responseId: undefined,
-                        sent: [],
-                      });
-                      setAgent(null);
-                      setTranscript(null);
-                      setOperation(null);
-                      setControls(null);
-                      setOutput([]);
-                      setResponseStatus('');
-                    }}
-                  >
-                    换一个 worker 开始新对话
-                  </button>
-                  <button
-                    className="workspace__secondary"
-                    disabled={busy}
-                    onClick={() => void enable(false)}
-                  >
-                    关闭网页 CMA 调用
-                  </button>
-                  <p>关闭授权后，已受理任务仍在运行；已有 worker 的权限仍由 CMA 管理。</p>
-                </>
-              )}
-            </details>
           </section>
-          <aside className="workspace__preview" aria-label="空间预览">
-            <div className="workspace__preview-heading">
-              <div>
-                <h2>{preview.startsWith('/preview') ? '最新草稿' : '空间预览'}</h2>
-                <p>
-                  {preview.startsWith('/preview')
-                    ? '尚未发布，继续聊天即可调整。'
-                    : '当前已发布版本，变化会自动同步。'}
-                </p>
-              </div>
-              {preview && (
-                <a href={preview} target="_blank" rel="noopener noreferrer">
-                  全屏 ↗
-                </a>
-              )}
-            </div>
-            {links.length > 0 && (
-              <div className="workspace__results">
-                <button
-                  className={!preview ? '' : 'workspace__secondary'}
-                  onClick={() => {
-                    setFollowPreview(false);
-                    setPreview('');
-                    setConfirmPublish('');
-                  }}
-                >
-                  当前空间
-                </button>
-                {links.slice(0, 5).map((url, i) => (
-                  <button
-                    key={url}
-                    className={preview === url ? '' : 'workspace__secondary'}
-                    onClick={() => {
-                      setFollowPreview(i === 0);
-                      setPreview(url);
-                      setPreviewIdentity(null);
-                      setConfirmPublish('');
-                    }}
-                  >
-                    {url.startsWith('/preview') ? `草稿预览 ${i + 1}` : url.split('#')[0]}
-                  </button>
-                ))}
-              </div>
-            )}
-            {!followPreview && latest && (
-              <button className="workspace__secondary" onClick={() => setFollowPreview(true)}>
-                跟随最新预览
-              </button>
-            )}
-            <div className="workspace__scene">
-              {preview ? (
-                <iframe
-                  className="workspace__frame"
-                  title="三维空间预览"
-                  src={preview}
-                  referrerPolicy="no-referrer"
-                  sandbox="allow-scripts allow-same-origin allow-pointer-lock"
-                />
-              ) : note.spaceId && browserClient ? (
-                <SpacePage
-                  key={note.spaceId}
-                  spaceId={note.spaceId}
-                  client={browserClient}
-                  hasShareToken
-                  embedded
-                />
-              ) : (
-                <div className="workspace__empty">
-                  <span aria-hidden="true">◇</span>
-                  <p>选中空间后在这里查看</p>
-                  <small>边聊边看，最新草稿自动出现在这里</small>
-                </div>
-              )}
-            </div>
-            {preview.startsWith('/preview') && note.agentId && (
-              <section className="workspace__publish">
-                <h2>验收这次草稿</h2>
-                {previewError && <p role="alert">{previewError}</p>}
-                {checkedPreview && (
-                  <p>
-                    草稿 <code>{checkedPreview.preview.draftId}</code> · 修订{' '}
-                    {checkedPreview.preview.rev}
-                  </p>
-                )}
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={confirmPublish === preview}
-                    onChange={(e) => setConfirmPublish(e.target.checked ? preview : '')}
-                  />
-                  我已查看预览，要求 worker 发布对应草稿
-                </label>
-                <button
-                  disabled={confirmPublish !== preview || disabled || !checkedPreview}
-                  onClick={() =>
-                    void runIntent({
-                      action: 'message',
-                      body: {
-                        agentId: note.agentId,
-                        context: {
-                          chat: true,
-                          spaceId: checkedPreview!.spaceId,
-                          ...(note.orgId ? { orgId: note.orgId } : {}),
-                        },
-                        instruction: `我已查看预览，确认发布空间 ${checkedPreview!.spaceId} 的草稿 ${checkedPreview!.preview.draftId}，范围 ${checkedPreview!.preview.scope}，草稿修订 rev=${checkedPreview!.preview.rev}，基础版本 baseSeq=${checkedPreview!.preview.baseSeq}。先核对上述编号和版本是否仍一致，并在发布请求中保留该 rev；如果已变化或冲突，请停止并说明，不要自动重放。`,
-                        idempotencyKey: crypto.randomUUID(),
-                      },
-                    })
-                  }
-                >
-                  请 worker 发布此草稿
-                </button>
-              </section>
-            )}
-            <details className="workspace__open-link">
-              <summary>打开分享或预览链接</summary>
-              <form
-                className="workspace__viewer-form"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const url = viewerLink(viewerInput);
-                  if (url) {
-                    setFollowPreview(false);
-                    setConfirmPublish('');
-                    setPreviewIdentity(null);
-                    setPreview(url);
-                    setError('');
-                  } else setError('请输入本站的空间、组合或草稿预览链接。');
-                }}
-              >
-                <label>
-                  打开已有查看链接
-                  <input
-                    value={viewerInput}
-                    onChange={(e) => setViewerInput(e.target.value)}
-                    placeholder="/s/空间编号#share=…"
-                  />
-                </label>
-                <button className="workspace__secondary">打开</button>
-              </form>
-            </details>
-          </aside>
         </div>
       )}
     </main>

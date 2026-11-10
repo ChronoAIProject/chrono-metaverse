@@ -2,6 +2,7 @@
 //! metaverse 业务接口仍只接受 NyxID 签名身份，worker 凭据由 CMA 管理。
 pub(crate) mod catalog;
 mod config;
+mod creation;
 mod crypto;
 mod provider;
 mod routes;

@@ -5,6 +5,7 @@ pub(super) fn routes(provider: MockProvider, app: Router) -> Router {
     let create = provider.clone();
     let message = provider.clone();
     let control = provider.clone();
+    let attachment = provider.clone();
     app.route("/api/v1/agents", get(move |headers: HeaderMap| {
         let p = list.clone(); async move {
             let s = p.0.lock().unwrap();
@@ -29,6 +30,19 @@ pub(super) fn routes(provider: MockProvider, app: Router) -> Router {
             (StatusCode::ACCEPTED,Json(json!({"id":"op_test","status":"pending"}))).into_response()
         }
     }))
+    .route("/api/v1/agents/{id}/attachments", post(move |Path(id): Path<String>, axum::extract::Query(query): axum::extract::Query<HashMap<String, String>>, headers: HeaderMap, bytes: axum::body::Bytes| {
+        let p = attachment.clone(); async move {
+            let token = headers[header::AUTHORIZATION].to_str().unwrap().strip_prefix("Bearer ").unwrap();
+            let name = &query["name"];
+            let hash = format!("{:x}", Sha256::digest(&bytes));
+            let receipt = json!({"id":"att_test","agent_id":id,"name":name,"path":format!("/home/attachments/{id}/att_test/{name}"),"size_bytes":bytes.len(),"media_type":"application/octet-stream","sha256":if name == "bad.glb" {"bad"} else {&hash}});
+            let mut state = p.0.lock().unwrap();
+            assert!(state.access.contains_key(token));
+            assert!(!headers.contains_key(header::COOKIE));
+            state.worker_calls.push(("attachment".into(),headers["idempotency-key"].to_str().unwrap().into(),receipt.clone()));
+            (StatusCode::CREATED, Json(receipt))
+        }
+    }).layer(axum::extract::DefaultBodyLimit::max(20 * 1024 * 1024)))
     .route("/api/v1/agent-lifecycle/{id}",get(|| async {Json(json!({"id":"op_test","status":"succeeded","phase":"ready","agent_id":"agt_test"}))}))
     .route("/api/v1/agents/{id}",get(|| async {Json(json!({"id":"agt_test","status":"working"}))}))
     .route("/api/v1/agents/{id}/transcript",get(|| async {Json(json!({"agent_id":"agt_test","through_seq":4,"turns":[]}))}))
@@ -228,4 +242,159 @@ async fn worker_revocation_fences_inflight_requests_even_after_reenable() {
     assert!(!setup.body.to_string().contains("secret provider"));
     let other = connect(&app, "worker-owner", 3600).await;
     assert_eq!(session(&app, &other).await.body["workerEnabled"], false);
+}
+
+#[tokio::test]
+async fn creation_sources_select_the_pinned_tools_and_preserve_owner_and_service_scope() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let cookie = connect(&app, "source-owner", 3600).await;
+    call(&app, &cookie, "consent", json!({"enabled":true})).await;
+    let mut input = task();
+    input["context"]["creation"] = json!({"name":"New room","source":{"kind":"scaniverse","url":"https://scaniverse.com/scan/one"}});
+    let created = call(&app, &cookie, "create", input.clone()).await;
+    assert_eq!(created.status, StatusCode::ACCEPTED, "{}", created.body);
+    let body = app
+        .nyx
+        .oauth
+        .0
+        .lock()
+        .unwrap()
+        .worker_calls
+        .last()
+        .unwrap()
+        .2
+        .clone();
+    assert_eq!(
+        body["repository"]["ref"],
+        "d2ac32a337836d8338a5ed9b1cd7f8e8cc0429e2"
+    );
+    assert!(body["initial_message"]
+        .as_str()
+        .unwrap()
+        .contains("metaverse-recon source"));
+    assert!(body["initial_message"].as_str().unwrap().contains(ORG));
+    assert_eq!(
+        body["profile"]["permissions"]["services"],
+        json!(["chrono-metaverse"])
+    );
+    input["context"]["creation"]["source"]["url"] = json!("https://evil.test/scan/one");
+    assert_eq!(
+        call(&app, &cookie, "create", input.clone()).await.status,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    input["context"]["creation"]["source"] =
+        json!({"kind":"file","name":"room.glb","size":8,"sha256":"a".repeat(64)});
+    assert_eq!(
+        call(&app, &cookie, "create", input.clone()).await.status,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    input["prepareOnly"] = json!(true);
+    assert_eq!(
+        call(&app, &cookie, "create", input).await.status,
+        StatusCode::ACCEPTED
+    );
+    let body = app
+        .nyx
+        .oauth
+        .0
+        .lock()
+        .unwrap()
+        .worker_calls
+        .last()
+        .unwrap()
+        .2
+        .clone();
+    assert!(body["initial_message"]
+        .as_str()
+        .unwrap()
+        .contains("文件尚未上传"));
+    assert!(!body["initial_message"]
+        .as_str()
+        .unwrap()
+        .contains("metaverse-recon source"));
+}
+
+async fn upload(
+    app: &TestApp,
+    cookie: &str,
+    csrf: &str,
+    name: &str,
+    size: usize,
+) -> (StatusCode, Value) {
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(format!(
+            "{ROOT}/worker/attachment?agentId=agt_test&name={name}"
+        ))
+        .header("cookie", cookie)
+        .header("origin", ORIGIN)
+        .header("x-csrf-token", csrf)
+        .header("idempotency-key", "stable-attachment-0001")
+        .header("content-type", "application/octet-stream")
+        .body(Body::from(vec![42u8; size]))
+        .unwrap();
+    let response = metaverse_api::app(app.state.clone())
+        .oneshot(request)
+        .await
+        .unwrap();
+    let status = response.status();
+    assert!(response.headers()[header::CACHE_CONTROL]
+        .to_str()
+        .unwrap()
+        .contains("no-store"));
+    let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
+        .await
+        .unwrap();
+    (status, serde_json::from_slice(&bytes).unwrap())
+}
+#[tokio::test]
+async fn model_upload_checks_consent_csrf_size_and_receipt_and_retries_the_same_upstream_request() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let cookie = connect(&app, "upload-owner", 3600).await;
+    let session = session(&app, &cookie).await;
+    let csrf = session.body["csrfToken"].as_str().unwrap();
+    assert_eq!(
+        upload(&app, &cookie, csrf, "room.glb", 8).await.0,
+        StatusCode::FORBIDDEN
+    );
+    call(&app, &cookie, "consent", json!({"enabled":true})).await;
+    assert_eq!(
+        upload(&app, &cookie, "wrong", "room.glb", 8).await.0,
+        StatusCode::FORBIDDEN
+    );
+    let first = upload(&app, &cookie, csrf, "room.glb", 9 * 1024 * 1024).await;
+    assert_eq!(first.0, StatusCode::CREATED, "{}", first.1);
+    assert_eq!(first.1["size_bytes"], 9 * 1024 * 1024);
+    assert_eq!(
+        upload(&app, &cookie, csrf, "room.glb", 9 * 1024 * 1024).await,
+        first
+    );
+    {
+        let state = app.nyx.oauth.0.lock().unwrap();
+        assert_eq!(state.worker_calls.len(), 2);
+        assert_eq!(state.worker_calls[0], state.worker_calls[1]);
+    }
+    assert_eq!(
+        upload(&app, &cookie, csrf, "bad.glb", 8).await.0,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert_eq!(
+        upload(&app, &cookie, csrf, "room.glb", 20 * 1024 * 1024 + 1)
+            .await
+            .0,
+        StatusCode::PAYLOAD_TOO_LARGE
+    );
+    assert_eq!(
+        upload(&app, &cookie, csrf, "room.exe", 8).await.0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    call(&app, &cookie, "consent", json!({"enabled":false})).await;
+    assert_eq!(
+        upload(&app, &cookie, csrf, "room.glb", 8).await.0,
+        StatusCode::FORBIDDEN
+    );
 }

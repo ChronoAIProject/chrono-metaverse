@@ -164,3 +164,10 @@ CMA 接口要求普通用户 OAuth access token。带服务 resource/allowed_ser
 - 线上工作台桌面/手机真实渲染，未出现脚本错误或横向溢出。匿名目录、私有查看器和 CMA 操作均返回 `401` 且 `no-store`；业务接口仍拒绝未签名请求。OAuth 客户端、最小 scopes、回调、PKCE 和安全 Cookie 已核对。
 - 本地 449 个网页测试、21 个 OAuth 集成测试（包括 4 个空间发现/查看器用例）及桌面/手机工作台流程通过。全站端到端测试和 API 全量测试在该 CI 中通过。浏览器夹具验证了已有场景渲染、连续追问复用 worker、自动跟随新预览和重新确认发布。
 - 未代替用户完成浏览器 OAuth 同意、CMA 同意或真实 worker 修改。线上已验证匿名入口与原有代理读取；登录后的真实空间列表和 worker 编辑仍需用户以自己的账号首次使用验收。
+
+
+## 创建来源与模型上传
+
+创建聊天在 `context.creation` 中提交 `{name,source}`，来源为 `{kind:"scaniverse",url}` 或 `{kind:"file",name,size,sha256,attachment?}`。文件先以 `prepareOnly:true` 创建环境，再经 `POST /api/auth/nyxid/worker/attachment?agentId=…&name=…` 上传二进制，核对 CMA 回执后以 `message` 提交同一 worker；链接直接以 `create` 提交。固定官方仓库版本和离线命令见 [WEB_CONSOLE_PLAN.md](WEB_CONSOLE_PLAN.md)。
+
+附件入口要求当前浏览器会话、同源 Origin、CSRF、CMA 同意版本和幂等编号；同进程最多两次上传，单文件最大 20 MiB，读取请求体最多 30 秒，转发最多 45 秒，不落盘。成功响应前再次校验授权版本和回执的 worker、名称、路径、大小、SHA-256。CMA 继续独立检查当前用户对目标 worker 的权限。此路径不新增 OAuth scopes，也不把用户 OAuth 凭据交给 worker。
