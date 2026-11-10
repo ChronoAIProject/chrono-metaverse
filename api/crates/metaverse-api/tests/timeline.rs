@@ -1895,6 +1895,33 @@ async fn draft_assets_are_checked_by_role_and_by_space_ownership() {
         "{:?}",
         reply.body
     );
+    // 带偏航的物件（SHAPES 3）：按模型包围盒转过之后的外包盒和 bounds 比。长条模型 0.8 × 0.5 × 0.2 米，
+    // 偏航 90° 后 x、z 对调；不带 transform 时同样的 bounds 对不上。
+    let bench = app
+        .put_checked_asset(
+            SPACE,
+            b"glTF bench",
+            "model/gltf-binary",
+            "model",
+            glb_check([-0.4, 0.0, -0.1], [0.4, 0.5, 0.1], 100),
+        )
+        .await;
+    let turned = |id: &str, transform: Option<Value>| {
+        let mut entity = json!({"entityId": id, "layer": "ext", "kind": "object", "assetHash": &bench,
+            "bounds": {"min": [3.9, 0, 0.6], "max": [4.1, 0.5, 1.4]}});
+        if let Some(transform) = transform {
+            entity["transform"] = transform;
+        }
+        json!([{"op": "placeEntity", "entity": entity}])
+    };
+    let reply = append(&app, &path, turned("bench", None)).await;
+    assert_eq!(
+        reply.body["code"], "model_bounds_mismatch",
+        "{:?}",
+        reply.body
+    );
+    let reply = append(&app, &path, turned("bench", Some(json!({"yaw": 90})))).await;
+    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     // 正例：核对记录合乎角色。
     let reply = append(&app, &path, place("lamp", &model)).await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
