@@ -108,3 +108,11 @@ nyxid proxy request chrono-cd "$APP/services/metaverse-api/secrets?org_id=$ORG" 
 - OAuth 客户端归 ChronoAI 组织，客户端秘密和加密密钥已通过 chrono-cd 应用密钥接口设置。
 - 已在线核对：所有新副本就绪、`session` 返回 `enabled:true`、`/connect` 正常、授权跳转包含正确客户端/回调/PKCE、Cookie 为 Secure/HttpOnly/SameSite=Lax、无签名身份业务请求返回 401、无效回调拒绝且不缓存、原有 OAuth 代理可读取 `chronoai-lobby`。
 - 尚需用户实际登录并同意 `/connect` 授权，才能在线验收“Agent 使用同一用户保存的授权访问组织空间”的完整链路；不将匿名入口检查当作此链路已通过。
+
+## 网页管理部署记录（2026-11-10）
+
+- chrono-cd 修订 `11`；源码提交 `4292d162ea126f956cc3ab5a51812dee985d8feb`，来自 `deploy/nyxid-oauth-20261110` 分支。[Images 运行](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/42834883023) 成功，两个镜像按该运行的摘要固定在 `app.json`。
+- 仅更新 API/web 镜像及 CD 解析出的镜像摘要；客户端、已有授权、数据库和应用配置沿用。API 单副本和 web 双副本全部更新且就绪。
+- 已在线核对：新页面真实渲染、手机布局与滚动、未连接时组织查询不可操作、权限范围说明可展开、回调失败返回固定恢复页面且清理地址参数、点击授权可到 NyxID 登录页；未执行用户同意步骤。
+- 新增 `check`、`organizations` 接口对无会话请求返回 401，回调错误和状态响应不缓存；授权跳转仍包含原客户端、最小 scopes、精确回调与 PKCE；业务接口仍拒绝未签名请求，既有 NyxID OAuth 代理仍能读取 `chronoai-lobby`。
+- 连接后的账号检查、组织列表和角色查询、断开流程已通过本地真实 MongoDB + 模拟 NyxID 的集成测试及桌面/手机浏览器测试。线上完整连接链路仍需用户以与 Agent Key 相同的账号授权后验收。
