@@ -78,12 +78,48 @@ const WORKSPACE_TSCONFIG = {
   include: ['build/**/*.ts'],
 };
 
+/**
+ * 工作区里不进版本库的目录：拉取的数据、本地输出，以及**不公开**的原始扫描（`scan/`，`pull --scan`
+ * 写的最大 1 GiB）和重建工作目录（`work/`：参考图、下载的贴图、逐件草稿）、网页用模型（`web/`）。
+ */
+export const WORKSPACE_IGNORED = [
+  'out/',
+  'chunks/',
+  'assets/',
+  'scan/',
+  'work/',
+  'web/',
+  'node_modules/',
+] as const;
+
 const WORKSPACE_GITIGNORE = `# metaverse 工作区：拉取的数据和本地输出不进版本库，建造脚本（build/）进。
-out/
-chunks/
-assets/
-node_modules/
+# scan/ 是原始扫描（不公开，不进任何仓库）；work/ 是重建的工作目录；web/ 是本地生成的网页用模型。
+${WORKSPACE_IGNORED.join('\n')}
 `;
+
+/**
+ * 保证工作区的 `.gitignore` 忽略 `WORKSPACE_IGNORED`：没有就写一份；有就把缺的行补在末尾（旧版本 init 写的
+ * 没有 `scan/`、`work/`、`web/`）。返回补上的行（写了新文件时返回全部），没改时返回空数组。
+ */
+export function ensureGitignore(root: string): string[] {
+  const file = join(root, '.gitignore');
+  if (!existsSync(file)) {
+    writeFileSync(file, WORKSPACE_GITIGNORE);
+    return [...WORKSPACE_IGNORED];
+  }
+  const text = readFileSync(file, 'utf8');
+  const lines = new Set(text.split(/\r?\n/).map((line) => line.trim()));
+  const missing = WORKSPACE_IGNORED.filter(
+    (entry) => !lines.has(entry) && !lines.has(`/${entry}`) && !lines.has(entry.slice(0, -1)),
+  );
+  if (missing.length === 0) return [];
+  const prefix = text.length === 0 || text.endsWith('\n') ? '' : '\n';
+  writeFileSync(
+    file,
+    `${text}${prefix}# metaverse 补上的：原始扫描（scan/）不公开，重建工作目录和本地输出不进版本库\n${missing.join('\n')}\n`,
+  );
+  return missing;
+}
 
 /** 随 SDK 分发、写进工作区的技能说明：建造（metaverse-builder）和用 AI 重建实体空间（metaverse-reconstruct）。 */
 export const SKILLS = ['metaverse-builder', 'metaverse-reconstruct'] as const;
@@ -196,10 +232,7 @@ export function runInit(ctx: CliContext, args: readonly string[]): number {
     created.push(tsconfig);
   }
   const gitignore = join(root, '.gitignore');
-  if (!existsSync(gitignore)) {
-    writeFileSync(gitignore, WORKSPACE_GITIGNORE);
-    created.push(gitignore);
-  }
+  if (ensureGitignore(root).length > 0) created.push(gitignore);
   const link = linkSdk(ctx.sdkRoot, root);
   if (link !== null) created.push(link);
   ctx.out(`已创建工作区 ${root}（空间 ${spaceId}，${mode} 模式）`);

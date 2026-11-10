@@ -32,6 +32,10 @@ function scanZip(): Uint8Array {
   ]);
 }
 
+/** 贴图（只要文件头对：pull 按文件头起扩展名）。 */
+const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+const JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 4, 5, 6]);
+
 function state(scan: Uint8Array, extra: Partial<FakeState> = {}): Partial<FakeState> {
   const web = meshGlb();
   const model = meshGlb({ nodes: [{ mesh: 0, scale: [2, 2, 2] }] });
@@ -62,6 +66,20 @@ function state(scan: Uint8Array, extra: Partial<FakeState> = {}): Partial<FakeSt
             bounds: { min: [-1, 0, -1], max: [1, 2, 1] },
           },
         },
+        {
+          id: 'rb.rug-01',
+          body: {
+            entityId: 'rb.rug-01',
+            layer: 'rebuilt',
+            kind: 'object',
+            shape: {
+              type: 'box',
+              size: [1, 0.02, 1],
+              material: { texture: sha256(PNG), normalMap: sha256(JPEG), uv: 'planar' },
+            },
+            bounds: { min: [-0.5, 0, -0.5], max: [0.5, 0.02, 0.5] },
+          },
+        },
       ],
       anchors: [
         { anchorId: 'door-1', kind: 'door', box: [0, 0, 0, 20, 40, 4], visibility: 'public' },
@@ -80,6 +98,8 @@ function state(scan: Uint8Array, extra: Partial<FakeState> = {}): Partial<FakeSt
       [sha256(scan), Buffer.from(scan)],
       [sha256(web), Buffer.from(web)],
       [sha256(model), Buffer.from(model)],
+      [sha256(PNG), Buffer.from(PNG)],
+      [sha256(JPEG), Buffer.from(JPEG)],
     ]),
     ...extra,
   };
@@ -174,8 +194,29 @@ describe('metaverse pull --scan', () => {
     fake.state.snapshot = { ...fake.state.snapshot!, scan: null };
     expect(await main(ctx, ['pull', '--scan'])).toBe(1);
     expect(ctx.errors.at(-1)).toContain('没有原始扫描');
-    expect(await main(ctx, ['pull', '--assets'])).toBe(1);
-    expect(ctx.errors.at(-1)).toContain('--share');
+  });
+
+  it('--assets：网页用模型、物件模型和贴图都下到 assets/（贴图按文件头起扩展名），已有的不重下', async () => {
+    fake = await startFakeApi(state(scanZip()));
+    const root = workspace(fake);
+    const ctx = makeContext(root);
+    expect(await main(ctx, ['pull', '--assets'])).toBe(0);
+    const names = readdirSync(join(root, 'assets')).sort();
+    expect(names).toHaveLength(4);
+    expect(names).toContain(`${sha256(PNG)}.png`);
+    expect(names).toContain(`${sha256(JPEG)}.jpg`);
+    expect(ctx.lines.join('\n')).toContain('贴图 4 个在 assets/');
+    const before = fake.requests.length;
+    expect(await main(ctx, ['pull', '--assets'])).toBe(0);
+    expect(fake.requests.slice(before).some((r) => r.path.includes('/assets/'))).toBe(false);
+    // 服务端没有的资源：提示，不中断。
+    fake.state.assets!.delete(sha256(JPEG));
+    removeDir(join(root, 'assets'));
+    const jsonCtx = makeContext(root);
+    expect(await main(jsonCtx, ['pull', '--assets', '--json'])).toBe(0);
+    const out = JSON.parse(jsonCtx.lines.join('\n'));
+    expect(out.assets).toBe(3);
+    expect(out.warnings.join('\n')).toContain(sha256(JPEG).slice(0, 12));
   });
 
   it('内容与哈希不符：删掉下到一半的文件', async () => {
@@ -188,6 +229,26 @@ describe('metaverse pull --scan', () => {
     expect(await main(ctx, ['pull', '--scan'])).toBe(1);
     expect(ctx.errors.at(-1)).toContain('sha256');
     expect(readdirSync(join(root, 'scan')).filter((n) => n.endsWith('.part'))).toEqual([]);
+  });
+});
+
+describe('metaverse pull：工作区的 .gitignore', () => {
+  it('旧版本 init 写的 .gitignore 缺 scan/、work/、web/ 时补上；已有的不重复写', async () => {
+    fake = await startFakeApi(state(scanZip()));
+    const root = workspace(fake);
+    writeFileSync(join(root, '.gitignore'), 'out/\nchunks/\nassets/\nnode_modules/');
+    const ctx = makeContext(root);
+    expect(await main(ctx, ['pull', '--scan'])).toBe(0);
+    const lines = readFileSync(join(root, '.gitignore'), 'utf8').split('\n');
+    expect(lines.filter((line) => line === 'scan/')).toHaveLength(1);
+    expect(lines).toContain('work/');
+    expect(lines).toContain('web/');
+    expect(lines).toContain('node_modules/');
+    expect(ctx.errors.join('\n')).toContain('.gitignore 补上了 scan/、work/、web/');
+    const again = makeContext(root);
+    expect(await main(again, ['pull'])).toBe(0);
+    expect(readFileSync(join(root, '.gitignore'), 'utf8').split('\n')).toEqual(lines);
+    expect(again.errors.join('\n')).not.toContain('.gitignore');
   });
 });
 
@@ -213,7 +274,8 @@ describe('metaverse pull --share', () => {
     });
     expect(JSON.parse(readFileSync(join(root, 'scan', 'transform.json'), 'utf8')).seq).toBe(4);
     const assets = readdirSync(join(root, 'assets'));
-    expect(assets).toHaveLength(2);
+    expect(assets).toHaveLength(4);
+    expect(assets).toContain(`${sha256(PNG)}.png`);
     // 令牌不出现在工作区的任何文件里，也不出现在输出里。
     const grep = (dir: string): string[] =>
       readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

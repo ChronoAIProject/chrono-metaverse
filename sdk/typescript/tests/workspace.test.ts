@@ -201,7 +201,11 @@ describe('metaverse init', () => {
       'export default function build',
     );
     expect(existsSync(join(root, 'tsconfig.json'))).toBe(true);
-    expect(readFileSync(join(root, '.gitignore'), 'utf8')).toContain('out/');
+    const ignore = readFileSync(join(root, '.gitignore'), 'utf8').split('\n');
+    // 原始扫描（不公开）、重建工作目录、本地输出都不进版本库。
+    for (const entry of ['out/', 'chunks/', 'assets/', 'scan/', 'work/', 'web/']) {
+      expect(ignore).toContain(entry);
+    }
     expect(lstatSync(join(root, 'node_modules/@chrono-metaverse/sdk')).isSymbolicLink()).toBe(true);
     // 再来一次要 --force；--force 不覆盖已有的建造脚本。
     writeFileSync(join(root, 'build/main.ts'), '// 我的脚本');

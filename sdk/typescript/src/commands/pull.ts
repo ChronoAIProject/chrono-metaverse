@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readSync,
   statSync,
   writeFileSync,
@@ -12,6 +13,7 @@ import { chunkHash, decompressChunk } from '../core/chunk.js';
 import { isSha256Hex, sha256Hex } from '../core/hash.js';
 import { LimitsError, parseUploadLimits } from '../core/limits.js';
 import { normalizeEntityBody, type EntityBody } from '../core/record.js';
+import { textureRefs } from '../core/shape.js';
 import type { MetaverseApi, SnapshotView } from '../transport/api.js';
 import {
   DEFAULT_SEGMENT_BYTES,
@@ -22,7 +24,7 @@ import {
 import { parseShareLink, PublicApi, ShareLinkError } from '../transport/public.js';
 import { writeLimits } from '../workspace/bundle.js';
 import { paths, writeBase, writeJson, type ChunkRef, type SpaceFile } from '../workspace/files.js';
-import { installSkill, linkSdk } from './init.js';
+import { ensureGitignore, installSkill, linkSdk } from './init.js';
 import {
   CliError,
   flag,
@@ -37,7 +39,7 @@ import {
   type Workspace,
 } from './common.js';
 
-export const PULL_HELP = `metaverse pull [--seq <n>] [--scan]
+export const PULL_HELP = `metaverse pull [--seq <n>] [--scan] [--assets]
 metaverse pull --share <分享链接> [--seq <n>] [--assets]
 
 下载空间的当前状态（或指定 seq 的版本）到工作区：space.json、palette.json、anchors.json、
@@ -51,7 +53,8 @@ metaverse bundle check 据此提前检查）。
   --share <分享链接>  不经 NyxID，只读公开快照（https://<网站>/s/<空间编号>#share=<分享令牌>；令牌也可以
                       用环境变量 METAVERSE_SHARE_TOKEN 给）：写 space.json（标记为只读，不能推送）、entities.json、
                       anchors.json（只有公开锚点）、区块和 scan/transform.json。分享令牌只在内存里用，不写进工作区
-  --assets            和 --share 一起用：另外下载网页用模型和物件模型到 assets/（按哈希核对）`;
+  --assets            另外把这个版本引用的网页用模型（全部档）、物件模型和贴图下载到 assets/（按哈希核对；
+                      贴图按文件头起扩展名）。metaverse-recon bundle --from-snapshot 要用（例如退回旧版本时）`;
 
 const CONCURRENCY = 6;
 
@@ -96,6 +99,70 @@ function chunkRefs(snapshot: SnapshotView | null): ChunkRef[] {
     cz: c.cz,
     hash: c.hash,
   }));
+}
+
+/** 贴图的扩展名：按文件头认 png、jpg、webp，认不出来时用 bin。 */
+function imageExtension(bytes: Uint8Array): string {
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47)
+    return 'png';
+  if (bytes[0] === 0xff && bytes[1] === 0xd8) return 'jpg';
+  const text = Buffer.from(bytes.subarray(0, 12)).toString('latin1');
+  if (text.startsWith('RIFF') && text.slice(8, 12) === 'WEBP') return 'webp';
+  return 'bin';
+}
+
+/**
+ * `--assets`：这个版本引用的网页用模型（全部档）、物件模型（`<哈希>.glb`）和贴图（`<哈希>.<png|jpg|webp>`，
+ * 来自物件形状材质的 `texture`、`normalMap`、`roughnessMap` 和物件的 `textures`）下载到 `assets/`。
+ * 按哈希核对，坏数据不落盘；已有同一哈希的文件不重下。`metaverse-recon bundle --from-snapshot` 按哈希在这里找。
+ */
+async function downloadAssets(
+  getAsset: (hash: string) => Promise<Uint8Array | null>,
+  dir: string,
+  snapshot: SnapshotView | null,
+  entities: readonly EntityBody[],
+): Promise<{ files: string[]; missing: string[] }> {
+  const glbs = new Set<string>(snapshot?.scan?.webModelHashes ?? []);
+  const textures = new Set<string>();
+  for (const entity of entities) {
+    if (entity.assetHash !== undefined) glbs.add(entity.assetHash);
+    if (entity.shape !== undefined)
+      for (const hash of textureRefs(entity.shape)) textures.add(hash);
+    for (const hash of entity.textures ?? []) textures.add(hash);
+  }
+  mkdirSync(dir, { recursive: true });
+  const present = new Map<string, string>();
+  for (const name of readdirSync(dir)) {
+    const stem = name.split('.', 1)[0]!;
+    if (isSha256Hex(stem) && !name.endsWith('.part')) present.set(stem, join(dir, name));
+  }
+  const files: string[] = [];
+  const missing: string[] = [];
+  const wanted = [
+    ...[...glbs].sort().map((hash) => ({ hash, texture: false })),
+    ...[...textures]
+      .filter((hash) => !glbs.has(hash))
+      .sort()
+      .map((hash) => ({ hash, texture: true })),
+  ];
+  for (const { hash, texture } of wanted) {
+    if (!isSha256Hex(hash)) throw new CliError(`快照里的资源哈希格式不对：${hash}`);
+    const existing = present.get(hash);
+    if (existing !== undefined) {
+      files.push(existing);
+      continue;
+    }
+    const bytes = await getAsset(hash);
+    if (bytes === null) {
+      missing.push(hash);
+      continue;
+    }
+    if (sha256Hex(bytes) !== hash) throw new CliError(`资源 ${hash} 的内容与哈希不符`);
+    const target = join(dir, `${hash}.${texture ? imageExtension(bytes) : 'glb'}`);
+    writeFileSync(target, bytes);
+    files.push(target);
+  }
+  return { files, missing };
 }
 
 /** 扫描目录（`metaverse-recon` 的 `--scan`、`--transform` 默认从这里读）。 */
@@ -208,9 +275,6 @@ export async function runPull(ctx: CliContext, args: readonly string[]): Promise
   }
   const ws = openWorkspace(ctx, values);
   if (str(values, 'share') !== undefined) return pullShare(ctx, ws, values);
-  if (flag(values, 'assets')) {
-    throw new CliError('--assets 只和 --share 一起用（经 NyxID 拉取时网页用模型照常下载）');
-  }
   const api = makeApi(ctx, ws, values);
   const json = flag(values, 'json');
   const say = (line: string) => {
@@ -272,6 +336,16 @@ export async function runPull(ctx: CliContext, args: readonly string[]): Promise
       }
     }
   }
+  let assets: string[] | null = null;
+  if (flag(values, 'assets')) {
+    const result = await downloadAssets((hash) => api.getAsset(hash), p.assets, snapshot, entities);
+    assets = result.files;
+    if (result.missing.length > 0) {
+      warnings.push(
+        `这些资源没有下载到（服务端返回 404）：${result.missing.map((h) => h.slice(0, 12)).join('、')}`,
+      );
+    }
+  }
   let scan: ScanDownload | null = null;
   let transform = false;
   if (flag(values, 'scan')) {
@@ -286,6 +360,9 @@ export async function runPull(ctx: CliContext, args: readonly string[]): Promise
   }
   installSkill(ctx.sdkRoot, ws.root, true);
   linkSdk(ctx.sdkRoot, ws.root);
+  const ignored = ensureGitignore(ws.root);
+  if (ignored.length > 0)
+    warnings.push(`.gitignore 补上了 ${ignored.join('、')}（原始扫描不公开，不进版本库）`);
   if (json) {
     printJson(ctx, {
       spaceId: ws.config.spaceId,
@@ -297,6 +374,7 @@ export async function runPull(ctx: CliContext, args: readonly string[]): Promise
       regions: spaceFile.regions.length,
       plots: spaceFile.plots.length,
       limits: limitsNote === null,
+      ...(assets !== null ? { assets: assets.length } : {}),
       ...(scan !== null ? { scan: { ...scan, transform } } : {}),
       warnings,
     });
@@ -312,6 +390,7 @@ export async function runPull(ctx: CliContext, args: readonly string[]): Promise
     ctx.out(`  地块 ${plot.id}：${plot.boxes.map((b) => JSON.stringify(b)).join('、')}（格）`);
   }
   if (limitsNote === null) ctx.out('  上传上限写进了 limits.json');
+  if (assets !== null) ctx.out(`  网页用模型、物件模型和贴图 ${assets.length} 个在 assets/`);
   if (scan !== null) {
     ctx.out(
       scan.skipped
@@ -387,25 +466,15 @@ async function pullShare(
     chunks,
   });
   const transform = writeTransform(ws.root, snapshot, seq);
-  // 网页用模型和物件模型（按哈希核对，坏数据不落盘）。
+  // 网页用模型、物件模型和贴图（按哈希核对，坏数据不落盘）。
   const assets: string[] = [];
   if (flag(values, 'assets')) {
-    const hashes = new Set<string>(snapshot.scan?.webModelHashes ?? []);
-    for (const entity of entities) if (entity.assetHash !== undefined) hashes.add(entity.assetHash);
-    mkdirSync(p.assets, { recursive: true });
-    for (const hash of [...hashes].sort()) {
-      if (!isSha256Hex(hash)) throw new CliError(`快照里的资源哈希格式不对：${hash}`);
-      const target = join(p.assets, `${hash}.glb`);
-      if (!existsSync(target)) {
-        const bytes = await api.getAsset(hash);
-        if (sha256Hex(bytes) !== hash) throw new CliError(`资源 ${hash} 的内容与哈希不符`);
-        writeFileSync(target, bytes);
-      }
-      assets.push(target);
-    }
+    const result = await downloadAssets((hash) => api.getAsset(hash), p.assets, snapshot, entities);
+    assets.push(...result.files);
   }
   installSkill(ctx.sdkRoot, ws.root, true);
   linkSdk(ctx.sdkRoot, ws.root);
+  const ignored = ensureGitignore(ws.root);
   if (json) {
     printJson(ctx, {
       spaceId: ws.config.spaceId,
@@ -427,9 +496,10 @@ async function pullShare(
     `  区块 ${chunks.length}（新下载 ${downloaded}），物件 ${entities.length}，公开锚点 ${snapshot.anchors.length}` +
       (transform ? '，扫描的变换写进了 scan/transform.json' : ''),
   );
-  if (flag(values, 'assets')) ctx.out(`  网页用模型和物件模型 ${assets.length} 个在 assets/`);
+  if (flag(values, 'assets')) ctx.out(`  网页用模型、物件模型和贴图 ${assets.length} 个在 assets/`);
   ctx.out(
     '  这是公开快照：内部锚点、原始扫描都没有，不能 push；要推送先用 metaverse pull 经 NyxID 重新拉取',
   );
+  if (ignored.length > 0) ctx.err(`注意：.gitignore 补上了 ${ignored.join('、')}`);
   return 0;
 }
