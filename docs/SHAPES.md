@@ -117,8 +117,9 @@ glb 导出都不变。
 3. `tile` 只用于有贴图坐标的材质：贴图材质（本来就必须有 `uv`），或者带了 `normalMap` / `roughnessMap` 的颜色材质；
 4. 颜色材质带了 `normalMap` 或 `roughnessMap` 就必须给 `uv`；两样都没带时仍然不能有 `uv`，也仍然不能有 `tint`（与原来相同）；
 5. `normalMap`、`roughnessMap` 和 `texture` 一样是 64 位小写十六进制的资源哈希。只有 AI 物件集（本地文件）里可以
-   写成外链对象 `{url, sha256, size}`，由本地工具 `bundle` 下载、核对后作为 `texture` 文件进重建包，记录里换成
-   哈希（`docs/design/server-slim.md` 第 12 节）；形状本身（重建包和提交里的物件记录）只收哈希。
+   写成外链对象 `{url, sha256, size}`，或本地文件 `{file}`（相对物件集文件的路径，不能是绝对路径、不能有 `..`，
+   重建工作台 `texture`、`bake` 写的），由本地工具 `bundle` 下载或读取、核对后作为 `texture` 文件进重建包，记录里
+   换成哈希（`docs/design/server-slim.md` 第 12 节）；形状本身（重建包和提交里的物件记录）只收哈希。
 
 **资源引用**：`normalMap`、`roughnessMap` 和 `texture` 一样是物件引用的贴图资源。物件的 `textures` 列出形状里这三个
 字段的全部哈希（去重，至多 64 个）。接口服务按形状收集引用（`Shape::texture_refs`：草稿追加时查用途和归属、
@@ -380,7 +381,7 @@ v = (−a·sin θ + b·cos θ) / tile[1]
 - `shape_*.json`：给定形状，写明期望的包围盒和三角形数（网站和处理服务据此核对网格生成）。三角形数目前只给 `plate`（4n − 4）和点处于一般位置的 `hull`（2V − 4）；`shape_plate_*`、`shape_hull_*`、`shape_material_*` 和对应的 `shape_invalid_*` 覆盖本文新增的板、凸包、`opacity`、`unlit`，以及第 2 节"贴图坐标的平铺、着色、法线与粗糙度"的新字段（合法的取值和越界、类型错、缺少前提的写法）。
 - `canonical_entity_model_source.json`：引用外部模型、带 `material.tint` 和 `props.source` 的物件记录的内容哈希。
 - `uv/uv_*.json`：贴图坐标。给定形状和材质，按顶点的局部位置和法线找到顶点，写明期望的最终贴图坐标；覆盖 `box`、`planar`、`cylindrical`、`mesh`（盒子、圆柱、挤出、板、扫掠）× 有无 `tile`、`offset`、`rotate`，以及组合上的材质和颜色材质的法线贴图。期望值由 `tests/vectors/tools/texture_vectors.py` 按本文独立算出。网站和处理服务核对（接口服务不生成网格）。
-- `authored/authored_*.json`：带外链贴图对象 `{url, sha256, size}` 的 AI 物件集，合法和不合法各一份，由本地工具的物件集校验按 `valid` 接受或拒绝（接口服务不收物件集）。
+- `authored/authored_*.json`：带外链贴图对象 `{url, sha256, size}` 和本地贴图 `{file}` 的 AI 物件集，合法和不合法各一份，由本地工具的物件集校验按 `valid` 接受或拒绝（接口服务不收物件集）。
 - `ops/ops_*.json`：高层操作作用到工作状态的结果，含第 3 节"草稿的种类与操作"的规则（`ifPresent`、带历史的 `ifNew`、编号分区、同层模板、重建草稿的操作、"除去"范围、模板引用的完整性）。Rust 生成，命令行核对。
 - `bundle/bundle_*.json`：第 7 节的重建包清单，合法和不合法的写法、出错的字段、引用表、展开成的操作，以及在旧重建层上推一次、推两次的结果（第二次没有变化）；`bundle_limits_default.json` 是第 8 节的默认上限。Rust 跑全部，命令行只跑结构校验和默认上限。
 

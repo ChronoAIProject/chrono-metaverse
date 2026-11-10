@@ -160,23 +160,25 @@ Rust 实现之后重新生成，文件没有变化）。接口服务、本地工
 材质（子形状带 `transform`）、颜色材质带法线贴图。不给 `tile` 的几个（`uv_box_normalized`、`uv_cylindrical_normalized`、
 `uv_mesh_cylinder_normalized`、`uv_mesh_extrude`）就是原来的算法。
 
-## 6. AI 物件集的外链贴图：`authored/authored_*.json`
+## 6. AI 物件集的外链贴图和本地贴图：`authored/authored_*.json`
 
-对应 SHAPES 2 合法条件第 5 条和 `docs/design/server-slim.md` 第 12 节：外链贴图 `{url, sha256, size}` 只出现在 AI 物件集
-（本地文件）里，由本地工具 `bundle` 按外部模型同样的下载规则下载（主机列表 `METAVERSE_RECON_MODEL_HOSTS`，单个大小上限
-`METAVERSE_RECON_MAX_TEXTURE_BYTES`），按贴图用途的上限（边长 4096）检查，作为 `texture` 文件进重建包，记录里换成哈希。
-接口服务不收物件集，不跑这批向量。
+对应 SHAPES 2 合法条件第 5 条和 `docs/design/server-slim.md` 第 12 节：外链贴图 `{url, sha256, size}` 和本地贴图 `{file}`
+（相对物件集文件的路径，重建工作台 `texture`、`bake` 写的）只出现在 AI 物件集（本地文件）里。外链的由本地工具 `bundle`
+按外部模型同样的下载规则下载（主机列表 `METAVERSE_RECON_MODEL_HOSTS`，单个大小上限 `METAVERSE_RECON_MAX_TEXTURE_BYTES`），
+本地的直接读；都按贴图用途的上限（边长 4096）检查，作为 `texture` 文件进重建包，记录里换成哈希。接口服务不收物件集，
+不跑这批向量。
 
 | 字段 | 含义 |
 |---|---|
 | `cases` | 用例：`{ "name", "description", "authored": 物件集, "valid": bool, "summary"?, "where"? }` |
-| `cases[].summary` | `valid = true` 时：`{ entities, templates, models, textureUrls }`：物件、模板、外部模型的个数，`textureUrls` 是去重后的外链贴图地址数，本地工具要整理出这么多个下载 |
+| `cases[].summary` | `valid = true` 时：`{ entities, templates, models, textureUrls, textureFiles }`：物件、模板、外部模型的个数，`textureUrls` 是去重后的外链贴图地址数（本地工具要整理出这么多个下载），`textureFiles` 是去重后的本地贴图路径数 |
 | `cases[].where` | `valid = false` 时错在哪里：物件集里的路径（说明，仅供参考） |
 
 - `authored_texture_urls_valid.json`：结构、组合、模板、实例、外部模型、烘焙指令和外链贴图混用的完整示例（同一个
-  外链用了两次，只算一个），颜色材质带外链的法线、粗糙度贴图，以及一个最小的物件集。本地工具的物件集校验必须接受。
+  外链用了两次，只算一个），颜色材质带外链的法线、粗糙度贴图，一个最小的物件集，以及工作台写的 `{file}` 本地贴图
+  （同一个文件用了两次，只算一个）。本地工具的物件集校验必须接受。
 - `authored_texture_urls_invalid.json`：从最小的物件集改一处：不是 https、带用户名、`sha256` 大写或长度不对、`size`
-  是 0、超过 16 MiB、是小数、是字符串、缺了，多了字段，工作台的 `{file}` 引用，`texture` 是数字，`normalMap`、
+  是 0、超过 16 MiB、是小数、是字符串、缺了，多了字段，`{file}` 是绝对路径、带 `..`、多了字段，`texture` 是数字，`normalMap`、
   `roughnessMap` 的外链写错，模板里的外链写错，烘焙指令和 `normalMap`、`tile` 一起出现。本地工具的物件集校验在下载之前
   就必须全部拒绝。
 
