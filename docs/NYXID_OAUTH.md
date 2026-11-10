@@ -200,6 +200,15 @@ nyxid proxy request chrono-cd "$APP/services/metaverse-api/secrets?org_id=$ORG" 
 - 桌面将 CMA 聊天放在右侧独立网格列，场景按剩余宽度取景；收起后恢复满宽。1280×720 下场景 900 像素、聊天 380 像素，两者不重叠。手机改为上下布局，并压缩场景工具栏和时间轴，保留可用三维画面；启动/恢复卡滚动到标题，避免错误原因被自动滚动藏起来。
 - 待确认的创建、追加消息、附件和停止请求保留最后一次错误说明、错误类型与 HTTP 状态，刷新后仍可查看。旧记录继续兼容并明确说明缺少历史错误详情。重试追加消息保持同一 worker、原始请求内容和幂等编号，不自动重放写操作。
 - 本地 455 个网页测试、5 个工作台浏览器场景、格式、lint、类型、生产构建及 32 个部署检查通过。新回归验证第一条成功、第二条回执失败、刷新保留具体错误、再以原请求恢复；这是模拟故障测试，不代表已确认用户实际第二条消息的上游故障原因。
-- [CI](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/42909370893) 中网页、API、重建工具、SDK 和仓库检查已成功，全站三维浏览器任务在部署记录编写时仍在运行，最终状态以该运行记录为准。
+- [CI](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/42909370893) 已全部成功，包括全站三维浏览器任务。
 - 线上构建身份与源码一致，桌面/手机独立区域、旧消息恢复记录、持久化错误显示、匿名接口拒绝、OAuth 最小 scopes/PKCE/安全 Cookie 均通过。登录后的页面检查使用模拟会话/目录/生命周期/错误，不创建真实 worker；浏览器无脚本错误。原用户代理读取的 `chronoai-lobby` 完整响应与更新前一致，head.seq 仍为 `5`。
 - 用户已确认第一条 CMA 请求成功，待确认记录对应第二条追问。现有记录没有保留具体错误，且尚无该浏览器的 worker/响应编号，无法确定是 CMA 拒绝、网络超时还是回执缺失。此次修复恢复反馈与布局，不将其表述为真实第二条消息已执行成功。刷新后可明确重试原请求，取得原结果或具体错误，再依据请求详情核查。
+
+## CMA 后续消息授权诊断部署记录（2026-11-11）
+
+- chrono-cd 修订 `20`；API 源码 `20a97be73143528fb7993883ee56cdec21b2a772`，分支 `fix/cma-oauth-refusal-20261111`。API 镜像摘要来自 [Images 运行](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/42913499938) 成功的 API 构建任务，已固定到 `app.json`。仅 PATCH API 镜像；逐字段比较确认其余应用规格不变，web 保留右侧独立聊天栏版本 `aac88194abdec5bed7d0432874a5a3743622bb86`。
+- CMA 返回的 `403 command_authority_required` 映射为 `cma_command_authority_required`，提示网页后续聊天授权未被接受；`403 response_forbidden` 映射为 `cma_response_forbidden`，提示核对该 worker 的共享与操作权限。其他拒绝保持通用提示，不转发 provider 诊断。后续消息的拒绝日志关联 worker、原请求编号、HTTP 状态与映射后的错误码，不记录输入或凭据。网页沿用原恢复记录，不自动重试。
+- 已从当前 CMA 与 NyxID 源码复现第三方 OAuth 声明与命令过滤器的契约冲突，证据和验收条件见 [CMA #1638](https://github.com/ChronoAIProject/cma/issues/1638)。独立 Rust harness 直接引入 CMA 的实际 `bearer.rs`，6 项测试通过；这是过滤器的源码复现，不能替代真实用户的后续命令验收，也不能据此判定这次请求的原始上游错误码。没有移除令牌限制、扩大服务授权或借用另一份登录凭据。
+- 本地 API 107 项单元测试、格式检查和严格 clippy 通过；[CI](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/42913382777) 的 API、依赖审查、网页、SDK、重建工具及仓库检查成功，记录时全站浏览器任务仍在运行。部署配置及固定摘要检查通过。
+- 线上 API `1/1`、web `2/2` 全部更新就绪，API 健康检查通过；有效格式的匿名后续消息返回 `401` 且 `no-store`。既有 `chronoai-lobby` 经原 NyxID 用户代理读取的完整响应与部署前一致，head.seq 为 `5`、commitId 为 `b7a6773f3b1e4866adccaa9dadad78e7`。API 启动日志无 ERROR/panic，种子状态为 `AlreadyDone`。
+- 用户反馈已确认第二条请求收到 CMA 403，旧提示不足以区分命令授权与资源权限。尚未取得该请求的 worker、原请求编号及原始 CMA 错误码；没有代替用户重放移动机器狗的操作，也没有把此次诊断部署表述为后续消息已能执行。授权兼容问题修复前应保留原请求，反复重试不会改变当前凭据的授权。
