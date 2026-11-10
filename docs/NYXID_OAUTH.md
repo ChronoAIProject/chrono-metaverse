@@ -26,6 +26,8 @@ OAuth 凭据只用于 `/oauth/userinfo`、`/oauth/token` 和组织角色查询�
 
 在 NyxID 注册一个专用于此部署的**保密 OAuth 客户端**，支持 `authorization_code`、`refresh_token`、PKCE S256、`client_secret_post`，允许 scopes `openid offline_access`。不用为这个客户端授予业务服务的代理访问范围；它不代理业务请求。现有 NyxID 的普通用户组织查询接口以用户身份判定成员权限，不要求新增组织 scope。此结论根据 NyxID 源码核对；实际部署仍需完成下文的线上验收。
 
+`openid offline_access` 是当前申请的最小 scope 集合，但 NyxID 现有普通用户组织接口没有“仅查询角色”的专用 scope。本文所说的“只用于查询”是 metaverse 的代码使用边界，不代表 provider 已将令牌硬限制到这一个接口；令牌仍须按敏感用户凭据保护，其他接口能否接受它取决于 NyxID 各路由的身份、scope 及资源检查。
+
 回调地址必须精确注册为：
 
 ```text
@@ -82,3 +84,11 @@ nyxid proxy request chrono-cd "$APP/services/metaverse-api/secrets?org_id=$ORG" 
 本地集成测试使用真实 MongoDB 副本集和模拟 NyxID provider，覆盖浏览器绑定/重放、PKCE、密文存储、同主体访问、实时角色降级/移除、显式凭据优先、跨副本刷新、主体不符、刷新拒绝和暂时故障、请求取消、断开与刷新/查询竞争、旧会话不能撤销新授权。命令见 [API README](../api/README.md)。
 
 线上启用后验证：`GET /api/auth/nyxid/session` 返回 `enabled:true`；用户连接后，以原有 Agent Key 经 NyxID MCP 读取组织空间；另一用户未连接时不可借用此授权；断开后再次读取被拒绝。功能权限和 Key 操作范围的拒绝行为也应与之前一致。这些线上检查不能用本地模拟测试替代。
+
+## ChronoAI 部署记录（2026-11-10）
+
+- 应用：`metaverse / chrono-metaverse`，chrono-cd 修订 `10`；源码提交 `d7674fb00e9c67a3a4344f2ddb30ba753318b747`。
+- [构建运行](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/42825482374) 生成的 API/web 镜像按摘要固定在 `infra/chrono-cd/app.json`；保留原有双服务、数据库和资源配置。
+- OAuth 客户端归 ChronoAI 组织，客户端秘密和加密密钥已通过 chrono-cd 应用密钥接口设置。
+- 已在线核对：所有新副本就绪、`session` 返回 `enabled:true`、`/connect` 正常、授权跳转包含正确客户端/回调/PKCE、Cookie 为 Secure/HttpOnly/SameSite=Lax、无签名身份业务请求返回 401、无效回调拒绝且不缓存、原有 OAuth 代理可读取 `chronoai-lobby`。
+- 尚需用户实际登录并同意 `/connect` 授权，才能在线验收“Agent 使用同一用户保存的授权访问组织空间”的完整链路；不将匿名入口检查当作此链路已通过。
