@@ -321,6 +321,12 @@ export function fixtureEvents(now: number = Date.now()): SpaceEvent[] {
     anchorId: 'seat-02',
     data: { status: '有人', party: 1 },
   });
+  // 今天早些时候前台摆上的花束：现在模式总能看到（不依赖上面写死日期的送花日，那些两天后就失效）。
+  drafts.push({
+    at: t0 - 90 * 60_000,
+    type: 'decor.placed',
+    anchorId: 'counter-01',
+  });
   drafts.push({
     at: t0 - 10 * 60_000,
     type: 'staff.note',
