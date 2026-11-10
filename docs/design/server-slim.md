@@ -1123,6 +1123,7 @@ S3 做完后的状态（实施记录）：
      更新、提交带 `jobId`"还没做（`CommitPlan.job_id` 已有，提交事务里还没有任务栅栏），种子发布遇到冲突自动重放也在 S4；
   2. S4 删旧接口之前，实体区路径照旧收 `scan`、`authored` 上传（`check_legacy_upload_purpose`），旧的扫描导入接口照旧能建任务；
   3. 预览资源接口仍是"草稿的 `assets` + 本空间任何时候登记过的 `assetRefs`"（现有规则，没有收窄到基础版本及更早）；
+     ——S9 复核后已收窄：`assetRefs` 加 `seq`（最早引用它的版本号），旧数据按 `commitId` 查提交的版本；
   4. S9：本机设施 `infra/dev/mock-nyxid.mjs` 还没有带 `metaverse:rebuild:write` 的身份，九步验收还不经过重建路径；
   5. 网站对提交的发布者类别 `rebuild`、预览的范围 `rebuild` 只按原文显示（没有专门的文案），S8 或以后按需要补。
 

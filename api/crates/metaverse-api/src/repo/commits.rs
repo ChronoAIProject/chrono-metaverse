@@ -13,7 +13,7 @@
 //! 2. 插入提交：`seq = head.seq + 1`，`at = max(当前时间, head.at)`（`(spaceId, seq)` 唯一）；
 //! 3. 按 `head.seq == 旧值` 条件推进 `spaces.head`（区域和地块的当前状态一起更新）；
 //! 4. 更新物件和锚点的当前状态 `entities` / `anchors`（`{spaceId, id, owner, hash, body, seq}`）；
-//! 5. 登记资源引用 `assetRefs {hash, spaceId, owner, createdAt, commitId}`；
+//! 5. 登记资源引用 `assetRefs {hash, spaceId, owner, createdAt, commitId, seq}`（`seq` 取最早引用它的版本号）；
 //! 6. 提交带扫描、而空间还没有坐标系时，按 `{_id, frame: 不存在}` 条件固定坐标系
 //!    `frame = {fixedAt: 提交的 at, referenceScan: scan.assetHash}`（docs/design/server-slim.md 2.7）；
 //! 7. 由后台任务发布时（部署种子），按租约栅栏把任务标记完成，提交带 `jobId`。
@@ -716,13 +716,18 @@ impl Repo {
         assets.sort();
         assets.dedup();
         for hash in assets {
+            // `seq` 记最早引用它的提交的版本号（`$min`：事件类型先登记的也补上），
+            // 预览按草稿的基础版本过滤（设计 2.8）。
             refs.update_one(
                 doc! {"hash": hash, "spaceId": grant.space_id()},
-                doc! {"$setOnInsert": {
-                    "owner": owner.clone(),
-                    "createdAt": at.to_rfc3339(),
-                    "commitId": commit_id,
-                }},
+                doc! {
+                    "$setOnInsert": {
+                        "owner": owner.clone(),
+                        "createdAt": at.to_rfc3339(),
+                        "commitId": commit_id,
+                    },
+                    "$min": {"seq": seq as i64},
+                },
             )
             .upsert(true)
             .session(&mut *session)

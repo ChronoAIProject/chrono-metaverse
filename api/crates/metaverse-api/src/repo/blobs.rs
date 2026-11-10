@@ -301,21 +301,46 @@ impl Repo {
         self.asset_meta_unchecked(hash).await
     }
 
-    /// 本空间登记过的资源（预览读基础版本的资源）。
-    pub async fn space_asset(
+    /// 本空间第 `upto` 版及以前的提交登记过的资源（预览读基础版本的资源，设计 2.8）。
+    ///
+    /// `assetRefs` 的 `seq` 是最早引用它的提交的版本号；瘦身前写的只有 `commitId`（第一次引用它的
+    /// 提交），按它查版本号。只由事件类型登记过、没有被提交引用过的不算（预览不显示事件）。
+    pub async fn space_asset_upto(
         &self,
         grant: &Grant,
         hash: &str,
+        upto: u64,
     ) -> Result<Option<AssetMeta>, RepoError> {
         let mut filter = granted_children(grant);
         filter.insert("hash", hash);
-        let registered = self
+        let Some(found) = self
             .collection(collections::ASSET_REFS)
             .find_one(filter)
-            .projection(doc! {"_id": 1})
+            .projection(doc! {"seq": 1, "commitId": 1})
             .await?
-            .is_some();
-        if !registered {
+        else {
+            return Ok(None);
+        };
+        let seq = match found.get("seq") {
+            Some(Bson::Int64(value)) => Some(*value),
+            Some(Bson::Int32(value)) => Some(i64::from(*value)),
+            _ => None,
+        };
+        let within = match (seq, found.get_str("commitId")) {
+            (Some(seq), _) => u64::try_from(seq).is_ok_and(|seq| seq <= upto),
+            (None, Ok(commit_id)) => {
+                let mut filter = granted_children(grant);
+                filter.insert("_id", commit_id);
+                filter.insert("seq", doc! {"$lte": upto as i64});
+                self.collection(collections::COMMITS)
+                    .find_one(filter)
+                    .projection(doc! {"_id": 1})
+                    .await?
+                    .is_some()
+            }
+            (None, Err(_)) => false,
+        };
+        if !within {
             return Ok(None);
         }
         self.asset_meta_unchecked(hash).await

@@ -1648,6 +1648,130 @@ async fn draft_assets_must_belong_to_the_space_and_become_public_on_publish() {
     assert_eq!(registered.get_str("commitId").unwrap(), commit_id);
 }
 
+/// 预览令牌读资源只到草稿的基础版本（设计 2.8）：基础版本之后才发布的模型和贴图一律 404，
+/// 令牌不记名、可转发，不能借它读到成员才看得到的新内容。
+#[tokio::test]
+async fn preview_assets_stop_at_the_draft_base_seq() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    app.define_layout(SPACE).await;
+    let older = app
+        .put_checked_asset(
+            SPACE,
+            b"\xff\xd8\xff older texture",
+            "image/jpeg",
+            "texture",
+            image_check("jpeg", 256, 256),
+        )
+        .await;
+    let newer = app
+        .put_checked_asset(
+            SPACE,
+            b"\xff\xd8\xff newer texture",
+            "image/jpeg",
+            "texture",
+            image_check("jpeg", 256, 256),
+        )
+        .await;
+    let entity = |id: &str, hash: &str, x: f64| {
+        json!([{"op": "placeEntity", "entity": {"entityId": id, "layer": "ext", "kind": "object",
+            "shape": {"type": "box", "size": [1, 0.02, 1], "transform": {"position": [x, 0, 2]},
+                      "material": {"texture": hash, "uv": "planar"}},
+            "bounds": {"min": [x - 0.5, 0, 1.5], "max": [x + 0.5, 0.02, 2.5]}}}])
+    };
+    let publish = |path: String| {
+        let app = &app;
+        async move {
+            let reply = app
+                .org(Method::POST, &format!("{path}/publish"), None)
+                .await;
+            assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+            reply.body["seq"].as_u64().unwrap()
+        }
+    };
+    let drafts = format!("/api/v1/spaces/{SPACE}/drafts");
+    // 第一版引用 older。
+    let first = draft_path(SPACE, &new_draft(&app, &drafts).await);
+    assert_eq!(
+        append(&app, &first, entity("rug-a", &older, 2.0))
+            .await
+            .status,
+        StatusCode::OK
+    );
+    let base = publish(first).await;
+    // 草稿 D 基于这一版，生成预览令牌。
+    let pending = draft_path(SPACE, &new_draft(&app, &drafts).await);
+    let token = app
+        .org(Method::POST, &format!("{pending}/preview"), None)
+        .await
+        .body["token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let preview_auth = format!("Preview {token}");
+    // 另一个草稿在 D 的基础版本之后发布，引用 newer。
+    let second = draft_path(SPACE, &new_draft(&app, &drafts).await);
+    assert_eq!(
+        append(&app, &second, entity("rug-b", &newer, 4.0))
+            .await
+            .status,
+        StatusCode::OK
+    );
+    assert_eq!(publish(second).await, base + 1);
+    let status = |hash: String| {
+        let app = &app;
+        let auth = preview_auth.clone();
+        async move {
+            app.public(&format!("/api/public/previews/assets/{hash}"), Some(&auth))
+                .await
+                .status
+        }
+    };
+    assert_eq!(status(older.clone()).await, StatusCode::OK);
+    assert_eq!(status(newer.clone()).await, StatusCode::NOT_FOUND);
+    // 新写的 assetRefs 带最早引用它的版本号。
+    let refs = app.collection("assetRefs");
+    let seq_of = |hash: String| {
+        let refs = refs.clone();
+        async move {
+            refs.find_one(doc! {"hash": hash, "spaceId": SPACE})
+                .await
+                .unwrap()
+                .unwrap()
+                .get_i64("seq")
+                .unwrap()
+        }
+    };
+    assert_eq!(seq_of(older.clone()).await, base as i64);
+    assert_eq!(seq_of(newer.clone()).await, base as i64 + 1);
+    // 瘦身前写的只有 commitId：按提交的版本号判断，结果相同。
+    refs.update_many(doc! {"spaceId": SPACE}, doc! {"$unset": {"seq": ""}})
+        .await
+        .unwrap();
+    assert_eq!(status(older.clone()).await, StatusCode::OK);
+    assert_eq!(status(newer.clone()).await, StatusCode::NOT_FOUND);
+    // 只由事件类型登记过（既没有 seq 也没有 commitId）：不给。
+    refs.update_one(
+        doc! {"hash": &older, "spaceId": SPACE},
+        doc! {"$unset": {"commitId": ""}, "$set": {"eventType": "visit"}},
+    )
+    .await
+    .unwrap();
+    assert_eq!(status(older.clone()).await, StatusCode::NOT_FOUND);
+    // 再被一次提交引用时，`$min` 补上版本号（事件类型先登记的也一样）。
+    let third = draft_path(SPACE, &new_draft(&app, &drafts).await);
+    assert_eq!(
+        append(&app, &third, entity("rug-c", &older, 6.0))
+            .await
+            .status,
+        StatusCode::OK
+    );
+    let latest = publish(third).await;
+    assert_eq!(seq_of(older.clone()).await, latest as i64);
+}
+
 /// 功能级开关打开时（`METAVERSE_REQUIRE_PERMISSIONS=true`），草稿的全部写操作和区域都要求
 /// `metaverse:content:write`，事件类型和抹除要求 `metaverse:event:write`；读草稿不要求。
 #[tokio::test]
