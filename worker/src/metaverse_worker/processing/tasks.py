@@ -1,13 +1,13 @@
-"""子进程入口（`jobs.isolate.run_isolated` 调用）：参数和返回值都是普通数据（字符串、数字、列表、字典、
-字节）。
+"""处理入口：参数和返回值都是普通数据（字符串、数字、列表、字典、字节），重建工作台（`recon.prepare`）和
+本地重建编排（`bundle.rebuild`）直接调用。
 
-解析不可信的文件、重计算都在这里做，父进程只负责数据库读写。每个入口都可以在测试里直接调用。
-
-- `sniff_task`：上传文件的格式检查；
-- `scan_task`：扫描读取 → 对齐（给定 / 复用 / 首次自动 / 重扫配准）→ 网页用模型 → 结构 + 物体重建
+- `sniff_task`：文件的格式检查；
+- `scan_task`：扫描读取 → 对齐（给定 / 首次自动 / 重扫配准）→ 网页用模型 → 结构 + 物体重建
   （给了 AI 物件集 `authored` 时换成 `authored_build.authored_rebuild`）；
 - `voxelize_task`：体素化 → 方块表分配 → 区块编码；
 - `model_task`：物件模型重新导出。
+
+`limits` 的键见 `processing.limits.default_limits`。
 """
 
 from __future__ import annotations
@@ -115,7 +115,7 @@ def scan_task(
 ) -> dict:
     """见模块说明。`reference = {"path", "transform"}` 时做重扫配准；`transform` 给了就直接用。
 
-    `authored` 是 `authored.parse_authored` 整理过的物件集，`authored_sources` 是父进程下载好的外部模型
+    `authored` 是 `authored.parse_authored` 整理过的物件集，`authored_sources` 是下载好的外部模型
     （`{来源键: {format, path}}`）。"""
     os.makedirs(workdir, exist_ok=True)
     timings: dict[str, float] = {}

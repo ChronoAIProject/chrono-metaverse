@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "metaverse-worker"
 version = "0.1.0"
-description = "chrono-metaverse 处理服务：上传校验、扫描对齐、结构重建、体素化、网页用模型、定期清理"
+description = "chrono-metaverse 本地重建工具：扫描对齐、网页用模型、结构和物体重建、AI 物件集、重建工作台"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -14,7 +14,6 @@ dependencies = [
     "pillow>=13,<14",
     "trimesh>=5.2,<6",
     "DracoPy>=2.2,<3",
-    "pymongo>=4.19,<5",
     "fast-simplification>=0.2,<0.3",
 ]
 
@@ -25,7 +24,6 @@ dev = [
 ]
 
 [project.scripts]
-metaverse-worker = "metaverse_worker.__main__:main"
 metaverse-recon = "metaverse_worker.recon.cli:main"
 
 [tool.setuptools.packages.find]
@@ -38,9 +36,6 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
-markers = [
-    "mongo: 需要本地 MongoDB 副本集（METAVERSE_TEST_MONGODB_URI，默认 mongodb://127.0.0.1:27018/?replicaSet=rs0）",
-]
 
 [tool.ruff]
 line-length = 110

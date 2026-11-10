@@ -1,7 +1,7 @@
-"""从模型库下载外部模型（AI 物件集里的 `model.url`，父进程里调用，只做网络读写，不解析内容）。
+"""从模型库下载外部模型（AI 物件集里的 `model.url`，`bundle.sources` 调用，只做网络读写，不解析内容）。
 
-- **只用 https**，主机必须在允许列表里（`WORKER_MODEL_HOSTS`）：条目写主机名时精确匹配（端口只能是默认的
-  443）；写成 `.hf.co` 这样以点开头时匹配它的所有子域名；写成 `主机:端口` 时只匹配那个端口；
+- **只用 https**，主机必须在允许列表里（`METAVERSE_RECON_MODEL_HOSTS`）：条目写主机名时精确匹配（端口只能
+  是默认的 443）；写成 `.hf.co` 这样以点开头时匹配它的所有子域名；写成 `主机:端口` 时只匹配那个端口；
 - **不自动跟随重定向**：每一跳的 `Location` 都按同样的规则检查（https、主机在列表里），最多 5 跳；
 - **大小**：`Content-Length` 和声明的大小不一致就不读；边读边数，超过声明的大小立刻停；
 - **哈希**：读完核对 sha256，不符就删掉文件。
@@ -62,11 +62,11 @@ def parse_hosts(text: str | None) -> tuple[str, ...]:
             or (port and not (port.isdigit() and 0 < int(port) < 65536))
             or (entry.startswith(".") and (port or "." not in host))
         ):
-            raise ValueError(f"WORKER_MODEL_HOSTS 里的 {item.strip()!r} 不是合法的主机名")
+            raise ValueError(f"主机列表里的 {item.strip()!r} 不是合法的主机名")
         if entry not in out:
             out.append(entry)
     if not out:
-        raise ValueError("WORKER_MODEL_HOSTS 不能为空")
+        raise ValueError("主机列表不能为空")
     return tuple(out)
 
 

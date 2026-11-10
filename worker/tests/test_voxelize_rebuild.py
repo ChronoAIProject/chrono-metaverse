@@ -12,7 +12,6 @@ import trimesh
 from conftest import jpeg_bytes, scan_glb
 from metaverse_worker.chunk import FIRST_PALETTE_BLOCK, decompress
 from metaverse_worker.errors import InputRejected, PermanentJobError
-from metaverse_worker.handlers.voxelize import palette_size_of
 from metaverse_worker.processing.glb import GlbMesh, read_glb_json, write_glb
 from metaverse_worker.processing.rebuild import body_textures, load_objects_impl, rebuild, structure_entities
 from metaverse_worker.processing.scan import ScanMesh
@@ -76,24 +75,6 @@ def test_voxelize_clips_to_physical_region(room):
     assert len(empty.cells) == 0 and len(empty.colors) == 0
     with pytest.raises(InputRejected):
         voxelize_mesh(room, max_cells=10)
-
-
-@pytest.mark.parametrize(
-    ("style", "size"),
-    [(None, 64), ("default", 64), ("coarse", 16), ("fine", 256), ({}, 64), ({"paletteSize": 1024}, 1024)],
-)
-def test_voxelize_style_to_palette_size(style, size):
-    assert palette_size_of(style) == size
-
-
-@pytest.mark.parametrize(
-    "style",
-    ["", "Default", "watercolor", 64, True, ["coarse"], {"paletteSize": 0}, {"paletteSize": 1025},
-     {"paletteSize": True}, {"paletteSize": 8.0}, {"paletteSize": 8, "dither": 1}],
-)  # fmt: skip
-def test_voxelize_style_rejected(style):
-    with pytest.raises(PermanentJobError):
-        palette_size_of(style)
 
 
 def test_assign_blocks_is_append_only():

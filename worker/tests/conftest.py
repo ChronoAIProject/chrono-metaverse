@@ -1,29 +1,19 @@
-"""测试公用的夹具：真实本地 MongoDB（随机库名，测试结束删除）、配置、空间 / 任务 / 上传的构造。"""
+"""测试公用的夹具：合成扫描写成 glb / zip、图片编码、重建工作台的缓存目录、PIL 像素上限的恢复。
+
+本地工具不连数据库，测试也不需要 MongoDB。
+"""
 
 from __future__ import annotations
 
-import hashlib
 import io
-import os
-import uuid
 import zipfile
-from typing import Any
 
 import numpy as np
 import pytest
 from PIL import Image
 
-from metaverse_worker.assets import write_upload_part
-from metaverse_worker.config import Config
 from metaverse_worker.processing.glb import GlbMesh, write_glb
 from metaverse_worker.processing.scan import ScanMesh
-from metaverse_worker.store import Store
-from metaverse_worker.timeutil import now_ts
-
-MONGO_URI = os.environ.get("METAVERSE_TEST_MONGODB_URI", "mongodb://127.0.0.1:27018/?replicaSet=rs0")
-SPACE = "front-hall"
-OWNER = {"kind": "person", "id": "alice"}
-ACTOR = {"sub": "alice", "nyxServiceId": "dev-service"}
 
 
 @pytest.fixture(autouse=True)
@@ -71,136 +61,9 @@ def scan_zip(mesh: ScanMesh) -> bytes:
     return buf.getvalue()
 
 
-def make_config(database: str = "unused", **overrides: Any) -> Config:
-    values: dict[str, Any] = {
-        "mongodb_uri": MONGO_URI,
-        "mongodb_database": database,
-        "worker_id": "test-worker",
-        "poll_seconds": 0.05,
-        "job_memory_mb": 4096,
-        "job_timeout_seconds": 600,
-        "health_port": 0,
-        "health_host": "127.0.0.1",
-    }
-    values.update(overrides)
-    return Config(**values)
-
-
 @pytest.fixture(autouse=True)
 def _restore_pil_pixel_limit():
     """读模型时按任务的上限设置 PIL 的进程级像素上限（`scan.guard_pixels`）；测试之间恢复原值。"""
     saved = Image.MAX_IMAGE_PIXELS
     yield
     Image.MAX_IMAGE_PIXELS = saved
-
-
-@pytest.fixture
-def config(tmp_path) -> Config:
-    return make_config(workdir=str(tmp_path))
-
-
-@pytest.fixture
-def store():
-    from pymongo import MongoClient
-    from pymongo.errors import PyMongoError
-
-    client: MongoClient = MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000, tz_aware=True)
-    try:
-        client.admin.command("ping")
-    except PyMongoError:
-        client.close()
-        pytest.skip("本地 MongoDB 不可用")
-    name = f"mvw_test_{uuid.uuid4().hex[:12]}"
-    s = Store(client, name)
-    s.ensure_indexes()
-    try:
-        yield s
-    finally:
-        client.drop_database(name)
-        client.close()
-
-
-@pytest.fixture
-def db_config(store, tmp_path) -> Config:
-    return make_config(store.db.name, workdir=str(tmp_path))
-
-
-def make_space(
-    store: Store, space_id: str = SPACE, regions: list | None = None, owner: dict | None = None
-) -> None:
-    now = now_ts(store.clock)
-    store.spaces.insert_one(
-        {
-            "_id": space_id,
-            "name": "前厅",
-            "description": "",
-            "owner": owner or OWNER,
-            "visibility": "unlisted",
-            "shareTokens": [],
-            "head": {"seq": 0, "at": now},
-            "regions": regions or [],
-            "plots": [],
-            "storageLimitBytes": 1 << 30,
-            "storageUsedBytes": 0,
-            "createdAt": now,
-            "updatedAt": now,
-        }
-    )
-
-
-def make_job(store: Store, kind: str, params: dict, space_id: str = SPACE, job_id: str | None = None) -> str:
-    job_id = job_id or uuid.uuid4().hex
-    store.jobs.insert_one(
-        {
-            "_id": job_id,
-            "spaceId": space_id,
-            "owner": OWNER,
-            "kind": kind,
-            "params": params,
-            "status": "queued",
-            "attempt": 0,
-            "maxAttempts": 3,
-            "createdAt": now_ts(store.clock),
-            "actor": ACTOR,
-        }
-    )
-    return job_id
-
-
-def make_upload(
-    store: Store,
-    data: bytes,
-    purpose: str,
-    *,
-    declared_sha: str | None = None,
-    part_size: int = 256 * 1024 * 4,
-    status: str = "complete",
-    skip_parts: tuple[int, ...] = (),
-    space_id: str = SPACE,
-) -> str:
-    upload_id = uuid.uuid4().hex
-    for part_no, start in enumerate(range(0, len(data), part_size)):
-        if part_no in skip_parts:
-            continue
-        write_upload_part(store, upload_id, part_no, part_size, data[start : start + part_size])
-    store.uploads.insert_one(
-        {
-            "_id": upload_id,
-            "spaceId": space_id,
-            "owner": OWNER,
-            "purpose": purpose,
-            "size": len(data),
-            "sha256": declared_sha or hashlib.sha256(data).hexdigest(),
-            "partSize": part_size,
-            "status": status,
-            "createdAt": now_ts(store.clock),
-        }
-    )
-    return upload_id
-
-
-def upload_asset(store: Store, data: bytes, purpose: str, kind: str = "scan") -> str:
-    """直接登记一个资源（跳过上传校验），返回内容哈希。"""
-    from metaverse_worker.assets import put_asset
-
-    return put_asset(store, data, content_type="application/octet-stream", kind=kind, space_id=SPACE).hash
