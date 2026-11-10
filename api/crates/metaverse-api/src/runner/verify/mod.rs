@@ -131,12 +131,6 @@ impl Inspector {
             (UploadPurpose::Bundle, UploadFormat::Json) => {
                 Inspector::Bundle(text::JsonStream::new(size))
             }
-            (UploadPurpose::Authored, _) => {
-                return Err(Reject::new(
-                    "retired_purpose",
-                    "AI 物件集不再上传到服务端（改在本地打成重建包）",
-                ))
-            }
             _ => return Err(wrong()),
         })
     }

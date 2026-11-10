@@ -122,15 +122,23 @@ fn unix_now() -> i64 {
 
 /// 一份合法的身份令牌；每次调用都是新的 jti。
 pub fn identity(subject: &str) -> String {
+    identity_with(subject, &[])
+}
+
+/// 同 [`identity`]，带功能级权限（例如重建路径要求的 `metaverse:rebuild:write`）。
+pub fn identity_with(subject: &str, permissions: &[&str]) -> String {
     let now = unix_now();
     Signer::shared().sign(&json!({
         "sub": subject, "iss": ISSUER, "aud": AUDIENCE,
         "iat": now, "exp": now + 60,
         "jti": uuid::Uuid::new_v4().to_string(),
         "nyx_service_id": SERVICE,
-        "permissions": [], "roles": [], "groups": []
+        "permissions": permissions, "roles": [], "groups": []
     }))
 }
+
+/// 重建路径的写操作要求的权限。
+pub const REBUILD_PERMISSION: &str = "metaverse:rebuild:write";
 
 /// 模拟 NyxID：公钥列表 + 组织授权接口（转发凭据 `admin-token` / `member-token` / `viewer-token`
 /// 分别是 admin / member / viewer，其他一律不是成员）。
@@ -210,17 +218,19 @@ pub struct Reply {
     pub body: Value,
 }
 
-/// 一个调用者：身份 sub + 可选的转发凭据。
+/// 一个调用者：身份 sub + 可选的转发凭据 + 令牌里的功能级权限。
 #[derive(Clone, Copy)]
 pub struct Who<'a> {
     pub sub: &'a str,
     pub forwarded: Option<&'a str>,
+    pub permissions: &'a [&'a str],
 }
 
 pub const fn who(sub: &str) -> Who<'_> {
     Who {
         sub,
         forwarded: None,
+        permissions: &[],
     }
 }
 
@@ -228,6 +238,16 @@ pub const fn who_with<'a>(sub: &'a str, forwarded: &'a str) -> Who<'a> {
     Who {
         sub,
         forwarded: Some(forwarded),
+        permissions: &[],
+    }
+}
+
+/// 带重建权限的调用者（重建路径的写操作要求它）。
+pub const fn rebuilder(sub: &str) -> Who<'_> {
+    Who {
+        sub,
+        forwarded: None,
+        permissions: &[REBUILD_PERMISSION],
     }
 }
 
@@ -313,7 +333,10 @@ impl TestApp {
     ) -> axum::http::request::Builder {
         let mut request = Request::builder().method(method).uri(path);
         if let Some(caller) = caller {
-            request = request.header("x-nyxid-identity-token", identity(caller.sub));
+            request = request.header(
+                "x-nyxid-identity-token",
+                identity_with(caller.sub, caller.permissions),
+            );
             if let Some(token) = caller.forwarded {
                 request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
             }

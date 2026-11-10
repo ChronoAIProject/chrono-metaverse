@@ -13,7 +13,7 @@
 | `mock-nyxid.test.mjs` | 模拟 NyxID 的测试 |
 | `e2e.mjs` | 九步端到端验收（`docs/BUILD_PLAN.md` 5.2）：自己起全套、按九步执行并断言、收尾，见下面"九步验收" |
 | `e2e-lib.mjs` / `e2e-lib.test.mjs` | 验收脚本的小工具（步骤执行、等待、请求头、截图判断）和它们的测试 |
-| `demo-seed.mjs` / `demo-seed.test.mjs` | 部署配置种子的小工具（压缩成一行、换主人、生成分享令牌；`up.sh --demo-seed` 用）和它的测试 |
+| `demo-seed.mjs` / `demo-seed.test.mjs` | 部署配置种子的小工具（压缩成一行、换主人、生成分享令牌、拦住旧格式；`up.sh --demo-seed` 用）和它的测试 |
 | `mongo.mjs` / `mongo.test.mjs` | 不用驱动的 MongoDB 小工具（查副本集名、初始化单节点副本集、删库；`up.sh` 和验收收尾用）和它的测试 |
 
 测试：`node --test infra/dev/*.test.mjs`（持续集成的仓库检查任务也跑）。
@@ -63,12 +63,13 @@ UPLOAD_MAX_CONCURRENT_PARTS=4   RUNNER_POLL_SECONDS=2   CLEANUP_INTERVAL_SECONDS
 
 ### 演示数据（可选，部署配置种子）
 
-`up.sh --demo-seed[=<种子.json>]`（或环境变量 `METAVERSE_DEV_DEMO_SEED=<种子.json>`）让接口服务启动后像线上一样按部署配置种子建演示空间、导入扫描（种子格式见 [`api/README.md`](../../api/README.md)"部署配置种子"，线上的配置是 [`infra/chrono-cd/demo-seed.json`](../chrono-cd/demo-seed.json)，不给文件时就用它，会从 Scaniverse 下载约 6MB）：
+`up.sh --demo-seed[=<种子.json>]`（或环境变量 `METAVERSE_DEV_DEMO_SEED=<种子.json>`）让接口服务启动后像线上一样按部署配置种子建演示空间、导入按哈希固定的重建包（种子格式见 [`api/README.md`](../../api/README.md)"部署配置种子"和 `docs/design/server-slim.md` 7.1，线上的配置是 [`infra/chrono-cd/demo-seed.json`](../chrono-cd/demo-seed.json)，不给文件时就用它）：
 
 - 种子压缩成一行交给接口服务的 `METAVERSE_DEMO_SEED`（`node infra/dev/demo-seed.mjs compact <种子.json>`）；
 - 分享令牌取 `METAVERSE_DEMO_SHARE_TOKEN`，没设时生成一个存在 `infra/dev/.run/demo-share-token`，之后复用（空间里只存第一次的哈希）；结束时打印演示链接 `http://127.0.0.1:5173/s/<空间>#share=<令牌>`；
 - 主人默认是配置里的线上组织编号（公开读不受影响，但本地没人能管理它）；`METAVERSE_DEV_DEMO_SEED_OWNER=chronoai` 换成模拟 NyxID 的组织，alice 就能经 `/api/v1` 管理；
-- 进度看 `infra/dev/.run/api.log`（`部署配置种子完成 … outcome=Created`）。现在的种子格式还在建 `scan_import` 任务，处理服务下线以后它会被定期清理标记失败（`lastError.class = content`），空间建出来但没有内容；种子改成导入重建包以后（设计 13.2 S4）才会再有内容；
+- 允许下载的主机取 `METAVERSE_DEMO_SEED_HOSTS`，没设时用线上那一组（GitHub 的 raw 地址和发布页、Scaniverse）；种子带重建包时后台执行器从来源表下载空间里还没有的文件（前厅第 4 版的新库约 23MB）；旧格式（`files`、`hints`、`authored` 等）`demo-seed.mjs` 直接报错；
+- 进度看 `infra/dev/.run/api.log`（`部署配置种子完成 … outcome=Created`、`部署配置种子：已发布`）。线上现在的种子是第 3 版、不带包，本地新库只建出空间、没有内容；第 4 版的包上线以后（设计 S10）才有内容；
 - 经过会重新签发证书的出口代理时，接口服务另外信任 `SSL_CERT_FILE`（PEM）里的根证书，从环境继承即可。
 
 接口服务只允许本机地址用明文 http 当 NyxID 地址，所以模拟 NyxID 必须跑在本机。

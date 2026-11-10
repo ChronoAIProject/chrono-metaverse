@@ -20,7 +20,7 @@ use super::verify::ndjson::{LineSink, NdjsonStream};
 use super::verify::{Reject, BATCH_CHUNKS};
 use super::{JobFailure, Lease, Runner};
 use crate::auth::Grant;
-use crate::repo::{AssetMeta, ChunkSource, DraftStatus, JobDraftSave, JobFence};
+use crate::repo::{AssetMeta, ChunkSource, DraftStatus, JobDraftSave, JobFence, JobStep};
 use crate::timeline::drafts::{
     ops_job_result, AppendSession, OpsSource, MAX_DRAFT_OPS, MAX_OPS_FILE_BYTES,
 };
@@ -241,7 +241,7 @@ pub async fn run(runner: &Arc<Runner>, lease: &Lease) -> Result<(), JobFailure> 
             &prepared.draft,
             prepared.expected_rev,
             fence,
-            &result,
+            JobStep::Done(&result),
             now,
         )
         .await?

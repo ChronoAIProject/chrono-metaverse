@@ -14,7 +14,7 @@ use std::sync::Arc;
 use metaverse_core::scope::PathScope;
 
 use super::{JobFailure, Lease, Runner};
-use crate::repo::JobDraftSave;
+use crate::repo::{JobDraftSave, JobStep};
 use crate::timeline::bundle_apply::apply_bundle;
 use crate::timeline::state::ApplyError;
 
@@ -64,7 +64,7 @@ pub async fn run(
             &applied.prepared.draft,
             applied.prepared.expected_rev,
             fence,
-            &applied.result,
+            JobStep::Done(&applied.result),
             now,
         )
         .await?

@@ -15,7 +15,8 @@
 //! 4. 更新物件和锚点的当前状态 `entities` / `anchors`（`{spaceId, id, owner, hash, body, seq}`）；
 //! 5. 登记资源引用 `assetRefs {hash, spaceId, owner, createdAt, commitId}`；
 //! 6. 提交带扫描、而空间还没有坐标系时，按 `{_id, frame: 不存在}` 条件固定坐标系
-//!    `frame = {fixedAt: 提交的 at, referenceScan: scan.assetHash}`（docs/design/server-slim.md 2.7）。
+//!    `frame = {fixedAt: 提交的 at, referenceScan: scan.assetHash}`（docs/design/server-slim.md 2.7）；
+//! 7. 由后台任务发布时（部署种子），按租约栅栏把任务标记完成，提交带 `jobId`。
 //!
 //! 第 1 步之后先过清理的栅栏：提交引用的每个资源（`opsRef`、`scriptRef`、`assetRefs`、`bundleRef`、
 //! 扫描、草稿只为防清理而持有的资源）按文件名刷新
@@ -44,7 +45,7 @@ use mongodb::{
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use super::{collections, Repo, RepoError};
+use super::{collections, JobFence, Repo, RepoError};
 use crate::auth::Grant;
 
 /// 一次提交要写的内容（事务外的对象已经写好）。
@@ -81,6 +82,9 @@ pub struct CommitPlan {
     pub bundle_ref: Option<String>,
     /// 由后台任务发布时（部署种子）的任务编号（`commits.jobId` 有部分唯一索引）。
     pub job_id: Option<String>,
+    /// 由后台任务发布时：在提交事务里按租约栅栏把任务标记完成（docs/design/server-slim.md 2.7）。
+    /// 租约已经丢了就整个提交作废（[`CommitError::LeaseLost`]）。
+    pub job_done: Option<JobDone>,
     /// 只为防清理而在事务里一起确认的资源（草稿的 `heldAssets`、原始扫描）：过栅栏，但不登记到
     /// `assetRefs`、不公开。
     pub held_assets: Vec<String>,
@@ -112,9 +116,17 @@ impl CommitPlan {
             scan: None,
             bundle_ref: None,
             job_id: None,
+            job_done: None,
             held_assets: Vec::new(),
         }
     }
+}
+
+/// 提交事务里一起写的"任务完成"：栅栏和任务结果（事务里再加上 `commitId`、`seq`）。
+#[derive(Debug, Clone)]
+pub struct JobDone {
+    pub fence: JobFence,
+    pub result: Value,
 }
 
 /// 写入成功的提交。
@@ -140,6 +152,9 @@ pub enum CommitError {
     /// 事务里的栅栏没刷新到（升序去重的哈希）。整个提交作废。
     #[error("提交引用的资源已经被清理")]
     AssetsGone(Vec<String>),
+    /// 由后台任务发布时，任务的租约已经丢了：整个提交作废，由新的持有者重做。
+    #[error("任务的租约已经丢了")]
+    LeaseLost,
     #[error(transparent)]
     Repo(#[from] RepoError),
 }
@@ -484,6 +499,34 @@ impl Repo {
         self.fence_assets(session, plan).await?;
         let seq = plan.base_seq + 1;
         let at = metaverse_core::model::next_commit_at(now, space.head.at);
+        // 由后台任务发布：同一个事务里按租约栅栏把任务标记完成，提交和任务完成一起成功或一起作废。
+        // 先查租约：租约丢了就报租约丢失（不报草稿变了，新的持有者可能已经发布了这个草稿）。
+        if let Some(job) = &plan.job_done {
+            let mut result = job.result.clone();
+            if let Value::Object(map) = &mut result {
+                map.insert("commitId".into(), Value::String(commit_id.to_owned()));
+                map.insert("seq".into(), Value::from(seq));
+            }
+            let done = self
+                .collection(collections::JOBS)
+                .update_one(
+                    job.fence.filter(),
+                    doc! {
+                        "$set": {
+                            "status": "done",
+                            "result": to_bson(&result).map_err(CommitError::from)?,
+                            "resultCommitId": commit_id,
+                            "finishedAt": at.to_rfc3339(),
+                        },
+                        "$unset": {"leaseUntil": "", "notBefore": ""},
+                    },
+                )
+                .session(&mut *session)
+                .await?;
+            if done.matched_count != 1 {
+                return Err(CommitError::LeaseLost.into());
+            }
+        }
         let commit = Commit {
             id: commit_id.to_owned(),
             space_id: grant.space_id().to_owned(),

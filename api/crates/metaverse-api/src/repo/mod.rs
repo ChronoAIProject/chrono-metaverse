@@ -35,7 +35,7 @@ pub use events::{Cursor, EventInsert, Lower};
 pub use jobs::{JobInsert, MAX_JOB_LIST};
 pub use runner::{ChunkSource, JobFence, VerifyFinish};
 pub use universes::{UniverseFieldsUpdate, UniversePolicy, UniverseWrite};
-pub use uploads::{AssetAvailability, CompleteWrite, PartWrite, PendingUploads, Registered};
+pub use uploads::{CompleteWrite, PartWrite, PendingUploads, Registered};
 // 时间线、草稿、内容寻址数据、管理写入（时间线与公开读分工）。
 mod blobs;
 mod commits;
@@ -47,12 +47,12 @@ pub use blobs::{
     MISSING_ASSET,
 };
 pub use commits::{
-    palette_hash, state_blob_hash, BlobKind, CommitError, CommitOutcome, CommitPlan, Layout,
-    StoredChunk,
+    palette_hash, state_blob_hash, BlobKind, CommitError, CommitOutcome, CommitPlan, JobDone,
+    Layout, StoredChunk,
 };
 pub use drafts::{
-    DraftDoc, DraftScanDoc, DraftStatus, JobDraftSave, NewPreview, OpsAsset, OpsRef, OpsUpload,
-    PreviewRecord, ProvisionalBlock,
+    DraftDoc, DraftScanDoc, DraftStatus, JobDraftSave, JobStep, NewPreview, OpsAsset, OpsRef,
+    OpsUpload, PreviewRecord, ProvisionalBlock,
 };
 pub use space_admin::{SpaceSettings, MAX_SHARE_TOKEN_RECORDS};
 

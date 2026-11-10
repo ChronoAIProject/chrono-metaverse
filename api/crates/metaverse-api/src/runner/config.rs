@@ -11,6 +11,7 @@
 //! | `METAVERSE_INSTANCE_ID` | 主机名-进程号-随机数 | 本进程的编号（租约持有者） |
 //! | `CLEANUP_INTERVAL_SECONDS` | 600 | 定期清理的间隔 |
 //! | `CLEANUP_ASSET_GRACE_DAYS` | 7 | 资源上传或最近复用多少天以后、没人引用就清理 |
+//! | `METAVERSE_DEMO_SEED_HOSTS` | 空 | 部署种子导入（`bundle_import`）允许下载的主机，见 `demo_seed::hosts` |
 //!
 //! 停止时等手上任务的时间固定 20 秒（平台终止宽限 30 秒），没完成的上传按核心库常量
 //! `UPLOAD_TTL_SECONDS`（24 小时）清理。
@@ -31,6 +32,8 @@ pub struct RunnerConfig {
     pub instance_id: String,
     pub cleanup_interval_seconds: u64,
     pub asset_grace_days: u64,
+    /// 部署种子导入允许下载的主机（`METAVERSE_DEMO_SEED_HOSTS`）。
+    pub seed_hosts: crate::demo_seed::HostList,
 }
 
 /// 默认的进程编号：主机名-进程号-随机数。
@@ -57,6 +60,7 @@ impl Default for RunnerConfig {
             instance_id: default_instance_id(),
             cleanup_interval_seconds: 600,
             asset_grace_days: 7,
+            seed_hosts: crate::demo_seed::HostList::default(),
         }
     }
 }
@@ -128,6 +132,7 @@ impl RunnerConfig {
                 1,
                 365,
             )?,
+            seed_hosts: crate::demo_seed::HostList::from_lookup(lookup)?,
         })
     }
 }

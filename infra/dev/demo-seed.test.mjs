@@ -42,6 +42,27 @@ test('--owner 只换主人编号', () => {
   assert.throws(() => compactSeed(seed, { owner: 'chronoai/../x' }), SeedFileError);
 });
 
+test('旧格式（处理服务时代的 files、hints、authored……）直接报错', () => {
+  const seed = readSeed(production);
+  for (const key of ['files', 'rebuild', 'voxelize', 'hints', 'authored', 'observedAt']) {
+    assert.throws(() => compactSeed({ ...seed, [key]: [] }), (error) => {
+      assert.ok(error instanceof SeedFileError);
+      assert.match(error.message, new RegExp(`旧格式（${key}）.*改成 bundle`));
+      return true;
+    });
+  }
+  const dir = mkdtempSync(join(tmpdir(), 'demo-seed-'));
+  try {
+    const old = join(dir, 'old.json');
+    writeFileSync(old, JSON.stringify({ ...seed, files: [], hints: {} }));
+    const cli = run('compact', old);
+    assert.equal(cli.status, 2);
+    assert.match(cli.stderr, /旧格式（files、hints）/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('分享令牌：256 位随机数的 base64url，每次不同', () => {
   const a = newShareToken();
   const b = run('token').stdout.trim();

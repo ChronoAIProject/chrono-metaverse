@@ -21,7 +21,9 @@ import {
   parseMemoryMiB,
   parsePinnedImage,
   parsePositiveInt,
+  parseSeedHosts,
   seedProblems,
+  seedUrlAllowed,
   sharedBucketFloor,
 } from './check-app.mjs';
 
@@ -405,89 +407,92 @@ test('种子：按接口服务的规则静态校验', () => {
   assertProblem(seedVariant((s) => (s.owner.id = 'chronoai')), /不是部署这个应用的组织/);
   assertProblem(seedVariant((s) => (s.owner.slug = 'chronoai')), /owner 有不认识的字段 slug/);
   assertProblem(seedVariant((s) => (s.visibility = 'private')), /visibility 只能是/);
-  assertProblem(seedVariant((s) => (s.observedAt = '昨天')), /observedAt 必须是 RFC 3339/);
-  assertProblem(seedVariant((s) => (s.rebuild = 'yes')), /rebuild 必须是 true 或 false/);
   assertProblem(seedVariant((s) => (s.revision = 0)), /revision 必须是从 1 开始的整数/);
-  assertProblem(seedVariant((s) => (s.hints = [])), /hints 必须是 JSON 对象/);
-  assertProblem(
-    seedVariant((s) => (s.hints = { objects: [{ label: 'x'.repeat(5000) }] })),
-    /hints 规范化后超过 4096 字节/,
-  );
-  assertProblem(seedVariant((s) => (s.files[0].url = 'http://scaniverse.com/mesh.drc')), /url 必须是 https/);
-  assertProblem(seedVariant((s) => (s.files[0].url = 'https://u:p@scaniverse.com/mesh.drc')), /url 必须是 https/);
-  assertProblem(seedVariant((s) => (s.files[0].url = 'not a url')), /url 不是合法地址/);
-  assertProblem(seedVariant((s) => (s.files[0].sha256 = 'ABC')), /sha256 必须是 64 位小写十六进制/);
-  assertProblem(seedVariant((s) => (s.files[0].size = 0)), /size 必须是/);
-  assertProblem(seedVariant((s) => (s.files[0].contentType = 'x')), /有不认识的字段 contentType/);
-  assertProblem(seedVariant((s) => (s.files[1].name = 'MESH.drc')), /name 重复/);
-  assertProblem(seedVariant((s) => (s.files[1].name = 'tex.exe')), /name 不合法/);
-  assertProblem(seedVariant((s) => (s.files[1].name = 'other.glb')), /要么是单独一个/);
-  // 总大小上限取 256MiB（种子全在内存里处理）和 UPLOAD_MAX_SCAN_BYTES 中较小的。
-  assertProblem(
-    seedVariant((s) => {
-      s.files[0].size = 128 * 1024 * 1024;
-      s.files[1].size = 128 * 1024 * 1024 + 1;
-    }),
-    /文件总大小 \d+ 超过上限 268435456/,
-  );
-  assertProblem(seedVariant((s) => (s.files[0].size = 300 * 1024 * 1024)), /size 必须是 1–268435456 的整数/);
-  assertProblem(
-    seedProblems(seed, { targetOrg: spec.target_org_id, maxScanBytes: 5 * 1024 * 1024 }),
-    /文件总大小 \d+ 超过上限 5242880/,
-  );
-  assertProblem(seedVariant((s) => (s.files = [])), /files 要有 1–32 个文件/);
-  // 本机 http（本地开发的种子）和单独一个 zip 都可以。
-  assert.deepEqual(
-    seedVariant((s) => {
-      s.files = [{ ...s.files[0], url: 'http://127.0.0.1:9000/scan.zip', name: 'scan.zip' }];
-    }),
-    [],
-  );
   // 规范化 JSON：键按码点排序、没有空白。
   assert.equal(canonicalJson({ b: [1, { d: 2, c: 'x' }], a: null }), '{"a":null,"b":[1,{"c":"x","d":2}]}');
   assert.deepEqual(seedProblems(seed, { targetOrg: spec.target_org_id }), []);
   assertProblem(seedProblems(null), /必须是 JSON 对象/);
 });
 
-test('种子：AI 物件集按提交哈希固定在 raw.githubusercontent.com 的 infra/chrono-cd/demo/ 下', () => {
+test('种子：旧格式（处理服务时代的 files、rebuild、hints、authored……）报错', () => {
+  for (const key of ['files', 'rebuild', 'voxelize', 'hints', 'authored', 'observedAt']) {
+    const problems = seedVariant((s) => (s[key] = key === 'files' ? [] : true));
+    assertProblem(problems, new RegExp(`是旧格式（${key}）.*改成 bundle`));
+    assert.ok(!problems.some((problem) => problem.includes('不认识的字段')), problems.join('\n'));
+  }
+});
+
+test('种子：bundle 的清单和来源表按地址、sha256、大小固定，主机在 METAVERSE_DEMO_SEED_HOSTS 里', () => {
   const commit = '0123456789abcdef0123456789abcdef01234567';
-  const good = {
-    url: `https://raw.githubusercontent.com/chronoaiproject/chrono-metaverse/${commit}/infra/chrono-cd/demo/authored.json`,
-    sha256: 'a'.repeat(64),
-    size: 123456,
+  const raw = `https://raw.githubusercontent.com/chronoaiproject/chrono-metaverse/${commit}/infra/chrono-cd/demo/lobby-r4`;
+  const bundle = {
+    manifest: { url: `${raw}/manifest.json`, sha256: 'a'.repeat(64), size: 312345 },
+    sources: { url: `${raw}/sources.json`, sha256: 'b'.repeat(64), size: 4567 },
+  };
+  const hosts = 'raw.githubusercontent.com,github.com,scaniverse.com';
+  const check = (edit, hostList = hosts) => {
+    const copy = structuredClone({ ...seed, revision: 4, bundle });
+    edit(copy);
+    // null 表示没设主机列表。
+    return seedProblems(copy, { targetOrg: spec.target_org_id, hosts: hostList ?? undefined });
   };
   assert.deepEqual(
-    seedVariant((s) => (s.authored = { ...good })),
+    check(() => {}),
     [],
   );
+  assertProblem(check(() => {}, null), /带 bundle 时 metaverse-api 必须设 METAVERSE_DEMO_SEED_HOSTS/);
+  assertProblem(check(() => {}, 'github.com'), /bundle\.manifest\.url 必须是 https.*主机在 METAVERSE_DEMO_SEED_HOSTS 里/);
+  assertProblem(check(() => {}, 'https://raw.githubusercontent.com/'), /不是合法的主机/);
   assertProblem(
-    seedVariant((s) => (s.authored = { ...good, url: good.url.replace(commit, 'main') })),
-    /authored\.url 必须是 .*40 位提交哈希/,
+    check((s) => (s.bundle.manifest.url = s.bundle.manifest.url.replace('https:', 'http:'))),
+    /manifest\.url 必须是 https/,
   );
   assertProblem(
-    seedVariant((s) => (s.authored = { ...good, url: good.url.replace('https:', 'http:') })),
-    /authored\.url 必须是/,
+    check((s) => (s.bundle.sources.url = s.bundle.sources.url.replace(commit, 'main'))),
+    /sources\.url 要按 40 位提交哈希固定/,
   );
+  assertProblem(check((s) => (s.bundle.manifest.url = 'not a url')), /manifest\.url 不是合法地址/);
+  assertProblem(check((s) => (s.bundle.manifest.sha256 = 'ABC')), /manifest\.sha256 必须是 64 位小写十六进制/);
+  assertProblem(check((s) => (s.bundle.manifest.size = 0)), /manifest\.size 必须是 1–16777216 的整数/);
+  assertProblem(check((s) => (s.bundle.sources.size = 1024 * 1024 + 1)), /sources\.size 必须是 1–1048576 的整数/);
+  assertProblem(check((s) => (s.bundle.manifest.name = 'x')), /bundle\.manifest 有不认识的字段 name/);
+  assertProblem(check((s) => (s.bundle.zip = [])), /bundle 有不认识的字段 zip/);
+  assertProblem(check((s) => delete s.bundle.sources), /bundle\.sources 必须是/);
+  assertProblem(check((s) => (s.bundle = [])), /bundle 必须是/);
+  // 清单上限跟着 UPLOAD_MAX_BUNDLE_BYTES（调小时）。
   assertProblem(
-    seedVariant((s) => (s.authored = { ...good, url: good.url.replace('infra/chrono-cd/demo', 'tmp') })),
-    /authored\.url 必须是/,
+    seedProblems({ ...seed, bundle }, { targetOrg: spec.target_org_id, hosts, maxManifestBytes: 1000 }),
+    /manifest\.size 必须是 1–1000 的整数/,
   );
-  assertProblem(
-    seedVariant((s) => (s.authored = { ...good, url: good.url.replace('raw.githubusercontent.com', 'example.com') })),
-    /authored\.url 必须是/,
+  // app.json 里的配置一起核对：带 bundle 却没设主机列表。
+  const withBundle = { ...seed, revision: 4, bundle };
+  const app = variant((copy) => (apiEnv(copy).METAVERSE_DEMO_SEED = JSON.stringify(withBundle)));
+  assertProblem(checkApp(app, { seed: JSON.stringify(withBundle) }), /必须设 METAVERSE_DEMO_SEED_HOSTS/);
+  const listed = variant((copy) => {
+    apiEnv(copy).METAVERSE_DEMO_SEED = JSON.stringify(withBundle);
+    apiEnv(copy).METAVERSE_DEMO_SEED_HOSTS = hosts;
+  });
+  assert.deepEqual(checkApp(listed, { seed: JSON.stringify(withBundle) }), []);
+});
+
+test('种子：主机列表的写法同接口服务（主机名只许 443，.后缀匹配子域名，主机:端口只匹配那个端口）', () => {
+  const { entries, bad } = parseSeedHosts(
+    ' raw.githubusercontent.com, .GitHubUserContent.com,127.0.0.1:9000 ,, x/y, *.a.com, .com, .a.com:443',
   );
-  assertProblem(seedVariant((s) => (s.authored = { ...good, sha256: 'ABC' })), /authored\.sha256/);
-  assertProblem(seedVariant((s) => (s.authored = { ...good, size: 0 })), /authored\.size 必须是 1–4194304/);
-  assertProblem(seedVariant((s) => (s.authored = { ...good, size: 4 * 1024 * 1024 + 1 })), /authored\.size/);
-  assertProblem(seedVariant((s) => (s.authored = { ...good, name: 'x.json' })), /authored 有不认识的字段 name/);
-  assertProblem(seedVariant((s) => (s.authored = [good])), /authored 必须是/);
-  assertProblem(
-    seedVariant((s) => {
-      s.authored = { ...good };
-      s.rebuild = false;
-    }),
-    /rebuild 不能是 false/,
-  );
+  assert.deepEqual(bad, ['x/y', '*.a.com', '.com', '.a.com:443']);
+  for (const [text, ok] of [
+    ['https://raw.githubusercontent.com/o/r/x', true],
+    ['https://raw.githubusercontent.com:8443/x', false],
+    ['https://objects.githubusercontent.com/x', true],
+    ['https://githubusercontent.com/x', false],
+    ['http://127.0.0.1:9000/x', true],
+    ['http://127.0.0.1:9001/x', false],
+    ['http://raw.githubusercontent.com/x', false],
+    ['https://u:p@raw.githubusercontent.com/x', false],
+    ['https://raw.githubusercontent.com/x#y', false],
+  ]) {
+    assert.equal(seedUrlAllowed(new URL(text), entries), ok, text);
+  }
 });
 
 test('处理服务：WORKER_MODEL_HOSTS 必须显式写出，每项是主机名、后缀或 主机:端口', () => {

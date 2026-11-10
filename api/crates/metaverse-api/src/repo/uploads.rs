@@ -13,7 +13,7 @@
 use metaverse_core::check::{fits, AssetCheck, AssetRole, CheckBody, CHECK_VERSION};
 use metaverse_core::limits::UploadLimits;
 use metaverse_core::model::{Job, Upload, UploadFormat, UploadPart, ASSET_CHUNK_SIZE};
-use metaverse_core::scope::{PathScope, UploadPurpose};
+use metaverse_core::scope::UploadPurpose;
 use metaverse_core::Timestamp;
 use mongodb::bson::{self, doc, spec::BinarySubtype, Binary, Bson, DateTime, Document};
 
@@ -83,16 +83,6 @@ pub enum CompleteWrite {
     Completed,
     /// 会话已经不是 `open`，或者还有分片正在写入（调用方重新读会话区分）。
     NotOpen,
-}
-
-/// 某个资源对这个空间是否可用。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AssetAvailability {
-    /// 本空间有校验通过的上传，资源也还在。
-    Ready,
-    /// 本空间有已完成、正在校验的上传。
-    Pending,
-    Missing,
 }
 
 /// 核对通过的上传登记成资源的结果。
@@ -544,65 +534,74 @@ impl Repo {
         })
     }
 
-    /// 某个资源对这个空间是否可用：本空间有这个哈希、用途在 `purposes` 里的上传
-    /// （给了 `scope` 时还要求是同一路径范围创建的）。校验通过且资源仍在才算可用。
-    pub async fn asset_availability(
+    /// 后台任务自己写完的上传会话（部署种子下载的文件，docs/design/server-slim.md 7.2）改成
+    /// `complete`：条件同"完成上传"（`open`、没有正在写入的分片），但不建 `upload_verify` 任务——
+    /// 由这个后台任务接着核对、登记。返回是否改成了。
+    pub async fn complete_upload_inline(
         &self,
         grant: &Grant,
-        hash: &str,
-        purposes: &[UploadPurpose],
-        scope: Option<&PathScope>,
-    ) -> Result<AssetAvailability, RepoError> {
+        upload: &Upload,
+        now: Timestamp,
+    ) -> Result<bool, RepoError> {
+        if !grant.can_manage() || upload.space_id != grant.space_id() {
+            return Err(RepoError::GrantMismatch);
+        }
         let mut filter = space_children(grant);
-        filter.insert("sha256", hash);
+        filter.insert("_id", &upload.id);
+        filter.insert("status", "open");
         filter.insert(
-            "purpose",
-            doc! {"$in": purposes.iter().map(|p| purpose_name(*p)).collect::<Vec<_>>()},
+            "$or",
+            vec![
+                doc! {"writing": {"$exists": false}},
+                doc! {"writing": {"$lte": 0}},
+                doc! {"writeLeaseUntil": {"$lt": now.to_rfc3339()}},
+            ],
         );
-        filter.insert("status", doc! {"$in": ["complete", "done"]});
-        if let Some(scope) = scope {
-            filter.insert("scope", scope.to_string());
-        }
-        let mut cursor = self
+        let result = self
             .collection(collections::UPLOADS)
-            .find(filter)
-            .projection(doc! {"status": 1, "reused": 1})
-            .limit(20)
+            .update_one(
+                filter,
+                doc! {"$set": {
+                    "status": "complete",
+                    "completedAt": now.to_rfc3339(),
+                    "updatedAt": now.to_rfc3339(),
+                }},
+            )
             .await?;
-        let mut pending = false;
-        let mut done = false;
-        let mut reused = false;
-        while cursor.advance().await? {
-            let document: Document = cursor
-                .deserialize_current()
-                .map_err(|error| RepoError::Corrupt(error.to_string()))?;
-            match document.get_str("status") {
-                Ok("done") if document.get_bool("reused").unwrap_or(false) => reused = true,
-                Ok("done") => done = true,
-                Ok("complete") => pending = true,
-                _ => {}
-            }
+        Ok(result.matched_count == 1)
+    }
+
+    /// 删掉一个已经失败或过期的上传会话和它的数据块（部署种子重做时换一个新的会话）。已登记成资源
+    /// 的数据块不删。返回是否删了会话。
+    pub async fn remove_dead_upload(
+        &self,
+        grant: &Grant,
+        upload_id: &str,
+    ) -> Result<bool, RepoError> {
+        if !grant.can_manage() {
+            return Err(RepoError::GrantMismatch);
         }
-        // "直接复用"的上传没有传过数据：资源还要另外按所有权规则属于本空间才算（旧版本按哈希就
-        // 允许复用，留下的这类上传不能让别的主人的资源变成可用）。
-        if !done && reused {
-            done = self.space_owned_asset(grant, hash).await?.is_some();
-        }
-        if done {
-            let exists = self
+        let mut filter = space_children(grant);
+        filter.insert("_id", upload_id);
+        filter.insert("status", doc! {"$in": ["failed", "expired"]});
+        let removed = self
+            .collection(collections::UPLOADS)
+            .delete_one(filter)
+            .await?
+            .deleted_count
+            == 1;
+        if removed
+            && self
                 .collection(collections::ASSET_FILES)
-                .find_one(doc! {"filename": hash})
+                .find_one(doc! {"_id": upload_id})
                 .projection(doc! {"_id": 1})
                 .await?
-                .is_some();
-            if exists {
-                return Ok(AssetAvailability::Ready);
-            }
+                .is_none()
+        {
+            self.collection(collections::ASSET_CHUNKS)
+                .delete_many(doc! {"files_id": upload_id})
+                .await?;
         }
-        Ok(if pending {
-            AssetAvailability::Pending
-        } else {
-            AssetAvailability::Missing
-        })
+        Ok(removed)
     }
 }

@@ -22,7 +22,7 @@ use serde_json::{json, Value};
 use super::verify::{inspect, within_limits, InspectError, Inspector, Reject};
 use super::{JobFailure, Lease, Runner};
 use crate::auth::Grant;
-use crate::repo::{ChunkSource, JobFence, Registered, VerifyFinish};
+use crate::repo::{ChunkSource, JobFence, JobStep, Registered, VerifyFinish};
 
 fn upload_id(job: &Job) -> Result<&str, JobFailure> {
     job.params
@@ -44,20 +44,57 @@ fn result_of(upload: &Upload, reused: bool, format: Option<&str>) -> Value {
     result
 }
 
+/// 核对完以后任务这一边做什么。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Mode {
+    /// `upload_verify` 任务：核对完就完成任务。
+    CompleteJob,
+    /// 别的任务在自己的执行过程中核对（部署种子下载的文件）：只核对租约还在，任务接着做。
+    CheckLease,
+}
+
 pub async fn run(runner: &Arc<Runner>, lease: &Lease) -> Result<(), JobFailure> {
     let job = &lease.job;
-    let fence = &lease.fence;
     let upload_id = upload_id(job)?;
     let grant = runner.space_grant(job, "upload_verify").await?;
-    let repo = &runner.state.repo;
-    let upload = repo
+    let upload = runner
+        .state
+        .repo
         .upload(&grant, upload_id)
         .await?
         .ok_or_else(|| JobFailure::Content(format!("上传 {upload_id} 不存在，或不属于这个空间")))?;
+    verify(
+        runner,
+        &grant,
+        &upload,
+        &lease.fence,
+        Mode::CompleteJob,
+        None,
+    )
+    .await
+}
+
+/// 核对一个上传并登记成资源（4.3 第 1–6 步）。`context` 加在失败说明前面（例如清单里的文件路径）。
+/// 内容不合格时上传标记 `failed`、任务标记失败（同一个事务），返回 [`JobFailure::Recorded`]。
+pub(crate) async fn verify(
+    runner: &Arc<Runner>,
+    grant: &Grant,
+    upload: &Upload,
+    fence: &JobFence,
+    mode: Mode,
+    context: Option<&str>,
+) -> Result<(), JobFailure> {
+    let repo = &runner.state.repo;
+    let upload_id = upload.id.as_str();
+    let step = Step {
+        fence,
+        mode,
+        context,
+    };
     match upload.status {
         UploadStatus::Done => {
-            let result = result_of(&upload, true, upload.format.as_deref());
-            return complete(runner, fence, &result).await;
+            let result = result_of(upload, true, upload.format.as_deref());
+            return acknowledge(runner, &step, &result).await;
         }
         UploadStatus::Complete => {}
         other => {
@@ -67,35 +104,32 @@ pub async fn run(runner: &Arc<Runner>, lease: &Lease) -> Result<(), JobFailure> 
         }
     }
     // 上传所在的空间实例不在了（被删除，或删除后用同一个编号重建）：不登记、不计用量。
-    if !repo
-        .space_instance_exists(&grant, upload.created_at)
-        .await?
-    {
+    if !repo.space_instance_exists(grant, upload.created_at).await? {
         return reject(
             runner,
-            &grant,
-            &upload,
-            fence,
+            grant,
+            upload,
+            &step,
             &Reject::new("space_gone", "上传所在的空间已经删除"),
         )
         .await;
     }
     // 之前已经登记过这一份（重做的任务）：补做收尾。
-    if let Some(meta) = repo.asset_registered_by_upload(&grant, &upload.id).await? {
+    if let Some(meta) = repo.asset_registered_by_upload(grant, &upload.id).await? {
         let check = meta.check.clone();
-        return finish(runner, &grant, &upload, fence, check.as_ref(), false).await;
+        return finish(runner, grant, upload, &step, check.as_ref(), false).await;
     }
     // 上次已核对通过、登记时发现重名并删掉了本次的数据块：刷新已有资源后补做收尾。刷新不到说明它
     // 刚被清理删掉，本次的数据块也没了，只能让调用方重新上传。
     if upload.verified_sha256.as_deref() == Some(upload.sha256.as_str())
-        && !repo.upload_has_chunks(&grant, &upload.id).await?
+        && !repo.upload_has_chunks(grant, &upload.id).await?
     {
-        if !repo.touch_asset(&grant, &upload.sha256).await? {
+        if !repo.touch_asset(grant, &upload.sha256).await? {
             return reject(
                 runner,
-                &grant,
-                &upload,
-                fence,
+                grant,
+                upload,
+                &step,
                 &Reject::new(
                     "asset_gone",
                     "内容相同的已有资源刚被清理，本次的数据也已删除，请重新上传",
@@ -103,9 +137,9 @@ pub async fn run(runner: &Arc<Runner>, lease: &Lease) -> Result<(), JobFailure> 
             )
             .await;
         }
-        let meta = repo.asset_meta_for_runner(&grant, &upload.sha256).await?;
+        let meta = repo.asset_meta_for_runner(grant, &upload.sha256).await?;
         let check = meta.and_then(|meta| meta.check);
-        return finish(runner, &grant, &upload, fence, check.as_ref(), true).await;
+        return finish(runner, grant, upload, &step, check.as_ref(), true).await;
     }
 
     // 声明的哈希、大小、用途。
@@ -114,9 +148,9 @@ pub async fn run(runner: &Arc<Runner>, lease: &Lease) -> Result<(), JobFailure> 
     if !is_sha256_hex(&upload.sha256) || upload.size == 0 || upload.size > max {
         return reject(
             runner,
-            &grant,
-            &upload,
-            fence,
+            grant,
+            upload,
+            &step,
             &Reject::new(
                 "declared",
                 format!(
@@ -129,10 +163,7 @@ pub async fn run(runner: &Arc<Runner>, lease: &Lease) -> Result<(), JobFailure> 
     }
 
     // 流式读出、核对。
-    let source = ChunkSource::Upload {
-        grant: &grant,
-        upload: &upload,
-    };
+    let source = ChunkSource::Upload { grant, upload };
     let inspected = inspect(repo, &source, upload.size, upload.declared_format, |tail| {
         Inspector::new(upload.purpose, upload.declared_format, upload.size, tail)
     })
@@ -140,7 +171,7 @@ pub async fn run(runner: &Arc<Runner>, lease: &Lease) -> Result<(), JobFailure> 
     let inspected = match inspected {
         Ok(inspected) => inspected,
         Err(InspectError::Rejected(rejected)) => {
-            return reject(runner, &grant, &upload, fence, &rejected).await
+            return reject(runner, grant, upload, &step, &rejected).await
         }
         Err(InspectError::Repo(error)) => return Err(error.into()),
     };
@@ -152,53 +183,81 @@ pub async fn run(runner: &Arc<Runner>, lease: &Lease) -> Result<(), JobFailure> 
                 upload.sha256, inspected.sha256
             ),
         );
-        return reject(runner, &grant, &upload, fence, &rejected).await;
+        return reject(runner, grant, upload, &step, &rejected).await;
     }
     if let Err(rejected) = within_limits(upload.purpose, &inspected.check, &limits) {
-        return reject(runner, &grant, &upload, fence, &rejected).await;
+        return reject(runner, grant, upload, &step, &rejected).await;
     }
 
     // 记下"内容已核对通过"，再登记资源。
     if !repo
-        .mark_upload_verified(&grant, &upload, fence, now()?)
+        .mark_upload_verified(grant, upload, fence, now()?)
         .await?
     {
         return Err(JobFailure::LeaseLost);
     }
     let registered = repo
-        .register_upload_asset(&grant, &upload, &inspected.check)
+        .register_upload_asset(grant, upload, &inspected.check)
         .await?;
     finish(
         runner,
-        &grant,
-        &upload,
-        fence,
+        grant,
+        upload,
+        &step,
         Some(&inspected.check),
         registered == Registered::Reused,
     )
     .await
 }
 
-/// 事务收尾：上传 `done`、计入用量、任务完成。
+/// 核对时任务这一边的上下文：栅栏、核对完做什么、失败说明的前缀。
+struct Step<'a> {
+    fence: &'a JobFence,
+    mode: Mode,
+    context: Option<&'a str>,
+}
+
+impl Step<'_> {
+    /// 任务这一边写什么：完成任务，或只核对租约（顺带写进度）。
+    fn job<'v>(&self, result: &'v Value, progress: &'v Value) -> JobStep<'v> {
+        match self.mode {
+            Mode::CompleteJob => JobStep::Done(result),
+            Mode::CheckLease => JobStep::Progress(progress),
+        }
+    }
+
+    fn describe(&self, rejected: &Reject) -> String {
+        match self.context {
+            Some(context) => format!("{context}：{rejected}"),
+            None => rejected.to_string(),
+        }
+    }
+}
+
+fn progress_of(upload: &Upload) -> Value {
+    json!({"stage": "verified", "uploadId": upload.id, "assetHash": upload.sha256})
+}
+
+/// 事务收尾：上传 `done`、计入用量、任务完成（或只核对租约）。
 async fn finish(
     runner: &Arc<Runner>,
     grant: &Grant,
     upload: &Upload,
-    fence: &JobFence,
+    step: &Step<'_>,
     check: Option<&metaverse_core::check::AssetCheck>,
     reused: bool,
 ) -> Result<(), JobFailure> {
     let repo = &runner.state.repo;
     let format = check.map(|check| check.body.format());
     let result = result_of(upload, reused, format);
+    let progress = progress_of(upload);
     let outcome = repo
         .finish_verified_upload(
             grant,
             upload,
             check,
             upload.size,
-            Some(fence),
-            &result,
+            Some((step.fence, step.job(&result, &progress))),
             now()?,
         )
         .await?;
@@ -219,7 +278,7 @@ async fn finish(
                 runner,
                 grant,
                 upload,
-                fence,
+                step,
                 &Reject::new("space_gone", "上传所在的空间已经删除"),
             )
             .await
@@ -228,7 +287,7 @@ async fn finish(
             // 别人已经收尾（重做时）：上传已是 done 就按完成处理。
             match repo.upload(grant, &upload.id).await? {
                 Some(current) if current.status == UploadStatus::Done => {
-                    complete(runner, fence, &result).await
+                    acknowledge(runner, step, &result).await
                 }
                 _ => Err(JobFailure::Content("上传已经不是待核对的状态".to_owned())),
             }
@@ -236,17 +295,24 @@ async fn finish(
     }
 }
 
-async fn complete(
+/// 上传已经核对完（重做时发现）：`upload_verify` 完成任务；别的任务只核对租约还在。
+async fn acknowledge(
     runner: &Arc<Runner>,
-    fence: &JobFence,
+    step: &Step<'_>,
     result: &Value,
 ) -> Result<(), JobFailure> {
-    if runner
-        .state
-        .repo
-        .complete_job(&runner.background, fence, result, now()?)
-        .await?
-    {
+    let repo = &runner.state.repo;
+    let held = match step.mode {
+        Mode::CompleteJob => {
+            repo.complete_job(&runner.background, step.fence, result, now()?)
+                .await?
+        }
+        Mode::CheckLease => {
+            repo.job_progress(&runner.background, step.fence, result)
+                .await?
+        }
+    };
+    if held {
         Ok(())
     } else {
         Err(JobFailure::LeaseLost)
@@ -258,24 +324,19 @@ async fn reject(
     runner: &Arc<Runner>,
     grant: &Grant,
     upload: &Upload,
-    fence: &JobFence,
+    step: &Step<'_>,
     rejected: &Reject,
 ) -> Result<(), JobFailure> {
     let repo = &runner.state.repo;
     let now = now()?;
+    let message = step.describe(rejected);
     let error = JobError::Detail {
         class: ErrorClass::Content,
-        message: rejected.to_string(),
+        message: message.clone(),
         at: now,
     };
     if !repo
-        .fail_verified_upload(
-            grant,
-            &upload.id,
-            &rejected.to_string(),
-            Some((fence, &error)),
-            now,
-        )
+        .fail_verified_upload(grant, &upload.id, &message, Some((step.fence, &error)), now)
         .await?
     {
         return Err(JobFailure::LeaseLost);
@@ -319,18 +380,8 @@ pub async fn settle_upload(
                 repo.delete_upload_chunks(grant, &upload.id).await?;
             }
             let check = meta.check.clone();
-            let format = check.as_ref().map(|check| check.body.format());
-            let result = result_of(&upload, !ours, format);
             match repo
-                .finish_verified_upload(
-                    grant,
-                    &upload,
-                    check.as_ref(),
-                    meta.length,
-                    None,
-                    &result,
-                    now,
-                )
+                .finish_verified_upload(grant, &upload, check.as_ref(), meta.length, None, now)
                 .await?
             {
                 VerifyFinish::Done => {

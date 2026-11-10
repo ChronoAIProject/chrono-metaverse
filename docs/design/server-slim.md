@@ -1128,6 +1128,56 @@ S3 做完后的状态（实施记录）：
 - **接口与数据**：第 7 节；任务参数 `{manifest, sources, revision}`。
 - **验收**：本机 https 测试服务器当 GitHub 和 Scaniverse：新库全流程（建空间、下载、打包扫描、登记、展开、发布）；已有旧任务的版本什么都不做；版本加一在同一空间追加；**第一次 404、重启后成功**（重新排队）；403、429 先重试；**租约丢失后在"追加"和"发布"之间重做**，结果只有一个提交；发布时有冲突自动重放；没有变化写 `unchanged`；主机不在列表、重定向到列表外、哈希不符、清单不合规、来源表缺文件各自失败且不重试；空间不是种子建的不碰；旧格式配置只记错误、服务照常就绪；6 个旧路由和 `authored` 上传返回 410。
 
+S4 做完后的状态（实施记录）：
+
+- 部署种子：`demo_seed/config.rs`（7.1 的新格式，旧格式记错误日志、跳过）、新 `demo_seed/hosts.rs`（`METAVERSE_DEMO_SEED_HOSTS`，
+  写法同本地工具，每一跳重定向都查）、新 `demo_seed/sources.rs`（来源表）、`demo_seed/fetch.rs`（流式下载，`fetch` 与 `content`
+  两类失败）、`demo_seed/pack.rs`（`ZipBuilder` 逐个成员写本地头和数据、最后写中央目录，`stored_zip` 只给测试和向量用）、
+  `demo_seed/mod.rs`（7.2 的启动流程，下载失败的任务重新排队并写 `history`）；新 `runner/bundle_import.rs`（7.2"执行器做
+  `bundle_import`"，`SlotClass::Heavy` 领取它）；`runner/upload_verify.rs` 的核对拆成 `verify`，种子在自己的任务里调用（只核对
+  租约、不完成任务）。
+- 发布：`timeline::drafts::publish` 改按 `Publisher`（调用者或系统发布者）写提交，`PublishOptions.job` 带任务栅栏；提交事务里
+  按租约栅栏把任务标记完成（`CommitPlan.job_done`，结果补上 `commitId`、`seq`），"没有变化"时草稿标记已发布和任务完成在同一个
+  事务里（`Repo::mark_draft_unchanged_for_job`）；后台任务保存草稿可以只写进度（`JobStep::Progress`）。
+- 旧接口：新 `routes/retired.rs`，6 个路由 410 `endpoint_retired`；`authored` 用途在实体区、地块、重建三组路径的创建、传片、完成、
+  查询都是 410；实体区、地块路径上传 `scan` 422 `purpose_not_allowed`；`routes/jobs.rs` 只留任务查询（标签 `jobs`），`hints`、
+  `scan_params`、`AUTHORED_KIND`、`MAX_HINTS_BYTES`、`check_legacy_upload_purpose`、核心库 `metaverse_core::authored` 和
+  `tests/demo_authored.rs`、上传核对的 `retired_purpose`，以及只给旧接口用的数据访问方法（`scan_committed`、`asset_availability`）
+  都删了。
+- 部署：`infra/chrono-cd/demo-seed.json` 和 `app.json` 的 `METAVERSE_DEMO_SEED` 换成新格式（版本 3、不带 `bundle`）；
+  `check-app.mjs` 按新格式校验；`infra/dev/demo-seed.mjs` 遇到旧格式直接报错；`up.sh` 给接口服务设默认的种子主机列表。
+- 测试：`tests/demo_seed.rs` 按上面的验收重写（10 个用例）；`tests/uploads_jobs.rs` 加旧接口和物件集上传 410、旧任务记录照样能查；
+  用到扫描上传的测试改走重建路径（`runner_support::upload_declared` 按用途选路径，测试设施加了带重建权限的调用者）。
+- 实现时补上的细节（设计没写到，按最小的写法定下）：
+  1. 种子的上传会话编号由（任务、文件哈希）算出，重做时接着用：`open` 的重写全部分片（8 MiB 一片），`complete` 的直接核对，
+     `failed`、`expired` 的删掉重建；会话不带 `jobId`，卡在 `complete` 时由清理第 1 步按"任务记录不存在、完成超过 24 小时"收尾；
+  2. 文件的上传格式按清单路径的扩展名定，规则与命令行 `bundle push` 相同（扫描 zip/glb/drc/obj，模型 glb，贴图
+     png/jpg/jpeg/webp，建模记录文本）；清单本身也走一个上传会话（用途 `bundle`），展开时从 GridFS 读；
+  3. 下载前按要下载的文件总量查空间的存储上限，超了按 `content` 失败；
+  4. 种子的草稿编号由任务编号算出；展开、追加以后在同一个事务里把结果摘要写进任务的 `progress`，重做时草稿的 `bundleRef` 已经是
+     这份清单就不再下载，结果摘要取进度里的；草稿已发布而任务没完成（正常不会出现）时按草稿补完成任务；
+  5. 提交事务和"没有变化"的事务里**先查任务租约、再占草稿**：新的持有者可能已经发布了同一个草稿，旧的持有者应当得到"租约丢了"
+     而不是"草稿变了"；
+  6. 种子的包不能引用目标空间已有的模板（解析清单时不传空间的模板表）：种子要在新库里也能展开；
+  7. 来源表的键必须在清单的 `files` 里；`zip` 只用于 `scan` 用途、`.zip` 结尾的文件，按成员算出的打包长度必须等于清单写的大小，
+     启动时就能查出成员、顺序或大小写错；
+  8. 主机列表在读配置时就核对清单和来源表的地址；带 `bundle` 却没设主机列表、主机列表本身写错，都与别的不合法配置一样启动失败；
+  9. 发布说明是 `note` 加"（部署配置种子第 N 版）"，超过 2000 字时截断 `note`；结果摘要里的 `anchors` 是展开时（基础版本上）的
+     结果，发布时自动重放的话以提交为准；
+  10. 410 的旧接口不解析请求体；`authored` 在解析路径里的用途时就返回 410，不看权限。
+- 与设计的偏离：
+  1. **`check-app` 的种子规则、`up.sh` 的种子主机列表、chrono-cd 和本地设施 README 的种子一节提前到 S4 改**（10.2、10.3 原定
+     S9）：`demo-seed.json` 换成新格式以后必须与 `app.json` 一致并通过检查，文档也不能还写着旧流程。`METAVERSE_DEMO_SEED_HOSTS`
+     只在种子带 `bundle` 时要求（10.2 写的是"显式写出"，S9 把它加进 `app.json` 时改成始终要求）。**`app.json` 只换了种子这一项，
+     镜像没换**：按现在的 `app.json` 部署会让旧镜像读不了新格式的种子而启动失败，种子格式和镜像必须在 R2 的同一次 `PUT` 里一起换；
+  2. 跨语言向量 `tests/vectors/demo_seed_zip.json` 字节不变：Rust 测试按新的打包代码重算 zip 字节，`registered`、`single` 两段是
+     本地工具嗅探的结果，改成按字面值写（`single.format` 是本地工具的叫法 `draco`）；本地工具那边的测试照旧读它。
+- 留给后面几步接上的：
+  1. S9：`app.json` 加 `METAVERSE_DEMO_SEED_HOSTS`（README 环境变量表同步）并让 `check-app` 始终要求；镜像换成 R2 的；九步验收和
+     `mock-nyxid.mjs` 的重建身份（S3 留下的）；`infra/chrono-cd/demo/README.md` 里物件集的旧流程；
+  2. S10：前厅第 4 版的清单和来源表（`infra/chrono-cd/demo/lobby-r4/`）、种子改成版本 4 带包；
+  3. S3 留下的"预览资源接口的范围没有收窄到基础版本及更早"仍在。
+
 #### S5 命令行
 
 - **改哪些文件**：`sdk/typescript/src/commands/`：删 `scan.ts`、`rebuild.ts`、`voxelize.ts`、`authored.ts`；新 `bundle.ts`（`check`、`push`）；改 `publish`（在 `common.ts` 或所在文件）认重建草稿；改 `pull.ts`（`--scan` 分段下载、`--share`、`limits.json`）；`index.ts` 注册。`src/transport/api.ts`（重建路径、`Range` 分段下载、公开快照）、`src/transport/upload.ts`（重建上传）；新 `src/core/check/{glb.ts, image.ts, zip.ts}`；技能说明 `metaverse-reconstruct`；`sdk/typescript/README.md`。

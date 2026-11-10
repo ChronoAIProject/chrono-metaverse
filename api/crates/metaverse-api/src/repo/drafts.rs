@@ -38,6 +38,15 @@ use super::transactions::{TxnOp, TxnOutcome};
 use super::{collections, Repo, RepoError};
 use crate::auth::{AuthorizerKey, Grant};
 
+/// 后台任务保存草稿时，任务这一边写什么。
+#[derive(Debug, Clone, Copy)]
+pub enum JobStep<'a> {
+    /// 任务完成，写结果（交包、`ops_from_upload` 保存草稿就是最后一步）。
+    Done(&'a Value),
+    /// 只核对租约还在、写进度（部署种子展开以后还要发布）。
+    Progress(&'a Value),
+}
+
 /// 后台任务保存草稿的结果。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JobDraftSave {
@@ -300,17 +309,22 @@ impl Repo {
     }
 
     /// 后台任务保存草稿（docs/design/server-slim.md 2.6 第 6 步、4.10）：一个事务里按
-    /// `{_id, rev, status: open}` 保存草稿，同时按租约栅栏把任务标记完成；任何一个匹配不到就中止。
+    /// `{_id, rev, status: open}` 保存草稿，同时按租约栅栏把任务标记完成（或只写进度）；任何一个
+    /// 匹配不到就中止。
     pub async fn save_draft_for_job(
         &self,
         grant: &Grant,
         draft: &DraftDoc,
         expected_rev: u64,
         fence: &super::JobFence,
-        result: &Value,
+        step: JobStep<'_>,
         now: Timestamp,
     ) -> Result<JobDraftSave, RepoError> {
         let (filter, update) = self.draft_save(grant, draft, expected_rev)?;
+        let job = match step {
+            JobStep::Done(result) => fence.done_op(result, now)?,
+            JobStep::Progress(progress) => fence.progress_op(progress)?,
+        };
         let outcome = self
             .run_transaction(&[
                 TxnOp::Update {
@@ -318,7 +332,7 @@ impl Repo {
                     filter,
                     update,
                 },
-                fence.done_op(result, now)?,
+                job,
             ])
             .await?;
         Ok(match outcome {
@@ -355,6 +369,45 @@ impl Repo {
             )
             .await?;
         Ok(result.matched_count == 1)
+    }
+
+    /// 同 [`Repo::mark_draft_unchanged`]，由后台任务发布时（部署种子）：同一个事务里按租约栅栏把
+    /// 任务标记完成，任何一个匹配不到就中止。
+    pub async fn mark_draft_unchanged_for_job(
+        &self,
+        grant: &Grant,
+        draft_id: &str,
+        rev: u64,
+        fence: &super::JobFence,
+        result: &Value,
+        now: metaverse_core::Timestamp,
+    ) -> Result<JobDraftSave, RepoError> {
+        if !grant.can_manage() {
+            return Err(RepoError::GrantMismatch);
+        }
+        let mut filter = draft_filter(grant, draft_id);
+        filter.insert("rev", rev as i64);
+        filter.insert("status", "open");
+        // 先查租约：租约丢了就报租约丢失（新的持有者可能已经发布了这个草稿）。
+        let outcome = self
+            .run_transaction(&[
+                fence.done_op(result, now)?,
+                TxnOp::Update {
+                    collection: collections::DRAFTS,
+                    filter,
+                    update: doc! {"$set": {
+                        "status": "published",
+                        "unchanged": true,
+                        "updatedAt": now.to_rfc3339(),
+                    }},
+                },
+            ])
+            .await?;
+        Ok(match outcome {
+            TxnOutcome::Committed => JobDraftSave::Saved,
+            TxnOutcome::NotMatched(0) => JobDraftSave::LeaseLost,
+            TxnOutcome::NotMatched(_) => JobDraftSave::DraftChanged,
+        })
     }
 
     /// 发布后（草稿已在提交事务里标记为已发布）：预览令牌和草稿区块随即作废。只在草稿确实

@@ -1,4 +1,4 @@
-//! 分片上传、扫描与任务的集成测试（真实 MongoDB + 模拟 NyxID）。
+//! 分片上传、任务查询和已下线接口的集成测试（真实 MongoDB + 模拟 NyxID）。
 
 mod ingest_support;
 
@@ -68,10 +68,11 @@ async fn chunked_upload_writes_gridfs_chunks_and_queues_verification() {
     front_hall(&app).await;
     let data = draco_bytes();
     let sha = sha256_hex(&data);
-    let base = "/api/v1/spaces/front-hall";
+    // 扫描只经重建路径上传（要重建权限）。
+    let base = "/api/v1/spaces/front-hall/rebuild";
     let created = create_upload(
         &app,
-        who(ORG),
+        rebuilder(ORG),
         base,
         "scan",
         json!({"totalSize": data.len(), "sha256": sha, "partSize": KIB256, "format": "drc"}),
@@ -92,33 +93,37 @@ async fn chunked_upload_writes_gridfs_chunks_and_queues_verification() {
 
     // 先传最后一片；这时完成会被拒（还缺第 0 片）。
     let reply = app
-        .put_bytes(who(ORG), &part(1), data[KIB256..].to_vec())
+        .put_bytes(rebuilder(ORG), &part(1), data[KIB256..].to_vec())
         .await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     assert_eq!(reply.body["size"], 100);
     assert_eq!(reply.body["sha256"], sha256_hex(&data[KIB256..]));
     let complete = format!("{base}/uploads/scan/{upload_id}/complete");
-    let reply = app.call(who(ORG), Method::POST, &complete, None).await;
+    let reply = app
+        .call(rebuilder(ORG), Method::POST, &complete, None)
+        .await;
     assert_eq!(reply.status, StatusCode::CONFLICT);
     assert_eq!(reply.body["code"], "upload_incomplete");
 
     // 片号越界、长度不对、超过声明的大小、文件头不符。
-    let reply = app.put_bytes(who(ORG), &part(2), vec![0; 10]).await;
+    let reply = app.put_bytes(rebuilder(ORG), &part(2), vec![0; 10]).await;
     assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(reply.body["code"], "invalid_part_number");
-    let reply = app.put_bytes(who(ORG), &part(0), vec![0; 10]).await;
+    let reply = app.put_bytes(rebuilder(ORG), &part(0), vec![0; 10]).await;
     assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(reply.body["code"], "part_size_mismatch");
-    let reply = app.put_bytes(who(ORG), &part(1), vec![0; 101]).await;
+    let reply = app.put_bytes(rebuilder(ORG), &part(1), vec![0; 101]).await;
     assert_eq!(reply.status, StatusCode::PAYLOAD_TOO_LARGE);
-    let reply = app.put_bytes(who(ORG), &part(0), vec![b'x'; KIB256]).await;
+    let reply = app
+        .put_bytes(rebuilder(ORG), &part(0), vec![b'x'; KIB256])
+        .await;
     assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(reply.body["code"], "format_mismatch");
 
     // 第 0 片传两次（重传幂等）。
     for _ in 0..2 {
         let reply = app
-            .put_bytes(who(ORG), &part(0), data[..KIB256].to_vec())
+            .put_bytes(rebuilder(ORG), &part(0), data[..KIB256].to_vec())
             .await;
         assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     }
@@ -138,17 +143,21 @@ async fn chunked_upload_writes_gridfs_chunks_and_queues_verification() {
     assert_eq!(sha256_hex(&joined), sha);
 
     // 完成：202 + upload_verify 任务。
-    let reply = app.call(who(ORG), Method::POST, &complete, None).await;
+    let reply = app
+        .call(rebuilder(ORG), Method::POST, &complete, None)
+        .await;
     assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
     let job_id = reply.body["jobId"].as_str().unwrap().to_owned();
     assert_eq!(reply.body["status"], "complete");
     // 重复完成返回同一个任务。
-    let again = app.call(who(ORG), Method::POST, &complete, None).await;
+    let again = app
+        .call(rebuilder(ORG), Method::POST, &complete, None)
+        .await;
     assert_eq!(again.status, StatusCode::ACCEPTED);
     assert_eq!(again.body["jobId"], job_id.as_str());
     // 完成之后不再接收分片。
     let reply = app
-        .put_bytes(who(ORG), &part(1), data[KIB256..].to_vec())
+        .put_bytes(rebuilder(ORG), &part(1), data[KIB256..].to_vec())
         .await;
     assert_eq!(reply.status, StatusCode::CONFLICT);
 
@@ -174,7 +183,7 @@ async fn chunked_upload_writes_gridfs_chunks_and_queues_verification() {
         job.get_document("actor").unwrap(),
         &doc! {"sub": ORG, "nyxServiceId": SERVICE}
     );
-    assert_eq!(job.get_str("scope").unwrap(), "physical");
+    assert_eq!(job.get_str("scope").unwrap(), "rebuild");
     assert!(job.get_str("createdAt").unwrap().ends_with('Z'));
     assert!(matches!(
         job.get("attempt"),
@@ -203,7 +212,7 @@ async fn chunked_upload_writes_gridfs_chunks_and_queues_verification() {
     // 查询任务和上传状态。
     let reply = app
         .call(
-            who(ORG),
+            rebuilder(ORG),
             Method::GET,
             &format!("{base}/jobs/{job_id}"),
             None,
@@ -214,7 +223,7 @@ async fn chunked_upload_writes_gridfs_chunks_and_queues_verification() {
     assert_eq!(reply.body["status"], "queued");
     let reply = app
         .call(
-            who(ORG),
+            rebuilder(ORG),
             Method::GET,
             &format!("{base}/uploads/scan/{upload_id}"),
             None,
@@ -228,7 +237,7 @@ async fn chunked_upload_writes_gridfs_chunks_and_queues_verification() {
     app.finish_upload(&upload_id, &sha, data.len() as i64).await;
     let reply = app
         .call(
-            who(ORG),
+            rebuilder(ORG),
             Method::GET,
             &format!("{base}/uploads/scan/{upload_id}"),
             None,
@@ -241,7 +250,7 @@ async fn chunked_upload_writes_gridfs_chunks_and_queues_verification() {
     assert_eq!(reply.body["contentType"], "application/x-draco");
     let reused = create_upload(
         &app,
-        who(ORG),
+        rebuilder(ORG),
         base,
         "scan",
         json!({"size": data.len(), "sha256": sha, "partSize": KIB256, "format": "drc"}),
@@ -266,7 +275,7 @@ async fn chunked_upload_writes_gridfs_chunks_and_queues_verification() {
     // 大小对不上的复用被拒。
     let reply = create_upload(
         &app,
-        who(ORG),
+        rebuilder(ORG),
         base,
         "scan",
         json!({"size": 5, "sha256": sha, "partSize": KIB256, "format": "drc"}),
@@ -284,17 +293,21 @@ async fn upload_rules_scope_and_access() {
     let base = "/api/v1/spaces/front-hall";
     let sha = sha256_hex(b"something");
     let body = |size: u64, part: u64, format: &str| json!({"size": size, "sha256": sha, "partSize": part, "format": format});
-    // 地块路径不能上传扫描；地块路径可以上传物件模型；不存在的地块 404。
-    let reply = create_upload(
-        &app,
-        who(ORG),
-        &format!("{base}/plots/p1"),
-        "scan",
-        body(10, 262144, "glb"),
-    )
-    .await;
-    assert_eq!(reply.status, StatusCode::FORBIDDEN, "{:?}", reply.body);
-    assert_eq!(reply.body["code"], "scope_violation");
+    // 实体区、地块路径不能上传扫描（改经重建路径，422）；地块路径可以上传物件模型；不存在的地块 404。
+    for path in [base.to_owned(), format!("{base}/plots/p1")] {
+        let reply = create_upload(&app, who(ORG), &path, "scan", body(10, 262144, "glb")).await;
+        assert_eq!(
+            reply.status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{path}: {:?}",
+            reply.body
+        );
+        assert_eq!(reply.body["code"], "purpose_not_allowed");
+        assert!(reply.body["detail"]
+            .as_str()
+            .unwrap()
+            .contains("/rebuild/uploads/scan"));
+    }
     let reply = create_upload(
         &app,
         who(ORG),
@@ -465,427 +478,92 @@ async fn upload_rules_scope_and_access() {
     assert_eq!(reply.status, StatusCode::NOT_FOUND);
 }
 
-/// 只有 glb 文件头的假模型（第 0 片的文件头检查只看魔数、版本、总长度；物件模型只收 glb）。
-fn fake_glb(label: &[u8]) -> Vec<u8> {
-    let total = (12 + label.len()) as u32;
-    let mut bytes = b"glTF".to_vec();
-    bytes.extend_from_slice(&2u32.to_le_bytes());
-    bytes.extend_from_slice(&total.to_le_bytes());
-    bytes.extend_from_slice(label);
-    bytes
-}
-
-/// 上传并模拟核对通过（直接写资源和上传的完成状态），返回内容哈希。
-async fn uploaded(app: &TestApp, base: &str, purpose: &str, format: &str, data: &[u8]) -> String {
-    let sha = sha256_hex(data);
-    let created = create_upload(
-        app,
-        who(ORG),
-        base,
-        purpose,
-        json!({"size": data.len(), "sha256": sha, "partSize": KIB256, "format": format}),
-    )
-    .await;
-    assert_eq!(created.status, StatusCode::CREATED, "{:?}", created.body);
-    let id = created.body["uploadId"].as_str().unwrap().to_owned();
-    let reply = app
-        .put_bytes(
-            who(ORG),
-            &format!("{base}/uploads/{purpose}/{id}/parts/0"),
-            data.to_vec(),
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/uploads/{purpose}/{id}/complete"),
-            None,
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
-    app.finish_upload(&id, &sha, data.len() as i64).await;
-    sha
-}
-
+/// 已下线的接口（docs/design/server-slim.md 2.1）：扫描导入、重新对齐、重建、体素化、物件模型重新
+/// 导出一律 410 `endpoint_retired`；AI 物件集上传三组路径都是 410；任务查询照旧，旧种类的记录照样能查。
 #[tokio::test]
-async fn scan_and_model_jobs() {
-    let Some(app) = TestApp::start(&[("JOB_MAX_PENDING_PER_SPACE", "20")]).await else {
+async fn retired_endpoints_are_gone() {
+    let Some(app) = TestApp::start(&[]).await else {
         return;
     };
     front_hall(&app).await;
     let base = "/api/v1/spaces/front-hall";
-
-    // 资源不存在、还在校验中。
-    let unknown = sha256_hex(b"never uploaded");
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/scans"),
-            Some(json!({"assetHash": unknown})),
-        )
-        .await;
-    assert_eq!(
-        reply.status,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "{:?}",
-        reply.body
-    );
-    assert_eq!(reply.body["code"], "asset_unknown");
-    let pending = b"DRACO pending scan".to_vec();
-    let pending_sha = sha256_hex(&pending);
-    let created = create_upload(
-        &app,
-        who(ORG),
-        base,
-        "scan",
-        json!({"size": pending.len(), "sha256": pending_sha, "partSize": KIB256, "format": "drc"}),
-    )
-    .await;
-    let pending_id = created.body["uploadId"].as_str().unwrap().to_owned();
-    app.put_bytes(
-        who(ORG),
-        &format!("{base}/uploads/scan/{pending_id}/parts/0"),
-        pending,
-    )
-    .await;
-    app.call(
-        who(ORG),
-        Method::POST,
-        &format!("{base}/uploads/scan/{pending_id}/complete"),
-        None,
-    )
-    .await;
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/scans"),
-            Some(json!({"assetHash": pending_sha})),
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::CONFLICT);
-    assert_eq!(reply.body["code"], "asset_not_ready");
-    // 处理服务校验失败：上传状态能看到原因，资源不可用。
-    app.fail_upload(&pending_id, "整体哈希不符").await;
-    let reply = app
-        .call(
-            who(ORG),
-            Method::GET,
-            &format!("{base}/uploads/scan/{pending_id}"),
-            None,
-        )
-        .await;
-    assert_eq!(reply.body["status"], "failed");
-    assert_eq!(reply.body["error"], "整体哈希不符");
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/scans"),
-            Some(json!({"assetHash": pending_sha})),
-        )
-        .await;
-    assert_eq!(reply.body["code"], "asset_unknown");
-
-    // 导入扫描：scan_import 任务，参数按约定。
-    let scan = uploaded(&app, base, "scan", "drc", b"DRACO the scan").await;
-    // 贴图走 texture 用途；带贴图的扫描打包成 zip 上传，scan_import 不再单独接收贴图。
-    let texture = uploaded(
-        &app,
-        base,
-        "texture",
-        "jpeg",
-        &[0xff, 0xd8, 0xff, 0xe0, 0, 4, 0, 0],
-    )
-    .await;
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/scans"),
-            Some(json!({"assetHash": scan, "textureHash": texture})),
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
-    let zipped = uploaded(&app, base, "scan", "zip", b"PK\x03\x04 scan.drc + tex.jpg").await;
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/scans"),
-            Some(json!({"assetHash": zipped, "rebuild": false})),
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
-    assert_eq!(reply.body["params"]["rebuild"], false);
-    let reply = app
-        .call_with(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/scans"),
-            &[("idempotency-key", "import-1")],
-            Some(
-                json!({"assetHash": scan, "observedAt": "2026-11-01T10:00:00+08:00",
-                        "hints": {"floor": "tile"}}),
-            ),
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
-    let job_id = reply.body["id"].as_str().unwrap().to_owned();
-    assert_eq!(reply.body["kind"], "scan_import");
-    assert_eq!(
-        reply.body["params"],
-        json!({"assetHash": scan, "observedAt": "2026-11-01T02:00:00.000Z",
-               "rebuild": true, "voxelize": false, "hints": {"floor": "tile"}})
-    );
-    // 同一个幂等键：返回同一个任务；参数不同：409。
-    let reply = app
-        .call_with(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/scans"),
-            &[("idempotency-key", "import-1")],
-            Some(
-                json!({"assetHash": scan, "observedAt": "2026-11-01T10:00:00+08:00",
-                        "hints": {"floor": "tile"}}),
-            ),
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(reply.body["id"], job_id.as_str());
-    let reply = app
-        .call_with(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/scans"),
-            &[("idempotency-key", "import-1")],
-            Some(json!({"assetHash": scan})),
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::CONFLICT);
-    // 字段拼错。
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/scans"),
-            Some(json!({"assetHash": scan, "rebuld": true})),
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
-
-    // 对齐：变换不合法 422；合法时 scan_import 带 transform。
-    let identity_matrix = [
-        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 2.5, 0.0, -1.0, 1.0,
-    ];
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/scans/{scan}/alignment"),
-            Some(json!({"transform": [1, 2, 3]})),
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(reply.body["code"], "invalid_transform");
-    // 处理服务会拒绝的变换（平移超过 1e5 米、毫米单位的 0.001 缩放）在请求时就是 422。
-    let mut far = identity_matrix;
-    far[12] = 200_000.0;
-    let mut millimetres = identity_matrix;
-    for i in [0, 5, 10] {
-        millimetres[i] = 0.001;
+    let scan = "a".repeat(64);
+    let identity = json!([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    for (path, body) in [
+        (format!("{base}/scans"), json!({"assetHash": scan})),
+        (
+            format!("{base}/scans/{scan}/alignment"),
+            json!({"transform": identity}),
+        ),
+        (format!("{base}/scans/{scan}/rebuild"), json!({})),
+        (format!("{base}/scans/{scan}/voxelize"), json!({})),
+        (format!("{base}/models"), json!({"assetHash": scan})),
+        (
+            format!("{base}/plots/p1/models"),
+            json!({"assetHash": scan}),
+        ),
+    ] {
+        for caller in [who(ORG), rebuilder(ORG)] {
+            let reply = app
+                .call(caller, Method::POST, &path, Some(body.clone()))
+                .await;
+            assert_eq!(reply.status, StatusCode::GONE, "{path}: {:?}", reply.body);
+            assert_eq!(reply.body["code"], "endpoint_retired");
+            assert!(reply.body["detail"].as_str().unwrap().contains("/rebuild/"));
+        }
     }
-    for transform in [far, millimetres] {
+    assert_eq!(count_jobs(&app).await, 0, "旧接口不再建任务");
+    // AI 物件集上传：三组路径的创建、传片、完成、查询都是 410。
+    let body = json!({"size": 10, "sha256": scan, "partSize": KIB256, "format": "json"});
+    for (caller, prefix) in [
+        (who(ORG), base.to_owned()),
+        (who(ORG), format!("{base}/plots/p1")),
+        (rebuilder(ORG), format!("{base}/rebuild")),
+    ] {
+        let reply = create_upload(&app, caller, &prefix, "authored", body.clone()).await;
+        assert_eq!(reply.status, StatusCode::GONE, "{prefix}: {:?}", reply.body);
+        assert_eq!(reply.body["code"], "endpoint_retired");
         let reply = app
             .call(
-                who(ORG),
-                Method::POST,
-                &format!("{base}/scans/{scan}/alignment"),
-                Some(json!({ "transform": transform })),
+                caller,
+                Method::GET,
+                &format!("{prefix}/uploads/authored/up_x"),
+                None,
             )
             .await;
-        assert_eq!(
-            reply.status,
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "{transform:?}"
-        );
-        assert_eq!(reply.body["code"], "invalid_transform");
+        assert_eq!(reply.status, StatusCode::GONE, "{prefix}");
+        let reply = app
+            .put_bytes(
+                caller,
+                &format!("{prefix}/uploads/authored/up_x/parts/0"),
+                b"{}".to_vec(),
+            )
+            .await;
+        assert_eq!(reply.status, StatusCode::GONE, "{prefix}");
     }
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/scans/{scan}/alignment"),
-            Some(json!({"transform": identity_matrix, "voxelize": true})),
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
-    assert_eq!(reply.body["kind"], "scan_import");
-    assert_eq!(reply.body["params"]["transform"], json!(identity_matrix));
-    assert_eq!(reply.body["params"]["voxelize"], true);
+    // 旧接口不在注册给 NyxID 的文档里。
+    let document = app.public("/api/openapi.json", None, &[]).await;
+    assert_eq!(document.status, StatusCode::OK);
+    let text = document.body.to_string();
+    for gone in [
+        "import_scan",
+        "align_scan",
+        "rebuild_scan",
+        "voxelize_scan",
+        "import_model",
+    ] {
+        assert!(!text.contains(gone), "{gone}");
+    }
+    assert!(!text.contains("authoredAsset"));
 
-    // 体素化、重建：扫描必须已经导入（有提交引用它）。
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/scans/{scan}/voxelize"),
-            None,
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::NOT_FOUND);
-    assert_eq!(reply.body["code"], "scan_not_found");
-    app.insert_commit("front-hall", org_owner(), &ago(0), Some(&scan))
-        .await;
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/scans/{scan}/voxelize"),
-            Some(json!({"style": "default"})),
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
-    assert_eq!(
-        reply.body["params"],
-        json!({"scanAssetHash": scan, "style": "default"})
-    );
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/scans/{scan}/rebuild"),
-            None,
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
-    assert_eq!(reply.body["kind"], "rebuild");
-    assert_eq!(reply.body["params"], json!({"scanAssetHash": scan}));
-
-    // 物件模型：地块路径要求是同一地块上传的。
-    let model = uploaded(&app, base, "model", "glb", &fake_glb(b"a lamp")).await;
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/plots/p1/models"),
-            Some(json!({"assetHash": model})),
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
-    let plot_model = uploaded(
-        &app,
-        &format!("{base}/plots/p1"),
-        "model",
-        "glb",
-        &fake_glb(b"a bench"),
-    )
-    .await;
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/plots/p1/models"),
-            Some(json!({"assetHash": plot_model})),
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
-    assert_eq!(reply.body["kind"], "model_import");
-    assert_eq!(reply.body["scope"], "plot:p1");
-    let plot_job = reply.body["id"].as_str().unwrap().to_owned();
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/models"),
-            Some(json!({"assetHash": model})),
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::ACCEPTED);
-
-    // 地块路径只能看到本地块发起的任务；实体区路径能看到全部。
-    let reply = app
-        .call(
-            who(ORG),
-            Method::GET,
-            &format!("{base}/plots/p1/jobs/{job_id}"),
-            None,
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::NOT_FOUND);
-    let reply = app
-        .call(
-            who(ORG),
-            Method::GET,
-            &format!("{base}/plots/p1/jobs/{plot_job}"),
-            None,
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::OK);
-    let reply = app
-        .call(
-            who(ORG),
-            Method::GET,
-            &format!("{base}/plots/p1/jobs"),
-            None,
-        )
-        .await;
-    let kinds: Vec<&str> = reply.body["items"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|j| j["scope"].as_str().unwrap())
-        .collect();
-    assert!(kinds.iter().all(|scope| *scope == "plot:p1"), "{kinds:?}");
-    let reply = app
-        .call(
-            who(ORG),
-            Method::GET,
-            &format!("{base}/jobs?status=queued&limit=100"),
-            None,
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::OK);
-    assert!(reply.body["items"].as_array().unwrap().len() >= 6);
-    let reply = app
-        .call(
-            who(ORG),
-            Method::GET,
-            &format!("{base}/jobs?status=sleeping"),
-            None,
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
-
-    // 处理服务写回结果后能查到 result（例如需要人工对齐）。
-    app.collection("jobs")
-        .update_one(
-            doc! {"_id": &job_id},
-            doc! {"$set": {"status": "done", "result": {"needsAlignment": true, "errorCm": 7.5}}},
-        )
-        .await
-        .unwrap();
-    let reply = app
-        .call(
-            who_with("bob", "member-token"),
-            Method::GET,
-            &format!("{base}/jobs/{job_id}"),
-            None,
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(reply.body["result"]["needsAlignment"], true);
-    // 处理服务在 scan_import 里顺带建的体素化任务（编号 `<任务编号>-voxelize`）也能查到。
-    let follow_up = format!("{job_id}-voxelize");
+    // 任务查询照旧：处理服务下线前的旧任务记录照样能查。
     app.collection("jobs")
         .insert_one(doc! {
-            "_id": &follow_up, "spaceId": "front-hall", "owner": {"kind": "org", "id": ORG},
-            "kind": "voxelize", "params": {"scanAssetHash": &scan}, "status": "queued",
-            "attempt": 0, "maxAttempts": 3, "createdAt": ago(0),
-            "actor": {"sub": ORG, "nyxServiceId": SERVICE},
+            "_id": "job_old_scan_import", "spaceId": "front-hall",
+            "owner": {"kind": "org", "id": ORG}, "kind": "scan_import",
+            "params": {"assetHash": &scan, "rebuild": true}, "status": "done",
+            "attempt": 1, "maxAttempts": 3, "createdAt": ago(3600), "scope": "physical",
+            "lastError": "旧的处理服务写的一段文字",
         })
         .await
         .unwrap();
@@ -893,31 +571,26 @@ async fn scan_and_model_jobs() {
         .call(
             who(ORG),
             Method::GET,
-            &format!("{base}/jobs/{follow_up}"),
+            &format!("{base}/jobs/job_old_scan_import"),
             None,
         )
         .await;
     assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
-    assert_eq!(reply.body["kind"], "voxelize");
-    // 陌生人看不到；member 不能发起任务。
+    assert_eq!(reply.body["kind"], "scan_import");
+    assert_eq!(reply.body["lastError"], "旧的处理服务写的一段文字");
+    assert!(reply.body.get("errorClass").is_none());
     let reply = app
-        .call(
-            who("eve"),
-            Method::GET,
-            &format!("{base}/jobs/{job_id}"),
-            None,
-        )
+        .call(who(ORG), Method::GET, &format!("{base}/jobs"), None)
         .await;
-    assert_eq!(reply.status, StatusCode::NOT_FOUND);
-    let reply = app
-        .call(
-            who_with("bob", "member-token"),
-            Method::POST,
-            &format!("{base}/scans"),
-            Some(json!({"assetHash": scan})),
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::FORBIDDEN);
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(reply.body["items"][0]["id"], "job_old_scan_import");
+}
+
+async fn count_jobs(app: &TestApp) -> u64 {
+    app.collection("jobs")
+        .count_documents(doc! {})
+        .await
+        .unwrap()
 }
 
 #[tokio::test]
@@ -927,17 +600,34 @@ async fn pending_job_limit_is_429() {
     };
     front_hall(&app).await;
     let base = "/api/v1/spaces/front-hall";
-    // 两个上传完成后就占满了任务名额。
-    let first = uploaded(&app, base, "scan", "drc", b"DRACO one").await;
-    uploaded(&app, base, "scan", "drc", b"DRACO two").await;
-    let reply = app
-        .call(
+    // 三个脚本上传：传完数据，前两个完成就占满了任务名额，第三个完成时 429。
+    let mut uploads = Vec::new();
+    for text in [&b"one"[..], b"two", b"three"] {
+        let created = create_upload(
+            &app,
             who(ORG),
-            Method::POST,
-            &format!("{base}/scans"),
-            Some(json!({"assetHash": first})),
+            base,
+            "script",
+            json!({"size": text.len(), "sha256": sha256_hex(text), "partSize": KIB256, "format": "text"}),
         )
         .await;
+        assert_eq!(created.status, StatusCode::CREATED, "{:?}", created.body);
+        let id = created.body["uploadId"].as_str().unwrap().to_owned();
+        let reply = app
+            .put_bytes(
+                who(ORG),
+                &format!("{base}/uploads/script/{id}/parts/0"),
+                text.to_vec(),
+            )
+            .await;
+        assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
+        uploads.push(format!("{base}/uploads/script/{id}/complete"));
+    }
+    for complete in &uploads[..2] {
+        let reply = app.call(who(ORG), Method::POST, complete, None).await;
+        assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
+    }
+    let reply = app.call(who(ORG), Method::POST, &uploads[2], None).await;
     assert_eq!(
         reply.status,
         StatusCode::TOO_MANY_REQUESTS,
@@ -945,7 +635,7 @@ async fn pending_job_limit_is_429() {
         reply.body
     );
     assert_eq!(reply.body["code"], "too_many_jobs");
-    // 处理服务做完一个之后可以继续。
+    // 后台执行器做完以后可以继续。
     app.collection("jobs")
         .update_many(
             doc! {"kind": "upload_verify"},
@@ -953,129 +643,8 @@ async fn pending_job_limit_is_429() {
         )
         .await
         .unwrap();
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/scans"),
-            Some(json!({"assetHash": first})),
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::ACCEPTED);
-}
-
-/// 模拟"建空间时第一次提交没写成"：删掉提交和锚点、把 head 退回 0。
-async fn drop_genesis(app: &TestApp, space: &str) {
-    app.collection("commits")
-        .delete_many(doc! {"spaceId": space})
-        .await
-        .unwrap();
-    app.collection("anchors")
-        .delete_many(doc! {"spaceId": space})
-        .await
-        .unwrap();
-    app.collection("spaces")
-        .update_one(
-            doc! {"_id": space},
-            doc! {"$set": {"head": {"seq": 0_i64, "at": ago(60)}}},
-        )
-        .await
-        .unwrap();
-}
-
-async fn commit_seqs(app: &TestApp, space: &str) -> Vec<i64> {
-    let commits: Vec<Document> = app
-        .collection("commits")
-        .find(doc! {"spaceId": space})
-        .sort(doc! {"seq": 1})
-        .await
-        .unwrap()
-        .try_collect()
-        .await
-        .unwrap();
-    commits
-        .iter()
-        .map(|c| match c.get("seq") {
-            Some(Bson::Int32(n)) => i64::from(*n),
-            Some(Bson::Int64(n)) => *n,
-            other => panic!("seq 不是整数：{other:?}"),
-        })
-        .collect()
-}
-
-#[tokio::test]
-async fn scan_jobs_write_the_missing_first_commit_before_queueing() {
-    let Some(app) = TestApp::start(&[]).await else {
-        return;
-    };
-    front_hall(&app).await;
-    let base = "/api/v1/spaces/front-hall";
-    let scan = uploaded(&app, base, "scan", "drc", b"DRACO genesis scan").await;
-    let model = uploaded(&app, base, "model", "glb", &fake_glb(b"genesis lamp")).await;
-    drop_genesis(&app, "front-hall").await;
-
-    // 物件模型导入不写提交，不需要补写第一次提交。
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/models"),
-            Some(json!({"assetHash": model})),
-        )
-        .await;
+    let reply = app.call(who(ORG), Method::POST, &uploads[2], None).await;
     assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
-    assert!(commit_seqs(&app, "front-hall").await.is_empty());
-
-    // 导入扫描：先写 seq 1（_space 锚点 + 通用方块表），再建任务，处理服务的提交从 seq 2 开始。
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/scans"),
-            Some(json!({"assetHash": scan})),
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
-    assert_eq!(commit_seqs(&app, "front-hall").await, vec![1]);
-    let genesis = app
-        .collection("commits")
-        .find_one(doc! {"spaceId": "front-hall", "seq": 1})
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(genesis.get_str("paletteHash").is_ok(), "{genesis:?}");
-    let anchors = genesis.get_array("changedAnchors").unwrap();
-    assert_eq!(
-        anchors[0].as_document().unwrap().get_str("id").unwrap(),
-        "_space"
-    );
-
-    // 已经有第一次提交：再建任务不会多写提交。
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/scans"),
-            Some(json!({"assetHash": scan, "rebuild": false})),
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
-    assert_eq!(commit_seqs(&app, "front-hall").await, vec![1]);
-
-    // 体素化、重建同样先检查：空间已有提交（这里模拟处理服务直接写的 seq 1）时不再补写。
-    drop_genesis(&app, "front-hall").await;
-    app.insert_commit("front-hall", org_owner(), &ago(30), Some(&scan))
-        .await;
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/scans/{scan}/rebuild"),
-            None,
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
-    assert_eq!(commit_seqs(&app, "front-hall").await, vec![1]);
 }
 
 /// 只凭哈希和大小不能把别的主人的资源变成自己的：别的空间请求"复用"时照常要求上传完整
@@ -1091,10 +660,11 @@ async fn reuse_by_hash_requires_owning_the_asset() {
         .await;
     let secret = draco_bytes();
     let sha = sha256_hex(&secret);
-    let base = "/api/v1/spaces/front-hall";
+    // 扫描只经重建路径上传（要重建权限）。
+    let base = "/api/v1/spaces/front-hall/rebuild";
     let reply = create_upload(
         &app,
-        who(ORG),
+        rebuilder(ORG),
         base,
         "scan",
         json!({"size": secret.len(), "sha256": sha, "partSize": KIB256, "format": "drc"}),
@@ -1105,7 +675,7 @@ async fn reuse_by_hash_requires_owning_the_asset() {
     for (n, part) in secret.chunks(KIB256).enumerate() {
         let reply = app
             .put_bytes(
-                who(ORG),
+                rebuilder(ORG),
                 &format!("{base}/uploads/scan/{upload_id}/parts/{n}"),
                 part.to_vec(),
             )
@@ -1114,7 +684,7 @@ async fn reuse_by_hash_requires_owning_the_asset() {
     }
     let reply = app
         .call(
-            who(ORG),
+            rebuilder(ORG),
             Method::POST,
             &format!("{base}/uploads/scan/{upload_id}/complete"),
             None,
@@ -1132,10 +702,15 @@ async fn reuse_by_hash_requires_owning_the_asset() {
         ("scan", "drc", sha.as_str()),
         ("scan", "drc", unknown.as_str()),
     ] {
+        let (caller, path) = if purpose == "scan" {
+            (rebuilder("bob"), format!("{bob}/rebuild"))
+        } else {
+            (who("bob"), bob.to_owned())
+        };
         let reply = create_upload(
             &app,
-            who("bob"),
-            bob,
+            caller,
+            &path,
             purpose,
             json!({"size": secret.len(), "sha256": hash, "partSize": KIB256, "format": format}),
         )
@@ -1149,7 +724,7 @@ async fn reuse_by_hash_requires_owning_the_asset() {
         assert_eq!(reply.body["status"], "open", "{purpose}");
         assert_eq!(reply.body["reused"], false, "{purpose}");
     }
-    // 拿不到资源，也不能拿它建导入任务。
+    // 拿不到资源。
     let reply = app
         .call(
             who("bob"),
@@ -1159,21 +734,6 @@ async fn reuse_by_hash_requires_owning_the_asset() {
         )
         .await;
     assert_eq!(reply.status, StatusCode::NOT_FOUND, "{:?}", reply.body);
-    let reply = app
-        .call(
-            who("bob"),
-            Method::POST,
-            &format!("{bob}/scans"),
-            Some(json!({"assetHash": sha})),
-        )
-        .await;
-    assert_eq!(
-        reply.status,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "{:?}",
-        reply.body
-    );
-    assert_eq!(reply.body["code"], "asset_unknown");
 
     // 旧版本按哈希复用留下的上传（status=done、reused=true）同样不算。
     app.collection("uploads")
@@ -1194,25 +754,11 @@ async fn reuse_by_hash_requires_owning_the_asset() {
         )
         .await;
     assert_eq!(reply.status, StatusCode::NOT_FOUND, "{:?}", reply.body);
-    let reply = app
-        .call(
-            who("bob"),
-            Method::POST,
-            &format!("{bob}/scans"),
-            Some(json!({"assetHash": sha})),
-        )
-        .await;
-    assert_eq!(
-        reply.status,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "{:?}",
-        reply.body
-    );
 
     // 主人自己照常复用（201、status=done）并能下载。
     let reply = create_upload(
         &app,
-        who(ORG),
+        rebuilder(ORG),
         base,
         "scan",
         json!({"size": secret.len(), "sha256": sha, "partSize": KIB256, "format": "drc"}),
@@ -1224,7 +770,7 @@ async fn reuse_by_hash_requires_owning_the_asset() {
     let reply = create_upload(
         &app,
         who(ORG),
-        base,
+        "/api/v1/spaces/front-hall",
         "texture",
         json!({"size": secret.len(), "sha256": sha, "partSize": KIB256, "format": "png"}),
     )
@@ -1377,10 +923,11 @@ async fn late_part_write_cannot_rewrite_a_completed_upload() {
     front_hall(&app).await;
     let data = draco_bytes();
     let sha = sha256_hex(&data);
-    let base = "/api/v1/spaces/front-hall";
+    // 扫描只经重建路径上传（要重建权限）。
+    let base = "/api/v1/spaces/front-hall/rebuild";
     let reply = create_upload(
         &app,
-        who(ORG),
+        rebuilder(ORG),
         base,
         "scan",
         json!({"size": data.len(), "sha256": sha, "partSize": KIB256, "format": "drc"}),
@@ -1390,7 +937,9 @@ async fn late_part_write_cannot_rewrite_a_completed_upload() {
     let upload_id = reply.body["uploadId"].as_str().unwrap().to_owned();
     let part = |n: usize| format!("{base}/uploads/scan/{upload_id}/parts/{n}");
     for (n, bytes) in data.chunks(KIB256).enumerate() {
-        let reply = app.put_bytes(who(ORG), &part(n), bytes.to_vec()).await;
+        let reply = app
+            .put_bytes(rebuilder(ORG), &part(n), bytes.to_vec())
+            .await;
         assert_eq!(reply.status, StatusCode::OK, "{:?}", reply.body);
     }
     // 第 1 片的重传：过了状态检查，等信号才给出请求体。
@@ -1403,7 +952,10 @@ async fn late_part_write_cannot_rewrite_a_completed_upload() {
     let request = axum::http::Request::builder()
         .method(Method::PUT)
         .uri(part(1))
-        .header("x-nyxid-identity-token", identity(ORG))
+        .header(
+            "x-nyxid-identity-token",
+            identity_with(ORG, &[REBUILD_PERMISSION]),
+        )
         .header("content-type", "application/octet-stream")
         .header("content-length", (data.len() - KIB256).to_string())
         .body(axum::body::Body::from_stream(stream))
@@ -1413,7 +965,7 @@ async fn late_part_write_cannot_rewrite_a_completed_upload() {
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     let reply = app
         .call(
-            who(ORG),
+            rebuilder(ORG),
             Method::POST,
             &format!("{base}/uploads/scan/{upload_id}/complete"),
             None,
@@ -1451,10 +1003,11 @@ async fn complete_waits_for_parts_in_flight() {
     front_hall(&app).await;
     let data = draco_bytes();
     let sha = sha256_hex(&data);
-    let base = "/api/v1/spaces/front-hall";
+    // 扫描只经重建路径上传（要重建权限）。
+    let base = "/api/v1/spaces/front-hall/rebuild";
     let reply = create_upload(
         &app,
-        who(ORG),
+        rebuilder(ORG),
         base,
         "scan",
         json!({"size": data.len(), "sha256": sha, "partSize": KIB256, "format": "drc"}),
@@ -1464,7 +1017,7 @@ async fn complete_waits_for_parts_in_flight() {
     for (n, bytes) in data.chunks(KIB256).enumerate() {
         let reply = app
             .put_bytes(
-                who(ORG),
+                rebuilder(ORG),
                 &format!("{base}/uploads/scan/{upload_id}/parts/{n}"),
                 bytes.to_vec(),
             )
@@ -1480,7 +1033,9 @@ async fn complete_waits_for_parts_in_flight() {
         )
         .await
         .unwrap();
-    let reply = app.call(who(ORG), Method::POST, &complete, None).await;
+    let reply = app
+        .call(rebuilder(ORG), Method::POST, &complete, None)
+        .await;
     assert_eq!(reply.status, StatusCode::CONFLICT, "{:?}", reply.body);
     assert_eq!(reply.body["code"], "parts_in_progress");
     assert_eq!(reply.headers.get("retry-after").unwrap(), "2");
@@ -1492,311 +1047,8 @@ async fn complete_waits_for_parts_in_flight() {
         )
         .await
         .unwrap();
-    let reply = app.call(who(ORG), Method::POST, &complete, None).await;
-    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
-}
-
-/// 一份合法的 AI 物件集：带烘焙指令的面板 + 外部模型（形状和署名的深层校验在处理服务）。
-fn authored_doc() -> Value {
-    json!({
-        "version": 1,
-        "entities": [
-            {"entityId": "panel-01", "kind": "object",
-             "shape": {"type": "box", "size": [0.02, 1, 1], "material": {"bake": "planar"}}},
-            {"entityId": "chair-01", "kind": "object",
-             "model": {"url": "https://dl.polyhaven.org/a.glb", "sha256": "a".repeat(64), "size": 10, "format": "glb"},
-             "transform": {"position": [2, 0, 1]},
-             "props": {"category": "chair", "source": {"library": "polyhaven", "id": "a",
-                       "page": "https://polyhaven.com/a/a", "author": "x", "license": "CC0-1.0", "title": "A"}}}
-        ],
-        "notes": "前厅",
-        "structure": "keep"
-    })
-}
-
-#[tokio::test]
-async fn scans_and_rebuild_accept_authored_sets() {
-    let Some(app) = TestApp::start(&[("JOB_MAX_PENDING_PER_SPACE", "20")]).await else {
-        return;
-    };
-    front_hall(&app).await;
-    let base = "/api/v1/spaces/front-hall";
-    let scan = uploaded(&app, base, "scan", "drc", b"DRACO the scan").await;
-
-    // 内联：浅层校验通过后登记成本空间的 authored 资源（规范化 JSON），任务参数里是 authoredAsset。
-    let doc = authored_doc();
     let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/scans"),
-            Some(json!({"assetHash": scan, "authored": doc})),
-        )
+        .call(rebuilder(ORG), Method::POST, &complete, None)
         .await;
     assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
-    let canonical = metaverse_core::canonical::canonical_json(&doc).unwrap();
-    let inline_hash = sha256_hex(canonical.as_bytes());
-    assert_eq!(
-        reply.body["params"],
-        json!({"assetHash": scan, "rebuild": true, "voxelize": false, "authoredAsset": inline_hash})
-    );
-    let files = app
-        .collection("assets.files")
-        .find_one(doc! {"filename": &inline_hash})
-        .await
-        .unwrap()
-        .expect("物件集已登记");
-    let metadata = files.get_document("metadata").unwrap();
-    assert_eq!(metadata.get_str("kind").unwrap(), "authored");
-    assert_eq!(metadata.get_str("spaceId").unwrap(), "front-hall");
-    assert_eq!(metadata.get_str("contentType").unwrap(), "application/json");
-
-    // 对齐接口（带变换的导入）同样接受。
-    let identity = json!([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/scans/{scan}/alignment"),
-            Some(json!({"transform": identity, "authored": authored_doc()})),
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
-    assert_eq!(reply.body["params"]["authoredAsset"], json!(inline_hash));
-    assert_eq!(
-        reply.body["params"]["transform"].as_array().map(Vec::len),
-        Some(16)
-    );
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &format!("{base}/scans/{scan}/alignment"),
-            Some(json!({"transform": identity, "authored": authored_doc(), "rebuild": false})),
-        )
-        .await;
-    assert_eq!(
-        reply.status,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "{:?}",
-        reply.body
-    );
-
-    // 浅层校验不通过：422 invalid_authored。
-    let mut wrong_version = authored_doc();
-    wrong_version["version"] = json!(2);
-    let mut baked_texture = authored_doc();
-    baked_texture["entities"][0]["shape"]["material"]["texture"] = json!("b".repeat(64));
-    let mut plain_http = authored_doc();
-    plain_http["entities"][1]["model"]["url"] = json!("http://dl.polyhaven.org/a.glb");
-    let mut too_many = authored_doc();
-    too_many["entities"] = Value::Array(
-        (0..2001)
-            .map(|i| json!({"entityId": format!("b-{i}"), "kind": "object", "shape": {"type": "box"}}))
-            .collect(),
-    );
-    for (body, message) in [
-        (
-            json!({"assetHash": scan, "authored": wrong_version}),
-            "version",
-        ),
-        (
-            json!({"assetHash": scan, "authored": baked_texture}),
-            "texture",
-        ),
-        (json!({"assetHash": scan, "authored": plain_http}), "https"),
-        (json!({"assetHash": scan, "authored": too_many}), "entities"),
-        (
-            json!({"assetHash": scan, "authored": authored_doc(), "authoredAsset": inline_hash}),
-            "只能给一个",
-        ),
-        (
-            json!({"assetHash": scan, "authored": authored_doc(), "rebuild": false}),
-            "rebuild",
-        ),
-    ] {
-        let reply = app
-            .call(who(ORG), Method::POST, &format!("{base}/scans"), Some(body))
-            .await;
-        assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY, "{message}");
-        assert_eq!(reply.body["code"], "invalid_authored", "{message}");
-        assert!(
-            reply.body["detail"].as_str().unwrap().contains(message),
-            "{message}: {:?}",
-            reply.body
-        );
-    }
-
-    // authored 用途上传：只经实体区路径；内容是 JSON 对象。
-    let mut uploaded_doc = authored_doc();
-    uploaded_doc["notes"] = json!("上传的版本");
-    let bytes = serde_json::to_vec_pretty(&uploaded_doc).unwrap();
-    let reply = create_upload(
-        &app,
-        who(ORG),
-        &format!("{base}/plots/p1"),
-        "authored",
-        json!({"size": bytes.len(), "sha256": sha256_hex(&bytes), "partSize": KIB256, "format": "json"}),
-    )
-    .await;
-    assert_eq!(reply.status, StatusCode::FORBIDDEN, "{:?}", reply.body);
-    let reply = create_upload(
-        &app,
-        who(ORG),
-        base,
-        "authored",
-        json!({"size": 5 << 20, "sha256": sha256_hex(b"x"), "partSize": KIB256, "format": "json"}),
-    )
-    .await;
-    assert_eq!(
-        reply.status,
-        StatusCode::PAYLOAD_TOO_LARGE,
-        "{:?}",
-        reply.body
-    );
-    let reply = create_upload(
-        &app,
-        who(ORG),
-        base,
-        "authored",
-        json!({"size": 10, "sha256": sha256_hex(b"x"), "partSize": KIB256, "format": "text"}),
-    )
-    .await;
-    assert_eq!(
-        reply.status,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "{:?}",
-        reply.body
-    );
-    let asset = uploaded(&app, base, "authored", "json", &bytes).await;
-
-    // 重建：已导入的扫描才行；authoredAsset 必须是本空间 authored 用途的资源。
-    app.insert_commit("front-hall", org_owner(), &ago(0), Some(&scan))
-        .await;
-    let rebuild = format!("{base}/scans/{scan}/rebuild");
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &rebuild,
-            Some(json!({"authoredAsset": asset})),
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
-    assert_eq!(
-        reply.body["params"],
-        json!({"scanAssetHash": scan, "authoredAsset": asset})
-    );
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &rebuild,
-            Some(json!({"authored": authored_doc(), "hints": {"x": 1}})),
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::ACCEPTED, "{:?}", reply.body);
-    assert_eq!(
-        reply.body["params"],
-        json!({"scanAssetHash": scan, "hints": {"x": 1}, "authoredAsset": inline_hash})
-    );
-    let other_kind = app
-        .put_asset(
-            b"{\"version\": 1}",
-            doc! {"kind": "script", "spaceId": "front-hall"},
-        )
-        .await;
-    for (hash, status, code) in [
-        (
-            scan.clone(),
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "asset_unknown",
-        ),
-        (
-            other_kind,
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "asset_unknown",
-        ),
-        (
-            sha256_hex(b"never"),
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "asset_unknown",
-        ),
-        (
-            "NOT-A-HASH".to_owned(),
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "invalid_request",
-        ),
-    ] {
-        let reply = app
-            .call(
-                who(ORG),
-                Method::POST,
-                &rebuild,
-                Some(json!({"authoredAsset": hash})),
-            )
-            .await;
-        assert_eq!(reply.status, status, "{hash}: {:?}", reply.body);
-        assert_eq!(reply.body["code"], code, "{hash}");
-    }
-    // 别的空间的物件集不能用（资源归属）。
-    app.create_space(who(ORG), "back-room", "org", ORG, "unlisted")
-        .await;
-    let foreign = uploaded(
-        &app,
-        "/api/v1/spaces/back-room",
-        "authored",
-        "json",
-        b"{\"version\":1,\"entities\":[]}",
-    )
-    .await;
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &rebuild,
-            Some(json!({"authoredAsset": foreign})),
-        )
-        .await;
-    assert_eq!(
-        reply.status,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "{:?}",
-        reply.body
-    );
-    // 还在校验中的物件集：409。
-    let pending =
-        br#"{"version":1,"entities":[{"entityId":"a","kind":"object","shape":{}}]}"#.to_vec();
-    let created = create_upload(
-        &app,
-        who(ORG),
-        base,
-        "authored",
-        json!({"size": pending.len(), "sha256": sha256_hex(&pending), "partSize": KIB256, "format": "json"}),
-    )
-    .await;
-    let id = created.body["uploadId"].as_str().unwrap().to_owned();
-    app.put_bytes(
-        who(ORG),
-        &format!("{base}/uploads/authored/{id}/parts/0"),
-        pending.clone(),
-    )
-    .await;
-    app.call(
-        who(ORG),
-        Method::POST,
-        &format!("{base}/uploads/authored/{id}/complete"),
-        None,
-    )
-    .await;
-    let reply = app
-        .call(
-            who(ORG),
-            Method::POST,
-            &rebuild,
-            Some(json!({"authoredAsset": sha256_hex(&pending)})),
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::CONFLICT, "{:?}", reply.body);
-    assert_eq!(reply.body["code"], "asset_not_ready");
 }

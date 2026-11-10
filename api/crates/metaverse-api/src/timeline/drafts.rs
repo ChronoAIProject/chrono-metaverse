@@ -31,7 +31,7 @@ use metaverse_core::check::{model_fits_bounds, AssetCheck, CheckBody};
 use metaverse_core::chunk::{Chunk, ChunkKey};
 use metaverse_core::limits::UploadLimits;
 use metaverse_core::model::{
-    ActorKind, Author, ChunkChange, Commit, DraftChunk, IdChange, Layer, Touched,
+    Actor, ActorKind, Author, ChunkChange, Commit, DraftChunk, IdChange, Layer, Touched,
 };
 use metaverse_core::ops::{
     AnchorSkip, Op, OpError, PaletteBlock, ScopeKind, TouchedSet, WorkingState,
@@ -46,12 +46,13 @@ use super::palette::{assign_final_ids, palette_value, parse_palette};
 use super::snapshot::{assemble, Audience};
 use super::state::{check_scope_only, ops_cells, ApplyError, Workspace};
 use super::views::SnapshotView;
-use super::writer::{actor, attach_keyframe, commit, entity_asset_roles, entity_assets, record_of};
+use super::writer::{attach_keyframe, commit, entity_asset_roles, entity_assets, record_of};
 use crate::auth::{Caller, Grant};
 use crate::error::ApiError;
 use crate::repo::{
     AssetRole, CommitError, CommitOutcome, CommitPlan, DraftDoc, DraftScanDoc, DraftStatus,
-    OpsAsset, OpsRef, ProvisionalBlock, Repo, UnusableAsset, MISSING_ASSET,
+    JobDone, JobDraftSave, JobFence, OpsAsset, OpsRef, ProvisionalBlock, Repo, UnusableAsset,
+    MISSING_ASSET,
 };
 
 /// 一个草稿最多的操作条数（内联 + 上传）。
@@ -999,6 +1000,39 @@ pub async fn preview_snapshot(
     .await
 }
 
+/// 谁在发布：调用者，或部署种子这类没有调用者的系统发布者（docs/design/server-slim.md 3.5）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Publisher {
+    pub sub: String,
+    pub service_id: String,
+}
+
+impl Publisher {
+    pub fn of(caller: &Caller) -> Self {
+        Self {
+            sub: caller.subject.clone(),
+            service_id: caller.service_id.clone(),
+        }
+    }
+
+    /// 没有调用者的系统发布者（服务编号为空）。
+    pub fn system(sub: &str) -> Self {
+        Self {
+            sub: sub.to_owned(),
+            service_id: String::new(),
+        }
+    }
+}
+
+/// 由后台任务发布（部署种子，docs/design/server-slim.md 2.7）：提交带任务编号，任务完成与提交
+/// 在同一个事务里按租约栅栏写；没有变化时任务完成与"草稿标记已发布"在同一个事务里写。`result`
+/// 是任务结果的底稿，发布时再加上 `commitId`、`seq` 或 `unchanged`。
+#[derive(Debug, Clone)]
+pub struct JobPublish {
+    pub fence: JobFence,
+    pub result: Value,
+}
+
 /// 发布选项。
 #[derive(Debug, Clone, Default)]
 pub struct PublishOptions {
@@ -1013,6 +1047,8 @@ pub struct PublishOptions {
     pub script_ref: Option<String>,
     /// 当前配置的各用途上限（按核对记录判断 `scriptRef` 是不是文本）。
     pub limits: UploadLimits,
+    /// 由后台任务发布时的任务栅栏和结果底稿。
+    pub job: Option<JobPublish>,
 }
 
 /// 发布的结果。
@@ -1045,6 +1081,8 @@ pub enum PublishError {
     /// 在"最新版本 + 本次变化"上，模板引用不完整：本次放进去的物件引用的模板不在同一层，或本次
     /// 删掉的模板还被物件引用（`(物件编号, 模板编号)`，docs/design/server-slim.md 2.5 第 3 条）。
     BrokenTemplates(Vec<(String, String)>),
+    /// 由后台任务发布时，任务的租约已经丢了：什么都没写。
+    LeaseLost,
 }
 
 impl From<ApiError> for PublishError {
@@ -1523,7 +1561,7 @@ async fn commit_ops(
 pub async fn publish(
     repo: &Repo,
     grant: &Grant,
-    caller: &Caller,
+    publisher: &Publisher,
     draft: &DraftDoc,
     options: &PublishOptions,
     now: Timestamp,
@@ -1656,11 +1694,32 @@ pub async fn publish(
             && changes.new_blocks.is_empty()
             && scan.is_none()
         {
-            if !repo
-                .mark_draft_unchanged(grant, &draft.id, draft.rev, now)
-                .await?
-            {
-                return Err(draft_changed().into());
+            match &options.job {
+                None => {
+                    if !repo
+                        .mark_draft_unchanged(grant, &draft.id, draft.rev, now)
+                        .await?
+                    {
+                        return Err(draft_changed().into());
+                    }
+                }
+                Some(job) => {
+                    let mut result = job.result.clone();
+                    if let Value::Object(map) = &mut result {
+                        map.insert("unchanged".into(), json!(true));
+                        map.insert("seq".into(), json!(head_seq));
+                    }
+                    match repo
+                        .mark_draft_unchanged_for_job(
+                            grant, &draft.id, draft.rev, &job.fence, &result, now,
+                        )
+                        .await?
+                    {
+                        JobDraftSave::Saved => {}
+                        JobDraftSave::DraftChanged => return Err(draft_changed().into()),
+                        JobDraftSave::LeaseLost => return Err(PublishError::LeaseLost),
+                    }
+                }
             }
             if let Err(error) = repo.clear_published_draft(grant, &draft.id).await {
                 tracing::warn!(space = %grant.space_id(), draft = %draft.id, error = %error, "清理已发布草稿的预览和区块失败");
@@ -1672,10 +1731,22 @@ pub async fn publish(
         repo.put_records(grant, &changes.records).await?;
         let mut plan = CommitPlan::new(
             head_seq,
-            actor(caller, draft.scope.clone(), kind),
+            Actor {
+                sub: publisher.sub.clone(),
+                nyx_service_id: publisher.service_id.clone(),
+                scope: draft.scope.clone(),
+                kind,
+            },
             message.clone(),
         );
-        if draft.created_by.sub != caller.subject {
+        if let Some(job) = &options.job {
+            plan.job_id = Some(job.fence.job_id.clone());
+            plan.job_done = Some(JobDone {
+                fence: job.fence.clone(),
+                result: job.result.clone(),
+            });
+        }
+        if draft.created_by.sub != publisher.sub {
             plan.author = Some(Author {
                 sub: draft.created_by.sub.clone(),
             });
@@ -1727,6 +1798,7 @@ pub async fn publish(
             Err(CommitError::DraftChanged) => return Err(draft_changed().into()),
             Err(CommitError::Missing) => return Err(ApiError::not_found().into()),
             Err(CommitError::AssetsGone(gone)) => return Err(PublishError::AssetsGone(gone)),
+            Err(CommitError::LeaseLost) => return Err(PublishError::LeaseLost),
             Err(CommitError::Repo(error)) => return Err(error.into()),
         }
     }

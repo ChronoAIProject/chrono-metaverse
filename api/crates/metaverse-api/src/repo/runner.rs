@@ -356,16 +356,15 @@ impl Repo {
     }
 
     /// 核对通过（内容已登记成资源）以后的收尾，一个事务里：上传 `complete → done` 并写 `assetHash`、
-    /// `format`、`storageBytes`；空间（同一个实例）的 `storageUsedBytes` 加上大小；给了栅栏时任务完成。
-    #[allow(clippy::too_many_arguments)]
+    /// `format`、`storageBytes`；空间（同一个实例）的 `storageUsedBytes` 加上大小；给了任务时按栅栏
+    /// 把任务标记完成（`upload_verify`）或只核对租约（部署种子在自己的任务里核对下载的文件）。
     pub async fn finish_verified_upload(
         &self,
         grant: &Grant,
         upload: &Upload,
         check: Option<&AssetCheck>,
         size: u64,
-        fence: Option<&JobFence>,
-        result: &Value,
+        job: Option<(&JobFence, super::JobStep<'_>)>,
         now: Timestamp,
     ) -> Result<VerifyFinish, RepoError> {
         if !grant.can_manage() || upload.space_id != grant.space_id() {
@@ -398,8 +397,12 @@ impl Repo {
                 update: doc! {"$inc": {"storageUsedBytes": size as i64}},
             },
         ];
-        if let Some(fence) = fence {
-            ops.push(fence.done_op(result, now)?);
+        match job {
+            None => {}
+            Some((fence, super::JobStep::Done(result))) => ops.push(fence.done_op(result, now)?),
+            Some((fence, super::JobStep::Progress(progress))) => {
+                ops.push(fence.progress_op(progress)?)
+            }
         }
         Ok(match self.run_transaction(&ops).await? {
             TxnOutcome::Committed => VerifyFinish::Done,

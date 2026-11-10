@@ -1,42 +1,50 @@
-//! 部署配置种子的配置：`METAVERSE_DEMO_SEED`（JSON）和 `METAVERSE_DEMO_SHARE_TOKEN`（分享令牌原文）。
+//! 部署配置种子的配置：`METAVERSE_DEMO_SEED`（JSON）、`METAVERSE_DEMO_SHARE_TOKEN`（分享令牌原文）和
+//! `METAVERSE_DEMO_SEED_HOSTS`（允许下载的主机，见 [`super::hosts`]）。格式见
+//! docs/design/server-slim.md 7.1：
 //!
-//! 解析严格：拒绝未知字段；地址只接受 https（本机测试可用 http://127.0.0.1 这类本机地址）；每个文件
-//! 必须声明大小和 sha256，总大小不超过 [`MAX_SEED_TOTAL_BYTES`] 和扫描上传上限（`UPLOAD_MAX_SCAN_BYTES`）
-//! 中较小的一个；空间编号、名称、说明按建空间接口的规则校验。配置不合法时接口服务启动失败（与其他配置一样，见 `config.rs`）。
+//! ```json
+//! {"spaceId": "chronoai-lobby", "name": "ChronoAI 前厅", "description": "…",
+//!  "owner": {"kind": "org", "id": "<组织编号>"}, "visibility": "unlisted", "revision": 4,
+//!  "bundle": {"manifest": {"url": "https://…/manifest.json", "sha256": "…", "size": 312345},
+//!             "sources":  {"url": "https://…/sources.json",  "sha256": "…", "size": 4567}}}
+//! ```
 //!
-//! 可选的 `authored: {url, sha256, size}` 是 AI 物件集（设计 6.3）：地址规则、下载、核对与扫描文件相同，
-//! 大小 ≤ 4MB（[`MAX_AUTHORED_BYTES`]）；下载后登记成 authored 资源，导入任务带 `authoredAsset`，
-//! 重建层换成物件集里的物件（这时 `rebuild` 不能是 false）。
+//! - 解析严格：拒绝未知字段；空间编号、名称、说明按建空间接口的规则校验；清单和来源表的地址必须在
+//!   主机列表里，sha256 是 64 位小写十六进制，清单不超过重建包清单的上传上限，来源表不超过 1 MiB；
+//! - `bundle` 可选：不给时种子只保证空间存在（建空间、写第一次提交），不导入任何内容；
+//! - **旧格式**（出现 `files`、`rebuild`、`voxelize`、`hints`、`authored`、`observedAt`，处理服务下线前的
+//!   写法）：记错误日志、跳过种子，接口服务照常启动（部署前由 `infra/chrono-cd/check-app.mjs` 拦住）；
+//! - 其他不合法的配置与别的配置项一样让接口服务启动失败（见 `config.rs`）。
 //!
 //! 分享令牌原文只用来算哈希：`Debug` 不输出内容、释放时清零，错误信息里也不出现它。
 
 use std::fmt;
 
-use metaverse_core::authored::MAX_AUTHORED_BYTES;
-use metaverse_core::canonical::canonical_json;
 use metaverse_core::ids::is_subject_id;
-use metaverse_core::model::{Owner, OwnerKind, UploadFormat, Visibility};
-use metaverse_core::{is_sha256_hex, Timestamp};
-use serde::Deserialize;
+use metaverse_core::is_sha256_hex;
+use metaverse_core::model::{Owner, OwnerKind, Visibility};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use zeroize::Zeroizing;
 
+use super::hosts::{HostList, HOSTS_ENV};
+use super::sources::MAX_SOURCES_BYTES;
 use crate::config::ConfigError;
 use crate::routes::admin_spaces::NewSpace;
-use crate::routes::jobs::MAX_HINTS_BYTES;
 
 /// 种子配置的环境变量。
 pub const SEED_ENV: &str = "METAVERSE_DEMO_SEED";
 /// 分享令牌原文的环境变量（chrono-cd 里作为应用密钥注入）。
 pub const SHARE_TOKEN_ENV: &str = "METAVERSE_DEMO_SHARE_TOKEN";
-/// 最多几个文件（一个网格 + 贴图、材质）。
-pub const MAX_FILES: usize = 32;
-/// 种子文件总大小的固定上限（256MiB）。下载的文件和打包的 zip 都在内存里，峰值约为总大小的两倍；
-/// 接口服务的 `memory_limit` 是 1Gi，还要给并发的分片上传留余量。种子在每次启动时执行，超内存被杀
-/// 会让接口服务反复重启，所以这里比扫描上传的上限（默认 1GiB）严。
-pub const MAX_SEED_TOTAL_BYTES: u64 = 256 << 20;
-/// 物件集在日志和错误信息里的文件名。
-pub const AUTHORED_FILE: &str = "authored.json";
+/// 旧格式（处理服务下线前）的字段：出现任何一个就记错误日志、跳过种子。
+pub const LEGACY_KEYS: [&str; 6] = [
+    "files",
+    "rebuild",
+    "voxelize",
+    "hints",
+    "authored",
+    "observedAt",
+];
 /// 分享令牌原文的长度范围（base64url；32 个字符约 192 位随机数）。
 pub const MIN_SHARE_TOKEN_CHARS: usize = 32;
 pub const MAX_SHARE_TOKEN_CHARS: usize = 256;
@@ -63,32 +71,28 @@ impl SeedShareToken {
     }
 }
 
-/// 文件在扫描里的作用（按扩展名）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FileRole {
-    /// 网格：glb、drc、obj。
-    Mesh,
-    /// 贴图：jpg、jpeg、png、webp。
-    Texture,
-    /// obj 的材质文件：mtl。
-    Material,
-    /// 已经打好的 zip（只能单独一个文件）。
-    Archive,
-    /// AI 物件集（`authored`，JSON），不进扫描压缩包。
-    Authored,
-}
-
-/// 一个要下载的文件。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SeedFile {
-    pub url: url::Url,
-    /// 文件名（zip 里的成员名，也决定格式）。
-    pub name: String,
+/// 按地址、sha256、大小固定的一份小文件（清单、来源表）。也是 `bundle_import` 任务参数里的写法。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Pinned {
+    pub url: String,
     pub sha256: String,
     pub size: u64,
-    pub role: FileRole,
-    /// 按扩展名推断的格式（下载后核对文件头）；`mtl` 按纯文本核对。
-    pub format: UploadFormat,
+}
+
+impl Pinned {
+    /// 解析好的地址（配置读入时已经核对过能解析）。
+    pub fn parsed_url(&self) -> Result<url::Url, String> {
+        url::Url::parse(&self.url).map_err(|error| format!("地址不合法：{error}"))
+    }
+}
+
+/// 要导入的重建包：清单和来源表。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SeedBundle {
+    pub manifest: Pinned,
+    pub sources: Pinned,
 }
 
 /// 解析好的种子配置。
@@ -99,18 +103,15 @@ pub struct DemoSeedConfig {
     pub description: String,
     pub owner: Owner,
     pub visibility: Visibility,
-    pub observed_at: Option<Timestamp>,
-    pub files: Vec<SeedFile>,
-    pub rebuild: bool,
-    pub voxelize: bool,
-    pub hints: Option<Value>,
-    /// AI 物件集（可选，文件名固定为 `authored.json`，格式 JSON）。
-    pub authored: Option<SeedFile>,
-    /// 导入版本：改大以后重启接口服务，会对同一个空间再发起一次导入（见 `demo_seed` 模块说明）。
+    /// 导入版本：改大以后重启接口服务，会对同一个空间再导入一次（见 `demo_seed` 模块说明）。
     pub revision: u32,
+    /// 要导入的重建包；没有时只保证空间存在。
+    pub bundle: Option<SeedBundle>,
     pub share_token: Option<SeedShareToken>,
-    /// 所有文件加起来（以及打包后的 zip）的上限：[`MAX_SEED_TOTAL_BYTES`] 和扫描上传上限中较小的。
-    pub max_total_bytes: u64,
+    /// 允许下载的主机（`METAVERSE_DEMO_SEED_HOSTS`）。
+    pub hosts: HostList,
+    /// 清单的大小上限（重建包清单的上传上限 `UPLOAD_MAX_BUNDLE_BYTES`）。
+    pub max_manifest_bytes: u64,
 }
 
 impl DemoSeedConfig {
@@ -140,27 +141,10 @@ struct RawSeed {
     owner: RawOwner,
     #[serde(default)]
     visibility: Visibility,
-    #[serde(default)]
-    observed_at: Option<Timestamp>,
-    files: Vec<RawFile>,
-    #[serde(default = "default_true")]
-    rebuild: bool,
-    #[serde(default)]
-    voxelize: bool,
-    #[serde(default)]
-    hints: Option<Value>,
-    #[serde(default)]
-    authored: Option<RawAuthored>,
     #[serde(default = "default_revision")]
     revision: u32,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawAuthored {
-    url: String,
-    sha256: String,
-    size: u64,
+    #[serde(default)]
+    bundle: Option<SeedBundle>,
 }
 
 #[derive(Deserialize)]
@@ -170,73 +154,12 @@ struct RawOwner {
     id: String,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawFile {
-    url: String,
-    name: String,
-    sha256: String,
-    size: u64,
-}
-
-fn default_true() -> bool {
-    true
-}
-
 fn default_revision() -> u32 {
     1
 }
 
 fn invalid(reason: impl Into<String>) -> ConfigError {
     ConfigError::Invalid(SEED_ENV, reason.into())
-}
-
-/// 本机地址（测试和本地开发可用明文 http）。
-fn is_loopback(url: &url::Url) -> bool {
-    match url.host() {
-        Some(url::Host::Domain(name)) => name.eq_ignore_ascii_case("localhost"),
-        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
-        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
-        None => false,
-    }
-}
-
-/// 下载地址（也用于跟随重定向时检查新地址）：https，或本机的 http；不带用户名密码和片段。
-pub fn url_allowed(url: &url::Url) -> bool {
-    let scheme_ok = match url.scheme() {
-        "https" => true,
-        "http" => is_loopback(url),
-        _ => false,
-    };
-    scheme_ok
-        && url.host().is_some()
-        && url.username().is_empty()
-        && url.password().is_none()
-        && url.fragment().is_none()
-}
-
-/// 文件名：1–128 个字符，字母、数字、`.`、`_`、`-`，不以 `.` 开头；扩展名决定作用和格式。
-fn file_kind(name: &str) -> Option<(FileRole, UploadFormat)> {
-    let safe = (1..=128).contains(&name.len())
-        && !name.starts_with('.')
-        && name
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'));
-    if !safe {
-        return None;
-    }
-    let extension = name.rsplit_once('.')?.1.to_ascii_lowercase();
-    Some(match extension.as_str() {
-        "glb" => (FileRole::Mesh, UploadFormat::Glb),
-        "drc" => (FileRole::Mesh, UploadFormat::Drc),
-        "obj" => (FileRole::Mesh, UploadFormat::Obj),
-        "jpg" | "jpeg" => (FileRole::Texture, UploadFormat::Jpeg),
-        "png" => (FileRole::Texture, UploadFormat::Png),
-        "webp" => (FileRole::Texture, UploadFormat::Webp),
-        "mtl" => (FileRole::Material, UploadFormat::Text),
-        "zip" => (FileRole::Archive, UploadFormat::Zip),
-        _ => return None,
-    })
 }
 
 fn parse_share_token(raw: Option<String>) -> Result<Option<SeedShareToken>, ConfigError> {
@@ -262,34 +185,81 @@ fn parse_share_token(raw: Option<String>) -> Result<Option<SeedShareToken>, Conf
     Ok(Some(token))
 }
 
+/// 一份固定文件（清单或来源表）的规则：地址在主机列表里，sha256 合法，大小在 1–`max` 之间。
+fn check_pinned(
+    what: &str,
+    pinned: &Pinned,
+    hosts: &HostList,
+    max: u64,
+) -> Result<(), ConfigError> {
+    let url = pinned
+        .parsed_url()
+        .map_err(|reason| invalid(format!("bundle.{what}.url {reason}")))?;
+    if !hosts.allows(&url) {
+        return Err(invalid(format!(
+            "bundle.{what}.url 的主机 {} 不在 {HOSTS_ENV} 里（只用 https，本机测试可用 http://127.0.0.1:<端口>，不带用户名、密码和片段）",
+            super::hosts::host_of(&url)
+        )));
+    }
+    if !is_sha256_hex(&pinned.sha256) {
+        return Err(invalid(format!(
+            "bundle.{what}.sha256 必须是 64 位小写十六进制"
+        )));
+    }
+    if pinned.size == 0 || pinned.size > max {
+        return Err(invalid(format!(
+            "bundle.{what}.size 必须在 1–{max} 字节之间"
+        )));
+    }
+    Ok(())
+}
+
 impl DemoSeedConfig {
-    /// 读配置。没设 `METAVERSE_DEMO_SEED` 时返回 `None`（什么都不做）。
-    /// `max_scan_bytes` 是扫描上传的上限（`UPLOAD_MAX_SCAN_BYTES`）；种子文件总大小不超过它和
-    /// [`MAX_SEED_TOTAL_BYTES`] 中较小的一个。
+    /// 读配置。没设 `METAVERSE_DEMO_SEED`（或是旧格式，记错误日志）时返回 `None`（什么都不做）。
+    /// `max_manifest_bytes` 是重建包清单的上传上限（`UPLOAD_MAX_BUNDLE_BYTES`）。
     pub fn from_lookup(
         lookup: &dyn Fn(&str) -> Option<String>,
-        max_scan_bytes: u64,
+        max_manifest_bytes: u64,
     ) -> Result<Option<Self>, ConfigError> {
-        let max_total_bytes = max_scan_bytes.min(MAX_SEED_TOTAL_BYTES);
         let optional = |name: &str| {
             lookup(name)
                 .map(|v| v.trim().to_owned())
                 .filter(|v| !v.is_empty())
         };
+        // 主机列表在种子之外也要合法（后台执行器做 bundle_import 时用同一份）。
+        let hosts = HostList::from_lookup(lookup)?;
         // 没有种子时令牌用不上，也不检查（不能因为一个用不上的密钥启动失败）。
         let Some(text) = optional(SEED_ENV) else {
             return Ok(None);
         };
-        let token = parse_share_token(optional(SHARE_TOKEN_ENV))?;
-        let raw: RawSeed = serde_json::from_str(&text)
+        let value: Value = serde_json::from_str(&text)
             .map_err(|error| invalid(format!("不是合法的种子配置 JSON：{error}")))?;
-        Self::from_raw(raw, token, max_total_bytes).map(Some)
+        if let Some(object) = value.as_object() {
+            let legacy: Vec<&str> = LEGACY_KEYS
+                .iter()
+                .copied()
+                .filter(|key| object.contains_key(*key))
+                .collect();
+            if !legacy.is_empty() {
+                tracing::error!(
+                    fields = ?legacy,
+                    "部署配置种子是旧格式（{}），旧格式的种子要处理服务，已不支持，改成 bundle（docs/design/server-slim.md 7.1）；跳过种子，服务照常启动",
+                    legacy.join("、")
+                );
+                return Ok(None);
+            }
+        }
+        let token = parse_share_token(optional(SHARE_TOKEN_ENV))?;
+        let raw: RawSeed = serde_json::from_value(value)
+            .map_err(|error| invalid(format!("不是合法的种子配置：{error}")))?;
+        Self::from_raw(raw, token, hosts, max_manifest_bytes).map(Some)
     }
 
     fn from_raw(
         raw: RawSeed,
         share_token: Option<SeedShareToken>,
-        max_total_bytes: u64,
+        hosts: HostList,
+        max_manifest_bytes: u64,
     ) -> Result<Self, ConfigError> {
         if raw.owner.kind != OwnerKind::Org || !is_subject_id(&raw.owner.id) {
             return Err(invalid(
@@ -299,110 +269,14 @@ impl DemoSeedConfig {
         if raw.revision == 0 {
             return Err(invalid("revision 从 1 开始"));
         }
-        if raw.files.is_empty() || raw.files.len() > MAX_FILES {
-            return Err(invalid(format!("files 要有 1–{MAX_FILES} 个文件")));
-        }
-        let mut files = Vec::with_capacity(raw.files.len());
-        let mut total: u64 = 0;
-        for file in raw.files {
-            let url = url::Url::parse(&file.url)
-                .map_err(|error| invalid(format!("文件 {} 的地址不合法：{error}", file.name)))?;
-            if !url_allowed(&url) {
+        if let Some(bundle) = &raw.bundle {
+            if hosts.is_empty() {
                 return Err(invalid(format!(
-                    "文件 {} 的地址必须是 https（本机测试可用 http://127.0.0.1），不带用户名、密码和片段",
-                    file.name
+                    "带 bundle 时必须设置 {HOSTS_ENV}（允许下载的主机，逗号分隔）"
                 )));
             }
-            let (role, format) = file_kind(&file.name).ok_or_else(|| {
-                invalid(format!(
-                    "文件名 {:?} 不合法：只能用字母、数字、.、_、-，扩展名是 glb、drc、obj、jpg、jpeg、png、webp、mtl 或 zip",
-                    file.name
-                ))
-            })?;
-            if !is_sha256_hex(&file.sha256) {
-                return Err(invalid(format!(
-                    "文件 {} 的 sha256 必须是 64 位小写十六进制",
-                    file.name
-                )));
-            }
-            if file.size == 0 || file.size > max_total_bytes {
-                return Err(invalid(format!(
-                    "文件 {} 的大小必须在 1–{max_total_bytes} 字节之间",
-                    file.name
-                )));
-            }
-            total = total.saturating_add(file.size);
-            if files
-                .iter()
-                .any(|other: &SeedFile| other.name.eq_ignore_ascii_case(&file.name))
-            {
-                return Err(invalid(format!("文件名重复：{}", file.name)));
-            }
-            files.push(SeedFile {
-                url,
-                name: file.name,
-                sha256: file.sha256,
-                size: file.size,
-                role,
-                format,
-            });
-        }
-        if total > max_total_bytes {
-            return Err(invalid(format!(
-                "文件总大小 {total} 超过上限 {max_total_bytes}（种子在内存里处理，上限取 256MiB 和 UPLOAD_MAX_SCAN_BYTES 中较小的）"
-            )));
-        }
-        let meshes = files.iter().filter(|f| f.role == FileRole::Mesh).count();
-        let archives = files.iter().filter(|f| f.role == FileRole::Archive).count();
-        let usable = if files.len() == 1 {
-            meshes == 1 || archives == 1
-        } else {
-            meshes == 1 && archives == 0
-        };
-        if !usable {
-            return Err(invalid(
-                "files 要么是单独一个 glb / drc / obj / zip，要么是一个 glb / drc / obj 网格加贴图（jpg、png、webp）和材质（mtl），会打包成 zip",
-            ));
-        }
-        let authored = match raw.authored {
-            None => None,
-            Some(authored) => {
-                let url = url::Url::parse(&authored.url)
-                    .map_err(|error| invalid(format!("authored 的地址不合法：{error}")))?;
-                if !url_allowed(&url) {
-                    return Err(invalid(
-                        "authored 的地址必须是 https（本机测试可用 http://127.0.0.1），不带用户名、密码和片段",
-                    ));
-                }
-                if !is_sha256_hex(&authored.sha256) {
-                    return Err(invalid("authored 的 sha256 必须是 64 位小写十六进制"));
-                }
-                if authored.size == 0 || authored.size > MAX_AUTHORED_BYTES {
-                    return Err(invalid(format!(
-                        "authored 的大小必须在 1–{MAX_AUTHORED_BYTES} 字节之间"
-                    )));
-                }
-                if !raw.rebuild {
-                    return Err(invalid("带 authored（AI 物件集）时 rebuild 不能是 false"));
-                }
-                Some(SeedFile {
-                    url,
-                    name: AUTHORED_FILE.to_owned(),
-                    sha256: authored.sha256,
-                    size: authored.size,
-                    role: FileRole::Authored,
-                    format: UploadFormat::Json,
-                })
-            }
-        };
-        if let Some(hints) = &raw.hints {
-            let fits = hints.is_object()
-                && canonical_json(hints).is_ok_and(|text| text.len() <= MAX_HINTS_BYTES);
-            if !fits {
-                return Err(invalid(format!(
-                    "hints 必须是规范化后不超过 {MAX_HINTS_BYTES} 字节的 JSON 对象"
-                )));
-            }
+            check_pinned("manifest", &bundle.manifest, &hosts, max_manifest_bytes)?;
+            check_pinned("sources", &bundle.sources, &hosts, MAX_SOURCES_BYTES)?;
         }
         match (raw.visibility, &share_token) {
             (Visibility::Unlisted, None) => {
@@ -418,15 +292,11 @@ impl DemoSeedConfig {
             description: raw.description,
             owner: Owner::org(raw.owner.id),
             visibility: raw.visibility,
-            observed_at: raw.observed_at,
-            files,
-            rebuild: raw.rebuild,
-            voxelize: raw.voxelize,
-            hints: raw.hints,
-            authored,
             revision: raw.revision,
+            bundle: raw.bundle,
             share_token,
-            max_total_bytes,
+            hosts,
+            max_manifest_bytes,
         };
         seed.new_space()
             .validate()
@@ -443,6 +313,13 @@ mod tests {
 
     const TOKEN: &str = "seedtoken_0123456789abcdefghijklmnopqrstuvwxyzABC";
     const ORG: &str = "52aa284c-b5b2-49bd-9d12-79f24772dbd7";
+    const HOSTS: &str = "raw.githubusercontent.com,github.com,scaniverse.com";
+    const MAX_MANIFEST: u64 = 16 << 20;
+
+    fn pinned(path: &str, byte: char, size: u64) -> Value {
+        json!({"url": format!("https://raw.githubusercontent.com/o/r/{}/infra/chrono-cd/demo/lobby-r4/{path}", "0".repeat(40)),
+               "sha256": byte.to_string().repeat(64), "size": size})
+    }
 
     fn seed() -> Value {
         json!({
@@ -451,25 +328,30 @@ mod tests {
             "description": "演示",
             "owner": {"kind": "org", "id": ORG},
             "visibility": "unlisted",
-            "files": [
-                {"url": "https://scaniverse.com/api/media/x/mesh.drc", "name": "mesh.drc",
-                 "sha256": "a".repeat(64), "size": 1000},
-                {"url": "https://scaniverse.com/api/media/x/tex.jpg", "name": "tex.jpg",
-                 "sha256": "b".repeat(64), "size": 2000}
-            ],
-            "rebuild": true,
-            "voxelize": false,
-            "hints": {"objects": [{"center": [1, 0.5, 2], "kind": "chair"}]}
+            "revision": 4,
+            "bundle": {"manifest": pinned("manifest.json", 'a', 312_345),
+                       "sources": pinned("sources.json", 'b', 4567)}
         })
     }
 
-    fn load(seed: &Value, token: Option<&str>) -> Result<Option<DemoSeedConfig>, ConfigError> {
+    fn load_with(
+        seed: &Value,
+        token: Option<&str>,
+        hosts: Option<&str>,
+    ) -> Result<Option<DemoSeedConfig>, ConfigError> {
         let mut values = BTreeMap::new();
         values.insert(SEED_ENV, seed.to_string());
         if let Some(token) = token {
             values.insert(SHARE_TOKEN_ENV, token.to_owned());
         }
-        DemoSeedConfig::from_lookup(&|name| values.get(name).cloned(), 1 << 30)
+        if let Some(hosts) = hosts {
+            values.insert(HOSTS_ENV, hosts.to_owned());
+        }
+        DemoSeedConfig::from_lookup(&|name| values.get(name).cloned(), MAX_MANIFEST)
+    }
+
+    fn load(seed: &Value, token: Option<&str>) -> Result<Option<DemoSeedConfig>, ConfigError> {
+        load_with(seed, token, Some(HOSTS))
     }
 
     fn reason(result: Result<Option<DemoSeedConfig>, ConfigError>) -> String {
@@ -485,36 +367,63 @@ mod tests {
         assert_eq!(config.space_id, "chronoai-lobby");
         assert_eq!(config.owner, Owner::org(ORG));
         assert_eq!(config.visibility, Visibility::Unlisted);
-        assert_eq!(config.revision, 1);
-        assert!(config.rebuild && !config.voxelize);
-        assert_eq!(config.files[0].role, FileRole::Mesh);
-        assert_eq!(config.files[0].format, UploadFormat::Drc);
-        assert_eq!(config.files[1].role, FileRole::Texture);
-        assert_eq!(config.reference(), "chronoai-lobby@1");
+        assert_eq!(config.revision, 4);
+        let bundle = config.bundle.as_ref().unwrap();
+        assert_eq!(bundle.manifest.size, 312_345);
+        assert_eq!(bundle.sources.sha256, "b".repeat(64));
+        assert_eq!(config.reference(), "chronoai-lobby@4");
         assert_eq!(
             config.share_token.as_ref().unwrap().hash(),
             metaverse_core::sha256_hex(TOKEN.as_bytes())
         );
+        // 没有 bundle：只保证空间存在；版本默认 1；不要求主机列表。
+        let mut bare = seed();
+        bare.as_object_mut().unwrap().remove("bundle");
+        bare.as_object_mut().unwrap().remove("revision");
+        let config = load_with(&bare, Some(TOKEN), None).unwrap().unwrap();
+        assert!(config.bundle.is_none());
+        assert_eq!(config.revision, 1);
     }
 
     #[test]
     fn absent_seed_does_nothing() {
         let values: BTreeMap<&str, String> = BTreeMap::new();
         assert_eq!(
-            DemoSeedConfig::from_lookup(&|name| values.get(name).cloned(), 1 << 30),
+            DemoSeedConfig::from_lookup(&|name| values.get(name).cloned(), MAX_MANIFEST),
             Ok(None)
         );
         let blank = BTreeMap::from([(SEED_ENV, "  ".to_owned())]);
         assert_eq!(
-            DemoSeedConfig::from_lookup(&|name| blank.get(name).cloned(), 1 << 30),
+            DemoSeedConfig::from_lookup(&|name| blank.get(name).cloned(), MAX_MANIFEST),
             Ok(None)
         );
         // 没有种子时，令牌即使格式不对也不检查。
         let stray = BTreeMap::from([(SHARE_TOKEN_ENV, "short".to_owned())]);
         assert_eq!(
-            DemoSeedConfig::from_lookup(&|name| stray.get(name).cloned(), 1 << 30),
+            DemoSeedConfig::from_lookup(&|name| stray.get(name).cloned(), MAX_MANIFEST),
             Ok(None)
         );
+        // 主机列表本身不合法：照样报错（执行器也用它）。
+        let hosts = BTreeMap::from([(HOSTS_ENV, "https://x.example/".to_owned())]);
+        assert!(matches!(
+            DemoSeedConfig::from_lookup(&|name| hosts.get(name).cloned(), MAX_MANIFEST),
+            Err(ConfigError::Invalid(HOSTS_ENV, _))
+        ));
+    }
+
+    #[test]
+    fn legacy_format_is_skipped_not_fatal() {
+        for key in LEGACY_KEYS {
+            let mut value = seed();
+            value[key] = json!(true);
+            assert_eq!(load(&value, Some(TOKEN)), Ok(None), "{key}");
+        }
+        // 线上第 1–3 版的写法（files + authored + hints）：跳过。
+        let old = json!({"spaceId": "chronoai-lobby", "name": "前厅", "owner": {"kind": "org", "id": ORG},
+                         "files": [{"url": "https://scaniverse.com/x/mesh.drc", "name": "mesh.drc",
+                                    "sha256": "a".repeat(64), "size": 10}],
+                         "rebuild": true, "revision": 3});
+        assert_eq!(load(&old, Some(TOKEN)), Ok(None));
     }
 
     #[test]
@@ -525,82 +434,63 @@ mod tests {
         let mut owner = seed();
         owner["owner"]["slug"] = json!("chronoai");
         assert!(reason(load(&owner, Some(TOKEN))).contains("slug"));
+        let mut bundle = seed();
+        bundle["bundle"]["zip"] = json!([]);
+        assert!(reason(load(&bundle, Some(TOKEN))).contains("zip"));
         let mut file = seed();
-        file["files"][0]["contentType"] = json!("x");
-        assert!(reason(load(&file, Some(TOKEN))).contains("contentType"));
+        file["bundle"]["manifest"]["name"] = json!("x");
+        assert!(reason(load(&file, Some(TOKEN))).contains("name"));
     }
 
     #[test]
-    fn urls_must_be_https_except_loopback() {
+    fn bundle_files_are_pinned_and_hosts_listed() {
+        // 主机不在列表、http、带密码、片段：拒绝。
         for (url, ok) in [
-            ("https://scaniverse.com/a/mesh.drc", true),
-            ("https://cdn.example/a/mesh.drc?sig=1", true),
-            ("http://127.0.0.1:9000/mesh.drc", true),
-            ("http://localhost:9000/mesh.drc", true),
-            ("http://[::1]:9000/mesh.drc", true),
-            ("http://scaniverse.com/a/mesh.drc", false),
-            ("ftp://scaniverse.com/mesh.drc", false),
-            ("https://user:pass@scaniverse.com/mesh.drc", false),
-            ("https://scaniverse.com/mesh.drc#x", false),
-            ("file:///etc/passwd", false),
+            (
+                "https://raw.githubusercontent.com/o/r/x/manifest.json",
+                true,
+            ),
+            ("https://evil.example/manifest.json", false),
+            ("http://raw.githubusercontent.com/manifest.json", false),
+            ("https://u:p@raw.githubusercontent.com/manifest.json", false),
+            ("https://raw.githubusercontent.com/manifest.json#x", false),
         ] {
             let mut value = seed();
-            value["files"][0]["url"] = json!(url);
+            value["bundle"]["manifest"]["url"] = json!(url);
             assert_eq!(load(&value, Some(TOKEN)).is_ok(), ok, "{url}");
         }
-    }
-
-    /// 改一份配置的函数。
-    type Edit = Box<dyn Fn(&mut Value)>;
-
-    #[test]
-    fn file_rules() {
+        // 本机测试：列表里写出带端口的本机地址。
+        let mut local = seed();
+        local["bundle"]["manifest"]["url"] = json!("http://127.0.0.1:9000/manifest.json");
+        local["bundle"]["sources"]["url"] = json!("http://127.0.0.1:9000/sources.json");
+        assert!(load_with(&local, Some(TOKEN), Some("127.0.0.1:9000")).is_ok());
+        assert!(load_with(&local, Some(TOKEN), Some("127.0.0.1")).is_err());
+        // 带 bundle 却没有主机列表。
+        assert!(reason(load_with(&seed(), Some(TOKEN), None)).contains(HOSTS_ENV));
+        type Edit = Box<dyn Fn(&mut Value)>;
         let cases: Vec<(&str, Edit)> = vec![
             (
                 "sha256",
-                Box::new(|v| v["files"][0]["sha256"] = json!("A".repeat(64))),
-            ),
-            ("大小", Box::new(|v| v["files"][0]["size"] = json!(0))),
-            (
-                "大小",
-                Box::new(|v| v["files"][0]["size"] = json!(MAX_SEED_TOTAL_BYTES + 1)),
+                Box::new(|v| v["bundle"]["manifest"]["sha256"] = json!("A".repeat(64))),
             ),
             (
-                "总大小",
+                "size",
+                Box::new(|v| v["bundle"]["manifest"]["size"] = json!(0)),
+            ),
+            (
+                "size",
+                Box::new(|v| v["bundle"]["manifest"]["size"] = json!(MAX_MANIFEST + 1)),
+            ),
+            (
+                "size",
+                Box::new(|v| v["bundle"]["sources"]["size"] = json!(MAX_SOURCES_BYTES + 1)),
+            ),
+            (
+                "种子配置",
                 Box::new(|v| {
-                    v["files"][0]["size"] = json!(1u64 << 27);
-                    v["files"][1]["size"] = json!((1u64 << 27) + 1);
+                    v["bundle"].as_object_mut().unwrap().remove("sources");
                 }),
             ),
-            (
-                "文件名",
-                Box::new(|v| v["files"][0]["name"] = json!("../mesh.drc")),
-            ),
-            (
-                "文件名",
-                Box::new(|v| v["files"][0]["name"] = json!(".mesh.drc")),
-            ),
-            (
-                "文件名",
-                Box::new(|v| v["files"][0]["name"] = json!("mesh.exe")),
-            ),
-            (
-                "重复",
-                Box::new(|v| v["files"][1]["name"] = json!("MESH.drc")),
-            ),
-            (
-                "要么",
-                Box::new(|v| v["files"][1]["name"] = json!("other.glb")),
-            ),
-            (
-                "要么",
-                Box::new(|v| v["files"][0]["name"] = json!("tex2.png")),
-            ),
-            (
-                "要么",
-                Box::new(|v| v["files"][1]["name"] = json!("scan.zip")),
-            ),
-            ("1–32", Box::new(|v| v["files"] = json!([]))),
         ];
         for (expected, edit) in cases {
             let mut value = seed();
@@ -608,21 +498,6 @@ mod tests {
             let reason = reason(load(&value, Some(TOKEN)));
             assert!(reason.contains(expected), "{expected}: {reason}");
         }
-        // 单独一个网格或 zip 可以。
-        for name in ["scan.glb", "scan.zip", "scan.obj"] {
-            let mut value = seed();
-            value["files"] = json!([{"url": "https://x.example/f", "name": name,
-                                     "sha256": "c".repeat(64), "size": 10}]);
-            assert!(load(&value, Some(TOKEN)).is_ok(), "{name}");
-        }
-        // obj + mtl + 贴图可以。
-        let mut value = seed();
-        value["files"][0]["name"] = json!("scan.obj");
-        value["files"]
-            .as_array_mut()
-            .unwrap()
-            .push(json!({"url": "https://x.example/m", "name": "scan.mtl", "sha256": "d".repeat(64), "size": 10}));
-        assert!(load(&value, Some(TOKEN)).is_ok());
     }
 
     #[test]
@@ -645,60 +520,6 @@ mod tests {
         let mut value = seed();
         value["revision"] = json!(0);
         assert!(reason(load(&value, Some(TOKEN))).contains("revision"));
-        let mut value = seed();
-        value["observedAt"] = json!("昨天");
-        assert!(load(&value, Some(TOKEN)).is_err());
-        let mut value = seed();
-        value["observedAt"] = json!("2026-10-01T09:30:00+08:00");
-        let config = load(&value, Some(TOKEN)).unwrap().unwrap();
-        assert_eq!(
-            config.observed_at.unwrap().to_rfc3339(),
-            "2026-10-01T01:30:00.000Z"
-        );
-    }
-
-    #[test]
-    fn total_size_is_capped_by_the_smaller_limit() {
-        let total = |max_scan_bytes: u64| {
-            let values = BTreeMap::from([
-                (SEED_ENV, seed().to_string()),
-                (SHARE_TOKEN_ENV, TOKEN.to_owned()),
-            ]);
-            DemoSeedConfig::from_lookup(&|name| values.get(name).cloned(), max_scan_bytes)
-                .unwrap()
-                .unwrap()
-                .max_total_bytes
-        };
-        // 扫描上传上限 1GiB 时取种子自己的 256MiB（全在内存里处理）；上传上限更小时取上传上限。
-        assert_eq!(total(1 << 30), MAX_SEED_TOTAL_BYTES);
-        assert_eq!(total(1 << 20), 1 << 20);
-        // 单个文件不超过上传上限，但超过种子的上限：拒绝。
-        let mut value = seed();
-        value["files"][0]["size"] = json!(MAX_SEED_TOTAL_BYTES + 1);
-        assert!(reason(load(&value, Some(TOKEN))).contains(&MAX_SEED_TOTAL_BYTES.to_string()));
-        let mut value = seed();
-        value["files"][0]["size"] = json!(1500);
-        let values = BTreeMap::from([
-            (SEED_ENV, value.to_string()),
-            (SHARE_TOKEN_ENV, TOKEN.to_owned()),
-        ]);
-        let rejected = DemoSeedConfig::from_lookup(&|name| values.get(name).cloned(), 3000);
-        assert!(
-            matches!(rejected, Err(ConfigError::Invalid(_, reason)) if reason.contains("总大小"))
-        );
-    }
-
-    #[test]
-    fn hints_must_be_a_small_object() {
-        let mut value = seed();
-        value["hints"] = json!([1, 2]);
-        assert!(reason(load(&value, Some(TOKEN))).contains("hints"));
-        let mut value = seed();
-        value["hints"] = json!({"objects": [{"label": "x".repeat(5000)}]});
-        assert!(reason(load(&value, Some(TOKEN))).contains("hints"));
-        let mut value = seed();
-        value.as_object_mut().unwrap().remove("hints");
-        assert_eq!(load(&value, Some(TOKEN)).unwrap().unwrap().hints, None);
     }
 
     #[test]
@@ -728,43 +549,5 @@ mod tests {
         let printed = format!("{config:?}");
         assert!(!printed.contains(TOKEN));
         assert!(printed.contains("<redacted>"));
-    }
-
-    #[test]
-    fn authored_set_is_optional_and_checked() {
-        let mut value = seed();
-        value["authored"] = json!({"url": "https://raw.githubusercontent.com/o/r/0123abc/infra/chrono-cd/demo/authored.json",
-                                   "sha256": "c".repeat(64), "size": 1234});
-        let config = load(&value, Some(TOKEN)).unwrap().unwrap();
-        let authored = config.authored.expect("带物件集");
-        assert_eq!(
-            (authored.name.as_str(), authored.size),
-            (AUTHORED_FILE, 1234)
-        );
-        assert_eq!(authored.format, UploadFormat::Json);
-        assert_eq!(authored.role, FileRole::Authored);
-        assert!(load(&seed(), Some(TOKEN))
-            .unwrap()
-            .unwrap()
-            .authored
-            .is_none());
-        for (key, bad) in [
-            ("url", json!("http://example.com/a.json")),
-            ("url", json!("not a url")),
-            ("sha256", json!("C".repeat(64))),
-            ("size", json!(0)),
-            ("size", json!(MAX_AUTHORED_BYTES + 1)),
-        ] {
-            let mut value = value.clone();
-            value["authored"][key] = bad.clone();
-            assert!(load(&value, Some(TOKEN)).is_err(), "{key}={bad}");
-        }
-        let mut extra = value.clone();
-        extra["authored"]["name"] = json!("x.json");
-        assert!(load(&extra, Some(TOKEN)).is_err());
-        let mut no_rebuild = value.clone();
-        no_rebuild["rebuild"] = json!(false);
-        let error = load(&no_rebuild, Some(TOKEN)).unwrap_err();
-        assert!(error.to_string().contains("rebuild"), "{error}");
     }
 }

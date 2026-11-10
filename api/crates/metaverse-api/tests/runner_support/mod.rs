@@ -60,10 +60,15 @@ pub async fn upload_declared(
     bytes: &[u8],
     sha: &str,
 ) -> (String, String) {
-    let base = format!("/api/v1/spaces/{space}");
+    // 扫描、网页用模型、重建包只经重建路径上传（要重建权限）。
+    let (base, caller) = if matches!(purpose, "scan" | "webmodel" | "bundle") {
+        (format!("/api/v1/spaces/{space}/rebuild"), rebuilder(ORG))
+    } else {
+        (format!("/api/v1/spaces/{space}"), who(ORG))
+    };
     let created = app
         .call(
-            who(ORG),
+            caller,
             Method::POST,
             &format!("{base}/uploads/{purpose}"),
             Some(json!({"size": bytes.len(), "sha256": sha, "partSize": KIB256, "format": format})),
@@ -74,7 +79,7 @@ pub async fn upload_declared(
     for (n, part) in bytes.chunks(KIB256).enumerate() {
         let reply = app
             .put_bytes(
-                who(ORG),
+                caller,
                 &format!("{base}/uploads/{purpose}/{id}/parts/{n}"),
                 part.to_vec(),
             )
@@ -83,7 +88,7 @@ pub async fn upload_declared(
     }
     let reply = app
         .call(
-            who(ORG),
+            caller,
             Method::POST,
             &format!("{base}/uploads/{purpose}/{id}/complete"),
             None,
