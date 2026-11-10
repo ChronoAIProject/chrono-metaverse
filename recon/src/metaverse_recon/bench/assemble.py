@@ -437,7 +437,7 @@ def cmd_assemble(args) -> dict:
     path = os.path.join(out_dir, "authored.json")
     wc.write_json(path, authored)
     if not errors and not bad:
-        # 写回路径（处理服务）对同一份文件的完整校验：通过了，scan_import / rebuild 就会原样接受
+        # 打包（bundle）对同一份文件的完整校验：通过了，bundle 就会原样接受
         try:
             parse_authored(authored)
         except AuthoredError as e:

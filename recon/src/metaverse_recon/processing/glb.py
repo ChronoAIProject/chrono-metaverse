@@ -136,7 +136,7 @@ def write_glb(mesh: GlbMesh) -> bytes:
     if any(c != 1.0 for c in mesh.base_color):
         pbr["baseColorFactor"] = [float(c) for c in mesh.base_color]
     gltf: dict = {
-        "asset": {"version": "2.0", "generator": "chrono-metaverse-worker"},
+        "asset": {"version": "2.0", "generator": "metaverse-recon"},
         "scene": 0,
         "scenes": [{"nodes": [0]}],
         "nodes": [{"mesh": 0, "name": mesh.name}],

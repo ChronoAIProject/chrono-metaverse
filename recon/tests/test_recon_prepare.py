@@ -156,6 +156,10 @@ def test_reframe_compute_to_scan_import(tmp_path, scan_file):
     M_c = compute_alignment(mesh.vertices, mesh.faces).matrix
     M_a = auto_align(mesh).matrix
     C = M_a @ np.linalg.inv(M_c)
+    # 新名 align 和旧名 scan_import、worker 是同一个坐标系（--to 的默认值是 align）
+    for name in ("align", "scan_import", "worker"):
+        assert np.allclose(rf.frame_matrix(name, mesh), M_a)
+    assert build_parser().parse_args(["reframe", "--scan", "s", "--in", "a", "--out", "b"]).dst == "align"
     body = {
         "entityId": "b",
         "layer": "rebuilt",

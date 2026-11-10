@@ -13,7 +13,7 @@
     out/sofa/place
     metaverse-recon compare  --object counter-01 --model counter.json --out out/counter/compare
     metaverse-recon assemble --entities out/*/entity.json --out out/authored
-    metaverse-recon reframe  --scan mesh.drc --from compute --to scan_import --in model.json --out model2.json
+    metaverse-recon reframe  --scan mesh.drc --from compute --to align --in model.json --out model2.json
     metaverse-recon refshot  --object table-01 --face top --out out/table/refshot
     metaverse-recon texture  --model table.json --part '$' --color tile.jpg --tile 1.3,1.0 --calibrate ...
     metaverse-recon texsearch --query "white marble" --out out/tex ；texfetch --from out/tex/candidates.json#2
@@ -62,9 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     # ---- prepare
-    p = sub.add_parser(
-        "prepare", help="扫描 → 基线目录（与处理服务 scan_import 首次导入相同的对齐、结构、物体）"
-    )
+    p = sub.add_parser("prepare", help="扫描 → 基线目录（对齐、结构、物体；与原处理服务首次导入的结果相同）")
     p.add_argument(
         "--scan", help="扫描：Scaniverse 式 zip、glb，或 drc（配 --texture）；工作区里默认 scan/scan.zip"
     )
@@ -75,7 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
         "工作区里有 scan/transform.json 时默认用它",
     )
     p.add_argument("--auto-align", action="store_true", help="不用工作区的 scan/transform.json，重新自动对齐")
-    p.add_argument("--hints", help="物体提示 JSON（处理服务坐标系，与 scan_import 的 hints 参数相同）")
+    p.add_argument("--hints", help="物体提示 JSON（空间坐标，格式与原处理服务导入扫描时的 hints 相同）")
     p.add_argument("--out", help="输出的基线目录（工作区里默认 out/recon）")
     p.add_argument("--max-texture", type=int, default=4096, help="scan.glb 贴图的最长边（默认 4096）")
     p.add_argument("--objects-target", help=argparse.SUPPRESS)
@@ -413,16 +411,17 @@ def _assemble_parsers(sub) -> None:
     a.add_argument("--cell", default="560x420", help="对比图每格尺寸")
     a.add_argument("--no-render", action="store_true", help="不出对比图（整房预览 glb 和偏差表照出）")
 
-    r = sub.add_parser("reframe", help="把物件在两个对齐坐标系之间换算（compute ↔ scan_import 或任意变换）")
+    r = sub.add_parser("reframe", help="把物件在两个对齐坐标系之间换算（compute ↔ align 或任意变换）")
     r.add_argument("--scan", required=True, help="两种对齐都基于的原始扫描（drc / glb / zip）")
     r.add_argument("--texture", help="drc 的贴图（不影响对齐）")
     r.add_argument(
         "--from",
         dest="src",
         default="compute",
-        help="原坐标系：compute（reconstruct_lobby.py 的 compute_alignment）、scan_import、或变换文件",
+        help="原坐标系：compute（reconstruct_lobby.py 的 compute_alignment）、"
+        "align（自动对齐；旧名 scan_import）、或变换文件",
     )
-    r.add_argument("--to", dest="dst", default="scan_import", help="目标坐标系（同上；默认 scan_import）")
+    r.add_argument("--to", dest="dst", default="align", help="目标坐标系（同上；默认 align）")
     r.add_argument("--in", dest="inp", required=True, nargs="+", help="物件文件（任意 compare 能读的格式）")
     r.add_argument("--out", required=True, help="输出文件（一个输入时）或目录（多个输入时）")
     r.add_argument(

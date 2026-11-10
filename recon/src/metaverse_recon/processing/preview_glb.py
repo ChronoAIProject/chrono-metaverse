@@ -202,7 +202,7 @@ def export_glb(
             meshes.append({"name": eid, "primitives": prims})
             nodes.append({"name": eid, "mesh": len(meshes) - 1})
     doc: dict[str, Any] = {
-        "asset": {"version": "2.0", "generator": "metaverse-worker preview"},
+        "asset": {"version": "2.0", "generator": "metaverse-recon preview"},
         "scene": 0,
         "scenes": [{"nodes": list(range(len(nodes)))}],
         "nodes": nodes,
