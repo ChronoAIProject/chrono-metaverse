@@ -8,6 +8,9 @@
 //   --as <sub>          调用者（默认 alice）；用组织编号（例如 chronoai）就是"组织本身"的 agent key
 //   --org-role <角色>    这次的访问令牌查组织角色时固定返回 admin / member / viewer / none
 //   --org <组织编号>      配合 --org-role，只对这个组织生效
+//   --permission <权限>  身份令牌带这个权限（可重复；给了就不再按角色文件，例如
+//                       --permission metaverse:rebuild:write）。不给时按 infra/dev/org-roles.json 的
+//                       permissions：重建身份 rita 带 metaverse:rebuild:write，其他人没有
 //   --no-forward        不带 Authorization: Bearer（模拟没开"转发调用者令牌"）
 //   --share <分享令牌>   公开读接口用：Authorization: Share <令牌>
 //
@@ -21,7 +24,7 @@ const nyx = (process.env.MOCK_NYXID_URL ?? 'http://127.0.0.1:8090').replace(/\/$
 
 function usage(message) {
   if (message) console.error(message);
-  console.error('用法：node infra/dev/call.mjs [--as <sub>] [--org-role <角色>] [--org <组织>] [--no-forward] [--share <令牌>] <方法> <路径> [JSON 或 @文件]');
+  console.error('用法：node infra/dev/call.mjs [--as <sub>] [--org-role <角色>] [--org <组织>] [--permission <权限>]… [--no-forward] [--share <令牌>] <方法> <路径> [JSON 或 @文件]');
   process.exit(2);
 }
 
@@ -38,6 +41,7 @@ for (let i = 0; i < args.length; i += 1) {
   if (arg === '--as') options.as = next();
   else if (arg === '--org-role') options.orgRole = next();
   else if (arg === '--org') options.org = next();
+  else if (arg === '--permission') (options.permissions ??= []).push(next());
   else if (arg === '--share') options.share = next();
   else if (arg === '--no-forward') options.forward = false;
   else if (arg === '-h' || arg === '--help') usage();
@@ -60,6 +64,7 @@ if (path.startsWith('/api/v1/')) {
   const tokenRequest = { sub: options.as };
   if (options.orgRole) tokenRequest.orgRole = options.orgRole;
   if (options.org) tokenRequest.org = options.org;
+  if (options.permissions) tokenRequest.permissions = options.permissions;
   const tokenResponse = await fetch(`${nyx}/dev/token`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

@@ -3,7 +3,8 @@
 #   MongoDB 副本集（已有就复用）→ 模拟 NyxID → 接口服务（含后台执行器：上传核对、ops_from_upload、
 #   定期清理）→ 网站开发服务器（/api 转给本地接口服务）
 #
-# 处理服务已下线（docs/design/server-slim.md）：上传核对由接口服务自己做，重建改在本地用重建工具做。
+# 没有处理服务（docs/design/server-slim.md）：上传核对、包展开由接口服务的后台执行器做；重建在本地用
+# recon/ 的 metaverse-recon 做，产出重建包，再用命令行 metaverse bundle push 上传发布（重建身份 rita）。
 #
 # 用法：infra/dev/up.sh [--no-web] [--demo-seed[=<种子.json>]]
 # 停止：infra/dev/down.sh
@@ -245,16 +246,16 @@ cat <<EOF
 
 本地全套已启动（停止：infra/dev/down.sh；日志：infra/dev/.run/*.log）
   MongoDB      $mongo_uri（库 $database）
-  模拟 NyxID   $nyx（服务编号 dev-service，组织角色：infra/dev/org-roles.json）
+  模拟 NyxID   $nyx（服务编号 dev-service，组织角色和权限：infra/dev/org-roles.json；重建身份 rita）
   接口服务     $api/api/healthz
 EOF
 [[ $with_web -eq 1 ]] && echo "  网站         http://127.0.0.1:$web_port/"
-echo "  本地重建工具 recon/.venv/bin/metaverse-recon（没有就 cd recon && uv sync --frozen --extra dev）"
+echo "  本地重建工具 recon/.venv/bin/metaverse-recon（没有就 cd recon && uv sync --frozen）"
 if [[ -n "$seed_space" ]]; then
   cat <<EOF
   演示空间     http://127.0.0.1:$web_port/s/$seed_space#share=$seed_token
-               （种子在后台下载；旧格式种子的导入任务要处理服务，现在会被定期清理标记失败，
-                见 docs/design/server-slim.md 13.3；分享令牌在 infra/dev/.run/demo-share-token）
+               （种子带重建包时由后台执行器下载、导入，不带包时只建空间；
+                分享令牌在 infra/dev/.run/demo-share-token）
 EOF
 fi
 cat <<EOF

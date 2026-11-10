@@ -2,13 +2,13 @@
 
 在自己电脑（或云端会话）上起一套完整的 chrono-metaverse：MongoDB 副本集、模拟 NyxID、接口服务（含后台执行器：上传核对、`ops_from_upload`、定期清理）、网站开发服务器。全部只监听 `127.0.0.1`，不连真实的 NyxID，也不需要任何密钥。
 
-处理服务已下线（[`docs/design/server-slim.md`](../../docs/design/server-slim.md)）：上传核对由接口服务自己做，重建改在本地用重建工具（`recon/.venv/bin/metaverse-recon`）做，`up.sh` 不再起处理服务，也不再需要 Python。
+没有处理服务（[`docs/design/server-slim.md`](../../docs/design/server-slim.md)）：上传核对、操作文件和重建包的展开由接口服务的后台执行器做；重建在本地用重建工具 `metaverse-recon`（[`recon/`](../../recon/README.md)）做，产出重建包，再用命令行 `metaverse bundle push` 上传发布。`up.sh` 本身不需要 Python；本地重建工具的虚拟环境由用到它的地方准备（九步验收、[重建教程](../../docs/tutorials/reconstruct-with-ai.md)），`cd recon && uv sync --frozen`。
 
 | 文件 | 作用 |
 |---|---|
 | `up.sh` / `down.sh` | 一键启动 / 停止全套；日志和进程号在 `infra/dev/.run/`（不进版本库） |
 | `mock-nyxid.mjs` | 模拟 NyxID（Node 22，无第三方依赖） |
-| `org-roles.json` | 模拟 NyxID 用的组织角色表 |
+| `org-roles.json` | 模拟 NyxID 用的组织角色表和各身份的权限（重建身份 `rita`） |
 | `call.mjs` | 调用接口服务的小工具：每次自动取新令牌、带上 NyxID 代理会带的请求头 |
 | `mock-nyxid.test.mjs` | 模拟 NyxID 的测试 |
 | `e2e.mjs` | 九步端到端验收（`docs/BUILD_PLAN.md` 5.2）：自己起全套、按九步执行并断言、收尾，见下面"九步验收" |
@@ -20,7 +20,7 @@
 
 ## 准备
 
-- Node 22、npm；Rust（`rustup`，版本由 `api/rust-toolchain.toml` 固定为 1.97.0）；curl。本地重建工具另要 Python 3.13（推荐装 [uv](https://docs.astral.sh/uv/)），`up.sh` 本身不需要。
+- Node 22、npm；Rust（`rustup`，版本由 `api/rust-toolchain.toml` 固定为 1.97.0）；curl。本地重建工具（九步验收的第 2 步、重建教程）另要 Python 3.13 和 [uv](https://docs.astral.sh/uv/)，`up.sh` 本身不需要。
 - MongoDB 副本集（接口服务要用事务，单机版不行）。`up.sh` 会先找 `127.0.0.1:27017`、`27018` 上已有的副本集；都没有时，如果装了 `mongod`（在 PATH 里，或设置 `MONGOD_BIN`）就在 `infra/dev/.run/mongo-data` 起一个单节点副本集 `rs0`；还没有的话按提示下载 [MongoDB 社区版](https://www.mongodb.com/try/download/community)，或用 Docker：
 
   ```bash
@@ -55,11 +55,14 @@ NYXID_JWT_AUDIENCE=urn:chrono-metaverse:api
 ALLOWED_NYX_SERVICE_IDS=dev-service
 BIND=127.0.0.1:8080   PUBLIC_BASE_URL=http://127.0.0.1:5173
 UPLOAD_MAX_CONCURRENT_PARTS=4   RUNNER_POLL_SECONDS=2   CLEANUP_INTERVAL_SECONDS=600
+METAVERSE_DEMO_SEED_HOSTS=raw.githubusercontent.com,github.com,release-assets.githubusercontent.com,objects.githubusercontent.com,scaniverse.com
 ```
+
+`METAVERSE_DEMO_SEED_HOSTS` 的默认值与线上 `app.json` 相同（`check-app.mjs` 检查两处一致），本地 `--demo-seed` 下载的就是线上会下载的那几个主机。
 
 后台执行器和定期清理的其余配置（`RUNNER_*`、`CLEANUP_*`、各用途的上传上限）用接口服务的默认值，见 [`api/README.md`](../../api/README.md)；都可以在运行 `up.sh` 前用同名环境变量覆盖（`up.sh` 显式传的几个也一样）。
 
-`down.sh` 照旧会停掉旧版本 `up.sh` 起的处理服务（`worker.pid`），新起的全套里没有它。
+`down.sh` 照旧会停掉旧版本 `up.sh` 起的处理服务（`worker.pid`，以前的进程号文件还在时），新起的全套里没有它。
 
 ### 演示数据（可选，部署配置种子）
 
@@ -69,7 +72,8 @@ UPLOAD_MAX_CONCURRENT_PARTS=4   RUNNER_POLL_SECONDS=2   CLEANUP_INTERVAL_SECONDS
 - 分享令牌取 `METAVERSE_DEMO_SHARE_TOKEN`，没设时生成一个存在 `infra/dev/.run/demo-share-token`，之后复用（空间里只存第一次的哈希）；结束时打印演示链接 `http://127.0.0.1:5173/s/<空间>#share=<令牌>`；
 - 主人默认是配置里的线上组织编号（公开读不受影响，但本地没人能管理它）；`METAVERSE_DEV_DEMO_SEED_OWNER=chronoai` 换成模拟 NyxID 的组织，alice 就能经 `/api/v1` 管理；
 - 允许下载的主机取 `METAVERSE_DEMO_SEED_HOSTS`，没设时用线上那一组（GitHub 的 raw 地址和发布页、Scaniverse）；种子带重建包时后台执行器从来源表下载空间里还没有的文件（前厅第 4 版的新库约 23MB）；旧格式（`files`、`hints`、`authored` 等）`demo-seed.mjs` 直接报错；
-- 进度看 `infra/dev/.run/api.log`（`部署配置种子完成 … outcome=Created`、`部署配置种子：已发布`）。线上现在的种子是第 3 版、不带包，本地新库只建出空间、没有内容；第 4 版的包上线以后（设计 S10）才有内容；
+- 进度看 `infra/dev/.run/api.log`（`部署配置种子完成 … outcome=Created`、`部署配置种子：已发布`）。线上现在的种子是第 3 版、不带包，本地新库只建出空间、没有内容（日志是 `outcome=Created { job_id: None }`）；第 4 版的包上线以后（设计 S10）才有内容；
+- 要在本机试带包的种子：把包目录用本机 https 服务托管（自签证书，接口服务信任 `SSL_CERT_FILE` 里的根证书），写一份来源表和带 `bundle` 的种子，`METAVERSE_DEMO_SEED_HOSTS` 加上 `127.0.0.1:<端口>`；本机测试也可以用 `http://127.0.0.1:<端口>`（只有本机地址允许明文）；
 - 经过会重新签发证书的出口代理时，接口服务另外信任 `SSL_CERT_FILE`（PEM）里的根证书，从环境继承即可。
 
 接口服务只允许本机地址用明文 http 当 NyxID 地址，所以模拟 NyxID 必须跑在本机。
@@ -84,7 +88,7 @@ node infra/dev/mock-nyxid.mjs [--port 8090] [--host 127.0.0.1] [--roles infra/de
 |---|---|
 | `GET /.well-known/openid-configuration` | `issuer` 就是服务根地址（`http://127.0.0.1:8090`），`jwks_uri` 指向下一行 |
 | `GET /.well-known/jwks.json` | 公钥列表。RSA 2048 密钥在启动时生成，只在内存里；每次启动 kid 都不同，接口服务遇到未知 kid 会自己刷新 |
-| `POST /dev/token` | 请求体 `{sub, orgRole?, org?, permissions?}`，返回 `{identityToken, accessToken, expiresIn, serviceId, audience, issuer}`；每次一个新的 jti |
+| `POST /dev/token` | 请求体 `{sub, orgRole?, org?, permissions?}`，返回 `{identityToken, accessToken, expiresIn, serviceId, audience, issuer}`；每次一个新的 jti。不带 `permissions` 时按角色文件的 `permissions` 给（命令行取令牌只带 `sub`） |
 | `GET /api/v1/orgs/{id}/authorization` | 组织角色查询：`Authorization: Bearer <accessToken>`，返回 `{id, your_role, …}`；不是成员 404，凭据无效 401 |
 | `GET /healthz` | 启动检查 |
 
@@ -92,13 +96,15 @@ node infra/dev/mock-nyxid.mjs [--port 8090] [--host 127.0.0.1] [--roles infra/de
 
 - **身份令牌**（放在 `X-NyxID-Identity-Token` 请求头里）：头部只有 `{alg: RS256, typ: JWT, kid}`；声明是 `sub`、`iss`、`aud`（`urn:chrono-metaverse:api`）、`iat`、`exp`（= `iat` + 60 秒）、`jti`（随机）、`nyx_service_id`（固定 `dev-service`）、`permissions`、`roles`、`groups`，**不带** `token_type`。与接口服务的验签要求（`api/crates/metaverse-api/src/auth/jwt.rs`）逐项一致，测试里也核对了。
 - **访问令牌**（放在 `Authorization: Bearer` 里，相当于 NyxID 开了"转发调用者令牌"后转发来的令牌）：同一把密钥签的 JWT，`token_type = access`、`sub` 与身份令牌相同、有效 1 小时。接口服务查组织角色前会验签并核对 `sub`，再原样转给 `/api/v1/orgs/{id}/authorization`。
-- **组织角色**：默认按 `org-roles.json` 查（每次查询都重新读文件，改了不用重启）：
+- **组织角色和权限**：默认按 `org-roles.json` 查（每次查询都重新读文件，改了不用重启）：
 
   ```json
-  {"orgs": {"chronoai": {"alice": "admin", "bob": "member", "carol": "viewer"}}}
+  {"orgs": {"chronoai": {"alice": "admin", "bob": "member", "carol": "viewer", "rita": "admin"}},
+   "permissions": {"rita": ["metaverse:rebuild:write"]}}
   ```
 
   `/dev/token` 带 `orgRole`（`admin`/`member`/`viewer`/`none`）时，这个访问令牌查任何组织都返回该角色；再带 `org` 就只对那个组织生效。
+- **重建权限**（`docs/design/server-slim.md` 第 3 节）：重建路径 `/api/v1/spaces/{space_id}/rebuild/` 上的写操作要求身份令牌的 `permissions` 里有 `metaverse:rebuild:write`，线上它挂在平台管理员建的角色 `metaverse-rebuilder` 上。本地用 `permissions` 模拟：**rita** 是带这个权限的组织 admin（重建身份，`metaverse bundle push --sub rita`）；**alice** 是没有它的组织 admin（调重建路径 403 `rebuild_permission_required`，九步验收的反例）。临时给别人加权限用 `call.mjs --permission`。
 - **组织本身的 agent key**：`sub` 直接写组织编号（例如 `chronoai`），接口服务判为"组织本身"，不查角色。
 
 本地的组织编号用 `chronoai` 这样的短字符串即可；线上是 NyxID 的组织 UUID。
@@ -110,8 +116,10 @@ node infra/dev/mock-nyxid.mjs [--port 8090] [--host 127.0.0.1] [--roles infra/de
 身份令牌 60 秒过期、jti 只能用一次，所以每次请求都要取新令牌。`call.mjs` 帮你做这件事：
 
 ```bash
-node infra/dev/call.mjs [--as <sub>] [--org-role <角色>] [--org <组织>] [--no-forward] [--share <分享令牌>] <方法> <路径> [JSON 或 @文件]
+node infra/dev/call.mjs [--as <sub>] [--org-role <角色>] [--org <组织>] [--permission <权限>]… [--no-forward] [--share <分享令牌>] <方法> <路径> [JSON 或 @文件]
 ```
+
+- `--permission` 可以重复，给了就不再按角色文件（例如 `--as bob --permission metaverse:rebuild:write`）；
 
 - `/api/v1/*`：带 `X-NyxID-Identity-Token` 和 `Authorization: Bearer <访问令牌>`（`--no-forward` 不带后者）；
 - `/api/public/*`：不带身份，`--share` 时带 `Authorization: Share <令牌>`；
@@ -130,48 +138,41 @@ curl -s http://127.0.0.1:8080/api/v1/spaces/front-hall \
 
 ## 九步验收（`e2e.mjs`）
 
-`docs/BUILD_PLAN.md` 5.2 的端到端验收，跨接口服务、网站和命令行，用真实的 MongoDB 副本集：
+`docs/BUILD_PLAN.md` 5.2 的端到端验收，跨接口服务、本地重建工具、命令行和网站，用真实的 MongoDB 副本集（`docs/design/server-slim.md` 10.4 改成"本地重建工具出包 → 命令行上传发布"）：
 
 ```bash
-infra/dev/down.sh                       # 先停掉自己起的全套（验收要自己起一套）
-node infra/dev/e2e.mjs [--keep]         # 默认只跑第 1、8、9 步（见下）
-node infra/dev/e2e.mjs --only 1-9 --scan <前厅扫描.zip|.drc|.glb|.obj> [--voxelize]
+infra/dev/down.sh                                   # 先停掉自己起的全套（验收要自己起一套）
+node infra/dev/e2e.mjs --scan <前厅扫描.zip|.glb> [--keep]   # 九步
+node infra/dev/e2e.mjs --only 1,8,9                 # 不要扫描的三步
 ```
 
-**处理服务下线后的过渡**（[设计 13.3](../../docs/design/server-slim.md)）：第 2–7 步依赖处理服务的重建结果（上传扫描 → 对齐和 AI 重建 → 快照、视图、时间轴、"现在"模式），九步改成"本地重建工具出包、`metaverse bundle push` 发布"之前（设计 13.2 S9）跑不通，所以 `--only` 默认是 `1,8,9`，不需要扫描文件；第 8 步没有前面的步骤时自己打开页面、读当时的版本。`--only` 接受逗号分隔的编号和区间（`1,8,9`、`1-9`、`2-4,8`），只有选了第 2 步才要 `--scan`；结果表保留原来的步骤编号。
+`--only` 接受逗号分隔的编号和区间（`1,8,9`、`1-9`、`2-4,8`），默认 `1-9`；选了某一步就要连同它依赖的步骤一起选（第 3 步推送第 2 步打的包，第 4 步读第 3 步的提交，第 5 步打开页面、第 6、7 步在这个页面上操作；每一步都要第 1 步建的空间），否则退出码 2。结果表保留原来的步骤编号。
 
 | 步骤 | 做法 | 断言 |
 |---|---|---|
 | 1. 建组织空间 | alice（`chronoai` 的 admin）`POST /api/v1/admin/spaces`，再 `PUT .../layout` 定义实体区、虚拟区和地块 `p1`；`metaverse init`（direct 模式，从模拟 NyxID 取令牌） | 201、分享令牌、归属证据 `org_admin` |
-| 2. 分片上传扫描 | `metaverse scan <文件> --part-size 0.25 --no-wait --json`；再按同一哈希建一次上传 | 分成多片、有资源哈希和 `scan_import` 任务；本空间已有的内容直接复用（201、`reused: true`、`status: done`） |
-| 3. 对齐与 AI 重建 | 轮询任务直到 `done`，再等全部任务完成 | 不要求人工对齐；seq 前进；快照有物件和网页用模型；`--voxelize` 时最新快照有区块 |
-| 4. 公开快照 | 凭分享令牌读公开提交列表、`snapshot?seq=` 重建前后两个版本、网页用模型；`--voxelize` 时再读体素化那次提交和它的一个区块 | 重建后有物件、重建前为空；资源和区块 `immutable`；没带或带错令牌 404 |
-| 5. 三种视图 | 无头 Chromium 打开 `/s/<空间>#share=<令牌>`，依次切"优化""优化 + 扩展""原始"；`--voxelize` 时优化视图再切"方块"画法 | 每种视图就绪；画布截图不是空白；优化有物件、扩展有"虚拟"标识、原始有扫描；方块画法画出区块、不画重建层物件 |
+| 2. 本地工具产出重建包 | 工作区里 `metaverse pull`（写 `space.json`、`limits.json`）；扫描复制到 `scan/`；`metaverse-recon align`（首次自动对齐，写 `scan/transform.json`）→ `prepare` → `bundle --algorithm`（最后经 `PATH` 里的 `metaverse` 调 `bundle check`）；再 `metaverse bundle check --json` | 不需要服务；包里有扫描、网页用模型和贴图；清单的 `base` 是拉取时的版本；检查通过 |
+| 3. 上传并发布 | rita（带 `metaverse:rebuild:write`）`metaverse bundle push --publish --part-size 0.25 --json`；同一个包 `--publish --replay` 再推一次；本空间、carol 的空间各按扫描的哈希建一次上传 | 扫描分成多片、核对完成；提交的类别 `rebuild`，带扫描和网页用模型，重建层编号 `rb.` 开头，建议锚点建好；再推一次文件全部复用、`unchanged`、不写提交；本空间直接复用，carol 的空间要完整上传 |
+| 4. 公开快照 | 凭分享令牌读公开提交列表、`snapshot?seq=` 重建前后两个版本、网页用模型、原始扫描 | 重建后有物件、重建前为空；资源 `immutable`；原始扫描不公开（404）；没带或带错令牌 404 |
+| 5. 三种视图 | 无头 Chromium 打开 `/s/<空间>#share=<令牌>`，依次切"优化""优化 + 扩展""原始" | 每种视图就绪；画布截图不是空白；优化有物件、扩展有"虚拟"标识、原始有扫描 |
 | 6. 回到重建前 | 点重建前那次提交的标记，再点"现在" | 显示"这个时刻还没有优化模型"；回到最新版本 |
 | 7. 写事件、"现在"模式 | 登记 `shop.status`（空间级状态），重开页面，alice 写一条事件 | 公开 `/head` 的 `recordedAt` 变化；公开增量事件里有它；页面状态栏出现事件文字 |
 | 8. 地块建造 | 工作区里 `metaverse pull` → `build --plot p1`（示例脚本）→ `check` → `push --json` → `publish --json` | 新 seq；公开快照里有示例桌子；页面拉到新版本，扩展视图物件变多 |
-| 9. 越权 | bob（member）建草稿、写事件、登记事件类型、建组织空间；dave（非成员）读和写；alice 读写 carol 的个人空间；carol 在自己的空间用前厅扫描的哈希建上传、直接导入 | member 写 403；看不到的一律 404；凭哈希复用不到别的空间的资源（201 但要完整上传，导入 422 `asset_unknown`） |
+| 9. 越权 | bob（member）建草稿、写事件、登记事件类型、建组织空间；dave（非成员）读和写；alice 读写 carol 的个人空间；alice（没有重建权限）建重建草稿、经重建路径上传；bob（member，带重建权限）建重建草稿；经实体区路径上传扫描；经地块路径上传重建包清单；调已下线的扫描导入；地块草稿放 `rb.` 编号；rita 再推一次包不发布，用预览令牌读资源 | member 写 403；看不到的一律 404；没有重建权限 403 `rebuild_permission_required`，member 即使有权限也 403；实体区路径传扫描 422 `purpose_not_allowed`；地块路径传清单 403 `scope_violation`；旧接口 410 `endpoint_retired`；`rb.` 编号 422 `invalid_op`；预览令牌读网页用模型 200、读原始扫描和包清单 404 |
 
 - 端口都是临时挑的空闲端口，库名 `metaverse_e2e_<随机后缀>`；结束时运行 `down.sh` 并删除这个库，`--keep` 保留现场；
-- 结果、截图（`view-*.png`（`--voxelize` 时多一张方块画法的 `view-optimized-blocks.png`）、`timeline-before-rebuild.png`、`live-event.png`、`plot-build-extended.png`，失败时 `failure.png`）、工作区和 `up.sh` 的输出在 `infra/dev/.run/e2e-<后缀>/`；各服务的日志在 `infra/dev/.run/*.log`；
-- 扫描文件不进版本库，用 `--scan` 或 `METAVERSE_E2E_SCAN` 指定；只接受 `metaverse scan` 支持的 glb、drc、obj、zip（带贴图的扫描把网格和贴图打包成 zip，例如 Scaniverse 导出的 drc + jpg）；
-- 浏览器：`METAVERSE_E2E_BROWSER_PATH`，没有时用 `/opt/pw-browsers/chromium`，再没有交给网站依赖里的 Playwright 自己找；任务的等待上限 `METAVERSE_E2E_JOB_TIMEOUT`（秒，默认 1800）；
-- 收尾删库用 `mongo.mjs drop`（不再借处理服务虚拟环境里的 pymongo）；
+- 结果、截图（`view-*.png`、`timeline-before-rebuild.png`、`live-event.png`、`plot-build-extended.png`，失败时 `failure.png`）、工作区（含 `out/recon`、`out/bundle`）、本地工具的输出（`recon-*.log`）和 `up.sh` 的输出在 `infra/dev/.run/e2e-<后缀>/`；各服务的日志在 `infra/dev/.run/*.log`；
+- 扫描文件不进版本库，用 `--scan` 或 `METAVERSE_E2E_SCAN` 指定；只接受本地工具直接读的 Scaniverse 式 zip（网格 + 贴图，例如 drc + jpg）和 glb；
+- 本地工具用 `recon/.venv/bin/metaverse-recon`，没有时先 `uv sync --frozen`；命令行每次从 `sdk/typescript` 构建，第 2 步给本地工具放一个 `metaverse` 垫片（`e2e-<后缀>/bin/`），让 `bundle` 最后能调用 `metaverse bundle check`；
+- 浏览器：`METAVERSE_E2E_BROWSER_PATH`，没有时用 `/opt/pw-browsers/chromium`，再没有交给网站依赖里的 Playwright 自己找；`bundle push` 等后台核对和包展开的上限 `METAVERSE_E2E_JOB_TIMEOUT`（秒，默认 600）；
+- 收尾删库用 `mongo.mjs drop`；
 - 退出码：0 全部通过，1 有步骤失败（后面的步骤标"未执行"），2 参数或环境不对（没开始验收）。
 
 要跑的是本地全套和一份真实扫描，不放进每次合并请求的持续集成；持续集成只跑小工具的测试和参数检查（`e2e-lib.test.mjs`）。
 
-**2026-11-09 实测**（4 核机器，前厅扫描的 Draco 网格 1.0MB，不带贴图）：
+**2026-11-10 实测**（4 核机器，前厅扫描 zip：Draco 网格 + 贴图共 5.9MB）：九步第一次就全部通过，验收主体约 3 分 20 秒（不含编译）。第 2 步本地出包 118 秒（`align` 2 秒、`prepare` 55 秒、`bundle --algorithm` 60 秒）：31 个文件（扫描、2 档网页用模型、28 张结构贴图），`bundle check` 通过；第 3 步推送发布 26 秒：扫描分 23 片，发布为 seq 3（`rebuild`），重建层 59 件、建议锚点 8 个，再推一次 `unchanged`；第 9 步 17 种越权和用途、编号、预览的反例都按预期返回。截图和结果另存在会话的临时目录，没有进仓库。
 
-- 按当时的代码，第 2 步失败：命令行建上传时发 `contentType`、`fileName`，接口服务只认 `size`/`totalSize`、`sha256`、`partSize`、`format`（拒收未知字段，422）。命令行和接口服务对不上的地方还有两处，都在第 8 步：建草稿时多发了 `message`（接口服务只认 `baseSeq`），"从上传应用操作"同时发了 `uploadId` 和 `assetHash`（接口服务要求只给一个）。这三处要命令行改（或接口服务放宽），改之前验收停在第 2 步；
-- 在本地临时把这三处请求体改成接口服务的写法（不提交）后，九步全部通过：上传 4 片；重建 30 秒左右（64 个物件、2 档网页用模型）；三种视图截图都不是空白；回到版本 #2 显示"还没有优化模型"；事件写入后约 5 秒内页面状态栏出现；地块建造 3 个操作发布为 seq 4，扩展视图能看到虚拟区里的桌椅；9 个越权请求全部按预期返回 403 / 404。全程约 2 分钟（不含首次编译）。
-- 页面只在打开时读一次事件类型，打开之后才登记的类型，它的事件要重新打开页面才显示；所以第 7 步登记类型后先重开页面再写事件。
-
-**2026-11-09 合并安全与正确性审查修复后重跑**（4 核机器，前厅扫描 zip：Draco 网格 + 贴图共 5.9MB）：
-
-- 不改任何组件，九步第一次就全部通过：上传 23 片；导入任务约 60 秒（重建约 48 秒、网页用模型约 10 秒；63 个物件、2 档网页用模型）；三种视图截图都不是空白；回到版本 #2 显示"还没有优化模型"；事件写入后约 5 秒内页面状态栏出现；地块建造 3 个操作发布为 seq 4，扩展视图物件 63 → 66；9 个越权请求全部按预期返回 403 / 404。验收主体约 2 分钟（不含首次编译）；
-- `--voxelize` 同样通过：导入之后另一个 `voxelize` 任务约 5 秒写出 seq 4（195 个区块），网页出现"形状 / 方块"切换。当时验收脚本还不看体素化结果（区块按导入那次提交检查，那次没有区块），于是补上了第 3、4、5 步里 `--voxelize` 的断言：最新快照有区块、公开区块 `immutable`、方块画法画出约 37 万个面；
-- 审查修复改了按哈希复用上传的语义（复用和新建都是 201；只有本空间已经拥有的资源才能直接复用），验收脚本补了第 2 步"同一空间复用"和第 9 步"别的空间凭哈希复用不到、导入 422"两组断言，两种模式都通过。命令行 README 里"内容已存在时 200"的说明和测试替身的状态码也一并改成 201。
+**历史**：处理服务还在时（2026-11-09），第 2–3 步是"`metaverse scan` 分片上传 → 处理服务对齐和 AI 重建"，九步在 4 核机器上约 2 分钟通过（导入任务约 60 秒，63 个物件）；处理服务下线到九步改完之间（设计 13.3），默认只跑第 1、8、9 步。
 
 ## 实测示例
 
@@ -261,7 +262,3 @@ node infra/dev/call.mjs --share <分享令牌> GET /api/public/spaces/front-hall
 | `--as chronoai POST /api/v1/admin/spaces`（组织本身，不查角色） | 201，`ownerEvidence.basis = org_subject` |
 
 分享令牌只在创建时返回一次，库里只存哈希；示例里用占位符代替了实测时的随机值。
-
-**2026-11-09 处理服务下线后（设计 13.2 S2）**：`node infra/dev/e2e.mjs`（默认第 1、8、9 步）在 4 核机器上跑了两次，都全部通过：
-建组织空间、定义区域；命令行在地块里 `pull → build → check → push → publish`（3 个操作，发布为 seq 3，扩展视图里有 3 个物件）；
-9 个越权请求都按预期返回 403 / 404。`up.sh` 没起处理服务，副本集用 `mongo.mjs` 查到，收尾删库也用它。

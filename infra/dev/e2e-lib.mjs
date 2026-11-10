@@ -57,18 +57,19 @@ export async function waitFor(probe, { timeout = 30_000, interval = 500, what = 
 /**
  * 调用本地接口服务的客户端，请求头与 call.mjs 相同：
  * - `/api/v1/*`：每次先向模拟 NyxID 取一对新令牌，带 `X-NyxID-Identity-Token` 和
- *   `Authorization: Bearer <访问令牌>`；
+ *   `Authorization: Bearer <访问令牌>`；`permissions` 给了就写进身份令牌，不给时按模拟 NyxID 的
+ *   角色文件（例如重建身份 rita 带 `metaverse:rebuild:write`）；
  * - `/api/public/*`：不带身份，给了 `share` 时带 `Authorization: Share <令牌>`。
  * 返回 `{status, headers, body}`；body 能按 JSON 解析就解析，否则是文本。
  */
 export function devClient({ api, nyx, fetchImpl = fetch }) {
   const base = api.replace(/\/$/, '');
   const nyxBase = nyx.replace(/\/$/, '');
-  return async function call(method, path, { as = 'alice', body, share, orgRole, headers: extra } = {}) {
+  return async function call(method, path, { as = 'alice', body, share, orgRole, permissions, headers: extra } = {}) {
     const headers = { accept: 'application/json', ...extra };
     if (body !== undefined) headers['content-type'] = 'application/json';
     if (path.startsWith('/api/v1/')) {
-      const tokenRequest = { sub: as, ...(orgRole ? { orgRole } : {}) };
+      const tokenRequest = { sub: as, ...(orgRole ? { orgRole } : {}), ...(permissions ? { permissions } : {}) };
       const tokenReply = await fetchImpl(`${nyxBase}/dev/token`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -130,6 +131,28 @@ export function parseOnly(text, max) {
   }
   if (numbers.size === 0) throw new Error('--only 至少要选一步');
   return new Set([...numbers].sort((a, b) => a - b));
+}
+
+/**
+ * 九步之间的依赖（e2e.mjs）：第 1 步建空间；第 3 步推送第 2 步打的包；第 4 步读第 3 步的提交；第 5 步打开页面、
+ * 第 6、7 步在这个页面上操作；第 8、9 步只要空间。
+ */
+export const STEP_NEEDS = { 2: [1], 3: [2], 4: [3], 5: [4], 6: [5], 7: [5], 8: [1], 9: [1] };
+
+/** 选了却缺了它依赖的步骤：返回 `[[步骤, [缺的步骤…]], …]`，没有缺的返回空数组。 */
+export function missingSteps(only, needs = STEP_NEEDS) {
+  const missing = [];
+  for (const step of only) {
+    const absent = (needs[step] ?? []).filter((need) => !only.has(need));
+    if (absent.length > 0) missing.push([step, absent]);
+  }
+  return missing;
+}
+
+/** 预览链接里的令牌（`…/preview#t=<令牌>`，命令行 previewLink 的写法）；没有时返回 null。 */
+export function previewToken(link) {
+  const match = /[#&?]t=([A-Za-z0-9_-]+)/.exec(String(link ?? ''));
+  return match ? match[1] : null;
 }
 
 export async function runSteps(steps, context, { log = () => {} } = {}) {

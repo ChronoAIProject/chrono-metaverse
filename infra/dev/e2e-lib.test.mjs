@@ -21,7 +21,9 @@ import {
   freePort,
   imageStats,
   looksRendered,
+  missingSteps,
   parseUpOutput,
+  previewToken,
   randomSuffix,
   parseOnly,
   runSteps,
@@ -230,7 +232,7 @@ let rolesDir;
 before(async () => {
   rolesDir = await mkdtemp(join(tmpdir(), 'e2e-lib-'));
   const roles = join(rolesDir, 'roles.json');
-  await writeFile(roles, JSON.stringify({ orgs: {} }));
+  await writeFile(roles, JSON.stringify({ orgs: {}, permissions: { rita: ['metaverse:rebuild:write'] } }));
   mock = await startMockNyxid({ port: 0, rolesPath: roles, log: () => {} });
   echo = createServer((request, response) => {
     let body = '';
@@ -278,6 +280,18 @@ test('devClient：/api/v1 每次带新的身份令牌和转发的访问令牌', 
   );
 });
 
+test('devClient：权限不给时按角色文件，给了就以给的为准', async () => {
+  const call = devClient({ api: echoUrl, nyx: mock.url });
+  const permissionsOf = (reply) => decodeClaims(reply.body.headers['x-nyxid-identity-token']).permissions;
+  assert.deepEqual(permissionsOf(await call('GET', '/api/v1/spaces/x', { as: 'rita' })), ['metaverse:rebuild:write']);
+  assert.deepEqual(permissionsOf(await call('GET', '/api/v1/spaces/x', { as: 'bob' })), []);
+  assert.deepEqual(
+    permissionsOf(await call('GET', '/api/v1/spaces/x', { as: 'bob', permissions: ['metaverse:rebuild:write'] })),
+    ['metaverse:rebuild:write'],
+  );
+  assert.deepEqual(permissionsOf(await call('GET', '/api/v1/spaces/x', { as: 'rita', permissions: [] })), []);
+});
+
 test('devClient：/api/public 不带身份，给了分享令牌才带 Authorization: Share', async () => {
   const call = devClient({ api: echoUrl, nyx: mock.url });
   const plain = await call('GET', '/api/public/spaces/x');
@@ -309,21 +323,26 @@ function runScript(args, env = {}) {
 }
 
 test('e2e.mjs：选了第 2 步却没给扫描文件、文件不存在、格式不对时退出码 2，不起全套', async () => {
-  // 默认只跑第 1、8、9 步（不要扫描文件，会起全套），这里都显式选上第 2 步。
-  const missing = runScript(['--only', '1-9']);
+  // 默认跑全部九步，要扫描文件。
+  const missing = runScript([]);
   assert.equal(missing.status, 2);
   assert.match(missing.stderr, /缺少扫描文件/);
 
-  const absent = runScript(['--only', '2', '--scan', join(rolesDir, 'none.drc')]);
+  const absent = runScript(['--only', '1,2', '--scan', join(rolesDir, 'none.zip')]);
   assert.equal(absent.status, 2);
   assert.match(absent.stderr, /找不到扫描文件/);
 
-  // zip（网格 + 贴图）也是合法的扫描格式，用别的扩展名。
-  const wrong = join(rolesDir, 'scan.ply');
-  await writeFile(wrong, 'ply');
-  const format = runScript(['--only', '2'], { METAVERSE_E2E_SCAN: wrong });
+  // 本地工具 prepare / bundle 直接读的格式：Scaniverse 式 zip（网格 + 贴图）或 glb。
+  const wrong = join(rolesDir, 'scan.drc');
+  await writeFile(wrong, 'drc');
+  const format = runScript(['--only', '1,2'], { METAVERSE_E2E_SCAN: wrong });
   assert.equal(format.status, 2);
-  assert.match(format.stderr, /扫描文件必须是 \.glb、\.drc、\.obj、\.zip/);
+  assert.match(format.stderr, /扫描文件必须是 \.zip、\.glb/);
+
+  // 选了某一步却没选它依赖的步骤。
+  const orphan = runScript(['--only', '1,4']);
+  assert.equal(orphan.status, 2);
+  assert.match(orphan.stderr, /第 4 步要连同第 3 步一起跑/);
 
   const unknown = runScript(['--bogus']);
   assert.equal(unknown.status, 2);
@@ -336,6 +355,24 @@ test('e2e.mjs --help 打印说明', () => {
   const help = runScript(['--help']);
   assert.equal(help.status, 0);
   assert.match(help.stdout, /九步端到端验收/);
+});
+
+test('missingSteps：选了的步骤缺了依赖时列出来', () => {
+  assert.deepEqual(missingSteps(new Set([1, 2, 3, 4, 5, 6, 7, 8, 9])), []);
+  assert.deepEqual(missingSteps(new Set([1, 8, 9])), []);
+  assert.deepEqual(missingSteps(new Set([1, 3])), [[3, [2]]]);
+  assert.deepEqual(missingSteps(new Set([8])), [[8, [1]]]);
+  assert.deepEqual(missingSteps(new Set([1, 2, 3, 6, 7])), [
+    [6, [5]],
+    [7, [5]],
+  ]);
+});
+
+test('previewToken：从命令行给的预览链接里取令牌', () => {
+  assert.equal(previewToken('http://127.0.0.1:5173/preview#t=abc_DEF-123'), 'abc_DEF-123');
+  assert.equal(previewToken('https://x/preview?a=1&t=tok'), 'tok');
+  assert.equal(previewToken('https://x/preview'), null);
+  assert.equal(previewToken(null), null);
 });
 
 test('parseOnly：编号和区间，排好序；写法不对或越界报错', () => {
