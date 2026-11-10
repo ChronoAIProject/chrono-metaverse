@@ -1066,6 +1066,57 @@ S2 做完后的状态（实施记录）：
   - 没定义实体区的空间：实体区草稿能挪锚点，虚拟区和地块里的操作被拒；
   - OpenAPI 里出现 12 个新 `operationId`。
 
+S3 做完后的状态（实施记录）：
+
+- 接口服务：新 `routes/rebuild.rs`（2.3 的 12 个接口，标签 `rebuild`，复用实体区的上传、草稿、任务步骤：`routes/uploads.rs` 的
+  `UploadPath`、`routes/drafts.rs` 和 `routes/jobs.rs` 的内部函数按范围参数化）；鉴权 `Capability::WriteRebuild` 与
+  `Authorizer::require_rebuild_write` / `rebuild_space`；交包任务 `runner/bundle_job.rs`（`ops_job.rs` 按 `source: "bundle"` 分派）
+  和展开 `timeline/bundle_apply.rs`（`apply_bundle`，S4 的 `bundle_import` 直接复用）；`timeline/drafts.rs` 的追加按核对记录判断
+  角色、模型与记录一致、模板完整性、两类资源，发布的 `layer:rebuilt`、`scan`、`unchanged`、`observedAt`、默认说明和脚本；
+  `timeline/state.rs` 工作状态带范围种类、草稿的扫描、按需加载的锚点历史；`repo/blobs.rs` 的 `AssetRole` 换成核心库的角色、
+  `kind_fits` 换成按核对记录判断（`check_asset_roles`）；`repo/commits.rs` 的 `CommitPlan` 加 `scan`、`bundle_ref`、`job_id`、
+  `held_assets`，提交事务里条件写 `frame`、栅栏带上包清单和扫描，`anchor_history`；`GET space` 返回 `uploadLimits`，查询上传返回
+  `check`，`/api/v1` 快照带 `scan.alignment`。
+- 测试：`tests/rebuild.rs` 8 个用例覆盖上面的验收各项（权限两种配置、member、真实上传清单到发布、两种草稿互不相通、模板、冲突与
+  重放、没有变化和锚点不复活、文件角色、没有实体区）；`openapi.rs` 单元测试核对 12 个 `operationId`；原有测试里按 `kind`、
+  `sourceHash` 判断角色的用例改成按核对记录（`tests/timeline.rs`、`tests/events.rs`、`tests/asset_fence.rs`）。
+- 实现时补上的细节（设计没写到，按最小的写法定下）：
+  1. 交包时除了草稿已有 `bundleRef`，这个草稿还有排队或运行中的 `ops_from_upload` 任务也 409 `bundle_already_applied`（两个交包
+     请求挨着来时，第二个在返回 202 之前就被拒；并发漏过去的仍由执行器第 1 步拦住）；清单超过上限在返回 202 之前 413
+     `bundle_too_large`；
+  2. 展开时清单不合规、文件不合用途、作用操作被拒，任务都按 `content` 失败，说明写进 `lastError`（接口层的 422 码是
+     `invalid_bundle`）；展开的操作文件按规范 JSON 一行一条，登记成 `kind: ops`、`format: ndjson` 的资源（不写核对记录，只被草稿
+     和提交引用），同一份清单展开得到同一个哈希；
+  3. 任务结果在 2.6 第 7 步之外另有 `manifestHash`、`opsHash`、`draftId`、`rev`；`anchors.created` 是编号列表（命令行按列表或
+     个数都能显示）；`entities.placed` 含模板；
+  4. 锚点漂移只看这次碰过的物件所关联的锚点：关联物件（不含模板）的格子范围合起来与锚点的盒子不相交；锚点没有盒子（只有
+     `position`）时按它所在的一格算；
+  5. `layer:rebuilt` 判断"改过重建层"时，除了 `actor.scope = rebuild` 和旧的 `actor.kind = job`，`actor.kind = rebuild` 也算；
+     一个重建草稿只有锚点、没有重建层内容时同样登记 `layer:rebuilt`（2.7"每个重建草稿都登记"）；
+  6. 重建草稿碰过物件就把 `touched.rebuiltLayer` 记为 true（不只是有 `clearRebuilt` 时）；
+  7. 发布结果 `PublishView` 的 `commitId`、`at` 改成可省略（`unchanged` 时没有）；草稿视图多 `heldAssets`、`bundleRef`、`scan`、
+     `defaultMessage`、`defaultScriptRef`、`unchanged`，`touched` 多 `scan`、`rebuiltLayer`；
+  8. 路径里的用途按核心库的名字认（含 `webmodel`、`bundle`）：实体区、地块路径上传这两种从 404 变成 403 `scope_violation`，
+     重建路径上传 `ops`、`authored` 也是 403；
+  9. 提交事务里写 `frame` 放在 `repo/commits.rs`（事务代码在那里），没有改 `repo/spaces.rs`。
+- 与设计的偏离：
+  1. **追加后的模板完整性只报与本草稿有关的缺口**：2.5 第 3 条写的是"工作状态里每个物件引用的模板都要存在"，实现成"碰过的
+     物件引用的模板不在、或碰过的模板还被引用"才 409（发布时本来就是这样）。基础版本里已有的旧缺口（例如跨层的旧引用）不是这个
+     草稿造成的，按原文会让这个空间之后的每个草稿都追加不进去。线上没有这类旧数据（S1 的核对），新写入的缺口照样被拦住。
+     SHAPES 第 3 节同步改了；核心库的 `broken_template_refs`（Rust、TypeScript）仍是整份状态的检查，向量不变；
+  2. **`scriptRef` 也按核对记录判断**（角色"文本"）：原来看 `metadata.kind = script`。后台迁移 `backfill-asset-check-v1` 只补
+     扫描、网页用模型、物件模型、贴图，所以 R2 之前上传的旧脚本不能再当新提交的 `scriptRef`（重新按 script 用途上传同一内容即可，
+     登记时撞名会补写核对记录）；线上只有处理服务写过 `scriptRef`，已有提交不受影响；
+  3. 交包展开和写回放在 `timeline/bundle_apply.rs`、`runner/bundle_job.rs`，没有都写进 `timeline/drafts.rs`（13.2 的文件清单）：
+     S4 的种子导入要复用同一个展开函数，单独成文件更清楚。
+- 留给后面几步接上的：
+  1. S4：`bundle_import` 用 `timeline::bundle_apply::apply_bundle` 展开、再按 2.7 发布；"由后台任务发布时再加任务状态的条件
+     更新、提交带 `jobId`"还没做（`CommitPlan.job_id` 已有，提交事务里还没有任务栅栏），种子发布遇到冲突自动重放也在 S4；
+  2. S4 删旧接口之前，实体区路径照旧收 `scan`、`authored` 上传（`check_legacy_upload_purpose`），旧的扫描导入接口照旧能建任务；
+  3. 预览资源接口仍是"草稿的 `assets` + 本空间任何时候登记过的 `assetRefs`"（现有规则，没有收窄到基础版本及更早）；
+  4. S9：本机设施 `infra/dev/mock-nyxid.mjs` 还没有带 `metaverse:rebuild:write` 的身份，九步验收还不经过重建路径；
+  5. 网站对提交的发布者类别 `rebuild`、预览的范围 `rebuild` 只按原文显示（没有专门的文案），S8 或以后按需要补。
+
 #### S4 演示种子 + 删除旧代码
 
 - **改哪些文件**：
