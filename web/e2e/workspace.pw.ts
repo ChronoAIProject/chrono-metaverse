@@ -37,6 +37,12 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+// Finish fixture asset callbacks before Playwright closes the page.
+// Waiting preserves real route errors instead of suppressing them at teardown.
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: 'wait' });
+});
+
 test('在线工作台：明确授权、创建 worker、查看结果并确认发布', async ({ page }, testInfo) => {
   let enabled = false;
   let firstInstruction = '';
