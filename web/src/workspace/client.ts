@@ -1,4 +1,4 @@
-import { browserKeyHeaders } from '../auth/browserKey';
+import { cmaOwnerHeaders } from '../auth/cmaConnection';
 
 export type Session = {
   enabled: boolean;
@@ -106,7 +106,7 @@ export async function workerRequest<T>(
       headers: {
         'Content-Type': 'application/json',
         'x-csrf-token': session.csrfToken ?? '',
-        ...browserKeyHeaders(session.subject, session.cmaOwnerId),
+        ...cmaOwnerHeaders(session.subject, session.cmaOwnerId),
       },
       body: JSON.stringify(body),
     });

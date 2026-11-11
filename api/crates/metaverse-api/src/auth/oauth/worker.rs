@@ -1,5 +1,5 @@
 //! Fixed browser-to-CMA operations; CMA owns runtime credentials and resource ACL.
-use super::{agent_key, routes, seconds, HeldCredential, OAuthError, OAuthService, STORE};
+use super::{owner, routes, seconds, HeldCredential, OAuthError, OAuthService, STORE};
 use crate::{error::ApiError, repo::OAuthSessionRecord, routes::ApiJson, AppState};
 use axum::{
     extract::{Query, Request, State},
@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 pub(super) fn router() -> Router<AppState> {
     Router::new()
-        .merge(agent_key::router())
+        .route("/api/auth/nyxid/worker/connection", post(connection))
         .route("/api/auth/nyxid/worker/consent", post(consent))
         .route("/api/auth/nyxid/worker/agents", post(agents))
         .route("/api/auth/nyxid/worker/create", post(create))
@@ -55,7 +55,6 @@ struct Access {
     oauth: Arc<OAuthService>,
     session: OAuthSessionRecord,
     held: HeldCredential,
-    credential: Option<agent_key::Credential>,
     owner: String,
 }
 impl Access {
@@ -78,16 +77,25 @@ impl Access {
             owner: session.subject.clone(),
             session,
             held,
-            credential: None,
         };
         access.current(require_consent).await?;
         if require_consent {
-            let owner = agent_key::owner(state, headers, &access.session.subject).await?;
-            access.credential = Some(agent_key::checked(&access.oauth, headers, &owner).await?);
+            access.require_cma_grant()?;
+            let owner = owner::resolve(state, headers, &access.session.subject).await?;
             access.owner = owner.id;
             access.current(true).await?;
         }
         Ok(access)
+    }
+    fn require_cma_grant(&self) -> Result<(), ApiError> {
+        if !self.held.cma_granted {
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                "cma_oauth_required",
+                "请在 NyxID 授权网页访问 CMA；原任务与请求编号已保留",
+            ));
+        }
+        Ok(())
     }
     async fn current(&self, require_consent: bool) -> Result<(), ApiError> {
         if !self.oauth.current(&self.held).await? {
@@ -128,7 +136,7 @@ impl Access {
             .oauth
             .http
             .request(method.clone(), url)
-            .bearer_auth(self.credential.as_ref().ok_or_else(unavailable)?.value());
+            .bearer_auth(self.held.credential.value());
         if let Some(body) = body {
             request = request.json(&body);
         }
@@ -193,7 +201,7 @@ impl Access {
         if c.org_id.as_deref().unwrap_or(&self.session.subject) != self.owner {
             return Err(ApiError::new(
                 StatusCode::FORBIDDEN,
-                "cma_key_account_mismatch",
+                "cma_owner_forbidden",
                 "空间归属与 CMA 授权不一致，请为当前空间重新连接 CMA",
             ));
         }
@@ -222,7 +230,11 @@ async fn read_json(mut response: reqwest::Response) -> Result<Value, ApiError> {
 }
 fn refusal(status: StatusCode, body: &Value) -> ApiError {
     if status == StatusCode::UNAUTHORIZED {
-        return agent_key::not_accepted();
+        return ApiError::new(
+            StatusCode::UNAUTHORIZED,
+            "cma_oauth_required",
+            "CMA 未接受当前 OAuth 授权，请重新连接；原任务和请求编号已保留",
+        );
     }
     let code = body
         .get("code")
@@ -263,6 +275,47 @@ fn refusal(status: StatusCode, body: &Value) -> ApiError {
     };
     ApiError::new(status, "cma_request_refused", detail)
 }
+async fn connection(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let mut a = Access::new(&state, &headers, false).await?;
+    a.require_cma_grant()?;
+    a.owner = owner::resolve(&state, &headers, &a.session.subject)
+        .await?
+        .id;
+    a.current(false).await?;
+    let response = a
+        .oauth
+        .http
+        .get(a.target("/auth/session")?)
+        .bearer_auth(a.held.credential.value())
+        .send()
+        .await
+        .map_err(|_| unavailable())?;
+    let status = response.status();
+    let value = read_json(response).await?;
+    a.current(false).await?;
+    if !status.is_success() {
+        return Err(refusal(status, &value));
+    }
+    if value.get("authenticated").and_then(Value::as_bool) != Some(true)
+        || value.get("subject").and_then(Value::as_str) != Some(a.session.subject.as_str())
+    {
+        return Err(unavailable());
+    }
+    if value.get("api_commands").and_then(Value::as_bool) != Some(true) {
+        return Err(ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "cma_command_authority_required",
+            "CMA 尚未提供此 OAuth 授权的聊天能力，请保留原任务；重复授权不会解决此服务配置问题",
+        ));
+    }
+    // Organization selection is context, never a replacement for the user actor.
+    owner::resolve(&state, &headers, &a.session.subject).await?;
+    a.current(false).await?;
+    Ok(Json(json!({"ready":true,"ownerId":a.owner})).into_response())
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Consent {
@@ -296,7 +349,11 @@ async fn agents(
     ApiJson(input): ApiJson<List>,
 ) -> Result<Response, ApiError> {
     let a = Access::new(&state, &headers, true).await?;
-    let mut path = "/api/v1/agents?limit=50".to_owned();
+    let mut path = "/api/v1/agents?status=ready&limit=50".to_owned();
+    if a.owner != a.session.subject {
+        path.push_str("&organization=");
+        path.push_str(&a.owner);
+    }
     if let Some(cursor) = input.cursor {
         if cursor.is_empty() || cursor.len() > 2048 || cursor.chars().any(char::is_control) {
             return Err(ApiError::invalid("分页标记不正确"));
@@ -538,7 +595,7 @@ async fn attachment(
         .oauth
         .http
         .post(target)
-        .bearer_auth(a.credential.as_ref().ok_or_else(unavailable)?.value())
+        .bearer_auth(a.held.credential.value())
         .header("Idempotency-Key", &key)
         .header("Content-Type", "application/octet-stream")
         .timeout(Duration::from_secs(45))

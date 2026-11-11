@@ -17,6 +17,7 @@ struct TokenResponse {
     refresh_token: Option<String>,
     token_type: String,
     expires_in: i64,
+    scope: Option<String>,
 }
 impl Drop for TokenResponse {
     fn drop(&mut self) {
@@ -155,6 +156,10 @@ impl OAuthService {
             refresh_token: refresh.into(),
             expires_at: seconds()? + token.expires_in,
             subject_verified: false,
+            scope: token
+                .scope
+                .clone()
+                .or_else(|| previous.and_then(|p| p.scope.clone())),
         })
     }
 

@@ -2,7 +2,6 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ConnectPage } from './ConnectPage';
-import { readBrowserKey, saveBrowserKey } from './browserKey';
 
 afterEach(() => window.history.replaceState(null, '', '/'));
 
@@ -257,21 +256,8 @@ it('网络失败可重试，未启用时不显示授权入口', async () => {
   expect(screen.queryByRole('link', { name: '前往 NyxID 授权' })).toBeNull();
 });
 
-it('断开账号先撤销浏览器子凭据，再删除 OAuth 连接', async () => {
-  const identity = {
-    keyId: 'key-cma',
-    name: 'CMA',
-    credentialId: 'child',
-    credentialExpiresAt: null,
-    keyExpiresAt: null,
-  };
-  saveBrowserKey('alice', 'nyx_test_connect_child', identity);
-  saveBrowserKey(
-    'alice',
-    'nyx_test_connect_org_child',
-    { ...identity, ownerId: 'org-one' },
-    'org-one',
-  );
+it('迁移后清除旧浏览器凭据，断开只调用 OAuth 断开接口', async () => {
+  localStorage.setItem('metaverse-cma-credential:v2:alice:alice', 'legacy-secret');
   const request = vi.fn<typeof fetch>(async (input) =>
     Response.json(String(input).endsWith('/session') ? connected : { ok: true }),
   );
@@ -281,35 +267,7 @@ it('断开账号先撤销浏览器子凭据，再删除 OAuth 连接', async () 
   await screen.findByRole('link', { name: '前往 NyxID 授权' });
   expect(request.mock.calls.map((c) => String(c[0]))).toEqual([
     '/api/auth/nyxid/session',
-    '/api/auth/nyxid/worker/key/revoke',
-    '/api/auth/nyxid/worker/key/revoke',
     '/api/auth/nyxid/disconnect',
   ]);
-  expect(readBrowserKey('alice')).toBeNull();
-  expect(readBrowserKey('alice', 'org-one')).toBeNull();
-  expect(request.mock.calls[2]?.[1]?.headers).toMatchObject({
-    Authorization: 'Bearer nyx_test_connect_org_child',
-    'x-metaverse-cma-owner': 'org-one',
-  });
-});
-it('子凭据撤销状态未知时保留连接以供恢复', async () => {
-  saveBrowserKey('alice', 'nyx_test_connect_child', {
-    keyId: 'key-cma',
-    name: 'CMA',
-    credentialId: 'child',
-    credentialExpiresAt: null,
-    keyExpiresAt: null,
-  });
-  const request = vi.fn<typeof fetch>(async (input) =>
-    String(input).endsWith('/session')
-      ? Response.json(connected)
-      : Response.json({ code: 'cma_key_unavailable' }, { status: 503 }),
-  );
-  render(<ConnectPage request={request} />);
-  await userEvent.click(await screen.findByRole('button', { name: '断开连接' }));
-  await userEvent.click(screen.getByRole('button', { name: '确认断开' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('尚未确认撤销');
-  expect(request).toHaveBeenCalledTimes(2);
-  expect(readBrowserKey('alice')).not.toBeNull();
-  sessionStorage.clear();
+  expect(localStorage.getItem('metaverse-cma-credential:v2:alice:alice')).toBeNull();
 });

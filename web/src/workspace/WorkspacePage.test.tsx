@@ -6,17 +6,9 @@ vi.mock('../space/SpacePage', () => ({
     <div data-testid="private-viewer">{spaceId}</div>
   ),
 }));
-import { saveBrowserKey } from '../auth/browserKey';
 import { WorkspacePage } from './WorkspacePage';
 import { resultLinks, viewerLink, type Transcript, type Operation } from './client';
 
-const keyIdentity = {
-  keyId: 'key-cma',
-  name: 'Metaverse CMA',
-  credentialId: 'browser-child',
-  credentialExpiresAt: null,
-  keyExpiresAt: null,
-};
 const connected = {
   enabled: true,
   connected: true,
@@ -90,9 +82,9 @@ function mockApi(
         organizations: [{ id: 'org-one', name: 'ChronoAI', role: 'admin' }],
         next: null,
       });
-    if (url.endsWith('/key/check'))
+    if (url.endsWith('/connection'))
       return reply({
-        ...keyIdentity,
+        ready: true,
         ownerId: new Headers(init?.headers).get('x-metaverse-cma-owner') ?? 'owner-a',
       });
     if (url.endsWith('/session'))
@@ -181,26 +173,19 @@ async function fillTask() {
 }
 beforeEach(() => {
   sessionStorage.clear();
-  saveBrowserKey('owner-a', 'nyx_test_browser_owner_a', keyIdentity);
-  saveBrowserKey(
-    'owner-a',
-    'nyx_test_browser_org_one',
-    { ...keyIdentity, ownerId: 'org-one' },
-    'org-one',
-  );
   window.history.replaceState(null, '', '/workspace');
 });
 afterEach(cleanup);
 
 describe('CMA workspace', () => {
-  it('新标签页直接打开组织空间时，从目录恢复归属并复用已有浏览器授权', async () => {
+  it('新标签页直接打开组织空间时，从目录恢复归属并复用 OAuth 授权', async () => {
     sessionStorage.clear();
     window.history.replaceState(null, '', '/workspace?space=my-lobby');
     const api = mockApi();
     render(<WorkspacePage request={api.request} />);
     await userEvent.click(await screen.findByRole('button', { name: '打开 CMA 聊天' }));
-    await screen.findByText('当前空间使用：ChronoAI的 CMA');
-    await screen.findByText('已连接 CMA · Metaverse CMA');
+    await screen.findByText('当前空间：ChronoAI · 使用当前账号的 CMA 授权');
+    await screen.findByText('已连接 CMA');
     await waitFor(() =>
       expect(JSON.parse(sessionStorage.getItem('metaverse-worker:owner-a')!).orgId).toBe('org-one'),
     );
@@ -208,10 +193,9 @@ describe('CMA workspace', () => {
       false,
     );
     expect(
-      api.request.mock.calls.filter((call) => String(call[0]).endsWith('/key/check')).at(-1)?.[1]
+      api.request.mock.calls.filter((call) => String(call[0]).endsWith('/connection')).at(-1)?.[1]
         ?.headers,
     ).toMatchObject({
-      Authorization: 'Bearer nyx_test_browser_org_one',
       'x-metaverse-cma-owner': 'org-one',
     });
   });
@@ -220,10 +204,8 @@ describe('CMA workspace', () => {
     const { container } = render(<WorkspacePage request={api.request} />);
     await screen.findByRole('button', { name: '选择空间' });
     await openChat();
-    const enable = await screen.findByRole('button', { name: '同意并启用' });
-    expect(enable).toBeDisabled();
+    const enable = await screen.findByRole('button', { name: '启用 CMA 聊天' });
     expect(api.writes).toEqual([]);
-    await userEvent.click(screen.getByRole('checkbox', { name: /允许此浏览器/ }));
     await userEvent.click(enable);
     await screen.findByRole('button', { name: '选择空间' });
     await fillTask();

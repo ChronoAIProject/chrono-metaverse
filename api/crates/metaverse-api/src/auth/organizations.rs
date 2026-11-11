@@ -71,7 +71,7 @@ impl ForwardedCredential {
         Self(Zeroizing::new(value.to_owned()))
     }
 
-    fn value(&self) -> &str {
+    pub(crate) fn value(&self) -> &str {
         &self.0
     }
 }
