@@ -43,6 +43,10 @@ npm run shot
 
 模型和贴图在浏览器的 `CacheStorage` 中保存，缓存名为 `chrono-metaverse-models-v1`，总量上限 512 MiB，超过后清理较早的资源。刷新先向服务器重新验证预览授权、读取最新草稿，再复用同一授权和修订下已经校验哈希的资源。缓存键只保存授权作用域的哈希。浏览器禁用存储时照常联网加载；清除站点数据会移除缓存。线上原件仍存于现有系统的 MongoDB GridFS，本地下载与转换文件位于本目录的 `assets/`。
 
+缓存和查看器是通用能力。场景的名称、标记文字、实体引用、显示距离及配准参数集中在 `context.json`，楼层沿用 `build/alignment.json` 的来源数据；剖面边界直接从拉取的 `space.json` 实体区推导，不在生成器中重复填写办公室坐标。其他空间可以更换这些输入及模型，不需要修改查看器。通用字段见 `docs/SHAPES.md` 的 `backgroundView` 与 `landmark` 说明。
+
+`.venv/bin/python scripts/check-context-reuse.py` 使用临时工作区验证不同名称、楼层、实体编号、平移及 90° 旋转，不修改当前场景。它复用本地已下载的模型，不联网；报告保存在 `out/context-reuse-check.json`。验收脚本的模型数量、远景分片数量、标记名称及点击返回范围也从当前场景清单推导。
+
 在 `scripts/convert-onemap.py` 修改 `OFFICE_HEIGHT`、`HEADING` 后，依次重跑转换、地面和楼内配准脚本即可整体调整。地面采用平面正射影像，水面和树木没有额外生成可运动的几何模型。
 
 ## 重新下载、转换和校验

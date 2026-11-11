@@ -319,69 +319,77 @@ test('窗外背景：城市模型加载后、切换视图和回到全景都保�
   expect(errors).toEqual([]);
 });
 
-test('拉远显示完整楼体和办公室标记，点击标记返回室内', async ({ page }) => {
-  const errors = watchErrors(page);
-  await page.route('**/api/public/spaces/demo-lobby/snapshot?*', async (route) => {
-    const response = await route.fetch();
-    const snapshot = await response.json();
-    snapshot.regions = snapshot.regions.filter((r: { kind: string }) => r.kind === 'physical');
-    snapshot.entities = snapshot.entities.filter(
-      (r: { body: { regionId?: string } }) => r.body.regionId !== 'virtual',
-    );
-    snapshot.chunks = snapshot.chunks.filter((c: { cx: number }) => c.cx < 4);
-    snapshot.regions.push({
-      id: 'tower',
-      kind: 'virtual',
-      boxes: [[-20, 0, -300, 180, 2200, -100]],
-    });
-    snapshot.entities.push({
-      id: 'tower',
-      body: {
-        entityId: 'tower',
-        layer: 'ext',
-        kind: 'object',
-        regionId: 'tower',
-        bounds: { min: [-1, 3, -14], max: [7, 103, -6] },
-        shape: {
-          type: 'box',
-          size: [8, 100, 8],
-          transform: { position: [3, 3, -10] },
-          material: { color: [100, 135, 160] },
-        },
-        props: {
-          background: true,
-          backgroundView: { focus: [3, 1.4, 2.5], minDistance: 30 },
-          landmark: {
-            label: 'ChronoAI · 14层办公室',
-            position: [3, 1.4, 5.2],
-            minDistance: 30,
-            focusBounds: { min: [0, 0, 0], max: [6, 2.75, 5] },
+for (const example of [
+  { id: 'laboratory', label: '城市实验室 · 8层', minDistance: 30, position: [3, 1.4, 5.2] },
+  { id: 'exhibition', label: '展馆入口', minDistance: 55, position: [4, 1, 5.1] },
+]) {
+  test(`通用背景标记：${example.label} 按场景距离显示并返回指定范围`, async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.route('**/api/public/spaces/demo-lobby/snapshot?*', async (route) => {
+      const response = await route.fetch();
+      const snapshot = await response.json();
+      snapshot.regions = snapshot.regions.filter((r: { kind: string }) => r.kind === 'physical');
+      snapshot.entities = snapshot.entities.filter(
+        (r: { body: { regionId?: string } }) => r.body.regionId !== 'virtual',
+      );
+      snapshot.chunks = snapshot.chunks.filter((c: { cx: number }) => c.cx < 4);
+      snapshot.regions.push({
+        id: 'tower',
+        kind: 'virtual',
+        boxes: [[-20, 0, -300, 180, 2200, -100]],
+      });
+      snapshot.entities.push({
+        id: 'tower',
+        body: {
+          entityId: 'tower',
+          layer: 'ext',
+          kind: 'object',
+          regionId: 'tower',
+          bounds: { min: [-1, 3, -14], max: [7, 103, -6] },
+          shape: {
+            type: 'box',
+            size: [8, 100, 8],
+            transform: { position: [3, 3, -10] },
+            material: { color: [100, 135, 160] },
+          },
+          props: {
+            background: true,
+            backgroundView: { focus: [3, 1.4, 2.5], minDistance: example.minDistance },
+            landmark: {
+              label: example.label,
+              position: example.position,
+              minDistance: example.minDistance,
+              focusBounds: { min: [0, 0, 0], max: [6, 2.75, 5] },
+            },
           },
         },
-      },
+      });
+      await route.fulfill({ response, json: snapshot });
     });
-    await route.fulfill({ response, json: snapshot });
+    await page.goto(`${LINK.replace('#', '?view=extended#')}`);
+    await waitForScene(page, 'extended');
+    const viewer = page.locator('.viewer');
+    const marker = page.getByRole('button', { name: example.label, exact: true });
+    await expect(viewer).toHaveAttribute('data-overview-objects', '0');
+    await expect(marker).toBeHidden();
+    const canvas = (await page.locator('.viewer__canvas').boundingBox())!;
+    await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + canvas.height / 2);
+    for (let i = 0; i < 12; i++) {
+      await page.mouse.wheel(0, 400);
+      await page.waitForTimeout(100);
+    }
+    await expect(viewer).toHaveAttribute('data-overview-objects', '1');
+    await expect(marker).toBeVisible();
+    await page.screenshot({ path: join(SHOTS, `background-marker-${example.id}.png`) });
+    await marker.click();
+    await expect(viewer).toHaveAttribute('data-overview-objects', '0');
+    await expect(marker).toBeHidden();
+    const frame = await frameRange(page);
+    expect(frame[3]! - frame[0]!).toBeLessThan(6.5);
+    expect(await roomCoverage(page)).toBeGreaterThan(0.3);
+    expect(errors).toEqual([]);
   });
-  await page.goto(`${LINK.replace('#', '?view=extended#')}`);
-  await waitForScene(page, 'extended');
-  const viewer = page.locator('.viewer');
-  const marker = page.getByRole('button', { name: 'ChronoAI · 14层办公室', exact: true });
-  await expect(viewer).toHaveAttribute('data-overview-objects', '0');
-  await expect(marker).toBeHidden();
-  const canvas = (await page.locator('.viewer__canvas').boundingBox())!;
-  await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + canvas.height / 2);
-  for (let i = 0; i < 8; i++) await page.mouse.wheel(0, 400);
-  await expect(viewer).toHaveAttribute('data-overview-objects', '1');
-  await expect(marker).toBeVisible();
-  await page.screenshot({ path: join(SHOTS, 'tower-office-marker.png') });
-  await marker.click();
-  await expect(viewer).toHaveAttribute('data-overview-objects', '0');
-  await expect(marker).toBeHidden();
-  const frame = await frameRange(page);
-  expect(frame[3]! - frame[0]!).toBeLessThan(6.5);
-  expect(await roomCoverage(page)).toBeGreaterThan(0.3);
-  expect(errors).toEqual([]);
-});
+}
 
 test('?view= 指定打开时的视图：原始视图的房间占画面大部分，切换视图时更新地址', async ({
   page,

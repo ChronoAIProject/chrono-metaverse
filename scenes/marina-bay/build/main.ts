@@ -13,19 +13,19 @@ export default function build(base: BuildBase, kit: Kit) {
   const placement: Placement = JSON.parse(
     readFileSync(new URL('./placement.json', import.meta.url), 'utf8'),
   );
+  const config = JSON.parse(readFileSync(new URL('../context.json', import.meta.url), 'utf8'));
   const entities = [...buildings, ...ground]
     .map((entity) => placeExterior(entity, placement))
     .concat(placement.hostEntities);
   const ids = new Set(entities.map((entity) => entity.entityId));
   return {
-    message:
-      '办公室近景保留楼体剖面，拉远显示完整 Tower 1 和十四层办公室标记，滨海湾作为背景',
+    message: config.message,
     ops: [
       ...base.entities
         .filter(
           (entity) =>
             entity.layer === 'ext' &&
-            entity.entityId.startsWith('bay.') &&
+            entity.entityId.startsWith(config.entityPrefix) &&
             !ids.has(entity.entityId),
         )
         .map((entity) => kit.removeEntity(entity.entityId)),

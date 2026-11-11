@@ -18,7 +18,7 @@ function distance(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
-/** 背景可按离关注位置的距离切换：近看室内剖面，远看完整楼体。 */
+/** 背景按相机与场景配置的关注位置之间的距离切换。 */
 export function backgroundView(entity: EntityBody) {
   if (!isBackgroundEntity(entity)) return null;
   const config = record(entity.props?.backgroundView);

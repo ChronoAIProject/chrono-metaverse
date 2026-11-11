@@ -9,6 +9,7 @@ import numpy as np
 from PIL import Image
 import trimesh
 from scipy.spatial import ConvexHull
+from context_geometry import floor_outline
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -28,13 +29,14 @@ def main():
     buildings = json.loads((ROOT / 'build/onemap-entities.json').read_text())
     ground = json.loads((ROOT / 'build/ground.json').read_text())
     placement = json.loads((ROOT / 'build/placement.json').read_text())
+    config = json.loads((ROOT / 'context.json').read_text())['host']
     host = placement['hostEntities']
-    require(placement['officeContained'] and placement['minimumFacadeClearanceMeters'] > 0.05, '办公室没有完全位于 Tower 1 楼体内')
+    require(placement['officeContained'] and placement['minimumFacadeClearanceMeters'] > config['minimumClearanceMeters'], '主体没有完全位于宿主模型内')
     office = json.loads((ROOT / 'entities.json').read_text())
-    floor = next(entity for entity in office if entity['entityId'] == 'rb.floor')['shape']
-    outline = np.array(floor['outline']['points']) + np.array(floor['transform']['position'])[[0, 2]]
+    floor = next(entity for entity in office if entity['entityId'] == config['floorEntityId'])['shape']
+    outline = floor_outline(floor)
     planes = ConvexHull(np.array(placement['sectionPolygon'])).equations
-    require((outline @ planes[:, :2].T + planes[:, 2]).max() < -0.05, '当前办公室地面超出 Tower 1 截面')
+    require((outline @ planes[:, :2].T + planes[:, 2]).max() < -config['minimumClearanceMeters'], '主体地面超出宿主模型截面')
     entities = buildings + ground + host
     require(len({item['entityId'] for item in entities}) == len(entities), '存在重复物件编号')
     results = []

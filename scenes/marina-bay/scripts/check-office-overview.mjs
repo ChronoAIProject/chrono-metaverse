@@ -3,6 +3,15 @@ import { chromium } from '../../../sdk/typescript/node_modules/playwright-core/i
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 const root = new URL('../', import.meta.url);
+const read = path => JSON.parse(readFileSync(new URL(path, root), 'utf8'));
+const placement = read('build/placement.json');
+const entities = [...read('entities.json'), ...read('build/onemap-entities.json'),
+  ...read('build/ground.json'), ...placement.hostEntities];
+const expectedModels = entities.filter(entity => entity.assetHash).length;
+const expectedOverview = entities.filter(entity => entity.props?.backgroundView?.minDistance > 0).length;
+const landmark = entities.find(entity => entity.props?.landmark)?.props.landmark;
+if (!landmark) throw new Error('场景数据没有配置位置标记');
+const expectedFrame = [...landmark.focusBounds.min, ...landmark.focusBounds.max];
 const drafts = Object.entries(JSON.parse(readFileSync(new URL('out/drafts.json', root), 'utf8')))
   .sort((a, b) => Date.parse(b[1].createdAt) - Date.parse(a[1].createdAt));
 const [draftId, draft] = drafts[0] ?? [];
@@ -11,7 +20,9 @@ if (!previewUrl) throw new Error('尚未生成系统草稿预览链接');
 const isPreview = new URL(previewUrl).pathname === '/preview';
 mkdirSync(new URL('out/system-shots/', root), { recursive: true });
 const browser = await chromium.launch({
-  executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  ...(process.env.METAVERSE_E2E_BROWSER_PATH
+    ? { executablePath: process.env.METAVERSE_E2E_BROWSER_PATH }
+    : process.platform === 'darwin' ? { channel: 'chrome' } : {}),
   headless: true,
   args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
 });
@@ -34,10 +45,10 @@ try {
   const viewer = page.locator('.viewer');
   async function ready() {
     await page.locator('button[data-mode="extended"]').click();
-    await page.waitForFunction(() => {
+    await page.waitForFunction(expectedModels => {
       const v = document.querySelector('.viewer');
-      return v?.dataset.ready === 'true' && v.dataset.modelsPending === '0' && Number(v.dataset.modelsLoaded) >= 292;
-    }, undefined, { timeout: 240000 });
+      return v?.dataset.ready === 'true' && v.dataset.modelsPending === '0' && Number(v.dataset.modelsLoaded) === expectedModels;
+    }, expectedModels, { timeout: 240000 });
     if (await viewer.getAttribute('data-models-failed') !== '0') throw new Error('模型加载失败');
   }
   await page.goto(previewUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
@@ -64,20 +75,25 @@ try {
   }
   const canvas = await page.locator('.viewer__canvas').boundingBox();
   await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + canvas.height / 2);
-  for (let i = 0; i < 18; i++) await page.mouse.wheel(0, 400);
+  // 等浏览器逐次处理滚轮，避免软件渲染繁忙时输入事件合并。
+  for (let i = 0; i < 22; i++) {
+    await page.mouse.wheel(0, 400);
+    await page.waitForTimeout(120);
+  }
   await page.mouse.move(20, 20);
-  const marker = page.getByRole('button', { name: 'ChronoAI · 14层办公室', exact: true });
+  const marker = page.getByRole('button', { name: landmark.label, exact: true });
   await marker.waitFor({ state: 'visible', timeout: 20000 });
   await page.waitForTimeout(1000);
   const far = await viewer.evaluate(v => ({ ...v.dataset }));
-  if (far.overviewObjects !== '5') throw new Error('拉远后楼体片段没有全部显示');
+  if (Number(far.overviewObjects) !== expectedOverview) throw new Error('拉远后背景片段没有全部显示');
   await page.screenshot({ path: new URL('out/system-shots/tower-office-marker.png', root).pathname });
   await marker.click();
   await page.waitForFunction(() => document.querySelector('.viewer')?.dataset.overviewObjects === '0');
   await marker.waitFor({ state: 'hidden' });
   const returned = await viewer.evaluate(v => ({ ...v.dataset }));
   const frame = returned.frame.split(',').map(Number);
-  if (frame[3] - frame[0] > 12 || frame[5] - frame[2] > 16) throw new Error('点击标记未返回办公室');
+  if (frame.some((value, index) => Math.abs(value - expectedFrame[index]) > 0.01))
+    throw new Error('点击标记未返回场景配置的范围');
   await page.screenshot({ path: new URL('out/system-shots/office-return.png', root).pathname });
   const report = { draftId, near, far, returned, firstAssetRequests: firstAssets,
     reloadAssetRequests: assets.length - firstAssets, authorizations, cache, errors };
