@@ -273,3 +273,10 @@ nyxid proxy request chrono-cd "$APP/services/metaverse-api/secrets?org_id=$ORG" 
 
 - 发布页面另有 2 项个人/组织审批回归通过，直接加载生产静态资源，覆盖各自的首次点击审批、刷新复用、撤销及凭据不进入恢复记录；session/provider/审批页均为明确的 fixtures，未批准真实 NyxID 请求或执行 CMA 命令。
 - 可选的 [NyxID PR #2375](https://github.com/ChronoAIProject/NyxID/pull/2375) 提供通用 `owner_id` 审批偏好：只从已认证选项识别归属、优先显示对应 Key、预填可修改的新 Key 归属。它不包含 CMA/Metaverse 的权限规则；旧 #2373 已关闭。本版本运行不依赖该 PR 合并或部署。
+
+## 多份 CMA 连接的审批兼容修复（2026-11-11）
+
+- 线上新建的个人“Metaverse 网页”Key 可同时包含个人和组织的 CMA 连接。先前 API 要求每条 CMA 连接都与空间归属相同，导致 NyxID 批准成功后仍被拒绝，并撤销本次子凭据。这项额外限制已移除：Key owner 仍必须匹配当前空间归属，scope 仍仅允许 proxy，所有连接仍须为活动 CMA，且至少有一条已授权连接属于当前归属。不能用另一归属的 Key 或仅有其他归属的 CMA 连接代替。
+- chrono-cd 修订 25，generation 24；API `1/1`、web `2/2` 就绪。只更新 API 镜像为源码 `ec9b3403e86bc027075990bfec2a04620eaf4475`，摘要取自成功的 [Images 43038690581](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/43038690581)。网页仍为 `446eee58422c6606967620b5ec57661c8ba685d3`。已撤销的旧子凭据需要用户再次点击审批，复用对应归属的已有 Key 即可。
+- 28 项真实 MongoDB OAuth 集成测试、严格 clippy 和格式检查通过。新增回归验证个人/组织多份 CMA 连接的核验与交付、非 CMA 连接拒绝、缺失当前归属连接拒绝。生产 API 健康、匿名 poll/check 拒绝及 no-store 通过；规格仅 API 镜像与对应摘要变化，secret inventory、MongoDB 身份和前厅完整记录不变，日志无 ERROR/panic。CD 正常刷新 MongoDB provisioned_at 元数据。未代替用户审批或执行真实 CMA 命令。
+- Node 22 下 9 项相关浏览器场景及 32 项部署规格检查通过。源码 CI 的接口服务、网页单测与构建、SDK、本地重建、依赖审查和仓库检查通过；网页端到端任务在安装 Chromium 的 Ubuntu 软件源解析阶段失败（`Temporary failure resolving 'azure.archive.ubuntu.com'`），尚未执行浏览器测试，已重跑失败任务。不能将该轮完整 CI 记为全绿。

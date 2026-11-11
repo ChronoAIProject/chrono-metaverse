@@ -21,7 +21,7 @@
       }
     },
     "metaverse-api": {
-      "image": "ghcr.io/chronoaiproject/chrono-metaverse-api:446eee5@sha256:0e1633f337347085865e43270b2937498dfe6e2b71069e8609b1594b02d12737",
+      "image": "ghcr.io/chronoaiproject/chrono-metaverse-api:ec9b340@sha256:3db76a81a8312a557e8a76536f053f7460543bb087568c506089daf88d335c46",
       "port": 8080,
       "routes": [
         "/api"
