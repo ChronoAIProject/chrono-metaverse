@@ -54,7 +54,7 @@ CMA `docs/CMA_Operations.md` 的 “NyxID proxy access to the CMA API” 描述�
 
 ## 对当前草稿的审计
 
-[NyxID #2384](https://github.com/ChronoAIProject/NyxID/pull/2384) 混合了两类改动：
+已关闭、未合并的 [NyxID #2384](https://github.com/ChronoAIProject/NyxID/pull/2384) 混合了两类改动：
 
 | 改动 | 归属与结论 |
 |---|---|
@@ -85,4 +85,4 @@ Metaverse 已移除上述私有回执消费逻辑：成功响应保持 CMA 原 s
 
 ## 发布状态
 
-Metaverse OAuth 草稿及其镜像已构建，NyxID 混合草稿保持 draft；两边均未执行本次生产发布。暂缓联合发布，先完成上面的边界评审和真实链路验证。NyxID 生产部署入口仍缺失，已有的信息请求尚未得到入口，不能将镜像发布当作生产更新。
+Metaverse OAuth 草稿的早期镜像已构建，但它们早于私有回执依赖的移除，不能作为当前候选。NyxID 混合 PR 已被维护者关闭，未合并；其未完成的 CI/镜像构建已请求取消。两边均未执行本次生产发布。暂缓联合发布，先完成上面的边界评审和真实链路验证。NyxID 生产部署入口仍缺失，已有的信息请求尚未得到入口，不能将镜像发布当作生产更新。
