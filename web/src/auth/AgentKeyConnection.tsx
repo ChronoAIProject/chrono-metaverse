@@ -20,13 +20,16 @@ export function AgentKeyConnection({
   request,
   onChange,
   checkVersion = 0,
+  ownerName,
 }: {
   readonly session: Session;
   readonly request: typeof fetch;
   readonly onChange: (ready: boolean) => void;
   readonly checkVersion?: number;
+  readonly ownerName?: string;
 }) {
   const owner = session.cmaOwnerId ?? session.subject!;
+  const ownerLabel = owner === session.subject ? '个人账号' : (ownerName ?? '当前组织');
   const [identity, setIdentity] = useState<KeyIdentity | null>(null);
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   const [error, setError] = useState('');
@@ -203,6 +206,7 @@ export function AgentKeyConnection({
   }
   return (
     <section className="workspace__consent" aria-label="CMA 浏览器授权">
+      <p>当前空间使用：{ownerLabel}的 CMA</p>
       {ready && identity ? (
         <>
           <p>已连接 CMA · {identity.name}</p>
@@ -214,9 +218,16 @@ export function AgentKeyConnection({
         <>
           <h2>在 NyxID 确认 CMA 授权</h2>
           <p>
-            点击打开授权页，确认当前空间归属的 CMA 授权即可。请求和权限已自动填好，无需输入验证码或
-            Key。
+            请求码和 CMA 权限已填好，无需输入验证码或 Key。请在 NyxID 选择归属为 「{ownerLabel}」的
+            CMA 专用授权，然后确认。
           </p>
+          <details>
+            <summary>没有对应授权？</summary>
+            <p>
+              在 NyxID 点“新建 Agent Key”，展开“自定义”，选择「{ownerLabel}」作为归属，
+              只勾选该归属下的 CMA 服务，再点击创建并继续。名称、权限和期限已填好。
+            </p>
+          </details>
           <a href={enrollment.verification_uri} target="_blank" rel="noopener noreferrer">
             打开 NyxID 授权页
           </a>

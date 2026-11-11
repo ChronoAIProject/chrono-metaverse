@@ -1460,6 +1460,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                 <AgentKeyConnection
                   key={`${session.subject}:${session.csrfToken}:${session.cmaOwnerId}`}
                   session={session}
+                  ownerName={catalog?.organizations.find((o) => o.id === note.orgId)?.name}
                   request={request}
                   onChange={setKeyReady}
                   checkVersion={keyCheck}

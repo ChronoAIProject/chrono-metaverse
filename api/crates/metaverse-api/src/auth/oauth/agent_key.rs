@@ -113,7 +113,7 @@ impl Identity {
             return Err(ApiError::new(
                 StatusCode::FORBIDDEN,
                 "cma_key_account_mismatch",
-                "Agent Key 与当前连接账号不一致，请用同一账号重新授权",
+                "Agent Key 与当前空间归属不一致，请选择该个人或组织的 CMA 授权",
             ));
         }
         Ok(())
@@ -356,7 +356,6 @@ async fn request(State(state): State<AppState>, headers: HeaderMap) -> Result<Re
     // Preferences only. NyxID's human review owns selection and approval.
     url.query_pairs_mut().extend_pairs([
         ("user_code", request.user_code.as_str()),
-        ("owner_id", b.owner.id.as_str()),
         ("login_type", "agent"),
         ("key_source", "existing"),
         ("permissions", "proxy"),

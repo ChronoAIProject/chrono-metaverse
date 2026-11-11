@@ -17,10 +17,18 @@ async fn browser_key_owner_is_bound_to_live_membership_connection_and_task_conte
     let started = call_owner(&app, &cookie, "key/request", None, json!({}), Some(ORG)).await;
     assert_eq!(started.status, StatusCode::OK, "{}", started.body);
     let url = url::Url::parse(started.body["verification_uri"].as_str().unwrap()).unwrap();
-    assert_eq!(
-        url.query_pairs().find(|(k, _)| k == "owner_id").unwrap().1,
-        ORG
-    );
+    // The unmodified NyxID approval page rejects unknown preferences.
+    assert!(url.query_pairs().all(|(k, _)| matches!(
+        k.as_ref(),
+        "user_code"
+            | "login_type"
+            | "key_source"
+            | "permissions"
+            | "services"
+            | "key_name"
+            | "expiry_days"
+    )));
+    assert!(!url.query_pairs().any(|(k, _)| k == "owner_id"));
     for (key, owner) in [(personal, Some(ORG)), (org, None)] {
         let denied = call_owner(&app, &cookie, "key/check", Some(key), json!({}), owner).await;
         assert_eq!(denied.body["code"], "cma_key_account_mismatch");
