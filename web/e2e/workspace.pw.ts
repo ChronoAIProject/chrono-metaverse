@@ -545,10 +545,10 @@ test('恢复旧任务：手机直接看到沙箱阶段的授权阻塞', async ({
   await page.getByRole('button', { name: '打开 CMA 聊天' }).click();
   const scene = await page.locator('.workspace__scene').boundingBox();
   const chat = await page.getByRole('dialog', { name: 'CMA 空间聊天' }).boundingBox();
-  expect(scene!.width).toBe(390);
+  expect(scene!.width).toBe(page.viewportSize()!.width);
   expect(scene!.height).toBeGreaterThanOrEqual(chat!.height);
   expect(chat!.x).toBeGreaterThanOrEqual(8);
-  expect(chat!.x + chat!.width).toBeLessThanOrEqual(382);
+  expect(chat!.x + chat!.width).toBeLessThanOrEqual(page.viewportSize()!.width - 8);
   expect(chat!.y + chat!.height).toBeLessThanOrEqual(700);
   await page.getByText('需要完成 CMA 服务授权', { exact: true }).waitFor();
   await expect(page.getByText('需要完成 CMA 服务授权', { exact: true })).toBeInViewport();
