@@ -222,3 +222,15 @@ nyxid proxy request chrono-cd "$APP/services/metaverse-api/secrets?org_id=$ORG" 
 断开整个账号前，网页先撤销本标签页已保存的 CMA 子凭据；确认后清除本地记录，再删除服务端 OAuth 授权。撤销状态未知时保留入口供重试或到 NyxID 核对。撤销浏览器 CMA 凭据不停止已受理的 worker；worker 自己的业务服务 Key 仍由 CMA 管理。
 
 首次真实审批、CMA 环境授权和生产连续聊天需真实用户完成验收；模拟 provider、后端集成和浏览器夹具测试不能代替此验收。
+
+## 浏览器 CMA Key 部署记录（2026-11-11）
+
+- chrono-cd 修订 21，generation 20，API `1/1`、web `2/2` 就绪。运行源码 `b454ec589d4111590510761fafd4299042d1734a`，镜像来自 [Images 43012246438](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/43012246438) 的构建输出，按摘要固定：
+  - API：`ghcr.io/chronoaiproject/chrono-metaverse-api:b454ec5@sha256:55e1adfa7b4f6b94b3d3987757759f474d2e8c60c1408b87e8ba1addaf463a89`
+  - web：`ghcr.io/chronoaiproject/chrono-metaverse-web:b454ec5@sha256:6cf43120c92fdfca56cdf166facaa14962a5f95fb28f5a5dca3d3ea3a26bae82`
+- 用户要求 Agent Key 由浏览器保存。使用 NyxID 已有 Agent Key 登录审批，优先复用合适的已有 Key，并签发独立子凭据；存于独立 `sessionStorage` 项。固定接口实时核验账号与 CMA-only / proxy 范围，临时向 CMA 直接转发，不保存 Key，不用 OAuth 回退。账号/组织目录仍使用原加密用户 OAuth。
+- 本机通过 107 项 API 单元测试、26 项真实 MongoDB OAuth 集成测试、460 项网页全套测试及追加的 2 项断开测试；lint、类型、格式、构建通过。8 项 Chrome 场景通过，覆盖审批、刷新复用、撤销、聊天、发布确认和模型上传恢复。
+- 首次 CI 的 24 项浏览器测试有 1 项因页面关闭时资源回调尚未结束而失败。`64608a4d8a2623706134be4eced91e17448d7492` 只修正测试清理，等待回调完成，不抑制实际请求错误；同一恢复场景本机连续 5 次通过。生产代码与已构建镜像完全一致。随后 [CI 43013683472](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/43013683472) 全部任务通过，包括 24 项浏览器场景和 462 项网页测试。
+- 线上核验构建身份、健康、未登录访问拒绝、OAuth PKCE/scopes，以及 1280×720 的授权界面和模拟账号凭据复用，共 12 项通过。模拟账号仅用于检查已发布 UI，没有代替用户批准或执行真实 CMA 任务。部署补丁只改变镜像和相应摘要，其他服务配置及 secret inventory 不变；前厅完整记录部署前后相同，`head.seq=5`、commit `b7a6773f3b1e4866adccaa9dadad78e7`。
+- NyxID 两个域名的 Agent Key request 接口均实际返回预期形状；测试发起的未批准请求自然过期。直接跨域调用缺少所需预检/回执头支持；现有 NyxID CMA 代理的旧连接地址与目录部署不一致可返回 `cma_configuration_required`，其 admission 规则也未接入附件路径，因此此实现使用 CMA 已有服务绑定 Key 校验。没有修改全局目录、代理准入或拓宽授权。
+- [CMA #1638](https://github.com/ChronoAIProject/cma/issues/1638) 已因本接入无需扩展身份 OAuth 而关闭为 not planned；独立安全问题 #1579、#1580 保持开放。真实用户首次审批、CMA 环境授权和原第二条消息执行尚待验收；不以源码、模拟请求或部署健康替代真实执行结果。
