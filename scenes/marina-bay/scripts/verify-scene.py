@@ -8,6 +8,7 @@ import struct
 import numpy as np
 from PIL import Image
 import trimesh
+from scipy.spatial import ConvexHull
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -26,7 +27,15 @@ def main():
 
     buildings = json.loads((ROOT / 'build/onemap-entities.json').read_text())
     ground = json.loads((ROOT / 'build/ground.json').read_text())
-    entities = buildings + ground
+    placement = json.loads((ROOT / 'build/placement.json').read_text())
+    host = placement['hostEntities']
+    require(placement['officeContained'] and placement['minimumFacadeClearanceMeters'] > 0.05, '办公室没有完全位于 Tower 1 楼体内')
+    office = json.loads((ROOT / 'entities.json').read_text())
+    floor = next(entity for entity in office if entity['entityId'] == 'rb.floor')['shape']
+    outline = np.array(floor['outline']['points']) + np.array(floor['transform']['position'])[[0, 2]]
+    planes = ConvexHull(np.array(placement['sectionPolygon'])).equations
+    require((outline @ planes[:, :2].T + planes[:, 2]).max() < -0.05, '当前办公室地面超出 Tower 1 截面')
+    entities = buildings + ground + host
     require(len({item['entityId'] for item in entities}) == len(entities), '存在重复物件编号')
     results = []
     for entity in entities:
@@ -81,6 +90,7 @@ def main():
         'orthophotoTiles': ground[0]['props']['瓦片数'],
         'buildingParts': len(buildings),
         'groundParts': len(ground),
+        'hostTowerParts': len(host),
         'modelBytes': sum(item['bytes'] for item in results),
         'triangles': sum(item['triangles'] for item in results),
         'largestModelBytes': max(item['bytes'] for item in results),

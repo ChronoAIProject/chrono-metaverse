@@ -7,9 +7,9 @@
 - 官方页面：https://www.onemap.gov.sg/3d
 - 官方三维索引：https://www.onemap.gov.sg/omapi/tilesets/sg_noterrain_tiles/tileset.json
 - 官方正射影像：https://www.onemap.gov.sg/maps/tiles/OrthoJPG/{z}/{x}/{y}.png
-- 范围：西经度 103.8500、南纬度 1.2780、东经度 103.8647、北纬度 1.2918。
+- 范围：西界经度 103.8500、南纬度 1.2780、东经度 103.8647、北纬度 1.2918。
 - 下载 49 个最高精度 B3DM 分片，共 825,204,456 字节；另外下载 36 张第 17 级正射影像。
-- 转换出 257 个建筑部件、4 块影像地面，合计约 175 MiB。含金沙酒店、艺术科学博物馆、摩天轮、滨海湾周边建筑。
+- 转换出 257 个建筑部件、4 块影像地面，并增加 2 个 Tower 1 楼体剖面物件，合计约 176 MiB。含金沙酒店、艺术科学博物馆、摩天轮、滨海湾周边建筑。
 - `assets/onemap/manifest.json` 保留原始分片地址、SHA-256、批次属性和下载时间，`marina-bay.tileset.json` 可作为本地三维分片入口。
 - 署名：**Map Data © 2026 SLA**。原始数据没有随代码纳入 Git。
 
@@ -35,18 +35,24 @@ npm run shot
 
 地理参考来自官方 Tower 1 模型：纬度 `1.2801706774251347`、经度 `103.85419949862057`。模型的地心坐标经过 glTF 轴向校正后，转换为米制、y 向上的局部坐标，保留原始比例和建筑贴图。
 
-现有室内扫描没有提供地理朝向和十四层楼板标高。当前按**楼板标高 60 米、局部 +Z 指向北偏东 25°**配准，把海湾侧外墙放到室内主玻璃窗外。高度与朝向都是估值；需要现场窗景核准，不能视为测绘级定位。官方批次的楼层数不用于计算十四层高度。Tower 1 整栋外壳单独记录在 `build/own-tower.json`，不进入外景显示，以免挡住已重建室内。
+办公室位于 **MBFC Tower 1 内部的十四层**。原先按整栋楼的外包范围对齐，会让窗边落到该高度的外墙之外；现在用官方楼体在办公室高度的截面，匹配现有主玻璃的方向，并检查室内地面全部位于楼体内。`build/placement.json` 记录统一旋转约 −6.545°、平移约 `[4.042, 0, 1.606]` 米，最终局部 +Z 指向北偏东约 18.455°；已有办公室坐标保持原位。
 
-在 `scripts/convert-onemap.py` 修改 `OFFICE_HEIGHT`、`HEADING` 后，依次重跑转换和地面脚本即可整体调整。地面采用平面正射影像，水面和树木没有额外生成可运动的几何模型。
+现有室内扫描没有提供绝对标高与单元号。十四层楼板暂按 **60 米标高**，办公室沿外墙的位置暂取临滨海湾一侧，仍需现场核准。官方数据没有室内平面图，不能据此确定具体单元。
+
+`build/own-tower.json` 保留完整 Tower 1 外壳；`scripts/align-office.py` 从它生成所在楼层以下的楼体，保留官方外墙贴图，并按截面补一块示意结构楼板。楼体上方剖开供室内查看，示意楼板不代表整层装修或房间布局。两个新物件都在办公室下方，作为背景加入同一扩展地块。
+
+在 `scripts/convert-onemap.py` 修改 `OFFICE_HEIGHT`、`HEADING` 后，依次重跑转换、地面和楼内配准脚本即可整体调整。地面采用平面正射影像，水面和树木没有额外生成可运动的几何模型。
 
 ## 重新下载、转换和校验
 
 ```sh
+node ../../sdk/typescript/dist/cli.js pull
 uv venv .venv --python 3.14
 uv pip install --python .venv/bin/python -r requirements.txt
 .venv/bin/python scripts/download-onemap.py
 .venv/bin/python scripts/convert-onemap.py
 .venv/bin/python scripts/prepare-ground.py
+.venv/bin/python scripts/align-office.py
 .venv/bin/python scripts/verify-scene.py
 ```
 
@@ -72,6 +78,8 @@ node ../../sdk/typescript/dist/cli.js check
 node ../../sdk/typescript/dist/cli.js push --inline --preview-ttl 604800
 ```
 
-上传脚本最多并发三个模型，逐个等待系统的 GLB 核对任务完成。服务器已有同一模型时复用；上传清单保存在 `out/model-uploads.json`。`push` 生成系统预览链接，记录于 `out/drafts.json`。草稿不会自动发布；按建造技能要求，由人看过系统预览后再发布。
+仅重做楼体剖面时运行 `node scripts/upload-models.mjs --host`，其余 261 个模型直接复用已有资源，通过摆放变换整体配准。上传脚本最多并发三个模型，逐个等待系统的 GLB 核对任务完成。服务器已有同一模型时复用；上传清单保存在 `out/model-uploads.json`。`push` 生成系统预览链接，记录于 `out/drafts.json`。草稿不会自动发布；按建造技能要求，由人看过系统预览后再发布。
 
 `node scripts/check-system-preview.mjs` 直接打开线上系统生成的预览链接，依次验收扩展视图和原有室内视图，保存加载报告与截图到 `out/system-preview-check.json`、`out/system-shots/`。
+
+2026-11-12 楼内配准验收：所有 263 个扩展物件通过范围与模型校验；线上原生预览加载 315 个物件、287 个模型实例，300 个资源请求成功，无脚本或网络错误。办公室地面全部位于 Tower 1 的对应高度截面内，最近外墙余量约 0.12 米。默认取景与原有办公室一致。
