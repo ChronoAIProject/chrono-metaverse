@@ -1,7 +1,7 @@
 //! 用户 OAuth 托管组织查询；经浏览器明确同意后，可调用固定 CMA 操作。
 //! metaverse 业务接口仍只接受 NyxID 签名身份，worker 凭据由 CMA 管理。
-mod agent_key;
 pub(crate) mod catalog;
+mod cma_proxy;
 mod config;
 mod creation;
 mod crypto;

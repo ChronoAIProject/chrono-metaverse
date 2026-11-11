@@ -1,33 +1,11 @@
 import { expect, test } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => {
-    const identity = {
-      keyId: 'key-cma',
-      name: 'Metaverse CMA',
-      credentialId: 'browser-child',
-      credentialExpiresAt: null,
-      keyExpiresAt: null,
-    };
-    const subject = sessionStorage.getItem('fixture-key-subject') ?? 'web-owner';
-    sessionStorage.setItem(
-      'metaverse-cma-credential:v1',
-      JSON.stringify({ subject, credential: 'nyx_test_browser_worker', identity }),
-    );
-    sessionStorage.setItem(
-      'metaverse-cma-credential:v1:org:org-one',
-      JSON.stringify({
-        subject,
-        credential: 'nyx_test_org_worker',
-        identity: { ...identity, ownerId: 'org-one' },
-      }),
-    );
-  });
-  await page.route('**/api/auth/nyxid/worker/key/check', (route) =>
+  await page.route('**/api/auth/nyxid/worker/connection', (route) =>
     route.fulfill({
       json: {
         ownerId: route.request().headers()['x-metaverse-cma-owner'] ?? 'web-owner',
-        keyId: 'key-cma',
+        ready: true,
         name: 'Metaverse CMA',
         credentialId: 'browser-child',
         credentialExpiresAt: null,
@@ -70,11 +48,11 @@ test('在线工作台：明确授权、创建 worker、查看结果并确认发�
       });
       return route.fulfill({ response });
     }
-    if (path.endsWith('/key/check'))
+    if (path.endsWith('/connection'))
       return route.fulfill({
         json: {
           ownerId: route.request().headers()['x-metaverse-cma-owner'] ?? 'web-owner',
-          keyId: 'key-cma',
+          ready: true,
           name: 'Metaverse CMA',
           credentialId: 'browser-child',
           credentialExpiresAt: null,
@@ -203,10 +181,8 @@ test('在线工作台：明确授权、创建 worker、查看结果并确认发�
   await page.goto('/');
   await page.getByRole('link', { name: '打开在线工作台' }).click();
   await page.getByRole('button', { name: '打开 CMA 聊天' }).click();
-  const enable = page.getByRole('button', { name: '同意并启用' });
-  await expect(enable).toBeDisabled();
+  const enable = page.getByRole('button', { name: '启用 CMA 聊天' });
   expect(writes).toEqual([]);
-  await page.getByRole('checkbox', { name: /允许此浏览器/ }).check();
   await enable.click();
   await page.getByRole('button', { name: '选择空间', exact: true }).click();
   await page.getByRole('button', { name: /演示前厅/ }).click();
@@ -292,11 +268,11 @@ test('手机端：创建回复丢失后刷新页面，恢复原请求不会重�
       });
       return route.fulfill({ response });
     }
-    if (path.endsWith('/key/check'))
+    if (path.endsWith('/connection'))
       return route.fulfill({
         json: {
           ownerId: route.request().headers()['x-metaverse-cma-owner'] ?? 'web-owner',
-          keyId: 'key-cma',
+          ready: true,
           name: 'Metaverse CMA',
           credentialId: 'browser-child',
           credentialExpiresAt: null,
@@ -378,11 +354,11 @@ for (const loseUpload of [false, true])
     const uploadKeys: string[] = [];
     await page.route('**/api/auth/nyxid/**', async (route) => {
       const url = new URL(route.request().url());
-      if (url.pathname.endsWith('/key/check'))
+      if (url.pathname.endsWith('/connection'))
         return route.fulfill({
           json: {
             ownerId: route.request().headers()['x-metaverse-cma-owner'] ?? 'web-owner',
-            keyId: 'key-cma',
+            ready: true,
             name: 'Metaverse CMA',
             credentialId: 'browser-child',
             credentialExpiresAt: null,
@@ -529,11 +505,11 @@ test('恢复旧任务：手机直接看到沙箱阶段的授权阻塞', async ({
       });
     if (path.endsWith('/spaces'))
       return route.fulfill({ json: { items: [], organizations: [], next: null } });
-    if (path.endsWith('/key/check'))
+    if (path.endsWith('/connection'))
       return route.fulfill({
         json: {
           ownerId: route.request().headers()['x-metaverse-cma-owner'] ?? 'web-owner',
-          keyId: 'key-cma',
+          ready: true,
           name: 'Metaverse CMA',
           credentialId: 'browser-child',
           credentialExpiresAt: null,

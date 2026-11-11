@@ -8,7 +8,7 @@ use axum::{
     Json, Router,
 };
 use metaverse_core::{ids::is_subject_id, model::OrgRole};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
@@ -118,7 +118,24 @@ fn private(mut response: Response) -> Response {
     response
 }
 
-async fn login(State(state): State<AppState>) -> Result<Response, ApiError> {
+#[derive(Deserialize, Default)]
+struct Login {
+    workspace: Option<String>,
+}
+#[derive(Serialize, Deserialize)]
+struct Flow {
+    verifier: String,
+    workspace: bool,
+}
+impl Drop for Flow {
+    fn drop(&mut self) {
+        self.verifier.zeroize();
+    }
+}
+async fn login(
+    State(state): State<AppState>,
+    Query(query): Query<Login>,
+) -> Result<Response, ApiError> {
     let oauth = service(&state)?;
     let verifier = Zeroizing::new(crypto::random()?);
     let state = crypto::random()?;
@@ -126,7 +143,12 @@ async fn login(State(state): State<AppState>) -> Result<Response, ApiError> {
     let id = crypto::digest(&state);
     let browser_hash = crypto::digest(&browser);
     let aad = format!("{}/flow/{id}/{browser_hash}", oauth.namespace);
-    let sealed = oauth.vault.seal(verifier.as_bytes(), &aad)?;
+    let flow = Flow {
+        verifier: verifier.to_string(),
+        workspace: query.workspace.as_deref() == Some("1"),
+    };
+    let payload = Zeroizing::new(serde_json::to_vec(&flow).map_err(|_| OAuthError::Unavailable)?);
+    let sealed = oauth.vault.seal(&payload, &aad)?;
     oauth
         .repo
         .oauth_flow_put(&STORE, &id, &browser_hash, &sealed, seconds()? + 600)
@@ -136,11 +158,22 @@ async fn login(State(state): State<AppState>) -> Result<Response, ApiError> {
         ("response_type", "code"),
         ("client_id", oauth.config.client_id.as_str()),
         ("redirect_uri", oauth.config.redirect_uri.as_str()),
-        ("scope", "openid offline_access"),
+        (
+            "scope",
+            if oauth.config.cma_base_url.is_some() {
+                "openid offline_access proxy"
+            } else {
+                "openid offline_access"
+            },
+        ),
         ("state", state.as_str()),
         ("code_challenge", crypto::digest(&verifier).as_str()),
         ("code_challenge_method", "S256"),
     ]);
+    if oauth.config.cma_base_url.is_some() {
+        url.query_pairs_mut()
+            .append_pair("resource", oauth.endpoint("/api/v1/proxy/s/cma").as_str());
+    }
     let mut response = Redirect::to(url.as_str()).into_response();
     set_cookie(
         &mut response,
@@ -238,13 +271,21 @@ async fn finish_callback(
         &sealed,
         &format!("{}/flow/{id}/{browser_hash}", oauth.namespace),
     )?;
-    let verifier = std::str::from_utf8(&verifier).map_err(|_| OAuthError::Unavailable)?;
+    // Existing in-flight v1 flows contain only the PKCE verifier.
+    let flow = serde_json::from_slice::<Flow>(&verifier)
+        .or_else(|_| {
+            std::str::from_utf8(&verifier).map(|v| Flow {
+                verifier: v.into(),
+                workspace: false,
+            })
+        })
+        .map_err(|_| OAuthError::Unavailable)?;
     let code = query
         .code
         .as_deref()
         .filter(|v| !v.is_empty() && v.len() <= 4096)
         .ok_or(OAuthError::Reconnect)?;
-    let mut tokens = oauth.exchange(code, verifier).await?;
+    let mut tokens = oauth.exchange(code, &flow.verifier).await?;
     // userinfo 使用 provider 实时验证后的主体，不信任未验签 ID token 或浏览器自报 user_id。
     let subject = oauth.subject(&tokens.access_token).await?;
     tokens.subject_verified = true;
@@ -260,7 +301,28 @@ async fn finish_callback(
             seconds()? + SESSION_TTL,
         )
         .await?;
-    let mut response = Redirect::to("/connect?connected=1").into_response();
+    if flow.workspace && oauth.config.cma_base_url.is_some() {
+        let browser = oauth
+            .repo
+            .oauth_session_get(&STORE, &crypto::digest(&session), seconds()?)
+            .await?
+            .ok_or(OAuthError::Reconnect)?;
+        // The CMA authorization click also enables this browser. Actual service
+        // access still requires a successful proxy probe and is enforced by NyxID.
+        if !oauth
+            .repo
+            .oauth_worker_consent(&STORE, &browser, true, seconds()?)
+            .await?
+        {
+            return Err(OAuthError::Reconnect.into());
+        }
+    }
+    let mut response = Redirect::to(if flow.workspace {
+        "/workspace"
+    } else {
+        "/connect?connected=1"
+    })
+    .into_response();
     set_cookie(
         &mut response,
         FLOW_COOKIE,

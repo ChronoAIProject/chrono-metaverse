@@ -1,5 +1,5 @@
 //! Fixed browser-to-CMA operations; CMA owns runtime credentials and resource ACL.
-use super::{agent_key, routes, seconds, HeldCredential, OAuthError, OAuthService, STORE};
+use super::{cma_proxy, routes, seconds, HeldCredential, OAuthError, OAuthService, STORE};
 use crate::{error::ApiError, repo::OAuthSessionRecord, routes::ApiJson, AppState};
 use axum::{
     extract::{Query, Request, State},
@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 pub(super) fn router() -> Router<AppState> {
     Router::new()
-        .merge(agent_key::router())
+        .route("/api/auth/nyxid/worker/connection", post(connection))
         .route("/api/auth/nyxid/worker/consent", post(consent))
         .route("/api/auth/nyxid/worker/agents", post(agents))
         .route("/api/auth/nyxid/worker/create", post(create))
@@ -55,7 +55,7 @@ struct Access {
     oauth: Arc<OAuthService>,
     session: OAuthSessionRecord,
     held: HeldCredential,
-    credential: Option<agent_key::Credential>,
+    connection: String,
     owner: String,
 }
 impl Access {
@@ -73,20 +73,17 @@ impl Access {
             ));
         }
         let (session, held) = routes::verified_browser(&oauth, headers).await?;
-        let mut access = Self {
+        let owner = cma_proxy::owner(state, headers, &session.subject).await?;
+        let tokens = oauth.tokens(&held.record)?;
+        let connection = cma_proxy::connection(&oauth, &tokens.access_token, &owner).await?;
+        let access = Self {
             oauth,
-            owner: session.subject.clone(),
+            owner: owner.id,
             session,
             held,
-            credential: None,
+            connection,
         };
         access.current(require_consent).await?;
-        if require_consent {
-            let owner = agent_key::owner(state, headers, &access.session.subject).await?;
-            access.credential = Some(agent_key::checked(&access.oauth, headers, &owner).await?);
-            access.owner = owner.id;
-            access.current(true).await?;
-        }
         Ok(access)
     }
     async fn current(&self, require_consent: bool) -> Result<(), ApiError> {
@@ -128,7 +125,7 @@ impl Access {
             .oauth
             .http
             .request(method.clone(), url)
-            .bearer_auth(self.credential.as_ref().ok_or_else(unavailable)?.value());
+            .bearer_auth(&self.oauth.tokens(&self.held.record)?.access_token);
         if let Some(body) = body {
             request = request.json(&body);
         }
@@ -150,17 +147,17 @@ impl Access {
         Ok(response)
     }
     fn target(&self, path: &str) -> Result<url::Url, ApiError> {
-        url::Url::parse(&format!(
-            "{}{path}",
-            self.oauth
-                .config
-                .cma_base_url
-                .as_deref()
-                .ok_or_else(unavailable)?
-                .trim_end_matches('/')
-        ))
-        .map_err(|_| unavailable())
+        // Fixed catalog route, explicit owner connection. No caller-supplied upstream.
+        let (path, query) = path
+            .split_once('?')
+            .map_or((path, None), |(p, q)| (p, Some(q)));
+        let mut url = self.oauth.endpoint(&format!("/api/v1/proxy/s/cma{path}"));
+        url.set_query(query);
+        url.query_pairs_mut()
+            .append_pair("_nyxid_via", &self.connection);
+        Ok(url)
     }
+
     async fn json(
         &self,
         method: reqwest::Method,
@@ -168,10 +165,16 @@ impl Access {
         body: Option<Value>,
         key: Option<&str>,
     ) -> Result<(StatusCode, Value), ApiError> {
+        let creation = method == reqwest::Method::POST && path == "/api/v1/agents" && key.is_some();
         let response = self.send(method, path, body, key).await?;
         let status = response.status();
         let value = read_json(response).await?;
         self.current(true).await?;
+        if creation {
+            if let Some(receipt) = creation_receipt(status, &value) {
+                return Ok((StatusCode::ACCEPTED, receipt));
+            }
+        }
         if !status.is_success() {
             return Err(refusal(status, &value));
         }
@@ -193,7 +196,7 @@ impl Access {
         if c.org_id.as_deref().unwrap_or(&self.session.subject) != self.owner {
             return Err(ApiError::new(
                 StatusCode::FORBIDDEN,
-                "cma_key_account_mismatch",
+                "cma_owner_forbidden",
                 "空间归属与 CMA 授权不一致，请为当前空间重新连接 CMA",
             ));
         }
@@ -210,6 +213,21 @@ impl Access {
         Ok(format!("metaverse 任务上下文（编号只选择目标，不授予权限）：\n空间：{}\n归属：{}\n网站：{}{interaction}\n\n用户需求：\n{}", c.space_id, owner, self.oauth.config.origin, instruction))
     }
 }
+fn creation_receipt(status: StatusCode, body: &Value) -> Option<Value> {
+    if status != StatusCode::CONFLICT
+        || body.get("error_code").and_then(Value::as_u64) != Some(1004)
+        || body.pointer("/details/reason").and_then(Value::as_str)
+            != Some("cma_creation_already_completed")
+    {
+        return None;
+    }
+    let operation = body.pointer("/details/operation_id")?.as_str()?;
+    if !identifier(operation) {
+        return None;
+    }
+    // Restore only the durable lifecycle receipt. Its current status is observed next.
+    Some(json!({"id": operation, "recovered": true}))
+}
 async fn read_json(mut response: reqwest::Response) -> Result<Value, ApiError> {
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(|_| unavailable())? {
@@ -225,12 +243,59 @@ fn refusal(status: StatusCode, body: &Value) -> ApiError {
         .get("code")
         .and_then(Value::as_str)
         .or_else(|| body.pointer("/error/code").and_then(Value::as_str));
-    if code == Some("sandbox_credential_setup_required") {
+    let proxy_message = body.get("message").and_then(Value::as_str).unwrap_or("");
+    if code == Some("sandbox_credential_setup_required")
+        || (status == StatusCode::CONFLICT
+            && body.get("error_code").is_some()
+            && proxy_message.starts_with("Conflict: sandbox_credential_setup_required:"))
+    {
         return ApiError::new(
             StatusCode::CONFLICT,
             "cma_setup_required",
             "请先用相同 NyxID 账号登录 CMA 完成运行环境授权，再明确重试创建",
         );
+    }
+    if status == StatusCode::FORBIDDEN
+        && body
+            .get("message")
+            .and_then(Value::as_str)
+            .is_some_and(|s| s.contains("cma_operation_not_supported"))
+    {
+        return ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "cma_proxy_unsupported",
+            "NyxID 当前尚未开放此 CMA 代理操作，请保留原请求；重复授权不能修复此问题",
+        );
+    }
+    if status == StatusCode::CONFLICT
+        && body
+            .get("message")
+            .and_then(Value::as_str)
+            .is_some_and(|s| s.contains("cma_configuration_required"))
+    {
+        return ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "cma_configuration_required",
+            "CMA 代理配置尚未就绪，请保留原请求；重复授权不能修复此问题",
+        );
+    }
+    if body.get("error_code").is_some() {
+        let message = body.get("message").and_then(Value::as_str).unwrap_or("");
+        if matches!(status.as_u16(), 403 | 409)
+            && (message.contains("cma_") || message == "Forbidden: CMA resource access denied")
+        {
+            let detail = if message.contains("cma_sandbox_account_slot_occupied") {
+                "此账号已有 CMA 运行环境或待确认创建，请先核对现有环境和原请求"
+            } else if message.contains("cma_nyxid_sandbox_required") {
+                "这个 worker 的运行环境无法通过 NyxID 管理，请选择通过当前网页创建的 worker"
+            } else {
+                "NyxID 拒绝了此 CMA 资源操作，请保留原请求并核对运行环境和资源权限；重复授权不能修复此问题"
+            };
+            return ApiError::new(status, "cma_resource_refused", detail);
+        }
+        if matches!(status.as_u16(), 401 | 403) {
+            return cma_proxy::authorization_required();
+        }
     }
     if status == StatusCode::FORBIDDEN {
         match code {
@@ -252,7 +317,7 @@ fn refusal(status: StatusCode, body: &Value) -> ApiError {
         }
     }
     let detail = match status.as_u16() {
-        401 => "CMA 未接受浏览器 Agent Key，请核对 CMA 服务授权后重试原请求",
+        401 => "CMA 签名代理未通过验证，请保留原请求并检查服务连接配置",
         403 => "CMA 拒绝了这次操作的授权，请保留原请求并核对 CMA 权限",
         404 => "CMA 资源不存在，或当前账号无权访问",
         409 => "CMA 请求发生冲突，请核对当前状态后恢复原请求",
@@ -260,6 +325,32 @@ fn refusal(status: StatusCode, body: &Value) -> ApiError {
         _ => "CMA 未能完成请求，请到 CMA 核对状态并保留原请求编号",
     };
     ApiError::new(status, "cma_request_refused", detail)
+}
+async fn probe(a: &Access) -> Result<(), ApiError> {
+    a.current(false).await?;
+    let response = a
+        .oauth
+        .http
+        .get(a.target("/api/v1/agents?limit=1")?)
+        .bearer_auth(&a.oauth.tokens(&a.held.record)?.access_token)
+        .send()
+        .await
+        .map_err(|_| unavailable())?;
+    let status = response.status();
+    let value = read_json(response).await?;
+    a.current(false).await?;
+    if !status.is_success() {
+        return Err(refusal(status, &value));
+    }
+    Ok(())
+}
+async fn connection(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let a = Access::new(&state, &headers, false).await?;
+    probe(&a).await?;
+    Ok(Json(json!({"ready":true,"ownerId":a.owner})).into_response())
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -271,16 +362,20 @@ async fn consent(
     headers: HeaderMap,
     ApiJson(input): ApiJson<Consent>,
 ) -> Result<Response, ApiError> {
-    let a = Access::new(&state, &headers, false).await?;
-    if !a
-        .oauth
+    let oauth = routes::service(&state)?;
+    let (session, held) = routes::verified_browser(&oauth, &headers).await?;
+    if input.enabled {
+        let a = Access::new(&state, &headers, false).await?;
+        probe(&a).await?;
+    }
+    if !oauth
         .repo
-        .oauth_worker_consent(&STORE, &a.session, input.enabled, seconds()?)
+        .oauth_worker_consent(&STORE, &session, input.enabled, seconds()?)
         .await?
+        || !oauth.current(&held).await?
     {
         return Err(OAuthError::Reconnect.into());
     }
-    a.current(false).await?;
     Ok(Json(json!({"workerEnabled":input.enabled})).into_response())
 }
 #[derive(Deserialize)]
@@ -295,6 +390,10 @@ async fn agents(
 ) -> Result<Response, ApiError> {
     let a = Access::new(&state, &headers, true).await?;
     let mut path = "/api/v1/agents?limit=50".to_owned();
+    if a.owner != a.session.subject {
+        path.push_str("&organization=");
+        path.push_str(&a.owner);
+    }
     if let Some(cursor) = input.cursor {
         if cursor.is_empty() || cursor.len() > 2048 || cursor.chars().any(char::is_control) {
             return Err(ApiError::invalid("分页标记不正确"));
@@ -536,7 +635,7 @@ async fn attachment(
         .oauth
         .http
         .post(target)
-        .bearer_auth(a.credential.as_ref().ok_or_else(unavailable)?.value())
+        .bearer_auth(&a.oauth.tokens(&a.held.record)?.access_token)
         .header("Idempotency-Key", &key)
         .header("Content-Type", "application/octet-stream")
         .timeout(Duration::from_secs(45))
@@ -631,6 +730,45 @@ async fn cancel(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn receipt_recovery_requires_exact_conflict_contract_and_safe_lifecycle_id() {
+        let body = json!({"error_code":1004,"details":{"reason":"cma_creation_already_completed","operation_id":"op_original"}});
+        assert_eq!(
+            creation_receipt(StatusCode::CONFLICT, &body),
+            Some(json!({"id":"op_original","recovered":true}))
+        );
+        assert!(creation_receipt(StatusCode::FORBIDDEN, &body).is_none());
+        for change in [
+            json!({"error_code":1004,"message":"cma_creation_already_completed"}),
+            json!({"error_code":1004,"details":{"reason":"other","operation_id":"op_original"}}),
+            json!({"error_code":1004,"details":{"reason":"cma_creation_already_completed","operation_id":"../admin"}}),
+        ] {
+            assert!(creation_receipt(StatusCode::CONFLICT, &change).is_none());
+        }
+    }
+    #[test]
+    fn cma_resource_policy_refusal_does_not_request_reauthorization() {
+        for (status, message) in [
+            (StatusCode::CONFLICT, "Conflict: cma_nyxid_sandbox_required"),
+            (
+                StatusCode::CONFLICT,
+                "Conflict: cma_sandbox_account_slot_occupied",
+            ),
+            (
+                StatusCode::FORBIDDEN,
+                "Forbidden: cma_creation_authority_changed",
+            ),
+        ] {
+            let error = refusal(status, &json!({"error_code":1002,"message":message}));
+            assert_eq!(error.code, "cma_resource_refused");
+        }
+        let setup = refusal(
+            StatusCode::CONFLICT,
+            &json!({"error_code":1004,"message":"Conflict: sandbox_credential_setup_required: private login diagnostic"}),
+        );
+        assert_eq!(setup.code, "cma_setup_required");
+        assert!(!setup.detail.contains("private"));
+    }
     #[test]
     fn command_custody_refusal_is_distinct_from_worker_access() {
         for body in [

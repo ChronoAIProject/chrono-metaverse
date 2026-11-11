@@ -69,7 +69,7 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 | `METAVERSE_DEMO_SEED` | [`demo-seed.json`](demo-seed.json) 压缩成的一行 | 部署配置种子：接口服务启动、建好索引后在后台建演示空间 `chronoai-lobby`，带重建包时导入它（第 8 步）。改种子时两处一起改，`check-app.mjs` 检查一致。现在是第 4 版，带前厅第 4 版的重建包（[`demo/lobby-r4/`](demo/lobby-r4/)），线上 2026-11-10 已导入（第 5 次提交），之后重启是 `AlreadyDone` |
 | `METAVERSE_DEMO_SEED_HOSTS` | `raw.githubusercontent.com,github.com,release-assets.githubusercontent.com,objects.githubusercontent.com,scaniverse.com` | 种子允许下载的主机（只用 https，重定向的每一跳都查，最多 5 跳）：清单和来源表在 `raw.githubusercontent.com`，发布页的文件从 `github.com` 重定向到 `release-assets.githubusercontent.com` 或 `objects.githubusercontent.com`，扫描成员在 `scaniverse.com`。有种子时 `check-app.mjs` 要求显式写出，并且和 `infra/dev/up.sh` 的默认值相同 |
 | `METAVERSE_DEMO_SHARE_TOKEN` | **密钥**（`secret_keys`，不在 `env` 里） | 演示空间的分享令牌原文，接口服务只存它的 sha256、不写日志；用 `set_app_secrets` 设置（第 5 步）。种子是凭链接查看（`unlisted`）时必须有，缺了接口服务启动失败 |
-| `CMA_BASE_URL` | `https://cma.nyxid.ai` | 网页在线 worker 的固定 CMA API 地址；不设置则关闭 worker 调用。沿用现有 OAuth scopes，用户需在工作台明确启用 |
+| `CMA_BASE_URL` | `https://cma.nyxid.ai` | 启用网页在线 worker，并提供 CMA 官方页面入口；请求经 NyxID 固定 CMA 代理。OAuth 申请 `openid offline_access proxy` 与 CMA 服务授权，用户需在工作台明确启用 |
 | `NYXID_OAUTH_CLIENT_ID` | `be885bc0-94fd-4a30-bb5e-613723cd0eef` | ChronoAI 组织的 chrono-metaverse 保密 OAuth 客户端；回调为本站 `/api/auth/nyxid/callback` |
 | `NYXID_OAUTH_CLIENT_SECRET` / `NYXID_OAUTH_ENCRYPTION_KEY` | **密钥** | 客户端秘密及 32 字节随机加密密钥，使用应用密钥注入；见 [OAuth 部署说明](../../docs/NYXID_OAUTH.md) |
 | `RUST_LOG` | `info` | |

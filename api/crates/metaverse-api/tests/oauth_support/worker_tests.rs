@@ -6,27 +6,28 @@ pub(super) fn routes(provider: MockProvider, app: Router) -> Router {
     let message = provider.clone();
     let control = provider.clone();
     let attachment = provider.clone();
-    app.route("/api/v1/agents", get(move |headers: HeaderMap| {
+    let proxy = app.route("/api/v1/agents", get(move |headers: HeaderMap| {
         let p = list.clone(); async move {
             let s = p.0.lock().unwrap();
             let token = headers[header::AUTHORIZATION].to_str().unwrap().strip_prefix("Bearer ").unwrap();
-            assert!(s.browser_keys.contains_key(token));
+            assert!(s.access.contains_key(token));
             assert!(!headers.contains_key(header::COOKIE));
             Json(json!({"items":[{"id":"agt_test","title":"Builder","status":"working"}],"next":null}))
         }
     }).post(move |headers: HeaderMap, Json(body): Json<Value>| {
         let p = create.clone(); async move {
-            let (gate, entered, setup) = {
+            let (gate, entered, setup, completed) = {
                 let mut s=p.0.lock().unwrap();
                 let token=headers[header::AUTHORIZATION].to_str().unwrap().strip_prefix("Bearer ").unwrap();
-                assert!(s.browser_keys.contains_key(token));
+                assert!(s.access.contains_key(token));
                 assert!(!headers.contains_key(header::COOKIE));
                 s.worker_calls.push(("create".into(),headers["idempotency-key"].to_str().unwrap().into(),body));
-                (s.worker_gate.clone(),s.worker_entered.clone(),s.worker_setup_required)
+                (s.worker_gate.clone(),s.worker_entered.clone(),s.worker_setup_required,s.worker_completed_receipt)
             };
             if let Some(n)=entered {n.notify_one();}
             if let Some(n)=gate {n.notified().await;}
             if setup { return (StatusCode::CONFLICT,Json(json!({"code":"sandbox_credential_setup_required","detail":"secret provider diagnostic"}))).into_response(); }
+            if completed { return (StatusCode::CONFLICT, Json(json!({"error":"conflict","error_code":1004,"details":{"reason":"cma_creation_already_completed","operation_id":"op_test","agent_id":"agt_test"}}))).into_response(); }
             (StatusCode::ACCEPTED,Json(json!({"id":"op_test","status":"pending"}))).into_response()
         }
     }))
@@ -37,7 +38,7 @@ pub(super) fn routes(provider: MockProvider, app: Router) -> Router {
             let hash = format!("{:x}", Sha256::digest(&bytes));
             let receipt = json!({"id":"att_test","agent_id":id,"name":name,"path":format!("/home/attachments/{id}/att_test/{name}"),"size_bytes":bytes.len(),"media_type":"application/octet-stream","sha256":if name == "bad.glb" {"bad"} else {&hash}});
             let mut state = p.0.lock().unwrap();
-            assert!(state.browser_keys.contains_key(token));
+            assert!(state.access.contains_key(token));
             assert!(!headers.contains_key(header::COOKIE));
             state.worker_calls.push(("attachment".into(),headers["idempotency-key"].to_str().unwrap().into(),receipt.clone()));
             (StatusCode::CREATED, Json(receipt))
@@ -64,15 +65,20 @@ pub(super) fn routes(provider: MockProvider, app: Router) -> Router {
         let p = provider.clone();
         async move {
             assert!(!request.headers().contains_key(header::COOKIE));
-            let valid = request.headers().get(header::AUTHORIZATION).and_then(|v|v.to_str().ok()).and_then(|v|v.strip_prefix("Bearer ")).is_some_and(|v|p.0.lock().unwrap().browser_keys.contains_key(v));
+            let query: HashMap<String, String> = url::form_urlencoded::parse(request.uri().query().unwrap_or("").as_bytes()).into_owned().collect();
+            assert!(matches!(query.get("_nyxid_via").map(String::as_str), Some("cma_personal" | "cma_org")));
+            p.0.lock().unwrap().proxy_queries.push(query);
+            if p.0.lock().unwrap().proxy_denied { return (StatusCode::FORBIDDEN, Json(json!({"error_code":1003,"message":"private permission diagnostic"}))).into_response(); }
+            if p.0.lock().unwrap().proxy_configuration_required { return (StatusCode::CONFLICT, Json(json!({"error_code":1004,"message":"Conflict: cma_configuration_required"}))).into_response(); }
+            let valid = request.headers().get(header::AUTHORIZATION).and_then(|v|v.to_str().ok()).and_then(|v|v.strip_prefix("Bearer ")).is_some_and(|v|p.0.lock().unwrap().access.contains_key(v));
             if !valid { return StatusCode::UNAUTHORIZED.into_response(); }
             next.run(request).await
         }
-    }))
+    }));
+    Router::new().nest("/api/v1/proxy/s/cma", proxy)
 }
 
-async fn call(app: &TestApp, cookie: &str, action: &str, body: Value) -> Reply {
-    agent_key_tests::register_org(&app.nyx.oauth);
+pub(super) async fn call(app: &TestApp, cookie: &str, action: &str, body: Value) -> Reply {
     let s = session(app, cookie).await;
     let csrf = s.body["csrfToken"].as_str().unwrap();
     app.send(
@@ -82,7 +88,6 @@ async fn call(app: &TestApp, cookie: &str, action: &str, body: Value) -> Reply {
             ("cookie", cookie),
             ("origin", ORIGIN),
             ("x-csrf-token", csrf),
-            ("authorization", "Bearer nyx_browser_org_credential"),
             ("x-metaverse-cma-owner", ORG),
         ],
         Some(body),
@@ -91,6 +96,38 @@ async fn call(app: &TestApp, cookie: &str, action: &str, body: Value) -> Reply {
 }
 fn task() -> Value {
     json!({"context":{"spaceId":"lobby","orgId":ORG},"instruction":"在入口建欢迎区，先预览","idempotencyKey":"stable-create-000001"})
+}
+
+#[tokio::test]
+async fn confirmed_creation_retry_restores_receipt_without_claiming_live_status() {
+    let app = TestApp::start_with_options(true, true)
+        .await
+        .expect("MongoDB required");
+    let cookie = connect(&app, "receipt-owner", 3600).await;
+    assert_eq!(
+        call(&app, &cookie, "consent", json!({"enabled":true}))
+            .await
+            .status,
+        StatusCode::OK
+    );
+    let original = call(&app, &cookie, "create", task()).await;
+    assert_eq!(original.status, StatusCode::ACCEPTED);
+    app.nyx.oauth.0.lock().unwrap().worker_completed_receipt = true;
+    let recovered = call(&app, &cookie, "create", task()).await;
+    assert_eq!(recovered.status, StatusCode::ACCEPTED, "{}", recovered.body);
+    assert_eq!(recovered.body, json!({"id":"op_test","recovered":true}));
+    {
+        let s = app.nyx.oauth.0.lock().unwrap();
+        assert_eq!(s.worker_calls[0], s.worker_calls[1]);
+    }
+    let observed = call(
+        &app,
+        &cookie,
+        "observe",
+        json!({"operationId":recovered.body["id"]}),
+    )
+    .await;
+    assert_eq!(observed.body["operation"]["agent_id"], "agt_test");
 }
 
 #[tokio::test]
@@ -160,7 +197,30 @@ async fn worker_requires_browser_consent_and_preserves_service_scope_and_request
     );
     let mut message = task();
     message["agentId"] = json!("agt_test");
-    let reply = call(&app, &cookie, "message", message).await;
+    let reply = call(&app, &cookie, "message", message.clone()).await;
+    message["idempotencyKey"] = json!("stable-followup-000002");
+    message["instruction"] = json!("再把灯光调暖一些");
+    let followup = call(&app, &cookie, "message", message.clone()).await;
+    assert_eq!(followup.status, StatusCode::ACCEPTED, "{}", followup.body);
+    assert_eq!(
+        call(&app, &cookie, "message", message).await.body,
+        followup.body
+    );
+    {
+        let state = app.nyx.oauth.0.lock().unwrap();
+        let messages: Vec<_> = state
+            .worker_calls
+            .iter()
+            .filter(|c| c.0 == "message")
+            .collect();
+        assert_eq!(messages.len(), 3);
+        assert_ne!(messages[0].1, messages[1].1);
+        assert_eq!(messages[1], messages[2]);
+        assert!(state
+            .proxy_queries
+            .iter()
+            .any(|q| q.get("organization").map(String::as_str) == Some(ORG)));
+    }
     assert_eq!(reply.status, StatusCode::ACCEPTED, "{}", reply.body);
     assert_eq!(
         reply.body,
@@ -341,7 +401,6 @@ async fn upload(
         .uri(format!(
             "{ROOT}/worker/attachment?agentId=agt_test&name={name}"
         ))
-        .header("authorization", "Bearer nyx_browser_upload-owner")
         .header("cookie", cookie)
         .header("origin", ORIGIN)
         .header("x-csrf-token", csrf)

@@ -4,8 +4,8 @@ use axum::{extract::Form, routing::post};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
-mod agent_key_tests;
 mod catalog_tests;
+mod cma_proxy_tests;
 mod worker_tests;
 
 const ROOT: &str = "/api/auth/nyxid";
@@ -37,11 +37,12 @@ struct ProviderState {
     serial: u64,
     refreshes: usize,
     worker_calls: Vec<(String, String, Value)>,
-    browser_keys: HashMap<String, Value>,
-    key_delivery: Option<Value>,
-    key_revocations: Vec<String>,
+    proxy_denied: bool,
+    proxy_configuration_required: bool,
+    proxy_queries: Vec<HashMap<String, String>>,
     key_message_failure: bool,
     worker_setup_required: bool,
+    worker_completed_receipt: bool,
     worker_gate: Option<Arc<tokio::sync::Notify>>,
     worker_entered: Option<Arc<tokio::sync::Notify>>,
     role: Option<String>,
@@ -152,7 +153,7 @@ impl MockProvider {
                 }
             }
         }));
-        agent_key_tests::routes(self.clone(), app)
+        cma_proxy_tests::routes(self.clone(), app)
             .merge(worker_tests::routes(self.clone(), Router::new()))
     }
 }
@@ -172,8 +173,19 @@ fn response_cookie(reply: &Reply, name: &str) -> String {
 }
 
 async fn begin(app: &TestApp, subject: &str, ttl: i64) -> (String, String) {
+    begin_at(app, subject, ttl, false).await
+}
+async fn begin_at(app: &TestApp, subject: &str, ttl: i64, workspace: bool) -> (String, String) {
     let login = app
-        .send(Method::GET, &format!("{ROOT}/login"), &[], None)
+        .send(
+            Method::GET,
+            &format!(
+                "{ROOT}/login{}",
+                if workspace { "?workspace=1" } else { "" }
+            ),
+            &[],
+            None,
+        )
         .await;
     assert_eq!(login.status, StatusCode::SEE_OTHER);
     assert_eq!(login.headers[header::CACHE_CONTROL], "no-store");
@@ -186,7 +198,8 @@ async fn begin(app: &TestApp, subject: &str, ttl: i64) -> (String, String) {
         .query_pairs()
         .map(|(k, v)| (k.into_owned(), v.into_owned()))
         .collect();
-    assert_eq!(params["scope"], "openid offline_access");
+    assert_eq!(params["scope"], "openid offline_access proxy");
+    assert!(params["resource"].ends_with("/api/v1/proxy/s/cma"));
     assert_eq!(params["code_challenge_method"], "S256");
     let code = uuid::Uuid::new_v4().to_string();
     app.nyx.oauth.0.lock().unwrap().codes.insert(
@@ -211,7 +224,6 @@ async fn connect(app: &TestApp, subject: &str, ttl: i64) -> String {
     assert_eq!(reply.status, StatusCode::SEE_OTHER, "{}", reply.body);
     assert_eq!(reply.headers[header::LOCATION], "/connect?connected=1");
     assert!(!format!("{:?}", reply.headers).contains("oauth-access"));
-    agent_key_tests::register(&app.nyx.oauth, subject);
     response_cookie(&reply, "mv_nyx_session")
 }
 

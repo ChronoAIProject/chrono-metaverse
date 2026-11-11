@@ -20,7 +20,23 @@ Agent 原有 Key → NyxID（Key / 服务 / 操作范围检查）
                  metaverse 资源 ACL → 执行业务操作
 ```
 
-OAuth 默认用于 `/oauth/userinfo`、`/oauth/token`、当前用户的组织列表和组织角色查询。用户在 `/workspace` 另行通过 NyxID 的 Agent Key 登录审批连接 CMA；仅 CMA / proxy 的登录子凭据保存在本标签页 `sessionStorage`，Metaverse 固定接口临时转发给 CMA，CMA 向 NyxID 校验服务绑定。CMA 请求不使用已保存的用户 OAuth，不增加 OAuth scope。metaverse 业务操作仍以本次 NyxID 签名身份执行。浏览器连接 Cookie 不能认证 `/api/v1/*`。个人资源、组织主体直接访问自己的资源，以及公开/分享链接的原有规则继续生效。
+网页 CMA 接入改为复用同一份加密 OAuth 授权。启用 CMA 时请求 `openid offline_access proxy` 和唯一 CMA `resource`，客户端默认服务只预选 CMA，用户仍可取消。浏览器仅持有 HttpOnly 会话 Cookie；旧版本保存的 CMA 登录子凭据和待审批记录会从网页存储清除，不复制到服务端。任务、聊天和幂等恢复记录保持原样。
+
+```text
+浏览器（Cookie + CSRF）
+  → metaverse 固定 CMA 接口
+    → NyxID /proxy/s/cma（OAuth 服务授权 + 指定个人/组织连接）
+      → CMA（短期签名身份 + 资源权限检查）
+        → CMA 自己持有的可续期运行凭据 → worker
+```
+
+`POST /api/auth/nyxid/worker/connection` 使用真实只读代理请求核验 CMA 授权；列出服务或存在浏览器会话都不能证明已连接。选择组织连接前实时检查组织成员权限；签名身份始终是实际用户，选择组织连接不会把用户变成组织主体，也不表示 CMA 已支持组织资源 provisioning。CMA API 继续决定资源的真实归属和可操作权限。缺少 grant 显示 OAuth 补授权入口；配置冲突和未开放操作显示服务错误，不诱导重复授权。创建新 Sandbox 仍可能要求同账号先完成 CMA 官方登录。
+
+从工作台点击授权，成功后返回 `/workspace` 并启用该浏览器的 CMA 调用；不会自动重放消息。普通 `/connect` 回调仍返回连接页。关闭 CMA、重新授权和断开时继续检查会话和同意版本，禁止在途请求越过撤销。模型二进制上传也经过相同代理，原文件摘要、请求正文及幂等编号保持一致。连接 Cookie 只认证固定网页接口，不能认证 `/api/v1/*`。
+
+本次上线前必须同时验证 NyxID 的代理依赖：旧无凭据自动连接的目录地址一致性、用户通过组织连接时的实际 actor、附件准入，以及既有 NyxID Sandbox 容量和来源约束。2026-11-12 的线上只读探测仍分别返回 `cma_configuration_required` 和 `cma_operation_not_supported`；本地模拟通过不能替代真实创建和连续消息验收。以下按日期记录的旧方案仅作历史记录。
+
+创建请求已经被 NyxID 确认但网页遗失响应时，只接受结构化的 `cma_creation_already_completed` 回执，恢复原 lifecycle 编号，再读取真实状态；不生成新编号或宣称任务成功。旧 worker 若不满足 NyxID 原有运行环境来源/容量要求，网页显示资源错误并保留原请求，不引导重复 OAuth。组织 CMA 连接选择仍与空间归属对应，但签名中的执行者始终是当前用户；组织资源创建能力取决于 CMA 与 NyxID 已发布的接口。
 
 ## 网页管理
 
@@ -36,13 +52,13 @@ OAuth 默认用于 `/oauth/userinfo`、`/oauth/token`、当前用户的组织列
 
 上述 POST 接口均要求本浏览器有效会话、同源 `Origin` 和会话绑定的 `x-csrf-token`。账号始终取服务端会话，不接受网页指定其他账号或任意 provider URL；查询完成后复核授权版本，不能越过并发断开或重新授权。浏览器不会收到 OAuth 访问令牌、刷新令牌或客户端秘密。
 
-OAuth 回调成功后返回 `/connect?connected=1`；取消、过期、provider 故障和未启用分别返回固定错误标记，网页显示恢复入口。回调参数、授权码、state 和 provider 错误原文均不转发到网页；标记显示后从浏览器当前地址移除。断开仅影响本部署保存的授权，如需远端撤销，页面提供 NyxID 入口。
+普通 OAuth 回调成功后返回 `/connect?connected=1`，从工作台发起则返回固定 `/workspace`；取消、过期、provider 故障和未启用分别返回固定错误标记，网页显示恢复入口。回调参数、授权码、state 和 provider 错误原文均不转发到网页；标记显示后从浏览器当前地址移除。断开仅影响本部署保存的授权，如需远端撤销，页面提供 NyxID 入口。
 
 ## 配置
 
-在 NyxID 注册一个专用于此部署的**保密 OAuth 客户端**，支持 `authorization_code`、`refresh_token`、PKCE S256、`client_secret_post`，允许 scopes `openid offline_access`。不用为这个客户端授予业务服务的代理访问范围；它不代理业务请求。现有 NyxID 的普通用户组织查询接口以用户身份判定成员权限，不要求新增组织 scope。此结论根据 NyxID 源码核对；实际部署仍需完成下文的线上验收。
+在 NyxID 注册一个专用于此部署的**保密 OAuth 客户端**，支持 `authorization_code`、`refresh_token`、PKCE S256、`client_secret_post`，启用 CMA 时允许 scopes `openid offline_access proxy`，将默认服务设为 `cma`；未配置 CMA 时只申请 `openid offline_access`。CMA 服务 grant 必须由用户明确确认。现有 NyxID 的普通用户组织查询接口以用户身份判定成员权限，不要求新增组织 scope。此结论根据 NyxID 源码核对；实际部署仍需完成下文的线上验收。
 
-`openid offline_access` 是当前申请的最小 scope 集合，但 NyxID 现有普通用户组织接口没有“仅查询角色”的专用 scope。账号核验和组织查询是 metaverse 对已保存 OAuth 的代码使用边界，不代表 provider 已将令牌硬限制到这些接口；令牌仍须按敏感用户凭据保护，其他接口能否接受它取决于各服务路由的身份、scope 及资源检查。
+CMA 的服务授权由 NyxID 代理强制检查； NyxID 现有普通用户组织接口没有“仅查询角色”的专用 scope。账号核验和组织查询是 metaverse 对已保存 OAuth 的代码使用边界，不代表 provider 已将令牌硬限制到这些接口；令牌仍须按敏感用户凭据保护，其他接口能否接受它取决于各服务路由的身份、scope 及资源检查。
 
 回调地址必须精确注册为：
 
