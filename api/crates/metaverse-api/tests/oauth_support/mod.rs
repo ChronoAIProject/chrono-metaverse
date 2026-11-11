@@ -42,7 +42,7 @@ struct ProviderState {
     proxy_queries: Vec<HashMap<String, String>>,
     key_message_failure: bool,
     worker_setup_required: bool,
-    worker_completed_receipt: bool,
+    worker_creation_proxy_conflict: bool,
     worker_gate: Option<Arc<tokio::sync::Notify>>,
     worker_entered: Option<Arc<tokio::sync::Notify>>,
     role: Option<String>,

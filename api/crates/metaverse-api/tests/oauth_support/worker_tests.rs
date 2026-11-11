@@ -22,12 +22,12 @@ pub(super) fn routes(provider: MockProvider, app: Router) -> Router {
                 assert!(s.access.contains_key(token));
                 assert!(!headers.contains_key(header::COOKIE));
                 s.worker_calls.push(("create".into(),headers["idempotency-key"].to_str().unwrap().into(),body));
-                (s.worker_gate.clone(),s.worker_entered.clone(),s.worker_setup_required,s.worker_completed_receipt)
+                (s.worker_gate.clone(),s.worker_entered.clone(),s.worker_setup_required,s.worker_creation_proxy_conflict)
             };
             if let Some(n)=entered {n.notify_one();}
             if let Some(n)=gate {n.notified().await;}
             if setup { return (StatusCode::CONFLICT,Json(json!({"code":"sandbox_credential_setup_required","detail":"secret provider diagnostic"}))).into_response(); }
-            if completed { return (StatusCode::CONFLICT, Json(json!({"error":"conflict","error_code":1004,"details":{"reason":"cma_creation_already_completed","operation_id":"op_test","agent_id":"agt_test"}}))).into_response(); }
+            if completed { return (StatusCode::CONFLICT, Json(json!({"error":"conflict","error_code":1004,"message":"Conflict: cma_creation_already_completed: query the original resource"}))).into_response(); }
             (StatusCode::ACCEPTED,Json(json!({"id":"op_test","status":"pending"}))).into_response()
         }
     }))
@@ -99,7 +99,7 @@ fn task() -> Value {
 }
 
 #[tokio::test]
-async fn confirmed_creation_retry_restores_receipt_without_claiming_live_status() {
+async fn creation_retry_preserves_the_public_cma_receipt_and_original_request() {
     let app = TestApp::start_with_options(true, true)
         .await
         .expect("MongoDB required");
@@ -112,10 +112,10 @@ async fn confirmed_creation_retry_restores_receipt_without_claiming_live_status(
     );
     let original = call(&app, &cookie, "create", task()).await;
     assert_eq!(original.status, StatusCode::ACCEPTED);
-    app.nyx.oauth.0.lock().unwrap().worker_completed_receipt = true;
     let recovered = call(&app, &cookie, "create", task()).await;
     assert_eq!(recovered.status, StatusCode::ACCEPTED, "{}", recovered.body);
-    assert_eq!(recovered.body, json!({"id":"op_test","recovered":true}));
+    assert_eq!(recovered.body, original.body);
+    assert_eq!(recovered.body, json!({"id":"op_test","status":"pending"}));
     {
         let s = app.nyx.oauth.0.lock().unwrap();
         assert_eq!(s.worker_calls[0], s.worker_calls[1]);
@@ -128,6 +128,22 @@ async fn confirmed_creation_retry_restores_receipt_without_claiming_live_status(
     )
     .await;
     assert_eq!(observed.body["operation"]["agent_id"], "agt_test");
+
+    // An upstream proxy conflict cannot become a successful CMA receipt.
+    app.nyx
+        .oauth
+        .0
+        .lock()
+        .unwrap()
+        .worker_creation_proxy_conflict = true;
+    let refused = call(&app, &cookie, "create", task()).await;
+    assert_eq!(refused.status, StatusCode::CONFLICT, "{}", refused.body);
+    assert_eq!(refused.body["code"], "cma_resource_refused");
+    assert!(refused.body.get("id").is_none());
+    assert!(refused.body.get("recovered").is_none());
+    let s = app.nyx.oauth.0.lock().unwrap();
+    assert_eq!(s.worker_calls.len(), 3);
+    assert!(s.worker_calls.iter().all(|call| call == &s.worker_calls[0]));
 }
 
 #[tokio::test]

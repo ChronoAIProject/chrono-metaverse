@@ -165,16 +165,10 @@ impl Access {
         body: Option<Value>,
         key: Option<&str>,
     ) -> Result<(StatusCode, Value), ApiError> {
-        let creation = method == reqwest::Method::POST && path == "/api/v1/agents" && key.is_some();
         let response = self.send(method, path, body, key).await?;
         let status = response.status();
         let value = read_json(response).await?;
         self.current(true).await?;
-        if creation {
-            if let Some(receipt) = creation_receipt(status, &value) {
-                return Ok((StatusCode::ACCEPTED, receipt));
-            }
-        }
         if !status.is_success() {
             return Err(refusal(status, &value));
         }
@@ -212,21 +206,6 @@ impl Access {
         };
         Ok(format!("metaverse 任务上下文（编号只选择目标，不授予权限）：\n空间：{}\n归属：{}\n网站：{}{interaction}\n\n用户需求：\n{}", c.space_id, owner, self.oauth.config.origin, instruction))
     }
-}
-fn creation_receipt(status: StatusCode, body: &Value) -> Option<Value> {
-    if status != StatusCode::CONFLICT
-        || body.get("error_code").and_then(Value::as_u64) != Some(1004)
-        || body.pointer("/details/reason").and_then(Value::as_str)
-            != Some("cma_creation_already_completed")
-    {
-        return None;
-    }
-    let operation = body.pointer("/details/operation_id")?.as_str()?;
-    if !identifier(operation) {
-        return None;
-    }
-    // Restore only the durable lifecycle receipt. Its current status is observed next.
-    Some(json!({"id": operation, "recovered": true}))
 }
 async fn read_json(mut response: reqwest::Response) -> Result<Value, ApiError> {
     let mut bytes = Vec::new();
@@ -731,20 +710,14 @@ async fn cancel(
 mod tests {
     use super::*;
     #[test]
-    fn receipt_recovery_requires_exact_conflict_contract_and_safe_lifecycle_id() {
-        let body = json!({"error_code":1004,"details":{"reason":"cma_creation_already_completed","operation_id":"op_original"}});
-        assert_eq!(
-            creation_receipt(StatusCode::CONFLICT, &body),
-            Some(json!({"id":"op_original","recovered":true}))
+    fn proxy_creation_conflict_stays_a_refusal_without_private_receipt_dependency() {
+        let error = refusal(
+            StatusCode::CONFLICT,
+            &json!({"error":"conflict","error_code":1004,"message":"Conflict: cma_creation_already_completed: query the original resource","details":{"reason":"cma_creation_already_completed","operation_id":"op_private"}}),
         );
-        assert!(creation_receipt(StatusCode::FORBIDDEN, &body).is_none());
-        for change in [
-            json!({"error_code":1004,"message":"cma_creation_already_completed"}),
-            json!({"error_code":1004,"details":{"reason":"other","operation_id":"op_original"}}),
-            json!({"error_code":1004,"details":{"reason":"cma_creation_already_completed","operation_id":"../admin"}}),
-        ] {
-            assert!(creation_receipt(StatusCode::CONFLICT, &change).is_none());
-        }
+        assert_eq!(error.status, StatusCode::CONFLICT);
+        assert_eq!(error.code, "cma_resource_refused");
+        assert!(!error.detail.contains("op_private"));
     }
     #[test]
     fn cma_resource_policy_refusal_does_not_request_reauthorization() {
