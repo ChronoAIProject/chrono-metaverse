@@ -72,6 +72,7 @@ pub(super) fn routes(provider: MockProvider, app: Router) -> Router {
 }
 
 async fn call(app: &TestApp, cookie: &str, action: &str, body: Value) -> Reply {
+    agent_key_tests::register_org(&app.nyx.oauth);
     let s = session(app, cookie).await;
     let csrf = s.body["csrfToken"].as_str().unwrap();
     app.send(
@@ -81,13 +82,8 @@ async fn call(app: &TestApp, cookie: &str, action: &str, body: Value) -> Reply {
             ("cookie", cookie),
             ("origin", ORIGIN),
             ("x-csrf-token", csrf),
-            (
-                "authorization",
-                &format!(
-                    "Bearer nyx_browser_{}",
-                    s.body["subject"].as_str().unwrap_or("disconnected")
-                ),
-            ),
+            ("authorization", "Bearer nyx_browser_org_credential"),
+            ("x-metaverse-cma-owner", ORG),
         ],
         Some(body),
     )

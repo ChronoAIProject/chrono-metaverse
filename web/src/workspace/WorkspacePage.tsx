@@ -57,8 +57,15 @@ function fileUploadIntent(base: Notebook): Intent {
   };
 }
 export function WorkspacePage({ request = fetch }: { readonly request?: typeof fetch }) {
-  const [session, setSession] = useState<Session | null>(null);
+  const [accountSession, setSession] = useState<Session | null>(null);
   const [note, setNote] = useState<Notebook>(emptyNotebook);
+  const session = useMemo(
+    () =>
+      accountSession
+        ? { ...accountSession, cmaOwnerId: note.orgId || accountSession.subject }
+        : null,
+    [accountSession, note.orgId],
+  );
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
@@ -96,7 +103,13 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [consentChecked, setConsentChecked] = useState(false);
-  const [keyReady, setKeyReady] = useState(false);
+  const [readyOwner, setReadyOwner] = useState('');
+  const keyContext = `${session?.subject}:${session?.cmaOwnerId}`;
+  const keyReady = readyOwner === keyContext;
+  const setKeyReady = useCallback(
+    (ready: boolean) => setReadyOwner(ready ? keyContext : ''),
+    [keyContext],
+  );
   const [keyCheck, setKeyCheck] = useState(0);
   const [confirmPublish, setConfirmPublish] = useState('');
   const [confirmForget, setConfirmForget] = useState(false);
@@ -154,7 +167,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
         )
           throw new Error();
         version.current++;
-        setKeyReady(false);
+        setReadyOwner('');
         setSession(s);
         setCatalog(null);
         setOutput([]);
@@ -245,7 +258,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
       e instanceof WorkerError &&
       ['cma_key_required', 'cma_key_account_mismatch', 'cma_key_scope_required'].includes(e.code)
     ) {
-      setKeyReady(false);
+      setReadyOwner('');
       setKeyCheck((v) => v + 1);
     }
     if (e instanceof WorkerError && e.code === 'cma_consent_required')
@@ -1445,7 +1458,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
               )}
               {session.workerAvailable && (
                 <AgentKeyConnection
-                  key={`${session.subject}:${session.csrfToken}`}
+                  key={`${session.subject}:${session.csrfToken}:${session.cmaOwnerId}`}
                   session={session}
                   request={request}
                   onChange={setKeyReady}

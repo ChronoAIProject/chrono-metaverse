@@ -14,10 +14,19 @@ test.beforeEach(async ({ page }) => {
       'metaverse-cma-credential:v1',
       JSON.stringify({ subject, credential: 'nyx_test_browser_worker', identity }),
     );
+    sessionStorage.setItem(
+      'metaverse-cma-credential:v1:org:org-one',
+      JSON.stringify({
+        subject,
+        credential: 'nyx_test_org_worker',
+        identity: { ...identity, ownerId: 'org-one' },
+      }),
+    );
   });
   await page.route('**/api/auth/nyxid/worker/key/check', (route) =>
     route.fulfill({
       json: {
+        ownerId: route.request().headers()['x-metaverse-cma-owner'] ?? 'web-owner',
         keyId: 'key-cma',
         name: 'Metaverse CMA',
         credentialId: 'browser-child',
@@ -64,6 +73,7 @@ test('在线工作台：明确授权、创建 worker、查看结果并确认发�
     if (path.endsWith('/key/check'))
       return route.fulfill({
         json: {
+          ownerId: route.request().headers()['x-metaverse-cma-owner'] ?? 'web-owner',
           keyId: 'key-cma',
           name: 'Metaverse CMA',
           credentialId: 'browser-child',
@@ -285,6 +295,7 @@ test('手机端：创建回复丢失后刷新页面，恢复原请求不会重�
     if (path.endsWith('/key/check'))
       return route.fulfill({
         json: {
+          ownerId: route.request().headers()['x-metaverse-cma-owner'] ?? 'web-owner',
           keyId: 'key-cma',
           name: 'Metaverse CMA',
           credentialId: 'browser-child',
@@ -370,6 +381,7 @@ for (const loseUpload of [false, true])
       if (url.pathname.endsWith('/key/check'))
         return route.fulfill({
           json: {
+            ownerId: route.request().headers()['x-metaverse-cma-owner'] ?? 'web-owner',
             keyId: 'key-cma',
             name: 'Metaverse CMA',
             credentialId: 'browser-child',
@@ -520,6 +532,7 @@ test('恢复旧任务：手机直接看到沙箱阶段的授权阻塞', async ({
     if (path.endsWith('/key/check'))
       return route.fulfill({
         json: {
+          ownerId: route.request().headers()['x-metaverse-cma-owner'] ?? 'web-owner',
           keyId: 'key-cma',
           name: 'Metaverse CMA',
           credentialId: 'browser-child',

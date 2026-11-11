@@ -62,7 +62,7 @@ fn scope_required() -> ApiError {
     ApiError::new(
         StatusCode::FORBIDDEN,
         "cma_key_scope_required",
-        "请选择属于当前账号、仅允许 CMA 服务且 scope 为 proxy 的个人 Agent Key",
+        "请选择属于当前空间归属、仅允许其 CMA 服务且 scope 为 proxy 的 Agent Key",
     )
 }
 
@@ -72,6 +72,8 @@ struct Service {
     slug: String,
     catalog_service_slug: Option<String>,
     is_active: bool,
+    #[serde(default)]
+    owner_id: Option<String>,
 }
 #[derive(Deserialize)]
 struct Key {
@@ -96,6 +98,7 @@ struct Identity {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Summary {
+    owner_id: String,
     key_id: String,
     name: String,
     credential_id: String,
@@ -103,8 +106,10 @@ struct Summary {
     key_expires_at: Option<String>,
 }
 impl Identity {
-    fn same_owner(&self, subject: &str) -> Result<(), ApiError> {
-        if self.api_key.owner_id != subject || self.api_key.owner_type != "personal" {
+    fn same_owner(&self, owner: &Owner) -> Result<(), ApiError> {
+        if self.api_key.owner_id != owner.id
+            || self.api_key.owner_type != if owner.org { "org" } else { "personal" }
+        {
             return Err(ApiError::new(
                 StatusCode::FORBIDDEN,
                 "cma_key_account_mismatch",
@@ -113,8 +118,8 @@ impl Identity {
         }
         Ok(())
     }
-    fn summary(self, subject: &str) -> Result<Summary, ApiError> {
-        self.same_owner(subject)?;
+    fn summary(self, owner: &Owner) -> Result<Summary, ApiError> {
+        self.same_owner(owner)?;
         let key = self.api_key;
         if key.scopes.split_whitespace().collect::<Vec<_>>() != ["proxy"]
             || key.allow_all_services
@@ -130,12 +135,17 @@ impl Identity {
                 })
             })
             || key.effective_services.iter().any(|s| {
-                s.slug != "cma" || s.catalog_service_slug.as_deref() != Some("cma") || !s.is_active
+                s.slug != "cma"
+                    || s.catalog_service_slug.as_deref() != Some("cma")
+                    || !s.is_active
+                    || s.owner_id.as_deref().is_some_and(|id| id != owner.id)
+                    || (owner.org && s.owner_id.as_deref() != Some(owner.id.as_str()))
             })
         {
             return Err(scope_required());
         }
         Ok(Summary {
+            owner_id: owner.id.clone(),
             key_id: key.id,
             name: key.name,
             credential_id: self.credential_id,
@@ -192,36 +202,99 @@ async fn identity(oauth: &OAuthService, credential: &Credential) -> Result<Ident
 async fn verify(
     oauth: &OAuthService,
     credential: &Credential,
-    subject: &str,
+    owner: &Owner,
 ) -> Result<Summary, ApiError> {
-    identity(oauth, credential).await?.summary(subject)
+    identity(oauth, credential).await?.summary(owner)
 }
 pub(super) async fn checked(
     oauth: &OAuthService,
     headers: &HeaderMap,
-    subject: &str,
+    owner: &Owner,
 ) -> Result<Credential, ApiError> {
     let credential = Credential::from_headers(headers)?;
-    verify(oauth, &credential, subject).await?;
+    verify(oauth, &credential, owner).await?;
     Ok(credential)
+}
+
+pub(super) struct Owner {
+    pub(super) id: String,
+    pub(super) org: bool,
+}
+fn requested_owner(headers: &HeaderMap, subject: &str) -> Result<Owner, ApiError> {
+    let values = headers
+        .get_all("x-metaverse-cma-owner")
+        .iter()
+        .collect::<Vec<_>>();
+    let id = match values.as_slice() {
+        [] => subject,
+        [value] => value
+            .to_str()
+            .ok()
+            .filter(|id| metaverse_core::ids::is_subject_id(id))
+            .ok_or_else(|| ApiError::invalid("CMA 归属编号不正确"))?,
+        _ => return Err(ApiError::invalid("CMA 归属编号重复")),
+    };
+    let org = id != subject;
+    Ok(Owner { id: id.into(), org })
+}
+pub(super) async fn owner(
+    state: &AppState,
+    headers: &HeaderMap,
+    subject: &str,
+) -> Result<Owner, ApiError> {
+    let owner = requested_owner(headers, subject)?;
+    if owner.org {
+        use crate::auth::organizations::MembershipLookup;
+        match state
+            .authorizer
+            .connection_membership(subject, &owner.id)
+            .await
+        {
+            MembershipLookup::Member(member)
+                if member.role != metaverse_core::model::OrgRole::Viewer => {}
+            MembershipLookup::Unavailable => return Err(ApiError::org_membership_unavailable()),
+            _ => {
+                return Err(ApiError::new(
+                    StatusCode::FORBIDDEN,
+                    "cma_key_account_mismatch",
+                    "当前账号没有使用该组织 CMA 的权限",
+                ))
+            }
+        }
+    }
+    Ok(owner)
 }
 
 struct Browser {
     oauth: Arc<OAuthService>,
     session: OAuthSessionRecord,
     held: HeldCredential,
+    owner: Owner,
 }
 impl Browser {
     async fn new(state: &AppState, headers: &HeaderMap) -> Result<Self, ApiError> {
+        Self::open(state, headers, true).await
+    }
+    async fn open(
+        state: &AppState,
+        headers: &HeaderMap,
+        require_owner_access: bool,
+    ) -> Result<Self, ApiError> {
         let oauth = routes::service(state)?;
         if oauth.config.cma_base_url.is_none() {
             return Err(unavailable());
         }
         let (session, held) = routes::verified_browser(&oauth, headers).await?;
+        let owner = if require_owner_access {
+            owner(state, headers, &session.subject).await?
+        } else {
+            requested_owner(headers, &session.subject)?
+        };
         Ok(Self {
             oauth,
             session,
             held,
+            owner,
         })
     }
     async fn current(&self) -> Result<(), ApiError> {
@@ -283,6 +356,7 @@ async fn request(State(state): State<AppState>, headers: HeaderMap) -> Result<Re
     // Preferences only. NyxID's human review owns selection and approval.
     url.query_pairs_mut().extend_pairs([
         ("user_code", request.user_code.as_str()),
+        ("owner_id", b.owner.id.as_str()),
         ("login_type", "agent"),
         ("key_source", "existing"),
         ("permissions", "proxy"),
@@ -340,7 +414,7 @@ async fn poll(
     if !valid(credential.value()) {
         return Err(unavailable());
     }
-    let summary = delivery.identity.summary(&b.session.subject);
+    let summary = delivery.identity.summary(&b.owner);
     let current = b.current().await;
     if summary.is_err() || current.is_err() {
         // An unusable delivered child must not remain active. Never revoke its parent.
@@ -359,17 +433,19 @@ async fn poll(
 async fn check(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, ApiError> {
     let b = Browser::new(&state, &headers).await?;
     let credential = Credential::from_headers(&headers)?;
-    let summary = verify(&b.oauth, &credential, &b.session.subject).await?;
+    let summary = verify(&b.oauth, &credential, &b.owner).await?;
     b.current().await?;
     Ok(Json(summary).into_response())
 }
 async fn revoke(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, ApiError> {
-    let b = Browser::new(&state, &headers).await?;
+    // A holder may revoke its own child after leaving the organization. This never
+    // grants CMA access or permission to revoke the parent or another credential.
+    let b = Browser::open(&state, &headers, false).await?;
     let credential = Credential::from_headers(&headers)?;
     // Revocation remains available if the parent Key's service grant changed.
     identity(&b.oauth, &credential)
         .await?
-        .same_owner(&b.session.subject)?;
+        .same_owner(&b.owner)?;
     b.current().await?;
     let response = b
         .oauth

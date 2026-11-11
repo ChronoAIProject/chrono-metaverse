@@ -132,3 +132,35 @@ it('过期或损坏凭据不复用，存储与工作记录分离', () => {
   expect(browserKeyHeaders('alice')).toEqual({});
   expect(sessionStorage.getItem('metaverse-worker:alice')).toBeNull();
 });
+
+it('个人和组织缓存互相隔离，切换归属后核验对应凭据', async () => {
+  const org = 'org-one';
+  const orgIdentity = { ...identity, ownerId: org };
+  saveBrowserKey('alice', credential, identity);
+  saveBrowserKey('alice', 'nyx_test_org_credential', orgIdentity, org);
+  const request = vi.fn<typeof fetch>(async (_input, init) => {
+    const owner = new Headers(init?.headers).get('x-metaverse-cma-owner');
+    return Response.json(owner ? orgIdentity : { ...identity, ownerId: 'alice' });
+  });
+  const change = vi.fn();
+  const view = render(<AgentKeyConnection session={session} request={request} onChange={change} />);
+  await waitFor(() => expect(change).toHaveBeenLastCalledWith(true));
+  view.rerender(
+    <AgentKeyConnection
+      session={{ ...session, cmaOwnerId: org }}
+      request={request}
+      onChange={change}
+    />,
+  );
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(change).toHaveBeenLastCalledWith(true));
+  expect(request.mock.calls[1]?.[1]?.headers).toMatchObject({
+    Authorization: 'Bearer nyx_test_org_credential',
+    'x-metaverse-cma-owner': org,
+  });
+  expect(readBrowserKey('alice')?.credential).toBe(credential);
+  expect(readBrowserKey('bob', org)).toBeNull();
+  expect(browserKeyHeaders('alice', 'org-other')).toEqual({ 'x-metaverse-cma-owner': 'org-other' });
+  expect(() => saveBrowserKey('alice', credential, identity, org)).toThrow();
+  expect(() => saveBrowserKey('alice', credential, orgIdentity)).toThrow();
+});

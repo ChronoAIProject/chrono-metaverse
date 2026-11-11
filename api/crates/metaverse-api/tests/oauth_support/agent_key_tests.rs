@@ -3,6 +3,95 @@ use super::*;
 fn metadata(subject: &str) -> Value {
     json!({"api_key":{"id":"key-cma","name":"Metaverse CMA","owner_type":"personal","owner_id":subject,"scopes":"proxy","allow_all_services":false,"allow_auto_connected_services":false,"allowed_service_ids":["svc-cma"],"effective_services":[{"id":"svc-cma","slug":"cma","catalog_service_slug":"cma","is_active":true}],"expires_at":null},"credential_id":"child-browser","credential_expires_at":null})
 }
+
+#[tokio::test]
+async fn browser_key_owner_is_bound_to_live_membership_connection_and_task_context() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let cookie = connect(&app, "key-owner", 3600).await;
+    call(&app, &cookie, "consent", None, json!({"enabled":true})).await;
+    register_org(&app.nyx.oauth);
+    let personal = "nyx_browser_key-owner";
+    let org = "nyx_browser_org_credential";
+    let started = call_owner(&app, &cookie, "key/request", None, json!({}), Some(ORG)).await;
+    assert_eq!(started.status, StatusCode::OK, "{}", started.body);
+    let url = url::Url::parse(started.body["verification_uri"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        url.query_pairs().find(|(k, _)| k == "owner_id").unwrap().1,
+        ORG
+    );
+    for (key, owner) in [(personal, Some(ORG)), (org, None)] {
+        let denied = call_owner(&app, &cookie, "key/check", Some(key), json!({}), owner).await;
+        assert_eq!(denied.body["code"], "cma_key_account_mismatch");
+    }
+    let task = json!({"context":{"spaceId":"lobby","orgId":ORG},"instruction":"hello","idempotencyKey":"stable-org-create-001"});
+    assert_eq!(
+        call(&app, &cookie, "create", Some(personal), task.clone())
+            .await
+            .body["code"],
+        "cma_key_account_mismatch"
+    );
+    let mut personal_task = task.clone();
+    personal_task["context"]
+        .as_object_mut()
+        .unwrap()
+        .remove("orgId");
+    assert_eq!(
+        call_owner(&app, &cookie, "create", Some(org), personal_task, Some(ORG))
+            .await
+            .body["code"],
+        "cma_key_account_mismatch"
+    );
+    for service_owner in [Value::Null, json!("key-owner")] {
+        app.nyx
+            .oauth
+            .0
+            .lock()
+            .unwrap()
+            .browser_keys
+            .get_mut(org)
+            .unwrap()["api_key"]["effective_services"][0]["owner_id"] = service_owner;
+        assert_eq!(
+            call_owner(&app, &cookie, "key/check", Some(org), json!({}), Some(ORG))
+                .await
+                .body["code"],
+            "cma_key_scope_required"
+        );
+    }
+    register_org(&app.nyx.oauth);
+    for role in [Some("viewer"), None] {
+        app.nyx.oauth.0.lock().unwrap().role = role.map(str::to_owned);
+        assert_eq!(
+            call_owner(&app, &cookie, "create", Some(org), task.clone(), Some(ORG))
+                .await
+                .status,
+            StatusCode::FORBIDDEN
+        );
+    }
+    assert!(app.nyx.oauth.0.lock().unwrap().worker_calls.is_empty());
+    for role in ["admin", "member"] {
+        app.nyx.oauth.0.lock().unwrap().role = Some(role.into());
+        let checked = call_owner(&app, &cookie, "key/check", Some(org), json!({}), Some(ORG)).await;
+        assert_eq!(checked.body["ownerId"], ORG, "{}", checked.body);
+        let created = call_owner(&app, &cookie, "create", Some(org), task.clone(), Some(ORG)).await;
+        assert_eq!(created.status, StatusCode::ACCEPTED, "{}", created.body);
+    }
+    app.nyx.oauth.0.lock().unwrap().role = None;
+    assert_eq!(
+        call_owner(&app, &cookie, "create", Some(org), task, Some(ORG))
+            .await
+            .status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(app.nyx.oauth.0.lock().unwrap().worker_calls.len(), 2);
+    assert_eq!(
+        call_owner(&app, &cookie, "key/revoke", Some(org), json!({}), Some(ORG))
+            .await
+            .status,
+        StatusCode::OK
+    );
+}
 pub(super) fn register(provider: &MockProvider, subject: &str) {
     provider
         .0
@@ -10,6 +99,17 @@ pub(super) fn register(provider: &MockProvider, subject: &str) {
         .unwrap()
         .browser_keys
         .insert(format!("nyx_browser_{subject}"), metadata(subject));
+}
+pub(super) fn register_org(provider: &MockProvider) {
+    let mut key = metadata(ORG);
+    key["api_key"]["owner_type"] = json!("org");
+    key["api_key"]["effective_services"][0]["owner_id"] = json!(ORG);
+    provider
+        .0
+        .lock()
+        .unwrap()
+        .browser_keys
+        .insert("nyx_browser_org_credential".into(), key);
 }
 pub(super) fn routes(provider: MockProvider, app: Router) -> Router {
     let lookup = provider.clone();
@@ -51,6 +151,16 @@ async fn call(
     credential: Option<&str>,
     body: Value,
 ) -> Reply {
+    call_owner(app, cookie, action, credential, body, None).await
+}
+async fn call_owner(
+    app: &TestApp,
+    cookie: &str,
+    action: &str,
+    credential: Option<&str>,
+    body: Value,
+    owner: Option<&str>,
+) -> Reply {
     let s = session(app, cookie).await;
     let csrf = s.body["csrfToken"].as_str().unwrap();
     let bearer = credential.map(|v| format!("Bearer {v}"));
@@ -61,6 +171,9 @@ async fn call(
     ];
     if let Some(bearer) = &bearer {
         headers.push(("authorization", bearer));
+    }
+    if let Some(owner) = owner {
+        headers.push(("x-metaverse-cma-owner", owner));
     }
     app.send(
         Method::POST,

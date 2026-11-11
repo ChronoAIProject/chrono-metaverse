@@ -266,6 +266,12 @@ it('断开账号先撤销浏览器子凭据，再删除 OAuth 连接', async () 
     keyExpiresAt: null,
   };
   saveBrowserKey('alice', 'nyx_test_connect_child', identity);
+  saveBrowserKey(
+    'alice',
+    'nyx_test_connect_org_child',
+    { ...identity, ownerId: 'org-one' },
+    'org-one',
+  );
   const request = vi.fn<typeof fetch>(async (input) =>
     Response.json(String(input).endsWith('/session') ? connected : { ok: true }),
   );
@@ -276,9 +282,15 @@ it('断开账号先撤销浏览器子凭据，再删除 OAuth 连接', async () 
   expect(request.mock.calls.map((c) => String(c[0]))).toEqual([
     '/api/auth/nyxid/session',
     '/api/auth/nyxid/worker/key/revoke',
+    '/api/auth/nyxid/worker/key/revoke',
     '/api/auth/nyxid/disconnect',
   ]);
   expect(readBrowserKey('alice')).toBeNull();
+  expect(readBrowserKey('alice', 'org-one')).toBeNull();
+  expect(request.mock.calls[2]?.[1]?.headers).toMatchObject({
+    Authorization: 'Bearer nyx_test_connect_org_child',
+    'x-metaverse-cma-owner': 'org-one',
+  });
 });
 it('子凭据撤销状态未知时保留连接以供恢复', async () => {
   saveBrowserKey('alice', 'nyx_test_connect_child', {

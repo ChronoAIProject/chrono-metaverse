@@ -26,6 +26,7 @@ export function AgentKeyConnection({
   readonly onChange: (ready: boolean) => void;
   readonly checkVersion?: number;
 }) {
+  const owner = session.cmaOwnerId ?? session.subject!;
   const [identity, setIdentity] = useState<KeyIdentity | null>(null);
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   const [error, setError] = useState('');
@@ -48,7 +49,7 @@ export function AgentKeyConnection({
       lost();
       setEnrollment(null);
       setError('');
-      const saved = readBrowserKey(session.subject);
+      const saved = readBrowserKey(session.subject, owner);
       setIdentity(saved?.identity ?? null);
       if (!saved) {
         setBusy(false);
@@ -65,7 +66,7 @@ export function AgentKeyConnection({
         );
         if (!validIdentity(value)) throw new Error('无法核对 Agent Key 授权状态。');
         if (!active) return;
-        saveBrowserKey(session.subject!, saved.credential, value);
+        saveBrowserKey(session.subject!, saved.credential, value, owner);
         setIdentity(value);
         setReady(true);
         onChange(true);
@@ -77,7 +78,7 @@ export function AgentKeyConnection({
             failure.code,
           )
         ) {
-          clearBrowserKey(session.subject!);
+          clearBrowserKey(session.subject!, owner);
           setIdentity(null);
         }
         setError(failure instanceof Error ? failure.message : '暂时无法核验 Agent Key。');
@@ -90,7 +91,7 @@ export function AgentKeyConnection({
       generation.current = runGeneration + 1;
       controller.abort();
     };
-  }, [session, attempt, checkVersion, lost, onChange, request]);
+  }, [session, attempt, checkVersion, lost, onChange, request, owner]);
 
   useEffect(() => {
     if (!enrollment) return;
@@ -114,7 +115,7 @@ export function AgentKeyConnection({
           request,
         );
         if (!active) return;
-        saveBrowserKey(session.subject!, delivery.credential, delivery.identity);
+        saveBrowserKey(session.subject!, delivery.credential, delivery.identity, owner);
         setIdentity(delivery.identity);
         setEnrollment(null);
         setError('');
@@ -144,7 +145,7 @@ export function AgentKeyConnection({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [enrollment, session, onChange, request]);
+  }, [enrollment, session, onChange, request, owner]);
 
   async function run(work: () => Promise<void>) {
     if (action.current) return;
@@ -195,7 +196,7 @@ export function AgentKeyConnection({
       const current = generation.current;
       await workerRequest(session, 'key/revoke', {}, undefined, request);
       if (current !== generation.current) return;
-      clearBrowserKey(session.subject!);
+      clearBrowserKey(session.subject!, owner);
       setIdentity(null);
       lost();
     });
@@ -213,14 +214,16 @@ export function AgentKeyConnection({
         <>
           <h2>在 NyxID 确认 CMA 授权</h2>
           <p>
-            点击打开授权页，选择 CMA 专用授权并确认即可。请求和权限已自动填好，无需输入验证码或
+            点击打开授权页，确认当前空间归属的 CMA 授权即可。请求和权限已自动填好，无需输入验证码或
             Key。
           </p>
           <a href={enrollment.verification_uri} target="_blank" rel="noopener noreferrer">
             打开 NyxID 授权页
           </a>
           <p>完成后本页会自动连接。不会自动重发原消息。</p>
-          <button onClick={() => setEnrollment(null)}>取消等待</button>
+          <button className="workspace__secondary" onClick={() => setEnrollment(null)}>
+            取消等待
+          </button>
         </>
       ) : (
         <>

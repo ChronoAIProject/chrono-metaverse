@@ -56,7 +56,7 @@ export async function uploadModel(
         'Content-Type': 'application/octet-stream',
         'x-csrf-token': session.csrfToken ?? '',
         'Idempotency-Key': key,
-        ...browserKeyHeaders(session.subject),
+        ...browserKeyHeaders(session.subject, session.cmaOwnerId),
       },
       body: file,
     });

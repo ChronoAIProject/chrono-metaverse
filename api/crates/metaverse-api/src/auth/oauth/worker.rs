@@ -56,6 +56,7 @@ struct Access {
     session: OAuthSessionRecord,
     held: HeldCredential,
     credential: Option<agent_key::Credential>,
+    owner: String,
 }
 impl Access {
     async fn new(
@@ -74,14 +75,16 @@ impl Access {
         let (session, held) = routes::verified_browser(&oauth, headers).await?;
         let mut access = Self {
             oauth,
+            owner: session.subject.clone(),
             session,
             held,
             credential: None,
         };
         access.current(require_consent).await?;
         if require_consent {
-            access.credential =
-                Some(agent_key::checked(&access.oauth, headers, &access.session.subject).await?);
+            let owner = agent_key::owner(state, headers, &access.session.subject).await?;
+            access.credential = Some(agent_key::checked(&access.oauth, headers, &owner).await?);
+            access.owner = owner.id;
             access.current(true).await?;
         }
         Ok(access)
@@ -185,6 +188,13 @@ impl Access {
         {
             return Err(ApiError::invalid(
                 "请填写有效空间编号、组织编号和不超过 32 KiB 的需求",
+            ));
+        }
+        if c.org_id.as_deref().unwrap_or(&self.session.subject) != self.owner {
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                "cma_key_account_mismatch",
+                "空间归属与 CMA 授权不一致，请为当前空间重新连接 CMA",
             ));
         }
         let owner = c

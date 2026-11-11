@@ -90,7 +90,7 @@ function mockApi(
         organizations: [{ id: 'org-one', name: 'ChronoAI', role: 'admin' }],
         next: null,
       });
-    if (url.endsWith('/key/check')) return reply(keyIdentity);
+    if (url.endsWith('/key/check')) return reply({ ...keyIdentity, ownerId: new Headers(init?.headers).get('x-metaverse-cma-owner') ?? 'owner-a' });
     if (url.endsWith('/session'))
       return reply({ ...connected, workerEnabled: options.enabled ?? true });
     const action = url.split('/').at(-1)!;
@@ -178,6 +178,7 @@ async function fillTask() {
 beforeEach(() => {
   sessionStorage.clear();
   saveBrowserKey('owner-a', 'nyx_test_browser_owner_a', keyIdentity);
+  saveBrowserKey('owner-a', 'nyx_test_browser_org_one', { ...keyIdentity, ownerId: 'org-one' }, 'org-one');
   window.history.replaceState(null, '', '/workspace');
 });
 afterEach(cleanup);

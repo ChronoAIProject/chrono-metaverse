@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import './ConnectPage.css';
-import { browserKeyHeaders, clearBrowserKey, readBrowserKey } from './browserKey';
+import { browserKeyHeaders, clearBrowserKey, readBrowserKeys } from './browserKey';
 
 type Session =
   | { enabled: false; connected: false }
@@ -141,13 +141,16 @@ export function ConnectPage({ request = fetch }: { readonly request?: typeof fet
     setChecked(null);
     if (kind === 'organizations') setOrganizations(null);
     try {
-      if (kind === 'disconnect' && readBrowserKey(session.subject)) {
+      for (const saved of kind === 'disconnect' ? readBrowserKeys(session.subject) : []) {
         const revoked = await request('/api/auth/nyxid/worker/key/revoke', {
           method: 'POST',
           credentials: 'same-origin',
           cache: 'no-store',
           signal: controller.signal,
-          headers: { 'x-csrf-token': session.csrfToken, ...browserKeyHeaders(session.subject) },
+          headers: {
+            'x-csrf-token': session.csrfToken,
+            ...browserKeyHeaders(session.subject, saved.owner),
+          },
         });
         if (!revoked.ok) {
           const problem = (await revoked.json()) as { code?: string };
@@ -159,7 +162,7 @@ export function ConnectPage({ request = fetch }: { readonly request?: typeof fet
             return;
           }
         }
-        clearBrowserKey(session.subject);
+        clearBrowserKey(session.subject, saved.owner);
       }
       const response = await request(
         `/api/auth/nyxid/${kind === 'disconnect' || kind === 'organizations' ? kind : 'check'}`,

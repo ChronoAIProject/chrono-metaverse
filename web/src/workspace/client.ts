@@ -8,6 +8,7 @@ export type Session = {
   workerAvailable?: boolean;
   workerUrl?: string | null;
   workerEnabled?: boolean;
+  cmaOwnerId?: string;
 };
 export type Context = { spaceId: string; orgId?: string };
 export type Intent = {
@@ -105,7 +106,7 @@ export async function workerRequest<T>(
       headers: {
         'Content-Type': 'application/json',
         'x-csrf-token': session.csrfToken ?? '',
-        ...browserKeyHeaders(session.subject),
+        ...browserKeyHeaders(session.subject, session.cmaOwnerId),
       },
       body: JSON.stringify(body),
     });
