@@ -1226,7 +1226,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
         <section className="workspace__welcome workspace__ui">
           <span>YOUR SPACES, ONE CONVERSATION</span>
           <h1>打开空间，聊着就能改</h1>
-          <p>把空间铺满眼前，让 CMA 在右侧陪你建造。</p>
+          <p>把空间铺满眼前，让 CMA 陪你建造。</p>
           <a className="workspace__button" href="/connect">
             连接 NyxID，查看我的空间
           </a>
@@ -1250,7 +1250,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                   <h1>{note.creation.name}</h1>
                   <p>
                     {creating
-                      ? '在右侧聊天中放入扫描链接或模型，开始创建你的空间。'
+                      ? '在 CMA 聊天中放入扫描链接或模型，开始创建你的空间。'
                       : 'CMA 正在准备空间；重建完成后，预览会出现在这里。'}
                   </p>
                   <div className="workspace__ui">
@@ -1276,7 +1276,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                       创建第一个空间
                     </button>
                   </div>
-                  <small>需要调整时，打开右侧的 CMA 聊天</small>
+                  <small>需要调整时，打开 CMA 聊天</small>
                 </div>
               )}
             </div>

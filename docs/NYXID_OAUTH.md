@@ -215,7 +215,7 @@ nyxid proxy request chrono-cd "$APP/services/metaverse-api/secrets?org_id=$ORG" 
 
 ## 浏览器 CMA 登录凭据
 
-`POST /api/auth/nyxid/worker/key/{request,poll,check,revoke}` 复用 NyxID `/api/v1/auth/agent-key/{request,poll,self}`。用户在 NyxID 输入单独展示的验证码并批准；审批提示优先选择已有 Key，也可以新建。提示不是权限约束，交付及每次 CMA 调用均核验 Key 归属与实时权限：当前登录的个人账号、仅 `proxy` scope、仅活动的 CMA 服务、禁用所有服务及自动连接服务的通配授权。拒绝宽范围凭据，不扩大原 Key。
+`POST /api/auth/nyxid/worker/key/{request,poll,check,revoke}` 复用 NyxID `/api/v1/auth/agent-key/{request,poll,self}`。授权链接自动带入短请求码、CMA 服务和权限提示；用户在 NyxID 点击选择并批准，无需复制验证码或输入 Key。审批提示优先选择已有 Key，也可以使用预填名称、权限和期限的新建表单。device_code 和子凭据不放入授权链接。提示不是权限约束，交付及每次 CMA 调用均核验 Key 归属与实时权限：当前登录的个人账号、仅 `proxy` scope、仅活动的 CMA 服务、禁用所有服务及自动连接服务的通配授权。拒绝宽范围凭据，不扩大原 Key。
 
 只有一次性交付时响应含子凭据，响应禁止缓存；后续核验仅返回安全元数据。子凭据不写入数据库、任务、恢复记录、URL 或诊断。账号不匹配或授权会话在交付期间失效时，尽力撤销该新交付子凭据。已有子凭据权限变化后仍可撤销自身。浏览器脚本可读取 `sessionStorage`，因此有限服务范围、期限和同源脚本安全仍然必要。OAuth 访问及刷新令牌仍加密保存在服务端，二者用途不同。
 

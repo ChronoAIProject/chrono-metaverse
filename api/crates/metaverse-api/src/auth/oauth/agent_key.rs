@@ -270,13 +270,19 @@ async fn request(State(state): State<AppState>, headers: HeaderMap) -> Result<Re
         || url.fragment().is_some()
         || !(1..=600).contains(&request.expires_in)
         || !(1..=60).contains(&request.interval)
+        || request.device_code.is_empty()
         || request.device_code.len() > 4096
-        || request.user_code.len() > 32
+        || !(4..=32).contains(&request.user_code.len())
+        || !request
+            .user_code
+            .bytes()
+            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'-')
     {
         return Err(unavailable());
     }
     // Preferences only. NyxID's human review owns selection and approval.
     url.query_pairs_mut().extend_pairs([
+        ("user_code", request.user_code.as_str()),
         ("login_type", "agent"),
         ("key_source", "existing"),
         ("permissions", "proxy"),

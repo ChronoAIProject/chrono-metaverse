@@ -52,13 +52,13 @@ it('刷新复用浏览器凭据，核验后才启用；账号切换不发送旧 
   expect(request).toHaveBeenCalledTimes(1);
   expect(change).toHaveBeenLastCalledWith(false);
 });
-it('授权展示独立验证码，审批交付仅保存浏览器；不自动发任务', async () => {
+it('授权链接预填请求，无需输入验证码或 Key；交付仅保存浏览器且不自动发任务', async () => {
   const request = vi.fn<typeof fetch>(async (input) => {
     if (String(input).endsWith('/request'))
       return Response.json({
         device_code: 'private-device',
         user_code: 'ABCD-1234',
-        verification_uri: 'https://nyxid.ai/login/agent-key?services=cma',
+        verification_uri: 'https://nyxid.ai/login/agent-key?services=cma&user_code=ABCD-1234',
         expires_in: 60,
         interval: 1,
       });
@@ -68,10 +68,12 @@ it('授权展示独立验证码，审批交付仅保存浏览器；不自动发�
   const change = vi.fn();
   render(<AgentKeyConnection session={session} request={request} onChange={change} />);
   await userEvent.click(await screen.findByRole('button', { name: '授权此浏览器调用 CMA' }));
-  expect(await screen.findByText('ABCD-1234')).toBeVisible();
-  expect(screen.getByRole('link', { name: '打开 NyxID 授权页' }).getAttribute('href')).not.toMatch(
-    /ABCD|private-device/,
-  );
+  const link = await screen.findByRole('link', { name: '打开 NyxID 授权页' });
+  const url = new URL(link.getAttribute('href')!);
+  expect(url.searchParams.get('user_code')).toBe('ABCD-1234');
+  expect(link.getAttribute('href')).not.toMatch(/private-device|nyx_test/);
+  expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  expect(screen.getByText(/无需输入验证码或 Key/)).toBeVisible();
   await screen.findByText('已连接 CMA · Metaverse CMA', {}, { timeout: 3000 });
   expect(readBrowserKey('alice')?.credential).toBe(credential);
   expect(request.mock.calls.map((c) => String(c[0]))).toEqual([
@@ -90,6 +92,25 @@ it('已撤销凭据会移除本地记录并要求重新授权', async () => {
   expect(readBrowserKey('alice')).toBeNull();
   expect(change).not.toHaveBeenCalledWith(true);
 });
+it.each(['', 'user_code=WXYZ-5678', 'user_code=ABCD-1234&user_code=ABCD-1234'])(
+  '不打开缺失、错配或重复请求码的授权链接：%s',
+  async (query) => {
+    const request = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        device_code: 'private-device',
+        user_code: 'ABCD-1234',
+        verification_uri: `https://nyxid.ai/login/agent-key?${query}`,
+        expires_in: 60,
+        interval: 1,
+      }),
+    );
+    render(<AgentKeyConnection session={session} request={request} onChange={vi.fn()} />);
+    await userEvent.click(await screen.findByRole('button', { name: '授权此浏览器调用 CMA' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('无法核对授权入口');
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(request).toHaveBeenCalledTimes(1);
+  },
+);
 it('服务端确认撤销后清除子凭据', async () => {
   saveBrowserKey('alice', credential, identity);
   const request = vi.fn<typeof fetch>(async (input) =>

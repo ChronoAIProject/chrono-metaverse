@@ -206,11 +206,12 @@ test('在线工作台：明确授权、创建 worker、查看结果并确认发�
   const stage = await page.locator('.workspace__stage').boundingBox();
   const scene = await page.locator('.workspace__scene').boundingBox();
   const chat = await page.getByRole('dialog', { name: 'CMA 空间聊天' }).boundingBox();
-  expect(chat!.x).toBeGreaterThanOrEqual(scene!.x + scene!.width);
+  expect(chat!.x).toBe(0);
+  expect(chat!.x + chat!.width).toBeLessThanOrEqual(scene!.x);
   expect(scene!.width).toBeGreaterThanOrEqual(850);
   expect(stage!.width).toBe(1280);
   expect(scene!.width + chat!.width).toBe(1280);
-  expect(chat!.x + chat!.width).toBeLessThanOrEqual(1280);
+  expect(scene!.x + scene!.width).toBeLessThanOrEqual(1280);
   expect(chat!.y + chat!.height).toBeLessThanOrEqual(720);
   await page.getByRole('button', { name: '收起 CMA 聊天' }).click();
   await expect(page.getByRole('dialog', { name: 'CMA 空间聊天' })).toBeHidden();

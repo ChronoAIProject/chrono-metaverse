@@ -174,6 +174,8 @@ export function AgentKeyConnection({
         url.password ||
         url.hash ||
         !/^[A-Z0-9-]{4,32}$/.test(value.user_code) ||
+        url.searchParams.getAll('user_code').length !== 1 ||
+        url.searchParams.get('user_code') !== value.user_code ||
         typeof value.device_code !== 'string' ||
         value.device_code.length > 4096 ||
         !Number.isInteger(value.expires_in) ||
@@ -210,9 +212,9 @@ export function AgentKeyConnection({
       ) : enrollment ? (
         <>
           <h2>在 NyxID 确认 CMA 授权</h2>
-          <p>复制验证码，在授权页输入后，选择仅允许 CMA 的个人 Key。也可以新建一个。</p>
           <p>
-            <strong>{enrollment.user_code}</strong>
+            点击打开授权页，选择 CMA 专用授权并确认即可。请求和权限已自动填好，无需输入验证码或
+            Key。
           </p>
           <a href={enrollment.verification_uri} target="_blank" rel="noopener noreferrer">
             打开 NyxID 授权页

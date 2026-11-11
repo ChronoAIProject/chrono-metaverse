@@ -90,7 +90,12 @@ async fn browser_key_enrollment_is_private_scoped_and_revokes_only_its_child() {
     assert_eq!(started.headers[header::CACHE_CONTROL], "no-store");
     let uri = started.body["verification_uri"].as_str().unwrap();
     assert!(uri.contains("services=cma") && uri.contains("key_source=existing"));
-    assert!(!uri.contains("ABCD") && !uri.contains("private-device"));
+    let uri = url::Url::parse(uri).unwrap();
+    assert_eq!(
+        uri.query_pairs().find(|(k, _)| k == "user_code").unwrap().1,
+        "ABCD-1234"
+    );
+    assert!(!uri.as_str().contains("private-device"));
     let pending = call(
         &app,
         &cookie,
