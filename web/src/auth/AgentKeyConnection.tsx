@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { WorkerError, workerRequest, type Session } from '../workspace/client';
 import {
+  browserKeyStorageKey,
   clearBrowserKey,
   readBrowserKey,
   saveBrowserKey,
   validIdentity,
   type KeyIdentity,
 } from './browserKey';
-
-type Enrollment = {
-  device_code: string;
-  user_code: string;
-  verification_uri: string;
-  expires_in: number;
-  interval: number;
-};
+import {
+  clearEnrollment,
+  readEnrollment,
+  saveEnrollment,
+  validEnrollment,
+  type Enrollment,
+  type PendingEnrollment,
+} from './browserEnrollment';
 export function AgentKeyConnection({
   session,
   request,
@@ -31,7 +32,7 @@ export function AgentKeyConnection({
   const owner = session.cmaOwnerId ?? session.subject!;
   const ownerLabel = owner === session.subject ? '个人账号' : (ownerName ?? '当前组织');
   const [identity, setIdentity] = useState<KeyIdentity | null>(null);
-  const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
+  const [enrollment, setEnrollment] = useState<PendingEnrollment | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -55,9 +56,11 @@ export function AgentKeyConnection({
       const saved = readBrowserKey(session.subject, owner);
       setIdentity(saved?.identity ?? null);
       if (!saved) {
+        setEnrollment(readEnrollment(session.subject!, owner));
         setBusy(false);
         return;
       }
+      clearEnrollment(session.subject!, owner);
       setBusy(true);
       try {
         const value = await workerRequest<KeyIdentity>(
@@ -97,14 +100,26 @@ export function AgentKeyConnection({
   }, [session, attempt, checkVersion, lost, onChange, request, owner]);
 
   useEffect(() => {
+    function changed(event: StorageEvent) {
+      if (
+        event.storageArea === localStorage &&
+        (event.key === null || event.key === browserKeyStorageKey(session.subject!, owner))
+      )
+        setAttempt((value) => value + 1);
+    }
+    window.addEventListener('storage', changed);
+    return () => window.removeEventListener('storage', changed);
+  }, [session.subject, owner]);
+
+  useEffect(() => {
     if (!enrollment) return;
     const controller = new AbortController();
     let active = true;
     let timer: ReturnType<typeof setTimeout>;
-    const expires = Date.now() + enrollment.expires_in * 1000;
     let interval = enrollment.interval;
     async function poll() {
-      if (Date.now() >= expires) {
+      if (Date.now() >= enrollment!.expiresAt) {
+        clearEnrollment(session.subject!, owner);
         setEnrollment(null);
         setError('此次授权已过期，请重新发起。');
         return;
@@ -119,6 +134,7 @@ export function AgentKeyConnection({
         );
         if (!active) return;
         saveBrowserKey(session.subject!, delivery.credential, delivery.identity, owner);
+        clearEnrollment(session.subject!, owner);
         setIdentity(delivery.identity);
         setEnrollment(null);
         setError('');
@@ -128,12 +144,31 @@ export function AgentKeyConnection({
         if (!active) return;
         if (
           failure instanceof WorkerError &&
-          ['cma_key_pending', 'cma_key_slow_down'].includes(failure.code)
+          ['cma_key_pending', 'cma_key_slow_down', 'network', 'cma_key_unavailable'].includes(
+            failure.code,
+          )
         ) {
           if (failure.code === 'cma_key_slow_down') interval = Math.min(60, interval + 5);
+          try {
+            saveEnrollment(session.subject!, owner, {
+              ...enrollment!,
+              interval,
+              nextPollAt: Date.now() + interval * 1000,
+            });
+          } catch (storageFailure) {
+            setEnrollment(null);
+            setError((storageFailure as Error).message);
+            return;
+          }
+          setError(
+            failure.code === 'network' || failure.code === 'cma_key_unavailable'
+              ? '正在重新检查原授权，请稍候。'
+              : '',
+          );
           timer = setTimeout(() => void poll(), interval * 1000);
           return;
         }
+        clearEnrollment(session.subject!, owner);
         setEnrollment(null);
         setError(
           failure instanceof Error
@@ -142,7 +177,7 @@ export function AgentKeyConnection({
         );
       }
     }
-    timer = setTimeout(() => void poll(), interval * 1000);
+    timer = setTimeout(() => void poll(), Math.max(0, enrollment.nextPollAt - Date.now()));
     return () => {
       active = false;
       controller.abort();
@@ -170,28 +205,16 @@ export function AgentKeyConnection({
     await run(async () => {
       const current = generation.current;
       const value = await workerRequest<Enrollment>(session, 'key/request', {}, undefined, request);
-      const url = new URL(value.verification_uri);
-      if (
-        url.protocol !== 'https:' ||
-        url.pathname !== '/login/agent-key' ||
-        url.username ||
-        url.password ||
-        url.hash ||
-        !/^[A-Z0-9-]{4,32}$/.test(value.user_code) ||
-        url.searchParams.getAll('user_code').length !== 1 ||
-        url.searchParams.get('user_code') !== value.user_code ||
-        typeof value.device_code !== 'string' ||
-        value.device_code.length > 4096 ||
-        !Number.isInteger(value.expires_in) ||
-        !Number.isInteger(value.interval) ||
-        !value.device_code.length ||
-        value.expires_in < 1 ||
-        value.expires_in > 600 ||
-        value.interval < 1 ||
-        value.interval > 60
-      )
-        throw new Error('无法核对授权入口，请重试。');
-      if (current === generation.current) setEnrollment(value);
+      if (!validEnrollment(value)) throw new Error('无法核对授权入口，请重试。');
+      if (current === generation.current) {
+        const pending = {
+          ...value,
+          expiresAt: Date.now() + value.expires_in * 1000,
+          nextPollAt: Date.now() + value.interval * 1000,
+        };
+        saveEnrollment(session.subject!, owner, pending);
+        setEnrollment(pending);
+      }
     });
   }
   async function revoke() {
@@ -232,14 +255,20 @@ export function AgentKeyConnection({
             打开 NyxID 授权页
           </a>
           <p>完成后本页会自动连接。不会自动重发原消息。</p>
-          <button className="workspace__secondary" onClick={() => setEnrollment(null)}>
+          <button
+            className="workspace__secondary"
+            onClick={() => {
+              clearEnrollment(session.subject!, owner);
+              setEnrollment(null);
+            }}
+          >
             取消等待
           </button>
         </>
       ) : (
         <>
           <h2>连接 CMA</h2>
-          <p>授权一次后，本标签页会复用已有凭据。Agent Key 保存在浏览器，后端只临时转发。</p>
+          <p>授权一次后，此浏览器会复用已有凭据。刷新或打开其他空间时会自动核验。</p>
           <button
             disabled={busy}
             onClick={() => (identity ? setAttempt((v) => v + 1) : void start())}

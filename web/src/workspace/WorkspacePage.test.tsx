@@ -193,6 +193,28 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('CMA workspace', () => {
+  it('新标签页直接打开组织空间时，从目录恢复归属并复用已有浏览器授权', async () => {
+    sessionStorage.clear();
+    window.history.replaceState(null, '', '/workspace?space=my-lobby');
+    const api = mockApi();
+    render(<WorkspacePage request={api.request} />);
+    await userEvent.click(await screen.findByRole('button', { name: '打开 CMA 聊天' }));
+    await screen.findByText('当前空间使用：ChronoAI的 CMA');
+    await screen.findByText('已连接 CMA · Metaverse CMA');
+    await waitFor(() =>
+      expect(JSON.parse(sessionStorage.getItem('metaverse-worker:owner-a')!).orgId).toBe('org-one'),
+    );
+    expect(api.request.mock.calls.some((call) => String(call[0]).endsWith('/key/request'))).toBe(
+      false,
+    );
+    expect(
+      api.request.mock.calls.filter((call) => String(call[0]).endsWith('/key/check')).at(-1)?.[1]
+        ?.headers,
+    ).toMatchObject({
+      Authorization: 'Bearer nyx_test_browser_org_one',
+      'x-metaverse-cma-owner': 'org-one',
+    });
+  });
   it('requires explicit consent, submits one task, displays safe results and publishes only after confirmation', async () => {
     const api = mockApi({ enabled: false });
     const { container } = render(<WorkspacePage request={api.request} />);

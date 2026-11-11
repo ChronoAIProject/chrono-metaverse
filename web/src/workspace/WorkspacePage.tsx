@@ -59,12 +59,18 @@ function fileUploadIntent(base: Notebook): Intent {
 export function WorkspacePage({ request = fetch }: { readonly request?: typeof fetch }) {
   const [accountSession, setSession] = useState<Session | null>(null);
   const [note, setNote] = useState<Notebook>(emptyNotebook);
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const catalogSpace = catalog?.items.find((space) => space.id === note.spaceId);
+  const orgId =
+    !note.creation && catalogSpace
+      ? catalogSpace.owner.kind === 'org'
+        ? catalogSpace.owner.id
+        : ''
+      : note.orgId;
   const session = useMemo(
     () =>
-      accountSession
-        ? { ...accountSession, cmaOwnerId: note.orgId || accountSession.subject }
-        : null,
-    [accountSession, note.orgId],
+      accountSession ? { ...accountSession, cmaOwnerId: orgId || accountSession.subject } : null,
+    [accountSession, orgId],
   );
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -76,7 +82,6 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
   const [transcript, setTranscript] = useState<Transcript | null>(null);
   const [responseStatus, setResponseStatus] = useState('');
   const [controls, setControls] = useState<Controls | null>(null);
-  const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [catalogError, setCatalogError] = useState('');
   const [catalogReload, setCatalogReload] = useState(0);
   const [catalogBusy, setCatalogBusy] = useState(false);
@@ -284,6 +289,12 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
     },
     [session],
   );
+
+  // 新标签页按链接打开已有空间时，从目录恢复归属，复用该归属的浏览器授权。
+  useEffect(() => {
+    if (catalogSpace && !note.creation && note.orgId !== orgId)
+      commit({ ...noteRef.current, orgId });
+  }, [catalogSpace, note.creation, note.orgId, orgId, commit]);
 
   // Bounded, non-overlapping observation. No write is retried by polling.
   useEffect(() => {
@@ -840,7 +851,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
   const checkedPreview = previewIdentity?.url === preview ? previewIdentity.value : null;
   const ready = session?.connected && session.workerEnabled && keyReady;
   const disabled = busy || Boolean(note.pending);
-  const selected = catalog?.items.find((s) => s.id === note.spaceId);
+  const selected = catalogSpace;
   const visibleSpaces =
     catalog?.items.filter(
       (s) =>
@@ -1456,16 +1467,22 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                   <p>在线 worker 尚未启用。你仍可以查看有权限的空间。</p>
                 </div>
               )}
-              {session.workerAvailable && (
+              {session.workerAvailable &&
+              note.spaceId &&
+              !note.creation &&
+              !catalog &&
+              !catalogError ? (
+                <p role="status">正在核对空间归属和 CMA 授权…</p>
+              ) : session.workerAvailable ? (
                 <AgentKeyConnection
                   key={`${session.subject}:${session.csrfToken}:${session.cmaOwnerId}`}
                   session={session}
-                  ownerName={catalog?.organizations.find((o) => o.id === note.orgId)?.name}
+                  ownerName={catalog?.organizations.find((o) => o.id === orgId)?.name}
                   request={request}
                   onChange={setKeyReady}
                   checkVersion={keyCheck}
                 />
-              )}
+              ) : null}
               {session.workerAvailable && keyReady && !session.workerEnabled && (
                 <div className="workspace__consent">
                   <h2>启用空间聊天</h2>
