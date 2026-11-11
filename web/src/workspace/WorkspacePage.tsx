@@ -261,7 +261,12 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
   const report = useCallback((e: unknown) => {
     if (
       e instanceof WorkerError &&
-      ['cma_key_required', 'cma_key_account_mismatch', 'cma_key_scope_required'].includes(e.code)
+      [
+        'cma_key_required',
+        'cma_key_account_mismatch',
+        'cma_key_scope_required',
+        'cma_key_not_accepted',
+      ].includes(e.code)
     ) {
       setReadyOwner('');
       setKeyCheck((v) => v + 1);

@@ -70,6 +70,7 @@ it('授权链接预填请求，无需输入验证码或 Key；交付仅保存浏
         interval: 1,
       });
     if (String(input).endsWith('/poll')) return Response.json({ credential, identity });
+    if (String(input).endsWith('/check')) return Response.json(identity);
     throw new Error('unexpected request');
   });
   const change = vi.fn();
@@ -86,6 +87,7 @@ it('授权链接预填请求，无需输入验证码或 Key；交付仅保存浏
   expect(request.mock.calls.map((c) => String(c[0]))).toEqual([
     '/api/auth/nyxid/worker/key/request',
     '/api/auth/nyxid/worker/key/poll',
+    '/api/auth/nyxid/worker/key/check',
   ]);
 });
 it('已撤销凭据会移除本地记录并要求重新授权', async () => {
@@ -98,6 +100,56 @@ it('已撤销凭据会移除本地记录并要求重新授权', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('已撤销');
   expect(readBrowserKey('alice')).toBeNull();
   expect(change).not.toHaveBeenCalledWith(true);
+});
+it('首次批准后先保存 Key，CMA 核验失败不显示已连接，重试不重新授权', async () => {
+  let finishCheck: (response: Response) => void = () => {};
+  let available = false;
+  const request = vi.fn<typeof fetch>(async (input) => {
+    if (String(input).endsWith('/request'))
+      return Response.json({
+        device_code: 'private-device',
+        user_code: 'ABCD-1234',
+        verification_uri: 'https://nyxid.ai/login/agent-key?user_code=ABCD-1234',
+        expires_in: 60,
+        interval: 1,
+      });
+    if (String(input).endsWith('/poll')) return Response.json({ credential, identity });
+    if (String(input).endsWith('/check')) {
+      if (available) return Response.json(identity);
+      return new Promise<Response>((resolve) => {
+        finishCheck = resolve;
+      });
+    }
+    throw new Error('unexpected request');
+  });
+  const change = vi.fn();
+  render(<AgentKeyConnection session={session} request={request} onChange={change} />);
+  await userEvent.click(await screen.findByRole('button', { name: '授权此浏览器调用 CMA' }));
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(3), { timeout: 3000 });
+  expect(readBrowserKey('alice')?.credential).toBe(credential);
+  expect(change).not.toHaveBeenCalledWith(true);
+  expect(screen.queryByText('已连接 CMA · Metaverse CMA')).not.toBeInTheDocument();
+  finishCheck(
+    Response.json({ code: 'cma_key_not_accepted', detail: 'CMA 尚未接受此授权' }, { status: 503 }),
+  );
+  expect(await screen.findByRole('alert')).toHaveTextContent('CMA 尚未接受此授权');
+  expect(readBrowserKey('alice')?.credential).toBe(credential);
+  expect(change).not.toHaveBeenCalledWith(true);
+  available = true;
+  await userEvent.click(screen.getByRole('button', { name: '重新检查 CMA 授权' }));
+  await screen.findByText('已连接 CMA · Metaverse CMA');
+  expect(change).toHaveBeenLastCalledWith(true);
+  expect(request.mock.calls.filter(([input]) => String(input).endsWith('/request'))).toHaveLength(
+    1,
+  );
+  expect(request.mock.calls.filter(([input]) => String(input).endsWith('/poll'))).toHaveLength(1);
+  expect(
+    request.mock.calls
+      .filter(([input]) => String(input).endsWith('/check'))
+      .every(
+        ([, init]) => new Headers(init?.headers).get('authorization') === `Bearer ${credential}`,
+      ),
+  ).toBe(true);
 });
 it('刷新时暂时无法核验仍保留凭据，点击重试复用原凭据', async () => {
   saveBrowserKey('alice', credential, identity);
@@ -236,6 +288,7 @@ it('NyxID 已批准但尚未交付时刷新，恢复原申请并接收结果，�
         interval: 1,
       });
     if (String(input).endsWith('/poll')) return Response.json({ credential, identity });
+    if (String(input).endsWith('/check')) return Response.json(identity);
     throw new Error('unexpected request');
   });
   const change = vi.fn();

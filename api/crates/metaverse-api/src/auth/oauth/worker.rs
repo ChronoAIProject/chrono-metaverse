@@ -221,6 +221,9 @@ async fn read_json(mut response: reqwest::Response) -> Result<Value, ApiError> {
     serde_json::from_slice(&bytes).map_err(|_| unavailable())
 }
 fn refusal(status: StatusCode, body: &Value) -> ApiError {
+    if status == StatusCode::UNAUTHORIZED {
+        return agent_key::not_accepted();
+    }
     let code = body
         .get("code")
         .and_then(Value::as_str)
@@ -252,7 +255,6 @@ fn refusal(status: StatusCode, body: &Value) -> ApiError {
         }
     }
     let detail = match status.as_u16() {
-        401 => "CMA 未接受浏览器 Agent Key，请核对 CMA 服务授权后重试原请求",
         403 => "CMA 拒绝了这次操作的授权，请保留原请求并核对 CMA 权限",
         404 => "CMA 资源不存在，或当前账号无权访问",
         409 => "CMA 请求发生冲突，请核对当前状态后恢复原请求",

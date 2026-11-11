@@ -138,8 +138,9 @@ export function AgentKeyConnection({
         setIdentity(delivery.identity);
         setEnrollment(null);
         setError('');
-        setReady(true);
-        onChange(true);
+        // Preserve the delivered Key before checking CMA. A service failure
+        // must never consume the one-time delivery or require a new approval.
+        setAttempt((value) => value + 1);
       } catch (failure) {
         if (!active) return;
         if (

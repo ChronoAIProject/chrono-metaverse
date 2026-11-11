@@ -1,5 +1,7 @@
 # NyxID 用户授权与 Agent 组织访问
 
+当前 CMA 工作台的直连接入、浏览器 Key 复用及服务配置见 [CMA Agent Key](CMA_AGENT_KEY.md)。下文保留网页登录、组织访问和历次部署记录。
+
 Agent 继续使用已有的、绑定服务的 Agent Key。NyxID 校验 Key、服务访问权限和操作范围，再向 metaverse 签发身份令牌。metaverse 根据令牌的 `sub` 找到**同一用户**保存的 OAuth 授权，实时查询该用户在资源所属组织的角色。组织 admin 可管理，member/viewer 只读。
 
 不需要新增 NyxID 鉴权功能，也不需要把另一把“组织 Key”交给 Agent 或存进 metaverse。组织作为资源主人，与 Key 能访问哪些服务是不同的授权维度。

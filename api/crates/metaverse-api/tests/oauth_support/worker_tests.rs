@@ -1,12 +1,28 @@
 use super::*;
 
 pub(super) fn routes(provider: MockProvider, app: Router) -> Router {
+    let handshake = provider.clone();
     let list = provider.clone();
     let create = provider.clone();
     let message = provider.clone();
     let control = provider.clone();
     let attachment = provider.clone();
-    app.route("/api/v1/agents", get(move |headers: HeaderMap| {
+    app.route("/auth/session", get(move |headers: HeaderMap| {
+        let p = handshake.clone(); async move {
+            assert!(!headers.contains_key(header::COOKIE));
+            let token = headers[header::AUTHORIZATION].to_str().unwrap().strip_prefix("Bearer ").unwrap();
+            let (reply, gate, entered) = {
+                let mut s = p.0.lock().unwrap();
+                let subject = s.browser_keys[token]["api_key"]["owner_id"].clone();
+                s.cma_auth_calls += 1;
+                (s.cma_auth_reply.clone().unwrap_or((StatusCode::OK, json!({"authenticated":true,"subject":subject}))), s.cma_auth_gate.clone(), s.cma_auth_entered.clone())
+            };
+            if let Some(entered) = entered { entered.notify_one(); }
+            if let Some(gate) = gate { gate.notified().await; }
+            (reply.0, Json(reply.1))
+        }
+    }))
+    .route("/api/v1/agents", get(move |headers: HeaderMap| {
         let p = list.clone(); async move {
             let s = p.0.lock().unwrap();
             let token = headers[header::AUTHORIZATION].to_str().unwrap().strip_prefix("Bearer ").unwrap();
@@ -50,7 +66,7 @@ pub(super) fn routes(provider: MockProvider, app: Router) -> Router {
         let p=message.clone();async move {
             let mut state = p.0.lock().unwrap();
             state.worker_calls.push(("message".into(),headers["idempotency-key"].to_str().unwrap().into(),body));
-            if state.key_message_failure { return (StatusCode::FORBIDDEN, Json(json!({"code":"response_forbidden","message":"private diagnostic"}))).into_response(); }
+            if let Some(status) = state.key_message_refusal { return (status, Json(json!({"code":"response_forbidden","message":"private diagnostic"}))).into_response(); }
             (StatusCode::OK,[("x-cma-response-id","resp_test"),("x-cma-command-id","cmd_test"),("content-type","text/event-stream")],"event: response.created\ndata: {}\n\n").into_response()
         }
     }))

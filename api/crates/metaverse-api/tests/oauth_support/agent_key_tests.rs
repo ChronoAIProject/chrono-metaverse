@@ -5,6 +5,110 @@ fn metadata(subject: &str) -> Value {
 }
 
 #[tokio::test]
+async fn browser_key_connection_requires_cma_acceptance_without_losing_the_delivered_key() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let cookie = connect(&app, "key-owner", 3600).await;
+    let credential = "nyx_browser_key-owner";
+    let mut delivery = metadata("key-owner");
+    delivery["credential"] = json!(credential);
+    app.nyx.oauth.0.lock().unwrap().key_delivery = Some(delivery);
+    // A one-time delivery must survive a later CMA configuration failure.
+    let delivered = call(
+        &app,
+        &cookie,
+        "key/poll",
+        None,
+        json!({"deviceCode":"private-device-code"}),
+    )
+    .await;
+    assert_eq!(delivered.body["credential"], credential);
+    for (status, body, code) in [
+        (
+            StatusCode::UNAUTHORIZED,
+            json!({"detail":"private diagnostic"}),
+            "cma_key_not_accepted",
+        ),
+        (
+            StatusCode::FORBIDDEN,
+            json!({"detail":"private diagnostic"}),
+            "cma_key_not_accepted",
+        ),
+        (
+            StatusCode::OK,
+            json!({"authenticated":true,"subject":"another-owner"}),
+            "cma_key_not_accepted",
+        ),
+        (
+            StatusCode::OK,
+            json!({"authenticated":false,"subject":"key-owner"}),
+            "cma_key_not_accepted",
+        ),
+        (StatusCode::OK, json!({}), "cma_key_unavailable"),
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            json!({"detail":"private diagnostic"}),
+            "cma_key_unavailable",
+        ),
+        (StatusCode::FOUND, json!({}), "cma_key_unavailable"),
+    ] {
+        app.nyx.oauth.0.lock().unwrap().cma_auth_reply = Some((status, body));
+        let checked = call(&app, &cookie, "key/check", Some(credential), json!({})).await;
+        assert_eq!(checked.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(checked.body["code"], code, "{}", checked.body);
+        assert_eq!(checked.headers[header::CACHE_CONTROL], "no-store");
+        assert!(!checked.body.to_string().contains(credential));
+        assert!(!checked.body.to_string().contains("private diagnostic"));
+    }
+    app.nyx.oauth.0.lock().unwrap().cma_auth_reply = None;
+    let checked = call(&app, &cookie, "key/check", Some(credential), json!({})).await;
+    assert_eq!(checked.status, StatusCode::OK, "{}", checked.body);
+    assert_eq!(checked.body["ownerId"], "key-owner");
+    let s = app.nyx.oauth.0.lock().unwrap();
+    assert_eq!(s.cma_auth_calls, 8);
+    assert!(s.browser_keys.contains_key(credential));
+    assert!(s.key_revocations.is_empty());
+    assert!(s.worker_calls.is_empty());
+}
+
+#[tokio::test]
+async fn browser_key_cma_handshake_cannot_outlive_browser_disconnect() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let cookie = connect(&app, "key-owner", 3600).await;
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let gate = Arc::new(tokio::sync::Notify::new());
+    {
+        let mut s = app.nyx.oauth.0.lock().unwrap();
+        s.cma_auth_entered = Some(entered.clone());
+        s.cma_auth_gate = Some(gate.clone());
+    }
+    let (checked, ()) = tokio::join!(
+        call(
+            &app,
+            &cookie,
+            "key/check",
+            Some("nyx_browser_key-owner"),
+            json!({})
+        ),
+        async {
+            tokio::time::timeout(std::time::Duration::from_secs(5), entered.notified())
+                .await
+                .unwrap();
+            assert_eq!(
+                disconnect(&app, &cookie).await.status,
+                StatusCode::NO_CONTENT
+            );
+            gate.notify_one();
+        }
+    );
+    assert_eq!(checked.status, StatusCode::UNAUTHORIZED, "{}", checked.body);
+    assert!(!checked.body.to_string().contains("ownerId"));
+}
+
+#[tokio::test]
 async fn browser_key_accepts_multiple_cma_connections_but_requires_its_owners_connection() {
     let Some(app) = TestApp::start_with_options(true, true).await else {
         return;
@@ -479,11 +583,16 @@ async fn follow_up_recovery_preserves_worker_content_and_idempotency_through_fix
             .status,
         StatusCode::ACCEPTED
     );
-    app.nyx.oauth.0.lock().unwrap().key_message_failure = true;
-    let denied = call(&app, &cookie, "message", Some(credential), second.clone()).await;
-    assert_eq!(denied.body["code"], "cma_response_forbidden");
-    assert!(!denied.body.to_string().contains("private diagnostic"));
-    app.nyx.oauth.0.lock().unwrap().key_message_failure = false;
+    for (status, code) in [
+        (StatusCode::FORBIDDEN, "cma_response_forbidden"),
+        (StatusCode::UNAUTHORIZED, "cma_key_not_accepted"),
+    ] {
+        app.nyx.oauth.0.lock().unwrap().key_message_refusal = Some(status);
+        let denied = call(&app, &cookie, "message", Some(credential), second.clone()).await;
+        assert_eq!(denied.body["code"], code);
+        assert!(!denied.body.to_string().contains("private diagnostic"));
+    }
+    app.nyx.oauth.0.lock().unwrap().key_message_refusal = None;
     assert_eq!(
         call(&app, &cookie, "message", Some(credential), second)
             .await
@@ -491,8 +600,9 @@ async fn follow_up_recovery_preserves_worker_content_and_idempotency_through_fix
         StatusCode::ACCEPTED
     );
     let s = app.nyx.oauth.0.lock().unwrap();
-    assert_eq!(s.worker_calls.len(), 3);
+    assert_eq!(s.worker_calls.len(), 4);
     assert_eq!(s.worker_calls[1], s.worker_calls[2]);
+    assert_eq!(s.worker_calls[2], s.worker_calls[3]);
     assert!(s
         .worker_calls
         .iter()

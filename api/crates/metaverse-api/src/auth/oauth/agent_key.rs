@@ -58,6 +58,13 @@ fn unavailable() -> ApiError {
         "暂时无法核验浏览器的 Agent Key，请保留原请求后重试",
     )
 }
+pub(super) fn not_accepted() -> ApiError {
+    ApiError::new(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "cma_key_not_accepted",
+        "CMA 尚未接受此授权，请重新检查连接；原授权、任务和请求编号已保留",
+    )
+}
 fn scope_required() -> ApiError {
     ApiError::new(
         StatusCode::FORBIDDEN,
@@ -211,6 +218,44 @@ async fn verify(
     owner: &Owner,
 ) -> Result<Summary, ApiError> {
     identity(oauth, credential).await?.summary(owner)
+}
+
+/// A NyxID grant alone does not prove that the configured CMA accepts the Key.
+/// Only the browser's credential goes to CMA; no OAuth tokens or cookies do.
+async fn check_cma(
+    oauth: &OAuthService,
+    credential: &Credential,
+    owner: &Owner,
+) -> Result<(), ApiError> {
+    let base = oauth
+        .config
+        .cma_base_url
+        .as_deref()
+        .ok_or_else(unavailable)?;
+    let response = oauth
+        .http
+        .get(format!("{}/auth/session", base.trim_end_matches('/')))
+        .bearer_auth(credential.value())
+        .send()
+        .await
+        .map_err(|_| unavailable())?;
+    if matches!(response.status().as_u16(), 401 | 403) {
+        return Err(not_accepted());
+    }
+    if !response.status().is_success() {
+        return Err(unavailable());
+    }
+    #[derive(Deserialize)]
+    struct Session {
+        authenticated: bool,
+        subject: String,
+    }
+    let session: Session =
+        serde_json::from_slice(&private_body(response).await?).map_err(|_| unavailable())?;
+    if !session.authenticated || session.subject != owner.id {
+        return Err(not_accepted());
+    }
+    Ok(())
 }
 pub(super) async fn checked(
     oauth: &OAuthService,
@@ -439,6 +484,7 @@ async fn check(State(state): State<AppState>, headers: HeaderMap) -> Result<Resp
     let b = Browser::new(&state, &headers).await?;
     let credential = Credential::from_headers(&headers)?;
     let summary = verify(&b.oauth, &credential, &b.owner).await?;
+    check_cma(&b.oauth, &credential, &b.owner).await?;
     b.current().await?;
     Ok(Json(summary).into_response())
 }
