@@ -215,7 +215,7 @@ nyxid proxy request chrono-cd "$APP/services/metaverse-api/secrets?org_id=$ORG" 
 
 ## 浏览器 CMA 登录凭据
 
-`POST /api/auth/nyxid/worker/key/{request,poll,check,revoke}` 复用 NyxID `/api/v1/auth/agent-key/{request,poll,self}`。授权链接自动带入短请求码、CMA 服务和权限提示；用户在 NyxID 点击选择并批准，无需复制验证码或输入 Key。审批提示优先选择已有 Key，也可以使用预填名称、权限和期限的新建表单。device_code 和子凭据不放入授权链接。提示不是权限约束，交付及每次 CMA 调用均核验 Key 归属与实时权限：当前登录的个人账号、仅 `proxy` scope、仅活动的 CMA 服务、禁用所有服务及自动连接服务的通配授权。拒绝宽范围凭据，不扩大原 Key。
+`POST /api/auth/nyxid/worker/key/{request,poll,check,revoke}` 复用 NyxID `/api/v1/auth/agent-key/{request,poll,self}`。授权链接自动带入短请求码、CMA 服务和权限提示；用户在 NyxID 点击选择并批准，无需复制验证码或输入 Key。审批提示优先选择已有 Key，也可以使用预填名称、权限和期限的新建表单。device_code 和子凭据不放入授权链接。提示不是权限约束，交付及每次 CMA 调用均核验 Key 归属与实时权限：当前空间的个人/组织归属、仅 `proxy` scope、仅活动的 CMA 服务、禁用所有服务及自动连接服务的通配授权。拒绝宽范围凭据，不扩大原 Key。
 
 只有一次性交付时响应含子凭据，响应禁止缓存；后续核验仅返回安全元数据。子凭据不写入数据库、任务、恢复记录、URL 或诊断。账号不匹配或授权会话在交付期间失效时，尽力撤销该新交付子凭据。已有子凭据权限变化后仍可撤销自身。浏览器脚本可读取 `sessionStorage`，因此有限服务范围、期限和同源脚本安全仍然必要。OAuth 访问及刷新令牌仍加密保存在服务端，二者用途不同。
 
@@ -269,4 +269,4 @@ nyxid proxy request chrono-cd "$APP/services/metaverse-api/secrets?org_id=$ORG" 
 - chrono-cd 修订 24，generation 23；API `1/1`、web `2/2` 全部更新就绪。源码 `446eee58422c6606967620b5ec57661c8ba685d3`，镜像摘要来自成功的 [Images 43032305657](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/43032305657)，已固定到 `app.json`。这次部署使用现有 NyxID，不依赖未发布参数或 PR。
 - 个人与组织空间分别复用本标签页对应归属的浏览器子凭据。目标归属取自空间/创建草稿和组织目录，组织成员权限、Key owner、CMA 连接归属及消息上下文在 API 实时核验。首次在现有 NyxID 页面仍须点击对应归属的授权；没有对应 Key 时在新建页选择归属及 CMA 服务，无需手输验证码或 Key。
 - 发布后 14 项检查通过，包括精确构建身份、健康、匿名拒绝、OAuth scopes/PKCE、1280×720 和手机浮窗、拖动/收起/重开、浏览器凭据复用。登录后 UI 使用明确的 session/provider fixtures，没有批准真实授权或执行真实 CMA 命令。未批准的真实 NyxID 请求已确认可加载既有审批预览。
-- 应用规格逐字段比较仅有两项镜像及 CD 解析摘要改变；secret inventory、MongoDB 库和用户不变。运行日志未发现 ERROR/panic；前厅完整记录与部署前一致（seq 5、commit `b7a6773f3b1e4866adccaa9dadad78e7`）。本地 466 项网页测试、27 项真实 MongoDB OAuth 集成测试和 9 项相关浏览器场景通过；完整 CI 的浏览器任务记录时仍在运行，其余六个任务成功。
+- 应用规格逐字段比较仅有两项镜像及 CD 解析摘要改变；secret inventory、MongoDB 库和用户不变。运行日志未发现 ERROR/panic；前厅完整记录与部署前一致（seq 5、commit `b7a6773f3b1e4866adccaa9dadad78e7`）。本地 466 项网页测试、27 项真实 MongoDB OAuth 集成测试和 9 项相关浏览器场景通过；[完整 CI 43032305913](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/43032305913) 的八个任务全部成功，包括全站浏览器测试与 CI Gate。
