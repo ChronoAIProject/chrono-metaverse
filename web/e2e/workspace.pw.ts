@@ -206,13 +206,12 @@ test('在线工作台：明确授权、创建 worker、查看结果并确认发�
   const stage = await page.locator('.workspace__stage').boundingBox();
   const scene = await page.locator('.workspace__scene').boundingBox();
   const chat = await page.getByRole('dialog', { name: 'CMA 空间聊天' }).boundingBox();
-  expect(chat!.x).toBe(0);
-  expect(chat!.x + chat!.width).toBeLessThanOrEqual(scene!.x);
-  expect(scene!.width).toBeGreaterThanOrEqual(850);
+  expect(scene!.width).toBe(1280);
   expect(stage!.width).toBe(1280);
-  expect(scene!.width + chat!.width).toBe(1280);
-  expect(scene!.x + scene!.width).toBeLessThanOrEqual(1280);
-  expect(chat!.y + chat!.height).toBeLessThanOrEqual(720);
+  expect(chat!.x).toBeGreaterThanOrEqual(stage!.x + 8);
+  expect(chat!.x + chat!.width).toBeLessThanOrEqual(1280 - 8);
+  expect(chat!.y).toBeGreaterThanOrEqual(stage!.y + 8);
+  expect(chat!.y + chat!.height).toBeLessThanOrEqual(720 - 8);
   await page.getByRole('button', { name: '收起 CMA 聊天' }).click();
   await expect(page.getByRole('dialog', { name: 'CMA 空间聊天' })).toBeHidden();
   expect((await page.locator('.workspace__scene').boundingBox())!.width).toBe(1280);
@@ -221,6 +220,24 @@ test('在线工作台：明确授权、创建 worker、查看结果并确认发�
     path: testInfo.outputPath('existing-space-desktop.png'),
     fullPage: true,
   });
+  const handle = page.getByRole('button', { name: '移动 CMA 聊天窗，方向键调整位置' });
+  const before = (await handle.boundingBox())!;
+  await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(before.x + before.width / 2 + 180, before.y + before.height / 2 + 24);
+  await page.mouse.up();
+  await expect.poll(async () => (await handle.boundingBox())!.x).toBeCloseTo(before.x + 180);
+  await handle.focus();
+  await handle.press('ArrowRight');
+  await expect.poll(async () => (await handle.boundingBox())!.x).toBeCloseTo(before.x + 204);
+  await page.setViewportSize({ width: 390, height: 700 });
+  await expect
+    .poll(async () => {
+      const box = (await page.getByRole('dialog', { name: 'CMA 空间聊天' }).boundingBox())!;
+      return box.x >= 8 && box.y >= 8 && box.x + box.width <= 382 && box.y + box.height <= 692;
+    })
+    .toBe(true);
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page.getByLabel('给空间发消息').fill('在入口建一个欢迎区，先给我预览。');
   await page.getByRole('button', { name: '发送' }).click();
   await expect(page.getByText(/已建立草稿并核对预览/)).toBeVisible();
@@ -528,8 +545,11 @@ test('恢复旧任务：手机直接看到沙箱阶段的授权阻塞', async ({
   await page.getByRole('button', { name: '打开 CMA 聊天' }).click();
   const scene = await page.locator('.workspace__scene').boundingBox();
   const chat = await page.getByRole('dialog', { name: 'CMA 空间聊天' }).boundingBox();
-  expect(scene!.y + scene!.height).toBeLessThanOrEqual(chat!.y);
-  expect(scene!.height).toBeGreaterThanOrEqual(120);
+  expect(scene!.width).toBe(390);
+  expect(scene!.height).toBeGreaterThanOrEqual(chat!.height);
+  expect(chat!.x).toBeGreaterThanOrEqual(8);
+  expect(chat!.x + chat!.width).toBeLessThanOrEqual(382);
+  expect(chat!.y + chat!.height).toBeLessThanOrEqual(700);
   await page.getByText('需要完成 CMA 服务授权', { exact: true }).waitFor();
   await expect(page.getByText('需要完成 CMA 服务授权', { exact: true })).toBeInViewport();
   await expect(page.getByRole('button', { name: '刷新启动进度' })).toBeInViewport();

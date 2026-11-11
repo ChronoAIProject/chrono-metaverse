@@ -31,6 +31,7 @@ import './WorkspacePage.css';
 import { modelDigest, scaniverseLink, uploadModel } from './creation';
 import { StartupProgress } from './StartupProgress';
 import { AgentKeyConnection } from '../auth/AgentKeyConnection';
+import { useFloatingChat } from './useFloatingChat';
 
 type PreviewIdentity = {
   spaceId: string;
@@ -73,12 +74,13 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
   const [catalogReload, setCatalogReload] = useState(0);
   const [catalogBusy, setCatalogBusy] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const floatingChat = useFloatingChat(chatOpen);
   const [menu, setMenu] = useState<'spaces' | 'view' | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const spaceButton = useRef<HTMLButtonElement>(null);
   const viewButton = useRef<HTMLButtonElement>(null);
   const chatButton = useRef<HTMLButtonElement>(null);
-  const chatPanel = useRef<HTMLElement>(null);
+  const chatPanel = floatingChat.panel;
   const autoUpload = useRef(false);
   const [sourceFile, setSourceFile] = useState<{
     spaceId: string;
@@ -1233,7 +1235,10 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
         </section>
       )}
       {session?.connected && (
-        <div className={`workspace__stage${chatOpen ? ' workspace__stage--chat-open' : ''}`}>
+        <div
+          ref={floatingChat.stage}
+          className={`workspace__stage${chatOpen ? ' workspace__stage--chat-open' : ''}`}
+        >
           <section className="workspace__preview" aria-label="空间视图">
             <div className="workspace__scene">
               {preview ? (
@@ -1284,6 +1289,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
           <section
             id="workspace-chat"
             ref={chatPanel}
+            style={floatingChat.style}
             className="workspace__chat workspace__ui"
             role="dialog"
             aria-label="CMA 空间聊天"
@@ -1300,6 +1306,14 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
             }}
           >
             <header className="workspace__chat-heading">
+              <button
+                type="button"
+                className="workspace__drag-handle"
+                aria-label="移动 CMA 聊天窗，方向键调整位置"
+                {...floatingChat.handle}
+              >
+                ⠿
+              </button>
               <div>
                 <h2>{note.creation?.phase === 'draft' ? '创建空间' : 'CMA 聊天'}</h2>
                 <p>{spaceName || '选择一个空间，或创建新空间'}</p>

@@ -1,4 +1,4 @@
-/* 聊天展开后占用左侧独立一列，画布和聊天不重叠。 */
+/* CMA 浮窗可移动、收起；场景保持全宽。 */
 .workspace {
   height: 100%;
   min-width: 0;
@@ -265,12 +265,6 @@
   min-height: 0;
   overflow: hidden;
 }
-.workspace__stage--chat-open {
-  grid-template-columns: clamp(320px, 30vw, 380px) minmax(0, 1fr);
-}
-.workspace__stage--chat-open .workspace__preview {
-  grid-column: 2;
-}
 .workspace__preview {
   position: relative;
   grid-column: 1;
@@ -343,15 +337,33 @@
   font-weight: 400;
 }
 .workspace__chat {
-  grid-column: 1;
-  grid-row: 1;
+  position: absolute;
+  z-index: 30;
+  left: 16px;
+  bottom: 88px;
+  width: clamp(320px, 30vw, 380px);
+  max-width: calc(100% - 16px);
+  height: min(560px, calc(100% - 112px));
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--dsw-alias-bg-base);
-  border-right: 1px solid var(--dsw-alias-border-l1);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 12px;
+  box-shadow: 0 12px 48px #0006;
   overflow: hidden;
+}
+.workspace .workspace__drag-handle {
+  width: 24px;
+  min-width: 24px;
+  padding: 4px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.workspace .workspace__drag-handle:active {
+  cursor: grabbing;
 }
 .workspace__chat-heading {
   padding: 12px 14px;
@@ -653,20 +665,10 @@
     max-height: calc(100dvh - 80px);
   }
   .workspace__chat {
-    grid-column: 1;
-    grid-row: 2;
-    border-right: 0;
-    border-top: 1px solid var(--dsw-alias-border-l1);
-  }
-  .workspace__stage--chat-open {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(260px, 1fr) minmax(0, 1.5fr);
-  }
-  .workspace__stage--chat-open .workspace__preview {
-    grid-column: 1;
-  }
-  .workspace__stage--chat-open:has(.workspace__empty) {
-    grid-template-rows: minmax(120px, 1fr) minmax(0, 2fr);
+    left: 8px;
+    bottom: 12px;
+    width: calc(100% - 16px);
+    height: min(560px, calc(100% - 24px));
   }
   .workspace .workspace__chat-launcher {
     width: 34px;
