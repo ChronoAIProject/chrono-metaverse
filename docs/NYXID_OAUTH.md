@@ -262,3 +262,11 @@ nyxid proxy request chrono-cd "$APP/services/metaverse-api/secrets?org_id=$ORG" 
 - API 使用登录用户 OAuth 实时核实组织成员权限，验证 Key owner、类型、proxy 范围及有效 CMA 连接归属；create/message 还核对请求正文的空间归属。个人授权与组织授权不能交叉使用。切换归属会立即关闭发送能力，重新核验对应凭据后才恢复。拒绝错误归属的交付时撤销该次子凭据，保留原任务与请求编号。
 - 断开账号前逐条撤销该浏览器的个人/组织子凭据，成功一条才清除一条；结果不确定时保留恢复状态。持有者离开组织后仍能撤销自己的子凭据。
 - 466 项网页测试、27 项真实 MongoDB OAuth 集成测试、9 项相关浏览器场景通过；严格 clippy、lint、类型、格式和构建通过。浏览器场景分别覆盖个人与组织首次审批、刷新复用、撤销和凭据不进入恢复记录，审批使用明确的 fixtures。真实 NyxID 检查只验证现有请求预览兼容性，没有代替用户批准或执行真实 CMA 命令。
+
+
+## 兼容现有 NyxID 的归属授权部署记录（2026-11-11）
+
+- chrono-cd 修订 24，generation 23；API `1/1`、web `2/2` 全部更新就绪。源码 `446eee58422c6606967620b5ec57661c8ba685d3`，镜像摘要来自成功的 [Images 43032305657](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/43032305657)，已固定到 `app.json`。这次部署使用现有 NyxID，不依赖未发布参数或 PR。
+- 个人与组织空间分别复用本标签页对应归属的浏览器子凭据。目标归属取自空间/创建草稿和组织目录，组织成员权限、Key owner、CMA 连接归属及消息上下文在 API 实时核验。首次在现有 NyxID 页面仍须点击对应归属的授权；没有对应 Key 时在新建页选择归属及 CMA 服务，无需手输验证码或 Key。
+- 发布后 14 项检查通过，包括精确构建身份、健康、匿名拒绝、OAuth scopes/PKCE、1280×720 和手机浮窗、拖动/收起/重开、浏览器凭据复用。登录后 UI 使用明确的 session/provider fixtures，没有批准真实授权或执行真实 CMA 命令。未批准的真实 NyxID 请求已确认可加载既有审批预览。
+- 应用规格逐字段比较仅有两项镜像及 CD 解析摘要改变；secret inventory、MongoDB 库和用户不变。运行日志未发现 ERROR/panic；前厅完整记录与部署前一致（seq 5、commit `b7a6773f3b1e4866adccaa9dadad78e7`）。本地 466 项网页测试、27 项真实 MongoDB OAuth 集成测试和 9 项相关浏览器场景通过；完整 CI 的浏览器任务记录时仍在运行，其余六个任务成功。
