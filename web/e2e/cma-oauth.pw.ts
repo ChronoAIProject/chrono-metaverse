@@ -36,8 +36,7 @@ test('CMA OAuth 会话在刷新后复用，不读取或发送浏览器 Key', asy
     )
     .toBeNull();
   await page.reload();
-  const open = page.getByRole('button', { name: '打开 CMA 聊天' });
-  if (await open.isVisible()) await open.click();
+  await page.getByRole('button', { name: '打开 CMA 聊天' }).click();
   await expect(page.getByText('已连接 CMA', { exact: true })).toBeVisible();
   expect(probes).toBeGreaterThanOrEqual(2);
 });
