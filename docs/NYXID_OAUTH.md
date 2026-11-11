@@ -234,3 +234,12 @@ nyxid proxy request chrono-cd "$APP/services/metaverse-api/secrets?org_id=$ORG" 
 - 线上核验构建身份、健康、未登录访问拒绝、OAuth PKCE/scopes，以及 1280×720 的授权界面和模拟账号凭据复用，共 12 项通过。模拟账号仅用于检查已发布 UI，没有代替用户批准或执行真实 CMA 任务。部署补丁只改变镜像和相应摘要，其他服务配置及 secret inventory 不变；前厅完整记录部署前后相同，`head.seq=5`、commit `b7a6773f3b1e4866adccaa9dadad78e7`。
 - NyxID 两个域名的 Agent Key request 接口均实际返回预期形状；测试发起的未批准请求自然过期。直接跨域调用缺少所需预检/回执头支持；现有 NyxID CMA 代理的旧连接地址与目录部署不一致可返回 `cma_configuration_required`，其 admission 规则也未接入附件路径，因此此实现使用 CMA 已有服务绑定 Key 校验。没有修改全局目录、代理准入或拓宽授权。
 - [CMA #1638](https://github.com/ChronoAIProject/cma/issues/1638) 已因本接入无需扩展身份 OAuth 而关闭为 not planned；独立安全问题 #1579、#1580 保持开放。真实用户首次审批、CMA 环境授权和原第二条消息执行尚待验收；不以源码、模拟请求或部署健康替代真实执行结果。
+
+## 左侧并排聊天与点击授权部署记录（2026-11-11）
+
+- chrono-cd 修订 22，generation 21；API `1/1`、web `2/2` 全部更新就绪。运行源码 `ebf5b7e1b5ddc2ebde2f73b629ae5d8f49b791c3`，镜像来自成功的 [Images 43019087011](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/43019087011)，摘要固定在 `app.json`。补丁仅改变两项镜像及解析后的摘要；应用规格、MongoDB 库与用户、secret inventory 不变。chrono-cd 重建状态记录时自动刷新 MongoDB 的 `provisioned_at`。
+- 桌面聊天改到左侧独立列。1280×720 下聊天 `x=0, width=380`，场景 `x=380, width=900`，两者不重叠；收起聊天恢复场景全宽。手机继续场景在上、聊天在下。
+- 授权链接使用 NyxID 已有的 `user_code` 提示，预填本次请求及 CMA/proxy、名称、期限。用户点击进入、选择并批准即可，无需手输验证码或 Key；优先复用合适的已有授权，新建表单也已预填。仅短请求码进入链接，device_code 和凭据不进入链接。交付和每次调用的账号、服务及权限核验继续生效。前端拒绝缺失、错配或重复的链接请求码。
+- 已对线上 NyxID 发起一项未批准的真实请求，确认链接直接加载请求预览，不需输入请求码；没有代替用户批准。浏览器测试使用明确的模拟审批页，确认批准前不交付、点击批准后连接，并验证刷新复用及撤销。
+- 本地 465 项网页测试、107 项 API 单元测试、26 项真实 MongoDB OAuth 集成测试、8 项相关浏览器场景通过；格式、lint、类型、构建、严格 clippy 及 32 项部署检查通过。[CI 43019074399](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/43019074399) 全部通过，包含 24 项整站浏览器场景。
+- 发布后 13 项检查通过，覆盖精确构建身份、健康、匿名访问拒绝、OAuth scopes/PKCE、1280×720 布局、手机布局和模拟账号的授权入口及凭据复用。启动日志无 ERROR/panic，种子为 AlreadyDone；前厅完整响应与部署前一致（seq 5、commit `b7a6773f3b1e4866adccaa9dadad78e7`）。已发布页面的授权检查使用模拟会话及 provider，没有执行真实 CMA 命令；真实用户首次批准及原第二条消息的执行结果仍未冒充验收。

@@ -5,7 +5,7 @@
   },
   "services": {
     "metaverse-web": {
-      "image": "ghcr.io/chronoaiproject/chrono-metaverse-web:b454ec5@sha256:6cf43120c92fdfca56cdf166facaa14962a5f95fb28f5a5dca3d3ea3a26bae82",
+      "image": "ghcr.io/chronoaiproject/chrono-metaverse-web:ebf5b7e@sha256:d3e282e1ca48099ce457b08f33db016923a975048adf21b4d5a5f10692db64f0",
       "port": 8080,
       "routes": [
         "/"
@@ -21,7 +21,7 @@
       }
     },
     "metaverse-api": {
-      "image": "ghcr.io/chronoaiproject/chrono-metaverse-api:b454ec5@sha256:55e1adfa7b4f6b94b3d3987757759f474d2e8c60c1408b87e8ba1addaf463a89",
+      "image": "ghcr.io/chronoaiproject/chrono-metaverse-api:ebf5b7e@sha256:4ea267ed6abeb8fa1acdc4ac4a8a8e801450b9dcd575db2c4e357ae7ab47b6ad",
       "port": 8080,
       "routes": [
         "/api"
