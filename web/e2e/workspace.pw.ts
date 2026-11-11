@@ -549,7 +549,7 @@ test('恢复旧任务：手机直接看到沙箱阶段的授权阻塞', async ({
   expect(scene!.height).toBeGreaterThanOrEqual(chat!.height);
   expect(chat!.x).toBeGreaterThanOrEqual(8);
   expect(chat!.x + chat!.width).toBeLessThanOrEqual(page.viewportSize()!.width - 8);
-  expect(chat!.y + chat!.height).toBeLessThanOrEqual(700);
+  expect(chat!.y + chat!.height).toBeLessThanOrEqual(page.viewportSize()!.height - 8);
   await page.getByText('需要完成 CMA 服务授权', { exact: true }).waitFor();
   await expect(page.getByText('需要完成 CMA 服务授权', { exact: true })).toBeInViewport();
   await expect(page.getByRole('button', { name: '刷新启动进度' })).toBeInViewport();
