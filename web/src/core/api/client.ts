@@ -1,4 +1,6 @@
 import { decompressChunk } from '../chunk';
+import { sha256HexOfText } from '../hash';
+import { browserAssetCache } from './assetCache';
 import type {
   CommitSummary,
   EventDensity,
@@ -268,6 +270,7 @@ export function createPublicClient(options: PublicClientOptions = {}): PublicCli
   const base = trimTrailingSlashes(options.baseUrl ?? '');
   const universe = options.universe ?? undefined;
   const fetcher = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+  const previewGrants = new Map<string, { scope: string; expires: number }>();
   const headers = (extra: Record<string, string> = {}): Record<string, string> => ({
     ...(options.share ? { Authorization: `Share ${options.share}` } : {}),
     ...extra,
@@ -292,6 +295,21 @@ export function createPublicClient(options: PublicClientOptions = {}): PublicCli
 
   async function json<T>(path: string): Promise<T> {
     return (await (await request(path)).json()) as T;
+  }
+
+  async function previewBlob(
+    token: string,
+    hash: string,
+    onProgress?: ProgressCallback,
+  ): Promise<Blob> {
+    const checked = checkedHash(hash);
+    const load = async () =>
+      readBody(await request(`/previews/assets/${checked}`, undefined, token), onProgress);
+    const grant = previewGrants.get(token);
+    if (!grant || grant.expires <= Date.now()) return load();
+    const blob = await browserAssetCache.get(grant.scope, checked, load);
+    onProgress?.(blob.size, blob.size);
+    return blob;
   }
 
   const space = (id: string) => `/spaces/${segment(id)}`;
@@ -336,7 +354,16 @@ export function createPublicClient(options: PublicClientOptions = {}): PublicCli
     universeRevision: (universeId, seq) =>
       json<UniverseRevision>(`/universes/${segment(universeId)}/revisions/${seq}`),
     async preview(token) {
-      return (await (await request('/previews', undefined, token)).json()) as PreviewView;
+      previewGrants.delete(token);
+      const view = (await (await request('/previews', undefined, token)).json()) as PreviewView;
+      const expires = Date.parse(view.preview.expiresAt ?? '');
+      if (Number.isFinite(expires) && expires > Date.now()) {
+        previewGrants.set(token, {
+          scope: sha256HexOfText(`${base}\0${token}\0${view.preview.rev}`),
+          expires,
+        });
+      }
+      return view;
     },
     async previewChunk(token, hash) {
       const checked = checkedHash(hash);
@@ -344,12 +371,10 @@ export function createPublicClient(options: PublicClientOptions = {}): PublicCli
       return decompressChunk(new Uint8Array(await response.arrayBuffer()), checked);
     },
     async previewAsset(token, hash, onProgress) {
-      const response = await request(`/previews/assets/${checkedHash(hash)}`, undefined, token);
-      return (await readBody(response, onProgress)).arrayBuffer();
+      return (await previewBlob(token, hash, onProgress)).arrayBuffer();
     },
     async previewAssetBlob(token, hash, onProgress) {
-      const response = await request(`/previews/assets/${checkedHash(hash)}`, undefined, token);
-      return readBody(response, onProgress);
+      return previewBlob(token, hash, onProgress);
     },
   };
 }
