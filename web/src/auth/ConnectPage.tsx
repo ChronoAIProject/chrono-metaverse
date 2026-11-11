@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import './ConnectPage.css';
 import { browserKeyHeaders, clearBrowserKey, readBrowserKeys } from './browserKey';
+import { clearEnrollment } from './browserEnrollment';
 
 type Session =
   | { enabled: false; connected: false }
@@ -204,6 +205,7 @@ export function ConnectPage({ request = fetch }: { readonly request?: typeof fet
       }
       if (kind === 'disconnect') {
         clearBrowserKey(session.subject);
+        clearEnrollment(session.subject);
         setSession({ enabled: true, connected: false });
         setConfirmDisconnect(false);
         setOrganizations(null);
@@ -381,7 +383,7 @@ export function ConnectPage({ request = fetch }: { readonly request?: typeof fet
                     >
                       <h3 id="disconnect-title">断开此部署的连接？</h3>
                       <p>
-                        将撤销本标签页的 CMA
+                        将撤销此浏览器保存的 CMA
                         登录凭据，删除本部署保存的账号授权，并使相关连接会话失效。依赖这份账号授权的
                         Agent 组织访问会停止；需要时可以重新授权。
                       </p>
@@ -577,7 +579,7 @@ export function ConnectPage({ request = fetch }: { readonly request?: typeof fet
                 <p>
                   访问和刷新令牌加密保存在 metaverse 服务端，不提供给网页或 Agent。Agent
                   继续保管自己的 Key。在线工作台的 CMA
-                  登录子凭据仅存在本标签页浏览器存储中，服务端只临时转发。
+                  登录子凭据仅保存在此浏览器，按账号与空间归属复用，服务端只临时转发。
                 </p>
                 <p>
                   “断开连接”删除本部署保存的凭据。若要撤销 NyxID 侧的应用授权，请到 NyxID 管理。

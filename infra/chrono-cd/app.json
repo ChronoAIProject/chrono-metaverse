@@ -5,7 +5,7 @@
   },
   "services": {
     "metaverse-web": {
-      "image": "ghcr.io/chronoaiproject/chrono-metaverse-web:db8d147@sha256:27a580118654b1ce2e6267921ac2c6a97a7a474aeebc66b0192735e550fc5617",
+      "image": "ghcr.io/chronoaiproject/chrono-metaverse-web:446eee5@sha256:245166848a66bdfdcacffa02316a7b52bf1ac494222ec1cad7aecb101200fce9",
       "port": 8080,
       "routes": [
         "/"

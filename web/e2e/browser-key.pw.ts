@@ -6,9 +6,7 @@ for (const organization of [false, true])
     context,
   }) => {
     const owner = organization ? 'org-one' : 'browser-owner';
-    const storage = organization
-      ? 'metaverse-cma-credential:v1:org:org-one'
-      : 'metaverse-cma-credential:v1';
+    const storage = `metaverse-cma-credential:v2:browser-owner:${owner}`;
     if (organization)
       await page.addInitScript(() => {
         if (!sessionStorage.getItem('metaverse-worker:browser-owner'))
@@ -31,7 +29,7 @@ for (const organization of [false, true])
     let revocations = 0;
     let approved = false;
     let pendingPolls = 0;
-    // This fixture models human approval; it does not approve a real NyxID request.
+    // 使用明确的审批夹具，不批准真实 NyxID 请求。
     await context.route(/^https:\/\/nyxid\.ai\/login\/agent-key(?:\?|$)/, async (route) => {
       const params = new URL(route.request().url()).searchParams;
       expect(params.get('user_code')).toBe('ABCD-1234');
@@ -50,7 +48,7 @@ for (const organization of [false, true])
       });
     });
     await page.setViewportSize({ width: 1280, height: 720 });
-    await page.route('**/api/auth/nyxid/**', async (route) => {
+    await context.route('**/api/auth/nyxid/**', async (route) => {
       const path = new URL(route.request().url()).pathname;
       if (path.endsWith('/session'))
         return route.fulfill({
@@ -66,7 +64,17 @@ for (const organization of [false, true])
       if (path.endsWith('/spaces'))
         return route.fulfill({
           json: {
-            items: [],
+            items: [
+              {
+                id: 'browser-space',
+                name: '已有测试空间',
+                description: '',
+                owner: { kind: organization ? 'org' : 'person', id: owner },
+                access: 'manage',
+                visibility: 'private',
+                updatedAt: '2026-11-11T00:00:00Z',
+              },
+            ],
             organizations: organization
               ? [{ id: 'org-one', name: 'Example team', role: 'admin' }]
               : [],
@@ -74,6 +82,11 @@ for (const organization of [false, true])
           },
         });
       expect(route.request().headers()['x-csrf-token']).toBe('csrf');
+      if (path.includes('/view/'))
+        return route.fulfill({
+          status: 404,
+          json: { code: 'fixture_no_scene', detail: '仅测试授权恢复' },
+        });
       expect(route.request().headers()['x-metaverse-cma-owner']).toBe(
         organization ? owner : undefined,
       );
@@ -118,6 +131,14 @@ for (const organization of [false, true])
     const href = await page.getByRole('link', { name: '打开 NyxID 授权页' }).getAttribute('href');
     expect(new URL(href!).searchParams.get('user_code')).toBe('ABCD-1234');
     expect(href).not.toMatch(/private-device|nyx_browser/);
+    await expect.poll(() => pendingPolls).toBeGreaterThan(0);
+    await page.reload();
+    await page.getByRole('button', { name: '打开 CMA 聊天' }).click();
+    await expect(page.getByRole('link', { name: '打开 NyxID 授权页' })).toHaveAttribute(
+      'href',
+      href!,
+    );
+    expect(enrollments).toBe(1);
     const popupPromise = page.waitForEvent('popup');
     await page.getByRole('link', { name: '打开 NyxID 授权页' }).click();
     const approval = await popupPromise;
@@ -128,9 +149,7 @@ for (const organization of [false, true])
     await approval.getByRole('button', { name: '确认授权 CMA' }).click();
     await expect(page.getByText('已连接 CMA · Metaverse CMA')).toBeVisible();
     await approval.close();
-    expect(await page.evaluate((key) => sessionStorage.getItem(key), storage)).toContain(
-      credential,
-    );
+    expect(await page.evaluate((key) => localStorage.getItem(key), storage)).toContain(credential);
     expect(
       await page.evaluate(() => sessionStorage.getItem('metaverse-worker:browser-owner') ?? ''),
     ).not.toContain(credential);
@@ -139,9 +158,42 @@ for (const organization of [false, true])
     await expect(page.getByText('已连接 CMA · Metaverse CMA')).toBeVisible();
     expect(enrollments).toBe(1);
     expect(checks).toBeGreaterThan(0);
+    await page.getByRole('button', { name: '选择空间' }).click();
+    await page.getByRole('button', { name: /已有测试空间/ }).click();
+    await expect(page.getByText('已连接 CMA · Metaverse CMA')).toBeVisible();
+    await page.reload();
+    await page.getByRole('button', { name: '打开 CMA 聊天' }).click();
+    await expect(page.getByText('已连接 CMA · Metaverse CMA')).toBeVisible();
+    // 新标签页没有聊天恢复记录，必须依据目录归属找到同一凭据。
+    const other = await context.newPage();
+    await other.goto('/');
+    expect(
+      await other.evaluate(() => sessionStorage.getItem('metaverse-worker:browser-owner')),
+    ).toBeNull();
+    await other.goto('/workspace?space=browser-space');
+    await other.getByRole('button', { name: '打开 CMA 聊天' }).click();
+    await expect(other.getByText('已连接 CMA · Metaverse CMA')).toBeVisible();
+    expect(enrollments).toBe(1);
+    // 切到另一归属时，不能借用原归属的凭据。
+    await other.evaluate(
+      (org) =>
+        sessionStorage.setItem(
+          'metaverse-worker:browser-owner',
+          JSON.stringify({
+            spaceId: '',
+            orgId: org ? '' : 'org-one',
+            instruction: '',
+          }),
+        ),
+      organization,
+    );
+    await other.goto('/workspace');
+    await other.getByRole('button', { name: '打开 CMA 聊天' }).click();
+    await expect(other.getByRole('button', { name: '授权此浏览器调用 CMA' })).toBeVisible();
+    await other.close();
     await page.screenshot({ path: '/tmp/metaverse-browser-key-1280.png' });
     await page.getByRole('button', { name: '断开此浏览器的 CMA 授权' }).click();
     await expect(page.getByRole('button', { name: '授权此浏览器调用 CMA' })).toBeVisible();
     expect(revocations).toBe(1);
-    expect(await page.evaluate((key) => sessionStorage.getItem(key), storage)).toBeNull();
+    expect(await page.evaluate((key) => localStorage.getItem(key), storage)).toBeNull();
   });

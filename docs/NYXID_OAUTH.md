@@ -215,7 +215,7 @@ nyxid proxy request chrono-cd "$APP/services/metaverse-api/secrets?org_id=$ORG" 
 
 ## 浏览器 CMA 登录凭据
 
-`POST /api/auth/nyxid/worker/key/{request,poll,check,revoke}` 复用 NyxID `/api/v1/auth/agent-key/{request,poll,self}`。授权链接自动带入短请求码、CMA 服务和权限提示；用户在 NyxID 点击选择并批准，无需复制验证码或输入 Key。审批提示优先选择已有 Key，也可以使用预填名称、权限和期限的新建表单。device_code 和子凭据不放入授权链接。提示不是权限约束，交付及每次 CMA 调用均核验 Key 归属与实时权限：当前登录的个人账号、仅 `proxy` scope、仅活动的 CMA 服务、禁用所有服务及自动连接服务的通配授权。拒绝宽范围凭据，不扩大原 Key。
+`POST /api/auth/nyxid/worker/key/{request,poll,check,revoke}` 复用 NyxID `/api/v1/auth/agent-key/{request,poll,self}`。授权链接自动带入短请求码、CMA 服务和权限提示；用户在 NyxID 点击选择并批准，无需复制验证码或输入 Key。审批提示优先选择已有 Key，也可以使用预填名称、权限和期限的新建表单。device_code 和子凭据不放入授权链接。提示不是权限约束，交付及每次 CMA 调用均核验 Key 归属与实时权限：当前空间的个人/组织归属、仅 `proxy` scope、仅活动的 CMA 服务、禁用所有服务及自动连接服务的通配授权。拒绝宽范围凭据，不扩大原 Key。
 
 只有一次性交付时响应含子凭据，响应禁止缓存；后续核验仅返回安全元数据。子凭据不写入数据库、任务、恢复记录、URL 或诊断。账号不匹配或授权会话在交付期间失效时，尽力撤销该新交付子凭据。已有子凭据权限变化后仍可撤销自身。浏览器脚本可读取 `sessionStorage`，因此有限服务范围、期限和同源脚本安全仍然必要。OAuth 访问及刷新令牌仍加密保存在服务端，二者用途不同。
 
@@ -262,3 +262,23 @@ nyxid proxy request chrono-cd "$APP/services/metaverse-api/secrets?org_id=$ORG" 
 - API 使用登录用户 OAuth 实时核实组织成员权限，验证 Key owner、类型、proxy 范围及有效 CMA 连接归属；create/message 还核对请求正文的空间归属。个人授权与组织授权不能交叉使用。切换归属会立即关闭发送能力，重新核验对应凭据后才恢复。拒绝错误归属的交付时撤销该次子凭据，保留原任务与请求编号。
 - 断开账号前逐条撤销该浏览器的个人/组织子凭据，成功一条才清除一条；结果不确定时保留恢复状态。持有者离开组织后仍能撤销自己的子凭据。
 - 466 项网页测试、27 项真实 MongoDB OAuth 集成测试、9 项相关浏览器场景通过；严格 clippy、lint、类型、格式和构建通过。浏览器场景分别覆盖个人与组织首次审批、刷新复用、撤销和凭据不进入恢复记录，审批使用明确的 fixtures。真实 NyxID 检查只验证现有请求预览兼容性，没有代替用户批准或执行真实 CMA 命令。
+
+
+## 兼容现有 NyxID 的归属授权部署记录（2026-11-11）
+
+- chrono-cd 修订 24，generation 23；API `1/1`、web `2/2` 全部更新就绪。源码 `446eee58422c6606967620b5ec57661c8ba685d3`，镜像摘要来自成功的 [Images 43032305657](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/43032305657)，已固定到 `app.json`。这次部署使用现有 NyxID，不依赖未发布参数或 PR。
+- 个人与组织空间分别复用本标签页对应归属的浏览器子凭据。目标归属取自空间/创建草稿和组织目录，组织成员权限、Key owner、CMA 连接归属及消息上下文在 API 实时核验。首次在现有 NyxID 页面仍须点击对应归属的授权；没有对应 Key 时在新建页选择归属及 CMA 服务，无需手输验证码或 Key。
+- 发布后 14 项检查通过，包括精确构建身份、健康、匿名拒绝、OAuth scopes/PKCE、1280×720 和手机浮窗、拖动/收起/重开、浏览器凭据复用。登录后 UI 使用明确的 session/provider fixtures，没有批准真实授权或执行真实 CMA 命令。未批准的真实 NyxID 请求已确认可加载既有审批预览。
+- 应用规格逐字段比较仅有两项镜像及 CD 解析摘要改变；secret inventory、MongoDB 库和用户不变。运行日志未发现 ERROR/panic；前厅完整记录与部署前一致（seq 5、commit `b7a6773f3b1e4866adccaa9dadad78e7`）。本地 466 项网页测试、27 项真实 MongoDB OAuth 集成测试和 9 项相关浏览器场景通过；[完整 CI 43032305913](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/43032305913) 的八个任务全部成功，包括全站浏览器测试与 CI Gate。
+
+- 发布页面另有 2 项个人/组织审批回归通过，直接加载生产静态资源，覆盖各自的首次点击审批、刷新复用、撤销及凭据不进入恢复记录；session/provider/审批页均为明确的 fixtures，未批准真实 NyxID 请求或执行 CMA 命令。
+- 可选的 [NyxID PR #2375](https://github.com/ChronoAIProject/NyxID/pull/2375) 提供通用 `owner_id` 审批偏好：只从已认证选项识别归属、优先显示对应 Key、预填可修改的新 Key 归属。它不包含 CMA/Metaverse 的权限规则；旧 #2373 已关闭。本版本运行不依赖该 PR 合并或部署。
+
+## 多份 CMA 连接的审批兼容修复（2026-11-11）
+
+- 线上新建的个人“Metaverse 网页”Key 可同时包含个人和组织的 CMA 连接。先前 API 要求每条 CMA 连接都与空间归属相同，导致 NyxID 批准成功后仍被拒绝，并撤销本次子凭据。这项额外限制已移除：Key owner 仍必须匹配当前空间归属，scope 仍仅允许 proxy，所有连接仍须为活动 CMA，且至少有一条已授权连接属于当前归属。不能用另一归属的 Key 或仅有其他归属的 CMA 连接代替。
+- chrono-cd 修订 25，generation 24；API `1/1`、web `2/2` 就绪。只更新 API 镜像为源码 `ec9b3403e86bc027075990bfec2a04620eaf4475`，摘要取自成功的 [Images 43038690581](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/43038690581)。网页仍为 `446eee58422c6606967620b5ec57661c8ba685d3`。已撤销的旧子凭据需要用户再次点击审批，复用对应归属的已有 Key 即可。
+- 28 项真实 MongoDB OAuth 集成测试、严格 clippy 和格式检查通过。新增回归验证个人/组织多份 CMA 连接的核验与交付、非 CMA 连接拒绝、缺失当前归属连接拒绝。生产 API 健康、匿名 poll/check 拒绝及 no-store 通过；规格仅 API 镜像与对应摘要变化，secret inventory、MongoDB 身份和前厅完整记录不变，日志无 ERROR/panic。CD 正常刷新 MongoDB provisioned_at 元数据。未代替用户审批或执行真实 CMA 命令。
+- Node 22 下 9 项相关浏览器场景及 32 项部署规格检查通过。源码 CI 的接口服务、网页单测与构建、SDK、本地重建、依赖审查和仓库检查通过；网页端到端任务在安装 Chromium 的 Ubuntu 软件源解析阶段失败（`Temporary failure resolving 'azure.archive.ubuntu.com'`），重跑仍为相同安装失败。
+- CI 改用与锁文件 `@playwright/test` 版本一致的官方 `v1.58.2-noble` 镜像，固定注册表返回并核对内容哈希的摘要，预装 Chromium 和系统依赖。工作流及镜像固定检查通过。[新一轮 CI 43042758824](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/43042758824) 八项任务全部通过，其中浏览器测试 25 项通过；同源码另一轮 `43042746567` 也成功。该轮 `87ef411` 与已部署 `ec9b340` 的 api/web/recon/sdk 源码相同，仅增加部署记录及 CI 修复。
+- NyxID #2375 已解决主线共享授权页冲突并重新生成。100 项授权相关前端测试、lint、生产构建和本地 CLI 授权页一致性检查通过；[CI 43042760474](https://github.com/ChronoAIProject/NyxID/actions/runs/43042760474) 已验证限时切换到独立且保留 Ubuntu 签名校验的备用源，完整 CLI 测试与授权页一致性任务通过。该轮 Oracle Worker 检查仍因 Chromium 安装的同类 DNS 错误失败，已改用匹配其现有 Playwright 版本、按摘要固定的官方镜像，保留全部检查并重新运行 [CI 43045376988](https://github.com/ChronoAIProject/NyxID/actions/runs/43045376988)。新一轮结果待确认，未合并或部署该可选 PR。

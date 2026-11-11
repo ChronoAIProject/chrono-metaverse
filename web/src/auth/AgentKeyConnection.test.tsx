@@ -2,7 +2,14 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AgentKeyConnection } from './AgentKeyConnection';
-import { browserKeyHeaders, readBrowserKey, saveBrowserKey } from './browserKey';
+import {
+  browserKeyHeaders,
+  clearBrowserKey,
+  readBrowserKey,
+  readBrowserKeys,
+  saveBrowserKey,
+} from './browserKey';
+import { readEnrollment } from './browserEnrollment';
 
 const identity = {
   keyId: 'key-cma',
@@ -92,6 +99,24 @@ it('已撤销凭据会移除本地记录并要求重新授权', async () => {
   expect(readBrowserKey('alice')).toBeNull();
   expect(change).not.toHaveBeenCalledWith(true);
 });
+it('刷新时暂时无法核验仍保留凭据，点击重试复用原凭据', async () => {
+  saveBrowserKey('alice', credential, identity);
+  let available = false;
+  const request = vi.fn<typeof fetch>(async () =>
+    available
+      ? Response.json(identity)
+      : Response.json({ code: 'cma_key_unavailable', detail: '暂时无法核验' }, { status: 503 }),
+  );
+  const change = vi.fn();
+  render(<AgentKeyConnection session={session} request={request} onChange={change} />);
+  expect(await screen.findByRole('alert')).toHaveTextContent('暂时无法核验');
+  expect(readBrowserKey('alice')?.credential).toBe(credential);
+  expect(change).not.toHaveBeenCalledWith(true);
+  available = true;
+  await userEvent.click(screen.getByRole('button', { name: '重新检查 CMA 授权' }));
+  await screen.findByText('已连接 CMA · Metaverse CMA');
+  expect(request.mock.calls.every((call) => String(call[0]).endsWith('/key/check'))).toBe(true);
+});
 it.each(['', 'user_code=WXYZ-5678', 'user_code=ABCD-1234&user_code=ABCD-1234'])(
   '不打开缺失、错配或重复请求码的授权链接：%s',
   async (query) => {
@@ -163,4 +188,72 @@ it('个人和组织缓存互相隔离，切换归属后核验对应凭据', asyn
   expect(browserKeyHeaders('alice', 'org-other')).toEqual({ 'x-metaverse-cma-owner': 'org-other' });
   expect(() => saveBrowserKey('alice', credential, identity, org)).toThrow();
   expect(() => saveBrowserKey('alice', credential, orgIdentity)).toThrow();
+});
+
+it('浏览器授权跨标签页复用，账号和归属分别保存，断开不删除其他账号', () => {
+  saveBrowserKey('alice', credential, { ...identity, ownerId: 'alice' });
+  saveBrowserKey(
+    'alice',
+    'nyx_test_org_credential',
+    { ...identity, ownerId: 'org-one' },
+    'org-one',
+  );
+  saveBrowserKey('bob', 'nyx_test_bob_credential', { ...identity, ownerId: 'bob' });
+  sessionStorage.clear();
+  expect(readBrowserKey('alice')?.credential).toBe(credential);
+  expect(
+    readBrowserKeys('alice')
+      .map((key) => key.owner)
+      .sort(),
+  ).toEqual(['alice', 'org-one']);
+  expect(readBrowserKey('bob', 'org-one')).toBeNull();
+  clearBrowserKey('alice');
+  expect(readBrowserKeys('alice')).toEqual([]);
+  expect(readBrowserKey('bob')?.credential).toBe('nyx_test_bob_credential');
+});
+
+it('迁移旧标签页授权后，刷新和新标签页继续使用，撤销后不从旧缓存复活', () => {
+  sessionStorage.setItem(
+    'metaverse-cma-credential:v1',
+    JSON.stringify({ subject: 'alice', credential, identity }),
+  );
+  expect(readBrowserKey('alice')?.credential).toBe(credential);
+  expect(sessionStorage.getItem('metaverse-cma-credential:v1')).toBeNull();
+  sessionStorage.clear();
+  expect(readBrowserKey('alice')?.credential).toBe(credential);
+  clearBrowserKey('alice');
+  expect(readBrowserKey('alice')).toBeNull();
+});
+
+it('NyxID 已批准但尚未交付时刷新，恢复原申请并接收结果，不再创建授权', async () => {
+  const request = vi.fn<typeof fetch>(async (input) => {
+    if (String(input).endsWith('/request'))
+      return Response.json({
+        device_code: 'private-original-device',
+        user_code: 'ABCD-1234',
+        verification_uri: 'https://nyxid.ai/login/agent-key?user_code=ABCD-1234',
+        expires_in: 60,
+        interval: 1,
+      });
+    if (String(input).endsWith('/poll')) return Response.json({ credential, identity });
+    throw new Error('unexpected request');
+  });
+  const change = vi.fn();
+  const first = render(
+    <AgentKeyConnection session={session} request={request} onChange={change} />,
+  );
+  await userEvent.click(await screen.findByRole('button', { name: '授权此浏览器调用 CMA' }));
+  await screen.findByRole('link', { name: '打开 NyxID 授权页' });
+  const pending = readEnrollment('alice', 'alice')!;
+  first.unmount();
+  render(<AgentKeyConnection session={session} request={request} onChange={change} />);
+  await screen.findByRole('link', { name: '打开 NyxID 授权页' });
+  expect(readEnrollment('alice', 'alice')?.expiresAt).toBe(pending.expiresAt);
+  await screen.findByText('已连接 CMA · Metaverse CMA', {}, { timeout: 3000 });
+  expect(request.mock.calls.filter((call) => String(call[0]).endsWith('/request'))).toHaveLength(1);
+  expect(request.mock.calls.find((call) => String(call[0]).endsWith('/poll'))?.[1]?.body).toBe(
+    JSON.stringify({ deviceCode: 'private-original-device' }),
+  );
+  expect(readEnrollment('alice', 'alice')).toBeNull();
+  expect(readBrowserKey('alice')?.credential).toBe(credential);
 });

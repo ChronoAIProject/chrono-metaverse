@@ -62,7 +62,7 @@ fn scope_required() -> ApiError {
     ApiError::new(
         StatusCode::FORBIDDEN,
         "cma_key_scope_required",
-        "请选择属于当前空间归属、仅允许其 CMA 服务且 scope 为 proxy 的 Agent Key",
+        "请选择属于当前空间归属、仅允许 CMA 服务且 scope 为 proxy 的 Agent Key，并包含该归属的 CMA 连接",
     )
 }
 
@@ -138,8 +138,14 @@ impl Identity {
                 s.slug != "cma"
                     || s.catalog_service_slug.as_deref() != Some("cma")
                     || !s.is_active
-                    || s.owner_id.as_deref().is_some_and(|id| id != owner.id)
-                    || (owner.org && s.owner_id.as_deref() != Some(owner.id.as_str()))
+            })
+            // NyxID can grant several connections for the same catalog service.
+            // Direct CMA calls use the verified Key owner, not a connection owner.
+            // Require a matching connection without rejecting other CMA grants.
+            || !key.effective_services.iter().any(|s| {
+                key.allowed_service_ids.contains(&s.id)
+                    && (s.owner_id.as_deref() == Some(owner.id.as_str())
+                        || (!owner.org && s.owner_id.is_none()))
             })
         {
             return Err(scope_required());

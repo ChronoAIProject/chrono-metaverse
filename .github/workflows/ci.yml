@@ -106,6 +106,10 @@ jobs:
   web-e2e:
     name: 网站端到端（web e2e）
     runs-on: ubuntu-latest
+    # 官方镜像预装锁文件对应的 Chromium 与系统依赖，避免每轮测试依赖 Ubuntu 软件源。
+    container:
+      image: mcr.microsoft.com/playwright:v1.58.2-noble@sha256:6446946a1d9fd62d9ae501312a2d76a43ee688542b21622056a372959b65d63d
+      options: --ipc=host
     timeout-minutes: 25
     defaults:
       run:
@@ -119,10 +123,6 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - name: 安装依赖
         run: npm ci --no-audit --no-fund
-      # 装锁文件里 @playwright/test 对应版本的 Chromium 和系统依赖（与 CMA 相同的写法）。
-      - name: 安装 Chromium
-        timeout-minutes: 10
-        run: npx --no-install playwright install --with-deps chromium
       - name: 端到端测试
         run: npm run e2e
       - name: 失败时上传截图

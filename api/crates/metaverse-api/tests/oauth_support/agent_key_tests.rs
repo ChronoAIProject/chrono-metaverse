@@ -5,6 +5,113 @@ fn metadata(subject: &str) -> Value {
 }
 
 #[tokio::test]
+async fn browser_key_accepts_multiple_cma_connections_but_requires_its_owners_connection() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let cookie = connect(&app, "key-owner", 3600).await;
+    register_org(&app.nyx.oauth);
+    for (credential, owner) in [
+        ("nyx_browser_key-owner", None),
+        ("nyx_browser_org_credential", Some(ORG)),
+    ] {
+        let mut key = app.nyx.oauth.0.lock().unwrap().browser_keys[credential].clone();
+        key["api_key"]["effective_services"][0]["owner_id"] = json!(owner.unwrap_or("key-owner"));
+        let mut extra = key["api_key"]["effective_services"][0].clone();
+        extra["id"] = json!("other-cma");
+        extra["owner_id"] = json!(if owner.is_some() { "key-owner" } else { ORG });
+        key["api_key"]["allowed_service_ids"] = json!(["svc-cma", "other-cma"]);
+        key["api_key"]["effective_services"]
+            .as_array_mut()
+            .unwrap()
+            .push(extra);
+        app.nyx
+            .oauth
+            .0
+            .lock()
+            .unwrap()
+            .browser_keys
+            .insert(credential.into(), key.clone());
+        let checked = call_owner(
+            &app,
+            &cookie,
+            "key/check",
+            Some(credential),
+            json!({}),
+            owner,
+        )
+        .await;
+        assert_eq!(checked.status, StatusCode::OK, "{}", checked.body);
+        assert_eq!(checked.body["ownerId"], owner.unwrap_or("key-owner"));
+        let mut delivery = key.clone();
+        delivery["credential"] = json!(credential);
+        app.nyx.oauth.0.lock().unwrap().key_delivery = Some(delivery);
+        assert_eq!(
+            call_owner(
+                &app,
+                &cookie,
+                "key/poll",
+                None,
+                json!({"deviceCode":"private-device-code"}),
+                owner
+            )
+            .await
+            .status,
+            StatusCode::OK
+        );
+        // Other catalog services remain forbidden, even alongside a valid CMA grant.
+        key["api_key"]["effective_services"][1]["catalog_service_slug"] = json!("other-service");
+        app.nyx
+            .oauth
+            .0
+            .lock()
+            .unwrap()
+            .browser_keys
+            .insert(credential.into(), key.clone());
+        assert_eq!(
+            call_owner(
+                &app,
+                &cookie,
+                "key/check",
+                Some(credential),
+                json!({}),
+                owner
+            )
+            .await
+            .body["code"],
+            "cma_key_scope_required"
+        );
+        // A CMA grant under another owner cannot stand in for the required connection.
+        key["api_key"]["effective_services"][1]["catalog_service_slug"] = json!("cma");
+        key["api_key"]["effective_services"]
+            .as_array_mut()
+            .unwrap()
+            .remove(0);
+        key["api_key"]["allowed_service_ids"] = json!(["other-cma"]);
+        app.nyx
+            .oauth
+            .0
+            .lock()
+            .unwrap()
+            .browser_keys
+            .insert(credential.into(), key);
+        assert_eq!(
+            call_owner(
+                &app,
+                &cookie,
+                "key/check",
+                Some(credential),
+                json!({}),
+                owner
+            )
+            .await
+            .body["code"],
+            "cma_key_scope_required"
+        );
+    }
+}
+
+#[tokio::test]
 async fn browser_key_owner_is_bound_to_live_membership_connection_and_task_context() {
     let Some(app) = TestApp::start_with_options(true, true).await else {
         return;
