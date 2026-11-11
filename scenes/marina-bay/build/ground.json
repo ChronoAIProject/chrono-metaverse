@@ -1,0 +1,110 @@
+[
+  {
+    "entityId": "bay.orthophoto-0-0",
+    "layer": "ext",
+    "kind": "object",
+    "label": "滨海湾岸线与地面（OneMap 正射影像）",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "a922983762964b432aa20eb26f60e8318f482c3a4e2e01a35e191efbcf641f76",
+    "bounds": {
+      "min": [
+        13.630548,
+        -60.257,
+        218.955664
+      ],
+      "max": [
+        1229.680393,
+        -60.257,
+        1432.034595
+      ]
+    },
+    "props": {
+      "数据来源": "OneMap OrthoJPG 正射影像",
+      "来源地址": "https://www.onemap.gov.sg/3d",
+      "版权": "Map Data © 2026 SLA",
+      "影像级别": 17,
+      "瓦片数": 36
+    }
+  },
+  {
+    "entityId": "bay.orthophoto-0-1",
+    "layer": "ext",
+    "kind": "object",
+    "label": "滨海湾岸线与地面（OneMap 正射影像）",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "4aa83d19f9baf47acc3e5e5b6ec5627627bc37f9b4bbc909085d88e7a0a2a129",
+    "bounds": {
+      "min": [
+        -371.322344,
+        -60.257,
+        -606.578477
+      ],
+      "max": [
+        844.728743,
+        -60.257,
+        606.503117
+      ]
+    },
+    "props": {
+      "数据来源": "OneMap OrthoJPG 正射影像",
+      "来源地址": "https://www.onemap.gov.sg/3d",
+      "版权": "Map Data © 2026 SLA",
+      "影像级别": 17,
+      "瓦片数": 36
+    }
+  },
+  {
+    "entityId": "bay.orthophoto-1-0",
+    "layer": "ext",
+    "kind": "object",
+    "label": "滨海湾岸线与地面（OneMap 正射影像）",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "14a8eca314000d2f016ba89dd9839079cc38ba4d913bcf7c3c88037f2b4c3b79",
+    "bounds": {
+      "min": [
+        -817.467646,
+        -60.257,
+        606.503117
+      ],
+      "max": [
+        398.582198,
+        -60.257,
+        1819.582048
+      ]
+    },
+    "props": {
+      "数据来源": "OneMap OrthoJPG 正射影像",
+      "来源地址": "https://www.onemap.gov.sg/3d",
+      "版权": "Map Data © 2026 SLA",
+      "影像级别": 17,
+      "瓦片数": 36
+    }
+  },
+  {
+    "entityId": "bay.orthophoto-1-1",
+    "layer": "ext",
+    "kind": "object",
+    "label": "滨海湾岸线与地面（OneMap 正射影像）",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "5024845be9210e1a33aa3c4a102172cc370edc7c08cc35d0b2feaef8db91db6c",
+    "bounds": {
+      "min": [
+        -1202.420538,
+        -60.257,
+        -219.031024
+      ],
+      "max": [
+        13.630548,
+        -60.257,
+        994.050569
+      ]
+    },
+    "props": {
+      "数据来源": "OneMap OrthoJPG 正射影像",
+      "来源地址": "https://www.onemap.gov.sg/3d",
+      "版权": "Map Data © 2026 SLA",
+      "影像级别": 17,
+      "瓦片数": 36
+    }
+  }
+]

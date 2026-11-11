@@ -6,6 +6,7 @@ import { displayName, type Anchor, type EntityBody } from '../core/api/types';
 import { GRID_UNIT } from '../core/chunk';
 import {
   anchorPosition,
+  isBackgroundEntity,
   placePoint,
   type MemberContent,
   type Placement,
@@ -22,7 +23,7 @@ import {
 import { materialKey } from '../core/shapes/build';
 import type { VoxelPart } from '../core/voxels';
 import { anchorKey, linkRoute, type AnchorRef, type Visual } from '../core/visuals';
-import { clipBox, frameBox, scanCeilingHeight, scanFrameBox } from './framing';
+import { backgroundFarPlane, clipBox, frameBox, scanCeilingHeight, scanFrameBox } from './framing';
 import { iconElement } from './icons';
 import { createLights } from './lighting';
 import {
@@ -144,6 +145,8 @@ interface FrameSource {
   readonly group: THREE.Object3D;
   readonly clips: readonly THREE.Box3[];
   readonly extraBoxes: readonly THREE.Box3[];
+  /** 背景只用于远裁面，模型尚未下载时也能保留完整的窗外视距。 */
+  readonly backgroundBoxes: readonly THREE.Box3[];
   /** 原始视图的扫描模型（组里的那一份）；取景用它表面的 2%–98% 分位包围盒，不用外包盒。 */
   readonly scan: THREE.Object3D | null;
 }
@@ -479,12 +482,13 @@ export class SceneView {
     return this.textures.get(hash, role);
   }
 
-  /** 形状材质按材质的分组键和"玻璃"共用一份（画法见 materials.ts）。 */
-  private shapeMaterial(material: Material, glass: boolean): THREE.Material {
-    const key = `${materialKey(material)}|${glass ? 'g' : 'o'}`;
+  /** 形状材质按材质、玻璃和背景状态共用一份（画法见 materials.ts）。 */
+  private shapeMaterial(material: Material, glass: boolean, background = false): THREE.Material {
+    const key = `${materialKey(material)}|${glass ? 'g' : 'o'}|${background}`;
     let cached = this.materialCache.get(key);
     if (cached === undefined) {
-      cached = createShapeMaterial(material, glass, this.materialContext);
+      const context = background ? { ...this.materialContext, clipping: [] } : this.materialContext;
+      cached = createShapeMaterial(material, glass, context);
       this.materialCache.set(key, cached);
     }
     return cached;
@@ -576,26 +580,36 @@ export class SceneView {
    * 共用的模型实例：几何体和材质属于缓存，释放时跳过。材质按物件的外观（`tint`、`opacity`、`unlit`、
    * `shading`）派生，也进缓存；`albedo` 且没有别的外观时直接用模型里的材质（materials.ts）。
    */
-  private sharedClone(model: THREE.Object3D, look?: EntityBody['material']): THREE.Object3D {
+  private sharedClone(
+    model: THREE.Object3D,
+    look?: EntityBody['material'],
+    background = false,
+  ): THREE.Object3D {
     const clone = model.clone(true);
     clone.traverse((object) => {
       object.userData.sharedGeometry = true;
       object.userData.sharedMaterial = true;
+      object.userData.background = background;
       const mesh = object as THREE.Mesh;
       if (!mesh.isMesh) return;
       mesh.material = Array.isArray(mesh.material)
-        ? mesh.material.map((m) => this.modelMaterial(m, look))
-        : this.modelMaterial(mesh.material, look);
+        ? mesh.material.map((m) => this.modelMaterial(m, look, background))
+        : this.modelMaterial(mesh.material, look, background);
     });
     return clone;
   }
 
-  private modelMaterial(source: THREE.Material, look: EntityBody['material']): THREE.Material {
-    const key = modelMaterialKey(source, look);
-    if (key === null) return source;
+  private modelMaterial(
+    source: THREE.Material,
+    look: EntityBody['material'],
+    background = false,
+  ): THREE.Material {
+    const lookKey = modelMaterialKey(source, look);
+    if (lookKey === null && !background) return source;
+    const key = `${lookKey ?? source.uuid}|${background}`;
     let material = this.materialCache.get(key);
     if (material === undefined) {
-      material = createModelMaterial(source, look, this.clipping);
+      material = createModelMaterial(source, look, background ? [] : this.clipping);
       this.materialCache.set(key, material);
     }
     return material;
@@ -694,6 +708,7 @@ export class SceneView {
     scans: (THREE.Object3D | null)[],
     warnings: string[],
   ): void {
+    const generation = this.generation;
     disposeObject(this.content);
     disposeObject(this.overlay);
     this.content.clear();
@@ -713,6 +728,16 @@ export class SceneView {
     let entityCount = 0;
     let voxelFaces = 0;
     let hasScan = false;
+    let modelsPending = 0;
+    let modelsLoaded = 0;
+    let modelsFailed = 0;
+    const modelProgress = () => {
+      if (this.disposed || generation !== this.generation) return;
+      this.host.dataset.modelsPending = String(modelsPending);
+      this.host.dataset.modelsLoaded = String(modelsLoaded);
+      this.host.dataset.modelsFailed = String(modelsFailed);
+    };
+    modelProgress();
     const inUse = new Set<string>();
 
     plans.forEach(({ member, entities }, index) => {
@@ -725,14 +750,20 @@ export class SceneView {
       // 物件：按（几何体，玻璃）分批，两个以上画成 InstancedMesh。
       const batches = new Map<
         string,
-        { key: string; glass: boolean; items: { entity: EntityBody; matrix: THREE.Matrix4 }[] }
+        {
+          key: string;
+          glass: boolean;
+          background: boolean;
+          items: { entity: EntityBody; matrix: THREE.Matrix4 }[];
+        }
       >();
       for (const { entity, key, matrix } of entities) {
         if (key === null || matrix === null) continue;
         inUse.add(key);
         const glass = entity.props?.glass === true;
-        const batchKey = `${key}|${glass}`;
-        const batch = batches.get(batchKey) ?? { key, glass, items: [] };
+        const background = isBackgroundEntity(entity);
+        const batchKey = `${key}|${glass}|${background}`;
+        const batch = batches.get(batchKey) ?? { key, glass, background, items: [] };
         batch.items.push({ entity, matrix });
         batches.set(batchKey, batch);
       }
@@ -743,7 +774,9 @@ export class SceneView {
           warnings.push(...built.warnings.map((w) => `${item.entity.entityId}：${w}`));
         }
         if (built.geometry.index === null || built.geometry.index.count === 0) continue;
-        const materials = built.materials.map((m) => this.shapeMaterial(m, batch.glass));
+        const materials = built.materials.map((m) =>
+          this.shapeMaterial(m, batch.glass, batch.background),
+        );
         textured += built.materials.filter(isTextureMaterial).length;
         const payload = batch.items.map((item) => ({
           spaceId: member.spaceId,
@@ -764,11 +797,16 @@ export class SceneView {
           mesh.matrixAutoUpdate = false;
           mesh.matrix.copy(batch.items[0]!.matrix);
         }
-        mesh.userData = { sharedGeometry: true, sharedMaterial: true, entities: payload };
+        mesh.userData = {
+          sharedGeometry: true,
+          sharedMaterial: true,
+          entities: payload,
+          background: batch.background,
+        };
         mesh.name = batch.items.map((item) => item.entity.entityId).join(',');
         if (batch.glass) mesh.renderOrder = 2;
         group.add(mesh);
-        this.pickables.push(mesh);
+        if (!batch.background) this.pickables.push(mesh);
         triangles += (built.geometry.index.count / 3) * batch.items.length;
         entityCount += batch.items.length;
       }
@@ -779,6 +817,7 @@ export class SceneView {
       for (const { entity } of entities) {
         if (entity.shape !== undefined || entity.assetHash === undefined) continue;
         entityCount += 1;
+        const background = isBackgroundEntity(entity);
         const holder = new THREE.Group();
         holder.userData = { entities: [{ spaceId: member.spaceId, entity }] };
         const bounds = entity.bounds;
@@ -790,23 +829,36 @@ export class SceneView {
           );
         }
         group.add(holder);
-        this.pickables.push(holder);
-        this.model(entity.assetHash)
-          ?.then((model) => {
-            if (this.disposed || holder.parent === null) return;
-            const box = bounds ? this.modelBox(model) : null;
-            const placed = box ? placedModelBox(box, entity.transform) : null;
-            const fit = bounds && placed ? modelFit(placed, bounds) : null;
-            if (fit !== null) {
-              const warning = modelFitWarning(entity.entityId, fit);
-              console.warn(warning);
-              warnings.push(warning);
+        if (!background) this.pickables.push(holder);
+        const pending = this.model(entity.assetHash);
+        if (pending === null) continue;
+        modelsPending++;
+        modelProgress();
+        pending
+          .then((model) => {
+            if (!this.disposed && holder.parent !== null) {
+              const box = bounds ? this.modelBox(model) : null;
+              const placed = box ? placedModelBox(box, entity.transform) : null;
+              const fit = bounds && placed ? modelFit(placed, bounds) : null;
+              if (fit !== null) {
+                const warning = modelFitWarning(entity.entityId, fit);
+                console.warn(warning);
+                warnings.push(warning);
+              }
+              const clone = this.sharedClone(model, entity.material, background);
+              placeRotatedModel(clone, entity.transform, box ?? undefined);
+              holder.add(fitModelInto(clone, fit));
             }
-            const clone = this.sharedClone(model, entity.material);
-            placeRotatedModel(clone, entity.transform, box ?? undefined);
-            holder.add(fitModelInto(clone, fit));
+            modelsLoaded++;
           })
-          .catch(() => warnings.push(`${entity.entityId}：模型下载失败`));
+          .catch(() => {
+            modelsFailed++;
+            warnings.push(`${entity.entityId}：模型下载失败`);
+          })
+          .finally(() => {
+            modelsPending--;
+            modelProgress();
+          });
       }
 
       // 方块。
@@ -895,6 +947,15 @@ export class SceneView {
     const modeChanged = this.lastMode !== null && this.lastMode !== content.mode;
     this.lastMode = content.mode;
     if (!this.framed || (this.autoFramed && modeChanged)) this.frameContent();
+    else {
+      // 用户移动过镜头时保留位置，新增的背景仍须能落入远裁面。
+      this.camera.far = backgroundFarPlane(
+        this.camera.position,
+        this.camera.far,
+        this.frameSources.flatMap((source) => source.backgroundBoxes),
+      );
+      this.camera.updateProjectionMatrix();
+    }
     this.host.dataset.triangles = String(Math.round(triangles));
   }
 
@@ -1416,7 +1477,7 @@ export class SceneView {
 
   /**
    * 取景用的包围盒：每个成员里内容（物件、方块、扫描）的包围盒和它的取景范围（实体区，
-   * 优化 + 扩展视图再加虚拟区）求交后合并；没有定义实体区的成员用全部内容。
+   * 优化 + 扩展视图再加非背景虚拟区）求交后合并；背景不参与主体取景。
    * 扫描按表面（三角形按面积加权）的 2%–98% 分位包围盒算，去掉零星的离群点（framing.ts 的 `scanFrameBox`）。
    * 开着剖切时顶部压到剖切高度（上面的内容反正看不见）。
    */
@@ -1426,7 +1487,11 @@ export class SceneView {
     for (const source of this.frameSources) {
       const box = new THREE.Box3();
       source.group.traverse((object) => {
-        if ((object as THREE.Mesh).isMesh && object.userData.scanPart !== true) {
+        if (
+          (object as THREE.Mesh).isMesh &&
+          object.userData.scanPart !== true &&
+          object.userData.background !== true
+        ) {
           box.union(new THREE.Box3().expandByObject(object));
         }
       });
@@ -1434,6 +1499,10 @@ export class SceneView {
       for (const extra of source.extraBoxes) box.union(extra);
       out.union(clipBox(box, source.clips));
     }
+    // 只有背景、没有主体的空间仍能查看全貌。
+    if (out.isEmpty())
+      for (const source of this.frameSources)
+        for (const box of source.backgroundBoxes) out.union(box);
     if (out.isEmpty()) return out;
     if (this.cutHeight !== null && this.cutHeight > out.min.y + 0.2) {
       out.max.y = Math.min(out.max.y, this.cutHeight);
@@ -1463,7 +1532,11 @@ export class SceneView {
     this.camera.position.copy(frame.position);
     const diagonal = box.getSize(new THREE.Vector3()).length();
     this.camera.near = Math.max(0.02, frame.distance / 500);
-    this.camera.far = Math.max(50, frame.distance * 20 + diagonal * 2);
+    this.camera.far = backgroundFarPlane(
+      frame.position,
+      Math.max(50, frame.distance * 20 + diagonal * 2),
+      this.frameSources.flatMap((source) => source.backgroundBoxes),
+    );
     this.camera.updateProjectionMatrix();
     this.controls.update();
     this.framed = true;
@@ -1837,9 +1910,12 @@ function frameSourceOf(
     group,
     scan,
     clips: member.view.frameBoxes.map((box) => placedGridBox(member.placement, box)),
+    backgroundBoxes: member.view.entities
+      .filter((entity) => isBackgroundEntity(entity) && entity.bounds !== undefined)
+      .map((entity) => placedBox(member.placement, entity.bounds!.min, entity.bounds!.max)),
     extraBoxes: [
       ...member.view.entities
-        .filter((e) => e.shape === undefined && e.bounds !== undefined)
+        .filter((e) => e.shape === undefined && e.bounds !== undefined && !isBackgroundEntity(e))
         .map((e) => placedBox(member.placement, e.bounds!.min, e.bounds!.max)),
       // 优化 + 扩展视图画出了虚拟区的边界光效，整块虚拟区都纳入取景。
       ...member.view.virtualRegions.flatMap((r) =>
