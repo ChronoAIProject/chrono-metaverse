@@ -91,6 +91,223 @@
         "官方测量高度（米）": 185.782,
         "三角形数": 1152,
         "处理说明": "保留办公室以下的官方楼体，上方剖开以查看室内",
+        "background": true,
+        "landmark": {
+          "label": "ChronoAI · 14层办公室",
+          "position": [
+            5.75,
+            1.4,
+            15.7209848659808
+          ],
+          "minDistance": 80,
+          "focusBounds": {
+            "min": [
+              0.1999,
+              -0.0531,
+              -0.0269
+            ],
+            "max": [
+              11.3001,
+              2.8031,
+              15.4088
+            ]
+          }
+        }
+      }
+    },
+    {
+      "entityId": "bay.tower1-above-office",
+      "layer": "ext",
+      "kind": "object",
+      "label": "MBFC Tower 1 · 完整楼体上部",
+      "regionId": "marina-bay-exterior",
+      "assetHash": "a0472e8a8bd4b8f248e45d190aaeaa111438b2c392d1281fdf50833a10204447",
+      "bounds": {
+        "min": [
+          -14.597709,
+          3.21,
+          -35.969591
+        ],
+        "max": [
+          38.060906,
+          125.78154,
+          16.163776
+        ]
+      },
+      "props": {
+        "数据来源": "OneMap 三维地图 · 新加坡土地管理局 SLA",
+        "来源地址": "https://www.onemap.gov.sg/3d",
+        "版权": "Map Data © 2026 SLA",
+        "官方建筑编号": "SLA_BLDG2_481e89dc-0dd1-4b88-8f8b-80303d6842a2",
+        "原始分片": "7/77/7_0.b3dm",
+        "数据创建日期": "2025-06-08",
+        "官方测量高度（米）": 185.782,
+        "三角形数": 116,
+        "backgroundView": {
+          "focus": [
+            5.75,
+            1.375,
+            7.69095
+          ],
+          "minDistance": 80
+        },
+        "处理说明": "远看时显示所在楼层以上的完整官方楼体",
+        "background": true
+      }
+    },
+    {
+      "entityId": "bay.tower1-office-facade-west",
+      "layer": "ext",
+      "kind": "object",
+      "label": "MBFC Tower 1 · 十四层外墙",
+      "regionId": "marina-bay-exterior",
+      "assetHash": "f75a24f2d82db513954c94338ebc8cf9122944e5a6d0010ac490e1d64a5bb1be",
+      "bounds": {
+        "min": [
+          -14.59958,
+          -0.13,
+          -35.982471
+        ],
+        "max": [
+          -0.12,
+          3.21,
+          15.491644
+        ]
+      },
+      "props": {
+        "数据来源": "OneMap 三维地图 · 新加坡土地管理局 SLA",
+        "来源地址": "https://www.onemap.gov.sg/3d",
+        "版权": "Map Data © 2026 SLA",
+        "官方建筑编号": "SLA_BLDG2_481e89dc-0dd1-4b88-8f8b-80303d6842a2",
+        "原始分片": "7/77/7_0.b3dm",
+        "数据创建日期": "2025-06-08",
+        "官方测量高度（米）": 185.782,
+        "三角形数": 84,
+        "backgroundView": {
+          "focus": [
+            5.75,
+            1.375,
+            7.69095
+          ],
+          "minDistance": 80
+        },
+        "background": true
+      }
+    },
+    {
+      "entityId": "bay.tower1-office-facade-east",
+      "layer": "ext",
+      "kind": "object",
+      "label": "MBFC Tower 1 · 十四层外墙",
+      "regionId": "marina-bay-exterior",
+      "assetHash": "57e48f32c201ebd167e34106285a9dd3595adbb1e14bd95581bc2d799366f8e8",
+      "bounds": {
+        "min": [
+          11.62,
+          -0.13,
+          -35.796931
+        ],
+        "max": [
+          38.068141,
+          3.21,
+          16.175207
+        ]
+      },
+      "props": {
+        "数据来源": "OneMap 三维地图 · 新加坡土地管理局 SLA",
+        "来源地址": "https://www.onemap.gov.sg/3d",
+        "版权": "Map Data © 2026 SLA",
+        "官方建筑编号": "SLA_BLDG2_481e89dc-0dd1-4b88-8f8b-80303d6842a2",
+        "原始分片": "7/77/7_0.b3dm",
+        "数据创建日期": "2025-06-08",
+        "官方测量高度（米）": 185.782,
+        "三角形数": 58,
+        "backgroundView": {
+          "focus": [
+            5.75,
+            1.375,
+            7.69095
+          ],
+          "minDistance": 80
+        },
+        "background": true
+      }
+    },
+    {
+      "entityId": "bay.tower1-office-facade-north",
+      "layer": "ext",
+      "kind": "object",
+      "label": "MBFC Tower 1 · 十四层外墙",
+      "regionId": "marina-bay-exterior",
+      "assetHash": "02d1ce857f2eba485a58dfd92cafb9b7df77880e33ba44d77082c0fc524ad5c2",
+      "bounds": {
+        "min": [
+          -0.12,
+          -0.13,
+          -35.952811
+        ],
+        "max": [
+          11.62,
+          3.21,
+          -35.792869
+        ]
+      },
+      "props": {
+        "数据来源": "OneMap 三维地图 · 新加坡土地管理局 SLA",
+        "来源地址": "https://www.onemap.gov.sg/3d",
+        "版权": "Map Data © 2026 SLA",
+        "官方建筑编号": "SLA_BLDG2_481e89dc-0dd1-4b88-8f8b-80303d6842a2",
+        "原始分片": "7/77/7_0.b3dm",
+        "数据创建日期": "2025-06-08",
+        "官方测量高度（米）": 185.782,
+        "三角形数": 14,
+        "backgroundView": {
+          "focus": [
+            5.75,
+            1.375,
+            7.69095
+          ],
+          "minDistance": 80
+        },
+        "background": true
+      }
+    },
+    {
+      "entityId": "bay.tower1-office-facade-south",
+      "layer": "ext",
+      "kind": "object",
+      "label": "MBFC Tower 1 · 十四层外墙",
+      "regionId": "marina-bay-exterior",
+      "assetHash": "d41fcd5bb2f5a8cca9f37488aee66d3fb268d1897718fcc181f75e17842f1481",
+      "bounds": {
+        "min": [
+          4.830842,
+          -0.13,
+          15.62
+        ],
+        "max": [
+          11.62,
+          3.21,
+          15.796584
+        ]
+      },
+      "props": {
+        "数据来源": "OneMap 三维地图 · 新加坡土地管理局 SLA",
+        "来源地址": "https://www.onemap.gov.sg/3d",
+        "版权": "Map Data © 2026 SLA",
+        "官方建筑编号": "SLA_BLDG2_481e89dc-0dd1-4b88-8f8b-80303d6842a2",
+        "原始分片": "7/77/7_0.b3dm",
+        "数据创建日期": "2025-06-08",
+        "官方测量高度（米）": 185.782,
+        "三角形数": 10,
+        "backgroundView": {
+          "focus": [
+            5.75,
+            1.375,
+            7.69095
+          ],
+          "minDistance": 80
+        },
         "background": true
       }
     },
@@ -122,6 +339,14 @@
         "数据创建日期": "2025-06-08",
         "官方测量高度（米）": 185.782,
         "三角形数": 44,
+        "backgroundView": {
+          "focus": [
+            5.75,
+            1.375,
+            7.69095
+          ],
+          "maxDistance": 80
+        },
         "处理说明": "根据官方楼体截面生成的示意楼板，不代表完整室内平面图",
         "background": true
       }

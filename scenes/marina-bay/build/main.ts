@@ -19,7 +19,7 @@ export default function build(base: BuildBase, kit: Kit) {
   const ids = new Set(entities.map((entity) => entity.entityId));
   return {
     message:
-      '按 Tower 1 十四层楼体截面配准办公室，补入下方楼体和所在楼层示意楼板，滨海湾作为窗外背景',
+      '办公室近景保留楼体剖面，拉远显示完整 Tower 1 和十四层办公室标记，滨海湾作为背景',
     ops: [
       ...base.entities
         .filter(

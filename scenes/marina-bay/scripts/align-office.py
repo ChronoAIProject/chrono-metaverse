@@ -65,6 +65,13 @@ def main():
     halfspaces = ConvexHull(placed_hull).equations
     distances = outline @ halfspaces[:, :2].T + halfspaces[:, 2]
     assert distances.max() < -0.05, '办公室地面仍有部分在 Tower 1 外'
+    office_bounds = np.array([
+        np.min([e['bounds']['min'] for e in office if e.get('bounds')], axis=0),
+        np.max([e['bounds']['max'] for e in office if e.get('bounds')], axis=0),
+    ])
+    focus = office_bounds.mean(axis=0).tolist()
+    far_view = {'focus': focus, 'minDistance': 80}
+    near_view = {'focus': focus, 'maxDistance': 80}
     host = []
 
     def save(entity_id, label, parts, props):
@@ -91,6 +98,35 @@ def main():
         if cut is not None and len(cut.faces):
             lower.append(cut)
     save('bay.tower1-below-office', 'MBFC Tower 1 · 十四层以下楼体（剖面）', lower, {'处理说明': '保留办公室以下的官方楼体，上方剖开以查看室内'})
+    host[-1]['props']['landmark'] = {
+        'label': 'ChronoAI · 14层办公室',
+        'position': [float(target[0]), 1.4, float(target[2]) + 0.08],
+        'minDistance': 80,
+        'focusBounds': {'min': office_bounds[0].tolist(), 'max': office_bounds[1].tolist()},
+    }
+    # 拉远后补回楼体上部；所有片段仍位于扩展地块，室内重建层保持原样。
+    upper = [trimesh.intersections.slice_mesh_plane(mesh, [0, 1, 0], [0, 3.21, 0], cap=False) for mesh in meshes]
+    upper = [mesh for mesh in upper if mesh is not None and len(mesh.faces)]
+    save('bay.tower1-above-office', 'MBFC Tower 1 · 完整楼体上部', upper, {'backgroundView': far_view, '处理说明': '远看时显示所在楼层以上的完整官方楼体'})
+    zones = {
+        'west': [([-0.12, 0, 0], [-1, 0, 0])],
+        'east': [([11.62, 0, 0], [1, 0, 0])],
+        'north': [([-0.12, 0, 0], [1, 0, 0]), ([11.62, 0, 0], [-1, 0, 0]), ([0, 0, -0.12], [0, 0, -1])],
+        'south': [([-0.12, 0, 0], [1, 0, 0]), ([11.62, 0, 0], [-1, 0, 0]), ([0, 0, 15.62], [0, 0, 1])],
+    }
+    for zone, planes in zones.items():
+        parts = []
+        for mesh in meshes:
+            part = trimesh.intersections.slice_mesh_plane(mesh, [0, 1, 0], [0, -0.13, 0], cap=False)
+            part = trimesh.intersections.slice_mesh_plane(part, [0, -1, 0], [0, 3.21, 0], cap=False)
+            for origin, normal in planes:
+                part = trimesh.intersections.slice_mesh_plane(part, normal, origin, cap=False)
+                if part is None or not len(part.faces):
+                    break
+            if part is not None and len(part.faces):
+                parts.append(part)
+        if parts:
+            save(f'bay.tower1-office-facade-{zone}', 'MBFC Tower 1 · 十四层外墙', parts, {'backgroundView': far_view})
     # 官方数据没有室内楼板；按所在高度的楼体截面补一块示意结构板。
     count = len(placed_hull)
     vertices = np.array([[x, y, z] for y in [-0.37, -0.12] for x, z in placed_hull])
@@ -102,7 +138,7 @@ def main():
         faces.extend([[i, count + i, count + j], [i, count + j, j]])
     slab = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
     slab.visual = trimesh.visual.TextureVisuals(material=trimesh.visual.material.PBRMaterial(baseColorFactor=[145, 147, 150, 255], roughnessFactor=1, metallicFactor=0))
-    save('bay.tower1-office-slab', 'MBFC Tower 1 · 十四层示意结构楼板', [slab], {'处理说明': '根据官方楼体截面生成的示意楼板，不代表完整室内平面图'})
+    save('bay.tower1-office-slab', 'MBFC Tower 1 · 十四层示意结构楼板', [slab], {'backgroundView': near_view, '处理说明': '根据官方楼体截面生成的示意楼板，不代表完整室内平面图'})
     source_alignment = json.loads((ROOT / 'build/alignment.json').read_text())
     placement = {
         'yaw': yaw, 'translation': shift.tolist(),
