@@ -40,6 +40,44 @@ async function sceneAt(seq: number) {
 }
 
 describe('三种视图', () => {
+  it('两公里的窗外背景保留在扩展视图，但不放大主体取景、虚拟区边界或剖切滑块', async () => {
+    const base = await sceneAt(3);
+    const region = {
+      id: 'bay',
+      kind: 'virtual' as const,
+      boxes: [[2000, -1200, -20000, 42000, 6000, 20000] as const],
+    };
+    const background = {
+      entityId: 'bay',
+      layer: 'ext' as const,
+      kind: 'object' as const,
+      regionId: 'bay',
+      assetHash: 'a'.repeat(64),
+      props: { background: true },
+      bounds: { min: [100, -60, -1000] as const, max: [2100, 300, 1000] as const },
+    };
+    const scene = {
+      ...base,
+      regions: [...base.regions, region],
+      entities: [...base.entities, background],
+    };
+    const before = selectView(base, 'extended');
+    const after = selectView(scene, 'extended');
+    expect(after.entities).toContain(background);
+    expect(after.frameBoxes).toEqual(before.frameBoxes);
+    expect(after.virtualRegions).toEqual(before.virtualRegions);
+    expect(sceneHeightRange(scene)).toEqual(sceneHeightRange(base));
+    expect(selectView(scene, 'optimized').entities).not.toContain(background);
+
+    // 同一地区后来增加可交互展台时，仍须显示并取景那块虚拟区域。
+    const mixed = {
+      ...scene,
+      entities: [...scene.entities, { ...background, entityId: 'kiosk', props: {} }],
+    };
+    expect(selectView(mixed, 'extended').virtualRegions.map((r) => r.id)).toContain('bay');
+    expect(sceneHeightRange(mixed).max).toBe(300);
+  });
+
   it('原始视图只有扫描，没有物件和方块', async () => {
     const view = selectView(await sceneAt(3), 'raw');
     expect(view.showScan).toBe(true);

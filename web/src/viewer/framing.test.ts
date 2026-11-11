@@ -4,6 +4,7 @@ import {
   scanCeilingHeight,
   DEFAULT_MARGIN,
   clipBox,
+  backgroundFarPlane,
   frameBox,
   percentileBox,
   scanFrameBox,
@@ -114,6 +115,27 @@ describe('取景范围', () => {
     expect(clipped.max.x).toBe(10);
     expect(clipBox(content, []).equals(content)).toBe(true);
     expect(clipBox(content, [far]).isEmpty()).toBe(true);
+  });
+
+  it('办公室镜头保持原来的投影尺寸，同时远裁面覆盖所有窗外建筑', () => {
+    const frame = frameBox(room, { fov: FOV, aspect: 1.6 })!;
+    const background = new THREE.Box3(
+      new THREE.Vector3(-1500, -60, -800),
+      new THREE.Vector3(1500, 260, 2000),
+    );
+    const far = backgroundFarPlane(frame.position, 500, [background]);
+    const camera = new THREE.PerspectiveCamera(FOV, 1.6, 0.02, far);
+    camera.position.copy(frame.position);
+    camera.lookAt(frame.target);
+    camera.updateMatrixWorld();
+    for (const x of [background.min.x, background.max.x]) {
+      for (const y of [background.min.y, background.max.y]) {
+        for (const z of [background.min.z, background.max.z])
+          expect(camera.position.distanceTo(new THREE.Vector3(x, y, z))).toBeLessThan(far);
+      }
+    }
+    expect(frame.distance).toBeLessThan(20);
+    expect(backgroundFarPlane(frame.position, 500, [])).toBe(500);
   });
 });
 

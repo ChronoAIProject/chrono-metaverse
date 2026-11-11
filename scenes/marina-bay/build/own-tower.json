@@ -1,0 +1,32 @@
+[
+  {
+    "entityId": "bay.481e89dc-0dd1-4b88-8f8b-80303d6842a2",
+    "layer": "ext",
+    "kind": "object",
+    "label": "MARINA BAY FINANCIAL CENTRE (TOWER 1)",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "befdfd24bbc8cb706a8cd864a417e0ce151cb23ed34587d88b7ceb5a411ff27b",
+    "bounds": {
+      "min": [
+        -25.726804,
+        -60.0,
+        -47.402699
+      ],
+      "max": [
+        36.326804,
+        125.78154,
+        15.65
+      ]
+    },
+    "props": {
+      "数据来源": "OneMap 三维地图 · 新加坡土地管理局 SLA",
+      "来源地址": "https://www.onemap.gov.sg/3d",
+      "版权": "Map Data © 2026 SLA",
+      "官方建筑编号": "SLA_BLDG2_481e89dc-0dd1-4b88-8f8b-80303d6842a2",
+      "原始分片": "7/77/7_0.b3dm",
+      "数据创建日期": "2025-06-08",
+      "官方测量高度（米）": 185.782,
+      "三角形数": 1148
+    }
+  }
+]
