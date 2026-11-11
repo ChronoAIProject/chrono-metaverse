@@ -817,6 +817,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
     operation?.status,
     operation?.phase,
     chatOpen,
+    chatPanel,
   ]);
   const cmaBase = session?.workerUrl ?? CMA;
   const observedAgentId = note.agentId || operation?.agent_id;
@@ -930,7 +931,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
       document.removeEventListener('pointerdown', outside);
       document.removeEventListener('keydown', keyboard);
     };
-  }, [menu, chatOpen]);
+  }, [menu, chatOpen, chatPanel]);
   return (
     <main className="workspace">
       <header className="workspace__header workspace__ui">
