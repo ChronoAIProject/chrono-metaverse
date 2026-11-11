@@ -10,7 +10,7 @@ pub(super) fn routes(provider: MockProvider, app: Router) -> Router {
         let p = list.clone(); async move {
             let s = p.0.lock().unwrap();
             let token = headers[header::AUTHORIZATION].to_str().unwrap().strip_prefix("Bearer ").unwrap();
-            assert!(s.access.contains_key(token));
+            assert!(s.browser_keys.contains_key(token));
             assert!(!headers.contains_key(header::COOKIE));
             Json(json!({"items":[{"id":"agt_test","title":"Builder","status":"working"}],"next":null}))
         }
@@ -19,7 +19,7 @@ pub(super) fn routes(provider: MockProvider, app: Router) -> Router {
             let (gate, entered, setup) = {
                 let mut s=p.0.lock().unwrap();
                 let token=headers[header::AUTHORIZATION].to_str().unwrap().strip_prefix("Bearer ").unwrap();
-                assert!(s.access.contains_key(token));
+                assert!(s.browser_keys.contains_key(token));
                 assert!(!headers.contains_key(header::COOKIE));
                 s.worker_calls.push(("create".into(),headers["idempotency-key"].to_str().unwrap().into(),body));
                 (s.worker_gate.clone(),s.worker_entered.clone(),s.worker_setup_required)
@@ -37,7 +37,7 @@ pub(super) fn routes(provider: MockProvider, app: Router) -> Router {
             let hash = format!("{:x}", Sha256::digest(&bytes));
             let receipt = json!({"id":"att_test","agent_id":id,"name":name,"path":format!("/home/attachments/{id}/att_test/{name}"),"size_bytes":bytes.len(),"media_type":"application/octet-stream","sha256":if name == "bad.glb" {"bad"} else {&hash}});
             let mut state = p.0.lock().unwrap();
-            assert!(state.access.contains_key(token));
+            assert!(state.browser_keys.contains_key(token));
             assert!(!headers.contains_key(header::COOKIE));
             state.worker_calls.push(("attachment".into(),headers["idempotency-key"].to_str().unwrap().into(),receipt.clone()));
             (StatusCode::CREATED, Json(receipt))
@@ -48,8 +48,10 @@ pub(super) fn routes(provider: MockProvider, app: Router) -> Router {
     .route("/api/v1/agents/{id}/transcript",get(|| async {Json(json!({"agent_id":"agt_test","through_seq":4,"turns":[]}))}))
     .route("/api/v2/agents/{id}/responses",post(move |headers: HeaderMap,Json(body):Json<Value>|{
         let p=message.clone();async move {
-            p.0.lock().unwrap().worker_calls.push(("message".into(),headers["idempotency-key"].to_str().unwrap().into(),body));
-            (StatusCode::OK,[("x-cma-response-id","resp_test"),("x-cma-command-id","cmd_test"),("content-type","text/event-stream")],"event: response.created\ndata: {}\n\n")
+            let mut state = p.0.lock().unwrap();
+            state.worker_calls.push(("message".into(),headers["idempotency-key"].to_str().unwrap().into(),body));
+            if state.key_message_failure { return (StatusCode::FORBIDDEN, Json(json!({"code":"response_forbidden","message":"private diagnostic"}))).into_response(); }
+            (StatusCode::OK,[("x-cma-response-id","resp_test"),("x-cma-command-id","cmd_test"),("content-type","text/event-stream")],"event: response.created\ndata: {}\n\n").into_response()
         }
     }))
     .route("/api/v2/responses/{id}",get(||async{Json(json!({"id":"resp_test","status":"in_progress"}))}))
@@ -57,6 +59,14 @@ pub(super) fn routes(provider: MockProvider, app: Router) -> Router {
         let p=control.clone();async move{
             p.0.lock().unwrap().worker_calls.push(("cancel".into(),headers["idempotency-key"].to_str().unwrap().into(),body));
             (StatusCode::ACCEPTED,Json(json!({"control":{"id":"cmd_stop","status":"admitted"}})))
+        }
+    })).layer(axum::middleware::from_fn(move |request: axum::extract::Request, next: axum::middleware::Next| {
+        let p = provider.clone();
+        async move {
+            assert!(!request.headers().contains_key(header::COOKIE));
+            let valid = request.headers().get(header::AUTHORIZATION).and_then(|v|v.to_str().ok()).and_then(|v|v.strip_prefix("Bearer ")).is_some_and(|v|p.0.lock().unwrap().browser_keys.contains_key(v));
+            if !valid { return StatusCode::UNAUTHORIZED.into_response(); }
+            next.run(request).await
         }
     }))
 }
@@ -71,6 +81,13 @@ async fn call(app: &TestApp, cookie: &str, action: &str, body: Value) -> Reply {
             ("cookie", cookie),
             ("origin", ORIGIN),
             ("x-csrf-token", csrf),
+            (
+                "authorization",
+                &format!(
+                    "Bearer nyx_browser_{}",
+                    s.body["subject"].as_str().unwrap_or("disconnected")
+                ),
+            ),
         ],
         Some(body),
     )
@@ -328,6 +345,7 @@ async fn upload(
         .uri(format!(
             "{ROOT}/worker/attachment?agentId=agt_test&name={name}"
         ))
+        .header("authorization", "Bearer nyx_browser_upload-owner")
         .header("cookie", cookie)
         .header("origin", ORIGIN)
         .header("x-csrf-token", csrf)

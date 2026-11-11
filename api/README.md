@@ -53,7 +53,7 @@ cargo run -p metaverse-api
 | `ALLOWED_NYX_SERVICE_IDS` | 是 | 允许的 NyxID 服务编号，逗号分隔（过渡期可同时填自定义服务和目录服务的编号） |
 | `BIND` | 否 | 默认 `0.0.0.0:8080` |
 | `PUBLIC_BASE_URL` | 否 | 默认 `http://localhost:8080`；用于预览链接和 OAuth 回调；OAuth 启用时须为 HTTPS 根地址（本机可用 HTTP） |
-| `CMA_BASE_URL` | 否 | 固定 CMA 根地址；设置后可在 `/workspace` 明确同意调用在线 worker，要求已配置 OAuth；HTTPS，本机测试可用 HTTP |
+| `CMA_BASE_URL` | 否 | 固定 CMA 根地址；设置后可在 `/workspace` 授权浏览器 CMA 子凭据并明确同意调用在线 worker；Key 仅临时转发，账号/组织查询仍要求已配置 OAuth；HTTPS，本机测试可用 HTTP |
 | `NYXID_OAUTH_CLIENT_ID` | 否 | 专用保密 OAuth 客户端 ID；三个 OAuth 变量须同时配置，否则默认禁用 |
 | `NYXID_OAUTH_CLIENT_SECRET` | 启用 OAuth 时必填 | 客户端秘密，使用应用密钥注入 |
 | `NYXID_OAUTH_ENCRYPTION_KEY` | 启用 OAuth 时必填 | 32 字节随机密钥的标准 base64 编码，使用应用密钥注入 |

@@ -1,6 +1,31 @@
 import { expect, test } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    const identity = {
+      keyId: 'key-cma',
+      name: 'Metaverse CMA',
+      credentialId: 'browser-child',
+      credentialExpiresAt: null,
+      keyExpiresAt: null,
+    };
+    const subject = sessionStorage.getItem('fixture-key-subject') ?? 'web-owner';
+    sessionStorage.setItem(
+      'metaverse-cma-credential:v1',
+      JSON.stringify({ subject, credential: 'nyx_test_browser_worker', identity }),
+    );
+  });
+  await page.route('**/api/auth/nyxid/worker/key/check', (route) =>
+    route.fulfill({
+      json: {
+        keyId: 'key-cma',
+        name: 'Metaverse CMA',
+        credentialId: 'browser-child',
+        credentialExpiresAt: null,
+        keyExpiresAt: null,
+      },
+    }),
+  );
   await page.route('**/api/public/{chunks,assets}/**', async (route) => {
     const response = await route.fetch({
       headers: {
@@ -30,6 +55,16 @@ test('在线工作台：明确授权、创建 worker、查看结果并确认发�
       });
       return route.fulfill({ response });
     }
+    if (path.endsWith('/key/check'))
+      return route.fulfill({
+        json: {
+          keyId: 'key-cma',
+          name: 'Metaverse CMA',
+          credentialId: 'browser-child',
+          credentialExpiresAt: null,
+          keyExpiresAt: null,
+        },
+      });
     const action = path.split('/').at(-1)!;
     if (action === 'spaces')
       return route.fulfill({
@@ -223,6 +258,16 @@ test('手机端：创建回复丢失后刷新页面，恢复原请求不会重�
       });
       return route.fulfill({ response });
     }
+    if (path.endsWith('/key/check'))
+      return route.fulfill({
+        json: {
+          keyId: 'key-cma',
+          name: 'Metaverse CMA',
+          credentialId: 'browser-child',
+          credentialExpiresAt: null,
+          keyExpiresAt: null,
+        },
+      });
     const action = path.split('/').at(-1)!;
     if (action === 'spaces')
       return route.fulfill({
@@ -298,13 +343,23 @@ for (const loseUpload of [false, true])
     const uploadKeys: string[] = [];
     await page.route('**/api/auth/nyxid/**', async (route) => {
       const url = new URL(route.request().url());
+      if (url.pathname.endsWith('/key/check'))
+        return route.fulfill({
+          json: {
+            keyId: 'key-cma',
+            name: 'Metaverse CMA',
+            credentialId: 'browser-child',
+            credentialExpiresAt: null,
+            keyExpiresAt: null,
+          },
+        });
       const action = url.pathname.split('/').at(-1)!;
       if (action === 'session')
         return route.fulfill({
           json: {
             enabled: true,
             connected: true,
-            subject: 'owner-model',
+            subject: 'web-owner',
             csrfToken: 'csrf-model',
             workerAvailable: true,
             workerEnabled: true,
@@ -414,7 +469,7 @@ test('恢复旧任务：手机直接看到沙箱阶段的授权阻塞', async ({
   await page.setViewportSize({ width: 375, height: 720 });
   await page.addInitScript(() =>
     sessionStorage.setItem(
-      'metaverse-worker:startup-owner',
+      'metaverse-worker:web-owner',
       JSON.stringify({
         spaceId: 'fixture-space',
         orgId: '',
@@ -430,7 +485,7 @@ test('恢复旧任务：手机直接看到沙箱阶段的授权阻塞', async ({
         json: {
           enabled: true,
           connected: true,
-          subject: 'startup-owner',
+          subject: 'web-owner',
           csrfToken: 'fixture',
           workerAvailable: true,
           workerEnabled: true,
@@ -438,6 +493,16 @@ test('恢复旧任务：手机直接看到沙箱阶段的授权阻塞', async ({
       });
     if (path.endsWith('/spaces'))
       return route.fulfill({ json: { items: [], organizations: [], next: null } });
+    if (path.endsWith('/key/check'))
+      return route.fulfill({
+        json: {
+          keyId: 'key-cma',
+          name: 'Metaverse CMA',
+          credentialId: 'browser-child',
+          credentialExpiresAt: null,
+          keyExpiresAt: null,
+        },
+      });
     if (path.endsWith('/observe'))
       return route.fulfill({
         json: {

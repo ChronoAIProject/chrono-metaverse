@@ -20,7 +20,7 @@ Agent 原有 Key → NyxID（Key / 服务 / 操作范围检查）
                  metaverse 资源 ACL → 执行业务操作
 ```
 
-OAuth 默认用于 `/oauth/userinfo`、`/oauth/token`、当前用户的组织列表和组织角色查询。用户在 `/workspace` 明确启用后，当前浏览器还可通过固定 CMA 接口创建、查看和使用本人有权使用的 worker；不增加 OAuth scope，也不开放任意代理。metaverse 业务操作仍以本次 NyxID 签名身份执行。浏览器连接 Cookie 不能认证 `/api/v1/*`。个人资源、组织主体直接访问自己的资源，以及公开/分享链接的原有规则继续生效。
+OAuth 默认用于 `/oauth/userinfo`、`/oauth/token`、当前用户的组织列表和组织角色查询。用户在 `/workspace` 另行通过 NyxID 的 Agent Key 登录审批连接 CMA；仅 CMA / proxy 的登录子凭据保存在本标签页 `sessionStorage`，Metaverse 固定接口临时转发给 CMA，CMA 向 NyxID 校验服务绑定。CMA 请求不使用已保存的用户 OAuth，不增加 OAuth scope。metaverse 业务操作仍以本次 NyxID 签名身份执行。浏览器连接 Cookie 不能认证 `/api/v1/*`。个人资源、组织主体直接访问自己的资源，以及公开/分享链接的原有规则继续生效。
 
 ## 网页管理
 
@@ -42,7 +42,7 @@ OAuth 回调成功后返回 `/connect?connected=1`；取消、过期、provider 
 
 在 NyxID 注册一个专用于此部署的**保密 OAuth 客户端**，支持 `authorization_code`、`refresh_token`、PKCE S256、`client_secret_post`，允许 scopes `openid offline_access`。不用为这个客户端授予业务服务的代理访问范围；它不代理业务请求。现有 NyxID 的普通用户组织查询接口以用户身份判定成员权限，不要求新增组织 scope。此结论根据 NyxID 源码核对；实际部署仍需完成下文的线上验收。
 
-`openid offline_access` 是当前申请的最小 scope 集合，但 NyxID 现有普通用户组织接口没有“仅查询角色”的专用 scope。组织查询及用户明确启用后的固定 CMA 操作是 metaverse 的代码使用边界，不代表 provider 已将令牌硬限制到这些接口；令牌仍须按敏感用户凭据保护，其他接口能否接受它取决于各服务路由的身份、scope 及资源检查。
+`openid offline_access` 是当前申请的最小 scope 集合，但 NyxID 现有普通用户组织接口没有“仅查询角色”的专用 scope。账号核验和组织查询是 metaverse 对已保存 OAuth 的代码使用边界，不代表 provider 已将令牌硬限制到这些接口；令牌仍须按敏感用户凭据保护，其他接口能否接受它取决于各服务路由的身份、scope 及资源检查。
 
 回调地址必须精确注册为：
 
@@ -212,3 +212,13 @@ nyxid proxy request chrono-cd "$APP/services/metaverse-api/secrets?org_id=$ORG" 
 - 本地 API 107 项单元测试、格式检查和严格 clippy 通过；[CI](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/42913382777) 的 API、依赖审查、网页、SDK、重建工具及仓库检查成功，记录时全站浏览器任务仍在运行。部署配置及固定摘要检查通过。
 - 线上 API `1/1`、web `2/2` 全部更新就绪，API 健康检查通过；有效格式的匿名后续消息返回 `401` 且 `no-store`。既有 `chronoai-lobby` 经原 NyxID 用户代理读取的完整响应与部署前一致，head.seq 为 `5`、commitId 为 `b7a6773f3b1e4866adccaa9dadad78e7`。API 启动日志无 ERROR/panic，种子状态为 `AlreadyDone`。
 - 用户反馈已确认第二条请求收到 CMA 403，旧提示不足以区分命令授权与资源权限。尚未取得该请求的 worker、原请求编号及原始 CMA 错误码；没有代替用户重放移动机器狗的操作，也没有把此次诊断部署表述为后续消息已能执行。授权兼容问题修复前应保留原请求，反复重试不会改变当前凭据的授权。
+
+## 浏览器 CMA 登录凭据
+
+`POST /api/auth/nyxid/worker/key/{request,poll,check,revoke}` 复用 NyxID `/api/v1/auth/agent-key/{request,poll,self}`。用户在 NyxID 输入单独展示的验证码并批准；审批提示优先选择已有 Key，也可以新建。提示不是权限约束，交付及每次 CMA 调用均核验 Key 归属与实时权限：当前登录的个人账号、仅 `proxy` scope、仅活动的 CMA 服务、禁用所有服务及自动连接服务的通配授权。拒绝宽范围凭据，不扩大原 Key。
+
+只有一次性交付时响应含子凭据，响应禁止缓存；后续核验仅返回安全元数据。子凭据不写入数据库、任务、恢复记录、URL 或诊断。账号不匹配或授权会话在交付期间失效时，尽力撤销该新交付子凭据。已有子凭据权限变化后仍可撤销自身。浏览器脚本可读取 `sessionStorage`，因此有限服务范围、期限和同源脚本安全仍然必要。OAuth 访问及刷新令牌仍加密保存在服务端，二者用途不同。
+
+断开整个账号前，网页先撤销本标签页已保存的 CMA 子凭据；确认后清除本地记录，再删除服务端 OAuth 授权。撤销状态未知时保留入口供重试或到 NyxID 核对。撤销浏览器 CMA 凭据不停止已受理的 worker；worker 自己的业务服务 Key 仍由 CMA 管理。
+
+首次真实审批、CMA 环境授权和生产连续聊天需真实用户完成验收；模拟 provider、后端集成和浏览器夹具测试不能代替此验收。

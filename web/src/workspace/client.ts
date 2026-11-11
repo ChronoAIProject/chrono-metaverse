@@ -1,3 +1,5 @@
+import { browserKeyHeaders } from '../auth/browserKey';
+
 export type Session = {
   enabled: boolean;
   connected: boolean;
@@ -100,7 +102,11 @@ export async function workerRequest<T>(
       credentials: 'same-origin',
       cache: 'no-store',
       signal: controller.signal,
-      headers: { 'Content-Type': 'application/json', 'x-csrf-token': session.csrfToken ?? '' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-csrf-token': session.csrfToken ?? '',
+        ...browserKeyHeaders(session.subject),
+      },
       body: JSON.stringify(body),
     });
     const result: unknown = await r.json();

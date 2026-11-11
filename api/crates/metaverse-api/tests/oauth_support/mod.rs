@@ -4,6 +4,7 @@ use axum::{extract::Form, routing::post};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
+mod agent_key_tests;
 mod catalog_tests;
 mod worker_tests;
 
@@ -36,6 +37,10 @@ struct ProviderState {
     serial: u64,
     refreshes: usize,
     worker_calls: Vec<(String, String, Value)>,
+    browser_keys: HashMap<String, Value>,
+    key_delivery: Option<Value>,
+    key_revocations: Vec<String>,
+    key_message_failure: bool,
     worker_setup_required: bool,
     worker_gate: Option<Arc<tokio::sync::Notify>>,
     worker_entered: Option<Arc<tokio::sync::Notify>>,
@@ -147,7 +152,8 @@ impl MockProvider {
                 }
             }
         }));
-        worker_tests::routes(self.clone(), app)
+        agent_key_tests::routes(self.clone(), app)
+            .merge(worker_tests::routes(self.clone(), Router::new()))
     }
 }
 
@@ -205,6 +211,7 @@ async fn connect(app: &TestApp, subject: &str, ttl: i64) -> String {
     assert_eq!(reply.status, StatusCode::SEE_OTHER, "{}", reply.body);
     assert_eq!(reply.headers[header::LOCATION], "/connect?connected=1");
     assert!(!format!("{:?}", reply.headers).contains("oauth-access"));
+    agent_key_tests::register(&app.nyx.oauth, subject);
     response_cookie(&reply, "mv_nyx_session")
 }
 

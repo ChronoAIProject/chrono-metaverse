@@ -1,5 +1,5 @@
 //! Fixed browser-to-CMA operations; CMA owns runtime credentials and resource ACL.
-use super::{routes, seconds, HeldCredential, OAuthError, OAuthService, STORE};
+use super::{agent_key, routes, seconds, HeldCredential, OAuthError, OAuthService, STORE};
 use crate::{error::ApiError, repo::OAuthSessionRecord, routes::ApiJson, AppState};
 use axum::{
     extract::{Query, Request, State},
@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 pub(super) fn router() -> Router<AppState> {
     Router::new()
+        .merge(agent_key::router())
         .route("/api/auth/nyxid/worker/consent", post(consent))
         .route("/api/auth/nyxid/worker/agents", post(agents))
         .route("/api/auth/nyxid/worker/create", post(create))
@@ -54,6 +55,7 @@ struct Access {
     oauth: Arc<OAuthService>,
     session: OAuthSessionRecord,
     held: HeldCredential,
+    credential: Option<agent_key::Credential>,
 }
 impl Access {
     async fn new(
@@ -70,12 +72,18 @@ impl Access {
             ));
         }
         let (session, held) = routes::verified_browser(&oauth, headers).await?;
-        let access = Self {
+        let mut access = Self {
             oauth,
             session,
             held,
+            credential: None,
         };
         access.current(require_consent).await?;
+        if require_consent {
+            access.credential =
+                Some(agent_key::checked(&access.oauth, headers, &access.session.subject).await?);
+            access.current(true).await?;
+        }
         Ok(access)
     }
     async fn current(&self, require_consent: bool) -> Result<(), ApiError> {
@@ -112,13 +120,12 @@ impl Access {
         key: Option<&str>,
     ) -> Result<reqwest::Response, ApiError> {
         self.current(true).await?;
-        let tokens = self.oauth.tokens(&self.held.record)?;
-        let url = format!("{}{path}", self.oauth.config.cma_base_url.as_ref().unwrap());
+        let url = self.target(path)?;
         let mut request = self
             .oauth
             .http
             .request(method.clone(), url)
-            .bearer_auth(&tokens.access_token);
+            .bearer_auth(self.credential.as_ref().ok_or_else(unavailable)?.value());
         if let Some(body) = body {
             request = request.json(&body);
         }
@@ -138,6 +145,18 @@ impl Access {
         })?;
         self.current(true).await?;
         Ok(response)
+    }
+    fn target(&self, path: &str) -> Result<url::Url, ApiError> {
+        url::Url::parse(&format!(
+            "{}{path}",
+            self.oauth
+                .config
+                .cma_base_url
+                .as_deref()
+                .ok_or_else(unavailable)?
+                .trim_end_matches('/')
+        ))
+        .map_err(|_| unavailable())
     }
     async fn json(
         &self,
@@ -223,7 +242,7 @@ fn refusal(status: StatusCode, body: &Value) -> ApiError {
         }
     }
     let detail = match status.as_u16() {
-        401 => "CMA 未接受当前登录，请重新连接 NyxID",
+        401 => "CMA 未接受浏览器 Agent Key，请核对 CMA 服务授权后重试原请求",
         403 => "CMA 拒绝了这次操作的授权，请保留原请求并核对 CMA 权限",
         404 => "CMA 资源不存在，或当前账号无权访问",
         409 => "CMA 请求发生冲突，请核对当前状态后恢复原请求",
@@ -501,19 +520,13 @@ async fn attachment(
     let size = bytes.len();
     let sha = format!("{:x}", Sha256::digest(&bytes));
     a.current(true).await?;
-    let tokens = a.oauth.tokens(&a.held.record)?;
-    let mut target = url::Url::parse(&format!(
-        "{}/api/v1/agents/{}/attachments",
-        a.oauth.config.cma_base_url.as_ref().unwrap(),
-        input.agent_id
-    ))
-    .map_err(|_| unavailable())?;
+    let mut target = a.target(&format!("/api/v1/agents/{}/attachments", input.agent_id))?;
     target.query_pairs_mut().append_pair("name", &input.name);
     let upstream = a
         .oauth
         .http
         .post(target)
-        .bearer_auth(&tokens.access_token)
+        .bearer_auth(a.credential.as_ref().ok_or_else(unavailable)?.value())
         .header("Idempotency-Key", &key)
         .header("Content-Type", "application/octet-stream")
         .timeout(Duration::from_secs(45))

@@ -15,18 +15,21 @@
 ## 授权与调用
 
 ```text
-浏览器 ── HttpOnly 会话 + CSRF ──> metaverse 网页后端
-  │                                    ├─ 已核验用户 + 实时组织权限
-  │                                    │      ├─ 列出个人/组织空间
-  │                                    │      └─ 只读空间查看器投影
-  │                                    │
-  └─ 明确启用 CMA 后提交聊天 ────────────┴─ 同用户 OAuth → 固定 CMA API
-                                                              │
-                                           CMA 托管的服务范围 Agent Key
-                                                              │
-                                                  NyxID → metaverse API
-                                                              │
-                                                      资源 ACL / 操作权限
+浏览器账号登录 ── HttpOnly 会话 + CSRF ──> Metaverse
+                                           └─ 用户 OAuth → NyxID 组织查询 → 空间目录/只读查看
+
+浏览器「连接 CMA」 → NyxID 现有 Agent Key 登录审批
+                     └─ 复用仅 CMA / proxy 的个人 Key，签发独立登录子凭据
+                                      │
+                               本标签页 sessionStorage
+                                      │ Authorization + 会话 + CSRF
+                               Metaverse 固定 CMA 接口（只临时转发）
+                                      │ 原 Key + 原幂等编号
+                                     CMA ── 服务绑定校验 → NyxID
+                                      │
+                           CMA 托管的 metaverse 服务 Key
+                                      │
+                               NyxID → metaverse API → 资源 ACL
 ```
 
 不扩大既有 `openid offline_access` scopes，不向浏览器或 worker 提供用户 OAuth 凭据。空间发现/查看和 CMA 调用分别验证当前用户与会话；CMA 还要求当前浏览器的明确同意版本。已有业务 `/api/v1/*` 仍只接受 NyxID 签名身份。
@@ -69,8 +72,22 @@
 - 验证涵盖链接创建、文件无附加文字创建、上传中断后刷新恢复、原编号重试、真实 MongoDB 的同意/CSRF/大小与回执核对，以及 13 寸和手机的布局。线上 OAuth 和 CMA 可续期环境授权仍由用户首次登录时完成。
 
 
+## 浏览器 Agent Key（2026-11-11）
+
+用户要求 Agent Key 保存在浏览器，Metaverse 服务端不持久保存，优先复用已有 NyxID 能力。采用现有 Agent Key 登录审批流程：用户可选择已有且范围合适的 Key，由 NyxID 签发独立登录子凭据；不复制父 Key 原文，不轮换父 Key。子凭据继承父 Key 的实时权限，不能将宽范围父 Key 描述为只允许 CMA 的凭据。
+
+- 优先复用本浏览器有效的登录子凭据；过期、撤销或权限不足时再由用户明确授权，不自动创建 Key 或扩大权限。需要登录审批时请求 CMA 服务和 proxy scope，审批在 NyxID 页面由用户完成。
+- Key、一次性交付凭据和轮询秘密不进入任务文本、链接、日志、恢复记录或 Metaverse 数据库。浏览器中的凭据按账号隔离；退出、账号变化和撤销应正确处理。浏览器脚本可读的凭据仍受同源脚本安全影响，应使用合适期限和有限服务范围。
+- 子凭据保存在单独的 `sessionStorage` 认证项，不进入聊天恢复记录；刷新同标签页先实时核验后复用。账号切换不会发送另一账号的 Key，过期或失效时重新授权。关闭标签页后不保证保留，断开 CMA 仅撤销子凭据，不撤销父 Key。
+- Metaverse 向固定的 `CMA_BASE_URL` 临时转发 Key、请求与幂等编号；先向 NyxID `/auth/agent-key/self` 实时核验个人归属和 CMA-only / proxy 权限，不回退到用户 OAuth。现有 Key 的登录子凭据继承实时父权限，网页不会把宽范围父 Key 当成窄范围凭据。
+- CMA 和 NyxID 当前浏览器预检不足以直接完成跨域幂等写入和读取回执，因此保留同源固定转发。实测 NyxID 的 CMA 代理还会因连接与目录部署地址不一致返回 `cma_configuration_required`；其当前 dispatch 规则未接入附件上传。本实现使用 CMA 已有的直接 Key 服务绑定校验，不修改目录或放宽代理准入。
+- 这项变更解决 CMA 调用凭据。现有组织空间目录和成员查询仍使用用户 OAuth；Agent Key 不能直接替代用户组织成员查询权限。CMA worker 自己的业务服务 Key 仍由 CMA 管理，浏览器不需要获得它。
+- CMA 已有普通 Agent Key 服务绑定验证及 NyxID 签名代理命令准入能力，不再要求第三方身份 OAuth token 直接成为独立命令授权。[CMA #1638](https://github.com/ChronoAIProject/cma/issues/1638) 因本次接入无需该扩展而关闭为 not planned；不代表原始第二条消息已成功，原过滤器复现记录仍有效。独立安全问题 #1579、#1580 保留。
+
 ## 已知的连续聊天授权阻塞（2026-11-11）
 
-用户实际首轮成功，第二轮追加消息返回 CMA 403。身份 OAuth 登录与 CMA 持久命令授权存在区别；不能以“已能创建 worker”推断同一 access token 可以提交后续消息。NyxID 第三方客户端令牌包含显式范围字段，CMA 当前独立命令过滤器会拒绝该形状；需与 [CMA #1638](https://github.com/ChronoAIProject/cma/issues/1638) 对齐固定 CMA 服务授权和支持的命令准入方式，不能移除 JWT 限制或扩大到所有服务来规避。
+用户实际首轮成功，第二轮追加消息返回 CMA 403。身份 OAuth 登录与 CMA 持久命令授权存在区别；不能以“已能创建 worker”推断同一 access token 可以提交后续消息。NyxID 第三方客户端令牌包含显式范围字段，CMA 当前独立命令过滤器会拒绝该形状。网页现改为以上明确获得 CMA 服务权限的 Agent Key 路径，不能移除 JWT 限制或扩大到所有服务来规避。
 
 后端分别保留 `cma_command_authority_required`（网页凭据未获得命令授权）和 `cma_response_forbidden`（worker 交互权限被拒绝），前端沿用原请求恢复记录显示。只有两个固定上游错误码被映射，不透传任意 provider 诊断。后续消息拒绝日志只记 worker 编号、原请求编号、HTTP 状态和本地错误码，不记输入或凭据。
+
+本次验证：107 项 API 单元测试、26 项真实 MongoDB OAuth/目录/CMA 集成测试、网页全套原有 460 项测试及新增 2 项账号断开测试通过；lint、类型、格式、构建通过。8 项 Chrome 浏览器场景覆盖授权交付、刷新复用、撤销、已有空间、连续聊天、发布确认、文件上传及原请求恢复。生产真实审批和第二条命令仍需当前用户验收。

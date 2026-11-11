@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import './ConnectPage.css';
+import { browserKeyHeaders, clearBrowserKey, readBrowserKey } from './browserKey';
 
 type Session =
   | { enabled: false; connected: false }
@@ -140,6 +141,26 @@ export function ConnectPage({ request = fetch }: { readonly request?: typeof fet
     setChecked(null);
     if (kind === 'organizations') setOrganizations(null);
     try {
+      if (kind === 'disconnect' && readBrowserKey(session.subject)) {
+        const revoked = await request('/api/auth/nyxid/worker/key/revoke', {
+          method: 'POST',
+          credentials: 'same-origin',
+          cache: 'no-store',
+          signal: controller.signal,
+          headers: { 'x-csrf-token': session.csrfToken, ...browserKeyHeaders(session.subject) },
+        });
+        if (!revoked.ok) {
+          const problem = (await revoked.json()) as { code?: string };
+          if (problem.code !== 'cma_key_required') {
+            setFeedback({
+              tone: 'error',
+              text: '浏览器 CMA 授权尚未确认撤销，请重试或在 NyxID 撤销该登录凭据。',
+            });
+            return;
+          }
+        }
+        clearBrowserKey(session.subject);
+      }
       const response = await request(
         `/api/auth/nyxid/${kind === 'disconnect' || kind === 'organizations' ? kind : 'check'}`,
         {
@@ -179,6 +200,7 @@ export function ConnectPage({ request = fetch }: { readonly request?: typeof fet
         return;
       }
       if (kind === 'disconnect') {
+        clearBrowserKey(session.subject);
         setSession({ enabled: true, connected: false });
         setConfirmDisconnect(false);
         setOrganizations(null);
@@ -356,8 +378,9 @@ export function ConnectPage({ request = fetch }: { readonly request?: typeof fet
                     >
                       <h3 id="disconnect-title">断开此部署的连接？</h3>
                       <p>
-                        将删除本部署保存的授权凭据，并使相关连接会话失效。依赖这份授权的 Agent
-                        组织访问会停止；需要时可以重新授权。
+                        将撤销本标签页的 CMA
+                        登录凭据，删除本部署保存的账号授权，并使相关连接会话失效。依赖这份账号授权的
+                        Agent 组织访问会停止；需要时可以重新授权。
                       </p>
                       <p>此操作不会退出 NyxID，也不会撤销其他应用的授权。</p>
                       <div className="connect__actions">
@@ -521,7 +544,7 @@ export function ConnectPage({ request = fetch }: { readonly request?: typeof fet
               <h2 id="permissions-title">授权用途与范围</h2>
               <p className="connect__muted">
                 metaverse 保存这份授权，用于核验账号、刷新连接、读取组织列表和查询组织角色。
-                若在在线工作台明确启用，还可通过 CMA 创建与使用当前账号有权限的 worker。
+                在线工作台另行申请 CMA 浏览器授权，用于创建与使用当前账号有权限的 worker。
               </p>
               <dl className="connect__scopes">
                 <div>
@@ -550,7 +573,8 @@ export function ConnectPage({ request = fetch }: { readonly request?: typeof fet
                 <summary>凭据保存在哪里，如何撤销？</summary>
                 <p>
                   访问和刷新令牌加密保存在 metaverse 服务端，不提供给网页或 Agent。Agent
-                  继续保管自己的 Key。
+                  继续保管自己的 Key。在线工作台的 CMA
+                  登录子凭据仅存在本标签页浏览器存储中，服务端只临时转发。
                 </p>
                 <p>
                   “断开连接”删除本部署保存的凭据。若要撤销 NyxID 侧的应用授权，请到 NyxID 管理。

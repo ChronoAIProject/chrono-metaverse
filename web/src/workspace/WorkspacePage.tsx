@@ -30,6 +30,7 @@ import {
 import './WorkspacePage.css';
 import { modelDigest, scaniverseLink, uploadModel } from './creation';
 import { StartupProgress } from './StartupProgress';
+import { AgentKeyConnection } from '../auth/AgentKeyConnection';
 
 type PreviewIdentity = {
   spaceId: string;
@@ -93,6 +94,8 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [consentChecked, setConsentChecked] = useState(false);
+  const [keyReady, setKeyReady] = useState(false);
+  const [keyCheck, setKeyCheck] = useState(0);
   const [confirmPublish, setConfirmPublish] = useState('');
   const [confirmForget, setConfirmForget] = useState(false);
   const [manualPreview, setPreview] = useState('');
@@ -149,6 +152,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
         )
           throw new Error();
         version.current++;
+        setKeyReady(false);
         setSession(s);
         setCatalog(null);
         setOutput([]);
@@ -235,6 +239,13 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
   }, [preview, request, note.spaceId]);
 
   const report = useCallback((e: unknown) => {
+    if (
+      e instanceof WorkerError &&
+      ['cma_key_required', 'cma_key_account_mismatch', 'cma_key_scope_required'].includes(e.code)
+    ) {
+      setKeyReady(false);
+      setKeyCheck((v) => v + 1);
+    }
     if (e instanceof WorkerError && e.code === 'cma_consent_required')
       setSession((s) => (s ? { ...s, workerEnabled: false } : s));
     if (e instanceof WorkerError && e.code === 'nyxid_reconnect_required') {
@@ -261,7 +272,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
 
   // Bounded, non-overlapping observation. No write is retried by polling.
   useEffect(() => {
-    if (!session?.workerEnabled || busy || (!agentId && !operationId)) return;
+    if (!session?.workerEnabled || !keyReady || busy || (!agentId && !operationId)) return;
     const c = new AbortController();
     let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -354,7 +365,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
       c.abort();
       clearTimeout(timer);
     };
-  }, [session, agentId, operationId, responseId, busy, request, poll, commit, report]);
+  }, [session, keyReady, agentId, operationId, responseId, busy, request, poll, commit, report]);
 
   const action = useCallback(
     async (run: (signal: AbortSignal) => Promise<void>) => {
@@ -394,6 +405,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
   }
   const runIntent = useCallback(
     async function runIntent(intent: Intent, base = noteRef.current) {
+      if (!session?.connected || !session.workerEnabled || !keyReady) return;
       const chain: { next?: { intent: Intent; base: Notebook } } = {};
       await action(async (signal) => {
         const pending = intent.setupRequired
@@ -537,7 +549,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
       });
       if (chain.next) await runIntent(chain.next.intent, chain.next.base);
     },
-    [action, commit, request, session, sourceFile],
+    [action, commit, request, session, sourceFile, keyReady],
   );
 
   useEffect(() => {
@@ -561,7 +573,14 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
   }, [note, sourceFile, busy, runIntent]);
   function submit(e: FormEvent) {
     e.preventDefault();
-    if (!session?.workerEnabled || busy || note.operationId || note.pending || !note.spaceId.trim())
+    if (
+      !session?.workerEnabled ||
+      !keyReady ||
+      busy ||
+      note.operationId ||
+      note.pending ||
+      !note.spaceId.trim()
+    )
       return;
     if (note.creation?.phase === 'draft') {
       const url = scaniverseLink(note.instruction);
@@ -803,7 +822,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
     ? `${cmaBase}/agents/${encodeURIComponent(observedAgentId)}`
     : cmaBase;
   const checkedPreview = previewIdentity?.url === preview ? previewIdentity.value : null;
-  const ready = session?.connected && session.workerEnabled;
+  const ready = session?.connected && session.workerEnabled && keyReady;
   const disabled = busy || Boolean(note.pending);
   const selected = catalog?.items.find((s) => s.id === note.spaceId);
   const visibleSpaces =
@@ -1409,7 +1428,16 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                   <p>在线 worker 尚未启用。你仍可以查看有权限的空间。</p>
                 </div>
               )}
-              {session.workerAvailable && !session.workerEnabled && (
+              {session.workerAvailable && (
+                <AgentKeyConnection
+                  key={`${session.subject}:${session.csrfToken}`}
+                  session={session}
+                  request={request}
+                  onChange={setKeyReady}
+                  checkVersion={keyCheck}
+                />
+              )}
+              {session.workerAvailable && keyReady && !session.workerEnabled && (
                 <div className="workspace__consent">
                   <h2>启用空间聊天</h2>
                   <label>

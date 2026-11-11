@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ConnectPage } from './ConnectPage';
+import { readBrowserKey, saveBrowserKey } from './browserKey';
 
 afterEach(() => window.history.replaceState(null, '', '/'));
 
@@ -254,4 +255,49 @@ it('网络失败可重试，未启用时不显示授权入口', async () => {
   await userEvent.click(screen.getByRole('button', { name: '重试' }));
   expect(await screen.findByText(/此部署尚未启用/)).toBeInTheDocument();
   expect(screen.queryByRole('link', { name: '前往 NyxID 授权' })).toBeNull();
+});
+
+it('断开账号先撤销浏览器子凭据，再删除 OAuth 连接', async () => {
+  const identity = {
+    keyId: 'key-cma',
+    name: 'CMA',
+    credentialId: 'child',
+    credentialExpiresAt: null,
+    keyExpiresAt: null,
+  };
+  saveBrowserKey('alice', 'nyx_test_connect_child', identity);
+  const request = vi.fn<typeof fetch>(async (input) =>
+    Response.json(String(input).endsWith('/session') ? connected : { ok: true }),
+  );
+  render(<ConnectPage request={request} />);
+  await userEvent.click(await screen.findByRole('button', { name: '断开连接' }));
+  await userEvent.click(screen.getByRole('button', { name: '确认断开' }));
+  await screen.findByRole('link', { name: '前往 NyxID 授权' });
+  expect(request.mock.calls.map((c) => String(c[0]))).toEqual([
+    '/api/auth/nyxid/session',
+    '/api/auth/nyxid/worker/key/revoke',
+    '/api/auth/nyxid/disconnect',
+  ]);
+  expect(readBrowserKey('alice')).toBeNull();
+});
+it('子凭据撤销状态未知时保留连接以供恢复', async () => {
+  saveBrowserKey('alice', 'nyx_test_connect_child', {
+    keyId: 'key-cma',
+    name: 'CMA',
+    credentialId: 'child',
+    credentialExpiresAt: null,
+    keyExpiresAt: null,
+  });
+  const request = vi.fn<typeof fetch>(async (input) =>
+    String(input).endsWith('/session')
+      ? Response.json(connected)
+      : Response.json({ code: 'cma_key_unavailable' }, { status: 503 }),
+  );
+  render(<ConnectPage request={request} />);
+  await userEvent.click(await screen.findByRole('button', { name: '断开连接' }));
+  await userEvent.click(screen.getByRole('button', { name: '确认断开' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('尚未确认撤销');
+  expect(request).toHaveBeenCalledTimes(2);
+  expect(readBrowserKey('alice')).not.toBeNull();
+  sessionStorage.clear();
 });

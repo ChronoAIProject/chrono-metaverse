@@ -1,4 +1,5 @@
 import { WorkerError, type Attachment, type Session } from './client';
+import { browserKeyHeaders } from '../auth/browserKey';
 
 export const MODEL_SIZE_LIMIT = 20 * 1024 * 1024;
 export function scaniverseLink(text: string): string | null {
@@ -55,6 +56,7 @@ export async function uploadModel(
         'Content-Type': 'application/octet-stream',
         'x-csrf-token': session.csrfToken ?? '',
         'Idempotency-Key': key,
+        ...browserKeyHeaders(session.subject),
       },
       body: file,
     });

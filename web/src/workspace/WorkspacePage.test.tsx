@@ -6,9 +6,17 @@ vi.mock('../space/SpacePage', () => ({
     <div data-testid="private-viewer">{spaceId}</div>
   ),
 }));
+import { saveBrowserKey } from '../auth/browserKey';
 import { WorkspacePage } from './WorkspacePage';
 import { resultLinks, viewerLink, type Transcript, type Operation } from './client';
 
+const keyIdentity = {
+  keyId: 'key-cma',
+  name: 'Metaverse CMA',
+  credentialId: 'browser-child',
+  credentialExpiresAt: null,
+  keyExpiresAt: null,
+};
 const connected = {
   enabled: true,
   connected: true,
@@ -82,6 +90,7 @@ function mockApi(
         organizations: [{ id: 'org-one', name: 'ChronoAI', role: 'admin' }],
         next: null,
       });
+    if (url.endsWith('/key/check')) return reply(keyIdentity);
     if (url.endsWith('/session'))
       return reply({ ...connected, workerEnabled: options.enabled ?? true });
     const action = url.split('/').at(-1)!;
@@ -168,6 +177,7 @@ async function fillTask() {
 }
 beforeEach(() => {
   sessionStorage.clear();
+  saveBrowserKey('owner-a', 'nyx_test_browser_owner_a', keyIdentity);
   window.history.replaceState(null, '', '/workspace');
 });
 afterEach(cleanup);
