@@ -243,3 +243,12 @@ nyxid proxy request chrono-cd "$APP/services/metaverse-api/secrets?org_id=$ORG" 
 - 已对线上 NyxID 发起一项未批准的真实请求，确认链接直接加载请求预览，不需输入请求码；没有代替用户批准。浏览器测试使用明确的模拟审批页，确认批准前不交付、点击批准后连接，并验证刷新复用及撤销。
 - 本地 465 项网页测试、107 项 API 单元测试、26 项真实 MongoDB OAuth 集成测试、8 项相关浏览器场景通过；格式、lint、类型、构建、严格 clippy 及 32 项部署检查通过。[CI 43019074399](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/43019074399) 全部通过，包含 24 项整站浏览器场景。
 - 发布后 13 项检查通过，覆盖精确构建身份、健康、匿名访问拒绝、OAuth scopes/PKCE、1280×720 布局、手机布局和模拟账号的授权入口及凭据复用。启动日志无 ERROR/panic，种子为 AlreadyDone；前厅完整响应与部署前一致（seq 5、commit `b7a6773f3b1e4866adccaa9dadad78e7`）。已发布页面的授权检查使用模拟会话及 provider，没有执行真实 CMA 命令；真实用户首次批准及原第二条消息的执行结果仍未冒充验收。
+
+
+## 可移动 CMA 浮窗部署记录（2026-11-11）
+
+- chrono-cd 修订 23，generation 22；API `1/1`、web `2/2` 更新就绪。源码 `b5b3e359770bfef3f6733b7965b48ebf058a9547`，镜像来自成功的 [Images 43024889957](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/43024889957)，摘要固定在 `app.json`。应用规格和 secret inventory 与发布前相比仅有两项镜像及对应解析摘要改变。
+- 场景始终全宽。CMA 聊天默认在左下方浮动，可拖动、方向键移动、收起再打开；缩小窗口会自动保持在可见范围。1280×720 下初始聊天为 `x=16, y=128, width=380, height=504`，不遮住场景顶栏和底部时间轴。手机使用浮窗布局。
+- 465 项网页测试、8 项相关浏览器场景、32 项部署检查通过；lint、类型、格式、构建通过。[CI 43024889961](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/43024889961) 全部成功，含 24 项整站浏览器场景。
+- 发布后 14 项检查通过，包括构建身份、健康、匿名拒绝、OAuth scopes/PKCE、桌面与手机浮窗、拖动/收起/重开、浏览器凭据复用。已登录 UI 使用明确的 session/provider fixtures，没有代替用户批准或执行真实 CMA 命令。前厅仍为 seq 5、commit `b7a6773f3b1e4866adccaa9dadad78e7`。
+- 这次发布只包含浮窗。按个人/组织归属自动选择 CMA 的改动仍等待 NyxID 授权页的 `owner_id` 支持，不能将尚未部署的授权逻辑计作线上功能。
