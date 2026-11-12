@@ -8,6 +8,7 @@ import {
   viewerLink,
   WorkerError,
   workerRequest,
+  validCredentialVersion,
   type Agent,
   type Controls,
   type Intent,
@@ -30,7 +31,9 @@ import {
 import './WorkspacePage.css';
 import { modelDigest, scaniverseLink, uploadModel } from './creation';
 import { StartupProgress } from './StartupProgress';
+import { OAuthConnection } from '../auth/OAuthConnection';
 import { AgentKeyConnection } from '../auth/AgentKeyConnection';
+import { readAuthMethod, saveAuthMethod, type CmaAuthMethod } from '../auth/cmaConnection';
 import { useFloatingChat } from './useFloatingChat';
 
 type PreviewIdentity = {
@@ -67,10 +70,23 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
         ? catalogSpace.owner.id
         : ''
       : note.orgId;
+  const [authChoice, setAuthChoice] = useState<{ subject: string; method: CmaAuthMethod } | null>(
+    null,
+  );
+  const authMethod =
+    authChoice?.subject === accountSession?.subject
+      ? (authChoice?.method ?? 'oauth')
+      : readAuthMethod(accountSession?.subject);
   const session = useMemo(
     () =>
-      accountSession ? { ...accountSession, cmaOwnerId: orgId || accountSession.subject } : null,
-    [accountSession, orgId],
+      accountSession
+        ? {
+            ...accountSession,
+            cmaOwnerId: orgId || accountSession.subject,
+            cmaAuthMethod: authMethod,
+          }
+        : null,
+    [accountSession, orgId, authMethod],
   );
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -107,15 +123,18 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
   const chatEnd = useRef<HTMLDivElement>(null);
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [consentChecked, setConsentChecked] = useState(false);
+  const credentialVersion = useRef<string | undefined>(undefined);
   const [readyOwner, setReadyOwner] = useState('');
-  const keyContext = `${session?.subject}:${session?.cmaOwnerId}`;
-  const keyReady = readyOwner === keyContext;
-  const setKeyReady = useCallback(
-    (ready: boolean) => setReadyOwner(ready ? keyContext : ''),
-    [keyContext],
+  const connectionContext = `${session?.subject}:${session?.csrfToken}:${session?.cmaOwnerId}:${authMethod}`;
+  const connectionReady = readyOwner === connectionContext;
+  const setConnectionReady = useCallback(
+    (ready: boolean, version?: string) => {
+      credentialVersion.current = ready ? version : undefined;
+      setReadyOwner(ready ? connectionContext : '');
+    },
+    [connectionContext],
   );
-  const [keyCheck, setKeyCheck] = useState(0);
+  const [connectionCheck, setConnectionCheck] = useState(0);
   const [confirmPublish, setConfirmPublish] = useState('');
   const [confirmForget, setConfirmForget] = useState(false);
   const [manualPreview, setPreview] = useState('');
@@ -261,10 +280,19 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
   const report = useCallback((e: unknown) => {
     if (
       e instanceof WorkerError &&
-      ['cma_key_required', 'cma_key_account_mismatch', 'cma_key_scope_required'].includes(e.code)
+      [
+        'cma_oauth_required',
+        'cma_credential_changed',
+        'cma_owner_forbidden',
+        'cma_command_authority_required',
+        'cma_key_required',
+        'cma_key_account_mismatch',
+        'cma_key_scope_required',
+        'cma_key_not_accepted',
+      ].includes(e.code)
     ) {
       setReadyOwner('');
-      setKeyCheck((v) => v + 1);
+      setConnectionCheck((v) => v + 1);
     }
     if (e instanceof WorkerError && e.code === 'cma_consent_required')
       setSession((s) => (s ? { ...s, workerEnabled: false } : s));
@@ -298,7 +326,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
 
   // Bounded, non-overlapping observation. No write is retried by polling.
   useEffect(() => {
-    if (!session?.workerEnabled || !keyReady || busy || (!agentId && !operationId)) return;
+    if (!session?.workerEnabled || !connectionReady || busy || (!agentId && !operationId)) return;
     const c = new AbortController();
     let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -391,7 +419,18 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
       c.abort();
       clearTimeout(timer);
     };
-  }, [session, keyReady, agentId, operationId, responseId, busy, request, poll, commit, report]);
+  }, [
+    session,
+    connectionReady,
+    agentId,
+    operationId,
+    responseId,
+    busy,
+    request,
+    poll,
+    commit,
+    report,
+  ]);
 
   const action = useCallback(
     async (run: (signal: AbortSignal) => Promise<void>) => {
@@ -431,19 +470,45 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
   }
   const runIntent = useCallback(
     async function runIntent(intent: Intent, base = noteRef.current) {
-      if (!session?.connected || !session.workerEnabled || !keyReady) return;
+      if (!session?.connected || !session.workerEnabled || !connectionReady) return;
       const chain: { next?: { intent: Intent; base: Notebook } } = {};
       await action(async (signal) => {
+        const recovery =
+          base.pending?.body.idempotencyKey === intent.body.idempotencyKey ||
+          base.startup?.body.idempotencyKey === intent.body.idempotencyKey;
+        const mayBindCurrent =
+          !recovery || intent.notAdmitted === true || intent.setupRequired === true;
         const pending = intent.setupRequired
           ? {
               ...intent,
+              credentialVersion: credentialVersion.current,
               body: { ...intent.body, idempotencyKey: crypto.randomUUID() },
               setupRequired: false,
+              notAdmitted: false,
               lastError: undefined,
             }
-          : { ...intent, lastError: undefined };
+          : {
+              ...intent,
+              credentialVersion: mayBindCurrent
+                ? credentialVersion.current
+                : intent.credentialVersion,
+              notAdmitted: false,
+              lastError: undefined,
+            };
         commit({ ...base, pending });
+        let dispatched = false;
         try {
+          if (!validCredentialVersion(pending.credentialVersion))
+            throw new WorkerError(
+              'cma_recovery_check_required',
+              '此恢复记录缺少原凭据版本，请先在 CMA 核对结果，再清除恢复记录。',
+            );
+          if (pending.credentialVersion !== credentialVersion.current)
+            throw new WorkerError(
+              'cma_credential_changed',
+              '聊天凭据已变化，请切回原授权方式重试；原凭据无法恢复时，先在 CMA 核对结果，再清除恢复记录。',
+            );
+          const writeSession = { ...session!, cmaCredentialVersion: pending.credentialVersion };
           if (pending.action === 'attachment') {
             if (
               !sourceFile ||
@@ -453,8 +518,9 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
               sourceFile.sha256 !== pending.body.sha256
             )
               throw new Error('请重新选择同一模型文件，再重试原请求。');
+            dispatched = true;
             const receipt = await uploadModel(
-              session!,
+              writeSession,
               String(pending.body.agentId),
               sourceFile.file,
               pending.body.idempotencyKey,
@@ -473,6 +539,8 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
             };
             const follow: Intent = {
               action: 'message',
+              credentialVersion: pending.credentialVersion,
+              notAdmitted: true,
               body: {
                 agentId: base.agentId,
                 context: {
@@ -494,11 +562,12 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
             chain.next = { intent: follow, base: next };
             return;
           }
+          dispatched = true;
           const value = await workerRequest<{
             id?: string;
             responseId?: string;
             commandId?: string;
-          }>(session!, pending.action, pending.body, signal, request);
+          }>(writeSession, pending.action, pending.body, signal, request);
           if (signal.aborted) return;
           if (pending.action === 'create') {
             if (typeof value.id !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/.test(value.id))
@@ -555,27 +624,48 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
               : '请求已受理，正在跟进进度。',
           );
         } catch (e) {
+          // 只有已知从未受理的请求可换凭据；本次拒绝不能消除更早一次的未知结果。
+          const notAdmitted =
+            mayBindCurrent &&
+            (!dispatched ||
+              (e instanceof WorkerError &&
+                e.code === 'cma_credential_changed' &&
+                e.status === 409));
+          const failure =
+            notAdmitted && e instanceof WorkerError && e.code === 'cma_credential_changed'
+              ? new WorkerError(
+                  e.code,
+                  '授权已更新，本次提交尚未发送。连接核验后，请重试原请求。',
+                  e.status,
+                )
+              : e;
           if (!signal.aborted)
             commit({
               ...base,
               pending: {
                 ...pending,
-                ...(e instanceof WorkerError && e.code === 'cma_setup_required'
+                notAdmitted,
+                ...(mayBindCurrent && e instanceof WorkerError && e.code === 'cma_setup_required'
                   ? { setupRequired: true }
                   : {}),
                 lastError: {
-                  code: e instanceof WorkerError ? e.code : 'unconfirmed_response',
-                  message: (e instanceof Error ? e.message : '请求结果尚未确认。').slice(0, 2048),
-                  ...(e instanceof WorkerError && e.status ? { status: e.status } : {}),
+                  code: failure instanceof WorkerError ? failure.code : 'unconfirmed_response',
+                  message: (failure instanceof Error
+                    ? failure.message
+                    : '请求结果尚未确认。'
+                  ).slice(0, 2048),
+                  ...(failure instanceof WorkerError && failure.status
+                    ? { status: failure.status }
+                    : {}),
                 },
               },
             });
-          throw e;
+          throw failure;
         }
       });
       if (chain.next) await runIntent(chain.next.intent, chain.next.base);
     },
-    [action, commit, request, session, sourceFile, keyReady],
+    [action, commit, request, session, sourceFile, connectionReady],
   );
 
   useEffect(() => {
@@ -601,7 +691,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
     e.preventDefault();
     if (
       !session?.workerEnabled ||
-      !keyReady ||
+      !connectionReady ||
       busy ||
       note.operationId ||
       note.pending ||
@@ -849,7 +939,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
     ? `${cmaBase}/agents/${encodeURIComponent(observedAgentId)}`
     : cmaBase;
   const checkedPreview = previewIdentity?.url === preview ? previewIdentity.value : null;
-  const ready = session?.connected && session.workerEnabled && keyReady;
+  const ready = session?.connected && session.workerEnabled && connectionReady;
   const disabled = busy || Boolean(note.pending);
   const selected = catalogSpace;
   const visibleSpaces =
@@ -1474,28 +1564,52 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
               !catalogError ? (
                 <p role="status">正在核对空间归属和 CMA 授权…</p>
               ) : session.workerAvailable ? (
-                <AgentKeyConnection
-                  key={`${session.subject}:${session.csrfToken}:${session.cmaOwnerId}`}
-                  session={session}
-                  ownerName={catalog?.organizations.find((o) => o.id === orgId)?.name}
-                  request={request}
-                  onChange={setKeyReady}
-                  checkVersion={keyCheck}
-                />
+                <div className="workspace__consent">
+                  <label>
+                    聊天授权方式{' '}
+                    <select
+                      aria-label="聊天授权方式"
+                      value={authMethod}
+                      disabled={busy}
+                      onChange={(event) => {
+                        const method = event.target.value as CmaAuthMethod;
+                        saveAuthMethod(session.subject!, method);
+                        autoUpload.current = false;
+                        setReadyOwner('');
+                        setAuthChoice({ subject: session.subject!, method });
+                      }}
+                    >
+                      <option value="oauth">OAuth</option>
+                      <option value="agent_key">Agent Key</option>
+                    </select>
+                  </label>
+                  {authMethod === 'oauth' ? (
+                    <OAuthConnection
+                      key={connectionContext}
+                      session={session}
+                      ownerName={catalog?.organizations.find((o) => o.id === orgId)?.name}
+                      request={request}
+                      onChange={setConnectionReady}
+                      checkVersion={connectionCheck}
+                    />
+                  ) : (
+                    <AgentKeyConnection
+                      key={connectionContext}
+                      session={session}
+                      ownerName={catalog?.organizations.find((o) => o.id === orgId)?.name}
+                      request={request}
+                      onChange={setConnectionReady}
+                      checkVersion={connectionCheck}
+                    />
+                  )}
+                </div>
               ) : null}
-              {session.workerAvailable && keyReady && !session.workerEnabled && (
+              {session.workerAvailable && connectionReady && !session.workerEnabled && (
                 <div className="workspace__consent">
                   <h2>启用空间聊天</h2>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={consentChecked}
-                      onChange={(e) => setConsentChecked(e.target.checked)}
-                    />
-                    允许此浏览器通过 CMA 查看、创建和使用此账号有权限的 Agent，并发送我填写的任务。
-                  </label>
-                  <button disabled={!consentChecked || busy} onClick={() => void enable(true)}>
-                    同意并启用
+                  <p>允许网页通过 CMA 查看、创建和使用你有权限的 Agent，并发送你填写的任务。</p>
+                  <button disabled={busy} onClick={() => void enable(true)}>
+                    启用 CMA 聊天
                   </button>
                 </div>
               )}

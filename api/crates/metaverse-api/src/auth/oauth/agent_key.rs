@@ -1,5 +1,5 @@
-//! Browser-held NyxID login credentials; secrets are never persisted.
-use super::{routes, seconds, HeldCredential, OAuthError, OAuthService, STORE};
+//! 浏览器持有 NyxID 登录子凭据；服务端不持久保存。
+use super::{owner, routes, seconds, HeldCredential, OAuthError, OAuthService, STORE};
 use crate::{error::ApiError, repo::OAuthSessionRecord, routes::ApiJson, AppState};
 use axum::{
     extract::State,
@@ -26,7 +26,7 @@ impl Credential {
     pub(super) fn value(&self) -> &str {
         &self.0
     }
-    fn from_headers(headers: &HeaderMap) -> Result<Self, ApiError> {
+    pub(super) fn from_headers(headers: &HeaderMap) -> Result<Self, ApiError> {
         let mut values = headers.get_all(header::AUTHORIZATION).iter();
         let token = values
             .next()
@@ -58,11 +58,18 @@ fn unavailable() -> ApiError {
         "暂时无法核验浏览器的 Agent Key，请保留原请求后重试",
     )
 }
+pub(super) fn not_accepted() -> ApiError {
+    ApiError::new(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "cma_key_not_accepted",
+        "CMA 尚未接受此授权，请重新检查连接；原授权、任务和请求编号已保留",
+    )
+}
 fn scope_required() -> ApiError {
     ApiError::new(
         StatusCode::FORBIDDEN,
         "cma_key_scope_required",
-        "请选择属于当前空间归属、仅允许 CMA 服务且 scope 为 proxy 的 Agent Key，并包含该归属的 CMA 连接",
+        "请选择当前账号的 CMA 专用 Agent Key，仅授予 CMA 服务和 proxy 权限",
     )
 }
 
@@ -104,22 +111,21 @@ struct Summary {
     credential_id: String,
     credential_expires_at: Option<String>,
     key_expires_at: Option<String>,
+    credential_version: String,
 }
 impl Identity {
-    fn same_owner(&self, owner: &Owner) -> Result<(), ApiError> {
-        if self.api_key.owner_id != owner.id
-            || self.api_key.owner_type != if owner.org { "org" } else { "personal" }
-        {
+    fn same_owner(&self, subject: &str) -> Result<(), ApiError> {
+        if self.api_key.owner_id != subject || self.api_key.owner_type != "personal" {
             return Err(ApiError::new(
                 StatusCode::FORBIDDEN,
                 "cma_key_account_mismatch",
-                "Agent Key 与当前空间归属不一致，请选择该个人或组织的 CMA 授权",
+                "Agent Key 不属于当前登录账号，请使用当前账号的 CMA 授权",
             ));
         }
         Ok(())
     }
-    fn summary(self, owner: &Owner) -> Result<Summary, ApiError> {
-        self.same_owner(owner)?;
+    fn summary(self, subject: &str) -> Result<Summary, ApiError> {
+        self.same_owner(subject)?;
         let key = self.api_key;
         if key.scopes.split_whitespace().collect::<Vec<_>>() != ["proxy"]
             || key.allow_all_services
@@ -139,24 +145,24 @@ impl Identity {
                     || s.catalog_service_slug.as_deref() != Some("cma")
                     || !s.is_active
             })
-            // NyxID can grant several connections for the same catalog service.
-            // Direct CMA calls use the verified Key owner, not a connection owner.
-            // Require a matching connection without rejecting other CMA grants.
+            // 同一服务可以有多个连接；直连使用已核验的 Key 主体。
+            // 必须包含当前账号的连接，允许同时存在其他 CMA 连接。
             || !key.effective_services.iter().any(|s| {
                 key.allowed_service_ids.contains(&s.id)
-                    && (s.owner_id.as_deref() == Some(owner.id.as_str())
-                        || (!owner.org && s.owner_id.is_none()))
+                    && (s.owner_id.as_deref() == Some(subject)
+                        || s.owner_id.is_none())
             })
         {
             return Err(scope_required());
         }
         Ok(Summary {
-            owner_id: owner.id.clone(),
+            owner_id: subject.into(),
             key_id: key.id,
             name: key.name,
             credential_id: self.credential_id,
             credential_expires_at: self.credential_expires_at,
             key_expires_at: key.expires_at,
+            credential_version: String::new(),
         })
     }
 }
@@ -208,74 +214,70 @@ async fn identity(oauth: &OAuthService, credential: &Credential) -> Result<Ident
 async fn verify(
     oauth: &OAuthService,
     credential: &Credential,
-    owner: &Owner,
+    subject: &str,
 ) -> Result<Summary, ApiError> {
-    identity(oauth, credential).await?.summary(owner)
+    identity(oauth, credential).await?.summary(subject)
+}
+
+/// NyxID 批准不能证明 CMA 已接受；这里只转发浏览器 Key。
+async fn check_cma(
+    oauth: &OAuthService,
+    credential: &Credential,
+    subject: &str,
+) -> Result<(), ApiError> {
+    let base = oauth
+        .config
+        .cma_base_url
+        .as_deref()
+        .ok_or_else(unavailable)?;
+    let response = oauth
+        .http
+        .get(format!("{}/auth/session", base.trim_end_matches('/')))
+        .bearer_auth(credential.value())
+        .send()
+        .await
+        .map_err(|_| unavailable())?;
+    if matches!(response.status().as_u16(), 401 | 403) {
+        return Err(not_accepted());
+    }
+    if !response.status().is_success() {
+        return Err(unavailable());
+    }
+    #[derive(Deserialize)]
+    struct Session {
+        authenticated: bool,
+        subject: String,
+        #[serde(default)]
+        api_commands: bool,
+    }
+    let session: Session =
+        serde_json::from_slice(&private_body(response).await?).map_err(|_| unavailable())?;
+    if !session.authenticated || session.subject != subject {
+        return Err(not_accepted());
+    }
+    if !session.api_commands {
+        return Err(ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "cma_command_authority_required",
+            "CMA 尚未提供此 Agent Key 的聊天能力，请保留原授权与请求，等待服务配置完成",
+        ));
+    }
+    Ok(())
 }
 pub(super) async fn checked(
     oauth: &OAuthService,
     headers: &HeaderMap,
-    owner: &Owner,
+    subject: &str,
 ) -> Result<Credential, ApiError> {
     let credential = Credential::from_headers(headers)?;
-    verify(oauth, &credential, owner).await?;
+    verify(oauth, &credential, subject).await?;
     Ok(credential)
-}
-
-pub(super) struct Owner {
-    pub(super) id: String,
-    pub(super) org: bool,
-}
-fn requested_owner(headers: &HeaderMap, subject: &str) -> Result<Owner, ApiError> {
-    let values = headers
-        .get_all("x-metaverse-cma-owner")
-        .iter()
-        .collect::<Vec<_>>();
-    let id = match values.as_slice() {
-        [] => subject,
-        [value] => value
-            .to_str()
-            .ok()
-            .filter(|id| metaverse_core::ids::is_subject_id(id))
-            .ok_or_else(|| ApiError::invalid("CMA 归属编号不正确"))?,
-        _ => return Err(ApiError::invalid("CMA 归属编号重复")),
-    };
-    let org = id != subject;
-    Ok(Owner { id: id.into(), org })
-}
-pub(super) async fn owner(
-    state: &AppState,
-    headers: &HeaderMap,
-    subject: &str,
-) -> Result<Owner, ApiError> {
-    let owner = requested_owner(headers, subject)?;
-    if owner.org {
-        use crate::auth::organizations::MembershipLookup;
-        match state
-            .authorizer
-            .connection_membership(subject, &owner.id)
-            .await
-        {
-            MembershipLookup::Member(member)
-                if member.role != metaverse_core::model::OrgRole::Viewer => {}
-            MembershipLookup::Unavailable => return Err(ApiError::org_membership_unavailable()),
-            _ => {
-                return Err(ApiError::new(
-                    StatusCode::FORBIDDEN,
-                    "cma_key_account_mismatch",
-                    "当前账号没有使用该组织 CMA 的权限",
-                ))
-            }
-        }
-    }
-    Ok(owner)
 }
 
 struct Browser {
     oauth: Arc<OAuthService>,
     session: OAuthSessionRecord,
     held: HeldCredential,
-    owner: Owner,
 }
 impl Browser {
     async fn new(state: &AppState, headers: &HeaderMap) -> Result<Self, ApiError> {
@@ -291,16 +293,13 @@ impl Browser {
             return Err(unavailable());
         }
         let (session, held) = routes::verified_browser(&oauth, headers).await?;
-        let owner = if require_owner_access {
-            owner(state, headers, &session.subject).await?
-        } else {
-            requested_owner(headers, &session.subject)?
-        };
+        if require_owner_access {
+            owner::resolve(state, headers, &session.subject).await?;
+        }
         Ok(Self {
             oauth,
             session,
             held,
-            owner,
         })
     }
     async fn current(&self) -> Result<(), ApiError> {
@@ -359,7 +358,7 @@ async fn request(State(state): State<AppState>, headers: HeaderMap) -> Result<Re
     {
         return Err(unavailable());
     }
-    // Preferences only. NyxID's human review owns selection and approval.
+    // 仅预填选项，最终选择与审批由 NyxID 确认。
     url.query_pairs_mut().extend_pairs([
         ("user_code", request.user_code.as_str()),
         ("login_type", "agent"),
@@ -419,10 +418,10 @@ async fn poll(
     if !valid(credential.value()) {
         return Err(unavailable());
     }
-    let summary = delivery.identity.summary(&b.owner);
+    let summary = delivery.identity.summary(&b.session.subject);
     let current = b.current().await;
     if summary.is_err() || current.is_err() {
-        // An unusable delivered child must not remain active. Never revoke its parent.
+        // 交付给错误账号的子凭据不能保持有效；不能撤销父 Key。
         let _ = b
             .oauth
             .http
@@ -432,25 +431,27 @@ async fn poll(
             .await;
     }
     current?;
-    let summary = summary?;
+    let mut summary = summary?;
+    summary.credential_version = super::worker::credential_version(credential.value());
     Ok(Json(json!({"credential":credential.value(),"identity":summary})).into_response())
 }
 async fn check(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, ApiError> {
     let b = Browser::new(&state, &headers).await?;
     let credential = Credential::from_headers(&headers)?;
-    let summary = verify(&b.oauth, &credential, &b.owner).await?;
+    let mut summary = verify(&b.oauth, &credential, &b.session.subject).await?;
+    summary.credential_version = super::worker::credential_version(credential.value());
+    check_cma(&b.oauth, &credential, &b.session.subject).await?;
     b.current().await?;
     Ok(Json(summary).into_response())
 }
 async fn revoke(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, ApiError> {
-    // A holder may revoke its own child after leaving the organization. This never
-    // grants CMA access or permission to revoke the parent or another credential.
+    // 退出组织后仍可撤销当前账号的子凭据，不因此授予 CMA 操作权限。
     let b = Browser::open(&state, &headers, false).await?;
     let credential = Credential::from_headers(&headers)?;
-    // Revocation remains available if the parent Key's service grant changed.
+    // 父 Key 的服务授权变化后仍允许撤销子凭据。
     identity(&b.oauth, &credential)
         .await?
-        .same_owner(&b.owner)?;
+        .same_owner(&b.session.subject)?;
     b.current().await?;
     let response = b
         .oauth

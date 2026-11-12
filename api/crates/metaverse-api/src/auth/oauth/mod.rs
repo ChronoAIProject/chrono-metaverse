@@ -5,6 +5,7 @@ pub(crate) mod catalog;
 mod config;
 mod creation;
 mod crypto;
+mod owner;
 mod provider;
 mod routes;
 mod worker;
@@ -48,6 +49,8 @@ struct Tokens {
     refresh_token: String,
     expires_at: i64,
     subject_verified: bool,
+    #[serde(default)]
+    scope: Option<String>,
 }
 
 impl Drop for Tokens {
@@ -61,6 +64,7 @@ impl Drop for Tokens {
 pub(crate) struct HeldCredential {
     pub credential: ForwardedCredential,
     record: OAuthGrantRecord,
+    cma_granted: bool,
 }
 
 pub struct OAuthService {
@@ -162,6 +166,10 @@ impl OAuthService {
             if tokens.expires_at > seconds()? + 30 && tokens.subject_verified {
                 return Ok(Some(HeldCredential {
                     credential: ForwardedCredential::retained(tokens.access_token.clone()),
+                    cma_granted: tokens
+                        .scope
+                        .as_deref()
+                        .is_some_and(|s| s.split_whitespace().any(|s| s == "proxy")),
                     record,
                 }));
             }

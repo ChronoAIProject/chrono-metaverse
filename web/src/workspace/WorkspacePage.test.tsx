@@ -6,17 +6,9 @@ vi.mock('../space/SpacePage', () => ({
     <div data-testid="private-viewer">{spaceId}</div>
   ),
 }));
-import { saveBrowserKey } from '../auth/browserKey';
 import { WorkspacePage } from './WorkspacePage';
 import { resultLinks, viewerLink, type Transcript, type Operation } from './client';
 
-const keyIdentity = {
-  keyId: 'key-cma',
-  name: 'Metaverse CMA',
-  credentialId: 'browser-child',
-  credentialExpiresAt: null,
-  keyExpiresAt: null,
-};
 const connected = {
   enabled: true,
   connected: true,
@@ -49,6 +41,9 @@ function mockApi(
     loseCreate?: boolean;
     loseMessage?: boolean;
     setup?: boolean;
+    rotateCredential?: boolean;
+    rejectRecoveryCredential?: boolean;
+    setupOnRecovery?: boolean;
     followUp?: boolean;
     operation?: Operation | ((creates: number) => Operation);
     observeFailures?: number;
@@ -56,6 +51,7 @@ function mockApi(
 ) {
   const writes: { action: string; body: Record<string, unknown> }[] = [];
   let creates = 0;
+  let credentialVersion = 'v'.repeat(43);
   let messages = 0;
   let observeFailures = options.observeFailures ?? 0;
   const request = vi.fn<typeof fetch>(async (input, init) => {
@@ -90,9 +86,10 @@ function mockApi(
         organizations: [{ id: 'org-one', name: 'ChronoAI', role: 'admin' }],
         next: null,
       });
-    if (url.endsWith('/key/check'))
+    if (url.endsWith('/connection'))
       return reply({
-        ...keyIdentity,
+        ready: true,
+        credentialVersion,
         ownerId: new Headers(init?.headers).get('x-metaverse-cma-owner') ?? 'owner-a',
       });
     if (url.endsWith('/session'))
@@ -103,6 +100,16 @@ function mockApi(
     if (action === 'consent') return reply({ workerEnabled: body.enabled });
     if (action === 'create') {
       creates++;
+      if (creates === 2 && options.setupOnRecovery)
+        return reply({ code: 'cma_setup_required', detail: '运行环境授权已失效' }, 409);
+      if (creates === 2 && options.rejectRecoveryCredential) {
+        credentialVersion = 'w'.repeat(43);
+        return reply({ code: 'cma_credential_changed', detail: '当前令牌已续期' }, 409);
+      }
+      if (creates === 1 && options.rotateCredential) {
+        credentialVersion = 'w'.repeat(43);
+        return reply({ code: 'cma_credential_changed', detail: '当前令牌已续期' }, 409);
+      }
       if (creates === 1 && options.loseCreate) throw new TypeError('lost response');
       if (creates === 1 && options.setup)
         return reply({ code: 'cma_setup_required', detail: '请先登录 CMA 完成运行环境授权' }, 409);
@@ -181,26 +188,19 @@ async function fillTask() {
 }
 beforeEach(() => {
   sessionStorage.clear();
-  saveBrowserKey('owner-a', 'nyx_test_browser_owner_a', keyIdentity);
-  saveBrowserKey(
-    'owner-a',
-    'nyx_test_browser_org_one',
-    { ...keyIdentity, ownerId: 'org-one' },
-    'org-one',
-  );
   window.history.replaceState(null, '', '/workspace');
 });
 afterEach(cleanup);
 
 describe('CMA workspace', () => {
-  it('新标签页直接打开组织空间时，从目录恢复归属并复用已有浏览器授权', async () => {
+  it('新标签页直接打开组织空间时，从目录恢复归属并复用 OAuth 授权', async () => {
     sessionStorage.clear();
     window.history.replaceState(null, '', '/workspace?space=my-lobby');
     const api = mockApi();
     render(<WorkspacePage request={api.request} />);
     await userEvent.click(await screen.findByRole('button', { name: '打开 CMA 聊天' }));
-    await screen.findByText('当前空间使用：ChronoAI的 CMA');
-    await screen.findByText('已连接 CMA · Metaverse CMA');
+    await screen.findByText('当前空间：ChronoAI · 使用当前账号的 CMA 授权');
+    await screen.findByText('已连接 CMA');
     await waitFor(() =>
       expect(JSON.parse(sessionStorage.getItem('metaverse-worker:owner-a')!).orgId).toBe('org-one'),
     );
@@ -208,10 +208,9 @@ describe('CMA workspace', () => {
       false,
     );
     expect(
-      api.request.mock.calls.filter((call) => String(call[0]).endsWith('/key/check')).at(-1)?.[1]
+      api.request.mock.calls.filter((call) => String(call[0]).endsWith('/connection')).at(-1)?.[1]
         ?.headers,
     ).toMatchObject({
-      Authorization: 'Bearer nyx_test_browser_org_one',
       'x-metaverse-cma-owner': 'org-one',
     });
   });
@@ -220,10 +219,8 @@ describe('CMA workspace', () => {
     const { container } = render(<WorkspacePage request={api.request} />);
     await screen.findByRole('button', { name: '选择空间' });
     await openChat();
-    const enable = await screen.findByRole('button', { name: '同意并启用' });
-    expect(enable).toBeDisabled();
+    const enable = await screen.findByRole('button', { name: '启用 CMA 聊天' });
     expect(api.writes).toEqual([]);
-    await userEvent.click(screen.getByRole('checkbox', { name: /允许此浏览器/ }));
     await userEvent.click(enable);
     await screen.findByRole('button', { name: '选择空间' });
     await fillTask();
@@ -521,4 +518,77 @@ it('only starts a replacement after explicit action when startup failed before a
   expect(creates).toHaveLength(2);
   expect(creates[1]!.body.idempotencyKey).not.toBe(creates[0]!.body.idempotencyKey);
   expect(creates[1]!.body.instruction).toBe(creates[0]!.body.instruction);
+});
+
+it('旧恢复记录缺少凭据版本时保留内容并阻止跨凭据重发', async () => {
+  const api = mockApi({ loseCreate: true });
+  const mounted = render(<WorkspacePage request={api.request} />);
+  await screen.findByRole('button', { name: '选择空间' });
+  await fillTask();
+  await userEvent.click(screen.getByRole('button', { name: '发送' }));
+  await screen.findByRole('button', { name: '重试原请求' });
+  mounted.unmount();
+  const saved = JSON.parse(sessionStorage.getItem('metaverse-worker:owner-a')!);
+  delete saved.pending.credentialVersion;
+  sessionStorage.setItem('metaverse-worker:owner-a', JSON.stringify(saved));
+  render(<WorkspacePage request={api.request} />);
+  await screen.findByText('已连接 CMA');
+  await userEvent.click(screen.getByRole('button', { name: '重试原请求' }));
+  await screen.findByText(/^上次请求反馈：此恢复记录缺少原凭据版本/);
+  expect(api.writes).toHaveLength(1);
+  const restored = JSON.parse(sessionStorage.getItem('metaverse-worker:owner-a')!);
+  expect(restored.pending.body).toEqual(saved.pending.body);
+});
+
+it('首次提交因 OAuth 续期被明确拒绝后，刷新仍可核验新凭据并手动重试', async () => {
+  const api = mockApi({ rotateCredential: true });
+  const mounted = render(<WorkspacePage request={api.request} />);
+  await fillTask();
+  await userEvent.click(screen.getByRole('button', { name: '发送' }));
+  await screen.findByText(/^上次请求反馈：授权已更新，本次提交尚未发送/);
+  expect(api.writes).toHaveLength(1);
+  expect(JSON.parse(sessionStorage.getItem('metaverse-worker:owner-a')!).pending.notAdmitted).toBe(
+    true,
+  );
+  mounted.unmount();
+  render(<WorkspacePage request={api.request} />);
+  await screen.findByText('已连接 CMA');
+  expect(api.writes).toHaveLength(1);
+  await userEvent.click(screen.getByRole('button', { name: '重试原请求' }));
+  await screen.findByText(/<script>danger/);
+  expect(api.writes).toEqual([api.writes[0], api.writes[0]]);
+  const headers = api.request.mock.calls
+    .filter(([path]) => String(path).endsWith('/create'))
+    .map(([, init]) => new Headers(init?.headers).get('x-metaverse-cma-credential'));
+  expect(headers).toEqual(['v'.repeat(43), 'w'.repeat(43)]);
+});
+
+it('未知结果的一次重试被拒绝，不能据此认定更早请求未受理并更换凭据', async () => {
+  const api = mockApi({ loseCreate: true, rejectRecoveryCredential: true });
+  render(<WorkspacePage request={api.request} />);
+  await fillTask();
+  await userEvent.click(screen.getByRole('button', { name: '发送' }));
+  await userEvent.click(await screen.findByRole('button', { name: '重试原请求' }));
+  await screen.findByText('上次请求反馈：当前令牌已续期');
+  await screen.findByText('已连接 CMA');
+  expect(api.writes).toHaveLength(2);
+  expect(JSON.parse(sessionStorage.getItem('metaverse-worker:owner-a')!).pending.notAdmitted).toBe(
+    false,
+  );
+  await userEvent.click(screen.getByRole('button', { name: '重试原请求' }));
+  await screen.findByText(/^上次请求反馈：聊天凭据已变化/);
+  expect(api.writes).toHaveLength(2);
+});
+
+it('未知创建恢复时遇到环境授权错误，仍保留原编号且不允许另建任务', async () => {
+  const api = mockApi({ loseCreate: true, setupOnRecovery: true });
+  render(<WorkspacePage request={api.request} />);
+  await fillTask();
+  await userEvent.click(screen.getByRole('button', { name: '发送' }));
+  await userEvent.click(await screen.findByRole('button', { name: '重试原请求' }));
+  await screen.findByText('上次请求反馈：运行环境授权已失效');
+  expect(screen.queryByRole('button', { name: '已完成授权，重新提交' })).toBeNull();
+  await userEvent.click(screen.getByRole('button', { name: '重试原请求' }));
+  await screen.findByText(/<script>danger/);
+  expect(api.writes).toEqual([api.writes[0], api.writes[0], api.writes[0]]);
 });
