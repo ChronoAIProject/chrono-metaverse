@@ -217,8 +217,9 @@ pub fn router(state: AppState) -> Router {
         .route("/api/openapi.json", get(crate::openapi::serve))
         .route(
             "/api/agent-guide",
-            get(|| async { include_str!("../../resources/agent-guide.md") }),
+            get(crate::openapi::agent_guide),
         )
+        .route("/api/v1/agent-guide", get(crate::openapi::agent_guide))
         .merge(gated)
         .fallback(error::not_found)
         .with_state(state)

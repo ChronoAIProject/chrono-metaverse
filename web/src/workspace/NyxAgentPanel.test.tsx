@@ -75,7 +75,7 @@ it('从工作台发送、显示完成预览，再用同一个会话续聊', asyn
   expect(writes[0]).toMatchObject({
     spaceId: 'lobby',
     instruction: '添加欢迎牌',
-    instructionsVersion: 2,
+    instructionsVersion: 3,
   });
   expect(writes[0]).not.toHaveProperty('conversationId');
   await userEvent.type(screen.getByRole('textbox', { name: '给 NyxAgent 发消息' }), '改成蓝色');
@@ -105,7 +105,7 @@ it('断流后刷新只恢复本地状态，用户恢复时重发完全相同的�
   expect(writes).toHaveLength(1);
   const pending = readNyxagentNote('alice', 'lobby').pending;
   expect(pending?.responseId).toBe('resp_test');
-  expect(pending?.body.instructionsVersion).toBe(2);
+  expect(pending?.body.instructionsVersion).toBe(3);
   expect(pending?.body).not.toHaveProperty('conversationId');
   view.unmount();
   render(<NyxAgentPanel {...props} />);

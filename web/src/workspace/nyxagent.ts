@@ -13,7 +13,7 @@ export type NyxagentTask = {
   instruction: string;
   idempotencyKey: string;
   conversationId?: string;
-  instructionsVersion?: 1 | 2;
+  instructionsVersion?: 1 | 2 | 3;
 };
 export type NyxagentResponse = {
   id: string;
@@ -69,7 +69,8 @@ export function readNyxagentNote(subject: string, spaceId: string, orgId?: strin
         p.body.idempotencyKey.length < 16 ||
         (p.body.instructionsVersion !== undefined &&
           p.body.instructionsVersion !== 1 &&
-          p.body.instructionsVersion !== 2) ||
+          p.body.instructionsVersion !== 2 &&
+          p.body.instructionsVersion !== 3) ||
         (p.body.conversationId !== undefined && !identifier(p.body.conversationId))
       )
         return emptyNyxagentNote();
@@ -128,20 +129,39 @@ export async function streamNyxagent(
   onUpdate: (update: NyxagentUpdate) => void,
   request = fetch,
 ): Promise<NyxagentResponse> {
-  const r = await request('/api/auth/nyxid/nyxagent/message', {
-    method: 'POST',
-    credentials: 'same-origin',
-    cache: 'no-store',
-    signal,
-    headers: {
-      'Content-Type': 'application/json',
-      'x-csrf-token': session.csrfToken ?? '',
-      ...cmaAuthHeaders({ ...session, cmaCredentialVersion: pending.credentialVersion }),
-    },
-    body: JSON.stringify(pending.body),
-  });
+  // Each transport attempt has its own trace ID; the saved mutation request stays unchanged.
+  const requestId = crypto.randomUUID();
+  const interrupted = () =>
+    new WorkerError(
+      'nyxagent_stream_interrupted',
+      `网络连接已中断，NyxAgent 结果尚未确认。请先核对结果或恢复原请求，避免重复操作。排查编号：${requestId}`,
+      0,
+    );
+  async function network<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation();
+    } catch (failure) {
+      if (signal.aborted) throw failure;
+      throw interrupted();
+    }
+  }
+  const r = await network(() =>
+    request('/api/auth/nyxid/nyxagent/message', {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-csrf-token': session.csrfToken ?? '',
+        'x-request-id': requestId,
+        ...cmaAuthHeaders({ ...session, cmaCredentialVersion: pending.credentialVersion }),
+      },
+      body: JSON.stringify(pending.body),
+    }),
+  );
   if (!r.ok) {
-    const problem = (await r.json()) as { code?: string; detail?: string };
+    const problem = (await r.json().catch(() => ({}))) as { code?: string; detail?: string };
     throw new WorkerError(
       problem.code ?? 'nyxagent_error',
       problem.detail ?? 'NyxAgent 请求未完成，请保留原请求。',
@@ -185,9 +205,16 @@ export async function streamNyxagent(
       event = '';
       return;
     }
-    const v = JSON.parse(raw) as Record<string, unknown>;
+    let v: Record<string, unknown>;
+    try {
+      v = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      throw interrupted();
+    }
+    if (!v || typeof v !== 'object') throw interrupted();
     const kind = typeof v.type === 'string' ? v.type : event;
     event = '';
+    if (kind === 'metaverse.error') throw interrupted();
     if (kind === 'response.created' || kind === 'response.in_progress') {
       const response = v.response as { id?: unknown; conversation?: { id?: unknown } };
       identity(response);
@@ -217,7 +244,7 @@ export async function streamNyxagent(
   }
   try {
     while (true) {
-      const chunk = await reader.read();
+      const chunk = await network(() => reader.read());
       if (chunk.done) buffer += decoder.decode();
       else {
         total += chunk.value.byteLength;
@@ -238,7 +265,7 @@ export async function streamNyxagent(
         throw new Error('NyxAgent 响应格式不正确。');
       if (chunk.done) break;
     }
-    throw new Error('连接中断，NyxAgent 结果尚未确认。请恢复原请求，避免重复操作。');
+    throw interrupted();
   } finally {
     await reader.cancel().catch(() => {});
     reader.releaseLock();

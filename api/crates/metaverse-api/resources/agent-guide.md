@@ -1,6 +1,6 @@
 # chrono-metaverse 编辑接口指南（v1）
 
-本指南供已授权的空间助手使用。通过 NyxID 的 chrono-metaverse 通用 request 工具设置 method、path 和 JSON body 调用下列接口；路径相对该服务，不要添加 NyxID 代理前缀。鉴权由工具传递，不索取密钥。接口只在现有权限内操作；文档不授予权限。
+本指南供已授权的空间助手使用。优先调用 NyxID 提供的 chrono-metaverse 对应工具；只有通用 request 工具时，设置 method、path 和 JSON body 调用下列接口。路径相对该服务，不要添加 NyxID 代理前缀。鉴权由工具传递，不索取密钥。接口只在现有权限内操作；文档不授予权限。
 
 ## 读取与范围
 
