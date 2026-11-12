@@ -172,3 +172,34 @@ it('通用计划拒绝未知操作、资源路径逃逸和只读快照', async (
   expect(await main(ctx, ['edit', 'push'])).toBe(1);
   expect(ctx.errors.join('\n')).toContain('分享快照不能编辑');
 });
+
+it.each(['check', 'upload', 'push'])('%s 的 JSON 输出是单个完整结果', async (action) => {
+  const root = setup({
+    version: 1,
+    message: '调整内容',
+    ops: [place('object', box([1, 1, 1], { at: [2, 0, 2] }))],
+  });
+  await connect(root);
+  const ctx = makeContext(root);
+  expect(await main(ctx, ['edit', action, '--inline', '--json'])).toBe(0);
+  const result = JSON.parse(ctx.lines.join('\n'));
+  if (action === 'check') expect(result.ok).toBe(true);
+  if (action === 'upload') expect(result.uploaded).toBe(0);
+  if (action === 'push') {
+    expect(result.draftId).toEqual(expect.any(String));
+    expect(result.previewRev).toEqual(expect.any(Number));
+  }
+});
+
+it('资源检查失败时不会先输出检查成功的结果', async () => {
+  const root = setup({
+    version: 1,
+    message: '导入内容',
+    ops: [],
+    assets: [{ hash: 'a'.repeat(64), format: 'glb' }],
+  });
+  const ctx = makeContext(root);
+  expect(await main(ctx, ['edit', 'check', '--json'])).toBe(1);
+  expect(ctx.lines).toEqual([]);
+  expect(ctx.errors.join('\n')).toContain('缺少资源');
+});
