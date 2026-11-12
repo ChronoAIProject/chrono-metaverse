@@ -5,7 +5,10 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 const root = new URL('../', import.meta.url);
 const read = path => JSON.parse(readFileSync(new URL(path, root), 'utf8'));
 const placement = read('build/placement.json');
-const entities = [...read('entities.json'), ...read('build/onemap-entities.json'),
+const config = read('context.json');
+const baseEntities = read('entities.json').filter(entity =>
+  !(entity.layer === 'ext' && entity.entityId.startsWith(config.entityPrefix)));
+const entities = [...baseEntities, ...read('build/onemap-entities.json'),
   ...read('build/ground.json'), ...placement.hostEntities];
 const expectedModels = entities.filter(entity => entity.assetHash).length;
 const expectedOverview = entities.filter(entity => entity.props?.backgroundView?.minDistance > 0).length;

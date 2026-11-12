@@ -2,13 +2,25 @@
 import { chromium } from '../../../sdk/typescript/node_modules/playwright-core/index.mjs';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 const root = new URL('../', import.meta.url);
+const read = path => JSON.parse(readFileSync(new URL(path, root), 'utf8'));
+const config = read('context.json');
+const space = read('space.json');
+const boxes = space.regions.find(region => region.id === config.host.focusRegionId).boxes;
+const focusSpan = [0, 1, 2].map(axis =>
+  (Math.max(...boxes.map(box => box[axis + 3])) - Math.min(...boxes.map(box => box[axis]))) * 0.05);
 const drafts = Object.entries(JSON.parse(readFileSync(new URL('out/drafts.json', root), 'utf8')))
   .sort((a, b) => Date.parse(b[1].createdAt) - Date.parse(a[1].createdAt));
 const [draftId, draft] = drafts[0] ?? [];
 const previewUrl = process.env.METAVERSE_PREVIEW_URL ?? draft?.preview;
 if (!previewUrl) throw new Error('尚未生成系统草稿预览链接');
 mkdirSync(new URL('out/system-shots/', root), { recursive: true });
-const browser = await chromium.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const browser = await chromium.launch({
+  ...(process.env.METAVERSE_E2E_BROWSER_PATH
+    ? { executablePath: process.env.METAVERSE_E2E_BROWSER_PATH }
+    : process.platform === 'darwin' ? { channel: 'chrome' } : {}),
+  headless: true,
+  args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+});
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
   const errors = [];
@@ -34,7 +46,7 @@ try {
     await page.waitForTimeout(1000);
     states[mode] = await viewer.evaluate(element => ({ ...element.dataset }));
     const frame = states[mode].frame.split(',').map(Number);
-    if (frame[3] - frame[0] > 12 || frame[5] - frame[2] > 16) errors.push(`${mode}：默认取景超出办公室`);
+    if (frame[3] - frame[0] > focusSpan[0] || frame[5] - frame[2] > focusSpan[2]) errors.push(`${mode}：默认取景超出主体区域`);
     if (states[mode].modelsFailed !== '0') errors.push(`${mode}：模型加载失败`);
     await page.screenshot({ path: new URL(`out/system-shots/${mode}.png`, root).pathname });
     console.log(`系统 ${mode} 视图已就绪：${states[mode].entities} 个物件，${states[mode].triangles} 个三角形`);
