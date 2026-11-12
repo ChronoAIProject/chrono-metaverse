@@ -102,8 +102,14 @@ export async function runEdit(
     printJson(ctx, { script, operations: plan.ops.length });
     return 0;
   }
-  const check = await runCheck(ctx, buildArgs);
-  if (check !== 0) return check;
+  // 中间检查先缓存在本地；JSON 模式只输出当前命令的完整结果。
+  const checkOutput: string[] = [];
+  const reportCheck = () => checkOutput.forEach((line) => ctx.out(line));
+  const check = await runCheck({ ...ctx, out: (line) => checkOutput.push(line) }, buildArgs);
+  if (check !== 0) {
+    reportCheck();
+    return check;
+  }
   // 所有资源先核对，再发出第一笔网络写入；支持复用已在线上的资源。
   const local = (plan.assets ?? []).map((asset) => {
     const file = resolve(ws.root, asset.path ?? `assets/${asset.hash}.${asset.format}`);
@@ -121,7 +127,11 @@ export async function runEdit(
       throw new CliError(`资源 ${asset.hash} 内容哈希不符`);
     return { ...asset, file: actual };
   });
-  if (action === 'check') return 0;
+  if (action === 'check') {
+    reportCheck();
+    return 0;
+  }
+  if (!flag(values, 'json')) reportCheck();
   const api = makeApi(ctx, ws, values);
   for (const asset of local) {
     const result = await upload(api, {
