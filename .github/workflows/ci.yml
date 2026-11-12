@@ -159,6 +159,8 @@ jobs:
         run: .venv/bin/ruff format --check .
       - name: 测试
         run: .venv/bin/pytest
+      - name: 场景导入通用性（本地模拟源）
+        run: .venv/bin/python ../scenes/marina-bay/scripts/check-import-reuse.py
 
   sdk-typescript:
     name: 命令行（sdk/typescript）

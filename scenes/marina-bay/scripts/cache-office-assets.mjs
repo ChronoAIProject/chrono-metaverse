@@ -1,9 +1,10 @@
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { ApiClient, MetaverseApi, resolveNyxToken } from '../../../sdk/typescript/dist/index.js';
 const root = new URL('../', import.meta.url);
+const config = JSON.parse(readFileSync(new URL('metaverse.json', root), 'utf8'));
 const entities = JSON.parse(readFileSync(new URL('entities.json', root)));
 const client = new ApiClient({ mode: 'nyxid', token: () => resolveNyxToken().token });
-const api = new MetaverseApi(client, 'chronoai-lobby');
+const api = new MetaverseApi(client, config.spaceId);
 const hashes = new Map();
 function visit(shape) {
   if (shape?.material?.texture) hashes.set(shape.material.texture, 'bin');

@@ -7,6 +7,7 @@ import sys
 import tempfile
 
 import numpy as np
+from scene_config import foreground_entities
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -19,7 +20,7 @@ def check_case(label, turn, offset, level):
     config = copy.deepcopy(read('context.json'))
     host = config['host']
     source = read(host['modelFile'])[0]
-    entities = read('entities.json')
+    entities = foreground_entities(read('entities.json'))
     space = read('space.json')
     workspace = read('metaverse.json')
     alignment = read('build/alignment.json')
@@ -54,6 +55,10 @@ def check_case(label, turn, offset, level):
     host['landmark']['label'] = f'{label} · {level}层入口'
     host['overviewDistanceMeters'] = level * 10
     alignment['officeFloor'] = level
+    # 模拟发布后重新拉取：背景已经在快照里，不能扩大主体和返回范围。
+    entities.append({'entityId': 'sample.saved-background', 'layer': 'ext', 'kind': 'object',
+                     'bounds': {'min': [-1000, -1000, -1000], 'max': [1000, 1000, 1000]},
+                     'props': {'background': True}})
     with tempfile.TemporaryDirectory(prefix='metaverse-context-') as directory:
         root = Path(directory)
         (root / 'assets').mkdir()
@@ -71,8 +76,11 @@ def check_case(label, turn, offset, level):
         marker = next(entity['props']['landmark'] for entity in result['hostEntities'] if 'landmark' in entity['props'])
         assert marker['label'] == host['landmark']['label']
         assert marker['minDistance'] == host['overviewDistanceMeters']
-        expected_min = np.min([entity['bounds']['min'] for entity in entities if entity.get('bounds')], axis=0)
+        focus_entities = foreground_entities(entities)
+        expected_min = np.min([entity['bounds']['min'] for entity in focus_entities if entity.get('bounds')], axis=0)
+        expected_max = np.max([entity['bounds']['max'] for entity in focus_entities if entity.get('bounds')], axis=0)
         assert np.allclose(marker['focusBounds']['min'], expected_min)
+        assert np.allclose(marker['focusBounds']['max'], expected_max)
         return {'label': label, 'turn': turn, 'offset': offset.tolist(), 'parts': len(result['hostEntities']), 'verified': True}
 
 

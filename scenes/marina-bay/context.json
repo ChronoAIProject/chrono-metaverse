@@ -1,6 +1,27 @@
 {
   "entityPrefix": "bay.",
   "message": "办公室近景保留楼体剖面，拉远显示完整 Tower 1 和十四层办公室标记，滨海湾作为背景",
+  "oneMap": {
+    "bboxDegrees": [103.8500, 1.2780, 103.8647, 1.2918],
+    "reference": { "lat": 1.2801706774251347, "lon": 103.85419949862057 },
+    "officeFloor": 14,
+    "officeHeightMeters": 60.0,
+    "headingDegrees": 25.0,
+    "hostSourceId": "SLA_BLDG2_481e89dc-0dd1-4b88-8f8b-80303d6842a2",
+    "initialPlacement": { "centerX": 5.3, "frontZ": 15.65 },
+    "fallbackBuildingLabel": "滨海湾建筑",
+    "tilesBaseUrl": "https://www.onemap.gov.sg/omapi/tilesets/sg_noterrain_tiles/",
+    "pageUrl": "https://www.onemap.gov.sg/3d",
+    "attribution": "Map Data © 2026 SLA",
+    "manifestAttribution": "Map Data © 2026 Singapore Land Authority (SLA)",
+    "tilesetFile": "marina-bay.tileset.json",
+    "imagery": {
+      "urlTemplate": "https://www.onemap.gov.sg/maps/tiles/OrthoJPG/{z}/{x}/{y}.png",
+      "zoom": 17,
+      "atlasFile": "marina-bay-orthophoto.jpg",
+      "label": "滨海湾岸线与地面（OneMap 正射影像）"
+    }
+  },
   "host": {
     "modelFile": "build/own-tower.json",
     "entityPrefix": "bay.tower1",
