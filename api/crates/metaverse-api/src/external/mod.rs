@@ -240,7 +240,6 @@ fn public_ip(ip: IpAddr) -> bool {
 
 pub fn freshness(headers: &HeaderMap, policy: &CachePolicy, now: SystemTime) -> u64 {
     if policy.persist == Some(false)
-        || headers.contains_key("set-cookie")
         || headers.get_all("vary").iter().any(|value| {
             value.to_str().map_or(true, |value| {
                 value.split(',').any(|name| {
@@ -283,6 +282,14 @@ pub fn freshness(headers: &HeaderMap, policy: &CachePolicy, now: SystemTime) -> 
                 .flatten()
         })
     };
+    // Set-Cookie 本身不禁止 HTTP 缓存；只在上游明确允许共享缓存时保存字节，
+    // Cookie 不进入缓存，也不转发给浏览器或后续提供方请求。
+    if headers.contains_key("set-cookie")
+        && !directives.contains(&"public")
+        && seconds("s-maxage").is_none()
+    {
+        return 0;
+    }
     let date = headers
         .get("date")
         .and_then(|v| v.to_str().ok())

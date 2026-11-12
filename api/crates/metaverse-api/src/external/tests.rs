@@ -141,6 +141,19 @@ fn freshness_respects_shared_cache_restrictions_and_remaining_age() {
         HeaderValue::from_static("Accept-Encoding, Authorization, Origin"),
     );
     assert_eq!(freshness(&headers, &CachePolicy::default(), now), 50);
+    headers.insert(
+        "set-cookie",
+        HeaderValue::from_static("anonymous=tracker; Secure; HttpOnly"),
+    );
+    assert_eq!(freshness(&headers, &CachePolicy::default(), now), 50);
+    headers.insert("cache-control", HeaderValue::from_static("max-age=600"));
+    assert_eq!(freshness(&headers, &CachePolicy::default(), now), 0);
+    headers.insert(
+        "cache-control",
+        HeaderValue::from_static("public,max-age=600"),
+    );
+    assert_eq!(freshness(&headers, &CachePolicy::default(), now), 350);
+    headers.remove("set-cookie");
     headers.insert("vary", HeaderValue::from_static("*"));
     assert_eq!(freshness(&headers, &CachePolicy::default(), now), 0);
     headers.remove("vary");

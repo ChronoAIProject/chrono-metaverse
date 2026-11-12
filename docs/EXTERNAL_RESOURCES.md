@@ -34,7 +34,7 @@
 
 每个实例独占自己的目录，以原子替换写入完整内容，按保存时间淘汰；相同 URL 的并发下载合并。每实例最多八个出站下载，单请求总时限 25 秒；三维单项最多 32 MiB、地图 8 MiB。DNS 全部地址必须为公网地址，并绑定实际连接；系统代理和自动重定向关闭，防止转向内网。
 
-新鲜期遵循 `s-maxage`、`max-age` 或 `Expires`，扣除 `Date`、`Age` 和传输时间；来源配置只能缩短，最长七天。`no-store`、`private`、`no-cache`、`Set-Cookie`、`Vary: *`、未知变化请求头或未声明新鲜期的响应不写缓存。常见的 `Vary: Accept-Encoding/Origin/Authorization/Cookie/Accept/User-Agent` 按固定出站头处理，不携带任何客户端头。过期即重新下载，不返回陈旧数据掩盖 403，也不把失败响应当成有效内容。`persist: false` 同时禁止读取已有磁盘缓存。
+新鲜期遵循 `s-maxage`、`max-age` 或 `Expires`，扣除 `Date`、`Age` 和传输时间；来源配置只能缩短，最长七天。`no-store`、`private`、`no-cache`、未明确允许共享缓存的 `Set-Cookie`、`Vary: *`、未知变化请求头或未声明新鲜期的响应不写缓存。带 `Set-Cookie` 的响应只有明确声明 `public` 或 `s-maxage` 才能保存字节，Cookie 始终丢弃，不保存、不回传。常见的 `Vary: Accept-Encoding/Origin/Authorization/Cookie/Accept/User-Agent` 按固定出站头处理，不携带任何客户端头。过期即重新下载，不返回陈旧数据掩盖 403，也不把失败响应当成有效内容。`persist: false` 同时禁止读取已有磁盘缓存。
 
 同一目录可在进程重新启动后复用。当前 dev 使用容器临时磁盘，重新部署或更换容器后会重新填充；若需要跨容器重建保留，可给每个实例挂载独占持久卷并配置目录。缓存是可重新获取的副本，不作为历史存档或数据授权凭据。需要稳定回放的获准数据包仍通过普通资源上传、内容哈希和空间时间线保存。
 
