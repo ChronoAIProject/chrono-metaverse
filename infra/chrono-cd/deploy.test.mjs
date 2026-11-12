@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { deployment, deploy } from './deploy.mjs';
+import { deployment, deploymentSpec, deploy } from './deploy.mjs';
 
 const sha = 'a'.repeat(40);
 const digests = { api: `sha256:${'b'.repeat(64)}`, web: `sha256:${'c'.repeat(64)}` };
@@ -21,19 +21,21 @@ test('环境不能交叉部署，短期分支和不完整构建被拒绝', () =>
 function fixture({ conflict = false, concurrent = false, failed = false } = {}) {
   const calls = [];
   const target = deployment('dev', 'staging', sha, digests);
-  let patched = false;
+  let applied = false;
   const current = { name: target.app, owner, generation: 27, revision: 28,
-    url: 'https://example.invalid', spec: { services: target.services, addons: { mongodb: {} } } };
+    url: 'https://example.invalid', spec: { services: Object.fromEntries(Object.entries(target.services).map(([name, spec]) =>
+      [name, { ...spec, image_digest: 'sha256:old', env: { KEEP: 'yes' }, secret_keys: ['TOKEN'], resources: { limits: { memory: '1Gi' } } }])),
+      addons: { mongodb: {} } } };
   const request = async (url, options) => {
     calls.push({ url, ...options });
     let data;
     let status = 200;
-    if (options.method === 'PATCH') {
+    if (options.method === 'PUT') {
       if (conflict) status = 409;
-      patched = true;
+      applied = true;
       data = { ...current, generation: 28, revision: 29 };
     } else if (url.includes('/status?')) data = { phase: failed ? 'degraded' : 'ready' };
-    else data = { ...current, generation: patched ? (concurrent ? 29 : 28) : 27 };
+    else data = { ...current, generation: applied ? (concurrent ? 29 : 28) : 27 };
     return new Response(JSON.stringify(data), { status });
   };
   return { calls, request };
@@ -44,9 +46,17 @@ test('只按本次构建摘要更新镜像，携带乐观锁并核对部署结�
   const mock = fixture();
   const result = await deploy(options, mock);
   assert.equal(result.generation, 28);
-  const write = mock.calls.find((call) => call.method === 'PATCH');
+  const write = mock.calls.find((call) => call.method === 'PUT');
   assert.equal(write.headers['If-Match'], '27');
-  assert.deepEqual(JSON.parse(write.body), { services: deployment('dev', 'staging', sha, digests).services });
+  const body = JSON.parse(write.body);
+  assert.deepEqual(body.addons, { mongodb: {} });
+  for (const [name, service] of Object.entries(body.services)) {
+    assert.equal(service.image, deployment('dev', 'staging', sha, digests).services[name].image);
+    assert.deepEqual(service.env, { KEEP: 'yes' });
+    assert.deepEqual(service.secret_keys, ['TOKEN']);
+    assert.deepEqual(service.resources, { limits: { memory: '1Gi' } });
+    assert.ok(!Object.hasOwn(service, 'image_digest'));
+  }
   assert.ok(mock.calls.every((call) => call.url.includes('/chrono-metaverse?') || call.url.includes('/chrono-metaverse/status?')));
 });
 
@@ -54,6 +64,15 @@ test('并发修改、应用失败和拒绝写入均让部署失败，不重放�
   for (const config of [{ conflict: true }, { concurrent: true }, { failed: true }]) {
     const mock = fixture(config);
     await assert.rejects(deploy(options, mock));
-    assert.equal(mock.calls.filter((call) => call.method === 'PATCH').length, 1);
+    assert.equal(mock.calls.filter((call) => call.method === 'PUT').length, 1);
   }
+});
+
+test('完整 PUT 保留当前配置，去掉只读摘要且不修改读取结果', () => {
+  const current = { services: { api: { image: 'old', image_digest: 'sha256:old', env: { MODE: 'live' } }, sidecar: { image: 'keep' } }, addons: { mongodb: {} } };
+  const before = structuredClone(current);
+  const result = deploymentSpec(current, { api: { image: 'new' } });
+  assert.deepEqual(current, before);
+  assert.deepEqual(result, { services: { api: { image: 'new', env: { MODE: 'live' } }, sidecar: { image: 'keep' } }, addons: { mongodb: {} } });
+  assert.throws(() => deploymentSpec(current, { absent: { image: 'new' } }), /缺少服务/);
 });

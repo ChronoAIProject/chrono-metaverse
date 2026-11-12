@@ -21,14 +21,40 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 
 `publish.yml` 先调用完整 CI，通过后才构建和部署。两个镜像的摘要作为本次运行的工件交给
 [`deploy.mjs`](deploy.mjs)：核对分支与环境，读取目标当前 generation，携带 `If-Match`
-只 PATCH 镜像，等待服务及路由就绪，并核对线上摘要。失败不会自动重放写入。
+以当前完整规格 PUT 两个新镜像，去掉 CD 生成的只读 `image_digest`，其余配置原样保留，
+等待服务及路由就绪，并核对线上摘要。失败不会自动重放写入。
 
 两个 GitHub 环境各自保存 `CHRONO_CD_API_KEY`。它们是组织拥有、scope 为 `proxy`、
 仅允许 `chrono-cd` 的独立 Agent Key，有效期至 2027-11-12；在到期前轮换。
-当前 CD 授权粒度是组织级，无法把密钥限制为单个应用；环境分支限制和脚本负责选择部署目标。
+每把 Key 的 NyxID operation scope 只选择读取应用、读取状态、PUT 应用三个操作：
+固定组织、项目和本环境应用；查询参数闭合且必须包含固定 `org_id`。
+PUT 请求体逐层闭合，所有非镜像字段必须与授权时的线上配置一致，只允许两个 `image`
+字符串变化。跨应用、PATCH、应用列表、重启、删除、密钥写入均被代理层拒绝。
 用户的 OAuth 令牌、应用 OAuth secret、数据库密码不保存在 Actions 或 Git 中。
-组织的 `chrono-cd` 确认策略只为上述两个应用的精确 PATCH 路径自动放行；其他写操作仍要求确认。
+组织的 `chrono-cd` 确认策略只为上述两个应用的精确 PUT 路径自动放行；其他写操作仍要求确认。
 这允许无人值守更新，同时不开放应用删除、密钥设置或任意项目的写操作。
+
+CD 当前登记的操作清单缺少 PATCH，所以自动部署使用 PUT 加 `If-Match`。
+`image` 的限制是字符串长度，镜像来源仍由部署脚本与 CD 自身的镜像校验负责；
+部署 Key 可以替换应用代码，因此应按部署凭据管理。
+
+### 更新部署权限
+
+线上环境变量、资源、路由、密钥名称等配置变更后，旧的部署权限会拒绝 PUT，需组织管理员
+核对变更并更新配置基线。不要解除 operation scope 来恢复部署。
+读取目标的最新应用 JSON（只含配置和密钥名称，不含密钥原文），再读取
+`GET /api/v1/api-keys/<key-id>/operations` 的当前 `revision`，生成更新内容：
+
+```bash
+node infra/chrono-cd/key-scope.mjs <线上应用.json> <staging或production> <当前权限修订号> > <权限.json>
+```
+
+用管理员 OAuth 将结果 PUT 到
+`/api/v1/api-keys/<key-id>/operations/8cb7d612-cf45-440b-9d1c-6029683b224c`。
+生成器会核对环境、应用、组织、项目和两个服务；NyxID 以 `expected_revision` 防止并发覆盖。
+Key 轮换继承现有操作范围；替换相应 GitHub environment 的 `CHRONO_CD_API_KEY` 后，
+验证本应用可部署、另一应用返回 403，并确认旧 Key 已撤销。Key 原文只写入环境 Secret，
+不作为仓库变量、工件或日志保存。
 
 以下手动操作示例针对测试环境。正式环境改用正式规格、应用及服务名；日常更新通常由工作流完成。
 
