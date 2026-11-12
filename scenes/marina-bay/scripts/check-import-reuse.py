@@ -17,22 +17,33 @@ from PIL import Image
 import trimesh
 
 SCRIPTS = Path(__file__).resolve().parent
+# 固定赤道基准点及已知地心坐标，用于独立核对模拟模型的坐标变换。
+SAMPLES = [
+    {'name': 'alpha', 'reference': {'lat': 0, 'lon': 0}, 'ecefCenter': [6378137, 0, 0],
+     'level': 8, 'height': 40, 'heading': 0, 'hostIndex': 1, 'zoom': 12,
+     'position': {'centerX': 100, 'frontZ': 120}},
+    {'name': 'beta', 'reference': {'lat': 0, 'lon': 90}, 'ecefCenter': [0, 6378137, 0],
+     'level': 3, 'height': 12, 'heading': 90, 'hostIndex': 0, 'zoom': 13,
+     'position': {'centerX': -60, 'frontZ': -80}},
+]
 
 
 def write_json(path, value):
     path.write_text(json.dumps(value, ensure_ascii=False))
 
 
-def make_source(directory, name, longitude, center):
+def make_source(directory, sample):
     directory.mkdir(parents=True)
-    region = [math.radians(v) for v in [longitude - 0.001, -0.001, longitude + 0.001, 0.001]] + [0, 200]
+    name = sample['name']
+    meridian = sample['reference']['lon']
+    region = [math.radians(v) for v in [meridian - 0.001, -0.001, meridian + 0.001, 0.001]] + [0, 200]
     children = []
     for index in range(2):
         mesh = trimesh.creation.box(extents=[12 + index * 2, 80 + index * 10, 10 + index])
         mesh.vertex_attributes['_BATCHID'] = np.zeros((len(mesh.vertices), 1), dtype=np.float32)
         glb = trimesh.Scene(mesh).export(file_type='glb')
-        feature = json.dumps({'RTC_CENTER': center, 'BATCH_LENGTH': 1}).encode()
-        batch = json.dumps({'gml:id': [f'{name}-{index}'], 'gml:name': [''], 'Latitude': [0], 'Longitude': [longitude]}).encode()
+        feature = json.dumps({'RTC_CENTER': sample['ecefCenter'], 'BATCH_LENGTH': 1}).encode()
+        batch = json.dumps({'gml:id': [f'{name}-{index}'], 'gml:name': [''], 'Latitude': [0], 'Longitude': [meridian]}).encode()
         header = struct.pack('<4s6I', b'b3dm', 1, 28 + len(feature) + len(batch) + len(glb), len(feature), 0, len(batch), 0)
         uri = f'{name}-building-{index}_0.b3dm'
         (directory / uri).write_bytes(header + feature + batch + glb)
@@ -43,13 +54,17 @@ def make_source(directory, name, longitude, center):
     write_json(directory / 'tileset.json', {'asset': {'version': '1.0'}, 'root': {'children': children}})
 
 
-def check_case(root, base, name, longitude, level, height, heading, host_index, zoom, position):
+def check_case(root, base, sample):
     root.mkdir()
+    name, level, height = sample['name'], sample['level'], sample['height']
+    heading, host_index, zoom = sample['heading'], sample['hostIndex'], sample['zoom']
+    position = sample['position']
+    meridian = sample['reference']['lon']
     workspace = {'spaceId': f'space-{name}', 'plot': f'plot-{name}'}
     region_id = f'region-{name}'
     source = {
-        'bboxDegrees': [longitude - 0.001, -0.001, longitude + 0.001, 0.001],
-        'reference': {'lat': 0, 'lon': longitude}, 'officeFloor': level,
+        'bboxDegrees': [meridian - 0.001, -0.001, meridian + 0.001, 0.001],
+        'reference': sample['reference'], 'officeFloor': level,
         'officeHeightMeters': height, 'headingDegrees': heading,
         'hostSourceId': f'{name}-{host_index}', 'initialPlacement': position,
         'fallbackBuildingLabel': f'{name}建筑', 'tilesBaseUrl': f'{base}/{name}/',
@@ -83,7 +98,7 @@ def check_case(root, base, name, longitude, level, height, heading, host_index, 
     assert abs((bounds['min'][0] + bounds['max'][0]) / 2 - position['centerX']) < 1e-6
     assert abs(bounds['max'][2] - position['frontZ']) < 1e-6
     # 两处赤道参考点分别位于地心坐标的 +X、+Y 轴，独立核对标高和朝向产生的范围。
-    vertical_span = 12 + host_index * 2 if longitude == 0 else 10 + host_index
+    vertical_span = 12 + host_index * 2 if meridian == 0 else 10 + host_index
     width = 10 + host_index if heading == 0 else 80 + host_index * 10
     assert abs(bounds['min'][1] - (-height - vertical_span / 2)) < 1e-6
     assert abs(bounds['max'][0] - bounds['min'][0] - width) < 1e-6
@@ -118,15 +133,14 @@ def main():
 
     with tempfile.TemporaryDirectory(prefix='metaverse-import-') as directory:
         root = Path(directory)
-        make_source(root / 'source/alpha', 'alpha', 0, [6378137, 0, 0])
-        make_source(root / 'source/beta', 'beta', 90, [0, 6378137, 0])
+        for sample in SAMPLES:
+            make_source(root / 'source' / sample['name'], sample)
         server = ThreadingHTTPServer(('127.0.0.1', 0), functools.partial(Handler, directory=str(root / 'source')))
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
             base = f'http://127.0.0.1:{server.server_port}'
-            report = [check_case(root / 'workspace-alpha', base, 'alpha', 0, 8, 40, 0, 1, 12, {'centerX': 100, 'frontZ': 120}),
-                      check_case(root / 'workspace-beta', base, 'beta', 90, 3, 12, 90, 0, 13, {'centerX': -60, 'frontZ': -80})]
+            report = [check_case(root / f"workspace-{sample['name']}", base, sample) for sample in SAMPLES]
             print(json.dumps(report, ensure_ascii=False))
         finally:
             server.shutdown()
