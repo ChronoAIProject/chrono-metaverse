@@ -1,6 +1,7 @@
 // 凭据仅保存在浏览器独立的授权存储中，不进入任务、聊天记录、URL 或诊断。
 export type KeyIdentity = {
   ownerId?: string;
+  credentialVersion?: string;
   keyId: string;
   name: string;
   credentialId: string;
@@ -10,8 +11,8 @@ export type KeyIdentity = {
 type SavedKey = { subject: string; credential: string; identity: KeyIdentity };
 const LEGACY = 'metaverse-cma-credential:v1';
 const prefix = (subject: string) => `metaverse-cma-credential:v2:${encodeURIComponent(subject)}:`;
-export const browserKeyStorageKey = (subject: string, owner = subject) =>
-  `${prefix(subject)}${encodeURIComponent(owner)}`;
+export const browserKeyStorageKey = (subject: string) =>
+  `${prefix(subject)}${encodeURIComponent(subject)}`;
 const legacyKey = (subject: string, owner = subject) =>
   owner === subject ? LEGACY : `${LEGACY}:org:${owner}`;
 const storageKeys = (storage: Storage) =>
@@ -33,7 +34,7 @@ export function validIdentity(v: unknown): v is KeyIdentity {
 export function readBrowserKey(subject?: string, owner = subject): SavedKey | null {
   if (!subject) return null;
   try {
-    const key = browserKeyStorageKey(subject, owner);
+    const key = browserKeyStorageKey(subject);
     const persistent = localStorage.getItem(key);
     const raw = persistent ?? sessionStorage.getItem(legacyKey(subject, owner));
     if (!raw || raw.length > 16_384) return null;
@@ -42,8 +43,7 @@ export function readBrowserKey(subject?: string, owner = subject): SavedKey | nu
       v.subject !== subject ||
       !validCredential(v.credential) ||
       !validIdentity(v.identity) ||
-      (v.identity.ownerId !== undefined && v.identity.ownerId !== owner) ||
-      (owner !== subject && v.identity.ownerId !== owner)
+      (v.identity.ownerId !== undefined && v.identity.ownerId !== subject)
     )
       return null;
     if (
@@ -67,13 +67,12 @@ export function saveBrowserKey(
   if (
     !validCredential(credential) ||
     !validIdentity(identity) ||
-    (identity.ownerId !== undefined && identity.ownerId !== owner) ||
-    (owner !== subject && identity.ownerId !== owner)
+    (identity.ownerId !== undefined && identity.ownerId !== subject)
   )
     throw new Error('无法核对 Agent Key 授权结果，请重新授权。');
   try {
     localStorage.setItem(
-      browserKeyStorageKey(subject, owner),
+      browserKeyStorageKey(subject),
       JSON.stringify({ subject, credential, identity }),
     );
   } catch {
@@ -88,28 +87,13 @@ export function saveBrowserKey(
   }
 }
 export function readBrowserKeys(subject: string): Array<SavedKey & { owner: string }> {
-  const owners = new Set([subject]);
-  for (const key of storageKeys(localStorage)) {
-    if (key.startsWith(prefix(subject))) {
-      try {
-        owners.add(decodeURIComponent(key.slice(prefix(subject).length)));
-      } catch {
-        // 损坏的归属编号不能参与凭据复用。
-      }
-    }
-  }
-  for (const key of storageKeys(sessionStorage)) {
-    if (key.startsWith(`${LEGACY}:org:`)) owners.add(key.slice(`${LEGACY}:org:`.length));
-  }
-  return [...owners].flatMap((owner) => {
-    const saved = readBrowserKey(subject, owner);
-    return saved ? [{ ...saved, owner }] : [];
-  });
+  const saved = readBrowserKey(subject);
+  return saved ? [{ ...saved, owner: subject }] : [];
 }
 export function clearBrowserKey(subject: string, owner?: string) {
   for (const storage of [localStorage, sessionStorage]) {
     const keys = owner
-      ? [browserKeyStorageKey(subject, owner), legacyKey(subject, owner)]
+      ? [browserKeyStorageKey(subject), legacyKey(subject, owner)]
       : storageKeys(storage).filter(
           (k) => k.startsWith(prefix(subject)) || k === LEGACY || k.startsWith(`${LEGACY}:org:`),
         );

@@ -1,5 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { WorkerError, workerRequest, type Session } from '../workspace/client';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  WorkerError,
+  workerRequest,
+  validCredentialVersion,
+  type Session,
+} from '../workspace/client';
 import {
   browserKeyStorageKey,
   clearBrowserKey,
@@ -17,7 +22,7 @@ import {
   type PendingEnrollment,
 } from './browserEnrollment';
 export function AgentKeyConnection({
-  session,
+  session: suppliedSession,
   request,
   onChange,
   checkVersion = 0,
@@ -25,12 +30,16 @@ export function AgentKeyConnection({
 }: {
   readonly session: Session;
   readonly request: typeof fetch;
-  readonly onChange: (ready: boolean) => void;
+  readonly onChange: (ready: boolean, version?: string) => void;
   readonly checkVersion?: number;
   readonly ownerName?: string;
 }) {
+  const session = useMemo(
+    () => ({ ...suppliedSession, cmaAuthMethod: 'agent_key' as const }),
+    [suppliedSession],
+  );
   const owner = session.cmaOwnerId ?? session.subject!;
-  const ownerLabel = owner === session.subject ? '个人账号' : (ownerName ?? '当前组织');
+  const ownerLabel = owner === session.subject ? '个人空间' : (ownerName ?? '当前组织');
   const [identity, setIdentity] = useState<KeyIdentity | null>(null);
   const [enrollment, setEnrollment] = useState<PendingEnrollment | null>(null);
   const [error, setError] = useState('');
@@ -70,12 +79,13 @@ export function AgentKeyConnection({
           controller.signal,
           request,
         );
-        if (!validIdentity(value)) throw new Error('无法核对 Agent Key 授权状态。');
+        if (!validIdentity(value) || !validCredentialVersion(value.credentialVersion))
+          throw new Error('无法核对 Agent Key 授权状态。');
         if (!active) return;
         saveBrowserKey(session.subject!, saved.credential, value, owner);
         setIdentity(value);
         setReady(true);
-        onChange(true);
+        onChange(true, value.credentialVersion);
       } catch (failure) {
         if (!active) return;
         if (
@@ -103,7 +113,7 @@ export function AgentKeyConnection({
     function changed(event: StorageEvent) {
       if (
         event.storageArea === localStorage &&
-        (event.key === null || event.key === browserKeyStorageKey(session.subject!, owner))
+        (event.key === null || event.key === browserKeyStorageKey(session.subject!))
       )
         setAttempt((value) => value + 1);
     }
@@ -138,8 +148,8 @@ export function AgentKeyConnection({
         setIdentity(delivery.identity);
         setEnrollment(null);
         setError('');
-        setReady(true);
-        onChange(true);
+        // 先保存一次性交付的凭据；CMA 配置失败不能导致重复审批。
+        setAttempt((value) => value + 1);
       } catch (failure) {
         if (!active) return;
         if (
@@ -229,7 +239,7 @@ export function AgentKeyConnection({
   }
   return (
     <section className="workspace__consent" aria-label="CMA 浏览器授权">
-      <p>当前空间使用：{ownerLabel}的 CMA</p>
+      <p>当前空间：{ownerLabel} · 使用当前账号的 CMA 授权</p>
       {ready && identity ? (
         <>
           <p>已连接 CMA · {identity.name}</p>
@@ -241,16 +251,9 @@ export function AgentKeyConnection({
         <>
           <h2>在 NyxID 确认 CMA 授权</h2>
           <p>
-            请求码和 CMA 权限已填好，无需输入验证码或 Key。请在 NyxID 选择归属为 「{ownerLabel}」的
-            CMA 专用授权，然后确认。
+            请求码和 CMA 权限已填好，无需输入验证码或 Key。在 NyxID 选择当前账号的 CMA
+            专用授权并确认。
           </p>
-          <details>
-            <summary>没有对应授权？</summary>
-            <p>
-              在 NyxID 点“新建 Agent Key”，展开“自定义”，选择「{ownerLabel}」作为归属，
-              只勾选该归属下的 CMA 服务，再点击创建并继续。名称、权限和期限已填好。
-            </p>
-          </details>
           <a href={enrollment.verification_uri} target="_blank" rel="noopener noreferrer">
             打开 NyxID 授权页
           </a>

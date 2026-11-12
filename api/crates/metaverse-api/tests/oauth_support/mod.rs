@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 mod agent_key_tests;
 mod catalog_tests;
+mod connection_tests;
 mod worker_tests;
 
 const ROOT: &str = "/api/auth/nyxid";
@@ -25,6 +26,7 @@ pub(super) fn config_values() -> Vec<(&'static str, String)> {
 
 struct Code {
     challenge: String,
+    scope: String,
     subject: String,
     ttl: i64,
 }
@@ -34,13 +36,19 @@ struct ProviderState {
     codes: HashMap<String, Code>,
     access: HashMap<String, String>,
     refresh: HashMap<String, String>,
+    scopes: HashMap<String, String>,
     serial: u64,
     refreshes: usize,
     worker_calls: Vec<(String, String, Value)>,
     browser_keys: HashMap<String, Value>,
     key_delivery: Option<Value>,
     key_revocations: Vec<String>,
-    key_message_failure: bool,
+    worker_bearers: Vec<String>,
+    message_refusal: Option<StatusCode>,
+    cma_auth_reply: Option<(StatusCode, Value)>,
+    cma_auth_calls: usize,
+    cma_auth_gate: Option<Arc<tokio::sync::Notify>>,
+    cma_auth_entered: Option<Arc<tokio::sync::Notify>>,
     worker_setup_required: bool,
     worker_gate: Option<Arc<tokio::sync::Notify>>,
     worker_entered: Option<Arc<tokio::sync::Notify>>,
@@ -104,12 +112,12 @@ impl MockProvider {
                 let mut state = provider.0.lock().unwrap();
                 assert_eq!(fields.get("client_id").unwrap(), "metaverse-oauth");
                 assert_eq!(fields.get("client_secret").unwrap(), "test-client-secret");
-                let (subject, ttl) = if fields["grant_type"] == "authorization_code" {
+                let (subject, ttl, scope) = if fields["grant_type"] == "authorization_code" {
                     let code = state.codes.remove(&fields["code"]).unwrap();
                     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(fields["code_verifier"].as_bytes()));
                     assert_eq!(challenge, code.challenge);
                     assert_eq!(fields["redirect_uri"], format!("{ORIGIN}{ROOT}/callback"));
-                    (code.subject, code.ttl)
+                    (code.subject, code.ttl, code.scope)
                 } else {
                     state.refreshes += 1;
                     if state.refresh_rejected {
@@ -118,7 +126,7 @@ impl MockProvider {
                     let Some(subject) = state.refresh.remove(&fields["refresh_token"]) else {
                         return (StatusCode::BAD_REQUEST, Json(json!({"error":"invalid_grant"}))).into_response();
                     };
-                    (state.refresh_subject.clone().unwrap_or(subject), 3600)
+                    (state.refresh_subject.clone().unwrap_or(subject), 3600, state.scopes[&fields["refresh_token"]].clone())
                 };
                 state.serial += 1;
                 let access = if state.jwt_access {
@@ -126,8 +134,10 @@ impl MockProvider {
                 } else { format!("oauth-access-{}", state.serial) };
                 let refresh = format!("oauth-refresh-{}", state.serial);
                 state.access.insert(access.clone(), subject.clone());
+                agent_key_tests::register_state(&mut state, &subject);
+                state.scopes.insert(refresh.clone(), scope.clone());
                 state.refresh.insert(refresh.clone(), subject);
-                Json(json!({"access_token":access,"refresh_token":refresh,"token_type":"Bearer","expires_in":ttl})).into_response()
+                Json(json!({"access_token":access,"refresh_token":refresh,"token_type":"Bearer","expires_in":ttl,"scope":scope})).into_response()
             }
         }))
         .route("/api/v1/orgs", get(move |headers: HeaderMap| {
@@ -152,8 +162,8 @@ impl MockProvider {
                 }
             }
         }));
-        agent_key_tests::routes(self.clone(), app)
-            .merge(worker_tests::routes(self.clone(), Router::new()))
+        app.merge(worker_tests::routes(self.clone(), Router::new()))
+            .merge(agent_key_tests::routes(self.clone(), Router::new()))
     }
 }
 
@@ -172,8 +182,19 @@ fn response_cookie(reply: &Reply, name: &str) -> String {
 }
 
 async fn begin(app: &TestApp, subject: &str, ttl: i64) -> (String, String) {
+    begin_at(app, subject, ttl, false).await
+}
+async fn begin_at(app: &TestApp, subject: &str, ttl: i64, workspace: bool) -> (String, String) {
     let login = app
-        .send(Method::GET, &format!("{ROOT}/login"), &[], None)
+        .send(
+            Method::GET,
+            &format!(
+                "{ROOT}/login{}",
+                if workspace { "?workspace=1" } else { "" }
+            ),
+            &[],
+            None,
+        )
         .await;
     assert_eq!(login.status, StatusCode::SEE_OTHER);
     assert_eq!(login.headers[header::CACHE_CONTROL], "no-store");
@@ -186,13 +207,22 @@ async fn begin(app: &TestApp, subject: &str, ttl: i64) -> (String, String) {
         .query_pairs()
         .map(|(k, v)| (k.into_owned(), v.into_owned()))
         .collect();
-    assert_eq!(params["scope"], "openid offline_access");
+    assert!(matches!(
+        params["scope"].as_str(),
+        "openid roles offline_access" | "openid roles offline_access proxy"
+    ));
+    if params["scope"].split_whitespace().any(|s| s == "proxy") {
+        assert!(params["resource"].ends_with("/api/v1/proxy/s/cma"));
+    } else {
+        assert!(!params.contains_key("resource"));
+    }
     assert_eq!(params["code_challenge_method"], "S256");
     let code = uuid::Uuid::new_v4().to_string();
     app.nyx.oauth.0.lock().unwrap().codes.insert(
         code.clone(),
         Code {
             challenge: params["code_challenge"].clone(),
+            scope: params["scope"].clone(),
             subject: subject.into(),
             ttl,
         },
@@ -211,7 +241,6 @@ async fn connect(app: &TestApp, subject: &str, ttl: i64) -> String {
     assert_eq!(reply.status, StatusCode::SEE_OTHER, "{}", reply.body);
     assert_eq!(reply.headers[header::LOCATION], "/connect?connected=1");
     assert!(!format!("{:?}", reply.headers).contains("oauth-access"));
-    agent_key_tests::register(&app.nyx.oauth, subject);
     response_cookie(&reply, "mv_nyx_session")
 }
 

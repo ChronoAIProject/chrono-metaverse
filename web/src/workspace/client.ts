@@ -1,4 +1,4 @@
-import { browserKeyHeaders } from '../auth/browserKey';
+import { cmaAuthHeaders, type CmaAuthMethod } from '../auth/cmaConnection';
 
 export type Session = {
   enabled: boolean;
@@ -9,10 +9,14 @@ export type Session = {
   workerUrl?: string | null;
   workerEnabled?: boolean;
   cmaOwnerId?: string;
+  cmaAuthMethod?: CmaAuthMethod;
+  cmaCredentialVersion?: string;
 };
 export type Context = { spaceId: string; orgId?: string };
 export type Intent = {
   action: 'create' | 'message' | 'cancel' | 'attachment';
+  credentialVersion?: string;
+  notAdmitted?: boolean;
   body: Record<string, unknown> & { idempotencyKey: string };
   setupRequired?: boolean;
   lastError?: { code: string; message: string; status?: number };
@@ -106,7 +110,7 @@ export async function workerRequest<T>(
       headers: {
         'Content-Type': 'application/json',
         'x-csrf-token': session.csrfToken ?? '',
-        ...browserKeyHeaders(session.subject, session.cmaOwnerId),
+        ...cmaAuthHeaders(session),
       },
       body: JSON.stringify(body),
     });
@@ -129,6 +133,8 @@ export async function workerRequest<T>(
   }
 }
 const id = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9_-]{1,256}$/.test(v);
+export const validCredentialVersion = (v: unknown): v is string =>
+  typeof v === 'string' && /^[A-Za-z0-9_-]{43}$/.test(v);
 export const emptyNotebook = (): Notebook => ({ spaceId: '', orgId: '', instruction: '' });
 function parseNotebook(raw: string | null, spaceId = ''): Notebook {
   const fallback = () => ({ ...emptyNotebook(), spaceId });
@@ -154,6 +160,9 @@ function parseNotebook(raw: string | null, spaceId = ''): Notebook {
           typeof v.pending.body !== 'object' ||
           v.pending.body === null ||
           !id(v.pending.body.idempotencyKey) ||
+          (v.pending.credentialVersion !== undefined &&
+            !validCredentialVersion(v.pending.credentialVersion)) ||
+          (v.pending.notAdmitted !== undefined && typeof v.pending.notAdmitted !== 'boolean') ||
           (v.pending.lastError !== undefined &&
             (typeof v.pending.lastError.code !== 'string' ||
               typeof v.pending.lastError.message !== 'string' ||
@@ -166,7 +175,10 @@ function parseNotebook(raw: string | null, spaceId = ''): Notebook {
         (v.startup.action !== 'create' ||
           typeof v.startup.body !== 'object' ||
           v.startup.body === null ||
-          !id(v.startup.body.idempotencyKey)))
+          !id(v.startup.body.idempotencyKey) ||
+          (v.startup.credentialVersion !== undefined &&
+            !validCredentialVersion(v.startup.credentialVersion)) ||
+          (v.startup.notAdmitted !== undefined && typeof v.startup.notAdmitted !== 'boolean')))
     )
       return fallback();
     return v;

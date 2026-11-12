@@ -4,7 +4,7 @@ import { readFileSync, appendFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ORG = '52aa284c-b5b2-49bd-9d12-79f24772dbd7';
+export const ORG = '52aa284c-b5b2-49bd-9d12-79f24772dbd7';
 const PROXY = 'https://nyx-api.chrono-ai.fun/api/v1/proxy/s/chrono-cd/api/v1';
 export const TARGETS = {
   dev: { environment: 'staging', app: 'chrono-metaverse', prefix: 'metaverse' },
@@ -26,6 +26,18 @@ export function deployment(ref, environment, sha, digests) {
     };
   }
   return { ...target, services };
+}
+
+/** 从当前规格生成完整 PUT，只替换指定镜像，去掉 CD 生成的只读摘要。 */
+export function deploymentSpec(current, services) {
+  if (!current?.services || typeof current.services !== 'object') throw new Error('缺少当前应用规格');
+  const spec = structuredClone(current);
+  for (const [name, update] of Object.entries(services)) {
+    if (!spec.services[name]) throw new Error(`目标缺少服务 ${name}`);
+    spec.services[name].image = update.image;
+  }
+  for (const service of Object.values(spec.services)) delete service.image_digest;
+  return spec;
 }
 
 /** 对部署通道的错误只报告状态码，不把凭据或响应中的敏感字段写入日志。 */
@@ -56,13 +68,10 @@ export async function deploy({ ref, environment, sha, digests, key }, {
   if (current.name !== target.app || current.owner !== ORG || !Number.isInteger(current.generation)) {
     throw new Error('部署目标或应用版本不匹配');
   }
-  for (const service of Object.keys(target.services)) {
-    if (!current.spec?.services?.[service]) throw new Error(`目标缺少服务 ${service}`);
-  }
   const applied = await api('', {
-    method: 'PATCH',
+    method: 'PUT',
     headers: { 'If-Match': String(current.generation) },
-    body: JSON.stringify({ services: target.services }),
+    body: JSON.stringify(deploymentSpec(current.spec, target.services)),
   });
   for (let index = 0; index < attempts; index += 1) {
     const status = await api('/status');

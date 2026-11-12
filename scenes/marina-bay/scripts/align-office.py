@@ -9,6 +9,7 @@ import numpy as np
 import trimesh
 from scipy.spatial import ConvexHull
 from context_geometry import floor_outline
+from scene_config import foreground_entities
 
 ROOT = Path(__file__).resolve().parents[1]
 # 空间协议的网格单位，所有场景一致。
@@ -52,7 +53,7 @@ def main():
     section_height = config['sectionHeightMeters']
     source_alignment = json.loads((root / 'build/alignment.json').read_text())
     tower = json.loads((root / config['modelFile']).read_text())[0]
-    office = json.loads((root / 'entities.json').read_text())
+    office = foreground_entities(json.loads((root / 'entities.json').read_text()))
     glazing = next(e for e in office if e['entityId'] == config['facadeEntityId'])
     floor = next(e for e in office if e['entityId'] == config['floorEntityId'])['shape']
     outline = floor_outline(floor)
@@ -184,7 +185,7 @@ def main():
     }
     (root / 'build/placement.json').write_text(json.dumps(placement, ensure_ascii=False, indent=2) + '\n')
     print(json.dumps({k: v for k, v in placement.items() if k not in ['sectionPolygon', 'hostEntities']}, ensure_ascii=False))
-    print(f'生成 {len(host)} 个楼体剖面物件，原有滨海湾模型复用资源，仅调整摆放')
+    print(f'生成 {len(host)} 个楼体剖面物件，原有外景模型复用资源，仅调整摆放')
 
 
 if __name__ == '__main__':
