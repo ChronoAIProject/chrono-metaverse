@@ -220,6 +220,13 @@ async fn nyxagent_rejects_cross_account_broad_or_incomplete_keys_before_model_or
     let mut foreign = metadata(SUBJECT);
     foreign["api_key"]["effective_services"][0]["catalog_service_slug"] = json!("another-service");
     cases.push((foreign, "nyxagent_key_scope_required"));
+    let mut conflicting = metadata(SUBJECT);
+    conflicting["api_key"]["effective_services"][1]["catalog_service_slug"] =
+        json!("another-service");
+    cases.push((conflicting, "nyxagent_key_scope_required"));
+    let mut uncatalogued_model = metadata(SUBJECT);
+    uncatalogued_model["api_key"]["effective_services"][0]["catalog_service_slug"] = Value::Null;
+    cases.push((uncatalogued_model, "nyxagent_key_scope_required"));
     for (key, code) in cases {
         app.nyx
             .oauth
@@ -358,6 +365,59 @@ async fn nyxagent_accepts_implicit_read_and_catalog_connections_during_delivery_
     let checked = call(&app, &cookie, "key/check", json!({})).await;
     assert_eq!(checked.0, StatusCode::OK, "{}", checked.2);
     assert!(app.nyx.oauth.0.lock().unwrap().key_revocations.is_empty());
+}
+
+#[tokio::test]
+async fn nyxagent_accepts_custom_metaverse_and_duplicate_llm_connections() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let cookie = setup(&app).await;
+    // Real NyxID grants include an org-owned custom Metaverse deployment and
+    // both personal and org connections to the same public model catalog entry.
+    for omit_catalog_field in [false, true] {
+        let mut key = metadata(SUBJECT);
+        let services = key["api_key"]["effective_services"].as_array_mut().unwrap();
+        services[1]["catalog_service_slug"] = Value::Null;
+        services[1]["owner_id"] = json!(ORG);
+        if omit_catalog_field {
+            services[1]
+                .as_object_mut()
+                .unwrap()
+                .remove("catalog_service_slug");
+        }
+        let mut org_llm = services[2].clone();
+        org_llm["id"] = json!("svc-org-llm");
+        org_llm["owner_id"] = json!(ORG);
+        services.push(org_llm);
+        key["api_key"]["allowed_service_ids"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!("svc-org-llm"));
+        {
+            let mut state = app.nyx.oauth.0.lock().unwrap();
+            state.browser_keys.insert(KEY.into(), key.clone());
+            key["credential"] = json!(KEY);
+            state.key_delivery = Some(key);
+        }
+        let polled = call(
+            &app,
+            &cookie,
+            "key/poll",
+            json!({"deviceCode":"private-device-code"}),
+        )
+        .await;
+        assert_eq!(polled.0, StatusCode::OK, "{}", polled.2);
+        assert_eq!(
+            serde_json::from_str::<Value>(&polled.2).unwrap()["credential"],
+            KEY
+        );
+        let checked = call(&app, &cookie, "key/check", json!({})).await;
+        assert_eq!(checked.0, StatusCode::OK, "{}", checked.2);
+        let sent = call(&app, &cookie, "message", task()).await;
+        assert_eq!(sent.0, StatusCode::OK, "{}", sent.2);
+        assert!(app.nyx.oauth.0.lock().unwrap().key_revocations.is_empty());
+    }
 }
 
 #[tokio::test]
