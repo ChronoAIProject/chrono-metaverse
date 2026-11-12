@@ -1,0 +1,89 @@
+{
+  "target_org_id": "52aa284c-b5b2-49bd-9d12-79f24772dbd7",
+  "addons": {
+    "mongodb": {}
+  },
+  "services": {
+    "metaverse-prod-web": {
+      "image": "ghcr.io/chronoaiproject/chrono-metaverse-web:f0ceb85@sha256:96038e4de8f90d60eb3d043ba05d4a6c6b8dd1c6ac2ab094c8dbe3d333ebe32a",
+      "port": 8080,
+      "routes": [
+        "/"
+      ],
+      "expose": "public",
+      "health_path": "/healthz",
+      "replicas": 2,
+      "resources": {
+        "cpu_request": "25m",
+        "memory_request": "32Mi",
+        "cpu_limit": "250m",
+        "memory_limit": "128Mi"
+      },
+      "files": [
+        {
+          "path": "/etc/nginx/conf.d/default.conf",
+          "content": "# 网站镜像的 nginx 配置：提供构建好的单页应用，并把接口同源转发给接口服务。\n# 照 CMA web/nginx.conf 改写，去掉了 agent / event-gateway / image-manager 等 CMA 专有的路由。\n#\n# 同源是有意的：页面不需要知道接口在哪，分享令牌只放在请求头里（设计 7.2）。\n# 接口服务的地址 metaverse-prod-api:8080 由部署配置（infra/）里的服务名决定。\n\n# 不记录查询参数，OAuth 回调中的 code/state 不进入访问日志。\nlog_format metaverse '$remote_addr - $remote_user [$time_local] '\n                     '\"$request_method $uri $server_protocol\" $status $body_bytes_sent';\n\nserver {\n    listen 8080;\n    server_name _;\n    access_log /var/log/nginx/access.log metaverse;\n\n    root /usr/share/nginx/html;\n    index index.html;\n\n    add_header X-Content-Type-Options \"nosniff\" always;\n    add_header X-Frame-Options \"SAMEORIGIN\" always;\n    # 分享令牌在地址的 # 后面；不发 Referer，令牌不会随外链泄露（设计 7.2）。\n    add_header Referrer-Policy \"no-referrer\" always;\n\n    # 带哈希的静态文件永不变化；入口页面每次都重新取。\n    location /assets/ {\n        gzip on;\n        gzip_vary on;\n        gzip_min_length 1024;\n        gzip_types application/javascript text/javascript text/css;\n        expires 1y;\n        add_header Cache-Control \"public, immutable\";\n        add_header X-Content-Type-Options \"nosniff\" always;\n        add_header Referrer-Policy \"no-referrer\" always;\n        try_files $uri @missing_asset;\n    }\n\n    # 发布过程中短暂找不到的文件不能被缓存成空白页（同 CMA）。\n    location @missing_asset {\n        add_header Cache-Control \"no-store\" always;\n        return 404;\n    }\n\n    # 注意：location 里一旦写了 add_header，就不再继承 server 级的 add_header，所以安全头要重写一遍。\n    location = /index.html {\n        add_header Cache-Control \"no-store\";\n        add_header X-Content-Type-Options \"nosniff\" always;\n        add_header X-Frame-Options \"SAMEORIGIN\" always;\n        add_header Referrer-Policy \"no-referrer\" always;\n    }\n\n    # 接口服务：公开读接口、写接口、管理接口、OpenAPI、健康检查都走同一个转发。\n    # proxy_pass 不带路径，请求路径原样转发：接口说明文档只在 /api/openapi.json\n    # （接口服务没有根路径的 /openapi.json，所以这里不单独转发它）。\n    # 分片上传每片最大 32MiB（设计 6.1、8.5），不在网站磁盘上缓冲请求体。\n    location /api/ {\n        client_max_body_size 33m;\n        proxy_request_buffering off;\n        proxy_pass http://metaverse-prod-api:8080;\n        proxy_http_version 1.1;\n        proxy_set_header Host $host;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n        # 平台网关约 100 秒无响应就断开，长操作一律做成任务（设计 8.5）。\n        proxy_read_timeout 100s;\n    }\n\n    # 网站自己的健康检查（chrono-cd 探活用）。\n    location = /healthz {\n        access_log off;\n        default_type text/plain;\n        return 200 \"ok\\n\";\n    }\n\n    # 前端路由：/s/<空间编号>、/u/<组合编号> 等任何未匹配的路径都交给单页应用。\n    location / {\n        try_files $uri $uri/ /index.html;\n    }\n}\n"
+        }
+      ]
+    },
+    "metaverse-prod-api": {
+      "image": "ghcr.io/chronoaiproject/chrono-metaverse-api:ec9b340@sha256:3db76a81a8312a557e8a76536f053f7460543bb087568c506089daf88d335c46",
+      "port": 8080,
+      "routes": [
+        "/api"
+      ],
+      "expose": "public",
+      "health_path": "/api/healthz",
+      "replicas": 1,
+      "env": {
+        "BIND": "0.0.0.0:8080",
+        "PUBLIC_BASE_URL": "https://chrono-metaverse-prod-chronoai.apps.nyxid.ai",
+        "NYXID_BASE_URL": "https://nyx-api.chrono-ai.fun",
+        "NYXID_JWKS_URL": "https://api.nyxid.ai/.well-known/jwks.json",
+        "NYXID_JWT_ISSUER": "https://nyx-api.chrono-ai.fun",
+        "NYXID_JWT_AUDIENCE": "urn:chrono-metaverse:prod:api",
+        "ALLOWED_NYX_SERVICE_IDS": "5100e939-adb0-46c5-af30-215593a7434f",
+        "METAVERSE_REQUIRE_PERMISSIONS": "false",
+        "UPLOAD_MAX_SCAN_BYTES": "1073741824",
+        "UPLOAD_MAX_MODEL_BYTES": "52428800",
+        "UPLOAD_MAX_TEXTURE_BYTES": "52428800",
+        "UPLOAD_MAX_OPS_BYTES": "67108864",
+        "UPLOAD_MAX_SCRIPT_BYTES": "4194304",
+        "UPLOAD_MAX_TEXTURE_SIDE": "4096",
+        "UPLOAD_MODEL_MAX_TRIANGLES": "100000",
+        "UPLOAD_MODEL_MAX_TEXTURE_SIDE": "2048",
+        "UPLOAD_WEBMODEL_MAX_TRIANGLES": "500000",
+        "UPLOAD_MAX_OPEN_PER_SPACE": "16",
+        "UPLOAD_MAX_CONCURRENT_PARTS": "4",
+        "JOB_MAX_PENDING_PER_SPACE": "8",
+        "PUBLIC_RATE_LIMIT_PER_MINUTE": "60000000",
+        "PUBLIC_RATE_LIMIT_BURST": "1000000",
+        "PUBLIC_BLOB_RATE_LIMIT_PER_MINUTE": "60000000",
+        "PUBLIC_BLOB_RATE_LIMIT_BURST": "1000000",
+        "PUBLIC_CACHE_BYTES": "134217728",
+        "METAVERSE_DEMO_SEED": "{\"spaceId\":\"chronoai-lobby\",\"name\":\"ChronoAI 前厅\",\"description\":\"ChronoAI 办公室前厅：Scaniverse 扫描 + AI 重建的演示空间（由部署配置自动导入）\",\"owner\":{\"kind\":\"org\",\"id\":\"52aa284c-b5b2-49bd-9d12-79f24772dbd7\"},\"visibility\":\"unlisted\",\"revision\":4,\"bundle\":{\"manifest\":{\"url\":\"https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/5092c2c43dc52eb235534b0d691aa39dba808764/infra/chrono-cd/demo/lobby-r4/manifest.json\",\"sha256\":\"2a25a714b75c2042db6642d85d27ae990eb1cb00114c44cecaf3a0468c048bc1\",\"size\":68882},\"sources\":{\"url\":\"https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/5092c2c43dc52eb235534b0d691aa39dba808764/infra/chrono-cd/demo/lobby-r4/sources.json\",\"sha256\":\"2badd7241ffb688e68cc0f6ffb6860887c0aa7d79fc2db7a4d6625e31d09d496\",\"size\":9962}}}",
+        "METAVERSE_DEMO_SEED_HOSTS": "raw.githubusercontent.com,github.com,release-assets.githubusercontent.com,objects.githubusercontent.com,scaniverse.com",
+        "RUST_LOG": "info",
+        "NYXID_OAUTH_CLIENT_ID": "77897f49-445c-4101-bee6-b9c0c7b64ecb",
+        "CMA_BASE_URL": "https://cma.nyxid.ai"
+      },
+      "addon_env": {
+        "mongodb": {
+          "uri": "MONGODB_URI",
+          "database": "MONGODB_DATABASE"
+        }
+      },
+      "secret_keys": [
+        "METAVERSE_DEMO_SHARE_TOKEN",
+        "NYXID_OAUTH_CLIENT_SECRET",
+        "NYXID_OAUTH_ENCRYPTION_KEY"
+      ],
+      "resources": {
+        "cpu_request": "250m",
+        "memory_request": "384Mi",
+        "cpu_limit": "1",
+        "memory_limit": "1536Mi"
+      }
+    }
+  }
+}

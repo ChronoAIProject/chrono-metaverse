@@ -1,28 +1,22 @@
-name: Demo assets
+name: 发布演示资源（正式版）
 
 # 把演示种子要下载的大文件传到本仓库的发布页 demo-assets（docs/design/server-slim.md 7.4 方案 B）。
 # 清单和来源表进仓库（infra/chrono-cd/demo/lobby-r<版本>/），大文件不进 git 历史，按 <sha256>.<扩展名> 命名放在这里，
 # 种子按来源表里的地址下载、按 sha256 核对。本地有 gh 写权限时直接 `gh release upload demo-assets <文件>`（先看发布页
 # 已有哪些，同名的不要再传），不需要本工作流。
 #
-# 没有 gh 写权限时：在当前分支的最新提交上另做一个提交，只加一个目录 demo-assets-upload/，放进要上传的文件（文件名就是
-# 内容的 sha256 加扩展名），然后二选一：
-#   - 能推标签：给这个提交打标签 demo-assets-upload-<编号>，只推这个标签
-#     （git push origin refs/tags/demo-assets-upload-<编号>），不推分支；工作流传完以后删掉这个标签；
-#   - 只能推自己的工作分支：把这个提交推上去，工作流跑完以后马上退掉它
-#     （git push --force-with-lease=<分支>:<这个提交> origin <上一个提交>:<分支>）。退掉那次推送也会触发本工作流，
-#     这时目录已经没有了，工作流什么都不做。
-# 两种做法里这个提交最后都不在任何分支和标签上，大文件不会进仓库历史。本工作流核对文件名与内容的 sha256 一致，
-# 没有发布页时先建，逐个上传（同名已存在就跳过）。
+# 工作流只从 main 发布。先把清单与来源表经 PR 合入 main，再从 main 上传已核对的资源。
+# 大文件通常用 gh release upload 上传，不需要临时工作分支、上传标签或强制回退历史。
+# 自动上传目录若进入 main，会在该提交上执行；没有待上传文件时手动运行只做空检查。
 #
 # 发布页里的文件是公开的（设计 6.8）：只放种子包里的东西，种子用的包已经去掉内部锚点和建模记录。
 
 on:
   push:
-    branches: ['**']
-    tags: ['demo-assets-upload-*']
-    # 分支推送只在这个目录有改动时触发；标签推送不看路径。
+    branches: [main]
+    # 只在主线包含待上传文件时触发。
     paths: ['demo-assets-upload/**']
+  workflow_dispatch: {}
 
 # 同一时刻只跑一个，避免两次上传同时建发布页。
 concurrency:
@@ -35,6 +29,8 @@ permissions:
 jobs:
   upload:
     name: 上传演示种子文件
+    if: github.ref == 'refs/heads/main'
+    environment: production
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -52,7 +48,7 @@ jobs:
           files=(demo-assets-upload/*)
           echo "count=${#files[@]}" >>"$GITHUB_OUTPUT"
           if [ ${#files[@]} -eq 0 ]; then
-            echo "demo-assets-upload/ 里没有文件（上传用的提交已经退掉），不用上传" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "demo-assets-upload/ 里没有文件，不用上传" | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           for path in "${files[@]}"; do
@@ -93,8 +89,3 @@ jobs:
             fi
           done
           echo "上传 $uploaded 个，已存在跳过 $skipped 个" | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: 删掉上传用的标签
-        if: ${{ always() && github.ref_type == 'tag' }}
-        env:
-          TAG: ${{ github.ref_name }}
-        run: gh api -X DELETE "repos/$GH_REPO/git/refs/tags/$TAG"
