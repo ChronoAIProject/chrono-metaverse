@@ -28,6 +28,8 @@ cargo deny --locked --all-features check advisories licenses bans sources
 - 测试用的 RSA 密钥由 `openssl genrsa` 临时生成（与 CMA 相同），仓库里没有任何私钥。
 - 重新生成跨语言测试向量：`METAVERSE_WRITE_VECTORS=1 cargo test -p metaverse-core --test vectors`。
 
+接口服务构建时把工具源码版本写入二进制，本地默认取 Git HEAD。手动构建 `infra/api/Dockerfile` 须传 `--build-arg CHRONO_BUILD_SHA=<完整40位提交哈希>`；发布工作流已传入该参数。在线 worker 从这个固定版本安装工具，用户不需要仓库写权限。
+
 本地运行接口服务（鉴权配置缺一项就启动失败）：
 
 ```bash

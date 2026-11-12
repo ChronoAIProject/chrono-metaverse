@@ -18,6 +18,7 @@ def read(path):
 
 def check_case(label, turn, offset, level):
     config = copy.deepcopy(read('context.json'))
+    config['entityPrefix'] = 'sample.'
     host = config['host']
     source = read(host['modelFile'])[0]
     entities = foreground_entities(read('entities.json'))

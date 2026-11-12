@@ -73,7 +73,7 @@ jobs:
             type=ref,event=branch
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
-      # 构建参数只有网站用（web/build/identity.ts 的构建身份）；接口服务的镜像忽略它们。
+      # 构建身份同时固定网站版本与在线 worker 的工具源码版本。
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         id: push
         with:

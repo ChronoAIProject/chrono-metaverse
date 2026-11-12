@@ -46,8 +46,9 @@ const terminal = (status: string) =>
     status,
   );
 function fileUploadIntent(base: Notebook): Intent {
-  const source = base.creation!.source!;
-  if (source.kind !== 'file') throw new Error('没有待上传模型');
+  const source =
+    base.model ?? (base.creation?.source?.kind === 'file' ? base.creation.source : undefined);
+  if (!source) throw new Error('没有待上传模型');
   return {
     action: 'attachment',
     body: {
@@ -55,6 +56,9 @@ function fileUploadIntent(base: Notebook): Intent {
       name: source.name,
       size: source.size,
       sha256: source.sha256,
+      ...(base.model
+        ? { instruction: base.instruction || `将模型 ${source.name} 导入当前空间，生成草稿预览` }
+        : {}),
       idempotencyKey: crypto.randomUUID(),
     },
   };
@@ -529,7 +533,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
               request,
             );
             if (signal.aborted) return;
-            const creation = base.creation!;
+            const creation = base.model ? undefined : base.creation;
             const source = {
               kind: 'file' as const,
               name: receipt.name,
@@ -545,17 +549,25 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                 agentId: base.agentId,
                 context: {
                   chat: true,
+                  ...(session?.toolSourceRef ? { toolSourceRef: session.toolSourceRef } : {}),
                   spaceId: base.spaceId,
                   ...(base.orgId ? { orgId: base.orgId } : {}),
-                  creation: { name: creation.name, source },
+                  ...(creation
+                    ? { creation: { name: creation.name, source } }
+                    : { attachments: [receipt] }),
                 },
-                instruction: creation.instruction || `从模型 ${receipt.name} 创建空间`,
+                instruction: creation
+                  ? creation.instruction || `从模型 ${receipt.name} 创建空间`
+                  : String(pending.body.instruction),
                 idempotencyKey: crypto.randomUUID(),
               },
             };
             const next = {
               ...base,
-              creation: { ...creation, source, phase: 'uploaded' as const },
+              ...(creation
+                ? { creation: { ...creation, source, phase: 'uploaded' as const } }
+                : {}),
+              model: undefined,
               pending: follow,
             };
             commit(next);
@@ -733,6 +745,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
           body: {
             context: {
               chat: true,
+              ...(session?.toolSourceRef ? { toolSourceRef: session.toolSourceRef } : {}),
               spaceId: note.spaceId,
               ...(note.orgId ? { orgId: note.orgId } : {}),
               creation: { name: base.creation.name, source },
@@ -747,12 +760,21 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
       return;
     }
     if (note.creation && ['preparing', 'uploaded'].includes(note.creation.phase)) return;
+    if (note.model) {
+      if (!note.agentId) {
+        setError('先发送一条消息开始聊天，worker 就绪后即可上传模型。');
+        return;
+      }
+      void runIntent(fileUploadIntent(note), note);
+      return;
+    }
     if (!note.instruction.trim()) return;
     void runIntent({
       action: note.agentId ? 'message' : 'create',
       body: {
         context: {
           chat: true,
+          ...(session?.toolSourceRef ? { toolSourceRef: session.toolSourceRef } : {}),
           spaceId: note.spaceId.trim(),
           ...(note.orgId ? { orgId: note.orgId } : {}),
         },
@@ -976,7 +998,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
     (creating
       ? note.creation!.name.trim() &&
         (sourceFile?.spaceId === note.spaceId || scaniverseLink(note.instruction))
-      : note.instruction.trim()),
+      : note.instruction.trim() || (note.model && note.agentId)),
   );
   function startCreation() {
     if (disabled || !session?.subject) return;
@@ -996,11 +1018,22 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
     setChatOpen(true);
   }
   async function pickModel(file: File) {
-    if (!note.creation || busy || note.creation.phase === 'submitted') return;
+    if (busy) return;
     const base = note;
     await action(async () => {
       const sha256 = await modelDigest(file);
       if (base.spaceId !== noteRef.current.spaceId) return;
+      if (!base.creation || base.creation.phase === 'submitted') {
+        const expected = base.pending?.action === 'attachment' ? base.pending.body : undefined;
+        if (
+          expected &&
+          (expected.name !== file.name || expected.size !== file.size || expected.sha256 !== sha256)
+        )
+          throw new Error('请选择原来提交的同一文件，文件名、大小和内容必须一致。');
+        setSourceFile({ spaceId: base.spaceId, file, sha256 });
+        if (!expected) commit({ ...base, model: { name: file.name, size: file.size, sha256 } });
+        return;
+      }
       if (
         base.creation!.phase !== 'draft' &&
         base.creation!.source?.kind === 'file' &&
@@ -1184,7 +1217,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                           required
                           maxLength={80}
                           pattern="[a-z0-9][a-z0-9-]*"
-                          placeholder="例如 chronoai-lobby"
+                          placeholder="例如 sample-space"
                         />
                       </label>
                       <button disabled={disabled || !targetId}>打开空间</button>
@@ -1411,10 +1444,11 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
             aria-modal="false"
             hidden={!chatOpen}
             onDragOver={(e) => {
-              if (note.creation && e.dataTransfer.types.includes('Files')) e.preventDefault();
+              if ((note.creation || note.agentId) && e.dataTransfer.types.includes('Files'))
+                e.preventDefault();
             }}
             onDrop={(e) => {
-              if (!note.creation) return;
+              if (!note.creation && !note.agentId) return;
               e.preventDefault();
               const file = e.dataTransfer.files[0];
               if (file) void pickModel(file);
@@ -1645,6 +1679,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                             '介绍一下这个空间',
                             '把入口改得明亮一点，先给我预览',
                             '保留现有布局，增加一个交流区',
+                            '放入一个模型，调整位置和外观，先给我预览',
                           ].map((text) => (
                             <button
                               className="workspace__secondary"
@@ -1837,6 +1872,9 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                           agentId: note.agentId,
                           context: {
                             chat: true,
+                            ...(session?.toolSourceRef
+                              ? { toolSourceRef: session.toolSourceRef }
+                              : {}),
                             spaceId: checkedPreview!.spaceId,
                             ...(note.orgId ? { orgId: note.orgId } : {}),
                           },
@@ -1942,10 +1980,42 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
               </details>
             </div>
             <form onSubmit={submit} className="workspace__composer">
+              {!creating && !importing && ready && (
+                <div className="workspace__actions">
+                  <label className="workspace__file-picker">
+                    <span>{note.model ? `已选择：${note.model.name}` : '添加 GLB / ZIP 模型'}</span>
+                    <input
+                      type="file"
+                      accept=".glb,.zip"
+                      aria-label="添加空间模型"
+                      className="workspace__sr-only"
+                      disabled={busy || !note.agentId || (!note.pending && disabled)}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (file) void pickModel(file);
+                        event.target.value = '';
+                      }}
+                    />
+                  </label>
+                  {note.model && !note.pending && (
+                    <button
+                      type="button"
+                      className="workspace__secondary"
+                      onClick={() => {
+                        commit({ ...note, model: undefined });
+                        setSourceFile(null);
+                      }}
+                    >
+                      移除附件
+                    </button>
+                  )}
+                  {!note.agentId && <small>开始聊天后可添加模型，也可直接描述地图来源。</small>}
+                </div>
+              )}
               <label>
                 <span className="workspace__sr-only">给空间发消息</span>
                 <textarea
-                  required={!creating}
+                  required={!creating && !note.model}
                   rows={2}
                   maxLength={16000}
                   value={note.instruction}

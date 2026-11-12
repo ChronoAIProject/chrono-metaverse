@@ -8,6 +8,7 @@ mod crypto;
 mod owner;
 mod provider;
 mod routes;
+mod tools;
 mod worker;
 
 use std::{

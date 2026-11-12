@@ -54,6 +54,7 @@ export const PUBLISH_HELP = `metaverse publish <草稿编号> [--plot <地块> |
   --plot <地块>       草稿所属的地块（默认用 push 时记下的）
   --rebuild           重建草稿（走 /rebuild/ 路径；默认用 bundle push 时记下的）
   --message <说明>    提交说明（默认用推送时记下的说明；重建草稿不给时服务端用清单的 note）
+  --rev <修订号>      发布用户已看过的草稿修订（默认使用本地预览记录；变化时服务端拒绝）
   --replay            冲突时在最新版本上重放`;
 
 /** 提交说明的上限（接口服务按字符数检查）。 */
@@ -203,14 +204,17 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
     }
   }
   let link: string | null = null;
+  let previewRev: number | undefined;
   if (!flag(values, 'no-preview')) {
     const preview = await api.preview(draftId, ttl !== undefined ? { ttlSeconds: ttl } : {}, plot);
     link = previewLink(ws.config.webUrl, preview);
+    previewRev = preview.rev;
   }
   saveDraft(ws.root, draftId, {
     plot,
     baseSeq,
     opCount: result.ops.length,
+    ...(previewRev !== undefined ? { previewRev } : {}),
     createdAt: new Date().toISOString(),
     ...(message !== undefined ? { message } : {}),
     ...(link !== null ? { preview: link } : {}),
@@ -226,6 +230,7 @@ export async function runPush(ctx: CliContext, args: readonly string[]): Promise
       summary,
       applied,
       preview: link,
+      previewRev: previewRev ?? null,
     });
     return 0;
   }
@@ -258,7 +263,7 @@ export function describePublish(draftId: string, result: PublishView): string {
 export async function publishDraft(
   api: ReturnType<typeof makeApi>,
   draftId: string,
-  request: { message?: string; replay?: boolean },
+  request: { message?: string; replay?: boolean; rev?: number },
   scope: ScopeRef,
 ): Promise<PublishView> {
   const rebuild = isRebuild(scope);
@@ -270,6 +275,11 @@ export async function publishDraft(
   } catch (error) {
     if (!(error instanceof ApiError) || error.status !== 409) throw error;
     const body = (error.body ?? {}) as Record<string, unknown>;
+    if (error.code === 'draft_rev_changed') {
+      throw new CliError(
+        `没有发布：${error.message}。重新生成预览，用户确认后用 --rev 指定该修订。`,
+      );
+    }
     if (error.code === 'asset_gone') {
       // 草稿引用的资源被服务端定期清理了（上传后 7 天内没被引用）：重放或重新拉取都没用，
       // 只能重新上传同一内容（哈希不变）。
@@ -318,6 +328,7 @@ export async function runPublish(ctx: CliContext, args: readonly string[]): Prom
     rebuild: { type: 'boolean' },
     message: { type: 'string' },
     replay: { type: 'boolean' },
+    rev: { type: 'string' },
   });
   if (flag(values, 'help')) {
     ctx.out(PUBLISH_HELP);
@@ -341,12 +352,16 @@ export async function runPublish(ctx: CliContext, args: readonly string[]): Prom
     const error = messageError(message);
     if (error !== null) throw new CliError(error);
   }
+  const rev = num(values, 'rev') ?? record?.previewRev;
+  if (rev !== undefined && (!Number.isSafeInteger(rev) || rev < 0))
+    throw new CliError('--rev 必须是非负整数');
   const result = await publishDraft(
     api,
     draftId,
     {
       ...(message !== undefined ? { message } : {}),
       ...(flag(values, 'replay') ? { replay: true } : {}),
+      ...(rev !== undefined ? { rev } : {}),
     },
     scope,
   );

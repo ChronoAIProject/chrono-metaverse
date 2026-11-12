@@ -20,6 +20,8 @@ export interface DraftRecord {
   /** 提交说明：发布时没给 --message 就用它。 */
   readonly message?: string;
   readonly preview?: string;
+  /** 用户预览绑定的草稿修订，发布时防止误发后续修改。 */
+  readonly previewRev?: number;
 }
 
 function draftsFile(root: string): string {
