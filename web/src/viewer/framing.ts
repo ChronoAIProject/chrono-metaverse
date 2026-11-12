@@ -168,6 +168,20 @@ export function clipBox(box: THREE.Box3, clips: readonly THREE.Box3[]): THREE.Bo
   return out;
 }
 
+/** 背景只延长远裁面，办公室取景和近裁面仍按主体尺寸决定。 */
+export function backgroundFarPlane(
+  position: THREE.Vector3,
+  baseline: number,
+  boxes: readonly THREE.Box3[],
+): number {
+  let far = baseline;
+  for (const box of boxes) {
+    if (box.isEmpty()) continue;
+    for (const point of corners(box)) far = Math.max(far, position.distanceTo(point) + 1);
+  }
+  return far;
+}
+
 /** 扫描取景默认丢掉每个轴两端各 2% 的表面（零星的离群点）。 */
 export const SCAN_PERCENTILE = 0.02;
 /** 算分位包围盒时最多取这么多个三角形（按固定步长抽样）：几十万个三角形的扫描也只要几十毫秒。 */

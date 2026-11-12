@@ -1,0 +1,13 @@
+{
+  "name": "chronoai-marina-bay-scene",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node ../../sdk/typescript/dist/cli.js dev",
+    "typecheck": "node ../../sdk/typescript/node_modules/typescript/bin/tsc -p tsconfig.json",
+    "check": "node ../../sdk/typescript/dist/cli.js check",
+    "build": "node ../../sdk/typescript/dist/cli.js build",
+    "verify": ".venv/bin/python scripts/verify-scene.py",
+    "shot": "node ../../sdk/typescript/dist/cli.js shot --views extended --angles front --no-cutaway --browser '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' --out out/native-shots"
+  }
+}

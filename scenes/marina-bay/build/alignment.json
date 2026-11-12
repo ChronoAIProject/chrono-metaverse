@@ -1,0 +1,18 @@
+{
+  "reference": {
+    "lat": 1.2801706774251347,
+    "lon": 103.85419949862057
+  },
+  "officeFloor": 14,
+  "officeHeightMeters": 60.0,
+  "headingDegrees": 25.0,
+  "shift": [
+    6.959720810177076,
+    0.0,
+    -15.284937059261472
+  ],
+  "note": "建筑坐标来自官方模型；办公室高度和朝向暂按估值配准，可以统一调整，不改变室内重建。",
+  "modelParts": 257,
+  "ownTowerParts": 1,
+  "totalTriangles": 320738
+}

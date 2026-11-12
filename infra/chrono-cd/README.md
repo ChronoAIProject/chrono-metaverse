@@ -53,7 +53,7 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 | `NYXID_JWKS_URL` | `https://api.nyxid.ai/.well-known/jwks.json` | 取自 NyxID `/.well-known/openid-configuration` 的 `jwks_uri` |
 | `NYXID_JWT_ISSUER` | `https://nyx-api.chrono-ai.fun` | 同上的 `issuer`（两个 NyxID 域名返回的都是它） |
 | `NYXID_JWT_AUDIENCE` | `urn:chrono-metaverse:api` | 必须和 NyxID 注册时的 `identity_jwt_audience` 一字不差 |
-| `ALLOWED_NYX_SERVICE_IDS` | `362df1f5-8135-4a05-aa85-d929a5fd9f73` | 已注册（2026-11-09，第 7 步）：ChronoAI 组织的自定义服务 `chrono-metaverse` 的连接编号（自定义服务没有目录编号，身份令牌里的 `nyx_service_id` 就是它），线上第 7 次修订起生效，经 NyxID 调接口已能读到真实数据 |
+| `ALLOWED_NYX_SERVICE_IDS` | `362df1f5-8135-4a05-aa85-d929a5fd9f73` | ChronoAI 组织的 `chrono-metaverse` 自定义服务连接编号（第 7 步）。另建连接时换成新编号；首次部署尚未注册时可临时用 `pending-nyxid-registration`，此时 `/api/v1/*` 均无法通过鉴权 |
 | `METAVERSE_REQUIRE_PERMISSIONS` | `false` | 第一步不启用功能级权限 |
 | `UPLOAD_MAX_SCAN_BYTES` / `UPLOAD_MAX_MODEL_BYTES` / `UPLOAD_MAX_TEXTURE_BYTES` / `UPLOAD_MAX_OPS_BYTES` / `UPLOAD_MAX_SCRIPT_BYTES` | 1GiB / 50MiB / 50MiB / 64MiB / 4MiB | 各用途上传的大小上限（其余用途——网页用模型、重建包清单——用接口服务的默认值 64MiB、16MiB，见 [`api/README.md`](../../api/README.md)） |
 | `UPLOAD_MAX_TEXTURE_SIDE` | `4096` | 贴图单边像素上限（第 0 片按文件头检查，后台核对再按全文查）。很多手机的贴图上限是 4096，本地工具打包时按同样的上限检查 |
@@ -69,6 +69,9 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 | `METAVERSE_DEMO_SEED` | [`demo-seed.json`](demo-seed.json) 压缩成的一行 | 部署配置种子：接口服务启动、建好索引后在后台建演示空间 `chronoai-lobby`，带重建包时导入它（第 8 步）。改种子时两处一起改，`check-app.mjs` 检查一致。现在是第 4 版，带前厅第 4 版的重建包（[`demo/lobby-r4/`](demo/lobby-r4/)），线上 2026-11-10 已导入（第 5 次提交），之后重启是 `AlreadyDone` |
 | `METAVERSE_DEMO_SEED_HOSTS` | `raw.githubusercontent.com,github.com,release-assets.githubusercontent.com,objects.githubusercontent.com,scaniverse.com` | 种子允许下载的主机（只用 https，重定向的每一跳都查，最多 5 跳）：清单和来源表在 `raw.githubusercontent.com`，发布页的文件从 `github.com` 重定向到 `release-assets.githubusercontent.com` 或 `objects.githubusercontent.com`，扫描成员在 `scaniverse.com`。有种子时 `check-app.mjs` 要求显式写出，并且和 `infra/dev/up.sh` 的默认值相同 |
 | `METAVERSE_DEMO_SHARE_TOKEN` | **密钥**（`secret_keys`，不在 `env` 里） | 演示空间的分享令牌原文，接口服务只存它的 sha256、不写日志；用 `set_app_secrets` 设置（第 5 步）。种子是凭链接查看（`unlisted`）时必须有，缺了接口服务启动失败 |
+| `CMA_BASE_URL` | `https://cma.nyxid.ai` | 网页在线 worker 的固定 CMA API 地址；不设置则关闭 worker 调用。沿用现有 OAuth scopes，用户需在工作台明确启用 |
+| `NYXID_OAUTH_CLIENT_ID` | `be885bc0-94fd-4a30-bb5e-613723cd0eef` | ChronoAI 组织的 chrono-metaverse 保密 OAuth 客户端；回调为本站 `/api/auth/nyxid/callback` |
+| `NYXID_OAUTH_CLIENT_SECRET` / `NYXID_OAUTH_ENCRYPTION_KEY` | **密钥** | 客户端秘密及 32 字节随机加密密钥，使用应用密钥注入；见 [OAuth 部署说明](../../docs/NYXID_OAUTH.md) |
 | `RUST_LOG` | `info` | |
 
 种子带重建包时要从 `raw.githubusercontent.com`、GitHub 发布页和 `scaniverse.com` 下载清单、来源表和包里空间还没有的文件（主机列表 `METAVERSE_DEMO_SEED_HOSTS`），所以接口服务需要能访问公网（chrono-cd 默认 `egress` 允许）；文件边下载边写进上传会话的数据块，扫描 zip 一次只有一个成员在内存里（单个成员 ≤ 128MiB）。
@@ -145,7 +148,7 @@ gh run list -R ChronoAIProject/chrono-metaverse --workflow Images --commit <完�
 gh run view <运行编号> -R ChronoAIProject/chrono-metaverse --log | grep -oE '(api|web)=sha256:[0-9a-f]{64}' | sort -u
 ```
 
-`app.json` 里的镜像是主分支上线验证过的版本（瘦身后的版本 R2：接口服务和网站都是 `413b28f`，摘要与线上第 8 次修订记录的一致，2026-11-10 上线）。2026-11-10 起线上另有从功能分支部署的版本（NyxID 授权 `d7674fb`、浮动对话建空间 `d90dfe3`），它们的镜像和新增的环境变量在各自分支的 `app.json` 里，合进主分支时一起更新；前厅第 4 版（R3，线上第 16 次修订）只改了种子，镜像和其他环境变量沿用当时线上的第 15 次修订。`check-app.mjs` 拒绝只有标签、标签不是 7 位提交哈希、或仓库和服务对不上的镜像。
+`app.json` 里的镜像是已经上线验证过的版本；当前源码、构建运行和 chrono-cd 修订记录见 [OAuth 与工作台部署记录](../../docs/NYXID_OAUTH.md)。前厅第 4 版（R3，线上第 16 次修订）的种子配置与功能分支的 OAuth 和浮动聊天配置已合并。`check-app.mjs` 拒绝只有标签、标签不是 7 位提交哈希、或仓库和服务对不上的镜像。
 
 按摘要部署只保证"部署的就是那次运行构建的镜像"，管不到谁能推镜像、推代码。`main` 已经建好（2026-11-09，从开发分支 `claude/happy-ritchie-oly5hx` 的 `77bbdb8` 建出），以后作为部署分支：日常开发在开发分支，上线前开合并请求进 `main`，部署只用 `main` 上构建的镜像。还没做、要仓库管理员在 GitHub 上决定的：把默认分支改成 `main` 并加保护（禁止直接推送、必须经合并请求、CI 必须通过）；在包设置的 Manage Actions access 里收回本仓库工作流的写权限，改用只在受保护分支的 GitHub Environment 里可用的凭证推镜像（工作流自己声明的 `packages: write` 拦不住改过的工作流）；用组织规则集限制谁能改 `.github/workflows`。
 
@@ -207,11 +210,11 @@ nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH \
 
 常见失败：`400 image_not_found`（摘要不存在、复制错了或还没构建完）、`400 image_unauthorized`（第 2 步没做）、`409 quota_exceeded`（第 3 步）、`409 service_name_taken`（服务名被组织里别的应用占用）。
 
-规格里声明了密钥 `METAVERSE_DEMO_SHARE_TOKEN`：第一次提交时密钥还没设置，chrono-cd 返回 `422 missing_secret_keys`——这表示规格**已保存**、等密钥，接着做第 5 步，设置后 chrono-cd 立即应用。
+规格里声明了 `METAVERSE_DEMO_SHARE_TOKEN` 和两个 `NYXID_OAUTH_*` 密钥：第一次提交时密钥还没设置，chrono-cd 返回 `422 missing_secret_keys`——这表示规格**已保存**、等密钥，接着做第 5 步，设置后 chrono-cd 立即应用。
 
 ### 第 5 步：密钥（演示空间的分享令牌）
 
-只有一个：接口服务的 `METAVERSE_DEMO_SHARE_TOKEN`，演示空间 `chronoai-lobby`（凭链接查看）的分享令牌原文。接口服务只用它算 sha256 存进空间文档，不写日志；演示链接是 `/s/chronoai-lobby#share=<令牌>`（第 8 步）。
+演示空间使用接口服务的 `METAVERSE_DEMO_SHARE_TOKEN`，演示空间 `chronoai-lobby`（凭链接查看）的分享令牌原文。接口服务只用它算 sha256 存进空间文档，不写日志；演示链接是 `/s/chronoai-lobby#share=<令牌>`（第 8 步）。
 
 1. 在自己电脑上生成（256 位随机数，base64url，43 个字符；接口服务要求 32–256 个 `A–Z a–z 0–9 - _`），存进密码管理器：
 
@@ -257,7 +260,11 @@ curl -s -o /dev/null -w '%{http_code}\n' $URL/api/v1/spaces/x   # 401（没有�
 
 ### 第 7 步：注册成 NyxID 服务（组织管理员，在自己电脑上）
 
-**已完成**（2026-11-09）：ChronoAI 组织的自定义服务 `chrono-metaverse`，服务编号 `362df1f5-8135-4a05-aa85-d929a5fd9f73`，已填进 `ALLOWED_NYX_SERVICE_IDS`（线上第 7 次修订），也已接进 NyxID 的 MCP 服务；经 NyxID 调接口已能读到真实数据。下面留作重新注册或换环境时的步骤。
+ChronoAI 的现有部署已完成注册：组织 `chronoai`（`52aa284c-b5b2-49bd-9d12-79f24772dbd7`），服务 `chrono-metaverse`，连接编号 `362df1f5-8135-4a05-aa85-d929a5fd9f73`，地址 `https://chrono-metaverse-chronoai.apps.nyxid.ai`，OpenAPI 地址为该域名下的 `/api/openapi.json`。连接已开启 `jwt` 身份传递、受众 `urn:chrono-metaverse:api` 和 `forward_access_token`，允许组织成员使用；`app.json` 的服务编号白名单已同步。
+
+已验证 `nyxid proxy request chrono-metaverse api/v1/spaces/chronoai-lobby --output json` 可读取前厅数据，MCP 可发现 `chrono-metaverse__get_space` 等具体工具。MCP 使用 `x-api-key` 时不会转发用户访问令牌。旧版本因此无法查询组织角色，读取组织空间返回 404；本次 OAuth 实现允许用户先在 `/connect` 授权，再以原有 Agent Key 调用。需先发布新版 API/web，并按 [NyxID OAuth 接入](../../docs/NYXID_OAUTH.md) 注册 OAuth 客户端、设置两个应用密钥和客户端 ID；本次发布同时配置该功能；每位用户仍需打开 `/connect` 授权一次。无需新建服务连接或 Agent Key。
+
+维护现有部署时复用这条连接，无需再次创建。以下步骤用于新建或重建连接：
 
 完整命令见开发教程 [`docs/tutorials/cloud-claude-code-nyxid.md`](../../docs/tutorials/cloud-claude-code-nyxid.md) 第 9.3 节。要点：
 

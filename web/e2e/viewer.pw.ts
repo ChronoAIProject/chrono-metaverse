@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import * as THREE from 'three';
+import { MODELS } from '../src/fixtures/assets';
 import { frameBox } from '../src/viewer/framing';
 import {
   brightCoverage,
@@ -268,6 +269,54 @@ test('取景：房间占画面的大部分，"回到全景"用同样的取景', 
   await page.waitForTimeout(300);
   await page.screenshot({ path: join(SHOTS, 'framing-extended.png') });
   expect(await roomCoverage(page)).toBeGreaterThan(0.3);
+});
+
+test('窗外背景：城市模型加载后、切换视图和回到全景都保持办公室取景', async ({ page }) => {
+  const errors = watchErrors(page);
+  await page.route('**/api/public/spaces/demo-lobby/snapshot?*', async (route) => {
+    const response = await route.fetch();
+    const snapshot = await response.json();
+    snapshot.regions = snapshot.regions.filter((r: { kind: string }) => r.kind === 'physical');
+    snapshot.entities = snapshot.entities.filter(
+      (r: { body: { regionId?: string } }) => r.body.regionId !== 'virtual',
+    );
+    snapshot.chunks = snapshot.chunks.filter((c: { cx: number }) => c.cx < 4);
+    snapshot.regions.push({
+      id: 'bay',
+      kind: 'virtual',
+      boxes: [[-3000, -1200, -5000, 3000, 6000, -4000]],
+    });
+    snapshot.entities.push({
+      id: 'bay',
+      body: {
+        entityId: 'bay',
+        layer: 'ext',
+        kind: 'structure',
+        regionId: 'bay',
+        assetHash: MODELS.crate.hash,
+        bounds: { min: [-150, -60, -250], max: [150, 300, -200] },
+        props: { background: true },
+      },
+    });
+    await route.fulfill({ response, json: snapshot });
+  });
+  await page.goto(LINK);
+  await waitForScene(page, 'optimized');
+  const room = await frameRange(page);
+  await page.getByRole('button', { name: '优化 + 扩展' }).click();
+  await waitForScene(page, 'extended');
+  await expect(page.locator('.viewer')).toHaveAttribute('data-models-pending', '0');
+  expect(await numberAttr(page, 'data-models-loaded')).toBeGreaterThan(0);
+  expect(await numberAttr(page, 'data-models-failed')).toBe(0);
+  expect(await frameRange(page)).toEqual(room);
+  await expect(page.locator('.viewer__virtual-tag')).toHaveCount(0);
+  await page.getByRole('button', { name: '回到全景' }).click();
+  expect(await frameRange(page)).toEqual(room);
+  await page.screenshot({ path: join(SHOTS, 'framing-background.png') });
+  await page.getByRole('button', { name: '优化', exact: true }).click();
+  await waitForScene(page, 'optimized');
+  expect(await frameRange(page)).toEqual(room);
+  expect(errors).toEqual([]);
 });
 
 test('?view= 指定打开时的视图：原始视图的房间占画面大部分，切换视图时更新地址', async ({

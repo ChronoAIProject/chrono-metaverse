@@ -325,3 +325,10 @@
     display: none;
   }
 }
+
+.space__worker-link {
+  color: var(--dsw-alias-state-business-primary);
+  font-size: 12px;
+  white-space: nowrap;
+  text-decoration: none;
+}

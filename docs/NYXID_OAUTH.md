@@ -1,0 +1,129 @@
+# NyxID 用户授权与 Agent 组织访问
+
+当前 CMA 工作台采用 [CMA 用户 OAuth 直连](CMA_OAUTH.md)。下文保留网页登录、组织访问和历次部署记录；历史浏览器 Key 和早期 OAuth 兼容缺口描述不代表本次代码已上线。
+
+Agent 继续使用已有的、绑定服务的 Agent Key。NyxID 校验 Key、服务访问权限和操作范围，再向 metaverse 签发身份令牌。metaverse 根据令牌的 `sub` 找到**同一用户**保存的 OAuth 授权，实时查询该用户在资源所属组织的角色。组织 admin 可管理，member/viewer 只读。
+
+不需要新增 NyxID 鉴权功能，也不需要把另一把“组织 Key”交给 Agent 或存进 metaverse。组织作为资源主人，与 Key 能访问哪些服务是不同的授权维度。
+
+```text
+首次连接：
+用户浏览器 → /connect → NyxID 授权（Code + PKCE）
+                        ↓ 回调、userinfo 核对主体
+                 metaverse 加密保存用户 OAuth 凭据
+
+日常调用：
+Agent 原有 Key → NyxID（Key / 服务 / 操作范围检查）
+                     ↓ 签名身份 sub
+                 metaverse（验签、防重放、功能权限）
+                     ↓ 按 sub 取同一用户的 OAuth 凭据
+                 NyxID /orgs/{资源主人}/authorization
+                     ↓ 当前角色
+                 metaverse 资源 ACL → 执行业务操作
+```
+
+OAuth 用于账号核验、组织查询，以及经用户明确授权后的固定 CMA 操作。CMA 请求直接使用同一用户 grant；服务范围通过 OAuth resource 限定到 CMA，业务流量不经过 NyxID 服务代理。具体前置能力、权限与发布条件见上面的 CMA 接入文档。浏览器会话仍不能认证 `/api/v1/*` 业务写入。
+
+## 网页管理
+
+从首页“连接 NyxID”进入 `/connect`，可完成授权、核对账号编号、实时检查连接、读取并选择自己所属的组织、查询组织角色、重新授权和确认断开。组织列表仅供选择，查询结果及实际 Agent 调用都重新核验组织角色。页面区分“授权已保存”和“连接有效”；网络或服务故障不会被显示成“没有组织权限”。页面适配手机并可滚动阅读授权用途与权限边界。
+
+| 接口 | 用途 |
+|---|---|
+| `GET /api/auth/nyxid/session` | 本浏览器的保存状态、已核验账号编号及 CSRF 令牌；不代表 provider 实时有效性 |
+| `POST /api/auth/nyxid/check`，请求 `{}` | 读取同主体凭据，必要时刷新，再通过 userinfo 实时核验账号 |
+| `POST /api/auth/nyxid/check`，请求 `{"orgId":"组织编号"}` | 实时核验连接及指定组织角色，返回资源访问级别；不签发业务凭据 |
+| `POST /api/auth/nyxid/organizations` | 读取当前连接账号所属组织，仅返回编号、名称和角色，不转发联系邮箱等字段 |
+| `POST /api/auth/nyxid/disconnect` | 确认后删除本部署授权凭据，失效该授权实例的浏览器会话 |
+
+上述 POST 接口均要求本浏览器有效会话、同源 `Origin` 和会话绑定的 `x-csrf-token`。账号始终取服务端会话，不接受网页指定其他账号或任意 provider URL；查询完成后复核授权版本，不能越过并发断开或重新授权。浏览器不会收到 OAuth 访问令牌、刷新令牌或客户端秘密。
+
+OAuth 回调成功后返回 `/connect?connected=1`；取消、过期、provider 故障和未启用分别返回固定错误标记，网页显示恢复入口。回调参数、授权码、state 和 provider 错误原文均不转发到网页；标记显示后从浏览器当前地址移除。断开仅影响本部署保存的授权，如需远端撤销，页面提供 NyxID 入口。
+
+## 配置
+
+在 NyxID 注册一个专用于此部署的**保密 OAuth 客户端**，支持 `authorization_code`、`refresh_token`、PKCE S256、`client_secret_post`，允许 scopes `openid roles offline_access proxy`；启用 CMA 时申请固定 CMA resource。`proxy` 在这里用于受限服务授权，实际请求直接到 CMA。现有 NyxID 的普通用户组织查询接口以用户身份判定成员权限，不要求新增组织 scope。此结论根据 NyxID 源码核对；实际部署仍需完成下文的线上验收。
+
+`openid offline_access` 是历史组织查询方案申请的 scope 集合，但 NyxID 现有普通用户组织接口没有“仅查询角色”的专用 scope。账号核验和组织查询是 metaverse 对已保存 OAuth 的代码使用边界，不代表 provider 已将令牌硬限制到这些接口；令牌仍须按敏感用户凭据保护，其他接口能否接受它取决于各服务路由的身份、scope 及资源检查。
+
+回调地址必须精确注册为：
+
+```text
+https://chrono-metaverse-chronoai.apps.nyxid.ai/api/auth/nyxid/callback
+```
+
+给 `metaverse-api` 配置以下变量，web 和 worker 不需要这些秘密：
+
+| 变量 | 内容 |
+|---|---|
+| `PUBLIC_BASE_URL` | 实际站点根地址；生产必须 HTTPS，本机开发可用 HTTP |
+| `NYXID_OAUTH_CLIENT_ID` | 新注册的 OAuth 客户端 ID，不是 NyxID 服务连接 ID |
+| `NYXID_OAUTH_CLIENT_SECRET` | 客户端秘密，放 chrono-cd 应用密钥 |
+| `NYXID_OAUTH_ENCRYPTION_KEY` | 32 字节随机密钥的标准 base64 编码，放 chrono-cd 应用密钥 |
+
+加密密钥可用 `openssl rand -base64 32` 生成，保存在密码管理器中，不提交仓库。所有 API 副本必须使用相同的配置和密钥。备份数据库时需另行备份密钥；替换或丢失密钥后，原密文无法读取，用户需重新连接。当前没有在线密钥轮换机制。
+
+三个 `NYXID_OAUTH_*` 变量全部缺省时功能关闭，`/connect` 显示未启用；只配部分变量会启动失败。ChronoAI 的 OAuth 客户端 ID 为 `be885bc0-94fd-4a30-bb5e-613723cd0eef`，当前 `app.json` 已声明两个秘密。迁移到其他部署时需注册自己的客户端；启用时，在**当前部署规格**的 `services.metaverse-api.env` 增加客户端 ID，在该服务的 `secret_keys` 中保留原有项并增加两个秘密的名字，再通过 chrono-cd 的应用密钥接口设置它们。不要用旧规格覆盖当前镜像或其他配置。
+
+应用密钥请求体为：
+
+```json
+{
+  "NYXID_OAUTH_CLIENT_SECRET": "<客户端秘密>",
+  "NYXID_OAUTH_ENCRYPTION_KEY": "<32 字节随机密钥的 base64>"
+}
+```
+
+从自己电脑的临时文件提交，避免将秘密粘贴到对话或命令行历史：
+
+```bash
+# /安全临时目录/oauth-secrets.json 权限为 0600，不在仓库内
+nyxid proxy request chrono-cd "$APP/services/metaverse-api/secrets?org_id=$ORG" \
+  --method PUT --data @/安全临时目录/oauth-secrets.json --output json
+```
+
+`APP`、`ORG` 的设置及更新规格的方法见 [chrono-cd 部署说明](../infra/chrono-cd/README.md)。上线需同时更新 API 和 web 镜像，随后让每位需要组织访问的用户在 `/connect` 授权一次，使用与其 Agent Key 相同的 NyxID 账号。
+
+## 凭据生命周期与边界
+
+- OAuth 使用随机 state、独立浏览器绑定 Cookie、一次性流程记录和 PKCE。回调以 provider 的实时 userinfo 核对主体，不信任浏览器传入的用户编号或未验证的 ID token。
+- `oauthGrants` 仅保存 AES-256-GCM 密文，密文绑定部署、签发方、客户端、主体、授权实例和版本。`oauthFlows` 的 PKCE verifier 也加密；流程和浏览器会话标识只存哈希。流程 10 分钟、浏览器会话 30 天，数据库 TTL 索引负责回收，读取时仍检查实际过期时间。
+- Cookie 为 HttpOnly、SameSite=Lax，HTTPS 部署加 Secure，限制到 `/api/auth/nyxid`；浏览器拿不到 access/refresh token。浏览器会话过期不会自动取消 Agent 使用的授权；可重新连接后断开，或在 NyxID 撤销该应用授权。
+- 访问令牌即将过期时刷新，数据库 60 秒租约避免不同副本同时轮换。刷新任务在调用请求取消后继续落库；刷新和重新连接/断开之间以版本条件更新。userinfo 暂时失败时，轮换结果会加密保留，但核对主体成功前不可使用。凭据被撤销或主体不符时本地授权失效。进程崩溃或数据库在轮换后持续不可写，仍可能需要重新连接。
+- 有显式转发 Bearer 时优先使用它，失败不回退到保存的 OAuth；无转发凭据时才查同一 `sub` 的授权。无效或重复的 Authorization 头直接拒绝。收到的 Agent Key 原文不会被持久保存。
+- 组织角色每次实时查询，不缓存成员权限；查询结束再次核对授权版本。断开后，尚未通过这项核对的查询会被拒绝；已经取得资源授权并开始执行的操作不会被回滚。服务访问、路径/输入限制和审批仍由 NyxID 在转发前执行。
+- 断开要求同源 Origin 和会话绑定的 CSRF 令牌，会删除本地密文、失效相关浏览器会话。它不调用 NyxID 的全局登出或远端撤销接口；如需同时撤销 provider 侧授权，请在 NyxID 中撤销此应用。
+- API Trace 和网站 nginx 访问日志不记录查询参数、请求头或令牌。CD 的 `/api` 入口直接到 API，需确认外层 ingress、CDN 和日志采集也不记录 OAuth 回调查询参数。
+
+性能上，保存授权路径相对直接转发凭据多两次数据库读取（取密文、查询后核对版本），正常仍只有一次 NyxID 组织角色请求；刷新或恢复待核对凭据时增加 token/userinfo 请求。组织查询整体 15 秒截止，失败时读取按不可见返回 404，写入返回 503 `org_membership_unavailable`。未连接、已断开时不会放宽资源权限。
+
+## 验证
+
+本地集成测试使用真实 MongoDB 副本集和模拟 NyxID provider，覆盖浏览器绑定/重放、PKCE、密文存储、同主体访问、实时角色降级/移除、显式凭据优先、跨副本刷新、主体不符、刷新拒绝和暂时故障、请求取消、断开与刷新/查询竞争、旧会话不能撤销新授权。命令见 [API README](../api/README.md)。
+
+线上启用后验证：`GET /api/auth/nyxid/session` 返回 `enabled:true`；用户连接后，以原有 Agent Key 经 NyxID MCP 读取组织空间；另一用户未连接时不可借用此授权；断开后再次读取被拒绝。功能权限和 Key 操作范围的拒绝行为也应与之前一致。这些线上检查不能用本地模拟测试替代。
+
+## ChronoAI 部署记录（2026-11-10）
+
+- 应用：`metaverse / chrono-metaverse`，chrono-cd 修订 `10`；源码提交 `d7674fb00e9c67a3a4344f2ddb30ba753318b747`。
+- [构建运行](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/42825482374) 生成的 API/web 镜像按摘要固定在 `infra/chrono-cd/app.json`；保留原有双服务、数据库和资源配置。
+- OAuth 客户端归 ChronoAI 组织，客户端秘密和加密密钥已通过 chrono-cd 应用密钥接口设置。
+- 已在线核对：所有新副本就绪、`session` 返回 `enabled:true`、`/connect` 正常、授权跳转包含正确客户端/回调/PKCE、Cookie 为 Secure/HttpOnly/SameSite=Lax、无签名身份业务请求返回 401、无效回调拒绝且不缓存、原有 OAuth 代理可读取 `chronoai-lobby`。
+- 尚需用户实际登录并同意 `/connect` 授权，才能在线验收“Agent 使用同一用户保存的授权访问组织空间”的完整链路；不将匿名入口检查当作此链路已通过。
+
+## 网页管理部署记录（2026-11-10）
+
+- chrono-cd 修订 `11`；源码提交 `4292d162ea126f956cc3ab5a51812dee985d8feb`，来自 `deploy/nyxid-oauth-20261110` 分支。[Images 运行](https://github.com/ChronoAIProject/chrono-metaverse/actions/runs/42834883023) 成功，两个镜像按该运行的摘要固定在 `app.json`。
+- 仅更新 API/web 镜像及 CD 解析出的镜像摘要；客户端、已有授权、数据库和应用配置沿用。API 单副本和 web 双副本全部更新且就绪。
+- 已在线核对：新页面真实渲染、手机布局与滚动、未连接时组织查询不可操作、权限范围说明可展开、回调失败返回固定恢复页面且清理地址参数、点击授权可到 NyxID 登录页；未执行用户同意步骤。
+- 新增 `check`、`organizations` 接口对无会话请求返回 401，回调错误和状态响应不缓存；授权跳转仍包含原客户端、最小 scopes、精确回调与 PKCE；业务接口仍拒绝未签名请求，既有 NyxID OAuth 代理仍能读取 `chronoai-lobby`。
+- 连接后的账号检查、组织列表和角色查询、断开流程已通过本地真实 MongoDB + 模拟 NyxID 的集成测试及桌面/手机浏览器测试。线上完整连接链路仍需用户以与 Agent Key 相同的账号授权后验收。
+
+
+## 在线 CMA worker 工作台
+
+`/workspace` 提供自然语言委托、准备与执行状态、对话、追加需求、停止当前响应、结果链接及三维预览。查看预览后可明确要求同一 worker 发布。详细规划与权限边界见 [WEB_CONSOLE_PLAN.md](WEB_CONSOLE_PLAN.md)。没有手工编辑方块、坐标或业务 JSON 的控制台。
+
+部署设置 `CMA_BASE_URL`（固定 HTTPS 根地址，生产为 `https://cma.nyxid.ai`）。
+本次代码迁移、实际 OAuth 令牌测试结果和 CMA 发布前提见 [CMA 用户 OAuth 直连](CMA_OAUTH.md)。
+CMA 与 Metaverse 均完成验证之前，不把这次迁移描述为已部署或连续聊天已修复。

@@ -14,7 +14,7 @@
 api/          接口服务：Rust 工作区（axum + mongodb + utoipa）
   crates/metaverse-core   区块编码、内容哈希、回放、操作、形状词表（纯计算）
   crates/metaverse-api    公开读、写、管理接口；NyxID 身份令牌校验与组织角色查询
-web/          只读查看器：React + Vite + three.js（沿用 CMA 前端工程），nginx 托管
+web/          查看器与 CMA 在线工作台：React + Vite + three.js（沿用 CMA 前端工程），nginx 托管
 recon/        本地重建工具：Python（扫描对齐、网页用模型、结构和物体、AI 物件集、重建工作台 metaverse-recon）
 sdk/typescript  metaverse 命令行与建造脚本工具包
 infra/
@@ -61,6 +61,7 @@ infra/dev/down.sh     # 停止
 ## 文档
 
 - [整体设计](docs/ARCHITECTURE.md)、[建设计划](docs/BUILD_PLAN.md)、[进度报告](docs/PROGRESS.md)、[形状词表](docs/SHAPES.md)、[重建开源方案调研](docs/research/scan-to-model.md)
+- [在线工作台规划](docs/WEB_CONSOLE_PLAN.md)：在网页委托 CMA worker 建造、跟进任务与预览结果
 - [建造教程](docs/tutorials/build-space.md)：用 Claude Code / Codex 建造空间、给 AI 配 agent key、写事件、组合空间
 - [开发教程](docs/tutorials/cloud-claude-code-nyxid.md)：在云端用 Claude Code 连接 NyxID 开发、部署、注册 NyxID 服务
 - [重建教程](docs/tutorials/reconstruct-with-ai.md) 和[方法论](docs/methodology/README.md)：从扫描到逼真的数字孪生——采集、本地重建、逐件建模、多人评审、贴图、写回上线

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import { WorkspacePage } from './workspace/WorkspacePage';
+import { ConnectPage } from './auth/ConnectPage';
 import {
   createPublicClient,
   previewTokenFromHash,
@@ -50,12 +52,21 @@ function Home({ showFixtureLink }: { readonly showFixtureLink: boolean }) {
   return (
     <main className="home">
       <div className="home__card">
-        <h1>chrono-metaverse 查看器</h1>
-        <p>实体空间的数字孪生和虚拟扩展，按一条时间线记录和回放。网站只读，凭分享链接打开空间。</p>
+        <h1>你的空间，聊着改</h1>
+        <p>
+          登录后选择你的个人或组织空间，和在线 CMA worker 持续聊天，边调整边看三维预览。
+          空间的每次发布都可以沿时间线回放。
+        </p>
         <p className="home__hint">
           空间链接形如 <code>/s/空间编号#share=分享令牌</code>，组合链接形如{' '}
           <code>/u/组合编号#share=分享令牌</code>。
         </p>
+        <a className="home__link" href="/workspace">
+          打开在线工作台
+        </a>
+        <a className="home__link home__link--quiet" href="/connect">
+          连接 NyxID
+        </a>
         {showFixtureLink && (
           <div className="home__links">
             <a className="home__link" href={FIXTURE_LINK}>
@@ -108,6 +119,10 @@ export function App({
   switch (route.kind) {
     case 'home':
       return <Home showFixtureLink={showFixtureLink} />;
+    case 'connect':
+      return <ConnectPage />;
+    case 'workspace':
+      return <WorkspacePage />;
     case 'space':
       return (
         <SpacePage
