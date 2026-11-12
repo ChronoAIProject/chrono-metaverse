@@ -38,6 +38,41 @@
 
 同一目录可在进程重新启动后复用。当前 dev 使用容器临时磁盘，重新部署或更换容器后会重新填充；若需要跨容器重建保留，可给每个实例挂载独占持久卷并配置目录。缓存是可重新获取的副本，不作为历史存档或数据授权凭据。需要稳定回放的获准数据包仍通过普通资源上传、内容哈希和空间时间线保存。
 
+## 从矢量瓦片持续生成三维内容
+
+`props.externalContent` 支持 `format: "mvt"`。来源 `url` 指向标准 TileJSON，查看器读取其 XYZ 模板和最高层级，按镜头视锥及距离发现新区域。多边形图层、高度字段、颜色和保护范围都由普通物件配置，无需提供方分支：
+
+```json
+{
+  "version": 1,
+  "format": "mvt",
+  "sources": [{
+    "url": "https://tiles.example.org/index.json",
+    "delivery": "server",
+    "resourcePrefixes": ["https://tiles.example.org/data/"],
+    "attribution": "示例数据提供方",
+    "page": "https://tiles.example.org/",
+    "license": {"label": "数据许可", "url": "https://tiles.example.org/license"}
+  }],
+  "reference": {"latitude": 35, "longitude": 139, "origin": [0, -60, 0], "heading": 25},
+  "extrusion": {
+    "layer": "shapes",
+    "heightProperty": "height",
+    "minHeightProperty": "base_height",
+    "hiddenProperty": "hidden",
+    "defaultHeight": 8,
+    "maxHeight": 1000,
+    "color": "#bbc5c8",
+    "maxDistance": 20000,
+    "excludeBounds": [[-30, -30, 30, 30]]
+  }
+}
+```
+
+物件仍需代理形状、范围和 `background: true`。`excludeBounds` 是所在成员本地米制坐标的 `[minX,minZ,maxX,maxZ]`；相交的多边形不生成，保留已有精细模型和室内主体。高度单位为米，顶高须大于底高；仅缺少顶高时使用 `defaultHeight`。矢量体块不等同于实景贴图、测绘模型或已核实的实际楼高。
+
+TileJSON 和 PBF 复用现有空间权限、署名和 HTTP 磁盘缓存。MVT 来源只允许索引自身与显式 `resourcePrefixes`，不会因索引位于根路径而开放整个域名。每次读取最多 8 MiB，每份来源最多四个并行请求、32 块可见瓦片，不预取全球数据。移动镜头取消不再需要的下载；几何缓存限制为 48 块及 96 MiB，移除物件释放资源。当前支持标准 Web Mercator XYZ。地图与三维同时启动时，服务端在总时限内排队，最多八个出站下载。
+
 # OneMap 历史接入核查（2026-11-13）
 
 早期场景下载先打开 OneMap 官方三维网页观察网络请求，再读取网页使用的 `/omapi/tilesets/sg_noterrain_tiles/tileset.json` 和 B3DM 分片。旧下载器带有官方 `/3d` 页面 Referer；本次已移除，使用本系统自己的 User-Agent。旧离线缓存也改为记录 HTTP 期限，不复用缺少期限的历史回执，并拒绝持久保存 `private/no-store` 响应。这里调用的是官方网页的数据接口；目前没有找到证明该三维端点属于公开开发者 API 的文档，也没有证据表明旧流程已完成正式开发者授权。不能将其描述为已通过公开 OneMap 3D API 授权。

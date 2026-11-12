@@ -19,6 +19,38 @@ const entity: EntityBody = {
 };
 
 describe('外部数据源协议', () => {
+  it('矢量源通过相同的普通物件声明，字段、参考和保护范围必须有效', () => {
+    const vector = {
+      ...config,
+      format: 'mvt',
+      reference: { latitude: 35, longitude: 139, origin: [0, -60, 0] },
+      extrusion: {
+        layer: 'shapes',
+        heightProperty: 'elevation',
+        defaultHeight: 8,
+        maxHeight: 1000,
+        color: '#aabbcc',
+        maxDistance: 20000,
+        excludeBounds: [[-10, -10, 10, 10]],
+      },
+    };
+    expect(
+      externalContentOf({ ...entity, props: { background: true, externalContent: vector } })
+        ?.format,
+    ).toBe('mvt');
+    for (const change of [
+      { reference: undefined },
+      { extrusion: { ...vector.extrusion, maxHeight: Infinity } },
+      { extrusion: { ...vector.extrusion, excludeBounds: [[1, 1, 0, 0]] } },
+    ]) {
+      expect(
+        externalContentOf({
+          ...entity,
+          props: { background: true, externalContent: { ...vector, ...change } },
+        }),
+      ).toBeNull();
+    }
+  });
   it('不同提供方与本地、地理坐标共用普通物件配置', () => {
     expect(externalContentOf(entity)).toMatchObject(config);
     const reference = { latitude: -33.8, longitude: 151.2, origin: [6, -10, 3] };

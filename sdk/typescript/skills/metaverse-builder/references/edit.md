@@ -39,6 +39,8 @@ metaverse-recon content import --model <文件.glb> --id chair-1 --label '休息
 
 预览应检查至少两个可替换来源、主体取景、距离显示、刷新缓存、来源不可用状态和移除后停止加载。用户确认的是当前草稿修订，变更提供方后仍需预览。
 
+标准矢量瓦片可用 `props.externalContent.format: "mvt"` 接入：`sources.url` 为 TileJSON，`reference` 复用地图的米制地理参考，`extrusion` 声明多边形图层、顶高/底高字段、隐藏字段、默认/最大高度、颜色和加载距离。`excludeBounds` 保护已有精细内容。保留代理形状、范围和 `background: true`，仍通过普通编辑计划、预览和发布；完整字段见 `docs/EXTERNAL_RESOURCES.md`。不要把轮廓拉伸体块表述为实景贴图或测绘模型。
+
 ## 同一份编辑计划
 
 ```json
