@@ -96,6 +96,15 @@ struct Service {
     #[serde(default)]
     owner_id: Option<String>,
 }
+impl Service {
+    fn slug_for(&self, purpose: Purpose) -> Option<&str> {
+        match purpose {
+            Purpose::NyxAgent => self.catalog_service_slug.as_deref(),
+            Purpose::Cma => (self.catalog_service_slug.as_deref() == Some(self.slug.as_str()))
+                .then_some(self.slug.as_str()),
+        }
+    }
+}
 #[derive(Deserialize)]
 struct Key {
     id: String,
@@ -144,10 +153,22 @@ impl Identity {
         let services = purpose.services();
         let permitted = |service: &Service| {
             service.is_active
-                && services.contains(&service.slug.as_str())
-                && service.catalog_service_slug.as_deref() == Some(service.slug.as_str())
+                && service
+                    .slug_for(purpose)
+                    .is_some_and(|slug| services.contains(&slug))
         };
-        if key.scopes.split_whitespace().collect::<Vec<_>>() != ["proxy"]
+        // NyxID grants read implicitly even when it is absent from the scope string.
+        let scopes = key.scopes.split_whitespace().collect::<Vec<_>>();
+        let valid_scopes = match purpose {
+            Purpose::Cma => scopes == ["proxy"],
+            Purpose::NyxAgent => {
+                scopes.contains(&"proxy")
+                    && scopes
+                        .iter()
+                        .all(|scope| matches!(*scope, "read" | "proxy"))
+            }
+        };
+        if !valid_scopes
             || key.allow_all_services
             || key.allow_auto_connected_services
             || key.allowed_service_ids.is_empty()
@@ -159,9 +180,9 @@ impl Identity {
             })
             || key.effective_services.iter().any(|s| !permitted(s))
             || services.iter().any(|slug| {
-                !key.effective_services
-                    .iter()
-                    .any(|s| s.slug == *slug && key.allowed_service_ids.contains(&s.id))
+                !key.effective_services.iter().any(|s| {
+                    s.slug_for(purpose) == Some(*slug) && key.allowed_service_ids.contains(&s.id)
+                })
             })
             || (purpose == Purpose::Cma
                 && !key.effective_services.iter().any(|s| {

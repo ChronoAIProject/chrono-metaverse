@@ -63,6 +63,21 @@ export function clearEnrollment(subject: string, owner?: string, provider: ChatP
     // 浏览器可能已关闭存储访问；不阻止结束等待或清除已交付凭据。
   }
 }
+// Request expiry prevents another poll; it does not invalidate a credential
+// already claimed by a poll whose response is still in flight.
+export function matchesEnrollment(
+  subject: string,
+  owner: string,
+  deviceCode: string,
+  provider: ChatProvider = 'cma',
+): boolean {
+  try {
+    const raw = sessionStorage.getItem(storageKey(subject, owner, provider));
+    return !!raw && raw.length <= 16384 && JSON.parse(raw).device_code === deviceCode;
+  } catch {
+    return false;
+  }
+}
 export function readEnrollment(
   subject: string,
   owner: string,
