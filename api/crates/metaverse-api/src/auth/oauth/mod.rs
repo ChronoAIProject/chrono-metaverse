@@ -5,6 +5,7 @@ pub(crate) mod catalog;
 mod config;
 mod creation;
 mod crypto;
+mod nyxagent;
 mod owner;
 mod provider;
 mod routes;
@@ -74,6 +75,7 @@ pub struct OAuthService {
     repo: Repo,
     vault: Vault,
     http: reqwest::Client,
+    nyxagent_http: reqwest::Client,
 }
 
 impl OAuthService {
@@ -107,6 +109,12 @@ impl OAuthService {
             repo,
             vault,
             http,
+            nyxagent_http: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .connect_timeout(Duration::from_secs(5))
+                .timeout(Duration::from_secs(1900))
+                .build()
+                .map_err(|_| "NyxAgent HTTP 客户端配置不可用")?,
         }))
     }
 

@@ -9,10 +9,12 @@ export type KeyIdentity = {
   keyExpiresAt: string | null;
 };
 type SavedKey = { subject: string; credential: string; identity: KeyIdentity };
+export type ChatProvider = 'cma' | 'nyxagent';
 const LEGACY = 'metaverse-cma-credential:v1';
-const prefix = (subject: string) => `metaverse-cma-credential:v2:${encodeURIComponent(subject)}:`;
-export const browserKeyStorageKey = (subject: string) =>
-  `${prefix(subject)}${encodeURIComponent(subject)}`;
+const prefix = (subject: string, provider: ChatProvider = 'cma') =>
+  `metaverse-${provider}-credential:v2:${encodeURIComponent(subject)}:`;
+export const browserKeyStorageKey = (subject: string, provider: ChatProvider = 'cma') =>
+  `${prefix(subject, provider)}${encodeURIComponent(subject)}`;
 const legacyKey = (subject: string, owner = subject) =>
   owner === subject ? LEGACY : `${LEGACY}:org:${owner}`;
 const storageKeys = (storage: Storage) =>
@@ -31,12 +33,17 @@ export function validIdentity(v: unknown): v is KeyIdentity {
     )
   );
 }
-export function readBrowserKey(subject?: string, owner = subject): SavedKey | null {
+export function readBrowserKey(
+  subject?: string,
+  owner = subject,
+  provider: ChatProvider = 'cma',
+): SavedKey | null {
   if (!subject) return null;
   try {
-    const key = browserKeyStorageKey(subject);
+    const key = browserKeyStorageKey(subject, provider);
     const persistent = localStorage.getItem(key);
-    const raw = persistent ?? sessionStorage.getItem(legacyKey(subject, owner));
+    const raw =
+      persistent ?? (provider === 'cma' ? sessionStorage.getItem(legacyKey(subject, owner)) : null);
     if (!raw || raw.length > 16_384) return null;
     const v = JSON.parse(raw) as SavedKey;
     if (
@@ -52,7 +59,7 @@ export function readBrowserKey(subject?: string, owner = subject): SavedKey | nu
       )
     )
       return null;
-    if (persistent === null) saveBrowserKey(subject, v.credential, v.identity, owner);
+    if (persistent === null) saveBrowserKey(subject, v.credential, v.identity, owner, provider);
     return v;
   } catch {
     return null;
@@ -63,6 +70,7 @@ export function saveBrowserKey(
   credential: string,
   identity: KeyIdentity,
   owner = subject,
+  provider: ChatProvider = 'cma',
 ) {
   if (
     !validCredential(credential) ||
@@ -72,13 +80,14 @@ export function saveBrowserKey(
     throw new Error('无法核对 Agent Key 授权结果，请重新授权。');
   try {
     localStorage.setItem(
-      browserKeyStorageKey(subject),
+      browserKeyStorageKey(subject, provider),
       JSON.stringify({ subject, credential, identity }),
     );
   } catch {
-    throw new Error('无法在此浏览器保存 CMA 授权，请检查网站存储设置后重试。');
+    throw new Error('无法在此浏览器保存 Agent Key 授权，请检查网站存储设置后重试。');
   }
   try {
+    if (provider !== 'cma') return;
     const previous = sessionStorage.getItem(legacyKey(subject, owner));
     if (previous && (JSON.parse(previous) as SavedKey).subject === subject)
       sessionStorage.removeItem(legacyKey(subject, owner));
@@ -90,12 +99,17 @@ export function readBrowserKeys(subject: string): Array<SavedKey & { owner: stri
   const saved = readBrowserKey(subject);
   return saved ? [{ ...saved, owner: subject }] : [];
 }
-export function clearBrowserKey(subject: string, owner?: string) {
+export function clearBrowserKey(subject: string, owner?: string, provider: ChatProvider = 'cma') {
   for (const storage of [localStorage, sessionStorage]) {
     const keys = owner
-      ? [browserKeyStorageKey(subject), legacyKey(subject, owner)]
+      ? [
+          browserKeyStorageKey(subject, provider),
+          ...(provider === 'cma' ? [legacyKey(subject, owner)] : []),
+        ]
       : storageKeys(storage).filter(
-          (k) => k.startsWith(prefix(subject)) || k === LEGACY || k.startsWith(`${LEGACY}:org:`),
+          (k) =>
+            k.startsWith(prefix(subject, provider)) ||
+            (provider === 'cma' && (k === LEGACY || k.startsWith(`${LEGACY}:org:`))),
         );
     for (const key of keys) {
       try {

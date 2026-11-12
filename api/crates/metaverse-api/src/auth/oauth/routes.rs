@@ -34,6 +34,7 @@ pub fn router(state: AppState, viewer: Router<AppState>) -> Router<AppState> {
         .merge(viewer)
         .merge(super::worker::router())
         .merge(super::agent_key::router())
+        .merge(super::nyxagent::router())
         .route_layer(axum::middleware::from_fn_with_state(
             state,
             crate::public::guard,

@@ -11,6 +11,7 @@ export type Session = {
   cmaOwnerId?: string;
   cmaAuthMethod?: CmaAuthMethod;
   cmaCredentialVersion?: string;
+  chatProvider?: 'nyxagent';
 };
 export type Context = { spaceId: string; orgId?: string };
 export type Intent = {
@@ -102,7 +103,7 @@ export async function workerRequest<T>(
   if (signal?.aborted) controller.abort();
   const timeout = window.setTimeout(abort, 30_000);
   try {
-    const r = await request(`/api/auth/nyxid/worker/${action}`, {
+    const r = await request(`/api/auth/nyxid/${session.chatProvider ?? 'worker'}/${action}`, {
       method: 'POST',
       credentials: 'same-origin',
       cache: 'no-store',

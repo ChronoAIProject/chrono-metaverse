@@ -1,3 +1,4 @@
+import type { ChatProvider } from './browserKey';
 // 未交付的申请只保存在发起标签页；刷新后沿用同一请求，不重复创建授权。
 export type Enrollment = {
   device_code: string;
@@ -7,9 +8,10 @@ export type Enrollment = {
   interval: number;
 };
 export type PendingEnrollment = Enrollment & { expiresAt: number; nextPollAt: number };
-const prefix = (subject: string) => `metaverse-cma-enrollment:v1:${encodeURIComponent(subject)}:`;
-const storageKey = (subject: string, owner: string) =>
-  `${prefix(subject)}${encodeURIComponent(owner)}`;
+const prefix = (subject: string, provider: ChatProvider = 'cma') =>
+  `metaverse-${provider}-enrollment:v1:${encodeURIComponent(subject)}:`;
+const storageKey = (subject: string, owner: string, provider: ChatProvider = 'cma') =>
+  `${prefix(subject, provider)}${encodeURIComponent(owner)}`;
 
 export function validEnrollment(value: Enrollment): boolean {
   try {
@@ -37,28 +39,37 @@ export function validEnrollment(value: Enrollment): boolean {
     return false;
   }
 }
-export function saveEnrollment(subject: string, owner: string, value: PendingEnrollment) {
+export function saveEnrollment(
+  subject: string,
+  owner: string,
+  value: PendingEnrollment,
+  provider: ChatProvider = 'cma',
+) {
   try {
-    sessionStorage.setItem(storageKey(subject, owner), JSON.stringify(value));
+    sessionStorage.setItem(storageKey(subject, owner, provider), JSON.stringify(value));
   } catch {
     throw new Error('无法在此标签页保存授权申请，请检查网站存储设置后重试。');
   }
 }
-export function clearEnrollment(subject: string, owner?: string) {
+export function clearEnrollment(subject: string, owner?: string, provider: ChatProvider = 'cma') {
   try {
     const keys = owner
-      ? [storageKey(subject, owner)]
+      ? [storageKey(subject, owner, provider)]
       : Array.from({ length: sessionStorage.length }, (_, index) =>
           sessionStorage.key(index),
-        ).filter((key): key is string => key !== null && key.startsWith(prefix(subject)));
+        ).filter((key): key is string => key !== null && key.startsWith(prefix(subject, provider)));
     for (const key of keys) sessionStorage.removeItem(key);
   } catch {
     // 浏览器可能已关闭存储访问；不阻止结束等待或清除已交付凭据。
   }
 }
-export function readEnrollment(subject: string, owner: string): PendingEnrollment | null {
+export function readEnrollment(
+  subject: string,
+  owner: string,
+  provider: ChatProvider = 'cma',
+): PendingEnrollment | null {
   try {
-    const raw = sessionStorage.getItem(storageKey(subject, owner));
+    const raw = sessionStorage.getItem(storageKey(subject, owner, provider));
     if (!raw || raw.length > 16384) return null;
     const value = JSON.parse(raw) as PendingEnrollment;
     if (
@@ -69,7 +80,7 @@ export function readEnrollment(subject: string, owner: string): PendingEnrollmen
       !Number.isFinite(value.nextPollAt) ||
       value.nextPollAt > Date.now() + 60_000
     ) {
-      clearEnrollment(subject, owner);
+      clearEnrollment(subject, owner, provider);
       return null;
     }
     return value;

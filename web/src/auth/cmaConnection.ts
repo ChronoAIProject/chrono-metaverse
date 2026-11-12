@@ -8,9 +8,13 @@ export function cmaAuthHeaders(session: {
   cmaOwnerId?: string;
   cmaAuthMethod?: CmaAuthMethod;
   cmaCredentialVersion?: string;
+  chatProvider?: 'nyxagent';
 }): Record<string, string> {
   const method = session.cmaAuthMethod ?? 'oauth';
-  const saved = method === 'agent_key' ? readBrowserKey(session.subject, session.cmaOwnerId) : null;
+  const saved =
+    method === 'agent_key'
+      ? readBrowserKey(session.subject, session.cmaOwnerId, session.chatProvider ?? 'cma')
+      : null;
   return {
     ...cmaOwnerHeaders(session.subject, session.cmaOwnerId),
     'x-metaverse-cma-auth': method,
