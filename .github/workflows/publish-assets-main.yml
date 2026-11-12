@@ -1,4 +1,4 @@
-name: 发布演示资源（仅 main）
+name: 发布演示资源（正式版）
 
 # 把演示种子要下载的大文件传到本仓库的发布页 demo-assets（docs/design/server-slim.md 7.4 方案 B）。
 # 清单和来源表进仓库（infra/chrono-cd/demo/lobby-r<版本>/），大文件不进 git 历史，按 <sha256>.<扩展名> 命名放在这里，
@@ -30,7 +30,7 @@ jobs:
   upload:
     name: 上传演示种子文件
     if: github.ref == 'refs/heads/main'
-    environment: release
+    environment: production
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

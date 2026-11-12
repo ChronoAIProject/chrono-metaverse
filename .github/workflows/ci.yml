@@ -9,8 +9,9 @@ name: CI
 
 on:
   push:
-    branches: ['**']
+    branches-ignore: [dev, main]
   pull_request:
+  workflow_call:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -212,13 +213,14 @@ jobs:
         with:
           go-version: stable
           cache: false
-      - name: 合并请求只允许以 main 为目标
+      - name: 核对开发与正式版的合并方向
         if: github.event_name == 'pull_request'
         env:
           TARGET_BRANCH: ${{ github.base_ref }}
+          SOURCE_BRANCH: ${{ github.head_ref }}
         run: |
-          if [[ "$TARGET_BRANCH" != main ]]; then
-            echo "::error::合并请求必须直接合入 main，请调整目标分支"
+          if [[ "$TARGET_BRANCH" != dev ]] && [[ "$TARGET_BRANCH" != main || "$SOURCE_BRANCH" != dev ]]; then
+            echo "::error::开发改动合入 dev；正式版只从 dev 合入 main"
             exit 1
           fi
       - name: 数据访问边界（不需要编译）

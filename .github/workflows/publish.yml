@@ -1,34 +1,41 @@
-name: 发布镜像（仅 main）
+name: 发布与部署
 
-# 只有 main 可以构建并发布两个镜像到 ghcr.io：
+# dev 发布测试镜像，main 发布正式镜像：
 #   ghcr.io/chronoaiproject/chrono-metaverse-{api,web}
 # （处理服务已下线，不再构建 worker 镜像；线上在换成瘦身后的版本之前仍按摘要跑以前构建的那个。）
-# 标签：短提交哈希（7 位）、main、latest。
-# 只构建 linux/amd64（chrono-cd 的节点架构）。部署不在这里做，见 infra/chrono-cd/README.md。
+# 标签：短提交哈希（7 位）、分支名；latest 只属于 main。
+# 只构建 linux/amd64，按运行返回的摘要部署到分支对应的环境。
 #
 # main 和 latest 标签会随新构建移动，所以部署始终按本次运行返回的摘要固定。
-# 任务同时校验主线 ref 并使用仅允许 main 的 release 环境。
+# 任务检查 dev/main ref，并绑定相应环境的分支限制。
 # 摘要交给 infra/chrono-cd/pin-images.mjs，不按标签查询摘要。
 
 on:
   push:
     branches:
       - main
+      - dev
   workflow_dispatch: {}
 
 # 同一分支的镜像按推送顺序构建，不中途取消（避免分支标签指向半路被取消的那次之前的版本）。
 concurrency:
-  group: publish-main
+  group: publish-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
+  validate:
+    name: 发布前检查
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+    uses: ./.github/workflows/ci.yml
+
   build:
     name: 镜像 ${{ matrix.image }}
-    if: github.ref == 'refs/heads/main'
-    environment: release
+    needs: validate
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
     permissions:
       contents: read
       packages: write
@@ -114,3 +121,42 @@ jobs:
             echo "${TAGS}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 保存本次构建摘要
+        env:
+          IMAGE: ${{ matrix.image }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          mkdir -p digests
+          printf '%s\n' "$DIGEST" > "digests/${IMAGE}.txt"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digest-${{ matrix.image }}
+          path: digests/${{ matrix.image }}.txt
+          retention-days: 7
+          if-no-files-found: error
+
+  deploy:
+    name: 部署 ${{ github.ref_name == 'main' && '正式版' || '测试版' }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+      url: ${{ github.ref_name == 'main' && 'https://chrono-metaverse-prod-chronoai.apps.nyxid.ai' || 'https://chrono-metaverse-chronoai.apps.nyxid.ai' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.0
+        with:
+          pattern: digest-*
+          path: digests
+          merge-multiple: true
+      - name: 按本次构建摘要部署并等待就绪
+        env:
+          DEPLOY_ENVIRONMENT: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+          CHRONO_CD_API_KEY: ${{ secrets.CHRONO_CD_API_KEY }}
+        run: node infra/chrono-cd/deploy.mjs digests

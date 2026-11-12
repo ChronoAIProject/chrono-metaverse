@@ -7,7 +7,7 @@
 //   （`uses: owner/repo@<哈希> # v1.2.3`）。标签和分支（`@v2`、`@master`）可以被上游改写，上游
 //   被入侵时恶意代码会跑在拿着 packages: write 令牌或能写 Actions 缓存的任务里。
 //   `docker://` 镜像按摘要固定；install-action 的 `tool:` 写明版本。
-// - 发布镜像的工作流（publish-main.yml）不读写 Actions 缓存：缓存按仓库和分支共用、不分工作流，同一分支
+// - 发布镜像的工作流（publish.yml）不读写 Actions 缓存：缓存按仓库和分支共用、不分工作流，同一分支
 //   上任何 CI 任务里的 action 都能写进构建层。
 // - Dockerfile（infra/*/Dockerfile）：`# syntax=` 构建前端、`FROM` 和 `COPY --from=` 的外部镜像都按
 //   摘要固定（`镜像:标签@sha256:<64 位>`，标签只作记号）。
@@ -126,7 +126,7 @@ export function checkPins(root) {
   for (const file of readdirSync(workflows).filter((entry) => /\.ya?ml$/.test(entry)).sort()) {
     const name = `.github/workflows/${file}`;
     problems.push(
-      ...workflowProblems(readFileSync(join(workflows, file), 'utf8'), name, { publishesImages: file === 'publish-main.yml' }),
+      ...workflowProblems(readFileSync(join(workflows, file), 'utf8'), name, { publishesImages: file === 'publish.yml' }),
     );
   }
   const infra = join(root, 'infra');

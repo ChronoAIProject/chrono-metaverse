@@ -205,7 +205,7 @@ jobs:
 
 第一次构建完成后，到 GitHub 组织的软件包页面打开这个包，进入设置把可见性改成公开（Public），否则部署时会报 `image_unauthorized`。镜像还没构建出来就部署，会报 `image_not_found`。
 
-上面是最小的写法。本项目实际用的是 `.github/workflows/publish-main.yml`：一次构建两个镜像（Dockerfile 在 `infra/api/`、`infra/web/`，构建上下文是仓库根目录；处理服务下线后不再有 `infra/worker/`），标签用 7 位提交哈希和分支名，部署时按摘要固定。
+上面是最小的写法。本项目实际用的是 `.github/workflows/publish.yml`：一次构建两个镜像（Dockerfile 在 `infra/api/`、`infra/web/`，构建上下文是仓库根目录；处理服务下线后不再有 `infra/worker/`），标签用 7 位提交哈希和分支名，部署时按摘要固定。
 
 ### 7.3 提交应用配置
 

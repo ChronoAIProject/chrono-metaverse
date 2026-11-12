@@ -23,7 +23,7 @@ infra/
   dev/                本地全套：模拟 NyxID、一键启动脚本
 docs/         整体设计、建设计划、形状词表、教程
 spikes/       第 0 阶段验证代码与结果
-.github/      持续集成（ci.yml）与镜像构建（publish-main.yml）
+.github/      持续集成（ci.yml）与镜像构建（publish.yml）
 ```
 
 ## 快速开始（本地全套）
@@ -48,16 +48,19 @@ infra/dev/down.sh     # 停止
 
 ## 部署
 
-- 镜像：只有合入 `main` 后由 GitHub Actions 构建并发布，推到 `ghcr.io/chronoaiproject/chrono-metaverse-{api,web}`（标签：7 位提交哈希、`main`、`latest`；部署一律按摘要固定）。
+- 镜像：合入 `dev` 后发布并部署测试版，合入 `main` 后发布并部署正式版，推到 `ghcr.io/chronoaiproject/chrono-metaverse-{api,web}`（标签：7 位提交哈希、分支名；`latest` 只给 `main`；部署一律按摘要固定）。
 - 部署：chrono-cd 的 ChronoAI 组织下，项目 `metaverse`、应用 `chrono-metaverse`，服务 `metaverse-web` / `metaverse-api` 加 MongoDB 插件（处理服务已下线，重建在本地做，见 [docs/design/server-slim.md](docs/design/server-slim.md)）。规格和完整步骤（设为公开、提交、NyxID 注册、导入演示数据、回滚）见 [infra/chrono-cd/README.md](infra/chrono-cd/README.md)。
 
 ## 持续集成与分支保护
 
-`main` 是唯一长期分支和发布来源。短期开发分支从 `main` 创建，PR 直接以 `main`
-为目标；合并后自动删除远端开发分支。镜像与演示资源的发布工作流只接受 `main`，
-手动运行同样受分支检查及 `release` 环境的 `main` 策略约束。
+`dev` 是默认开发分支和测试版来源，沿用现有 `chrono-metaverse` 测试部署；`main`
+负责独立的 `chrono-metaverse-prod` 正式部署。开发 PR 合入 `dev`，发布正式版时从
+`dev` 提 PR 合入 `main`。合并后删除短期分支，保留这两个长期分支。
 
-`main` 的必过检查只绑定 GitHub Actions 的 `CI Gate`（名称保持固定）。它等待
+两条分支分别使用只允许 `dev` 的 `staging` 环境和只允许 `main` 的 `production`
+环境，部署配置与数据库隔离。手动运行同样检查分支，不从其他分支发布。
+
+`dev` 和 `main` 的必过检查只绑定 GitHub Actions 的 `CI Gate`（名称保持固定）。它等待
 [ci.yml](.github/workflows/ci.yml) 中的全部 CI 任务，只有所有任务都成功才通过；失败、取消或跳过均不通过。
 因此，调整各任务的显示名称无需再修改 GitHub 分支保护。新增、删除或修改 job ID 时，同步维护
 `ci-gate.needs`，让它覆盖所有 CI 任务。可选组件的跳过在任务内部处理，使任务本身正常成功。

@@ -18,7 +18,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
 const read = (path) => readFileSync(join(root, path), 'utf8');
 const ci = read('.github/workflows/ci.yml');
-const images = read('.github/workflows/publish-main.yml');
+const images = read('.github/workflows/publish.yml');
 const apiDockerfile = read('infra/api/Dockerfile');
 
 const SHA = '0123456789abcdef0123456789abcdef01234567';
@@ -64,8 +64,8 @@ test('工作流：发布镜像不读写 Actions 缓存', () => {
     'no-cache: true',
     'cache-from: type=gha,scope=x\n          cache-to: type=gha,mode=max,scope=x',
   );
-  assert.notEqual(withCache, images, 'publish-main.yml 里应当有 no-cache: true');
-  const problems = workflowProblems(withCache, 'publish-main.yml', { publishesImages: true });
+  assert.notEqual(withCache, images, 'publish.yml 里应当有 no-cache: true');
+  const problems = workflowProblems(withCache, 'publish.yml', { publishesImages: true });
   assertProblem(problems, /发布镜像不能读写 Actions 缓存（cache-from: type=gha/);
   assertProblem(problems, /发布镜像不能读写 Actions 缓存（cache-to: type=gha/);
   // 不发布镜像的工作流可以用缓存（CI 的构建缓存不进发布镜像）。
@@ -77,10 +77,10 @@ test('工作流：发布镜像不读写 Actions 缓存', () => {
     for (const service of ['api', 'web']) {
       cpSync(join(root, 'infra', service), join(dir, 'infra', service), { recursive: true });
     }
-    writeFileSync(join(dir, '.github', 'workflows', 'publish-main.yml'), withCache.replace(/docker\/login-action@[0-9a-f]{40} # \S+/, 'docker/login-action@v3'));
+    writeFileSync(join(dir, '.github', 'workflows', 'publish.yml'), withCache.replace(/docker\/login-action@[0-9a-f]{40} # \S+/, 'docker/login-action@v3'));
     const found = checkPins(dir);
-    assertProblem(found, /images\.yml:\d+：docker\/login-action@v3 要固定/);
-    assertProblem(found, /images\.yml:\d+：发布镜像不能读写 Actions 缓存/);
+    assertProblem(found, /publish\.yml:\d+：docker\/login-action@v3 要固定/);
+    assertProblem(found, /publish\.yml:\d+：发布镜像不能读写 Actions 缓存/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
