@@ -1,7 +1,7 @@
 //! Fixed NyxID proxy operations using the browser's original, separately scoped Agent Key.
 use super::{
     agent_key::{self, Browser, Credential, Purpose},
-    worker, OAuthService,
+    worker,
 };
 use crate::{error::ApiError, routes::ApiJson, AppState};
 use axum::{
@@ -89,8 +89,10 @@ async fn revoke_key(
         .await
         .map_err(mapped)
 }
-fn target(oauth: &OAuthService, path: &str) -> url::Url {
-    oauth.endpoint(&format!("/api/v1/proxy/s/llm-nyx/v1/{path}"))
+fn target(base: &url::Url, path: &str) -> url::Url {
+    let mut url = base.clone();
+    url.set_path(&format!("/api/v1/proxy/s/llm-nyx/v1/{path}"));
+    url
 }
 struct Access {
     browser: Browser,
@@ -132,7 +134,7 @@ impl Access {
             .browser
             .oauth
             .http
-            .get(target(&self.browser.oauth, path))
+            .get(target(&self.browser.oauth.base_url, path))
             .bearer_auth(self.credential.value())
             .send()
             .await
@@ -222,7 +224,7 @@ async fn message(
         .browser
         .oauth
         .nyxagent_http
-        .post(target(&a.browser.oauth, "responses"))
+        .post(target(&a.browser.oauth.base_url, "responses"))
         .bearer_auth(a.credential.value())
         .header("Idempotency-Key", &input.idempotency_key)
         .json(&body)
