@@ -72,7 +72,11 @@ it('从工作台发送、显示完成预览，再用同一个会话续聊', asyn
   await screen.findByText('草稿预览 /preview#t=safe-preview-token');
   expect(preview).toHaveBeenCalledWith('/preview#t=safe-preview-token');
   expect(readNyxagentNote('alice', 'lobby').pending).toBeUndefined();
-  expect(writes[0]).toMatchObject({ spaceId: 'lobby', instruction: '添加欢迎牌' });
+  expect(writes[0]).toMatchObject({
+    spaceId: 'lobby',
+    instruction: '添加欢迎牌',
+    instructionsVersion: 2,
+  });
   expect(writes[0]).not.toHaveProperty('conversationId');
   await userEvent.type(screen.getByRole('textbox', { name: '给 NyxAgent 发消息' }), '改成蓝色');
   await userEvent.click(screen.getByRole('button', { name: '发送给 NyxAgent' }));
@@ -101,6 +105,7 @@ it('断流后刷新只恢复本地状态，用户恢复时重发完全相同的�
   expect(writes).toHaveLength(1);
   const pending = readNyxagentNote('alice', 'lobby').pending;
   expect(pending?.responseId).toBe('resp_test');
+  expect(pending?.body.instructionsVersion).toBe(2);
   expect(pending?.body).not.toHaveProperty('conversationId');
   view.unmount();
   render(<NyxAgentPanel {...props} />);
@@ -135,4 +140,84 @@ it('换 Key 后不能恢复旧请求，也不会自动创建任务', async () =>
   expect(screen.getByRole('button', { name: '恢复 NyxAgent 原请求' })).toBeDisabled();
   expect(screen.getByRole('button', { name: '核对 NyxAgent 结果' })).toBeDisabled();
   expect(request).toHaveBeenCalledTimes(1);
+});
+
+it('升级后恢复旧待确认请求，不补写新协议版本', async () => {
+  const body = {
+    spaceId: 'lobby',
+    instruction: '旧版未完成的修改',
+    idempotencyKey: 'stable-legacy-request-001',
+  };
+  saveNyxagentNote('alice', 'lobby', {
+    instruction: '',
+    messages: [],
+    pending: { body, credentialVersion: identity.credentialVersion },
+  });
+  const writes: string[] = [];
+  const request = vi.fn<typeof fetch>(async (url, init) => {
+    if (String(url).endsWith('/key/check')) return Response.json(identity);
+    if (String(url).endsWith('/message')) {
+      writes.push(String(init?.body));
+      return sse();
+    }
+    throw new Error(`unexpected ${url}`);
+  });
+  render(
+    <NyxAgentPanel
+      session={session}
+      space={space}
+      request={request}
+      onPreview={vi.fn()}
+      onBusy={vi.fn()}
+    />,
+  );
+  await screen.findByText('已连接 NyxAgent · NyxAgent');
+  expect(writes).toEqual([]);
+  await userEvent.click(screen.getByRole('button', { name: '恢复 NyxAgent 原请求' }));
+  await screen.findByText('草稿预览 /preview#t=safe-preview-token');
+  expect(writes).toEqual([JSON.stringify(body)]);
+});
+
+it('主动中断显示可操作的提示，并保留响应与原请求', async () => {
+  const request = vi.fn<typeof fetch>(async (url, init) => {
+    if (String(url).endsWith('/key/check')) return Response.json(identity);
+    if (String(url).endsWith('/message')) {
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode(
+                `data: ${JSON.stringify({ type: 'response.created', response: { id: 'resp_test', conversation: { id: 'conv_test' } } })}\n\n`,
+              ),
+            );
+            init?.signal?.addEventListener('abort', () =>
+              controller.error(new DOMException('BodyStreamBuffer was aborted', 'AbortError')),
+            );
+          },
+        }),
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      );
+    }
+    throw new Error(`unexpected ${url}`);
+  });
+  render(
+    <NyxAgentPanel
+      session={session}
+      space={space}
+      request={request}
+      onPreview={vi.fn()}
+      onBusy={vi.fn()}
+    />,
+  );
+  await screen.findByText('已连接 NyxAgent · NyxAgent');
+  await userEvent.type(screen.getByRole('textbox', { name: '给 NyxAgent 发消息' }), '修改立方体');
+  await userEvent.click(screen.getByRole('button', { name: '发送给 NyxAgent' }));
+  await waitFor(() =>
+    expect(readNyxagentNote('alice', 'lobby').pending?.responseId).toBe('resp_test'),
+  );
+  await userEvent.click(screen.getByRole('button', { name: '中断连接' }));
+  await screen.findByText('连接已中断，操作结果尚未确认。请先核对结果，避免重复操作。');
+  expect(screen.queryByText('BodyStreamBuffer was aborted')).toBeNull();
+  expect(readNyxagentNote('alice', 'lobby').pending?.body.instruction).toBe('修改立方体');
+  expect(screen.getByRole('button', { name: '核对 NyxAgent 结果' })).toBeEnabled();
 });

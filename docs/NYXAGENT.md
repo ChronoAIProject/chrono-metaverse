@@ -30,7 +30,9 @@ NyxAgent 与 CMA 分别授权、保存凭据。Key 留在此浏览器的独立�
 
 本地联调可使用真实本地 NyxID；授权页支持 HTTPS，或仅指向 `localhost`、IPv4/IPv6 回环地址的 HTTP。普通内网地址和远程 HTTP 地址仍会被拒绝。NyxID 的 `FRONTEND_URL` 应指向本地授权网页，Metaverse 的 `NYXID_BASE_URL`、JWKS 和签发方应指向本地 NyxID 后端。
 
-NyxID 的 OpenAPI 抓取策略可能拒绝本地地址，此时服务提供 `chrono-metaverse__request` 通用工具。可通过该工具读取 `/api/openapi.json`，再按文档调用实际接口；例如 `get_space` 对应 `GET /api/v1/spaces/{space_id}`。
+NyxID 的 OpenAPI 抓取策略可能拒绝本地地址，此时服务提供 `chrono-metaverse__request` 通用工具。新消息会引导助手先通过该工具读取 `GET /api/agent-guide`；指南包含草稿、修订、预览、发布和取消流程，以及能直接通过实际接口校验的物件示例。更多接口仍可读取 `/api/openapi.json`。指南是公开的静态协议说明，不包含空间数据，也不改变鉴权或 NyxID 的地址抓取策略。
+
+新消息使用 `instructionsVersion: 2` 固定这份引导；待确认消息原样保存该版本。旧消息省略版本或使用 `1` 时，服务端仍生成旧版上游请求，升级后重试不会改变幂等请求内容；其他版本在调用上游前返回 422。
 
 这条通道使用 NyxAgent 的 Key 绑定会话，不包含个人 NyxBot 的历史、记忆或 specialists。扫描、文件导入和主机重建仍使用 CMA 或本地重建工具。
 

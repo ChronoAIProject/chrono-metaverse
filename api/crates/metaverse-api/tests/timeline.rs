@@ -49,6 +49,60 @@ fn ids(list: &Value, key: &str) -> Vec<String> {
 }
 
 #[tokio::test]
+async fn agent_guide_example_creates_a_real_preview_without_layout_or_publication() {
+    let Some(app) = TestApp::start().await else {
+        return;
+    };
+    app.create_space(SPACE).await;
+    let guide = app.public("/api/agent-guide", None).await;
+    assert_eq!(guide.status, StatusCode::OK);
+    let text = std::str::from_utf8(&guide.bytes).unwrap();
+    let example = text
+        .split_once("```json\n")
+        .unwrap()
+        .1
+        .split_once("```")
+        .unwrap()
+        .0;
+    let body: Value = serde_json::from_str(example).unwrap();
+    let id = new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await;
+    let path = draft_path(SPACE, &id);
+    let updated = app
+        .org(Method::POST, &format!("{path}/ops"), Some(body))
+        .await;
+    assert_eq!(updated.status, StatusCode::OK, "{:?}", updated.body);
+    assert_eq!(updated.body["rev"], 1);
+    let preview = app
+        .org(
+            Method::POST,
+            &format!("{path}/preview"),
+            Some(json!({"ttlSeconds":3600})),
+        )
+        .await;
+    assert_eq!(preview.status, StatusCode::CREATED, "{:?}", preview.body);
+    let auth = format!("Preview {}", preview.body["token"].as_str().unwrap());
+    let view = app.public("/api/public/previews", Some(&auth)).await;
+    assert_eq!(view.status, StatusCode::OK);
+    assert_eq!(
+        view.body["entities"][0]["body"]["shape"]["size"],
+        json!([1.0, 1.0, 1.0])
+    );
+    assert_eq!(
+        view.body["entities"][0]["body"]["shape"]["material"]["color"],
+        json!([255, 0, 0])
+    );
+    let published = app
+        .org(
+            Method::GET,
+            &format!("/api/v1/spaces/{SPACE}/snapshot"),
+            None,
+        )
+        .await;
+    assert_eq!(published.body["seq"], 1);
+    assert!(published.body["entities"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn genesis_layout_drafts_preview_publish_and_reads() {
     let Some(app) = TestApp::start().await else {
         return;

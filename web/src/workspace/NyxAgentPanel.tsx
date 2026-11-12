@@ -153,7 +153,13 @@ export function NyxAgentPanel({
       if (mounted.current) finished(response);
     } catch (failure) {
       if (mounted.current) {
-        setError(failure instanceof Error ? failure.message : '结果尚未确认，请恢复原请求。');
+        setError(
+          controller.signal.aborted
+            ? '连接已中断，操作结果尚未确认。请先核对结果，避免重复操作。'
+            : failure instanceof Error
+              ? failure.message
+              : '结果尚未确认，请恢复原请求。',
+        );
         setActivity('结果尚未确认');
         setConnectionCheck((v) => v + 1);
       }
@@ -173,6 +179,7 @@ export function NyxAgentPanel({
       ...(orgId ? { orgId } : {}),
       instruction: note.instruction,
       idempotencyKey: crypto.randomUUID(),
+      instructionsVersion: 2 as const,
       ...(note.conversationId ? { conversationId: note.conversationId } : {}),
     };
     try {

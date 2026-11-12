@@ -196,6 +196,50 @@ async fn nyxagent_preserves_original_key_stream_conversation_and_idempotency_wit
 }
 
 #[tokio::test]
+async fn nyxagent_versions_instructions_without_changing_legacy_retries() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let cookie = setup(&app).await;
+    for version in [None, Some(1), Some(2), None] {
+        let mut input = task();
+        if let Some(version) = version {
+            input["instructionsVersion"] = json!(version);
+        }
+        let result = call(&app, &cookie, "message", input).await;
+        assert_eq!(result.0, StatusCode::OK, "{}", result.2);
+    }
+    {
+        let state = app.nyx.oauth.0.lock().unwrap();
+        let bodies: Vec<_> = state.worker_calls.iter().map(|(_, _, b)| b).collect();
+        assert_eq!(bodies.len(), 4);
+        assert_eq!(bodies[0], bodies[1]);
+        assert_eq!(bodies[0], bodies[3]);
+        let legacy = bodies[0]["instructions"].as_str().unwrap();
+        // Pin the actual v1 bytes so an accidental change breaks legacy replay checks.
+        assert_eq!(legacy, "你是 chrono-metaverse 空间助手。只使用 NyxID 已授权的 chrono-metaverse 工具。先搜索工具并读取目标空间和最新版本，编号和归属不授予权限；404 不代表可以创建替代空间。缺少权限时提供 NyxID 授权指引。编辑先创建或沿用当前草稿，每次可见修改后生成新的短期预览，把完整预览链接单独一行输出。没有用户对具体预览的明确发布确认时保持草稿；发布冲突时等待，不覆盖、不自动重放。不要索取或输出密钥和登录凭据，不改仓库、不部署、不访问无关服务。回复简短说明实际进展，不能把任务受理当作完成。");
+        assert!(bodies[2]["instructions"]
+            .as_str()
+            .unwrap()
+            .starts_with(legacy));
+        assert!(bodies[2]["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("GET /api/agent-guide"));
+        assert_eq!(bodies[0]["input"], bodies[2]["input"]);
+    }
+    for version in [json!(0), json!(3), json!("2"), json!(-1)] {
+        let mut input = task();
+        input["instructionsVersion"] = version;
+        assert_eq!(
+            call(&app, &cookie, "message", input).await.0,
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+    }
+    assert_eq!(app.nyx.oauth.0.lock().unwrap().worker_calls.len(), 4);
+}
+
+#[tokio::test]
 async fn nyxagent_rejects_cross_account_broad_or_incomplete_keys_before_model_or_write() {
     let Some(app) = TestApp::start_with_options(true, true).await else {
         return;
