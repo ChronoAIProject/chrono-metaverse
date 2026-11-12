@@ -218,8 +218,9 @@ jobs:
         env:
           TARGET_BRANCH: ${{ github.base_ref }}
           SOURCE_BRANCH: ${{ github.head_ref }}
+          SOURCE_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         run: |
-          if [[ "$TARGET_BRANCH" != dev ]] && [[ "$TARGET_BRANCH" != main || "$SOURCE_BRANCH" != dev ]]; then
+          if [[ "$TARGET_BRANCH" != dev ]] && [[ "$TARGET_BRANCH" != main || "$SOURCE_BRANCH" != dev || "$SOURCE_REPO" != "$GITHUB_REPOSITORY" ]]; then
             echo "::error::开发改动合入 dev；正式版只从 dev 合入 main"
             exit 1
           fi

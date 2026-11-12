@@ -15,18 +15,16 @@ test.beforeEach(async ({ page }) => {
     }),
   );
   await page.route('**/api/public/{chunks,assets}/**', async (route) => {
-    const response = await route.fetch({
+    await route.continue({
       headers: {
         ...route.request().headers(),
         Authorization: 'Share fixture-share-token-0123456789abcdef',
       },
     });
-    await route.fulfill({ response });
   });
 });
 
-// Finish fixture asset callbacks before Playwright closes the page.
-// Waiting preserves real route errors instead of suppressing them at teardown.
+// 等夹具回调结束后再关闭页面，保留真实的路由错误。
 test.afterEach(async ({ page }) => {
   await page.unrouteAll({ behavior: 'wait' });
 });
