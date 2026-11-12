@@ -99,7 +99,13 @@ struct Service {
 impl Service {
     fn slug_for(&self, purpose: Purpose) -> Option<&str> {
         match purpose {
-            Purpose::NyxAgent => self.catalog_service_slug.as_deref(),
+            // Metaverse deployments are registered directly in NyxID and have
+            // no catalog entry. Catalog identities still take precedence, and
+            // model services must retain their catalog identity.
+            Purpose::NyxAgent => self
+                .catalog_service_slug
+                .as_deref()
+                .or_else(|| (self.slug == "chrono-metaverse").then_some(self.slug.as_str())),
             Purpose::Cma => (self.catalog_service_slug.as_deref() == Some(self.slug.as_str()))
                 .then_some(self.slug.as_str()),
         }
