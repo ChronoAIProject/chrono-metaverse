@@ -14,7 +14,26 @@ export interface SourceCache {
   readonly maxAgeSeconds?: number;
 }
 
-export interface ExternalSource extends SourceCredit {
+export interface SourceDelivery {
+  /** direct 保持浏览器直连；server 经空间权限校验后由服务器获取。 */
+  readonly delivery?: 'direct' | 'server';
+  /** 三维外部依赖额外允许的 HTTPS 目录，必须以 / 结束。 */
+  readonly resourcePrefixes?: readonly string[];
+}
+
+export interface ExternalRequest {
+  readonly entity: string;
+  readonly kind: 'map' | 'content';
+  readonly source: number;
+  readonly url: string;
+}
+
+export interface ExternalAccess {
+  readonly key: string;
+  readonly load: (request: ExternalRequest, signal: AbortSignal) => Promise<Response>;
+}
+
+export interface ExternalSource extends SourceCredit, SourceDelivery {
   readonly url: string;
   readonly cache?: SourceCache;
 }
@@ -58,6 +77,15 @@ export function validSource(value: Record<string, unknown>): boolean {
   const license = record(value.license);
   const cache = record(value.cache);
   return (
+    (value.delivery === undefined || value.delivery === 'direct' || value.delivery === 'server') &&
+    (value.resourcePrefixes === undefined ||
+      (Array.isArray(value.resourcePrefixes) &&
+        value.resourcePrefixes.length <= 8 &&
+        value.resourcePrefixes.every((prefix: unknown) => {
+          if (!publicHttps(prefix)) return false;
+          const url = new URL(prefix);
+          return url.pathname.endsWith('/') && !url.search;
+        }))) &&
     typeof value.attribution === 'string' &&
     value.attribution.trim().length > 0 &&
     value.attribution.length <= 500 &&

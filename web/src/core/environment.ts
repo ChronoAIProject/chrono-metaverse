@@ -6,11 +6,12 @@ import {
   validSource,
   geographicReference,
   type SourceCredit,
+  type SourceDelivery,
   type SourceCache,
   type GeographicReference,
 } from './externalSource';
 
-export interface TileSource extends SourceCredit {
+export interface TileSource extends SourceCredit, SourceDelivery {
   readonly urlTemplate: string;
   readonly scheme?: 'xyz' | 'tms';
   readonly cache?: SourceCache;

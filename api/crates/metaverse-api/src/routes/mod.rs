@@ -30,6 +30,7 @@ pub mod views;
 pub mod admin_space_settings;
 pub mod blob_response;
 pub mod drafts;
+pub mod external;
 pub mod previews;
 pub mod public_timeline;
 pub mod timeline;
@@ -125,6 +126,10 @@ pub fn router(state: AppState) -> Router {
         ));
     let browser_view = Router::new()
         .route(
+            "/api/auth/nyxid/view/spaces/{space_id}/external",
+            post(external::get_public_external),
+        )
+        .route(
             "/api/auth/nyxid/view/spaces/{space_id}",
             post(public_spaces::get_public_space),
         )
@@ -157,6 +162,14 @@ pub fn router(state: AppState) -> Router {
             crate::auth::oauth::catalog::read,
         ));
     let public = Router::new()
+        .route(
+            "/api/public/spaces/{space_id}/external",
+            get(external::get_public_external),
+        )
+        .route(
+            "/api/public/previews/external",
+            get(external::get_preview_external),
+        )
         .route(
             "/api/public/spaces/{space_id}",
             get(public_spaces::get_public_space),

@@ -28,6 +28,8 @@ use utoipa::{
     ),
     paths(
         crate::health::healthz,
+        crate::routes::external::get_public_external,
+        crate::routes::external::get_preview_external,
         serve,
         crate::routes::spaces::get_space,
         crate::routes::admin_spaces::create_space,

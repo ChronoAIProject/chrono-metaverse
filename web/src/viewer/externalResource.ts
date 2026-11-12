@@ -1,4 +1,10 @@
-import { publicHttps, type SourceCache } from '../core/externalSource';
+import {
+  publicHttps,
+  type SourceCache,
+  type SourceDelivery,
+  type ExternalAccess,
+  type ExternalRequest,
+} from '../core/externalSource';
 
 export const EXTERNAL_RESOURCE_CACHE = 'chrono-metaverse-external-resources-v1';
 const MAX_CACHE_BYTES = 256 * 1024 * 1024;
@@ -132,4 +138,25 @@ export async function externalResponse(
       .catch(() => undefined);
   }
   return result;
+}
+
+/** 服务端来源不降级为浏览器直连，避免绕过来源拒绝和空间权限。 */
+export async function sourceResponse(
+  source: SourceDelivery & { readonly cache?: SourceCache },
+  access: ExternalAccess | undefined,
+  request: ExternalRequest,
+  signal: AbortSignal,
+  maxBytes = 32 * 1024 * 1024,
+): Promise<Response> {
+  if (source.delivery !== 'server')
+    return externalResponse(request.url, signal, source.cache, maxBytes);
+  if (!access) throw new Error('当前查看方式未提供服务端资源访问权限');
+  const response = await access.load(
+    request,
+    AbortSignal.any([signal, AbortSignal.timeout(30000)]),
+  );
+  if (!response.ok) throw new Error(`外部资源请求失败（${response.status}）`);
+  const bytes = await boundedBody(response, maxBytes);
+  signal.throwIfAborted();
+  return new Response(bytes, { headers: response.headers });
 }

@@ -1,3 +1,4 @@
+import type { ExternalAccess } from '../core/externalSource';
 import * as THREE from 'three';
 import { environmentOf, type Environment } from '../core/environment';
 import { GRID_UNIT } from '../core/chunk';
@@ -23,18 +24,28 @@ export class EnvironmentView {
   }
 
   setContent(content: SceneContent): void {
-    let selected: { environment: Environment; placement: Placement } | null = null;
+    let selected: {
+      environment: Environment;
+      placement: Placement;
+      entity: string;
+      access?: ExternalAccess;
+    } | null = null;
     for (const member of content.members) {
       for (const entity of member.view.entities) {
         const environment = environmentOf(entity);
         if (environment) {
-          selected = { environment, placement: member.placement };
+          selected = {
+            environment,
+            placement: member.placement,
+            entity: entity.entityId,
+            access: member.external,
+          };
           break;
         }
       }
       if (selected) break;
     }
-    const key = JSON.stringify(selected);
+    const key = JSON.stringify(selected && { ...selected, access: selected.access?.key });
     if (key === this.key) return;
     this.clear();
     this.key = key;
@@ -44,7 +55,10 @@ export class EnvironmentView {
     this.scene.background = new THREE.Color(0xbad4e5);
     this.host.dataset.environment = 'true';
     if (environment.map) {
-      this.map = new GeographicMap(environment.map, this.host);
+      this.map = new GeographicMap(environment.map, this.host, {
+        entity: selected.entity,
+        access: selected.access,
+      });
       this.map.group.rotation.y = THREE.MathUtils.degToRad(placement.rotation);
       this.map.group.position.fromArray(placement.offset).multiplyScalar(GRID_UNIT);
       this.scene.add(this.map.group);

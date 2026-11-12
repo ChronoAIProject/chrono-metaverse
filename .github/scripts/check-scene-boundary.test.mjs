@@ -61,14 +61,22 @@ test("场景专用值和源码依赖会失败，夹具和测试可以使用示�
       join(root, "web/src/viewer/source.ts"),
       'const url = "https://provider.example.org/tiles/";',
     );
+    mkdirSync(join(root, "api/crates/metaverse-api/src/external"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(root, "api/crates/metaverse-api/src/external/transport.rs"),
+      'const HOST: &str = "provider.example.org";',
+    );
     const errors = violations(root);
-    assert.equal(errors.length, 5);
+    assert.equal(errors.length, 6);
     assert(errors.some((error) => error.includes("包含场景提供方地址")));
     assert(errors.some((error) => error.includes("通用编辑层不能依赖")));
     assert(errors.some((error) => error.includes("web/src/viewer.ts")));
     assert(errors.some((error) => error.includes("生产核心依赖 scenes/")));
     assert(errors.some((error) => error.includes("recon/src/model.py")));
     for (const file of [
+      "api/crates/metaverse-api/src/external/transport.rs",
       "web/src/viewer.ts",
       "web/src/viewer/source.ts",
       "sdk/typescript/src/import.ts",

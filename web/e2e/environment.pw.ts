@@ -12,9 +12,10 @@ for (let i = 0; i < pixels.length; i += 3) {
 }
 const tile = Buffer.from(encodePng(64, 64, pixels));
 
-async function prepare(page: Page, fallback = false) {
+async function prepare(page: Page, fallback = false, server = false) {
   const sources = [
     {
+      ...(server ? { delivery: 'server' } : {}),
       urlTemplate: 'https://tiles.example.org/{z}/{x}/{y}',
       attribution: '测试全球地图',
       page: 'https://tiles.example.org/',
@@ -142,4 +143,33 @@ test('地图源失败和浏览器存储不可用时使用配置的全球影像�
   await expect(viewer).toHaveAttribute('data-map-failed', '0');
   await expect(page.getByLabel('地图来源')).toContainText('测试全球地图');
   expect(Number(await viewer.getAttribute('data-map-zoom'))).toBeGreaterThanOrEqual(15);
+});
+
+test('地图服务端来源携带预览权限并避免浏览器直连瓦片', async ({ page }) => {
+  await prepare(page, false, true);
+  const requests: string[] = [];
+  let direct = 0;
+  page.on('request', (request) => {
+    if (request.url().startsWith('https://tiles.example.org/')) direct++;
+  });
+  await page.route('**/api/public/previews/external?**', async (route) => {
+    const request = route.request();
+    requests.push(request.url());
+    expect((await request.allHeaders()).authorization).toMatch(/^Preview /);
+    await route.fulfill({
+      body: tile,
+      contentType: 'image/png',
+      headers: { 'cache-control': 'no-store' },
+    });
+  });
+  await page.goto(PREVIEW);
+  await ready(page);
+  expect(requests.length).toBeGreaterThan(0);
+  expect(
+    requests.every((value) => {
+      const query = new URL(value).searchParams;
+      return query.get('kind') === 'map' && query.get('entity') === 'environment-test';
+    }),
+  ).toBe(true);
+  expect(direct).toBe(0);
 });

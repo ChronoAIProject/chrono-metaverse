@@ -1,3 +1,4 @@
+import type { ExternalAccess } from './externalSource';
 import type {
   Anchor,
   EntityBody,
@@ -19,6 +20,7 @@ import type { LayerChunk, VoxelSource } from './voxels';
  * 结构元素和物体都是物件（形状词表），方块风格内容是区块。
  */
 export interface SceneDocument {
+  readonly external?: ExternalAccess;
   readonly spaceId: string;
   readonly name?: string;
   readonly seq: number;
@@ -34,13 +36,14 @@ export interface SceneDocument {
 
 /** 同时下载的区块数上限。 */
 const CHUNK_CONCURRENCY = 6;
+let resourceSerial = 0;
 
 /** 加载进度：已完成的区块数和总数。 */
 export type ChunkProgress = (done: number, total: number) => void;
 
 /** 快照 → 场景文档：并发下载区块（每个都核对哈希）。 */
 export async function loadScene(
-  client: Pick<PublicClient, 'chunk'>,
+  client: Pick<PublicClient, 'chunk' | 'external'>,
   snapshot: Snapshot,
   name?: string,
   onProgress?: ChunkProgress,
@@ -68,6 +71,13 @@ export async function loadScene(
   };
   await Promise.all(Array.from({ length: Math.min(CHUNK_CONCURRENCY, refs.length) }, worker));
   return {
+    external: client.external
+      ? {
+          key: `${snapshot.spaceId}:${snapshot.seq}:${++resourceSerial}`,
+          load: (resource, signal) =>
+            client.external!(snapshot.spaceId, snapshot.seq, resource, signal),
+        }
+      : undefined,
     spaceId: snapshot.spaceId,
     name,
     seq: snapshot.seq,
@@ -382,6 +392,7 @@ export function anchorPosition(anchor: Anchor): [number, number, number] | null 
 
 /** 交给三维场景的一个成员：某个空间在某个视图下的内容和它的摆放。 */
 export interface MemberContent {
+  readonly external?: ExternalAccess;
   readonly spaceId: string;
   /** 组合页给成员标名字（纯文本）。 */
   readonly name?: string;

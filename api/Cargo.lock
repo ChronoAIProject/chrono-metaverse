@@ -1301,6 +1301,7 @@ dependencies = [
  "flate2",
  "futures-util",
  "governor",
+ "httpdate",
  "metaverse-core",
  "meteroid-utoipa",
  "mongodb",

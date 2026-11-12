@@ -65,13 +65,13 @@ export function violations(root) {
       const source = readFileSync(file, "utf8").split(/^#\[cfg\(test\)\]/m)[0];
       const errors = [];
       if (
-        /^web\/src\/(viewer\/|core\/(externalSource|environment)\.ts$)/.test(
+        /^(web\/src\/(viewer\/|core\/(externalSource|environment)\.ts$)|api\/crates\/metaverse-api\/src\/(external\/|routes\/external\.rs$))/.test(
           relative(root, file),
         )
       ) {
         for (const host of providerHosts)
           if (source.includes(host))
-            errors.push(`通用显示层包含场景提供方地址：${host}`);
+            errors.push(`通用资源层包含场景提供方地址：${host}`);
       }
       if (
         [

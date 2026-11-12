@@ -131,6 +131,7 @@ export function SpacePage({
           view,
           scan,
           scanTransform: scene.scan?.transform,
+          external: scene.external,
           placement: IDENTITY_PLACEMENT,
         },
       ],

@@ -67,6 +67,14 @@ export function PreviewPage({
 
   const assets = useMemo(
     () => ({
+      external: client.previewExternal
+        ? (
+            _space: string,
+            _seq: number,
+            resource: import('../core/externalSource').ExternalRequest,
+            signal: AbortSignal,
+          ) => client.previewExternal!(token ?? '', resource, signal)
+        : undefined,
       chunk: (hash: string) => client.previewChunk(token ?? '', hash),
       asset: (hash: string) => client.previewAsset(token ?? '', hash),
       assetBlob: (hash: string) => client.previewAssetBlob(token ?? '', hash),
@@ -138,6 +146,7 @@ export function PreviewPage({
           view,
           scan: bytes,
           scanTransform: scene.scan?.transform,
+          external: scene.external,
           placement: IDENTITY_PLACEMENT,
         },
       ],

@@ -1,3 +1,4 @@
+import type { ExternalAccess } from '../core/externalSource';
 import * as THREE from 'three';
 import type { GeographicMap as MapConfig } from '../core/environment';
 import {
@@ -69,6 +70,7 @@ export class GeographicMap {
   constructor(
     private readonly config: MapConfig,
     private readonly host: HTMLElement,
+    private readonly resource?: { entity: string; access?: ExternalAccess },
   ) {
     this.reference = new GeoReference(config);
     this.maxZoom = Math.max(...config.sources.map((source) => source.maxZoom));
@@ -391,7 +393,16 @@ export class GeographicMap {
   private async load(node: Node): Promise<void> {
     for (const source of tileSources(node, this.config.sources)) {
       try {
-        const image = await mapTileImage(tileUrl(node, source), this.abort.signal, source.cache);
+        const image = await mapTileImage(tileUrl(node, source), this.abort.signal, source.cache, {
+          source,
+          access: this.resource?.access,
+          request: {
+            entity: this.resource?.entity ?? '',
+            kind: 'map',
+            source: this.config.sources.indexOf(source),
+            url: tileUrl(node, source),
+          },
+        });
         if (this.disposed) {
           image.close();
           return;

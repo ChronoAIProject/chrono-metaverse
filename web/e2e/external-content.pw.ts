@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Route } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { MODELS } from '../src/fixtures/assets';
 import { encodePng } from '../src/fixtures/png';
@@ -43,8 +43,95 @@ async function prepare(
   denied = false,
   dependencies = false,
   hierarchy = false,
+  server = false,
 ) {
   const seen: { url: string; authorization?: string; cookie?: string }[] = [];
+  async function fulfillResource(route: Route, url: string, host: string) {
+    if (host === 'denied.example.org') {
+      await route.fulfill({
+        status: 403,
+        body: 'Direct download is not permitted',
+        headers: cors,
+      });
+    } else if (url.endsWith('logo.png')) {
+      await route.fulfill({ body: logo, contentType: 'image/png', headers: cors });
+    } else if (url.endsWith('.b3dm')) {
+      await route.fulfill({
+        body: compressedTile,
+        contentType: 'application/octet-stream',
+        headers: cors,
+      });
+    } else if (url.endsWith('model.gltf')) {
+      await route.fulfill({ json: externalGltf, headers: cors });
+    } else if (url.endsWith('geometry.bin')) {
+      await route.fulfill({
+        body: externalBin,
+        contentType: 'application/octet-stream',
+        headers: cors,
+      });
+    } else if (url.endsWith('texture.png')) {
+      await route.fulfill({ body: externalImage, contentType: 'image/png', headers: cors });
+    } else if (url.endsWith('model.glb')) {
+      await route.fulfill({
+        body: Buffer.from(MODELS.crate.bytes),
+        contentType: 'model/gltf-binary',
+        headers: cors,
+      });
+    } else {
+      const position = ecef(151.2, -33.8);
+      const transform = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, position.x, position.y, position.z, 1];
+      await route.fulfill({
+        json: {
+          asset: { version: '1.0' },
+          geometricError: 0,
+          root: {
+            boundingVolume: { sphere: [0, 0, 0, hierarchy ? 2000000 : 20] },
+            geometricError: hierarchy ? 100000000 : 0,
+            refine: 'REPLACE',
+            ...(host === 'city-b.example.org' ? { transform } : {}),
+            ...(hierarchy
+              ? {
+                  children: [
+                    {
+                      boundingVolume: { sphere: [0, 0, 0, 20] },
+                      geometricError: 0,
+                      content: { uri: 'model.b3dm' },
+                    },
+                    {
+                      boundingVolume: { sphere: [0, -1000000, 0, 20] },
+                      geometricError: 0,
+                      content: { uri: 'invisible.b3dm' },
+                    },
+                  ],
+                }
+              : {
+                  content: {
+                    uri:
+                      host === 'city-b.example.org'
+                        ? 'model.glb'
+                        : dependencies
+                          ? 'model.gltf'
+                          : 'model.b3dm',
+                  },
+                }),
+          },
+        },
+        headers: { ...cors, ...(fallback ? { 'cache-control': 'no-store' } : {}) },
+      });
+    }
+  }
+  if (server)
+    await page.route('**/api/public/previews/external?**', async (route) => {
+      const request = route.request();
+      const headers = await request.allHeaders();
+      seen.push({
+        url: request.url(),
+        authorization: headers.authorization,
+        cookie: headers.cookie,
+      });
+      const url = new URL(request.url()).searchParams.get('url')!;
+      await fulfillResource(route, url, new URL(url).hostname);
+    });
   for (const host of ['city-a.example.org', 'city-b.example.org', 'denied.example.org']) {
     await page.route(`https://${host}/**`, async (route) => {
       const request = route.request();
@@ -54,95 +141,7 @@ async function prepare(
         authorization: headers.authorization,
         cookie: headers.cookie,
       });
-      if (host === 'denied.example.org') {
-        await route.fulfill({
-          status: 403,
-          body: 'Direct download is not permitted',
-          headers: cors,
-        });
-      } else if (request.url().endsWith('logo.png')) {
-        await route.fulfill({ body: logo, contentType: 'image/png', headers: cors });
-      } else if (request.url().endsWith('.b3dm')) {
-        await route.fulfill({
-          body: compressedTile,
-          contentType: 'application/octet-stream',
-          headers: cors,
-        });
-      } else if (request.url().endsWith('model.gltf')) {
-        await route.fulfill({ json: externalGltf, headers: cors });
-      } else if (request.url().endsWith('geometry.bin')) {
-        await route.fulfill({
-          body: externalBin,
-          contentType: 'application/octet-stream',
-          headers: cors,
-        });
-      } else if (request.url().endsWith('texture.png')) {
-        await route.fulfill({ body: externalImage, contentType: 'image/png', headers: cors });
-      } else if (request.url().endsWith('model.glb')) {
-        await route.fulfill({
-          body: Buffer.from(MODELS.crate.bytes),
-          contentType: 'model/gltf-binary',
-          headers: cors,
-        });
-      } else {
-        const position = ecef(151.2, -33.8);
-        const transform = [
-          1,
-          0,
-          0,
-          0,
-          0,
-          1,
-          0,
-          0,
-          0,
-          0,
-          1,
-          0,
-          position.x,
-          position.y,
-          position.z,
-          1,
-        ];
-        await route.fulfill({
-          json: {
-            asset: { version: '1.0' },
-            geometricError: 0,
-            root: {
-              boundingVolume: { sphere: [0, 0, 0, hierarchy ? 2000000 : 20] },
-              geometricError: hierarchy ? 100000000 : 0,
-              refine: 'REPLACE',
-              ...(host === 'city-b.example.org' ? { transform } : {}),
-              ...(hierarchy
-                ? {
-                    children: [
-                      {
-                        boundingVolume: { sphere: [0, 0, 0, 20] },
-                        geometricError: 0,
-                        content: { uri: 'model.b3dm' },
-                      },
-                      {
-                        boundingVolume: { sphere: [0, -1000000, 0, 20] },
-                        geometricError: 0,
-                        content: { uri: 'invisible.b3dm' },
-                      },
-                    ],
-                  }
-                : {
-                    content: {
-                      uri:
-                        host === 'city-b.example.org'
-                          ? 'model.glb'
-                          : dependencies
-                            ? 'model.gltf'
-                            : 'model.b3dm',
-                    },
-                  }),
-            },
-          },
-          headers: { ...cors, ...(fallback ? { 'cache-control': 'no-store' } : {}) },
-        });
-      }
+      await fulfillResource(route, request.url(), host);
     });
   }
   await page.route('**/api/public/previews', async (route) => {
@@ -163,7 +162,10 @@ async function prepare(
           externalContent: {
             version: 1,
             format: '3d-tiles',
-            sources,
+            sources: sources.map((value) => ({
+              ...value,
+              ...(server ? { delivery: 'server' } : {}),
+            })),
             ...(reference ? { reference } : {}),
           },
         },
@@ -347,4 +349,41 @@ test('部分分片失败后仍显示成功内容，并持续保留不完整状�
   await expect(credit).toHaveAttribute('data-visible-tiles', '1');
   await expect(credit).toHaveAttribute('data-state', 'partial');
   await expect(credit).toContainText('来源暂不可用');
+});
+
+test('服务端来源的索引、三维分片及 glTF 依赖统一经过预览授权', async ({ page }) => {
+  const seen = await prepare(page, false, false, true, false, true);
+  await page.goto(PREVIEW);
+  const credit = page.getByLabel('外部内容来源').locator('[data-entity-id="external-a"]');
+  await expect(credit).toHaveAttribute('data-state', 'ready');
+  await expect(credit).toHaveAttribute('data-visible-tiles', '1');
+  const requests = seen.filter((item) => item.url.includes('/previews/external?'));
+  expect(requests).toHaveLength(4);
+  expect(requests.every((item) => item.authorization?.startsWith('Preview '))).toBe(true);
+  expect(
+    requests.map((item) => new URL(item.url).searchParams.get('url')?.split('/').at(-1)).sort(),
+  ).toEqual(['geometry.bin', 'model.gltf', 'texture.png', 'tileset.json']);
+  expect(
+    requests.every((item) => new URL(item.url).searchParams.get('entity') === 'external-a'),
+  ).toBe(true);
+  expect(
+    seen
+      .filter((item) => new URL(item.url).hostname === 'city-a.example.org')
+      .every((item) => item.url.endsWith('logo.png')),
+  ).toBe(true);
+});
+
+test('服务端来源被拒绝后不尝试浏览器直连', async ({ page }) => {
+  const seen = await prepare(page, false, true, false, false, true);
+  await page.goto(PREVIEW);
+  await expect(
+    page.getByLabel('外部内容来源').locator('[data-entity-id="external-a"]'),
+  ).toHaveAttribute('data-state', 'failed');
+  expect(seen).toHaveLength(2);
+  expect(seen.some((item) => item.url.includes('/previews/external?'))).toBe(true);
+  expect(
+    seen
+      .filter((item) => new URL(item.url).hostname === 'denied.example.org')
+      .every((item) => item.url.endsWith('logo.png')),
+  ).toBe(true);
 });
