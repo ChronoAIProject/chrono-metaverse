@@ -1,35 +1,37 @@
-name: Images
+name: 发布镜像（仅 main）
 
-# 推送到 main 和开发分支时，构建两个镜像并推到 ghcr.io：
+# 只有 main 可以构建并发布两个镜像到 ghcr.io：
 #   ghcr.io/chronoaiproject/chrono-metaverse-{api,web}
 # （处理服务已下线，不再构建 worker 镜像；线上在换成瘦身后的版本之前仍按摘要跑以前构建的那个。）
-# 标签：短提交哈希（7 位）、分支名（/ 换成 -）；latest 只给 main。
+# 标签：短提交哈希（7 位）、main、latest。
 # 只构建 linux/amd64（chrono-cd 的节点架构）。部署不在这里做，见 infra/chrono-cd/README.md。
 #
-# 标签都可以被改写：触发条件和 packages: write 都由被推分支自己的这个文件声明，有推送权限的人
-# 在任何分支里改一下这里就能覆盖同名标签。所以部署一律按摘要固定：每次运行在摘要里写出
-# `api=sha256:…` 这样的行，部署时从这次提交在部署分支上的运行里复制，交给
-# infra/chrono-cd/pin-images.mjs（不要按标签去仓库查摘要）。
+# main 和 latest 标签会随新构建移动，所以部署始终按本次运行返回的摘要固定。
+# 任务同时校验主线 ref 并使用仅允许 main 的 release 环境。
+# 摘要交给 infra/chrono-cd/pin-images.mjs，不按标签查询摘要。
 
 on:
   push:
     branches:
       - main
-      - claude/happy-ritchie-oly5hx
   workflow_dispatch: {}
 
 # 同一分支的镜像按推送顺序构建，不中途取消（避免分支标签指向半路被取消的那次之前的版本）。
 concurrency:
-  group: images-${{ github.ref }}
+  group: publish-main
   cancel-in-progress: false
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   build:
     name: 镜像 ${{ matrix.image }}
+    if: github.ref == 'refs/heads/main'
+    environment: release
+    permissions:
+      contents: read
+      packages: write
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:

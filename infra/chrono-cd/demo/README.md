@@ -278,8 +278,8 @@ print(len(p['templates']), len(p['entities']), len(p['models']))"      # 0 52 24
 1. **种子导入重建包**（设计 7.3、7.4，前厅第 4 版按这条走）：`metaverse-recon bundle --seed`
    打种子用的包（会公开：去掉内部锚点和建模记录）→ 大文件按 `<sha256>.<扩展名>` 传到本仓库的发布页 `demo-assets`
    （有 gh 写权限时 `gh release upload demo-assets <文件>`，先看发布页已有哪些，同名的不要再传——`gh` 遇到同名会报错，
-   `--clobber` 会覆盖；没有 gh 写权限时用工作流 [`.github/workflows/demo-assets.yml`](../../../.github/workflows/demo-assets.yml)，
-   用法写在文件开头，同名的自动跳过）→ 写来源表（扫描 zip 写成两个 Scaniverse 成员，其余写发布页的下载地址）→
+   `--clobber` 会覆盖；没有 gh 写权限时用工作流 [`.github/workflows/publish-assets-main.yml`](../../../.github/workflows/publish-assets-main.yml)，
+   只允许在 main 运行，用法写在文件开头，同名的自动跳过）→ 写来源表（扫描 zip 写成两个 Scaniverse 成员，其余写发布页的下载地址）→
    清单和来源表提交进本目录的 `lobby-r<版本>/` → 种子配置的 `bundle` 引用这次
    提交的 raw 地址（按 40 位提交哈希固定）和两个文件的 sha256、大小，`revision` 加一 → `node infra/dev/demo-seed.mjs
    compact infra/chrono-cd/demo-seed.json` 的输出就是 `METAVERSE_DEMO_SEED` 的值，跑 `node infra/chrono-cd/check-app.mjs`，

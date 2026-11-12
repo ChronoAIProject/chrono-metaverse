@@ -926,7 +926,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
   - 组织配额由组织下所有应用共用，默认 8 核 / 16Gi / 40 个容器 / 80Gi。
   - 计算方式：Σ(副本数 × 资源申请)，另外为滚动更新预留本应用资源申请最大的那个服务一份，再加 1 个容器。
   - 部署前先查用量，不够就提配额申请。
-- **持续集成**：GitHub Actions 构建并推送两个镜像（`api`、`web`，`.github/workflows/images.yml`），本地重建工具只跑测试、不出镜像；目前由组织 admin 用 chrono-cd 的 `PATCH` 更新镜像版本（`infra/chrono-cd/README.md`），以后可以在工作流里用组织的 NyxID API key 自动调用。
+- **持续集成**：GitHub Actions 构建并推送两个镜像（`api`、`web`，`.github/workflows/publish-main.yml`），本地重建工具只跑测试、不出镜像；目前由组织 admin 用 chrono-cd 的 `PATCH` 更新镜像版本（`infra/chrono-cd/README.md`），以后可以在工作流里用组织的 NyxID API key 自动调用。
 - **注册到 NyxID**：
   - 第一步：组织管理员自助注册自定义服务，地址填应用根地址，OpenAPI 地址填 `https://<应用域名>/api/openapi.json`（只包含 `/api/v1/*`，不含管理接口，`paths` 带 `/api` 前缀），开启身份令牌并设置 `identity_jwt_audience`（9.1）。具体命令见开发教程第 9 节。
   - 要用 agent key 的路径参数限制时（第 3 阶段之前就需要，9.3）：请平台管理员注册成目录服务，并同步接口列表；同时为配置操作范围的人打开 `assistant:operation-scopes` 开关。

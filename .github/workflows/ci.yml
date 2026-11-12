@@ -212,6 +212,15 @@ jobs:
         with:
           go-version: stable
           cache: false
+      - name: 合并请求只允许以 main 为目标
+        if: github.event_name == 'pull_request'
+        env:
+          TARGET_BRANCH: ${{ github.base_ref }}
+        run: |
+          if [[ "$TARGET_BRANCH" != main ]]; then
+            echo "::error::合并请求必须直接合入 main，请调整目标分支"
+            exit 1
+          fi
       - name: 数据访问边界（不需要编译）
         run: bash .github/scripts/check-db-boundary.sh
       # 模拟 NyxID、九步验收脚本的小工具和参数检查（验收本身要起全套和前厅扫描，不在这里跑）。
