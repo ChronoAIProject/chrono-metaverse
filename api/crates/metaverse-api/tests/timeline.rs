@@ -56,6 +56,14 @@ async fn agent_guide_example_creates_a_real_preview_without_layout_or_publicatio
     app.create_space(SPACE).await;
     let guide = app.public("/api/agent-guide", None).await;
     assert_eq!(guide.status, StatusCode::OK);
+    let tool_guide = app.public("/api/v1/agent-guide", None).await;
+    assert_eq!(tool_guide.status, StatusCode::OK);
+    assert_eq!(guide.bytes, tool_guide.bytes);
+    let spec = app.public("/api/openapi.json", None).await;
+    assert_eq!(
+        spec.body["paths"]["/api/v1/agent-guide"]["get"]["operationId"],
+        "get_agent_guide"
+    );
     let text = std::str::from_utf8(&guide.bytes).unwrap();
     let example = text
         .split_once("```json\n")

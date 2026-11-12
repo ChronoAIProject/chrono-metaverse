@@ -29,6 +29,7 @@ use utoipa::{
     paths(
         crate::health::healthz,
         serve,
+        agent_guide,
         crate::routes::spaces::get_space,
         crate::routes::admin_spaces::create_space,
         crate::routes::public_spaces::get_public_space,
@@ -123,6 +124,21 @@ use utoipa::{
     )
 )]
 pub struct ApiDoc;
+
+/// 编辑空间前先读取本指南，了解草稿操作、短期预览及明确确认后发布的协议。
+#[utoipa::path(
+    get,
+    path = "/api/v1/agent-guide",
+    operation_id = "get_agent_guide",
+    tag = "drafts",
+    responses((status = 200, description = "空间编辑协议；不授予权限，也不能替代用户的发布确认", body = String, content_type = "text/markdown"))
+)]
+pub async fn agent_guide() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/markdown; charset=utf-8")],
+        include_str!("../resources/agent-guide.md"),
+    )
+}
 
 struct IdentitySecurity;
 

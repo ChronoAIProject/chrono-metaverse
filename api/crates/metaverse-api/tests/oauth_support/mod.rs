@@ -48,6 +48,7 @@ struct ProviderState {
     worker_bearers: Vec<String>,
     message_refusal: Option<StatusCode>,
     nyxagent_error_code: Option<String>,
+    nyxagent_stream_error: bool,
     cma_auth_reply: Option<(StatusCode, Value)>,
     cma_auth_calls: usize,
     cma_auth_gate: Option<Arc<tokio::sync::Notify>>,
