@@ -473,25 +473,30 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
       if (!session?.connected || !session.workerEnabled || !connectionReady) return;
       const chain: { next?: { intent: Intent; base: Notebook } } = {};
       await action(async (signal) => {
+        const recovery =
+          base.pending?.body.idempotencyKey === intent.body.idempotencyKey ||
+          base.startup?.body.idempotencyKey === intent.body.idempotencyKey;
+        const mayBindCurrent =
+          !recovery || intent.notAdmitted === true || intent.setupRequired === true;
         const pending = intent.setupRequired
           ? {
               ...intent,
               credentialVersion: credentialVersion.current,
               body: { ...intent.body, idempotencyKey: crypto.randomUUID() },
               setupRequired: false,
+              notAdmitted: false,
               lastError: undefined,
             }
           : {
               ...intent,
-              credentialVersion:
-                intent.credentialVersion ??
-                (base.pending?.body.idempotencyKey === intent.body.idempotencyKey ||
-                base.startup?.body.idempotencyKey === intent.body.idempotencyKey
-                  ? undefined
-                  : credentialVersion.current),
+              credentialVersion: mayBindCurrent
+                ? credentialVersion.current
+                : intent.credentialVersion,
+              notAdmitted: false,
               lastError: undefined,
             };
         commit({ ...base, pending });
+        let dispatched = false;
         try {
           if (!validCredentialVersion(pending.credentialVersion))
             throw new WorkerError(
@@ -513,6 +518,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
               sourceFile.sha256 !== pending.body.sha256
             )
               throw new Error('请重新选择同一模型文件，再重试原请求。');
+            dispatched = true;
             const receipt = await uploadModel(
               writeSession,
               String(pending.body.agentId),
@@ -534,6 +540,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
             const follow: Intent = {
               action: 'message',
               credentialVersion: pending.credentialVersion,
+              notAdmitted: true,
               body: {
                 agentId: base.agentId,
                 context: {
@@ -555,6 +562,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
             chain.next = { intent: follow, base: next };
             return;
           }
+          dispatched = true;
           const value = await workerRequest<{
             id?: string;
             responseId?: string;
@@ -616,22 +624,43 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
               : '请求已受理，正在跟进进度。',
           );
         } catch (e) {
+          // 只有已知从未受理的请求可换凭据；本次拒绝不能消除更早一次的未知结果。
+          const notAdmitted =
+            mayBindCurrent &&
+            (!dispatched ||
+              (e instanceof WorkerError &&
+                e.code === 'cma_credential_changed' &&
+                e.status === 409));
+          const failure =
+            notAdmitted && e instanceof WorkerError && e.code === 'cma_credential_changed'
+              ? new WorkerError(
+                  e.code,
+                  '授权已更新，本次提交尚未发送。连接核验后，请重试原请求。',
+                  e.status,
+                )
+              : e;
           if (!signal.aborted)
             commit({
               ...base,
               pending: {
                 ...pending,
-                ...(e instanceof WorkerError && e.code === 'cma_setup_required'
+                notAdmitted,
+                ...(mayBindCurrent && e instanceof WorkerError && e.code === 'cma_setup_required'
                   ? { setupRequired: true }
                   : {}),
                 lastError: {
-                  code: e instanceof WorkerError ? e.code : 'unconfirmed_response',
-                  message: (e instanceof Error ? e.message : '请求结果尚未确认。').slice(0, 2048),
-                  ...(e instanceof WorkerError && e.status ? { status: e.status } : {}),
+                  code: failure instanceof WorkerError ? failure.code : 'unconfirmed_response',
+                  message: (failure instanceof Error
+                    ? failure.message
+                    : '请求结果尚未确认。'
+                  ).slice(0, 2048),
+                  ...(failure instanceof WorkerError && failure.status
+                    ? { status: failure.status }
+                    : {}),
                 },
               },
             });
-          throw e;
+          throw failure;
         }
       });
       if (chain.next) await runIntent(chain.next.intent, chain.next.base);

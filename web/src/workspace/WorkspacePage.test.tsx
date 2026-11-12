@@ -41,6 +41,9 @@ function mockApi(
     loseCreate?: boolean;
     loseMessage?: boolean;
     setup?: boolean;
+    rotateCredential?: boolean;
+    rejectRecoveryCredential?: boolean;
+    setupOnRecovery?: boolean;
     followUp?: boolean;
     operation?: Operation | ((creates: number) => Operation);
     observeFailures?: number;
@@ -48,6 +51,7 @@ function mockApi(
 ) {
   const writes: { action: string; body: Record<string, unknown> }[] = [];
   let creates = 0;
+  let credentialVersion = 'v'.repeat(43);
   let messages = 0;
   let observeFailures = options.observeFailures ?? 0;
   const request = vi.fn<typeof fetch>(async (input, init) => {
@@ -85,7 +89,7 @@ function mockApi(
     if (url.endsWith('/connection'))
       return reply({
         ready: true,
-        credentialVersion: 'v'.repeat(43),
+        credentialVersion,
         ownerId: new Headers(init?.headers).get('x-metaverse-cma-owner') ?? 'owner-a',
       });
     if (url.endsWith('/session'))
@@ -96,6 +100,16 @@ function mockApi(
     if (action === 'consent') return reply({ workerEnabled: body.enabled });
     if (action === 'create') {
       creates++;
+      if (creates === 2 && options.setupOnRecovery)
+        return reply({ code: 'cma_setup_required', detail: '运行环境授权已失效' }, 409);
+      if (creates === 2 && options.rejectRecoveryCredential) {
+        credentialVersion = 'w'.repeat(43);
+        return reply({ code: 'cma_credential_changed', detail: '当前令牌已续期' }, 409);
+      }
+      if (creates === 1 && options.rotateCredential) {
+        credentialVersion = 'w'.repeat(43);
+        return reply({ code: 'cma_credential_changed', detail: '当前令牌已续期' }, 409);
+      }
       if (creates === 1 && options.loseCreate) throw new TypeError('lost response');
       if (creates === 1 && options.setup)
         return reply({ code: 'cma_setup_required', detail: '请先登录 CMA 完成运行环境授权' }, 409);
@@ -524,4 +538,57 @@ it('旧恢复记录缺少凭据版本时保留内容并阻止跨凭据重发', a
   expect(api.writes).toHaveLength(1);
   const restored = JSON.parse(sessionStorage.getItem('metaverse-worker:owner-a')!);
   expect(restored.pending.body).toEqual(saved.pending.body);
+});
+
+it('首次提交因 OAuth 续期被明确拒绝后，刷新仍可核验新凭据并手动重试', async () => {
+  const api = mockApi({ rotateCredential: true });
+  const mounted = render(<WorkspacePage request={api.request} />);
+  await fillTask();
+  await userEvent.click(screen.getByRole('button', { name: '发送' }));
+  await screen.findByText(/^上次请求反馈：授权已更新，本次提交尚未发送/);
+  expect(api.writes).toHaveLength(1);
+  expect(JSON.parse(sessionStorage.getItem('metaverse-worker:owner-a')!).pending.notAdmitted).toBe(
+    true,
+  );
+  mounted.unmount();
+  render(<WorkspacePage request={api.request} />);
+  await screen.findByText('已连接 CMA');
+  expect(api.writes).toHaveLength(1);
+  await userEvent.click(screen.getByRole('button', { name: '重试原请求' }));
+  await screen.findByText(/<script>danger/);
+  expect(api.writes).toEqual([api.writes[0], api.writes[0]]);
+  const headers = api.request.mock.calls
+    .filter(([path]) => String(path).endsWith('/create'))
+    .map(([, init]) => new Headers(init?.headers).get('x-metaverse-cma-credential'));
+  expect(headers).toEqual(['v'.repeat(43), 'w'.repeat(43)]);
+});
+
+it('未知结果的一次重试被拒绝，不能据此认定更早请求未受理并更换凭据', async () => {
+  const api = mockApi({ loseCreate: true, rejectRecoveryCredential: true });
+  render(<WorkspacePage request={api.request} />);
+  await fillTask();
+  await userEvent.click(screen.getByRole('button', { name: '发送' }));
+  await userEvent.click(await screen.findByRole('button', { name: '重试原请求' }));
+  await screen.findByText('上次请求反馈：当前令牌已续期');
+  await screen.findByText('已连接 CMA');
+  expect(api.writes).toHaveLength(2);
+  expect(JSON.parse(sessionStorage.getItem('metaverse-worker:owner-a')!).pending.notAdmitted).toBe(
+    false,
+  );
+  await userEvent.click(screen.getByRole('button', { name: '重试原请求' }));
+  await screen.findByText(/^上次请求反馈：聊天凭据已变化/);
+  expect(api.writes).toHaveLength(2);
+});
+
+it('未知创建恢复时遇到环境授权错误，仍保留原编号且不允许另建任务', async () => {
+  const api = mockApi({ loseCreate: true, setupOnRecovery: true });
+  render(<WorkspacePage request={api.request} />);
+  await fillTask();
+  await userEvent.click(screen.getByRole('button', { name: '发送' }));
+  await userEvent.click(await screen.findByRole('button', { name: '重试原请求' }));
+  await screen.findByText('上次请求反馈：运行环境授权已失效');
+  expect(screen.queryByRole('button', { name: '已完成授权，重新提交' })).toBeNull();
+  await userEvent.click(screen.getByRole('button', { name: '重试原请求' }));
+  await screen.findByText(/<script>danger/);
+  expect(api.writes).toEqual([api.writes[0], api.writes[0], api.writes[0]]);
 });

@@ -16,6 +16,7 @@ export type Context = { spaceId: string; orgId?: string };
 export type Intent = {
   action: 'create' | 'message' | 'cancel' | 'attachment';
   credentialVersion?: string;
+  notAdmitted?: boolean;
   body: Record<string, unknown> & { idempotencyKey: string };
   setupRequired?: boolean;
   lastError?: { code: string; message: string; status?: number };
@@ -161,6 +162,7 @@ function parseNotebook(raw: string | null, spaceId = ''): Notebook {
           !id(v.pending.body.idempotencyKey) ||
           (v.pending.credentialVersion !== undefined &&
             !validCredentialVersion(v.pending.credentialVersion)) ||
+          (v.pending.notAdmitted !== undefined && typeof v.pending.notAdmitted !== 'boolean') ||
           (v.pending.lastError !== undefined &&
             (typeof v.pending.lastError.code !== 'string' ||
               typeof v.pending.lastError.message !== 'string' ||
@@ -175,7 +177,8 @@ function parseNotebook(raw: string | null, spaceId = ''): Notebook {
           v.startup.body === null ||
           !id(v.startup.body.idempotencyKey) ||
           (v.startup.credentialVersion !== undefined &&
-            !validCredentialVersion(v.startup.credentialVersion))))
+            !validCredentialVersion(v.startup.credentialVersion)) ||
+          (v.startup.notAdmitted !== undefined && typeof v.startup.notAdmitted !== 'boolean')))
     )
       return fallback();
     return v;
