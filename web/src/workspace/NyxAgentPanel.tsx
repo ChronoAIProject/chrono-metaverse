@@ -91,7 +91,7 @@ export function NyxAgentPanel({
           text:
             answer ||
             (response.status === 'failed'
-              ? '本轮未完成，请核对已执行的操作后再继续。'
+              ? '本轮未完成，请核对已执行的操作后开始新的 NyxAgent 对话。'
               : '本轮已完成。'),
         },
       ],
@@ -110,7 +110,7 @@ export function NyxAgentPanel({
     setText('');
     setActivity('');
     if (response.status === 'failed')
-      setError('NyxAgent 本轮执行失败，请核对已完成的操作后再继续。');
+      setError('NyxAgent 本轮执行失败，请核对已完成的操作后开始新的 NyxAgent 对话。');
   }
   async function run(pending: NyxagentPending) {
     if (!space || active.current || !credentialVersion) return;
@@ -153,7 +153,13 @@ export function NyxAgentPanel({
       if (mounted.current) finished(response);
     } catch (failure) {
       if (mounted.current) {
-        setError(failure instanceof Error ? failure.message : '结果尚未确认，请恢复原请求。');
+        setError(
+          controller.signal.aborted
+            ? '连接已中断，操作结果尚未确认。请先核对结果，避免重复操作。'
+            : failure instanceof Error
+              ? failure.message
+              : '结果尚未确认，请恢复原请求。',
+        );
         setActivity('结果尚未确认');
         setConnectionCheck((v) => v + 1);
       }
@@ -173,6 +179,7 @@ export function NyxAgentPanel({
       ...(orgId ? { orgId } : {}),
       instruction: note.instruction,
       idempotencyKey: crypto.randomUUID(),
+      instructionsVersion: 2 as const,
       ...(note.conversationId ? { conversationId: note.conversationId } : {}),
     };
     try {

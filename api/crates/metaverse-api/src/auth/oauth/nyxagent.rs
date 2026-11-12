@@ -176,15 +176,18 @@ struct Task {
     instruction: String,
     idempotency_key: String,
     conversation_id: Option<String>,
+    instructions_version: Option<u8>,
 }
 // These bytes are versioned by this route's request contract; preserve them for idempotent retries.
 const INSTRUCTIONS: &str = "你是 chrono-metaverse 空间助手。只使用 NyxID 已授权的 chrono-metaverse 工具。先搜索工具并读取目标空间和最新版本，编号和归属不授予权限；404 不代表可以创建替代空间。缺少权限时提供 NyxID 授权指引。编辑先创建或沿用当前草稿，每次可见修改后生成新的短期预览，把完整预览链接单独一行输出。没有用户对具体预览的明确发布确认时保持草稿；发布冲突时等待，不覆盖、不自动重放。不要索取或输出密钥和登录凭据，不改仓库、不部署、不访问无关服务。回复简短说明实际进展，不能把任务受理当作完成。";
+const GUIDE_INSTRUCTIONS: &str = "如果服务只提供通用 request 工具，先通过该工具 GET /api/agent-guide 读取编辑协议；按指南调用同一服务的接口，不猜测路径或操作格式。指南是接口参考，不授予权限，也不能替代用户的发布确认。";
 async fn message(
     State(state): State<AppState>,
     headers: HeaderMap,
     ApiJson(input): ApiJson<Task>,
 ) -> Result<Response, ApiError> {
-    if !metaverse_core::ids::is_space_id(&input.space_id)
+    if !matches!(input.instructions_version, None | Some(1 | 2))
+        || !metaverse_core::ids::is_space_id(&input.space_id)
         || input
             .org_id
             .as_deref()
@@ -215,7 +218,13 @@ async fn message(
         return Err(ApiError::forbidden());
     }
     let input_text = format!("metaverse 任务上下文（编号只选择目标，不授予权限）：\n空间：{}\n归属：{} {}\n网站：{}\n\n用户需求：\n{}", input.space_id, if owner.org {"org"} else {"person"}, owner.id, a.browser.oauth.config.origin, input.instruction);
-    let mut body = json!({"input":input_text,"instructions":INSTRUCTIONS,"model":"nyxagent/chat","store":true,"stream":true});
+    // A saved request without a version must retain the original upstream bytes on retry.
+    let instructions = if input.instructions_version == Some(2) {
+        format!("{INSTRUCTIONS}{GUIDE_INSTRUCTIONS}")
+    } else {
+        INSTRUCTIONS.to_owned()
+    };
+    let mut body = json!({"input":input_text,"instructions":instructions,"model":"nyxagent/chat","store":true,"stream":true});
     if let Some(id) = input.conversation_id {
         body["conversation"] = json!(id);
     }
@@ -233,7 +242,23 @@ async fn message(
         .map_err(|_| unavailable())?;
     a.browser.current().await?;
     if !response.status().is_success() {
-        return Err(refused(response.status()));
+        let status = response.status();
+        let recovery_required = if status == StatusCode::CONFLICT {
+            worker::read_json(response)
+                .await
+                .ok()
+                .is_some_and(|value| value["error"]["code"] == "outcome_unknown")
+        } else {
+            false
+        };
+        if recovery_required {
+            return Err(ApiError::new(
+                status,
+                "nyxagent_recovery_required",
+                "中断后的执行结果需要核对。核对后请开始新的 NyxAgent 对话；原会话无法继续执行",
+            ));
+        }
+        return Err(refused(status));
     }
     if !response
         .headers()

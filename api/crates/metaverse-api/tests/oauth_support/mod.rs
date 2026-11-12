@@ -47,6 +47,7 @@ struct ProviderState {
     key_revocations: Vec<String>,
     worker_bearers: Vec<String>,
     message_refusal: Option<StatusCode>,
+    nyxagent_error_code: Option<String>,
     cma_auth_reply: Option<(StatusCode, Value)>,
     cma_auth_calls: usize,
     cma_auth_gate: Option<Arc<tokio::sync::Notify>>,

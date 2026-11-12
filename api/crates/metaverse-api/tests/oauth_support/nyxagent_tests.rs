@@ -49,12 +49,15 @@ pub(super) fn routes(provider: MockProvider, app: Router) -> Router {
             async move {
                 assert_eq!(headers["idempotency-key"], "stable-nyx-request-001");
                 record(&p, &headers, "nyx-message", body);
-                if let Some(status) = p.0.lock().unwrap().message_refusal {
-                    return (
-                        status,
-                        Json(json!({"detail":"private upstream diagnostics"})),
-                    )
-                        .into_response();
+                {
+                    let state = p.0.lock().unwrap();
+                    if let Some(status) = state.message_refusal {
+                        return (
+                            status,
+                            Json(json!({"error":{"code":state.nyxagent_error_code,"message":"private upstream diagnostics"}})),
+                        )
+                            .into_response();
+                    }
                 }
                 let mut created = response();
                 created["status"] = json!("in_progress");
@@ -193,6 +196,50 @@ async fn nyxagent_preserves_original_key_stream_conversation_and_idempotency_wit
     assert_eq!(writes[1].2["conversation"], "conv_test");
     assert_eq!(state.cma_auth_calls, 0);
     drop(state);
+}
+
+#[tokio::test]
+async fn nyxagent_versions_instructions_without_changing_legacy_retries() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let cookie = setup(&app).await;
+    for version in [None, Some(1), Some(2), None] {
+        let mut input = task();
+        if let Some(version) = version {
+            input["instructionsVersion"] = json!(version);
+        }
+        let result = call(&app, &cookie, "message", input).await;
+        assert_eq!(result.0, StatusCode::OK, "{}", result.2);
+    }
+    {
+        let state = app.nyx.oauth.0.lock().unwrap();
+        let bodies: Vec<_> = state.worker_calls.iter().map(|(_, _, b)| b).collect();
+        assert_eq!(bodies.len(), 4);
+        assert_eq!(bodies[0], bodies[1]);
+        assert_eq!(bodies[0], bodies[3]);
+        let legacy = bodies[0]["instructions"].as_str().unwrap();
+        // Pin the actual v1 bytes so an accidental change breaks legacy replay checks.
+        assert_eq!(legacy, "你是 chrono-metaverse 空间助手。只使用 NyxID 已授权的 chrono-metaverse 工具。先搜索工具并读取目标空间和最新版本，编号和归属不授予权限；404 不代表可以创建替代空间。缺少权限时提供 NyxID 授权指引。编辑先创建或沿用当前草稿，每次可见修改后生成新的短期预览，把完整预览链接单独一行输出。没有用户对具体预览的明确发布确认时保持草稿；发布冲突时等待，不覆盖、不自动重放。不要索取或输出密钥和登录凭据，不改仓库、不部署、不访问无关服务。回复简短说明实际进展，不能把任务受理当作完成。");
+        assert!(bodies[2]["instructions"]
+            .as_str()
+            .unwrap()
+            .starts_with(legacy));
+        assert!(bodies[2]["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("GET /api/agent-guide"));
+        assert_eq!(bodies[0]["input"], bodies[2]["input"]);
+    }
+    for version in [json!(0), json!(3), json!("2"), json!(-1)] {
+        let mut input = task();
+        input["instructionsVersion"] = version;
+        assert_eq!(
+            call(&app, &cookie, "message", input).await.0,
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+    }
+    assert_eq!(app.nyx.oauth.0.lock().unwrap().worker_calls.len(), 4);
 }
 
 #[tokio::test]
@@ -478,4 +525,31 @@ async fn nyxagent_sanitizes_upstream_refusal_without_automatic_retry() {
     assert!(result.2.contains("nyxagent_request_refused"));
     assert!(!result.2.contains("private upstream diagnostics"));
     assert_eq!(app.nyx.oauth.0.lock().unwrap().worker_calls.len(), 1);
+}
+
+#[tokio::test]
+async fn nyxagent_distinguishes_interrupted_sessions_from_retryable_conflicts() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let cookie = setup(&app).await;
+    for (code, recovery) in [
+        ("outcome_unknown", true),
+        ("session_busy", false),
+        ("idempotency_conflict", false),
+        ("private-code", false),
+    ] {
+        {
+            let mut state = app.nyx.oauth.0.lock().unwrap();
+            state.message_refusal = Some(StatusCode::CONFLICT);
+            state.nyxagent_error_code = Some(code.into());
+        }
+        let result = call(&app, &cookie, "message", task()).await;
+        assert_eq!(result.0, StatusCode::CONFLICT);
+        assert_eq!(result.2.contains("nyxagent_recovery_required"), recovery);
+        assert_eq!(result.2.contains("开始新的 NyxAgent 对话"), recovery);
+        assert!(!result.2.contains("private upstream diagnostics"));
+        assert!(!result.2.contains("private-code"));
+    }
+    assert_eq!(app.nyx.oauth.0.lock().unwrap().worker_calls.len(), 4);
 }

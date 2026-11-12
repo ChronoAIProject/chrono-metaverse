@@ -13,6 +13,7 @@ export type NyxagentTask = {
   instruction: string;
   idempotencyKey: string;
   conversationId?: string;
+  instructionsVersion?: 1 | 2;
 };
 export type NyxagentResponse = {
   id: string;
@@ -66,6 +67,9 @@ export function readNyxagentNote(subject: string, spaceId: string, orgId?: strin
         p.body.instruction.length > 16000 ||
         !identifier(p.body.idempotencyKey) ||
         p.body.idempotencyKey.length < 16 ||
+        (p.body.instructionsVersion !== undefined &&
+          p.body.instructionsVersion !== 1 &&
+          p.body.instructionsVersion !== 2) ||
         (p.body.conversationId !== undefined && !identifier(p.body.conversationId))
       )
         return emptyNyxagentNote();

@@ -159,20 +159,26 @@ it('恢复请求仍绑定原响应和会话', async () => {
   ).rejects.toThrow('原请求不一致');
 });
 
-it('聊天和未确认请求按账号、空间、组织隔离，不包含凭据且精确保留重试正文', () => {
-  const note = {
-    instruction: '',
-    messages: [{ role: 'user' as const, text: pending.body.instruction }],
-    conversationId: 'conv_test',
-    pending,
-  };
-  saveNyxagentNote('alice', 'lobby', note);
-  expect(readNyxagentNote('alice', 'lobby')).toEqual(note);
-  expect(readNyxagentNote('bob', 'lobby')).toEqual(emptyNyxagentNote());
-  expect(readNyxagentNote('alice', 'garden')).toEqual(emptyNyxagentNote());
-  expect(readNyxagentNote('alice', 'lobby', 'another-org')).toEqual(emptyNyxagentNote());
-  expect(JSON.stringify(note)).not.toContain(credential);
-});
+it.each([undefined, 1, 2] as const)(
+  '聊天隔离并原样保留协议版本 %s 的重试正文',
+  (instructionsVersion) => {
+    const note = {
+      instruction: '',
+      messages: [{ role: 'user' as const, text: pending.body.instruction }],
+      conversationId: 'conv_test',
+      pending: {
+        ...pending,
+        body: { ...pending.body, ...(instructionsVersion ? { instructionsVersion } : {}) },
+      },
+    };
+    saveNyxagentNote('alice', 'lobby', note);
+    expect(readNyxagentNote('alice', 'lobby')).toEqual(note);
+    expect(readNyxagentNote('bob', 'lobby')).toEqual(emptyNyxagentNote());
+    expect(readNyxagentNote('alice', 'garden')).toEqual(emptyNyxagentNote());
+    expect(readNyxagentNote('alice', 'lobby', 'another-org')).toEqual(emptyNyxagentNote());
+    expect(JSON.stringify(note)).not.toContain(credential);
+  },
+);
 
 it('NyxAgent 与 CMA 的 Key 和待确认授权分别保存和清除', () => {
   saveBrowserKey('alice', 'nyx_test_cma_credential', identity);
