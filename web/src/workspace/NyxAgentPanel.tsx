@@ -91,7 +91,7 @@ export function NyxAgentPanel({
           text:
             answer ||
             (response.status === 'failed'
-              ? '本轮未完成，请核对已执行的操作后再继续。'
+              ? '本轮未完成，请核对已执行的操作后开始新的 NyxAgent 对话。'
               : '本轮已完成。'),
         },
       ],
@@ -110,7 +110,7 @@ export function NyxAgentPanel({
     setText('');
     setActivity('');
     if (response.status === 'failed')
-      setError('NyxAgent 本轮执行失败，请核对已完成的操作后再继续。');
+      setError('NyxAgent 本轮执行失败，请核对已完成的操作后开始新的 NyxAgent 对话。');
   }
   async function run(pending: NyxagentPending) {
     if (!space || active.current || !credentialVersion) return;

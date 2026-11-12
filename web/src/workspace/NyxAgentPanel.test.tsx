@@ -221,3 +221,31 @@ it('主动中断显示可操作的提示，并保留响应与原请求', async (
   expect(readNyxagentNote('alice', 'lobby').pending?.body.instruction).toBe('修改立方体');
   expect(screen.getByRole('button', { name: '核对 NyxAgent 结果' })).toBeEnabled();
 });
+
+it('失败终态完成核对，保留会话并指引开始新对话', async () => {
+  const request = vi.fn<typeof fetch>(async (url) => {
+    if (String(url).endsWith('/key/check')) return Response.json(identity);
+    if (String(url).endsWith('/message'))
+      return new Response(
+        `data: ${JSON.stringify({ type: 'response.failed', response: { id: 'resp_test', conversation: { id: 'conv_test' }, status: 'failed', output: [] } })}\n\n`,
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      );
+    throw new Error(`unexpected ${url}`);
+  });
+  render(
+    <NyxAgentPanel
+      session={session}
+      space={space}
+      request={request}
+      onPreview={vi.fn()}
+      onBusy={vi.fn()}
+    />,
+  );
+  await screen.findByText('已连接 NyxAgent · NyxAgent');
+  await userEvent.type(screen.getByRole('textbox', { name: '给 NyxAgent 发消息' }), '修改立方体');
+  await userEvent.click(screen.getByRole('button', { name: '发送给 NyxAgent' }));
+  await screen.findByText('NyxAgent 本轮执行失败，请核对已完成的操作后开始新的 NyxAgent 对话。');
+  expect(readNyxagentNote('alice', 'lobby').pending).toBeUndefined();
+  expect(readNyxagentNote('alice', 'lobby').conversationId).toBe('conv_test');
+  expect(screen.getByRole('button', { name: '开始新的 NyxAgent 对话' })).toBeInTheDocument();
+});

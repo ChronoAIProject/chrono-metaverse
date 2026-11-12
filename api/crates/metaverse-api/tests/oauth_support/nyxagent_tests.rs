@@ -49,12 +49,15 @@ pub(super) fn routes(provider: MockProvider, app: Router) -> Router {
             async move {
                 assert_eq!(headers["idempotency-key"], "stable-nyx-request-001");
                 record(&p, &headers, "nyx-message", body);
-                if let Some(status) = p.0.lock().unwrap().message_refusal {
-                    return (
-                        status,
-                        Json(json!({"detail":"private upstream diagnostics"})),
-                    )
-                        .into_response();
+                {
+                    let state = p.0.lock().unwrap();
+                    if let Some(status) = state.message_refusal {
+                        return (
+                            status,
+                            Json(json!({"error":{"code":state.nyxagent_error_code,"message":"private upstream diagnostics"}})),
+                        )
+                            .into_response();
+                    }
                 }
                 let mut created = response();
                 created["status"] = json!("in_progress");
@@ -522,4 +525,31 @@ async fn nyxagent_sanitizes_upstream_refusal_without_automatic_retry() {
     assert!(result.2.contains("nyxagent_request_refused"));
     assert!(!result.2.contains("private upstream diagnostics"));
     assert_eq!(app.nyx.oauth.0.lock().unwrap().worker_calls.len(), 1);
+}
+
+#[tokio::test]
+async fn nyxagent_distinguishes_interrupted_sessions_from_retryable_conflicts() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let cookie = setup(&app).await;
+    for (code, recovery) in [
+        ("outcome_unknown", true),
+        ("session_busy", false),
+        ("idempotency_conflict", false),
+        ("private-code", false),
+    ] {
+        {
+            let mut state = app.nyx.oauth.0.lock().unwrap();
+            state.message_refusal = Some(StatusCode::CONFLICT);
+            state.nyxagent_error_code = Some(code.into());
+        }
+        let result = call(&app, &cookie, "message", task()).await;
+        assert_eq!(result.0, StatusCode::CONFLICT);
+        assert_eq!(result.2.contains("nyxagent_recovery_required"), recovery);
+        assert_eq!(result.2.contains("开始新的 NyxAgent 对话"), recovery);
+        assert!(!result.2.contains("private upstream diagnostics"));
+        assert!(!result.2.contains("private-code"));
+    }
+    assert_eq!(app.nyx.oauth.0.lock().unwrap().worker_calls.len(), 4);
 }

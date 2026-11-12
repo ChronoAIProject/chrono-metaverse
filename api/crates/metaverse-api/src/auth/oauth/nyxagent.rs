@@ -242,7 +242,23 @@ async fn message(
         .map_err(|_| unavailable())?;
     a.browser.current().await?;
     if !response.status().is_success() {
-        return Err(refused(response.status()));
+        let status = response.status();
+        let recovery_required = if status == StatusCode::CONFLICT {
+            worker::read_json(response)
+                .await
+                .ok()
+                .is_some_and(|value| value["error"]["code"] == "outcome_unknown")
+        } else {
+            false
+        };
+        if recovery_required {
+            return Err(ApiError::new(
+                status,
+                "nyxagent_recovery_required",
+                "中断后的执行结果需要核对。核对后请开始新的 NyxAgent 对话；原会话无法继续执行",
+            ));
+        }
+        return Err(refused(status));
     }
     if !response
         .headers()
