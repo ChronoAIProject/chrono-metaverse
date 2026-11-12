@@ -179,7 +179,7 @@ export function NyxAgentPanel({
       ...(orgId ? { orgId } : {}),
       instruction: note.instruction,
       idempotencyKey: crypto.randomUUID(),
-      instructionsVersion: 2 as const,
+      instructionsVersion: 3 as const,
       ...(note.conversationId ? { conversationId: note.conversationId } : {}),
     };
     try {

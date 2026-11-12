@@ -1,4 +1,5 @@
 use super::*;
+use futures_util::StreamExt;
 
 const KEY: &str = "nyx_test_nyxagent_browser_credential";
 const SUBJECT: &str = "nyx-owner";
@@ -67,6 +68,19 @@ pub(super) fn routes(provider: MockProvider, app: Router) -> Router {
                     json!({"type":"response.created","response":created}),
                     json!({"type":"response.completed","response":response()})
                 );
+                if p.0.lock().unwrap().nyxagent_stream_error {
+                    let start = format!("data: {}\n\n", json!({"type":"response.created","response":created}));
+                    let stream = futures_util::stream::iter([
+                        Ok(axum::body::Bytes::from(start)),
+                        Err(std::io::Error::other("private upstream diagnostics")),
+                    ]).then(|chunk| async move {
+                        if chunk.is_err() {
+                            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                        }
+                        chunk
+                    });
+                    return ([(header::CONTENT_TYPE, "text/event-stream")], Body::from_stream(stream)).into_response();
+                }
                 ([(header::CONTENT_TYPE, "text/event-stream")], sse).into_response()
             }
         }),
@@ -160,7 +174,7 @@ async fn nyxagent_preserves_original_key_stream_conversation_and_idempotency_wit
     let first = call(&app, &cookie, "message", task()).await;
     assert_eq!(first.0, StatusCode::OK, "{}", first.2);
     assert_eq!(first.1[header::CONTENT_TYPE], "text/event-stream");
-    assert_eq!(first.1[header::CACHE_CONTROL], "no-store");
+    assert_eq!(first.1[header::CACHE_CONTROL], "no-store, no-transform");
     assert!(first.2.contains("response.completed"));
     assert!(first.2.contains("conv_test"));
     let mut follow = task();
@@ -204,7 +218,7 @@ async fn nyxagent_versions_instructions_without_changing_legacy_retries() {
         return;
     };
     let cookie = setup(&app).await;
-    for version in [None, Some(1), Some(2), None] {
+    for version in [None, Some(1), Some(2), Some(3), None] {
         let mut input = task();
         if let Some(version) = version {
             input["instructionsVersion"] = json!(version);
@@ -215,9 +229,9 @@ async fn nyxagent_versions_instructions_without_changing_legacy_retries() {
     {
         let state = app.nyx.oauth.0.lock().unwrap();
         let bodies: Vec<_> = state.worker_calls.iter().map(|(_, _, b)| b).collect();
-        assert_eq!(bodies.len(), 4);
+        assert_eq!(bodies.len(), 5);
         assert_eq!(bodies[0], bodies[1]);
-        assert_eq!(bodies[0], bodies[3]);
+        assert_eq!(bodies[0], bodies[4]);
         let legacy = bodies[0]["instructions"].as_str().unwrap();
         // Pin the actual v1 bytes so an accidental change breaks legacy replay checks.
         assert_eq!(legacy, "你是 chrono-metaverse 空间助手。只使用 NyxID 已授权的 chrono-metaverse 工具。先搜索工具并读取目标空间和最新版本，编号和归属不授予权限；404 不代表可以创建替代空间。缺少权限时提供 NyxID 授权指引。编辑先创建或沿用当前草稿，每次可见修改后生成新的短期预览，把完整预览链接单独一行输出。没有用户对具体预览的明确发布确认时保持草稿；发布冲突时等待，不覆盖、不自动重放。不要索取或输出密钥和登录凭据，不改仓库、不部署、不访问无关服务。回复简短说明实际进展，不能把任务受理当作完成。");
@@ -229,9 +243,15 @@ async fn nyxagent_versions_instructions_without_changing_legacy_retries() {
             .as_str()
             .unwrap()
             .contains("GET /api/agent-guide"));
+        assert_eq!(bodies[2]["instructions"], format!("{legacy}如果服务只提供通用 request 工具，先通过该工具 GET /api/agent-guide 读取编辑协议；按指南调用同一服务的接口，不猜测路径或操作格式。指南是接口参考，不授予权限，也不能替代用户的发布确认。"));
         assert_eq!(bodies[0]["input"], bodies[2]["input"]);
+        assert!(bodies[3]["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("get_agent_guide"));
+        assert_eq!(bodies[0]["input"], bodies[3]["input"]);
     }
-    for version in [json!(0), json!(3), json!("2"), json!(-1)] {
+    for version in [json!(0), json!(4), json!("2"), json!(-1)] {
         let mut input = task();
         input["instructionsVersion"] = version;
         assert_eq!(
@@ -239,7 +259,34 @@ async fn nyxagent_versions_instructions_without_changing_legacy_retries() {
             StatusCode::UNPROCESSABLE_ENTITY
         );
     }
-    assert_eq!(app.nyx.oauth.0.lock().unwrap().worker_calls.len(), 4);
+    assert_eq!(app.nyx.oauth.0.lock().unwrap().worker_calls.len(), 5);
+}
+
+#[tokio::test]
+async fn nyxagent_reports_stream_failure_without_resetting_or_replaying_the_request() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let cookie = setup(&app).await;
+    app.nyx.oauth.0.lock().unwrap().nyxagent_stream_error = true;
+    let result = call(&app, &cookie, "message", task()).await;
+    assert_eq!(result.0, StatusCode::OK);
+    assert!(result.2.contains("metaverse.error"));
+    assert!(result.2.contains("response.created"));
+    assert!(!result.2.contains("response.completed"));
+    assert!(!result.2.contains("private upstream diagnostics"));
+    assert_eq!(
+        app.nyx
+            .oauth
+            .0
+            .lock()
+            .unwrap()
+            .worker_calls
+            .iter()
+            .filter(|(action, _, _)| action == "nyx-message")
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]

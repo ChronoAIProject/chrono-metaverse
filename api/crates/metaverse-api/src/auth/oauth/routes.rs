@@ -106,9 +106,20 @@ fn set_cookie(response: &mut Response, name: &str, value: &str, ttl: i64, secure
 }
 
 fn private(mut response: Response) -> Response {
-    response
-        .headers_mut()
-        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    let cache_control = if response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.split(';').next() == Some("text/event-stream"))
+    {
+        "no-store, no-transform"
+    } else {
+        "no-store"
+    };
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static(cache_control),
+    );
     response.headers_mut().insert(
         header::REFERRER_POLICY,
         HeaderValue::from_static("no-referrer"),
