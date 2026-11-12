@@ -15,6 +15,7 @@ import {
   type Tile,
 } from './geography';
 import { mapTileImage } from './mapTileCache';
+import { sourceCredit } from './sourceCredit';
 
 const MAX_LEAVES = 96;
 const MAX_TEXTURES = 192;
@@ -74,14 +75,7 @@ export class GeographicMap {
     this.group.name = 'geographic-map';
     this.credit.className = 'viewer__map-credit';
     this.credit.setAttribute('aria-label', '地图来源');
-    for (const source of config.sources) {
-      const link = document.createElement('a');
-      link.href = source.page;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.textContent = source.attribution;
-      this.credit.append(link);
-    }
+    for (const source of config.sources) this.credit.append(sourceCredit(source));
     host.appendChild(this.credit);
     // 两极超出 Web Mercator 覆盖的部分仍有地球表面，不露出透明背景。
     for (const north of [true, false]) {
@@ -397,7 +391,7 @@ export class GeographicMap {
   private async load(node: Node): Promise<void> {
     for (const source of tileSources(node, this.config.sources)) {
       try {
-        const image = await mapTileImage(tileUrl(node, source), this.abort.signal);
+        const image = await mapTileImage(tileUrl(node, source), this.abort.signal, source.cache);
         if (this.disposed) {
           image.close();
           return;

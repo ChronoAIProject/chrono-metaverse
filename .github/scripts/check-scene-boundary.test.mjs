@@ -11,6 +11,7 @@ test("场景专用值和源码依赖会失败，夹具和测试可以使用示�
     for (const directory of [
       "scenes/example",
       "web/src/fixtures",
+      "web/src/viewer",
       "sdk/typescript/src",
       "sdk/typescript/src/workspace",
       "recon/src",
@@ -21,7 +22,10 @@ test("场景专用值和源码依赖会失败，夹具和测试可以使用示�
     writeFileSync(
       join(root, "scenes/example/context.json"),
       JSON.stringify({
-        oneMap: { hostSourceId: "source-building-123" },
+        oneMap: {
+          hostSourceId: "source-building-123",
+          tilesBaseUrl: "https://provider.example.org/tiles/",
+        },
         host: { label: "示例中的特定建筑名称" },
       }),
     );
@@ -53,14 +57,20 @@ test("场景专用值和源码依赖会失败，夹具和测试可以使用示�
       join(root, "sdk/typescript/src/workspace/edit.ts"),
       'import { adapter } from "./context.js";',
     );
+    writeFileSync(
+      join(root, "web/src/viewer/source.ts"),
+      'const url = "https://provider.example.org/tiles/";',
+    );
     const errors = violations(root);
-    assert.equal(errors.length, 4);
+    assert.equal(errors.length, 5);
+    assert(errors.some((error) => error.includes("包含场景提供方地址")));
     assert(errors.some((error) => error.includes("通用编辑层不能依赖")));
     assert(errors.some((error) => error.includes("web/src/viewer.ts")));
     assert(errors.some((error) => error.includes("生产核心依赖 scenes/")));
     assert(errors.some((error) => error.includes("recon/src/model.py")));
     for (const file of [
       "web/src/viewer.ts",
+      "web/src/viewer/source.ts",
       "sdk/typescript/src/import.ts",
       "sdk/typescript/src/workspace/edit.ts",
       "recon/src/model.py",

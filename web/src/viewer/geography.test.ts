@@ -20,6 +20,12 @@ const global = {
 };
 const local = { ...global, minZoom: 5, bounds: [0, 0, 20, 20] as const };
 
+it('TMS 来源反转行号，其他协议坐标保持一致', () => {
+  expect(tileUrl({ z: 5, x: 17, y: 15 }, { ...global, scheme: 'tms' })).toBe(
+    'https://example.org/5/16/17',
+  );
+});
+
 describe('地图坐标与瓦片来源', () => {
   it('覆盖 Web Mercator 整个世界，经度接缝和四个子块连续', () => {
     expect(tileCoordinates(0, 0, 0)).toEqual([-180, expect.closeTo(85.0511288)]);

@@ -222,7 +222,12 @@ describe('贴图缓存：按（哈希，用途）', () => {
   it('同一个资源只下载一次；当颜色和当法线用时是两份设置不同、共用图片的贴图', async () => {
     const image = new THREE.Texture();
     const load = vi.fn(() => Promise.resolve(image));
-    const cache = new TextureCache(load, () => 8);
+    const counts: number[] = [];
+    const cache = new TextureCache(
+      load,
+      () => 8,
+      (count) => counts.push(count),
+    );
     const [color, normal, again] = await Promise.all([
       cache.get(COLOR, 'color'),
       cache.get(COLOR, 'normal'),
@@ -236,6 +241,7 @@ describe('贴图缓存：按（哈希，用途）', () => {
     expect(color!.colorSpace).toBe(THREE.SRGBColorSpace);
     expect(normal!.colorSpace).toBe(THREE.NoColorSpace);
     expect(normal!.anisotropy).toBe(8);
+    expect(counts).toEqual([0, 1, 0]);
     cache.dispose();
   });
 
@@ -244,10 +250,16 @@ describe('贴图缓存：按（哈希，用途）', () => {
       .fn<(hash: string) => Promise<THREE.Texture>>()
       .mockRejectedValueOnce(new Error('网络错误'))
       .mockResolvedValue(new THREE.Texture());
-    const cache = new TextureCache(load, () => 1);
+    const counts: number[] = [];
+    const cache = new TextureCache(
+      load,
+      () => 1,
+      (count) => counts.push(count),
+    );
     await expect(cache.get(COLOR, 'color')).rejects.toThrow('网络错误');
     await expect(cache.get(COLOR, 'color')).resolves.toBeInstanceOf(THREE.Texture);
     expect(load).toHaveBeenCalledTimes(2);
+    expect(counts).toEqual([0, 1, 0, 1, 0]);
     expect(new TextureCache(undefined, () => 1).get(COLOR, 'color')).toBeNull();
   });
 });

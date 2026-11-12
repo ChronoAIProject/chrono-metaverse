@@ -1,22 +1,26 @@
 import type { EntityBody } from './api/types';
+import {
+  record,
+  finite,
+  publicHttps,
+  validSource,
+  geographicReference,
+  type SourceCredit,
+  type SourceCache,
+  type GeographicReference,
+} from './externalSource';
 
-export interface TileSource {
+export interface TileSource extends SourceCredit {
   readonly urlTemplate: string;
-  readonly attribution: string;
-  readonly page: string;
+  readonly scheme?: 'xyz' | 'tms';
+  readonly cache?: SourceCache;
   readonly minZoom: number;
   readonly maxZoom: number;
   /** 经度西界、纬度南界、经度东界、纬度北界。 */
   readonly bounds?: readonly [number, number, number, number];
 }
 
-export interface GeographicMap {
-  readonly latitude: number;
-  readonly longitude: number;
-  /** 地理参考点在成员空间中的海平面位置，单位为米。 */
-  readonly origin: readonly [number, number, number];
-  /** 局部 +z 相对于正北顺时针旋转的角度。 */
-  readonly heading: number;
+export interface GeographicMap extends GeographicReference {
   readonly sources: readonly TileSource[];
 }
 
@@ -26,36 +30,11 @@ export interface Environment {
   readonly map?: GeographicMap;
 }
 
-function record(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function finite(value: unknown, min: number, max: number): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
-}
-
-function https(value: unknown): value is string {
-  if (typeof value !== 'string' || value.length > 2000) return false;
-  try {
-    const url = new URL(value);
-    return url.protocol === 'https:' && !url.username && !url.password && !url.hash;
-  } catch {
-    return false;
-  }
-}
-
 function tileSource(value: unknown): TileSource | null {
   const raw = record(value);
-  if (!raw || !https(raw.urlTemplate) || !https(raw.page)) return null;
+  if (!raw || !publicHttps(raw.urlTemplate) || !validSource(raw)) return null;
   if (!['{z}', '{x}', '{y}'].every((key) => (raw.urlTemplate as string).includes(key))) return null;
-  if (
-    typeof raw.attribution !== 'string' ||
-    !raw.attribution.trim() ||
-    raw.attribution.length > 500
-  )
-    return null;
+  if (raw.scheme !== undefined && raw.scheme !== 'xyz' && raw.scheme !== 'tms') return null;
   if (!finite(raw.minZoom, 0, 20) || !Number.isInteger(raw.minZoom)) return null;
   if (!finite(raw.maxZoom, raw.minZoom, 20) || !Number.isInteger(raw.maxZoom)) return null;
   const bounds = raw.bounds;
@@ -95,14 +74,10 @@ export function environmentOf(entity: EntityBody): Environment | null {
   let map: GeographicMap | undefined;
   if (raw.map !== undefined) {
     const value = record(raw.map);
+    const reference = geographicReference(value);
     if (
       !value ||
-      !finite(value.latitude, -85, 85) ||
-      !finite(value.longitude, -180, 180) ||
-      !finite(value.heading ?? 0, -360, 360) ||
-      !Array.isArray(value.origin) ||
-      value.origin.length !== 3 ||
-      !value.origin.every((n) => finite(n, -100000, 100000)) ||
+      !reference ||
       !Array.isArray(value.sources) ||
       value.sources.length < 1 ||
       value.sources.length > 4
@@ -112,7 +87,7 @@ export function environmentOf(entity: EntityBody): Environment | null {
     // 至少一个无范围限制的低精度全球来源，确保远景不会落到地图矩形外。
     if (sources.some((source) => !source) || !sources.some((s) => s?.minZoom === 0 && !s.bounds))
       return null;
-    map = { ...value, heading: value.heading ?? 0, sources } as unknown as GeographicMap;
+    map = { ...reference, sources } as GeographicMap;
   }
   return sky || map ? { version: 1, sky, map } : null;
 }

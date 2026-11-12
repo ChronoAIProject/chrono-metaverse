@@ -65,12 +65,16 @@ export function configureTexture(
 export class TextureCache {
   private readonly images = new Map<string, Promise<THREE.Texture>>();
   private readonly textures = new Map<string, Promise<THREE.Texture>>();
+  private pending = 0;
 
   constructor(
     private readonly load: ((hash: string) => Promise<THREE.Texture>) | undefined,
     /** 各向异性过滤的级数（按显卡的上限，用到时才取）。 */
     private readonly anisotropy: () => number,
-  ) {}
+    private readonly onPending?: (count: number) => void,
+  ) {
+    onPending?.(0);
+  }
 
   get(hash: string, role: TextureRole): Promise<THREE.Texture> | null {
     const load = this.load;
@@ -80,7 +84,12 @@ export class TextureCache {
     if (texture === undefined) {
       let image = this.images.get(hash);
       if (image === undefined) {
-        image = load(hash);
+        this.pending++;
+        this.onPending?.(this.pending);
+        image = load(hash).finally(() => {
+          this.pending--;
+          this.onPending?.(this.pending);
+        });
         this.images.set(hash, image);
         image.catch(() => this.images.delete(hash));
       }

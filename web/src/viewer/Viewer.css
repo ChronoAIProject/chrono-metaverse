@@ -581,7 +581,8 @@
     bottom: calc(var(--space-4) + 3 * var(--control-h) + 3 * var(--space-2));
   }
 }
-.viewer__map-credit {
+.viewer__map-credit,
+.viewer__external-credits {
   position: absolute;
   left: 12px;
   bottom: 80px;
@@ -597,6 +598,28 @@
   font-size: 11px;
 }
 
-.viewer__map-credit a {
+.viewer__map-credit a,
+.viewer__external-credits a {
   color: inherit;
+}
+
+.viewer__external-credits {
+  bottom: 120px;
+  max-height: 25%;
+  overflow: auto;
+}
+
+.viewer__source-credit,
+.viewer__source-credit > a,
+.viewer__external-credit {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.viewer__source-credit img {
+  max-width: 72px;
+  max-height: 22px;
+  object-fit: contain;
 }
