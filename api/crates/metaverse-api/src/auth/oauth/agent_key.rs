@@ -395,13 +395,8 @@ pub(super) async fn request_for(
     }
     let mut request: Request = serde_json::from_slice(&body).map_err(|_| unavailable())?;
     let mut url = url::Url::parse(&request.verification_uri).map_err(|_| unavailable())?;
-    if url.scheme() != "https"
-        || url.host_str().is_none()
-        || !url.username().is_empty()
-        || url.password().is_some()
+    if crate::auth::jwt::validate_endpoint(&request.verification_uri).is_err()
         || url.path() != "/login/agent-key"
-        || url.query().is_some()
-        || url.fragment().is_some()
         || !(1..=600).contains(&request.expires_in)
         || !(1..=60).contains(&request.interval)
         || request.device_code.is_empty()

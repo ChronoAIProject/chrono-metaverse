@@ -126,10 +126,14 @@ pub(super) fn register_state(state: &mut ProviderState, subject: &str) {
 pub(super) fn routes(provider: MockProvider, app: Router) -> Router {
     let lookup = provider.clone();
     let revoke = provider.clone();
-    app.route("/api/v1/auth/agent-key/request", post(|headers: HeaderMap, Json(body): Json<Value>| async move {
+    let request = provider.clone();
+    app.route("/api/v1/auth/agent-key/request", post(move |headers: HeaderMap, Json(body): Json<Value>| {
+        let p = request.clone(); async move {
         assert!(!headers.contains_key(header::COOKIE)); assert!(!headers.contains_key(header::AUTHORIZATION));
         assert_eq!(body["client_app"], "chrono-metaverse");
-        Json(json!({"device_code":"private-device-code","user_code":"ABCD-1234","expires_in":300,"interval":1,"verification_uri":"https://nyxid.ai/login/agent-key"}))
+        let uri = p.0.lock().unwrap().key_verification_uri.clone().unwrap_or_else(|| "https://nyxid.ai/login/agent-key".into());
+        Json(json!({"device_code":"private-device-code","user_code":"ABCD-1234","expires_in":300,"interval":1,"verification_uri":uri}))
+        }
     })).route("/api/v1/auth/agent-key/poll", post(move |headers: HeaderMap, Json(body): Json<Value>| {
         let p = provider.clone(); async move {
             assert!(!headers.contains_key(header::COOKIE)); assert!(!headers.contains_key(header::AUTHORIZATION));

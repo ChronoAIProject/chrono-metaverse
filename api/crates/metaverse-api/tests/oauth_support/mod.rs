@@ -43,6 +43,7 @@ struct ProviderState {
     worker_calls: Vec<(String, String, Value)>,
     browser_keys: HashMap<String, Value>,
     key_delivery: Option<Value>,
+    key_verification_uri: Option<String>,
     key_revocations: Vec<String>,
     worker_bearers: Vec<String>,
     message_refusal: Option<StatusCode>,

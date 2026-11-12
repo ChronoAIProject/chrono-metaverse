@@ -282,6 +282,52 @@ async fn nyxagent_requires_session_csrf_original_credential_and_matching_owner_c
 }
 
 #[tokio::test]
+async fn nyxagent_enrollment_accepts_loopback_http_without_trusting_remote_http() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let cookie = setup(&app).await;
+    for (uri, accepted) in [
+        ("http://localhost:13000/login/agent-key", true),
+        ("http://127.0.0.1:13000/login/agent-key", true),
+        ("http://127.23.4.5:13000/login/agent-key", true),
+        ("http://[::1]:13000/login/agent-key", true),
+        ("https://nyxid.ai/login/agent-key", true),
+        ("http://nyxid.ai/login/agent-key", false),
+        ("http://192.168.1.2/login/agent-key", false),
+        ("http://localhost.evil.test/login/agent-key", false),
+        ("http://[::2]/login/agent-key", false),
+        ("http://user@localhost/login/agent-key", false),
+        ("http://localhost/login/agent-key?unexpected=1", false),
+        ("http://localhost/login/agent-key#fragment", false),
+        ("http://localhost/wrong-path", false),
+    ] {
+        app.nyx.oauth.0.lock().unwrap().key_verification_uri = Some(uri.into());
+        let result = call(&app, &cookie, "key/request", json!({})).await;
+        assert_eq!(
+            result.0,
+            if accepted {
+                StatusCode::OK
+            } else {
+                StatusCode::SERVICE_UNAVAILABLE
+            },
+            "{uri}: {}",
+            result.2
+        );
+        if accepted {
+            let body: Value = serde_json::from_str(&result.2).unwrap();
+            let url = url::Url::parse(body["verification_uri"].as_str().unwrap()).unwrap();
+            assert_eq!(
+                url.query_pairs().find(|(k, _)| k == "user_code").unwrap().1,
+                "ABCD-1234"
+            );
+        } else {
+            assert!(!result.2.contains("private-device-code"));
+        }
+    }
+}
+
+#[tokio::test]
 async fn nyxagent_enrollment_has_separate_scope_and_invalid_delivery_revokes_only_child() {
     let Some(app) = TestApp::start_with_options(true, true).await else {
         return;
