@@ -54,7 +54,7 @@ function Home({ showFixtureLink }: { readonly showFixtureLink: boolean }) {
       <div className="home__card">
         <h1>你的空间，聊着改</h1>
         <p>
-          登录后选择你的个人或组织空间，和在线 CMA worker 持续聊天，边调整边看三维预览。
+          登录后选择你的个人或组织空间，和 CMA 或 NyxAgent 持续聊天，边调整边看三维预览。
           空间的每次发布都可以沿时间线回放。
         </p>
         <p className="home__hint">

@@ -12,6 +12,7 @@ export type Session = {
   cmaOwnerId?: string;
   cmaAuthMethod?: CmaAuthMethod;
   cmaCredentialVersion?: string;
+  chatProvider?: 'nyxagent';
 };
 export type Context = { spaceId: string; orgId?: string };
 export type Intent = {
@@ -104,7 +105,7 @@ export async function workerRequest<T>(
   if (signal?.aborted) controller.abort();
   const timeout = window.setTimeout(abort, 30_000);
   try {
-    const r = await request(`/api/auth/nyxid/worker/${action}`, {
+    const r = await request(`/api/auth/nyxid/${session.chatProvider ?? 'worker'}/${action}`, {
       method: 'POST',
       credentials: 'same-origin',
       cache: 'no-store',
@@ -120,8 +121,9 @@ export async function workerRequest<T>(
     if (!r.ok) {
       const problem = result as { code?: string; detail?: string };
       throw new WorkerError(
-        problem.code ?? 'cma_error',
-        problem.detail ?? '请求未完成，请核对 CMA 状态。',
+        problem.code ?? (session.chatProvider === 'nyxagent' ? 'nyxagent_error' : 'cma_error'),
+        problem.detail ??
+          `请求未完成，请核对 ${session.chatProvider === 'nyxagent' ? 'NyxAgent' : 'CMA'} 状态。`,
         r.status,
       );
     }

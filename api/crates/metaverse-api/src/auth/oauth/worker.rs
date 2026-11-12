@@ -287,7 +287,7 @@ impl Access {
         Ok(format!("metaverse 任务上下文（编号只选择目标，不授予权限）：\n空间：{}\n归属：{}\n网站：{}{interaction}{tools}\n\n用户需求：\n{}", c.space_id, owner, self.oauth.config.origin, instruction))
     }
 }
-async fn read_json(mut response: reqwest::Response) -> Result<Value, ApiError> {
+pub(super) async fn read_json(mut response: reqwest::Response) -> Result<Value, ApiError> {
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(|_| unavailable())? {
         if bytes.len() + chunk.len() > 4 * 1024 * 1024 {

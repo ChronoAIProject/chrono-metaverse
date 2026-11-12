@@ -182,7 +182,9 @@ export function ConnectPage({ request = fetch }: { readonly request?: typeof fet
       }
       if (kind === 'disconnect') {
         clearBrowserKey(session.subject);
+        clearBrowserKey(session.subject, undefined, 'nyxagent');
         clearEnrollment(session.subject);
+        clearEnrollment(session.subject, undefined, 'nyxagent');
         setSession({ enabled: true, connected: false });
         setConfirmDisconnect(false);
         setOrganizations(null);

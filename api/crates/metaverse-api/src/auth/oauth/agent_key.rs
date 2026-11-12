@@ -13,6 +13,20 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use zeroize::{Zeroize, Zeroizing};
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Purpose {
+    Cma,
+    NyxAgent,
+}
+impl Purpose {
+    fn services(self) -> &'static [&'static str] {
+        match self {
+            Self::Cma => &["cma"],
+            Self::NyxAgent => &["llm-nyx", "chrono-metaverse", "chrono-llm-public"],
+        }
+    }
+}
+
 pub(super) fn router() -> Router<AppState> {
     Router::new()
         .route("/api/auth/nyxid/worker/key/request", post(request))
@@ -124,34 +138,36 @@ impl Identity {
         }
         Ok(())
     }
-    fn summary(self, subject: &str) -> Result<Summary, ApiError> {
+    fn summary(self, subject: &str, purpose: Purpose) -> Result<Summary, ApiError> {
         self.same_owner(subject)?;
         let key = self.api_key;
+        let services = purpose.services();
+        let permitted = |service: &Service| {
+            service.is_active
+                && services.contains(&service.slug.as_str())
+                && service.catalog_service_slug.as_deref() == Some(service.slug.as_str())
+        };
         if key.scopes.split_whitespace().collect::<Vec<_>>() != ["proxy"]
             || key.allow_all_services
             || key.allow_auto_connected_services
             || key.allowed_service_ids.is_empty()
             || key.effective_services.is_empty()
             || key.allowed_service_ids.iter().any(|id| {
-                !key.effective_services.iter().any(|s| {
-                    &s.id == id
-                        && s.slug == "cma"
-                        && s.catalog_service_slug.as_deref() == Some("cma")
-                        && s.is_active
-                })
+                !key.effective_services
+                    .iter()
+                    .any(|s| &s.id == id && permitted(s))
             })
-            || key.effective_services.iter().any(|s| {
-                s.slug != "cma"
-                    || s.catalog_service_slug.as_deref() != Some("cma")
-                    || !s.is_active
+            || key.effective_services.iter().any(|s| !permitted(s))
+            || services.iter().any(|slug| {
+                !key.effective_services
+                    .iter()
+                    .any(|s| s.slug == *slug && key.allowed_service_ids.contains(&s.id))
             })
-            // 同一服务可以有多个连接；直连使用已核验的 Key 主体。
-            // 必须包含当前账号的连接，允许同时存在其他 CMA 连接。
-            || !key.effective_services.iter().any(|s| {
-                key.allowed_service_ids.contains(&s.id)
-                    && (s.owner_id.as_deref() == Some(subject)
-                        || s.owner_id.is_none())
-            })
+            || (purpose == Purpose::Cma
+                && !key.effective_services.iter().any(|s| {
+                    key.allowed_service_ids.contains(&s.id)
+                        && (s.owner_id.as_deref() == Some(subject) || s.owner_id.is_none())
+                }))
         {
             return Err(scope_required());
         }
@@ -216,7 +232,9 @@ async fn verify(
     credential: &Credential,
     subject: &str,
 ) -> Result<Summary, ApiError> {
-    identity(oauth, credential).await?.summary(subject)
+    identity(oauth, credential)
+        .await?
+        .summary(subject, Purpose::Cma)
 }
 
 /// NyxID 批准不能证明 CMA 已接受；这里只转发浏览器 Key。
@@ -274,22 +292,23 @@ pub(super) async fn checked(
     Ok(credential)
 }
 
-struct Browser {
-    oauth: Arc<OAuthService>,
-    session: OAuthSessionRecord,
+pub(super) struct Browser {
+    pub(super) oauth: Arc<OAuthService>,
+    pub(super) session: OAuthSessionRecord,
     held: HeldCredential,
 }
 impl Browser {
     async fn new(state: &AppState, headers: &HeaderMap) -> Result<Self, ApiError> {
-        Self::open(state, headers, true).await
+        Self::open(state, headers, true, Purpose::Cma).await
     }
     async fn open(
         state: &AppState,
         headers: &HeaderMap,
         require_owner_access: bool,
+        purpose: Purpose,
     ) -> Result<Self, ApiError> {
         let oauth = routes::service(state)?;
-        if oauth.config.cma_base_url.is_none() {
+        if purpose == Purpose::Cma && oauth.config.cma_base_url.is_none() {
             return Err(unavailable());
         }
         let (session, held) = routes::verified_browser(&oauth, headers).await?;
@@ -302,7 +321,10 @@ impl Browser {
             held,
         })
     }
-    async fn current(&self) -> Result<(), ApiError> {
+    pub(super) async fn nyxagent(state: &AppState, headers: &HeaderMap) -> Result<Self, ApiError> {
+        Self::open(state, headers, true, Purpose::NyxAgent).await
+    }
+    pub(super) async fn current(&self) -> Result<(), ApiError> {
         if !self.oauth.current(&self.held).await?
             || self
                 .oauth
@@ -319,7 +341,14 @@ impl Browser {
     }
 }
 async fn request(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, ApiError> {
-    let b = Browser::new(&state, &headers).await?;
+    request_for(&state, &headers, Purpose::Cma).await
+}
+pub(super) async fn request_for(
+    state: &AppState,
+    headers: &HeaderMap,
+    purpose: Purpose,
+) -> Result<Response, ApiError> {
+    let b = Browser::open(state, headers, true, purpose).await?;
     let response = b.oauth.http.post(b.oauth.endpoint("/api/v1/auth/agent-key/request"))
         .header(header::ORIGIN, &b.oauth.config.origin)
         .json(&json!({"requested_profile":"metaverse-web","client_label":"Metaverse 网页","client_app":"chrono-metaverse","client_form_factor":"browser"}))
@@ -364,7 +393,7 @@ async fn request(State(state): State<AppState>, headers: HeaderMap) -> Result<Re
         ("login_type", "agent"),
         ("key_source", "existing"),
         ("permissions", "proxy"),
-        ("services", "cma"),
+        ("services", &purpose.services().join(",")),
         ("key_name", "Metaverse 网页"),
         ("expiry_days", "7"),
     ]);
@@ -374,8 +403,8 @@ async fn request(State(state): State<AppState>, headers: HeaderMap) -> Result<Re
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Poll {
-    device_code: String,
+pub(super) struct Poll {
+    pub(super) device_code: String,
 }
 impl Drop for Poll {
     fn drop(&mut self) {
@@ -387,13 +416,21 @@ async fn poll(
     headers: HeaderMap,
     ApiJson(input): ApiJson<Poll>,
 ) -> Result<Response, ApiError> {
+    poll_for(&state, &headers, input, Purpose::Cma).await
+}
+pub(super) async fn poll_for(
+    state: &AppState,
+    headers: &HeaderMap,
+    input: Poll,
+    purpose: Purpose,
+) -> Result<Response, ApiError> {
     if input.device_code.is_empty()
         || input.device_code.len() > 4096
         || !input.device_code.bytes().all(|b| b.is_ascii_graphic())
     {
         return Err(ApiError::invalid("授权请求已失效"));
     }
-    let b = Browser::new(&state, &headers).await?;
+    let b = Browser::open(state, headers, true, purpose).await?;
     let response = b
         .oauth
         .http
@@ -418,7 +455,7 @@ async fn poll(
     if !valid(credential.value()) {
         return Err(unavailable());
     }
-    let summary = delivery.identity.summary(&b.session.subject);
+    let summary = delivery.identity.summary(&b.session.subject, purpose);
     let current = b.current().await;
     if summary.is_err() || current.is_err() {
         // 交付给错误账号的子凭据不能保持有效；不能撤销父 Key。
@@ -446,8 +483,15 @@ async fn check(State(state): State<AppState>, headers: HeaderMap) -> Result<Resp
 }
 async fn revoke(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, ApiError> {
     // 退出组织后仍可撤销当前账号的子凭据，不因此授予 CMA 操作权限。
-    let b = Browser::open(&state, &headers, false).await?;
-    let credential = Credential::from_headers(&headers)?;
+    revoke_for(&state, &headers, Purpose::Cma).await
+}
+pub(super) async fn revoke_for(
+    state: &AppState,
+    headers: &HeaderMap,
+    purpose: Purpose,
+) -> Result<Response, ApiError> {
+    let b = Browser::open(state, headers, false, purpose).await?;
+    let credential = Credential::from_headers(headers)?;
     // 父 Key 的服务授权变化后仍允许撤销子凭据。
     identity(&b.oauth, &credential)
         .await?
@@ -467,4 +511,27 @@ async fn revoke(State(state): State<AppState>, headers: HeaderMap) -> Result<Res
     }
     b.current().await?;
     Ok(Json(json!({"revoked":true})).into_response())
+}
+
+pub(super) async fn checked_nyxagent(
+    oauth: &OAuthService,
+    headers: &HeaderMap,
+    subject: &str,
+) -> Result<Credential, ApiError> {
+    let credential = Credential::from_headers(headers)?;
+    identity(oauth, &credential)
+        .await?
+        .summary(subject, Purpose::NyxAgent)?;
+    Ok(credential)
+}
+pub(super) async fn nyxagent_summary(
+    oauth: &OAuthService,
+    credential: &Credential,
+    subject: &str,
+) -> Result<Value, ApiError> {
+    let mut summary = identity(oauth, credential)
+        .await?
+        .summary(subject, Purpose::NyxAgent)?;
+    summary.credential_version = super::worker::credential_version(credential.value());
+    serde_json::to_value(summary).map_err(|_| unavailable())
 }

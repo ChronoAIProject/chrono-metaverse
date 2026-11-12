@@ -7,6 +7,7 @@ use std::collections::HashMap;
 mod agent_key_tests;
 mod catalog_tests;
 mod connection_tests;
+mod nyxagent_tests;
 mod worker_tests;
 
 const ROOT: &str = "/api/auth/nyxid";
@@ -164,6 +165,7 @@ impl MockProvider {
         }));
         app.merge(worker_tests::routes(self.clone(), Router::new()))
             .merge(agent_key_tests::routes(self.clone(), Router::new()))
+            .merge(nyxagent_tests::routes(self.clone(), Router::new()))
     }
 }
 

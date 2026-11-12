@@ -12,6 +12,7 @@ import {
   saveBrowserKey,
   validIdentity,
   type KeyIdentity,
+  type ChatProvider,
 } from './browserKey';
 import {
   clearEnrollment,
@@ -27,17 +28,24 @@ export function AgentKeyConnection({
   onChange,
   checkVersion = 0,
   ownerName,
+  provider = 'cma',
 }: {
   readonly session: Session;
   readonly request: typeof fetch;
   readonly onChange: (ready: boolean, version?: string) => void;
   readonly checkVersion?: number;
   readonly ownerName?: string;
+  readonly provider?: ChatProvider;
 }) {
   const session = useMemo(
-    () => ({ ...suppliedSession, cmaAuthMethod: 'agent_key' as const }),
-    [suppliedSession],
+    () => ({
+      ...suppliedSession,
+      cmaAuthMethod: 'agent_key' as const,
+      ...(provider === 'nyxagent' ? { chatProvider: 'nyxagent' as const } : {}),
+    }),
+    [suppliedSession, provider],
   );
+  const serviceName = provider === 'nyxagent' ? 'NyxAgent' : 'CMA';
   const owner = session.cmaOwnerId ?? session.subject!;
   const ownerLabel = owner === session.subject ? '个人空间' : (ownerName ?? '当前组织');
   const [identity, setIdentity] = useState<KeyIdentity | null>(null);
@@ -62,14 +70,14 @@ export function AgentKeyConnection({
       lost();
       setEnrollment(null);
       setError('');
-      const saved = readBrowserKey(session.subject, owner);
+      const saved = readBrowserKey(session.subject, owner, provider);
       setIdentity(saved?.identity ?? null);
       if (!saved) {
-        setEnrollment(readEnrollment(session.subject!, owner));
+        setEnrollment(readEnrollment(session.subject!, owner, provider));
         setBusy(false);
         return;
       }
-      clearEnrollment(session.subject!, owner);
+      clearEnrollment(session.subject!, owner, provider);
       setBusy(true);
       try {
         const value = await workerRequest<KeyIdentity>(
@@ -82,7 +90,7 @@ export function AgentKeyConnection({
         if (!validIdentity(value) || !validCredentialVersion(value.credentialVersion))
           throw new Error('无法核对 Agent Key 授权状态。');
         if (!active) return;
-        saveBrowserKey(session.subject!, saved.credential, value, owner);
+        saveBrowserKey(session.subject!, saved.credential, value, owner, provider);
         setIdentity(value);
         setReady(true);
         onChange(true, value.credentialVersion);
@@ -90,11 +98,16 @@ export function AgentKeyConnection({
         if (!active) return;
         if (
           failure instanceof WorkerError &&
-          ['cma_key_required', 'cma_key_account_mismatch', 'cma_key_scope_required'].includes(
-            failure.code,
-          )
+          [
+            'cma_key_required',
+            'cma_key_account_mismatch',
+            'cma_key_scope_required',
+            'nyxagent_key_required',
+            'nyxagent_key_account_mismatch',
+            'nyxagent_key_scope_required',
+          ].includes(failure.code)
         ) {
-          clearBrowserKey(session.subject!, owner);
+          clearBrowserKey(session.subject!, owner, provider);
           setIdentity(null);
         }
         setError(failure instanceof Error ? failure.message : '暂时无法核验 Agent Key。');
@@ -107,19 +120,19 @@ export function AgentKeyConnection({
       generation.current = runGeneration + 1;
       controller.abort();
     };
-  }, [session, attempt, checkVersion, lost, onChange, request, owner]);
+  }, [session, attempt, checkVersion, lost, onChange, request, owner, provider]);
 
   useEffect(() => {
     function changed(event: StorageEvent) {
       if (
         event.storageArea === localStorage &&
-        (event.key === null || event.key === browserKeyStorageKey(session.subject!))
+        (event.key === null || event.key === browserKeyStorageKey(session.subject!, provider))
       )
         setAttempt((value) => value + 1);
     }
     window.addEventListener('storage', changed);
     return () => window.removeEventListener('storage', changed);
-  }, [session.subject, owner]);
+  }, [session.subject, owner, provider]);
 
   useEffect(() => {
     if (!enrollment) return;
@@ -129,7 +142,7 @@ export function AgentKeyConnection({
     let interval = enrollment.interval;
     async function poll() {
       if (Date.now() >= enrollment!.expiresAt) {
-        clearEnrollment(session.subject!, owner);
+        clearEnrollment(session.subject!, owner, provider);
         setEnrollment(null);
         setError('此次授权已过期，请重新发起。');
         return;
@@ -143,8 +156,8 @@ export function AgentKeyConnection({
           request,
         );
         if (!active) return;
-        saveBrowserKey(session.subject!, delivery.credential, delivery.identity, owner);
-        clearEnrollment(session.subject!, owner);
+        saveBrowserKey(session.subject!, delivery.credential, delivery.identity, owner, provider);
+        clearEnrollment(session.subject!, owner, provider);
         setIdentity(delivery.identity);
         setEnrollment(null);
         setError('');
@@ -154,31 +167,42 @@ export function AgentKeyConnection({
         if (!active) return;
         if (
           failure instanceof WorkerError &&
-          ['cma_key_pending', 'cma_key_slow_down', 'network', 'cma_key_unavailable'].includes(
-            failure.code,
-          )
+          [
+            'cma_key_pending',
+            'cma_key_slow_down',
+            'network',
+            'cma_key_unavailable',
+            'nyxagent_key_pending',
+            'nyxagent_key_slow_down',
+            'nyxagent_key_unavailable',
+          ].includes(failure.code)
         ) {
-          if (failure.code === 'cma_key_slow_down') interval = Math.min(60, interval + 5);
+          if (failure.code.endsWith('_key_slow_down')) interval = Math.min(60, interval + 5);
           try {
-            saveEnrollment(session.subject!, owner, {
-              ...enrollment!,
-              interval,
-              nextPollAt: Date.now() + interval * 1000,
-            });
+            saveEnrollment(
+              session.subject!,
+              owner,
+              {
+                ...enrollment!,
+                interval,
+                nextPollAt: Date.now() + interval * 1000,
+              },
+              provider,
+            );
           } catch (storageFailure) {
             setEnrollment(null);
             setError((storageFailure as Error).message);
             return;
           }
           setError(
-            failure.code === 'network' || failure.code === 'cma_key_unavailable'
+            failure.code === 'network' || failure.code.endsWith('_key_unavailable')
               ? '正在重新检查原授权，请稍候。'
               : '',
           );
           timer = setTimeout(() => void poll(), interval * 1000);
           return;
         }
-        clearEnrollment(session.subject!, owner);
+        clearEnrollment(session.subject!, owner, provider);
         setEnrollment(null);
         setError(
           failure instanceof Error
@@ -193,7 +217,7 @@ export function AgentKeyConnection({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [enrollment, session, onChange, request, owner]);
+  }, [enrollment, session, onChange, request, owner, provider]);
 
   async function run(work: () => Promise<void>) {
     if (action.current) return;
@@ -222,7 +246,7 @@ export function AgentKeyConnection({
           expiresAt: Date.now() + value.expires_in * 1000,
           nextPollAt: Date.now() + value.interval * 1000,
         };
-        saveEnrollment(session.subject!, owner, pending);
+        saveEnrollment(session.subject!, owner, pending, provider);
         setEnrollment(pending);
       }
     });
@@ -232,27 +256,31 @@ export function AgentKeyConnection({
       const current = generation.current;
       await workerRequest(session, 'key/revoke', {}, undefined, request);
       if (current !== generation.current) return;
-      clearBrowserKey(session.subject!, owner);
+      clearBrowserKey(session.subject!, owner, provider);
       setIdentity(null);
       lost();
     });
   }
   return (
-    <section className="workspace__consent" aria-label="CMA 浏览器授权">
-      <p>当前空间：{ownerLabel} · 使用当前账号的 CMA 授权</p>
+    <section className="workspace__consent" aria-label={`${serviceName} 浏览器授权`}>
+      <p>
+        当前空间：{ownerLabel} · 使用当前账号的 {serviceName} 授权
+      </p>
       {ready && identity ? (
         <>
-          <p>已连接 CMA · {identity.name}</p>
+          <p>
+            已连接 {serviceName} · {identity.name}
+          </p>
           <button className="workspace__secondary" disabled={busy} onClick={() => void revoke()}>
-            断开此浏览器的 CMA 授权
+            断开此浏览器的 {serviceName} 授权
           </button>
         </>
       ) : enrollment ? (
         <>
-          <h2>在 NyxID 确认 CMA 授权</h2>
+          <h2>在 NyxID 确认 {serviceName} 授权</h2>
           <p>
-            请求码和 CMA 权限已填好，无需输入验证码或 Key。在 NyxID 选择当前账号的 CMA
-            专用授权并确认。
+            请求码和 {serviceName} 权限已填好，无需输入验证码或 Key。在 NyxID
+            选择当前账号的专用授权并确认。
           </p>
           <a href={enrollment.verification_uri} target="_blank" rel="noopener noreferrer">
             打开 NyxID 授权页
@@ -261,7 +289,7 @@ export function AgentKeyConnection({
           <button
             className="workspace__secondary"
             onClick={() => {
-              clearEnrollment(session.subject!, owner);
+              clearEnrollment(session.subject!, owner, provider);
               setEnrollment(null);
             }}
           >
@@ -270,15 +298,25 @@ export function AgentKeyConnection({
         </>
       ) : (
         <>
-          <h2>连接 CMA</h2>
+          <h2>连接 {serviceName}</h2>
           <p>授权一次后，此浏览器会复用已有凭据。刷新或打开其他空间时会自动核验。</p>
           <button
             disabled={busy}
             onClick={() => (identity ? setAttempt((v) => v + 1) : void start())}
           >
-            {busy ? '正在核验…' : identity ? '重新检查 CMA 授权' : '授权此浏览器调用 CMA'}
+            {busy
+              ? '正在核验…'
+              : identity
+                ? '重新检查 CMA 授权'
+                : `授权此浏览器调用 ${serviceName}`}
           </button>
         </>
+      )}
+      {provider === 'nyxagent' && !ready && (
+        <p>
+          请选择 proxy 权限，以及 NyxAgent（llm-nyx）、chrono-metaverse 和 Chrono LLM Public
+          三个服务。
+        </p>
       )}
       {error && <p role="alert">{error}</p>}
     </section>

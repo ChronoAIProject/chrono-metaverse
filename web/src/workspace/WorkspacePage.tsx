@@ -35,6 +35,7 @@ import { OAuthConnection } from '../auth/OAuthConnection';
 import { AgentKeyConnection } from '../auth/AgentKeyConnection';
 import { readAuthMethod, saveAuthMethod, type CmaAuthMethod } from '../auth/cmaConnection';
 import { useFloatingChat } from './useFloatingChat';
+import { NyxAgentPanel } from './NyxAgentPanel';
 
 type PreviewIdentity = {
   spaceId: string;
@@ -106,6 +107,22 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
   const [catalogReload, setCatalogReload] = useState(0);
   const [catalogBusy, setCatalogBusy] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [assistant, setAssistant] = useState<'cma' | 'nyxagent'>(() => {
+    try {
+      return sessionStorage.getItem('metaverse-chat-provider') === 'nyxagent' ? 'nyxagent' : 'cma';
+    } catch {
+      return 'cma';
+    }
+  });
+  const [nyxagentBusy, setNyxagentBusy] = useState(false);
+  function chooseAssistant(value: 'cma' | 'nyxagent') {
+    setAssistant(value);
+    try {
+      sessionStorage.setItem('metaverse-chat-provider', value);
+    } catch {
+      /* 当前页面仍可切换。 */
+    }
+  }
   const floatingChat = useFloatingChat(chatOpen);
   const [menu, setMenu] = useState<'spaces' | 'view' | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -962,7 +979,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
     : cmaBase;
   const checkedPreview = previewIdentity?.url === preview ? previewIdentity.value : null;
   const ready = session?.connected && session.workerEnabled && connectionReady;
-  const disabled = busy || Boolean(note.pending);
+  const disabled = busy || Boolean(note.pending) || nyxagentBusy;
   const selected = catalogSpace;
   const visibleSpaces =
     catalog?.items.filter(
@@ -1002,6 +1019,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
   );
   function startCreation() {
     if (disabled || !session?.subject) return;
+    chooseAssistant('cma');
     const org =
       selected?.owner.kind === 'org' &&
       catalog?.organizations.some((o) => o.id === selected.owner.id && o.role === 'admin')
@@ -1329,13 +1347,29 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
         )}
         {session?.connected && (
           <button
+            className="workspace__button workspace__secondary"
+            aria-label="打开 NyxAgent 聊天"
+            disabled={busy || nyxagentBusy}
+            onClick={() => {
+              chooseAssistant('nyxagent');
+              setChatOpen(true);
+            }}
+          >
+            NyxAgent
+          </button>
+        )}
+        {session?.connected && (
+          <button
             ref={chatButton}
             className="workspace__chat-launcher workspace__button"
             aria-label="打开 CMA 聊天"
             aria-expanded={chatOpen}
             aria-controls="workspace-chat"
             hidden={chatOpen}
-            onClick={() => setChatOpen(true)}
+            onClick={() => {
+              chooseAssistant('cma');
+              setChatOpen(true);
+            }}
           >
             <svg
               viewBox="0 0 24 24"
@@ -1376,7 +1410,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
         <section className="workspace__welcome workspace__ui">
           <span>YOUR SPACES, ONE CONVERSATION</span>
           <h1>打开空间，聊着就能改</h1>
-          <p>把空间铺满眼前，让 CMA 陪你建造。</p>
+          <p>把空间铺满眼前，和 CMA 或 NyxAgent 聊着建造。</p>
           <a className="workspace__button" href="/connect">
             连接 NyxID，查看我的空间
           </a>
@@ -1429,7 +1463,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                       创建第一个空间
                     </button>
                   </div>
-                  <small>需要调整时，打开 CMA 聊天</small>
+                  <small>需要调整时，打开空间聊天</small>
                 </div>
               )}
             </div>
@@ -1440,15 +1474,19 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
             style={floatingChat.style}
             className="workspace__chat workspace__ui"
             role="dialog"
-            aria-label="CMA 空间聊天"
+            aria-label={assistant === 'nyxagent' ? 'NyxAgent 空间聊天' : 'CMA 空间聊天'}
             aria-modal="false"
             hidden={!chatOpen}
             onDragOver={(e) => {
-              if ((note.creation || note.agentId) && e.dataTransfer.types.includes('Files'))
+              if (
+                assistant === 'cma' &&
+                (note.creation || note.agentId) &&
+                e.dataTransfer.types.includes('Files')
+              )
                 e.preventDefault();
             }}
             onDrop={(e) => {
-              if (!note.creation && !note.agentId) return;
+              if (assistant !== 'cma' || (!note.creation && !note.agentId)) return;
               e.preventDefault();
               const file = e.dataTransfer.files[0];
               if (file) void pickModel(file);
@@ -1458,612 +1496,660 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
               <button
                 type="button"
                 className="workspace__drag-handle"
-                aria-label="移动 CMA 聊天窗，方向键调整位置"
+                aria-label={`移动 ${assistant === 'nyxagent' ? 'NyxAgent' : 'CMA'} 聊天窗，方向键调整位置`}
                 {...floatingChat.handle}
               >
                 ⠿
               </button>
               <div>
-                <h2>{note.creation?.phase === 'draft' ? '创建空间' : 'CMA 聊天'}</h2>
+                <h2>
+                  {assistant === 'nyxagent'
+                    ? 'NyxAgent 聊天'
+                    : note.creation?.phase === 'draft'
+                      ? '创建空间'
+                      : 'CMA 聊天'}
+                </h2>
                 <p>{spaceName || '选择一个空间，或创建新空间'}</p>
               </div>
+              <label>
+                <span className="workspace__sr-only">空间助手</span>
+                <select
+                  aria-label="空间助手"
+                  value={assistant}
+                  disabled={busy || nyxagentBusy}
+                  onChange={(event) => chooseAssistant(event.target.value as 'cma' | 'nyxagent')}
+                >
+                  <option value="cma">CMA</option>
+                  <option value="nyxagent">NyxAgent</option>
+                </select>
+              </label>
               <span className="workspace__badge" role="status">
-                {creating
-                  ? '待提交'
-                  : statusText(responseStatus || operation?.status || agent?.status || 'ready')}
+                {assistant === 'nyxagent'
+                  ? nyxagentBusy
+                    ? '执行中'
+                    : 'Agent Key'
+                  : creating
+                    ? '待提交'
+                    : statusText(responseStatus || operation?.status || agent?.status || 'ready')}
               </span>
               <button
                 className="workspace__icon-button workspace__secondary"
-                aria-label="收起 CMA 聊天"
+                aria-label={assistant === 'nyxagent' ? '收起 NyxAgent 聊天' : '收起 CMA 聊天'}
                 onClick={closeChat}
               >
                 −
               </button>
             </header>
-            <div className="workspace__chat-scroll">
-              {note.creation && note.creation.phase !== 'submitted' && (
-                <section className="workspace__creation" aria-label="创建空间设置">
-                  {creating && (
-                    <>
-                      <h2>从扫描或模型开始</h2>
-                      <p>
-                        粘贴 Scaniverse 链接，或放入 GLB / 扫描 ZIP。CMA
-                        会完成重建和上传，先给你预览。
-                      </p>
-                      <div className="workspace__creation-fields">
-                        <label>
-                          空间名称
-                          <input
-                            value={note.creation.name}
-                            maxLength={80}
-                            disabled={disabled}
-                            onChange={(e) =>
-                              commit({
-                                ...note,
-                                creation: { ...note.creation!, name: e.target.value },
-                              })
-                            }
-                          />
-                        </label>
-                        <label>
-                          空间归属
-                          <select
-                            value={note.orgId}
-                            disabled={disabled}
-                            onChange={(e) => change('orgId', e.target.value)}
+            {assistant === 'nyxagent' ? (
+              <NyxAgentPanel
+                key={`${session.subject}:${selected?.id ?? ''}:${selected?.owner.id ?? ''}`}
+                session={session}
+                space={selected}
+                request={request}
+                onBusy={setNyxagentBusy}
+                onPreview={(value) => {
+                  const url = viewerLink(value);
+                  if (!url) return;
+                  setFollowPreview(false);
+                  setConfirmPublish('');
+                  setPreviewIdentity(null);
+                  setPreview(url);
+                }}
+              />
+            ) : (
+              <>
+                <div className="workspace__chat-scroll">
+                  {note.creation && note.creation.phase !== 'submitted' && (
+                    <section className="workspace__creation" aria-label="创建空间设置">
+                      {creating && (
+                        <>
+                          <h2>从扫描或模型开始</h2>
+                          <p>
+                            粘贴 Scaniverse 链接，或放入 GLB / 扫描 ZIP。CMA
+                            会完成重建和上传，先给你预览。
+                          </p>
+                          <div className="workspace__creation-fields">
+                            <label>
+                              空间名称
+                              <input
+                                value={note.creation.name}
+                                maxLength={80}
+                                disabled={disabled}
+                                onChange={(e) =>
+                                  commit({
+                                    ...note,
+                                    creation: { ...note.creation!, name: e.target.value },
+                                  })
+                                }
+                              />
+                            </label>
+                            <label>
+                              空间归属
+                              <select
+                                value={note.orgId}
+                                disabled={disabled}
+                                onChange={(e) => change('orgId', e.target.value)}
+                              >
+                                <option value="">我的个人空间</option>
+                                {catalog?.organizations
+                                  .filter((o) => o.role === 'admin')
+                                  .map((o) => (
+                                    <option key={o.id} value={o.id}>
+                                      {o.name}
+                                    </option>
+                                  ))}
+                              </select>
+                            </label>
+                          </div>
+                        </>
+                      )}
+                      <label className="workspace__file-picker">
+                        <input
+                          className="workspace__sr-only"
+                          type="file"
+                          aria-label="选择模型文件"
+                          accept=".glb,.zip"
+                          disabled={busy}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) void pickModel(file);
+                            e.target.value = '';
+                          }}
+                        />
+                        <span>
+                          {note.creation.source?.kind === 'file' ? '重新选择模型' : '上传模型'}
+                        </span>
+                        <small>GLB / ZIP · 最大 20 MiB，也可拖入聊天窗</small>
+                      </label>
+                      {note.creation.source?.kind === 'file' && (
+                        <p className="workspace__file-name">
+                          {note.creation.source.name} ·{' '}
+                          {(note.creation.source.size / 1024 / 1024).toFixed(1)} MiB
+                          {!sourceFile && ' · 继续时请重新选择原文件'}
+                        </p>
+                      )}
+                      {note.creation.phase === 'preparing' && (
+                        <p role="status">准备建模环境后会上传模型，随后自动开始重建。</p>
+                      )}
+                      {note.creation.phase === 'preparing' &&
+                        note.agentId &&
+                        !note.operationId &&
+                        !note.pending && (
+                          <button
+                            disabled={busy || !sourceFile}
+                            onClick={() => void runIntent(fileUploadIntent(note))}
                           >
-                            <option value="">我的个人空间</option>
-                            {catalog?.organizations
-                              .filter((o) => o.role === 'admin')
-                              .map((o) => (
-                                <option key={o.id} value={o.id}>
-                                  {o.name}
-                                </option>
-                              ))}
-                          </select>
-                        </label>
-                      </div>
-                    </>
+                            继续上传模型
+                          </button>
+                        )}
+                    </section>
                   )}
-                  <label className="workspace__file-picker">
-                    <input
-                      className="workspace__sr-only"
-                      type="file"
-                      aria-label="选择模型文件"
-                      accept=".glb,.zip"
-                      disabled={busy}
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) void pickModel(file);
-                        e.target.value = '';
-                      }}
-                    />
-                    <span>
-                      {note.creation.source?.kind === 'file' ? '重新选择模型' : '上传模型'}
-                    </span>
-                    <small>GLB / ZIP · 最大 20 MiB，也可拖入聊天窗</small>
-                  </label>
-                  {note.creation.source?.kind === 'file' && (
-                    <p className="workspace__file-name">
-                      {note.creation.source.name} ·{' '}
-                      {(note.creation.source.size / 1024 / 1024).toFixed(1)} MiB
-                      {!sourceFile && ' · 继续时请重新选择原文件'}
+                  {querySpace &&
+                    querySpace !== note.spaceId &&
+                    /^[a-z0-9][a-z0-9-]{0,79}$/.test(querySpace) && (
+                      <div className="workspace__notice">
+                        <p>已有会话已保留，可切换到链接指定的空间。</p>
+                        <button disabled={disabled} onClick={() => openSpace(querySpace)}>
+                          打开 {querySpace}
+                        </button>
+                      </div>
+                    )}
+                  {error && (
+                    <p className="workspace__notice workspace__notice--error" role="alert">
+                      {error}
                     </p>
                   )}
-                  {note.creation.phase === 'preparing' && (
-                    <p role="status">准备建模环境后会上传模型，随后自动开始重建。</p>
+                  {notice && (
+                    <p className="workspace__notice" role="status">
+                      {notice}
+                    </p>
                   )}
-                  {note.creation.phase === 'preparing' &&
-                    note.agentId &&
-                    !note.operationId &&
-                    !note.pending && (
-                      <button
-                        disabled={busy || !sourceFile}
-                        onClick={() => void runIntent(fileUploadIntent(note))}
-                      >
-                        继续上传模型
-                      </button>
-                    )}
-                </section>
-              )}
-              {querySpace &&
-                querySpace !== note.spaceId &&
-                /^[a-z0-9][a-z0-9-]{0,79}$/.test(querySpace) && (
-                  <div className="workspace__notice">
-                    <p>已有会话已保留，可切换到链接指定的空间。</p>
-                    <button disabled={disabled} onClick={() => openSpace(querySpace)}>
-                      打开 {querySpace}
-                    </button>
-                  </div>
-                )}
-              {error && (
-                <p className="workspace__notice workspace__notice--error" role="alert">
-                  {error}
-                </p>
-              )}
-              {notice && (
-                <p className="workspace__notice" role="status">
-                  {notice}
-                </p>
-              )}
-              {!session.workerAvailable && (
-                <div className="workspace__notice">
-                  <p>在线 worker 尚未启用。你仍可以查看有权限的空间。</p>
-                </div>
-              )}
-              {session.workerAvailable &&
-              note.spaceId &&
-              !note.creation &&
-              !catalog &&
-              !catalogError ? (
-                <p role="status">正在核对空间归属和 CMA 授权…</p>
-              ) : session.workerAvailable ? (
-                <div className="workspace__consent">
-                  <label>
-                    聊天授权方式{' '}
-                    <select
-                      aria-label="聊天授权方式"
-                      value={authMethod}
-                      disabled={busy}
-                      onChange={(event) => {
-                        const method = event.target.value as CmaAuthMethod;
-                        saveAuthMethod(session.subject!, method);
-                        autoUpload.current = false;
-                        setReadyOwner('');
-                        setAuthChoice({ subject: session.subject!, method });
-                      }}
-                    >
-                      <option value="oauth">OAuth</option>
-                      <option value="agent_key">Agent Key</option>
-                    </select>
-                  </label>
-                  {authMethod === 'oauth' ? (
-                    <OAuthConnection
-                      key={connectionContext}
-                      session={session}
-                      ownerName={catalog?.organizations.find((o) => o.id === orgId)?.name}
-                      request={request}
-                      onChange={setConnectionReady}
-                      checkVersion={connectionCheck}
-                    />
-                  ) : (
-                    <AgentKeyConnection
-                      key={connectionContext}
-                      session={session}
-                      ownerName={catalog?.organizations.find((o) => o.id === orgId)?.name}
-                      request={request}
-                      onChange={setConnectionReady}
-                      checkVersion={connectionCheck}
-                    />
-                  )}
-                </div>
-              ) : null}
-              {session.workerAvailable && connectionReady && !session.workerEnabled && (
-                <div className="workspace__consent">
-                  <h2>启用空间聊天</h2>
-                  <p>允许网页通过 CMA 查看、创建和使用你有权限的 Agent，并发送你填写的任务。</p>
-                  <button disabled={busy} onClick={() => void enable(true)}>
-                    启用 CMA 聊天
-                  </button>
-                </div>
-              )}
-              <div
-                className="workspace__conversation"
-                role="log"
-                aria-label="聊天记录"
-                aria-live="polite"
-                aria-relevant="additions text"
-              >
-                {!note.creation &&
-                  !note.operationId &&
-                  conversation.length === 0 &&
-                  unobserved.length === 0 &&
-                  !pendingText && (
-                    <div className="workspace__chat-empty">
-                      <span aria-hidden="true">✳</span>
-                      <h2>
-                        {note.creation
-                          ? '给新空间一个起点'
-                          : note.spaceId
-                            ? '你想怎样调整这个空间？'
-                            : '先选一个空间'}
-                      </h2>
-                      <p>
-                        {note.creation
-                          ? '放入扫描链接或模型，也可以告诉 CMA 你希望保留的布局和风格。'
-                          : '可以说“把入口改得明亮一点”，再继续说“暖色一些”。worker 会沿用当前草稿，给你新的预览。'}
-                      </p>
-                      {note.spaceId && ready && !note.creation && (
-                        <div className="workspace__suggestions">
-                          {[
-                            '介绍一下这个空间',
-                            '把入口改得明亮一点，先给我预览',
-                            '保留现有布局，增加一个交流区',
-                            '放入一个模型，调整位置和外观，先给我预览',
-                          ].map((text) => (
-                            <button
-                              className="workspace__secondary"
-                              key={text}
-                              disabled={disabled}
-                              onClick={() => change('instruction', text)}
-                            >
-                              {text}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                  {!session.workerAvailable && (
+                    <div className="workspace__notice">
+                      <p>在线 worker 尚未启用。你仍可以查看有权限的空间。</p>
                     </div>
                   )}
-                {conversation.map((m) => (
-                  <article
-                    key={m.key}
-                    className={`workspace__message workspace__message--${m.role}`}
-                  >
-                    <strong>{m.role === 'assistant' ? 'CMA worker' : '你'}</strong>
-                    <p>{m.text}</p>
-                  </article>
-                ))}
-                {unobserved.map((m) => (
-                  <article key={m.key} className="workspace__message workspace__message--user">
-                    <strong>你</strong>
-                    <p>{m.text}</p>
-                  </article>
-                ))}
-                {pendingText && (
-                  <article className="workspace__message workspace__message--user">
-                    <strong>你 · {busy ? '正在发送' : '等待确认'}</strong>
-                    <p>{pendingText}</p>
-                  </article>
-                )}
-                {extraTexts.map((text, i) => (
-                  <article
-                    key={`live-${i}`}
-                    className="workspace__message workspace__message--assistant"
-                  >
-                    <strong>CMA worker</strong>
-                    <p>{text}</p>
-                  </article>
-                ))}
-                {awaiting && (
-                  <div className="workspace__activity" role="status">
-                    <span className="workspace__pulse" />
-                    worker 正在处理，回复和预览会自动更新。
-                    {activity.map((a) => (
-                      <p key={a.id}>
-                        {a.name} · {statusText(a.status ?? 'in_progress')}
-                      </p>
-                    ))}
-                  </div>
-                )}
-                {note.operationId && (
-                  <StartupProgress
-                    operation={operation}
-                    operationId={note.operationId}
-                    cmaUrl={cmaBase}
-                    busy={disabled}
-                    onRefresh={() => {
-                      setError('');
-                      setNotice('');
-                      setPoll((v) => v + 1);
-                    }}
-                    onResume={note.startup ? () => void runIntent(note.startup!) : undefined}
-                    onRestart={
-                      note.startup && !operation?.agent_id
-                        ? () => {
-                            autoUpload.current = Boolean(
-                              note.creation?.source?.kind === 'file' && sourceFile,
-                            );
-                            void runIntent(
-                              {
-                                ...note.startup!,
-                                body: {
-                                  ...note.startup!.body,
-                                  idempotencyKey: crypto.randomUUID(),
-                                },
-                              },
-                              { ...note, operationId: undefined },
-                            );
-                          }
-                        : undefined
-                    }
-                  />
-                )}
-                <div ref={chatEnd} />
-              </div>
-              {note.pending && !busy && (
-                <section className="workspace__recovery">
-                  <h2>保留了一次待确认请求</h2>
-                  <p>
-                    {note.pending.setupRequired
-                      ? '请用相同账号登录 CMA，完成运行环境授权后回到这里重新提交。'
-                      : '发送结果尚未确认。重试会使用相同内容和原请求编号。'}
-                  </p>
-                  {note.pending.lastError ? (
-                    <p className="workspace__notice--error">
-                      上次请求反馈：{note.pending.lastError.message}
-                    </p>
-                  ) : (
-                    <p>旧记录没有保留错误详情。重试原请求可取回结果或新的错误原因。</p>
+                  {session.workerAvailable &&
+                  note.spaceId &&
+                  !note.creation &&
+                  !catalog &&
+                  !catalogError ? (
+                    <p role="status">正在核对空间归属和 CMA 授权…</p>
+                  ) : session.workerAvailable ? (
+                    <div className="workspace__consent">
+                      <label>
+                        聊天授权方式{' '}
+                        <select
+                          aria-label="聊天授权方式"
+                          value={authMethod}
+                          disabled={busy}
+                          onChange={(event) => {
+                            const method = event.target.value as CmaAuthMethod;
+                            saveAuthMethod(session.subject!, method);
+                            autoUpload.current = false;
+                            setReadyOwner('');
+                            setAuthChoice({ subject: session.subject!, method });
+                          }}
+                        >
+                          <option value="oauth">OAuth</option>
+                          <option value="agent_key">Agent Key</option>
+                        </select>
+                      </label>
+                      {authMethod === 'oauth' ? (
+                        <OAuthConnection
+                          key={connectionContext}
+                          session={session}
+                          ownerName={catalog?.organizations.find((o) => o.id === orgId)?.name}
+                          request={request}
+                          onChange={setConnectionReady}
+                          checkVersion={connectionCheck}
+                        />
+                      ) : (
+                        <AgentKeyConnection
+                          key={connectionContext}
+                          session={session}
+                          ownerName={catalog?.organizations.find((o) => o.id === orgId)?.name}
+                          request={request}
+                          onChange={setConnectionReady}
+                          checkVersion={connectionCheck}
+                        />
+                      )}
+                    </div>
+                  ) : null}
+                  {session.workerAvailable && connectionReady && !session.workerEnabled && (
+                    <div className="workspace__consent">
+                      <h2>启用空间聊天</h2>
+                      <p>允许网页通过 CMA 查看、创建和使用你有权限的 Agent，并发送你填写的任务。</p>
+                      <button disabled={busy} onClick={() => void enable(true)}>
+                        启用 CMA 聊天
+                      </button>
+                    </div>
                   )}
-                  <div className="workspace__actions">
-                    {note.pending.setupRequired && (
-                      <a href={`${cmaBase}/auth/login`} target="_blank" rel="noopener noreferrer">
-                        登录 CMA ↗
-                      </a>
+                  <div
+                    className="workspace__conversation"
+                    role="log"
+                    aria-label="聊天记录"
+                    aria-live="polite"
+                    aria-relevant="additions text"
+                  >
+                    {!note.creation &&
+                      !note.operationId &&
+                      conversation.length === 0 &&
+                      unobserved.length === 0 &&
+                      !pendingText && (
+                        <div className="workspace__chat-empty">
+                          <span aria-hidden="true">✳</span>
+                          <h2>
+                            {note.creation
+                              ? '给新空间一个起点'
+                              : note.spaceId
+                                ? '你想怎样调整这个空间？'
+                                : '先选一个空间'}
+                          </h2>
+                          <p>
+                            {note.creation
+                              ? '放入扫描链接或模型，也可以告诉 CMA 你希望保留的布局和风格。'
+                              : '可以说“把入口改得明亮一点”，再继续说“暖色一些”。worker 会沿用当前草稿，给你新的预览。'}
+                          </p>
+                          {note.spaceId && ready && !note.creation && (
+                            <div className="workspace__suggestions">
+                              {[
+                                '介绍一下这个空间',
+                                '把入口改得明亮一点，先给我预览',
+                                '保留现有布局，增加一个交流区',
+                                '放入一个模型，调整位置和外观，先给我预览',
+                              ].map((text) => (
+                                <button
+                                  className="workspace__secondary"
+                                  key={text}
+                                  disabled={disabled}
+                                  onClick={() => change('instruction', text)}
+                                >
+                                  {text}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    {conversation.map((m) => (
+                      <article
+                        key={m.key}
+                        className={`workspace__message workspace__message--${m.role}`}
+                      >
+                        <strong>{m.role === 'assistant' ? 'CMA worker' : '你'}</strong>
+                        <p>{m.text}</p>
+                      </article>
+                    ))}
+                    {unobserved.map((m) => (
+                      <article key={m.key} className="workspace__message workspace__message--user">
+                        <strong>你</strong>
+                        <p>{m.text}</p>
+                      </article>
+                    ))}
+                    {pendingText && (
+                      <article className="workspace__message workspace__message--user">
+                        <strong>你 · {busy ? '正在发送' : '等待确认'}</strong>
+                        <p>{pendingText}</p>
+                      </article>
                     )}
-                    <button disabled={busy} onClick={() => void runIntent(note.pending!)}>
-                      {note.pending.setupRequired ? '已完成授权，重新提交' : '重试原请求'}
-                    </button>
-                    <a href={cmaLink} target="_blank" rel="noopener noreferrer">
-                      在 CMA 核对进度 ↗
-                    </a>
+                    {extraTexts.map((text, i) => (
+                      <article
+                        key={`live-${i}`}
+                        className="workspace__message workspace__message--assistant"
+                      >
+                        <strong>CMA worker</strong>
+                        <p>{text}</p>
+                      </article>
+                    ))}
+                    {awaiting && (
+                      <div className="workspace__activity" role="status">
+                        <span className="workspace__pulse" />
+                        worker 正在处理，回复和预览会自动更新。
+                        {activity.map((a) => (
+                          <p key={a.id}>
+                            {a.name} · {statusText(a.status ?? 'in_progress')}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                    {note.operationId && (
+                      <StartupProgress
+                        operation={operation}
+                        operationId={note.operationId}
+                        cmaUrl={cmaBase}
+                        busy={disabled}
+                        onRefresh={() => {
+                          setError('');
+                          setNotice('');
+                          setPoll((v) => v + 1);
+                        }}
+                        onResume={note.startup ? () => void runIntent(note.startup!) : undefined}
+                        onRestart={
+                          note.startup && !operation?.agent_id
+                            ? () => {
+                                autoUpload.current = Boolean(
+                                  note.creation?.source?.kind === 'file' && sourceFile,
+                                );
+                                void runIntent(
+                                  {
+                                    ...note.startup!,
+                                    body: {
+                                      ...note.startup!.body,
+                                      idempotencyKey: crypto.randomUUID(),
+                                    },
+                                  },
+                                  { ...note, operationId: undefined },
+                                );
+                              }
+                            : undefined
+                        }
+                      />
+                    )}
+                    <div ref={chatEnd} />
                   </div>
-                  <details>
-                    <summary>请求详情</summary>
-                    <p>
-                      操作：
-                      {
-                        {
-                          create: '准备在线 worker',
-                          message: '发送聊天消息',
-                          attachment: '上传模型',
-                          cancel: '停止任务',
-                        }[note.pending.action]
-                      }
-                    </p>
-                    <p>
-                      请求编号 <code>{note.pending.body.idempotencyKey}</code>
-                    </p>
-                    {note.pending.lastError && (
+                  {note.pending && !busy && (
+                    <section className="workspace__recovery">
+                      <h2>保留了一次待确认请求</h2>
                       <p>
-                        错误类型 <code>{note.pending.lastError.code}</code>
-                        {note.pending.lastError.status &&
-                          ` · HTTP ${note.pending.lastError.status}`}
+                        {note.pending.setupRequired
+                          ? '请用相同账号登录 CMA，完成运行环境授权后回到这里重新提交。'
+                          : '发送结果尚未确认。重试会使用相同内容和原请求编号。'}
+                      </p>
+                      {note.pending.lastError ? (
+                        <p className="workspace__notice--error">
+                          上次请求反馈：{note.pending.lastError.message}
+                        </p>
+                      ) : (
+                        <p>旧记录没有保留错误详情。重试原请求可取回结果或新的错误原因。</p>
+                      )}
+                      <div className="workspace__actions">
+                        {note.pending.setupRequired && (
+                          <a
+                            href={`${cmaBase}/auth/login`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            登录 CMA ↗
+                          </a>
+                        )}
+                        <button disabled={busy} onClick={() => void runIntent(note.pending!)}>
+                          {note.pending.setupRequired ? '已完成授权，重新提交' : '重试原请求'}
+                        </button>
+                        <a href={cmaLink} target="_blank" rel="noopener noreferrer">
+                          在 CMA 核对进度 ↗
+                        </a>
+                      </div>
+                      <details>
+                        <summary>请求详情</summary>
+                        <p>
+                          操作：
+                          {
+                            {
+                              create: '准备在线 worker',
+                              message: '发送聊天消息',
+                              attachment: '上传模型',
+                              cancel: '停止任务',
+                            }[note.pending.action]
+                          }
+                        </p>
+                        <p>
+                          请求编号 <code>{note.pending.body.idempotencyKey}</code>
+                        </p>
+                        {note.pending.lastError && (
+                          <p>
+                            错误类型 <code>{note.pending.lastError.code}</code>
+                            {note.pending.lastError.status &&
+                              ` · HTTP ${note.pending.lastError.status}`}
+                          </p>
+                        )}
+                      </details>
+                      <details>
+                        <summary>已在 CMA 核对结果</summary>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={confirmForget}
+                            onChange={(e) => setConfirmForget(e.target.checked)}
+                          />
+                          我已在 CMA 核对结果，可以清除此恢复记录
+                        </label>
+                        <button
+                          className="workspace__secondary"
+                          disabled={busy || !confirmForget}
+                          onClick={() => {
+                            commit({ ...note, pending: undefined });
+                            setConfirmForget(false);
+                          }}
+                        >
+                          清除恢复记录
+                        </button>
+                      </details>
+                    </section>
+                  )}
+                  {preview.startsWith('/preview') && note.agentId && (
+                    <section className="workspace__publish">
+                      <h2>验收这次草稿</h2>
+                      {previewError && <p role="alert">{previewError}</p>}
+                      {checkedPreview && (
+                        <p>
+                          草稿 <code>{checkedPreview.preview.draftId}</code> · 修订{' '}
+                          {checkedPreview.preview.rev}
+                        </p>
+                      )}
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={confirmPublish === preview}
+                          onChange={(e) => setConfirmPublish(e.target.checked ? preview : '')}
+                        />
+                        我已查看预览，要求 worker 发布对应草稿
+                      </label>
+                      <button
+                        disabled={confirmPublish !== preview || disabled || !checkedPreview}
+                        onClick={() =>
+                          void runIntent({
+                            action: 'message',
+                            body: {
+                              agentId: note.agentId,
+                              context: {
+                                chat: true,
+                                ...(session?.toolSourceRef
+                                  ? { toolSourceRef: session.toolSourceRef }
+                                  : {}),
+                                spaceId: checkedPreview!.spaceId,
+                                ...(note.orgId ? { orgId: note.orgId } : {}),
+                              },
+                              instruction: `我已查看预览，确认发布空间 ${checkedPreview!.spaceId} 的草稿 ${checkedPreview!.preview.draftId}，范围 ${checkedPreview!.preview.scope}，草稿修订 rev=${checkedPreview!.preview.rev}，基础版本 baseSeq=${checkedPreview!.preview.baseSeq}。先核对上述编号和版本是否仍一致，并在发布请求中保留该 rev；如果已变化或冲突，请停止并说明，不要自动重放。`,
+                              idempotencyKey: crypto.randomUUID(),
+                            },
+                          })
+                        }
+                      >
+                        请 worker 发布此草稿
+                      </button>
+                    </section>
+                  )}
+                  <details className="workspace__chat-options">
+                    <summary>会话与 worker</summary>
+                    <div className="workspace__actions">
+                      <button
+                        className="workspace__secondary"
+                        disabled={busy}
+                        onClick={() => {
+                          setError('');
+                          setPoll((v) => v + 1);
+                        }}
+                      >
+                        刷新进度
+                      </button>
+                      <a href={cmaLink} target="_blank" rel="noopener noreferrer">
+                        完整进度与审批 ↗
+                      </a>
+                    </div>
+                    {note.agentId && (
+                      <p>
+                        worker <code>{note.agentId}</code>
                       </p>
                     )}
+                    {note.operationId && (
+                      <p>
+                        准备任务 <code>{note.operationId}</code>
+                      </p>
+                    )}
+                    <p>关闭页面不会停止云端任务；当前标签页保留每个空间的聊天恢复记录。</p>
+                    {ready && !note.creation && (
+                      <>
+                        <button
+                          className="workspace__secondary"
+                          disabled={disabled}
+                          onClick={() => void list()}
+                        >
+                          读取我的 CMA workers
+                        </button>
+                        {agents && (
+                          <ul className="workspace__agents">
+                            {agents.map((a) => (
+                              <li key={a.id}>
+                                <button
+                                  disabled={disabled}
+                                  className="workspace__secondary"
+                                  onClick={() => selectAgent(a.id)}
+                                >
+                                  {a.owner_title ?? a.title ?? a.id}
+                                  <span>{statusText(a.status)}</span>
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        {nextCursor && (
+                          <button disabled={disabled} onClick={() => void list(nextCursor)}>
+                            加载更多
+                          </button>
+                        )}
+                        <button
+                          className="workspace__secondary"
+                          disabled={disabled}
+                          onClick={() => {
+                            commit({
+                              ...note,
+                              agentId: undefined,
+                              operationId: undefined,
+                              responseId: undefined,
+                              sent: [],
+                            });
+                            setAgent(null);
+                            setTranscript(null);
+                            setOperation(null);
+                            setControls(null);
+                            setOutput([]);
+                            setResponseStatus('');
+                          }}
+                        >
+                          换一个 worker 开始新对话
+                        </button>
+                        <button
+                          className="workspace__secondary"
+                          disabled={busy}
+                          onClick={() => void enable(false)}
+                        >
+                          关闭网页 CMA 调用
+                        </button>
+                        <p>关闭授权后，已受理任务仍在运行；已有 worker 的权限仍由 CMA 管理。</p>
+                      </>
+                    )}
                   </details>
-                  <details>
-                    <summary>已在 CMA 核对结果</summary>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={confirmForget}
-                        onChange={(e) => setConfirmForget(e.target.checked)}
-                      />
-                      我已在 CMA 核对结果，可以清除此恢复记录
-                    </label>
-                    <button
-                      className="workspace__secondary"
-                      disabled={busy || !confirmForget}
-                      onClick={() => {
-                        commit({ ...note, pending: undefined });
-                        setConfirmForget(false);
-                      }}
-                    >
-                      清除恢复记录
-                    </button>
-                  </details>
-                </section>
-              )}
-              {preview.startsWith('/preview') && note.agentId && (
-                <section className="workspace__publish">
-                  <h2>验收这次草稿</h2>
-                  {previewError && <p role="alert">{previewError}</p>}
-                  {checkedPreview && (
-                    <p>
-                      草稿 <code>{checkedPreview.preview.draftId}</code> · 修订{' '}
-                      {checkedPreview.preview.rev}
-                    </p>
+                </div>
+                <form onSubmit={submit} className="workspace__composer">
+                  {!creating && !importing && ready && (
+                    <div className="workspace__actions">
+                      <label className="workspace__file-picker">
+                        <span>
+                          {note.model ? `已选择：${note.model.name}` : '添加 GLB / ZIP 模型'}
+                        </span>
+                        <input
+                          type="file"
+                          accept=".glb,.zip"
+                          aria-label="添加空间模型"
+                          className="workspace__sr-only"
+                          disabled={busy || !note.agentId || (!note.pending && disabled)}
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            if (file) void pickModel(file);
+                            event.target.value = '';
+                          }}
+                        />
+                      </label>
+                      {note.model && !note.pending && (
+                        <button
+                          type="button"
+                          className="workspace__secondary"
+                          onClick={() => {
+                            commit({ ...note, model: undefined });
+                            setSourceFile(null);
+                          }}
+                        >
+                          移除附件
+                        </button>
+                      )}
+                      {!note.agentId && <small>开始聊天后可添加模型，也可直接描述地图来源。</small>}
+                    </div>
                   )}
                   <label>
-                    <input
-                      type="checkbox"
-                      checked={confirmPublish === preview}
-                      onChange={(e) => setConfirmPublish(e.target.checked ? preview : '')}
+                    <span className="workspace__sr-only">给空间发消息</span>
+                    <textarea
+                      required={!creating && !note.model}
+                      rows={2}
+                      maxLength={16000}
+                      value={note.instruction}
+                      disabled={!ready || !note.spaceId || disabled || importing}
+                      onChange={(e) => change('instruction', e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                          e.preventDefault();
+                          if (canSend) e.currentTarget.form?.requestSubmit();
+                        }
+                      }}
+                      placeholder={
+                        creating
+                          ? '粘贴 Scaniverse 分享链接，或上传模型后说说你的想法…'
+                          : note.spaceId
+                            ? '描述你想要的变化…'
+                            : '先选择一个空间'
+                      }
                     />
-                    我已查看预览，要求 worker 发布对应草稿
                   </label>
-                  <button
-                    disabled={confirmPublish !== preview || disabled || !checkedPreview}
-                    onClick={() =>
-                      void runIntent({
-                        action: 'message',
-                        body: {
-                          agentId: note.agentId,
-                          context: {
-                            chat: true,
-                            ...(session?.toolSourceRef
-                              ? { toolSourceRef: session.toolSourceRef }
-                              : {}),
-                            spaceId: checkedPreview!.spaceId,
-                            ...(note.orgId ? { orgId: note.orgId } : {}),
-                          },
-                          instruction: `我已查看预览，确认发布空间 ${checkedPreview!.spaceId} 的草稿 ${checkedPreview!.preview.draftId}，范围 ${checkedPreview!.preview.scope}，草稿修订 rev=${checkedPreview!.preview.rev}，基础版本 baseSeq=${checkedPreview!.preview.baseSeq}。先核对上述编号和版本是否仍一致，并在发布请求中保留该 rev；如果已变化或冲突，请停止并说明，不要自动重放。`,
-                          idempotencyKey: crypto.randomUUID(),
-                        },
-                      })
-                    }
-                  >
-                    请 worker 发布此草稿
-                  </button>
-                </section>
-              )}
-              <details className="workspace__chat-options">
-                <summary>会话与 worker</summary>
-                <div className="workspace__actions">
-                  <button
-                    className="workspace__secondary"
-                    disabled={busy}
-                    onClick={() => {
-                      setError('');
-                      setPoll((v) => v + 1);
-                    }}
-                  >
-                    刷新进度
-                  </button>
-                  <a href={cmaLink} target="_blank" rel="noopener noreferrer">
-                    完整进度与审批 ↗
-                  </a>
-                </div>
-                {note.agentId && (
-                  <p>
-                    worker <code>{note.agentId}</code>
-                  </p>
-                )}
-                {note.operationId && (
-                  <p>
-                    准备任务 <code>{note.operationId}</code>
-                  </p>
-                )}
-                <p>关闭页面不会停止云端任务；当前标签页保留每个空间的聊天恢复记录。</p>
-                {ready && !note.creation && (
-                  <>
-                    <button
-                      className="workspace__secondary"
-                      disabled={disabled}
-                      onClick={() => void list()}
-                    >
-                      读取我的 CMA workers
-                    </button>
-                    {agents && (
-                      <ul className="workspace__agents">
-                        {agents.map((a) => (
-                          <li key={a.id}>
-                            <button
-                              disabled={disabled}
-                              className="workspace__secondary"
-                              onClick={() => selectAgent(a.id)}
-                            >
-                              {a.owner_title ?? a.title ?? a.id}
-                              <span>{statusText(a.status)}</span>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    {nextCursor && (
-                      <button disabled={disabled} onClick={() => void list(nextCursor)}>
-                        加载更多
+                  <div className="workspace__actions">
+                    <small>Enter 发送 · Shift + Enter 换行</small>
+                    {controls?.target_active && controls.target && (
+                      <button
+                        type="button"
+                        className="workspace__secondary"
+                        disabled={disabled}
+                        onClick={() =>
+                          void runIntent({
+                            action: 'cancel',
+                            body: {
+                              agentId: note.agentId,
+                              responseId: note.responseId,
+                              turnSequence: controls.target!.turn_sequence,
+                              agentRevision: controls.agent_revision,
+                              idempotencyKey: crypto.randomUUID(),
+                            },
+                          })
+                        }
+                      >
+                        停止响应
                       </button>
                     )}
-                    <button
-                      className="workspace__secondary"
-                      disabled={disabled}
-                      onClick={() => {
-                        commit({
-                          ...note,
-                          agentId: undefined,
-                          operationId: undefined,
-                          responseId: undefined,
-                          sent: [],
-                        });
-                        setAgent(null);
-                        setTranscript(null);
-                        setOperation(null);
-                        setControls(null);
-                        setOutput([]);
-                        setResponseStatus('');
-                      }}
-                    >
-                      换一个 worker 开始新对话
+                    <button type="submit" disabled={!canSend}>
+                      {creating ? '开始创建' : '发送'}
                     </button>
-                    <button
-                      className="workspace__secondary"
-                      disabled={busy}
-                      onClick={() => void enable(false)}
-                    >
-                      关闭网页 CMA 调用
-                    </button>
-                    <p>关闭授权后，已受理任务仍在运行；已有 worker 的权限仍由 CMA 管理。</p>
-                  </>
-                )}
-              </details>
-            </div>
-            <form onSubmit={submit} className="workspace__composer">
-              {!creating && !importing && ready && (
-                <div className="workspace__actions">
-                  <label className="workspace__file-picker">
-                    <span>{note.model ? `已选择：${note.model.name}` : '添加 GLB / ZIP 模型'}</span>
-                    <input
-                      type="file"
-                      accept=".glb,.zip"
-                      aria-label="添加空间模型"
-                      className="workspace__sr-only"
-                      disabled={busy || !note.agentId || (!note.pending && disabled)}
-                      onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        if (file) void pickModel(file);
-                        event.target.value = '';
-                      }}
-                    />
-                  </label>
-                  {note.model && !note.pending && (
-                    <button
-                      type="button"
-                      className="workspace__secondary"
-                      onClick={() => {
-                        commit({ ...note, model: undefined });
-                        setSourceFile(null);
-                      }}
-                    >
-                      移除附件
-                    </button>
-                  )}
-                  {!note.agentId && <small>开始聊天后可添加模型，也可直接描述地图来源。</small>}
-                </div>
-              )}
-              <label>
-                <span className="workspace__sr-only">给空间发消息</span>
-                <textarea
-                  required={!creating && !note.model}
-                  rows={2}
-                  maxLength={16000}
-                  value={note.instruction}
-                  disabled={!ready || !note.spaceId || disabled || importing}
-                  onChange={(e) => change('instruction', e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                      e.preventDefault();
-                      if (canSend) e.currentTarget.form?.requestSubmit();
-                    }
-                  }}
-                  placeholder={
-                    creating
-                      ? '粘贴 Scaniverse 分享链接，或上传模型后说说你的想法…'
-                      : note.spaceId
-                        ? '描述你想要的变化…'
-                        : '先选择一个空间'
-                  }
-                />
-              </label>
-              <div className="workspace__actions">
-                <small>Enter 发送 · Shift + Enter 换行</small>
-                {controls?.target_active && controls.target && (
-                  <button
-                    type="button"
-                    className="workspace__secondary"
-                    disabled={disabled}
-                    onClick={() =>
-                      void runIntent({
-                        action: 'cancel',
-                        body: {
-                          agentId: note.agentId,
-                          responseId: note.responseId,
-                          turnSequence: controls.target!.turn_sequence,
-                          agentRevision: controls.agent_revision,
-                          idempotencyKey: crypto.randomUUID(),
-                        },
-                      })
-                    }
-                  >
-                    停止响应
-                  </button>
-                )}
-                <button type="submit" disabled={!canSend}>
-                  {creating ? '开始创建' : '发送'}
-                </button>
-              </div>
-            </form>
+                  </div>
+                </form>
+              </>
+            )}
           </section>
         </div>
       )}
