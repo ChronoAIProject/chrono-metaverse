@@ -20,6 +20,8 @@ test('草稿模型和贴图在刷新后复用浏览器缓存，预览授权每�
   const viewer = page.locator('.viewer');
   await expect(viewer).toHaveAttribute('data-ready', 'true');
   await expect(viewer).toHaveAttribute('data-models-pending', '0');
+  // 几何就绪时贴图仍可能在异步读取，等待实际完成后再验证刷新缓存。
+  await expect(viewer).toHaveAttribute('data-textures-pending', '0');
   await expect.poll(() => pending.size).toBe(0);
   await expect
     .poll(() =>
@@ -36,6 +38,7 @@ test('草稿模型和贴图在刷新后复用浏览器缓存，预览授权每�
   await page.reload();
   await expect(viewer).toHaveAttribute('data-ready', 'true');
   await expect(viewer).toHaveAttribute('data-models-pending', '0');
+  await expect(viewer).toHaveAttribute('data-textures-pending', '0');
   await expect.poll(() => pending.size).toBe(0);
   expect(assets.length).toBe(first);
   // 开发模式的 StrictMode 会重跑一次加载；每次刷新仍必须重新请求授权。
@@ -64,5 +67,6 @@ test('浏览器拒绝持久存储时仍可加载草稿', async ({ page }) => {
   await page.goto(PREVIEW);
   await expect(page.locator('.viewer')).toHaveAttribute('data-ready', 'true');
   await expect(page.locator('.viewer')).toHaveAttribute('data-models-pending', '0');
+  await expect(page.locator('.viewer')).toHaveAttribute('data-textures-pending', '0');
   await expect(page.locator('.viewer')).toHaveAttribute('data-models-failed', '0');
 });
