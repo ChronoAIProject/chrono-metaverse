@@ -14,7 +14,7 @@
 api/          接口服务：Rust 工作区（axum + mongodb + utoipa）
   crates/metaverse-core   区块编码、内容哈希、回放、操作、形状词表（纯计算）
   crates/metaverse-api    公开读、写、管理接口；NyxID 身份令牌校验与组织角色查询
-web/          只读查看器：React + Vite + three.js（沿用 CMA 前端工程），nginx 托管
+web/          查看器与 CMA 在线工作台：React + Vite + three.js（沿用 CMA 前端工程），nginx 托管
 recon/        本地重建工具：Python（扫描对齐、网页用模型、结构和物体、AI 物件集、重建工作台 metaverse-recon）
 sdk/typescript  metaverse 命令行与建造脚本工具包
 infra/
@@ -23,7 +23,7 @@ infra/
   dev/                本地全套：模拟 NyxID、一键启动脚本
 docs/         整体设计、建设计划、形状词表、教程
 spikes/       第 0 阶段验证代码与结果
-.github/      持续集成（ci.yml）与镜像构建（images.yml）
+.github/      持续集成（ci.yml）与镜像构建（publish.yml）
 ```
 
 ## 快速开始（本地全套）
@@ -48,12 +48,19 @@ infra/dev/down.sh     # 停止
 
 ## 部署
 
-- 镜像：推送到 `main` 或开发分支时由 GitHub Actions 构建，推到 `ghcr.io/chronoaiproject/chrono-metaverse-{api,web}`（标签：7 位提交哈希、分支名；`latest` 只给 `main`；部署一律按摘要固定）。
+- 镜像：合入 `dev` 后发布并部署测试版，合入 `main` 后发布并部署正式版，推到 `ghcr.io/chronoaiproject/chrono-metaverse-{api,web}`（标签：7 位提交哈希、分支名；`latest` 只给 `main`；部署一律按摘要固定）。
 - 部署：chrono-cd 的 ChronoAI 组织下，项目 `metaverse`、应用 `chrono-metaverse`，服务 `metaverse-web` / `metaverse-api` 加 MongoDB 插件（处理服务已下线，重建在本地做，见 [docs/design/server-slim.md](docs/design/server-slim.md)）。规格和完整步骤（设为公开、提交、NyxID 注册、导入演示数据、回滚）见 [infra/chrono-cd/README.md](infra/chrono-cd/README.md)。
 
 ## 持续集成与分支保护
 
-`main` 的必过检查只绑定 GitHub Actions 的 `CI Gate`（名称保持固定）。它等待
+`dev` 是默认开发分支和测试版来源，沿用现有 `chrono-metaverse` 测试部署；`main`
+负责独立的 `chrono-metaverse-prod` 正式部署。开发 PR 合入 `dev`，发布正式版时从
+`dev` 提 PR 合入 `main`。合并后删除短期分支，保留这两个长期分支。
+
+两条分支分别使用只允许 `dev` 的 `staging` 环境和只允许 `main` 的 `production`
+环境，部署配置与数据库隔离。手动运行同样检查分支，不从其他分支发布。
+
+`dev` 和 `main` 的必过检查只绑定 GitHub Actions 的 `CI Gate`（名称保持固定）。它等待
 [ci.yml](.github/workflows/ci.yml) 中的全部 CI 任务，只有所有任务都成功才通过；失败、取消或跳过均不通过。
 因此，调整各任务的显示名称无需再修改 GitHub 分支保护。新增、删除或修改 job ID 时，同步维护
 `ci-gate.needs`，让它覆盖所有 CI 任务。可选组件的跳过在任务内部处理，使任务本身正常成功。
@@ -61,6 +68,7 @@ infra/dev/down.sh     # 停止
 ## 文档
 
 - [整体设计](docs/ARCHITECTURE.md)、[建设计划](docs/BUILD_PLAN.md)、[进度报告](docs/PROGRESS.md)、[形状词表](docs/SHAPES.md)、[重建开源方案调研](docs/research/scan-to-model.md)
+- [在线工作台规划](docs/WEB_CONSOLE_PLAN.md)：在网页委托 CMA worker 建造、跟进任务与预览结果
 - [建造教程](docs/tutorials/build-space.md)：用 Claude Code / Codex 建造空间、给 AI 配 agent key、写事件、组合空间
 - [开发教程](docs/tutorials/cloud-claude-code-nyxid.md)：在云端用 Claude Code 连接 NyxID 开发、部署、注册 NyxID 服务
 - [重建教程](docs/tutorials/reconstruct-with-ai.md) 和[方法论](docs/methodology/README.md)：从扫描到逼真的数字孪生——采集、本地重建、逐件建模、多人评审、贴图、写回上线

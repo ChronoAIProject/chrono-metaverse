@@ -43,6 +43,8 @@ pub struct AppState {
     pub public: Arc<public::PublicServices>,
     /// 叫醒本进程的后台执行器（完成上传、建好任务以后，不等轮询）。
     pub job_signal: Arc<runner::JobSignal>,
+    /// 用户授权的凭据托管；不为业务接口提供浏览器身份认证。
+    pub oauth: Option<Arc<auth::oauth::OAuthService>>,
     ready: Arc<AtomicBool>,
 }
 
@@ -54,8 +56,22 @@ impl AppState {
             jwt::Verifier::new(config.verifier_config())
                 .map_err(|error| format!("NyxID 身份令牌校验配置不可用：{error}"))?,
         );
-        let organizations = OrganizationClient::new(&config.nyxid.base_url, verifier.clone())?;
+        let oauth = config
+            .oauth
+            .clone()
+            .map(|oauth| {
+                auth::oauth::OAuthService::new(
+                    oauth,
+                    &config.nyxid.base_url,
+                    &config.nyxid.issuer,
+                    repo.clone(),
+                )
+            })
+            .transpose()?;
+        let organizations = OrganizationClient::new(&config.nyxid.base_url, verifier.clone())?
+            .with_oauth(oauth.clone());
         Ok(Self {
+            oauth,
             authenticator: Arc::new(Authenticator::new(verifier, repo.clone())),
             authorizer: Arc::new(Authorizer::new(
                 repo.clone(),

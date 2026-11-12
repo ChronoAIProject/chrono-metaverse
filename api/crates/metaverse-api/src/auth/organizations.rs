@@ -2,16 +2,14 @@
 //!
 //! 改编自 CMA `api/crates/cma/src/auth/organizations/{mod.rs,transport.rs}`：
 //!
-//! - 用**调用者自己的凭据**调用 NyxID `GET /api/v1/orgs/{orgId}/authorization`；
-//!   CMA 用服务端保存的登录令牌，本服务网站只读、不登录，所以改用 NyxID 转发来的
-//!   调用者令牌（`Authorization: Bearer …`，需要在 NyxID 注册时开启
-//!   `forward_access_token`）。这是设计里有记录的例外：令牌只在内存里用，
-//!   只调这一个接口，不记日志、不落库、用完即弃。
+//! - 用调用者自己的凭据调用 NyxID `GET /api/v1/orgs/{orgId}/authorization`。
+//!   优先使用显式转发令牌；无转发时按签名主体获取同一用户保存的 OAuth 授权。
+//!   OAuth 授权由 [`super::oauth`] 加密托管，只用于组织权限查询。
 //! - 转发来的是 JWT 时，先验签并要求它的 sub 等于身份令牌的 sub（CMA 用 userinfo
 //!   核对主体，这里用同一组 NyxID 公钥核对）。
 //! - 返回的编号必须等于 `orgId`（不认 slug）；角色只能是 admin、member、viewer。
 //! - 三态结果：成员（带角色和证据）/ 不是成员（401、403、404）/ 查不到（其他错误、超时、
-//!   没有转发令牌）。整次查询 15 秒截止。
+//!   没有可用凭据）。整次查询 15 秒截止。
 //! - 结果不跨请求缓存；证据最多用 60 秒，从查询开始时算起。
 
 use std::{
@@ -45,6 +43,9 @@ impl fmt::Debug for ForwardedCredential {
 }
 
 impl ForwardedCredential {
+    pub(crate) fn retained(token: String) -> Self {
+        Self(Zeroizing::new(token))
+    }
     /// 从请求头取 `Authorization: Bearer <令牌>`。头只能出现一次；别的认证方案
     /// （例如公开接口的 `Share`）不算转发凭据。
     pub fn from_headers(headers: &axum::http::HeaderMap) -> Option<Self> {
@@ -113,6 +114,7 @@ pub struct OrganizationClient {
     base_url: reqwest::Url,
     http: reqwest::Client,
     verifier: Arc<Verifier>,
+    oauth: Option<Arc<super::oauth::OAuthService>>,
 }
 
 impl OrganizationClient {
@@ -131,7 +133,13 @@ impl OrganizationClient {
             base_url,
             http,
             verifier,
+            oauth: None,
         })
+    }
+
+    pub fn with_oauth(mut self, oauth: Option<Arc<super::oauth::OAuthService>>) -> Self {
+        self.oauth = oauth;
+        self
     }
 
     fn endpoint(&self, org_id: &str) -> Option<reqwest::Url> {
@@ -147,7 +155,7 @@ impl OrganizationClient {
         Some(endpoint)
     }
 
-    /// 查 `subject` 在 `org_id` 里的角色，用调用者自己转发来的凭据。
+    /// 查 `subject` 在 `org_id` 里的角色，使用显式转发凭据或同主体 OAuth 授权。
     pub async fn membership(
         &self,
         subject: &str,
@@ -157,12 +165,27 @@ impl OrganizationClient {
         if !is_subject_id(org_id) {
             return MembershipLookup::NotMember;
         }
-        let Some(credential) = credential else {
-            return MembershipLookup::Unavailable;
-        };
-        tokio::time::timeout(LOOKUP_TIMEOUT, self.lookup(subject, credential, org_id))
-            .await
-            .unwrap_or(MembershipLookup::Unavailable)
+        tokio::time::timeout(LOOKUP_TIMEOUT, async {
+            // 显式转发的凭据保持其原有权限语义；无凭据时才选择同一签名主体的 OAuth 授权。
+            // 无效/受限的显式凭据不能通过回退到更大的保存权限而被忽略。
+            if let Some(credential) = credential {
+                return self.lookup(subject, credential, org_id).await;
+            }
+            let Some(oauth) = &self.oauth else {
+                return MembershipLookup::Unavailable;
+            };
+            let held = match oauth.credential(subject).await {
+                Ok(Some(held)) => held,
+                _ => return MembershipLookup::Unavailable,
+            };
+            let result = self.lookup(subject, &held.credential, org_id).await;
+            match oauth.current(&held).await {
+                Ok(true) => result,
+                _ => MembershipLookup::Unavailable,
+            }
+        })
+        .await
+        .unwrap_or(MembershipLookup::Unavailable)
     }
 
     async fn lookup(

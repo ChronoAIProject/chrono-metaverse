@@ -54,6 +54,11 @@
   background: var(--primary-fill-hover);
 }
 
+.home__link:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 .home__links {
   display: flex;
   flex-wrap: wrap;

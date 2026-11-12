@@ -1,0 +1,355 @@
+{
+  "yaw": -6.545413288235196,
+  "translation": [
+    4.042260893679291,
+    0.0,
+    1.6059662806073796
+  ],
+  "headingDegrees": 18.454586711764804,
+  "officeFloor": 14,
+  "officeHeightMeters": 60.0,
+  "note": "按临滨海湾外墙及现有玻璃朝向配准，办公室位于楼体内。单元沿外墙的位置和楼层绝对标高仍待现场核准。",
+  "sectionPolygon": [
+    [
+      -14.598723767470428,
+      15.111448692786555
+    ],
+    [
+      -13.534972672855787,
+      -22.74258307117891
+    ],
+    [
+      -6.225547357341892,
+      -32.594976300812235
+    ],
+    [
+      -2.649377239273023,
+      -35.97656801755322
+    ],
+    [
+      -0.9550147607031176,
+      -35.95734113755559
+    ],
+    [
+      9.072199912254456,
+      -35.84352006646439
+    ],
+    [
+      38.06482653894732,
+      -35.29213640223429
+    ],
+    [
+      37.770956099912425,
+      -23.403754252367914
+    ],
+    [
+      36.896983810716904,
+      11.95172450477266
+    ],
+    [
+      26.0987381089802,
+      16.169970273789062
+    ],
+    [
+      4.566520964294595,
+      15.610330049977927
+    ],
+    [
+      -10.643836163245446,
+      15.214712167682594
+    ]
+  ],
+  "officeContained": true,
+  "minimumFacadeClearanceMeters": 0.12012601262662415,
+  "hostEntities": [
+    {
+      "entityId": "bay.tower1-below-office",
+      "layer": "ext",
+      "kind": "object",
+      "label": "MBFC Tower 1 · 十四层以下楼体（剖面）",
+      "regionId": "marina-bay-exterior",
+      "assetHash": "42598f4f4621352ca325ca42ae716e71c34b98f6fe3f33838d766945cbec1d4f",
+      "bounds": {
+        "min": [
+          -20.402247,
+          -60.0,
+          -43.646572
+        ],
+        "max": [
+          42.572886,
+          -0.13,
+          16.343062
+        ]
+      },
+      "props": {
+        "数据来源": "OneMap 三维地图 · 新加坡土地管理局 SLA",
+        "来源地址": "https://www.onemap.gov.sg/3d",
+        "版权": "Map Data © 2026 SLA",
+        "官方建筑编号": "SLA_BLDG2_481e89dc-0dd1-4b88-8f8b-80303d6842a2",
+        "原始分片": "7/77/7_0.b3dm",
+        "数据创建日期": "2025-06-08",
+        "官方测量高度（米）": 185.782,
+        "三角形数": 1152,
+        "处理说明": "保留办公室以下的官方楼体，上方剖开以查看室内",
+        "background": true,
+        "landmark": {
+          "label": "ChronoAI · 14层办公室",
+          "position": [
+            5.75,
+            1.4,
+            15.7209848659808
+          ],
+          "minDistance": 80,
+          "focusBounds": {
+            "min": [
+              0.1999,
+              -0.0531,
+              -0.0269
+            ],
+            "max": [
+              11.3001,
+              2.8031,
+              15.4088
+            ]
+          }
+        }
+      }
+    },
+    {
+      "entityId": "bay.tower1-above-office",
+      "layer": "ext",
+      "kind": "object",
+      "label": "MBFC Tower 1 · 完整楼体上部",
+      "regionId": "marina-bay-exterior",
+      "assetHash": "a0472e8a8bd4b8f248e45d190aaeaa111438b2c392d1281fdf50833a10204447",
+      "bounds": {
+        "min": [
+          -14.597709,
+          3.21,
+          -35.969591
+        ],
+        "max": [
+          38.060906,
+          125.78154,
+          16.163776
+        ]
+      },
+      "props": {
+        "数据来源": "OneMap 三维地图 · 新加坡土地管理局 SLA",
+        "来源地址": "https://www.onemap.gov.sg/3d",
+        "版权": "Map Data © 2026 SLA",
+        "官方建筑编号": "SLA_BLDG2_481e89dc-0dd1-4b88-8f8b-80303d6842a2",
+        "原始分片": "7/77/7_0.b3dm",
+        "数据创建日期": "2025-06-08",
+        "官方测量高度（米）": 185.782,
+        "三角形数": 116,
+        "backgroundView": {
+          "focus": [
+            5.75,
+            1.375,
+            7.69095
+          ],
+          "minDistance": 80
+        },
+        "处理说明": "远看时显示所在楼层以上的完整官方楼体",
+        "background": true
+      }
+    },
+    {
+      "entityId": "bay.tower1-office-facade-west",
+      "layer": "ext",
+      "kind": "object",
+      "label": "MBFC Tower 1 · 十四层外墙",
+      "regionId": "marina-bay-exterior",
+      "assetHash": "f75a24f2d82db513954c94338ebc8cf9122944e5a6d0010ac490e1d64a5bb1be",
+      "bounds": {
+        "min": [
+          -14.59958,
+          -0.13,
+          -35.982471
+        ],
+        "max": [
+          -0.12,
+          3.21,
+          15.491644
+        ]
+      },
+      "props": {
+        "数据来源": "OneMap 三维地图 · 新加坡土地管理局 SLA",
+        "来源地址": "https://www.onemap.gov.sg/3d",
+        "版权": "Map Data © 2026 SLA",
+        "官方建筑编号": "SLA_BLDG2_481e89dc-0dd1-4b88-8f8b-80303d6842a2",
+        "原始分片": "7/77/7_0.b3dm",
+        "数据创建日期": "2025-06-08",
+        "官方测量高度（米）": 185.782,
+        "三角形数": 84,
+        "backgroundView": {
+          "focus": [
+            5.75,
+            1.375,
+            7.69095
+          ],
+          "minDistance": 80
+        },
+        "background": true
+      }
+    },
+    {
+      "entityId": "bay.tower1-office-facade-east",
+      "layer": "ext",
+      "kind": "object",
+      "label": "MBFC Tower 1 · 十四层外墙",
+      "regionId": "marina-bay-exterior",
+      "assetHash": "57e48f32c201ebd167e34106285a9dd3595adbb1e14bd95581bc2d799366f8e8",
+      "bounds": {
+        "min": [
+          11.62,
+          -0.13,
+          -35.796931
+        ],
+        "max": [
+          38.068141,
+          3.21,
+          16.175207
+        ]
+      },
+      "props": {
+        "数据来源": "OneMap 三维地图 · 新加坡土地管理局 SLA",
+        "来源地址": "https://www.onemap.gov.sg/3d",
+        "版权": "Map Data © 2026 SLA",
+        "官方建筑编号": "SLA_BLDG2_481e89dc-0dd1-4b88-8f8b-80303d6842a2",
+        "原始分片": "7/77/7_0.b3dm",
+        "数据创建日期": "2025-06-08",
+        "官方测量高度（米）": 185.782,
+        "三角形数": 58,
+        "backgroundView": {
+          "focus": [
+            5.75,
+            1.375,
+            7.69095
+          ],
+          "minDistance": 80
+        },
+        "background": true
+      }
+    },
+    {
+      "entityId": "bay.tower1-office-facade-north",
+      "layer": "ext",
+      "kind": "object",
+      "label": "MBFC Tower 1 · 十四层外墙",
+      "regionId": "marina-bay-exterior",
+      "assetHash": "02d1ce857f2eba485a58dfd92cafb9b7df77880e33ba44d77082c0fc524ad5c2",
+      "bounds": {
+        "min": [
+          -0.12,
+          -0.13,
+          -35.952811
+        ],
+        "max": [
+          11.62,
+          3.21,
+          -35.792869
+        ]
+      },
+      "props": {
+        "数据来源": "OneMap 三维地图 · 新加坡土地管理局 SLA",
+        "来源地址": "https://www.onemap.gov.sg/3d",
+        "版权": "Map Data © 2026 SLA",
+        "官方建筑编号": "SLA_BLDG2_481e89dc-0dd1-4b88-8f8b-80303d6842a2",
+        "原始分片": "7/77/7_0.b3dm",
+        "数据创建日期": "2025-06-08",
+        "官方测量高度（米）": 185.782,
+        "三角形数": 14,
+        "backgroundView": {
+          "focus": [
+            5.75,
+            1.375,
+            7.69095
+          ],
+          "minDistance": 80
+        },
+        "background": true
+      }
+    },
+    {
+      "entityId": "bay.tower1-office-facade-south",
+      "layer": "ext",
+      "kind": "object",
+      "label": "MBFC Tower 1 · 十四层外墙",
+      "regionId": "marina-bay-exterior",
+      "assetHash": "d41fcd5bb2f5a8cca9f37488aee66d3fb268d1897718fcc181f75e17842f1481",
+      "bounds": {
+        "min": [
+          4.830842,
+          -0.13,
+          15.62
+        ],
+        "max": [
+          11.62,
+          3.21,
+          15.796584
+        ]
+      },
+      "props": {
+        "数据来源": "OneMap 三维地图 · 新加坡土地管理局 SLA",
+        "来源地址": "https://www.onemap.gov.sg/3d",
+        "版权": "Map Data © 2026 SLA",
+        "官方建筑编号": "SLA_BLDG2_481e89dc-0dd1-4b88-8f8b-80303d6842a2",
+        "原始分片": "7/77/7_0.b3dm",
+        "数据创建日期": "2025-06-08",
+        "官方测量高度（米）": 185.782,
+        "三角形数": 10,
+        "backgroundView": {
+          "focus": [
+            5.75,
+            1.375,
+            7.69095
+          ],
+          "minDistance": 80
+        },
+        "background": true
+      }
+    },
+    {
+      "entityId": "bay.tower1-office-slab",
+      "layer": "ext",
+      "kind": "object",
+      "label": "MBFC Tower 1 · 十四层示意结构楼板",
+      "regionId": "marina-bay-exterior",
+      "assetHash": "3168803cc7949c91f8230cb8745cb66d3d7ed0868d2d7f3bdeb4ff09b1e6f0aa",
+      "bounds": {
+        "min": [
+          -14.598724,
+          -0.37,
+          -35.976568
+        ],
+        "max": [
+          38.064827,
+          -0.12,
+          16.16997
+        ]
+      },
+      "props": {
+        "数据来源": "OneMap 三维地图 · 新加坡土地管理局 SLA",
+        "来源地址": "https://www.onemap.gov.sg/3d",
+        "版权": "Map Data © 2026 SLA",
+        "官方建筑编号": "SLA_BLDG2_481e89dc-0dd1-4b88-8f8b-80303d6842a2",
+        "原始分片": "7/77/7_0.b3dm",
+        "数据创建日期": "2025-06-08",
+        "官方测量高度（米）": 185.782,
+        "三角形数": 44,
+        "backgroundView": {
+          "focus": [
+            5.75,
+            1.375,
+            7.69095
+          ],
+          "maxDistance": 80
+        },
+        "处理说明": "根据官方楼体截面生成的示意楼板，不代表完整室内平面图",
+        "background": true
+      }
+    }
+  ]
+}

@@ -12,6 +12,7 @@
 //! | `ALLOWED_NYX_SERVICE_IDS` | 是 | 允许的 NyxID 服务编号，逗号分隔 |
 //! | `BIND` | 否 | 监听地址，默认 `0.0.0.0:8080` |
 //! | `PUBLIC_BASE_URL` | 否 | 对外地址，默认 `http://localhost:8080` |
+//! | `NYXID_OAUTH_CLIENT_ID`、`NYXID_OAUTH_CLIENT_SECRET`、`NYXID_OAUTH_ENCRYPTION_KEY` | 否 | 同时设置以启用用户授权及凭据加密托管 |
 //! | `METAVERSE_REQUIRE_PERMISSIONS` | 否 | 是否启用功能级权限（`true`/`false`），默认 `false` |
 //! | `UPLOAD_*`、`JOB_MAX_PENDING_PER_SPACE` | 否 | 上传大小、格式和任务数的上限，见 [`crate::ingest`] |
 //! | `PUBLIC_*`、`TRUSTED_CLIENT_IP_HEADER` | 否 | 公开接口的限流、并发、缓存和可信客户端地址头，见 [`crate::public::PublicConfig`] |
@@ -42,6 +43,7 @@ pub struct Config {
     pub mongodb_uri: String,
     pub mongodb_database: String,
     pub nyxid: NyxIdConfig,
+    pub oauth: Option<crate::auth::oauth::OAuthConfig>,
     pub require_permissions: bool,
     /// 上传、任务的上限（`UPLOAD_*`、`JOB_*`，见 `ingest` 模块）。
     pub ingest: crate::ingest::IngestConfig,
@@ -155,7 +157,9 @@ impl Config {
         let runner = crate::runner::RunnerConfig::from_lookup(&lookup)?;
         let mut public = crate::public::PublicConfig::from_lookup(&lookup)?;
         public.site_base_url = public_base_url.as_str().trim_end_matches('/').to_owned();
+        let oauth = crate::auth::oauth::OAuthConfig::from_lookup(&lookup, &public_base_url)?;
         Ok(Self {
+            oauth,
             public,
             bind,
             public_base_url,

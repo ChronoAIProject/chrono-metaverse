@@ -1,0 +1,25 @@
+# metaverse 工作区：拉取的数据和本地输出不进版本库，建造脚本（build/）进。
+out/
+chunks/
+assets/
+node_modules/
+.venv/
+.vite/
+.claude/
+__pycache__/
+references/model-paths.json
+references/singapore-model.json
+references/onemap/
+references/objaverse-paths.json.gz
+references/osm.json
+references/context-osm.json
+space.json
+palette.json
+entities.json
+anchors.json
+# metaverse 补上的：原始扫描（scan/）不公开，重建工作目录和本地输出不进版本库
+scan/
+work/
+web/
+
+limits.json

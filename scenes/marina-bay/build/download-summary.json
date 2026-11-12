@@ -1,0 +1,21 @@
+{
+  "source": "https://www.onemap.gov.sg/omapi/tilesets/sg_noterrain_tiles/tileset.json",
+  "attribution": "Map Data © 2026 Singapore Land Authority (SLA)",
+  "bboxDegrees": [
+    103.85,
+    1.278,
+    103.8647,
+    1.2918
+  ],
+  "downloadedAt": "2026-11-11T14:57:10.174390+00:00",
+  "sourceTiles": 49,
+  "sourceBytes": 825204456,
+  "orthophotoTiles": 36,
+  "buildingParts": 257,
+  "groundParts": 4,
+  "hostTowerParts": 7,
+  "modelBytes": 193272344,
+  "triangles": 321076,
+  "largestModelBytes": 4704980,
+  "verified": true
+}

@@ -11,6 +11,7 @@ import {
 
 const ROUTES: readonly AppRoute[] = [
   { kind: 'home' },
+  { kind: 'connect' },
   { kind: 'space', spaceId: 'restaurant-xyz' },
   { kind: 'universe', universeId: 'street-1' },
   { kind: 'preview' },

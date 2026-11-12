@@ -37,7 +37,7 @@ export const WEB_SERVICE = 'metaverse-web';
 /** 已下线的服务：规格里不能再出现（docs/design/server-slim.md 10.1）。 */
 export const RETIRED_SERVICES = ['metaverse-worker'];
 
-/** 每个服务的镜像仓库（images.yml 推送的包）。 */
+/** 每个服务的镜像仓库（publish.yml 推送的包）。 */
 export const IMAGE_REPOSITORIES = {
   [WEB_SERVICE]: 'ghcr.io/chronoaiproject/chrono-metaverse-web',
   [API_SERVICE]: 'ghcr.io/chronoaiproject/chrono-metaverse-api',
@@ -45,7 +45,7 @@ export const IMAGE_REPOSITORIES = {
 
 /**
  * 按摘要固定的镜像引用：`仓库[:标签]@sha256:<64 位小写十六进制>`。chrono-cd 在标签和摘要都有时
- * 只按摘要拉取，标签只是给人看的记号，所以只允许 7 位提交哈希（images.yml 的短哈希标签），
+ * 只按摘要拉取，标签只是给人看的记号，所以只允许 7 位提交哈希（publish.yml 的短哈希标签），
  * 不允许 `main` 这类分支标签，免得记号和实际镜像对不上。
  */
 const PINNED_IMAGE = /^(?<repo>[a-z0-9.-]+(?:\/[a-z0-9._-]+)+?)(?::(?<tag>[^@:/]+))?@(?<digest>sha256:[0-9a-f]{64})$/;

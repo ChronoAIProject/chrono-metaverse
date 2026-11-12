@@ -205,36 +205,43 @@ pub async fn get_public_head(
     State(state): State<AppState>,
     Path(space_id): Path<String>,
     Query(query): Query<UniverseParam>,
-    headers: HeaderMap,
+    headers: super::public_access::ViewerHeaders,
 ) -> Result<Response, ApiError> {
-    let (grant, head) = match query.universe.as_deref() {
-        Some(universe) => {
-            let now = crate::now()?;
-            let grant =
-                public_space_grant(&state, &space_id, &headers, Some(universe), now).await?;
-            let head = head_data(&state, &grant).await?;
-            (grant, head)
-        }
-        None => match state.ingest.head_cache.get(&space_id) {
-            // 先用缓存的授权信息校验令牌，通过了才用缓存的数据。
-            Some(cached) => {
-                let grant = Authorizer::public_space_from_policy(
-                    &space_id,
-                    &cached.policy,
-                    share_token(&headers),
-                )?;
-                (grant, cached.head)
-            }
-            None => {
-                let (grant, policy) = state
-                    .authorizer
-                    .public_space_with_policy(&space_id, share_token(&headers))
-                    .await?;
+    let (grant, head) = if let Some(grant) =
+        headers.browser_grant(&space_id, query.universe.as_deref())?
+    {
+        let head = head_data(&state, &grant).await?;
+        (grant, head)
+    } else {
+        match query.universe.as_deref() {
+            Some(universe) => {
+                let now = crate::now()?;
+                let grant =
+                    public_space_grant(&state, &space_id, &headers, Some(universe), now).await?;
                 let head = head_data(&state, &grant).await?;
-                state.ingest.head_cache.put(&space_id, policy, head.clone());
                 (grant, head)
             }
-        },
+            None => match state.ingest.head_cache.get(&space_id) {
+                // 先用缓存的授权信息校验令牌，通过了才用缓存的数据。
+                Some(cached) => {
+                    let grant = Authorizer::public_space_from_policy(
+                        &space_id,
+                        &cached.policy,
+                        share_token(&headers),
+                    )?;
+                    (grant, cached.head)
+                }
+                None => {
+                    let (grant, policy) = state
+                        .authorizer
+                        .public_space_with_policy(&space_id, share_token(&headers))
+                        .await?;
+                    let head = head_data(&state, &grant).await?;
+                    state.ingest.head_cache.put(&space_id, policy, head.clone());
+                    (grant, head)
+                }
+            },
+        }
     };
     let tag = etag(&head);
     let cache = match grant.public_basis() {
@@ -281,7 +288,7 @@ pub async fn list_public_events(
     State(state): State<AppState>,
     Path(space_id): Path<String>,
     Query(query): Query<EventsQuery>,
-    headers: HeaderMap,
+    headers: super::public_access::ViewerHeaders,
 ) -> Result<Response, ApiError> {
     if query.raw == Some(true) {
         return Err(ApiError::invalid("公开读不支持 raw"));
@@ -354,7 +361,7 @@ pub async fn get_public_event_density(
     State(state): State<AppState>,
     Path(space_id): Path<String>,
     Query(query): Query<DensityQuery>,
-    headers: HeaderMap,
+    headers: super::public_access::ViewerHeaders,
 ) -> Result<Response, ApiError> {
     let from = parse_time("from", Some(&query.from))?.expect("已给出");
     let to = parse_time("to", Some(&query.to))?.expect("已给出");
@@ -437,7 +444,7 @@ pub async fn get_public_state(
     State(state): State<AppState>,
     Path(space_id): Path<String>,
     Query(query): Query<StateQuery>,
-    headers: HeaderMap,
+    headers: super::public_access::ViewerHeaders,
 ) -> Result<Response, ApiError> {
     let now = crate::now()?;
     let at = parse_time("at", query.at.as_deref())?.unwrap_or(now);

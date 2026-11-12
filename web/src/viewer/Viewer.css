@@ -25,6 +25,54 @@
   pointer-events: none;
 }
 
+.viewer__landmark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  pointer-events: auto;
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+
+.viewer__landmark-caption {
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 2px solid var(--surface);
+  box-shadow: 0 2px 12px #0006;
+  font-size: var(--text-note);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.viewer__landmark-pin {
+  height: 22px;
+  width: 2px;
+  background: var(--accent);
+  position: relative;
+}
+
+.viewer__landmark-pin::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: -5px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 5px #0003;
+}
+
+.viewer__landmark:focus-visible .viewer__landmark-caption {
+  box-shadow: var(--focus-ring);
+}
+
 .viewer__anchor,
 .viewer__member-tag,
 .viewer__event,

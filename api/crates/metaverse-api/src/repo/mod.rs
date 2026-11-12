@@ -18,7 +18,10 @@ use mongodb::{
     Client, Collection, Database, IndexModel,
 };
 
+mod catalog;
+mod oauth;
 mod spaces;
+pub(crate) use oauth::{OAuthGrantRecord, OAuthSessionRecord};
 
 pub use spaces::SpacePolicy;
 
@@ -177,6 +180,7 @@ impl Repo {
 
     /// 幂等地建立全部索引（设计 13.2）。多副本同时执行也安全。
     pub async fn ensure_indexes(&self) -> Result<(), RepoError> {
+        self.ensure_oauth_indexes().await?;
         use collections::*;
         let named = |name: &str| IndexOptions::builder().name(name.to_owned()).build();
         let unique = |name: &str| {
@@ -191,10 +195,16 @@ impl Repo {
         let plan: Vec<(&str, Vec<IndexModel>)> = vec![
             (
                 SPACES,
-                vec![index(
-                    doc! {"owner.kind": 1, "owner.id": 1, "updatedAt": 1},
-                    named("owner_updated"),
-                )],
+                vec![
+                    index(
+                        doc! {"owner.kind": 1, "owner.id": 1, "updatedAt": 1},
+                        named("owner_updated"),
+                    ),
+                    index(
+                        doc! {"owner.kind":1,"owner.id":1,"_id":1},
+                        named("owner_catalog"),
+                    ),
+                ],
             ),
             (
                 COMMITS,

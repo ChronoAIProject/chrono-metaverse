@@ -288,7 +288,7 @@ NyxID 转发的是"调用方请求里 `Authorization: Bearer` 后面的原文"�
 
 这对 chrono-metaverse 意味着两件事：
 1. 它会收到可以直接使用的 NyxID 凭证，包括 agent key 原文，必须按凭证对待，例如不能写进日志。
-2. 通过 MCP `x-api-key` 调用的个人 key 不带任何令牌。按 chrono-metaverse 自己 `api/README.md` 第 390 行写的流程，这时查不到组织角色，组织空间的写操作会返回 503。
+2. 通过 MCP `x-api-key` 调用时不带转发令牌。旧版 chrono-metaverse 因此查不到组织角色，组织空间的读返回 404、写返回 503。新的 [OAuth 接入](../NYXID_OAUTH.md) 按签名 `sub` 使用同一用户保存的授权实时查角色，Agent Key 的服务绑定及原有调用方式保持一致；功能需部署配置并由用户连接后生效。
 
 ---
 

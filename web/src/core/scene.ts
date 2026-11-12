@@ -183,6 +183,30 @@ export function entityRegionKind(
   return inVirtual ? 'virtual' : 'physical';
 }
 
+/** 窗外建筑、天空等背景保持真实尺寸，但不参与主体取景、剖切和点选。 */
+export function isBackgroundEntity(entity: EntityBody): boolean {
+  return entity.props?.background === true;
+}
+
+/** 纯背景区域不画建造边界；混有普通物件或方块的区域仍保留原来的行为。 */
+function foregroundRegions(scene: SceneDocument): readonly Region[] {
+  return scene.regions.filter((region) => {
+    if (region.kind !== 'virtual') return true;
+    const entities = scene.entities.filter((entity) => {
+      if (!isDrawable(entity)) return false;
+      if (entity.regionId !== undefined) return entity.regionId === region.id;
+      if (entity.layer === 'rebuilt') return false;
+      const point = entityAnchorPoint(entity);
+      return point !== null && region.boxes.some((box) => boxContains(box, point));
+    });
+    return (
+      entities.length === 0 ||
+      entities.some((entity) => !isBackgroundEntity(entity)) ||
+      scene.chunks.some((chunk) => region.boxes.some((box) => chunkTouchesBox(chunk, box)))
+    );
+  });
+}
+
 export interface ViewContent {
   readonly mode: ViewMode;
   /** 原始视图显示扫描模型。 */
@@ -205,7 +229,7 @@ export interface ViewContent {
    */
   readonly anchored: readonly EntityBody[];
   /**
-   * 镜头取景的范围（格子盒）：实体区，优化 + 扩展视图再加上虚拟区。
+   * 镜头取景的范围（格子盒）：实体区，优化 + 扩展视图再加上非背景虚拟区。
    * 没有定义实体区时为空，取景就用全部内容。
    */
   readonly frameBoxes: readonly GridBox[];
@@ -269,7 +293,7 @@ export function selectView(
   const drawable = scene.entities.filter(isDrawable);
   const styledChunks = scene.chunks.filter(keepChunk);
   if (mode === 'extended') {
-    const virtualRegions = scene.regions.filter((r) => r.kind === 'virtual');
+    const virtualRegions = foregroundRegions(scene).filter((r) => r.kind === 'virtual');
     return {
       mode,
       showScan: false,
@@ -379,9 +403,10 @@ export interface SceneContent {
 export function sceneHeightRange(scene: SceneDocument): { min: number; max: number } {
   let max = 0;
   for (const entity of scene.entities) {
-    if (entity.kind !== 'template' && entity.bounds) max = Math.max(max, entity.bounds.max[1]);
+    if (entity.kind !== 'template' && entity.bounds && !isBackgroundEntity(entity))
+      max = Math.max(max, entity.bounds.max[1]);
   }
-  for (const region of scene.regions) {
+  for (const region of foregroundRegions(scene)) {
     for (const box of region.boxes) max = Math.max(max, box[4] * GRID_UNIT);
   }
   return { min: 0, max: max > 0 ? max : 3 };
@@ -401,7 +426,7 @@ export const CEILING_CUT_MARGIN = 0.05;
 export function ceilingCutHeight(scene: SceneDocument): number | null {
   const tops: number[] = [];
   for (const entity of scene.entities) {
-    if (entity.kind !== 'structure' || !entity.bounds) continue;
+    if (entity.kind !== 'structure' || !entity.bounds || isBackgroundEntity(entity)) continue;
     const { min, max } = entity.bounds;
     if (max[1] - min[1] > 1.5) tops.push(max[1]);
   }

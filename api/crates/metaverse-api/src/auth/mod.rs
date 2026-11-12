@@ -20,6 +20,7 @@ use axum::{
 pub mod access;
 pub mod authorizer;
 pub mod jwt;
+pub mod oauth;
 pub mod organizations;
 pub mod permissions;
 
@@ -123,6 +124,10 @@ impl Authenticator {
                 return Err(ApiError::unauthenticated("token_replayed"));
             }
         }
+        let credential = ForwardedCredential::from_headers(headers);
+        if headers.contains_key(axum::http::header::AUTHORIZATION) && credential.is_none() {
+            return Err(ApiError::unauthenticated("invalid_forwarded_credential"));
+        }
         Ok(Caller {
             capabilities: capabilities_from_permissions(&identity.permissions),
             subject: identity.subject,
@@ -130,7 +135,7 @@ impl Authenticator {
             service_id: identity.service_id,
             jti: identity.jti,
             expires_at: identity.expires_at,
-            credential: ForwardedCredential::from_headers(headers),
+            credential,
         })
     }
 }

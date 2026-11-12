@@ -5,9 +5,11 @@
   },
   "services": {
     "metaverse-web": {
-      "image": "ghcr.io/chronoaiproject/chrono-metaverse-web:413b28f@sha256:0eda546248a45a5a5ba2ef71dc82a8ebc32e45010cf1bf9fd8b1c0b80a514ce8",
+      "image": "ghcr.io/chronoaiproject/chrono-metaverse-web:f0ceb85@sha256:96038e4de8f90d60eb3d043ba05d4a6c6b8dd1c6ac2ab094c8dbe3d333ebe32a",
       "port": 8080,
-      "routes": ["/"],
+      "routes": [
+        "/"
+      ],
       "expose": "public",
       "health_path": "/healthz",
       "replicas": 2,
@@ -19,9 +21,11 @@
       }
     },
     "metaverse-api": {
-      "image": "ghcr.io/chronoaiproject/chrono-metaverse-api:413b28f@sha256:d6ff2aee81a8f42ac5be6a087fcf8b896d990fdfe30a0f36bf7e8dcbba78ed2d",
+      "image": "ghcr.io/chronoaiproject/chrono-metaverse-api:ec9b340@sha256:3db76a81a8312a557e8a76536f053f7460543bb087568c506089daf88d335c46",
       "port": 8080,
-      "routes": ["/api"],
+      "routes": [
+        "/api"
+      ],
       "expose": "public",
       "health_path": "/api/healthz",
       "replicas": 1,
@@ -53,7 +57,9 @@
         "PUBLIC_CACHE_BYTES": "134217728",
         "METAVERSE_DEMO_SEED": "{\"spaceId\":\"chronoai-lobby\",\"name\":\"ChronoAI 前厅\",\"description\":\"ChronoAI 办公室前厅：Scaniverse 扫描 + AI 重建的演示空间（由部署配置自动导入）\",\"owner\":{\"kind\":\"org\",\"id\":\"52aa284c-b5b2-49bd-9d12-79f24772dbd7\"},\"visibility\":\"unlisted\",\"revision\":4,\"bundle\":{\"manifest\":{\"url\":\"https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/5092c2c43dc52eb235534b0d691aa39dba808764/infra/chrono-cd/demo/lobby-r4/manifest.json\",\"sha256\":\"2a25a714b75c2042db6642d85d27ae990eb1cb00114c44cecaf3a0468c048bc1\",\"size\":68882},\"sources\":{\"url\":\"https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/5092c2c43dc52eb235534b0d691aa39dba808764/infra/chrono-cd/demo/lobby-r4/sources.json\",\"sha256\":\"2badd7241ffb688e68cc0f6ffb6860887c0aa7d79fc2db7a4d6625e31d09d496\",\"size\":9962}}}",
         "METAVERSE_DEMO_SEED_HOSTS": "raw.githubusercontent.com,github.com,release-assets.githubusercontent.com,objects.githubusercontent.com,scaniverse.com",
-        "RUST_LOG": "info"
+        "RUST_LOG": "info",
+        "NYXID_OAUTH_CLIENT_ID": "be885bc0-94fd-4a30-bb5e-613723cd0eef",
+        "CMA_BASE_URL": "https://cma.nyxid.ai"
       },
       "addon_env": {
         "mongodb": {
@@ -61,7 +67,11 @@
           "database": "MONGODB_DATABASE"
         }
       },
-      "secret_keys": ["METAVERSE_DEMO_SHARE_TOKEN"],
+      "secret_keys": [
+        "METAVERSE_DEMO_SHARE_TOKEN",
+        "NYXID_OAUTH_CLIENT_SECRET",
+        "NYXID_OAUTH_ENCRYPTION_KEY"
+      ],
       "resources": {
         "cpu_request": "250m",
         "memory_request": "384Mi",

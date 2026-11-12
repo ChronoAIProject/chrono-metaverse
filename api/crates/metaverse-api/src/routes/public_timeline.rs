@@ -25,7 +25,7 @@ use super::public_access::{
 };
 use super::timeline::{timeline_page, TimelineQuery};
 use crate::error::{ApiError, ProblemDocument};
-use crate::public::headers::{cache_control, share_token, IMMUTABLE};
+use crate::public::headers::{cache_control, IMMUTABLE};
 use crate::public::CacheKey;
 use crate::timeline::snapshot::{public_summaries, snapshot_at, Audience};
 use crate::timeline::views::{CommitSummaryPage, SnapshotView};
@@ -70,17 +70,12 @@ pub async fn get_public_snapshot(
     Path(space_id): Path<String>,
     Query(query): Query<SnapshotQuery>,
     Query(universe): Query<UniverseParam>,
-    headers: HeaderMap,
+    headers: super::public_access::ViewerHeaders,
 ) -> Result<Response, ApiError> {
     // 凭组合令牌（`?universe=`）时，成员资格要按版本或时刻判断，所以先解析参数。
     let universe = universe.universe.as_deref();
     let direct = match universe {
-        None => Some(
-            state
-                .authorizer
-                .public_space(&space_id, share_token(&headers))
-                .await?,
-        ),
+        None => Some(public_space_grant(&state, &space_id, &headers, None, crate::now()?).await?),
         Some(_) => None,
     };
     let seq = match (
@@ -89,22 +84,25 @@ pub async fn get_public_snapshot(
     ) {
         (Some(seq), None) => seq,
         (None, Some(at)) => {
-            let grant = match direct {
+            let grant = match direct.clone() {
                 Some(grant) => grant,
                 None => public_space_grant(&state, &space_id, &headers, universe, at).await?,
             };
             let seq = state.repo.seq_at(&grant, at).await?;
-            let mut location = format!("/api/public/spaces/{space_id}/snapshot?seq={seq}");
-            if let Some(universe) = universe {
-                location.push_str(&format!("&universe={universe}"));
+            if headers.browser_grant(&space_id, None)?.is_none() {
+                let mut location = format!("/api/public/spaces/{space_id}/snapshot?seq={seq}");
+                if let Some(universe) = universe {
+                    location.push_str(&format!("&universe={universe}"));
+                }
+                let mut response = StatusCode::FOUND.into_response();
+                let headers = response.headers_mut();
+                if let Ok(value) = HeaderValue::from_str(&location) {
+                    headers.insert(header::LOCATION, value);
+                }
+                headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+                return Ok(response);
             }
-            let mut response = StatusCode::FOUND.into_response();
-            let headers = response.headers_mut();
-            if let Ok(value) = HeaderValue::from_str(&location) {
-                headers.insert(header::LOCATION, value);
-            }
-            headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-            return Ok(response);
+            seq
         }
         _ => return Err(ApiError::invalid("seq 和 at 必须且只能给出一个")),
     };
@@ -177,15 +175,10 @@ pub async fn get_public_timeline(
     Path(space_id): Path<String>,
     Query(query): Query<TimelineQuery>,
     Query(universe): Query<UniverseParam>,
-    headers: HeaderMap,
+    headers: super::public_access::ViewerHeaders,
 ) -> Result<Response, ApiError> {
     let grant = match universe.universe.as_deref() {
-        None => {
-            state
-                .authorizer
-                .public_space(&space_id, share_token(&headers))
-                .await?
-        }
+        None => public_space_grant(&state, &space_id, &headers, None, crate::now()?).await?,
         // 凭组合令牌：查询的时间段里某个时刻是组合成员。
         Some(universe) => {
             let now = crate::now()?;

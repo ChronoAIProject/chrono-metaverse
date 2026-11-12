@@ -62,6 +62,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = ap.add_subparsers(dest="cmd", required=True)
 
+    s = sub.add_parser("source", help="Scaniverse 网格分享或本地 GLB/ZIP → 可重建的扫描来源")
+    s.add_argument("source", help="Scaniverse 分享链接或本地 GLB/ZIP 路径")
+    s.add_argument("--out", required=True, help="保存扫描与 source.json 的新目录")
+
     # ---- prepare
     p = sub.add_parser("prepare", help="扫描 → 基线目录（对齐、结构、物体；与原处理服务首次导入的结果相同）")
     p.add_argument(
@@ -460,7 +464,11 @@ PIPELINE = {
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        if args.cmd == "prepare":
+        if args.cmd == "source":
+            from .source import cmd_source
+
+            cmd_source(args)
+        elif args.cmd == "prepare":
             from .prepare import cmd_prepare
 
             cmd_prepare(args)

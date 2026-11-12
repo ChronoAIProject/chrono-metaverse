@@ -1,4 +1,6 @@
 import { decompressChunk } from '../chunk';
+import { sha256HexOfText } from '../hash';
+import { browserAssetCache } from './assetCache';
 import type {
   CommitSummary,
   EventDensity,
@@ -51,6 +53,8 @@ export interface PublicClientOptions {
   /** 组合页：用组合的分享令牌读成员空间时，每个请求都带 `?universe=<组合编号>`。 */
   readonly universe?: string | null;
   readonly fetch?: typeof fetch;
+  /** Authenticated, read-only space viewer; no session credential enters public blob requests. */
+  readonly browser?: { readonly csrfToken: string };
 }
 
 /** 下载进度：已收到的字节数和总字节数（服务端没给 Content-Length 时总数为 null）。 */
@@ -268,6 +272,7 @@ export function createPublicClient(options: PublicClientOptions = {}): PublicCli
   const base = trimTrailingSlashes(options.baseUrl ?? '');
   const universe = options.universe ?? undefined;
   const fetcher = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+  const previewGrants = new Map<string, { scope: string; expires: number }>();
   const headers = (extra: Record<string, string> = {}): Record<string, string> => ({
     ...(options.share ? { Authorization: `Share ${options.share}` } : {}),
     ...extra,
@@ -278,20 +283,43 @@ export function createPublicClient(options: PublicClientOptions = {}): PublicCli
     extra?: Record<string, string>,
     preview?: string,
   ): Promise<Response> {
-    const response = await fetcher(`${base}/api/public${path}`, {
-      method: 'GET',
-      headers: preview === undefined ? headers(extra) : { Authorization: `Preview ${preview}` },
-      ...(preview === undefined ? {} : { cache: 'no-store' as const }),
-      // 链接里的令牌不随 Referer 带出去（设计 7.2）。
-      referrerPolicy: 'no-referrer',
-      credentials: 'omit',
-    });
+    const browser = options.browser && path.startsWith('/spaces/') ? options.browser : undefined;
+    const response = await fetcher(
+      `${base}${browser ? '/api/auth/nyxid/view' : '/api/public'}${path}`,
+      {
+        method: browser ? 'POST' : 'GET',
+        headers: browser
+          ? { ...extra, 'x-csrf-token': browser.csrfToken }
+          : preview === undefined
+            ? headers(extra)
+            : { Authorization: `Preview ${preview}` },
+        ...(preview === undefined && !browser ? {} : { cache: 'no-store' as const }),
+        // 链接里的令牌不随 Referer 带出去（设计 7.2）。
+        referrerPolicy: 'no-referrer',
+        credentials: browser ? 'same-origin' : 'omit',
+      },
+    );
     if (!response.ok && response.status !== 304) throw await problem(response);
     return response;
   }
 
   async function json<T>(path: string): Promise<T> {
     return (await (await request(path)).json()) as T;
+  }
+
+  async function previewBlob(
+    token: string,
+    hash: string,
+    onProgress?: ProgressCallback,
+  ): Promise<Blob> {
+    const checked = checkedHash(hash);
+    const load = async () =>
+      readBody(await request(`/previews/assets/${checked}`, undefined, token), onProgress);
+    const grant = previewGrants.get(token);
+    if (!grant || grant.expires <= Date.now()) return load();
+    const blob = await browserAssetCache.get(grant.scope, checked, load);
+    onProgress?.(blob.size, blob.size);
+    return blob;
   }
 
   const space = (id: string) => `/spaces/${segment(id)}`;
@@ -336,7 +364,16 @@ export function createPublicClient(options: PublicClientOptions = {}): PublicCli
     universeRevision: (universeId, seq) =>
       json<UniverseRevision>(`/universes/${segment(universeId)}/revisions/${seq}`),
     async preview(token) {
-      return (await (await request('/previews', undefined, token)).json()) as PreviewView;
+      previewGrants.delete(token);
+      const view = (await (await request('/previews', undefined, token)).json()) as PreviewView;
+      const expires = Date.parse(view.preview.expiresAt ?? '');
+      if (Number.isFinite(expires) && expires > Date.now()) {
+        previewGrants.set(token, {
+          scope: sha256HexOfText(`${base}\0${token}\0${view.preview.rev}`),
+          expires,
+        });
+      }
+      return view;
     },
     async previewChunk(token, hash) {
       const checked = checkedHash(hash);
@@ -344,12 +381,10 @@ export function createPublicClient(options: PublicClientOptions = {}): PublicCli
       return decompressChunk(new Uint8Array(await response.arrayBuffer()), checked);
     },
     async previewAsset(token, hash, onProgress) {
-      const response = await request(`/previews/assets/${checkedHash(hash)}`, undefined, token);
-      return (await readBody(response, onProgress)).arrayBuffer();
+      return (await previewBlob(token, hash, onProgress)).arrayBuffer();
     },
     async previewAssetBlob(token, hash, onProgress) {
-      const response = await request(`/previews/assets/${checkedHash(hash)}`, undefined, token);
-      return readBody(response, onProgress);
+      return previewBlob(token, hash, onProgress);
     },
   };
 }

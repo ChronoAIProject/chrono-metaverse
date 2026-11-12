@@ -296,3 +296,24 @@ describe('去掉地址末尾的斜杠', () => {
     expect(Date.now() - started).toBeLessThan(500);
   });
 });
+
+it('uses session and CSRF only for fixed read-only browser space routes; published blobs remain anonymous', async () => {
+  const requests: { url: string; init: RequestInit | undefined }[] = [];
+  const request = vi.fn<typeof fetch>(async (input, init) => {
+    requests.push({ url: String(input), init });
+    return new Response(JSON.stringify({ name: 'Private space' }), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+  });
+  const client = createPublicClient({ browser: { csrfToken: 'browser-csrf' }, fetch: request });
+  await client.space('private-lobby');
+  await client.asset('a'.repeat(64));
+  expect(requests[0]!.url).toBe('/api/auth/nyxid/view/spaces/private-lobby');
+  expect(requests[0]!.init?.method).toBe('POST');
+  expect(requests[0]!.init?.credentials).toBe('same-origin');
+  expect(requests[0]!.init?.cache).toBe('no-store');
+  expect(new Headers(requests[0]!.init?.headers).get('x-csrf-token')).toBe('browser-csrf');
+  expect(requests[1]!.url).toBe('/api/public/assets/' + 'a'.repeat(64) + '.bin');
+  expect(requests[1]!.init?.credentials).toBe('omit');
+  expect(new Headers(requests[1]!.init?.headers).has('x-csrf-token')).toBe(false);
+});

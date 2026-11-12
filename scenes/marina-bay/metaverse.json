@@ -1,0 +1,8 @@
+{
+  "spaceId": "chronoai-lobby",
+  "mode": "nyxid",
+  "slug": "chrono-metaverse",
+  "plot": "marina-bay-exterior",
+  "webUrl": "https://chrono-metaverse-chronoai.apps.nyxid.ai",
+  "buildScript": "build/main.ts"
+}

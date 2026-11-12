@@ -7,6 +7,31 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 
 改 `app.json` 后先跑静态检查（持续集成里也跑）：`node infra/chrono-cd/check-app.mjs`。它检查规格里只有网站和接口服务两个服务（处理服务已下线，出现 `metaverse-worker` 就报错）、每个服务的镜像都按摘要固定（第 1 步"镜像按摘要固定"）、接口服务的限流额度和可信地址头、内存预算用到的上限和缓存配置都显式写出（第 1 节"内存预算"）、README 的环境变量表和密钥是否列全，以及演示数据的种子（[`demo-seed.json`](demo-seed.json)）和接口服务的 `METAVERSE_DEMO_SEED` 是否一致、种子本身是否合法、`METAVERSE_DEMO_SEED_HOSTS` 是否写出并与 `infra/dev/up.sh` 的默认值相同（第 8 步）；测试在 `check-app.test.mjs`（`node --test infra/chrono-cd/*.test.mjs`）。镜像换版本用 [`pin-images.mjs`](pin-images.mjs) 生成规格或补丁（测试在 `pin-images.test.mjs`）。
 
+## 分支与环境
+
+| 分支 | GitHub 环境 | CD 应用 | 网站 |
+|---|---|---|---|
+| `dev`（默认） | `staging` | `chrono-metaverse` | https://chrono-metaverse-chronoai.apps.nyxid.ai |
+| `main` | `production` | `chrono-metaverse-prod` | https://chrono-metaverse-prod-chronoai.apps.nyxid.ai |
+
+当前已有的应用、地址和数据归测试版。正式版使用 [`app.production.json`](app.production.json)，
+服务名是 `metaverse-prod-web` / `metaverse-prod-api`。正式网站以配置文件覆盖 nginx 上游，
+只转发到正式接口；两个应用各自申请 MongoDB 插件，各自设置 OAuth 客户端、加密密钥和分享令牌。
+测试数据不复制到正式库。
+
+`publish.yml` 先调用完整 CI，通过后才构建和部署。两个镜像的摘要作为本次运行的工件交给
+[`deploy.mjs`](deploy.mjs)：核对分支与环境，读取目标当前 generation，携带 `If-Match`
+只 PATCH 镜像，等待服务及路由就绪，并核对线上摘要。失败不会自动重放写入。
+
+两个 GitHub 环境各自保存 `CHRONO_CD_API_KEY`。它们是组织拥有、scope 为 `proxy`、
+仅允许 `chrono-cd` 的独立 Agent Key，有效期至 2027-11-12；在到期前轮换。
+当前 CD 授权粒度是组织级，无法把密钥限制为单个应用；环境分支限制和脚本负责选择部署目标。
+用户的 OAuth 令牌、应用 OAuth secret、数据库密码不保存在 Actions 或 Git 中。
+组织的 `chrono-cd` 确认策略只为上述两个应用的精确 PATCH 路径自动放行；其他写操作仍要求确认。
+这允许无人值守更新，同时不开放应用删除、密钥设置或任意项目的写操作。
+
+以下手动操作示例针对测试环境。正式环境改用正式规格、应用及服务名；日常更新通常由工作流完成。
+
 ## 1. 规格要点
 
 | 服务 | 镜像 | 路由 | 暴露 | 端口 | 健康检查 | 副本 | 资源申请 / 上限 |
@@ -40,7 +65,7 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 
 ### 环境变量与密钥
 
-只有一个应用密钥：接口服务的 `METAVERSE_DEMO_SHARE_TOKEN`（演示空间的分享令牌原文，在规格的 `secret_keys` 里声明，值用 `set_app_secrets` 设置，见第 5 步）。`env` 里没有任何密钥：数据库连接由插件注入，身份令牌只用 NyxID 公钥校验。
+应用密钥包括 OAuth 的客户端秘密、加密密钥，以及接口服务的 `METAVERSE_DEMO_SHARE_TOKEN`（演示空间的分享令牌原文，在规格的 `secret_keys` 里声明，值用 `set_app_secrets` 设置，见第 5 步）。`env` 里没有任何密钥：数据库连接由插件注入，身份令牌只用 NyxID 公钥校验。
 
 `metaverse-api`（完整说明见 [`api/README.md`](../../api/README.md)）：
 
@@ -53,7 +78,7 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 | `NYXID_JWKS_URL` | `https://api.nyxid.ai/.well-known/jwks.json` | 取自 NyxID `/.well-known/openid-configuration` 的 `jwks_uri` |
 | `NYXID_JWT_ISSUER` | `https://nyx-api.chrono-ai.fun` | 同上的 `issuer`（两个 NyxID 域名返回的都是它） |
 | `NYXID_JWT_AUDIENCE` | `urn:chrono-metaverse:api` | 必须和 NyxID 注册时的 `identity_jwt_audience` 一字不差 |
-| `ALLOWED_NYX_SERVICE_IDS` | `362df1f5-8135-4a05-aa85-d929a5fd9f73` | 已注册（2026-11-09，第 7 步）：ChronoAI 组织的自定义服务 `chrono-metaverse` 的连接编号（自定义服务没有目录编号，身份令牌里的 `nyx_service_id` 就是它），线上第 7 次修订起生效，经 NyxID 调接口已能读到真实数据 |
+| `ALLOWED_NYX_SERVICE_IDS` | `362df1f5-8135-4a05-aa85-d929a5fd9f73` | ChronoAI 组织的 `chrono-metaverse` 自定义服务连接编号（第 7 步）。另建连接时换成新编号；首次部署尚未注册时可临时用 `pending-nyxid-registration`，此时 `/api/v1/*` 均无法通过鉴权 |
 | `METAVERSE_REQUIRE_PERMISSIONS` | `false` | 第一步不启用功能级权限 |
 | `UPLOAD_MAX_SCAN_BYTES` / `UPLOAD_MAX_MODEL_BYTES` / `UPLOAD_MAX_TEXTURE_BYTES` / `UPLOAD_MAX_OPS_BYTES` / `UPLOAD_MAX_SCRIPT_BYTES` | 1GiB / 50MiB / 50MiB / 64MiB / 4MiB | 各用途上传的大小上限（其余用途——网页用模型、重建包清单——用接口服务的默认值 64MiB、16MiB，见 [`api/README.md`](../../api/README.md)） |
 | `UPLOAD_MAX_TEXTURE_SIDE` | `4096` | 贴图单边像素上限（第 0 片按文件头检查，后台核对再按全文查）。很多手机的贴图上限是 4096，本地工具打包时按同样的上限检查 |
@@ -69,6 +94,9 @@ chrono-metaverse 部署在 chrono-cd 的 ChronoAI 组织下：项目 `metaverse`
 | `METAVERSE_DEMO_SEED` | [`demo-seed.json`](demo-seed.json) 压缩成的一行 | 部署配置种子：接口服务启动、建好索引后在后台建演示空间 `chronoai-lobby`，带重建包时导入它（第 8 步）。改种子时两处一起改，`check-app.mjs` 检查一致。现在是第 4 版，带前厅第 4 版的重建包（[`demo/lobby-r4/`](demo/lobby-r4/)），线上 2026-11-10 已导入（第 5 次提交），之后重启是 `AlreadyDone` |
 | `METAVERSE_DEMO_SEED_HOSTS` | `raw.githubusercontent.com,github.com,release-assets.githubusercontent.com,objects.githubusercontent.com,scaniverse.com` | 种子允许下载的主机（只用 https，重定向的每一跳都查，最多 5 跳）：清单和来源表在 `raw.githubusercontent.com`，发布页的文件从 `github.com` 重定向到 `release-assets.githubusercontent.com` 或 `objects.githubusercontent.com`，扫描成员在 `scaniverse.com`。有种子时 `check-app.mjs` 要求显式写出，并且和 `infra/dev/up.sh` 的默认值相同 |
 | `METAVERSE_DEMO_SHARE_TOKEN` | **密钥**（`secret_keys`，不在 `env` 里） | 演示空间的分享令牌原文，接口服务只存它的 sha256、不写日志；用 `set_app_secrets` 设置（第 5 步）。种子是凭链接查看（`unlisted`）时必须有，缺了接口服务启动失败 |
+| `CMA_BASE_URL` | `https://cma.nyxid.ai` | 网页在线 worker 的固定 CMA API 地址；不设置则关闭 worker 调用。沿用现有 OAuth scopes，用户需在工作台明确启用 |
+| `NYXID_OAUTH_CLIENT_ID` | `be885bc0-94fd-4a30-bb5e-613723cd0eef` | ChronoAI 组织的 chrono-metaverse 保密 OAuth 客户端；回调为本站 `/api/auth/nyxid/callback` |
+| `NYXID_OAUTH_CLIENT_SECRET` / `NYXID_OAUTH_ENCRYPTION_KEY` | **密钥** | 客户端秘密及 32 字节随机加密密钥，使用应用密钥注入；见 [OAuth 部署说明](../../docs/NYXID_OAUTH.md) |
 | `RUST_LOG` | `info` | |
 
 种子带重建包时要从 `raw.githubusercontent.com`、GitHub 发布页和 `scaniverse.com` 下载清单、来源表和包里空间还没有的文件（主机列表 `METAVERSE_DEMO_SEED_HOSTS`），所以接口服务需要能访问公网（chrono-cd 默认 `egress` 允许）；文件边下载边写进上传会话的数据块，扫描 zip 一次只有一个成员在内存里（单个成员 ≤ 128MiB）。
@@ -124,39 +152,46 @@ APP=api/v1/projects/metaverse/apps/chrono-metaverse
 
 ### 第 1 步：推送镜像
 
-推送到 `main` 或开发分支 `claude/happy-ritchie-oly5hx` 时，GitHub Actions 的 `Images` 工作流（[`.github/workflows/images.yml`](../../.github/workflows/images.yml)）构建两个镜像并推到 ghcr.io（处理服务已下线，不再构建 `chrono-metaverse-worker`）：
+推送 `dev` 或 `main` 后，GitHub Actions 的“发布与部署”工作流
+（[`.github/workflows/publish.yml`](../../.github/workflows/publish.yml)）构建两个镜像：
 
-- `ghcr.io/chronoaiproject/chrono-metaverse-{api,web}:<7 位提交哈希>`
-- `…:<分支名>`（`/` 换成 `-`，例如 `claude-happy-ritchie-oly5hx`、`main`）
-- `…:latest`（只有 `main`）
+- `dev`：发布 `:<提交短哈希>`、`:dev`，部署 `staging`，沿用当前 `chrono-metaverse` 应用。
+- `main`：发布 `:<提交短哈希>`、`:main`、`:latest`，部署 `production` 的 `chrono-metaverse-prod` 应用。
+- 两个应用使用独立 MongoDB、OAuth 客户端和加密密钥；当前测试数据不迁入正式库。
+- 手动运行也只能选择 `dev` 或 `main`；其他分支不会取得发布环境。
 
 #### 镜像按摘要固定
 
 部署**只用摘要**，不用任何标签（包括 7 位提交哈希标签）：
 
-- **标签可以被改写**：`Images` 的触发条件和 `packages: write` 权限都由被推分支自己的 `images.yml` 声明。有推送权限的人（或泄露的令牌）在任何分支里改一下这个文件，推一次就能覆盖 `:<线上的提交哈希>` 这类标签，ghcr 没有禁止改写标签的设置。
+- **标签可以被改写**：发布只从 `dev` 或 `main` 执行，运行使用分支对应环境的限制；同一主线的后续构建仍会移动 `main` 和 `latest` 标签，因此部署继续按摘要固定。
 - **chrono-cd 每次 `PUT` 和 `PATCH` 都会重新解析标签**（`Put` 对每个服务调用 `resolveImages`，不管镜像字段改没改；`set_app_secrets` 和重启用已存的摘要）。按标签写的规格，下一次只改环境变量的 `PATCH`（例如第 4 步改 `PUBLIC_BASE_URL`、第 7 步改 `ALLOWED_NYX_SERVICE_IDS`）就会把标签当时指向的镜像部署上线，修订记录里标签名不变、只有摘要变了。
 - **按摘要写时**：chrono-cd 在标签和摘要都有时只按摘要拉取，重新解析也还是同一个镜像。
 
-摘要从**这次提交在部署分支上的 `Images` 运行**里取：GitHub 的 Actions 页面打开那次运行（核对分支和提交哈希），两个任务的摘要里各有一行 `api=sha256:…`、`web=sha256:…`，原样交给 [`pin-images.mjs`](pin-images.mjs)。不要按标签去 ghcr 查摘要，那查到的是标签现在指向的镜像。命令行也可以这样取（`gh` 登录后）：
+摘要从**这次提交在对应 `dev` 或 `main` 分支上的发布运行**里取：GitHub 的 Actions 页面打开那次运行（核对分支和提交哈希），两个任务的摘要里各有一行 `api=sha256:…`、`web=sha256:…`，原样交给 [`pin-images.mjs`](pin-images.mjs)。不要按标签去 ghcr 查摘要，那查到的是标签现在指向的镜像。命令行也可以这样取（`gh` 登录后）：
 
 ```bash
-gh run list -R ChronoAIProject/chrono-metaverse --workflow Images --commit <完整提交哈希> --json databaseId,headBranch,conclusion
+gh run list -R ChronoAIProject/chrono-metaverse --workflow publish.yml --branch <dev或main> --commit <完整提交哈希> --json databaseId,headBranch,conclusion
 gh run view <运行编号> -R ChronoAIProject/chrono-metaverse --log | grep -oE '(api|web)=sha256:[0-9a-f]{64}' | sort -u
 ```
 
-`app.json` 里的镜像是主分支上线验证过的版本（瘦身后的版本 R2：接口服务和网站都是 `413b28f`，摘要与线上第 8 次修订记录的一致，2026-11-10 上线）。2026-11-10 起线上另有从功能分支部署的版本（NyxID 授权 `d7674fb`、浮动对话建空间 `d90dfe3`），它们的镜像和新增的环境变量在各自分支的 `app.json` 里，合进主分支时一起更新；前厅第 4 版（R3，线上第 16 次修订）只改了种子，镜像和其他环境变量沿用当时线上的第 15 次修订。`check-app.mjs` 拒绝只有标签、标签不是 7 位提交哈希、或仓库和服务对不上的镜像。
+`app.json` 里的镜像是已经上线验证过的版本；当前源码、构建运行和 chrono-cd 修订记录见 [OAuth 与工作台部署记录](../../docs/NYXID_OAUTH.md)。前厅第 4 版（R3，线上第 16 次修订）的种子配置与功能分支的 OAuth 和浮动聊天配置已合并。`check-app.mjs` 拒绝只有标签、标签不是 7 位提交哈希、或仓库和服务对不上的镜像。
 
-按摘要部署只保证"部署的就是那次运行构建的镜像"，管不到谁能推镜像、推代码。`main` 已经建好（2026-11-09，从开发分支 `claude/happy-ritchie-oly5hx` 的 `77bbdb8` 建出），以后作为部署分支：日常开发在开发分支，上线前开合并请求进 `main`，部署只用 `main` 上构建的镜像。还没做、要仓库管理员在 GitHub 上决定的：把默认分支改成 `main` 并加保护（禁止直接推送、必须经合并请求、CI 必须通过）；在包设置的 Manage Actions access 里收回本仓库工作流的写权限，改用只在受保护分支的 GitHub Environment 里可用的凭证推镜像（工作流自己声明的 `packages: write` 拦不住改过的工作流）；用组织规则集限制谁能改 `.github/workflows`。
+`dev` 是默认开发分支，短期分支的 PR 以 `dev` 为目标；正式版只接受从 `dev`
+合入 `main`。这两个长期分支禁止直接推送、强制推送和删除，合并必须通过绑定
+GitHub Actions 的 `CI Gate`。合并后自动删除短期分支。
+
+`staging` 环境只允许 `dev`，`production` 环境只允许 `main`。旧的工作分支发布
+入口已停用，新入口为 `publish.yml`；正式演示资源由 `publish-assets-main.yml` 发布。
 
 #### 构建输入也固定
 
 镜像的内容取决于构建时拉进来的东西，这些也一律固定到不可改写的引用（持续集成里 `node infra/chrono-cd/check-pins.mjs` 检查，测试在 `check-pins.test.mjs`）：
 
 - 工作流里的 action 固定到 40 位提交哈希，注释里写版本；install-action 装的工具写明版本。上游的标签或分支被改写（例如上游被入侵）时，不会在拿着 `packages: write` 令牌的任务里跑新代码。
-- `Images` 不读写 Actions 缓存：缓存按仓库和分支共用、不分工作流，同一分支上任何 CI 任务里的 action 都能写进构建层。每次从头构建，api 镜像会慢几分钟。
+- “发布与部署” 不读写 Actions 缓存：缓存按仓库和分支共用、不分工作流，同一分支上任何 CI 任务里的 action 都能写进构建层。每次从头构建，api 镜像会慢几分钟。
 - 两个 Dockerfile 的 `# syntax=` 构建前端和基础镜像写成"标签@摘要"（构建时 BuildKit 只按摘要拉）。
-- 处理服务已下线：它的镜像（`infra/worker/`）和"构建后端按版本和哈希固定"的检查都已删掉，`Images` 不再构建它；线上在换成瘦身后的版本之前，处理服务仍按线上规格里固定的摘要运行以前构建的镜像。
+- 处理服务已下线：它的镜像（`infra/worker/`）和"构建后端按版本和哈希固定"的检查都已删掉，“发布与部署” 不再构建它；线上在换成瘦身后的版本之前，处理服务仍按线上规格里固定的摘要运行以前构建的镜像。
 
 更新由 Dependabot 每周提（[`.github/dependabot.yml`](../../.github/dependabot.yml)，新版本发布满一周才提）；`# syntax=` 的摘要要手工换。
 
@@ -207,11 +242,11 @@ nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH \
 
 常见失败：`400 image_not_found`（摘要不存在、复制错了或还没构建完）、`400 image_unauthorized`（第 2 步没做）、`409 quota_exceeded`（第 3 步）、`409 service_name_taken`（服务名被组织里别的应用占用）。
 
-规格里声明了密钥 `METAVERSE_DEMO_SHARE_TOKEN`：第一次提交时密钥还没设置，chrono-cd 返回 `422 missing_secret_keys`——这表示规格**已保存**、等密钥，接着做第 5 步，设置后 chrono-cd 立即应用。
+规格里声明了 `METAVERSE_DEMO_SHARE_TOKEN` 和两个 `NYXID_OAUTH_*` 密钥：第一次提交时密钥还没设置，chrono-cd 返回 `422 missing_secret_keys`——这表示规格**已保存**、等密钥，接着做第 5 步，设置后 chrono-cd 立即应用。
 
 ### 第 5 步：密钥（演示空间的分享令牌）
 
-只有一个：接口服务的 `METAVERSE_DEMO_SHARE_TOKEN`，演示空间 `chronoai-lobby`（凭链接查看）的分享令牌原文。接口服务只用它算 sha256 存进空间文档，不写日志；演示链接是 `/s/chronoai-lobby#share=<令牌>`（第 8 步）。
+演示空间使用接口服务的 `METAVERSE_DEMO_SHARE_TOKEN`，演示空间 `chronoai-lobby`（凭链接查看）的分享令牌原文。接口服务只用它算 sha256 存进空间文档，不写日志；演示链接是 `/s/chronoai-lobby#share=<令牌>`（第 8 步）。
 
 1. 在自己电脑上生成（256 位随机数，base64url，43 个字符；接口服务要求 32–256 个 `A–Z a–z 0–9 - _`），存进密码管理器：
 
@@ -257,7 +292,11 @@ curl -s -o /dev/null -w '%{http_code}\n' $URL/api/v1/spaces/x   # 401（没有�
 
 ### 第 7 步：注册成 NyxID 服务（组织管理员，在自己电脑上）
 
-**已完成**（2026-11-09）：ChronoAI 组织的自定义服务 `chrono-metaverse`，服务编号 `362df1f5-8135-4a05-aa85-d929a5fd9f73`，已填进 `ALLOWED_NYX_SERVICE_IDS`（线上第 7 次修订），也已接进 NyxID 的 MCP 服务；经 NyxID 调接口已能读到真实数据。下面留作重新注册或换环境时的步骤。
+ChronoAI 的现有部署已完成注册：组织 `chronoai`（`52aa284c-b5b2-49bd-9d12-79f24772dbd7`），服务 `chrono-metaverse`，连接编号 `362df1f5-8135-4a05-aa85-d929a5fd9f73`，地址 `https://chrono-metaverse-chronoai.apps.nyxid.ai`，OpenAPI 地址为该域名下的 `/api/openapi.json`。连接已开启 `jwt` 身份传递、受众 `urn:chrono-metaverse:api` 和 `forward_access_token`，允许组织成员使用；`app.json` 的服务编号白名单已同步。
+
+已验证 `nyxid proxy request chrono-metaverse api/v1/spaces/chronoai-lobby --output json` 可读取前厅数据，MCP 可发现 `chrono-metaverse__get_space` 等具体工具。MCP 使用 `x-api-key` 时不会转发用户访问令牌。旧版本因此无法查询组织角色，读取组织空间返回 404；本次 OAuth 实现允许用户先在 `/connect` 授权，再以原有 Agent Key 调用。需先发布新版 API/web，并按 [NyxID OAuth 接入](../../docs/NYXID_OAUTH.md) 注册 OAuth 客户端、设置两个应用密钥和客户端 ID；本次发布同时配置该功能；每位用户仍需打开 `/connect` 授权一次。无需新建服务连接或 Agent Key。
+
+维护现有部署时复用这条连接，无需再次创建。以下步骤用于新建或重建连接：
 
 完整命令见开发教程 [`docs/tutorials/cloud-claude-code-nyxid.md`](../../docs/tutorials/cloud-claude-code-nyxid.md) 第 9.3 节。要点：
 
@@ -329,7 +368,7 @@ NyxID 注册以后，别的空间照常经接口建：以组织 admin 身份 `PO
 
 ## 3. 日常更新
 
-新版本只换镜像，用 `PATCH`（不会动其他字段，也不会覆盖别人中途的部署）。摘要按第 1 步"镜像按摘要固定"从那次提交的 `Images` 运行里取，`pin-images.mjs --patch` 生成只含镜像的补丁：
+新版本只换镜像，用 `PATCH`（不会动其他字段，也不会覆盖别人中途的部署）。摘要按第 1 步"镜像按摘要固定"从那次提交的 “发布与部署” 运行里取，`pin-images.mjs --patch` 生成只含镜像的补丁：
 
 ```bash
 PATCH_BODY=$(node infra/chrono-cd/pin-images.mjs --patch <新的提交哈希> \
@@ -339,7 +378,7 @@ nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --
 
 上线后同步改 `app.json` 的两个镜像（同一条命令去掉 `--patch` 的输出里就是新的镜像引用），让仓库里记的是线上验证过的版本。
 
-**线上规格还是按标签写的时候（只做一次）**：2026-11-09 部署的修订 1–3 用的是 `:b957be0`、`:aabf88f`、`:0fccf1d` 这类标签。在做任何只改环境变量的 `PATCH` 之前，先用上面的命令把镜像换成按摘要固定，摘要取 `revisions` 里**当前修订记录的** `ImageDigest`（部署时解析出来的，不受之后改写标签的影响；与那次 `Images` 运行的摘要核对一次）。之后再按需要用 `PATCH` 同步 `app.json` 里改过的环境变量（例如第 1 节"公开接口限流"的四个额度）。
+**线上规格还是按标签写的时候（只做一次）**：2026-11-09 部署的修订 1–3 用的是 `:b957be0`、`:aabf88f`、`:0fccf1d` 这类标签。在做任何只改环境变量的 `PATCH` 之前，先用上面的命令把镜像换成按摘要固定，摘要取 `revisions` 里**当前修订记录的** `ImageDigest`（部署时解析出来的，不受之后改写标签的影响；与那次 “发布与部署” 运行的摘要核对一次）。之后再按需要用 `PATCH` 同步 `app.json` 里改过的环境变量（例如第 1 节"公开接口限流"的四个额度）。
 
 改了 `app.json` 的其他内容（环境变量、资源）时用第 4 步的 `PUT` 整份提交；`PUT` 会整份替换，提交前先 `GET` 一次，把线上手工改过的值（`PUBLIC_BASE_URL`、`ALLOWED_NYX_SERVICE_IDS`）同步回来，再带上 `If-Match: <generation>`。
 
@@ -349,7 +388,7 @@ nyxid proxy request chrono-cd "$APP?org_id=$ORG" --method PATCH --output json --
 
 `docs/design/server-slim.md` 第 11 节。这一次和日常更新不同：处理服务要从规格里删掉、接口服务的资源和环境变量都变了，种子格式也换了（旧镜像读不了新格式的种子），所以必须用第 4 步的 `PUT` **整份**提交，并且镜像、环境变量、删掉处理服务在**同一次**里完成：
 
-1. 新的九步验收在本机全过（`infra/dev/README.md`），开发分支合并进 `main`，取这次提交在 `main` 上的 `Images` 运行里的两个摘要；
+1. 新的九步验收在本机全过（`infra/dev/README.md`），开发分支合并进 `main`，取这次提交在 `main` 上的 “发布与部署” 运行里的两个摘要；
 2. `GET` 一次线上规格，把线上手工改过的值同步进 `app.json`（目前没有：`PUBLIC_BASE_URL`、`ALLOWED_NYX_SERVICE_IDS` 都已和线上一致）；
 3. `node infra/chrono-cd/pin-images.mjs <提交哈希> api=sha256:<摘要> web=sha256:<摘要>` 生成整份规格（只有通过 `check-app` 才输出），带上 `If-Match: <generation>` `PUT`；
 4. 第 6 步查状态：`get_app_status` 里只剩 `metaverse-web`、`metaverse-api` 两个服务（处理服务已删除）；接口服务日志里有建索引、后台执行器和清理启动、后台迁移 `backfill-asset-check-v1` 的进度，种子什么都不做（`AlreadyDone`）；
