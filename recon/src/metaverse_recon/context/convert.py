@@ -10,8 +10,8 @@ import trimesh
 from PIL import Image
 
 from ..bench.core import ReconError
+from ..content import triangle_groups
 from .config import plot_region_id, workspace_config
-from .meshes import triangle_groups
 
 Y_UP_TO_Z_UP = np.array([[1, 0, 0, 0], [0, 0, -1, 0], [0, 1, 0, 0], [0, 0, 0, 1]], dtype=float)
 

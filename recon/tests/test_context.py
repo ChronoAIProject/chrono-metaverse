@@ -120,7 +120,7 @@ def test_config_does_not_mutate_input():
 def test_large_mesh_parts_remain_within_platform_limits_without_mutating_source():
     import numpy as np
 
-    from metaverse_recon.context.meshes import triangle_groups
+    from metaverse_recon.content import triangle_groups
 
     mesh = trimesh.creation.box()
     mesh.faces = np.tile(mesh.faces, (10000, 1))

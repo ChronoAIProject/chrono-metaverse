@@ -9,9 +9,9 @@ import trimesh
 from scipy.spatial import ConvexHull
 
 from ..bench.core import ReconError
+from ..content import triangle_groups
 from .config import foreground_entities, plot_region_id, workspace_config
 from .geometry import floor_outline
-from .meshes import triangle_groups
 
 # 空间协议的网格单位，所有场景一致。
 GRID_UNIT = 0.05

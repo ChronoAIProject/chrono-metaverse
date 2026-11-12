@@ -48,6 +48,15 @@ export function violations(root) {
       const source = readFileSync(file, "utf8").split(/^#\[cfg\(test\)\]/m)[0];
       const errors = [];
       if (
+        [
+          "sdk/typescript/src/commands/edit.ts",
+          "sdk/typescript/src/workspace/edit.ts",
+          "recon/src/metaverse_recon/content.py",
+        ].includes(relative(root, file)) &&
+        /\b(?:from|import)\b[^\n]*\bcontext\b/.test(source)
+      )
+        errors.push("通用编辑层不能依赖地图或背景提供方");
+      if (
         /(?:from|import|require|readFile|include_str|open)[^\n]*scenes\//.test(
           source,
         )

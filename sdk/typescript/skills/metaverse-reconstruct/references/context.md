@@ -1,5 +1,7 @@
 # 背景、所在楼体与返回主体的标记
 
+这是可选的内容提供工具。普通物件编辑先使用 [通用空间编辑](../../metaverse-builder/references/edit.md)；无需地图配置或楼内配准。这里生成的清单由 `metaverse context` 转换成同一标准编辑计划，统一调用 `metaverse edit` 检查、上传和预览。
+
 用户在网页聊天中描述位置、楼层和效果，由 worker 执行以下操作。用户只需要空间的相应权限；不用 GitHub 账号、平台仓库写权限、部署权限或自己填写坐标。工具源码来自任务固定提交，所有数据写在仓库外的空间工作区。
 
 先 `metaverse pull --assets`，再 `metaverse-recon context inspect`：读取真实区域、主体物件编号、已有背景配置。主体取景、房顶剖切和浏览器缓存由查看器统一处理。背景始终标记 `props.background: true`；不要通过缩小城市模型去迎合室内镜头。

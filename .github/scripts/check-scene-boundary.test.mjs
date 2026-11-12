@@ -12,6 +12,7 @@ test("场景专用值和源码依赖会失败，夹具和测试可以使用示�
       "scenes/example",
       "web/src/fixtures",
       "sdk/typescript/src",
+      "sdk/typescript/src/workspace",
       "recon/src",
       "api/crates/metaverse-core/src",
       "api/crates/metaverse-api/src",
@@ -48,14 +49,20 @@ test("场景专用值和源码依赖会失败，夹具和测试可以使用示�
       join(root, "web/src/viewer.test.ts"),
       'const source = "source-building-123";',
     );
+    writeFileSync(
+      join(root, "sdk/typescript/src/workspace/edit.ts"),
+      'import { adapter } from "./context.js";',
+    );
     const errors = violations(root);
-    assert.equal(errors.length, 3);
+    assert.equal(errors.length, 4);
+    assert(errors.some((error) => error.includes("通用编辑层不能依赖")));
     assert(errors.some((error) => error.includes("web/src/viewer.ts")));
     assert(errors.some((error) => error.includes("生产核心依赖 scenes/")));
     assert(errors.some((error) => error.includes("recon/src/model.py")));
     for (const file of [
       "web/src/viewer.ts",
       "sdk/typescript/src/import.ts",
+      "sdk/typescript/src/workspace/edit.ts",
       "recon/src/model.py",
     ])
       writeFileSync(join(root, file), "");

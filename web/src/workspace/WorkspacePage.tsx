@@ -1679,7 +1679,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                             '介绍一下这个空间',
                             '把入口改得明亮一点，先给我预览',
                             '保留现有布局，增加一个交流区',
-                            '添加窗外背景，拉远显示完整楼体和返回主体的标记',
+                            '放入一个模型，调整位置和外观，先给我预览',
                           ].map((text) => (
                             <button
                               className="workspace__secondary"

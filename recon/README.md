@@ -527,7 +527,11 @@ Sofa"（gla_bot，两人位、枕式扶手，4.53 厘米），但它是深棕色
 - 配准只求偏航和平移：扫描本身有倾斜时先由摆正步骤修正（10° 以内）；
 - 解析前检查里 Draco 的三角形数要解码后才知道（本地没有子进程内存上限，靠机器本身的内存）。
 
-## 通用背景与楼内配准
+## 普通内容导入
+
+`metaverse-recon content import --model <文件.glb> --id <物件编号> --label <名称>` 将模型转换为普通物件和标准编辑计划。支持位置、朝向和缩放，不需要地图配置、背景标记或新地块。家具、装饰、建筑都使用相同输出，交给 `metaverse edit check/push`。详细流程见 [通用空间编辑](../sdk/typescript/skills/metaverse-builder/references/edit.md)。
+
+## 可选地图与楼内配准工具
 
 `metaverse-recon context --help` 提供独立工作区里的背景导入，不需要修改场景脚本或平台源码。
 `inspect` 读取主体与已保存背景，`init` 生成 OneMap 配置，`download/convert/ground/align/build`

@@ -70,6 +70,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_parser(sub)
 
+    from ..content import add_parser as add_content_parser
+
+    add_content_parser(sub)
+
     # ---- prepare
     p = sub.add_parser("prepare", help="扫描 → 基线目录（对齐、结构、物体；与原处理服务首次导入的结果相同）")
     p.add_argument(
@@ -468,7 +472,11 @@ PIPELINE = {
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        if args.cmd == "context":
+        if args.cmd == "content":
+            from ..content import cmd_content
+
+            print(json.dumps(cmd_content(args), ensure_ascii=False, indent=2))
+        elif args.cmd == "context":
             from ..context.workflow import cmd_context
 
             print(json.dumps(cmd_context(args), ensure_ascii=False, indent=2))

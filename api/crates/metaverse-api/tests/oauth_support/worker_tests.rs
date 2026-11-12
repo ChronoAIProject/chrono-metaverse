@@ -130,7 +130,7 @@ async fn existing_space_worker_uses_pinned_tools_and_accepts_only_its_own_attach
         assert!(body["initial_message"]
             .as_str()
             .unwrap()
-            .contains("metaverse context"));
+            .contains("metaverse edit"));
         assert!(!body.to_string().contains("oauth-access"));
     }
     input["context"]["toolSourceRef"] = json!("dev");

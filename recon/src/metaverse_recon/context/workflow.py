@@ -1,20 +1,18 @@
 """通过已安装的命令完成背景导入，所有输出都留在用户工作区。"""
 
 import copy
-import hashlib
 from pathlib import Path
 
 import numpy as np
-import trimesh
 
 from ..bench.core import ReconError
+from ..content import import_glb
 from .config import (
     foreground_entities,
     number,
     plot_region_id,
     read,
     validate,
-    vector,
     workspace_config,
     write,
 )
@@ -108,40 +106,21 @@ def save(root, config, entities):
 
 def import_model(args):
     root = Path(args.workspace).resolve()
-    model = Path(args.model).resolve()
-    if model.suffix.lower() != ".glb":
-        raise ReconError("背景模型须为 GLB；其他地图来源请先用相应适配器转成 GLB")
-    if model.stat().st_size > 50 * 1024 * 1024:
-        raise ReconError("单个背景 GLB 不能超过 50 MiB；请先拆分模型")
     config = {"version": 1, "entityPrefix": args.prefix, "message": args.label}
     validate(config)
-    vector(args.at, "at")
-    number(args.yaw, "yaw")
     number(args.overview_distance, "overviewDistance", 0, 1e9)
-    scene = trimesh.load_scene(model, process=False)
-    if not scene.geometry:
-        raise ReconError("GLB 没有网格")
-    # 保留节点变换、贴图和米制比例；统一为底面中心原点。
-    minimum, maximum = scene.bounds
-    center = (minimum + maximum) / 2
-    center[1] = minimum[1]
-    scene.apply_translation(-center)
-    data = scene.export(file_type="glb", include_normals=True)
-    digest = hashlib.sha256(data).hexdigest()
-    (root / "assets").mkdir(parents=True, exist_ok=True)
-    (root / "assets" / f"{digest}.glb").write_bytes(data)
-    at = np.array(args.at)
-    entity = {
-        "entityId": args.prefix + "model",
-        "layer": "ext",
-        "kind": "object",
-        "label": args.label,
-        "regionId": plot_region_id(root),
-        "assetHash": digest,
-        "bounds": {"min": (minimum - center).tolist(), "max": (maximum - center).tolist()},
-        "props": {"来源": args.label, "署名": args.attribution},
-    }
-    entity = placed(entity, {"yaw": args.yaw, "translation": at.tolist()})
+    entities, _assets = import_glb(
+        root,
+        Path(args.model).resolve(),
+        args.prefix + "model",
+        args.label,
+        args.at,
+        args.yaw,
+        region=plot_region_id(root),
+        background=True,
+        attribution=args.attribution,
+    )
+    entity = entities[0]
     if args.landmark:
         subjects = [e for e in foreground_entities(read(root, "entities.json")) if e.get("bounds")]
         if not subjects:
@@ -156,7 +135,7 @@ def import_model(args):
             "position": np.mean(list(bounds.values()), axis=0).tolist(),
             "minDistance": args.overview_distance,
         }
-    return save(root, config, [entity])
+    return save(root, config, entities)
 
 
 def cmd_context(args):

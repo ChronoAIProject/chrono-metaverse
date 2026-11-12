@@ -17,6 +17,7 @@ import { BundleError } from '../core/bundle.js';
 import { CheckError } from '../core/check/index.js';
 import { runAdmin } from './admin.js';
 import { runContext } from './context.js';
+import { runEdit } from './edit.js';
 import { runBuildCommand, runCheck, runDiff } from './build.js';
 import { runBundle } from './bundle.js';
 import { CliError, type CliContext } from './common.js';
@@ -34,7 +35,8 @@ export const HELP = `metaverse —— chrono-metaverse 的本地工作区和建�
                          和 metaverse-reconstruct（AI 重建实体空间）
   admin …                管理命令：建空间、改名和可见性、轮换分享令牌、定义区域和地块、登记事件类型、抹除事件
   pull                   下载空间的当前状态（--scan 另下载原始扫描；--share <链接> 只读公开快照）
-  context …              通用背景：范围计划、模型上传、配准结果检查与原生草稿预览
+  edit …                 通用空间编辑：标准操作、资源核对、范围检查和草稿预览
+  context …              旧背景清单的兼容入口，转换后复用 edit
   build                  运行建造脚本（每次从基础状态重新生成）
   dev                    本地查看器（脚本改了自动重建）
   shot                   无头浏览器截图，供 AI 看图自查
@@ -63,6 +65,7 @@ type Command = (ctx: CliContext, args: readonly string[]) => number | Promise<nu
 const COMMANDS: Record<string, Command> = {
   init: runInit,
   context: runContext,
+  edit: runEdit,
   admin: runAdmin,
   bundle: runBundle,
   pull: runPull,
