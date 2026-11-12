@@ -34,7 +34,7 @@ test('CMA OAuth 会话在刷新后复用，不读取或发送浏览器 Key', asy
     .poll(() =>
       page.evaluate(() => localStorage.getItem('metaverse-cma-credential:v2:owner:owner')),
     )
-    .toBeNull();
+    .toBe('obsolete-secret');
   await page.reload();
   await page.getByRole('button', { name: '打开 CMA 聊天' }).click();
   await expect(page.getByText('已连接 CMA', { exact: true })).toBeVisible();

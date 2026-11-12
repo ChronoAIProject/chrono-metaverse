@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { WorkerError, workerRequest, type Session } from '../workspace/client';
-import { clearLegacyCmaCredentials } from './cmaConnection';
 
 export function OAuthConnection({
   session,
@@ -22,7 +21,6 @@ export function OAuthConnection({
   const [authorize, setAuthorize] = useState(false);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    clearLegacyCmaCredentials();
     const controller = new AbortController();
     let active = true;
     onChange(false);

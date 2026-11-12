@@ -2,7 +2,8 @@
 
 工作台复用现有 NyxID confidential OAuth client，采用 Code + PKCE。浏览器只持有
 HttpOnly 会话 Cookie；访问和刷新令牌加密托管在 Metaverse，CMA runtime 的服务
-Agent Key 仍由 CMA 自己管理。网页不再领取、存储或转发浏览器 Agent Key。
+Agent Key 仍由 CMA 自己管理。网页默认选择 OAuth；也可明确切换到 [浏览器 Agent Key](CMA_AGENT_KEY.md)。
+OAuth 模式不读取或发送浏览器 Key，也不删除已保存的 Key。
 
 ```text
 浏览器 ──点击授权──> NyxID（确认当前用户及 CMA 服务范围）
@@ -24,6 +25,9 @@ Agent Key 仍由 CMA 自己管理。网页不再领取、存储或转发浏览�
 已有的身份登录不自动获得 CMA 授权。用户在 NyxID 明确同意一次后，刷新网页、打开新
 标签页和切换空间均复用保存的 OAuth grant。断开连接删除本部署的 grant，失效相关
 会话；待确认消息、内容和幂等编号保持不变，授权或轮询不会自动重发写入。
+
+聊天窗记住当前账号选择的授权方式。切换方式先取消原连接状态并重新核验，不自动
+重发待确认消息。两种方式共用相同请求内容与幂等编号，恢复仍由用户明确点击。
 
 ## 连接与权限
 

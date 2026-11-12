@@ -1,5 +1,5 @@
 import { WorkerError, type Attachment, type Session } from './client';
-import { cmaOwnerHeaders } from '../auth/cmaConnection';
+import { cmaAuthHeaders } from '../auth/cmaConnection';
 
 export const MODEL_SIZE_LIMIT = 20 * 1024 * 1024;
 export function scaniverseLink(text: string): string | null {
@@ -56,7 +56,7 @@ export async function uploadModel(
         'Content-Type': 'application/octet-stream',
         'x-csrf-token': session.csrfToken ?? '',
         'Idempotency-Key': key,
-        ...cmaOwnerHeaders(session.subject, session.cmaOwnerId),
+        ...cmaAuthHeaders(session),
       },
       body: file,
     });

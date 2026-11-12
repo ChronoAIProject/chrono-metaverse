@@ -4,6 +4,7 @@ use axum::{extract::Form, routing::post};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
+mod agent_key_tests;
 mod catalog_tests;
 mod connection_tests;
 mod worker_tests;
@@ -39,6 +40,10 @@ struct ProviderState {
     serial: u64,
     refreshes: usize,
     worker_calls: Vec<(String, String, Value)>,
+    browser_keys: HashMap<String, Value>,
+    key_delivery: Option<Value>,
+    key_revocations: Vec<String>,
+    worker_bearers: Vec<String>,
     message_refusal: Option<StatusCode>,
     cma_auth_reply: Option<(StatusCode, Value)>,
     cma_auth_calls: usize,
@@ -129,6 +134,7 @@ impl MockProvider {
                 } else { format!("oauth-access-{}", state.serial) };
                 let refresh = format!("oauth-refresh-{}", state.serial);
                 state.access.insert(access.clone(), subject.clone());
+                agent_key_tests::register_state(&mut state, &subject);
                 state.scopes.insert(refresh.clone(), scope.clone());
                 state.refresh.insert(refresh.clone(), subject);
                 Json(json!({"access_token":access,"refresh_token":refresh,"token_type":"Bearer","expires_in":ttl,"scope":scope})).into_response()
@@ -157,6 +163,7 @@ impl MockProvider {
             }
         }));
         app.merge(worker_tests::routes(self.clone(), Router::new()))
+            .merge(agent_key_tests::routes(self.clone(), Router::new()))
     }
 }
 

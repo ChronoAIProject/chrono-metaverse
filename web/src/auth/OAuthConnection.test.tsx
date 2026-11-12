@@ -8,7 +8,11 @@ const session = {
   csrfToken: 'csrf',
   workerAvailable: true,
 };
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+  sessionStorage.clear();
+});
 it('刷新及切换归属仅使用会话，不转发浏览器保存的 Key', async () => {
   localStorage.setItem('metaverse-cma-credential:v2:alice:alice', 'old-secret');
   sessionStorage.setItem('metaverse-cma-enrollment:v1:alice:alice', 'old-device');
@@ -22,8 +26,8 @@ it('刷新及切换归属仅使用会话，不转发浏览器保存的 Key', asy
   const view = render(<OAuthConnection session={session} request={request} onChange={change} />);
   await screen.findByText('已连接 CMA');
   expect(change).toHaveBeenLastCalledWith(true);
-  expect(localStorage.length).toBe(0);
-  expect(sessionStorage.length).toBe(0);
+  expect(localStorage.getItem('metaverse-cma-credential:v2:alice:alice')).toBe('old-secret');
+  expect(sessionStorage.getItem('metaverse-cma-enrollment:v1:alice:alice')).toBe('old-device');
   view.rerender(
     <OAuthConnection
       session={{ ...session, cmaOwnerId: 'org-one' }}

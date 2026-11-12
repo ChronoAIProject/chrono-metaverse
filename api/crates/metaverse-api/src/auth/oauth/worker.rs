@@ -1,5 +1,5 @@
 //! Fixed browser-to-CMA operations; CMA owns runtime credentials and resource ACL.
-use super::{owner, routes, seconds, HeldCredential, OAuthError, OAuthService, STORE};
+use super::{agent_key, owner, routes, seconds, HeldCredential, OAuthError, OAuthService, STORE};
 use crate::{error::ApiError, repo::OAuthSessionRecord, routes::ApiJson, AppState};
 use axum::{
     extract::{Query, Request, State},
@@ -51,11 +51,24 @@ fn unavailable() -> ApiError {
         "CMA 暂时无法响应，请保留当前任务后重试",
     )
 }
+fn auth_method(headers: &HeaderMap) -> Result<&'static str, ApiError> {
+    let mut values = headers.get_all("x-metaverse-cma-auth").iter();
+    let method = match values.next().map(|v| v.to_str()) {
+        None | Some(Ok("oauth")) => "oauth",
+        Some(Ok("agent_key")) => "agent_key",
+        _ => return Err(ApiError::invalid("CMA 授权方式不正确")),
+    };
+    if values.next().is_some() {
+        return Err(ApiError::invalid("CMA 授权方式重复"));
+    }
+    Ok(method)
+}
 struct Access {
     oauth: Arc<OAuthService>,
     session: OAuthSessionRecord,
     held: HeldCredential,
     owner: String,
+    key: Option<agent_key::Credential>,
 }
 impl Access {
     async fn new(
@@ -72,11 +85,18 @@ impl Access {
             ));
         }
         let (session, held) = routes::verified_browser(&oauth, headers).await?;
+        let mode = auth_method(headers)?;
+        let key = if mode == "agent_key" {
+            Some(agent_key::checked(&oauth, headers, &session.subject).await?)
+        } else {
+            None
+        };
         let mut access = Self {
             oauth,
             owner: session.subject.clone(),
             session,
             held,
+            key,
         };
         access.current(require_consent).await?;
         if require_consent {
@@ -87,8 +107,20 @@ impl Access {
         }
         Ok(access)
     }
+    fn credential(&self) -> &str {
+        self.key
+            .as_ref()
+            .map_or_else(|| self.held.credential.value(), |key| key.value())
+    }
+    fn refusal(&self, status: StatusCode, body: &Value) -> ApiError {
+        if status == StatusCode::UNAUTHORIZED && self.key.is_some() {
+            agent_key::not_accepted()
+        } else {
+            refusal(status, body)
+        }
+    }
     fn require_cma_grant(&self) -> Result<(), ApiError> {
-        if !self.held.cma_granted {
+        if self.key.is_none() && !self.held.cma_granted {
             return Err(ApiError::new(
                 StatusCode::FORBIDDEN,
                 "cma_oauth_required",
@@ -136,7 +168,7 @@ impl Access {
             .oauth
             .http
             .request(method.clone(), url)
-            .bearer_auth(self.held.credential.value());
+            .bearer_auth(self.credential());
         if let Some(body) = body {
             request = request.json(&body);
         }
@@ -181,7 +213,7 @@ impl Access {
         let value = read_json(response).await?;
         self.current(true).await?;
         if !status.is_success() {
-            return Err(refusal(status, &value));
+            return Err(self.refusal(status, &value));
         }
         Ok((status, value))
     }
@@ -289,7 +321,7 @@ async fn connection(
         .oauth
         .http
         .get(a.target("/auth/session")?)
-        .bearer_auth(a.held.credential.value())
+        .bearer_auth(a.credential())
         .send()
         .await
         .map_err(|_| unavailable())?;
@@ -297,7 +329,7 @@ async fn connection(
     let value = read_json(response).await?;
     a.current(false).await?;
     if !status.is_success() {
-        return Err(refusal(status, &value));
+        return Err(a.refusal(status, &value));
     }
     if value.get("authenticated").and_then(Value::as_bool) != Some(true)
         || value.get("subject").and_then(Value::as_str) != Some(a.session.subject.as_str())
@@ -308,7 +340,7 @@ async fn connection(
         return Err(ApiError::new(
             StatusCode::SERVICE_UNAVAILABLE,
             "cma_command_authority_required",
-            "CMA 尚未提供此 OAuth 授权的聊天能力，请保留原任务；重复授权不会解决此服务配置问题",
+            "CMA 尚未提供此授权的聊天能力，请保留原任务；重复授权不会解决此服务配置问题",
         ));
     }
     // Organization selection is context, never a replacement for the user actor.
@@ -326,7 +358,16 @@ async fn consent(
     headers: HeaderMap,
     ApiJson(input): ApiJson<Consent>,
 ) -> Result<Response, ApiError> {
-    let a = Access::new(&state, &headers, false).await?;
+    // 关闭聊天只修改当前浏览器的同意状态，不依赖 CMA 凭据仍然有效。
+    let oauth = routes::service(&state)?;
+    let (session, held) = routes::verified_browser(&oauth, &headers).await?;
+    let a = Access {
+        oauth,
+        owner: session.subject.clone(),
+        session,
+        held,
+        key: None,
+    };
     if !a
         .oauth
         .repo
@@ -505,7 +546,7 @@ async fn message(
         .await?;
     if !r.status().is_success() {
         let s = r.status();
-        let error = refusal(s, &read_json(r).await?);
+        let error = a.refusal(s, &read_json(r).await?);
         tracing::warn!(
             agent_id = id,
             request_id = input.idempotency_key,
@@ -595,7 +636,7 @@ async fn attachment(
         .oauth
         .http
         .post(target)
-        .bearer_auth(a.held.credential.value())
+        .bearer_auth(a.credential())
         .header("Idempotency-Key", &key)
         .header("Content-Type", "application/octet-stream")
         .timeout(Duration::from_secs(45))
@@ -614,7 +655,7 @@ async fn attachment(
     let body = read_json(upstream).await?;
     a.current(true).await?;
     if !status.is_success() {
-        return Err(refusal(status, &body));
+        return Err(a.refusal(status, &body));
     }
     let receipt: Attachment = serde_json::from_value(body).map_err(|_| unavailable())?;
     if !valid_receipt(&receipt, &input.agent_id)

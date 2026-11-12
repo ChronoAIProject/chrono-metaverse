@@ -33,6 +33,7 @@ pub fn router(state: AppState, viewer: Router<AppState>) -> Router<AppState> {
         .route("/api/auth/nyxid/spaces", post(super::catalog::list))
         .merge(viewer)
         .merge(super::worker::router())
+        .merge(super::agent_key::router())
         .route_layer(axum::middleware::from_fn_with_state(
             state,
             crate::public::guard,

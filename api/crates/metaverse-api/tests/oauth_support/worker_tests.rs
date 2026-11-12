@@ -82,6 +82,7 @@ pub(super) fn routes(provider: MockProvider, app: Router) -> Router {
             assert!(!request.headers().contains_key(header::COOKIE));
             let valid = request.headers().get(header::AUTHORIZATION).and_then(|v|v.to_str().ok()).and_then(|v|v.strip_prefix("Bearer ")).is_some_and(|v|p.0.lock().unwrap().access.contains_key(v));
             if !valid { return StatusCode::UNAUTHORIZED.into_response(); }
+            p.0.lock().unwrap().worker_bearers.push(request.headers()[header::AUTHORIZATION].to_str().unwrap().to_owned());
             next.run(request).await
         }
     }))

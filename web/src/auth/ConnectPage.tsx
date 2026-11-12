@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import './ConnectPage.css';
-import { clearLegacyCmaCredentials } from './cmaConnection';
+import { clearBrowserKey } from './browserKey';
+import { clearEnrollment } from './browserEnrollment';
 
 type Session =
   | { enabled: false; connected: false }
@@ -90,7 +91,6 @@ export function ConnectPage({ request = fetch }: { readonly request?: typeof fet
   }, []);
 
   useEffect(() => {
-    clearLegacyCmaCredentials();
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 15_000);
     let active = true;
@@ -181,7 +181,8 @@ export function ConnectPage({ request = fetch }: { readonly request?: typeof fet
         return;
       }
       if (kind === 'disconnect') {
-        clearLegacyCmaCredentials();
+        clearBrowserKey(session.subject);
+        clearEnrollment(session.subject);
         setSession({ enabled: true, connected: false });
         setConfirmDisconnect(false);
         setOrganizations(null);

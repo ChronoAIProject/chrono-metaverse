@@ -1,4 +1,4 @@
-import { cmaOwnerHeaders } from '../auth/cmaConnection';
+import { cmaAuthHeaders, type CmaAuthMethod } from '../auth/cmaConnection';
 
 export type Session = {
   enabled: boolean;
@@ -9,6 +9,7 @@ export type Session = {
   workerUrl?: string | null;
   workerEnabled?: boolean;
   cmaOwnerId?: string;
+  cmaAuthMethod?: CmaAuthMethod;
 };
 export type Context = { spaceId: string; orgId?: string };
 export type Intent = {
@@ -106,7 +107,7 @@ export async function workerRequest<T>(
       headers: {
         'Content-Type': 'application/json',
         'x-csrf-token': session.csrfToken ?? '',
-        ...cmaOwnerHeaders(session.subject, session.cmaOwnerId),
+        ...cmaAuthHeaders(session),
       },
       body: JSON.stringify(body),
     });

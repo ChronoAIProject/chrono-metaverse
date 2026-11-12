@@ -31,6 +31,8 @@ import './WorkspacePage.css';
 import { modelDigest, scaniverseLink, uploadModel } from './creation';
 import { StartupProgress } from './StartupProgress';
 import { OAuthConnection } from '../auth/OAuthConnection';
+import { AgentKeyConnection } from '../auth/AgentKeyConnection';
+import { readAuthMethod, saveAuthMethod, type CmaAuthMethod } from '../auth/cmaConnection';
 import { useFloatingChat } from './useFloatingChat';
 
 type PreviewIdentity = {
@@ -67,10 +69,23 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
         ? catalogSpace.owner.id
         : ''
       : note.orgId;
+  const [authChoice, setAuthChoice] = useState<{ subject: string; method: CmaAuthMethod } | null>(
+    null,
+  );
+  const authMethod =
+    authChoice?.subject === accountSession?.subject
+      ? (authChoice?.method ?? 'oauth')
+      : readAuthMethod(accountSession?.subject);
   const session = useMemo(
     () =>
-      accountSession ? { ...accountSession, cmaOwnerId: orgId || accountSession.subject } : null,
-    [accountSession, orgId],
+      accountSession
+        ? {
+            ...accountSession,
+            cmaOwnerId: orgId || accountSession.subject,
+            cmaAuthMethod: authMethod,
+          }
+        : null,
+    [accountSession, orgId, authMethod],
   );
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -108,7 +123,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [readyOwner, setReadyOwner] = useState('');
-  const connectionContext = `${session?.subject}:${session?.cmaOwnerId}`;
+  const connectionContext = `${session?.subject}:${session?.csrfToken}:${session?.cmaOwnerId}:${authMethod}`;
   const connectionReady = readyOwner === connectionContext;
   const setConnectionReady = useCallback(
     (ready: boolean) => setReadyOwner(ready ? connectionContext : ''),
@@ -260,9 +275,15 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
   const report = useCallback((e: unknown) => {
     if (
       e instanceof WorkerError &&
-      ['cma_oauth_required', 'cma_owner_forbidden', 'cma_command_authority_required'].includes(
-        e.code,
-      )
+      [
+        'cma_oauth_required',
+        'cma_owner_forbidden',
+        'cma_command_authority_required',
+        'cma_key_required',
+        'cma_key_account_mismatch',
+        'cma_key_scope_required',
+        'cma_key_not_accepted',
+      ].includes(e.code)
     ) {
       setReadyOwner('');
       setConnectionCheck((v) => v + 1);
@@ -1486,14 +1507,45 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
               !catalogError ? (
                 <p role="status">正在核对空间归属和 CMA 授权…</p>
               ) : session.workerAvailable ? (
-                <OAuthConnection
-                  key={`${session.subject}:${session.csrfToken}:${session.cmaOwnerId}`}
-                  session={session}
-                  ownerName={catalog?.organizations.find((o) => o.id === orgId)?.name}
-                  request={request}
-                  onChange={setConnectionReady}
-                  checkVersion={connectionCheck}
-                />
+                <div className="workspace__consent">
+                  <label>
+                    聊天授权方式{' '}
+                    <select
+                      aria-label="聊天授权方式"
+                      value={authMethod}
+                      disabled={busy}
+                      onChange={(event) => {
+                        const method = event.target.value as CmaAuthMethod;
+                        saveAuthMethod(session.subject!, method);
+                        autoUpload.current = false;
+                        setReadyOwner('');
+                        setAuthChoice({ subject: session.subject!, method });
+                      }}
+                    >
+                      <option value="oauth">OAuth</option>
+                      <option value="agent_key">Agent Key</option>
+                    </select>
+                  </label>
+                  {authMethod === 'oauth' ? (
+                    <OAuthConnection
+                      key={connectionContext}
+                      session={session}
+                      ownerName={catalog?.organizations.find((o) => o.id === orgId)?.name}
+                      request={request}
+                      onChange={setConnectionReady}
+                      checkVersion={connectionCheck}
+                    />
+                  ) : (
+                    <AgentKeyConnection
+                      key={connectionContext}
+                      session={session}
+                      ownerName={catalog?.organizations.find((o) => o.id === orgId)?.name}
+                      request={request}
+                      onChange={setConnectionReady}
+                      checkVersion={connectionCheck}
+                    />
+                  )}
+                </div>
               ) : null}
               {session.workerAvailable && connectionReady && !session.workerEnabled && (
                 <div className="workspace__consent">
