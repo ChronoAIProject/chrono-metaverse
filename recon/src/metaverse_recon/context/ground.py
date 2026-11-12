@@ -44,7 +44,7 @@ def main(root=None):
         data = cached_bytes(
             imagery["urlTemplate"].format(z=zoom, x=x, y=y),
             path,
-            {"User-Agent": "chrono-metaverse/1.0", "Referer": source["pageUrl"]},
+            {"User-Agent": "chrono-metaverse/1.0"},
             limit=8 * 1024 * 1024,
         )
         return x, y, Image.open(io.BytesIO(data)).convert("RGB")

@@ -212,6 +212,7 @@ export function UniversePage({
         view: memberView,
         scan: memberView.showScan && hash !== undefined ? (scans.get(hash) ?? null) : null,
         scanTransform: scene.scan?.transform,
+        external: scene.external,
         placement: { offset: member.offset, rotation: member.rotation },
       });
     });

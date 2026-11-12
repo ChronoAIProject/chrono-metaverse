@@ -16,6 +16,7 @@ boon = { workspace = true }
 flate2 = { workspace = true }
 futures-util = { workspace = true }
 governor = { workspace = true }
+httpdate = { workspace = true }
 metaverse-core = { workspace = true }
 mongodb = { workspace = true }
 reqwest = { workspace = true }

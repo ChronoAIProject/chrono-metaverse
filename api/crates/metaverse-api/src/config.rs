@@ -38,6 +38,7 @@ pub struct NyxIdConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
+    pub external: crate::external::ExternalConfig,
     pub bind: SocketAddr,
     pub public_base_url: url::Url,
     pub mongodb_uri: String,
@@ -159,6 +160,7 @@ impl Config {
         public.site_base_url = public_base_url.as_str().trim_end_matches('/').to_owned();
         let oauth = crate::auth::oauth::OAuthConfig::from_lookup(&lookup, &public_base_url)?;
         Ok(Self {
+            external: crate::external::ExternalConfig::from_lookup(&lookup)?,
             oauth,
             public,
             bind,

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { externalResponse, freshness } from './externalResource';
+import { externalResponse, freshness, sourceResponse } from './externalResource';
 
 const url = 'https://source.example.org/tile';
 const signal = () => new AbortController().signal;
@@ -105,5 +105,32 @@ describe('公开资源的 HTTP 缓存', () => {
     );
     await expect(externalResponse(url, signal(), undefined, 50)).rejects.toThrow('大小上限');
     expect(stored.size).toBe(0);
+  });
+});
+
+describe('服务端外部资源', () => {
+  it('每次经空间授权回调读取，不复用公开浏览器缓存或退回直连', async () => {
+    const direct = vi.fn();
+    vi.stubGlobal('fetch', direct);
+    const load = vi.fn(async () => new Response('server data'));
+    const request = { entity: 'context', kind: 'content' as const, source: 0, url };
+    for (let i = 0; i < 2; i++) {
+      expect(
+        await (
+          await sourceResponse({ delivery: 'server' }, { key: 'space:4', load }, request, signal())
+        ).text(),
+      ).toBe('server data');
+    }
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(direct).not.toHaveBeenCalled();
+    expect(stored.size).toBe(0);
+    load.mockResolvedValueOnce(new Response('denied', { status: 403 }));
+    await expect(
+      sourceResponse({ delivery: 'server' }, { key: 'space:4', load }, request, signal()),
+    ).rejects.toThrow('403');
+    await expect(
+      sourceResponse({ delivery: 'server' }, undefined, request, signal()),
+    ).rejects.toThrow('权限');
+    expect(direct).not.toHaveBeenCalled();
   });
 });

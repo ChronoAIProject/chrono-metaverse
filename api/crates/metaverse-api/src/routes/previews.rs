@@ -60,7 +60,7 @@ async fn previewed(state: &AppState, headers: &HeaderMap) -> Result<(Grant, Draf
         .map(|(grant, draft, _)| (grant, draft))
 }
 
-async fn previewed_with_target(
+pub(super) async fn previewed_with_target(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<(Grant, DraftDoc, PreviewTarget), ApiError> {

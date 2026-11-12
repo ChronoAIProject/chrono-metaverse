@@ -2834,3 +2834,104 @@ async fn ops_from_upload_is_limited_per_space_and_per_draft() {
     );
     assert_eq!(reply.body["code"], "too_many_ops_files");
 }
+
+#[tokio::test]
+async fn external_resources_require_visible_version_and_current_preview_even_on_cache_hits() {
+    use sha2::{Digest, Sha256};
+    let directory = std::env::temp_dir().join(format!("external-route-{}", uuid::Uuid::new_v4()));
+    let Some(app) =
+        TestApp::start_with_env(&[("EXTERNAL_CACHE_DIR", directory.to_str().unwrap())]).await
+    else {
+        return;
+    };
+    let share = format!("Share {}", app.create_space(SPACE).await);
+    let id = new_draft(&app, &format!("/api/v1/spaces/{SPACE}/drafts")).await;
+    let path = draft_path(SPACE, &id);
+    let placed = append(&app, &path, json!([{"op":"placeEntity","entity":{
+        "entityId":"context","kind":"object","layer":"ext","shape":{"type":"box","size":[1,1,1]},"bounds":{"min":[-0.5,0,-0.5],"max":[0.5,1,0.5]},
+        "props":{"background":true,"externalContent":{"version":1,"format":"3d-tiles","sources":[{
+            "delivery":"server","url":"https://tiles.example/data/tileset.json","page":"https://tiles.example/","attribution":"测试数据"
+        }]}}
+    }}])).await;
+    assert_eq!(placed.status, StatusCode::OK, "{:?}", placed.body);
+    // 预先放入磁盘夹具，验证命中缓存也不能绕过版本或令牌校验。
+    let url = "https://tiles.example/data/tileset.json";
+    let saved = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    let meta = serde_json::to_vec(
+        &json!({"saved":saved,"expires":saved+600000,"content_type":"application/json"}),
+    )
+    .unwrap();
+    let mut file = (meta.len() as u32).to_be_bytes().to_vec();
+    file.extend(meta);
+    file.extend(b"{\"asset\":{\"version\":\"1.0\"}}");
+    tokio::fs::create_dir_all(&directory).await.unwrap();
+    tokio::fs::write(directory.join(format!("{:x}", Sha256::digest(url))), file)
+        .await
+        .unwrap();
+    let query = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("entity", "context")
+        .append_pair("kind", "content")
+        .append_pair("source", "0")
+        .append_pair("url", url)
+        .finish();
+    let preview = app
+        .org(Method::POST, &format!("{path}/preview"), None)
+        .await;
+    assert_eq!(preview.status, StatusCode::CREATED);
+    let token = format!("Preview {}", preview.body["token"].as_str().unwrap());
+    let endpoint = format!("/api/public/previews/external?{query}");
+    assert_eq!(
+        app.public(&endpoint, None).await.status,
+        StatusCode::NOT_FOUND
+    );
+    let loaded = app.public(&endpoint, Some(&token)).await;
+    assert_eq!(loaded.status, StatusCode::OK, "{:?}", loaded.body);
+    assert_eq!(loaded.header("x-resource-cache"), "hit");
+    assert_eq!(loaded.header(header::CACHE_CONTROL), "no-store");
+    assert_eq!(loaded.body["asset"]["version"], "1.0");
+    let wrong = endpoint.replace("entity=context", "entity=other");
+    assert_eq!(
+        app.public(&wrong, Some(&token)).await.status,
+        StatusCode::NOT_FOUND
+    );
+    let published = app
+        .org(
+            Method::POST,
+            &format!("{path}/publish"),
+            Some(json!({"message":"发布外部来源","rev":1})),
+        )
+        .await;
+    assert_eq!(published.status, StatusCode::OK, "{:?}", published.body);
+    assert_eq!(
+        app.public(&endpoint, Some(&token)).await.status,
+        StatusCode::NOT_FOUND
+    );
+    let seq = published.body["seq"].as_u64().unwrap();
+    let endpoint = format!("/api/public/spaces/{SPACE}/external?seq={seq}&{query}");
+    assert_eq!(
+        app.public(&endpoint, None).await.status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        app.public(&endpoint, Some(&share)).await.status,
+        StatusCode::OK
+    );
+    let earlier = endpoint.replace(&format!("seq={seq}&"), "seq=1&");
+    assert_eq!(
+        app.public(&earlier, Some(&share)).await.status,
+        StatusCode::NOT_FOUND
+    );
+    let escaped = endpoint.replace(
+        "tiles.example%2Fdata%2Ftileset.json",
+        "tiles.example%2Fsecret",
+    );
+    assert_eq!(
+        app.public(&escaped, Some(&share)).await.status,
+        StatusCode::FORBIDDEN
+    );
+    app.state.repo.drop_database().await.unwrap();
+    tokio::fs::remove_dir_all(directory).await.unwrap();
+}

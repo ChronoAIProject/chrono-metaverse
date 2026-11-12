@@ -1,3 +1,4 @@
+import type { ExternalRequest } from '../externalSource';
 import { decompressChunk } from '../chunk';
 import { sha256HexOfText } from '../hash';
 import { browserAssetCache } from './assetCache';
@@ -92,6 +93,17 @@ export interface DensityQuery {
 export type SnapshotQuery = { readonly seq: number } | { readonly at: Timestamp };
 
 export interface PublicClient {
+  readonly external?: (
+    spaceId: string,
+    seq: number,
+    resource: ExternalRequest,
+    signal: AbortSignal,
+  ) => Promise<Response>;
+  readonly previewExternal?: (
+    token: string,
+    resource: ExternalRequest,
+    signal: AbortSignal,
+  ) => Promise<Response>;
   readonly space: (spaceId: string) => Promise<SpaceInfo>;
   readonly head: (spaceId: string, etag?: string | null) => Promise<HeadResult>;
   readonly snapshot: (spaceId: string, query: SnapshotQuery) => Promise<Snapshot>;
@@ -282,11 +294,13 @@ export function createPublicClient(options: PublicClientOptions = {}): PublicCli
     path: string,
     extra?: Record<string, string>,
     preview?: string,
+    signal?: AbortSignal,
   ): Promise<Response> {
     const browser = options.browser && path.startsWith('/spaces/') ? options.browser : undefined;
     const response = await fetcher(
       `${base}${browser ? '/api/auth/nyxid/view' : '/api/public'}${path}`,
       {
+        signal,
         method: browser ? 'POST' : 'GET',
         headers: browser
           ? { ...extra, 'x-csrf-token': browser.csrfToken }
@@ -328,6 +342,10 @@ export function createPublicClient(options: PublicClientOptions = {}): PublicCli
     query({ ...params, universe });
 
   return {
+    external: (spaceId, seq, resource, signal) =>
+      request(`${space(spaceId)}/external${q({ seq, ...resource })}`, undefined, undefined, signal),
+    previewExternal: (token, resource, signal) =>
+      request(`/previews/external${query({ ...resource })}`, undefined, token, signal),
     space: (spaceId) => json<SpaceInfo>(`${space(spaceId)}${q()}`),
     async head(spaceId, etag) {
       const response = await request(

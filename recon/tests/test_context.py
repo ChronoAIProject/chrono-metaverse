@@ -83,7 +83,9 @@ def test_cache_reuses_only_matching_source_and_valid_bytes(tmp_path, monkeypatch
 
     def fetch(request, timeout):
         calls.append(request.full_url)
-        return io.BytesIO(request.full_url.encode())
+        response = io.BytesIO(request.full_url.encode())
+        response.headers = {"Cache-Control": "public, max-age=3600"}
+        return response
 
     monkeypatch.setattr("urllib.request.urlopen", fetch)
     target = tmp_path / "same-name.png"
@@ -231,3 +233,26 @@ def test_host_sections_and_marker_in_independent_workspace(tmp_path, label, turn
     assert marker["focusBounds"]["min"] == pytest.approx(subject_min)
     assert marker["focusBounds"]["max"] == pytest.approx(subject_max)
     assert read(tmp_path, "entities.json") == before
+
+
+def test_download_cache_revalidates_old_receipts_and_rejects_no_store(tmp_path, monkeypatch):
+    from metaverse_recon.context.cache import cached_bytes
+
+    url = "https://source.invalid/tileset.json"
+    target = tmp_path / "tileset.json"
+    target.write_bytes(b"old")
+    receipt = target.with_name(target.name + ".source.json")
+    receipt.write_text(json.dumps({"url": url, "sha256": hashlib.sha256(b"old").hexdigest()}))
+    calls = []
+
+    def fetch(request, timeout):
+        calls.append(request.full_url)
+        response = io.BytesIO(b"new")
+        response.headers = {"Cache-Control": "private, no-store"}
+        return response
+
+    monkeypatch.setattr("urllib.request.urlopen", fetch)
+    with pytest.raises(ReconError, match="禁止持久"):
+        cached_bytes(url, target, {})
+    assert calls == [url]
+    assert target.read_bytes() == b"old"

@@ -17,9 +17,14 @@ import dracoWasm from 'three/examples/jsm/libs/draco/gltf/draco_decoder.wasm?url
 import type { EntityBody } from '../core/api/types';
 import { GRID_UNIT } from '../core/chunk';
 import type { Placement, SceneContent } from '../core/scene';
-import { externalContentOf, publicHttps, type ExternalContent } from '../core/externalSource';
+import {
+  externalContentOf,
+  publicHttps,
+  type ExternalContent,
+  type ExternalAccess,
+} from '../core/externalSource';
 import { GeoReference } from './geography';
-import { externalResponse } from './externalResource';
+import { sourceResponse } from './externalResource';
 import { sourceCredit } from './sourceCredit';
 import { backgroundView } from './background';
 
@@ -46,6 +51,7 @@ class ExternalItem {
     private readonly downloadQueue: DownloadPriorityQueue,
     private readonly parseQueue: PriorityQueue,
     private readonly lruCache: LRUCache,
+    private readonly access?: ExternalAccess,
   ) {
     this.view = backgroundView(entity);
     this.group.rotation.y = THREE.MathUtils.degToRad(placement.rotation);
@@ -61,7 +67,8 @@ class ExternalItem {
   }
 
   private start(entity: EntityBody): void {
-    const source = this.config.sources[this.sourceIndex]!;
+    const sourceIndex = this.sourceIndex;
+    const source = this.config.sources[sourceIndex]!;
     const tiles = new TilesRenderer(source.url);
     this.tiles = tiles;
     this.loaded = 0;
@@ -88,10 +95,11 @@ class ExternalItem {
           ? new URL(tile.content.uri, `${tile.internal.basePath.replace(/\/$/, '')}/`).href
           : url,
       fetchData: (url: string, options: RequestInit) =>
-        externalResponse(
-          url,
+        sourceResponse(
+          source,
+          this.access,
+          { entity: entity.entityId, kind: 'content', source: sourceIndex, url },
           options.signal ? AbortSignal.any([signal, options.signal]) : signal,
-          source.cache,
         ),
     });
     const decoderManager = new THREE.LoadingManager();
@@ -127,7 +135,12 @@ class ExternalItem {
                 for (const entry of [...(json.buffers ?? []), ...(json.images ?? [])]) {
                   if (!entry.uri || entry.uri.startsWith('data:')) continue;
                   const url = new URL(entry.uri, parser.options.path).href;
-                  const response = await externalResponse(url, signal, source.cache);
+                  const response = await sourceResponse(
+                    source,
+                    this.access,
+                    { entity: entity.entityId, kind: 'content', source: sourceIndex, url },
+                    signal,
+                  );
                   const blob = await response.blob();
                   signal.throwIfAborted();
                   entry.uri = URL.createObjectURL(blob);
@@ -270,16 +283,20 @@ export class ExternalContentView {
     const selected = content.members.flatMap((member) =>
       member.view.entities.flatMap((entity) => {
         const config = externalContentOf(entity);
-        return config ? [{ config, entity, placement: member.placement }] : [];
+        return config
+          ? [{ config, entity, placement: member.placement, access: member.external }]
+          : [];
       }),
     );
-    const key = JSON.stringify(selected);
+    const key = JSON.stringify(
+      selected.map(({ access, ...item }) => ({ ...item, access: access?.key })),
+    );
     if (key === this.key) return;
     this.clear();
     this.key = key;
     if (!selected.length) return;
     this.host.append(this.credit);
-    for (const { config, entity, placement } of selected) {
+    for (const { config, entity, placement, access } of selected) {
       const item = new ExternalItem(
         config,
         entity,
@@ -288,6 +305,7 @@ export class ExternalContentView {
         this.downloadQueue,
         this.parseQueue,
         this.lruCache,
+        access,
       );
       this.items.push(item);
       this.scene.add(item.group);

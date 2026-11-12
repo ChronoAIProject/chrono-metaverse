@@ -33,7 +33,7 @@ def main(root=None):
     config = context["oneMap"]
     dest = root / "assets/onemap"
     base = config["tilesBaseUrl"]
-    headers = {"User-Agent": "chrono-metaverse/1.0", "Referer": config["pageUrl"]}
+    headers = {"User-Agent": "chrono-metaverse/1.0"}
     dest.mkdir(parents=True, exist_ok=True)
     source = json.loads(download("tileset.json", dest, base, headers))
     bounds = [math.radians(x) for x in config["bboxDegrees"]]

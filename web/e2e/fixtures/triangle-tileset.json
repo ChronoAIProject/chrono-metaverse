@@ -1,0 +1,9 @@
+{
+  "asset": { "version": "1.0" },
+  "geometricError": 0,
+  "root": {
+    "boundingVolume": { "sphere": [0, 0, 0, 20] },
+    "geometricError": 0,
+    "content": { "uri": "triangle-draco.b3dm" }
+  }
+}

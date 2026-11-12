@@ -16,6 +16,7 @@ pub mod auth;
 pub mod config;
 pub mod demo_seed;
 pub mod error;
+pub mod external;
 pub mod health;
 pub mod ingest;
 pub mod openapi;
@@ -35,6 +36,8 @@ use repo::{Repo, RepoError};
 #[derive(Clone)]
 pub struct AppState {
     pub repo: Repo,
+    /// 外部地图、三维内容与依赖的有界磁盘缓存。
+    pub external: Arc<external::ExternalResources>,
     pub authenticator: Arc<Authenticator>,
     pub authorizer: Arc<Authorizer>,
     /// 上传、任务的上限和进程内状态（分片并发、`/head` 短缓存）。
@@ -71,6 +74,7 @@ impl AppState {
         let organizations = OrganizationClient::new(&config.nyxid.base_url, verifier.clone())?
             .with_oauth(oauth.clone());
         Ok(Self {
+            external: external::ExternalResources::new(&config.external),
             oauth,
             authenticator: Arc::new(Authenticator::new(verifier, repo.clone())),
             authorizer: Arc::new(Authorizer::new(

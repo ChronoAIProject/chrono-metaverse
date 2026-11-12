@@ -206,13 +206,16 @@ pub enum RateTier {
 impl RateTier {
     /// 按路径判断档位：`/api/public/chunks/`、`/api/public/assets/` 和预览的区块、资源。
     pub fn for_path(path: &str) -> Self {
-        const BLOB_PREFIXES: [&str; 4] = [
+        const BLOB_PREFIXES: [&str; 5] = [
             "/api/public/chunks/",
             "/api/public/assets/",
             "/api/public/previews/chunks/",
             "/api/public/previews/assets/",
+            "/api/public/previews/external",
         ];
-        if BLOB_PREFIXES.iter().any(|prefix| path.starts_with(prefix)) {
+        if BLOB_PREFIXES.iter().any(|prefix| path.starts_with(prefix))
+            || path.starts_with("/api/public/spaces/") && path.ends_with("/external")
+        {
             RateTier::Blob
         } else {
             RateTier::Default
