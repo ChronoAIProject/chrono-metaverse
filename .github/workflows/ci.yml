@@ -226,6 +226,10 @@ jobs:
             echo "::error::开发改动合入 dev；正式版只从 dev 合入 main"
             exit 1
           fi
+      - name: 场景隔离边界
+        run: |
+          node --test .github/scripts/check-scene-boundary.test.mjs
+          node .github/scripts/check-scene-boundary.mjs
       - name: 数据访问边界（不需要编译）
         run: bash .github/scripts/check-db-boundary.sh
       # 模拟 NyxID、九步验收脚本的小工具和参数检查（验收本身要起全套和前厅扫描，不在这里跑）。

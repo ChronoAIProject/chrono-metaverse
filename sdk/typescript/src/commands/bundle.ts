@@ -504,6 +504,7 @@ export async function runBundlePush(ctx: CliContext, args: readonly string[]): P
 
   // 6. 预览。
   let link: string | null = null;
+  let previewRev: number | undefined;
   if (!flag(values, 'no-preview')) {
     const preview = await api.preview(
       draftId,
@@ -511,10 +512,12 @@ export async function runBundlePush(ctx: CliContext, args: readonly string[]): P
       REBUILD,
     );
     link = previewLink(ws.config.webUrl, preview);
+    previewRev = preview.rev;
   }
   saveDraft(ws.root, draftId, {
     plot: null,
     scope: 'rebuild',
+    ...(previewRev !== undefined ? { previewRev } : {}),
     baseSeq,
     bundle: report.manifestHash,
     createdAt: new Date().toISOString(),
@@ -543,6 +546,7 @@ export async function runBundlePush(ctx: CliContext, args: readonly string[]): P
       files: [...outcomes.values()],
       applied,
       preview: link,
+      previewRev: previewRev ?? null,
       published,
     });
     return 0;

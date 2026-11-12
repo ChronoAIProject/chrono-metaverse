@@ -71,7 +71,7 @@ fn rebuild() -> Result<PathScope, ApiError> {
     tag = "rebuild",
     description = "创建重建路径的分片上传（要求重建权限 metaverse:rebuild:write）。用途：scan（原始扫描：glb、drc、obj，或 Scaniverse 导出的 zip）、webmodel（网页用模型 glb）、model（物件模型 glb）、texture（png、jpeg、webp）、script（建模记录等 UTF-8 文本）、bundle（重建包清单 JSON）。声明总大小、整体 SHA-256、分片大小（256KiB 的整数倍，≤32MiB）和格式；本空间已经拥有这份内容、核对结果合乎用途时直接复用（status=done、reused=true、带 check），否则返回上传编号，之后按片号 PUT 原始字节，最后调用 complete_rebuild_upload。各用途的上限见 get_space 的 uploadLimits。",
     params(
-        ("space_id" = String, Path, description = "空间编号", example = "chronoai-lobby"),
+        ("space_id" = String, Path, description = "空间编号", example = "sample-space"),
         ("purpose" = String, Path, description = "用途：scan | webmodel | model | texture | script | bundle", example = "bundle"),
     ),
     request_body = CreateUploadRequest,
@@ -227,7 +227,7 @@ pub async fn get_rebuild_upload(
     operation_id = "create_rebuild_draft",
     tag = "rebuild",
     description = "建一个重建草稿（要求重建权限）。重建草稿只收一个重建包：之后用 apply_rebuild_bundle 交包、create_rebuild_draft_preview 生成预览链接、publish_rebuild_draft 发布。可选 baseSeq 指定基于哪个版本（命令行取清单的 base.seq，默认最新）；发布时与 (baseSeq, 最新] 里改过重建层的提交冲突。30 天后过期。",
-    params(("space_id" = String, Path, description = "空间编号", example = "chronoai-lobby")),
+    params(("space_id" = String, Path, description = "空间编号", example = "sample-space")),
     request_body(content = Option<CreateDraftRequest>, description = "可省略"),
     security(("nyxid_identity" = [])),
     responses(

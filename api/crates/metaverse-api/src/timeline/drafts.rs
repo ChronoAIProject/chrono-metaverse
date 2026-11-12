@@ -1595,7 +1595,12 @@ pub async fn publish(
         .into());
     }
     if options.expected_rev.is_some_and(|rev| rev != draft.rev) {
-        return Err(ApiError::conflict("草稿已经被修改，请重新读取后再发布").into());
+        return Err(ApiError::new(
+            axum::http::StatusCode::CONFLICT,
+            "draft_rev_changed",
+            "草稿已经被修改，请重新预览并确认当前修订后再发布",
+        )
+        .into());
     }
     if draft.op_count() == 0 {
         return Err(ApiError::invalid(if rebuild {

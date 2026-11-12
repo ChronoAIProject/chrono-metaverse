@@ -8,6 +8,8 @@ description: 在 chrono-metaverse 空间里建造（虚拟地块、实体区的�
 这个工作区是一个空间（`metaverse.json` 里的 `spaceId`）的本地副本。所有修改都经接口提交成**草稿**，
 由人看过预览链接后再发布进时间线。你不能直接改线上数据，也不需要改平台仓库。
 
+背景与所在楼体：使用 `metaverse-recon context` 生成数据、`metaverse context` 检查和推成草稿；先读工作区内 `metaverse-reconstruct/references/context.md`。不要为一个场景修改平台源码。
+
 ## 1. 坐标约定
 
 - **单位米，y 轴向上**，右手坐标系。原点在实体区地面的一个角（首次导入扫描时固定）。

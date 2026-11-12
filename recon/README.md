@@ -526,3 +526,11 @@ Sofa"（gla_bot，两人位、枕式扶手，4.53 厘米），但它是深棕色
 - 带偏航的模型物件，服务端按转过之后的外包盒核对尺寸，斜放的长条物件比不转的宽松（外包盒比实物大）；
 - 配准只求偏航和平移：扫描本身有倾斜时先由摆正步骤修正（10° 以内）；
 - 解析前检查里 Draco 的三角形数要解码后才知道（本地没有子进程内存上限，靠机器本身的内存）。
+
+## 通用背景与楼内配准
+
+`metaverse-recon context --help` 提供独立工作区里的背景导入，不需要修改场景脚本或平台源码。
+`inspect` 读取主体与已保存背景，`init` 生成 OneMap 配置，`download/convert/ground/align/build`
+处理地图、正射影像和宿主楼体；`import` 接收其他来源的 GLB；`restore` 从空间快照恢复配置。
+输出 `out/context/entities.json` 交给 `metaverse context` 检查、上传和生成原生预览。
+楼内配准与数据源的边界见 [重建技能](../sdk/typescript/skills/metaverse-reconstruct/references/context.md)。

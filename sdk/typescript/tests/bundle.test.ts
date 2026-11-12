@@ -457,7 +457,7 @@ describe('metaverse bundle push', () => {
     expect(await main(ctx, ['publish', draftId!, '--replay'])).toBe(0);
     const last = api.requests.at(-1)!;
     expect(last.path).toBe(`/api/v1/spaces/demo-space/rebuild/drafts/${draftId}/publish`);
-    expect(JSON.parse(last.body.toString())).toEqual({ replay: true });
+    expect(JSON.parse(last.body.toString())).toEqual({ replay: true, rev: 0 });
     expect(ctx.lines.at(-2)).toContain('（重建草稿）');
     // 推送时就带 --replay。
     expect(await main(ctx, ['bundle', 'push', '--publish', '--replay'])).toBe(0);

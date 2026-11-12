@@ -7,6 +7,7 @@ vi.mock('../space/SpacePage', () => ({
   ),
 }));
 import { WorkspacePage } from './WorkspacePage';
+import * as creation from './creation';
 import { resultLinks, viewerLink, type Transcript, type Operation } from './client';
 
 const connected = {
@@ -16,6 +17,7 @@ const connected = {
   csrfToken: 'csrf-secret',
   workerAvailable: true,
   workerEnabled: true,
+  toolSourceRef: 'a'.repeat(40),
 };
 const reply = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -94,6 +96,30 @@ function mockApi(
       });
     if (url.endsWith('/session'))
       return reply({ ...connected, workerEnabled: options.enabled ?? true });
+    if (url.includes('/worker/attachment?')) {
+      const agentId = new URL(url, window.location.origin).searchParams.get('agentId');
+      const file = init?.body as File;
+      writes.push({
+        action: 'attachment',
+        body: {
+          agentId,
+          name: file.name,
+          idempotencyKey: new Headers(init?.headers).get('Idempotency-Key'),
+        },
+      });
+      return reply(
+        {
+          id: 'att_one',
+          agent_id: agentId,
+          name: file.name,
+          size_bytes: file.size,
+          media_type: 'application/octet-stream',
+          sha256: 'b'.repeat(64),
+          path: `/home/attachments/${agentId}/att_one/${file.name}`,
+        },
+        201,
+      );
+    }
     const action = url.split('/').at(-1)!;
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     if (['consent', 'create', 'message', 'cancel'].includes(action)) writes.push({ action, body });
@@ -591,4 +617,35 @@ it('未知创建恢复时遇到环境授权错误，仍保留原编号且不允�
   await userEvent.click(screen.getByRole('button', { name: '重试原请求' }));
   await screen.findByText(/<script>danger/);
   expect(api.writes).toEqual([api.writes[0], api.writes[0], api.writes[0]]);
+});
+
+it('已有空间通过同一 worker 接收模型附件并保持草稿', async () => {
+  const digest = vi.spyOn(creation, 'modelDigest').mockResolvedValue('b'.repeat(64));
+  try {
+    const api = mockApi();
+    render(<WorkspacePage request={api.request} />);
+    await fillTask();
+    await userEvent.click(screen.getByRole('button', { name: '发送' }));
+    await screen.findByText(/<script>danger/);
+    await waitFor(() => expect(screen.getByLabelText('添加空间模型')).toBeEnabled());
+    const file = new File(['glTF'], 'building.glb', { type: 'model/gltf-binary' });
+    await userEvent.upload(screen.getByLabelText('添加空间模型'), file);
+    await screen.findByText('已选择：building.glb');
+    await userEvent.type(screen.getByLabelText('给空间发消息'), '把模型作为窗外背景，给我预览');
+    await userEvent.click(screen.getByRole('button', { name: '发送' }));
+    await waitFor(() => expect(api.writes.filter((w) => w.action === 'message')).toHaveLength(1));
+    const message = api.writes.find((w) => w.action === 'message')!.body;
+    expect(message.agentId).toBe('agt_one');
+    expect(message.instruction).toBe('把模型作为窗外背景，给我预览');
+    expect(message.context).toMatchObject({
+      spaceId: 'my-lobby',
+      toolSourceRef: 'a'.repeat(40),
+      attachments: [{ agent_id: 'agt_one', name: 'building.glb' }],
+    });
+    expect((message.context as Record<string, unknown>).creation).toBeUndefined();
+    expect(api.writes.filter((w) => w.action === 'create')).toHaveLength(1);
+    expect(api.writes.some((w) => w.action === 'publish')).toBe(false);
+  } finally {
+    digest.mockRestore();
+  }
 });

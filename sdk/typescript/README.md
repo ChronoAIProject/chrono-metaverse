@@ -254,3 +254,10 @@ npm run test:coverage
   各种不合规文件）；`tests/check-vectors.test.ts` 跑接口服务生成的二进制样本 `vectors/check/`（`expected.json` 的格式和拒绝码
   见 `vectors/README.md` 第 9 节；目录还没有时跳过），按声明的格式和按内容认各跑一遍，通过时的核对记录、被拒时的拒绝码都要
   与 Rust 相同。
+
+## 背景导入
+
+`metaverse context plan/stage/upload/check/push` 读取 `metaverse-recon context` 的通用数据清单。
+操作留在独立空间工作区，通过用户现有的 NyxID 权限执行，不需要仓库写权限。
+`plan` 只生成布局计划；`push` 核对模型并产出草稿预览，由用户确认后发布。
+具体步骤见 [背景与楼体配准](skills/metaverse-reconstruct/references/context.md)。

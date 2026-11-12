@@ -66,6 +66,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("source", help="Scaniverse 分享链接或本地 GLB/ZIP 路径")
     s.add_argument("--out", required=True, help="保存扫描与 source.json 的新目录")
 
+    from ..context.workflow import add_parser
+
+    add_parser(sub)
+
     # ---- prepare
     p = sub.add_parser("prepare", help="扫描 → 基线目录（对齐、结构、物体；与原处理服务首次导入的结果相同）")
     p.add_argument(
@@ -464,7 +468,11 @@ PIPELINE = {
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        if args.cmd == "source":
+        if args.cmd == "context":
+            from ..context.workflow import cmd_context
+
+            print(json.dumps(cmd_context(args), ensure_ascii=False, indent=2))
+        elif args.cmd == "source":
             from .source import cmd_source
 
             cmd_source(args)

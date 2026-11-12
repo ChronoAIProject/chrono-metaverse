@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { isObjectId, isSpaceId } from '../core/ids.js';
 import {
@@ -144,6 +144,9 @@ export function installSkill(sdkRoot: string, root: string, force: boolean): str
     if (!existsSync(source)) throw new CliError(`找不到技能说明源文件 ${source}`);
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, readFileSync(source));
+    const references = join(dirname(source), 'references');
+    if (existsSync(references))
+      cpSync(references, join(dirname(target), 'references'), { recursive: true });
     written.push(target);
   }
   return written;
