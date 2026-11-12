@@ -22,6 +22,7 @@ import {
   type Enrollment,
   type PendingEnrollment,
 } from './browserEnrollment';
+import { receiveBrowserKey } from './browserDelivery';
 export function AgentKeyConnection({
   session: suppliedSession,
   request,
@@ -136,7 +137,6 @@ export function AgentKeyConnection({
 
   useEffect(() => {
     if (!enrollment) return;
-    const controller = new AbortController();
     let active = true;
     let timer: ReturnType<typeof setTimeout>;
     let interval = enrollment.interval;
@@ -148,20 +148,12 @@ export function AgentKeyConnection({
         return;
       }
       try {
-        const delivery = await workerRequest<{ credential: string; identity: KeyIdentity }>(
-          session,
-          'key/poll',
-          { deviceCode: enrollment!.device_code },
-          controller.signal,
-          request,
-        );
+        const delivery = await receiveBrowserKey(session, enrollment!, request, owner, provider);
         if (!active) return;
-        saveBrowserKey(session.subject!, delivery.credential, delivery.identity, owner, provider);
-        clearEnrollment(session.subject!, owner, provider);
         setIdentity(delivery.identity);
         setEnrollment(null);
         setError('');
-        // 先保存一次性交付的凭据；CMA 配置失败不能导致重复审批。
+        // 交付已保存；服务核验失败不能导致重复审批。
         setAttempt((value) => value + 1);
       } catch (failure) {
         if (!active) return;
@@ -214,7 +206,6 @@ export function AgentKeyConnection({
     timer = setTimeout(() => void poll(), Math.max(0, enrollment.nextPollAt - Date.now()));
     return () => {
       active = false;
-      controller.abort();
       clearTimeout(timer);
     };
   }, [enrollment, session, onChange, request, owner, provider]);
@@ -307,7 +298,7 @@ export function AgentKeyConnection({
             {busy
               ? '正在核验…'
               : identity
-                ? '重新检查 CMA 授权'
+                ? `重新检查 ${serviceName} 授权`
                 : `授权此浏览器调用 ${serviceName}`}
           </button>
         </>

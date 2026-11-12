@@ -210,6 +210,7 @@ async fn nyxagent_rejects_cross_account_broad_or_incomplete_keys_before_model_or
         ("allow_all_services", json!(true)),
         ("allow_auto_connected_services", json!(true)),
         ("scopes", json!("proxy admin")),
+        ("scopes", json!("read")),
         ("allowed_service_ids", json!(["svc-llm-nyx"])),
     ] {
         let mut bad = metadata(SUBJECT);
@@ -319,6 +320,44 @@ async fn nyxagent_enrollment_has_separate_scope_and_invalid_delivery_revokes_onl
         StatusCode::FORBIDDEN
     );
     assert_eq!(app.nyx.oauth.0.lock().unwrap().key_revocations, vec![KEY]);
+}
+
+#[tokio::test]
+async fn nyxagent_accepts_implicit_read_and_catalog_connections_during_delivery_and_check() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let cookie = setup(&app).await;
+    let mut key = metadata(SUBJECT);
+    key["api_key"]["scopes"] = json!("read proxy");
+    for service in key["api_key"]["effective_services"].as_array_mut().unwrap() {
+        service["slug"] = json!(format!(
+            "my-{}",
+            service["catalog_service_slug"].as_str().unwrap()
+        ));
+        service["owner_id"] = json!(SUBJECT);
+    }
+    {
+        let mut state = app.nyx.oauth.0.lock().unwrap();
+        state.browser_keys.insert(KEY.into(), key.clone());
+        key["credential"] = json!(KEY);
+        state.key_delivery = Some(key);
+    }
+    let polled = call(
+        &app,
+        &cookie,
+        "key/poll",
+        json!({"deviceCode":"private-device-code"}),
+    )
+    .await;
+    assert_eq!(polled.0, StatusCode::OK, "{}", polled.2);
+    assert_eq!(
+        serde_json::from_str::<Value>(&polled.2).unwrap()["credential"],
+        KEY
+    );
+    let checked = call(&app, &cookie, "key/check", json!({})).await;
+    assert_eq!(checked.0, StatusCode::OK, "{}", checked.2);
+    assert!(app.nyx.oauth.0.lock().unwrap().key_revocations.is_empty());
 }
 
 #[tokio::test]
