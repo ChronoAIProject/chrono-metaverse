@@ -7,7 +7,7 @@
 //       → 只输出镜像的 JSON 合并补丁（PATCH 的请求体），可以只换一部分服务
 //   --app <路径> 换一份基础规格（默认 infra/chrono-cd/app.json）
 //
-// 摘要取自这次提交在部署分支上的 Images 运行（.github/workflows/publish.yml 的运行摘要里
+// 摘要取自这次提交在部署分支上的“发布与部署”运行（.github/workflows/publish.yml 的运行摘要里
 // `api=sha256:…` 这样的行），不要按标签去仓库查：ghcr 的标签可以被任何分支里改过的工作流改写。
 // 生成的引用是 `ghcr.io/chronoaiproject/chrono-metaverse-<服务>:<7 位提交哈希>@sha256:<摘要>`：
 // chrono-cd 标签和摘要都有时只按摘要拉取，标签只是给人看的记号。处理服务已下线，只有 api、web 两个镜像。
