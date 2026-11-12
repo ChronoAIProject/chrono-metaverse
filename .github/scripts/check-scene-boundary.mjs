@@ -14,14 +14,31 @@ export function violations(root) {
   const sceneFiles = readdirSync(join(root, "scenes"), { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .flatMap((entry) =>
-      ["context.json", "metaverse.json"].map((name) =>
+      ["context.json", "metaverse.json", "build/environment.json"].map((name) =>
         join(root, "scenes", entry.name, name),
       ),
     )
     .filter(existsSync);
   const values = new Set();
+  const providerHosts = new Set();
+  function collectProviders(value) {
+    if (!value || typeof value !== "object") return;
+    for (const [key, entry] of Object.entries(value)) {
+      if (
+        ["url", "urlTemplate", "tilesBaseUrl"].includes(key) &&
+        typeof entry === "string"
+      ) {
+        try {
+          providerHosts.add(new URL(entry).hostname);
+        } catch {
+          /* 无效配置由来源校验处理。 */
+        }
+      } else collectProviders(entry);
+    }
+  }
   for (const file of sceneFiles) {
     const config = JSON.parse(readFileSync(file, "utf8"));
+    collectProviders(config);
     for (const value of [
       config.spaceId,
       config.oneMap?.hostSourceId,
@@ -47,6 +64,15 @@ export function violations(root) {
     .flatMap((file) => {
       const source = readFileSync(file, "utf8").split(/^#\[cfg\(test\)\]/m)[0];
       const errors = [];
+      if (
+        /^web\/src\/(viewer\/|core\/(externalSource|environment)\.ts$)/.test(
+          relative(root, file),
+        )
+      ) {
+        for (const host of providerHosts)
+          if (source.includes(host))
+            errors.push(`通用显示层包含场景提供方地址：${host}`);
+      }
       if (
         [
           "sdk/typescript/src/commands/edit.ts",

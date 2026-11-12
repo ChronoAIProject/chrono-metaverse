@@ -1,3 +1,5 @@
+import { externalContentOf } from '../core/externalSource';
+import { ExternalContentView } from './externalContentView';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -298,6 +300,7 @@ export class SceneView {
   private readonly materialCache = new Map<string, THREE.Material>();
   private readonly textures: TextureCache;
   private readonly environment: EnvironmentView;
+  private readonly externalContent: ExternalContentView;
   private readonly modelCache = new Map<string, Promise<THREE.Object3D>>();
   private readonly scanCache = new WeakMap<ArrayBuffer, Promise<THREE.Object3D>>();
   private readonly modelBoxes = new WeakMap<THREE.Object3D, BoxLike | null>();
@@ -396,10 +399,15 @@ export class SceneView {
 
     this.meshes = options.meshService ?? createMeshService();
     this.ownsMeshes = options.meshService === undefined;
-    this.textures = new TextureCache(options.loadTexture, () =>
-      Math.min(8, this.renderer.capabilities.getMaxAnisotropy()),
+    this.textures = new TextureCache(
+      options.loadTexture,
+      () => Math.min(8, this.renderer.capabilities.getMaxAnisotropy()),
+      (count) => {
+        if (!this.disposed) host.dataset.texturesPending = String(count);
+      },
     );
     this.environment = new EnvironmentView(this.scene, host, options.loadTexture);
+    this.externalContent = new ExternalContentView(this.scene, this.host);
 
     // 灯光按物理单位设置（强度是 π 的倍数），见 lighting.ts。
     this.scene.add(...createLights());
@@ -486,6 +494,7 @@ export class SceneView {
     }
     this.controls.update();
     this.environment.update(this.camera);
+    this.externalContent.update(this.camera);
     this.updateBackgroundViews();
     this.renderer.render(this.scene, this.camera);
     this.updateLabels();
@@ -650,7 +659,7 @@ export class SceneView {
     const jobs = new Map<string, ShapeJob>();
     const plans = content.members.map((member) => {
       const entities = member.view.entities.map((entity) => {
-        if (entity.shape === undefined || environmentOf(entity))
+        if (entity.shape === undefined || environmentOf(entity) || externalContentOf(entity))
           return { entity, key: null, matrix: null };
         const { local, matrix } = splitShape(entity.shape);
         const used = usedTemplates(local, member.view.templates);
@@ -741,6 +750,7 @@ export class SceneView {
     this.distanceObjects = [];
     this.landmarks = [];
     this.environment.setContent(content);
+    this.externalContent.setContent(content);
     this.grid.visible = !this.environment.hasMap;
     // 换了内容，原来选中的物件（信息面板随之关闭）不再固定显示标签。
     this.focusAnchor = null;
@@ -765,7 +775,9 @@ export class SceneView {
     const inUse = new Set<string>();
 
     plans.forEach(({ member, entities }, index) => {
-      entityCount += entities.filter(({ entity }) => environmentOf(entity)).length;
+      entityCount += entities.filter(
+        ({ entity }) => environmentOf(entity) || externalContentOf(entity),
+      ).length;
       const group = placementGroup(member.placement);
       group.name = `member:${member.spaceId}`;
       this.content.add(group);
@@ -841,7 +853,12 @@ export class SceneView {
       // 底面中心（modelPlacement.ts）；这个外包盒实际比 bounds 大时等比缩小兜进 bounds（modelFit.ts，
       // 服务端已经实测过，这里只是兜底）。
       for (const { entity } of entities) {
-        if (entity.shape !== undefined || entity.assetHash === undefined || environmentOf(entity))
+        if (
+          entity.shape !== undefined ||
+          entity.assetHash === undefined ||
+          environmentOf(entity) ||
+          externalContentOf(entity)
+        )
           continue;
         entityCount += 1;
         const background = isBackgroundEntity(entity);
@@ -1951,6 +1968,7 @@ export class SceneView {
     this.materialCache.clear();
     this.textures.dispose();
     this.environment.dispose();
+    this.externalContent.dispose();
     if (this.ownsMeshes) this.meshes.dispose();
     this.renderer.dispose();
     canvas.remove();

@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@noble/hashes": "2.4.0",
+    "3d-tiles-renderer": "0.5.4",
     "fflate": "0.8.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

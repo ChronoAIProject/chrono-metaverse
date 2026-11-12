@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { GeographicMap, TileSource } from '../core/environment';
+import type { TileSource } from '../core/environment';
+import type { GeographicReference } from '../core/externalSource';
 
 export const EARTH_RADIUS = 6378137;
 const ECCENTRICITY_SQUARED = 6.6943799901413165e-3;
@@ -56,7 +57,7 @@ export function tileUrl(tile: Tile, source: TileSource): string {
   return source.urlTemplate
     .replaceAll('{z}', String(tile.z))
     .replaceAll('{x}', String(tile.x))
-    .replaceAll('{y}', String(tile.y));
+    .replaceAll('{y}', String(source.scheme === 'tms' ? 2 ** tile.z - 1 - tile.y : tile.y));
 }
 
 export function ecef(longitude: number, latitude: number, height = 0): THREE.Vector3 {
@@ -78,7 +79,7 @@ export class GeoReference {
   private readonly inverseRotation: THREE.Matrix4;
   readonly origin: THREE.Vector3;
 
-  constructor(map: GeographicMap) {
+  constructor(map: GeographicReference & { readonly sources?: readonly TileSource[] }) {
     this.origin = new THREE.Vector3(...map.origin);
     this.ecefOrigin = ecef(map.longitude, map.latitude);
     const lon = rad(map.longitude),

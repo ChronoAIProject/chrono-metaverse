@@ -28,14 +28,24 @@ async function prepare(page: Page, fallback = false) {
     route.fulfill({
       body: tile,
       contentType: 'image/png',
-      headers: { 'access-control-allow-origin': '*' },
+      headers: {
+        'access-control-allow-origin': '*',
+        'cache-control': 'public, max-age=3600',
+        date: new Date().toUTCString(),
+        'access-control-expose-headers': 'date, age',
+      },
     }),
   );
   await page.route('https://unavailable.example.org/**', (route) =>
     route.fulfill({
       status: 503,
       body: '暂不可用',
-      headers: { 'access-control-allow-origin': '*' },
+      headers: {
+        'access-control-allow-origin': '*',
+        'cache-control': 'public, max-age=3600',
+        date: new Date().toUTCString(),
+        'access-control-expose-headers': 'date, age',
+      },
     }),
   );
   await page.route('**/api/public/previews', async (route) => {
@@ -92,7 +102,8 @@ test('拉远越过旧天空球半径仍有连续地图和天空，刷新复用�
   await expect
     .poll(() =>
       page.evaluate(
-        async () => (await (await caches.open('chrono-metaverse-map-tiles-v1')).keys()).length,
+        async () =>
+          (await (await caches.open('chrono-metaverse-external-resources-v1')).keys()).length,
       ),
     )
     .toBe(initialRequests);
