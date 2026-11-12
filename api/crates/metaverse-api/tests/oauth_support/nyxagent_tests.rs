@@ -68,6 +68,21 @@ pub(super) fn routes(provider: MockProvider, app: Router) -> Router {
                     json!({"type":"response.created","response":created}),
                     json!({"type":"response.completed","response":response()})
                 );
+                let gate = {
+                    let state = p.0.lock().unwrap();
+                    state.nyxagent_stream_gate.clone().zip(state.nyxagent_stream_entered.clone())
+                };
+                if let Some((gate, entered)) = gate {
+                    let start = axum::body::Bytes::from(format!("data: {}\n\n", json!({"type":"response.created","response":created})));
+                    let end = axum::body::Bytes::from(format!("data: {}\n\n", json!({"type":"response.completed","response":response()})));
+                    let stream = futures_util::stream::once(async move { Ok::<_, std::io::Error>(start) })
+                        .chain(futures_util::stream::once(async move {
+                            entered.notify_one();
+                            gate.notified().await;
+                            Ok::<_, std::io::Error>(end)
+                        }));
+                    return ([(header::CONTENT_TYPE, "text/event-stream")], Body::from_stream(stream)).into_response();
+                }
                 if p.0.lock().unwrap().nyxagent_stream_error {
                     let start = format!("data: {}\n\n", json!({"type":"response.created","response":created}));
                     let stream = futures_util::stream::iter([
@@ -287,6 +302,88 @@ async fn nyxagent_reports_stream_failure_without_resetting_or_replaying_the_requ
             .count(),
         1
     );
+}
+
+#[tokio::test]
+async fn nyxagent_stream_survives_background_oauth_token_refresh() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let cookie = connect(&app, SUBJECT, 60).await;
+    let gate = Arc::new(tokio::sync::Notify::new());
+    let entered = Arc::new(tokio::sync::Notify::new());
+    {
+        let mut state = app.nyx.oauth.0.lock().unwrap();
+        state.browser_keys.insert(KEY.into(), metadata(SUBJECT));
+        state.access.insert(KEY.into(), SUBJECT.into());
+        state.nyxagent_stream_gate = Some(gate.clone());
+        state.nyxagent_stream_entered = Some(entered.clone());
+    }
+    let (reply, ()) = tokio::join!(call(&app, &cookie, "message", task()), async {
+        entered.notified().await;
+        // A second browser action refreshes the same login while the turn is live.
+        tokio::time::sleep(std::time::Duration::from_secs(31)).await;
+        assert_eq!(app.nyx.oauth.0.lock().unwrap().refreshes, 0);
+        let check = call(&app, &cookie, "key/check", json!({})).await;
+        assert_eq!(check.0, StatusCode::OK);
+        assert_eq!(app.nyx.oauth.0.lock().unwrap().refreshes, 1);
+        gate.notify_one();
+    });
+    assert_eq!(reply.0, StatusCode::OK);
+    assert!(reply.2.contains("response.completed"), "{}", reply.2);
+    assert!(!reply.2.contains("metaverse.error"));
+    assert_eq!(
+        app.nyx
+            .oauth
+            .0
+            .lock()
+            .unwrap()
+            .worker_calls
+            .iter()
+            .filter(|(action, _, _)| action == "nyx-message")
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn nyxagent_stream_still_stops_after_login_authority_changes() {
+    for change in ["disconnect", "reauthorize"] {
+        let Some(app) = TestApp::start_with_options(true, true).await else {
+            return;
+        };
+        let cookie = setup(&app).await;
+        let gate = Arc::new(tokio::sync::Notify::new());
+        let entered = Arc::new(tokio::sync::Notify::new());
+        {
+            let mut state = app.nyx.oauth.0.lock().unwrap();
+            state.nyxagent_stream_gate = Some(gate.clone());
+            state.nyxagent_stream_entered = Some(entered.clone());
+        }
+        let (reply, ()) = tokio::join!(call(&app, &cookie, "message", task()), async {
+            entered.notified().await;
+            tokio::time::sleep(std::time::Duration::from_secs(6)).await;
+            match change {
+                "disconnect" => assert_eq!(
+                    disconnect(&app, &cookie).await.status,
+                    StatusCode::NO_CONTENT
+                ),
+                "reauthorize" => {
+                    connect(&app, SUBJECT, 3600).await;
+                }
+                _ => unreachable!(),
+            }
+            gate.notify_one();
+        });
+        assert_eq!(reply.0, StatusCode::OK, "{change}");
+        assert!(
+            reply.2.contains("response.created"),
+            "{change}: {}",
+            reply.2
+        );
+        assert!(reply.2.contains("metaverse.error"), "{change}: {}", reply.2);
+        assert!(!reply.2.contains("response.completed"), "{change}");
+    }
 }
 
 #[tokio::test]
