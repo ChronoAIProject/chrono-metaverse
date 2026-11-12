@@ -51,6 +51,9 @@ fn unavailable() -> ApiError {
         "CMA 暂时无法响应，请保留当前任务后重试",
     )
 }
+pub(super) fn credential_version(credential: &str) -> String {
+    super::crypto::digest(&format!("metaverse:cma:credential:v1:{credential}"))
+}
 fn auth_method(headers: &HeaderMap) -> Result<&'static str, ApiError> {
     let mut values = headers.get_all("x-metaverse-cma-auth").iter();
     let method = match values.next().map(|v| v.to_str()) {
@@ -69,6 +72,8 @@ struct Access {
     held: HeldCredential,
     owner: String,
     key: Option<agent_key::Credential>,
+    expected_version: Option<String>,
+    enforce_version: bool,
 }
 impl Access {
     async fn new(
@@ -97,6 +102,15 @@ impl Access {
             session,
             held,
             key,
+            expected_version: {
+                let mut values = headers.get_all("x-metaverse-cma-credential").iter();
+                let value = values.next().map(|v| v.to_str().unwrap_or("").to_owned());
+                if values.next().is_some() {
+                    return Err(ApiError::invalid("CMA 凭据版本重复"));
+                }
+                value
+            },
+            enforce_version: headers.contains_key("x-metaverse-cma-auth"),
         };
         access.current(require_consent).await?;
         if require_consent {
@@ -111,6 +125,15 @@ impl Access {
         self.key
             .as_ref()
             .map_or_else(|| self.held.credential.value(), |key| key.value())
+    }
+    fn require_credential_version(&self) -> Result<(), ApiError> {
+        if self.enforce_version
+            && self.expected_version.as_deref()
+                != Some(credential_version(self.credential()).as_str())
+        {
+            return Err(ApiError::new(StatusCode::CONFLICT, "cma_credential_changed", "聊天凭据已变化。请切回原授权方式重试；原凭据无法恢复时，先在 CMA 核对结果，再清除恢复记录，避免重复执行"));
+        }
+        Ok(())
     }
     fn refusal(&self, status: StatusCode, body: &Value) -> ApiError {
         if status == StatusCode::UNAUTHORIZED && self.key.is_some() {
@@ -163,6 +186,9 @@ impl Access {
         key: Option<&str>,
     ) -> Result<reqwest::Response, ApiError> {
         self.current(true).await?;
+        if method != reqwest::Method::GET {
+            self.require_credential_version()?;
+        }
         let url = self.target(path)?;
         let mut request = self
             .oauth
@@ -346,7 +372,7 @@ async fn connection(
     // Organization selection is context, never a replacement for the user actor.
     owner::resolve(&state, &headers, &a.session.subject).await?;
     a.current(false).await?;
-    Ok(Json(json!({"ready":true,"ownerId":a.owner})).into_response())
+    Ok(Json(json!({"ready":true,"ownerId":a.owner,"credentialVersion":credential_version(a.credential())})).into_response())
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -367,6 +393,8 @@ async fn consent(
         session,
         held,
         key: None,
+        expected_version: None,
+        enforce_version: false,
     };
     if !a
         .oauth
@@ -630,6 +658,7 @@ async fn attachment(
     let size = bytes.len();
     let sha = format!("{:x}", Sha256::digest(&bytes));
     a.current(true).await?;
+    a.require_credential_version()?;
     let mut target = a.target(&format!("/api/v1/agents/{}/attachments", input.agent_id))?;
     target.query_pairs_mut().append_pair("name", &input.name);
     let upstream = a

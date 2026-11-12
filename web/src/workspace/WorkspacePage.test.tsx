@@ -85,6 +85,7 @@ function mockApi(
     if (url.endsWith('/connection'))
       return reply({
         ready: true,
+        credentialVersion: 'v'.repeat(43),
         ownerId: new Headers(init?.headers).get('x-metaverse-cma-owner') ?? 'owner-a',
       });
     if (url.endsWith('/session'))
@@ -503,4 +504,24 @@ it('only starts a replacement after explicit action when startup failed before a
   expect(creates).toHaveLength(2);
   expect(creates[1]!.body.idempotencyKey).not.toBe(creates[0]!.body.idempotencyKey);
   expect(creates[1]!.body.instruction).toBe(creates[0]!.body.instruction);
+});
+
+it('旧恢复记录缺少凭据版本时保留内容并阻止跨凭据重发', async () => {
+  const api = mockApi({ loseCreate: true });
+  const mounted = render(<WorkspacePage request={api.request} />);
+  await screen.findByRole('button', { name: '选择空间' });
+  await fillTask();
+  await userEvent.click(screen.getByRole('button', { name: '发送' }));
+  await screen.findByRole('button', { name: '重试原请求' });
+  mounted.unmount();
+  const saved = JSON.parse(sessionStorage.getItem('metaverse-worker:owner-a')!);
+  delete saved.pending.credentialVersion;
+  sessionStorage.setItem('metaverse-worker:owner-a', JSON.stringify(saved));
+  render(<WorkspacePage request={api.request} />);
+  await screen.findByText('已连接 CMA');
+  await userEvent.click(screen.getByRole('button', { name: '重试原请求' }));
+  await screen.findByText(/^上次请求反馈：此恢复记录缺少原凭据版本/);
+  expect(api.writes).toHaveLength(1);
+  const restored = JSON.parse(sessionStorage.getItem('metaverse-worker:owner-a')!);
+  expect(restored.pending.body).toEqual(saved.pending.body);
 });

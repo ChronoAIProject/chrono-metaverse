@@ -1,6 +1,7 @@
 // 凭据仅保存在浏览器独立的授权存储中，不进入任务、聊天记录、URL 或诊断。
 export type KeyIdentity = {
   ownerId?: string;
+  credentialVersion?: string;
   keyId: string;
   name: string;
   credentialId: string;

@@ -19,13 +19,14 @@ it('刷新及切换归属仅使用会话，不转发浏览器保存的 Key', asy
   const request = vi.fn<typeof fetch>(async (_, init) =>
     Response.json({
       ready: true,
+      credentialVersion: 'v'.repeat(43),
       ownerId: new Headers(init?.headers).get('x-metaverse-cma-owner') ?? 'alice',
     }),
   );
   const change = vi.fn();
   const view = render(<OAuthConnection session={session} request={request} onChange={change} />);
   await screen.findByText('已连接 CMA');
-  expect(change).toHaveBeenLastCalledWith(true);
+  expect(change).toHaveBeenLastCalledWith(true, 'v'.repeat(43));
   expect(localStorage.getItem('metaverse-cma-credential:v2:alice:alice')).toBe('old-secret');
   expect(sessionStorage.getItem('metaverse-cma-enrollment:v1:alice:alice')).toBe('old-device');
   view.rerender(

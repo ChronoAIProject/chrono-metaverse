@@ -7,12 +7,16 @@ export function cmaAuthHeaders(session: {
   subject?: string;
   cmaOwnerId?: string;
   cmaAuthMethod?: CmaAuthMethod;
+  cmaCredentialVersion?: string;
 }): Record<string, string> {
   const method = session.cmaAuthMethod ?? 'oauth';
   const saved = method === 'agent_key' ? readBrowserKey(session.subject, session.cmaOwnerId) : null;
   return {
     ...cmaOwnerHeaders(session.subject, session.cmaOwnerId),
     'x-metaverse-cma-auth': method,
+    ...(session.cmaCredentialVersion
+      ? { 'x-metaverse-cma-credential': session.cmaCredentialVersion }
+      : {}),
     ...(saved ? { Authorization: `Bearer ${saved.credential}` } : {}),
   };
 }

@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { WorkerError, workerRequest, type Session } from '../workspace/client';
+import {
+  WorkerError,
+  workerRequest,
+  validCredentialVersion,
+  type Session,
+} from '../workspace/client';
 import {
   browserKeyStorageKey,
   clearBrowserKey,
@@ -25,7 +30,7 @@ export function AgentKeyConnection({
 }: {
   readonly session: Session;
   readonly request: typeof fetch;
-  readonly onChange: (ready: boolean) => void;
+  readonly onChange: (ready: boolean, version?: string) => void;
   readonly checkVersion?: number;
   readonly ownerName?: string;
 }) {
@@ -74,12 +79,13 @@ export function AgentKeyConnection({
           controller.signal,
           request,
         );
-        if (!validIdentity(value)) throw new Error('无法核对 Agent Key 授权状态。');
+        if (!validIdentity(value) || !validCredentialVersion(value.credentialVersion))
+          throw new Error('无法核对 Agent Key 授权状态。');
         if (!active) return;
         saveBrowserKey(session.subject!, saved.credential, value, owner);
         setIdentity(value);
         setReady(true);
-        onChange(true);
+        onChange(true, value.credentialVersion);
       } catch (failure) {
         if (!active) return;
         if (

@@ -12,6 +12,7 @@ import {
 import { readEnrollment } from './browserEnrollment';
 
 const identity = {
+  credentialVersion: 'k'.repeat(43),
   keyId: 'key-cma',
   name: 'Metaverse CMA',
   credentialId: 'child-browser',
@@ -49,7 +50,7 @@ it('刷新复用浏览器凭据，核验后才启用；账号切换不发送旧 
       }),
     }),
   );
-  expect(change).toHaveBeenLastCalledWith(true);
+  expect(change).toHaveBeenLastCalledWith(true, identity.credentialVersion);
   view.rerender(
     <AgentKeyConnection
       session={{ ...session, subject: 'bob' }}
@@ -141,7 +142,7 @@ it('首次批准后先保存 Key，CMA 核验失败不显示已连接，重试�
   available = true;
   await userEvent.click(screen.getByRole('button', { name: '重新检查 CMA 授权' }));
   await screen.findByText('已连接 CMA · Metaverse CMA');
-  expect(change).toHaveBeenLastCalledWith(true);
+  expect(change).toHaveBeenLastCalledWith(true, identity.credentialVersion);
   expect(request.mock.calls.filter(([input]) => String(input).endsWith('/request'))).toHaveLength(
     1,
   );
@@ -219,7 +220,7 @@ it('个人与组织空间复用当前账号 Key，组织仅选择目标资源', 
   const request = vi.fn<typeof fetch>(async () => Response.json(value));
   const change = vi.fn();
   const view = render(<AgentKeyConnection session={session} request={request} onChange={change} />);
-  await waitFor(() => expect(change).toHaveBeenLastCalledWith(true));
+  await waitFor(() => expect(change).toHaveBeenLastCalledWith(true, identity.credentialVersion));
   view.rerender(
     <AgentKeyConnection
       session={{ ...session, cmaOwnerId: 'org-one' }}

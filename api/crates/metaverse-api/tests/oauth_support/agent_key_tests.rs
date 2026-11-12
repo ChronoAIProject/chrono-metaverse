@@ -24,6 +24,10 @@ async fn browser_key_connection_requires_cma_acceptance_without_losing_the_deliv
     )
     .await;
     assert_eq!(delivered.body["credential"], credential);
+    assert_eq!(
+        delivered.body["identity"]["credentialVersion"],
+        version(credential)
+    );
     for (status, body, code) in [
         (
             StatusCode::UNAUTHORIZED,
@@ -70,6 +74,7 @@ async fn browser_key_connection_requires_cma_acceptance_without_losing_the_deliv
     let checked = call(&app, &cookie, "key/check", Some(credential), json!({})).await;
     assert_eq!(checked.status, StatusCode::OK, "{}", checked.body);
     assert_eq!(checked.body["ownerId"], "key-owner");
+    assert_eq!(checked.body["credentialVersion"], version(credential));
     let s = app.nyx.oauth.0.lock().unwrap();
     assert_eq!(s.cma_auth_calls, 9);
     assert!(s.browser_keys.contains_key(credential));
@@ -160,6 +165,11 @@ async fn call(
 ) -> Reply {
     call_owner(app, cookie, action, credential, body, None).await
 }
+fn version(credential: &str) -> String {
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(
+        format!("metaverse:cma:credential:v1:{credential}").as_bytes(),
+    ))
+}
 async fn call_owner(
     app: &TestApp,
     cookie: &str,
@@ -170,6 +180,7 @@ async fn call_owner(
 ) -> Reply {
     let s = session(app, cookie).await;
     let csrf = s.body["csrfToken"].as_str().unwrap();
+    let credential_version = credential.map(version);
     let bearer = credential.map(|v| format!("Bearer {v}"));
     let mut headers = vec![
         ("cookie", cookie),
@@ -179,6 +190,9 @@ async fn call_owner(
     ];
     if action == "consent" {
         headers.retain(|(name, _)| *name != "x-metaverse-cma-auth");
+    }
+    if let Some(version) = &credential_version {
+        headers.push(("x-metaverse-cma-credential", version));
     }
     if let Some(bearer) = &bearer {
         headers.push(("authorization", bearer));
@@ -339,6 +353,10 @@ async fn model_upload_uses_selected_browser_key_and_keeps_the_original_receipt()
             .header("x-csrf-token", csrf)
             .header("x-metaverse-cma-auth", "agent_key")
             .header("authorization", "Bearer nyx_browser_key-owner")
+            .header(
+                "x-metaverse-cma-credential",
+                version("nyx_browser_key-owner"),
+            )
             .header("idempotency-key", "dual-upload-original-0001")
             .header("content-type", "application/octet-stream")
             .body(Body::from(vec![42u8; 8]))
@@ -361,4 +379,88 @@ async fn model_upload_uses_selected_browser_key_and_keeps_the_original_receipt()
         .iter()
         .all(|v| v == "Bearer nyx_browser_key-owner"));
     assert_eq!(s.worker_calls[0], s.worker_calls[1]);
+}
+
+#[tokio::test]
+async fn changed_credentials_cannot_replay_unknown_commands_in_a_new_authority_scope() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let cookie = connect(&app, "key-owner", 3600).await;
+    call(&app, &cookie, "consent", None, json!({"enabled":true})).await;
+    let session = session(&app, &cookie).await;
+    let csrf = session.body["csrfToken"].as_str().unwrap();
+    let key = "nyx_browser_key-owner";
+    let key_version = version(key);
+    let body = json!({"context":{"spaceId":"lobby"},"instruction":"恢复原操作","agentId":"agt_test","idempotencyKey":"original-uncertain-command-001"});
+    let connection = app
+        .send(
+            Method::POST,
+            &format!("{ROOT}/worker/connection"),
+            &[
+                ("cookie", &cookie),
+                ("origin", ORIGIN),
+                ("x-csrf-token", csrf),
+                ("x-metaverse-cma-auth", "oauth"),
+            ],
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(connection.status, StatusCode::OK, "{}", connection.body);
+    let old_oauth_version = connection.body["credentialVersion"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    // 切换方式或替换 Key 后，同一编号不能进入另一个凭据的幂等范围。
+    for (mode, expected) in [
+        ("oauth", key_version.as_str()),
+        ("agent_key", old_oauth_version.as_str()),
+        ("agent_key", ""),
+    ] {
+        let denied = app
+            .send(
+                Method::POST,
+                &format!("{ROOT}/worker/message"),
+                &[
+                    ("cookie", &cookie),
+                    ("origin", ORIGIN),
+                    ("x-csrf-token", csrf),
+                    ("x-metaverse-cma-auth", mode),
+                    ("authorization", "Bearer nyx_browser_key-owner"),
+                    ("x-metaverse-cma-credential", expected),
+                ],
+                Some(body.clone()),
+            )
+            .await;
+        assert_eq!(denied.status, StatusCode::CONFLICT, "{}", denied.body);
+        assert_eq!(denied.body["code"], "cma_credential_changed");
+    }
+    assert!(app.nyx.oauth.0.lock().unwrap().worker_calls.is_empty());
+    assert_eq!(
+        call(&app, &cookie, "message", Some(key), body.clone())
+            .await
+            .status,
+        StatusCode::ACCEPTED
+    );
+    // 重新登录轮换 OAuth 访问令牌后，旧版本同样不能重放。
+    let cookie = connect(&app, "key-owner", 3600).await;
+    call(&app, &cookie, "consent", None, json!({"enabled":true})).await;
+    let session = super::session(&app, &cookie).await;
+    let csrf = session.body["csrfToken"].as_str().unwrap();
+    let denied = app
+        .send(
+            Method::POST,
+            &format!("{ROOT}/worker/message"),
+            &[
+                ("cookie", &cookie),
+                ("origin", ORIGIN),
+                ("x-csrf-token", csrf),
+                ("x-metaverse-cma-auth", "oauth"),
+                ("x-metaverse-cma-credential", &old_oauth_version),
+            ],
+            Some(body),
+        )
+        .await;
+    assert_eq!(denied.status, StatusCode::CONFLICT, "{}", denied.body);
+    assert_eq!(app.nyx.oauth.0.lock().unwrap().worker_calls.len(), 1);
 }

@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react';
-import { WorkerError, workerRequest, type Session } from '../workspace/client';
+import {
+  WorkerError,
+  workerRequest,
+  validCredentialVersion,
+  type Session,
+} from '../workspace/client';
 
 export function OAuthConnection({
   session,
@@ -10,7 +15,7 @@ export function OAuthConnection({
 }: {
   readonly session: Session;
   readonly request: typeof fetch;
-  readonly onChange: (ready: boolean) => void;
+  readonly onChange: (ready: boolean, version?: string) => void;
   readonly checkVersion?: number;
   readonly ownerName?: string;
 }) {
@@ -31,17 +36,20 @@ export function OAuthConnection({
       setError('');
       setAuthorize(false);
       try {
-        const result = await workerRequest<{ ready: boolean; ownerId: string }>(
-          session,
-          'connection',
-          {},
-          controller.signal,
-          request,
-        );
-        if (!result.ready || result.ownerId !== owner) throw new Error('无法核对 CMA 连接。');
+        const result = await workerRequest<{
+          ready: boolean;
+          ownerId: string;
+          credentialVersion: string;
+        }>(session, 'connection', {}, controller.signal, request);
+        if (
+          !result.ready ||
+          result.ownerId !== owner ||
+          !validCredentialVersion(result.credentialVersion)
+        )
+          throw new Error('无法核对 CMA 连接。');
         if (!active) return;
         setReady(true);
-        onChange(true);
+        onChange(true, result.credentialVersion);
       } catch (failure) {
         if (!active) return;
         setError(failure instanceof Error ? failure.message : '暂时无法核对 CMA 连接。');

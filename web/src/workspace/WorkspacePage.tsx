@@ -8,6 +8,7 @@ import {
   viewerLink,
   WorkerError,
   workerRequest,
+  validCredentialVersion,
   type Agent,
   type Controls,
   type Intent,
@@ -122,11 +123,15 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
   const chatEnd = useRef<HTMLDivElement>(null);
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const credentialVersion = useRef<string | undefined>(undefined);
   const [readyOwner, setReadyOwner] = useState('');
   const connectionContext = `${session?.subject}:${session?.csrfToken}:${session?.cmaOwnerId}:${authMethod}`;
   const connectionReady = readyOwner === connectionContext;
   const setConnectionReady = useCallback(
-    (ready: boolean) => setReadyOwner(ready ? connectionContext : ''),
+    (ready: boolean, version?: string) => {
+      credentialVersion.current = ready ? version : undefined;
+      setReadyOwner(ready ? connectionContext : '');
+    },
     [connectionContext],
   );
   const [connectionCheck, setConnectionCheck] = useState(0);
@@ -277,6 +282,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
       e instanceof WorkerError &&
       [
         'cma_oauth_required',
+        'cma_credential_changed',
         'cma_owner_forbidden',
         'cma_command_authority_required',
         'cma_key_required',
@@ -470,13 +476,34 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
         const pending = intent.setupRequired
           ? {
               ...intent,
+              credentialVersion: credentialVersion.current,
               body: { ...intent.body, idempotencyKey: crypto.randomUUID() },
               setupRequired: false,
               lastError: undefined,
             }
-          : { ...intent, lastError: undefined };
+          : {
+              ...intent,
+              credentialVersion:
+                intent.credentialVersion ??
+                (base.pending?.body.idempotencyKey === intent.body.idempotencyKey ||
+                base.startup?.body.idempotencyKey === intent.body.idempotencyKey
+                  ? undefined
+                  : credentialVersion.current),
+              lastError: undefined,
+            };
         commit({ ...base, pending });
         try {
+          if (!validCredentialVersion(pending.credentialVersion))
+            throw new WorkerError(
+              'cma_recovery_check_required',
+              '此恢复记录缺少原凭据版本，请先在 CMA 核对结果，再清除恢复记录。',
+            );
+          if (pending.credentialVersion !== credentialVersion.current)
+            throw new WorkerError(
+              'cma_credential_changed',
+              '聊天凭据已变化，请切回原授权方式重试；原凭据无法恢复时，先在 CMA 核对结果，再清除恢复记录。',
+            );
+          const writeSession = { ...session!, cmaCredentialVersion: pending.credentialVersion };
           if (pending.action === 'attachment') {
             if (
               !sourceFile ||
@@ -487,7 +514,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
             )
               throw new Error('请重新选择同一模型文件，再重试原请求。');
             const receipt = await uploadModel(
-              session!,
+              writeSession,
               String(pending.body.agentId),
               sourceFile.file,
               pending.body.idempotencyKey,
@@ -506,6 +533,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
             };
             const follow: Intent = {
               action: 'message',
+              credentialVersion: pending.credentialVersion,
               body: {
                 agentId: base.agentId,
                 context: {
@@ -531,7 +559,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
             id?: string;
             responseId?: string;
             commandId?: string;
-          }>(session!, pending.action, pending.body, signal, request);
+          }>(writeSession, pending.action, pending.body, signal, request);
           if (signal.aborted) return;
           if (pending.action === 'create') {
             if (typeof value.id !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/.test(value.id))

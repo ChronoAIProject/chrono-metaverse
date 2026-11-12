@@ -111,6 +111,7 @@ struct Summary {
     credential_id: String,
     credential_expires_at: Option<String>,
     key_expires_at: Option<String>,
+    credential_version: String,
 }
 impl Identity {
     fn same_owner(&self, subject: &str) -> Result<(), ApiError> {
@@ -161,6 +162,7 @@ impl Identity {
             credential_id: self.credential_id,
             credential_expires_at: self.credential_expires_at,
             key_expires_at: key.expires_at,
+            credential_version: String::new(),
         })
     }
 }
@@ -429,13 +431,15 @@ async fn poll(
             .await;
     }
     current?;
-    let summary = summary?;
+    let mut summary = summary?;
+    summary.credential_version = super::worker::credential_version(credential.value());
     Ok(Json(json!({"credential":credential.value(),"identity":summary})).into_response())
 }
 async fn check(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, ApiError> {
     let b = Browser::new(&state, &headers).await?;
     let credential = Credential::from_headers(&headers)?;
-    let summary = verify(&b.oauth, &credential, &b.session.subject).await?;
+    let mut summary = verify(&b.oauth, &credential, &b.session.subject).await?;
+    summary.credential_version = super::worker::credential_version(credential.value());
     check_cma(&b.oauth, &credential, &b.session.subject).await?;
     b.current().await?;
     Ok(Json(summary).into_response())

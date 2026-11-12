@@ -25,10 +25,20 @@ async fn oauth_probe_uses_saved_user_grant_without_browser_keys_and_survives_ref
         return;
     };
     let cookie = connect(&app, "oauth-owner", 1).await;
+    let mut version = None;
     for _ in 0..2 {
         let r = probe(&app, &cookie, None).await;
         assert_eq!(r.status, StatusCode::OK, "{}", r.body);
-        assert_eq!(r.body, json!({"ready":true,"ownerId":"oauth-owner"}));
+        let current = r.body["credentialVersion"].as_str().unwrap().to_owned();
+        assert_eq!(current.len(), 43);
+        assert_eq!(
+            r.body,
+            json!({"ready":true,"ownerId":"oauth-owner","credentialVersion":current})
+        );
+        if let Some(previous) = &version {
+            assert_eq!(previous, &current);
+        }
+        version = Some(current);
         assert!(!r.body.to_string().contains("oauth-access"));
     }
     assert_eq!(app.nyx.oauth.0.lock().unwrap().refreshes, 1);

@@ -34,3 +34,11 @@ CMA 需要配置服务绑定的普通 Key introspection：`CHRONO_NYXID_SERVICE_
 CMA catalog，CMA confidential client 注册到该 catalog 的 `introspection_client_ids`。
 不能通过 userinfo 成功推断 CMA 服务授权有效。CMA 运行环境中的服务 Key 继续由 CMA
 管理，与网页使用的登录子凭据相互独立。
+
+## 待确认操作
+
+创建、消息、停止及上传记录同时保存原请求编号和不可逆的凭据版本摘要。浏览器
+发送写操作时携带 `x-metaverse-cma-credential`，服务器核对当前实际凭据的版本后
+才转发给 CMA。切换 OAuth、替换 Key 或恢复旧版记录时不能跨凭据重放结果未知的
+操作；切回原 Key 可使用原内容与编号恢复。原 Key 已撤销或丢失时，先在 CMA 核对
+结果，再明确清除恢复记录。OAuth 刷新导致令牌变化时遵循同一规则。

@@ -23,7 +23,9 @@ test('CMA OAuth 会话在刷新后复用，不读取或发送浏览器 Key', asy
       return route.fulfill({ json: { items: [], organizations: [], next: null } });
     if (path.endsWith('/connection')) {
       probes++;
-      return route.fulfill({ json: { ready: true, ownerId: 'owner' } });
+      return route.fulfill({
+        json: { ready: true, credentialVersion: 'v'.repeat(43), ownerId: 'owner' },
+      });
     }
     throw new Error(`Unexpected auth operation: ${path}`);
   });
