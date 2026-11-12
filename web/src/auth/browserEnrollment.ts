@@ -16,8 +16,13 @@ const storageKey = (subject: string, owner: string, provider: ChatProvider = 'cm
 export function validEnrollment(value: Enrollment): boolean {
   try {
     const url = new URL(value.verification_uri);
+    const loopback =
+      url.hostname === 'localhost' ||
+      url.hostname === '[::1]' ||
+      /^127(?:\.\d{1,3}){3}$/.test(url.hostname);
     return (
-      url.protocol === 'https:' &&
+      value.verification_uri.trim() === value.verification_uri &&
+      (url.protocol === 'https:' || (url.protocol === 'http:' && loopback)) &&
       url.pathname === '/login/agent-key' &&
       !url.username &&
       !url.password &&

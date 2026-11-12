@@ -28,6 +28,10 @@ NyxAgent 与 CMA 分别授权、保存凭据。Key 留在此浏览器的独立�
 
 服务端固定经现有 `NYXID_BASE_URL` 下的 `/api/v1/proxy/s/llm-nyx/v1/` 访问模型、Responses SSE 和已保存响应，不接受自定义上游地址、任意模型或任意代理路径。消息使用 `store: true`，并传递原 `Idempotency-Key`；不会自动重试写入。无需增加部署环境变量。
 
+本地联调可使用真实本地 NyxID；授权页支持 HTTPS，或仅指向 `localhost`、IPv4/IPv6 回环地址的 HTTP。普通内网地址和远程 HTTP 地址仍会被拒绝。NyxID 的 `FRONTEND_URL` 应指向本地授权网页，Metaverse 的 `NYXID_BASE_URL`、JWKS 和签发方应指向本地 NyxID 后端。
+
+NyxID 的 OpenAPI 抓取策略可能拒绝本地地址，此时服务提供 `chrono-metaverse__request` 通用工具。可通过该工具读取 `/api/openapi.json`，再按文档调用实际接口；例如 `get_space` 对应 `GET /api/v1/spaces/{space_id}`。
+
 这条通道使用 NyxAgent 的 Key 绑定会话，不包含个人 NyxBot 的历史、记忆或 specialists。扫描、文件导入和主机重建仍使用 CMA 或本地重建工具。
 
 ## 验证
