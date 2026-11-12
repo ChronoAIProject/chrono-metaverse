@@ -581,3 +581,22 @@
     bottom: calc(var(--space-4) + 3 * var(--control-h) + 3 * var(--space-2));
   }
 }
+.viewer__map-credit {
+  position: absolute;
+  left: 12px;
+  bottom: 80px;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  max-width: min(520px, 70%);
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgb(15 18 22 / 78%);
+  color: #eee;
+  font-size: 11px;
+}
+
+.viewer__map-credit a {
+  color: inherit;
+}

@@ -21,6 +21,14 @@ metaverse-recon content import --model <文件.glb> --id chair-1 --label '休息
 
 不需要外部模型的内容直接使用 SHAPES 参数形状，写在标准 `placeEntity.entity.shape` 里；同一计划可混合形状、模型、模板、删除、锚点和方块操作。复杂程序化建造仍可使用已有 SDK 脚本，但这不是用户的前提条件。
 
+## 连续天空和地图
+
+需要地理背景时，在普通背景物件上设置 `props.environment: {version: 1, sky?, map?}`，仍用 `placeEntity` 提交。`sky` 使用等距柱状全景贴图 `{texture, yaw?}`，哈希同时声明在物件 `textures` 中，新图列入编辑计划的 `assets`。`map` 使用 `{latitude, longitude, origin: [x,y,z], heading?, sources}`：参考点的海平面位置以空间米坐标表示，朝向为局部 +z 相对正北的顺时针角。
+
+`sources` 按顺序配置公开 HTTPS、支持 CORS 的 Web Mercator 影像 URL 模板（含 `{z}/{x}/{y}`）、署名、来源页面、`minZoom` 和 `maxZoom`，可带 `[西,南,东,北]` 覆盖范围。至少有一个从第 0 级开始的全球回退来源。不要把来源名称或地点写进通用代码，不使用有界地板或球壳冒充连续环境。地图瓦片保存在浏览器缓存，全景图和环境参数随空间版本保存。
+
+代理物件的形状与范围必须落在当前授权区域内；背景渲染不会授予额外的地块写权限。修改已有环境时保留原编号，读取并保留未要求改变的字段。组合只启用第一个有效环境，因此新增前先检查现有物件。预览至少检查主体近景、拉远超出原地图范围、多个朝向、标记返回、刷新缓存和切换视图。
+
 ## 同一份编辑计划
 
 ```json
