@@ -253,6 +253,13 @@ impl OAuthService {
     pub(crate) async fn current(&self, held: &HeldCredential) -> Result<bool, OAuthError> {
         Ok(self.repo.oauth_grant_current(&STORE, &held.record).await?)
     }
+
+    async fn browser_authority_current(&self, held: &HeldCredential) -> Result<bool, OAuthError> {
+        Ok(self
+            .repo
+            .oauth_grant_authority_current(&STORE, &held.record)
+            .await?)
+    }
 }
 
 fn seconds() -> Result<i64, OAuthError> {

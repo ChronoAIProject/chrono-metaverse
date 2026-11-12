@@ -159,6 +159,15 @@ impl Repo {
         Ok(self.collection(GRANTS).find_one(doc!{"_id":&record.id,"version":&record.version,"incarnation":&record.incarnation,"active":true}).await?.is_some())
     }
 
+    /// A browser login survives token rotation; disconnect and reauthorization fence its incarnation.
+    pub(crate) async fn oauth_grant_authority_current(
+        &self,
+        _: &StoreAuthority,
+        record: &OAuthGrantRecord,
+    ) -> Result<bool, RepoError> {
+        Ok(self.collection(GRANTS).find_one(doc!{"_id":&record.id,"subject":&record.subject,"incarnation":&record.incarnation,"active":true}).await?.is_some())
+    }
+
     pub(crate) async fn oauth_grant_disable(
         &self,
         _: &StoreAuthority,

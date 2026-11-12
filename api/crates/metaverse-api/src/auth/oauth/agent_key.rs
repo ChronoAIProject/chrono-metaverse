@@ -323,6 +323,7 @@ pub(super) struct Browser {
     pub(super) oauth: Arc<OAuthService>,
     pub(super) session: OAuthSessionRecord,
     held: HeldCredential,
+    purpose: Purpose,
 }
 impl Browser {
     async fn new(state: &AppState, headers: &HeaderMap) -> Result<Self, ApiError> {
@@ -346,13 +347,20 @@ impl Browser {
             oauth,
             session,
             held,
+            purpose,
         })
     }
     pub(super) async fn nyxagent(state: &AppState, headers: &HeaderMap) -> Result<Self, ApiError> {
         Self::open(state, headers, true, Purpose::NyxAgent).await
     }
     pub(super) async fn current(&self) -> Result<(), ApiError> {
-        if !self.oauth.current(&self.held).await?
+        // NyxAgent forwards its original Agent Key, not the browser's OAuth access token.
+        // A normal OAuth refresh changes that token's version without ending this login.
+        let current = match self.purpose {
+            Purpose::NyxAgent => self.oauth.browser_authority_current(&self.held).await?,
+            Purpose::Cma => self.oauth.current(&self.held).await?,
+        };
+        if !current
             || self
                 .oauth
                 .repo
