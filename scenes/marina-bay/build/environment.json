@@ -1,0 +1,89 @@
+{
+  "entityId": "bay.environment",
+  "layer": "ext",
+  "kind": "object",
+  "label": "地理环境 · 连续海陆地图与天空",
+  "regionId": "marina-bay-exterior",
+  "bounds": {
+    "min": [
+      8,
+      -61,
+      8
+    ],
+    "max": [
+      8.02,
+      -60.98,
+      8.02
+    ]
+  },
+  "shape": {
+    "type": "box",
+    "size": [
+      0.02,
+      0.02,
+      0.02
+    ],
+    "transform": {
+      "position": [
+        8.01,
+        -61,
+        8.01
+      ]
+    }
+  },
+  "textures": [
+    "20e81e3b2a8c8cc32fd38dda3b8f256698ac1418e0366c983e509e277c4601d1"
+  ],
+  "props": {
+    "background": true,
+    "environment": {
+      "version": 1,
+      "sky": {
+        "texture": "20e81e3b2a8c8cc32fd38dda3b8f256698ac1418e0366c983e509e277c4601d1",
+        "yaw": 0
+      },
+      "map": {
+        "latitude": 1.2801706774251347,
+        "longitude": 103.85419949862057,
+        "origin": [
+          12.698957563907662,
+          -60.257,
+          -12.785997359593134
+        ],
+        "heading": 18.454586711764804,
+        "sources": [
+          {
+            "urlTemplate": "https://www.onemap.gov.sg/maps/tiles/OrthoJPG/{z}/{x}/{y}.png",
+            "attribution": "Map Data © 2026 SLA / OneMap",
+            "page": "https://www.onemap.gov.sg/",
+            "minZoom": 16,
+            "maxZoom": 18,
+            "bounds": [
+              103.85,
+              1.278,
+              103.8647,
+              1.2918
+            ]
+          },
+          {
+            "urlTemplate": "https://clarity.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            "attribution": "Esri World Imagery (Clarity) · Esri, Vantor, Earthstar Geographics, IGN, GIS User Community",
+            "page": "https://www.arcgis.com/home/item.html?id=ab399b847323487dba26809bf11ea91a",
+            "minZoom": 0,
+            "maxZoom": 13
+          }
+        ]
+      }
+    },
+    "说明": "按地理参考持续加载海陆影像，天空采用渲染器背景，无球壳边界",
+    "版权": "天空 CC0 Poly Haven；地图来源在查看器常驻署名",
+    "source": {
+      "library": "polyhaven",
+      "id": "kloofendal_48d_partly_cloudy_puresky",
+      "page": "https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky",
+      "author": "Greg Zaal",
+      "license": "CC0-1.0",
+      "title": "Kloofendal 48d Partly Cloudy PureSky"
+    }
+  }
+}

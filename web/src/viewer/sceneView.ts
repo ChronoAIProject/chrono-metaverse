@@ -50,6 +50,8 @@ import { fitModelInto, measureModel, modelFit, modelFitWarning, type BoxLike } f
 import { placedModelBox, placeRotatedModel } from './modelPlacement';
 import type { ShapeJob } from './meshJobs';
 import { backgroundLandmark, backgroundView } from './background';
+import { environmentOf } from '../core/environment';
+import { EnvironmentView } from './environmentView';
 
 /**
  * 只读查看器的 three.js 场景。React 组件（Viewer.tsx）只负责挂载和传参，
@@ -295,6 +297,7 @@ export class SceneView {
   private readonly geometryCache = new Map<string, ShapeGeometry & { triangles: number }>();
   private readonly materialCache = new Map<string, THREE.Material>();
   private readonly textures: TextureCache;
+  private readonly environment: EnvironmentView;
   private readonly modelCache = new Map<string, Promise<THREE.Object3D>>();
   private readonly scanCache = new WeakMap<ArrayBuffer, Promise<THREE.Object3D>>();
   private readonly modelBoxes = new WeakMap<THREE.Object3D, BoxLike | null>();
@@ -355,7 +358,12 @@ export class SceneView {
     private readonly host: HTMLElement,
     private readonly options: SceneViewOptions = {},
   ) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    // 对数深度让厘米级室内和地球远景共享深度缓冲，不用近共面的叠加网格补海面。
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: true,
+      logarithmicDepthBuffer: true,
+    });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -391,6 +399,7 @@ export class SceneView {
     this.textures = new TextureCache(options.loadTexture, () =>
       Math.min(8, this.renderer.capabilities.getMaxAnisotropy()),
     );
+    this.environment = new EnvironmentView(this.scene, host, options.loadTexture);
 
     // 灯光按物理单位设置（强度是 π 的倍数），见 lighting.ts。
     this.scene.add(...createLights());
@@ -476,6 +485,7 @@ export class SceneView {
       if (t >= 1) this.flight = null;
     }
     this.controls.update();
+    this.environment.update(this.camera);
     this.updateBackgroundViews();
     this.renderer.render(this.scene, this.camera);
     this.updateLabels();
@@ -640,7 +650,8 @@ export class SceneView {
     const jobs = new Map<string, ShapeJob>();
     const plans = content.members.map((member) => {
       const entities = member.view.entities.map((entity) => {
-        if (entity.shape === undefined) return { entity, key: null, matrix: null };
+        if (entity.shape === undefined || environmentOf(entity))
+          return { entity, key: null, matrix: null };
         const { local, matrix } = splitShape(entity.shape);
         const used = usedTemplates(local, member.view.templates);
         const key = geometryKey(local, used);
@@ -729,6 +740,8 @@ export class SceneView {
     this.frameSources = [];
     this.distanceObjects = [];
     this.landmarks = [];
+    this.environment.setContent(content);
+    this.grid.visible = !this.environment.hasMap;
     // 换了内容，原来选中的物件（信息面板随之关闭）不再固定显示标签。
     this.focusAnchor = null;
     this.labelsDirty = true;
@@ -752,6 +765,7 @@ export class SceneView {
     const inUse = new Set<string>();
 
     plans.forEach(({ member, entities }, index) => {
+      entityCount += entities.filter(({ entity }) => environmentOf(entity)).length;
       const group = placementGroup(member.placement);
       group.name = `member:${member.spaceId}`;
       this.content.add(group);
@@ -827,7 +841,8 @@ export class SceneView {
       // 底面中心（modelPlacement.ts）；这个外包盒实际比 bounds 大时等比缩小兜进 bounds（modelFit.ts，
       // 服务端已经实测过，这里只是兜底）。
       for (const { entity } of entities) {
-        if (entity.shape !== undefined || entity.assetHash === undefined) continue;
+        if (entity.shape !== undefined || entity.assetHash === undefined || environmentOf(entity))
+          continue;
         entityCount += 1;
         const background = isBackgroundEntity(entity);
         const holder = new THREE.Group();
@@ -1935,6 +1950,7 @@ export class SceneView {
     for (const material of this.materialCache.values()) material.dispose();
     this.materialCache.clear();
     this.textures.dispose();
+    this.environment.dispose();
     if (this.ownsMeshes) this.meshes.dispose();
     this.renderer.dispose();
     canvas.remove();
