@@ -13,8 +13,9 @@
   "orthophotoTiles": 36,
   "buildingParts": 257,
   "groundParts": 4,
-  "modelBytes": 183139740,
-  "triangles": 319598,
+  "hostTowerParts": 7,
+  "modelBytes": 193272344,
+  "triangles": 321076,
   "largestModelBytes": 4704980,
   "verified": true
 }

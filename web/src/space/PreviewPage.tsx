@@ -43,7 +43,7 @@ export interface PreviewPageProps {
  *
  * - `GET /api/public/previews`，令牌放在 `Authorization: Preview <令牌>` 里（在 # 后面，不进日志）；
  * - 草稿的区块和资源（包括新上传的贴图）全部走 `/api/public/previews/chunks|assets/{hash}`；
- * - 响应不缓存；页面明确标出"草稿预览"，只显示公开锚点，没有时间轴。
+ * - 每次打开先验证预览；资源字节按授权与修订隔离保存在浏览器，页面没有时间轴。
  */
 export function PreviewPage({
   token,

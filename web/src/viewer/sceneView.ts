@@ -49,6 +49,7 @@ import { createMeshService, type MeshService } from './meshService';
 import { fitModelInto, measureModel, modelFit, modelFitWarning, type BoxLike } from './modelFit';
 import { placedModelBox, placeRotatedModel } from './modelPlacement';
 import type { ShapeJob } from './meshJobs';
+import { backgroundLandmark, backgroundView } from './background';
 
 /**
  * 只读查看器的 three.js 场景。React 组件（Viewer.tsx）只负责挂载和传参，
@@ -324,6 +325,13 @@ export class SceneView {
   private autoFramed = false;
   private lastMode: SceneContent['mode'] | null = null;
   private frameSources: FrameSource[] = [];
+  private distanceObjects: {
+    object: THREE.Object3D;
+    focus: THREE.Vector3;
+    min: number;
+    max: number;
+  }[] = [];
+  private landmarks: { object: CSS2DObject; focus: THREE.Vector3; min: number }[] = [];
   /** 扫描的取景包围盒，按组里的那一份缓存（换了内容那一份就没人引用了）。 */
   private readonly scanBoxes = new WeakMap<THREE.Object3D, THREE.Box3>();
   private disposed = false;
@@ -468,6 +476,7 @@ export class SceneView {
       if (t >= 1) this.flight = null;
     }
     this.controls.update();
+    this.updateBackgroundViews();
     this.renderer.render(this.scene, this.camera);
     this.updateLabels();
     this.labels.render(this.scene, this.camera);
@@ -718,6 +727,8 @@ export class SceneView {
     this.anchors = new Map();
     this.pickables = [];
     this.frameSources = [];
+    this.distanceObjects = [];
+    this.landmarks = [];
     // 换了内容，原来选中的物件（信息面板随之关闭）不再固定显示标签。
     this.focusAnchor = null;
     this.labelsDirty = true;
@@ -762,7 +773,7 @@ export class SceneView {
         inUse.add(key);
         const glass = entity.props?.glass === true;
         const background = isBackgroundEntity(entity);
-        const batchKey = `${key}|${glass}|${background}`;
+        const batchKey = `${key}|${glass}|${background}|${JSON.stringify(entity.props?.backgroundView ?? null)}`;
         const batch = batches.get(batchKey) ?? { key, glass, background, items: [] };
         batch.items.push({ entity, matrix });
         batches.set(batchKey, batch);
@@ -806,6 +817,7 @@ export class SceneView {
         mesh.name = batch.items.map((item) => item.entity.entityId).join(',');
         if (batch.glass) mesh.renderOrder = 2;
         group.add(mesh);
+        this.addBackgroundView(mesh, batch.items[0]!.entity, member);
         if (!batch.background) this.pickables.push(mesh);
         triangles += (built.geometry.index.count / 3) * batch.items.length;
         entityCount += batch.items.length;
@@ -829,6 +841,7 @@ export class SceneView {
           );
         }
         group.add(holder);
+        this.addBackgroundView(holder, entity, member);
         if (!background) this.pickables.push(holder);
         const pending = this.model(entity.assetHash);
         if (pending === null) continue;
@@ -962,6 +975,33 @@ export class SceneView {
   /** 成员的锚点、虚拟区光效、组合里的成员名。 */
   private buildOverlay(member: MemberContent, overlay: THREE.Group, universe: boolean): void {
     const placement = member.placement;
+    for (const entity of member.view.entities) {
+      const landmark = backgroundLandmark(entity);
+      if (!landmark) continue;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'viewer__landmark';
+      button.title = '点击查看此处';
+      const caption = document.createElement('span');
+      caption.className = 'viewer__landmark-caption';
+      caption.textContent = landmark.label;
+      const pin = document.createElement('span');
+      pin.className = 'viewer__landmark-pin';
+      pin.setAttribute('aria-hidden', 'true');
+      button.append(caption, pin);
+      const object = new CSS2DObject(button);
+      object.center.set(0.5, 1);
+      object.position.set(...landmark.position);
+      object.visible = false;
+      overlay.add(object);
+      const box = placedBox(placement, landmark.bounds.min, landmark.bounds.max);
+      button.addEventListener('click', () => this.frameBounds(box));
+      this.landmarks.push({
+        object,
+        focus: box.getCenter(new THREE.Vector3()),
+        min: landmark.minDistance,
+      });
+    }
     for (const region of member.view.virtualRegions) {
       for (const box of region.boxes) {
         const min = new THREE.Vector3(box[0], box[1], box[2]).multiplyScalar(GRID_UNIT);
@@ -1524,7 +1564,10 @@ export class SceneView {
    * 实体区里的内容占满画面，四边各留 6%（合计约 12%）的边距。
    */
   frameContent(): void {
-    const box = this.frameTarget();
+    this.frameBounds(this.frameTarget());
+  }
+
+  private frameBounds(box: THREE.Box3): void {
     const frame = frameBox(box, { fov: this.camera.fov, aspect: this.camera.aspect });
     if (frame === null) return;
     this.flight = null;
@@ -1545,6 +1588,41 @@ export class SceneView {
     this.host.dataset.frame = [...box.min.toArray(), ...box.max.toArray()]
       .map((v) => v.toFixed(2))
       .join(',');
+  }
+
+  private addBackgroundView(
+    object: THREE.Object3D,
+    entity: EntityBody,
+    member: MemberContent,
+  ): void {
+    const config = backgroundView(entity);
+    if (!config) return;
+    this.distanceObjects.push({
+      object,
+      focus: new THREE.Vector3(...placePoint(member.placement, config.focus)),
+      min: config.min,
+      max: config.max,
+    });
+    object.visible = false;
+  }
+
+  private updateBackgroundViews(): void {
+    for (const item of this.distanceObjects) {
+      const distance = this.camera.position.distanceTo(item.focus);
+      item.object.visible = distance >= item.min && distance < item.max;
+    }
+    const projected = new THREE.Vector3();
+    for (const item of this.landmarks) {
+      item.object.getWorldPosition(projected).project(this.camera);
+      item.object.visible =
+        this.camera.position.distanceTo(item.focus) >= item.min &&
+        projected.z >= -1 &&
+        projected.z <= 1 &&
+        Math.abs(projected.x) < 1.05 &&
+        Math.abs(projected.y) < 1.05;
+    }
+    const count = this.distanceObjects.filter((item) => item.min > 0 && item.object.visible).length;
+    this.host.dataset.overviewObjects = String(count);
   }
 
   /** 镜头飞到某一点（连接的另一端）。 */

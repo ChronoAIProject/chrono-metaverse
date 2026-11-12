@@ -1,0 +1,31 @@
+{
+  "entityPrefix": "bay.",
+  "message": "办公室近景保留楼体剖面，拉远显示完整 Tower 1 和十四层办公室标记，滨海湾作为背景",
+  "host": {
+    "modelFile": "build/own-tower.json",
+    "entityPrefix": "bay.tower1",
+    "label": "MBFC Tower 1",
+    "levelLabel": "十四层",
+    "focusRegionId": "office",
+    "floorEntityId": "rb.floor",
+    "facadeEntityId": "rb.glazing-z15.38-1",
+    "sectionHeightMeters": 1.4,
+    "facadeDirection": [0, 1],
+    "facadeNormalMinDot": 0.98,
+    "facadeEdgeMinLengthMeters": 3,
+    "facadeInsetMeters": 0.12,
+    "minimumClearanceMeters": 0.05,
+    "boundaryMarginMeters": 0.02,
+    "sliceOverlapMeters": 0.01,
+    "overviewDistanceMeters": 80,
+    "landmark": {
+      "label": "ChronoAI · 14层办公室",
+      "offset": [0, 0, 0.08]
+    },
+    "slab": {
+      "thicknessMeters": 0.25,
+      "color": [145, 147, 150, 255]
+    },
+    "note": "按临滨海湾外墙及现有玻璃朝向配准，办公室位于楼体内。单元沿外墙的位置和楼层绝对标高仍待现场核准。"
+  }
+}

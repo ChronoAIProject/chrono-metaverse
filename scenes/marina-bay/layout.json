@@ -3,7 +3,6 @@
     {
       "id": "office",
       "kind": "physical",
-      "name": "ChronoAI 前厅 · MBFC Tower 1 十四层",
       "boxes": [
         [
           -2,
@@ -13,12 +12,12 @@
           64,
           312
         ]
-      ]
+      ],
+      "name": "ChronoAI 前厅 · MBFC Tower 1 十四层"
     },
     {
       "id": "marina-bay-exterior",
       "kind": "virtual",
-      "name": "滨海湾窗外场景 · OneMap 官方模型",
       "boxes": [
         [
           -30000,
@@ -59,15 +58,23 @@
           232,
           5200,
           40000
+        ],
+        [
+          -2,
+          64,
+          -2,
+          232,
+          5200,
+          312
         ]
-      ]
+      ],
+      "name": "滨海湾窗外场景 · OneMap 官方模型"
     }
   ],
   "plots": [
     {
       "id": "marina-bay-exterior",
       "regionId": "marina-bay-exterior",
-      "name": "滨海湾外景",
       "boxes": [
         [
           -30000,
@@ -108,8 +115,17 @@
           232,
           5200,
           40000
+        ],
+        [
+          -2,
+          64,
+          -2,
+          232,
+          5200,
+          312
         ]
-      ]
+      ],
+      "name": "滨海湾外景"
     }
   ]
 }
