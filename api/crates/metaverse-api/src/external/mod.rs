@@ -108,7 +108,8 @@ impl ExternalResources {
                 return Ok((bytes, meta.content_type, true));
             }
         }
-        let _permit = self.inflight.try_acquire().map_err(|_| {
+        // 地图和三维可同时启动；在总时限内排队，避免正常的混合场景被瞬时并发拒绝。
+        let _permit = self.inflight.acquire().await.map_err(|_| {
             ApiError::new(
                 StatusCode::TOO_MANY_REQUESTS,
                 "external_busy",

@@ -13,6 +13,54 @@ struct Stub {
     responses: Mutex<VecDeque<reqwest::Response>>,
     calls: AtomicUsize,
 }
+
+struct Slow {
+    active: AtomicUsize,
+    peak: AtomicUsize,
+}
+impl Transport for Slow {
+    fn get<'a>(
+        &'a self,
+        _: &'a url::Url,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<reqwest::Response, ApiError>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            let count = self.active.fetch_add(1, Ordering::SeqCst) + 1;
+            self.peak.fetch_max(count, Ordering::SeqCst);
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            self.active.fetch_sub(1, Ordering::SeqCst);
+            Ok(response(200, "no-store", "data"))
+        })
+    }
+}
+
+#[tokio::test]
+async fn mixed_view_requests_queue_without_exceeding_download_limit() {
+    let (mut runtime, _, _) = runtime(vec![], 0);
+    let slow = Arc::new(Slow {
+        active: AtomicUsize::new(0),
+        peak: AtomicUsize::new(0),
+    });
+    runtime.transport = slow.clone();
+    let runtime = Arc::new(runtime);
+    let mut tasks = tokio::task::JoinSet::new();
+    for index in 0..12 {
+        let runtime = runtime.clone();
+        tasks.spawn(async move {
+            runtime
+                .fetch(
+                    &source(),
+                    &format!("https://tiles.example/data/{index}.bin"),
+                )
+                .await
+        });
+    }
+    while let Some(result) = tasks.join_next().await {
+        assert!(result.unwrap().is_ok());
+    }
+    assert!((2..=8).contains(&slow.peak.load(Ordering::SeqCst)));
+}
 impl Transport for Stub {
     fn get<'a>(
         &'a self,
@@ -60,6 +108,20 @@ fn runtime(
         stub,
         config,
     )
+}
+
+#[test]
+fn vector_index_requires_explicit_resource_directories() {
+    let source = Source::from_entity(&json!({"props":{"background":true,"externalContent":{"version":1,"format":"mvt","sources":[{"delivery":"server","url":"https://tiles.example/planet","attribution":"测试矢量","page":"https://tiles.example/","resourcePrefixes":["https://tiles.example/planet/"]}]}}}), "content", 0).unwrap();
+    assert!(source.checked("https://tiles.example/planet").is_ok());
+    assert!(source
+        .checked("https://tiles.example/planet/version/14/1/2.pbf")
+        .is_ok());
+    assert!(source.checked("https://tiles.example/secret").is_err());
+    assert!(source
+        .checked("https://tiles.example/planet/../secret")
+        .is_err());
+    assert_eq!(source.max_bytes, 8 * 1024 * 1024);
 }
 
 #[test]

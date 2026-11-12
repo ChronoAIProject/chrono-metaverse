@@ -45,13 +45,35 @@ export interface GeographicReference {
   readonly heading: number;
 }
 
-export interface ExternalContent {
+export interface TilesContent {
   readonly version: 1;
   readonly format: '3d-tiles';
   readonly sources: readonly ExternalSource[];
   /** 缺省使用本地米制坐标，原点放在代理物件 bounds 的底面中心。 */
   readonly reference?: GeographicReference;
 }
+
+export interface VectorContent {
+  readonly version: 1;
+  readonly format: 'mvt';
+  /** 标准 TileJSON 入口；模板与层级从入口读取。 */
+  readonly sources: readonly ExternalSource[];
+  readonly reference: GeographicReference;
+  readonly extrusion: {
+    readonly layer: string;
+    readonly heightProperty: string;
+    readonly minHeightProperty?: string;
+    readonly hiddenProperty?: string;
+    readonly defaultHeight: number;
+    readonly maxHeight: number;
+    readonly color: string;
+    readonly maxDistance: number;
+    /** 本地米制坐标中的覆盖区域 [minX,minZ,maxX,maxZ]，保留已有精细内容。 */
+    readonly excludeBounds?: readonly (readonly [number, number, number, number])[];
+  };
+}
+
+export type ExternalContent = TilesContent | VectorContent;
 
 export function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -126,7 +148,7 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
   if (
     !raw ||
     raw.version !== 1 ||
-    raw.format !== '3d-tiles' ||
+    (raw.format !== '3d-tiles' && raw.format !== 'mvt') ||
     !Array.isArray(raw.sources) ||
     raw.sources.length < 1 ||
     raw.sources.length > 4
@@ -138,5 +160,46 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
   }
   const reference = raw.reference === undefined ? undefined : geographicReference(raw.reference);
   if (reference === null) return null;
+  if (raw.format === 'mvt') {
+    const style = record(raw.extrusion);
+    const field = (value: unknown) =>
+      typeof value === 'string' && value.length > 0 && value.length <= 100;
+    if (
+      !reference ||
+      !style ||
+      !field(style.layer) ||
+      !field(style.heightProperty) ||
+      (style.minHeightProperty !== undefined && !field(style.minHeightProperty)) ||
+      (style.hiddenProperty !== undefined && !field(style.hiddenProperty)) ||
+      !finite(style.defaultHeight, 0, 2000) ||
+      !finite(style.maxHeight, 1, 2000) ||
+      style.defaultHeight > style.maxHeight ||
+      !finite(style.maxDistance, 100, 50000) ||
+      typeof style.color !== 'string' ||
+      !/^#[a-f0-9]{6}$/i.test(style.color)
+    )
+      return null;
+    if (
+      style.excludeBounds !== undefined &&
+      (!Array.isArray(style.excludeBounds) ||
+        style.excludeBounds.length > 256 ||
+        style.excludeBounds.some(
+          (b: unknown) =>
+            !Array.isArray(b) ||
+            b.length !== 4 ||
+            !b.every((v: unknown) => finite(v, -100000, 100000)) ||
+            b[0]! >= b[2]! ||
+            b[1]! >= b[3]!,
+        ))
+    )
+      return null;
+    return {
+      version: 1,
+      format: 'mvt',
+      sources: raw.sources,
+      reference,
+      extrusion: style,
+    } as unknown as VectorContent;
+  }
   return { version: 1, format: '3d-tiles', sources: raw.sources, reference } as ExternalContent;
 }

@@ -58,10 +58,19 @@ impl Source {
         let (config, sources, field, max_bytes) = match kind {
             "content" => {
                 let config = &props["externalContent"];
-                if config["format"] != "3d-tiles" {
+                if config["format"] != "3d-tiles" && config["format"] != "mvt" {
                     return Err(ApiError::not_found());
                 }
-                (config, &config["sources"], "url", 32 * 1024 * 1024)
+                (
+                    config,
+                    &config["sources"],
+                    "url",
+                    if config["format"] == "mvt" {
+                        8 * 1024 * 1024
+                    } else {
+                        32 * 1024 * 1024
+                    },
+                )
             }
             "map" => {
                 let config = &props["environment"];
@@ -94,10 +103,13 @@ impl Source {
         let root = https(value)?;
         let mut prefixes = Vec::new();
         if kind == "content" {
-            prefixes.push(
-                root.join(".")
-                    .map_err(|_| ApiError::invalid("来源目录无效"))?,
-            );
+            // TileJSON 可以位于域名根目录；其瓦片目录必须显式声明，不能开放整个域名。
+            if config["format"] == "3d-tiles" {
+                prefixes.push(
+                    root.join(".")
+                        .map_err(|_| ApiError::invalid("来源目录无效"))?,
+                );
+            }
             if let Some(values) = raw.get("resourcePrefixes") {
                 let values = values
                     .as_array()

@@ -20,13 +20,14 @@ import type { Placement, SceneContent } from '../core/scene';
 import {
   externalContentOf,
   publicHttps,
-  type ExternalContent,
+  type TilesContent,
   type ExternalAccess,
 } from '../core/externalSource';
 import { GeoReference } from './geography';
 import { sourceResponse } from './externalResource';
 import { sourceCredit } from './sourceCredit';
 import { backgroundView } from './background';
+import { VectorContentItem } from './vectorContentView';
 
 /** 标准三维分片的显示实例；与物件模型哈希、提供方及具体地点无关。 */
 class ExternalItem {
@@ -44,7 +45,7 @@ class ExternalItem {
   private readonly view: ReturnType<typeof backgroundView>;
 
   constructor(
-    private readonly config: ExternalContent,
+    private readonly config: TilesContent,
     entity: EntityBody,
     placement: Placement,
     host: HTMLElement,
@@ -256,7 +257,7 @@ class ExternalItem {
 
 export class ExternalContentView {
   private key = '';
-  private items: ExternalItem[] = [];
+  private items: (ExternalItem | VectorContentItem)[] = [];
   private readonly credit = document.createElement('div');
   private readonly downloadQueue = new DownloadPriorityQueue();
   private readonly parseQueue = new PriorityQueue();
@@ -297,16 +298,19 @@ export class ExternalContentView {
     if (!selected.length) return;
     this.host.append(this.credit);
     for (const { config, entity, placement, access } of selected) {
-      const item = new ExternalItem(
-        config,
-        entity,
-        placement,
-        this.credit,
-        this.downloadQueue,
-        this.parseQueue,
-        this.lruCache,
-        access,
-      );
+      const item =
+        config.format === 'mvt'
+          ? new VectorContentItem(config, entity, placement, this.credit, access)
+          : new ExternalItem(
+              config,
+              entity,
+              placement,
+              this.credit,
+              this.downloadQueue,
+              this.parseQueue,
+              this.lruCache,
+              access,
+            );
       this.items.push(item);
       this.scene.add(item.group);
     }
