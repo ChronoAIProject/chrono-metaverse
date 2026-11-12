@@ -32,7 +32,10 @@ beforeEach(() => {
   sessionStorage.clear();
   localStorage.clear();
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 it('刷新复用浏览器凭据，核验后才启用；账号切换不发送旧 Key', async () => {
   saveBrowserKey('alice', credential, identity);
@@ -208,7 +211,7 @@ it('服务端确认撤销后清除子凭据', async () => {
   );
 });
 
-it.each(['交付前重新打开', '交付后重新打开', '取消等待'])(
+it.each(['交付前重新打开', '交付后重新打开', '取消等待', '交付跨过申请期限'])(
   '一次性 NyxAgent 凭据交付不依赖聊天组件，尊重明确取消：%s',
   async (transition) => {
     let deliver: (response: Response) => void = () => {};
@@ -251,13 +254,15 @@ it.each(['交付前重新打开', '交付后重新打开', '取消等待'])(
     await waitFor(() => expect(claimed).toBe(true), { timeout: 3000 });
     if (transition === '取消等待') {
       await userEvent.click(screen.getByRole('button', { name: '取消等待' }));
-    } else {
+    } else if (transition !== '交付跨过申请期限') {
       first.unmount();
       if (transition === '交付前重新打开') {
         render(element);
         await screen.findByRole('link', { name: '打开 NyxID 授权页' });
       }
     }
+    if (transition === '交付跨过申请期限')
+      vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_001);
     await act(async () => deliver(Response.json({ credential, identity })));
     if (transition === '取消等待') {
       expect(readBrowserKey('alice', 'alice', 'nyxagent')).toBeNull();

@@ -1,6 +1,6 @@
 import { workerRequest, type Session } from '../workspace/client';
 import { readBrowserKey, saveBrowserKey, type ChatProvider, type KeyIdentity } from './browserKey';
-import { clearEnrollment, readEnrollment, type PendingEnrollment } from './browserEnrollment';
+import { clearEnrollment, matchesEnrollment, type PendingEnrollment } from './browserEnrollment';
 
 type Delivery = { credential: string; identity: KeyIdentity };
 // A claimed NyxID credential cannot be polled again. Finish and save a delivery
@@ -15,8 +15,7 @@ export function receiveBrowserKey(
   provider: ChatProvider,
 ): Promise<Delivery> {
   const subject = session.subject!;
-  const pending = () =>
-    readEnrollment(subject, owner, provider)?.device_code === enrollment.device_code;
+  const pending = () => matchesEnrollment(subject, owner, enrollment.device_code, provider);
   const saved = readBrowserKey(subject, owner, provider);
   if (!pending() && saved) return Promise.resolve(saved);
   const id = JSON.stringify([subject, session.csrfToken, owner, provider, enrollment.device_code]);
