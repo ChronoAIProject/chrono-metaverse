@@ -6,6 +6,7 @@
 
 # ---- 构建：与 api/rust-toolchain.toml 相同的工具链 ----
 FROM rust:1.97.0-slim-trixie@sha256:686a437ead83701e8f871e66e838c3ec55f46b5fc235b025756396ac823bdc51 AS build
+ARG CHRONO_BUILD_SHA
 WORKDIR /build
 COPY api/ ./
 # RUSTUP_TOOLCHAIN 只在这条命令里生效：直接用镜像自带的 1.97.0，
@@ -14,7 +15,7 @@ COPY api/ ./
 RUN --mount=type=cache,id=metaverse-api-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=metaverse-api-cargo-git,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,id=metaverse-api-target,target=/build/target,sharing=locked \
-    RUSTUP_TOOLCHAIN=1.97.0 cargo build --release --locked --bin metaverse-api \
+    CHRONO_BUILD_SHA="${CHRONO_BUILD_SHA}" RUSTUP_TOOLCHAIN=1.97.0 cargo build --release --locked --bin metaverse-api \
     && install -D -m 0755 target/release/metaverse-api /out/metaverse-api
 
 # ---- 运行：distroless（只有 glibc、libgcc 和 CA 证书，没有 shell） ----

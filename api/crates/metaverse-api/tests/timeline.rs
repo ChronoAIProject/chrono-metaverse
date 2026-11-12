@@ -158,6 +158,18 @@ async fn genesis_layout_drafts_preview_publish_and_reads() {
         assert_eq!(reply.header(header::CACHE_CONTROL), "no-store");
     }
 
+    // 不允许发布已经过期的预览修订，时间线与草稿保持不变。
+    let stale = app
+        .org(
+            Method::POST,
+            &format!("{path}/publish"),
+            Some(json!({"message": "过期预览", "rev": 0})),
+        )
+        .await;
+    assert_eq!(stale.status, StatusCode::CONFLICT);
+    assert_eq!(stale.body["code"], "draft_rev_changed");
+    assert_eq!(app.org(Method::GET, &path, None).await.body["rev"], 1);
+
     // 发布：seq 3；预览令牌立即失效。
     let published = app
         .org(

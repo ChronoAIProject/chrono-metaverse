@@ -6,6 +6,7 @@ export type Session = {
   subject?: string;
   csrfToken?: string;
   workerAvailable?: boolean;
+  toolSourceRef?: string;
   workerUrl?: string | null;
   workerEnabled?: boolean;
   cmaOwnerId?: string;
@@ -33,6 +34,7 @@ export type Notebook = {
   startup?: Intent;
   sent?: { key: string; text: string }[];
   creation?: CreationDraft;
+  model?: { name: string; size: number; sha256: string };
 };
 export type Attachment = {
   id: string;
@@ -119,8 +121,9 @@ export async function workerRequest<T>(
     if (!r.ok) {
       const problem = result as { code?: string; detail?: string };
       throw new WorkerError(
-        problem.code ?? 'cma_error',
-        problem.detail ?? '请求未完成，请核对 CMA 状态。',
+        problem.code ?? (session.chatProvider === 'nyxagent' ? 'nyxagent_error' : 'cma_error'),
+        problem.detail ??
+          `请求未完成，请核对 ${session.chatProvider === 'nyxagent' ? 'NyxAgent' : 'CMA'} 状态。`,
         r.status,
       );
     }
@@ -147,6 +150,12 @@ function parseNotebook(raw: string | null, spaceId = ''): Notebook {
       (spaceId && v.spaceId !== spaceId) ||
       typeof v.orgId !== 'string' ||
       typeof v.instruction !== 'string' ||
+      (v.model !== undefined &&
+        (typeof v.model.name !== 'string' ||
+          !Number.isInteger(v.model.size) ||
+          v.model.size < 1 ||
+          v.model.size > 20 * 1024 * 1024 ||
+          !/^[a-f0-9]{64}$/.test(v.model.sha256))) ||
       (v.creation !== undefined &&
         (typeof v.creation.name !== 'string' ||
           !['draft', 'preparing', 'uploaded', 'submitted'].includes(v.creation.phase) ||

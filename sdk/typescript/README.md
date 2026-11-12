@@ -254,3 +254,16 @@ npm run test:coverage
   各种不合规文件）；`tests/check-vectors.test.ts` 跑接口服务生成的二进制样本 `vectors/check/`（`expected.json` 的格式和拒绝码
   见 `vectors/README.md` 第 9 节；目录还没有时跳过），按声明的格式和按内容认各跑一遍，通过时的核对记录、被拒时的拒绝码都要
   与 Rust 相同。
+
+## 通用空间编辑
+
+`metaverse edit inspect/stage/check/upload/push` 使用已有空间操作协议和可选资源表，统一新增、更新、移除物件及调整锚点和方块。模型、参数形状和贴图可混合使用，不要求背景身份、编号前缀或新地块；已有实体区可以直接编辑。数据文件交给固定程序生成草稿，用户不用写建造脚本。
+
+普通 GLB 用 `metaverse-recon content import --model <文件> --id <物件编号> --label <名称>` 生成标准计划，再 `metaverse edit push --file work/edit.json`。位置、朝向、缩放及显示属性由内容数据决定。用户确认预览后发布；版本、范围与资源哈希不符时拒绝写入。步骤见 [通用编辑](skills/metaverse-builder/references/edit.md)。
+
+## 可选内容提供方：地图与楼体
+
+`metaverse context plan/stage/upload/check/push` 兼容地图工具的背景清单，在入口转为标准操作后复用 `edit`，不再有独立上传和预览实现。
+操作留在独立空间工作区，通过用户现有的 NyxID 权限执行，不需要仓库写权限。
+`plan` 只生成布局计划；`push` 核对模型并产出草稿预览，由用户确认后发布。
+具体步骤见 [背景与楼体配准](skills/metaverse-reconstruct/references/context.md)。

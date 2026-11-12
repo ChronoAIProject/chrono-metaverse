@@ -358,10 +358,30 @@ describe('metaverse push / publish', () => {
     expect(publishCtx.lines[0]).toContain('seq 6');
     const publish = fake.requests.at(-1)!;
     expect(publish.path).toBe(`/api/v1/spaces/demo-space/plots/p1/drafts/${draftId}/publish`);
-    expect(JSON.parse(publish.body.toString())).toEqual({ message: '确认' });
+    expect(JSON.parse(publish.body.toString())).toEqual({ message: '确认', rev: 2 });
     // 不给 --message 时用 push 时记下的说明（建造脚本返回的 message）。
     expect(await main(makeContext(root), ['publish', draftId])).toBe(0);
-    expect(JSON.parse(fake.requests.at(-1)!.body.toString())).toEqual({ message: '放两张桌子' });
+    expect(JSON.parse(fake.requests.at(-1)!.body.toString())).toEqual({
+      message: '放两张桌子',
+      rev: 2,
+    });
+  });
+
+  it('发布绑定已预览的修订；草稿变更后必须重新确认', async () => {
+    fake = await startFakeApi(remoteSnapshot().state);
+    const root = directWorkspace(fake, PUSH_SCRIPT);
+    expect(await main(makeContext(root), ['push', '--plot', 'p1'])).toBe(0);
+    const [draftId, draft] = [...fake.state.drafts.entries()][0]!;
+    draft.ops.push({ op: '后续修改' });
+    const ctx = makeContext(root);
+    expect(await main(ctx, ['publish', draftId])).toBe(1);
+    expect(ctx.errors.join('\n')).toContain('重新预览');
+    expect(draft.published).not.toBe(true);
+    expect(await main(makeContext(root), ['publish', draftId, '--rev', '3'])).toBe(0);
+    expect(JSON.parse(fake.requests.at(-1)!.body.toString()).rev).toBe(3);
+    const count = fake.requests.length;
+    expect(await main(makeContext(root), ['publish', draftId, '--rev', '-1'])).toBe(1);
+    expect(fake.requests.length).toBe(count);
   });
 
   it('--message 覆盖脚本的说明；说明不合法时不推送、不发布', async () => {

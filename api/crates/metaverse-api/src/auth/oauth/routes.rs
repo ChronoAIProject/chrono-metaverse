@@ -376,8 +376,8 @@ async fn session(State(state): State<AppState>, headers: HeaderMap) -> Result<Re
         None => None,
     };
     Ok(private(Json(match session {
-        Some(session)=>json!({"enabled":true,"connected":true,"subject":session.subject,"csrfToken":crypto::digest(&format!("csrf/{}",raw.as_ref().unwrap().as_str())),"workerAvailable":oauth.config.cma_base_url.is_some(),"workerUrl":oauth.config.cma_base_url,"workerEnabled":session.worker_enabled}),
-        None=>json!({"enabled":true,"connected":false,"workerAvailable":oauth.config.cma_base_url.is_some()}),
+        Some(session)=>json!({"enabled":true,"connected":true,"subject":session.subject,"csrfToken":crypto::digest(&format!("csrf/{}",raw.as_ref().unwrap().as_str())),"toolSourceRef":super::tools::SOURCE_REF,"workerAvailable":oauth.config.cma_base_url.is_some(),"workerUrl":oauth.config.cma_base_url,"workerEnabled":session.worker_enabled}),
+        None=>json!({"enabled":true,"connected":false,"toolSourceRef":super::tools::SOURCE_REF,"workerAvailable":oauth.config.cma_base_url.is_some()}),
     }).into_response()))
 }
 

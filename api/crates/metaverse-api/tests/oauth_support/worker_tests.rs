@@ -109,6 +109,64 @@ fn task() -> Value {
 }
 
 #[tokio::test]
+async fn existing_space_worker_uses_pinned_tools_and_accepts_only_its_own_attachments() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let cookie = connect(&app, "context-owner", 3600).await;
+    call(&app, &cookie, "consent", json!({"enabled": true})).await;
+    let source = session(&app, &cookie).await.body["toolSourceRef"].clone();
+    assert_eq!(source.as_str().unwrap().len(), 40);
+    let mut input = task();
+    input["context"]["toolSourceRef"] = source.clone();
+    assert_eq!(
+        call(&app, &cookie, "create", input.clone()).await.status,
+        StatusCode::ACCEPTED
+    );
+    {
+        let state = app.nyx.oauth.0.lock().unwrap();
+        let body = &state.worker_calls.last().unwrap().2;
+        assert_eq!(body["repository"]["ref"], source);
+        assert!(body["initial_message"]
+            .as_str()
+            .unwrap()
+            .contains("metaverse edit"));
+        assert!(!body.to_string().contains("oauth-access"));
+    }
+    input["context"]["toolSourceRef"] = json!("dev");
+    assert_eq!(
+        call(&app, &cookie, "create", input.clone()).await.status,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    input["context"]["toolSourceRef"] = source;
+    input["agentId"] = json!("agt_test");
+    input["context"]["attachments"] = json!([{"id":"att_test", "agent_id":"agt_other", "name":"building.glb", "path":"/home/attachments/agt_other/att_test/building.glb", "size_bytes":100, "media_type":"application/octet-stream", "sha256":"a".repeat(64)}]);
+    assert_eq!(
+        call(&app, &cookie, "message", input.clone()).await.status,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    input["context"]["attachments"][0]["agent_id"] = json!("agt_test");
+    input["context"]["attachments"][0]["path"] =
+        json!("/home/attachments/agt_test/att_test/building.glb");
+    assert_eq!(
+        call(&app, &cookie, "message", input).await.status,
+        StatusCode::ACCEPTED
+    );
+    let state = app.nyx.oauth.0.lock().unwrap();
+    let message = &state.worker_calls.last().unwrap().2;
+    assert!(message["input"].as_str().unwrap().contains("building.glb"));
+    assert_eq!(
+        state
+            .worker_calls
+            .iter()
+            .filter(|call| call.0 == "create")
+            .count(),
+        1
+    );
+    drop(state);
+}
+
+#[tokio::test]
 async fn worker_requires_browser_consent_and_preserves_service_scope_and_request_identity() {
     let Some(app) = TestApp::start_with_options(true, true).await else {
         return;

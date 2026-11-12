@@ -15,6 +15,7 @@ dependencies = [
     "trimesh>=5.2,<6",
     "DracoPy>=2.2,<3",
     "fast-simplification>=0.2,<0.3",
+    "shapely>=2.1,<3",
 ]
 
 [project.optional-dependencies]

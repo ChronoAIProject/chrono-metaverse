@@ -1,6 +1,6 @@
 ---
 name: metaverse-reconstruct
-description: 当 AI 模型师逐件重建一个扫描过的实体空间（前厅、餐厅……）的"优化模型"：用本地重建工具 metaverse-recon 看图、量尺寸，每件物体先去模型库（Poly Haven、Objaverse，只要 CC0 / CC-BY）搜一个看起来差不多的现成模型摆进扫描里对照，搜不到或差太多的定制件再手写 SHAPES 参数形状，合并成 AI 物件集，在本地打成重建包，用 metaverse bundle push 推成重建草稿。做重建、替换重建层物体、写 authored.json、打包推送之前先读。
+description: 当 AI 模型师逐件重建一个扫描过的实体空间（前厅、餐厅……）的"优化模型"：用本地重建工具 metaverse-recon 看图、量尺寸，每件物体先去模型库（Poly Haven、Objaverse，只要 CC0 / CC-BY）搜一个看起来差不多的现成模型摆进扫描里对照，搜不到或差太多的定制件再手写 SHAPES 参数形状，合并成 AI 物件集，在本地打成重建包，用 metaverse bundle push 推成重建草稿。做重建、替换重建层物体、写 authored.json、打包推送、导入地图或建筑背景、楼内配准之前先读。
 ---
 
 # 用 AI 重建一个空间（metaverse-recon）
@@ -18,11 +18,13 @@ description: 当 AI 模型师逐件重建一个扫描过的实体空间（前厅
 2. **搜不到或差太多**（定制件：前台、LED 大屏墙、入口门框、嵌入柜、墙垛……）才自己手写参数形状。
 3. 每一件都要和扫描并排看过、偏差数字过关才算完成。
 
+添加城市或楼体背景、定位所在楼层、设置远景标记时，读取 [背景与楼体配准](references/context.md)。这些操作在独立工作区完成，不修改平台源码，也不需要用户有仓库或部署权限。
+
 ## 1. 准备
 
 ```bash
 # 安装本地重建工具（Python 3.13+，不需要显卡；渲染还要 node 22+）
-uv tool install "git+https://github.com/ChronoAIProject/chrono-metaverse@<标签>#subdirectory=recon"
+uv tool install "git+https://github.com/ChronoAIProject/chrono-metaverse@<任务固定提交>#subdirectory=recon"
 metaverse-recon doctor --install  # 查 node、three、Playwright、Chromium、中文字体，缺的装进缓存目录
 # 在平台仓库里开发时：cd recon && uv sync --frozen
 
@@ -30,6 +32,8 @@ metaverse-recon doctor --install  # 查 node、three、Playwright、Chromium、�
 metaverse init <空间编号> && cd <空间编号>
 metaverse pull --scan             # 原始扫描 scan/scan.zip、变换 scan/transform.json、上传上限 limits.json（新空间也先 pull 一次）
 ```
+
+在线 worker 使用任务给定的完整提交安装工具。已检出该提交时，可在工具源码目录执行 `cd sdk/typescript && npm ci && npm run build`，再用生成的 `dist/cli.js`；在仓库外运行 `metaverse init` 创建空间工作区。平台代码只读，空间数据不写进源码目录。
 
 - `pull --scan` 分段下载（原始扫描可能有 1 GiB），断了再运行一次接着下。只有分享链接、还没有 NyxID 凭证时，
   `metaverse pull --share <链接> --assets` 能拿到变换、网页用模型、物件模型和贴图（只读，不能推送，也没有原始扫描）。

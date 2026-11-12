@@ -451,7 +451,7 @@ export class MetaverseApi {
    */
   publish(
     draftId: string,
-    request: { message?: string; replay?: boolean } = {},
+    request: { message?: string; replay?: boolean; rev?: number } = {},
     scope?: ScopeRef,
   ): Promise<PublishView> {
     return this.client.json(

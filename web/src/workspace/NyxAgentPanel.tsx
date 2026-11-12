@@ -277,6 +277,9 @@ export function NyxAgentPanel({
           <section className="workspace__recovery">
             <h2>恢复 NyxAgent 原请求</h2>
             <p>结果尚未确认。保留同一请求编号和凭据，避免重复操作。</p>
+            {credentialVersion && credentialVersion !== note.pending.credentialVersion && (
+              <p>当前凭据已变化，请切回原 NyxAgent 授权后恢复请求。</p>
+            )}
             <code>{note.pending.body.idempotencyKey}</code>
             {note.pending.responseId && (
               <button

@@ -657,6 +657,8 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
         }
         case 'publish':
           if (invalidFields(req, ['message', 'replay', 'rev', 'observedAt', 'scriptRef'])) return;
+          if (req.rev !== undefined && req.rev !== draft.ops.length)
+            return problem(409, 'draft_rev_changed', '草稿已变化，请重新预览并确认当前修订');
           if (state.publishProblem !== undefined) {
             const { status, code, detail, extra } = state.publishProblem;
             return problem(status, code, detail, extra ?? {});
