@@ -194,27 +194,10 @@ impl Authorizer {
         Ok(())
     }
 
-    /// 重建权限（docs/design/server-slim.md 3.1 第 3 层）：重建路径上的写操作（建上传、传片、完成上传、
-    /// 建草稿、交包、预览、发布、丢弃）要求令牌的 `permissions` 里有 `metaverse:rebuild:write`，
-    /// 精确匹配。**不看** `METAVERSE_REQUIRE_PERMISSIONS`，也没有关掉它的配置：NyxID 里配好这个权限
-    /// 之前，通过接口谁都写不了重建层，只有部署种子（系统范围，不是令牌）能写。没有就 403
-    /// `rebuild_permission_required`。
-    pub fn require_rebuild_write(&self, caller: &Caller) -> Result<(), ApiError> {
-        if caller.capabilities.allows(Capability::WriteRebuild) {
-            return Ok(());
-        }
-        tracing::info!(subject = %caller.subject, "没有重建权限，拒绝重建路径上的写操作");
-        Err(ApiError::new(
-            axum::http::StatusCode::FORBIDDEN,
-            "rebuild_permission_required",
-            "写重建层要求身份令牌带 metaverse:rebuild:write 权限（NyxID 的 metaverse-rebuilder 角色）",
-        ))
-    }
-
-    /// 重建路径的写操作：先要重建权限，再要资源级"管理"（docs/design/server-slim.md 2.3、3.1）。
-    /// 重建路径不要求 `metaverse:content:write`（功能级开关只管实体区、地块）。
+    /// 重建层属于空间内容：个人主人、组织主体及现场核验的组织管理员可管理。
+    /// 不要求额外平台角色；平台权限不能替代资源级管理权。
+    /// NyxID 在代理前独立执行 Agent Key 的服务及操作范围限制。
     pub async fn rebuild_space(&self, caller: &Caller, space_id: &str) -> Result<Grant, ApiError> {
-        self.require_rebuild_write(caller)?;
         self.space(caller, space_id, Purpose::Manage).await
     }
 

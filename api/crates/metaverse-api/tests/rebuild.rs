@@ -1,6 +1,6 @@
 //! 重建路径的集成测试（docs/design/server-slim.md 13.2 S3 的验收）：真实本地 MongoDB + 模拟 NyxID。
 //!
-//! 覆盖：重建权限（总开关开和关都要求）、member 403；重建路径全套接口的成功和失败路径（真实的
+//! 覆盖：空间主人/组织管理员无需平台角色、member/viewer 403；重建路径全套接口的成功和失败路径（真实的
 //! 分片上传、核对、交包展开、预览、发布）；实体区草稿和重建草稿互不相通；同层模板和发布时的模板
 //! 完整性；`setScan` 首次固定坐标系、拍摄时间沿用；两个重建草稿交错时的 `layer:rebuilt` 冲突和重放；
 //! 实体区草稿与重建草稿只在同一锚点编号上冲突；没有变化不写提交、合并包推两次、删掉的锚点不复活、
@@ -18,7 +18,6 @@ use timeline_support::{
 
 const SPACE: &str = "lobby";
 const REBUILD: &str = "metaverse:rebuild:write";
-const CONTENT: &str = "metaverse:content:write";
 const CREATE: &str = "metaverse:space:create";
 const IDENTITY: [f64; 16] = [
     1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
@@ -28,9 +27,9 @@ fn rb(space: &str) -> String {
     format!("/api/v1/spaces/{space}/rebuild")
 }
 
-/// 带重建权限的组织本身（组织的 agent key，"管理"级别）。
+/// 组织本身（组织的 agent key，管理级别，不带平台功能权限）。
 async fn rebuilder(app: &TestApp, method: Method, path: &str, body: Option<Value>) -> Reply {
-    app.org_with(&[REBUILD], method, path, body).await
+    app.org_with(&[], method, path, body).await
 }
 
 /// 某个调用者带着给定的权限和转发凭据。
@@ -422,11 +421,10 @@ async fn upload_small(
 // 权限
 // ---------------------------------------------------------------------------
 
-/// 重建路径的写操作始终要求 `metaverse:rebuild:write`：总开关开和关两种配置都是 403；
-/// `metaverse:content:write` 不够，开关打开时重建路径也不要求它；读操作不要求；member 带着重建权限
-/// 也是 403（不是"管理"级别）。
+/// 空间主人、组织本身和实时核验的组织管理员不需要平台角色。
+/// member/viewer/外人即使带旧重建权限或通配权限也不能写，跨空间仍不可见。
 #[tokio::test]
-async fn rebuild_writes_always_require_the_rebuild_permission() {
+async fn rebuild_writes_follow_space_management_without_platform_permissions() {
     for enforced in [false, true] {
         let env: &[(&str, &str)] = if enforced {
             &[("METAVERSE_REQUIRE_PERMISSIONS", "true")]
@@ -441,102 +439,152 @@ async fn rebuild_writes_always_require_the_rebuild_permission() {
                 &[CREATE],
                 Method::POST,
                 "/api/v1/admin/spaces",
-                Some(json!({"id": SPACE, "name": "前厅", "owner": {"kind": "org", "id": ORG}})),
+                Some(json!({"id":SPACE,"name":"前厅","owner":{"kind":"org","id":ORG}})),
             )
             .await;
         assert_eq!(reply.status, StatusCode::CREATED, "{:?}", reply.body);
-        let drafts = format!("{}/drafts", rb(SPACE));
-        let upload = format!("{}/uploads/bundle", rb(SPACE));
-        let upload_body =
-            json!({"size": 10, "sha256": "a".repeat(64), "partSize": 262144, "format": "json"});
-        // 没有任何权限、只有 content:write：403 rebuild_permission_required。
-        for permissions in [&[][..], &[CONTENT][..], &["metaverse:rebuild:*"][..]] {
-            for (path, body) in [(&drafts, None), (&upload, Some(upload_body.clone()))] {
-                let reply = app.org_with(permissions, Method::POST, path, body).await;
-                assert_eq!(
-                    reply.status,
-                    StatusCode::FORBIDDEN,
-                    "{enforced} {permissions:?} {path}"
-                );
-                assert_eq!(reply.body["code"], "rebuild_permission_required");
-            }
-        }
-        // 只有重建权限（开关打开时也不要求 content:write）：可以建草稿。
-        let draft = new_rebuild_draft(&app, SPACE, None).await;
-        // 读操作只按访问级别。
-        for path in [
-            draft.clone(),
-            format!("{}/jobs", rb(SPACE)),
-            format!("/api/v1/spaces/{SPACE}"),
+        let personal = as_caller(
+            &app,
+            "alice",
+            None,
+            &[CREATE],
+            Method::POST,
+            "/api/v1/admin/spaces",
+            Some(json!({"id":"personal","name":"个人空间",
+            "owner":{"kind":"person","id":"alice"}})),
+        )
+        .await;
+        assert_eq!(personal.status, StatusCode::CREATED, "{:?}", personal.body);
+        for (subject, credential, space) in [
+            (ORG, None, SPACE),
+            ("alice", Some("admin-token"), SPACE),
+            ("alice", None, "personal"),
         ] {
-            let reply = app.org_with(&[], Method::GET, &path, None).await;
-            assert_eq!(reply.status, StatusCode::OK, "{path} {:?}", reply.body);
-        }
-        // 交包、预览、发布、丢弃：没有重建权限一律 403，草稿不变。
-        for (method, suffix, body) in [
-            (
+            let base = rb(space);
+            let create = as_caller(
+                &app,
+                subject,
+                credential,
+                &[],
                 Method::POST,
-                "/bundle",
-                Some(json!({"assetHash": "a".repeat(64)})),
-            ),
-            (Method::POST, "/preview", None),
-            (Method::POST, "/publish", None),
-            (Method::DELETE, "", None),
-        ] {
-            let reply = app
-                .org_with(
-                    &[CONTENT],
-                    method.clone(),
-                    &format!("{draft}{suffix}"),
-                    body,
-                )
-                .await;
-            assert_eq!(reply.status, StatusCode::FORBIDDEN, "{method} {suffix}");
-            assert_eq!(reply.body["code"], "rebuild_permission_required");
+                &format!("{base}/drafts"),
+                None,
+            )
+            .await;
+            assert_eq!(
+                create.status,
+                StatusCode::CREATED,
+                "{enforced} {subject} {space} {:?}",
+                create.body
+            );
+            let draft = format!("{base}/drafts/{}", create.body["id"].as_str().unwrap());
+            let upload = as_caller(
+                &app,
+                subject,
+                credential,
+                &[],
+                Method::POST,
+                &format!("{base}/uploads/bundle"),
+                Some(json!({"size":10,"sha256":"a".repeat(64),"partSize":262144,"format":"json"})),
+            )
+            .await;
+            assert!(
+                matches!(upload.status, StatusCode::OK | StatusCode::CREATED),
+                "{:?}",
+                upload.body
+            );
+            let preview = as_caller(
+                &app,
+                subject,
+                credential,
+                &[],
+                Method::POST,
+                &format!("{draft}/preview"),
+                None,
+            )
+            .await;
+            assert_eq!(preview.status, StatusCode::CREATED, "{:?}", preview.body);
+            // Requests pass schema parsing and reach authorization; neither legacy capability nor wildcard grants management.
+            for (outsider, forwarded, expected) in if space == SPACE {
+                vec![
+                    ("bob", Some("member-token"), StatusCode::FORBIDDEN),
+                    ("viewer", Some("viewer-token"), StatusCode::FORBIDDEN),
+                    ("eve", Some("stranger-token"), StatusCode::NOT_FOUND),
+                ]
+            } else {
+                vec![("bob", Some("admin-token"), StatusCode::NOT_FOUND)]
+            } {
+                for permissions in [&[][..], &[REBUILD][..], &["*"][..]] {
+                    for (method, path, body) in [
+                        (Method::POST, format!("{base}/drafts"), Some(json!({}))),
+                        (
+                            Method::POST,
+                            format!("{base}/uploads/bundle"),
+                            Some(
+                                json!({"size":10,"sha256":"b".repeat(64),"partSize":262144,"format":"json"}),
+                            ),
+                        ),
+                        (
+                            Method::PUT,
+                            format!(
+                                "{base}/uploads/bundle/{}/parts/0",
+                                upload.body["uploadId"].as_str().unwrap()
+                            ),
+                            None,
+                        ),
+                        (
+                            Method::POST,
+                            format!(
+                                "{base}/uploads/bundle/{}/complete",
+                                upload.body["uploadId"].as_str().unwrap()
+                            ),
+                            None,
+                        ),
+                        (
+                            Method::POST,
+                            format!("{draft}/bundle"),
+                            Some(json!({"assetHash":"a".repeat(64)})),
+                        ),
+                        (
+                            Method::POST,
+                            format!("{draft}/moves"),
+                            Some(
+                                json!({"rev":0,"moves":[{"entityId":"rb.robot","expectedHash":"a".repeat(64),"offset":[1,0,0]}]}),
+                            ),
+                        ),
+                        (Method::POST, format!("{draft}/preview"), None),
+                        (
+                            Method::POST,
+                            format!("{draft}/publish"),
+                            Some(json!({"rev":0,"replay":false})),
+                        ),
+                        (Method::DELETE, draft.clone(), None),
+                    ] {
+                        let r = as_caller(
+                            &app,
+                            outsider,
+                            forwarded,
+                            permissions,
+                            method.clone(),
+                            &path,
+                            body,
+                        )
+                        .await;
+                        assert_eq!(
+                            r.status, expected,
+                            "{enforced} {outsider} {permissions:?} {method} {path} {:?}",
+                            r.body
+                        );
+                    }
+                }
+            }
+            let current =
+                as_caller(&app, subject, credential, &[], Method::GET, &draft, None).await;
+            assert_eq!(current.body["rev"], 0);
+            let removed =
+                as_caller(&app, subject, credential, &[], Method::DELETE, &draft, None).await;
+            assert_eq!(removed.status, StatusCode::NO_CONTENT, "{:?}", removed.body);
         }
-        assert_eq!(
-            app.org_with(&[], Method::GET, &draft, None).await.body["rev"],
-            0
-        );
-        // 组织 member 带着重建权限：只读级别，写操作 403；读可以。
-        let reply = as_caller(
-            &app,
-            "bob",
-            Some("member-token"),
-            &[REBUILD],
-            Method::POST,
-            &drafts,
-            None,
-        )
-        .await;
-        assert_eq!(reply.status, StatusCode::FORBIDDEN, "{:?}", reply.body);
-        assert_eq!(reply.body["code"], "forbidden");
-        let reply = as_caller(
-            &app,
-            "bob",
-            Some("member-token"),
-            &[],
-            Method::GET,
-            &draft,
-            None,
-        )
-        .await;
-        assert_eq!(reply.status, StatusCode::OK);
-        // 不是成员：写和读都是 404（带着重建权限也一样）。
-        let reply = as_caller(
-            &app,
-            "eve",
-            Some("stranger-token"),
-            &[REBUILD],
-            Method::POST,
-            &drafts,
-            None,
-        )
-        .await;
-        assert_eq!(reply.status, StatusCode::NOT_FOUND);
-        // 带重建权限丢弃：可以。
-        let reply = rebuilder(&app, Method::DELETE, &draft, None).await;
-        assert_eq!(reply.status, StatusCode::NO_CONTENT);
     }
 }
 

@@ -265,8 +265,8 @@ pub(super) fn path_scope(plot_id: Option<String>) -> Result<PathScope, ApiError>
 }
 
 /// 草稿的写操作（建草稿、追加、从上传应用、交包、预览、发布、丢弃）。实体区、地块：功能级开关
-/// 打开时先要求 `metaverse:content:write`（与上传相同），再做资源级"管理"检查。重建路径：始终要求
-/// `metaverse:rebuild:write`，再做"管理"检查（docs/design/server-slim.md 3.1）。
+/// 打开时先要求 `metaverse:content:write`（与上传相同），再做资源级管理检查。
+/// 重建路径按空间管理权，不额外要求平台角色。
 pub(super) async fn writable(
     state: &AppState,
     caller: &Caller,

@@ -17,8 +17,8 @@
 //! GET    .../rebuild/jobs、.../rebuild/jobs/{job_id}            list_rebuild_jobs、get_rebuild_job
 //! ```
 //!
-//! - **权限**：写操作要"管理"级别**并且**令牌带 `metaverse:rebuild:write`（始终生效，不看
-//!   `METAVERSE_REQUIRE_PERMISSIONS`），没有就 403 `rebuild_permission_required`；读操作按访问级别；
+//! - **权限**：写操作要求本空间管理权，空间主人和组织管理员无需额外平台角色；
+//!   普通成员只读，跨空间访问拒绝；Agent Key 操作范围由 NyxID 独立执行；
 //! - **重建草稿只收一个包**：可交重建包或由 moves 在服务端生成 merge 包，不收任意内联操作或操作文件；
 //!   交第二个包 409 `bundle_already_applied`；
 //!   交过包以后只能预览、发布、丢弃；
@@ -74,7 +74,7 @@ fn rebuild() -> Result<PathScope, ApiError> {
     path = "/api/v1/spaces/{space_id}/rebuild/uploads/{purpose}",
     operation_id = "create_rebuild_upload",
     tag = "rebuild",
-    description = "创建重建路径的分片上传（要求重建权限 metaverse:rebuild:write）。用途：scan（原始扫描：glb、drc、obj，或 Scaniverse 导出的 zip）、webmodel（网页用模型 glb）、model（物件模型 glb）、texture（png、jpeg、webp）、script（建模记录等 UTF-8 文本）、bundle（重建包清单 JSON）。声明总大小、整体 SHA-256、分片大小（256KiB 的整数倍，≤32MiB）和格式；本空间已经拥有这份内容、核对结果合乎用途时直接复用（status=done、reused=true、带 check），否则返回上传编号，之后按片号 PUT 原始字节，最后调用 complete_rebuild_upload。各用途的上限见 get_space 的 uploadLimits。",
+    description = "创建重建路径的分片上传（要求本空间管理权）。用途：scan（原始扫描：glb、drc、obj，或 Scaniverse 导出的 zip）、webmodel（网页用模型 glb）、model（物件模型 glb）、texture（png、jpeg、webp）、script（建模记录等 UTF-8 文本）、bundle（重建包清单 JSON）。声明总大小、整体 SHA-256、分片大小（256KiB 的整数倍，≤32MiB）和格式；本空间已经拥有这份内容、核对结果合乎用途时直接复用（status=done、reused=true、带 check），否则返回上传编号，之后按片号 PUT 原始字节，最后调用 complete_rebuild_upload。各用途的上限见 get_space 的 uploadLimits。",
     params(
         ("space_id" = String, Path, description = "空间编号", example = "sample-space"),
         ("purpose" = String, Path, description = "用途：scan | webmodel | model | texture | script | bundle", example = "bundle"),
@@ -83,7 +83,7 @@ fn rebuild() -> Result<PathScope, ApiError> {
     security(("nyxid_identity" = [])),
     responses(
         (status = 201, description = "已创建，开始上传分片（或已直接复用）", body = UploadView),
-        (status = 403, description = "没有重建权限（rebuild_permission_required）、只有只读权限，或这个用途不能经重建路径上传", body = ProblemDocument),
+        (status = 403, description = "没有本空间管理权，或这个用途不能经重建路径上传", body = ProblemDocument),
         (status = 404, description = "空间不存在或无权查看", body = ProblemDocument),
         (status = 413, description = "超过大小上限或空间存储上限", body = ProblemDocument),
         (status = 422, description = "参数不合法（哈希、分片大小、格式）", body = ProblemDocument),
@@ -112,7 +112,7 @@ pub async fn create_rebuild_upload(
     path = "/api/v1/spaces/{space_id}/rebuild/uploads/{purpose}/{upload_id}/parts/{n}",
     operation_id = "upload_rebuild_part",
     tag = "rebuild",
-    description = "上传一片（重建路径，要求重建权限）。请求体是原始字节，片号 n 从 0 开始；除最后一片外每片都必须正好是分片大小。同一片可以重传。规则同 put_upload_part。",
+    description = "上传一片（重建路径，要求本空间管理权）。请求体是原始字节，片号 n 从 0 开始；除最后一片外每片都必须正好是分片大小。同一片可以重传。规则同 put_upload_part。",
     params(
         ("space_id" = String, Path, description = "空间编号"),
         ("purpose" = String, Path, description = "用途"),
@@ -123,7 +123,7 @@ pub async fn create_rebuild_upload(
     security(("nyxid_identity" = [])),
     responses(
         (status = 200, description = "已收到", body = PartReceipt),
-        (status = 403, description = "没有重建权限或只有只读权限", body = ProblemDocument),
+        (status = 403, description = "没有本空间管理权", body = ProblemDocument),
         (status = 404, description = "上传不存在（或不是经重建路径创建的）", body = ProblemDocument),
         (status = 409, description = "上传已不接收分片", body = ProblemDocument),
         (status = 413, description = "超过声明的大小", body = ProblemDocument),
@@ -157,7 +157,7 @@ pub async fn upload_rebuild_part(
     path = "/api/v1/spaces/{space_id}/rebuild/uploads/{purpose}/{upload_id}/complete",
     operation_id = "complete_rebuild_upload",
     tag = "rebuild",
-    description = "完成上传（重建路径，要求重建权限）。全部分片到齐后返回 202 和 upload_verify 任务编号；接口服务的后台执行器流式核对整体哈希和文件内容（glb 实测包围盒、图片尺寸、zip 目录、清单的外层结构），通过后登记成资源并把上传标记为 done，用 get_rebuild_job 或 get_rebuild_upload 等结果。重复调用返回同一个任务；还有缺片时 409。",
+    description = "完成上传（重建路径，要求本空间管理权）。全部分片到齐后返回 202 和 upload_verify 任务编号；接口服务的后台执行器流式核对整体哈希和文件内容（glb 实测包围盒、图片尺寸、zip 目录、清单的外层结构），通过后登记成资源并把上传标记为 done，用 get_rebuild_job 或 get_rebuild_upload 等结果。重复调用返回同一个任务；还有缺片时 409。",
     params(
         ("space_id" = String, Path, description = "空间编号"),
         ("purpose" = String, Path, description = "用途"),
@@ -167,7 +167,7 @@ pub async fn upload_rebuild_part(
     responses(
         (status = 202, description = "已开始核对", body = CompleteUploadResponse),
         (status = 200, description = "已经核对通过（或复用）", body = CompleteUploadResponse),
-        (status = 403, description = "没有重建权限或只有只读权限", body = ProblemDocument),
+        (status = 403, description = "没有本空间管理权", body = ProblemDocument),
         (status = 404, description = "上传不存在", body = ProblemDocument),
         (status = 409, description = "还缺分片，或上传已失败、过期", body = ProblemDocument),
         (status = 429, description = "排队中的任务太多", body = ProblemDocument),
@@ -194,7 +194,7 @@ pub async fn complete_rebuild_upload(
     path = "/api/v1/spaces/{space_id}/rebuild/uploads/{purpose}/{upload_id}",
     operation_id = "get_rebuild_upload",
     tag = "rebuild",
-    description = "查询重建路径上传的状态：已收到哪些分片、还缺哪些、核对任务、资源哈希 assetHash 和服务端的核对记录 check。按访问级别读，不要求重建权限。",
+    description = "查询重建路径上传的状态：已收到哪些分片、还缺哪些、核对任务、资源哈希 assetHash 和服务端的核对记录 check。按访问级别读，不要求本空间管理权。",
     params(
         ("space_id" = String, Path, description = "空间编号"),
         ("purpose" = String, Path, description = "用途"),
@@ -231,13 +231,13 @@ pub async fn get_rebuild_upload(
     path = "/api/v1/spaces/{space_id}/rebuild/drafts",
     operation_id = "create_rebuild_draft",
     tag = "rebuild",
-    description = "建一个重建草稿（要求重建权限）。重建草稿只收一个重建包：之后用 apply_rebuild_bundle 交包、create_rebuild_draft_preview 生成预览链接、publish_rebuild_draft 发布。可选 baseSeq 指定基于哪个版本（命令行取清单的 base.seq，默认最新）；发布时与 (baseSeq, 最新] 里改过重建层的提交冲突。30 天后过期。",
+    description = "建一个重建草稿（要求本空间管理权）。重建草稿只收一个重建包：之后用 apply_rebuild_bundle 交包、create_rebuild_draft_preview 生成预览链接、publish_rebuild_draft 发布。可选 baseSeq 指定基于哪个版本（命令行取清单的 base.seq，默认最新）；发布时与 (baseSeq, 最新] 里改过重建层的提交冲突。30 天后过期。",
     params(("space_id" = String, Path, description = "空间编号", example = "sample-space")),
     request_body(content = Option<CreateDraftRequest>, description = "可省略"),
     security(("nyxid_identity" = [])),
     responses(
         (status = 201, description = "新的重建草稿", body = DraftView),
-        (status = 403, description = "没有重建权限（rebuild_permission_required）或只有只读权限", body = ProblemDocument),
+        (status = 403, description = "没有本空间管理权", body = ProblemDocument),
         (status = 404, description = "空间不存在或无权查看", body = ProblemDocument),
         (status = 422, description = "baseSeq 不合法", body = ProblemDocument),
     )
@@ -310,7 +310,7 @@ fn bundle_already_applied() -> ApiError {
     path = "/api/v1/spaces/{space_id}/rebuild/drafts/{draft_id}/bundle",
     operation_id = "apply_rebuild_bundle",
     tag = "rebuild",
-    description = "给重建草稿交一个重建包（要求重建权限）。请求体 {uploadId}（本空间经重建路径上传、用途 bundle、核对通过的上传）或 {assetHash}（本空间核对通过的清单）。只插入展开任务并返回 202 {jobId, status: queued}；后台执行器读清单、按规则完整校验（文件都属于本空间、核对结果合乎用途、长度一致）、展开成操作（setScan、clearRebuilt、placeEntity、removeEntity 带 ifPresent、createAnchor 带 ifNew），作用到草稿上。结果用 get_rebuild_job 查询：{applied, entities: {placed, removed}, anchors: {created, skipped: [{id, reason: exists|existed}]}, anchorDrift: [{anchorId, entityIds}], files}。一个重建草稿只收一个包，第二个 409 bundle_already_applied。",
+    description = "给重建草稿交一个重建包（要求本空间管理权）。请求体 {uploadId}（本空间经重建路径上传、用途 bundle、核对通过的上传）或 {assetHash}（本空间核对通过的清单）。只插入展开任务并返回 202 {jobId, status: queued}；后台执行器读清单、按规则完整校验（文件都属于本空间、核对结果合乎用途、长度一致）、展开成操作（setScan、clearRebuilt、placeEntity、removeEntity 带 ifPresent、createAnchor 带 ifNew），作用到草稿上。结果用 get_rebuild_job 查询：{applied, entities: {placed, removed}, anchors: {created, skipped: [{id, reason: exists|existed}]}, anchorDrift: [{anchorId, entityIds}], files}。一个重建草稿只收一个包，第二个 409 bundle_already_applied。",
     params(
         ("space_id" = String, Path, description = "空间编号"),
         ("draft_id" = String, Path, description = "重建草稿编号"),
@@ -319,7 +319,7 @@ fn bundle_already_applied() -> ApiError {
     security(("nyxid_identity" = [])),
     responses(
         (status = 202, description = "已排队展开", body = BundleJobView),
-        (status = 403, description = "没有重建权限或只有只读权限", body = ProblemDocument),
+        (status = 403, description = "没有本空间管理权", body = ProblemDocument),
         (status = 404, description = "草稿不存在或不是重建草稿；清单上传不存在或资源已被清理", body = ProblemDocument),
         (status = 409, description = "草稿已发布，或已经交过包（bundle_already_applied）", body = ProblemDocument),
         (status = 413, description = "清单超过大小上限", body = ProblemDocument),
@@ -488,7 +488,7 @@ async fn queue_bundle(
     path = "/api/v1/spaces/{space_id}/rebuild/drafts/{draft_id}/preview",
     operation_id = "create_rebuild_draft_preview",
     tag = "rebuild",
-    description = "为重建草稿生成预览链接（要求重建权限），给人在网页上确认效果后再发布。预览只给可预览的资源（网页用模型、物件模型、贴图）；原始扫描、包清单、建模记录、操作文件拿预览令牌一律读不到。令牌默认 24 小时、最长 7 天，绑定当前 rev。",
+    description = "为重建草稿生成预览链接（要求本空间管理权），给人在网页上确认效果后再发布。预览只给可预览的资源（网页用模型、物件模型、贴图）；原始扫描、包清单、建模记录、操作文件拿预览令牌一律读不到。令牌默认 24 小时、最长 7 天，绑定当前 rev。",
     params(
         ("space_id" = String, Path, description = "空间编号"),
         ("draft_id" = String, Path, description = "重建草稿编号"),
@@ -497,7 +497,7 @@ async fn queue_bundle(
     security(("nyxid_identity" = [])),
     responses(
         (status = 201, description = "预览链接", body = PreviewView),
-        (status = 403, description = "没有重建权限或只有只读权限", body = ProblemDocument),
+        (status = 403, description = "没有本空间管理权", body = ProblemDocument),
         (status = 404, description = "草稿不存在或不是重建草稿", body = ProblemDocument),
         (status = 409, description = "草稿已发布", body = ProblemDocument),
     )
@@ -516,7 +516,7 @@ pub async fn create_rebuild_draft_preview(
     path = "/api/v1/spaces/{space_id}/rebuild/drafts/{draft_id}/publish",
     operation_id = "publish_rebuild_draft",
     tag = "rebuild",
-    description = "发布重建草稿（要求重建权限；给本地重建 agent 的 key 默认不开放这一项，人看过预览链接后自己发布）。写成一次提交：发布者类别 rebuild，带包清单和扫描（与最新版本完全相同就不写），第一次带扫描的提交固定坐标系；message 默认取包的 note，scriptRef 默认取包的建模记录。冲突：中途有改过重建层的提交（layer:rebuilt）、带扫描的提交（scan）、改过本包新建的锚点（anchor:<编号>）时 409，可以带 replay: true 在最新版本上重放。内容与最新版本相比没有变化时不写提交，返回 200 {unchanged: true, seq}。",
+    description = "发布重建草稿（要求本空间管理权；给本地重建 agent 的 key 默认不开放这一项，人看过预览链接后自己发布）。写成一次提交：发布者类别 rebuild，带包清单和扫描（与最新版本完全相同就不写），第一次带扫描的提交固定坐标系；message 默认取包的 note，scriptRef 默认取包的建模记录。冲突：中途有改过重建层的提交（layer:rebuilt）、带扫描的提交（scan）、改过本包新建的锚点（anchor:<编号>）时 409，可以带 replay: true 在最新版本上重放。内容与最新版本相比没有变化时不写提交，返回 200 {unchanged: true, seq}。",
     params(
         ("space_id" = String, Path, description = "空间编号"),
         ("draft_id" = String, Path, description = "重建草稿编号"),
@@ -525,7 +525,7 @@ pub async fn create_rebuild_draft_preview(
     security(("nyxid_identity" = [])),
     responses(
         (status = 200, description = "已发布（或内容没变、unchanged）", body = PublishView),
-        (status = 403, description = "没有重建权限或只有只读权限", body = ProblemDocument),
+        (status = 403, description = "没有本空间管理权", body = ProblemDocument),
         (status = 404, description = "草稿不存在或不是重建草稿", body = ProblemDocument),
         (status = 409, description = "冲突（conflicts 列出冲突的键）、越界、模板引用不完整（broken_template_ref）、已发布或 rev 不一致；asset_gone：引用的资源已被清理", body = ProblemDocument),
         (status = 422, description = "还没交包；scriptRef 不是本空间的文本资源", body = ProblemDocument),
@@ -545,7 +545,7 @@ pub async fn publish_rebuild_draft(
     path = "/api/v1/spaces/{space_id}/rebuild/drafts/{draft_id}",
     operation_id = "discard_rebuild_draft",
     tag = "rebuild",
-    description = "丢弃重建草稿（要求重建权限）：草稿和预览令牌一起删除，预览链接立即失效。",
+    description = "丢弃重建草稿（要求本空间管理权）：草稿和预览令牌一起删除，预览链接立即失效。",
     params(
         ("space_id" = String, Path, description = "空间编号"),
         ("draft_id" = String, Path, description = "重建草稿编号"),
@@ -553,7 +553,7 @@ pub async fn publish_rebuild_draft(
     security(("nyxid_identity" = [])),
     responses(
         (status = 204, description = "已丢弃"),
-        (status = 403, description = "没有重建权限或只有只读权限", body = ProblemDocument),
+        (status = 403, description = "没有本空间管理权", body = ProblemDocument),
         (status = 404, description = "草稿不存在或不是重建草稿", body = ProblemDocument),
     )
 )]

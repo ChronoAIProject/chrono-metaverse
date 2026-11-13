@@ -123,7 +123,7 @@ use utoipa::{
         (name = "universes", description = "组合宇宙"),
         (name = "timeline", description = "时间线：提交列表、快照、区块、区域内容"),
         (name = "drafts", description = "草稿：建草稿、批量操作、预览、发布（实体区和地块两组路径）"),
-        (name = "rebuild", description = "重建路径：上传、重建草稿（只收一个重建包）、交包、预览、发布、任务查询；写操作要求 metaverse:rebuild:write"),
+        (name = "rebuild", description = "重建路径：上传、重建草稿（只收一个重建包）、交包、预览、发布、任务查询；写操作要求本空间管理权，无需额外平台角色"),
         (name = "admin", description = "管理接口（不进 AI 工具）"),
         (name = "public", description = "公开读接口（不经过 NyxID）"),
         (name = "health", description = "健康检查"),

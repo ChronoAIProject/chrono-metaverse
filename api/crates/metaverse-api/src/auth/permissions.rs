@@ -7,8 +7,7 @@
 //! 第一步默认不启用（`METAVERSE_REQUIRE_PERMISSIONS=false`）：需要平台级限制时，请平台
 //! 管理员在 NyxID 建 `metaverse-user`、`metaverse-admin` 角色并分配下面的权限，再打开开关。
 //!
-//! 例外是重建权限 `metaverse:rebuild:write`（docs/design/server-slim.md 第 3 节）：重建路径上的写操作
-//! **始终**要求它，不看上面的开关，也没有关掉它的配置（见 `Authorizer::require_rebuild_write`）。
+//! 重建层编辑沿用空间管理权，不要求额外平台权限；见 `Authorizer::rebuild_space`。
 
 use std::collections::BTreeSet;
 
@@ -22,8 +21,6 @@ pub mod permission {
     pub const EVENT_WRITE: &str = "metaverse:event:write";
     /// 创建和修改组合宇宙。
     pub const UNIVERSE_WRITE: &str = "metaverse:universe:write";
-    /// 写重建层：重建路径（`/api/v1/spaces/{space_id}/rebuild/`）上的全部写操作，始终要求。
-    pub const REBUILD_WRITE: &str = "metaverse:rebuild:write";
 }
 
 /// 固定的能力集合。
@@ -33,8 +30,6 @@ pub enum Capability {
     WriteContent,
     WriteEvents,
     WriteUniverses,
-    /// 写重建层（始终生效，不受功能级开关影响）。
-    WriteRebuild,
 }
 
 /// 一组能力。
@@ -69,9 +64,6 @@ pub fn capabilities_from_permissions<S: AsRef<str>>(
             }
             permission::UNIVERSE_WRITE => {
                 granted.insert(Capability::WriteUniverses);
-            }
-            permission::REBUILD_WRITE => {
-                granted.insert(Capability::WriteRebuild);
             }
             _ => {}
         }
@@ -110,6 +102,7 @@ mod tests {
             "metaverse:rebuild:*",
             "metaverse:rebuild",
             "metaverse-rebuilder",
+            "metaverse:rebuild:write",
         ] {
             assert_eq!(
                 capabilities_from_permissions([permission]).iter().count(),
@@ -126,9 +119,7 @@ mod tests {
             permission::CONTENT_WRITE,
             permission::EVENT_WRITE,
             permission::UNIVERSE_WRITE,
-            permission::REBUILD_WRITE,
         ]);
-        assert_eq!(all.iter().count(), 5);
-        assert!(all.allows(Capability::WriteRebuild));
+        assert_eq!(all.iter().count(), 4);
     }
 }

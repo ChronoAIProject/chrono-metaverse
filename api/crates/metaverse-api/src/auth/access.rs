@@ -11,10 +11,8 @@
 //!
 //! 以后需要成员也能写，只改 [`ORG_ROLE_ACCESS`]。
 //!
-//! 重建路径（`/api/v1/spaces/{space_id}/rebuild/`）与实体区路径一样按这张表算访问级别，写操作另外
-//! **始终**要求重建权限 `metaverse:rebuild:write`（不受 `METAVERSE_REQUIRE_PERMISSIONS` 影响，也没有
-//! 关掉它的配置，见 `Authorizer::require_rebuild_write`）；组织 member 没有"管理"级别，带着这个权限
-//! 也写不了。
+//! 重建路径（`/api/v1/spaces/{space_id}/rebuild/`）也按这张表算访问级别；写操作要求管理权，
+//! 不需要额外平台角色。组织 member/viewer 只读，平台权限不能替代空间管理权。
 
 use metaverse_core::model::{OrgRole, Owner, OwnerKind};
 

@@ -8,7 +8,7 @@
 //! ```
 //!
 //! 重建路径（`/rebuild/uploads/...`，docs/design/server-slim.md 2.3）的处理函数在 `routes/rebuild.rs`，
-//! 复用这里的步骤：写操作始终要求 `metaverse:rebuild:write`，用途是 `scan`、`webmodel`、`model`、
+//! 复用这里的步骤：写操作要求本空间管理权，用途是 `scan`、`webmodel`、`model`、
 //! `texture`、`script`、`bundle`。
 //!
 //! - 用途写在路径里（NyxID 操作范围按路径限制能传哪类文件）：实体区、地块路径收 `model`、`texture`、
@@ -302,8 +302,8 @@ impl UploadPath {
 }
 
 /// 资源级授权 + 路径范围 + 用途与范围一致。实体区、地块的写操作在功能级开关打开时要求
-/// `metaverse:content:write`；重建路径的写操作始终要求 `metaverse:rebuild:write`
-/// （docs/design/server-slim.md 3.1），读操作只按访问级别。
+/// `metaverse:content:write`；重建路径的写操作要求本空间管理权，无需额外平台角色；
+/// 读操作只按访问级别。
 async fn authorize(
     state: &AppState,
     caller: &Caller,
@@ -349,7 +349,7 @@ async fn authorize(
         // 扫描改经重建路径上传（docs/design/server-slim.md 2.1）。
         ScopeError::ScanOutsideRebuild => invalid_with(
             "purpose_not_allowed",
-            "扫描改经 /rebuild/uploads/scan 上传（重建路径，要求 metaverse:rebuild:write）",
+            "扫描改经 /rebuild/uploads/scan 上传（重建路径，要求本空间管理权）",
         ),
         other => scope_violation(other.to_string()),
     })?;

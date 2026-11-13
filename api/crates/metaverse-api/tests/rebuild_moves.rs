@@ -8,8 +8,7 @@ const REBUILD: &str = "metaverse:rebuild:write";
 const BASE: &str = "/api/v1/spaces/moving";
 
 async fn call(app: &TestApp, path: &str, body: Value) -> timeline_support::Reply {
-    app.org_with(&[REBUILD], Method::POST, path, Some(body))
-        .await
+    app.org_with(&[], Method::POST, path, Some(body)).await
 }
 
 async fn fixture(app: &TestApp) -> Value {
@@ -126,12 +125,17 @@ async fn rebuilt_moves_preserve_data_preview_before_publish_and_reject_duplicate
     expected["shape"]["transform"]["position"] = json!([2.0, 0.0, 3.0]);
     assert_eq!(preview.body["entities"][0]["body"], expected);
     assert_eq!(p.body["rev"], 1);
-    // Publishing uses the same exact permission gate and rev fence as other rebuild bundles.
+    // A read-only member cannot publish even with the legacy platform permission.
+    let token = timeline_support::identity_with("bob", &[REBUILD]);
     let denied = app
-        .org(
+        .send(
             Method::POST,
             &format!("{path}/publish"),
-            Some(json!({"rev":1})),
+            &[
+                ("x-nyxid-identity-token", token.as_str()),
+                ("authorization", "Bearer member-token"),
+            ],
+            timeline_support::Payload::Json(json!({"rev":1})),
         )
         .await;
     assert_eq!(denied.status, StatusCode::FORBIDDEN);
@@ -164,30 +168,13 @@ async fn rebuilt_moves_preserve_data_preview_before_publish_and_reject_duplicate
 }
 
 #[tokio::test]
-async fn rebuilt_moves_require_exact_permission_and_reject_stale_or_expanded_requests() {
+async fn rebuilt_moves_reject_stale_expanded_and_cross_space_requests() {
     let Some(app) = TestApp::start().await else {
         return;
     };
     let snapshot = fixture(&app).await;
     let path = draft(&app).await;
     let input = moving(&snapshot);
-    for permissions in [
-        &[][..],
-        &["metaverse:content:write"][..],
-        &["*"][..],
-        &["metaverse:rebuild:*"][..],
-    ] {
-        let r = app
-            .org_with(
-                permissions,
-                Method::POST,
-                &format!("{path}/moves"),
-                Some(input.clone()),
-            )
-            .await;
-        assert_eq!(r.status, StatusCode::FORBIDDEN, "{permissions:?}");
-        assert_eq!(r.body["code"], "rebuild_permission_required");
-    }
     let mut bad = input.clone();
     bad["rev"] = json!(3);
     assert_eq!(

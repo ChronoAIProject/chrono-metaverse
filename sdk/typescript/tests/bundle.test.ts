@@ -465,11 +465,11 @@ describe('metaverse bundle push', () => {
     expect(ctx.errors.at(-1)).toContain('--replay 要和 --publish 一起用');
   });
 
-  it('没有重建权限：403 rebuild_permission_required', async () => {
-    await startWith({ rebuildPermission: false });
+  it('没有空间管理权：403 forbidden', async () => {
+    await startWith({ canManageSpace: false });
     const { ctx } = setup();
     expect(await main(ctx, ['bundle', 'push'])).toBe(1);
-    expect(ctx.errors.at(-1)).toContain('rebuild_permission_required');
+    expect(ctx.errors.at(-1)).toContain('forbidden');
   });
 
   it('展开结果里跳过的锚点和锚点漂移', async () => {

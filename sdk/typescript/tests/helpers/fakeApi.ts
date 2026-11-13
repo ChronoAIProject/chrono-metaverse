@@ -157,8 +157,8 @@ export interface FakeState {
   replayResolves?: boolean;
   /** 重建草稿发布过的包（清单哈希）：同一个包再发布返回 unchanged。 */
   publishedBundles: Set<string>;
-  /** 令牌带不带 metaverse:rebuild:write（默认带）；不带时重建路径的写操作 403。 */
-  rebuildPermission: boolean;
+  /** 是否有目标空间的管理权（默认有）；只读成员写重建路径返回 403。 */
+  canManageSpace: boolean;
   /** 公开读用的分享令牌。 */
   shareToken: string;
   /** 资源下载时每段最多给这么多字节（模拟服务端按 Range 分段）；0 表示不支持 Range、整份返回。 */
@@ -223,7 +223,7 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
     publishConflict: init.publishConflict ?? false,
     ...(init.replayResolves !== undefined ? { replayResolves: init.replayResolves } : {}),
     publishedBundles: init.publishedBundles ?? new Set(),
-    rebuildPermission: init.rebuildPermission ?? true,
+    canManageSpace: init.canManageSpace ?? true,
     shareToken: init.shareToken ?? 'share-secret-1',
     ...(init.rangeChunk !== undefined ? { rangeChunk: init.rangeChunk } : {}),
     dropAssetRequests: init.dropAssetRequests ?? 0,
@@ -352,9 +352,9 @@ export async function startFakeApi(init: Partial<FakeState> = {}): Promise<FakeA
       return;
     }
     let m: RegExpExecArray | null;
-    // 重建路径的写操作要 metaverse:rebuild:write（docs/design/server-slim.md 3.1 第 3 层）。
-    if (apiPath.includes('/rebuild/') && request.method !== 'GET' && !state.rebuildPermission) {
-      return problem(403, 'rebuild_permission_required', '令牌没有 metaverse:rebuild:write');
+    // 重建路径写操作沿用目标空间的管理权。
+    if (apiPath.includes('/rebuild/') && request.method !== 'GET' && !state.canManageSpace) {
+      return problem(403, 'forbidden', '没有目标空间管理权');
     }
     const spaceId = String(state.space.id);
     const space = `/api/v1/spaces/${spaceId}`;

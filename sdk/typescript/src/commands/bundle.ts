@@ -70,7 +70,7 @@ export const BUNDLE_HELP = `metaverse bundle <check | push> [目录] [选项]
   metaverse bundle push [目录] [选项]
       先跑一遍 check；按清单的 base 建重建草稿；经 /rebuild/ 路径上传文件（同时 4 个；空间里已有、
       核对结果合乎用途的直接复用，本地没有又不能复用就停下）和清单；交包、等服务端展开；生成预览链接。
-      默认不发布：人看过预览后用 metaverse publish <草稿编号> 发布。要求令牌带 metaverse:rebuild:write。
+      默认不发布：人看过预览后用 metaverse publish <草稿编号> 发布。要求目标空间管理权；Agent Key 还需允许对应重建操作。
 
       --base latest       清单没有 base 时，以空间的最新版本为基础（冲突检查只覆盖从现在起的变化）
       --publish           展开后直接发布（agent key 的操作范围要包含发布接口）

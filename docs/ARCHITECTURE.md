@@ -5,7 +5,7 @@
 > 状态：方案稿。标"待定"的地方需要确认后再实现。
 > 平台相关结论来自对 NyxID、chrono-cd、chrono-bucket 源码的核查（第 15 节）；扫描处理的可行性已用公司前厅扫描实测（第 16 节、`spikes/voxelize/`）。
 
-**第四版的变化**：服务端瘦身。重建全部挪到本地（本地工具 `metaverse-recon` 产出重建包，命令行上传、发布），服务端只做 NyxID 鉴权、存储（分片上传、哈希核对、按文件内容的轻量格式和上限检查）、时间线和写入校验，代码里不再有针对某类场景的重建知识。处理服务（`metaverse-worker`）下线，上传核对和过期清理并进接口服务的后台执行器；重建层有单独的路径 `/rebuild/`，只收重建包，写入一律要求新权限 `metaverse:rebuild:write`（6、8.3、9.2、9.3）。迁移步骤见 `docs/design/server-slim.md`。
+**第四版的变化**：服务端瘦身。重建全部挪到本地（本地工具 `metaverse-recon` 产出重建包，命令行上传、发布），服务端只做 NyxID 鉴权、存储（分片上传、哈希核对、按文件内容的轻量格式和上限检查）、时间线和写入校验，代码里不再有针对某类场景的重建知识。处理服务（`metaverse-worker`）下线，上传核对和过期清理并进接口服务的后台执行器；重建层有单独的路径 `/rebuild/`，只收重建包，写入按空间管理权授权，无需额外平台角色（6、8.3、9.2、9.3）。迁移步骤见 `docs/design/server-slim.md`。
 
 **第三版的变化**：鉴权与权限完全改用 NyxID。本服务不再自建空间钥匙：每个 agent 用一把 NyxID agent key（凭证保存在 agent 本机），能做什么由人在 NyxID 里配置操作范围，服务端只做校验（第 9 节）。接口路径按"能被 NyxID 限制"来设计（8.3）。
 
@@ -157,7 +157,7 @@ spaces {
 
 - **三个图层**：
   - **扫描层**：原始模型资源 + 对齐变换。
-  - **重建层**：AI 按扫描轮廓重建的结构元素（地面、墙、玻璃，带转移来的贴图）和物体（参数化定义或模型 + 贴图），只在实体区；以物件记录（4.4）存储，随提交版本化。重建在本地完成，由有重建权限的调用者经重建草稿写入（6.3、9.3）。
+  - **重建层**：AI 按扫描轮廓重建的结构元素（地面、墙、玻璃，带转移来的贴图）和物体（参数化定义或模型 + 贴图），只在实体区；以物件记录（4.4）存储，随提交版本化。重建在本地完成，由有目标空间管理权的调用者经重建草稿写入（6.3、9.3）。
   - **扩展层**：人和 AI 的修改，可以是参数化物件，也可以是方块风格的格子（区块）。
 - **几何用连续坐标**：顶点、物体的位置和旋转都是连续值（米），不吸附到网格。网格只用于定位参考、区域和地块边界、锚点吸附，以及占用索引（寻路、找空位）。
 - **方块是可选风格**：虚拟区可以用方块建造，方块按网格存成区块，编码如下。
@@ -564,7 +564,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 | 查看 | `GET /api/v1/spaces/{space_id}`：空间信息，含最新 seq（也作为 ETag）、区域、地块、锚点（含内部级）、各用途的上传上限 `uploadLimits`<br>`GET .../regions/{region_id}/content`：区域内容（分层文字）<br>`GET .../timeline`、`GET .../events`（含内部级）、`GET .../jobs/{job_id}` |
 | 实体区修改 | `POST /api/v1/spaces/{space_id}/drafts`：建草稿<br>→ `POST .../drafts/{draft_id}/ops`：批量操作<br>→ `POST .../drafts/{draft_id}/ops-from-upload`：大批量，异步<br>→ `POST .../drafts/{draft_id}/preview`<br>→ `POST .../drafts/{draft_id}/publish` |
 | 地块修改 | 同上，路径换成 `/api/v1/spaces/{space_id}/plots/{plot_id}/drafts...`；服务端保证每个操作都落在该地块内 |
-| 重建层 | 前缀 `/api/v1/spaces/{space_id}/rebuild/`：上传（`uploads/{purpose}`，用途 `scan`、`webmodel`、`model`、`texture`、`script`、`bundle`）→ 建草稿（`drafts`）→ 交包（`drafts/{draft_id}/bundle`，异步展开）→ 预览 → 发布；任务查询 `jobs`、`jobs/{job_id}`。重建草稿只收一个重建包，没有内联操作；只写重建层、扫描层和新锚点（6.3）。写操作一律要求 `metaverse:rebuild:write`（9.2） |
+| 重建层 | 前缀 `/api/v1/spaces/{space_id}/rebuild/`：上传（`uploads/{purpose}`，用途 `scan`、`webmodel`、`model`、`texture`、`script`、`bundle`）→ 建草稿（`drafts`）→ 交包（`drafts/{draft_id}/bundle`，异步展开）→ 预览 → 发布；任务查询 `jobs`、`jobs/{job_id}`。重建草稿只收一个重建包，没有内联操作；只写重建层、扫描层和新锚点（6.3）。写操作要求本空间管理权（9.2） |
 | 上传 | `POST /api/v1/spaces/{space_id}/uploads/{purpose}` → `PUT .../uploads/{purpose}/{upload_id}/parts/{n}` → `POST .../complete`（返回核对任务，6.1）<br>实体区和地块路径的用途：`model`、`texture`、`ops`、`script`；扫描、网页用模型和重建包清单只经重建路径上传 |
 | 事件 | `POST /api/v1/spaces/{space_id}/sources/{source}/events`：批量写，每批 ≤ 1000 条<br>`POST .../sources/{source}/corrections`：更正和撤回 |
 | 组合 | `POST /api/v1/universes`<br>`PATCH /api/v1/universes/{universe_id}`：摆放、连接、可见性、分享令牌<br>`POST /api/v1/universes/{universe_id}/members/{space_id}`：加入；`DELETE` 同一路径：退出 |
@@ -624,7 +624,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 
 - **显式记录主人类型**：空间和组合都记 `owner: { kind: person | org, id }`。不能从一个编号去猜它是不是组织。
 - **组织空间要先查证再创建**：创建组织空间时，现场调用 NyxID 的组织授权接口确认调用者是该组织的 admin，再写入 `ownerEvidence`（签发方、组织编号、核验人、核验时间，与 CMA 的组织归属证据相同）。查不到就拒绝。没有证据的空间一律按个人所有处理。
-- **部署配置种子是运维行为**：演示空间可以由部署配置建（接口服务的 `METAVERSE_DEMO_SEED`，见 `infra/chrono-cd/README.md` 第 8 步），不经过任何网络接口、没有调用者。它的依据是"部署这套服务的组织 admin 把它写进了部署配置"——在 chrono-cd 里改应用规格、设密钥都要求组织 admin，所以与 admin 现场核验同级。归属证据写成单独的依据 `basis = operator_seed`、`verifiedBy = system:demo-seed`（带冒号，不可能是 NyxID 主体编号），一致性检查只在"组织主人 + 这种依据 + 证据里的组织就是配置里的主人"时接受它。种子用授权层签发的显式系统范围写入并记审计日志，只碰自己建的空间（证据是 `operator_seed`、主人一致），已有的别人的空间一律不动；建空间、第一次提交与管理接口走同一条代码路径，导入的是一个重建包：配置按哈希固定两份小文件——清单和来源表（每个文件从哪里下载），由后台执行器下载、核对、登记资源，再与命令行一样建重建草稿、展开、发布（提交的 `actor.sub = system:demo-seed`、`kind = rebuild`），服务端不跑任何重建。系统范围不是令牌，不经过下面的重建权限检查，这是唯一的例外，写审计日志。NyxID 服务注册之前，线上只能靠种子写入。
+- **部署配置种子是运维行为**：演示空间可以由部署配置建（接口服务的 `METAVERSE_DEMO_SEED`，见 `infra/chrono-cd/README.md` 第 8 步），不经过任何网络接口、没有调用者。它的依据是"部署这套服务的组织 admin 把它写进了部署配置"——在 chrono-cd 里改应用规格、设密钥都要求组织 admin，所以与 admin 现场核验同级。归属证据写成单独的依据 `basis = operator_seed`、`verifiedBy = system:demo-seed`（带冒号，不可能是 NyxID 主体编号），一致性检查只在"组织主人 + 这种依据 + 证据里的组织就是配置里的主人"时接受它。种子用授权层签发的显式系统范围写入并记审计日志，只碰自己建的空间（证据是 `operator_seed`、主人一致），已有的别人的空间一律不动；建空间、第一次提交与管理接口走同一条代码路径，导入的是一个重建包：配置按哈希固定两份小文件——清单和来源表（每个文件从哪里下载），由后台执行器下载、核对、登记资源，再与命令行一样建重建草稿、展开、发布（提交的 `actor.sub = system:demo-seed`、`kind = rebuild`），服务端不跑任何重建。系统范围不是令牌，由后台显式签发并写审计日志，不扩展任何网络调用者的权限。NyxID 服务注册之前，线上只能靠种子写入。
 - **子资源继承主人**：提交、草稿、事件、物件、锚点都带 `spaceId` 和主人副本，写入时校验副本与空间的主人一致，不一致判为数据损坏（CMA 的 lineage 规则）。
 - **访问级别**：
 
@@ -659,7 +659,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
   - 需要平台级限制时（例如谁能建空间），请平台管理员在 NyxID 建 `metaverse-user`、`metaverse-admin` 角色。
   - 服务端按 CMA 的做法，把令牌里的 `permissions` 按字符串精确映射成一组固定的能力；不认角色名和用户组，未知字符串和前缀通配一律不授予，不在本地维护管理员名单。
   - 现有的权限：`metaverse:space:create`、`metaverse:content:write`、`metaverse:event:write`、`metaverse:universe:write`。总开关 `METAVERSE_REQUIRE_PERMISSIONS` 打开时才检查；第一步可以不用。
-- **重建权限（始终生效）**：重建路径上的写操作（上传、建草稿、交包、预览、发布、丢弃）一律要求令牌带 `metaverse:rebuild:write`，精确匹配，不看总开关，也没有关掉它的配置；缺了返回 403。权限来自 NyxID 角色：请平台管理员建 `metaverse-rebuilder`（只含这个权限），分给要写重建层的人。建好之前，通过接口谁都写不了重建层，只有部署种子能写。同一个人名下的所有 key 都带这个权限，按 key 再细分靠操作范围（9.3）。组织主体能不能挂角色、agent key 的令牌带不带主人的权限，第 0 阶段实测（16.2）。
+- **重建层属于空间内容**：个人主人、组织主体和当前组织 admin 可管理本空间重建层，无需额外平台重建角色。普通 member/viewer 只读；平台权限不能替代空间管理权。写入前重新核验资源访问，角色查询不可用时拒绝写入。
 - **更细的限制交给 NyxID**：能改哪个地块、能写哪个数据源、能不能发布，由 agent key 的操作范围在转发前检查（9.3）。人的登录态不受操作范围约束，这正是上面的主人和角色检查必须存在的原因。
 
 ### 9.3 agent 的权限：NyxID agent key
@@ -704,7 +704,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 **三层中间件，顺序固定**：
 
 1. **身份**（全部 `/api/v1/*`）：按 9.1 验签。身份令牌头只能出现一次；完全不读 `X-NyxID-User-*` 明文头（Ornn 的回退是漏洞，本服务直接暴露在公网）。失败返回 401；拿不到 NyxID 公钥返回 503。
-2. **功能级权限**（9.2）：精确匹配 `metaverse:*` 权限字符串，不认前缀通配；重建路径的写操作始终要 `metaverse:rebuild:write`，其余按总开关。
+2. **功能级权限**（9.2）：精确匹配 `metaverse:*` 权限字符串，不认前缀通配；重建路径按空间管理权，其他功能按总开关。
 3. **资源级**（`/spaces/{space_id}/...`、`/universes/{universe_id}/...`）：读出主人，按 9.2 算出访问级别（无 / 只读 / 管理），交给后面的处理逻辑。
 
 **请求内容与路径一致**：
@@ -748,7 +748,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 |---|---|---|
 | 身份令牌加上 agent key 编号（以及子凭证编号、认证方式）。注入点在 NyxID 代理里已经能拿到这些信息，改动很小 | 留痕；区分同一主人名下的多个 agent | 高 |
 | 为配置者打开"操作范围"开关（`assistant:operation-scopes`） | 第一步就要用操作范围限制 agent | 高 |
-| 平台管理员建自定义角色 `metaverse-rebuilder`（只含 `metaverse:rebuild:write`），并确认 agent key 的令牌带主人的权限 | 写重建层（9.2）；建好之前只有部署种子能写重建层 | 高 |
+| 核验空间管理权和 Agent Key 的空间/操作范围 | 写重建层及预览（9.2）；预览 Key 不允许发布 | 高 |
 | 本服务注册成目录服务并同步接口 | 操作范围里的路径参数取值限制只能挂在目录服务的接口上 | 高 |
 | 提供 Claude Code / Codex 用 agent key 接入 MCP 的配置命令（目前只生成登录配置） | 让 AI 默认用受限的 agent key，而不是人的登录态 | 中 |
 | 操作范围支持前缀通配（例如 `/spaces/abc/**`） | 不必逐个列接口 | 低 |
@@ -824,7 +824,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 ### 10.3 接入说明
 
 - **能看到工具**：用户在 Claude Code 里连上 NyxID 的 MCP，就能看到本服务的工具。工具可能要先用 `nyx__search_tools` 搜索，再用 `nyx__call_tool` 调用。
-- **能写入**：调用者必须是空间主人本人、主人组织本身（签名身份 sub 为组织 ID）或组织 admin（9.2；组织 member、viewer 只读），并且所用 agent key 的操作范围允许这个接口（9.3）；写重建层还要有重建权限。
+- **能写入**：调用者必须是空间主人本人、主人组织本身（签名身份 sub 为组织 ID）或组织 admin（9.2；组织 member、viewer 只读），并且所用 agent key 的操作范围允许这个接口（9.3）；重建层编辑同样按这一空间管理权判断，无需额外平台角色。
 - **技能文件**：技能说明（中文）随命令行工具分发，由 `metaverse init` 写进工作区，写明坐标约定、方块表、区域和地块规则、建造规范、两种建造方式和示例。平台仓库里的 `skills/metaverse-builder/` 只是源文件。
 - **教程**：
   - `docs/tutorials/cloud-claude-code-nyxid.md` 是平台开发教程；
@@ -1004,7 +1004,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
   - 300MB 文件分片上传进 GridFS；
   - 向平台确认备份和容量。
 - **重建权限**：
-  - 平台管理员建 `metaverse-rebuilder` 角色后：个人身份和这个人的 agent key 调用时，身份令牌的 `permissions` 里是否都带 `metaverse:rebuild:write`；
+  - 个人主人、组织主体和组织 admin 无额外平台权限时是否可编辑自己的重建层；普通成员、跨空间和 Key 超范围是否被拒绝；
   - 组织主体能不能挂角色（不能的话，重建由组织 admin 本人或他的 agent key 做）。
 - **上传核对与本地重建**：
   - 接口服务后台核对 1GB 扫描时的耗时和内存峰值（流式，应只多几 MB）；
@@ -1061,5 +1061,5 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 | 外部模型的署名不实 | 署名是写入方的声明，服务端只校验格式；网站的改动说明不依赖具体工具 |
 | 别人抢先用掉重建包要用的锚点编号 | 重建包只建"从没出现过"的锚点，跳过的会列出来给人看；物件编号分区（`rb.`），抢不走 |
 | 本地工具版本不同，重建结果不同 | 结果以重建包为准：文件按哈希固定，清单记生成工具和版本；已有空间重建时沿用线上的变换 |
-| 重建层被不该写的人或 agent 改掉 | 重建路径的写操作始终要求 `metaverse:rebuild:write`（没配好之前只有部署种子能写）；重建是单独的路径范围，NyxID 可以只给指定的 key；重建草稿只收重建包；时间线只追加，改坏了再发布一个包改回来 |
+| 重建层被不该写的人或 agent 改掉 | 重建路径的写操作要求目标空间管理权，并独立执行 Key 的操作范围；重建是单独的路径范围，NyxID 可以只给指定的 key；重建草稿只收重建包；时间线只追加，改坏了再发布一个包改回来 |
 | 种子包里的内容被公开 | 种子包进公开仓库和发布页，一切都会公开；生成时去掉内部锚点和建模记录，检查时给出警告 |

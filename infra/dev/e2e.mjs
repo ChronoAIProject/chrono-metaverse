@@ -5,7 +5,7 @@
 //   1. 用测试令牌建组织空间（再定义实体区、虚拟区和地块 p1）
 //   2. 本地工具产出重建包：metaverse pull → metaverse-recon align → prepare → bundle --algorithm --anchors →
 //      metaverse bundle check 通过（不需要服务）
-//   3. 带重建权限的身份上传并发布：metaverse bundle push --publish（0.25MiB 一片，等后台核对和包展开），
+//   3. 空间管理员上传并发布：metaverse bundle push --publish（0.25MiB 一片，等后台核对和包展开），
 //      提交的类别是 rebuild；同一个包再推一次得到 unchanged；按哈希复用只在本空间成立
 //   4. 公开读接口按 seq 返回快照（重建前后两个版本、资源、没带令牌 404）
 //   5. 网站三种视图都能渲染（无头浏览器截图，检查不是空白）
@@ -23,8 +23,7 @@
 //   prepare / bundle 直接读的格式）。前厅扫描约 1 分 45 秒打完包（4 核）；
 // - 本地工具用 recon/.venv/bin/metaverse-recon，没有时先 `uv sync --frozen`（要装好 uv）；命令行从
 //   sdk/typescript 构建；
-// - 重建身份是 rita（模拟 NyxID 按 infra/dev/org-roles.json 给 metaverse:rebuild:write），alice 是没有
-//   重建权限的组织 admin；
+// - 重建身份 rita 和 alice 都是空间所属组织的管理员，无需额外平台重建角色；
 // - 每次用随机库名和空闲端口，结束时停掉全套（down.sh）并删除这个库；--keep 保留现场排查；
 // - 截图、工作区、日志和结果在 infra/dev/.run/e2e-<后缀>/（不进版本库）；
 // - 浏览器：METAVERSE_E2E_BROWSER_PATH，没有时用 /opt/pw-browsers/chromium（存在的话），
@@ -492,7 +491,7 @@ const steps = [
     },
   },
   {
-    name: '带重建权限的身份上传并发布',
+    name: '空间管理员上传并发布',
     async run(ctx) {
       const pushed = await metaverse(
         ['bundle', 'push', '--publish', '--part-size', '0.25', '--sub', REBUILDER, '--json'],
@@ -794,9 +793,9 @@ const steps = [
         { what: 'alice 读 carol 的个人空间', status: 404, method: 'GET', path: `/api/v1/spaces/${carol}`, as: 'alice' },
         { what: 'alice 在 carol 的个人空间建草稿', status: 404, method: 'POST', path: `/api/v1/spaces/${carol}/drafts`, as: 'alice', body: {} },
         { what: 'bob 冒充组织建组织空间', status: 403, method: 'POST', path: '/api/v1/admin/spaces', as: 'bob', body: { id: `e2e-bob-${suffix}`, name: 'x', owner: { kind: 'org', id: ORG } } },
-        // 重建路径（设计 3.1）：写操作要 metaverse:rebuild:write，并且要"管理"级别。
-        { what: 'alice（组织 admin，没有重建权限）建重建草稿', status: 403, code: 'rebuild_permission_required', method: 'POST', path: `${rebuildBase}/drafts`, as: 'alice', body: { baseSeq } },
-        { what: 'alice（没有重建权限）经重建路径上传扫描', status: 403, code: 'rebuild_permission_required', method: 'POST', path: `${rebuildBase}/uploads/scan`, as: 'alice', body: scanUpload },
+        // 重建路径按空间管理权；旧平台权限也不能提升普通成员。
+        { what: 'bob（组织 member）建重建草稿', status: 403, method: 'POST', path: `${rebuildBase}/drafts`, as: 'bob', body: { baseSeq } },
+        { what: 'bob（组织 member）经重建路径上传扫描', status: 403, method: 'POST', path: `${rebuildBase}/uploads/scan`, as: 'bob', body: scanUpload },
         { what: 'bob（组织 member，带重建权限）建重建草稿', status: 403, method: 'POST', path: `${rebuildBase}/drafts`, as: 'bob', permissions: [REBUILD_PERMISSION], body: { baseSeq } },
         // 上传用途按路径（设计 2.3）：扫描只经重建路径，重建包清单不能经地块路径。
         { what: 'alice 经实体区路径上传扫描', status: 422, code: 'purpose_not_allowed', method: 'POST', path: `/api/v1/spaces/${spaceId}/uploads/scan`, as: 'alice', body: scanUpload },
