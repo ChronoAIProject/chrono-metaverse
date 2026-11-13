@@ -72,5 +72,6 @@ test('原登录缺少 CMA grant 时提供 OAuth 入口，不申请新 Key', asyn
     'href',
     '/api/auth/nyxid/login?workspace=1',
   );
+  await expect(page.locator('.workspace__chat-heading [role="status"]')).toHaveText('连接未就绪');
   await expect(page.getByRole('button', { name: '启用 CMA 聊天' })).toHaveCount(0);
 });

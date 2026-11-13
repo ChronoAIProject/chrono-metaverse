@@ -1514,9 +1514,15 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                   ? nyxagentBusy
                     ? '执行中'
                     : ''
-                  : creating
-                    ? '待提交'
-                    : statusText(responseStatus || operation?.status || agent?.status || 'ready')}
+                  : !connectionReady
+                    ? '连接未就绪'
+                    : !session.workerEnabled
+                      ? '待启用'
+                      : creating
+                        ? '待提交'
+                        : statusText(
+                            responseStatus || operation?.status || agent?.status || 'ready',
+                          )}
               </span>
               <button
                 className="workspace__icon-button workspace__secondary"
