@@ -140,7 +140,7 @@ tsconfig.json、node_modules/@chrono-metaverse/sdk（指向这份 SDK 的链接�
 一份清单 `manifest.json` 加清单列出的文件（原始扫描、网页用模型、物件模型、贴图、建模记录）。清单与托管位置无关，`base`
 写明基于空间的第几版。`bundle push` 的要点：
 
-- 写重建层要令牌带 `metaverse:rebuild:write`（没有就 403 `rebuild_permission_required`）；重建用的 agent key 默认不给发布，
+- 写重建层要求目标空间管理权（个人主人、组织主体或当前组织管理员），无需额外平台角色；重建用的 agent key 默认不给发布，
   人看过预览链接后自己 `metaverse publish <草稿编号>`；
 - 清单没有 `base` 时要显式 `--base latest`；`base.spaceId` 与工作区不同、`base.seq` 超过最新版本都拒绝；时间线前进了会提示，
   发布时服务端检查冲突（重建层整体是一个冲突单位）；
@@ -248,7 +248,7 @@ npm run test:coverage
   `api/crates/metaverse-core/tests/ops_vectors.rs` 生成，格式见 `vectors/README.md` 第 4 节。
 - 接口调用的测试用本地假服务器（`tests/helpers/fakeApi.ts`），按接口服务的路径和字段回答：和接口服务一样拒绝未知字段和缺少的
   必填字段（422），核对上传格式的白名单和第 0 片的文件头，经地块路径只看得到本地块的任务，还能按路径前缀模拟 NyxID 的操作范围。
-  重建路径（上传、草稿、交包、发布的 `unchanged`、重建权限）、资源的 `Range` 分段和公开读也在里面，按 `docs/design/server-slim.md`
+  重建路径（上传、草稿、交包、发布的 `unchanged`、空间管理权限）、资源的 `Range` 分段和公开读也在里面，按 `docs/design/server-slim.md`
   2.3 的约定写；接口服务实现以后要对着真服务联调一次。
 - 资源核对：`tests/check.test.ts` 用 `tests/helpers/samples.ts` 在内存里造 glb、图片、zip、操作文件样本（设计 6.5 列出的
   各种不合规文件）；`tests/check-vectors.test.ts` 跑接口服务生成的二进制样本 `vectors/check/`（`expected.json` 的格式和拒绝码

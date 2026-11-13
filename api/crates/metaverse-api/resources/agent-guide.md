@@ -8,11 +8,11 @@
 
 已知物件编号时，优先用 get_snapshot_entity 或 GET /api/v1/spaces/{spaceId}/entities/{entityId}?seq={实际版本} 精确读取，返回 {spaceId,seq,entity:{id,hash,body}}。省略 seq 取最新；建草稿后须用实际 baseSeq 再核对。大型空间的完整快照可能被工具截断，不能从截断输出猜测物件、哈希或字段，也不要反复下载完整快照。需要布局和附近物件时用 get_region_content；精确物件记录仍以此单物件接口为准。
 
-普通空间草稿作用于 physical 范围、ext 扩展层。没有 regions 时可以在未被虚拟区或地块占用的位置编辑，不需要创建布局。用户明确指定已有地块时，下面所有 drafts 路径改为 /api/v1/spaces/{spaceId}/plots/{plotId}/drafts，始终保持同一范围。普通草稿不能改 rebuilt 层；有重建权限时使用下面的重建流程，不能改名或复制到扩展层来绕过限制。
+普通空间草稿作用于 physical 范围、ext 扩展层。没有 regions 时可以在未被虚拟区或地块占用的位置编辑，不需要创建布局。用户明确指定已有地块时，下面所有 drafts 路径改为 /api/v1/spaces/{spaceId}/plots/{plotId}/drafts，始终保持同一范围。普通草稿不能改 rebuilt 层；调整重建物件时使用下面的重建流程，不能改名或复制到扩展层来绕过限制。
 
 ## 移动已有重建物件
 
-先核对真实 body.layer；编号本身不授予权限。rebuilt 层物件可以通过专用重建草稿移动，无需修改仓库、重新扫描或重做整个空间。调用者必须同时具备本空间管理权、NyxID 精确权限 metaverse:rebuild:write，并且当前 Agent Key 获准调用对应工具。空间管理员身份、平台管理员的通配权限和仅有普通内容编辑权限都不能替代精确重建权限。
+先核对真实 body.layer；编号本身不授予权限。rebuilt 层物件可以通过专用重建草稿移动，无需修改仓库、重新扫描或重做整个空间。个人空间主人、组织主体和当前组织管理员具备本空间管理权，可以编辑本空间的重建层，无需额外 NyxID 平台重建角色。当前 Agent Key 仍须获准调用该空间的对应工具；普通成员/viewer 只读，平台权限不能替代空间管理权。
 
 1. POST /api/v1/spaces/{spaceId}/rebuild/drafts，body {"baseSeq":实际最新seq}；记录返回 id 和 rev。
 2. 用 get_snapshot_entity 读取草稿 baseSeq 下的目标记录，核对真实 layer，再调用 move_rebuild_entities，或 POST /api/v1/spaces/{spaceId}/rebuild/drafts/{draftId}/moves，body {"rev":实际rev,"moves":[{"entityId":"实际rb.编号","expectedHash":"返回的entity.hash","offset":[1,0,0]}]}。offset 是世界坐标的平移量，单位米，y 向上；示例表示向 +x 移动 1 米，必须按用户目标计算真实值。一次 1–100 个不同物件。
@@ -22,7 +22,7 @@
 
 服务端从原始物件生成 merge 重建包，同步更新 bounds 和形状位置，保留编号、模型、材质、来源等字段。不能用此入口替换模型、移动模板或扩展层、修改扫描/锚点。返回 anchorDrift 时说明关联锚点未移动，不自动扩大修改范围。每个重建草稿只收一批移动或一个重建包；改动要求变化时保留已确认状态，明确说明需要新重建草稿与新预览。不要重复提交平移请求；断流后先查草稿和任务。
 
-401/403 时停止并说明缺少的是登录、Key 操作授权还是 rebuild_permission_required；没有真实拒绝结果时不要断言用户没有权限。不能自行授予角色或修改 Key。复杂重建仍使用 apply_rebuild_bundle（先查 OpenAPI），遵守同样的权限、范围和预览确认流程。
+401/403 时停止并说明缺少的是登录、Key 操作授权还是空间管理权；没有真实拒绝结果时不要断言用户没有权限。不能自行授予角色或修改 Key。复杂重建仍使用 apply_rebuild_bundle（先查 OpenAPI），遵守同样的权限、范围和预览确认流程。
 
 ## 草稿、预览与发布
 

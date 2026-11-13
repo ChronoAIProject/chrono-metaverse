@@ -224,7 +224,6 @@ Poly Haven 的模型是 `format: "gltf"`，另有 `files: {相对路径: {url, s
 - `fetch` 提示"坐标超过 ±1000 米"：模型多半是厘米单位，`place` 会按扫描缩放，可以照常用。
 - Sketchfab 模型提示"不能按地址下载"：它不在 Objaverse 镜像里，AI 物件集只收按地址下载的模型，换候选。
 - `assemble` 或 `bundle` 报物件不合规：按说明改对应的物件；`metaverse bundle check` 和服务端交包时跑的是同一套规则。
-- `bundle push` 报 403 `rebuild_permission_required`：令牌没有 `metaverse:rebuild:write`，请平台管理员给账号加上
-  `metaverse-rebuilder` 角色（在这之前只有部署种子能写重建层）。
+- `bundle push` 报 403：核对目标空间管理权和 Agent Key 的服务/操作范围。个人主人、组织主体和当前组织管理员无需额外平台重建角色；普通成员只读。不要自行授予角色或扩大 Key 范围。
 - `bundle push` 说某个文件"本地没有，空间里也没有可以复用的"：通常是原始扫描，先 `metaverse pull --scan`。
 - 发布时 409 冲突：看冲突的键；`layer:rebuilt` 说明中途有人改过重建层，确认后 `--replay`，或重新拉取、重新打包。

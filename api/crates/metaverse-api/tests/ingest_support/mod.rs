@@ -125,7 +125,7 @@ pub fn identity(subject: &str) -> String {
     identity_with(subject, &[])
 }
 
-/// 同 [`identity`]，带功能级权限（例如重建路径要求的 `metaverse:rebuild:write`）。
+/// 同 [`identity`]，带功能级权限（例如可选功能级开关所要求的内容写权限）。
 pub fn identity_with(subject: &str, permissions: &[&str]) -> String {
     let now = unix_now();
     Signer::shared().sign(&json!({

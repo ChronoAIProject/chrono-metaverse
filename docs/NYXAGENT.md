@@ -16,15 +16,15 @@ NyxAgent 与 CMA 分别授权、保存凭据。Key 留在此浏览器的独立�
 
 ### 重建层编辑与最小权限
 
-普通草稿只能编辑扩展层。移动 `rb.` 重建物件需要当前账号具有精确权限 `metaverse:rebuild:write`，同时拥有目标空间管理权；组织 member 和只有 `*`、`metaverse:content:write` 或 `metaverse:rebuild:*` 的账号仍不可写。推荐通过非默认角色 `metaverse-rebuilder` 单独授予这一项权限，不自动授予其他用户。助手不能自行分配角色或扩大 Key 权限。
+普通草稿只能编辑扩展层；重建物件使用专用重建草稿。重建层属于空间内容，个人空间主人、组织主体和经 NyxID 现场核验的当前组织管理员可编辑本空间内的重建物件，无需另加平台 `metaverse-rebuilder` 角色或 `metaverse:rebuild:write` 权限。组织 member/viewer 只读；平台管理员身份、通配权限和旧重建权限都不能替代目标空间管理权。组织角色查询不可用时写操作拒绝（503），不可借用其他账号的凭据。
 
-创建角色和分配角色须由 NyxID 平台管理员调用正式管理接口完成。`operator` 只能读取角色，不能据此自助授予重建权限；403 `rebuild_permission_required` 时应请管理员只授上述精确权限，不能放宽服务端检查。Key 操作范围配置也需在 NyxID 为当前账号开启 `assistant:operation-scopes`；已有的限制始终执行。
+空间管理权与 Agent Key 的服务/操作范围同时生效。Key 必须允许目标空间的具体接口；拥有空间不能扩大 Key 范围，助手也不能自行修改权限。配置操作范围需 NyxID 为当前账号开启 `assistant:operation-scopes`，已有的限制始终执行。
 
 重建草稿支持 `POST /api/v1/spaces/{space_id}/rebuild/drafts/{draft_id}/moves`，正文为 `{rev,moves:[{entityId,expectedHash,offset:[x,y,z]}]}`。哈希取自草稿基础快照，平移量单位为米。服务端读取原物件，仅平移 bounds 和形状根节点位置，保留模型、旋转、材质和来源；拒绝跨层、模板、过期哈希或修订、重复物件和物理区域之外的修改。每个草稿只收一批移动或一个重建包，后台任务完成后再读取 rev 并创建预览。断流后先核对草稿和任务，不能新建草稿重复移动。
 
 大型快照可能被工具截断。已知目标编号时，用 `get_snapshot_entity`（`GET /api/v1/spaces/{space_id}/entities/{entity_id}?seq=<baseSeq>`）读取单个 `{id,hash,body}`，以 `entity.hash` 作 `expectedHash`。它只从该空间、该版本的清单解析记录，沿用原读取权限；受限 Key 需显式允许同一字面空间的 `GET:.../entities/{entity_id}`。区域摘要用于了解附近布局，不能代替精确哈希或完整物件字段。
 
-角色权限和 Agent Key 操作范围是同时生效的。只准备预览的 Key 应仅允许目标空间的读取、重建草稿创建/读取、moves、任务查询、preview、取消；不要允许 `/publish`、`/bundle`、上传、管理接口或其他空间。用户确认具体预览及 rev 后，才使用另行授权发布的凭据；预览 Key 本身无法发布，用户在聊天中要求发布也不会扩大它的权限。
+空间管理权和 Agent Key 操作范围是同时生效的。只准备预览的 Key 应仅允许目标空间的读取、重建草稿创建/读取、moves、任务查询、preview、取消；不要允许 `/publish`、`/bundle`、上传、管理接口或其他空间。用户确认具体预览及 rev 后，才使用另行授权发布的凭据；预览 Key 本身无法发布，用户在聊天中要求发布也不会扩大它的权限。
 
 NyxID 自定义服务使用字面空间路径规则时，模板 OpenAPI 工具可能被过滤。可将该用户连接的规范地址配置为 `/api/openapi.json?spaceId=<空间编号>`：它保留 operationId，但把空间路径固定为该编号并去掉可变的 `space_id` 参数，供 NyxID 正常发现工具。随后给 Key 配置相同字面空间路径的 allow 规则，例如 `POST:/api/v1/spaces/chronoai-lobby/rebuild/drafts/{draft_id}/moves`。**规范地址只控制工具发现，真正的访问限制由 Key 的操作规则和服务端权限共同执行**；单独更换规范地址不构成隔离。该连接的工具发现将只显示这一空间；需编辑其他空间时应另设连接或重新明确配置范围。目录服务已有稳定 endpoint ID 时，优先使用 NyxID endpoint 输入约束固定 `space_id`。
 

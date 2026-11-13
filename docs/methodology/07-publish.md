@@ -92,12 +92,11 @@ metaverse publish <草稿编号> --replay      # 冲突时：在最新版本上�
 
 | 要做的事 | 要什么 |
 |---|---|
-| 推送（上传、建重建草稿、交包、预览） | 空间的"管理"级别（主人本人、主人组织、组织 admin）**并且**令牌带 `metaverse:rebuild:write`；没有就 403 `rebuild_permission_required` |
+| 推送（上传、建重建草稿、交包、预览） | 空间的"管理"级别（主人本人、主人组织、组织 admin）；无需额外平台角色，缺少管理权返回 403 |
 | 发布 | 同上；给 AI 用的 agent key **默认不给发布**，人看过预览再发布 |
 | 读（拉取、查任务） | 访问级别即可 |
 
-- `metaverse:rebuild:write` 由 NyxID 的角色带来：请平台管理员建角色 `metaverse-rebuilder`（只含这一项权限），分给要写重建层的人。
-  **在这之前，通过接口谁都写不了重建层**，只有部署种子能写——这是有意的。
+- 重建层属于空间内容，按空间管理权授权；Agent Key 还需允许目标空间及对应操作，预览 Key 不开放发布。
 - AI 一律用自己的 agent key（`nyxid login --agent-key --profile <名称>`，人审批），操作范围只开 `/spaces/<空间>/rebuild/` 下的上传、建草稿、
   交包、预览、任务查询，不开发布；不要让 AI 用人的登录态（人的全部权限都会给它）。
 - 详见[整体设计](../ARCHITECTURE.md) 9.2、9.3 和设计第 3 节。

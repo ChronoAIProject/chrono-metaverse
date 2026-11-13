@@ -104,7 +104,7 @@ node infra/dev/mock-nyxid.mjs [--port 8090] [--host 127.0.0.1] [--roles infra/de
   ```
 
   `/dev/token` 带 `orgRole`（`admin`/`member`/`viewer`/`none`）时，这个访问令牌查任何组织都返回该角色；再带 `org` 就只对那个组织生效。
-- **重建权限**（`docs/design/server-slim.md` 第 3 节）：重建路径 `/api/v1/spaces/{space_id}/rebuild/` 上的写操作要求身份令牌的 `permissions` 里有 `metaverse:rebuild:write`，线上它挂在平台管理员建的角色 `metaverse-rebuilder` 上。本地用 `permissions` 模拟：**rita** 是带这个权限的组织 admin（重建身份，`metaverse bundle push --sub rita`）；**alice** 是没有它的组织 admin（调重建路径 403 `rebuild_permission_required`，九步验收的反例）。临时给别人加权限用 `call.mjs --permission`。
+- **重建编辑**：个人主人、组织主体和当前组织 admin 均可编辑本空间重建层，无需额外平台角色。alice 和 rita 都是组织 admin；rita 携带的旧 `metaverse:rebuild:write` 仅用于模拟任意权限声明，不参与重建授权。bob/member 和 carol/viewer 只读；给它们附加平台权限也不能提升空间访问级别。
 - **组织本身的 agent key**：`sub` 直接写组织编号（例如 `chronoai`），接口服务判为"组织本身"，不查角色。
 
 本地的组织编号用 `chronoai` 这样的短字符串即可；线上是 NyxID 的组织 UUID。
@@ -152,13 +152,13 @@ node infra/dev/e2e.mjs --only 1,8,9                 # 不要扫描的三步
 |---|---|---|
 | 1. 建组织空间 | alice（`chronoai` 的 admin）`POST /api/v1/admin/spaces`，再 `PUT .../layout` 定义实体区、虚拟区和地块 `p1`；`metaverse init`（direct 模式，从模拟 NyxID 取令牌） | 201、分享令牌、归属证据 `org_admin` |
 | 2. 本地工具产出重建包 | 工作区里 `metaverse pull`（写 `space.json`、`limits.json`）；扫描复制到 `scan/`；`metaverse-recon align`（首次自动对齐，写 `scan/transform.json`）→ `prepare` → `bundle --algorithm --anchors`（`--anchors`：按类别建议的锚点也进包，默认只列出建议；最后经 `PATH` 里的 `metaverse` 调 `bundle check`）；再 `metaverse bundle check --json` | 不需要服务；包里有扫描、网页用模型和贴图；清单的 `base` 是拉取时的版本；检查通过 |
-| 3. 上传并发布 | rita（带 `metaverse:rebuild:write`）`metaverse bundle push --publish --part-size 0.25 --json`；同一个包 `--publish` 再推一次（不带 `--replay`）；本空间、carol 的空间各按扫描的哈希建一次上传 | 扫描分成多片、核对完成；提交的类别 `rebuild`，带扫描和网页用模型，重建层编号 `rb.` 开头，建议锚点建好；再推一次文件全部复用、`unchanged`、不写提交；本空间直接复用，carol 的空间要完整上传 |
+| 3. 上传并发布 | rita（组织管理员）`metaverse bundle push --publish --part-size 0.25 --json`；同一个包 `--publish` 再推一次（不带 `--replay`）；本空间、carol 的空间各按扫描的哈希建一次上传 | 扫描分成多片、核对完成；提交的类别 `rebuild`，带扫描和网页用模型，重建层编号 `rb.` 开头，建议锚点建好；再推一次文件全部复用、`unchanged`、不写提交；本空间直接复用，carol 的空间要完整上传 |
 | 4. 公开快照 | 凭分享令牌读公开提交列表、`snapshot?seq=` 重建前后两个版本、网页用模型、原始扫描 | 重建后有物件、重建前为空；资源 `immutable`；原始扫描不公开（404）；没带或带错令牌 404 |
 | 5. 三种视图 | 无头 Chromium 打开 `/s/<空间>#share=<令牌>`，依次切"优化""优化 + 扩展""原始" | 每种视图就绪；画布截图不是空白；优化有物件、扩展有"虚拟"标识、原始有扫描 |
 | 6. 回到重建前 | 点重建前那次提交的标记，再点"现在" | 显示"这个时刻还没有优化模型"；回到最新版本 |
 | 7. 写事件、"现在"模式 | 登记 `shop.status`（空间级状态），重开页面，alice 写一条事件 | 公开 `/head` 的 `recordedAt` 变化；公开增量事件里有它；页面状态栏出现事件文字 |
 | 8. 地块建造 | 工作区里 `metaverse pull` → `build --plot p1`（示例脚本）→ `check` → `push --json` → `publish --json` | 新 seq；公开快照里有示例桌子；页面拉到新版本，扩展视图物件变多 |
-| 9. 越权 | bob（member）建草稿、写事件、登记事件类型、建组织空间；dave（非成员）读和写；alice 读写 carol 的个人空间；alice（没有重建权限）建重建草稿、经重建路径上传；bob（member，带重建权限）建重建草稿；经实体区路径上传扫描；经地块路径上传重建包清单；调已下线的扫描导入；地块草稿放 `rb.` 编号；rita 再推一次包不发布，用预览令牌读资源 | member 写 403；看不到的一律 404；没有重建权限 403 `rebuild_permission_required`，member 即使有权限也 403；实体区路径传扫描 422 `purpose_not_allowed`；地块路径传清单 403 `scope_violation`；旧接口 410 `endpoint_retired`；`rb.` 编号 422 `invalid_op`；预览令牌读网页用模型 200、读原始扫描和包清单 404 |
+| 9. 越权 | bob（member）建草稿、写事件、登记事件类型、建组织空间；dave（非成员）读和写；alice 读写 carol 的个人空间；bob（只读成员）建重建草稿、经重建路径上传；bob（member，带旧平台权限）建重建草稿；经实体区路径上传扫描；经地块路径上传重建包清单；调已下线的扫描导入；地块草稿放 `rb.` 编号；rita 再推一次包不发布，用预览令牌读资源 | member 写 403；看不到的一律 404；缺少空间管理权 403，member 即使有旧平台权限也 403；实体区路径传扫描 422 `purpose_not_allowed`；地块路径传清单 403 `scope_violation`；旧接口 410 `endpoint_retired`；`rb.` 编号 422 `invalid_op`；预览令牌读网页用模型 200、读原始扫描和包清单 404 |
 
 - 端口都是临时挑的空闲端口，库名 `metaverse_e2e_<随机后缀>`；结束时运行 `down.sh` 并删除这个库，`--keep` 保留现场；
 - 结果、截图（`view-*.png`、`timeline-before-rebuild.png`、`live-event.png`、`plot-build-extended.png`，失败时 `failure.png`）、工作区（含 `out/recon`、`out/bundle`）、本地工具的输出（`recon-*.log`）和 `up.sh` 的输出在 `infra/dev/.run/e2e-<后缀>/`；各服务的日志在 `infra/dev/.run/*.log`；

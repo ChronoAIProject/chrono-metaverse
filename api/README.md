@@ -119,7 +119,7 @@ NyxID 地址只接受 https；明文 http 只允许本机地址（本地测试�
 | `src/openapi.rs` | utoipa 文档；`GET /api/openapi.json` 只含 `/api/v1/*` 非管理接口（注册给 NyxID），并去掉没被引用的结构；`operationId` 全部小写加下划线（有测试） |
 | `src/auth/jwt.rs` | 身份令牌验签 |
 | `src/auth/organizations.rs` | 组织角色查询 |
-| `src/auth/permissions.rs` | `metaverse:*` 权限字符串 → 固定能力（含始终生效的重建权限 `metaverse:rebuild:write`） |
+| `src/auth/permissions.rs` | `metaverse:*` 权限字符串 → 固定能力（重建编辑独立按空间管理权判断） |
 | `src/auth/access.rs` | 访问级别表（设计 9.2）及测试矩阵 |
 | `src/auth/authorizer.rs` | 资源级授权；签发授权凭据 `Grant`、`CreateGrant`、`AuthorizerKey`（字段私有，只有这里能构造） |
 | `src/auth/mod.rs` | `Caller`、身份层（验签 + jti 防重放）、`/api/v1` 身份中间件 |
@@ -145,7 +145,7 @@ NyxID 地址只接受 https；明文 http 只允许本机地址（本地测试�
 | `src/auth/authorizer/system.rs` | 由已有凭据派生的系统范围 `SystemGrant`（写审计日志），用于保存和删除状态快照；部署配置种子的建空间凭据 `seed_create_grant` 和种子空间凭据 `seed_space`；后台执行器、清理、迁移的跨空间凭据 `BackgroundGrant`（同样写审计日志） |
 | `tests/api.rs` | 集成测试：本地 MongoDB + 模拟 NyxID（公钥列表、组织授权接口） |
 | `tests/timeline.rs`、`tests/timeline_support/` | 时间线、草稿、公开读、管理接口的集成测试（同样的设施，另加直接写库模拟上传和瘦身前写的旧数据） |
-| `tests/rebuild.rs` | 重建路径（docs/design/server-slim.md 13.2 S3 的验收）：重建权限、真实上传清单、交包展开、预览、发布规则、冲突和重放、没有变化、锚点不复活、文件角色、没定义实体区的范围（用 `tests/timeline_support/`，资源带核对记录直接登记） |
+| `tests/rebuild.rs` | 重建路径（docs/design/server-slim.md 13.2 S3 的验收）：空间管理权限、真实上传清单、交包展开、预览、发布规则、冲突和重放、没有变化、锚点不复活、文件角色、没定义实体区的范围（用 `tests/timeline_support/`，资源带核对记录直接登记） |
 | `tests/asset_fence.rs` | 与定期清理的栅栏（见"与定期清理的栅栏"）：模拟清理在追加、复用、建任务、发布之间删除资源（用 `tests/timeline_support/`） |
 | `tests/uploads_jobs.rs`、`tests/events.rs`、`tests/universes.rs`、`tests/ingest_support/` | 上传与任务、事件、组合的集成测试（同样的设施；后台任务的结果按约定的文档格式直接写库模拟） |
 | `tests/runner.rs`、`tests/runner_cleanup.rs`、`tests/runner_support/` | 后台执行器、上传核对、`ops_from_upload`、定期清理、后台迁移的集成测试（从处理服务移植的场景，另加僵尸执行器、名额、重试分类、核对期间健康检查） |
@@ -434,7 +434,8 @@ universeRevisions { _id: "<组合编号>:<seq>", universeId, owner, seq, at, act
 
    读接口（含读草稿、查任务）不要求能力。管理接口里的改名称和可见性、轮换分享令牌、删除空间只要求资源级"管理"，不对应能力（它们只该由主人或组织 admin 经命令行调用，不进 AI 工具）。
 
-   **重建权限**（始终生效，docs/design/server-slim.md 3.1）：重建路径（`/api/v1/spaces/{space_id}/rebuild/`）上的写操作（建上传、传片、完成上传、建草稿、交包、预览、发布、丢弃）一律要求 `metaverse:rebuild:write`，不看上面的开关，也没有关掉它的配置，没有就 403 `rebuild_permission_required`；重建路径不要求 `metaverse:content:write`，读操作只按访问级别。NyxID 里配好这个权限之前，通过接口谁都写不了重建层，只有部署种子（系统范围）能写。
+   **重建编辑**：重建路径（`/api/v1/spaces/{space_id}/rebuild/`）的全部写操作要求目标空间管理权，无需额外平台角色或功能权限；个人主人、组织主体和经现场核验的组织 admin 可管理，member/viewer 只读。NyxID 继续独立限制 Agent Key 的目标空间及操作范围；读操作只按访问级别。
+
 3. **资源级**：读出主人（没有一致归属证据的组织空间按个人所有处理）→ 主人本人或组织本身直接是"管理"→ 否则优先用调用者转发来的 `Authorization: Bearer`，没有转发凭据时按签名 `sub` 获取同一用户保存的 OAuth 凭据，再调 NyxID `GET /api/v1/orgs/{id}/authorization`（转发的是 JWT 时先验签并要求 sub 一致；返回编号必须等于组织编号；401/403/404 判为不是成员，其他判为查不到；15 秒截止；不跨请求缓存；证据最多用 60 秒）→ admin 是"管理"，member/viewer 是"只读"。看不到 404，能看不能写 403，写操作查不到角色 503 `org_membership_unavailable`。
 
 用户连接入口为 `/connect`，OAuth 管理端点在 `/api/auth/nyxid/*`，独立于业务身份中间件；浏览器 Cookie 不能调用 `/api/v1/*`。在线工作台另有经同意的固定 CMA 操作集合，见 [工作台规划](../docs/WEB_CONSOLE_PLAN.md)。凭据加密存储、自动刷新和断开流程见 [NyxID OAuth 接入](../docs/NYXID_OAUTH.md)。

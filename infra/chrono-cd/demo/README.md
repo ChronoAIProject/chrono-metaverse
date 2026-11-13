@@ -285,8 +285,7 @@ print(len(p['templates']), len(p['entities']), len(p['models']))"      # 0 52 24
    compact infra/chrono-cd/demo-seed.json` 的输出就是 `METAVERSE_DEMO_SEED` 的值，跑 `node infra/chrono-cd/check-app.mjs`，
    再按 [`../README.md`](../README.md) 第 8 步只改这一项。接口服务重启后在同一个空间里导入这个包、发布一次
    `actor.kind = rebuild` 的提交（重建层整体替换、锚点只新建），空间和演示链接不变；
-2. **命令行直接推送**（NyxID 已注册）：有 `metaverse:rebuild:write` 的人（平台管理员建的角色 `metaverse-rebuilder`，
-   还没建）在工作区里 `metaverse bundle push`，看过预览后 `metaverse publish <草稿编号>`。这条路不用托管文件，但新库
+2. **命令行直接推送**（NyxID 已注册）：有目标空间管理权的人（个人主人、组织主体或当前组织管理员）在工作区里 `metaverse bundle push`，看过预览后 `metaverse publish <草稿编号>`。这条路不用托管文件，但新库
    （本地 `--demo-seed`）就没有内容了，所以演示空间仍以第 1 条为准。
 
 ## 本地全流程验证
