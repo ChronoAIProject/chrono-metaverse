@@ -230,6 +230,20 @@ async fn message(
         body["conversation"] = json!(id);
     }
     a.browser.current().await?;
+    // Keep the configured destination separate from the credential-bearing access context.
+    // Serialize the task before attaching authorization; diagnostics must never inspect it.
+    let endpoint = target(
+        &state.oauth.as_ref().ok_or_else(unavailable)?.base_url,
+        "responses",
+    );
+    let upstream = a
+        .browser
+        .oauth
+        .nyxagent_http
+        .post(endpoint)
+        .json(&body)
+        .bearer_auth(a.credential.value())
+        .header("Idempotency-Key", &input.idempotency_key);
     let request_id = headers
         .get("x-request-id")
         .and_then(|v| v.to_str().ok())
@@ -239,14 +253,7 @@ async fn message(
     // closed tab stops observation, not the already authorized turn. Never replay it here.
     let (chunks, receiver) = mpsc::channel(8);
     let (ready, started) = oneshot::channel();
-    tokio::spawn(forward(
-        a,
-        body,
-        input.idempotency_key,
-        request_id,
-        ready,
-        chunks,
-    ));
+    tokio::spawn(forward(a, upstream, request_id, ready, chunks));
     started.await.map_err(|_| unavailable())??;
     let stream = futures_util::stream::unfold(receiver, |mut receiver| async move {
         receiver
@@ -267,22 +274,14 @@ async fn message(
 
 async fn forward(
     a: Access,
-    body: Value,
-    idempotency_key: String,
+    upstream: reqwest::RequestBuilder,
     request_id: uuid::Uuid,
     ready: oneshot::Sender<Result<(), ApiError>>,
     chunks: mpsc::Sender<axum::body::Bytes>,
 ) {
     let mut ready = Some(ready);
     let result = async {
-        let mut response = a
-            .browser
-            .oauth
-            .nyxagent_http
-            .post(target(&a.browser.oauth.base_url, "responses"))
-            .bearer_auth(a.credential.value())
-            .header("Idempotency-Key", &idempotency_key)
-            .json(&body)
+        let mut response = upstream
             .send()
             .await
             .map_err(|error| {
