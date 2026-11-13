@@ -19,6 +19,12 @@ import {
   type NyxagentPending,
   type NyxagentResponse,
 } from './nyxagent';
+import {
+  parseViewerActions,
+  viewerReply,
+  type ViewerCommand,
+  type ViewerContext,
+} from './viewerActions';
 
 export function NyxAgentPanel({
   session: supplied,
@@ -27,6 +33,9 @@ export function NyxAgentPanel({
   onPreview,
   onBusy,
   onRestore,
+  viewerContext,
+  onViewerCommand,
+  viewerFeedback,
 }: {
   readonly session: Session;
   readonly space?: SpaceSummary;
@@ -34,6 +43,9 @@ export function NyxAgentPanel({
   readonly onPreview: (link: string) => void;
   readonly onBusy: (busy: boolean) => void;
   readonly onRestore?: () => void;
+  readonly viewerContext?: ViewerContext;
+  readonly onViewerCommand?: (command: ViewerCommand) => void;
+  readonly viewerFeedback?: { error?: string; notice?: string };
 }) {
   const orgId = space?.owner.kind === 'org' ? space.owner.id : undefined;
   const session = useMemo(
@@ -89,7 +101,9 @@ export function NyxAgentPanel({
   );
   const finished = useCallback(
     (response: NyxagentResponse) => {
-      const answer = outputMessages(response.output).join('\n');
+      const rawAnswer = outputMessages(response.output).join('\n');
+      const answer = viewerReply(rawAnswer);
+      const controls = parseViewerActions(rawAnswer);
       const saved = current.current;
       commit({
         ...saved,
@@ -118,13 +132,22 @@ export function NyxAgentPanel({
           },
         ],
       });
-      if (links[0]) onPreview(links[0]);
+      if (response.status === 'completed' && controls.actions.length > 0) {
+        onViewerCommand?.({ id: response.id, actions: controls.actions });
+      }
+      if (controls.invalid)
+        setError('页面操作格式无法核验，已保留聊天结果；请重新描述需要的页面操作。');
+      if (
+        links[0] &&
+        !controls.actions.some((a) => ['space', 'current', 'preview'].includes(a.type))
+      )
+        onPreview(links[0]);
       setText('');
       setActivity('');
       if (response.status === 'failed')
         setError('NyxAgent 本轮执行失败，请核对已完成的操作后开始新的 NyxAgent 对话。');
     },
-    [commit, onPreview],
+    [commit, onPreview, onViewerCommand],
   );
   async function run(pending: NyxagentPending) {
     if (!space || active.current || !credentialVersion || current.current.recoveryRequired) return;
@@ -149,7 +172,7 @@ export function NyxAgentPanel({
         controller.signal,
         (update) => {
           if (!mounted.current) return;
-          setText(update.text);
+          setText(viewerReply(update.text));
           setActivity(update.activity);
           const p = current.current.pending;
           if (
@@ -207,7 +230,8 @@ export function NyxAgentPanel({
       ...(orgId ? { orgId } : {}),
       instruction,
       idempotencyKey: crypto.randomUUID(),
-      instructionsVersion: 3 as const,
+      instructionsVersion: 4 as const,
+      ...(viewerContext ? { viewerContext } : {}),
       ...(note.conversationId ? { conversationId: note.conversationId } : {}),
     };
     try {
@@ -329,6 +353,16 @@ export function NyxAgentPanel({
           onChange={connection}
           checkVersion={connectionCheck}
         />
+        {viewerFeedback?.error && (
+          <p className="workspace__notice workspace__notice--error" role="alert">
+            {viewerFeedback.error}
+          </p>
+        )}
+        {viewerFeedback?.notice && (
+          <p className="workspace__notice" role="status">
+            {viewerFeedback.notice}
+          </p>
+        )}
         {!space && (
           <p className="workspace__notice">先选择已有空间。扫描和模型导入可使用 CMA 创建空间。</p>
         )}
