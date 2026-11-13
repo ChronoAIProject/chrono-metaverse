@@ -284,8 +284,8 @@ async fn forward(
         let mut response = upstream
             .send()
             .await
-            .map_err(|error| {
-                tracing::warn!(%request_id, stage = "upstream_send", timeout = error.is_timeout(), connect = error.is_connect(), "NyxAgent transport interrupted");
+            .map_err(|_| {
+                tracing::warn!(%request_id, stage = "upstream_send", "NyxAgent transport interrupted");
                 unavailable()
             })?;
         a.browser.current().await?;
@@ -327,8 +327,8 @@ async fn forward(
                     })?;
                     continue;
                 }
-                chunk = response.chunk() => chunk.map_err(|error| {
-                    tracing::warn!(%request_id, stage = "upstream_read", timeout = error.is_timeout(), "NyxAgent transport interrupted");
+                chunk = response.chunk() => chunk.map_err(|_| {
+                    tracing::warn!(%request_id, stage = "upstream_read", "NyxAgent transport interrupted");
                     unavailable()
                 })?,
             };
