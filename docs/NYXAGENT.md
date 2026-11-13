@@ -14,6 +14,18 @@ NyxAgent 与 CMA 分别授权、保存凭据。Key 留在此浏览器的独立�
 
 组织空间仍使用当前用户的个人 Key；组织归属只选择目标资源。工作台检查当前组织角色，实际工具调用仍由 NyxID 和 metaverse 校验权限。服务连接或模型未获授权时，要在 NyxID 完成对应配置。
 
+### 重建层编辑与最小权限
+
+普通草稿只能编辑扩展层。移动 `rb.` 重建物件需要当前账号具有精确权限 `metaverse:rebuild:write`，同时拥有目标空间管理权；组织 member 和只有 `*`、`metaverse:content:write` 或 `metaverse:rebuild:*` 的账号仍不可写。推荐通过非默认角色 `metaverse-rebuilder` 单独授予这一项权限，不自动授予其他用户。助手不能自行分配角色或扩大 Key 权限。
+
+创建角色和分配角色须由 NyxID 平台管理员调用正式管理接口完成。`operator` 只能读取角色，不能据此自助授予重建权限；403 `rebuild_permission_required` 时应请管理员只授上述精确权限，不能放宽服务端检查。Key 操作范围配置也需在 NyxID 为当前账号开启 `assistant:operation-scopes`；已有的限制始终执行。
+
+重建草稿支持 `POST /api/v1/spaces/{space_id}/rebuild/drafts/{draft_id}/moves`，正文为 `{rev,moves:[{entityId,expectedHash,offset:[x,y,z]}]}`。哈希取自草稿基础快照，平移量单位为米。服务端读取原物件，仅平移 bounds 和形状根节点位置，保留模型、旋转、材质和来源；拒绝跨层、模板、过期哈希或修订、重复物件和物理区域之外的修改。每个草稿只收一批移动或一个重建包，后台任务完成后再读取 rev 并创建预览。断流后先核对草稿和任务，不能新建草稿重复移动。
+
+角色权限和 Agent Key 操作范围是同时生效的。只准备预览的 Key 应仅允许目标空间的读取、重建草稿创建/读取、moves、任务查询、preview、取消；不要允许 `/publish`、`/bundle`、上传、管理接口或其他空间。用户确认具体预览及 rev 后，才使用另行授权发布的凭据；预览 Key 本身无法发布，用户在聊天中要求发布也不会扩大它的权限。
+
+NyxID 自定义服务使用字面空间路径规则时，模板 OpenAPI 工具可能被过滤。可将该用户连接的规范地址配置为 `/api/openapi.json?spaceId=<空间编号>`：它保留 operationId，但把空间路径固定为该编号并去掉可变的 `space_id` 参数，供 NyxID 正常发现工具。随后给 Key 配置相同字面空间路径的 allow 规则，例如 `POST:/api/v1/spaces/chronoai-lobby/rebuild/drafts/{draft_id}/moves`。**规范地址只控制工具发现，真正的访问限制由 Key 的操作规则和服务端权限共同执行**；单独更换规范地址不构成隔离。该连接的工具发现将只显示这一空间；需编辑其他空间时应另设连接或重新明确配置范围。目录服务已有稳定 endpoint ID 时，优先使用 NyxID endpoint 输入约束固定 `space_id`。
+
 ## 使用与恢复
 
 - 以自然语言描述空间修改。助手的固定指令要求先读取最新状态、修改草稿、生成预览，并在用户明确确认具体预览后才发布。工具权限由 NyxID 决定；这些指令不额外授予权限。
@@ -33,7 +45,7 @@ NyxAgent 与 CMA 分别授权、保存凭据。Key 留在此浏览器的独立�
 
 NyxID 的 OpenAPI 抓取策略可能拒绝本地地址，此时服务提供 `chrono-metaverse__request` 通用工具。新消息会引导助手先通过该工具读取 `GET /api/agent-guide`；指南包含草稿、修订、预览、发布和取消流程，以及能直接通过实际接口校验的物件示例。更多接口仍可读取 `/api/openapi.json`。指南是公开的静态协议说明，不包含空间数据，也不改变鉴权或 NyxID 的地址抓取策略。
 
-新消息使用 `instructionsVersion: 2` 固定这份引导；待确认消息原样保存该版本。旧消息省略版本或使用 `1` 时，服务端仍生成旧版上游请求，升级后重试不会改变幂等请求内容；其他版本在调用上游前返回 422。
+新消息使用 `instructionsVersion: 3` 固定这份引导；待确认消息原样保存该版本。旧消息省略版本或使用 `1`、`2` 时，服务端仍生成对应版本的上游请求，升级后重试不会改变幂等请求内容；其他版本在调用上游前返回 422。
 
 这条通道使用 NyxAgent 的 Key 绑定会话，不包含个人 NyxBot 的历史、记忆或 specialists。扫描、文件导入和主机重建仍使用 CMA 或本地重建工具。
 

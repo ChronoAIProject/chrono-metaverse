@@ -10,6 +10,7 @@
 //! POST   .../rebuild/drafts                                     create_rebuild_draft
 //! GET    .../rebuild/drafts/{draft_id}                          get_rebuild_draft
 //! POST   .../rebuild/drafts/{draft_id}/bundle                   apply_rebuild_bundle
+//! POST   .../rebuild/drafts/{draft_id}/moves                    move_rebuild_entities
 //! POST   .../rebuild/drafts/{draft_id}/preview                  create_rebuild_draft_preview
 //! POST   .../rebuild/drafts/{draft_id}/publish                  publish_rebuild_draft
 //! DELETE .../rebuild/drafts/{draft_id}                          discard_rebuild_draft
@@ -18,7 +19,8 @@
 //!
 //! - **权限**：写操作要"管理"级别**并且**令牌带 `metaverse:rebuild:write`（始终生效，不看
 //!   `METAVERSE_REQUIRE_PERMISSIONS`），没有就 403 `rebuild_permission_required`；读操作按访问级别；
-//! - **重建草稿只收一个包**：没有内联操作的接口，也不收操作文件；交第二个包 409 `bundle_already_applied`；
+//! - **重建草稿只收一个包**：可交重建包或由 moves 在服务端生成 merge 包，不收任意内联操作或操作文件；
+//!   交第二个包 409 `bundle_already_applied`；
 //!   交过包以后只能预览、发布、丢弃；
 //! - **草稿属于创建时的范围**：重建草稿只能经这条路径操作，实体区、地块草稿也不能经这条路径操作（404）；
 //! - **上传的用途**：`scan`、`webmodel`、`model`、`texture`、`script`、`bundle`；交包时按 `uploadId` 只认
@@ -55,6 +57,9 @@ use crate::error::{ApiError, ProblemDocument};
 use crate::ingest::new_id;
 use crate::repo::{AssetRole, DraftStatus, UnusableAsset};
 use crate::AppState;
+
+pub mod moves;
+use moves::move_rebuild_entities;
 
 fn rebuild() -> Result<PathScope, ApiError> {
     Ok(PathScope::Rebuild)
@@ -396,8 +401,19 @@ pub async fn apply_rebuild_bundle(
         }
         Some(_) => {}
     }
+    queue_bundle(&state, &caller, &grant, draft, manifest_hash).await
+}
+
+async fn queue_bundle(
+    state: &AppState,
+    caller: &Caller,
+    grant: &crate::auth::Grant,
+    draft: crate::repo::DraftDoc,
+    manifest_hash: String,
+) -> Result<Response, ApiError> {
+    let space_id = grant.space_id();
     let limit = state.ingest.config.max_pending_jobs_per_space;
-    if state.repo.pending_jobs(&grant).await? >= limit {
+    if state.repo.pending_jobs(grant).await? >= limit {
         return Err(ApiError::new(
             StatusCode::TOO_MANY_REQUESTS,
             "too_many_jobs",
@@ -405,7 +421,7 @@ pub async fn apply_rebuild_bundle(
         ));
     }
     // 清理的栅栏：任务参数和之后的草稿都会引用清单，插入任务之前先刷新 touchedAt 并确认还在。
-    if !state.repo.touch_asset(&grant, &manifest_hash).await? {
+    if !state.repo.touch_asset(grant, &manifest_hash).await? {
         return Err(ApiError::new(
             StatusCode::NOT_FOUND,
             "not_found",
@@ -443,7 +459,7 @@ pub async fn apply_rebuild_bundle(
         started_at: None,
         finished_at: None,
     };
-    state.repo.insert_job(&grant, &job).await?;
+    state.repo.insert_job(grant, &job).await?;
     // 叫醒本进程的后台执行器（重任务名额），不等轮询。
     state.job_signal.notify();
     tracing::info!(space = %space_id, draft = %draft.id, job = %job.id, manifest = %manifest_hash, by = %caller.subject, "交包，展开任务已排队");
@@ -631,6 +647,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             &format!("{base}/drafts/{{draft_id}}/bundle"),
             post(apply_rebuild_bundle).layer(small),
+        )
+        .route(
+            &format!("{base}/drafts/{{draft_id}}/moves"),
+            post(move_rebuild_entities).layer(small),
         )
         .route(
             &format!("{base}/drafts/{{draft_id}}/preview"),
