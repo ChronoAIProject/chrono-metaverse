@@ -42,6 +42,13 @@ type PreviewIdentity = {
   preview: { draftId: string; rev: number; baseSeq: number; scope: string };
 };
 const CMA = 'https://cma.nyxid.ai';
+function readChatProvider(): 'cma' | 'nyxagent' {
+  try {
+    return sessionStorage.getItem('metaverse-chat-provider') === 'nyxagent' ? 'nyxagent' : 'cma';
+  } catch {
+    return 'cma';
+  }
+}
 const terminal = (status: string) =>
   ['succeeded', 'completed', 'failed', 'cancelled', 'stopped', 'deleted', 'paused'].includes(
     status,
@@ -107,13 +114,8 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
   const [catalogReload, setCatalogReload] = useState(0);
   const [catalogBusy, setCatalogBusy] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const [assistant, setAssistant] = useState<'cma' | 'nyxagent'>(() => {
-    try {
-      return sessionStorage.getItem('metaverse-chat-provider') === 'nyxagent' ? 'nyxagent' : 'cma';
-    } catch {
-      return 'cma';
-    }
-  });
+  const openRestoredChat = useCallback(() => setChatOpen(true), []);
+  const [assistant, setAssistant] = useState(readChatProvider);
   const [nyxagentBusy, setNyxagentBusy] = useState(false);
   function chooseAssistant(value: 'cma' | 'nyxagent') {
     setAssistant(value);
@@ -1347,27 +1349,13 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
         )}
         {session?.connected && (
           <button
-            className="workspace__button workspace__secondary"
-            aria-label="打开 NyxAgent 聊天"
-            disabled={busy || nyxagentBusy}
-            onClick={() => {
-              chooseAssistant('nyxagent');
-              setChatOpen(true);
-            }}
-          >
-            NyxAgent
-          </button>
-        )}
-        {session?.connected && (
-          <button
             ref={chatButton}
             className="workspace__chat-launcher workspace__button"
-            aria-label="打开 CMA 聊天"
+            aria-label="打开空间助手"
             aria-expanded={chatOpen}
             aria-controls="workspace-chat"
             hidden={chatOpen}
             onClick={() => {
-              chooseAssistant('cma');
               setChatOpen(true);
             }}
           >
@@ -1383,7 +1371,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
               <path d="M20 11.5a8 8 0 0 1-8 8H4l1.4-4A8 8 0 1 1 20 11.5Z" />
               <path d="M8 10h8M8 14h5" />
             </svg>
-            <span>CMA 聊天</span>
+            <span>空间助手</span>
             {awaiting ? (
               <small>处理中</small>
             ) : preview.startsWith('/preview') ? (
@@ -1503,11 +1491,9 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
               </button>
               <div>
                 <h2>
-                  {assistant === 'nyxagent'
-                    ? 'NyxAgent 聊天'
-                    : note.creation?.phase === 'draft'
-                      ? '创建空间'
-                      : 'CMA 聊天'}
+                  {assistant === 'cma' && note.creation?.phase === 'draft'
+                    ? '创建空间'
+                    : '空间助手'}
                 </h2>
                 <p>{spaceName || '选择一个空间，或创建新空间'}</p>
               </div>
@@ -1519,15 +1505,15 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                   disabled={busy || nyxagentBusy}
                   onChange={(event) => chooseAssistant(event.target.value as 'cma' | 'nyxagent')}
                 >
-                  <option value="cma">CMA</option>
-                  <option value="nyxagent">NyxAgent</option>
+                  <option value="cma">CMA · 扫描与导入</option>
+                  <option value="nyxagent">NyxAgent · 对话编辑</option>
                 </select>
               </label>
               <span className="workspace__badge" role="status">
                 {assistant === 'nyxagent'
                   ? nyxagentBusy
                     ? '执行中'
-                    : 'Agent Key'
+                    : ''
                   : creating
                     ? '待提交'
                     : statusText(responseStatus || operation?.status || agent?.status || 'ready')}
@@ -1547,6 +1533,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                 space={selected}
                 request={request}
                 onBusy={setNyxagentBusy}
+                onRestore={openRestoredChat}
                 onPreview={(value) => {
                   const url = viewerLink(value);
                   if (!url) return;

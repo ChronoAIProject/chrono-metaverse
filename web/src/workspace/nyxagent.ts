@@ -29,6 +29,7 @@ export type NyxagentPending = {
 };
 export type NyxagentNote = {
   conversationId?: string;
+  recoveryRequired?: boolean;
   instruction: string;
   messages: { role: 'user' | 'assistant'; text: string }[];
   pending?: NyxagentPending;
@@ -48,6 +49,7 @@ export function readNyxagentNote(subject: string, spaceId: string, orgId?: strin
       typeof note.instruction !== 'string' ||
       note.instruction.length > 16000 ||
       (note.conversationId !== undefined && !identifier(note.conversationId)) ||
+      (note.recoveryRequired !== undefined && typeof note.recoveryRequired !== 'boolean') ||
       !Array.isArray(note.messages) ||
       note.messages.length > 30 ||
       note.messages.some(

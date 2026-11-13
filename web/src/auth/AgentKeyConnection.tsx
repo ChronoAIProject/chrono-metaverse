@@ -30,6 +30,7 @@ export function AgentKeyConnection({
   checkVersion = 0,
   ownerName,
   provider = 'cma',
+  compact = false,
 }: {
   readonly session: Session;
   readonly request: typeof fetch;
@@ -37,6 +38,7 @@ export function AgentKeyConnection({
   readonly checkVersion?: number;
   readonly ownerName?: string;
   readonly provider?: ChatProvider;
+  readonly compact?: boolean;
 }) {
   const session = useMemo(
     () => ({
@@ -252,6 +254,22 @@ export function AgentKeyConnection({
       lost();
     });
   }
+  if (compact && ready && identity)
+    return (
+      <details className="workspace__connection" aria-label={`${serviceName} 浏览器授权`}>
+        <summary>已连接 {serviceName}</summary>
+        <p>
+          已连接 {serviceName} · {identity.name}
+        </p>
+        <p>
+          当前空间：{ownerLabel} · 使用当前账号的 {serviceName} 授权
+        </p>
+        <button className="workspace__secondary" disabled={busy} onClick={() => void revoke()}>
+          断开此浏览器的 {serviceName} 授权
+        </button>
+        {error && <p role="alert">{error}</p>}
+      </details>
+    );
   return (
     <section className="workspace__consent" aria-label={`${serviceName} 浏览器授权`}>
       <p>
@@ -304,10 +322,13 @@ export function AgentKeyConnection({
         </>
       )}
       {provider === 'nyxagent' && !ready && (
-        <p>
-          请选择 proxy 权限，以及 NyxAgent（llm-nyx）、chrono-metaverse 和 Chrono LLM Public
-          三个服务。
-        </p>
+        <details>
+          <summary>授权范围说明</summary>
+          <p>
+            请选择 proxy 权限，以及 NyxAgent（llm-nyx）、chrono-metaverse 和 Chrono LLM Public
+            三个服务。
+          </p>
+        </details>
       )}
       {error && <p role="alert">{error}</p>}
     </section>

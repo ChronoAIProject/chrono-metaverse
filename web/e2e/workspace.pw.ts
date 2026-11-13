@@ -180,14 +180,14 @@ test('在线工作台：明确授权、创建 worker、查看结果并确认发�
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
   await page.getByRole('link', { name: '打开在线工作台' }).click();
-  await page.getByRole('button', { name: '打开 CMA 聊天' }).click();
+  await page.getByRole('button', { name: '打开空间助手' }).click();
   const enable = page.getByRole('button', { name: '启用 CMA 聊天' });
   expect(writes).toEqual([]);
   await enable.click();
   await page.getByRole('button', { name: '选择空间', exact: true }).click();
   await page.getByRole('button', { name: /演示前厅/ }).click();
-  if (await page.getByRole('button', { name: '打开 CMA 聊天' }).isVisible())
-    await page.getByRole('button', { name: '打开 CMA 聊天' }).click();
+  if (await page.getByRole('button', { name: '打开空间助手' }).isVisible())
+    await page.getByRole('button', { name: '打开空间助手' }).click();
   await expect(page.locator('.workspace__scene .viewer[data-ready="true"]')).toBeVisible();
   const stage = await page.locator('.workspace__stage').boundingBox();
   const scene = await page.locator('.workspace__scene').boundingBox();
@@ -201,7 +201,7 @@ test('在线工作台：明确授权、创建 worker、查看结果并确认发�
   await page.getByRole('button', { name: '收起 CMA 聊天' }).click();
   await expect(page.getByRole('dialog', { name: 'CMA 空间聊天' })).toBeHidden();
   expect((await page.locator('.workspace__scene').boundingBox())!.width).toBe(1280);
-  await page.getByRole('button', { name: '打开 CMA 聊天' }).click();
+  await page.getByRole('button', { name: '打开空间助手' }).click();
   await page.screenshot({
     path: testInfo.outputPath('existing-space-desktop.png'),
     fullPage: true,
@@ -324,8 +324,8 @@ test('手机端：创建回复丢失后刷新页面，恢复原请求不会重�
   await page.goto('/workspace');
   await page.getByRole('button', { name: '选择空间', exact: true }).click();
   await page.getByRole('button', { name: /演示前厅/ }).click();
-  if (await page.getByRole('button', { name: '打开 CMA 聊天' }).isVisible())
-    await page.getByRole('button', { name: '打开 CMA 聊天' }).click();
+  if (await page.getByRole('button', { name: '打开空间助手' }).isVisible())
+    await page.getByRole('button', { name: '打开空间助手' }).click();
   await page.getByLabel('给空间发消息').fill('改成一个可以交流的小广场');
   await page.getByRole('button', { name: '发送' }).click();
   await expect(page.getByRole('button', { name: '重试原请求' })).toBeVisible();
@@ -534,7 +534,7 @@ test('恢复旧任务：手机直接看到沙箱阶段的授权阻塞', async ({
     return route.fulfill({ status: 404, json: { code: 'not_found' } });
   });
   await page.goto('/workspace');
-  await page.getByRole('button', { name: '打开 CMA 聊天' }).click();
+  await page.getByRole('button', { name: '打开空间助手' }).click();
   const scene = await page.locator('.workspace__scene').boundingBox();
   const chat = await page.getByRole('dialog', { name: 'CMA 空间聊天' }).boundingBox();
   expect(scene!.width).toBe(page.viewportSize()!.width);

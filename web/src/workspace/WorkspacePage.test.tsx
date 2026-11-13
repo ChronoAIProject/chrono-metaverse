@@ -204,7 +204,7 @@ async function selectSpace(name = /我的前厅/) {
   await userEvent.click(await screen.findByRole('button', { name }));
 }
 async function openChat() {
-  const launcher = screen.queryByRole('button', { name: '打开 CMA 聊天' });
+  const launcher = screen.queryByRole('button', { name: '打开空间助手' });
   if (launcher) await userEvent.click(launcher);
 }
 async function fillTask() {
@@ -224,7 +224,7 @@ describe('CMA workspace', () => {
     window.history.replaceState(null, '', '/workspace?space=my-lobby');
     const api = mockApi();
     render(<WorkspacePage request={api.request} />);
-    await userEvent.click(await screen.findByRole('button', { name: '打开 CMA 聊天' }));
+    await userEvent.click(await screen.findByRole('button', { name: '打开空间助手' }));
     await screen.findByText('当前空间：ChronoAI · 使用当前账号的 CMA 授权');
     await screen.findByText('已连接 CMA');
     await waitFor(() =>
