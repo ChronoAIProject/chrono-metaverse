@@ -100,14 +100,19 @@ export function SpacePage({
   const camera = useMemo(() => {
     const requestedMode = viewerCommand?.actions.filter((a) => a.type === 'mode').at(-1);
     const requestedStyle = viewerCommand?.actions.filter((a) => a.type === 'style').at(-1);
+    const requestedCutaway = viewerCommand?.actions.filter((a) => a.type === 'cutaway').at(-1);
     if (
       (requestedMode?.type === 'mode' && requestedMode.value !== mode) ||
-      (requestedStyle?.type === 'style' && requestedStyle.value !== style)
+      (requestedStyle?.type === 'style' && requestedStyle.value !== style) ||
+      (requestedCutaway?.type === 'cutaway' &&
+        (requestedCutaway.height === null
+          ? cutEnabled
+          : !cutEnabled || cutChoice !== requestedCutaway.height))
     )
       return undefined;
     const actions = viewerCommand?.actions.filter((a) => a.type === 'camera');
     return actions?.length ? { id: viewerCommand!.id, actions } : undefined;
-  }, [viewerCommand, mode, style]);
+  }, [viewerCommand, mode, style, cutEnabled, cutChoice]);
   // 下载好的扫描模型，连同它的哈希：换了扫描时旧的自动失效。
   const [loadedScan, setLoadedScan] = useState<{ hash: string; bytes: ArrayBuffer } | null>(null);
   const playback = usePlayback(now);

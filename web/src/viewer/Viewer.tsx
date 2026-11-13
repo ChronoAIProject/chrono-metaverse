@@ -106,6 +106,9 @@ export function Viewer({
     cameraResultRef.current?.(success);
   }, []);
   useEffect(() => {
+    viewRef.current?.setCutaway(cutaway);
+  }, [cutaway, content]);
+  useEffect(() => {
     cameraRef.current = camera;
     cameraResultRef.current = onCameraResult;
     if (
@@ -187,10 +190,6 @@ export function Viewer({
       cancelled = true;
     };
   }, [content, applyCamera]);
-
-  useEffect(() => {
-    viewRef.current?.setCutaway(cutaway);
-  }, [cutaway, content]);
 
   useEffect(() => {
     viewRef.current?.setVisuals(visuals);
