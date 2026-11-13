@@ -54,13 +54,20 @@ function setup() {
   };
   const contents: SceneContent[] = [];
   const dispose = vi.fn();
-  const camera = vi.fn<(action: CameraAction, content: SceneContent) => boolean>(() => true);
+  let cutHeight: number | null = null;
+  const cameraCuts: (number | null)[] = [];
+  const camera = vi.fn<(action: CameraAction, content: SceneContent) => boolean>(() => {
+    cameraCuts.push(cutHeight);
+    return true;
+  });
   const createView = vi.fn<SceneViewFactory>(() => ({
     setContent: async (content) => {
       contents.push(content);
     },
     setVisuals: vi.fn(),
-    setCutaway: vi.fn(),
+    setCutaway: (height) => {
+      cutHeight = height;
+    },
     select: vi.fn(),
     frameContent: vi.fn(),
     setShowAllLabels: vi.fn(),
@@ -80,7 +87,7 @@ function setup() {
       warnings: [],
     }),
   }));
-  return { client, contents, dispose, createView, camera };
+  return { client, contents, dispose, createView, camera, cameraCuts };
 }
 it('keeps one viewer through published → draft → new draft → published, and retains published scene data', async () => {
   const s = setup();
@@ -205,4 +212,33 @@ it('applies all camera actions after the requested scene mode is ready, once per
     <SpacePage {...props} viewerCommand={{ ...command, actions: [...command.actions] }} />,
   );
   expect(s.camera).toHaveBeenCalledTimes(2);
+});
+
+it('frames the scene using the requested cutaway before moving the camera, including same-scene commands', async () => {
+  const s = setup();
+  const props = {
+    spaceId: SPACE_ID,
+    client: s.client,
+    hasShareToken: true,
+    createView: s.createView,
+  };
+  const view = render(<SpacePage {...props} />);
+  await waitFor(() => expect(s.contents.length).toBeGreaterThan(0));
+  for (const [i, height] of [0.5, null].entries()) {
+    view.rerender(
+      <SpacePage
+        {...props}
+        viewerCommand={{
+          id: `cut_${i}`,
+          actions: [
+            { type: 'cutaway', height },
+            { type: 'camera', kind: 'overview' },
+          ],
+        }}
+      />,
+    );
+    await waitFor(() => expect(s.cameraCuts).toHaveLength(i + 1));
+    expect(s.cameraCuts[i]).toBe(height);
+  }
+  expect(s.createView).toHaveBeenCalledTimes(1);
 });

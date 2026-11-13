@@ -193,6 +193,20 @@ test('AI 页面动作切换空间、视图、草稿和镜头，保留同一个 W
   expect(await canvas!.evaluate((canvas) => canvas.isConnected)).toBe(true);
   expect(downloads).toHaveLength(count);
   await send([
+    { type: 'cutaway', height: 0.5 },
+    { type: 'camera', kind: 'overview' },
+  ]);
+  await expect
+    .poll(async () => Number((await viewer.getAttribute('data-frame'))!.split(',')[4]))
+    .toBe(0.5);
+  await send([
+    { type: 'cutaway', height: null },
+    { type: 'camera', kind: 'overview' },
+  ]);
+  await expect
+    .poll(async () => Number((await viewer.getAttribute('data-frame'))!.split(',')[4]))
+    .toBeGreaterThan(0.5);
+  await send([
     { type: 'space', spaceId: 'not-authorized' },
     { type: 'mode', value: 'raw' },
   ]);
