@@ -1307,7 +1307,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                       ×
                     </button>
                   </div>
-                  {links.length > 0 && (
+                  {(links.length > 0 || preview) && (
                     <div className="workspace__results">
                       <button
                         className={!preview ? '' : 'workspace__secondary'}
