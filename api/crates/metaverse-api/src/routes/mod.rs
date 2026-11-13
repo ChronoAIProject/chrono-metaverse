@@ -88,6 +88,10 @@ pub fn router(state: AppState) -> Router {
             get(timeline::get_snapshot),
         )
         .route(
+            "/api/v1/spaces/{space_id}/entities/{entity_id}",
+            get(timeline::get_snapshot_entity),
+        )
+        .route(
             "/api/v1/spaces/{space_id}/chunks/{hash}",
             get(timeline::get_chunk),
         )

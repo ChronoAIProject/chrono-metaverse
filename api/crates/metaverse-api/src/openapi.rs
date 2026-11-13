@@ -84,6 +84,7 @@ use utoipa::{
         // 时间线与公开读分工
         crate::routes::timeline::list_timeline,
         crate::routes::timeline::get_snapshot,
+        crate::routes::timeline::get_snapshot_entity,
         crate::routes::timeline::get_chunk,
         crate::routes::timeline::get_asset,
         crate::routes::timeline::get_region_content,
@@ -438,6 +439,18 @@ mod tests {
         assert!(movement["requestBody"]
             .to_string()
             .contains("MoveEntitiesRequest"));
+        let reader = &paths["/api/v1/spaces/test-lobby/entities/{entity_id}"]["get"];
+        assert_eq!(reader["operationId"], "get_snapshot_entity");
+        assert!(reader["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["name"] == "seq"));
+        assert!(!reader["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["name"] == "space_id"));
         for invalid in ["../other", "test-lobby/../other", "{space_id}", "ab", ""] {
             assert!(space_document(invalid).is_err());
         }

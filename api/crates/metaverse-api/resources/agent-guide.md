@@ -4,7 +4,9 @@
 
 ## 读取与范围
 
-先 GET /api/v1/spaces/{spaceId}，再 GET /api/v1/spaces/{spaceId}/snapshot 读取最新 seq、entities、anchors、regions、plots。snapshot.entities 是 [{id,hash,body}]，body 才是完整物件。GET /api/v1/spaces/{spaceId}/timeline 可核对发布记录。只操作任务指定空间；404 时停止，不能创建替代空间。
+先 GET /api/v1/spaces/{spaceId} 确认空间；已知物件编号时按下文精确读取，只有需要完整状态时再 GET /api/v1/spaces/{spaceId}/snapshot 读取最新 seq、entities、anchors、regions、plots。snapshot.entities 是 [{id,hash,body}]，body 才是完整物件。GET /api/v1/spaces/{spaceId}/timeline 可核对发布记录。只操作任务指定空间；404 时停止，不能创建替代空间。
+
+已知物件编号时，优先用 get_snapshot_entity 或 GET /api/v1/spaces/{spaceId}/entities/{entityId}?seq={实际版本} 精确读取，返回 {spaceId,seq,entity:{id,hash,body}}。省略 seq 取最新；建草稿后须用实际 baseSeq 再核对。大型空间的完整快照可能被工具截断，不能从截断输出猜测物件、哈希或字段，也不要反复下载完整快照。需要布局和附近物件时用 get_region_content；精确物件记录仍以此单物件接口为准。
 
 普通空间草稿作用于 physical 范围、ext 扩展层。没有 regions 时可以在未被虚拟区或地块占用的位置编辑，不需要创建布局。用户明确指定已有地块时，下面所有 drafts 路径改为 /api/v1/spaces/{spaceId}/plots/{plotId}/drafts，始终保持同一范围。普通草稿不能改 rebuilt 层；有重建权限时使用下面的重建流程，不能改名或复制到扩展层来绕过限制。
 
@@ -13,7 +15,7 @@
 先核对真实 body.layer；编号本身不授予权限。rebuilt 层物件可以通过专用重建草稿移动，无需修改仓库、重新扫描或重做整个空间。调用者必须同时具备本空间管理权、NyxID 精确权限 metaverse:rebuild:write，并且当前 Agent Key 获准调用对应工具。空间管理员身份、平台管理员的通配权限和仅有普通内容编辑权限都不能替代精确重建权限。
 
 1. POST /api/v1/spaces/{spaceId}/rebuild/drafts，body {"baseSeq":实际最新seq}；记录返回 id 和 rev。
-2. 调用 move_rebuild_entities，或 POST /api/v1/spaces/{spaceId}/rebuild/drafts/{draftId}/moves，body {"rev":实际rev,"moves":[{"entityId":"实际rb.编号","expectedHash":"baseSeq快照中该物件的hash","offset":[1,0,0]}]}。offset 是世界坐标的平移量，单位米，y 向上；示例表示向 +x 移动 1 米，必须按用户目标计算真实值。一次 1–100 个不同物件。
+2. 用 get_snapshot_entity 读取草稿 baseSeq 下的目标记录，核对真实 layer，再调用 move_rebuild_entities，或 POST /api/v1/spaces/{spaceId}/rebuild/drafts/{draftId}/moves，body {"rev":实际rev,"moves":[{"entityId":"实际rb.编号","expectedHash":"返回的entity.hash","offset":[1,0,0]}]}。offset 是世界坐标的平移量，单位米，y 向上；示例表示向 +x 移动 1 米，必须按用户目标计算真实值。一次 1–100 个不同物件。
 3. 返回 202 只代表排队。GET /api/v1/spaces/{spaceId}/rebuild/jobs/{jobId} 等到 status=done，再 GET 对应重建草稿读取新的 rev。失败时报告真实错误，不能当作已完成。
 4. POST /api/v1/spaces/{spaceId}/rebuild/drafts/{draftId}/preview，body {"ttlSeconds":3600}。提供实际完整预览链接、草稿编号、rev 和有效期。保持未发布；空间 head 不会因移动草稿或预览而变化。
 5. 仅当用户明确确认当前具体预览和 rev，并且 Key 获准发布时，使用对应 /rebuild/drafts/{draftId}/publish，body {"rev":实际确认rev,"message":"用户确认的修改","replay":false}。Key 只获准准备预览时，应保留草稿供用户通过有发布权的入口发布，不索取更宽的 Key。

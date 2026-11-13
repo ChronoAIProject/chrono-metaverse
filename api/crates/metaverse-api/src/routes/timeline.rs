@@ -19,7 +19,7 @@ use crate::error::{ApiError, ProblemDocument};
 use crate::repo::Repo;
 use crate::timeline::region_text::region_content;
 use crate::timeline::snapshot::{snapshot_at, Audience};
-use crate::timeline::views::{CommitPage, CommitView, SnapshotView};
+use crate::timeline::views::{CommitPage, CommitView, EntityRecordView, SnapshotView};
 use crate::AppState;
 
 /// 每页最多的提交数。
@@ -165,6 +165,65 @@ pub async fn get_snapshot(
         response.headers_mut().insert(header::ETAG, value);
     }
     Ok(response)
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotEntityView {
+    pub space_id: String,
+    pub seq: u64,
+    pub entity: EntityRecordView,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/spaces/{space_id}/entities/{entity_id}",
+    operation_id = "get_snapshot_entity",
+    tag = "timeline",
+    description = "精确读取一个物件在指定版本的真实记录，返回 {spaceId,seq,entity:{id,hash,body}}。seq 默认最新；重建草稿移动前传草稿 baseSeq，使用 entity.hash 作 expectedHash，并核对 entity.body.layer、bounds 和原模型字段。已知物件编号时优先用此工具，避免完整 snapshot 因物件过多被工具截断。只读，沿用空间访问检查；无物件、无版本或无空间访问权均 404。",
+    params(
+        ("space_id" = String, Path, description = "空间编号"),
+        ("entity_id" = String, Path, description = "物件编号，例如 rb.clutter-09"),
+        SeqQuery,
+    ),
+    security(("nyxid_identity" = [])),
+    responses(
+        (status = 200, description = "指定版本的单个物件", body = SnapshotEntityView),
+        (status = 401, description = "身份令牌无效", body = ProblemDocument),
+        (status = 404, description = "物件、版本或空间不存在，或无权查看", body = ProblemDocument),
+        (status = 422, description = "seq 不合法", body = ProblemDocument),
+    )
+)]
+pub async fn get_snapshot_entity(
+    State(state): State<AppState>,
+    caller: Caller,
+    Path((space_id, entity_id)): Path<(String, String)>,
+    Query(query): Query<SeqQuery>,
+) -> Result<Response, ApiError> {
+    let grant = state
+        .authorizer
+        .space(&caller, &space_id, Purpose::Read)
+        .await?;
+    if !is_object_id(&entity_id) {
+        return Err(ApiError::not_found());
+    }
+    let (seq, _, _) = resolve_seq(&state.repo, &grant, query.seq.as_deref()).await?;
+    let manifest = state.repo.manifest_at(&grant, seq).await?;
+    let hash = manifest
+        .entities
+        .get(&entity_id)
+        .ok_or_else(ApiError::not_found)?;
+    let mut records = state.repo.record_bodies(&grant, &[hash.as_str()]).await?;
+    let body = records.remove(hash).ok_or_else(ApiError::internal)?;
+    Ok(private_json(&SnapshotEntityView {
+        space_id,
+        seq,
+        entity: EntityRecordView {
+            id: entity_id,
+            hash: hash.clone(),
+            body,
+        },
+    }))
 }
 
 #[utoipa::path(
