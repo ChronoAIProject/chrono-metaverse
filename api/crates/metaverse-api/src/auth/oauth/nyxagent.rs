@@ -281,13 +281,7 @@ async fn forward(
 ) {
     let mut ready = Some(ready);
     let result = async {
-        let mut response = upstream
-            .send()
-            .await
-            .map_err(|_| {
-                tracing::warn!(%request_id, stage = "upstream_send", "NyxAgent transport interrupted");
-                unavailable()
-            })?;
+        let mut response = upstream.send().await.map_err(|_| unavailable())?;
         a.browser.current().await?;
         if !response.status().is_success() {
             let status = response.status();
@@ -322,22 +316,16 @@ async fn forward(
         loop {
             let chunk = tokio::select! {
                 _ = authority.tick() => {
-                    a.browser.current().await.inspect_err(|error| {
-                        tracing::warn!(%request_id, stage = "session_check", code = error.code, "NyxAgent stream interrupted");
-                    })?;
+                    a.browser.current().await?;
                     continue;
                 }
-                chunk = response.chunk() => chunk.map_err(|_| {
-                    tracing::warn!(%request_id, stage = "upstream_read", "NyxAgent transport interrupted");
-                    unavailable()
-                })?,
+                chunk = response.chunk() => chunk.map_err(|_| unavailable())?,
             };
             let Some(chunk) = chunk else {
                 return Ok(());
             };
             total += chunk.len();
             if total > 8 * 1024 * 1024 {
-                tracing::warn!(%request_id, stage = "response_limit", "NyxAgent stream interrupted");
                 return Err(unavailable());
             }
             // Check again before exposing bytes; authority can change between timer ticks.
@@ -349,6 +337,8 @@ async fn forward(
     }
     .await;
     if let Err(error) = result {
+        // Log outside the credential-bearing future; only the public trace ID is recorded.
+        tracing::warn!(%request_id, "NyxAgent transport interrupted");
         if let Some(ready) = ready {
             let _ = ready.send(Err(error));
         } else {
