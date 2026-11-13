@@ -353,7 +353,10 @@ async function versionText(page) {
 
 async function renderedStats(page, file) {
   await page.screenshot({ path: join(out, file) });
-  return imageStats(decodePng(await page.locator('.viewer__canvas').screenshot()));
+  // Capture the visible canvas without scrolling the full-height scene into view.
+  const clip = await page.locator('.viewer__canvas').boundingBox();
+  if (!clip || clip.width <= 0 || clip.height <= 0) throw new E2eError('查看器没有可见画布');
+  return imageStats(decodePng(await page.screenshot({ clip })));
 }
 
 // ---------------------------------------------------------------------------

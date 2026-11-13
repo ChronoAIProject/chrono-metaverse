@@ -1,4 +1,4 @@
-// infra/dev/mongo.mjs 的测试：BSON 编码、解码往返，OP_MSG 的格式；本机 27018 上有副本集时
+// infra/dev/mongo.mjs 的测试：BSON 编码、解码往返，OP_MSG 的格式；测试端口上有副本集时
 // 再真的查一次副本集名（没有就跳过）。
 import assert from 'node:assert/strict';
 import net from 'node:net';
@@ -52,9 +52,12 @@ test('能解码回复里常见的类型（浮点、长整数、时间戳、对�
   assert.deepEqual([...document.hash], [1, 2, 3]);
 });
 
-test('本机 27018 上的副本集（没有就跳过）', async (t) => {
+test('本机测试端口上的副本集（没有就跳过）', async (t) => {
+  const uri = new URL(process.env.METAVERSE_TEST_MONGODB_URI ?? 'mongodb://127.0.0.1:27018');
+  assert.ok(['127.0.0.1', 'localhost'].includes(uri.hostname), '测试工具只连接本机');
+  const port = Number(uri.port || 27017);
   const open = await new Promise((resolve) => {
-    const socket = net.connect({ host: '127.0.0.1', port: 27018 });
+    const socket = net.connect({ host: '127.0.0.1', port });
     socket.on('connect', () => {
       socket.end();
       resolve(true);
@@ -62,10 +65,10 @@ test('本机 27018 上的副本集（没有就跳过）', async (t) => {
     socket.on('error', () => resolve(false));
   });
   if (!open) {
-    t.skip('27018 上没有 MongoDB');
+    t.skip(`${port} 上没有 MongoDB`);
     return;
   }
-  const hello = await command(27018, { hello: 1 });
+  const hello = await command(port, { hello: 1 });
   assert.equal(typeof hello.setName, 'string');
   assert.equal(hello.ok, 1);
 });

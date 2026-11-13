@@ -704,8 +704,9 @@ fn plate_hull_material_cases() -> Vec<(&'static str, &'static str, Value, Value)
             "shape_invalid_plate_too_many_points",
             "plate：超过 64 个点",
             json!({"type":"plate","points":(0..65).map(|i| {
-                let a = f64::from(i) * std::f64::consts::TAU / 65.0;
-                json!([a.cos(), 0, -a.sin()])
+                // The size guard runs before geometry checks; integers keep this
+                // shared vector independent of platform trigonometry rounding.
+                json!([i, 0, i * i])
             }).collect::<Vec<_>>(),"thickness":0.02}),
             none.clone(),
         ),

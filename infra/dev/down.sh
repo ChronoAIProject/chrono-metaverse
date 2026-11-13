@@ -11,7 +11,7 @@ stop() {
   [[ -f "$pidfile" ]] || return 0
   pid=$(cat "$pidfile")
   if kill -0 "$pid" 2>/dev/null; then
-    echo "[down] 停止 $name（进程号 $pid）"
+    echo "[down] 停止 ${name}（进程号 ${pid}）"
     # 进程组号就是进程号（up.sh 用 set -m 起的）；不行再只停这个进程。
     kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
     for _ in $(seq 1 "$grace"); do
