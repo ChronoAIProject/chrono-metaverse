@@ -49,7 +49,7 @@ for arg in "$@"; do
       exit 0
       ;;
     *)
-      echo "不认识的参数：$arg（可用 --no-web、--demo-seed[=<种子.json>]）" >&2
+      echo "不认识的参数：${arg}（可用 --no-web、--demo-seed[=<种子.json>]）" >&2
       exit 2
       ;;
   esac
@@ -97,7 +97,7 @@ wait_http() {
     sleep 1
   done
   tail -n 40 "$run/$name.log" >&2 || true
-  die "$name 在 $seconds 秒内没有就绪（$url，日志：$run/$name.log）"
+  die "$name 在 $seconds 秒内没有就绪（${url}，日志：$run/$name.log）"
 }
 
 need node "需要 Node 22（https://nodejs.org）"
@@ -153,7 +153,7 @@ EOF
   fi
   port_busy "$mongo_port" && die "端口 $mongo_port 已被占用，换一个：METAVERSE_DEV_MONGO_PORT=<端口>"
   mkdir -p "$run/mongo-data"
-  say "启动 mongod（副本集 rs0，端口 $mongo_port，数据在 infra/dev/.run/mongo-data）"
+  say "启动 mongod（副本集 rs0，端口 ${mongo_port}，数据在 infra/dev/.run/mongo-data）"
   start mongod "$mongod_bin" --dbpath "$run/mongo-data" --port "$mongo_port" --bind_ip 127.0.0.1 --replSet rs0
   node "$repo/infra/dev/mongo.mjs" init "$mongo_port" 60 || die "mongod 没有选出主节点（日志：$run/mongod.log）"
   mongo_uri="mongodb://127.0.0.1:$mongo_port/?replicaSet=rs0"
@@ -193,7 +193,7 @@ if [[ -n "$seed_file" ]]; then
       (umask 077 && printf '%s\n' "$seed_token" >"$run/demo-share-token")
     fi
   fi
-  say "部署配置种子：$seed_file（空间 $seed_space），接口服务建好索引后在后台导入"
+  say "部署配置种子：${seed_file}（空间 ${seed_space}），接口服务建好索引后在后台导入"
 fi
 
 # ---------------------------------------------------------------------------
@@ -204,7 +204,7 @@ say "编译接口服务（第一次要几分钟）"
 target=${CARGO_TARGET_DIR:-$repo/api/target}
 [[ "$target" = /* ]] || target="$repo/api/$target"
 api="http://127.0.0.1:$api_port"
-say "启动接口服务：$api（库 $database）"
+say "启动接口服务：${api}（库 ${database}）"
 MONGODB_URI="$mongo_uri" \
   MONGODB_DATABASE="$database" \
   NYXID_BASE_URL="$nyx" \
@@ -245,8 +245,8 @@ fi
 cat <<EOF
 
 本地全套已启动（停止：infra/dev/down.sh；日志：infra/dev/.run/*.log）
-  MongoDB      $mongo_uri（库 $database）
-  模拟 NyxID   $nyx（服务编号 dev-service，组织角色和权限：infra/dev/org-roles.json；重建身份 rita）
+  MongoDB      ${mongo_uri}（库 ${database}）
+  模拟 NyxID   ${nyx}（服务编号 dev-service，组织角色和权限：infra/dev/org-roles.json；重建身份 rita）
   接口服务     $api/api/healthz
 EOF
 [[ $with_web -eq 1 ]] && echo "  网站         http://127.0.0.1:$web_port/"

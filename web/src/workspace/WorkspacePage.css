@@ -341,9 +341,9 @@
   z-index: 30;
   left: 16px;
   bottom: 88px;
-  width: clamp(320px, 30vw, 380px);
+  width: clamp(360px, 34vw, 440px);
   max-width: calc(100% - 16px);
-  height: min(560px, calc(100% - 160px));
+  height: min(680px, calc(100% - 128px));
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -381,6 +381,36 @@
 }
 .workspace__chat-heading h2 {
   font-size: 13px;
+}
+.workspace__chat-heading select {
+  max-width: 150px;
+  font-size: 11px;
+}
+.workspace__connection {
+  padding: 10px 16px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+.workspace__connection summary {
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+.workspace__connection[open] > *:not(summary) {
+  margin-top: 10px;
+}
+.workspace__preview-action {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 16px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+.workspace__preview-action p {
+  flex-basis: 100%;
+  color: var(--dsw-alias-label-secondary);
+}
+.workspace__recovery code {
+  overflow-wrap: anywhere;
 }
 .workspace__chat-heading p {
   margin-top: 2px;
@@ -670,7 +700,7 @@
     left: 8px;
     bottom: 12px;
     width: calc(100% - 16px);
-    height: min(560px, calc(100% - 24px));
+    height: min(680px, calc(100% - 24px));
   }
   .workspace .workspace__chat-launcher {
     width: 34px;

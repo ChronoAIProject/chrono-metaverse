@@ -51,6 +51,7 @@ struct ProviderState {
     nyxagent_stream_error: bool,
     nyxagent_stream_gate: Option<Arc<tokio::sync::Notify>>,
     nyxagent_stream_entered: Option<Arc<tokio::sync::Notify>>,
+    nyxagent_stream_finished: Option<Arc<tokio::sync::Notify>>,
     cma_auth_reply: Option<(StatusCode, Value)>,
     cma_auth_calls: usize,
     cma_auth_gate: Option<Arc<tokio::sync::Notify>>,

@@ -110,7 +110,7 @@ test('两种授权连续聊天；切换及刷新不重发未知消息，仅原�
     throw new Error(`Unexpected operation ${path}`);
   });
   await page.goto('/workspace');
-  const open = page.getByRole('button', { name: '打开 CMA 聊天' });
+  const open = page.getByRole('button', { name: '打开空间助手' });
   await open.click();
   await expect(page.getByText('已连接 CMA · CMA')).toBeVisible();
   await page.getByLabel('给空间发消息').fill('第一条');

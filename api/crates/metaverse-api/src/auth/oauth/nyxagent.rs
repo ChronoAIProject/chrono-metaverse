@@ -12,10 +12,10 @@ use axum::{
     routing::post,
     Json, Router,
 };
-use futures_util::StreamExt;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use tokio::sync::{mpsc, oneshot};
 
 pub(super) fn router() -> Router<AppState> {
     Router::new()
@@ -230,93 +230,125 @@ async fn message(
         body["conversation"] = json!(id);
     }
     a.browser.current().await?;
+    // Keep the configured destination separate from the credential-bearing access context.
+    // Serialize the task before attaching authorization; diagnostics must never inspect it.
+    let endpoint = target(
+        &state.oauth.as_ref().ok_or_else(unavailable)?.base_url,
+        "responses",
+    );
+    let upstream = a
+        .browser
+        .oauth
+        .nyxagent_http
+        .post(endpoint)
+        .json(&body)
+        .bearer_auth(a.credential.value())
+        .header("Idempotency-Key", &input.idempotency_key);
     let request_id = headers
         .get("x-request-id")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| uuid::Uuid::parse_str(v).ok())
         .unwrap_or_else(uuid::Uuid::new_v4);
-    let response = a
-        .browser
-        .oauth
-        .nyxagent_http
-        .post(target(&a.browser.oauth.base_url, "responses"))
-        .bearer_auth(a.credential.value())
-        .header("Idempotency-Key", &input.idempotency_key)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|error| {
-            tracing::warn!(%request_id, stage = "upstream_send", timeout = error.is_timeout(), connect = error.is_connect(), "NyxAgent transport interrupted");
-            unavailable()
-        })?;
-    a.browser.current().await?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let recovery_required = if status == StatusCode::CONFLICT {
-            worker::read_json(response)
-                .await
-                .ok()
-                .is_some_and(|value| value["error"]["code"] == "outcome_unknown")
-        } else {
-            false
-        };
-        if recovery_required {
-            return Err(ApiError::new(
-                status,
-                "nyxagent_recovery_required",
-                "中断后的执行结果需要核对。核对后请开始新的 NyxAgent 对话；原会话无法继续执行",
-            ));
-        }
-        return Err(refused(status));
-    }
-    if !response
-        .headers()
-        .get(header::CONTENT_TYPE)
-        .and_then(|h| h.to_str().ok())
-        .is_some_and(|v| v.split(';').next() == Some("text/event-stream"))
-    {
-        return Err(unavailable());
-    }
-    let stream = futures_util::stream::try_unfold(
-        (a, response, 0_usize, Instant::now()),
-        move |(a, mut response, total, mut checked)| async move {
-            let chunk = response.chunk().await.map_err(|error| {
-                tracing::warn!(%request_id, stage = "upstream_read", timeout = error.is_timeout(), "NyxAgent transport interrupted");
-                unavailable()
-            })?;
-            let Some(chunk) = chunk else {
-                return Ok(None);
-            };
-            let total = total + chunk.len();
-            if total > 8 * 1024 * 1024 {
-                tracing::warn!(%request_id, stage = "response_limit", "NyxAgent stream interrupted");
-                return Err(unavailable());
-            }
-            if checked.elapsed() >= Duration::from_secs(5) {
-                a.browser.current().await.inspect_err(|error| {
-                    tracing::warn!(%request_id, stage = "session_check", code = error.code, "NyxAgent stream interrupted");
-                })?;
-                checked = Instant::now();
-            }
-            Ok(Some((chunk, (a, response, total, checked))))
-        },
-    );
+    // Own the upstream connection independently of this browser HTTP request. A reload or
+    // closed tab stops observation, not the already authorized turn. Never replay it here.
+    let (chunks, receiver) = mpsc::channel(8);
+    let (ready, started) = oneshot::channel();
+    tokio::spawn(forward(a, upstream, request_id, ready, chunks));
+    started.await.map_err(|_| unavailable())??;
+    let stream = futures_util::stream::unfold(receiver, |mut receiver| async move {
+        receiver
+            .recv()
+            .await
+            .map(|chunk| (Ok::<_, std::convert::Infallible>(chunk), receiver))
+    });
     Ok((
         [
             (header::CONTENT_TYPE, "text/event-stream"),
             (header::CACHE_CONTROL, "no-store, no-transform"),
             (header::HeaderName::from_static("x-accel-buffering"), "no"),
         ],
-        Body::from_stream(stream.map(|result| {
-            // A structured SSE error preserves earlier response IDs and avoids resetting the body.
-            Ok::<_, std::convert::Infallible>(result.unwrap_or_else(|_| {
-                axum::body::Bytes::from_static(
-                    b"\n\nevent: metaverse.error\ndata: {\"type\":\"metaverse.error\"}\n\n",
-                )
-            }))
-        })),
+        Body::from_stream(stream),
     )
         .into_response())
+}
+
+async fn forward(
+    a: Access,
+    upstream: reqwest::RequestBuilder,
+    request_id: uuid::Uuid,
+    ready: oneshot::Sender<Result<(), ApiError>>,
+    chunks: mpsc::Sender<axum::body::Bytes>,
+) {
+    let mut ready = Some(ready);
+    let result = async {
+        let mut response = upstream.send().await.map_err(|_| unavailable())?;
+        a.browser.current().await?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let recovery_required = if status == StatusCode::CONFLICT {
+                worker::read_json(response)
+                    .await
+                    .ok()
+                    .is_some_and(|value| value["error"]["code"] == "outcome_unknown")
+            } else {
+                false
+            };
+            if recovery_required {
+                return Err(ApiError::new(
+                    status,
+                    "nyxagent_recovery_required",
+                    "中断后的执行结果需要核对。核对后请开始新的 NyxAgent 对话；原会话无法继续执行",
+                ));
+            }
+            return Err(refused(status));
+        }
+        if !response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|h| h.to_str().ok())
+            .is_some_and(|v| v.split(';').next() == Some("text/event-stream"))
+        {
+            return Err(unavailable());
+        }
+        let _ = ready.take().unwrap().send(Ok(()));
+        let mut total = 0_usize;
+        let mut authority = tokio::time::interval(Duration::from_secs(5));
+        loop {
+            let chunk = tokio::select! {
+                _ = authority.tick() => {
+                    a.browser.current().await?;
+                    continue;
+                }
+                chunk = response.chunk() => chunk.map_err(|_| unavailable())?,
+            };
+            let Some(chunk) = chunk else {
+                return Ok(());
+            };
+            total += chunk.len();
+            if total > 8 * 1024 * 1024 {
+                return Err(unavailable());
+            }
+            // Check again before exposing bytes; authority can change between timer ticks.
+            a.browser.current().await?;
+            // A dropped receiver must not drop the upstream stream. Its stored response
+            // remains readable with the original credential after the browser reconnects.
+            let _ = chunks.send(chunk).await;
+        }
+    }
+    .await;
+    if let Err(error) = result {
+        // Log outside the credential-bearing future; only the public trace ID is recorded.
+        tracing::warn!(%request_id, "NyxAgent transport interrupted");
+        if let Some(ready) = ready {
+            let _ = ready.send(Err(error));
+        } else {
+            let _ = chunks
+                .send(axum::body::Bytes::from_static(
+                    b"\n\nevent: metaverse.error\ndata: {\"type\":\"metaverse.error\"}\n\n",
+                ))
+                .await;
+        }
+    }
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

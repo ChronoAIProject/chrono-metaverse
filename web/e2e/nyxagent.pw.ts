@@ -63,22 +63,28 @@ test('等待授权后交付一次性凭据，切换助手不丢失交付，刷�
     throw new Error(`Unexpected operation ${path}`);
   });
   await page.goto('/workspace');
-  await page.getByRole('button', { name: '打开 NyxAgent 聊天' }).click();
+  await page.locator('.workspace__chat-launcher').waitFor({ state: 'attached' });
+  if (await page.getByRole('button', { name: '打开空间助手' }).isVisible())
+    await page.getByRole('button', { name: '打开空间助手' }).click();
+  await page.getByRole('combobox', { name: '空间助手' }).selectOption('nyxagent');
   await page.getByRole('button', { name: '授权此浏览器调用 NyxAgent' }).click();
   await expect(page.getByRole('link', { name: '打开 NyxID 授权页' })).toBeVisible();
   await expect.poll(() => polls).toBe(2);
   await page.getByRole('combobox', { name: '空间助手' }).selectOption('cma');
   await page.getByRole('combobox', { name: '空间助手' }).selectOption('nyxagent');
   deliver();
-  await expect(page.getByText('已连接 NyxAgent · 网页授权')).toBeVisible();
+  await expect(page.getByText('已连接 NyxAgent', { exact: true })).toBeVisible();
   await page.reload();
-  await page.getByRole('button', { name: '打开 NyxAgent 聊天' }).click();
-  await expect(page.getByText('已连接 NyxAgent · 网页授权')).toBeVisible();
+  await page.locator('.workspace__chat-launcher').waitFor({ state: 'attached' });
+  if (await page.getByRole('button', { name: '打开空间助手' }).isVisible())
+    await page.getByRole('button', { name: '打开空间助手' }).click();
+  await page.getByRole('combobox', { name: '空间助手' }).selectOption('nyxagent');
+  await expect(page.getByText('已连接 NyxAgent', { exact: true })).toBeVisible();
   expect(requests).toBe(1);
   expect(polls).toBe(2);
 });
 
-test('独立 Agent Key 聊天，无 CMA 配置也可续聊；刷新后显式恢复原请求', async ({ page }) => {
+test('独立 Agent Key 聊天，无 CMA 配置也可续聊；刷新后自动查询原请求结果', async ({ page }) => {
   const key = 'nyx_browser_nyxagent_test_credential';
   const identity = {
     ownerId: 'owner',
@@ -125,7 +131,7 @@ test('独立 Agent Key 聊天，无 CMA 配置也可续聊；刷新后显式恢�
               id: 'lobby',
               name: '测试空间',
               description: '',
-              owner: { kind: 'person', id: 'owner' },
+              owner: { kind: 'org', id: 'team' },
               visibility: 'unlisted',
               access: 'manage',
             },
@@ -162,28 +168,47 @@ test('独立 Agent Key 聊天，无 CMA 配置也可续聊；刷新后显式恢�
           : `data: ${JSON.stringify({ type: 'response.completed', response: { ...response, status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: writes.length === 1 ? '已完成第一轮' : '已恢复原请求' }] }] } })}\n\n`;
       return route.fulfill({ contentType: 'text/event-stream', body: created + terminal });
     }
+    if (path.endsWith('/response')) {
+      expect(route.request().postDataJSON()).toEqual({ responseId: 'resp_second' });
+      return route.fulfill({
+        json: {
+          id: 'resp_second',
+          conversation: { id: 'conv_test' },
+          status: 'completed',
+          output: [
+            {
+              type: 'message',
+              role: 'assistant',
+              content: [{ type: 'output_text', text: '已恢复原请求' }],
+            },
+          ],
+        },
+      });
+    }
     throw new Error(`Unexpected operation ${path}`);
   });
   await page.goto('/workspace');
-  await page.getByRole('button', { name: '打开 NyxAgent 聊天' }).click();
-  await expect(page.getByText('已连接 NyxAgent · NyxAgent')).toBeVisible();
+  await page.locator('.workspace__chat-launcher').waitFor({ state: 'attached' });
+  if (await page.getByRole('button', { name: '打开空间助手' }).isVisible())
+    await page.getByRole('button', { name: '打开空间助手' }).click();
+  await page.getByRole('combobox', { name: '空间助手' }).selectOption('nyxagent');
+  await expect(page.getByText('已连接 NyxAgent', { exact: true })).toBeVisible();
   await page.getByLabel('给 NyxAgent 发消息').fill('第一条');
   await page.getByRole('button', { name: '发送给 NyxAgent' }).click();
   await expect(page.getByText('已完成第一轮')).toBeVisible();
   expect(writes[0]).not.toHaveProperty('conversationId');
+  expect(writes[0]!.orgId).toBe('team');
   await page.getByLabel('给 NyxAgent 发消息').fill('第二条');
   await page.getByRole('button', { name: '发送给 NyxAgent' }).click();
-  await expect(page.getByRole('button', { name: '恢复 NyxAgent 原请求' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '查看任务进度' })).toBeVisible();
   expect(writes).toHaveLength(2);
   expect(writes[1]!.conversationId).toBe('conv_test');
   await page.reload();
-  await page.getByRole('button', { name: '打开 NyxAgent 聊天' }).click();
-  await expect(page.getByText('已连接 NyxAgent · NyxAgent')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'NyxAgent 空间聊天' })).toBeVisible();
+  await expect(page.getByText('已连接 NyxAgent', { exact: true })).toBeVisible();
   expect(writes).toHaveLength(2);
-  await page.getByRole('button', { name: '恢复 NyxAgent 原请求' }).click();
   await expect(page.getByText('已恢复原请求')).toBeVisible();
-  expect(writes).toHaveLength(3);
-  expect(writes[2]).toEqual(writes[1]);
+  expect(writes).toHaveLength(2);
   expect(
     await page.evaluate(() => localStorage.getItem('metaverse-cma-credential:v2:owner:owner')),
   ).toBeNull();

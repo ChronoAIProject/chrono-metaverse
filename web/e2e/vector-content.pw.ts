@@ -85,7 +85,9 @@ test('镜头拉远发现历史范围之外的新瓦片并保留主体取景，�
   await page.goto(PREVIEW);
   const credit = page.locator('.viewer__external-credit[data-format="mvt"]');
   await expect(credit).toHaveAttribute('data-state', 'ready');
-  expect(Number(await credit.getAttribute('data-loaded'))).toBeGreaterThan(0);
+  await expect
+    .poll(async () => Number(await credit.getAttribute('data-loaded')))
+    .toBeGreaterThan(0);
   const viewer = page.locator('.viewer'),
     frame = await viewer.getAttribute('data-frame');
   const first = new Set(seen);
@@ -112,7 +114,9 @@ test('矢量入口与新瓦片共用服务端预览权限，不向浏览器提�
   await page.goto(PREVIEW);
   const credit = page.locator('.viewer__external-credit[data-format="mvt"]');
   await expect(credit).toHaveAttribute('data-state', 'ready');
-  expect(Number(await credit.getAttribute('data-loaded'))).toBeGreaterThan(0);
+  await expect
+    .poll(async () => Number(await credit.getAttribute('data-loaded')))
+    .toBeGreaterThan(0);
   expect(seen.some((url) => url.endsWith('/index.json'))).toBe(true);
   expect(seen.some((url) => url.endsWith('.pbf'))).toBe(true);
   expect(direct).toEqual([]);

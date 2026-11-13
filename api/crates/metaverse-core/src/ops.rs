@@ -39,7 +39,7 @@ use crate::record::{
     REBUILT_ID_PREFIX,
 };
 use crate::scope::{AllowedArea, PathScope, ScopeError};
-use crate::shape::Shape;
+use crate::shape::{Shape, TemplateSource};
 use crate::Timestamp;
 
 /// 每批操作的条数上限。
@@ -469,6 +469,27 @@ pub struct WorkingState {
     pub scan: Option<DraftScan>,
 }
 
+/// Resolve only referenced templates. Scanning the entire growing entity map
+/// for every placement makes importing a large operation file quadratic.
+struct PlacementTemplates<'a> {
+    entities: &'a BTreeMap<String, EntityBody>,
+    placement: &'a EntityBody,
+}
+
+impl TemplateSource for PlacementTemplates<'_> {
+    fn template(&self, id: &str) -> Option<&Shape> {
+        let entity =
+            if id == self.placement.entity_id && self.placement.kind == EntityKind::Template {
+                self.placement
+            } else {
+                self.entities.get(id)?
+            };
+        (entity.kind == EntityKind::Template && entity.layer == self.placement.layer)
+            .then_some(entity.shape.as_ref())
+            .flatten()
+    }
+}
+
 /// 盒子按区块切开：(区块坐标, 落在这个区块里的格子盒子)。
 fn chunk_spans(region: &GridBox) -> Vec<([i32; 3], GridBox)> {
     let size = CHUNK_SIZE as i64;
@@ -884,13 +905,12 @@ impl WorkingState {
                 }
                 self.check_entity_id(entity)?;
                 self.existing_entity(&entity.entity_id)?;
-                // 模板只能被同一层引用：只把这一层的模板交给校验。
-                let mut templates = self.templates_of(layer);
-                if entity.kind == EntityKind::Template {
-                    if let Some(shape) = &entity.shape {
-                        templates.insert(entity.entity_id.clone(), shape.clone());
-                    }
-                }
+                // Include the candidate template so self references and replacement
+                // cycles are checked against its new shape, within the same layer.
+                let templates = PlacementTemplates {
+                    entities: &self.entities,
+                    placement: entity,
+                };
                 entity.validate(&templates)?;
                 self.entities
                     .insert(entity.entity_id.clone(), (**entity).clone());
@@ -1459,6 +1479,26 @@ mod tests {
             .apply(&op(json!({"op":"createAnchor",
                 "anchor":{"anchorId":"t2","kind":"table","box":[5,0,5,6,1,6],"visibility":"public"}})))
             .is_err());
+    }
+
+    #[test]
+    fn placement_rejects_new_and_replacement_template_cycles_atomically() {
+        let mut s = WorkingState::default();
+        let template = |id: &str, shape: Value| {
+            op(json!({"op":"placeEntity","entity":{
+                "entityId":id,"layer":"ext","kind":"template","shape":shape,
+                "bounds":{"min":[-0.5,0,-0.5],"max":[0.5,1,0.5]}
+            }}))
+        };
+        let instance = |id: &str| json!({"type":"instance","template":id});
+        s.apply(&template("base", json!({"type":"box","size":[1,1,1]})))
+            .unwrap();
+        s.apply(&template("alias", instance("base"))).unwrap();
+        let before = s.entities.clone();
+        assert!(s.apply(&template("base", instance("alias"))).is_err());
+        assert_eq!(s.entities, before);
+        assert!(s.apply(&template("self", instance("self"))).is_err());
+        assert_eq!(s.entities, before);
     }
 
     #[test]

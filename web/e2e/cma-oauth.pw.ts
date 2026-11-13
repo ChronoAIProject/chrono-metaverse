@@ -30,7 +30,7 @@ test('CMA OAuth 会话在刷新后复用，不读取或发送浏览器 Key', asy
     throw new Error(`Unexpected auth operation: ${path}`);
   });
   await page.goto('/workspace');
-  await page.getByRole('button', { name: '打开 CMA 聊天' }).click();
+  await page.getByRole('button', { name: '打开空间助手' }).click();
   await expect(page.getByText('已连接 CMA', { exact: true })).toBeVisible();
   await expect
     .poll(() =>
@@ -38,7 +38,7 @@ test('CMA OAuth 会话在刷新后复用，不读取或发送浏览器 Key', asy
     )
     .toBe('obsolete-secret');
   await page.reload();
-  await page.getByRole('button', { name: '打开 CMA 聊天' }).click();
+  await page.getByRole('button', { name: '打开空间助手' }).click();
   await expect(page.getByText('已连接 CMA', { exact: true })).toBeVisible();
   expect(probes).toBeGreaterThanOrEqual(2);
 });
@@ -67,7 +67,7 @@ test('原登录缺少 CMA grant 时提供 OAuth 入口，不申请新 Key', asyn
     throw new Error(`Unexpected auth operation: ${path}`);
   });
   await page.goto('/workspace');
-  await page.getByRole('button', { name: '打开 CMA 聊天' }).click();
+  await page.getByRole('button', { name: '打开空间助手' }).click();
   await expect(page.getByRole('link', { name: '授权网页使用 CMA' })).toHaveAttribute(
     'href',
     '/api/auth/nyxid/login?workspace=1',
