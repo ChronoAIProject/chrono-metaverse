@@ -11,9 +11,11 @@ use std::collections::BTreeSet;
 use std::sync::OnceLock;
 
 use axum::{
+    extract::Query,
     http::{header, HeaderValue},
     response::{IntoResponse, Response},
 };
+use serde::Deserialize;
 use serde_json::Value;
 use utoipa::{
     openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
@@ -56,6 +58,7 @@ use utoipa::{
         crate::routes::rebuild::create_rebuild_draft,
         crate::routes::rebuild::get_rebuild_draft,
         crate::routes::rebuild::apply_rebuild_bundle,
+        crate::routes::rebuild::moves::move_rebuild_entities,
         crate::routes::rebuild::create_rebuild_draft_preview,
         crate::routes::rebuild::publish_rebuild_draft,
         crate::routes::rebuild::discard_rebuild_draft,
@@ -172,6 +175,39 @@ pub fn nyxid_document() -> Value {
     document
 }
 
+/// Concrete space paths let custom NyxID connections discover tools while the Key's
+/// operation rules enforce that same literal space. This document grants no access.
+fn space_document(space_id: &str) -> Result<Value, crate::error::ApiError> {
+    if !metaverse_core::ids::is_space_id(space_id) {
+        return Err(crate::error::ApiError::invalid("spaceId 格式不对"));
+    }
+    let mut document = nyxid_document();
+    let paths = document["paths"].as_object_mut().expect("paths");
+    let original = std::mem::take(paths);
+    for (path, mut item) in original {
+        if path == "/api/v1/agent-guide" {
+            paths.insert(path, item);
+        } else if path.starts_with("/api/v1/spaces/{space_id}") {
+            // Utoipa emits parameters on operations; also handle path-level parameters.
+            fn remove_space_parameter(value: &mut Value) {
+                if let Some(parameters) = value.get_mut("parameters").and_then(Value::as_array_mut)
+                {
+                    parameters.retain(|p| p["in"] != "path" || p["name"] != "space_id");
+                }
+            }
+            remove_space_parameter(&mut item);
+            if let Some(operations) = item.as_object_mut() {
+                for operation in operations.values_mut() {
+                    remove_space_parameter(operation);
+                }
+            }
+            paths.insert(path.replace("{space_id}", space_id), item);
+        }
+    }
+    prune_schemas(&mut document);
+    Ok(document)
+}
+
 fn collect_refs(value: &Value, refs: &mut BTreeSet<String>) {
     match value {
         Value::Object(map) => {
@@ -216,18 +252,28 @@ fn prune_schemas(document: &mut Value) {
     schemas.retain(|name, _| used.contains(name));
 }
 
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DocumentQuery {
+    space_id: Option<String>,
+}
+
 #[utoipa::path(
     get,
     path = "/api/openapi.json",
     operation_id = "get_openapi",
     tag = "health",
+    params(("spaceId" = Option<String>, Query, description = "可选：把空间路径固定到此编号，配合 NyxID Key 字面路径规则限制范围；文档本身不授予权限")),
     responses((status = 200, description = "注册给 NyxID 的 OpenAPI 文档"))
 )]
-pub async fn serve() -> Response {
+pub async fn serve(Query(query): Query<DocumentQuery>) -> Result<Response, crate::error::ApiError> {
     static DOCUMENT: OnceLock<String> = OnceLock::new();
-    let body = DOCUMENT
-        .get_or_init(|| serde_json::to_string(&nyxid_document()).expect("可以序列化"))
-        .clone();
+    let body = match query.space_id {
+        Some(id) => serde_json::to_string(&space_document(&id)?).expect("可以序列化"),
+        None => DOCUMENT
+            .get_or_init(|| serde_json::to_string(&nyxid_document()).expect("可以序列化"))
+            .clone(),
+    };
     let mut response = body.into_response();
     let headers = response.headers_mut();
     headers.insert(
@@ -238,7 +284,7 @@ pub async fn serve() -> Response {
         header::CACHE_CONTROL,
         HeaderValue::from_static("public, max-age=300"),
     );
-    response
+    Ok(response)
 }
 
 #[cfg(test)]
@@ -297,7 +343,7 @@ mod tests {
         assert!(response.to_string().contains("PreviewSnapshotView"));
     }
 
-    /// 重建路径的 12 个接口都在注册给 NyxID 的文档里（docs/design/server-slim.md 2.3）。
+    /// 重建路径都在注册给 NyxID 的文档里（docs/design/server-slim.md 2.3）。
     #[test]
     fn rebuild_operations_are_registered() {
         let document = nyxid_document();
@@ -332,6 +378,10 @@ mod tests {
                 "apply_rebuild_bundle",
             ),
             (
+                "post /api/v1/spaces/{space_id}/rebuild/drafts/{draft_id}/moves",
+                "move_rebuild_entities",
+            ),
+            (
                 "post /api/v1/spaces/{space_id}/rebuild/drafts/{draft_id}/preview",
                 "create_rebuild_draft_preview",
             ),
@@ -362,13 +412,37 @@ mod tests {
             .iter()
             .filter(|(op, _)| op.contains("/rebuild/"))
             .collect();
-        assert_eq!(rebuild.len(), 12, "{rebuild:?}");
+        assert_eq!(rebuild.len(), 13, "{rebuild:?}");
         // 写操作都声明了身份令牌。
         let body = &document["paths"]["/api/v1/spaces/{space_id}/rebuild/drafts/{draft_id}/bundle"]
             ["post"];
         assert!(body["security"].to_string().contains("nyxid_identity"));
         assert!(document["components"]["schemas"]
             .get("ApplyBundleRequest")
+            .is_some());
+    }
+
+    #[test]
+    fn scoped_discovery_preserves_operations_without_a_widening_space_argument() {
+        let document = space_document("test-lobby").unwrap();
+        let paths = document["paths"].as_object().unwrap();
+        assert!(paths
+            .keys()
+            .all(|p| p == "/api/v1/agent-guide" || p.starts_with("/api/v1/spaces/test-lobby")));
+        let movement = &paths["/api/v1/spaces/test-lobby/rebuild/drafts/{draft_id}/moves"]["post"];
+        assert_eq!(movement["operationId"], "move_rebuild_entities");
+        let parameters = movement["parameters"].as_array().unwrap();
+        assert!(parameters.iter().any(|p| p["name"] == "draft_id"));
+        assert!(!parameters.iter().any(|p| p["name"] == "space_id"));
+        assert!(movement["security"].to_string().contains("nyxid_identity"));
+        assert!(movement["requestBody"]
+            .to_string()
+            .contains("MoveEntitiesRequest"));
+        for invalid in ["../other", "test-lobby/../other", "{space_id}", "ab", ""] {
+            assert!(space_document(invalid).is_err());
+        }
+        assert!(nyxid_document()["paths"]
+            .get("/api/v1/spaces/{space_id}")
             .is_some());
     }
 
