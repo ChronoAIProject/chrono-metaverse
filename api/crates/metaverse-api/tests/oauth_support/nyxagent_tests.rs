@@ -270,7 +270,7 @@ async fn nyxagent_versions_instructions_without_changing_legacy_retries() {
             .contains("get_agent_guide"));
         assert_eq!(bodies[0]["input"], bodies[3]["input"]);
     }
-    for version in [json!(0), json!(4), json!("2"), json!(-1)] {
+    for version in [json!(0), json!(5), json!("2"), json!(-1)] {
         let mut input = task();
         input["instructionsVersion"] = version;
         assert_eq!(
@@ -279,6 +279,50 @@ async fn nyxagent_versions_instructions_without_changing_legacy_retries() {
         );
     }
     assert_eq!(app.nyx.oauth.0.lock().unwrap().worker_calls.len(), 5);
+}
+
+#[tokio::test]
+async fn nyxagent_page_actions_preserve_retry_context_and_do_not_change_legacy_requests() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let cookie = setup(&app).await;
+    let mut input = task();
+    input["instructionsVersion"] = json!(4);
+    input["viewerContext"] = json!({"spaces":[{"id":"lobby","name":"前厅"}]});
+    for _ in 0..2 {
+        assert_eq!(
+            call(&app, &cookie, "message", input.clone()).await.0,
+            StatusCode::OK
+        );
+    }
+    {
+        let state = app.nyx.oauth.0.lock().unwrap();
+        let bodies: Vec<_> = state.worker_calls.iter().map(|(_, _, b)| b).collect();
+        assert_eq!(bodies.len(), 2);
+        assert_eq!(bodies[0], bodies[1]);
+        assert!(bodies[0]["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("metaverse-view"));
+        assert!(bodies[0]["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("不清缓存"));
+        assert!(bodies[0]["input"].as_str().unwrap().contains("前厅"));
+    }
+    input["instructionsVersion"] = json!(3);
+    assert_eq!(
+        call(&app, &cookie, "message", input.clone()).await.0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    input["instructionsVersion"] = json!(4);
+    input["viewerContext"] = json!({"unbounded":"x".repeat(16001)});
+    assert_eq!(
+        call(&app, &cookie, "message", input).await.0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(app.nyx.oauth.0.lock().unwrap().worker_calls.len(), 2);
 }
 
 #[tokio::test]

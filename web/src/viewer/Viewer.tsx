@@ -3,6 +3,7 @@ import type { Texture } from 'three';
 import { viewHasGeometry, type SceneContent } from '../core/scene';
 import { attributionCredits, sceneSources } from '../core/sources';
 import type { Visual } from '../core/visuals';
+import type { CameraAction } from '../workspace/viewerActions';
 import { InfoPanel } from './InfoPanel';
 import { CreditLine, ModelSources } from './ModelSources';
 import {
@@ -21,6 +22,7 @@ export interface SceneViewLike {
   setCutaway(height: number | null): void;
   select(selection: Selection | null): void;
   frameContent(): void;
+  applyCamera?(action: CameraAction, content: SceneContent): boolean;
   /** 显示全部锚点标签；false 时只显示有意义的几类（见 labelLayout.ts）。 */
   setShowAllLabels(all: boolean): void;
   getStats(): SceneStats;
@@ -41,6 +43,8 @@ export interface ViewerProps {
   readonly createView?: SceneViewFactory;
   /** 场景生成完以后报告扫描天花板的高度（米；没有扫描或没扫到天花板时是 null），页面据此定默认剖切高度。 */
   readonly onScanCeiling?: (height: number | null) => void;
+  readonly camera?: { id: string; actions: CameraAction[] };
+  readonly onCameraResult?: (success: boolean) => void;
 }
 
 /** 内容对应的提示：原始视图那时还没有扫描、优化视图那时还没有模型。 */
@@ -65,12 +69,18 @@ export function Viewer({
   loadModel,
   createView = createSceneView,
   onScanCeiling,
+  camera,
+  onCameraResult,
 }: ViewerProps) {
   const viewRef = useRef<SceneViewLike | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const textureRef = useRef(loadTexture);
   const modelRef = useRef(loadModel);
   const ceilingRef = useRef(onScanCeiling);
+  const cameraRef = useRef(camera);
+  const cameraResultRef = useRef(onCameraResult);
+  const lastCamera = useRef('');
+  const readyContent = useRef<SceneContent | null>(null);
   const [unsupported, setUnsupported] = useState<string | null>(null);
   const [step, setStep] = useState<LoadStep | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -86,6 +96,26 @@ export function Viewer({
     modelRef.current = loadModel;
     ceilingRef.current = onScanCeiling;
   }, [loadTexture, loadModel, onScanCeiling]);
+  const applyCamera = useCallback((view: SceneViewLike, content: SceneContent) => {
+    const command = cameraRef.current;
+    if (!command || lastCamera.current === command.id) return;
+    lastCamera.current = command.id;
+    const results = command.actions.map((action) => view.applyCamera?.(action, content) ?? false);
+    const success = results.every(Boolean);
+    if (hostRef.current) hostRef.current.dataset.cameraCommand = command.id;
+    cameraResultRef.current?.(success);
+  }, []);
+  useEffect(() => {
+    cameraRef.current = camera;
+    cameraResultRef.current = onCameraResult;
+    if (
+      content &&
+      readyContent.current === content &&
+      viewRef.current &&
+      hostRef.current?.dataset.ready === 'true'
+    )
+      applyCamera(viewRef.current, content);
+  }, [camera, onCameraResult, content, applyCamera]);
 
   // 场景在宿主元素挂上时创建一次（回调 ref，React 19 支持返回清理函数）。
   const attach = useCallback(
@@ -147,6 +177,8 @@ export function Viewer({
         ceilingRef.current?.(stats.scanCeiling);
         host.dataset.sources = String(sceneSources(content).length);
         host.dataset.ready = 'true';
+        readyContent.current = content;
+        applyCamera(view, content);
       })
       .catch((error: unknown) => {
         if (!cancelled) setUnsupported(error instanceof Error ? error.message : String(error));
@@ -154,7 +186,7 @@ export function Viewer({
     return () => {
       cancelled = true;
     };
-  }, [content]);
+  }, [content, applyCamera]);
 
   useEffect(() => {
     viewRef.current?.setCutaway(cutaway);

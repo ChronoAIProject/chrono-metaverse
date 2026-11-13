@@ -1,6 +1,7 @@
 import { externalContentOf } from '../core/externalSource';
 import { ExternalContentView } from './externalContentView';
 import * as THREE from 'three';
+import type { CameraAction } from '../workspace/viewerActions';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
@@ -22,7 +23,7 @@ import {
   type Shape,
   type TemplateTable,
 } from '../core/shapes/types';
-import { materialKey } from '../core/shapes/build';
+import { materialKey, shapeBounds } from '../core/shapes/build';
 import type { VoxelPart } from '../core/voxels';
 import { anchorKey, linkRoute, type AnchorRef, type Visual } from '../core/visuals';
 import { backgroundFarPlane, clipBox, frameBox, scanCeilingHeight, scanFrameBox } from './framing';
@@ -330,6 +331,7 @@ export class SceneView {
   /** 镜头还停在自动取景的位置（用户没动过）：画面大小变了、换了视图时重新取景。 */
   private autoFramed = false;
   private lastMode: SceneContent['mode'] | null = null;
+  private lastSpaces = '';
   private frameSources: FrameSource[] = [];
   private distanceObjects: {
     object: THREE.Object3D;
@@ -991,7 +993,10 @@ export class SceneView {
     // 时间轴换版本不重新取景，免得回放时镜头跳来跳去。
     const modeChanged = this.lastMode !== null && this.lastMode !== content.mode;
     this.lastMode = content.mode;
-    if (!this.framed || (this.autoFramed && modeChanged)) this.frameContent();
+    const spaces = content.members.map((member) => member.spaceId).join('\u0000');
+    const spacesChanged = this.lastSpaces !== spaces;
+    this.lastSpaces = spaces;
+    if (!this.framed || spacesChanged || (this.autoFramed && modeChanged)) this.frameContent();
     else {
       // 用户移动过镜头时保留位置，新增的背景仍须能落入远裁面。
       this.camera.far = backgroundFarPlane(
@@ -1655,6 +1660,60 @@ export class SceneView {
     }
     const count = this.distanceObjects.filter((item) => item.min > 0 && item.object.visible).length;
     this.host.dataset.overviewObjects = String(count);
+  }
+
+  /** Only bounded, read-only camera operations are exposed to the chat UI. */
+  applyCamera(action: CameraAction, content: SceneContent): boolean {
+    if (action.kind === 'overview') {
+      this.flight = null;
+      this.frameContent();
+      return true;
+    }
+    if (action.kind === 'focus') {
+      for (const member of content.members) {
+        const entity = member.view.entities.find((item) => item.entityId === action.entityId);
+        if (!entity) continue;
+        const bounds =
+          entity.bounds ??
+          (entity.shape ? shapeBounds(entity.shape, { templates: member.view.templates }) : null);
+        if (!bounds) continue;
+        const point = bounds.min.map((n, i) => (n + bounds.max[i]!) / 2) as [
+          number,
+          number,
+          number,
+        ];
+        this.flyTo(new THREE.Vector3(...placePoint(member.placement, point)));
+        this.select({ spaceId: member.spaceId, entity });
+        this.options.onSelect?.({ spaceId: member.spaceId, entity });
+        return true;
+      }
+      return false;
+    }
+    if (this.flight) {
+      this.camera.position.copy(this.flight.to);
+      this.controls.target.copy(this.flight.targetTo);
+      this.flight = null;
+    }
+    this.autoFramed = false;
+    const offset = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
+    const spherical = new THREE.Spherical().setFromVector3(offset);
+    if (action.kind === 'zoom')
+      spherical.radius = THREE.MathUtils.clamp(
+        spherical.radius * action.factor,
+        Math.max(this.camera.near * 4, 0.1),
+        this.camera.far * 0.8,
+      );
+    else {
+      spherical.theta += THREE.MathUtils.degToRad(action.yaw);
+      spherical.phi = THREE.MathUtils.clamp(
+        spherical.phi + THREE.MathUtils.degToRad(action.pitch),
+        0.05,
+        Math.PI - 0.05,
+      );
+    }
+    this.camera.position.copy(this.controls.target).add(offset.setFromSpherical(spherical));
+    this.controls.update();
+    return true;
   }
 
   /** 镜头飞到某一点（连接的另一端）。 */

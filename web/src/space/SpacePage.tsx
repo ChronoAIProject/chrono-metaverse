@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ViewerCommand } from '../workspace/viewerActions';
 import type { PublicClient } from '../core/api/client';
 import { toMillis } from '../core/events';
 import {
@@ -15,6 +16,7 @@ import {
 import { buildVisuals } from '../core/visuals';
 import { useAssetLoaders, useDensity, useRuntimeState } from '../data/hooks';
 import { SpaceRuntime } from '../data/spaceRuntime';
+import { usePreviewScene } from '../data/usePreviewScene';
 import { useRebuiltStyle, useViewMode } from '../routing/routes';
 import { TimelineBar, formatTime } from '../timeline/TimelineBar';
 import { Viewer, type SceneViewFactory } from '../viewer/Viewer';
@@ -35,6 +37,10 @@ export interface SpacePageProps {
   /** 有分享令牌时为 true；没有时提示链接可能不完整。 */
   readonly hasShareToken: boolean;
   readonly embedded?: boolean;
+  /** Switch to an authorized draft without replacing the viewer or its model caches. */
+  readonly previewToken?: string;
+  readonly viewerCommand?: ViewerCommand;
+  readonly onCameraResult?: (success: boolean) => void;
   readonly createView?: SceneViewFactory;
   readonly now?: () => number;
   /** 默认视图：地址里没有（或不认识）`?view=` 时用它；切回它时地址里不写 view。 */
@@ -56,6 +62,9 @@ export function SpacePage({
   client,
   hasShareToken,
   embedded = false,
+  previewToken,
+  viewerCommand,
+  onCameraResult,
   createView,
   now = Date.now,
   initialMode = 'optimized',
@@ -68,6 +77,37 @@ export function SpacePage({
   // 原始视图里扫描天花板的高度（查看器生成完场景后报告）。
   const [scanCeiling, setScanCeiling] = useState<number | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const appliedControls = useRef('');
+  useEffect(() => {
+    if (!viewerCommand || appliedControls.current === viewerCommand.id) return;
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (!active) return;
+      appliedControls.current = viewerCommand.id;
+      for (const action of viewerCommand.actions) {
+        if (action.type === 'mode') setMode(action.value);
+        if (action.type === 'style') setStyle(action.value);
+        if (action.type === 'cutaway') {
+          setCutEnabled(action.height !== null);
+          if (action.height !== null) setCutHeight(action.height);
+        }
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [viewerCommand, setMode, setStyle]);
+  const camera = useMemo(() => {
+    const requestedMode = viewerCommand?.actions.filter((a) => a.type === 'mode').at(-1);
+    const requestedStyle = viewerCommand?.actions.filter((a) => a.type === 'style').at(-1);
+    if (
+      (requestedMode?.type === 'mode' && requestedMode.value !== mode) ||
+      (requestedStyle?.type === 'style' && requestedStyle.value !== style)
+    )
+      return undefined;
+    const actions = viewerCommand?.actions.filter((a) => a.type === 'camera');
+    return actions?.length ? { id: viewerCommand!.id, actions } : undefined;
+  }, [viewerCommand, mode, style]);
   // 下载好的扫描模型，连同它的哈希：换了扫描时旧的自动失效。
   const [loadedScan, setLoadedScan] = useState<{ hash: string; bytes: ArrayBuffer } | null>(null);
   const playback = usePlayback(now);
@@ -81,28 +121,32 @@ export function SpacePage({
     [client, spaceId, attempt],
   );
   useEffect(() => {
+    if (previewToken) return;
     runtime.start();
     return () => runtime.stop();
-  }, [runtime]);
+  }, [runtime, previewToken]);
 
   useEffect(() => {
-    runtime.setTime(time, live, windowMs);
-  }, [runtime, time, live, windowMs]);
+    if (!previewToken) runtime.setTime(time, live, windowMs);
+  }, [runtime, time, live, windowMs, previewToken]);
 
   const state = useRuntimeState(runtime);
-  const { scene, info } = state;
-  const loaders = useAssetLoaders(client);
+  const { info } = state;
+  const draft = usePreviewScene(client, spaceId, previewToken, attempt);
+  const scene = previewToken ? draft.scene : state.scene;
+  const loaders = useAssetLoaders(draft.source);
+  const name = previewToken ? draft.view?.spaceName : info?.name;
 
   useEffect(() => {
-    if (info) document.title = `${info.name} · chrono-metaverse`;
-  }, [info]);
+    if (name) document.title = `${previewToken ? '草稿预览 · ' : ''}${name} · chrono-metaverse`;
+  }, [name, previewToken]);
 
   const scanHash = mode === 'raw' ? scene?.scan?.webModelHashes[0] : undefined;
   useEffect(() => {
-    if (scanHash === undefined) return;
+    if (scanHash === undefined || loadedScan?.hash === scanHash) return;
     let cancelled = false;
-    runtime
-      .scan(scanHash)
+    const scan = previewToken ? draft.source.asset(scanHash) : runtime.scan(scanHash);
+    scan
       .then((bytes) => {
         if (!cancelled) setLoadedScan({ hash: scanHash, bytes });
       })
@@ -112,12 +156,12 @@ export function SpacePage({
     return () => {
       cancelled = true;
     };
-  }, [scanHash, runtime]);
+  }, [scanHash, runtime, previewToken, draft.source, loadedScan?.hash]);
   const scan = loadedScan !== null && loadedScan.hash === scanHash ? loadedScan.bytes : null;
 
   const content = useMemo<SceneContent | null>(() => {
-    if (state.status !== 'ready') return null;
-    if (state.seq === null) return { mode, members: [], links: [] };
+    if (!previewToken && state.status !== 'ready') return null;
+    if (!previewToken && state.seq === null) return { mode, members: [], links: [] };
     if (scene === null) return null;
     const view = selectView(scene, mode, style);
     // 原始视图要等扫描下载完再交给查看器，避免先画一个空场景。
@@ -127,7 +171,7 @@ export function SpacePage({
       members: [
         {
           spaceId,
-          name: info?.name,
+          name,
           view,
           scan,
           scanTransform: scene.scan?.transform,
@@ -137,22 +181,24 @@ export function SpacePage({
       ],
       links: [],
     };
-  }, [state.status, state.seq, scene, mode, style, scan, spaceId, info?.name]);
+  }, [state.status, state.seq, scene, mode, style, scan, spaceId, name, previewToken]);
 
   const visuals = useMemo(
     () =>
-      buildVisuals(
-        [
-          {
-            spaceId,
-            types: info?.eventTypes ?? [],
-            events: state.events,
-            states: state.states,
-          },
-        ],
-        { at: time, windowMs },
-      ),
-    [spaceId, info?.eventTypes, state.events, state.states, time, windowMs],
+      previewToken
+        ? []
+        : buildVisuals(
+            [
+              {
+                spaceId,
+                types: info?.eventTypes ?? [],
+                events: state.events,
+                states: state.states,
+              },
+            ],
+            { at: time, windowMs },
+          ),
+    [spaceId, info?.eventTypes, state.events, state.states, time, windowMs, previewToken],
   );
 
   const heights = useMemo(() => (scene ? sceneHeightRange(scene) : { min: 0, max: 3 }), [scene]);
@@ -174,17 +220,22 @@ export function SpacePage({
     range.from,
     range.to,
     state.changes,
-    state.status === 'ready',
+    state.status === 'ready' && !previewToken,
   );
 
-  if (state.status === 'error' && state.error) {
+  const error = previewToken ? draft.error : state.error;
+  if (error) {
     return (
       <ErrorCard
-        title="打不开这个空间"
-        message={state.error.message}
-        notFound={state.error.notFound}
+        title={previewToken ? '打不开这个预览' : '打不开这个空间'}
+        message={
+          previewToken && error.notFound
+            ? '预览链接无效或已过期，草稿可能已发布、更新或取消。'
+            : error.message
+        }
+        notFound={error.notFound}
         hint={
-          !hasShareToken && state.error.notFound
+          !previewToken && !hasShareToken && error.notFound
             ? '链接里没有分享令牌（# 后面的 share=…）。'
             : undefined
         }
@@ -193,19 +244,37 @@ export function SpacePage({
     );
   }
 
-  const commit = state.commits.filter((c) => c.seq === state.seq)[0] ?? null;
-  const loading = state.status === 'loading' || (state.seq !== null && scene === null);
+  const commit = previewToken
+    ? null
+    : (state.commits.filter((c) => c.seq === state.seq)[0] ?? null);
+  const loading = previewToken
+    ? scene === null
+    : state.status === 'loading' || (state.seq !== null && scene === null);
+  const progress = previewToken ? draft.progress : state.progress;
   return (
-    <main className="space" data-space-id={spaceId} data-live={live}>
+    <main
+      className="space"
+      data-space-id={spaceId}
+      data-live={!previewToken && live}
+      data-preview={previewToken ? 'true' : undefined}
+      data-preview-rev={draft.view?.preview.rev}
+    >
       <header className="space__bar">
         <div className="space__title">
-          <h1>{info?.name ?? '正在加载…'}</h1>
+          <h1>
+            {previewToken && <span className="space__badge">草稿预览</span>}
+            {name ?? info?.name ?? '正在加载…'}
+          </h1>
           <p className="space__version">
-            {commit
-              ? `版本 #${commit.seq} · ${commit.message}`
-              : state.status === 'loading'
-                ? '正在读取时间线'
-                : '这个时刻还没有任何提交'}
+            {previewToken
+              ? draft.view
+                ? `基于版本 #${draft.view.preview.baseSeq} · 草稿修订 ${draft.view.preview.rev} · 尚未发布`
+                : '正在读取草稿'
+              : commit
+                ? `版本 #${commit.seq} · ${commit.message}`
+                : state.status === 'loading'
+                  ? '正在读取时间线'
+                  : '这个时刻还没有任何提交'}
           </p>
         </div>
         <div className="space__switches">
@@ -221,7 +290,7 @@ export function SpacePage({
           onToggle={setCutEnabled}
           onHeight={setCutHeight}
         />
-        {!embedded && window.self === window.top && (
+        {!embedded && !previewToken && window.self === window.top && (
           <a
             className="space__worker-link"
             href={`/workspace?space=${encodeURIComponent(spaceId)}`}
@@ -232,7 +301,11 @@ export function SpacePage({
         <ThemeToggle />
       </header>
 
-      <section className="space__stage" aria-label="三维视图" aria-busy={state.sceneLoading}>
+      <section
+        className="space__stage"
+        aria-label="三维视图"
+        aria-busy={previewToken ? loading : state.sceneLoading}
+      >
         <Viewer
           content={content}
           visuals={visuals}
@@ -241,15 +314,20 @@ export function SpacePage({
           loadTexture={loaders.loadTexture}
           loadModel={loaders.loadModel}
           createView={createView}
+          camera={camera}
+          onCameraResult={onCameraResult}
         />
-        {(loading || state.progress !== null) && (
+        {(loading || progress !== null) && (
           <LoadingCard
-            label={state.progress?.label ?? (state.status === 'loading' ? '读取空间' : '读取版本')}
-            done={state.progress?.done}
-            total={state.progress?.total}
+            label={
+              progress?.label ??
+              (previewToken ? '读取草稿' : state.status === 'loading' ? '读取空间' : '读取版本')
+            }
+            done={progress?.done}
+            total={progress?.total}
           />
         )}
-        {state.status === 'ready' && state.seq === null && (
+        {!previewToken && state.status === 'ready' && state.seq === null && (
           <div className="space__empty" role="status">
             这个时刻还没有任何提交。
           </div>
@@ -283,20 +361,22 @@ export function SpacePage({
         )}
       </section>
 
-      <TimelineBar
-        from={range.from}
-        to={range.to}
-        time={time}
-        commits={state.commits}
-        density={density}
-        playing={playback.playing}
-        speed={playback.speed}
-        live={live}
-        onSeek={playback.seek}
-        onTogglePlay={() => playback.togglePlay(range.from)}
-        onSpeedChange={playback.setSpeed}
-        onNow={playback.goNow}
-      />
+      {!previewToken && (
+        <TimelineBar
+          from={range.from}
+          to={range.to}
+          time={time}
+          commits={state.commits}
+          density={density}
+          playing={playback.playing}
+          speed={playback.speed}
+          live={live}
+          onSeek={playback.seek}
+          onTogglePlay={() => playback.togglePlay(range.from)}
+          onSpeedChange={playback.setSpeed}
+          onNow={playback.goNow}
+        />
+      )}
     </main>
   );
 }

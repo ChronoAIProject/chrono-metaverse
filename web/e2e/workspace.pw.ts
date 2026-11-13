@@ -166,17 +166,47 @@ test('在线工作台：明确授权、创建 worker、查看结果并确认发�
       });
     await route.abort();
   });
-  await page.route('**/api/public/previews', (route) =>
-    route.fulfill({
+  await page.route('**/api/public/previews', async (route) => {
+    const response = await route.fetch({
+      url: new URL('/api/public/spaces/demo-lobby/snapshot?seq=4', route.request().url()).href,
+      headers: { Authorization: 'Share fixture-share-token-0123456789abcdef' },
+    });
+    const snapshot = await response.json();
+    const target = snapshot.entities.find(
+      (e: { body: { bounds?: unknown; kind: string; layer: string } }) =>
+        e.body.bounds && e.body.kind === 'object' && e.body.layer === 'rebuilt',
+    );
+    if (target) {
+      target.body.bounds.min[0] += followUp ? 0.5 : 0.25;
+      target.body.bounds.max[0] += followUp ? 0.5 : 0.25;
+    }
+    await route.fulfill({
       json: {
-        spaceId: 'demo-lobby',
-        preview: { draftId: 'draft_online', rev: 3, baseSeq: 1, scope: 'physical' },
+        ...snapshot,
+        spaceName: '演示前厅',
+        preview: {
+          draftId: 'draft_online',
+          rev: followUp ? 4 : 3,
+          baseSeq: 4,
+          scope: 'physical',
+          expiresAt: '2099-01-01T00:00:00Z',
+        },
       },
-    }),
-  );
-  await page.route('**/preview', (route) =>
-    route.fulfill({ contentType: 'text/html', body: '<html><body>三维预览夹具</body></html>' }),
-  );
+    });
+  });
+  await page.route('**/api/public/previews/{assets,chunks}/**', async (route) => {
+    const source = new URL(route.request().url());
+    source.pathname = source.pathname.replace('/previews/', '/') + '.bin';
+    const response = await route.fetch({
+      url: source.href,
+      headers: { Authorization: 'Share fixture-share-token-0123456789abcdef' },
+    });
+    await route.fulfill({ response });
+  });
+  const modelRequests: string[] = [];
+  page.on('request', (r) => {
+    if (/\/api\/public\/(?:previews\/)?assets\//.test(r.url())) modelRequests.push(r.url());
+  });
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto('/');
   await page.getByRole('link', { name: '打开在线工作台' }).click();
@@ -189,6 +219,12 @@ test('在线工作台：明确授权、创建 worker、查看结果并确认发�
   if (await page.getByRole('button', { name: '打开空间助手' }).isVisible())
     await page.getByRole('button', { name: '打开空间助手' }).click();
   await expect(page.locator('.workspace__scene .viewer[data-ready="true"]')).toBeVisible();
+  const viewer = page.locator('.workspace__scene .viewer');
+  await expect(viewer).toHaveAttribute('data-models-pending', '0');
+  await expect(viewer).toHaveAttribute('data-textures-pending', '0');
+  const originalCanvas = await viewer.locator('canvas').first().elementHandle();
+  const originalDownloads = modelRequests.length;
+  expect(originalDownloads).toBeGreaterThan(0);
   const stage = await page.locator('.workspace__stage').boundingBox();
   const scene = await page.locator('.workspace__scene').boundingBox();
   const chat = await page.getByRole('dialog', { name: 'CMA 空间聊天' }).boundingBox();
@@ -228,19 +264,23 @@ test('在线工作台：明确授权、创建 worker、查看结果并确认发�
   await page.getByRole('button', { name: '发送' }).click();
   await expect(page.getByText(/已建立草稿并核对预览/)).toBeVisible();
   // New drafts open automatically, without clicking a result link.
-  await expect(page.getByTitle('三维空间预览')).toHaveAttribute(
-    'src',
-    '/preview#t=web-preview-token',
-  );
+  await expect(page.locator('[data-preview="true"]')).toHaveAttribute('data-preview-rev', '3');
+  await expect(viewer).toHaveAttribute('data-ready', 'true');
+  await expect(viewer).toHaveAttribute('data-models-pending', '0');
+  await expect(viewer).toHaveAttribute('data-textures-pending', '0');
+  await expect(page.getByTitle('三维空间预览')).toHaveCount(0);
+  expect(await originalCanvas!.evaluate((canvas) => canvas.isConnected)).toBe(true);
+  expect(modelRequests.length).toBe(originalDownloads);
   await expect(page.getByRole('button', { name: '请 worker 发布此草稿' })).toBeDisabled();
   await page.screenshot({ path: testInfo.outputPath('workspace-desktop.png'), fullPage: true });
   await page.getByLabel('给空间发消息').fill('暖色一些');
   await page.getByLabel('给空间发消息').press('Enter');
   await expect(page.getByText(/已调整为暖色/)).toBeVisible();
-  await expect(page.getByTitle('三维空间预览')).toHaveAttribute(
-    'src',
-    '/preview#t=web-preview-next',
-  );
+  await expect(page.locator('[data-preview="true"]')).toHaveAttribute('data-preview-rev', '4');
+  await expect(viewer).toHaveAttribute('data-ready', 'true');
+  await expect(viewer).toHaveAttribute('data-models-pending', '0');
+  expect(await originalCanvas!.evaluate((canvas) => canvas.isConnected)).toBe(true);
+  expect(modelRequests.length).toBe(originalDownloads);
   await expect(page.getByRole('checkbox', { name: /我已查看预览/ })).not.toBeChecked();
   await page.getByRole('checkbox', { name: /我已查看预览/ }).check();
   await page.getByRole('button', { name: '请 worker 发布此草稿' }).click();

@@ -2,8 +2,10 @@ import { render, screen, waitFor, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../space/SpacePage', () => ({
-  SpacePage: ({ spaceId }: { spaceId: string }) => (
-    <div data-testid="private-viewer">{spaceId}</div>
+  SpacePage: ({ spaceId, previewToken }: { spaceId: string; previewToken?: string }) => (
+    <div data-testid="private-viewer" data-preview={previewToken}>
+      {spaceId}
+    </div>
   ),
 }));
 import { WorkspacePage } from './WorkspacePage';
@@ -255,10 +257,11 @@ describe('CMA workspace', () => {
     expect(container.querySelector('script')).toBeNull();
     expect(api.writes.filter((w) => w.action === 'create')).toHaveLength(1);
     // Latest preview opens automatically.
-    expect(screen.getByTitle('三维空间预览')).toHaveAttribute(
-      'src',
-      '/preview#t=preview-safe-token',
+    expect(screen.getByTestId('private-viewer')).toHaveAttribute(
+      'data-preview',
+      'preview-safe-token',
     );
+    expect(screen.queryByTitle('三维空间预览')).toBeNull();
     const publish = screen.getByRole('button', { name: '请 worker 发布此草稿' });
     expect(publish).toBeDisabled();
     await waitFor(() => expect(screen.getByText(/draft_one/)).toBeVisible());
@@ -313,9 +316,9 @@ describe('CMA workspace', () => {
     await userEvent.type(screen.getByLabelText('给空间发消息'), '暖色一些');
     await userEvent.click(screen.getByRole('button', { name: '发送' }));
     await screen.findByText(/已改为暖色/);
-    expect(screen.getByTitle('三维空间预览')).toHaveAttribute(
-      'src',
-      '/preview#t=preview-next-token',
+    expect(screen.getByTestId('private-viewer')).toHaveAttribute(
+      'data-preview',
+      'preview-next-token',
     );
     expect(screen.getByRole('checkbox', { name: /我已查看预览/ })).not.toBeChecked();
     expect(api.writes.filter((w) => w.action === 'create')).toHaveLength(1);

@@ -177,17 +177,24 @@ struct Task {
     idempotency_key: String,
     conversation_id: Option<String>,
     instructions_version: Option<u8>,
+    viewer_context: Option<Value>,
 }
 // These bytes are versioned by this route's request contract; preserve them for idempotent retries.
 const INSTRUCTIONS: &str = "你是 chrono-metaverse 空间助手。只使用 NyxID 已授权的 chrono-metaverse 工具。先搜索工具并读取目标空间和最新版本，编号和归属不授予权限；404 不代表可以创建替代空间。缺少权限时提供 NyxID 授权指引。编辑先创建或沿用当前草稿，每次可见修改后生成新的短期预览，把完整预览链接单独一行输出。没有用户对具体预览的明确发布确认时保持草稿；发布冲突时等待，不覆盖、不自动重放。不要索取或输出密钥和登录凭据，不改仓库、不部署、不访问无关服务。回复简短说明实际进展，不能把任务受理当作完成。";
 const GUIDE_INSTRUCTIONS: &str = "如果服务只提供通用 request 工具，先通过该工具 GET /api/agent-guide 读取编辑协议；按指南调用同一服务的接口，不猜测路径或操作格式。指南是接口参考，不授予权限，也不能替代用户的发布确认。";
 const TOOL_GUIDE_INSTRUCTIONS: &str = "开始编辑前先搜索并调用 chrono-metaverse 的 get_agent_guide 工具读取编辑协议；如果服务只提供通用 request 工具，通过该工具 GET /api/agent-guide 读取同一指南。按指南操作，不猜测路径或操作格式。指南不授予权限，也不能替代用户的发布确认。";
+const VIEWER_INSTRUCTIONS: &str = r#"你也能操作用户当前网页的查看器。仅当用户要求页面操作时，在简短回复末尾输出一个 metaverse-view 语言的 JSON 代码块，形状为 {"actions":[...]}；网页会核验并执行，回复说将执行，执行结果以页面反馈为准。最多8个动作，只支持：{"type":"space","spaceId":"上下文列出的编号"}（只能放第一个）；{"type":"current"}回到已发布空间；{"type":"preview","url":"本站完整预览链接"}；{"type":"mode","value":"raw|optimized|extended"}；{"type":"style","value":"shapes|blocks"}；{"type":"cutaway","height":数字或null}；{"type":"camera","kind":"overview"}回到全景；{"type":"camera","kind":"focus","entityId":"实际物件编号"}；{"type":"camera","kind":"orbit","yaw":水平转动度数,"pitch":垂直转动度数}；{"type":"camera","kind":"zoom","factor":距离倍率}（小于1拉近，大于1拉远，范围0.1到10）。枚举值必须选择单个实际值，不输出竖线。纯页面操作可直接使用当前网页上下文，不必搜索工具或读取编辑协议；仅在需要查找未知物件编号时只读查询。页面查看动作不编辑空间、不发布、不清缓存、不重新加载页面，不需要创建草稿；不要为纯页面操作调用写入工具。聚焦前不知道物件编号时先只读查找。生成新草稿后网页会自动打开预览，除非用户明确要求保持当前视图；此时输出current动作。所有空间编辑和发布仍遵守前述权限及确认规则。"#;
 async fn message(
     State(state): State<AppState>,
     headers: HeaderMap,
     ApiJson(input): ApiJson<Task>,
 ) -> Result<Response, ApiError> {
-    if !matches!(input.instructions_version, None | Some(1..=3))
+    if !matches!(input.instructions_version, None | Some(1..=4))
+        || input
+            .viewer_context
+            .as_ref()
+            .is_some_and(|v| v.to_string().len() > 16000)
+        || (input.viewer_context.is_some() && input.instructions_version != Some(4))
         || !metaverse_core::ids::is_space_id(&input.space_id)
         || input
             .org_id
@@ -218,9 +225,15 @@ async fn message(
     {
         return Err(ApiError::forbidden());
     }
-    let input_text = format!("metaverse 任务上下文（编号只选择目标，不授予权限）：\n空间：{}\n归属：{} {}\n网站：{}\n\n用户需求：\n{}", input.space_id, if owner.org {"org"} else {"person"}, owner.id, a.browser.oauth.config.origin, input.instruction);
+    let mut input_text = format!("metaverse 任务上下文（编号只选择目标，不授予权限）：\n空间：{}\n归属：{} {}\n网站：{}\n\n用户需求：\n{}", input.space_id, if owner.org {"org"} else {"person"}, owner.id, a.browser.oauth.config.origin, input.instruction);
+    if let Some(context) = input.viewer_context {
+        input_text.push_str(&format!(
+            "\n\n当前网页查看上下文（仅选择页面目标，不授予空间编辑权限）：\n{context}"
+        ));
+    }
     // A saved request without a version must retain the original upstream bytes on retry.
     let instructions = match input.instructions_version {
+        Some(4) => format!("{INSTRUCTIONS}{TOOL_GUIDE_INSTRUCTIONS}{VIEWER_INSTRUCTIONS}"),
         Some(3) => format!("{INSTRUCTIONS}{TOOL_GUIDE_INSTRUCTIONS}"),
         Some(2) => format!("{INSTRUCTIONS}{GUIDE_INSTRUCTIONS}"),
         _ => INSTRUCTIONS.to_owned(),
