@@ -39,6 +39,7 @@ pub struct SpaceView {
     pub id: String,
     pub name: String,
     pub description: String,
+    pub composition_enabled: bool,
     pub owner: OwnerView,
     /// 组织空间创建时的核验记录。
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -79,6 +80,7 @@ impl SpaceView {
             id: space.id,
             name: space.name,
             description: space.description,
+            composition_enabled: space.composition_enabled,
             owner: OwnerView {
                 kind: space.owner.kind,
                 id: space.owner.id,
@@ -111,6 +113,7 @@ pub struct PublicSpaceView {
     pub id: String,
     pub name: String,
     pub description: String,
+    pub composition_enabled: bool,
     #[schema(value_type = String, example = "unlisted")]
     pub visibility: Visibility,
     /// 最新 seq、at，以及最新公开可见变化的记录时间 `recordedAt`（与 `/head` 相同）。
@@ -137,6 +140,7 @@ impl PublicSpaceView {
             id: space.id,
             name: space.name,
             description: space.description,
+            composition_enabled: space.composition_enabled,
             visibility: space.visibility,
             head: super::public_events::PublicHeadView {
                 seq: space.head.seq,

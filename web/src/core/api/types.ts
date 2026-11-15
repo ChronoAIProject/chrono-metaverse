@@ -199,6 +199,11 @@ export interface Head {
  * 区块清单里是两层（重建层、扩展层）的区块引用；方块表内联。
  */
 export interface Snapshot {
+  readonly composition?: {
+    readonly members: readonly UniverseMember[];
+    readonly links: readonly UniverseLink[];
+    readonly themeId?: string;
+  };
   readonly spaceId: string;
   readonly seq: number;
   readonly at: Timestamp;
@@ -243,6 +248,7 @@ export interface EventTypeDef {
 }
 
 export interface SpaceInfo {
+  readonly compositionEnabled?: boolean;
   readonly id: string;
   readonly name: string;
   readonly description?: string;
@@ -341,6 +347,9 @@ export interface StateAt {
 }
 
 export interface UniverseMember {
+  /** 原始空间编号与当前实例的授权路径；旧组合接口省略。 */
+  readonly sourceSpaceId?: string;
+  readonly accessPath?: string | null;
   readonly spaceId: string;
   /** 以格为单位。 */
   readonly offset: Vec3;

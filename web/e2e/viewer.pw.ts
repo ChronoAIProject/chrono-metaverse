@@ -47,6 +47,11 @@ async function waitForScene(page: Page, mode: string) {
   await page.waitForTimeout(900);
 }
 
+async function openDisplaySettings(page: Page) {
+  const trigger = page.getByRole('button', { name: '显示设置', exact: true });
+  if ((await trigger.getAttribute('aria-expanded')) !== 'true') await trigger.click();
+}
+
 async function numberAttr(page: Page, name: string): Promise<number> {
   return Number(await page.locator('.viewer').getAttribute(name));
 }
@@ -521,6 +526,7 @@ test('锚点标签：默认只显示有意义的，避让、有上限，悬停�
 test('形状 / 方块：重建层两种内容都有时可以切换，地址里记住选择', async ({ page }) => {
   await page.goto(LINK);
   await waitForScene(page, 'optimized');
+  await openDisplaySettings(page);
   const styles = page.getByRole('group', { name: '重建层画法' });
   const shapes = styles.getByRole('button', { name: '形状' });
   const blocks = styles.getByRole('button', { name: '方块' });
@@ -543,6 +549,7 @@ test('形状 / 方块：重建层两种内容都有时可以切换，地址里�
   // 刷新：仍然是方块，# 后面的分享令牌照样有效。
   await page.reload();
   await waitForScene(page, 'optimized');
+  await openDisplaySettings(page);
   await expect(blocks).toHaveAttribute('aria-pressed', 'true');
   expect(await numberAttr(page, 'data-voxel-faces')).toBeGreaterThan(shapeFaces * 5);
 
@@ -555,10 +562,12 @@ test('形状 / 方块：重建层两种内容都有时可以切换，地址里�
   // 原始视图只画扫描，切换禁用。
   await page.getByRole('button', { name: '原始', exact: true }).click();
   await waitForScene(page, 'raw');
+  await openDisplaySettings(page);
   await expect(blocks).toBeDisabled();
 
   // 换回形状：地址里去掉 style，物件回来、重建层区块不画。
   await page.getByRole('button', { name: '优化', exact: true }).click();
+  await openDisplaySettings(page);
   await shapes.click();
   await expect(page).toHaveURL(/\/s\/demo-lobby#share=/);
   await expect.poll(() => numberAttr(page, 'data-entities')).toBe(shapeEntities);
@@ -576,6 +585,7 @@ test('形状 / 方块：重建层两种内容都有时可以切换，地址里�
 test('剖切：所有视图都能切掉某个高度以上的内容（含扫描模型）', async ({ page }) => {
   await page.goto(LINK);
   await waitForScene(page, 'optimized');
+  await openDisplaySettings(page);
   const cut = page.getByRole('checkbox', { name: '剖切' });
   await cut.uncheck();
   await page.waitForTimeout(600);
@@ -924,7 +934,7 @@ test('错误页：链接无效和空间不存在给出同样的提示', async ({
   await page.goto('/s/demo-lobby');
   await expect(page.getByRole('alert')).toContainText('分享令牌');
   await page.goto('/u/demo-street#share=wrong');
-  await expect(page.getByRole('alert')).toContainText('链接无效，或者组合不存在');
+  await expect(page.getByRole('alert')).toContainText('链接无效，或者空间不存在');
   await page.goto('/preview#t=wrong');
   await expect(page.getByRole('alert')).toContainText('预览链接无效或已过期');
 });
@@ -933,6 +943,7 @@ test('浅色主题', async ({ page }) => {
   await page.goto(LINK);
   await waitForScene(page, 'optimized');
   // 跟随系统 → 浅色 → 深色：默认深色，点一次到"跟随系统"，再点到浅色。
+  await openDisplaySettings(page);
   const toggle = page.locator('.theme-toggle');
   for (
     let i = 0;

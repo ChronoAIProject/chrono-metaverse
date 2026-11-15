@@ -90,6 +90,8 @@ export type Visual =
 
 /** 一个空间的输入：已应用更正、只含公开级的事件，T 时刻的锚点状态，事件类型。 */
 export interface SpaceVisualInput {
+  /** 实例路径与原始空间分离：防伪校验仍使用原始空间编号。 */
+  readonly sourceSpaceId?: string;
   readonly spaceId: string;
   readonly types: readonly EventTypeDef[];
   readonly events: readonly SpaceEvent[];
@@ -276,16 +278,31 @@ export function buildVisuals(
         if (correlation === undefined || time > at + 0) {
           // 路线终点可能在 T 之后（回放时已经加载到），单独处理。
           if (correlation !== undefined && def.display.pathRole === 'destination') {
-            keepLatest(destinations, correlation, { event, spaceId: space.spaceId, def }, true);
+            keepLatest(
+              destinations,
+              `${correlation}\0${space.spaceId}`,
+              { event, spaceId: space.spaceId, def },
+              true,
+            );
           }
           continue;
         }
         if (def.display.pathRole === 'origin') {
           // 防伪造：起点事件只能写在 correlationId 前缀对应的空间里。
-          if (correlation.split(':')[0] !== space.spaceId) continue;
-          keepLatest(origins, correlation, { event, spaceId: space.spaceId, def }, false);
+          if (correlation.split(':')[0] !== (space.sourceSpaceId ?? space.spaceId)) continue;
+          keepLatest(
+            origins,
+            `${correlation}\0${space.spaceId}`,
+            { event, spaceId: space.spaceId, def },
+            false,
+          );
         } else if (def.display.pathRole === 'destination') {
-          keepLatest(destinations, correlation, { event, spaceId: space.spaceId, def }, false);
+          keepLatest(
+            destinations,
+            `${correlation}\0${space.spaceId}`,
+            { event, spaceId: space.spaceId, def },
+            false,
+          );
         }
         continue;
       }
@@ -308,7 +325,7 @@ export function buildVisuals(
       const anchor = { spaceId: space.spaceId, anchorId: event.anchorId };
       const color = colorOf(def);
       const text = eventText(def, event.data);
-      const id = `${kind}:${event.id}`;
+      const id = `${kind}:${space.sourceSpaceId ? `${space.spaceId}:` : ''}${event.id}`;
       switch (kind) {
         case 'highlight':
           out.push({ kind: 'highlight', id, type: def.type, color, anchor, text });
@@ -349,7 +366,7 @@ export function buildVisuals(
   for (const [type, { def, totals }] of heat) {
     const max = Math.max(...totals.values());
     for (const [key, total] of totals) {
-      const slash = key.indexOf('/');
+      const slash = key.lastIndexOf('/');
       out.push({
         kind: 'heat',
         id: `heat:${type}:${key}`,
@@ -392,85 +409,119 @@ function pairPaths(
 ): PathVisual[] {
   const out: PathVisual[] = [];
   const correlations = new Set<string>();
-  for (const key of origins.keys()) correlations.add(key);
-  for (const key of destinations.keys()) correlations.add(key.replace(/^future:/, ''));
+  const correlationOf = (key: string) => key.replace(/^future:/, '').split('\0')[0]!;
+  for (const key of origins.keys()) correlations.add(correlationOf(key));
+  for (const key of destinations.keys()) correlations.add(correlationOf(key));
+  const commonDepth = (a: string, b: string) => {
+    const left = a.split('/');
+    const right = b.split('/');
+    let depth = 0;
+    while (depth < left.length && left[depth] === right[depth]) depth++;
+    return depth;
+  };
+  const nearest = (origin: PathEnd, candidates: PathEnd[]) =>
+    candidates
+      .slice()
+      .sort(
+        (a, b) =>
+          commonDepth(origin.spaceId, b.spaceId) - commonDepth(origin.spaceId, a.spaceId) ||
+          a.spaceId.localeCompare(b.spaceId),
+      )[0];
   for (const correlation of correlations) {
-    const origin = origins.get(correlation);
-    const arrived = destinations.get(correlation);
-    const upcoming = destinations.get(`future:${correlation}`);
-    const base = origin ?? arrived;
-    if (base === undefined) continue;
-    const def = base.def;
-    const from = origin ? { spaceId: origin.spaceId, anchorId: origin.event.anchorId } : undefined;
-    const icon = iconName(def.display.icon ?? arrived?.def.display.icon);
-    const color = colorOf(def);
-    const text = eventText(def, base.event.data);
-    const common = {
-      id: `path:${correlation}`,
-      type: def.type,
-      color,
-      correlationId: correlation,
-      icon,
-      text,
-    };
-    if (
-      origin !== undefined &&
-      arrived !== undefined &&
-      toMillis(arrived.event.at) >= toMillis(origin.event.at)
-    ) {
-      // 已经到达：完整路线在到达后再显示一会儿。
-      const arrivedAt = toMillis(arrived.event.at);
-      const linger = Math.max(
-        (arrived.def.display.durationSec ?? DEFAULT_ARRIVAL_SEC) * 1000,
-        windowMs,
-      );
-      if (at - arrivedAt > linger) continue;
-      out.push({
-        ...common,
-        kind: 'path',
-        from,
-        to: { spaceId: arrived.spaceId, anchorId: arrived.event.anchorId },
-        progress: 1,
-        durationMs: arrivedAt - toMillis(origin.event.at),
-      });
-      continue;
-    }
-    if (origin !== undefined) {
-      const sentAt = toMillis(origin.event.at);
-      if (upcoming !== undefined && toMillis(upcoming.event.at) >= sentAt) {
-        // 回放时已经知道终点：按两事件的时间差推进。
-        const total = toMillis(upcoming.event.at) - sentAt;
+    const froms = [...origins]
+      .filter(([key]) => correlationOf(key) === correlation)
+      .map(([, end]) => end);
+    const arrivals = [...destinations]
+      .filter(([key]) => !key.startsWith('future:') && correlationOf(key) === correlation)
+      .map(([, end]) => end);
+    const futures = [...destinations]
+      .filter(([key]) => key.startsWith('future:') && correlationOf(key) === correlation)
+      .map(([, end]) => end);
+    // 每个起点实例独立配对，优先选择共同祖先最近的终点实例。
+    const pairs = froms.length
+      ? froms.map((origin) => ({
+          origin,
+          arrived: nearest(origin, arrivals),
+          upcoming: nearest(origin, futures),
+        }))
+      : arrivals.map((arrived) => ({ origin: undefined, arrived, upcoming: undefined }));
+    for (const { origin, arrived, upcoming } of pairs) {
+      const base = origin ?? arrived;
+      if (base === undefined) continue;
+      const def = base.def;
+      const from = origin
+        ? { spaceId: origin.spaceId, anchorId: origin.event.anchorId }
+        : undefined;
+      const icon = iconName(def.display.icon ?? arrived?.def.display.icon);
+      const color = colorOf(def);
+      const text = eventText(def, base.event.data);
+      const common = {
+        id: `path:${correlation}${pairs.length > 1 || base.spaceId.includes('/') ? `:${base.spaceId}` : ''}`,
+        type: def.type,
+        color,
+        correlationId: correlation,
+        icon,
+        text,
+      };
+      if (
+        origin !== undefined &&
+        arrived !== undefined &&
+        toMillis(arrived.event.at) >= toMillis(origin.event.at)
+      ) {
+        // 已经到达：完整路线在到达后再显示一会儿。
+        const arrivedAt = toMillis(arrived.event.at);
+        const linger = Math.max(
+          (arrived.def.display.durationSec ?? DEFAULT_ARRIVAL_SEC) * 1000,
+          windowMs,
+        );
+        if (at - arrivedAt > linger) continue;
         out.push({
           ...common,
           kind: 'path',
           from,
-          to: { spaceId: upcoming.spaceId, anchorId: upcoming.event.anchorId },
-          progress: total > 0 ? Math.min(1, Math.max(0, (at - sentAt) / total)) : 1,
-          durationMs: total,
+          to: { spaceId: arrived.spaceId, anchorId: arrived.event.anchorId },
+          progress: 1,
+          durationMs: arrivedAt - toMillis(origin.event.at),
         });
         continue;
       }
-      // 只有起点：只在起点显示图标。
-      const maxAge = (def.maxAgeSec ?? DEFAULT_PATH_MAX_AGE_SEC) * 1000;
-      if (at - sentAt > maxAge) continue;
-      out.push({ ...common, kind: 'path', from, progress: null, durationMs: null });
-      continue;
-    }
-    if (arrived !== undefined) {
-      // 只有终点（起点空间不在当前视图里）：在终点显示一会儿图标。
-      const arrivedAt = toMillis(arrived.event.at);
-      const linger = Math.max(
-        (arrived.def.display.durationSec ?? DEFAULT_ARRIVAL_SEC) * 1000,
-        windowMs,
-      );
-      if (at - arrivedAt > linger) continue;
-      out.push({
-        ...common,
-        kind: 'path',
-        to: { spaceId: arrived.spaceId, anchorId: arrived.event.anchorId },
-        progress: 1,
-        durationMs: null,
-      });
+      if (origin !== undefined) {
+        const sentAt = toMillis(origin.event.at);
+        if (upcoming !== undefined && toMillis(upcoming.event.at) >= sentAt) {
+          // 回放时已经知道终点：按两事件的时间差推进。
+          const total = toMillis(upcoming.event.at) - sentAt;
+          out.push({
+            ...common,
+            kind: 'path',
+            from,
+            to: { spaceId: upcoming.spaceId, anchorId: upcoming.event.anchorId },
+            progress: total > 0 ? Math.min(1, Math.max(0, (at - sentAt) / total)) : 1,
+            durationMs: total,
+          });
+          continue;
+        }
+        // 只有起点：只在起点显示图标。
+        const maxAge = (def.maxAgeSec ?? DEFAULT_PATH_MAX_AGE_SEC) * 1000;
+        if (at - sentAt > maxAge) continue;
+        out.push({ ...common, kind: 'path', from, progress: null, durationMs: null });
+        continue;
+      }
+      if (arrived !== undefined) {
+        // 只有终点（起点空间不在当前视图里）：在终点显示一会儿图标。
+        const arrivedAt = toMillis(arrived.event.at);
+        const linger = Math.max(
+          (arrived.def.display.durationSec ?? DEFAULT_ARRIVAL_SEC) * 1000,
+          windowMs,
+        );
+        if (at - arrivedAt > linger) continue;
+        out.push({
+          ...common,
+          kind: 'path',
+          to: { spaceId: arrived.spaceId, anchorId: arrived.event.anchorId },
+          progress: 1,
+          durationMs: null,
+        });
+      }
     }
   }
   return out;

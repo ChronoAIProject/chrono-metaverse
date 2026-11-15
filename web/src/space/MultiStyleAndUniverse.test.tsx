@@ -33,6 +33,19 @@ beforeEach(() => {
   window.history.replaceState(null, '', '/s/demo-lobby');
 });
 
+function 打开面板(label: string) {
+  const trigger = screen.getByRole('button', { name: label });
+  if (trigger.getAttribute('aria-expanded') !== 'true') fireEvent.click(trigger);
+}
+function 设置按钮(name: string | RegExp) {
+  打开面板('显示设置');
+  return screen.getByRole('button', { name });
+}
+function 成员控件(label: string) {
+  打开面板('空间导览');
+  return screen.getByLabelText(label);
+}
+
 function 打开完整应用(url: string) {
   window.history.replaceState(null, '', url);
   const fetcher = vi.fn<typeof fetch>(fixtureFetch);
@@ -74,6 +87,7 @@ it.each([
     expect(app.createClient).toHaveBeenCalledWith(SHARE_TOKEN, undefined);
     验证请求授权(app.fetcher, `/api/public/spaces/${SPACE_ID}`, `Share ${SHARE_TOKEN}`);
     expect(window.location.hash).toBe(hash);
+    打开面板('显示设置');
     const gallery = within(screen.getByRole('group', { name: '空间样式画廊' }));
     fireEvent.click(gallery.getByRole('button', { name: /品牌开放日.*开放日策展/ }));
     await waitFor(() =>
@@ -101,7 +115,7 @@ it.each([
     await waitFor(() => expect(app.views[0]?.last().mode).toBe('extended'));
     expect(new URLSearchParams(window.location.search).get('view')).toBe('extended');
     expect(window.location.hash).toBe(hash);
-    fireEvent.click(screen.getByRole('button', { name: '方块' }));
+    fireEvent.click(设置按钮('方块'));
     await waitFor(() => expect(app.views[0]?.last().members[0]?.view.style).toBe('blocks'));
     expect(new URLSearchParams(window.location.search).get('style')).toBe('blocks');
     expect(window.location.hash).toBe(hash);
@@ -113,10 +127,10 @@ it('完整应用的组合分享片段在主题排布与成员样式指定清除�
   const hash = `#share=${UNIVERSE_SHARE_TOKEN}`;
   const app = 打开完整应用(`/u/${UNIVERSE_ID}${hash}`);
   await waitFor(() => expect(app.views[0]?.last().members).toHaveLength(2));
-  expect(app.createClient).toHaveBeenCalledWith(UNIVERSE_SHARE_TOKEN, UNIVERSE_ID);
+  expect(app.createClient).toHaveBeenCalledWith(UNIVERSE_SHARE_TOKEN, undefined);
   验证请求授权(
     app.fetcher,
-    `/api/public/universes/${UNIVERSE_ID}`,
+    `/api/public/spaces/${UNIVERSE_ID}/scene`,
     `Share ${UNIVERSE_SHARE_TOKEN}`,
   );
   for (const id of [SPACE_ID, FLORIST_ID]) {
@@ -134,7 +148,7 @@ it('完整应用的组合分享片段在主题排布与成员样式指定清除�
     ).toBe(true);
   }
   expect(window.location.hash).toBe(hash);
-  fireEvent.click(screen.getByRole('button', { name: '工程蓝图总览' }));
+  fireEvent.click(设置按钮('工程蓝图总览'));
   await waitFor(() =>
     expect(app.views[0]!.last().members.map((member) => member.view.styleId)).toEqual([
       'blueprint',
@@ -143,31 +157,39 @@ it('完整应用的组合分享片段在主题排布与成员样式指定清除�
   );
   expect(new URLSearchParams(window.location.search).get('themeId')).toBe('blueprint-atlas');
   expect(window.location.hash).toBe(hash);
-  fireEvent.click(screen.getByRole('button', { name: '并排展廊' }));
+  fireEvent.click(设置按钮('并排展廊'));
   await waitFor(() =>
-    expect(app.views[0]!.last().members[1]!.placement).toMatchObject({
+    expect(
+      app.views[0]!.last().members.find(
+        (member) => member.spaceId === `${UNIVERSE_ID}/${FLORIST_ID}`,
+      )!.placement,
+    ).toMatchObject({
       offset: [26, 0, 0],
       rotation: 0,
     }),
   );
   expect(new URLSearchParams(window.location.search).get('layout')).toBe('side-by-side');
   expect(window.location.hash).toBe(hash);
-  const selector = screen.getByLabelText(`${fixtureStore().spaces.get(SPACE_ID)!.name} 样式`);
+  const selector = 成员控件(`${fixtureStore().spaces.get(SPACE_ID)!.name} 样式`);
   fireEvent.change(selector, { target: { value: 'brand-open-day' } });
   await waitFor(() => {
     const members = app.views[0]!.last().members;
-    expect(members.find((member) => member.spaceId === SPACE_ID)!.view).toMatchObject({
+    expect(
+      members.find((member) => member.spaceId === `${UNIVERSE_ID}/${SPACE_ID}`)!.view,
+    ).toMatchObject({
       styleId: 'brand-open-day',
       mode: 'extended',
       extensions: { badge: '开放日策展' },
     });
-    expect(members.find((member) => member.spaceId === FLORIST_ID)!.view).toMatchObject({
+    expect(
+      members.find((member) => member.spaceId === `${UNIVERSE_ID}/${FLORIST_ID}`)!.view,
+    ).toMatchObject({
       styleId: 'blueprint',
       mode: 'optimized',
     });
   });
   expect(new URLSearchParams(window.location.search).get('memberStyles')).toBe(
-    `${SPACE_ID}:brand-open-day`,
+    `${UNIVERSE_ID}/${SPACE_ID}:brand-open-day`,
   );
   expect(window.location.hash).toBe(hash);
   fireEvent.change(selector, { target: { value: '' } });
@@ -193,7 +215,7 @@ it.each(['', `&share=${SHARE_TOKEN}`])(
     expect(app.createClient.mock.calls.every(([share]) => share === null)).toBe(true);
     验证请求授权(app.fetcher, '/api/public/previews', `Preview ${PREVIEW_TOKEN}`);
     expect(window.location.hash).toBe(hash);
-    fireEvent.click(screen.getByRole('button', { name: /品牌开放日.*开放日策展/ }));
+    fireEvent.click(设置按钮(/品牌开放日.*开放日策展/));
     await waitFor(() =>
       expect(app.views[0]?.last().members[0]?.view).toMatchObject({
         styleId: 'brand-open-day',
@@ -233,6 +255,8 @@ it('样式画廊读取策展扩展标签并在实际切换后的场景视图保�
   const client = createPublicClient({ share: SHARE_TOKEN, fetch: fixtureFetch });
   const s = fakeViewFactory();
   render(<SpacePage spaceId={SPACE_ID} client={client} hasShareToken createView={s.factory} />);
+  await screen.findByRole('button', { name: '显示设置' });
+  打开面板('显示设置');
   const button = await screen.findByRole('button', { name: /品牌开放日.*开放日策展/ });
   expect(within(button).getByText('开放日策展')).toBeVisible();
   fireEvent.click(button);
@@ -245,7 +269,7 @@ it('样式画廊读取策展扩展标签并在实际切换后的场景视图保�
       },
     }),
   );
-  fireEvent.click(screen.getByRole('button', { name: /写实建筑/ }));
+  fireEvent.click(设置按钮(/写实建筑/));
   await waitFor(() => {
     const view = s.views[0]?.last().members[0]?.view;
     expect(view?.styleId).toBe('arch-realistic');
@@ -296,6 +320,7 @@ it('先应用样式动作再发送镜头动作，并允许显式覆盖', async (
   await waitFor(() => expect(camera).toHaveBeenCalledOnce());
   expect(camera.mock.calls[0]).toBeDefined();
   expect(s.views[0]!.last().members[0]!.view.style).toBe('blocks');
+  打开面板('显示设置');
   fireEvent.click(
     within(screen.getByRole('group', { name: '重建层画法' })).getByRole('button', { name: '形状' }),
   );
@@ -304,7 +329,9 @@ it('先应用样式动作再发送镜头动作，并允许显式覆盖', async (
     within(screen.getByRole('group', { name: '视图模式' })).getByRole('button', { name: /扩展/ }),
   );
   await waitFor(() => expect(s.views[0]!.last().mode).toBe('extended'));
+  打开面板('空间导览');
   fireEvent.click(screen.getByRole('button', { name: /^全景$/ }));
+  打开面板('空间导览');
   fireEvent.click(screen.getByRole('button', { name: /^全景$/ }));
   expect(s.views[0]!.frameContent).toHaveBeenCalledTimes(2);
 });
@@ -392,6 +419,7 @@ it('`VE-P12-01`：三类跨空间连接双向跳转到公开锚点，重复点�
   const page = render(<UniversePage {...s.props} />);
   await waitFor(() => expect(s.views[0]?.last().members).toHaveLength(2));
   const view = s.views[0]!;
+  打开面板('空间导览');
   const sidebar = within(page.container.querySelector<HTMLElement>('.space__links')!);
   expect(sidebar.getAllByRole('button')).toHaveLength(7);
   const names = new Map([
@@ -422,6 +450,7 @@ it('`VE-P12-01`：三类跨空间连接双向跳转到公开锚点，重复点�
       }
     }
   }
+  打开面板('空间导览');
   const members = within(screen.getByRole('complementary', { name: '成员空间' }));
   fireEvent.click(members.getByRole('button', { name: '聚焦' }));
   expect(view.focusAnchor).toHaveBeenLastCalledWith(null);
@@ -442,6 +471,7 @@ it('`VE-P12-02`：空间公开锚点导览传递目标，全景导览清理聚�
   render(<SpacePage spaceId={SPACE_ID} client={client} hasShareToken createView={s.factory} />);
   await waitFor(() => expect(s.views[0]?.last().members).toHaveLength(1));
   const view = s.views[0]!;
+  打开面板('空间导览');
   const bar = within(screen.getByRole('group', { name: '空间锚点导览' }));
   const anchors = view
     .last()
@@ -499,8 +529,10 @@ it('`VE-P12-04`：连接聚焦后先应用成员样式再定位实体，重建�
   const page = render(<UniversePage {...s.props} createView={factory} />);
   await waitFor(() => expect(s.views[0]?.last().members).toHaveLength(2));
   const view = s.views[0]!;
+  打开面板('空间导览');
   fireEvent.click(screen.getByRole('button', { name: /街区通道.*→ 演示前厅/ }));
   expect(view.focusAnchor).toHaveBeenLastCalledWith({ spaceId: SPACE_ID, anchorId: 'door-01' });
+  打开面板('空间导览');
   const members = within(screen.getByRole('complementary', { name: '成员空间' }));
   expect(view.focusMember).toHaveBeenLastCalledWith(SPACE_ID);
   expect(members.getByRole('button', { name: '全景' })).toBeVisible();
@@ -519,6 +551,7 @@ it('`VE-P12-04`：连接聚焦后先应用成员样式再定位实体，重建�
   page.rerender(<UniversePage {...s.props} createView={factory} viewerCommand={command} />);
   await waitFor(() => expect(applyCamera).toHaveBeenCalledOnce());
   expect(members.queryByRole('button', { name: '全景' })).not.toBeInTheDocument();
+  打开面板('空间导览');
   expect(members.getAllByRole('button', { name: '聚焦' })).toHaveLength(2);
   expect(view.focusMember).not.toHaveBeenCalled();
   expect(view.focusAnchor).toHaveBeenCalledWith(null);
@@ -542,13 +575,14 @@ it('`VE-P12-04`：连接聚焦后先应用成员样式再定位实体，重建�
   );
   view.focusMember.mockClear();
   const count = view.contents.length;
-  fireEvent.click(screen.getByRole('button', { name: '工程蓝图总览' }));
+  fireEvent.click(设置按钮('工程蓝图总览'));
   await waitFor(() => expect(view.contents.length).toBeGreaterThan(count));
   expect(view.focusMember).not.toHaveBeenCalled();
   expect(view.focusAnchor.mock.calls.every(([ref]) => ref === null)).toBe(true);
   expect(applyCamera).toHaveBeenCalledOnce();
   expect(flyTo).toHaveBeenCalledOnce();
 
+  打开面板('空间导览');
   fireEvent.click(screen.getByRole('button', { name: /街区通道.*→ 街角花店/ }));
   view.focusAnchor.mockClear();
   view.focusMember.mockClear();
@@ -562,7 +596,7 @@ it('`VE-P12-04`：连接聚焦后先应用成员样式再定位实体，重建�
   expect(view.focusAnchor).toHaveBeenLastCalledWith(null);
   expect(view.frameContent).toHaveBeenCalledOnce();
   const overviewCount = view.contents.length;
-  fireEvent.click(screen.getByRole('button', { name: '体素方块世界' }));
+  fireEvent.click(设置按钮('体素方块世界'));
   await waitFor(() => expect(view.contents.length).toBeGreaterThan(overviewCount));
   expect(view.focusMember).not.toHaveBeenCalled();
   expect(view.focusAnchor.mock.calls.every(([ref]) => ref === null)).toBe(true);
@@ -580,10 +614,12 @@ it('`VE-P13-01`：跨空间连接与成员聚焦后执行纯相机聚焦或环�
   const page = render(<UniversePage {...s.props} createView={factory} />);
   await waitFor(() => expect(s.views[0]?.last().members).toHaveLength(2));
   const view = s.views[0]!;
+  打开面板('空间导览');
   const members = within(screen.getByRole('complementary', { name: '成员空间' }));
   const florist = view.last().members.find((member) => member.spaceId === FLORIST_ID)!;
   const entity = florist.view.entities.find((candidate) => candidate.bounds != null)!;
   expect(entity).toBeDefined();
+  打开面板('空间导览');
   fireEvent.click(screen.getByRole('button', { name: /街区通道.*→ 演示前厅/ }));
   expect(view.focusMember).toHaveBeenLastCalledWith(SPACE_ID);
   expect(members.getByRole('button', { name: '全景' })).toBeVisible();
@@ -597,17 +633,20 @@ it('`VE-P13-01`：跨空间连接与成员聚焦后执行纯相机聚焦或环�
   await waitFor(() => expect(applyCamera).toHaveBeenCalledOnce());
   expect(applyCamera).toHaveBeenLastCalledWith(focus.actions[0], view.last());
   expect(members.queryByRole('button', { name: '全景' })).not.toBeInTheDocument();
+  打开面板('空间导览');
   expect(members.getAllByRole('button', { name: '聚焦' })).toHaveLength(2);
   expect(view.focusMember).not.toHaveBeenCalled();
   const focusCount = view.contents.length;
-  fireEvent.click(screen.getByRole('button', { name: '霓虹街区' }));
+  fireEvent.click(设置按钮('霓虹街区'));
   await waitFor(() => expect(view.contents.length).toBeGreaterThan(focusCount));
   expect(view.focusMember).not.toHaveBeenCalled();
   expect(view.focusAnchor.mock.calls.every(([ref]) => ref === null)).toBe(true);
+  打开面板('空间导览');
   expect(members.getAllByRole('button', { name: '聚焦' })).toHaveLength(2);
   expect(applyCamera).toHaveBeenCalledOnce();
 
   const lobbyRow = members.getByText('演示前厅').closest('.space__info-row')! as HTMLElement;
+  打开面板('空间导览');
   fireEvent.click(within(lobbyRow).getByRole('button', { name: '聚焦' }));
   expect(view.focusMember).toHaveBeenLastCalledWith(SPACE_ID);
   expect(within(lobbyRow).getByRole('button', { name: '全景' })).toBeVisible();
@@ -621,13 +660,15 @@ it('`VE-P13-01`：跨空间连接与成员聚焦后执行纯相机聚焦或环�
   await waitFor(() => expect(applyCamera).toHaveBeenCalledTimes(2));
   expect(applyCamera).toHaveBeenLastCalledWith(orbit.actions[0], view.last());
   expect(members.queryByRole('button', { name: '全景' })).not.toBeInTheDocument();
+  打开面板('空间导览');
   expect(members.getAllByRole('button', { name: '聚焦' })).toHaveLength(2);
   expect(view.focusMember).not.toHaveBeenCalled();
   const orbitCount = view.contents.length;
-  fireEvent.click(screen.getByRole('button', { name: '白模沙盘总览' }));
+  fireEvent.click(设置按钮('白模沙盘总览'));
   await waitFor(() => expect(view.contents.length).toBeGreaterThan(orbitCount));
   expect(view.focusMember).not.toHaveBeenCalled();
   expect(view.focusAnchor.mock.calls.every(([ref]) => ref === null)).toBe(true);
+  打开面板('空间导览');
   expect(members.getAllByRole('button', { name: '聚焦' })).toHaveLength(2);
   expect(applyCamera).toHaveBeenCalledTimes(2);
 });
@@ -651,6 +692,7 @@ it('`VE-P13-02`：单空间锚点导览聚焦后执行外部相机指令，切�
     .members[0]!.view.anchors.find(
       (candidate) => candidate.visibility === 'public' && candidate.position != null,
     )!;
+  打开面板('空间导览');
   fireEvent.click(
     within(screen.getByRole('group', { name: '空间锚点导览' })).getByRole('button', {
       name: anchor.label ?? anchor.anchorId,
@@ -669,6 +711,7 @@ it('`VE-P13-02`：单空间锚点导览聚焦后执行外部相机指令，切�
   await waitFor(() => expect(applyCamera).toHaveBeenCalledOnce());
   expect(view.focusAnchor).toHaveBeenLastCalledWith(null);
   const count = view.contents.length;
+  打开面板('显示设置');
   fireEvent.click(
     within(screen.getByRole('group', { name: '空间样式画廊' })).getByRole('button', {
       name: '工程蓝图',
@@ -718,10 +761,7 @@ it('保存的成员样式优先于保存的组合主题，其余成员应用保�
   const members = s.views[0]!.last().members;
   expect(members.find((m) => m.spaceId === SPACE_ID)!.view.styleId).toBe('voxel-blocks');
   expect(members.find((m) => m.spaceId === FLORIST_ID)!.view.styleId).toBe('spring-greenhouse');
-  expect(screen.getByRole('button', { name: '体素方块世界' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
+  expect(设置按钮('体素方块世界')).toHaveAttribute('aria-pressed', 'true');
 });
 
 it.each([
@@ -894,8 +934,7 @@ it.each(['query', 'click', 'action'] as const)(
         }
       />,
     );
-    if (source === 'click')
-      fireEvent.click(await screen.findByRole('button', { name: '体素方块世界' }));
+    if (source === 'click') fireEvent.click(设置按钮('体素方块世界'));
     await waitFor(() => {
       expect(s.views[0]?.last().members).toHaveLength(2);
       expect(
@@ -904,10 +943,7 @@ it.each(['query', 'click', 'action'] as const)(
         ),
       ).toBe(true);
     });
-    expect(screen.getByRole('button', { name: '体素方块世界' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
+    expect(设置按钮('体素方块世界')).toHaveAttribute('aria-pressed', 'true');
   },
 );
 
@@ -929,12 +965,9 @@ it.each(['query', 'click', 'action'] as const)(
       expect(s.views[0]!.last().members.find((m) => m.spaceId === SPACE_ID)!.view.styleId).toBe(
         'voxel-blocks',
       );
-      expect(screen.getByRole('button', { name: '体素方块世界' })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      );
+      expect(设置按钮('体素方块世界')).toHaveAttribute('aria-pressed', 'true');
     }
-    if (source === 'click') fireEvent.click(screen.getByRole('button', { name: '各自独立' }));
+    if (source === 'click') fireEvent.click(设置按钮('各自独立'));
     if (source === 'action')
       page.rerender(
         <UniversePage
@@ -950,10 +983,7 @@ it.each(['query', 'click', 'action'] as const)(
       expect(members.find((m) => m.spaceId === SPACE_ID)!.view.styleId).toBe('maquette');
       expect(members.find((m) => m.spaceId === FLORIST_ID)!.view.styleId).toBe('spring-greenhouse');
     });
-    expect(screen.getByRole('button', { name: '各自独立' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
+    expect(设置按钮('各自独立')).toHaveAttribute('aria-pressed', 'true');
   },
 );
 
@@ -1009,7 +1039,7 @@ it.each(['query', 'sidebar', 'action'] as const)(
     );
     await waitFor(() => expect(s.views[0]?.last().members).toHaveLength(2));
     if (source === 'sidebar')
-      fireEvent.change(screen.getByLabelText(`${fixtureStore().spaces.get(SPACE_ID)!.name} 样式`), {
+      fireEvent.change(成员控件(`${fixtureStore().spaces.get(SPACE_ID)!.name} 样式`), {
         target: { value: 'maquette' },
       });
     await waitFor(() => {
@@ -1112,11 +1142,11 @@ it('调整横向偏移时保留预设纵向偏移与旋转，并响应重复全�
   const s = universe();
   render(<UniversePage {...s.props} />);
   await waitFor(() => expect(s.views[0]?.last().members).toHaveLength(2));
-  fireEvent.click(screen.getByRole('button', { name: '斜向广场' }));
+  fireEvent.click(设置按钮('斜向广场'));
   const name = fixtureStore().spaces.get(SPACE_ID)!.name;
-  expect(screen.getByLabelText(`${name} 旋转`)).toHaveValue('90');
-  expect(screen.getByLabelText(`${name} Z 偏移`)).toHaveValue(-10);
-  fireEvent.change(screen.getByLabelText(`${name} X 偏移`), { target: { value: '-20' } });
+  expect(成员控件(`${name} 旋转`)).toHaveValue('90');
+  expect(成员控件(`${name} Z 偏移`)).toHaveValue(-10);
+  fireEvent.change(成员控件(`${name} X 偏移`), { target: { value: '-20' } });
   await waitFor(() =>
     expect(s.views[0]!.last().members[0]!.placement).toEqual({
       offset: [-20, 0, -10],
@@ -1188,7 +1218,7 @@ it.each(['空间页', '预览页'] as const)(
       ),
     );
     await waitFor(() => expect(s.views[0]?.last().members[0]?.view.showScan).toBe(true));
-    fireEvent.click(screen.getByRole('button', { name: '工程蓝图' }));
+    fireEvent.click(设置按钮('工程蓝图'));
     await waitFor(() =>
       expect(s.views[0]!.last().members[0]!.view).toMatchObject({
         styleId: 'blueprint',
@@ -1200,7 +1230,7 @@ it.each(['空间页', '预览页'] as const)(
     expect(new URLSearchParams(window.location.search).has('view')).toBe(false);
     expect(new URLSearchParams(window.location.search).has('style')).toBe(false);
     expect(window.location.hash).toBe('#share=%E4%BF%9D%E7%95%99%E4%BB%A4%E7%89%8C');
-    fireEvent.click(screen.getByRole('button', { name: /扫描重建叠加/ }));
+    fireEvent.click(设置按钮(/扫描重建叠加/));
     await waitFor(() => {
       const member = s.views[0]!.last().members[0]!;
       expect(member.view).toMatchObject({ mode: 'optimized', showScan: true });
@@ -1258,7 +1288,7 @@ it('组合主题和局部样式切换释放历史覆盖，局部操作保持其�
   const s = universe('?view=raw&style=blocks');
   render(<UniversePage {...s.props} />);
   await waitFor(() => expect(s.views[0]?.last().members).toHaveLength(2));
-  fireEvent.click(screen.getByRole('button', { name: '工程蓝图总览' }));
+  fireEvent.click(设置按钮('工程蓝图总览'));
   await waitFor(() =>
     expect(
       s.views[0]!.last().members.every(
@@ -1270,7 +1300,7 @@ it('组合主题和局部样式切换释放历史覆盖，局部操作保持其�
   fireEvent.click(
     within(screen.getByRole('group', { name: '视图模式' })).getByRole('button', { name: '原始' }),
   );
-  fireEvent.change(screen.getByLabelText(`${fixtureStore().spaces.get(SPACE_ID)!.name} 样式`), {
+  fireEvent.change(成员控件(`${fixtureStore().spaces.get(SPACE_ID)!.name} 样式`), {
     target: { value: 'extension-only' },
   });
   await waitFor(() => {
@@ -1306,7 +1336,7 @@ it('全局命名样式动作可被后续主题和各自独立替换，保留真�
   );
   expect(new URLSearchParams(window.location.search).get('themeId')).toBe('blueprint');
   expect(new URLSearchParams(window.location.search).has('memberStyles')).toBe(false);
-  fireEvent.click(screen.getByRole('button', { name: '体素方块世界' }));
+  fireEvent.click(设置按钮('体素方块世界'));
   await waitFor(() =>
     expect(
       s.views[0]!.last().members.every(
@@ -1339,7 +1369,7 @@ it('全局命名样式动作可被后续主题和各自独立替换，保留真�
   expect(
     s.views[0]!.last().members.find((member) => member.spaceId === FLORIST_ID)!.view,
   ).toMatchObject({ mode: 'optimized', style: 'shapes' });
-  fireEvent.click(screen.getByRole('button', { name: '各自独立' }));
+  fireEvent.click(设置按钮('各自独立'));
   await waitFor(() => {
     const members = s.views[0]!.last().members;
     expect(members.find((member) => member.spaceId === SPACE_ID)!.view.styleId).toBe(
@@ -1402,3 +1432,57 @@ it.each(['仅扫描', '扫描缺失', '空图层'] as const)(
       ).toBeInTheDocument();
   },
 );
+
+it('普通空间保留自身模型，同时渲染子空间并按实例保存样式覆盖', async () => {
+  const root = createPublicClient({ share: SHARE_TOKEN, fetch: fixtureFetch });
+  const florist = createPublicClient({
+    share: fixtureStore().spaces.get(FLORIST_ID)!.shareToken,
+    fetch: fixtureFetch,
+  });
+  const client = {
+    ...root,
+    space: async (id: string) => ({ ...(await root.space(id)), compositionEnabled: true }),
+    scene: vi.fn(async () => ({
+      id: SPACE_ID,
+      name: '含内容的组合空间',
+      seq: 4,
+      at: new Date().toISOString(),
+      links: [],
+      members: [
+        {
+          spaceId: SPACE_ID,
+          sourceSpaceId: SPACE_ID,
+          accessPath: null,
+          name: '演示前厅',
+          seq: 4,
+          offset: [0, 0, 0] as const,
+          rotation: 0 as const,
+        },
+        {
+          spaceId: `${SPACE_ID}/${FLORIST_ID}`,
+          sourceSpaceId: FLORIST_ID,
+          accessPath: SPACE_ID,
+          name: '街角花店',
+          seq: 2,
+          offset: [120, 0, 240] as const,
+          rotation: 180 as const,
+        },
+      ],
+    })),
+    forComposition: (path: string | null) => (path ? florist : root),
+  };
+  const s = fakeViewFactory();
+  render(<SpacePage spaceId={SPACE_ID} client={client} hasShareToken createView={s.factory} />);
+  await waitFor(() => expect(s.views[0]?.last().members).toHaveLength(2));
+  expect(s.views).toHaveLength(1);
+  expect(s.views[0]!.last().members[0]!.view.entities.length).toBeGreaterThan(20);
+  expect(s.views[0]!.last().members[1]).toMatchObject({
+    spaceId: `${SPACE_ID}/${FLORIST_ID}`,
+    placement: { offset: [120, 0, 240], rotation: 180 },
+  });
+  fireEvent.change(成员控件('街角花店 样式'), { target: { value: 'blueprint' } });
+  await waitFor(() => expect(s.views[0]!.last().members[1]!.view.styleId).toBe('blueprint'));
+  expect(new URLSearchParams(window.location.search).get('memberStyles')).toBe(
+    `${SPACE_ID}/${FLORIST_ID}:blueprint`,
+  );
+});

@@ -37,6 +37,7 @@ pub mod timeline;
 
 // 上传、任务、事件、组合（各自的文件里有说明）。
 pub mod admin_events;
+pub mod composition;
 pub mod event_query;
 pub mod events;
 pub mod ingest_common;
@@ -166,11 +167,16 @@ pub fn router(state: AppState) -> Router {
         .merge(events::routes())
         .merge(admin_events::routes())
         .merge(universes::routes())
+        .merge(composition::write_routes())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             crate::auth::require_identity,
         ));
     let browser_view = Router::new()
+        .route(
+            "/api/auth/nyxid/view/spaces/{space_id}/scene",
+            post(composition::get_scene),
+        )
         .route(
             "/api/auth/nyxid/view/spaces/{space_id}/external",
             post(external::get_public_external),
@@ -249,6 +255,7 @@ pub fn router(state: AppState) -> Router {
         // 事件、状态、组合的公开读。
         .merge(public_events::routes())
         .merge(public_universes::routes())
+        .merge(composition::public_routes())
         // 全部公开接口：按来源地址限流、每空间并发上限（设计 8.2）。
         .route_layer(middleware::from_fn_with_state(
             state.clone(),

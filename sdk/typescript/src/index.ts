@@ -82,6 +82,16 @@ export type {
   InstanceShape,
 } from './core/shape.js';
 export { ApiClient, ApiError, type TransportConfig } from './transport/client.js';
-export { MetaverseApi, type UploadFormat, type UploadPurpose } from './transport/api.js';
+export {
+  MetaverseApi,
+  type UploadFormat,
+  type UploadPurpose,
+  type SpaceChild,
+  type SpaceLink,
+  type SpaceComposition,
+  type CompositionView,
+  type CompositionUpdate,
+  type ChildChange,
+} from './transport/api.js';
 export { resolveNyxToken } from './transport/token.js';
 export { upload, waitForJob, type UploadOptions } from './transport/upload.js';

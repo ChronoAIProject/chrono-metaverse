@@ -157,6 +157,7 @@ pub async fn assemble(
         }
     };
     Ok(SnapshotView {
+        composition: manifest.composition.clone().unwrap_or_default(),
         space_id: space_id.to_owned(),
         seq,
         at,

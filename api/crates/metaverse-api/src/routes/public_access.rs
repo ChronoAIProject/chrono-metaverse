@@ -68,7 +68,9 @@ impl ViewerHeaders {
         universe: Option<&str>,
     ) -> Result<Option<Grant>, ApiError> {
         if let Some(grant) = &self.grant {
-            if grant.space_id() != space_id || universe.is_some() {
+            if grant.space_id() != space_id
+                || (universe.is_some_and(|path| path != space_id) && grant.membership().is_none())
+            {
                 return Err(ApiError::not_found());
             }
         }
@@ -86,7 +88,9 @@ pub struct UniverseParam {
 
 fn universe_id(universe: Option<&str>) -> Result<Option<&str>, ApiError> {
     match universe {
-        Some(id) if !is_space_id(id) => Err(ApiError::not_found()),
+        Some(id) if id.split('/').count() > 8 || id.split('/').any(|part| !is_space_id(part)) => {
+            Err(ApiError::not_found())
+        }
         other => Ok(other),
     }
 }
@@ -100,9 +104,15 @@ pub async fn public_space_grant(
     at: Timestamp,
 ) -> Result<Grant, ApiError> {
     if let Some(grant) = headers.browser_grant(space_id, universe)? {
+        if grant
+            .membership()
+            .is_some_and(|periods| !periods.contains(at))
+        {
+            return Err(ApiError::not_found());
+        }
         return Ok(grant);
     }
-    match universe_id(universe)? {
+    match universe_id(universe)?.filter(|id| *id != space_id) {
         Some(universe_id) => {
             state
                 .authorizer
@@ -129,9 +139,12 @@ pub async fn public_space_grant_ever(
     now: Timestamp,
 ) -> Result<(Grant, bool), ApiError> {
     if let Some(grant) = headers.browser_grant(space_id, universe)? {
-        return Ok((grant, true));
+        let current = grant
+            .membership()
+            .is_none_or(|periods| periods.contains(now));
+        return Ok((grant, current));
     }
-    match universe_id(universe)? {
+    match universe_id(universe)?.filter(|id| *id != space_id) {
         Some(universe_id) => {
             state
                 .authorizer
@@ -156,9 +169,15 @@ pub async fn public_space_grant_during(
     to: Timestamp,
 ) -> Result<Grant, ApiError> {
     if let Some(grant) = headers.browser_grant(space_id, universe)? {
+        if grant
+            .membership()
+            .is_some_and(|periods| !periods.overlaps(from, Some(to)))
+        {
+            return Err(ApiError::not_found());
+        }
         return Ok(grant);
     }
-    match universe_id(universe)? {
+    match universe_id(universe)?.filter(|id| *id != space_id) {
         Some(universe_id) => {
             state
                 .authorizer
@@ -189,9 +208,26 @@ pub async fn public_space_grant_for_seq(
     seq: u64,
 ) -> Result<Grant, ApiError> {
     if let Some(grant) = headers.browser_grant(space_id, universe)? {
+        if let Some(periods) = grant.membership() {
+            let window = if seq == 0 {
+                let space = state
+                    .repo
+                    .space(&grant)
+                    .await?
+                    .ok_or_else(ApiError::not_found)?;
+                let end = state.repo.commit_window(&grant, 1).await?.map(|(at, _)| at);
+                Some((space.created_at, end))
+            } else {
+                state.repo.commit_window(&grant, seq).await?
+            };
+            let (start, end) = window.ok_or_else(ApiError::not_found)?;
+            if !periods.overlaps(start, end.map(|end| end.saturating_add_millis(-1))) {
+                return Err(ApiError::not_found());
+            }
+        }
         return Ok(grant);
     }
-    match universe_id(universe)? {
+    match universe_id(universe)?.filter(|id| *id != space_id) {
         Some(universe_id) => {
             state
                 .authorizer

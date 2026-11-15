@@ -27,6 +27,7 @@ pub use spaces::SpacePolicy;
 
 // 上传、任务、事件、组合（各自的文件里有说明）。
 mod cleanup;
+mod composition;
 mod events;
 mod jobs;
 mod runner;
@@ -95,6 +96,8 @@ pub const REPLAY_RETENTION: Duration = Duration::from_secs(90);
 pub enum RepoError {
     #[error("数据库暂时不可用")]
     Unavailable,
+    #[error("子空间配置不合法：{0}")]
+    InvalidComposition(String),
     #[error("编号已存在")]
     Duplicate,
     #[error("授权凭据与写入内容不一致")]
@@ -196,6 +199,7 @@ impl Repo {
             (
                 SPACES,
                 vec![
+                    index(doc! {"members.spaceId": 1}, named("member_space")),
                     index(
                         doc! {"owner.kind": 1, "owner.id": 1, "updatedAt": 1},
                         named("owner_updated"),
@@ -351,6 +355,7 @@ impl Repo {
         for (collection, indexes) in plan {
             self.collection(collection).create_indexes(indexes).await?;
         }
+        self.prepare_space_composition().await?;
         Ok(())
     }
 

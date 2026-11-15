@@ -68,7 +68,7 @@ function Home({ showFixtureLink }: { readonly showFixtureLink: boolean }) {
         </p>
         <p className="home__hint">
           空间链接形如 <code>/s/空间编号#share=分享令牌</code>，组合链接形如{' '}
-          <code>/u/组合编号#share=分享令牌</code>。
+          <code>/s/空间编号#share=分享令牌</code>。
         </p>
         <a className="home__link" href="/workspace">
           打开在线工作台
@@ -143,10 +143,17 @@ export function App({
   const { route } = useAppRouter();
   const fragment = useFragment();
   const share = shareTokenFromHash(fragment);
-  const universeId = route.kind === 'universe' ? route.universeId : undefined;
+  useEffect(() => {
+    if (route.kind === 'universe')
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `/s/${encodeURIComponent(route.universeId)}${window.location.search}${window.location.hash}`,
+      );
+  }, [route]);
   const client = useMemo(
-    () => (route.kind === 'preview' ? createClient(null) : createClient(share, universeId)),
-    [createClient, share, universeId, route.kind],
+    () => (route.kind === 'preview' ? createClient(null) : createClient(share, undefined)),
+    [createClient, share, route.kind],
   );
 
   switch (route.kind) {
@@ -169,6 +176,7 @@ export function App({
     case 'universe':
       return (
         <UniversePage
+          native
           key={`${route.universeId}#${share ?? ''}`}
           universeId={route.universeId}
           client={client}

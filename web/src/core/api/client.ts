@@ -93,6 +93,8 @@ export interface DensityQuery {
 export type SnapshotQuery = { readonly seq: number } | { readonly at: Timestamp };
 
 export interface PublicClient {
+  readonly scene: (spaceId: string, at?: Timestamp) => Promise<UniverseView>;
+  readonly forComposition: (path: string | null) => PublicClient;
   readonly external?: (
     spaceId: string,
     seq: number,
@@ -342,6 +344,8 @@ export function createPublicClient(options: PublicClientOptions = {}): PublicCli
     query({ ...params, universe });
 
   return {
+    scene: (spaceId, at) => json<UniverseView>(`/spaces/${segment(spaceId)}/scene${query({ at })}`),
+    forComposition: (path) => createPublicClient({ ...options, universe: path }),
     external: (spaceId, seq, resource, signal) =>
       request(`${space(spaceId)}/external${q({ seq, ...resource })}`, undefined, undefined, signal),
     previewExternal: (token, resource, signal) =>

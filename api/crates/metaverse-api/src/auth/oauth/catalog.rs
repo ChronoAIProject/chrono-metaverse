@@ -104,7 +104,23 @@ pub(crate) async fn read(
             subject: session.subject,
             credential: held.credential.clone(),
         };
-        let grant = state.authorizer.browser_space(&identity, &space_id).await?;
+        let params: crate::routes::public_access::UniverseParam =
+            axum::extract::Query::<crate::routes::public_access::UniverseParam>::try_from_uri(
+                request.uri(),
+            )
+            .map(|query| query.0)
+            .map_err(|_| ApiError::not_found())?;
+        let grant = if let Some(path) = params.universe.as_deref().filter(|path| *path != space_id)
+        {
+            let root_id = path.split('/').next().ok_or_else(ApiError::not_found)?;
+            let root = state.authorizer.browser_space(&identity, root_id).await?;
+            state
+                .authorizer
+                .browser_composition_member(&root, &space_id, path)
+                .await?
+        } else {
+            state.authorizer.browser_space(&identity, &space_id).await?
+        };
         ensure_current(&oauth, &held).await?;
         request.extensions_mut().insert(BrowserViewerGrant(grant));
         let owned = std::mem::replace(request, Request::new(axum::body::Body::empty()));

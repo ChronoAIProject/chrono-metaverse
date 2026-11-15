@@ -225,3 +225,105 @@ async fn browser_catalog_bounds_pages_and_skips_tombstones_and_inconsistent_org_
     assert_eq!(next.body["items"].as_array().unwrap().len(), 3);
     assert!(next.body["next"].is_null());
 }
+
+#[tokio::test]
+async fn 浏览器沿根空间授权读取外部嵌套子空间并在退出后停止读取当前内容() {
+    let app = TestApp::start_with_options(true, true)
+        .await
+        .expect("需要真实数据库");
+    create_org(&app).await;
+    for id in ["foreign-child", "foreign-leaf", "unrelated-space"] {
+        assert_eq!(
+            app.create(
+                &identity("another-owner"),
+                None,
+                space_body(id, "person", "another-owner")
+            )
+            .await
+            .status,
+            StatusCode::CREATED
+        );
+    }
+    let changed = app
+        .send(
+            Method::PATCH,
+            "/api/v1/spaces/oauth-hall/composition",
+            &[("x-nyxid-identity-token", &identity(ORG))],
+            Some(json!({"invitations":["foreign-child"]})),
+        )
+        .await;
+    assert_eq!(changed.status, StatusCode::OK, "{}", changed.body);
+    for (parent, child) in [
+        ("foreign-child", "foreign-leaf"),
+        ("oauth-hall", "foreign-child"),
+    ] {
+        let added = app
+            .send(
+                Method::POST,
+                &format!("/api/v1/spaces/{parent}/children/{child}"),
+                &[("x-nyxid-identity-token", &identity("another-owner"))],
+                Some(json!({"offset":[0,0,0],"rotation":0})),
+            )
+            .await;
+        assert_eq!(added.status, StatusCode::OK, "{}", added.body);
+    }
+    let cookie = connect(&app, "browser-owner", 3600).await;
+    assert_eq!(
+        browser(&app, &cookie, "view/spaces/foreign-leaf", None)
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    let scene = browser(&app, &cookie, "view/spaces/oauth-hall/scene", None).await;
+    assert_eq!(scene.status, StatusCode::OK, "{}", scene.body);
+    assert_eq!(scene.body["members"].as_array().unwrap().len(), 3);
+    for path in [
+        "view/spaces/oauth-hall?universe=oauth-hall",
+        "view/spaces/foreign-leaf?universe=oauth-hall/foreign-child",
+        "view/spaces/foreign-leaf/head?universe=oauth-hall/foreign-child",
+    ] {
+        let reply = browser(&app, &cookie, path, None).await;
+        assert_eq!(reply.status, StatusCode::OK, "{path}: {}", reply.body);
+        assert_eq!(reply.headers[header::CACHE_CONTROL], "no-store");
+    }
+    for path in [
+        "view/spaces/foreign-leaf?universe=oauth-hall",
+        "view/spaces/foreign-leaf?universe=oauth-hall/foreign-child/oauth-hall",
+        "view/spaces/unrelated-space?universe=oauth-hall/foreign-child",
+    ] {
+        assert_eq!(
+            browser(&app, &cookie, path, None).await.status,
+            StatusCode::NOT_FOUND,
+            "{path}"
+        );
+    }
+    let removed = app
+        .send(
+            Method::DELETE,
+            "/api/v1/spaces/oauth-hall/children/foreign-child",
+            &[("x-nyxid-identity-token", &identity(ORG))],
+            None,
+        )
+        .await;
+    assert_eq!(removed.status, StatusCode::OK, "{}", removed.body);
+    assert_eq!(
+        browser(
+            &app,
+            &cookie,
+            "view/spaces/foreign-leaf/head?universe=oauth-hall/foreign-child",
+            None
+        )
+        .await
+        .status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        browser(&app, &cookie, "view/spaces/oauth-hall/scene", None)
+            .await
+            .body["members"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+}

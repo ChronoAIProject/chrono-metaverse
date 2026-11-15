@@ -792,3 +792,20 @@
     display: none;
   }
 }
+
+.workspace__menu-tabs {
+  display: flex;
+  gap: 8px;
+}
+.workspace__menu-tabs button {
+  flex: 1;
+}
+.workspace__menu-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.workspace__menu-tabs [aria-pressed='true'] {
+  border-color: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-state-business-primary);
+}

@@ -507,13 +507,29 @@ pub async fn get_universe(
 async fn member_facts(
     state: &AppState,
     grant: &UniverseGrant,
+    caller: &Caller,
 ) -> Result<Vec<(String, Visibility, BTreeSet<String>)>, ApiError> {
     let now = crate::now()?;
     let (_, grants) = state
         .authorizer
         .universe_member_grants_at(grant, now)
         .await?;
-    let mut facts = Vec::with_capacity(grants.len());
+    let mut facts = Vec::with_capacity(grants.len() + 1);
+    // 父空间自身的公开锚点也可以连接到子空间。
+    let root = state
+        .authorizer
+        .space(caller, grant.universe_id(), Purpose::Read)
+        .await?;
+    let space = state
+        .repo
+        .space(&root)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    facts.push((
+        root.space_id().to_owned(),
+        space.visibility,
+        super::event_query::public_anchor_ids(state, &root).await?,
+    ));
     // 已经删除（或同编号重建）的成员没有凭据，也没有可以连接的锚点。
     for member in grants.into_iter().flatten() {
         let Some(space) = state.repo.space(&member).await? else {
@@ -577,13 +593,16 @@ pub async fn update_universe(
         .collect();
     let needs_facts = request.links.is_some() || request.visibility == Some(Visibility::Public);
     let facts = if needs_facts {
-        member_facts(&state, &grant).await?
+        member_facts(&state, &grant, &caller).await?
     } else {
         Vec::new()
     };
     if let Some(visibility) = request.visibility {
         if visibility == Visibility::Public {
-            if let Some((space, _, _)) = facts.iter().find(|(_, v, _)| *v != Visibility::Public) {
+            if let Some((space, _, _)) = facts
+                .iter()
+                .find(|(id, v, _)| id != &universe_id && *v != Visibility::Public)
+            {
                 return Err(conflict_with(
                     "visibility_conflict",
                     format!("成员 {space} 是凭链接查看的空间，组合不能设为公开"),
@@ -643,7 +662,7 @@ pub async fn update_universe(
                     return Err(invalid_with(
                         "link_anchor_not_public",
                         format!(
-                            "连接两端必须是成员空间的公开锚点：{}/{}",
+                            "连接两端必须是本空间或子空间的公开锚点：{}/{}",
                             end.space_id, end.anchor_id
                         ),
                     ));

@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::chunk::ChunkKey;
-use crate::model::{ChunkChange, Commit, IdChange, ScanRef};
+use crate::model::{ChunkChange, Commit, IdChange, ScanRef, UniverseState};
 use crate::Timestamp;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -35,6 +35,7 @@ pub struct StateManifest {
     pub regions_hash: Option<String>,
     pub palette_hash: Option<String>,
     pub scan: Option<ScanRef>,
+    pub composition: Option<UniverseState>,
 }
 
 /// 状态清单的存储形式：各项按键排序的列表，保证内容哈希稳定。
@@ -50,6 +51,8 @@ pub struct StoredManifest {
     pub palette_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scan: Option<ScanRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub composition: Option<UniverseState>,
 }
 
 impl StateManifest {
@@ -71,6 +74,7 @@ impl StateManifest {
             regions_hash: self.regions_hash.clone(),
             palette_hash: self.palette_hash.clone(),
             scan: self.scan.clone(),
+            composition: self.composition.clone(),
         }
     }
 
@@ -79,6 +83,7 @@ impl StateManifest {
             regions_hash: stored.regions_hash.clone(),
             palette_hash: stored.palette_hash.clone(),
             scan: stored.scan.clone(),
+            composition: stored.composition.clone(),
             ..Default::default()
         };
         manifest.apply_chunks(&stored.chunks);
@@ -108,6 +113,9 @@ impl StateManifest {
 
     /// 叠加一次提交的变化。
     pub fn apply_commit(&mut self, commit: &Commit) {
+        if let Some(composition) = &commit.composition {
+            self.composition = Some(composition.clone());
+        }
         self.apply_chunks(&commit.changed_chunks);
         apply_ids(&mut self.entities, &commit.changed_entities);
         apply_ids(&mut self.anchors, &commit.changed_anchors);
@@ -228,6 +236,7 @@ mod tests {
             regions_hash: None,
             palette_hash: None,
             scan: None,
+            composition: None,
             keyframe: None,
             job_id: None,
             draft_id: None,

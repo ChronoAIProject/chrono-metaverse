@@ -454,6 +454,17 @@ pub struct Space {
     pub styles: Vec<SpaceStyleSpec>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_style_id: Option<String>,
+    #[serde(default)]
+    pub composition_enabled: bool,
+    /// 子空间引用与连接；与自身模型共用空间历史。
+    #[serde(default)]
+    pub members: Vec<UniverseMember>,
+    #[serde(default)]
+    pub links: Vec<UniverseLink>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme_id: Option<String>,
+    #[serde(default)]
+    pub invitations: Vec<String>,
     pub storage_limit_bytes: u64,
     #[serde(default)]
     pub storage_used_bytes: u64,
@@ -670,6 +681,9 @@ pub struct Commit {
     /// 每 50 次提交存一份完整状态清单的哈希。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keyframe: Option<String>,
+    /// 本次变更后的子空间完整状态；省略表示沿用。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub composition: Option<UniverseState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub job_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1481,6 +1495,11 @@ mod tests {
             plots: vec![],
             styles: vec![],
             default_style_id: None,
+            composition_enabled: false,
+            members: Vec::new(),
+            links: Vec::new(),
+            theme_id: None,
+            invitations: Vec::new(),
             storage_limit_bytes: 1 << 30,
             storage_used_bytes: 0,
             created_at: ts(0),

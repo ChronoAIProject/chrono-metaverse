@@ -426,3 +426,164 @@
   white-space: nowrap;
   text-decoration: none;
 }
+
+/* 查看操作按任务收拢，主栏不再随样式与成员数量增长。 */
+.space__primary-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.viewer-panel {
+  position: relative;
+  z-index: 12;
+}
+.viewer-panel[data-open='true'] {
+  z-index: 14;
+}
+.viewer-panel .theme-toggle span {
+  display: inline;
+}
+.viewer-panel__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--rule-2);
+  border-radius: var(--radius);
+  background: var(--raised);
+  color: var(--ink);
+  font-size: var(--text-note);
+  white-space: nowrap;
+}
+.viewer-panel__trigger[aria-expanded='true'] {
+  background: var(--inset);
+  border-color: var(--accent);
+}
+.viewer-panel__body {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(390px, calc(100vw - 24px));
+  max-height: min(680px, calc(100dvh - 140px));
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--lift-rest);
+  color: var(--ink);
+}
+.viewer-panel__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.viewer-panel__heading button {
+  min-width: 36px;
+  min-height: 36px;
+  font-size: 22px;
+  color: var(--ink-2);
+}
+.viewer-panel__section {
+  display: grid;
+  gap: 10px;
+  padding-top: 16px;
+  margin-top: 12px;
+  border-top: 1px solid var(--rule);
+}
+.viewer-panel__section h2 {
+  font-size: var(--text-note);
+  font-weight: 600;
+}
+.viewer-panel .style-gallery {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 100%;
+}
+.viewer-panel .style-gallery__item {
+  min-height: 42px;
+  white-space: normal;
+  text-align: left;
+}
+.viewer-panel .segmented {
+  flex-wrap: wrap;
+  width: fit-content;
+}
+.viewer-panel .cutaway {
+  display: flex;
+  flex-wrap: wrap;
+}
+.viewer-panel .cutaway__range {
+  flex: 1;
+  min-width: 100px;
+}
+.viewer-panel--navigation {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+}
+.viewer-panel--navigation .viewer-panel__body {
+  left: 0;
+  right: auto;
+}
+.viewer-panel .anchor-quickbar {
+  position: static;
+  display: flex;
+  flex-wrap: wrap;
+  transform: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.space__members dl {
+  display: grid;
+  gap: 16px;
+}
+.space__members .space__info-row {
+  display: grid;
+  gap: 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--rule);
+}
+.space__members dt {
+  font-size: var(--text-note);
+  font-weight: 600;
+}
+.space__members dd {
+  display: grid;
+  gap: 8px;
+  font-size: var(--text-meta);
+  color: var(--ink-2);
+}
+.space__members .space__placement {
+  margin: 0;
+}
+@media (max-width: 720px) {
+  .space__title {
+    min-width: 0;
+    flex-basis: auto;
+  }
+  .space__primary-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .space__primary-actions .segmented button {
+    padding: 0 10px;
+  }
+  .space__bar {
+    gap: 8px;
+  }
+  .viewer-panel__body {
+    max-height: calc(100dvh - 200px);
+  }
+}
+
+.viewer-panel__body[hidden] {
+  display: none;
+}
