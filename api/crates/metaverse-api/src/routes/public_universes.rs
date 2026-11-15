@@ -61,6 +61,8 @@ pub struct PublicMemberView {
     pub seq: Option<u64>,
     /// 成员空间的名称。
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style_id: Option<String>,
 }
 
 /// 修订里的成员与摆放。
@@ -71,6 +73,8 @@ pub struct RevisionMemberView {
     pub offset: [i64; 3],
     #[schema(value_type = u16)]
     pub rotation: Rotation,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style_id: Option<String>,
 }
 
 /// T 时刻的组合（网站 `UniverseView`）。
@@ -87,13 +91,18 @@ pub struct PublicUniverseView {
     pub members: Vec<PublicMemberView>,
     #[schema(value_type = Vec<Object>)]
     pub links: Vec<UniverseLink>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct PublicRevisionState {
     pub members: Vec<RevisionMemberView>,
     #[schema(value_type = Vec<Object>)]
     pub links: Vec<UniverseLink>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme_id: Option<String>,
 }
 
 /// 一次组合修订（网站 `UniverseRevision`）。
@@ -152,6 +161,7 @@ pub async fn get_public_universe(
             at: universe.created_at,
             members: Vec::new(),
             links: Vec::new(),
+            theme_id: None,
         },
         Some(revision) => {
             let mut members = Vec::with_capacity(revision.state.members.len());
@@ -172,6 +182,7 @@ pub async fn get_public_universe(
                     rotation: member.rotation,
                     seq: state.repo.space_seq_at(member_grant, at).await?,
                     name,
+                    style_id: member.style_id.clone(),
                 });
             }
             PublicUniverseView {
@@ -188,6 +199,7 @@ pub async fn get_public_universe(
                         shown.contains(&link.from.space_id) && shown.contains(&link.to.space_id)
                     })
                     .collect(),
+                theme_id: revision.state.theme_id,
             }
         }
     };
@@ -243,9 +255,11 @@ pub async fn get_public_universe_revision(
                     space_id: member.space_id,
                     offset: member.offset,
                     rotation: member.rotation,
+                    style_id: member.style_id,
                 })
                 .collect(),
             links: revision.state.links,
+            theme_id: revision.state.theme_id,
         },
     };
     Ok(public_cache(

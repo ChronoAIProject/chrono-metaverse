@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { VIEW_MODES, type RebuiltStyle, type ViewMode } from '../core/scene';
+import { isStyleId } from '../core/styles';
 
 /**
  * 页面路由。照搬 CMA web/src/routing/routes.ts 的写法：路径和路由对象一一对应、
@@ -97,6 +98,82 @@ export function useAppRouter(): AppRouter {
 
 /** 查询参数里记住的重建层画法的键。 */
 export const STYLE_PARAM = 'style';
+/** 命名空间样式参数。 */
+export const LOOK_PARAM = 'look';
+/** 组合成员样式覆盖参数。 */
+export const MEMBER_STYLES_PARAM = 'memberStyles';
+/** 组合排布预设参数。 */
+export const LAYOUT_PARAM = 'layout';
+
+/** 读取命名样式编号；空值和非法编号返回 `null`。 */
+export function lookFromSearch(search: string): string | null {
+  const value = new URLSearchParams(search).get(LOOK_PARAM);
+  return value !== null && isStyleId(value) ? value : null;
+}
+
+/** 写入命名样式编号。 */
+export function searchWithLook(search: string, styleId: string | null): string {
+  const params = new URLSearchParams(search);
+  if (styleId && isStyleId(styleId)) params.set(LOOK_PARAM, styleId);
+  else params.delete(LOOK_PARAM);
+  const text = params.toString();
+  return text === '' ? '' : `?${text}`;
+}
+
+/** 读取组合中的成员样式覆盖；列表格式或编号非法时不应用覆盖。 */
+export function memberStylesFromSearch(search: string): ReadonlyMap<string, string> {
+  const map = new Map<string, string>();
+  const value = new URLSearchParams(search).get(MEMBER_STYLES_PARAM);
+  if (!value) return map;
+  for (const item of value.split(',')) {
+    const [spaceId, styleId, extra] = item.split(':');
+    if (
+      !spaceId ||
+      !styleId ||
+      extra !== undefined ||
+      !/^[a-z0-9][a-z0-9-]{0,79}(?![\s\S])/.test(spaceId) ||
+      !isStyleId(styleId)
+    )
+      return new Map();
+    map.set(spaceId, styleId);
+  }
+  return map;
+}
+
+/** 写入组合成员样式覆盖。 */
+export function searchWithMemberStyles(
+  search: string,
+  styles: ReadonlyMap<string, string> | Record<string, string>,
+): string {
+  const params = new URLSearchParams(search);
+  const entries = styles instanceof Map ? [...styles.entries()] : Object.entries(styles);
+  const encoded = entries
+    .filter(
+      ([spaceId, styleId]) =>
+        /^[a-z0-9][a-z0-9-]{0,79}(?![\s\S])/.test(spaceId) && isStyleId(styleId),
+    )
+    .map(([spaceId, styleId]) => `${spaceId}:${styleId}`)
+    .join(',');
+  if (encoded) params.set(MEMBER_STYLES_PARAM, encoded);
+  else params.delete(MEMBER_STYLES_PARAM);
+  const text = params.toString();
+  return text === '' ? '' : `?${text}`;
+}
+
+/** 读取排布预设编号。 */
+export function layoutFromSearch(search: string): string | null {
+  const value = new URLSearchParams(search).get(LAYOUT_PARAM);
+  return value !== null && /^[a-z0-9][a-z0-9-]{0,79}$/.test(value) ? value : null;
+}
+
+/** 写入排布预设编号。 */
+export function searchWithLayout(search: string, layout: string | null): string {
+  const params = new URLSearchParams(search);
+  if (layout && /^[a-z0-9][a-z0-9-]{0,79}$/.test(layout)) params.set(LAYOUT_PARAM, layout);
+  else params.delete(LAYOUT_PARAM);
+  const text = params.toString();
+  return text === '' ? '' : `?${text}`;
+}
 
 /** 地址里记住的重建层画法：`?style=blocks` 是方块；没有或不认识的值是默认的形状。 */
 export function styleFromSearch(search: string): RebuiltStyle {
@@ -138,6 +215,17 @@ export function viewFromSearch(search: string): ViewMode | null {
   return VIEW_MODES.find((mode) => mode.id === value)?.id ?? null;
 }
 
+/** 与产品协议命名一致的兼容别名。 */
+export const parseViewMode = viewFromSearch;
+export const parseExplicitViewMode = viewFromSearch;
+
+export function parseExplicitRebuiltStyle(search: string): RebuiltStyle | null {
+  const value = new URLSearchParams(search).get(STYLE_PARAM);
+  return value === 'shapes' || value === 'blocks' ? value : null;
+}
+/** 与产品协议命名一致的兼容别名。 */
+export const parseRebuiltStyle = styleFromSearch;
+
 /** 换掉查询参数里的视图（等于页面的默认视图时不写），其他参数原样保留。返回 `''` 或 `?…`。 */
 export function searchWithView(search: string, view: ViewMode, fallback: ViewMode): string {
   const params = new URLSearchParams(search);
@@ -146,6 +234,9 @@ export function searchWithView(search: string, view: ViewMode, fallback: ViewMod
   const text = params.toString();
   return text === '' ? '' : `?${text}`;
 }
+
+/** 写入视图查询参数的协议别名。 */
+export const writeViewQuery = searchWithView;
 
 /**
  * 视图（原始 / 优化 / 优化 + 扩展），记在地址的查询参数里：打开 `?view=raw` 的链接直接进原始视图，
@@ -167,4 +258,44 @@ export function useViewMode(fallback: ViewMode): readonly [ViewMode, (mode: View
     [fallback],
   );
   return [mode, change] as const;
+}
+
+/** 分别记录页面默认值与地址或控件显式指定的覆盖值。 */
+export function useViewOverrides(fallback: ViewMode) {
+  const [mode, writeMode] = useViewMode(fallback);
+  const [style, writeStyle] = useRebuiltStyle();
+  const [explicitMode, setExplicitMode] = useState(() =>
+    parseExplicitViewMode(window.location.search),
+  );
+  const [explicitStyle, setExplicitStyle] = useState(() =>
+    parseExplicitRebuiltStyle(window.location.search),
+  );
+  const setMode = useCallback(
+    (value: ViewMode) => {
+      setExplicitMode(value);
+      writeMode(value);
+    },
+    [writeMode],
+  );
+  const setStyle = useCallback(
+    (value: RebuiltStyle) => {
+      setExplicitStyle(value);
+      writeStyle(value);
+    },
+    [writeStyle],
+  );
+  const resetOverrides = useCallback(() => {
+    setExplicitMode(null);
+    setExplicitStyle(null);
+    const params = new URLSearchParams(window.location.search);
+    params.delete(VIEW_PARAM);
+    params.delete(STYLE_PARAM);
+    const search = params.size ? `?${params}` : '';
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${window.location.pathname}${search}${window.location.hash}`,
+    );
+  }, []);
+  return { mode, style, explicitMode, explicitStyle, setMode, setStyle, resetOverrides };
 }

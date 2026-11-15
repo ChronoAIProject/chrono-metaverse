@@ -24,7 +24,8 @@ import {
   type TemplateTable,
 } from '../core/shapes/types';
 import { materialKey, shapeBounds } from '../core/shapes/build';
-import type { VoxelPart } from '../core/voxels';
+import type { VoxelPart, VoxelSource } from '../core/voxels';
+import { sha256Hex } from '../core/hash';
 import { anchorKey, linkRoute, type AnchorRef, type Visual } from '../core/visuals';
 import { backgroundFarPlane, clipBox, frameBox, scanCeilingHeight, scanFrameBox } from './framing';
 import { iconElement } from './icons';
@@ -48,10 +49,12 @@ import {
   type MaterialContext,
   type TextureRole,
 } from './materials';
+import { applyStyleLook } from './materials';
+import { styleLookKey, type StyleLook } from '../core/styles';
 import { createMeshService, type MeshService } from './meshService';
 import { fitModelInto, measureModel, modelFit, modelFitWarning, type BoxLike } from './modelFit';
 import { placedModelBox, placeRotatedModel } from './modelPlacement';
-import type { ShapeJob } from './meshJobs';
+import type { ShapeJob, ShapeJobResult } from './meshJobs';
 import { backgroundLandmark, backgroundView } from './background';
 import { environmentOf } from '../core/environment';
 import { EnvironmentView } from './environmentView';
@@ -241,6 +244,26 @@ function voxelGeometry(part: VoxelPart): THREE.BufferGeometry {
   return geometry;
 }
 
+/** 按图层、坐标、内容哈希、区域过滤和调色板复用体素几何，不包含样式外观。 */
+function voxelGeometryKey(source: VoxelSource): string {
+  return JSON.stringify([
+    source.chunks.map(({ layer, cx, cy, cz, cells }) => [
+      layer,
+      cx,
+      cy,
+      cz,
+      sha256Hex(new Uint8Array(cells.buffer, cells.byteOffset, cells.byteLength)),
+    ]),
+    source.keepBoxes,
+    source.palette,
+  ]);
+}
+
+interface VoxelGeometry {
+  readonly parts: readonly { part: VoxelPart; geometry: THREE.BufferGeometry }[];
+  readonly faceCount: number;
+}
+
 function placementGroup(placement: Placement): THREE.Group {
   const group = new THREE.Group();
   group.rotation.y = (placement.rotation * Math.PI) / 180;
@@ -298,10 +321,16 @@ export class SceneView {
   private readonly meshes: MeshService;
   private readonly ownsMeshes: boolean;
   private readonly geometryCache = new Map<string, ShapeGeometry & { triangles: number }>();
+  private readonly shapePending = new Map<string, Promise<void>>();
+  private readonly voxelCache = new Map<
+    string,
+    { pending: Promise<VoxelGeometry>; result?: VoxelGeometry }
+  >();
   private readonly materialCache = new Map<string, THREE.Material>();
   private readonly textures: TextureCache;
   private readonly environment: EnvironmentView;
   private readonly externalContent: ExternalContentView;
+  private lights: THREE.Light[] = [];
   private readonly modelCache = new Map<string, Promise<THREE.Object3D>>();
   private readonly scanCache = new WeakMap<ArrayBuffer, Promise<THREE.Object3D>>();
   private readonly modelBoxes = new WeakMap<THREE.Object3D, BoxLike | null>();
@@ -352,7 +381,7 @@ export class SceneView {
   /** 锚点标签：显示全部、悬停的、点按（选中）的、有事件的。 */
   private showAllLabels = false;
   private hoverAnchor: string | null = null;
-  private focusAnchor: string | null = null;
+  private focusedAnchorKey: string | null = null;
   private eventAnchors = new Set<string>();
   private labelsDirty = true;
   private labelsAt = 0;
@@ -412,7 +441,8 @@ export class SceneView {
     this.externalContent = new ExternalContentView(this.scene, this.host);
 
     // 灯光按物理单位设置（强度是 π 的倍数），见 lighting.ts。
-    this.scene.add(...createLights());
+    this.lights = createLights();
+    this.scene.add(...this.lights);
     this.grid = new THREE.GridHelper(60, 60, 0x6b6f78, 0x3b3f48);
     (this.grid.material as THREE.Material).transparent = true;
     (this.grid.material as THREE.Material).opacity = 0.45;
@@ -513,23 +543,29 @@ export class SceneView {
   }
 
   /** 形状材质按材质、玻璃和背景状态共用一份（画法见 materials.ts）。 */
-  private shapeMaterial(material: Material, glass: boolean, background = false): THREE.Material {
-    const key = `${materialKey(material)}|${glass ? 'g' : 'o'}|${background}`;
+  private shapeMaterial(
+    material: Material,
+    glass: boolean,
+    background = false,
+    styleLook?: StyleLook,
+    kind: 'structure' | 'object' = 'object',
+  ): THREE.Material {
+    const key = `${materialKey(material)}|${glass ? 'g' : 'o'}|${background}|${styleLookKey(styleLook)}|${kind}`;
     let cached = this.materialCache.get(key);
     if (cached === undefined) {
       const context = background ? { ...this.materialContext, clipping: [] } : this.materialContext;
-      cached = createShapeMaterial(material, glass, context);
+      cached = createShapeMaterial(material, glass, context, styleLook, kind);
       this.materialCache.set(key, cached);
     }
     return cached;
   }
 
-  private voxelMaterial(part: VoxelPart): THREE.Material {
-    const key = `voxel|${part.key}`;
+  private voxelMaterial(part: VoxelPart, styleLook?: StyleLook): THREE.Material {
+    const key = `voxel|${part.key}|${styleLookKey(styleLook)}`;
     const cached = this.materialCache.get(key);
     if (cached !== undefined) return cached;
     let material: THREE.Material;
-    if (part.kind === 'emissive') {
+    if (part.kind === 'emissive' || styleLook?.unlit === true) {
       // 发光方块不受光照，按方块颜色原样显示。
       material = new THREE.MeshBasicMaterial({ vertexColors: true, clippingPlanes: this.clipping });
     } else {
@@ -542,7 +578,7 @@ export class SceneView {
         depthWrite: !glass,
         clippingPlanes: this.clipping,
       });
-      if (part.texture !== undefined) {
+      if (part.texture !== undefined && !styleLook?.stripTextures) {
         this.texture(part.texture)
           ?.then((map) => {
             if (this.disposed) return;
@@ -553,6 +589,9 @@ export class SceneView {
       }
       material = standard;
     }
+    if (styleLook?.wireframe)
+      (material as THREE.Material & { wireframe?: boolean }).wireframe = true;
+    applyStyleLook(material, styleLook);
     this.materialCache.set(key, material);
     return material;
   }
@@ -614,6 +653,8 @@ export class SceneView {
     model: THREE.Object3D,
     look?: EntityBody['material'],
     background = false,
+    styleLook?: StyleLook,
+    kind: 'structure' | 'object' = 'object',
   ): THREE.Object3D {
     const clone = model.clone(true);
     clone.traverse((object) => {
@@ -623,8 +664,8 @@ export class SceneView {
       const mesh = object as THREE.Mesh;
       if (!mesh.isMesh) return;
       mesh.material = Array.isArray(mesh.material)
-        ? mesh.material.map((m) => this.modelMaterial(m, look, background))
-        : this.modelMaterial(mesh.material, look, background);
+        ? mesh.material.map((m) => this.modelMaterial(m, look, background, styleLook, kind))
+        : this.modelMaterial(mesh.material, look, background, styleLook, kind);
     });
     return clone;
   }
@@ -633,13 +674,21 @@ export class SceneView {
     source: THREE.Material,
     look: EntityBody['material'],
     background = false,
+    styleLook?: StyleLook,
+    kind: 'structure' | 'object' = 'object',
   ): THREE.Material {
-    const lookKey = modelMaterialKey(source, look);
+    const lookKey = modelMaterialKey(source, look, styleLook);
     if (lookKey === null && !background) return source;
-    const key = `${lookKey ?? source.uuid}|${background}`;
+    const key = `${lookKey ?? source.uuid}|${background}|${styleLookKey(styleLook)}|${kind}`;
     let material = this.materialCache.get(key);
     if (material === undefined) {
-      material = createModelMaterial(source, look, background ? [] : this.clipping);
+      material = createModelMaterial(
+        source,
+        look,
+        background ? [] : this.clipping,
+        styleLook,
+        kind,
+      );
       this.materialCache.set(key, material);
     }
     return material;
@@ -649,16 +698,54 @@ export class SceneView {
   // 内容
   // ---------------------------------------------------------------------------
 
+  /** 正在生成的任务也共用；关闭后的异步结果不再创建几何缓冲。 */
+  private cachedVoxels(key: string, source: VoxelSource): Promise<VoxelGeometry> {
+    if (source.chunks.length === 0) return Promise.resolve({ parts: [], faceCount: 0 });
+    const cached = this.voxelCache.get(key);
+    if (cached) {
+      this.voxelCache.delete(key);
+      this.voxelCache.set(key, cached);
+      return cached.pending;
+    }
+    const entry: { pending: Promise<VoxelGeometry>; result?: VoxelGeometry } = {
+      pending: this.meshes
+        .voxels(source)
+        .then((meshes) => {
+          if (this.disposed) return { parts: [], faceCount: 0 };
+          const result = {
+            parts: meshes.parts
+              .filter((part) => part.indices.length > 0)
+              .map((part) => ({
+                part,
+                geometry: voxelGeometry(part),
+              })),
+            faceCount: meshes.faceCount,
+          };
+          entry.result = result;
+          return result;
+        })
+        .catch((error: unknown) => {
+          this.voxelCache.delete(key);
+          throw error;
+        }),
+    };
+    this.voxelCache.set(key, entry);
+    return entry.pending;
+  }
+
   /**
    * 换内容。网格在后台线程里生成，生成好之前保留上一份内容，画面不闪；
    * 中途又来了新内容时，旧的一份生成完直接丢掉。
    */
   async setContent(content: SceneContent): Promise<void> {
+    if (this.disposed) return;
     const generation = ++this.generation;
     const warnings: string[] = [];
 
     // 1. 收集要生成的形状（按局部形状去重，已经缓存的跳过）。
     const jobs = new Map<string, ShapeJob>();
+    const reusedShapes: Promise<void>[] = [];
+    const reusedShapeKeys = new Set<string>();
     const plans = content.members.map((member) => {
       const entities = member.view.entities.map((entity) => {
         if (entity.shape === undefined || environmentOf(entity) || externalContentOf(entity))
@@ -666,33 +753,77 @@ export class SceneView {
         const { local, matrix } = splitShape(entity.shape);
         const used = usedTemplates(local, member.view.templates);
         const key = geometryKey(local, used);
-        if (!this.geometryCache.has(key) && !jobs.has(key)) {
+        const cached = this.geometryCache.get(key);
+        const pending = this.shapePending.get(key);
+        if (cached) {
+          this.geometryCache.delete(key);
+          this.geometryCache.set(key, cached);
+        } else if (pending) {
+          if (!reusedShapeKeys.has(key)) {
+            reusedShapeKeys.add(key);
+            reusedShapes.push(pending);
+          }
+        } else if (!jobs.has(key)) {
           jobs.set(key, { key, shape: local, templates: used });
         }
         return { entity, key, matrix };
       });
-      return { member, entities };
+      return { member, entities, voxelKey: voxelGeometryKey(member.view.voxels) };
     });
 
     const report = this.options.onProgress;
     const voxelTotal = content.members.filter((m) => m.view.voxels.chunks.length > 0).length;
-    const steps = jobs.size + voxelTotal;
+    const steps = reusedShapes.length + jobs.size + voxelTotal;
     let shapesDone = 0;
+    let reusedShapesDone = 0;
     let voxelsDone = 0;
     const progress = (label: string) => {
-      if (steps > 0) report?.({ label, done: shapesDone + voxelsDone, total: steps });
+      if (steps > 0 && !this.disposed && generation === this.generation)
+        report?.({ label, done: shapesDone + reusedShapesDone + voxelsDone, total: steps });
     };
     progress('生成网格');
 
     try {
-      const [shapeResults, voxelResults, scans] = await Promise.all([
-        this.meshes.shapes([...jobs.values()], (done) => {
-          shapesDone = done;
-          progress('生成网格');
-        }),
+      let batchRun: Promise<void> | undefined;
+      if (jobs.size > 0) {
+        const batchKeys = [...jobs.keys()];
+        let shapeRun: Promise<ShapeJobResult[]>;
+        try {
+          shapeRun = this.meshes.shapes([...jobs.values()], (done) => {
+            shapesDone = done;
+            progress('生成网格');
+          });
+        } catch (error) {
+          shapeRun = Promise.reject(error);
+        }
+        batchRun = shapeRun
+          .then((shapeResults) => {
+            if (this.disposed) return;
+            for (const result of shapeResults) {
+              if (this.geometryCache.has(result.key)) continue;
+              const geometry = partsToGeometry(result.parts, result.warnings);
+              this.geometryCache.set(result.key, { ...geometry, triangles: result.triangles });
+            }
+          })
+          .finally(() => {
+            for (const key of batchKeys) {
+              if (this.shapePending.get(key) === batchRun) this.shapePending.delete(key);
+            }
+          });
+        for (const key of batchKeys) this.shapePending.set(key, batchRun);
+      }
+      const [, , voxelResults, scans] = await Promise.all([
+        batchRun,
         Promise.all(
-          content.members.map(async (member) => {
-            const result = await this.meshes.voxels(member.view.voxels);
+          reusedShapes.map(async (pending) => {
+            await pending;
+            reusedShapesDone += 1;
+            progress('生成网格');
+          }),
+        ),
+        Promise.all(
+          plans.map(async ({ member, voxelKey }) => {
+            const result = await this.cachedVoxels(voxelKey, member.view.voxels);
             if (member.view.voxels.chunks.length > 0) {
               voxelsDone += 1;
               progress('生成方块');
@@ -717,16 +848,35 @@ export class SceneView {
           }),
         ),
       ]);
-      if (this.disposed) return;
-      for (const result of shapeResults) {
-        const geometry = partsToGeometry(result.parts, result.warnings);
-        this.geometryCache.set(result.key, { ...geometry, triangles: result.triangles });
-      }
-      if (generation !== this.generation) return;
+      if (this.disposed || generation !== this.generation) return;
       this.build(content, plans, voxelResults, scans, warnings);
     } finally {
       if (generation === this.generation) report?.(null);
     }
+  }
+
+  /** 组合环境使用同一成员的灯光、样式色与天空，并在当前构建代次内生效。 */
+  private updateStyleEnvironment(content: SceneContent): void {
+    const generation = this.generation;
+    const owner =
+      content.members.find((member) =>
+        member.view.entities.some((entity) => environmentOf(entity)),
+      ) ??
+      content.members.find(
+        (member) =>
+          member.view.lighting !== undefined ||
+          member.lighting !== undefined ||
+          member.view.backgroundColor !== undefined ||
+          member.backgroundColor !== undefined,
+      );
+    for (const light of this.lights) this.scene.remove(light);
+    this.lights = createLights(owner?.view.lighting ?? owner?.lighting);
+    this.scene.add(...this.lights);
+    this.environment.setContent(
+      { ...content, members: owner ? [owner] : [] },
+      owner?.view.backgroundColor ?? owner?.backgroundColor,
+      () => !this.disposed && generation === this.generation,
+    );
   }
 
   private build(
@@ -734,8 +884,9 @@ export class SceneView {
     plans: {
       member: MemberContent;
       entities: { entity: EntityBody; key: string | null; matrix: THREE.Matrix4 | null }[];
+      voxelKey: string;
     }[],
-    voxelResults: { parts: readonly VoxelPart[]; faceCount: number }[],
+    voxelResults: VoxelGeometry[],
     scans: (THREE.Object3D | null)[],
     warnings: string[],
   ): void {
@@ -751,11 +902,11 @@ export class SceneView {
     this.frameSources = [];
     this.distanceObjects = [];
     this.landmarks = [];
-    this.environment.setContent(content);
+    this.updateStyleEnvironment(content);
     this.externalContent.setContent(content);
     this.grid.visible = !this.environment.hasMap;
     // 换了内容，原来选中的物件（信息面板随之关闭）不再固定显示标签。
-    this.focusAnchor = null;
+    this.focusedAnchorKey = null;
     this.labelsDirty = true;
     let triangles = 0;
     let instancedBatches = 0;
@@ -793,6 +944,8 @@ export class SceneView {
           key: string;
           glass: boolean;
           background: boolean;
+          styleLook?: StyleLook;
+          kind: 'structure' | 'object';
           items: { entity: EntityBody; matrix: THREE.Matrix4 }[];
         }
       >();
@@ -801,8 +954,17 @@ export class SceneView {
         inUse.add(key);
         const glass = entity.props?.glass === true;
         const background = isBackgroundEntity(entity);
-        const batchKey = `${key}|${glass}|${background}|${JSON.stringify(entity.props?.backgroundView ?? null)}`;
-        const batch = batches.get(batchKey) ?? { key, glass, background, items: [] };
+        const styleLook = member.view.styleLook ?? member.styleLook;
+        const kind = entity.kind === 'structure' ? 'structure' : 'object';
+        const batchKey = `${key}|${glass}|${background}|${kind}|${styleLookKey(styleLook)}|${JSON.stringify(entity.props?.backgroundView ?? null)}`;
+        const batch = batches.get(batchKey) ?? {
+          key,
+          glass,
+          background,
+          styleLook,
+          kind,
+          items: [],
+        };
         batch.items.push({ entity, matrix });
         batches.set(batchKey, batch);
       }
@@ -814,7 +976,7 @@ export class SceneView {
         }
         if (built.geometry.index === null || built.geometry.index.count === 0) continue;
         const materials = built.materials.map((m) =>
-          this.shapeMaterial(m, batch.glass, batch.background),
+          this.shapeMaterial(m, batch.glass, batch.background, batch.styleLook, batch.kind),
         );
         textured += built.materials.filter(isTextureMaterial).length;
         const payload = batch.items.map((item) => ({
@@ -892,7 +1054,13 @@ export class SceneView {
                 console.warn(warning);
                 warnings.push(warning);
               }
-              const clone = this.sharedClone(model, entity.material, background);
+              const clone = this.sharedClone(
+                model,
+                entity.material,
+                background,
+                member.view.styleLook ?? member.styleLook,
+                entity.kind === 'structure' ? 'structure' : 'object',
+              );
               placeRotatedModel(clone, entity.transform, box ?? undefined);
               holder.add(fitModelInto(clone, fit));
             }
@@ -911,9 +1079,12 @@ export class SceneView {
       // 方块。
       const voxels = voxelResults[index]!;
       voxelFaces += voxels.faceCount;
-      for (const part of voxels.parts) {
-        if (part.indices.length === 0) continue;
-        const mesh = new THREE.Mesh(voxelGeometry(part), this.voxelMaterial(part));
+      for (const { part, geometry } of voxels.parts) {
+        const mesh = new THREE.Mesh(
+          geometry,
+          this.voxelMaterial(part, member.view.styleLook ?? member.styleLook),
+        );
+        mesh.userData.sharedGeometry = true;
         mesh.userData.sharedMaterial = true;
         mesh.name = `voxels:${part.key}`;
         if (part.kind === 'glass') mesh.renderOrder = 3;
@@ -962,6 +1133,16 @@ export class SceneView {
         if (inUse.has(key)) continue;
         cached.geometry.dispose();
         this.geometryCache.delete(key);
+      }
+    }
+    // 体素缓冲较大，保留最近的内容；当前成员与尚未完成的任务不驱逐。
+    if (this.voxelCache.size > 40) {
+      const voxelKeys = new Set(plans.map((plan) => plan.voxelKey));
+      for (const [key, cached] of this.voxelCache) {
+        if (this.voxelCache.size <= 30) break;
+        if (voxelKeys.has(key) || !cached.result) continue;
+        for (const { geometry } of cached.result.parts) geometry.dispose();
+        this.voxelCache.delete(key);
       }
     }
 
@@ -1176,7 +1357,7 @@ export class SceneView {
         button.dataset.kind = link.kind;
         button.textContent = `${{ door: '门', portal: '传送门', street: '街道' }[link.kind] ?? '连接'} → ${there.memberName ?? there.ref.spaceId}`;
         button.title = `飞到 ${there.memberName ?? there.ref.spaceId} 的 ${there.label}`;
-        button.addEventListener('click', () => this.flyTo(there.world!));
+        button.addEventListener('click', () => this.focusAnchor(there.ref));
         const object = new CSS2DObject(button);
         object.position.copy(here.world!).add(new THREE.Vector3(0, 0.45, 0));
         this.overlay.add(object);
@@ -1604,6 +1785,34 @@ export class SceneView {
     this.frameBounds(this.frameTarget());
   }
 
+  /** 聚焦组合中的一个成员空间；传 `null` 时回到全景总览。 */
+  focusMember(spaceId: string | null): void {
+    if (spaceId === null) {
+      this.frameContent();
+      return;
+    }
+    const source = this.frameSources.find((item) => item.group.name === `member:${spaceId}`);
+    if (!source) return;
+    this.content.updateMatrixWorld(true);
+    const box = new THREE.Box3();
+    source.group.traverse((object) => {
+      if ((object as THREE.Mesh).isMesh && object.userData.background !== true)
+        box.union(new THREE.Box3().setFromObject(object));
+    });
+    for (const clip of source.clips) box.union(clip);
+    for (const extra of source.extraBoxes) box.union(extra);
+    if (!box.isEmpty()) this.frameBounds(box);
+  }
+
+  /** 聚焦公开锚点并保留标签高亮；传 `null` 清除锚点聚焦。 */
+  focusAnchor(ref: { readonly spaceId: string; readonly anchorId: string } | null): void {
+    const key = ref === null ? null : anchorKey(ref);
+    this.setFocus(key);
+    if (key === null) return;
+    const info = this.anchors.get(key);
+    if (info?.world) this.flyTo(info.world);
+  }
+
   private frameBounds(box: THREE.Box3): void {
     const frame = frameBox(box, { fov: this.camera.fov, aspect: this.camera.aspect });
     if (frame === null) return;
@@ -1670,7 +1879,9 @@ export class SceneView {
       return true;
     }
     if (action.kind === 'focus') {
+      // 物件编号仅在成员空间内唯一，匹配前先限定成员范围。
       for (const member of content.members) {
+        if (action.spaceId && member.spaceId !== action.spaceId) continue;
         const entity = member.view.entities.find((item) => item.entityId === action.entityId);
         if (!entity) continue;
         const bounds =
@@ -1835,7 +2046,7 @@ export class SceneView {
         height: size.height,
         priority: anchorLabelPriority(info.anchor.kind, this.eventAnchors.has(key)),
         screenSize: this.screenSize(info, width, height),
-        forced: key === this.hoverAnchor || key === this.focusAnchor,
+        forced: key === this.hoverAnchor || key === this.focusedAnchorKey,
       });
     }
     const shown = layoutLabels(candidates, {
@@ -1889,8 +2100,11 @@ export class SceneView {
   }
 
   private setFocus(key: string | null): void {
-    if (this.focusAnchor === key) return;
-    this.focusAnchor = key;
+    if (this.focusedAnchorKey === key) return;
+    if (this.focusedAnchorKey !== null)
+      this.anchors.get(this.focusedAnchorKey)?.element?.removeAttribute('data-focused');
+    this.focusedAnchorKey = key;
+    if (key !== null) this.anchors.get(key)?.element?.setAttribute('data-focused', 'true');
     this.labelsDirty = true;
   }
 
@@ -1951,7 +2165,7 @@ export class SceneView {
     const picked = this.raycast(event);
     this.select(picked);
     // 点在锚点附近（没点到物件，或物件没挂锚点）：显示这个锚点的标签。
-    if (this.focusAnchor === null) {
+    if (this.focusedAnchorKey === null) {
       this.setFocus(
         this.anchorNear(event.clientX, event.clientY, event.pointerType === 'mouse' ? 18 : 28),
       );
@@ -2021,8 +2235,13 @@ export class SceneView {
     this.clearSelection();
     disposeObject(this.content);
     disposeObject(this.overlay);
+    this.shapePending.clear();
     for (const { geometry } of this.geometryCache.values()) geometry.dispose();
     this.geometryCache.clear();
+    for (const cached of this.voxelCache.values()) {
+      for (const { geometry } of cached.result?.parts ?? []) geometry.dispose();
+    }
+    this.voxelCache.clear();
     for (const material of this.materialCache.values()) material.dispose();
     this.materialCache.clear();
     this.textures.dispose();

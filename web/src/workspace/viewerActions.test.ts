@@ -4,6 +4,51 @@ import { parseViewerActions, viewerReply } from './viewerActions';
 const reply = (actions: unknown[]) =>
   '将调整查看方式。\n```metaverse-view\n' + JSON.stringify({ actions }) + '\n```';
 describe('AI 页面动作', () => {
+  it.each(['A', '_', '-', '0', 'Studio_01.v2', 'A'.repeat(128)])(
+    '组合级与成员级动作均接受后端合法样式编号：`%s`',
+    (styleId) => {
+      const actions = [
+        { type: 'look', styleId },
+        { type: 'look', styleId, spaceId: 'demo-lobby' },
+      ];
+      expect(parseViewerActions(reply(actions))).toEqual({ actions, invalid: false });
+    },
+  );
+
+  it.each([
+    '',
+    '.',
+    '.hidden',
+    'A'.repeat(129),
+    'a:b',
+    'a b',
+    'a\n',
+    'a\r',
+    '中文',
+    'a/b',
+    'a,b',
+    'a%20',
+  ])('组合级与成员级动作均拒绝非法样式编号：`%j`', (styleId) => {
+    for (const action of [
+      { type: 'look', styleId },
+      { type: 'look', styleId, spaceId: 'demo-lobby' },
+    ])
+      expect(parseViewerActions(reply([action]))).toEqual({ actions: [], invalid: true });
+  });
+
+  it.each(['Studio_01.v2', '-bad', '_bad', '.bad', 'a'.repeat(81), 'a b', 'a\n'])(
+    '空间与组合编号继续遵循原有规则：`%j`',
+    (id) => {
+      for (const action of [
+        { type: 'space', spaceId: id },
+        { type: 'universe', universeId: id },
+        { type: 'look', styleId: 'Studio_01.v2', spaceId: id },
+        { type: 'camera', kind: 'focus', entityId: 'chair', spaceId: id },
+      ])
+        expect(parseViewerActions(reply([action]))).toEqual({ actions: [], invalid: true });
+    },
+  );
+
   it('separates visible prose from bounded viewer actions', () => {
     const text = reply([
       { type: 'current' },
@@ -38,5 +83,16 @@ describe('AI 页面动作', () => {
     expect(
       parseViewerActions(reply([{ type: 'current' }]) + '\n' + reply([{ type: 'current' }])),
     ).toEqual({ actions: [], invalid: true });
+  });
+  it('支持命名样式、组合跳转和成员级聚焦', () => {
+    const result = parseViewerActions(
+      reply([
+        { type: 'universe', universeId: 'demo-street' },
+        { type: 'look', styleId: 'night-neon', spaceId: 'demo-florist' },
+        { type: 'camera', kind: 'focus', entityId: 'counter', spaceId: 'demo-florist' },
+      ]),
+    );
+    expect(result.invalid).toBe(false);
+    expect(result.actions).toHaveLength(3);
   });
 });

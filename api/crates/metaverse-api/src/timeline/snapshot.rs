@@ -53,6 +53,11 @@ pub async fn assemble(
     draft_scan: Option<&DraftScanDoc>,
 ) -> Result<SnapshotView, ApiError> {
     let space_id = grant.space_id();
+    let (styles, default_style_id) = repo
+        .space(grant)
+        .await?
+        .map(|space| (space.styles, space.default_style_id))
+        .unwrap_or_default();
     let mut blocks = repo
         .palette_blocks(grant, manifest.palette_hash.as_deref())
         .await?;
@@ -175,6 +180,8 @@ pub async fn assemble(
         anchors,
         regions: layout.regions.into_iter().map(RegionView::from).collect(),
         plots: layout.plots.into_iter().map(PlotView::from).collect(),
+        styles,
+        default_style_id,
         scan,
     })
 }

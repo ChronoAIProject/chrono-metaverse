@@ -10,14 +10,16 @@ import {
   effectiveCutHeight,
   sceneHeightRange,
   selectView,
+  selectViewForStyle,
   type SceneContent,
   type ViewMode,
 } from '../core/scene';
+import { resolveSpaceStyles, type SpaceStyle } from '../core/styles';
 import { buildVisuals } from '../core/visuals';
 import { useAssetLoaders, useDensity, useRuntimeState } from '../data/hooks';
 import { SpaceRuntime } from '../data/spaceRuntime';
 import { usePreviewScene } from '../data/usePreviewScene';
-import { useRebuiltStyle, useViewMode } from '../routing/routes';
+import { useViewOverrides, lookFromSearch, searchWithLook } from '../routing/routes';
 import { TimelineBar, formatTime } from '../timeline/TimelineBar';
 import { Viewer, type SceneViewFactory } from '../viewer/Viewer';
 import {
@@ -25,6 +27,8 @@ import {
   ErrorCard,
   LoadingCard,
   StyleSwitch,
+  StyleGallerySwitch,
+  AnchorQuickBar,
   ThemeToggle,
   ViewModeSwitch,
 } from './controls';
@@ -69,8 +73,20 @@ export function SpacePage({
   now = Date.now,
   initialMode = 'optimized',
 }: SpacePageProps) {
-  const [mode, setMode] = useViewMode(initialMode);
-  const [style, setStyle] = useRebuiltStyle();
+  const {
+    mode: fallbackMode,
+    style: fallbackStyle,
+    explicitMode,
+    explicitStyle,
+    setMode,
+    setStyle,
+    resetOverrides,
+  } = useViewOverrides(initialMode);
+  const [lookId, setLookId] = useState<string | null>(() => lookFromSearch(window.location.search));
+  const [focusedAnchor, setFocusedAnchor] = useState<{ spaceId: string; anchorId: string } | null>(
+    null,
+  );
+  const [overviewRequest, setOverviewRequest] = useState(0);
   const [cutEnabled, setCutEnabled] = useState(true);
   // 剖切高度：null 表示用户还没拖过滑块，按天花板算默认值（只切掉天花板）。
   const [cutChoice, setCutHeight] = useState<number | null>(null);
@@ -78,15 +94,28 @@ export function SpacePage({
   const [scanCeiling, setScanCeiling] = useState<number | null>(null);
   const [attempt, setAttempt] = useState(0);
   const appliedControls = useRef('');
+  const [appliedCommandId, setAppliedCommandId] = useState('');
   useEffect(() => {
     if (!viewerCommand || appliedControls.current === viewerCommand.id) return;
     let active = true;
     void Promise.resolve().then(() => {
       if (!active) return;
       appliedControls.current = viewerCommand.id;
+      setAppliedCommandId(viewerCommand.id);
       for (const action of viewerCommand.actions) {
+        if (action.type === 'camera') setFocusedAnchor(null);
         if (action.type === 'mode') setMode(action.value);
         if (action.type === 'style') setStyle(action.value);
+        if (action.type === 'look' && (!action.spaceId || action.spaceId === spaceId)) {
+          resetOverrides();
+          setLookId(action.styleId);
+          const search = searchWithLook(window.location.search, action.styleId);
+          window.history.replaceState(
+            window.history.state,
+            '',
+            `${window.location.pathname}${search}${window.location.hash}`,
+          );
+        }
         if (action.type === 'cutaway') {
           setCutEnabled(action.height !== null);
           if (action.height !== null) setCutHeight(action.height);
@@ -96,23 +125,7 @@ export function SpacePage({
     return () => {
       active = false;
     };
-  }, [viewerCommand, setMode, setStyle]);
-  const camera = useMemo(() => {
-    const requestedMode = viewerCommand?.actions.filter((a) => a.type === 'mode').at(-1);
-    const requestedStyle = viewerCommand?.actions.filter((a) => a.type === 'style').at(-1);
-    const requestedCutaway = viewerCommand?.actions.filter((a) => a.type === 'cutaway').at(-1);
-    if (
-      (requestedMode?.type === 'mode' && requestedMode.value !== mode) ||
-      (requestedStyle?.type === 'style' && requestedStyle.value !== style) ||
-      (requestedCutaway?.type === 'cutaway' &&
-        (requestedCutaway.height === null
-          ? cutEnabled
-          : !cutEnabled || cutChoice !== requestedCutaway.height))
-    )
-      return undefined;
-    const actions = viewerCommand?.actions.filter((a) => a.type === 'camera');
-    return actions?.length ? { id: viewerCommand!.id, actions } : undefined;
-  }, [viewerCommand, mode, style, cutEnabled, cutChoice]);
+  }, [viewerCommand, setMode, setStyle, resetOverrides, spaceId]);
   // 下载好的扫描模型，连同它的哈希：换了扫描时旧的自动失效。
   const [loadedScan, setLoadedScan] = useState<{ hash: string; bytes: ArrayBuffer } | null>(null);
   const playback = usePlayback(now);
@@ -141,12 +154,49 @@ export function SpacePage({
   const scene = previewToken ? draft.scene : state.scene;
   const loaders = useAssetLoaders(draft.source);
   const name = previewToken ? draft.view?.spaceName : info?.name;
+  const styles = useMemo(() => resolveSpaceStyles(scene, info), [scene, info]);
+  const activeSpaceStyle = useMemo<SpaceStyle | undefined>(() => {
+    const requested = lookId ?? scene?.defaultStyleId ?? info?.defaultStyleId;
+    return styles.find((candidate) => candidate.id === requested);
+  }, [styles, lookId, scene?.defaultStyleId, info?.defaultStyleId]);
+
+  const mode = explicitMode ?? activeSpaceStyle?.mode ?? fallbackMode;
+  const style =
+    explicitStyle ??
+    (activeSpaceStyle ? (activeSpaceStyle.rebuiltStyle ?? 'shapes') : fallbackStyle);
 
   useEffect(() => {
     if (name) document.title = `${previewToken ? '草稿预览 · ' : ''}${name} · chrono-metaverse`;
   }, [name, previewToken]);
 
-  const scanHash = mode === 'raw' ? scene?.scan?.webModelHashes[0] : undefined;
+  const camera = useMemo(() => {
+    if (viewerCommand?.id !== appliedCommandId) return undefined;
+    const actionsAfterLook = viewerCommand?.actions.slice(
+      viewerCommand.actions
+        .map((action) => action.type === 'look' && (!action.spaceId || action.spaceId === spaceId))
+        .lastIndexOf(true) + 1,
+    );
+    const requestedMode = actionsAfterLook?.filter((action) => action.type === 'mode').at(-1);
+    const requestedStyle = actionsAfterLook?.filter((action) => action.type === 'style').at(-1);
+    const requestedCutaway = viewerCommand?.actions
+      .filter((action) => action.type === 'cutaway')
+      .at(-1);
+    if (
+      (requestedMode?.type === 'mode' && requestedMode.value !== mode) ||
+      (requestedStyle?.type === 'style' && requestedStyle.value !== style) ||
+      (requestedCutaway?.type === 'cutaway' &&
+        (requestedCutaway.height === null
+          ? cutEnabled
+          : !cutEnabled || cutChoice !== requestedCutaway.height))
+    )
+      return undefined;
+    const actions = viewerCommand?.actions.filter((a) => a.type === 'camera');
+    return actions?.length ? { id: viewerCommand!.id, actions } : undefined;
+  }, [viewerCommand, appliedCommandId, mode, style, spaceId, cutEnabled, cutChoice]);
+  const showScan = explicitMode
+    ? explicitMode === 'raw'
+    : (activeSpaceStyle?.visibleLayers?.includes('scan') ?? mode === 'raw');
+  const scanHash = showScan ? scene?.scan?.webModelHashes[0] : undefined;
   useEffect(() => {
     if (scanHash === undefined || loadedScan?.hash === scanHash) return;
     let cancelled = false;
@@ -168,7 +218,13 @@ export function SpacePage({
     if (!previewToken && state.status !== 'ready') return null;
     if (!previewToken && state.seq === null) return { mode, members: [], links: [] };
     if (scene === null) return null;
-    const view = selectView(scene, mode, style);
+    const view = activeSpaceStyle
+      ? selectViewForStyle(
+          scene,
+          { ...activeSpaceStyle, rebuiltStyle: style },
+          explicitMode ?? undefined,
+        )
+      : selectView(scene, mode, style);
     // 原始视图要等扫描下载完再交给查看器，避免先画一个空场景。
     if (view.showScan && scan === null) return null;
     return {
@@ -186,7 +242,19 @@ export function SpacePage({
       ],
       links: [],
     };
-  }, [state.status, state.seq, scene, mode, style, scan, spaceId, name, previewToken]);
+  }, [
+    state.status,
+    state.seq,
+    scene,
+    mode,
+    style,
+    activeSpaceStyle,
+    explicitMode,
+    scan,
+    spaceId,
+    name,
+    previewToken,
+  ]);
 
   const visuals = useMemo(
     () =>
@@ -283,6 +351,20 @@ export function SpacePage({
           </p>
         </div>
         <div className="space__switches">
+          <StyleGallerySwitch
+            styles={styles}
+            activeId={activeSpaceStyle?.id}
+            onChange={(next) => {
+              setLookId(next.id);
+              const search = searchWithLook(window.location.search, next.id);
+              window.history.replaceState(
+                window.history.state,
+                '',
+                `${window.location.pathname}${search}${window.location.hash}`,
+              );
+              resetOverrides();
+            }}
+          />
           <ViewModeSwitch mode={mode} onChange={setMode} />
           {scene !== null && hasStyleChoice(scene) && (
             <StyleSwitch style={style} disabled={mode === 'raw'} onChange={setStyle} />
@@ -319,9 +401,23 @@ export function SpacePage({
           loadTexture={loaders.loadTexture}
           loadModel={loaders.loadModel}
           createView={createView}
+          overviewRequest={overviewRequest}
           camera={camera}
+          focusedAnchor={focusedAnchor}
           onCameraResult={onCameraResult}
         />
+        <AnchorQuickBar
+          anchors={scene?.anchors ?? []}
+          onFocus={(anchor) => {
+            if (!anchor) setOverviewRequest((value) => value + 1);
+            setFocusedAnchor(anchor ? { spaceId, anchorId: anchor.anchorId } : null);
+          }}
+        />
+        {activeSpaceStyle && (
+          <div className="space__style-badge" title={activeSpaceStyle.description}>
+            {activeSpaceStyle.name} · {activeSpaceStyle.description}
+          </div>
+        )}
         {(loading || progress !== null) && (
           <LoadingCard
             label={

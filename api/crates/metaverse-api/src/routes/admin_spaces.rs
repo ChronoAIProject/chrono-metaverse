@@ -238,6 +238,8 @@ pub(crate) async fn create_space_with(
         },
         regions: Vec::new(),
         plots: Vec::new(),
+        styles: Vec::new(),
+        default_style_id: None,
         storage_limit_bytes: DEFAULT_STORAGE_LIMIT_BYTES,
         storage_used_bytes: 0,
         created_at: now,

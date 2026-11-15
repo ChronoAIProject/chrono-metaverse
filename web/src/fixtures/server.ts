@@ -264,7 +264,7 @@ export function fixtureReply(
         seq: revision.seq,
         at: revision.at,
         message: revision.message,
-        state: { members: revision.members, links: revision.links },
+        state: { members: revision.members, links: revision.links, themeId: revision.themeId },
       });
     }
     const at = params.has('at') ? toMillis(params.get('at')!) : Date.now();
@@ -279,6 +279,7 @@ export function fixtureReply(
         at: found.revision.at,
         members: found.members,
         links: found.revision.links,
+        themeId: found.revision.themeId,
       },
       { 'cache-control': 'no-store' },
     );

@@ -9,6 +9,7 @@ import type {
   Snapshot,
   SpaceEvent,
   SpaceInfo,
+  SpaceStyleSpec,
   UniverseLink,
   UniverseMember,
 } from '../core/api/types';
@@ -23,8 +24,18 @@ import {
   floristAnchors,
   floristEntities,
   floristRegions,
+  floristStyles,
 } from './florist';
-import { SHARE_TOKEN, SPACE_ID, SPACE_NAME, anchors, entitiesAt, plots, regions } from './lobby';
+import {
+  SHARE_TOKEN,
+  SPACE_ID,
+  SPACE_NAME,
+  anchors,
+  entitiesAt,
+  plots,
+  regions,
+  lobbyStyles,
+} from './lobby';
 import {
   MATERIALS_ID,
   MATERIALS_NAME,
@@ -33,6 +44,7 @@ import {
   materialsCommits,
   materialsEntities,
   materialsRegions,
+  materialsStyles,
 } from './materials';
 import { SCAN_TRANSFORM, fixtureScanGlb } from './scanModel';
 import {
@@ -73,6 +85,8 @@ export interface FixtureSpace {
   readonly commits: CommitSummary[];
   readonly events: SpaceEvent[];
   readonly snapshots: Map<number, Snapshot>;
+  readonly styles?: readonly SpaceStyleSpec[];
+  readonly defaultStyleId?: string;
 }
 
 export interface UniverseRevisionFixture {
@@ -81,6 +95,7 @@ export interface UniverseRevisionFixture {
   readonly message: string;
   readonly members: readonly Omit<UniverseMember, 'seq'>[];
   readonly links: readonly UniverseLink[];
+  readonly themeId?: string;
 }
 
 export interface FixtureStore {
@@ -150,6 +165,8 @@ function snapshotFor(
     regions: space.regions,
     plots: space.plots,
     scan,
+    styles: space.styles,
+    defaultStyleId: space.defaultStyleId,
   };
 }
 
@@ -174,6 +191,8 @@ export function spaceInfo(space: FixtureSpace): SpaceInfo {
     head: headOf(space),
     // 与接口服务相同：返回全部事件类型和版本（含默认内部级的），不按 defaultVisibility 过滤。
     eventTypes: space.eventTypes,
+    styles: space.styles,
+    defaultStyleId: space.defaultStyleId,
   };
 }
 
@@ -207,6 +226,8 @@ export function fixtureStore(now: number = Date.now()): FixtureStore {
     commits: commits.map((c) => ({ ...c })),
     events: fixtureEvents(now),
     snapshots: new Map(),
+    styles: lobbyStyles,
+    defaultStyleId: 'arch-realistic',
   };
   const lobbyScan = {
     webModelHashes: [scanHash],
@@ -229,6 +250,16 @@ export function fixtureStore(now: number = Date.now()): FixtureStore {
     );
   }
 
+  // 花店保留一小块体素地台，切换体素样式时仍有可见内容。
+  const floristVoxel = storeChunks(
+    chunksFrom('rebuilt', [0, 0, 0], [16, 4, 16], (gx, gy, gz) => {
+      if (gy === 0) return (gx + gz) % 2 === 0 ? 1 : 2;
+      if (gy === 1 && (gx === 0 || gz === 0 || gx === 15 || gz === 15)) return 3;
+      return 0;
+    }),
+  );
+  for (const item of floristVoxel) chunkBytes.set(item.ref.hash, item.compressed);
+
   const florist: FixtureSpace = {
     id: FLORIST_ID,
     name: FLORIST_NAME,
@@ -241,11 +272,20 @@ export function fixtureStore(now: number = Date.now()): FixtureStore {
     commits: floristCommits.map((c) => ({ ...c })),
     events: floristEvents(now),
     snapshots: new Map(),
+    styles: floristStyles,
+    defaultStyleId: 'spring-greenhouse',
   };
   for (const commit of florist.commits) {
     florist.snapshots.set(
       commit.seq,
-      snapshotFor(florist, commit.seq, commit.at, floristEntities(commit.seq), [], null),
+      snapshotFor(
+        florist,
+        commit.seq,
+        commit.at,
+        floristEntities(commit.seq),
+        floristVoxel.map((item) => item.ref),
+        null,
+      ),
     );
   }
 
@@ -262,6 +302,8 @@ export function fixtureStore(now: number = Date.now()): FixtureStore {
     commits: materialsCommits.map((c) => ({ ...c })),
     events: [],
     snapshots: new Map(),
+    styles: materialsStyles,
+    defaultStyleId: 'studio-clay',
   };
   for (const commit of samples.commits) {
     samples.snapshots.set(
@@ -315,6 +357,8 @@ export function fixtureStore(now: number = Date.now()): FixtureStore {
   };
   const preview: PreviewView = {
     ...base,
+    // 此草稿新增了虚拟内容，因此默认样式包含扩展区。
+    defaultStyleId: 'extended-full',
     entities: [...base.entities, { id: bench.entityId, body: bench }],
     chunks: [...base.chunks, ...fountain.map((f) => f.ref)],
     spaceName: SPACE_NAME,
@@ -346,15 +390,21 @@ export function fixtureStore(now: number = Date.now()): FixtureStore {
           message: '建立组合：前厅',
           members: [{ spaceId: SPACE_ID, offset: [0, 0, 0], rotation: 0 }],
           links: [],
+          themeId: 'independent',
         },
         {
           seq: 2,
           at: '2026-10-20T08:00:00.000Z',
           message: '花店加入，街道相连',
           members: [
-            { spaceId: SPACE_ID, offset: [0, 0, 0], rotation: 0 },
+            { spaceId: SPACE_ID, offset: [0, 0, 0], rotation: 0, styleId: 'arch-realistic' },
             // 花店转 180°，门朝北对着前厅的门，中间隔一条 3 米宽的街。
-            { spaceId: FLORIST_ID, offset: [120, 0, 240], rotation: 180 },
+            {
+              spaceId: FLORIST_ID,
+              offset: [120, 0, 240],
+              rotation: 180,
+              styleId: 'spring-greenhouse',
+            },
           ],
           links: [
             {
@@ -363,6 +413,7 @@ export function fixtureStore(now: number = Date.now()): FixtureStore {
               kind: 'street',
             },
           ],
+          themeId: 'independent',
         },
       ],
     },
@@ -398,6 +449,7 @@ export function universeAt(fixtures: FixtureStore, at: number) {
       const seq = space.commits.filter((c) => toMillis(c.at) <= at).at(-1)?.seq ?? null;
       return { ...member, seq, name: space.name };
     }),
+    themeId: revision.themeId,
   };
 }
 

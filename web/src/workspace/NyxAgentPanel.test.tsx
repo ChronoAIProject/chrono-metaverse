@@ -24,7 +24,7 @@ const space: SpaceSummary = {
   access: 'manage',
   updatedAt: '',
 };
-function sse(complete = true) {
+function sse(complete = true, text = '草稿预览 /preview#t=safe-preview-token') {
   const response = {
     id: 'resp_test',
     conversation: { id: 'conv_test' },
@@ -34,7 +34,7 @@ function sse(complete = true) {
   return new Response(
     `data: ${JSON.stringify({ type: 'response.created', response })}\n\n` +
       (complete
-        ? `data: ${JSON.stringify({ type: 'response.completed', response: { ...response, status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '草稿预览 /preview#t=safe-preview-token' }] }] } })}\n\n`
+        ? `data: ${JSON.stringify({ type: 'response.completed', response: { ...response, status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] }] } })}\n\n`
         : ''),
     { headers: { 'Content-Type': 'text/event-stream' } },
   );
@@ -43,6 +43,43 @@ beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
   saveBrowserKey('alice', 'nyx_test_nyxagent_browser_credential', identity, 'alice', 'nyxagent');
+});
+
+it('切换组合时保留成员样式和镜头动作，不被回复中的预览链接抢占', async () => {
+  const actions = [
+    { type: 'universe', universeId: 'demo-street' },
+    { type: 'look', styleId: 'maquette', spaceId: 'demo-lobby' },
+    { type: 'camera', kind: 'focus', entityId: 'chair', spaceId: 'demo-lobby' },
+  ];
+  const request = vi.fn<typeof fetch>(async (url) => {
+    if (String(url).endsWith('/key/check')) return Response.json(identity);
+    if (String(url).endsWith('/message'))
+      return sse(
+        true,
+        `将切换组合。/preview#t=safe-preview-token\n\`\`\`metaverse-view\n${JSON.stringify({ actions })}\n\`\`\``,
+      );
+    throw new Error(`未预期的请求：${url}`);
+  });
+  const preview = vi.fn();
+  const command = vi.fn();
+  render(
+    <NyxAgentPanel
+      session={session}
+      space={space}
+      request={request}
+      onPreview={preview}
+      onViewerCommand={command}
+      onBusy={vi.fn()}
+    />,
+  );
+  await screen.findByText('已连接 NyxAgent · NyxAgent');
+  await userEvent.type(
+    screen.getByRole('textbox', { name: '给 NyxAgent 发消息' }),
+    '切换组合并聚焦前厅',
+  );
+  await userEvent.click(screen.getByRole('button', { name: '发送给 NyxAgent' }));
+  await waitFor(() => expect(command).toHaveBeenCalledWith({ id: 'resp_test', actions }));
+  expect(preview).not.toHaveBeenCalled();
 });
 
 it('从工作台发送、显示完成预览，再用同一个会话续聊', async () => {
@@ -75,7 +112,7 @@ it('从工作台发送、显示完成预览，再用同一个会话续聊', asyn
   expect(writes[0]).toMatchObject({
     spaceId: 'lobby',
     instruction: '添加欢迎牌',
-    instructionsVersion: 4,
+    instructionsVersion: 5,
   });
   expect(writes[0]).not.toHaveProperty('conversationId');
   await userEvent.type(screen.getByRole('textbox', { name: '给 NyxAgent 发消息' }), '改成蓝色');
@@ -124,7 +161,7 @@ it('断流后刷新只恢复本地状态，自动只读取原结果，不重复�
   expect(writes).toHaveLength(1);
   const pending = readNyxagentNote('alice', 'lobby').pending;
   expect(pending?.responseId).toBe('resp_test');
-  expect(pending?.body.instructionsVersion).toBe(4);
+  expect(pending?.body.instructionsVersion).toBe(5);
   expect(pending?.body).not.toHaveProperty('conversationId');
   view.unmount();
   render(<NyxAgentPanel {...props} />);

@@ -389,3 +389,18 @@ describe('查看器外壳', () => {
     expect(views[0]!.dispose).toHaveBeenCalled();
   });
 });
+
+it.each([true, false])('首页样式卡片分别链接到对应命名样式（夹具：`%s`）', (showFixtureLink) => {
+  window.history.replaceState(null, '', '/');
+  const { container } = render(<App showFixtureLink={showFixtureLink} />);
+  const links = [...container.querySelectorAll<HTMLAnchorElement>('.home__style-card')];
+  expect(links.map((link) => new URL(link.href).searchParams.get('look'))).toEqual([
+    'raw-scan',
+    'arch-realistic',
+    'voxel-blocks',
+    'maquette',
+    'blueprint',
+    'night-neon',
+    'minimal-office',
+  ]);
+});

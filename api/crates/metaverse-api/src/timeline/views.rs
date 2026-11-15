@@ -3,7 +3,7 @@
 
 use metaverse_core::grid::GridBox;
 use metaverse_core::model::{
-    Actor, Author, ChunkChange, IdChange, Layer, Plot, Region, RegionKind,
+    Actor, Author, ChunkChange, IdChange, Layer, Plot, Region, RegionKind, SpaceStyleSpec,
 };
 use metaverse_core::Timestamp;
 use serde::Serialize;
@@ -127,6 +127,10 @@ pub struct SnapshotView {
     pub anchors: Vec<Value>,
     pub regions: Vec<RegionView>,
     pub plots: Vec<PlotView>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub styles: Vec<SpaceStyleSpec>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_style_id: Option<String>,
     pub scan: Option<ScanView>,
 }
 

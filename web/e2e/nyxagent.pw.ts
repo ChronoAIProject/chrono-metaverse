@@ -219,7 +219,7 @@ test('AI 页面动作切换空间、视图、草稿和镜头，保留同一个 W
   ).toBeVisible();
   await expect(viewer).toHaveAttribute('data-mode', 'optimized');
   expect(writes[0]).toMatchObject({
-    instructionsVersion: 4,
+    instructionsVersion: 5,
     viewerContext: {
       spaces: [
         { id: 'demo-lobby', name: '前厅' },

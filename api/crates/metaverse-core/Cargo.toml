@@ -5,6 +5,9 @@ edition.workspace = true
 publish = false
 description = "chrono-metaverse 的纯计算核心：数据模型、形状、区块编码、内容哈希、操作、回放、事件语义（无异步、无 IO）"
 
+[features]
+schema = ["dep:utoipa"]
+
 [dependencies]
 flate2 = { workspace = true }
 serde = { workspace = true }
@@ -13,6 +16,7 @@ serde_json = { workspace = true, features = ["raw_value"] }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true }
+utoipa = { workspace = true, optional = true }
 
 [dev-dependencies]
 base64 = { workspace = true }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SHARE_TOKEN, SPACE_ID } from '../fixtures';
 import { fixtureFetch } from '../fixtures/server';
 import { createPublicClient } from './api/client';
-import type { Palette } from './api/types';
+import type { Palette, StyleLayer } from './api/types';
 import { BLOCK_AIR, chunkIndex, emptyChunk } from './chunk';
 import {
   anchorPosition,
@@ -20,6 +20,7 @@ import {
   CEILING_CUT_MARGIN,
   FALLBACK_CUT_HEIGHT,
   selectView,
+  selectViewForStyle,
   templatesOf,
   viewHasGeometry,
   type SceneDocument,
@@ -32,8 +33,30 @@ import {
   voxelSourceMeshes,
   type LayerChunk,
 } from './voxels';
+import { resolveSpaceStyles, styleLookKey } from './styles';
 
 const client = createPublicClient({ share: SHARE_TOKEN, fetch: fixtureFetch });
+
+it('夹具扩展经公开快照加载与视图选择完整保留，且不影响几何和外观缓存键', async () => {
+  const snapshot = await client.snapshot(SPACE_ID, { seq: 4 });
+  const scene = await loadScene(client, snapshot, '演示前厅');
+  const style = resolveSpaceStyles(scene).find((candidate) => candidate.id === 'brand-open-day')!;
+  expect(style.extensions).toEqual({
+    badge: '开放日策展',
+    exhibition: { title: '前厅共创展', edition: 2026, zones: ['实体区', '虚拟展区'] },
+  });
+  const view = selectViewForStyle(scene, style);
+  expect(view.extensions).toBe(style.extensions);
+  expect(selectViewForStyle(scene, style, 'raw').extensions).toBe(style.extensions);
+  const legacy = selectViewForStyle(scene, { ...style, extensions: undefined });
+  expect(legacy).not.toHaveProperty('extensions');
+  expect(selectViewForStyle(scene, { ...style, extensions: {} })).not.toHaveProperty('extensions');
+  const { extensions: projected, ...content } = view;
+  expect(projected).toBe(style.extensions);
+  expect(content).toEqual(legacy);
+  expect(styleLookKey(style.look)).toBe(styleLookKey({ ...style.look }));
+  expect(selectView(scene, style.mode)).not.toHaveProperty('extensions');
+});
 
 async function sceneAt(seq: number) {
   return loadScene(client, await client.snapshot(SPACE_ID, { seq }), '演示前厅');
@@ -456,5 +479,97 @@ describe('组合里的摆放', () => {
     expect(optimized.voxels.chunks.length).toBeLessThan(extended.voxels.chunks.length);
     expect(viewHasGeometry(optimized)).toBe(true);
     expect(viewHasGeometry(selectView(await sceneAt(1), 'optimized'))).toBe(false);
+  });
+});
+
+describe('命名样式的独立图层投影', () => {
+  it.each([
+    [['scan']],
+    [['ext']],
+    [['rebuilt']],
+    [['rebuilt', 'ext']],
+    [['scan', 'ext']],
+    [['scan', 'rebuilt']],
+    [['scan', 'rebuilt', 'ext']],
+    [[]],
+  ] as const)(
+    '按可见图层 `%j` 同步选择物件、区块、边界与取景',
+    async (layers: readonly StyleLayer[]) => {
+      const scene = await sceneAt(4);
+      const view = selectViewForStyle(scene, {
+        id: 'layers',
+        name: '图层样式',
+        description: '独立选择',
+        swatch: '#fff',
+        mode: 'raw',
+        visibleLayers: layers,
+      });
+      expect(view.showScan).toBe(layers.includes('scan'));
+      expect(view.entities.map((entity) => entity.entityId)).toEqual(
+        scene.entities
+          .filter((entity) => isDrawable(entity) && layers.includes(entity.layer))
+          .map((entity) => entity.entityId),
+      );
+      expect(
+        view.voxels.chunks.every((chunk) => chunk.layer === 'ext' && layers.includes('ext')),
+      ).toBe(true);
+      expect(view.voxels.chunks.length).toBe(
+        layers.includes('ext') ? scene.chunks.filter((chunk) => chunk.layer === 'ext').length : 0,
+      );
+      expect(view.voxels.keepBoxes).toBeNull();
+      expect(view.virtualRegions.length).toBe(layers.includes('ext') ? 1 : 0);
+      if (layers.length === 1 && layers[0] === 'ext') {
+        expect(view.frameBoxes).toEqual(scene.regions.flatMap((region) => region.boxes));
+        const virtualOnly = selectViewForStyle(
+          { ...scene, chunks: [] },
+          {
+            id: 'virtual',
+            name: '虚拟展区',
+            description: '仅扩展物件',
+            swatch: '#fff',
+            mode: 'extended',
+            visibleLayers: ['ext'],
+          },
+        );
+        expect(virtualOnly.frameBoxes).toEqual(
+          scene.regions
+            .filter((region) => region.kind === 'virtual')
+            .flatMap((region) => region.boxes),
+        );
+      }
+      if (layers.length === 0) expect(view.frameBoxes).toEqual([]);
+      expect(view.anchored.every((entity) => layers.includes(entity.layer))).toBe(true);
+    },
+  );
+
+  it('图层选择保留体素画法与模板，类别过滤同步约束锚点，显式模式恢复旧投影', async () => {
+    const scene = await sceneAt(4);
+    const style = {
+      id: 'layers',
+      name: '图层样式',
+      description: '独立选择',
+      swatch: '#fff',
+      mode: 'extended' as const,
+      visibleLayers: ['rebuilt'] as const,
+      rebuiltStyle: 'blocks' as const,
+    };
+    const blocks = selectViewForStyle(scene, style);
+    expect(blocks.entities).toEqual([]);
+    expect(blocks.voxels.chunks.length).toBeGreaterThan(0);
+    expect(blocks.voxels.chunks.every((chunk) => chunk.layer === 'rebuilt')).toBe(true);
+    expect(blocks.templates).toEqual(templatesOf(scene.entities));
+    const filtered = selectViewForStyle(scene, {
+      ...style,
+      rebuiltStyle: 'shapes',
+      filterKinds: ['structure'],
+    });
+    expect(filtered.entities.length).toBeGreaterThan(0);
+    expect(
+      [...filtered.entities, ...filtered.anchored].every((entity) => entity.kind === 'structure'),
+    ).toBe(true);
+    const overridden = selectViewForStyle(scene, style, 'extended');
+    expect(overridden.entities.some((entity) => entity.layer === 'ext')).toBe(true);
+    expect(overridden.voxels.chunks.some((chunk) => chunk.layer === 'ext')).toBe(true);
+    expect(selectViewForStyle(scene, style, 'raw').showScan).toBe(true);
   });
 });

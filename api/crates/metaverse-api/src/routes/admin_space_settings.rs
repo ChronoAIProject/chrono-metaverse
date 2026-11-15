@@ -14,8 +14,10 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use metaverse_core::ids::is_object_id;
 use metaverse_core::model::{
-    validate_layout, ActorKind, Plot, Region, ShareTokenRecord, Visibility,
+    validate_layout, validate_space_styles, ActorKind, Plot, Region, ShareTokenRecord,
+    SpaceStyleSpec, Visibility,
 };
 use metaverse_core::scope::PathScope;
 use metaverse_core::sha256_hex;
@@ -24,7 +26,7 @@ use utoipa::{IntoParams, ToSchema};
 
 use super::admin_spaces::{check_text, new_share_token, ShareTokenView};
 use super::views::SpaceView;
-use super::ApiJson;
+use super::{ApiJson, StyleJson, StyleRequest};
 use crate::auth::permissions::Capability;
 use crate::auth::{Caller, Purpose};
 use crate::error::{ApiError, ProblemDocument};
@@ -45,9 +47,74 @@ pub struct UpdateSpaceRequest {
     /// `unlisted` 或 `public`。
     #[schema(value_type = Option<String>, example = "public")]
     pub visibility: Option<Visibility>,
+    /// 空间自定义样式目录。
+    #[serde(default, deserialize_with = "deserialize_style_input")]
+    pub styles: Option<Vec<SpaceStyleSpec>>,
+    /// 默认样式编号；传 `null` 可清除。
+    #[serde(
+        default,
+        deserialize_with = "super::deserialize_optional_nullable_string"
+    )]
+    pub default_style_id: Option<Option<String>>,
     /// 凭链接查看 → 公开时必须为 `true`：全部历史（区块、资源、提交）会随之公开，且收不回。
     #[serde(default)]
     pub confirm_public_history: bool,
+}
+
+/// 写请求拒绝未知核心字段，存储模型仍容忍滚动更新期间的新字段。
+/// 先保留原始片段，使合法 `JSON` 中溢出的数值也作为字段校验错误返回 422。
+fn deserialize_style_input<'de, D>(deserializer: D) -> Result<Option<Vec<SpaceStyleSpec>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+    parse_style_input(raw.get()).map_err(|error| serde::de::Error::custom(error.detail))
+}
+
+fn parse_style_input(raw: &str) -> Result<Option<Vec<SpaceStyleSpec>>, ApiError> {
+    let containers: Option<Vec<super::StyleInputFields>> = serde_json::from_str(raw)
+        .map_err(|_| ApiError::invalid("`styles` 必须是样式对象数组或空值"))?;
+    for fields in containers.iter().flatten() {
+        if let Some(look) = fields.get("look") {
+            serde_json::from_str::<Option<super::StyleInputFields>>(look.get())
+                .map_err(|_| ApiError::invalid("空间样式的 `look` 必须是对象或空值"))?;
+        }
+    }
+    let mut parser = serde_json::Deserializer::from_str(raw);
+    let mut unknown = false;
+    let styles: Option<Vec<SpaceStyleSpec>> =
+        serde_ignored::deserialize(&mut parser, |_| unknown = true).map_err(
+            |_| {
+                ApiError::invalid(
+                    "`styles` 必须是样式对象数组或空值；每项须含字符串 `id` 与 `name`，`extensions` 必须是对象，其余字段须符合约定类型、枚举和数值范围",
+                )
+            },
+        )?;
+    if unknown {
+        return Err(ApiError::invalid(
+            "空间样式包含未知核心或外观字段；自定义配置请放入 `extensions` 对象",
+        ));
+    }
+    if styles
+        .iter()
+        .flatten()
+        .any(|style| !is_object_id(&style.id))
+    {
+        return Err(ApiError::invalid("空间样式的 `id` 编号不合法"));
+    }
+    Ok(styles)
+}
+
+impl StyleRequest for UpdateSpaceRequest {
+    fn validate_style_fields(fields: &super::StyleInputFields) -> Result<(), ApiError> {
+        if let Some(raw) = fields.get("styles") {
+            parse_style_input(raw.get())?;
+        }
+        super::validate_style_id(
+            fields.get("defaultStyleId").map(Box::as_ref),
+            "defaultStyleId",
+        )
+    }
 }
 
 #[utoipa::path(
@@ -70,7 +137,7 @@ pub async fn update_space(
     State(state): State<AppState>,
     caller: Caller,
     Path(space_id): Path<String>,
-    ApiJson(request): ApiJson<UpdateSpaceRequest>,
+    StyleJson(request): StyleJson<UpdateSpaceRequest>,
 ) -> Result<Response, ApiError> {
     let grant = state
         .authorizer
@@ -81,6 +148,18 @@ pub async fn update_space(
     }
     if let Some(description) = &request.description {
         check_text("description", description, 2000, true)?;
+    }
+    if let Some(styles) = &request.styles {
+        validate_space_styles(
+            styles,
+            request.default_style_id.as_ref().and_then(Option::as_deref),
+        )
+        .map_err(ApiError::invalid)?;
+    }
+    if let Some(Some(default_style_id)) = &request.default_style_id {
+        if request.styles.is_none() && !is_object_id(default_style_id) {
+            return Err(ApiError::invalid("默认样式编号不合法"));
+        }
     }
     let space = state
         .repo
@@ -101,6 +180,8 @@ pub async fn update_space(
         name: request.name.map(|n| n.trim().to_owned()),
         description: request.description,
         visibility: request.visibility,
+        styles: request.styles,
+        default_style_id: request.default_style_id,
     };
     let now = crate::now()?;
     if !state

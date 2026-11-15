@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import type { Material } from '../core/shapes/types';
+import { BUILTIN_SPACE_STYLES, type StyleLook } from '../core/styles';
 import { TEXTURE_DIFFUSE, TEXTURE_EMISSIVE } from './lighting';
 import {
   TextureCache,
@@ -334,4 +335,121 @@ describe('物件模型的材质：material.shading', () => {
     bakeInPlace(source);
     expectColor(source.color, original.clone().multiplyScalar(TEXTURE_DIFFUSE));
   });
+});
+
+it('不打光的形状在贴图加载前后只叠加一次样式色调', async () => {
+  const { ctx } = fakeContext();
+  const material = createShapeMaterial(
+    { texture: COLOR, tint: [220, 180, 140], unlit: true },
+    false,
+    ctx,
+    { tint: [128, 200, 240] },
+  ) as THREE.MeshBasicMaterial;
+  const expected = srgb([220, 180, 140]).multiply(srgb([128, 200, 240]));
+  expectColor(material.color, expected);
+  await settle();
+  expect(material.map).not.toBeNull();
+  expectColor(material.color, expected);
+});
+
+it.each(['完成', '失败'] as const)(
+  '形状颜色与表面贴图异步`%s`后仍保留样式配方，白模与蓝图始终剥离贴图',
+  async (outcome) => {
+    const pending: { resolve: (map: THREE.Texture) => void; reject: (error: Error) => void }[] = [];
+    const texture = vi.fn(
+      () =>
+        new Promise<THREE.Texture>((resolve, reject) => {
+          pending.push({ resolve, reject });
+        }),
+    );
+    const ctx: MaterialContext = { texture, clipping: [], alive: () => true };
+    const look: StyleLook = {
+      objectColor: [210, 190, 170],
+      tint: [180, 200, 220],
+      roughness: 0.31,
+      metalness: 0.42,
+      wireframe: true,
+      opacity: 0.7,
+    };
+    const source: Material = {
+      texture: COLOR,
+      tint: [240, 220, 200],
+      normalMap: NORMAL,
+      roughnessMap: ROUGH,
+    };
+    const materials = (['albedo', 'baked'] as const).map(
+      (shading) =>
+        createShapeMaterial({ ...source, shading }, false, ctx, look) as THREE.MeshStandardMaterial,
+    );
+    const requests = texture.mock.calls.length;
+    const stripped = ['maquette', 'blueprint'].map((id) => {
+      const style = BUILTIN_SPACE_STYLES.find((item) => item.id === id)!;
+      return createShapeMaterial(source, false, ctx, style.look) as THREE.MeshStandardMaterial;
+    });
+    expect(texture).toHaveBeenCalledTimes(requests);
+    const verify = () => {
+      for (const material of materials) {
+        expectColor(material.color, srgb(look.objectColor!).multiply(srgb(look.tint!)));
+        expect(material).toMatchObject({
+          roughness: 0.31,
+          metalness: 0.42,
+          wireframe: true,
+          opacity: 0.7,
+        });
+      }
+      for (const material of stripped) {
+        expect(material.map).toBeNull();
+        if (material instanceof THREE.MeshStandardMaterial) {
+          expect([material.emissiveMap, material.normalMap, material.roughnessMap]).toEqual([
+            null,
+            null,
+            null,
+          ]);
+        }
+      }
+    };
+    verify();
+    for (const resource of pending) {
+      if (outcome === '完成') resource.resolve(new THREE.Texture());
+      else resource.reject(new Error('资源加载失败'));
+    }
+    await settle();
+    verify();
+    for (const material of materials) {
+      expect(material.map !== null).toBe(outcome === '完成');
+      expect(material.normalMap !== null).toBe(outcome === '完成');
+      expect(material.roughnessMap !== null).toBe(outcome === '完成');
+    }
+  },
+);
+
+it('模型克隆剥离所有表面贴图且保留共享源材质，其他样式继续显示贴图', () => {
+  const map = new THREE.Texture();
+  const source = new THREE.MeshPhysicalMaterial({
+    map,
+    normalMap: map,
+    roughnessMap: map,
+    metalnessMap: map,
+    bumpMap: map,
+    displacementMap: map,
+    alphaMap: map,
+    aoMap: map,
+    lightMap: map,
+    emissiveMap: map,
+    clearcoatMap: map,
+    clearcoatNormalMap: map,
+    transmissionMap: map,
+    sheenColorMap: map,
+  });
+  const slots = Object.entries(source)
+    .filter(([, value]) => value === map)
+    .map(([key]) => key);
+  for (const id of ['maquette', 'blueprint', 'arch-realistic', 'voxel-blocks', 'extended-full']) {
+    const style = BUILTIN_SPACE_STYLES.find((item) => item.id === id)!;
+    const derived = createModelMaterial(source, undefined, [], style.look);
+    for (const slot of slots) {
+      expect(Reflect.get(derived, slot) ?? null).toBe(style.look?.stripTextures ? null : map);
+      expect(Reflect.get(source, slot)).toBe(map);
+    }
+  }
 });

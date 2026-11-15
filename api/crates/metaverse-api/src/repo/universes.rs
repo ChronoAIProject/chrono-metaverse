@@ -277,6 +277,11 @@ impl Repo {
         );
         set.insert("members", to_bson(&revision.state.members)?);
         set.insert("links", to_bson(&revision.state.links)?);
+        if let Some(theme_id) = &revision.state.theme_id {
+            set.insert("themeId", theme_id);
+        } else {
+            set.insert("themeId", Bson::Null);
+        }
         let outcome = self
             .run_transaction(&[
                 TxnOp::Insert {
@@ -369,6 +374,7 @@ impl Repo {
                             })
                             .cloned()
                             .collect(),
+                        theme_id: universe.theme_id.clone(),
                     },
                     owner: Some(universe.owner.clone()),
                 };

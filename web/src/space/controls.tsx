@@ -1,4 +1,6 @@
 import { REBUILT_STYLES, VIEW_MODES, type RebuiltStyle, type ViewMode } from '../core/scene';
+import type { SpaceStyle } from '../core/styles';
+import type { Anchor } from '../core/api/types';
 import {
   APPEARANCE_ORDER,
   appearanceLabel,
@@ -15,7 +17,7 @@ export function ViewModeSwitch({
   readonly onChange: (mode: ViewMode) => void;
 }) {
   return (
-    <div className="segmented" role="group" aria-label="视图">
+    <div className="segmented" role="group" aria-label="视图模式">
       {VIEW_MODES.map((option) => (
         <button
           key={option.id}
@@ -26,6 +28,70 @@ export function ViewModeSwitch({
           data-mode={option.id}
         >
           {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** 命名空间样式画廊。 */
+export function StyleGallerySwitch({
+  styles,
+  activeId,
+  onChange,
+}: {
+  readonly styles: readonly SpaceStyle[];
+  readonly activeId?: string;
+  readonly onChange: (style: SpaceStyle) => void;
+}) {
+  return (
+    <div className="style-gallery" role="group" aria-label="空间样式画廊">
+      {styles.map((style) => (
+        <button
+          key={style.id}
+          type="button"
+          className="style-gallery__item"
+          aria-pressed={activeId === style.id}
+          title={style.description}
+          onClick={() => onChange(style)}
+        >
+          <span
+            className="style-gallery__swatch"
+            style={{ background: style.swatch }}
+            aria-hidden="true"
+          />
+          <span>{style.name}</span>
+          {style.category === 'custom' && (
+            <small>
+              {typeof style.extensions?.badge === 'string' && style.extensions.badge.trim()
+                ? style.extensions.badge
+                : '专属'}
+            </small>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** 空间锚点快速导览。 */
+export function AnchorQuickBar({
+  anchors,
+  onFocus,
+}: {
+  readonly anchors: readonly Anchor[];
+  readonly onFocus: (anchor: Anchor | null) => void;
+}) {
+  const visible = anchors.filter((anchor) => anchor.visibility !== 'internal');
+  if (visible.length === 0) return null;
+  return (
+    <div className="anchor-quickbar" role="group" aria-label="空间锚点导览">
+      <button type="button" onClick={() => onFocus(null)}>
+        全景
+      </button>
+      {visible.map((anchor) => (
+        <button key={anchor.anchorId} type="button" onClick={() => onFocus(anchor)}>
+          {anchor.label ?? anchor.anchorId}
         </button>
       ))}
     </div>

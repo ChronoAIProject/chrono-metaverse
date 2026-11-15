@@ -3,6 +3,7 @@ import type { EntityBody } from '../core/api/types';
 import { shadingLook } from '../core/shapes/look';
 import { isTextureMaterial, type Material } from '../core/shapes/types';
 import { applyTexturedLook } from './lighting';
+import { styleLookKey, type StyleLook } from '../core/styles';
 
 /**
  * 形状材质和物件模型材质的画法（docs/SHAPES.md 第 2 节"着色、法线、粗糙度"、第 3 节 `material.shading`）。
@@ -128,6 +129,7 @@ function whenLoaded(
       material.needsUpdate = true;
     })
     .catch(() => {
+      if (!ctx.alive()) return;
       onError();
       material.needsUpdate = true;
     });
@@ -148,7 +150,23 @@ export function createShapeMaterial(
   material: Material,
   glass: boolean,
   ctx: MaterialContext,
+  styleLook?: StyleLook,
+  kind: 'structure' | 'object' = 'object',
 ): THREE.Material {
+  if (styleLook?.unlit !== undefined) material = { ...material, unlit: styleLook.unlit };
+  if (styleLook?.stripTextures) {
+    const source = material;
+    const color =
+      (kind === 'structure' ? styleLook.structureColor : styleLook.objectColor) ??
+      ('color' in source ? source.color : ([225, 225, 225] as const));
+    material = {
+      color,
+      opacity: source.opacity,
+      roughness: source.roughness,
+      metalness: source.metalness,
+      unlit: source.unlit,
+    } as Material;
+  }
   const opacity = glass ? LEGACY_GLASS_OPACITY : Math.min(1, Math.max(0, material.opacity ?? 1));
   const transparent = opacity < 1;
   const side = transparent ? THREE.DoubleSide : THREE.FrontSide;
@@ -163,12 +181,16 @@ export function createShapeMaterial(
     });
     if (isTextureMaterial(material)) {
       basic.color = material.tint ? srgb(material.tint) : new THREE.Color(0xffffff);
+      const baseColor = basic.color.clone();
       whenLoaded(ctx, material.texture, 'color', basic, (map) => {
         basic.map = map;
+        basic.color.copy(baseColor);
+        applyStyleLook(basic, styleLook, kind);
       });
     } else {
       basic.color = srgb(material.color);
     }
+    applyStyleLook(basic, styleLook, kind);
     return basic;
   }
   const look = shadingLook(material, transparent);
@@ -196,8 +218,12 @@ export function createShapeMaterial(
         (map) => {
           standard.map = map;
           standard.color.copy(tint);
+          applyStyleLook(standard, styleLook, kind);
         },
-        () => standard.color.copy(tint),
+        () => {
+          standard.color.copy(tint);
+          applyStyleLook(standard, styleLook, kind);
+        },
       );
     } else {
       // 扫描烘焙的看法：只有一部分受光照，另一部分按自发光直接显示贴图，亮度接近原始扫描。
@@ -207,8 +233,14 @@ export function createShapeMaterial(
         material.texture,
         'color',
         standard,
-        (map) => applyTexturedLook(standard, tint, map),
-        () => applyTexturedLook(standard, tint, null),
+        (map) => {
+          applyTexturedLook(standard, tint, map);
+          applyStyleLook(standard, styleLook, kind);
+        },
+        () => {
+          applyTexturedLook(standard, tint, null);
+          applyStyleLook(standard, styleLook, kind);
+        },
       );
     }
   } else {
@@ -225,7 +257,52 @@ export function createShapeMaterial(
       standard.roughnessMap = map;
     });
   }
+  applyStyleLook(standard, styleLook, kind);
   return standard;
+}
+
+/** 在派生材质上应用命名空间样式；不会修改共享的基础材质。 */
+export function applyStyleLook(
+  material: THREE.Material,
+  look: StyleLook | undefined,
+  kind: 'structure' | 'object' = 'object',
+): void {
+  if (!look) return;
+  const color = kind === 'structure' ? look.structureColor : look.objectColor;
+  const renderMaterial = material as THREE.Material & {
+    color?: THREE.Color;
+    map?: THREE.Texture | null;
+    emissiveMap?: THREE.Texture | null;
+    roughness?: number;
+    metalness?: number;
+    opacity: number;
+    transparent: boolean;
+    wireframe?: boolean;
+    toneMapped?: boolean;
+    emissive?: THREE.Color;
+  };
+  if (look.stripTextures) {
+    // 同时剥离模型扩展材质的表面贴图，保留共享贴图资源供其他样式使用。
+    const slots = material as unknown as Record<string, unknown>;
+    for (const key of Object.keys(slots)) {
+      if (key === 'map' || key.endsWith('Map')) slots[key] = null;
+    }
+  }
+  if (color && renderMaterial.color) renderMaterial.color.copy(srgb(color));
+  if (look.tint && renderMaterial.color) renderMaterial.color.multiply(srgb(look.tint));
+  if (look.roughness !== undefined && renderMaterial.roughness !== undefined)
+    renderMaterial.roughness = Math.min(1, Math.max(0, look.roughness));
+  if (look.metalness !== undefined && renderMaterial.metalness !== undefined)
+    renderMaterial.metalness = Math.min(1, Math.max(0, look.metalness));
+  if (look.opacity !== undefined) {
+    renderMaterial.opacity = Math.min(1, Math.max(0, look.opacity));
+    renderMaterial.transparent = renderMaterial.opacity < 1;
+  }
+  if (look.wireframe !== undefined && 'wireframe' in renderMaterial)
+    renderMaterial.wireframe = look.wireframe;
+  if (look.unlit && renderMaterial.emissive) renderMaterial.emissive.set(0xffffff);
+  if (look.unlit && renderMaterial.toneMapped !== undefined) renderMaterial.toneMapped = false;
+  renderMaterial.needsUpdate = true;
 }
 
 /** 物件模型（`assetHash`）整体的外观：`tint`、`opacity`、`unlit`、`shading`。 */
@@ -261,11 +338,16 @@ function modelLook(look: ModelLook) {
  * 物件模型里一份材质按物件外观派生时的缓存键；不用派生（原样用模型里的材质）时返回 null：
  * `albedo` 且没有 tint、opacity、unlit，或者这份材质本来就不受 `baked` 影响。
  */
-export function modelMaterialKey(source: THREE.Material, look: ModelLook): string | null {
+export function modelMaterialKey(
+  source: THREE.Material,
+  look: ModelLook,
+  styleLook?: StyleLook,
+): string | null {
   const { tint, opacity, unlit, shading } = modelLook(look);
   const bake = !unlit && shading === 'baked' && isBakeable(source);
-  if (!bake && tint === null && opacity === 1 && !unlit) return null;
-  return `model|${source.uuid}|${bake ? 'baked' : 'albedo'}|${tint?.getHexString() ?? ''}|${opacity}|${unlit}`;
+  const styleKey = styleLookKey(styleLook);
+  if (!bake && tint === null && opacity === 1 && !unlit && styleKey === '') return null;
+  return `model|${source.uuid}|${bake ? 'baked' : 'albedo'}|${tint?.getHexString() ?? ''}|${opacity}|${unlit}|${styleKey}`;
 }
 
 /**
@@ -276,11 +358,13 @@ export function createModelMaterial(
   source: THREE.Material,
   look: ModelLook,
   clipping: THREE.Plane[],
+  styleLook?: StyleLook,
+  kind: 'structure' | 'object' = 'object',
 ): THREE.Material {
   const { tint, opacity: lookOpacity, unlit, shading } = modelLook(look);
   const opacity = lookOpacity * source.opacity;
   const transparent = source.transparent || opacity < 1;
-  if (unlit) {
+  if (unlit || styleLook?.unlit) {
     const colored = source as THREE.MeshStandardMaterial;
     const basic = new THREE.MeshBasicMaterial({
       map: colored.map ?? null,
@@ -293,6 +377,7 @@ export function createModelMaterial(
       toneMapped: false,
     });
     if (tint) basic.color.multiply(tint);
+    applyStyleLook(basic, styleLook, kind);
     return basic;
   }
   const copy = source.clone() as THREE.MeshStandardMaterial;
@@ -304,5 +389,6 @@ export function createModelMaterial(
   if (opacity < 1) copy.depthWrite = false;
   // clone() 会把剖切平面复制一份，换回共用的那一个。
   copy.clippingPlanes = clipping;
+  applyStyleLook(copy, styleLook, kind);
   return copy;
 }

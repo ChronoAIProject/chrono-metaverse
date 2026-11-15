@@ -139,7 +139,7 @@ export function NyxAgentPanel({
         setError('页面操作格式无法核验，已保留聊天结果；请重新描述需要的页面操作。');
       if (
         links[0] &&
-        !controls.actions.some((a) => ['space', 'current', 'preview'].includes(a.type))
+        !controls.actions.some((a) => ['space', 'universe', 'current', 'preview'].includes(a.type))
       )
         onPreview(links[0]);
       setText('');
@@ -230,7 +230,7 @@ export function NyxAgentPanel({
       ...(orgId ? { orgId } : {}),
       instruction,
       idempotencyKey: crypto.randomUUID(),
-      instructionsVersion: 4 as const,
+      instructionsVersion: 5 as const,
       ...(viewerContext ? { viewerContext } : {}),
       ...(note.conversationId ? { conversationId: note.conversationId } : {}),
     };

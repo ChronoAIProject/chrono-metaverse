@@ -1,7 +1,9 @@
 //! 接口返回的视图。公开视图按设计 8.2 的数据投影规则：不返回用户编号、归属证据、
 //! 分享令牌和配额信息，锚点只给公开级。
 
-use metaverse_core::model::{OwnerEvidence, OwnerKind, Plot, Region, Space, Visibility};
+use metaverse_core::model::{
+    OwnerEvidence, OwnerKind, Plot, Region, Space, SpaceStyleSpec, Visibility,
+};
 use metaverse_core::record::AnchorBody;
 use metaverse_core::Timestamp;
 use serde::Serialize;
@@ -52,6 +54,10 @@ pub struct SpaceView {
     /// 地块：`{ id, regionId, boxes, name? }`。
     #[schema(value_type = Vec<Object>)]
     pub plots: Vec<Plot>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub styles: Vec<SpaceStyleSpec>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_style_id: Option<String>,
     /// 锚点当前状态（含内部级）。
     #[schema(value_type = Vec<Object>)]
     pub anchors: Vec<AnchorBody>,
@@ -86,6 +92,8 @@ impl SpaceView {
             },
             regions: space.regions,
             plots: space.plots,
+            styles: space.styles,
+            default_style_id: space.default_style_id,
             anchors,
             storage_limit_bytes: space.storage_limit_bytes,
             storage_used_bytes: space.storage_used_bytes,
@@ -111,6 +119,10 @@ pub struct PublicSpaceView {
     pub regions: Vec<crate::timeline::views::RegionView>,
     /// 地块（公开形状：`{id, regionId, label?, boxes}`）。
     pub plots: Vec<crate::timeline::views::PlotView>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub styles: Vec<SpaceStyleSpec>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_style_id: Option<String>,
     /// 只含公开级锚点。
     #[schema(value_type = Vec<Object>)]
     pub anchors: Vec<AnchorBody>,
@@ -133,6 +145,8 @@ impl PublicSpaceView {
             },
             regions: space.regions.into_iter().map(Into::into).collect(),
             plots: space.plots.into_iter().map(Into::into).collect(),
+            styles: space.styles,
+            default_style_id: space.default_style_id,
             anchors,
             event_types: Vec::new(),
         }

@@ -26,7 +26,7 @@ use axum::{
     Json, Router,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use metaverse_core::ids::is_space_id;
+use metaverse_core::ids::{is_object_id, is_space_id};
 use metaverse_core::model::{
     ActorKind, Owner, OwnerKind, Rotation, ShareTokenRecord, Universe, UniverseHead, UniverseLink,
     UniverseMember, UniverseRevision, UniverseState, Visibility,
@@ -42,7 +42,7 @@ use super::ingest_common::{
     conflict_with, if_match_seq, invalid_with, no_store, path_actor, set_header,
 };
 use super::views::OwnerView;
-use super::ApiJson;
+use super::{ApiJson, StyleJson, StyleRequest};
 use crate::auth::{Caller, MembershipBasis, MembershipChange, Purpose, UniverseGrant};
 use crate::error::{ApiError, ProblemDocument};
 use crate::repo::{RepoError, UniverseFieldsUpdate, UniverseWrite};
@@ -97,6 +97,14 @@ pub struct MemberPlacement {
     pub offset: [i64; 3],
     #[schema(value_type = u16, example = 90)]
     pub rotation: Rotation,
+    /// 成员样式：省略 `styleId` 保留原值，`null` 或空字符串清除绑定。
+    #[serde(
+        default,
+        deserialize_with = "super::deserialize_optional_nullable_string",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub style_id: Option<Option<String>>,
 }
 
 #[derive(Debug, Default, Deserialize, ToSchema)]
@@ -114,6 +122,12 @@ pub struct UpdateUniverseRequest {
     #[serde(default)]
     #[schema(value_type = Option<String>)]
     pub visibility: Option<Visibility>,
+    /// 组合主题：省略 `themeId` 保留原值，`null` 或空字符串清除绑定。
+    #[serde(
+        default,
+        deserialize_with = "super::deserialize_optional_nullable_string"
+    )]
+    pub theme_id: Option<Option<String>>,
     /// 全部成员的新摆放（成员集合必须和现在完全一样；加入、退出走成员接口）。
     #[serde(default)]
     pub members: Option<Vec<MemberPlacement>>,
@@ -139,10 +153,42 @@ pub struct JoinUniverseRequest {
     pub offset: [i64; 3],
     #[schema(value_type = u16, example = 0)]
     pub rotation: Rotation,
+    /// 加入时可绑定样式；省略 `styleId`、`null` 或空字符串表示不绑定。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style_id: Option<String>,
     #[serde(default)]
     pub base_seq: Option<u64>,
     #[serde(default)]
     pub message: Option<String>,
+}
+
+impl StyleRequest for UpdateUniverseRequest {
+    fn validate_style_fields(fields: &super::StyleInputFields) -> Result<(), ApiError> {
+        super::validate_style_id(fields.get("themeId").map(Box::as_ref), "themeId")?;
+        if let Some(raw) = fields.get("members") {
+            if let Ok(members) =
+                serde_json::from_str::<Vec<Box<serde_json::value::RawValue>>>(raw.get())
+            {
+                for member in members {
+                    if let Ok(fields) =
+                        serde_json::from_str::<super::StyleInputFields>(member.get())
+                    {
+                        super::validate_style_id(
+                            fields.get("styleId").map(Box::as_ref),
+                            "styleId",
+                        )?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl StyleRequest for JoinUniverseRequest {
+    fn validate_style_fields(fields: &super::StyleInputFields) -> Result<(), ApiError> {
+        super::validate_style_id(fields.get("styleId").map(Box::as_ref), "styleId")
+    }
 }
 
 #[derive(Debug, Default, Deserialize, ToSchema)]
@@ -182,6 +228,8 @@ pub struct UniverseView {
     pub members: Vec<UniverseMember>,
     #[schema(value_type = Vec<Object>)]
     pub links: Vec<UniverseLink>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme_id: Option<String>,
     pub invitations: Vec<String>,
     /// 分享令牌（只有编号和时间，原文只在创建或轮换时返回一次）。只有组合主人能看到。
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -215,6 +263,7 @@ impl UniverseView {
             at: universe.head.at,
             members: universe.members,
             links: universe.links,
+            theme_id: universe.theme_id,
             invitations: universe.invitations,
             created_at: universe.created_at,
         }
@@ -389,6 +438,7 @@ pub async fn create_universe(
         head: UniverseHead { seq: 0, at: now },
         members: Vec::new(),
         links: Vec::new(),
+        theme_id: None,
         created_at: now,
         owner_evidence: grant.evidence().cloned(),
         invitations: Vec::new(),
@@ -500,7 +550,7 @@ pub async fn update_universe(
     caller: Caller,
     Path(universe_id): Path<String>,
     headers: HeaderMap,
-    ApiJson(request): ApiJson<UpdateUniverseRequest>,
+    StyleJson(request): StyleJson<UpdateUniverseRequest>,
 ) -> Result<Response, ApiError> {
     let grant = state
         .authorizer
@@ -554,6 +604,11 @@ pub async fn update_universe(
         }
         for placement in placements {
             check_offset(&placement.offset)?;
+            if let Some(Some(style_id)) = &placement.style_id {
+                if !is_object_id(style_id) {
+                    return Err(ApiError::invalid("成员样式编号不合法"));
+                }
+            }
         }
         members = placements
             .iter()
@@ -561,6 +616,14 @@ pub async fn update_universe(
                 space_id: placement.space_id.clone(),
                 offset: placement.offset,
                 rotation: placement.rotation,
+                style_id: match &placement.style_id {
+                    Some(style_id) => style_id.clone(),
+                    None => universe
+                        .members
+                        .iter()
+                        .find(|member| member.space_id == placement.space_id)
+                        .and_then(|member| member.style_id.clone()),
+                },
             })
             .collect();
         state_changed |= members != universe.members;
@@ -630,6 +693,16 @@ pub async fn update_universe(
         }
         fields.share_tokens = Some(tokens);
     }
+    if let Some(Some(theme_id)) = &request.theme_id {
+        if !is_object_id(theme_id) {
+            return Err(ApiError::invalid("组合主题编号不合法"));
+        }
+    }
+    let theme_id = request
+        .theme_id
+        .clone()
+        .unwrap_or_else(|| universe.theme_id.clone());
+    state_changed |= request.theme_id.is_some() && theme_id != universe.theme_id;
     let revision = state_changed.then(|| {
         revision(
             &universe,
@@ -638,6 +711,7 @@ pub async fn update_universe(
             UniverseState {
                 members: members.clone(),
                 links: links.clone(),
+                theme_id: theme_id.clone(),
             },
             now,
         )
@@ -694,7 +768,7 @@ pub async fn join_universe(
     caller: Caller,
     Path((universe_id, space_id)): Path<(String, String)>,
     headers: HeaderMap,
-    ApiJson(request): ApiJson<JoinUniverseRequest>,
+    StyleJson(request): StyleJson<JoinUniverseRequest>,
 ) -> Result<Response, ApiError> {
     let membership = state
         .authorizer
@@ -725,6 +799,12 @@ pub async fn join_universe(
     }
     base_seq(request.base_seq, &headers, universe.head.seq)?;
     check_offset(&request.offset)?;
+    let style_id = request.style_id.filter(|id| !id.is_empty());
+    if let Some(style_id) = &style_id {
+        if !is_object_id(style_id) {
+            return Err(ApiError::invalid("成员样式编号不合法"));
+        }
+    }
     let message = request
         .message
         .clone()
@@ -748,6 +828,7 @@ pub async fn join_universe(
         space_id: space_id.clone(),
         offset: request.offset,
         rotation: request.rotation,
+        style_id,
     });
     let invitations: Vec<String> = universe
         .invitations
@@ -762,6 +843,7 @@ pub async fn join_universe(
         UniverseState {
             members,
             links: universe.links.clone(),
+            theme_id: universe.theme_id.clone(),
         },
         now,
     );
@@ -852,7 +934,11 @@ pub async fn leave_universe(
         &universe,
         &caller,
         message,
-        UniverseState { members, links },
+        UniverseState {
+            members,
+            links,
+            theme_id: universe.theme_id.clone(),
+        },
         now,
     );
     match state

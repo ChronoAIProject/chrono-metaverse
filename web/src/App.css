@@ -74,3 +74,48 @@
 .home__link--quiet:hover {
   background: var(--tint-hover);
 }
+
+.home__showcase {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+}
+
+.home__showcase h2 {
+  font-size: var(--text-subject);
+}
+
+.home__style-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+}
+
+.home__style-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 7px 9px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  color: var(--ink);
+  text-decoration: none;
+  background: var(--raised);
+  font-size: var(--text-note);
+}
+
+.home__style-card:hover {
+  border-color: var(--accent);
+  background: var(--tint-hover);
+}
+
+.home__style-swatch {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--ink) 20%, transparent);
+}

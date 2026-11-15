@@ -10,6 +10,8 @@ export interface FakeView extends SceneViewLike {
   cutaway: number | null;
   /** 是否显示全部锚点标签。 */
   allLabels: boolean;
+  focusMember: ReturnType<typeof vi.fn<NonNullable<SceneViewLike['focusMember']>>>;
+  focusAnchor: ReturnType<typeof vi.fn<NonNullable<SceneViewLike['focusAnchor']>>>;
   /** 最后一次的内容（只看第一个成员的视图）。 */
   last(): SceneContent;
 }
@@ -41,6 +43,8 @@ export function fakeViewFactory(): { factory: SceneViewFactory; views: FakeView[
       },
       select: vi.fn(),
       frameContent: vi.fn(),
+      focusMember: vi.fn<NonNullable<SceneViewLike['focusMember']>>(),
+      focusAnchor: vi.fn<NonNullable<SceneViewLike['focusAnchor']>>(),
       getStats() {
         const last = view.contents[view.contents.length - 1];
         return {

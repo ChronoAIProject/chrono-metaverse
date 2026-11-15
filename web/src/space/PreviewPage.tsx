@@ -10,13 +10,15 @@ import {
   effectiveCutHeight,
   sceneHeightRange,
   selectView,
+  selectViewForStyle,
   type SceneContent,
   type SceneDocument,
   type ViewMode,
 } from '../core/scene';
+import { resolveSpaceStyles } from '../core/styles';
 import { useAssetLoaders } from '../data/hooks';
 import { runtimeError, type LoadProgress, type RuntimeError } from '../data/spaceRuntime';
-import { useRebuiltStyle, useViewMode } from '../routing/routes';
+import { useViewOverrides, lookFromSearch, searchWithLook } from '../routing/routes';
 import { formatTime } from '../timeline/TimelineBar';
 import { Viewer, type SceneViewFactory } from '../viewer/Viewer';
 import {
@@ -24,6 +26,8 @@ import {
   ErrorCard,
   LoadingCard,
   StyleSwitch,
+  StyleGallerySwitch,
+  AnchorQuickBar,
   ThemeToggle,
   ViewModeSwitch,
 } from './controls';
@@ -51,8 +55,20 @@ export function PreviewPage({
   createView,
   initialMode = 'extended',
 }: PreviewPageProps) {
-  const [mode, setMode] = useViewMode(initialMode);
-  const [style, setStyle] = useRebuiltStyle();
+  const {
+    mode: fallbackMode,
+    style: fallbackStyle,
+    explicitMode,
+    explicitStyle,
+    setMode,
+    setStyle,
+    resetOverrides,
+  } = useViewOverrides(initialMode);
+  const [lookId, setLookId] = useState<string | null>(() => lookFromSearch(window.location.search));
+  const [focusedAnchor, setFocusedAnchor] = useState<{ spaceId: string; anchorId: string } | null>(
+    null,
+  );
+  const [overviewRequest, setOverviewRequest] = useState(0);
   const [cutEnabled, setCutEnabled] = useState(true);
   // 剖切高度：null 表示用户还没拖过滑块，按天花板算默认值（只切掉天花板）。
   const [cutChoice, setCutHeight] = useState<number | null>(null);
@@ -107,7 +123,18 @@ export function PreviewPage({
     };
   }, [client, token, assets, attempt]);
 
-  const scanHash = mode === 'raw' ? scene?.scan?.webModelHashes[0] : undefined;
+  const styles = useMemo(() => resolveSpaceStyles(scene), [scene]);
+  const activeStyle = styles.find(
+    (candidate) => candidate.id === (lookId ?? scene?.defaultStyleId),
+  );
+  const mode = explicitMode ?? activeStyle?.mode ?? fallbackMode;
+  const style =
+    explicitStyle ?? (activeStyle ? (activeStyle.rebuiltStyle ?? 'shapes') : fallbackStyle);
+
+  const showScan = explicitMode
+    ? explicitMode === 'raw'
+    : (activeStyle?.visibleLayers?.includes('scan') ?? mode === 'raw');
+  const scanHash = showScan ? scene?.scan?.webModelHashes[0] : undefined;
   useEffect(() => {
     if (scanHash === undefined || token === null) return;
     let cancelled = false;
@@ -134,7 +161,13 @@ export function PreviewPage({
 
   const content = useMemo<SceneContent | null>(() => {
     if (scene === null) return null;
-    const view = selectView(scene, mode, style);
+    const view = activeStyle
+      ? selectViewForStyle(
+          scene,
+          { ...activeStyle, rebuiltStyle: style },
+          explicitMode ?? undefined,
+        )
+      : selectView(scene, mode, style);
     const bytes = scan !== null && scan.hash === scanHash ? scan.bytes : null;
     if (view.showScan && bytes === null) return null;
     return {
@@ -152,7 +185,7 @@ export function PreviewPage({
       ],
       links: [],
     };
-  }, [scene, mode, style, scan, scanHash]);
+  }, [scene, mode, style, explicitMode, activeStyle, scan, scanHash]);
   const heights = useMemo(() => (scene ? sceneHeightRange(scene) : { min: 0, max: 3 }), [scene]);
   const ceiling = useMemo(() => (scene ? ceilingCutHeight(scene) : null), [scene]);
   const cutHeight = effectiveCutHeight(cutChoice, defaultCutHeight(mode, ceiling, scanCeiling));
@@ -202,6 +235,20 @@ export function PreviewPage({
           </p>
         </div>
         <div className="space__switches">
+          <StyleGallerySwitch
+            styles={styles}
+            activeId={activeStyle?.id}
+            onChange={(next) => {
+              setLookId(next.id);
+              const search = searchWithLook(window.location.search, next.id);
+              window.history.replaceState(
+                window.history.state,
+                '',
+                `${window.location.pathname}${search}${window.location.hash}`,
+              );
+              resetOverrides();
+            }}
+          />
           <ViewModeSwitch mode={mode} onChange={setMode} />
           {scene !== null && hasStyleChoice(scene) && (
             <StyleSwitch style={style} disabled={mode === 'raw'} onChange={setStyle} />
@@ -224,6 +271,17 @@ export function PreviewPage({
           loadTexture={loaders.loadTexture}
           loadModel={loaders.loadModel}
           createView={createView}
+          overviewRequest={overviewRequest}
+          focusedAnchor={focusedAnchor}
+        />
+        <AnchorQuickBar
+          anchors={scene?.anchors ?? []}
+          onFocus={(anchor) => {
+            if (!anchor) setOverviewRequest((value) => value + 1);
+            setFocusedAnchor(
+              anchor && scene ? { spaceId: scene.spaceId, anchorId: anchor.anchorId } : null,
+            );
+          }}
         />
         {(scene === null || progress !== null) && (
           <LoadingCard

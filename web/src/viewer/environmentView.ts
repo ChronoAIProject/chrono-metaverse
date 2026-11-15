@@ -12,6 +12,10 @@ export class EnvironmentView {
   private map: GeographicMap | null = null;
   private sky: THREE.Texture | null = null;
   private generation = 0;
+  private skyPending: Promise<THREE.Texture> | null = null;
+  private backgroundColor?: string;
+  private isCurrent: () => boolean = () => true;
+  private yaw = 0;
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -23,7 +27,13 @@ export class EnvironmentView {
     return this.map !== null;
   }
 
-  setContent(content: SceneContent): void {
+  setContent(
+    content: SceneContent,
+    backgroundColor?: string,
+    isCurrent: () => boolean = () => true,
+  ): void {
+    this.backgroundColor = backgroundColor;
+    this.isCurrent = isCurrent;
     let selected: {
       environment: Environment;
       placement: Placement;
@@ -46,46 +56,55 @@ export class EnvironmentView {
       if (selected) break;
     }
     const key = JSON.stringify(selected && { ...selected, access: selected.access?.key });
-    if (key === this.key) return;
-    this.clear();
-    this.key = key;
-    if (!selected) return;
-    const { environment, placement } = selected;
-    const generation = this.generation;
-    this.scene.background = new THREE.Color(0xbad4e5);
-    this.host.dataset.environment = 'true';
-    if (environment.map) {
-      this.map = new GeographicMap(environment.map, this.host, {
-        entity: selected.entity,
-        access: selected.access,
-      });
-      this.map.group.rotation.y = THREE.MathUtils.degToRad(placement.rotation);
-      this.map.group.position.fromArray(placement.offset).multiplyScalar(GRID_UNIT);
-      this.scene.add(this.map.group);
+    if (key !== this.key) {
+      this.clear();
+      this.key = key;
+      if (selected) {
+        const { environment, placement } = selected;
+        this.host.dataset.environment = 'true';
+        this.yaw = THREE.MathUtils.degToRad((environment.sky?.yaw ?? 0) + placement.rotation);
+        if (environment.map) {
+          this.map = new GeographicMap(environment.map, this.host, {
+            entity: selected.entity,
+            access: selected.access,
+          });
+          this.map.group.rotation.y = THREE.MathUtils.degToRad(placement.rotation);
+          this.map.group.position.fromArray(placement.offset).multiplyScalar(GRID_UNIT);
+          this.scene.add(this.map.group);
+        }
+        if (environment.sky && this.loadTexture) {
+          this.host.dataset.sky = 'loading';
+          this.skyPending = this.loadTexture(environment.sky.texture);
+        }
+      }
     }
-    if (environment.sky && this.loadTexture) {
-      const sky = environment.sky;
-      this.host.dataset.sky = 'loading';
-      void this.loadTexture(sky.texture)
+    const generation = ++this.generation;
+    this.applyBackground();
+    if (this.skyPending && !this.sky) {
+      void this.skyPending
         .then((texture) => {
-          if (generation !== this.generation) return;
+          if (generation !== this.generation || !this.isCurrent()) return;
           // 贴图缓存还服务普通材质，这里只拥有副本，不修改缓存的采样方式。
           this.sky = texture.clone();
           this.sky.mapping = THREE.EquirectangularReflectionMapping;
           this.sky.colorSpace = THREE.SRGBColorSpace;
           this.sky.needsUpdate = true;
-          this.scene.background = this.sky;
-          this.scene.backgroundRotation.set(
-            0,
-            THREE.MathUtils.degToRad(sky.yaw + placement.rotation),
-            0,
-          );
           this.host.dataset.sky = 'ready';
+          this.applyBackground();
         })
         .catch(() => {
-          if (generation === this.generation) this.host.dataset.sky = 'failed';
+          if (generation === this.generation && this.isCurrent()) this.host.dataset.sky = 'failed';
         });
     }
+  }
+
+  /** 背景的唯一写入点：显式样式色优先，其次为当前环境天空。 */
+  private applyBackground(): void {
+    if (!this.isCurrent()) return;
+    this.scene.background = this.backgroundColor
+      ? new THREE.Color(this.backgroundColor)
+      : (this.sky ?? (this.host.dataset.environment ? new THREE.Color(0xbad4e5) : null));
+    this.scene.backgroundRotation.set(0, this.backgroundColor ? 0 : this.yaw, 0);
   }
 
   update(camera: THREE.PerspectiveCamera): void {
@@ -108,8 +127,8 @@ export class EnvironmentView {
     this.map = null;
     this.sky?.dispose();
     this.sky = null;
-    this.scene.background = null;
-    this.scene.backgroundRotation.set(0, 0, 0);
+    this.skyPending = null;
+    this.yaw = 0;
     delete this.host.dataset.environment;
     delete this.host.dataset.sky;
     delete this.host.dataset.mapDistance;
@@ -118,5 +137,8 @@ export class EnvironmentView {
   dispose(): void {
     this.clear();
     this.key = '';
+    this.backgroundColor = undefined;
+    this.isCurrent = () => true;
+    this.applyBackground();
   }
 }

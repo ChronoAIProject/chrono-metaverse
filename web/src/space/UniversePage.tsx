@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { consumePendingViewerCommand, type ViewerCommand } from '../workspace/viewerActions';
 import type { PublicClient } from '../core/api/client';
 import type { CommitSummary, UniverseView } from '../core/api/types';
 import { toMillis } from '../core/events';
@@ -9,14 +10,27 @@ import {
   effectiveCutHeight,
   sceneHeightRange,
   selectView,
+  selectViewForStyle,
   type MemberContent,
   type SceneContent,
   type ViewMode,
 } from '../core/scene';
+import {
+  resolveSpaceStyles,
+  UNIVERSE_THEMES,
+  UNIVERSE_LAYOUT_PRESETS,
+  applyLayoutPreset,
+} from '../core/styles';
 import { buildVisuals, type SpaceVisualInput } from '../core/visuals';
 import { useAssetLoaders, useDensity, useRuntimeStates, useStableList } from '../data/hooks';
 import { SpaceRuntime, runtimeError, type RuntimeError } from '../data/spaceRuntime';
-import { useRebuiltStyle, useViewMode } from '../routing/routes';
+import {
+  useViewOverrides,
+  memberStylesFromSearch,
+  searchWithMemberStyles,
+  layoutFromSearch,
+  searchWithLayout,
+} from '../routing/routes';
 import { TimelineBar } from '../timeline/TimelineBar';
 import { Viewer, type SceneViewFactory } from '../viewer/Viewer';
 import {
@@ -38,6 +52,7 @@ const UNIVERSE_POLL_MS = 15_000;
 
 export interface UniversePageProps {
   readonly universeId: string;
+  readonly viewerCommand?: ViewerCommand;
   /** 带组合分享令牌、请求附 `?universe=` 的客户端。 */
   readonly client: PublicClient;
   readonly hasShareToken: boolean;
@@ -56,14 +71,67 @@ type CommitWithSpace = CommitSummary & { readonly spaceId: string; readonly spac
  */
 export function UniversePage({
   universeId,
+  viewerCommand,
   client,
   hasShareToken,
   createView,
   now = Date.now,
   initialMode = 'optimized',
 }: UniversePageProps) {
-  const [mode, setMode] = useViewMode(initialMode);
-  const [style, setStyle] = useRebuiltStyle();
+  const {
+    mode: fallbackMode,
+    style: fallbackStyle,
+    explicitMode,
+    explicitStyle,
+    setMode,
+    setStyle,
+    resetOverrides,
+  } = useViewOverrides(initialMode);
+  const [themeId, setThemeId] = useState<string | null>(() =>
+    new URLSearchParams(window.location.search).get('themeId'),
+  );
+  const changeTheme = useCallback(
+    (id: string) => {
+      resetOverrides();
+      setThemeId(id);
+      const params = new URLSearchParams(window.location.search);
+      params.set('themeId', id);
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `${window.location.pathname}?${params}${window.location.hash}`,
+      );
+    },
+    [resetOverrides],
+  );
+  const [pendingCommand, setPendingCommand] = useState<ViewerCommand>();
+  const command = viewerCommand ?? pendingCommand;
+  const appliedCommand = useRef('');
+  const [appliedCommandId, setAppliedCommandId] = useState('');
+  useEffect(() => {
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (!active) return;
+      const pending = consumePendingViewerCommand();
+      if (pending) setPendingCommand(pending);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+  const [memberStyles, setMemberStyles] = useState<ReadonlyMap<string, string>>(() =>
+    memberStylesFromSearch(window.location.search),
+  );
+  const [layoutId, setLayoutId] = useState(() => layoutFromSearch(window.location.search));
+  const [memberOffsets, setMemberOffsets] = useState<
+    Record<string, readonly [number, number, number, number]>
+  >({});
+  const [focusedSpaceId, setFocusedSpaceId] = useState<string | null>(null);
+  const [focusedAnchor, setFocusedAnchor] = useState<{
+    readonly spaceId: string;
+    readonly anchorId: string;
+  } | null>(null);
+  const [overviewRequest, setOverviewRequest] = useState(0);
   const [cutEnabled, setCutEnabled] = useState(true);
   // 剖切高度：null 表示用户还没拖过滑块，按各成员的天花板算默认值（取最高的，只切掉天花板）。
   const [cutChoice, setCutHeight] = useState<number | null>(null);
@@ -161,16 +229,120 @@ export function UniversePage({
   const infos = useStableList(states.map((s) => s.info));
   const commitLists = useStableList(states.map((s) => s.commits));
 
+  const runtimeTheme = useMemo(() => {
+    const theme = UNIVERSE_THEMES.find((candidate) => candidate.id === themeId);
+    if (theme) return theme;
+    if (
+      themeId &&
+      scenes.some((scene, i) =>
+        resolveSpaceStyles(scene, infos[i]).some((style) => style.id === themeId),
+      )
+    )
+      return {
+        id: themeId,
+        name: '全局命名样式',
+        description: '统一成员空间样式',
+        styleId: themeId,
+      };
+    return undefined;
+  }, [themeId, scenes, infos]);
+  const savedTheme = UNIVERSE_THEMES.find((theme) => theme.id === view?.themeId);
+  const activeTheme = runtimeTheme ?? savedTheme ?? UNIVERSE_THEMES[0]!;
+  const memberLooks = useMemo(
+    () =>
+      view?.members.map((member, i) => {
+        const scene = scenes[i];
+        const info = infos[i];
+        const requested = [
+          memberStyles.get(member.spaceId),
+          runtimeTheme?.styleId,
+          member.styleId,
+          // 显式选择「各自独立」时跳过组合保存的主题。
+          runtimeTheme?.id === 'independent' ? undefined : savedTheme?.styleId,
+          scene?.defaultStyleId,
+          info?.defaultStyleId,
+          'arch-realistic',
+        ];
+        const styles = resolveSpaceStyles(scene, info);
+        return requested
+          .map((id) => styles.find((candidate) => candidate.id === id))
+          .find((candidate) => candidate !== undefined);
+      }) ?? [],
+    [view, scenes, infos, memberStyles, runtimeTheme, savedTheme],
+  );
+  const mode =
+    explicitMode ??
+    (memberLooks.some((look) => look?.mode === 'raw')
+      ? 'raw'
+      : memberLooks.some((look) => look?.mode === 'extended')
+        ? 'extended'
+        : memberLooks.some(Boolean)
+          ? 'optimized'
+          : fallbackMode);
+  const style =
+    explicitStyle ??
+    (activeTheme.styleId ? (memberLooks.find(Boolean)?.rebuiltStyle ?? 'shapes') : fallbackStyle);
+  const membersReady =
+    view !== null && view.members.every((member, i) => member.seq == null || scenes[i] != null);
+  useEffect(() => {
+    if (!command || !membersReady || appliedCommand.current === command.id) return;
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (!active) return;
+      appliedCommand.current = command.id;
+      const nextMemberStyles = new Map(memberStyles);
+      for (const action of command.actions) {
+        if (action.type === 'camera') {
+          setFocusedAnchor(null);
+          setFocusedSpaceId(null);
+        }
+        if (action.type === 'mode') setMode(action.value);
+        if (action.type === 'style') setStyle(action.value);
+        if (action.type === 'cutaway') {
+          setCutEnabled(action.height !== null);
+          if (action.height !== null) setCutHeight(action.height);
+        }
+        if (action.type === 'look') {
+          if (!action.spaceId) {
+            changeTheme(action.styleId);
+          } else {
+            resetOverrides();
+            nextMemberStyles.set(action.spaceId, action.styleId);
+          }
+        }
+      }
+      setMemberStyles(nextMemberStyles);
+      const search = searchWithMemberStyles(window.location.search, nextMemberStyles);
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `${window.location.pathname}${search}${window.location.hash}`,
+      );
+      setAppliedCommandId(command.id);
+    });
+    return () => {
+      active = false;
+    };
+  }, [command, membersReady, memberStyles, setMode, setStyle, resetOverrides, changeTheme]);
+  const camera = useMemo(() => {
+    if (!command || appliedCommandId !== command.id || !membersReady) return undefined;
+    const actions = command.actions.filter((action) => action.type === 'camera');
+    return actions.length ? { id: command.id, actions } : undefined;
+  }, [command, appliedCommandId, membersReady]);
+
   // 原始视图：各成员的扫描模型。
   const scanWanted = useMemo(
     () =>
-      mode !== 'raw'
-        ? []
-        : runtimes.flatMap((runtime, i) => {
-            const hash = scenes[i]?.scan?.webModelHashes[0];
-            return hash === undefined ? [] : [{ runtime, hash }];
-          }),
-    [mode, runtimes, scenes],
+      runtimes.flatMap((runtime, i) => {
+        const look = memberLooks[i];
+        const showScan = explicitMode
+          ? explicitMode === 'raw'
+          : (look?.visibleLayers?.includes('scan') ?? (look?.mode ?? fallbackMode) === 'raw');
+        if (!showScan) return [];
+        const hash = scenes[i]?.scan?.webModelHashes[0];
+        return hash === undefined ? [] : [{ runtime, hash }];
+      }),
+    [explicitMode, memberLooks, fallbackMode, runtimes, scenes],
   );
   const scanKey = scanWanted.map((s) => s.hash).join(',');
   useEffect(() => {
@@ -198,13 +370,35 @@ export function UniversePage({
     return map;
   }, [view, infos]);
 
+  const placements = useMemo(() => {
+    if (!view) return [];
+    if (layoutId) return applyLayoutPreset(view.members, layoutId, memberOffsets);
+    return view.members.map((member) => {
+      const offset = memberOffsets[member.spaceId];
+      return offset
+        ? {
+            ...member,
+            offset: [offset[0], offset[1], offset[2]] as const,
+            rotation: offset[3] as 0 | 90 | 180 | 270,
+          }
+        : member;
+    });
+  }, [view, layoutId, memberOffsets]);
+
   const content = useMemo<SceneContent | null>(() => {
     if (view === null) return null;
     const members: MemberContent[] = [];
-    view.members.forEach((member, i) => {
+    placements.forEach((member, i) => {
       const scene = scenes[i];
       if (member.seq === null || member.seq === undefined || !scene) return;
-      const memberView = selectView(scene, mode, style);
+      const namedStyle = memberLooks[i];
+      const memberView = namedStyle
+        ? selectViewForStyle(
+            scene,
+            { ...namedStyle, rebuiltStyle: explicitStyle ?? namedStyle.rebuiltStyle ?? 'shapes' },
+            explicitMode ?? undefined,
+          )
+        : selectView(scene, explicitMode ?? fallbackMode, explicitStyle ?? fallbackStyle);
       const hash = scene.scan?.webModelHashes[0];
       members.push({
         spaceId: member.spaceId,
@@ -216,8 +410,21 @@ export function UniversePage({
         placement: { offset: member.offset, rotation: member.rotation },
       });
     });
+    if (members.some((member) => member.view.showScan && member.scan === null)) return null;
     return { mode, members, links: view.links };
-  }, [view, scenes, mode, style, scans, names]);
+  }, [
+    view,
+    scenes,
+    mode,
+    explicitMode,
+    explicitStyle,
+    fallbackMode,
+    fallbackStyle,
+    scans,
+    names,
+    placements,
+    memberLooks,
+  ]);
   // 有成员的重建层既有物件又有区块时才给出"形状 / 方块"切换。
   const styleChoice = scenes.some((scene) => scene != null && hasStyleChoice(scene));
 
@@ -309,6 +516,40 @@ export function UniversePage({
           </p>
         </div>
         <div className="space__switches">
+          <div className="segmented" role="group" aria-label="组合样式主题">
+            {UNIVERSE_THEMES.map((theme) => (
+              <button
+                key={theme.id}
+                type="button"
+                aria-pressed={activeTheme.id === theme.id}
+                title={theme.description}
+                onClick={() => changeTheme(theme.id)}
+              >
+                {theme.name}
+              </button>
+            ))}
+          </div>
+          <div className="segmented" role="group" aria-label="组合排布预设">
+            {UNIVERSE_LAYOUT_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                aria-pressed={(layoutId ?? 'default') === preset.id}
+                title={preset.description}
+                onClick={() => {
+                  setLayoutId(preset.id);
+                  const next = searchWithLayout(window.location.search, preset.id);
+                  window.history.replaceState(
+                    window.history.state,
+                    '',
+                    `${window.location.pathname}${next}${window.location.hash}`,
+                  );
+                }}
+              >
+                {preset.name}
+              </button>
+            ))}
+          </div>
           <ViewModeSwitch mode={mode} onChange={setMode} />
           {styleChoice && (
             <StyleSwitch style={style} disabled={mode === 'raw'} onChange={setStyle} />
@@ -327,12 +568,16 @@ export function UniversePage({
       <section className="space__stage" aria-label="三维视图">
         <Viewer
           content={content}
+          camera={camera}
           visuals={visuals}
           cutaway={cutEnabled ? cutHeight : null}
           onScanCeiling={setScanCeiling}
           loadTexture={loaders.loadTexture}
           loadModel={loaders.loadModel}
           createView={createView}
+          overviewRequest={overviewRequest}
+          focusedSpaceId={focusedSpaceId}
+          focusedAnchor={focusedAnchor}
         />
         {(loading || progress !== null) && (
           <LoadingCard
@@ -354,13 +599,151 @@ export function UniversePage({
         {view && view.members.length > 0 && (
           <aside className="space__info" aria-label="成员空间">
             <dl>
-              {view.members.map((member) => (
+              {view.members.map((member, i) => (
                 <div key={member.spaceId} className="space__info-row">
                   <dt>{names.get(member.spaceId)}</dt>
-                  <dd>{member.seq != null ? `版本 #${member.seq}` : '还没有提交'}</dd>
+                  <dd>
+                    <span>{member.seq != null ? `版本 #${member.seq}` : '还没有提交'}</span>
+                    <div className="space__member-actions">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFocusedAnchor(null);
+                          if (focusedSpaceId === member.spaceId)
+                            setOverviewRequest((value) => value + 1);
+                          setFocusedSpaceId(
+                            focusedSpaceId === member.spaceId ? null : member.spaceId,
+                          );
+                        }}
+                      >
+                        {focusedSpaceId === member.spaceId ? '全景' : '聚焦'}
+                      </button>
+                      <select
+                        aria-label={`${names.get(member.spaceId)} 样式`}
+                        value={memberStyles.get(member.spaceId) ?? ''}
+                        onChange={(event) => {
+                          resetOverrides();
+                          const next = new Map(memberStyles);
+                          if (event.target.value) next.set(member.spaceId, event.target.value);
+                          else next.delete(member.spaceId);
+                          setMemberStyles(next);
+                          const search = searchWithMemberStyles(window.location.search, next);
+                          window.history.replaceState(
+                            window.history.state,
+                            '',
+                            `${window.location.pathname}${search}${window.location.hash}`,
+                          );
+                        }}
+                      >
+                        <option value="">跟随组合</option>
+                        {resolveSpaceStyles(scenes[i], infos[i]).map((candidate) => (
+                          <option key={candidate.id} value={candidate.id}>
+                            {candidate.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <details className="space__placement">
+                      <summary>排布微调</summary>
+                      <label>
+                        旋转
+                        <select
+                          aria-label={`${names.get(member.spaceId)} 旋转`}
+                          value={placements[i]?.rotation ?? member.rotation}
+                          onChange={(event) => {
+                            const current = [
+                              ...(placements[i]?.offset ?? member.offset),
+                              placements[i]?.rotation ?? member.rotation,
+                            ] as const;
+                            setMemberOffsets((offsets) => ({
+                              ...offsets,
+                              [member.spaceId]: [
+                                current[0],
+                                current[1],
+                                current[2],
+                                Number(event.target.value),
+                              ],
+                            }));
+                          }}
+                        >
+                          {[0, 90, 180, 270].map((rotation) => (
+                            <option key={rotation} value={rotation}>
+                              {rotation}°
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {(['X', 'Z'] as const).map((axis) => (
+                        <label key={axis}>
+                          {axis}
+                          <input
+                            type="number"
+                            step="1"
+                            aria-label={`${names.get(member.spaceId)} ${axis} 偏移`}
+                            value={(placements[i]?.offset ?? member.offset)[axis === 'X' ? 0 : 2]}
+                            onChange={(event) => {
+                              const current = [
+                                ...(placements[i]?.offset ?? member.offset),
+                                placements[i]?.rotation ?? member.rotation,
+                              ] as const;
+                              const next: [number, number, number, number] = [...current];
+                              next[axis === 'X' ? 0 : 2] = Number(event.target.value);
+                              setMemberOffsets((offsets) => ({
+                                ...offsets,
+                                [member.spaceId]: next,
+                              }));
+                            }}
+                          />
+                        </label>
+                      ))}
+                    </details>
+                  </dd>
                 </div>
               ))}
             </dl>
+            <button
+              type="button"
+              className="space__overview"
+              onClick={() => {
+                setFocusedSpaceId(null);
+                setFocusedAnchor(null);
+                setOverviewRequest((value) => value + 1);
+              }}
+            >
+              全景总览
+            </button>
+            {view.links.length > 0 && (
+              <div className="space__links">
+                <strong>跨空间连接</strong>
+                {view.links.flatMap((link, index) => {
+                  const directions =
+                    link.from.spaceId === link.to.spaceId && link.from.anchorId === link.to.anchorId
+                      ? [[link.from, link.to] as const]
+                      : ([
+                          [link.from, link.to],
+                          [link.to, link.from],
+                        ] as const);
+                  return directions.map(([here, there], direction) => (
+                    <button
+                      key={`${index}:${direction}`}
+                      type="button"
+                      title={`跳转到${names.get(there.spaceId)}`}
+                      onClick={() => {
+                        setFocusedSpaceId(there.spaceId);
+                        setFocusedAnchor({ spaceId: there.spaceId, anchorId: there.anchorId });
+                      }}
+                    >
+                      {link.kind === 'door'
+                        ? '门洞'
+                        : link.kind === 'portal'
+                          ? '传送门'
+                          : '街区通道'}{' '}
+                      · {names.get(here.spaceId)} → {names.get(there.spaceId)}
+                    </button>
+                  ));
+                })}
+              </div>
+            )}
           </aside>
         )}
       </section>

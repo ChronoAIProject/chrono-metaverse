@@ -177,6 +177,18 @@ describe('公开读接口客户端', () => {
     await expect(wrong.universe(UNIVERSE_ID)).rejects.toMatchObject({ status: 404 });
   });
 
+  it('组合修订通过 `state.themeId` 返回主题并省略蛇形字段', async () => {
+    const universe = createPublicClient({ share: UNIVERSE_SHARE_TOKEN, fetch: fixtureFetch });
+    for (const seq of [1, 2]) {
+      const revision = await universe.universeRevision(UNIVERSE_ID, seq);
+      expect(revision.universeId).toBe(UNIVERSE_ID);
+      expect(revision.seq).toBe(seq);
+      expect(revision.state.themeId).toBe('independent');
+      expect(revision.state).not.toHaveProperty('theme_id');
+      expect(revision.state.members).toHaveLength(seq);
+    }
+  });
+
   it('预览：草稿区块和草稿贴图只能经预览接口读取', async () => {
     const view = await client.preview(PREVIEW_TOKEN);
     expect(view.preview.baseSeq).toBe(4);
