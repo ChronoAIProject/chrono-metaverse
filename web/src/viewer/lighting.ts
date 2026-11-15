@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { LightingPreset } from '../core/api/types';
 
 /**
  * 查看器的灯光和贴图材质的明暗。
@@ -42,6 +43,37 @@ export const FILL_LIGHT: DirectionalSpec = {
   direction: [-0.55, 0.5, -0.6],
 };
 
+const PRESET_LIGHTS: Record<
+  LightingPreset,
+  {
+    hemisphere: { sky: number; ground: number; factor: number };
+    key: DirectionalSpec;
+    fill: DirectionalSpec;
+  }
+> = {
+  daylight: { hemisphere: HEMISPHERE_LIGHT, key: KEY_LIGHT, fill: FILL_LIGHT },
+  warm: {
+    hemisphere: { sky: 0xffead0, ground: 0x8c7160, factor: 0.7 },
+    key: { color: 0xffc27c, factor: 0.72, direction: [0.45, 0.8, 0.4] },
+    fill: { color: 0xffe5c0, factor: 0.22, direction: [-0.55, 0.5, -0.6] },
+  },
+  night: {
+    hemisphere: { sky: 0x20284f, ground: 0x080b18, factor: 0.28 },
+    key: { color: 0x718cff, factor: 0.42, direction: [0.45, 0.8, 0.4] },
+    fill: { color: 0xff6bd6, factor: 0.38, direction: [-0.55, 0.5, -0.6] },
+  },
+  studio: {
+    hemisphere: { sky: 0xf7f7f7, ground: 0xbfc3cc, factor: 0.78 },
+    key: { color: 0xffffff, factor: 0.48, direction: [0.45, 0.8, 0.4] },
+    fill: { color: 0xdbe5ff, factor: 0.38, direction: [-0.55, 0.5, -0.6] },
+  },
+  blueprint: {
+    hemisphere: { sky: 0x234d83, ground: 0x071326, factor: 0.45 },
+    key: { color: 0x86cfff, factor: 0.55, direction: [0.45, 0.8, 0.4] },
+    fill: { color: 0x4c7aff, factor: 0.34, direction: [-0.55, 0.5, -0.6] },
+  },
+};
+
 /** 贴图材质受光照影响的部分。 */
 export const TEXTURE_DIFFUSE = 0.3;
 /** 贴图材质不受光照、直接显示的部分（自发光，贴图同一张）。 */
@@ -52,17 +84,18 @@ function directionOf(spec: DirectionalSpec): THREE.Vector3 {
 }
 
 /** 场景用的三盏灯（物理单位的强度）。平行光放在离原点 20 米处，照向原点。 */
-export function createLights(): THREE.Light[] {
+export function createLights(preset: LightingPreset = 'daylight'): THREE.Light[] {
+  const specs = PRESET_LIGHTS[preset] ?? PRESET_LIGHTS.daylight;
   const hemisphere = new THREE.HemisphereLight(
-    HEMISPHERE_LIGHT.sky,
-    HEMISPHERE_LIGHT.ground,
-    HEMISPHERE_LIGHT.factor * Math.PI,
+    specs.hemisphere.sky,
+    specs.hemisphere.ground,
+    specs.hemisphere.factor * Math.PI,
   );
   hemisphere.name = 'light:hemisphere';
   const lights: THREE.Light[] = [hemisphere];
   for (const [name, spec] of [
-    ['light:key', KEY_LIGHT],
-    ['light:fill', FILL_LIGHT],
+    ['light:key', specs.key],
+    ['light:fill', specs.fill],
   ] as const) {
     const light = new THREE.DirectionalLight(spec.color, spec.factor * Math.PI);
     light.position.copy(directionOf(spec).multiplyScalar(20));

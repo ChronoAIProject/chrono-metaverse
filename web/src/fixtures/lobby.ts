@@ -1,4 +1,4 @@
-import type { Anchor, EntityBody, Plot, Region } from '../core/api/types';
+import type { Anchor, EntityBody, Plot, Region, SpaceStyleSpec } from '../core/api/types';
 import type { Shape } from '../core/shapes/types';
 import { TEXTURES } from './assets';
 
@@ -22,6 +22,56 @@ import { TEXTURES } from './assets';
 export const SPACE_ID = 'demo-lobby';
 export const SPACE_NAME = '演示前厅';
 export const SHARE_TOKEN = 'fixture-share-token-0123456789abcdef';
+
+/** 演示前厅的空间专属样式目录。 */
+export const lobbyStyles: readonly SpaceStyleSpec[] = [
+  {
+    id: 'extension-only',
+    name: '扩展展区',
+    description: '仅展示扩展层物件与方块，独立审视虚拟展区',
+    mode: 'extended',
+    visibleLayers: ['ext'],
+    lighting: 'studio',
+  },
+  {
+    id: 'scan-rebuilt-overlay',
+    name: '扫描重建叠加',
+    description: '叠加扫描网格与重建层，核对重建配准',
+    mode: 'optimized',
+    visibleLayers: ['scan', 'rebuilt'],
+    rebuiltStyle: 'shapes',
+    lighting: 'studio',
+  },
+  {
+    id: 'minimal-office',
+    name: '极简办公',
+    description: '清爽冷白结构与原木暖色物件',
+    swatch: '#d2c1a4',
+    mode: 'optimized',
+    rebuiltStyle: 'shapes',
+    lighting: 'daylight',
+    look: {
+      stripTextures: true,
+      structureColor: [236, 242, 246],
+      objectColor: [190, 153, 110],
+      roughness: 0.85,
+    },
+  },
+  {
+    id: 'brand-open-day',
+    name: '品牌开放日',
+    description: '虚实共生与琥珀强调色的暖调展陈',
+    swatch: '#dda65e',
+    mode: 'extended',
+    rebuiltStyle: 'shapes',
+    lighting: 'warm',
+    look: { tint: [255, 225, 184], roughness: 0.6 },
+    extensions: {
+      badge: '开放日策展',
+      exhibition: { title: '前厅共创展', edition: 2026, zones: ['实体区', '虚拟展区'] },
+    },
+  },
+];
 
 export const regions: Region[] = [
   { id: 'physical', kind: 'physical', label: '实体区', boxes: [[0, 0, 0, 120, 60, 100]] },

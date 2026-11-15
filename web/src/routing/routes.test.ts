@@ -7,6 +7,12 @@ import {
   styleFromSearch,
   viewFromSearch,
   type AppRoute,
+  lookFromSearch,
+  searchWithLook,
+  memberStylesFromSearch,
+  searchWithMemberStyles,
+  layoutFromSearch,
+  searchWithLayout,
 } from './routes';
 
 const ROUTES: readonly AppRoute[] = [
@@ -83,5 +89,71 @@ describe('地址里指定的视图', () => {
     // 预览页默认是优化 + 扩展：切到优化要写出来。
     expect(searchWithView('', 'optimized', 'extended')).toBe('?view=optimized');
     expect(searchWithView('?view=optimized', 'extended', 'extended')).toBe('');
+  });
+});
+
+describe('地址里的命名样式与组合参数', () => {
+  it.each(['A', '_', '-', '0', 'Studio_01.v2', 'A'.repeat(128)])(
+    '后端合法样式编号可无损往返：`%s`',
+    (styleId) => {
+      const search = searchWithLook('?keep=1', styleId);
+      expect(lookFromSearch(search)).toBe(styleId);
+      expect(new URLSearchParams(search).get('keep')).toBe('1');
+      const members = new Map([['demo-lobby', styleId]]);
+      expect(memberStylesFromSearch(searchWithMemberStyles('?keep=1', members))).toEqual(members);
+      expect(memberStylesFromSearch(searchWithMemberStyles('', { 'demo-lobby': styleId }))).toEqual(
+        members,
+      );
+    },
+  );
+
+  it.each([
+    '',
+    '.',
+    '.hidden',
+    'A'.repeat(129),
+    'a:b',
+    'a b',
+    'a\n',
+    'a\r',
+    '中文',
+    'a/b',
+    'a,b',
+    'a%20',
+  ])('拒绝非法样式编号：`%j`', (styleId) => {
+    expect(lookFromSearch(`?${new URLSearchParams({ look: styleId })}`)).toBeNull();
+    expect(searchWithLook('?look=old&keep=1', styleId)).toBe('?keep=1');
+    expect(
+      memberStylesFromSearch(`?${new URLSearchParams({ memberStyles: `demo-lobby:${styleId}` })}`),
+    ).toEqual(new Map());
+    expect(
+      searchWithMemberStyles('?memberStyles=old&keep=1', new Map([['demo-lobby', styleId]])),
+    ).toBe('?keep=1');
+  });
+
+  it.each(['Studio_01.v2', '-bad', '_bad', '.bad', 'a'.repeat(81), 'a b', 'a\n'])(
+    '成员空间编号继续遵循原有规则：`%j`',
+    (spaceId) => {
+      expect(
+        memberStylesFromSearch(
+          `?${new URLSearchParams({ memberStyles: `${spaceId}:Studio_01.v2` })}`,
+        ),
+      ).toEqual(new Map());
+      expect(searchWithMemberStyles('', new Map([[spaceId, 'Studio_01.v2']]))).toBe('');
+    },
+  );
+
+  it('可往返读取命名样式、成员覆盖和排布预设', () => {
+    expect(lookFromSearch('?look=night-neon')).toBe('night-neon');
+    expect(searchWithLook('', 'blueprint')).toBe('?look=blueprint');
+    const styles = memberStylesFromSearch(
+      '?memberStyles=demo-lobby:maquette,demo-florist:spring-greenhouse',
+    );
+    expect(styles.get('demo-lobby')).toBe('maquette');
+    expect(searchWithMemberStyles('', styles)).toBe(
+      '?memberStyles=demo-lobby%3Amaquette%2Cdemo-florist%3Aspring-greenhouse',
+    );
+    expect(layoutFromSearch('?layout=courtyard')).toBe('courtyard');
+    expect(searchWithLayout('', 'courtyard')).toBe('?layout=courtyard');
   });
 });

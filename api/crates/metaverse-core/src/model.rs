@@ -208,6 +208,226 @@ pub fn validate_layout(regions: &[Region], plots: &[Plot]) -> Result<(), String>
     Ok(())
 }
 
+/// 空间样式的材质外观配方。样式只描述渲染偏好，不改变空间几何数据。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct SpaceStyleLook {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strip_textures: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structure_color: Option<[u8; 3]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_color: Option<[u8; 3]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tint: Option<[u8; 3]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roughness: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metalness: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wireframe: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unlit: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opacity: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edge_color: Option<String>,
+}
+
+/// 命名样式可独立选择的内容图层。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum StyleLayer {
+    Scan,
+    Rebuilt,
+    Ext,
+}
+
+/// 命名样式可显示的物件类别，不影响体素区块。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum StyleEntityKind {
+    Structure,
+    Object,
+}
+
+/// 一个空间可命名的样式定义。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct SpaceStyleSpec {
+    pub id: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub swatch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rebuilt_style: Option<String>,
+    /// 显式选择图层时显示完整图层；省略时保持旧模式的区域投影。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visible_layers: Option<Vec<StyleLayer>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter_kinds: Option<Vec<StyleEntityKind>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lighting: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background_color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub look: Option<SpaceStyleLook>,
+    /// 公开的结构化扩展元数据，支持对象、数组、字符串、布尔、有限数值和空值；空对象省略。
+    /// 每个样式最多 16384 字节紧凑 `JSON`、256 个对象成员与数组元素，根对象为第零层，最大深度为 8。
+    /// 键名为 1–128 字节，禁止点、美元符号、控制字符及原型保留名；整数绝对值不超过 9007199254740991。
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+/// 单个样式扩展的容量边界；根对象深度为零，条目计入所有对象成员与数组元素。
+pub const MAX_STYLE_EXTENSION_DEPTH: usize = 8;
+pub const MAX_STYLE_EXTENSION_ENTRIES: usize = 256;
+pub const MAX_STYLE_EXTENSION_BYTES: usize = 16 * 1024;
+pub const MAX_STYLE_EXTENSION_KEY_BYTES: usize = 128;
+
+fn validate_style_extension_key(key: &str) -> Result<(), String> {
+    if key.is_empty()
+        || key.len() > MAX_STYLE_EXTENSION_KEY_BYTES
+        || key.contains(['.', '$'])
+        || key.chars().any(char::is_control)
+        || matches!(key, "__proto__" | "prototype" | "constructor")
+    {
+        return Err("扩展键名必须为 1–128 字节，不能含点、美元符号、控制字符或原型保留名".into());
+    }
+    Ok(())
+}
+
+fn validate_style_extension_value(
+    value: &Value,
+    depth: usize,
+    entries: &mut usize,
+) -> Result<(), String> {
+    *entries += 1;
+    if depth > MAX_STYLE_EXTENSION_DEPTH || *entries > MAX_STYLE_EXTENSION_ENTRIES {
+        return Err("扩展最多嵌套 8 层，所有对象成员与数组元素合计不能超过 256 条".into());
+    }
+    match value {
+        Value::Object(object) => {
+            for (key, value) in object {
+                validate_style_extension_key(key)?;
+                validate_style_extension_value(value, depth + 1, entries)?;
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                validate_style_extension_value(value, depth + 1, entries)?;
+            }
+        }
+        Value::Number(number) => {
+            let finite = number.as_f64().filter(|value| value.is_finite());
+            if finite
+                .is_none_or(|value| value.fract() == 0.0 && value.abs() > 9_007_199_254_740_991.0)
+            {
+                return Err("扩展数值必须有限，整数必须在正负 9007199254740991 以内".into());
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn validate_style_extensions(extensions: &BTreeMap<String, Value>) -> Result<(), String> {
+    let mut entries = 0;
+    for (key, value) in extensions {
+        validate_style_extension_key(key)?;
+        validate_style_extension_value(value, 1, &mut entries)?;
+    }
+    if serde_json::to_vec(extensions)
+        .map_err(|_| "扩展无法序列化为合法的 `JSON`".to_owned())?
+        .len()
+        > MAX_STYLE_EXTENSION_BYTES
+    {
+        return Err("每个样式扩展的紧凑 `JSON` 不能超过 16384 字节".into());
+    }
+    Ok(())
+}
+
+/// 校验空间样式目录，确保样式编号唯一且能作为对象编号使用。
+pub fn validate_space_styles(
+    styles: &[SpaceStyleSpec],
+    default_style_id: Option<&str>,
+) -> Result<(), String> {
+    let mut ids = BTreeMap::new();
+    for style in styles {
+        validate_style_extensions(&style.extensions).map_err(|message| {
+            format!("空间样式 `{}` 的 `extensions` 不合法：{message}", style.id)
+        })?;
+        if !is_object_id(&style.id) {
+            return Err(format!("空间样式 `{}` 的编号不合法", style.id));
+        }
+        if style.name.trim().is_empty() {
+            return Err(format!("空间样式 `{}` 的名称不能为空", style.id));
+        }
+        if style.visible_layers.as_ref().is_some_and(|layers| {
+            layers
+                .iter()
+                .enumerate()
+                .any(|(i, layer)| layers[..i].contains(layer))
+        }) || style.filter_kinds.as_ref().is_some_and(|kinds| {
+            kinds
+                .iter()
+                .enumerate()
+                .any(|(i, kind)| kinds[..i].contains(kind))
+        }) {
+            return Err(format!("空间样式 `{}` 的图层或物件类别不能重复", style.id));
+        }
+        for (field, value, allowed) in [
+            (
+                "mode",
+                style.mode.as_deref(),
+                &["raw", "optimized", "extended"][..],
+            ),
+            (
+                "rebuiltStyle",
+                style.rebuilt_style.as_deref(),
+                &["shapes", "blocks"][..],
+            ),
+            (
+                "lighting",
+                style.lighting.as_deref(),
+                &["daylight", "warm", "night", "studio", "blueprint"][..],
+            ),
+        ] {
+            if value.is_some_and(|value| !allowed.contains(&value)) {
+                return Err(format!("空间样式 `{}` 的 `{field}` 不合法", style.id));
+            }
+        }
+        if style
+            .look
+            .as_ref()
+            .and_then(|look| look.opacity)
+            .is_some_and(|opacity| !(0.0..=1.0).contains(&opacity))
+        {
+            return Err(format!(
+                "空间样式 `{}` 的 `opacity` 必须在 0 到 1 之间",
+                style.id
+            ));
+        }
+        if ids.insert(style.id.as_str(), ()).is_some() {
+            return Err(format!("空间样式编号重复：`{}`", style.id));
+        }
+    }
+    if let Some(default_id) = default_style_id {
+        if !is_object_id(default_id) {
+            return Err(format!("默认空间样式编号不合法：`{default_id}`"));
+        }
+    }
+    Ok(())
+}
+
 /// 空间文档（`spaces` 集合）。`regions`、`plots` 只是 head 的读缓存，历史在提交里。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -230,6 +450,10 @@ pub struct Space {
     pub regions: Vec<Region>,
     #[serde(default)]
     pub plots: Vec<Plot>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub styles: Vec<SpaceStyleSpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_style_id: Option<String>,
     pub storage_limit_bytes: u64,
     #[serde(default)]
     pub storage_used_bytes: u64,
@@ -763,6 +987,8 @@ pub struct UniverseMember {
     pub space_id: String,
     pub offset: [i64; 3],
     pub rotation: Rotation,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -788,11 +1014,14 @@ pub struct UniverseLink {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UniverseState {
     #[serde(default)]
     pub members: Vec<UniverseMember>,
     #[serde(default)]
     pub links: Vec<UniverseLink>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -817,6 +1046,8 @@ pub struct Universe {
     pub members: Vec<UniverseMember>,
     #[serde(default)]
     pub links: Vec<UniverseLink>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme_id: Option<String>,
     pub created_at: Timestamp,
     /// 组织主人的归属证据（规则与空间相同，设计 9.2）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1248,6 +1479,8 @@ mod tests {
             },
             regions: vec![],
             plots: vec![],
+            styles: vec![],
+            default_style_id: None,
             storage_limit_bytes: 1 << 30,
             storage_used_bytes: 0,
             created_at: ts(0),
@@ -1492,5 +1725,246 @@ mod tests {
         let value = serde_json::to_value(&rebuilt).unwrap();
         assert_eq!(value["scan"], true);
         assert_eq!(value["rebuiltLayer"], true);
+    }
+
+    #[test]
+    fn 空间样式拒绝不支持的渲染选项() {
+        let valid = json!({"id": "custom-room", "name": "自定义房间", "mode": "raw",
+            "rebuiltStyle": "blocks", "lighting": "studio", "look": {"opacity": 0.5, "edgeColor": "#fff"}});
+        let style = |value| serde_json::from_value::<SpaceStyleSpec>(value).unwrap();
+        assert!(validate_space_styles(&[style(valid.clone())], None).is_ok());
+        for (field, value) in [
+            ("mode", "invalid"),
+            ("rebuiltStyle", "invalid"),
+            ("lighting", "invalid"),
+        ] {
+            let mut invalid = valid.clone();
+            invalid[field] = json!(value);
+            assert!(
+                validate_space_styles(&[style(invalid)], None).is_err(),
+                "{field}"
+            );
+        }
+        for opacity in [-0.1, 1.1] {
+            let mut invalid = valid.clone();
+            invalid["look"]["opacity"] = json!(opacity);
+            assert!(validate_space_styles(&[style(invalid)], None).is_err());
+        }
+        for opacity in [0.0, 1.0] {
+            let mut boundary = valid.clone();
+            boundary["look"]["opacity"] = json!(opacity);
+            assert!(validate_space_styles(&[style(boundary)], None).is_ok());
+        }
+    }
+
+    #[test]
+    fn 命名样式图层和类别往返并拒绝非法或重复标识() {
+        let old = json!({"id": "custom-room", "name": "自定义房间"});
+        let decoded: SpaceStyleSpec = serde_json::from_value(old.clone()).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), old);
+        for layers in [
+            json!([]),
+            json!(["ext"]),
+            json!(["rebuilt"]),
+            json!(["scan", "rebuilt", "ext"]),
+        ] {
+            let mut value = old.clone();
+            value["visibleLayers"] = layers;
+            value["filterKinds"] = json!(["structure", "object"]);
+            let style: SpaceStyleSpec = serde_json::from_value(value.clone()).unwrap();
+            assert!(validate_space_styles(std::slice::from_ref(&style), None).is_ok());
+            assert_eq!(serde_json::to_value(style).unwrap(), value);
+        }
+        for (field, invalid) in [
+            ("visibleLayers", json!([""])),
+            ("visibleLayers", json!(["unknown"])),
+            ("visibleLayers", json!(["ext", "ext"])),
+            ("filterKinds", json!([""])),
+            ("filterKinds", json!(["template"])),
+            ("filterKinds", json!(["object", "object"])),
+        ] {
+            let mut value = old.clone();
+            value[field] = invalid;
+            if let Ok(style) = serde_json::from_value::<SpaceStyleSpec>(value) {
+                assert!(validate_space_styles(&[style], None).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn 样式扩展无损往返且缺省与空对象不增加字段() {
+        let old = json!({"id": "custom-room", "name": "自定义房间"});
+        for value in [
+            old.clone(),
+            json!({"id": "custom-room", "name": "自定义房间", "extensions": {}}),
+        ] {
+            let style: SpaceStyleSpec = serde_json::from_value(value).unwrap();
+            assert!(validate_space_styles(std::slice::from_ref(&style), None).is_ok());
+            assert_eq!(serde_json::to_value(style).unwrap(), old);
+        }
+        let mut value = old;
+        value["extensions"] =
+            json!({"策展": {"标题": "共创展", "配置": [true, null, -0.25, {"版本": 2}]}});
+        let style: SpaceStyleSpec = serde_json::from_value(value.clone()).unwrap();
+        assert!(validate_space_styles(std::slice::from_ref(&style), None).is_ok());
+        assert_eq!(serde_json::to_value(style).unwrap(), value);
+    }
+
+    #[test]
+    fn 样式扩展递归拒绝不安全键名与越界整数() {
+        let valid = |extensions: Value| {
+            let style: SpaceStyleSpec = serde_json::from_value(json!({
+                "id": "custom-room", "name": "自定义房间", "extensions": extensions
+            }))
+            .unwrap();
+            validate_space_styles(&[style], None).is_ok()
+        };
+        for key in [
+            "",
+            "$date",
+            "a$b",
+            "a.b",
+            "a\0b",
+            "a\nb",
+            "__proto__",
+            "constructor",
+            "prototype",
+            &"键".repeat(43),
+        ] {
+            for extensions in [json!({key: 1}), json!({"配置": [{key: 1}]})] {
+                assert!(!valid(extensions), "键名应被拒绝：{key:?}");
+            }
+        }
+        for number in [
+            json!(u64::MAX),
+            json!(i64::MIN),
+            json!(9_007_199_254_740_992_i64),
+            json!(1e100),
+        ] {
+            assert!(!valid(json!({"数值": number})));
+        }
+        assert!(valid(
+            json!({"安全边界": [9_007_199_254_740_991_i64, -9_007_199_254_740_991_i64], "小数": 0.125, "键".repeat(42): true})
+        ));
+    }
+
+    #[test]
+    fn 样式扩展按整体条目深度和编码字节数校验边界() {
+        let valid = |extensions: Value| {
+            let style: SpaceStyleSpec = serde_json::from_value(json!({
+                "id": "custom-room", "name": "自定义房间", "extensions": extensions
+            }))
+            .unwrap();
+            validate_space_styles(&[style], None).is_ok()
+        };
+        for (count, expected) in [(256, true), (257, false)] {
+            let object: Map<String, Value> = (0..count)
+                .map(|i| (format!("键{i}"), json!(true)))
+                .collect();
+            assert_eq!(valid(Value::Object(object)), expected);
+            assert_eq!(
+                valid(json!({"数组": vec![Value::Null; count - 1]})),
+                expected
+            );
+        }
+        for (depth, expected) in [(8, true), (9, false)] {
+            let nested = (0..depth - 1).fold(Value::Null, |value, _| json!([value]));
+            assert_eq!(valid(json!({"层": nested})), expected);
+        }
+        let overhead = serde_json::to_vec(&json!({"内容": ""})).unwrap().len();
+        assert!(valid(
+            json!({"内容": "x".repeat(MAX_STYLE_EXTENSION_BYTES - overhead)})
+        ));
+        assert!(!valid(
+            json!({"内容": "x".repeat(MAX_STYLE_EXTENSION_BYTES - overhead + 1)})
+        ));
+        assert!(!valid(
+            json!({"内容": "中".repeat(MAX_STYLE_EXTENSION_BYTES / 3)})
+        ));
+    }
+
+    #[test]
+    fn 空间与组合样式往返保持向后兼容() {
+        let mut document = serde_json::to_value(space(Owner::person("alice"), None)).unwrap();
+        assert!(document.get("styles").is_none());
+        let old: Space = serde_json::from_value(document.clone()).unwrap();
+        assert!(old.styles.is_empty());
+        assert!(old.default_style_id.is_none());
+
+        let style = SpaceStyleSpec {
+            id: "0123456789abcdef01234567".into(),
+            name: "白模沙盘".into(),
+            description: Some("审视空间体量".into()),
+            swatch: Some("#f3efe6".into()),
+            mode: Some("optimized".into()),
+            rebuilt_style: Some("shapes".into()),
+            visible_layers: Some(vec![StyleLayer::Scan, StyleLayer::Rebuilt]),
+            filter_kinds: Some(vec![StyleEntityKind::Structure]),
+            lighting: Some("studio".into()),
+            background_color: Some("#f3efe6".into()),
+            look: Some(SpaceStyleLook {
+                strip_textures: Some(true),
+                structure_color: Some([242, 238, 230]),
+                object_color: None,
+                tint: None,
+                roughness: Some(0.92),
+                metalness: Some(0.02),
+                wireframe: None,
+                unlit: None,
+                opacity: Some(0.8),
+                edge_color: Some("#80cfff".into()),
+            }),
+            extensions: BTreeMap::new(),
+        };
+        document["styles"] = json!([style]);
+        document["defaultStyleId"] = json!("0123456789abcdef01234567");
+        let decoded: Space = serde_json::from_value(document).unwrap();
+        assert_eq!(decoded.styles.len(), 1);
+        assert_eq!(
+            decoded.styles[0].visible_layers,
+            Some(vec![StyleLayer::Scan, StyleLayer::Rebuilt])
+        );
+        assert_eq!(
+            decoded.styles[0].filter_kinds,
+            Some(vec![StyleEntityKind::Structure])
+        );
+        let look = decoded.styles[0].look.as_ref().unwrap();
+        assert_eq!(look.opacity, Some(0.8));
+        assert_eq!(look.edge_color.as_deref(), Some("#80cfff"));
+        let encoded = serde_json::to_value(look).unwrap();
+        assert_eq!(encoded["edgeColor"], "#80cfff");
+        assert_eq!(
+            serde_json::from_value::<SpaceStyleLook>(encoded).unwrap(),
+            *look
+        );
+        assert_eq!(
+            decoded.default_style_id.as_deref(),
+            Some("0123456789abcdef01234567")
+        );
+        assert!(
+            validate_space_styles(&decoded.styles, decoded.default_style_id.as_deref()).is_ok()
+        );
+
+        let member = UniverseMember {
+            space_id: "front-hall".into(),
+            offset: [0, 0, 0],
+            rotation: Rotation::R0,
+            style_id: Some("0123456789abcdef01234567".into()),
+        };
+        let state = UniverseState {
+            members: vec![member.clone()],
+            links: vec![],
+            theme_id: Some("night-district".into()),
+        };
+        let value = serde_json::to_value(&state).unwrap();
+        let restored: UniverseState = serde_json::from_value(value).unwrap();
+        assert_eq!(restored, state);
+        let legacy: UniverseState = serde_json::from_value(json!({
+            "members": [{"spaceId": "front-hall", "offset": [0, 0, 0], "rotation": 0}],
+            "links": []
+        }))
+        .unwrap();
+        assert_eq!(legacy.members[0].style_id, None);
+        assert_eq!(legacy.theme_id, None);
     }
 }

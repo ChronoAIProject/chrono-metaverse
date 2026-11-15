@@ -1,7 +1,7 @@
 //! 管理接口的空间写入（设计 8.4）：名称和可见性、分享令牌轮换、删除空间。
 //! 区域和地块的修改写成一次提交，走 [`Repo::write_commit`]。
 
-use metaverse_core::model::{ShareTokenRecord, Visibility};
+use metaverse_core::model::{ShareTokenRecord, SpaceStyleSpec, Visibility};
 use metaverse_core::Timestamp;
 use mongodb::bson::{doc, Document};
 
@@ -18,6 +18,8 @@ pub struct SpaceSettings {
     pub name: Option<String>,
     pub description: Option<String>,
     pub visibility: Option<Visibility>,
+    pub styles: Option<Vec<SpaceStyleSpec>>,
+    pub default_style_id: Option<Option<String>>,
 }
 
 impl Repo {
@@ -40,6 +42,12 @@ impl Repo {
         }
         if let Some(visibility) = settings.visibility {
             set.insert("visibility", to_bson(&visibility)?);
+        }
+        if let Some(styles) = &settings.styles {
+            set.insert("styles", to_bson(styles)?);
+        }
+        if let Some(default_style_id) = &settings.default_style_id {
+            set.insert("defaultStyleId", to_bson(default_style_id)?);
         }
         let result = self
             .collection(collections::SPACES)

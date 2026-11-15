@@ -1,19 +1,35 @@
 import { viewerLink } from './client';
+import { isStyleId } from '../core/styles';
 
 export type CameraAction =
   | { kind: 'overview' }
-  | { kind: 'focus'; entityId: string }
+  | { kind: 'focus'; entityId: string; spaceId?: string }
   | { kind: 'orbit'; yaw: number; pitch: number }
   | { kind: 'zoom'; factor: number };
 export type ViewerAction =
   | { type: 'space'; spaceId: string }
+  | { type: 'universe'; universeId: string }
   | { type: 'current' }
   | { type: 'preview'; url: string }
   | { type: 'mode'; value: 'raw' | 'optimized' | 'extended' }
   | { type: 'style'; value: 'shapes' | 'blocks' }
+  | { type: 'look'; styleId: string; spaceId?: string }
   | { type: 'cutaway'; height: number | null }
   | ({ type: 'camera' } & CameraAction);
 export type ViewerCommand = { id: string; actions: ViewerAction[] };
+let pendingViewerCommand: ViewerCommand | undefined;
+
+/** 从工作台切换到组合路由时，一次性交接查看器动作。 */
+export function setPendingViewerCommand(command: ViewerCommand): void {
+  pendingViewerCommand = command;
+}
+
+export function consumePendingViewerCommand(): ViewerCommand | undefined {
+  const command = pendingViewerCommand;
+  pendingViewerCommand = undefined;
+  return command;
+}
+
 export type ViewerContext = {
   spaces: { id: string; name: string }[];
   preview?: string;
@@ -34,7 +50,13 @@ function valid(value: unknown): value is ViewerAction {
       return (
         exact('type', 'spaceId') &&
         typeof v.spaceId === 'string' &&
-        /^[a-z0-9][a-z0-9-]{0,79}$/.test(v.spaceId)
+        /^[a-z0-9][a-z0-9-]{0,79}(?![\s\S])/.test(v.spaceId)
+      );
+    case 'universe':
+      return (
+        exact('type', 'universeId') &&
+        typeof v.universeId === 'string' &&
+        /^[a-z0-9][a-z0-9-]{0,79}(?![\s\S])/.test(v.universeId)
       );
     case 'current':
       return exact('type');
@@ -49,6 +71,14 @@ function valid(value: unknown): value is ViewerAction {
       return exact('type', 'value') && ['raw', 'optimized', 'extended'].includes(String(v.value));
     case 'style':
       return exact('type', 'value') && ['shapes', 'blocks'].includes(String(v.value));
+    case 'look':
+      return (
+        exact('type', 'styleId', ...(v.spaceId === undefined ? [] : ['spaceId'])) &&
+        typeof v.styleId === 'string' &&
+        isStyleId(v.styleId) &&
+        (v.spaceId === undefined ||
+          (typeof v.spaceId === 'string' && /^[a-z0-9][a-z0-9-]{0,79}(?![\s\S])/.test(v.spaceId)))
+      );
     case 'cutaway':
       return exact('type', 'height') && (v.height === null || number(v.height, -1000, 10000));
     case 'camera':
@@ -57,9 +87,12 @@ function valid(value: unknown): value is ViewerAction {
           return exact('type', 'kind');
         case 'focus':
           return (
-            exact('type', 'kind', 'entityId') &&
+            exact('type', 'kind', 'entityId', ...(v.spaceId === undefined ? [] : ['spaceId'])) &&
             typeof v.entityId === 'string' &&
-            /^[A-Za-z0-9_.:-]{1,256}$/.test(v.entityId)
+            /^[A-Za-z0-9_.:-]{1,256}$/.test(v.entityId) &&
+            (v.spaceId === undefined ||
+              (typeof v.spaceId === 'string' &&
+                /^[a-z0-9][a-z0-9-]{0,79}(?![\s\S])/.test(v.spaceId)))
           );
         case 'orbit':
           return (
@@ -88,7 +121,7 @@ export function parseViewerActions(text: string): { actions: ViewerAction[]; inv
     )
       return { actions: [], invalid: true };
     // A space transition must precede all actions targeting its viewer.
-    if (value.actions.some((a, i) => a.type === 'space' && i !== 0))
+    if (value.actions.some((a, i) => (a.type === 'space' || a.type === 'universe') && i !== 0))
       return { actions: [], invalid: true };
     return { actions: value.actions, invalid: false };
   } catch {

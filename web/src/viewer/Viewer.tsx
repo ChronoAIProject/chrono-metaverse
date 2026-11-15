@@ -22,6 +22,8 @@ export interface SceneViewLike {
   setCutaway(height: number | null): void;
   select(selection: Selection | null): void;
   frameContent(): void;
+  focusMember?(spaceId: string | null): void;
+  focusAnchor?(ref: { readonly spaceId: string; readonly anchorId: string } | null): void;
   applyCamera?(action: CameraAction, content: SceneContent): boolean;
   /** 显示全部锚点标签；false 时只显示有意义的几类（见 labelLayout.ts）。 */
   setShowAllLabels(all: boolean): void;
@@ -45,18 +47,24 @@ export interface ViewerProps {
   readonly onScanCeiling?: (height: number | null) => void;
   readonly camera?: { id: string; actions: CameraAction[] };
   readonly onCameraResult?: (success: boolean) => void;
+  /** 组合工作台的成员镜头聚焦；`null` 表示全景总览。 */
+  readonly focusedSpaceId?: string | null;
+  /** 每次点击全景总览时递增，重复点击也生效。 */
+  readonly overviewRequest?: number;
+  /** 空间锚点导览的镜头目标；`null` 表示清除锚点高亮。 */
+  readonly focusedAnchor?: { readonly spaceId: string; readonly anchorId: string } | null;
 }
 
 /** 内容对应的提示：原始视图那时还没有扫描、优化视图那时还没有模型。 */
 function noticeFor(content: SceneContent): string | null {
   if (content.members.length === 0) return null;
-  if (content.mode === 'raw') {
-    return content.members.every((m) => m.view.scanMissing)
-      ? '这个时刻之前还没有导入扫描模型。'
-      : null;
-  }
-  return content.members.some((m) => viewHasGeometry(m.view))
-    ? null
+  if (content.members.some((member) => member.view.showScan || viewHasGeometry(member.view)))
+    return null;
+  if (content.members.every((member) => member.view.scanMissing))
+    return '这个时刻之前还没有导入扫描模型。';
+  if (content.mode === 'raw') return null;
+  return content.members.some((member) => member.view.visibleLayers !== undefined)
+    ? '当前样式没有可见内容，可以切换样式或查看模式。'
     : '这个时刻还没有优化模型，可以切到"原始"视图看扫描。';
 }
 
@@ -71,6 +79,9 @@ export function Viewer({
   onScanCeiling,
   camera,
   onCameraResult,
+  focusedSpaceId,
+  focusedAnchor,
+  overviewRequest = 0,
 }: ViewerProps) {
   const viewRef = useRef<SceneViewLike | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -79,6 +90,8 @@ export function Viewer({
   const ceilingRef = useRef(onScanCeiling);
   const cameraRef = useRef(camera);
   const cameraResultRef = useRef(onCameraResult);
+  const focusedSpaceRef = useRef(focusedSpaceId);
+  const focusedAnchorRef = useRef(focusedAnchor);
   const lastCamera = useRef('');
   const readyContent = useRef<SceneContent | null>(null);
   const [unsupported, setUnsupported] = useState<string | null>(null);
@@ -119,6 +132,20 @@ export function Viewer({
     )
       applyCamera(viewRef.current, content);
   }, [camera, onCameraResult, content, applyCamera]);
+
+  useEffect(() => {
+    focusedSpaceRef.current = focusedSpaceId;
+    if (focusedSpaceId != null) viewRef.current?.focusMember?.(focusedSpaceId);
+  }, [focusedSpaceId]);
+
+  useEffect(() => {
+    focusedAnchorRef.current = focusedAnchor;
+    if (focusedAnchor !== undefined) viewRef.current?.focusAnchor?.(focusedAnchor);
+  }, [focusedAnchor]);
+
+  useEffect(() => {
+    if (overviewRequest > 0) viewRef.current?.frameContent();
+  }, [overviewRequest]);
 
   // 场景在宿主元素挂上时创建一次（回调 ref，React 19 支持返回清理函数）。
   const attach = useCallback(
@@ -181,6 +208,8 @@ export function Viewer({
         host.dataset.sources = String(sceneSources(content).length);
         host.dataset.ready = 'true';
         readyContent.current = content;
+        if (focusedSpaceRef.current != null) view.focusMember?.(focusedSpaceRef.current);
+        if (focusedAnchorRef.current !== undefined) view.focusAnchor?.(focusedAnchorRef.current);
         applyCamera(view, content);
       })
       .catch((error: unknown) => {

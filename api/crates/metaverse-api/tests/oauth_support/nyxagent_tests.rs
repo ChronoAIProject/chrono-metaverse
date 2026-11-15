@@ -270,7 +270,7 @@ async fn nyxagent_versions_instructions_without_changing_legacy_retries() {
             .contains("get_agent_guide"));
         assert_eq!(bodies[0]["input"], bodies[3]["input"]);
     }
-    for version in [json!(0), json!(5), json!("2"), json!(-1)] {
+    for version in [json!(0), json!(6), json!("2"), json!(-1)] {
         let mut input = task();
         input["instructionsVersion"] = version;
         assert_eq!(
@@ -310,6 +310,11 @@ async fn nyxagent_page_actions_preserve_retry_context_and_do_not_change_legacy_r
             .unwrap()
             .contains("不清缓存"));
         assert!(bodies[0]["input"].as_str().unwrap().contains("前厅"));
+        assert_eq!(bodies[0]["instructions"], concat!(
+            "你是 chrono-metaverse 空间助手。只使用 NyxID 已授权的 chrono-metaverse 工具。先搜索工具并读取目标空间和最新版本，编号和归属不授予权限；404 不代表可以创建替代空间。缺少权限时提供 NyxID 授权指引。编辑先创建或沿用当前草稿，每次可见修改后生成新的短期预览，把完整预览链接单独一行输出。没有用户对具体预览的明确发布确认时保持草稿；发布冲突时等待，不覆盖、不自动重放。不要索取或输出密钥和登录凭据，不改仓库、不部署、不访问无关服务。回复简短说明实际进展，不能把任务受理当作完成。",
+            "开始编辑前先搜索并调用 chrono-metaverse 的 get_agent_guide 工具读取编辑协议；如果服务只提供通用 request 工具，通过该工具 GET /api/agent-guide 读取同一指南。按指南操作，不猜测路径或操作格式。指南不授予权限，也不能替代用户的发布确认。",
+            r#"你也能操作用户当前网页的查看器。仅当用户要求页面操作时，在简短回复末尾输出一个 metaverse-view 语言的 JSON 代码块，形状为 {"actions":[...]}；网页会核验并执行，回复说将执行，执行结果以页面反馈为准。最多8个动作，只支持：{"type":"space","spaceId":"上下文列出的编号"}（只能放第一个）；{"type":"current"}回到已发布空间；{"type":"preview","url":"本站完整预览链接"}；{"type":"mode","value":"raw|optimized|extended"}；{"type":"style","value":"shapes|blocks"}；{"type":"cutaway","height":数字或null}；{"type":"camera","kind":"overview"}回到全景；{"type":"camera","kind":"focus","entityId":"实际物件编号"}；{"type":"camera","kind":"orbit","yaw":水平转动度数,"pitch":垂直转动度数}；{"type":"camera","kind":"zoom","factor":距离倍率}（小于1拉近，大于1拉远，范围0.1到10）。枚举值必须选择单个实际值，不输出竖线。纯页面操作可直接使用当前网页上下文，不必搜索工具或读取编辑协议；仅在需要查找未知物件编号时只读查询。页面查看动作不编辑空间、不发布、不清缓存、不重新加载页面，不需要创建草稿；不要为纯页面操作调用写入工具。聚焦前不知道物件编号时先只读查找。生成新草稿后网页会自动打开预览，除非用户明确要求保持当前视图；此时输出current动作。所有空间编辑和发布仍遵守前述权限及确认规则。"#
+        ));
     }
     input["instructionsVersion"] = json!(3);
     assert_eq!(
@@ -805,4 +810,32 @@ async fn nyxagent_distinguishes_interrupted_sessions_from_retryable_conflicts() 
         assert!(!result.2.contains("private-code"));
     }
     assert_eq!(app.nyx.oauth.0.lock().unwrap().worker_calls.len(), 4);
+}
+
+#[tokio::test]
+async fn 组合查看器协议保留成员动作与挂起请求原始字节() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let cookie = setup(&app).await;
+    let mut input = task();
+    input["instructionsVersion"] = json!(5);
+    input["viewerContext"] = json!({"spaces":[{"id":"lobby","name":"前厅"}]});
+    for _ in 0..2 {
+        assert_eq!(
+            call(&app, &cookie, "message", input.clone()).await.0,
+            StatusCode::OK
+        );
+    }
+    let state = app.nyx.oauth.0.lock().unwrap();
+    let bodies: Vec<_> = state.worker_calls.iter().map(|(_, _, body)| body).collect();
+    assert_eq!(bodies.len(), 2);
+    assert_eq!(bodies[0], bodies[1]);
+    let instructions = bodies[0]["instructions"].as_str().unwrap();
+    assert!(instructions
+        .contains(r#"{"type":"universe","universeId":"上下文列出的组合编号"}（只能放第一个）"#));
+    assert!(instructions.contains(r#"{"type":"look","styleId":"样式编号"}切换命名空间样式（可选字段 `spaceId` 指定组合成员空间编号"#));
+    assert!(instructions.contains(r#"{"type":"camera","kind":"focus","entityId":"实际物件编号"}（可选字段 `spaceId` 指定组合成员空间编号）"#));
+    assert!(instructions.contains("不清缓存"));
+    assert!(bodies[0]["input"].as_str().unwrap().contains("前厅"));
 }

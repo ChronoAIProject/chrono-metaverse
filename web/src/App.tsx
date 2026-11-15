@@ -49,6 +49,15 @@ function useFragment(): string {
 }
 
 function Home({ showFixtureLink }: { readonly showFixtureLink: boolean }) {
+  const styles = [
+    ['raw-scan', '原始扫描', '#8394a8'],
+    ['arch-realistic', '写实建筑', '#d69c63'],
+    ['voxel-blocks', '体素方块', '#7fc4a7'],
+    ['maquette', '白模沙盘', '#f2eee6'],
+    ['blueprint', '工程蓝图', '#2489d8'],
+    ['night-neon', '夜景霓虹', '#9b76e6'],
+    ['minimal-office', '空间专属样式', '#e58b72'],
+  ] as const;
   return (
     <main className="home">
       <div className="home__card">
@@ -67,6 +76,30 @@ function Home({ showFixtureLink }: { readonly showFixtureLink: boolean }) {
         <a className="home__link home__link--quiet" href="/connect">
           连接 NyxID
         </a>
+        <section className="home__showcase" aria-labelledby="home-styles-title">
+          <h2 id="home-styles-title">一处空间 · 多重样式</h2>
+          <p>同一份空间基底，按展示、审阅和工程协作自由切换命名样式。</p>
+          <div className="home__style-grid">
+            {styles.map(([id, name, color]) => (
+              <a
+                key={name}
+                className="home__style-card"
+                href={
+                  showFixtureLink
+                    ? `${FIXTURE_LINK.split('#')[0]}?look=${id}#${FIXTURE_LINK.split('#')[1]}`
+                    : `/workspace?look=${id}`
+                }
+              >
+                <span className="home__style-swatch" style={{ background: color }} />
+                <span>{name}</span>
+              </a>
+            ))}
+          </div>
+        </section>
+        <section className="home__showcase" aria-labelledby="home-universe-title">
+          <h2 id="home-universe-title">多处空间 · 自由组合</h2>
+          <p>用独立样式或组合主题拼接多个空间，试排街角、展廊和合院，并通过门洞与传送门跳转。</p>
+        </section>
         {showFixtureLink && (
           <div className="home__links">
             <a className="home__link" href={FIXTURE_LINK}>

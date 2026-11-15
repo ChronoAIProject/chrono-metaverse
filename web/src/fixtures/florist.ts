@@ -1,4 +1,4 @@
-import type { Anchor, EntityBody, Region } from '../core/api/types';
+import type { Anchor, EntityBody, Region, SpaceStyleSpec } from '../core/api/types';
 import type { Shape } from '../core/shapes/types';
 import { shapeBounds } from '../core/shapes/build';
 import { MODELS, TEXTURES, bouquetShape } from './assets';
@@ -17,6 +17,31 @@ import { MODELS, TEXTURES, bouquetShape } from './assets';
 export const FLORIST_ID = 'demo-florist';
 export const FLORIST_NAME = '街角花店';
 export const FLORIST_SHARE_TOKEN = 'fixture-florist-token-fedcba9876543210';
+
+/** 街角花店的空间专属样式目录。 */
+export const floristStyles: readonly SpaceStyleSpec[] = [
+  {
+    id: 'spring-greenhouse',
+    name: '春日花房',
+    description: '鼠尾草绿与珊瑚暖调日光',
+    swatch: '#a7c4a0',
+    mode: 'optimized',
+    rebuiltStyle: 'shapes',
+    lighting: 'warm',
+    look: { structureColor: [214, 230, 210], tint: [234, 255, 228], roughness: 0.8 },
+  },
+  {
+    id: 'botanical-night',
+    name: '夜色花坊',
+    description: '静谧深蓝背景与柔光植物展陈',
+    swatch: '#345675',
+    mode: 'extended',
+    rebuiltStyle: 'shapes',
+    lighting: 'night',
+    backgroundColor: '#0d1d2b',
+    look: { tint: [173, 212, 230], metalness: 0.12, roughness: 0.45 },
+  },
+];
 
 export const floristRegions: Region[] = [
   { id: 'shop', kind: 'physical', name: '店内', boxes: [[0, 0, 0, 80, 60, 80]] },

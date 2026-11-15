@@ -36,6 +36,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 ] }
 ring = "0.17.14"
 serde = { version = "1", features = ["derive"] }
+serde_ignored = "0.1"
 # float_roundtrip：解析浮点数时精确舍入。默认的快速解析偶尔差 1 个 ulp，
 # 会让规范化 JSON 和内容哈希与其他语言不一致（SHAPES 5）。
 serde_json = { version = "1", features = ["float_roundtrip"] }

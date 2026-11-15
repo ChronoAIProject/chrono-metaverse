@@ -54,6 +54,49 @@ export interface Anchor {
 
 export type Layer = 'rebuilt' | 'ext';
 
+/** 空间样式在公开接口中的可序列化定义。字段缺省时由客户端使用默认样式。 */
+export interface SpaceStyleLook {
+  readonly stripTextures?: boolean;
+  readonly structureColor?: readonly [number, number, number];
+  readonly objectColor?: readonly [number, number, number];
+  readonly tint?: readonly [number, number, number];
+  readonly roughness?: number;
+  readonly metalness?: number;
+  readonly opacity?: number;
+  readonly wireframe?: boolean;
+  readonly unlit?: boolean;
+  readonly edgeColor?: string;
+}
+
+export type LightingPreset = 'daylight' | 'warm' | 'night' | 'studio' | 'blueprint';
+export type StyleLayer = 'scan' | 'rebuilt' | 'ext';
+
+/** 样式扩展使用普通 `JSON` 值，允许嵌套结构；服务端校验键名、有限数值与容量。 */
+export type StyleExtensionValue =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly StyleExtensionValue[]
+  | { readonly [key: string]: StyleExtensionValue };
+
+export type StyleExtensions = Readonly<Record<string, StyleExtensionValue>>;
+
+export interface SpaceStyleSpec {
+  readonly id: string;
+  readonly name: string;
+  readonly description?: string;
+  readonly swatch?: string;
+  readonly mode?: 'raw' | 'optimized' | 'extended';
+  readonly rebuiltStyle?: 'shapes' | 'blocks';
+  readonly visibleLayers?: readonly StyleLayer[];
+  readonly filterKinds?: readonly ('structure' | 'object')[];
+  readonly lighting?: LightingPreset;
+  readonly backgroundColor?: string;
+  readonly look?: SpaceStyleLook;
+  readonly extensions?: StyleExtensions;
+}
+
 /** 物件记录的 body（docs/SHAPES.md 第 3 节）。模板也是物件，`kind: "template"`。 */
 export interface EntityBody {
   readonly entityId: string;
@@ -167,6 +210,8 @@ export interface Snapshot {
   readonly regions: readonly Region[];
   readonly plots: readonly Plot[];
   readonly scan?: ScanRef | null;
+  readonly styles?: readonly SpaceStyleSpec[];
+  readonly defaultStyleId?: string;
 }
 
 export type EventDisplayKind = 'highlight' | 'icon' | 'label' | 'path' | 'spawnEntity' | 'heat';
@@ -208,6 +253,8 @@ export interface SpaceInfo {
   readonly head?: Head;
   /** 公开的事件类型及显示规则（只读查看器据此可视化事件）。 */
   readonly eventTypes?: readonly EventTypeDef[];
+  readonly styles?: readonly SpaceStyleSpec[];
+  readonly defaultStyleId?: string;
 }
 
 /** 提交列表的公开投影（设计 8.2 数据投影规则）。 */
@@ -303,6 +350,7 @@ export interface UniverseMember {
   readonly seq?: number | null;
   /** 成员空间的名称（可选，没有时查看器再取 `GET /spaces/{id}?universe=`）。 */
   readonly name?: string;
+  readonly styleId?: string;
 }
 
 export interface UniverseLink {
@@ -323,6 +371,7 @@ export interface UniverseView {
   readonly at: Timestamp;
   readonly members: readonly UniverseMember[];
   readonly links: readonly UniverseLink[];
+  readonly themeId?: string;
 }
 
 export interface UniverseRevision {
@@ -333,6 +382,7 @@ export interface UniverseRevision {
   readonly state: {
     readonly members: readonly UniverseMember[];
     readonly links: readonly UniverseLink[];
+    readonly themeId?: string;
   };
 }
 

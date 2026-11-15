@@ -66,6 +66,8 @@ pub async fn get_public_space(
     } else {
         space.regions.clear();
         space.plots.clear();
+        space.styles.clear();
+        space.default_style_id = None;
         Vec::new()
     };
     let created_at = space.created_at;

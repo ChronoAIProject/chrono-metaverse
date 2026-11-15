@@ -8,8 +8,10 @@ import type {
   Region,
   ScanRef,
   Snapshot,
+  SpaceStyleSpec,
   UniverseLink,
 } from './api/types';
+import type { SpaceStyle, StyleLook, LightingPreset } from './styles';
 import type { PublicClient } from './api/client';
 import { GRID_UNIT } from './chunk';
 import type { TemplateTable, Vec3 } from './shapes/types';
@@ -32,6 +34,9 @@ export interface SceneDocument {
   readonly palette: Palette;
   readonly chunks: readonly LayerChunk[];
   readonly scan?: ScanRef | null;
+  /** 空间可用的命名样式目录。 */
+  readonly styles?: readonly SpaceStyleSpec[];
+  readonly defaultStyleId?: string;
 }
 
 /** 同时下载的区块数上限。 */
@@ -89,6 +94,8 @@ export async function loadScene(
     palette: snapshot.palette ?? { blocks: [] },
     chunks,
     scan: snapshot.scan ?? null,
+    styles: snapshot.styles,
+    defaultStyleId: snapshot.defaultStyleId,
   };
 }
 
@@ -243,6 +250,14 @@ export interface ViewContent {
    * 没有定义实体区时为空，取景就用全部内容。
    */
   readonly frameBoxes: readonly GridBox[];
+  /** 当前命名样式及其派生外观；旧调用不提供时保持空值。 */
+  readonly styleId?: string;
+  readonly styleLook?: StyleLook;
+  /** 当前样式的公开扩展元数据，不参与几何选择或材质缓存。 */
+  readonly extensions?: SpaceStyle['extensions'];
+  readonly lighting?: LightingPreset;
+  readonly backgroundColor?: string;
+  readonly visibleLayers?: SpaceStyle['visibleLayers'];
 }
 
 /** 视图里有没有可画的内容（物件或方块）。 */
@@ -272,14 +287,61 @@ export function selectView(
   scene: SceneDocument,
   mode: ViewMode,
   style: RebuiltStyle = 'shapes',
+  visibleLayers?: SpaceStyle['visibleLayers'],
+  filterKinds?: SpaceStyle['filterKinds'],
 ): ViewContent {
   const templates = templatesOf(scene.entities);
   const anchors = scene.anchors.filter((a) => a.visibility !== 'internal');
   const palette = scene.palette;
+  const drawableEntities = scene.entities.filter(
+    (entity) =>
+      isDrawable(entity) &&
+      (!filterKinds || (entity.kind !== 'template' && filterKinds.includes(entity.kind))),
+  );
   const physical = scene.regions.filter((r) => r.kind === 'physical');
   const physicalBoxes = physical.flatMap((r) => r.boxes);
   const anchoredOf = (entities: readonly EntityBody[]) =>
     entities.filter((e) => e.anchorId !== undefined && e.bounds !== undefined);
+  if (visibleLayers !== undefined) {
+    const scanSelected = visibleLayers.includes('scan');
+    const hasScan = (scene.scan?.webModelHashes.length ?? 0) > 0;
+    const choice = visibleLayers.includes('rebuilt') && hasStyleChoice(scene) ? style : null;
+    const drawable = drawableEntities.filter((entity) => visibleLayers.includes(entity.layer));
+    const chunks = scene.chunks.filter(
+      (chunk) =>
+        visibleLayers.includes(chunk.layer) && !(choice === 'shapes' && chunk.layer === 'rebuilt'),
+    );
+    const virtualRegions = visibleLayers.includes('ext')
+      ? foregroundRegions({ ...scene, entities: drawable, chunks }).filter(
+          (region) => region.kind === 'virtual',
+        )
+      : [];
+    const physicalVisible =
+      scanSelected ||
+      visibleLayers.includes('rebuilt') ||
+      drawable.some(
+        (entity) =>
+          !isBackgroundEntity(entity) && entityRegionKind(entity, scene.regions) === 'physical',
+      ) ||
+      chunks.some((chunk) => physicalBoxes.some((box) => chunkTouchesBox(chunk, box)));
+    return {
+      mode,
+      showScan: scanSelected && hasScan,
+      visibleLayers,
+      scanMissing: scanSelected && !hasScan,
+      entities: drawable.filter((entity) => !(choice === 'blocks' && entity.layer === 'rebuilt')),
+      templates,
+      voxels: { chunks, keepBoxes: null, palette },
+      virtualRegions,
+      anchors,
+      style: choice,
+      anchored: anchoredOf(drawable),
+      frameBoxes: [
+        ...(physicalVisible ? physicalBoxes : []),
+        ...virtualRegions.flatMap((region) => region.boxes),
+      ],
+    };
+  }
   if (mode === 'raw') {
     const hasScan = (scene.scan?.webModelHashes.length ?? 0) > 0;
     return {
@@ -292,7 +354,7 @@ export function selectView(
       virtualRegions: [],
       anchors,
       style: null,
-      anchored: anchoredOf(scene.entities.filter(isDrawable)),
+      anchored: anchoredOf(drawableEntities),
       frameBoxes: physicalBoxes,
     };
   }
@@ -300,7 +362,7 @@ export function selectView(
   const choice = hasStyleChoice(scene) ? style : null;
   const keepEntity = (e: EntityBody) => !(choice === 'blocks' && e.layer === 'rebuilt');
   const keepChunk = (c: LayerChunk) => !(choice === 'shapes' && c.layer === 'rebuilt');
-  const drawable = scene.entities.filter(isDrawable);
+  const drawable = drawableEntities;
   const styledChunks = scene.chunks.filter(keepChunk);
   if (mode === 'extended') {
     const virtualRegions = foregroundRegions(scene).filter((r) => r.kind === 'virtual');
@@ -341,6 +403,32 @@ export function selectView(
     style: choice,
     anchored: anchoredOf(inPhysical),
     frameBoxes: physicalBoxes,
+  };
+}
+
+/** 按命名样式取视图；底层 `selectView` 仍保留原有 `mode`/`style` 调用契约。 */
+export function selectViewForStyle(
+  scene: SceneDocument,
+  spaceStyle: SpaceStyle,
+  modeOverride?: ViewMode,
+): ViewContent {
+  // 显式模式覆盖采用旧投影；命名样式自身的图层选择在释放覆盖后恢复。
+  const selected = selectView(
+    scene,
+    modeOverride ?? spaceStyle.mode,
+    spaceStyle.rebuiltStyle ?? 'shapes',
+    modeOverride === undefined ? spaceStyle.visibleLayers : undefined,
+    spaceStyle.filterKinds,
+  );
+  return {
+    ...selected,
+    styleId: spaceStyle.id,
+    styleLook: spaceStyle.look,
+    ...(spaceStyle.extensions && Object.keys(spaceStyle.extensions).length > 0
+      ? { extensions: spaceStyle.extensions }
+      : {}),
+    lighting: spaceStyle.lighting,
+    backgroundColor: spaceStyle.backgroundColor,
   };
 }
 
@@ -401,6 +489,10 @@ export interface MemberContent {
   readonly scan?: ArrayBuffer | null;
   readonly scanTransform?: readonly number[];
   readonly placement: Placement;
+  readonly styleId?: string;
+  readonly styleLook?: StyleLook;
+  readonly lighting?: LightingPreset;
+  readonly backgroundColor?: string;
 }
 
 /** 三维场景的全部内容：单个空间就是一个零摆放的成员；组合页有多个成员和连接。 */

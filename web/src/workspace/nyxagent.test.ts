@@ -212,16 +212,22 @@ it('恢复请求仍绑定原响应和会话', async () => {
   ).rejects.toThrow('原请求不一致');
 });
 
-it.each([undefined, 1, 2, 3] as const)(
-  '聊天隔离并原样保留协议版本 %s 的重试正文',
-  (instructionsVersion) => {
+it.each([undefined, 1, 2, 3, 4, 5] as const)(
+  '聊天隔离并原样保存和发送协议版本 `%s` 的重试正文',
+  async (instructionsVersion) => {
     const note = {
       instruction: '',
       messages: [{ role: 'user' as const, text: pending.body.instruction }],
       conversationId: 'conv_test',
       pending: {
         ...pending,
-        body: { ...pending.body, ...(instructionsVersion ? { instructionsVersion } : {}) },
+        body: {
+          ...pending.body,
+          ...(instructionsVersion ? { instructionsVersion } : {}),
+          ...(instructionsVersion && instructionsVersion >= 4
+            ? { viewerContext: { spaces: [{ id: 'lobby', name: '前厅' }] } }
+            : {}),
+        },
       },
     };
     saveNyxagentNote('alice', 'lobby', note);
@@ -230,6 +236,16 @@ it.each([undefined, 1, 2, 3] as const)(
     expect(readNyxagentNote('alice', 'garden')).toEqual(emptyNyxagentNote());
     expect(readNyxagentNote('alice', 'lobby', 'another-org')).toEqual(emptyNyxagentNote());
     expect(JSON.stringify(note)).not.toContain(credential);
+    const request = vi.fn<typeof fetch>(async () =>
+      stream(frame('response.completed', { response: completed })),
+    );
+    const restored = readNyxagentNote('alice', 'lobby').pending!;
+    for (let attempt = 0; attempt < 2; attempt++)
+      await streamNyxagent(session, restored, new AbortController().signal, vi.fn(), request);
+    expect(request.mock.calls.map(([, init]) => init?.body)).toEqual([
+      JSON.stringify(note.pending.body),
+      JSON.stringify(note.pending.body),
+    ]);
   },
 );
 

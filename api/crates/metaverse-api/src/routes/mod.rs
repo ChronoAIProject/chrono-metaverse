@@ -6,7 +6,7 @@
 //!
 //! 索引建好之前，除健康检查和 OpenAPI 外一律返回 503。
 
-use std::time::Duration;
+use std::{collections::BTreeMap, time::Duration};
 
 use axum::{
     extract::{DefaultBodyLimit, FromRequest, Request, State},
@@ -65,6 +65,48 @@ const X_REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
 #[derive(FromRequest)]
 #[from_request(via(axum::Json), rejection(ApiError))]
 pub struct ApiJson<T>(pub T);
+
+type StyleInputFields = BTreeMap<String, Box<serde_json::value::RawValue>>;
+
+/// 只校验新增样式字段，既有字段仍交给原请求类型处理。
+pub trait StyleRequest {
+    fn validate_style_fields(fields: &StyleInputFields) -> Result<(), ApiError>;
+}
+
+/// 在请求类型反序列化前校验样式片段，避免上游英文错误进入中文说明。
+pub struct StyleJson<T>(pub T);
+
+impl<S, T> FromRequest<S> for StyleJson<T>
+where
+    S: Send + Sync,
+    T: serde::de::DeserializeOwned + StyleRequest,
+{
+    type Rejection = ApiError;
+
+    async fn from_request(request: Request, state: &S) -> Result<Self, Self::Rejection> {
+        let axum::Json(raw) =
+            axum::Json::<Box<serde_json::value::RawValue>>::from_request(request, state).await?;
+        if let Ok(fields) = serde_json::from_str::<StyleInputFields>(raw.get()) {
+            T::validate_style_fields(&fields)?;
+        }
+        let axum::Json(value) = axum::Json::<T>::from_bytes(raw.get().as_bytes())?;
+        Ok(Self(value))
+    }
+}
+
+fn validate_style_id(
+    raw: Option<&serde_json::value::RawValue>,
+    field: &str,
+) -> Result<(), ApiError> {
+    if let Some(raw) = raw {
+        let id: Option<String> = serde_json::from_str(raw.get())
+            .map_err(|_| ApiError::invalid(format!("`{field}` 必须是字符串或空值")))?;
+        if id.is_some_and(|id| !id.is_empty() && !metaverse_core::ids::is_object_id(&id)) {
+            return Err(ApiError::invalid(format!("`{field}` 的编号不合法")));
+        }
+    }
+    Ok(())
+}
 
 async fn require_ready(State(state): State<AppState>, request: Request, next: Next) -> Response {
     if state.is_ready() {
@@ -239,4 +281,15 @@ pub fn router(state: AppState) -> Router {
         }))
         .layer(PropagateRequestIdLayer::new(X_REQUEST_ID))
         .layer(SetRequestIdLayer::new(X_REQUEST_ID, MakeRequestUuid))
+}
+
+/// `PATCH` 字段省略时保留原值；`null` 和空字符串清除该值。
+pub(crate) fn deserialize_optional_nullable_string<'de, D>(
+    deserializer: D,
+) -> Result<Option<Option<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = <Option<String> as serde::Deserialize>::deserialize(deserializer)?;
+    Ok(Some(value.filter(|value| !value.is_empty())))
 }

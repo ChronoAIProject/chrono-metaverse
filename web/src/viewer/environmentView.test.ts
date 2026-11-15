@@ -77,3 +77,50 @@ it('组合旋转作用于天空副本，释放环境不释放共享资源', asyn
   expect(disposeSky).toHaveBeenCalledOnce();
   expect(disposeShared).not.toHaveBeenCalled();
 });
+
+it('地图与天空在样式色往返时复用环境资源，移除图层后完整清理', async () => {
+  const scene = new THREE.Scene();
+  const host = document.createElement('div');
+  const view = new EnvironmentView(scene, host, async () => new THREE.Texture());
+  const withMap: EntityBody = {
+    ...entity,
+    props: {
+      background: true,
+      environment: {
+        version: 1,
+        sky: { texture: hash, yaw: 20 },
+        map: {
+          latitude: 35,
+          longitude: -120,
+          origin: [0, 0, 0],
+          sources: [
+            {
+              urlTemplate: 'https://maps.example.org/{z}/{x}/{y}.jpg',
+              attribution: '示例地图',
+              page: 'https://maps.example.org/',
+              minZoom: 0,
+              maxZoom: 18,
+            },
+          ],
+        },
+      },
+    },
+  };
+  view.setContent(content([withMap]));
+  await Promise.resolve();
+  const sky = scene.background;
+  const map = scene.getObjectByName('geographic-map');
+  expect(view.hasMap).toBe(true);
+  view.setContent(content([withMap]), '#090b14');
+  expect((scene.background as THREE.Color).getHexString()).toBe('090b14');
+  expect(host.dataset.sky).toBe('ready');
+  expect(scene.getObjectByName('geographic-map')).toBe(map);
+  view.setContent(content([withMap]));
+  expect(scene.background).toBe(sky);
+  expect(scene.getObjectByName('geographic-map')).toBe(map);
+  view.setContent(content([]), '#0c192c');
+  expect((scene.background as THREE.Color).getHexString()).toBe('0c192c');
+  expect(view.hasMap).toBe(false);
+  expect(host.dataset.sky).toBeUndefined();
+  view.dispose();
+});

@@ -311,6 +311,64 @@ mod tests {
     }
 
     #[test]
+    fn 样式读写契约公开图层枚举与类别过滤() {
+        let document = full_document();
+        let schemas = &document["components"]["schemas"];
+        assert_eq!(
+            schemas["StyleLayer"]["enum"],
+            serde_json::json!(["scan", "rebuilt", "ext"])
+        );
+        assert_eq!(
+            schemas["StyleEntityKind"]["enum"],
+            serde_json::json!(["structure", "object"])
+        );
+        let style = &schemas["SpaceStyleSpec"]["properties"];
+        assert!(style["visibleLayers"].to_string().contains("StyleLayer"));
+        assert!(style["filterKinds"].to_string().contains("StyleEntityKind"));
+        for name in [
+            "SpaceView",
+            "PublicSpaceView",
+            "SnapshotView",
+            "UpdateSpaceRequest",
+        ] {
+            assert!(
+                schemas[name]["properties"]["styles"]
+                    .to_string()
+                    .contains("SpaceStyleSpec"),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn 样式扩展契约为可省略的任意结构对象并记录容量边界() {
+        let document = full_document();
+        let schemas = &document["components"]["schemas"];
+        let style = &schemas["SpaceStyleSpec"];
+        let extensions = &style["properties"]["extensions"];
+        assert_eq!(extensions["type"], "object");
+        assert_eq!(extensions["additionalProperties"], serde_json::json!({}));
+        assert!(!style["required"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("extensions")));
+        let description = extensions["description"].as_str().unwrap();
+        for boundary in ["16384", "256", "128", "9007199254740991"] {
+            assert!(description.contains(boundary));
+        }
+        for name in [
+            "SpaceView",
+            "PublicSpaceView",
+            "SnapshotView",
+            "UpdateSpaceRequest",
+        ] {
+            assert!(schemas[name]["properties"]["styles"]
+                .to_string()
+                .contains("SpaceStyleSpec"));
+        }
+    }
+
+    #[test]
     fn every_operation_id_is_lower_snake_case() {
         let all = operations(&full_document());
         assert!(all.len() >= 4);

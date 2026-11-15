@@ -36,7 +36,7 @@ import { AgentKeyConnection } from '../auth/AgentKeyConnection';
 import { readAuthMethod, saveAuthMethod, type CmaAuthMethod } from '../auth/cmaConnection';
 import { useFloatingChat } from './useFloatingChat';
 import { NyxAgentPanel } from './NyxAgentPanel';
-import type { ViewerCommand } from './viewerActions';
+import { setPendingViewerCommand, type ViewerCommand } from './viewerActions';
 
 type PreviewIdentity = {
   spaceId: string;
@@ -944,6 +944,18 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
         return;
       }
       openSpace(target.id, target.owner.kind === 'org' ? target.owner.id : undefined, true);
+    }
+    const universe = command.actions.find((a) => a.type === 'universe');
+    if (universe?.type === 'universe') {
+      if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(universe.universeId)) {
+        setViewerFeedback({ error: '组合编号格式不正确。' });
+        return;
+      }
+      setPendingViewerCommand({ id: command.id, actions: command.actions.slice(1) });
+      appliedViewerCommands.current.add(key);
+      window.history.pushState(null, '', `/u/${encodeURIComponent(universe.universeId)}`);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+      return;
     }
     appliedViewerCommands.current.add(key);
     if (appliedViewerCommands.current.size > 50)

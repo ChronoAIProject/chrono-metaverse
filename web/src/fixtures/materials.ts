@@ -1,4 +1,4 @@
-import type { Anchor, CommitSummary, EntityBody, Region } from '../core/api/types';
+import type { Anchor, CommitSummary, EntityBody, Region, SpaceStyleSpec } from '../core/api/types';
 import type { Material, Shape } from '../core/shapes/types';
 import { CRATE_SIZE, MODELS, TEXTURES } from './assets';
 
@@ -20,6 +20,25 @@ import { CRATE_SIZE, MODELS, TEXTURES } from './assets';
 export const MATERIALS_ID = 'demo-materials';
 export const MATERIALS_NAME = '材质样板';
 export const MATERIALS_SHARE_TOKEN = 'fixture-materials-token-13579bdf2468ace0';
+
+/** 材质样板的空间专属审阅样式。 */
+export const materialsStyles: readonly SpaceStyleSpec[] = [
+  {
+    id: 'studio-clay',
+    name: '素模审阅',
+    description: '高漫反射工作室灰模',
+    swatch: '#aeb4bd',
+    mode: 'optimized',
+    rebuiltStyle: 'shapes',
+    lighting: 'studio',
+    look: {
+      stripTextures: true,
+      structureColor: [186, 190, 198],
+      objectColor: [145, 151, 163],
+      roughness: 0.96,
+    },
+  },
+];
 
 export const materialsRegions: Region[] = [
   { id: 'room', kind: 'physical', name: '样板间', boxes: [[-4, 0, -4, 124, 60, 84]] },

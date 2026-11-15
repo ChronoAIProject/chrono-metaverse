@@ -23,8 +23,10 @@ const SHOTS = join(import.meta.dirname, 'screenshots');
 const LINK = '/s/demo-lobby#share=fixture-share-token-0123456789abcdef';
 const UNIVERSE = '/u/demo-street#share=fixture-universe-token-00112233445566778899';
 const PREVIEW = '/preview#t=fixture-preview-token-aabbccddeeff00112233445566778899';
-const FLORIST = '/s/demo-florist#share=fixture-florist-token-fedcba9876543210';
-const MATERIALS = '/s/demo-materials#share=fixture-materials-token-13579bdf2468ace0';
+// 材质断言检查原始颜色和贴图，因此显式选择不覆盖材质的样式。
+const FLORIST = '/s/demo-florist?look=arch-realistic#share=fixture-florist-token-fedcba9876543210';
+const MATERIALS =
+  '/s/demo-materials?look=arch-realistic#share=fixture-materials-token-13579bdf2468ace0';
 
 function watchErrors(page: Page): string[] {
   const errors: string[] = [];
