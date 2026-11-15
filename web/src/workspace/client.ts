@@ -209,18 +209,18 @@ export function saveNotebook(subject: string, value: Notebook) {
   if (value.spaceId)
     sessionStorage.setItem(`metaverse-worker:${subject}:space:${value.spaceId}`, text);
 }
-/** Only this application's viewer routes may be embedded. Never render arbitrary worker HTML. */
+/** 只允许嵌入本站查看路由，输出时编码 HTML 元字符。 */
 export function viewerLink(value: string, origin = window.location.origin): string | null {
   try {
     const u = new URL(value, origin);
     if (u.origin !== origin || u.username || u.password || u.search) return null;
     if (u.pathname === '/preview' && /^#t=[A-Za-z0-9_-]{1,256}$/.test(u.hash))
-      return u.pathname + u.hash;
+      return encodeURI(u.pathname + u.hash);
     if (
       /^\/(s|u)\/[a-z0-9][a-z0-9-]{0,79}$/.test(u.pathname) &&
       (u.hash === '' || /^#share=[A-Za-z0-9_-]{1,256}$/.test(u.hash))
     )
-      return u.pathname + u.hash;
+      return encodeURI(u.pathname + u.hash);
     return null;
   } catch {
     return null;
