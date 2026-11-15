@@ -207,9 +207,18 @@ pub async fn get_public_head(
     Query(query): Query<UniverseParam>,
     headers: super::public_access::ViewerHeaders,
 ) -> Result<Response, ApiError> {
-    let (grant, head) = if let Some(grant) =
-        headers.browser_grant(&space_id, query.universe.as_deref())?
+    let (grant, head) = if headers
+        .browser_grant(&space_id, query.universe.as_deref())?
+        .is_some()
     {
+        let grant = public_space_grant(
+            &state,
+            &space_id,
+            &headers,
+            query.universe.as_deref(),
+            crate::now()?,
+        )
+        .await?;
         let head = head_data(&state, &grant).await?;
         (grant, head)
     } else {

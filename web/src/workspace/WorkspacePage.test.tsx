@@ -428,6 +428,7 @@ it('only embeds same-origin viewer routes and extracts links from assistant resu
 it('creates from a Scaniverse link with an automatic space id and selected owner', async () => {
   const api = mockApi();
   render(<WorkspacePage request={api.request} />);
+  await userEvent.click(await screen.findByRole('button', { name: '选择空间' }));
   await userEvent.click(await screen.findByRole('button', { name: '创建空间' }));
   expect(screen.getByRole('dialog', { name: 'CMA 空间聊天' })).toBeVisible();
   expect(screen.queryByLabelText('目标空间编号')).toBeNull();

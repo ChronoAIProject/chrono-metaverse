@@ -48,7 +48,11 @@ vi.mock('./NyxAgentPanel', () => ({
 }));
 vi.mock('../space/SpacePage', async (importOriginal) => {
   const original = await importOriginal<typeof import('../space/SpacePage')>();
-  return { ...original, SpacePage: () => <div>工作台查看器</div> };
+  return {
+    ...original,
+    SpacePage: (props: import('../space/SpacePage').SpacePageProps) =>
+      props.embedded ? <div>工作台查看器</div> : <original.SpacePage {...props} />,
+  };
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -125,16 +129,20 @@ it.each(['成员样式', '全局样式'] as const)(
         name: scope === '成员样式' ? '应用组合动作' : '应用全局样式动作',
       }),
     );
-    await waitFor(() => expect(window.location.pathname).toBe('/u/demo-street'));
+    await waitFor(() => expect(window.location.pathname).toBe('/s/demo-street'));
     await waitFor(() => expect(camera).toHaveBeenCalledOnce());
     expect(camera.mock.calls[0]).toBeDefined();
     const members = s.views[0]!.last().members;
     if (scope === '成员样式') {
-      expect(members.find((member) => member.spaceId === SPACE_ID)!.view).toMatchObject({
+      expect(
+        members.find((member) => member.spaceId === `${UNIVERSE_ID}/${SPACE_ID}`)!.view,
+      ).toMatchObject({
         mode: 'optimized',
         style: 'blocks',
       });
-      expect(members.find((member) => member.spaceId !== SPACE_ID)!.view).toMatchObject({
+      expect(
+        members.find((member) => member.spaceId !== `${UNIVERSE_ID}/${SPACE_ID}`)!.view,
+      ).toMatchObject({
         mode: 'optimized',
         style: 'shapes',
       });
@@ -147,6 +155,7 @@ it.each(['成员样式', '全局样式'] as const)(
             member.view.style === 'shapes',
         ),
       ).toBe(true);
+      fireEvent.click(screen.getByRole('button', { name: '显示设置' }));
       fireEvent.click(screen.getByRole('button', { name: '体素方块世界' }));
       await waitFor(() =>
         expect(
@@ -156,7 +165,9 @@ it.each(['成员样式', '全局样式'] as const)(
       fireEvent.click(screen.getByRole('button', { name: '各自独立' }));
       await waitFor(() =>
         expect(
-          s.views[0]!.last().members.find((member) => member.spaceId === SPACE_ID)!.view.styleId,
+          s.views[0]!.last().members.find(
+            (member) => member.spaceId === `${UNIVERSE_ID}/${SPACE_ID}`,
+          )!.view.styleId,
         ).toBe('arch-realistic'),
       );
     }

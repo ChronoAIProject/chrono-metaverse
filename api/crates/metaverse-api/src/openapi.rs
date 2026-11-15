@@ -35,6 +35,11 @@ use utoipa::{
         serve,
         agent_guide,
         crate::routes::spaces::get_space,
+        crate::routes::composition::get_scene,
+        crate::routes::composition::get_composition,
+        crate::routes::composition::update_composition,
+        crate::routes::composition::join_child,
+        crate::routes::composition::leave_child,
         crate::routes::admin_spaces::create_space,
         crate::routes::public_spaces::get_public_space,
         // 上传、任务、事件、组合

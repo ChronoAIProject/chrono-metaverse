@@ -77,7 +77,7 @@
 | 术语 | 含义 |
 |---|---|
 | **网格** | 全系统统一的定位网格，单位 `GRID_UNIT` 按真实物体尺度定为 5 厘米（约为一把椅子宽度的 1/9），所有空间共用，上线后不可改。网格只用于定位、区域和地块边界、锚点吸附和占用索引；模型几何用连续坐标，不吸附到网格 |
-| **一条时间线** | 全局唯一的时间轴。所有空间提交、组合修订和事件都按服务端时间 `at` 排在上面；各空间、各组合的序号 `seq` 只用于存储分区和并发控制，不是独立的时间线 |
+| **一条时间线** | 全局唯一的时间轴。所有空间提交、组合修订和事件都按服务端时间 `at` 排在上面；各空间的序号 `seq` 只用于存储分区和并发控制，不是独立的时间线 |
 | 空间 | 一个独立的方块世界，有自己的坐标系和方块表 |
 | 实体区 / 虚拟区 | 空间里与现实对应、由扫描生成的部分 / 现实中不存在的扩展部分 |
 | 地块 | 虚拟区内划出的一块范围，可以单独授权 |
@@ -92,7 +92,7 @@
 | agent key | NyxID 签发给某个 agent 的凭证（`nyxid_ag_` 开头），只保存在 agent 本机；能做什么由人在 NyxID 里配置的操作范围决定 |
 | 操作范围 | NyxID 对 agent key 的限制：允许哪些接口、路径参数和请求体字段取什么值 |
 | 分享令牌 | 打开"凭链接查看"的空间时用的随机令牌 |
-| 组合宇宙 | 引用多个空间并规定它们的摆放方式 |
+| 空间组合 | 普通空间引用子空间并规定其摆放方式 |
 
 ---
 
@@ -144,6 +144,7 @@ spaces {
   shareTokens: [ { id, hash, createdAt, revokedAt } ]   // 至少 128 位随机数，只存哈希，可轮换、可吊销
   frame: { fixedAt, referenceScan } // 坐标系：首次导入扫描时固定，之后不变
   head: { seq, at, commitId }      // 时间线最新位置
+  compositionEnabled, members, links, themeId?, invitations  // 子空间组合当前状态（4.5）
   regions, plots                   // 当前状态（只作读缓存；历史在提交里，见 5.2）
   storageLimitBytes, storageUsedBytes
   createdAt
@@ -208,24 +209,18 @@ entities / anchors（当前状态，只作 head 的读缓存）
 - **锚点类型**：`table`、`seat`、`zone`、`door`、`camera`、`counter`、`space` 是固定的通用词表（现实接入用），不是某个场景专用；加一种类型算协议变更，按"先能读、再去写"分两次发布。
 - **自定义属性**：物件的 `props` 是不透明的键值。网站只在点选物件时，在信息面板里按纯文本列出（保留键 `label` 作为悬浮标签），不做其他解释。例外是 `props.source` 为对象时：它是外部模型的署名（库、编号、来源页、作者、许可、标题），服务端按结构校验、只收可商用不传染的许可（署名内容是写入方的声明，服务端只校验格式），网站在画面底边的署名行（有 CC-BY 模型时常驻）、模型来源面板和信息面板里显示。
 
-### 4.5 组合宇宙
+### 4.5 空间原生组合
 
-```
-universes { _id, name, owner: { kind: person | org, id }, visibility: unlisted | public, shareTokens,
-            head: { seq, at },
-            members: [ { spaceId, offset: [x,y,z], rotation: 0|90|180|270 } ],
-            links:   [ { from: {spaceId, anchorId}, to: {spaceId, anchorId}, kind: door|portal|street } ] }
-universeRevisions { universeId, seq, at, actor, message, state: { members, links } }
-```
+普通 `spaces` 同时拥有自身内容与 `members` 子空间引用、`links` 公开锚点连接、`themeId` 和 `invitations`。不再单独存储 Universe，也不再有另一条修订序列。兼容接口内部仍沿用 Universe 类型名。
 
-- **摆放**：`offset` 以格为单位；`rotation` 绕 y 轴、以成员空间原点为轴心，先旋转再平移。所有空间共用同一个格子尺寸，所以网格天然对齐。
-- **修订**：每次修订都存完整的新状态（体积很小），查 T 时刻的组合只需取 `at ≤ T` 的最后一条修订。
-- **写入规则**：与空间提交相同（5.2、5.7）。
-  - 修订的 `at` 由服务端赋值 = max(当前时间, head.at)，随 seq 单调不减，调用方不能指定。
-  - 在一个事务里插入修订（`(universeId, seq)` 唯一），并按 `head.seq == 旧值` 条件推进 `universes.head`。
-  - 调用方用 `baseSeq` 或 `If-Match` 说明自己基于哪个修订，组合已变就返回 409。
-- **连接**：`kind` 只决定外观。网站在两端锚点画连接标识，点击后镜头飞到另一端；画跨空间路线时，连接两端作为途经点。不涉及化身或移动。
-- **权限与可见性**：见第 12 节。
+- **摆放**：子空间 `offset` 以格为单位，`rotation` 为绕 y 轴的 0/90/180/270 度；局部坐标先旋转再平移，逐层累计。根空间自身的内容也参加渲染。
+- **历史**：组合变化存入普通 `commits.composition = {members, links, themeId?}`，省略表示沿用原状态；关键帧和快照保留组合状态。模型编辑与组合编辑共用 `head.seq`，时间为 `max(现在, head.at)`。
+- **并发**：写入在同一个事务中新增提交、按旧 `head.seq` 推进空间、核对全图版本栅栏，防止并发反向加入形成环。`baseSeq` 或 `If-Match` 不匹配返回 409。
+- **嵌套**：允许共享后代，禁止直接或间接自引用；最多嵌套 8 层、展开 256 个实例。查看结果以实例路径区分同源空间的多次摆放。
+- **连接与权限**：连接两端可为本空间或直接子空间的公开锚点。加入须获子空间管理者同意；分享授权沿路径逐层核验，成员期取交集，退出后只开放授权期间的历史。
+- **迁移与兼容**：启动时事务迁移旧 `universes` / `universeRevisions` 至 `spaces` / `commits`，保留旧集合并标记，支持重复执行。编号冲突时阻止启动并说明冲突；旧 API 继续操作同一份原生空间状态。查看链接统一为 `/s/`，旧 `/u/` 自动进入同一查看器并保留查询和分享片段。
+
+详细接口、菜单和验收约定见 [空间原生组合与查看菜单](design/space-composition.md)。
 
 ---
 
@@ -256,6 +251,7 @@ commits {
   changedEntities: [ { id, hash|null } ],
   changedAnchors:  [ { id, hash|null } ],
   regionsHash?, paletteHash?, scan?: { assetHash, webModelHashes, transform, alignment? },   // alignment 是本地工具写的对齐信息，原样保存，只在 /api/v1 返回
+  composition?: { members, links, themeId? }, // 本次变化后的子空间完整状态，省略则沿用
   keyframe?: 状态清单的哈希,             // 每 50 次提交存一份完整状态（区块、物件、锚点、区域、方块表、扫描）
   jobId?,                               // 由后台任务产生的提交（部署种子导入；历史上的处理服务任务）；(jobId) 部分唯一索引，防止重复写回
   draftId?, scriptRef?,                 // 草稿发布时附带的脚本（资源哈希，只为追溯）
@@ -495,7 +491,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
   - 支持播放、暂停、调速、跳转，有"现在"按钮。
 - **事件可视化**：只实现 5.4 列出的显示方式。事件文本、锚点标签、提交说明一律当纯文本显示。
 - **打开方式**：
-  - 空间链接形如 `/s/<空间编号>#share=<分享令牌>`；组合链接形如 `/u/<组合编号>#share=<分享令牌>`。
+  - 空间及组合链接统一为 `/s/<空间编号>#share=<分享令牌>`；旧 `/u/` 保留兼容。
   - 页面脚本把令牌放在请求头 `Authorization: Share <令牌>` 里调用公开读接口。
   - 页面设置 `Referrer-Policy: no-referrer`。
 - **加载**：区块和资源按内容哈希命名，可以永久缓存；网格在浏览器的后台线程里生成。
@@ -525,10 +521,11 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 | `GET /api/public/spaces/{id}/events?from=&to=&since=&types=&after=` | 公开事件（每次 ≤ 24 小时，每页 ≤ 5000） | 短 |
 | `GET /api/public/spaces/{id}/events/density?from=&to=&bucket=` | 事件数量聚合（最长 90 天） | 短 |
 | `GET /api/public/spaces/{id}/state?at=` | T 时刻各公开锚点的状态 | 短 |
+| `GET /api/public/spaces/{id}/scene?at=` | 递归展开自身与子空间，返回实例路径、累计摆放及同一时刻的各空间 seq | 不缓存 |
 | `GET /api/public/chunks/{hash}.bin` | 区块，只返回已发布（有 `publishedAt`）的区块 | 永久 |
 | `GET /api/public/assets/{hash}.bin` | 资源，只返回登记在 `assetRefs` 里的资源，支持分段下载 | 永久 |
-| `GET /api/public/universes/{id}?at=` | T 时刻生效的组合修订（成员、摆放、连接）和各成员在 T 时刻的 seq；查看器再按这些 seq 调用 `snapshot?seq=` | 不缓存 |
-| `GET /api/public/universes/{id}/revisions/{seq}` | 某一次组合修订的内容 | 长 |
+| `GET /api/public/universes/{id}?at=` | 兼容旧客户端的直接子空间组合投影，新客户端使用空间的 `scene` | 不缓存 |
+| `GET /api/public/universes/{id}/revisions/{seq}` | 兼容入口，读取空间提交中的组合状态 | 长 |
 | `GET /api/public/previews` | 草稿预览（令牌放在请求头里） | 不缓存 |
 | `GET /api/public/previews/chunks/{hash}`、`.../assets/{hash}` | 预览用到的区块和资源：草稿生成的区块、草稿引用的可预览资源（网页用模型、物件模型、贴图；原始扫描、清单、建模记录不给），以及草稿基础版本（seq ≤ baseSeq）的提交引用过、已发布的区块和本空间已登记的资源；不属于这些的一律 404；资源支持分段下载 | 不缓存 |
 
@@ -567,7 +564,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 | 重建层 | 前缀 `/api/v1/spaces/{space_id}/rebuild/`：上传（`uploads/{purpose}`，用途 `scan`、`webmodel`、`model`、`texture`、`script`、`bundle`）→ 建草稿（`drafts`）→ 交包（`drafts/{draft_id}/bundle`，异步展开）→ 预览 → 发布；任务查询 `jobs`、`jobs/{job_id}`。重建草稿只收一个重建包，没有内联操作；只写重建层、扫描层和新锚点（6.3）。写操作要求本空间管理权（9.2） |
 | 上传 | `POST /api/v1/spaces/{space_id}/uploads/{purpose}` → `PUT .../uploads/{purpose}/{upload_id}/parts/{n}` → `POST .../complete`（返回核对任务，6.1）<br>实体区和地块路径的用途：`model`、`texture`、`ops`、`script`；扫描、网页用模型和重建包清单只经重建路径上传 |
 | 事件 | `POST /api/v1/spaces/{space_id}/sources/{source}/events`：批量写，每批 ≤ 1000 条<br>`POST .../sources/{source}/corrections`：更正和撤回 |
-| 组合 | `POST /api/v1/universes`<br>`PATCH /api/v1/universes/{universe_id}`：摆放、连接、可见性、分享令牌<br>`POST /api/v1/universes/{universe_id}/members/{space_id}`：加入；`DELETE` 同一路径：退出 |
+| 子空间组合 | `GET/PATCH /api/v1/spaces/{space_id}/composition`：摆放、连接、邀请、主题<br>`POST/DELETE /api/v1/spaces/{space_id}/children/{child_id}`：加入、退出；与自身模型共用空间提交 |
 
 批量操作只用高层操作（填充、空心盒、替换、复制区域、新增方块、放物件、删物件（可带"不存在就跳过"）、新建/移动/修改锚点），每次 ≤ 200 条，请求体 ≤ 1MB；超出返回 413，并提示改走上传。设置扫描、清空重建层只由重建包展开产生，调用方不能直接给。
 
@@ -848,17 +845,17 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 
 ## 12. 多空间组合与跨空间事件
 
-- **创建与修改**：第一步，组织成员都能创建组合，创建者是组合的主人。修改名称、可见性、摆放和连接，需要 NyxID 身份是组合主人。
+- **创建与修改**：直接创建普通空间，在其 `composition` 接口设置子空间、摆放、主题与连接。名称、可见性和组合设置均沿用空间管理权限：个人主人、主人组织本身或组织管理员。
 - **加入与退出**：
-  - 把空间加入组合，必须由该空间的主人（或主人组织成员）调用加入接口，所以别人不能把你的空间拉进他的组合。
+  - 父空间管理者发出邀请后，由子空间管理者调用加入接口；同时管理双方时可直接加入。
   - 空间主人随时可以让本空间退出。
-  - 加入和退出都记为组合的修订。
+  - 加入和退出都写入父空间的普通提交，与自身内容共用序号及回放时间线。子空间可继续引用其他空间，但禁止循环，最多嵌套 8 层、展开 256 个实例。
 - **可见性**：组合不能比任何成员更公开——有凭链接查看的成员时，组合也只能凭链接查看。凭组合的分享令牌可以读取各成员空间的公开数据（8.2）。
 - **连接**：连接两端只能引用公开锚点。
 - **送花示例**：
   - **两条事件**：花店在自己的空间写一条 `delivery.sent`（显示为路线起点），餐厅收到后写一条 `delivery.arrived`（显示为路线终点）。两条用同一个 `correlationId = "<花店空间编号>:<编号>"`。
   - **防伪造**：起点事件只能写在前缀对应的空间里，其他空间无法伪造。
-  - **配对规则**：路线只在当前组合的成员之间配对。同一 `correlationId` 下，取起点事件和终点事件（更正已应用；同一侧有多条时取最新一条），在组合坐标系里从起点锚点画到终点锚点，动画时长取两条事件的时间差。
+  - **配对规则**：路线只在当前展开的空间实例之间配对。同一 `correlationId` 下，取起点事件和终点事件（更正已应用；同一侧有多条时取最新一条）；重复引用的每个起点实例各自选择共同祖先最近的终点实例，在组合坐标系中绘制路线，动画时长取两条事件的时间差。
   - **路线画法**：成员之间有连接时，路线沿连接走最短路径，经过每条连接两端的锚点；没有连接就画弧线。
   - **不完整时**：只有起点、还没有终点时，只在起点显示图标；单空间视图只显示本空间这一侧的图标。
   - **由花店代写终点**：如果终点事件要由花店来写，餐厅可以在 NyxID 里创建一把组织 agent key 交给花店，操作范围只允许往餐厅的 `florist` 数据源写 `delivery.arrived`，锚点只能是收货台（9.3）。
@@ -895,7 +892,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 | `eventTypes` | 事件类型版本 | `(spaceId, type, version)` 唯一 |
 | `drafts` / `previews` | 草稿（可预览的 `assets` 与只为防清理而持有的 `heldAssets` 分开）、预览令牌（只存哈希） | `spaceId`；按过期时间清理 |
 | `uploads` / `jobs` | 上传会话、后台任务（上传核对、大批量操作、种子导入；旧的处理服务任务只留记录） | 见 6.1、6.4 |
-| `universes` / `universeRevisions` | 组合当前状态、修订 | `(universeId, seq)` 唯一、`(universeId, at)` |
+| `universes` / `universeRevisions` | 仅保留旧数据备查，已迁入 `spaces` / `commits` | 不再写入 |
 | `replay` | 令牌防重放 | `_id` = jti，按过期时间删除 |
 | `migrations` | 迁移记录与锁（含定期清理的租约锁） | `_id` = 迁移名或锁名 |
 | GridFS `assets` | 原始扫描、网页用模型、物件模型、贴图、大块操作、脚本、重建包清单；`metadata` 记第一次登记的种类、所属空间、`touchedAt` 和核对结果 `check`（只取决于内容；能不能按某个用途引用看它，不看种类） | `files.filename` 唯一（= 内容哈希） |
@@ -1071,7 +1068,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
 
 样式目录属于空间设置，快照组装时投影当前目录，扩展沿用该语义，不新增几何提交。前端按编号整体替换样式，快照优先于空间信息，扩展随所属样式一起替换，避免混合不同来源的键。扩展仅为数据，已约定的消费者按需读取，不自动执行或参与材质与几何缓存；前厅夹具的“品牌开放日”通过 `extensions.badge` 展示“开放日策展”，并把 `extensions.exhibition` 策展结构传至场景视图。
 
-`Universe` 通过 `themeId` 和成员级 `styleId` 组合多个空间。解析优先级为：运行时单成员覆盖（查询参数 `memberStyles`、侧栏或带 `spaceId` 的 `look` 动作） > 运行时全局选择（查询参数 `themeId`、顶部主题按钮或不带 `spaceId` 的主题及命名样式 `look` 动作） > 成员保存的 `UniverseMember.styleId` > 组合保存的 `UniverseView.themeId` > 空间默认样式（`scene.defaultStyleId`、`info.defaultStyleId`，最终回退到内置默认样式 `arch-realistic`）。运行时非 `independent` 主题统一覆盖未设运行时成员覆盖的成员；显式选择 `independent`（各自独立）时不施加映射且跳过组合保存主题，恢复成员保存样式或空间默认样式。持久化主题仅映射未保存成员样式的成员。顶部主题激活态优先显示运行时选择，否则显示保存主题，均未指定时显示 `independent`。
+空间通过 `themeId` 和子空间级 `styleId` 组合多个空间，旧协议的 `Universe` 类型名继续保留。解析优先级为：运行时单成员覆盖（查询参数 `memberStyles`、侧栏或带 `spaceId` 的 `look` 动作） > 运行时全局选择（查询参数 `themeId`、显示设置中的主题按钮或不带 `spaceId` 的主题及命名样式 `look` 动作） > 成员保存的 `UniverseMember.styleId` > 组合保存的 `UniverseView.themeId` > 空间默认样式（`scene.defaultStyleId`、`info.defaultStyleId`，最终回退到内置默认样式 `arch-realistic`）。运行时非 `independent` 主题统一覆盖未设运行时成员覆盖的成员；显式选择 `independent`（各自独立）时不施加映射且跳过组合保存主题，恢复成员保存样式或空间默认样式。持久化主题仅映射未保存成员样式的成员。顶部主题激活态优先显示运行时选择，否则显示保存主题，均未指定时显示 `independent`。
 
 公开投影携带成员样式绑定和组合主题，修订在这些字段变化时生成，以便时间线回放保持一致。体素几何按图层、分块坐标及内容哈希、区域过滤和调色板缓存，正在生成的任务与几何缓冲可跨样式和组合成员复用；派生材质按 `styleLookKey` 隔离。缓存驱逐或关闭查看器时统一释放受管体素几何。样式编号与后端对象编号规则一致，允许 1–128 个 `ASCII` 字母、数字、`_`、`-`、`.` 且不以 `.` 开头；空间与组合编号保持原有规则。
 

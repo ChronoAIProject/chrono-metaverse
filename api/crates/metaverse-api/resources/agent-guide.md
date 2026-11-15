@@ -10,6 +10,16 @@
 
 普通空间草稿作用于 physical 范围、ext 扩展层。没有 regions 时可以在未被虚拟区或地块占用的位置编辑，不需要创建布局。用户明确指定已有地块时，下面所有 drafts 路径改为 /api/v1/spaces/{spaceId}/plots/{plotId}/drafts，始终保持同一范围。普通草稿不能改 rebuilt 层；调整重建物件时使用下面的重建流程，不能改名或复制到扩展层来绕过限制。
 
+## 子空间组合
+
+每个空间都可以同时拥有自己的模型和子空间，不再需要创建独立 Universe。查看链接统一为 /s/{spaceId}#share=实际分享令牌。旧 /u/ 链接继续可用。
+
+先调用 get_space_composition 或 GET /api/v1/spaces/{spaceId}/composition 读取成员、摆放、连接及 seq。加入已有空间用 join_space_child 或 POST /api/v1/spaces/{spaceId}/children/{childId}，body {"baseSeq":实际父空间seq,"offset":[0,0,0],"rotation":0}。调用者必须能管理子空间，并能管理父空间或已被父空间邀请。父空间管理者可 PATCH /api/v1/spaces/{spaceId}/composition，body {"baseSeq":实际seq,"invitations":[实际子空间编号]} 发出邀请；邀请不是加入，仍需子空间管理者接受。
+
+调整摆放用 update_space_composition 或 PATCH 同一 composition 路径，members 必须列出现有全部直接子空间，不能借此加入或移除。offset 是整数格，每格 0.05 米；rotation 仅允许 0、90、180、270。links 两端可引用本空间或直接子空间的公开锚点。退出用 leave_space_child 或 DELETE /api/v1/spaces/{spaceId}/children/{childId}，body {"baseSeq":实际seq}。组合变化立即写普通提交，和模型编辑共用 head.seq；遇到 409 先重新读取，不能覆盖或盲目重试。
+
+子空间可以继续包含子空间，最多嵌套 8 层、展开 256 个实例。循环引用会被拒绝。分享父空间只开放沿引用路径获准的公开内容；子空间退出后仅可回看授权期间。组合编辑不会改写任何子空间的模型。草稿预览令牌继续只授权该草稿所属空间的内容。
+
 ## 移动已有重建物件
 
 先核对真实 body.layer；编号本身不授予权限。rebuilt 层物件可以通过专用重建草稿移动，无需修改仓库、重新扫描或重做整个空间。个人空间主人、组织主体和当前组织管理员具备本空间管理权，可以编辑本空间的重建层，无需额外 NyxID 平台重建角色。当前 Agent Key 仍须获准调用该空间的对应工具；普通成员/viewer 只读，平台权限不能替代空间管理权。

@@ -114,7 +114,7 @@ impl From<RepoError> for JobFailure {
             RepoError::Unavailable | RepoError::Duplicate => {
                 JobFailure::Transient(format!("数据库暂时不可用：{error}"))
             }
-            RepoError::GrantMismatch | RepoError::Corrupt(_) => {
+            RepoError::GrantMismatch | RepoError::Corrupt(_) | RepoError::InvalidComposition(_) => {
                 JobFailure::Content(format!("记录不一致：{error}"))
             }
         }

@@ -160,6 +160,24 @@ impl MembershipPeriods {
         Self { periods }
     }
 
+    /// 多层引用只开放每一层都获准展示的时间段。
+    pub fn intersection(&self, other: &Self) -> Self {
+        let mut periods = Vec::new();
+        for (a, ae) in &self.periods {
+            for (b, be) in &other.periods {
+                let start = (*a).max(*b);
+                let end = match (ae, be) {
+                    (Some(a), Some(b)) => Some((*a).min(*b)),
+                    (a, b) => a.or(*b),
+                };
+                if end.is_none_or(|end| start < end) {
+                    periods.push((start, end));
+                }
+            }
+        }
+        Self { periods }
+    }
+
     /// 全部时间段（按开始时间排序，互不重叠）。
     pub fn periods(&self) -> &[(Timestamp, Option<Timestamp>)] {
         &self.periods
@@ -461,6 +479,102 @@ impl Authorizer {
         Ok((policy, periods))
     }
 
+    /// path 为根空间到直接父空间的编号路径，令牌只属于根空间。
+    async fn path_member_policy(
+        &self,
+        space_id: &str,
+        path: &str,
+        share_token: Option<&str>,
+    ) -> Result<(UniverseGrant, crate::repo::SpacePolicy, MembershipPeriods), ApiError> {
+        let ids: Vec<_> = path.split('/').collect();
+        if ids.is_empty() || ids.len() > 8 || ids.iter().any(|id| !is_space_id(id)) {
+            return Err(ApiError::not_found());
+        }
+        let mut visited = std::collections::BTreeSet::new();
+        if !ids
+            .iter()
+            .chain(std::iter::once(&space_id))
+            .all(|id| visited.insert(*id))
+        {
+            return Err(ApiError::not_found());
+        }
+        let root = self.public_universe(ids[0], share_token).await?;
+        self.path_member_policy_with_root(space_id, &ids, root)
+            .await
+    }
+
+    async fn path_member_policy_with_root(
+        &self,
+        space_id: &str,
+        ids: &[&str],
+        root: UniverseGrant,
+    ) -> Result<(UniverseGrant, crate::repo::SpacePolicy, MembershipPeriods), ApiError> {
+        let mut parent = root.clone();
+        let mut inherited: Option<MembershipPeriods> = None;
+        let mut target = None;
+        for child in ids.iter().skip(1).copied().chain(std::iter::once(space_id)) {
+            let (policy, periods) = self.member_policy(child, &parent).await?;
+            let periods = inherited
+                .as_ref()
+                .map_or(periods.clone(), |previous| previous.intersection(&periods));
+            if periods.is_empty() {
+                return Err(ApiError::not_found());
+            }
+            inherited = Some(periods);
+            let composition_policy = self.universe_policy_of(child).await?;
+            parent = Self::universe_grant(
+                child,
+                &composition_policy,
+                GrantAccess::Public,
+                root.public_basis,
+            );
+            target = Some(policy);
+        }
+        Ok((
+            root,
+            target.ok_or_else(ApiError::not_found)?,
+            inherited.ok_or_else(ApiError::not_found)?,
+        ))
+    }
+
+    /// 浏览器已核验根空间访问权后，沿同一条成员路径授予公开投影读权限。
+    pub(crate) async fn browser_composition_member(
+        &self,
+        root: &Grant,
+        space_id: &str,
+        path: &str,
+    ) -> Result<Grant, ApiError> {
+        let ids: Vec<_> = path.split('/').collect();
+        if ids.first().copied() != Some(root.space_id())
+            || ids.len() > 8
+            || ids.iter().any(|id| !is_space_id(id))
+        {
+            return Err(ApiError::not_found());
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        if !ids
+            .iter()
+            .chain(std::iter::once(&space_id))
+            .all(|id| seen.insert(*id))
+        {
+            return Err(ApiError::not_found());
+        }
+        let policy = self.universe_policy_of(root.space_id()).await?;
+        if &policy.owner != root.owner() {
+            return Err(ApiError::not_found());
+        }
+        let universe = Self::universe_grant(
+            root.space_id(),
+            &policy,
+            GrantAccess::Public,
+            Some(PublicBasis::ShareToken),
+        );
+        let (universe, policy, periods) = self
+            .path_member_policy_with_root(space_id, &ids, universe)
+            .await?;
+        Ok(Self::member_grant(space_id, policy, &universe, periods))
+    }
+
     /// 凭组合读成员空间的凭据：公开级、带成员期（读取方据此裁剪提交和事件）。凭令牌时和凭空间
     /// 自己的分享令牌一样不可共享缓存（`PublicBasis::ShareToken`）。
     fn member_grant(
@@ -495,8 +609,9 @@ impl Authorizer {
         if !is_space_id(space_id) {
             return Err(ApiError::not_found());
         }
-        let universe = self.public_universe(universe_id, share_token).await?;
-        let (policy, periods) = self.member_policy(space_id, &universe).await?;
+        let (universe, policy, periods) = self
+            .path_member_policy(space_id, universe_id, share_token)
+            .await?;
         if !periods.contains(at) {
             return Err(ApiError::not_found());
         }
@@ -516,8 +631,9 @@ impl Authorizer {
         if !is_space_id(space_id) {
             return Err(ApiError::not_found());
         }
-        let universe = self.public_universe(universe_id, share_token).await?;
-        let (policy, periods) = self.member_policy(space_id, &universe).await?;
+        let (universe, policy, periods) = self
+            .path_member_policy(space_id, universe_id, share_token)
+            .await?;
         let epoch = Timestamp::from_millis(0).map_err(|_| ApiError::internal())?;
         if !periods.overlaps(epoch, Some(now)) {
             return Err(ApiError::not_found());
@@ -542,8 +658,9 @@ impl Authorizer {
         if !is_space_id(space_id) {
             return Err(ApiError::not_found());
         }
-        let universe = self.public_universe(universe_id, share_token).await?;
-        let (policy, periods) = self.member_policy(space_id, &universe).await?;
+        let (universe, policy, periods) = self
+            .path_member_policy(space_id, universe_id, share_token)
+            .await?;
         if !periods.overlaps(from, Some(to)) {
             return Err(ApiError::not_found());
         }
@@ -563,8 +680,9 @@ impl Authorizer {
         if !is_space_id(space_id) {
             return Err(ApiError::not_found());
         }
-        let universe = self.public_universe(universe_id, share_token).await?;
-        let (policy, periods) = self.member_policy(space_id, &universe).await?;
+        let (universe, policy, periods) = self
+            .path_member_policy(space_id, universe_id, share_token)
+            .await?;
         let created_at = policy.created_at;
         let grant = Self::member_grant(space_id, policy, &universe, periods);
         // 只用来读提交时间，不交给调用方。
@@ -760,6 +878,25 @@ mod tests {
         // 创建时间恰好等于加入时间：算。
         let same = MembershipPeriods::from_history(&history, "b", Some(t(20)));
         assert!(same.contains(t(20)));
+    }
+
+    #[test]
+    fn 多层成员期求交保留退出边界和重新加入期间() {
+        let a = MembershipPeriods {
+            periods: vec![(t(10), Some(t(30))), (t(40), None)],
+        };
+        let b = MembershipPeriods {
+            periods: vec![(t(20), Some(t(40))), (t(50), Some(t(60)))],
+        };
+        let result = a.intersection(&b);
+        assert_eq!(
+            result.periods(),
+            &[(t(20), Some(t(30))), (t(50), Some(t(60)))]
+        );
+        assert!(!result.contains(t(30)));
+        assert!(!result.contains(t(40)));
+        assert!(result.contains(t(50)));
+        assert_eq!(result, b.intersection(&a));
     }
 
     #[test]

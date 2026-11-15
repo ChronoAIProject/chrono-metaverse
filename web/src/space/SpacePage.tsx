@@ -33,6 +33,10 @@ import {
   ViewModeSwitch,
 } from './controls';
 import { usePlayback } from './usePlayback';
+import { UniversePage } from './UniversePage';
+import { timelineRange } from '../timeline/range';
+export { timelineRange } from '../timeline/range';
+import { ViewerPanel, SettingSection } from './DisplaySettings';
 import './SpacePage.css';
 
 export interface SpacePageProps {
@@ -49,15 +53,6 @@ export interface SpacePageProps {
   readonly now?: () => number;
   /** 默认视图：地址里没有（或不认识）`?view=` 时用它；切回它时地址里不写 view。 */
   readonly initialMode?: ViewMode;
-}
-
-/** 时间轴的范围：第一次提交前一天到现在（或最后一次提交、当前时刻里最晚的）。 */
-export function timelineRange(commitTimes: readonly number[], now: number, time: number) {
-  const first = commitTimes.length > 0 ? Math.min(...commitTimes) : now - 7 * 86_400_000;
-  const last = commitTimes.length > 0 ? Math.max(...commitTimes) : now;
-  const to = Math.max(now, last, time);
-  const from = Math.min(first - 86_400_000, to - 86_400_000);
-  return { from, to };
 }
 
 /** 查看一个空间：三维视图、三种视图切换、剖切、时间轴、事件可视化（设计第 7 节）。 */
@@ -138,18 +133,22 @@ export function SpacePage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [client, spaceId, attempt],
   );
+  const state = useRuntimeState(runtime);
+  const composition = !previewToken && state.info?.compositionEnabled;
   useEffect(() => {
-    if (previewToken) return;
+    if (previewToken || composition) return;
     runtime.start();
     return () => runtime.stop();
-  }, [runtime, previewToken]);
+  }, [runtime, previewToken, composition]);
 
   useEffect(() => {
-    if (!previewToken) runtime.setTime(time, live, windowMs);
-  }, [runtime, time, live, windowMs, previewToken]);
+    if (!previewToken && !composition) runtime.setTime(time, live, windowMs);
+  }, [runtime, time, live, windowMs, previewToken, composition]);
 
-  const state = useRuntimeState(runtime);
   const { info } = state;
+  // 首次读取后保留普通查看器，切换空间时复用画布和模型缓存。
+  const [openedSpace, setOpenedSpace] = useState(false);
+  if (!openedSpace && info && !info.compositionEnabled) setOpenedSpace(true);
   const draft = usePreviewScene(client, spaceId, previewToken, attempt);
   const scene = previewToken ? draft.scene : state.scene;
   const loaders = useAssetLoaders(draft.source);
@@ -317,6 +316,24 @@ export function SpacePage({
     );
   }
 
+  if (!previewToken && info === null && !openedSpace) return <LoadingCard label="读取空间" />;
+
+  if (!previewToken && info?.compositionEnabled) {
+    return (
+      <UniversePage
+        native
+        universeId={spaceId}
+        client={client}
+        hasShareToken={hasShareToken}
+        createView={createView}
+        now={now}
+        initialMode={initialMode}
+        viewerCommand={viewerCommand}
+        onCameraResult={onCameraResult}
+      />
+    );
+  }
+
   const commit = previewToken
     ? null
     : (state.commits.filter((c) => c.seq === state.seq)[0] ?? null);
@@ -350,42 +367,50 @@ export function SpacePage({
                   : '这个时刻还没有任何提交'}
           </p>
         </div>
-        <div className="space__switches">
-          <StyleGallerySwitch
-            styles={styles}
-            activeId={activeSpaceStyle?.id}
-            onChange={(next) => {
-              setLookId(next.id);
-              const search = searchWithLook(window.location.search, next.id);
-              window.history.replaceState(
-                window.history.state,
-                '',
-                `${window.location.pathname}${search}${window.location.hash}`,
-              );
-              resetOverrides();
-            }}
-          />
+        <div className="space__primary-actions">
           <ViewModeSwitch mode={mode} onChange={setMode} />
-          {scene !== null && hasStyleChoice(scene) && (
-            <StyleSwitch style={style} disabled={mode === 'raw'} onChange={setStyle} />
+          <ViewerPanel label="显示设置">
+            <SettingSection label="空间样式">
+              <StyleGallerySwitch
+                styles={styles}
+                activeId={activeSpaceStyle?.id}
+                onChange={(next) => {
+                  setLookId(next.id);
+                  const search = searchWithLook(window.location.search, next.id);
+                  window.history.replaceState(
+                    window.history.state,
+                    '',
+                    `${window.location.pathname}${search}${window.location.hash}`,
+                  );
+                  resetOverrides();
+                }}
+              />
+              {scene !== null && hasStyleChoice(scene) && (
+                <StyleSwitch style={style} disabled={mode === 'raw'} onChange={setStyle} />
+              )}
+            </SettingSection>
+            <SettingSection label="室内剖切">
+              <CutawayControl
+                enabled={cutEnabled}
+                height={Math.min(cutHeight, heights.max)}
+                max={heights.max}
+                onToggle={setCutEnabled}
+                onHeight={setCutHeight}
+              />
+            </SettingSection>
+            <SettingSection label="界面外观">
+              <ThemeToggle />
+            </SettingSection>
+          </ViewerPanel>
+          {!embedded && !previewToken && window.self === window.top && (
+            <a
+              className="space__worker-link"
+              href={`/workspace?space=${encodeURIComponent(spaceId)}`}
+            >
+              请 worker 调整
+            </a>
           )}
         </div>
-        <CutawayControl
-          enabled={cutEnabled}
-          height={Math.min(cutHeight, heights.max)}
-          max={heights.max}
-          onToggle={setCutEnabled}
-          onHeight={setCutHeight}
-        />
-        {!embedded && !previewToken && window.self === window.top && (
-          <a
-            className="space__worker-link"
-            href={`/workspace?space=${encodeURIComponent(spaceId)}`}
-          >
-            请 worker 调整
-          </a>
-        )}
-        <ThemeToggle />
       </header>
 
       <section
@@ -406,13 +431,15 @@ export function SpacePage({
           focusedAnchor={focusedAnchor}
           onCameraResult={onCameraResult}
         />
-        <AnchorQuickBar
-          anchors={scene?.anchors ?? []}
-          onFocus={(anchor) => {
-            if (!anchor) setOverviewRequest((value) => value + 1);
-            setFocusedAnchor(anchor ? { spaceId, anchorId: anchor.anchorId } : null);
-          }}
-        />
+        <ViewerPanel label="空间导览" className="viewer-panel--navigation">
+          <AnchorQuickBar
+            anchors={scene?.anchors ?? []}
+            onFocus={(anchor) => {
+              if (!anchor) setOverviewRequest((value) => value + 1);
+              setFocusedAnchor(anchor ? { spaceId, anchorId: anchor.anchorId } : null);
+            }}
+          />
+        </ViewerPanel>
         {activeSpaceStyle && (
           <div className="space__style-badge" title={activeSpaceStyle.description}>
             {activeSpaceStyle.name} · {activeSpaceStyle.description}

@@ -21,6 +21,12 @@ function lastVisuals(view: { visuals: (readonly Visual[])[] }): readonly Visual[
   return view.visuals[view.visuals.length - 1] ?? [];
 }
 
+function 显示控件() {
+  const button = screen.getByRole('button', { name: '显示设置' });
+  if (button.getAttribute('aria-expanded') !== 'true') fireEvent.click(button);
+  return screen;
+}
+
 function visit(url: string) {
   window.history.replaceState(null, '', url);
 }
@@ -88,11 +94,11 @@ describe('应用外壳', () => {
     expect(await screen.findByRole('heading', { name: '街角' })).toBeInTheDocument();
     await waitFor(() => expect(views[0]?.last().members.length).toBe(2));
     const content = views[0]!.last();
-    const florist = content.members.find((m) => m.spaceId === 'demo-florist')!;
+    const florist = content.members.find((m) => m.spaceId === 'demo-street/demo-florist')!;
     expect(florist.placement).toEqual({ offset: [120, 0, 240], rotation: 180 });
     expect(florist.name).toBe('街角花店');
     expect(content.links).toHaveLength(1);
-    expect(screen.getByText(/组合修订 #2/)).toBeInTheDocument();
+    expect(screen.getByText(/版本 #2/, { selector: '.space__version' })).toBeInTheDocument();
     await waitFor(() => {
       const path = lastVisuals(views[0]!).find((v) => v.kind === 'path');
       expect(path).toMatchObject({ correlationId: 'demo-florist:live', progress: null });
@@ -108,16 +114,18 @@ describe('应用外壳', () => {
     render(<App createClient={createClient} createView={factory} />);
     await screen.findByRole('heading', { name: '街角' });
     await userEvent.click(await screen.findByRole('button', { name: /跳到提交 演示前厅 #3/ }));
-    await waitFor(() => expect(screen.getByText(/组合修订 #1/)).toBeInTheDocument());
     await waitFor(() =>
-      expect(views[0]!.last().members.map((m) => m.spaceId)).toEqual(['demo-lobby']),
+      expect(screen.getByText(/版本 #1/, { selector: '.space__version' })).toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(views[0]!.last().members.map((m) => m.spaceId)).toEqual(['demo-street/demo-lobby']),
     );
   });
 
   it('组合页：令牌不对时统一提示链接无效', async () => {
     visit('/u/demo-street#share=wrong');
     render(<App createClient={createClient} createView={fakeViewFactory().factory} />);
-    expect(await screen.findByRole('alert')).toHaveTextContent('链接无效，或者组合不存在');
+    expect(await screen.findByRole('alert')).toHaveTextContent('链接无效，或者空间不存在');
   });
 
   it('预览页：标明草稿预览，草稿里的物件和区块交给场景', async () => {
@@ -204,7 +212,7 @@ describe('应用外壳', () => {
     await userEvent.click(screen.getByRole('button', { name: '优化' }));
     await waitFor(() => expect(view.cutaway).toBeCloseTo(2.75));
     // 拖过滑块就按用户的，换视图也不变
-    fireEvent.change(screen.getByRole('slider', { name: '剖切高度' }), {
+    fireEvent.change(显示控件().getByRole('slider', { name: '剖切高度' }), {
       target: { value: '1.5' },
     });
     await waitFor(() => expect(view.cutaway).toBeCloseTo(1.5));
@@ -212,7 +220,7 @@ describe('应用外壳', () => {
     await waitFor(() => expect(last().mode).toBe('raw'));
     expect(view.cutaway).toBeCloseTo(1.5);
 
-    await userEvent.click(screen.getByRole('checkbox', { name: '剖切' }));
+    await userEvent.click(显示控件().getByRole('checkbox', { name: '剖切' }));
     await waitFor(() => expect(view.cutaway).toBeNull());
   });
 
@@ -220,13 +228,17 @@ describe('应用外壳', () => {
     const { factory, views } = fakeViewFactory();
     visit(FIXTURE_LINK);
     render(<App createClient={createClient} createView={factory} />);
-    const group = await screen.findByRole('group', { name: '重建层画法' });
+    await userEvent.click(await screen.findByRole('button', { name: '显示设置' }));
+    const group = await 显示控件().findByRole('group', { name: '重建层画法' });
     const member = () => views[0]!.last().members[0]!;
     await waitFor(() => expect(member().view.style).toBe('shapes'));
     expect(member().view.voxels.chunks.every((c) => c.layer === 'ext')).toBe(true);
-    expect(screen.getByRole('button', { name: '形状' })).toHaveAttribute('aria-pressed', 'true');
+    expect(显示控件().getByRole('button', { name: '形状' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
 
-    await userEvent.click(screen.getByRole('button', { name: '方块' }));
+    await userEvent.click(显示控件().getByRole('button', { name: '方块' }));
     await waitFor(() => expect(member().view.style).toBe('blocks'));
     expect(member().view.entities).toEqual([]);
     expect(member().view.voxels.chunks.some((c) => c.layer === 'rebuilt')).toBe(true);
@@ -236,10 +248,10 @@ describe('应用外壳', () => {
 
     // 原始视图只画扫描：切换禁用。
     await userEvent.click(screen.getByRole('button', { name: '原始' }));
-    expect(screen.getByRole('button', { name: '方块' })).toBeDisabled();
+    expect(显示控件().getByRole('button', { name: '方块' })).toBeDisabled();
     await userEvent.click(screen.getByRole('button', { name: '优化' }));
 
-    await userEvent.click(screen.getByRole('button', { name: '形状' }));
+    await userEvent.click(显示控件().getByRole('button', { name: '形状' }));
     await waitFor(() => expect(member().view.style).toBe('shapes'));
     expect(window.location.search).toBe('');
     expect(window.location.hash).toBe('#share=fixture-share-token-0123456789abcdef');
@@ -247,7 +259,9 @@ describe('应用外壳', () => {
 
     // 重建之前（版本 #1）重建层什么都没有：不显示切换。
     await userEvent.click(screen.getByRole('button', { name: /跳到提交 #1/ }));
-    await waitFor(() => expect(screen.getByText(/版本 #1/)).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText(/版本 #1/, { selector: '.space__version' })).toBeInTheDocument(),
+    );
     await waitFor(() =>
       expect(screen.queryByRole('group', { name: '重建层画法' })).not.toBeInTheDocument(),
     );
@@ -259,7 +273,10 @@ describe('应用外壳', () => {
     render(<App createClient={createClient} createView={factory} />);
     expect(await screen.findByRole('heading', { name: '演示前厅' })).toBeInTheDocument();
     await waitFor(() => expect(views[0]?.last().members[0]?.view.style).toBe('blocks'));
-    expect(screen.getByRole('button', { name: '方块' })).toHaveAttribute('aria-pressed', 'true');
+    expect(显示控件().getByRole('button', { name: '方块' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
   });
 
   it('打开带 ?view=raw 的链接：直接进原始视图；切换视图时更新地址，# 后面的令牌不受影响', async () => {
@@ -279,7 +296,7 @@ describe('应用外壳', () => {
     expect(window.location.hash).toBe('#share=fixture-share-token-0123456789abcdef');
 
     // 和画法参数互不影响；切回默认的优化视图时地址里不写 view。
-    await userEvent.click(screen.getByRole('button', { name: '方块' }));
+    await userEvent.click(显示控件().getByRole('button', { name: '方块' }));
     expect(window.location.search).toBe('?view=extended&style=blocks');
     await userEvent.click(screen.getByRole('button', { name: '优化' }));
     await waitFor(() => expect(views[0]!.last().mode).toBe('optimized'));
@@ -334,7 +351,9 @@ describe('应用外壳', () => {
     render(<App createClient={createClient} createView={factory} />);
     await screen.findByRole('heading', { name: '演示前厅' });
     await userEvent.click(await screen.findByRole('button', { name: /跳到提交 #1/ }));
-    await waitFor(() => expect(screen.getByText(/版本 #1/)).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText(/版本 #1/, { selector: '.space__version' })).toBeInTheDocument(),
+    );
     await waitFor(() => {
       const view = views[0]!;
       expect(view.last().members[0]!.view.entities).toEqual([]);

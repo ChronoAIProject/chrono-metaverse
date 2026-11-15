@@ -131,7 +131,7 @@ export function memberStylesFromSearch(search: string): ReadonlyMap<string, stri
       !spaceId ||
       !styleId ||
       extra !== undefined ||
-      !/^[a-z0-9][a-z0-9-]{0,79}(?![\s\S])/.test(spaceId) ||
+      !/^[a-z0-9][a-z0-9-]{0,79}(?:\/[a-z0-9][a-z0-9-]{0,79}){0,8}(?![\s\S])/.test(spaceId) ||
       !isStyleId(styleId)
     )
       return new Map();
@@ -150,7 +150,8 @@ export function searchWithMemberStyles(
   const encoded = entries
     .filter(
       ([spaceId, styleId]) =>
-        /^[a-z0-9][a-z0-9-]{0,79}(?![\s\S])/.test(spaceId) && isStyleId(styleId),
+        /^[a-z0-9][a-z0-9-]{0,79}(?:\/[a-z0-9][a-z0-9-]{0,79}){0,8}(?![\s\S])/.test(spaceId) &&
+        isStyleId(styleId),
     )
     .map(([spaceId, styleId]) => `${spaceId}:${styleId}`)
     .join(',');

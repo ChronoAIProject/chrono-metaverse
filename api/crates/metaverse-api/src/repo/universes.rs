@@ -72,6 +72,7 @@ fn owner_kind(owner: &Owner) -> &'static str {
 fn granted_universe(grant: &UniverseGrant) -> Document {
     doc! {
         "_id": grant.universe_id(),
+        "deletingAt": {"$exists": false},
         "owner.kind": owner_kind(grant.owner()),
         "owner.id": &grant.owner().id,
     }
@@ -79,7 +80,8 @@ fn granted_universe(grant: &UniverseGrant) -> Document {
 
 fn granted_revisions(grant: &UniverseGrant) -> Document {
     doc! {
-        "universeId": grant.universe_id(),
+        "spaceId": grant.universe_id(),
+        "composition": {"$exists": true},
         "owner.kind": owner_kind(grant.owner()),
         "owner.id": &grant.owner().id,
     }
@@ -95,6 +97,51 @@ fn to_bson<T: serde::Serialize>(value: &T) -> Result<Bson, RepoError> {
 
 fn from_document<T: serde::de::DeserializeOwned>(document: Document) -> Result<T, RepoError> {
     bson::deserialize_from_document(document).map_err(|error| RepoError::Corrupt(error.to_string()))
+}
+
+/// 兼容组合请求，实际创建普通空间。
+pub(super) fn native_space_document(universe: &Universe) -> Result<Document, RepoError> {
+    let mut document = to_document(universe)?;
+    document.insert("description", "");
+    document.insert("compositionEnabled", true);
+    document.insert("regions", Vec::<Bson>::new());
+    document.insert("plots", Vec::<Bson>::new());
+    document.insert("storageLimitBytes", 1024_i64 * 1024 * 1024);
+    document.insert("storageUsedBytes", 0_i64);
+    document.insert(
+        "updatedAt",
+        universe
+            .updated_at
+            .unwrap_or(universe.created_at)
+            .to_rfc3339(),
+    );
+    Ok(document)
+}
+
+pub(super) fn native_revision_document(revision: &UniverseRevision) -> Result<Document, RepoError> {
+    let mut document = to_document(revision)?;
+    document.remove("universeId");
+    document.remove("state");
+    document.insert(
+        "_id",
+        format!("composition:{}:{}", revision.universe_id, revision.seq),
+    );
+    document.insert("spaceId", &revision.universe_id);
+    document.insert("composition", to_bson(&revision.state)?);
+    Ok(document)
+}
+
+fn revision_from_commit(mut document: Document) -> Result<UniverseRevision, RepoError> {
+    let id = document
+        .get_str("spaceId")
+        .map_err(|e| RepoError::Corrupt(e.to_string()))?
+        .to_owned();
+    document.insert("universeId", id);
+    let state = document
+        .remove("composition")
+        .ok_or_else(|| RepoError::Corrupt("缺少子空间状态".into()))?;
+    document.insert("state", state);
+    from_document(document)
 }
 
 /// 组合文档上可以改的字段（不含成员、连接；它们随修订一起改）。
@@ -122,8 +169,8 @@ impl Repo {
         universe_id: &str,
     ) -> Result<Option<UniversePolicy>, RepoError> {
         let found = self
-            .collection(collections::UNIVERSES)
-            .find_one(doc! {"_id": universe_id})
+            .collection(collections::SPACES)
+            .find_one(doc! {"_id": universe_id, "deletingAt": {"$exists": false}})
             .projection(doc! {
                 "owner": 1, "ownerEvidence": 1, "visibility": 1, "shareTokens": 1, "members": 1
             })
@@ -157,15 +204,15 @@ impl Repo {
         {
             return Err(RepoError::GrantMismatch);
         }
-        self.collection(collections::UNIVERSES)
-            .insert_one(to_document(universe)?)
+        self.collection(collections::SPACES)
+            .insert_one(native_space_document(universe)?)
             .await?;
         Ok(())
     }
 
     /// 读组合文档。
     pub async fn universe(&self, grant: &UniverseGrant) -> Result<Option<Universe>, RepoError> {
-        self.collection(collections::UNIVERSES)
+        self.collection(collections::SPACES)
             .find_one(granted_universe(grant))
             .await?
             .map(from_document)
@@ -201,7 +248,7 @@ impl Repo {
         }
         let Some(revision) = revision else {
             let result = self
-                .collection(collections::UNIVERSES)
+                .collection(collections::SPACES)
                 .update_one(filter, doc! {"$set": set})
                 .await?;
             return Ok(if result.matched_count == 1 {
@@ -269,12 +316,15 @@ impl Repo {
         {
             return Err(RepoError::GrantMismatch);
         }
-        let mut document = to_document(revision)?;
-        document.insert("_id", format!("{}:{}", revision.universe_id, revision.seq));
+        let document = native_revision_document(revision)?;
+        let graph_version = self
+            .validate_composition_graph(&revision.universe_id, &revision.state)
+            .await?;
         set.insert(
             "head",
-            doc! {"seq": revision.seq as i64, "at": revision.at.to_rfc3339()},
+            doc! {"seq": revision.seq as i64, "at": revision.at.to_rfc3339(), "commitId": format!("composition:{}:{}", revision.universe_id, revision.seq)},
         );
+        set.insert("compositionEnabled", true);
         set.insert("members", to_bson(&revision.state.members)?);
         set.insert("links", to_bson(&revision.state.links)?);
         if let Some(theme_id) = &revision.state.theme_id {
@@ -284,12 +334,17 @@ impl Repo {
         }
         let outcome = self
             .run_transaction(&[
+                TxnOp::Update {
+                    collection: collections::MIGRATIONS,
+                    filter: doc! {"_id": "space-composition-graph", "version": graph_version},
+                    update: doc! {"$inc": {"version": 1}},
+                },
                 TxnOp::Insert {
-                    collection: collections::UNIVERSE_REVISIONS,
+                    collection: collections::COMMITS,
                     document,
                 },
                 TxnOp::Update {
-                    collection: collections::UNIVERSES,
+                    collection: collections::SPACES,
                     filter,
                     update: doc! {"$set": set},
                 },
@@ -318,7 +373,7 @@ impl Repo {
             return Err(RepoError::GrantMismatch);
         }
         let space_id = grant.space_id();
-        let universes = self.collection(collections::UNIVERSES);
+        let universes = self.collection(collections::SPACES);
         universes
             .update_many(
                 doc! {"invitations": space_id},
@@ -378,9 +433,7 @@ impl Repo {
                     },
                     owner: Some(universe.owner.clone()),
                 };
-                let mut revision_document = to_document(&revision)?;
-                revision_document
-                    .insert("_id", format!("{}:{}", revision.universe_id, revision.seq));
+                let revision_document = native_revision_document(&revision)?;
                 let filter = doc! {"_id": &id, "head.seq": universe.head.seq as i64};
                 let set = doc! {
                     "head": {"seq": revision.seq as i64, "at": revision.at.to_rfc3339()},
@@ -390,12 +443,17 @@ impl Repo {
                 };
                 let outcome = self
                     .run_transaction(&[
+                        TxnOp::Update {
+                            collection: collections::MIGRATIONS,
+                            filter: doc! {"_id": "space-composition-graph"},
+                            update: doc! {"$inc": {"version": 1}},
+                        },
                         TxnOp::Insert {
-                            collection: collections::UNIVERSE_REVISIONS,
+                            collection: collections::COMMITS,
                             document: revision_document,
                         },
                         TxnOp::Update {
-                            collection: collections::UNIVERSES,
+                            collection: collections::SPACES,
                             filter,
                             update: doc! {"$set": set},
                         },
@@ -428,11 +486,11 @@ impl Repo {
     ) -> Result<Option<UniverseRevision>, RepoError> {
         let mut filter = granted_revisions(grant);
         filter.insert("at", doc! {"$lte": at.to_rfc3339()});
-        self.collection(collections::UNIVERSE_REVISIONS)
+        self.collection(collections::COMMITS)
             .find_one(filter)
             .sort(doc! {"seq": -1})
             .await?
-            .map(from_document)
+            .map(revision_from_commit)
             .transpose()
     }
 
@@ -444,10 +502,10 @@ impl Repo {
     ) -> Result<Option<UniverseRevision>, RepoError> {
         let mut filter = granted_revisions(grant);
         filter.insert("seq", seq as i64);
-        self.collection(collections::UNIVERSE_REVISIONS)
+        self.collection(collections::COMMITS)
             .find_one(filter)
             .await?
-            .map(from_document)
+            .map(revision_from_commit)
             .transpose()
     }
 
@@ -471,6 +529,22 @@ impl Repo {
             .unwrap_or_default())
     }
 
+    /// 读取空间在 T 时刻的原生组合状态；模型提交不会清空子空间。
+    pub async fn composition_at(
+        &self,
+        grant: &Grant,
+        at: Timestamp,
+    ) -> Result<UniverseState, RepoError> {
+        let found = self.collection(collections::COMMITS).find_one(doc! {
+            "spaceId": grant.space_id(), "owner.kind": owner_kind(grant.owner()), "owner.id": &grant.owner().id,
+            "composition": {"$exists": true}, "at": {"$lte": at.to_rfc3339()},
+        }).sort(doc! {"seq": -1}).await?;
+        found
+            .map(revision_from_commit)
+            .transpose()
+            .map(|revision| revision.map(|r| r.state).unwrap_or_default())
+    }
+
     /// 全部修订的 (时间, 成员空间编号)，按 seq 排序（判断成员资格的时间段用，最多 10000 条）。
     pub async fn universe_membership_history(
         &self,
@@ -489,13 +563,13 @@ impl Repo {
         #[derive(Deserialize)]
         struct Row {
             at: Timestamp,
-            state: StateMembers,
+            composition: StateMembers,
         }
         let mut cursor = self
-            .collection(collections::UNIVERSE_REVISIONS)
+            .collection(collections::COMMITS)
             .find(granted_revisions(grant))
             .sort(doc! {"seq": 1})
-            .projection(doc! {"at": 1, "state.members.spaceId": 1})
+            .projection(doc! {"at": 1, "composition.members.spaceId": 1})
             .limit(10_000)
             .await?;
         let mut history = Vec::new();
@@ -506,7 +580,11 @@ impl Repo {
             let row: Row = from_document(document)?;
             history.push((
                 row.at,
-                row.state.members.into_iter().map(|m| m.space_id).collect(),
+                row.composition
+                    .members
+                    .into_iter()
+                    .map(|m| m.space_id)
+                    .collect(),
             ));
         }
         Ok(history)

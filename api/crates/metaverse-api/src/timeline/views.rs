@@ -132,6 +132,9 @@ pub struct SnapshotView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_style_id: Option<String>,
     pub scan: Option<ScanView>,
+    /// 子空间、摆放与连接在这个版本的完整状态。
+    #[schema(value_type = Object)]
+    pub composition: metaverse_core::model::UniverseState,
 }
 
 /// 公开接口的操作人：只给类别。

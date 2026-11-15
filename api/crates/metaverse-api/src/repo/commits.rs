@@ -545,6 +545,7 @@ impl Repo {
             regions_hash: plan.layout.as_ref().map(|(hash, _, _)| hash.clone()),
             palette_hash: plan.palette_hash.clone(),
             scan: plan.scan.clone(),
+            composition: None,
             keyframe: plan.keyframe.clone(),
             job_id: plan.job_id.clone(),
             draft_id: plan.draft_id.clone(),

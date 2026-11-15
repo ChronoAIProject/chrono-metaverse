@@ -401,12 +401,12 @@ async fn membership_links_visibility_and_public_reads() {
     );
     // 修订文档带主人副本和发起者。
     let revision = app
-        .collection("universeRevisions")
-        .find_one(doc! {"universeId": "street", "seq": 2_i64})
+        .collection("commits")
+        .find_one(doc! {"spaceId": "street", "seq": 2_i64})
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(revision.get_str("_id").unwrap(), "street:2");
+    assert_eq!(revision.get_str("_id").unwrap(), "composition:street:2");
     assert_eq!(
         revision.get_document("owner").unwrap(),
         &doc! {"kind": "org", "id": ORG}
@@ -926,8 +926,8 @@ async fn deleted_member_leaves_universe_and_recreated_id_is_not_a_member() {
     assert_eq!(reply.body["members"], json!([]), "{:?}", reply.body);
     assert_eq!(reply.body["seq"], 2);
     let revision = app
-        .collection("universeRevisions")
-        .find_one(doc! {"universeId": "street", "seq": 2_i64})
+        .collection("commits")
+        .find_one(doc! {"spaceId": "street", "seq": 2_i64})
         .await
         .unwrap()
         .unwrap();
@@ -1576,7 +1576,7 @@ async fn 加入成员校验样式编号并归一化空样式() {
         assert!(cleared.get("styleId").is_none(), "空样式编号应被清除");
     }
     let persisted = app
-        .collection("universes")
+        .collection("spaces")
         .find_one(doc! {"_id": "street"})
         .await
         .unwrap()
@@ -1898,14 +1898,14 @@ async fn 组合主题及更新加入成员样式的完整中文错误与逐次�
     let themed = patch(&app, who(ORG), json!({"themeId": "saved"})).await;
     assert_eq!(themed.status, StatusCode::OK, "{:?}", themed.body);
     let before = app
-        .collection("universes")
+        .collection("spaces")
         .find_one(doc! {"_id": "street"})
         .await
         .unwrap()
         .unwrap();
     let revision_count = app
-        .collection("universeRevisions")
-        .count_documents(doc! {})
+        .collection("commits")
+        .count_documents(doc! {"spaceId": "street", "composition": {"$exists": true}})
         .await
         .unwrap();
     let mut count = 0;
@@ -1940,15 +1940,15 @@ async fn 组合主题及更新加入成员样式的完整中文错误与逐次�
             let reply = app.call(who(ORG), method, &path, Some(body)).await;
             assert_chinese_style_problem(&reply);
             let after = app
-                .collection("universes")
+                .collection("spaces")
                 .find_one(doc! {"_id": "street"})
                 .await
                 .unwrap()
                 .unwrap();
             assert_eq!(after, before, "每次拒绝均不得改变完整组合文档和修订序号");
             assert_eq!(
-                app.collection("universeRevisions")
-                    .count_documents(doc! {})
+                app.collection("commits")
+                    .count_documents(doc! {"spaceId": "street", "composition": {"$exists": true}})
                     .await
                     .unwrap(),
                 revision_count,
@@ -1980,7 +1980,7 @@ async fn 加入成员省略或空值均不绑定样式() {
         assert!(member.get("styleId").is_none());
     }
     let stored = app
-        .collection("universes")
+        .collection("spaces")
         .find_one(doc! {"_id": "street"})
         .await
         .unwrap()

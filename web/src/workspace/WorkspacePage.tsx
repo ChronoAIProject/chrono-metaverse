@@ -130,7 +130,6 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
   const [menu, setMenu] = useState<'spaces' | 'view' | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const spaceButton = useRef<HTMLButtonElement>(null);
-  const viewButton = useRef<HTMLButtonElement>(null);
   const chatButton = useRef<HTMLButtonElement>(null);
   const chatPanel = floatingChat.panel;
   const autoUpload = useRef(false);
@@ -953,7 +952,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
       }
       setPendingViewerCommand({ id: command.id, actions: command.actions.slice(1) });
       appliedViewerCommands.current.add(key);
-      window.history.pushState(null, '', `/u/${encodeURIComponent(universe.universeId)}`);
+      window.history.pushState(null, '', `/s/${encodeURIComponent(universe.universeId)}`);
       window.dispatchEvent(new PopStateEvent('popstate'));
       return;
     }
@@ -1144,7 +1143,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
       if (event.key !== 'Escape') return;
       if (menu) {
         setMenu(null);
-        (menu === 'spaces' ? spaceButton : viewButton).current?.focus();
+        spaceButton.current?.focus();
       } else if (chatOpen && chatPanel.current?.contains(document.activeElement)) {
         setChatOpen(false);
         requestAnimationFrame(() => chatButton.current?.focus());
@@ -1173,236 +1172,244 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                 ref={spaceButton}
                 className="workspace__space-trigger workspace__secondary"
                 aria-label="选择空间"
-                aria-expanded={menu === 'spaces'}
+                aria-expanded={menu !== null}
                 aria-controls="workspace-spaces"
-                onClick={() => setMenu(menu === 'spaces' ? null : 'spaces')}
+                onClick={() => setMenu(menu === null ? 'spaces' : null)}
               >
                 <span aria-hidden="true">▦</span>
                 <span>{spaceName || '选择空间'}</span>
                 <span aria-hidden="true">⌄</span>
               </button>
-              <button
-                ref={viewButton}
-                className="workspace__view-trigger workspace__secondary"
-                aria-label="切换空间视图"
-                aria-expanded={menu === 'view'}
-                aria-controls="workspace-view-options"
-                onClick={() => setMenu(menu === 'view' ? null : 'view')}
-              >
-                <span aria-hidden="true">◈</span>
-                <span>{preview ? '草稿预览' : '当前空间'}</span>
-                <span aria-hidden="true">⌄</span>
-              </button>
-              {menu === 'spaces' && (
-                <section id="workspace-spaces" className="workspace__library" aria-label="已有空间">
+              {menu !== null && (
+                <section id="workspace-spaces" className="workspace__library" aria-label="空间菜单">
                   <div className="workspace__heading">
-                    <h2>我的空间</h2>
+                    <h2>空间</h2>
+                    <button
+                      className="workspace__create-button"
+                      aria-label="创建空间"
+                      disabled={disabled}
+                      onClick={() => {
+                        setMenu(null);
+                        startCreation();
+                      }}
+                    >
+                      ＋ 创建空间
+                    </button>
                     <button
                       className="workspace__icon-button workspace__secondary"
                       aria-label="关闭空间菜单"
-                      onClick={() => setMenu(null)}
-                    >
-                      ×
-                    </button>
-                    <button
-                      className="workspace__secondary"
-                      disabled={catalogBusy}
-                      onClick={() => setCatalogReload((v) => v + 1)}
-                    >
-                      刷新空间
-                    </button>
-                  </div>
-                  <label>
-                    搜索空间
-                    <input
-                      type="search"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="名称或编号"
-                    />
-                  </label>
-                  <label>
-                    空间归属
-                    <select value={ownerFilter} onChange={(e) => setOwnerFilter(e.target.value)}>
-                      <option value="all">全部空间</option>
-                      <option value="person">我的个人空间</option>
-                      {catalog?.organizations.map((o) => (
-                        <option key={o.id} value={o.id}>
-                          {o.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {catalogError && <p role="alert">{catalogError}</p>}
-                  {!catalog && !catalogError && <p role="status">正在读取空间…</p>}
-                  <ul className="workspace__spaces">
-                    {visibleSpaces.map((space) => (
-                      <li key={space.id}>
-                        <button
-                          className="workspace__space-card"
-                          aria-pressed={note.spaceId === space.id}
-                          disabled={disabled}
-                          onClick={() =>
-                            openSpace(
-                              space.id,
-                              space.owner.kind === 'org' ? space.owner.id : undefined,
-                            )
-                          }
-                        >
-                          <strong>{space.name}</strong>
-                          <span>
-                            {space.owner.kind === 'person'
-                              ? '个人空间'
-                              : (catalog?.organizations.find((o) => o.id === space.owner.id)
-                                  ?.name ?? '组织空间')}{' '}
-                            · {space.access === 'read' ? '只读' : '可调整'}
-                          </span>
-                          <small>{space.id}</small>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                  {catalog && visibleSpaces.length === 0 && (
-                    <p className="workspace__muted">
-                      {search || ownerFilter !== 'all'
-                        ? '当前筛选下没有空间。'
-                        : '还没有可访问的空间，可以点击顶部“创建空间”开始。'}
-                    </p>
-                  )}
-                  {catalog?.next && (
-                    <button
-                      className="workspace__secondary"
-                      disabled={catalogBusy}
-                      onClick={() => void moreSpaces()}
-                    >
-                      加载更多空间
-                    </button>
-                  )}
-
-                  <details className="workspace__open-space">
-                    <summary>按编号打开已有空间</summary>
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        openSpace(targetId);
+                      onClick={() => {
+                        setMenu(null);
+                        spaceButton.current?.focus();
                       }}
                     >
-                      <label>
-                        目标空间编号
-                        <input
-                          value={targetId}
-                          onChange={(e) => setTargetId(e.target.value)}
-                          required
-                          maxLength={80}
-                          pattern="[a-z0-9][a-z0-9-]*"
-                          placeholder="例如 sample-space"
-                        />
-                      </label>
-                      <button disabled={disabled || !targetId}>打开空间</button>
-                    </form>
-                  </details>
-                </section>
-              )}
-              {menu === 'view' && (
-                <section
-                  id="workspace-view-options"
-                  className="workspace__view-options"
-                  aria-label="查看选项"
-                >
-                  <div className="workspace__heading">
-                    <h2>{preview ? '草稿预览 · 尚未发布' : '当前已发布空间'}</h2>
-                    <button
-                      className="workspace__icon-button workspace__secondary"
-                      aria-label="关闭查看选项"
-                      onClick={() => setMenu(null)}
-                    >
                       ×
                     </button>
                   </div>
-                  {(links.length > 0 || preview) && (
-                    <div className="workspace__results">
+                  <div className="workspace__menu-tabs" role="group" aria-label="空间菜单内容">
+                    <button
+                      className="workspace__secondary"
+                      aria-pressed={menu === 'spaces'}
+                      onClick={() => setMenu('spaces')}
+                    >
+                      我的空间
+                    </button>
+                    <button
+                      className="workspace__secondary"
+                      aria-pressed={menu === 'view'}
+                      onClick={() => setMenu('view')}
+                    >
+                      查看与预览
+                    </button>
+                  </div>
+                  {menu === 'spaces' && (
+                    <div className="workspace__menu-content" aria-label="已有空间">
                       <button
-                        className={!preview ? '' : 'workspace__secondary'}
-                        onClick={() => {
-                          setFollowPreview(false);
-                          setPreview('');
-                          setConfirmPublish('');
-                          setMenu(null);
-                        }}
+                        className="workspace__secondary"
+                        disabled={catalogBusy}
+                        onClick={() => setCatalogReload((v) => v + 1)}
                       >
-                        当前空间
+                        刷新空间
                       </button>
-                      {links.slice(0, 5).map((url, i) => (
+                      <label>
+                        搜索空间
+                        <input
+                          type="search"
+                          value={search}
+                          onChange={(e) => setSearch(e.target.value)}
+                          placeholder="名称或编号"
+                        />
+                      </label>
+                      <label>
+                        空间归属
+                        <select
+                          value={ownerFilter}
+                          onChange={(e) => setOwnerFilter(e.target.value)}
+                        >
+                          <option value="all">全部空间</option>
+                          <option value="person">我的个人空间</option>
+                          {catalog?.organizations.map((o) => (
+                            <option key={o.id} value={o.id}>
+                              {o.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {catalogError && <p role="alert">{catalogError}</p>}
+                      {!catalog && !catalogError && <p role="status">正在读取空间…</p>}
+                      <ul className="workspace__spaces">
+                        {visibleSpaces.map((space) => (
+                          <li key={space.id}>
+                            <button
+                              className="workspace__space-card"
+                              aria-pressed={note.spaceId === space.id}
+                              disabled={disabled}
+                              onClick={() =>
+                                openSpace(
+                                  space.id,
+                                  space.owner.kind === 'org' ? space.owner.id : undefined,
+                                )
+                              }
+                            >
+                              <strong>{space.name}</strong>
+                              <span>
+                                {space.owner.kind === 'person'
+                                  ? '个人空间'
+                                  : (catalog?.organizations.find((o) => o.id === space.owner.id)
+                                      ?.name ?? '组织空间')}{' '}
+                                · {space.access === 'read' ? '只读' : '可调整'}
+                              </span>
+                              <small>{space.id}</small>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                      {catalog && visibleSpaces.length === 0 && (
+                        <p className="workspace__muted">
+                          {search || ownerFilter !== 'all'
+                            ? '当前筛选下没有空间。'
+                            : '还没有可访问的空间，可以点击“创建空间”开始。'}
+                        </p>
+                      )}
+                      {catalog?.next && (
                         <button
-                          key={url}
-                          className={preview === url ? '' : 'workspace__secondary'}
-                          onClick={() => {
-                            setFollowPreview(i === 0);
-                            setPreview(url);
-                            setPreviewIdentity(null);
-                            setConfirmPublish('');
-                            setMenu(null);
+                          className="workspace__secondary"
+                          disabled={catalogBusy}
+                          onClick={() => void moreSpaces()}
+                        >
+                          加载更多空间
+                        </button>
+                      )}
+
+                      <details className="workspace__open-space">
+                        <summary>按编号打开已有空间</summary>
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            openSpace(targetId);
                           }}
                         >
-                          {url.startsWith('/preview') ? `草稿预览 ${i + 1}` : url.split('#')[0]}
-                        </button>
-                      ))}
+                          <label>
+                            目标空间编号
+                            <input
+                              value={targetId}
+                              onChange={(e) => setTargetId(e.target.value)}
+                              required
+                              maxLength={80}
+                              pattern="[a-z0-9][a-z0-9-]*"
+                              placeholder="例如 sample-space"
+                            />
+                          </label>
+                          <button disabled={disabled || !targetId}>打开空间</button>
+                        </form>
+                      </details>
                     </div>
                   )}
-                  {!followPreview && latest && (
-                    <button className="workspace__secondary" onClick={() => setFollowPreview(true)}>
-                      跟随最新预览
-                    </button>
-                  )}
+                  {menu === 'view' && (
+                    <div className="workspace__menu-content" aria-label="查看选项">
+                      <div className="workspace__heading">
+                        <h2>{preview ? '草稿预览 · 尚未发布' : '当前已发布空间'}</h2>
+                      </div>
+                      {(links.length > 0 || preview) && (
+                        <div className="workspace__results">
+                          <button
+                            className={!preview ? '' : 'workspace__secondary'}
+                            onClick={() => {
+                              setFollowPreview(false);
+                              setPreview('');
+                              setConfirmPublish('');
+                              setMenu(null);
+                            }}
+                          >
+                            当前空间
+                          </button>
+                          {links.slice(0, 5).map((url, i) => (
+                            <button
+                              key={url}
+                              className={preview === url ? '' : 'workspace__secondary'}
+                              onClick={() => {
+                                setFollowPreview(i === 0);
+                                setPreview(url);
+                                setPreviewIdentity(null);
+                                setConfirmPublish('');
+                                setMenu(null);
+                              }}
+                            >
+                              {url.startsWith('/preview') ? `草稿预览 ${i + 1}` : url.split('#')[0]}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {!followPreview && latest && (
+                        <button
+                          className="workspace__secondary"
+                          onClick={() => setFollowPreview(true)}
+                        >
+                          跟随最新预览
+                        </button>
+                      )}
 
-                  {preview && (
-                    <a href={preview} target="_blank" rel="noopener noreferrer">
-                      在新窗口打开 ↗
-                    </a>
+                      {preview && (
+                        <a href={preview} target="_blank" rel="noopener noreferrer">
+                          在新窗口打开 ↗
+                        </a>
+                      )}
+                      <details className="workspace__open-link">
+                        <summary>打开分享或预览链接</summary>
+                        <form
+                          className="workspace__viewer-form"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            const url = viewerLink(viewerInput);
+                            if (url) {
+                              setFollowPreview(false);
+                              setConfirmPublish('');
+                              setPreviewIdentity(null);
+                              setPreview(url);
+                              setError('');
+                              setMenu(null);
+                            } else {
+                              setError('请输入本站的空间、组合或草稿预览链接。');
+                              setChatOpen(true);
+                            }
+                          }}
+                        >
+                          <label>
+                            打开已有查看链接
+                            <input
+                              value={viewerInput}
+                              onChange={(e) => setViewerInput(e.target.value)}
+                              placeholder="/s/空间编号#share=…"
+                            />
+                          </label>
+                          <button className="workspace__secondary">打开</button>
+                        </form>
+                      </details>
+                    </div>
                   )}
-                  <details className="workspace__open-link">
-                    <summary>打开分享或预览链接</summary>
-                    <form
-                      className="workspace__viewer-form"
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        const url = viewerLink(viewerInput);
-                        if (url) {
-                          setFollowPreview(false);
-                          setConfirmPublish('');
-                          setPreviewIdentity(null);
-                          setPreview(url);
-                          setError('');
-                          setMenu(null);
-                        } else {
-                          setError('请输入本站的空间、组合或草稿预览链接。');
-                          setChatOpen(true);
-                        }
-                      }}
-                    >
-                      <label>
-                        打开已有查看链接
-                        <input
-                          value={viewerInput}
-                          onChange={(e) => setViewerInput(e.target.value)}
-                          placeholder="/s/空间编号#share=…"
-                        />
-                      </label>
-                      <button className="workspace__secondary">打开</button>
-                    </form>
-                  </details>
                 </section>
               )}
             </div>
-            <button
-              className="workspace__create-button"
-              aria-label="创建空间"
-              disabled={disabled}
-              onClick={startCreation}
-            >
-              <span aria-hidden="true">＋</span>
-              <span>创建空间</span>
-            </button>
           </>
         )}
         {session?.connected && (

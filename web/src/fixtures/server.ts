@@ -285,6 +285,91 @@ export function fixtureReply(
     );
   }
 
+  // 旧组合夹具同时提供统一空间入口，便于验证旧链接和 /s/ 的原生组合渲染。
+  const nativeRoot = `/api/public/spaces/${fixtures.universe.id}`;
+  if (path === nativeRoot || path.startsWith(`${nativeRoot}/`)) {
+    if (share !== fixtures.universe.shareToken) return notFound();
+    const at = params.has('at') ? toMillis(params.get('at')!) : Date.now();
+    const found = universeAt(fixtures, at);
+    const head = {
+      seq: found?.revision.seq ?? 0,
+      at: found?.revision.at ?? new Date(at).toISOString(),
+    };
+    switch (path.slice(nativeRoot.length)) {
+      case '':
+        return json(200, {
+          id: fixtures.universe.id,
+          name: fixtures.universe.name,
+          compositionEnabled: true,
+          head,
+          regions: [],
+          plots: [],
+          anchors: [],
+          eventTypes: [],
+        });
+      case '/head':
+        return json(200, head);
+      case '/snapshot':
+        return json(200, {
+          spaceId: fixtures.universe.id,
+          ...head,
+          regions: [],
+          plots: [],
+          anchors: [],
+          chunks: [],
+          entities: [],
+        });
+      case '/timeline':
+        return json(200, { items: [], nextAfter: null });
+      case '/events':
+        return json(200, { items: [], nextAfter: null });
+      case '/state':
+        return json(200, { at: new Date(at).toISOString(), states: [] });
+      case '/events/density':
+        return json(200, {
+          from: params.get('from'),
+          to: params.get('to'),
+          bucketSec: Number(params.get('bucket')),
+          buckets: [],
+        });
+      case '/scene': {
+        const members = (found?.members ?? []).map((member) => ({
+          ...member,
+          spaceId: `${fixtures.universe.id}/${member.spaceId}`,
+          sourceSpaceId: member.spaceId,
+          accessPath: fixtures.universe.id,
+        }));
+        return json(
+          200,
+          {
+            id: fixtures.universe.id,
+            name: fixtures.universe.name,
+            ...head,
+            members: [
+              {
+                spaceId: fixtures.universe.id,
+                sourceSpaceId: fixtures.universe.id,
+                accessPath: null,
+                name: fixtures.universe.name,
+                seq: null,
+                offset: [0, 0, 0],
+                rotation: 0,
+              },
+              ...members,
+            ],
+            links: (found?.revision.links ?? []).map((link) => ({
+              ...link,
+              from: { ...link.from, spaceId: `${fixtures.universe.id}/${link.from.spaceId}` },
+              to: { ...link.to, spaceId: `${fixtures.universe.id}/${link.to.spaceId}` },
+            })),
+            themeId: found?.revision.themeId,
+          },
+          { 'cache-control': 'no-store' },
+        );
+      }
+    }
+  }
+
   const match = /^\/api\/public\/spaces\/([^/]+)(\/.*)?$/.exec(path);
   if (match === null) return problem(404, 'not_found', `没有这个接口：${path}`);
   const space = fixtures.spaces.get(decodeURIComponent(match[1]!));

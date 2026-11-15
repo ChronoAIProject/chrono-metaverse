@@ -149,6 +149,7 @@ impl IntoResponse for ApiError {
 impl From<RepoError> for ApiError {
     fn from(error: RepoError) -> Self {
         match error {
+            RepoError::InvalidComposition(message) => ApiError::invalid(message),
             RepoError::Unavailable => ApiError::store_unavailable(),
             RepoError::Duplicate => ApiError::conflict("编号已存在"),
             RepoError::GrantMismatch | RepoError::Corrupt(_) => {

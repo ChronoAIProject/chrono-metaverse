@@ -305,3 +305,42 @@ describe('跨空间路线', () => {
     expect(eventLookMs([], 48 * 3_600_000).before).toBe(24 * 3_600_000);
   });
 });
+
+it('同源空间的多次摆放保留各实例的事件、热力锚点和最近分支路线', () => {
+  const inputs: SpaceVisualInput[] = [];
+  for (const branch of ['left', 'right']) {
+    inputs.push({
+      ...space(`root/${branch}/florist`, [
+        event('sent', T - 1000, 'counter', { correlationId: 'florist:instance' }),
+      ]),
+      sourceSpaceId: 'florist',
+    });
+    inputs.push({
+      ...space(`root/${branch}/lobby`, [
+        event('arrived', T + 1000, 'door', { correlationId: 'florist:instance' }),
+        event('visitor', T - 1000, 'door'),
+        event('order.served', T - 1000, 'counter'),
+      ]),
+      sourceSpaceId: 'lobby',
+    });
+  }
+  const visuals = buildVisuals(inputs, { at: T });
+  expect(new Set(visuals.map((visual) => visual.id)).size).toBe(visuals.length);
+  for (const branch of ['left', 'right']) {
+    expect(visuals).toContainEqual(
+      expect.objectContaining({
+        kind: 'path',
+        correlationId: 'florist:instance',
+        from: { spaceId: `root/${branch}/florist`, anchorId: 'counter' },
+        to: { spaceId: `root/${branch}/lobby`, anchorId: 'door' },
+        progress: 0.5,
+      }),
+    );
+    expect(visuals).toContainEqual(
+      expect.objectContaining({
+        kind: 'heat',
+        anchor: { spaceId: `root/${branch}/lobby`, anchorId: 'door' },
+      }),
+    );
+  }
+});

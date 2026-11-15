@@ -164,7 +164,8 @@ test('AI 页面动作切换空间、视图、草稿和镜头，保留同一个 W
   await expect(page.locator('[data-preview="true"]')).toHaveAttribute('data-preview-rev', '1');
   await ready();
   expect(downloads).toHaveLength(count);
-  await page.getByRole('button', { name: '切换空间视图', exact: true }).click();
+  await page.getByRole('button', { name: '选择空间', exact: true }).click();
+  await page.getByRole('button', { name: '查看与预览', exact: true }).click();
   await page.getByRole('button', { name: '当前空间', exact: true }).click();
   await expect(page.locator('[data-preview="true"]')).toHaveCount(0);
   await ready();

@@ -31,6 +31,7 @@ import {
   ThemeToggle,
   ViewModeSwitch,
 } from './controls';
+import { ViewerPanel, SettingSection } from './DisplaySettings';
 import './SpacePage.css';
 
 export interface PreviewPageProps {
@@ -234,34 +235,42 @@ export function PreviewPage({
               : '正在读取草稿'}
           </p>
         </div>
-        <div className="space__switches">
-          <StyleGallerySwitch
-            styles={styles}
-            activeId={activeStyle?.id}
-            onChange={(next) => {
-              setLookId(next.id);
-              const search = searchWithLook(window.location.search, next.id);
-              window.history.replaceState(
-                window.history.state,
-                '',
-                `${window.location.pathname}${search}${window.location.hash}`,
-              );
-              resetOverrides();
-            }}
-          />
+        <div className="space__primary-actions">
           <ViewModeSwitch mode={mode} onChange={setMode} />
-          {scene !== null && hasStyleChoice(scene) && (
-            <StyleSwitch style={style} disabled={mode === 'raw'} onChange={setStyle} />
-          )}
+          <ViewerPanel label="显示设置">
+            <SettingSection label="空间样式">
+              <StyleGallerySwitch
+                styles={styles}
+                activeId={activeStyle?.id}
+                onChange={(next) => {
+                  setLookId(next.id);
+                  const search = searchWithLook(window.location.search, next.id);
+                  window.history.replaceState(
+                    window.history.state,
+                    '',
+                    `${window.location.pathname}${search}${window.location.hash}`,
+                  );
+                  resetOverrides();
+                }}
+              />
+              {scene !== null && hasStyleChoice(scene) && (
+                <StyleSwitch style={style} disabled={mode === 'raw'} onChange={setStyle} />
+              )}
+            </SettingSection>
+            <SettingSection label="室内剖切">
+              <CutawayControl
+                enabled={cutEnabled}
+                height={Math.min(cutHeight, heights.max)}
+                max={heights.max}
+                onToggle={setCutEnabled}
+                onHeight={setCutHeight}
+              />
+            </SettingSection>
+            <SettingSection label="界面外观">
+              <ThemeToggle />
+            </SettingSection>
+          </ViewerPanel>
         </div>
-        <CutawayControl
-          enabled={cutEnabled}
-          height={Math.min(cutHeight, heights.max)}
-          max={heights.max}
-          onToggle={setCutEnabled}
-          onHeight={setCutHeight}
-        />
-        <ThemeToggle />
       </header>
       <section className="space__stage" aria-label="三维视图">
         <Viewer
@@ -274,15 +283,17 @@ export function PreviewPage({
           overviewRequest={overviewRequest}
           focusedAnchor={focusedAnchor}
         />
-        <AnchorQuickBar
-          anchors={scene?.anchors ?? []}
-          onFocus={(anchor) => {
-            if (!anchor) setOverviewRequest((value) => value + 1);
-            setFocusedAnchor(
-              anchor && scene ? { spaceId: scene.spaceId, anchorId: anchor.anchorId } : null,
-            );
-          }}
-        />
+        <ViewerPanel label="空间导览" className="viewer-panel--navigation">
+          <AnchorQuickBar
+            anchors={scene?.anchors ?? []}
+            onFocus={(anchor) => {
+              if (!anchor) setOverviewRequest((value) => value + 1);
+              setFocusedAnchor(
+                anchor && scene ? { spaceId: scene.spaceId, anchorId: anchor.anchorId } : null,
+              );
+            }}
+          />
+        </ViewerPanel>
         {(scene === null || progress !== null) && (
           <LoadingCard
             label={progress?.label ?? '读取草稿'}

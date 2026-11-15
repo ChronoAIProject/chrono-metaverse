@@ -477,6 +477,7 @@ for (const loseUpload of [false, true])
       return route.abort();
     });
     await page.goto('/workspace');
+    await page.getByRole('button', { name: '选择空间', exact: true }).click();
     await page.getByRole('button', { name: '创建空间', exact: true }).click();
     await page
       .getByLabel('选择模型文件')

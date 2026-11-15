@@ -44,7 +44,47 @@ export function scopeName(scope: ScopeRef): string {
   return typeof scope === 'string' && scope !== '' ? `地块 ${scope}` : '实体区';
 }
 
+/** 子空间摆放：偏移以格（0.05 米）为单位，先绕 y 轴旋转、再平移。 */
+export interface SpaceChild {
+  readonly spaceId: string;
+  readonly offset: readonly [number, number, number];
+  readonly rotation: 0 | 90 | 180 | 270;
+  readonly styleId?: string | null;
+}
+export interface SpaceLink {
+  readonly from: { readonly spaceId: string; readonly anchorId: string };
+  readonly to: { readonly spaceId: string; readonly anchorId: string };
+  readonly kind: 'door' | 'portal' | 'street';
+}
+export interface SpaceComposition {
+  readonly members: readonly SpaceChild[];
+  readonly links: readonly SpaceLink[];
+  readonly themeId?: string | null;
+}
+export interface CompositionView extends SpaceComposition {
+  readonly id: string;
+  readonly name: string;
+  readonly seq: number;
+  readonly at: string;
+  readonly invitations: readonly string[];
+}
+export interface CompositionUpdate {
+  readonly baseSeq: number;
+  readonly members?: readonly SpaceChild[];
+  readonly links?: readonly SpaceLink[];
+  readonly themeId?: string | null;
+  readonly invitations?: readonly string[];
+  readonly message?: string;
+}
+export interface ChildChange {
+  readonly spaceId: string;
+  readonly childId: string;
+  readonly seq: number;
+  readonly at: string;
+}
+
 export interface SpaceView {
+  readonly compositionEnabled?: boolean;
   readonly id: string;
   readonly name: string;
   readonly description?: string;
@@ -62,6 +102,7 @@ export interface SpaceView {
 
 /** `GET /api/v1/spaces/{id}/snapshot?seq=` 的响应（与公开快照同形，锚点含内部级）。 */
 export interface SnapshotView {
+  readonly composition?: SpaceComposition;
   readonly spaceId?: string;
   readonly seq: number;
   readonly at: string;
@@ -259,6 +300,29 @@ export class MetaverseApi {
   /** `GET /api/v1/spaces/{space_id}` */
   getSpace(): Promise<SpaceView> {
     return this.client.json('GET', this.space);
+  }
+
+  /** 子空间关系和自身模型共享 getSpace().head.seq。 */
+  getComposition(): Promise<CompositionView> {
+    return this.client.json('GET', `${this.space}/composition`);
+  }
+
+  updateComposition(update: CompositionUpdate): Promise<{ readonly composition: CompositionView }> {
+    return this.client.json('PATCH', `${this.space}/composition`, { json: update });
+  }
+
+  /** 调用者需能管理子空间，且管理父空间或已获邀请。 */
+  joinChild(child: SpaceChild, baseSeq: number): Promise<ChildChange> {
+    const { spaceId, ...placement } = child;
+    return this.client.json('POST', `${this.space}/children/${seg(spaceId)}`, {
+      json: { ...placement, baseSeq },
+    });
+  }
+
+  leaveChild(childId: string, baseSeq: number): Promise<ChildChange> {
+    return this.client.json('DELETE', `${this.space}/children/${seg(childId)}`, {
+      json: { baseSeq },
+    });
   }
 
   /** `GET /api/v1/spaces/{space_id}/snapshot?seq=` */
