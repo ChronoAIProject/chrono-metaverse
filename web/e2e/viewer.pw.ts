@@ -523,8 +523,10 @@ test('锚点标签：默认只显示有意义的，避让、有上限，悬停�
 
   // 拉远：屏幕上变小的锚点不放标签，标签变少；有事件的锚点优先，仍然有标签。
   await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + canvas.height / 2);
-  for (let i = 0; i < 6; i += 1) await page.mouse.wheel(0, 400);
-  await expect.poll(() => numberAttr(page, 'data-labels')).toBeLessThan(shown);
+  await expect(async () => {
+    await page.mouse.wheel(0, 400);
+    expect(await numberAttr(page, 'data-labels')).toBeLessThan(shown);
+  }).toPass({ intervals: [120], timeout: 10_000 });
   const withEvents = /1 号桌|座位 2|前台|入口|休息区/;
   expect(await visibleLabels(page).filter({ hasText: withEvents }).count()).toBeGreaterThan(0);
   await expectNoOverlap(page);

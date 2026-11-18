@@ -2228,6 +2228,7 @@ export class SceneView {
   };
 
   private onControlsStart = () => {
+    this.onPointerLeave();
     this.flight = null;
     this.autoFramed = false;
   };
