@@ -484,8 +484,9 @@ export class SceneView {
     canvas.addEventListener('pointerdown', this.onPointerDown);
     canvas.addEventListener('pointerup', this.onPointerUp);
     canvas.addEventListener('pointercancel', this.onPointerCancel);
-    canvas.addEventListener('pointermove', this.onPointerMove);
-    canvas.addEventListener('pointerleave', this.onPointerLeave);
+    this.labels.domElement.addEventListener('wheel', this.onLabelWheel, { passive: false });
+    host.addEventListener('pointermove', this.onPointerMove);
+    host.addEventListener('pointerleave', this.onPointerLeave);
 
     this.resize = new ResizeObserver(() => this.fit());
     this.resize.observe(host);
@@ -2313,6 +2314,11 @@ export class SceneView {
     this.options.onSelect?.(picked);
   };
 
+  private onLabelWheel = (event: WheelEvent) => {
+    event.preventDefault();
+    this.renderer.domElement.dispatchEvent(new WheelEvent('wheel', event));
+  };
+
   private onControlsStart = () => {
     this.onPointerLeave();
     this.flight = null;
@@ -2322,6 +2328,13 @@ export class SceneView {
   /** 悬浮标签：props.label（保留键），没有时用物件的 label。 */
   private onPointerMove = (event: PointerEvent) => {
     if (event.pointerType !== 'mouse' || this.pointerDown !== null) return;
+    if (
+      event.target !== this.renderer.domElement &&
+      !this.labels.domElement.contains(event.target as Node)
+    ) {
+      this.onPointerLeave();
+      return;
+    }
     this.hoverPoint = { clientX: event.clientX, clientY: event.clientY };
     if (this.hoverTimer !== null) return;
     const wait = Math.max(0, this.hoverAt + 80 - performance.now());
@@ -2381,8 +2394,9 @@ export class SceneView {
     canvas.removeEventListener('pointerdown', this.onPointerDown);
     canvas.removeEventListener('pointerup', this.onPointerUp);
     canvas.removeEventListener('pointercancel', this.onPointerCancel);
-    canvas.removeEventListener('pointermove', this.onPointerMove);
-    canvas.removeEventListener('pointerleave', this.onPointerLeave);
+    this.labels.domElement.removeEventListener('wheel', this.onLabelWheel);
+    this.host.removeEventListener('pointermove', this.onPointerMove);
+    this.host.removeEventListener('pointerleave', this.onPointerLeave);
     this.controls.removeEventListener('start', this.onControlsStart);
     this.navigation.dispose();
     this.controls.dispose();
