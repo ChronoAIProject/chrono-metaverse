@@ -29,6 +29,7 @@ vi.mock('three', async (original) => ({
     setClearColor() {}
     setSize() {}
     setAnimationLoop() {}
+    render() {}
     dispose() {}
   },
 }));
@@ -394,6 +395,31 @@ it('`VE-P12-03`：三类连接双向聚焦变换后的公开锚点，成员取�
       .join(',');
   expect(world(0)).toBe('3.00,1.00,1.00');
   expect(world(1)).toBe('8.50,2.00,12.00');
+  // 连点两个世界标签时，第二次飞行必须从中途的眼位起步。
+  let now = performance.now();
+  vi.spyOn(performance, 'now').mockImplementation(() => now);
+  const tick = () => {
+    now += 80;
+    Reflect.get(s.view, 'frame').call(s.view);
+  };
+  const start = camera.position.clone();
+  secondLabel.click();
+  expect(camera.position.equals(start)).toBe(true);
+  tick();
+  const midway = camera.position.clone();
+  expect(midway.distanceTo(start)).toBeGreaterThan(0);
+  firstLabel.click();
+  expect(camera.position.equals(midway)).toBe(true);
+  for (let n = 0; n < 24; n++) tick();
+  expect(Reflect.get(s.view, 'controls').target.toArray().map(Math.round)).toEqual([3, 1, 1]);
+  s.view.setPerspective('first');
+  const eye = camera.position.clone();
+  const orientation = camera.quaternion.clone();
+  secondLabel.click();
+  expect(camera.position.equals(eye)).toBe(true);
+  expect(camera.quaternion.equals(orientation)).toBe(true);
+  tick();
+  expect(camera.position.distanceTo(eye)).toBeGreaterThan(0);
   for (const kind of ['door', 'portal', 'street']) {
     const buttons = host.querySelectorAll<HTMLButtonElement>(`.viewer__link[data-kind="${kind}"]`);
     expect(buttons).toHaveLength(2);

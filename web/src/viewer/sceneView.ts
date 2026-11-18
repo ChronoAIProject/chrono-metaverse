@@ -359,10 +359,14 @@ export class SceneView {
   private flight: {
     from: THREE.Vector3;
     to: THREE.Vector3;
-    targetFrom: THREE.Vector3;
+    rotationFrom: THREE.Quaternion;
+    rotationTo: THREE.Quaternion;
+    distanceFrom: number;
     targetTo: THREE.Vector3;
-    start: number;
-    duration?: number;
+    zoomFrom: number;
+    elapsed: number;
+    lastFrame: number;
+    duration: number;
   } | null = null;
   private accent = new THREE.Color(0xc8f542);
   private cutHeight: number | null = null;
@@ -480,8 +484,9 @@ export class SceneView {
     canvas.addEventListener('pointerdown', this.onPointerDown);
     canvas.addEventListener('pointerup', this.onPointerUp);
     canvas.addEventListener('pointercancel', this.onPointerCancel);
-    canvas.addEventListener('pointermove', this.onPointerMove);
-    canvas.addEventListener('pointerleave', this.onPointerLeave);
+    this.labels.domElement.addEventListener('wheel', this.onLabelWheel, { passive: false });
+    host.addEventListener('pointermove', this.onPointerMove);
+    host.addEventListener('pointerleave', this.onPointerLeave);
 
     this.resize = new ResizeObserver(() => this.fit());
     this.resize.observe(host);
@@ -528,24 +533,43 @@ export class SceneView {
     this.camera.updateProjectionMatrix();
     this.labelsDirty = true;
     // 画面大小变了（转屏、页头换行）而镜头还是自动取景的：按新的宽高比重新取景。
-    if (this.autoFramed) this.frameContent();
+    if (this.autoFramed && !this.flight) this.frameContent(false);
   }
 
   private frame(): void {
     if (this.disposed) return;
-    if (this.flight !== null) {
-      const t = Math.min(
-        1,
-        (performance.now() - this.flight.start) / (this.flight.duration ?? 700),
+    const flight = this.flight;
+    if (flight) {
+      const now = performance.now();
+      // 长帧或切回标签页时，仍渲染中间的镜头位置。
+      flight.elapsed += Math.min(100, now - flight.lastFrame);
+      flight.lastFrame = now;
+      const t = Math.min(1, flight.elapsed / flight.duration);
+      const ease = t * t * (3 - 2 * t);
+      this.camera.position.lerpVectors(flight.from, flight.to, ease);
+      this.camera.quaternion.slerpQuaternions(flight.rotationFrom, flight.rotationTo, ease);
+      const distance = THREE.MathUtils.lerp(
+        flight.distanceFrom,
+        flight.to.distanceTo(flight.targetTo),
+        ease,
       );
-      const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-      this.camera.position.lerpVectors(this.flight.from, this.flight.to, ease);
-      this.controls.target.lerpVectors(this.flight.targetFrom, this.flight.targetTo, ease);
-      if (t >= 1) this.flight = null;
+      this.camera
+        .getWorldDirection(this.controls.target)
+        .multiplyScalar(distance)
+        .add(this.camera.position);
+      if (flight.zoomFrom !== 1) {
+        this.camera.zoom = THREE.MathUtils.lerp(flight.zoomFrom, 1, ease);
+        this.camera.updateProjectionMatrix();
+      }
+      if (t >= 1) {
+        this.controls.target.copy(flight.targetTo);
+        this.flight = null;
+      }
+    } else {
+      this.navigation.update();
+      this.controls.update();
+      this.firstPerson?.sync();
     }
-    this.navigation.update();
-    this.controls.update();
-    this.firstPerson?.sync();
     this.environment.update(this.camera);
     this.externalContent.update(this.camera);
     this.updateBackgroundViews();
@@ -1202,7 +1226,7 @@ export class SceneView {
     const spaces = content.members.map((member) => member.spaceId).join('\u0000');
     const spacesChanged = this.lastSpaces !== spaces;
     this.lastSpaces = spaces;
-    if (!this.framed || spacesChanged || (this.autoFramed && modeChanged)) this.frameContent();
+    if (!this.framed || spacesChanged || (this.autoFramed && modeChanged)) this.frameContent(false);
     else {
       // 用户移动过镜头时保留位置，新增的背景仍须能落入远裁面。
       this.camera.far = backgroundFarPlane(
@@ -1241,9 +1265,7 @@ export class SceneView {
       const box = placedBox(placement, landmark.bounds.min, landmark.bounds.max);
       if (landmark.overview && !universe && member.view.mode === 'extended')
         this.overviewBox ??= { box, framing: landmark.framing };
-      button.addEventListener('click', () =>
-        this.frameBounds(box, this.overviewBox !== null, landmark.framing),
-      );
+      button.addEventListener('click', () => this.frameBounds(box, true, landmark.framing));
       this.landmarks.push({
         object,
         focus: box.getCenter(new THREE.Vector3()),
@@ -1276,7 +1298,7 @@ export class SceneView {
         );
         glow.userData.accent = true;
         glow.position.copy(center);
-        const tag = document.createElement('div');
+        const tag = navigationLabel(() => this.frameBounds(placedGridBox(placement, box)));
         tag.className = 'viewer__virtual-tag';
         tag.dataset.labelPriority = String(EVENT_PRIORITY);
         const name = displayName(region);
@@ -1311,7 +1333,7 @@ export class SceneView {
       let world: THREE.Vector3 | null = null;
       if (local !== null) {
         world = new THREE.Vector3(...placePoint(placement, local));
-        element = document.createElement('div');
+        element = navigationLabel(() => this.focusAnchor(ref));
         element.className = 'viewer__anchor';
         element.dataset.anchorId = anchor.anchorId;
         element.dataset.spaceId = member.spaceId;
@@ -1350,7 +1372,7 @@ export class SceneView {
         }
       }
       if (box.isEmpty()) box.set(new THREE.Vector3(0, 0, 0), new THREE.Vector3(3, 2.5, 3));
-      const tag = document.createElement('div');
+      const tag = navigationLabel(() => this.focusMember(member.spaceId));
       tag.className = 'viewer__member-tag';
       tag.dataset.labelPriority = String(EVENT_PRIORITY + 1);
       tag.textContent = member.name;
@@ -1523,12 +1545,19 @@ export class SceneView {
     this.applyCut();
   }
 
-  private eventTag(className: string, color: readonly number[], icon?: string, text?: string) {
-    const element = document.createElement('div');
+  private eventTag(
+    onClick: () => void,
+    className: string,
+    color: readonly number[],
+    icon?: string,
+    text?: string,
+  ) {
+    const element = navigationLabel(onClick);
     element.className = className;
     element.dataset.labelPriority = String(EVENT_PRIORITY + 2);
     element.style.setProperty('--event-color', cssColor(color));
     if (icon) element.appendChild(iconElement(icon));
+    if (!text && icon) element.setAttribute('aria-label', icon);
     if (text) {
       const span = document.createElement('span');
       span.textContent = text;
@@ -1581,6 +1610,7 @@ export class SceneView {
       case 'icon':
       case 'label': {
         const element = this.eventTag(
+          () => this.focusAnchor(info.ref),
           visual.kind === 'icon' ? 'viewer__event viewer__event--icon' : 'viewer__event',
           visual.color,
           visual.kind === 'icon' ? visual.icon : undefined,
@@ -1726,6 +1756,7 @@ export class SceneView {
         new THREE.MeshBasicMaterial({ color: srgb(visual.color) }),
       );
       const tag = this.eventTag(
+        () => this.flyTo(marker.position),
         'viewer__event viewer__event--icon',
         visual.color,
         visual.icon,
@@ -1746,6 +1777,7 @@ export class SceneView {
       const end = from?.world ? from : to?.world ? to : undefined;
       if (end === undefined) return;
       const tag = this.eventTag(
+        () => this.focusAnchor(end.ref),
         'viewer__event viewer__event--icon',
         visual.color,
         visual.icon,
@@ -1816,8 +1848,13 @@ export class SceneView {
    * 镜头取景（第一次有内容时自动执行；"回到全景"也用它）：斜上方约 45° 俯视，
    * 实体区里的内容占满画面，四边各留 6%（合计约 12%）的边距。
    */
-  frameContent(): void {
-    this.frameBounds(this.overviewBox?.box ?? this.frameTarget(), false, this.overviewBox?.framing);
+  frameContent(animate = true): void {
+    this.frameBounds(
+      this.overviewBox?.box ?? this.frameTarget(),
+      animate,
+      this.overviewBox?.framing,
+    );
+    this.autoFramed = this.framed;
   }
 
   /** 聚焦组合中的一个成员空间；传 `null` 时回到全景总览。 */
@@ -1867,27 +1904,13 @@ export class SceneView {
 
   private frameBounds(
     box: THREE.Box3,
-    animate = false,
+    animate = true,
     framing?: Pick<FrameOptions, 'azimuths' | 'elevation'>,
   ): void {
-    this.setPerspective('third');
     const frame = frameBox(box, { fov: this.camera.fov, aspect: this.camera.aspect, ...framing });
     if (frame === null) return;
-    const moving = animate && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (moving) {
-      this.flight = {
-        from: this.camera.position.clone(),
-        to: frame.position,
-        targetFrom: this.controls.target.clone(),
-        targetTo: frame.target,
-        start: performance.now(),
-        duration: 1650,
-      };
-    } else {
-      this.flight = null;
-      this.controls.target.copy(frame.target);
-      this.camera.position.copy(frame.position);
-    }
+    this.leaveFirstPersonForFlight();
+    this.moveCamera(frame.position, frame.target, animate);
     const diagonal = box.getSize(new THREE.Vector3()).length();
     this.camera.near = Math.max(0.02, frame.distance / 500);
     this.camera.far = backgroundFarPlane(
@@ -1896,7 +1919,6 @@ export class SceneView {
       this.frameSources.flatMap((source) => source.backgroundBoxes),
     );
     this.camera.updateProjectionMatrix();
-    this.controls.update();
     this.framed = true;
     this.autoFramed = !animate;
     this.labelsDirty = true;
@@ -1971,11 +1993,7 @@ export class SceneView {
       }
       return false;
     }
-    if (this.flight) {
-      this.camera.position.copy(this.flight.to);
-      this.controls.target.copy(this.flight.targetTo);
-      this.flight = null;
-    }
+    this.flight = null;
     this.autoFramed = false;
     const offset = new THREE.Vector3().subVectors(
       this.controls.object.position,
@@ -2004,19 +2022,50 @@ export class SceneView {
     return true;
   }
 
-  /** 镜头飞到某一点（连接的另一端）。 */
-  flyTo(point: THREE.Vector3): void {
-    this.setPerspective('third');
-    this.autoFramed = false;
-    const offset = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
-    offset.setLength(Math.min(offset.length(), 6));
+  private leaveFirstPersonForFlight(): void {
+    if (!this.firstPerson) return;
+    this.firstPerson.exit(true);
+    this.firstPerson = null;
+    this.options.onPerspectiveChange?.('third');
+  }
+
+  private moveCamera(to: THREE.Vector3, target: THREE.Vector3, animate = true): void {
+    if (!animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      this.flight = null;
+      this.camera.position.copy(to);
+      this.controls.target.copy(target);
+      this.camera.zoom = 1;
+      this.camera.updateProjectionMatrix();
+      this.controls.update();
+      return;
+    }
+    const distance = this.camera.position.distanceTo(to);
     this.flight = {
       from: this.camera.position.clone(),
-      to: point.clone().add(offset),
-      targetFrom: this.controls.target.clone(),
-      targetTo: point.clone(),
-      start: performance.now(),
+      to,
+      rotationFrom: this.camera.quaternion.clone(),
+      rotationTo: new THREE.Quaternion().setFromRotationMatrix(
+        new THREE.Matrix4().lookAt(to, target, this.camera.up),
+      ),
+      distanceFrom: this.controls.getDistance(),
+      targetTo: target.clone(),
+      zoomFrom: this.camera.zoom,
+      elapsed: 0,
+      lastFrame: performance.now(),
+      duration: Math.min(1650, 700 + distance * 12),
     };
+  }
+
+  /** 从当前眼位靠近目标，沿用当前方位。 */
+  flyTo(point: THREE.Vector3): void {
+    this.leaveFirstPersonForFlight();
+    this.autoFramed = false;
+    const orbit = new THREE.Spherical().setFromVector3(
+      this.camera.position.clone().sub(this.controls.target),
+    );
+    orbit.phi = THREE.MathUtils.clamp(orbit.phi, 0.01, this.controls.maxPolarAngle);
+    orbit.radius = Math.min(orbit.radius, 6);
+    this.moveCamera(new THREE.Vector3().setFromSpherical(orbit).add(point), point);
     this.host.dataset.flyTarget = point
       .toArray()
       .map((v) => v.toFixed(2))
@@ -2266,6 +2315,11 @@ export class SceneView {
     this.options.onSelect?.(picked);
   };
 
+  private onLabelWheel = (event: WheelEvent) => {
+    event.preventDefault();
+    this.renderer.domElement.dispatchEvent(new WheelEvent('wheel', event));
+  };
+
   private onControlsStart = () => {
     this.onPointerLeave();
     this.flight = null;
@@ -2275,6 +2329,13 @@ export class SceneView {
   /** 悬浮标签：props.label（保留键），没有时用物件的 label。 */
   private onPointerMove = (event: PointerEvent) => {
     if (event.pointerType !== 'mouse' || this.pointerDown !== null) return;
+    if (
+      event.target !== this.renderer.domElement &&
+      !this.labels.domElement.contains(event.target as Node)
+    ) {
+      this.onPointerLeave();
+      return;
+    }
     this.hoverPoint = { clientX: event.clientX, clientY: event.clientY };
     if (this.hoverTimer !== null) return;
     const wait = Math.max(0, this.hoverAt + 80 - performance.now());
@@ -2334,8 +2395,9 @@ export class SceneView {
     canvas.removeEventListener('pointerdown', this.onPointerDown);
     canvas.removeEventListener('pointerup', this.onPointerUp);
     canvas.removeEventListener('pointercancel', this.onPointerCancel);
-    canvas.removeEventListener('pointermove', this.onPointerMove);
-    canvas.removeEventListener('pointerleave', this.onPointerLeave);
+    this.labels.domElement.removeEventListener('wheel', this.onLabelWheel);
+    this.host.removeEventListener('pointermove', this.onPointerMove);
+    this.host.removeEventListener('pointerleave', this.onPointerLeave);
     this.controls.removeEventListener('start', this.onControlsStart);
     this.navigation.dispose();
     this.controls.dispose();
@@ -2373,6 +2435,13 @@ function sameKeys(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
 }
 
 /** 成员坐标里的米制盒子 → 世界坐标的盒子（摆放只绕 y 轴转 90° 的倍数，外接盒就是精确的）。 */
+function navigationLabel(onClick: () => void): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.addEventListener('click', onClick);
+  return button;
+}
+
 function placedBox(
   placement: Placement,
   min: readonly number[],

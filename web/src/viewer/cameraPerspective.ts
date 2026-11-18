@@ -74,9 +74,16 @@ export class FirstPersonView {
     this.camera.updateMatrixWorld();
   }
 
-  exit() {
+  exit(keepEye = false) {
     this.controls.object = this.camera;
     Object.assign(this.controls, this.orbitLimits);
+    if (keepEye) {
+      this.camera
+        .getWorldDirection(this.controls.target)
+        .multiplyScalar(LOOK_RADIUS)
+        .add(this.camera.position);
+      return;
+    }
     this.camera.position.copy(this.orbitPosition);
     this.controls.target.copy(this.orbitTarget);
     this.camera.near = this.orbitNear;
