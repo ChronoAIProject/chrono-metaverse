@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   EVENT_PRIORITY,
   anchorLabelPriority,
-  estimateLabelSize,
   layoutLabels,
   maxLabelsFor,
   type LabelCandidate,
@@ -10,7 +9,7 @@ import {
 } from './labelLayout';
 
 const OPTIONS: LabelLayoutOptions = {
-  showAll: false,
+  moreLabels: false,
   maxLabels: 10,
   minScreenSize: 28,
   padding: 4,
@@ -51,14 +50,14 @@ describe('锚点标签的优先级', () => {
 });
 
 describe('锚点标签的取舍', () => {
-  it('默认不显示优先级为 0 的；悬停 / 点按的总是显示；"显示全部"不做取舍', () => {
+  it('默认不显示优先级为 0 的；悬停 / 点按的总是显示；更多模式包含普通物件', () => {
     const candidates = [
       label('table', 100, 100, { priority: 3 }),
       label('seat', 300, 100, { priority: 0 }),
       label('hover-seat', 500, 100, { priority: 0, forced: true }),
     ];
     expect(shown(candidates)).toEqual(['hover-seat', 'table']);
-    expect(shown(candidates, { showAll: true })).toEqual(['hover-seat', 'seat', 'table']);
+    expect(shown(candidates, { moreLabels: true })).toEqual(['hover-seat', 'seat', 'table']);
   });
 
   it('屏幕上太小的锚点不放标签，有事件的除外', () => {
@@ -95,30 +94,45 @@ describe('锚点标签的取舍', () => {
     expect(shown([label('a', 100, 100), label('b', 162, 100)])).toEqual(['a']);
   });
 
-  it('总数有上限；悬停的不占名额，压住的其他标签让开', () => {
+  it('总数有上限；悬停的优先占用名额，压住的其他标签让开', () => {
     const grid = Array.from({ length: 30 }, (_, i) =>
       label(`z${String(i).padStart(2, '0')}`, 100 + (i % 6) * 200, 100 + Math.floor(i / 6) * 100),
     );
     expect(shown(grid)).toHaveLength(10);
     const hovered = label('hover', 100, 100, { priority: 0, forced: true });
     const result = shown([...grid, hovered]);
-    expect(result).toHaveLength(11);
+    expect(result).toHaveLength(10);
     expect(result).toContain('hover');
     // 和悬停标签重叠的 z00 让开了。
     expect(result).not.toContain('z00');
   });
 
-  it('按画面大小定上限：宽屏 10 个，手机 4 个', () => {
-    expect(maxLabelsFor(1440, 775)).toBe(10);
-    expect(maxLabelsFor(390, 560)).toBe(4);
-    expect(maxLabelsFor(900, 600)).toBe(5);
+  it('两种密度都避让，悬停或点选的标签也不会互相覆盖', () => {
+    const candidates = [
+      label('focus', 105, 100, { forced: true }),
+      label('hover', 100, 100, { forced: true, priority: 30 }),
+      label('event', 115, 100, { priority: EVENT_PRIORITY }),
+    ];
+    expect(shown(candidates)).toEqual(['hover']);
+    expect(shown(candidates, { moreLabels: true })).toEqual(['hover']);
   });
 
-  it('标签大小按字数估计：中文字比英文字母宽', () => {
-    const chinese = estimateLabelSize('前台');
-    const latin = estimateLabelSize('AB');
-    expect(chinese.width).toBeGreaterThan(latin.width);
-    expect(estimateLabelSize('1 号桌 · 有人 3 位').width).toBeGreaterThan(chinese.width);
-    expect(chinese.height).toBe(24);
+  it('同名普通物件在精简模式只显示一个，更多模式仍受上限约束', () => {
+    const candidates = [
+      label('a', 100, 100, { group: '前厅/会议椅' }),
+      label('b', 300, 100, { group: '前厅/会议椅' }),
+      label('c', 500, 100, { group: '花店/会议椅' }),
+    ];
+    expect(shown(candidates)).toEqual(['a', 'c']);
+    expect(shown(candidates, { moreLabels: true })).toEqual(['a', 'b', 'c']);
+    expect(shown(candidates, { moreLabels: true, maxLabels: 1 })).toEqual(['a']);
+  });
+
+  it('按画面大小定上限，更多模式扩大可用名额', () => {
+    expect(maxLabelsFor(1440, 775)).toBe(5);
+    expect(maxLabelsFor(390, 560)).toBe(2);
+    expect(maxLabelsFor(900, 600)).toBe(3);
+    expect(maxLabelsFor(1440, 775, true)).toBe(10);
+    expect(maxLabelsFor(390, 560, true)).toBe(4);
   });
 });
