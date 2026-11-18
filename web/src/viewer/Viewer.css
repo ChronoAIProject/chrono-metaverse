@@ -79,6 +79,8 @@
 .viewer__event,
 .viewer__link,
 .viewer__virtual-tag {
+  pointer-events: auto;
+  cursor: pointer;
   font-family: var(--font-ui);
   white-space: nowrap;
 }
@@ -180,7 +182,7 @@
   filter: brightness(1.08);
 }
 
-.viewer__link:focus-visible {
+.viewer__labels button:focus-visible {
   box-shadow: var(--focus-ring);
 }
 
