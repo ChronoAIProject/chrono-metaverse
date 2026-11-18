@@ -42,7 +42,6 @@ type PreviewIdentity = {
   spaceId: string;
   preview: { draftId: string; rev: number; baseSeq: number; scope: string };
 };
-const CMA = 'https://cma.nyxid.ai';
 function readChatProvider(): 'cma' | 'nyxagent' {
   try {
     return sessionStorage.getItem('metaverse-chat-provider') === 'nyxagent' ? 'nyxagent' : 'cma';
@@ -1031,11 +1030,12 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
     chatOpen,
     chatPanel,
   ]);
-  const cmaBase = session?.workerUrl ?? CMA;
+  const cmaBase = session?.workerUrl ?? undefined;
   const observedAgentId = note.agentId || operation?.agent_id;
-  const cmaLink = observedAgentId
-    ? `${cmaBase}/agents/${encodeURIComponent(observedAgentId)}`
-    : cmaBase;
+  const cmaLink =
+    cmaBase && observedAgentId
+      ? `${cmaBase}/agents/${encodeURIComponent(observedAgentId)}`
+      : cmaBase;
   const checkedPreview = previewIdentity?.url === preview ? previewIdentity.value : null;
   const ready = session?.connected && session.workerEnabled && connectionReady;
   const disabled = busy || Boolean(note.pending) || nyxagentBusy;
@@ -1939,7 +1939,7 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                         <p>旧记录没有保留错误详情。重试原请求可取回结果或新的错误原因。</p>
                       )}
                       <div className="workspace__actions">
-                        {note.pending.setupRequired && (
+                        {note.pending.setupRequired && cmaBase && (
                           <a
                             href={`${cmaBase}/auth/login`}
                             target="_blank"
@@ -1951,9 +1951,11 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                         <button disabled={busy} onClick={() => void runIntent(note.pending!)}>
                           {note.pending.setupRequired ? '已完成授权，重新提交' : '重试原请求'}
                         </button>
-                        <a href={cmaLink} target="_blank" rel="noopener noreferrer">
-                          在 CMA 核对进度 ↗
-                        </a>
+                        {cmaLink && (
+                          <a href={cmaLink} target="_blank" rel="noopener noreferrer">
+                            在 CMA 核对进度 ↗
+                          </a>
+                        )}
                       </div>
                       <details>
                         <summary>请求详情</summary>
@@ -2058,9 +2060,11 @@ export function WorkspacePage({ request = fetch }: { readonly request?: typeof f
                       >
                         刷新进度
                       </button>
-                      <a href={cmaLink} target="_blank" rel="noopener noreferrer">
-                        完整进度与审批 ↗
-                      </a>
+                      {cmaLink && (
+                        <a href={cmaLink} target="_blank" rel="noopener noreferrer">
+                          完整进度与审批 ↗
+                        </a>
+                      )}
                     </div>
                     {note.agentId && (
                       <p>
