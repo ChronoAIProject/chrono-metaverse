@@ -135,6 +135,9 @@ impl ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
+        if self.status == StatusCode::SERVICE_UNAVAILABLE {
+            tracing::warn!(code = self.code, "接口暂时不可用");
+        }
         let mut response = (self.status, Json(self.document())).into_response();
         let headers = response.headers_mut();
         headers.insert(
