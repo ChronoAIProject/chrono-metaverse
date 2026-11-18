@@ -6,12 +6,15 @@
 //! [`Grant`]、[`CreateGrant`]、[`AuthorizerKey`] 的字段都是私有的，只有本模块能构造，
 //! 所以数据访问层（`repo/`）的每一次读写都必然经过这里的检查。
 
+use std::sync::Arc;
+
 use metaverse_core::ids::is_space_id;
 use metaverse_core::model::{EvidenceBasis, OrgRole, Owner, OwnerEvidence, OwnerKind, Visibility};
 use metaverse_core::{sha256_hex, Timestamp};
 use subtle::ConstantTimeEq;
 
 use super::access::{direct_access, level_for_role, AccessLevel};
+use super::in_flight::InFlight;
 use super::organizations::{MembershipLookup, OrganizationClient};
 use super::permissions::Capability;
 use super::Caller;
@@ -142,6 +145,7 @@ pub enum Purpose {
 pub struct Authorizer {
     repo: Repo,
     organizations: OrganizationClient,
+    browser_memberships: InFlight<(String, String, String), MembershipLookup>,
     issuer: String,
     require_permissions: bool,
 }
@@ -173,6 +177,7 @@ impl Authorizer {
         Self {
             repo,
             organizations,
+            browser_memberships: InFlight::default(),
             issuer,
             require_permissions,
         }
@@ -295,7 +300,7 @@ impl Authorizer {
     /// Browser viewers get the public scene projection, after the same resource ACL.
     /// This grant cannot manage content and is never accepted as a business identity.
     pub(crate) async fn browser_space(
-        &self,
+        self: &Arc<Self>,
         identity: &super::oauth::catalog::BrowserIdentity,
         space_id: &str,
     ) -> Result<Grant, ApiError> {
@@ -311,13 +316,35 @@ impl Authorizer {
         let level = match direct_access(&owner, identity.subject()) {
             Some(level) => level,
             None => match self
-                .organizations
-                .membership(identity.subject(), Some(identity.credential()), &owner.id)
+                .browser_memberships
+                .check(
+                    (
+                        identity.subject().to_owned(),
+                        sha256_hex(identity.credential().value().as_bytes()),
+                        owner.id.clone(),
+                    ),
+                    || {
+                        let authorizer = self.clone();
+                        let subject = identity.subject().to_owned();
+                        let credential = identity.credential().clone();
+                        let org_id = owner.id.clone();
+                        async move {
+                            authorizer
+                                .organizations
+                                .membership(&subject, Some(&credential), &org_id)
+                                .await
+                        }
+                    },
+                )
                 .await
             {
-                MembershipLookup::Member(member) => level_for_role(member.role),
+                MembershipLookup::Member(member) if member.is_current() => {
+                    level_for_role(member.role)
+                }
                 MembershipLookup::NotMember => AccessLevel::None,
-                MembershipLookup::Unavailable => return Err(ApiError::org_membership_unavailable()),
+                MembershipLookup::Member(_) | MembershipLookup::Unavailable => {
+                    return Err(ApiError::org_membership_unavailable())
+                }
             },
         };
         if level == AccessLevel::None {

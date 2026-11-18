@@ -203,6 +203,7 @@ impl OAuthService {
             return Err(OAuthError::Reconnect);
         }
         if !response.status().is_success() {
+            tracing::warn!(status = %response.status(), "NyxID 主体核验暂时失败");
             return Err(OAuthError::Unavailable);
         }
         #[derive(Deserialize)]
