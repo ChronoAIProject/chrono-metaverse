@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    auth::{in_flight::InFlight, organizations::ForwardedCredential},
+    auth::{organizations::ForwardedCredential, read_checks::ReadChecks},
     repo::{OAuthGrantRecord, Repo, RepoError},
 };
 pub use config::OAuthConfig;
@@ -77,7 +77,7 @@ pub struct OAuthService {
     vault: Vault,
     http: reqwest::Client,
     nyxagent_http: reqwest::Client,
-    browser_subject_checks: InFlight<(String, String), Result<String, OAuthError>>,
+    browser_subject_checks: ReadChecks<(String, String), Result<(), OAuthError>>,
 }
 
 impl OAuthService {
@@ -111,7 +111,7 @@ impl OAuthService {
             repo,
             vault,
             http,
-            browser_subject_checks: InFlight::default(),
+            browser_subject_checks: ReadChecks::new(Result::is_ok),
             nyxagent_http: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .connect_timeout(Duration::from_secs(5))

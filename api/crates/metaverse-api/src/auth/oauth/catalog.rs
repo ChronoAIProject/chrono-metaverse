@@ -19,11 +19,15 @@ use serde_json::json;
 
 pub(crate) struct BrowserIdentity {
     subject: String,
+    grant_version: String,
     credential: crate::auth::ForwardedCredential,
 }
 impl BrowserIdentity {
     pub(crate) fn subject(&self) -> &str {
         &self.subject
+    }
+    pub(crate) fn grant_version(&self) -> &str {
+        &self.grant_version
     }
     pub(crate) fn credential(&self) -> &crate::auth::ForwardedCredential {
         &self.credential
@@ -60,6 +64,7 @@ pub(crate) async fn list(
     }
     let identity = BrowserIdentity {
         subject: session.subject.clone(),
+        grant_version: held.record.version.clone(),
         credential: held.credential.clone(),
     };
     let owners = std::iter::once((Owner::person(session.subject.clone()), OrgRole::Admin))
@@ -99,9 +104,10 @@ pub(crate) async fn read(
         next: Next,
     ) -> Result<Response, ApiError> {
         let oauth = routes::service(&state)?;
-        let (session, held) = routes::verified_browser(&oauth, request.headers()).await?;
+        let (session, held) = routes::verified_viewer(&oauth, request.headers()).await?;
         let identity = BrowserIdentity {
             subject: session.subject,
+            grant_version: held.record.version.clone(),
             credential: held.credential.clone(),
         };
         let params: crate::routes::public_access::UniverseParam =

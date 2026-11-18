@@ -60,7 +60,9 @@ struct ProviderState {
     worker_gate: Option<Arc<tokio::sync::Notify>>,
     worker_entered: Option<Arc<tokio::sync::Notify>>,
     role: Option<String>,
+    role_failure: Option<StatusCode>,
     userinfo_down: bool,
+    userinfo_calls: usize,
     refresh_rejected: bool,
     refresh_subject: Option<String>,
     jwt_access: bool,
@@ -83,9 +85,12 @@ impl Default for MockProvider {
 }
 
 impl MockProvider {
-    pub(super) async fn role(&self, token: &str) -> Option<String> {
+    pub(super) async fn role(&self, token: &str) -> Result<Option<String>, StatusCode> {
         let (role, gate, entered) = {
             let state = self.0.lock().unwrap();
+            if let Some(status) = state.role_failure {
+                return Err(status);
+            }
             (
                 state.access.get(token).and(state.role.clone()),
                 state.role_gate.clone(),
@@ -98,7 +103,7 @@ impl MockProvider {
         if let Some(gate) = gate {
             gate.notified().await;
         }
-        role
+        Ok(role)
     }
 
     pub(super) fn routes(&self, app: Router) -> Router {
@@ -160,7 +165,8 @@ impl MockProvider {
         .route("/oauth/userinfo", get(move |headers: HeaderMap| {
             let provider = user.clone();
             async move {
-                let state = provider.0.lock().unwrap();
+                let mut state = provider.0.lock().unwrap();
+                state.userinfo_calls += 1;
                 if state.userinfo_down { return StatusCode::SERVICE_UNAVAILABLE.into_response(); }
                 let token = headers.get(header::AUTHORIZATION).unwrap().to_str().unwrap().strip_prefix("Bearer ").unwrap();
                 match state.access.get(token) {
