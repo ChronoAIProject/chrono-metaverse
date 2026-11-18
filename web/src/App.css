@@ -1,3 +1,8 @@
+html {
+  /* 面板可沿两个方向滚动，捏合手势留给空间画布。 */
+  touch-action: pan-x pan-y;
+}
+
 #root {
   display: block;
 }

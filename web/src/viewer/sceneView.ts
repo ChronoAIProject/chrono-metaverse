@@ -1,4 +1,5 @@
 import { externalContentOf } from '../core/externalSource';
+import { attachCameraNavigation } from './cameraNavigation';
 import { ExternalContentView } from './externalContentView';
 import * as THREE from 'three';
 import type { CameraAction } from '../workspace/viewerActions';
@@ -312,6 +313,7 @@ export class SceneView {
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(50, 1, 0.05, 500);
   private readonly controls: OrbitControls;
+  private readonly navigation: ReturnType<typeof attachCameraNavigation>;
   private readonly content = new THREE.Group();
   private readonly overlay = new THREE.Group();
   private readonly visualLayer = new THREE.Group();
@@ -407,11 +409,11 @@ export class SceneView {
     // 剖切只作用在场景内容的材质上（虚拟区光效、标签不被切掉）。
     this.renderer.localClippingEnabled = true;
     this.renderer.domElement.className = 'viewer__canvas';
-    this.renderer.domElement.setAttribute(
-      'aria-label',
-      '空间的三维视图：拖动旋转，滚轮或双指缩放，右键或双指拖动平移',
-    );
-    this.renderer.domElement.setAttribute('role', 'img');
+    const canvas = this.renderer.domElement;
+    canvas.title =
+      '点击画布后用 WASD 或方向键移动，Q 下降，E 上升。拖动旋转，右键拖动平移，滚轮或双指捏合缩放。';
+    canvas.setAttribute('aria-label', '空间的三维视图。' + canvas.title);
+    canvas.setAttribute('role', 'group');
     host.appendChild(this.renderer.domElement);
 
     this.labels = new CSS2DRenderer();
@@ -452,6 +454,7 @@ export class SceneView {
 
     this.camera.position.set(8, 7, 11);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.minDistance = 0.1;
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
     this.controls.maxPolarAngle = Math.PI * 0.495;
@@ -461,9 +464,10 @@ export class SceneView {
     // 用户动了镜头以后，不再自动重新取景。
     this.controls.addEventListener('start', this.onControlsStart);
 
-    const canvas = this.renderer.domElement;
+    this.navigation = attachCameraNavigation(canvas, this.controls, this.onControlsStart);
     canvas.addEventListener('pointerdown', this.onPointerDown);
     canvas.addEventListener('pointerup', this.onPointerUp);
+    canvas.addEventListener('pointercancel', this.onPointerCancel);
     canvas.addEventListener('pointermove', this.onPointerMove);
     canvas.addEventListener('pointerleave', this.onPointerLeave);
 
@@ -524,6 +528,7 @@ export class SceneView {
       this.controls.target.lerpVectors(this.flight.targetFrom, this.flight.targetTo, ease);
       if (t >= 1) this.flight = null;
     }
+    this.navigation.update();
     this.controls.update();
     this.environment.update(this.camera);
     this.externalContent.update(this.camera);
@@ -2155,7 +2160,12 @@ export class SceneView {
   }
 
   private onPointerDown = (event: PointerEvent) => {
-    this.pointerDown = { x: event.clientX, y: event.clientY };
+    this.pointerDown =
+      event.isPrimary && event.button === 0 ? { x: event.clientX, y: event.clientY } : null;
+  };
+
+  private onPointerCancel = () => {
+    this.pointerDown = null;
   };
 
   private onPointerUp = (event: PointerEvent) => {
@@ -2174,6 +2184,7 @@ export class SceneView {
   };
 
   private onControlsStart = () => {
+    this.flight = null;
     this.autoFramed = false;
   };
 
@@ -2227,9 +2238,11 @@ export class SceneView {
     const canvas = this.renderer.domElement;
     canvas.removeEventListener('pointerdown', this.onPointerDown);
     canvas.removeEventListener('pointerup', this.onPointerUp);
+    canvas.removeEventListener('pointercancel', this.onPointerCancel);
     canvas.removeEventListener('pointermove', this.onPointerMove);
     canvas.removeEventListener('pointerleave', this.onPointerLeave);
     this.controls.removeEventListener('start', this.onControlsStart);
+    this.navigation.dispose();
     this.controls.dispose();
     this.clearVisuals();
     this.clearSelection();

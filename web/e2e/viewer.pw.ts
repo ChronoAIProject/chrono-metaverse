@@ -957,6 +957,47 @@ test('浅色主题', async ({ page }) => {
   await page.screenshot({ path: join(SHOTS, 'light-theme.png') });
 });
 
+test('键盘移动相机，触控板缩放空间，页面和操作面板保持原比例', async ({ page }) => {
+  await page.goto(UNIVERSE);
+  await waitForScene(page, 'optimized');
+  const canvas = page.locator('.viewer__canvas');
+  const marker = page.locator('.viewer__member-tag', { hasText: '街角花店' });
+  const x = () => marker.evaluate((element) => element.getBoundingClientRect().x);
+  const start = await x();
+  await canvas.click({ position: { x: 40, y: 160 } });
+  await expect(canvas).toBeFocused();
+  await page.keyboard.down('d');
+  try {
+    await expect.poll(x).toBeLessThan(start - 12);
+  } finally {
+    await page.keyboard.up('d');
+  }
+  await page.getByRole('button', { name: '回到全景' }).click();
+  await expect.poll(x).toBeCloseTo(start, 1);
+
+  // 带 Control 的滚轮是 Chromium 触控板捏合传给页面的事件。
+  const pageSize = () => page.evaluate(() => [innerWidth, devicePixelRatio, visualViewport?.scale]);
+  const size = await pageSize();
+  const wheel = { deltaY: -20, ctrlKey: true, bubbles: true, cancelable: true };
+  await canvas.dispatchEvent('wheel', wheel);
+  await expect.poll(async () => Math.abs((await x()) - start)).toBeGreaterThan(2);
+  expect(await pageSize()).toEqual(size);
+
+  const panel = page.getByRole('button', { name: '回到全景' });
+  const afterZoom = await x();
+  const canceled = await panel.evaluate(
+    (element, init) => [
+      !element.dispatchEvent(new WheelEvent('wheel', init)),
+      !element.dispatchEvent(new WheelEvent('wheel', { ...init, ctrlKey: false })),
+      !element.dispatchEvent(new KeyboardEvent('keydown', { ...init, key: '+', metaKey: true })),
+    ],
+    wheel,
+  );
+  expect(canceled).toEqual([true, false, true]);
+  await panel.press('ArrowLeft');
+  expect(await x()).toBeCloseTo(afterZoom, 1);
+});
+
 test.describe('移动端', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
@@ -991,6 +1032,8 @@ test.describe('移动端', () => {
         touchPoints: points.map((p, id) => ({ ...p, id })),
       });
     };
+    const pageScale = () => page.evaluate(() => window.visualViewport!.scale);
+    const initialScale = await pageScale();
     const before = await canvas.screenshot();
     await touch('touchStart', [{ x: cx, y: cy }]);
     for (let i = 1; i <= 8; i += 1) await touch('touchMove', [{ x: cx + i * 12, y: cy }]);
@@ -1012,6 +1055,7 @@ test.describe('移动端', () => {
     await page.waitForTimeout(600);
     const zoomed = await canvas.screenshot();
     expect(Buffer.compare(rotated, zoomed)).not.toBe(0);
+    expect(await pageScale()).toBe(initialScale);
     await page.screenshot({ path: join(SHOTS, 'mobile-touch.png') });
   });
 });
