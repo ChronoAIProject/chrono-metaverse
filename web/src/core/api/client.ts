@@ -282,6 +282,35 @@ export function trimTrailingSlashes(value: string): string {
   return value.slice(0, end);
 }
 
+const TRANSIENT_READ_STATUSES = new Set([429, 502, 503, 504]);
+const MAX_READ_RETRY_DELAY_MS = 3_000;
+
+function readRetryDelay(response: Response): number {
+  const retryAfter = response.headers.get('Retry-After');
+  const delay = retryAfter
+    ? /^\d+$/.test(retryAfter)
+      ? Number(retryAfter) * 1_000
+      : Date.parse(retryAfter) - Date.now()
+    : 0;
+  return Math.max(1_000, delay || 0);
+}
+
+async function waitForReadRetry(delay: number, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', abort);
+      resolve();
+    }, delay);
+    function abort() {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    }
+    signal?.addEventListener('abort', abort, { once: true });
+  });
+  signal?.throwIfAborted();
+}
+
 export function createPublicClient(options: PublicClientOptions = {}): PublicClient {
   const base = trimTrailingSlashes(options.baseUrl ?? '');
   const universe = options.universe ?? undefined;
@@ -299,22 +328,30 @@ export function createPublicClient(options: PublicClientOptions = {}): PublicCli
     signal?: AbortSignal,
   ): Promise<Response> {
     const browser = options.browser && path.startsWith('/spaces/') ? options.browser : undefined;
-    const response = await fetcher(
-      `${base}${browser ? '/api/auth/nyxid/view' : '/api/public'}${path}`,
-      {
-        signal,
-        method: browser ? 'POST' : 'GET',
-        headers: browser
-          ? { ...extra, 'x-csrf-token': browser.csrfToken }
-          : preview === undefined
-            ? headers(extra)
-            : { Authorization: `Preview ${preview}` },
-        ...(preview === undefined && !browser ? {} : { cache: 'no-store' as const }),
-        // 链接里的令牌不随 Referer 带出去（设计 7.2）。
-        referrerPolicy: 'no-referrer',
-        credentials: browser ? 'same-origin' : 'omit',
-      },
-    );
+    const url = `${base}${browser ? '/api/auth/nyxid/view' : '/api/public'}${path}`;
+    const init: RequestInit = {
+      signal,
+      method: browser ? 'POST' : 'GET',
+      headers: browser
+        ? { ...extra, 'x-csrf-token': browser.csrfToken }
+        : preview === undefined
+          ? headers(extra)
+          : { Authorization: `Preview ${preview}` },
+      ...(preview === undefined && !browser ? {} : { cache: 'no-store' }),
+      // 链接里的令牌不随 Referer 带出去（设计 7.2）。
+      referrerPolicy: 'no-referrer',
+      credentials: browser ? 'same-origin' : 'omit',
+    };
+    let response = await fetcher(url, init);
+    // 工作台用 POST 读取，短暂的限流或服务故障只重试一次，避免放大并发。
+    if (browser && TRANSIENT_READ_STATUSES.has(response.status)) {
+      const delay = readRetryDelay(response);
+      if (delay <= MAX_READ_RETRY_DELAY_MS) {
+        void response.body?.cancel().catch(() => undefined);
+        await waitForReadRetry(delay + Math.random() * 250, signal);
+        response = await fetcher(url, init);
+      }
+    }
     if (!response.ok && response.status !== 304) throw await problem(response);
     return response;
   }

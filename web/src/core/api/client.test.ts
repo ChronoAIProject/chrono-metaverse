@@ -329,3 +329,68 @@ it('uses session and CSRF only for fixed read-only browser space routes; publish
   expect(requests[1]!.init?.credentials).toBe('omit');
   expect(new Headers(requests[1]!.init?.headers).has('x-csrf-token')).toBe(false);
 });
+
+it('工作台读取遇到短暂 503 时等待后重试一次', async () => {
+  vi.useFakeTimers();
+  try {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 503, headers: { 'Retry-After': '1' } }))
+      .mockResolvedValueOnce(Response.json({ name: '街角' }));
+    const client = createPublicClient({ browser: { csrfToken: 'browser-csrf' }, fetch: request });
+    const result = client.space('street-corner');
+    await vi.advanceTimersByTimeAsync(999);
+    expect(request).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(251);
+    await expect(result).resolves.toEqual({ name: '街角' });
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(request.mock.calls[1]).toEqual(request.mock.calls[0]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('持续故障在一次重试后显示原错误，权限拒绝直接返回', async () => {
+  vi.useFakeTimers();
+  try {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(Response.json({ code: 'org_membership_unavailable' }, { status: 503 }))
+      .mockResolvedValueOnce(new Response(null, { status: 401 }));
+    const client = createPublicClient({ browser: { csrfToken: 'browser-csrf' }, fetch: request });
+    const unavailable = expect(client.space('street-corner')).rejects.toMatchObject({
+      status: 503,
+      code: 'org_membership_unavailable',
+    });
+    await vi.advanceTimersByTimeAsync(1_250);
+    await unavailable;
+    await expect(client.space('street-corner')).rejects.toMatchObject({ status: 401 });
+    expect(request).toHaveBeenCalledTimes(3);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('切换视图时取消三维分片的重试', async () => {
+  vi.useFakeTimers();
+  try {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 503 }));
+    const client = createPublicClient({ browser: { csrfToken: 'browser-csrf' }, fetch: request });
+    const controller = new AbortController();
+    const result = client.external!(
+      'street-corner',
+      4,
+      { entity: 'background', kind: 'content', source: 0, url: 'https://example.com/tile.glb' },
+      controller.signal,
+    );
+    const aborted = expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.advanceTimersByTimeAsync(100);
+    controller.abort();
+    await vi.runAllTimersAsync();
+    await aborted;
+    expect(request).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
