@@ -223,7 +223,10 @@ impl OrganizationClient {
         match response.status().as_u16() {
             401 | 403 | 404 => return MembershipLookup::NotMember,
             200 => {}
-            _ => return MembershipLookup::Unavailable,
+            status => {
+                tracing::warn!(status, "NyxID 组织角色查询暂时失败");
+                return MembershipLookup::Unavailable;
+            }
         }
         if response
             .content_length()
