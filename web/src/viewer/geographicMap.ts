@@ -207,7 +207,8 @@ export class GeographicMap {
       new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
     );
     const pixels =
-      this.host.clientHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
+      this.host.clientHeight /
+      (2 * Math.tan(THREE.MathUtils.degToRad(camera.getEffectiveFOV() / 2)));
     const visible = (node: Node) =>
       Math.acos(THREE.MathUtils.clamp(node.direction.dot(direction), -1, 1)) <=
         horizon + node.angle + 0.02 &&

@@ -21,6 +21,7 @@
 
 .viewer__labels {
   position: absolute;
+  z-index: 0;
   inset: 0;
   pointer-events: none;
 }
@@ -277,6 +278,7 @@
  */
 .viewer__bottom {
   position: absolute;
+  z-index: 1;
   left: var(--space-4);
   right: var(--space-4);
   bottom: var(--space-4);
@@ -296,6 +298,79 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--space-2);
+}
+
+.camera-controls {
+  padding: 5px;
+  border: 1px solid var(--rule-2);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--lift-plate);
+  user-select: none;
+}
+
+.camera-controls__modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 2px;
+  border-radius: var(--radius);
+  background: var(--inset);
+}
+
+.camera-controls__modes button {
+  min-height: var(--control-h-sm);
+  padding-inline: 5px;
+  border-radius: var(--radius-sm);
+  color: var(--ink-2);
+  font-size: var(--text-note);
+}
+
+.camera-controls__modes button[aria-pressed='true'] {
+  background: var(--primary-fill);
+  color: var(--on-primary);
+  font-weight: 600;
+}
+
+.camera-controls__actions {
+  display: flex;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.camera-controls__group > span {
+  display: block;
+  margin-block: 2px;
+  font-size: var(--text-meta);
+  text-align: center;
+  color: var(--ink-2);
+}
+
+.camera-controls__keys {
+  display: grid;
+  grid-template-rows: repeat(2, var(--hit));
+  grid-template-columns: repeat(1, var(--hit));
+  gap: 2px;
+}
+
+.camera-controls__group:first-child .camera-controls__keys {
+  grid-template-columns: repeat(3, var(--hit));
+}
+
+.camera-controls__keys button {
+  display: grid;
+  place-items: center;
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.camera-controls button:hover:not([aria-pressed='true']),
+.camera-controls button:active {
+  background: var(--tint-hover);
+  color: var(--accent);
 }
 
 /* 简短署名：放不下时先截短标题（完整列表点"全部来源"展开），许可、项数和按钮一直看得见。 */

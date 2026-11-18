@@ -70,6 +70,8 @@ function setup() {
     },
     select: vi.fn(),
     frameContent: vi.fn(),
+    stepCamera: vi.fn(),
+    setPerspective: vi.fn(),
     setShowAllLabels: vi.fn(),
     dispose,
     applyCamera: camera,
