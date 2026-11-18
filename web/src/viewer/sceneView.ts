@@ -1,5 +1,6 @@
 import { externalContentOf } from '../core/externalSource';
-import { attachCameraNavigation } from './cameraNavigation';
+import { FirstPersonView, type CameraPerspective } from './cameraPerspective';
+import { attachCameraNavigation, type CameraStep } from './cameraNavigation';
 import { ExternalContentView } from './externalContentView';
 import * as THREE from 'three';
 import type { CameraAction } from '../workspace/viewerActions';
@@ -94,6 +95,7 @@ export interface Selection {
 }
 
 export interface SceneViewOptions {
+  readonly onPerspectiveChange?: (mode: CameraPerspective) => void;
   /** 按资源哈希取贴图。没有时贴图材质退回成色调颜色。 */
   readonly loadTexture?: (hash: string) => Promise<THREE.Texture>;
   /** 按资源哈希取处理后的物件模型（glb 字节）。 */
@@ -313,6 +315,7 @@ export class SceneView {
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(50, 1, 0.05, 500);
   private readonly controls: OrbitControls;
+  private firstPerson: FirstPersonView | null = null;
   private readonly navigation: ReturnType<typeof attachCameraNavigation>;
   private readonly content = new THREE.Group();
   private readonly overlay = new THREE.Group();
@@ -530,6 +533,7 @@ export class SceneView {
     }
     this.navigation.update();
     this.controls.update();
+    this.firstPerson?.sync();
     this.environment.update(this.camera);
     this.externalContent.update(this.camera);
     this.updateBackgroundViews();
@@ -1818,7 +1822,25 @@ export class SceneView {
     if (info?.world) this.flyTo(info.world);
   }
 
+  setPerspective(mode: CameraPerspective): void {
+    if ((this.firstPerson !== null) === (mode === 'first')) return;
+    this.onControlsStart();
+    if (mode === 'first') {
+      this.firstPerson = new FirstPersonView(this.camera, this.controls, this.frameTarget());
+    } else {
+      this.firstPerson?.exit();
+      this.firstPerson = null;
+    }
+    this.options.onPerspectiveChange?.(mode);
+  }
+
+  stepCamera(action: CameraStep): void {
+    this.navigation.step(action, this.firstPerson !== null);
+    this.firstPerson?.sync();
+  }
+
   private frameBounds(box: THREE.Box3): void {
+    this.setPerspective('third');
     const frame = frameBox(box, { fov: this.camera.fov, aspect: this.camera.aspect });
     if (frame === null) return;
     this.flight = null;
@@ -1911,7 +1933,10 @@ export class SceneView {
       this.flight = null;
     }
     this.autoFramed = false;
-    const offset = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
+    const offset = new THREE.Vector3().subVectors(
+      this.controls.object.position,
+      this.controls.target,
+    );
     const spherical = new THREE.Spherical().setFromVector3(offset);
     if (action.kind === 'zoom')
       spherical.radius = THREE.MathUtils.clamp(
@@ -1927,13 +1952,17 @@ export class SceneView {
         Math.PI - 0.05,
       );
     }
-    this.camera.position.copy(this.controls.target).add(offset.setFromSpherical(spherical));
+    this.controls.object.position
+      .copy(this.controls.target)
+      .add(offset.setFromSpherical(spherical));
     this.controls.update();
+    this.firstPerson?.sync();
     return true;
   }
 
   /** 镜头飞到某一点（连接的另一端）。 */
   flyTo(point: THREE.Vector3): void {
+    this.setPerspective('third');
     this.autoFramed = false;
     const offset = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
     offset.setLength(Math.min(offset.length(), 6));
@@ -1986,7 +2015,7 @@ export class SceneView {
     if (info.extent === null) {
       const depth = -world.clone().applyMatrix4(this.camera.matrixWorldInverse).z;
       if (depth <= 0) return 0;
-      const halfFov = THREE.MathUtils.degToRad(this.camera.fov) / 2;
+      const halfFov = THREE.MathUtils.degToRad(this.camera.getEffectiveFOV()) / 2;
       return (NOMINAL_ANCHOR_SIZE * height) / 2 / (depth * Math.tan(halfFov));
     }
     let minX = Infinity;

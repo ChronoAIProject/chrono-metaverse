@@ -998,6 +998,31 @@ test('键盘移动相机，触控板缩放空间，页面和操作面板保持�
   expect(await x()).toBeCloseTo(afterZoom, 1);
 });
 
+test('可见的相机控制器可以点按移动并切换第一、第三视角', async ({ page }) => {
+  await page.goto(UNIVERSE);
+  await waitForScene(page, 'optimized');
+  const pad = page.getByRole('group', { name: '相机控制器' });
+  const button = (name: string) => pad.getByRole('button', { name, exact: true });
+  const marker = page.locator('.viewer__member-tag', { hasText: '街角花店' });
+  const x = () => marker.evaluate((node) => node.getBoundingClientRect().x);
+  const start = await x();
+  await button('向右平移').click();
+  await expect.poll(x).toBeLessThan(start - 5);
+  const moved = await x();
+  await button('第一视角').click();
+  await expect(button('第一视角')).toHaveAttribute('aria-pressed', 'true');
+  await button('向左转').click();
+  await button('前进').click();
+  await button('拉近').click();
+  expect(await page.evaluate(() => visualViewport?.scale)).toBe(1);
+  await button('第三视角').click();
+  await expect.poll(x).toBeCloseTo(moved, 1);
+  await button('第一视角').click();
+  await page.getByRole('button', { name: '回到全景' }).click();
+  await expect(button('第三视角')).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(x).toBeCloseTo(start, 1);
+});
+
 test.describe('移动端', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
@@ -1057,5 +1082,13 @@ test.describe('移动端', () => {
     expect(Buffer.compare(rotated, zoomed)).not.toBe(0);
     expect(await pageScale()).toBe(initialScale);
     await page.screenshot({ path: join(SHOTS, 'mobile-touch.png') });
+    const pad = page.getByRole('group', { name: '相机控制器' });
+    await pad.getByRole('button', { name: '第一视角' }).tap();
+    await pad.getByRole('button', { name: '前进' }).tap();
+    await expect(pad.getByRole('button', { name: '第一视角' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await pad.getByRole('button', { name: '第三视角' }).tap();
   });
 });
