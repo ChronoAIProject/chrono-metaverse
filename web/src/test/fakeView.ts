@@ -8,8 +8,8 @@ export interface FakeView extends SceneViewLike {
   readonly contents: SceneContent[];
   readonly visuals: (readonly Visual[])[];
   cutaway: number | null;
-  /** 是否显示全部锚点标签。 */
-  allLabels: boolean;
+  /** 是否显示更多锚点标签。 */
+  moreLabels: boolean;
   focusMember: ReturnType<typeof vi.fn<NonNullable<SceneViewLike['focusMember']>>>;
   focusAnchor: ReturnType<typeof vi.fn<NonNullable<SceneViewLike['focusAnchor']>>>;
   /** 最后一次的内容（只看第一个成员的视图）。 */
@@ -23,7 +23,7 @@ export function fakeViewFactory(): { factory: SceneViewFactory; views: FakeView[
       contents: [],
       visuals: [],
       cutaway: null,
-      allLabels: false,
+      moreLabels: false,
       last() {
         const content = view.contents[view.contents.length - 1];
         if (content === undefined) throw new Error('还没有内容');
@@ -38,8 +38,8 @@ export function fakeViewFactory(): { factory: SceneViewFactory; views: FakeView[
       setCutaway(height) {
         view.cutaway = height;
       },
-      setShowAllLabels(all) {
-        view.allLabels = all;
+      setMoreLabels(all) {
+        view.moreLabels = all;
       },
       select: vi.fn(),
       frameContent: vi.fn(),

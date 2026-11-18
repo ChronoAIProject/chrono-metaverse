@@ -91,7 +91,9 @@
   font-size: var(--text-meta);
   font-weight: 500;
   line-height: 18px;
-  transform: translateY(-18px);
+  max-width: min(32ch, 55vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
   border: 1px solid var(--rule);
 }
 
@@ -152,14 +154,12 @@
   padding: 3px 9px 3px 5px;
 }
 
-/* 用独立的 scale 属性，不覆盖 CSS2DRenderer 写在 transform 上的定位。 */
+/* 保持入场动画的标签边界稳定。 */
 @keyframes viewer-pop {
   from {
-    scale: 0.6;
     opacity: 0;
   }
   to {
-    scale: 1;
     opacity: 1;
   }
 }

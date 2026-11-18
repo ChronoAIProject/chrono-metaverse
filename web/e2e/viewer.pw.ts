@@ -167,7 +167,7 @@ function visibleLabels(page: Page) {
 
 /** 看得见的锚点标签两两不重叠（允许 1 像素误差）。 */
 async function expectNoOverlap(page: Page) {
-  const rects = await visibleLabels(page).evaluateAll((elements) =>
+  const rects = await page.locator('.viewer__labels > :visible').evaluateAll((elements) =>
     elements.map((element) => {
       const r = element.getBoundingClientRect();
       return [r.left, r.top, r.right, r.bottom] as const;
@@ -464,7 +464,7 @@ test('灯光：优化视图里白色的纯色部件是亮的，背光面也不�
   await page.screenshot({ path: join(SHOTS, 'lighting-backlit.png') });
 });
 
-test('锚点标签：默认只显示有意义的，避让、有上限，悬停时显示，可以显示全部', async ({ page }) => {
+test('锚点标签：默认只显示有意义的，避让、有上限，悬停时显示，可显示更多', async ({ page }) => {
   await page.goto(LINK);
   await waitForScene(page, 'optimized');
   const anchors = page.locator('.viewer__anchor');
@@ -472,8 +472,8 @@ test('锚点标签：默认只显示有意义的，避让、有上限，悬停�
   expect(total).toBeGreaterThanOrEqual(20);
   await expect.poll(() => numberAttr(page, 'data-labels')).toBeGreaterThan(3);
   const shown = await visibleLabels(page).count();
-  // 1440 × 900 的画面最多 10 个。
-  expect(shown).toBeLessThanOrEqual(10);
+  // 宽屏的精简模式最多显示 5 个。
+  expect(shown).toBeLessThanOrEqual(5);
   expect(shown).toBeLessThan(total);
   expect(await numberAttr(page, 'data-labels')).toBe(shown);
   await expectNoOverlap(page);
@@ -490,15 +490,23 @@ test('锚点标签：默认只显示有意义的，避让、有上限，悬停�
   );
   await page.screenshot({ path: join(SHOTS, 'labels-default.png') });
 
-  // 显示全部标签。
-  const all = page.getByRole('checkbox', { name: '显示全部标签' });
+  // 更多标签。
+  const all = page.getByRole('checkbox', { name: '更多标签' });
   await all.check();
   const seat = anchors.filter({ hasText: '座位 1' });
-  await expect(seat).toBeVisible();
   await expect.poll(() => visibleLabels(page).count()).toBeGreaterThan(shown);
+  await expectNoOverlap(page);
   await page.screenshot({ path: join(SHOTS, 'labels-all.png') });
   // 标签中心就是锚点在屏幕上的位置：记下来，关掉"显示全部"后把鼠标移过去。
-  const seatBox = (await seat.boundingBox())!;
+  const seatBox = await seat.evaluate(
+    (el) =>
+      el.getBoundingClientRect().toJSON() as {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      },
+  );
   await all.uncheck();
   await expect(seat).toBeHidden();
   await expect.poll(() => visibleLabels(page).count()).toBe(shown);
@@ -515,8 +523,10 @@ test('锚点标签：默认只显示有意义的，避让、有上限，悬停�
 
   // 拉远：屏幕上变小的锚点不放标签，标签变少；有事件的锚点优先，仍然有标签。
   await page.mouse.move(canvas.x + canvas.width / 2, canvas.y + canvas.height / 2);
-  for (let i = 0; i < 6; i += 1) await page.mouse.wheel(0, 400);
-  await expect.poll(() => numberAttr(page, 'data-labels')).toBeLessThan(shown);
+  await expect(async () => {
+    await page.mouse.wheel(0, 400);
+    expect(await numberAttr(page, 'data-labels')).toBeLessThan(shown);
+  }).toPass({ intervals: [120], timeout: 10_000 });
   const withEvents = /1 号桌|座位 2|前台|入口|休息区/;
   expect(await visibleLabels(page).filter({ hasText: withEvents }).count()).toBeGreaterThan(0);
   await expectNoOverlap(page);
@@ -863,6 +873,7 @@ test('组合页：两个空间按摆放拼在一起，连接可飞过去，送�
   await page.getByRole('button', { name: '回到全景' }).click();
   await page.waitForTimeout(500);
   await expectRendered(page);
+  await expectNoOverlap(page);
   await page.screenshot({ path: join(SHOTS, 'universe.png') });
 
   // 花刚送到：完整路线（沿街道连接）。
@@ -1036,9 +1047,10 @@ test.describe('移动端', () => {
       () => document.documentElement.scrollWidth - window.innerWidth,
     );
     expect(overflow).toBeLessThanOrEqual(0);
-    // 手机上标签更少（最多 4 个），房间同样占画面的大部分。
+    // 手机上标签更少（最多 2 个），房间同样占画面的大部分。
     await expect.poll(() => numberAttr(page, 'data-labels')).toBeGreaterThan(0);
-    expect(await visibleLabels(page).count()).toBeLessThanOrEqual(4);
+    expect(await visibleLabels(page).count()).toBeLessThanOrEqual(2);
+    await expectNoOverlap(page);
     expect(await roomCoverage(page)).toBeGreaterThan(0.3);
     await page.screenshot({ path: join(SHOTS, 'mobile.png') });
 

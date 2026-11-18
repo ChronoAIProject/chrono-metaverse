@@ -30,8 +30,8 @@ export interface SceneViewLike {
   focusMember?(spaceId: string | null): void;
   focusAnchor?(ref: { readonly spaceId: string; readonly anchorId: string } | null): void;
   applyCamera?(action: CameraAction, content: SceneContent): boolean;
-  /** 显示全部锚点标签；false 时只显示有意义的几类（见 labelLayout.ts）。 */
-  setShowAllLabels(all: boolean): void;
+  /** 扩大锚点标签的显示范围和数量上限。 */
+  setMoreLabels(more: boolean): void;
   getStats(): SceneStats;
   dispose(): void;
 }
@@ -103,7 +103,7 @@ export function Viewer({
   const [unsupported, setUnsupported] = useState<string | null>(null);
   const [step, setStep] = useState<LoadStep | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
-  const [allLabels, setAllLabels] = useState(false);
+  const [moreLabels, setMoreLabels] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   // 场景里外部模型的署名：有 CC BY 的模型时底部常驻一行简短署名（署名必须可见），
   // 只有 CC0 的模型时右下角放"模型来源"按钮；两者都能展开完整的模型来源面板。
@@ -233,8 +233,8 @@ export function Viewer({
   }, [visuals, content]);
 
   useEffect(() => {
-    viewRef.current?.setShowAllLabels(allLabels);
-  }, [allLabels, content]);
+    viewRef.current?.setMoreLabels(moreLabels);
+  }, [moreLabels, content]);
 
   // 换了内容（换时刻、换视图）时，原来选中的物件可能已经不在了。
   const [selectedContent, setSelectedContent] = useState(content);
@@ -301,14 +301,14 @@ export function Viewer({
             )}
             <label
               className="viewer__tool viewer__tool--check"
-              title="默认只显示桌子、前台、区域、门和有事件的锚点"
+              title="显示更多物件名称，标签会自动避让"
             >
               <input
                 type="checkbox"
-                checked={allLabels}
-                onChange={(event) => setAllLabels(event.target.checked)}
+                checked={moreLabels}
+                onChange={(event) => setMoreLabels(event.target.checked)}
               />
-              显示全部标签
+              更多标签
             </label>
             <button
               type="button"

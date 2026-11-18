@@ -36,7 +36,7 @@ import {
   LABEL_PADDING,
   MIN_SCREEN_SIZE,
   anchorLabelPriority,
-  estimateLabelSize,
+  EVENT_PRIORITY,
   layoutLabels,
   maxLabelsFor,
   type LabelCandidate,
@@ -78,7 +78,7 @@ import { EnvironmentView } from './environmentView';
  * - 组合：每个成员一组，按摆放（先绕 y 轴旋转、再平移）放进同一场景；连接画出来，点击飞到另一端；
  * - 虚拟区：边界光效 + "虚拟"标签；事件：高亮、图标、标签、路线、生成物件、热力；
  * - 锚点：纯文本标签，默认只显示有意义的几类，屏幕上避让、远处隐藏、总数有上限，
- *   悬停 / 点按时显示，可切换为显示全部（取舍规则见 labelLayout.ts）；
+ *   悬停 / 点按时显示，可切换为显示更多（取舍规则见 labelLayout.ts）；
  * - 镜头：按实体区里内容的包围盒取景（framing.ts），斜上方 45° 俯视，房间占满画面；
  * - 剖切：内容材质共用一个裁剪平面（世界坐标），切掉某个高度以上的物件、方块和扫描。
  */
@@ -165,8 +165,6 @@ interface FrameSource {
 
 /** 没有范围的锚点按这么大（米）估计屏幕上的大小。 */
 const NOMINAL_ANCHOR_SIZE = 0.6;
-/** 标签布局在镜头移动时最多多久重算一次（毫秒）。 */
-const LABEL_LAYOUT_MS = 100;
 
 interface VisualObject {
   readonly objects: THREE.Object3D[];
@@ -383,13 +381,12 @@ export class SceneView {
   private hoverPoint: { readonly clientX: number; readonly clientY: number } | null = null;
   private hoverTimer: ReturnType<typeof setTimeout> | null = null;
   private stats: SceneStats = EMPTY_STATS;
-  /** 锚点标签：显示全部、悬停的、点按（选中）的、有事件的。 */
-  private showAllLabels = false;
+  /** 标签密度与交互状态。 */
+  private moreLabels = false;
   private hoverAnchor: string | null = null;
   private focusedAnchorKey: string | null = null;
   private eventAnchors = new Set<string>();
   private labelsDirty = true;
-  private labelsAt = 0;
   private readonly labelCamera = new THREE.Matrix4();
   private readonly labelProjection = new THREE.Matrix4();
 
@@ -538,8 +535,8 @@ export class SceneView {
     this.externalContent.update(this.camera);
     this.updateBackgroundViews();
     this.renderer.render(this.scene, this.camera);
-    this.updateLabels();
     this.labels.render(this.scene, this.camera);
+    this.updateLabels();
   }
 
   // ---------------------------------------------------------------------------
@@ -1177,6 +1174,9 @@ export class SceneView {
       members: content.members.length,
       warnings,
     };
+    this.host.dataset.anchors = String(
+      [...this.anchors.values()].filter((info) => info.element).length,
+    );
     this.applyCut();
     this.setVisuals(this.lastVisuals);
     // 第一次有内容时取景；镜头没动过时换了视图（例如加上虚拟区）也重新取景。
@@ -1208,6 +1208,7 @@ export class SceneView {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'viewer__landmark';
+      button.dataset.labelPriority = String(EVENT_PRIORITY + 4);
       button.title = '点击查看此处';
       const caption = document.createElement('span');
       caption.className = 'viewer__landmark-caption';
@@ -1256,6 +1257,7 @@ export class SceneView {
         glow.position.copy(center);
         const tag = document.createElement('div');
         tag.className = 'viewer__virtual-tag';
+        tag.dataset.labelPriority = String(EVENT_PRIORITY);
         const name = displayName(region);
         tag.textContent = name ? `虚拟 · ${name}` : '虚拟';
         const label = new CSS2DObject(tag);
@@ -1329,6 +1331,7 @@ export class SceneView {
       if (box.isEmpty()) box.set(new THREE.Vector3(0, 0, 0), new THREE.Vector3(3, 2.5, 3));
       const tag = document.createElement('div');
       tag.className = 'viewer__member-tag';
+      tag.dataset.labelPriority = String(EVENT_PRIORITY + 1);
       tag.textContent = member.name;
       const object = new CSS2DObject(tag);
       const center = box.getCenter(new THREE.Vector3());
@@ -1363,6 +1366,7 @@ export class SceneView {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'viewer__link';
+        button.dataset.labelPriority = String(EVENT_PRIORITY + 3);
         button.dataset.kind = link.kind;
         button.textContent = `${{ door: '门', portal: '传送门', street: '街道' }[link.kind] ?? '连接'} → ${there.memberName ?? there.ref.spaceId}`;
         button.title = `飞到 ${there.memberName ?? there.ref.spaceId} 的 ${there.label}`;
@@ -1501,6 +1505,7 @@ export class SceneView {
   private eventTag(className: string, color: readonly number[], icon?: string, text?: string) {
     const element = document.createElement('div');
     element.className = className;
+    element.dataset.labelPriority = String(EVENT_PRIORITY + 2);
     element.style.setProperty('--event-color', cssColor(color));
     if (icon) element.appendChild(iconElement(icon));
     if (text) {
@@ -1990,19 +1995,17 @@ export class SceneView {
     this.cut.constant = this.cutHeight ?? 1e6;
     // 剖切高度以上的锚点标签隐藏，在标签布局里统一处理。
     this.labelsDirty = true;
-    this.updateLabels();
   }
 
   // ---------------------------------------------------------------------------
   // 锚点标签
   // ---------------------------------------------------------------------------
 
-  /** 显示全部标签（不做取舍）；关掉时按 labelLayout.ts 的规则精简。 */
-  setShowAllLabels(all: boolean): void {
-    if (this.showAllLabels === all) return;
-    this.showAllLabels = all;
+  /** 扩大标签候选范围和数量上限，继续避让。 */
+  setMoreLabels(more: boolean): void {
+    if (this.moreLabels === more) return;
+    this.moreLabels = more;
     this.labelsDirty = true;
-    this.updateLabels();
   }
 
   private cutHides(world: THREE.Vector3): boolean {
@@ -2040,63 +2043,75 @@ export class SceneView {
     return Math.max(((maxX - minX) * width) / 2, ((maxY - minY) * height) / 2);
   }
 
-  /**
-   * 决定哪些锚点标签显示：剖切和画面外的隐藏；其余按优先级、屏幕大小、避让和上限取舍。
-   * 镜头在动时最多每 100 毫秒算一次；锚点、事件、剖切、悬停变了时马上算。
-   */
+  /** 投影完成后统一读取标签边界，再集中更新可见性。遮住的标签仍可在下一帧测量。 */
   private updateLabels(): void {
-    if (this.disposed) return;
-    this.camera.updateMatrixWorld();
     const cameraMoved =
       !this.labelCamera.equals(this.camera.matrixWorld) ||
       !this.labelProjection.equals(this.camera.projectionMatrix);
     if (!this.labelsDirty && !cameraMoved) return;
-    const now = performance.now();
-    if (!this.labelsDirty && now - this.labelsAt < LABEL_LAYOUT_MS) return;
     this.labelsDirty = false;
-    this.labelsAt = now;
     this.labelCamera.copy(this.camera.matrixWorld);
     this.labelProjection.copy(this.camera.projectionMatrix);
 
-    const width = Math.max(1, this.host.clientWidth);
-    const height = Math.max(1, this.host.clientHeight);
+    const viewport = this.labels.domElement.getBoundingClientRect();
+    const elements = Array.from(this.labels.domElement.children) as HTMLElement[];
     const candidates: LabelCandidate[] = [];
-    const point = new THREE.Vector3();
-    let total = 0;
-    for (const [key, info] of this.anchors) {
-      if (info.element === null || info.world === null) continue;
-      total += 1;
-      if (this.cutHides(info.world)) continue;
-      point.copy(info.world).project(this.camera);
-      if (point.z > 1 || point.z < -1 || Math.abs(point.x) > 1.05 || Math.abs(point.y) > 1.05) {
+    for (const [index, element] of elements.entries()) {
+      const rect = element.getBoundingClientRect();
+      if (
+        !rect.width ||
+        !rect.height ||
+        rect.left < viewport.left ||
+        rect.right > viewport.right ||
+        rect.top < viewport.top ||
+        rect.bottom > viewport.bottom
+      )
         continue;
+      const { spaceId, anchorId } = element.dataset;
+      const key = spaceId && anchorId ? anchorKey({ spaceId, anchorId }) : '';
+      const info = this.anchors.get(key);
+      let forced = element === document.activeElement;
+      let priority = Number(element.dataset.labelPriority ?? 0);
+      let screenSize = 0;
+      let group: string | undefined;
+      if (info?.world) {
+        if (this.cutHides(info.world)) continue;
+        const hasEvent = this.eventAnchors.has(key);
+        priority = anchorLabelPriority(info.anchor.kind, hasEvent);
+        forced = key === this.hoverAnchor || key === this.focusedAnchorKey;
+        if (key === this.hoverAnchor) priority = EVENT_PRIORITY + 20;
+        screenSize = this.screenSize(info, viewport.width, viewport.height);
+        if (!hasEvent && !forced) group = JSON.stringify([spaceId, info.label]);
       }
-      const size = estimateLabelSize(info.element.textContent ?? '');
       candidates.push({
-        key,
-        x: ((point.x + 1) / 2) * width,
-        y: ((1 - point.y) / 2) * height,
-        width: size.width,
-        height: size.height,
-        priority: anchorLabelPriority(info.anchor.kind, this.eventAnchors.has(key)),
-        screenSize: this.screenSize(info, width, height),
-        forced: key === this.hoverAnchor || key === this.focusedAnchorKey,
+        key: String(index),
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+        width: rect.width,
+        height: rect.height,
+        priority,
+        screenSize,
+        forced,
+        group,
       });
     }
     const shown = layoutLabels(candidates, {
-      showAll: this.showAllLabels,
-      maxLabels: maxLabelsFor(width, height),
+      moreLabels: this.moreLabels,
+      maxLabels: maxLabelsFor(viewport.width, viewport.height, this.moreLabels),
       minScreenSize: MIN_SCREEN_SIZE,
       padding: LABEL_PADDING,
     });
-    for (const [key, info] of this.anchors) {
-      if (info.element === null) continue;
-      const hidden = !shown.has(key);
-      if (info.element.hidden !== hidden) info.element.hidden = hidden;
+    let anchorsShown = 0;
+    for (const [index, element] of elements.entries()) {
+      const visible = shown.has(String(index));
+      const visibility = visible ? '' : 'hidden';
+      if (visibility !== element.style.visibility) element.style.visibility = visibility;
+      if (visible && element.dataset.anchorId) anchorsShown += 1;
     }
-    const labels = String(shown.size);
-    if (this.host.dataset.labels !== labels) this.host.dataset.labels = labels;
-    if (this.host.dataset.anchors !== String(total)) this.host.dataset.anchors = String(total);
+    this.host.dataset.labels = String(anchorsShown);
+    const hover = this.hoverAnchor === null ? undefined : this.anchors.get(this.hoverAnchor);
+    if (hover?.element?.style.visibility === '' && hover.label === this.tooltip.textContent)
+      this.tooltip.hidden = true;
   }
 
   /** 离屏幕上某一点最近、在 radius 像素以内的锚点（剖切掉的不算）。 */
@@ -2213,6 +2228,7 @@ export class SceneView {
   };
 
   private onControlsStart = () => {
+    this.onPointerLeave();
     this.flight = null;
     this.autoFramed = false;
   };
@@ -2235,12 +2251,23 @@ export class SceneView {
     this.hoverAt = performance.now();
     const picked = this.raycast(event);
     // 悬停在物件或锚点上：显示它的锚点标签。
-    this.setHover(this.anchorOf(picked) ?? this.anchorNear(event.clientX, event.clientY, 18));
+    const pickedKey = this.anchorOf(picked);
+    const info = pickedKey === null ? undefined : this.anchors.get(pickedKey);
+    this.setHover(
+      info?.world && !this.cutHides(info.world)
+        ? pickedKey
+        : this.anchorNear(event.clientX, event.clientY, 18),
+    );
     const text = picked
       ? ((typeof picked.entity.props?.label === 'string' ? picked.entity.props.label : undefined) ??
         picked.entity.label)
       : undefined;
-    if (text === undefined) {
+    if (
+      text === undefined ||
+      (pickedKey === this.hoverAnchor &&
+        text === info?.label &&
+        info?.element?.style.visibility !== 'hidden')
+    ) {
       this.tooltip.hidden = true;
       return;
     }
