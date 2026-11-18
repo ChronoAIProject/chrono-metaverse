@@ -18,6 +18,7 @@ const connected = {
   subject: 'owner-a',
   csrfToken: 'csrf-secret',
   workerAvailable: true,
+  workerUrl: 'https://worker.example',
   workerEnabled: true,
   toolSourceRef: 'a'.repeat(40),
 };
@@ -380,7 +381,7 @@ describe('CMA workspace', () => {
     const retry = await screen.findByRole('button', { name: '已完成授权，重新提交' });
     expect(screen.getByRole('link', { name: '登录 CMA ↗' })).toHaveAttribute(
       'href',
-      'https://cma.nyxid.ai/auth/login',
+      `${connected.workerUrl}/auth/login`,
     );
     await userEvent.click(retry);
     await screen.findByText(/<script>danger/);
