@@ -191,6 +191,9 @@ function parseNotebook(raw: string | null, spaceId = ''): Notebook {
           (v.startup.notAdmitted !== undefined && typeof v.startup.notAdmitted !== 'boolean')))
     )
       return fallback();
+    if (v.sent) {
+      v.sent = [...new Map(v.sent.map((message) => [message.key, message])).values()];
+    }
     return v;
   } catch {
     return fallback();
@@ -340,7 +343,9 @@ export function recordSent(
   key: string,
   text: string,
 ): NonNullable<Notebook['sent']> {
-  const sent = [...(note.sent ?? []), { key, text }].slice(-30);
+  const previous = note.sent ?? [];
+  if (previous.some((message) => message.key === key)) return previous;
+  const sent = [...previous, { key, text }].slice(-30);
   let size = sent.reduce((total, m) => total + m.text.length, 0);
   while (size > 64000 && sent.length > 1) size -= sent.shift()!.text.length;
   return sent;
