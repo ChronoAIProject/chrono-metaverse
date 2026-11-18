@@ -102,6 +102,8 @@ export interface Selection {
 }
 
 export interface SceneViewOptions {
+  /** 地图及外部内容的署名挂载位置。 */
+  readonly providerCreditsHost?: HTMLElement;
   readonly onPerspectiveChange?: (mode: CameraPerspective) => void;
   /** 按资源哈希取贴图。没有时贴图材质退回成色调颜色。 */
   readonly loadTexture?: (hash: string) => Promise<THREE.Texture>;
@@ -455,8 +457,14 @@ export class SceneView {
         if (!this.disposed) host.dataset.texturesPending = String(count);
       },
     );
-    this.environment = new EnvironmentView(this.scene, host, options.loadTexture);
-    this.externalContent = new ExternalContentView(this.scene, this.host);
+    const providerCreditsHost = options.providerCreditsHost ?? host;
+    this.environment = new EnvironmentView(
+      this.scene,
+      host,
+      options.loadTexture,
+      providerCreditsHost,
+    );
+    this.externalContent = new ExternalContentView(this.scene, host, providerCreditsHost);
 
     // 灯光按物理单位设置（强度是 π 的倍数），见 lighting.ts。
     this.lights = createLights();

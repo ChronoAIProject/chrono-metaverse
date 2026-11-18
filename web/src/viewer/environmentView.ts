@@ -21,6 +21,7 @@ export class EnvironmentView {
     private readonly scene: THREE.Scene,
     private readonly host: HTMLElement,
     private readonly loadTexture?: (hash: string) => Promise<THREE.Texture>,
+    private readonly providerCreditsHost = host,
   ) {}
 
   get hasMap(): boolean {
@@ -64,10 +65,15 @@ export class EnvironmentView {
         this.host.dataset.environment = 'true';
         this.yaw = THREE.MathUtils.degToRad((environment.sky?.yaw ?? 0) + placement.rotation);
         if (environment.map) {
-          this.map = new GeographicMap(environment.map, this.host, {
-            entity: selected.entity,
-            access: selected.access,
-          });
+          this.map = new GeographicMap(
+            environment.map,
+            this.host,
+            {
+              entity: selected.entity,
+              access: selected.access,
+            },
+            this.providerCreditsHost,
+          );
           this.map.group.rotation.y = THREE.MathUtils.degToRad(placement.rotation);
           this.map.group.position.fromArray(placement.offset).multiplyScalar(GRID_UNIT);
           this.scene.add(this.map.group);

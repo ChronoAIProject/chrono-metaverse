@@ -140,7 +140,7 @@ export interface EntityBody {
   };
   /**
    * 不透明的键值，网站只按纯文本列出。例外：`source` 是对象时是外部模型的署名
-   * （core/sources.ts），在"模型来源"面板和信息面板里显示。
+   * （core/sources.ts），显示在查看器的「引用版权」面板。
    */
   readonly props?: Readonly<Record<string, unknown>>;
 }

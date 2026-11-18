@@ -258,7 +258,7 @@ class ExternalItem {
 export class ExternalContentView {
   private key = '';
   private items: (ExternalItem | VectorContentItem)[] = [];
-  private readonly credit = document.createElement('div');
+  private readonly credit = document.createElement('section');
   private readonly downloadQueue = new DownloadPriorityQueue();
   private readonly parseQueue = new PriorityQueue();
   private readonly lruCache = new LRUCache();
@@ -266,6 +266,7 @@ export class ExternalContentView {
   constructor(
     private readonly scene: THREE.Scene,
     private readonly host: HTMLElement,
+    private readonly providerCreditsHost: HTMLElement,
   ) {
     this.downloadQueue.priorityCallback = DEFAULT_DOWNLOAD_QUEUE.priorityCallback;
     this.parseQueue.priorityCallback = DEFAULT_PARSE_QUEUE.priorityCallback;
@@ -278,6 +279,9 @@ export class ExternalContentView {
     this.lruCache.minBytesSize = 96 * 1024 * 1024;
     this.credit.className = 'viewer__external-credits';
     this.credit.setAttribute('aria-label', '外部内容来源');
+    const heading = document.createElement('h3');
+    heading.textContent = '外部内容来源';
+    this.credit.append(heading);
   }
 
   setContent(content: SceneContent): void {
@@ -296,7 +300,7 @@ export class ExternalContentView {
     this.clear();
     this.key = key;
     if (!selected.length) return;
-    this.host.append(this.credit);
+    this.providerCreditsHost.append(this.credit);
     for (const { config, entity, placement, access } of selected) {
       const item =
         config.format === 'mvt'
