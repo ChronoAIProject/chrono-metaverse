@@ -10,7 +10,7 @@ vi.mock('../space/SpacePage', () => ({
 }));
 import { WorkspacePage } from './WorkspacePage';
 import * as creation from './creation';
-import { resultLinks, viewerLink, type Transcript, type Operation } from './client';
+import { readNotebook, resultLinks, viewerLink, type Transcript, type Operation } from './client';
 
 const connected = {
   enabled: true,
@@ -488,6 +488,25 @@ it('shows the sandbox event state and resumes a connection wait with the origina
   const creates = api.writes.filter((w) => w.action === 'create');
   expect(creates).toHaveLength(2);
   expect(creates[1]!.body).toEqual(creates[0]!.body);
+  const { sent } = JSON.parse(sessionStorage.getItem('metaverse-worker:owner-a')!);
+  expect(sent).toEqual([
+    { key: creates[0]!.body.idempotencyKey, text: creates[0]!.body.instruction },
+  ]);
+});
+
+it('deduplicates restored CMA receipts by request ID and keeps distinct requests with the same text', () => {
+  const first = { key: 'request-one', text: '请继续' };
+  const second = { key: 'request-two', text: first.text };
+  sessionStorage.setItem(
+    'metaverse-worker:owner-a',
+    JSON.stringify({
+      spaceId: 'my-lobby',
+      orgId: '',
+      instruction: '',
+      sent: [first, first, second],
+    }),
+  );
+  expect(readNotebook('owner-a').sent).toEqual([first, second]);
 });
 
 it('retains a failed startup and its agent without treating that agent as ready', async () => {
