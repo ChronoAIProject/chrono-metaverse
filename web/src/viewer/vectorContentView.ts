@@ -17,6 +17,7 @@ import { vectorGeometry, visibleVectorTiles } from './vectorGeometry';
 
 interface Node {
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
+  roads?: THREE.BufferGeometry;
   features: number;
   bytes: number;
   used: number;
@@ -29,6 +30,7 @@ export class VectorContentItem {
   private readonly status = document.createElement('span');
   private readonly reference: GeoReference;
   private readonly material: THREE.MeshLambertMaterial;
+  private readonly roadMaterial?: THREE.LineBasicMaterial;
   private readonly nodes = new Map<string, Node>();
   private readonly pending = new Map<string, AbortController>();
   private readonly failed = new Map<string, number>();
@@ -58,7 +60,10 @@ export class VectorContentItem {
       color: config.extrusion.color,
       side: THREE.DoubleSide,
     });
-    if (hologram) hologramMaterial(this.material, 'facade');
+    if (hologram) {
+      hologramMaterial(this.material, 'facade');
+      this.roadMaterial = new THREE.LineBasicMaterial({ color: 0x43556b });
+    }
     this.group.name = `vector:${entity.entityId}`;
     this.group.userData.background = true;
     this.group.rotation.y = THREE.MathUtils.degToRad(placement.rotation);
@@ -215,32 +220,42 @@ export class VectorContentItem {
     );
     const bytes = new Uint8Array(await response.arrayBuffer());
     signal.throwIfAborted();
-    const { geometry, features } = vectorGeometry(
+    const { geometry, features, roads } = vectorGeometry(
       bytes,
       tile,
       this.reference,
       this.config.extrusion,
+      !!this.roadMaterial,
     );
-    const size = Object.values(geometry.attributes).reduce((n, a) => n + a.array.byteLength, 0);
+    const size =
+      Object.values(geometry.attributes).reduce((n, a) => n + a.array.byteLength, 0) +
+      (roads?.getAttribute('position').array.byteLength ?? 0);
     const total = () => [...this.nodes.values()].reduce((n, node) => n + node.bytes, 0);
     // 几何按瓦片合并；只淘汰当前视野之外的数据，限制内存。
     for (const [oldKey, node] of [...this.nodes]
       .filter(([k]) => !this.wanted.has(k))
       .sort((a, b) => a[1].used - b[1].used)) {
       if (this.nodes.size < 48 && total() + size <= 96 * 1024 * 1024) break;
+      node.roads?.dispose();
       node.mesh.geometry.dispose();
       node.mesh.removeFromParent();
       this.nodes.delete(oldKey);
     }
     if (this.disposed || signal.aborted || total() + size > 96 * 1024 * 1024) {
+      roads?.dispose();
       geometry.dispose();
       return;
     }
     const mesh = new THREE.Mesh(geometry, this.material);
+    if (roads && this.roadMaterial) {
+      const lines = new THREE.LineSegments(roads, this.roadMaterial);
+      lines.userData.background = true;
+      mesh.add(lines);
+    }
     mesh.userData.background = true;
     mesh.visible = this.wanted.has(key);
     this.group.add(mesh);
-    this.nodes.set(key, { mesh, features, bytes: size, used: performance.now() });
+    this.nodes.set(key, { mesh, roads, features, bytes: size, used: performance.now() });
     this.failed.delete(key);
   }
 
@@ -269,7 +284,11 @@ export class VectorContentItem {
   dispose(): void {
     this.disposed = true;
     this.abort.abort();
-    for (const node of this.nodes.values()) node.mesh.geometry.dispose();
+    for (const node of this.nodes.values()) {
+      node.roads?.dispose();
+      node.mesh.geometry.dispose();
+    }
+    this.roadMaterial?.dispose();
     this.nodes.clear();
     this.material.dispose();
     this.group.removeFromParent();

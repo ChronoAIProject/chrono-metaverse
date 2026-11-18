@@ -7,70 +7,99 @@ export function surfaceLook(look: StyleLook | undefined, entity: EntityBody, bac
   const { min, max } = entity.bounds;
   const height = max[1] - min[1];
   const footprint = Math.max(max[0] - min[0], max[2] - min[2]);
-  return (height >= 10 && height >= footprint * 0.12) ||
+  if (entity.material?.unlit || entity.props?.link) return look;
+  if (
+    (height >= 10 && height >= footprint * 0.12 && entity.material?.shading !== 'albedo') ||
     (height >= 2.5 &&
       footprint >= 20 &&
       !!entity.props?.backgroundView &&
-      !!entity.assetHash &&
-      entity.kind === 'object')
-    ? { ...look, hologram: 'facade' as const }
-    : look;
+      entity.kind === 'object') ||
+    (height >= 10 && height >= footprint * 0.6)
+  )
+    return { ...look, hologram: 'facade' as const };
+  if (
+    entity.kind === 'object' &&
+    entity.assetHash &&
+    footprint > 0 &&
+    !entity.props?.backgroundView
+  )
+    return { ...look, hologram: 'landscape' as const };
+  return look;
 }
 
-type Surface = 'facade' | 'terrain' | 'detail';
+type Surface = NonNullable<StyleLook['hologram']> | 'terrain';
 
-// 在世界坐标中绘制玻璃分格。导数控制远景线宽和消隐，移动镜头时纹路固定在立面上。
+// 在面内坐标和偏移后的内层各绘制一次。镜头斜看时，两层玻璃产生视差。
 const facade = /* glsl */ `
   vec3 p = holoPosition;
   vec3 n = normalize(cross(dFdx(p), dFdy(p)));
   vec3 eye = normalize(cameraPosition - p);
   n *= dot(n, eye) < 0.0 ? -1.0 : 1.0;
-  float upright = 1.0 - smoothstep(0.48, 0.93, abs(n.y));
-  vec2 tangent = normalize(vec2(n.z + 0.00001, -n.x));
-  vec2 glass = vec2(dot(p.xz, tangent) / 2.4, p.y / 3.6);
-  vec2 cell = floor(glass);
-  vec2 face = fract(glass);
-  vec2 fw = clamp(fwidth(glass), vec2(0.003), vec2(1.0));
-  vec2 border = min(face, 1.0 - face);
-  vec2 bars = (1.0 - smoothstep(vec2(0.0), fw * 0.85 + vec2(0.012, 0.022), border))
-    * (1.0 - smoothstep(vec2(0.18), vec2(0.64), fw));
-  float seed = fract(sin(dot(floor(cell / vec2(3.0, 1.0)), vec2(23.17, 51.13))) * 4375.1);
-  float windowLamp = smoothstep(0.88,0.98,seed) * smoothstep(0.06,0.23,border.x)
-    * (1.0-smoothstep(0.035,0.13+fw.y,abs(face.y-0.69))) * (1.0-smoothstep(0.12,0.60,max(fw.x,fw.y)));
-  float fresnel = pow(1.0 - abs(dot(eye, n)), 3.2);
-  float orientation = smoothstep(-0.84,0.85,dot(n,normalize(vec3(-0.55,0.28,0.78))));
-  vec3 reflection = reflect(-eye,n);
-  float skyLine = exp(-4.5*abs(reflection.y+0.04));
-  float sunset = pow(0.5+0.5*dot(normalize(reflection.xz+0.0001),normalize(vec2(0.82,-0.57))),3.0);
-  vec3 glassColor = mix(vec3(0.006,0.010,0.030),vec3(0.012,0.045,0.072),orientation);
-  glassColor += skyLine * mix(vec3(0.014,0.035,0.073),vec3(0.17,0.071,0.125),sunset);
-  vec3 emission = mix(vec3(0.054,0.32,0.45),vec3(0.32,0.15,0.41),1.0-orientation);
-  float lineDistance = abs(fract(glass.y/11.0 + 0.02) - 0.5)*11.0;
-  float band = (1.0-smoothstep(0.018,0.055+fw.y*0.50,lineDistance)) * (1.0-smoothstep(0.3,1.0,fw.y));
-  glassColor += upright * (emission*(0.12*bars.x + 0.14*bars.y + 1.55*band)
-    + windowLamp*mix(vec3(0.16,0.27,0.32),vec3(0.68,0.33,0.14),step(0.955,seed)));
-  glassColor += fresnel * mix(vec3(0.05,0.16,0.25),vec3(0.29,0.12,0.24),sunset);
+  float cosEye = clamp(dot(eye, n), 0.0, 1.0);
+  float wall = 1.0 - smoothstep(0.38, 0.90, abs(n.y));
+  vec2 tangent = normalize(vec2(n.z + 0.0001, -n.x));
+  vec2 axis = vec2(dot(p.xz, tangent), p.y);
+  vec2 ray = vec2(dot(-eye.xz,tangent), -eye.y) / max(0.34, cosEye);
+  vec2 inner = axis + 2.8 * ray;
+  vec2 pane = axis / vec2(7.5, 4.2);
+  vec2 width = max(fwidth(pane), vec2(0.002));
+  vec2 edge = abs(fract(pane + 0.5) - 0.5);
+  vec2 joint = (1.0 - smoothstep(vec2(0.0), width+vec2(0.009,0.013),edge))
+    * (1.0 - smoothstep(vec2(0.10),vec2(0.56),width));
+  float interior = inner.y / 4.2;
+  float iw = clamp(fwidth(interior),0.003,0.65);
+  float shelf = (1.0-smoothstep(0.01,0.055+iw,abs(fract(interior+0.5)-0.5)))
+    * (1.0-smoothstep(0.12,0.60,iw));
+  float wing = inner.x / 23.0;
+  float spine = (1.0-smoothstep(0.012,0.039+fwidth(wing),abs(fract(wing+0.5)-0.5)))
+    * (1.0-smoothstep(0.10,0.45,fwidth(wing)));
+  vec3 r = reflect(-eye,n);
+  float facing = smoothstep(-0.92,0.92,dot(n,normalize(vec3(-0.62,0.17,0.74))));
+  float fresnel = pow(1.0-cosEye, 2.7);
+  float horizon = exp(-5.8*abs(r.y+0.07));
+  float sun = pow(0.5+0.5*dot(normalize(r.xz+0.0001),normalize(vec2(0.82,-0.57))),3.5);
+  vec3 rim = mix(vec3(0.26,0.77,0.95),vec3(0.78,0.55,0.86),sun);
+  vec3 glass = mix(vec3(0.009,0.028,0.055),vec3(0.021,0.066,0.090),facing);
+  glass += horizon * mix(vec3(0.033,0.085,0.115),vec3(0.25,0.145,0.18),sun);
+  glass += fresnel * rim * 0.34;
+  // 稀疏的亮边将玻璃分成体块，普通层板保留暗面。
+  float tier = pane.y / 7.0;
+  float tierEdge = (1.0 - smoothstep(0.004,0.012+fwidth(tier),abs(fract(tier+0.5)-0.5)))
+    * (1.0 - smoothstep(0.12,0.45,fwidth(tier)));
+  glass += wall * (vec3(0.043,0.078,0.095)*shelf + vec3(0.025,0.046,0.065)*spine +
+    rim * (0.072*joint.x+0.032*joint.y+0.46*tierEdge));
+  // 合并贴图仅提取有明显专色的标记。窗户、墙面与灰白的摄影光影均由玻璃接管。
   #ifdef USE_MAP
-    vec3 mark = texture2D(map, vMapUv).rgb;
-    float value = max(mark.r,max(mark.g,mark.b));
-    float saturation = (value - min(mark.r,min(mark.g,mark.b))) / max(value,0.001);
-    float contrast = smoothstep(0.045,0.55,value);
-    // 烘焙的招牌与窗格共用一张图；保留高亮、高彩度细节及少量亮字。
-    float signage = contrast * max(smoothstep(0.38,0.77,saturation),0.69*smoothstep(0.19,0.70,value));
-    glassColor = mix(glassColor, mark * 1.1, signage);
+    vec3 ink = texture2D(map, vMapUv).rgb;
+    float peak = max(ink.r,max(ink.g,ink.b));
+    float chroma = peak-min(ink.r,min(ink.g,ink.b));
+    float logo = smoothstep(0.18,0.42,chroma)*smoothstep(0.68,0.90,chroma/max(peak,0.001));
+    glass = mix(glass,ink,logo);
   #endif
-  outgoingLight = glassColor;
+  float solidity = mix(0.65,0.97,smoothstep(55.0,320.0,length(cameraPosition-p)));
+  diffuseColor.a *= mix(solidity,1.0,clamp(fresnel + tierEdge,0.0,1.0));
+  outgoingLight = glass;
 `;
 
 const terrain = /* glsl */ `
-  vec3 aerial = diffuseColor.rgb;
-  float value = dot(aerial, vec3(0.24,0.58,0.18));
-  float water = smoothstep(0.005,0.095,aerial.b-aerial.r);
-  vec3 land = mix(vec3(0.008,0.019,0.036),vec3(0.085,0.098,0.132),sqrt(value));
-  vec3 sea = mix(vec3(0.013,0.041,0.069),vec3(0.026,0.093,0.14),value);
-  outgoingLight = mix(land,sea,water) + vec3(0.26,0.25,0.24)*smoothstep(0.48,0.9,value);
-  float air = smoothstep(650.0,13000.0,length(cameraPosition-holoPosition));
-  outgoingLight = mix(outgoingLight,vec3(0.34,0.27,0.36),air*0.92);
+  // 只从低频影像取陆水分区和大尺度明暗，街区背景不展示航拍纹理。
+  vec3 region = diffuseColor.rgb;
+  #ifdef USE_MAP
+    region = texture2D(map,vMapUv,3.5).rgb;
+  #endif
+  float value = dot(region,vec3(0.23,0.64,0.13));
+  float water = smoothstep(0.018,0.071,region.b-region.r) * smoothstep(0.012,0.08,region.g-region.r);
+  vec3 ground = mix(vec3(0.023,0.037,0.060),vec3(0.038,0.052,0.077),smoothstep(0.16,0.48,value));
+  vec3 sea = vec3(0.024,0.077,0.103);
+  float air = smoothstep(750.0,12000.0,length(cameraPosition-holoPosition));
+  outgoingLight = mix(mix(ground,sea,water),vec3(0.32,0.27,0.34),air*0.90);
+`;
+
+// 低矮街景和树冠只交代体积。保留源材质的透明遮罩与接触阴影。
+const landscape = /* glsl */ `
+  vec3 n = normalize(cross(dFdx(holoPosition),dFdy(holoPosition)));
+  float light = clamp(dot(n,normalize(vec3(-0.35,0.80,0.49)))*0.5+0.5,0.0,1.0);
+  outgoingLight = mix(vec3(0.016,0.031,0.047),vec3(0.048,0.077,0.084),light);
 `;
 
 const detail = /* glsl */ `
@@ -80,6 +109,10 @@ const detail = /* glsl */ `
 `;
 
 export function hologramMaterial(material: THREE.Material, surface: Surface) {
+  if (surface === 'facade') {
+    if (/(?:^|[\s_.-])(logo|signage|wordmark|emblem)(?:$|[\s_.-])/i.test(material.name)) return;
+    material.transparent = true;
+  }
   material.customProgramCacheKey = () => 'hologram-' + surface;
   material.onBeforeCompile = (shader) => {
     if (surface !== 'detail') {
@@ -96,7 +129,14 @@ export function hologramMaterial(material: THREE.Material, surface: Surface) {
         );
       shader.fragmentShader = 'varying vec3 holoPosition;\n' + shader.fragmentShader;
     }
-    const color = surface === 'facade' ? facade : surface === 'terrain' ? terrain : detail;
+    const color =
+      surface === 'facade'
+        ? facade
+        : surface === 'terrain'
+          ? terrain
+          : surface === 'landscape'
+            ? landscape
+            : detail;
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <opaque_fragment>',
       color + '\n#include <opaque_fragment>',

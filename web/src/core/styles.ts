@@ -17,7 +17,7 @@ export function isStyleId(value: string): boolean {
 }
 
 export type { LightingPreset };
-export type StyleLook = SpaceStyleLook & { readonly hologram?: 'detail' | 'facade' };
+export type StyleLook = SpaceStyleLook & { readonly hologram?: 'detail' | 'facade' | 'landscape' };
 
 export interface SpaceStyle {
   readonly id: StyleId;
@@ -153,7 +153,7 @@ export const BUILTIN_SPACE_STYLES: readonly SpaceStyle[] = [
   {
     id: 'holo-arena',
     name: '全息场',
-    description: '暮色中的玻璃楼群、冰青光带和琥珀色窗灯',
+    description: '暮色中的双层玻璃楼群、冰青层板与深色水岸',
     swatch: '#5eedec',
     category: 'builtin',
     mode: 'extended',
