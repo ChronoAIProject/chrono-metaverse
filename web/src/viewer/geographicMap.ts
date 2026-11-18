@@ -55,7 +55,7 @@ export class GeographicMap {
   private readonly patches = new Map<string, Patch>();
   private readonly pending = new Set<string>();
   private readonly abort = new AbortController();
-  private readonly credit = document.createElement('div');
+  private readonly credit = document.createElement('section');
   private queue: Node[] = [];
   private active: Node[] = [];
   private visible: Node[] = [];
@@ -72,14 +72,18 @@ export class GeographicMap {
     private readonly config: MapConfig,
     private readonly host: HTMLElement,
     private readonly resource?: { entity: string; access?: ExternalAccess; hologram?: boolean },
+    providerCreditsHost = host,
   ) {
     this.reference = new GeoReference(config);
     this.maxZoom = Math.max(...config.sources.map((source) => source.maxZoom));
     this.group.name = 'geographic-map';
     this.credit.className = 'viewer__map-credit';
     this.credit.setAttribute('aria-label', '地图来源');
+    const heading = document.createElement('h3');
+    heading.textContent = '地图来源';
+    this.credit.append(heading);
     for (const source of config.sources) this.credit.append(sourceCredit(source));
-    host.appendChild(this.credit);
+    providerCreditsHost.append(this.credit);
     // 两极超出 Web Mercator 覆盖的部分仍有地球表面，不露出透明背景。
     for (const north of [true, false]) {
       const geometry = this.cap(north);

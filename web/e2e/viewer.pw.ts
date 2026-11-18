@@ -620,6 +620,74 @@ test('剖切：所有视图都能切掉某个高度以上的内容（含扫描�
   await expectRendered(page);
 });
 
+test('屏幕直播随面板剖切，切到原始视图时移除播放器', async ({ page }) => {
+  const videoId = 'test_screen';
+  await page.route(`https://www.youtube-nocookie.com/embed/${videoId}?*`, (route) =>
+    route.fulfill({
+      contentType: 'text/html',
+      body: '<body style="background: rgb(255, 0, 255)">',
+    }),
+  );
+  await page.route('**/api/public/spaces/demo-lobby/snapshot?*', async (route) => {
+    const response = await route.fetch();
+    const snapshot = await response.json();
+    await route.fulfill({
+      response,
+      json: {
+        ...snapshot,
+        anchors: [],
+        chunks: [],
+        regions: [],
+        entities: [
+          {
+            id: 'screen',
+            body: {
+              entityId: 'screen',
+              layer: 'rebuilt',
+              kind: 'object',
+              shape: {
+                type: 'plate',
+                points: [
+                  [-2, 0.8, 0],
+                  [2, 0.8, 0],
+                  [2, 3, 0],
+                  [-2, 3, 0],
+                ],
+                thickness: 0.02,
+                material: { color: [0, 0, 255], unlit: true },
+              },
+              props: {
+                liveScreen: { kind: 'youtube', url: `https://youtu.be/${videoId}`, plate: [] },
+              },
+            },
+          },
+        ],
+      },
+    });
+  });
+  const purplePixels = async () => {
+    const { channels, pixels } = decodePng(await page.locator('.viewer__canvas').screenshot());
+    let count = 0;
+    for (let i = 0; i < pixels.length; i += channels) {
+      if (pixels[i]! > 240 && pixels[i + 1]! < 15 && pixels[i + 2]! > 240) count += 1;
+    }
+    return count;
+  };
+
+  await page.goto(LINK);
+  await waitForScene(page, 'optimized');
+  await openDisplaySettings(page);
+  const cut = page.getByRole('checkbox', { name: '剖切' });
+  await cut.uncheck();
+  await expect.poll(purplePixels).toBeGreaterThan(5000);
+  await cut.check();
+  await page.getByRole('slider', { name: '剖切高度' }).fill('0.6');
+  await expect.poll(purplePixels).toBe(0);
+
+  await page.getByRole('button', { name: '原始', exact: true }).click();
+  await expect(page.locator('.viewer iframe')).toHaveCount(0);
+});
+
 test('时间轴：拖到最早、按提交前后跳、回到现在', async ({ page }) => {
   await page.goto(LINK);
   await waitForScene(page, 'optimized');
@@ -708,9 +776,7 @@ test('现在模式：带 ETag 轮询 /head，增量拉到新事件，seq 变了�
   await page.screenshot({ path: join(SHOTS, 'live-new-commit.png') });
 });
 
-test('板、凸包、玻璃、灯箱和外部模型：画得出来，底部常驻 CC BY 署名，可展开完整来源', async ({
-  page,
-}) => {
+test('板、凸包、玻璃、灯箱和外部模型可绘制，引用版权入口可查看完整署名', async ({ page }) => {
   const errors = watchErrors(page);
   await page.goto(FLORIST);
   await waitForScene(page, 'optimized');
@@ -735,87 +801,40 @@ test('板、凸包、玻璃、灯箱和外部模型：画得出来，底部常�
   expect(wedgeColor[0] - wedgeColor[2]).toBeGreaterThan(8);
   await page.screenshot({ path: join(SHOTS, 'florist-solids.png') });
 
-  // 署名默认可见：画面底边一行（不用点开），标题链到来源页、许可链到许可正文；
-  // 在右下角工具按钮的下面，不挡按钮，也不压左下角的版本信息。
-  const line = page.getByRole('note', { name: '模型署名' });
-  await expect(line).toBeVisible();
-  await expect(line).toHaveText(
-    /^模型来源：玻璃瓶花束（示例） \/ 夹具作者乙 \/ CC-BY-4\.0 …，共 2 项/,
-  );
-  const title = line.getByRole('link', { name: '玻璃瓶花束（示例）' });
-  await expect(title).toHaveAttribute('href', 'https://example.com/models/bouquet');
-  await expect(title).toHaveAttribute('rel', 'noopener noreferrer');
-  await expect(line.getByRole('link', { name: 'CC-BY-4.0' })).toHaveAttribute(
-    'href',
-    'https://creativecommons.org/licenses/by/4.0/',
-  );
-  const lineBox = (await line.boundingBox())!;
-  const toolsBox = (await page.locator('.viewer__tools').boundingBox())!;
-  const infoBox = (await page.locator('.space__info').boundingBox())!;
-  const viewerBox = (await page.locator('.viewer').boundingBox())!;
-  expect(lineBox.y).toBeGreaterThanOrEqual(toolsBox.y + toolsBox.height);
-  expect(lineBox.x).toBeGreaterThan(infoBox.x + infoBox.width);
-  expect(viewerBox.y + viewerBox.height - (lineBox.y + lineBox.height)).toBeLessThan(24);
-  await expect(page.getByRole('button', { name: /模型来源 ·/ })).toHaveCount(0);
-  await page.screenshot({ path: join(SHOTS, 'florist-credit-line.png') });
-  // 模型库的标题常有四五十个字符（前厅的显示器就是），一行放不下时只截短标题，
-  // 许可链接和"共 N 项"照样整个在行里看得见（夹具的标题短，这里临时换成长标题量一下）。
-  await line.evaluate((node) => {
-    const title = node.querySelector<HTMLElement>('.viewer__credit-title')!;
-    title.dataset.original = title.textContent ?? '';
-    title.textContent = 'Computer Monitor 16:9 (Low Poly, Game Ready) '.repeat(3).trim();
-  });
-  const longTitle = await line.evaluate((node) => {
-    const title = node.querySelector<HTMLElement>('.viewer__credit-title')!;
-    const rest = node.querySelector<HTMLElement>('.viewer__credit-rest')!;
-    const text = node.querySelector<HTMLElement>('.viewer__credit-text')!.getBoundingClientRect();
-    const restBox = rest.getBoundingClientRect();
-    return {
-      titleTruncated: title.scrollWidth > title.clientWidth,
-      restWhole: rest.scrollWidth <= rest.clientWidth,
-      restInside: restBox.left >= text.left && restBox.right <= text.right + 0.5,
-    };
-  });
-  expect(longTitle).toEqual({ titleTruncated: true, restWhole: true, restInside: true });
-  await expect(line.getByRole('link', { name: 'CC-BY-4.0' })).toBeVisible();
-  await page.screenshot({ path: join(SHOTS, 'florist-credit-line-long-title.png') });
-  await line.evaluate((node) => {
-    const title = node.querySelector<HTMLElement>('.viewer__credit-title')!;
-    title.textContent = title.dataset.original ?? '';
-  });
-  await expect(line).toHaveText(
-    /^模型来源：玻璃瓶花束（示例） \/ 夹具作者乙 \/ CC-BY-4\.0 …，共 2 项/,
-  );
-  // 展开：列出两个外部模型的署名，链接新开窗口且不带来源信息。
-  const toggle = line.getByRole('button');
-  await expect(toggle).toHaveText('全部来源');
+  const toggle = page.getByRole('button', { name: '引用版权' });
+  const panel = page.getByRole('region', { name: '引用版权' });
+  await expect(toggle).toBeVisible();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByRole('link', { name: '玻璃瓶花束（示例）' })).toHaveCount(0);
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  await expect(toggle).toHaveText('收起');
-  const panel = page.getByRole('region', { name: '模型来源' });
   await expect(panel).toBeVisible();
   const cc = panel.getByRole('link', { name: '玻璃瓶花束（示例）' });
   await expect(cc).toHaveAttribute('href', 'https://example.com/models/bouquet');
   await expect(cc).toHaveAttribute('rel', 'noopener noreferrer');
-  await expect(panel.getByText('CC BY 4.0（须署名）')).toBeVisible();
+  await expect(panel.getByRole('link', { name: 'CC BY 4.0（须署名）' })).toHaveAttribute(
+    'href',
+    'https://creativecommons.org/licenses/by/4.0/',
+  );
   await expect(panel.getByText('作者 夹具作者乙')).toBeVisible();
   await expect(panel.getByRole('link', { name: '木质花架（示例）' })).toBeVisible();
-  // 注明改动（CC BY 的要求）：说明不依赖具体工具
-  await expect(panel.getByText(/可能经过调整.*后重新导出，与原文件不同/)).toBeVisible();
+  await expect(panel.getByText(/经过调整.*与原文件不同/)).toBeVisible();
   await page.screenshot({ path: join(SHOTS, 'florist-sources.png') });
-  await toggle.click();
+  await page.keyboard.press('Escape');
   await expect(panel).toHaveCount(0);
-  await expect(line).toBeVisible();
+  await expect(toggle).toBeFocused();
 
-  // 手机宽度：署名照样在底边，在工具按钮下面，不重叠
-  await page.setViewportSize({ width: 390, height: 780 });
-  await expect(line).toBeVisible();
-  const narrowLine = (await line.boundingBox())!;
-  const narrowTools = (await page.locator('.viewer__tools').boundingBox())!;
-  expect(narrowLine.y).toBeGreaterThanOrEqual(narrowTools.y + narrowTools.height);
-  expect(narrowLine.x).toBeGreaterThanOrEqual(0);
-  expect(narrowLine.x + narrowLine.width).toBeLessThanOrEqual(390);
-  await page.screenshot({ path: join(SHOTS, 'florist-credit-line-narrow.png') });
+  await page.setViewportSize({ width: 320, height: 780 });
+  await toggle.click();
+  await expect(panel).toBeVisible();
+  const buttonBox = (await toggle.boundingBox())!;
+  const panelBox = (await panel.boundingBox())!;
+  expect(panelBox.y + panelBox.height).toBeLessThan(buttonBox.y);
+  expect(panelBox.x).toBeGreaterThanOrEqual(0);
+  expect(panelBox.x + panelBox.width).toBeLessThanOrEqual(320);
+  await page.screenshot({ path: join(SHOTS, 'florist-sources-narrow.png') });
+  await panel.getByRole('button', { name: '关闭' }).click();
+  await expect(panel).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 

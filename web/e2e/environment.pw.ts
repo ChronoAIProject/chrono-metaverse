@@ -97,6 +97,15 @@ test('拉远越过旧天空球半径仍有连续地图和天空，刷新复用�
   });
   await page.goto(PREVIEW);
   const viewer = await ready(page);
+  const toggle = page.getByRole('button', { name: '引用版权' });
+  await expect(page.getByRole('link', { name: '测试全球地图' })).toHaveCount(0);
+  await toggle.click();
+  const panel = page.getByRole('region', { name: '引用版权' });
+  await expect(panel.getByRole('link', { name: '测试全球地图' })).toHaveAttribute(
+    'href',
+    'https://tiles.example.org/',
+  );
+  await panel.getByRole('button', { name: '关闭' }).click();
   const nearFrame = await viewer.getAttribute('data-frame');
   const initialRequests = requests;
   expect(initialRequests).toBeGreaterThan(0);

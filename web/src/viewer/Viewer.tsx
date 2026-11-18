@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { Texture } from 'three';
 import { viewHasGeometry, type SceneContent } from '../core/scene';
-import { attributionCredits, sceneSources } from '../core/sources';
+import { sceneSources } from '../core/sources';
 import type { Visual } from '../core/visuals';
 import type { CameraAction } from '../workspace/viewerActions';
 import { CameraControls } from './CameraControls';
 import type { CameraPerspective } from './cameraPerspective';
 import type { CameraStep } from './cameraNavigation';
 import { InfoPanel } from './InfoPanel';
-import { CreditLine, ModelSources } from './ModelSources';
+import { ModelSources } from './ModelSources';
 import {
   SceneView,
   type LoadStep,
@@ -105,10 +105,34 @@ export function Viewer({
   const [selection, setSelection] = useState<Selection | null>(null);
   const [moreLabels, setMoreLabels] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
-  // 场景里外部模型的署名：有 CC BY 的模型时底部常驻一行简短署名（署名必须可见），
-  // 只有 CC0 的模型时右下角放"模型来源"按钮；两者都能展开完整的模型来源面板。
+  const [hasProviderCredits, setHasProviderCredits] = useState(false);
+  const providerCreditsRef = useRef<HTMLDivElement>(null);
+  const sourcesTriggerRef = useRef<HTMLButtonElement>(null);
+  const sourcesCloseRef = useRef<HTMLButtonElement>(null);
+  const sourcesId = useId();
   const credits = useMemo(() => sceneSources(content), [content]);
-  const attribution = attributionCredits(credits).length > 0;
+  const hasSources = credits.length > 0 || hasProviderCredits;
+  if (!hasSources && sourcesOpen) setSourcesOpen(false);
+
+  useEffect(() => {
+    const host = providerCreditsRef.current;
+    if (!host) return;
+    // 地图和流式内容由渲染器挂载署名，跟随实际加载的来源显示入口。
+    const update = () => setHasProviderCredits(host.childElementCount > 0);
+    const observer = new MutationObserver(update);
+    observer.observe(host, { childList: true });
+    update();
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (sourcesOpen) sourcesCloseRef.current?.focus();
+  }, [sourcesOpen]);
+
+  const closeSources = () => {
+    setSourcesOpen(false);
+    sourcesTriggerRef.current?.focus();
+  };
 
   useEffect(() => {
     textureRef.current = loadTexture;
@@ -161,6 +185,7 @@ export function Viewer({
       let view: SceneViewLike;
       try {
         view = createView(host, {
+          providerCreditsHost: providerCreditsRef.current ?? undefined,
           loadTexture: (hash) =>
             textureRef.current
               ? textureRef.current(hash)
@@ -213,7 +238,7 @@ export function Viewer({
         host.dataset.scan = String(stats.hasScan);
         host.dataset.scanCeiling = stats.scanCeiling === null ? '' : stats.scanCeiling.toFixed(3);
         ceilingRef.current?.(stats.scanCeiling);
-        host.dataset.sources = String(sceneSources(content).length);
+        host.dataset.sources = String(credits.length);
         host.dataset.ready = 'true';
         readyContent.current = content;
         if (focusedSpaceRef.current != null) view.focusMember?.(focusedSpaceRef.current);
@@ -226,7 +251,7 @@ export function Viewer({
     return () => {
       cancelled = true;
     };
-  }, [content, applyCamera]);
+  }, [content, credits, applyCamera]);
 
   useEffect(() => {
     viewRef.current?.setVisuals(visuals);
@@ -244,12 +269,9 @@ export function Viewer({
   }
 
   const notice = content !== null && unsupported === null ? noticeFor(content) : null;
+  const showTools = content !== null && unsupported === null;
   return (
-    <div
-      className={attribution ? 'viewer viewer--credited' : 'viewer'}
-      ref={attach}
-      data-ready="false"
-    >
+    <div className="viewer" ref={attach} data-ready="false">
       {unsupported !== null && (
         <div className="viewer__notice" role="alert">
           <strong>无法显示三维场景</strong>
@@ -278,53 +300,80 @@ export function Viewer({
           }}
         />
       )}
-      <ModelSources credits={credits} open={sourcesOpen} onClose={() => setSourcesOpen(false)} />
-      {content !== null && unsupported === null && (
+      {(showTools || hasSources) && (
         <div className="viewer__bottom">
-          <CreditLine
-            credits={credits}
-            open={sourcesOpen}
-            onToggle={() => setSourcesOpen((open) => !open)}
-          />
-          <div className="viewer__tools">
-            {credits.length > 0 && !attribution && (
+          <div className="viewer__actions">
+            {showTools && (
+              <div className="viewer__tools">
+                <label
+                  className="viewer__tool viewer__tool--check"
+                  title="显示更多物件名称，标签会自动避让"
+                >
+                  <input
+                    type="checkbox"
+                    checked={moreLabels}
+                    onChange={(event) => setMoreLabels(event.target.checked)}
+                  />
+                  更多标签
+                </label>
+                <button
+                  type="button"
+                  className="viewer__tool"
+                  onClick={() => viewRef.current?.frameContent()}
+                >
+                  回到全景
+                </button>
+              </div>
+            )}
+            {hasSources && (
               <button
                 type="button"
                 className="viewer__tool"
+                ref={sourcesTriggerRef}
                 aria-expanded={sourcesOpen}
-                aria-controls="viewer-model-sources"
-                title="场景里外部模型的标题、作者、许可和来源页"
+                aria-controls={sourcesId}
                 onClick={() => setSourcesOpen((open) => !open)}
               >
-                模型来源 · {credits.length}
+                引用版权
               </button>
             )}
-            <label
-              className="viewer__tool viewer__tool--check"
-              title="显示更多物件名称，标签会自动避让"
-            >
-              <input
-                type="checkbox"
-                checked={moreLabels}
-                onChange={(event) => setMoreLabels(event.target.checked)}
-              />
-              更多标签
-            </label>
-            <button
-              type="button"
-              className="viewer__tool"
-              onClick={() => viewRef.current?.frameContent()}
-            >
-              回到全景
-            </button>
           </div>
-          <CameraControls
-            perspective={perspective}
-            onPerspective={(mode) => viewRef.current?.setPerspective(mode)}
-            onStep={(step) => viewRef.current?.stepCamera(step)}
-          />
+          {showTools && (
+            <CameraControls
+              perspective={perspective}
+              onPerspective={(mode) => viewRef.current?.setPerspective(mode)}
+              onStep={(step) => viewRef.current?.stepCamera(step)}
+            />
+          )}
         </div>
       )}
+      <section
+        className="viewer__sources"
+        aria-labelledby={`${sourcesId}-title`}
+        id={sourcesId}
+        hidden={!sourcesOpen}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.stopPropagation();
+            closeSources();
+          }
+        }}
+      >
+        <header>
+          <h2 id={`${sourcesId}-title`}>引用版权</h2>
+          <button
+            type="button"
+            className="viewer__info-close"
+            ref={sourcesCloseRef}
+            onClick={closeSources}
+            aria-label="关闭"
+          >
+            ×
+          </button>
+        </header>
+        <ModelSources credits={credits} />
+        <div className="viewer__provider-credits" ref={providerCreditsRef} />
+      </section>
     </div>
   );
 }
