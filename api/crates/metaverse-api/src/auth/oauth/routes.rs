@@ -450,7 +450,10 @@ pub(super) async fn verified_browser(
             oauth.repo.oauth_grant_disable(&STORE, &held.record).await?;
             return Err(OAuthError::Reconnect.into());
         }
-        Err(error) => return Err(error.into()),
+        Err(error) => {
+            tracing::warn!(%error, "工作台的 NyxID 主体核验暂时失败");
+            return Err(error.into());
+        }
     }
     Ok((session, held))
 }
