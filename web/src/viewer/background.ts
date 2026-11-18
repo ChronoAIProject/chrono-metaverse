@@ -48,10 +48,26 @@ export function backgroundLandmark(entity: EntityBody) {
     min.some((v, i) => v >= max[i]!)
   )
     return null;
+  const azimuth = config.azimuth;
+  const elevation = config.elevation;
+  const framing = {
+    ...(typeof azimuth === 'number' && Number.isFinite(azimuth) ? { azimuths: [azimuth] } : {}),
+    ...(typeof elevation === 'number' &&
+    Number.isFinite(elevation) &&
+    elevation >= 1 &&
+    elevation <= 89
+      ? { elevation }
+      : {}),
+  };
   return {
+    ...(Object.keys(framing).length ? { framing } : {}),
     label: config.label,
     position,
     bounds: { min, max },
     minDistance: distance(config.minDistance, 0),
+    ...(config.overview === true ? { overview: true } : {}),
+    ...(config.maxDistance !== undefined
+      ? { maxDistance: distance(config.maxDistance, Infinity) }
+      : {}),
   };
 }

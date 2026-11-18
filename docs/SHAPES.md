@@ -246,7 +246,7 @@ v = (−a·sin θ + b·cos θ) / tile[1]
 - `fit` 是可选的拟合质量。
 - `props.background: true` 将物件作为窗外建筑、地形等背景：保留米制尺寸，显示时不参与主体自动取景、室内剖切或点选，远裁面单独覆盖其 `bounds`。只包含背景且没有方块的虚拟区不画地块边界；混有普通内容的虚拟区保持原来的行为。
 - 背景可附加 `props.backgroundView: { focus: [x,y,z], minDistance?, maxDistance? }`，距离区间为 `[minDistance, maxDistance)`，缺省为 `[0, Infinity)`。坐标属于所在空间，距离单位为米；形状和模型采用相同规则。
-- 背景位置标记由 `props.landmark: { label, position: [x,y,z], minDistance?, focusBounds: { min: [x,y,z], max: [x,y,z] } }` 配置。标记达到指定距离后显示，文字来自 `label`，点击将镜头移至 `focusBounds`。不依赖空间编号、建筑、楼层或特定名称，坐标随组合成员的摆放一起变换；格式无效时忽略该配置。
+- 背景位置标记由 `props.landmark: { label, position: [x,y,z], minDistance?, focusBounds: { min: [x,y,z], max: [x,y,z] } }` 配置。可另设 `maxDistance` 限制标记显示距离上限。单空间扩展视图可在一个标记上设 `overview: true`，以其范围作为入场和返回全景的取景，并在点击标记时平滑移动镜头。可通过 `azimuth` 和 `elevation`（度）指定取景方向，仰角接受 1–89 度。标记达到指定距离后显示，文字来自 `label`，点击将镜头移至 `focusBounds`。不依赖空间编号、建筑、楼层或特定名称，坐标随组合成员的摆放一起变换；格式无效时忽略该配置。
 - 结构元素（墙、地面、玻璃）也是物件，`kind: "structure"`，形状通常是带贴图的 `box` 或 `extrude`。
 
 ### 连续环境 `props.environment`

@@ -29,7 +29,14 @@ import { materialKey, shapeBounds } from '../core/shapes/build';
 import type { VoxelPart, VoxelSource } from '../core/voxels';
 import { sha256Hex } from '../core/hash';
 import { anchorKey, linkRoute, type AnchorRef, type Visual } from '../core/visuals';
-import { backgroundFarPlane, clipBox, frameBox, scanCeilingHeight, scanFrameBox } from './framing';
+import {
+  type FrameOptions,
+  backgroundFarPlane,
+  clipBox,
+  frameBox,
+  scanCeilingHeight,
+  scanFrameBox,
+} from './framing';
 import { iconElement } from './icons';
 import { createLights } from './lighting';
 import {
@@ -355,6 +362,7 @@ export class SceneView {
     targetFrom: THREE.Vector3;
     targetTo: THREE.Vector3;
     start: number;
+    duration?: number;
   } | null = null;
   private accent = new THREE.Color(0xc8f542);
   private cutHeight: number | null = null;
@@ -371,7 +379,11 @@ export class SceneView {
     min: number;
     max: number;
   }[] = [];
-  private landmarks: { object: CSS2DObject; focus: THREE.Vector3; min: number }[] = [];
+  private landmarks: { object: CSS2DObject; focus: THREE.Vector3; min: number; max: number }[] = [];
+  private overviewBox: {
+    box: THREE.Box3;
+    framing?: Pick<FrameOptions, 'azimuths' | 'elevation'>;
+  } | null = null;
   /** 扫描的取景包围盒，按组里的那一份缓存（换了内容那一份就没人引用了）。 */
   private readonly scanBoxes = new WeakMap<THREE.Object3D, THREE.Box3>();
   private disposed = false;
@@ -522,7 +534,10 @@ export class SceneView {
   private frame(): void {
     if (this.disposed) return;
     if (this.flight !== null) {
-      const t = Math.min(1, (performance.now() - this.flight.start) / 700);
+      const t = Math.min(
+        1,
+        (performance.now() - this.flight.start) / (this.flight.duration ?? 700),
+      );
       const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
       this.camera.position.lerpVectors(this.flight.from, this.flight.to, ease);
       this.controls.target.lerpVectors(this.flight.targetFrom, this.flight.targetTo, ease);
@@ -908,6 +923,7 @@ export class SceneView {
     this.frameSources = [];
     this.distanceObjects = [];
     this.landmarks = [];
+    this.overviewBox = null;
     this.updateStyleEnvironment(content);
     this.externalContent.setContent(content);
     this.grid.visible = !this.environment.hasMap;
@@ -1223,11 +1239,16 @@ export class SceneView {
       object.visible = false;
       overlay.add(object);
       const box = placedBox(placement, landmark.bounds.min, landmark.bounds.max);
-      button.addEventListener('click', () => this.frameBounds(box));
+      if (landmark.overview && !universe && member.view.mode === 'extended')
+        this.overviewBox ??= { box, framing: landmark.framing };
+      button.addEventListener('click', () =>
+        this.frameBounds(box, this.overviewBox !== null, landmark.framing),
+      );
       this.landmarks.push({
         object,
         focus: box.getCenter(new THREE.Vector3()),
         min: landmark.minDistance,
+        max: landmark.maxDistance ?? Infinity,
       });
     }
     for (const region of member.view.virtualRegions) {
@@ -1796,7 +1817,7 @@ export class SceneView {
    * 实体区里的内容占满画面，四边各留 6%（合计约 12%）的边距。
    */
   frameContent(): void {
-    this.frameBounds(this.frameTarget());
+    this.frameBounds(this.overviewBox?.box ?? this.frameTarget(), false, this.overviewBox?.framing);
   }
 
   /** 聚焦组合中的一个成员空间；传 `null` 时回到全景总览。 */
@@ -1844,13 +1865,29 @@ export class SceneView {
     this.firstPerson?.sync();
   }
 
-  private frameBounds(box: THREE.Box3): void {
+  private frameBounds(
+    box: THREE.Box3,
+    animate = false,
+    framing?: Pick<FrameOptions, 'azimuths' | 'elevation'>,
+  ): void {
     this.setPerspective('third');
-    const frame = frameBox(box, { fov: this.camera.fov, aspect: this.camera.aspect });
+    const frame = frameBox(box, { fov: this.camera.fov, aspect: this.camera.aspect, ...framing });
     if (frame === null) return;
-    this.flight = null;
-    this.controls.target.copy(frame.target);
-    this.camera.position.copy(frame.position);
+    const moving = animate && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (moving) {
+      this.flight = {
+        from: this.camera.position.clone(),
+        to: frame.position,
+        targetFrom: this.controls.target.clone(),
+        targetTo: frame.target,
+        start: performance.now(),
+        duration: 1650,
+      };
+    } else {
+      this.flight = null;
+      this.controls.target.copy(frame.target);
+      this.camera.position.copy(frame.position);
+    }
     const diagonal = box.getSize(new THREE.Vector3()).length();
     this.camera.near = Math.max(0.02, frame.distance / 500);
     this.camera.far = backgroundFarPlane(
@@ -1861,7 +1898,7 @@ export class SceneView {
     this.camera.updateProjectionMatrix();
     this.controls.update();
     this.framed = true;
-    this.autoFramed = true;
+    this.autoFramed = !animate;
     this.labelsDirty = true;
     this.host.dataset.frame = [...box.min.toArray(), ...box.max.toArray()]
       .map((v) => v.toFixed(2))
@@ -1892,8 +1929,10 @@ export class SceneView {
     const projected = new THREE.Vector3();
     for (const item of this.landmarks) {
       item.object.getWorldPosition(projected).project(this.camera);
+      const distance = this.camera.position.distanceTo(item.focus);
       item.object.visible =
-        this.camera.position.distanceTo(item.focus) >= item.min &&
+        distance >= item.min &&
+        distance < item.max &&
         projected.z >= -1 &&
         projected.z <= 1 &&
         Math.abs(projected.x) < 1.05 &&
