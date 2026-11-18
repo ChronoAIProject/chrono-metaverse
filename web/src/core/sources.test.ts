@@ -90,7 +90,7 @@ describe('模型署名', () => {
     expect(credits[0]!.usedBy).toEqual(['沙发', 'sofa-3']);
     expect(credits[1]!.usedBy).toEqual(['chair-1']);
     expect(sceneSources(null)).toEqual([]);
-    // 底部署名行只看要求署名的（CC BY），顺序不变
+    // 按许可筛出要求署名的模型，顺序不变
     expect(attributionCredits(credits).map((c) => c.source.title)).toEqual(['布艺沙发']);
     expect(attributionCredits([credits[1]!])).toEqual([]);
   });

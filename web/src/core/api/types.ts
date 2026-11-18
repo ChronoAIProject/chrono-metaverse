@@ -139,7 +139,8 @@ export interface EntityBody {
     readonly coverage3cm?: number;
   };
   /**
-   * 物件属性。`source` 提供模型署名，`liveScreen` 配置形状面板的直播源。
+   * 物件属性。`source` 提供「引用版权」面板显示的模型署名，
+   * `liveScreen` 配置形状面板的直播源。
    */
   readonly props?: Readonly<Record<string, unknown>>;
 }

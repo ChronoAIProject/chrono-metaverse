@@ -206,8 +206,13 @@ test('两个提供方及本地、地理坐标共用分片加载，刷新缓存�
     await expect(credit).toHaveAttribute('data-state', 'ready');
     await expect(credit).toHaveAttribute('data-visible-tiles', '1');
   }
-  await expect(credits.getByRole('link', { name: '测试数据许可' })).toHaveCount(2);
-  await expect(credits.locator('img')).toHaveCount(2);
+  await expect(credits).toBeHidden();
+  const toggle = page.getByRole('button', { name: '引用版权' });
+  await toggle.click();
+  const panel = page.getByRole('region', { name: '引用版权' });
+  await expect(panel.getByRole('link', { name: '测试数据许可' })).toHaveCount(2);
+  await expect(panel.locator('img')).toHaveCount(2);
+  await panel.getByRole('button', { name: '关闭' }).click();
   const frame = await page.locator('.viewer').getAttribute('data-frame');
   await expect
     .poll(() =>
