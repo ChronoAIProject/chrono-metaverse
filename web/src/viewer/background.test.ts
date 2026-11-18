@@ -28,6 +28,20 @@ describe('通用场景背景配置', () => {
     });
   });
 
+  it('单空间可选择楼外全景并限制导航标记的显示距离', () => {
+    const landmark = {
+      label: '楼外',
+      position: [0, 0, 0],
+      focusBounds: { min: [-1, 0, -1], max: [1, 2, 1] },
+      overview: true,
+      maxDistance: 48,
+    };
+    expect(backgroundLandmark(entity({ background: true, landmark }))).toMatchObject({
+      overview: true,
+      maxDistance: 48,
+    });
+  });
+
   it('配置只作用于背景，不改变普通物件的显示', () => {
     const item = entity({ backgroundView: { focus: [0, 0, 0], minDistance: 20 } });
     expect(backgroundView(item)).toBeNull();
