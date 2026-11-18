@@ -22,8 +22,8 @@ const emptyScene: SceneDocument = {
 };
 
 describe('空间样式目录', () => {
-  it('包含七套内置样式并保持稳定外观键', () => {
-    expect(BUILTIN_SPACE_STYLES).toHaveLength(7);
+  it('包含八套内置样式并保持稳定外观键', () => {
+    expect(BUILTIN_SPACE_STYLES).toHaveLength(8);
     expect(BUILTIN_SPACE_STYLES.map((item) => item.id)).toEqual([
       'raw-scan',
       'arch-realistic',
@@ -32,6 +32,7 @@ describe('空间样式目录', () => {
       'maquette',
       'blueprint',
       'night-neon',
+      'holo-arena',
     ]);
     expect(styleLookKey({ metalness: 0.2, roughness: 0.8 })).toBe('metalness:0.2|roughness:0.8');
     expect(styleLookKey({ roughness: 0.8, metalness: 0.2 })).toBe('metalness:0.2|roughness:0.8');
@@ -117,7 +118,7 @@ it('扩展元数据随样式整体覆盖合并且快照优先，不混入最新�
   expect(styles.find((style) => style.id === 'info-only')?.extensions).toEqual({
     badge: '最新主题',
   });
-  expect(styles).toHaveLength(8);
+  expect(styles).toHaveLength(BUILTIN_SPACE_STYLES.length + 1);
   expect(
     resolveSpaceStyles({ ...emptyScene, styles: [{ id: spec.id, name: '无扩展覆盖' }] }, info).find(
       (style) => style.id === spec.id,

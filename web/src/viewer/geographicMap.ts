@@ -1,5 +1,6 @@
 import type { ExternalAccess } from '../core/externalSource';
 import * as THREE from 'three';
+import { hologramMaterial } from './hologram';
 import type { GeographicMap as MapConfig } from '../core/environment';
 import {
   ancestorUv,
@@ -70,7 +71,7 @@ export class GeographicMap {
   constructor(
     private readonly config: MapConfig,
     private readonly host: HTMLElement,
-    private readonly resource?: { entity: string; access?: ExternalAccess },
+    private readonly resource?: { entity: string; access?: ExternalAccess; hologram?: boolean },
   ) {
     this.reference = new GeoReference(config);
     this.maxZoom = Math.max(...config.sources.map((source) => source.maxZoom));
@@ -83,6 +84,7 @@ export class GeographicMap {
     for (const north of [true, false]) {
       const geometry = this.cap(north);
       const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: 0xd8e3e6 }));
+      if (resource?.hologram) hologramMaterial(mesh.material, 'terrain');
       mesh.userData.background = true;
       this.group.add(mesh);
     }
@@ -326,6 +328,7 @@ export class GeographicMap {
           this.geometry(node),
           new THREE.MeshBasicMaterial({ color: 0x557e8e }),
         );
+        if (this.resource?.hologram) hologramMaterial(mesh.material, 'terrain');
         mesh.position.copy(node.center);
         mesh.userData.background = true;
         mesh.name = `map:${key}`;

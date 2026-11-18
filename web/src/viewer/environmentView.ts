@@ -1,5 +1,6 @@
 import type { ExternalAccess } from '../core/externalSource';
 import * as THREE from 'three';
+import { twilightSky } from './hologram';
 import { environmentOf, type Environment } from '../core/environment';
 import { GRID_UNIT } from '../core/chunk';
 import type { Placement, SceneContent } from '../core/scene';
@@ -55,10 +56,18 @@ export class EnvironmentView {
       }
       if (selected) break;
     }
-    const key = JSON.stringify(selected && { ...selected, access: selected.access?.key });
+    const hologram = !!content.members[0]?.view.styleLook?.hologram;
+    const key = JSON.stringify([
+      selected && { ...selected, access: selected.access?.key },
+      hologram,
+    ]);
     if (key !== this.key) {
       this.clear();
       this.key = key;
+      if (hologram) {
+        this.sky = twilightSky();
+        this.host.dataset.sky = 'ready';
+      }
       if (selected) {
         const { environment, placement } = selected;
         this.host.dataset.environment = 'true';
@@ -67,12 +76,13 @@ export class EnvironmentView {
           this.map = new GeographicMap(environment.map, this.host, {
             entity: selected.entity,
             access: selected.access,
+            hologram,
           });
           this.map.group.rotation.y = THREE.MathUtils.degToRad(placement.rotation);
           this.map.group.position.fromArray(placement.offset).multiplyScalar(GRID_UNIT);
           this.scene.add(this.map.group);
         }
-        if (environment.sky && this.loadTexture) {
+        if (!hologram && environment.sky && this.loadTexture) {
           this.host.dataset.sky = 'loading';
           this.skyPending = this.loadTexture(environment.sky.texture);
         }

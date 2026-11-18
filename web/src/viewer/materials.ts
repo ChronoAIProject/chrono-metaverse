@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { hologramMaterial } from './hologram';
 import type { EntityBody } from '../core/api/types';
 import { shadingLook } from '../core/shapes/look';
 import { isTextureMaterial, type Material } from '../core/shapes/types';
@@ -268,6 +269,7 @@ export function applyStyleLook(
   kind: 'structure' | 'object' = 'object',
 ): void {
   if (!look) return;
+  if (look.hologram) hologramMaterial(material, look.hologram);
   const color = kind === 'structure' ? look.structureColor : look.objectColor;
   const renderMaterial = material as THREE.Material & {
     color?: THREE.Color;

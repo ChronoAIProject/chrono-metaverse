@@ -1,3 +1,4 @@
+import { hologramMaterial } from './hologram';
 import * as THREE from 'three';
 import type { EntityBody } from '../core/api/types';
 import type { Placement } from '../core/scene';
@@ -50,12 +51,14 @@ export class VectorContentItem {
     placement: Placement,
     host: HTMLElement,
     private readonly access?: ExternalAccess,
+    hologram = false,
   ) {
     this.reference = new GeoReference(config.reference);
     this.material = new THREE.MeshLambertMaterial({
       color: config.extrusion.color,
       side: THREE.DoubleSide,
     });
+    if (hologram) hologramMaterial(this.material, 'facade');
     this.group.name = `vector:${entity.entityId}`;
     this.group.userData.background = true;
     this.group.rotation.y = THREE.MathUtils.degToRad(placement.rotation);
