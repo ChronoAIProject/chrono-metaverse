@@ -148,11 +148,94 @@ async fn browser_viewer_reads_unlisted_space_without_issuing_shares_or_authentic
     assert_eq!(mutation.status, StatusCode::UNAUTHORIZED);
     let after = app.read("oauth-hall", &identity(ORG), None).await;
     assert_eq!(initial.body, after.body);
+}
+
+#[tokio::test]
+async fn browser_viewer_reuses_successful_checks_and_rechecks_after_expiry_or_reconnect() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    create_org(&app).await;
+    let cookie = connect(&app, "browser-owner", 3600).await;
+    let userinfo_calls = app.nyx.oauth.0.lock().unwrap().userinfo_calls;
+    let role_calls = app.nyx.seen_credentials.lock().unwrap().len();
+    let base = "view/spaces/oauth-hall";
+    assert_eq!(
+        browser(&app, &cookie, base, None).await.status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        browser(&app, &cookie, &format!("{base}/head"), None)
+            .await
+            .status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        app.nyx.oauth.0.lock().unwrap().userinfo_calls,
+        userinfo_calls + 1
+    );
+    assert_eq!(
+        app.nyx.seen_credentials.lock().unwrap().len(),
+        role_calls + 1
+    );
+
+    app.nyx.oauth.0.lock().unwrap().role_failure = Some(StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+        browser(&app, &cookie, base, None).await.status,
+        StatusCode::OK
+    );
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    let unavailable = browser(&app, &cookie, base, None).await;
+    assert_eq!(unavailable.status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(unavailable.body["code"], "org_membership_unavailable");
+    assert_eq!(
+        app.nyx.oauth.0.lock().unwrap().userinfo_calls,
+        userinfo_calls + 2
+    );
+    assert_eq!(
+        app.nyx.seen_credentials.lock().unwrap().len(),
+        role_calls + 2
+    );
+    app.nyx.oauth.0.lock().unwrap().role_failure = None;
+    assert_eq!(
+        browser(&app, &cookie, base, None).await.status,
+        StatusCode::OK
+    );
+
     app.nyx.oauth.0.lock().unwrap().userinfo_down = true;
+    let live_check = check_connection(&app, &cookie, json!({})).await;
+    assert_eq!(live_check.status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(
         browser(&app, &cookie, base, None).await.status,
         StatusCode::SERVICE_UNAVAILABLE
     );
+    app.nyx.oauth.0.lock().unwrap().userinfo_down = false;
+    assert_eq!(
+        browser(&app, &cookie, base, None).await.status,
+        StatusCode::OK
+    );
+
+    app.nyx.oauth.0.lock().unwrap().role = None;
+    let reconnected = connect(&app, "browser-owner", 3600).await;
+    assert_eq!(
+        browser(&app, &reconnected, base, None).await.status,
+        StatusCode::NOT_FOUND
+    );
+    assert!(!session(&app, &cookie).await.body["connected"]
+        .as_bool()
+        .unwrap());
+    app.nyx.oauth.0.lock().unwrap().role = Some("viewer".into());
+    assert_eq!(
+        browser(&app, &reconnected, base, None).await.status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        disconnect(&app, &reconnected).await.status,
+        StatusCode::NO_CONTENT
+    );
+    assert!(!session(&app, &reconnected).await.body["connected"]
+        .as_bool()
+        .unwrap());
 }
 #[tokio::test]
 async fn browser_viewer_cannot_outlive_disconnect_during_membership_lookup() {

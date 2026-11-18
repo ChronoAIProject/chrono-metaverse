@@ -173,8 +173,9 @@ impl NyxMock {
                         let token = credential.strip_prefix("Bearer ").unwrap_or_default();
                         let role = if token.starts_with("oauth-") {
                             match oauth.role(token).await {
-                                Some(role) => role,
-                                None => return StatusCode::NOT_FOUND.into_response(),
+                                Ok(Some(role)) => role,
+                                Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+                                Err(status) => return status.into_response(),
                             }
                         } else { match token {
                             "admin-token" => "admin",

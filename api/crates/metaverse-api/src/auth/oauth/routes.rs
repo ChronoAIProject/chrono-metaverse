@@ -425,6 +425,21 @@ pub(super) async fn verified_browser(
     oauth: &Arc<OAuthService>,
     headers: &HeaderMap,
 ) -> Result<(OAuthSessionRecord, super::HeldCredential), ApiError> {
+    verify_browser(oauth, headers, false).await
+}
+
+pub(super) async fn verified_viewer(
+    oauth: &Arc<OAuthService>,
+    headers: &HeaderMap,
+) -> Result<(OAuthSessionRecord, super::HeldCredential), ApiError> {
+    verify_browser(oauth, headers, true).await
+}
+
+async fn verify_browser(
+    oauth: &Arc<OAuthService>,
+    headers: &HeaderMap,
+    reuse_cached: bool,
+) -> Result<(OAuthSessionRecord, super::HeldCredential), ApiError> {
     let session = browser_action(oauth, headers).await?;
     let held = oauth
         .credential(&session.subject)
@@ -437,16 +452,23 @@ pub(super) async fn verified_browser(
         .browser_subject_checks
         .check(
             (held.record.id.clone(), held.record.version.clone()),
+            reuse_cached,
             || {
                 let oauth = oauth.clone();
                 let credential = held.credential.clone();
-                async move { oauth.subject(credential.value()).await }
+                let subject = session.subject.clone();
+                async move {
+                    if oauth.subject(credential.value()).await? != subject {
+                        return Err(OAuthError::Reconnect);
+                    }
+                    Ok(())
+                }
             },
         )
         .await;
     match verified {
-        Ok(subject) if subject == session.subject => {}
-        Ok(_) | Err(OAuthError::Reconnect) => {
+        Ok(()) => {}
+        Err(OAuthError::Reconnect) => {
             oauth.repo.oauth_grant_disable(&STORE, &held.record).await?;
             return Err(OAuthError::Reconnect.into());
         }

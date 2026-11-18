@@ -14,9 +14,9 @@ use metaverse_core::{sha256_hex, Timestamp};
 use subtle::ConstantTimeEq;
 
 use super::access::{direct_access, level_for_role, AccessLevel};
-use super::in_flight::InFlight;
 use super::organizations::{MembershipLookup, OrganizationClient};
 use super::permissions::Capability;
+use super::read_checks::ReadChecks;
 use super::Caller;
 use crate::error::ApiError;
 use crate::repo::Repo;
@@ -145,7 +145,7 @@ pub enum Purpose {
 pub struct Authorizer {
     repo: Repo,
     organizations: OrganizationClient,
-    browser_memberships: InFlight<(String, String, String), MembershipLookup>,
+    browser_memberships: ReadChecks<(String, String, String), MembershipLookup>,
     issuer: String,
     require_permissions: bool,
 }
@@ -177,7 +177,9 @@ impl Authorizer {
         Self {
             repo,
             organizations,
-            browser_memberships: InFlight::default(),
+            browser_memberships: ReadChecks::new(
+                |result| matches!(result, MembershipLookup::Member(member) if member.is_current()),
+            ),
             issuer,
             require_permissions,
         }
@@ -320,9 +322,10 @@ impl Authorizer {
                 .check(
                     (
                         identity.subject().to_owned(),
-                        sha256_hex(identity.credential().value().as_bytes()),
+                        identity.grant_version().to_owned(),
                         owner.id.clone(),
                     ),
+                    true,
                     || {
                         let authorizer = self.clone();
                         let subject = identity.subject().to_owned();
