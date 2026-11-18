@@ -43,6 +43,8 @@ export function fakeViewFactory(): { factory: SceneViewFactory; views: FakeView[
       },
       select: vi.fn(),
       frameContent: vi.fn(),
+      stepCamera: vi.fn(),
+      setPerspective: vi.fn(),
       focusMember: vi.fn<NonNullable<SceneViewLike['focusMember']>>(),
       focusAnchor: vi.fn<NonNullable<SceneViewLike['focusAnchor']>>(),
       getStats() {

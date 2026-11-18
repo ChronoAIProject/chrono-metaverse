@@ -4,6 +4,9 @@ import { viewHasGeometry, type SceneContent } from '../core/scene';
 import { attributionCredits, sceneSources } from '../core/sources';
 import type { Visual } from '../core/visuals';
 import type { CameraAction } from '../workspace/viewerActions';
+import { CameraControls } from './CameraControls';
+import type { CameraPerspective } from './cameraPerspective';
+import type { CameraStep } from './cameraNavigation';
 import { InfoPanel } from './InfoPanel';
 import { CreditLine, ModelSources } from './ModelSources';
 import {
@@ -22,6 +25,8 @@ export interface SceneViewLike {
   setCutaway(height: number | null): void;
   select(selection: Selection | null): void;
   frameContent(): void;
+  stepCamera(step: CameraStep): void;
+  setPerspective(mode: CameraPerspective): void;
   focusMember?(spaceId: string | null): void;
   focusAnchor?(ref: { readonly spaceId: string; readonly anchorId: string } | null): void;
   applyCamera?(action: CameraAction, content: SceneContent): boolean;
@@ -94,6 +99,7 @@ export function Viewer({
   const focusedAnchorRef = useRef(focusedAnchor);
   const lastCamera = useRef('');
   const readyContent = useRef<SceneContent | null>(null);
+  const [perspective, setPerspective] = useState<CameraPerspective>('third');
   const [unsupported, setUnsupported] = useState<string | null>(null);
   const [step, setStep] = useState<LoadStep | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -163,6 +169,7 @@ export function Viewer({
             modelRef.current
               ? modelRef.current(hash)
               : Promise.reject(new Error('没有模型加载函数')),
+          onPerspectiveChange: setPerspective,
           onProgress: setStep,
           onSelect: setSelection,
         });
@@ -170,6 +177,7 @@ export function Viewer({
         setUnsupported(error instanceof Error ? error.message : String(error));
         return;
       }
+      setPerspective('third');
       viewRef.current = view;
       return () => {
         view.dispose();
@@ -310,6 +318,11 @@ export function Viewer({
               回到全景
             </button>
           </div>
+          <CameraControls
+            perspective={perspective}
+            onPerspective={(mode) => viewRef.current?.setPerspective(mode)}
+            onStep={(step) => viewRef.current?.stepCamera(step)}
+          />
         </div>
       )}
     </div>

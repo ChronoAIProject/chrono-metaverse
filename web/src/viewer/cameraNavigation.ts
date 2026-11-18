@@ -1,17 +1,28 @@
 import { Vector3 } from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-const directions = new Map<string, readonly [number, number, number]>([
-  ['KeyW', [0, 0, -1]],
-  ['ArrowUp', [0, 0, -1]],
-  ['KeyS', [0, 0, 1]],
-  ['ArrowDown', [0, 0, 1]],
-  ['KeyA', [-1, 0, 0]],
-  ['ArrowLeft', [-1, 0, 0]],
-  ['KeyD', [1, 0, 0]],
-  ['ArrowRight', [1, 0, 0]],
-  ['KeyQ', [0, -1, 0]],
-  ['KeyE', [0, 1, 0]],
+const directions = {
+  forward: [0, 0, -1],
+  back: [0, 0, 1],
+  left: [-1, 0, 0],
+  right: [1, 0, 0],
+  down: [0, -1, 0],
+  up: [0, 1, 0],
+} as const;
+type Direction = keyof typeof directions;
+export type CameraStep = Direction | 'turnLeft' | 'turnRight' | 'zoomIn' | 'zoomOut';
+
+const keys = new Map<string, Direction>([
+  ['KeyW', 'forward'],
+  ['ArrowUp', 'forward'],
+  ['KeyS', 'back'],
+  ['ArrowDown', 'back'],
+  ['KeyA', 'left'],
+  ['ArrowLeft', 'left'],
+  ['KeyD', 'right'],
+  ['ArrowRight', 'right'],
+  ['KeyQ', 'down'],
+  ['KeyE', 'up'],
 ]);
 
 /** 键盘沿当前方位移动相机和观察点，鼠标及触屏继续使用 OrbitControls。 */
@@ -26,19 +37,7 @@ export function attachCameraNavigation(
   const offset = new Vector3();
   let lastMove = 0;
 
-  const move = (now: number) => {
-    if (pressed.size === 0) return;
-    let x = 0;
-    let y = 0;
-    let z = 0;
-    for (const key of pressed) {
-      const direction = directions.get(key)!;
-      x += direction[0];
-      y += direction[1];
-      z += direction[2];
-    }
-    const seconds = Math.min((now - lastMove) / 1000, 0.1);
-    lastMove = now;
+  const translate = (x: number, y: number, z: number, seconds: number) => {
     const speed = Math.max(1, controls.getDistance() * 0.6);
     offset
       .set(Math.sign(x), Math.sign(y), Math.sign(z))
@@ -49,13 +48,29 @@ export function attachCameraNavigation(
     controls.target.add(offset);
   };
 
+  const move = (now: number) => {
+    if (pressed.size === 0) return;
+    let x = 0;
+    let y = 0;
+    let z = 0;
+    for (const key of pressed) {
+      const direction = directions[keys.get(key)!];
+      x += direction[0];
+      y += direction[1];
+      z += direction[2];
+    }
+    const seconds = Math.min((now - lastMove) / 1000, 0.1);
+    lastMove = now;
+    translate(x, y, z, seconds);
+  };
+
   canvas.tabIndex = 0;
   canvas.addEventListener('pointerdown', () => canvas.focus({ preventScroll: true }), options);
   canvas.addEventListener(
     'keydown',
     (event) => {
       if (event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
-      if (!directions.has(event.code)) return;
+      if (!keys.has(event.code)) return;
       event.preventDefault();
       if (pressed.has(event.code)) return;
       const now = performance.now();
@@ -105,5 +120,28 @@ export function attachCameraNavigation(
     );
   }
 
-  return { update: () => move(performance.now()), dispose: () => listeners.abort() };
+  const step = (action: CameraStep, firstPerson: boolean) => {
+    onStart();
+    switch (action) {
+      case 'zoomIn':
+        controls.dollyIn(0.85);
+        break;
+      case 'zoomOut':
+        controls.dollyOut(0.85);
+        break;
+      case 'turnLeft':
+      case 'turnRight': {
+        const left = firstPerson ? -1 : 1;
+        controls.rotateLeft(((action === 'turnLeft' ? left : -left) * Math.PI) / 12);
+        break;
+      }
+      default: {
+        const [x, y, z] = directions[action];
+        translate(x, y, z, 0.15);
+        controls.update();
+      }
+    }
+  };
+
+  return { step, update: () => move(performance.now()), dispose: () => listeners.abort() };
 }
