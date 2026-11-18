@@ -12,11 +12,23 @@
 }
 
 .viewer__canvas {
+  position: relative;
   display: block;
   width: 100%;
   height: 100%;
   /* 触控交给 OrbitControls：单指旋转，双指缩放和平移。 */
   touch-action: none;
+}
+
+.viewer__live-screens {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.viewer__live-screens iframe {
+  border: 0;
+  backface-visibility: hidden;
 }
 
 .viewer__labels {
