@@ -1,3 +1,4 @@
+import { hologramMaterial } from './hologram';
 import * as THREE from 'three';
 import { TilesRenderer } from '3d-tiles-renderer/three';
 import {
@@ -53,6 +54,7 @@ class ExternalItem {
     private readonly parseQueue: PriorityQueue,
     private readonly lruCache: LRUCache,
     private readonly access?: ExternalAccess,
+    private readonly hologram = false,
   ) {
     this.view = backgroundView(entity);
     this.group.rotation.y = THREE.MathUtils.degToRad(placement.rotation);
@@ -174,8 +176,18 @@ class ExternalItem {
       }
     }
     this.group.add(tiles.group);
-    tiles.addEventListener('load-model', () => {
+    tiles.addEventListener('load-model', ({ scene }) => {
       if (this.tiles !== tiles || this.disposed) return;
+      if (this.hologram)
+        scene.traverse((object) => {
+          if (!(object instanceof THREE.Mesh)) return;
+          for (const material of Array.isArray(object.material)
+            ? object.material
+            : [object.material]) {
+            hologramMaterial(material, 'facade');
+            material.needsUpdate = true;
+          }
+        });
       this.loaded++;
       this.credit.dataset.loaded = String(this.loaded);
       this.setState(this.failed ? 'partial' : 'ready', this.failed ? '来源暂不可用' : '');
@@ -289,7 +301,15 @@ export class ExternalContentView {
       member.view.entities.flatMap((entity) => {
         const config = externalContentOf(entity);
         return config
-          ? [{ config, entity, placement: member.placement, access: member.external }]
+          ? [
+              {
+                config,
+                entity,
+                placement: member.placement,
+                access: member.external,
+                hologram: !!member.view.styleLook?.hologram,
+              },
+            ]
           : [];
       }),
     );
@@ -301,10 +321,10 @@ export class ExternalContentView {
     this.key = key;
     if (!selected.length) return;
     this.providerCreditsHost.append(this.credit);
-    for (const { config, entity, placement, access } of selected) {
+    for (const { config, entity, placement, access, hologram } of selected) {
       const item =
         config.format === 'mvt'
-          ? new VectorContentItem(config, entity, placement, this.credit, access)
+          ? new VectorContentItem(config, entity, placement, this.credit, access, hologram)
           : new ExternalItem(
               config,
               entity,
@@ -314,6 +334,7 @@ export class ExternalContentView {
               this.parseQueue,
               this.lruCache,
               access,
+              hologram,
             );
       this.items.push(item);
       this.scene.add(item.group);

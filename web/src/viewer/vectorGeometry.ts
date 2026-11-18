@@ -35,13 +35,55 @@ function clip(ring: readonly Point[], extent: number): Point[] {
   });
 }
 
+// OpenMapTiles 的主干道可作为全息地面的浅色嵌线。没有交通图层的来源仍使用底图。
+function roadLines(data: VectorTile, tile: Tile, reference: GeoReference) {
+  const layer = data.layers.transportation;
+  if (!layer || layer.length > 10000) return;
+  const roads = new Set(['motorway', 'trunk', 'primary', 'secondary']);
+  const positions: number[] = [];
+  let vertices = 0;
+  for (let i = 0; i < layer.length; i++) {
+    const f = layer.feature(i);
+    if (
+      f.type !== 2 ||
+      !roads.has(String(f.properties.class)) ||
+      f.properties.brunnel === 'tunnel' ||
+      f.extent < 1 ||
+      f.extent > 65536
+    )
+      continue;
+    for (const path of f.loadGeometry()) {
+      vertices += path.length;
+      if (vertices > 50000) return;
+      let previous: THREE.Vector3 | undefined;
+      for (const p of path) {
+        const [lon, lat] = tileCoordinates(
+          tile.x + p.x / f.extent,
+          tile.y + p.y / f.extent,
+          tile.z,
+        );
+        const next = reference.point(lon, lat, 0.65);
+        if (previous) positions.push(...previous.toArray(), ...next.toArray());
+        previous = next;
+      }
+    }
+  }
+  if (!positions.length) return;
+  return new THREE.BufferGeometry().setAttribute(
+    'position',
+    new THREE.Float32BufferAttribute(positions, 3),
+  );
+}
+
 export function vectorGeometry(
   bytes: Uint8Array,
   tile: Tile,
   reference: GeoReference,
   style: VectorContent['extrusion'],
-): { geometry: THREE.BufferGeometry; features: number } {
-  const layer = new VectorTile(new Pbf(bytes)).layers[style.layer];
+  groundRoads = false,
+) {
+  const data = new VectorTile(new Pbf(bytes));
+  const layer = data.layers[style.layer];
   const positions: number[] = [];
   let features = 0,
     vertices = 0;
@@ -133,7 +175,7 @@ export function vectorGeometry(
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
-  return { geometry, features };
+  return { geometry, features, roads: groundRoads ? roadLines(data, tile, reference) : undefined };
 }
 
 /** 从全球四叉树按视锥和距离发现瓦片，输入只含标准地理参考。 */

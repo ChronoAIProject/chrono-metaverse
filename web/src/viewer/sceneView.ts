@@ -67,6 +67,7 @@ import { placedModelBox, placeRotatedModel } from './modelPlacement';
 import type { ShapeJob, ShapeJobResult } from './meshJobs';
 import { backgroundLandmark, backgroundView } from './background';
 import { environmentOf } from '../core/environment';
+import { surfaceLook } from './hologram';
 import { EnvironmentView } from './environmentView';
 
 /**
@@ -1021,7 +1022,11 @@ export class SceneView {
         inUse.add(key);
         const glass = entity.props?.glass === true;
         const background = isBackgroundEntity(entity);
-        const styleLook = member.view.styleLook ?? member.styleLook;
+        const styleLook = surfaceLook(
+          member.view.styleLook ?? member.styleLook,
+          entity,
+          background,
+        );
         const kind = entity.kind === 'structure' ? 'structure' : 'object';
         const batchKey = `${key}|${glass}|${background}|${kind}|${styleLookKey(styleLook)}|${JSON.stringify(entity.props?.backgroundView ?? null)}`;
         const batch = batches.get(batchKey) ?? {
@@ -1125,7 +1130,7 @@ export class SceneView {
                 model,
                 entity.material,
                 background,
-                member.view.styleLook ?? member.styleLook,
+                surfaceLook(member.view.styleLook ?? member.styleLook, entity, background),
                 entity.kind === 'structure' ? 'structure' : 'object',
               );
               placeRotatedModel(clone, entity.transform, box ?? undefined);

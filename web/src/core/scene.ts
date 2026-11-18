@@ -423,7 +423,10 @@ export function selectViewForStyle(
   return {
     ...selected,
     styleId: spaceStyle.id,
-    styleLook: spaceStyle.look,
+    styleLook:
+      spaceStyle.extensions?.surface === 'hologram'
+        ? { ...spaceStyle.look, hologram: 'detail' }
+        : spaceStyle.look,
     ...(spaceStyle.extensions && Object.keys(spaceStyle.extensions).length > 0
       ? { extensions: spaceStyle.extensions }
       : {}),

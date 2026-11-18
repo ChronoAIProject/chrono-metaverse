@@ -17,7 +17,7 @@ export function isStyleId(value: string): boolean {
 }
 
 export type { LightingPreset };
-export type StyleLook = SpaceStyleLook;
+export type StyleLook = SpaceStyleLook & { readonly hologram?: 'detail' | 'facade' | 'landscape' };
 
 export interface SpaceStyle {
   readonly id: StyleId;
@@ -53,7 +53,7 @@ const customStyle = (spec: SpaceStyleSpec): SpaceStyle => ({
     : {}),
 });
 
-/** 产品内置的七套核心样式。 */
+/** 产品内置的八套核心样式。 */
 export const BUILTIN_SPACE_STYLES: readonly SpaceStyle[] = [
   {
     id: 'raw-scan',
@@ -149,6 +149,18 @@ export const BUILTIN_SPACE_STYLES: readonly SpaceStyle[] = [
       roughness: 0.35,
       metalness: 0.25,
     },
+  },
+  {
+    id: 'holo-arena',
+    name: '全息场',
+    description: '暮色中的双层玻璃楼群、冰青层板与深色水岸',
+    swatch: '#5eedec',
+    category: 'builtin',
+    mode: 'extended',
+    rebuiltStyle: 'shapes',
+    lighting: 'studio',
+    look: { roughness: 0.31, metalness: 0.15 },
+    extensions: { surface: 'hologram' },
   },
 ] as const;
 

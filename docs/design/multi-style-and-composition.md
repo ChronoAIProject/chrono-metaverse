@@ -12,7 +12,7 @@
 
 显式的模式控件、`?view=` 或 `mode` 动作优先使用旧模式投影，暂时替代样式的图层列表；显式画法仅覆盖重建画法。选择命名样式、组合主题、成员样式或执行 `look` 动作会释放此前的模式与画法覆盖。同一动作序列按顺序处理，`look` 后的 `mode`、`style` 动作重新建立覆盖。扫描下载依据实际图层选择触发，支持在非原始模式中叠加扫描。
 
-产品内置七套核心样式：`raw-scan` 原始扫描、`arch-realistic` 写实建筑、`voxel-blocks` 体素方块、`extended-full` 虚实共生、`maquette` 白模沙盘、`blueprint` 工程蓝图、`night-neon` 夜景霓虹。空间和快照都可以通过 `Space.styles` / `Snapshot.styles` 添加自定义样式，默认样式由 `defaultStyleId` 指向。
+产品内置八套核心样式：`raw-scan` 原始扫描、`arch-realistic` 写实建筑、`voxel-blocks` 体素方块、`extended-full` 虚实共生、`maquette` 白模沙盘、`blueprint` 工程蓝图、`night-neon` 夜景霓虹、`holo-arena` 全息场。空间和快照都可以通过 `Space.styles` / `Snapshot.styles` 添加自定义样式，默认样式由 `defaultStyleId` 指向。
 
 ### 结构化自定义扩展
 
