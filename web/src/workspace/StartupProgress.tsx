@@ -23,7 +23,7 @@ export function StartupProgress({
 }: {
   readonly operation: Operation | null;
   readonly operationId: string;
-  readonly cmaUrl: string;
+  readonly cmaUrl?: string;
   readonly busy: boolean;
   readonly onRefresh: () => void;
   readonly onResume?: () => void;
@@ -84,9 +84,11 @@ export function StartupProgress({
         </button>
         {waiting && (
           <>
-            <a href={`${cmaUrl}/auth/login`} target="_blank" rel="noopener noreferrer">
-              前往 CMA 完成授权 ↗
-            </a>
+            {cmaUrl && (
+              <a href={`${cmaUrl}/auth/login`} target="_blank" rel="noopener noreferrer">
+                前往 CMA 完成授权 ↗
+              </a>
+            )}
             {onResume && (
               <button disabled={busy} onClick={onResume}>
                 已完成授权，继续原任务
