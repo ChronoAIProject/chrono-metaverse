@@ -139,8 +139,8 @@ export interface EntityBody {
     readonly coverage3cm?: number;
   };
   /**
-   * 不透明的键值，网站只按纯文本列出。例外：`source` 是对象时是外部模型的署名
-   * （core/sources.ts），显示在查看器的「引用版权」面板。
+   * 物件属性。`source` 提供「引用版权」面板显示的模型署名，
+   * `liveScreen` 配置形状面板的直播源。
    */
   readonly props?: Readonly<Record<string, unknown>>;
 }

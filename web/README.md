@@ -73,6 +73,27 @@ React 19 + Vite + TypeScript + three.js。凭分享链接打开空间或组合�
 
 状态事件（类型带 `state`）按 T 时刻的状态显示，超过 `maxAgeSec` 失效；瞬时事件显示 T 之前一个时间窗内的（窗口取 `durationSec` 和页面给的窗口里大的：暂停回放 15 分钟，播放时随速度放大，"现在"模式 10 秒）。起点事件必须写在 `correlationId` 前缀对应的空间里，否则不配对；单空间页只显示本空间这一侧的图标。所有事件文本、锚点标签、提交说明、物件属性一律用 `textContent` 写入（纯文本）。
 
+## 屏幕直播
+
+在形状物件的 `props.liveScreen` 中配置播放源和屏幕面板。前厅 LED 大屏是建模物件集里的 `cabinet-01`，其屏幕面板位于 `shape.children[0]`。
+
+```json
+{
+  "liveScreen": {
+    "kind": "youtube",
+    "url": "https://www.youtube.com/live/<视频 ID>",
+    "plate": [0]
+  }
+}
+```
+
+- `plate` 是从 `shape` 起逐层进入 `children` 的下标，根形状就是面板时用 `[]`。面板用四点长方形 `plate`，顶点按左下、右下、右上、左上排列。
+- `kind: "youtube"` 接受允许嵌入的视频链接，包括 `/live/<视频 ID>`、`/watch?v=<视频 ID>` 和 `youtu.be/<视频 ID>`。播放不可用时由 YouTube 播放器显示状态。
+- `kind: "hls"` 使用 HTTPS 或站点内以 `/` 开头的 HLS 播放地址。跨站源需要为播放清单和分片开启 CORS。
+- 直播默认静音，跟随面板透视、遮挡和剖切。删除 `liveScreen` 即显示原静态贴图。回看历史版本时，若该版本配置了直播源，播放的是该来源当前的画面。
+
+前厅等重建层物件可在重建物件集中配置，扩展层物件可通过 `placeEntity` 操作写入。
+
 ## 命令
 
 ```bash

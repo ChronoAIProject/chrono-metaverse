@@ -39,6 +39,7 @@ import {
 } from './framing';
 import { iconElement } from './icons';
 import { createLights } from './lighting';
+import { LiveScreens } from './liveScreen';
 import {
   LABEL_PADDING,
   MIN_SCREEN_SIZE,
@@ -353,6 +354,8 @@ export class SceneView {
     clipping: this.clipping,
     alive: () => !this.disposed,
   };
+  private readonly liveScreens: LiveScreens;
+  private readonly backgroundColor = new THREE.Color();
   private anchors = new Map<string, AnchorInfo>();
   private visuals = new Map<string, VisualObject>();
   private lastVisuals: readonly Visual[] = [];
@@ -412,6 +415,7 @@ export class SceneView {
     private readonly host: HTMLElement,
     private readonly options: SceneViewOptions = {},
   ) {
+    this.liveScreens = new LiveScreens(host, this.clipping);
     // 对数深度让厘米级室内和地球远景共享深度缓冲，不用近共面的叠加网格补海面。
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -422,8 +426,6 @@ export class SceneView {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
-    // 背景透明，透出 .viewer 的背景（随深浅色主题变化）。
-    this.renderer.setClearColor(0x000000, 0);
     // 剖切只作用在场景内容的材质上（虚拟区光效、标签不被切掉）。
     this.renderer.localClippingEnabled = true;
     this.renderer.domElement.className = 'viewer__canvas';
@@ -513,6 +515,8 @@ export class SceneView {
   /** 颜色跟着主题走：从 CSS 令牌读取强调色。 */
   private applyTheme(): void {
     const style = getComputedStyle(this.host);
+    this.backgroundColor.setStyle(style.backgroundColor);
+    this.updateBackground();
     const accent = style.getPropertyValue('--accent').trim();
     if (accent !== '') {
       try {
@@ -532,10 +536,16 @@ export class SceneView {
     });
   }
 
+  private updateBackground(): void {
+    // 嵌入播放器在画布下方，只有通过深度和剖切测试的面板像素才让播放器露出来。
+    this.renderer.setClearColor(this.backgroundColor, this.liveScreens.hasEmbed ? 1 : 0);
+  }
+
   private fit(): void {
     const width = Math.max(1, this.host.clientWidth);
     const height = Math.max(1, this.host.clientHeight);
     this.renderer.setSize(width, height, false);
+    this.liveScreens.resize(width, height);
     this.labels.setSize(width, height);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
@@ -582,6 +592,7 @@ export class SceneView {
     this.externalContent.update(this.camera);
     this.updateBackgroundViews();
     this.renderer.render(this.scene, this.camera);
+    this.liveScreens.render(this.scene, this.camera);
     this.labels.render(this.scene, this.camera);
     this.updateLabels();
   }
@@ -944,6 +955,7 @@ export class SceneView {
     warnings: string[],
   ): void {
     const generation = this.generation;
+    this.liveScreens.clear();
     disposeObject(this.content);
     disposeObject(this.overlay);
     this.content.clear();
@@ -1005,6 +1017,7 @@ export class SceneView {
       >();
       for (const { entity, key, matrix } of entities) {
         if (key === null || matrix === null) continue;
+        this.liveScreens.add(group, entity);
         inUse.add(key);
         const glass = entity.props?.glass === true;
         const background = isBackgroundEntity(entity);
@@ -1179,6 +1192,7 @@ export class SceneView {
 
     this.links = content.links;
     this.buildLinks(content);
+    this.updateBackground();
 
     // 缓存只保留最近的一批，时间轴来回拖动时不会无限增长；正在用的不清。
     if (this.geometryCache.size > 400) {
@@ -2409,6 +2423,7 @@ export class SceneView {
     this.controls.removeEventListener('start', this.onControlsStart);
     this.navigation.dispose();
     this.controls.dispose();
+    this.liveScreens.clear();
     this.clearVisuals();
     this.clearSelection();
     disposeObject(this.content);

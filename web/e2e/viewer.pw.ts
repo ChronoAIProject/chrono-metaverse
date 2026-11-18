@@ -620,6 +620,74 @@ test('剖切：所有视图都能切掉某个高度以上的内容（含扫描�
   await expectRendered(page);
 });
 
+test('屏幕直播随面板剖切，切到原始视图时移除播放器', async ({ page }) => {
+  const videoId = 'test_screen';
+  await page.route(`https://www.youtube-nocookie.com/embed/${videoId}?*`, (route) =>
+    route.fulfill({
+      contentType: 'text/html',
+      body: '<body style="background: rgb(255, 0, 255)">',
+    }),
+  );
+  await page.route('**/api/public/spaces/demo-lobby/snapshot?*', async (route) => {
+    const response = await route.fetch();
+    const snapshot = await response.json();
+    await route.fulfill({
+      response,
+      json: {
+        ...snapshot,
+        anchors: [],
+        chunks: [],
+        regions: [],
+        entities: [
+          {
+            id: 'screen',
+            body: {
+              entityId: 'screen',
+              layer: 'rebuilt',
+              kind: 'object',
+              shape: {
+                type: 'plate',
+                points: [
+                  [-2, 0.8, 0],
+                  [2, 0.8, 0],
+                  [2, 3, 0],
+                  [-2, 3, 0],
+                ],
+                thickness: 0.02,
+                material: { color: [0, 0, 255], unlit: true },
+              },
+              props: {
+                liveScreen: { kind: 'youtube', url: `https://youtu.be/${videoId}`, plate: [] },
+              },
+            },
+          },
+        ],
+      },
+    });
+  });
+  const purplePixels = async () => {
+    const { channels, pixels } = decodePng(await page.locator('.viewer__canvas').screenshot());
+    let count = 0;
+    for (let i = 0; i < pixels.length; i += channels) {
+      if (pixels[i]! > 240 && pixels[i + 1]! < 15 && pixels[i + 2]! > 240) count += 1;
+    }
+    return count;
+  };
+
+  await page.goto(LINK);
+  await waitForScene(page, 'optimized');
+  await openDisplaySettings(page);
+  const cut = page.getByRole('checkbox', { name: '剖切' });
+  await cut.uncheck();
+  await expect.poll(purplePixels).toBeGreaterThan(5000);
+  await cut.check();
+  await page.getByRole('slider', { name: '剖切高度' }).fill('0.6');
+  await expect.poll(purplePixels).toBe(0);
+
+  await page.getByRole('button', { name: '原始', exact: true }).click();
+  await expect(page.locator('.viewer iframe')).toHaveCount(0);
+});
+
 test('时间轴：拖到最早、按提交前后跳、回到现在', async ({ page }) => {
   await page.goto(LINK);
   await waitForScene(page, 'optimized');
