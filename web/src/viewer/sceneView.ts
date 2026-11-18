@@ -533,7 +533,7 @@ export class SceneView {
     this.camera.updateProjectionMatrix();
     this.labelsDirty = true;
     // 画面大小变了（转屏、页头换行）而镜头还是自动取景的：按新的宽高比重新取景。
-    if (this.autoFramed) this.frameContent(false);
+    if (this.autoFramed && !this.flight) this.frameContent(false);
   }
 
   private frame(): void {
@@ -1854,6 +1854,7 @@ export class SceneView {
       animate,
       this.overviewBox?.framing,
     );
+    this.autoFramed = this.framed;
   }
 
   /** 聚焦组合中的一个成员空间；传 `null` 时回到全景总览。 */

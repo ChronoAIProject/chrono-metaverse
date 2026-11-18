@@ -261,8 +261,7 @@ test('取景：房间占画面的大部分，"回到全景"用同样的取景', 
   await page.waitForTimeout(900);
   expect(await roomCoverage(page)).toBeLessThan(framed * 0.6);
   await page.getByRole('button', { name: '回到全景' }).click();
-  await page.waitForTimeout(500);
-  expect(await roomCoverage(page)).toBeGreaterThan(0.3);
+  await expect.poll(() => roomCoverage(page)).toBeGreaterThan(0.3);
 
   // 优化 + 扩展：虚拟区一起纳入取景（镜头没动过时换视图自动重新取景）。
   await page.getByRole('button', { name: '优化 + 扩展' }).click();
@@ -393,7 +392,7 @@ for (const example of [
     await expect(marker).toBeHidden();
     const frame = await frameRange(page);
     expect(frame[3]! - frame[0]!).toBeLessThan(6.5);
-    expect(await roomCoverage(page)).toBeGreaterThan(0.3);
+    await expect.poll(() => roomCoverage(page)).toBeGreaterThan(0.3);
     expect(errors).toEqual([]);
   });
 }
