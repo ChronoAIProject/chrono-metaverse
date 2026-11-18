@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    auth::organizations::ForwardedCredential,
+    auth::{in_flight::InFlight, organizations::ForwardedCredential},
     repo::{OAuthGrantRecord, Repo, RepoError},
 };
 pub use config::OAuthConfig;
@@ -31,7 +31,7 @@ pub use routes::router;
 pub(crate) struct StoreAuthority(());
 const STORE: StoreAuthority = StoreAuthority(());
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum OAuthError {
     #[error("NyxID 授权不可用，请重新连接")]
     Reconnect,
@@ -77,6 +77,7 @@ pub struct OAuthService {
     vault: Vault,
     http: reqwest::Client,
     nyxagent_http: reqwest::Client,
+    browser_subject_checks: InFlight<(String, String), Result<String, OAuthError>>,
 }
 
 impl OAuthService {
@@ -110,6 +111,7 @@ impl OAuthService {
             repo,
             vault,
             http,
+            browser_subject_checks: InFlight::default(),
             nyxagent_http: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .connect_timeout(Duration::from_secs(5))

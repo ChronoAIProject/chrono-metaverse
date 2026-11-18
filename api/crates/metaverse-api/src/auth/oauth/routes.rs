@@ -433,14 +433,27 @@ pub(super) async fn verified_browser(
     if held.record.incarnation != session.incarnation {
         return Err(OAuthError::Reconnect.into());
     }
-    let tokens = oauth.tokens(&held.record)?;
-    match oauth.subject(&tokens.access_token).await {
+    let verified = oauth
+        .browser_subject_checks
+        .check(
+            (held.record.id.clone(), held.record.version.clone()),
+            || {
+                let oauth = oauth.clone();
+                let credential = held.credential.clone();
+                async move { oauth.subject(credential.value()).await }
+            },
+        )
+        .await;
+    match verified {
         Ok(subject) if subject == session.subject => {}
         Ok(_) | Err(OAuthError::Reconnect) => {
             oauth.repo.oauth_grant_disable(&STORE, &held.record).await?;
             return Err(OAuthError::Reconnect.into());
         }
-        Err(error) => return Err(error.into()),
+        Err(error) => {
+            tracing::warn!(%error, "工作台的 NyxID 主体核验暂时失败");
+            return Err(error.into());
+        }
     }
     Ok((session, held))
 }
