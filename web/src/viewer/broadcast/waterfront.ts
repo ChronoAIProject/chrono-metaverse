@@ -9,14 +9,12 @@ export class WaterfrontMaterials {
     projection: T.Material;
   }[] = [];
   private readonly wall = new T.MeshBasicMaterial();
-  private readonly ground = new T.MeshBasicMaterial();
   private enabled = false;
   constructor() {
     hologramMaterial(this.wall, 'facade');
-    hologramMaterial(this.ground, 'landscape');
   }
-  add(object: T.Object3D, facade: boolean) {
-    const projection = facade ? this.wall : this.ground;
+  add(object: T.Object3D) {
+    const projection = this.wall;
     object.traverse((mesh) => {
       if (!(mesh instanceof T.Mesh)) return;
       const original = mesh.material;
@@ -36,6 +34,5 @@ export class WaterfrontMaterials {
   dispose() {
     this.show(false);
     this.wall.dispose();
-    this.ground.dispose();
   }
 }

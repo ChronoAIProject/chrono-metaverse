@@ -1107,7 +1107,7 @@ export class SceneView {
           holder ??= new THREE.Group().add(mesh);
           holder.add(screen);
           if (broadcast?.source === entity) mirrorMesh = mesh;
-          if (!this.broadcast && broadcast?.origin === entity) {
+          if (!this.broadcast && broadcast?.source === entity) {
             this.broadcast = new BroadcastVenue(broadcast, screen, (shot) => {
               this.host.dataset.broadcastShot = shot;
               this.options.onBroadcastShot?.(shot);
@@ -1175,8 +1175,7 @@ export class SceneView {
               );
               if (venue && this.broadcast === venue && background && !entity.props?.liveScreen) {
                 const role = surfaceLook({ hologram: 'detail' }, entity, true)?.hologram;
-                if (role === 'facade' || role === 'landscape')
-                  venue.surfaces.add(clone, role === 'facade');
+                if (role === 'facade') venue.surfaces.add(clone);
               }
               placeRotatedModel(clone, entity.transform, box ?? undefined);
               holder.add(fitModelInto(clone, fit));

@@ -223,14 +223,19 @@ test('同一播放器随发布会拉远，轨道返回和切换视图恢复地�
   const nav = viewer.getByRole('navigation', { name: '发布会机位' });
   await expect(nav.getByRole('button', { name: '滨海湾' })).toHaveAttribute('aria-pressed', 'true');
   await nav.getByRole('button', { name: '播放拉远' }).click();
-  for (const shot of ['office', 'city', 'orbit'])
+  const frame = viewer.locator('iframe');
+  for (const shot of ['office', 'city', 'orbit']) {
     await expect(viewer).toHaveAttribute('data-broadcast-shot', shot);
+    if (shot === 'office') await expect(frame).toHaveCSS('filter', 'none');
+    else await expect(frame).not.toHaveCSS('filter', 'none');
+  }
   await expect
     .poll(async () => Number(await viewer.getAttribute('data-map-distance')))
     .toBeGreaterThan(1e7);
   await expect(nav.getByRole('button', { name: '播放拉远' })).toBeVisible();
   await nav.getByRole('button', { name: '前厅看台' }).click();
   await expect(viewer).toHaveAttribute('data-broadcast-shot', 'office');
+  await expect(frame).toHaveCSS('filter', 'none');
   expect(requests).toBe(1);
   await nav.getByRole('button', { name: '地球轨道' }).click();
   await page.locator('button[data-mode="optimized"]').click();

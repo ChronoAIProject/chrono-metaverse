@@ -653,3 +653,13 @@
     padding: 3px 8px;
   }
 }
+
+.viewer:is([data-broadcast-shot='city'], [data-broadcast-shot='orbit'])
+  .viewer__live-screens
+  iframe {
+  filter: grayscale(1) brightness(0.55) sepia(1) saturate(1.45) hue-rotate(122deg) brightness(1.18);
+}
+
+.viewer:is([data-broadcast-shot='city'], [data-broadcast-shot='orbit']) .viewer__canvas {
+  filter: grayscale(1) sepia(0.86) saturate(1.8) hue-rotate(112deg) brightness(1.05);
+}

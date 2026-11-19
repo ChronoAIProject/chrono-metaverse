@@ -6,6 +6,7 @@ import { EARTH_RADIUS as R, GeoReference } from '../geography';
 import { liveScreenOf } from '../liveScreen';
 import { buildCity } from './city';
 import { loadHardware } from './hardware';
+import { RelayScreen, screenGlass } from './screen';
 import { WaterfrontMaterials } from './waterfront';
 import { broadcastSky, orbitalEarth } from './sky';
 
@@ -17,17 +18,7 @@ export function broadcastConfig(member: MemberContent) {
   const source = member.view.entities.find((e) => e.entityId === 'tide-arena.mirror');
   const screen = source && liveScreenOf(source, window.location.origin);
   const map = member.view.entities.map(environmentOf).find((env) => env?.map)?.map;
-  if (!source || !screen || !map) return null;
-  const cabinet = member.view.entities.find((e) => e.entityId === source.props?.['镜像来源']);
-  const physical = cabinet && liveScreenOf(cabinet, window.location.origin);
-  return {
-    source,
-    screen,
-    map,
-    placement: member.placement,
-    origin: physical ? cabinet! : source,
-    face: physical ?? screen,
-  };
+  return source && screen && map ? { source, screen, map, placement: member.placement } : null;
 }
 
 type Config = NonNullable<ReturnType<typeof broadcastConfig>>;
@@ -47,8 +38,7 @@ export class BroadcastVenue {
   private readonly orbitScreen = new T.Group();
   private readonly relay = new T.Group();
   private readonly panel = new T.Group();
-  private readonly officeEye: T.Vector3;
-  private readonly clipping: { material: T.Material; planes: T.Plane[] }[] = [];
+  private readonly video: RelayScreen;
   private readonly traffic;
   private active: BroadcastShot | null = null;
   private readonly eye = new T.Vector3();
@@ -90,22 +80,18 @@ export class BroadcastVenue {
     this.orbitScreen.rotation.set(-0.11, -0.2, -0.03);
     this.orbitScreen.scale.setScalar(0.052);
     // 两个远景都沿用前厅镜像实体的外框与占位画面。
-    this.relay.add(this.panel);
+    this.video = new RelayScreen(player);
+    this.relay.add(this.panel, screenGlass());
     this.panel.matrixAutoUpdate = false;
     this.panel.matrix
       .makeScale(16 / config.screen.width, 9 / config.screen.height, 16 / config.screen.width)
       .multiply(config.screen.matrix.clone().invert());
-    const face = config.face;
+    const face = config.screen;
     this.officeCenter.setFromMatrixPosition(face.matrix);
-    this.officeEye = vec(-face.width * 0.24, 0.36, face.width * 1.29).applyMatrix4(face.matrix);
     this.relayMatrix = new T.Matrix4()
       .makeTranslation(0, 0, 0.055)
       .multiply(new T.Matrix4().makeScale(16 / face.width, 9 / face.height, 1))
       .multiply(face.matrix.clone().invert());
-    this.player.traverse((o) => {
-      if (o instanceof T.Mesh && o.material.clippingPlanes)
-        this.clipping.push({ material: o.material, planes: o.material.clippingPlanes });
-    });
     this.root.updateMatrixWorld(true);
   }
 
@@ -125,14 +111,10 @@ export class BroadcastVenue {
         to: this.city.localToWorld(vec(8, 379, 890 * widen)),
         target: this.city.localToWorld(vec(0, 50, 0)),
       };
-    const to = this.officeEye
-      .clone()
-      .sub(this.officeCenter)
-      .multiplyScalar(widen)
-      .add(this.officeCenter);
+    const to = this.officeCenter.clone().add(vec(-2, 1.8, 14 * widen));
     return {
       to: this.root.localToWorld(to),
-      target: this.root.localToWorld(this.officeCenter.clone()),
+      target: this.root.localToWorld(this.officeCenter.clone().add(vec(0, -2, 0))),
     };
   }
 
@@ -150,8 +132,7 @@ export class BroadcastVenue {
         parent.add(this.relay);
         this.relay.add(this.player);
       }
-      for (const { material, planes } of this.clipping)
-        material.clippingPlanes = shot === 'office' ? planes : null;
+      this.video.show(shot !== 'office');
       this.player.matrixAutoUpdate = false;
       if (shot === 'office') this.player.matrix.identity();
       else this.player.matrix.copy(this.relayMatrix);
@@ -160,13 +141,14 @@ export class BroadcastVenue {
       this.active = shot;
       this.change(shot);
     }
-    this.sky.visible = distance >= 100;
+    this.panel.visible = !this.video.playing;
+    this.sky.visible = shot !== 'office';
     this.sky.material.uniforms.orbit!.value = T.MathUtils.smoothstep(
       Math.log10(Math.max(1, distance)),
       3.5,
       5.35,
     );
-    this.city.visible = distance >= 85 && distance < 70000;
+    this.city.visible = shot === 'city' && distance < 70000;
     this.orbit.visible = this.earth.earth.visible = shot === 'orbit';
     const t = this.reduced.matches ? 0 : performance.now() / 1000;
     if (this.city.visible) this.traffic(t);
@@ -185,11 +167,12 @@ export class BroadcastVenue {
     this.abort.abort();
     this.surfaces.dispose();
     this.panel.clear(); // 镜像几何和材质归原实体所有。
-    for (const { material, planes } of this.clipping) material.clippingPlanes = planes;
+    this.video.dispose();
     this.home.add(this.player);
     this.player.matrix.identity();
     this.player.matrixWorldNeedsUpdate = true;
     this.root.removeFromParent();
+    this.root.add(this.relay); // 室内机位时投影组处于游离状态，也需要释放。
     const geometries = new Set<T.BufferGeometry>(),
       materials = new Set<T.Material>();
     this.root.traverse((obj) => {
