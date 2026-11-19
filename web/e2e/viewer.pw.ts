@@ -187,7 +187,8 @@ test.beforeAll(() => {
 });
 
 test.beforeEach(async ({ request }) => {
-  await request.post('/__fixtures/reset');
+  // 重置是幂等操作。复用的本地连接被关闭时，允许重建一次连接。
+  await request.post('/__fixtures/reset', { maxRetries: 1 });
 });
 
 test('三种视图：形状带圆角和贴图，同款物件共用几何体，网格在后台线程生成', async ({ page }) => {

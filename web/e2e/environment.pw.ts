@@ -244,6 +244,35 @@ test('地图服务端来源携带预览权限并避免浏览器直连瓦片', as
   expect(direct).toBe(0);
 });
 
+/** 在浏览器内记录每次切换和当帧的显示状态，覆盖短暂停留的机位。 */
+async function verifyPlayback(page: Page, order: string[]) {
+  const viewer = page.locator('.viewer');
+  const samples = await viewer.evaluateHandle((root) => {
+    const seen: { id: string | null; screen: string; canvas: string }[] = [];
+    const observer = new MutationObserver(() => {
+      seen.push({
+        id: root.getAttribute('data-broadcast-shot'),
+        screen: getComputedStyle(root.querySelector('iframe')!).filter,
+        canvas: getComputedStyle(root.querySelector('.viewer__canvas')!).filter,
+      });
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ['data-broadcast-shot'] });
+    return { seen, observer };
+  });
+  try {
+    const play = viewer.getByRole('button', { name: '播放拉远' });
+    await play.click();
+    await expect.poll(() => samples.evaluate((log) => log.seen.map((s) => s.id))).toEqual(order);
+    await expect(play).toBeVisible();
+    expect(await samples.evaluate((log) => log.seen)).toEqual(
+      order.map((id) => ({ id, screen: 'none', canvas: 'none' })),
+    );
+  } finally {
+    await samples.evaluate((log) => log.observer.disconnect());
+    await samples.dispose();
+  }
+}
+
 test('同一播放器随发布会拉远，轨道返回和切换视图恢复地面场景', async ({ page }) => {
   const tour = readBroadcastTour(structuredClone(tourFixture))!;
   const newId = () => randomBytes(8).toString('base64url');
@@ -270,15 +299,9 @@ test('同一播放器随发布会拉远，轨道返回和切换视图恢复地�
     'aria-pressed',
     'true',
   );
-  await nav.getByRole('button', { name: '播放拉远' }).click();
+  await verifyPlayback(page, tour.order);
   const frame = viewer.locator('iframe').first();
-  for (const shot of tour.order) {
-    await expect(viewer).toHaveAttribute('data-broadcast-shot', shot);
-    await expect(frame).toHaveCSS('filter', 'none');
-    await expect(viewer.locator('.viewer__canvas')).toHaveCSS('filter', 'none');
-  }
   await expect(viewer).toHaveAttribute('data-broadcast-shot', 'pier');
-  await expect(nav.getByRole('button', { name: '播放拉远' })).toBeVisible();
   await nav.getByRole('button', { name: '演播室' }).click();
   await expect(viewer).toHaveAttribute('data-broadcast-shot', 'studio');
   await expect(frame).toHaveCSS('filter', 'none');
@@ -302,8 +325,7 @@ test('同一播放器随发布会拉远，轨道返回和切换视图恢复地�
   await expect(nav.getByRole('button', { name: '观测码头' })).toHaveCount(0);
   await expect(viewer.locator(`iframe[src*="/embed/${feed.id}?"]`)).toHaveCount(2);
   await expect.poll(() => requests).toBe(4);
-  await nav.getByRole('button', { name: '播放拉远' }).click();
-  for (const shot of tour.order) await expect(viewer).toHaveAttribute('data-broadcast-shot', shot);
+  await verifyPlayback(page, tour.order);
   await expect
     .poll(async () => Number(await viewer.getAttribute('data-map-distance')))
     .toBeGreaterThan(1e7);
