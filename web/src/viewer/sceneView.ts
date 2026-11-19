@@ -13,6 +13,7 @@ import {
   anchorPosition,
   isBackgroundEntity,
   placePoint,
+  sceneChange,
   type MemberContent,
   type Placement,
   type SceneContent,
@@ -385,10 +386,9 @@ export class SceneView {
   private cutHeight: number | null = null;
   private generation = 0;
   private framed = false;
-  /** 镜头还停在自动取景的位置（用户没动过）：画面大小变了、换了视图时重新取景。 */
+  /** 镜头还停在自动取景的位置（用户没动过）：画面大小变化时可重新取景。 */
   private autoFramed = false;
-  private lastMode: SceneContent['mode'] | null = null;
-  private lastSpaces = '';
+  private lastContent: SceneContent | null = null;
   private frameSources: FrameSource[] = [];
   private distanceObjects: {
     object: THREE.Object3D;
@@ -1301,22 +1301,22 @@ export class SceneView {
     );
     this.applyCut();
     this.setVisuals(this.lastVisuals);
-    // 第一次有内容时取景；镜头没动过时换了视图（例如加上虚拟区）也重新取景。
-    // 时间轴换版本不重新取景，免得回放时镜头跳来跳去。
-    const modeChanged = this.lastMode !== null && this.lastMode !== content.mode;
-    this.lastMode = content.mode;
-    const spaces = content.members.map((member) => member.spaceId).join('\u0000');
-    const spacesChanged = this.lastSpaces !== spaces;
-    this.lastSpaces = spaces;
+    const change = sceneChange(this.lastContent, content);
+    this.lastContent = content;
+    if (change === 'extension') {
+      // 离开巡演时停在当前眼位。用户主动发起的普通镜头动作继续执行。
+      if (previousShot) this.flight = null;
+      this.autoFramed = false;
+    }
     if (
       !this.framed ||
-      spacesChanged ||
-      wasBroadcast !== !!this.broadcast ||
-      (this.autoFramed && modeChanged)
+      change === 'space' ||
+      (change !== 'extension' && wasBroadcast !== !!this.broadcast) ||
+      (this.autoFramed && change === 'scan')
     ) {
       this.frameContent(false);
       if (this.broadcast) this.showBroadcast(this.broadcast.config.tour.initial, false);
-    } else if (this.broadcast && previousShot) {
+    } else if (change !== 'extension' && this.broadcast && previousShot) {
       const { tour } = this.broadcast.config;
       this.showBroadcast(
         tour.stops.some((s) => s.id === previousShot) ? previousShot : tour.initial,
@@ -1977,10 +1977,13 @@ export class SceneView {
   }
 
   /** 聚焦公开锚点并保留标签高亮；传 `null` 清除锚点聚焦。 */
-  focusAnchor(ref: { readonly spaceId: string; readonly anchorId: string } | null): void {
+  focusAnchor(
+    ref: { readonly spaceId: string; readonly anchorId: string } | null,
+    moveCamera = true,
+  ): void {
     const key = ref === null ? null : anchorKey(ref);
     this.setFocus(key);
-    if (key === null) return;
+    if (key === null || !moveCamera) return;
     const info = this.anchors.get(key);
     if (info?.world) this.flyTo(info.world);
   }
