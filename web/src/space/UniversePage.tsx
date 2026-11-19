@@ -17,6 +17,7 @@ import {
 } from '../core/scene';
 import {
   resolveSpaceStyles,
+  BUILTIN_SPACE_STYLES,
   UNIVERSE_THEMES,
   UNIVERSE_LAYOUT_PRESETS,
   applyLayoutPreset,
@@ -26,6 +27,7 @@ import { useAssetLoaders, useDensity, useRuntimeStates, useStableList } from '..
 import { SpaceRuntime, runtimeError, type RuntimeError } from '../data/spaceRuntime';
 import {
   useViewOverrides,
+  lookFromSearch,
   memberStylesFromSearch,
   searchWithMemberStyles,
   layoutFromSearch,
@@ -38,6 +40,7 @@ import {
   ErrorCard,
   LoadingCard,
   StyleSwitch,
+  StyleGallerySwitch,
   ThemeToggle,
   ViewModeSwitch,
 } from './controls';
@@ -118,15 +121,18 @@ export function UniversePage({
     setStyle,
     resetOverrides,
   } = useViewOverrides(initialMode);
+  const [lookId, setLookId] = useState(() => lookFromSearch(window.location.search));
   const [themeId, setThemeId] = useState<string | null>(() =>
     new URLSearchParams(window.location.search).get('themeId'),
   );
   const changeTheme = useCallback(
-    (id: string) => {
+    (id: string, named = false) => {
       resetOverrides();
-      setThemeId(id);
+      setLookId(named ? id : null);
+      setThemeId(named ? null : id);
       const params = new URLSearchParams(window.location.search);
-      params.set('themeId', id);
+      params.delete(named ? 'themeId' : 'look');
+      params.set(named ? 'look' : 'themeId', id);
       window.history.replaceState(
         window.history.state,
         '',
@@ -256,23 +262,25 @@ export function UniversePage({
   const infos = useStableList(states.map((s) => s.info));
   const commitLists = useStableList(states.map((s) => s.commits));
 
+  const catalogs = useMemo(
+    () => scenes.map((scene, i) => resolveSpaceStyles(scene, infos[i])),
+    [scenes, infos],
+  );
+  const gallery = useMemo(() => {
+    const shared = new Map(BUILTIN_SPACE_STYLES.map((style) => [style.id, style]));
+    // 成员专属样式在成员菜单中可选，共同支持的样式也可以一次应用到整个组合。
+    for (const style of catalogs[0] ?? [])
+      if (catalogs.every((list) => list.some((item) => item.id === style.id)))
+        shared.set(style.id, style);
+    return [...shared.values()];
+  }, [catalogs]);
   const runtimeTheme = useMemo(() => {
-    const theme = UNIVERSE_THEMES.find((candidate) => candidate.id === themeId);
-    if (theme) return theme;
-    if (
-      themeId &&
-      scenes.some((scene, i) =>
-        resolveSpaceStyles(scene, infos[i]).some((style) => style.id === themeId),
-      )
-    )
-      return {
-        id: themeId,
-        name: '全局命名样式',
-        description: '统一成员空间样式',
-        styleId: themeId,
-      };
-    return undefined;
-  }, [themeId, scenes, infos]);
+    const named = (id: string | null) =>
+      id && catalogs.some((list) => list.some((style) => style.id === id))
+        ? { id, styleId: id }
+        : undefined;
+    return named(lookId) ?? UNIVERSE_THEMES.find((theme) => theme.id === themeId) ?? named(themeId);
+  }, [catalogs, lookId, themeId]);
   const savedTheme = UNIVERSE_THEMES.find((theme) => theme.id === view?.themeId);
   const activeTheme = runtimeTheme ?? savedTheme ?? UNIVERSE_THEMES[0]!;
   const memberLooks = useMemo(
@@ -290,12 +298,12 @@ export function UniversePage({
           info?.defaultStyleId,
           'arch-realistic',
         ];
-        const styles = resolveSpaceStyles(scene, info);
+        const styles = catalogs[i] ?? [];
         return requested
           .map((id) => styles.find((candidate) => candidate.id === id))
           .find((candidate) => candidate !== undefined);
       }) ?? [],
-    [view, scenes, infos, memberStyles, runtimeTheme, savedTheme],
+    [view, scenes, infos, catalogs, memberStyles, runtimeTheme, savedTheme],
   );
   const mode =
     explicitMode ??
@@ -331,7 +339,10 @@ export function UniversePage({
         }
         if (action.type === 'look') {
           if (!action.spaceId) {
-            changeTheme(action.styleId);
+            changeTheme(
+              action.styleId,
+              !UNIVERSE_THEMES.some((theme) => theme.id === action.styleId),
+            );
           } else {
             resetOverrides();
             for (const member of view?.members ?? []) {
@@ -602,6 +613,16 @@ export function UniversePage({
           <ViewModeSwitch mode={mode} onChange={setMode} />
           <ViewerPanel label="显示设置">
             <SettingSection label="空间样式">
+              <StyleGallerySwitch
+                styles={gallery}
+                activeId={activeTheme.styleId}
+                onChange={(style) => changeTheme(style.id, true)}
+              />
+              {styleChoice && (
+                <StyleSwitch style={style} disabled={mode === 'raw'} onChange={setStyle} />
+              )}
+            </SettingSection>
+            <SettingSection label="组合设置">
               <div className="segmented" role="group" aria-label="组合样式主题">
                 {UNIVERSE_THEMES.map((theme) => (
                   <button
@@ -636,9 +657,6 @@ export function UniversePage({
                   </button>
                 ))}
               </div>
-              {styleChoice && (
-                <StyleSwitch style={style} disabled={mode === 'raw'} onChange={setStyle} />
-              )}
             </SettingSection>
             <SettingSection label="室内剖切">
               <CutawayControl
