@@ -643,8 +643,8 @@
 }
 @media (max-width: 900px) {
   .viewer__broadcast {
-    top: auto;
-    bottom: calc(var(--space-4) + var(--control-h) + 6px);
+    top: calc(var(--space-3) + var(--control-h) + var(--space-2));
+    bottom: auto;
     left: var(--space-3);
     right: auto;
     transform: none;
