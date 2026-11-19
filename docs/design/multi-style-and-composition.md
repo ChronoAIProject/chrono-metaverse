@@ -14,6 +14,11 @@
 
 产品内置八套核心样式：`raw-scan` 原始扫描、`arch-realistic` 写实建筑、`voxel-blocks` 体素方块、`extended-full` 虚实共生、`maquette` 白模沙盘、`blueprint` 工程蓝图、`night-neon` 夜景霓虹、`holo-arena` 全息场。空间和快照都可以通过 `Space.styles` / `Snapshot.styles` 添加自定义样式，默认样式由 `defaultStyleId` 指向。
 
+单空间和组合都使用 `?look=<样式编号>` 和「空间样式」画廊。组合列出平台样式和每个成员都提供的样式，成员自己的菜单可以选择专属样式。显式的成员选择优先于全局选择。「组合设置」保留既有主题、排布以及 `themeId` 链接。有效的 `look` 优先，切换主题或样式会清除另一项临时选择。
+
+全息渲染可读取物件的 `props.surfaceRole` 和 glTF 材质的 `extras.surfaceRole`。支持 `facade`（幕墙）、`landscape`（低矮街景）、`detail`（室内细节）和 `preserve`（保留材质）。旧资产继续使用几何特征与材质名称推断。MVT 物件可在 `props.externalContent.roads` 配置图层 `layer`、分类字段 `classProperty`、分类值列表 `classes` 和可选排除条件 `exclude: {property, value}`。传入 `false` 关闭道路描线，省略时沿用 OpenMapTiles 字段。
+
+
 ### 结构化自定义扩展
 
 每个 `SpaceStyleSpec` 可选填 `extensions` 对象，保存策展标签、主题参数或其他约定的公开元数据。对象成员可以是嵌套对象、数组、字符串、布尔、数值或 `null`，字段名在数据库、管理接口、公开空间、时间线及预览快照、`OpenAPI` 和前端中均为 `extensions`。这些数据随公开样式投影，不能用于存放私密配置。扩展本身不执行代码，不自动修改渲染行为；消费者按约定读取所需字段，其余数据完整保留。

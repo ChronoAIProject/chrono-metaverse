@@ -225,7 +225,7 @@ export class VectorContentItem {
       tile,
       this.reference,
       this.config.extrusion,
-      !!this.roadMaterial,
+      this.roadMaterial ? (this.config.roads ?? true) : false,
     );
     const size =
       Object.values(geometry.attributes).reduce((n, a) => n + a.array.byteLength, 0) +

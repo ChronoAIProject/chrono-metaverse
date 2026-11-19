@@ -268,7 +268,7 @@ export function applyStyleLook(
   look: StyleLook | undefined,
   kind: 'structure' | 'object' = 'object',
 ): void {
-  if (!look) return;
+  if (!look || (look.hologram && material.userData.surfaceRole === 'preserve')) return;
   if (look.hologram) hologramMaterial(material, look.hologram);
   const color = kind === 'structure' ? look.structureColor : look.objectColor;
   const renderMaterial = material as THREE.Material & {
@@ -378,6 +378,8 @@ export function createModelMaterial(
       clippingPlanes: clipping,
       toneMapped: false,
     });
+    basic.name = source.name;
+    basic.userData.surfaceRole = source.userData.surfaceRole;
     if (tint) basic.color.multiply(tint);
     applyStyleLook(basic, styleLook, kind);
     return basic;

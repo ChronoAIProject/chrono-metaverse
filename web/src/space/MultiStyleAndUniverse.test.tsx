@@ -1334,7 +1334,7 @@ it('全局命名样式动作可被后续主题和各自独立替换，保留真�
       ),
     ).toBe(true),
   );
-  expect(new URLSearchParams(window.location.search).get('themeId')).toBe('blueprint');
+  expect(new URLSearchParams(window.location.search).get('look')).toBe('blueprint');
   expect(new URLSearchParams(window.location.search).has('memberStyles')).toBe(false);
   fireEvent.click(设置按钮('体素方块世界'));
   await waitFor(() =>
@@ -1485,4 +1485,20 @@ it('普通空间保留自身模型，同时渲染子空间并按实例保存样�
   expect(new URLSearchParams(window.location.search).get('memberStyles')).toBe(
     `${SPACE_ID}/${FLORIST_ID}:blueprint`,
   );
+});
+
+it('组合与单空间共用 look 参数和样式画廊，切换后保留旧主题入口', async () => {
+  const s = universe('?look=holo-arena&themeId=blueprint-atlas');
+  render(<UniversePage {...s.props} />);
+  await waitFor(() => {
+    const members = s.views[0]?.last().members;
+    expect(members).toHaveLength(2);
+    expect(members?.every((member) => member.view.styleLook?.hologram === 'detail')).toBe(true);
+  });
+  expect(设置按钮('全息场')).toHaveAttribute('aria-pressed', 'true');
+  fireEvent.click(设置按钮('白模沙盘'));
+  expect(new URLSearchParams(location.search).get('look')).toBe('maquette');
+  expect(new URLSearchParams(location.search).has('themeId')).toBe(false);
+  fireEvent.click(设置按钮('各自独立'));
+  expect(new URLSearchParams(location.search).has('look')).toBe(false);
 });
