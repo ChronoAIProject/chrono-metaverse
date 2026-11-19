@@ -53,12 +53,20 @@ export interface TilesContent {
   readonly reference?: GeographicReference;
 }
 
+export interface RoadLayer {
+  readonly layer: string;
+  readonly classProperty: string;
+  readonly classes: readonly string[];
+  readonly exclude?: { readonly property: string; readonly value: string };
+}
+
 export interface VectorContent {
   readonly version: 1;
   readonly format: 'mvt';
   /** 标准 TileJSON 入口；模板与层级从入口读取。 */
   readonly sources: readonly ExternalSource[];
   readonly reference: GeographicReference;
+  readonly roads?: RoadLayer | false;
   readonly extrusion: {
     readonly layer: string;
     readonly heightProperty: string;
@@ -164,6 +172,24 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
     const style = record(raw.extrusion);
     const field = (value: unknown) =>
       typeof value === 'string' && value.length > 0 && value.length <= 100;
+    const roads = record(raw.roads);
+    if (raw.roads !== undefined && raw.roads !== false) {
+      if (
+        !roads ||
+        !field(roads.layer) ||
+        !field(roads.classProperty) ||
+        !Array.isArray(roads.classes) ||
+        roads.classes.length > 128 ||
+        !roads.classes.every(field)
+      )
+        return null;
+      const exclude = record(roads.exclude);
+      if (
+        roads.exclude !== undefined &&
+        (!exclude || !field(exclude.property) || !field(exclude.value))
+      )
+        return null;
+    }
     if (
       !reference ||
       !style ||
@@ -199,6 +225,7 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
       sources: raw.sources,
       reference,
       extrusion: style,
+      ...(raw.roads !== undefined ? { roads: raw.roads } : {}),
     } as unknown as VectorContent;
   }
   return { version: 1, format: '3d-tiles', sources: raw.sources, reference } as ExternalContent;

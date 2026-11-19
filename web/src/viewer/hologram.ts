@@ -2,8 +2,22 @@ import * as THREE from 'three';
 import type { EntityBody } from '../core/api/types';
 import type { StyleLook } from '../core/styles';
 
-export function surfaceLook(look: StyleLook | undefined, entity: EntityBody, background: boolean) {
-  if (!look?.hologram || !background || !entity.bounds) return look;
+// 标注可来自场景物件或 glTF 材质 extras，未标注的旧资产沿用几何推断。
+function surfaceRole(value: unknown) {
+  if (value === 'facade' || value === 'landscape' || value === 'detail' || value === 'preserve')
+    return value;
+}
+
+export function surfaceLook(
+  look: StyleLook | undefined,
+  entity: EntityBody,
+  background: boolean,
+): StyleLook | undefined {
+  if (!look?.hologram) return look;
+  const role = surfaceRole(entity.props?.surfaceRole);
+  if (role === 'preserve') return undefined;
+  if (role) return { ...look, hologram: role };
+  if (!background || !entity.bounds) return look;
   const { min, max } = entity.bounds;
   const height = max[1] - min[1];
   const footprint = Math.max(max[0] - min[0], max[2] - min[2]);
@@ -109,8 +123,12 @@ const detail = /* glsl */ `
 `;
 
 export function hologramMaterial(material: THREE.Material, surface: Surface) {
+  const role = surfaceRole(material.userData.surfaceRole);
+  if (role === 'preserve') return;
+  surface = role ?? surface;
   if (surface === 'facade') {
-    if (/(?:^|[\s_.-])(logo|signage|wordmark|emblem)(?:$|[\s_.-])/i.test(material.name)) return;
+    if (!role && /(?:^|[\s_.-])(logo|signage|wordmark|emblem)(?:$|[\s_.-])/i.test(material.name))
+      return;
     material.transparent = true;
   }
   material.customProgramCacheKey = () => 'hologram-' + surface;

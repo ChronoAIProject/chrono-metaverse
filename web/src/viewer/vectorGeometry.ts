@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { VectorTile, classifyRings } from '@mapbox/vector-tile';
 import Pbf from 'pbf';
-import type { VectorContent } from '../core/externalSource';
+import type { RoadLayer, VectorContent } from '../core/externalSource';
 import { GeoReference, tileBounds, tileCoordinates, type Tile } from './geography';
 
 type Point = { x: number; y: number };
@@ -36,18 +36,24 @@ function clip(ring: readonly Point[], extent: number): Point[] {
 }
 
 // OpenMapTiles 的主干道可作为全息地面的浅色嵌线。没有交通图层的来源仍使用底图。
-function roadLines(data: VectorTile, tile: Tile, reference: GeoReference) {
-  const layer = data.layers.transportation;
+const openMapTilesRoads: RoadLayer = {
+  layer: 'transportation',
+  classProperty: 'class',
+  classes: ['motorway', 'trunk', 'primary', 'secondary'],
+  exclude: { property: 'brunnel', value: 'tunnel' },
+};
+function roadLines(data: VectorTile, tile: Tile, reference: GeoReference, mapping: RoadLayer) {
+  const layer = data.layers[mapping.layer];
   if (!layer || layer.length > 10000) return;
-  const roads = new Set(['motorway', 'trunk', 'primary', 'secondary']);
+  const roads = new Set(mapping.classes);
   const positions: number[] = [];
   let vertices = 0;
   for (let i = 0; i < layer.length; i++) {
     const f = layer.feature(i);
     if (
       f.type !== 2 ||
-      !roads.has(String(f.properties.class)) ||
-      f.properties.brunnel === 'tunnel' ||
+      !roads.has(String(f.properties[mapping.classProperty])) ||
+      (mapping.exclude && f.properties[mapping.exclude.property] === mapping.exclude.value) ||
       f.extent < 1 ||
       f.extent > 65536
     )
@@ -80,7 +86,7 @@ export function vectorGeometry(
   tile: Tile,
   reference: GeoReference,
   style: VectorContent['extrusion'],
-  groundRoads = false,
+  groundRoads: RoadLayer | boolean = false,
 ) {
   const data = new VectorTile(new Pbf(bytes));
   const layer = data.layers[style.layer];
@@ -175,7 +181,13 @@ export function vectorGeometry(
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
-  return { geometry, features, roads: groundRoads ? roadLines(data, tile, reference) : undefined };
+  return {
+    geometry,
+    features,
+    roads: groundRoads
+      ? roadLines(data, tile, reference, groundRoads === true ? openMapTilesRoads : groundRoads)
+      : undefined,
+  };
 }
 
 /** 从全球四叉树按视锥和距离发现瓦片，输入只含标准地理参考。 */
