@@ -81,11 +81,14 @@ export class BroadcastVenue {
     this.relay.add(this.panel);
     const face = config.screen;
     this.officeCenter.setFromMatrixPosition(face.matrix);
+    const align = face.matrix.clone().invert();
     this.relayMatrix = new T.Matrix4()
-      .makeScale(16 / face.width, 9 / face.height, 16 / face.width)
-      .multiply(face.matrix.clone().invert());
+      .makeTranslation(0, 0, 0.055)
+      .multiply(new T.Matrix4().makeScale(16 / face.width, 9 / face.height, 1))
+      .multiply(align);
+    // 行星尺度下保证视频在底板之前，原屏的扫描线和四角镶边仍在视频之前。
     this.panel.matrixAutoUpdate = false;
-    this.panel.matrix.copy(this.relayMatrix);
+    this.panel.matrix.makeScale(16 / face.width, 9 / face.height, 10).multiply(align);
     const auditorium = new T.Group();
     auditorium.position.set(0, -6.4, 1.5);
     auditorium.rotation.x = 0.18;
