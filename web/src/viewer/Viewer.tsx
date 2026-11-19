@@ -16,6 +16,7 @@ import {
   type SceneViewOptions,
   type Selection,
 } from './sceneView';
+import type { BroadcastShot } from './broadcast/venue';
 import './Viewer.css';
 
 /** 查看器需要的场景能力；测试里可以换成假的实现（jsdom 没有 WebGL）。 */
@@ -25,6 +26,8 @@ export interface SceneViewLike {
   setCutaway(height: number | null): void;
   select(selection: Selection | null): void;
   frameContent(): void;
+  toggleTour?(): void;
+  showBroadcast?(shot: BroadcastShot): void;
   stepCamera(step: CameraStep): void;
   setPerspective(mode: CameraPerspective): void;
   focusMember?(spaceId: string | null): void;
@@ -99,6 +102,8 @@ export function Viewer({
   const focusedAnchorRef = useRef(focusedAnchor);
   const lastCamera = useRef('');
   const readyContent = useRef<SceneContent | null>(null);
+  const [tour, setTour] = useState(false);
+  const [broadcast, setBroadcast] = useState<BroadcastShot | null>(null);
   const [perspective, setPerspective] = useState<CameraPerspective>('third');
   const [unsupported, setUnsupported] = useState<string | null>(null);
   const [step, setStep] = useState<LoadStep | null>(null);
@@ -194,6 +199,8 @@ export function Viewer({
             modelRef.current
               ? modelRef.current(hash)
               : Promise.reject(new Error('没有模型加载函数')),
+          onBroadcastTour: setTour,
+          onBroadcastShot: setBroadcast,
           onPerspectiveChange: setPerspective,
           onProgress: setStep,
           onSelect: setSelection,
@@ -299,6 +306,33 @@ export function Viewer({
             viewRef.current?.select(null);
           }}
         />
+      )}
+      {showTools && broadcast && (
+        <nav className="viewer__broadcast" aria-label="发布会机位">
+          <button
+            className="viewer__tour"
+            type="button"
+            onClick={() => viewRef.current?.toggleTour?.()}
+          >
+            <span aria-hidden="true">{tour ? '■' : '▶'}</span> {tour ? '停止拉远' : '播放拉远'}
+          </button>
+          {(
+            [
+              ['office', '前厅看台'],
+              ['city', '滨海湾'],
+              ['orbit', '地球轨道'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={broadcast === id}
+              onClick={() => viewRef.current?.showBroadcast?.(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
       )}
       {(showTools || hasSources) && (
         <div className="viewer__bottom">

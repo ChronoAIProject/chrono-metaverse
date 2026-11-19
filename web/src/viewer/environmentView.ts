@@ -123,7 +123,7 @@ export class EnvironmentView {
     this.scene.backgroundRotation.set(0, this.backgroundColor ? 0 : this.yaw, 0);
   }
 
-  update(camera: THREE.PerspectiveCamera): void {
+  update(camera: THREE.PerspectiveCamera, orbitalGlobe = false): void {
     if (!this.map) return;
     this.map.group.updateWorldMatrix(true, false);
     const center = this.map.reference.center.clone().applyMatrix4(this.map.group.matrixWorld);
@@ -134,7 +134,8 @@ export class EnvironmentView {
       camera.far = far;
       camera.updateProjectionMatrix();
     }
-    this.map.update(camera);
+    this.map.group.visible = !orbitalGlobe;
+    if (!orbitalGlobe) this.map.update(camera);
   }
 
   private clear(): void {

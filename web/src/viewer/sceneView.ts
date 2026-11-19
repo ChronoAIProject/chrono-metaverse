@@ -40,6 +40,7 @@ import {
 import { iconElement } from './icons';
 import { createLights } from './lighting';
 import { LiveScreens } from './liveScreen';
+import { broadcastConfig, BroadcastVenue, type BroadcastShot } from './broadcast/venue';
 import {
   LABEL_PADDING,
   MIN_SCREEN_SIZE,
@@ -106,6 +107,8 @@ export interface Selection {
 export interface SceneViewOptions {
   /** 地图及外部内容的署名挂载位置。 */
   readonly providerCreditsHost?: HTMLElement;
+  readonly onBroadcastTour?: (playing: boolean) => void;
+  readonly onBroadcastShot?: (shot: BroadcastShot | null) => void;
   readonly onPerspectiveChange?: (mode: CameraPerspective) => void;
   /** 按资源哈希取贴图。没有时贴图材质退回成色调颜色。 */
   readonly loadTexture?: (hash: string) => Promise<THREE.Texture>;
@@ -356,6 +359,8 @@ export class SceneView {
     alive: () => !this.disposed,
   };
   private readonly liveScreens: LiveScreens;
+  private broadcast: BroadcastVenue | null = null;
+  private tour: { stops: BroadcastShot[]; arrivedAt: number | null } | null = null;
   private readonly backgroundColor = new THREE.Color();
   private anchors = new Map<string, AnchorInfo>();
   private visuals = new Map<string, VisualObject>();
@@ -373,6 +378,7 @@ export class SceneView {
     elapsed: number;
     lastFrame: number;
     duration: number;
+    scaleRatio: number;
   } | null = null;
   private accent = new THREE.Color(0xc8f542);
   private cutHeight: number | null = null;
@@ -565,12 +571,16 @@ export class SceneView {
       flight.lastFrame = now;
       const t = Math.min(1, flight.elapsed / flight.duration);
       const ease = t * t * (3 - 2 * t);
-      this.camera.position.lerpVectors(flight.from, flight.to, ease);
+      const positionEase =
+        Math.abs(flight.scaleRatio - 1) < 0.01
+          ? ease
+          : Math.expm1(Math.log(flight.scaleRatio) * ease) / (flight.scaleRatio - 1);
+      this.camera.position.lerpVectors(flight.from, flight.to, positionEase);
       this.camera.quaternion.slerpQuaternions(flight.rotationFrom, flight.rotationTo, ease);
       const distance = THREE.MathUtils.lerp(
         flight.distanceFrom,
         flight.to.distanceTo(flight.targetTo),
-        ease,
+        positionEase,
       );
       this.camera
         .getWorldDirection(this.controls.target)
@@ -589,7 +599,10 @@ export class SceneView {
       this.controls.update();
       this.firstPerson?.sync();
     }
-    this.environment.update(this.camera);
+    const shot = this.broadcast?.update(this.camera);
+    this.overlay.visible = this.visualLayer.visible = shot !== 'orbit';
+    this.updateTour();
+    this.environment.update(this.camera, shot === 'orbit');
     this.externalContent.update(this.camera);
     this.updateBackgroundViews();
     this.renderer.render(this.scene, this.camera);
@@ -956,6 +969,9 @@ export class SceneView {
     warnings: string[],
   ): void {
     const generation = this.generation;
+    const wasBroadcast = this.broadcast !== null;
+    this.broadcast?.dispose();
+    this.broadcast = null;
     this.liveScreens.clear();
     disposeObject(this.content);
     disposeObject(this.overlay);
@@ -1004,6 +1020,7 @@ export class SceneView {
       const overlay = placementGroup(member.placement);
       this.overlay.add(overlay);
 
+      const broadcast = broadcastConfig(member);
       // 物件：按（几何体，玻璃）分批，两个以上画成 InstancedMesh。
       const batches = new Map<
         string,
@@ -1080,10 +1097,21 @@ export class SceneView {
         // 直播与面板共用距离显示条件，切换时一起隐藏或显示。
         let holder: THREE.Group | undefined;
         for (const { entity } of batch.items) {
-          const screen = this.liveScreens.create(entity, this.clipping, batch.background);
+          const relay =
+            broadcast && entity.entityId === broadcast.source.props?.['镜像来源']
+              ? broadcast.screen.source
+              : undefined;
+          const screen = this.liveScreens.create(entity, this.clipping, batch.background, relay);
           if (screen === null) continue;
           holder ??= new THREE.Group().add(mesh);
           holder.add(screen);
+          if (!this.broadcast && broadcast?.source === entity) {
+            this.broadcast = new BroadcastVenue(broadcast, screen, (shot) => {
+              this.host.dataset.broadcastShot = shot;
+              this.options.onBroadcastShot?.(shot);
+            });
+            this.scene.add(this.broadcast.root);
+          }
         }
         const object = holder ?? mesh;
         group.add(object);
@@ -1261,8 +1289,15 @@ export class SceneView {
     const spaces = content.members.map((member) => member.spaceId).join('\u0000');
     const spacesChanged = this.lastSpaces !== spaces;
     this.lastSpaces = spaces;
-    if (!this.framed || spacesChanged || (this.autoFramed && modeChanged)) this.frameContent(false);
-    else {
+    if (
+      !this.framed ||
+      spacesChanged ||
+      (wasBroadcast && !this.broadcast) ||
+      (this.autoFramed && modeChanged)
+    ) {
+      this.frameContent(false);
+      if (this.broadcast) this.showBroadcast('city', false);
+    } else {
       // 用户移动过镜头时保留位置，新增的背景仍须能落入远裁面。
       this.camera.far = backgroundFarPlane(
         this.camera.position,
@@ -1270,6 +1305,11 @@ export class SceneView {
         this.frameSources.flatMap((source) => source.backgroundBoxes),
       );
       this.camera.updateProjectionMatrix();
+    }
+    if (!this.broadcast) {
+      this.stopTour();
+      delete this.host.dataset.broadcastShot;
+      this.options.onBroadcastShot?.(null);
     }
     this.host.dataset.triangles = String(Math.round(triangles));
   }
@@ -1932,6 +1972,48 @@ export class SceneView {
     this.options.onPerspectiveChange?.(mode);
   }
 
+  toggleTour(): void {
+    if (this.tour) {
+      this.onControlsStart();
+      return;
+    }
+    if (!this.broadcast) return;
+    this.showBroadcast('office', false);
+    this.tour = { stops: ['city', 'orbit'], arrivedAt: null };
+    this.options.onBroadcastTour?.(true);
+  }
+
+  private stopTour(): void {
+    if (!this.tour) return;
+    this.tour = null;
+    this.options.onBroadcastTour?.(false);
+  }
+
+  private updateTour(): void {
+    if (!this.tour || this.flight) return;
+    this.tour.arrivedAt ??= performance.now();
+    if (performance.now() - this.tour.arrivedAt < 3200) return;
+    const next = this.tour.stops.shift();
+    if (!next) return this.stopTour();
+    this.tour.arrivedAt = null;
+    this.flyBroadcast(next, true);
+  }
+
+  showBroadcast(shot: BroadcastShot, animate = true): void {
+    this.stopTour();
+    this.flyBroadcast(shot, animate);
+  }
+
+  private flyBroadcast(shot: BroadcastShot, animate: boolean): void {
+    if (!this.broadcast) return;
+    this.leaveFirstPersonForFlight();
+    this.autoFramed = false;
+    const pose = this.broadcast.camera(shot, this.camera.aspect);
+    this.camera.near = 0.025;
+    this.camera.updateProjectionMatrix();
+    this.moveCamera(pose.to, pose.target, animate, true);
+  }
+
   stepCamera(action: CameraStep): void {
     this.navigation.step(action, this.firstPerson !== null);
     this.firstPerson?.sync();
@@ -1942,6 +2024,7 @@ export class SceneView {
     animate = true,
     framing?: Pick<FrameOptions, 'azimuths' | 'elevation'>,
   ): void {
+    this.stopTour();
     const frame = frameBox(box, { fov: this.camera.fov, aspect: this.camera.aspect, ...framing });
     if (frame === null) return;
     this.leaveFirstPersonForFlight();
@@ -2001,6 +2084,7 @@ export class SceneView {
 
   /** Only bounded, read-only camera operations are exposed to the chat UI. */
   applyCamera(action: CameraAction, content: SceneContent): boolean {
+    this.stopTour();
     if (action.kind === 'overview') {
       this.flight = null;
       this.frameContent();
@@ -2064,7 +2148,12 @@ export class SceneView {
     this.options.onPerspectiveChange?.('third');
   }
 
-  private moveCamera(to: THREE.Vector3, target: THREE.Vector3, animate = true): void {
+  private moveCamera(
+    to: THREE.Vector3,
+    target: THREE.Vector3,
+    animate = true,
+    broadcast = false,
+  ): void {
     if (!animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       this.flight = null;
       this.camera.position.copy(to);
@@ -2087,12 +2176,22 @@ export class SceneView {
       zoomFrom: this.camera.zoom,
       elapsed: 0,
       lastFrame: performance.now(),
-      duration: Math.min(1650, 700 + distance * 12),
+      duration: broadcast
+        ? Math.min(5200, 1600 + 200 * Math.log1p(distance))
+        : Math.min(1650, 700 + distance * 12),
+      scaleRatio: broadcast
+        ? THREE.MathUtils.clamp(
+            to.distanceTo(target) / Math.max(0.1, this.controls.getDistance()),
+            0.000001,
+            1000000,
+          )
+        : 1,
     };
   }
 
   /** 从当前眼位靠近目标，沿用当前方位。 */
   flyTo(point: THREE.Vector3): void {
+    this.stopTour();
     this.leaveFirstPersonForFlight();
     this.autoFramed = false;
     const orbit = new THREE.Spherical().setFromVector3(
@@ -2356,6 +2455,7 @@ export class SceneView {
   };
 
   private onControlsStart = () => {
+    this.stopTour();
     this.onPointerLeave();
     this.flight = null;
     this.autoFramed = false;
@@ -2436,6 +2536,8 @@ export class SceneView {
     this.controls.removeEventListener('start', this.onControlsStart);
     this.navigation.dispose();
     this.controls.dispose();
+    this.broadcast?.dispose();
+    this.broadcast = null;
     this.liveScreens.clear();
     this.clearVisuals();
     this.clearSelection();

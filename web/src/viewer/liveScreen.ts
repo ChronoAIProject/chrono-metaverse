@@ -52,7 +52,7 @@ function sourceOf(kind: unknown, value: unknown, origin: string): Source | null 
 }
 
 /** 按组内下标找到屏幕面板，沿用面板的四个角和整条变换链。 */
-function liveScreenOf(entity: EntityBody, origin: string): Screen | null {
+export function liveScreenOf(entity: EntityBody, origin: string): Screen | null {
   const config = entity.props?.liveScreen;
   if (config === null || typeof config !== 'object') return null;
   const { kind, url, plate } = config as Record<string, unknown>;
@@ -103,9 +103,15 @@ export class LiveScreens {
     return this.dom !== null;
   }
 
-  create(entity: EntityBody, clipping: THREE.Plane[], background: boolean): THREE.Group | null {
-    const screen = liveScreenOf(entity, window.location.origin);
-    if (screen === null) return null;
+  create(
+    entity: EntityBody,
+    clipping: THREE.Plane[],
+    background: boolean,
+    relay?: Source,
+  ): THREE.Group | null {
+    const panel = liveScreenOf(entity, window.location.origin);
+    if (panel === null) return null;
+    const screen = relay ? { ...panel, source: relay } : panel;
     const { source, matrix, width, height } = screen;
     const geometry = new THREE.PlaneGeometry(width, height);
     const material = new THREE.MeshBasicMaterial({
