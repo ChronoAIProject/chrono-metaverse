@@ -226,8 +226,8 @@ test('同一播放器随发布会拉远，轨道返回和切换视图恢复地�
   const frame = viewer.locator('iframe');
   for (const shot of ['office', 'city', 'orbit']) {
     await expect(viewer).toHaveAttribute('data-broadcast-shot', shot);
-    if (shot === 'office') await expect(frame).toHaveCSS('filter', 'none');
-    else await expect(frame).not.toHaveCSS('filter', 'none');
+    await expect(frame).toHaveCSS('filter', 'none');
+    await expect(viewer.locator('.viewer__canvas')).toHaveCSS('filter', 'none');
   }
   await expect
     .poll(async () => Number(await viewer.getAttribute('data-map-distance')))

@@ -1,5 +1,4 @@
 import * as T from 'three';
-import { dusk } from './terrain';
 import fieldUrl from '../../assets/earth/field.webp';
 import { EARTH_RADIUS, GeoReference } from '../geography';
 
@@ -8,7 +7,6 @@ export function broadcastSky() {
     depthWrite: false,
     depthTest: false,
     side: T.BackSide,
-    uniforms: { orbit: { value: 0 } },
     vertexShader: `
       varying vec3 ray;
       void main() {
@@ -18,19 +16,16 @@ export function broadcastSky() {
       }`,
     fragmentShader: `
       varying vec3 ray;
-      uniform float orbit;
       float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
-      ${dusk}
       void main() {
         vec3 d=normalize(ray);
-        vec3 dusk=duskColor(d);
         vec2 uv=vec2(atan(d.x,d.z)/6.28318,asin(d.y)/3.14159);
         vec2 cells=uv*vec2(950.,475.);
         float star=hash(floor(cells));
         float light=step(.984,star)*(1.-smoothstep(.025,.28,length(fract(cells)-.5)));
         vec3 space=vec3(.0012,.0032,.007)+vec3(.005,.013,.019)*exp(-5.*abs(d.y+.24*d.x))+
           vec3(.42,.55,.62)*light*hash(floor(cells)+3.);
-        gl_FragColor=vec4(mix(dusk,space,orbit),1.);
+        gl_FragColor=vec4(space,1.);
         #include <colorspace_fragment>
       }`,
   });

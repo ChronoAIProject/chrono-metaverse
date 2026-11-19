@@ -602,7 +602,7 @@ export class SceneView {
     const shot = this.broadcast?.update(this.camera);
     this.overlay.visible = this.visualLayer.visible = shot !== 'orbit';
     this.updateTour();
-    this.environment.update(this.camera, shot === 'orbit', shot === 'city');
+    this.environment.update(this.camera, shot === 'orbit');
     this.externalContent.update(this.camera);
     this.updateBackgroundViews();
     this.renderer.render(this.scene, this.camera);
@@ -1173,12 +1173,9 @@ export class SceneView {
                 surfaceLook(member.view.styleLook ?? member.styleLook, entity, background),
                 entity.kind === 'structure' ? 'structure' : 'object',
               );
-              if (venue && this.broadcast === venue && background && !entity.props?.liveScreen) {
-                const role = surfaceLook({ hologram: 'detail' }, entity, true)?.hologram;
-                if (role === 'facade') venue.surfaces.add(clone);
-              }
               placeRotatedModel(clone, entity.transform, box ?? undefined);
               holder.add(fitModelInto(clone, fit));
+              if (venue && this.broadcast === venue) venue.addSeating(entity.entityId, holder);
             }
             modelsLoaded++;
           })

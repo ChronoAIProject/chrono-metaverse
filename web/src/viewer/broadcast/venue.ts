@@ -6,8 +6,7 @@ import { EARTH_RADIUS as R, GeoReference } from '../geography';
 import { liveScreenOf } from '../liveScreen';
 import { buildCity } from './city';
 import { loadHardware } from './hardware';
-import { RelayScreen, screenGlass } from './screen';
-import { WaterfrontMaterials } from './waterfront';
+import { backgroundView } from '../background';
 import { broadcastSky, orbitalEarth } from './sky';
 
 export type BroadcastShot = 'office' | 'city' | 'orbit';
@@ -26,7 +25,6 @@ type Config = NonNullable<ReturnType<typeof broadcastConfig>>;
 /** 三个会场在同一坐标系中。播放器始终使用当前快照中前厅全息看台的配置。 */
 export class BroadcastVenue {
   readonly root = new T.Group();
-  readonly surfaces = new WaterfrontMaterials();
   private readonly sky = broadcastSky();
   private readonly abort = new AbortController();
   private readonly city = new T.Group();
@@ -38,7 +36,7 @@ export class BroadcastVenue {
   private readonly orbitScreen = new T.Group();
   private readonly relay = new T.Group();
   private readonly panel = new T.Group();
-  private readonly video: RelayScreen;
+  private readonly seating = new T.Group();
   private readonly traffic;
   private active: BroadcastShot | null = null;
   private readonly eye = new T.Vector3();
@@ -80,23 +78,36 @@ export class BroadcastVenue {
     this.orbitScreen.rotation.set(-0.11, -0.2, -0.03);
     this.orbitScreen.scale.setScalar(0.052);
     // 两个远景都沿用前厅镜像实体的外框与占位画面。
-    this.video = new RelayScreen(player);
-    this.relay.add(this.panel, screenGlass());
-    this.panel.matrixAutoUpdate = false;
-    this.panel.matrix
-      .makeScale(16 / config.screen.width, 9 / config.screen.height, 16 / config.screen.width)
-      .multiply(config.screen.matrix.clone().invert());
+    this.relay.add(this.panel);
     const face = config.screen;
     this.officeCenter.setFromMatrixPosition(face.matrix);
     this.relayMatrix = new T.Matrix4()
-      .makeTranslation(0, 0, 0.055)
-      .multiply(new T.Matrix4().makeScale(16 / face.width, 9 / face.height, 1))
+      .makeScale(16 / face.width, 9 / face.height, 16 / face.width)
       .multiply(face.matrix.clone().invert());
+    this.panel.matrixAutoUpdate = false;
+    this.panel.matrix.copy(this.relayMatrix);
+    const auditorium = new T.Group();
+    auditorium.position.set(0, -6.4, 1.5);
+    auditorium.rotation.x = 0.18;
+    auditorium.scale.setScalar(0.36);
+    this.seating.position
+      .fromArray(backgroundView(config.source)?.focus ?? this.officeCenter.toArray())
+      .negate();
+    auditorium.add(this.seating);
+    this.relay.add(auditorium);
     this.root.updateMatrixWorld(true);
   }
 
   setMirror(mesh: T.Mesh) {
     this.panel.add(mesh.clone(false));
+  }
+
+  addSeating(entityId: string, holder: T.Group) {
+    if (!/^tide-arena\.(?:(?:light-)?(?:east|west|north|south)|dome)$/.test(entityId)) return;
+    // 实例共用生成器产出的几何、材质和透明纹理，独立于室内的距离显隐。
+    const instance = holder.clone(true);
+    instance.visible = true;
+    this.seating.add(instance);
   }
 
   camera(shot: BroadcastShot, aspect: number) {
@@ -132,22 +143,14 @@ export class BroadcastVenue {
         parent.add(this.relay);
         this.relay.add(this.player);
       }
-      this.video.show(shot !== 'office');
       this.player.matrixAutoUpdate = false;
       if (shot === 'office') this.player.matrix.identity();
       else this.player.matrix.copy(this.relayMatrix);
       this.player.matrixWorldNeedsUpdate = true;
-      this.surfaces.show(shot === 'city');
       this.active = shot;
       this.change(shot);
     }
-    this.panel.visible = !this.video.playing;
-    this.sky.visible = shot !== 'office';
-    this.sky.material.uniforms.orbit!.value = T.MathUtils.smoothstep(
-      Math.log10(Math.max(1, distance)),
-      3.5,
-      5.35,
-    );
+    this.sky.visible = shot === 'orbit';
     this.city.visible = shot === 'city' && distance < 70000;
     this.orbit.visible = this.earth.earth.visible = shot === 'orbit';
     const t = this.reduced.matches ? 0 : performance.now() / 1000;
@@ -165,14 +168,12 @@ export class BroadcastVenue {
 
   dispose() {
     this.abort.abort();
-    this.surfaces.dispose();
     this.panel.clear(); // 镜像几何和材质归原实体所有。
-    this.video.dispose();
+    this.seating.clear();
     this.home.add(this.player);
     this.player.matrix.identity();
     this.player.matrixWorldNeedsUpdate = true;
     this.root.removeFromParent();
-    this.root.add(this.relay); // 室内机位时投影组处于游离状态，也需要释放。
     const geometries = new Set<T.BufferGeometry>(),
       materials = new Set<T.Material>();
     this.root.traverse((obj) => {
