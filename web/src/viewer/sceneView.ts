@@ -40,7 +40,7 @@ import {
 import { iconElement } from './icons';
 import { createLights } from './lighting';
 import { LiveScreens } from './liveScreen';
-import { broadcastConfig, BroadcastVenue, type BroadcastShot } from './broadcast/venue';
+import { broadcastConfig, BroadcastVenue, type BroadcastView } from './broadcast/venue';
 import {
   LABEL_PADDING,
   MIN_SCREEN_SIZE,
@@ -108,7 +108,7 @@ export interface SceneViewOptions {
   /** 地图及外部内容的署名挂载位置。 */
   readonly providerCreditsHost?: HTMLElement;
   readonly onBroadcastTour?: (playing: boolean) => void;
-  readonly onBroadcastShot?: (shot: BroadcastShot | null) => void;
+  readonly onBroadcastShot?: (shot: BroadcastView | null) => void;
   readonly onPerspectiveChange?: (mode: CameraPerspective) => void;
   /** 按资源哈希取贴图。没有时贴图材质退回成色调颜色。 */
   readonly loadTexture?: (hash: string) => Promise<THREE.Texture>;
@@ -360,7 +360,8 @@ export class SceneView {
   };
   private readonly liveScreens: LiveScreens;
   private broadcast: BroadcastVenue | null = null;
-  private tour: { stops: BroadcastShot[]; arrivedAt: number | null } | null = null;
+  private selectedShot: string | null = null;
+  private tour: { stops: string[]; arrivedAt: number | null } | null = null;
   private readonly backgroundColor = new THREE.Color();
   private anchors = new Map<string, AnchorInfo>();
   private visuals = new Map<string, VisualObject>();
@@ -599,10 +600,11 @@ export class SceneView {
       this.controls.update();
       this.firstPerson?.sync();
     }
-    const shot = this.broadcast?.update(this.camera);
-    this.overlay.visible = this.visualLayer.visible = shot !== 'orbit';
+    const globe =
+      this.broadcast?.update(this.camera, this.flight ? null : this.selectedShot) ?? false;
+    this.overlay.visible = this.visualLayer.visible = !globe;
     this.updateTour();
-    this.environment.update(this.camera, shot === 'orbit');
+    this.environment.update(this.camera, globe);
     this.externalContent.update(this.camera);
     this.updateBackgroundViews();
     this.renderer.render(this.scene, this.camera);
@@ -970,6 +972,9 @@ export class SceneView {
   ): void {
     const generation = this.generation;
     const wasBroadcast = this.broadcast !== null;
+    const previousShot = this.selectedShot;
+    this.selectedShot = null;
+    this.stopTour();
     this.broadcast?.dispose();
     this.broadcast = null;
     this.liveScreens.clear();
@@ -1010,7 +1015,7 @@ export class SceneView {
     modelProgress();
     const inUse = new Set<string>();
 
-    plans.forEach(({ member, entities }, index) => {
+    for (const [index, { member, entities }] of plans.entries()) {
       entityCount += entities.filter(
         ({ entity }) => environmentOf(entity) || externalContentOf(entity),
       ).length;
@@ -1044,7 +1049,7 @@ export class SceneView {
           background,
         );
         const kind = entity.kind === 'structure' ? 'structure' : 'object';
-        const batchKey = `${key}|${glass}|${background}|${kind}|${styleLookKey(styleLook)}|${JSON.stringify(entity.props?.backgroundView ?? null)}`;
+        const batchKey = `${key}|${glass}|${background}|${kind}|${styleLookKey(styleLook)}|${JSON.stringify(entity.props?.backgroundView ?? null)}|${entity === broadcast?.mirror}`;
         const batch = batches.get(batchKey) ?? {
           key,
           glass,
@@ -1056,7 +1061,6 @@ export class SceneView {
         batch.items.push({ entity, matrix });
         batches.set(batchKey, batch);
       }
-      let mirrorMesh: THREE.Mesh | undefined;
       for (const batch of batches.values()) {
         const built = this.geometryCache.get(batch.key);
         if (built === undefined) continue;
@@ -1099,19 +1103,32 @@ export class SceneView {
         let holder: THREE.Group | undefined;
         for (const { entity } of batch.items) {
           const relay =
-            broadcast && entity.entityId === broadcast.source.props?.['镜像来源']
-              ? broadcast.screen.source
+            broadcast &&
+            (entity === broadcast.mirror || broadcast.tour.linkedScreens?.includes(entity.entityId))
+              ? broadcast.source
               : undefined;
           const screen = this.liveScreens.create(entity, this.clipping, batch.background, relay);
           if (screen === null) continue;
           holder ??= new THREE.Group().add(mesh);
           holder.add(screen);
-          if (broadcast?.source === entity) mirrorMesh = mesh;
-          if (!this.broadcast && broadcast?.source === entity) {
-            this.broadcast = new BroadcastVenue(broadcast, screen, (shot) => {
-              this.host.dataset.broadcastShot = shot;
-              this.options.onBroadcastShot?.(shot);
-            });
+          if (!this.broadcast && broadcast?.mirror === entity) {
+            this.broadcast = new BroadcastVenue(
+              broadcast,
+              screen,
+              (shot) => {
+                this.host.dataset.broadcastShot = shot.active;
+                this.options.onBroadcastShot?.(shot);
+              },
+              (id) => {
+                const hash = member.view.entities.find((entry) => entry.entityId === id)?.assetHash;
+                return hash ? this.options.loadModel?.(hash) : undefined;
+              },
+            );
+            const mirror = mesh.clone(false);
+            mirror.material = built.materials.map((m) =>
+              this.shapeMaterial(m, batch.glass, true, batch.styleLook, batch.kind),
+            );
+            this.broadcast.setMirror(mirror);
             this.scene.add(this.broadcast.root);
           }
         }
@@ -1123,7 +1140,6 @@ export class SceneView {
         entityCount += batch.items.length;
       }
 
-      if (broadcast && mirrorMesh) this.broadcast?.setMirror(mirrorMesh);
       // 只有物件模型（assetHash）的物件：按物件的 transform 转好，转过之后的外包盒底面中心对齐 bounds 的
       // 底面中心（modelPlacement.ts）；这个外包盒实际比 bounds 大时等比缩小兜进 bounds（modelFit.ts，
       // 服务端已经实测过，这里只是兜底）。
@@ -1232,7 +1248,7 @@ export class SceneView {
 
       this.buildOverlay(member, overlay, content.members.length > 1);
       this.frameSources.push(frameSourceOf(member, group, scanInstance));
-    });
+    }
 
     this.links = content.links;
     this.buildLinks(content);
@@ -1295,11 +1311,17 @@ export class SceneView {
     if (
       !this.framed ||
       spacesChanged ||
-      (wasBroadcast && !this.broadcast) ||
+      wasBroadcast !== !!this.broadcast ||
       (this.autoFramed && modeChanged)
     ) {
       this.frameContent(false);
-      if (this.broadcast) this.showBroadcast('city', false);
+      if (this.broadcast) this.showBroadcast(this.broadcast.config.tour.initial, false);
+    } else if (this.broadcast && previousShot) {
+      const { tour } = this.broadcast.config;
+      this.showBroadcast(
+        tour.stops.some((s) => s.id === previousShot) ? previousShot : tour.initial,
+        false,
+      );
     } else {
       // 用户移动过镜头时保留位置，新增的背景仍须能落入远裁面。
       this.camera.far = backgroundFarPlane(
@@ -1981,8 +2003,9 @@ export class SceneView {
       return;
     }
     if (!this.broadcast) return;
-    this.showBroadcast('office', false);
-    this.tour = { stops: ['city', 'orbit'], arrivedAt: null };
+    const [first, ...stops] = this.broadcast.config.tour.order;
+    this.showBroadcast(first!, false);
+    this.tour = { stops, arrivedAt: null };
     this.options.onBroadcastTour?.(true);
   }
 
@@ -1995,23 +2018,27 @@ export class SceneView {
   private updateTour(): void {
     if (!this.tour || this.flight) return;
     this.tour.arrivedAt ??= performance.now();
-    if (performance.now() - this.tour.arrivedAt < 3200) return;
+    const current = this.broadcast?.config.tour.stops.find((s) => s.id === this.selectedShot);
+    if (!current) return this.stopTour();
+    if (performance.now() - this.tour.arrivedAt < current.holdMs) return;
     const next = this.tour.stops.shift();
     if (!next) return this.stopTour();
     this.tour.arrivedAt = null;
     this.flyBroadcast(next, true);
   }
 
-  showBroadcast(shot: BroadcastShot, animate = true): void {
+  showBroadcast(shot: string, animate = true): void {
     this.stopTour();
     this.flyBroadcast(shot, animate);
   }
 
-  private flyBroadcast(shot: BroadcastShot, animate: boolean): void {
+  private flyBroadcast(shot: string, animate: boolean): void {
     if (!this.broadcast) return;
     this.leaveFirstPersonForFlight();
     this.autoFramed = false;
     const pose = this.broadcast.camera(shot, this.camera.aspect);
+    if (!pose) return;
+    this.selectedShot = shot;
     this.camera.near = 0.025;
     this.camera.updateProjectionMatrix();
     this.moveCamera(pose.to, pose.target, animate, true);
@@ -2115,6 +2142,7 @@ export class SceneView {
       return false;
     }
     this.stopTour();
+    this.selectedShot = null;
     this.flight = null;
     this.autoFramed = false;
     const offset = new THREE.Vector3().subVectors(
@@ -2157,6 +2185,7 @@ export class SceneView {
     animate = true,
     broadcast = false,
   ): void {
+    if (!broadcast) this.selectedShot = null;
     if (!animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       this.flight = null;
       this.camera.position.copy(to);
@@ -2458,6 +2487,7 @@ export class SceneView {
   };
 
   private onControlsStart = () => {
+    this.selectedShot = null;
     this.stopTour();
     this.onPointerLeave();
     this.flight = null;

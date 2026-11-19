@@ -1,5 +1,8 @@
+import { randomBytes } from 'node:crypto';
+import tourFixture from './fixtures/observatory-tour.json' with { type: 'json' };
+import { readBroadcastTour, type BroadcastTour, type Point } from '../src/core/broadcastTour';
 import { expect, test, type Page } from '@playwright/test';
-import { DRAFT_TEXTURE } from '../src/fixtures/assets';
+import { DRAFT_TEXTURE, MODELS } from '../src/fixtures/assets';
 import { encodePng } from '../src/fixtures/png';
 import { brightCoverage, decodePng } from './png';
 
@@ -12,7 +15,13 @@ for (let i = 0; i < pixels.length; i += 3) {
 }
 const tile = Buffer.from(encodePng(64, 64, pixels));
 
-async function prepare(page: Page, fallback = false, server = false, broadcast = false) {
+async function prepare(
+  page: Page,
+  fallback = false,
+  server = false,
+  tour?: BroadcastTour,
+  feed?: { id: string },
+) {
   const sources = [
     {
       ...(server ? { delivery: 'server' } : {}),
@@ -73,12 +82,25 @@ async function prepare(page: Page, fallback = false, server = false, broadcast =
         },
       },
     });
-    if (broadcast) {
+    if (tour && feed) {
+      preview.spaceId = 'southern-observatory';
+      preview.spaceName = '南天观测站';
       preview.entities.push({
-        id: 'tide-arena.mirror',
+        id: 'field-sensor',
+        body: {
+          entityId: 'field-sensor',
+          kind: 'object',
+          layer: 'ext',
+          regionId: 'virtual',
+          assetHash: MODELS.crate.hash,
+          bounds: { min: [2, 0, 8], max: [3, 1, 9] },
+        },
+      });
+      preview.entities.push({
+        id: tour.mirror,
         hash: 'f'.repeat(64),
         body: {
-          entityId: 'tide-arena.mirror',
+          entityId: tour.mirror,
           kind: 'object',
           layer: 'ext',
           regionId: 'virtual',
@@ -94,11 +116,23 @@ async function prepare(page: Page, fallback = false, server = false, broadcast =
           },
           bounds: { min: [-2, 3, -0.02], max: [2, 5, 0] },
           props: {
-            background: true,
-            liveScreen: { kind: 'youtube', url: 'https://youtu.be/test_screen', plate: [] },
+            liveScreen: { kind: 'youtube', url: `https://youtu.be/${feed.id}`, plate: [] },
           },
         },
       });
+      const mirror = preview.entities.at(-1);
+      const program = structuredClone(mirror);
+      program.id = program.body.entityId = tour.program;
+      program.hash = 'e'.repeat(64);
+      program.body.shape.points = program.body.shape.points.map(([x, y, z]: Point) => [
+        x + 8,
+        y,
+        z,
+      ]);
+      program.body.bounds = { min: [6, 3, -0.02], max: [10, 5, 0] };
+      mirror.body.props.liveScreen = { plate: [] };
+      mirror.body.props.broadcastTour = tour;
+      preview.entities.push(program);
     }
     await route.fulfill({ json: preview });
   });
@@ -211,35 +245,72 @@ test('地图服务端来源携带预览权限并避免浏览器直连瓦片', as
 });
 
 test('同一播放器随发布会拉远，轨道返回和切换视图恢复地面场景', async ({ page }) => {
-  await prepare(page, false, false, true);
+  const tour = readBroadcastTour(structuredClone(tourFixture))!;
+  const newId = () => randomBytes(8).toString('base64url');
+  const feed = { id: newId() };
+  const modelErrors: string[] = [];
+  page.on('console', (msg) => {
+    if (msg.text().includes('巡演设备加载失败')) modelErrors.push(msg.text());
+  });
+  await page.route(`**/api/public/previews/assets/${MODELS.crate.hash}*`, (route) =>
+    route.fulfill({ body: Buffer.from(MODELS.crate.bytes), contentType: 'model/gltf-binary' }),
+  );
+  await prepare(page, false, false, tour, feed);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   let requests = 0;
-  await page.route('https://www.youtube-nocookie.com/embed/test_screen?*', (route) => {
+  await page.route('https://www.youtube-nocookie.com/embed/**', (route) => {
+    expect(new URL(route.request().url()).pathname).toBe(`/embed/${feed.id}`);
     requests++;
     return route.fulfill({ contentType: 'text/html', body: '<body style="background:magenta">' });
   });
   await page.goto(PREVIEW);
   const viewer = await ready(page);
   const nav = viewer.getByRole('navigation', { name: '发布会机位' });
-  await expect(nav.getByRole('button', { name: '滨海湾' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(nav.getByRole('button', { name: '观测码头' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
   await nav.getByRole('button', { name: '播放拉远' }).click();
-  const frame = viewer.locator('iframe');
-  for (const shot of ['office', 'city', 'orbit']) {
+  const frame = viewer.locator('iframe').first();
+  for (const shot of tour.order) {
     await expect(viewer).toHaveAttribute('data-broadcast-shot', shot);
     await expect(frame).toHaveCSS('filter', 'none');
     await expect(viewer.locator('.viewer__canvas')).toHaveCSS('filter', 'none');
   }
+  await expect(viewer).toHaveAttribute('data-broadcast-shot', 'pier');
+  await expect(nav.getByRole('button', { name: '播放拉远' })).toBeVisible();
+  await nav.getByRole('button', { name: '演播室' }).click();
+  await expect(viewer).toHaveAttribute('data-broadcast-shot', 'studio');
+  await expect(frame).toHaveCSS('filter', 'none');
+  expect(requests).toBe(2);
+  expect(
+    await viewer
+      .locator('iframe')
+      .evaluateAll(
+        (es) => new Set(es.map((e) => new URL((e as HTMLIFrameElement).src).pathname)).size,
+      ),
+  ).toBe(1);
+  tour.order = ['pier', 'studio', 'zenith'];
+  tour.initial = 'studio';
+  feed.id = newId();
+  tour.stops[1]!.label = '东侧码头';
+  tour.stops[1]!.screen!.position = [33, 21, -16];
+  tour.stops[1]!.equipment![0]!.motion!.radius = [18, 5, 40];
+  await page.reload();
+  await expect(nav.getByRole('button', { name: '演播室' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(nav.getByRole('button', { name: '东侧码头' })).toBeVisible();
+  await expect(nav.getByRole('button', { name: '观测码头' })).toHaveCount(0);
+  await expect(viewer.locator(`iframe[src*="/embed/${feed.id}?"]`)).toHaveCount(2);
+  await expect.poll(() => requests).toBe(4);
+  await nav.getByRole('button', { name: '播放拉远' }).click();
+  for (const shot of tour.order) await expect(viewer).toHaveAttribute('data-broadcast-shot', shot);
   await expect
     .poll(async () => Number(await viewer.getAttribute('data-map-distance')))
     .toBeGreaterThan(1e7);
-  await expect(nav.getByRole('button', { name: '播放拉远' })).toBeVisible();
-  await nav.getByRole('button', { name: '前厅看台' }).click();
-  await expect(viewer).toHaveAttribute('data-broadcast-shot', 'office');
-  await expect(frame).toHaveCSS('filter', 'none');
-  expect(requests).toBe(1);
-  await nav.getByRole('button', { name: '地球轨道' }).click();
+  await nav.getByRole('button', { name: '南天中继' }).click();
   await page.locator('button[data-mode="optimized"]').click();
   await expect(nav).toHaveCount(0);
   await expect(viewer).not.toHaveAttribute('data-environment');
   await expect(viewer.locator('iframe')).toHaveCount(0);
+  expect(modelErrors).toEqual([]);
 });

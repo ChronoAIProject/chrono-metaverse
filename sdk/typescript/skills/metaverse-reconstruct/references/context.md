@@ -14,6 +14,7 @@
 metaverse-recon context init --prefix exterior. --label '建筑周边背景' \
   --bbox <西经度> <南纬度> <东经度> <北纬度> \
   --reference <纬度> <经度> --floor <楼层> --height <绝对标高米> \
+  --tiles-base-url '<来源的瓦片基础地址>' --page-url '<来源页面>' \
   --heading <朝向度> --attribution '<来源署名>'
 metaverse-recon context download
 metaverse-recon context inspect

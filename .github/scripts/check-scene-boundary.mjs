@@ -5,6 +5,13 @@ import { fileURLToPath } from "node:url";
 
 function files(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    if (
+      entry.isDirectory() &&
+      ["node_modules", ".venv", "__pycache__", "out", "target"].includes(
+        entry.name,
+      )
+    )
+      return [];
     const path = join(directory, entry.name);
     return entry.isDirectory() ? files(path) : [path];
   });
@@ -54,7 +61,7 @@ export function violations(root) {
     "api/crates/metaverse-core/src",
     "api/crates/metaverse-api/src",
   ];
-  return roots
+  const coreErrors = roots
     .flatMap((directory) => files(join(root, directory)))
     .filter(
       (file) =>
@@ -93,6 +100,21 @@ export function violations(root) {
           errors.push(`生产核心包含场景专用值：${value}`);
       return errors.map((error) => `${relative(root, file)}：${error}`);
     });
+  // 空间来源由 API 保存。既检查生产源码，也检查可能把节目重新灌入空间的种子和生成器。
+  const program =
+    /(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^"'\s]*?&)?v=|(?:embed|live|shorts)\/))[A-Za-z0-9_-]{11}(?![A-Za-z0-9_-])/i;
+  const inputs = [...roots, "scenes", "infra/chrono-cd", "web/public"];
+  const mediaErrors = inputs
+    .filter((dir) => existsSync(join(root, dir)))
+    .flatMap((dir) => files(join(root, dir)))
+    .filter(
+      (file) =>
+        /\.(?:[cm]?js|[cm]?ts|tsx|py|rs|json|sh|html)$/.test(file) &&
+        !/\/(?:fixtures|node_modules|out|target)\/|\.test\./.test(file),
+    )
+    .filter((file) => program.test(readFileSync(file, "utf8")))
+    .map((file) => `${relative(root, file)}：实际节目地址应由空间 API 提供`);
+  return [...coreErrors, ...mediaErrors];
 }
 
 if (

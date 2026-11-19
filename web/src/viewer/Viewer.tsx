@@ -16,7 +16,7 @@ import {
   type SceneViewOptions,
   type Selection,
 } from './sceneView';
-import type { BroadcastShot } from './broadcast/venue';
+import type { BroadcastView } from './broadcast/venue';
 import './Viewer.css';
 
 /** 查看器需要的场景能力；测试里可以换成假的实现（jsdom 没有 WebGL）。 */
@@ -27,7 +27,7 @@ export interface SceneViewLike {
   select(selection: Selection | null): void;
   frameContent(): void;
   toggleTour?(): void;
-  showBroadcast?(shot: BroadcastShot): void;
+  showBroadcast?(shot: string): void;
   stepCamera(step: CameraStep): void;
   setPerspective(mode: CameraPerspective): void;
   focusMember?(spaceId: string | null): void;
@@ -103,7 +103,7 @@ export function Viewer({
   const lastCamera = useRef('');
   const readyContent = useRef<SceneContent | null>(null);
   const [tour, setTour] = useState(false);
-  const [broadcast, setBroadcast] = useState<BroadcastShot | null>(null);
+  const [broadcast, setBroadcast] = useState<BroadcastView | null>(null);
   const [perspective, setPerspective] = useState<CameraPerspective>('third');
   const [unsupported, setUnsupported] = useState<string | null>(null);
   const [step, setStep] = useState<LoadStep | null>(null);
@@ -316,17 +316,11 @@ export function Viewer({
           >
             <span aria-hidden="true">{tour ? '■' : '▶'}</span> {tour ? '停止拉远' : '播放拉远'}
           </button>
-          {(
-            [
-              ['office', '前厅看台'],
-              ['city', '滨海湾'],
-              ['orbit', '地球轨道'],
-            ] as const
-          ).map(([id, label]) => (
+          {broadcast.stops.map(({ id, label }) => (
             <button
               key={id}
               type="button"
-              aria-pressed={broadcast === id}
+              aria-pressed={broadcast.active === id}
               onClick={() => viewRef.current?.showBroadcast?.(id)}
             >
               {label}

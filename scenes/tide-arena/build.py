@@ -468,7 +468,7 @@ def hologram_dome():
     return mesh
 
 
-def shape_screen(source, center, region, face_path):
+def shape_screen(source, center, region, face_path, mirror_id):
     face = source["shape"]
     chain = [face]
     for index in face_path:
@@ -566,11 +566,11 @@ def shape_screen(source, center, region, face_path):
         [(w + 0.14) * cos(angle) + 0.05, h + 0.13, (w + 0.14) * sin(angle) + 0.10]
     )
     return {
-        "entityId": "tide-arena.mirror",
+        "entityId": mirror_id,
         "regionId": region,
         "layer": "ext",
         "kind": "object",
-        "label": "前厅 LED · 悬浮全息镜像",
+        "label": source.get("label", source["entityId"]) + " · 悬浮全息镜像",
         "shape": shape,
         "bounds": {
             "min": (midpoint - ext - [0, 0.53, 0]).tolist(),
@@ -587,7 +587,12 @@ def shape_screen(source, center, region, face_path):
 
 def build(snapshot, root, bindings=None):
     if bindings is None:
-        bindings = json.loads(Path(__file__).with_name("bindings.json").read_text())[snapshot["spaceId"]]
+        saved = [e["body"]["props"]["arenaBindings"] for e in snapshot["entities"]
+                 if isinstance(e["body"].get("props", {}).get("arenaBindings"), dict)]
+        if len(saved) != 1:
+            raise ValueError("快照中需有一份 props.arenaBindings，或用 --bindings 指定该次生成的绑定")
+        bindings = saved[0]
+    prefix = bindings.get("entityPrefix", "arena.")
     regions = {r["id"]: r for r in snapshot["regions"]}
     region = bindings["outputRegion"]
     if region not in regions:
@@ -616,7 +621,7 @@ def build(snapshot, root, bindings=None):
     def add(part, label, mesh, textures=None, unlit=False, props=None):
         entities.append(
             {
-                "entityId": "tide-arena." + part,
+                "entityId": prefix + part,
                 "label": label,
                 "regionId": region,
                 "layer": "ext",
@@ -661,31 +666,6 @@ def build(snapshot, root, bindings=None):
             )
         access_bridge(bank, side * pi / 2, opening)
         props = {"座席数": bank.seats}
-        if side == 0:
-            props["landmark"] = {
-                "label": "内场视角",
-                "position": (center + [6.9, 3.5, -1]).tolist(),
-                "maxDistance": 90,
-                "azimuth": -15,
-                "elevation": 5,
-                "focusBounds": {
-                    "min": (center + [-7.5, -0.2, -12]).tolist(),
-                    "max": (center + [7.8, 11.15, -0.2]).tolist(),
-                },
-            }
-        if side == 2:
-            props["landmark"] = {
-                "label": "拉远看楼体",
-                "position": (center + [-11.5, 5, -11]).tolist(),
-                "overview": True,
-                "maxDistance": 90,
-                "azimuth": 20,
-                "elevation": 14,
-                "focusBounds": {
-                    "min": (center + [-31, -51, -36]).tolist(),
-                    "max": (center + [43, 118, 36]).tolist(),
-                },
-            }
         add(part, "星潮 · " + label + "侧浮空玻璃看台", bank, props=props)
         # 光池只投在看台的正下方，边缘自然消退，缝隙里仍能看到城市。
         glow = Mesh()
@@ -721,7 +701,14 @@ def build(snapshot, root, bindings=None):
         },
     )
     if screen:
-        entities.append(shape_screen(existing[screen["entity"]], center, region, screen.get("facePath", [])))
+        mirror = shape_screen(existing[screen["entity"]], center, region, screen.get("facePath", []), prefix + "mirror")
+        # 节目源和巡演由空间作者在 API 上维护。重建几何时沿用最新快照。
+        previous = existing.get(mirror["entityId"], {}).get("props", {})
+        mirror["props"] = {**previous, **mirror["props"]}
+        mirror["props"]["arenaBindings"] = bindings
+        if "liveScreen" not in previous:
+            mirror["props"]["liveScreen"] = {"plate": [0]}
+        entities.append(mirror)
     focus = center.tolist()
 
     def view(lo, hi=None):
@@ -741,7 +728,7 @@ def build(snapshot, root, bindings=None):
             entities.append(
                 {
                     **upper,
-                    "entityId": "tide-arena.shell-" + tag,
+                    "entityId": prefix + "shell-" + tag,
                     "label": "楼体过渡投影",
                     "material": {
                         "tint": [142, 221, 246],
@@ -751,10 +738,6 @@ def build(snapshot, root, bindings=None):
                     "props": {**upper["props"], "backgroundView": view(lo, hi)},
                 }
             )
-    arena_bounds = {
-        "min": (center + [-25.0, -0.45, -30.2]).tolist(),
-        "max": (center + [25.0, 14.1, 30.2]).tolist(),
-    }
     changes = []
     for key, entity in existing.items():
         props = {**entity.get("props", {})}
@@ -762,16 +745,6 @@ def build(snapshot, root, bindings=None):
             props["backgroundView"] = view(SHELL_DISTANCE)
         elif key in facades:
             props["backgroundView"] = view(96)
-        elif key == entry:
-            props["landmark"] = {
-                **props.get("landmark", {}),
-                "label": "进入前厅 · 全息看台",
-                "minDistance": 74,
-                "position": (center + [0, 17, 0]).tolist(),
-                "azimuth": -30,
-                "elevation": 24,
-                "focusBounds": arena_bounds,
-            }
         elif key in visible:
             props.pop("backgroundView", None)
         else:
@@ -783,7 +756,7 @@ def build(snapshot, root, bindings=None):
         entities.append(
             {
                 **slab,
-                "entityId": "tide-arena.deck",
+                "entityId": prefix + "deck",
                 "label": "投影玻璃基面",
                 "material": {"shading": "albedo", "tint": [42, 59, 81], "opacity": 0.57},
                 "props": {**slab["props"], "backgroundView": view(0, 80)},
@@ -793,6 +766,15 @@ def build(snapshot, root, bindings=None):
         changes.append(
             {**slab, "props": {**slab["props"], "backgroundView": view(80, SHELL_DISTANCE)}}
         )
+    # 生成器更新网格。空间作者已发布的标签、地标、节目和取景优先。
+    for entity in entities:
+        previous = existing.get(entity["entityId"])
+        if previous:
+            if "label" in previous:
+                entity["label"] = previous["label"]
+            entity["props"] = {**entity.get("props", {}), **previous.get("props", {})}
+            if entity["entityId"] == prefix + "mirror":
+                entity["props"]["arenaBindings"] = bindings
     ops = [
         {"op": "placeEntity", "entity": e}
         for e in [*entities, *changes]

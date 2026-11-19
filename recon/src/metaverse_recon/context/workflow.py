@@ -161,8 +161,8 @@ def cmd_context(args):
                 "hostSourceId": args.host_id or "待选择",
                 "initialPlacement": {"centerX": 0, "frontZ": 0},
                 "fallbackBuildingLabel": "地图建筑",
-                "tilesBaseUrl": "https://www.onemap.gov.sg/omapi/tilesets/sg_noterrain_tiles/",
-                "pageUrl": "https://www.onemap.gov.sg/3d",
+                "tilesBaseUrl": args.tiles_base_url,
+                "pageUrl": args.page_url,
                 "attribution": args.attribution,
                 "manifestAttribution": args.attribution,
                 "tilesetFile": "context.tileset.json",
@@ -241,6 +241,8 @@ def add_parser(sub):
             command.add_argument("--floor", type=int, required=True)
             command.add_argument("--heading", type=float, default=0)
             command.add_argument("--host-id")
+            command.add_argument("--tiles-base-url", required=True, help="来源的 3D Tiles 基础地址")
+            command.add_argument("--page-url", required=True, help="来源的署名页面")
             command.add_argument("--attribution", required=True)
         if action == "import":
             command.add_argument("--model", required=True)

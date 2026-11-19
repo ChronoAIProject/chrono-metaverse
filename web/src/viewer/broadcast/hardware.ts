@@ -1,60 +1,106 @@
 import * as T from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { projectionMaterial } from './projection';
 import { createDracoLoader } from '../draco';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import stationUrl from '../../assets/broadcast/station.glb?url';
-import launchUrl from '../../assets/broadcast/launch.glb?url';
+import type { BroadcastModel } from '../../core/broadcastTour';
 
-/** 从真实设备的各部件表面采样截线，保留太阳翼和舱体的遮挡。 */
-export function loadHardware(kind: 'station' | 'launch', parent: T.Group, signal: AbortSignal) {
-  const url = kind === 'station' ? stationUrl : launchUrl;
-  const loader = new GLTFLoader();
-  const decoder = kind === 'station' ? createDracoLoader() : null;
-  if (decoder) loader.setDRACOLoader(decoder);
-  void loader
-    .loadAsync(url)
-    .then(({ scene }) => {
-      const box = new T.Box3().setFromObject(scene);
-      const size = box.getSize(new T.Vector3());
-      const scale = (kind === 'station' ? 0.56 : 0.17) / Math.max(size.x, size.y, size.z);
-      const centre = box.getCenter(new T.Vector3());
-      scene.scale.setScalar(scale);
-      scene.position.copy(centre).multiplyScalar(-scale);
-      const originalMaterials = new Set<T.Material>();
-      scene.traverse((o) => {
-        if (!(o instanceof T.Mesh)) return;
-        for (const m of Array.isArray(o.material) ? o.material : [o.material])
-          originalMaterials.add(m);
-        o.geometry.computeBoundingBox();
-        const extent = o.geometry.boundingBox!.getSize(new T.Vector3());
-        const pitch = Math.max(extent.x, extent.y, extent.z, 0.001) / 30;
-        o.material = projectionMaterial(pitch, kind === 'station' ? 0.65 : 0.82);
+const library = import.meta.glob<string>('../../assets/broadcast/*.glb', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+});
+
+type LoadEntity = (id: string) => Promise<ArrayBuffer> | undefined;
+
+/** 同一巡演的设备实例共用解析后的几何与全息材质。模型实体由当前成员的资源接口读取。 */
+export class EquipmentModels {
+  private readonly models = new Map<string, Promise<T.Group>>();
+  private readonly resources = new Set<T.BufferGeometry | T.Material | T.Texture>();
+  private readonly instances: T.Object3D[] = [];
+  private disposed = false;
+
+  constructor(private readonly loadEntity: LoadEntity) {}
+
+  attach = (ref: BroadcastModel, holder: T.Group) => {
+    const key = JSON.stringify(ref);
+    let model = this.models.get(key);
+    if (!model) {
+      model = this.load(ref);
+      this.models.set(key, model);
+    }
+    void model
+      .then((template) => {
+        if (this.disposed) return;
+        const instance = template.clone();
+        holder.add(instance);
+        this.instances.push(instance);
+      })
+      .catch((error) => {
+        if (!this.disposed) console.warn('巡演设备加载失败', ref, error);
       });
-      const dispose = () => {
-        scene.removeFromParent();
-        const resources = new Set<T.BufferGeometry | T.Material | T.Texture>();
-        for (const mat of originalMaterials) {
-          resources.add(mat);
-          for (const v of Object.values(mat)) if (v instanceof T.Texture) resources.add(v);
-        }
-        scene.traverse((o) => {
-          if (!(o instanceof T.Mesh)) return;
-          resources.add(o.geometry);
-          for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
-            resources.add(m);
-            for (const v of Object.values(m)) if (v instanceof T.Texture) resources.add(v);
-          }
-        });
-        for (const r of resources) r.dispose();
-      };
-      if (signal.aborted) dispose();
-      else {
-        parent.add(scene);
-        signal.addEventListener('abort', dispose, { once: true });
+  };
+
+  private async load(ref: BroadcastModel) {
+    const decoder = createDracoLoader();
+    const loader = new GLTFLoader().setDRACOLoader(decoder);
+    try {
+      let model;
+      if (typeof ref === 'string') {
+        const url = library[`../../assets/broadcast/${ref}.glb`];
+        if (!url) throw new Error('设备资源库中没有这个模型');
+        model = await loader.loadAsync(url);
+      } else {
+        const bytes = await this.loadEntity(ref.entity);
+        if (!bytes) throw new Error('当前空间中缺少设备模型实体');
+        model = await loader.parseAsync(bytes, '');
       }
-    })
-    .catch((error) => {
-      if (!signal.aborted) console.warn('轨道设备加载失败', kind, error);
-    })
-    .finally(() => decoder?.dispose());
+      const { scene } = model;
+      const projection = scene.userData.projection;
+      if (projection?.fitUnit) {
+        const bounds = new T.Box3().setFromObject(scene);
+        const size = bounds.getSize(new T.Vector3());
+        const scale = 1 / Math.max(size.x, size.y, size.z, Number.EPSILON);
+        scene.scale.setScalar(scale);
+        scene.position.copy(bounds.getCenter(new T.Vector3())).multiplyScalar(-scale);
+      }
+      scene.traverse((obj) => {
+        if (!(obj instanceof T.Mesh)) return;
+        this.resources.add(obj.geometry);
+        obj.geometry.computeBoundingBox();
+        const extent = obj.geometry.boundingBox!.getSize(new T.Vector3());
+        const pitch = Math.max(extent.x, extent.y, extent.z, 0.001) / 30;
+        const project = (original: T.Material) => {
+          this.resources.add(original);
+          for (const value of Object.values(original))
+            if (value instanceof T.Texture) this.resources.add(value);
+          const style = original.userData.projection ?? projection;
+          const material = projectionMaterial(
+            style?.pitch ?? pitch,
+            style?.intensity ?? 0.7,
+            style?.tint,
+          );
+          this.resources.add(material);
+          return material;
+        };
+        obj.material = Array.isArray(obj.material)
+          ? obj.material.map(project)
+          : project(obj.material);
+      });
+      if (this.disposed) this.release();
+      return scene;
+    } finally {
+      decoder.dispose();
+    }
+  }
+  private release() {
+    for (const resource of this.resources) resource.dispose();
+    this.resources.clear();
+  }
+  dispose() {
+    this.disposed = true;
+    for (const instance of this.instances) instance.removeFromParent();
+    this.instances.length = 0;
+    this.models.clear();
+    this.release();
+  }
 }

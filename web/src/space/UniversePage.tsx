@@ -281,7 +281,15 @@ export function UniversePage({
         : undefined;
     return named(lookId) ?? UNIVERSE_THEMES.find((theme) => theme.id === themeId) ?? named(themeId);
   }, [catalogs, lookId, themeId]);
-  const savedTheme = UNIVERSE_THEMES.find((theme) => theme.id === view?.themeId);
+  const savedTheme = useMemo(() => {
+    const id = view?.themeId;
+    return (
+      UNIVERSE_THEMES.find((theme) => theme.id === id) ??
+      (id && catalogs.some((list) => list.some((style) => style.id === id))
+        ? { id, styleId: id }
+        : undefined)
+    );
+  }, [catalogs, view?.themeId]);
   const activeTheme = runtimeTheme ?? savedTheme ?? UNIVERSE_THEMES[0]!;
   const memberLooks = useMemo(
     () =>

@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "program": "field-feed",
+  "mirror": "observatory-panel",
+  "environment": "environment-test",
+  "initial": "pier",
+  "order": ["studio", "zenith", "pier"],
+  "stops": [
+    {
+      "id": "studio",
+      "label": "演播室",
+      "frame": "screen",
+      "minDistance": 0,
+      "holdMs": 650,
+      "camera": { "eye": [1, 2, 12], "target": [0, 0, 0] }
+    },
+    {
+      "id": "pier",
+      "label": "观测码头",
+      "frame": "local",
+      "minDistance": 60,
+      "holdMs": 650,
+      "position": [-50, 0, 26],
+      "camera": { "eye": [0, 55, 145], "target": [0, 12, 0] },
+      "screen": { "position": [8, 22, 15], "scale": 2 },
+      "equipment": [
+        {
+          "model": { "entity": "field-sensor" },
+          "count": 3,
+          "position": [18, 29, 8],
+          "scale": 0.5,
+          "motion": { "kind": "route", "radius": [30, 4, 13], "period": 37 }
+        }
+      ]
+    },
+    {
+      "id": "zenith",
+      "label": "南天中继",
+      "frame": "earth",
+      "minDistance": 80000,
+      "holdMs": 650,
+      "rotation": [-0.92, 0.6, 0],
+      "camera": { "eye": [0.4, 0.06, 3.2], "target": [0.4, 0, 0] },
+      "screen": { "position": [0.95, 0.28, 0.83], "scale": 0.044 },
+      "equipment": [{ "model": "rocket", "position": [1, 0.06, 0.85], "scale": 0.18 }]
+    }
+  ]
+}
