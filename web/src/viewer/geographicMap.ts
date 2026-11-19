@@ -1,5 +1,6 @@
 import type { ExternalAccess } from '../core/externalSource';
 import * as THREE from 'three';
+import { projectTerrain } from './broadcast/terrain';
 import { hologramMaterial } from './hologram';
 import type { GeographicMap as MapConfig } from '../core/environment';
 import {
@@ -322,6 +323,24 @@ export class GeographicMap {
     this.prune();
   }
 
+  private projected = false;
+
+  setProjected(enabled: boolean) {
+    if (this.projected === enabled) return;
+    this.projected = enabled;
+    for (const { mesh } of this.patches.values()) this.stylePatch(mesh.material);
+  }
+
+  private stylePatch(material: THREE.MeshBasicMaterial) {
+    if (this.projected) projectTerrain(material);
+    else if (this.resource?.hologram) hologramMaterial(material, 'terrain');
+    else {
+      material.onBeforeCompile = THREE.Material.prototype.onBeforeCompile;
+      material.customProgramCacheKey = THREE.Material.prototype.customProgramCacheKey;
+    }
+    material.needsUpdate = true;
+  }
+
   private paint(): void {
     let loaded = 0;
     for (const node of this.visible) {
@@ -332,7 +351,7 @@ export class GeographicMap {
           this.geometry(node),
           new THREE.MeshBasicMaterial({ color: 0x557e8e }),
         );
-        if (this.resource?.hologram) hologramMaterial(mesh.material, 'terrain');
+        this.stylePatch(mesh.material);
         mesh.position.copy(node.center);
         mesh.userData.background = true;
         mesh.name = `map:${key}`;

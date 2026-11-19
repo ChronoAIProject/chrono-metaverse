@@ -4,8 +4,9 @@ import { GRID_UNIT } from '../../core/chunk';
 import { environmentOf } from '../../core/environment';
 import { EARTH_RADIUS as R, GeoReference } from '../geography';
 import { liveScreenOf } from '../liveScreen';
-import { buildCity, nameplate, programCard } from './city';
-import { rocket, screenFrame, station } from './models';
+import { buildCity } from './city';
+import { loadHardware } from './hardware';
+import { WaterfrontMaterials } from './waterfront';
 import { broadcastSky, orbitalEarth } from './sky';
 
 export type BroadcastShot = 'office' | 'city' | 'orbit';
@@ -16,7 +17,17 @@ export function broadcastConfig(member: MemberContent) {
   const source = member.view.entities.find((e) => e.entityId === 'tide-arena.mirror');
   const screen = source && liveScreenOf(source, window.location.origin);
   const map = member.view.entities.map(environmentOf).find((env) => env?.map)?.map;
-  return source && screen && map ? { source, screen, map, placement: member.placement } : null;
+  if (!source || !screen || !map) return null;
+  const cabinet = member.view.entities.find((e) => e.entityId === source.props?.['镜像来源']);
+  const physical = cabinet && liveScreenOf(cabinet, window.location.origin);
+  return {
+    source,
+    screen,
+    map,
+    placement: member.placement,
+    origin: physical ? cabinet! : source,
+    face: physical ?? screen,
+  };
 }
 
 type Config = NonNullable<ReturnType<typeof broadcastConfig>>;
@@ -24,15 +35,20 @@ type Config = NonNullable<ReturnType<typeof broadcastConfig>>;
 /** 三个会场在同一坐标系中。播放器始终使用当前快照中前厅全息看台的配置。 */
 export class BroadcastVenue {
   readonly root = new T.Group();
+  readonly surfaces = new WaterfrontMaterials();
   private readonly sky = broadcastSky();
+  private readonly abort = new AbortController();
   private readonly city = new T.Group();
   private readonly orbit = new T.Group();
   private readonly earth;
-  private readonly hub = station();
-  private readonly launch = rocket();
+  private readonly hub = new T.Group();
+  private readonly launch = new T.Group();
   private readonly cityScreen = new T.Group();
   private readonly orbitScreen = new T.Group();
-  private readonly card = programCard();
+  private readonly relay = new T.Group();
+  private readonly panel = new T.Group();
+  private readonly officeEye: T.Vector3;
+  private readonly clipping: { material: T.Material; planes: T.Plane[] }[] = [];
   private readonly traffic;
   private active: BroadcastShot | null = null;
   private readonly eye = new T.Vector3();
@@ -53,42 +69,48 @@ export class BroadcastVenue {
     this.city.position.set(-240, 0, 345);
     this.city.rotation.y = 0.88;
     this.traffic = buildCity(this.city);
-    this.cityScreen.position.set(-86, 199, 92);
+    this.cityScreen.position.set(-40, 160, 96);
     this.cityScreen.scale.setScalar(15.8);
-    this.cityScreen.rotation.y = 0.1;
+    this.cityScreen.rotation.y = -0.23;
     this.city.add(this.cityScreen);
     const ref = new GeoReference(config.map);
     this.earth = orbitalEarth(ref);
     this.root.add(this.earth.earth);
     this.orbit.position.copy(ref.center);
     this.orbit.scale.setScalar(R);
-    this.orbit.rotation.x = -0.67;
-    this.hub.position.set(1.09, 0.01, 0.55);
-    this.hub.scale.setScalar(0.0165);
-    this.hub.rotation.z = -0.17;
-    this.launch.scale.setScalar(0.019);
-    this.launch.rotation.z = -0.34;
+    this.orbit.rotation.set(-1.05, Math.PI, 0, 'YXZ');
+    this.hub.position.set(1.04, 0.01, 0.55);
+    loadHardware('station', this.hub, this.abort.signal);
+    loadHardware('launch', this.launch, this.abort.signal);
+    this.hub.rotation.set(0.51, 0.73, -0.36);
+
+    this.launch.rotation.z = -0.5;
     this.orbit.add(this.hub, this.launch, this.orbitScreen);
-    this.orbitScreen.position.set(1.0, 0.42, 0.66);
+    this.orbitScreen.position.set(1.1, 0.31, 0.72);
     this.orbitScreen.rotation.set(-0.11, -0.2, -0.03);
-    this.orbitScreen.scale.setScalar(0.047);
-    for (const [screen, caption] of [
-      [this.cityScreen, 'CHRONOAI   /   MARINA BAY'],
-      [this.orbitScreen, 'CHRONOAI   /   ORBITAL RELAY'],
-    ] as const) {
-      screen.add(
-        screenFrame(),
-        nameplate(caption),
-        new T.Mesh(new T.PlaneGeometry(16, 9), this.card),
-      );
-    }
-    const face = config.screen;
+    this.orbitScreen.scale.setScalar(0.052);
+    // 两个远景都沿用前厅镜像实体的外框与占位画面。
+    this.relay.add(this.panel);
+    this.panel.matrixAutoUpdate = false;
+    this.panel.matrix
+      .makeScale(16 / config.screen.width, 9 / config.screen.height, 16 / config.screen.width)
+      .multiply(config.screen.matrix.clone().invert());
+    const face = config.face;
     this.officeCenter.setFromMatrixPosition(face.matrix);
+    this.officeEye = vec(-face.width * 0.24, 0.36, face.width * 1.29).applyMatrix4(face.matrix);
     this.relayMatrix = new T.Matrix4()
-      .makeTranslation(0, 0, 0.045)
+      .makeTranslation(0, 0, 0.055)
       .multiply(new T.Matrix4().makeScale(16 / face.width, 9 / face.height, 1))
       .multiply(face.matrix.clone().invert());
+    this.player.traverse((o) => {
+      if (o instanceof T.Mesh && o.material.clippingPlanes)
+        this.clipping.push({ material: o.material, planes: o.material.clippingPlanes });
+    });
     this.root.updateMatrixWorld(true);
+  }
+
+  setMirror(mesh: T.Mesh) {
+    this.panel.add(mesh.clone(false));
   }
 
   camera(shot: BroadcastShot, aspect: number) {
@@ -100,13 +122,17 @@ export class BroadcastVenue {
       };
     if (shot === 'city')
       return {
-        to: this.city.localToWorld(vec(8, 205, 815 * widen)),
-        target: this.city.localToWorld(vec(0, 128, 0)),
+        to: this.city.localToWorld(vec(8, 379, 890 * widen)),
+        target: this.city.localToWorld(vec(0, 50, 0)),
       };
-    const to = this.officeCenter.clone().add(vec(-2, 1.8, 14 * widen));
+    const to = this.officeEye
+      .clone()
+      .sub(this.officeCenter)
+      .multiplyScalar(widen)
+      .add(this.officeCenter);
     return {
       to: this.root.localToWorld(to),
-      target: this.root.localToWorld(this.officeCenter.clone().add(vec(0, -2, 0))),
+      target: this.root.localToWorld(this.officeCenter.clone()),
     };
   }
 
@@ -117,11 +143,20 @@ export class BroadcastVenue {
     if (shot !== this.active) {
       const parent =
         shot === 'office' ? this.home : shot === 'city' ? this.cityScreen : this.orbitScreen;
-      parent.add(this.player);
+      if (shot === 'office') {
+        this.home.add(this.player);
+        this.relay.removeFromParent();
+      } else {
+        parent.add(this.relay);
+        this.relay.add(this.player);
+      }
+      for (const { material, planes } of this.clipping)
+        material.clippingPlanes = shot === 'office' ? planes : null;
       this.player.matrixAutoUpdate = false;
       if (shot === 'office') this.player.matrix.identity();
       else this.player.matrix.copy(this.relayMatrix);
       this.player.matrixWorldNeedsUpdate = true;
+      this.surfaces.show(shot === 'city');
       this.active = shot;
       this.change(shot);
     }
@@ -136,10 +171,10 @@ export class BroadcastVenue {
     const t = this.reduced.matches ? 0 : performance.now() / 1000;
     if (this.city.visible) this.traffic(t);
     if (this.orbit.visible) {
-      this.hub.rotation.y = 0.2 * Math.sin(t * 0.1);
+      this.hub.rotation.y = 0.73 + 0.13 * Math.sin(t * 0.06);
       this.launch.position.set(
-        -1.04 + 0.08 * Math.sin(t * 0.17),
-        0.31 + 0.14 * Math.sin(t * 0.17),
+        -0.94 + 0.04 * Math.sin(t * 0.17),
+        0.35 + 0.065 * Math.sin(t * 0.17),
         0.47,
       );
     }
@@ -147,6 +182,10 @@ export class BroadcastVenue {
   }
 
   dispose() {
+    this.abort.abort();
+    this.surfaces.dispose();
+    this.panel.clear(); // 镜像几何和材质归原实体所有。
+    for (const { material, planes } of this.clipping) material.clippingPlanes = planes;
     this.home.add(this.player);
     this.player.matrix.identity();
     this.player.matrixWorldNeedsUpdate = true;
@@ -154,7 +193,7 @@ export class BroadcastVenue {
     const geometries = new Set<T.BufferGeometry>(),
       materials = new Set<T.Material>();
     this.root.traverse((obj) => {
-      if (obj instanceof T.Mesh) {
+      if (obj instanceof T.Mesh || obj instanceof T.Points) {
         geometries.add(obj.geometry);
         for (const m of Array.isArray(obj.material) ? obj.material : [obj.material])
           materials.add(m);

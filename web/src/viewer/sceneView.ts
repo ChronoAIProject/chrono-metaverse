@@ -602,7 +602,7 @@ export class SceneView {
     const shot = this.broadcast?.update(this.camera);
     this.overlay.visible = this.visualLayer.visible = shot !== 'orbit';
     this.updateTour();
-    this.environment.update(this.camera, shot === 'orbit');
+    this.environment.update(this.camera, shot === 'orbit', shot === 'city');
     this.externalContent.update(this.camera);
     this.updateBackgroundViews();
     this.renderer.render(this.scene, this.camera);
@@ -1056,6 +1056,7 @@ export class SceneView {
         batch.items.push({ entity, matrix });
         batches.set(batchKey, batch);
       }
+      let mirrorMesh: THREE.Mesh | undefined;
       for (const batch of batches.values()) {
         const built = this.geometryCache.get(batch.key);
         if (built === undefined) continue;
@@ -1105,7 +1106,8 @@ export class SceneView {
           if (screen === null) continue;
           holder ??= new THREE.Group().add(mesh);
           holder.add(screen);
-          if (!this.broadcast && broadcast?.source === entity) {
+          if (broadcast?.source === entity) mirrorMesh = mesh;
+          if (!this.broadcast && broadcast?.origin === entity) {
             this.broadcast = new BroadcastVenue(broadcast, screen, (shot) => {
               this.host.dataset.broadcastShot = shot;
               this.options.onBroadcastShot?.(shot);
@@ -1121,6 +1123,8 @@ export class SceneView {
         entityCount += batch.items.length;
       }
 
+      const venue = broadcast ? this.broadcast : null;
+      if (mirrorMesh) venue?.setMirror(mirrorMesh);
       // 只有物件模型（assetHash）的物件：按物件的 transform 转好，转过之后的外包盒底面中心对齐 bounds 的
       // 底面中心（modelPlacement.ts）；这个外包盒实际比 bounds 大时等比缩小兜进 bounds（modelFit.ts，
       // 服务端已经实测过，这里只是兜底）。
@@ -1169,6 +1173,11 @@ export class SceneView {
                 surfaceLook(member.view.styleLook ?? member.styleLook, entity, background),
                 entity.kind === 'structure' ? 'structure' : 'object',
               );
+              if (venue && this.broadcast === venue && background && !entity.props?.liveScreen) {
+                const role = surfaceLook({ hologram: 'detail' }, entity, true)?.hologram;
+                if (role === 'facade' || role === 'landscape')
+                  venue.surfaces.add(clone, role === 'facade');
+              }
               placeRotatedModel(clone, entity.transform, box ?? undefined);
               holder.add(fitModelInto(clone, fit));
             }
