@@ -6,7 +6,6 @@ import { EARTH_RADIUS as R, GeoReference } from '../geography';
 import { liveScreenOf } from '../liveScreen';
 import { buildCity } from './city';
 import { loadHardware } from './hardware';
-import { backgroundView } from '../background';
 import { broadcastSky, orbitalEarth } from './sky';
 
 export type BroadcastShot = 'office' | 'city' | 'orbit';
@@ -36,7 +35,6 @@ export class BroadcastVenue {
   private readonly orbitScreen = new T.Group();
   private readonly relay = new T.Group();
   private readonly panel = new T.Group();
-  private readonly seating = new T.Group();
   private readonly traffic;
   private active: BroadcastShot | null = null;
   private readonly eye = new T.Vector3();
@@ -89,28 +87,11 @@ export class BroadcastVenue {
     // 行星尺度下保证视频在底板之前，原屏的扫描线和四角镶边仍在视频之前。
     this.panel.matrixAutoUpdate = false;
     this.panel.matrix.makeScale(16 / face.width, 9 / face.height, 10).multiply(align);
-    const auditorium = new T.Group();
-    auditorium.position.set(0, -6.4, 1.5);
-    auditorium.rotation.x = 0.18;
-    auditorium.scale.setScalar(0.36);
-    this.seating.position
-      .fromArray(backgroundView(config.source)?.focus ?? this.officeCenter.toArray())
-      .negate();
-    auditorium.add(this.seating);
-    this.relay.add(auditorium);
     this.root.updateMatrixWorld(true);
   }
 
   setMirror(mesh: T.Mesh) {
     this.panel.add(mesh.clone(false));
-  }
-
-  addSeating(entityId: string, holder: T.Group) {
-    if (!/^tide-arena\.(?:(?:light-)?(?:east|west|north|south)|dome)$/.test(entityId)) return;
-    // 实例共用生成器产出的几何、材质和透明纹理，独立于室内的距离显隐。
-    const instance = holder.clone(true);
-    instance.visible = true;
-    this.seating.add(instance);
   }
 
   camera(shot: BroadcastShot, aspect: number) {
@@ -172,7 +153,6 @@ export class BroadcastVenue {
   dispose() {
     this.abort.abort();
     this.panel.clear(); // 镜像几何和材质归原实体所有。
-    this.seating.clear();
     this.home.add(this.player);
     this.player.matrix.identity();
     this.player.matrixWorldNeedsUpdate = true;

@@ -1123,8 +1123,7 @@ export class SceneView {
         entityCount += batch.items.length;
       }
 
-      const venue = broadcast ? this.broadcast : null;
-      if (mirrorMesh) venue?.setMirror(mirrorMesh);
+      if (broadcast && mirrorMesh) this.broadcast?.setMirror(mirrorMesh);
       // 只有物件模型（assetHash）的物件：按物件的 transform 转好，转过之后的外包盒底面中心对齐 bounds 的
       // 底面中心（modelPlacement.ts）；这个外包盒实际比 bounds 大时等比缩小兜进 bounds（modelFit.ts，
       // 服务端已经实测过，这里只是兜底）。
@@ -1175,7 +1174,6 @@ export class SceneView {
               );
               placeRotatedModel(clone, entity.transform, box ?? undefined);
               holder.add(fitModelInto(clone, fit));
-              if (venue && this.broadcast === venue) venue.addSeating(entity.entityId, holder);
             }
             modelsLoaded++;
           })
