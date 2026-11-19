@@ -12,7 +12,7 @@ for (let i = 0; i < pixels.length; i += 3) {
 }
 const tile = Buffer.from(encodePng(64, 64, pixels));
 
-async function prepare(page: Page, fallback = false, server = false) {
+async function prepare(page: Page, fallback = false, server = false, broadcast = false) {
   const sources = [
     {
       ...(server ? { delivery: 'server' } : {}),
@@ -73,6 +73,33 @@ async function prepare(page: Page, fallback = false, server = false) {
         },
       },
     });
+    if (broadcast) {
+      preview.entities.push({
+        id: 'tide-arena.mirror',
+        hash: 'f'.repeat(64),
+        body: {
+          entityId: 'tide-arena.mirror',
+          kind: 'object',
+          layer: 'ext',
+          regionId: 'virtual',
+          shape: {
+            type: 'plate',
+            points: [
+              [-2, 3, 0],
+              [2, 3, 0],
+              [2, 5, 0],
+              [-2, 5, 0],
+            ],
+            thickness: 0.02,
+          },
+          bounds: { min: [-2, 3, -0.02], max: [2, 5, 0] },
+          props: {
+            background: true,
+            liveScreen: { kind: 'youtube', url: 'https://youtu.be/test_screen', plate: [] },
+          },
+        },
+      });
+    }
     await route.fulfill({ json: preview });
   });
 }
@@ -181,4 +208,38 @@ test('地图服务端来源携带预览权限并避免浏览器直连瓦片', as
     }),
   ).toBe(true);
   expect(direct).toBe(0);
+});
+
+test('同一播放器随发布会拉远，轨道返回和切换视图恢复地面场景', async ({ page }) => {
+  await prepare(page, false, false, true);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  let requests = 0;
+  await page.route('https://www.youtube-nocookie.com/embed/test_screen?*', (route) => {
+    requests++;
+    return route.fulfill({ contentType: 'text/html', body: '<body style="background:magenta">' });
+  });
+  await page.goto(PREVIEW);
+  const viewer = await ready(page);
+  const nav = viewer.getByRole('navigation', { name: '发布会机位' });
+  await expect(nav.getByRole('button', { name: '滨海湾' })).toHaveAttribute('aria-pressed', 'true');
+  await nav.getByRole('button', { name: '播放拉远' }).click();
+  const frame = viewer.locator('iframe');
+  for (const shot of ['office', 'city', 'orbit']) {
+    await expect(viewer).toHaveAttribute('data-broadcast-shot', shot);
+    await expect(frame).toHaveCSS('filter', 'none');
+    await expect(viewer.locator('.viewer__canvas')).toHaveCSS('filter', 'none');
+  }
+  await expect
+    .poll(async () => Number(await viewer.getAttribute('data-map-distance')))
+    .toBeGreaterThan(1e7);
+  await expect(nav.getByRole('button', { name: '播放拉远' })).toBeVisible();
+  await nav.getByRole('button', { name: '前厅看台' }).click();
+  await expect(viewer).toHaveAttribute('data-broadcast-shot', 'office');
+  await expect(frame).toHaveCSS('filter', 'none');
+  expect(requests).toBe(1);
+  await nav.getByRole('button', { name: '地球轨道' }).click();
+  await page.locator('button[data-mode="optimized"]').click();
+  await expect(nav).toHaveCount(0);
+  await expect(viewer).not.toHaveAttribute('data-environment');
+  await expect(viewer.locator('iframe')).toHaveCount(0);
 });

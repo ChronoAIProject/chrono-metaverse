@@ -604,3 +604,52 @@
   max-height: 22px;
   object-fit: contain;
 }
+
+.viewer__broadcast {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-4);
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  border: 1px solid #78c9d955;
+  border-radius: var(--radius-pill);
+  background: #0d1826ed;
+}
+
+.viewer__broadcast button {
+  min-height: 34px;
+  padding: 4px 14px;
+  border-radius: inherit;
+  color: #e1eded;
+  font-size: var(--text-note);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.viewer__broadcast button[aria-pressed='true'] {
+  background: #b5fbeb;
+  color: #102128;
+}
+.viewer__broadcast .viewer__tour {
+  color: #fff;
+  border-radius: 0;
+  border-right: 1px solid #78c9d94d;
+  margin-right: 4px;
+}
+.viewer__tour span {
+  color: #83efe6;
+}
+@media (max-width: 900px) {
+  .viewer__broadcast {
+    top: calc(var(--space-3) + var(--control-h) + var(--space-2));
+    bottom: auto;
+    left: var(--space-3);
+    right: auto;
+    transform: none;
+  }
+  .viewer__broadcast button {
+    padding: 3px 8px;
+  }
+}

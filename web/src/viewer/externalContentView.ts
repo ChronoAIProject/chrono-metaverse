@@ -1,3 +1,4 @@
+import { createDracoLoader } from './draco';
 import { hologramMaterial } from './hologram';
 import * as THREE from 'three';
 import { TilesRenderer } from '3d-tiles-renderer/three';
@@ -13,8 +14,6 @@ import {
 import { GLTFExtensionsPlugin } from '3d-tiles-renderer/three/plugins';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
-import dracoWrapper from 'three/examples/jsm/libs/draco/gltf/draco_wasm_wrapper.js?url';
-import dracoWasm from 'three/examples/jsm/libs/draco/gltf/draco_decoder.wasm?url';
 import type { EntityBody } from '../core/api/types';
 import { GRID_UNIT } from '../core/chunk';
 import type { Placement, SceneContent } from '../core/scene';
@@ -105,16 +104,7 @@ class ExternalItem {
           options.signal ? AbortSignal.any([signal, options.signal]) : signal,
         ),
     });
-    const decoderManager = new THREE.LoadingManager();
-    decoderManager.setURLModifier((url) => {
-      if (url.endsWith('draco_wasm_wrapper.js')) return dracoWrapper;
-      if (url.endsWith('draco_decoder.wasm')) return dracoWasm;
-      throw new Error('未知的三维解码资源');
-    });
-    this.decoder = new DRACOLoader(decoderManager)
-      .setDecoderPath('/__decoder__/')
-      .setDecoderConfig({ type: 'wasm' })
-      .setWorkerLimit(2);
+    this.decoder = createDracoLoader();
     tiles.manager.setURLModifier((url) => {
       if (url.startsWith('data:') || this.blobs.has(url) || publicHttps(url)) return url;
       throw new Error('三维内容包含不支持的资源地址');
