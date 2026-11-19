@@ -1,9 +1,13 @@
 import * as T from 'three';
 
 /** 截线在物体的局部坐标中采样，移动、转身和远近变化都不会让纹理滑动。 */
-export function projectionMaterial(pitch: number, intensity: number) {
+export function projectionMaterial(pitch: number, intensity: number, tint = '#77bad5') {
   return new T.ShaderMaterial({
-    uniforms: { pitch: { value: pitch }, intensity: { value: intensity } },
+    uniforms: {
+      pitch: { value: pitch },
+      intensity: { value: intensity },
+      tint: { value: new T.Color(tint) },
+    },
     side: T.DoubleSide,
     vertexShader: `
       #include <common>
@@ -20,7 +24,7 @@ export function projectionMaterial(pitch: number, intensity: number) {
       #include <common>
       #include <logdepthbuf_pars_fragment>
       varying vec3 p,n,eye;
-      uniform float pitch,intensity;
+      uniform float pitch,intensity; uniform vec3 tint;
       float line(float x) {
         float width=max(fwidth(x),.001);
         return (1.-smoothstep(.024,.045+width*.65,abs(fract(x+.5)-.5))) / (1.+width*2.);
@@ -36,6 +40,7 @@ export function projectionMaterial(pitch: number, intensity: number) {
         vec3 ink=mix(vec3(.002,.016,.026),vec3(.018,.062,.082),facing);
         ink+=vec3(.19,.61,.60)*(cuts*.68+etch*.14)*intensity;
         ink+=vec3(.21,.49,.52)*rim*(.3+intensity)+vec3(.01,.08,.085)*intensity;
+        ink=mix(ink,tint*(.10+.35*facing+.53*rim+.33*cuts),.55);
         gl_FragColor=vec4(ink,1.);
         #include <colorspace_fragment>
       }`,

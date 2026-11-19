@@ -5,11 +5,11 @@ import { projectionMaterial } from './projection';
 
 type Point = [number, number, number];
 
-const white = '#b4cbd7',
-  hull = '#425368',
-  graphite = '#192437';
-const ice = '#62f9fa',
-  rose = '#ff578c',
+const white = '#88b6c9',
+  hull = '#39617a',
+  graphite = '#193852';
+const ice = '#7af2ff',
+  rose = '#b3a0f6',
   gold = '#ffbc68';
 
 /** 把静止部件按材质烘成少量绘制批次；活动物件复用整组几何。 */
@@ -48,7 +48,11 @@ class Model {
   finish() {
     const group = new T.Group();
     for (const [color, parts] of this.parts) {
-      const material = projectionMaterial(0.85, [ice, rose, gold].includes(color) ? 0.72 : 0.23);
+      const material = projectionMaterial(
+        0.85,
+        [ice, rose, gold].includes(color) ? 0.72 : 0.23,
+        color,
+      );
       group.add(new T.Mesh(mergeGeometries(parts)!, material));
       parts.forEach((p) => p.dispose());
     }
@@ -122,7 +126,8 @@ export function airship() {
 export function drone() {
   const m = new Model();
   m.box([3.4, 1.25, 2.2], [0, 0, 0], white);
-  m.box([1.4, 1.1, 1.4], [0, -1, 0], graphite);
+  m.put(new T.SphereGeometry(1.1, 16, 12), graphite, [0, -1.15, 0]);
+  m.ring(0.54, 0.13, [0, -1.15, 0.96], ice);
   m.box([0.8, 0.48, 0.2], [0, -1, 0.74], ice);
   for (const x of [-2.6, 2.6])
     for (const z of [-1.95, 1.95]) {
@@ -131,5 +136,49 @@ export function drone() {
       m.ring(1.47, 0.08, [x, 0.19, z], ice, Math.PI / 2);
       m.box([2.7, 0.12, 0.32], [x, 0, z], graphite);
     }
+  return m.finish();
+}
+
+/** 港区货运六旋翼的吊架、舱体和六个独立涵道共用同一个刚体变换。 */
+export function cargoDrone() {
+  const m = new Model();
+  m.box([11, 0.72, 3.85], [0, 0.8, 0], hull);
+  m.box([9.5, 3.2, 3.65], [0, -2, 0], white);
+  for (const x of [-4.9, -1.7, 1.7, 4.9]) {
+    m.box([0.18, 3.7, 3.9], [x, -1.82, 0], graphite);
+  }
+  for (const side of [-1, 1]) {
+    m.box([10, 0.24, 0.35], [0, -4.18, side * 2.6], hull);
+    for (const x of [-4.4, 0, 4.4]) {
+      m.box([0.47, 0.55, 3.7], [x, 1, side * 2.65], hull);
+      m.ring(2.12, 0.24, [x, 1, side * 4.5], white, Math.PI / 2);
+      m.ring(2.11, 0.08, [x, 1.22, side * 4.5], ice, Math.PI / 2);
+      m.box([3.85, 0.16, 0.38], [x, 1, side * 4.5], graphite);
+    }
+  }
+  return m.finish();
+}
+
+/** 滨水巡检机的高展弦比机翼、双尾梁和机腹传感器。 */
+export function surveyPlane() {
+  const m = new Model();
+  m.put(new T.SphereGeometry(1, 24, 12).scale(5.7, 1, 1.2), white, [0, 0, 0]);
+  for (const side of [-1, 1]) {
+    const plan = new T.Shape();
+    plan.moveTo(1.8, 0);
+    plan.lineTo(0.6, 8.9);
+    plan.lineTo(-0.5, 10.3);
+    plan.lineTo(-1.3, 10.3);
+    plan.lineTo(-1.75, 0);
+    plan.closePath();
+    const wing = new T.ExtrudeGeometry(plan, { depth: 0.28, bevelEnabled: false });
+    wing.rotateX((side * Math.PI) / 2);
+    m.put(wing, hull, [0, 0.35, 0]);
+    m.box([7.4, 0.45, 0.43], [-3.8, 0.18, side * 2.85], white);
+    m.box([1.15, 1.75, 0.22], [-6.8, 0.9, side * 2.85], hull, -0.24);
+  }
+  m.box([1.6, 0.23, 6.35], [-6.9, 0.49, 0], white);
+  m.put(new T.SphereGeometry(0.89, 14, 10), graphite, [2.8, -0.85, 0]);
+  m.ring(0.41, 0.09, [2.8, -0.89, 0.8], ice);
   return m.finish();
 }
