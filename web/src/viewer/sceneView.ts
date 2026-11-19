@@ -2084,7 +2084,6 @@ export class SceneView {
 
   /** Only bounded, read-only camera operations are exposed to the chat UI. */
   applyCamera(action: CameraAction, content: SceneContent): boolean {
-    this.stopTour();
     if (action.kind === 'overview') {
       this.flight = null;
       this.frameContent();
@@ -2112,6 +2111,7 @@ export class SceneView {
       }
       return false;
     }
+    this.stopTour();
     this.flight = null;
     this.autoFramed = false;
     const offset = new THREE.Vector3().subVectors(
