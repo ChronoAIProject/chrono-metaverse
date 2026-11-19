@@ -92,33 +92,32 @@ function liveScreenOf(entity: EntityBody, origin: string): Screen | null {
   return { source, matrix, width, height };
 }
 
-/** 直播保留原面板作占位。YouTube 播放器由 WebGL 平面遮罩显示，因而受深度和剖切约束。 */
+/** 直播保留原面板作占位。YouTube 播放器由 WebGL 平面遮罩显示，沿用面板的遮挡和剖切规则。 */
 export class LiveScreens {
   private dom: CSS3DRenderer | null = null;
   private readonly cleanups: (() => void)[] = [];
 
-  constructor(
-    private readonly host: HTMLElement,
-    private readonly clipping: THREE.Plane[],
-  ) {}
+  constructor(private readonly host: HTMLElement) {}
 
   get hasEmbed(): boolean {
     return this.dom !== null;
   }
 
-  add(group: THREE.Group, entity: EntityBody): void {
+  create(entity: EntityBody, clipping: THREE.Plane[], background: boolean): THREE.Group | null {
     const screen = liveScreenOf(entity, window.location.origin);
-    if (screen === null) return;
+    if (screen === null) return null;
     const { source, matrix, width, height } = screen;
     const geometry = new THREE.PlaneGeometry(width, height);
     const material = new THREE.MeshBasicMaterial({
-      clippingPlanes: this.clipping,
+      clippingPlanes: background ? null : clipping,
       toneMapped: false,
     });
     const mesh = new THREE.Mesh(geometry, material);
+    mesh.userData.background = background;
     mesh.matrixAutoUpdate = false;
     mesh.matrix.copy(matrix);
     mesh.visible = false;
+    const group = new THREE.Group();
     group.add(mesh);
     const stop =
       source.kind === 'youtube'
@@ -126,10 +125,11 @@ export class LiveScreens {
         : this.hls(mesh, source.url);
     this.cleanups.push(() => {
       stop();
-      mesh.removeFromParent();
+      group.removeFromParent();
       geometry.dispose();
       material.dispose();
     });
+    return group;
   }
 
   private youtube(
