@@ -416,7 +416,7 @@ export class SceneView {
     private readonly host: HTMLElement,
     private readonly options: SceneViewOptions = {},
   ) {
-    this.liveScreens = new LiveScreens(host, this.clipping);
+    this.liveScreens = new LiveScreens(host);
     // 对数深度让厘米级室内和地球远景共享深度缓冲，不用近共面的叠加网格补海面。
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -1018,7 +1018,6 @@ export class SceneView {
       >();
       for (const { entity, key, matrix } of entities) {
         if (key === null || matrix === null) continue;
-        this.liveScreens.add(group, entity);
         inUse.add(key);
         const glass = entity.props?.glass === true;
         const background = isBackgroundEntity(entity);
@@ -1078,8 +1077,17 @@ export class SceneView {
         };
         mesh.name = batch.items.map((item) => item.entity.entityId).join(',');
         if (batch.glass) mesh.renderOrder = 2;
-        group.add(mesh);
-        this.addBackgroundView(mesh, batch.items[0]!.entity, member);
+        // 直播与面板共用距离显示条件，切换时一起隐藏或显示。
+        let holder: THREE.Group | undefined;
+        for (const { entity } of batch.items) {
+          const screen = this.liveScreens.create(entity, this.clipping, batch.background);
+          if (screen === null) continue;
+          holder ??= new THREE.Group().add(mesh);
+          holder.add(screen);
+        }
+        const object = holder ?? mesh;
+        group.add(object);
+        this.addBackgroundView(object, batch.items[0]!.entity, member);
         if (!batch.background) this.pickables.push(mesh);
         triangles += (built.geometry.index.count / 3) * batch.items.length;
         entityCount += batch.items.length;
