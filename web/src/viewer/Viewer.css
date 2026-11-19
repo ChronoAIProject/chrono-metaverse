@@ -614,6 +614,8 @@
   display: flex;
   align-items: center;
   padding: 4px;
+  max-width: calc(100% - 2 * var(--space-3));
+  overflow-x: auto;
   border: 1px solid #78c9d955;
   border-radius: var(--radius-pill);
   background: #0d1826ed;

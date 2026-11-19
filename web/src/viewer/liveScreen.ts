@@ -52,11 +52,11 @@ function sourceOf(kind: unknown, value: unknown, origin: string): Source | null 
 }
 
 /** 按组内下标找到屏幕面板，沿用面板的四个角和整条变换链。 */
-export function liveScreenOf(entity: EntityBody, origin: string): Screen | null {
+export function liveScreenOf(entity: EntityBody, origin: string, relay?: Source): Screen | null {
   const config = entity.props?.liveScreen;
   if (config === null || typeof config !== 'object') return null;
   const { kind, url, plate } = config as Record<string, unknown>;
-  const source = sourceOf(kind, url, origin);
+  const source = relay ?? sourceOf(kind, url, origin);
   if (source === null || !Array.isArray(plate)) return null;
 
   let shape = entity.shape;
@@ -92,6 +92,18 @@ export function liveScreenOf(entity: EntityBody, origin: string): Screen | null 
   return { source, matrix, width, height };
 }
 
+export class LiveScreen extends THREE.Group {
+  constructor(
+    private readonly material: THREE.MeshBasicMaterial,
+    private readonly homeClipping: THREE.Plane[] | null,
+  ) {
+    super();
+  }
+  setRelayed(relayed: boolean) {
+    this.material.clippingPlanes = relayed ? null : this.homeClipping;
+  }
+}
+
 /** 直播保留原面板作占位。YouTube 播放器由 WebGL 平面遮罩显示，沿用面板的遮挡和剖切规则。 */
 export class LiveScreens {
   private dom: CSS3DRenderer | null = null;
@@ -108,10 +120,9 @@ export class LiveScreens {
     clipping: THREE.Plane[],
     background: boolean,
     relay?: Source,
-  ): THREE.Group | null {
-    const panel = liveScreenOf(entity, window.location.origin);
-    if (panel === null) return null;
-    const screen = relay ? { ...panel, source: relay } : panel;
+  ): LiveScreen | null {
+    const screen = liveScreenOf(entity, window.location.origin, relay);
+    if (screen === null) return null;
     const { source, matrix, width, height } = screen;
     const geometry = new THREE.PlaneGeometry(width, height);
     const material = new THREE.MeshBasicMaterial({
@@ -123,7 +134,7 @@ export class LiveScreens {
     mesh.matrixAutoUpdate = false;
     mesh.matrix.copy(matrix);
     mesh.visible = false;
-    const group = new THREE.Group();
+    const group = new LiveScreen(material, material.clippingPlanes);
     group.add(mesh);
     const stop =
       source.kind === 'youtube'

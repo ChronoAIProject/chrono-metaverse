@@ -784,6 +784,15 @@ it.each([
     'blueprint',
   ],
   [
+    '组合保存的空间样式编号直接采用目录定义',
+    '',
+    'removed-look',
+    'maquette',
+    'blueprint',
+    'arch-realistic',
+    'maquette',
+  ],
+  [
     '成员保存样式过期时采用组合保存主题',
     '',
     'removed-look',

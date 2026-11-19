@@ -68,14 +68,20 @@ test("场景专用值和源码依赖会失败，夹具和测试可以使用示�
       join(root, "api/crates/metaverse-api/src/external/transport.rs"),
       'const HOST: &str = "provider.example.org";',
     );
+    writeFileSync(
+      join(root, "scenes/example/bindings.json"),
+      JSON.stringify({ url: "https://youtu.be/" + "x".repeat(11) }),
+    );
     const errors = violations(root);
-    assert.equal(errors.length, 6);
+    assert.equal(errors.length, 7);
+    assert(errors.some((error) => error.includes("实际节目地址")));
     assert(errors.some((error) => error.includes("包含场景提供方地址")));
     assert(errors.some((error) => error.includes("通用编辑层不能依赖")));
     assert(errors.some((error) => error.includes("web/src/viewer.ts")));
     assert(errors.some((error) => error.includes("生产核心依赖 scenes/")));
     assert(errors.some((error) => error.includes("recon/src/model.py")));
     for (const file of [
+      "scenes/example/bindings.json",
       "api/crates/metaverse-api/src/external/transport.rs",
       "web/src/viewer.ts",
       "web/src/viewer/source.ts",
