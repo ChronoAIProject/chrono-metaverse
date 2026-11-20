@@ -81,12 +81,53 @@ function roadLines(data: VectorTile, tile: Tile, reference: GeoReference, mappin
   );
 }
 
+/** 高精度瓦片内贴着椭球画水域，洞口保留岛屿。远景沿用地理底图。 */
+function waterGeometry(data: VectorTile, name: string, tile: Tile, reference: GeoReference) {
+  const layer = data.layers[name];
+  if (!layer || tile.z < 14 || layer.length > 10000) return;
+  const positions: number[] = [];
+  const indices: number[] = [];
+  let vertices = 0;
+  for (let i = 0; i < layer.length; i++) {
+    const feature = layer.feature(i);
+    if (feature.type !== 3 || feature.extent < 1 || feature.extent > 65536) continue;
+    const rings = feature.loadGeometry();
+    vertices += rings.reduce((n, ring) => n + ring.length, 0);
+    if (vertices > 50000) return;
+    for (const polygon of classifyRings(rings)) {
+      const [outer, ...holes] = polygon.map((ring) => clip(ring, feature.extent));
+      if (!outer || outer.length < 3) continue;
+      const contours = [outer, ...holes.filter((hole) => hole.length >= 3)].map((ring) =>
+        ring.map((p) => new THREE.Vector2(p.x, p.y)),
+      );
+      const faces = THREE.ShapeUtils.triangulateShape(contours[0]!, contours.slice(1));
+      const offset = positions.length / 3;
+      for (const p of contours.flat()) {
+        const [lon, lat] = tileCoordinates(
+          tile.x + p.x / feature.extent,
+          tile.y + p.y / feature.extent,
+          tile.z,
+        );
+        // 14 级瓦片对角线的弦高小于 0.25 米，略微抬高以免水面与影像交错。
+        positions.push(...reference.point(lon, lat, 0.3).toArray());
+      }
+      for (const [a, b, c] of faces) indices.push(offset + a!, offset + b!, offset + c!);
+    }
+  }
+  if (!indices.length) return;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  return geometry;
+}
+
 export function vectorGeometry(
   bytes: Uint8Array,
   tile: Tile,
   reference: GeoReference,
   style: VectorContent['extrusion'],
   groundRoads: RoadLayer | boolean = false,
+  waterLayer?: string,
 ) {
   const data = new VectorTile(new Pbf(bytes));
   const layer = data.layers[style.layer];
@@ -184,6 +225,7 @@ export function vectorGeometry(
   return {
     geometry,
     features,
+    water: waterLayer ? waterGeometry(data, waterLayer, tile, reference) : undefined,
     roads: groundRoads
       ? roadLines(data, tile, reference, groundRoads === true ? openMapTilesRoads : groundRoads)
       : undefined,

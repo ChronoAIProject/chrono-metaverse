@@ -96,16 +96,17 @@ const facade = /* glsl */ `
 `;
 
 const terrain = /* glsl */ `
-  // 只从低频影像取陆水分区和大尺度明暗，街区背景不展示航拍纹理。
+  // 近处保留航拍道路和植被的明暗，拉远后再过渡到暮色分区。
+  float range = length(cameraPosition-holoPosition);
   vec3 region = diffuseColor.rgb;
   #ifdef USE_MAP
-    region = texture2D(map,vMapUv,3.5).rgb;
+    region = texture2D(map,vMapUv,2.5*smoothstep(350.0,3500.0,range)).rgb;
   #endif
   float value = dot(region,vec3(0.23,0.64,0.13));
   float water = smoothstep(0.018,0.071,region.b-region.r) * smoothstep(0.012,0.08,region.g-region.r);
-  vec3 ground = mix(vec3(0.023,0.037,0.060),vec3(0.038,0.052,0.077),smoothstep(0.16,0.48,value));
+  vec3 ground = mix(vec3(0.023,0.037,0.060),vec3(0.11,0.14,0.17),smoothstep(0.025,0.55,value));
   vec3 sea = vec3(0.024,0.077,0.103);
-  float air = smoothstep(750.0,12000.0,length(cameraPosition-holoPosition));
+  float air = smoothstep(750.0,12000.0,range);
   outgoingLight = mix(mix(ground,sea,water),vec3(0.32,0.27,0.34),air*0.90);
 `;
 
