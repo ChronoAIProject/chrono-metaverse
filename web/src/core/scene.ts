@@ -505,6 +505,18 @@ export interface SceneContent {
   readonly links: readonly UniverseLink[];
 }
 
+/** 按已经显示的内容识别视图切换，组合的成员顺序也参与判断。 */
+export function sceneChange(previous: SceneContent | null, next: SceneContent) {
+  if (
+    !previous ||
+    previous.members.length !== next.members.length ||
+    previous.members.some((m, i) => m.spaceId !== next.members[i]?.spaceId)
+  )
+    return 'space';
+  if (previous.mode === next.mode) return 'content';
+  return previous.mode === 'raw' || next.mode === 'raw' ? 'scan' : 'extension';
+}
+
 /** 场景的高度范围（米），用于剖切滑块的上下限。 */
 export function sceneHeightRange(scene: SceneDocument): { min: number; max: number } {
   let max = 0;

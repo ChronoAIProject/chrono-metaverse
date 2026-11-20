@@ -334,5 +334,10 @@ test('同一播放器随发布会拉远，轨道返回和切换视图恢复地�
   await expect(nav).toHaveCount(0);
   await expect(viewer).not.toHaveAttribute('data-environment');
   await expect(viewer.locator('iframe')).toHaveCount(0);
+  await page.locator('button[data-mode="extended"]').click();
+  await expect(viewer).toHaveAttribute('data-broadcast-shot', 'zenith');
+  await expect
+    .poll(async () => Number(await viewer.getAttribute('data-map-distance')))
+    .toBeGreaterThan(1e7);
   expect(modelErrors).toEqual([]);
 });

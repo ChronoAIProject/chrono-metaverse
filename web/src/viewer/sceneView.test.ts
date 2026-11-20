@@ -504,6 +504,34 @@ it('`VE-P13-03`：真实场景视图在成员取景后执行跨成员实体聚�
   expect(Reflect.get(s.view, 'autoFramed')).toBe(false);
 });
 
+it('手动调整镜头后显隐扩展层，眼位、朝向、缩放和注视点逐项保持', async () => {
+  const { view } = setup();
+  const optimized = shapeContent();
+  const extended: SceneContent = {
+    ...optimized,
+    mode: 'extended',
+    members: optimized.members.map((m) => ({ ...m, view: { ...m.view, mode: 'extended' } })),
+  };
+  await view.setContent(optimized);
+  const camera = Reflect.get(view, 'camera') as THREE.PerspectiveCamera;
+  const controls = Reflect.get(view, 'controls');
+  view.stepCamera('turnRight');
+  controls.target.set(3, 2, 1);
+  camera.zoom = 1.6;
+  controls.update();
+  const pose = () => [
+    ...camera.position.toArray(),
+    ...camera.quaternion.toArray(),
+    camera.zoom,
+    ...controls.target.toArray(),
+  ];
+  const expected = pose();
+  for (const content of [extended, optimized]) {
+    await view.setContent(content);
+    expect(pose()).toEqual(expected);
+  }
+});
+
 it('只切换样式时仅生成一次体素网格，复用几何并隔离材质', async () => {
   const s = setup();
   const voxels = source();

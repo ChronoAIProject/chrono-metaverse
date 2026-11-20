@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { Texture } from 'three';
-import { viewHasGeometry, type SceneContent } from '../core/scene';
+import { sceneChange, viewHasGeometry, type SceneContent } from '../core/scene';
 import { sceneSources } from '../core/sources';
 import type { Visual } from '../core/visuals';
 import type { CameraAction } from '../workspace/viewerActions';
@@ -31,7 +31,10 @@ export interface SceneViewLike {
   stepCamera(step: CameraStep): void;
   setPerspective(mode: CameraPerspective): void;
   focusMember?(spaceId: string | null): void;
-  focusAnchor?(ref: { readonly spaceId: string; readonly anchorId: string } | null): void;
+  focusAnchor?(
+    ref: { readonly spaceId: string; readonly anchorId: string } | null,
+    moveCamera?: boolean,
+  ): void;
   applyCamera?(action: CameraAction, content: SceneContent): boolean;
   /** 扩大锚点标签的显示范围和数量上限。 */
   setMoreLabels(more: boolean): void;
@@ -247,9 +250,14 @@ export function Viewer({
         ceilingRef.current?.(stats.scanCeiling);
         host.dataset.sources = String(credits.length);
         host.dataset.ready = 'true';
+        const extensionChanged = sceneChange(readyContent.current, content) === 'extension';
         readyContent.current = content;
-        if (focusedSpaceRef.current != null) view.focusMember?.(focusedSpaceRef.current);
-        if (focusedAnchorRef.current !== undefined) view.focusAnchor?.(focusedAnchorRef.current);
+        if (extensionChanged) {
+          if (focusedAnchorRef.current) view.focusAnchor?.(focusedAnchorRef.current, false);
+        } else {
+          if (focusedSpaceRef.current != null) view.focusMember?.(focusedSpaceRef.current);
+          if (focusedAnchorRef.current !== undefined) view.focusAnchor?.(focusedAnchorRef.current);
+        }
         applyCamera(view, content);
       })
       .catch((error: unknown) => {

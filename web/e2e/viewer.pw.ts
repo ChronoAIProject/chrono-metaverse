@@ -264,9 +264,16 @@ test('取景：房间占画面的大部分，"回到全景"用同样的取景', 
   await page.getByRole('button', { name: '回到全景' }).click();
   await expect.poll(() => roomCoverage(page)).toBeGreaterThan(0.3);
 
-  // 优化 + 扩展：虚拟区一起纳入取景（镜头没动过时换视图自动重新取景）。
+  // 扩展区显隐保留镜头，主动回到全景时才把虚拟区纳入取景。
   await page.getByRole('button', { name: '优化 + 扩展' }).click();
   await waitForScene(page, 'extended');
+  expect(await frameRange(page)).toEqual(frame);
+  await page.getByRole('button', { name: '优化', exact: true }).click();
+  await waitForScene(page, 'optimized');
+  expect(await frameRange(page)).toEqual(frame);
+  await page.getByRole('button', { name: '优化 + 扩展' }).click();
+  await waitForScene(page, 'extended');
+  await page.getByRole('button', { name: '回到全景' }).click();
   await expect
     .poll(async () => {
       const box = (await page.locator('.viewer').getAttribute('data-frame'))!.split(',');
