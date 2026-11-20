@@ -340,23 +340,8 @@ export class GeographicMap {
           new THREE.MeshBasicMaterial({ color: 0x557e8e }),
         );
         if (this.resource?.hologram) hologramMaterial(mesh.material, 'terrain');
-        else {
-          // 航拍影像已包含曝光与光照；保持原始色调，轻微增强屏幕尺度的局部对比。
-          mesh.material.toneMapped = false;
-          mesh.material.onBeforeCompile = (shader) => {
-            shader.fragmentShader = shader.fragmentShader.replace(
-              '#include <map_fragment>',
-              `#include <map_fragment>
-               #ifdef USE_MAP
-                 vec2 dx = dFdx(vMapUv) * 1.35, dy = dFdy(vMapUv) * 1.35;
-                 vec3 mean = 0.25 * (texture2D(map, vMapUv + dx).rgb + texture2D(map, vMapUv - dx).rgb
-                                    + texture2D(map, vMapUv + dy).rgb + texture2D(map, vMapUv - dy).rgb);
-                 vec3 contrast = clamp(diffuseColor.rgb - mean, -0.065, 0.065);
-                 diffuseColor.rgb = clamp(diffuseColor.rgb + 0.50 * contrast, 0.0, 1.0);
-               #endif`,
-            );
-          };
-        }
+        // 已按屏幕精度选择正射影像，保留原片曝光，每个片元仅采样一次。
+        else mesh.material.toneMapped = false;
         mesh.position.copy(node.center);
         mesh.userData.background = true;
         mesh.name = `map:${key}`;

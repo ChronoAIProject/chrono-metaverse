@@ -474,7 +474,7 @@ export class SceneView {
       host,
       options.loadTexture,
       providerCreditsHost,
-      { pixelRatio, anisotropy: Math.min(16, this.renderer.capabilities.getMaxAnisotropy()) },
+      { pixelRatio, anisotropy: Math.min(8, this.renderer.capabilities.getMaxAnisotropy()) },
     );
     this.externalContent = new ExternalContentView(this.scene, host, providerCreditsHost);
 
