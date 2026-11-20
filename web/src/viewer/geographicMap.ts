@@ -26,6 +26,7 @@ const CONCURRENCY = 6;
 interface Node extends Tile {
   readonly center: THREE.Vector3;
   readonly sphere: THREE.Sphere;
+  readonly bounds: THREE.Box3;
   readonly direction: THREE.Vector3;
   readonly angle: number;
   readonly width: number;
@@ -73,6 +74,7 @@ export class GeographicMap {
     private readonly host: HTMLElement,
     private readonly resource?: { entity: string; access?: ExternalAccess; hologram?: boolean },
     providerCreditsHost = host,
+    private readonly sampling = { pixelRatio: 1, anisotropy: 4 },
   ) {
     this.reference = new GeoReference(config);
     this.maxZoom = Math.max(...config.sources.map((source) => source.maxZoom));
@@ -134,6 +136,7 @@ export class GeographicMap {
     const value: Node = {
       ...tile,
       center,
+      bounds: box,
       sphere: box.getBoundingSphere(new THREE.Sphere()),
       direction: ecef((west + east) / 2, (south + north) / 2).normalize(),
       angle: Math.min(Math.PI, THREE.MathUtils.degToRad((east - west + north - south) / 2)),
@@ -149,6 +152,9 @@ export class GeographicMap {
       ),
       lastUsed: performance.now(),
     };
+    // 地球曲面可能在包围盒采样点之间达到极值，按采样间距的弦高留余量。
+    const spacing = value.width / 4;
+    box.expandByScalar(spacing ** 2 / (4 * EARTH_RADIUS) + 0.05);
     this.nodes.set(key, value);
     return value;
   }
@@ -210,23 +216,24 @@ export class GeographicMap {
     const horizon = Math.acos(Math.min(1, 6356752 / earthCamera.length()));
     const direction = earthCamera.normalize();
     const frustum = new THREE.Frustum().setFromProjectionMatrix(
-      new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+      new THREE.Matrix4()
+        .multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+        .multiply(this.group.matrixWorld),
     );
     const pixels =
-      this.host.clientHeight /
+      (this.host.clientHeight * this.sampling.pixelRatio) /
       (2 * Math.tan(THREE.MathUtils.degToRad(camera.getEffectiveFOV() / 2)));
     const visible = (node: Node) =>
       Math.acos(THREE.MathUtils.clamp(node.direction.dot(direction), -1, 1)) <=
         horizon + node.angle + 0.02 &&
-      frustum.intersectsSphere(node.sphere.clone().applyMatrix4(this.group.matrixWorld));
+      (node.z < 10 ? frustum.intersectsSphere(node.sphere) : frustum.intersectsBox(node.bounds));
     const error = (node: Node) =>
-      (node.width * pixels) /
-      Math.max(1, position.distanceTo(node.sphere.center) - node.sphere.radius);
+      (node.width * pixels) / Math.max(1, node.bounds.distanceToPoint(position));
     let leaves = [this.node({ z: 0, x: 0, y: 0 })];
     const blocked = new Set<Node>();
     for (let pass = 0; pass < MAX_LEAVES * 2; pass++) {
       let best: Node | null = null,
-        score = 512;
+        score = 256; // 标准影像瓦片宽 256 纹素，按实际绘制像素选择精度。
       for (const leaf of leaves) {
         const value = error(leaf);
         const [west, south, east, north] = tileBounds(leaf);
@@ -333,6 +340,23 @@ export class GeographicMap {
           new THREE.MeshBasicMaterial({ color: 0x557e8e }),
         );
         if (this.resource?.hologram) hologramMaterial(mesh.material, 'terrain');
+        else {
+          // 航拍影像已包含曝光与光照；保持原始色调，轻微增强屏幕尺度的局部对比。
+          mesh.material.toneMapped = false;
+          mesh.material.onBeforeCompile = (shader) => {
+            shader.fragmentShader = shader.fragmentShader.replace(
+              '#include <map_fragment>',
+              `#include <map_fragment>
+               #ifdef USE_MAP
+                 vec2 dx = dFdx(vMapUv) * 1.35, dy = dFdy(vMapUv) * 1.35;
+                 vec3 mean = 0.25 * (texture2D(map, vMapUv + dx).rgb + texture2D(map, vMapUv - dx).rgb
+                                    + texture2D(map, vMapUv + dy).rgb + texture2D(map, vMapUv - dy).rgb);
+                 vec3 contrast = clamp(diffuseColor.rgb - mean, -0.065, 0.065);
+                 diffuseColor.rgb = clamp(diffuseColor.rgb + 0.50 * contrast, 0.0, 1.0);
+               #endif`,
+            );
+          };
+        }
         mesh.position.copy(node.center);
         mesh.userData.background = true;
         mesh.name = `map:${key}`;
@@ -417,7 +441,7 @@ export class GeographicMap {
         }
         const texture = new THREE.Texture(image);
         texture.colorSpace = THREE.SRGBColorSpace;
-        texture.anisotropy = 4;
+        texture.anisotropy = this.sampling.anisotropy;
         texture.needsUpdate = true;
         node.texture = texture;
         node.failedAt = undefined;

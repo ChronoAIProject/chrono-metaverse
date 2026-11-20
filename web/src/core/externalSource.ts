@@ -67,6 +67,7 @@ export interface VectorContent {
   readonly sources: readonly ExternalSource[];
   readonly reference: GeographicReference;
   readonly roads?: RoadLayer | false;
+  readonly waterLayer?: string;
   readonly extrusion: {
     readonly layer: string;
     readonly heightProperty: string;
@@ -194,6 +195,7 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
       !reference ||
       !style ||
       !field(style.layer) ||
+      (raw.waterLayer !== undefined && !field(raw.waterLayer)) ||
       !field(style.heightProperty) ||
       (style.minHeightProperty !== undefined && !field(style.minHeightProperty)) ||
       (style.hiddenProperty !== undefined && !field(style.hiddenProperty)) ||
@@ -225,6 +227,7 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
       sources: raw.sources,
       reference,
       extrusion: style,
+      ...(raw.waterLayer !== undefined ? { waterLayer: raw.waterLayer } : {}),
       ...(raw.roads !== undefined ? { roads: raw.roads } : {}),
     } as unknown as VectorContent;
   }

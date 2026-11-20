@@ -23,6 +23,7 @@ export class EnvironmentView {
     private readonly host: HTMLElement,
     private readonly loadTexture?: (hash: string) => Promise<THREE.Texture>,
     private readonly providerCreditsHost = host,
+    private readonly sampling?: { pixelRatio: number; anisotropy: number },
   ) {}
 
   get hasMap(): boolean {
@@ -83,6 +84,7 @@ export class EnvironmentView {
               hologram,
             },
             this.providerCreditsHost,
+            this.sampling,
           );
           this.map.group.rotation.y = THREE.MathUtils.degToRad(placement.rotation);
           this.map.group.position.fromArray(placement.offset).multiplyScalar(GRID_UNIT);

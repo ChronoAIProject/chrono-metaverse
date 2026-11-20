@@ -430,7 +430,8 @@ export class SceneView {
       alpha: true,
       logarithmicDepthBuffer: true,
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const pixelRatio = Math.min(window.devicePixelRatio, 2);
+    this.renderer.setPixelRatio(pixelRatio);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
@@ -473,6 +474,7 @@ export class SceneView {
       host,
       options.loadTexture,
       providerCreditsHost,
+      { pixelRatio, anisotropy: Math.min(16, this.renderer.capabilities.getMaxAnisotropy()) },
     );
     this.externalContent = new ExternalContentView(this.scene, host, providerCreditsHost);
 

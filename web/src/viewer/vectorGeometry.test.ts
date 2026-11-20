@@ -48,6 +48,26 @@ describe('通用矢量三维内容', () => {
     hollow.geometry.dispose();
   });
 
+  it('指定的水域图层保留岛屿，缺少图层时沿用航拍影像', () => {
+    const tileData = vectorTileFixture(24, true);
+    expect(vectorGeometry(tileData, tile, reference, style).water).toBeUndefined();
+    expect(
+      vectorGeometry(tileData, tile, reference, style, false, 'missing').water,
+    ).toBeUndefined();
+    const surface = vectorGeometry(tileData, tile, reference, style, false, 'shapes').water!;
+    // 从岛屿中心向下投射不应击中水面，同一纬度向东移到水域内则应命中。
+    const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(surface, material);
+    function hits(x: number) {
+      const point = reference.point(...tileCoordinates(tile.x + x, tile.y + 0.5, tile.z), 100);
+      return new THREE.Raycaster(point, new THREE.Vector3(0, -1, 0)).intersectObject(mesh).length;
+    }
+    expect(hits(0.5)).toBe(0);
+    expect(hits(0.7)).toBeGreaterThan(0);
+    surface.dispose();
+    material.dispose();
+  });
+
   it('镜头移动到旧范围之外会发现新瓦片，远到不可见时不下载全球数据', () => {
     const camera = new THREE.PerspectiveCamera(50, 1.5, 0.02, 20000000);
     camera.position.set(0, 500, 3000);
