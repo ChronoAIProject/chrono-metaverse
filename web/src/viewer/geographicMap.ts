@@ -152,6 +152,9 @@ export class GeographicMap {
       ),
       lastUsed: performance.now(),
     };
+    // 地球曲面可能在包围盒采样点之间达到极值，按采样间距的弦高留余量。
+    const spacing = value.width / 4;
+    box.expandByScalar(spacing ** 2 / (4 * EARTH_RADIUS) + 0.05);
     this.nodes.set(key, value);
     return value;
   }
@@ -213,7 +216,9 @@ export class GeographicMap {
     const horizon = Math.acos(Math.min(1, 6356752 / earthCamera.length()));
     const direction = earthCamera.normalize();
     const frustum = new THREE.Frustum().setFromProjectionMatrix(
-      new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+      new THREE.Matrix4()
+        .multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+        .multiply(this.group.matrixWorld),
     );
     const pixels =
       (this.host.clientHeight * this.sampling.pixelRatio) /
@@ -221,7 +226,7 @@ export class GeographicMap {
     const visible = (node: Node) =>
       Math.acos(THREE.MathUtils.clamp(node.direction.dot(direction), -1, 1)) <=
         horizon + node.angle + 0.02 &&
-      frustum.intersectsSphere(node.sphere.clone().applyMatrix4(this.group.matrixWorld));
+      (node.z < 10 ? frustum.intersectsSphere(node.sphere) : frustum.intersectsBox(node.bounds));
     const error = (node: Node) =>
       (node.width * pixels) / Math.max(1, node.bounds.distanceToPoint(position));
     let leaves = [this.node({ z: 0, x: 0, y: 0 })];

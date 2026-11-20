@@ -36,6 +36,37 @@ describe('地图按镜头选择精度', () => {
     expect(host.querySelector('.viewer__map-credit')).toBeNull();
   });
 
+  it('斜视海岸时将精度留给镜头中的地面', () => {
+    const host = document.createElement('div');
+    Object.defineProperty(host, 'clientHeight', { value: 697 });
+    const map = new GeographicMap(
+      {
+        ...config,
+        latitude: 1.28017,
+        longitude: 103.8542,
+        heading: 18.45,
+        origin: [12.7, -60.257, -12.786],
+        sources: [
+          { ...config.sources[0]!, minZoom: 12, maxZoom: 20, bounds: [103.78, 1.22, 103.93, 1.38] },
+          { ...config.sources[0]!, maxZoom: 13 },
+        ],
+      },
+      host,
+    );
+    const camera = new THREE.PerspectiveCamera(50, 1140 / 697, 0.02, 20000000);
+    camera.position.set(68, -9, 196);
+    camera.lookAt(22, -60, 115);
+    map.update(camera, true);
+    map.group.updateMatrixWorld(true);
+    const ray = new THREE.Raycaster();
+    for (const y of [-0.6, -0.2, 0.1]) {
+      ray.setFromCamera(new THREE.Vector2(0.22, y), camera);
+      expect(ray.intersectObjects(map.group.children)[0]?.object.name).toMatch(/^map:20\//);
+    }
+    expect(map.group.children.length).toBeLessThanOrEqual(98);
+    map.dispose();
+  });
+
   it('地球尺度会降低精度，地图来源署名是安全的链接和纯文本', () => {
     const host = document.createElement('div');
     Object.defineProperty(host, 'clientHeight', { value: 900 });
