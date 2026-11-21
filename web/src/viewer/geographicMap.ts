@@ -1,5 +1,7 @@
+import { grassPatch } from './mapGrass';
 import type { ExternalAccess } from '../core/externalSource';
 import * as THREE from 'three';
+import { applyGroundDetail, groundDetailTexture } from './mapGround';
 import { hologramMaterial } from './hologram';
 import type { GeographicMap as MapConfig } from '../core/environment';
 import {
@@ -39,6 +41,7 @@ interface Patch {
   readonly mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
   readonly node: Node;
   ancestor: string | null;
+  grass?: ReturnType<typeof grassPatch>;
 }
 
 export interface MapStats {
@@ -62,10 +65,12 @@ export class GeographicMap {
   private visible: Node[] = [];
   private disposed = false;
   private lastUpdate = -Infinity;
+  private readonly localEye = new THREE.Vector3();
   private readonly cameraWorld = new THREE.Matrix4();
   private readonly cameraProjection = new THREE.Matrix4();
   private viewport = '';
   private maxZoom: number;
+  private readonly detail?: THREE.Texture;
   private failures = 0;
   private stats: MapStats = { tiles: 0, pending: 0, failed: 0, zoom: 0 };
 
@@ -77,6 +82,8 @@ export class GeographicMap {
     private readonly sampling = { pixelRatio: 1, anisotropy: 4 },
   ) {
     this.reference = new GeoReference(config);
+    if (config.surfaceDetail === 'urban' && !resource?.hologram)
+      this.detail = groundDetailTexture(sampling.anisotropy);
     this.maxZoom = Math.max(...config.sources.map((source) => source.maxZoom));
     this.group.name = 'geographic-map';
     this.credit.className = 'viewer__map-credit';
@@ -284,6 +291,7 @@ export class GeographicMap {
     this.viewport = viewport;
     this.cameraWorld.copy(camera.matrixWorld);
     this.cameraProjection.copy(camera.projectionMatrix);
+    this.group.worldToLocal(this.localEye.copy(camera.position));
     this.visible = this.select(camera);
     const wanted = new Map<string, Node>();
     const keep = new Set(this.visible.map(tileKey));
@@ -319,6 +327,8 @@ export class GeographicMap {
     for (const [key, patch] of this.patches) {
       if (!keep.has(key)) {
         this.group.remove(patch.mesh);
+        patch.grass?.geometry.dispose();
+        patch.grass?.material.dispose();
         patch.mesh.geometry.dispose();
         patch.mesh.material.dispose();
         this.patches.delete(key);
@@ -340,14 +350,24 @@ export class GeographicMap {
           new THREE.MeshBasicMaterial({ color: 0x557e8e }),
         );
         if (this.resource?.hologram) hologramMaterial(mesh.material, 'terrain');
-        // 已按屏幕精度选择正射影像，保留原片曝光，每个片元仅采样一次。
-        else mesh.material.toneMapped = false;
+        else {
+          mesh.material.toneMapped = false;
+          if (this.detail && node.z >= 15) applyGroundDetail(mesh.material, this.detail);
+        }
         mesh.position.copy(node.center);
         mesh.userData.background = true;
         mesh.name = `map:${key}`;
         this.group.add(mesh);
         patch = { node, mesh, ancestor: null };
         this.patches.set(key, patch);
+      }
+      if (this.detail && node.texture && node.z >= 18 && node.width < 50) {
+        const near = node.bounds.distanceToPoint(this.localEye) < 28;
+        if (near && !patch.grass) {
+          patch.grass = grassPatch(patch.mesh.geometry, node.texture, node.width);
+          patch.mesh.add(patch.grass);
+        }
+        if (patch.grass) patch.grass.visible = near;
       }
       let ancestor = node;
       while (!ancestor.texture && ancestor.z > 0)
@@ -465,7 +485,10 @@ export class GeographicMap {
     this.disposed = true;
     this.abort.abort();
     this.credit.remove();
+    this.detail?.dispose();
     for (const patch of this.patches.values()) {
+      patch.grass?.geometry.dispose();
+      patch.grass?.material.dispose();
       patch.mesh.geometry.dispose();
       patch.mesh.material.dispose();
     }

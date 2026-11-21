@@ -24,6 +24,9 @@ export default function build(base: BuildBase, kit: Kit) {
   const entities = [...buildings, ...ground]
     .map((entity) => placeExterior(entity, placement))
     .concat(placement.hostEntities, environment ? [environment] : []);
+  // 线上按视野流式加载的周边楼群独立于离线模型包，由空间保存其图层和保护范围。
+  const surroundings = base.entities.find((entity) => entity.entityId === 'bay.city-surroundings');
+  if (surroundings) entities.push(surroundings);
   const ids = new Set(entities.map((entity) => entity.entityId));
   return {
     message: config.message,

@@ -68,7 +68,10 @@ export interface VectorContent {
   readonly reference: GeographicReference;
   readonly roads?: RoadLayer | false;
   readonly waterLayer?: string;
+  readonly waterReflection?: 'scene';
   readonly extrusion: {
+    readonly facade?: 'urban';
+    readonly distantZoom?: number;
     readonly layer: string;
     readonly heightProperty: string;
     readonly minHeightProperty?: string;
@@ -195,7 +198,11 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
       !reference ||
       !style ||
       !field(style.layer) ||
+      (style.facade !== undefined && style.facade !== 'urban') ||
+      (style.distantZoom !== undefined &&
+        (!finite(style.distantZoom, 0, 20) || !Number.isInteger(style.distantZoom))) ||
       (raw.waterLayer !== undefined && !field(raw.waterLayer)) ||
+      (raw.waterReflection !== undefined && (raw.waterReflection !== 'scene' || !raw.waterLayer)) ||
       !field(style.heightProperty) ||
       (style.minHeightProperty !== undefined && !field(style.minHeightProperty)) ||
       (style.hiddenProperty !== undefined && !field(style.hiddenProperty)) ||
@@ -227,6 +234,7 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
       sources: raw.sources,
       reference,
       extrusion: style,
+      ...(raw.waterReflection ? { waterReflection: raw.waterReflection } : {}),
       ...(raw.waterLayer !== undefined ? { waterLayer: raw.waterLayer } : {}),
       ...(raw.roads !== undefined ? { roads: raw.roads } : {}),
     } as unknown as VectorContent;

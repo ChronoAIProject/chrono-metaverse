@@ -1,4 +1,6 @@
+import { MapReflection, CITY_REFLECTION_LAYER } from './mapReflection';
 import { mapWaterMaterial } from './mapWater';
+import { urbanFacade } from './mapFacade';
 import { hologramMaterial } from './hologram';
 import * as THREE from 'three';
 import type { EntityBody } from '../core/api/types';
@@ -33,6 +35,7 @@ export class VectorContentItem {
   private readonly reference: GeoReference;
   private readonly material: THREE.MeshLambertMaterial;
   private readonly waterMaterial?: ReturnType<typeof mapWaterMaterial>;
+  private readonly reflection?: MapReflection;
   private readonly roadMaterial?: THREE.LineBasicMaterial;
   private readonly nodes = new Map<string, Node>();
   private readonly pending = new Map<string, AbortController>();
@@ -63,7 +66,11 @@ export class VectorContentItem {
       color: config.extrusion.color,
       side: THREE.DoubleSide,
     });
-    if (config.waterLayer) this.waterMaterial = mapWaterMaterial(hologram);
+    if (config.extrusion.facade && !hologram) urbanFacade(this.material);
+    if (config.waterLayer) {
+      if (!hologram && config.waterReflection === 'scene') this.reflection = new MapReflection();
+      this.waterMaterial = mapWaterMaterial(hologram, this.reflection);
+    }
     if (hologram) {
       hologramMaterial(this.material, 'facade');
       this.roadMaterial = new THREE.LineBasicMaterial({ color: 0x43556b });
@@ -167,6 +174,7 @@ export class VectorContentItem {
       this.reference,
       this.zoom,
       this.config.extrusion.maxDistance,
+      this.config.extrusion.distantZoom,
     );
     this.wanted = new Set(selected.map(tileKey));
     for (const [key, node] of this.nodes) {
@@ -257,10 +265,21 @@ export class VectorContentItem {
       return;
     }
     const mesh = new THREE.Mesh(geometry, this.material);
+    mesh.layers.enable(CITY_REFLECTION_LAYER);
     if (water && this.waterMaterial) {
       const surface = new THREE.Mesh(water, this.waterMaterial);
       surface.userData.background = true;
       surface.name = 'map-water';
+      const reflection = this.reflection;
+      if (reflection)
+        surface.onBeforeRender = (renderer, scene, camera) => {
+          this.waterMaterial!.uniforms.hasReflection!.value = reflection.update(
+            renderer,
+            scene,
+            camera,
+            this.reference.origin.y + this.group.position.y + 0.3,
+          );
+        };
       mesh.add(surface);
     }
     if (roads && this.roadMaterial) {
@@ -307,6 +326,7 @@ export class VectorContentItem {
     }
     this.roadMaterial?.dispose();
     this.waterMaterial?.dispose();
+    this.reflection?.dispose();
     this.nodes.clear();
     this.material.dispose();
     this.group.removeFromParent();

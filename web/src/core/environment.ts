@@ -22,6 +22,7 @@ export interface TileSource extends SourceCredit, SourceDelivery {
 }
 
 export interface GeographicMap extends GeographicReference {
+  readonly surfaceDetail?: 'urban';
   readonly sources: readonly TileSource[];
 }
 
@@ -88,7 +89,12 @@ export function environmentOf(entity: EntityBody): Environment | null {
     // 至少一个无范围限制的低精度全球来源，确保远景不会落到地图矩形外。
     if (sources.some((source) => !source) || !sources.some((s) => s?.minZoom === 0 && !s.bounds))
       return null;
-    map = { ...reference, sources } as GeographicMap;
+    if (value.surfaceDetail !== undefined && value.surfaceDetail !== 'urban') return null;
+    map = {
+      ...reference,
+      sources,
+      ...(value.surfaceDetail ? { surfaceDetail: value.surfaceDetail } : {}),
+    } as GeographicMap;
   }
   return sky || map ? { version: 1, sky, map } : null;
 }
