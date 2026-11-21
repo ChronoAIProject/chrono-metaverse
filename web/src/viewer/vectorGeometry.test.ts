@@ -27,11 +27,12 @@ describe('通用矢量三维内容', () => {
     expect(solid.geometry.boundingBox!.max.y).toBeCloseTo(-36, 0);
     const roofArea = (geometry: THREE.BufferGeometry) => {
       const p = geometry.getAttribute('position');
+      const index = geometry.index!;
       let sum = 0;
-      for (let i = 0; i < p.count; i += 3) {
-        const a = new THREE.Vector3().fromBufferAttribute(p, i),
-          b = new THREE.Vector3().fromBufferAttribute(p, i + 1),
-          c = new THREE.Vector3().fromBufferAttribute(p, i + 2);
+      for (let i = 0; i < index.count; i += 3) {
+        const a = new THREE.Vector3().fromBufferAttribute(p, index.getX(i)),
+          b = new THREE.Vector3().fromBufferAttribute(p, index.getX(i + 1)),
+          c = new THREE.Vector3().fromBufferAttribute(p, index.getX(i + 2));
         sum += Math.abs(b.sub(a).cross(c.sub(a)).y) / 2;
       }
       return sum;
@@ -46,6 +47,29 @@ describe('通用矢量三维内容', () => {
     ).toBe(0);
     solid.geometry.dispose();
     hollow.geometry.dispose();
+  });
+
+  it('单面远楼从街道和内庭看都能命中最近的墙，屋顶的洞口仍然贯通', () => {
+    const { geometry } = vectorGeometry(vectorTileFixture(24, true), tile, reference, style);
+    const material = new THREE.MeshBasicMaterial({ side: THREE.FrontSide });
+    const mesh = new THREE.Mesh(geometry, material);
+    const point = (x: number, height: number) =>
+      reference.point(...tileCoordinates(tile.x + x, tile.y + 0.5, tile.z), height);
+    for (const [eye, wall] of [
+      [0.2, 0.25],
+      [0.5, 0.625],
+    ] as const) {
+      const from = point(eye, 12),
+        to = point(wall, 12);
+      const ray = new THREE.Raycaster(from, to.clone().sub(from).normalize());
+      expect(ray.intersectObject(mesh)[0]!.point.distanceTo(to)).toBeLessThan(0.1);
+    }
+    expect(
+      new THREE.Raycaster(point(0.5, 50), new THREE.Vector3(0, -1, 0)).intersectObject(mesh),
+    ).toHaveLength(0);
+    expect(geometry.getAttribute('position').count).toBeLessThan(geometry.index!.count);
+    geometry.dispose();
+    material.dispose();
   });
 
   it('近处细瓦片和远处概化瓦片同时可见，同一位置只绘制一次', () => {
