@@ -138,7 +138,9 @@ function pavingEdge(
         p.y + 0.018,
         p.z + m.y,
       );
-      uv.push(u, -0.36, u, 0.027, u, 0.072, u, 0.39);
+      // 压顶石沿边铺成长条；顶面、倒角和立面共用同一排石材。
+      const alongStone = u * 0.52;
+      uv.push(alongStone, 0.035, alongStone, 0.205, alongStone, 0.225, alongStone, 0.365);
     }
     for (let i = 0; i < 3; i++) {
       const v = side + i;

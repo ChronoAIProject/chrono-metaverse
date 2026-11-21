@@ -37,6 +37,16 @@ export function groundSurfaceMaterial(kind: GroundLayer['material']) {
   material.normalScale.setScalar(turf ? 0.72 : 0.82);
   material.customProgramCacheKey = () => 'ground:' + kind;
   material.onBeforeCompile = (shader) => {
+    if (!turf) {
+      // 面与压顶石各自展开 UV，米制位置让一片湿痕能连续绕过石缘。
+      shader.vertexShader =
+        'varying vec2 pavingMeters;\n' +
+        shader.vertexShader.replace(
+          '#include <begin_vertex>',
+          '#include <begin_vertex>\n pavingMeters=position.xz;',
+        );
+      shader.fragmentShader = 'varying vec2 pavingMeters;\n' + shader.fragmentShader;
+    }
     // 几何 UV 以米为单位。石材定向铺设，草皮交错采样两个方向，消除周期纹。
     const sample = turf
       ? /* glsl */ `
@@ -55,10 +65,17 @@ export function groundSurfaceMaterial(kind: GroundLayer['material']) {
       : /* glsl */ `
       vec2 uvA=vMapUv/2.0;
       vec3 albedo=texture2D(map,uvA).rgb;
-      vec3 props=texture2D(normalMap,uvA).rgb;
-      vec2 slope=props.rg*2.0-1.0;
-      float rough=props.b;
-      diffuseColor.rgb*=albedo;`;
+      vec4 props=texture2D(normalMap,uvA);
+      float retention=clamp((props.a*255.0-128.0)/124.0,0.0,1.0);
+      float moisture=coverNoise(pavingMeters*0.13)*0.72+coverNoise(pavingMeters*0.38)*0.28;
+      float damp=smoothstep(0.40,0.82,retention*0.60+moisture*0.68);
+      float film=damp*smoothstep(0.28,0.84,retention);
+      vec2 slope=(props.rg*2.0-1.0)*(1.0-0.65*film);
+      // 斜视时一个像素覆盖更多细纹，扩大湿石高光以减少闪点。
+      float footprint=1024.0*max(length(dFdx(uvA)),length(dFdy(uvA)));
+      float wetRoughness=mix(0.34,0.54,smoothstep(1.0,14.0,footprint));
+      float rough=mix(max(props.b,0.48),wetRoughness,film);
+      diffuseColor.rgb*=albedo*mix(vec3(1.04),vec3(0.43,0.47,0.50),damp);`;
     shader.fragmentShader =
       `float coverNoise(vec2 p) {
       vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
@@ -69,9 +86,7 @@ export function groundSurfaceMaterial(kind: GroundLayer['material']) {
         .replace('#include <map_fragment>', sample)
         .replace(
           '#include <roughnessmap_fragment>',
-          turf
-            ? 'float roughnessFactor=mix(0.84,0.99,rough);'
-            : 'float roughnessFactor=clamp(rough,0.48,1.0);',
+          turf ? 'float roughnessFactor=mix(0.84,0.99,rough);' : 'float roughnessFactor=rough;',
         )
         .replace(
           '#include <lights_fragment_end>',
