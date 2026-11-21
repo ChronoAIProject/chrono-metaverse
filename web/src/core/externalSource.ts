@@ -60,6 +60,13 @@ export interface RoadLayer {
   readonly exclude?: { readonly property: string; readonly value: string };
 }
 
+export interface GroundLayer {
+  readonly layer: string;
+  readonly property: string;
+  readonly values: readonly string[];
+  readonly material: 'turf' | 'pavers';
+}
+
 export interface VectorContent {
   readonly version: 1;
   readonly format: 'mvt';
@@ -68,6 +75,7 @@ export interface VectorContent {
   readonly reference: GeographicReference;
   readonly roads?: RoadLayer | false;
   readonly waterLayer?: string;
+  readonly groundLayers?: readonly GroundLayer[];
   readonly waterReflection?: 'scene';
   readonly extrusion: {
     readonly facade?: 'urban';
@@ -176,6 +184,26 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
     const style = record(raw.extrusion);
     const field = (value: unknown) =>
       typeof value === 'string' && value.length > 0 && value.length <= 100;
+    const groundLayers = raw.groundLayers;
+    if (
+      groundLayers !== undefined &&
+      (!Array.isArray(groundLayers) ||
+        groundLayers.length > 4 ||
+        !groundLayers.every((item) => {
+          const g = record(item);
+          return (
+            g &&
+            field(g.layer) &&
+            field(g.property) &&
+            Array.isArray(g.values) &&
+            g.values.length > 0 &&
+            g.values.length <= 32 &&
+            g.values.every(field) &&
+            (g.material === 'turf' || g.material === 'pavers')
+          );
+        }))
+    )
+      return null;
     const roads = record(raw.roads);
     if (raw.roads !== undefined && raw.roads !== false) {
       if (
@@ -234,6 +262,7 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
       sources: raw.sources,
       reference,
       extrusion: style,
+      ...(groundLayers ? { groundLayers } : {}),
       ...(raw.waterReflection ? { waterReflection: raw.waterReflection } : {}),
       ...(raw.waterLayer !== undefined ? { waterLayer: raw.waterLayer } : {}),
       ...(raw.roads !== undefined ? { roads: raw.roads } : {}),

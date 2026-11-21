@@ -1,4 +1,5 @@
 import { MapReflection, CITY_REFLECTION_LAYER } from './mapReflection';
+import { groundSurfaceMaterial } from './groundSurface';
 import { mapWaterMaterial } from './mapWater';
 import { urbanFacade } from './mapFacade';
 import { hologramMaterial } from './hologram';
@@ -10,6 +11,7 @@ import {
   publicHttps,
   record,
   type ExternalAccess,
+  type GroundLayer,
   type VectorContent,
 } from '../core/externalSource';
 import { backgroundView } from './background';
@@ -22,6 +24,7 @@ interface Node {
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
   roads?: THREE.BufferGeometry;
   water?: THREE.BufferGeometry;
+  ground: THREE.BufferGeometry[];
   features: number;
   bytes: number;
   used: number;
@@ -37,6 +40,7 @@ export class VectorContentItem {
   private readonly waterMaterial?: ReturnType<typeof mapWaterMaterial>;
   private readonly reflection?: MapReflection;
   private readonly roadMaterial?: THREE.LineBasicMaterial;
+  private readonly groundMaterials = new Map<GroundLayer['material'], THREE.MeshStandardMaterial>();
   private readonly nodes = new Map<string, Node>();
   private readonly pending = new Map<string, AbortController>();
   private readonly failed = new Map<string, number>();
@@ -66,6 +70,11 @@ export class VectorContentItem {
       color: config.extrusion.color,
       side: THREE.DoubleSide,
     });
+    if (!hologram)
+      for (const { material } of config.groundLayers ?? []) {
+        if (!this.groundMaterials.has(material))
+          this.groundMaterials.set(material, groundSurfaceMaterial(material));
+      }
     if (config.extrusion.facade && !hologram) urbanFacade(this.material);
     if (config.waterLayer) {
       if (!hologram && config.waterReflection === 'scene') this.reflection = new MapReflection();
@@ -233,19 +242,27 @@ export class VectorContentItem {
     );
     const bytes = new Uint8Array(await response.arrayBuffer());
     signal.throwIfAborted();
-    const { geometry, features, roads, water } = vectorGeometry(
+    const { geometry, features, roads, water, ground } = vectorGeometry(
       bytes,
       tile,
       this.reference,
       this.config.extrusion,
       this.roadMaterial ? (this.config.roads ?? true) : false,
       this.config.waterLayer,
+      this.groundMaterials.size ? this.config.groundLayers : [],
     );
     const size =
       Object.values(geometry.attributes).reduce((n, a) => n + a.array.byteLength, 0) +
       (roads?.getAttribute('position').array.byteLength ?? 0) +
       (water?.getAttribute('position').array.byteLength ?? 0) +
-      (water?.index?.array.byteLength ?? 0);
+      (water?.index?.array.byteLength ?? 0) +
+      ground.reduce(
+        (sum, { geometry: g }) =>
+          sum +
+          Object.values(g.attributes).reduce((n, a) => n + a.array.byteLength, 0) +
+          (g.index?.array.byteLength ?? 0),
+        0,
+      );
     const total = () => [...this.nodes.values()].reduce((n, node) => n + node.bytes, 0);
     // 几何按瓦片合并；只淘汰当前视野之外的数据，限制内存。
     for (const [oldKey, node] of [...this.nodes]
@@ -254,6 +271,7 @@ export class VectorContentItem {
       if (this.nodes.size < 48 && total() + size <= 96 * 1024 * 1024) break;
       node.roads?.dispose();
       node.water?.dispose();
+      node.ground.forEach((g) => g.dispose());
       node.mesh.geometry.dispose();
       node.mesh.removeFromParent();
       this.nodes.delete(oldKey);
@@ -261,11 +279,20 @@ export class VectorContentItem {
     if (this.disposed || signal.aborted || total() + size > 96 * 1024 * 1024) {
       roads?.dispose();
       water?.dispose();
+      ground.forEach((s) => s.geometry.dispose());
       geometry.dispose();
       return;
     }
     const mesh = new THREE.Mesh(geometry, this.material);
     mesh.layers.enable(CITY_REFLECTION_LAYER);
+    mesh.castShadow = this.groundMaterials.size > 0;
+    for (const part of ground) {
+      const surface = new THREE.Mesh(part.geometry, this.groundMaterials.get(part.material)!);
+      surface.name = 'ground:' + part.material;
+      surface.userData.background = true;
+      surface.receiveShadow = true;
+      mesh.add(surface);
+    }
     if (water && this.waterMaterial) {
       const surface = new THREE.Mesh(water, this.waterMaterial);
       surface.userData.background = true;
@@ -290,7 +317,15 @@ export class VectorContentItem {
     mesh.userData.background = true;
     mesh.visible = this.wanted.has(key);
     this.group.add(mesh);
-    this.nodes.set(key, { mesh, roads, water, features, bytes: size, used: performance.now() });
+    this.nodes.set(key, {
+      mesh,
+      roads,
+      water,
+      ground: ground.map((s) => s.geometry),
+      features,
+      bytes: size,
+      used: performance.now(),
+    });
     this.failed.delete(key);
   }
 
@@ -322,9 +357,11 @@ export class VectorContentItem {
     for (const node of this.nodes.values()) {
       node.roads?.dispose();
       node.water?.dispose();
+      node.ground.forEach((g) => g.dispose());
       node.mesh.geometry.dispose();
     }
     this.roadMaterial?.dispose();
+    for (const material of this.groundMaterials.values()) material.dispose();
     this.waterMaterial?.dispose();
     this.reflection?.dispose();
     this.nodes.clear();

@@ -20,6 +20,8 @@ export class MapReflection {
   constructor() {
     this.mirror.rotation.x = -Math.PI / 2;
     this.eye.layers.set(CITY_REFLECTION_LAYER);
+    this.texture.generateMipmaps = true;
+    this.texture.minFilter = THREE.LinearMipmapLinearFilter;
   }
 
   update(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, level: number) {

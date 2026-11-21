@@ -1,3 +1,4 @@
+import { CitySun } from './citySun';
 import { CITY_REFLECTION_LAYER } from './mapReflection';
 import { externalContentOf } from '../core/externalSource';
 import { FirstPersonView, type CameraPerspective } from './cameraPerspective';
@@ -347,6 +348,7 @@ export class SceneView {
   >();
   private readonly materialCache = new Map<string, THREE.Material>();
   private readonly textures: TextureCache;
+  private readonly citySun = new CitySun();
   private readonly environment: EnvironmentView;
   private readonly externalContent: ExternalContentView;
   private lights: THREE.Light[] = [];
@@ -610,6 +612,7 @@ export class SceneView {
     this.environment.update(this.camera, globe);
     this.externalContent.update(this.camera);
     this.updateBackgroundViews();
+    this.citySun.update(this.renderer, this.controls.target, globe);
     this.renderer.render(this.scene, this.camera);
     this.liveScreens.render(this.scene, this.camera);
     this.labels.render(this.scene, this.camera);
@@ -746,7 +749,10 @@ export class SceneView {
       object.userData.background = background;
       const mesh = object as THREE.Mesh;
       if (!mesh.isMesh) return;
-      if (background) mesh.layers.enable(CITY_REFLECTION_LAYER);
+      if (background) {
+        mesh.layers.enable(CITY_REFLECTION_LAYER);
+        mesh.castShadow = true;
+      }
       mesh.material = Array.isArray(mesh.material)
         ? mesh.material.map((m) => this.modelMaterial(m, look, background, styleLook, kind))
         : this.modelMaterial(mesh.material, look, background, styleLook, kind);
@@ -955,6 +961,22 @@ export class SceneView {
       );
     for (const light of this.lights) this.scene.remove(light);
     this.lights = createLights(owner?.view.lighting ?? owner?.lighting);
+    const hasGround = content.members.some(
+      (member) =>
+        !member.view.styleLook?.hologram &&
+        member.view.entities.some((entity) => {
+          const external = externalContentOf(entity);
+          return external?.format === 'mvt' && !!external.groundLayers?.length;
+        }),
+    );
+    this.citySun.setLight(
+      hasGround
+        ? this.lights.find(
+            (light): light is THREE.DirectionalLight =>
+              light instanceof THREE.DirectionalLight && light.name === 'light:key',
+          )
+        : undefined,
+    );
     this.scene.add(...this.lights);
     this.environment.setContent(
       { ...content, members: owner ? [owner] : [] },
@@ -1095,7 +1117,10 @@ export class SceneView {
           mesh.matrixAutoUpdate = false;
           mesh.matrix.copy(batch.items[0]!.matrix);
         }
-        if (batch.background) mesh.layers.enable(CITY_REFLECTION_LAYER);
+        if (batch.background) {
+          mesh.layers.enable(CITY_REFLECTION_LAYER);
+          mesh.castShadow = !batch.glass;
+        }
         mesh.userData = {
           sharedGeometry: true,
           sharedMaterial: true,
@@ -2594,6 +2619,7 @@ export class SceneView {
     for (const material of this.materialCache.values()) material.dispose();
     this.materialCache.clear();
     this.textures.dispose();
+    this.citySun.setLight(undefined);
     this.environment.dispose();
     this.externalContent.dispose();
     if (this.ownsMeshes) this.meshes.dispose();

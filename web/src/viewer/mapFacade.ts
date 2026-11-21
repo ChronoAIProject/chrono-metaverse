@@ -2,7 +2,21 @@ import * as THREE from 'three';
 
 /** 同一瓦片的楼房共用材质，远处小于一个像素的窗框过渡到立面的平均色。 */
 export function urbanFacade(material: THREE.MeshLambertMaterial) {
+  const panorama = { value: null as THREE.Texture | null };
+  const hasPanorama = { value: false };
+  const yaw = { value: 0 };
+  material.onBeforeRender = (_renderer, scene) => {
+    const background = scene.background;
+    panorama.value =
+      background instanceof THREE.Texture &&
+      background.mapping === THREE.EquirectangularReflectionMapping
+        ? background
+        : null;
+    hasPanorama.value = !!panorama.value;
+    yaw.value = scene.backgroundRotation.y;
+  };
   material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, { citySky: panorama, cityHasSky: hasPanorama, citySkyYaw: yaw });
     shader.vertexShader =
       'varying vec3 cityPosition;\nvarying vec3 cityNormal;\nvarying vec2 cityFacade;\n' +
       shader.vertexShader.replace(
@@ -13,10 +27,11 @@ export function urbanFacade(material: THREE.MeshLambertMaterial) {
         cityFacade = uv;`,
       );
     shader.fragmentShader =
-      'varying vec3 cityPosition;\nvarying vec3 cityNormal;\nvarying vec2 cityFacade;\n' +
-      shader.fragmentShader.replace(
-        '#include <color_fragment>',
-        /* glsl */ `#include <color_fragment>
+      'uniform sampler2D citySky;\nuniform bool cityHasSky;\nuniform float citySkyYaw;\nvarying vec3 cityPosition;\nvarying vec3 cityNormal;\nvarying vec2 cityFacade;\n' +
+      shader.fragmentShader
+        .replace(
+          '#include <color_fragment>',
+          /* glsl */ `#include <color_fragment>
         float variant = cityFacade.y;
         float wall = 1.0 - smoothstep(0.35,0.8,abs(cityNormal.y));
         vec2 tangent = normalize(vec2(cityNormal.z + 0.0001, -cityNormal.x));
@@ -30,6 +45,22 @@ export function urbanFacade(material: THREE.MeshLambertMaterial) {
         vec3 finish = mix(stone,glazing,panels.x*panels.y);
         diffuseColor.rgb *= mix(stone*0.88,finish,wall);
         `,
-      );
+        )
+        .replace(
+          '#include <opaque_fragment>',
+          /* glsl */ `
+        vec3 worldN=inverseTransformDirection(normal,viewMatrix);
+        vec3 worldEye=inverseTransformDirection(normalize(vViewPosition),viewMatrix);
+        vec3 ray=reflect(-worldEye,worldN);
+        float co=cos(citySkyYaw), si=sin(citySkyYaw);
+        ray.xz=mat2(co,si,-si,co)*ray.xz;
+        ray.y=max(0.015,ray.y);
+        vec3 skyLight=cityHasSky ? texture2D(citySky,equirectUv(normalize(ray)),2.0).rgb : vec3(0.34,0.46,0.55);
+        float grazing=pow(1.0-abs(dot(worldEye,worldN)),3.0);
+        outgoingLight=mix(outgoingLight,skyLight,wall*panels.x*panels.y*(0.16+0.36*grazing));
+        float air=0.34*smoothstep(800.0,11500.0,length(vViewPosition));
+        outgoingLight=mix(outgoingLight,mix(vec3(0.40,0.51,0.58),skyLight,0.20),air);
+        #include <opaque_fragment>`,
+        );
   };
 }

@@ -8,22 +8,42 @@ export function grassPatch(terrain: THREE.BufferGeometry, image: THREE.Texture, 
   const origin = corner(0);
   const cells = Math.min(144, Math.ceil(width / 0.24));
   const geometry = new THREE.InstancedBufferGeometry();
-  geometry.setAttribute(
-    'position',
-    new THREE.Float32BufferAttribute(
-      [
-        -0.025, 0, 0, 0.025, 0, 0, 0.047, 0.12, 0.015, 0, 0, -0.024, 0, 0, 0.024, -0.035, 0.1,
-        0.043, -0.044, 0, 0.02, -0.01, 0, 0.045, -0.068, 0.115, 0.072,
-      ],
-      3,
-    ),
-  );
+  // 根部较宽，叶尖收窄并弯折；由实例朝向打散相邻草簇。
+  const blades: number[] = [];
+  for (const [angle, height, lean] of [
+    [0, 0.14, 0.045],
+    [2.2, 0.17, 0.052],
+    [4.3, 0.105, 0.058],
+  ] as const) {
+    const tip = (width: number, y: number, bend: number) => [
+      Math.cos(angle) * width + Math.sin(angle) * bend,
+      y,
+      -Math.sin(angle) * width + Math.cos(angle) * bend,
+    ];
+    const left = tip(-0.017, 0, 0),
+      right = tip(0.017, 0, 0);
+    const midLeft = tip(-0.008, height * 0.6, lean * 0.35),
+      midRight = tip(0.008, height * 0.6, lean * 0.35);
+    blades.push(
+      ...left,
+      ...right,
+      ...midLeft,
+      ...midLeft,
+      ...right,
+      ...midRight,
+      ...midLeft,
+      ...midRight,
+      ...tip(0, height, lean),
+    );
+  }
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(blades, 3));
   geometry.instanceCount = cells * cells;
   geometry.boundingSphere = terrain.boundingSphere!.clone();
   const material = new THREE.ShaderMaterial({
     side: THREE.DoubleSide,
     toneMapped: false,
     uniforms: {
+      time: { value: 0 },
       imagery: { value: image },
       corner: { value: origin },
       east: { value: corner(4).sub(origin) },
@@ -35,7 +55,7 @@ export function grassPatch(terrain: THREE.BufferGeometry, image: THREE.Texture, 
       #include <logdepthbuf_pars_vertex>
       uniform sampler2D imagery;
       uniform vec3 corner, east, south;
-      uniform float cells;
+      uniform float cells,time;
       varying vec3 bladeColor;
       vec3 jitter(vec2 p) {
         vec3 seed = fract(vec3(p.xyx)*vec3(0.1031,0.1030,0.0973));
@@ -57,6 +77,8 @@ export function grassPatch(terrain: THREE.BufferGeometry, image: THREE.Texture, 
         float angle = random.y*6.283185;
         vec3 blade = position * scale;
         blade.xz=mat2(cos(angle),sin(angle),-sin(angle),cos(angle))*blade.xz;
+        float height=clamp(position.y/0.17,0.0,1.0);
+        blade.xz+=vec2(0.016,0.009)*scale*height*height*sin(time*1.7+root.x*0.38+root.z*0.24);
         gl_Position = projectionMatrix*(base + modelViewMatrix*vec4(blade,0.0));
         bladeColor = photo * mix(0.60,1.26,clamp(position.y*8.0,0.0,1.0)) * (0.88+random.x*0.24);
         #include <logdepthbuf_vertex>
@@ -72,6 +94,9 @@ export function grassPatch(terrain: THREE.BufferGeometry, image: THREE.Texture, 
       }`,
   });
   const mesh = new THREE.Mesh(geometry, material);
+  mesh.onBeforeRender = () => {
+    material.uniforms.time!.value = performance.now() * 0.001;
+  };
   mesh.name = 'map-grass';
   mesh.userData.background = true;
   return mesh;

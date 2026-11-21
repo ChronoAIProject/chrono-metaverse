@@ -68,6 +68,41 @@ describe('通用矢量三维内容', () => {
     facade.dispose();
   });
 
+  it('仅重建已配置的地表，草坪保留洞口，铺装有独立的压顶石和立缘', () => {
+    const mapping = { layer: 'shapes', property: 'elevation', values: ['24'] } as const;
+    const surfaces = vectorGeometry(
+      vectorTileFixture(24, true),
+      tile,
+      reference,
+      style,
+      false,
+      undefined,
+      [
+        { ...mapping, material: 'turf' },
+        { ...mapping, material: 'pavers' },
+        { ...mapping, material: 'turf', values: ['30'] },
+      ],
+    ).ground;
+    expect(surfaces.map((s) => s.material)).toEqual(['turf', 'pavers']);
+    const [grass, paving] = surfaces.map((s) => s.geometry);
+    expect(grass!.getAttribute('normal').getY(0)).toBeGreaterThan(0.99);
+    expect(paving!.getAttribute('position').count).toBeGreaterThan(
+      grass!.getAttribute('position').count,
+    );
+    const throughHole = reference.point(...tileCoordinates(tile.x + 0.5, tile.y + 0.5, tile.z), 5);
+    const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+    for (const s of surfaces) {
+      expect(s.geometry.getAttribute('uv').count).toBe(s.geometry.getAttribute('position').count);
+      expect(
+        new THREE.Raycaster(throughHole, new THREE.Vector3(0, -1, 0)).intersectObject(
+          new THREE.Mesh(s.geometry, material),
+        ),
+      ).toHaveLength(0);
+      s.geometry.dispose();
+    }
+    material.dispose();
+  });
+
   it('指定的水域图层保留岛屿，缺少图层时沿用航拍影像', () => {
     const tileData = vectorTileFixture(24, true);
     expect(vectorGeometry(tileData, tile, reference, style).water).toBeUndefined();
