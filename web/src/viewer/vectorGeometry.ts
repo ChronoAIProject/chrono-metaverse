@@ -132,6 +132,7 @@ export function vectorGeometry(
   const data = new VectorTile(new Pbf(bytes));
   const layer = data.layers[style.layer];
   const positions: number[] = [];
+  const facade: number[] = [];
   let features = 0,
     vertices = 0;
   if (layer && layer.length > 10000) throw new Error('矢量瓦片要素过多');
@@ -188,6 +189,7 @@ export function vectorGeometry(
         )
       )
         continue;
+      const start = positions.length;
       const flat = top.flat();
       const shape = top.map((ring) => ring.map((p) => new THREE.Vector2(p.x, p.z)));
       const triangles = THREE.ShapeUtils.triangulateShape(shape[0]!, shape.slice(1));
@@ -215,11 +217,18 @@ export function vectorGeometry(
         }
       }
       if (positions.length > 1800000) throw new Error('矢量瓦片生成几何过大');
+      if (style.facade) {
+        const seed = feature.id ?? Math.round(height * 113);
+        const variant = (((seed % 997) * 47) % 997) / 997;
+        for (let k = start; k < positions.length; k += 3)
+          facade.push(positions[k + 1]! - box.min.y + minHeight, variant);
+      }
       features++;
     }
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  if (style.facade) geometry.setAttribute('uv', new THREE.Float32BufferAttribute(facade, 2));
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
   return {
@@ -239,6 +248,7 @@ export function visibleVectorTiles(
   reference: GeoReference,
   zoom: number,
   maxDistance: number,
+  distantZoom = zoom,
 ): Tile[] {
   const frustum = new THREE.Frustum().setFromProjectionMatrix(
     new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
@@ -259,7 +269,9 @@ export function visibleVectorTiles(
     const sphere = box.getBoundingSphere(new THREE.Sphere()).applyMatrix4(matrixWorld);
     const distance = camera.position.distanceTo(sphere.center);
     if (distance - sphere.radius > maxDistance || !frustum.intersectsSphere(sphere)) continue;
-    if (tile.z === zoom) leaves.push({ tile, distance });
+    // 近岸保留最高精度；远端优先使用来源确实提供建筑的概化层。
+    const distant = tile.z === distantZoom && distance - sphere.radius > 4200;
+    if (tile.z === zoom || distant) leaves.push({ tile, distance });
     else
       for (let i = 0; i < 4; i++)
         queue.push({ z: tile.z + 1, x: tile.x * 2 + (i & 1), y: tile.y * 2 + (i >> 1) });

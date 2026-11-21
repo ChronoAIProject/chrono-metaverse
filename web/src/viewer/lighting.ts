@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CITY_REFLECTION_LAYER } from './mapReflection';
 import type { LightingPreset } from '../core/api/types';
 
 /**
@@ -102,6 +103,7 @@ export function createLights(preset: LightingPreset = 'daylight'): THREE.Light[]
     light.name = name;
     lights.push(light);
   }
+  for (const light of lights) light.layers.enable(CITY_REFLECTION_LAYER);
   return lights;
 }
 

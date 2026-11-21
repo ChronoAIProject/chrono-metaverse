@@ -48,6 +48,26 @@ describe('通用矢量三维内容', () => {
     hollow.geometry.dispose();
   });
 
+  it('近处细瓦片和远处概化瓦片同时可见，同一位置只绘制一次', () => {
+    const camera = new THREE.PerspectiveCamera(48, 1.6, 0.1, 40000);
+    camera.position.set(0, 180, 0);
+    camera.lookAt(0, 0, -3000);
+    camera.updateMatrixWorld();
+    const tiles = visibleVectorTiles(camera, new THREE.Matrix4(), reference, 14, 24000, 13);
+    expect(new Set(tiles.map((t) => t.z))).toEqual(new Set([13, 14]));
+    const keys = new Set(tiles.map(tileKey));
+    for (const t of tiles.filter((t) => t.z === 14))
+      expect(keys.has(tileKey({ z: 13, x: t.x >> 1, y: t.y >> 1 }))).toBe(false);
+    const facade = vectorGeometry(vectorTileFixture(24), tile, reference, {
+      ...style,
+      facade: 'urban',
+    }).geometry;
+    const uv = facade.getAttribute('uv');
+    expect(uv.count).toBe(facade.getAttribute('position').count);
+    expect(uv.getX(0)).toBeCloseTo(24, 0);
+    facade.dispose();
+  });
+
   it('指定的水域图层保留岛屿，缺少图层时沿用航拍影像', () => {
     const tileData = vectorTileFixture(24, true);
     expect(vectorGeometry(tileData, tile, reference, style).water).toBeUndefined();

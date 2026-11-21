@@ -1,3 +1,4 @@
+import { CITY_REFLECTION_LAYER } from './mapReflection';
 import { externalContentOf } from '../core/externalSource';
 import { FirstPersonView, type CameraPerspective } from './cameraPerspective';
 import { attachCameraNavigation, type CameraStep } from './cameraNavigation';
@@ -745,6 +746,7 @@ export class SceneView {
       object.userData.background = background;
       const mesh = object as THREE.Mesh;
       if (!mesh.isMesh) return;
+      if (background) mesh.layers.enable(CITY_REFLECTION_LAYER);
       mesh.material = Array.isArray(mesh.material)
         ? mesh.material.map((m) => this.modelMaterial(m, look, background, styleLook, kind))
         : this.modelMaterial(mesh.material, look, background, styleLook, kind);
@@ -1093,6 +1095,7 @@ export class SceneView {
           mesh.matrixAutoUpdate = false;
           mesh.matrix.copy(batch.items[0]!.matrix);
         }
+        if (batch.background) mesh.layers.enable(CITY_REFLECTION_LAYER);
         mesh.userData = {
           sharedGeometry: true,
           sharedMaterial: true,
