@@ -37,6 +37,8 @@ export class VectorContentItem {
   private readonly status = document.createElement('span');
   private readonly reference: GeoReference;
   private readonly material: THREE.MeshLambertMaterial;
+  private readonly exteriorMaterial?: THREE.MeshLambertMaterial;
+  private readonly localEye = new THREE.Vector3();
   private readonly waterMaterial?: ReturnType<typeof mapWaterMaterial>;
   private readonly reflection?: MapReflection;
   private readonly roadMaterial?: THREE.LineBasicMaterial;
@@ -75,7 +77,12 @@ export class VectorContentItem {
         if (!this.groundMaterials.has(material))
           this.groundMaterials.set(material, groundSurfaceMaterial(material));
       }
-    if (config.extrusion.facade && !hologram) urbanFacade(this.material);
+    if (config.extrusion.facade && !hologram) {
+      this.exteriorMaterial = new THREE.MeshLambertMaterial({ color: config.extrusion.color });
+      this.exteriorMaterial.shadowSide = THREE.DoubleSide;
+      urbanFacade(this.exteriorMaterial);
+      urbanFacade(this.material);
+    }
     if (config.waterLayer) {
       if (!hologram && config.waterReflection === 'scene') this.reflection = new MapReflection();
       this.waterMaterial = mapWaterMaterial(hologram, this.reflection);
@@ -177,6 +184,7 @@ export class VectorContentItem {
     this.lastUpdate = now;
     this.cameraWorld.copy(camera.matrixWorld);
     this.projection.copy(camera.projectionMatrix);
+    this.group.worldToLocal(this.localEye.copy(camera.position));
     const selected = visibleVectorTiles(
       camera,
       this.group.matrixWorld,
@@ -188,7 +196,10 @@ export class VectorContentItem {
     this.wanted = new Set(selected.map(tileKey));
     for (const [key, node] of this.nodes) {
       node.mesh.visible = this.wanted.has(key);
-      if (node.mesh.visible) node.used = now;
+      if (node.mesh.visible) {
+        node.used = now;
+        node.mesh.material = this.buildingMaterial(node.mesh.geometry);
+      }
     }
     for (const [key, pending] of this.pending) if (!this.wanted.has(key)) pending.abort();
     this.queue = selected.filter(
@@ -199,6 +210,13 @@ export class VectorContentItem {
     );
     this.pump();
     this.paint();
+  }
+
+  private buildingMaterial(geometry: THREE.BufferGeometry) {
+    // 靠近楼群或进入楼体时仍绘制内壁；远处仅着色朝外的屋面和外墙。
+    return this.exteriorMaterial && geometry.boundingBox!.distanceToPoint(this.localEye) > 50
+      ? this.exteriorMaterial
+      : this.material;
   }
 
   private pump(): void {
@@ -253,6 +271,7 @@ export class VectorContentItem {
     );
     const size =
       Object.values(geometry.attributes).reduce((n, a) => n + a.array.byteLength, 0) +
+      (geometry.index?.array.byteLength ?? 0) +
       (roads?.getAttribute('position').array.byteLength ?? 0) +
       (water?.getAttribute('position').array.byteLength ?? 0) +
       (water?.index?.array.byteLength ?? 0) +
@@ -283,7 +302,7 @@ export class VectorContentItem {
       geometry.dispose();
       return;
     }
-    const mesh = new THREE.Mesh(geometry, this.material);
+    const mesh = new THREE.Mesh(geometry, this.buildingMaterial(geometry));
     mesh.layers.enable(CITY_REFLECTION_LAYER);
     mesh.castShadow = this.groundMaterials.size > 0;
     for (const part of ground) {
@@ -365,6 +384,7 @@ export class VectorContentItem {
     this.waterMaterial?.dispose();
     this.reflection?.dispose();
     this.nodes.clear();
+    this.exteriorMaterial?.dispose();
     this.material.dispose();
     this.group.removeFromParent();
     this.credit.remove();

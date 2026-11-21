@@ -32,6 +32,8 @@ interface Node extends Tile {
   readonly direction: THREE.Vector3;
   readonly angle: number;
   readonly width: number;
+  readonly sources: ReturnType<typeof tileSources>;
+  readonly canRefine: boolean;
   texture?: THREE.Texture;
   failedAt?: number;
   lastUsed: number;
@@ -69,7 +71,6 @@ export class GeographicMap {
   private readonly cameraWorld = new THREE.Matrix4();
   private readonly cameraProjection = new THREE.Matrix4();
   private viewport = '';
-  private maxZoom: number;
   private readonly detail?: THREE.Texture;
   private failures = 0;
   private stats: MapStats = { tiles: 0, pending: 0, failed: 0, zoom: 0 };
@@ -84,7 +85,6 @@ export class GeographicMap {
     this.reference = new GeoReference(config);
     if (config.surfaceDetail === 'urban' && !resource?.hologram)
       this.detail = groundDetailTexture(sampling.anisotropy);
-    this.maxZoom = Math.max(...config.sources.map((source) => source.maxZoom));
     this.group.name = 'geographic-map';
     this.credit.className = 'viewer__map-credit';
     this.credit.setAttribute('aria-label', '地图来源');
@@ -144,6 +144,16 @@ export class GeographicMap {
       ...tile,
       center,
       bounds: box,
+      sources: tileSources(tile, this.config.sources),
+      canRefine: this.config.sources.some(
+        (source) =>
+          tile.z < source.maxZoom &&
+          (!source.bounds ||
+            (west < source.bounds[2] &&
+              east > source.bounds[0] &&
+              south < source.bounds[3] &&
+              north > source.bounds[1])),
+      ),
       sphere: box.getBoundingSphere(new THREE.Sphere()),
       direction: ecef((west + east) / 2, (south + north) / 2).normalize(),
       angle: Math.min(Math.PI, THREE.MathUtils.degToRad((east - west + north - south) / 2)),
@@ -243,17 +253,7 @@ export class GeographicMap {
         score = 256; // 标准影像瓦片宽 256 纹素，按实际绘制像素选择精度。
       for (const leaf of leaves) {
         const value = error(leaf);
-        const [west, south, east, north] = tileBounds(leaf);
-        const canRefine = this.config.sources.some(
-          (source) =>
-            leaf.z < source.maxZoom &&
-            (!source.bounds ||
-              (west < source.bounds[2] &&
-                east > source.bounds[0] &&
-                south < source.bounds[3] &&
-                north > source.bounds[1])),
-        );
-        if (!blocked.has(leaf) && leaf.z < this.maxZoom && canRefine && value > score) {
+        if (!blocked.has(leaf) && leaf.canRefine && value > score) {
           score = value;
           best = leaf;
         }
@@ -304,7 +304,7 @@ export class GeographicMap {
         active.set(key, node);
         node.lastUsed = now;
         // 逐四级保留低精度回退，避免每次移动都下载完整的祖先链。
-        const available = tileSources(node, this.config.sources).length > 0;
+        const available = node.sources.length > 0;
         if (available && (!nearestAvailable || node.z % 4 === 0)) wanted.set(key, node);
         if (available) nearestAvailable = true;
         if (node.z === 0) break;
@@ -316,7 +316,7 @@ export class GeographicMap {
       .filter(
         (node) =>
           !node.texture &&
-          tileSources(node, this.config.sources).length > 0 &&
+          node.sources.length > 0 &&
           !this.pending.has(tileKey(node)) &&
           (!node.failedAt || now - node.failedAt > 30000),
       )
@@ -428,7 +428,7 @@ export class GeographicMap {
   }
 
   private async load(node: Node): Promise<void> {
-    for (const source of tileSources(node, this.config.sources)) {
+    for (const source of node.sources) {
       try {
         const image = await mapTileImage(tileUrl(node, source), this.abort.signal, source.cache, {
           source,

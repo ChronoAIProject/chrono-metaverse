@@ -231,6 +231,7 @@ export function vectorGeometry(
   const layer = data.layers[style.layer];
   const positions: number[] = [];
   const facade: number[] = [];
+  const indices: number[] = [];
   let features = 0,
     vertices = 0;
   if (layer && layer.length > 10000) throw new Error('矢量瓦片要素过多');
@@ -291,30 +292,32 @@ export function vectorGeometry(
       const flat = top.flat();
       const shape = top.map((ring) => ring.map((p) => new THREE.Vector2(p.x, p.z)));
       const triangles = THREE.ShapeUtils.triangulateShape(shape[0]!, shape.slice(1));
-      for (const face of triangles) {
-        const a = flat[face[0]!]!,
-          b = flat[face[1]!]!,
-          c = flat[face[2]!]!;
-        if (b.clone().sub(a).cross(c.clone().sub(a)).y < 0)
-          positions.push(...a.toArray(), ...c.toArray(), ...b.toArray());
-        else positions.push(...a.toArray(), ...b.toArray(), ...c.toArray());
+      // 屋面共享顶点，每段立面单独保留四个顶点，让窗面与转角保持平整。
+      const roof = positions.length / 3;
+      for (const p of flat) positions.push(p.x, p.y, p.z);
+      for (const [ia, ib, ic] of triangles) {
+        const a = flat[ia!]!,
+          b = flat[ib!]!,
+          c = flat[ic!]!;
+        const upward = (b.z - a.z) * (c.x - a.x) - (b.x - a.x) * (c.z - a.z) >= 0;
+        indices.push(roof + ia!, roof + (upward ? ib! : ic!), roof + (upward ? ic! : ib!));
       }
       for (let r = 0; r < top.length; r++) {
         const high = top[r]!,
           low = bottom[r]!;
+        // 在本地水平面判断绕序；外墙朝街道，内庭的墙朝洞口。
+        const hole = r > 0;
+        const reverse = THREE.ShapeUtils.isClockWise(shape[r]!) === hole;
         for (let j = 0; j < high.length; j++) {
           const next = (j + 1) % high.length;
-          positions.push(
-            ...low[j]!.toArray(),
-            ...low[next]!.toArray(),
-            ...high[j]!.toArray(),
-            ...high[j]!.toArray(),
-            ...low[next]!.toArray(),
-            ...high[next]!.toArray(),
-          );
+          const wall = positions.length / 3;
+          const a = reverse ? next : j,
+            b = reverse ? j : next;
+          for (const p of [low[a]!, low[b]!, high[a]!, high[b]!]) positions.push(p.x, p.y, p.z);
+          indices.push(wall, wall + 1, wall + 2, wall + 2, wall + 1, wall + 3);
         }
       }
-      if (positions.length > 1800000) throw new Error('矢量瓦片生成几何过大');
+      if (indices.length > 600000) throw new Error('矢量瓦片生成几何过大');
       if (style.facade) {
         const seed = feature.id ?? Math.round(height * 113);
         const variant = (((seed % 997) * 47) % 997) / 997;
@@ -326,6 +329,8 @@ export function vectorGeometry(
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeBoundingBox();
   if (style.facade) geometry.setAttribute('uv', new THREE.Float32BufferAttribute(facade, 2));
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
