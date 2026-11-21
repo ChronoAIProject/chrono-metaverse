@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { VectorTile, classifyRings } from '@mapbox/vector-tile';
 import Pbf from 'pbf';
-import type { RoadLayer, VectorContent } from '../core/externalSource';
+import type { GroundLayer, RoadLayer, VectorContent } from '../core/externalSource';
 import { GeoReference, tileBounds, tileCoordinates, type Tile } from './geography';
 
 type Point = { x: number; y: number };
@@ -81,16 +81,97 @@ function roadLines(data: VectorTile, tile: Tile, reference: GeoReference, mappin
   );
 }
 
-/** 高精度瓦片内贴着椭球画水域，洞口保留岛屿。远景沿用地理底图。 */
-function waterGeometry(data: VectorTile, name: string, tile: Tile, reference: GeoReference) {
+/** 压顶石用斜接转角收口。只沿真实轮廓建模，舍去裁片产生的边。 */
+function pavingEdge(
+  ring: THREE.Vector2[],
+  hole: boolean,
+  start: number,
+  extent: number,
+  positions: number[],
+  indices: number[],
+  uv: number[],
+) {
+  const points = ring.map((_, i) => new THREE.Vector3().fromArray(positions, (start + i) * 3));
+  const sign = (THREE.ShapeUtils.isClockWise(ring) ? -1 : 1) * (hole ? -1 : 1);
+  const inward = points.map((p, i) => {
+    const next = points[(i + 1) % points.length]!;
+    return new THREE.Vector2(p.z - next.z, next.x - p.x).normalize().multiplyScalar(sign);
+  });
+  const inset = inward.map((n, i) => {
+    const miter = n
+      .clone()
+      .add(inward[(i + inward.length - 1) % inward.length]!)
+      .normalize();
+    return miter.multiplyScalar(0.34 / Math.max(0.4, miter.dot(n)));
+  });
+  let along = 0;
+  for (let j = 0; j < ring.length; j++) {
+    const k = (j + 1) % ring.length,
+      a = ring[j]!,
+      b = ring[k]!;
+    const head = points[j]!,
+      tail = points[k]!,
+      length = head.distanceTo(tail);
+    const previous = along;
+    along += length;
+    if (
+      (a.x === b.x && (a.x === 0 || a.x === extent)) ||
+      (a.y === b.y && (a.y === 0 || a.y === extent))
+    )
+      continue;
+    const side = positions.length / 3;
+    for (const [p, m, u] of [
+      [head, inset[j]!, previous],
+      [tail, inset[k]!, along],
+    ] as const) {
+      positions.push(
+        p.x,
+        p.y - 0.36,
+        p.z,
+        p.x,
+        p.y + 0.027,
+        p.z,
+        p.x + m.x * 0.12,
+        p.y + 0.056,
+        p.z + m.y * 0.12,
+        p.x + m.x,
+        p.y + 0.018,
+        p.z + m.y,
+      );
+      uv.push(u, -0.36, u, 0.027, u, 0.072, u, 0.39);
+    }
+    for (let i = 0; i < 3; i++) {
+      const v = side + i;
+      indices.push(v, v + 4, v + 1, v + 1, v + 4, v + 5);
+    }
+  }
+}
+
+/** 从同一份矢量数据生成水面或游戏地表。贴着椭球绘制并保留所有内环。 */
+function polygonSurface(
+  data: VectorTile,
+  name: string,
+  tile: Tile,
+  reference: GeoReference,
+  ground?: GroundLayer,
+) {
   const layer = data.layers[name];
   if (!layer || tile.z < 14 || layer.length > 10000) return;
   const positions: number[] = [];
   const indices: number[] = [];
+  const uv: number[] = [];
+  const height = ground ? (ground.material === 'pavers' ? 0.34 : 0.055) : 0.3;
   let vertices = 0;
   for (let i = 0; i < layer.length; i++) {
     const feature = layer.feature(i);
     if (feature.type !== 3 || feature.extent < 1 || feature.extent > 65536) continue;
+    if (
+      ground &&
+      (!ground.values.includes(String(feature.properties[ground.property])) ||
+        feature.properties.brunnel ||
+        Number(feature.properties.layer ?? 0) !== 0)
+    )
+      continue;
     const rings = feature.loadGeometry();
     vertices += rings.reduce((n, ring) => n + ring.length, 0);
     if (vertices > 50000) return;
@@ -109,15 +190,31 @@ function waterGeometry(data: VectorTile, name: string, tile: Tile, reference: Ge
           tile.z,
         );
         // 14 级瓦片对角线的弦高小于 0.25 米，略微抬高以免水面与影像交错。
-        positions.push(...reference.point(lon, lat, 0.3).toArray());
+        const point = reference.point(lon, lat, height);
+        positions.push(...point.toArray());
+        if (ground) uv.push(point.x, -point.z);
       }
-      for (const [a, b, c] of faces) indices.push(offset + a!, offset + b!, offset + c!);
+      for (const [a, b, c] of faces) {
+        if (ground) indices.push(offset + a!, offset + c!, offset + b!);
+        else indices.push(offset + a!, offset + b!, offset + c!);
+      }
+      if (ground?.material === 'pavers') {
+        let start = offset;
+        contours.forEach((ring, index) => {
+          pavingEdge(ring, index > 0, start, feature.extent, positions, indices, uv);
+          start += ring.length;
+        });
+      }
     }
   }
   if (!indices.length) return;
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices);
+  if (ground) {
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geometry.computeVertexNormals();
+  }
   return geometry;
 }
 
@@ -128,6 +225,7 @@ export function vectorGeometry(
   style: VectorContent['extrusion'],
   groundRoads: RoadLayer | boolean = false,
   waterLayer?: string,
+  groundLayers: readonly GroundLayer[] = [],
 ) {
   const data = new VectorTile(new Pbf(bytes));
   const layer = data.layers[style.layer];
@@ -234,7 +332,11 @@ export function vectorGeometry(
   return {
     geometry,
     features,
-    water: waterLayer ? waterGeometry(data, waterLayer, tile, reference) : undefined,
+    ground: groundLayers.flatMap((layer) => {
+      const surface = polygonSurface(data, layer.layer, tile, reference, layer);
+      return surface ? [{ material: layer.material, geometry: surface }] : [];
+    }),
+    water: waterLayer ? polygonSurface(data, waterLayer, tile, reference) : undefined,
     roads: groundRoads
       ? roadLines(data, tile, reference, groundRoads === true ? openMapTilesRoads : groundRoads)
       : undefined,

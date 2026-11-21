@@ -24,6 +24,7 @@ vi.mock('three', async (original) => ({
   ...(await original<typeof import('three')>()),
   WebGLRenderer: class {
     readonly domElement = document.createElement('canvas');
+    readonly shadowMap = { enabled: false };
     readonly capabilities = { getMaxAnisotropy: () => 1 };
     setPixelRatio() {}
     setClearColor() {}
