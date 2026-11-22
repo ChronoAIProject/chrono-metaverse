@@ -40,12 +40,12 @@
     "regionId": "marina-bay-exterior",
     "layer": "ext",
     "kind": "object",
-    "assetHash": "9eacd8f3aa99e7ad18d44bbee963529515386307702f4af26f0d7df303a669da",
+    "assetHash": "9a9adc6e6c5b9ea0a5665793c88ae813487e84ced68a4043e23270683cbcef3a",
     "label": "浮尔顿路 · 金蒲桃行道树",
     "bounds": {
       "min": [
         301.56238898244726,
-        -60.29721680783163,
+        -60.320121912275255,
         445.58251675042885
       ],
       "max": [
@@ -79,7 +79,9 @@
         "11405968",
         "11405969"
       ],
-      "叶片与树皮": "Island Tree 01、Eucalyptus Bark · Poly Haven · CC0"
+      "叶片与树皮": "Island Tree 01、Eucalyptus Bark · Poly Haven · CC0",
+      "根颈与覆盖物": "树干在近地处分叉外展；树基覆盖物按草带和树穴高度贴地。根形和覆盖范围为估值。",
+      "地表素材": "Brown Mud Leaves 01 · Poly Haven · CC0 · https://polyhaven.com/a/brown_mud_leaves_01"
     }
   },
   {
@@ -153,6 +155,37 @@
       "材质来源": "https://polyhaven.com/a/asphalt_01",
       "版权": "© OpenStreetMap contributors · ODbL；Asphalt 01 · Poly Haven · CC0",
       "说明": "中心线、路口和车道数来自 OSM。路宽、渐变段、标线位置及磨耗为估值。"
+    }
+  },
+  {
+    "entityId": "bay.fullerton-dining-terraces",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "kind": "structure",
+    "label": "One Fullerton · 临水餐饮露台",
+    "assetHash": "a5a03b3d9911a48e77abc68df02c923d43206fb8264ed99913c26dbae825cce7",
+    "bounds": {
+      "min": [
+        262.0287093518352,
+        -60.0222,
+        462.6068122602956
+      ],
+      "max": [
+        272.56444935007244,
+        -56.143696283362026,
+        508.4047967407963
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "现场参考": "https://commons.wikimedia.org/wiki/File:One_Fullerton_12-05-2024(7).jpg",
+      "建筑来源": "Map Data © Singapore Land Authority / OneMap",
+      "木材来源": "Teak Veneer · Poly Haven · CC0 · https://polyhaven.com/a/teak_veneer",
+      "说明": "沿 OneMap 两段既有双坡棚顶配设支架、矮边和用餐区。桌椅样式、数量与排列为视觉近似。"
     }
   }
 ]
