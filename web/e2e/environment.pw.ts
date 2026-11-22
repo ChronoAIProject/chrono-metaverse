@@ -215,6 +215,22 @@ test('地图源失败和浏览器存储不可用时使用配置的全球影像�
   expect(Number(await viewer.getAttribute('data-map-zoom'))).toBeGreaterThanOrEqual(15);
 });
 
+test('清晰瓦片恢复后移除当前视野的低清回退提示', async ({ page }) => {
+  await prepare(page);
+  await page.clock.install();
+  let restored = false;
+  await page.route('https://tiles.example.org/16/**', (route) =>
+    restored ? route.fallback() : route.abort('failed'),
+  );
+  await page.goto(PREVIEW);
+  const viewer = await ready(page);
+  await expect(viewer).toHaveAttribute('data-map-failed', /^[1-9]\d*$/);
+  restored = true;
+  await page.clock.fastForward(31_000);
+  await expect(viewer).toHaveAttribute('data-map-failed', '0');
+  await expect(viewer).toHaveAttribute('data-map-pending', '0');
+});
+
 test('地图服务端来源携带预览权限并避免浏览器直连瓦片', async ({ page }) => {
   await prepare(page, false, true);
   const requests: string[] = [];
