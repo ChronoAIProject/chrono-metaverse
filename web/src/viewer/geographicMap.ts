@@ -1,7 +1,7 @@
 import { grassPatch } from './mapGrass';
 import type { ExternalAccess } from '../core/externalSource';
 import * as THREE from 'three';
-import { applyGroundDetail, groundDetailTexture } from './mapGround';
+import { groundDetailTexture, urbanGroundMaterial } from './mapGround';
 import { hologramMaterial } from './hologram';
 import type { GeographicMap as MapConfig } from '../core/environment';
 import {
@@ -40,7 +40,10 @@ interface Node extends Tile {
 }
 
 interface Patch {
-  readonly mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+  readonly mesh: THREE.Mesh<
+    THREE.BufferGeometry,
+    THREE.MeshBasicMaterial | THREE.MeshLambertMaterial
+  >;
   readonly node: Node;
   ancestor: string | null;
   grass?: ReturnType<typeof grassPatch>;
@@ -347,12 +350,17 @@ export class GeographicMap {
       if (!patch) {
         const mesh = new THREE.Mesh(
           this.geometry(node),
-          new THREE.MeshBasicMaterial({ color: 0x557e8e }),
+          this.detail && node.z >= 15
+            ? urbanGroundMaterial(this.detail)
+            : new THREE.MeshBasicMaterial({ color: 0x557e8e }),
         );
         if (this.resource?.hologram) hologramMaterial(mesh.material, 'terrain');
         else {
           mesh.material.toneMapped = false;
-          if (this.detail && node.z >= 15) applyGroundDetail(mesh.material, this.detail);
+          if (mesh.material instanceof THREE.MeshLambertMaterial) {
+            mesh.geometry.computeVertexNormals();
+            mesh.receiveShadow = true;
+          }
         }
         mesh.position.copy(node.center);
         mesh.userData.background = true;

@@ -1,5 +1,36 @@
 import * as THREE from 'three';
 
+/** 米制视距的空气透视，在海湾尺度上逐渐降低反差。 */
+const cityAir = /* glsl */ `
+  vec3 cityAir(vec3 light, float meters, vec3 horizon) {
+    float transmission = exp2(-max(0.0, meters - 75.0) / 4800.0);
+    return mix(light, horizon, min(0.42, 1.0 - transmission));
+  }
+`;
+
+/** 实景模型既有标准受光材质，也有烘焙为无光照贴图的楼面。 */
+export function cityModelAir(material: THREE.Material) {
+  if (!(
+    material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshBasicMaterial
+  ))
+    return;
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader =
+      'varying vec3 cityEye;\n' +
+      shader.vertexShader.replace(
+        '#include <project_vertex>',
+        '#include <project_vertex>\ncityEye = mvPosition.xyz;',
+      );
+    shader.fragmentShader =
+      'varying vec3 cityEye;\n' +
+      cityAir +
+      shader.fragmentShader.replace(
+        '#include <opaque_fragment>',
+        'outgoingLight = cityAir(outgoingLight, length(cityEye), vec3(0.46,0.55,0.62));\n#include <opaque_fragment>',
+      );
+  };
+}
+
 /** 同一瓦片的楼房共用材质，远处小于一个像素的窗框过渡到立面的平均色。 */
 export function urbanFacade(material: THREE.MeshLambertMaterial) {
   const panorama = { value: null as THREE.Texture | null };
@@ -27,6 +58,7 @@ export function urbanFacade(material: THREE.MeshLambertMaterial) {
         cityFacade = uv;`,
       );
     shader.fragmentShader =
+      cityAir +
       'uniform sampler2D citySky;\nuniform bool cityHasSky;\nuniform float citySkyYaw;\nvarying vec3 cityPosition;\nvarying vec3 cityNormal;\nvarying vec2 cityFacade;\n' +
       shader.fragmentShader
         .replace(
@@ -58,8 +90,7 @@ export function urbanFacade(material: THREE.MeshLambertMaterial) {
         vec3 skyLight=cityHasSky ? texture2D(citySky,equirectUv(normalize(ray)),2.0).rgb : vec3(0.34,0.46,0.55);
         float grazing=pow(1.0-abs(dot(worldEye,worldN)),3.0);
         outgoingLight=mix(outgoingLight,skyLight,wall*panels.x*panels.y*(0.16+0.36*grazing));
-        float air=0.34*smoothstep(800.0,11500.0,length(vViewPosition));
-        outgoingLight=mix(outgoingLight,mix(vec3(0.40,0.51,0.58),skyLight,0.20),air);
+        outgoingLight=cityAir(outgoingLight,length(vViewPosition),mix(vec3(0.46,0.55,0.62),skyLight,0.15));
         #include <opaque_fragment>`,
         );
   };

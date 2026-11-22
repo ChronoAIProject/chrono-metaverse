@@ -13,7 +13,13 @@
 - `assets/onemap/manifest.json` 保留原始分片地址、SHA-256、批次属性和下载时间，`marina-bay.tileset.json` 可作为本地三维分片入口。
 - 署名：**Map Data © 2026 SLA**。原始数据没有随代码纳入 Git。
 
+浮尔顿步道沿滨海蓄水池西岸建模了约 165 米直岸。岸线两端的纬度、经度分别为 `1.2849604, 103.8539466` 和 `1.2863666, 103.8544468`。`context.json` 的 `quay` 保存投影到 OneMap 外景的米制端点，构建时与建筑一起配准到办公室。步道有铺石记录，石板宽度、岸墙横截面及栏杆高度依据行人尺度估算。地图数据 © OpenStreetMap contributors，ODbL 1.0。[岸线](https://www.openstreetmap.org/way/687912605) · [浮尔顿步道](https://www.openstreetmap.org/way/479233715) · [许可](https://www.openstreetmap.org/copyright)
+
 ## 系统内预览
+
+步道靠建筑的一侧有四段低矮绿化，沿 One Fullerton 底层影像可辨的绿带重建。花槽宽度、植物高度和枝条朝向采用估值。枝叶采用同一张带透明遮罩的图集，与花槽一起储存在场景附带的 GLB 中。[Poly Haven · Shrub 01，CC0](https://polyhaven.com/a/shrub_01)
+
+浮尔顿路靠建筑一侧的 14 株金蒲桃按新加坡国家公园局 2021 年 Trees.sg 名录定位，树高落在当年记录的 6–9 米、9–12 米区间内。树冠与树皮为视觉重建，模型随场景分发。铺装截取自花岗岩扫描的单块石材，以真实米制尺寸贴到石板上。[树木名录快照](https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e) · [叶片素材](https://polyhaven.com/a/island_tree_01) · [树皮素材](https://polyhaven.com/a/eucalyptus_bark) · [石材素材](https://polyhaven.com/a/granite_tile_04)
 
 在仓库根目录先安装 `web` 和 `sdk/typescript` 的依赖、编译 SDK，再进入本目录：
 

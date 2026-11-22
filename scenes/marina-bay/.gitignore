@@ -1,7 +1,14 @@
 # metaverse 工作区：拉取的数据和本地输出不进版本库，建造脚本（build/）进。
 out/
 chunks/
-assets/
+assets/*
+# 场景附带的绿化和石材资源。
+!assets/10b26f08617ccd5b234fa588dd95e3e468d2dc239c70c841c64130ab2dbd95da.glb
+!assets/a9eed290adc4315dae58b3e727158a2aee4ec239ca0f911f47484b0d966ac0f8.webp
+!assets/2b6c98c430486c2e433e647e5ac7dc8ef0f47e407890d74153958a72538397fd.webp
+!assets/684d6cef3eafb58f0d3414495b47ae3fdbfa209d9170676840c63c9de8b0bed2.webp
+!assets/9eacd8f3aa99e7ad18d44bbee963529515386307702f4af26f0d7df303a669da.glb
+!assets/6f8701bf09570c7b5dbc6a82571a7d0a61632566b42728b8376fd7e90b042147.glb
 node_modules/
 .venv/
 .vite/

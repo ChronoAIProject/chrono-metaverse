@@ -1,5 +1,17 @@
 {
   "entityPrefix": "bay.",
+  "quay": {
+    "id": "bay.fullerton-quay",
+    "label": "浮尔顿滨水步道 · 石岸与栏杆",
+    "source": "https://www.openstreetmap.org/way/687912605",
+    "granite": {
+      "color": "a9eed290adc4315dae58b3e727158a2aee4ec239ca0f911f47484b0d966ac0f8",
+      "normal": "2b6c98c430486c2e433e647e5ac7dc8ef0f47e407890d74153958a72538397fd",
+      "roughness": "684d6cef3eafb58f0d3414495b47ae3fdbfa209d9170676840c63c9de8b0bed2"
+    },
+    "start": [256.29647, -60.02220, 452.82150],
+    "end": [271.55711, -60.03710, 617.26994]
+  },
   "message": "办公室近景保留楼体剖面，拉远显示完整 Tower 1 和十四层办公室标记，滨海湾作为背景",
   "oneMap": {
     "bboxDegrees": [103.8500, 1.2780, 103.8647, 1.2918],

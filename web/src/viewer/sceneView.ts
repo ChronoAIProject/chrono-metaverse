@@ -1,4 +1,5 @@
 import { CitySun } from './citySun';
+import { cityModelAir } from './mapFacade';
 import { CITY_REFLECTION_LAYER } from './mapReflection';
 import { externalContentOf } from '../core/externalSource';
 import { FirstPersonView, type CameraPerspective } from './cameraPerspective';
@@ -349,6 +350,7 @@ export class SceneView {
   private readonly materialCache = new Map<string, THREE.Material>();
   private readonly textures: TextureCache;
   private readonly citySun = new CitySun();
+  private daylightCity = false;
   private readonly environment: EnvironmentView;
   private readonly externalContent: ExternalContentView;
   private lights: THREE.Light[] = [];
@@ -612,7 +614,7 @@ export class SceneView {
     this.environment.update(this.camera, globe);
     this.externalContent.update(this.camera);
     this.updateBackgroundViews();
-    this.citySun.update(this.renderer, this.controls.target, globe);
+    this.citySun.update(this.renderer, this.camera.position, this.controls.target, globe);
     this.renderer.render(this.scene, this.camera);
     this.liveScreens.render(this.scene, this.camera);
     this.labels.render(this.scene, this.camera);
@@ -752,6 +754,7 @@ export class SceneView {
       if (background) {
         mesh.layers.enable(CITY_REFLECTION_LAYER);
         mesh.castShadow = true;
+        mesh.receiveShadow = look?.shading === 'albedo';
       }
       mesh.material = Array.isArray(mesh.material)
         ? mesh.material.map((m) => this.modelMaterial(m, look, background, styleLook, kind))
@@ -769,7 +772,8 @@ export class SceneView {
   ): THREE.Material {
     const lookKey = modelMaterialKey(source, look, styleLook);
     if (lookKey === null && !background) return source;
-    const key = `${lookKey ?? source.uuid}|${background}|${styleLookKey(styleLook)}|${kind}`;
+    const air = background && this.daylightCity && !styleLook;
+    const key = `${lookKey ?? source.uuid}|${background}|${styleLookKey(styleLook)}|${kind}|${air}`;
     let material = this.materialCache.get(key);
     if (material === undefined) {
       material = createModelMaterial(
@@ -779,6 +783,7 @@ export class SceneView {
         styleLook,
         kind,
       );
+      if (air) cityModelAir(material);
       this.materialCache.set(key, material);
     }
     return material;
@@ -961,6 +966,11 @@ export class SceneView {
       );
     for (const light of this.lights) this.scene.remove(light);
     this.lights = createLights(owner?.view.lighting ?? owner?.lighting);
+    this.daylightCity =
+      (owner?.view.lighting ?? owner?.lighting ?? 'daylight') === 'daylight' &&
+      !(owner?.view.styleLook ?? owner?.styleLook)?.hologram &&
+      !(owner?.view.backgroundColor ?? owner?.backgroundColor) &&
+      !!owner?.view.entities.some((entity) => environmentOf(entity)?.map?.surfaceDetail === 'urban');
     const hasGround = content.members.some(
       (member) =>
         !member.view.styleLook?.hologram &&
@@ -1120,6 +1130,7 @@ export class SceneView {
         if (batch.background) {
           mesh.layers.enable(CITY_REFLECTION_LAYER);
           mesh.castShadow = !batch.glass;
+          mesh.receiveShadow = !batch.glass;
         }
         mesh.userData = {
           sharedGeometry: true,
@@ -2093,7 +2104,8 @@ export class SceneView {
     this.leaveFirstPersonForFlight();
     this.moveCamera(frame.position, frame.target, animate);
     const diagonal = box.getSize(new THREE.Vector3()).length();
-    this.camera.near = Math.max(0.02, frame.distance / 500);
+    // 地图浏览可从全城连续移动到街面，沿用广播步行镜头的近裁距。
+    this.camera.near = this.environment.hasMap ? 0.025 : Math.max(0.02, frame.distance / 500);
     this.camera.far = backgroundFarPlane(
       frame.position,
       Math.max(50, frame.distance * 20 + diagonal * 2),

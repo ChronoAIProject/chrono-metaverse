@@ -1,0 +1,115 @@
+[
+  {
+    "entityId": "bay.fullerton-planting",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "kind": "object",
+    "assetHash": "10b26f08617ccd5b234fa588dd95e3e468d2dc239c70c841c64130ab2dbd95da",
+    "label": "浮尔顿步道 · 灌木花槽",
+    "bounds": {
+      "min": [
+        261.62083824805416,
+        -59.7922,
+        466.5661777064784
+      ],
+      "max": [
+        268.03682781048474,
+        -58.869606386352174,
+        528.589962951647
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "source": {
+        "library": "polyhaven",
+        "id": "shrub_01",
+        "author": "Rico Cilliers",
+        "page": "https://polyhaven.com/a/shrub_01",
+        "license": "CC0-1.0",
+        "title": "Shrub 01"
+      },
+      "位置依据": "OneMap · One Fullerton 底层沿步道可见的绿化色带，花槽断面和枝叶分布为重建估值。"
+    }
+  },
+  {
+    "entityId": "bay.fullerton-street-trees",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "kind": "object",
+    "assetHash": "9eacd8f3aa99e7ad18d44bbee963529515386307702f4af26f0d7df303a669da",
+    "label": "浮尔顿路 · 金蒲桃行道树",
+    "bounds": {
+      "min": [
+        301.56238898244726,
+        -60.29721680783163,
+        445.58251675042885
+      ],
+      "max": [
+        323.05212900593983,
+        -49.90781518289871,
+        598.4078709901971
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "树名": "Golden Myrtle · Xanthostemon chrysanthus",
+      "资料": "Trees.sg / National Parks Board，2021 年公开快照。树冠、枝形及树皮为视觉近似。",
+      "来源地址": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树木编号": [
+        "11409580",
+        "11409581",
+        "11409582",
+        "11409583",
+        "11409584",
+        "11405124",
+        "11405128",
+        "11405129",
+        "11405130",
+        "11405131",
+        "11405132",
+        "11405133",
+        "11405968",
+        "11405969"
+      ],
+      "叶片与树皮": "Island Tree 01、Eucalyptus Bark · Poly Haven · CC0"
+    }
+  },
+  {
+    "entityId": "bay.fullerton-road-sidewalk",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "kind": "structure",
+    "assetHash": "6f8701bf09570c7b5dbc6a82571a7d0a61632566b42728b8376fd7e90b042147",
+    "label": "浮尔顿路 · 人行道与树穴",
+    "bounds": {
+      "min": [
+        296.87157368701025,
+        -60.32838997810663,
+        438.6432665169494
+      ],
+      "max": [
+        319.11107274033867,
+        -60.121297789887976,
+        605.2405352702118
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "来源地址": "https://www.openstreetmap.org/way/515143393",
+      "版权": "© OpenStreetMap contributors · ODbL；Granite Tile 04 · Poly Haven (CC0)",
+      "说明": "按人行道中心线重建，扣除服务车道交叉口及名录树穴。路宽、路缘高度和树穴轮廓为估值。"
+    }
+  }
+]
