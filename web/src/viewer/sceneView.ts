@@ -970,7 +970,9 @@ export class SceneView {
       (owner?.view.lighting ?? owner?.lighting ?? 'daylight') === 'daylight' &&
       !(owner?.view.styleLook ?? owner?.styleLook)?.hologram &&
       !(owner?.view.backgroundColor ?? owner?.backgroundColor) &&
-      !!owner?.view.entities.some((entity) => environmentOf(entity)?.map?.surfaceDetail === 'urban');
+      !!owner?.view.entities.some(
+        (entity) => environmentOf(entity)?.map?.surfaceDetail === 'urban',
+      );
     const hasGround = content.members.some(
       (member) =>
         !member.view.styleLook?.hologram &&

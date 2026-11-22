@@ -111,5 +111,48 @@
       "版权": "© OpenStreetMap contributors · ODbL；Granite Tile 04 · Poly Haven (CC0)",
       "说明": "按人行道中心线重建，扣除服务车道交叉口及名录树穴。路宽、路缘高度和树穴轮廓为估值。"
     }
+  },
+  {
+    "entityId": "bay.fullerton-carriageways",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "kind": "structure",
+    "assetHash": "7b06b477152f87440116d006d3ffac5c45ea6c87dfa7d31f99b15a4168480b44",
+    "label": "浮尔顿路 · 沥青车道与标线",
+    "bounds": {
+      "min": [
+        301.0046928545528,
+        -60.285073573532685,
+        295.82849239383313
+      ],
+      "max": [
+        353.12503382548033,
+        -60.11966379236985,
+        605.5538742990241
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "绿带轮廓": "Map Data © Singapore Land Authority / OneMap 正射影像；Grass 004 · ambientCG · CC0",
+      "道路来源": "https://www.openstreetmap.org/way/22919331",
+      "道路编号": [
+        22919331,
+        670664313,
+        635276800,
+        479332225,
+        634751407,
+        1124074831,
+        1083770146,
+        679952923,
+        515143393
+      ],
+      "材质来源": "https://polyhaven.com/a/asphalt_01",
+      "版权": "© OpenStreetMap contributors · ODbL；Asphalt 01 · Poly Haven · CC0",
+      "说明": "中心线、路口和车道数来自 OSM。路宽、渐变段、标线位置及磨耗为估值。"
+    }
   }
 ]

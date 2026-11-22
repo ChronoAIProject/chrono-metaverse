@@ -2,7 +2,7 @@
 out/
 chunks/
 assets/*
-# 场景附带的绿化和石材资源。
+# 场景附带的绿化、石材和道路资源。
 !assets/10b26f08617ccd5b234fa588dd95e3e468d2dc239c70c841c64130ab2dbd95da.glb
 !assets/a9eed290adc4315dae58b3e727158a2aee4ec239ca0f911f47484b0d966ac0f8.webp
 !assets/2b6c98c430486c2e433e647e5ac7dc8ef0f47e407890d74153958a72538397fd.webp
@@ -30,3 +30,4 @@ work/
 web/
 
 limits.json
+!assets/7b06b477152f87440116d006d3ffac5c45ea6c87dfa7d31f99b15a4168480b44.glb
