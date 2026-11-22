@@ -187,5 +187,36 @@
       "木材来源": "Teak Veneer · Poly Haven · CC0 · https://polyhaven.com/a/teak_veneer",
       "说明": "沿 OneMap 两段既有双坡棚顶配设支架、矮边和用餐区。桌椅样式、数量与排列为视觉近似。"
     }
+  },
+  {
+    "entityId": "bay.fullerton-middle-terraces",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "kind": "structure",
+    "label": "One Fullerton · 中段临水茶座",
+    "assetHash": "859856380a2a77dad75676224c3865245430757ce3e4986609c4b5530a0be3e6",
+    "bounds": {
+      "min": [
+        265.73197463882366,
+        -60.0222,
+        517.9099175551368
+      ],
+      "max": [
+        275.5721832230579,
+        -55.146885352955316,
+        537.5776120794062
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "现场参考": "https://commons.wikimedia.org/wiki/File:One_Fullerton_12-05-2024(7).jpg",
+      "建筑来源": "Map Data © Singapore Land Authority / OneMap",
+      "木材来源": "Teak Veneer · Poly Haven · CC0 · https://polyhaven.com/a/teak_veneer",
+      "说明": "沿 OneMap 两段既有双坡棚顶配设支架、矮边和用餐区。桌椅样式、数量与排列为视觉近似。"
+    }
   }
 ]

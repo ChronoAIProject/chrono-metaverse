@@ -17,6 +17,8 @@ from trimesh.visual.texture import TextureVisuals
 ROOT = Path(__file__).resolve().parents[1]
 BUILDING = "bay.0c252ba3-f96a-4c82-b87b-fa5ef91708f2"
 SOURCE_HASH = "051c63d6c1d2f890a01ce6d2e2872e025d1af2747818067ba9b75ffed936f6ee"
+MIDDLE = "928bba087910672b69996dcd0a9eb38621bbf73c412f1d5c4b14ed9cf0b90a30"
+CANONICAL_BUILDING = "97c6196a9b48ba761391e74d22ce10f5959fddca8f9f3d4e62a253f37a77a0d2"
 PHOTO = "https://commons.wikimedia.org/wiki/File:One_Fullerton_12-05-2024(7).jpg"
 
 
@@ -26,15 +28,16 @@ def write_asset(data, folder):
     return digest
 
 
-def open_shell(source, record, start, inland, along, output):
+def open_shell(source, record, start, inland, along, output, middle):
     # Keep OneMap's original image data, materials and vertex buffers. Edit only one index buffer.
     raw = source.read_bytes()
-    if hashlib.sha256(raw).hexdigest() != SOURCE_HASH:
+    source_hash = hashlib.sha256(raw).hexdigest()
+    if source_hash not in {SOURCE_HASH, CANONICAL_BUILDING, MIDDLE}:
         raise ValueError("Expected the surveyed One Fullerton source GLB")
     json_size = struct.unpack_from("<I", raw, 12)[0]
     doc = json.loads(raw[20:20 + json_size])
     binary = bytearray(raw[28 + json_size:])
-    prim = doc["meshes"][0]["primitives"][0]
+    prim, = [pr for m in doc["meshes"] for pr in m["primitives"] if "TEXCOORD_0" in pr["attributes"]]
 
     def accessor_data(index, dtype):
         acc = doc["accessors"][index]
@@ -55,11 +58,17 @@ def open_shell(source, record, start, inland, along, output):
     tri = local[faces]
     min_corner, max_corner = tri.min(axis=1), tri.max(axis=1)
     cross = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
-    remove = ((min_corner[:, 2] > 10.5) & (max_corner[:, 2] < 56.5) &
-              (min_corner[:, 0] < 5) & (max_corner[:, 0] < 11.4) &
-              (min_corner[:, 1] < 0.05) & (max_corner[:, 1] > 2) &
-              (np.abs(cross[:, 1]) < 0.02 * np.linalg.norm(cross, axis=1)))
-    if remove.sum() != 20:
+    upright = ((min_corner[:, 1] < .06) & (max_corner[:, 1] > 2) &
+               (np.abs(cross[:, 1]) < .02 * np.linalg.norm(cross, axis=1)))
+    if middle:
+        # The landward service wall stays in place. Open the path-facing and end walls of the awnings.
+        remove = upright & (min_corner[:, 0] < 10.5)
+        expected = 20
+    else:
+        remove = (upright & (min_corner[:, 2] > 10.5) & (max_corner[:, 2] < 56.5) &
+                  (min_corner[:, 0] < 5) & (max_corner[:, 0] < 11.4))
+        expected = 20
+    if remove.sum() != expected:
         raise ValueError("Unexpected count of vertical skirt triangles")
     kept = faces[~remove].copy()
     faces[:len(kept)] = kept
@@ -73,7 +82,7 @@ def open_shell(source, record, start, inland, along, output):
     props = record["props"]
     props["三角形数"] = sum(doc["accessors"][pr["indices"]]["count"] // 3
                          for m in doc["meshes"] for pr in m["primitives"])
-    props["原建筑资源"] = SOURCE_HASH
+    props["原建筑资源"] = source_hash
     props["露台重建"] = "保留 OneMap 屋顶与主体轮廓，去除两段临水餐饮雨棚在街面封闭的侧壁。"
     props["露台参考"] = PHOTO
 
@@ -107,16 +116,20 @@ def chair():
     return {name: trimesh.util.concatenate(meshes) for name, meshes in pieces.items()}
 
 
-def furnish(start, along, inland, texture_path, output, region_id):
+def furnish(start, along, inland, texture_path, output, region_id, middle):
     pieces = defaultdict(list)
     prototype = chair()
     rng = np.random.default_rng(512)
-    # Each tuple gives the alongshore limits, eave positions and surveyed ridge height.
-    for z0, z1, x0, x1, eave, ridge in [
-        (10.85, 32.32, 4.75, 11.02, 2.19, 3.28),
-        (32.48, 56.12, 3.21, 11.13, 2.65, 3.94),
-    ]:
-        mid = 8.35 if z0 < 20 else 7.25
+    # Eave and ridge elevations are from the SLA mesh. Keep the middle deck behind the promenade.
+    sections = (
+        [(66.40, 77.52, 4.64, 11.12, 7.88, 2.53, 4.09),
+         (77.76, 85.33, 2.26, 11.44, 6.95, 2.18, 4.94)]
+        if middle else
+        [(10.85, 32.32, 4.75, 11.02, 8.35, 2.19, 3.28),
+         (32.48, 56.12, 3.21, 11.13, 7.25, 2.65, 3.94)]
+    )
+    for section, (z0, z1, outer_eave, x1, mid, eave, ridge) in enumerate(sections):
+        x0 = max(outer_eave, 3.67) if middle else outer_eave
         length = z1 - z0
         deck = 0.15
         pieces["Deck"].append(box([x1 - x0, deck - .018, length],
@@ -129,7 +142,7 @@ def furnish(start, along, inland, texture_path, output, region_id):
         # The low-resolution survey texture is visible on the upper roof. Canvas is visible below.
         # Folds run between structural bays and finish against the aluminium rafters.
         bays = round(length / 3.6)
-        for edge in [x0, x1]:
+        for edge in [outer_eave, x1]:
             vertices, faces = [], []
             for step in range(4 * bays + 1):
                 t = step / (4 * bays)
@@ -140,7 +153,8 @@ def furnish(start, along, inland, texture_path, output, region_id):
                     for column in range(2):
                         i = 3 * (step - 1) + column
                         faces.extend([[i, i + 1, i + 3], [i + 1, i + 4, i + 3]])
-            pieces["Canvas"].append(trimesh.Trimesh(vertices=vertices, faces=faces, process=False))
+            fabric = ("Burgundy" if section else "Green") if middle else "Canvas"
+            pieces[fabric].append(trimesh.Trimesh(vertices=vertices, faces=faces, process=False))
         # The low timber apron and actual eaves delimit the terrace along the waterside path.
         pieces["Teak"].append(box([0.10, 0.31, length], [x0 + 0.05, deck + 0.155, (z0 + z1) / 2]))
         for x in [x0 + 0.11, x1 - 0.15]:
@@ -152,7 +166,13 @@ def furnish(start, along, inland, texture_path, output, region_id):
         for z in np.arange(z0 + 1.4, z1 - 0.9, 2.6):
             for x in [x0 + 1.15, x1 - 1.2]:
                 offset = rng.uniform(-0.1, 0.1)
-                pieces["Teak"].append(box([0.83, 0.045, 0.73], [x, deck + 0.74, z + offset]))
+                if middle:
+                    top = trimesh.creation.cylinder(radius=.42, height=.045, sections=24)
+                    top.apply_transform(trimesh.transformations.rotation_matrix(math.pi / 2, [1, 0, 0]))
+                    top.apply_translation([x, deck + .74, z + offset])
+                    pieces["Teak"].append(top)
+                else:
+                    pieces["Teak"].append(box([0.83, 0.045, 0.73], [x, deck + 0.74, z + offset]))
                 pieces["Metal"].append(strut([x, deck + .04, z + offset], [x, deck + .73, z + offset], .041))
                 pieces["Metal"].append(box([.49, .035, .44], [x, deck + .025, z + offset]))
                 for sign in [-1, 1]:
@@ -174,6 +194,10 @@ def furnish(start, along, inland, texture_path, output, region_id):
         "Deck": PBRMaterial(name="Deck boards", baseColorTexture=timber, baseColorFactor=[103, 98, 94, 255], metallicFactor=0, roughnessFactor=.83),
         "Teak": PBRMaterial(name="Outdoor timber", baseColorTexture=timber, baseColorFactor=[183, 169, 150, 255], metallicFactor=0, roughnessFactor=.66),
     }
+    for name, color in [("Green", [41, 64, 55, 255]), ("Burgundy", [107, 45, 48, 255])]:
+        if name in pieces:
+            materials[name] = PBRMaterial(name=name + " canvas", baseColorFactor=color, doubleSided=True,
+                                          metallicFactor=0, roughnessFactor=.96)
     scene = trimesh.Scene()
     for name, meshes in pieces.items():
         m = trimesh.util.concatenate(meshes)
@@ -197,8 +221,8 @@ def furnish(start, along, inland, texture_path, output, region_id):
     for mesh in scene.geometry.values():
         mesh.vertices -= anchor
     data = trimesh.exchange.gltf.export_glb(scene, include_normals=True)
-    return dict(entityId="bay.fullerton-dining-terraces", regionId=region_id, layer="ext", kind="structure",
-                label="One Fullerton · 临水餐饮露台", assetHash=write_asset(data, output),
+    return dict(entityId="bay.fullerton-middle-terraces" if middle else "bay.fullerton-dining-terraces", regionId=region_id, layer="ext", kind="structure",
+                label="One Fullerton · 中段临水茶座" if middle else "One Fullerton · 临水餐饮露台", assetHash=write_asset(data, output),
                 bounds={"min": low.tolist(), "max": high.tolist()}, material={"shading": "albedo"},
                 props={"background": True, "surfaceRole": "landscape", "现场参考": PHOTO,
                        "建筑来源": "Map Data © Singapore Land Authority / OneMap",
@@ -209,13 +233,17 @@ def furnish(start, along, inland, texture_path, output, region_id):
 def bake(source, timber, output, buildings_file, streetscape_file):
     config = json.loads((ROOT / "context.json").read_text())
     buildings = json.loads(buildings_file.read_text())
-    building = next(b for b in buildings if b["entityId"] == BUILDING)
+    middle = hashlib.sha256(source.read_bytes()).hexdigest() == MIDDLE
+    if middle:
+        building = next(b for b in buildings if b["assetHash"] == MIDDLE or b["props"].get("原建筑资源") == MIDDLE)
+    else:
+        building = next(b for b in buildings if b["entityId"] == BUILDING)
     start = np.array(config["quay"]["start"])
     along = (np.array(config["quay"]["end"]) - start)[[0, 2]]
     along /= np.linalg.norm(along)
     inland = along[[1, 0]] * [1, -1]
-    open_shell(source, building, start, inland, along, output)
-    furniture = furnish(start, along, inland, timber, output, building["regionId"])
+    open_shell(source, building, start, inland, along, output, middle)
+    furniture = furnish(start, along, inland, timber, output, building["regionId"], middle)
     streetscape = json.loads(streetscape_file.read_text())
     streetscape = [item for item in streetscape if item["entityId"] != furniture["entityId"]] + [furniture]
     for file, value in [(buildings_file, buildings), (streetscape_file, streetscape)]:

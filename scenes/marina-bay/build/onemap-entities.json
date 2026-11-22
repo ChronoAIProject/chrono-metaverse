@@ -3095,7 +3095,7 @@
     "kind": "object",
     "label": "ONE FULLERTON",
     "regionId": "marina-bay-exterior",
-    "assetHash": "928bba087910672b69996dcd0a9eb38621bbf73c412f1d5c4b14ed9cf0b90a30",
+    "assetHash": "8db4f4651a304a6634f68a366b81ca857eaae0687e7b3569b1db49bf29e5021c",
     "bounds": {
       "min": [
         265.702299,
@@ -3116,7 +3116,10 @@
       "原始分片": "6/39/5_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 4.996,
-      "三角形数": 88
+      "三角形数": 68,
+      "原建筑资源": "928bba087910672b69996dcd0a9eb38621bbf73c412f1d5c4b14ed9cf0b90a30",
+      "露台重建": "保留 OneMap 屋顶与主体轮廓，去除两段临水餐饮雨棚在街面封闭的侧壁。",
+      "露台参考": "https://commons.wikimedia.org/wiki/File:One_Fullerton_12-05-2024(7).jpg"
     }
   },
   {
