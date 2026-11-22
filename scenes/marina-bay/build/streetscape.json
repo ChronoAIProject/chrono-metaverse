@@ -222,5 +222,37 @@
       "说明": "沿 OneMap 两段既有双坡棚顶配设支架、矮边和用餐区。桌椅样式、数量与排列为视觉近似。",
       "棚顶": "屋脊和檐口坐标取自 SLA 原模型。帆布颜色参照现场照片，分幅、垂度与棚架尺寸为估值。"
     }
+  },
+  {
+    "entityId": "bay.fullerton-courtyard-trees",
+    "regionId": "marina-bay-exterior",
+    "label": "One Fullerton · 临水树池与石铺小广场",
+    "kind": "structure",
+    "layer": "ext",
+    "assetHash": "9740d4d4ed2e439fca65a882ad55ea5707ea5307c6739bde8a2c5d10d01d9efb",
+    "bounds": {
+      "min": [
+        262.451982969216,
+        -59.9222,
+        506.36607025589655
+      ],
+      "max": [
+        273.59325333524004,
+        -51.7622,
+        521.0346417971699
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "现场参考": "https://commons.wikimedia.org/wiki/File:One_Fullerton_12-05-2024(5).jpg",
+      "树模型": "https://polyhaven.com/a/island_tree_01",
+      "树冠参考": "OneMap OrthoJPG，20 级，南段与中段雨棚间两处树冠。",
+      "定位": "树冠中心和宽度按航拍估读。树干位置、高度、树池及铺装接缝为估值，树种未核实。",
+      "素材": "Poly Haven · Island Tree 01、Shrub 01、Brown Mud Leaves 01 及花岗岩 · CC0。"
+    }
   }
 ]
