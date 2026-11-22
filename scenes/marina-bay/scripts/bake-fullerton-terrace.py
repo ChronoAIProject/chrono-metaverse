@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 import trimesh
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFilter
 from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
@@ -196,6 +196,56 @@ def line_south_canopy(pieces, z0, z1, x0, x1, mid, eave, ridge, deck, bays):
             pieces["Canopy frame"].append(strut([x, eave - .09, z], [mid, ridge - .09, z], .03))
 
 
+def deck_occlusion(pieces, canopy_ends):
+    # Project the opaque silhouettes onto the deck from cosine-weighted sky
+    # directions. Only indirect light uses this map. The sun still casts live shadows.
+    deck = trimesh.util.concatenate(pieces["Deck"])
+    low, high = deck.bounds[:, [0, 2]]
+    padding = .1
+    low, high = low - padding, high + padding
+    size = (320, 768)
+    scale = (np.array(size) - 1) / (high - low)
+    triangles = [mesh.triangles for name, meshes in pieces.items() if name != "Deck" for mesh in meshes]
+    for first, last in canopy_ends:
+        top = np.array([first[2], last[2]])
+        bottom = top.copy()
+        bottom[:, 1] = 0
+        triangles.append(np.array([[top[0], top[1], bottom[0]], [top[1], bottom[1], bottom[0]]]))
+    triangles = np.concatenate(triangles)
+    # Discard surfaces fully below the receiving plane.
+    floor = deck.bounds[1, 1]
+    triangles = triangles[triangles[:, :, 1].max(axis=1) > floor + .005]
+    planar = (triangles[:, :, [0, 2]] - low) * scale
+    height = np.maximum(triangles[:, :, 1:2] - floor, 0)
+    blocked = np.zeros(size[::-1], np.float32)
+    samples = 128
+    for i in range(samples):
+        u = (i + .5) / samples
+        angle = math.pi * (3 - math.sqrt(5)) * i
+        slope = math.sqrt(u / (1 - u)) * np.array([math.cos(angle), math.sin(angle)])
+        projected = (planar - height * slope * scale).round().astype(np.int32)
+        mask = Image.new("L", size)
+        draw = ImageDraw.Draw(mask)
+        for triangle in projected.reshape(-1, 6).tolist():
+            draw.polygon(triangle, fill=1)
+        blocked += np.asarray(mask)
+    # Allow some secondary bounce from the surrounding wood and pale pavement.
+    image = Image.fromarray(np.uint8(255 * (1 - .68 * blocked / samples)))
+    image = image.filter(ImageFilter.GaussianBlur(.8))
+    image.format = "JPEG"
+    return image, low, high
+
+
+def set_deck_uv_channel(tree):
+    deck = next(material for material in tree["materials"] if material["name"] == "Deck boards")
+    deck["occlusionTexture"]["texCoord"] = 1
+    for mesh in tree["meshes"]:
+        for primitive in mesh["primitives"]:
+            attrs = primitive["attributes"]
+            if "_DECK_UV" in attrs:
+                attrs["TEXCOORD_1"] = attrs.pop("_DECK_UV")
+
+
 def furnish(start, along, inland, texture_path, output, region_id, canopy_ends):
     middle = canopy_ends is not None
     pieces = defaultdict(list)
@@ -260,6 +310,9 @@ def furnish(start, along, inland, texture_path, output, region_id, canopy_ends):
         "Teak": PBRMaterial(name="Outdoor timber", baseColorTexture=timber, baseColorFactor=[183, 169, 150, 255], metallicFactor=0, roughnessFactor=.66),
     }
     textile = canvas_tile() if middle else None
+    if middle:
+        texture, deck_min, deck_max = deck_occlusion(pieces, canopy_ends)
+        materials["Deck"].occlusionTexture = texture
     for name, color in [("Green", [23, 54, 39, 255]), ("Burgundy", [100, 25, 35, 255])]:
         if name in pieces:
             materials[name] = PBRMaterial(name=name + " canvas", baseColorFactor=color, baseColorTexture=textile, doubleSided=True,
@@ -274,6 +327,9 @@ def furnish(start, along, inland, texture_path, output, region_id, canopy_ends):
             m.vertex_normals = np.repeat(m.face_normals, 3, axis=0)
             m.merge_vertices(merge_norm=False)
         xyz = m.vertices.copy()
+        if name == "Deck" and middle:
+            # Custom attributes pass through trimesh without its first-channel V flip.
+            m.vertex_attributes["_DECK_UV"] = (xyz[:, [0, 2]] - deck_min) / (deck_max - deck_min)
         # The photo sample's grain runs across U. Use metric coordinates on the broad faces.
         uv = np.column_stack((xyz[:, 2] / 1.6, (xyz[:, 0] + xyz[:, 1]) / 1.15))
         if name in {"Burgundy", "Green"}:
@@ -288,7 +344,8 @@ def furnish(start, along, inland, texture_path, output, region_id, canopy_ends):
     anchor[1] = low[1]
     for mesh in scene.geometry.values():
         mesh.vertices -= anchor
-    data = trimesh.exchange.gltf.export_glb(scene, include_normals=True)
+    data = trimesh.exchange.gltf.export_glb(scene, include_normals=True,
+                                            tree_postprocessor=set_deck_uv_channel if middle else None)
     return dict(entityId="bay.fullerton-middle-terraces" if middle else "bay.fullerton-dining-terraces", regionId=region_id, layer="ext", kind="structure",
                 label="One Fullerton · 中段临水茶座" if middle else "One Fullerton · 临水餐饮露台", assetHash=write_asset(data, output),
                 bounds={"min": low.tolist(), "max": high.tolist()}, material={"shading": "albedo"},
