@@ -40,12 +40,12 @@
     "regionId": "marina-bay-exterior",
     "layer": "ext",
     "kind": "object",
-    "assetHash": "9eacd8f3aa99e7ad18d44bbee963529515386307702f4af26f0d7df303a669da",
+    "assetHash": "9a9adc6e6c5b9ea0a5665793c88ae813487e84ced68a4043e23270683cbcef3a",
     "label": "浮尔顿路 · 金蒲桃行道树",
     "bounds": {
       "min": [
         301.56238898244726,
-        -60.29721680783163,
+        -60.320121912275255,
         445.58251675042885
       ],
       "max": [
@@ -79,7 +79,9 @@
         "11405968",
         "11405969"
       ],
-      "叶片与树皮": "Island Tree 01、Eucalyptus Bark · Poly Haven · CC0"
+      "叶片与树皮": "Island Tree 01、Eucalyptus Bark · Poly Haven · CC0",
+      "根颈与覆盖物": "树干在近地处分叉外展；树基覆盖物按草带和树穴高度贴地。根形和覆盖范围为估值。",
+      "地表素材": "Brown Mud Leaves 01 · Poly Haven · CC0 · https://polyhaven.com/a/brown_mud_leaves_01"
     }
   },
   {
