@@ -63,30 +63,46 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
       void main() {
         #include <logdepthbuf_fragment>
         vec2 p = surfacePosition.xz;
-        vec3 eye = normalize(cameraPosition - surfacePosition);
+        vec3 toEye = cameraPosition - surfacePosition;
+        float range = length(toEye);
+        vec3 eye = toEye / max(range, 0.001);
         mat2 wind = mat2(0.80,-0.60,0.60,0.80);
-        vec2 swell = slope(p*vec2(0.043,0.12) + time*vec2(0.021,0.09));
-        vec2 waves = slope((wind*p)*vec2(0.23,0.64) - time*vec2(0.04,0.32) + 0.42*swell);
-        // 两个风向的短波随像素足迹平滑衰减，防止远处闪点。
-        vec2 phase = vec2(dot(p,vec2(1.24,2.55)),dot(p,vec2(-3.53,1.46)))
-                   + waves * 1.4 - time*vec2(1.9,2.4);
-        vec2 ripple = cos(phase)*(1.0-smoothstep(vec2(0.5),vec2(3.14),fwidth(phase)));
-        vec2 normalXZ = 0.037*swell + 0.065*(waves*wind) +
-                        0.022*(ripple.x*vec2(0.44,0.90) + ripple.y*vec2(-0.92,0.38));
+        vec2 meters = wind*p;
+        vec2 swell = slope(meters*vec2(0.065,0.14) - time*vec2(0.018,0.09));
+        vec2 chop = slope(meters*vec2(0.47,0.94) - time*vec2(0.05,0.45));
+        mat2 crosswind = mat2(0.86,0.51,-0.51,0.86);
+        vec2 fine = slope((crosswind*meters)*vec2(3.2,6.8) - time*vec2(0.3,2.1));
+        // 长波调制短波的相位和强度，让同一片水上有阵风吹皱和相对平静的区域。
+        vec2 phase = vec2(dot(meters,vec2(1.6,5.1)),dot(meters,vec2(-5.4,17.6)))
+                   - time*vec2(5.4,10.2);
+        vec2 resolved = 1.0-smoothstep(vec2(0.5),vec2(3.14),fwidth(phase));
+        vec2 ripple = cos(phase + 2.8*swell.yx + 2.3*chop) * resolved;
+        float gust = 0.72 + 0.28*swell.x;
+        vec2 normalXZ = (0.023*swell + 0.033*chop + gust *
+          (0.029*ripple.x*vec2(0.30,0.95) + 0.019*ripple.y*vec2(-0.29,0.96)
+           + 0.026*(fine*crosswind))) * wind;
         vec3 normal = normalize(vec3(normalXZ.x, 1.0, normalXZ.y));
         vec3 reflected = reflect(-eye, normal);
         vec3 sky = horizon;
         if (hasSky) {
           float c = cos(skyYaw), s = sin(skyYaw);
-          reflected.xz = mat2(c,s,-s,c)*reflected.xz;
-          reflected.y = max(0.025,reflected.y);
-          sky = mix(horizon, texture2D(skyMap, equirectUv(normalize(reflected))).rgb, 0.72);
+          vec3 skyRay = vec3(reflected.x, max(0.025,reflected.y), reflected.z);
+          skyRay.xz = mat2(c,s,-s,c)*skyRay.xz;
+          sky = mix(horizon, texture2D(skyMap, equirectUv(normalize(skyRay))).rgb, 0.72);
         }
         if (hasReflection) {
-          vec4 clip = reflectionMatrix * vec4(surfacePosition, 1.0);
-          vec2 uv = clip.xy / max(0.001,clip.w) + normal.xz * 0.055;
+          // 在世界坐标中偏转反射光线，再投到镜像相机。近处可看清波纹切开的楼影，
+          // 接近对岸时逐渐收紧偏移，让建筑在水线处接上自己的倒影。
+          vec3 flatRay = vec3(-eye.x, eye.y, -eye.z);
+          const float reflectionReach = 110.0; // 米，近似湾岸建筑的有效反射距离
+          float projectedReach = range * reflectionReach / (reflectionReach + range);
+          vec3 samplePoint = surfacePosition + (reflected-flatRay)*projectedReach;
+          vec4 clip = reflectionMatrix * vec4(samplePoint, 1.0);
+          vec2 uv = clip.xy / max(0.001,clip.w);
           vec2 edge = smoothstep(vec2(0.0),vec2(0.028),min(uv,1.0-uv));
-          sky = mix(sky, textureLod(reflectionMap,clamp(uv,0.001,0.999),1.0+1.6*abs(normalXZ.y)).rgb, edge.x*edge.y*step(0.001,clip.w));
+          // 按变形后的采样足迹选取反射缓冲的 mip，斜看时合并亚像素的细碎亮边。
+          sky = mix(sky, textureGrad(reflectionMap,clamp(uv,0.001,0.999),dFdx(uv),dFdy(uv)).rgb,
+                    edge.x*edge.y*step(0.001,clip.w));
         }
         float cosine = clamp(dot(eye,normal),0.0,1.0);
         float fresnel = 0.025 + 0.93*pow(1.0-cosine,5.0);
@@ -97,7 +113,7 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
         float shine = alpha2/(3.14159*d*d) * 0.035 * max(dot(normal,sunlight),0.0);
         vec3 water = deep*(0.84 + 0.12*swell.y + 0.12*max(dot(normal,sunlight),0.0));
         vec3 color = mix(water,sky,fresnel) + sunColor * shine * 0.38;
-        float distanceFade = 1.0 - smoothstep(3500.0, 11000.0, distance(cameraPosition, surfacePosition));
+        float distanceFade = 1.0 - smoothstep(3500.0, 11000.0, range);
         gl_FragColor = vec4(color, 0.96 * distanceFade);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
