@@ -1,3 +1,4 @@
+import { PriorityQueue } from '3d-tiles-renderer/core';
 import { CitySun } from './citySun';
 import { cityModelAir } from './mapFacade';
 import { CITY_REFLECTION_LAYER } from './mapReflection';
@@ -354,6 +355,7 @@ export class SceneView {
   private readonly environment: EnvironmentView;
   private readonly externalContent: ExternalContentView;
   private lights: THREE.Light[] = [];
+  private readonly modelDownloads = new PriorityQueue();
   private readonly modelCache = new Map<string, Promise<THREE.Object3D>>();
   private readonly scanCache = new WeakMap<ArrayBuffer, Promise<THREE.Object3D>>();
   private readonly modelBoxes = new WeakMap<THREE.Object3D, BoxLike | null>();
@@ -428,6 +430,8 @@ export class SceneView {
     private readonly host: HTMLElement,
     private readonly options: SceneViewOptions = {},
   ) {
+    // 给地图、天空和交互请求留出带宽，模型仍按入队顺序加载。
+    this.modelDownloads.maxJobs = 8;
     this.liveScreens = new LiveScreens(host);
     // 对数深度让厘米级室内和地球远景共享深度缓冲，不用近共面的叠加网格补海面。
     this.renderer = new THREE.WebGLRenderer({
@@ -726,7 +730,11 @@ export class SceneView {
     if (load === undefined) return null;
     let model = this.modelCache.get(hash);
     if (model === undefined) {
-      model = load(hash).then((bytes) => this.parseGlb(bytes, false, false));
+      const download = this.modelDownloads.add(hash, () => load(hash)) as Promise<ArrayBuffer>;
+      model = download.then((bytes) => {
+        if (this.disposed) throw new DOMException('查看器已关闭', 'AbortError');
+        return this.parseGlb(bytes, false, false);
+      });
       this.modelCache.set(hash, model);
       model.catch(() => this.modelCache.delete(hash));
     }
@@ -2601,6 +2609,7 @@ export class SceneView {
 
   dispose(): void {
     this.disposed = true;
+    this.modelDownloads.removeByFilter(() => true);
     this.generation += 1;
     if (this.hoverTimer !== null) clearTimeout(this.hoverTimer);
     this.renderer.setAnimationLoop(null);
