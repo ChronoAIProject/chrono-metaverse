@@ -60,16 +60,22 @@ def open_shell(source, record, start, inland, along, output, middle):
     cross = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
     upright = ((min_corner[:, 1] < .06) & (max_corner[:, 1] > 2) &
                (np.abs(cross[:, 1]) < .02 * np.linalg.norm(cross, axis=1)))
+    canopy_ends = None
     if middle:
         # The landward service wall stays in place. Open the path-facing and end walls of the awnings.
         remove = upright & (min_corner[:, 0] < 10.5)
-        expected = 20
+        # Each row is a surveyed gable end, ordered waterside eave, ridge, landward eave.
+        # The SHA check fixes the vertex numbering of this SLA tile.
+        end_indices = [[[12, 18, 75], [6, 11, 25]], [[44, 34, 96], [50, 47, 89]]]
+        canopy_ends = local[end_indices]
+        remove |= min_corner[:, 1] > 2
+        expected = 64
     else:
         remove = (upright & (min_corner[:, 2] > 10.5) & (max_corner[:, 2] < 56.5) &
                   (min_corner[:, 0] < 5) & (max_corner[:, 0] < 11.4))
         expected = 20
     if remove.sum() != expected:
-        raise ValueError("Unexpected count of vertical skirt triangles")
+        raise ValueError("Unexpected count of removed survey triangles")
     kept = faces[~remove].copy()
     faces[:len(kept)] = kept
     index.update(count=int(kept.size), min=[int(kept.min())], max=[int(kept.max())])
@@ -83,8 +89,10 @@ def open_shell(source, record, start, inland, along, output, middle):
     props["三角形数"] = sum(doc["accessors"][pr["indices"]]["count"] // 3
                          for m in doc["meshes"] for pr in m["primitives"])
     props["原建筑资源"] = source_hash
-    props["露台重建"] = "保留 OneMap 屋顶与主体轮廓，去除两段临水餐饮雨棚在街面封闭的侧壁。"
+    props["露台重建"] = ("保留陆侧服务墙，按 OneMap 屋脊与檐口控制点重建中段两座雨棚。"
+                     if middle else "保留 OneMap 屋顶与主体轮廓，去除两段临水餐饮雨棚在街面封闭的侧壁。")
     props["露台参考"] = PHOTO
+    return canopy_ends
 
 
 def box(extents, center):
@@ -116,7 +124,80 @@ def chair():
     return {name: trimesh.util.concatenate(meshes) for name, meshes in pieces.items()}
 
 
-def furnish(start, along, inland, texture_path, output, region_id, middle):
+def canvas_tile():
+    # One 1.15 m bolt of fabric with a lapped seam and two rows of stitching.
+    y, x = np.indices((256, 256))
+    warp = np.cos(x * math.tau / 4)
+    weft = np.cos(y * math.tau / 4)
+    value = 242 + 2 * warp + 2 * weft + 1.5 * warp * weft
+    value[:, :5] -= 14
+    value[:, 5:7] += 7
+    for line in [1, 4]:
+        value[:, line] += 10 * (y[:, line] % 8 < 4)
+    image = Image.fromarray(np.uint8(value)).convert("RGB")
+    image.format = "PNG"
+    return image
+
+
+def fit_canvas(ends, bays, fabric, frame, post_edge, deck):
+    # Interpolate within each surveyed slope. The cloth is taut at rafters and
+    # at the ridge, with a small drop midway between supports.
+    first, last = ends
+    for side in [0, 2]:
+        vertices, faces = [], []
+        for row in range(8 * bays + 1):
+            t = row / (8 * bays)
+            eave, ridge = (first + t * (last - first))[[side, 1]]
+            droop = .082 * math.sin(row * math.pi / 8) ** 2
+            # The turned-down hem sits over the edge rail.
+            vertices.extend([eave - [0, .13 + droop * .17, 0], eave])
+            for u in [.25, .5, .75, 1.]:
+                point = eave + u * (ridge - eave)
+                point[1] -= droop * math.sin(math.pi * u)
+                vertices.append(point)
+            if row:
+                for col in range(5):
+                    i = 6 * (row - 1) + col
+                    faces.extend([[i, i + 6, i + 1], [i + 6, i + 7, i + 1]])
+        if side == 2:
+            faces = np.array(faces)[:, ::-1]
+        fabric.append(trimesh.Trimesh(vertices=vertices, faces=faces, process=False))
+        offset = [0, .052, 0]
+        frame.append(strut(first[side] - offset, last[side] - offset, .034))
+        for t in np.linspace(.012, .988, bays + 1):
+            eave, ridge = (first + t * (last - first))[[side, 1]]
+            frame.append(strut(eave - offset, ridge - offset, .035))
+            post_x = max(eave[0] + .11, post_edge + .11) if side == 0 else eave[0] - .15
+            post = eave + (ridge - eave) * ((post_x - eave[0]) / (ridge[0] - eave[0]))
+            post -= offset
+            frame.append(box([.065, post[1] - deck, .065], [post[0], (post[1] + deck) / 2, post[2]]))
+    frame.append(strut(first[1] - [0, .052, 0], last[1] - [0, .052, 0], .034))
+
+
+def line_south_canopy(pieces, z0, z1, x0, x1, mid, eave, ridge, deck, bays):
+    length = z1 - z0
+    for edge in [x0, x1]:
+        vertices, faces = [], []
+        for step in range(4 * bays + 1):
+            t = step / (4 * bays)
+            sag = .042 * math.sin(math.pi * step / 4) ** 2
+            for dx, h in [(edge, eave), ((edge + mid) / 2, (eave + ridge) / 2), (mid, ridge)]:
+                vertices.append([dx, h - .10 - sag, z0 + length * t])
+            if step:
+                for column in range(2):
+                    i = 3 * (step - 1) + column
+                    faces.extend([[i, i + 1, i + 3], [i + 1, i + 4, i + 3]])
+        pieces["Canvas"].append(trimesh.Trimesh(vertices=vertices, faces=faces, process=False))
+    for x in [x0 + 0.11, x1 - 0.15]:
+        pieces["Canopy frame"].append(box([0.075, 0.115, length], [x, eave - 0.06, (z0 + z1) / 2]))
+    for z in np.linspace(z0 + 0.12, z1 - 0.12, bays + 1):
+        for x in [x0 + 0.11, x1 - 0.15]:
+            pieces["Canopy frame"].append(box([0.065, eave - deck, 0.065], [x, (eave + deck) / 2, z]))
+            pieces["Canopy frame"].append(strut([x, eave - .09, z], [mid, ridge - .09, z], .03))
+
+
+def furnish(start, along, inland, texture_path, output, region_id, canopy_ends):
+    middle = canopy_ends is not None
     pieces = defaultdict(list)
     prototype = chair()
     rng = np.random.default_rng(512)
@@ -139,30 +220,14 @@ def furnish(start, along, inland, texture_path, output, region_id, middle):
         for i in range(boards):
             pieces["Deck"].append(box([width - .004, .018, length],
                                       [x0 + (i + .5) * width, deck - .009, (z0 + z1) / 2]))
-        # The low-resolution survey texture is visible on the upper roof. Canvas is visible below.
-        # Folds run between structural bays and finish against the aluminium rafters.
         bays = round(length / 3.6)
-        for edge in [outer_eave, x1]:
-            vertices, faces = [], []
-            for step in range(4 * bays + 1):
-                t = step / (4 * bays)
-                sag = .042 * math.sin(math.pi * step / 4) ** 2
-                for dx, h in [(edge, eave), ((edge + mid) / 2, (eave + ridge) / 2), (mid, ridge)]:
-                    vertices.append([dx, h - .10 - sag, z0 + length * t])
-                if step:
-                    for column in range(2):
-                        i = 3 * (step - 1) + column
-                        faces.extend([[i, i + 1, i + 3], [i + 1, i + 4, i + 3]])
-            fabric = ("Burgundy" if section else "Green") if middle else "Canvas"
-            pieces[fabric].append(trimesh.Trimesh(vertices=vertices, faces=faces, process=False))
+        if middle:
+            fabric = pieces["Burgundy" if section else "Green"]
+            fit_canvas(canopy_ends[section], bays, fabric, pieces["Canopy frame"], x0, deck)
+        else:
+            line_south_canopy(pieces, z0, z1, x0, x1, mid, eave, ridge, deck, bays)
         # The low timber apron and actual eaves delimit the terrace along the waterside path.
         pieces["Teak"].append(box([0.10, 0.31, length], [x0 + 0.05, deck + 0.155, (z0 + z1) / 2]))
-        for x in [x0 + 0.11, x1 - 0.15]:
-            pieces["Canopy frame"].append(box([0.075, 0.115, length], [x, eave - 0.06, (z0 + z1) / 2]))
-        for z in np.linspace(z0 + 0.12, z1 - 0.12, round(length / 3.6) + 1):
-            for x in [x0 + 0.11, x1 - 0.15]:
-                pieces["Canopy frame"].append(box([0.065, eave - deck, 0.065], [x, (eave + deck) / 2, z]))
-                pieces["Canopy frame"].append(strut([x, eave - .09, z], [mid, ridge - .09, z], .03))
         for z in np.arange(z0 + 1.4, z1 - 0.9, 2.6):
             for x in [x0 + 1.15, x1 - 1.2]:
                 offset = rng.uniform(-0.1, 0.1)
@@ -194,9 +259,10 @@ def furnish(start, along, inland, texture_path, output, region_id, middle):
         "Deck": PBRMaterial(name="Deck boards", baseColorTexture=timber, baseColorFactor=[103, 98, 94, 255], metallicFactor=0, roughnessFactor=.83),
         "Teak": PBRMaterial(name="Outdoor timber", baseColorTexture=timber, baseColorFactor=[183, 169, 150, 255], metallicFactor=0, roughnessFactor=.66),
     }
-    for name, color in [("Green", [41, 64, 55, 255]), ("Burgundy", [107, 45, 48, 255])]:
+    textile = canvas_tile() if middle else None
+    for name, color in [("Green", [23, 54, 39, 255]), ("Burgundy", [100, 25, 35, 255])]:
         if name in pieces:
-            materials[name] = PBRMaterial(name=name + " canvas", baseColorFactor=color, doubleSided=True,
+            materials[name] = PBRMaterial(name=name + " canvas", baseColorFactor=color, baseColorTexture=textile, doubleSided=True,
                                           metallicFactor=0, roughnessFactor=.96)
     scene = trimesh.Scene()
     for name, meshes in pieces.items():
@@ -210,6 +276,8 @@ def furnish(start, along, inland, texture_path, output, region_id, middle):
         xyz = m.vertices.copy()
         # The photo sample's grain runs across U. Use metric coordinates on the broad faces.
         uv = np.column_stack((xyz[:, 2] / 1.6, (xyz[:, 0] + xyz[:, 1]) / 1.15))
+        if name in {"Burgundy", "Green"}:
+            uv = np.column_stack((xyz[:, 2] / 1.15, xyz[:, 0] + xyz[:, 1] * .35))
         m.visual = TextureVisuals(uv=uv, material=materials[name])
         m.vertices[:, 0] = start[0] + inland[0] * xyz[:, 0] + along[0] * xyz[:, 2]
         m.vertices[:, 2] = start[2] + inland[1] * xyz[:, 0] + along[1] * xyz[:, 2]
@@ -242,8 +310,10 @@ def bake(source, timber, output, buildings_file, streetscape_file):
     along = (np.array(config["quay"]["end"]) - start)[[0, 2]]
     along /= np.linalg.norm(along)
     inland = along[[1, 0]] * [1, -1]
-    open_shell(source, building, start, inland, along, output, middle)
-    furniture = furnish(start, along, inland, timber, output, building["regionId"], middle)
+    ends = open_shell(source, building, start, inland, along, output, middle)
+    furniture = furnish(start, along, inland, timber, output, building["regionId"], ends)
+    if middle:
+        furniture["props"]["棚顶"] = "屋脊和檐口坐标取自 SLA 原模型。帆布颜色参照现场照片，分幅、垂度与棚架尺寸为估值。"
     streetscape = json.loads(streetscape_file.read_text())
     streetscape = [item for item in streetscape if item["entityId"] != furniture["entityId"]] + [furniture]
     for file, value in [(buildings_file, buildings), (streetscape_file, streetscape)]:
