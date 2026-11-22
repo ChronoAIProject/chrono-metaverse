@@ -14,6 +14,8 @@ from PIL import Image, ImageDraw, ImageFilter
 from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
+from fullerton_glazing import GLASS, PHOTO as GLAZING_PHOTO, glazing_patch
+
 ROOT = Path(__file__).resolve().parents[1]
 BUILDING = "bay.0c252ba3-f96a-4c82-b87b-fa5ef91708f2"
 SOURCE_HASH = "051c63d6c1d2f890a01ce6d2e2872e025d1af2747818067ba9b75ffed936f6ee"
@@ -43,7 +45,7 @@ def open_shell(source, record, start, inland, along, output, middle):
         acc = doc["accessors"][index]
         view = doc["bufferViews"][acc["bufferView"]]
         offset = view.get("byteOffset", 0) + acc.get("byteOffset", 0)
-        count = acc["count"] * (3 if acc["type"] == "VEC3" else 1)
+        count = acc["count"] * {"VEC3": 3, "VEC2": 2, "SCALAR": 1}[acc["type"]]
         return np.frombuffer(binary, dtype, count=count, offset=offset)
 
     index = doc["accessors"][prim["indices"]]
@@ -60,6 +62,7 @@ def open_shell(source, record, start, inland, along, output, middle):
     cross = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
     upright = ((min_corner[:, 1] < .06) & (max_corner[:, 1] > 2) &
                (np.abs(cross[:, 1]) < .02 * np.linalg.norm(cross, axis=1)))
+    glazing = []
     if middle:
         # The landward service wall stays in place. Open the path-facing and end walls of the awnings.
         remove = upright & (min_corner[:, 0] < 10.5)
@@ -76,7 +79,13 @@ def open_shell(source, record, start, inland, along, output, middle):
                       (min_corner[:, 2] > 10) & (max_corner[:, 2] < 57) &
                       (min_corner[:, 0] < 10.9) & (max_corner[:, 0] < 12))
         remove |= above_deck
-        expected = 50
+        uv = accessor_data(prim["attributes"]["TEXCOORD_0"], "<f4").reshape(-1, 2)
+        image = doc["images"][0]
+        view = doc["bufferViews"][image["bufferView"]]
+        offset = view.get("byteOffset", 0)
+        glass_faces, glazing = glazing_patch(local, faces, uv, binary[offset:offset + view["byteLength"]])
+        remove |= glass_faces
+        expected = 54
         # Locate the measured eaves in either encoding of the south building.
         surveyed = np.array([
             [[[4.74, 2.22, 10.74], [8.41, 3.34, 10.76], [11.07, 2.22, 10.77]],
@@ -107,7 +116,7 @@ def open_shell(source, record, start, inland, along, output, middle):
     props["露台重建"] = ("保留陆侧服务墙，按 OneMap 屋脊与檐口控制点重建中段两座雨棚。"
                      if middle else "南段雨棚依 OneMap 檐口和屋脊重建。保留后方立面、屋顶和主体轮廓。")
     props["露台参考"] = PHOTO
-    return canopy_ends
+    return canopy_ends, glazing
 
 
 def box(extents, center):
@@ -254,6 +263,9 @@ def deck_occlusion(pieces, canopy_ends):
 def set_deck_uv_channel(tree):
     deck = next(material for material in tree["materials"] if material["name"] == "Deck boards")
     deck["occlusionTexture"]["texCoord"] = 1
+    for material in tree["materials"]:
+        if material["name"] == GLASS:
+            material["extras"] = {"reflectSky": True, "surfaceRole": "facade"}
     for mesh in tree["meshes"]:
         for primitive in mesh["primitives"]:
             attrs = primitive["attributes"]
@@ -261,7 +273,7 @@ def set_deck_uv_channel(tree):
                 attrs["TEXCOORD_1"] = attrs.pop("_DECK_UV")
 
 
-def furnish(start, along, inland, texture_path, output, region_id, canopy_ends, middle):
+def furnish(start, along, inland, texture_path, output, region_id, canopy_ends, glazing, middle):
     pieces = defaultdict(list)
     prototype = chair()
     rng = np.random.default_rng(512)
@@ -355,10 +367,14 @@ def furnish(start, along, inland, texture_path, output, region_id, canopy_ends, 
         if name in {"Burgundy", "Green", "Charcoal"}:
             uv = np.column_stack((xyz[:, 2] / 1.15, xyz[:, 0] + xyz[:, 1] * .35))
         m.visual = TextureVisuals(uv=uv, material=materials[name])
+        scene.add_geometry(m, geom_name=name, node_name=name)
+    for mesh in glazing:
+        scene.add_geometry(mesh, geom_name=mesh.visual.material.name, node_name=mesh.visual.material.name)
+    for m in scene.geometry.values():
+        xyz = m.vertices.copy()
         m.vertices[:, 0] = start[0] + inland[0] * xyz[:, 0] + along[0] * xyz[:, 2]
         m.vertices[:, 2] = start[2] + inland[1] * xyz[:, 0] + along[1] * xyz[:, 2]
         m.vertices[:, 1] = start[1] + xyz[:, 1]
-        scene.add_geometry(m, geom_name=name, node_name=name)
     low, high = scene.bounds
     anchor = (low + high) / 2
     anchor[1] = low[1]
@@ -387,11 +403,13 @@ def bake(source, timber, output, buildings_file, streetscape_file):
     along = (np.array(config["quay"]["end"]) - start)[[0, 2]]
     along /= np.linalg.norm(along)
     inland = along[[1, 0]] * [1, -1]
-    ends = open_shell(source, building, start, inland, along, output, middle)
-    furniture = furnish(start, along, inland, timber, output, building["regionId"], ends, middle)
+    ends, glazing = open_shell(source, building, start, inland, along, output, middle)
+    furniture = furnish(start, along, inland, timber, output, building["regionId"], ends, glazing, middle)
     if middle:
         furniture["props"]["棚顶"] = "屋脊和檐口坐标取自 SLA 原模型。帆布颜色参照现场照片，分幅、垂度与棚架尺寸为估值。"
     else:
+        furniture["props"]["幕墙参考"] = GLAZING_PHOTO
+        furniture["props"]["幕墙"] = "二层约 22 米直段采用 OneMap 原始玻璃平面与影像。主窗框按影像配准，框深、颜色和反射强度为估值。"
         furniture["props"]["棚顶"] = "两座棚体的坡面采用 SLA 实测坐标。深浅表面、浅棚的四段横框和屋脊色带参照正射影像。材料和构件厚度为估值。"
     streetscape = {item["entityId"]: item for item in json.loads(streetscape_file.read_text())}
     streetscape[furniture["entityId"]] = furniture

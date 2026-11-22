@@ -8,31 +8,7 @@ const cityAir = /* glsl */ `
   }
 `;
 
-/** 实景模型既有标准受光材质，也有烘焙为无光照贴图的楼面。 */
-export function cityModelAir(material: THREE.Material) {
-  if (!(
-    material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshBasicMaterial
-  ))
-    return;
-  material.onBeforeCompile = (shader) => {
-    shader.vertexShader =
-      'varying vec3 cityEye;\n' +
-      shader.vertexShader.replace(
-        '#include <project_vertex>',
-        '#include <project_vertex>\ncityEye = mvPosition.xyz;',
-      );
-    shader.fragmentShader =
-      'varying vec3 cityEye;\n' +
-      cityAir +
-      shader.fragmentShader.replace(
-        '#include <opaque_fragment>',
-        'outgoingLight = cityAir(outgoingLight, length(cityEye), vec3(0.46,0.55,0.62));\n#include <opaque_fragment>',
-      );
-  };
-}
-
-/** 同一瓦片的楼房共用材质，远处小于一个像素的窗框过渡到立面的平均色。 */
-export function urbanFacade(material: THREE.MeshLambertMaterial) {
+function citySkyUniforms(material: THREE.Material) {
   const panorama = { value: null as THREE.Texture | null };
   const hasPanorama = { value: false };
   const yaw = { value: 0 };
@@ -46,8 +22,58 @@ export function urbanFacade(material: THREE.MeshLambertMaterial) {
     hasPanorama.value = !!panorama.value;
     yaw.value = scene.backgroundRotation.y;
   };
+  return { citySky: panorama, cityHasSky: hasPanorama, citySkyYaw: yaw };
+}
+
+const skyDeclarations =
+  'uniform sampler2D citySky;\nuniform bool cityHasSky;\nuniform float citySkyYaw;\n';
+
+/** 实景模型既有标准受光材质，也有烘焙为无光照贴图的楼面。 */
+export function cityModelAir(material: THREE.Material) {
+  if (!(
+    material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshBasicMaterial
+  ))
+    return;
+  const glass =
+    material instanceof THREE.MeshStandardMaterial && material.userData.reflectSky === true;
+  const sky = glass ? citySkyUniforms(material) : null;
+  if (sky) material.customProgramCacheKey = () => 'city-model-glazing';
   material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, { citySky: panorama, cityHasSky: hasPanorama, citySkyYaw: yaw });
+    if (sky) Object.assign(shader.uniforms, sky);
+    shader.vertexShader =
+      'varying vec3 cityEye;\n' +
+      shader.vertexShader.replace(
+        '#include <project_vertex>',
+        '#include <project_vertex>\ncityEye = mvPosition.xyz;',
+      );
+    shader.fragmentShader =
+      (sky ? skyDeclarations : '') +
+      'varying vec3 cityEye;\n' +
+      cityAir +
+      shader.fragmentShader.replace(
+        '#include <opaque_fragment>',
+        (sky
+          ? `if (cityHasSky) {
+          vec3 eye = normalize(vViewPosition);
+          vec3 reflected = inverseTransformDirection(reflect(-eye, normal), viewMatrix);
+          float c = cos(citySkyYaw), s = sin(citySkyYaw);
+          reflected.xz = mat2(c,s,-s,c) * reflected.xz;
+          reflected.y = max(0.014, reflected.y);
+          vec3 skyColor = texture2D(citySky, equirectUv(normalize(reflected)), 2.0).rgb;
+          float fresnel = 0.09 + 0.76 * pow(1.0 - abs(dot(normal,eye)), 5.0);
+          outgoingLight = mix(outgoingLight, skyColor, fresnel);
+        }\n`
+          : '') +
+          'outgoingLight = cityAir(outgoingLight, length(cityEye), vec3(0.46,0.55,0.62));\n#include <opaque_fragment>',
+      );
+  };
+}
+
+/** 同一瓦片的楼房共用材质，远处小于一个像素的窗框过渡到立面的平均色。 */
+export function urbanFacade(material: THREE.MeshLambertMaterial) {
+  const sky = citySkyUniforms(material);
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, sky);
     shader.vertexShader =
       'varying vec3 cityPosition;\nvarying vec3 cityNormal;\nvarying vec2 cityFacade;\n' +
       shader.vertexShader.replace(
@@ -59,7 +85,8 @@ export function urbanFacade(material: THREE.MeshLambertMaterial) {
       );
     shader.fragmentShader =
       cityAir +
-      'uniform sampler2D citySky;\nuniform bool cityHasSky;\nuniform float citySkyYaw;\nvarying vec3 cityPosition;\nvarying vec3 cityNormal;\nvarying vec2 cityFacade;\n' +
+      skyDeclarations +
+      'varying vec3 cityPosition;\nvarying vec3 cityNormal;\nvarying vec2 cityFacade;\n' +
       shader.fragmentShader
         .replace(
           '#include <color_fragment>',
