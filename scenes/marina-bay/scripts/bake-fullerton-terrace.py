@@ -85,7 +85,7 @@ def open_shell(source, record, start, inland, along, output, middle):
         offset = view.get("byteOffset", 0)
         glass_faces, glazing = glazing_patch(local, faces, uv, binary[offset:offset + view["byteLength"]])
         remove |= glass_faces
-        expected = 54
+        expected = 70
         # Locate the measured eaves in either encoding of the south building.
         surveyed = np.array([
             [[[4.74, 2.22, 10.74], [8.41, 3.34, 10.76], [11.07, 2.22, 10.77]],
@@ -409,7 +409,7 @@ def bake(source, timber, output, buildings_file, streetscape_file):
         furniture["props"]["棚顶"] = "屋脊和檐口坐标取自 SLA 原模型。帆布颜色参照现场照片，分幅、垂度与棚架尺寸为估值。"
     else:
         furniture["props"]["幕墙参考"] = GLAZING_PHOTO
-        furniture["props"]["幕墙"] = "二层约 22 米直段采用 OneMap 原始玻璃平面与影像。主窗框按影像配准，框深、颜色和反射强度为估值。"
+        furniture["props"]["幕墙"] = "二层五个窗面沿折线合计约 52 米，采用 OneMap 原始立面和影像。主窗框按影像配准，框深、颜色和反射强度为估值。"
         furniture["props"]["棚顶"] = "两座棚体的坡面采用 SLA 实测坐标。深浅表面、浅棚的四段横框和屋脊色带参照正射影像。材料和构件厚度为估值。"
     streetscape = {item["entityId"]: item for item in json.loads(streetscape_file.read_text())}
     streetscape[furniture["entityId"]] = furniture
