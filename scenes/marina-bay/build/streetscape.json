@@ -163,17 +163,17 @@
     "layer": "ext",
     "kind": "structure",
     "label": "One Fullerton · 临水餐饮露台",
-    "assetHash": "a5a03b3d9911a48e77abc68df02c923d43206fb8264ed99913c26dbae825cce7",
+    "assetHash": "c2826aecc2d756aeef529549f7b9a82a4e77c8fd974de1ab7eb18a53f2986958",
     "bounds": {
       "min": [
-        262.0287093518352,
+        261.97713136643426,
         -60.0222,
-        462.6068122602956
+        462.5173718372776
       ],
       "max": [
-        272.56444935007244,
-        -56.143696283362026,
-        508.4047967407963
+        273.19943484478756,
+        -49.408331457458495,
+        508.50659747485554
       ]
     },
     "material": {
@@ -185,7 +185,42 @@
       "现场参考": "https://commons.wikimedia.org/wiki/File:One_Fullerton_12-05-2024(7).jpg",
       "建筑来源": "Map Data © Singapore Land Authority / OneMap",
       "木材来源": "Teak Veneer · Poly Haven · CC0 · https://polyhaven.com/a/teak_veneer",
-      "说明": "沿 OneMap 两段既有双坡棚顶配设支架、矮边和用餐区。桌椅样式、数量与排列为视觉近似。"
+      "说明": "沿 OneMap 两段既有双坡棚顶配设支架、矮边和用餐区。桌椅样式、数量与排列为视觉近似。",
+      "幕墙参考": "https://commons.wikimedia.org/wiki/File:One_Fullerton_12-05-2024(6).jpg",
+      "幕墙": "二层约 22 米直段采用 OneMap 原始玻璃平面与影像。主窗框按影像配准，框深、颜色和反射强度为估值。",
+      "棚顶": "两座棚体的坡面采用 SLA 实测坐标。深浅表面、浅棚的四段横框和屋脊色带参照正射影像。材料和构件厚度为估值。"
+    }
+  },
+  {
+    "entityId": "bay.fullerton-middle-terraces",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "kind": "structure",
+    "label": "One Fullerton · 中段临水茶座",
+    "assetHash": "fe1b61a28c95181d056a3d0374ab9f84b04c8287d86ff804b4d8198dca807208",
+    "bounds": {
+      "min": [
+        265.66854860159896,
+        -60.0222,
+        517.8703527159549
+      ],
+      "max": [
+        275.67602619155195,
+        -55.032854011016845,
+        537.7008177239587
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "现场参考": "https://commons.wikimedia.org/wiki/File:One_Fullerton_12-05-2024(7).jpg",
+      "建筑来源": "Map Data © Singapore Land Authority / OneMap",
+      "木材来源": "Teak Veneer · Poly Haven · CC0 · https://polyhaven.com/a/teak_veneer",
+      "说明": "沿 OneMap 两段既有双坡棚顶配设支架、矮边和用餐区。桌椅样式、数量与排列为视觉近似。",
+      "棚顶": "屋脊和檐口坐标取自 SLA 原模型。帆布颜色参照现场照片，分幅、垂度与棚架尺寸为估值。"
     }
   }
 ]

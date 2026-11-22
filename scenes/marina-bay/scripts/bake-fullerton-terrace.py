@@ -10,13 +10,17 @@ from pathlib import Path
 
 import numpy as np
 import trimesh
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFilter
 from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
+
+from fullerton_glazing import GLASS, PHOTO as GLAZING_PHOTO, glazing_patch
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILDING = "bay.0c252ba3-f96a-4c82-b87b-fa5ef91708f2"
 SOURCE_HASH = "051c63d6c1d2f890a01ce6d2e2872e025d1af2747818067ba9b75ffed936f6ee"
+MIDDLE = "928bba087910672b69996dcd0a9eb38621bbf73c412f1d5c4b14ed9cf0b90a30"
+CANONICAL_BUILDING = "97c6196a9b48ba761391e74d22ce10f5959fddca8f9f3d4e62a253f37a77a0d2"
 PHOTO = "https://commons.wikimedia.org/wiki/File:One_Fullerton_12-05-2024(7).jpg"
 
 
@@ -26,21 +30,22 @@ def write_asset(data, folder):
     return digest
 
 
-def open_shell(source, record, start, inland, along, output):
+def open_shell(source, record, start, inland, along, output, middle):
     # Keep OneMap's original image data, materials and vertex buffers. Edit only one index buffer.
     raw = source.read_bytes()
-    if hashlib.sha256(raw).hexdigest() != SOURCE_HASH:
+    source_hash = hashlib.sha256(raw).hexdigest()
+    if source_hash not in {SOURCE_HASH, CANONICAL_BUILDING, MIDDLE}:
         raise ValueError("Expected the surveyed One Fullerton source GLB")
     json_size = struct.unpack_from("<I", raw, 12)[0]
     doc = json.loads(raw[20:20 + json_size])
     binary = bytearray(raw[28 + json_size:])
-    prim = doc["meshes"][0]["primitives"][0]
+    prim, = [pr for m in doc["meshes"] for pr in m["primitives"] if "TEXCOORD_0" in pr["attributes"]]
 
     def accessor_data(index, dtype):
         acc = doc["accessors"][index]
         view = doc["bufferViews"][acc["bufferView"]]
         offset = view.get("byteOffset", 0) + acc.get("byteOffset", 0)
-        count = acc["count"] * (3 if acc["type"] == "VEC3" else 1)
+        count = acc["count"] * {"VEC3": 3, "VEC2": 2, "SCALAR": 1}[acc["type"]]
         return np.frombuffer(binary, dtype, count=count, offset=offset)
 
     index = doc["accessors"][prim["indices"]]
@@ -55,12 +60,46 @@ def open_shell(source, record, start, inland, along, output):
     tri = local[faces]
     min_corner, max_corner = tri.min(axis=1), tri.max(axis=1)
     cross = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
-    remove = ((min_corner[:, 2] > 10.5) & (max_corner[:, 2] < 56.5) &
-              (min_corner[:, 0] < 5) & (max_corner[:, 0] < 11.4) &
-              (min_corner[:, 1] < 0.05) & (max_corner[:, 1] > 2) &
-              (np.abs(cross[:, 1]) < 0.02 * np.linalg.norm(cross, axis=1)))
-    if remove.sum() != 20:
-        raise ValueError("Unexpected count of vertical skirt triangles")
+    upright = ((min_corner[:, 1] < .06) & (max_corner[:, 1] > 2) &
+               (np.abs(cross[:, 1]) < .02 * np.linalg.norm(cross, axis=1)))
+    glazing = []
+    if middle:
+        # The landward service wall stays in place. Open the path-facing and end walls of the awnings.
+        remove = upright & (min_corner[:, 0] < 10.5)
+        # Each row is a surveyed gable end, ordered waterside eave, ridge, landward eave.
+        # The SHA check fixes the vertex numbering of this SLA tile.
+        end_indices = [[[12, 18, 75], [6, 11, 25]], [[44, 34, 96], [50, 47, 89]]]
+        canopy_ends = local[end_indices]
+        remove |= min_corner[:, 1] > 2
+        expected = 64
+    else:
+        remove = (upright & (min_corner[:, 2] > 10.5) & (max_corner[:, 2] < 56.5) &
+                  (min_corner[:, 0] < 5) & (max_corner[:, 0] < 11.4))
+        above_deck = ((min_corner[:, 1] > 1.8) & (max_corner[:, 1] < 5.2) &
+                      (min_corner[:, 2] > 10) & (max_corner[:, 2] < 57) &
+                      (min_corner[:, 0] < 10.9) & (max_corner[:, 0] < 12))
+        remove |= above_deck
+        uv = accessor_data(prim["attributes"]["TEXCOORD_0"], "<f4").reshape(-1, 2)
+        image = doc["images"][0]
+        view = doc["bufferViews"][image["bufferView"]]
+        offset = view.get("byteOffset", 0)
+        glass_faces, glazing = glazing_patch(local, faces, uv, binary[offset:offset + view["byteLength"]])
+        remove |= glass_faces
+        expected = 54
+        # Locate the measured eaves in either encoding of the south building.
+        surveyed = np.array([
+            [[[4.74, 2.22, 10.74], [8.41, 3.34, 10.76], [11.07, 2.22, 10.77]],
+             [[4.66, 2.22, 32.44], [8.33, 3.34, 32.43], [10.98, 2.22, 32.42]]],
+            [[[3.11, 2.70, 32.44], [7.21, 4.01, 32.43], [11.17, 2.75, 32.42]],
+             [[3.19, 2.70, 56.22], [7.29, 4.01, 56.20], [11.22, 2.75, 56.19]]],
+        ])
+        points = surveyed.reshape(-1, 3)
+        distances = np.linalg.norm(local[None, :, :] - points[:, None, :], axis=2)
+        if distances.min(axis=1).max() > .03:
+            raise ValueError("Missing a surveyed south canopy endpoint")
+        canopy_ends = local[distances.argmin(axis=1)].reshape(surveyed.shape)
+    if remove.sum() != expected:
+        raise ValueError("Unexpected count of removed survey triangles")
     kept = faces[~remove].copy()
     faces[:len(kept)] = kept
     index.update(count=int(kept.size), min=[int(kept.min())], max=[int(kept.max())])
@@ -73,9 +112,11 @@ def open_shell(source, record, start, inland, along, output):
     props = record["props"]
     props["三角形数"] = sum(doc["accessors"][pr["indices"]]["count"] // 3
                          for m in doc["meshes"] for pr in m["primitives"])
-    props["原建筑资源"] = SOURCE_HASH
-    props["露台重建"] = "保留 OneMap 屋顶与主体轮廓，去除两段临水餐饮雨棚在街面封闭的侧壁。"
+    props["原建筑资源"] = source_hash
+    props["露台重建"] = ("保留陆侧服务墙，按 OneMap 屋脊与檐口控制点重建中段两座雨棚。"
+                     if middle else "南段雨棚依 OneMap 檐口和屋脊重建。保留后方立面、屋顶和主体轮廓。")
     props["露台参考"] = PHOTO
+    return canopy_ends, glazing
 
 
 def box(extents, center):
@@ -107,16 +148,145 @@ def chair():
     return {name: trimesh.util.concatenate(meshes) for name, meshes in pieces.items()}
 
 
-def furnish(start, along, inland, texture_path, output, region_id):
+def canvas_tile():
+    # One 1.15 m bolt of fabric with a lapped seam and two rows of stitching.
+    y, x = np.indices((256, 256))
+    warp = np.cos(x * math.tau / 4)
+    weft = np.cos(y * math.tau / 4)
+    value = 242 + 2 * warp + 2 * weft + 1.5 * warp * weft
+    value[:, :5] -= 14
+    value[:, 5:7] += 7
+    for line in [1, 4]:
+        value[:, line] += 10 * (y[:, line] % 8 < 4)
+    image = Image.fromarray(np.uint8(value)).convert("RGB")
+    image.format = "PNG"
+    return image
+
+
+def fit_canvas(ends, bays, fabric, frame, post_edge, deck):
+    # Interpolate within each surveyed slope. The cloth is taut at rafters and
+    # at the ridge, with a small drop midway between supports.
+    first, last = ends
+    for side in [0, 2]:
+        if fabric is not None:
+            vertices, faces = [], []
+            for row in range(8 * bays + 1):
+                t = row / (8 * bays)
+                eave, ridge = (first + t * (last - first))[[side, 1]]
+                droop = .082 * math.sin(row * math.pi / 8) ** 2
+                # The turned-down hem sits over the edge rail.
+                vertices.extend([eave - [0, .13 + droop * .17, 0], eave])
+                for u in [.25, .5, .75, 1.]:
+                    point = eave + u * (ridge - eave)
+                    point[1] -= droop * math.sin(math.pi * u)
+                    vertices.append(point)
+                if row:
+                    for col in range(5):
+                        i = 6 * (row - 1) + col
+                        faces.extend([[i, i + 6, i + 1], [i + 6, i + 7, i + 1]])
+            if side == 2:
+                faces = np.array(faces)[:, ::-1]
+            fabric.append(trimesh.Trimesh(vertices=vertices, faces=faces, process=False))
+        offset = [0, .052, 0]
+        frame.append(strut(first[side] - offset, last[side] - offset, .034))
+        for t in np.linspace(.012, .988, bays + 1):
+            eave, ridge = (first + t * (last - first))[[side, 1]]
+            frame.append(strut(eave - offset, ridge - offset, .035))
+            post_x = max(eave[0] + .11, post_edge + .11) if side == 0 else eave[0] - .15
+            post = eave + (ridge - eave) * ((post_x - eave[0]) / (ridge[0] - eave[0]))
+            post -= offset
+            frame.append(box([.065, post[1] - deck, .065], [post[0], (post[1] + deck) / 2, post[2]]))
+    frame.append(strut(first[1] - [0, .052, 0], last[1] - [0, .052, 0], .034))
+
+
+def roof_panels(ends, pieces):
+    # The orthophoto resolves four large bays and a continuous pale ridge band.
+    # Cover strips meet the infill edge-to-edge on each surveyed roof plane.
+    ts = [0, .009, .245, .255, .495, .505, .745, .755, .991, 1]
+    us = [0, .055, .79, 1]
+    for side in [0, 2]:
+        for row, (t0, t1) in enumerate(zip(ts, ts[1:])):
+            for col, (u0, u1) in enumerate(zip(us, us[1:])):
+                verts = []
+                for t in [t0, t1]:
+                    eave, ridge = (ends[0] + t * (ends[1] - ends[0]))[[side, 1]]
+                    verts.extend([eave + u * (ridge - eave) for u in [u0, u1]])
+                faces = np.array([[0, 2, 1], [2, 3, 1]])
+                if side == 2:
+                    faces = faces[:, ::-1]
+                name = "Pale roof trim" if row % 2 == 0 or col != 1 else "Roof infill"
+                pieces[name].append(trimesh.Trimesh(vertices=verts, faces=faces, process=False))
+        a, b = ends[:, side]
+        pieces["Pale roof trim"].append(strut(a - [0, .047, 0], b - [0, .047, 0], .049))
+
+
+def deck_occlusion(pieces, canopy_ends):
+    # Project the opaque silhouettes onto the deck from cosine-weighted sky
+    # directions. Only indirect light uses this map. The sun still casts live shadows.
+    deck = trimesh.util.concatenate(pieces["Deck"])
+    low, high = deck.bounds[:, [0, 2]]
+    padding = .1
+    low, high = low - padding, high + padding
+    size = (320, 768)
+    scale = (np.array(size) - 1) / (high - low)
+    triangles = [mesh.triangles for name, meshes in pieces.items() if name != "Deck" for mesh in meshes]
+    for first, last in canopy_ends:
+        top = np.array([first[2], last[2]])
+        bottom = top.copy()
+        bottom[:, 1] = 0
+        triangles.append(np.array([[top[0], top[1], bottom[0]], [top[1], bottom[1], bottom[0]]]))
+    triangles = np.concatenate(triangles)
+    # Discard surfaces fully below the receiving plane.
+    floor = deck.bounds[1, 1]
+    triangles = triangles[triangles[:, :, 1].max(axis=1) > floor + .005]
+    planar = (triangles[:, :, [0, 2]] - low) * scale
+    height = np.maximum(triangles[:, :, 1:2] - floor, 0)
+    blocked = np.zeros(size[::-1], np.float32)
+    samples = 128
+    for i in range(samples):
+        u = (i + .5) / samples
+        angle = math.pi * (3 - math.sqrt(5)) * i
+        slope = math.sqrt(u / (1 - u)) * np.array([math.cos(angle), math.sin(angle)])
+        projected = (planar - height * slope * scale).round().astype(np.int32)
+        mask = Image.new("L", size)
+        draw = ImageDraw.Draw(mask)
+        for triangle in projected.reshape(-1, 6).tolist():
+            draw.polygon(triangle, fill=1)
+        blocked += np.asarray(mask)
+    # Allow some secondary bounce from the surrounding wood and pale pavement.
+    image = Image.fromarray(np.uint8(255 * (1 - .68 * blocked / samples)))
+    image = image.filter(ImageFilter.GaussianBlur(.8))
+    image.format = "JPEG"
+    return image, low, high
+
+
+def set_deck_uv_channel(tree):
+    deck = next(material for material in tree["materials"] if material["name"] == "Deck boards")
+    deck["occlusionTexture"]["texCoord"] = 1
+    for material in tree["materials"]:
+        if material["name"] == GLASS:
+            material["extras"] = {"reflectSky": True, "surfaceRole": "facade"}
+    for mesh in tree["meshes"]:
+        for primitive in mesh["primitives"]:
+            attrs = primitive["attributes"]
+            if "_DECK_UV" in attrs:
+                attrs["TEXCOORD_1"] = attrs.pop("_DECK_UV")
+
+
+def furnish(start, along, inland, texture_path, output, region_id, canopy_ends, glazing, middle):
     pieces = defaultdict(list)
     prototype = chair()
     rng = np.random.default_rng(512)
-    # Each tuple gives the alongshore limits, eave positions and surveyed ridge height.
-    for z0, z1, x0, x1, eave, ridge in [
-        (10.85, 32.32, 4.75, 11.02, 2.19, 3.28),
-        (32.48, 56.12, 3.21, 11.13, 2.65, 3.94),
-    ]:
-        mid = 8.35 if z0 < 20 else 7.25
+    # Eave and ridge elevations are from the SLA mesh. Keep the middle deck behind the promenade.
+    sections = (
+        [(66.40, 77.52, 4.64, 11.12),
+         (77.76, 85.33, 2.26, 11.44)]
+        if middle else
+        [(10.85, 32.32, 4.75, 11.02),
+         (32.48, 56.12, 3.21, 11.13)]
+    )
+    for section, (z0, z1, outer_eave, x1) in enumerate(sections):
+        x0 = max(outer_eave, 3.67) if middle else outer_eave
         length = z1 - z0
         deck = 0.15
         pieces["Deck"].append(box([x1 - x0, deck - .018, length],
@@ -126,33 +296,28 @@ def furnish(start, along, inland, texture_path, output, region_id):
         for i in range(boards):
             pieces["Deck"].append(box([width - .004, .018, length],
                                       [x0 + (i + .5) * width, deck - .009, (z0 + z1) / 2]))
-        # The low-resolution survey texture is visible on the upper roof. Canvas is visible below.
-        # Folds run between structural bays and finish against the aluminium rafters.
         bays = round(length / 3.6)
-        for edge in [x0, x1]:
-            vertices, faces = [], []
-            for step in range(4 * bays + 1):
-                t = step / (4 * bays)
-                sag = .042 * math.sin(math.pi * step / 4) ** 2
-                for dx, h in [(edge, eave), ((edge + mid) / 2, (eave + ridge) / 2), (mid, ridge)]:
-                    vertices.append([dx, h - .10 - sag, z0 + length * t])
-                if step:
-                    for column in range(2):
-                        i = 3 * (step - 1) + column
-                        faces.extend([[i, i + 1, i + 3], [i + 1, i + 4, i + 3]])
-            pieces["Canvas"].append(trimesh.Trimesh(vertices=vertices, faces=faces, process=False))
+        if middle:
+            fabric = pieces["Burgundy" if section else "Green"]
+        elif section == 0:
+            fabric = pieces["Charcoal"]
+        else:
+            roof_panels(canopy_ends[section], pieces)
+            fabric = None
+            bays = 4
+        fit_canvas(canopy_ends[section], bays, fabric, pieces["Canopy frame"], x0, deck)
         # The low timber apron and actual eaves delimit the terrace along the waterside path.
         pieces["Teak"].append(box([0.10, 0.31, length], [x0 + 0.05, deck + 0.155, (z0 + z1) / 2]))
-        for x in [x0 + 0.11, x1 - 0.15]:
-            pieces["Canopy frame"].append(box([0.075, 0.115, length], [x, eave - 0.06, (z0 + z1) / 2]))
-        for z in np.linspace(z0 + 0.12, z1 - 0.12, round(length / 3.6) + 1):
-            for x in [x0 + 0.11, x1 - 0.15]:
-                pieces["Canopy frame"].append(box([0.065, eave - deck, 0.065], [x, (eave + deck) / 2, z]))
-                pieces["Canopy frame"].append(strut([x, eave - .09, z], [mid, ridge - .09, z], .03))
         for z in np.arange(z0 + 1.4, z1 - 0.9, 2.6):
             for x in [x0 + 1.15, x1 - 1.2]:
                 offset = rng.uniform(-0.1, 0.1)
-                pieces["Teak"].append(box([0.83, 0.045, 0.73], [x, deck + 0.74, z + offset]))
+                if middle:
+                    top = trimesh.creation.cylinder(radius=.42, height=.045, sections=24)
+                    top.apply_transform(trimesh.transformations.rotation_matrix(math.pi / 2, [1, 0, 0]))
+                    top.apply_translation([x, deck + .74, z + offset])
+                    pieces["Teak"].append(top)
+                else:
+                    pieces["Teak"].append(box([0.83, 0.045, 0.73], [x, deck + 0.74, z + offset]))
                 pieces["Metal"].append(strut([x, deck + .04, z + offset], [x, deck + .73, z + offset], .041))
                 pieces["Metal"].append(box([.49, .035, .44], [x, deck + .025, z + offset]))
                 for sign in [-1, 1]:
@@ -167,13 +332,23 @@ def furnish(start, along, inland, texture_path, output, region_id):
     timber = Image.open(texture_path).convert("RGB").resize((512, 512), Image.Resampling.LANCZOS)
     timber.format = "JPEG"
     materials = {
-        "Canvas": PBRMaterial(name="Awning canvas", baseColorFactor=[148, 131, 111, 255],
-                              doubleSided=True, metallicFactor=0, roughnessFactor=.98),
+        "Pale roof trim": PBRMaterial(name="Pale roof trim", baseColorFactor=[185, 182, 167, 255],
+                                     doubleSided=True, metallicFactor=.13, roughnessFactor=.52),
+        "Roof infill": PBRMaterial(name="Coated roof panels", baseColorFactor=[114, 107, 91, 255],
+                                  doubleSided=True, metallicFactor=.06, roughnessFactor=.63),
         "Metal": PBRMaterial(name="Painted steel", baseColorFactor=[40, 43, 44, 255], metallicFactor=.43, roughnessFactor=.57),
         "Canopy frame": PBRMaterial(name="Grey aluminium", baseColorFactor=[106, 111, 106, 255], metallicFactor=.52, roughnessFactor=.49),
         "Deck": PBRMaterial(name="Deck boards", baseColorTexture=timber, baseColorFactor=[103, 98, 94, 255], metallicFactor=0, roughnessFactor=.83),
         "Teak": PBRMaterial(name="Outdoor timber", baseColorTexture=timber, baseColorFactor=[183, 169, 150, 255], metallicFactor=0, roughnessFactor=.66),
     }
+    textile = canvas_tile()
+    texture, deck_min, deck_max = deck_occlusion(pieces, canopy_ends)
+    materials["Deck"].occlusionTexture = texture
+    for name, color in [("Green", [23, 54, 39, 255]), ("Burgundy", [100, 25, 35, 255]),
+                        ("Charcoal", [26, 29, 31, 255])]:
+        if name in pieces:
+            materials[name] = PBRMaterial(name=name + " canvas", baseColorFactor=color, baseColorTexture=textile, doubleSided=True,
+                                          metallicFactor=0, roughnessFactor=.96)
     scene = trimesh.Scene()
     for name, meshes in pieces.items():
         m = trimesh.util.concatenate(meshes)
@@ -184,21 +359,31 @@ def furnish(start, along, inland, texture_path, output, region_id):
             m.vertex_normals = np.repeat(m.face_normals, 3, axis=0)
             m.merge_vertices(merge_norm=False)
         xyz = m.vertices.copy()
+        if name == "Deck":
+            # Custom attributes pass through trimesh without its first-channel V flip.
+            m.vertex_attributes["_DECK_UV"] = (xyz[:, [0, 2]] - deck_min) / (deck_max - deck_min)
         # The photo sample's grain runs across U. Use metric coordinates on the broad faces.
         uv = np.column_stack((xyz[:, 2] / 1.6, (xyz[:, 0] + xyz[:, 1]) / 1.15))
+        if name in {"Burgundy", "Green", "Charcoal"}:
+            uv = np.column_stack((xyz[:, 2] / 1.15, xyz[:, 0] + xyz[:, 1] * .35))
         m.visual = TextureVisuals(uv=uv, material=materials[name])
+        scene.add_geometry(m, geom_name=name, node_name=name)
+    for mesh in glazing:
+        scene.add_geometry(mesh, geom_name=mesh.visual.material.name, node_name=mesh.visual.material.name)
+    for m in scene.geometry.values():
+        xyz = m.vertices.copy()
         m.vertices[:, 0] = start[0] + inland[0] * xyz[:, 0] + along[0] * xyz[:, 2]
         m.vertices[:, 2] = start[2] + inland[1] * xyz[:, 0] + along[1] * xyz[:, 2]
         m.vertices[:, 1] = start[1] + xyz[:, 1]
-        scene.add_geometry(m, geom_name=name, node_name=name)
     low, high = scene.bounds
     anchor = (low + high) / 2
     anchor[1] = low[1]
     for mesh in scene.geometry.values():
         mesh.vertices -= anchor
-    data = trimesh.exchange.gltf.export_glb(scene, include_normals=True)
-    return dict(entityId="bay.fullerton-dining-terraces", regionId=region_id, layer="ext", kind="structure",
-                label="One Fullerton · 临水餐饮露台", assetHash=write_asset(data, output),
+    data = trimesh.exchange.gltf.export_glb(scene, include_normals=True,
+                                            tree_postprocessor=set_deck_uv_channel)
+    return dict(entityId="bay.fullerton-middle-terraces" if middle else "bay.fullerton-dining-terraces", regionId=region_id, layer="ext", kind="structure",
+                label="One Fullerton · 中段临水茶座" if middle else "One Fullerton · 临水餐饮露台", assetHash=write_asset(data, output),
                 bounds={"min": low.tolist(), "max": high.tolist()}, material={"shading": "albedo"},
                 props={"background": True, "surfaceRole": "landscape", "现场参考": PHOTO,
                        "建筑来源": "Map Data © Singapore Land Authority / OneMap",
@@ -209,15 +394,26 @@ def furnish(start, along, inland, texture_path, output, region_id):
 def bake(source, timber, output, buildings_file, streetscape_file):
     config = json.loads((ROOT / "context.json").read_text())
     buildings = json.loads(buildings_file.read_text())
-    building = next(b for b in buildings if b["entityId"] == BUILDING)
+    middle = hashlib.sha256(source.read_bytes()).hexdigest() == MIDDLE
+    if middle:
+        building = next(b for b in buildings if b["assetHash"] == MIDDLE or b["props"].get("原建筑资源") == MIDDLE)
+    else:
+        building = next(b for b in buildings if b["entityId"] == BUILDING)
     start = np.array(config["quay"]["start"])
     along = (np.array(config["quay"]["end"]) - start)[[0, 2]]
     along /= np.linalg.norm(along)
     inland = along[[1, 0]] * [1, -1]
-    open_shell(source, building, start, inland, along, output)
-    furniture = furnish(start, along, inland, timber, output, building["regionId"])
-    streetscape = json.loads(streetscape_file.read_text())
-    streetscape = [item for item in streetscape if item["entityId"] != furniture["entityId"]] + [furniture]
+    ends, glazing = open_shell(source, building, start, inland, along, output, middle)
+    furniture = furnish(start, along, inland, timber, output, building["regionId"], ends, glazing, middle)
+    if middle:
+        furniture["props"]["棚顶"] = "屋脊和檐口坐标取自 SLA 原模型。帆布颜色参照现场照片，分幅、垂度与棚架尺寸为估值。"
+    else:
+        furniture["props"]["幕墙参考"] = GLAZING_PHOTO
+        furniture["props"]["幕墙"] = "二层约 22 米直段采用 OneMap 原始玻璃平面与影像。主窗框按影像配准，框深、颜色和反射强度为估值。"
+        furniture["props"]["棚顶"] = "两座棚体的坡面采用 SLA 实测坐标。深浅表面、浅棚的四段横框和屋脊色带参照正射影像。材料和构件厚度为估值。"
+    streetscape = {item["entityId"]: item for item in json.loads(streetscape_file.read_text())}
+    streetscape[furniture["entityId"]] = furniture
+    streetscape = list(streetscape.values())
     for file, value in [(buildings_file, buildings), (streetscape_file, streetscape)]:
         file.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n")
     print(building["assetHash"], furniture["assetHash"])
