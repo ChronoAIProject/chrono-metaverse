@@ -755,7 +755,7 @@
     "kind": "object",
     "label": "MARINA BAY SANDS SINGAPORE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "95664d417851f133b6a370bda1e85cf1851107852768a377516e02ff5653e8ea",
+    "assetHash": "65eeae21fa2b5477b37f52cf884f6e1a2292517217461790d5d54be02ab4deb9",
     "bounds": {
       "min": [
         -661.780779,
@@ -776,7 +776,10 @@
       "原始分片": "5/19/2_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 211.149,
-      "三角形数": 28476
+      "三角形数": 14238,
+      "原建筑资源": "95664d417851f133b6a370bda1e85cf1851107852768a377516e02ff5653e8ea",
+      "玻璃参考": "https://commons.wikimedia.org/wiki/File:Marina_Bay_Sands_view_from_Merlion_Park,_Singapore_(Ank_Kumar)_01.jpg",
+      "立面处理": "按朝湾立面朝向和高度校正贴图中的大面积固定亮斑；窗格和几何轮廓沿用 SLA 模型。"
     }
   },
   {
@@ -3308,7 +3311,7 @@
     "kind": "object",
     "label": "TOWER 3 (MARINA BAY SANDS SINGAPORE)",
     "regionId": "marina-bay-exterior",
-    "assetHash": "798131dc0624167c639000bd26be350b6ba49c8902a7631387922d2a044b7e48",
+    "assetHash": "61ccf42579fe6c8a6f2364f0a042537bee4cf7967c0451964c70f97195aa75cc",
     "bounds": {
       "min": [
         -499.465987,
@@ -3329,7 +3332,10 @@
       "原始分片": "6/39/5_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 183.405,
-      "三角形数": 796
+      "三角形数": 398,
+      "原建筑资源": "798131dc0624167c639000bd26be350b6ba49c8902a7631387922d2a044b7e48",
+      "玻璃参考": "https://commons.wikimedia.org/wiki/File:Marina_Bay_Sands_view_from_Merlion_Park,_Singapore_(Ank_Kumar)_01.jpg",
+      "立面处理": "按朝湾立面朝向和高度校正贴图中的大面积固定亮斑；窗格和几何轮廓沿用 SLA 模型。"
     }
   },
   {
@@ -7001,7 +7007,7 @@
     "kind": "object",
     "label": "TOWER 2 (MARINA BAY SANDS SINGAPORE)",
     "regionId": "marina-bay-exterior",
-    "assetHash": "827fcc819e9171157b0540bd1fa1d054f69ccd42350737f86c614fe1febd92bd",
+    "assetHash": "d283dfdf0cbf0ceeb68d1fdc48c6a13c32cdb2532fd1368f51cf8bf6da95d596",
     "bounds": {
       "min": [
         -516.478454,
@@ -7022,7 +7028,10 @@
       "原始分片": "7/79/9_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 181.013,
-      "三角形数": 1032
+      "三角形数": 516,
+      "原建筑资源": "827fcc819e9171157b0540bd1fa1d054f69ccd42350737f86c614fe1febd92bd",
+      "玻璃参考": "https://commons.wikimedia.org/wiki/File:Marina_Bay_Sands_view_from_Merlion_Park,_Singapore_(Ank_Kumar)_01.jpg",
+      "立面处理": "按朝湾立面朝向和高度校正贴图中的大面积固定亮斑；窗格和几何轮廓沿用 SLA 模型。"
     }
   },
   {
