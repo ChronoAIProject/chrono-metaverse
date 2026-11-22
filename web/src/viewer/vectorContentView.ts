@@ -310,6 +310,7 @@ export class VectorContentItem {
       surface.name = 'ground:' + part.material;
       surface.userData.background = true;
       surface.receiveShadow = true;
+      surface.layers.enable(CITY_REFLECTION_LAYER);
       mesh.add(surface);
     }
     if (water && this.waterMaterial) {

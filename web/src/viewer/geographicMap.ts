@@ -1,7 +1,7 @@
 import { grassPatch } from './mapGrass';
 import type { ExternalAccess } from '../core/externalSource';
 import * as THREE from 'three';
-import { applyGroundDetail, groundDetailTexture } from './mapGround';
+import { groundDetailTexture, urbanGroundMaterial } from './mapGround';
 import { hologramMaterial } from './hologram';
 import type { GeographicMap as MapConfig } from '../core/environment';
 import {
@@ -40,7 +40,10 @@ interface Node extends Tile {
 }
 
 interface Patch {
-  readonly mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+  readonly mesh: THREE.Mesh<
+    THREE.BufferGeometry,
+    THREE.MeshBasicMaterial | THREE.MeshLambertMaterial
+  >;
   readonly node: Node;
   ancestor: string | null;
   grass?: ReturnType<typeof grassPatch>;
@@ -72,7 +75,6 @@ export class GeographicMap {
   private readonly cameraProjection = new THREE.Matrix4();
   private viewport = '';
   private readonly detail?: THREE.Texture;
-  private failures = 0;
   private stats: MapStats = { tiles: 0, pending: 0, failed: 0, zoom: 0 };
 
   constructor(
@@ -341,18 +343,24 @@ export class GeographicMap {
 
   private paint(): void {
     let loaded = 0;
+    let failed = 0;
     for (const node of this.visible) {
       const key = tileKey(node);
       let patch = this.patches.get(key);
       if (!patch) {
         const mesh = new THREE.Mesh(
           this.geometry(node),
-          new THREE.MeshBasicMaterial({ color: 0x557e8e }),
+          this.detail && node.z >= 15
+            ? urbanGroundMaterial(this.detail)
+            : new THREE.MeshBasicMaterial({ color: 0x557e8e }),
         );
         if (this.resource?.hologram) hologramMaterial(mesh.material, 'terrain');
         else {
           mesh.material.toneMapped = false;
-          if (this.detail && node.z >= 15) applyGroundDetail(mesh.material, this.detail);
+          if (mesh.material instanceof THREE.MeshLambertMaterial) {
+            mesh.geometry.computeVertexNormals();
+            mesh.receiveShadow = true;
+          }
         }
         mesh.position.copy(node.center);
         mesh.userData.background = true;
@@ -370,12 +378,17 @@ export class GeographicMap {
         if (patch.grass) patch.grass.visible = near;
       }
       let ancestor = node;
-      while (!ancestor.texture && ancestor.z > 0)
+      let unavailable = false;
+      while (!ancestor.texture) {
+        if (ancestor.failedAt !== undefined) unavailable = true;
+        if (ancestor.z === 0) break;
         ancestor = this.node({
           z: ancestor.z - 1,
           x: Math.floor(ancestor.x / 2),
           y: Math.floor(ancestor.y / 2),
         });
+      }
+      if (unavailable) failed++;
       const ancestorKey = ancestor.texture ? tileKey(ancestor) : null;
       if (ancestorKey) loaded++;
       if (ancestorKey === patch.ancestor) continue;
@@ -398,15 +411,15 @@ export class GeographicMap {
     this.stats = {
       tiles: loaded,
       pending: this.queue.length + this.pending.size,
-      failed: this.failures,
+      failed,
       zoom: Math.max(0, ...this.visible.map((node) => node.z)),
     };
     this.host.dataset.mapTiles = String(loaded);
     this.host.dataset.mapPending = String(this.stats.pending);
-    this.host.dataset.mapFailed = String(this.failures);
+    this.host.dataset.mapFailed = String(failed);
     this.host.dataset.mapZoom = String(this.stats.zoom);
     this.host.dataset.mapReady = String(loaded === this.visible.length && loaded > 0);
-    this.credit.title = this.failures
+    this.credit.title = failed
       ? '部分地图影像暂不可用，使用较低精度影像回退'
       : '地图按视野加载，支持浏览器缓存';
   }
@@ -456,7 +469,6 @@ export class GeographicMap {
       }
     }
     node.failedAt = performance.now();
-    this.failures++;
   }
 
   private release(node: Node): void {

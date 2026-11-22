@@ -31,18 +31,36 @@ export class CitySun {
     shadow.autoUpdate = false;
   }
 
-  update(renderer: THREE.WebGLRenderer, focus: THREE.Vector3, globe: boolean) {
+  update(renderer: THREE.WebGLRenderer, eye: THREE.Vector3, focus: THREE.Vector3, globe: boolean) {
     const light = this.light;
     renderer.shadowMap.enabled = !!light && !globe;
     if (!light || globe) return;
     const now = performance.now();
-    // 对齐成 24 米的网格，避免逐帧移动采样坐标。异步载入的楼体最多一秒后投影。
-    this.center.copy(focus).divideScalar(24).round().multiplyScalar(24);
-    if (now - this.last < 1000 && this.center.equals(light.target.position)) return;
+    const distance = eye.distanceTo(focus);
+    const shadow = light.shadow;
+    const previous = shadow.camera.right;
+    // 近处的立柱直径约 6 厘米，需要厘米级阴影采样。切换距离留有回差。
+    const radius =
+      distance < (previous === 40 ? 88 : 72)
+        ? 40
+        : distance < (previous === 112 ? 286 : 248)
+          ? 112
+          : 360;
+    if (radius === 360) this.center.copy(focus);
+    else this.center.lerpVectors(eye, focus, Math.min(1, (radius * 0.5) / Math.max(1, distance)));
+    const grid = radius / 15;
+    this.center.divideScalar(grid).round().multiplyScalar(grid);
+    if (previous === radius && now - this.last < 1000 && this.center.equals(light.target.position))
+      return;
     this.last = now;
+    if (previous !== radius) {
+      Object.assign(shadow.camera, { left: -radius, right: radius, top: radius, bottom: -radius });
+      shadow.camera.updateProjectionMatrix();
+    }
+    shadow.normalBias = radius / 3000;
     light.position.copy(this.direction).multiplyScalar(1000).add(this.center);
     light.target.position.copy(this.center);
     light.target.updateMatrixWorld();
-    light.shadow.needsUpdate = true;
+    shadow.needsUpdate = true;
   }
 }
