@@ -73,14 +73,15 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
         mat2 crosswind = mat2(0.86,0.51,-0.51,0.86);
         vec2 fine = slope((crosswind*meters)*vec2(3.2,6.8) - time*vec2(0.3,2.1));
         // 长波调制短波的相位和强度，让同一片水上有阵风吹皱和相对平静的区域。
-        vec2 phase = vec2(dot(meters,vec2(1.6,5.1)),dot(meters,vec2(-5.4,17.6)))
-                   - time*vec2(5.4,10.2);
+        // 约 46 和 21 厘米的两组短波，频率按深水重力波的色散关系取值。
+        vec2 phase = vec2(dot(meters,vec2(3.6,13.2)),dot(meters,vec2(-11.4,27.1)))
+                   - time*vec2(11.6,17.0);
         vec2 resolved = 1.0-smoothstep(vec2(0.5),vec2(3.14),fwidth(phase));
         vec2 ripple = cos(phase + 2.8*swell.yx + 2.3*chop) * resolved;
-        float gust = 0.72 + 0.28*swell.x;
-        vec2 normalXZ = (0.023*swell + 0.033*chop + gust *
-          (0.029*ripple.x*vec2(0.30,0.95) + 0.019*ripple.y*vec2(-0.29,0.96)
-           + 0.026*(fine*crosswind))) * wind;
+        float gust = clamp(0.81 + 0.31*swell.x, 0.48, 1.12);
+        vec2 normalXZ = (0.015*swell + 0.030*chop + gust *
+          (0.042*ripple.x*vec2(0.263,0.965) + 0.031*ripple.y*vec2(-0.388,0.922)
+           + 0.034*(fine*crosswind))) * wind;
         vec3 normal = normalize(vec3(normalXZ.x, 1.0, normalXZ.y));
         vec3 reflected = reflect(-eye, normal);
         vec3 sky = horizon;
@@ -100,8 +101,11 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
           vec4 clip = reflectionMatrix * vec4(samplePoint, 1.0);
           vec2 uv = clip.xy / max(0.001,clip.w);
           vec2 edge = smoothstep(vec2(0.0),vec2(0.028),min(uv,1.0-uv));
-          // 按变形后的采样足迹选取反射缓冲的 mip，斜看时合并亚像素的细碎亮边。
-          sky = mix(sky, textureGrad(reflectionMap,clamp(uv,0.001,0.999),dFdx(uv),dFdy(uv)).rgb,
+          // 消失在一个像素内的短波只轻微扩大楼影的采样足迹，保留岸线倒影。
+          float unresolved = dot(1.0-resolved*resolved, vec2(0.65,0.35));
+          float footprintScale = 1.0 + 0.48*gust*unresolved;
+          sky = mix(sky, textureGrad(reflectionMap,clamp(uv,0.001,0.999),
+                    dFdx(uv)*footprintScale,dFdy(uv)*footprintScale).rgb,
                     edge.x*edge.y*step(0.001,clip.w));
         }
         float cosine = clamp(dot(eye,normal),0.0,1.0);
