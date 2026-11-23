@@ -80,6 +80,14 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
         float footprint = max(fwidth(p.x),fwidth(p.y));
         return gradient * 6.0*f*(1.0-f) * (1.0-smoothstep(0.3,1.1,footprint));
       }
+      // 非偏振光从空气进入淡水时，两个偏振方向反射率的平均值。
+      float waterFresnel(float cosine) {
+        const float ior = 1.333;
+        float transmitted = sqrt(1.0 - (1.0 - cosine*cosine)/(ior*ior));
+        float perpendicular = (cosine - ior*transmitted)/(cosine + ior*transmitted);
+        float parallel = (ior*cosine - transmitted)/(ior*cosine + transmitted);
+        return 0.5 * (perpendicular*perpendicular + parallel*parallel);
+      }
       void main() {
         #include <logdepthbuf_fragment>
         vec2 p = surfacePosition.xz;
@@ -92,16 +100,19 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
         vec2 chop = slope(meters*vec2(0.47,0.94) - time*vec2(0.05,0.45));
         mat2 crosswind = mat2(0.86,0.51,-0.51,0.86);
         vec2 fine = slope((crosswind*meters)*vec2(3.2,6.8) - time*vec2(0.3,2.1));
-        // 长波调制短波的相位和强度，让同一片水上有阵风吹皱和相对平静的区域。
-        // 约 46 和 21 厘米的两组短波，频率按深水重力波的色散关系取值。
-        vec2 phase = vec2(dot(meters,vec2(3.6,13.2)),dot(meters,vec2(-11.4,27.1)))
-                   - time*vec2(11.6,17.0);
-        vec2 resolved = 1.0-smoothstep(vec2(0.5),vec2(3.14),fwidth(phase));
-        vec2 ripple = cos(phase + 2.8*swell.yx + 2.3*chop) * resolved;
+        // 两个短波频段各有一对不同方向的波列，叠加处形成有限长度的波峰。
+        // 米制波数 k 对应重力波角频率 sqrt(g * length(k))。
+        const vec2 k0 = vec2(3.6, 13.2), k1 = vec2(-2.45, 9.9);
+        const vec2 k2 = vec2(-11.4, 27.1), k3 = vec2(9.4, 20.2);
+        vec4 phase = vec4(dot(meters,k0), dot(meters,k1), dot(meters,k2), dot(meters,k3))
+                   - time*vec4(11.59,10.00,16.98,14.78)
+                   + 2.8*swell.yxyx + 2.3*chop.xyyx;
+        vec4 resolved = 1.0-smoothstep(vec4(0.5),vec4(3.14),fwidth(phase));
+        vec4 waves = cos(phase) * resolved;
+        vec2 rippleSlope = 0.0336*waves.x*normalize(k0) + 0.0252*waves.y*normalize(k1)
+                         + 0.0248*waves.z*normalize(k2) + 0.0186*waves.w*normalize(k3);
         float gust = clamp(0.81 + 0.31*swell.x, 0.48, 1.12);
-        vec2 normalXZ = (0.015*swell + 0.030*chop + gust *
-          (0.042*ripple.x*vec2(0.263,0.965) + 0.031*ripple.y*vec2(-0.388,0.922)
-           + 0.034*(fine*crosswind))) * wind;
+        vec2 normalXZ = (0.015*swell + 0.030*chop + gust*(rippleSlope + 0.034*(fine*crosswind))) * wind;
         vec3 normal = normalize(vec3(normalXZ.x, 1.0, normalXZ.y));
         vec3 reflected = reflect(-eye, normal);
         vec3 sky = horizon;
@@ -131,19 +142,25 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
           vec2 uv = clip.xy / max(0.001,clip.w);
           vec2 edge = smoothstep(vec2(0.0),vec2(0.028),min(uv,1.0-uv));
           // 消失在一个像素内的短波只轻微扩大楼影的采样足迹，保留岸线倒影。
-          float unresolved = dot(1.0-resolved*resolved, vec2(0.65,0.35));
+          float unresolved = dot(1.0-resolved*resolved, vec4(0.416,0.234,0.224,0.126));
           float footprintScale = 1.0 + 0.48*gust*unresolved;
           sky = mix(sky, textureGrad(reflectionMap,clamp(uv,0.001,0.999),
                     dFdx(uv)*footprintScale,dFdy(uv)*footprintScale).rgb,
                     edge.x*edge.y*step(0.001,clip.w));
         }
         float cosine = clamp(dot(eye,normal),0.0,1.0);
-        float fresnel = 0.025 + 0.93*pow(1.0-cosine,5.0);
+        float fresnel = waterFresnel(cosine);
         vec3 halfVector = normalize(eye + sunlight);
         float nh = max(0.0,dot(normal,halfVector));
-        float alpha2=0.008;
-        float d=1.0-nh*nh*(1.0-alpha2);
-        float shine = alpha2/(3.14159*d*d) * 0.035 * max(dot(normal,sunlight),0.0);
+        // 风浪斜率近似高斯分布。只在满足镜面反射的浪面上形成太阳闪光。
+        float nl = max(dot(normal,sunlight),0.0);
+        float nh2 = max(nh*nh, 0.0001);
+        const float slopeVariance = 0.008;
+        float distribution = exp(-(1.0-nh2)/(slopeVariance*nh2)) / (slopeVariance*nh2*nh2);
+        // 低矮的波面在掠射方向彼此遮蔽。光源颜色已包含 1/π。
+        float visibleSlopes = min(1.0, 2.0*nh*min(nl,cosine) / max(0.0001,dot(eye,halfVector)));
+        float shine = distribution * visibleSlopes / max(0.0001,4.0*cosine)
+                    * waterFresnel(clamp(dot(eye,halfVector),0.0,1.0));
         vec3 water = deep*(0.84 + 0.12*swell.y + 0.12*max(dot(normal,sunlight),0.0));
         float visibility = 1.0;
         #if defined(WATER_SHORE_SHADOW) && defined(USE_SHADOWMAP) && NUM_DIR_LIGHT_SHADOWS > 0
@@ -155,7 +172,7 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
         #endif
         // 遮挡只衰减直射照亮的水体与太阳高光，镜像相机已记录岸楼自身的明暗。
         water *= mix(1.0 - directFraction, 1.0, visibility);
-        vec3 color = mix(water,sky,fresnel) + sunColor * shine * (0.38 * visibility);
+        vec3 color = mix(water,sky,fresnel) + sunColor * shine * visibility;
         float distanceFade = 1.0 - smoothstep(3500.0, 11000.0, range);
         gl_FragColor = vec4(color, 0.96 * distanceFade);
         #include <tonemapping_fragment>
