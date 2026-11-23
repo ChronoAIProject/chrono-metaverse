@@ -172,7 +172,7 @@
     "layer": "ext",
     "kind": "structure",
     "label": "One Fullerton · 临水餐饮露台",
-    "assetHash": "56aab07e410876630dfc30fb4f88e49e2cba670da78a13bf232d726b924a2ae2",
+    "assetHash": "279ecbe920171530256e360c0ac26f05cdfddedeea768329677efe128d58f93a",
     "bounds": {
       "min": [
         261.97713136643426,
@@ -195,6 +195,8 @@
       "建筑来源": "Map Data © Singapore Land Authority / OneMap",
       "木材来源": "Teak Veneer · Poly Haven · CC0 · https://polyhaven.com/a/teak_veneer",
       "说明": "沿 OneMap 两段既有双坡棚顶配设支架、矮边和用餐区。桌椅样式、数量与排列为视觉近似。",
+      "藤椅参考": "https://commons.wikimedia.org/wiki/File:One_Fullerton_12-05-2024(8).jpg",
+      "藤椅": "浅色雨棚下的编织靠背、扶手和细金属椅脚参照现场照片。藤条宽度、桌边倒角和排布为估值。",
       "庭院店面参考": "https://commons.wikimedia.org/wiki/File:One_Fullerton_12-05-2024(10).jpg",
       "庭院店面": "沿 OneMap 约 17.3 米的一层墙线重建。柱、门框、内退玻璃和檐下空间参照街景照片，分隔、进深及室内陈设为估值。",
       "入口玻璃倒影": "在窗前沿线三个机位采集庭院、树池和海湾，反射随视线与玻璃位置变化。采集反映场景当前的日间布置。",
