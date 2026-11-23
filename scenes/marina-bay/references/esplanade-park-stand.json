@@ -18,7 +18,23 @@
         115,
         93
       ],
-      "groundY": -60.326
+      "groundY": -60.326,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            1.4413,
+            -0.0921
+          ],
+          [
+            -0.1491,
+            1.2819
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          1.81,
+          -0.579
+        ]
+      }
     },
     {
       "treeId": "11000921",
@@ -36,7 +52,23 @@
         131,
         97
       ],
-      "groundY": -60.319
+      "groundY": -60.319,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            1.3667,
+            -0.1269
+          ],
+          [
+            -0.1665,
+            1.2146
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          0.066,
+          -1.899
+        ]
+      }
     },
     {
       "treeId": "11000807",
@@ -54,7 +86,23 @@
         133,
         94
       ],
-      "groundY": -60.266
+      "groundY": -60.266,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            1.3397,
+            -0.1195
+          ],
+          [
+            -0.1831,
+            1.3684
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          -1.485,
+          -1.185
+        ]
+      }
     },
     {
       "treeId": "11006277",
@@ -72,7 +120,23 @@
         121,
         90
       ],
-      "groundY": -60.268
+      "groundY": -60.268,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            1.1758,
+            -0.0156
+          ],
+          [
+            -0.0247,
+            0.9832
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          1.595,
+          1.032
+        ]
+      }
     },
     {
       "treeId": "11003101",
@@ -126,7 +190,23 @@
         121,
         94
       ],
-      "groundY": -60.33
+      "groundY": -60.33,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            1.5064,
+            0.0058
+          ],
+          [
+            -0.0058,
+            1.5064
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          1.426,
+          -1.255
+        ]
+      }
     },
     {
       "treeId": "11020564",
@@ -144,7 +224,23 @@
         113,
         86
       ],
-      "groundY": -60.329
+      "groundY": -60.329,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            1.5064,
+            0.0005
+          ],
+          [
+            -0.0005,
+            1.5064
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.7,
+          1.766
+        ]
+      }
     },
     {
       "treeId": "10455443",
@@ -162,7 +258,23 @@
         119,
         98
       ],
-      "groundY": -60.264
+      "groundY": -60.264,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            1.5064,
+            0.0077
+          ],
+          [
+            -0.0077,
+            1.5064
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          -1.838,
+          0.481
+        ]
+      }
     },
     {
       "treeId": "10455453",
@@ -180,7 +292,23 @@
         114,
         95
       ],
-      "groundY": -60.265
+      "groundY": -60.265,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            0.7016,
+            0.0041
+          ],
+          [
+            0.0301,
+            1.1233
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          0.338,
+          0.754
+        ]
+      }
     },
     {
       "treeId": "10455463",
@@ -198,7 +326,23 @@
         116,
         93
       ],
-      "groundY": -60.266
+      "groundY": -60.266,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            1.5063,
+            0.014
+          ],
+          [
+            -0.014,
+            1.5063
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.444,
+          -1.652
+        ]
+      }
     },
     {
       "treeId": "10455474",
@@ -216,7 +360,23 @@
         132,
         102
       ],
-      "groundY": -60.267
+      "groundY": -60.267,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            1.5029,
+            -0.0113
+          ],
+          [
+            -0.0344,
+            1.3541
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          1.286,
+          1.399
+        ]
+      }
     },
     {
       "treeId": "10455483",
@@ -234,7 +394,23 @@
         123,
         98
       ],
-      "groundY": -60.268
+      "groundY": -60.268,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            1.1167,
+            -0.0185
+          ],
+          [
+            -0.0168,
+            1.5056
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          1.452,
+          1.226
+        ]
+      }
     },
     {
       "treeId": "10530717",
@@ -270,7 +446,23 @@
         147,
         102
       ],
-      "groundY": -60.331
+      "groundY": -60.331,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            1.5064,
+            -0.0121
+          ],
+          [
+            0.0121,
+            1.5064
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.827,
+          -0.636
+        ]
+      }
     },
     {
       "treeId": "10530712",
@@ -324,7 +516,23 @@
         111,
         92
       ],
-      "groundY": -60.27
+      "groundY": -60.27,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            1.1014,
+            0.0357
+          ],
+          [
+            0.0465,
+            1.1317
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          1.753,
+          0.733
+        ]
+      }
     },
     {
       "treeId": "11022324",
@@ -342,7 +550,23 @@
         125,
         101
       ],
-      "groundY": -60.331
+      "groundY": -60.331,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            1.165,
+            -0.0042
+          ],
+          [
+            0.0005,
+            1.0012
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.198,
+          -1.89
+        ]
+      }
     },
     {
       "treeId": "10982769",
@@ -378,7 +602,23 @@
         127,
         101
       ],
-      "groundY": -60.335
+      "groundY": -60.335,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            1.0128,
+            0.1022
+          ],
+          [
+            0.0888,
+            1.3175
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.276,
+          -0.094
+        ]
+      }
     },
     {
       "treeId": "11020558",
@@ -396,7 +636,23 @@
         120,
         98
       ],
-      "groundY": -59.998
+      "groundY": -59.998,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            1.1445,
+            0.4013
+          ],
+          [
+            0.3199,
+            1.1458
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.222,
+          -0.327
+        ]
+      }
     },
     {
       "treeId": "11022318",
@@ -486,7 +742,23 @@
         114,
         90
       ],
-      "groundY": -60.324
+      "groundY": -60.324,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            1.069,
+            -0.2303
+          ],
+          [
+            -0.2438,
+            0.9117
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          0.978,
+          0.088
+        ]
+      }
     },
     {
       "treeId": "10530714",
@@ -506,5 +778,6 @@
       ],
       "groundY": -60.331
     }
-  ]
+  ],
+  "crownSurvey": "Projected cutout foliage was registered to OneMap OrthoJPG at zoom 20. For 17 inland trees the connected canopy around the recorded stem supports estimates of horizontal shape and lean. Three quarters of spatial image blocks were used for fitting. Overlapping crowns and individual branches are approximate."
 }
