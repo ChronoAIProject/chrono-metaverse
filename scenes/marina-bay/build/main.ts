@@ -37,7 +37,14 @@ export default function build(base: BuildBase, kit: Kit) {
     readFileSync(new URL('./placement.json', import.meta.url), 'utf8'),
   );
   const config = JSON.parse(readFileSync(new URL('../context.json', import.meta.url), 'utf8'));
-  const entities = [...buildings, ...ground]
+  // Give surveyed exteriors the same daylight and cast shadows as the urban
+  // ground and water. Preserve the looks supplied by individual asset authors.
+  const cityBuildings = buildings.map((entity): EntityBody =>
+    config.quay && entity.assetHash && !entity.material
+      ? { ...entity, material: { shading: 'albedo' } }
+      : entity,
+  );
+  const entities = [...cityBuildings, ...ground]
     .map((entity) => placeExterior(entity, placement))
     .concat(placement.hostEntities, environment ? [environment] : []);
   if (config.quay) {
