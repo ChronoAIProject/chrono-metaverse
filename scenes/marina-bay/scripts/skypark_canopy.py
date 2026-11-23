@@ -8,8 +8,8 @@ from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
 
-def tree_cards(bark, leaves):
-    size = 96
+def tree_cards(*meshes, size=96, normal_lift=1.4):
+    leaves = meshes[-1]
     atlas = Image.new("RGBA", (size * 4, size))
     vertices, faces, texcoords, normals = [], [], [], []
     # Keep one nearly horizontal slice for elevated viewpoints.
@@ -18,14 +18,14 @@ def tree_cards(bark, leaves):
         facing = np.array([-np.sin(azimuth) * np.cos(elevation), np.sin(elevation),
                            np.cos(azimuth) * np.cos(elevation)])
         basis = np.array([side, np.cross(facing, side), facing])
-        projected = [mesh.vertices @ basis.T for mesh in (bark, leaves)]
+        projected = [mesh.vertices @ basis.T for mesh in meshes]
         low, high = np.min(np.vstack(projected), axis=0), np.max(np.vstack(projected), axis=0)
         span = high[:2] - low[:2]
         low[:2] -= span * .025
         high[:2] += span * .025
         depth = np.full((size, size), -np.inf)
         rgba = np.zeros((size, size, 4), dtype=np.uint8)
-        for mesh, coords in zip((bark, leaves), projected, strict=True):
+        for mesh, coords in zip(meshes, projected, strict=True):
             uv = mesh.visual.uv.copy()
             uv[:, 1] = 1 - uv[:, 1]
             texture = np.asarray(mesh.visual.material.baseColorTexture.convert("RGBA"))
@@ -63,8 +63,8 @@ def tree_cards(bark, leaves):
         vertices.extend(quad)
         faces.extend([[base, base + 1, base + 2], [base, base + 2, base + 3]])
         texcoords.extend([[(tile + u) / 4, v] for u, v in [(0, 0), (1, 0), (1, 1), (0, 1)]])
-        radial = quad - (leaves.bounds.mean(axis=0) - [0, 1.4, 0])
-        radial[:, 1] = np.maximum(radial[:, 1], .7)
+        radial = quad - (leaves.bounds.mean(axis=0) - [0, normal_lift, 0])
+        radial[:, 1] = np.maximum(radial[:, 1], .5 * normal_lift)
         normals.extend(radial / np.linalg.norm(radial, axis=1)[:, None])
     atlas.format = "PNG"
     material = PBRMaterial(name="SkyPark distant crowns", baseColorTexture=atlas, alphaMode="MASK",
