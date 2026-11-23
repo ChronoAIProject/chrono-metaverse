@@ -30,13 +30,12 @@ def bake(scan_folder):
     crowns, trunks, tones = [], [], []
     for tree in trees + reference["waterfrontCrowns"]:
         diameter = tree["crownDiameterMetres"]
-        if "estimatedHeightMetres" in tree:
-            height = tree["estimatedHeightMetres"]
+        rng = np.random.default_rng(int(tree["treeId"])) if "heightUpper" in tree else None
+        height = tree["heightUpper"] - rng.uniform(.6, 2.4) if rng is not None else tree["estimatedHeightMetres"]
+        if "sourceYawDegrees" in tree:
             axes = [diameter, height, diameter]
             angle = np.radians(tree["sourceYawDegrees"])
         else:
-            rng = np.random.default_rng(int(tree["treeId"]))
-            height = tree["heightUpper"] - rng.uniform(.6, 2.4)
             axes = [diameter, height, diameter * rng.uniform(.86, 1)]
             angle = rng.uniform(-np.pi, np.pi)
         basis = trimesh.transformations.rotation_matrix(angle, [0, 1, 0])[:3, :3]
