@@ -19,6 +19,7 @@ from trimesh.visual.texture import TextureVisuals
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT.parents[1] / "recon/src"))
 from metaverse_recon.context.convert import frame
+from context_geometry import geographic_point
 
 CARRIAGEWAYS = ((22919331, 670664313), (635276800, 479332225, 634751407, 1124074831))
 CROSSOVER = 1083770146
@@ -35,12 +36,7 @@ def read_roads(extract, config):
     nodes = {node.get("id"): node for node in osm.findall("node")}
 
     def position(node):
-        lon, lat = np.radians([float(node.get("lon")), float(node.get("lat"))])
-        eccentricity = 6.6943799901413165e-3
-        radius = 6378137 / np.sqrt(1 - eccentricity * np.sin(lat) ** 2)
-        point = radius * np.array([np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon),
-                                   (1 - eccentricity) * np.sin(lat)])
-        return (((point - origin) @ rotation.T) + shift)[[0, 2]]
+        return geographic_point(float(node.get("lon")), float(node.get("lat")), origin, rotation, shift)[[0, 2]]
 
     roads = {}
     for way_id in [*CARRIAGEWAYS[0], *CARRIAGEWAYS[1], CROSSOVER, DRIVEWAY, SIDEWALK]:

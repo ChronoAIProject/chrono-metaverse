@@ -656,5 +656,37 @@
       "定位": "经纬度、树种、树高和胸围档取自名录。根部依浏览器地表交点，档内高度、胸围、冠幅及枝形为估值。",
       "树形素材": "Poly Haven · Island Tree 01 · CC0 · https://polyhaven.com/a/island_tree_01"
     }
+  },
+  {
+    "entityId": "bay.queen-elizabeth-walk-paving",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "伊丽莎白女王步道 · 临河铺石",
+    "assetHash": "417c5657284369dbb283b284338e75b87e17adc958079ed8feb12fb885ca427e",
+    "bounds": {
+      "min": [
+        473.5119871235315,
+        -60.34094873447037,
+        693.3939308189542
+      ],
+      "max": [
+        498.2863628888526,
+        -59.99140764225494,
+        834.9415875407212
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "路线": "https://www.openstreetmap.org/way/467451181/history/7",
+      "地图来源": "© OpenStreetMap contributors, ODbL 1.0",
+      "影像来源": "Map Data © Singapore Land Authority / OneMap",
+      "铺装": "中心线、铺石类型来自 OSM。两侧宽度依正射影像估读，石材、砖缝及路面高程为估值。",
+      "材质来源": "Poly Haven · Granite Tile 04 · CC0 · https://polyhaven.com/a/granite_tile_04"
+    }
   }
 ]
