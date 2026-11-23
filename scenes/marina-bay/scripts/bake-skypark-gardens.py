@@ -8,10 +8,12 @@ from pathlib import Path
 import numpy as np
 import trimesh
 from PIL import Image, ImageOps
-from shapely import constrained_delaunay_triangles, set_precision, union_all
+from shapely import constrained_delaunay_triangles, contains_xy, set_precision, union_all
 from shapely.geometry import Point, Polygon, box
 from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
+
+from skypark_canopy import tree_cards
 
 ROOT = Path(__file__).resolve().parents[1]
 HOTEL = "65eeae21fa2b5477b37f52cf884f6e1a2292517217461790d5d54be02ab4deb9"
@@ -54,7 +56,21 @@ def garden_decks(building):
     return gardens, plane
 
 
-def beds_and_paving(scene, outline, plane, tree):
+def deck_surface(polygon, lift, plane, material, uv_origin, uv_span):
+    rings = [np.asarray(t.exterior.coords)[:3] for t in constrained_delaunay_triangles(polygon).geoms]
+    local = np.concatenate(rings)
+    xz = ORIGIN + local[:, :1] * ALONG + local[:, 1:] * ACROSS
+    y = xz @ plane[:2] + plane[2] + lift
+    xyz = np.column_stack((xz[:, 0], y, xz[:, 1]))
+    faces = np.arange(len(xyz)).reshape(-1, 3)
+    tri = xyz[faces]
+    down = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])[:, 1] < 0
+    faces[down] = faces[down, ::-1]
+    return trimesh.Trimesh(vertices=xyz, faces=faces,
+                           visual=TextureVisuals(uv=(local - uv_origin) / uv_span, material=material), process=False)
+
+
+def beds_and_paving(near, far, outline, plane, tree):
     # Crown centres are visible in the atlas. Bed edges below the foliage are
     # estimated as planted patches around these groups, leaving a clear walkway.
     plots = union_all([Point(s, x).buffer(max(.84, diameter * .34), quad_segs=7)
@@ -76,18 +92,23 @@ def beds_and_paving(scene, outline, plane, tree):
         (outline.difference(plots), .030, paving), (plots.difference(plots.buffer(-.095)), .037, edging),
         (plots.buffer(-.095), .034, soil),
     ]:
-        rings = [np.asarray(t.exterior.coords)[:3] for t in constrained_delaunay_triangles(polygon).geoms]
-        local = np.concatenate(rings)
-        xz = ORIGIN + local[:, :1] * ALONG + local[:, 1:] * ACROSS
-        y = xz @ plane[:2] + plane[2] + lift
-        xyz = np.column_stack((xz[:, 0], y, xz[:, 1]))
-        faces = np.arange(len(xyz)).reshape(-1, 3)
-        tri = xyz[faces]
-        down = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])[:, 1] < 0
-        faces[down] = faces[down, ::-1]
-        mesh = trimesh.Trimesh(vertices=xyz, faces=faces, visual=TextureVisuals(uv=local / 2.0, material=material),
-                               process=False)
-        scene.add_geometry(mesh, geom_name=material.name)
+        mesh = deck_surface(polygon, lift, plane, material, 0, 2)
+        near.add_geometry(mesh, geom_name=material.name)
+    # Keep the pale paving and dark soil at long range. Their measured deck
+    # outline needs only a few triangles once individual stone edges are subpixel.
+    low, high = np.asarray(outline.bounds).reshape(2, 2)
+    dimensions = np.ceil((high - low) * 4).astype(int)
+    s, x = np.meshgrid(np.linspace(low[0], high[0], dimensions[0]), np.linspace(high[1], low[1], dimensions[1]))
+    paving_color = np.asarray(pavers.resize((1, 1), Image.Resampling.BOX))[0, 0] / 255
+    linear = ((paving_color + .055) / 1.055) ** 2.4 * (paving.baseColorFactor[:3] / 255)
+    paving_color = np.uint8(255 * (1.055 * linear ** (1 / 2.4) - .055))
+    soil_color = np.asarray(soil_image.resize((1, 1), Image.Resampling.BOX))[0, 0]
+    rgb = np.where(contains_xy(plots, s, x)[:, :, None], soil_color, paving_color)
+    image = Image.fromarray(rgb)
+    image.format = "PNG"
+    finish = PBRMaterial(name="Distant garden paths", baseColorTexture=image, roughnessFactor=.85, metallicFactor=0)
+    mesh = deck_surface(outline.simplify(.075), .030, plane, finish, low, high - low)
+    far.add_geometry(mesh, geom_name=finish.name)
 
 
 def prototype(scene, name):
@@ -127,7 +148,8 @@ def gardens(building):
     foot[1] = bark.vertices[:, 1].min()
     width = np.mean((bounds[1] - bounds[0])[[0, 2]])
     height = bounds[1, 1] - foot[1]
-    parts = [(bark, []), (leaves, [])]
+    cards = tree_cards(bark, leaves)
+    parts = [(bark, []), (leaves, []), (cards, [])]
     rng = np.random.default_rng(1957)
     outline, plane = garden_decks(building)
     for s, x, diameter in CROWNS:
@@ -143,7 +165,7 @@ def gardens(building):
             normal = (src.vertex_normals / scale) @ rotation.T
             normal /= np.linalg.norm(normal, axis=1)[:, None]
             instances.append((v, normal))
-    result = trimesh.Scene()
+    near, far = trimesh.Scene(), trimesh.Scene()
     for src, instances in parts:
         count = len(src.vertices)
         mesh = trimesh.Trimesh(vertices=np.vstack([v for v, n in instances]),
@@ -151,8 +173,15 @@ def gardens(building):
                                vertex_normals=np.vstack([n for v, n in instances]),
                                visual=TextureVisuals(uv=np.tile(src.visual.uv, (len(instances), 1)),
                                                      material=src.visual.material), process=False)
-        result.add_geometry(mesh, geom_name=src.visual.material.name)
-    beds_and_paving(result, outline, plane, tree)
+        scene = far if src is cards else near
+        scene.add_geometry(mesh, geom_name=src.visual.material.name)
+    beds_and_paving(near, far, outline, plane, tree)
+    low, high = near.bounds
+    focus = ((low + high) / 2).tolist()
+    return [record(near, building, focus, False), record(far, building, focus, True)]
+
+
+def record(result, building, focus, distant):
     low, high = result.bounds
     center = (low + high) / 2
     center[1] = low[1]
@@ -161,10 +190,11 @@ def gardens(building):
     data = trimesh.exchange.gltf.export_glb(result, include_normals=True)
     digest = hashlib.sha256(data).hexdigest()
     (ROOT / "assets" / (digest + ".glb")).write_bytes(data)
-    return dict(entityId="bay.sands-skypark-gardens", layer="ext", kind="structure",
-                regionId=building["regionId"], label="滨海湾金沙 · 空中花园树群", assetHash=digest,
+    return dict(entityId="bay.sands-skypark-distant-canopy" if distant else "bay.sands-skypark-gardens", layer="ext", kind="structure",
+                regionId=building["regionId"], label="滨海湾金沙 · 空中花园树群远景" if distant else "滨海湾金沙 · 空中花园树群", assetHash=digest,
                 bounds={"min": low.tolist(), "max": high.tolist()}, material={"shading": "albedo"},
                 props={"background": True, "surfaceRole": "landscape",
+                       "backgroundView": {"focus": focus, "minDistance" if distant else "maxDistance": 425},
                        "建筑与冠幅": "Map Data © Singapore Land Authority / OneMap。两片树群的位置及冠幅由模型屋顶原始影像估计，根部高程依实测露台平面。",
                        "树木来源": "Poly Haven Island Tree 01 · CC0 · https://polyhaven.com/a/island_tree_01",
                        "说明": "按屋顶图像中可单独辨识的 16 处树冠配设阔叶树。树种、株数、树干位置和树高为近似。硬质铺地沿实测露台平面，树池边界及石材为估值。"})
@@ -172,9 +202,10 @@ def gardens(building):
 
 if __name__ == "__main__":
     buildings = json.loads((ROOT / "build/onemap-entities.json").read_text())
-    record = gardens(next(e for e in buildings if e["assetHash"] == HOTEL))
+    records = gardens(next(e for e in buildings if e["assetHash"] == HOTEL))
     path = ROOT / "build/streetscape.json"
     entities = {e["entityId"]: e for e in json.loads(path.read_text())}
-    entities[record["entityId"]] = record
+    for rec in records:
+        entities[rec["entityId"]] = rec
     path.write_text(json.dumps(list(entities.values()), ensure_ascii=False, indent=2) + "\n")
-    print(record["assetHash"])
+    print([rec["assetHash"] for rec in records])

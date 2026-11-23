@@ -282,6 +282,52 @@
     "props": {
       "background": true,
       "surfaceRole": "landscape",
+      "backgroundView": {
+        "focus": [
+          -485.26693941819997,
+          139.65368461703503,
+          625.7393614780999
+        ],
+        "maxDistance": 425
+      },
+      "建筑与冠幅": "Map Data © Singapore Land Authority / OneMap。两片树群的位置及冠幅由模型屋顶原始影像估计，根部高程依实测露台平面。",
+      "树木来源": "Poly Haven Island Tree 01 · CC0 · https://polyhaven.com/a/island_tree_01",
+      "说明": "按屋顶图像中可单独辨识的 16 处树冠配设阔叶树。树种、株数、树干位置和树高为近似。硬质铺地沿实测露台平面，树池边界及石材为估值。"
+    }
+  },
+  {
+    "entityId": "bay.sands-skypark-distant-canopy",
+    "layer": "ext",
+    "kind": "structure",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海湾金沙 · 空中花园树群远景",
+    "assetHash": "9b7374324d5a0e51333210597ee9ee020ecaf755074ce3226191c96c11df24bb",
+    "bounds": {
+      "min": [
+        -499.137785409,
+        135.6691264616926,
+        518.2023769998
+      ],
+      "max": [
+        -471.3960934274,
+        143.7343677712775,
+        734.4276444066772
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "backgroundView": {
+        "focus": [
+          -485.26693941819997,
+          139.65368461703503,
+          625.7393614780999
+        ],
+        "minDistance": 425
+      },
       "建筑与冠幅": "Map Data © Singapore Land Authority / OneMap。两片树群的位置及冠幅由模型屋顶原始影像估计，根部高程依实测露台平面。",
       "树木来源": "Poly Haven Island Tree 01 · CC0 · https://polyhaven.com/a/island_tree_01",
       "说明": "按屋顶图像中可单独辨识的 16 处树冠配设阔叶树。树种、株数、树干位置和树高为近似。硬质铺地沿实测露台平面，树池边界及石材为估值。"
