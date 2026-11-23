@@ -632,7 +632,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "伊丽莎白女王步道 · 十株双翼豆",
-    "assetHash": "1b4aca6dab4036b2a37dc4dd75f82bcbea2412da49b7b195d0d74a650b7aa421",
+    "assetHash": "6a205aee98235e899bcfa5a8e187840d0acbe704baebc9b27d5a3166270f83d5",
     "bounds": {
       "min": [
         480.61907723459524,
@@ -1039,12 +1039,12 @@
     "layer": "ext",
     "kind": "structure",
     "label": "滨海公园 · 步道与康乐通道林冠",
-    "assetHash": "268009ed1070cb09ccfc73cb464bc71cbdbb85280b297833a66a89d88dcc6c6f",
+    "assetHash": "f2bae82fa3dad9ab3c5dd10c28c15f903360dab96ddd65b394d2f6c13eb7ca6a",
     "bounds": {
       "min": [
         476.00759487527444,
         -60.427817244940215,
-        707.645974968905
+        664.0232614303119
       ],
       "max": [
         586.2798535133475,
@@ -1061,6 +1061,7 @@
       "树木名录": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
       "树木依据": "树位、树种与树高档来自 NParks 2021 名录。航拍参考树冠色差。各树枝形、冠径与档内高度为估值。",
       "林荫道": "康乐通道两侧额外 41 株雨树，树根高度取自浏览器地表。33 株树冠按 OneMap 航拍估读纵横冠幅及偏向。",
+      "南侧草坪": "另有六株雨树与一株印度紫檀，树位及高度档取自名录。树冠相接的部分按航拍估读。",
       "道路位置": "https://www.openstreetmap.org/way/843399102/history/13",
       "树形素材": "Poly Haven · Island Tree 01、Jacaranda Tree · CC0。雨树借用蓝花楹展开的分枝形态，按名录高度和估计冠宽拟合；其余树使用 Island Tree 01。"
     }
@@ -1101,7 +1102,7 @@
     "layer": "ext",
     "kind": "structure",
     "label": "滨海公园 · 东侧林带",
-    "assetHash": "e32c796d3ac326f611de24ffc58968cc37b6407e973994cbacc7fd83d3eace42",
+    "assetHash": "bf169a36367610b56ef9593c44a11a0292e6b4ecf694c81a9edc0c26fb4008fe",
     "bounds": {
       "min": [
         435.0129761168245,

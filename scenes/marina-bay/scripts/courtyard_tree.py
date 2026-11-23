@@ -167,6 +167,13 @@ def bake_crown(parts, leaf_mask=None):
                            visual=TextureVisuals(uv=texcoords, material=material), process=False)
 
 
+def tag_foliage(document):
+    # In this model the roots and leaf clusters share the same metric origin.
+    for node in document["nodes"]:
+        if node["name"] in {"Island tree bark", "Island tree branch clusters"}:
+            node.setdefault("extras", {})["vegetationWind"] = "small-tree"
+
+
 def preserve_crown_normals(mesh):
     # Either side of a cutout represents the same volume of leaves. Reverse the
     # winding for the other side while sharing the crown-outward shading normals.
