@@ -1070,17 +1070,17 @@
     "regionId": "marina-bay-exterior",
     "layer": "ext",
     "kind": "structure",
-    "label": "滨海大道 · 临水行道树",
-    "assetHash": "34a2a2638f7636dc60362506927b8bd73927406dc2f2376022884c5d3298900c",
+    "label": "滨海大道 · 两侧行道树",
+    "assetHash": "20f1fbc94ed29b87db750511bfb1b4ac647ed386dac6de68fe6b36afa1b6ac48",
     "bounds": {
       "min": [
-        -152.18704697838234,
-        -60.293,
-        26.22292566459139
+        -182.43067710442432,
+        -60.294000000000004,
+        0.6013393936623852
       ],
       "max": [
-        265.58668817973114,
-        -49.25198350916986,
+        305.0394152000819,
+        -48.99462878785578,
         94.34958101040287
       ]
     },
@@ -1091,7 +1091,7 @@
       "background": true,
       "surfaceRole": "landscape",
       "树木名录": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
-      "树木依据": "18 株 Sindora wallichii 的树位和高度档取自 NParks 2021 名录。冠径与色差按 OneMap 航拍估读，档内高度与枝形为估值。",
+      "树木依据": "49 株 Sindora wallichii 的树位和高度档取自 NParks 2021 名录。冠幅、偏向与色差按 OneMap 航拍估读，档内高度与枝形为估值。",
       "树形素材": "Poly Haven · Tree Small 02 · CC0。使用 Burkea africana 的枝叶与主干近似同为豆科的 Sindora。"
     }
   }

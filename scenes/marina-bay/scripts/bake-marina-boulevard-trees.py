@@ -25,7 +25,7 @@ def bake(scan_folder):
     bark.visual.material.name = "Marina Boulevard Sindora bark"
     foot = np.median(bark.vertices[bark.vertices[:, 1] < .08], axis=0)
     foot[1] = bark.bounds[0, 1]
-    median = np.median([tree["aerialRGB"] for tree in trees], axis=0)
+    median = np.array(reference["aerialReferenceRGB"])
     crowns, trunks, tones = [], [], []
     for tree in trees:
         rng = np.random.default_rng(int(tree["treeId"]))
@@ -35,6 +35,16 @@ def bake(scan_folder):
         angle = rng.uniform(-np.pi, np.pi)
         basis = trimesh.transformations.rotation_matrix(angle, [0, 1, 0])[:3, :3]
         transform = basis @ np.diag(axes)
+        fit = tree.get("crownFit")
+        if fit:
+            major = np.array(fit["majorLocalXZ"])
+            major /= np.linalg.norm(major)
+            horizontal = np.stack((major, [-major[1], major[0]]))
+            stretch = fit["stretch"]
+            warp = np.eye(3)
+            warp[np.ix_([0, 2], [0, 2])] = horizontal.T @ np.diag([stretch, 1 / stretch]) @ horizontal
+            warp[[0, 2], 1] = np.array(fit["leanLocalXZ"]) / (.7 * height)
+            transform = warp @ transform
         inverse = np.linalg.inv(transform)
         x, z = tree["localXZ"]
         ground = np.array([x, tree["groundY"] - .03, z])
@@ -56,10 +66,10 @@ def bake(scan_folder):
     scene.add_geometry(wood, geom_name=bark.visual.material.name)
     digest, bounds = write_tree_asset(scene)
     return dict(entityId="bay.marina-boulevard-sindora", regionId="marina-bay-exterior", layer="ext",
-                kind="structure", label="滨海大道 · 临水行道树", assetHash=digest, bounds=bounds,
+                kind="structure", label="滨海大道 · 两侧行道树", assetHash=digest, bounds=bounds,
                 material={"shading": "albedo"},
                 props={"background": True, "surfaceRole": "landscape", "树木名录": reference["source"],
-                       "树木依据": "18 株 Sindora wallichii 的树位和高度档取自 NParks 2021 名录。冠径与色差按 OneMap 航拍估读，档内高度与枝形为估值。",
+                       "树木依据": f"{len(trees)} 株 Sindora wallichii 的树位和高度档取自 NParks 2021 名录。冠幅、偏向与色差按 OneMap 航拍估读，档内高度与枝形为估值。",
                        "树形素材": "Poly Haven · Tree Small 02 · CC0。使用 Burkea africana 的枝叶与主干近似同为豆科的 Sindora。"})
 
 
