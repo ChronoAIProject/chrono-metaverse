@@ -455,5 +455,36 @@
         "minDistance": 115
       }
     }
+  },
+  {
+    "entityId": "bay.merlion-park-steps",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "1debb8c166dbf81a4465bb9af093aaf041542a5a1c5bce560b41d60fbb30b6cd",
+    "label": "鱼尾狮公园 · 滨水石阶",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        263.8863382810836,
+        -60.30264800000003,
+        639.4626315429066
+      ],
+      "max": [
+        308.5922024642569,
+        -57.704648,
+        692.6837846909024
+      ]
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "现场参考": "https://commons.wikimedia.org/wiki/File:Merlion_Singapore_2018.tif",
+      "影像": "Map Data © Singapore Land Authority / OneMap OrthoJPG",
+      "石材": "Granite Tile 04 · Poly Haven · CC0",
+      "说明": "沿正射影像三段折线铺设七级石阶，扣除实测雕像基座。低处踏面衔接矢量水岸约 1.1–1.5 米的配准差。踏步尺寸、石柱间距和陆侧过渡坡度按照片估配。"
+    }
   }
 ]
