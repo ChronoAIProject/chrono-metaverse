@@ -62,6 +62,8 @@ function skyDaylight(value: unknown): SkyDaylight | undefined {
 
 export interface Environment {
   readonly version: 1;
+  readonly daylightToneMapping?: 'agx';
+  readonly multisampleCutouts?: boolean;
   readonly sky?: {
     readonly texture: string;
     readonly yaw: number;
@@ -138,5 +140,12 @@ export function environmentOf(entity: EntityBody): Environment | null {
       ...(value.surfaceDetail ? { surfaceDetail: value.surfaceDetail } : {}),
     } as GeographicMap;
   }
-  return sky || map ? { version: 1, sky, map } : null;
+  if (!sky && !map) return null;
+  return {
+    version: 1,
+    sky,
+    map,
+    ...(raw.multisampleCutouts === true ? { multisampleCutouts: true } : {}),
+    ...(raw.daylightToneMapping === 'agx' ? { daylightToneMapping: 'agx' } : {}),
+  };
 }
