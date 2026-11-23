@@ -747,5 +747,34 @@
       "材质来源": "Poly Haven · Granite Tile 04 · CC0",
       "入口广场": "由 OneMap 正射影像中的 35 个嵌石中心拟合铺装排列，可见边线依影像估读。石缝、色泽和遮挡范围内的铺排为估值。坡面衔接场景既有步道与门槛标高。"
     }
+  },
+  {
+    "entityId": "bay.fullerton-entrance-lamps",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "One Fullerton · 临水步道双灯罩路灯",
+    "assetHash": "0f8cfda8ed1c85942d27efb45d4ebc32254ee429ae4f1e649b748f5964369c7d",
+    "bounds": {
+      "min": [
+        265.8491966059097,
+        -59.76584246563776,
+        539.9884492694166
+      ],
+      "max": [
+        269.6566139575004,
+        -54.043154011432215,
+        570.5676014329317
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "实景照片": "https://commons.wikimedia.org/wiki/File:Singapore_-_panoramio_(109).jpg",
+      "灯位": "由 2014 年照片中 25 个广场嵌石中心配准至 OneMap 正射影像。北端灯位在控制点外，中间灯的灯脚被植栽遮挡，按相邻两灯外推。",
+      "灯具": "浅色渐缩杆、双层高低灯罩及乳白扩散罩依照片重建。5.72 米杆高、灯臂朝向与涂层为影像估值。"
+    }
   }
 ]
