@@ -101,9 +101,35 @@ export function cityModelAir(material: THREE.Material) {
     material instanceof THREE.MeshStandardMaterial && material.userData.reflectSky === true;
   const probes = glass ? facadeProbeUniforms(material) : null;
   const sky = glass && !probes ? citySkyUniforms(material) : null;
+  const surface = material.userData.waterSurface;
+  const drops = surface === 'fountainDrops';
+  const fountain = material.map && (surface === 'fountainJet' || surface === 'fountainFoam');
+  const flowOffset = { value: 0 };
+  if (fountain || drops) {
+    const speed = drops ? 6.25 : surface === 'fountainJet' ? 3.05 : 0.28;
+    material.customProgramCacheKey = () => (drops ? 'city-fountain-drops' : 'city-fountain-flow');
+    material.onBeforeRender = () => {
+      flowOffset.value = ((performance.now() / 1000) * speed) % 1;
+    };
+  }
   if (glass)
     material.customProgramCacheKey = () => (probes ? 'city-facade-probes' : 'city-model-glazing');
   material.onBeforeCompile = (shader) => {
+    if (drops || fountain) {
+      shader.uniforms.flowOffset = flowOffset;
+      shader.vertexShader =
+        'uniform float flowOffset;\n' +
+        (drops
+          ? 'attribute vec4 _drop_drift;\n' +
+            shader.vertexShader.replace(
+              '#include <begin_vertex>',
+              '#include <begin_vertex>\ntransformed += _drop_drift.xyz * ((fract(flowOffset + _drop_drift.w) - 0.5) * 0.16);',
+            )
+          : shader.vertexShader.replace(
+              '#include <uv_vertex>',
+              '#include <uv_vertex>\nvMapUv.y += flowOffset;',
+            ));
+    }
     if (sky) Object.assign(shader.uniforms, sky);
     if (probes) Object.assign(shader.uniforms, probes);
     shader.vertexShader =

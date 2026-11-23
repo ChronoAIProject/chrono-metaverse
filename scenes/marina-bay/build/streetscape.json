@@ -455,5 +455,37 @@
         "minDistance": 115
       }
     }
+  },
+  {
+    "entityId": "bay.merlion-fountain-water",
+    "layer": "ext",
+    "kind": "object",
+    "regionId": "marina-bay-exterior",
+    "label": "鱼尾狮公园 · 喷泉水柱",
+    "assetHash": "e0e838b02afb8e596e8e018585b904a4f10794936968ce9a0ca5bc56c6385ed9",
+    "bounds": {
+      "min": [
+        272.1908058866747,
+        -60.13519149329538,
+        662.5464787501949
+      ],
+      "max": [
+        284.0959566548771,
+        -49.93214366498974,
+        671.1437040196753
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "water",
+      "雕像": "bay.a900c832-9448-4b5c-a1ef-a8828bfe76a9",
+      "地理参考": "https://www.openstreetmap.org/way/182819157",
+      "影像": "Map Data © Singapore Land Authority / OneMap OrthoJPG",
+      "现场参考": "https://commons.wikimedia.org/wiki/File:Merlion_Singapore_2018.tif",
+      "说明": "出水口取自 OneMap 雕像，喷射方向和落点参照正射影像。水流宽度、破碎程度与水花高度为日间估值。"
+    }
   }
 ]
