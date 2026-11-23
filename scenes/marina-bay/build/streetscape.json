@@ -808,5 +808,35 @@
       "种植依据": "拟合 2014 年实景中临水侧矮篱、中央绿篱、北端红叶灌木的相对顺序和高度。株位、颜色、品种及当代修剪状态未经现场核实。",
       "素材": "Poly Haven · Shrub 04 · Rico Cilliers · CC0 · https://polyhaven.com/a/shrub_04"
     }
+  },
+  {
+    "entityId": "bay.fullerton-arcade-south-glazing",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "One Fullerton · 门廊南侧玻璃窗格",
+    "assetHash": "aa6dcd55bfc0ed74f350fb5898433583703a70bbc9ed0315315c67ecacc30aba",
+    "bounds": {
+      "min": [
+        281.21389149594665,
+        -60.267199999999995,
+        543.6028734648634
+      ],
+      "max": [
+        281.7317133950212,
+        -51.8722,
+        546.9076527585578
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "实景照片": "https://commons.wikimedia.org/wiki/File:Singapore_-_panoramio_(109).jpg",
+      "窗格": "依据 OneMap 测绘面和 2014 年照片重建三列七行窗格。窗框深度、涂层、透射色与玻璃内退为估计值。",
+      "局部倒影": "沿玻璃面外侧三个位置采样滨水广场半球，近景反光随观察方向变化。倒影深度取代表性广场距离。",
+      "窗后色彩署名": "Андрей Бобровский · Singapore - panoramio (109) · CC BY 3.0 · 透视校正、分格裁切和降采样 · https://creativecommons.org/licenses/by/3.0/"
+    }
   }
 ]
