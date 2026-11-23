@@ -3496,7 +3496,7 @@
     "kind": "object",
     "label": "滨海湾建筑",
     "regionId": "marina-bay-exterior",
-    "assetHash": "28f2749cde59d87f6908e58d4aa607f69babc9f31cb69b9cb0635d427636227a",
+    "assetHash": "99238eb09e7d30a7c0b7f4f2d43966574bf7e014d8a2a079f540679d97b26017",
     "bounds": {
       "min": [
         280.454967,
@@ -3517,12 +3517,13 @@
       "原始分片": "6/39/5_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 11.043,
-      "三角形数": 761,
+      "三角形数": 696,
       "原建筑资源": "786a17032f2b9a9e68e3ddbd6656e48733cd29e4b35385c1e9efd831760f4de7",
       "基座参考": "https://commons.wikimedia.org/wiki/File:Merlion_Singapore_2018.tif",
       "基座石材": "Granite Tile 04 · Poly Haven · CC0。沿 OneMap 实测基座周长展开石缝，分层、湿润程度和砂浆宽度为照片估值。",
       "雕像摄影": "https://commons.wikimedia.org/wiki/File:Merlion_Singapore_2018.tif",
-      "雕像表面": "Adam Wilson · 2018 · CC0。按原模型口部、鬃毛和基座高度配准，可见侧取自照片，对侧按对称性估配。"
+      "雕像表面": "Adam Wilson · 2018 · CC0。按原模型口部、鬃毛和基座高度配准，可见侧取自照片，对侧按对称性估配。",
+      "浪座饰面": "Adam Wilson · 2018 · CC0。釉面马赛克按现场照片投影到 OneMap 原浪座；对侧、灯具遮挡处和粗糙度按可见瓷片估配。"
     }
   },
   {

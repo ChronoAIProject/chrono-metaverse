@@ -11,6 +11,7 @@ import numpy as np
 from PIL import Image
 from shapely.geometry import LinearRing, MultiPoint, Point
 from merlion_portrait import portrait
+from merlion_mosaic import wave_surface
 
 ROOT = Path(__file__).resolve().parents[1]
 ID = "bay.a900c832-9448-4b5c-a1ef-a8828bfe76a9"
@@ -97,8 +98,11 @@ def bake(file):
         raise ValueError("Missing surveyed podium triangles")
     sculpture, stone_pos, stone_norm, stone_uv, atlas = portrait(
         ROOT/"references/merlion-sculpture-2018.jpg", vertices, faces, read(upper["attributes"]["NORMAL"]))
-    # Keep the original UVs and index order for the mosaic under the statue.
-    upper["indices"] = accessor(faces[~(select|sculpture)].reshape(-1,1).astype("<u4"),"SCALAR",5125)
+    wave_faces = faces[~(select|sculpture)]
+    if len(wave_faces) != 130:
+        raise ValueError("Missing surveyed wave shell")
+    wave_pos, wave_norm, wave_uv, wave_maps = wave_surface(
+        ROOT/"references/merlion-wave-mosaic-2018.jpg", vertices, wave_faces, read(upper["attributes"]["NORMAL"]))
     base = vertices[faces[select]]
     ring = LinearRing(MultiPoint(vertices[vertices[:,1]<.01][:,[0,2]]).convex_hull.exterior.coords)
     perimeter = ring.length
@@ -149,6 +153,25 @@ def bake(file):
         "POSITION":accessor(stone_pos.astype("<f4"),"VEC3",5126),
         "NORMAL":accessor(stone_norm.astype("<f4"),"VEC3",5126),
         "TEXCOORD_0":accessor(stone_uv.astype("<f4"),"VEC2",5126)}})
+    wave_tex = []
+    for channel, image in enumerate(wave_maps):
+        if channel:
+            # Grout roughness and relief vary over a tile, while the full
+            # colour resolution carries the narrow blue and white glaze edges.
+            image = image.resize(((image.width+1)//2,(image.height+1)//2),Image.Resampling.BOX)
+        encoded = io.BytesIO()
+        image.save(encoded,format="JPEG",quality=87 if channel else 91,subsampling=0)
+        doc["images"].append({"bufferView":append_view(encoded.getvalue()),"mimeType":"image/jpeg"})
+        doc["textures"].append({"source":len(doc["images"])-1})
+        wave_tex.append(len(doc["textures"])-1)
+    doc["materials"].append({"name":"Merlion glazed mosaic","doubleSided":True,"pbrMetallicRoughness":{
+        "baseColorTexture":{"index":wave_tex[0]},"metallicRoughnessTexture":{"index":wave_tex[2]},
+        "metallicFactor":0},"normalTexture":{"index":wave_tex[1],"scale":.55},
+        "occlusionTexture":{"index":wave_tex[2]}})
+    mesh["primitives"][0]={"mode":4,"material":len(doc["materials"])-1,"attributes":{
+        "POSITION":accessor(wave_pos.astype("<f4"),"VEC3",5126),
+        "NORMAL":accessor(wave_norm.astype("<f4"),"VEC3",5126),
+        "TEXCOORD_0":accessor(wave_uv.astype("<f4"),"VEC2",5126)}}
     binary.extend(b"\0"*(-len(binary)%4))
     doc["buffers"][0]["byteLength"]=len(binary)
     header=json.dumps(doc,separators=(",",":")).encode()
@@ -165,6 +188,7 @@ def bake(file):
                   doc["accessors"][pr["attributes"]["POSITION"]]["count"]//3 for m in doc["meshes"] for pr in m["primitives"])
     statue["props"].update({"三角形数":old_count,"原建筑资源":SOURCE,"基座参考":PHOTO,
         "雕像摄影":PHOTO,"雕像表面":"Adam Wilson · 2018 · CC0。按原模型口部、鬃毛和基座高度配准，可见侧取自照片，对侧按对称性估配。",
+        "浪座饰面":"Adam Wilson · 2018 · CC0。釉面马赛克按现场照片投影到 OneMap 原浪座；对侧、灯具遮挡处和粗糙度按可见瓷片估配。",
         "基座石材":"Granite Tile 04 · Poly Haven · CC0。沿 OneMap 实测基座周长展开石缝，分层、湿润程度和砂浆宽度为照片估值。"})
     path.write_text(json.dumps(buildings,ensure_ascii=False,indent=2)+"\n")
     print(digest,len(data),len(seen),round(perimeter,3))
