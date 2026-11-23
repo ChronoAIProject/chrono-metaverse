@@ -74,6 +74,60 @@ it('室外金属共享缩小的天空并随样式切换和资源释放', async (
   expect(late.envMap).toBeNull();
 });
 
+it('线性天空载入后替换室外金属的显示全景并共享预滤波输入', async () => {
+  const photo = new Image();
+  Object.defineProperties(photo, {
+    naturalWidth: { value: 4 },
+    naturalHeight: { value: 2 },
+  });
+  using canvas = vi.spyOn(HTMLCanvasElement.prototype, 'getContext');
+  canvas.mockReturnValue({
+    drawImage: vi.fn(),
+    getImageData: () => ({ data: new Uint8ClampedArray(32).fill(128) }),
+  } as unknown as CanvasRenderingContext2D);
+  const radianceHash = 'c'.repeat(64);
+  let finish!: (texture: THREE.Texture) => void;
+  const radiance = new Promise<THREE.Texture>((resolve) => {
+    finish = resolve;
+  });
+  const scene = new THREE.Scene();
+  const view = new EnvironmentView(scene, document.createElement('div'), async (key) =>
+    key === radianceHash ? radiance : new THREE.Texture(photo),
+  );
+  const configured = {
+    ...entity,
+    textures: [hash, radianceHash],
+    props: {
+      background: true,
+      environment: {
+        version: 1,
+        sky: {
+          texture: hash,
+          yaw: 20,
+          radiance: { texture: radianceHash, scale: 32 },
+        },
+      },
+    },
+  };
+  const early = new THREE.MeshStandardMaterial();
+  view.addOutdoorMetal(early);
+  view.setContent(content([configured]), undefined, undefined, true);
+  await Promise.resolve();
+  const fallback = early.envMap!;
+  const disposed = vi.fn();
+  fallback.addEventListener('dispose', disposed);
+  finish(new THREE.Texture(photo));
+  await vi.waitFor(() => expect(early.envMap).toBeInstanceOf(THREE.DataTexture));
+  expect(disposed).toHaveBeenCalledOnce();
+  const late = new THREE.MeshStandardMaterial();
+  view.addOutdoorMetal(late);
+  expect(late.envMap).toBe(early.envMap);
+  expect(late.envMapIntensity).toBe(1);
+  expect(scene.background).not.toBe(late.envMap);
+  view.dispose();
+  expect(late.envMap).toBeNull();
+});
+
 it('移除环境后迟到的天空不会覆盖新视图', async () => {
   let resolve!: (texture: THREE.Texture) => void;
   const scene = new THREE.Scene();

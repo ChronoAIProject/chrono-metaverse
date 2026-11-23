@@ -42,8 +42,15 @@ export class EnvironmentView {
 
   private lightMetal(material: THREE.MeshStandardMaterial): void {
     const sky = this.daylightCity && !this.backgroundColor ? this.sky : null;
+    const radiance = sky && skyRadiance.get(sky);
     const image = sky?.image;
-    if (sky && image instanceof HTMLImageElement && image.naturalWidth > 0 && !this.metalSky) {
+    if (
+      sky &&
+      !radiance &&
+      image instanceof HTMLImageElement &&
+      image.naturalWidth > 0 &&
+      !this.metalSky
+    ) {
       // 银灰钢管需要随粗糙度预过滤的天空。512 像素全景对应 PMREM 的 128 像素材质面。
       const canvas = document.createElement('canvas');
       canvas.width = Math.min(512, image.naturalWidth);
@@ -56,13 +63,13 @@ export class EnvironmentView {
         this.metalSky.flipY = sky.flipY;
       }
     }
-    const map = sky ? this.metalSky : null;
+    const map = radiance ?? (sky ? this.metalSky : null);
     if (material.envMap !== map) {
       material.envMap = map;
       material.needsUpdate = true;
     }
     material.envMapRotation.set(0, this.yaw, 0);
-    material.envMapIntensity = 0.48;
+    material.envMapIntensity = radiance ? 1 : 0.48;
   }
 
   setContent(
@@ -167,6 +174,9 @@ export class EnvironmentView {
           if (texture) {
             texture.userData.airHalfDistance = this.sky.userData.airHalfDistance;
             skyRadiance.set(this.sky, texture);
+            for (const metal of this.metals) this.lightMetal(metal);
+            this.metalSky?.dispose();
+            this.metalSky = null;
           }
         })
         .catch(() => {
