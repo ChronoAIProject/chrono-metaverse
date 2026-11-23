@@ -31,6 +31,8 @@ One Fullerton 临水入口的玻璃侧墙和后墙采用 Андрей Бобро
 
 店屋图集裁切、透视校正并调色自 Frank Schulenburg 的街面照片、Balou46 的隔河照片与 Chensiyuan 的俯拍。改编图集与模型以 CC BY-SA 4.0 分发。[Frank Schulenburg，CC BY-SA 4.0](https://commons.wikimedia.org/wiki/File:Shophouses_on_Boat_Quay,_Singapore_(2023)-L1003691.jpg) · [Balou46，CC BY-SA 3.0](https://commons.wikimedia.org/wiki/File:SG-riverside-boat-quay.jpg) · [Chensiyuan，CC BY-SA 4.0](https://commons.wikimedia.org/wiki/File:Boat_Quay_in_Singapore_(Cropped).jpg) · [改编图集许可](https://creativecommons.org/licenses/by-sa/4.0/)
 
+维多利亚剧院面向草坪的两翼按 OneMap 测绘立面定位。拱窗铁艺、柱间海报、山花与中央入口取自同一张正面照片。照片中的小片遮挡以邻近墙面补全，柱身与洞口进深按比例估读。改编图集及模型以 CC BY-SA 4.0 分发。[TTangMonuments 的现场照片，CC BY-SA 4.0](https://commons.wikimedia.org/wiki/File:Victoria_Theatre_and_Victoria_Concert_Hall,_with_54m_high_Clock_Tower.jpg) · [改编图集许可](https://creativecommons.org/licenses/by-sa/4.0/)
+
 
 
 浮尔顿路双向车道按 OSM 单向中心线与车道数生成；转向开口保持可通行。六段路侧及中央绿带沿 OneMap 正射影像描绘。路面颗粒采用 2.08 米宽的沥青扫描，路宽、标线和路缘高度为重建估值。用 `scripts/bake-fullerton-road.py` 传入该区域 OSM XML 和 1K 沥青原图可重新烘焙。[道路](https://www.openstreetmap.org/way/22919331) · [OneMap](https://www.onemap.gov.sg/) · [沥青](https://polyhaven.com/a/asphalt_01) · [草皮](https://ambientcg.com/a/Grass004)

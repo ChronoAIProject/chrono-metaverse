@@ -1257,5 +1257,35 @@
       "重建范围": "45 至 85 号内有测绘记录的 40 栋。门窗样式、屋脊、雨棚与分户立面配色按同街实拍近似。",
       "材质版权": "Footprints © OpenStreetMap contributors (ODbL). Roof colour survey: OneMap, Singapore Land Authority. Cropped and rectified textures: Shophouses on Boat Quay, Singapore (2023)-L1003691 by Frank Schulenburg, Boat Quay in Singapore (Cropped) by Chensiyuan (both CC BY-SA 4.0), and SG-riverside-boat-quay by Balou46 (CC BY-SA 3.0). Adapted textures and model: https://creativecommons.org/licenses/by-sa/4.0/."
     }
+  },
+  {
+    "entityId": "bay.victoria-porticos",
+    "kind": "structure",
+    "layer": "ext",
+    "label": "维多利亚剧院与纪念堂 · 草坪侧双门廊",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "ec8d84e329d78d2bdd3524fcbe6dc497bc44122e72c0fd3241a9b6e38ea3f133",
+    "bounds": {
+      "min": [
+        615.6905632639232,
+        -60.070099059231104,
+        645.6475323161404
+      ],
+      "max": [
+        630.5511299404059,
+        -31.951491988978997,
+        705.3661763846286
+      ]
+    },
+    "material": {
+      "shading": "baked"
+    },
+    "props": {
+      "background": true,
+      "建筑数据": "OneMap · Map Data © Singapore Land Authority",
+      "现场照片": "https://commons.wikimedia.org/wiki/File:Victoria_Theatre_and_Victoria_Concert_Hall,_with_54m_high_Clock_Tower.jpg",
+      "材质版权": "Survey geometry: Map Data © Singapore Land Authority / OneMap. Portico textures cropped, rectified and retouched from Victoria Theatre and Victoria Concert Hall, with 54m high Clock Tower by TTangMonuments (CC BY-SA 4.0), https://commons.wikimedia.org/wiki/File:Victoria_Theatre_and_Victoria_Concert_Hall,_with_54m_high_Clock_Tower.jpg. Adapted texture atlas and model: https://creativecommons.org/licenses/by-sa/4.0/.",
+      "细节说明": "两翼位置与山花取自测绘表面。六扇拱窗、楼上六个柱间及柱身参照照片；进深为估值。"
+    }
   }
 ]
