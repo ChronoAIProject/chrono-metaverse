@@ -18,14 +18,7 @@ RAIN_TREE_HEADROOM = 1.4
 RAIN_TREE_MASK_GAIN = 1.045
 
 
-def bake(folder, spreading_tree, east_grove=False):
-    ref = json.loads((ROOT/"references/esplanade-park-stand.json").read_text())
-    points, colors, canopy, compact_bark_mesh = sample_scan(folder, "island_tree_01")
-    compact_xyz, uv, compact_normals, faces, compact = slices(points, colors, canopy, fit_opacity=True)
-    points, colors, canopy, spreading_bark_mesh = sample_scan(spreading_tree, "jacaranda_tree")
-    spreading_xyz, _, spreading_normals, _, spreading = slices(points, colors, canopy, fit_opacity=True)
-    stems = {0: [], 1: []}
-    trunks = []
+def canopy_material(compact, spreading, east_grove):
     atlas = Image.new("RGBA", (compact.width, compact.height * 2))
     # Reserve linear tint range for the brighter surveyed crowns. Decode and re-encode
     # sRGB here because glTF vertex colours multiply the sampled texture in linear light.
@@ -44,7 +37,15 @@ def bake(folder, spreading_tree, east_grove=False):
     name = "Esplanade Drive layered crowns" if east_grove else "Esplanade Park layered broadleaf canopy"
     paint = PBRMaterial(name=name, baseColorTexture=atlas,
                         metallicFactor=0, roughnessFactor=.98, alphaMode="MASK", alphaCutoff=.40)
-    vertices, shading, tones, texcoords = [], [], [], []
+    return paint
+
+
+def bake_stands(folder, spreading_tree, stands):
+    ref = json.loads((ROOT / "references/esplanade-park-stand.json").read_text())
+    points, colors, canopy, compact_bark_mesh = sample_scan(folder, "island_tree_01")
+    compact_xyz, uv, compact_normals, faces, compact = slices(points, colors, canopy, fit_opacity=True)
+    points, colors, canopy, spreading_bark_mesh = sample_scan(spreading_tree, "jacaranda_tree")
+    spreading_xyz, _, spreading_normals, _, spreading = slices(points, colors, canopy, fit_opacity=True)
     widths = {"Samanea saman":1.38,"Tabebuia rosea":.69,"Pterocarpus indicus":1.05,
               "Peltophorum pterocarpum":1.12}
     aerial_median = np.median([t["aerialRGB"] for t in ref["trees"]],axis=0)
@@ -52,10 +53,11 @@ def bake(folder, spreading_tree, east_grove=False):
     along = np.array(avenue["crownSurvey"]["alongLocalXZ"])
     along /= np.linalg.norm(along)
     road_axes = np.array([along, [-along[1], along[0]]])
-    trees = ref["trees"] + avenue["trees"]
-    if east_grove:
-        trees = json.loads((ROOT / "references/esplanade-drive-grove.json").read_text())["trees"]
-    for tree in trees:
+    park = ref["trees"] + avenue["trees"]
+    east = json.loads((ROOT / "references/esplanade-drive-grove.json").read_text())["trees"]
+    trees = park + east
+    vertices, shading, texcoords, tones, trunks, bark_tiles = [], [], [], [], [], []
+    for i, tree in enumerate(trees):
         # Both source volumes use the same slice grid. Select its UV region for each crown.
         measured_diameter = tree.get("crownDiameterMetres")
         spreading_form = (tree["species"] == "Samanea saman" or
@@ -66,7 +68,7 @@ def bake(folder, spreading_tree, east_grove=False):
             xyz, normals, bark, atlas_offset = compact_xyz, compact_normals, compact_bark_mesh, 1
         tree_uv = uv.copy()
         tree_uv[:, 1] = (tree_uv[:, 1] + atlas_offset) / 2
-        texcoords.extend(tree_uv)
+        texcoords.append(tree_uv)
         rng = np.random.default_rng(int(tree["treeId"]))
         height = tree["heightUpper"] - rng.uniform(.5,2.5)
         width = widths[tree["species"]] * height
@@ -92,48 +94,60 @@ def bake(folder, spreading_tree, east_grove=False):
         normal_transform = np.linalg.inv(transform)
         mapped = (xyz - [.5, 0, .5]) @ transform.T + ground
         n = normals @ normal_transform
-        vertices.extend(mapped)
+        vertices.append(mapped)
         trunk = bark.copy()
         trunk.vertices = (bark.vertices - [.5, 0, .5]) @ transform.T + ground
         trunk_normals = bark.vertex_normals @ normal_transform
         trunk.vertex_normals = trunk_normals / np.linalg.norm(trunk_normals, axis=1)[:, None]
-        stems[atlas_offset].append(len(trunks))
+        bark_tiles.append(atlas_offset)
         trunks.append(trunk)
-        shading.extend(n/np.linalg.norm(n,axis=1)[:,None])
+        shading.append(n/np.linalg.norm(n,axis=1)[:,None])
         tint = np.clip((np.array(tree["aerialRGB"])/aerial_median)**.65,.70,1.13)
         color = np.minimum(255, 231*tint)
-        if east_grove:
+        if i >= len(park):
             color = color * np.array(tree.get("foliageGainLinear", [1, 1, 1])) / RAIN_TREE_HEADROOM
         elif tree["species"] == "Samanea saman":
             color = (color * np.array(tree.get("foliageGainLinear", [1, 1, 1]))
                      * RAIN_TREE_MASK_GAIN / RAIN_TREE_HEADROOM)
         color = np.uint8(np.clip(np.rint(color), 0, 255)).tolist()
-        tones.extend(np.tile([*color, 255], (len(xyz), 1)))
-    visual = TextureVisuals(uv=np.asarray(texcoords), material=paint)
-    visual.vertex_attributes["color"] = np.asarray(tones,np.uint8)
-    mesh = trimesh.Trimesh(vertices=vertices,faces=np.vstack([faces+i*len(xyz) for i in range(len(trees))]),
-                           vertex_normals=shading,visual=visual,process=False)
-    if east_grove:
-        visibility = neighbouring_sky(np.reshape(vertices, (len(trees), -1, 3)),
-                                      np.reshape(shading, (len(trees), -1, 3)), trunks,
-                                      np.reshape(texcoords, (len(trees), -1, 2)), faces[::2],
-                                      atlas, paint.alphaCutoff)
-        assign_occlusion(mesh, np.concatenate([leaf for leaf, _ in visibility]))
-    scene = trimesh.Scene(mesh)
-    for bark_source, indices in [(spreading_bark_mesh, stems[0]), (compact_bark_mesh, stems[1])]:
-        trunk_mesh = combined([trunks[i] for i in indices])
-        if east_grove:
-            trunk_mesh.visual.material.name = bark_source.visual.material.name.replace("park bark", "Esplanade Drive bark")
+        tones.append(np.tile([*color, 255], (len(xyz), 1)))
+    # Both atlases carry identical alpha masks. Every tree participates in one
+    # depth pass so crowns on opposite sides of the asset boundary can interact.
+    park_paint = canopy_material(compact, spreading, False)
+    visibility = neighbouring_sky(vertices, shading, trunks, texcoords, faces[::2],
+                                  park_paint.baseColorTexture, park_paint.alphaCutoff)
+    entries = []
+    for east_grove in stands:
+        group = slice(len(park), None) if east_grove else slice(0, len(park))
+        paint = canopy_material(compact, spreading, True) if east_grove else park_paint
+        visual = TextureVisuals(uv=np.vstack(texcoords[group]), material=paint)
+        visual.vertex_attributes["color"] = np.vstack(tones[group])
+        tree_count = len(vertices[group])
+        mesh = trimesh.Trimesh(vertices=np.vstack(vertices[group]),
+                               faces=np.vstack([faces + i * len(uv) for i in range(tree_count)]),
+                               vertex_normals=np.vstack(shading[group]), visual=visual, process=False)
+        assign_occlusion(mesh, np.concatenate([leaf for leaf, _ in visibility[group]]))
+        scene = trimesh.Scene(mesh)
+        for tile, source in enumerate([spreading_bark_mesh, compact_bark_mesh]):
+            indices = [i for i in range(*group.indices(len(trees))) if bark_tiles[i] == tile]
+            trunk_mesh = combined([trunks[i] for i in indices])
+            if east_grove:
+                trunk_mesh.visual.material.name = source.visual.material.name.replace("park bark", "Esplanade Drive bark")
             assign_occlusion(trunk_mesh, np.concatenate([visibility[i][1] for i in indices]))
-        trunk_mesh.visual.vertex_attributes["color"] = np.tile(bark_source.visual.vertex_attributes["color"], (len(indices), 1))
-        scene.add_geometry(trunk_mesh, geom_name=trunk_mesh.visual.material.name)
-    digest, bounds = write_tree_asset(scene, use_occlusion_uv if east_grove else None)
+            trunk_mesh.visual.vertex_attributes["color"] = np.tile(source.visual.vertex_attributes["color"], (len(indices), 1))
+            scene.add_geometry(trunk_mesh, geom_name=trunk_mesh.visual.material.name)
+        digest, bounds = write_tree_asset(scene, use_occlusion_uv)
+        entries.append(stand_entry(east_grove, tree_count, digest, bounds, ref, avenue))
+    return entries
+
+
+def stand_entry(east_grove, tree_count, digest, bounds, ref, avenue):
     if east_grove:
         return dict(entityId="bay.esplanade-drive-grove", regionId="marina-bay-exterior", layer="ext",
                     kind="structure", label="滨海公园 · 东侧林带", assetHash=digest, bounds=bounds,
                     material={"shading": "albedo"}, props={
                         "background": True, "surfaceRole": "landscape", "树木名录": ref["source"],
-                        "树木依据": f"靠 Esplanade Drive 的 {len(trees)} 株双翼豆与洋红风铃木。树位、树种和高度档取自 NParks 2021 名录，根部按地面定位，冠幅与偏向按 OneMap 航拍估读。",
+                        "树木依据": f"靠 Esplanade Drive 的 {tree_count} 株双翼豆与洋红风铃木。树位、树种和高度档取自 NParks 2021 名录，根部按地面定位，冠幅与偏向按 OneMap 航拍估读。",
                         "树形素材": "Poly Haven · CC0。双翼豆借用 Jacaranda Tree 的分枝，洋红风铃木借用 Island Tree 01。"})
     return dict(entityId="bay.esplanade-park-stand",regionId="marina-bay-exterior",layer="ext",kind="structure",
                 label="滨海公园 · 步道与康乐通道林冠",assetHash=digest,bounds=bounds,
@@ -148,11 +162,14 @@ if __name__ == "__main__":
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("tree",type=Path)
     parser.add_argument("spreading_tree", type=Path, help="Directory containing the 1k Jacaranda Tree glTF")
-    parser.add_argument("--east-grove", action="store_true", help="Bake the separate Esplanade Drive stand")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--both", action="store_true", help="Bake both neighbouring stands together")
+    group.add_argument("--east-grove", action="store_true", help="Bake the separate Esplanade Drive stand")
     args = parser.parse_args()
-    entry = bake(args.tree, args.spreading_tree, args.east_grove)
+    entries = bake_stands(args.tree, args.spreading_tree, [False, True] if args.both else [args.east_grove])
     path=ROOT/"build/streetscape.json"
     records={r["entityId"]:r for r in json.loads(path.read_text())}
-    records[entry["entityId"]]=entry
+    for entry in entries:
+        records[entry["entityId"]] = entry
+        print(entry["assetHash"])
     path.write_text(json.dumps(list(records.values()),ensure_ascii=False,indent=2)+"\n")
-    print(entry["assetHash"])
