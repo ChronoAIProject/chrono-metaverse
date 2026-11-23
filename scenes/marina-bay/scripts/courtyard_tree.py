@@ -167,10 +167,12 @@ def bake_crown(parts, leaf_mask=None):
                            visual=TextureVisuals(uv=texcoords, material=material), process=False)
 
 
-def compact_bark(mesh, target_triangles=420, lock_border=False):
+def compact_bark(mesh, target_triangles=420, lock_border=False, max_error=None):
     source = {"targetTriangles": target_triangles, "lockBorder": lock_border,
               "faces": mesh.faces.ravel().tolist(), "position": mesh.vertices.ravel().tolist(),
               "attributes": np.column_stack((mesh.vertex_normals, mesh.visual.uv)).ravel().tolist()}
+    if max_error is not None:
+        source["maxError"] = max_error
     result = subprocess.run(["node", str(Path(__file__).with_name("simplify-skypark-tree.mjs"))],
                             input=json.dumps(source), text=True, capture_output=True, check=True)
     faces = np.asarray(json.loads(result.stdout)).reshape(-1, 3)
