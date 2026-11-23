@@ -9,6 +9,7 @@ assets/*
 !assets/684d6cef3eafb58f0d3414495b47ae3fdbfa209d9170676840c63c9de8b0bed2.webp
 !assets/9a9adc6e6c5b9ea0a5665793c88ae813487e84ced68a4043e23270683cbcef3a.glb
 !assets/6f8701bf09570c7b5dbc6a82571a7d0a61632566b42728b8376fd7e90b042147.glb
+!assets/86d5c0f6a1de9f15ecc389d3c8664ccbecf013ddba99eb996f8ea97f91dae7a5.glb
 node_modules/
 .venv/
 .vite/
