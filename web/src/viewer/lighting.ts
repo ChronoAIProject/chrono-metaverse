@@ -128,6 +128,16 @@ export function createLights(
       lights.push(light);
     }
   }
+  // 水平面直射照度占比决定水体在岸影中损失的日照。场景光组切换时计算一次。
+  const directIrradiance = (sun: THREE.DirectionalLight) =>
+    sun.intensity * luminance(sun.color) * Math.max(0, sun.position.y / sun.position.length());
+  const directional = lights.filter((light) => light instanceof THREE.DirectionalLight);
+  const total = directional.reduce(
+    (sum, sun) => sum + directIrradiance(sun),
+    hemisphere.intensity * luminance(hemisphere.color),
+  );
+  for (const sun of directional)
+    sun.userData.directFraction = directIrradiance(sun) / Math.max(1e-6, total);
   for (const light of lights) light.layers.enable(CITY_REFLECTION_LAYER);
   return lights;
 }
