@@ -1329,5 +1329,66 @@
     111.5,
     90.0
   ],
-  "crownFitMethod": "For the 31 additional inventory stems, isolate connected foliage in the z20 orthophoto within the nearest-stem region. Fit diameter from area, anisotropy from horizontal covariance, and limit the crown-centre offset to 18% of diameter."
+  "crownFitMethod": "For the 31 additional inventory stems, isolate connected foliage in the z20 orthophoto within the nearest-stem region. Fit diameter from area, anisotropy from horizontal covariance, and limit the crown-centre offset to 18% of diameter.",
+  "waterfrontCrowns": [
+    {
+      "treeId": "shore-west",
+      "longitude": 103.85519058,
+      "latitude": 1.28044848,
+      "estimatedHeightMetres": 12,
+      "crownDiameterMetres": 16.26,
+      "aerialRGB": [
+        107,
+        116,
+        85
+      ],
+      "groundY": -59.9181,
+      "localXZ": [
+        -80.023,
+        59.17
+      ],
+      "sourceYawDegrees": 280,
+      "crownFit": {
+        "majorLocalXZ": [
+          0.06357,
+          0.99798
+        ],
+        "stretch": 1.2,
+        "leanLocalXZ": [
+          1.508,
+          -1.811
+        ]
+      }
+    },
+    {
+      "treeId": "shore-east",
+      "longitude": 103.85533547,
+      "latitude": 1.28034247,
+      "estimatedHeightMetres": 9,
+      "crownDiameterMetres": 12.64,
+      "aerialRGB": [
+        126,
+        130,
+        102
+      ],
+      "groundY": -59.9184,
+      "localXZ": [
+        -99.592,
+        55.361
+      ],
+      "sourceYawDegrees": 8,
+      "crownFit": {
+        "majorLocalXZ": [
+          0.2341,
+          0.97221
+        ],
+        "stretch": 1.2,
+        "leanLocalXZ": [
+          -1.104,
+          -1.955
+        ]
+      }
+    }
+  ],
+  "waterfrontSurvey": "Two broadleaf crowns between the paved waterfront and the SLA building near stop 03391, measured in OneMap OrthoJPG at zoom 20. The canopy centroid approximates each stem. Species are unconfirmed; heights of 12 and 9 metres are visual estimates. Their branches use the same Burkea africana scan as a structural proxy."
 }

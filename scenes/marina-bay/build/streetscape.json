@@ -1072,7 +1072,7 @@
     "layer": "ext",
     "kind": "structure",
     "label": "滨海大道 · 两侧行道树",
-    "assetHash": "46fb8e252cfc9f09bc4d5895c332d963699885a43db6dcabc4c3cd4c0332a582",
+    "assetHash": "b2a564bed00667c0c243d12883a47cf7b752f0b57e73dccf567f5e0a49ef8a55",
     "bounds": {
       "min": [
         -182.43067710442432,
@@ -1081,7 +1081,7 @@
       ],
       "max": [
         305.0394152000819,
-        -48.99462878785578,
+        -47.94703798962672,
         94.34958101040287
       ]
     },
@@ -1093,6 +1093,7 @@
       "surfaceRole": "landscape",
       "树木名录": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
       "树木依据": "49 株 Sindora wallichii 的树位和高度档取自 NParks 2021 名录。冠幅、偏向与色差按 OneMap 航拍估读，档内高度与枝形为估值。",
+      "滨水步道": "03391 站朝湾一侧另有两株树，冠幅与冠心来自航拍，树种未确认。树高分别估为 12 米和 9 米，枝形借用同一扫描。",
       "树形素材": "Poly Haven · Tree Small 02 · CC0。使用 Burkea africana 的枝叶与主干近似同为豆科的 Sindora。"
     }
   },
