@@ -2,6 +2,8 @@
 
 from collections import defaultdict
 
+from pathlib import Path
+
 import numpy as np
 import trimesh
 from PIL import Image
@@ -55,6 +57,7 @@ def shopfront(corners, timber, stone_path):
     grain = Image.open(stone_path).convert("L").resize((320, 320), Image.Resampling.LANCZOS)
     grain = grain.point(lambda value: 104 + value * .59)
     grain.format = "JPEG"
+    reflections = Image.open(Path(__file__).resolve().parents[1] / "references/fullerton-courtyard-reflection.jpg")
     materials = {
         "Courtyard plaster": PBRMaterial(name="Wall washed plaster", baseColorTexture=wall_finish(grain, span, lintel - floor, fixtures),
                                          metallicFactor=0, roughnessFactor=.90),
@@ -64,7 +67,7 @@ def shopfront(corners, timber, stone_path):
         "Shop joinery": PBRMaterial(name="Interior timber joinery", baseColorTexture=timber, metallicFactor=0, roughnessFactor=.64),
         "Shop frames": PBRMaterial(name="Entrance aluminium", metallicFactor=.46, roughnessFactor=.42),
         GLASS: PBRMaterial(name=GLASS, baseColorFactor=[91, 143, 147, 45], metallicFactor=.10,
-                           roughnessFactor=.19, alphaMode="BLEND"),
+                           roughnessFactor=.19, emissiveTexture=reflections, emissiveFactor=[0, 0, 0], alphaMode="BLEND"),
     }
     sections = defaultdict(list)
     colors = defaultdict(list)
@@ -153,6 +156,8 @@ def shopfront(corners, timber, stone_path):
             ambient = .34 + .66 * np.exp(-.64 * np.maximum(xyz[:, 0], 0))
             color = np.uint8(np.round(255 * ((rgb + .055) / 1.055) ** 2.4 * ambient[:, None]))
             mesh.visual.vertex_attributes["color"] = np.column_stack((color, np.full(len(color), 255, dtype=np.uint8)))
+        if name == GLASS:
+            mesh.visual.uv = np.column_stack((xyz[:, 2] / span, (xyz[:, 1] - floor) / (lintel - floor)))
         if name == shell:
             # Box-project the mineral texture on each face at a constant metric scale.
             axes = np.abs(np.repeat(combined.face_normals, 3, axis=0)).argmax(axis=1)
