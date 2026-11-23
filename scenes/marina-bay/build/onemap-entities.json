@@ -3133,7 +3133,7 @@
     "kind": "object",
     "label": "THE FULLERTON PAVILION",
     "regionId": "marina-bay-exterior",
-    "assetHash": "4c500895294277a5e1b01e113cea9ca5f4987df545598dead5e8eb390e6d4d9c",
+    "assetHash": "47414ce032561b6226c39896ac95c6e01167cb8f1bf64fa52142c21f55c5611d",
     "bounds": {
       "min": [
         220.305883,
@@ -3154,7 +3154,12 @@
       "原始分片": "6/39/5_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 6.472,
-      "三角形数": 1956
+      "三角形数": 978,
+      "原建筑资源": "4c500895294277a5e1b01e113cea9ca5f4987df545598dead5e8eb390e6d4d9c",
+      "圆亭玻璃": "按测绘外壳朝向、高度和原影像颜色选取成对玻璃三角面。原窗框纹理保留，日间反光从圆亭中部采集的岸楼、天空和水面计算，玻璃粗糙度 0.28 为估值。"
+    },
+    "material": {
+      "shading": "albedo"
     }
   },
   {
