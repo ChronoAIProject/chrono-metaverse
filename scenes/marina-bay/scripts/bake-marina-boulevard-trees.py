@@ -10,6 +10,7 @@ from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
 from fullerton_shrubs import combined
+from grove_occlusion import assign_occlusion, neighbouring_sky, use_occlusion_uv
 from scanned_canopy import ROOT, sample_scan, slices, write_tree_asset
 
 
@@ -27,12 +28,17 @@ def bake(scan_folder):
     foot[1] = bark.bounds[0, 1]
     median = np.array(reference["aerialReferenceRGB"])
     crowns, trunks, tones = [], [], []
-    for tree in trees:
-        rng = np.random.default_rng(int(tree["treeId"]))
-        height = tree["heightUpper"] - rng.uniform(.6, 2.4)
+    for tree in trees + reference["waterfrontCrowns"]:
         diameter = tree["crownDiameterMetres"]
-        axes = [diameter, height, diameter * rng.uniform(.86, 1)]
-        angle = rng.uniform(-np.pi, np.pi)
+        if "estimatedHeightMetres" in tree:
+            height = tree["estimatedHeightMetres"]
+            axes = [diameter, height, diameter]
+            angle = np.radians(tree["sourceYawDegrees"])
+        else:
+            rng = np.random.default_rng(int(tree["treeId"]))
+            height = tree["heightUpper"] - rng.uniform(.6, 2.4)
+            axes = [diameter, height, diameter * rng.uniform(.86, 1)]
+            angle = rng.uniform(-np.pi, np.pi)
         basis = trimesh.transformations.rotation_matrix(angle, [0, 1, 0])[:3, :3]
         transform = basis @ np.diag(axes)
         fit = tree.get("crownFit")
@@ -60,16 +66,21 @@ def bake(scan_folder):
     foliage = combined(crowns)
     foliage.visual.vertex_attributes["color"] = np.vstack(tones).astype(np.uint8)
     wood = combined(trunks)
-    wood.visual.vertex_attributes["color"] = np.tile(bark.visual.vertex_attributes["color"], (len(trees), 1))
+    wood.visual.vertex_attributes["color"] = np.tile(bark.visual.vertex_attributes["color"], (len(trunks), 1))
+    visibility = neighbouring_sky([c.vertices for c in crowns], [c.vertex_normals for c in crowns],
+                                  trunks, [uv] * len(crowns), faces[::2], atlas, paint.alphaCutoff)
+    assign_occlusion(foliage, np.concatenate([leaf for leaf, _ in visibility]))
+    assign_occlusion(wood, np.concatenate([stem for _, stem in visibility]))
     scene = trimesh.Scene()
     scene.add_geometry(foliage, geom_name=paint.name)
     scene.add_geometry(wood, geom_name=bark.visual.material.name)
-    digest, bounds = write_tree_asset(scene)
+    digest, bounds = write_tree_asset(scene, use_occlusion_uv)
     return dict(entityId="bay.marina-boulevard-sindora", regionId="marina-bay-exterior", layer="ext",
                 kind="structure", label="滨海大道 · 两侧行道树", assetHash=digest, bounds=bounds,
                 material={"shading": "albedo"},
                 props={"background": True, "surfaceRole": "landscape", "树木名录": reference["source"],
                        "树木依据": f"{len(trees)} 株 Sindora wallichii 的树位和高度档取自 NParks 2021 名录。冠幅、偏向与色差按 OneMap 航拍估读，档内高度与枝形为估值。",
+                       "滨水步道":"03391 站朝湾一侧另有两株树，冠幅与冠心来自航拍，树种未确认。树高分别估为 12 米和 9 米，枝形借用同一扫描。",
                        "树形素材": "Poly Haven · Tree Small 02 · CC0。使用 Burkea africana 的枝叶与主干近似同为豆科的 Sindora。"})
 
 

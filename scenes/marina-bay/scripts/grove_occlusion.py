@@ -37,6 +37,38 @@ def crown_depth(projected, depth, faces, texcoords, alpha, cutoff):
     return origin, image
 
 
+def sky_directions(count):
+    """Uniform solid-angle samples of the upper hemisphere."""
+    for i in range(count):
+        up = (i + .5) / count
+        azimuth = np.pi * (3 - np.sqrt(5)) * i
+        horizontal = np.sqrt(1 - up**2)
+        ray = np.array([horizontal * np.cos(azimuth), up, horizontal * np.sin(azimuth)])
+        right = np.array([-np.sin(azimuth), 0, np.cos(azimuth)])
+        yield ray, np.array([right, np.cross(ray, right)])
+
+
+def sky_below_crown(samples, normals, crown, faces, uv, alpha, cutoff, directions=96, pitch=.22):
+    """Diffuse visibility on a receiving surface below alpha-tested foliage."""
+    blocked = np.zeros(len(samples))
+    for ray, basis in sky_directions(directions):
+        origin, depth = crown_depth(crown @ basis.T / pitch, crown @ ray, faces, uv, alpha, cutoff)
+        query = samples @ basis.T / pitch - origin
+        floor = np.floor(query)
+        x, y = floor.astype(int).T
+        sx, sy = (query - floor).T
+        receiver = samples @ ray + .04
+        weight = np.maximum(0, normals @ ray)
+        for ox, wx in [(0, 1 - sx), (1, sx)]:
+            for oy, wy in [(0, 1 - sy), (1, sy)]:
+                u, v = x + ox, y + oy
+                inside = (u >= 0) & (v >= 0) & (u < depth.shape[1]) & (v < depth.shape[0])
+                shaded = inside.copy()
+                shaded[inside] = depth[v[inside], u[inside]] > receiver[inside]
+                blocked += weight * wx * wy * shaded
+    return np.clip(1 - 2 * blocked / directions, 0, 1)
+
+
 def neighbouring_sky(crowns, crown_normals, trunks, uvs, faces, atlas, cutoff, directions=48, pitch=.28):
     """Integrate the cosine-weighted blocked sky at each canopy and bark vertex."""
     points = [np.vstack([c, t.vertices]) for c, t in zip(crowns, trunks)]
@@ -45,14 +77,7 @@ def neighbouring_sky(crowns, crown_normals, trunks, uvs, faces, atlas, cutoff, d
     samples = np.vstack(points)
     alpha = np.asarray(atlas)[:, :, 3].astype(np.float32) / 255
     blocked = np.zeros(len(samples))
-    # Golden-angle directions uniformly cover the upper hemisphere in solid angle.
-    for i in range(directions):
-        up = (i + .5) / directions
-        azimuth = np.pi * (3 - np.sqrt(5)) * i
-        horizontal = np.sqrt(1 - up**2)
-        ray = np.array([horizontal * np.cos(azimuth), up, horizontal * np.sin(azimuth)])
-        right = np.array([-np.sin(azimuth), 0, np.cos(azimuth)])
-        basis = np.array([right, np.cross(ray, right)])
+    for ray, basis in sky_directions(directions):
         query = samples @ basis.T / pitch
         offset = np.floor(query.min(axis=0)).astype(int) - 2
         query -= offset
