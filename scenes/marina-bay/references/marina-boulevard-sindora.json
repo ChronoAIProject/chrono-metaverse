@@ -1,6 +1,6 @@
 {
   "source": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
-  "aerial": "Map Data © Singapore Land Authority / OneMap, OrthoJPG. First 18 trees at z18, additional 31 at z20.",
+  "aerial": "Map Data © Singapore Land Authority / OneMap, OrthoJPG. Initial measurements at z18 for 18 trees and z20 for 31. The subsequent crown profile fit uses z20.",
   "trees": [
     {
       "treeId": "12487190",
@@ -20,7 +20,19 @@
         95
       ],
       "groundY": -60.259,
-      "crownDiameterMetres": 7.2
+      "crownDiameterMetres": 7.64,
+      "sourceYawDegrees": 150,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.99542,
+          -0.0956
+        ],
+        "stretch": 1.306,
+        "leanLocalXZ": [
+          1.375,
+          0.087
+        ]
+      }
     },
     {
       "treeId": "12487191",
@@ -40,7 +52,19 @@
         89
       ],
       "groundY": -60.259,
-      "crownDiameterMetres": 10.1
+      "crownDiameterMetres": 15.35,
+      "sourceYawDegrees": 240,
+      "crownFit": {
+        "majorLocalXZ": [
+          0.65683,
+          0.75404
+        ],
+        "stretch": 1.167,
+        "leanLocalXZ": [
+          -0.411,
+          2.263
+        ]
+      }
     },
     {
       "treeId": "12487195",
@@ -60,7 +84,19 @@
         84
       ],
       "groundY": -59.92,
-      "crownDiameterMetres": 10.1
+      "crownDiameterMetres": 14.42,
+      "sourceYawDegrees": 60,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.67014,
+          0.74223
+        ],
+        "stretch": 1.107,
+        "leanLocalXZ": [
+          0.487,
+          2.248
+        ]
+      }
     },
     {
       "treeId": "12487198",
@@ -80,7 +116,19 @@
         90
       ],
       "groundY": -60.257,
-      "crownDiameterMetres": 11.9
+      "crownDiameterMetres": 16.05,
+      "sourceYawDegrees": 300,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.22566,
+          0.97421
+        ],
+        "stretch": 1.029,
+        "leanLocalXZ": [
+          -0.035,
+          2.3
+        ]
+      }
     },
     {
       "treeId": "12487201",
@@ -100,7 +148,19 @@
         82
       ],
       "groundY": -59.887,
-      "crownDiameterMetres": 7.2
+      "crownDiameterMetres": 12.23,
+      "sourceYawDegrees": 300,
+      "crownFit": {
+        "majorLocalXZ": [
+          0.11735,
+          0.99309
+        ],
+        "stretch": 1.126,
+        "leanLocalXZ": [
+          0.699,
+          2.092
+        ]
+      }
     },
     {
       "treeId": "12487202",
@@ -140,7 +200,19 @@
         99
       ],
       "groundY": -59.92,
-      "crownDiameterMetres": 9.0
+      "crownDiameterMetres": 11.38,
+      "sourceYawDegrees": 330,
+      "crownFit": {
+        "majorLocalXZ": [
+          0.33328,
+          0.94283
+        ],
+        "stretch": 1.317,
+        "leanLocalXZ": [
+          -0.573,
+          1.106
+        ]
+      }
     },
     {
       "treeId": "12487205",
@@ -160,7 +232,19 @@
         89
       ],
       "groundY": -59.919,
-      "crownDiameterMetres": 10.1
+      "crownDiameterMetres": 14.88,
+      "sourceYawDegrees": 300,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.98394,
+          0.17851
+        ],
+        "stretch": 1.067,
+        "leanLocalXZ": [
+          1.026,
+          1.971
+        ]
+      }
     },
     {
       "treeId": "12487207",
@@ -180,7 +264,19 @@
         96
       ],
       "groundY": -59.864,
-      "crownDiameterMetres": 13.4
+      "crownDiameterMetres": 17.31,
+      "sourceYawDegrees": 270,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.86652,
+          -0.49914
+        ],
+        "stretch": 1.056,
+        "leanLocalXZ": [
+          -0.218,
+          2.29
+        ]
+      }
     },
     {
       "treeId": "12487208",
@@ -200,7 +296,19 @@
         101
       ],
       "groundY": -59.92,
-      "crownDiameterMetres": 10.1
+      "crownDiameterMetres": 17.76,
+      "sourceYawDegrees": 330,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.99769,
+          0.0679
+        ],
+        "stretch": 1.135,
+        "leanLocalXZ": [
+          0.357,
+          0.584
+        ]
+      }
     },
     {
       "treeId": "12487210",
@@ -220,7 +328,19 @@
         97
       ],
       "groundY": -60.261,
-      "crownDiameterMetres": 10.1
+      "crownDiameterMetres": 16.61,
+      "sourceYawDegrees": 330,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.98419,
+          -0.17713
+        ],
+        "stretch": 1.036,
+        "leanLocalXZ": [
+          -1.876,
+          1.33
+        ]
+      }
     },
     {
       "treeId": "12487211",
@@ -240,7 +360,19 @@
         91
       ],
       "groundY": -60.261,
-      "crownDiameterMetres": 10.1
+      "crownDiameterMetres": 13.26,
+      "sourceYawDegrees": 0,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.33624,
+          0.94178
+        ],
+        "stretch": 1.232,
+        "leanLocalXZ": [
+          -0.357,
+          1.374
+        ]
+      }
     },
     {
       "treeId": "12457866",
@@ -260,7 +392,19 @@
         90
       ],
       "groundY": -60.261,
-      "crownDiameterMetres": 6.7
+      "crownDiameterMetres": 10.48,
+      "sourceYawDegrees": 30,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.33828,
+          0.94105
+        ],
+        "stretch": 1.148,
+        "leanLocalXZ": [
+          -1.523,
+          1.12
+        ]
+      }
     },
     {
       "treeId": "12457870",
@@ -280,7 +424,19 @@
         83
       ],
       "groundY": -59.892,
-      "crownDiameterMetres": 6.7
+      "crownDiameterMetres": 10.86,
+      "sourceYawDegrees": 270,
+      "crownFit": {
+        "majorLocalXZ": [
+          0.39575,
+          0.91836
+        ],
+        "stretch": 1.077,
+        "leanLocalXZ": [
+          0.17,
+          1.467
+        ]
+      }
     },
     {
       "treeId": "12457873",
@@ -300,7 +456,19 @@
         90
       ],
       "groundY": -59.92,
-      "crownDiameterMetres": 10.1
+      "crownDiameterMetres": 13.5,
+      "sourceYawDegrees": 0,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.19441,
+          0.98092
+        ],
+        "stretch": 1.284,
+        "leanLocalXZ": [
+          -1.068,
+          0.84
+        ]
+      }
     },
     {
       "treeId": "12641817",
@@ -360,7 +528,19 @@
         87
       ],
       "groundY": -60.257,
-      "crownDiameterMetres": 13.4
+      "crownDiameterMetres": 17.54,
+      "sourceYawDegrees": 300,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.83981,
+          -0.54288
+        ],
+        "stretch": 1.111,
+        "leanLocalXZ": [
+          -0.482,
+          2.249
+        ]
+      }
     },
     {
       "treeId": "12487173",
@@ -379,19 +559,20 @@
         124,
         93
       ],
-      "crownDiameterMetres": 6.6,
+      "crownDiameterMetres": 8.44,
       "crownFit": {
         "majorLocalXZ": [
-          -0.9986,
-          -0.0531
+          -0.99819,
+          -0.0601
         ],
-        "stretch": 1.28,
+        "stretch": 1.35,
         "leanLocalXZ": [
-          0.3,
-          0.3
+          1.154,
+          -0.265
         ]
       },
-      "groundY": -60.26
+      "groundY": -60.26,
+      "sourceYawDegrees": 300
     },
     {
       "treeId": "12487174",
@@ -410,19 +591,20 @@
         129,
         92
       ],
-      "crownDiameterMetres": 10.5,
+      "crownDiameterMetres": 17.3,
       "crownFit": {
         "majorLocalXZ": [
-          -0.9729,
-          -0.2314
+          -0.97333,
+          0.22942
         ],
-        "stretch": 1.153,
+        "stretch": 1.154,
         "leanLocalXZ": [
-          -0.28,
-          -1.86
+          -1.209,
+          -1.957
         ]
       },
-      "groundY": -60.258
+      "groundY": -60.258,
+      "sourceYawDegrees": 150
     },
     {
       "treeId": "12487175",
@@ -441,19 +623,20 @@
         128,
         93
       ],
-      "crownDiameterMetres": 10.6,
+      "crownDiameterMetres": 14.69,
       "crownFit": {
         "majorLocalXZ": [
-          -0.7671,
-          -0.6415
+          0.12831,
+          0.99173
         ],
-        "stretch": 1.1,
+        "stretch": 1.195,
         "leanLocalXZ": [
-          -0.22,
-          -1.06
+          0.588,
+          -0.949
         ]
       },
-      "groundY": -60.258
+      "groundY": -60.258,
+      "sourceYawDegrees": 180
     },
     {
       "treeId": "12487176",
@@ -472,19 +655,20 @@
         122,
         92
       ],
-      "crownDiameterMetres": 11.9,
+      "crownDiameterMetres": 16.84,
       "crownFit": {
         "majorLocalXZ": [
-          -0.9458,
-          -0.3249
+          -0.62461,
+          0.78094
         ],
-        "stretch": 1.042,
+        "stretch": 1.083,
         "leanLocalXZ": [
-          0.58,
-          -0.89
+          0.199,
+          -0.408
         ]
       },
-      "groundY": -60.258
+      "groundY": -60.258,
+      "sourceYawDegrees": 120
     },
     {
       "treeId": "12487177",
@@ -534,19 +718,20 @@
         132,
         92
       ],
-      "crownDiameterMetres": 10.9,
+      "crownDiameterMetres": 16.0,
       "crownFit": {
         "majorLocalXZ": [
-          -0.7915,
-          0.6111
+          -0.25013,
+          0.96821
         ],
-        "stretch": 1.029,
+        "stretch": 1.184,
         "leanLocalXZ": [
-          0.22,
-          -1.43
+          -0.479,
+          -2.25
         ]
       },
-      "groundY": -60.258
+      "groundY": -60.258,
+      "sourceYawDegrees": 90
     },
     {
       "treeId": "12487179",
@@ -565,19 +750,20 @@
         128,
         96
       ],
-      "crownDiameterMetres": 9.1,
+      "crownDiameterMetres": 13.16,
       "crownFit": {
         "majorLocalXZ": [
-          -0.9753,
-          0.2209
+          -0.35387,
+          0.9353
         ],
-        "stretch": 1.164,
+        "stretch": 1.083,
         "leanLocalXZ": [
-          -0.64,
-          -1.51
+          0.515,
+          -2.242
         ]
       },
-      "groundY": -60.257
+      "groundY": -60.257,
+      "sourceYawDegrees": 210
     },
     {
       "treeId": "12487180",
@@ -596,19 +782,20 @@
         131,
         93
       ],
-      "crownDiameterMetres": 10.1,
+      "crownDiameterMetres": 13.5,
       "crownFit": {
         "majorLocalXZ": [
-          -0.9819,
-          -0.1895
+          -0.71211,
+          0.70207
         ],
-        "stretch": 1.109,
+        "stretch": 1.166,
         "leanLocalXZ": [
-          0.69,
-          -1.67
+          1.104,
+          -0.933
         ]
       },
-      "groundY": -60.257
+      "groundY": -60.257,
+      "sourceYawDegrees": 150
     },
     {
       "treeId": "12487181",
@@ -627,19 +814,20 @@
         116,
         90
       ],
-      "crownDiameterMetres": 10.6,
+      "crownDiameterMetres": 15.84,
       "crownFit": {
         "majorLocalXZ": [
-          -0.8605,
-          -0.5095
+          0.46702,
+          0.88424
         ],
-        "stretch": 1.13,
+        "stretch": 1.108,
         "leanLocalXZ": [
-          0.26,
-          -1.27
+          -0.935,
+          -2.101
         ]
       },
-      "groundY": -60.257
+      "groundY": -60.257,
+      "sourceYawDegrees": 90
     },
     {
       "treeId": "12487182",
@@ -658,19 +846,20 @@
         125,
         91
       ],
-      "crownDiameterMetres": 10.2,
+      "crownDiameterMetres": 16.92,
       "crownFit": {
         "majorLocalXZ": [
-          -0.202,
-          0.9794
+          -0.68149,
+          0.73182
         ],
-        "stretch": 1.146,
+        "stretch": 1.077,
         "leanLocalXZ": [
-          -1.71,
-          -0.68
+          0.746,
+          -1.246
         ]
       },
-      "groundY": -60.257
+      "groundY": -60.257,
+      "sourceYawDegrees": 180
     },
     {
       "treeId": "12487183",
@@ -689,19 +878,20 @@
         120,
         93
       ],
-      "crownDiameterMetres": 10.5,
+      "crownDiameterMetres": 14.32,
       "crownFit": {
         "majorLocalXZ": [
-          -0.9723,
-          0.2339
+          -0.85982,
+          -0.5106
         ],
-        "stretch": 1.147,
+        "stretch": 1.02,
         "leanLocalXZ": [
-          -1.11,
-          -1.52
+          -0.644,
+          -1.177
         ]
       },
-      "groundY": -60.257
+      "groundY": -60.257,
+      "sourceYawDegrees": 180
     },
     {
       "treeId": "12487192",
@@ -844,19 +1034,20 @@
         130,
         103
       ],
-      "crownDiameterMetres": 6.7,
+      "crownDiameterMetres": 11.85,
       "crownFit": {
         "majorLocalXZ": [
-          -0.5745,
-          0.8185
+          -0.84526,
+          -0.53435
         ],
-        "stretch": 1.007,
+        "stretch": 1.052,
         "leanLocalXZ": [
-          -0.02,
-          -0.1
+          -0.778,
+          -1.252
         ]
       },
-      "groundY": -60.26
+      "groundY": -60.26,
+      "sourceYawDegrees": 60
     },
     {
       "treeId": "12457872",
@@ -875,19 +1066,20 @@
         135,
         91
       ],
-      "crownDiameterMetres": 9.3,
+      "crownDiameterMetres": 12.22,
       "crownFit": {
         "majorLocalXZ": [
-          -0.9997,
-          -0.024
+          -0.87897,
+          -0.47688
         ],
-        "stretch": 1.218,
+        "stretch": 1.15,
         "leanLocalXZ": [
-          0.09,
-          -1.66
+          0.836,
+          -1.266
         ]
       },
-      "groundY": -60.257
+      "groundY": -60.257,
+      "sourceYawDegrees": 180
     },
     {
       "treeId": "12457875",
@@ -906,19 +1098,20 @@
         108,
         91
       ],
-      "crownDiameterMetres": 6.6,
+      "crownDiameterMetres": 11.68,
       "crownFit": {
         "majorLocalXZ": [
-          0.5822,
-          0.8131
+          -0.88718,
+          -0.46143
         ],
-        "stretch": 1.141,
+        "stretch": 1.199,
         "leanLocalXZ": [
-          -0.52,
-          0.63
+          -0.96,
+          0.047
         ]
       },
-      "groundY": -59.868
+      "groundY": -59.868,
+      "sourceYawDegrees": 330
     },
     {
       "treeId": "12457876",
@@ -937,19 +1130,20 @@
         118,
         97
       ],
-      "crownDiameterMetres": 5.9,
+      "crownDiameterMetres": 9.78,
       "crownFit": {
         "majorLocalXZ": [
-          -0.8658,
-          -0.5005
+          -0.99056,
+          -0.13711
         ],
-        "stretch": 1.17,
+        "stretch": 1.149,
         "leanLocalXZ": [
-          0.47,
-          -0.45
+          0.477,
+          -1.507
         ]
       },
-      "groundY": -60.26
+      "groundY": -60.26,
+      "sourceYawDegrees": 240
     },
     {
       "treeId": "12610418",
@@ -968,19 +1162,20 @@
         128,
         101
       ],
-      "crownDiameterMetres": 10.7,
+      "crownDiameterMetres": 17.01,
       "crownFit": {
         "majorLocalXZ": [
-          -0.8287,
-          -0.5597
+          -0.93055,
+          -0.36616
         ],
-        "stretch": 1.094,
+        "stretch": 1.138,
         "leanLocalXZ": [
-          1.29,
-          -1.42
+          1.665,
+          -0.685
         ]
       },
-      "groundY": -60.261
+      "groundY": -60.261,
+      "sourceYawDegrees": 120
     },
     {
       "treeId": "12498791",
@@ -999,19 +1194,20 @@
         124,
         94
       ],
-      "crownDiameterMetres": 7.2,
+      "crownDiameterMetres": 10.56,
       "crownFit": {
         "majorLocalXZ": [
-          -0.3372,
-          0.9414
+          -0.13852,
+          0.99036
         ],
-        "stretch": 1.036,
+        "stretch": 1.287,
         "leanLocalXZ": [
-          0.23,
-          -1.28
+          -0.016,
+          -1.905
         ]
       },
-      "groundY": -60.26
+      "groundY": -60.26,
+      "sourceYawDegrees": 120
     },
     {
       "treeId": "12498792",
@@ -1030,19 +1226,20 @@
         133,
         102
       ],
-      "crownDiameterMetres": 9.0,
+      "crownDiameterMetres": 13.75,
       "crownFit": {
         "majorLocalXZ": [
-          -0.9265,
-          -0.3762
+          -0.11762,
+          0.99306
         ],
-        "stretch": 1.008,
+        "stretch": 1.142,
         "leanLocalXZ": [
-          -0.47,
-          -1.22
+          -0.709,
+          -1.041
         ]
       },
-      "groundY": -60.26
+      "groundY": -60.26,
+      "sourceYawDegrees": 150
     },
     {
       "treeId": "12498793",
@@ -1061,19 +1258,20 @@
         129,
         107
       ],
-      "crownDiameterMetres": 10.7,
+      "crownDiameterMetres": 13.55,
       "crownFit": {
         "majorLocalXZ": [
-          -0.8121,
-          -0.5836
+          0.64113,
+          0.76743
         ],
-        "stretch": 1.126,
+        "stretch": 1.166,
         "leanLocalXZ": [
-          0.05,
-          0.14
+          1.292,
+          -0.41
         ]
       },
-      "groundY": -60.259
+      "groundY": -60.259,
+      "sourceYawDegrees": 240
     },
     {
       "treeId": "12498794",
@@ -1092,19 +1290,20 @@
         138,
         104
       ],
-      "crownDiameterMetres": 10.4,
+      "crownDiameterMetres": 13.7,
       "crownFit": {
         "majorLocalXZ": [
-          -0.1101,
-          0.9939
+          -0.12606,
+          0.99202
         ],
-        "stretch": 1.244,
+        "stretch": 1.345,
         "leanLocalXZ": [
-          1.87,
-          -0.05
+          1.001,
+          0.065
         ]
       },
-      "groundY": -60.259
+      "groundY": -60.259,
+      "sourceYawDegrees": 90
     },
     {
       "treeId": "12487213",
@@ -1123,19 +1322,20 @@
         116,
         96
       ],
-      "crownDiameterMetres": 5.2,
+      "crownDiameterMetres": 5.59,
       "crownFit": {
         "majorLocalXZ": [
-          -0.9819,
-          0.1892
+          -0.97612,
+          0.21722
         ],
-        "stretch": 1.28,
+        "stretch": 1.35,
         "leanLocalXZ": [
-          -0.79,
-          0.49
+          -1.0,
+          0.198
         ]
       },
-      "groundY": -60.262
+      "groundY": -60.262,
+      "sourceYawDegrees": 330
     },
     {
       "treeId": "12641809",
@@ -1185,19 +1385,20 @@
         109,
         90
       ],
-      "crownDiameterMetres": 8.1,
+      "crownDiameterMetres": 10.89,
       "crownFit": {
         "majorLocalXZ": [
-          -0.6302,
-          0.7764
+          -0.02844,
+          0.9996
         ],
-        "stretch": 1.036,
+        "stretch": 1.165,
         "leanLocalXZ": [
-          -0.68,
-          -1.29
+          -0.508,
+          -1.712
         ]
       },
-      "groundY": -60.264
+      "groundY": -60.264,
+      "sourceYawDegrees": 180
     },
     {
       "treeId": "12641811",
@@ -1216,19 +1417,20 @@
         142,
         114
       ],
-      "crownDiameterMetres": 7.3,
+      "crownDiameterMetres": 9.09,
       "crownFit": {
         "majorLocalXZ": [
-          -0.8785,
-          -0.4777
+          0.39372,
+          0.91923
         ],
-        "stretch": 1.134,
+        "stretch": 1.108,
         "leanLocalXZ": [
-          0.63,
-          1.02
+          0.426,
+          1.583
         ]
       },
-      "groundY": -60.263
+      "groundY": -60.263,
+      "sourceYawDegrees": 150
     },
     {
       "treeId": "12641812",
@@ -1247,19 +1449,20 @@
         123,
         96
       ],
-      "crownDiameterMetres": 7.5,
+      "crownDiameterMetres": 9.0,
       "crownFit": {
         "majorLocalXZ": [
-          -0.9647,
-          0.2634
+          -0.9567,
+          0.29108
         ],
-        "stretch": 1.189,
+        "stretch": 1.181,
         "leanLocalXZ": [
-          -1.23,
-          0.21
+          -0.925,
+          -0.885
         ]
       },
-      "groundY": -60.263
+      "groundY": -60.263,
+      "sourceYawDegrees": 330
     },
     {
       "treeId": "12641813",
@@ -1309,19 +1512,20 @@
         139,
         96
       ],
-      "crownDiameterMetres": 6.7,
+      "crownDiameterMetres": 10.94,
       "crownFit": {
         "majorLocalXZ": [
-          -0.949,
-          -0.3151
+          -0.81787,
+          -0.5754
         ],
-        "stretch": 1.137,
+        "stretch": 1.104,
         "leanLocalXZ": [
-          0.3,
-          -0.66
+          1.572,
+          -0.767
         ]
       },
-      "groundY": -60.257
+      "groundY": -60.257,
+      "sourceYawDegrees": 180
     }
   ],
   "aerialReferenceRGB": [
@@ -1329,7 +1533,7 @@
     111.5,
     90.0
   ],
-  "crownFitMethod": "For the 31 additional inventory stems, isolate connected foliage in the z20 orthophoto within the nearest-stem region. Fit diameter from area, anisotropy from horizontal covariance, and limit the crown-centre offset to 18% of diameter.",
+  "crownFitMethod": "For 31 additions, estimate the crown footprint from connected green pixels near each registered stem in the OneMap z20 orthophoto. For 39 of the 49 surveyed stems with a distinct crown around the base, refine the scan rotation, diameter, horizontal stretch and offset against that z20 footprint. Exclude ambiguous boundaries between stems. The remaining profiles retain their earlier estimates.",
   "waterfrontCrowns": [
     {
       "treeId": "shore-west",
