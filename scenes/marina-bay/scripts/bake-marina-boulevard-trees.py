@@ -10,6 +10,7 @@ from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
 from fullerton_shrubs import combined
+from grove_occlusion import assign_occlusion, neighbouring_sky, use_occlusion_uv
 from scanned_canopy import ROOT, sample_scan, slices, write_tree_asset
 
 
@@ -61,10 +62,14 @@ def bake(scan_folder):
     foliage.visual.vertex_attributes["color"] = np.vstack(tones).astype(np.uint8)
     wood = combined(trunks)
     wood.visual.vertex_attributes["color"] = np.tile(bark.visual.vertex_attributes["color"], (len(trees), 1))
+    visibility = neighbouring_sky([c.vertices for c in crowns], [c.vertex_normals for c in crowns],
+                                  trunks, [uv] * len(crowns), faces[::2], atlas, paint.alphaCutoff)
+    assign_occlusion(foliage, np.concatenate([leaf for leaf, _ in visibility]))
+    assign_occlusion(wood, np.concatenate([stem for _, stem in visibility]))
     scene = trimesh.Scene()
     scene.add_geometry(foliage, geom_name=paint.name)
     scene.add_geometry(wood, geom_name=bark.visual.material.name)
-    digest, bounds = write_tree_asset(scene)
+    digest, bounds = write_tree_asset(scene, use_occlusion_uv)
     return dict(entityId="bay.marina-boulevard-sindora", regionId="marina-bay-exterior", layer="ext",
                 kind="structure", label="滨海大道 · 两侧行道树", assetHash=digest, bounds=bounds,
                 material={"shading": "albedo"},
