@@ -12,6 +12,7 @@ from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
 from context_geometry import geographic_point
+from grove_occlusion import sky_below_crown, use_occlusion_uv
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT.parents[1] / "recon/src"))
@@ -46,6 +47,50 @@ def paving_material():
     return PBRMaterial(name="Queen Elizabeth Walk paving stones", baseColorTexture=color,
                        baseColorFactor=[245, 242, 236, 255], normalTexture=normal,
                        metallicRoughnessTexture=roughness, metallicFactor=0, roughnessFactor=1)
+
+
+def bake_tree_shade(mesh, stations, directions=96, pitch=.22):
+    rows = json.loads((ROOT / "build/streetscape.json").read_text())
+    row = next(row for row in rows if row["entityId"] == "bay.queen-elizabeth-walk-trees")
+    scene = trimesh.load_scene(ROOT / "assets" / (row["assetHash"] + ".glb"), process=False)
+    node = "Island tree branch clusters"
+    transform, geometry = scene.graph[node]
+    leaves = scene.geometry[geometry]
+    center = np.mean([row["bounds"]["min"], row["bounds"]["max"]], axis=0)
+    center[1] = row["bounds"]["min"][1]
+    crown = trimesh.transform_points(leaves.vertices, transform) + center
+    paint = leaves.visual.material
+    alpha = np.asarray(paint.baseColorTexture.convert("RGBA"))[:, :, 3].astype(np.float32) / 255
+
+    # Give the top and the two vertical faces their own lightmap strips. At each
+    # texel interpolate the same triangles and normals that the viewer draws.
+    widths = (6, 36, 6)
+    height, width = 768, sum(widths)
+    along = np.linspace(0, stations[-1], height)
+    section = np.clip(np.searchsorted(stations, along, side="right") - 1, 0, len(stations) - 2)
+    v = ((along - stations[section]) / np.diff(stations)[section])[:, None, None]
+    n = len(stations)
+    uvs, positions, normals = [], [], []
+    for strip, pixels in enumerate(widths):
+        u = np.linspace(0, 1, pixels)[None, :, None]
+        diagonal = np.minimum(u, v)
+        for attribute, result in [(mesh.vertices, positions), (mesh.vertex_normals, normals)]:
+            a, b = attribute[2*strip*n:(2*strip+2)*n].reshape(2, n, 3)
+            value = (a[section, None] * (1 - np.maximum(u, v)) + b[section+1, None] * diagonal
+                     + a[section+1, None] * (v - diagonal) + b[section, None] * (u - diagonal))
+            result.append(value)
+        for end in (0, pixels - 1):
+            column = (sum(widths[:strip]) + end + .5) / width
+            uvs.append(np.column_stack((np.full(n, column), (.5 + stations / stations[-1] * (height - 1)) / height)))
+    samples = np.concatenate(positions, axis=1).reshape(-1, 3)
+    shading = np.concatenate(normals, axis=1).reshape(-1, 3)
+    shading /= np.linalg.norm(shading, axis=1)[:, None]
+    visibility = sky_below_crown(samples, shading, crown, leaves.faces, leaves.visual.uv,
+                                 alpha, paint.alphaCutoff, directions, pitch)
+    image = Image.fromarray(np.rint(255 * visibility.reshape(height, width)).astype(np.uint8)).convert("RGB")
+    image.format = "PNG"
+    mesh.visual.material.occlusionTexture = image
+    mesh.vertex_attributes["_OCCLUSIONUV"] = np.vstack(uvs).astype(np.float32)
 
 
 def bake():
@@ -91,11 +136,13 @@ def bake():
                            process=False)
     if mesh.vertex_normals[2*n:4*n, 1].min() < .99:
         raise ValueError("Inverted paving strip")
+    bake_tree_shade(mesh, stations)
     low, high = mesh.bounds.copy()
     center = (low + high) / 2
     center[1] = low[1]
     mesh.apply_translation(-center)
-    data = trimesh.exchange.gltf.export_glb(trimesh.Scene(mesh), include_normals=True)
+    data = trimesh.exchange.gltf.export_glb(trimesh.Scene(mesh), include_normals=True,
+                                            tree_postprocessor=use_occlusion_uv)
     digest = hashlib.sha256(data).hexdigest()
     (ROOT / "assets" / (digest + ".glb")).write_bytes(data)
     return dict(entityId="bay.queen-elizabeth-walk-paving", kind="structure", layer="ext",
