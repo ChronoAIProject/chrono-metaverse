@@ -23,12 +23,14 @@ export function withBoatQuay(surroundings: EntityBody): EntityBody {
 function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | null): EntityBody | null {
   if (!saved || !configured) return saved ?? configured;
   const environment = saved.props?.environment as { sky?: Record<string, unknown> } | undefined;
-  const target = configured.props?.environment as { sky?: { texture: string } } | undefined;
+  const target = configured.props?.environment as { sky?: { texture: string; radiance?: { texture: string } } } | undefined;
   if (!environment?.sky || !target?.sky) return saved;
   const previous = JSON.parse(readFileSync(new URL('../references/partly-cloudy-sky.json', import.meta.url), 'utf8'));
   const base = { texture: previous.texture, yaw: previous.yaw };
   const { diffuseProbe: _probe, ...daylight } = previous.daylight;
+  const { radiance, ...displaySky } = target.sky;
   const presets = [
+    displaySky,
     base,
     { ...base, daylight: { ...daylight, directFraction: 0.58 } },
     { ...previous, daylight },
@@ -40,6 +42,7 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
   const textures = new Set(saved.textures);
   textures.delete(String(environment.sky.texture));
   textures.add(target.sky.texture);
+  if (radiance) textures.add(radiance.texture);
   return {
     ...saved,
     textures: [...textures],

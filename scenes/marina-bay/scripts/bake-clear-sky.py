@@ -28,7 +28,25 @@ def display_rgb(radiance):
     return np.rint(255 * srgb).astype(np.uint8)
 
 
-def bake(source, output):
+def reflected_sky(rgb, scale, output):
+    # Average scene-linear radiance over each output texel. The water shader
+    # supplies direct sunlight, so fill the solar disk from its adjacent sky.
+    height, width = rgb.shape[:2]
+    y, x = np.unravel_index(np.argmax(rgb[:height//2, :, 1]), (height//2, width))
+    azimuth = ((np.arange(width) + .5) / width - .5) * 2 * np.pi
+    elevation = (.5 - (np.arange(height) + .5) / height) * np.pi
+    cosine = (np.sin(elevation)[:, None] * np.sin(elevation[y]) +
+              np.cos(elevation)[:, None] * np.cos(elevation[y]) * np.cos(azimuth - azimuth[x]))
+    disk = cosine > np.cos(np.deg2rad(.75))
+    ring = (cosine > np.cos(np.deg2rad(2))) & ~disk
+    rgb[disk] = np.median(rgb[ring], axis=0)
+    average = rgb.reshape(256, height//256, 512, width//512, 3).mean(axis=(1, 3), dtype=float)
+    linear = np.clip(average * scale / 32, 0, 1)
+    srgb = np.where(linear <= .0031308, linear * 12.92, 1.055 * linear ** (1 / 2.4) - .055)
+    Image.fromarray(np.rint(255 * srgb).astype(np.uint8)).save(output, format="PNG")
+
+
+def bake(source, output, reflection=None):
     if hashlib.md5(source.read_bytes()).hexdigest() != SOURCE_MD5:
         raise ValueError("Expected the 4K Kloofendal 43d Clear (Pure Sky) Radiance HDR")
     width, height = 4096, 2048
@@ -42,11 +60,14 @@ def bake(source, output):
     for y in range(0, height, 64):
         pixels[y:y+64] = display_rgb(rgb[y:y+64].astype(float) * (HORIZONTAL_IRRADIANCE / measured))
     Image.fromarray(pixels).save(output, format="JPEG", quality=90, subsampling=0)
+    if reflection:
+        reflected_sky(rgb, HORIZONTAL_IRRADIANCE / measured, reflection)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument("--reflection", type=Path, help="Optional 512px sun-free sky for reflections")
     args = parser.parse_args()
-    bake(args.source, args.output)
+    bake(args.source, args.output, args.reflection)

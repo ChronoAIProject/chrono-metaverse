@@ -32,6 +32,14 @@ if (!probe && !hostOnly) {
     purpose: 'texture',
     format: 'jpeg',
   });
+  const radiance = environment.props.environment.sky.radiance;
+  if (radiance) assets.push({
+    entityId: environment.entityId,
+    label: '晴空反射辐亮度',
+    assetHash: radiance.texture,
+    purpose: 'texture',
+    format: 'png',
+  });
   const { quay } = JSON.parse(readFileSync(new URL('context.json', root), 'utf8'));
   for (const [role, hash] of Object.entries(quay?.granite ?? {})) {
     assets.push({

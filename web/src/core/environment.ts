@@ -76,6 +76,8 @@ export interface Environment {
     readonly yaw: number;
     /** 米。经过这段空气后，地物与地平线之间的亮度差减半。 */
     readonly airHalfDistance?: number;
+    /** Sun-free sky radiance encoded as sRGB times a linear scale. */
+    readonly radiance?: { readonly texture: string; readonly scale: number };
     readonly daylight?: SkyDaylight;
   };
   readonly map?: GeographicMap;
@@ -120,7 +122,15 @@ export function environmentOf(entity: EntityBody): Environment | null {
       !finite(value.yaw ?? 0, -360, 360)
     )
       return null;
+    const radiance = record(value.radiance);
     sky = {
+      ...(radiance &&
+      typeof radiance.texture === 'string' &&
+      /^[a-f0-9]{64}$/.test(radiance.texture) &&
+      entity.textures?.includes(radiance.texture) &&
+      finite(radiance.scale, 0.001, 65504)
+        ? { radiance: { texture: radiance.texture, scale: radiance.scale } }
+        : {}),
       texture: value.texture,
       yaw: (value.yaw as number | undefined) ?? 0,
       ...(finite(value.airHalfDistance, 1, 100000)
