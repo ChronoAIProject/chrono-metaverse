@@ -1064,5 +1064,35 @@
       "道路位置": "https://www.openstreetmap.org/way/843399102/history/13",
       "树形素材": "Poly Haven · Island Tree 01、Jacaranda Tree · CC0。雨树借用蓝花楹展开的分枝形态，按名录高度和估计冠宽拟合；其余树使用 Island Tree 01。"
     }
+  },
+  {
+    "entityId": "bay.marina-boulevard-sindora",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "kind": "structure",
+    "label": "滨海大道 · 临水行道树",
+    "assetHash": "34a2a2638f7636dc60362506927b8bd73927406dc2f2376022884c5d3298900c",
+    "bounds": {
+      "min": [
+        -152.18704697838234,
+        -60.293,
+        26.22292566459139
+      ],
+      "max": [
+        265.58668817973114,
+        -49.25198350916986,
+        94.34958101040287
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "树木名录": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树木依据": "18 株 Sindora wallichii 的树位和高度档取自 NParks 2021 名录。冠径与色差按 OneMap 航拍估读，档内高度与枝形为估值。",
+      "树形素材": "Poly Haven · Tree Small 02 · CC0。使用 Burkea africana 的枝叶与主干近似同为豆科的 Sindora。"
+    }
   }
 ]
