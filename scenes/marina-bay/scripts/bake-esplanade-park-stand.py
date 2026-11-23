@@ -13,14 +13,16 @@ from fullerton_shrubs import combined
 from scanned_canopy import ROOT, sample_scan, slices, write_tree_asset
 
 RAIN_TREE_HEADROOM = 1.4
+# Median linear-light gain on the registered crowns after opening the foliage mask.
+RAIN_TREE_MASK_GAIN = 1.045
 
 
 def bake(folder, spreading_tree):
     ref = json.loads((ROOT/"references/esplanade-park-stand.json").read_text())
     points, colors, canopy, compact_bark_mesh = sample_scan(folder, "island_tree_01")
-    compact_xyz, uv, compact_normals, faces, compact = slices(points, colors, canopy)
+    compact_xyz, uv, compact_normals, faces, compact = slices(points, colors, canopy, fit_opacity=True)
     points, colors, canopy, spreading_bark_mesh = sample_scan(spreading_tree, "jacaranda_tree")
-    spreading_xyz, _, spreading_normals, _, spreading = slices(points, colors, canopy)
+    spreading_xyz, _, spreading_normals, _, spreading = slices(points, colors, canopy, fit_opacity=True)
     stems = {0: [], 1: []}
     atlas = Image.new("RGBA", (compact.width, compact.height * 2))
     atlas.paste(compact, (0, 0))
@@ -36,7 +38,7 @@ def bake(folder, spreading_tree):
     atlas.paste(Image.fromarray(pixels), (0, compact.height))
     atlas.format = "PNG"
     paint = PBRMaterial(name="Esplanade Park layered broadleaf canopy", baseColorTexture=atlas,
-                        metallicFactor=0, roughnessFactor=.98, alphaMode="MASK", alphaCutoff=.32)
+                        metallicFactor=0, roughnessFactor=.98, alphaMode="MASK", alphaCutoff=.40)
     vertices, shading, tones, texcoords = [], [], [], []
     widths = {"Samanea saman":1.38,"Tabebuia rosea":.69,"Pterocarpus indicus":1.05,
               "Peltophorum pterocarpum":1.12}
@@ -85,7 +87,8 @@ def bake(folder, spreading_tree):
         tint = np.clip((np.array(tree["aerialRGB"])/aerial_median)**.65,.70,1.13)
         color = np.minimum(255, 231*tint)
         if tree["species"] == "Samanea saman":
-            color = color * np.array(tree.get("foliageGainLinear", [1, 1, 1])) / RAIN_TREE_HEADROOM
+            color = (color * np.array(tree.get("foliageGainLinear", [1, 1, 1]))
+                     * RAIN_TREE_MASK_GAIN / RAIN_TREE_HEADROOM)
         color = np.uint8(np.clip(np.rint(color), 0, 255)).tolist()
         tones.extend(np.tile([*color, 255], (len(xyz), 1)))
     visual = TextureVisuals(uv=np.asarray(texcoords), material=paint)
