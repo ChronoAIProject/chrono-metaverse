@@ -24,15 +24,32 @@ def repair_glazing(image):
     left = np.interp(row, [129, 148, 173, 197], [115, 109, 91, 62])
     right = np.interp(row, [129, 147, 171, 197], [156, 158, 174, 193])
     blend = np.clip(np.maximum(left - x, x - right) / 5 + .5, 0, 1)
-    # Extend the observed bay rhythm using two adjoining panels between the
-    # upright at x=117 and the one at x=142. Reconstruct concealed portions
-    # of the upper glass from clear glazing at the same height.
-    sample = 117 + (x - 117) % 25
-    glass = pixels[row, sample].astype(float)
-    sign = (row >= 154) & (row <= 172) & (sample < 134)
-    t = np.clip((row - 153) / 20, 0, 1)[:, :, None]
-    above, below = pixels[153, sample], pixels[173, sample]
-    glass[sign] = ((1 - t) * above + t * below)[sign]
+    # The clear lower bays have uprights at x=117, 130 and 142. A pale
+    # freestanding sign covers the centre of the facade, so repeating an
+    # entire window also repeats the sign. Estimate the glass by height
+    # from the darker clear samples and the frame profile below the sign.
+    clear = pixels[129:198, 106:163].astype(float)
+    light = clear @ np.array([.2126, .7152, .0722])
+    neutral = clear[:, :, 1] - clear[:, :, 2] < 15
+    lo = np.quantile(np.where(neutral, light, np.inf), .17, axis=1)
+    hi = np.quantile(np.where(neutral, light, np.inf), .47, axis=1)
+    in_glass = neutral & (light >= lo[:, None]) & (light <= hi[:, None])
+    glass_rows = np.array([np.median(values[valid], axis=0) for values, valid in zip(clear, in_glass)])
+    # Smooth the measured profile only along this small texture island.
+    weights = np.array([1, 2, 3, 2, 1], dtype=float) / 9
+    padded = np.pad(glass_rows, ((2, 2), (0, 0)), mode="edge")
+    glass_rows = sum(w * padded[i:i+len(glass_rows)] for i, w in enumerate(weights))
+    period = 12.5
+    sample_x = np.arange(108, 150)
+    profile = np.median(pixels[180:193, sample_x].astype(float), axis=0)
+    frame = []
+    for phase in np.arange(25) / 2:
+        distance = abs((sample_x - 117 - phase + period / 2) % period - period / 2)
+        frame.append(np.average(profile, axis=0, weights=np.exp(-.5 * (distance / .75)**2)))
+    frame = np.array(frame)
+    frame -= np.median(frame, axis=0)
+    glass = glass_rows[row - 129] + .68 * frame[((x - 117) * 2) % 25]
+    glass = np.clip(glass, 0, 255)
     pixels[y, x] = np.rint(pixels[y, x] * (1 - blend[:, :, None]) + glass * blend[:, :, None])
     return Image.fromarray(pixels)
 
