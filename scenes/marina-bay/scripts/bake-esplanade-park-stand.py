@@ -19,6 +19,7 @@ from fullerton_shrubs import combined
 
 ROOT = Path(__file__).resolve().parents[1]
 LAYERS, TILE = 5, 160
+RAIN_TREE_HEADROOM = 1.4
 SOURCES = {
     "island_tree_01": "78e905a40670bfabb2760601d4d9a6c17193a50d68e6271c66893eb7bd75906d",
     "jacaranda_tree": "ba4aa8ab4c3e3741ce3699604d6ec1607cd6b126ae2d32abbcc0d98e8edb3be4",
@@ -183,7 +184,16 @@ def bake(folder, spreading_tree):
     stems = {0: [], 1: []}
     atlas = Image.new("RGBA", (compact.width, compact.height * 2))
     atlas.paste(compact, (0, 0))
-    atlas.paste(spreading, (0, compact.height))
+    # Reserve linear tint range for the brighter surveyed crowns. Decode and re-encode
+    # sRGB here because glTF vertex colours multiply the sampled texture in linear light.
+    encoded = np.arange(256) / 255
+    linear = np.where(encoded <= .04045, encoded / 12.92, ((encoded + .055) / 1.055)**2.4)
+    boosted = np.minimum(1, linear * RAIN_TREE_HEADROOM)
+    lut = np.rint(255 * np.where(boosted <= .0031308, 12.92 * boosted,
+                                1.055 * boosted**(1/2.4) - .055)).astype(np.uint8)
+    pixels = np.array(spreading)
+    pixels[:, :, :3] = lut[pixels[:, :, :3]]
+    atlas.paste(Image.fromarray(pixels), (0, compact.height))
     atlas.format = "PNG"
     paint = PBRMaterial(name="Esplanade Park layered broadleaf canopy", baseColorTexture=atlas,
                         metallicFactor=0, roughnessFactor=.98, alphaMode="MASK", alphaCutoff=.32)
@@ -233,7 +243,11 @@ def bake(folder, spreading_tree):
         stems[atlas_offset].append(trunk)
         shading.extend(n/np.linalg.norm(n,axis=1)[:,None])
         tint = np.clip((np.array(tree["aerialRGB"])/aerial_median)**.65,.70,1.13)
-        tones.extend(np.tile(np.uint8(np.minimum(255,231*tint)).tolist()+[255],(len(xyz),1)))
+        color = np.minimum(255, 231*tint)
+        if tree["species"] == "Samanea saman":
+            color = color * np.array(tree.get("foliageGainLinear", [1, 1, 1])) / RAIN_TREE_HEADROOM
+        color = np.uint8(np.clip(np.rint(color), 0, 255)).tolist()
+        tones.extend(np.tile([*color, 255], (len(xyz), 1)))
     visual = TextureVisuals(uv=np.asarray(texcoords), material=paint)
     visual.vertex_attributes["color"] = np.asarray(tones,np.uint8)
     mesh = trimesh.Trimesh(vertices=vertices,faces=np.vstack([faces+i*len(xyz) for i in range(len(trees))]),
