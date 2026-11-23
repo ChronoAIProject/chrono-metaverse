@@ -34,7 +34,7 @@ interface Node extends Tile {
   readonly width: number;
   readonly sources: ReturnType<typeof tileSources>;
   readonly canRefine: boolean;
-  texture?: THREE.Texture;
+  texture?: THREE.Texture<ImageBitmap>;
   failedAt?: number;
   lastUsed: number;
 }
@@ -499,7 +499,7 @@ export class GeographicMap {
 
   private release(node: Node): void {
     if (!node.texture) return;
-    (node.texture.image as ImageBitmap).close();
+    node.texture.image.close();
     node.texture.dispose();
     node.texture = undefined;
   }
