@@ -4,18 +4,18 @@
     "regionId": "marina-bay-exterior",
     "layer": "ext",
     "kind": "object",
-    "assetHash": "10b26f08617ccd5b234fa588dd95e3e468d2dc239c70c841c64130ab2dbd95da",
+    "assetHash": "5dfd24a806223f953c0f51cdaa781181afbbea953242b293baa28c33bc6dbce3",
     "label": "浮尔顿步道 · 灌木花槽",
     "bounds": {
       "min": [
-        261.62083824805416,
+        261.38139401300623,
         -59.7922,
-        466.5661777064784
+        466.35196634313957
       ],
       "max": [
-        268.03682781048474,
-        -58.869606386352174,
-        528.589962951647
+        268.2009550815629,
+        -58.78184246712546,
+        529.0640166379134
       ]
     },
     "material": {
@@ -26,13 +26,22 @@
       "surfaceRole": "landscape",
       "source": {
         "library": "polyhaven",
-        "id": "shrub_01",
+        "id": "shrub_04",
+        "page": "https://polyhaven.com/a/shrub_04",
+        "title": "Shrub 04",
         "author": "Rico Cilliers",
-        "page": "https://polyhaven.com/a/shrub_01",
-        "license": "CC0-1.0",
-        "title": "Shrub 01"
+        "license": "CC0-1.0"
       },
-      "位置依据": "OneMap · One Fullerton 底层沿步道可见的绿化色带，花槽断面和枝叶分布为重建估值。"
+      "位置依据": "OneMap · One Fullerton 底层沿步道可见的绿化色带，花槽断面和枝叶分布为重建估值。",
+      "植被": "保留四个花槽的原位置及槽体。采用 Poly Haven 四株灌木参考样本，树种、株数和冠幅为估值。",
+      "backgroundView": {
+        "focus": [
+          264.7815759344645,
+          -59.24733412437696,
+          497.56273697583185
+        ],
+        "maxDistance": 115
+      }
     }
   },
   {
@@ -402,6 +411,51 @@
       "现场参考": "https://commons.wikimedia.org/wiki/File:Infinity_pool_at_Sands_Sky_Park,_Marina_Bay_Sands_Hotel,_Singapore_-_20100820.jpg",
       "木材来源": "Poly Haven · Teak Veneer · CC0",
       "说明": "依影像估配 48 张躺椅。椅型、面料、木板宽度和具体间距为视觉近似。"
+    }
+  },
+  {
+    "entityId": "bay.fullerton-planting-distant",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "kind": "object",
+    "assetHash": "a2e4c7e0123b9b31e6a2f22ad2855197c852183d798a1003f9dd03623b04fe37",
+    "label": "浮尔顿步道 · 灌木花槽远景",
+    "bounds": {
+      "min": [
+        261.38139401300623,
+        -59.7922,
+        466.35196634313957
+      ],
+      "max": [
+        268.2009550815629,
+        -58.78184246712546,
+        529.0640166379134
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "source": {
+        "library": "polyhaven",
+        "id": "shrub_04",
+        "page": "https://polyhaven.com/a/shrub_04",
+        "title": "Shrub 04",
+        "author": "Rico Cilliers",
+        "license": "CC0-1.0"
+      },
+      "位置依据": "OneMap · One Fullerton 底层沿步道可见的绿化色带，花槽断面和枝叶分布为重建估值。",
+      "植被": "保留四个花槽的原位置及槽体。采用 Poly Haven 四株灌木参考样本，树种、株数和冠幅为估值。",
+      "backgroundView": {
+        "focus": [
+          264.7815759344645,
+          -59.24733412437696,
+          497.56273697583185
+        ],
+        "minDistance": 115
+      }
     }
   }
 ]
