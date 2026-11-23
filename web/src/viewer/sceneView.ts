@@ -1,3 +1,4 @@
+import { prepareTreeWind, updateTreeWind } from './treeWind';
 import { PriorityQueue } from '3d-tiles-renderer/core';
 import { cityCutout } from './cityCutout';
 import { CitySun } from './citySun';
@@ -327,6 +328,10 @@ function polylineAt(points: readonly THREE.Vector3[], fraction: number): THREE.V
 }
 
 export class SceneView {
+  private readonly windMeshes: THREE.Mesh[] = [];
+  private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  private windTime = 0;
+  private lastWindFrame = 0;
   readonly renderer: THREE.WebGLRenderer;
   private readonly labels: CSS2DRenderer;
   private readonly hud: HTMLElement;
@@ -624,6 +629,14 @@ export class SceneView {
     this.environment.update(this.camera, globe);
     this.externalContent.update(this.camera);
     this.updateBackgroundViews();
+    if (this.windMeshes.length) {
+      const now = performance.now();
+      if (this.lastWindFrame && !globe && !this.reducedMotion.matches) {
+        this.windTime += Math.min(0.1, (now - this.lastWindFrame) / 1000);
+        updateTreeWind(this.windMeshes, this.windTime);
+      }
+      this.lastWindFrame = now;
+    }
     this.citySun.update(this.renderer, this.camera.position, this.controls.target, globe);
     this.renderer.render(this.scene, this.camera);
     this.liveScreens.render(this.scene, this.camera);
@@ -776,6 +789,10 @@ export class SceneView {
       const mesh = object as THREE.Mesh;
       if (!mesh.isMesh) return;
       if (background) {
+        if (mesh.userData.vegetationWind === 'small-tree') {
+          prepareTreeWind(mesh);
+          this.windMeshes.push(mesh);
+        }
         const surfaces = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
         if (!surfaces.some((m) => m.userData.waterSurface === 'pool'))
           mesh.layers.enable(CITY_REFLECTION_LAYER);
@@ -1058,6 +1075,8 @@ export class SceneView {
     this.broadcast?.dispose();
     this.broadcast = null;
     this.liveScreens.clear();
+    this.windMeshes.length = 0;
+    this.lastWindFrame = 0;
     disposeObject(this.content);
     disposeObject(this.overlay);
     this.content.clear();
@@ -1257,7 +1276,7 @@ export class SceneView {
         modelProgress();
         pending
           .then((model) => {
-            if (!this.disposed && holder.parent !== null) {
+            if (!this.disposed && generation === this.generation && holder.parent !== null) {
               const box = bounds ? this.modelBox(model) : null;
               const placed = box ? placedModelBox(box, entity.transform) : null;
               const fit = bounds && placed ? modelFit(placed, bounds) : null;
@@ -2658,6 +2677,7 @@ export class SceneView {
     this.disposed = true;
     this.modelDownloads.removeByFilter(() => true);
     this.generation += 1;
+    this.windMeshes.length = 0;
     if (this.hoverTimer !== null) clearTimeout(this.hoverTimer);
     this.renderer.setAnimationLoop(null);
     this.resize.disconnect();
