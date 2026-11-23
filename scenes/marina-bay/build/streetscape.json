@@ -748,5 +748,35 @@
       "植被依据": "两株树冠边界依正射影像估读。邻接冠缘、树干位置、树高、胸围和树池细部为估值。此处树种未经树木名录核实。",
       "树形素材": "Poly Haven · Island Tree 01 · CC0 · https://polyhaven.com/a/island_tree_01"
     }
+  },
+  {
+    "entityId": "bay.fullerton-entrance-shrubs",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "One Fullerton · 入口北侧矮篱与红叶种植带",
+    "assetHash": "d3e68f62fe4633856282a45872b6318669afae28d1344a9895fc8d237cb6defa",
+    "bounds": {
+      "min": [
+        269.32539127005543,
+        -59.78658472795196,
+        556.9038380320309
+      ],
+      "max": [
+        273.9798040776256,
+        -58.51178105164622,
+        569.5676655285897
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "实景参照": "https://commons.wikimedia.org/wiki/File:Singapore_-_panoramio_(109).jpg",
+      "种植依据": "拟合 2014 年实景中临水侧矮篱、中央绿篱、北端红叶灌木的相对顺序和高度。株位、颜色、品种及当代修剪状态未经现场核实。",
+      "素材": "Poly Haven · Shrub 04 · Rico Cilliers · CC0 · https://polyhaven.com/a/shrub_04"
+    }
   }
 ]
