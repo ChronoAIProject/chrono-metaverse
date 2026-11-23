@@ -625,5 +625,68 @@
       "植被位置": "十三处冠丛中心取自 20 级正射影像，根部放在 SLA 栈桥三角面上。树种、冠高、枝形为估值。",
       "植被素材": "Poly Haven · Shrub 04 · Rico Cilliers · CC0 · https://polyhaven.com/a/shrub_04"
     }
+  },
+  {
+    "entityId": "bay.queen-elizabeth-walk-trees",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "伊丽莎白女王步道 · 十株双翼豆",
+    "assetHash": "8833ce730b2a5e9cd07c454fb38022cf1e3685d71284d4137d59134b44d2e90c",
+    "bounds": {
+      "min": [
+        478.6277631597118,
+        -60.36,
+        698.0910918349987
+      ],
+      "max": [
+        505.9631640869318,
+        -44.04491203809597,
+        818.5641339920154
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "树木名录": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树木来源": "NParks Trees.sg，2021 年快照。编号 10530702–10530711，双翼豆 Peltophorum pterocarpum。",
+      "定位": "经纬度、树种、树高和胸围档取自名录。根部依浏览器地表交点，单株冠幅按 SLA / OneMap 正射影像四向估读。相接冠缘、档内高度、胸围和枝形为估值。",
+      "树形素材": "Poly Haven · Island Tree 01 · CC0 · https://polyhaven.com/a/island_tree_01"
+    }
+  },
+  {
+    "entityId": "bay.queen-elizabeth-walk-paving",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "伊丽莎白女王步道 · 临河铺石",
+    "assetHash": "417c5657284369dbb283b284338e75b87e17adc958079ed8feb12fb885ca427e",
+    "bounds": {
+      "min": [
+        473.5119871235315,
+        -60.34094873447037,
+        693.3939308189542
+      ],
+      "max": [
+        498.2863628888526,
+        -59.99140764225494,
+        834.9415875407212
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "路线": "https://www.openstreetmap.org/way/467451181/history/7",
+      "地图来源": "© OpenStreetMap contributors, ODbL 1.0",
+      "影像来源": "Map Data © Singapore Land Authority / OneMap",
+      "铺装": "中心线、铺石类型来自 OSM。两侧宽度依正射影像估读，石材、砖缝及路面高程为估值。",
+      "材质来源": "Poly Haven · Granite Tile 04 · CC0 · https://polyhaven.com/a/granite_tile_04"
+    }
   }
 ]

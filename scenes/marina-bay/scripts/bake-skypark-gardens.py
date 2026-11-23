@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -13,6 +12,7 @@ from shapely.geometry import Point, Polygon, box
 from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
+from courtyard_tree import compact_bark
 from skypark_canopy import tree_cards
 
 from skypark_geometry import ACROSS, ALONG, HOTEL_ID, ORIGIN
@@ -119,22 +119,6 @@ def prototype(scene, name):
                             vertex_normals=source.vertex_normals[vertices],
                             visual=TextureVisuals(uv=source.visual.uv[vertices],
                                                   material=source.visual.material), process=False)
-
-
-def compact_bark(mesh):
-    source = {"faces": mesh.faces.ravel().tolist(), "position": mesh.vertices.ravel().tolist(),
-              "attributes": np.column_stack((mesh.vertex_normals, mesh.visual.uv)).ravel().tolist()}
-    result = subprocess.run(["node", str(Path(__file__).with_name("simplify-skypark-tree.mjs"))],
-                            input=json.dumps(source), text=True, capture_output=True, check=True)
-    faces = np.asarray(json.loads(result.stdout)).reshape(-1, 3)
-    vertices, inverse = np.unique(faces, return_inverse=True)
-    material = mesh.visual.material
-    image = material.baseColorTexture.convert("RGB").resize((384, 384), Image.Resampling.LANCZOS)
-    image.format = "JPEG"
-    material.baseColorTexture = image
-    return trimesh.Trimesh(vertices=mesh.vertices[vertices], faces=inverse.reshape(-1, 3),
-                            vertex_normals=mesh.vertex_normals[vertices],
-                            visual=TextureVisuals(uv=mesh.visual.uv[vertices], material=material), process=False)
 
 
 def gardens(building):
