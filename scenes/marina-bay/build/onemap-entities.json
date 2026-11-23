@@ -5,7 +5,7 @@
     "kind": "object",
     "label": "THE SHOPPES AT MARINA BAY SANDS",
     "regionId": "marina-bay-exterior",
-    "assetHash": "54795e699927d46b1d354d4f17e59fb7142cd073937b84bed3d4cf5e689586be",
+    "assetHash": "efb3f392cd196e5b9f6900a6b87a9d993fbfc05b87efe7174998ed4a3f9c46dd",
     "bounds": {
       "min": [
         -396.044722,
@@ -26,7 +26,10 @@
       "原始分片": "4/9/1_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 44.869,
-      "三角形数": 13644
+      "三角形数": 13644,
+      "原建筑资源": "54795e699927d46b1d354d4f17e59fb7142cd073937b84bed3d4cf5e689586be",
+      "玻璃影像署名": "Marina Bay Sands view from Merlion Park, Singapore (Ank Kumar) 01. Ank Kumar, CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Cropped, masked and projected into the bay-facing glazing. https://commons.wikimedia.org/wiki/File:Marina_Bay_Sands_view_from_Merlion_Park,_Singapore_(Ank_Kumar)_01.jpg",
+      "立面处理": "购物中心临湾中央玻璃依鱼尾狮公园实拍配准。树冠和行人遮挡处的立柱与底层玻璃按邻窗估补。"
     }
   },
   {
