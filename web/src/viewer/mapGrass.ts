@@ -1,7 +1,12 @@
 import * as THREE from 'three';
+import { tileGrassCells } from './grassCells';
 
 /** 近处草叶使用瓦片自身的影像决定密度和颜色。每块一次实例绘制。 */
-export function grassPatch(terrain: THREE.BufferGeometry, image: THREE.Texture, width: number) {
+export function grassPatch(
+  terrain: THREE.BufferGeometry,
+  image: THREE.Texture<ImageBitmap>,
+  width: number,
+) {
   const positions = terrain.getAttribute('position');
   const corner = (index: number) => new THREE.Vector3().fromBufferAttribute(positions, index);
   // 精细地块固定为 4 × 4 个格，首行从西北到东北。
@@ -37,11 +42,15 @@ export function grassPatch(terrain: THREE.BufferGeometry, image: THREE.Texture, 
     );
   }
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(blades, 3));
-  geometry.instanceCount = cells * cells;
+  const selected = tileGrassCells(image.image, cells);
+  const sparse = selected && selected.length < cells * cells;
+  if (sparse) geometry.setAttribute('grassCell', new THREE.InstancedBufferAttribute(selected, 1));
+  geometry.instanceCount = selected?.length ?? cells * cells;
   geometry.boundingSphere = terrain.boundingSphere!.clone();
   const material = new THREE.ShaderMaterial({
     side: THREE.DoubleSide,
     toneMapped: false,
+    defines: sparse ? { SPARSE_GRASS: 1 } : {},
     uniforms: {
       time: { value: 0 },
       imagery: { value: image },
@@ -53,6 +62,9 @@ export function grassPatch(terrain: THREE.BufferGeometry, image: THREE.Texture, 
     vertexShader: /* glsl */ `
       #include <common>
       #include <logdepthbuf_pars_vertex>
+      #ifdef SPARSE_GRASS
+      attribute float grassCell;
+      #endif
       uniform sampler2D imagery;
       uniform vec3 corner, east, south;
       uniform float cells,time;
@@ -63,7 +75,11 @@ export function grassPatch(terrain: THREE.BufferGeometry, image: THREE.Texture, 
         return fract((seed.xxy+seed.yzz)*seed.zyx);
       }
       void main(){
+        #ifdef SPARSE_GRASS
+        float id = grassCell;
+        #else
         float id = float(gl_InstanceID);
+        #endif
         vec2 cell = vec2(mod(id,cells),floor(id/cells));
         vec3 random = jitter(cell+floor(corner.xz));
         vec2 uv = (cell+random.xy)/cells;
