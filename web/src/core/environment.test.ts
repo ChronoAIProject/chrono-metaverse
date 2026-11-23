@@ -38,6 +38,33 @@ describe('通用环境配置', () => {
     expect(parse('other')?.daylightToneMapping).toBeUndefined();
   });
 
+  it('解析带负系数的方向天光，残缺数据仍可使用日光', () => {
+    const probe = Array.from({ length: 27 }, (_, i) => Math.sin(i));
+    const parse = (diffuseProbe: unknown) =>
+      environmentOf({
+        ...entity,
+        props: {
+          background: true,
+          environment: {
+            version: 1,
+            sky: {
+              texture: hash,
+              daylight: {
+                azimuth: 0,
+                elevation: 45,
+                directFraction: 0.5,
+                sunColor: [1, 1, 1],
+                skyColor: [1, 1, 1],
+                diffuseProbe,
+              },
+            },
+          },
+        },
+      })?.sky?.daylight;
+    expect(parse(probe)?.diffuseProbe).toEqual(probe);
+    expect(parse(probe.slice(1))).toBeDefined();
+    expect(parse(probe.slice(1))?.diffuseProbe).toBeUndefined();
+  });
   it('可选日光参数无效时仍载入同一张天空', () => {
     const env = {
       version: 1,

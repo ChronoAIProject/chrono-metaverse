@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { skyProbe } from './skyProbe';
 import { CITY_REFLECTION_LAYER } from './mapReflection';
 import type { LightingPreset } from '../core/api/types';
 import type { SkyDaylight } from '../core/environment';
@@ -126,6 +127,11 @@ export function createLights(
       transmission(skyLight.g, sunlight.g),
       transmission(skyLight.b, sunlight.b),
     );
+    if (daylight.diffuseProbe) {
+      const sky = skyProbe(daylight.diffuseProbe, skyYaw, hemisphere.intensity);
+      sky.name = 'light:sky-probe';
+      lights[0] = sky;
+    }
     lights.push(sun);
   } else {
     for (const [name, spec] of [

@@ -33,6 +33,8 @@ export interface SkyDaylight {
   readonly directFraction: number;
   readonly sunColor: readonly [number, number, number];
   readonly skyColor: readonly [number, number, number];
+  /** Nine RGB radiance SH coefficients in panorama coordinates, normalized to skyColor's zenith irradiance. */
+  readonly diffuseProbe?: readonly number[];
 }
 
 function skyDaylight(value: unknown): SkyDaylight | undefined {
@@ -57,6 +59,11 @@ function skyDaylight(value: unknown): SkyDaylight | undefined {
     directFraction: d.directFraction,
     sunColor: d.sunColor,
     skyColor: d.skyColor,
+    ...(Array.isArray(d.diffuseProbe) &&
+    d.diffuseProbe.length === 27 &&
+    d.diffuseProbe.every((v) => finite(v, -64, 64))
+      ? { diffuseProbe: d.diffuseProbe as number[] }
+      : {}),
   };
 }
 
