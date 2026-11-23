@@ -175,5 +175,101 @@
     "visible foot on the south side",
     "base partially hidden by planting; ground ordinate interpolated between the other two lampposts",
     "visible foot north of the planting"
-  ]
+  ],
+  "southWalk": {
+    "registration": "Columns of dark band centres sampled on the walk in the same 2014 image, paired with their OneMap shoreline stations in metres. Register along the local pavement to avoid extrapolating the entrance-plaza fit by 80 metres.",
+    "bandControls": [
+      [
+        287,
+        7.05
+      ],
+      [
+        471,
+        12.2
+      ],
+      [
+        658,
+        17.3
+      ],
+      [
+        845,
+        22.45
+      ],
+      [
+        1027,
+        27.8
+      ],
+      [
+        1204,
+        32.95
+      ],
+      [
+        1385,
+        38.1
+      ],
+      [
+        1567,
+        43.45
+      ],
+      [
+        1747,
+        48.6
+      ],
+      [
+        1933,
+        54.0
+      ],
+      [
+        2112,
+        59.05
+      ],
+      [
+        2285,
+        64.5
+      ],
+      [
+        2465,
+        69.6
+      ],
+      [
+        2643,
+        74.75
+      ],
+      [
+        2825,
+        80.05
+      ]
+    ],
+    "postFeetPixels": [
+      [
+        436,
+        2049
+      ],
+      [
+        718,
+        2048
+      ],
+      [
+        997,
+        2047
+      ],
+      [
+        1275,
+        2046
+      ],
+      [
+        1826,
+        2045
+      ],
+      [
+        2105,
+        2045
+      ],
+      [
+        2532,
+        2045
+      ]
+    ],
+    "crossCheck": "White fittings are visible in the orthophoto near stations 19.1, 27.2, 35.2, 51.3 and 59.4 m. Tree cover limits identification of the first and last fittings. Cross-shore position uses the median of the three registered entrance shafts as an estimate."
+  }
 }

@@ -1,4 +1,4 @@
-"""Locate the three visible walkway lamps by matching the 2014 photo to registered stone inlays."""
+"""Register One Fullerton walkway lamps to the entrance inlays and southern paving bands."""
 
 import hashlib
 import json
@@ -60,6 +60,14 @@ def fixture():
 def bake():
     reference = json.loads((ROOT / "references/fullerton-entrance-lamps.json").read_text())
     positions, rms = post_centres(reference)
+    south = reference["southWalk"]
+    foot_columns = np.array(south["postFeetPixels"])[:, 0]
+    columns, stations = np.array(south["bandControls"]).T
+    if foot_columns.min() < columns[0] or foot_columns.max() > columns[-1]:
+        raise ValueError("Southern lamp feet must be bracketed by registered pavement bands")
+    south_stations = np.interp(foot_columns, columns, stations)
+    south_x = np.full(len(south_stations), np.median(positions[:, 0]))
+    positions = np.vstack([positions, np.column_stack((south_x, south_stations))])
     quay = json.loads((ROOT / "context.json").read_text())["quay"]
     start, end = np.array(quay["start"]), np.array(quay["end"])
     along = end - start
@@ -100,7 +108,7 @@ def bake():
                 regionId="marina-bay-exterior", label="One Fullerton · 临水步道双灯罩路灯",
                 assetHash=digest, bounds={"min": low.tolist(), "max": high.tolist()}, material={"shading": "albedo"},
                 props={"background": True, "实景照片": reference["image"],
-                       "灯位": "由 2014 年照片中 25 个广场嵌石中心配准至 OneMap 正射影像。北端灯位在控制点外，中间灯的灯脚被植栽遮挡，按相邻两灯外推。",
+                       "灯位": "由 2014 年照片中 25 个广场嵌石中心配准至 OneMap 正射影像。入口北端灯位在控制点外，中间灯脚受植栽遮挡。南段七个灯脚以相邻深灰石带定位，横向位置按入口三杆中位数估读。",
                        "灯具": "浅色渐缩杆、双层高低灯罩及乳白扩散罩依照片重建。5.72 米杆高、灯臂朝向与涂层为影像估值。"})
 
 
