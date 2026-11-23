@@ -27,6 +27,8 @@ One Fullerton 临水入口的玻璃侧墙和后墙采用 Андрей Бобро
 
 达尔豪西纪念碑的高度与轴向取自 OneMap 测量模型。石阶、角墩及四盏灯按实拍估定细部。材质文件 `references/dalhousie-obelisk-surfaces.jpg` 由 Mike Peel 与 Terence Ong 的照片裁切、透视校正和调色，改编图集按 CC BY-SA 4.0 分发。[Mike Peel 的 2023 年照片，CC BY-SA 4.0](https://commons.wikimedia.org/wiki/File:At_Singapore_2023_112.jpg) · [Terence Ong 的灯柱照片，CC BY 2.5](https://commons.wikimedia.org/wiki/File:Daihousie_Obelisk_2.JPG) · [改编图集许可](https://creativecommons.org/licenses/by-sa/4.0/)
 
+高街中心、半岛广场与国家法院的两座塔楼按 OpenStreetMap 轮廓和标高配准。窗带与立柱来自 2005、2022 和 2023 年的实拍，背面复用同楼可见的立面，立柱出挑深度按照片估算。高街中心照片由 Sengkang 自由授权使用。半岛广场与法院的改编贴图和模型按 CC BY-SA 4.0 分发。[高街中心](https://commons.wikimedia.org/wiki/File:High_Street_Centre_2,_Dec_05.JPG) · [Diego Delso 的半岛广场照片](https://commons.wikimedia.org/wiki/File:Peninsula_Plaza,_Singapur,_2023-08-18,_DD_19.jpg) · [Wzhkevin 的国家法院照片](https://commons.wikimedia.org/wiki/File:State_Court_Tower,_Singapore_-_2022-07-26.jpg) · [改编许可](https://creativecommons.org/licenses/by-sa/4.0/) · [地图数据许可](https://www.openstreetmap.org/copyright)
+
 驳船码头 45 至 85 号之间的 40 栋临河店屋按 OpenStreetMap 独立地块、楼层和高度建模。OneMap 正射影像用于估读岸线、屋面分段和逐户瓦色。12 个排除框覆盖原有的 40 个矢量地块。门窗与雨棚按同街实拍近似，岸墙高度和屋脊为估值。[OpenStreetMap 数据许可](https://www.openstreetmap.org/copyright) · [OneMap](https://www.onemap.gov.sg/)
 
 店屋图集裁切、透视校正并调色自 Frank Schulenburg 的街面照片、Balou46 的隔河照片与 Chensiyuan 的俯拍。改编图集与模型以 CC BY-SA 4.0 分发。[Frank Schulenburg，CC BY-SA 4.0](https://commons.wikimedia.org/wiki/File:Shophouses_on_Boat_Quay,_Singapore_(2023)-L1003691.jpg) · [Balou46，CC BY-SA 3.0](https://commons.wikimedia.org/wiki/File:SG-riverside-boat-quay.jpg) · [Chensiyuan，CC BY-SA 4.0](https://commons.wikimedia.org/wiki/File:Boat_Quay_in_Singapore_(Cropped).jpg) · [改编图集许可](https://creativecommons.org/licenses/by-sa/4.0/)
