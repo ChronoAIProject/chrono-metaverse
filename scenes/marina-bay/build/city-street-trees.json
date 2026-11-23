@@ -1,0 +1,464 @@
+[
+  {
+    "entityId": "landscape.canopy--1--1",
+    "kind": "object",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海湾 · 街道与滨水树冠",
+    "assetHash": "29b141f35f7db73b37afdc1fb682f8cffdcf5e1f2ffff4e4aa0c5f1b2e3b8019",
+    "bounds": {
+      "min": [
+        -552.9628710954948,
+        -60.282,
+        -259.82805629950394
+      ],
+      "max": [
+        0.05673914269277258,
+        -47.96291170486998,
+        3.6556868127165623
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "位置来源": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树位数": 115,
+      "棕榈数": 0,
+      "已单独建模树位数": 2,
+      "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes.",
+      "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
+    }
+  },
+  {
+    "entityId": "landscape.canopy--1-0",
+    "kind": "object",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海湾 · 街道与滨水树冠",
+    "assetHash": "5dfdc1963f26377a9993a9e8e13265cec455d4adf721267590a83a85e14b8b9f",
+    "bounds": {
+      "min": [
+        -556.8071910523012,
+        -60.29557154233136,
+        -2.37820711447055
+      ],
+      "max": [
+        -208.60900978175533,
+        -45.47488163549544,
+        403.49335699869073
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "位置来源": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树位数": 135,
+      "棕榈数": 34,
+      "已单独建模树位数": 17,
+      "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes. Royal palm mesh and textures adapted from 0 A.D., Wildfire Games, https://wildfiregames.com/, CC BY-SA 3.0, https://creativecommons.org/licenses/by-sa/3.0/. Scaled, rotated and batched for the street-tree census.",
+      "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
+    }
+  },
+  {
+    "entityId": "landscape.canopy--1-2",
+    "kind": "object",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海湾 · 街道与滨水树冠",
+    "assetHash": "50def8f51aad1b104200065dcb3da940ed68a3ae833d11c8b6b60e756ee920a7",
+    "bounds": {
+      "min": [
+        -554.738545772497,
+        -60.476208766672734,
+        1103.6033471554144
+      ],
+      "max": [
+        -76.87668331103356,
+        -37.93500758003886,
+        1530.3203552248663
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "位置来源": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树位数": 69,
+      "棕榈数": 0,
+      "已单独建模树位数": 0,
+      "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes.",
+      "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
+    }
+  },
+  {
+    "entityId": "landscape.canopy--2--1",
+    "kind": "object",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海湾 · 街道与滨水树冠",
+    "assetHash": "c274f40abfd6897ac24c3973c8b0a551856f57d7489b49bb1e2bf5619de6eb3f",
+    "bounds": {
+      "min": [
+        -556.8813986044541,
+        -60.282,
+        -14.310834017321808
+      ],
+      "max": [
+        -545.2467221302154,
+        -52.30937131156789,
+        -2.3023762086533237
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "位置来源": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树位数": 1,
+      "棕榈数": 0,
+      "已单独建模树位数": 0,
+      "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes.",
+      "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
+    }
+  },
+  {
+    "entityId": "landscape.canopy--2-0",
+    "kind": "object",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海湾 · 街道与滨水树冠",
+    "assetHash": "3e46231319494ce1066d1df19a7daea22f9f30b23e56dd1665d08569d59fac36",
+    "bounds": {
+      "min": [
+        -1105.6141918307167,
+        -60.36341756185827,
+        -5.615079034965814
+      ],
+      "max": [
+        -547.2981903580537,
+        -37.41696996717147,
+        551.2042205658227
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "位置来源": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树位数": 101,
+      "棕榈数": 11,
+      "已单独建模树位数": 0,
+      "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes. Royal palm mesh and textures adapted from 0 A.D., Wildfire Games, https://wildfiregames.com/, CC BY-SA 3.0, https://creativecommons.org/licenses/by-sa/3.0/. Scaled, rotated and batched for the street-tree census.",
+      "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
+    }
+  },
+  {
+    "entityId": "landscape.canopy--2-1",
+    "kind": "object",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海湾 · 街道与滨水树冠",
+    "assetHash": "64698c9943f4b4b4bdfc7115c3a7a65bf437ee2f15ed9164f61d0f66c0638a9f",
+    "bounds": {
+      "min": [
+        -659.3709317483385,
+        -60.335,
+        546.0665405548275
+      ],
+      "max": [
+        -575.2226215770454,
+        -45.56983599582816,
+        771.4008030318698
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "位置来源": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树位数": 33,
+      "棕榈数": 0,
+      "已单独建模树位数": 0,
+      "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes.",
+      "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
+    }
+  },
+  {
+    "entityId": "landscape.canopy--2-2",
+    "kind": "object",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海湾 · 街道与滨水树冠",
+    "assetHash": "fcf2f7b511d307966767a05d9ad9e54ade93c95de646bc42c17dc5f19603d530",
+    "bounds": {
+      "min": [
+        -613.5861725450931,
+        -60.478910508202546,
+        1337.1602479264047
+      ],
+      "max": [
+        -541.1207642150044,
+        -39.82217652818907,
+        1554.2795300493003
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "位置来源": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树位数": 12,
+      "棕榈数": 0,
+      "已单独建模树位数": 0,
+      "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes.",
+      "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
+    }
+  },
+  {
+    "entityId": "landscape.canopy--3-0",
+    "kind": "object",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海湾 · 街道与滨水树冠",
+    "assetHash": "bf143c53f27c1025de908de9cf48f50e596f5a9679ee6a3ffdf0715298e8843a",
+    "bounds": {
+      "min": [
+        -1170.653622910662,
+        -60.38245210732644,
+        216.74211976904294
+      ],
+      "max": [
+        -1099.0367003869374,
+        -37.09794085038706,
+        308.2648152642522
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "位置来源": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树位数": 14,
+      "棕榈数": 0,
+      "已单独建模树位数": 0,
+      "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes.",
+      "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
+    }
+  },
+  {
+    "entityId": "landscape.canopy-0--1",
+    "kind": "object",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海湾 · 街道与滨水树冠",
+    "assetHash": "1f4b2b3f42b7467418980921c8904bc61fb3c8a9922bc0dce4e239bf5368ae2b",
+    "bounds": {
+      "min": [
+        -1.725346582742541,
+        -60.27392438079311,
+        -305.4141943266296
+      ],
+      "max": [
+        237.80082574751913,
+        -48.39092438079311,
+        -1.3250711015323802
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "位置来源": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树位数": 44,
+      "棕榈数": 0,
+      "已单独建模树位数": 0,
+      "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes.",
+      "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
+    }
+  },
+  {
+    "entityId": "landscape.canopy-0-0",
+    "kind": "object",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海湾 · 街道与滨水树冠",
+    "assetHash": "74b4c314d25f388441aa32eed89f618818a65298d47ba551e06feb8ff66210ad",
+    "bounds": {
+      "min": [
+        33.830532604743034,
+        -60.2930054380402,
+        -1.325457748266853
+      ],
+      "max": [
+        544.6089087971849,
+        -39.71037851695276,
+        536.6471765676813
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "位置来源": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树位数": 83,
+      "棕榈数": 12,
+      "已单独建模树位数": 22,
+      "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes. Royal palm mesh and textures adapted from 0 A.D., Wildfire Games, https://wildfiregames.com/, CC BY-SA 3.0, https://creativecommons.org/licenses/by-sa/3.0/. Scaled, rotated and batched for the street-tree census.",
+      "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
+    }
+  },
+  {
+    "entityId": "landscape.canopy-0-1",
+    "kind": "object",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海湾 · 街道与滨水树冠",
+    "assetHash": "4b7b81ff6f375a008de3bb48dfe6daebf1fb224854929e86fb6f1d036e5dd296",
+    "bounds": {
+      "min": [
+        286.0409405901775,
+        -60.36,
+        547.0951205826084
+      ],
+      "max": [
+        555.8870653374149,
+        -39.31334365991726,
+        1082.9805495105927
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "位置来源": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树位数": 122,
+      "棕榈数": 0,
+      "已单独建模树位数": 115,
+      "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes.",
+      "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
+    }
+  },
+  {
+    "entityId": "landscape.canopy-0-2",
+    "kind": "object",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海湾 · 街道与滨水树冠",
+    "assetHash": "d72029f19e0007a754c29d63f4a44365111f68f0a535038dd600b70207ea255e",
+    "bounds": {
+      "min": [
+        77.16905239032563,
+        -60.39,
+        1092.1529597946874
+      ],
+      "max": [
+        397.9720093310008,
+        -39.03711351557358,
+        1244.378727204056
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "位置来源": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树位数": 21,
+      "棕榈数": 0,
+      "已单独建模树位数": 29,
+      "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes.",
+      "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
+    }
+  },
+  {
+    "entityId": "landscape.canopy-1-0",
+    "kind": "object",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海湾 · 街道与滨水树冠",
+    "assetHash": "d7f1785010e1ad44ed2c644e1b81888bd92e8f03a95b3861598ed959ce04e434",
+    "bounds": {
+      "min": [
+        640.1753808984984,
+        -60.32797119310132,
+        429.7340522998503
+      ],
+      "max": [
+        757.1689649417783,
+        -47.94502534366126,
+        545.9596079001972
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "位置来源": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树位数": 19,
+      "棕榈数": 0,
+      "已单独建模树位数": 0,
+      "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes.",
+      "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
+    }
+  },
+  {
+    "entityId": "landscape.canopy-1-1",
+    "kind": "object",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海湾 · 街道与滨水树冠",
+    "assetHash": "9c3016a8e87ea6a0f52b5959cf15b004024c8f3999a22548c9a91f6cfd92f3d5",
+    "bounds": {
+      "min": [
+        566.1294091187913,
+        -60.40265576500108,
+        606.0581665920557
+      ],
+      "max": [
+        887.6729347338625,
+        -43.01058348012929,
+        1100.3290027625826
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "位置来源": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树位数": 42,
+      "棕榈数": 0,
+      "已单独建模树位数": 0,
+      "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes.",
+      "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
+    }
+  }
+]

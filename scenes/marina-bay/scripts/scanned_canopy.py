@@ -114,7 +114,7 @@ def sample_scan(folder, name):
     return xyz, shaded, canopy, bark
 
 
-def canopy_depths(points, u, v, depth, cells=3):
+def canopy_depths(points, u, v, depth, cells=3, layer_count=LAYERS):
     """Fit each depth layer to the local distribution of scanned branches."""
     bands = 64
     grid = np.clip(points[:, [u, v]] * cells, 0, cells)
@@ -124,7 +124,7 @@ def canopy_depths(points, u, v, depth, cells=3):
     np.add.at(hist, (ix, iy, levels), 1)
     cumulative = gaussian_filter(hist, (.70, .70, 0)).cumsum(axis=2)
     fractions = cumulative / np.maximum(cumulative[:, :, -1:], 1e-12)
-    quantiles = (np.arange(LAYERS) + .5) / LAYERS
+    quantiles = (np.arange(layer_count) + .5) / layer_count
     heights = np.stack([(np.argmax(fractions >= q, axis=2) + .5) / bands for q in quantiles])
     boundaries = (heights[:-1] + heights[1:]) / 2
     layers = np.zeros(len(points), dtype=int)
@@ -152,13 +152,13 @@ def fit_slice_opacity(pixels, surface, axes, scan):
     pixels[y, x, 3] = np.rint(pixels[y, x, 3] * opacity).astype(np.uint8)
 
 
-def slices(points, colors, canopy, fit_opacity=False):
-    atlas = Image.new("RGBA", (TILE*LAYERS, TILE*3))
+def slices(points, colors, canopy, fit_opacity=False, *, layer_count=LAYERS, cells=3):
+    atlas = Image.new("RGBA", (TILE*layer_count, TILE*3))
     vertices, uv, normals, faces = [], [], [], []
     scan = cKDTree(points[canopy]) if fit_opacity else None
     for row, (u,v,depth) in enumerate([(0,1,2),(2,1,0),(0,2,1)]):
-        surfaces, layers = canopy_depths(points, u, v, depth)
-        for k in range(LAYERS):
+        surfaces, layers = canopy_depths(points, u, v, depth, cells=cells, layer_count=layer_count)
+        for k in range(layer_count):
             where = np.flatnonzero((layers == k) & canopy)
             ordered = where[np.argsort(points[where,depth], kind="stable")]
             size = TILE * 2
@@ -185,7 +185,7 @@ def slices(points, colors, canopy, fit_opacity=False):
                 n = pos - [.5, .32, .5]
                 n[1] = max(n[1], .12)
                 normals.append(n / np.linalg.norm(n))
-                uv.append([(k + a) / LAYERS, 1 - (row + 1 - b) / 3])
+                uv.append([(k + a) / layer_count, 1 - (row + 1 - b) / 3])
             # Both sides use the same crown-outward shading normals.
             for ix, iy in np.ndindex((steps, steps)):
                 first = base + ix * (steps + 1) + iy
