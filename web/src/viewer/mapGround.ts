@@ -1,6 +1,45 @@
 import * as THREE from 'three';
 import detailUrl from '../assets/geography/surface-detail.webp';
 
+export interface GroundAir {
+  groundSky: THREE.IUniform<THREE.Texture | null>;
+  groundSkyYaw: THREE.IUniform<number>;
+  groundAirStrength: THREE.IUniform<number>;
+}
+
+/** 远处的影像按视线长度衰减，散射光取当前方位的实景天际线。 */
+export function groundAir(material: THREE.Material, uniforms: GroundAir) {
+  const compile = material.onBeforeCompile.bind(material);
+  const key = material.customProgramCacheKey();
+  material.customProgramCacheKey = () => key + '/ground-air';
+  material.onBeforeCompile = (shader, renderer) => {
+    compile(shader, renderer);
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader =
+      'varying vec3 groundView;\n' +
+      shader.vertexShader.replace(
+        '#include <project_vertex>',
+        '#include <project_vertex>\ngroundView = mvPosition.xyz;',
+      );
+    shader.fragmentShader =
+      'varying vec3 groundView;\nuniform sampler2D groundSky;\nuniform float groundSkyYaw, groundAirStrength;\n' +
+      shader.fragmentShader.replace(
+        '#include <opaque_fragment>',
+        /* glsl */ `
+          float path = max(0.0, length(groundView) - 250.0);
+          if (path > 0.0 && groundAirStrength > 0.0) {
+            vec3 ray = inverseTransformDirection(normalize(groundView), viewMatrix);
+            float c = cos(groundSkyYaw), s = sin(groundSkyYaw);
+            ray.xz = mat2(c,s,-s,c) * ray.xz;
+            vec3 horizon = texture2D(groundSky, equirectUv(normalize(vec3(ray.x, 0.012, ray.z)))).rgb;
+            float scatter = (1.0 - exp2(-path / 5200.0)) * groundAirStrength;
+            outgoingLight = mix(outgoingLight, horizon, scatter);
+          }
+          #include <opaque_fragment>`,
+      );
+  };
+}
+
 /** 三种地表扫描共用一张线性数据贴图，平均亮度为中性灰。 */
 export function groundDetailTexture(anisotropy: number) {
   const texture = new THREE.TextureLoader().load(detailUrl);

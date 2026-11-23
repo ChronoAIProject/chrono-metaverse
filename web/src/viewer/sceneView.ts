@@ -760,7 +760,9 @@ export class SceneView {
       const mesh = object as THREE.Mesh;
       if (!mesh.isMesh) return;
       if (background) {
-        mesh.layers.enable(CITY_REFLECTION_LAYER);
+        const surfaces = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        if (!surfaces.some((m) => m.userData.waterSurface === 'pool'))
+          mesh.layers.enable(CITY_REFLECTION_LAYER);
         mesh.castShadow = true;
         mesh.receiveShadow = look?.shading === 'albedo';
       }

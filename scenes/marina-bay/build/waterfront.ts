@@ -50,8 +50,12 @@ export function waterfront(kit: Kit, quay: Quay, placement: Placement, regionId?
   const children = [
     kit.box([3.04, 0.45, span], { at: [1.98, -0.18, 0], color: '#777771', roughness: 0.91 }),
     ...slabs,
-    kit.box([0.48, 1.1, span], { at: [0.21, -0.6, 0], color: '#535958', roughness: 0.88 }),
-    kit.box([0.52, 0.27, span - 0.016], { at: [0.19, 0.22, 0], color: '#8e8980', roughness: 0.83 }),
+    // 朝步道的基层内退 2 厘米，板缝露出深色基层，饰面与基层不会争用同一深度。
+    kit.box([0.46, 1.1, span], { at: [0.2, -0.6, 0], color: '#535958', roughness: 0.88 }),
+    kit.box([0.52, 0.28, span - 0.016], {
+      at: [0.19, 0.22, 0],
+      ...granite('#a6a095', 1),
+    }),
     kit.box([0.63, 0.16, span - 0.012], {
       at: [0.2, 0.5, 0],
       chamfer: 0.016,

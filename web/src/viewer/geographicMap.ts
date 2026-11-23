@@ -1,7 +1,7 @@
 import { grassPatch } from './mapGrass';
 import type { ExternalAccess } from '../core/externalSource';
 import * as THREE from 'three';
-import { groundDetailTexture, urbanGroundMaterial } from './mapGround';
+import { groundAir, groundDetailTexture, urbanGroundMaterial, type GroundAir } from './mapGround';
 import { hologramMaterial } from './hologram';
 import type { GeographicMap as MapConfig } from '../core/environment';
 import {
@@ -75,6 +75,11 @@ export class GeographicMap {
   private readonly cameraProjection = new THREE.Matrix4();
   private viewport = '';
   private readonly detail?: THREE.Texture;
+  private readonly air: GroundAir = {
+    groundSky: { value: null },
+    groundSkyYaw: { value: 0 },
+    groundAirStrength: { value: 0 },
+  };
   private stats: MapStats = { tiles: 0, pending: 0, failed: 0, zoom: 0 };
 
   constructor(
@@ -107,6 +112,25 @@ export class GeographicMap {
 
   getStats(): MapStats {
     return this.stats;
+  }
+
+  setSky(background: THREE.Scene['background'], yaw: number) {
+    this.air.groundSky.value =
+      background instanceof THREE.Texture &&
+      background.mapping === THREE.EquirectangularReflectionMapping
+        ? background
+        : null;
+    this.air.groundSkyYaw.value = yaw;
+    this.updateAirStrength();
+  }
+
+  private updateAirStrength() {
+    const altitude =
+      this.localEye.distanceTo(this.reference.center) -
+      this.reference.origin.distanceTo(this.reference.center);
+    this.air.groundAirStrength.value = this.air.groundSky.value
+      ? 1 - THREE.MathUtils.smoothstep(altitude, 3000, 16000)
+      : 0;
   }
 
   private cap(north: boolean): THREE.BufferGeometry {
@@ -294,6 +318,7 @@ export class GeographicMap {
     this.cameraWorld.copy(camera.matrixWorld);
     this.cameraProjection.copy(camera.projectionMatrix);
     this.group.worldToLocal(this.localEye.copy(camera.position));
+    if (this.detail) this.updateAirStrength();
     this.visible = this.select(camera);
     const wanted = new Map<string, Node>();
     const keep = new Set(this.visible.map(tileKey));
@@ -357,6 +382,7 @@ export class GeographicMap {
         if (this.resource?.hologram) hologramMaterial(mesh.material, 'terrain');
         else {
           mesh.material.toneMapped = false;
+          if (this.detail) groundAir(mesh.material, this.air);
           if (mesh.material instanceof THREE.MeshLambertMaterial) {
             mesh.geometry.computeVertexNormals();
             mesh.receiveShadow = true;
