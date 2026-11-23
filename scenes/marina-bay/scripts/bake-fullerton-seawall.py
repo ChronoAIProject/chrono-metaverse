@@ -14,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 REFERENCE = "https://commons.wikimedia.org/wiki/File:Singapore_-_panoramio_(109).jpg"
 BOTTOM, TOP = -.36, .504
 REPEAT = 6.0
+# The round fittings are seated in the flat top course above this rebate.
+COURSE_FOOT = .17
 
 
 def facing_material():
@@ -38,10 +40,10 @@ def facing_material():
     sample = grain[v, u]
     joint_distance = np.minimum(abs(a - np.rint(a)), abs(b - np.rint(b))) * .375 / np.sqrt(2)
     joint = np.clip(1 - joint_distance / .008, 0, 1)
-    upper = level > .381
+    upper = level > COURSE_FOOT
     block_ends = np.abs((along + .375) % .75 - .375)
     joint = np.where(upper, np.clip(1-block_ends/.006, 0, 1), joint)
-    joint = np.maximum(joint, np.clip(1-abs(level-.381)/.008, 0, 1))
+    joint = np.maximum(joint, np.clip(1-abs(level-COURSE_FOOT)/.008, 0, 1))
     tone = np.where(upper, stone[(along/.75).astype(int) % 8, 0], tone)
     # The mapped water is 3–5 cm above the quay datum along this reach.
     # Irregular darkening and small pale deposits follow the observed water edge.
@@ -78,7 +80,7 @@ def bake():
     inland = np.array([delta[2], 0, -delta[0]]) / length
     # Fit beneath the 0.115 m coping projection. The slightly battered foot
     # extends below the rendered bay even at the ends of this 165 m reach.
-    profile = [(BOTTOM, -.196), (.375, -.081), (.385, -.09), (TOP, -.09)]
+    profile = [(BOTTOM, -.196), (COURSE_FOOT-.006, -.081), (COURSE_FOOT+.004, -.09), (TOP, -.09)]
     stations = np.linspace(0, length, round(length / 2.5) + 1)
     shade = np.random.default_rng(93).uniform(.88, 1, len(stations))
     vertices, uv, faces, colors = [], [], [], []

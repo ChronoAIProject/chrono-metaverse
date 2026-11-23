@@ -903,7 +903,7 @@
     "kind": "structure",
     "layer": "ext",
     "label": "浮尔顿滨水步道 · 菱砌驳岸",
-    "assetHash": "dec3a1a6efa809c4265e57d8a23fe821bd4b5bef33387bb1069cc49ff8e5eaab",
+    "assetHash": "e17d09cc994c077ee25a45b81ccdba2131c18fa41c5d6a34470fbf781c17c2fd",
     "bounds": {
       "min": [
         256.1013085289749,
@@ -926,6 +926,43 @@
       "照片参考": "https://commons.wikimedia.org/wiki/File:Singapore_-_panoramio_(109).jpg",
       "材质来源": "Poly Haven · Granite Tile 04 · CC0",
       "砌石": "沿已配准的岸线重建照片可见的菱形石缝与压条。块材尺寸、墙身坡度和湿痕宽度依照片估值，水线随场景水面配准。"
+    }
+  },
+  {
+    "entityId": "bay.fullerton-seawall-fittings",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "浮尔顿驳岸 · 临水侧圆形构件",
+    "assetHash": "8ed921913ca8e503b212d29697a43f69b8f84a7af59b23bf494a62b3acc1eb8f",
+    "bounds": {
+      "min": [
+        256.437537808808,
+        -59.81281777618896,
+        455.90504037575414
+      ],
+      "max": [
+        267.53128240204575,
+        -59.56890911763492,
+        574.7680841641476
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "实景参考": "https://commons.wikimedia.org/wiki/File:Singapore_-_panoramio_(109).jpg",
+      "岸线": "https://www.openstreetmap.org/way/687912605",
+      "backgroundView": {
+        "focus": [
+          261.98441010542683,
+          -59.69086344691193,
+          515.3365622699508
+        ],
+        "maxDistance": 300
+      },
+      "构件依据": "45 处圆形轮廓来自 2014 年岸线照片，沿岸位置按广场嵌石换算。照片范围外留空。构件高度、曲率与表面颜色为照片估值，功能和现状未经现场核实。"
     }
   }
 ]
