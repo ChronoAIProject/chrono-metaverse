@@ -12,6 +12,7 @@ from shapely import constrained_delaunay_triangles
 from shapely.geometry import Polygon, box
 from trimesh.visual.texture import TextureVisuals
 from trimesh.visual.material import PBRMaterial
+from passage_occlusion import occlusion_coordinates, portal_visibility
 
 ROOT = Path(__file__).resolve().parents[1]
 ENTITY = "bay.0c252ba3-f96a-4c82-b87b-fa5ef91708f2"
@@ -58,9 +59,11 @@ def carve(facade, local):
 
 def passage_mesh(front, transform):
     vertices, colors, faces, uv = [], [], [], []
+    quads = []
     # Vertices use depth from the curved survey wall, elevation, station along the bay.
     def quad(corners, normal, color, patch=None):
         local = np.asarray(corners, float)
+        quads.append((local, normal, patch == 'glass'))
         inset, y, s = local.T
         xyz = np.column_stack((front(s)+inset, y, s))
         ids = np.arange(len(vertices), len(vertices)+4)
@@ -68,6 +71,8 @@ def passage_mesh(front, transform):
             ids = ids[::-1]
         vertices.extend(xyz)
         factor = 1 - .53*np.minimum(1, np.maximum(0, inset)/DEPTH)**.72
+        if patch == 'glass':
+            factor = np.ones_like(inset)
         colors.extend(np.column_stack((np.asarray(color)*factor[:,None], np.full(4,255))))
         if patch == 'glass':
             uv.extend(np.column_stack(((1+253*inset/DEPTH)/512, (1+253*(y-FLOOR)/(HEAD-FLOOR))/256)))
@@ -135,9 +140,13 @@ def passage_mesh(front, transform):
     atlas.format="JPEG"
     material=PBRMaterial(name="Shaded entrance stone and glazing",baseColorTexture=atlas,
                          metallicFactor=0,roughnessFactor=.73)
+    material.occlusionTexture, light_uv = portal_visibility(
+        quads, lower, upper, landing_height, LEFT, RIGHT, FLOOR, HEAD, DEPTH)
     visual=TextureVisuals(uv=uv,material=material)
     visual.vertex_attributes["color"]=np.uint8(np.clip(colors,0,255))
-    return trimesh.Trimesh(vertices=transform(np.array(vertices)), faces=faces,visual=visual,process=False)
+    mesh = trimesh.Trimesh(vertices=transform(np.array(vertices)), faces=faces,visual=visual,process=False)
+    mesh.vertex_attributes["_OCCLUSION_UV"] = light_uv
+    return mesh
 
 
 def bake(path, entity, quay, output):
@@ -170,7 +179,8 @@ def bake(path, entity, quay, output):
     anchor = (low+high)/2
     anchor[1] = low[1]
     inside.apply_translation(-anchor)
-    interior = trimesh.exchange.gltf.export_glb(trimesh.Scene(inside),include_normals=True)
+    interior = trimesh.exchange.gltf.export_glb(trimesh.Scene(inside),include_normals=True,
+                                                 tree_postprocessor=occlusion_coordinates)
     facing = hashlib.sha256(interior).hexdigest()
     (output/(facing+'.glb')).write_bytes(interior)
     return dict(entityId="bay.fullerton-entrance-passage",regionId=entity["regionId"],layer="ext",kind="structure",
@@ -178,7 +188,8 @@ def bake(path, entity, quay, output):
                 bounds={"min":low.tolist(),"max":high.tolist()},material={"shading":"albedo"},
                 props={"background":True,"入口参考":PHOTO,
                        "门廊纹理署名":"Андрей Бобровский · Singapore - panoramio (109) · 2014 · https://creativecommons.org/licenses/by/3.0/ · 裁切、透视纠正并调整阴影。石材纹理 Poly Haven Granite Tile 04 · CC0。",
-                       "门廊":"玻璃侧墙、铺石与后方台阶依实景照片重建。进深、室内尺寸与材料为估值。地坪按场景前方广场标高衔接。"})
+                       "门廊":"玻璃侧墙、铺石与后方台阶依实景照片重建。进深、室内尺寸与材料为估值。地坪按场景前方广场标高衔接。",
+                       "天光":"由入口及平台开口的可见立体角烘焙环境遮蔽，随拍摄光照保留玻璃墙反射。漫反射回填为估值。"})
 
 
 if __name__ == '__main__':
