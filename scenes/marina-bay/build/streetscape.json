@@ -717,5 +717,36 @@
       "门廊纹理署名": "Андрей Бобровский · Singapore - panoramio (109) · 2014 · https://creativecommons.org/licenses/by/3.0/ · 裁切、透视纠正并调整阴影。石材纹理 Poly Haven Granite Tile 04 · CC0。",
       "门廊": "玻璃侧墙、铺石与后方台阶依实景照片重建。进深、室内尺寸与材料为估值。地坪按场景前方广场标高衔接。"
     }
+  },
+  {
+    "entityId": "bay.fullerton-entrance-trees",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "One Fullerton · 入口北侧两株临水树",
+    "assetHash": "4284ccfe683aa97b5d28d17292200f92a93f579ccf5c21122d7cb74e50fcaba9",
+    "bounds": {
+      "min": [
+        265.9781392108121,
+        -60.322199999999995,
+        556.6898106200401
+      ],
+      "max": [
+        273.9430625664708,
+        -52.508199999999995,
+        569.3939834942998
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "影像来源": "Map Data © Singapore Land Authority / OneMap · OrthoJPG z20",
+      "实景参照": "https://commons.wikimedia.org/wiki/File:Singapore_-_panoramio_(109).jpg",
+      "植被依据": "两株树冠边界依正射影像估读。邻接冠缘、树干位置、树高、胸围和树池细部为估值。此处树种未经树木名录核实。",
+      "树形素材": "Poly Haven · Island Tree 01 · CC0 · https://polyhaven.com/a/island_tree_01"
+    }
   }
 ]

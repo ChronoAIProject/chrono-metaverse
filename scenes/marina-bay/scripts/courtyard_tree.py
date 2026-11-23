@@ -8,6 +8,8 @@ from pathlib import Path
 
 import numpy as np
 import trimesh
+from scipy.optimize import brentq
+from scipy.spatial import ConvexHull
 from PIL import Image, ImageDraw
 from scipy.ndimage import distance_transform_edt
 from trimesh.visual.material import PBRMaterial
@@ -180,3 +182,66 @@ def compact_bark(mesh, target_triangles=420, lock_border=False):
     return trimesh.Trimesh(vertices=mesh.vertices[vertices], faces=inverse.reshape(-1, 3),
                             vertex_normals=mesh.vertex_normals[vertices],
                             visual=TextureVisuals(uv=mesh.visual.uv[vertices], material=material), process=False)
+
+
+def load_masked_tree(folder):
+    mask = folder / "textures/island_tree_01_leaves_alpha_1k.png"
+    if hashlib.sha256(mask.read_bytes()).hexdigest() != "f4341f147988dbe6b58d9ca841a8f0e4bcff25bc40d05f9877da82006d489c39":
+        raise ValueError("Expected the original 1k Island Tree 01 leaf opacity map")
+    with Image.open(mask) as source:
+        raw = np.asarray(source)
+        leaf_mask = Image.fromarray(np.uint8(raw.astype(float) * (255 / np.iinfo(raw.dtype).max))).convert("L")
+    return load_tree(folder, leaf_mask, bark_budget=850)
+
+
+def fit_crown(bark, leaves, height, girth, angle, foot_position, lo, hi, compass):
+    """Fit a scanned specimen to measured crown extents in the supplied horizontal frame."""
+    bottom = bark.bounds[0, 1]
+    foot = bark.vertices[bark.vertices[:, 1] < bottom + .08].mean(axis=0)
+    foot[1] = bottom
+    top = leaves.bounds[1, 1] - bottom
+    # Match estimated breast-height circumference before the first branch.
+    # Lift the lowest branches of the compact source specimen onto a clear stem.
+    vertical = height / top
+    lift = .53
+    def relative_height(h):
+        return h + lift * h * (1 - h) * (2 - h)
+
+    breast = top * brentq(lambda h: height * relative_height(h) - 1.3, 0, 1)
+    section = trimesh.intersections.mesh_plane(bark, [0, 1, 0], [0, bottom + breast, 0])
+    perimeter = ConvexHull(section.reshape(-1, 3)[:, [0, 2]]).area
+    stem = girth / perimeter
+    rotation = trimesh.transformations.rotation_matrix(angle, [0, 1, 0])[:3, :3]
+    # Work in geographic east/north so the source rotation never rotates the
+    # measured footprint. Bark and leaves receive the same continuous warp.
+    cardinal = rotation @ compass.T
+    crown = (leaves.vertices - foot) @ cardinal
+    spread = (hi - lo) / np.ptp(crown[:, [0, 2]], axis=0)
+    lean = lo - crown[:, [0, 2]].min(axis=0) * spread
+    result = []
+    for source in (bark, leaves):
+        mesh = source.copy()
+        xyz = (mesh.vertices - foot) @ cardinal
+        h = np.clip(xyz[:, 1] / top, 0, 1)
+        blend = np.clip((h - .12) / .24, 0, 1)
+        weight = (blend**2 * (3 - 2 * blend))[:, None]
+        slope = (6 * blend * (1 - blend) / (.24 * top))[:, None]
+        scale = stem + weight * (spread - stem)
+        dxz_dy = slope * (xyz[:, [0, 2]] * (spread - stem) + lean)
+        dy = vertical * (1 + 2 * lift - 6 * lift * h + 3 * lift * h**2)
+        normals = source.vertex_normals.copy()
+        bad = np.linalg.norm(normals, axis=1) < 1e-6
+        normals[bad] = trimesh.geometry.mean_vertex_normals(
+            len(mesh.vertices), mesh.faces, mesh.face_normals)[bad]
+        normals = normals @ cardinal
+        normals[:, [0, 2]] /= scale
+        normals[:, 1] = (normals[:, 1] - (dxz_dy * normals[:, [0, 2]]).sum(axis=1)) / dy
+        xyz[:, [0, 2]] = xyz[:, [0, 2]] * scale + weight * lean
+        xyz[:, 1] = height * relative_height(h)
+        mesh.vertices = xyz @ compass + foot_position
+        normals = normals @ compass
+        lengths = np.linalg.norm(normals, axis=1)
+        normals[lengths < 1e-8] = [0, 1, 0]
+        mesh.vertex_normals = normals / np.linalg.norm(normals, axis=1)[:, None]
+        result.append(mesh)
+    return result
