@@ -50,9 +50,10 @@ export function groundDetailTexture(anisotropy: number) {
 }
 
 /** 米制坐标跨瓦片连续，父影像替换为精细影像时材质颗粒仍在原位。 */
-export function urbanGroundMaterial(detail: THREE.Texture) {
+export function urbanGroundMaterial(detail: THREE.Texture, shadow: THREE.Color) {
   const material = new THREE.MeshLambertMaterial({ color: 0x557e8e, toneMapped: false });
   material.onBeforeCompile = (shader) => {
+    shader.uniforms.groundShadow = { value: shadow };
     shader.uniforms.groundDetail = { value: detail };
     shader.vertexShader =
       'varying vec2 groundMeters;\n' +
@@ -61,7 +62,7 @@ export function urbanGroundMaterial(detail: THREE.Texture) {
         '#include <project_vertex>\n groundMeters = (modelMatrix * vec4(transformed, 1.0)).xz;',
       );
     shader.fragmentShader =
-      'uniform sampler2D groundDetail;\nvarying vec2 groundMeters;\n' +
+      'uniform vec3 groundShadow;\nuniform sampler2D groundDetail;\nvarying vec2 groundMeters;\n' +
       shader.fragmentShader
         .replace(
           '#include <shadowmap_pars_fragment>',
@@ -70,7 +71,7 @@ export function urbanGroundMaterial(detail: THREE.Texture) {
         .replace(
           '#include <opaque_fragment>',
           // 保留航拍影像的日光，只混入场景几何投到地面的阴影。
-          'outgoingLight = diffuseColor.rgb * mix(vec3(0.55,0.61,0.68), vec3(1.0), getShadowMask());\n#include <opaque_fragment>',
+          'outgoingLight = diffuseColor.rgb * mix(groundShadow, vec3(1.0), getShadowMask());\n#include <opaque_fragment>',
         )
         .replace(
           '#include <map_fragment>',

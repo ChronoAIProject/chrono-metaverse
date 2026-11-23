@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { skyProbe } from './skyProbe';
 import { CITY_REFLECTION_LAYER } from './mapReflection';
 import type { LightingPreset } from '../core/api/types';
 import type { SkyDaylight } from '../core/environment';
@@ -116,6 +117,21 @@ export function createLights(
       .multiplyScalar(20);
     sun.intensity =
       (irradiance * daylight.directFraction) / (Math.sin(elevation) * luminance(sun.color));
+    // 航拍地表已有日照。阴影只保留水平面各色通道收到的天光。
+    const skyLight = hemisphere.color.clone().multiplyScalar(hemisphere.intensity);
+    const sunlight = sun.color.clone().multiplyScalar(sun.intensity * Math.sin(elevation));
+    const transmission = (sky: number, direct: number) =>
+      sky + direct > 0 ? sky / (sky + direct) : 1;
+    sun.userData.groundShadow = new THREE.Color(
+      transmission(skyLight.r, sunlight.r),
+      transmission(skyLight.g, sunlight.g),
+      transmission(skyLight.b, sunlight.b),
+    );
+    if (daylight.diffuseProbe) {
+      const sky = skyProbe(daylight.diffuseProbe, skyYaw, hemisphere.intensity);
+      sky.name = 'light:sky-probe';
+      lights[0] = sky;
+    }
     lights.push(sun);
   } else {
     for (const [name, spec] of [

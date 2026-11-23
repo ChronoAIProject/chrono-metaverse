@@ -40,7 +40,33 @@ describe('灯光（物理单位）', () => {
     const total = ambient.intensity + sun.intensity * direction.y;
     expect(total / Math.PI).toBeCloseTo(diffuseResponse(UP));
     expect((sun.intensity * direction.y) / total).toBeCloseTo(0.6);
+    expect(sun.userData.groundShadow.r).toBeCloseTo(0.4);
+    expect(sun.userData.groundShadow.g).toBeCloseTo(0.4);
+    expect(sun.userData.groundShadow.b).toBeCloseTo(0.4);
     expect(createLights('night', sky)).toHaveLength(3);
+  });
+  it('二阶漫射天光随全景旋转，保留以上方向测得的日照比例', () => {
+    const diffuseProbe = Array.from({ length: 27 }, (_, i) => (i < 3 ? 1 : Math.sin(i) * 0.12));
+    const daylight = {
+      azimuth: 12,
+      elevation: 40,
+      directFraction: 0.67,
+      sunColor: [1, 1, 1],
+      skyColor: [1, 1, 1],
+      diffuseProbe,
+    } as const;
+    const [original] = createLights('daylight', daylight);
+    const [rotated, sun] = createLights('daylight', daylight, 37);
+    expect(original).toBeInstanceOf(THREE.LightProbe);
+    expect(rotated).toBeInstanceOf(THREE.LightProbe);
+    const y = new THREE.Vector3(0, 1, 0);
+    for (const direction of [new THREE.Vector3(1, 2, -3).normalize(), UP, DOWN]) {
+      const turned = direction.clone().applyAxisAngle(y, THREE.MathUtils.degToRad(37));
+      const a = (original as THREE.LightProbe).sh.getIrradianceAt(direction, new THREE.Vector3());
+      const b = (rotated as THREE.LightProbe).sh.getIrradianceAt(turned, new THREE.Vector3());
+      expect(a.distanceTo(b)).toBeLessThan(0.00001);
+    }
+    expect(sun!.userData.directFraction).toBeCloseTo(0.67);
   });
   it('半球光加两盏平行光，强度是系数 × π', () => {
     const lights = createLights();

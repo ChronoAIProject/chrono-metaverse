@@ -21,7 +21,7 @@ export function withBoatQuay(surroundings: EntityBody): EntityBody {
 interface BaySky {
   texture?: string;
   airHalfDistance?: number;
-  daylight?: { directFraction?: number };
+  daylight?: { directFraction?: number; diffuseProbe?: number[] };
 }
 
 /** Update this site's previous daylight preset while preserving the saved map and sky orientation. */
@@ -31,7 +31,11 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
   const sky = environment?.sky;
   const target = (configured.props?.environment as { sky?: BaySky } | undefined)?.sky;
   if (!target?.daylight || !sky?.daylight || sky.texture !== target.texture ||
-      sky.airHalfDistance !== undefined || sky.daylight.directFraction !== 0.58) return saved;
+      sky.daylight.diffuseProbe !== undefined) return saved;
+  const original = sky.airHalfDistance === undefined && sky.daylight.directFraction === 0.58;
+  const clearDay = sky.airHalfDistance === target.airHalfDistance &&
+    sky.daylight.directFraction === target.daylight.directFraction;
+  if (!original && !clearDay) return saved;
   return {
     ...saved,
     props: {
@@ -40,7 +44,8 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
       environment: {
         ...environment,
         sky: { ...sky, airHalfDistance: target.airHalfDistance,
-          daylight: { ...sky.daylight, directFraction: target.daylight.directFraction } },
+          daylight: { ...sky.daylight, directFraction: target.daylight.directFraction,
+            diffuseProbe: target.daylight.diffuseProbe } },
       },
     },
   };
