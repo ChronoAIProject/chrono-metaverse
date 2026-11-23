@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CITY_REFLECTION_LAYER } from './mapReflection';
 import type { LightingPreset } from '../core/api/types';
+import type { SkyDaylight } from '../core/environment';
 
 /**
  * 查看器的灯光和贴图材质的明暗。
@@ -85,7 +86,11 @@ function directionOf(spec: DirectionalSpec): THREE.Vector3 {
 }
 
 /** 场景用的三盏灯（物理单位的强度）。平行光放在离原点 20 米处，照向原点。 */
-export function createLights(preset: LightingPreset = 'daylight'): THREE.Light[] {
+export function createLights(
+  preset: LightingPreset = 'daylight',
+  daylight?: SkyDaylight,
+  skyYaw = 0,
+): THREE.Light[] {
   const specs = PRESET_LIGHTS[preset] ?? PRESET_LIGHTS.daylight;
   const hemisphere = new THREE.HemisphereLight(
     specs.hemisphere.sky,
@@ -94,14 +99,34 @@ export function createLights(preset: LightingPreset = 'daylight'): THREE.Light[]
   );
   hemisphere.name = 'light:hemisphere';
   const lights: THREE.Light[] = [hemisphere];
-  for (const [name, spec] of [
-    ['light:key', specs.key],
-    ['light:fill', specs.fill],
-  ] as const) {
-    const light = new THREE.DirectionalLight(spec.color, spec.factor * Math.PI);
-    light.position.copy(directionOf(spec).multiplyScalar(20));
-    light.name = name;
-    lights.push(light);
+  if (preset === 'daylight' && daylight) {
+    // 方位随全景旋转。从水平白面入射照度按比例分配太阳与天光。
+    const azimuth = THREE.MathUtils.degToRad(daylight.azimuth - skyYaw);
+    const elevation = THREE.MathUtils.degToRad(daylight.elevation);
+    const horizontal = Math.cos(elevation);
+    const irradiance = Math.PI * diffuseResponse(new THREE.Vector3(0, 1, 0));
+    hemisphere.color.fromArray(daylight.skyColor);
+    hemisphere.intensity =
+      (irradiance * (1 - daylight.directFraction)) / luminance(hemisphere.color);
+    const sun = new THREE.DirectionalLight();
+    sun.name = 'light:key';
+    sun.color.fromArray(daylight.sunColor);
+    sun.position
+      .set(horizontal * Math.cos(azimuth), Math.sin(elevation), horizontal * Math.sin(azimuth))
+      .multiplyScalar(20);
+    sun.intensity =
+      (irradiance * daylight.directFraction) / (Math.sin(elevation) * luminance(sun.color));
+    lights.push(sun);
+  } else {
+    for (const [name, spec] of [
+      ['light:key', specs.key],
+      ['light:fill', specs.fill],
+    ] as const) {
+      const light = new THREE.DirectionalLight(spec.color, spec.factor * Math.PI);
+      light.position.copy(directionOf(spec).multiplyScalar(20));
+      light.name = name;
+      lights.push(light);
+    }
   }
   for (const light of lights) light.layers.enable(CITY_REFLECTION_LAYER);
   return lights;

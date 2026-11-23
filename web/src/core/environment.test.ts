@@ -26,6 +26,24 @@ const entity: EntityBody = {
 };
 
 describe('通用环境配置', () => {
+  it('可选日光参数无效时仍载入同一张天空', () => {
+    const env = {
+      version: 1,
+      sky: {
+        texture: hash,
+        daylight: {
+          azimuth: 30,
+          elevation: 45,
+          directFraction: 0.6,
+          sunColor: [1, 1, 1],
+          skyColor: [0, 0, 0],
+        },
+      },
+    };
+    const result = environmentOf({ ...entity, props: { background: true, environment: env } });
+    expect(result?.sky?.texture).toBe(hash);
+    expect(result?.sky?.daylight).toBeUndefined();
+  });
   it('从空间资源引用天空并保留任意地点的地图来源', () => {
     expect(environmentOf(entity)).toMatchObject({
       sky: { texture: hash, yaw: 0 },
