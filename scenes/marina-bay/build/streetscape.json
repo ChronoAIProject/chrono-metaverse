@@ -690,6 +690,35 @@
     }
   },
   {
+    "entityId": "bay.fullerton-entrance-passage",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "kind": "structure",
+    "label": "One Fullerton · 临水入口门廊",
+    "assetHash": "90e0724fb4c41512f57cb3054e1d6ff7ca17dcc217aac0b12c98b8cc4de015c7",
+    "bounds": {
+      "min": [
+        281.1987454154042,
+        -60.267199999999995,
+        545.8726976213021
+      ],
+      "max": [
+        295.40161428052545,
+        -51.8722,
+        563.8396168430005
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "入口参考": "https://commons.wikimedia.org/wiki/File:Singapore_-_panoramio_(109).jpg",
+      "门廊纹理署名": "Андрей Бобровский · Singapore - panoramio (109) · 2014 · https://creativecommons.org/licenses/by/3.0/ · 裁切、透视纠正并调整阴影。石材纹理 Poly Haven Granite Tile 04 · CC0。",
+      "门廊": "玻璃侧墙、铺石与后方台阶依实景照片重建。进深、室内尺寸与材料为估值。地坪按场景前方广场标高衔接。"
+    }
+  },
+  {
     "entityId": "bay.fullerton-seawall",
     "regionId": "marina-bay-exterior",
     "kind": "structure",
