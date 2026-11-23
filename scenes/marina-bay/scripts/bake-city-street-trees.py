@@ -15,6 +15,7 @@ from trimesh.visual.texture import TextureVisuals
 
 from fullerton_shrubs import combined
 from scanned_canopy import ROOT, sample_scan, slices, write_tree_asset
+from street_foliage import branch_sprays
 
 PALM_GENERA = {'Washingtonia', 'Dypsis', 'Roystonea', 'Bismarckia', 'Phoenix'}
 SPREADING = {'Samanea', 'Peltophorum', 'Libidibia', 'Delonix', 'Pterocarpus'}
@@ -24,9 +25,12 @@ PALM_CREDIT = ("Royal palm mesh and textures adapted from 0 A.D., Wildfire Games
                "Scaled, rotated and batched for the street-tree census.")
 
 
-def broadleaf(folder, name):
+def broadleaf(folder, name, sprays=False):
     points, colours, leaves, trunk = sample_scan(folder, name)
-    xyz, uv, normals, faces, atlas = slices(points, colours, leaves, fit_opacity=True, layer_count=3, cells=2)
+    if sprays:
+        (xyz, uv, normals, faces), atlas = branch_sprays(points, colours, leaves)
+    else:
+        xyz, uv, normals, faces, atlas = slices(points, colours, leaves, fit_opacity=True, layer_count=3, cells=2)
     crown_paint = PBRMaterial(name=name + " street foliage", baseColorTexture=atlas, metallicFactor=0,
                               roughnessFactor=.95, alphaMode="MASK", alphaCutoff=.36)
     foliage = trimesh.Trimesh(vertices=xyz, faces=faces, vertex_normals=normals,
@@ -65,13 +69,19 @@ def palm(folder):
                             visual=TextureVisuals(uv=uv, material=paint), process=False)]
 
 
-def bake(folders):
+def bake(folders, selected_tile=None):
     forms = {name: broadleaf(folder, name) for name, folder in
              zip(('tree_small_02', 'island_tree_01', 'jacaranda_tree'), folders[:3])}
     forms['palm'] = palm(folders[3])
     reference = json.loads((ROOT/'references/city-street-trees.json').read_text())
-    records = []
+    output = ROOT/'build/city-street-trees.json'
+    if selected_tile and selected_tile not in reference['tiles']:
+        raise ValueError(f'Unknown street-tree tile {selected_tile}')
+    records = {e['entityId']: e for e in json.loads(output.read_text())} if selected_tile else {}
+    empress_crown = broadleaf(folders[2], 'jacaranda_tree', sprays=True)
     for key, tile in reference['tiles'].items():
+        if selected_tile and selected_tile != key:
+            continue
         groups = defaultdict(list)
         painted = defaultdict(list)
         palms = 0
@@ -92,7 +102,8 @@ def bake(folders):
             rotation = trimesh.transformations.rotation_matrix(yaw, [0,1,0])[:3, :3]
             scale = np.array([width, height, width*rng.uniform(.85,1.09)])
             leaf_tint = np.rint(np.array([235,240,225])*rng.uniform(.85,1.05)).clip(0,255)
-            for source in forms[form]:
+            detailed = key == 'landscape.canopy-0-1' and form == 'jacaranda_tree'
+            for source in (empress_crown if detailed else forms[form]):
                 mesh = source.copy()
                 mesh.vertices = (source.vertices * scale) @ rotation.T + [x,y,z]
                 normals = (source.vertex_normals / scale) @ rotation.T
@@ -109,18 +120,20 @@ def bake(folders):
             scene.add_geometry(mesh, geom_name=group)
         credit = CREDIT + (' ' + PALM_CREDIT if palms else '')
         digest, bounds = write_tree_asset(scene, copyright=credit)
-        records.append(dict(entityId=key, kind='object', layer='ext', regionId='marina-bay-exterior',
+        records[key] = dict(entityId=key, kind='object', layer='ext', regionId='marina-bay-exterior',
                             label='滨海湾 · 街道与滨水树冠', assetHash=digest, bounds=bounds,
                             material={'shading':'albedo'}, props={'background':True,'surfaceRole':'landscape',
                             '位置来源':reference['source'], '树位数':len(tile['trees']), '棕榈数':palms,
                             '已单独建模树位数':len(tile['coveredTreeIds']), '树形素材':credit,
-                            '树冠':'树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。'}))
+                            '树冠':'树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。'})
         print(key, len(tile['trees']), digest, flush=True)
-    (ROOT/'build/city-street-trees.json').write_text(json.dumps(records, ensure_ascii=False, indent=2)+'\n')
+    output.write_text(json.dumps(list(records.values()), ensure_ascii=False, indent=2)+'\n')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('folders', type=Path, nargs=4, metavar='SOURCE',
                         help='Tree Small 02, Island Tree 01, Jacaranda Tree, and 0 A.D. royal palm directories')
-    bake(parser.parse_args().folders)
+    parser.add_argument("--tile", help="Rebuild a single census tile in the existing manifest")
+    args = parser.parse_args()
+    bake(args.folders, args.tile)

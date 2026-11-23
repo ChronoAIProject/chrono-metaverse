@@ -35,6 +35,8 @@ One Fullerton 临水入口的玻璃侧墙和后墙采用 Андрей Бобро
 
 皇后坊喷泉的池沿、碗心和莱佛士基座按 OneMap 正射影像定位。雕像由三张照片的轮廓重建，背面、基座高度与水位为估值。构建脚本使用项目已有的 Three.js 等值面实现。改编图集及模型以 CC BY-SA 4.0 分发。[Ralff Nestor Nacor 的正面照片](https://commons.wikimedia.org/wiki/File:Stamford_Raffles_Monument,_Singapore,_August_2023.jpg) · [Mike Peel 的左侧照片](https://commons.wikimedia.org/wiki/File:At_Singapore_2023_090.jpg) · [Mike Peel 的右侧照片](https://commons.wikimedia.org/wiki/File:At_Singapore_2023_093.jpg) · [OSM 喷泉测绘记录](https://www.openstreetmap.org/way/688830991/history/2) · [许可](https://creativecommons.org/licenses/by-sa/4.0/)
 
+皇后坊周围的 32 株开展型树木按 NParks 树位与估算冠幅放置。枝叶取自 Poly Haven 扫描树的局部分组，依照扫描枝向弯曲和排列，减少整冠切片在步行视角出现的水平边缘。树形为近似。[Poly Haven Jacaranda Tree，CC0](https://polyhaven.com/a/jacaranda_tree)
+
 
 
 浮尔顿路双向车道按 OSM 单向中心线与车道数生成；转向开口保持可通行。六段路侧及中央绿带沿 OneMap 正射影像描绘。路面颗粒采用 2.08 米宽的沥青扫描，路宽、标线和路缘高度为重建估值。用 `scripts/bake-fullerton-road.py` 传入该区域 OSM XML 和 1K 沥青原图可重新烘焙。[道路](https://www.openstreetmap.org/way/22919331) · [OneMap](https://www.onemap.gov.sg/) · [沥青](https://polyhaven.com/a/asphalt_01) · [草皮](https://ambientcg.com/a/Grass004)
