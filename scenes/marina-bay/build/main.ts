@@ -33,10 +33,11 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
     { ...base, daylight: { ...daylight, directFraction: 0.58 } },
     { ...previous, daylight },
     previous,
+    JSON.parse(readFileSync(new URL('../references/first-clear-sky.json', import.meta.url), 'utf8')),
   ];
   if (!presets.some((preset) => isDeepStrictEqual(preset, environment.sky))) return saved;
   const textures = new Set(saved.textures);
-  textures.delete(previous.texture);
+  textures.delete(String(environment.sky.texture));
   textures.add(target.sky.texture);
   return {
     ...saved,
