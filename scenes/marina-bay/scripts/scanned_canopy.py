@@ -1,6 +1,7 @@
 """Project scanned broadleaf crowns into curved depth slices and export textured park stands."""
 import hashlib
 import json
+import struct
 import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -195,7 +196,7 @@ def slices(points, colors, canopy, fit_opacity=False):
     return np.array(vertices), np.array(uv), np.array(normals), np.array(faces), atlas
 
 
-def write_tree_asset(scene, tree_postprocessor=None):
+def write_tree_asset(scene, tree_postprocessor=None, *, packing_options=(), copyright=None):
     low, high = scene.bounds
     origin = (low+high)/2
     origin[1] = low[1]
@@ -208,8 +209,18 @@ def write_tree_asset(scene, tree_postprocessor=None):
                                                             tree_postprocessor=tree_postprocessor))
         subprocess.run(["node", str(ROOT / "node_modules/gltfpack/cli.js"),
                         "-i", str(source), "-o", str(packed), "-vp", "16", "-vt", "14",
-                        "-vn", "10", "-km", "-kn"], check=True)
+                        "-vn", "10", "-km", "-kn", *packing_options], check=True)
         data = packed.read_bytes()
+    if copyright:
+        # gltfpack creates its own asset header. Attach redistribution credit to the packed GLB.
+        length = struct.unpack_from("<I", data, 12)[0]
+        doc = json.loads(data[20:20 + length])
+        doc["asset"]["copyright"] = copyright
+        header = json.dumps(doc, separators=(",", ":")).encode()
+        header += b" " * (-len(header) % 4)
+        chunks = data[20 + length:]
+        data = struct.pack("<4sIII4s", b"glTF", 2, 20 + len(header) + len(chunks),
+                           len(header), b"JSON") + header + chunks
     digest = hashlib.sha256(data).hexdigest()
     (ROOT/'assets'/(digest+'.glb')).write_bytes(data)
     return digest, {"min": low.tolist(), "max": high.tolist()}

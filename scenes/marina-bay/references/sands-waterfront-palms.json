@@ -1,0 +1,1005 @@
+{
+  "source": "https://github.com/0ad/0ad/tree/61a3b9507d974084e6badb88a0826bd89a6d5b8b/binaries/data/mods/public/art",
+  "sourceFiles": [
+    "binaries/data/mods/public/art/meshes/gaia/tree_roystonea_regia_d.dae",
+    "binaries/data/mods/public/art/textures/skins/gaia/palm_royal.png",
+    "binaries/data/mods/public/art/textures/skins/gaia/palm_areca_norm.png"
+  ],
+  "sourceHashes": {
+    "palm_royal.png": "3954140bc3776ac8cf693758f43ddad3624b442de4ee25abbb3a2e578f7e44c5",
+    "palm_areca_norm.png": "1931f11648cbe15888721c56e730fb991883557450a4c2b5cc0fa4fb89981625",
+    "tree_roystonea_regia_d.dae": "a6565155b6b67d4452b6cad1761d6c9ffc3027d63bbf6fe5e1a1ed16e6beec68"
+  },
+  "copyright": "Royal palm meshes and textures adapted from 0 A.D., Wildfire Games (https://wildfiregames.com/), CC BY-SA 3.0 (https://creativecommons.org/licenses/by-sa/3.0/). Scaled, rotated, tinted and batched for the Sands waterfront.",
+  "survey": "OneMap OrthoJPG z20. Crown centres and diameters from the two lines of planting beside the Sands waterfront plaza. Heights estimated in the Merlion Park photograph. Royal palms are a structural proxy; botanical species unconfirmed.",
+  "trees": [
+    {
+      "treeId": "north-1",
+      "localXZ": [
+        -242.59,
+        681.4
+      ],
+      "latitude": 1.28492717,
+      "longitude": 103.85887728,
+      "crownDiameterMetres": 4.15,
+      "groundY": -60.3001,
+      "estimatedHeightMetres": 9.0,
+      "yawDegrees": 240,
+      "variant": "d",
+      "linearTint": [
+        225,
+        219,
+        212
+      ]
+    },
+    {
+      "treeId": "north-10",
+      "localXZ": [
+        -247.635,
+        673.536
+      ],
+      "latitude": 1.28484343,
+      "longitude": 103.8588885,
+      "crownDiameterMetres": 4.12,
+      "groundY": -60.2994,
+      "estimatedHeightMetres": 12.0,
+      "yawDegrees": 30,
+      "variant": "d",
+      "linearTint": [
+        228,
+        221,
+        219
+      ]
+    },
+    {
+      "treeId": "north-11",
+      "localXZ": [
+        -247.993,
+        668.825
+      ],
+      "latitude": 1.28480345,
+      "longitude": 103.85887353,
+      "crownDiameterMetres": 4.28,
+      "groundY": -60.2989,
+      "estimatedHeightMetres": 13.5,
+      "yawDegrees": 195,
+      "variant": "d",
+      "linearTint": [
+        227,
+        221,
+        216
+      ]
+    },
+    {
+      "treeId": "north-12",
+      "localXZ": [
+        -247.831,
+        661.4
+      ],
+      "latitude": 1.28474321,
+      "longitude": 103.85884401,
+      "crownDiameterMetres": 4.39,
+      "groundY": -60.2981,
+      "estimatedHeightMetres": 14.5,
+      "yawDegrees": 120,
+      "variant": "d",
+      "linearTint": [
+        224,
+        219,
+        215
+      ]
+    },
+    {
+      "treeId": "north-13",
+      "localXZ": [
+        -248.129,
+        653.209
+      ],
+      "latitude": 1.28467494,
+      "longitude": 103.85881533,
+      "crownDiameterMetres": 4.17,
+      "groundY": -60.2973,
+      "estimatedHeightMetres": 14.5,
+      "yawDegrees": 60,
+      "variant": "d",
+      "linearTint": [
+        229,
+        222,
+        212
+      ]
+    },
+    {
+      "treeId": "north-14",
+      "localXZ": [
+        -248.254,
+        649.49
+      ],
+      "latitude": 1.28464397,
+      "longitude": 103.85880223,
+      "crownDiameterMetres": 4.06,
+      "groundY": -60.2969,
+      "estimatedHeightMetres": 14.5,
+      "yawDegrees": 330,
+      "variant": "d",
+      "linearTint": [
+        221,
+        215,
+        211
+      ]
+    },
+    {
+      "treeId": "north-15",
+      "localXZ": [
+        -248.04,
+        644.593
+      ],
+      "latitude": 1.28460466,
+      "longitude": 103.85878189,
+      "crownDiameterMetres": 3.81,
+      "groundY": -60.2964,
+      "estimatedHeightMetres": 14.0,
+      "yawDegrees": 330,
+      "variant": "d",
+      "linearTint": [
+        225,
+        219,
+        211
+      ]
+    },
+    {
+      "treeId": "north-16",
+      "localXZ": [
+        -251.127,
+        681.722
+      ],
+      "latitude": 1.28489718,
+      "longitude": 103.85894803,
+      "crownDiameterMetres": 4.23,
+      "groundY": -60.3005,
+      "estimatedHeightMetres": 9.0,
+      "yawDegrees": 285,
+      "variant": "d",
+      "linearTint": [
+        225,
+        220,
+        220
+      ]
+    },
+    {
+      "treeId": "north-17",
+      "localXZ": [
+        -251.567,
+        677.56
+      ],
+      "latitude": 1.28486139,
+      "longitude": 103.8589358,
+      "crownDiameterMetres": 4.23,
+      "groundY": -60.3,
+      "estimatedHeightMetres": 12.0,
+      "yawDegrees": 60,
+      "variant": "d",
+      "linearTint": [
+        225,
+        221,
+        219
+      ]
+    },
+    {
+      "treeId": "north-18",
+      "localXZ": [
+        -251.136,
+        673.322
+      ],
+      "latitude": 1.2848283,
+      "longitude": 103.8589162,
+      "crownDiameterMetres": 3.86,
+      "groundY": -60.2995,
+      "estimatedHeightMetres": 9.5,
+      "yawDegrees": 345,
+      "variant": "d",
+      "linearTint": [
+        214,
+        210,
+        216
+      ]
+    },
+    {
+      "treeId": "north-19",
+      "localXZ": [
+        -251.409,
+        669.523
+      ],
+      "latitude": 1.28479612,
+      "longitude": 103.858904,
+      "crownDiameterMetres": 4.08,
+      "groundY": -60.2991,
+      "estimatedHeightMetres": 13.5,
+      "yawDegrees": 270,
+      "variant": "d",
+      "linearTint": [
+        218,
+        211,
+        218
+      ]
+    },
+    {
+      "treeId": "north-2",
+      "localXZ": [
+        -243.212,
+        677.544
+      ],
+      "latitude": 1.28489319,
+      "longitude": 103.8588677,
+      "crownDiameterMetres": 4.09,
+      "groundY": -60.2997,
+      "estimatedHeightMetres": 12.0,
+      "yawDegrees": 0,
+      "variant": "d",
+      "linearTint": [
+        231,
+        222,
+        214
+      ]
+    },
+    {
+      "treeId": "north-20",
+      "localXZ": [
+        -251.73,
+        661.458
+      ],
+      "latitude": 1.28472879,
+      "longitude": 103.85887599,
+      "crownDiameterMetres": 4.16,
+      "groundY": -60.2983,
+      "estimatedHeightMetres": 15.0,
+      "yawDegrees": 300,
+      "variant": "d",
+      "linearTint": [
+        227,
+        221,
+        223
+      ]
+    },
+    {
+      "treeId": "north-21",
+      "localXZ": [
+        -251.937,
+        657.506
+      ],
+      "latitude": 1.2846956,
+      "longitude": 103.85886267,
+      "crownDiameterMetres": 4.19,
+      "groundY": -60.2979,
+      "estimatedHeightMetres": 15.0,
+      "yawDegrees": 240,
+      "variant": "d",
+      "linearTint": [
+        219,
+        213,
+        214
+      ]
+    },
+    {
+      "treeId": "north-22",
+      "localXZ": [
+        -251.995,
+        653.447
+      ],
+      "latitude": 1.28466211,
+      "longitude": 103.85884772,
+      "crownDiameterMetres": 4.24,
+      "groundY": -60.2974,
+      "estimatedHeightMetres": 15.0,
+      "yawDegrees": 60,
+      "variant": "d",
+      "linearTint": [
+        218,
+        214,
+        214
+      ]
+    },
+    {
+      "treeId": "north-23",
+      "localXZ": [
+        -252.035,
+        649.18
+      ],
+      "latitude": 1.28462699,
+      "longitude": 103.85883184,
+      "crownDiameterMetres": 4.26,
+      "groundY": -60.297,
+      "estimatedHeightMetres": 14.5,
+      "yawDegrees": 105,
+      "variant": "d",
+      "linearTint": [
+        219,
+        215,
+        214
+      ]
+    },
+    {
+      "treeId": "north-24",
+      "localXZ": [
+        -251.931,
+        645.108
+      ],
+      "latitude": 1.28459401,
+      "longitude": 103.85881554,
+      "crownDiameterMetres": 4.17,
+      "groundY": -60.2966,
+      "estimatedHeightMetres": 14.0,
+      "yawDegrees": 285,
+      "variant": "d",
+      "linearTint": [
+        219,
+        216,
+        216
+      ]
+    },
+    {
+      "treeId": "north-25",
+      "localXZ": [
+        -252.246,
+        641.08
+      ],
+      "latitude": 1.28455979,
+      "longitude": 103.85880281,
+      "crownDiameterMetres": 3.91,
+      "groundY": -60.2962,
+      "estimatedHeightMetres": 15.0,
+      "yawDegrees": 30,
+      "variant": "d",
+      "linearTint": [
+        218,
+        214,
+        219
+      ]
+    },
+    {
+      "treeId": "north-3",
+      "localXZ": [
+        -243.705,
+        672.982
+      ],
+      "latitude": 1.28485391,
+      "longitude": 103.85885439,
+      "crownDiameterMetres": 4.31,
+      "groundY": -60.2992,
+      "estimatedHeightMetres": 12.0,
+      "yawDegrees": 105,
+      "variant": "d",
+      "linearTint": [
+        234,
+        226,
+        221
+      ]
+    },
+    {
+      "treeId": "north-4",
+      "localXZ": [
+        -243.916,
+        657.72
+      ],
+      "latitude": 1.28472801,
+      "longitude": 103.85879816,
+      "crownDiameterMetres": 4.39,
+      "groundY": -60.2976,
+      "estimatedHeightMetres": 14.5,
+      "yawDegrees": 120,
+      "variant": "d",
+      "linearTint": [
+        227,
+        222,
+        212
+      ]
+    },
+    {
+      "treeId": "north-5",
+      "localXZ": [
+        -244.229,
+        653.656
+      ],
+      "latitude": 1.28469351,
+      "longitude": 103.85878527,
+      "crownDiameterMetres": 4.28,
+      "groundY": -60.2972,
+      "estimatedHeightMetres": 14.5,
+      "yawDegrees": 105,
+      "variant": "d",
+      "linearTint": [
+        240,
+        232,
+        215
+      ]
+    },
+    {
+      "treeId": "north-6",
+      "localXZ": [
+        -244.12,
+        649.098
+      ],
+      "latitude": 1.28465657,
+      "longitude": 103.85876708,
+      "crownDiameterMetres": 4.18,
+      "groundY": -60.2967,
+      "estimatedHeightMetres": 14.5,
+      "yawDegrees": 285,
+      "variant": "d",
+      "linearTint": [
+        224,
+        219,
+        211
+      ]
+    },
+    {
+      "treeId": "north-7",
+      "localXZ": [
+        -243.72,
+        645.364
+      ],
+      "latitude": 1.28462749,
+      "longitude": 103.85874964,
+      "crownDiameterMetres": 4.27,
+      "groundY": -60.2963,
+      "estimatedHeightMetres": 14.0,
+      "yawDegrees": 195,
+      "variant": "d",
+      "linearTint": [
+        216,
+        213,
+        208
+      ]
+    },
+    {
+      "treeId": "north-8",
+      "localXZ": [
+        -247.156,
+        681.764
+      ],
+      "latitude": 1.2849127,
+      "longitude": 103.85891585,
+      "crownDiameterMetres": 4.28,
+      "groundY": -60.3003,
+      "estimatedHeightMetres": 9.0,
+      "yawDegrees": 150,
+      "variant": "d",
+      "linearTint": [
+        225,
+        220,
+        218
+      ]
+    },
+    {
+      "treeId": "north-9",
+      "localXZ": [
+        -247.4,
+        677.353
+      ],
+      "latitude": 1.28487562,
+      "longitude": 103.85890108,
+      "crownDiameterMetres": 3.92,
+      "groundY": -60.2998,
+      "estimatedHeightMetres": 12.0,
+      "yawDegrees": 240,
+      "variant": "d",
+      "linearTint": [
+        222,
+        219,
+        220
+      ]
+    },
+    {
+      "treeId": "south-10",
+      "localXZ": [
+        -236.527,
+        525.72
+      ],
+      "latitude": 1.28367434,
+      "longitude": 103.85823673,
+      "crownDiameterMetres": 4.25,
+      "groundY": -60.2847,
+      "estimatedHeightMetres": 14.0,
+      "yawDegrees": 105,
+      "variant": "d",
+      "linearTint": [
+        215,
+        215,
+        216
+      ]
+    },
+    {
+      "treeId": "south-11",
+      "localXZ": [
+        -236.726,
+        521.382
+      ],
+      "latitude": 1.28363802,
+      "longitude": 103.85822188,
+      "crownDiameterMetres": 3.66,
+      "groundY": -60.2843,
+      "estimatedHeightMetres": 14.0,
+      "yawDegrees": 330,
+      "variant": "d",
+      "linearTint": [
+        214,
+        214,
+        212
+      ]
+    },
+    {
+      "treeId": "south-12",
+      "localXZ": [
+        -237.513,
+        517.217
+      ],
+      "latitude": 1.28360088,
+      "longitude": 103.85821248,
+      "crownDiameterMetres": 3.07,
+      "groundY": -60.284,
+      "estimatedHeightMetres": 13.5,
+      "yawDegrees": 30,
+      "variant": "d",
+      "linearTint": [
+        208,
+        209,
+        211
+      ]
+    },
+    {
+      "treeId": "south-13",
+      "localXZ": [
+        -236.743,
+        513.401
+      ],
+      "latitude": 1.28357254,
+      "longitude": 103.85819171,
+      "crownDiameterMetres": 3.29,
+      "groundY": -60.2836,
+      "estimatedHeightMetres": 13.5,
+      "yawDegrees": 195,
+      "variant": "d",
+      "linearTint": [
+        211,
+        213,
+        215
+      ]
+    },
+    {
+      "treeId": "south-15",
+      "localXZ": [
+        -236.129,
+        504.731
+      ],
+      "latitude": 1.28350382,
+      "longitude": 103.85815379,
+      "crownDiameterMetres": 3.44,
+      "groundY": -60.2829,
+      "estimatedHeightMetres": 13.0,
+      "yawDegrees": 120,
+      "variant": "d",
+      "linearTint": [
+        208,
+        209,
+        214
+      ]
+    },
+    {
+      "treeId": "south-16",
+      "localXZ": [
+        -235.88,
+        501.08
+      ],
+      "latitude": 1.28347485,
+      "longitude": 103.8581379,
+      "crownDiameterMetres": 3.22,
+      "groundY": -60.2826,
+      "estimatedHeightMetres": 14.0,
+      "yawDegrees": 15,
+      "variant": "d",
+      "linearTint": [
+        212,
+        213,
+        212
+      ]
+    },
+    {
+      "treeId": "south-17",
+      "localXZ": [
+        -235.221,
+        496.581
+      ],
+      "latitude": 1.28344049,
+      "longitude": 103.85811545,
+      "crownDiameterMetres": 3.7,
+      "groundY": -60.2822,
+      "estimatedHeightMetres": 14.0,
+      "yawDegrees": 135,
+      "variant": "d",
+      "linearTint": [
+        215,
+        215,
+        215
+      ]
+    },
+    {
+      "treeId": "south-18",
+      "localXZ": [
+        -234.6,
+        492.548
+      ],
+      "latitude": 1.28340981,
+      "longitude": 103.85809507,
+      "crownDiameterMetres": 3.64,
+      "groundY": -60.2819,
+      "estimatedHeightMetres": 14.0,
+      "yawDegrees": 30,
+      "variant": "d",
+      "linearTint": [
+        206,
+        206,
+        210
+      ]
+    },
+    {
+      "treeId": "south-20",
+      "localXZ": [
+        -233.48,
+        484.118
+      ],
+      "latitude": 1.28334499,
+      "longitude": 103.85805394,
+      "crownDiameterMetres": 3.81,
+      "groundY": -60.2812,
+      "estimatedHeightMetres": 12.0,
+      "yawDegrees": 330,
+      "variant": "d",
+      "linearTint": [
+        208,
+        210,
+        212
+      ]
+    },
+    {
+      "treeId": "south-21",
+      "localXZ": [
+        -241.16,
+        525.72
+      ],
+      "latitude": 1.28365663,
+      "longitude": 103.85827446,
+      "crownDiameterMetres": 3.94,
+      "groundY": -60.2849,
+      "estimatedHeightMetres": 14.5,
+      "yawDegrees": 195,
+      "variant": "d",
+      "linearTint": [
+        215,
+        215,
+        215
+      ]
+    },
+    {
+      "treeId": "south-25",
+      "localXZ": [
+        -238.631,
+        508.8
+      ],
+      "latitude": 1.28352761,
+      "longitude": 103.85818961,
+      "crownDiameterMetres": 3.48,
+      "groundY": -60.2833,
+      "estimatedHeightMetres": 13.0,
+      "yawDegrees": 300,
+      "variant": "d",
+      "linearTint": [
+        209,
+        213,
+        218
+      ]
+    },
+    {
+      "treeId": "south-27",
+      "localXZ": [
+        -239.24,
+        500.238
+      ],
+      "latitude": 1.28345511,
+      "longitude": 103.85816206,
+      "crownDiameterMetres": 3.65,
+      "groundY": -60.2827,
+      "estimatedHeightMetres": 14.0,
+      "yawDegrees": 15,
+      "variant": "d",
+      "linearTint": [
+        214,
+        216,
+        214
+      ]
+    },
+    {
+      "treeId": "south-28",
+      "localXZ": [
+        -238.6,
+        496.0
+      ],
+      "latitude": 1.28342282,
+      "longitude": 103.85814076,
+      "crownDiameterMetres": 3.29,
+      "groundY": -60.2823,
+      "estimatedHeightMetres": 14.0,
+      "yawDegrees": 15,
+      "variant": "d",
+      "linearTint": [
+        215,
+        216,
+        218
+      ]
+    },
+    {
+      "treeId": "south-29",
+      "localXZ": [
+        -237.96,
+        492.209
+      ],
+      "latitude": 1.28339419,
+      "longitude": 103.85812115,
+      "crownDiameterMetres": 3.17,
+      "groundY": -60.282,
+      "estimatedHeightMetres": 14.0,
+      "yawDegrees": 240,
+      "variant": "d",
+      "linearTint": [
+        214,
+        216,
+        215
+      ]
+    },
+    {
+      "treeId": "south-30",
+      "localXZ": [
+        -237.32,
+        487.763
+      ],
+      "latitude": 1.28336019,
+      "longitude": 103.85809905,
+      "crownDiameterMetres": 3.95,
+      "groundY": -60.2816,
+      "estimatedHeightMetres": 14.0,
+      "yawDegrees": 330,
+      "variant": "d",
+      "linearTint": [
+        211,
+        213,
+        214
+      ]
+    },
+    {
+      "treeId": "south-31",
+      "localXZ": [
+        -236.84,
+        483.16
+      ],
+      "latitude": 1.2833243,
+      "longitude": 103.85807767,
+      "crownDiameterMetres": 3.88,
+      "groundY": -60.2812,
+      "estimatedHeightMetres": 12.0,
+      "yawDegrees": 270,
+      "variant": "d",
+      "linearTint": [
+        216,
+        217,
+        212
+      ]
+    },
+    {
+      "treeId": "south-32",
+      "localXZ": [
+        -244.84,
+        525.72
+      ],
+      "latitude": 1.28364256,
+      "longitude": 103.85830443,
+      "crownDiameterMetres": 3.37,
+      "groundY": -60.285,
+      "estimatedHeightMetres": 14.5,
+      "yawDegrees": 210,
+      "variant": "d",
+      "linearTint": [
+        212,
+        216,
+        220
+      ]
+    },
+    {
+      "treeId": "south-33",
+      "localXZ": [
+        -243.953,
+        521.4
+      ],
+      "latitude": 1.28361055,
+      "longitude": 103.8582808,
+      "crownDiameterMetres": 3.73,
+      "groundY": -60.2846,
+      "estimatedHeightMetres": 14.5,
+      "yawDegrees": 180,
+      "variant": "d",
+      "linearTint": [
+        214,
+        216,
+        218
+      ]
+    },
+    {
+      "treeId": "south-34",
+      "localXZ": [
+        -243.572,
+        517.362
+      ],
+      "latitude": 1.2835789,
+      "longitude": 103.85826236,
+      "crownDiameterMetres": 3.93,
+      "groundY": -60.2842,
+      "estimatedHeightMetres": 14.0,
+      "yawDegrees": 165,
+      "variant": "d",
+      "linearTint": [
+        212,
+        215,
+        218
+      ]
+    },
+    {
+      "treeId": "south-35",
+      "localXZ": [
+        -242.531,
+        512.47
+      ],
+      "latitude": 1.28354279,
+      "longitude": 103.85823532,
+      "crownDiameterMetres": 3.91,
+      "groundY": -60.2838,
+      "estimatedHeightMetres": 13.5,
+      "yawDegrees": 150,
+      "variant": "d",
+      "linearTint": [
+        211,
+        213,
+        216
+      ]
+    },
+    {
+      "treeId": "south-36",
+      "localXZ": [
+        -242.131,
+        508.148
+      ],
+      "latitude": 1.28350889,
+      "longitude": 103.85821564,
+      "crownDiameterMetres": 4.07,
+      "groundY": -60.2834,
+      "estimatedHeightMetres": 13.0,
+      "yawDegrees": 195,
+      "variant": "d",
+      "linearTint": [
+        215,
+        216,
+        219
+      ]
+    },
+    {
+      "treeId": "south-37",
+      "localXZ": [
+        -241.515,
+        504.092
+      ],
+      "latitude": 1.283478,
+      "longitude": 103.85819522,
+      "crownDiameterMetres": 3.98,
+      "groundY": -60.2831,
+      "estimatedHeightMetres": 13.5,
+      "yawDegrees": 300,
+      "variant": "d",
+      "linearTint": [
+        214,
+        215,
+        216
+      ]
+    },
+    {
+      "treeId": "south-4",
+      "localXZ": [
+        -233.609,
+        509.352
+      ],
+      "latitude": 1.28355133,
+      "longitude": 103.85815081,
+      "crownDiameterMetres": 3.81,
+      "groundY": -60.2832,
+      "estimatedHeightMetres": 13.0,
+      "yawDegrees": 120,
+      "variant": "d",
+      "linearTint": [
+        218,
+        216,
+        215
+      ]
+    },
+    {
+      "treeId": "south-6",
+      "localXZ": [
+        -232.339,
+        500.854
+      ],
+      "latitude": 1.28348653,
+      "longitude": 103.8581082,
+      "crownDiameterMetres": 4.06,
+      "groundY": -60.2824,
+      "estimatedHeightMetres": 14.0,
+      "yawDegrees": 120,
+      "variant": "d",
+      "linearTint": [
+        216,
+        216,
+        214
+      ]
+    },
+    {
+      "treeId": "south-7",
+      "localXZ": [
+        -231.679,
+        496.926
+      ],
+      "latitude": 1.28345686,
+      "longitude": 103.85808791,
+      "crownDiameterMetres": 4.11,
+      "groundY": -60.2821,
+      "estimatedHeightMetres": 14.0,
+      "yawDegrees": 15,
+      "variant": "d",
+      "linearTint": [
+        211,
+        213,
+        211
+      ]
+    },
+    {
+      "treeId": "south-8",
+      "localXZ": [
+        -230.283,
+        488.83
+      ],
+      "latitude": 1.28339584,
+      "longitude": 103.8580458,
+      "crownDiameterMetres": 4.09,
+      "groundY": -60.2814,
+      "estimatedHeightMetres": 13.5,
+      "yawDegrees": 285,
+      "variant": "d",
+      "linearTint": [
+        209,
+        210,
+        211
+      ]
+    },
+    {
+      "treeId": "south-9",
+      "localXZ": [
+        -229.629,
+        484.985
+      ],
+      "latitude": 1.28336682,
+      "longitude": 103.85802587,
+      "crownDiameterMetres": 3.82,
+      "groundY": -60.2811,
+      "estimatedHeightMetres": 12.0,
+      "yawDegrees": 120,
+      "variant": "d",
+      "linearTint": [
+        211,
+        210,
+        210
+      ]
+    }
+  ]
+}

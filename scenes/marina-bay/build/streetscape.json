@@ -1156,5 +1156,35 @@
       "树形素材": "Poly Haven · Tree Small 02 · CC0。树种未确认，使用扫描阔叶树的枝干近似。",
       "实拍参考": "https://commons.wikimedia.org/wiki/File:Marina_Bay_Sands_view_from_Merlion_Park,_Singapore_(Ank_Kumar)_01.jpg"
     }
+  },
+  {
+    "entityId": "bay.sands-waterfront-palms",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "kind": "structure",
+    "label": "金沙滨水步道 · 棕榈树列",
+    "assetHash": "ed15d01da72677ef0b5ab48381ac1ff23e08adad631839f7f496c81a511523be",
+    "bounds": {
+      "min": [
+        -254.18130975854714,
+        -60.3255,
+        481.17417617499757
+      ],
+      "max": [
+        -228.02738898049884,
+        -45.3212,
+        683.9291060535991
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "树木依据": "树冠按 OneMap 正射影像定位，树高按鱼尾狮公园实拍估读。树种未确认，借用王棕的树干和羽状叶片。",
+      "树形素材": "Royal palm meshes and textures adapted from 0 A.D., Wildfire Games (https://wildfiregames.com/), CC BY-SA 3.0 (https://creativecommons.org/licenses/by-sa/3.0/). Scaled, rotated, tinted and batched for the Sands waterfront.",
+      "素材来源": "https://github.com/0ad/0ad/tree/61a3b9507d974084e6badb88a0826bd89a6d5b8b/binaries/data/mods/public/art"
+    }
   }
 ]
