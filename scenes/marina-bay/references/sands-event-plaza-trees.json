@@ -1,0 +1,180 @@
+{
+  "source": "Map Data © Singapore Land Authority / OneMap, OrthoJPG z20. Six broadleaf crowns bordering the open waterfront plaza between the two rows of palms.",
+  "heightReference": "Ank Kumar, Marina Bay Sands view from Merlion Park, Singapore (Ank Kumar) 01, Wikimedia Commons. Estimate heights from crown tops relative to the promenade. Stems are approximated by overhead crown centres. Species unconfirmed.",
+  "trees": [
+    {
+      "treeId": "event-1",
+      "longitude": 103.85872766,
+      "latitude": 1.28451281,
+      "localXZ": [
+        -246.862,
+        632.838
+      ],
+      "crownDiameterMetres": 10.09,
+      "aerialRGB": [
+        93,
+        107,
+        97
+      ],
+      "estimatedHeightMetres": 18.5,
+      "groundY": -60.2951,
+      "sourceYawDegrees": 120,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.7465,
+          -0.6653
+        ],
+        "stretch": 1.125,
+        "leanLocalXZ": [
+          -0.678,
+          1.221
+        ]
+      }
+    },
+    {
+      "treeId": "event-2",
+      "longitude": 103.85866327,
+      "latitude": 1.28443861,
+      "localXZ": [
+        -243.835,
+        622.374
+      ],
+      "crownDiameterMetres": 7.84,
+      "aerialRGB": [
+        85,
+        99,
+        93
+      ],
+      "estimatedHeightMetres": 14.5,
+      "groundY": -59.9539,
+      "sourceYawDegrees": 36,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.7191,
+          -0.695
+        ],
+        "stretch": 1.158,
+        "leanLocalXZ": [
+          -1.087,
+          -0.751
+        ]
+      }
+    },
+    {
+      "treeId": "event-3",
+      "longitude": 103.85869008,
+      "latitude": 1.28437551,
+      "localXZ": [
+        -249.488,
+        617.31
+      ],
+      "crownDiameterMetres": 9.22,
+      "aerialRGB": [
+        93,
+        108,
+        98
+      ],
+      "estimatedHeightMetres": 14.0,
+      "groundY": -59.9537,
+      "sourceYawDegrees": 216,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.258,
+          0.9661
+        ],
+        "stretch": 1.061,
+        "leanLocalXZ": [
+          1.175,
+          0.605
+        ]
+      }
+    },
+    {
+      "treeId": "event-4",
+      "longitude": 103.8586176,
+      "latitude": 1.28433131,
+      "localXZ": [
+        -244.242,
+        609.472
+      ],
+      "crownDiameterMetres": 9.23,
+      "aerialRGB": [
+        86,
+        101,
+        95
+      ],
+      "estimatedHeightMetres": 14.0,
+      "groundY": -59.9527,
+      "sourceYawDegrees": 300,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.6364,
+          0.7714
+        ],
+        "stretch": 1.1,
+        "leanLocalXZ": [
+          0.801,
+          -1.323
+        ]
+      }
+    },
+    {
+      "treeId": "event-5",
+      "longitude": 103.85835983,
+      "latitude": 1.28385126,
+      "localXZ": [
+        -240.675,
+        549.24
+      ],
+      "crownDiameterMetres": 6.1,
+      "aerialRGB": [
+        87,
+        102,
+        94
+      ],
+      "estimatedHeightMetres": 14.5,
+      "groundY": -59.947,
+      "sourceYawDegrees": 240,
+      "crownFit": {
+        "majorLocalXZ": [
+          0.4971,
+          0.8677
+        ],
+        "stretch": 1.159,
+        "leanLocalXZ": [
+          0.821,
+          0.188
+        ]
+      }
+    },
+    {
+      "treeId": "event-6",
+      "longitude": 103.85829845,
+      "latitude": 1.28377754,
+      "localXZ": [
+        -237.929,
+        538.965
+      ],
+      "crownDiameterMetres": 9.27,
+      "aerialRGB": [
+        82,
+        98,
+        93
+      ],
+      "estimatedHeightMetres": 16.5,
+      "groundY": -59.9459,
+      "sourceYawDegrees": 0,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.5001,
+          0.866
+        ],
+        "stretch": 1.06,
+        "leanLocalXZ": [
+          -0.776,
+          -1.17
+        ]
+      }
+    }
+  ]
+}
