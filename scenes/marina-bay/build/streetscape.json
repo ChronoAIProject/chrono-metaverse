@@ -564,8 +564,8 @@
     "layer": "ext",
     "kind": "structure",
     "regionId": "marina-bay-exterior",
-    "label": "浮尔顿水上圆亭 · 南侧靠泊平台",
-    "assetHash": "bbb3cf29f56c82ee1d3c9ccaaeaaf5bc62f956129b0e040ef6ef96cdd304fc4b",
+    "label": "浮尔顿水上圆亭 · 南侧与西侧平台",
+    "assetHash": "ccc2483a12c6461d1b048525f00b93456bad03322e44fa6e67a2233b3ad4d93d",
     "bounds": {
       "min": [
         215.7762476492711,
@@ -573,9 +573,9 @@
         365.8910471244782
       ],
       "max": [
-        235.40671301674706,
+        256.5222237367871,
         -58.7945,
-        407.27331437618415
+        422.90609526737296
       ]
     },
     "material": {
@@ -586,7 +586,7 @@
       "岸线参考": "https://www.openstreetmap.org/way/1173004263",
       "影像来源": "Map Data © Singapore Land Authority / OneMap",
       "木材来源": "Poly Haven · Teak Veneer · CC0 · https://polyhaven.com/a/teak_veneer",
-      "建模依据": "轮廓和五处圆形构件的位置按 OneMap 20 级正射影像描绘。平台离水 0.62 米、导桩高度、护舷截面和铺板材料为估值。"
+      "建模依据": "两座平台轮廓及南侧五处圆形构件按 OneMap 20 级正射影像描绘。西侧平台约长 60 米、宽 2.4 米，两座铺板的相对颜色取自同幅影像。平台离水 0.62 米、导桩高度、护舷截面和铺板材料为估值。"
     }
   }
 ]
