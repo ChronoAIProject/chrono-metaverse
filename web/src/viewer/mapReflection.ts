@@ -15,6 +15,7 @@ export class MapReflection {
   private readonly inverse = new THREE.Matrix4();
   readonly matrix = new THREE.Matrix4();
   readonly texture = this.mirror.getRenderTarget().texture;
+  readonly depth: THREE.DepthTexture;
   private last = -Infinity;
   private readonly position = new THREE.Vector3();
   private readonly rotation = new THREE.Quaternion();
@@ -22,6 +23,9 @@ export class MapReflection {
   private readonly capturedRotation = new THREE.Quaternion();
 
   constructor() {
+    const target = this.mirror.getRenderTarget();
+    this.depth = new THREE.DepthTexture(target.width, target.height, THREE.UnsignedIntType);
+    target.depthTexture = this.depth;
     this.mirror.rotation.x = -Math.PI / 2;
     this.eye.layers.set(CITY_REFLECTION_LAYER);
     this.texture.generateMipmaps = true;
@@ -46,6 +50,7 @@ export class MapReflection {
       const projection = camera.projectionMatrix.elements;
       const captured = this.eye.projectionMatrix.elements;
       if (
+        this.eye.far === camera.far &&
         this.position.distanceToSquared(this.capturedPosition) <= reach * reach &&
         Math.abs(this.rotation.dot(this.capturedRotation)) >= Math.cos(Math.PI / 15) &&
         Math.abs(projection[0]! / captured[0]! - 1) <= 0.2 &&
