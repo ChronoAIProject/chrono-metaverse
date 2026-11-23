@@ -10,7 +10,7 @@ import trimesh
 from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
-from courtyard_tree import fit_crown, load_masked_tree
+from courtyard_tree import fit_crown, load_masked_tree, preserve_crown_normals
 from fullerton_shrubs import combined
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -84,12 +84,7 @@ def bake(folder):
     for meshes in zip(*specimens, strict=True):
         mesh = combined(meshes)
         if mesh.visual.material.name == "Island tree branch clusters":
-            # The atlas cards use crown-outward shading normals. Draw either side
-            # with that same normal when the camera moves through the branches.
-            normals = mesh.vertex_normals.copy()
-            mesh.faces = np.vstack([mesh.faces, mesh.faces[:, ::-1]])
-            mesh.vertex_normals = normals
-            mesh.visual.material.doubleSided = False
+            preserve_crown_normals(mesh)
         scene.add_geometry(mesh, geom_name=mesh.visual.material.name)
     courtyard = trimesh.load_scene(ROOT / "assets" / (COURTYARD + ".glb"), process=False)
     materials = {name: mesh.visual.material for name, mesh in courtyard.geometry.items()}
