@@ -33,7 +33,7 @@ export class MapReflection {
     )
       return false;
     const now = performance.now();
-    if (now - this.last < 166) return true;
+    if (now - this.last < 166) return Math.abs(this.mirror.position.y - level) < 0.03;
     this.last = now;
     this.mirror.position.y = level;
     this.mirror.updateMatrixWorld();
