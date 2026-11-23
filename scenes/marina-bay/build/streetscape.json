@@ -695,7 +695,7 @@
     "layer": "ext",
     "kind": "structure",
     "label": "One Fullerton · 临水入口门廊",
-    "assetHash": "90e0724fb4c41512f57cb3054e1d6ff7ca17dcc217aac0b12c98b8cc4de015c7",
+    "assetHash": "c75b0e2387752bfbd1e0e32c202840151a6fd9c1830b7af464f5bf7c6a8491ac",
     "bounds": {
       "min": [
         281.1987454154042,
@@ -715,7 +715,8 @@
       "background": true,
       "入口参考": "https://commons.wikimedia.org/wiki/File:Singapore_-_panoramio_(109).jpg",
       "门廊纹理署名": "Андрей Бобровский · Singapore - panoramio (109) · 2014 · https://creativecommons.org/licenses/by/3.0/ · 裁切、透视纠正并调整阴影。石材纹理 Poly Haven Granite Tile 04 · CC0。",
-      "门廊": "玻璃侧墙、铺石与后方台阶依实景照片重建。进深、室内尺寸与材料为估值。地坪按场景前方广场标高衔接。"
+      "门廊": "玻璃侧墙、铺石与后方台阶依实景照片重建。进深、室内尺寸与材料为估值。地坪按场景前方广场标高衔接。",
+      "天光": "由入口及平台开口的可见立体角烘焙环境遮蔽，随拍摄光照保留玻璃墙反射。漫反射回填为估值。"
     }
   },
   {
@@ -785,7 +786,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "One Fullerton · 入口北侧矮篱与红叶种植带",
-    "assetHash": "d3e68f62fe4633856282a45872b6318669afae28d1344a9895fc8d237cb6defa",
+    "assetHash": "34e302c3a8a672be2881c8927673e12faddfecd24f75e3049341bd90aaf39e0e",
     "bounds": {
       "min": [
         269.32539127005543,
@@ -895,6 +896,171 @@
       "立面调查": "Map Data © Singapore Land Authority / OneMap · bay.cba4c479-1333-4eb8-a531-9f6e1049408e",
       "实景参考": "https://commons.wikimedia.org/wiki/File:Mandarin_Oriental_Building_Singapore_Meqqal.jpg",
       "重建": "16 层、13 开间按原始立面纹理定位。横梁、窗间柱挑出量和玻璃材质按照片估值。"
+    }
+  },
+  {
+    "entityId": "bay.fullerton-seawall",
+    "regionId": "marina-bay-exterior",
+    "kind": "structure",
+    "layer": "ext",
+    "label": "浮尔顿滨水步道 · 菱砌驳岸",
+    "assetHash": "e17d09cc994c077ee25a45b81ccdba2131c18fa41c5d6a34470fbf781c17c2fd",
+    "bounds": {
+      "min": [
+        256.1013085289749,
+        -60.3971,
+        452.8215
+      ],
+      "max": [
+        271.55711,
+        -59.5182,
+        617.2880507765522
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "岸线": "https://www.openstreetmap.org/way/687912605",
+      "地图来源": "© OpenStreetMap contributors · ODbL",
+      "照片参考": "https://commons.wikimedia.org/wiki/File:Singapore_-_panoramio_(109).jpg",
+      "材质来源": "Poly Haven · Granite Tile 04 · CC0",
+      "砌石": "沿已配准的岸线重建照片可见的菱形石缝与压条。块材尺寸、墙身坡度和湿痕宽度依照片估值，水线随场景水面配准。"
+    }
+  },
+  {
+    "entityId": "bay.fullerton-seawall-fittings",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "浮尔顿驳岸 · 临水侧圆形构件",
+    "assetHash": "8ed921913ca8e503b212d29697a43f69b8f84a7af59b23bf494a62b3acc1eb8f",
+    "bounds": {
+      "min": [
+        256.437537808808,
+        -59.81281777618896,
+        455.90504037575414
+      ],
+      "max": [
+        267.53128240204575,
+        -59.56890911763492,
+        574.7680841641476
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "实景参考": "https://commons.wikimedia.org/wiki/File:Singapore_-_panoramio_(109).jpg",
+      "岸线": "https://www.openstreetmap.org/way/687912605",
+      "backgroundView": {
+        "focus": [
+          261.98441010542683,
+          -59.69086344691193,
+          515.3365622699508
+        ],
+        "maxDistance": 300
+      },
+      "构件依据": "45 处圆形轮廓来自 2014 年岸线照片，沿岸位置按广场嵌石换算。照片范围外留空。构件高度、曲率与表面颜色为照片估值，功能和现状未经现场核实。"
+    }
+  },
+  {
+    "entityId": "bay.fullerton-entrance-lettering",
+    "regionId": "marina-bay-exterior",
+    "kind": "structure",
+    "layer": "ext",
+    "label": "One Fullerton · 海湾入口立体字",
+    "assetHash": "5e5733d82440a98d91022a18776b294b547604f9a792085be5c7f7e9e940afe2",
+    "bounds": {
+      "min": [
+        278.3735656738281,
+        -50.292198181152344,
+        547.6983032226562
+      ],
+      "max": [
+        279.39849853515625,
+        -49.2099494934082,
+        557.6846313476562
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "建筑定位": "Map Data © Singapore Land Authority / OneMap · 临水入口雨棚",
+      "实景参考": "https://commons.wikimedia.org/wiki/File:Singapore_-_panoramio_(109).jpg",
+      "字标": "按 2014 年实景照片估读十二个字母的间距、宽高和金属色；Gentilis 字形近似，厚度及安装进深为估值。",
+      "字形来源": "Gentilis · Copyright 2003–2008 SIL International · SIL Open Font License 1.1",
+      "backgroundView": {
+        "focus": [
+          278.8860321044922,
+          -49.75107383728027,
+          552.6914672851562
+        ],
+        "maxDistance": 320
+      }
+    }
+  },
+  {
+    "entityId": "bay.fullerton-entrance-lamps",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "One Fullerton · 临水步道双灯罩路灯",
+    "assetHash": "954def168af71057755c5267e7f5a8179c133e12deb14813d7ca3471d90de7a3",
+    "bounds": {
+      "min": [
+        258.70737438570956,
+        -59.76584246563776,
+        463.37690579162654
+      ],
+      "max": [
+        269.6566139575004,
+        -54.03621228337462,
+        570.5676014329317
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "实景照片": "https://commons.wikimedia.org/wiki/File:Singapore_-_panoramio_(109).jpg",
+      "灯位": "由 2014 年照片中 25 个广场嵌石中心配准至 OneMap 正射影像。入口北端灯位在控制点外，中间灯脚受植栽遮挡。南段七个灯脚以相邻深灰石带定位，横向位置按入口三杆中位数估读。",
+      "灯具": "浅色渐缩杆、双层高低灯罩及乳白扩散罩依照片重建。5.72 米杆高、灯臂朝向与涂层为影像估值。"
+    }
+  },
+  {
+    "entityId": "bay.esplanade-park-stand",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "kind": "structure",
+    "label": "滨海公园 · 步道内侧林冠",
+    "assetHash": "33d59effc8b75fceadfa4d4035a6e6e4d85ba41dd62736183c9b36792ee3880e",
+    "bounds": {
+      "min": [
+        476.00759487527444,
+        -60.375,
+        707.645974968905
+      ],
+      "max": [
+        577.0691548882177,
+        -42.81907247464057,
+        841.209080888003
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "树木名录": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树木依据": "树位、树种与树高档来自 NParks 2021 名录。航拍参考树冠色差。各树枝形、冠径与档内高度为估值。",
+      "树形素材": "Poly Haven · Island Tree 01 · CC0。按三个方向分层投影原始扫描以保留枝群间隙。"
     }
   }
 ]
