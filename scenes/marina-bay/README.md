@@ -33,6 +33,8 @@ One Fullerton 临水入口的玻璃侧墙和后墙采用 Андрей Бобро
 
 维多利亚剧院面向草坪的两翼按 OneMap 测绘立面定位。拱窗铁艺、柱间海报、山花与中央入口取自同一张正面照片。照片中的小片遮挡以邻近墙面补全，柱身与洞口进深按比例估读。改编图集及模型以 CC BY-SA 4.0 分发。[TTangMonuments 的现场照片，CC BY-SA 4.0](https://commons.wikimedia.org/wiki/File:Victoria_Theatre_and_Victoria_Concert_Hall,_with_54m_high_Clock_Tower.jpg) · [改编图集许可](https://creativecommons.org/licenses/by-sa/4.0/)
 
+皇后坊喷泉的池沿、碗心和莱佛士基座按 OneMap 正射影像定位。雕像由三张照片的轮廓重建，背面、基座高度与水位为估值。构建脚本使用项目已有的 Three.js 等值面实现。改编图集及模型以 CC BY-SA 4.0 分发。[Ralff Nestor Nacor 的正面照片](https://commons.wikimedia.org/wiki/File:Stamford_Raffles_Monument,_Singapore,_August_2023.jpg) · [Mike Peel 的左侧照片](https://commons.wikimedia.org/wiki/File:At_Singapore_2023_090.jpg) · [Mike Peel 的右侧照片](https://commons.wikimedia.org/wiki/File:At_Singapore_2023_093.jpg) · [OSM 喷泉测绘记录](https://www.openstreetmap.org/way/688830991/history/2) · [许可](https://creativecommons.org/licenses/by-sa/4.0/)
+
 
 
 浮尔顿路双向车道按 OSM 单向中心线与车道数生成；转向开口保持可通行。六段路侧及中央绿带沿 OneMap 正射影像描绘。路面颗粒采用 2.08 米宽的沥青扫描，路宽、标线和路缘高度为重建估值。用 `scripts/bake-fullerton-road.py` 传入该区域 OSM XML 和 1K 沥青原图可重新烘焙。[道路](https://www.openstreetmap.org/way/22919331) · [OneMap](https://www.onemap.gov.sg/) · [沥青](https://polyhaven.com/a/asphalt_01) · [草皮](https://ambientcg.com/a/Grass004)

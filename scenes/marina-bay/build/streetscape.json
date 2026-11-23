@@ -1287,5 +1287,38 @@
       "材质版权": "Survey geometry: Map Data © Singapore Land Authority / OneMap. Portico textures cropped, rectified and retouched from Victoria Theatre and Victoria Concert Hall, with 54m high Clock Tower by TTangMonuments (CC BY-SA 4.0), https://commons.wikimedia.org/wiki/File:Victoria_Theatre_and_Victoria_Concert_Hall,_with_54m_high_Clock_Tower.jpg. Adapted texture atlas and model: https://creativecommons.org/licenses/by-sa/4.0/.",
       "细节说明": "两翼位置与山花取自测绘表面。六扇拱窗、楼上六个柱间及柱身参照照片；进深为估值。"
     }
+  },
+  {
+    "entityId": "bay.raffles-statue-fountain",
+    "kind": "structure",
+    "layer": "ext",
+    "label": "皇后坊 · 莱佛士铜像与双碗喷泉",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "cf4bf599cd78843c1ee20c088516f4fe4e50aab39406b3f6ea46e73fb8a86c0b",
+    "bounds": {
+      "min": [
+        594.0310896557544,
+        -59.858000000000004,
+        660.5823916403576
+      ],
+      "max": [
+        633.4841399470301,
+        -54.42500461292267,
+        688.6617077826298
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "测量": "Map Data © Singapore Land Authority / OneMap OrthoJPG z20. Bowl centres, pedestal and pool edge traced from the registered orthophoto.",
+      "地图依据": [
+        "https://www.openstreetmap.org/way/688830991/history/2",
+        "https://www.openstreetmap.org/node/512071002"
+      ],
+      "材质版权": "Fountain and statue registration: OneMap, Map Data © Singapore Land Authority and © OpenStreetMap contributors, ODbL. Photos adapted from Stamford Raffles Monument, Singapore, August 2023 by Ralff Nestor Nacor and At Singapore 2023 090 and 093 by Mike Peel. Photographs, adapted atlas and model: CC BY-SA 4.0. Paving: Poly Haven Granite Tile 04 (CC0). https://creativecommons.org/licenses/by-sa/4.0/.",
+      "重建说明": "两只喷泉与雕像基座按影像配准。铜像由三个实拍角度重建，背部、基座高度和水位为估值。"
+    }
   }
 ]
