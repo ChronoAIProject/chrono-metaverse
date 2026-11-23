@@ -163,7 +163,7 @@
     "layer": "ext",
     "kind": "structure",
     "label": "One Fullerton · 临水餐饮露台",
-    "assetHash": "fa0c47729b6ed52f92e259a0d845aebb4fc4e365fa8b5b0ac3e1e845586b776d",
+    "assetHash": "56aab07e410876630dfc30fb4f88e49e2cba670da78a13bf232d726b924a2ae2",
     "bounds": {
       "min": [
         261.97713136643426,
@@ -188,6 +188,7 @@
       "说明": "沿 OneMap 两段既有双坡棚顶配设支架、矮边和用餐区。桌椅样式、数量与排列为视觉近似。",
       "庭院店面参考": "https://commons.wikimedia.org/wiki/File:One_Fullerton_12-05-2024(10).jpg",
       "庭院店面": "沿 OneMap 约 17.3 米的一层墙线重建。柱、门框、内退玻璃和檐下空间参照街景照片，分隔、进深及室内陈设为估值。",
+      "入口玻璃倒影": "在窗前沿线三个机位采集庭院、树池和海湾，反射随视线与玻璃位置变化。采集反映场景当前的日间布置。",
       "幕墙参考": "https://commons.wikimedia.org/wiki/File:One_Fullerton_12-05-2024(6).jpg",
       "幕墙": "二层五个窗面沿折线合计约 52 米，采用 OneMap 原始立面和影像。主窗框按影像配准，框深、颜色和反射强度为估值。",
       "棚顶": "两座棚体的坡面采用 SLA 实测坐标。深浅表面、浅棚的四段横框和屋脊色带参照正射影像。材料和构件厚度为估值。"
@@ -331,6 +332,35 @@
       "建筑与冠幅": "Map Data © Singapore Land Authority / OneMap。两片树群的位置及冠幅由模型屋顶原始影像估计，根部高程依实测露台平面。",
       "树木来源": "Poly Haven Island Tree 01 · CC0 · https://polyhaven.com/a/island_tree_01",
       "说明": "按屋顶图像中可单独辨识的 16 处树冠配设阔叶树。树种、株数、树干位置和树高为近似。硬质铺地沿实测露台平面，树池边界及石材为估值。"
+    }
+  },
+  {
+    "entityId": "bay.sands-skypark-pool",
+    "layer": "ext",
+    "kind": "structure",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海湾金沙 · 空中花园泳池",
+    "assetHash": "a7f39f8d2125f1a176c7aae8d0290c6dd5b26d9527293ea044eeb3383b911cc9",
+    "bounds": {
+      "min": [
+        -474.8918054125977,
+        133.87274773991928,
+        547.750114480957
+      ],
+      "max": [
+        -458.81388640625005,
+        133.88590368728165,
+        689.014389078125
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "来源": "Map Data © Singapore Land Authority / OneMap。三段水面沿酒店测绘网格轮廓配准。",
+      "材质": "池底颜色、泳池砖尺度及小波纹为日间视觉近似。"
     }
   }
 ]

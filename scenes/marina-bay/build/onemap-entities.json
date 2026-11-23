@@ -755,7 +755,7 @@
     "kind": "object",
     "label": "MARINA BAY SANDS SINGAPORE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "65eeae21fa2b5477b37f52cf884f6e1a2292517217461790d5d54be02ab4deb9",
+    "assetHash": "ca7d80d82ae3df2c54f04044a269e45c615c2faf7b5c8bcdd3f2496320fb4971",
     "bounds": {
       "min": [
         -661.780779,
@@ -779,7 +779,9 @@
       "三角形数": 14238,
       "原建筑资源": "95664d417851f133b6a370bda1e85cf1851107852768a377516e02ff5653e8ea",
       "玻璃参考": "https://commons.wikimedia.org/wiki/File:Marina_Bay_Sands_view_from_Merlion_Park,_Singapore_(Ank_Kumar)_01.jpg",
-      "立面处理": "按朝湾立面朝向和高度校正贴图中的大面积固定亮斑；窗格和几何轮廓沿用 SLA 模型。"
+      "立面处理": "按朝湾立面朝向和高度校正贴图中的大面积固定亮斑；窗格和几何轮廓沿用 SLA 模型。",
+      "泳池溢流边": "沿 SLA 原模型临湾池唇折线，依无边泳池现场照片校正其高出水面的视觉高度，准确高度为估值。",
+      "泳池现场参考": "https://commons.wikimedia.org/wiki/File:Infinity_Pool_at_Marina_Bay_Sands_SkyPark_Singapore_Ank_Kumar_Infosys_Limited_04.jpg"
     }
   },
   {
