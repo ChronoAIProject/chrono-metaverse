@@ -21,10 +21,12 @@ it('步行共用水面倒影，切换机位、转身和大幅缩放时在同一�
     clock.mockReturnValue(1016);
     camera.position.x = 0.1;
     expect(update()).toBe(true);
+    expect(mirror.capturedPosition.toArray()).toEqual([0, 2, 0]);
     expect(update(1)).toBe(false);
     expect(draw).toHaveBeenCalledTimes(1);
     camera.position.x = 380;
     expect(update()).toBe(true);
+    expect(mirror.capturedPosition.toArray()).toEqual([380, 2, 0]);
     expect(update()).toBe(true);
     expect(draw).toHaveBeenCalledTimes(2);
     camera.rotation.y = Math.PI / 2;

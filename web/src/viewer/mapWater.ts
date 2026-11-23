@@ -17,6 +17,7 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
       reflectionMap: { value: reflection?.texture ?? null },
       reflectionDepth: { value: reflection?.depth ?? null },
       reflectionMatrix: { value: reflection?.matrix ?? new THREE.Matrix4() },
+      reflectionEye: { value: reflection?.capturedPosition ?? new THREE.Vector3() },
       hasReflection: { value: false },
       sunlight: { value: new THREE.Vector3(...KEY_LIGHT.direction).normalize() },
       sunColor: { value: new THREE.Color(0xfff7e3) },
@@ -57,6 +58,7 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
       uniform sampler2D reflectionMap;
       uniform sampler2D reflectionDepth;
       uniform mat4 reflectionMatrix;
+      uniform vec3 reflectionEye;
       uniform bool hasReflection;
       uniform vec3 sunlight;
       uniform vec3 sunColor;
@@ -138,6 +140,15 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
             float projectedReach = range * 110.0 / (110.0 + range);
           #endif
           vec3 samplePoint = surfacePosition + (reflected-flatRay)*projectedReach;
+          #ifdef USE_LOGARITHMIC_DEPTH_BUFFER
+            // Between mirror captures the reflected eye moves with the camera,
+            // with its vertical translation reversed across the water plane.
+            vec3 eyeShift = cameraPosition - reflectionEye;
+            eyeShift.y = -eyeShift.y;
+            float axialShift = (reflectionMatrix * vec4(eyeShift, 0.0)).w;
+            float parallax = clamp((hitDepth-flatClip.w)/max(0.001,hitDepth-axialShift),0.0,1.0);
+            samplePoint -= eyeShift * parallax;
+          #endif
           vec4 clip = reflectionMatrix * vec4(samplePoint, 1.0);
           vec2 uv = clip.xy / max(0.001,clip.w);
           vec2 edge = smoothstep(vec2(0.0),vec2(0.028),min(uv,1.0-uv));
