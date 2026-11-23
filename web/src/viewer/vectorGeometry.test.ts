@@ -92,6 +92,27 @@ describe('通用矢量三维内容', () => {
     facade.dispose();
   });
 
+  it('城市墙面读取建筑颜色，区分黑色、未知色和缺少标注', () => {
+    for (const [value, expected] of [
+      [' #AbC ', [170, 187, 204, 255]],
+      ['#5a81a0', [90, 129, 160, 255]],
+      ['black', [0, 0, 0, 255]],
+      ['lightgrey', [211, 211, 211, 255]],
+      ['unmapped', [0, 0, 0, 0]],
+      [undefined, [0, 0, 0, 0]],
+    ] as const) {
+      const { geometry } = vectorGeometry(vectorTileFixture(24, true, value), tile, reference, {
+        ...style,
+        facade: 'urban',
+      });
+      const paint = geometry.getAttribute('facadePaint');
+      expect(paint.normalized).toBe(true);
+      expect(paint.count).toBe(geometry.getAttribute('position').count);
+      expect(Array.from(paint.array.slice(-4))).toEqual(expected);
+      geometry.dispose();
+    }
+  });
+
   it('仅重建已配置的地表，草坪保留洞口，铺装有独立的压顶石和立缘', () => {
     const mapping = { layer: 'shapes', property: 'elevation', values: ['24'] } as const;
     const surfaces = vectorGeometry(
@@ -167,5 +188,19 @@ describe('通用矢量三维内容', () => {
     camera.lookAt(0, 0, 0);
     camera.updateMatrixWorld();
     expect(visibleVectorTiles(camera, new THREE.Matrix4(), reference, 14, 12000)).toEqual([]);
+  });
+
+  it('复用瓦片范围时仍按当前成员变换裁剪', () => {
+    const camera = new THREE.PerspectiveCamera(50, 1.5, 0.02, 30000);
+    camera.position.set(0, 60, 250);
+    camera.lookAt(0, 20, -1000);
+    camera.updateMatrixWorld();
+    const transform = new THREE.Matrix4().makeRotationY(0.85).setPosition(2700, 0, 1000);
+    const fresh = new GeoReference({ longitude, latitude, origin: [4, -60, 8], heading: 37 });
+    const initial = visibleVectorTiles(camera, new THREE.Matrix4(), reference, 14, 12000);
+    const moved = visibleVectorTiles(camera, transform, reference, 14, 12000);
+    expect(moved).toEqual(visibleVectorTiles(camera, transform, fresh, 14, 12000));
+    expect(moved).not.toEqual(initial);
+    expect(visibleVectorTiles(camera, new THREE.Matrix4(), reference, 14, 12000)).toEqual(initial);
   });
 });

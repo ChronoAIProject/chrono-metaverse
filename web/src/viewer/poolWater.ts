@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { MapReflection } from './mapReflection';
 
 /** 在泳池的米制 UV 上移动两组小波，已滤掉的细纹不再扰动远处的倒影。 */
 export function poolWater(
@@ -10,14 +11,44 @@ export function poolWater(
   },
 ) {
   const time = { value: 0 };
+  const poolMirror = { value: null as THREE.Texture | null };
+  const poolProjection = { value: new THREE.Matrix4() };
+  const poolReflection = { value: 0 };
+  const bounds = new THREE.Box3();
+  let mirror: MapReflection | undefined;
+  material.addEventListener('dispose', () => mirror?.dispose());
   const update = material.onBeforeRender.bind(material);
-  material.onBeforeRender = (...args) => {
-    update(...args);
+  material.onBeforeRender = (renderer, scene, camera, geometry, object, group) => {
+    update(renderer, scene, camera, geometry, object, group);
     time.value = performance.now() / 1000;
+    poolReflection.value = 0;
+    if (renderer.getRenderTarget() || !(camera instanceof THREE.PerspectiveCamera)) return;
+    if (!geometry.boundingBox) geometry.computeBoundingBox();
+    bounds.copy(geometry.boundingBox!).applyMatrix4(object.matrixWorld);
+    const level = (bounds.min.y + bounds.max.y) / 2;
+    const distance = bounds.distanceToPoint(camera.position);
+    if (distance >= 90 || camera.position.y <= level) return;
+    mirror ??= new MapReflection();
+    if (mirror.update(renderer, scene, camera, level)) {
+      poolMirror.value = mirror.texture;
+      poolProjection.value.copy(mirror.matrix);
+      poolReflection.value = 1 - THREE.MathUtils.smoothstep(distance, 55, 90);
+    }
   };
   material.customProgramCacheKey = () => 'city-pool-water';
   material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, sky, { poolTime: time });
+    Object.assign(shader.uniforms, sky, {
+      poolTime: time,
+      poolMirror,
+      poolProjection,
+      poolReflection,
+    });
+    shader.vertexShader =
+      'varying vec3 poolPosition;\n' +
+      shader.vertexShader.replace(
+        '#include <project_vertex>',
+        '#include <project_vertex>\npoolPosition = (modelMatrix * vec4(transformed,1.0)).xyz;',
+      );
     shader.fragmentShader =
       declarations +
       shader.fragmentShader
@@ -32,6 +63,10 @@ const declarations = /* glsl */ `
   uniform bool cityHasSky;
   uniform float citySkyYaw;
   uniform float poolTime;
+  uniform sampler2D poolMirror;
+  uniform mat4 poolProjection;
+  uniform float poolReflection;
+  varying vec3 poolPosition;
 `;
 
 const floorLight = /* glsl */ `
@@ -67,11 +102,24 @@ const surfaceNormal = /* glsl */ `
 
 const reflection = /* glsl */ `
   if (cityHasSky) {
-    vec3 ray = inverseTransformDirection(reflect(-eye, normal), viewMatrix);
+    vec3 reflected = inverseTransformDirection(reflect(-eye, normal), viewMatrix);
+    vec3 ray = reflected;
     float c = cos(citySkyYaw), s = sin(citySkyYaw);
     ray.xz = mat2(c,s,-s,c)*ray.xz;
     ray.y = max(0.008,ray.y);
     vec3 sky = texture2D(citySky, equirectUv(normalize(ray))).rgb;
+    if (poolReflection > 0.0) {
+      vec3 worldEye = inverseTransformDirection(eye, viewMatrix);
+      vec3 flatRay = vec3(-worldEye.x,worldEye.y,-worldEye.z);
+      // The nearest deck and its fittings lie only a few metres beyond the water.
+      float range = length(vViewPosition);
+      float reach = 9.0 * range / (9.0 + range);
+      vec4 clip = poolProjection * vec4(poolPosition + reach*(reflected-flatRay), 1.0);
+      vec2 uv = clip.xy / max(.001, clip.w);
+      vec2 edge = smoothstep(vec2(0.0), vec2(.025), min(uv,1.0-uv));
+      vec3 sceneReflection = texture2D(poolMirror,clamp(uv,.001,.999)).rgb;
+      sky = mix(sky, sceneReflection, poolReflection*edge.x*edge.y*step(.001,clip.w));
+    }
     float fresnel = .021 + .94 * pow(1.0-clamp(dot(eye,normal),0.0,1.0),5.0);
     // Sky is sampled explicitly, so count the environment reflection only once.
     vec3 underwater = totalDiffuse + totalEmissiveRadiance;

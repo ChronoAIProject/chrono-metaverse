@@ -2,9 +2,23 @@ import * as THREE from 'three';
 import { VectorTile, classifyRings } from '@mapbox/vector-tile';
 import Pbf from 'pbf';
 import type { GroundLayer, RoadLayer, VectorContent } from '../core/externalSource';
-import { GeoReference, tileBounds, tileCoordinates, type Tile } from './geography';
+import { GeoReference, tileBounds, tileCoordinates, tileKey, type Tile } from './geography';
 
 type Point = { x: number; y: number };
+
+/** OpenMapTiles colour is an sRGB hex triplet or a CSS colour name. */
+function buildingPaint(property: unknown): number | undefined {
+  if (typeof property !== 'string') return;
+  const value = property.trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(value)) return Number.parseInt(value.slice(1), 16);
+  if (/^#[0-9a-f]{3}$/.test(value))
+    return Number.parseInt(
+      value.slice(1).replace(/./g, (digit) => digit + digit),
+      16,
+    );
+  if (Object.hasOwn(THREE.Color.NAMES, value))
+    return THREE.Color.NAMES[value as keyof typeof THREE.Color.NAMES];
+}
 
 /** 瓦片缓冲区不参与绘制，避免相邻瓦片的同一面重复叠加。 */
 function clip(ring: readonly Point[], extent: number): Point[] {
@@ -233,6 +247,7 @@ export function vectorGeometry(
   const layer = data.layers[style.layer];
   const positions: number[] = [];
   const facade: number[] = [];
+  const paint: number[] = [];
   const indices: number[] = [];
   let features = 0,
     vertices = 0;
@@ -256,6 +271,7 @@ export function vectorGeometry(
     )
       continue;
     const rings = feature.loadGeometry();
+    const tint = style.facade ? buildingPaint(feature.properties.colour) : undefined;
     vertices += rings.reduce((n, ring) => n + ring.length, 0);
     if (vertices > 50000) throw new Error('矢量瓦片顶点过多');
     for (const polygon of classifyRings(rings)) {
@@ -323,8 +339,11 @@ export function vectorGeometry(
       if (style.facade) {
         const seed = feature.id ?? Math.round(height * 113);
         const variant = (((seed % 997) * 47) % 997) / 997;
-        for (let k = start; k < positions.length; k += 3)
+        const rgb = tint ?? 0;
+        for (let k = start; k < positions.length; k += 3) {
           facade.push(positions[k + 1]! - box.min.y + minHeight, variant);
+          paint.push(rgb >>> 16, (rgb >>> 8) & 255, rgb & 255, tint === undefined ? 0 : 255);
+        }
       }
       features++;
     }
@@ -333,7 +352,10 @@ export function vectorGeometry(
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices);
   geometry.computeBoundingBox();
-  if (style.facade) geometry.setAttribute('uv', new THREE.Float32BufferAttribute(facade, 2));
+  if (style.facade) {
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(facade, 2));
+    geometry.setAttribute('facadePaint', new THREE.Uint8BufferAttribute(paint, 4, true));
+  }
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
   return {
@@ -350,6 +372,21 @@ export function vectorGeometry(
   };
 }
 
+const boundsByReference = new WeakMap<GeoReference, Map<string, THREE.Sphere>>();
+
+function vectorTileSphere(tile: Tile, reference: GeoReference): THREE.Sphere {
+  const [west, south, east, north] = tileBounds(tile);
+  const box = new THREE.Box3();
+  for (let row = 0; row <= 4; row++)
+    for (let col = 0; col <= 4; col++) {
+      const lon = west + ((east - west) * col) / 4,
+        lat = south + ((north - south) * row) / 4;
+      box.expandByPoint(reference.point(lon, lat, 0));
+      box.expandByPoint(reference.point(lon, lat, 2000));
+    }
+  return box.getBoundingSphere(new THREE.Sphere());
+}
+
 /** 从全球四叉树按视锥和距离发现瓦片，输入只含标准地理参考。 */
 export function visibleVectorTiles(
   camera: THREE.PerspectiveCamera,
@@ -364,18 +401,23 @@ export function visibleVectorTiles(
   );
   const leaves: { tile: Tile; distance: number }[] = [];
   const queue: Tile[] = [{ z: 0, x: 0, y: 0 }];
+  let bounds = boundsByReference.get(reference);
+  if (!bounds) {
+    bounds = new Map();
+    boundsByReference.set(reference, bounds);
+  }
+  const sphere = new THREE.Sphere();
   for (let visited = 0; queue.length && visited < 16000; visited++) {
     const tile = queue.shift()!;
-    const [west, south, east, north] = tileBounds(tile);
-    const box = new THREE.Box3();
-    for (let row = 0; row <= 4; row++)
-      for (let col = 0; col <= 4; col++) {
-        const lon = west + ((east - west) * col) / 4,
-          lat = south + ((north - south) * row) / 4;
-        box.expandByPoint(reference.point(lon, lat, 0));
-        box.expandByPoint(reference.point(lon, lat, 2000));
-      }
-    const sphere = box.getBoundingSphere(new THREE.Sphere()).applyMatrix4(matrixWorld);
+    const key = tileKey(tile);
+    let local = bounds.get(key);
+    if (!local) {
+      local = vectorTileSphere(tile, reference);
+      if (bounds.size >= 2048) bounds.delete(bounds.keys().next().value!);
+      bounds.set(key, local);
+    }
+    // 地理范围属于成员的本地坐标，移动成员时仍按当前变换测试视锥。
+    sphere.copy(local).applyMatrix4(matrixWorld);
     const distance = camera.position.distanceTo(sphere.center);
     if (distance - sphere.radius > maxDistance || !frustum.intersectsSphere(sphere)) continue;
     // 近岸保留最高精度；远端优先使用来源确实提供建筑的概化层。
