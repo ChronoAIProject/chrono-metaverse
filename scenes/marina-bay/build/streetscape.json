@@ -1228,5 +1228,34 @@
       "材质素材": "ambientCG Grass 004；Poly Haven Granite Tile 04 · CC0",
       "地面重建": "边界按正射影像与通道中心线定位。树冠下的边缘、铺装尺寸和高程为估值。"
     }
+  },
+  {
+    "entityId": "bay.boat-quay-shophouses",
+    "layer": "ext",
+    "kind": "structure",
+    "label": "驳船码头 · 临河店屋与骑楼",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "45ae0062fb238c038afb1721442fa21eff399617d819a78d7fc0fb6fd65b0283",
+    "bounds": {
+      "min": [
+        782.9476742612511,
+        -60.757,
+        405.65816690963163
+      ],
+      "max": [
+        915.0170297819159,
+        -43.38211381933429,
+        609.5078526904193
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "依据": "© OpenStreetMap contributors · ODbL, OneMap 正射影像，河岸现场照片",
+      "重建范围": "45 至 85 号内有测绘记录的 40 栋。门窗样式、屋脊、雨棚与分户立面配色按同街实拍近似。",
+      "材质版权": "Footprints © OpenStreetMap contributors (ODbL). Roof colour survey: OneMap, Singapore Land Authority. Cropped and rectified textures: Shophouses on Boat Quay, Singapore (2023)-L1003691 by Frank Schulenburg, Boat Quay in Singapore (Cropped) by Chensiyuan (both CC BY-SA 4.0), and SG-riverside-boat-quay by Balou46 (CC BY-SA 3.0). Adapted textures and model: https://creativecommons.org/licenses/by-sa/4.0/."
+    }
   }
 ]

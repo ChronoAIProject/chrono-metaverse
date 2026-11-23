@@ -3,6 +3,21 @@ import type { BuildBase, EntityBody, Kit } from '@chrono-metaverse/sdk';
 import { placeExterior, type Placement } from './placement.ts';
 import { waterfront } from './waterfront.ts';
 
+/** Keep the saved tile source and suppress the footprints replaced by the quay model. */
+export function withBoatQuay(surroundings: EntityBody): EntityBody {
+  const content = surroundings.props?.externalContent;
+  if (!content || typeof content !== 'object' || !('extrusion' in content)) return surroundings;
+  const style = content.extrusion;
+  if (!style || typeof style !== 'object') return surroundings;
+  const existing = 'excludeBounds' in style && Array.isArray(style.excludeBounds) ? style.excludeBounds : [];
+  const masks: number[][] = JSON.parse(readFileSync(new URL('./boat-quay-exclusions.json', import.meta.url), 'utf8'));
+  const saved = new Set(existing.map((bounds) => JSON.stringify(bounds)));
+  const excludeBounds = [...existing, ...masks.filter((bounds) => !saved.has(JSON.stringify(bounds)))];
+  return { ...surroundings, props: { ...surroundings.props, externalContent: {
+    ...content, extrusion: { ...style, excludeBounds },
+  } } };
+}
+
 /** 滨海湾扩展引用 OneMap 转换结果，室内沿用已有的重建物件。 */
 export default function build(base: BuildBase, kit: Kit) {
   const buildings: EntityBody[] = JSON.parse(
@@ -39,7 +54,7 @@ export default function build(base: BuildBase, kit: Kit) {
   }
   // 线上按视野流式加载的周边楼群独立于离线模型包，由空间保存其图层和保护范围。
   const surroundings = base.entities.find((entity) => entity.entityId === 'bay.city-surroundings');
-  if (surroundings) entities.push(surroundings);
+  if (surroundings) entities.push(config.quay ? withBoatQuay(surroundings) : surroundings);
   const ids = new Set(entities.map((entity) => entity.entityId));
   return {
     message: config.message,
