@@ -11,6 +11,8 @@ from shapely import constrained_delaunay_triangles
 from shapely.geometry import Polygon
 from trimesh.visual.texture import TextureVisuals
 
+from victoria_clock import PHOTO as DIAL_PHOTO, make_dials
+
 ROOT = Path(__file__).resolve().parents[1]
 ENTITY = "bay.f21025bc-7836-44eb-82b6-f78da166312a"
 SOURCE = "be6cc4591ece5f1419779b7ec72c2200cc024a57f1062e9e6a3c328eab46f564"
@@ -127,6 +129,7 @@ def bake(path):
     facade, = [name for name, mesh in scene.geometry.items() if isinstance(mesh.visual, TextureVisuals)]
     trim, = [name for name in scene.geometry if name != facade]
     scene.geometry[facade], lining = carve(scene.geometry[facade])
+    scene.add_geometry(make_dials(scene.geometry[facade]), geom_name="Victoria clock faces")
     stone = scene.geometry[trim]
     stone.faces = unique_faces(stone)
     stone.remove_unreferenced_vertices()
@@ -143,6 +146,7 @@ def bake(path):
     entity = next(e for e in entities if e["entityId"] == ENTITY)
     entity["assetHash"] = digest
     entity["props"].update({"三角形数": sum(len(m.faces) for m in scene.geometry.values()),
+                            "钟面参考": DIAL_PHOTO, "钟面重建": "四面位置和直径按测绘图分别配准。玻璃分格、罗马数字与指针按实景照片重绘，边框进深为估值。四面采用照片约 06:10 的静态读数。",
                             "钟楼参考": PHOTO, "钟楼开口": "四侧共十六处柱间开口按 OneMap 原始立面图定位。柱带厚度与洞口进深依照片估值。"})
     file.write_text(json.dumps(entities, indent=2, ensure_ascii=False) + "\n")
     return digest
