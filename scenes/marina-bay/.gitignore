@@ -3,6 +3,10 @@ out/
 chunks/
 assets/*
 # 场景附带的绿化、石材和道路资源。
+!assets/586ae3d60cdda3a8de014dc8ba811635114d5160642449a0c4afb1dff0df99b5.glb
+!assets/fe0819ec7cd9d3dfa0f85ac7a2f2bde482c6e6ec275a1c131661291a38b0b3d9.glb
+!assets/d1c321632ee44fbbc847e1024580d88927722becd8a97ac00dcec955dea7e92c.glb
+!assets/89bf010e0dd653b5f62cbf725dfcc01aa90e5d71cfcf73cd7ad270edd23589df.glb
 !assets/10b26f08617ccd5b234fa588dd95e3e468d2dc239c70c841c64130ab2dbd95da.glb
 !assets/a9eed290adc4315dae58b3e727158a2aee4ec239ca0f911f47484b0d966ac0f8.webp
 !assets/2b6c98c430486c2e433e647e5ac7dc8ef0f47e407890d74153958a72538397fd.webp

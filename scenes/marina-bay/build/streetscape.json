@@ -1320,5 +1320,153 @@
       "材质版权": "Fountain and statue registration: OneMap, Map Data © Singapore Land Authority and © OpenStreetMap contributors, ODbL. Photos adapted from Stamford Raffles Monument, Singapore, August 2023 by Ralff Nestor Nacor and At Singapore 2023 090 and 093 by Mike Peel. Photographs, adapted atlas and model: CC BY-SA 4.0. Paving: Poly Haven Granite Tile 04 (CC0). https://creativecommons.org/licenses/by-sa/4.0/.",
       "重建说明": "两只喷泉与雕像基座按影像配准。铜像由三个实拍角度重建，背部、基座高度和水位为估值。"
     }
+  },
+  {
+    "entityId": "bay.high-street-centre-facade",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "586ae3d60cdda3a8de014dc8ba811635114d5160642449a0c4afb1dff0df99b5",
+    "label": "高街中心 · 塔楼立面",
+    "bounds": {
+      "min": [
+        967.3469119086596,
+        -36.37933708597089,
+        719.9383514941709
+      ],
+      "max": [
+        1002.3856473282111,
+        55.62571848299663,
+        750.8110958720805
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "来源": "https://www.openstreetmap.org/way/243430457/history",
+      "重建": "按测绘轮廓与高度配准。窗带从实拍校正，背面与遮挡部分复用同楼可见立面，柱宽与出挑深度为估值。",
+      "材质版权": "Footprint © OpenStreetMap contributors (ODbL 1.0). Photograph by Sengkang (Copyrighted free use), https://commons.wikimedia.org/wiki/File:High_Street_Centre_2,_Dec_05.JPG. Cropped, rectified and exposure-adjusted. Photograph by Sengkang (Copyrighted free use), https://commons.wikimedia.org/wiki/File:High_Street_Centre,_Dec_05.JPG. Cropped, rectified and exposure-adjusted.",
+      "backgroundView": {
+        "focus": [
+          984.8662796184353,
+          9.623190698512872,
+          735.3747236831257
+        ],
+        "maxDistance": 4100
+      }
+    }
+  },
+  {
+    "entityId": "bay.peninsula-plaza-facade",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "fe0819ec7cd9d3dfa0f85ac7a2f2bde482c6e6ec275a1c131661291a38b0b3d9",
+    "label": "半岛广场 · 塔楼立面",
+    "bounds": {
+      "min": [
+        898.3072313498765,
+        -42.417075808182176,
+        1033.0855608063846
+      ],
+      "max": [
+        936.8396290031149,
+        50.59253967353516,
+        1071.3461840004693
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "来源": "https://www.openstreetmap.org/way/257193902/history",
+      "重建": "按测绘轮廓与高度配准。窗带从实拍校正，背面与遮挡部分复用同楼可见立面，柱宽与出挑深度为估值。",
+      "材质版权": "Footprint © OpenStreetMap contributors (ODbL 1.0). Photograph by Diego Delso (CC BY-SA 4.0), https://commons.wikimedia.org/wiki/File:Peninsula_Plaza,_Singapur,_2023-08-18,_DD_19.jpg. Cropped, rectified and exposure-adjusted. Adapted atlas and model: CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/.",
+      "backgroundView": {
+        "focus": [
+          917.5734301764957,
+          4.0877319326764905,
+          1052.215872403427
+        ],
+        "maxDistance": 4100
+      }
+    }
+  },
+  {
+    "entityId": "bay.state-courts-office-facade",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "d1c321632ee44fbbc847e1024580d88927722becd8a97ac00dcec955dea7e92c",
+    "label": "国家法院 · 办公塔 · 塔楼立面",
+    "bounds": {
+      "min": [
+        1325.571347431644,
+        -60.401315731608975,
+        40.771707038502534
+      ],
+      "max": [
+        1361.7817519604744,
+        117.60344938314842,
+        131.39162611403054
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "来源": "https://www.openstreetmap.org/way/699163978/history",
+      "重建": "按测绘轮廓与高度配准。窗带从实拍校正，背面与遮挡部分复用同楼可见立面，柱宽与出挑深度为估值。",
+      "材质版权": "Footprint © OpenStreetMap contributors (ODbL 1.0). Photograph by Wzhkevin (CC BY-SA 4.0), https://commons.wikimedia.org/wiki/File:State_Court_Tower,_Singapore_-_2022-07-26.jpg. Cropped, rectified and exposure-adjusted. Adapted atlas and model: CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/.",
+      "backgroundView": {
+        "focus": [
+          1343.6765496960593,
+          28.60106682576972,
+          86.08166657626654
+        ],
+        "maxDistance": 4100
+      }
+    }
+  },
+  {
+    "entityId": "bay.state-courts-court-facade",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "89bf010e0dd653b5f62cbf725dfcc01aa90e5d71cfcf73cd7ad270edd23589df",
+    "label": "国家法院 · 审判塔 · 塔楼立面",
+    "bounds": {
+      "min": [
+        1354.1178978700634,
+        -60.41014278865853,
+        39.66041736218179
+      ],
+      "max": [
+        1408.4144308340155,
+        117.59883986426749,
+        134.80263700259943
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "来源": "https://www.openstreetmap.org/way/699163979/history",
+      "重建": "按测绘轮廓与高度配准。窗带从实拍校正，背面与遮挡部分复用同楼可见立面，柱宽与出挑深度为估值。",
+      "材质版权": "Footprint © OpenStreetMap contributors (ODbL 1.0). Photograph by Wzhkevin (CC BY-SA 4.0), https://commons.wikimedia.org/wiki/File:State_Court_Tower,_Singapore_-_2022-07-26.jpg. Cropped, rectified and exposure-adjusted. Adapted atlas and model: CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/.",
+      "backgroundView": {
+        "focus": [
+          1381.2661643520396,
+          28.59434853780448,
+          87.23152718239061
+        ],
+        "maxDistance": 4100
+      }
+    }
   }
 ]

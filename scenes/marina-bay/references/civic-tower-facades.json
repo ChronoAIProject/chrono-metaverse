@@ -1,0 +1,216 @@
+[
+  {
+    "slug": "high-street-centre",
+    "label": "高街中心",
+    "building": "High Street Centre",
+    "way": 243430457,
+    "version": 7,
+    "footprint": [
+      [
+        103.8490304,
+        1.2902325
+      ],
+      [
+        103.8489089,
+        1.2900312
+      ],
+      [
+        103.8491455,
+        1.2898885
+      ],
+      [
+        103.849267,
+        1.2900899
+      ]
+    ],
+    "bottom": 24,
+    "top": 116,
+    "photos": [
+      {
+        "photo": "High Street Centre 2, Dec 05.JPG",
+        "author": "Sengkang",
+        "license": "Copyrighted free use",
+        "page": "https://commons.wikimedia.org/wiki/File:High_Street_Centre_2,_Dec_05.JPG"
+      },
+      {
+        "photo": "High Street Centre, Dec 05.JPG",
+        "author": "Sengkang",
+        "license": "Copyrighted free use",
+        "page": "https://commons.wikimedia.org/wiki/File:High_Street_Centre,_Dec_05.JPG"
+      }
+    ]
+  },
+  {
+    "slug": "peninsula-plaza",
+    "label": "半岛广场",
+    "building": "Peninsula Plaza",
+    "way": 257193902,
+    "version": 8,
+    "footprint": [
+      [
+        103.8506494,
+        1.2923325
+      ],
+      [
+        103.85064,
+        1.2923794
+      ],
+      [
+        103.8506593,
+        1.2924117
+      ],
+      [
+        103.8507735,
+        1.2925787
+      ],
+      [
+        103.8508151,
+        1.2925945
+      ],
+      [
+        103.8510272,
+        1.2924825
+      ],
+      [
+        103.8510418,
+        1.2924344
+      ],
+      [
+        103.8509311,
+        1.2922485
+      ],
+      [
+        103.8509122,
+        1.2922145
+      ],
+      [
+        103.850868,
+        1.2922024
+      ]
+    ],
+    "bottom": 18,
+    "top": 111,
+    "photos": [
+      {
+        "photo": "Peninsula Plaza, Singapur, 2023-08-18, DD 19.jpg",
+        "author": "Diego Delso",
+        "license": "CC BY-SA 4.0",
+        "page": "https://commons.wikimedia.org/wiki/File:Peninsula_Plaza,_Singapur,_2023-08-18,_DD_19.jpg"
+      }
+    ]
+  },
+  {
+    "slug": "state-courts-office",
+    "label": "国家法院 · 办公塔",
+    "building": "State Courts Office Tower",
+    "way": 699163978,
+    "version": 2,
+    "footprint": [
+      [
+        103.8437967,
+        1.2863191
+      ],
+      [
+        103.8434033,
+        1.2858456
+      ],
+      [
+        103.8433976,
+        1.2858387
+      ],
+      [
+        103.8434876,
+        1.285764
+      ],
+      [
+        103.8440011,
+        1.2863821
+      ],
+      [
+        103.8439111,
+        1.2864569
+      ]
+    ],
+    "bottom": 0,
+    "top": 178,
+    "photos": [
+      {
+        "photo": "State Court Tower, Singapore - 2022-07-26.jpg",
+        "author": "Wzhkevin",
+        "license": "CC BY-SA 4.0",
+        "page": "https://commons.wikimedia.org/wiki/File:State_Court_Tower,_Singapore_-_2022-07-26.jpg"
+      }
+    ]
+  },
+  {
+    "slug": "state-courts-court",
+    "label": "国家法院 · 审判塔",
+    "building": "State Courts Court Tower",
+    "way": 699163979,
+    "version": 3,
+    "footprint": [
+      [
+        103.8437193,
+        1.2863834
+      ],
+      [
+        103.8433259,
+        1.2859098
+      ],
+      [
+        103.8432894,
+        1.2859401
+      ],
+      [
+        103.8432328,
+        1.2858719
+      ],
+      [
+        103.8431408,
+        1.2859483
+      ],
+      [
+        103.8431212,
+        1.2859247
+      ],
+      [
+        103.8430137,
+        1.2860139
+      ],
+      [
+        103.8433517,
+        1.2864208
+      ],
+      [
+        103.8435508,
+        1.2866605
+      ],
+      [
+        103.8437577,
+        1.2864887
+      ],
+      [
+        103.8437014,
+        1.2864209
+      ],
+      [
+        103.8437121,
+        1.286412
+      ],
+      [
+        103.843701,
+        1.2863986
+      ]
+    ],
+    "bottom": 0,
+    "top": 178,
+    "photos": [
+      {
+        "photo": "State Court Tower, Singapore - 2022-07-26.jpg",
+        "author": "Wzhkevin",
+        "license": "CC BY-SA 4.0",
+        "page": "https://commons.wikimedia.org/wiki/File:State_Court_Tower,_Singapore_-_2022-07-26.jpg"
+      }
+    ]
+  }
+]
