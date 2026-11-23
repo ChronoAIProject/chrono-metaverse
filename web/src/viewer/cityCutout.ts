@@ -1,0 +1,48 @@
+import * as THREE from 'three';
+
+/** 多重采样的像素用原图遮罩控制覆盖率，已绘制的天空保持不透明。 */
+export function cityCutout(material: THREE.Material) {
+  if (
+    !(
+      material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshBasicMaterial
+    ) ||
+    material.transparent ||
+    material.alphaTest <= 0 ||
+    !material.map
+  )
+    return;
+  material.alphaToCoverage = true;
+  material.blending = THREE.CustomBlending;
+  material.blendSrc = THREE.OneFactor;
+  material.blendDst = THREE.ZeroFactor;
+  material.blendSrcAlpha = THREE.ZeroFactor;
+  material.blendDstAlpha = THREE.OneFactor;
+
+  const multisampled = { value: true };
+  const beforeRender = material.onBeforeRender;
+  material.onBeforeRender = function (...args) {
+    beforeRender.call(this, ...args);
+    const target = args[0].getRenderTarget();
+    multisampled.value = !target || target.samples > 1;
+  };
+  const compile = material.onBeforeCompile;
+  const programKey = material.customProgramCacheKey();
+  material.customProgramCacheKey = () => programKey + '|city-cutout';
+  material.onBeforeCompile = function (shader, renderer) {
+    compile.call(this, shader, renderer);
+    shader.uniforms.cutoutMultisampled = multisampled;
+    shader.fragmentShader =
+      'uniform bool cutoutMultisampled;\n' +
+      shader.fragmentShader.replace(
+        '#include <alphatest_fragment>',
+        `if (cutoutMultisampled) {
+           float width = max(fwidth(diffuseColor.a), 0.0001);
+           diffuseColor.a = smoothstep(alphaTest - 0.5 * width, alphaTest + 0.5 * width, diffuseColor.a);
+           if (diffuseColor.a == 0.0) discard;
+         } else {
+           if (diffuseColor.a < alphaTest) discard;
+           diffuseColor.a = 1.0;
+         }`,
+      );
+  };
+}

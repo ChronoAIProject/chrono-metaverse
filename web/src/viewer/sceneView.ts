@@ -1,4 +1,5 @@
 import { PriorityQueue } from '3d-tiles-renderer/core';
+import { cityCutout } from './cityCutout';
 import { CitySun } from './citySun';
 import { cityModelAir } from './mapFacade';
 import { CITY_REFLECTION_LAYER } from './mapReflection';
@@ -352,6 +353,8 @@ export class SceneView {
   private readonly textures: TextureCache;
   private readonly citySun = new CitySun();
   private daylightCity = false;
+  private multisampleCutouts = false;
+  private readonly canvasMultisampled: boolean;
   private readonly environment: EnvironmentView;
   private readonly externalContent: ExternalContentView;
   private lights: THREE.Light[] = [];
@@ -439,6 +442,8 @@ export class SceneView {
       alpha: true,
       logarithmicDepthBuffer: true,
     });
+    const gl = this.renderer.getContext();
+    this.canvasMultisampled = gl.getParameter(gl.SAMPLES) > 1;
     const pixelRatio = Math.min(window.devicePixelRatio, 2);
     this.renderer.setPixelRatio(pixelRatio);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -793,7 +798,8 @@ export class SceneView {
     const lookKey = modelMaterialKey(source, look, styleLook);
     if (lookKey === null && !background) return source;
     const air = background && this.daylightCity && !styleLook;
-    const key = `${lookKey ?? source.uuid}|${background}|${styleLookKey(styleLook)}|${kind}|${air}`;
+    const coverage = air && this.multisampleCutouts && source.alphaTest > 0;
+    const key = `${lookKey ?? source.uuid}|${background}|${styleLookKey(styleLook)}|${kind}|${air}|${coverage}`;
     let material = this.materialCache.get(key);
     if (material === undefined) {
       material = createModelMaterial(
@@ -804,6 +810,7 @@ export class SceneView {
         kind,
       );
       if (air) cityModelAir(material);
+      if (coverage) cityCutout(material);
       this.materialCache.set(key, material);
     }
     return material;
@@ -992,6 +999,7 @@ export class SceneView {
       !(owner?.view.styleLook ?? owner?.styleLook)?.hologram &&
       !(owner?.view.backgroundColor ?? owner?.backgroundColor) &&
       environment?.map?.surfaceDetail === 'urban';
+    this.multisampleCutouts = this.canvasMultisampled && environment?.multisampleCutouts === true;
     this.renderer.toneMapping =
       this.daylightCity && environment?.daylightToneMapping === 'agx'
         ? THREE.AgXToneMapping
