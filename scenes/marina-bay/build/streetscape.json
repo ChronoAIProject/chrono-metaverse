@@ -1039,7 +1039,7 @@
     "layer": "ext",
     "kind": "structure",
     "label": "滨海公园 · 步道与康乐通道林冠",
-    "assetHash": "60f38eab22d75ea390f5372c3ce4085bb4c24ebb09ed458c1afda9440f5418ba",
+    "assetHash": "5c9d759aa0972db3d9fd2446a60b83e910814fff4442fbd0785351a38f3a8893",
     "bounds": {
       "min": [
         476.00759487527444,
@@ -1071,7 +1071,7 @@
     "layer": "ext",
     "kind": "structure",
     "label": "滨海大道 · 两侧行道树",
-    "assetHash": "20f1fbc94ed29b87db750511bfb1b4ac647ed386dac6de68fe6b36afa1b6ac48",
+    "assetHash": "d48dedf9ce0c86ebd66d728f89bbbbe895d08fd9559a6dc0aca6810fe60fe78e",
     "bounds": {
       "min": [
         -182.43067710442432,

@@ -132,9 +132,29 @@ def canopy_depths(points, u, v, depth, cells=3):
     return heights, layers
 
 
-def slices(points, colors, canopy):
+def fit_slice_opacity(pixels, surface, axes, scan):
+    """Reduce opacity where the depth slice passes through an opening in the scan."""
+    y, x = np.nonzero(pixels[:, :, 3])
+    size = len(pixels)
+    uv = np.column_stack(((x + .5) / size, 1 - (y + .5) / size))
+    grid = uv * (len(surface) - 1)
+    i, j = grid.astype(int).T
+    a, b = (grid - grid.astype(int)).T
+    # Interpolate the two triangles as the GPU does, including their shared diagonal.
+    depth = (surface[i, j] * (1 - np.maximum(a, b)) + surface[i + 1, j + 1] * np.minimum(a, b)
+             + surface[i + 1, j] * np.maximum(a - b, 0) + surface[i, j + 1] * np.maximum(b - a, 0))
+    samples = np.empty((len(uv), 3))
+    samples[:, axes] = np.column_stack((uv, depth))
+    distance = scan.query(samples, distance_upper_bound=.054)[0]
+    gap = np.clip((distance - .007) / .047, 0, 1)
+    opacity = 1 - .92 * gap**2 * (3 - 2 * gap)
+    pixels[y, x, 3] = np.rint(pixels[y, x, 3] * opacity).astype(np.uint8)
+
+
+def slices(points, colors, canopy, fit_opacity=False):
     atlas = Image.new("RGBA", (TILE*LAYERS, TILE*3))
     vertices, uv, normals, faces = [], [], [], []
+    scan = cKDTree(points[canopy]) if fit_opacity else None
     for row, (u,v,depth) in enumerate([(0,1,2),(2,1,0),(0,2,1)]):
         surfaces, layers = canopy_depths(points, u, v, depth)
         for k in range(LAYERS):
@@ -148,6 +168,8 @@ def slices(points, colors, canopy):
             rgba[py,px,3] = 255
             image = Image.fromarray(rgba).resize((TILE,TILE),Image.Resampling.LANCZOS)
             pixels = np.array(image)
+            if scan is not None:
+                fit_slice_opacity(pixels, surfaces[k], (u, v, depth), scan)
             nearest = distance_transform_edt(pixels[:,:,3] == 0,return_indices=True,return_distances=False)
             pixels[:,:,:3] = pixels[tuple(nearest)][:,:,:3]
             atlas.paste(Image.fromarray(pixels), (k*TILE,row*TILE))
