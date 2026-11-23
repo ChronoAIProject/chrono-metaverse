@@ -1,0 +1,1333 @@
+{
+  "source": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+  "aerial": "Map Data © Singapore Land Authority / OneMap, OrthoJPG. First 18 trees at z18, additional 31 at z20.",
+  "trees": [
+    {
+      "treeId": "12487190",
+      "longitude": 103.855646,
+      "latitude": 1.279958,
+      "species": "Sindora wallichii",
+      "heightBand": ">6 but ≤9",
+      "heightUpper": 9,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        -148.88,
+        31.436
+      ],
+      "aerialRGB": [
+        110,
+        118,
+        95
+      ],
+      "groundY": -60.259,
+      "crownDiameterMetres": 7.2
+    },
+    {
+      "treeId": "12487191",
+      "longitude": 103.855503,
+      "latitude": 1.280046,
+      "species": "Sindora wallichii",
+      "heightBand": ">6 but ≤9",
+      "heightUpper": 9,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        -130.344,
+        33.529
+      ],
+      "aerialRGB": [
+        102,
+        111,
+        89
+      ],
+      "groundY": -60.259,
+      "crownDiameterMetres": 10.1
+    },
+    {
+      "treeId": "12487195",
+      "longitude": 103.854929,
+      "latitude": 1.280427,
+      "species": "Sindora wallichii",
+      "heightBand": ">6 but ≤9",
+      "heightUpper": 9,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        -54.643,
+        44.714
+      ],
+      "aerialRGB": [
+        91,
+        99,
+        84
+      ],
+      "groundY": -59.92,
+      "crownDiameterMetres": 10.1
+    },
+    {
+      "treeId": "12487198",
+      "longitude": 103.854528,
+      "latitude": 1.280677,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        -2.514,
+        50.907
+      ],
+      "aerialRGB": [
+        108,
+        114,
+        90
+      ],
+      "groundY": -60.257,
+      "crownDiameterMetres": 11.9
+    },
+    {
+      "treeId": "12487201",
+      "longitude": 103.854064,
+      "latitude": 1.280979,
+      "species": "Sindora wallichii",
+      "heightBand": ">6 but ≤9",
+      "heightUpper": 9,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        58.4,
+        59.348
+      ],
+      "aerialRGB": [
+        88,
+        96,
+        82
+      ],
+      "groundY": -59.887,
+      "crownDiameterMetres": 7.2
+    },
+    {
+      "treeId": "12487202",
+      "longitude": 103.853975,
+      "latitude": 1.281034,
+      "species": "Sindora wallichii",
+      "heightBand": ">6 but ≤9",
+      "heightUpper": 9,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        69.948,
+        60.674
+      ],
+      "aerialRGB": [
+        86,
+        98,
+        83
+      ],
+      "groundY": -59.878,
+      "crownDiameterMetres": 6.6
+    },
+    {
+      "treeId": "12487204",
+      "longitude": 103.853795,
+      "latitude": 1.281154,
+      "species": "Sindora wallichii",
+      "heightBand": ">6 but ≤9",
+      "heightUpper": 9,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        93.711,
+        64.233
+      ],
+      "aerialRGB": [
+        108,
+        116,
+        99
+      ],
+      "groundY": -59.92,
+      "crownDiameterMetres": 9.0
+    },
+    {
+      "treeId": "12487205",
+      "longitude": 103.853729,
+      "latitude": 1.281205,
+      "species": "Sindora wallichii",
+      "heightBand": ">6 but ≤9",
+      "heightUpper": 9,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        102.751,
+        66.24
+      ],
+      "aerialRGB": [
+        98,
+        108,
+        89
+      ],
+      "groundY": -59.919,
+      "crownDiameterMetres": 10.1
+    },
+    {
+      "treeId": "12487207",
+      "longitude": 103.853459,
+      "latitude": 1.281366,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        137.508,
+        69.676
+      ],
+      "aerialRGB": [
+        115,
+        124,
+        96
+      ],
+      "groundY": -59.864,
+      "crownDiameterMetres": 13.4
+    },
+    {
+      "treeId": "12487208",
+      "longitude": 103.853191,
+      "latitude": 1.281547,
+      "species": "Sindora wallichii",
+      "heightBand": ">6 but ≤9",
+      "heightUpper": 9,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        172.998,
+        75.209
+      ],
+      "aerialRGB": [
+        116,
+        128,
+        101
+      ],
+      "groundY": -59.92,
+      "crownDiameterMetres": 10.1
+    },
+    {
+      "treeId": "12487210",
+      "longitude": 103.852971,
+      "latitude": 1.281686,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        201.684,
+        78.792
+      ],
+      "aerialRGB": [
+        119,
+        130,
+        97
+      ],
+      "groundY": -60.261,
+      "crownDiameterMetres": 10.1
+    },
+    {
+      "treeId": "12487211",
+      "longitude": 103.852912,
+      "latitude": 1.281729,
+      "species": "Sindora wallichii",
+      "heightBand": ">6 but ≤9",
+      "heightUpper": 9,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        209.645,
+        80.326
+      ],
+      "aerialRGB": [
+        95,
+        105,
+        91
+      ],
+      "groundY": -60.261,
+      "crownDiameterMetres": 10.1
+    },
+    {
+      "treeId": "12457866",
+      "longitude": 103.852834,
+      "latitude": 1.281775,
+      "species": "Sindora wallichii",
+      "heightBand": ">3 but ≤6",
+      "heightUpper": 6,
+      "girthBand": "0.0 - 0.5",
+      "localXZ": [
+        219.662,
+        81.267
+      ],
+      "aerialRGB": [
+        94,
+        102,
+        90
+      ],
+      "groundY": -60.261,
+      "crownDiameterMetres": 6.7
+    },
+    {
+      "treeId": "12457870",
+      "longitude": 103.854368,
+      "latitude": 1.280784,
+      "species": "Sindora wallichii",
+      "heightBand": ">3 but ≤6",
+      "heightUpper": 6,
+      "girthBand": "0.0 - 0.5",
+      "localXZ": [
+        18.625,
+        54.104
+      ],
+      "aerialRGB": [
+        99,
+        108,
+        83
+      ],
+      "groundY": -59.892,
+      "crownDiameterMetres": 6.7
+    },
+    {
+      "treeId": "12457873",
+      "longitude": 103.854988,
+      "latitude": 1.28039,
+      "species": "Sindora wallichii",
+      "heightBand": ">6 but ≤9",
+      "heightUpper": 9,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        -62.323,
+        43.781
+      ],
+      "aerialRGB": [
+        111,
+        124,
+        90
+      ],
+      "groundY": -59.92,
+      "crownDiameterMetres": 10.1
+    },
+    {
+      "treeId": "12641817",
+      "longitude": 103.852531,
+      "latitude": 1.281995,
+      "species": "Sindora wallichii",
+      "heightBand": ">6 but ≤9",
+      "heightUpper": 9,
+      "girthBand": "0.0 - 0.5",
+      "localXZ": [
+        260.505,
+        89.063
+      ],
+      "aerialRGB": [
+        108,
+        112,
+        93
+      ],
+      "groundY": -60.263,
+      "crownDiameterMetres": 6.6
+    },
+    {
+      "treeId": "12641818",
+      "longitude": 103.852584,
+      "latitude": 1.281961,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        253.57,
+        88.149
+      ],
+      "aerialRGB": [
+        105,
+        111,
+        96
+      ],
+      "groundY": -60.263,
+      "crownDiameterMetres": 11.9
+    },
+    {
+      "treeId": "12583549",
+      "longitude": 103.854788,
+      "latitude": 1.280507,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        -36.683,
+        46.099
+      ],
+      "aerialRGB": [
+        109,
+        117,
+        87
+      ],
+      "groundY": -60.257,
+      "crownDiameterMetres": 13.4
+    },
+    {
+      "treeId": "12487173",
+      "longitude": 103.855717,
+      "latitude": 1.27966,
+      "species": "Sindora wallichii",
+      "heightBand": ">6 but ≤9",
+      "heightUpper": 9,
+      "girthBand": "0.0 - 0.5",
+      "localXZ": [
+        -169.967,
+        4.912
+      ],
+      "aerialRGB": [
+        118,
+        124,
+        93
+      ],
+      "crownDiameterMetres": 6.6,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.9986,
+          -0.0531
+        ],
+        "stretch": 1.28,
+        "leanLocalXZ": [
+          0.3,
+          0.3
+        ]
+      },
+      "groundY": -60.26
+    },
+    {
+      "treeId": "12487174",
+      "longitude": 103.855285,
+      "latitude": 1.279945,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        -113.075,
+        13.154
+      ],
+      "aerialRGB": [
+        118,
+        129,
+        92
+      ],
+      "crownDiameterMetres": 10.5,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.9729,
+          -0.2314
+        ],
+        "stretch": 1.153,
+        "leanLocalXZ": [
+          -0.28,
+          -1.86
+        ]
+      },
+      "groundY": -60.258
+    },
+    {
+      "treeId": "12487175",
+      "longitude": 103.8552,
+      "latitude": 1.279998,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        -102.025,
+        14.468
+      ],
+      "aerialRGB": [
+        118,
+        128,
+        93
+      ],
+      "crownDiameterMetres": 10.6,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.7671,
+          -0.6415
+        ],
+        "stretch": 1.1,
+        "leanLocalXZ": [
+          -0.22,
+          -1.06
+        ]
+      },
+      "groundY": -60.258
+    },
+    {
+      "treeId": "12487176",
+      "longitude": 103.855111,
+      "latitude": 1.280054,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        -90.431,
+        15.894
+      ],
+      "aerialRGB": [
+        113,
+        122,
+        92
+      ],
+      "crownDiameterMetres": 11.9,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.9458,
+          -0.3249
+        ],
+        "stretch": 1.042,
+        "leanLocalXZ": [
+          0.58,
+          -0.89
+        ]
+      },
+      "groundY": -60.258
+    },
+    {
+      "treeId": "12487177",
+      "longitude": 103.855,
+      "latitude": 1.280131,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        -75.637,
+        18.39
+      ],
+      "aerialRGB": [
+        122,
+        128,
+        93
+      ],
+      "crownDiameterMetres": 9.8,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.9825,
+          0.1862
+        ],
+        "stretch": 1.227,
+        "leanLocalXZ": [
+          -0.4,
+          -1.73
+        ]
+      },
+      "groundY": -60.258
+    },
+    {
+      "treeId": "12487178",
+      "longitude": 103.854925,
+      "latitude": 1.280181,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        -65.735,
+        19.873
+      ],
+      "aerialRGB": [
+        124,
+        132,
+        92
+      ],
+      "crownDiameterMetres": 10.9,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.7915,
+          0.6111
+        ],
+        "stretch": 1.029,
+        "leanLocalXZ": [
+          0.22,
+          -1.43
+        ]
+      },
+      "groundY": -60.258
+    },
+    {
+      "treeId": "12487179",
+      "longitude": 103.854731,
+      "latitude": 1.28031,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        -40.139,
+        23.676
+      ],
+      "aerialRGB": [
+        122,
+        128,
+        96
+      ],
+      "crownDiameterMetres": 9.1,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.9753,
+          0.2209
+        ],
+        "stretch": 1.164,
+        "leanLocalXZ": [
+          -0.64,
+          -1.51
+        ]
+      },
+      "groundY": -60.257
+    },
+    {
+      "treeId": "12487180",
+      "longitude": 103.854565,
+      "latitude": 1.280418,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        -18.349,
+        26.691
+      ],
+      "aerialRGB": [
+        123,
+        131,
+        93
+      ],
+      "crownDiameterMetres": 10.1,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.9819,
+          -0.1895
+        ],
+        "stretch": 1.109,
+        "leanLocalXZ": [
+          0.69,
+          -1.67
+        ]
+      },
+      "groundY": -60.257
+    },
+    {
+      "treeId": "12487181",
+      "longitude": 103.854464,
+      "latitude": 1.280477,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        -5.404,
+        27.854
+      ],
+      "aerialRGB": [
+        111,
+        116,
+        90
+      ],
+      "crownDiameterMetres": 10.6,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.8605,
+          -0.5095
+        ],
+        "stretch": 1.13,
+        "leanLocalXZ": [
+          0.26,
+          -1.27
+        ]
+      },
+      "groundY": -60.257
+    },
+    {
+      "treeId": "12487182",
+      "longitude": 103.854349,
+      "latitude": 1.280545,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        9.373,
+        29.259
+      ],
+      "aerialRGB": [
+        117,
+        125,
+        91
+      ],
+      "crownDiameterMetres": 10.2,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.202,
+          0.9794
+        ],
+        "stretch": 1.146,
+        "leanLocalXZ": [
+          -1.71,
+          -0.68
+        ]
+      },
+      "groundY": -60.257
+    },
+    {
+      "treeId": "12487183",
+      "longitude": 103.854239,
+      "latitude": 1.280614,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        23.692,
+        31.0
+      ],
+      "aerialRGB": [
+        114,
+        120,
+        93
+      ],
+      "crownDiameterMetres": 10.5,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.9723,
+          0.2339
+        ],
+        "stretch": 1.147,
+        "leanLocalXZ": [
+          -1.11,
+          -1.52
+        ]
+      },
+      "groundY": -60.257
+    },
+    {
+      "treeId": "12487192",
+      "longitude": 103.855422,
+      "latitude": 1.280097,
+      "species": "Sindora wallichii",
+      "heightBand": ">3 but ≤6",
+      "heightUpper": 6,
+      "girthBand": "0.0 - 0.5",
+      "localXZ": [
+        -119.791,
+        34.831
+      ],
+      "aerialRGB": [
+        115,
+        125,
+        96
+      ],
+      "crownDiameterMetres": 5.1,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.6658,
+          0.7461
+        ],
+        "stretch": 1.28,
+        "leanLocalXZ": [
+          0.79,
+          0.49
+        ]
+      },
+      "groundY": -60.258
+    },
+    {
+      "treeId": "12487193",
+      "longitude": 103.855355,
+      "latitude": 1.280144,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        -110.836,
+        36.389
+      ],
+      "aerialRGB": [
+        118,
+        128,
+        95
+      ],
+      "crownDiameterMetres": 7.1,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.9718,
+          -0.2358
+        ],
+        "stretch": 1.28,
+        "leanLocalXZ": [
+          1.26,
+          0.26
+        ]
+      },
+      "groundY": -60.258
+    },
+    {
+      "treeId": "12487209",
+      "longitude": 103.853303,
+      "latitude": 1.281478,
+      "species": "Sindora wallichii",
+      "heightBand": ">6 but ≤9",
+      "heightUpper": 9,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        158.477,
+        73.562
+      ],
+      "aerialRGB": [
+        106,
+        118,
+        95
+      ],
+      "crownDiameterMetres": 6.5,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.0116,
+          0.9999
+        ],
+        "stretch": 1.109,
+        "leanLocalXZ": [
+          1.16,
+          0.19
+        ]
+      },
+      "groundY": -59.919
+    },
+    {
+      "treeId": "12457867",
+      "longitude": 103.852861,
+      "latitude": 1.281515,
+      "species": "Sindora wallichii",
+      "heightBand": ">3 but ≤6",
+      "heightUpper": 6,
+      "girthBand": "0.0 - 0.5",
+      "localXZ": [
+        204.788,
+        56.481
+      ],
+      "aerialRGB": [
+        123,
+        136,
+        99
+      ],
+      "crownDiameterMetres": 6.0,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.9194,
+          -0.3933
+        ],
+        "stretch": 1.151,
+        "leanLocalXZ": [
+          0.38,
+          -1.01
+        ]
+      },
+      "groundY": -60.261
+    },
+    {
+      "treeId": "12457868",
+      "longitude": 103.85306,
+      "latitude": 1.281383,
+      "species": "Sindora wallichii",
+      "heightBand": ">3 but ≤6",
+      "heightUpper": 6,
+      "girthBand": "0.0 - 0.5",
+      "localXZ": [
+        178.548,
+        52.613
+      ],
+      "aerialRGB": [
+        121,
+        130,
+        103
+      ],
+      "crownDiameterMetres": 6.7,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.5745,
+          0.8185
+        ],
+        "stretch": 1.007,
+        "leanLocalXZ": [
+          -0.02,
+          -0.1
+        ]
+      },
+      "groundY": -60.26
+    },
+    {
+      "treeId": "12457872",
+      "longitude": 103.854838,
+      "latitude": 1.280242,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        -54.11,
+        21.894
+      ],
+      "aerialRGB": [
+        125,
+        135,
+        91
+      ],
+      "crownDiameterMetres": 9.3,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.9997,
+          -0.024
+        ],
+        "stretch": 1.218,
+        "leanLocalXZ": [
+          0.09,
+          -1.66
+        ]
+      },
+      "groundY": -60.257
+    },
+    {
+      "treeId": "12457875",
+      "longitude": 103.855813,
+      "latitude": 1.279853,
+      "species": "Sindora wallichii",
+      "heightBand": ">3 but ≤6",
+      "heightUpper": 6,
+      "girthBand": "0.0 - 0.5",
+      "localXZ": [
+        -170.631,
+        28.769
+      ],
+      "aerialRGB": [
+        103,
+        108,
+        91
+      ],
+      "crownDiameterMetres": 6.6,
+      "crownFit": {
+        "majorLocalXZ": [
+          0.5822,
+          0.8131
+        ],
+        "stretch": 1.141,
+        "leanLocalXZ": [
+          -0.52,
+          0.63
+        ]
+      },
+      "groundY": -59.868
+    },
+    {
+      "treeId": "12457876",
+      "longitude": 103.855777,
+      "latitude": 1.279623,
+      "species": "Sindora wallichii",
+      "heightBand": ">3 but ≤6",
+      "heightUpper": 6,
+      "girthBand": "0.0 - 0.5",
+      "localXZ": [
+        -177.748,
+        4.026
+      ],
+      "aerialRGB": [
+        114,
+        118,
+        97
+      ],
+      "crownDiameterMetres": 5.9,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.8658,
+          -0.5005
+        ],
+        "stretch": 1.17,
+        "leanLocalXZ": [
+          0.47,
+          -0.45
+        ]
+      },
+      "groundY": -60.26
+    },
+    {
+      "treeId": "12610418",
+      "longitude": 103.852804,
+      "latitude": 1.28155,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.0 - 0.5",
+      "localXZ": [
+        212.173,
+        57.308
+      ],
+      "aerialRGB": [
+        119,
+        128,
+        101
+      ],
+      "crownDiameterMetres": 10.7,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.8287,
+          -0.5597
+        ],
+        "stretch": 1.094,
+        "leanLocalXZ": [
+          1.29,
+          -1.42
+        ]
+      },
+      "groundY": -60.261
+    },
+    {
+      "treeId": "12498791",
+      "longitude": 103.852911,
+      "latitude": 1.281483,
+      "species": "Sindora wallichii",
+      "heightBand": ">6 but ≤9",
+      "heightUpper": 9,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        198.25,
+        55.626
+      ],
+      "aerialRGB": [
+        111,
+        124,
+        94
+      ],
+      "crownDiameterMetres": 7.2,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.3372,
+          0.9414
+        ],
+        "stretch": 1.036,
+        "leanLocalXZ": [
+          0.23,
+          -1.28
+        ]
+      },
+      "groundY": -60.26
+    },
+    {
+      "treeId": "12498792",
+      "longitude": 103.852966,
+      "latitude": 1.281451,
+      "species": "Sindora wallichii",
+      "heightBand": ">6 but ≤9",
+      "heightUpper": 9,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        191.207,
+        55.006
+      ],
+      "aerialRGB": [
+        122,
+        133,
+        102
+      ],
+      "crownDiameterMetres": 9.0,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.9265,
+          -0.3762
+        ],
+        "stretch": 1.008,
+        "leanLocalXZ": [
+          -0.47,
+          -1.22
+        ]
+      },
+      "groundY": -60.26
+    },
+    {
+      "treeId": "12498793",
+      "longitude": 103.853138,
+      "latitude": 1.281313,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        167.409,
+        49.266
+      ],
+      "aerialRGB": [
+        123,
+        129,
+        107
+      ],
+      "crownDiameterMetres": 10.7,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.8121,
+          -0.5836
+        ],
+        "stretch": 1.126,
+        "leanLocalXZ": [
+          0.05,
+          0.14
+        ]
+      },
+      "groundY": -60.259
+    },
+    {
+      "treeId": "12498794",
+      "longitude": 103.853234,
+      "latitude": 1.281251,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        154.829,
+        47.568
+      ],
+      "aerialRGB": [
+        133,
+        138,
+        104
+      ],
+      "crownDiameterMetres": 10.4,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.1101,
+          0.9939
+        ],
+        "stretch": 1.244,
+        "leanLocalXZ": [
+          1.87,
+          -0.05
+        ]
+      },
+      "groundY": -60.259
+    },
+    {
+      "treeId": "12487213",
+      "longitude": 103.852688,
+      "latitude": 1.281864,
+      "species": "Sindora wallichii",
+      "heightBand": ">6 but ≤9",
+      "heightUpper": 9,
+      "girthBand": "0.0 - 0.5",
+      "localXZ": [
+        238.547,
+        83.319
+      ],
+      "aerialRGB": [
+        109,
+        116,
+        96
+      ],
+      "crownDiameterMetres": 5.2,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.9819,
+          0.1892
+        ],
+        "stretch": 1.28,
+        "leanLocalXZ": [
+          -0.79,
+          0.49
+        ]
+      },
+      "groundY": -60.262
+    },
+    {
+      "treeId": "12641809",
+      "longitude": 103.852136,
+      "latitude": 1.281962,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        298.804,
+        67.178
+      ],
+      "aerialRGB": [
+        111,
+        116,
+        92
+      ],
+      "crownDiameterMetres": 8.8,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.9807,
+          -0.1956
+        ],
+        "stretch": 1.169,
+        "leanLocalXZ": [
+          -1.13,
+          1.1
+        ]
+      },
+      "groundY": -60.264
+    },
+    {
+      "treeId": "12641810",
+      "longitude": 103.852249,
+      "latitude": 1.281908,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        284.883,
+        67.081
+      ],
+      "aerialRGB": [
+        104,
+        109,
+        90
+      ],
+      "crownDiameterMetres": 8.1,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.6302,
+          0.7764
+        ],
+        "stretch": 1.036,
+        "leanLocalXZ": [
+          -0.68,
+          -1.29
+        ]
+      },
+      "groundY": -60.264
+    },
+    {
+      "treeId": "12641811",
+      "longitude": 103.852333,
+      "latitude": 1.281855,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        273.933,
+        65.72
+      ],
+      "aerialRGB": [
+        135,
+        142,
+        114
+      ],
+      "crownDiameterMetres": 7.3,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.8785,
+          -0.4777
+        ],
+        "stretch": 1.134,
+        "leanLocalXZ": [
+          0.63,
+          1.02
+        ]
+      },
+      "groundY": -60.263
+    },
+    {
+      "treeId": "12641812",
+      "longitude": 103.85242,
+      "latitude": 1.281799,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        262.541,
+        64.2
+      ],
+      "aerialRGB": [
+        117,
+        123,
+        96
+      ],
+      "crownDiameterMetres": 7.5,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.9647,
+          0.2634
+        ],
+        "stretch": 1.189,
+        "leanLocalXZ": [
+          -1.23,
+          0.21
+        ]
+      },
+      "groundY": -60.263
+    },
+    {
+      "treeId": "12641813",
+      "longitude": 103.852495,
+      "latitude": 1.281749,
+      "species": "Sindora wallichii",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        252.64,
+        62.717
+      ],
+      "aerialRGB": [
+        136,
+        141,
+        108
+      ],
+      "crownDiameterMetres": 6.5,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.9877,
+          -0.1566
+        ],
+        "stretch": 1.28,
+        "leanLocalXZ": [
+          -0.75,
+          0.45
+        ]
+      },
+      "groundY": -60.262
+    },
+    {
+      "treeId": "12583551",
+      "longitude": 103.854656,
+      "latitude": 1.280358,
+      "species": "Sindora wallichii",
+      "heightBand": ">3 but ≤6",
+      "heightUpper": 6,
+      "girthBand": "0.0 - 0.5",
+      "localXZ": [
+        -30.331,
+        24.959
+      ],
+      "aerialRGB": [
+        132,
+        139,
+        96
+      ],
+      "crownDiameterMetres": 6.7,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.949,
+          -0.3151
+        ],
+        "stretch": 1.137,
+        "leanLocalXZ": [
+          0.3,
+          -0.66
+        ]
+      },
+      "groundY": -60.257
+    }
+  ],
+  "aerialReferenceRGB": [
+    106.5,
+    111.5,
+    90.0
+  ],
+  "crownFitMethod": "For the 31 additional inventory stems, isolate connected foliage in the z20 orthophoto within the nearest-stem region. Fit diameter from area, anisotropy from horizontal covariance, and limit the crown-centre offset to 18% of diameter."
+}

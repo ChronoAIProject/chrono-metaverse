@@ -1039,7 +1039,7 @@
     "layer": "ext",
     "kind": "structure",
     "label": "滨海公园 · 步道与康乐通道林冠",
-    "assetHash": "e88f0d5ae51c7ee4806414f53e9af22b05f1c8c43083556402c2583a1643e2ef",
+    "assetHash": "60f38eab22d75ea390f5372c3ce4085bb4c24ebb09ed458c1afda9440f5418ba",
     "bounds": {
       "min": [
         476.00759487527444,
@@ -1063,6 +1063,36 @@
       "林荫道": "康乐通道两侧额外 41 株雨树，树根高度取自浏览器地表。33 株树冠按 OneMap 航拍估读纵横冠幅及偏向。",
       "道路位置": "https://www.openstreetmap.org/way/843399102/history/13",
       "树形素材": "Poly Haven · Island Tree 01、Jacaranda Tree · CC0。雨树借用蓝花楹展开的分枝形态，按名录高度和估计冠宽拟合；其余树使用 Island Tree 01。"
+    }
+  },
+  {
+    "entityId": "bay.marina-boulevard-sindora",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "kind": "structure",
+    "label": "滨海大道 · 两侧行道树",
+    "assetHash": "20f1fbc94ed29b87db750511bfb1b4ac647ed386dac6de68fe6b36afa1b6ac48",
+    "bounds": {
+      "min": [
+        -182.43067710442432,
+        -60.294000000000004,
+        0.6013393936623852
+      ],
+      "max": [
+        305.0394152000819,
+        -48.99462878785578,
+        94.34958101040287
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "树木名录": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树木依据": "49 株 Sindora wallichii 的树位和高度档取自 NParks 2021 名录。冠幅、偏向与色差按 OneMap 航拍估读，档内高度与枝形为估值。",
+      "树形素材": "Poly Haven · Tree Small 02 · CC0。使用 Burkea africana 的枝叶与主干近似同为豆科的 Sindora。"
     }
   }
 ]
