@@ -11,6 +11,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 from scipy.ndimage import gaussian_filter
 
+from sands_glazing import CREDIT, apply_glazing, front_wall
 from skypark_geometry import HOTEL_ID, overflow_crest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,7 +36,7 @@ def rebalance(image, mask):
     return Image.fromarray(np.uint8(np.clip(output, 0, 255)))
 
 
-def primitive(doc, views, prim, floor, pixels, painter, pool_anchor):
+def primitive(doc, views, prim, floor, pixels, painter, pool_anchor, tower_anchor, glazing):
     def read(index):
         acc = doc["accessors"][index]
         width = {"VEC2": 2, "VEC3": 3, "VEC4": 4, "SCALAR": 1}[acc["type"]]
@@ -71,6 +72,9 @@ def primitive(doc, views, prim, floor, pixels, painter, pool_anchor):
         altitude = attrs["POSITION"][original, 1].mean(axis=1) + floor
         facing_bay = ((normals[:, 0] > .82) & (np.abs(normals[:, 1]) < .25)
                       & (altitude > 22) & (altitude < 182.4))
+        if tower_anchor is not None and facing_bay.any():
+            for face in front_wall(attrs["POSITION"], original[facing_bay]):
+                glazing.append((attrs["POSITION"][face] + tower_anchor, attrs["TEXCOORD_0"][face]))
         for face in original[facing_bay]:
             uv = attrs["TEXCOORD_0"][face] * pixels
             painter.polygon([tuple(point) for point in uv], fill=255)
@@ -85,7 +89,7 @@ def primitive(doc, views, prim, floor, pixels, painter, pool_anchor):
     return len(first)
 
 
-def convert(raw, floor, pool_anchor=None):
+def convert(raw, floor, pool_anchor=None, tower_anchor=None):
     json_length = struct.unpack_from("<I", raw, 12)[0]
     doc = json.loads(raw[20:20 + json_length])
     binary = raw[28 + json_length:]
@@ -95,10 +99,15 @@ def convert(raw, floor, pool_anchor=None):
     image = Image.open(io.BytesIO(views[image_info["bufferView"]]))
     mask = Image.new("L", image.size)
     painter = ImageDraw.Draw(mask)
-    count = sum(primitive(doc, views, prim, floor, image.size, painter, pool_anchor)
+    glazing = []
+    count = sum(primitive(doc, views, prim, floor, image.size, painter, pool_anchor, tower_anchor, glazing)
                 for mesh in doc["meshes"] for prim in mesh["primitives"])
     jpeg = io.BytesIO()
-    rebalance(image, mask).save(jpeg, "JPEG", quality=95, subsampling=0, optimize=True)
+    texture = rebalance(image, mask)
+    if glazing:
+        texture = apply_glazing(texture, glazing)
+        image_info.setdefault("extras", {})["glazingAttribution"] = CREDIT
+    texture.save(jpeg, "JPEG", quality=95, subsampling=0, optimize=True)
     views[image_info["bufferView"]] = jpeg.getvalue()
     image_info["mimeType"] = "image/jpeg"
 
@@ -128,19 +137,21 @@ def bake(sources):
         raw = (sources / f"{source}.glb").read_bytes()
         if hashlib.sha256(raw).hexdigest() != source:
             raise ValueError(f"Source does not match {source}")
+        low, high = np.array([e["bounds"][key] for key in ("min", "max")])
+        anchor = (low + high) / 2
+        anchor[1] = low[1]
         pool_anchor = None
         if e["entityId"] == HOTEL_ID:
-            low, high = np.array([e["bounds"][key] for key in ("min", "max")])
-            pool_anchor = (low + high) / 2
-            pool_anchor[1] = low[1]
+            pool_anchor = anchor
             e["props"]["泳池溢流边"] = "沿 SLA 原模型临湾池唇折线，依无边泳池现场照片校正其高出水面的视觉高度，准确高度为估值。"
             e["props"]["泳池现场参考"] = "https://commons.wikimedia.org/wiki/File:Infinity_Pool_at_Marina_Bay_Sands_SkyPark_Singapore_Ank_Kumar_Infosys_Limited_04.jpg"
-        data, triangles = convert(raw, e["bounds"]["min"][1] + office_height, pool_anchor)
+        data, triangles = convert(raw, e["bounds"]["min"][1] + office_height, pool_anchor, anchor)
         digest = hashlib.sha256(data).hexdigest()
         (ROOT / "assets" / f"{digest}.glb").write_bytes(data)
         e["assetHash"] = digest
         e["props"].update({"三角形数": triangles, "原建筑资源": source, "玻璃参考": REFERENCE,
-                           "立面处理": "按朝湾立面朝向和高度校正贴图中的大面积固定亮斑；窗格和几何轮廓沿用 SLA 模型。"})
+                           "玻璃影像署名": CREDIT,
+                           "立面处理": "按塔顶角点和塔身轮廓配准鱼尾狮公园的实拍，将可见临湾窗带投影到 SLA 模型。低层受屋顶遮挡的玻璃沿同列可见窗带估补。"})
         found.add(source)
         print(e["label"], digest, len(data), triangles)
     if found != SOURCES:

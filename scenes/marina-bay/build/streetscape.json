@@ -1126,5 +1126,35 @@
       "树木依据": "靠 Esplanade Drive 的 67 株双翼豆与洋红风铃木。树位、树种和高度档取自 NParks 2021 名录，根部按地面定位，冠幅与偏向按 OneMap 航拍估读。",
       "树形素材": "Poly Haven · CC0。双翼豆借用 Jacaranda Tree 的分枝，洋红风铃木借用 Island Tree 01。"
     }
+  },
+  {
+    "entityId": "bay.sands-event-plaza-trees",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "kind": "structure",
+    "label": "金沙活动广场 · 临水阔叶树",
+    "assetHash": "3d3dac51f429941ba22dc046505b2b252587167412d4c84b352e30124a6b7825",
+    "bounds": {
+      "min": [
+        -255.78207146593707,
+        -60.3251,
+        534.0804979170101
+      ],
+      "max": [
+        -232.91591860835513,
+        -41.82346273400785,
+        639.8705577549819
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "树木依据": "两侧六株阔叶树的冠心、冠幅与偏向取自 SLA / OneMap 正射影像。以冠心近似树位，按鱼尾狮公园实拍估读树高。",
+      "树形素材": "Poly Haven · Tree Small 02 · CC0。树种未确认，使用扫描阔叶树的枝干近似。",
+      "实拍参考": "https://commons.wikimedia.org/wiki/File:Marina_Bay_Sands_view_from_Merlion_Park,_Singapore_(Ank_Kumar)_01.jpg"
+    }
   }
 ]
