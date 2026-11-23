@@ -5,6 +5,8 @@ export class CitySun {
   private light?: THREE.DirectionalLight;
   private direction = new THREE.Vector3();
   private center = new THREE.Vector3();
+  private right = new THREE.Vector3();
+  private up = new THREE.Vector3();
   private last = -Infinity;
 
   setLight(light: THREE.DirectionalLight | undefined) {
@@ -15,6 +17,9 @@ export class CitySun {
     this.direction.copy(light.position).normalize();
     light.castShadow = true;
     const shadow = light.shadow;
+    const basis = new THREE.Matrix4().lookAt(this.direction, new THREE.Vector3(), shadow.camera.up);
+    this.right.setFromMatrixColumn(basis, 0);
+    this.up.setFromMatrixColumn(basis, 1);
     Object.assign(shadow.camera, {
       left: -360,
       right: 360,
@@ -55,6 +60,13 @@ export class CitySun {
     }
     const grid = radius / 15;
     this.center.divideScalar(grid).round().multiplyScalar(grid);
+    // 快速跟随时仍按粗格更新，但让固定物体总落在同一组阴影纹素上。
+    const texelX = (2 * radius) / shadow.mapSize.x;
+    const texelY = (2 * radius) / shadow.mapSize.y;
+    const x = this.center.dot(this.right);
+    const y = this.center.dot(this.up);
+    this.center.addScaledVector(this.right, Math.round(x / texelX) * texelX - x);
+    this.center.addScaledVector(this.up, Math.round(y / texelY) * texelY - y);
     if (previous === radius && now - this.last < 1000 && this.center.equals(light.target.position))
       return;
     this.last = now;

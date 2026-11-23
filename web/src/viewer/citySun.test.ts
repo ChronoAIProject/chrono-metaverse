@@ -20,3 +20,30 @@ it('keeps the theatre and its cast shadow inside the map from the lawn overlook'
   }
   expect(key.shadow.mapSize.toArray()).toEqual([2048, 2048]);
 });
+
+it('keeps shadow texels aligned across camera tracking steps at each resolution', () => {
+  const sun = new CitySun();
+  const key = new THREE.DirectionalLight();
+  key.position.set(0.554, 0.742, 0.378);
+  sun.setLight(key);
+  const renderer = { shadowMap: {} } as THREE.WebGLRenderer;
+  const landmark = new THREE.Vector3(410, -55, 625);
+  const pixelAt = (offset: number, distance: number) => {
+    const focus = landmark.clone();
+    focus.z += offset;
+    const eye = focus.clone();
+    eye.x -= distance;
+    sun.update(renderer, eye, focus, false);
+    key.updateMatrixWorld();
+    key.shadow.updateMatrices(key);
+    const uv = landmark.clone().applyMatrix4(key.shadow.matrix);
+    return new THREE.Vector2(uv.x, uv.y).multiply(key.shadow.mapSize);
+  };
+  for (const distance of [30, 150, 480]) {
+    const a = pixelAt(0, distance);
+    const movement = pixelAt(27, distance).sub(a);
+    expect(movement.length()).toBeGreaterThan(1);
+    expect(movement.x).toBeCloseTo(Math.round(movement.x), 6);
+    expect(movement.y).toBeCloseTo(Math.round(movement.y), 6);
+  }
+});
