@@ -13,13 +13,16 @@ from trimesh.visual.texture import TextureVisuals
 
 ROOT = Path(__file__).resolve().parents[1]
 LAYERS, TILE = 5, 160
-SOURCE = "78e905a40670bfabb2760601d4d9a6c17193a50d68e6271c66893eb7bd75906d"
+SOURCES = {
+    "island_tree_01": "78e905a40670bfabb2760601d4d9a6c17193a50d68e6271c66893eb7bd75906d",
+    "jacaranda_tree": "ba4aa8ab4c3e3741ce3699604d6ec1607cd6b126ae2d32abbcc0d98e8edb3be4",
+}
 
 
-def sample_scan(folder):
-    raw = (folder / "island_tree_01_1k.gltf").read_bytes()
-    if hashlib.sha256(raw).hexdigest() != SOURCE:
-        raise ValueError("Expected Poly Haven Island Tree 01 1k")
+def sample_scan(folder, name):
+    raw = (folder / f"{name}_1k.gltf").read_bytes()
+    if hashlib.sha256(raw).hexdigest() != SOURCES[name]:
+        raise ValueError(f"Expected the Poly Haven {name} 1k glTF")
     doc = json.loads(raw)
     binary = (folder / doc["buffers"][0]["uri"]).read_bytes()
 
@@ -56,8 +59,11 @@ def sample_scan(folder):
         image = np.array(Image.open(folder / doc["images"][tex]["uri"]).convert("RGB"))
         u, v = (st * image.shape[1::-1]).astype(int).T
         keep = np.ones(total, bool)
-        if mat["name"] == "island_tree_01_leaves":
-            mask = np.asarray(Image.open(folder / "textures/island_tree_01_leaves_alpha_1k.png"))
+        if mat["name"] == f"{name}_leaves":
+            with Image.open(folder / f"textures/{name}_leaves_alpha_1k.png") as opacity:
+                mask = np.asarray(opacity)
+                if mask.ndim == 3:
+                    mask = mask[:, :, 0]
             keep = mask[v,u] >= np.iinfo(mask.dtype).max / 2
         points.append(np.einsum("ij,ijk->ik", weights, tri[sample])[keep])
         colours.append(image[v[keep],u[keep]])
@@ -114,16 +120,31 @@ def slices(points, colors):
     return np.array(vertices), np.array(uv), np.array(normals), np.array(faces), atlas
 
 
-def bake(folder):
+def bake(folder, spreading_tree):
     ref = json.loads((ROOT/"references/esplanade-park-stand.json").read_text())
-    xyz, uv, normals, faces, atlas = slices(*sample_scan(folder))
+    xyz, uv, normals, faces, compact = slices(*sample_scan(folder, "island_tree_01"))
+    _, _, _, _, spreading = slices(*sample_scan(spreading_tree, "jacaranda_tree"))
+    atlas = Image.new("RGBA", (compact.width, compact.height * 2))
+    atlas.paste(compact, (0, 0))
+    atlas.paste(spreading, (0, compact.height))
+    atlas.format = "PNG"
     paint = PBRMaterial(name="Esplanade Park layered broadleaf canopy", baseColorTexture=atlas,
                         metallicFactor=0, roughnessFactor=.98, alphaMode="MASK", alphaCutoff=.32)
-    vertices, shading, tones = [], [], []
+    vertices, shading, tones, texcoords = [], [], [], []
     widths = {"Samanea saman":1.38,"Tabebuia rosea":.69,"Pterocarpus indicus":1.05,
               "Peltophorum pterocarpum":1.12}
     aerial_median = np.median([t["aerialRGB"] for t in ref["trees"]],axis=0)
-    for tree in ref["trees"]:
+    avenue = json.loads((ROOT / "references/connaught-drive-rain-trees.json").read_text())
+    along = np.array(avenue["crownSurvey"]["alongLocalXZ"])
+    along /= np.linalg.norm(along)
+    road_axes = np.array([along, [-along[1], along[0]]])
+    trees = ref["trees"] + avenue["trees"]
+    for tree in trees:
+        # Both source volumes use the same slice grid. Select its UV region for each crown.
+        tree_uv = uv.copy()
+        atlas_offset = 0 if tree["species"] == "Samanea saman" else 1
+        tree_uv[:, 1] = (tree_uv[:, 1] + atlas_offset) / 2
+        texcoords.extend(tree_uv)
         rng = np.random.default_rng(int(tree["treeId"]))
         height = tree["heightUpper"] - rng.uniform(.5,2.5)
         width = widths[tree["species"]] * height
@@ -131,15 +152,24 @@ def bake(folder):
         angle = rng.uniform(-np.pi,np.pi)
         basis = trimesh.transformations.rotation_matrix(angle,[0,1,0])[:3,:3]
         mapped = (xyz-[.5,0,.5])*axes @ basis.T
+        n = (normals/axes) @ basis.T
+        fit = tree.get("crownFit")
+        if fit:
+            warp = np.eye(3)
+            horizontal = np.ix_([0, 2], [0, 2])
+            warp[horizontal] = road_axes.T @ np.diag(fit["scaleAlongAcross"]) @ road_axes
+            # Shear from ground level so the visible crown can lean beyond the stem.
+            warp[[0, 2], 1] = (fit["offsetAlongAcrossMetres"] @ road_axes) / (.70 * height)
+            mapped = mapped @ warp.T
+            n = n @ np.linalg.inv(warp)
         x,z = tree["localXZ"]
         vertices.extend(mapped+[x,tree["groundY"]-.04,z])
-        n = (normals/axes) @ basis.T
         shading.extend(n/np.linalg.norm(n,axis=1)[:,None])
         tint = np.clip((np.array(tree["aerialRGB"])/aerial_median)**.65,.70,1.13)
         tones.extend(np.tile(np.uint8(np.minimum(255,231*tint)).tolist()+[255],(len(xyz),1)))
-    visual = TextureVisuals(uv=np.tile(uv,(len(ref["trees"]),1)),material=paint)
+    visual = TextureVisuals(uv=np.asarray(texcoords), material=paint)
     visual.vertex_attributes["color"] = np.asarray(tones,np.uint8)
-    mesh = trimesh.Trimesh(vertices=vertices,faces=np.vstack([faces+i*len(xyz) for i in range(len(ref["trees"]))]),
+    mesh = trimesh.Trimesh(vertices=vertices,faces=np.vstack([faces+i*len(xyz) for i in range(len(trees))]),
                            vertex_normals=shading,visual=visual,process=False)
     low,high = mesh.bounds
     origin = (low+high)/2
@@ -149,16 +179,20 @@ def bake(folder):
     digest = hashlib.sha256(data).hexdigest()
     (ROOT/'assets'/(digest+'.glb')).write_bytes(data)
     return dict(entityId="bay.esplanade-park-stand",regionId="marina-bay-exterior",layer="ext",kind="structure",
-                label="滨海公园 · 步道内侧林冠",assetHash=digest,bounds={"min":low.tolist(),"max":high.tolist()},
+                label="滨海公园 · 步道与康乐通道林冠",assetHash=digest,bounds={"min":low.tolist(),"max":high.tolist()},
                 material={"shading":"albedo"},props={"background":True,"surfaceRole":"landscape","树木名录":ref["source"],
                 "树木依据":"树位、树种与树高档来自 NParks 2021 名录。航拍参考树冠色差。各树枝形、冠径与档内高度为估值。",
-                "树形素材":"Poly Haven · Island Tree 01 · CC0。按三个方向分层投影原始扫描以保留枝群间隙。"})
+                "林荫道":"康乐通道两侧额外 41 株雨树，树根高度取自浏览器地表。33 株树冠按 OneMap 航拍估读纵横冠幅及偏向。",
+                "道路位置":avenue["road"],
+                "树形素材":"Poly Haven · Island Tree 01、Jacaranda Tree · CC0。雨树借用蓝花楹展开的分枝形态，按名录高度和估计冠宽拟合；其余树使用 Island Tree 01。"})
 
 
 if __name__ == "__main__":
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("tree",type=Path)
-    entry=bake(parser.parse_args().tree)
+    parser.add_argument("spreading_tree", type=Path, help="Directory containing the 1k Jacaranda Tree glTF")
+    args = parser.parse_args()
+    entry = bake(args.tree, args.spreading_tree)
     path=ROOT/"build/streetscape.json"
     records={r["entityId"]:r for r in json.loads(path.read_text())}
     records[entry["entityId"]]=entry
