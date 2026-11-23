@@ -25,7 +25,6 @@ def bake(folder, spreading_tree, east_grove=False):
     spreading_xyz, _, spreading_normals, _, spreading = slices(points, colors, canopy, fit_opacity=True)
     stems = {0: [], 1: []}
     atlas = Image.new("RGBA", (compact.width, compact.height * 2))
-    atlas.paste(compact, (0, 0))
     # Reserve linear tint range for the brighter surveyed crowns. Decode and re-encode
     # sRGB here because glTF vertex colours multiply the sampled texture in linear light.
     encoded = np.arange(256) / 255
@@ -33,9 +32,12 @@ def bake(folder, spreading_tree, east_grove=False):
     boosted = np.minimum(1, linear * RAIN_TREE_HEADROOM)
     lut = np.rint(255 * np.where(boosted <= .0031308, 12.92 * boosted,
                                 1.055 * boosted**(1/2.4) - .055)).astype(np.uint8)
-    pixels = np.array(spreading)
-    pixels[:, :, :3] = lut[pixels[:, :, :3]]
-    atlas.paste(Image.fromarray(pixels), (0, compact.height))
+    for tile, offset, reserve_tint_range in [(compact, 0, east_grove), (spreading, compact.height, True)]:
+        if reserve_tint_range:
+            pixels = np.array(tile)
+            pixels[:, :, :3] = lut[pixels[:, :, :3]]
+            tile = Image.fromarray(pixels)
+        atlas.paste(tile, (0, offset))
     atlas.format = "PNG"
     name = "Esplanade Drive layered crowns" if east_grove else "Esplanade Park layered broadleaf canopy"
     paint = PBRMaterial(name=name, baseColorTexture=atlas,
@@ -97,11 +99,11 @@ def bake(folder, spreading_tree, east_grove=False):
         shading.extend(n/np.linalg.norm(n,axis=1)[:,None])
         tint = np.clip((np.array(tree["aerialRGB"])/aerial_median)**.65,.70,1.13)
         color = np.minimum(255, 231*tint)
-        if tree["species"] == "Samanea saman":
+        if east_grove:
+            color = color * np.array(tree.get("foliageGainLinear", [1, 1, 1])) / RAIN_TREE_HEADROOM
+        elif tree["species"] == "Samanea saman":
             color = (color * np.array(tree.get("foliageGainLinear", [1, 1, 1]))
                      * RAIN_TREE_MASK_GAIN / RAIN_TREE_HEADROOM)
-        elif spreading_form:
-            color = color / RAIN_TREE_HEADROOM
         color = np.uint8(np.clip(np.rint(color), 0, 255)).tolist()
         tones.extend(np.tile([*color, 255], (len(xyz), 1)))
     visual = TextureVisuals(uv=np.asarray(texcoords), material=paint)
