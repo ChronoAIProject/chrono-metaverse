@@ -26,9 +26,47 @@ export interface GeographicMap extends GeographicReference {
   readonly sources: readonly TileSource[];
 }
 
+/** 天空全景自身坐标系中的太阳方位，以及线性 RGB 下的日光、天光色度。 */
+export interface SkyDaylight {
+  readonly azimuth: number;
+  readonly elevation: number;
+  readonly directFraction: number;
+  readonly sunColor: readonly [number, number, number];
+  readonly skyColor: readonly [number, number, number];
+}
+
+function skyDaylight(value: unknown): SkyDaylight | undefined {
+  const d = record(value);
+  const color = (v: unknown): v is [number, number, number] =>
+    Array.isArray(v) &&
+    v.length === 3 &&
+    v.every((c) => finite(c, 0, 4)) &&
+    v.some((c) => c >= 0.001);
+  if (
+    !d ||
+    !finite(d.azimuth, -180, 180) ||
+    !finite(d.elevation, 1, 90) ||
+    !finite(d.directFraction, 0, 1) ||
+    !color(d.sunColor) ||
+    !color(d.skyColor)
+  )
+    return undefined;
+  return {
+    azimuth: d.azimuth,
+    elevation: d.elevation,
+    directFraction: d.directFraction,
+    sunColor: d.sunColor,
+    skyColor: d.skyColor,
+  };
+}
+
 export interface Environment {
   readonly version: 1;
-  readonly sky?: { readonly texture: string; readonly yaw: number };
+  readonly sky?: {
+    readonly texture: string;
+    readonly yaw: number;
+    readonly daylight?: SkyDaylight;
+  };
   readonly map?: GeographicMap;
 }
 
@@ -71,7 +109,11 @@ export function environmentOf(entity: EntityBody): Environment | null {
       !finite(value.yaw ?? 0, -360, 360)
     )
       return null;
-    sky = { texture: value.texture, yaw: (value.yaw as number | undefined) ?? 0 };
+    sky = {
+      texture: value.texture,
+      yaw: (value.yaw as number | undefined) ?? 0,
+      daylight: skyDaylight(value.daylight),
+    };
   }
   let map: GeographicMap | undefined;
   if (raw.map !== undefined) {

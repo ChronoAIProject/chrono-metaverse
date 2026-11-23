@@ -520,5 +520,42 @@
       "石材": "Granite Tile 04 · Poly Haven · CC0",
       "说明": "沿正射影像三段折线铺设七级石阶，扣除实测雕像基座。低处踏面衔接矢量水岸约 1.1–1.5 米的配准差。踏步尺寸、石柱间距和陆侧过渡坡度按照片估配。"
     }
+  },
+  {
+    "entityId": "bay.fullerton-woven-pendants",
+    "layer": "ext",
+    "kind": "object",
+    "regionId": "marina-bay-exterior",
+    "label": "浮尔顿露台 · 编织吊灯",
+    "assetHash": "c999fafb595856b5d072edd25e9c5db76c3c2c80a2c74ff75b2187e6e0526e93",
+    "bounds": {
+      "min": [
+        264.00390830739303,
+        -57.902311117033435,
+        486.0724032567502
+      ],
+      "max": [
+        271.05396909367994,
+        -56.74491872127209,
+        507.2508931548583
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "现场参考": "https://commons.wikimedia.org/wiki/File:One_Fullerton_12-05-2024(8).jpg",
+      "建筑来源": "Map Data © Singapore Land Authority / OneMap",
+      "backgroundView": {
+        "focus": [
+          267.5289387005365,
+          -57.32361491915276,
+          496.6616482058042
+        ],
+        "maxDistance": 180
+      },
+      "吊灯": "根据 2024 年现场晚间照片重建编织灯罩。吊绳按实测坡面收顶，两排共 14 盏的位置、尺寸和日间灯芯亮度为估值。"
+    }
   }
 ]

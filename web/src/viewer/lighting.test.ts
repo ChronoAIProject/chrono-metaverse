@@ -21,6 +21,27 @@ const UP = new THREE.Vector3(0, 1, 0);
 const DOWN = new THREE.Vector3(0, -1, 0);
 
 describe('灯光（物理单位）', () => {
+  it('全景日光随成员旋转，并保持水平面的总照度', () => {
+    const sky = {
+      azimuth: 0,
+      elevation: 30,
+      directFraction: 0.6,
+      sunColor: [1, 1, 1],
+      skyColor: [1, 1, 1],
+    } as const;
+    const [ambient, sun] = createLights('daylight', sky, 90) as [
+      THREE.HemisphereLight,
+      THREE.DirectionalLight,
+    ];
+    const direction = sun.position.clone().normalize();
+    expect(direction.x).toBeCloseTo(0);
+    expect(direction.y).toBeCloseTo(0.5);
+    expect(direction.z).toBeLessThan(0);
+    const total = ambient.intensity + sun.intensity * direction.y;
+    expect(total / Math.PI).toBeCloseTo(diffuseResponse(UP));
+    expect((sun.intensity * direction.y) / total).toBeCloseTo(0.6);
+    expect(createLights('night', sky)).toHaveLength(3);
+  });
   it('半球光加两盏平行光，强度是系数 × π', () => {
     const lights = createLights();
     expect(lights).toHaveLength(3);
