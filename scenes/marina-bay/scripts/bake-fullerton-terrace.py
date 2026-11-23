@@ -270,9 +270,11 @@ def deck_occlusion(pieces, canopy_ends):
 def set_deck_uv_channel(tree):
     for material in tree["materials"]:
         if "occlusionTexture" in material and material["name"] in {
-            "Deck boards", "Woven dining cane", "Outdoor timber", "Painted steel"
+            "Deck boards", "Woven dining cane", "Outdoor timber", "Painted steel", "Sheltered teak tabletops"
         }:
             material["occlusionTexture"]["texCoord"] = 1
+        if material["name"] == "Sheltered teak tabletops":
+            material["extras"] = {"prefilteredReflection": True}
         if material["name"] in {GLASS, SHOP_GLASS}:
             material["extras"] = {"reflectSky": True, "surfaceRole": "facade"}
         if material["name"] == SHOP_GLASS:
@@ -370,7 +372,7 @@ def furnish(start, along, inland, texture_path, output, region_id, canopy_ends, 
                     top.apply_translation([x, deck + .74, z + offset])
                     pieces["Teak"].append(top)
                 elif wicker:
-                    pieces["Teak"].append(rounded_board(.83, .73, .042, .033, .005, [x, deck + .74, z + offset]))
+                    pieces["Dining tables"].append(rounded_board(.83, .73, .042, .033, .005, [x, deck + .74, z + offset]))
                 else:
                     pieces["Teak"].append(box([0.83, 0.045, 0.73], [x, deck + 0.74, z + offset]))
                 pieces["Metal"].append(strut([x, deck + .04, z + offset], [x, deck + .73, z + offset], .041))
@@ -397,12 +399,26 @@ def furnish(start, along, inland, texture_path, output, region_id, canopy_ends, 
         "Teak": PBRMaterial(name="Outdoor timber", baseColorTexture=timber, baseColorFactor=[183, 169, 150, 255], metallicFactor=0, roughnessFactor=.66),
     }
     textile = canvas_tile()
+    if "Dining tables" in pieces:
+        # The tables under the pale canopy receive broad reflections of its underside and the quay.
+        refs = ROOT / "references"
+        grain = Image.open(refs / "teak-veneer-normal.png")
+        rough = Image.open(refs / "teak-veneer-roughness.png")
+        packed = Image.merge("RGB", (Image.new("L", rough.size, 255), rough, Image.new("L", rough.size)))
+        packed.format = "PNG"
+        materials["Dining tables"] = PBRMaterial(
+            name="Sheltered teak tabletops", baseColorTexture=timber,
+            baseColorFactor=[183, 169, 150, 255], metallicFactor=0, roughnessFactor=1,
+            normalTexture=grain, metallicRoughnessTexture=packed,
+            emissiveTexture=Image.open(refs / "fullerton-sheltered-timber.jpg"),
+            emissiveFactor=[0, 0, 0],
+        )
     if "Cane" in pieces:
         materials["Cane"] = cane_material()
         shelter = furniture_occlusion(canopy_ends)
         ramp = Image.fromarray(np.arange(256, dtype=np.uint8)[None, :]).convert("RGB")
         ramp.format = "PNG"
-        for name in ("Cane", "Teak", "Metal"):
+        for name in ("Cane", "Teak", "Metal", "Dining tables"):
             materials[name].occlusionTexture = ramp
     texture, deck_min, deck_max = deck_occlusion(pieces, canopy_ends)
     materials["Deck"].occlusionTexture = texture
@@ -414,7 +430,7 @@ def furnish(start, along, inland, texture_path, output, region_id, canopy_ends, 
     scene = trimesh.Scene()
     for name, meshes in pieces.items():
         m = trimesh.util.concatenate(meshes)
-        if name in {"Teak", "Deck", "Canopy frame"}:
+        if name in {"Teak", "Deck", "Canopy frame", "Dining tables"}:
             # Split at actual panel edges so thin boards do not acquire rounded, inflated normals.
             m = trimesh.Trimesh(vertices=m.vertices[m.faces].reshape(-1, 3),
                                 faces=np.arange(m.faces.size).reshape(-1, 3), process=False)
@@ -424,7 +440,7 @@ def furnish(start, along, inland, texture_path, output, region_id, canopy_ends, 
         if name == "Deck":
             # Custom attributes pass through trimesh without its first-channel V flip.
             m.vertex_attributes["_AO_UV"] = (xyz[:, [0, 2]] - deck_min) / (deck_max - deck_min)
-        elif not middle and name in {"Cane", "Teak", "Metal"}:
+        elif not middle and name in {"Cane", "Teak", "Metal", "Dining tables"}:
             visibility = shelter(xyz)
             m.vertex_attributes["_AO_UV"] = np.column_stack([(visibility * 255 + .5) / 256,
                                                              np.full(len(xyz), .5)])
@@ -502,6 +518,7 @@ def bake(source, timber, output, buildings_file, streetscape_file):
     if middle:
         furniture["props"]["棚顶"] = "屋脊和檐口坐标取自 SLA 原模型。帆布颜色参照现场照片，分幅、垂度与棚架尺寸为估值。"
     else:
+        furniture["props"]["桌面木纹"] = "颜色、法线与粗糙度取自 Poly Haven 的 CC0 Teak Veneer。同一浅棚下两个桌高机位的线性辐射亮度按粗糙度 0.65 预过滤，用于日间宽高光。"
         furniture["props"]["藤椅参考"] = WICKER_PHOTO
         furniture["props"]["藤椅"] = "浅色雨棚下的编织靠背、扶手和细金属椅脚参照现场照片。藤条宽度、桌边倒角和排布为估值。"
         furniture["props"]["庭院店面参考"] = SHOP_PHOTO
