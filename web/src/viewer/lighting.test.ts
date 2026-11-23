@@ -40,6 +40,9 @@ describe('灯光（物理单位）', () => {
     const total = ambient.intensity + sun.intensity * direction.y;
     expect(total / Math.PI).toBeCloseTo(diffuseResponse(UP));
     expect((sun.intensity * direction.y) / total).toBeCloseTo(0.6);
+    expect(sun.userData.groundShadow.r).toBeCloseTo(0.4);
+    expect(sun.userData.groundShadow.g).toBeCloseTo(0.4);
+    expect(sun.userData.groundShadow.b).toBeCloseTo(0.4);
     expect(createLights('night', sky)).toHaveLength(3);
   });
   it('半球光加两盏平行光，强度是系数 × π', () => {

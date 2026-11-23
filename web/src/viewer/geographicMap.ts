@@ -74,6 +74,7 @@ export class GeographicMap {
   private readonly cameraWorld = new THREE.Matrix4();
   private readonly cameraProjection = new THREE.Matrix4();
   private viewport = '';
+  private readonly groundShadow = new THREE.Color(0.55, 0.61, 0.68);
   private readonly detail?: THREE.Texture;
   private readonly air: GroundAir = {
     groundSky: { value: null },
@@ -115,7 +116,9 @@ export class GeographicMap {
     return this.stats;
   }
 
-  setSky(background: THREE.Scene['background'], yaw: number) {
+  setSky(background: THREE.Scene['background'], yaw: number, groundShadow?: THREE.Color) {
+    if (groundShadow) this.groundShadow.copy(groundShadow);
+    else this.groundShadow.setRGB(0.55, 0.61, 0.68);
     this.air.groundSky.value =
       background instanceof THREE.Texture &&
       background.mapping === THREE.EquirectangularReflectionMapping
@@ -379,7 +382,7 @@ export class GeographicMap {
         const mesh = new THREE.Mesh(
           this.geometry(node),
           this.detail && node.z >= 15
-            ? urbanGroundMaterial(this.detail)
+            ? urbanGroundMaterial(this.detail, this.groundShadow)
             : new THREE.MeshBasicMaterial({ color: 0x557e8e }),
         );
         if (this.resource?.hologram) hologramMaterial(mesh.material, 'terrain');
