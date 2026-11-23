@@ -3,7 +3,19 @@ import { poolWater } from './poolWater';
 
 /** 米制视距的空气透视，在海湾尺度上逐渐降低反差。 */
 const cityAir = /* glsl */ `
-  vec3 cityAir(vec3 light, float meters, vec3 horizon) {
+  vec3 cityAir(vec3 light, vec3 viewRay, vec3 horizon) {
+    float meters = length(viewRay);
+    if (meters <= 75.0) return light;
+    if (cityHasSky) {
+      vec2 direction = (viewRay * mat3(viewMatrix)).xz;
+      if (dot(direction, direction) > 0.0001) {
+        float longitude = atan(direction.y, direction.x) + citySkyYaw;
+        vec2 uv = vec2(fract(0.5 + longitude / 6.2831853), 0.505);
+        // Average about eight degrees of horizon to keep individual clouds out of the haze.
+        float lod = max(0.0, log2(float(textureSize(citySky, 0).x) / 45.0));
+        horizon = textureLod(citySky, uv, lod).rgb;
+      }
+    }
     float transmission = exp2(-max(0.0, meters - 75.0) / 4800.0);
     return mix(light, horizon, min(0.42, 1.0 - transmission));
   }
@@ -13,7 +25,10 @@ function citySkyUniforms(material: THREE.Material) {
   const panorama = { value: null as THREE.Texture | null };
   const hasPanorama = { value: false };
   const yaw = { value: 0 };
-  material.onBeforeRender = (_renderer, scene) => {
+  const beforeRender = material.onBeforeRender;
+  material.onBeforeRender = function (...args) {
+    beforeRender.call(this, ...args);
+    const scene = args[1];
     const background = scene.background;
     panorama.value =
       background instanceof THREE.Texture &&
@@ -100,7 +115,6 @@ export function cityModelAir(material: THREE.Material) {
   const glass =
     material instanceof THREE.MeshStandardMaterial && material.userData.reflectSky === true;
   const probes = glass ? facadeProbeUniforms(material) : null;
-  const sky = glass && !probes ? citySkyUniforms(material) : null;
   // A prefiltered glTF probe uses model-space directions and stores linear radiance in sRGB.
   const localProbe =
     material instanceof THREE.MeshStandardMaterial &&
@@ -126,6 +140,7 @@ export function cityModelAir(material: THREE.Material) {
       flowOffset.value = ((performance.now() / 1000) * speed) % 1;
     };
   }
+  const sky = citySkyUniforms(material);
   if (glass)
     material.customProgramCacheKey = () => (probes ? 'city-facade-probes' : 'city-model-glazing');
   material.onBeforeCompile = (shader) => {
@@ -157,7 +172,7 @@ export function cityModelAir(material: THREE.Material) {
           radiance += texture2D(emissiveMap, equirectUv(localRay)).rgb;`,
         );
     }
-    if (sky) Object.assign(shader.uniforms, sky);
+    Object.assign(shader.uniforms, sky);
     if (probes) Object.assign(shader.uniforms, probes);
     shader.vertexShader =
       'varying vec3 cityEye;\n' +
@@ -166,7 +181,7 @@ export function cityModelAir(material: THREE.Material) {
         '#include <project_vertex>\ncityEye = mvPosition.xyz;',
       );
     shader.fragmentShader =
-      (sky ? skyDeclarations : '') +
+      skyDeclarations +
       'varying vec3 cityEye;\n' +
       cityAir +
       shader.fragmentShader
@@ -182,7 +197,7 @@ export function cityModelAir(material: THREE.Material) {
           '#include <opaque_fragment>',
           (probes
             ? probeReflection
-            : sky
+            : glass
               ? `if (cityHasSky) {
           vec3 eye = normalize(vViewPosition);
           vec3 reflected = inverseTransformDirection(reflect(-eye, normal), viewMatrix);
@@ -194,7 +209,7 @@ export function cityModelAir(material: THREE.Material) {
           outgoingLight = mix(outgoingLight, skyColor, fresnel);
         }\n`
               : '') +
-            'outgoingLight = cityAir(outgoingLight, length(cityEye), vec3(0.46,0.55,0.62));\n#include <opaque_fragment>',
+            'outgoingLight = cityAir(outgoingLight, cityEye, vec3(0.46,0.55,0.62));\n#include <opaque_fragment>',
         );
   };
 }
@@ -218,8 +233,8 @@ export function urbanFacade(material: THREE.MeshLambertMaterial) {
         cityPaint = sRGBTransferEOTF(facadePaint);`,
       );
     shader.fragmentShader =
-      cityAir +
       skyDeclarations +
+      cityAir +
       varying +
       shader.fragmentShader
         .replace(
@@ -253,7 +268,7 @@ export function urbanFacade(material: THREE.MeshLambertMaterial) {
         vec3 skyLight=cityHasSky ? texture2D(citySky,equirectUv(normalize(ray)),2.0).rgb : vec3(0.34,0.46,0.55);
         float grazing=pow(1.0-abs(dot(worldEye,worldN)),3.0);
         outgoingLight=mix(outgoingLight,skyLight,wall*panels.x*panels.y*(0.16+0.36*grazing));
-        outgoingLight=cityAir(outgoingLight,length(vViewPosition),mix(vec3(0.46,0.55,0.62),skyLight,0.15));
+        outgoingLight=cityAir(outgoingLight,-vViewPosition,mix(vec3(0.46,0.55,0.62),skyLight,0.15));
         #include <opaque_fragment>`,
         );
   };
