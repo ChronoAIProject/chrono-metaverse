@@ -1,0 +1,127 @@
+{
+  "source": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+  "species": "Peltophorum pterocarpum",
+  "surveyYear": 2021,
+  "trees": [
+    {
+      "treeId": "10530702",
+      "longitude": 103.852944,
+      "latitude": 1.287965,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "> 1.5",
+      "groundY": -60.2622,
+      "localXZ": [
+        497.831,
+        706.771
+      ]
+    },
+    {
+      "treeId": "10530703",
+      "longitude": 103.85307,
+      "latitude": 1.288155,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "> 1.5",
+      "groundY": -60.3198,
+      "localXZ": [
+        494.001,
+        731.738
+      ]
+    },
+    {
+      "treeId": "10530704",
+      "longitude": 103.853097,
+      "latitude": 1.288219,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "> 1.5",
+      "groundY": -60.3207,
+      "localXZ": [
+        494.268,
+        739.422
+      ]
+    },
+    {
+      "treeId": "10530705",
+      "longitude": 103.853142,
+      "latitude": 1.2883,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "> 1.5",
+      "groundY": -60.2669,
+      "localXZ": [
+        493.515,
+        749.656
+      ]
+    },
+    {
+      "treeId": "10530706",
+      "longitude": 103.853196,
+      "latitude": 1.28839,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "1.1 - 1.5",
+      "groundY": -60.2682,
+      "localXZ": [
+        492.274,
+        761.215
+      ]
+    },
+    {
+      "treeId": "10530707",
+      "longitude": 103.85325,
+      "latitude": 1.288463,
+      "heightBand": ">15 but ≤18",
+      "girthBand": "> 1.5",
+      "groundY": -60.2692,
+      "localXZ": [
+        490.238,
+        771.07
+      ]
+    },
+    {
+      "treeId": "10530708",
+      "longitude": 103.853277,
+      "latitude": 1.288517,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "1.1 - 1.5",
+      "groundY": -60.325,
+      "localXZ": [
+        490.039,
+        777.752
+      ]
+    },
+    {
+      "treeId": "10530709",
+      "longitude": 103.853331,
+      "latitude": 1.288592,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "> 1.5",
+      "groundY": -60.2712,
+      "localXZ": [
+        488.097,
+        787.808
+      ]
+    },
+    {
+      "treeId": "10530710",
+      "longitude": 103.853376,
+      "latitude": 1.288662,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "> 1.5",
+      "groundY": -60.2723,
+      "localXZ": [
+        486.829,
+        796.939
+      ]
+    },
+    {
+      "treeId": "10530711",
+      "longitude": 103.853444,
+      "latitude": 1.288786,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "1.1 - 1.5",
+      "groundY": -60.2742,
+      "localXZ": [
+        485.765,
+        812.564
+      ]
+    }
+  ]
+}

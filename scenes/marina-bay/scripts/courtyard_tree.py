@@ -3,6 +3,8 @@
 import hashlib
 import json
 import math
+import subprocess
+from pathlib import Path
 
 import numpy as np
 import trimesh
@@ -132,3 +134,19 @@ def bake_crown(parts):
                            metallicFactor=0, roughnessFactor=.94, alphaMode="MASK", alphaCutoff=.48)
     return trimesh.Trimesh(vertices=vertices, faces=faces, vertex_normals=normals,
                            visual=TextureVisuals(uv=texcoords, material=material), process=False)
+
+
+def compact_bark(mesh):
+    source = {"faces": mesh.faces.ravel().tolist(), "position": mesh.vertices.ravel().tolist(),
+              "attributes": np.column_stack((mesh.vertex_normals, mesh.visual.uv)).ravel().tolist()}
+    result = subprocess.run(["node", str(Path(__file__).with_name("simplify-skypark-tree.mjs"))],
+                            input=json.dumps(source), text=True, capture_output=True, check=True)
+    faces = np.asarray(json.loads(result.stdout)).reshape(-1, 3)
+    vertices, inverse = np.unique(faces, return_inverse=True)
+    material = mesh.visual.material
+    image = material.baseColorTexture.convert("RGB").resize((384, 384), Image.Resampling.LANCZOS)
+    image.format = "JPEG"
+    material.baseColorTexture = image
+    return trimesh.Trimesh(vertices=mesh.vertices[vertices], faces=inverse.reshape(-1, 3),
+                            vertex_normals=mesh.vertex_normals[vertices],
+                            visual=TextureVisuals(uv=mesh.visual.uv[vertices], material=material), process=False)

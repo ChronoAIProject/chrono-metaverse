@@ -625,5 +625,36 @@
       "植被位置": "十三处冠丛中心取自 20 级正射影像，根部放在 SLA 栈桥三角面上。树种、冠高、枝形为估值。",
       "植被素材": "Poly Haven · Shrub 04 · Rico Cilliers · CC0 · https://polyhaven.com/a/shrub_04"
     }
+  },
+  {
+    "entityId": "bay.queen-elizabeth-walk-trees",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "伊丽莎白女王步道 · 十株双翼豆",
+    "assetHash": "5735ed63106fa95214a10e3e5cf6e027238bf72ddd5925a06c63586f5ee8ce2c",
+    "bounds": {
+      "min": [
+        481.02361300882177,
+        -60.36,
+        699.2898041559637
+      ],
+      "max": [
+        504.1106804192328,
+        -44.04491203809598,
+        818.3328743594979
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "树木名录": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树木来源": "NParks Trees.sg，2021 年快照。编号 10530702–10530711，双翼豆 Peltophorum pterocarpum。",
+      "定位": "经纬度、树种、树高和胸围档取自名录。根部依浏览器地表交点，档内高度、胸围、冠幅及枝形为估值。",
+      "树形素材": "Poly Haven · Island Tree 01 · CC0 · https://polyhaven.com/a/island_tree_01"
+    }
   }
 ]
