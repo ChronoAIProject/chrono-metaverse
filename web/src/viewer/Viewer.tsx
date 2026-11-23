@@ -3,7 +3,7 @@ import type { Texture } from 'three';
 import { sceneChange, viewHasGeometry, type SceneContent } from '../core/scene';
 import { sceneSources } from '../core/sources';
 import type { Visual } from '../core/visuals';
-import type { CameraAction } from '../workspace/viewerActions';
+import type { ViewCameraAction } from './cameraPose';
 import { CameraControls } from './CameraControls';
 import type { CameraPerspective } from './cameraPerspective';
 import type { CameraStep } from './cameraNavigation';
@@ -35,7 +35,7 @@ export interface SceneViewLike {
     ref: { readonly spaceId: string; readonly anchorId: string } | null,
     moveCamera?: boolean,
   ): void;
-  applyCamera?(action: CameraAction, content: SceneContent): boolean;
+  applyCamera?(action: ViewCameraAction, content: SceneContent): boolean;
   /** 扩大锚点标签的显示范围和数量上限。 */
   setMoreLabels(more: boolean): void;
   getStats(): SceneStats;
@@ -56,7 +56,7 @@ export interface ViewerProps {
   readonly createView?: SceneViewFactory;
   /** 场景生成完以后报告扫描天花板的高度（米；没有扫描或没扫到天花板时是 null），页面据此定默认剖切高度。 */
   readonly onScanCeiling?: (height: number | null) => void;
-  readonly camera?: { id: string; actions: CameraAction[] };
+  readonly camera?: { id: string; actions: ViewCameraAction[] };
   readonly onCameraResult?: (success: boolean) => void;
   /** 组合工作台的成员镜头聚焦；`null` 表示全景总览。 */
   readonly focusedSpaceId?: string | null;

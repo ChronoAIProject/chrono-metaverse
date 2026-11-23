@@ -21,6 +21,7 @@ import { runtimeError, type LoadProgress, type RuntimeError } from '../data/spac
 import { useViewOverrides, lookFromSearch, searchWithLook } from '../routing/routes';
 import { formatTime } from '../timeline/TimelineBar';
 import { Viewer, type SceneViewFactory } from '../viewer/Viewer';
+import { previewPose } from '../viewer/cameraPose';
 import {
   CutawayControl,
   ErrorCard,
@@ -65,6 +66,10 @@ export function PreviewPage({
     setStyle,
     resetOverrides,
   } = useViewOverrides(initialMode);
+  const [linkedCamera] = useState(() => {
+    const pose = previewPose(window.location.search);
+    return pose ? { id: 'preview-pose', actions: [pose] } : undefined;
+  });
   const [lookId, setLookId] = useState<string | null>(() => lookFromSearch(window.location.search));
   const [focusedAnchor, setFocusedAnchor] = useState<{ spaceId: string; anchorId: string } | null>(
     null,
@@ -275,6 +280,7 @@ export function PreviewPage({
       <section className="space__stage" aria-label="三维视图">
         <Viewer
           content={content}
+          camera={linkedCamera}
           cutaway={cutEnabled ? cutHeight : null}
           onScanCeiling={setScanCeiling}
           loadTexture={loaders.loadTexture}

@@ -7,7 +7,7 @@ import { FirstPersonView, type CameraPerspective } from './cameraPerspective';
 import { attachCameraNavigation, type CameraStep } from './cameraNavigation';
 import { ExternalContentView } from './externalContentView';
 import * as THREE from 'three';
-import type { CameraAction } from '../workspace/viewerActions';
+import type { ViewCameraAction } from './cameraPose';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
@@ -2169,8 +2169,21 @@ export class SceneView {
     this.host.dataset.overviewObjects = String(count);
   }
 
-  /** Only bounded, read-only camera operations are exposed to the chat UI. */
-  applyCamera(action: CameraAction, content: SceneContent): boolean {
+  /** 应用镜头命令或来自预览链接的固定机位。 */
+  applyCamera(action: ViewCameraAction, content: SceneContent): boolean {
+    if (action.kind === 'pose') {
+      const eye = new THREE.Vector3(...action.eye);
+      const target = new THREE.Vector3(...action.target);
+      this.stopTour();
+      this.leaveFirstPersonForFlight();
+      this.autoFramed = false;
+      // 近地机位可能从下方观察建筑。让 OrbitControls 在后续帧保持该仰角。
+      const polar = new THREE.Spherical().setFromVector3(eye.clone().sub(target)).phi;
+      this.controls.maxPolarAngle = Math.max(this.controls.maxPolarAngle, polar);
+      if (this.environment.hasMap) this.camera.near = 0.025;
+      this.moveCamera(eye, target, false);
+      return true;
+    }
     if (action.kind === 'overview') {
       this.flight = null;
       this.frameContent();
