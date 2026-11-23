@@ -17,6 +17,34 @@ HEIGHTS = {">9 but ≤12": (9, 12), ">12 but ≤15": (12, 15), ">15 but ≤18": 
 GIRTHS = {"1.1 - 1.5": (1.1, 1.5), "> 1.5": (1.6, 2.25)}
 
 
+def adjust_crown_outline(mesh, foot, compass, gains):
+    """Fit the outer branch spread between eight compass bearings."""
+    local = (mesh.vertices - foot) @ compass.T
+    horizontal = local[:, [0, 2]].copy()
+    radius = np.linalg.norm(horizontal, axis=1)
+    radial = horizontal / np.maximum(radius[:, None], 1e-8)
+    tangent = np.column_stack((-radial[:, 1], radial[:, 0]))
+    sector = np.mod(np.arctan2(horizontal[:, 1], horizontal[:, 0]), 2 * np.pi) * len(gains) / (2 * np.pi)
+    left = np.floor(sector).astype(int) % len(gains)
+    frac = sector - np.floor(sector)
+    delta = gains[(left + 1) % len(gains)] - gains[left]
+    gain = gains[left] - 1 + delta * frac**2 * (3 - 2 * frac)
+    angular_slope = delta * 6 * frac * (1 - frac) * len(gains) / (2 * np.pi)
+    # Keep the root and the first metre of the trunk fixed. The full measured
+    # spread begins at three metres from the stem, around the outer branches.
+    f = np.clip((radius - 1) / 2, 0, 1)
+    blend = f**2 * (3 - 2 * f)
+    scale = 1 + blend * gain
+    gradient = (gain * 3 * f * (1 - f))[:, None] * radial
+    gradient += (blend * angular_slope / np.maximum(radius, 1e-8))[:, None] * tangent
+    jacobian = scale[:, None, None] * np.eye(2) + horizontal[:, :, None] * gradient[:, None, :]
+    normals = mesh.vertex_normals @ compass.T
+    normals[:, [0, 2]] = np.linalg.solve(jacobian.transpose(0, 2, 1), normals[:, [0, 2], None])[:, :, 0]
+    local[:, [0, 2]] *= scale[:, None]
+    mesh.vertices = local @ compass + foot
+    mesh.vertex_normals = (normals @ compass) / np.linalg.norm(normals, axis=1)[:, None]
+
+
 def fit_tree(bark, leaves, record, compass):
     rng = np.random.default_rng(int(record["treeId"]))
     height = rng.uniform(*HEIGHTS[record["heightBand"]])
@@ -26,7 +54,15 @@ def fit_tree(bark, leaves, record, compass):
     lo = np.array([-extent["west"], -extent["south"]])
     hi = np.array([extent["east"], extent["north"]])
     x, z = record["localXZ"]
-    return fit_crown(bark, leaves, height, girth, angle, [x, record["groundY"]-.035, z], lo, hi, compass)
+    foot = [x, record["groundY"]-.035, z]
+    fit = record.get("crownOutlineFit")
+    if fit:
+        angle = np.radians(fit["sourceRotationDegrees"])
+    meshes = fit_crown(bark, leaves, height, girth, angle, foot, lo, hi, compass)
+    if fit:
+        for mesh in meshes:
+            adjust_crown_outline(mesh, foot, compass, np.asarray(fit["radialScale"]))
+    return meshes
 
 
 def bake(folder):
