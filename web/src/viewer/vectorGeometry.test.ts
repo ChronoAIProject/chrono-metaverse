@@ -149,7 +149,8 @@ describe('通用矢量三维内容', () => {
       undefined,
       [
         { ...mapping, material: 'turf' },
-        { ...mapping, material: 'pavers' },
+        { ...mapping, material: 'pavers', excludeFeatureIds: [2] },
+        { ...mapping, material: 'pavers', excludeFeatureIds: [1] },
         { ...mapping, material: 'turf', values: ['30'] },
       ],
     ).ground;

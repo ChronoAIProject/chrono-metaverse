@@ -209,6 +209,7 @@ function polygonSurface(
 ) {
   const layer = data.layers[name];
   if (!layer || tile.z < 14 || layer.length > 10000) return;
+  const excluded = new Set(ground?.excludeFeatureIds);
   const positions: number[] = [];
   const indices: number[] = [];
   const uv: number[] = [];
@@ -220,6 +221,7 @@ function polygonSurface(
     if (
       ground &&
       (!ground.values.includes(String(feature.properties[ground.property])) ||
+        (feature.id !== undefined && excluded.has(feature.id)) ||
         feature.properties.brunnel ||
         Number(feature.properties.layer ?? 0) !== 0)
     )

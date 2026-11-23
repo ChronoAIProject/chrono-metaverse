@@ -14,8 +14,25 @@ export function withBoatQuay(surroundings: EntityBody): EntityBody {
   const masks: number[][] = JSON.parse(readFileSync(new URL('./boat-quay-exclusions.json', import.meta.url), 'utf8'));
   const saved = new Set(existing.map((bounds) => JSON.stringify(bounds)));
   const excludeBounds = [...existing, ...masks.filter((bounds) => !saved.has(JSON.stringify(bounds)))];
+  const survey: { tileSource: string; features: { featureId: number }[] } = JSON.parse(
+    readFileSync(new URL('../references/pedestrian-asphalt.json', import.meta.url), 'utf8'),
+  );
+  let ground: { groundLayers?: unknown[] } = {};
+  if ('sources' in content && Array.isArray(content.sources) && content.sources.length === 1 &&
+      content.sources[0]?.url === survey.tileSource &&
+      'groundLayers' in content && Array.isArray(content.groundLayers)) {
+    // OpenMapTiles groups asphalt and stone areas under the same pedestrian subclass.
+    ground = { groundLayers: content.groundLayers.map((layer) => {
+      if (layer?.layer !== 'transportation' || layer.property !== 'subclass' ||
+          layer.material !== 'pavers' || !Array.isArray(layer.values) || !layer.values.includes('pedestrian') ||
+          (layer.excludeFeatureIds !== undefined && !Array.isArray(layer.excludeFeatureIds))) return layer;
+      const ids = new Set<number>(layer.excludeFeatureIds);
+      for (const { featureId } of survey.features) ids.add(featureId);
+      return { ...layer, excludeFeatureIds: [...ids] };
+    }) };
+  }
   return { ...surroundings, props: { ...surroundings.props, externalContent: {
-    ...content, extrusion: { ...style, excludeBounds },
+    ...content, ...ground, extrusion: { ...style, excludeBounds },
   } } };
 }
 

@@ -1,0 +1,34 @@
+{
+  "tileSource": "https://tiles.openfreemap.org/planet",
+  "surface": "asphalt",
+  "features": [
+    {
+      "featureId": 4743009592,
+      "source": "https://www.openstreetmap.org/way/474300959/history/7"
+    },
+    {
+      "featureId": 4745232362,
+      "source": "https://www.openstreetmap.org/way/474523236/history/4"
+    },
+    {
+      "featureId": 4745232382,
+      "source": "https://www.openstreetmap.org/way/474523238/history/4"
+    },
+    {
+      "featureId": 4746170272,
+      "source": "https://www.openstreetmap.org/way/474617027/history/6"
+    },
+    {
+      "featureId": 4752178852,
+      "source": "https://www.openstreetmap.org/way/475217885/history/12"
+    },
+    {
+      "featureId": 9588739432,
+      "source": "https://www.openstreetmap.org/way/958873943/history/5"
+    },
+    {
+      "featureId": 11110017472,
+      "source": "https://www.openstreetmap.org/way/1111001747/history/2"
+    }
+  ]
+}
