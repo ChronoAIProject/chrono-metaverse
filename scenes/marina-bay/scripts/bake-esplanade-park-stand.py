@@ -10,6 +10,7 @@ from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
 from fullerton_shrubs import combined
+from grove_occlusion import assign_occlusion, neighbouring_sky, use_occlusion_uv
 from scanned_canopy import ROOT, sample_scan, slices, write_tree_asset
 
 RAIN_TREE_HEADROOM = 1.4
@@ -24,6 +25,7 @@ def bake(folder, spreading_tree, east_grove=False):
     points, colors, canopy, spreading_bark_mesh = sample_scan(spreading_tree, "jacaranda_tree")
     spreading_xyz, _, spreading_normals, _, spreading = slices(points, colors, canopy, fit_opacity=True)
     stems = {0: [], 1: []}
+    trunks = []
     atlas = Image.new("RGBA", (compact.width, compact.height * 2))
     # Reserve linear tint range for the brighter surveyed crowns. Decode and re-encode
     # sRGB here because glTF vertex colours multiply the sampled texture in linear light.
@@ -95,7 +97,8 @@ def bake(folder, spreading_tree, east_grove=False):
         trunk.vertices = (bark.vertices - [.5, 0, .5]) @ transform.T + ground
         trunk_normals = bark.vertex_normals @ normal_transform
         trunk.vertex_normals = trunk_normals / np.linalg.norm(trunk_normals, axis=1)[:, None]
-        stems[atlas_offset].append(trunk)
+        stems[atlas_offset].append(len(trunks))
+        trunks.append(trunk)
         shading.extend(n/np.linalg.norm(n,axis=1)[:,None])
         tint = np.clip((np.array(tree["aerialRGB"])/aerial_median)**.65,.70,1.13)
         color = np.minimum(255, 231*tint)
@@ -110,14 +113,21 @@ def bake(folder, spreading_tree, east_grove=False):
     visual.vertex_attributes["color"] = np.asarray(tones,np.uint8)
     mesh = trimesh.Trimesh(vertices=vertices,faces=np.vstack([faces+i*len(xyz) for i in range(len(trees))]),
                            vertex_normals=shading,visual=visual,process=False)
+    if east_grove:
+        visibility = neighbouring_sky(np.reshape(vertices, (len(trees), -1, 3)),
+                                      np.reshape(shading, (len(trees), -1, 3)), trunks,
+                                      np.reshape(texcoords, (len(trees), -1, 2)), faces[::2],
+                                      atlas, paint.alphaCutoff)
+        assign_occlusion(mesh, np.concatenate([leaf for leaf, _ in visibility]))
     scene = trimesh.Scene(mesh)
-    for bark_source, group in [(spreading_bark_mesh, stems[0]), (compact_bark_mesh, stems[1])]:
-        trunk_mesh = combined(group)
+    for bark_source, indices in [(spreading_bark_mesh, stems[0]), (compact_bark_mesh, stems[1])]:
+        trunk_mesh = combined([trunks[i] for i in indices])
         if east_grove:
             trunk_mesh.visual.material.name = bark_source.visual.material.name.replace("park bark", "Esplanade Drive bark")
-        trunk_mesh.visual.vertex_attributes["color"] = np.tile(bark_source.visual.vertex_attributes["color"], (len(group), 1))
+            assign_occlusion(trunk_mesh, np.concatenate([visibility[i][1] for i in indices]))
+        trunk_mesh.visual.vertex_attributes["color"] = np.tile(bark_source.visual.vertex_attributes["color"], (len(indices), 1))
         scene.add_geometry(trunk_mesh, geom_name=trunk_mesh.visual.material.name)
-    digest, bounds = write_tree_asset(scene)
+    digest, bounds = write_tree_asset(scene, use_occlusion_uv if east_grove else None)
     if east_grove:
         return dict(entityId="bay.esplanade-drive-grove", regionId="marina-bay-exterior", layer="ext",
                     kind="structure", label="滨海公园 · 东侧林带", assetHash=digest, bounds=bounds,

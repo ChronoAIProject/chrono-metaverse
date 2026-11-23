@@ -195,7 +195,7 @@ def slices(points, colors, canopy, fit_opacity=False):
     return np.array(vertices), np.array(uv), np.array(normals), np.array(faces), atlas
 
 
-def write_tree_asset(scene):
+def write_tree_asset(scene, tree_postprocessor=None):
     low, high = scene.bounds
     origin = (low+high)/2
     origin[1] = low[1]
@@ -204,7 +204,8 @@ def write_tree_asset(scene):
     with TemporaryDirectory() as directory:
         source = Path(directory) / "trees.glb"
         packed = Path(directory) / "packed.glb"
-        source.write_bytes(trimesh.exchange.gltf.export_glb(scene, include_normals=True))
+        source.write_bytes(trimesh.exchange.gltf.export_glb(scene, include_normals=True,
+                                                            tree_postprocessor=tree_postprocessor))
         subprocess.run(["node", str(ROOT / "node_modules/gltfpack/cli.js"),
                         "-i", str(source), "-o", str(packed), "-vp", "16", "-vt", "14",
                         "-vn", "10", "-km", "-kn"], check=True)
