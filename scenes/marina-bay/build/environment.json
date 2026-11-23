@@ -38,6 +38,7 @@
     "background": true,
     "environment": {
       "version": 1,
+      "daylightToneMapping": "agx",
       "sky": {
         "texture": "20e81e3b2a8c8cc32fd38dda3b8f256698ac1418e0366c983e509e277c4601d1",
         "yaw": 0,
