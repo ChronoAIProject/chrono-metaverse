@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 from shapely.geometry import LinearRing, MultiPoint, Point
+from merlion_portrait import portrait
 
 ROOT = Path(__file__).resolve().parents[1]
 ID = "bay.a900c832-9448-4b5c-a1ef-a8828bfe76a9"
@@ -94,9 +95,10 @@ def bake(file):
     select = vertices[faces,1].max(axis=1)<2.72
     if select.sum()!=120:
         raise ValueError("Missing surveyed podium triangles")
-    # Preserve the original position, normal, UV, material and index order for
-    # every triangle above the pedestal, including the tiled waves under the lion.
-    upper["indices"] = accessor(faces[~select].reshape(-1,1).astype("<u4"),"SCALAR",5125)
+    sculpture, stone_pos, stone_norm, stone_uv, atlas = portrait(
+        ROOT/"references/merlion-sculpture-2018.jpg", vertices, faces, read(upper["attributes"]["NORMAL"]))
+    # Keep the original UVs and index order for the mosaic under the statue.
+    upper["indices"] = accessor(faces[~(select|sculpture)].reshape(-1,1).astype("<u4"),"SCALAR",5125)
     base = vertices[faces[select]]
     ring = LinearRing(MultiPoint(vertices[vertices[:,1]<.01][:,[0,2]]).convex_hull.exterior.coords)
     perimeter = ring.length
@@ -137,6 +139,16 @@ def bake(file):
         "POSITION":accessor(np.array(pos,dtype="<f4"),"VEC3",5126),
         "NORMAL":accessor(np.array(norms,dtype="<f4"),"VEC3",5126),
         "TEXCOORD_0":accessor(np.array(uv,dtype="<f4"),"VEC2",5126)}})
+    encoded = io.BytesIO()
+    atlas.save(encoded,format="JPEG",quality=92,subsampling=0)
+    doc["images"].append({"bufferView":append_view(encoded.getvalue()),"mimeType":"image/jpeg"})
+    doc["textures"].append({"source":len(doc["images"])-1})
+    doc["materials"].append({"name":"Merlion carved stone","pbrMetallicRoughness":{
+        "baseColorTexture":{"index":len(doc["textures"])-1},"roughnessFactor":.88,"metallicFactor":0}})
+    mesh["primitives"].append({"mode":4,"material":len(doc["materials"])-1,"attributes":{
+        "POSITION":accessor(stone_pos.astype("<f4"),"VEC3",5126),
+        "NORMAL":accessor(stone_norm.astype("<f4"),"VEC3",5126),
+        "TEXCOORD_0":accessor(stone_uv.astype("<f4"),"VEC2",5126)}})
     binary.extend(b"\0"*(-len(binary)%4))
     doc["buffers"][0]["byteLength"]=len(binary)
     header=json.dumps(doc,separators=(",",":")).encode()
@@ -152,6 +164,7 @@ def bake(file):
     old_count=sum(doc["accessors"][pr["indices"]]["count"]//3 if "indices" in pr else
                   doc["accessors"][pr["attributes"]["POSITION"]]["count"]//3 for m in doc["meshes"] for pr in m["primitives"])
     statue["props"].update({"三角形数":old_count,"原建筑资源":SOURCE,"基座参考":PHOTO,
+        "雕像摄影":PHOTO,"雕像表面":"Adam Wilson · 2018 · CC0。按原模型口部、鬃毛和基座高度配准，可见侧取自照片，对侧按对称性估配。",
         "基座石材":"Granite Tile 04 · Poly Haven · CC0。沿 OneMap 实测基座周长展开石缝，分层、湿润程度和砂浆宽度为照片估值。"})
     path.write_text(json.dumps(buildings,ensure_ascii=False,indent=2)+"\n")
     print(digest,len(data),len(seen),round(perimeter,3))
