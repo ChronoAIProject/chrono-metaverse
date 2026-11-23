@@ -11,11 +11,13 @@ from pathlib import Path
 import numpy as np
 import trimesh
 from PIL import Image, ImageDraw, ImageFilter
+from scipy.interpolate import RegularGridInterpolator
 from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
 from fullerton_shopfront import GLASS as SHOP_GLASS, PHOTO as SHOP_PHOTO, shopfront, shopfront_patch
 from fullerton_glazing import GLASS, PHOTO as GLAZING_PHOTO, glazing_patch
+from fullerton_wicker import PHOTO as WICKER_PHOTO, cane_material, rounded_board, woven_chair
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILDING = "bay.0c252ba3-f96a-4c82-b87b-fa5ef91708f2"
@@ -265,9 +267,11 @@ def deck_occlusion(pieces, canopy_ends):
 
 
 def set_deck_uv_channel(tree):
-    deck = next(material for material in tree["materials"] if material["name"] == "Deck boards")
-    deck["occlusionTexture"]["texCoord"] = 1
     for material in tree["materials"]:
+        if "occlusionTexture" in material and material["name"] in {
+            "Deck boards", "Woven dining cane", "Outdoor timber", "Painted steel"
+        }:
+            material["occlusionTexture"]["texCoord"] = 1
         if material["name"] in {GLASS, SHOP_GLASS}:
             material["extras"] = {"reflectSky": True, "surfaceRole": "facade"}
         if material["name"] == SHOP_GLASS:
@@ -278,13 +282,50 @@ def set_deck_uv_channel(tree):
     for mesh in tree["meshes"]:
         for primitive in mesh["primitives"]:
             attrs = primitive["attributes"]
-            if "_DECK_UV" in attrs:
-                attrs["TEXCOORD_1"] = attrs.pop("_DECK_UV")
+            if "_AO_UV" in attrs:
+                attrs["TEXCOORD_1"] = attrs.pop("_AO_UV")
+
+
+def furniture_occlusion(canopies):
+    """Estimate diffuse sky visibility at furniture height under the measured awnings."""
+    points = canopies.reshape(-1, 3)
+    axes = [np.linspace(points[:, 0].min() - 1, points[:, 0].max() + 1, 22),
+            np.linspace(0, 1.15, 5),
+            np.linspace(points[:, 2].min() - 1, points[:, 2].max() + 1, 85)]
+    samples = np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1).reshape(-1, 3)
+    faces = []
+    for first, last in canopies:
+        for a, b, c, d in [(first[0], first[1], last[1], last[0]),
+                           (first[1], first[2], last[2], last[1]),
+                           (first[2], last[2], last[2] * [1, 0, 1], first[2] * [1, 0, 1])]:
+            faces.extend([(a, b, c), (a, c, d)])
+    count = 96
+    occluded = np.zeros(len(samples))
+    for i in range(count):
+        u = (i + .5) / count
+        angle = i * math.pi * (3 - math.sqrt(5))
+        ray = np.array([math.sqrt(u) * math.cos(angle), math.sqrt(1-u), math.sqrt(u) * math.sin(angle)])
+        blocked = np.zeros(len(samples), dtype=bool)
+        for a, b, c in faces:
+            edge, side = b - a, c - a
+            p = np.cross(ray, side)
+            det = p @ edge
+            if abs(det) < 1e-8:
+                continue
+            delta = samples - a
+            q = np.cross(delta, edge)
+            s, t = delta @ p / det, q @ ray / det
+            blocked |= (s >= 0) & (t >= 0) & (s + t <= 1) & (q @ side / det > 0)
+        occluded += blocked
+    # Retain diffuse bounce from the bay-facing paving and timber deck.
+    visibility = (1 - .73 * occluded / count).reshape(*(len(axis) for axis in axes))
+    return RegularGridInterpolator(axes, visibility, bounds_error=False, fill_value=1)
 
 
 def furnish(start, along, inland, texture_path, output, region_id, canopy_ends, glazing, shop_corners, middle):
     pieces = defaultdict(list)
-    prototype = chair()
+    timber_chair = chair()
+    cane_chair = None if middle else woven_chair(strut)
     rng = np.random.default_rng(512)
     # Eave and ridge elevations are from the SLA mesh. Keep the middle deck behind the promenade.
     sections = (
@@ -295,6 +336,8 @@ def furnish(start, along, inland, texture_path, output, region_id, canopy_ends, 
          (32.48, 56.12, 3.21, 11.13)]
     )
     for section, (z0, z1, outer_eave, x1) in enumerate(sections):
+        wicker = not middle and section == 1
+        prototype = cane_chair if wicker else timber_chair
         x0 = max(outer_eave, 3.67) if middle else outer_eave
         length = z1 - z0
         deck = 0.15
@@ -325,6 +368,8 @@ def furnish(start, along, inland, texture_path, output, region_id, canopy_ends, 
                     top.apply_transform(trimesh.transformations.rotation_matrix(math.pi / 2, [1, 0, 0]))
                     top.apply_translation([x, deck + .74, z + offset])
                     pieces["Teak"].append(top)
+                elif wicker:
+                    pieces["Teak"].append(rounded_board(.83, .73, .042, .033, .005, [x, deck + .74, z + offset]))
                 else:
                     pieces["Teak"].append(box([0.83, 0.045, 0.73], [x, deck + 0.74, z + offset]))
                 pieces["Metal"].append(strut([x, deck + .04, z + offset], [x, deck + .73, z + offset], .041))
@@ -351,6 +396,13 @@ def furnish(start, along, inland, texture_path, output, region_id, canopy_ends, 
         "Teak": PBRMaterial(name="Outdoor timber", baseColorTexture=timber, baseColorFactor=[183, 169, 150, 255], metallicFactor=0, roughnessFactor=.66),
     }
     textile = canvas_tile()
+    if "Cane" in pieces:
+        materials["Cane"] = cane_material()
+        shelter = furniture_occlusion(canopy_ends)
+        ramp = Image.fromarray(np.arange(256, dtype=np.uint8)[None, :]).convert("RGB")
+        ramp.format = "PNG"
+        for name in ("Cane", "Teak", "Metal"):
+            materials[name].occlusionTexture = ramp
     texture, deck_min, deck_max = deck_occlusion(pieces, canopy_ends)
     materials["Deck"].occlusionTexture = texture
     for name, color in [("Green", [23, 54, 39, 255]), ("Burgundy", [100, 25, 35, 255]),
@@ -370,9 +422,16 @@ def furnish(start, along, inland, texture_path, output, region_id, canopy_ends, 
         xyz = m.vertices.copy()
         if name == "Deck":
             # Custom attributes pass through trimesh without its first-channel V flip.
-            m.vertex_attributes["_DECK_UV"] = (xyz[:, [0, 2]] - deck_min) / (deck_max - deck_min)
+            m.vertex_attributes["_AO_UV"] = (xyz[:, [0, 2]] - deck_min) / (deck_max - deck_min)
+        elif not middle and name in {"Cane", "Teak", "Metal"}:
+            visibility = shelter(xyz)
+            m.vertex_attributes["_AO_UV"] = np.column_stack([(visibility * 255 + .5) / 256,
+                                                             np.full(len(xyz), .5)])
         # The photo sample's grain runs across U. Use metric coordinates on the broad faces.
         uv = np.column_stack((xyz[:, 2] / 1.6, (xyz[:, 0] + xyz[:, 1]) / 1.15))
+        if name == "Cane":
+            uv = np.concatenate([mesh.vertex_attributes["_CANE_UV"] for mesh in meshes])
+            m.vertex_attributes.pop("_CANE_UV", None)
         if name in {"Burgundy", "Green", "Charcoal"}:
             uv = np.column_stack((xyz[:, 2] / 1.15, xyz[:, 0] + xyz[:, 1] * .35))
         m.visual = TextureVisuals(uv=uv, material=materials[name])
@@ -420,6 +479,8 @@ def bake(source, timber, output, buildings_file, streetscape_file):
     if middle:
         furniture["props"]["棚顶"] = "屋脊和檐口坐标取自 SLA 原模型。帆布颜色参照现场照片，分幅、垂度与棚架尺寸为估值。"
     else:
+        furniture["props"]["藤椅参考"] = WICKER_PHOTO
+        furniture["props"]["藤椅"] = "浅色雨棚下的编织靠背、扶手和细金属椅脚参照现场照片。藤条宽度、桌边倒角和排布为估值。"
         furniture["props"]["庭院店面参考"] = SHOP_PHOTO
         furniture["props"]["庭院店面"] = "沿 OneMap 约 17.3 米的一层墙线重建。柱、门框、内退玻璃和檐下空间参照街景照片，分隔、进深及室内陈设为估值。"
         furniture["props"]["入口玻璃倒影"] = "在窗前沿线三个机位采集庭院、树池和海湾，反射随视线与玻璃位置变化。采集反映场景当前的日间布置。"
