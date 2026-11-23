@@ -256,5 +256,35 @@
       "定位": "树冠中心和宽度按航拍估读。树干位置、高度、树池及铺装接缝为估值，树种未核实。",
       "素材": "Poly Haven · Island Tree 01、Shrub 01、Brown Mud Leaves 01 及花岗岩 · CC0。"
     }
+  },
+  {
+    "entityId": "bay.sands-skypark-gardens",
+    "layer": "ext",
+    "kind": "structure",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海湾金沙 · 空中花园树群",
+    "assetHash": "a950f639de3698f1c7032824831f25030fc8db9083f7d345840dc89df7e6e9ab",
+    "bounds": {
+      "min": [
+        -499.137785409,
+        135.8703379144575,
+        518.2023769998
+      ],
+      "max": [
+        -471.3960934274,
+        143.43703131961257,
+        733.2763459564
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "建筑与冠幅": "Map Data © Singapore Land Authority / OneMap。两片树群的位置及冠幅由模型屋顶原始影像估计，根部高程依实测露台平面。",
+      "树木来源": "Poly Haven Island Tree 01 · CC0 · https://polyhaven.com/a/island_tree_01",
+      "说明": "按屋顶图像中可单独辨识的 16 处树冠配设阔叶树。树种、株数、树干位置和树高为近似。硬质铺地沿实测露台平面，树池边界及石材为估值。"
+    }
   }
 ]
