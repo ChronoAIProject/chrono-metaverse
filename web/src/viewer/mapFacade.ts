@@ -101,6 +101,20 @@ export function cityModelAir(material: THREE.Material) {
     material instanceof THREE.MeshStandardMaterial && material.userData.reflectSky === true;
   const probes = glass ? facadeProbeUniforms(material) : null;
   const sky = glass && !probes ? citySkyUniforms(material) : null;
+  // A prefiltered glTF probe uses model-space directions and stores linear radiance in sRGB.
+  const localProbe =
+    material instanceof THREE.MeshStandardMaterial &&
+    material.userData.prefilteredReflection === true &&
+    material.emissiveMap &&
+    !glass;
+  const worldToProbe = localProbe ? { value: new THREE.Matrix3() } : null;
+  if (worldToProbe) {
+    const rotation = new THREE.Matrix4();
+    material.customProgramCacheKey = () => 'city-local-reflection';
+    material.onBeforeRender = (_renderer, _scene, _camera, _geometry, object) => {
+      worldToProbe.value.setFromMatrix4(rotation.extractRotation(object.matrixWorld)).transpose();
+    };
+  }
   const surface = material.userData.waterSurface;
   const drops = surface === 'fountainDrops';
   const fountain = material.map && (surface === 'fountainJet' || surface === 'fountainFoam');
@@ -130,6 +144,19 @@ export function cityModelAir(material: THREE.Material) {
               '#include <uv_vertex>\nvMapUv.y += flowOffset;',
             ));
     }
+    if (worldToProbe) {
+      shader.uniforms.worldToProbe = worldToProbe;
+      shader.fragmentShader =
+        'uniform mat3 worldToProbe;\n' +
+        shader.fragmentShader.replace(
+          '#include <lights_fragment_maps>',
+          `#include <lights_fragment_maps>
+          vec3 probeRay = reflect(-geometryViewDir, geometryNormal);
+          probeRay = normalize(mix(probeRay, geometryNormal, pow4(material.roughness)));
+          vec3 localRay = worldToProbe * inverseTransformDirection(probeRay, viewMatrix);
+          radiance += texture2D(emissiveMap, equirectUv(localRay)).rgb;`,
+        );
+    }
     if (sky) Object.assign(shader.uniforms, sky);
     if (probes) Object.assign(shader.uniforms, probes);
     shader.vertexShader =
@@ -143,7 +170,10 @@ export function cityModelAir(material: THREE.Material) {
       'varying vec3 cityEye;\n' +
       cityAir +
       shader.fragmentShader
-        .replace('#include <emissivemap_fragment>', probes ? '' : '#include <emissivemap_fragment>')
+        .replace(
+          '#include <emissivemap_fragment>',
+          probes || worldToProbe ? '' : '#include <emissivemap_fragment>',
+        )
         .replace(
           '#include <emissivemap_pars_fragment>',
           '#include <emissivemap_pars_fragment>\n' + (probes ? probeDeclarations : ''),
