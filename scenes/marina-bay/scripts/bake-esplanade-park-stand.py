@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import trimesh
 from PIL import Image
-from scipy.ndimage import distance_transform_edt, maximum_filter
+from scipy.ndimage import distance_transform_edt, gaussian_filter, map_coordinates, maximum_filter
 from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
@@ -85,11 +85,30 @@ def sample_scan(folder, name):
     return xyz, np.uint8(np.clip(rgb * (1-.34*coverage[:,None]/5), 0, 255))
 
 
+def canopy_depths(points, u, v, depth, cells=3):
+    """Fit each depth layer to the local distribution of scanned branches."""
+    bands = 64
+    grid = np.clip(points[:, [u, v]] * cells, 0, cells)
+    levels = np.minimum(bands - 1, (points[:, depth] * bands).astype(int))
+    ix, iy = np.rint(grid).astype(int).T
+    hist = np.zeros((cells + 1, cells + 1, bands))
+    np.add.at(hist, (ix, iy, levels), 1)
+    cumulative = gaussian_filter(hist, (.70, .70, 0)).cumsum(axis=2)
+    fractions = cumulative / np.maximum(cumulative[:, :, -1:], 1e-12)
+    quantiles = (np.arange(LAYERS) + .5) / LAYERS
+    heights = np.stack([(np.argmax(fractions >= q, axis=2) + .5) / bands for q in quantiles])
+    boundaries = (heights[:-1] + heights[1:]) / 2
+    layers = np.zeros(len(points), dtype=int)
+    for boundary in boundaries:
+        layers += points[:, depth] > map_coordinates(boundary, grid.T, order=1, mode="nearest")
+    return heights, layers
+
+
 def slices(points, colors):
     atlas = Image.new("RGBA", (TILE*LAYERS, TILE*3))
     vertices, uv, normals, faces = [], [], [], []
     for row, (u,v,depth) in enumerate([(0,1,2),(2,1,0),(0,2,1)]):
-        layers = np.minimum(LAYERS-1, (points[:,depth]*LAYERS).astype(int))
+        surfaces, layers = canopy_depths(points, u, v, depth)
         for k in range(LAYERS):
             where = np.flatnonzero(layers == k)
             ordered = where[np.argsort(points[where,depth], kind="stable")]
@@ -105,25 +124,31 @@ def slices(points, colors):
             pixels[:,:,:3] = pixels[tuple(nearest)][:,:,:3]
             atlas.paste(Image.fromarray(pixels), (k*TILE,row*TILE))
             base = len(vertices)
-            for a,b in [(0,0),(1,0),(1,1),(0,1)]:
+            surface = surfaces[k]
+            steps = len(surface) - 1
+            for ix, iy in np.ndindex(surface.shape):
+                a, b = ix / steps, iy / steps
                 pos = np.zeros(3)
-                pos[[u,v,depth]] = [a,b,(k+.5)/LAYERS]
+                pos[[u, v, depth]] = [a, b, surface[ix, iy]]
                 vertices.append(pos)
-                n = pos - [.5,.32,.5]
-                n[1] = max(n[1],.12)
+                n = pos - [.5, .32, .5]
+                n[1] = max(n[1], .12)
                 normals.append(n / np.linalg.norm(n))
-                uv.append([(k+a)/LAYERS,1-(row+1-b)/3])
-            # Keep an outward canopy normal as the camera passes either side.
-            for tri in [(0,1,2),(0,2,3),(2,1,0),(3,2,0)]:
-                faces.append([base+i for i in tri])
+                uv.append([(k + a) / LAYERS, 1 - (row + 1 - b) / 3])
+            # Both sides use the same crown-outward shading normals.
+            for ix, iy in np.ndindex((steps, steps)):
+                first = base + ix * (steps + 1) + iy
+                right = first + steps + 1
+                for tri in [(first, right, right + 1), (first, right + 1, first + 1)]:
+                    faces.extend((tri, tri[::-1]))
     atlas.format = "PNG"
     return np.array(vertices), np.array(uv), np.array(normals), np.array(faces), atlas
 
 
 def bake(folder, spreading_tree):
     ref = json.loads((ROOT/"references/esplanade-park-stand.json").read_text())
-    xyz, uv, normals, faces, compact = slices(*sample_scan(folder, "island_tree_01"))
-    _, _, _, _, spreading = slices(*sample_scan(spreading_tree, "jacaranda_tree"))
+    compact_xyz, uv, compact_normals, faces, compact = slices(*sample_scan(folder, "island_tree_01"))
+    spreading_xyz, _, spreading_normals, _, spreading = slices(*sample_scan(spreading_tree, "jacaranda_tree"))
     atlas = Image.new("RGBA", (compact.width, compact.height * 2))
     atlas.paste(compact, (0, 0))
     atlas.paste(spreading, (0, compact.height))
@@ -141,8 +166,11 @@ def bake(folder, spreading_tree):
     trees = ref["trees"] + avenue["trees"]
     for tree in trees:
         # Both source volumes use the same slice grid. Select its UV region for each crown.
+        if tree["species"] == "Samanea saman":
+            xyz, normals, atlas_offset = spreading_xyz, spreading_normals, 0
+        else:
+            xyz, normals, atlas_offset = compact_xyz, compact_normals, 1
         tree_uv = uv.copy()
-        atlas_offset = 0 if tree["species"] == "Samanea saman" else 1
         tree_uv[:, 1] = (tree_uv[:, 1] + atlas_offset) / 2
         texcoords.extend(tree_uv)
         rng = np.random.default_rng(int(tree["treeId"]))
