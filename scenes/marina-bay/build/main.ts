@@ -18,6 +18,34 @@ export function withBoatQuay(surroundings: EntityBody): EntityBody {
   } } };
 }
 
+interface BaySky {
+  texture?: string;
+  airHalfDistance?: number;
+  daylight?: { directFraction?: number };
+}
+
+/** Update this site's previous daylight preset while preserving the saved map and sky orientation. */
+function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | null): EntityBody | null {
+  if (!saved || !configured) return saved ?? configured;
+  const environment = saved.props?.environment as { sky?: BaySky } | undefined;
+  const sky = environment?.sky;
+  const target = (configured.props?.environment as { sky?: BaySky } | undefined)?.sky;
+  if (!target?.daylight || !sky?.daylight || sky.texture !== target.texture ||
+      sky.airHalfDistance !== undefined || sky.daylight.directFraction !== 0.58) return saved;
+  return {
+    ...saved,
+    props: {
+      ...saved.props,
+      日间照明: configured.props?.日间照明,
+      environment: {
+        ...environment,
+        sky: { ...sky, airHalfDistance: target.airHalfDistance,
+          daylight: { ...sky.daylight, directFraction: target.daylight.directFraction } },
+      },
+    },
+  };
+}
+
 /** 滨海湾扩展引用 OneMap 转换结果，室内沿用已有的重建物件。 */
 export default function build(base: BuildBase, kit: Kit) {
   const buildings: EntityBody[] = JSON.parse(
@@ -28,8 +56,9 @@ export default function build(base: BuildBase, kit: Kit) {
     ? JSON.parse(readFileSync(environmentFile, 'utf8'))
     : null;
   // 已保存的物件是权威状态；重新构建不能恢复已被用户替换的有限地板或天空壳。
-  const environment =
-    base.entities.find((entity) => entity.entityId === configured?.entityId) ?? configured;
+  const environment = bayDaylight(
+    base.entities.find((entity) => entity.entityId === configured?.entityId), configured,
+  );
   const ground: EntityBody[] = environment
     ? []
     : JSON.parse(readFileSync(new URL('./ground.json', import.meta.url), 'utf8'));

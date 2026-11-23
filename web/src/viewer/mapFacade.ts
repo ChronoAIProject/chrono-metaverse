@@ -16,7 +16,7 @@ const cityAir = /* glsl */ `
         horizon = textureLod(citySky, uv, lod).rgb;
       }
     }
-    float transmission = exp2(-max(0.0, meters - 75.0) / 4800.0);
+    float transmission = exp2(-max(0.0, meters - 75.0) / cityAirHalfDistance);
     return mix(light, horizon, min(0.42, 1.0 - transmission));
   }
 `;
@@ -25,6 +25,7 @@ function citySkyUniforms(material: THREE.Material) {
   const panorama = { value: null as THREE.Texture | null };
   const hasPanorama = { value: false };
   const yaw = { value: 0 };
+  const halfDistance = { value: 4800 };
   const beforeRender = material.onBeforeRender;
   material.onBeforeRender = function (...args) {
     beforeRender.call(this, ...args);
@@ -36,13 +37,19 @@ function citySkyUniforms(material: THREE.Material) {
         ? background
         : null;
     hasPanorama.value = !!panorama.value;
+    halfDistance.value = panorama.value?.userData.airHalfDistance ?? 4800;
     yaw.value = scene.backgroundRotation.y;
   };
-  return { citySky: panorama, cityHasSky: hasPanorama, citySkyYaw: yaw };
+  return {
+    citySky: panorama,
+    cityHasSky: hasPanorama,
+    citySkyYaw: yaw,
+    cityAirHalfDistance: halfDistance,
+  };
 }
 
 const skyDeclarations =
-  'uniform sampler2D citySky;\nuniform bool cityHasSky;\nuniform float citySkyYaw;\n';
+  'uniform sampler2D citySky;\nuniform bool cityHasSky;\nuniform float citySkyYaw, cityAirHalfDistance;\n';
 
 // 日间窗面将多个位置拍摄的半球图保存在零自发光的贴图里，普通 glTF 查看器仍按透明玻璃呈现。
 function facadeProbeUniforms(material: THREE.MeshStandardMaterial) {
