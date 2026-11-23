@@ -14,7 +14,7 @@ from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
 
-def load_tree(folder):
+def load_tree(folder, leaf_mask=None, bark_budget=None):
     raw = (folder / "island_tree_01_1k.gltf").read_bytes()
     if hashlib.sha256(raw).hexdigest() != "78e905a40670bfabb2760601d4d9a6c17193a50d68e6271c66893eb7bd75906d":
         raise ValueError("Expected Poly Haven Island Tree 01, 1k glTF")
@@ -40,38 +40,50 @@ def load_tree(folder):
         uv = read(attrs["TEXCOORD_0"]) * transform.get("scale", [1, 1]) + transform.get("offset", [0, 0])
         parts.append((read(attrs["POSITION"]), read(primitive["indices"]).reshape(-1, 3), uv,
                       read(attrs["NORMAL"]), image))
-    return simplify_trunk(parts[0]), bake_crown(parts[1:])
+    bark = simplify_trunk(parts[0], keep_source_edges=bark_budget is not None)
+    if bark_budget is not None:
+        bark = compact_bark(bark, bark_budget, lock_border=True)
+    return bark, bake_crown(parts[1:], leaf_mask)
 
 
-def simplify_trunk(part):
+def simplify_trunk(part, keep_source_edges=False):
     xyz, indices, uv, normals, texture = part
-    # Retain distinct texture islands when snapping nearby trunk vertices.
-    keys = np.column_stack((np.floor(xyz / .088), np.floor(uv * 7))).astype(np.int32)
-    _, kept, remap = np.unique(keys, axis=0, return_index=True, return_inverse=True)
-    faces = remap[indices]
-    distinct = ((faces[:, 0] != faces[:, 1]) & (faces[:, 0] != faces[:, 2]) & (faces[:, 1] != faces[:, 2]))
+    if keep_source_edges:
+        faces = indices
+    else:
+        # Retain distinct texture islands when snapping nearby trunk vertices.
+        keys = np.column_stack((np.floor(xyz / .088), np.floor(uv * 7))).astype(np.int32)
+        _, kept, remap = np.unique(keys, axis=0, return_index=True, return_inverse=True)
+        faces = remap[indices]
+        distinct = ((faces[:, 0] != faces[:, 1]) & (faces[:, 0] != faces[:, 2]) & (faces[:, 1] != faces[:, 2]))
+        faces = faces[distinct]
+        xyz, normals, uv = xyz[kept], normals[kept], uv[kept]
     texture = texture.resize((512, 512), Image.Resampling.LANCZOS)
     texture.format = "JPEG"
     material = PBRMaterial(name="Island tree bark", baseColorTexture=texture, metallicFactor=0, roughnessFactor=.93)
-    mesh = trimesh.Trimesh(vertices=xyz[kept], faces=faces[distinct], vertex_normals=normals[kept],
-                           visual=TextureVisuals(uv=uv[kept] * [1, -1] + [0, 1], material=material), process=False)
+    mesh = trimesh.Trimesh(vertices=xyz, faces=faces, vertex_normals=normals,
+                           visual=TextureVisuals(uv=uv * [1, -1] + [0, 1], material=material), process=False)
     mesh.update_faces(mesh.nondegenerate_faces(height=1e-6))
     mesh.remove_unreferenced_vertices()
     return mesh
 
 
-def foliage_tile(polygons, shades, basis, size):
+def foliage_tile(polygons, shades, basis, size, samples=None):
     plane = polygons @ basis.T
     low, high = plane.min(axis=(0, 1)), plane.max(axis=(0, 1))
     low[:2] -= .035
     high[:2] += .035
     pixels = (plane[:, :, :2] - low[:2]) / (high[:2] - low[:2]) * (size - 1)
     pixels[:, :, 1] = size - 1 - pixels[:, :, 1]
-    order = np.argsort(plane[:, :, 2].mean(axis=1))
-    image = Image.new("RGBA", (size, size))
-    draw = ImageDraw.Draw(image)
-    for points, color in zip(np.rint(pixels[order]).astype(int).reshape(-1, 6).tolist(), shades[order].tolist()):
-        draw.polygon(points, fill=(*color, 255))
+    if samples is not None:
+        from leaf_atlas import render_tile
+        image = render_tile(pixels, plane[:, :, 2], *samples, size)
+    else:
+        order = np.argsort(plane[:, :, 2].mean(axis=1))
+        image = Image.new("RGBA", (size, size))
+        draw = ImageDraw.Draw(image)
+        for points, color in zip(np.rint(pixels[order]).astype(int).reshape(-1, 6).tolist(), shades[order].tolist()):
+            draw.polygon(points, fill=(*color, 255))
     # Extend leaf colour into transparent texels for browser mip generation.
     rgba = np.array(image)
     nearest = distance_transform_edt(rgba[:, :, 3] == 0, return_distances=False, return_indices=True)
@@ -82,23 +94,35 @@ def foliage_tile(polygons, shades, basis, size):
     return Image.fromarray(rgba), quad @ basis
 
 
-def bake_crown(parts):
+def bake_crown(parts, leaf_mask=None):
     triangles, colors = [], []
+    source_uv, face_materials, textures = [], [], []
     for index, (xyz, faces, uv, normals, texture) in enumerate(parts):
         triangles.append(xyz[faces])
-        px = ((uv[faces].mean(axis=1) % 1.) * texture.size).astype(int)
-        rgb = np.asarray(texture)[px[:, 1], px[:, 0]].astype(np.float32)
-        if index == 0:
-            rgb *= (.90 + .13 * np.abs(normals[faces].mean(axis=1)[:, 1]))[:, None]
-        colors.append(rgb)
+        if leaf_mask is not None:
+            source_uv.append(uv[faces])
+            face_materials.append(np.full(len(faces), index, np.uint8))
+            bitmap = texture.convert("RGBA")
+            if index == 0:
+                bitmap.putalpha(leaf_mask)
+            textures.append(np.asarray(bitmap))
+        else:
+            px = ((uv[faces].mean(axis=1) % 1.) * texture.size).astype(int)
+            rgb = np.asarray(texture)[px[:, 1], px[:, 0]].astype(np.float32)
+            if index == 0:
+                rgb *= (.90 + .13 * np.abs(normals[faces].mean(axis=1)[:, 1]))[:, None]
+            colors.append(rgb)
     triangles = np.concatenate(triangles)
-    colors = np.uint8(np.clip(np.concatenate(colors), 0, 255))
+    colors = np.uint8(np.clip(np.concatenate(colors), 0, 255)) if colors else None
     centers = triangles.mean(axis=1)
     grid = np.floor((centers - centers.min(axis=0)) / .96).astype(int)
     cell = np.ravel_multi_index(grid.T, tuple(grid.max(axis=0) + 1))
     order = np.argsort(cell, kind="stable")
     groups = [idx for idx in np.split(order, np.flatnonzero(np.diff(cell[order])) + 1) if len(idx) > 120]
-    tile = 80
+    if leaf_mask is not None:
+        source_uv = np.concatenate(source_uv)
+        face_materials = np.concatenate(face_materials)
+    tile = 96 if leaf_mask is not None else 80
     columns = math.ceil(math.sqrt(len(groups) * 3))
     atlas = Image.new("RGBA", (columns * tile, columns * tile))
     vertices, faces, texcoords, normals = [], [], [], []
@@ -109,7 +133,9 @@ def bake_crown(parts):
             forward = np.array([-math.sin(azimuth) * math.cos(elevation), math.sin(elevation),
                                 math.cos(azimuth) * math.cos(elevation)])
             basis = np.array([side, np.cross(forward, side), forward])
-            image, quad = foliage_tile(triangles[indices], colors[indices], basis, tile)
+            samples = (source_uv[indices], face_materials[indices], textures) if leaf_mask is not None else None
+            shades = colors[indices] if colors is not None else None
+            image, quad = foliage_tile(triangles[indices], shades, basis, tile, samples)
             start = len(vertices)
             row, column = divmod(start // 4, columns)
             atlas.paste(image, (column * tile, row * tile))
@@ -121,14 +147,17 @@ def bake_crown(parts):
             radial = quad - [0, 2.8, 0]
             radial[:, 1] = np.maximum(radial[:, 1], .45)
             normals.extend(radial / np.linalg.norm(radial, axis=1)[:, None])
-    # Keep the two cutout states and their padded edge colours in a 256-entry PNG palette.
-    opacity = np.asarray(atlas.getchannel("A")) > 0
-    colors = atlas.convert("RGB").quantize(colors=128, method=Image.Quantize.MEDIANCUT)
-    indices = np.uint8(np.asarray(colors) + opacity * 128)
+    # Use four opacity levels for the resolved sample coverage. Legacy
+    # polygon-coloured clusters need only the two original cutout states.
+    levels = 4 if leaf_mask is not None else 2
+    count = 256 // levels
+    opacity = np.rint(np.asarray(atlas.getchannel("A"), dtype=float) * (levels - 1) / 255).astype(np.uint8)
+    colors = atlas.convert("RGB").quantize(colors=count, method=Image.Quantize.MEDIANCUT)
+    indices = np.uint8(np.asarray(colors) + opacity * count)
     atlas = Image.frombytes("P", atlas.size, indices.tobytes())
-    palette = colors.getpalette()[:384]
-    atlas.putpalette(palette + palette)
-    atlas.info["transparency"] = bytes([0] * 128 + [255] * 128)
+    palette = colors.getpalette()[:3 * count]
+    atlas.putpalette(palette * levels)
+    atlas.info["transparency"] = bytes(a for a in np.linspace(0, 255, levels).astype(int) for _ in range(count))
     atlas.format = "PNG"
     material = PBRMaterial(name="Island tree branch clusters", baseColorTexture=atlas, doubleSided=True,
                            metallicFactor=0, roughnessFactor=.94, alphaMode="MASK", alphaCutoff=.48)
@@ -136,8 +165,9 @@ def bake_crown(parts):
                            visual=TextureVisuals(uv=texcoords, material=material), process=False)
 
 
-def compact_bark(mesh):
-    source = {"faces": mesh.faces.ravel().tolist(), "position": mesh.vertices.ravel().tolist(),
+def compact_bark(mesh, target_triangles=420, lock_border=False):
+    source = {"targetTriangles": target_triangles, "lockBorder": lock_border,
+              "faces": mesh.faces.ravel().tolist(), "position": mesh.vertices.ravel().tolist(),
               "attributes": np.column_stack((mesh.vertex_normals, mesh.visual.uv)).ravel().tolist()}
     result = subprocess.run(["node", str(Path(__file__).with_name("simplify-skypark-tree.mjs"))],
                             input=json.dumps(source), text=True, capture_output=True, check=True)
