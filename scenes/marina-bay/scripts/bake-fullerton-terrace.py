@@ -18,6 +18,7 @@ from trimesh.visual.texture import TextureVisuals
 from fullerton_shopfront import GLASS as SHOP_GLASS, PHOTO as SHOP_PHOTO, shopfront, shopfront_patch
 from fullerton_glazing import GLASS, PHOTO as GLAZING_PHOTO, glazing_patch
 from fullerton_wicker import PHOTO as WICKER_PHOTO, cane_material, rounded_board, woven_chair
+from fullerton_pendants import pendants
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILDING = "bay.0c252ba3-f96a-4c82-b87b-fa5ef91708f2"
@@ -462,6 +463,28 @@ def furnish(start, along, inland, texture_path, output, region_id, canopy_ends, 
                        "说明": "沿 OneMap 两段既有双坡棚顶配设支架、矮边和用餐区。桌椅样式、数量与排列为视觉近似。"})
 
 
+def pendant_entity(ends, start, along, inland, output, region):
+    mesh = pendants(ends)
+    xyz = mesh.vertices.copy()
+    mesh.vertices[:, 0] = start[0] + inland[0] * xyz[:, 0] + along[0] * xyz[:, 2]
+    mesh.vertices[:, 2] = start[2] + inland[1] * xyz[:, 0] + along[1] * xyz[:, 2]
+    mesh.vertices[:, 1] = start[1] + xyz[:, 1]
+    low, high = mesh.bounds
+    focus = (low + high) / 2
+    center = [focus[0], low[1], focus[2]]
+    mesh.apply_translation(-np.asarray(center))
+    scene = trimesh.Scene()
+    scene.add_geometry(mesh, geom_name="Woven pendants", node_name="Woven pendants")
+    data = trimesh.exchange.gltf.export_glb(scene, include_normals=True)
+    return dict(entityId="bay.fullerton-woven-pendants", layer="ext", kind="object",
+                regionId=region, label="浮尔顿露台 · 编织吊灯", assetHash=write_asset(data, output),
+                bounds={"min":low.tolist(),"max":high.tolist()}, material={"shading":"albedo"},
+                props={"background":True,"现场参考":WICKER_PHOTO,
+                       "建筑来源":"Map Data © Singapore Land Authority / OneMap",
+                       "backgroundView":{"focus":focus.tolist(),"maxDistance":180},
+                       "吊灯":"根据 2024 年现场晚间照片重建编织灯罩。吊绳按实测坡面收顶，两排共 14 盏的位置、尺寸和日间灯芯亮度为估值。"})
+
+
 def bake(source, timber, output, buildings_file, streetscape_file):
     config = json.loads((ROOT / "context.json").read_text())
     buildings = json.loads(buildings_file.read_text())
@@ -489,6 +512,9 @@ def bake(source, timber, output, buildings_file, streetscape_file):
         furniture["props"]["棚顶"] = "两座棚体的坡面采用 SLA 实测坐标。深浅表面、浅棚的四段横框和屋脊色带参照正射影像。材料和构件厚度为估值。"
     streetscape = {item["entityId"]: item for item in json.loads(streetscape_file.read_text())}
     streetscape[furniture["entityId"]] = furniture
+    if not middle:
+        lights = pendant_entity(ends[1], start, along, inland, output, building["regionId"])
+        streetscape[lights["entityId"]] = lights
     streetscape = list(streetscape.values())
     for file, value in [(buildings_file, buildings), (streetscape_file, streetscape)]:
         file.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n")
