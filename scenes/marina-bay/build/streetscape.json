@@ -1032,5 +1032,35 @@
       "灯位": "由 2014 年照片中 25 个广场嵌石中心配准至 OneMap 正射影像。入口北端灯位在控制点外，中间灯脚受植栽遮挡。南段七个灯脚以相邻深灰石带定位，横向位置按入口三杆中位数估读。",
       "灯具": "浅色渐缩杆、双层高低灯罩及乳白扩散罩依照片重建。5.72 米杆高、灯臂朝向与涂层为影像估值。"
     }
+  },
+  {
+    "entityId": "bay.esplanade-park-stand",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "kind": "structure",
+    "label": "滨海公园 · 步道内侧林冠",
+    "assetHash": "33d59effc8b75fceadfa4d4035a6e6e4d85ba41dd62736183c9b36792ee3880e",
+    "bounds": {
+      "min": [
+        476.00759487527444,
+        -60.375,
+        707.645974968905
+      ],
+      "max": [
+        577.0691548882177,
+        -42.81907247464057,
+        841.209080888003
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "树木名录": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树木依据": "树位、树种与树高档来自 NParks 2021 名录。航拍参考树冠色差。各树枝形、冠径与档内高度为估值。",
+      "树形素材": "Poly Haven · Island Tree 01 · CC0。按三个方向分层投影原始扫描以保留枝群间隙。"
+    }
   }
 ]

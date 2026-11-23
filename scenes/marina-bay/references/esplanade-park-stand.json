@@ -1,0 +1,510 @@
+{
+  "source": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+  "aerial": "Map Data © Singapore Land Authority / OneMap, OrthoJPG z18",
+  "trees": [
+    {
+      "treeId": "10691332",
+      "longitude": 103.852989,
+      "latitude": 1.288562,
+      "species": "Samanea saman",
+      "heightBand": ">15 but ≤18",
+      "heightUpper": 18,
+      "localXZ": [
+        521.19,
+        768.716
+      ],
+      "aerialRGB": [
+        108,
+        115,
+        93
+      ],
+      "groundY": -60.326
+    },
+    {
+      "treeId": "11000921",
+      "longitude": 103.852892,
+      "latitude": 1.288082,
+      "species": "Pterocarpus indicus",
+      "heightBand": ">15 but ≤18",
+      "heightUpper": 18,
+      "localXZ": [
+        508.543,
+        716.05
+      ],
+      "aerialRGB": [
+        120,
+        131,
+        97
+      ],
+      "groundY": -60.319
+    },
+    {
+      "treeId": "11000807",
+      "longitude": 103.852895,
+      "latitude": 1.288234,
+      "species": "Pterocarpus indicus",
+      "heightBand": ">15 but ≤18",
+      "heightUpper": 18,
+      "localXZ": [
+        515.344,
+        731.424
+      ],
+      "aerialRGB": [
+        119,
+        133,
+        94
+      ],
+      "groundY": -60.266
+    },
+    {
+      "treeId": "11006277",
+      "longitude": 103.852834,
+      "latitude": 1.28832,
+      "species": "Pterocarpus indicus",
+      "heightBand": ">15 but ≤18",
+      "heightUpper": 18,
+      "localXZ": [
+        525.515,
+        737.173
+      ],
+      "aerialRGB": [
+        108,
+        121,
+        90
+      ],
+      "groundY": -60.268
+    },
+    {
+      "treeId": "11003101",
+      "longitude": 103.85269,
+      "latitude": 1.288283,
+      "species": "Pterocarpus indicus",
+      "heightBand": ">15 but ≤18",
+      "heightUpper": 18,
+      "localXZ": [
+        538.311,
+        726.693
+      ],
+      "aerialRGB": [
+        100,
+        113,
+        90
+      ],
+      "groundY": -60.268
+    },
+    {
+      "treeId": "10530716",
+      "longitude": 103.853473,
+      "latitude": 1.288897,
+      "species": "Peltophorum pterocarpum",
+      "heightBand": ">12 but ≤15",
+      "heightUpper": 15,
+      "localXZ": [
+        488.027,
+        825.052
+      ],
+      "aerialRGB": [
+        110,
+        120,
+        94
+      ],
+      "groundY": -60.331
+    },
+    {
+      "treeId": "11020563",
+      "longitude": 103.852647,
+      "latitude": 1.288711,
+      "species": "Samanea saman",
+      "heightBand": ">6 but ≤9",
+      "heightUpper": 9,
+      "localXZ": [
+        562.649,
+        767.562
+      ],
+      "aerialRGB": [
+        111,
+        121,
+        94
+      ],
+      "groundY": -60.33
+    },
+    {
+      "treeId": "11020564",
+      "longitude": 103.852544,
+      "latitude": 1.288674,
+      "species": "Samanea saman",
+      "heightBand": ">6 but ≤9",
+      "heightUpper": 9,
+      "localXZ": [
+        571.309,
+        759.01
+      ],
+      "aerialRGB": [
+        103,
+        113,
+        86
+      ],
+      "groundY": -60.329
+    },
+    {
+      "treeId": "10455443",
+      "longitude": 103.853007,
+      "latitude": 1.288101,
+      "species": "Tabebuia rosea",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        497.832,
+        723.363
+      ],
+      "aerialRGB": [
+        111,
+        119,
+        98
+      ],
+      "groundY": -60.264
+    },
+    {
+      "treeId": "10455453",
+      "longitude": 103.852998,
+      "latitude": 1.288164,
+      "species": "Tabebuia rosea",
+      "heightBand": ">15 but ≤18",
+      "heightUpper": 18,
+      "localXZ": [
+        501.684,
+        729.253
+      ],
+      "aerialRGB": [
+        105,
+        114,
+        95
+      ],
+      "groundY": -60.265
+    },
+    {
+      "treeId": "10455463",
+      "longitude": 103.852998,
+      "latitude": 1.288237,
+      "species": "Tabebuia rosea",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        505.095,
+        736.569
+      ],
+      "aerialRGB": [
+        108,
+        116,
+        93
+      ],
+      "groundY": -60.266
+    },
+    {
+      "treeId": "10455474",
+      "longitude": 103.853016,
+      "latitude": 1.2883,
+      "species": "Tabebuia rosea",
+      "heightBand": ">12 but ≤15",
+      "heightUpper": 15,
+      "localXZ": [
+        506.224,
+        743.729
+      ],
+      "aerialRGB": [
+        123,
+        132,
+        102
+      ],
+      "groundY": -60.267
+    },
+    {
+      "treeId": "10455483",
+      "longitude": 103.853025,
+      "latitude": 1.288372,
+      "species": "Tabebuia rosea",
+      "heightBand": ">15 but ≤18",
+      "heightUpper": 18,
+      "localXZ": [
+        508.68,
+        751.368
+      ],
+      "aerialRGB": [
+        113,
+        123,
+        98
+      ],
+      "groundY": -60.268
+    },
+    {
+      "treeId": "10530717",
+      "longitude": 103.853528,
+      "latitude": 1.288924,
+      "species": "Peltophorum pterocarpum",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        483.741,
+        830.345
+      ],
+      "aerialRGB": [
+        117,
+        123,
+        97
+      ],
+      "groundY": -60.276
+    },
+    {
+      "treeId": "10530713",
+      "longitude": 103.853185,
+      "latitude": 1.28885,
+      "species": "Peltophorum pterocarpum",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        514.879,
+        806.796
+      ],
+      "aerialRGB": [
+        142,
+        147,
+        102
+      ],
+      "groundY": -60.331
+    },
+    {
+      "treeId": "10530712",
+      "longitude": 103.853079,
+      "latitude": 1.288834,
+      "species": "Peltophorum pterocarpum",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        524.823,
+        800.207
+      ],
+      "aerialRGB": [
+        111,
+        117,
+        93
+      ],
+      "groundY": -60.331
+    },
+    {
+      "treeId": "10530715",
+      "longitude": 103.853359,
+      "latitude": 1.288877,
+      "species": "Peltophorum pterocarpum",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        498.591,
+        817.686
+      ],
+      "aerialRGB": [
+        132,
+        134,
+        112
+      ],
+      "groundY": -60.331
+    },
+    {
+      "treeId": "10455490",
+      "longitude": 103.852782,
+      "latitude": 1.288408,
+      "species": "Samanea saman",
+      "heightBand": ">15 but ≤18",
+      "heightUpper": 18,
+      "localXZ": [
+        534.873,
+        743.547
+      ],
+      "aerialRGB": [
+        104,
+        111,
+        92
+      ],
+      "groundY": -60.27
+    },
+    {
+      "treeId": "11022324",
+      "longitude": 103.85275,
+      "latitude": 1.288815,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        557.12,
+        782.829
+      ],
+      "aerialRGB": [
+        119,
+        125,
+        101
+      ],
+      "groundY": -60.331
+    },
+    {
+      "treeId": "10982769",
+      "longitude": 103.852799,
+      "latitude": 1.288888,
+      "species": "Samanea saman",
+      "heightBand": ">6 but ≤9",
+      "heightUpper": 9,
+      "localXZ": [
+        555.589,
+        792.449
+      ],
+      "aerialRGB": [
+        106,
+        116,
+        92
+      ],
+      "groundY": -60.332
+    },
+    {
+      "treeId": "11022327",
+      "longitude": 103.852899,
+      "latitude": 1.289067,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        553.867,
+        815.091
+      ],
+      "aerialRGB": [
+        121,
+        127,
+        101
+      ],
+      "groundY": -60.335
+    },
+    {
+      "treeId": "11020558",
+      "longitude": 103.852973,
+      "latitude": 1.289214,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        553.273,
+        833.303
+      ],
+      "aerialRGB": [
+        118,
+        120,
+        98
+      ],
+      "groundY": -59.998
+    },
+    {
+      "treeId": "11022318",
+      "longitude": 103.853079,
+      "latitude": 1.289014,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        533.235,
+        818.246
+      ],
+      "aerialRGB": [
+        99,
+        109,
+        90
+      ],
+      "groundY": -60.334
+    },
+    {
+      "treeId": "10994733",
+      "longitude": 103.853005,
+      "latitude": 1.288881,
+      "species": "Samanea saman",
+      "heightBand": ">6 but ≤9",
+      "heightUpper": 9,
+      "localXZ": [
+        534.484,
+        801.437
+      ],
+      "aerialRGB": [
+        94,
+        103,
+        87
+      ],
+      "groundY": -60.332
+    },
+    {
+      "treeId": "10982760",
+      "longitude": 103.852704,
+      "latitude": 1.288485,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        546.338,
+        747.595
+      ],
+      "aerialRGB": [
+        99,
+        106,
+        89
+      ],
+      "groundY": -60.271
+    },
+    {
+      "treeId": "11022320",
+      "longitude": 103.852649,
+      "latitude": 1.288425,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        549.082,
+        738.995
+      ],
+      "aerialRGB": [
+        95,
+        106,
+        89
+      ],
+      "groundY": -60.325
+    },
+    {
+      "treeId": "11020557",
+      "longitude": 103.852585,
+      "latitude": 1.28835,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        552.033,
+        728.468
+      ],
+      "aerialRGB": [
+        104,
+        114,
+        90
+      ],
+      "groundY": -60.324
+    },
+    {
+      "treeId": "10530714",
+      "longitude": 103.853278,
+      "latitude": 1.28886,
+      "species": "Peltophorum pterocarpum",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        505.966,
+        812.172
+      ],
+      "aerialRGB": [
+        138,
+        144,
+        107
+      ],
+      "groundY": -60.331
+    }
+  ]
+}
