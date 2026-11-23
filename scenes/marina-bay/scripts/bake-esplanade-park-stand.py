@@ -134,7 +134,9 @@ def bake(folder, spreading_tree):
     widths = {"Samanea saman":1.38,"Tabebuia rosea":.69,"Pterocarpus indicus":1.05,
               "Peltophorum pterocarpum":1.12}
     aerial_median = np.median([t["aerialRGB"] for t in ref["trees"]],axis=0)
-    for tree in ref["trees"]:
+    avenue = json.loads((ROOT / "references/connaught-drive-rain-trees.json").read_text())
+    trees = ref["trees"] + avenue["trees"]
+    for tree in trees:
         # Both source volumes use the same slice grid. Select its UV region for each crown.
         tree_uv = uv.copy()
         atlas_offset = 0 if tree["species"] == "Samanea saman" else 1
@@ -155,7 +157,7 @@ def bake(folder, spreading_tree):
         tones.extend(np.tile(np.uint8(np.minimum(255,231*tint)).tolist()+[255],(len(xyz),1)))
     visual = TextureVisuals(uv=np.asarray(texcoords), material=paint)
     visual.vertex_attributes["color"] = np.asarray(tones,np.uint8)
-    mesh = trimesh.Trimesh(vertices=vertices,faces=np.vstack([faces+i*len(xyz) for i in range(len(ref["trees"]))]),
+    mesh = trimesh.Trimesh(vertices=vertices,faces=np.vstack([faces+i*len(xyz) for i in range(len(trees))]),
                            vertex_normals=shading,visual=visual,process=False)
     low,high = mesh.bounds
     origin = (low+high)/2
@@ -165,9 +167,11 @@ def bake(folder, spreading_tree):
     digest = hashlib.sha256(data).hexdigest()
     (ROOT/'assets'/(digest+'.glb')).write_bytes(data)
     return dict(entityId="bay.esplanade-park-stand",regionId="marina-bay-exterior",layer="ext",kind="structure",
-                label="滨海公园 · 步道内侧林冠",assetHash=digest,bounds={"min":low.tolist(),"max":high.tolist()},
+                label="滨海公园 · 步道与康乐通道林冠",assetHash=digest,bounds={"min":low.tolist(),"max":high.tolist()},
                 material={"shading":"albedo"},props={"background":True,"surfaceRole":"landscape","树木名录":ref["source"],
                 "树木依据":"树位、树种与树高档来自 NParks 2021 名录。航拍参考树冠色差。各树枝形、冠径与档内高度为估值。",
+                "林荫道":"康乐通道两侧额外 41 株雨树，树根高度取自浏览器地表。",
+                "道路位置":avenue["road"],
                 "树形素材":"Poly Haven · Island Tree 01、Jacaranda Tree · CC0。雨树借用蓝花楹展开的分枝形态，按名录高度和估计冠宽拟合；其余树使用 Island Tree 01。"})
 
 

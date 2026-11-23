@@ -1,0 +1,745 @@
+{
+  "source": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+  "road": "https://www.openstreetmap.org/way/843399102/history/13",
+  "aerial": "Map Data © Singapore Land Authority / OneMap, OrthoJPG z18",
+  "trees": [
+    {
+      "treeId": "10969714",
+      "longitude": 103.853155,
+      "latitude": 1.289596,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        552.767,
+        880.145
+      ],
+      "aerialRGB": [
+        104,
+        111,
+        93
+      ],
+      "groundY": -60.005
+    },
+    {
+      "treeId": "10691324",
+      "longitude": 103.853387,
+      "latitude": 1.290071,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        551.563,
+        938.659
+      ],
+      "aerialRGB": [
+        107,
+        113,
+        92
+      ],
+      "groundY": -60.014
+    },
+    {
+      "treeId": "10691308",
+      "longitude": 103.853428,
+      "latitude": 1.290151,
+      "species": "Samanea saman",
+      "heightBand": ">12 but ≤15",
+      "heightUpper": 15,
+      "localXZ": [
+        551.166,
+        948.605
+      ],
+      "aerialRGB": [
+        115,
+        121,
+        93
+      ],
+      "groundY": -60.016
+    },
+    {
+      "treeId": "10689734",
+      "longitude": 103.854066,
+      "latitude": 1.291062,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        529.387,
+        1069.908
+      ],
+      "aerialRGB": [
+        113,
+        120,
+        95
+      ],
+      "groundY": -60.372
+    },
+    {
+      "treeId": "10690983",
+      "longitude": 103.854121,
+      "latitude": 1.291561,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        547.158,
+        1122.502
+      ],
+      "aerialRGB": [
+        112,
+        119,
+        98
+      ],
+      "groundY": -60.042
+    },
+    {
+      "treeId": "10690984",
+      "longitude": 103.853804,
+      "latitude": 1.290509,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        529.971,
+        1002.167
+      ],
+      "aerialRGB": [
+        97,
+        108,
+        90
+      ],
+      "groundY": -60.36
+    },
+    {
+      "treeId": "10690975",
+      "longitude": 103.853685,
+      "latitude": 1.290707,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        551.227,
+        1016.412
+      ],
+      "aerialRGB": [
+        109,
+        115,
+        93
+      ],
+      "groundY": -60.026
+    },
+    {
+      "treeId": "10690976",
+      "longitude": 103.853766,
+      "latitude": 1.290858,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        550.113,
+        1035.354
+      ],
+      "aerialRGB": [
+        122,
+        129,
+        95
+      ],
+      "groundY": -60.029
+    },
+    {
+      "treeId": "10689709",
+      "longitude": 103.854152,
+      "latitude": 1.291243,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        529.171,
+        1092.092
+      ],
+      "aerialRGB": [
+        102,
+        111,
+        93
+      ],
+      "groundY": -60.375
+    },
+    {
+      "treeId": "10689733",
+      "longitude": 103.853981,
+      "latitude": 1.290899,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        530.343,
+        1049.575
+      ],
+      "aerialRGB": [
+        95,
+        104,
+        91
+      ],
+      "groundY": -60.368
+    },
+    {
+      "treeId": "10689715",
+      "longitude": 103.854172,
+      "latitude": 1.291287,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        529.21,
+        1097.442
+      ],
+      "aerialRGB": [
+        108,
+        115,
+        95
+      ],
+      "groundY": -60.376
+    },
+    {
+      "treeId": "10689716",
+      "longitude": 103.854065,
+      "latitude": 1.291474,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        548.741,
+        1111.15
+      ],
+      "aerialRGB": [
+        109,
+        115,
+        96
+      ],
+      "groundY": -60.38
+    },
+    {
+      "treeId": "10690249",
+      "longitude": 103.853883,
+      "latitude": 1.291121,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        550.602,
+        1067.214
+      ],
+      "aerialRGB": [
+        110,
+        119,
+        96
+      ],
+      "groundY": -60.034
+    },
+    {
+      "treeId": "10690246",
+      "longitude": 103.854027,
+      "latitude": 1.290989,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        529.909,
+        1060.758
+      ],
+      "aerialRGB": [
+        105,
+        115,
+        93
+      ],
+      "groundY": -60.37
+    },
+    {
+      "treeId": "10690247",
+      "longitude": 103.853551,
+      "latitude": 1.290427,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        551.658,
+        982.049
+      ],
+      "aerialRGB": [
+        121,
+        128,
+        101
+      ],
+      "groundY": -60.021
+    },
+    {
+      "treeId": "10690248",
+      "longitude": 103.853637,
+      "latitude": 1.290602,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        551.161,
+        1003.632
+      ],
+      "aerialRGB": [
+        119,
+        122,
+        95
+      ],
+      "groundY": -60.024
+    },
+    {
+      "treeId": "10690985",
+      "longitude": 103.853997,
+      "latitude": 1.291357,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        550.132,
+        1096.226
+      ],
+      "aerialRGB": [
+        115,
+        121,
+        98
+      ],
+      "groundY": -60.378
+    },
+    {
+      "treeId": "10689725",
+      "longitude": 103.853928,
+      "latitude": 1.291204,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        549.942,
+        1077.648
+      ],
+      "aerialRGB": [
+        115,
+        122,
+        101
+      ],
+      "groundY": -60.036
+    },
+    {
+      "treeId": "10689726",
+      "longitude": 103.854373,
+      "latitude": 1.291791,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        532.488,
+        1157.404
+      ],
+      "aerialRGB": [
+        106,
+        116,
+        95
+      ],
+      "groundY": -60.387
+    },
+    {
+      "treeId": "10690997",
+      "longitude": 103.853494,
+      "latitude": 1.290319,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        552.36,
+        968.545
+      ],
+      "aerialRGB": [
+        122,
+        126,
+        99
+      ],
+      "groundY": -60.019
+    },
+    {
+      "treeId": "10968923",
+      "longitude": 103.853251,
+      "latitude": 1.289791,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        552.196,
+        904.203
+      ],
+      "aerialRGB": [
+        108,
+        114,
+        89
+      ],
+      "groundY": -60.009
+    },
+    {
+      "treeId": "10968261",
+      "longitude": 103.853358,
+      "latitude": 1.289584,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        531.73,
+        888.491
+      ],
+      "aerialRGB": [
+        102,
+        111,
+        90
+      ],
+      "groundY": -60.343
+    },
+    {
+      "treeId": "10691309",
+      "longitude": 103.853951,
+      "latitude": 1.291246,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        549.585,
+        1082.939
+      ],
+      "aerialRGB": [
+        114,
+        120,
+        100
+      ],
+      "groundY": -60.036
+    },
+    {
+      "treeId": "10691310",
+      "longitude": 103.853651,
+      "latitude": 1.290165,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        529.328,
+        960.496
+      ],
+      "aerialRGB": [
+        115,
+        119,
+        99
+      ],
+      "groundY": -60.354
+    },
+    {
+      "treeId": "10691311",
+      "longitude": 103.853971,
+      "latitude": 1.291291,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        549.67,
+        1088.389
+      ],
+      "aerialRGB": [
+        115,
+        120,
+        99
+      ],
+      "groundY": -60.008
+    },
+    {
+      "treeId": "10968723",
+      "longitude": 103.853086,
+      "latitude": 1.289438,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        552.343,
+        861.066
+      ],
+      "aerialRGB": [
+        113,
+        119,
+        101
+      ],
+      "groundY": -60.002
+    },
+    {
+      "treeId": "11008289",
+      "longitude": 103.852442,
+      "latitude": 1.288636,
+      "species": "Samanea saman",
+      "heightBand": ">6 but ≤9",
+      "heightUpper": 9,
+      "localXZ": [
+        579.821,
+        750.404
+      ],
+      "aerialRGB": [
+        97,
+        106,
+        90
+      ],
+      "groundY": -60.329
+    },
+    {
+      "treeId": "11020559",
+      "longitude": 103.853314,
+      "latitude": 1.289906,
+      "species": "Samanea saman",
+      "heightBand": ">6 but ≤9",
+      "heightUpper": 9,
+      "localXZ": [
+        551.216,
+        918.69
+      ],
+      "aerialRGB": [
+        119,
+        124,
+        92
+      ],
+      "groundY": -60.011
+    },
+    {
+      "treeId": "11020560",
+      "longitude": 103.853013,
+      "latitude": 1.289317,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        554.051,
+        845.507
+      ],
+      "aerialRGB": [
+        112,
+        115,
+        96
+      ],
+      "groundY": -60.0
+    },
+    {
+      "treeId": "10982766",
+      "longitude": 103.853194,
+      "latitude": 1.28967,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        552.291,
+        889.396
+      ],
+      "aerialRGB": [
+        107,
+        113,
+        95
+      ],
+      "groundY": -60.006
+    },
+    {
+      "treeId": "11020556",
+      "longitude": 103.854296,
+      "latitude": 1.291476,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        525.535,
+        1122.215
+      ],
+      "aerialRGB": [
+        94,
+        108,
+        91
+      ],
+      "groundY": -60.38
+    },
+    {
+      "treeId": "10982758",
+      "longitude": 103.853592,
+      "latitude": 1.290077,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        531.166,
+        948.903
+      ],
+      "aerialRGB": [
+        117,
+        122,
+        94
+      ],
+      "groundY": -60.352
+    },
+    {
+      "treeId": "11021240",
+      "longitude": 103.853383,
+      "latitude": 1.289644,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        532.013,
+        895.679
+      ],
+      "aerialRGB": [
+        101,
+        109,
+        90
+      ],
+      "groundY": -60.344
+    },
+    {
+      "treeId": "11020551",
+      "longitude": 103.853241,
+      "latitude": 1.289344,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        532.316,
+        858.936
+      ],
+      "aerialRGB": [
+        122,
+        129,
+        97
+      ],
+      "groundY": -59.999
+    },
+    {
+      "treeId": "11020554",
+      "longitude": 103.85364,
+      "latitude": 1.290167,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        530.531,
+        960.18
+      ],
+      "aerialRGB": [
+        114,
+        118,
+        98
+      ],
+      "groundY": -60.354
+    },
+    {
+      "treeId": "11022329",
+      "longitude": 103.853873,
+      "latitude": 1.290669,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        530.488,
+        1021.446
+      ],
+      "aerialRGB": [
+        106,
+        113,
+        90
+      ],
+      "groundY": -60.364
+    },
+    {
+      "treeId": "11022330",
+      "longitude": 103.853209,
+      "latitude": 1.289262,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        531.712,
+        849.214
+      ],
+      "aerialRGB": [
+        109,
+        117,
+        90
+      ],
+      "groundY": -60.338
+    },
+    {
+      "treeId": "10982761",
+      "longitude": 103.853539,
+      "latitude": 1.289967,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        531.372,
+        935.386
+      ],
+      "aerialRGB": [
+        119,
+        123,
+        93
+      ],
+      "groundY": -60.35
+    },
+    {
+      "treeId": "11008288",
+      "longitude": 103.854328,
+      "latitude": 1.291572,
+      "species": "Samanea saman",
+      "heightBand": ">12 but ≤15",
+      "heightUpper": 15,
+      "localXZ": [
+        526.793,
+        1133.341
+      ],
+      "aerialRGB": [
+        92,
+        105,
+        91
+      ],
+      "groundY": -60.382
+    },
+    {
+      "treeId": "11022331",
+      "longitude": 103.854346,
+      "latitude": 1.291575,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        525.118,
+        1134.488
+      ],
+      "aerialRGB": [
+        93,
+        105,
+        90
+      ],
+      "groundY": -60.383
+    },
+    {
+      "treeId": "11021241",
+      "longitude": 103.854162,
+      "latitude": 1.29169,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "localXZ": [
+        549.051,
+        1137.358
+      ],
+      "aerialRGB": [
+        106,
+        116,
+        95
+      ],
+      "groundY": -60.385
+    }
+  ]
+}
