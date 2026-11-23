@@ -74,19 +74,23 @@ export function urbanFacade(material: THREE.MeshLambertMaterial) {
   const sky = citySkyUniforms(material);
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, sky);
+    const varying =
+      'varying vec3 cityPosition;\nvarying vec3 cityNormal;\nvarying vec2 cityFacade;\nvarying vec4 cityPaint;\n';
     shader.vertexShader =
-      'varying vec3 cityPosition;\nvarying vec3 cityNormal;\nvarying vec2 cityFacade;\n' +
+      '#include <colorspace_pars_fragment>\nattribute vec4 facadePaint;\n' +
+      varying +
       shader.vertexShader.replace(
         '#include <project_vertex>',
         /* glsl */ `#include <project_vertex>
         cityPosition = position;
         cityNormal = normal;
-        cityFacade = uv;`,
+        cityFacade = uv;
+        cityPaint = sRGBTransferEOTF(facadePaint);`,
       );
     shader.fragmentShader =
       cityAir +
       skyDeclarations +
-      'varying vec3 cityPosition;\nvarying vec3 cityNormal;\nvarying vec2 cityFacade;\n' +
+      varying +
       shader.fragmentShader
         .replace(
           '#include <color_fragment>',
@@ -101,8 +105,10 @@ export function urbanFacade(material: THREE.MeshLambertMaterial) {
         panels = mix(panels,vec2(0.78,0.70),smoothstep(vec2(0.22),vec2(0.85),fw));
         vec3 stone = mix(vec3(0.73,0.72,0.68),vec3(1.42,1.40,1.30),variant);
         vec3 glazing = mix(vec3(0.29,0.48,0.57),vec3(0.51,0.69,0.74),variant);
-        vec3 finish = mix(stone,glazing,panels.x*panels.y);
-        diffuseColor.rgb *= mix(stone*0.88,finish,wall);
+        vec3 paint = mix(vec3(dot(cityPaint.rgb, vec3(.2126,.7152,.0722))), cityPaint.rgb, .80);
+        vec3 masonry = mix(diffuseColor.rgb*stone, .035+.70*paint, cityPaint.a*.88);
+        vec3 panes = mix(diffuseColor.rgb*glazing, masonry*vec3(.32,.43,.49), cityPaint.a*.65);
+        diffuseColor.rgb = mix(masonry*.88, mix(masonry,panes,panels.x*panels.y), wall);
         `,
         )
         .replace(

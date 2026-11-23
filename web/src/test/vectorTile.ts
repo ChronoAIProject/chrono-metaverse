@@ -1,7 +1,7 @@
 import Pbf from 'pbf';
 
 /** 自有简单多边形夹具，不包含第三方地理数据。 */
-export function vectorTileFixture(height = 24, hole = false): Uint8Array {
+export function vectorTileFixture(height = 24, hole = false, colour?: string): Uint8Array {
   const bytes = new Pbf();
   bytes.writeMessage(
     3,
@@ -11,12 +11,16 @@ export function vectorTileFixture(height = 24, hole = false): Uint8Array {
       layer.writeVarintField(5, 4096);
       layer.writeStringField(3, 'elevation');
       layer.writeMessage(4, (_, value) => value.writeDoubleField(3, height), null);
+      if (colour !== undefined) {
+        layer.writeStringField(3, 'colour');
+        layer.writeMessage(4, (_, value) => value.writeStringField(1, colour), null);
+      }
       layer.writeMessage(
         2,
         (_, feature) => {
           feature.writeVarintField(1, 1);
           feature.writeVarintField(3, 3);
-          feature.writePackedVarint(2, [0, 0]);
+          feature.writePackedVarint(2, colour === undefined ? [0, 0] : [0, 0, 1, 1]);
           const geometry: number[] = [];
           let x = 0,
             y = 0;

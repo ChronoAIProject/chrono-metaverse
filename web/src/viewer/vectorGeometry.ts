@@ -6,6 +6,20 @@ import { GeoReference, tileBounds, tileCoordinates, type Tile } from './geograph
 
 type Point = { x: number; y: number };
 
+/** OpenMapTiles colour is an sRGB hex triplet or a CSS colour name. */
+function buildingPaint(property: unknown): number | undefined {
+  if (typeof property !== 'string') return;
+  const value = property.trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(value)) return Number.parseInt(value.slice(1), 16);
+  if (/^#[0-9a-f]{3}$/.test(value))
+    return Number.parseInt(
+      value.slice(1).replace(/./g, (digit) => digit + digit),
+      16,
+    );
+  if (Object.hasOwn(THREE.Color.NAMES, value))
+    return THREE.Color.NAMES[value as keyof typeof THREE.Color.NAMES];
+}
+
 /** 瓦片缓冲区不参与绘制，避免相邻瓦片的同一面重复叠加。 */
 function clip(ring: readonly Point[], extent: number): Point[] {
   let points = ring.slice();
@@ -233,6 +247,7 @@ export function vectorGeometry(
   const layer = data.layers[style.layer];
   const positions: number[] = [];
   const facade: number[] = [];
+  const paint: number[] = [];
   const indices: number[] = [];
   let features = 0,
     vertices = 0;
@@ -256,6 +271,7 @@ export function vectorGeometry(
     )
       continue;
     const rings = feature.loadGeometry();
+    const tint = style.facade ? buildingPaint(feature.properties.colour) : undefined;
     vertices += rings.reduce((n, ring) => n + ring.length, 0);
     if (vertices > 50000) throw new Error('矢量瓦片顶点过多');
     for (const polygon of classifyRings(rings)) {
@@ -323,8 +339,11 @@ export function vectorGeometry(
       if (style.facade) {
         const seed = feature.id ?? Math.round(height * 113);
         const variant = (((seed % 997) * 47) % 997) / 997;
-        for (let k = start; k < positions.length; k += 3)
+        const rgb = tint ?? 0;
+        for (let k = start; k < positions.length; k += 3) {
           facade.push(positions[k + 1]! - box.min.y + minHeight, variant);
+          paint.push(rgb >>> 16, (rgb >>> 8) & 255, rgb & 255, tint === undefined ? 0 : 255);
+        }
       }
       features++;
     }
@@ -333,7 +352,10 @@ export function vectorGeometry(
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices);
   geometry.computeBoundingBox();
-  if (style.facade) geometry.setAttribute('uv', new THREE.Float32BufferAttribute(facade, 2));
+  if (style.facade) {
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(facade, 2));
+    geometry.setAttribute('facadePaint', new THREE.Uint8BufferAttribute(paint, 4, true));
+  }
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
   return {

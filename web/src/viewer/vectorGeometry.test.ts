@@ -92,6 +92,27 @@ describe('通用矢量三维内容', () => {
     facade.dispose();
   });
 
+  it('城市墙面读取建筑颜色，区分黑色、未知色和缺少标注', () => {
+    for (const [value, expected] of [
+      [' #AbC ', [170, 187, 204, 255]],
+      ['#5a81a0', [90, 129, 160, 255]],
+      ['black', [0, 0, 0, 255]],
+      ['lightgrey', [211, 211, 211, 255]],
+      ['unmapped', [0, 0, 0, 0]],
+      [undefined, [0, 0, 0, 0]],
+    ] as const) {
+      const { geometry } = vectorGeometry(vectorTileFixture(24, true, value), tile, reference, {
+        ...style,
+        facade: 'urban',
+      });
+      const paint = geometry.getAttribute('facadePaint');
+      expect(paint.normalized).toBe(true);
+      expect(paint.count).toBe(geometry.getAttribute('position').count);
+      expect(Array.from(paint.array.slice(-4))).toEqual(expected);
+      geometry.dispose();
+    }
+  });
+
   it('仅重建已配置的地表，草坪保留洞口，铺装有独立的压顶石和立缘', () => {
     const mapping = { layer: 'shapes', property: 'elevation', values: ['24'] } as const;
     const surfaces = vectorGeometry(
