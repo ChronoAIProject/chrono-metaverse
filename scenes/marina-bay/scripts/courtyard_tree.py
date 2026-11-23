@@ -14,7 +14,7 @@ from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
 
-def load_tree(folder, leaf_mask=None):
+def load_tree(folder, leaf_mask=None, bark_budget=None):
     raw = (folder / "island_tree_01_1k.gltf").read_bytes()
     if hashlib.sha256(raw).hexdigest() != "78e905a40670bfabb2760601d4d9a6c17193a50d68e6271c66893eb7bd75906d":
         raise ValueError("Expected Poly Haven Island Tree 01, 1k glTF")
@@ -40,21 +40,29 @@ def load_tree(folder, leaf_mask=None):
         uv = read(attrs["TEXCOORD_0"]) * transform.get("scale", [1, 1]) + transform.get("offset", [0, 0])
         parts.append((read(attrs["POSITION"]), read(primitive["indices"]).reshape(-1, 3), uv,
                       read(attrs["NORMAL"]), image))
-    return simplify_trunk(parts[0]), bake_crown(parts[1:], leaf_mask)
+    bark = simplify_trunk(parts[0], keep_source_edges=bark_budget is not None)
+    if bark_budget is not None:
+        bark = compact_bark(bark, bark_budget, lock_border=True)
+    return bark, bake_crown(parts[1:], leaf_mask)
 
 
-def simplify_trunk(part):
+def simplify_trunk(part, keep_source_edges=False):
     xyz, indices, uv, normals, texture = part
-    # Retain distinct texture islands when snapping nearby trunk vertices.
-    keys = np.column_stack((np.floor(xyz / .088), np.floor(uv * 7))).astype(np.int32)
-    _, kept, remap = np.unique(keys, axis=0, return_index=True, return_inverse=True)
-    faces = remap[indices]
-    distinct = ((faces[:, 0] != faces[:, 1]) & (faces[:, 0] != faces[:, 2]) & (faces[:, 1] != faces[:, 2]))
+    if keep_source_edges:
+        faces = indices
+    else:
+        # Retain distinct texture islands when snapping nearby trunk vertices.
+        keys = np.column_stack((np.floor(xyz / .088), np.floor(uv * 7))).astype(np.int32)
+        _, kept, remap = np.unique(keys, axis=0, return_index=True, return_inverse=True)
+        faces = remap[indices]
+        distinct = ((faces[:, 0] != faces[:, 1]) & (faces[:, 0] != faces[:, 2]) & (faces[:, 1] != faces[:, 2]))
+        faces = faces[distinct]
+        xyz, normals, uv = xyz[kept], normals[kept], uv[kept]
     texture = texture.resize((512, 512), Image.Resampling.LANCZOS)
     texture.format = "JPEG"
     material = PBRMaterial(name="Island tree bark", baseColorTexture=texture, metallicFactor=0, roughnessFactor=.93)
-    mesh = trimesh.Trimesh(vertices=xyz[kept], faces=faces[distinct], vertex_normals=normals[kept],
-                           visual=TextureVisuals(uv=uv[kept] * [1, -1] + [0, 1], material=material), process=False)
+    mesh = trimesh.Trimesh(vertices=xyz, faces=faces, vertex_normals=normals,
+                           visual=TextureVisuals(uv=uv * [1, -1] + [0, 1], material=material), process=False)
     mesh.update_faces(mesh.nondegenerate_faces(height=1e-6))
     mesh.remove_unreferenced_vertices()
     return mesh
@@ -157,8 +165,9 @@ def bake_crown(parts, leaf_mask=None):
                            visual=TextureVisuals(uv=texcoords, material=material), process=False)
 
 
-def compact_bark(mesh):
-    source = {"faces": mesh.faces.ravel().tolist(), "position": mesh.vertices.ravel().tolist(),
+def compact_bark(mesh, target_triangles=420, lock_border=False):
+    source = {"targetTriangles": target_triangles, "lockBorder": lock_border,
+              "faces": mesh.faces.ravel().tolist(), "position": mesh.vertices.ravel().tolist(),
               "attributes": np.column_stack((mesh.vertex_normals, mesh.visual.uv)).ravel().tolist()}
     result = subprocess.run(["node", str(Path(__file__).with_name("simplify-skypark-tree.mjs"))],
                             input=json.dumps(source), text=True, capture_output=True, check=True)

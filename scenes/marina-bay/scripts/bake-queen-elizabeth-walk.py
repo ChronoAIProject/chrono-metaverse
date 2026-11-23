@@ -11,7 +11,7 @@ from PIL import Image
 from scipy.optimize import brentq
 from scipy.spatial import ConvexHull
 
-from courtyard_tree import compact_bark, load_tree
+from courtyard_tree import load_tree
 from fullerton_shrubs import combined
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -87,8 +87,7 @@ def bake(folder):
     with Image.open(mask) as source:
         raw = np.asarray(source)
         leaf_mask = Image.fromarray(np.uint8(raw.astype(float) * (255 / np.iinfo(raw.dtype).max))).convert("L")
-    bark, leaves = load_tree(folder, leaf_mask)
-    bark = compact_bark(bark)
+    bark, leaves = load_tree(folder, leaf_mask, bark_budget=850)
     heading = np.radians(json.loads((ROOT / "context.json").read_text())["oneMap"]["headingDegrees"])
     compass = np.array([[-np.cos(heading), 0, np.sin(heading)], [0, 1, 0],
                         [np.sin(heading), 0, np.cos(heading)]])
