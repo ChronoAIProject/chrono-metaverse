@@ -13,6 +13,7 @@ const config = JSON.parse(readFileSync(new URL('metaverse.json', root), 'utf8'))
 const buildings = JSON.parse(readFileSync(new URL('build/onemap-entities.json', root), 'utf8'));
 const ground = JSON.parse(readFileSync(new URL('build/ground.json', root), 'utf8'));
 const streetscape = JSON.parse(readFileSync(new URL('build/streetscape.json', root), 'utf8'));
+const streetTrees = JSON.parse(readFileSync(new URL('build/city-street-trees.json', root), 'utf8'));
 const host = JSON.parse(readFileSync(new URL('build/placement.json', root), 'utf8')).hostEntities;
 const probe = process.argv.includes('--probe');
 const hostOnly = process.argv.includes('--host');
@@ -20,7 +21,7 @@ const entities = hostOnly
   ? host
   : probe
     ? [ground[0], buildings[0]]
-    : [...ground, ...buildings, ...host, ...streetscape];
+    : [...ground, ...buildings, ...host, ...streetscape, ...streetTrees];
 const assets = entities.map((entity) => ({ ...entity, purpose: 'model', format: 'glb' }));
 if (!probe && !hostOnly) {
   const { quay } = JSON.parse(readFileSync(new URL('context.json', root), 'utf8'));

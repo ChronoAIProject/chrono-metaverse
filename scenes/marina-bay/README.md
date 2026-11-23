@@ -23,6 +23,9 @@ One Fullerton 临水入口的玻璃侧墙和后墙采用 Андрей Бобро
 
 浮尔顿路靠建筑一侧的 14 株金蒲桃按新加坡国家公园局 2021 年 Trees.sg 名录定位，树高落在当年记录的 6–9 米、9–12 米区间内。树冠与树皮为视觉重建，模型随场景分发。铺装截取自花岗岩扫描的单块石材，以真实米制尺寸贴到石板上。[树木名录快照](https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e) · [叶片素材](https://polyhaven.com/a/island_tree_01) · [树皮素材](https://polyhaven.com/a/eucalyptus_bark) · [石材素材](https://polyhaven.com/a/granite_tile_04)
 
+全市街道与滨水树冠沿用公开场景内 14 个 `landscape.canopy` 分块的编号及树位。996 个树位中，185 个与单独建模的树根相距小于 10 厘米。其余 754 株阔叶树使用三个扫描树形，57 株棕榈借用游戏王棕模型。树位记录保存在成员坐标系，生成入口为 `scripts/bake-city-street-trees.py`。冠幅、高度与树形为近似值。[NParks 名录快照](https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e) · [Poly Haven 扫描树，CC0](https://polyhaven.com/a/jacaranda_tree) · [0 A.D. 王棕，Wildfire Games，CC BY-SA 3.0](https://github.com/0ad/0ad/tree/61a3b9507d974084e6badb88a0826bd89a6d5b8b/binaries/data/mods/public/art)
+
+
 浮尔顿路双向车道按 OSM 单向中心线与车道数生成；转向开口保持可通行。六段路侧及中央绿带沿 OneMap 正射影像描绘。路面颗粒采用 2.08 米宽的沥青扫描，路宽、标线和路缘高度为重建估值。用 `scripts/bake-fullerton-road.py` 传入该区域 OSM XML 和 1K 沥青原图可重新烘焙。[道路](https://www.openstreetmap.org/way/22919331) · [OneMap](https://www.onemap.gov.sg/) · [沥青](https://polyhaven.com/a/asphalt_01) · [草皮](https://ambientcg.com/a/Grass004)
 
 在仓库根目录先安装 `web` 和 `sdk/typescript` 的依赖、编译 SDK，再进入本目录：
