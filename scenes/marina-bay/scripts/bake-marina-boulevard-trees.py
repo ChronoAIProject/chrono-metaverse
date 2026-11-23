@@ -17,9 +17,9 @@ def bake(scan_folder):
     reference = json.loads((ROOT / "references/marina-boulevard-sindora.json").read_text())
     trees = reference["trees"]
     points, albedo, canopy, bark = sample_scan(scan_folder, "tree_small_02")
-    xyz, uv, normals, faces, atlas = slices(points, albedo, canopy)
+    xyz, uv, normals, faces, atlas = slices(points, albedo, canopy, fit_opacity=True)
     paint = PBRMaterial(name="Marina Boulevard Sindora crowns", baseColorTexture=atlas,
-                        metallicFactor=0, roughnessFactor=.97, alphaMode="MASK", alphaCutoff=.32)
+                        metallicFactor=0, roughnessFactor=.97, alphaMode="MASK", alphaCutoff=.40)
     crown = trimesh.Trimesh(vertices=xyz, faces=faces, vertex_normals=normals,
                              visual=TextureVisuals(uv=uv, material=paint), process=False)
     bark.visual.material.name = "Marina Boulevard Sindora bark"
