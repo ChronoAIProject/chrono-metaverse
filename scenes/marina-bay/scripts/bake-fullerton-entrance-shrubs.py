@@ -90,6 +90,25 @@ def bake(folder, alpha):
             mesh.visual.material = shared
             plants.append(mesh)
     mass = combined(plants)
+    # A few scanned leaf triangles have zero-length shading normals. Normalizing
+    # them in the lighting shader poisons the coarser HDR reflection mip levels.
+    normals = mass.vertex_normals.copy()
+    invalid = np.linalg.norm(normals, axis=1) < .5
+    if invalid.any():
+        # Some double-sided leaves store the same three indices in both winding
+        # orders. Count each triangle once when recovering the shading normal.
+        _, first = np.unique(np.sort(mass.faces, axis=1), axis=0, return_index=True)
+        faces = mass.faces[first]
+        triangles = mass.vertices[faces]
+        area_vectors = np.cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0])
+        geometric = np.zeros_like(normals)
+        for corner in faces.T:
+            np.add.at(geometric, corner, area_vectors)
+        lengths = np.linalg.norm(geometric[invalid], axis=1)
+        if np.any(lengths < 1e-12):
+            raise ValueError("Cannot recover the leaf normal from the incident triangles")
+        normals[invalid] = geometric[invalid] / lengths[:, None]
+        mass.vertex_normals = normals
     canopy_shade(mass, [mass])
     low, high = mass.bounds.copy()
     origin = (low + high) / 2
