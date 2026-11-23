@@ -36,6 +36,11 @@ it('步行共用水面倒影，切换机位、转身和大幅缩放时在同一�
     clock.mockReturnValue(1200);
     expect(update()).toBe(true);
     expect(draw).toHaveBeenCalledTimes(5);
+    camera.far *= 2;
+    camera.updateProjectionMatrix();
+    expect(update()).toBe(true);
+    expect(update()).toBe(true);
+    expect(draw).toHaveBeenCalledTimes(6);
   } finally {
     clock.mockRestore();
     mirror.dispose();
