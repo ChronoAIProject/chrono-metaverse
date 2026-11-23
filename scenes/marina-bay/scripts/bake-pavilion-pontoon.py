@@ -1,4 +1,4 @@
-"""Restore the low landing south of the Fullerton Pavilion from OneMap orthophotography."""
+"""Restore the two low landings beside the Fullerton Pavilion from OneMap orthophotography."""
 import argparse
 import hashlib
 import json
@@ -29,6 +29,9 @@ GUIDES = [(103.85397837, 1.28446801), (103.85397166, 1.28437281),
           (103.85391131, 1.28428700), (103.85390997, 1.28420119),
           (103.85390460, 1.28412879)]
 
+WEST_EDGE = [(103.85382816, 1.28470800), (103.85384962, 1.28470666),
+             (103.85382012, 1.28416633), (103.85379866, 1.28416499)]
+
 
 def projected(points):
     site = json.loads((ROOT / "context.json").read_text())["oneMap"]
@@ -58,40 +61,47 @@ def deck_material(path):
 
 
 def landing(timber):
-    outline = projected(EDGE)
-    polygon = Polygon(outline)
-    if not polygon.is_valid:
-        raise ValueError("Invalid OneMap outline")
-    across = outline[1] - outline[0]
-    across /= np.linalg.norm(across)
-    along = np.array([-across[1], across[0]])
     origin_y = json.loads((ROOT / "build/environment.json").read_text())["props"]["environment"]["map"]["origin"][1]
     water = origin_y + .30
     top = water + .62
-    corners, uv = [], []
-    for triangle in get_parts(constrained_delaunay_triangles(polygon)):
-        for x, z in list(triangle.exterior.coords)[:3]:
-            p = np.array([x, z]) - outline[0]
-            corners.append([x, top, z])
-            uv.append([p @ across / 1.70, p @ along / 1.20])
+    corners, uv, colors, trim = [], [], [], []
+    # Use the west/east median board colours in the same orthophoto exposure.
+    # glTF vertex colours multiply the shared wood texture in linear space.
+    def linear(rgb):
+        return ((np.asarray(rgb) / 255 + .055) / 1.055) ** 2.4
+    west_tint = np.rint(255 * linear([128, 120, 111]) / linear([163, 145, 128])).astype("u1")
+    for boundary, tint in [(EDGE, [255, 255, 255]), (WEST_EDGE, west_tint)]:
+        outline = projected(boundary)
+        polygon = Polygon(outline)
+        if not polygon.is_valid:
+            raise ValueError("Invalid OneMap outline")
+        across = outline[1] - outline[0]
+        across /= np.linalg.norm(across)
+        along = np.array([-across[1], across[0]])
+        for triangle in get_parts(constrained_delaunay_triangles(polygon)):
+            for x, z in list(triangle.exterior.coords)[:3]:
+                p = np.array([x, z]) - outline[0]
+                corners.append([x, top, z])
+                uv.append([p @ across / 1.70, p @ along / 1.20])
+                colors.append([*tint, 255])
+        for a, b in zip(outline, np.roll(outline, -1, axis=0)):
+            delta = b - a
+            length = np.linalg.norm(delta)
+            yaw = math.atan2(delta[0], delta[1])
+            for height, width, center_y, color in [
+                (.83, .12, top - .42, [114, 111, 100, 255]),
+                (.15, .16, top - .19, [52, 55, 54, 255]),
+            ]:
+                rail = trimesh.creation.box([width, height, length])
+                rail.apply_transform(trimesh.transformations.rotation_matrix(yaw, [0, 1, 0]))
+                center = (a + b) / 2
+                rail.apply_translation([center[0], center_y, center[1]])
+                rail.visual.face_colors = color
+                trim.append(rail)
     deck = trimesh.Trimesh(vertices=corners, faces=np.arange(len(corners)).reshape(-1, 3), process=False)
     deck.faces[deck.face_normals[:, 1] < 0] = deck.faces[deck.face_normals[:, 1] < 0][:, ::-1]
     deck.visual = TextureVisuals(uv=np.asarray(uv), material=deck_material(timber))
-    trim = []
-    for a, b in zip(outline, np.roll(outline, -1, axis=0)):
-        delta = b - a
-        length = np.linalg.norm(delta)
-        yaw = math.atan2(delta[0], delta[1])
-        for height, width, center_y, color in [
-            (.83, .12, top - .42, [114, 111, 100, 255]),
-            (.15, .16, top - .19, [52, 55, 54, 255]),
-        ]:
-            rail = trimesh.creation.box([width, height, length])
-            rail.apply_transform(trimesh.transformations.rotation_matrix(yaw, [0, 1, 0]))
-            center = (a + b) / 2
-            rail.apply_translation([center[0], center_y, center[1]])
-            rail.visual.face_colors = color
-            trim.append(rail)
+    deck.visual.vertex_attributes["color"] = np.asarray(colors, dtype="u1")
     for x, z in projected(GUIDES):
         for radius, height, center_y, color in [
             (.32, 1.28, water + .47, [150, 150, 143, 255]),
@@ -137,11 +147,11 @@ if __name__ == "__main__":
     records = {e["entityId"]: e for e in json.loads(path.read_text())}
     entity_id = "bay.fullerton-pavilion-pontoon"
     records[entity_id] = dict(entityId=entity_id, layer="ext", kind="structure",
-        regionId="marina-bay-exterior", label="浮尔顿水上圆亭 · 南侧靠泊平台", assetHash=digest,
+        regionId="marina-bay-exterior", label="浮尔顿水上圆亭 · 南侧与西侧平台", assetHash=digest,
         bounds={"min": low.tolist(), "max": high.tolist()}, material={"shading": "albedo"},
         props={"background": True, "岸线参考": "https://www.openstreetmap.org/way/1173004263",
                "影像来源": "Map Data © Singapore Land Authority / OneMap",
                "木材来源": "Poly Haven · Teak Veneer · CC0 · https://polyhaven.com/a/teak_veneer",
-               "建模依据": "轮廓和五处圆形构件的位置按 OneMap 20 级正射影像描绘。平台离水 0.62 米、导桩高度、护舷截面和铺板材料为估值。"})
+               "建模依据": "两座平台轮廓及南侧五处圆形构件按 OneMap 20 级正射影像描绘。西侧平台约长 60 米、宽 2.4 米，两座铺板的相对颜色取自同幅影像。平台离水 0.62 米、导桩高度、护舷截面和铺板材料为估值。"})
     path.write_text(json.dumps(list(records.values()), ensure_ascii=False, indent=2) + "\n")
     print(digest, len(data), high - low)

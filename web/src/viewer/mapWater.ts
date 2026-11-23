@@ -7,9 +7,13 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
   const material = new THREE.ShaderMaterial({
     side: THREE.DoubleSide,
     forceSinglePass: true,
+    lights: !!reflection,
+    defines: reflection ? { WATER_SHORE_SHADOW: 1 } : {},
     transparent: true,
     depthWrite: false,
     uniforms: {
+      ...(reflection ? THREE.UniformsUtils.clone(THREE.UniformsLib.lights) : {}),
+      directFraction: { value: 0 },
       reflectionMap: { value: reflection?.texture ?? null },
       reflectionMatrix: { value: reflection?.matrix ?? new THREE.Matrix4() },
       hasReflection: { value: false },
@@ -25,15 +29,29 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
     vertexShader: /* glsl */ `
       #include <common>
       #include <logdepthbuf_pars_vertex>
+      #ifdef WATER_SHORE_SHADOW
+        #include <shadowmap_pars_vertex>
+      #endif
       varying vec3 surfacePosition;
       void main() {
-        surfacePosition = (modelMatrix * vec4(position, 1.0)).xyz;
+        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        surfacePosition = worldPosition.xyz;
+        #ifdef WATER_SHORE_SHADOW
+          vec3 transformedNormal = mat3(viewMatrix) * vec3(0.0, 1.0, 0.0);
+          #include <shadowmap_vertex>
+        #endif
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         #include <logdepthbuf_vertex>
       }`,
     fragmentShader: /* glsl */ `
       #include <common>
       #include <logdepthbuf_pars_fragment>
+      #ifdef WATER_SHORE_SHADOW
+        #include <packing>
+        #include <shadowmap_pars_fragment>
+        uniform bool receiveShadow;
+      #endif
+      uniform float directFraction;
       uniform float time;
       uniform sampler2D reflectionMap;
       uniform mat4 reflectionMatrix;
@@ -116,7 +134,17 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
         float d=1.0-nh*nh*(1.0-alpha2);
         float shine = alpha2/(3.14159*d*d) * 0.035 * max(dot(normal,sunlight),0.0);
         vec3 water = deep*(0.84 + 0.12*swell.y + 0.12*max(dot(normal,sunlight),0.0));
-        vec3 color = mix(water,sky,fresnel) + sunColor * shine * 0.38;
+        float visibility = 1.0;
+        #if defined(WATER_SHORE_SHADOW) && defined(USE_SHADOWMAP) && NUM_DIR_LIGHT_SHADOWS > 0
+          if (receiveShadow) {
+            DirectionalLightShadow sun = directionalLightShadows[0];
+            visibility = getShadow(directionalShadowMap[0], sun.shadowMapSize, sun.shadowIntensity,
+                                   sun.shadowBias, sun.shadowRadius, vDirectionalShadowCoord[0]);
+          }
+        #endif
+        // 遮挡只衰减直射照亮的水体与太阳高光，镜像相机已记录岸楼自身的明暗。
+        water *= mix(1.0 - directFraction, 1.0, visibility);
+        vec3 color = mix(water,sky,fresnel) + sunColor * shine * (0.38 * visibility);
         float distanceFade = 1.0 - smoothstep(3500.0, 11000.0, range);
         gl_FragColor = vec4(color, 0.96 * distanceFade);
         #include <tonemapping_fragment>
@@ -129,6 +157,10 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
       material.uniforms.sunlight!.value.copy(key.position).sub(key.target.position).normalize();
       material.uniforms.sunColor!.value.copy(key.color).multiplyScalar(key.intensity / Math.PI);
     }
+    material.uniforms.directFraction!.value =
+      key instanceof THREE.DirectionalLight && key.castShadow
+        ? (key.userData.directFraction ?? 0)
+        : 0;
     const sky = scene.background;
     const hasSky =
       sky instanceof THREE.Texture && sky.mapping === THREE.EquirectangularReflectionMapping;

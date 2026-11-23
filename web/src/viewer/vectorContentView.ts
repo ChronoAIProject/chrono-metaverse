@@ -318,6 +318,7 @@ export class VectorContentItem {
       surface.userData.background = true;
       surface.name = 'map-water';
       const reflection = this.reflection;
+      surface.receiveShadow = !!reflection;
       if (reflection)
         surface.onBeforeRender = (renderer, scene, camera) => {
           this.waterMaterial!.uniforms.hasReflection!.value = reflection.update(

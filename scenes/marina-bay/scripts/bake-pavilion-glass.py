@@ -11,6 +11,8 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 from scipy.ndimage import gaussian_filter
 
+from pavilion_frames import frame_geometry
+
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = "4c500895294277a5e1b01e113cea9ca5f4987df545598dead5e8eb390e6d4d9c"
 ENTITY = "bay.5dcad293-673b-462b-b436-286de74f05d8"
@@ -119,6 +121,39 @@ def convert(raw):
         count = int(selection.sum())
         for triangle in attrs["TEXCOORD_0"][faces[selection]] * image.size:
             painter.polygon(list(map(tuple, triangle)), fill=255)
+        frames = frame_geometry(attrs["POSITION"], faces)
+        _, unique, remap = np.unique(np.column_stack(list(frames.values())), axis=0,
+                                     return_index=True, return_inverse=True)
+        frame_attrs = {}
+        for name, values in frames.items():
+            values = values[unique]
+            normalized = name == "COLOR_0"
+            if normalized:
+                # Vertex attributes in glTF are four-byte aligned. Opaque RGBA8
+                # preserves both metal finishes in a single draw.
+                rgb = np.rint(values * 255).astype("u1")
+                values = np.column_stack((rgb, np.full(len(rgb), 255, dtype="u1")))
+            view = len(views)
+            views.append(values.tobytes())
+            document["bufferViews"].append({"buffer": 0, "target": 34962})
+            frame_attrs[name] = len(document["accessors"])
+            accessor = {"bufferView": view, "componentType": 5121 if normalized else 5126,
+                        "count": len(values), "type": "VEC4" if normalized else "VEC3"}
+            if normalized:
+                accessor["normalized"] = True
+            if name == "POSITION":
+                accessor.update(min=values.min(axis=0).tolist(), max=values.max(axis=0).tolist())
+            document["accessors"].append(accessor)
+        index = len(document["accessors"])
+        document["accessors"].append({"bufferView": len(views), "componentType": 5123,
+                                      "type": "SCALAR", "count": len(remap)})
+        document["bufferViews"].append({"buffer": 0, "target": 34963})
+        views.append(remap.astype("<u2").tobytes())
+        mesh["primitives"].append({"attributes": frame_attrs, "indices": index,
+                                   "material": len(document["materials"])})
+        document["materials"].append({"name": "Pavilion door and window profiles",
+            "pbrMetallicRoughness": {"metallicFactor": .42, "roughnessFactor": .38}})
+        frame_count = len(frames["POSITION"]) // 3
     if total != 978 or not 100 <= count <= 130:
         raise ValueError(f"Unexpected surveyed geometry: {count} window faces, {total} total")
     # Reduce broad fixed reflections; retain fine luminance changes in the photographed mullions.
@@ -140,7 +175,7 @@ def convert(raw):
     header = json.dumps(document, separators=(",", ":")).encode()
     header += b" " * (-len(header) % 4)
     print(f"Selected {count} window triangles from {total} unique survey triangles")
-    return (struct.pack("<4sIIII", b"glTF", 2, 28+len(header)+len(packed), len(header), 0x4e4f534a)
+    return frame_count, (struct.pack("<4sIIII", b"glTF", 2, 28+len(header)+len(packed), len(header), 0x4e4f534a)
             + header + struct.pack("<I4s", len(packed), b"BIN\0") + packed)
 
 
@@ -150,7 +185,7 @@ if __name__ == "__main__":
     raw = parser.parse_args().source.read_bytes()
     if hashlib.sha256(raw).hexdigest() != SOURCE:
         raise ValueError("Expected the original SLA Pavilion GLB")
-    result = convert(raw)
+    frame_count, result = convert(raw)
     digest = hashlib.sha256(result).hexdigest()
     (ROOT / "assets" / (digest + ".glb")).write_bytes(result)
     path = ROOT / "build/onemap-entities.json"
@@ -158,7 +193,8 @@ if __name__ == "__main__":
     entity = next(e for e in records if e["entityId"] == ENTITY)
     entity["assetHash"] = digest
     entity["material"] = {"shading": "albedo"}
-    entity["props"].update({"原建筑资源": SOURCE, "三角形数": 978,
+    entity["props"].update({"原建筑资源": SOURCE, "三角形数": 978 + frame_count,
+                           "圆亭窗框": "按测绘影像圆柱展开图配准十二道竖框和两组双扇门。投影到原测绘外壳，55–65 毫米宽、38 毫米凸出量和金属表面参数为估值。",
                            "圆亭玻璃": "按测绘外壳朝向、高度和原影像颜色选取成对玻璃三角面。原窗框纹理保留，日间反光从圆亭中部采集的岸楼、天空和水面计算，玻璃粗糙度 0.28 为估值。"})
     path.write_text(json.dumps(records, ensure_ascii=False, indent=2) + "\n")
     print(digest, len(result))
