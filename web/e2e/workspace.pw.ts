@@ -166,12 +166,13 @@ test('在线工作台：明确授权、创建 worker、查看结果并确认发�
       });
     await route.abort();
   });
+  const fixture = await page.request.get('/api/public/spaces/demo-lobby/snapshot?seq=4', {
+    headers: { Authorization: 'Share fixture-share-token-0123456789abcdef' },
+  });
+  expect(fixture.ok()).toBe(true);
+  const initialSnapshot = await fixture.json();
   await page.route('**/api/public/previews', async (route) => {
-    const response = await route.fetch({
-      url: new URL('/api/public/spaces/demo-lobby/snapshot?seq=4', route.request().url()).href,
-      headers: { Authorization: 'Share fixture-share-token-0123456789abcdef' },
-    });
-    const snapshot = await response.json();
+    const snapshot = structuredClone(initialSnapshot);
     const target = snapshot.entities.find(
       (e: { body: { bounds?: unknown; kind: string; layer: string } }) =>
         e.body.bounds && e.body.kind === 'object' && e.body.layer === 'rebuilt',
