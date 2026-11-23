@@ -113,6 +113,31 @@ describe('通用矢量三维内容', () => {
     }
   });
 
+  it('同一要素内的独立楼体可区分，跨瓦片的墙面延续同一组窗格', () => {
+    function variants(x: number, west: number, east: number) {
+      const data = vectorTileFixture(60, false, undefined, [
+        [
+          [west, 640],
+          [east, 640],
+          [east, 896],
+          [west, 896],
+        ],
+      ]);
+      const { geometry, features } = vectorGeometry(data, { ...tile, x }, reference, {
+        ...style,
+        facade: 'urban',
+      });
+      expect(features).toBe(2);
+      const uv = geometry.getAttribute('uv');
+      const result = [uv.getY(0), uv.getY(uv.count - 1)];
+      geometry.dispose();
+      return result;
+    }
+    const [a, b] = variants(tile.x, 128, 384);
+    expect(a).not.toBe(b);
+    expect(variants(tile.x, 3968, 4224)[1]).toBe(variants(tile.x + 1, -128, 128)[1]);
+  });
+
   it('仅重建已配置的地表，草坪保留洞口，铺装有独立的压顶石和立缘', () => {
     const mapping = { layer: 'shapes', property: 'elevation', values: ['24'] } as const;
     const surfaces = vectorGeometry(

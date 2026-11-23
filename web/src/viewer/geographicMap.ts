@@ -79,6 +79,7 @@ export class GeographicMap {
     groundSky: { value: null },
     groundSkyYaw: { value: 0 },
     groundAirStrength: { value: 0 },
+    groundAirHalfDistance: { value: 5200 },
   };
   private stats: MapStats = { tiles: 0, pending: 0, failed: 0, zoom: 0 };
 
@@ -121,6 +122,8 @@ export class GeographicMap {
         ? background
         : null;
     this.air.groundSkyYaw.value = yaw;
+    this.air.groundAirHalfDistance.value =
+      this.air.groundSky.value?.userData.airHalfDistance ?? 5200;
     this.updateAirStrength();
   }
 

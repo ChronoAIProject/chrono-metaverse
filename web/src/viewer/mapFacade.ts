@@ -16,7 +16,7 @@ const cityAir = /* glsl */ `
         horizon = textureLod(citySky, uv, lod).rgb;
       }
     }
-    float transmission = exp2(-max(0.0, meters - 75.0) / 4800.0);
+    float transmission = exp2(-max(0.0, meters - 75.0) / cityAirHalfDistance);
     return mix(light, horizon, min(0.42, 1.0 - transmission));
   }
 `;
@@ -25,6 +25,7 @@ function citySkyUniforms(material: THREE.Material) {
   const panorama = { value: null as THREE.Texture | null };
   const hasPanorama = { value: false };
   const yaw = { value: 0 };
+  const halfDistance = { value: 4800 };
   const beforeRender = material.onBeforeRender;
   material.onBeforeRender = function (...args) {
     beforeRender.call(this, ...args);
@@ -36,13 +37,19 @@ function citySkyUniforms(material: THREE.Material) {
         ? background
         : null;
     hasPanorama.value = !!panorama.value;
+    halfDistance.value = panorama.value?.userData.airHalfDistance ?? 4800;
     yaw.value = scene.backgroundRotation.y;
   };
-  return { citySky: panorama, cityHasSky: hasPanorama, citySkyYaw: yaw };
+  return {
+    citySky: panorama,
+    cityHasSky: hasPanorama,
+    citySkyYaw: yaw,
+    cityAirHalfDistance: halfDistance,
+  };
 }
 
 const skyDeclarations =
-  'uniform sampler2D citySky;\nuniform bool cityHasSky;\nuniform float citySkyYaw;\n';
+  'uniform sampler2D citySky;\nuniform bool cityHasSky;\nuniform float citySkyYaw, cityAirHalfDistance;\n';
 
 // 日间窗面将多个位置拍摄的半球图保存在零自发光的贴图里，普通 glTF 查看器仍按透明玻璃呈现。
 function facadeProbeUniforms(material: THREE.MeshStandardMaterial) {
@@ -214,6 +221,23 @@ export function cityModelAir(material: THREE.Material) {
   };
 }
 
+// Integral of a periodic strip. Taking the difference at the pixel edges
+// keeps thin mullions and floor bands stable during camera motion.
+const facadeFiltering = /* glsl */ `
+  vec2 paneIntegral(vec2 x, vec2 coverage) {
+    return floor(x) * coverage + min(fract(x), coverage);
+  }
+  float paneCoverage(vec2 grid, vec2 coverage) {
+    vec2 pixel = max(fwidth(grid), vec2(0.001));
+    vec2 center = fract(grid) - 0.5 + 0.5 * coverage;
+    vec2 span = min(pixel, vec2(2.0));
+    vec2 panes = (paneIntegral(center + 0.5 * span, coverage)
+                - paneIntegral(center - 0.5 * span, coverage)) / span;
+    panes = mix(panes, coverage, smoothstep(vec2(0.6), vec2(2.0), pixel));
+    return clamp(panes.x * panes.y, 0.0, 1.0);
+  }
+`;
+
 /** 同一瓦片的楼房共用材质，远处小于一个像素的窗框过渡到立面的平均色。 */
 export function urbanFacade(material: THREE.MeshLambertMaterial) {
   const sky = citySkyUniforms(material);
@@ -235,25 +259,30 @@ export function urbanFacade(material: THREE.MeshLambertMaterial) {
     shader.fragmentShader =
       skyDeclarations +
       cityAir +
+      facadeFiltering +
       varying +
       shader.fragmentShader
         .replace(
           '#include <color_fragment>',
           /* glsl */ `#include <color_fragment>
-        float variant = cityFacade.y;
+        float variant = fract(cityFacade.y);
+        float ribbon = step(1.0,cityFacade.y);
+        float curtain = step(2.0,cityFacade.y);
         float wall = 1.0 - smoothstep(0.35,0.8,abs(cityNormal.y));
         vec2 tangent = normalize(vec2(cityNormal.z + 0.0001, -cityNormal.x));
-        vec2 grid = vec2(dot(cityPosition.xz, tangent)/mix(2.3,4.2,variant),cityFacade.x/3.55);
-        vec2 cell = abs(fract(grid)-0.5);
-        vec2 fw = max(fwidth(grid),vec2(0.001));
-        vec2 panels = 1.0-smoothstep(vec2(0.37,0.32)-0.5*fw, vec2(0.41,0.38)+0.5*fw, cell);
-        panels = mix(panels,vec2(0.78,0.70),smoothstep(vec2(0.22),vec2(0.85),fw));
-        vec3 stone = mix(vec3(0.73,0.72,0.68),vec3(1.42,1.40,1.30),variant);
-        vec3 glazing = mix(vec3(0.29,0.48,0.57),vec3(0.51,0.69,0.74),variant);
+        vec2 module = vec2(mix(2.6,4.6,variant) * mix(1.0,0.60,curtain),
+                           mix(3.0,3.6,variant) + 0.48 * curtain);
+        vec2 coverage = mix(vec2(0.50+0.18*variant,0.56),vec2(0.94,0.62),ribbon);
+        coverage = mix(coverage,vec2(0.93,0.86),curtain);
+        vec2 grid = vec2(dot(cityPosition.xz, tangent),cityFacade.x) / module;
+        float panes = paneCoverage(grid,coverage);
+        vec3 stone = mix(vec3(0.80,0.75,0.66),vec3(1.48,1.46,1.39),variant);
+        vec3 glazing = mix(vec3(0.27,0.37,0.41),vec3(0.48,0.67,0.69),variant);
         vec3 paint = mix(vec3(dot(cityPaint.rgb, vec3(.2126,.7152,.0722))), cityPaint.rgb, .80);
         vec3 masonry = mix(diffuseColor.rgb*stone, .035+.70*paint, cityPaint.a*.88);
-        vec3 panes = mix(diffuseColor.rgb*glazing, masonry*vec3(.32,.43,.49), cityPaint.a*.65);
-        diffuseColor.rgb = mix(masonry*.88, mix(masonry,panes,panels.x*panels.y), wall);
+        vec3 glass = mix(diffuseColor.rgb*glazing, masonry*vec3(.32,.43,.49), cityPaint.a*.65);
+        vec3 frame = mix(masonry,mix(glass,masonry,0.25),curtain);
+        diffuseColor.rgb = mix(masonry*.88, mix(frame,glass,panes), wall);
         `,
         )
         .replace(
@@ -267,7 +296,8 @@ export function urbanFacade(material: THREE.MeshLambertMaterial) {
         ray.y=max(0.015,ray.y);
         vec3 skyLight=cityHasSky ? texture2D(citySky,equirectUv(normalize(ray)),2.0).rgb : vec3(0.34,0.46,0.55);
         float grazing=pow(1.0-abs(dot(worldEye,worldN)),3.0);
-        outgoingLight=mix(outgoingLight,skyLight,wall*panels.x*panels.y*(0.16+0.36*grazing));
+        float reflection = 0.09 + 0.09*ribbon + 0.12*curtain + 0.32*grazing;
+        outgoingLight=mix(outgoingLight,skyLight,wall*panes*reflection);
         outgoingLight=cityAir(outgoingLight,-vViewPosition,mix(vec3(0.46,0.55,0.62),skyLight,0.15));
         #include <opaque_fragment>`,
         );

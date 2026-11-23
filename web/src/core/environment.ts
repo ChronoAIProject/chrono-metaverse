@@ -67,6 +67,8 @@ export interface Environment {
   readonly sky?: {
     readonly texture: string;
     readonly yaw: number;
+    /** 米。经过这段空气后，地物与地平线之间的亮度差减半。 */
+    readonly airHalfDistance?: number;
     readonly daylight?: SkyDaylight;
   };
   readonly map?: GeographicMap;
@@ -114,6 +116,9 @@ export function environmentOf(entity: EntityBody): Environment | null {
     sky = {
       texture: value.texture,
       yaw: (value.yaw as number | undefined) ?? 0,
+      ...(finite(value.airHalfDistance, 1, 100000)
+        ? { airHalfDistance: value.airHalfDistance }
+        : {}),
       daylight: skyDaylight(value.daylight),
     };
   }

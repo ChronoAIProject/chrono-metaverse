@@ -56,6 +56,19 @@ describe('通用环境配置', () => {
     expect(result?.sky?.texture).toBe(hash);
     expect(result?.sky?.daylight).toBeUndefined();
   });
+  it('读取天空的空气透视距离，无效距离沿用原有衰减', () => {
+    const sky = (airHalfDistance: number) =>
+      environmentOf({
+        ...entity,
+        props: {
+          background: true,
+          environment: { version: 1, sky: { texture: hash, airHalfDistance } },
+        },
+      })?.sky;
+    expect(sky(14400)?.airHalfDistance).toBe(14400);
+    expect(sky(0)).toMatchObject({ texture: hash });
+    expect(sky(0)?.airHalfDistance).toBeUndefined();
+  });
   it('从空间资源引用天空并保留任意地点的地图来源', () => {
     expect(environmentOf(entity)).toMatchObject({
       sky: { texture: hash, yaw: 0 },

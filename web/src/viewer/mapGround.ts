@@ -5,6 +5,7 @@ export interface GroundAir {
   groundSky: THREE.IUniform<THREE.Texture | null>;
   groundSkyYaw: THREE.IUniform<number>;
   groundAirStrength: THREE.IUniform<number>;
+  groundAirHalfDistance: THREE.IUniform<number>;
 }
 
 /** 远处的影像按视线长度衰减，散射光取当前方位的实景天际线。 */
@@ -22,7 +23,7 @@ export function groundAir(material: THREE.Material, uniforms: GroundAir) {
         '#include <project_vertex>\ngroundView = mvPosition.xyz;',
       );
     shader.fragmentShader =
-      'varying vec3 groundView;\nuniform sampler2D groundSky;\nuniform float groundSkyYaw, groundAirStrength;\n' +
+      'varying vec3 groundView;\nuniform sampler2D groundSky;\nuniform float groundSkyYaw, groundAirStrength, groundAirHalfDistance;\n' +
       shader.fragmentShader.replace(
         '#include <opaque_fragment>',
         /* glsl */ `
@@ -32,7 +33,7 @@ export function groundAir(material: THREE.Material, uniforms: GroundAir) {
             float c = cos(groundSkyYaw), s = sin(groundSkyYaw);
             ray.xz = mat2(c,s,-s,c) * ray.xz;
             vec3 horizon = texture2D(groundSky, equirectUv(normalize(vec3(ray.x, 0.012, ray.z)))).rgb;
-            float scatter = (1.0 - exp2(-path / 5200.0)) * groundAirStrength;
+            float scatter = (1.0 - exp2(-path / groundAirHalfDistance)) * groundAirStrength;
             outgoingLight = mix(outgoingLight, horizon, scatter);
           }
           #include <opaque_fragment>`,

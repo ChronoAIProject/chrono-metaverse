@@ -27,6 +27,16 @@ One Fullerton 临水入口的玻璃侧墙和后墙采用 Андрей Бобро
 
 达尔豪西纪念碑的高度与轴向取自 OneMap 测量模型。石阶、角墩及四盏灯按实拍估定细部。材质文件 `references/dalhousie-obelisk-surfaces.jpg` 由 Mike Peel 与 Terence Ong 的照片裁切、透视校正和调色，改编图集按 CC BY-SA 4.0 分发。[Mike Peel 的 2023 年照片，CC BY-SA 4.0](https://commons.wikimedia.org/wiki/File:At_Singapore_2023_112.jpg) · [Terence Ong 的灯柱照片，CC BY 2.5](https://commons.wikimedia.org/wiki/File:Daihousie_Obelisk_2.JPG) · [改编图集许可](https://creativecommons.org/licenses/by-sa/4.0/)
 
+驳船码头 45 至 85 号之间的 40 栋临河店屋按 OpenStreetMap 独立地块、楼层和高度建模。OneMap 正射影像用于估读岸线、屋面分段和逐户瓦色。12 个排除框覆盖原有的 40 个矢量地块。门窗与雨棚按同街实拍近似，岸墙高度和屋脊为估值。[OpenStreetMap 数据许可](https://www.openstreetmap.org/copyright) · [OneMap](https://www.onemap.gov.sg/)
+
+店屋图集裁切、透视校正并调色自 Frank Schulenburg 的街面照片、Balou46 的隔河照片与 Chensiyuan 的俯拍。改编图集与模型以 CC BY-SA 4.0 分发。[Frank Schulenburg，CC BY-SA 4.0](https://commons.wikimedia.org/wiki/File:Shophouses_on_Boat_Quay,_Singapore_(2023)-L1003691.jpg) · [Balou46，CC BY-SA 3.0](https://commons.wikimedia.org/wiki/File:SG-riverside-boat-quay.jpg) · [Chensiyuan，CC BY-SA 4.0](https://commons.wikimedia.org/wiki/File:Boat_Quay_in_Singapore_(Cropped).jpg) · [改编图集许可](https://creativecommons.org/licenses/by-sa/4.0/)
+
+维多利亚剧院面向草坪的两翼按 OneMap 测绘立面定位。拱窗铁艺、柱间海报、山花与中央入口取自同一张正面照片。照片中的小片遮挡以邻近墙面补全，柱身与洞口进深按比例估读。改编图集及模型以 CC BY-SA 4.0 分发。[TTangMonuments 的现场照片，CC BY-SA 4.0](https://commons.wikimedia.org/wiki/File:Victoria_Theatre_and_Victoria_Concert_Hall,_with_54m_high_Clock_Tower.jpg) · [改编图集许可](https://creativecommons.org/licenses/by-sa/4.0/)
+
+皇后坊喷泉的池沿、碗心和莱佛士基座按 OneMap 正射影像定位。雕像由三张照片的轮廓重建，背面、基座高度与水位为估值。构建脚本使用项目已有的 Three.js 等值面实现。改编图集及模型以 CC BY-SA 4.0 分发。[Ralff Nestor Nacor 的正面照片](https://commons.wikimedia.org/wiki/File:Stamford_Raffles_Monument,_Singapore,_August_2023.jpg) · [Mike Peel 的左侧照片](https://commons.wikimedia.org/wiki/File:At_Singapore_2023_090.jpg) · [Mike Peel 的右侧照片](https://commons.wikimedia.org/wiki/File:At_Singapore_2023_093.jpg) · [OSM 喷泉测绘记录](https://www.openstreetmap.org/way/688830991/history/2) · [许可](https://creativecommons.org/licenses/by-sa/4.0/)
+
+皇后坊周围的 32 株开展型树木按 NParks 树位与估算冠幅放置。枝叶取自 Poly Haven 扫描树的局部分组，依照扫描枝向弯曲和排列，减少整冠切片在步行视角出现的水平边缘。树形为近似。[Poly Haven Jacaranda Tree，CC0](https://polyhaven.com/a/jacaranda_tree)
+
 
 
 浮尔顿路双向车道按 OSM 单向中心线与车道数生成；转向开口保持可通行。六段路侧及中央绿带沿 OneMap 正射影像描绘。路面颗粒采用 2.08 米宽的沥青扫描，路宽、标线和路缘高度为重建估值。用 `scripts/bake-fullerton-road.py` 传入该区域 OSM XML 和 1K 沥青原图可重新烘焙。[道路](https://www.openstreetmap.org/way/22919331) · [OneMap](https://www.onemap.gov.sg/) · [沥青](https://polyhaven.com/a/asphalt_01) · [草皮](https://ambientcg.com/a/Grass004)

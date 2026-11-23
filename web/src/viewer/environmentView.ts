@@ -140,6 +140,7 @@ export class EnvironmentView {
           // 贴图缓存还服务普通材质，这里只拥有副本，不修改缓存的采样方式。
           this.sky = texture.clone();
           this.sky.mapping = THREE.EquirectangularReflectionMapping;
+          this.sky.userData.airHalfDistance = selected?.environment.sky?.airHalfDistance;
           this.sky.colorSpace = THREE.SRGBColorSpace;
           this.sky.needsUpdate = true;
           this.host.dataset.sky = 'ready';
