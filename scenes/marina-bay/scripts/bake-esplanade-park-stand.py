@@ -17,7 +17,7 @@ RAIN_TREE_HEADROOM = 1.4
 RAIN_TREE_MASK_GAIN = 1.045
 
 
-def bake(folder, spreading_tree):
+def bake(folder, spreading_tree, east_grove=False):
     ref = json.loads((ROOT/"references/esplanade-park-stand.json").read_text())
     points, colors, canopy, compact_bark_mesh = sample_scan(folder, "island_tree_01")
     compact_xyz, uv, compact_normals, faces, compact = slices(points, colors, canopy, fit_opacity=True)
@@ -37,7 +37,8 @@ def bake(folder, spreading_tree):
     pixels[:, :, :3] = lut[pixels[:, :, :3]]
     atlas.paste(Image.fromarray(pixels), (0, compact.height))
     atlas.format = "PNG"
-    paint = PBRMaterial(name="Esplanade Park layered broadleaf canopy", baseColorTexture=atlas,
+    name = "Esplanade Drive layered crowns" if east_grove else "Esplanade Park layered broadleaf canopy"
+    paint = PBRMaterial(name=name, baseColorTexture=atlas,
                         metallicFactor=0, roughnessFactor=.98, alphaMode="MASK", alphaCutoff=.40)
     vertices, shading, tones, texcoords = [], [], [], []
     widths = {"Samanea saman":1.38,"Tabebuia rosea":.69,"Pterocarpus indicus":1.05,
@@ -48,9 +49,14 @@ def bake(folder, spreading_tree):
     along /= np.linalg.norm(along)
     road_axes = np.array([along, [-along[1], along[0]]])
     trees = ref["trees"] + avenue["trees"]
+    if east_grove:
+        trees = json.loads((ROOT / "references/esplanade-drive-grove.json").read_text())["trees"]
     for tree in trees:
         # Both source volumes use the same slice grid. Select its UV region for each crown.
-        if tree["species"] == "Samanea saman":
+        measured_diameter = tree.get("crownDiameterMetres")
+        spreading_form = (tree["species"] == "Samanea saman" or
+                          (measured_diameter is not None and tree["species"] == "Peltophorum pterocarpum"))
+        if spreading_form:
             xyz, normals, bark, atlas_offset = spreading_xyz, spreading_normals, spreading_bark_mesh, 0
         else:
             xyz, normals, bark, atlas_offset = compact_xyz, compact_normals, compact_bark_mesh, 1
@@ -61,6 +67,8 @@ def bake(folder, spreading_tree):
         height = tree["heightUpper"] - rng.uniform(.5,2.5)
         width = widths[tree["species"]] * height
         axes = np.array([width*rng.uniform(.86,1.07),height,width*rng.uniform(.84,1.04)])
+        if measured_diameter is not None:
+            axes[[0, 2]] = measured_diameter
         angle = rng.uniform(-np.pi,np.pi)
         basis = trimesh.transformations.rotation_matrix(angle,[0,1,0])[:3,:3]
         transform = basis @ np.diag(axes)
@@ -89,6 +97,8 @@ def bake(folder, spreading_tree):
         if tree["species"] == "Samanea saman":
             color = (color * np.array(tree.get("foliageGainLinear", [1, 1, 1]))
                      * RAIN_TREE_MASK_GAIN / RAIN_TREE_HEADROOM)
+        elif spreading_form:
+            color = color / RAIN_TREE_HEADROOM
         color = np.uint8(np.clip(np.rint(color), 0, 255)).tolist()
         tones.extend(np.tile([*color, 255], (len(xyz), 1)))
     visual = TextureVisuals(uv=np.asarray(texcoords), material=paint)
@@ -98,9 +108,18 @@ def bake(folder, spreading_tree):
     scene = trimesh.Scene(mesh)
     for bark_source, group in [(spreading_bark_mesh, stems[0]), (compact_bark_mesh, stems[1])]:
         trunk_mesh = combined(group)
+        if east_grove:
+            trunk_mesh.visual.material.name = bark_source.visual.material.name.replace("park bark", "Esplanade Drive bark")
         trunk_mesh.visual.vertex_attributes["color"] = np.tile(bark_source.visual.vertex_attributes["color"], (len(group), 1))
         scene.add_geometry(trunk_mesh, geom_name=trunk_mesh.visual.material.name)
     digest, bounds = write_tree_asset(scene)
+    if east_grove:
+        return dict(entityId="bay.esplanade-drive-grove", regionId="marina-bay-exterior", layer="ext",
+                    kind="structure", label="滨海公园 · 东侧林带", assetHash=digest, bounds=bounds,
+                    material={"shading": "albedo"}, props={
+                        "background": True, "surfaceRole": "landscape", "树木名录": ref["source"],
+                        "树木依据": f"靠 Esplanade Drive 的 {len(trees)} 株双翼豆与洋红风铃木。树位、树种和高度档取自 NParks 2021 名录，根部按地面定位，冠幅与偏向按 OneMap 航拍估读。",
+                        "树形素材": "Poly Haven · CC0。双翼豆借用 Jacaranda Tree 的分枝，洋红风铃木借用 Island Tree 01。"})
     return dict(entityId="bay.esplanade-park-stand",regionId="marina-bay-exterior",layer="ext",kind="structure",
                 label="滨海公园 · 步道与康乐通道林冠",assetHash=digest,bounds=bounds,
                 material={"shading":"albedo"},props={"background":True,"surfaceRole":"landscape","树木名录":ref["source"],
@@ -114,8 +133,9 @@ if __name__ == "__main__":
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("tree",type=Path)
     parser.add_argument("spreading_tree", type=Path, help="Directory containing the 1k Jacaranda Tree glTF")
+    parser.add_argument("--east-grove", action="store_true", help="Bake the separate Esplanade Drive stand")
     args = parser.parse_args()
-    entry = bake(args.tree, args.spreading_tree)
+    entry = bake(args.tree, args.spreading_tree, args.east_grove)
     path=ROOT/"build/streetscape.json"
     records={r["entityId"]:r for r in json.loads(path.read_text())}
     records[entry["entityId"]]=entry

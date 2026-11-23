@@ -1,0 +1,2017 @@
+{
+  "source": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+  "aerial": "Map Data © Singapore Land Authority / OneMap OrthoJPG, zoom 20.",
+  "crownSurvey": "Estimated equivalent canopy diameter, aspect along and across Connaught Drive, centre offset, and relative RGB from connected aerial foliage around each surveyed stem. Roots were checked against the rendered ground.",
+  "trees": [
+    {
+      "treeId": "10530781",
+      "longitude": 103.854454,
+      "latitude": 1.291257,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        499.364,
+        1107.699
+      ],
+      "groundY": -60.321,
+      "aerialRGB": [
+        108,
+        119,
+        95
+      ],
+      "crownDiameterMetres": 11.21,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.912,
+          1.096
+        ],
+        "offsetAlongAcrossMetres": [
+          1.76,
+          -1.19
+        ]
+      }
+    },
+    {
+      "treeId": "10530779",
+      "longitude": 103.85443,
+      "latitude": 1.291163,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        497.392,
+        1097.15
+      ],
+      "groundY": -60.319,
+      "aerialRGB": [
+        127,
+        140,
+        93
+      ],
+      "crownDiameterMetres": 8.95,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.81,
+          1.235
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.09,
+          -0.34
+        ]
+      }
+    },
+    {
+      "treeId": "10530778",
+      "longitude": 103.854418,
+      "latitude": 1.291122,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        496.686,
+        1092.477
+      ],
+      "groundY": -60.318,
+      "aerialRGB": [
+        121,
+        131,
+        93
+      ],
+      "crownDiameterMetres": 8.13,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.81,
+          1.235
+        ],
+        "offsetAlongAcrossMetres": [
+          0.27,
+          -0.55
+        ]
+      }
+    },
+    {
+      "treeId": "10530777",
+      "longitude": 103.854409,
+      "latitude": 1.291094,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        496.286,
+        1089.248
+      ],
+      "groundY": -60.317,
+      "aerialRGB": [
+        120,
+        123,
+        92
+      ],
+      "crownDiameterMetres": 7.69,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.81,
+          1.235
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.62,
+          0.22
+        ]
+      }
+    },
+    {
+      "treeId": "10530776",
+      "longitude": 103.854391,
+      "latitude": 1.291049,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 15,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        495.998,
+        1083.891
+      ],
+      "groundY": -60.371,
+      "aerialRGB": [
+        105,
+        112,
+        91
+      ],
+      "crownDiameterMetres": 9.15,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.81,
+          1.235
+        ],
+        "offsetAlongAcrossMetres": [
+          -1.1,
+          -1.35
+        ]
+      }
+    },
+    {
+      "treeId": "10530774",
+      "longitude": 103.854364,
+      "latitude": 1.290968,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 15,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        494.936,
+        1074.504
+      ],
+      "groundY": -60.315,
+      "aerialRGB": [
+        110,
+        121,
+        94
+      ],
+      "crownDiameterMetres": 12.54,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.944,
+          1.059
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.35,
+          0.04
+        ]
+      }
+    },
+    {
+      "treeId": "10530765",
+      "longitude": 103.854256,
+      "latitude": 1.290868,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 18,
+      "heightBand": ">15 but ≤18",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        501.157,
+        1059.403
+      ],
+      "groundY": -60.313,
+      "aerialRGB": [
+        112,
+        118,
+        94
+      ],
+      "crownDiameterMetres": 13.72,
+      "crownFit": {
+        "scaleAlongAcross": [
+          1.033,
+          0.968
+        ],
+        "offsetAlongAcrossMetres": [
+          -1.82,
+          0.22
+        ]
+      }
+    },
+    {
+      "treeId": "10530772",
+      "longitude": 103.854265,
+      "latitude": 1.290941,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 18,
+      "heightBand": ">15 but ≤18",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        503.66,
+        1067.142
+      ],
+      "groundY": -60.314,
+      "aerialRGB": [
+        104,
+        111,
+        92
+      ],
+      "crownDiameterMetres": 10.59,
+      "crownFit": {
+        "scaleAlongAcross": [
+          1.072,
+          0.933
+        ],
+        "offsetAlongAcrossMetres": [
+          1.6,
+          -1.22
+        ]
+      }
+    },
+    {
+      "treeId": "10530770",
+      "longitude": 103.854184,
+      "latitude": 1.290932,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 15,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        511.41,
+        1062.43
+      ],
+      "groundY": -60.314,
+      "aerialRGB": [
+        107,
+        114,
+        94
+      ],
+      "crownDiameterMetres": 13.96,
+      "crownFit": {
+        "scaleAlongAcross": [
+          1.12,
+          0.893
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.68,
+          -2.16
+        ]
+      }
+    },
+    {
+      "treeId": "10455803",
+      "longitude": 103.854388,
+      "latitude": 1.290701,
+      "species": "Tabebuia rosea",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        480.039,
+        1048.876
+      ],
+      "groundY": -60.309,
+      "aerialRGB": [
+        125,
+        135,
+        96
+      ],
+      "crownDiameterMetres": 9.12,
+      "crownFit": {
+        "scaleAlongAcross": [
+          1.06,
+          0.943
+        ],
+        "offsetAlongAcrossMetres": [
+          -1.52,
+          -0.83
+        ]
+      }
+    },
+    {
+      "treeId": "10455826",
+      "longitude": 103.854526,
+      "latitude": 1.291104,
+      "species": "Tabebuia rosea",
+      "heightUpper": 9,
+      "heightBand": ">6 but ≤9",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        484.952,
+        1095.753
+      ],
+      "groundY": -60.317,
+      "aerialRGB": [
+        103,
+        118,
+        97
+      ],
+      "crownDiameterMetres": 8.64,
+      "crownFit": {
+        "scaleAlongAcross": [
+          1.133,
+          0.883
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.54,
+          1.2
+        ]
+      }
+    },
+    {
+      "treeId": "10455816",
+      "longitude": 103.854463,
+      "latitude": 1.290932,
+      "species": "Tabebuia rosea",
+      "heightUpper": 9,
+      "heightBand": ">6 but ≤9",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        483.269,
+        1075.553
+      ],
+      "groundY": -60.314,
+      "aerialRGB": [
+        111,
+        122,
+        98
+      ],
+      "crownDiameterMetres": 10.37,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.952,
+          1.05
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.31,
+          0.11
+        ]
+      }
+    },
+    {
+      "treeId": "10530755",
+      "longitude": 103.854113,
+      "latitude": 1.290281,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 15,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        488.149,
+        993.851
+      ],
+      "groundY": -60.301,
+      "aerialRGB": [
+        110,
+        117,
+        94
+      ],
+      "crownDiameterMetres": 12.31,
+      "crownFit": {
+        "scaleAlongAcross": [
+          1.026,
+          0.975
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.09,
+          -2.34
+        ]
+      }
+    },
+    {
+      "treeId": "10530762",
+      "longitude": 103.854301,
+      "latitude": 1.290769,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        491.991,
+        1051.598
+      ],
+      "groundY": -60.31,
+      "aerialRGB": [
+        124,
+        129,
+        97
+      ],
+      "crownDiameterMetres": 10.14,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.85,
+          1.176
+        ],
+        "offsetAlongAcrossMetres": [
+          1.51,
+          -1.03
+        ]
+      }
+    },
+    {
+      "treeId": "10530761",
+      "longitude": 103.854292,
+      "latitude": 1.290733,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        491.217,
+        1047.567
+      ],
+      "groundY": -60.31,
+      "aerialRGB": [
+        106,
+        115,
+        91
+      ],
+      "crownDiameterMetres": 9.28,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.81,
+          1.235
+        ],
+        "offsetAlongAcrossMetres": [
+          -1.04,
+          -0.23
+        ]
+      }
+    },
+    {
+      "treeId": "10530760",
+      "longitude": 103.854265,
+      "latitude": 1.290669,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        490.949,
+        1039.883
+      ],
+      "groundY": -60.308,
+      "aerialRGB": [
+        112,
+        119,
+        95
+      ],
+      "crownDiameterMetres": 11.01,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.81,
+          1.235
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.3,
+          0.47
+        ]
+      }
+    },
+    {
+      "treeId": "10530753",
+      "longitude": 103.854149,
+      "latitude": 1.290221,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        481.714,
+        989.531
+      ],
+      "groundY": -60.3,
+      "aerialRGB": [
+        112,
+        119,
+        91
+      ],
+      "crownDiameterMetres": 8.81,
+      "crownFit": {
+        "scaleAlongAcross": [
+          1.052,
+          0.951
+        ],
+        "offsetAlongAcrossMetres": [
+          0.31,
+          1.64
+        ]
+      }
+    },
+    {
+      "treeId": "10530752",
+      "longitude": 103.854253,
+      "latitude": 1.290205,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        470.477,
+        992.819
+      ],
+      "groundY": -60.299,
+      "aerialRGB": [
+        97,
+        107,
+        89
+      ],
+      "crownDiameterMetres": 5.57,
+      "crownFit": {
+        "scaleAlongAcross": [
+          1.101,
+          0.908
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.8,
+          -0.26
+        ]
+      }
+    },
+    {
+      "treeId": "10530756",
+      "longitude": 103.854119,
+      "latitude": 1.290374,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 15,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        491.89,
+        1003.453
+      ],
+      "groundY": -60.302,
+      "aerialRGB": [
+        110,
+        116,
+        96
+      ],
+      "crownDiameterMetres": 15.21,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.912,
+          1.097
+        ],
+        "offsetAlongAcrossMetres": [
+          0.51,
+          -0.75
+        ]
+      }
+    },
+    {
+      "treeId": "10530751",
+      "longitude": 103.854126,
+      "latitude": 1.29016,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        481.184,
+        982.336
+      ],
+      "groundY": -60.298,
+      "aerialRGB": [
+        107,
+        117,
+        92
+      ],
+      "crownDiameterMetres": 11.11,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.986,
+          1.014
+        ],
+        "offsetAlongAcrossMetres": [
+          -1.61,
+          -0.15
+        ]
+      }
+    },
+    {
+      "treeId": "10530748",
+      "longitude": 103.854077,
+      "latitude": 1.290036,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 15,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        480.331,
+        967.605
+      ],
+      "groundY": -60.296,
+      "aerialRGB": [
+        109,
+        117,
+        93
+      ],
+      "crownDiameterMetres": 11.44,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.953,
+          1.05
+        ],
+        "offsetAlongAcrossMetres": [
+          1.74,
+          -1.3
+        ]
+      }
+    },
+    {
+      "treeId": "10530750",
+      "longitude": 103.854233,
+      "latitude": 1.290145,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        469.69,
+        985.866
+      ],
+      "groundY": -60.298,
+      "aerialRGB": [
+        100,
+        111,
+        90
+      ],
+      "crownDiameterMetres": 7.93,
+      "crownFit": {
+        "scaleAlongAcross": [
+          1.235,
+          0.81
+        ],
+        "offsetAlongAcrossMetres": [
+          -1.39,
+          -0.57
+        ]
+      }
+    },
+    {
+      "treeId": "10530744",
+      "longitude": 103.854125,
+      "latitude": 1.289867,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 15,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        467.592,
+        952.926
+      ],
+      "groundY": -60.293,
+      "aerialRGB": [
+        117,
+        123,
+        92
+      ],
+      "crownDiameterMetres": 7.32,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.81,
+          1.235
+        ],
+        "offsetAlongAcrossMetres": [
+          0.27,
+          -0.03
+        ]
+      }
+    },
+    {
+      "treeId": "10530735",
+      "longitude": 103.854041,
+      "latitude": 1.289666,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 9,
+      "heightBand": ">6 but ≤9",
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        466.672,
+        928.832
+      ],
+      "groundY": -60.289,
+      "aerialRGB": [
+        109,
+        115,
+        90
+      ],
+      "crownDiameterMetres": 9.22,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.827,
+          1.21
+        ],
+        "offsetAlongAcrossMetres": [
+          -1.02,
+          -0.03
+        ]
+      }
+    },
+    {
+      "treeId": "10530743",
+      "longitude": 103.854113,
+      "latitude": 1.289832,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 15,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        467.167,
+        948.855
+      ],
+      "groundY": -60.292,
+      "aerialRGB": [
+        109,
+        114,
+        91
+      ],
+      "crownDiameterMetres": 5.88,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.81,
+          1.235
+        ],
+        "offsetAlongAcrossMetres": [
+          0.26,
+          1.09
+        ]
+      }
+    },
+    {
+      "treeId": "10530741",
+      "longitude": 103.853991,
+      "latitude": 1.289804,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 18,
+      "heightBand": ">15 but ≤18",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        478.164,
+        940.31
+      ],
+      "groundY": -60.292,
+      "aerialRGB": [
+        108,
+        117,
+        90
+      ],
+      "crownDiameterMetres": 14.5,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.98,
+          1.021
+        ],
+        "offsetAlongAcrossMetres": [
+          1.9,
+          -2.0
+        ]
+      }
+    },
+    {
+      "treeId": "10455704",
+      "longitude": 103.854198,
+      "latitude": 1.289832,
+      "species": "Tabebuia rosea",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        458.594,
+        952.852
+      ],
+      "groundY": -60.292,
+      "aerialRGB": [
+        118,
+        123,
+        93
+      ],
+      "crownDiameterMetres": 8.38,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.81,
+          1.235
+        ],
+        "offsetAlongAcrossMetres": [
+          1.03,
+          0.38
+        ]
+      }
+    },
+    {
+      "treeId": "10455685",
+      "longitude": 103.854192,
+      "latitude": 1.289745,
+      "species": "Tabebuia rosea",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        455.133,
+        943.852
+      ],
+      "groundY": -60.291,
+      "aerialRGB": [
+        116,
+        120,
+        94
+      ],
+      "crownDiameterMetres": 6.91,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.892,
+          1.12
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.34,
+          0.21
+        ]
+      }
+    },
+    {
+      "treeId": "10474943",
+      "longitude": 103.854267,
+      "latitude": 1.290098,
+      "species": "Tabebuia rosea",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        464.064,
+        982.755
+      ],
+      "groundY": -60.297,
+      "aerialRGB": [
+        125,
+        132,
+        104
+      ],
+      "crownDiameterMetres": 8.47,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.931,
+          1.074
+        ],
+        "offsetAlongAcrossMetres": [
+          0.63,
+          1.48
+        ]
+      }
+    },
+    {
+      "treeId": "10474949",
+      "longitude": 103.854271,
+      "latitude": 1.290161,
+      "species": "Tabebuia rosea",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        466.605,
+        989.257
+      ],
+      "groundY": -60.298,
+      "aerialRGB": [
+        121,
+        129,
+        99
+      ],
+      "crownDiameterMetres": 7.89,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.81,
+          1.235
+        ],
+        "offsetAlongAcrossMetres": [
+          0.36,
+          1.45
+        ]
+      }
+    },
+    {
+      "treeId": "10474952",
+      "longitude": 103.854288,
+      "latitude": 1.290214,
+      "species": "Tabebuia rosea",
+      "heightUpper": 15,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        467.367,
+        995.368
+      ],
+      "groundY": -60.299,
+      "aerialRGB": [
+        124,
+        133,
+        104
+      ],
+      "crownDiameterMetres": 9.42,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.918,
+          1.089
+        ],
+        "offsetAlongAcrossMetres": [
+          1.14,
+          1.38
+        ]
+      }
+    },
+    {
+      "treeId": "10455668",
+      "longitude": 103.854184,
+      "latitude": 1.289683,
+      "species": "Tabebuia rosea",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        453.043,
+        937.262
+      ],
+      "groundY": -60.289,
+      "aerialRGB": [
+        108,
+        115,
+        90
+      ],
+      "crownDiameterMetres": 8.12,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.868,
+          1.152
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.32,
+          -1.51
+        ]
+      }
+    },
+    {
+      "treeId": "10455657",
+      "longitude": 103.854172,
+      "latitude": 1.289634,
+      "species": "Tabebuia rosea",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        451.963,
+        931.787
+      ],
+      "groundY": -60.289,
+      "aerialRGB": [
+        114,
+        123,
+        90
+      ],
+      "crownDiameterMetres": 8.15,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.913,
+          1.095
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.65,
+          -0.61
+        ]
+      }
+    },
+    {
+      "treeId": "10455626",
+      "longitude": 103.854138,
+      "latitude": 1.289499,
+      "species": "Tabebuia rosea",
+      "heightUpper": 15,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        449.084,
+        916.659
+      ],
+      "groundY": -60.286,
+      "aerialRGB": [
+        117,
+        125,
+        97
+      ],
+      "crownDiameterMetres": 11.31,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.81,
+          1.235
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.32,
+          0.15
+        ]
+      }
+    },
+    {
+      "treeId": "10455638",
+      "longitude": 103.854158,
+      "latitude": 1.289563,
+      "species": "Tabebuia rosea",
+      "heightUpper": 18,
+      "heightBand": ">15 but ≤18",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        450.058,
+        924.013
+      ],
+      "groundY": -60.287,
+      "aerialRGB": [
+        120,
+        125,
+        93
+      ],
+      "crownDiameterMetres": 7.74,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.867,
+          1.154
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.87,
+          1.19
+        ]
+      }
+    },
+    {
+      "treeId": "10455695",
+      "longitude": 103.854195,
+      "latitude": 1.289798,
+      "species": "Tabebuia rosea",
+      "heightUpper": 15,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        457.307,
+        949.304
+      ],
+      "groundY": -60.292,
+      "aerialRGB": [
+        121,
+        125,
+        95
+      ],
+      "crownDiameterMetres": 6.99,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.881,
+          1.135
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.63,
+          -0.62
+        ]
+      }
+    },
+    {
+      "treeId": "10475467",
+      "longitude": 103.854214,
+      "latitude": 1.289895,
+      "species": "Tabebuia rosea",
+      "heightUpper": 15,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        459.924,
+        959.918
+      ],
+      "groundY": -60.293,
+      "aerialRGB": [
+        136,
+        141,
+        96
+      ],
+      "crownDiameterMetres": 8.34,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.81,
+          1.235
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.52,
+          0.36
+        ]
+      }
+    },
+    {
+      "treeId": "10475477",
+      "longitude": 103.85423,
+      "latitude": 1.289952,
+      "species": "Tabebuia rosea",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        460.974,
+        966.383
+      ],
+      "groundY": -60.294,
+      "aerialRGB": [
+        124,
+        132,
+        95
+      ],
+      "crownDiameterMetres": 7.42,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.862,
+          1.161
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.43,
+          -0.28
+        ]
+      }
+    },
+    {
+      "treeId": "10530742",
+      "longitude": 103.854101,
+      "latitude": 1.289801,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 15,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        466.929,
+        945.183
+      ],
+      "groundY": -60.292,
+      "aerialRGB": [
+        103,
+        110,
+        90
+      ],
+      "crownDiameterMetres": 6.05,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.81,
+          1.235
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.31,
+          1.02
+        ]
+      }
+    },
+    {
+      "treeId": "10530759",
+      "longitude": 103.854238,
+      "latitude": 1.290579,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 15,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        489.467,
+        1029.594
+      ],
+      "groundY": -60.307,
+      "aerialRGB": [
+        111,
+        118,
+        95
+      ],
+      "crownDiameterMetres": 12.91,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.81,
+          1.235
+        ],
+        "offsetAlongAcrossMetres": [
+          1.03,
+          0.04
+        ]
+      }
+    },
+    {
+      "treeId": "10530721",
+      "longitude": 103.853837,
+      "latitude": 1.289233,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 15,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        467.014,
+        875.845
+      ],
+      "groundY": -60.281,
+      "aerialRGB": [
+        133,
+        140,
+        99
+      ],
+      "crownDiameterMetres": 12.76,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.81,
+          1.235
+        ],
+        "offsetAlongAcrossMetres": [
+          -1.29,
+          1.24
+        ]
+      }
+    },
+    {
+      "treeId": "10530726",
+      "longitude": 103.853868,
+      "latitude": 1.289283,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        466.224,
+        882.313
+      ],
+      "groundY": -60.282,
+      "aerialRGB": [
+        126,
+        134,
+        98
+      ],
+      "crownDiameterMetres": 11.96,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.879,
+          1.138
+        ],
+        "offsetAlongAcrossMetres": [
+          1.23,
+          0.13
+        ]
+      }
+    },
+    {
+      "treeId": "10530740",
+      "longitude": 103.853972,
+      "latitude": 1.289746,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 18,
+      "heightBand": ">15 but ≤18",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        477.37,
+        933.604
+      ],
+      "groundY": -60.291,
+      "aerialRGB": [
+        100,
+        107,
+        90
+      ],
+      "crownDiameterMetres": 13.11,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.853,
+          1.173
+        ],
+        "offsetAlongAcrossMetres": [
+          -1.71,
+          -1.81
+        ]
+      }
+    },
+    {
+      "treeId": "10998346",
+      "longitude": 103.853894,
+      "latitude": 1.289577,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 9,
+      "heightBand": ">6 but ≤9",
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        477.34,
+        912.999
+      ],
+      "groundY": -60.288,
+      "aerialRGB": [
+        98,
+        109,
+        88
+      ],
+      "crownDiameterMetres": 8.11,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.81,
+          1.235
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.56,
+          -0.55
+        ]
+      }
+    },
+    {
+      "treeId": "10991461",
+      "longitude": 103.853869,
+      "latitude": 1.289516,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 9,
+      "heightBand": ">6 but ≤9",
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        477.011,
+        905.71
+      ],
+      "groundY": -60.286,
+      "aerialRGB": [
+        96,
+        107,
+        91
+      ],
+      "crownDiameterMetres": 8.93,
+      "crownFit": {
+        "scaleAlongAcross": [
+          1.056,
+          0.947
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.76,
+          -0.84
+        ]
+      }
+    },
+    {
+      "treeId": "10530732",
+      "longitude": 103.853987,
+      "latitude": 1.289512,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 15,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        464.922,
+        910.86
+      ],
+      "groundY": -60.286,
+      "aerialRGB": [
+        106,
+        115,
+        92
+      ],
+      "crownDiameterMetres": 8.35,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.81,
+          1.235
+        ],
+        "offsetAlongAcrossMetres": [
+          0.58,
+          -0.7
+        ]
+      }
+    },
+    {
+      "treeId": "10530738",
+      "longitude": 103.854059,
+      "latitude": 1.289702,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 18,
+      "heightBand": ">15 but ≤18",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        466.539,
+        933.287
+      ],
+      "groundY": -60.29,
+      "aerialRGB": [
+        104,
+        110,
+        89
+      ],
+      "crownDiameterMetres": 9.13,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.81,
+          1.235
+        ],
+        "offsetAlongAcrossMetres": [
+          0.6,
+          1.09
+        ]
+      }
+    },
+    {
+      "treeId": "10530718",
+      "longitude": 103.853564,
+      "latitude": 1.288996,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        483.475,
+        839.253
+      ],
+      "groundY": -60.278,
+      "aerialRGB": [
+        112,
+        118,
+        92
+      ],
+      "crownDiameterMetres": 12.94,
+      "crownFit": {
+        "scaleAlongAcross": [
+          1.015,
+          0.985
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.19,
+          -0.63
+        ]
+      }
+    },
+    {
+      "treeId": "10530719",
+      "longitude": 103.853636,
+      "latitude": 1.289096,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 9,
+      "heightBand": ">6 but ≤9",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        480.885,
+        852.661
+      ],
+      "groundY": -60.279,
+      "aerialRGB": [
+        105,
+        110,
+        92
+      ],
+      "crownDiameterMetres": 9.08,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.912,
+          1.096
+        ],
+        "offsetAlongAcrossMetres": [
+          0.69,
+          -0.42
+        ]
+      }
+    },
+    {
+      "treeId": "10530729",
+      "longitude": 103.853762,
+      "latitude": 1.289322,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 15,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        478.738,
+        881.236
+      ],
+      "groundY": -60.283,
+      "aerialRGB": [
+        108,
+        118,
+        90
+      ],
+      "crownDiameterMetres": 14.67,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.927,
+          1.079
+        ],
+        "offsetAlongAcrossMetres": [
+          1.93,
+          -1.1
+        ]
+      }
+    },
+    {
+      "treeId": "10530722",
+      "longitude": 103.853681,
+      "latitude": 1.289177,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 15,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        480.132,
+        862.895
+      ],
+      "groundY": -60.281,
+      "aerialRGB": [
+        108,
+        116,
+        92
+      ],
+      "crownDiameterMetres": 13.2,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.858,
+          1.166
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.09,
+          -1.32
+        ]
+      }
+    },
+    {
+      "treeId": "10530724",
+      "longitude": 103.853735,
+      "latitude": 1.289259,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 15,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        478.517,
+        873.653
+      ],
+      "groundY": -60.282,
+      "aerialRGB": [
+        104,
+        111,
+        93
+      ],
+      "crownDiameterMetres": 11.64,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.828,
+          1.208
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.64,
+          -0.62
+        ]
+      }
+    },
+    {
+      "treeId": "10530720",
+      "longitude": 103.853786,
+      "latitude": 1.289135,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        467.578,
+        863.625
+      ],
+      "groundY": -60.28,
+      "aerialRGB": [
+        125,
+        132,
+        97
+      ],
+      "crownDiameterMetres": 12.67,
+      "crownFit": {
+        "scaleAlongAcross": [
+          1.033,
+          0.968
+        ],
+        "offsetAlongAcrossMetres": [
+          0.19,
+          0.97
+        ]
+      }
+    },
+    {
+      "treeId": "10455807",
+      "longitude": 103.854402,
+      "latitude": 1.290745,
+      "species": "Tabebuia rosea",
+      "heightUpper": 9,
+      "heightBand": ">6 but ≤9",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        480.683,
+        1053.943
+      ],
+      "groundY": -60.31,
+      "aerialRGB": [
+        110,
+        118,
+        100
+      ],
+      "crownDiameterMetres": 7.25,
+      "crownFit": {
+        "scaleAlongAcross": [
+          1.072,
+          0.933
+        ],
+        "offsetAlongAcrossMetres": [
+          0.83,
+          1.1
+        ]
+      }
+    },
+    {
+      "treeId": "10455821",
+      "longitude": 103.85449,
+      "latitude": 1.291004,
+      "species": "Tabebuia rosea",
+      "heightUpper": 9,
+      "heightBand": ">6 but ≤9",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        483.91,
+        1084.038
+      ],
+      "groundY": -60.315,
+      "aerialRGB": [
+        113,
+        124,
+        98
+      ],
+      "crownDiameterMetres": 8.3,
+      "crownFit": {
+        "scaleAlongAcross": [
+          1.166,
+          0.857
+        ],
+        "offsetAlongAcrossMetres": [
+          0.68,
+          -0.19
+        ]
+      }
+    },
+    {
+      "treeId": "10455809",
+      "longitude": 103.854427,
+      "latitude": 1.290841,
+      "species": "Tabebuia rosea",
+      "heightUpper": 9,
+      "heightBand": ">6 but ≤9",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        482.647,
+        1064.74
+      ],
+      "groundY": -60.312,
+      "aerialRGB": [
+        117,
+        126,
+        99
+      ],
+      "crownDiameterMetres": 10.16,
+      "crownFit": {
+        "scaleAlongAcross": [
+          1.034,
+          0.967
+        ],
+        "offsetAlongAcrossMetres": [
+          0.01,
+          0.35
+        ]
+      }
+    },
+    {
+      "treeId": "11014923",
+      "longitude": 103.854252,
+      "latitude": 1.290045,
+      "species": "Tabebuia rosea",
+      "heightUpper": 15,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        463.101,
+        976.738
+      ],
+      "groundY": -60.296,
+      "aerialRGB": [
+        121,
+        129,
+        102
+      ],
+      "crownDiameterMetres": 7.34,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.938,
+          1.067
+        ],
+        "offsetAlongAcrossMetres": [
+          0.51,
+          1.0
+        ]
+      }
+    },
+    {
+      "treeId": "11014924",
+      "longitude": 103.85424,
+      "latitude": 1.289994,
+      "species": "Tabebuia rosea",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        461.928,
+        971.063
+      ],
+      "groundY": -60.295,
+      "aerialRGB": [
+        106,
+        115,
+        97
+      ],
+      "crownDiameterMetres": 6.73,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.894,
+          1.119
+        ],
+        "offsetAlongAcrossMetres": [
+          0.06,
+          -0.33
+        ]
+      }
+    },
+    {
+      "treeId": "10530745",
+      "longitude": 103.854136,
+      "latitude": 1.28991,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 15,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        468.492,
+        957.753
+      ],
+      "groundY": -60.294,
+      "aerialRGB": [
+        131,
+        139,
+        96
+      ],
+      "crownDiameterMetres": 8.84,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.81,
+          1.235
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.24,
+          -1.48
+        ]
+      }
+    },
+    {
+      "treeId": "10530747",
+      "longitude": 103.854152,
+      "latitude": 1.289958,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 15,
+      "heightBand": ">12 but ≤15",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        469.121,
+        963.316
+      ],
+      "groundY": -60.295,
+      "aerialRGB": [
+        133,
+        142,
+        95
+      ],
+      "crownDiameterMetres": 9.01,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.821,
+          1.219
+        ],
+        "offsetAlongAcrossMetres": [
+          0.28,
+          -0.69
+        ]
+      }
+    },
+    {
+      "treeId": "10530749",
+      "longitude": 103.854177,
+      "latitude": 1.29002,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        469.497,
+        970.705
+      ],
+      "groundY": -60.296,
+      "aerialRGB": [
+        104,
+        111,
+        91
+      ],
+      "crownDiameterMetres": 6.54,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.81,
+          1.235
+        ],
+        "offsetAlongAcrossMetres": [
+          -1.24,
+          0.05
+        ]
+      }
+    },
+    {
+      "treeId": "10530727",
+      "longitude": 103.853609,
+      "latitude": 1.289295,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 18,
+      "heightBand": ">15 but ≤18",
+      "girthBand": "> 1.5",
+      "localXZ": [
+        492.908,
+        871.334
+      ],
+      "groundY": -60.283,
+      "aerialRGB": [
+        100,
+        109,
+        89
+      ],
+      "crownDiameterMetres": 18.42,
+      "crownFit": {
+        "scaleAlongAcross": [
+          1.083,
+          0.923
+        ],
+        "offsetAlongAcrossMetres": [
+          0.11,
+          -1.12
+        ]
+      }
+    },
+    {
+      "treeId": "10530723",
+      "longitude": 103.854091,
+      "latitude": 1.28923,
+      "species": "Peltophorum pterocarpum",
+      "heightUpper": 12,
+      "heightBand": ">9 but ≤12",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        441.254,
+        887.49
+      ],
+      "groundY": -60.336,
+      "aerialRGB": [
+        97,
+        111,
+        93
+      ],
+      "crownDiameterMetres": 8.66,
+      "crownFit": {
+        "scaleAlongAcross": [
+          1.24,
+          0.806
+        ],
+        "offsetAlongAcrossMetres": [
+          0.39,
+          1.21
+        ]
+      }
+    },
+    {
+      "treeId": "10455607",
+      "longitude": 103.854121,
+      "latitude": 1.289425,
+      "species": "Tabebuia rosea",
+      "heightUpper": 18,
+      "heightBand": ">15 but ≤18",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        447.341,
+        908.443
+      ],
+      "groundY": -60.285,
+      "aerialRGB": [
+        100,
+        111,
+        92
+      ],
+      "crownDiameterMetres": 11.99,
+      "crownFit": {
+        "scaleAlongAcross": [
+          1.045,
+          0.957
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.67,
+          1.47
+        ]
+      }
+    },
+    {
+      "treeId": "12500377",
+      "longitude": 103.854295,
+      "latitude": 1.289991,
+      "species": "Tabebuia rosea",
+      "heightUpper": 9,
+      "heightBand": ">6 but ≤9",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        456.24,
+        973.349
+      ],
+      "groundY": -60.35,
+      "aerialRGB": [
+        134,
+        141,
+        109
+      ],
+      "crownDiameterMetres": 5.82,
+      "crownFit": {
+        "scaleAlongAcross": [
+          1.24,
+          0.806
+        ],
+        "offsetAlongAcrossMetres": [
+          0.04,
+          -1.1
+        ]
+      }
+    },
+    {
+      "treeId": "12500378",
+      "longitude": 103.854286,
+      "latitude": 1.289923,
+      "species": "Tabebuia rosea",
+      "heightUpper": 9,
+      "heightBand": ">6 but ≤9",
+      "girthBand": "1.1 - 1.5",
+      "localXZ": [
+        453.97,
+        966.111
+      ],
+      "groundY": -60.349,
+      "aerialRGB": [
+        120,
+        127,
+        98
+      ],
+      "crownDiameterMetres": 7.96,
+      "crownFit": {
+        "scaleAlongAcross": [
+          0.998,
+          1.002
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.5,
+          0.23
+        ]
+      }
+    },
+    {
+      "treeId": "12500381",
+      "longitude": 103.854224,
+      "latitude": 1.2896,
+      "species": "Tabebuia rosea",
+      "heightUpper": 9,
+      "heightBand": ">6 but ≤9",
+      "girthBand": "0.6 - 1.0",
+      "localXZ": [
+        445.13,
+        930.825
+      ],
+      "groundY": -60.343,
+      "aerialRGB": [
+        121,
+        126,
+        94
+      ],
+      "crownDiameterMetres": 7.94,
+      "crownFit": {
+        "scaleAlongAcross": [
+          1.117,
+          0.895
+        ],
+        "offsetAlongAcrossMetres": [
+          0.09,
+          0.26
+        ]
+      }
+    }
+  ]
+}
