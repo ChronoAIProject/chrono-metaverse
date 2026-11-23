@@ -19,6 +19,7 @@ from fullerton_shopfront import GLASS as SHOP_GLASS, PHOTO as SHOP_PHOTO, shopfr
 from fullerton_glazing import GLASS, PHOTO as GLAZING_PHOTO, glazing_patch
 from fullerton_wicker import PHOTO as WICKER_PHOTO, cane_material, rounded_board, woven_chair
 from fullerton_pendants import pendants
+from fullerton_passage import bake as bake_passage
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILDING = "bay.0c252ba3-f96a-4c82-b87b-fa5ef91708f2"
@@ -530,6 +531,8 @@ def bake(source, timber, output, buildings_file, streetscape_file):
     streetscape = {item["entityId"]: item for item in json.loads(streetscape_file.read_text())}
     streetscape[furniture["entityId"]] = furniture
     if not middle:
+        room = bake_passage(output / (building["assetHash"] + ".glb"), building, config["quay"], output)
+        streetscape[room["entityId"]] = room
         lights = pendant_entity(ends[1], start, along, inland, output, building["regionId"])
         streetscape[lights["entityId"]] = lights
     streetscape = list(streetscape.values())
