@@ -15,6 +15,7 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
       ...(reflection ? THREE.UniformsUtils.clone(THREE.UniformsLib.lights) : {}),
       directFraction: { value: 0 },
       reflectionMap: { value: reflection?.texture ?? null },
+      reflectionDepth: { value: reflection?.depth ?? null },
       reflectionMatrix: { value: reflection?.matrix ?? new THREE.Matrix4() },
       hasReflection: { value: false },
       sunlight: { value: new THREE.Vector3(...KEY_LIGHT.direction).normalize() },
@@ -54,6 +55,7 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
       uniform float directFraction;
       uniform float time;
       uniform sampler2D reflectionMap;
+      uniform sampler2D reflectionDepth;
       uniform mat4 reflectionMatrix;
       uniform bool hasReflection;
       uniform vec3 sunlight;
@@ -113,8 +115,17 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
           // 在世界坐标中偏转反射光线，再投到镜像相机。近处可看清波纹切开的楼影，
           // 接近对岸时逐渐收紧偏移，让建筑在水线处接上自己的倒影。
           vec3 flatRay = vec3(-eye.x, eye.y, -eye.z);
-          const float reflectionReach = 110.0; // 米，近似湾岸建筑的有效反射距离
-          float projectedReach = range * reflectionReach / (reflectionReach + range);
+          #ifdef USE_LOGARITHMIC_DEPTH_BUFFER
+            vec4 flatClip = reflectionMatrix * vec4(surfacePosition, 1.0);
+            vec2 flatUv = clamp(flatClip.xy / max(.001,flatClip.w), 0.0, 1.0);
+            // glTF 楼体和岸墙已随倒影写入对数深度。两段视深的比值给出
+            // 水面到被反射物体的相对距离，贴岸处的波纹偏转随之收紧。
+            float encoded = texture2D(reflectionDepth,flatUv).r;
+            float hitDepth = exp2(encoded * (2.0 / logDepthBufFC)) - 1.0;
+            float projectedReach = range * clamp(1.0 - flatClip.w / max(.001,hitDepth), 0.0, 1.0);
+          #else
+            float projectedReach = range * 110.0 / (110.0 + range);
+          #endif
           vec3 samplePoint = surfacePosition + (reflected-flatRay)*projectedReach;
           vec4 clip = reflectionMatrix * vec4(samplePoint, 1.0);
           vec2 uv = clip.xy / max(0.001,clip.w);
