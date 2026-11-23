@@ -12,6 +12,7 @@ from PIL import Image, ImageDraw, ImageFilter
 from scipy.ndimage import gaussian_filter
 
 from pavilion_frames import frame_geometry
+from pavilion_deck import add_deck, deck_faces
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = "4c500895294277a5e1b01e113cea9ca5f4987df545598dead5e8eb390e6d4d9c"
@@ -116,7 +117,10 @@ def convert(raw):
         document["accessors"].append(new)
         pane["material"] = len(document["materials"]) - 1
         mesh["primitives"].append(pane)
-        indices(primitive["indices"], faces[~selection])
+        deck, deck_uv = deck_faces(attrs["POSITION"], faces)
+        if np.any(selection & deck) or not 40 <= int(deck.sum()) <= 50:
+            raise ValueError(f"Unexpected set of pier faces: {deck.sum()}")
+        indices(primitive["indices"], faces[~(selection | deck)])
         indices(pane["indices"], faces[selection])
         count = int(selection.sum())
         for triangle in attrs["TEXCOORD_0"][faces[selection]] * image.size:
@@ -153,7 +157,9 @@ def convert(raw):
                                    "material": len(document["materials"])})
         document["materials"].append({"name": "Pavilion door and window profiles",
             "pbrMetallicRoughness": {"metallicFactor": .42, "roughnessFactor": .38}})
-        frame_count = len(frames["POSITION"]) // 3
+        added_triangles = len(frames["POSITION"]) // 3
+        added_triangles += add_deck(document, views, mesh, primitive, faces[deck], deck_uv, ROOT / "references/fullerton-pier-deck.jpg")
+        print(f"Registered {deck.sum()} measured deck triangles")
     if total != 978 or not 100 <= count <= 130:
         raise ValueError(f"Unexpected surveyed geometry: {count} window faces, {total} total")
     # Reduce broad fixed reflections; retain fine luminance changes in the photographed mullions.
@@ -175,7 +181,7 @@ def convert(raw):
     header = json.dumps(document, separators=(",", ":")).encode()
     header += b" " * (-len(header) % 4)
     print(f"Selected {count} window triangles from {total} unique survey triangles")
-    return frame_count, (struct.pack("<4sIIII", b"glTF", 2, 28+len(header)+len(packed), len(header), 0x4e4f534a)
+    return added_triangles, (struct.pack("<4sIIII", b"glTF", 2, 28+len(header)+len(packed), len(header), 0x4e4f534a)
             + header + struct.pack("<I4s", len(packed), b"BIN\0") + packed)
 
 
@@ -185,7 +191,7 @@ if __name__ == "__main__":
     raw = parser.parse_args().source.read_bytes()
     if hashlib.sha256(raw).hexdigest() != SOURCE:
         raise ValueError("Expected the original SLA Pavilion GLB")
-    frame_count, result = convert(raw)
+    added_triangles, result = convert(raw)
     digest = hashlib.sha256(result).hexdigest()
     (ROOT / "assets" / (digest + ".glb")).write_bytes(result)
     path = ROOT / "build/onemap-entities.json"
@@ -193,7 +199,8 @@ if __name__ == "__main__":
     entity = next(e for e in records if e["entityId"] == ENTITY)
     entity["assetHash"] = digest
     entity["material"] = {"shading": "albedo"}
-    entity["props"].update({"原建筑资源": SOURCE, "三角形数": 978 + frame_count,
+    entity["props"].update({"原建筑资源": SOURCE, "三角形数": 978 + added_triangles,
+                           "栈桥表面": "通行面按 SLA 原三角面配准 OneMap 20 级正射影像。沿实测走道方向叠加扫描木纹。板材、约 15.5 厘米板宽及粗糙度 0.82 为估值。",
                            "圆亭窗框": "按测绘影像圆柱展开图配准十二道竖框和两组双扇门。投影到原测绘外壳，55–65 毫米宽、38 毫米凸出量和金属表面参数为估值。",
                            "圆亭玻璃": "按测绘外壳朝向、高度和原影像颜色选取成对玻璃三角面。原窗框纹理保留，日间反光从圆亭中部采集的岸楼、天空和水面计算，玻璃粗糙度 0.28 为估值。"})
     path.write_text(json.dumps(records, ensure_ascii=False, indent=2) + "\n")

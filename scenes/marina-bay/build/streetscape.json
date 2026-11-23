@@ -588,5 +588,42 @@
       "木材来源": "Poly Haven · Teak Veneer · CC0 · https://polyhaven.com/a/teak_veneer",
       "建模依据": "两座平台轮廓及南侧五处圆形构件按 OneMap 20 级正射影像描绘。西侧平台约长 60 米、宽 2.4 米，两座铺板的相对颜色取自同幅影像。平台离水 0.62 米、导桩高度、护舷截面和铺板材料为估值。"
     }
+  },
+  {
+    "entityId": "bay.fullerton-pavilion-pier-planting",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "kind": "object",
+    "label": "浮尔顿圆亭栈桥 · 岸侧植被",
+    "assetHash": "8c19be9a50860202f0298c92e6a85380d3704c4af4056a272a161c5b91fa900f",
+    "bounds": {
+      "min": [
+        227.25723903181932,
+        -59.175,
+        369.8463005554808
+      ],
+      "max": [
+        251.49588622741103,
+        -58.32722317967082,
+        429.40508009905926
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "backgroundView": {
+        "focus": [
+          239.3765626296152,
+          -58.7511115898354,
+          399.62569032727004
+        ],
+        "maxDistance": 185
+      },
+      "影像来源": "Map Data © Singapore Land Authority / OneMap",
+      "植被位置": "十三处冠丛中心取自 20 级正射影像，根部放在 SLA 栈桥三角面上。树种、冠高、枝形为估值。",
+      "植被素材": "Poly Haven · Shrub 04 · Rico Cilliers · CC0 · https://polyhaven.com/a/shrub_04"
+    }
   }
 ]
