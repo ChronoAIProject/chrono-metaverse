@@ -1039,11 +1039,11 @@
     "layer": "ext",
     "kind": "structure",
     "label": "滨海公园 · 步道与康乐通道林冠",
-    "assetHash": "e6918e5785ce0bf5e8cb14a4c1db0fb9d1de5b0266aa18688378ee67867c4789",
+    "assetHash": "e88f0d5ae51c7ee4806414f53e9af22b05f1c8c43083556402c2583a1643e2ef",
     "bounds": {
       "min": [
         476.00759487527444,
-        -60.427,
+        -60.427817244940215,
         707.645974968905
       ],
       "max": [

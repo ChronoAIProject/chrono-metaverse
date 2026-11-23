@@ -2,14 +2,20 @@
 import argparse
 import hashlib
 import json
+import subprocess
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import numpy as np
 import trimesh
 from PIL import Image
+from scipy.spatial import cKDTree
 from scipy.ndimage import distance_transform_edt, gaussian_filter, map_coordinates, maximum_filter
 from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
+
+from courtyard_tree import compact_bark
+from fullerton_shrubs import combined
 
 ROOT = Path(__file__).resolve().parents[1]
 LAYERS, TILE = 5, 160
@@ -36,6 +42,7 @@ def sample_scan(folder, name):
 
     rng = np.random.default_rng(308)
     points, colours = [], []
+    bark_index = None
     for primitive in doc["meshes"][0]["primitives"]:
         attr = primitive["attributes"]
         pos = read(attr["POSITION"])
@@ -65,10 +72,24 @@ def sample_scan(folder, name):
                 if mask.ndim == 3:
                     mask = mask[:, :, 0]
             keep = mask[v,u] >= np.iinfo(mask.dtype).max / 2
+        if mat["name"] in (name, f"{name}_trunk"):
+            bark_index = len(points)
+            paint = PBRMaterial(name=f"{name} park bark", baseColorTexture=Image.fromarray(image),
+                                metallicFactor=0, roughnessFactor=.96)
+            bark = trimesh.Trimesh(vertices=pos, faces=faces, vertex_normals=read(attr["NORMAL"]),
+                                   visual=TextureVisuals(uv=uv * [1, -1] + [0, 1], material=paint),
+                                   process=False)
+            bark = compact_bark(bark, target_triangles=240, max_error=.12)
         points.append(np.einsum("ij,ijk->ik", weights, tri[sample])[keep])
         colours.append(image[v[keep],u[keep]])
     xyz = np.vstack(points)
-    xyz = (xyz - xyz.min(0)) / np.ptp(xyz, axis=0)
+    if bark_index is None:
+        raise ValueError(f"No bark primitive in {name}")
+    low, span = xyz.min(0), np.ptp(xyz, axis=0)
+    xyz = (xyz - low) / span
+    bark_normals = bark.vertex_normals * span
+    bark.vertices = (bark.vertices - low) / span
+    bark.vertex_normals = bark_normals / np.linalg.norm(bark_normals, axis=1)[:, None]
     rgb = np.vstack(colours).astype(float)
     # Approximate blocked skylight from depth above each scanned surface sample.
     coverage = np.zeros(len(xyz))
@@ -82,7 +103,15 @@ def sample_scan(folder, name):
         front = np.full(grid.max(0)+1, -np.inf)
         np.maximum.at(front, tuple(grid.T), depth)
         coverage += np.clip((maximum_filter(front, size=3)[tuple(grid.T)]-depth-.025)/.26, 0, 1)
-    return xyz, np.uint8(np.clip(rgb * (1-.34*coverage[:,None]/5), 0, 255))
+    canopy = np.concatenate([np.full(len(part), i != bark_index) for i, part in enumerate(points)])
+    shade = 1 - .34 * coverage / 5
+    shaded = np.uint8(np.clip(rgb * shade[:, None], 0, 255))
+    # Preserve the scanned skylight occlusion after separating solid wood from the atlas.
+    nearest = cKDTree(xyz[~canopy]).query(bark.vertices, k=12)[1]
+    linear = np.power(shade[~canopy][nearest].mean(axis=1), 2.2)
+    bark.visual.vertex_attributes["color"] = np.uint8(
+        np.column_stack((linear, linear, linear, np.ones(len(linear)))) * 255)
+    return xyz, shaded, canopy, bark
 
 
 def canopy_depths(points, u, v, depth, cells=3):
@@ -104,13 +133,13 @@ def canopy_depths(points, u, v, depth, cells=3):
     return heights, layers
 
 
-def slices(points, colors):
+def slices(points, colors, canopy):
     atlas = Image.new("RGBA", (TILE*LAYERS, TILE*3))
     vertices, uv, normals, faces = [], [], [], []
     for row, (u,v,depth) in enumerate([(0,1,2),(2,1,0),(0,2,1)]):
         surfaces, layers = canopy_depths(points, u, v, depth)
         for k in range(LAYERS):
-            where = np.flatnonzero(layers == k)
+            where = np.flatnonzero((layers == k) & canopy)
             ordered = where[np.argsort(points[where,depth], kind="stable")]
             size = TILE * 2
             px = np.rint(3 + (size-7)*points[ordered,u]).astype(int)
@@ -147,8 +176,11 @@ def slices(points, colors):
 
 def bake(folder, spreading_tree):
     ref = json.loads((ROOT/"references/esplanade-park-stand.json").read_text())
-    compact_xyz, uv, compact_normals, faces, compact = slices(*sample_scan(folder, "island_tree_01"))
-    spreading_xyz, _, spreading_normals, _, spreading = slices(*sample_scan(spreading_tree, "jacaranda_tree"))
+    points, colors, canopy, compact_bark_mesh = sample_scan(folder, "island_tree_01")
+    compact_xyz, uv, compact_normals, faces, compact = slices(points, colors, canopy)
+    points, colors, canopy, spreading_bark_mesh = sample_scan(spreading_tree, "jacaranda_tree")
+    spreading_xyz, _, spreading_normals, _, spreading = slices(points, colors, canopy)
+    stems = {0: [], 1: []}
     atlas = Image.new("RGBA", (compact.width, compact.height * 2))
     atlas.paste(compact, (0, 0))
     atlas.paste(spreading, (0, compact.height))
@@ -167,9 +199,9 @@ def bake(folder, spreading_tree):
     for tree in trees:
         # Both source volumes use the same slice grid. Select its UV region for each crown.
         if tree["species"] == "Samanea saman":
-            xyz, normals, atlas_offset = spreading_xyz, spreading_normals, 0
+            xyz, normals, bark, atlas_offset = spreading_xyz, spreading_normals, spreading_bark_mesh, 0
         else:
-            xyz, normals, atlas_offset = compact_xyz, compact_normals, 1
+            xyz, normals, bark, atlas_offset = compact_xyz, compact_normals, compact_bark_mesh, 1
         tree_uv = uv.copy()
         tree_uv[:, 1] = (tree_uv[:, 1] + atlas_offset) / 2
         texcoords.extend(tree_uv)
@@ -179,8 +211,7 @@ def bake(folder, spreading_tree):
         axes = np.array([width*rng.uniform(.86,1.07),height,width*rng.uniform(.84,1.04)])
         angle = rng.uniform(-np.pi,np.pi)
         basis = trimesh.transformations.rotation_matrix(angle,[0,1,0])[:3,:3]
-        mapped = (xyz-[.5,0,.5])*axes @ basis.T
-        n = (normals/axes) @ basis.T
+        transform = basis @ np.diag(axes)
         fit = tree.get("crownFit")
         if fit:
             warp = np.eye(3)
@@ -188,10 +219,18 @@ def bake(folder, spreading_tree):
             warp[horizontal] = road_axes.T @ np.diag(fit["scaleAlongAcross"]) @ road_axes
             # Shear from ground level so the visible crown can lean beyond the stem.
             warp[[0, 2], 1] = (fit["offsetAlongAcrossMetres"] @ road_axes) / (.70 * height)
-            mapped = mapped @ warp.T
-            n = n @ np.linalg.inv(warp)
+            transform = warp @ transform
         x,z = tree["localXZ"]
-        vertices.extend(mapped+[x,tree["groundY"]-.04,z])
+        ground = np.array([x, tree["groundY"] - .04, z])
+        normal_transform = np.linalg.inv(transform)
+        mapped = (xyz - [.5, 0, .5]) @ transform.T + ground
+        n = normals @ normal_transform
+        vertices.extend(mapped)
+        trunk = bark.copy()
+        trunk.vertices = (bark.vertices - [.5, 0, .5]) @ transform.T + ground
+        trunk_normals = bark.vertex_normals @ normal_transform
+        trunk.vertex_normals = trunk_normals / np.linalg.norm(trunk_normals, axis=1)[:, None]
+        stems[atlas_offset].append(trunk)
         shading.extend(n/np.linalg.norm(n,axis=1)[:,None])
         tint = np.clip((np.array(tree["aerialRGB"])/aerial_median)**.65,.70,1.13)
         tones.extend(np.tile(np.uint8(np.minimum(255,231*tint)).tolist()+[255],(len(xyz),1)))
@@ -199,11 +238,24 @@ def bake(folder, spreading_tree):
     visual.vertex_attributes["color"] = np.asarray(tones,np.uint8)
     mesh = trimesh.Trimesh(vertices=vertices,faces=np.vstack([faces+i*len(xyz) for i in range(len(trees))]),
                            vertex_normals=shading,visual=visual,process=False)
-    low,high = mesh.bounds
+    scene = trimesh.Scene(mesh)
+    for bark_source, group in [(spreading_bark_mesh, stems[0]), (compact_bark_mesh, stems[1])]:
+        trunk_mesh = combined(group)
+        trunk_mesh.visual.vertex_attributes["color"] = np.tile(bark_source.visual.vertex_attributes["color"], (len(group), 1))
+        scene.add_geometry(trunk_mesh, geom_name=trunk_mesh.visual.material.name)
+    low, high = scene.bounds
     origin = (low+high)/2
     origin[1] = low[1]
-    mesh.apply_translation(-origin)
-    data = trimesh.exchange.gltf.export_glb(trimesh.Scene(mesh),include_normals=True)
+    for surface in scene.geometry.values():
+        surface.apply_translation(-origin)
+    with TemporaryDirectory() as directory:
+        source = Path(directory) / "trees.glb"
+        packed = Path(directory) / "packed.glb"
+        source.write_bytes(trimesh.exchange.gltf.export_glb(scene, include_normals=True))
+        subprocess.run(["node", str(ROOT / "node_modules/gltfpack/cli.js"),
+                        "-i", str(source), "-o", str(packed), "-vp", "16", "-vt", "14",
+                        "-vn", "10", "-km", "-kn"], check=True)
+        data = packed.read_bytes()
     digest = hashlib.sha256(data).hexdigest()
     (ROOT/'assets'/(digest+'.glb')).write_bytes(data)
     return dict(entityId="bay.esplanade-park-stand",regionId="marina-bay-exterior",layer="ext",kind="structure",

@@ -9,5 +9,8 @@
     "build": "node ../../sdk/typescript/dist/cli.js build",
     "verify": ".venv/bin/python scripts/verify-scene.py",
     "shot": "node ../../sdk/typescript/dist/cli.js shot --views extended --angles front --no-cutaway --browser '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' --out out/native-shots"
+  },
+  "devDependencies": {
+    "gltfpack": "1.3.0"
   }
 }
