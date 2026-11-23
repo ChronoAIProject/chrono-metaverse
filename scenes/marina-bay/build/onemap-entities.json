@@ -5012,7 +5012,7 @@
     "kind": "object",
     "label": "VICTORIA THEATRE AND CONCERT HALL (U/C)",
     "regionId": "marina-bay-exterior",
-    "assetHash": "be6cc4591ece5f1419779b7ec72c2200cc024a57f1062e9e6a3c328eab46f564",
+    "assetHash": "18b9941eeab3082a43a2449c1867976365c4b096bb6e8a211871265d9bfe9f1b",
     "bounds": {
       "min": [
         616.223561,
@@ -5033,7 +5033,9 @@
       "原始分片": "7/76/11_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 53.341,
-      "三角形数": 2768
+      "三角形数": 3440,
+      "钟楼参考": "https://commons.wikimedia.org/wiki/File:Victoria_Theatre_and_Victoria_Concert_Hall,_with_54m_high_Clock_Tower.jpg",
+      "钟楼开口": "四侧共十六处柱间开口按 OneMap 原始立面图定位。柱带厚度与洞口进深依照片估值。"
     }
   },
   {
