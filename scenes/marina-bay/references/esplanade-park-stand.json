@@ -779,5 +779,265 @@
       "groundY": -60.331
     }
   ],
-  "crownSurvey": "Projected cutout foliage was registered to OneMap OrthoJPG at zoom 20. For 17 inland trees the connected canopy around the recorded stem supports estimates of horizontal shape and lean. Three quarters of spatial image blocks were used for fitting. Overlapping crowns and individual branches are approximate."
+  "crownSurvey": "Projected cutout foliage was registered to OneMap OrthoJPG at zoom 20. For 17 inland trees the connected canopy around the recorded stem supports estimates of horizontal shape and lean. Three quarters of spatial image blocks were used for fitting. Overlapping crowns and individual branches are approximate.",
+  "southernTrees": [
+    {
+      "treeId": "10690670",
+      "longitude": 103.852747,
+      "latitude": 1.287875,
+      "species": "Samanea saman",
+      "heightBand": ">15 but ≤18",
+      "heightUpper": 18,
+      "girthBand": "> 1.5",
+      "aerialRGB": [
+        109,
+        116,
+        93
+      ],
+      "localXZ": [
+        513.495,
+        688.486
+      ],
+      "groundY": -60.316,
+      "crownDiameterMetres": 18.36,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            0.9132,
+            0.0466
+          ],
+          [
+            0.0466,
+            1.0974
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          1.398,
+          1.458
+        ]
+      }
+    },
+    {
+      "treeId": "10998982",
+      "longitude": 103.852657,
+      "latitude": 1.288165,
+      "species": "Pterocarpus indicus",
+      "heightBand": ">15 but ≤18",
+      "heightUpper": 18,
+      "girthBand": "> 1.5",
+      "extentEstimate": "Manual estimate of the touching crown edges in the orthophoto.",
+      "aerialRGB": [
+        87,
+        97,
+        86
+      ],
+      "localXZ": [
+        536.125,
+        713.315
+      ],
+      "groundY": -60.266,
+      "crownDiameterMetres": 11.24,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            1.0026,
+            -0.003
+          ],
+          [
+            -0.003,
+            0.9974
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          0.522,
+          -0.156
+        ]
+      }
+    },
+    {
+      "treeId": "11022332",
+      "longitude": 103.852536,
+      "latitude": 1.288275,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "> 1.5",
+      "extentEstimate": "Manual estimate of the touching crown edges in the orthophoto.",
+      "aerialRGB": [
+        93,
+        103,
+        91
+      ],
+      "localXZ": [
+        553.47,
+        718.648
+      ],
+      "groundY": -60.268,
+      "crownDiameterMetres": 19.92,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            1.0458,
+            -0.051
+          ],
+          [
+            -0.051,
+            0.9586
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.191,
+          1.984
+        ]
+      }
+    },
+    {
+      "treeId": "10455401",
+      "longitude": 103.852585,
+      "latitude": 1.287848,
+      "species": "Samanea saman",
+      "heightBand": ">12 but ≤15",
+      "heightUpper": 15,
+      "girthBand": "> 1.5",
+      "extentEstimate": "Manual estimate of the touching crown edges in the orthophoto.",
+      "aerialRGB": [
+        90,
+        99,
+        90
+      ],
+      "localXZ": [
+        528.574,
+        678.161
+      ],
+      "groundY": -60.261,
+      "crownDiameterMetres": 21.39,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            0.9706,
+            0.0368
+          ],
+          [
+            0.0368,
+            1.0317
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          -1.108,
+          -0.313
+        ]
+      }
+    },
+    {
+      "treeId": "10455430",
+      "longitude": 103.852513,
+      "latitude": 1.28802,
+      "species": "Samanea saman",
+      "heightBand": ">9 but ≤12",
+      "heightUpper": 12,
+      "girthBand": "1.1 - 1.5",
+      "extentEstimate": "Manual estimate of the touching crown edges in the orthophoto.",
+      "aerialRGB": [
+        114,
+        118,
+        97
+      ],
+      "localXZ": [
+        543.874,
+        692.011
+      ],
+      "groundY": -60.264,
+      "crownDiameterMetres": 12.0,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            1.124,
+            -0.131
+          ],
+          [
+            -0.131,
+            0.9049
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          1.44,
+          0.858
+        ]
+      }
+    },
+    {
+      "treeId": "10455419",
+      "longitude": 103.852531,
+      "latitude": 1.287965,
+      "species": "Samanea saman",
+      "heightBand": ">12 but ≤15",
+      "heightUpper": 15,
+      "girthBand": "> 1.5",
+      "extentEstimate": "Manual estimate of the touching crown edges in the orthophoto.",
+      "aerialRGB": [
+        109,
+        114,
+        96
+      ],
+      "localXZ": [
+        539.488,
+        687.346
+      ],
+      "groundY": -60.263,
+      "crownDiameterMetres": 15.87,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            1.0826,
+            -0.0908
+          ],
+          [
+            -0.0908,
+            0.9314
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.623,
+          1.311
+        ]
+      }
+    },
+    {
+      "treeId": "11415785",
+      "longitude": 103.85286,
+      "latitude": 1.288681,
+      "species": "Samanea saman",
+      "heightBand": ">3 but ≤6",
+      "heightUpper": 6,
+      "girthBand": "0.6 - 1.0",
+      "aerialRGB": [
+        107,
+        116,
+        89
+      ],
+      "localXZ": [
+        539.763,
+        774.574
+      ],
+      "groundY": -60.274,
+      "crownDiameterMetres": 9.31,
+      "crownFit": {
+        "shapeLocalXZ": [
+          [
+            1.0345,
+            -0.0454
+          ],
+          [
+            -0.0454,
+            0.9687
+          ]
+        ],
+        "offsetAlongAcrossMetres": [
+          -0.347,
+          0.104
+        ]
+      }
+    }
+  ],
+  "southernSurvey": "Seven more registered trees around the south lawns. Crown areas, aspect and offsets are estimates from connected OneMap zoom-20 foliage or visually estimated limits where the crowns overlap. Heights and girths are register bands. Ground heights were sampled at the displayed surface."
 }

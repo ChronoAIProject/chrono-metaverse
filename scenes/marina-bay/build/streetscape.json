@@ -1039,12 +1039,12 @@
     "layer": "ext",
     "kind": "structure",
     "label": "滨海公园 · 步道与康乐通道林冠",
-    "assetHash": "404c2f47e789d6b9c2ab1686d4a884fe08fb2377bb7779031db01beb715f9ebe",
+    "assetHash": "f2bae82fa3dad9ab3c5dd10c28c15f903360dab96ddd65b394d2f6c13eb7ca6a",
     "bounds": {
       "min": [
         476.00759487527444,
         -60.427817244940215,
-        704.613148249812
+        664.0232614303119
       ],
       "max": [
         586.2798535133475,
@@ -1061,6 +1061,7 @@
       "树木名录": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
       "树木依据": "树位、树种与树高档来自 NParks 2021 名录。航拍参考树冠色差。各树枝形、冠径与档内高度为估值。",
       "林荫道": "康乐通道两侧额外 41 株雨树，树根高度取自浏览器地表。33 株树冠按 OneMap 航拍估读纵横冠幅及偏向。",
+      "南侧草坪": "另有六株雨树与一株印度紫檀，树位及高度档取自名录。树冠相接的部分按航拍估读。",
       "道路位置": "https://www.openstreetmap.org/way/843399102/history/13",
       "树形素材": "Poly Haven · Island Tree 01、Jacaranda Tree · CC0。雨树借用蓝花楹展开的分枝形态，按名录高度和估计冠宽拟合；其余树使用 Island Tree 01。"
     }

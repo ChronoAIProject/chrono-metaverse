@@ -53,7 +53,7 @@ def bake_stands(folder, spreading_tree, stands):
     along = np.array(avenue["crownSurvey"]["alongLocalXZ"])
     along /= np.linalg.norm(along)
     road_axes = np.array([along, [-along[1], along[0]]])
-    park = ref["trees"] + avenue["trees"]
+    park = ref["trees"] + avenue["trees"] + ref["southernTrees"]
     east = json.loads((ROOT / "references/esplanade-drive-grove.json").read_text())["trees"]
     trees = park + east
     vertices, shading, texcoords, tones, trunks, bark_tiles = [], [], [], [], [], []
@@ -154,6 +154,7 @@ def stand_entry(east_grove, tree_count, digest, bounds, ref, avenue):
                 material={"shading":"albedo"},props={"background":True,"surfaceRole":"landscape","树木名录":ref["source"],
                 "树木依据":"树位、树种与树高档来自 NParks 2021 名录。航拍参考树冠色差。各树枝形、冠径与档内高度为估值。",
                 "林荫道":"康乐通道两侧额外 41 株雨树，树根高度取自浏览器地表。33 株树冠按 OneMap 航拍估读纵横冠幅及偏向。",
+                "南侧草坪":"另有六株雨树与一株印度紫檀，树位及高度档取自名录。树冠相接的部分按航拍估读。",
                 "道路位置":avenue["road"],
                 "树形素材":"Poly Haven · Island Tree 01、Jacaranda Tree · CC0。雨树借用蓝花楹展开的分枝形态，按名录高度和估计冠宽拟合；其余树使用 Island Tree 01。"})
 
