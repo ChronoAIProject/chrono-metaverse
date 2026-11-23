@@ -167,6 +167,15 @@ def bake_crown(parts, leaf_mask=None):
                            visual=TextureVisuals(uv=texcoords, material=material), process=False)
 
 
+def preserve_crown_normals(mesh):
+    # Either side of a cutout represents the same volume of leaves. Reverse the
+    # winding for the other side while sharing the crown-outward shading normals.
+    normals = mesh.vertex_normals.copy()
+    mesh.faces = np.vstack([mesh.faces, mesh.faces[:, ::-1]])
+    mesh.vertex_normals = normals
+    mesh.visual.material.doubleSided = False
+
+
 def compact_bark(mesh, target_triangles=420, lock_border=False, max_error=None):
     source = {"targetTriangles": target_triangles, "lockBorder": lock_border,
               "faces": mesh.faces.ravel().tolist(), "position": mesh.vertices.ravel().tolist(),
