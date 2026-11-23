@@ -60,6 +60,35 @@ export function configureTexture(
   return texture;
 }
 
+/** 城市模型斜视近景时，给颜色、凹凸与粗糙度使用相同的纹理采样足迹。 */
+export function filterModelSurface(material: THREE.Material, limit: number) {
+  if (
+    !(material instanceof THREE.MeshStandardMaterial) ||
+    !material.map ||
+    !material.normalMap ||
+    material.transparent ||
+    material.alphaTest > 0
+  )
+    return;
+  const level = Math.min(4, limit);
+  for (const texture of [
+    material.map,
+    material.normalMap,
+    material.roughnessMap,
+    material.metalnessMap,
+  ]) {
+    if (
+      texture &&
+      texture.anisotropy < level &&
+      texture.magFilter === THREE.LinearFilter &&
+      texture.minFilter === THREE.LinearMipmapLinearFilter
+    ) {
+      texture.anisotropy = level;
+      texture.needsUpdate = true;
+    }
+  }
+}
+
 /**
  * 按（哈希，用途）缓存的贴图：同一个资源只下载、解码一次；颜色贴图直接用下载的那一份（与以前相同），
  * 法线、粗糙度贴图各复制一份再设置（复制的贴图共用同一张图片，只是颜色空间不同）。
