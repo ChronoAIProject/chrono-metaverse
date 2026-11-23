@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import trimesh
+from PIL import Image
 from scipy.optimize import brentq
 from scipy.spatial import ConvexHull
 
@@ -80,7 +81,13 @@ def fit_tree(bark, leaves, record, compass):
 
 def bake(folder):
     register = json.loads(REGISTER.read_text())
-    bark, leaves = load_tree(folder)
+    mask = folder / "textures/island_tree_01_leaves_alpha_1k.png"
+    if hashlib.sha256(mask.read_bytes()).hexdigest() != "f4341f147988dbe6b58d9ca841a8f0e4bcff25bc40d05f9877da82006d489c39":
+        raise ValueError("Expected the original 1k Island Tree 01 leaf opacity map")
+    with Image.open(mask) as source:
+        raw = np.asarray(source)
+        leaf_mask = Image.fromarray(np.uint8(raw.astype(float) * (255 / np.iinfo(raw.dtype).max))).convert("L")
+    bark, leaves = load_tree(folder, leaf_mask)
     bark = compact_bark(bark)
     heading = np.radians(json.loads((ROOT / "context.json").read_text())["oneMap"]["headingDegrees"])
     compass = np.array([[-np.cos(heading), 0, np.sin(heading)], [0, 1, 0],
