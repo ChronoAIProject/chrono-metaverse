@@ -135,6 +135,9 @@ def bake(folder, spreading_tree):
               "Peltophorum pterocarpum":1.12}
     aerial_median = np.median([t["aerialRGB"] for t in ref["trees"]],axis=0)
     avenue = json.loads((ROOT / "references/connaught-drive-rain-trees.json").read_text())
+    along = np.array(avenue["crownSurvey"]["alongLocalXZ"])
+    along /= np.linalg.norm(along)
+    road_axes = np.array([along, [-along[1], along[0]]])
     trees = ref["trees"] + avenue["trees"]
     for tree in trees:
         # Both source volumes use the same slice grid. Select its UV region for each crown.
@@ -149,9 +152,18 @@ def bake(folder, spreading_tree):
         angle = rng.uniform(-np.pi,np.pi)
         basis = trimesh.transformations.rotation_matrix(angle,[0,1,0])[:3,:3]
         mapped = (xyz-[.5,0,.5])*axes @ basis.T
+        n = (normals/axes) @ basis.T
+        fit = tree.get("crownFit")
+        if fit:
+            warp = np.eye(3)
+            horizontal = np.ix_([0, 2], [0, 2])
+            warp[horizontal] = road_axes.T @ np.diag(fit["scaleAlongAcross"]) @ road_axes
+            # Shear from ground level so the visible crown can lean beyond the stem.
+            warp[[0, 2], 1] = (fit["offsetAlongAcrossMetres"] @ road_axes) / (.70 * height)
+            mapped = mapped @ warp.T
+            n = n @ np.linalg.inv(warp)
         x,z = tree["localXZ"]
         vertices.extend(mapped+[x,tree["groundY"]-.04,z])
-        n = (normals/axes) @ basis.T
         shading.extend(n/np.linalg.norm(n,axis=1)[:,None])
         tint = np.clip((np.array(tree["aerialRGB"])/aerial_median)**.65,.70,1.13)
         tones.extend(np.tile(np.uint8(np.minimum(255,231*tint)).tolist()+[255],(len(xyz),1)))
@@ -170,7 +182,7 @@ def bake(folder, spreading_tree):
                 label="滨海公园 · 步道与康乐通道林冠",assetHash=digest,bounds={"min":low.tolist(),"max":high.tolist()},
                 material={"shading":"albedo"},props={"background":True,"surfaceRole":"landscape","树木名录":ref["source"],
                 "树木依据":"树位、树种与树高档来自 NParks 2021 名录。航拍参考树冠色差。各树枝形、冠径与档内高度为估值。",
-                "林荫道":"康乐通道两侧额外 41 株雨树，树根高度取自浏览器地表。",
+                "林荫道":"康乐通道两侧额外 41 株雨树，树根高度取自浏览器地表。33 株树冠按 OneMap 航拍估读纵横冠幅及偏向。",
                 "道路位置":avenue["road"],
                 "树形素材":"Poly Haven · Island Tree 01、Jacaranda Tree · CC0。雨树借用蓝花楹展开的分枝形态，按名录高度和估计冠宽拟合；其余树使用 Island Tree 01。"})
 
