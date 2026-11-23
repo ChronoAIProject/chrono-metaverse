@@ -26,6 +26,9 @@ vi.mock('three', async (original) => ({
     readonly domElement = document.createElement('canvas');
     readonly shadowMap = { enabled: false };
     readonly capabilities = { getMaxAnisotropy: () => 1 };
+    getContext() {
+      return { SAMPLES: 0x80a9, getParameter: () => 4 };
+    }
     setPixelRatio() {}
     setClearColor() {}
     setSize() {}

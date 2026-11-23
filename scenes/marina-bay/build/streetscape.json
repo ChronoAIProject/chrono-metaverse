@@ -558,5 +558,35 @@
       },
       "吊灯": "根据 2024 年现场晚间照片重建编织灯罩。吊绳按实测坡面收顶，两排共 14 盏的位置、尺寸和日间灯芯亮度为估值。"
     }
+  },
+  {
+    "entityId": "bay.fullerton-pavilion-pontoon",
+    "layer": "ext",
+    "kind": "structure",
+    "regionId": "marina-bay-exterior",
+    "label": "浮尔顿水上圆亭 · 南侧靠泊平台",
+    "assetHash": "bbb3cf29f56c82ee1d3c9ccaaeaaf5bc62f956129b0e040ef6ef96cdd304fc4b",
+    "bounds": {
+      "min": [
+        215.7762476492711,
+        -60.172000000000004,
+        365.8910471244782
+      ],
+      "max": [
+        235.40671301674706,
+        -58.7945,
+        407.27331437618415
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "岸线参考": "https://www.openstreetmap.org/way/1173004263",
+      "影像来源": "Map Data © Singapore Land Authority / OneMap",
+      "木材来源": "Poly Haven · Teak Veneer · CC0 · https://polyhaven.com/a/teak_veneer",
+      "建模依据": "轮廓和五处圆形构件的位置按 OneMap 20 级正射影像描绘。平台离水 0.62 米、导桩高度、护舷截面和铺板材料为估值。"
+    }
   }
 ]

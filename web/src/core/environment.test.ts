@@ -26,6 +26,18 @@ const entity: EntityBody = {
 };
 
 describe('通用环境配置', () => {
+  it('识别日间 AgX 配置，未知的色调映射保留默认值', () => {
+    const sky = { texture: hash };
+    const parse = (daylightToneMapping: string) =>
+      environmentOf({
+        ...entity,
+        props: { background: true, environment: { version: 1, sky, daylightToneMapping } },
+      });
+    expect(parse('agx')?.daylightToneMapping).toBe('agx');
+    expect(parse('other')?.sky?.texture).toBe(hash);
+    expect(parse('other')?.daylightToneMapping).toBeUndefined();
+  });
+
   it('可选日光参数无效时仍载入同一张天空', () => {
     const env = {
       version: 1,

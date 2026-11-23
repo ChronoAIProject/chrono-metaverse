@@ -1,4 +1,5 @@
 import { PriorityQueue } from '3d-tiles-renderer/core';
+import { cityCutout } from './cityCutout';
 import { CitySun } from './citySun';
 import { cityModelAir } from './mapFacade';
 import { CITY_REFLECTION_LAYER } from './mapReflection';
@@ -7,7 +8,7 @@ import { FirstPersonView, type CameraPerspective } from './cameraPerspective';
 import { attachCameraNavigation, type CameraStep } from './cameraNavigation';
 import { ExternalContentView } from './externalContentView';
 import * as THREE from 'three';
-import type { CameraAction } from '../workspace/viewerActions';
+import type { ViewCameraAction } from './cameraPose';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
@@ -352,6 +353,8 @@ export class SceneView {
   private readonly textures: TextureCache;
   private readonly citySun = new CitySun();
   private daylightCity = false;
+  private multisampleCutouts = false;
+  private readonly canvasMultisampled: boolean;
   private readonly environment: EnvironmentView;
   private readonly externalContent: ExternalContentView;
   private lights: THREE.Light[] = [];
@@ -439,6 +442,8 @@ export class SceneView {
       alpha: true,
       logarithmicDepthBuffer: true,
     });
+    const gl = this.renderer.getContext();
+    this.canvasMultisampled = gl.getParameter(gl.SAMPLES) > 1;
     const pixelRatio = Math.min(window.devicePixelRatio, 2);
     this.renderer.setPixelRatio(pixelRatio);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -793,7 +798,8 @@ export class SceneView {
     const lookKey = modelMaterialKey(source, look, styleLook);
     if (lookKey === null && !background) return source;
     const air = background && this.daylightCity && !styleLook;
-    const key = `${lookKey ?? source.uuid}|${background}|${styleLookKey(styleLook)}|${kind}|${air}`;
+    const coverage = air && this.multisampleCutouts && source.alphaTest > 0;
+    const key = `${lookKey ?? source.uuid}|${background}|${styleLookKey(styleLook)}|${kind}|${air}|${coverage}`;
     let material = this.materialCache.get(key);
     if (material === undefined) {
       material = createModelMaterial(
@@ -804,6 +810,7 @@ export class SceneView {
         kind,
       );
       if (air) cityModelAir(material);
+      if (coverage) cityCutout(material);
       this.materialCache.set(key, material);
     }
     return material;
@@ -992,6 +999,11 @@ export class SceneView {
       !(owner?.view.styleLook ?? owner?.styleLook)?.hologram &&
       !(owner?.view.backgroundColor ?? owner?.backgroundColor) &&
       environment?.map?.surfaceDetail === 'urban';
+    this.multisampleCutouts = this.canvasMultisampled && environment?.multisampleCutouts === true;
+    this.renderer.toneMapping =
+      this.daylightCity && environment?.daylightToneMapping === 'agx'
+        ? THREE.AgXToneMapping
+        : THREE.ACESFilmicToneMapping;
     const sky = environment?.sky;
     this.lights = createLights(
       preset,
@@ -2185,8 +2197,21 @@ export class SceneView {
     this.host.dataset.overviewObjects = String(count);
   }
 
-  /** Only bounded, read-only camera operations are exposed to the chat UI. */
-  applyCamera(action: CameraAction, content: SceneContent): boolean {
+  /** 应用镜头命令或来自预览链接的固定机位。 */
+  applyCamera(action: ViewCameraAction, content: SceneContent): boolean {
+    if (action.kind === 'pose') {
+      const eye = new THREE.Vector3(...action.eye);
+      const target = new THREE.Vector3(...action.target);
+      this.stopTour();
+      this.leaveFirstPersonForFlight();
+      this.autoFramed = false;
+      // 近地机位可能从下方观察建筑。让 OrbitControls 在后续帧保持该仰角。
+      const polar = new THREE.Spherical().setFromVector3(eye.clone().sub(target)).phi;
+      this.controls.maxPolarAngle = Math.max(this.controls.maxPolarAngle, polar);
+      if (this.environment.hasMap) this.camera.near = 0.025;
+      this.moveCamera(eye, target, false);
+      return true;
+    }
     if (action.kind === 'overview') {
       this.flight = null;
       this.frameContent();
