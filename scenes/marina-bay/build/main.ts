@@ -34,6 +34,7 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
     { ...previous, daylight },
     previous,
     JSON.parse(readFileSync(new URL('../references/first-clear-sky.json', import.meta.url), 'utf8')),
+    JSON.parse(readFileSync(new URL('../references/integrated-clear-sky.json', import.meta.url), 'utf8')),
   ];
   if (!presets.some((preset) => isDeepStrictEqual(preset, environment.sky))) return saved;
   const textures = new Set(saved.textures);

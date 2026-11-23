@@ -32,7 +32,7 @@
     }
   },
   "textures": [
-    "9a5c61de713e3ee2e676a815d66ef87adcb130a28a096938eb2bf01bed7a50bb"
+    "4a4bca86c5df121d85d7e9b76de8b02f296792909995a89c169b73295f28607f"
   ],
   "props": {
     "background": true,
@@ -40,7 +40,7 @@
       "version": 1,
       "multisampleCutouts": true,
       "sky": {
-        "texture": "9a5c61de713e3ee2e676a815d66ef87adcb130a28a096938eb2bf01bed7a50bb",
+        "texture": "4a4bca86c5df121d85d7e9b76de8b02f296792909995a89c169b73295f28607f",
         "yaw": -35.8303,
         "airHalfDistance": 28800,
         "daylight": {
@@ -132,6 +132,6 @@
       "license": "CC0-1.0",
       "title": "Kloofendal 43d Clear (Pure Sky)"
     },
-    "日间照明": "晴天采用 Poly Haven 实拍全天空。HDR 测得太阳仰角 42.92°，水平面直射占比 76.52%。移除太阳圆盘后，将天空辐亮度和下半球的近似地面反射投影为二阶球谐天光。空气透视半衰距离 28.8 公里为晴天画面取值。"
+    "日间照明": "晴天采用 Poly Haven 实拍全天空。HDR 测得太阳仰角 42.92°，水平面直射占比 76.52%。移除太阳圆盘后，将天空辐亮度和下半球的近似地面反射投影为二阶球谐天光。空气透视半衰距离 28.8 公里为晴天画面取值。 天空背景由同一晴空的 4K HDR 按场景水平照度与相机曝光转换。"
   }
 }
