@@ -24,6 +24,14 @@ const entities = hostOnly
     : [...ground, ...buildings, ...host, ...streetscape, ...streetTrees];
 const assets = entities.map((entity) => ({ ...entity, purpose: 'model', format: 'glb' }));
 if (!probe && !hostOnly) {
+  const environment = JSON.parse(readFileSync(new URL('build/environment.json', root), 'utf8'));
+  assets.push({
+    entityId: environment.entityId,
+    label: '晴空全景',
+    assetHash: environment.props.environment.sky.texture,
+    purpose: 'texture',
+    format: 'jpeg',
+  });
   const { quay } = JSON.parse(readFileSync(new URL('context.json', root), 'utf8'));
   for (const [role, hash] of Object.entries(quay?.granite ?? {})) {
     assets.push({
