@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw, ImageFilter
 from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
+from fullerton_shopfront import GLASS as SHOP_GLASS, PHOTO as SHOP_PHOTO, shopfront, shopfront_patch
 from fullerton_glazing import GLASS, PHOTO as GLAZING_PHOTO, glazing_patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -63,6 +64,7 @@ def open_shell(source, record, start, inland, along, output, middle):
     upright = ((min_corner[:, 1] < .06) & (max_corner[:, 1] > 2) &
                (np.abs(cross[:, 1]) < .02 * np.linalg.norm(cross, axis=1)))
     glazing = []
+    shop_corners = None
     if middle:
         # The landward service wall stays in place. Open the path-facing and end walls of the awnings.
         remove = upright & (min_corner[:, 0] < 10.5)
@@ -85,7 +87,9 @@ def open_shell(source, record, start, inland, along, output, middle):
         offset = view.get("byteOffset", 0)
         glass_faces, glazing = glazing_patch(local, faces, uv, binary[offset:offset + view["byteLength"]])
         remove |= glass_faces
-        expected = 70
+        shop_faces, shop_corners = shopfront_patch(local, faces)
+        remove |= shop_faces
+        expected = 74
         # Locate the measured eaves in either encoding of the south building.
         surveyed = np.array([
             [[[4.74, 2.22, 10.74], [8.41, 3.34, 10.76], [11.07, 2.22, 10.77]],
@@ -116,7 +120,7 @@ def open_shell(source, record, start, inland, along, output, middle):
     props["露台重建"] = ("保留陆侧服务墙，按 OneMap 屋脊与檐口控制点重建中段两座雨棚。"
                      if middle else "南段雨棚依 OneMap 檐口和屋脊重建。保留后方立面、屋顶和主体轮廓。")
     props["露台参考"] = PHOTO
-    return canopy_ends, glazing
+    return canopy_ends, glazing, shop_corners
 
 
 def box(extents, center):
@@ -264,7 +268,7 @@ def set_deck_uv_channel(tree):
     deck = next(material for material in tree["materials"] if material["name"] == "Deck boards")
     deck["occlusionTexture"]["texCoord"] = 1
     for material in tree["materials"]:
-        if material["name"] == GLASS:
+        if material["name"] in {GLASS, SHOP_GLASS}:
             material["extras"] = {"reflectSky": True, "surfaceRole": "facade"}
     for mesh in tree["meshes"]:
         for primitive in mesh["primitives"]:
@@ -273,7 +277,7 @@ def set_deck_uv_channel(tree):
                 attrs["TEXCOORD_1"] = attrs.pop("_DECK_UV")
 
 
-def furnish(start, along, inland, texture_path, output, region_id, canopy_ends, glazing, middle):
+def furnish(start, along, inland, texture_path, output, region_id, canopy_ends, glazing, shop_corners, middle):
     pieces = defaultdict(list)
     prototype = chair()
     rng = np.random.default_rng(512)
@@ -368,6 +372,9 @@ def furnish(start, along, inland, texture_path, output, region_id, canopy_ends, 
             uv = np.column_stack((xyz[:, 2] / 1.15, xyz[:, 0] + xyz[:, 1] * .35))
         m.visual = TextureVisuals(uv=uv, material=materials[name])
         scene.add_geometry(m, geom_name=name, node_name=name)
+    if shop_corners is not None:
+        stone_hash = json.loads((ROOT / "context.json").read_text())["quay"]["granite"]["color"]
+        glazing.extend(shopfront(shop_corners, timber, ROOT / "assets" / (stone_hash + ".webp")))
     for mesh in glazing:
         scene.add_geometry(mesh, geom_name=mesh.visual.material.name, node_name=mesh.visual.material.name)
     for m in scene.geometry.values():
@@ -403,11 +410,13 @@ def bake(source, timber, output, buildings_file, streetscape_file):
     along = (np.array(config["quay"]["end"]) - start)[[0, 2]]
     along /= np.linalg.norm(along)
     inland = along[[1, 0]] * [1, -1]
-    ends, glazing = open_shell(source, building, start, inland, along, output, middle)
-    furniture = furnish(start, along, inland, timber, output, building["regionId"], ends, glazing, middle)
+    ends, glazing, shop_corners = open_shell(source, building, start, inland, along, output, middle)
+    furniture = furnish(start, along, inland, timber, output, building["regionId"], ends, glazing, shop_corners, middle)
     if middle:
         furniture["props"]["棚顶"] = "屋脊和檐口坐标取自 SLA 原模型。帆布颜色参照现场照片，分幅、垂度与棚架尺寸为估值。"
     else:
+        furniture["props"]["庭院店面参考"] = SHOP_PHOTO
+        furniture["props"]["庭院店面"] = "沿 OneMap 约 17.3 米的一层墙线重建。柱、门框、内退玻璃和檐下空间参照街景照片，分隔、进深及室内陈设为估值。"
         furniture["props"]["幕墙参考"] = GLAZING_PHOTO
         furniture["props"]["幕墙"] = "二层五个窗面沿折线合计约 52 米，采用 OneMap 原始立面和影像。主窗框按影像配准，框深、颜色和反射强度为估值。"
         furniture["props"]["棚顶"] = "两座棚体的坡面采用 SLA 实测坐标。深浅表面、浅棚的四段横框和屋脊色带参照正射影像。材料和构件厚度为估值。"

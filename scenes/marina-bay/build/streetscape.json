@@ -163,7 +163,7 @@
     "layer": "ext",
     "kind": "structure",
     "label": "One Fullerton · 临水餐饮露台",
-    "assetHash": "8fa1267d6b24ec1f2556009cb2bd1b0a63550d6ae9b934fb03ba2216ab4fb987",
+    "assetHash": "fa0c47729b6ed52f92e259a0d845aebb4fc4e365fa8b5b0ac3e1e845586b776d",
     "bounds": {
       "min": [
         261.97713136643426,
@@ -171,9 +171,9 @@
         462.5173718372776
       ],
       "max": [
-        276.1385646741943,
+        277.65585939967656,
         -47.96276241906738,
-        519.6198740736467
+        524.9358346644849
       ]
     },
     "material": {
@@ -186,6 +186,8 @@
       "建筑来源": "Map Data © Singapore Land Authority / OneMap",
       "木材来源": "Teak Veneer · Poly Haven · CC0 · https://polyhaven.com/a/teak_veneer",
       "说明": "沿 OneMap 两段既有双坡棚顶配设支架、矮边和用餐区。桌椅样式、数量与排列为视觉近似。",
+      "庭院店面参考": "https://commons.wikimedia.org/wiki/File:One_Fullerton_12-05-2024(10).jpg",
+      "庭院店面": "沿 OneMap 约 17.3 米的一层墙线重建。柱、门框、内退玻璃和檐下空间参照街景照片，分隔、进深及室内陈设为估值。",
       "幕墙参考": "https://commons.wikimedia.org/wiki/File:One_Fullerton_12-05-2024(6).jpg",
       "幕墙": "二层五个窗面沿折线合计约 52 米，采用 OneMap 原始立面和影像。主窗框按影像配准，框深、颜色和反射强度为估值。",
       "棚顶": "两座棚体的坡面采用 SLA 实测坐标。深浅表面、浅棚的四段横框和屋脊色带参照正射影像。材料和构件厚度为估值。"
