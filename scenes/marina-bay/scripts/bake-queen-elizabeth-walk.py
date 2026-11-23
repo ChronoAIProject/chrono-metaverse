@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
-from courtyard_tree import fit_crown, load_masked_tree, preserve_crown_normals
+from courtyard_tree import fit_crown, load_masked_tree, preserve_crown_normals, tag_foliage
 from fullerton_shrubs import combined
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -90,7 +90,7 @@ def bake(folder):
     center[1] = low[1]
     for mesh in scene.geometry.values():
         mesh.apply_translation(-center)
-    data = trimesh.exchange.gltf.export_glb(scene, include_normals=True)
+    data = trimesh.exchange.gltf.export_glb(scene, include_normals=True, tree_postprocessor=tag_foliage)
     digest = hashlib.sha256(data).hexdigest()
     (ROOT / "assets" / (digest + ".glb")).write_bytes(data)
     return dict(entityId="bay.queen-elizabeth-walk-trees", kind="structure", layer="ext",

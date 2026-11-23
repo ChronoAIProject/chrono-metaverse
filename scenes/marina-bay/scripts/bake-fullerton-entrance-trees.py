@@ -10,7 +10,7 @@ import trimesh
 from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
-from courtyard_tree import fit_crown, load_masked_tree, preserve_crown_normals
+from courtyard_tree import fit_crown, load_masked_tree, preserve_crown_normals, tag_foliage
 from fullerton_shrubs import combined
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,13 +56,6 @@ def planting_bed(materials):
                                                      material=material), process=False)
         result.append(mesh)
     return result
-
-
-def tag_foliage(document):
-    # In this model the roots and leaf clusters share the same metric origin.
-    for node in document["nodes"]:
-        if node["name"] in {"Island tree bark", "Island tree branch clusters"}:
-            node.setdefault("extras", {})["vegetationWind"] = "small-tree"
 
 
 def bake(folder):
