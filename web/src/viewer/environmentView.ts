@@ -123,6 +123,7 @@ export class EnvironmentView {
       ? new THREE.Color(this.backgroundColor)
       : (this.sky ?? (this.host.dataset.environment ? new THREE.Color(0xbad4e5) : null));
     this.scene.backgroundRotation.set(0, this.backgroundColor ? 0 : this.yaw, 0);
+    this.map?.setSky(this.scene.background, this.scene.backgroundRotation.y);
   }
 
   update(camera: THREE.PerspectiveCamera, orbitalGlobe = false): void {
