@@ -82,7 +82,15 @@ def bake(folder):
                                    np.subtract(low, stem), np.subtract(high, stem), frame))
     scene = trimesh.Scene()
     for meshes in zip(*specimens, strict=True):
-        scene.add_geometry(combined(meshes), geom_name=meshes[0].visual.material.name)
+        mesh = combined(meshes)
+        if mesh.visual.material.name == "Island tree branch clusters":
+            # The atlas cards use crown-outward shading normals. Draw either side
+            # with that same normal when the camera moves through the branches.
+            normals = mesh.vertex_normals.copy()
+            mesh.faces = np.vstack([mesh.faces, mesh.faces[:, ::-1]])
+            mesh.vertex_normals = normals
+            mesh.visual.material.doubleSided = False
+        scene.add_geometry(mesh, geom_name=mesh.visual.material.name)
     courtyard = trimesh.load_scene(ROOT / "assets" / (COURTYARD + ".glb"), process=False)
     materials = {name: mesh.visual.material for name, mesh in courtyard.geometry.items()}
     transform = np.eye(4)
