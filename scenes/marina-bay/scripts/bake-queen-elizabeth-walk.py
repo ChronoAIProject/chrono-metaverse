@@ -32,6 +32,8 @@ def fit_tree(bark, leaves, record, compass):
 def bake(folder):
     register = json.loads(REGISTER.read_text())
     bark, leaves = load_masked_tree(folder)
+    # Match the projected leaf area of a 16x linear-resolution reference across the bay.
+    leaves.visual.material.alphaCutoff = .27
     heading = np.radians(json.loads((ROOT / "context.json").read_text())["oneMap"]["headingDegrees"])
     compass = np.array([[-np.cos(heading), 0, np.sin(heading)], [0, 1, 0],
                         [np.sin(heading), 0, np.cos(heading)]])
