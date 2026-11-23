@@ -964,5 +964,43 @@
       },
       "构件依据": "45 处圆形轮廓来自 2014 年岸线照片，沿岸位置按广场嵌石换算。照片范围外留空。构件高度、曲率与表面颜色为照片估值，功能和现状未经现场核实。"
     }
+  },
+  {
+    "entityId": "bay.fullerton-entrance-lettering",
+    "regionId": "marina-bay-exterior",
+    "kind": "structure",
+    "layer": "ext",
+    "label": "One Fullerton · 海湾入口立体字",
+    "assetHash": "5e5733d82440a98d91022a18776b294b547604f9a792085be5c7f7e9e940afe2",
+    "bounds": {
+      "min": [
+        278.3735656738281,
+        -50.292198181152344,
+        547.6983032226562
+      ],
+      "max": [
+        279.39849853515625,
+        -49.2099494934082,
+        557.6846313476562
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "建筑定位": "Map Data © Singapore Land Authority / OneMap · 临水入口雨棚",
+      "实景参考": "https://commons.wikimedia.org/wiki/File:Singapore_-_panoramio_(109).jpg",
+      "字标": "按 2014 年实景照片估读十二个字母的间距、宽高和金属色；Gentilis 字形近似，厚度及安装进深为估值。",
+      "字形来源": "Gentilis · Copyright 2003–2008 SIL International · SIL Open Font License 1.1",
+      "backgroundView": {
+        "focus": [
+          278.8860321044922,
+          -49.75107383728027,
+          552.6914672851562
+        ],
+        "maxDistance": 320
+      }
+    }
   }
 ]
