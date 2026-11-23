@@ -647,6 +647,16 @@ export class SceneView {
     if (cached === undefined) {
       const context = background ? { ...this.materialContext, clipping: [] } : this.materialContext;
       cached = createShapeMaterial(material, glass, context, styleLook, kind);
+      if (
+        background &&
+        !glass &&
+        !styleLook &&
+        (material.metalness ?? 0) > 0 &&
+        cached instanceof THREE.MeshStandardMaterial &&
+        !cached.transparent
+      ) {
+        this.environment.addOutdoorMetal(cached);
+      }
       this.materialCache.set(key, cached);
     }
     return cached;
@@ -1009,6 +1019,7 @@ export class SceneView {
       { ...content, members: owner ? [owner] : [] },
       owner?.view.backgroundColor ?? owner?.backgroundColor,
       () => !this.disposed && generation === this.generation,
+      this.daylightCity,
     );
   }
 

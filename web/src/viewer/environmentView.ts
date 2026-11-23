@@ -12,6 +12,9 @@ export class EnvironmentView {
   private key = '';
   private map: GeographicMap | null = null;
   private sky: THREE.Texture | null = null;
+  private metalSky: THREE.Texture | null = null;
+  private readonly metals = new Set<THREE.MeshStandardMaterial>();
+  private daylightCity = false;
   private generation = 0;
   private skyPending: Promise<THREE.Texture> | null = null;
   private backgroundColor?: string;
@@ -30,11 +33,43 @@ export class EnvironmentView {
     return this.map !== null;
   }
 
+  addOutdoorMetal(material: THREE.MeshStandardMaterial): void {
+    this.metals.add(material);
+    this.lightMetal(material);
+  }
+
+  private lightMetal(material: THREE.MeshStandardMaterial): void {
+    const sky = this.daylightCity && !this.backgroundColor ? this.sky : null;
+    const image = sky?.image;
+    if (sky && image instanceof HTMLImageElement && image.naturalWidth > 0 && !this.metalSky) {
+      // 银灰钢管需要随粗糙度预过滤的天空。512 像素全景对应 PMREM 的 128 像素材质面。
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.min(512, image.naturalWidth);
+      canvas.height = Math.max(1, Math.round(canvas.width / 2));
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+        this.metalSky = new THREE.CanvasTexture(canvas, THREE.EquirectangularReflectionMapping);
+        this.metalSky.colorSpace = sky.colorSpace;
+        this.metalSky.flipY = sky.flipY;
+      }
+    }
+    const map = sky ? this.metalSky : null;
+    if (material.envMap !== map) {
+      material.envMap = map;
+      material.needsUpdate = true;
+    }
+    material.envMapRotation.set(0, this.yaw, 0);
+    material.envMapIntensity = 0.48;
+  }
+
   setContent(
     content: SceneContent,
     backgroundColor?: string,
     isCurrent: () => boolean = () => true,
+    daylightCity = false,
   ): void {
+    this.daylightCity = daylightCity;
     this.backgroundColor = backgroundColor;
     this.isCurrent = isCurrent;
     let selected: {
@@ -124,6 +159,7 @@ export class EnvironmentView {
       : (this.sky ?? (this.host.dataset.environment ? new THREE.Color(0xbad4e5) : null));
     this.scene.backgroundRotation.set(0, this.backgroundColor ? 0 : this.yaw, 0);
     this.map?.setSky(this.scene.background, this.scene.backgroundRotation.y);
+    for (const metal of this.metals) this.lightMetal(metal);
   }
 
   update(camera: THREE.PerspectiveCamera, orbitalGlobe = false): void {
@@ -147,6 +183,8 @@ export class EnvironmentView {
     this.map = null;
     this.sky?.dispose();
     this.sky = null;
+    this.metalSky?.dispose();
+    this.metalSky = null;
     this.skyPending = null;
     this.yaw = 0;
     delete this.host.dataset.environment;
@@ -160,5 +198,6 @@ export class EnvironmentView {
     this.backgroundColor = undefined;
     this.isCurrent = () => true;
     this.applyBackground();
+    this.metals.clear();
   }
 }
