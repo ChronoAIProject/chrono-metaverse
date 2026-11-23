@@ -838,5 +838,34 @@
       "局部倒影": "沿玻璃面外侧三个位置采样滨水广场半球，近景反光随观察方向变化。倒影深度取代表性广场距离。",
       "窗后色彩署名": "Андрей Бобровский · Singapore - panoramio (109) · CC BY 3.0 · 透视校正、分格裁切和降采样 · https://creativecommons.org/licenses/by/3.0/"
     }
+  },
+  {
+    "entityId": "bay.ritz-millenia-bay-windows",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "丽思卡尔顿美年酒店 · 临湾窗带",
+    "assetHash": "db04dea9253a476a0a29f179104ac5bc25b8f3d9e04e7be43c4c9ef08eca352b",
+    "bounds": {
+      "min": [
+        -149.85852839408696,
+        -23.930981723618082,
+        1287.5516686849758
+      ],
+      "max": [
+        -46.19215598966808,
+        67.4046220811732,
+        1296.7360426766318
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "立面调查": "Map Data © Singapore Land Authority / OneMap · bay.d23a14f1-ee9f-4731-9bb5-080032ef42b4",
+      "实景参考": "https://commons.wikimedia.org/wiki/File:The_Ritz-Carlton_Millenia_Singapore_-_20050505.jpg",
+      "重建": "从官方立面纹理提取窗列并投回原三角面，按实景区分横向长窗、八角窗及方形开口。玻璃色、窗高与遮阳沿突出量为估值。"
+    }
   }
 ]
