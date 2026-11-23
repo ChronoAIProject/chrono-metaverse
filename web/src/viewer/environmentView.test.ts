@@ -40,6 +40,40 @@ function content(entities: EntityBody[], rotation = 0): SceneContent {
   };
 }
 
+it('室外金属共享缩小的天空并随样式切换和资源释放', async () => {
+  const scene = new THREE.Scene();
+  const photo = new Image();
+  Object.defineProperty(photo, 'naturalWidth', { value: 4096 });
+  const drawImage = vi.fn();
+  using canvas = vi.spyOn(HTMLCanvasElement.prototype, 'getContext');
+  canvas.mockReturnValue({ drawImage } as unknown as CanvasRenderingContext2D);
+  const view = new EnvironmentView(
+    scene,
+    document.createElement('div'),
+    async () => new THREE.Texture(photo),
+  );
+  const early = new THREE.MeshStandardMaterial();
+  const late = new THREE.MeshStandardMaterial();
+  view.addOutdoorMetal(early);
+  view.setContent(content([entity], 15), undefined, undefined, true);
+  await Promise.resolve();
+  view.addOutdoorMetal(late);
+  const sky = early.envMap!;
+  expect(sky).toBe(late.envMap);
+  expect(sky).not.toBe(scene.background);
+  expect(drawImage).toHaveBeenCalledExactlyOnceWith(photo, 0, 0, 512, 256);
+  expect(early.envMapRotation.y).toBeCloseTo(THREE.MathUtils.degToRad(35));
+  view.setContent(content([entity], 15), '#112233');
+  expect(early.envMap).toBeNull();
+  view.setContent(content([entity], 15), undefined, undefined, true);
+  expect(early.envMap).toBe(sky);
+  const disposed = vi.fn();
+  sky.addEventListener('dispose', disposed);
+  view.dispose();
+  expect(disposed).toHaveBeenCalledOnce();
+  expect(late.envMap).toBeNull();
+});
+
 it('移除环境后迟到的天空不会覆盖新视图', async () => {
   let resolve!: (texture: THREE.Texture) => void;
   const scene = new THREE.Scene();

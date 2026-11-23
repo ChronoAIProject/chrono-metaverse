@@ -647,6 +647,16 @@ export class SceneView {
     if (cached === undefined) {
       const context = background ? { ...this.materialContext, clipping: [] } : this.materialContext;
       cached = createShapeMaterial(material, glass, context, styleLook, kind);
+      if (
+        background &&
+        !glass &&
+        !styleLook &&
+        (material.metalness ?? 0) > 0 &&
+        cached instanceof THREE.MeshStandardMaterial &&
+        !cached.transparent
+      ) {
+        this.environment.addOutdoorMetal(cached);
+      }
       this.materialCache.set(key, cached);
     }
     return cached;
@@ -975,14 +985,19 @@ export class SceneView {
           member.backgroundColor !== undefined,
       );
     for (const light of this.lights) this.scene.remove(light);
-    this.lights = createLights(owner?.view.lighting ?? owner?.lighting);
+    const preset = owner?.view.lighting ?? owner?.lighting ?? 'daylight';
+    const environment = owner?.view.entities.map(environmentOf).find((env) => env !== null);
     this.daylightCity =
-      (owner?.view.lighting ?? owner?.lighting ?? 'daylight') === 'daylight' &&
+      preset === 'daylight' &&
       !(owner?.view.styleLook ?? owner?.styleLook)?.hologram &&
       !(owner?.view.backgroundColor ?? owner?.backgroundColor) &&
-      !!owner?.view.entities.some(
-        (entity) => environmentOf(entity)?.map?.surfaceDetail === 'urban',
-      );
+      environment?.map?.surfaceDetail === 'urban';
+    const sky = environment?.sky;
+    this.lights = createLights(
+      preset,
+      this.daylightCity ? sky?.daylight : undefined,
+      (sky?.yaw ?? 0) + (owner?.placement.rotation ?? 0),
+    );
     const hasGround = content.members.some(
       (member) =>
         !member.view.styleLook?.hologram &&
@@ -1004,6 +1019,7 @@ export class SceneView {
       { ...content, members: owner ? [owner] : [] },
       owner?.view.backgroundColor ?? owner?.backgroundColor,
       () => !this.disposed && generation === this.generation,
+      this.daylightCity,
     );
   }
 
