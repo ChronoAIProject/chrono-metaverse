@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { isDeepStrictEqual } from 'node:util';
 import type { BuildBase, EntityBody, Kit } from '@chrono-metaverse/sdk';
 import { placeExterior, type Placement } from './placement.ts';
 import { waterfront } from './waterfront.ts';
@@ -18,35 +19,38 @@ export function withBoatQuay(surroundings: EntityBody): EntityBody {
   } } };
 }
 
-interface BaySky {
-  texture?: string;
-  airHalfDistance?: number;
-  daylight?: { directFraction?: number; diffuseProbe?: number[] };
-}
-
-/** Update this site's previous daylight preset while preserving the saved map and sky orientation. */
+/** Only migrate skies previously distributed with the scene. */
 function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | null): EntityBody | null {
   if (!saved || !configured) return saved ?? configured;
-  const environment = saved.props?.environment as { sky?: BaySky } | undefined;
-  const sky = environment?.sky;
-  const target = (configured.props?.environment as { sky?: BaySky } | undefined)?.sky;
-  if (!target?.daylight || !sky?.daylight || sky.texture !== target.texture ||
-      sky.daylight.diffuseProbe !== undefined) return saved;
-  const original = sky.airHalfDistance === undefined && sky.daylight.directFraction === 0.58;
-  const clearDay = sky.airHalfDistance === target.airHalfDistance &&
-    sky.daylight.directFraction === target.daylight.directFraction;
-  if (!original && !clearDay) return saved;
+  const environment = saved.props?.environment as { sky?: Record<string, unknown> } | undefined;
+  const target = configured.props?.environment as { sky?: { texture: string; radiance?: { texture: string } } } | undefined;
+  if (!environment?.sky || !target?.sky) return saved;
+  const previous = JSON.parse(readFileSync(new URL('../references/partly-cloudy-sky.json', import.meta.url), 'utf8'));
+  const base = { texture: previous.texture, yaw: previous.yaw };
+  const { diffuseProbe: _probe, ...daylight } = previous.daylight;
+  const { radiance, ...displaySky } = target.sky;
+  const presets = [
+    displaySky,
+    base,
+    { ...base, daylight: { ...daylight, directFraction: 0.58 } },
+    { ...previous, daylight },
+    previous,
+    JSON.parse(readFileSync(new URL('../references/first-clear-sky.json', import.meta.url), 'utf8')),
+    JSON.parse(readFileSync(new URL('../references/integrated-clear-sky.json', import.meta.url), 'utf8')),
+  ];
+  if (!presets.some((preset) => isDeepStrictEqual(preset, environment.sky))) return saved;
+  const textures = new Set(saved.textures);
+  textures.delete(String(environment.sky.texture));
+  textures.add(target.sky.texture);
+  if (radiance) textures.add(radiance.texture);
   return {
     ...saved,
+    textures: [...textures],
     props: {
       ...saved.props,
+      source: configured.props?.source,
       日间照明: configured.props?.日间照明,
-      environment: {
-        ...environment,
-        sky: { ...sky, airHalfDistance: target.airHalfDistance,
-          daylight: { ...sky.daylight, directFraction: target.daylight.directFraction,
-            diffuseProbe: target.daylight.diffuseProbe } },
-      },
+      environment: { ...environment, sky: target.sky },
     },
   };
 }

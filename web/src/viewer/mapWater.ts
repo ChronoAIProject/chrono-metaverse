@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { MapReflection } from './mapReflection';
+import { skyRadiance } from './skyRadiance';
 import { KEY_LIGHT } from './lighting';
 
 /** 同一片水域共用米制波纹坐标；像素覆盖超过波长时逐渐滤掉细纹。 */
@@ -23,6 +24,7 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
       time: { value: 0 },
       skyMap: { value: null },
       hasSky: { value: false },
+      skyWeight: { value: 0.72 },
       skyYaw: { value: 0 },
       deep: { value: new THREE.Color(hologram ? '#174351' : '#325553') },
       horizon: { value: new THREE.Color(hologram ? '#a999b4' : '#acc6ce') },
@@ -62,6 +64,7 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
       uniform vec3 sunColor;
       uniform sampler2D skyMap;
       uniform bool hasSky;
+      uniform float skyWeight;
       uniform float skyYaw;
       uniform vec3 deep;
       uniform vec3 horizon;
@@ -120,7 +123,7 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
           float c = cos(skyYaw), s = sin(skyYaw);
           vec3 skyRay = vec3(reflected.x, max(0.025,reflected.y), reflected.z);
           skyRay.xz = mat2(c,s,-s,c)*skyRay.xz;
-          sky = mix(horizon, texture2D(skyMap, equirectUv(normalize(skyRay))).rgb, 0.72);
+          sky = mix(horizon, texture2D(skyMap, equirectUv(normalize(skyRay))).rgb, skyWeight);
         }
         if (hasReflection) {
           // 在世界坐标中偏转反射光线，再投到镜像相机。近处可看清波纹切开的楼影，
@@ -192,7 +195,9 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
     const sky = scene.background;
     const hasSky =
       sky instanceof THREE.Texture && sky.mapping === THREE.EquirectangularReflectionMapping;
-    material.uniforms.skyMap!.value = hasSky ? sky : null;
+    const radiance = hasSky ? skyRadiance.get(sky) : undefined;
+    material.uniforms.skyMap!.value = radiance ?? (hasSky ? sky : null);
+    material.uniforms.skyWeight!.value = radiance ? 1 : 0.72;
     material.uniforms.hasSky!.value = hasSky;
     material.uniforms.skyYaw!.value = scene.backgroundRotation.y;
   };
