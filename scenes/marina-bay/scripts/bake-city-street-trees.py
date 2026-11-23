@@ -78,7 +78,7 @@ def bake(folders, selected_tile=None):
     if selected_tile and selected_tile not in reference['tiles']:
         raise ValueError(f'Unknown street-tree tile {selected_tile}')
     records = {e['entityId']: e for e in json.loads(output.read_text())} if selected_tile else {}
-    empress_crown = broadleaf(folders[2], 'jacaranda_tree', sprays=True)
+    spreading_crown = broadleaf(folders[2], 'jacaranda_tree', sprays=True)
     for key, tile in reference['tiles'].items():
         if selected_tile and selected_tile != key:
             continue
@@ -102,8 +102,8 @@ def bake(folders, selected_tile=None):
             rotation = trimesh.transformations.rotation_matrix(yaw, [0,1,0])[:3, :3]
             scale = np.array([width, height, width*rng.uniform(.85,1.09)])
             leaf_tint = np.rint(np.array([235,240,225])*rng.uniform(.85,1.05)).clip(0,255)
-            detailed = key == 'landscape.canopy-0-1' and form == 'jacaranda_tree'
-            for source in (empress_crown if detailed else forms[form]):
+            detailed = tile.get('spreadingBranches', False) and form == 'jacaranda_tree'
+            for source in (spreading_crown if detailed else forms[form]):
                 mesh = source.copy()
                 mesh.vertices = (source.vertices * scale) @ rotation.T + [x,y,z]
                 normals = (source.vertex_normals / scale) @ rotation.T
