@@ -47,7 +47,12 @@ export class CitySun {
           ? 112
           : 360;
     if (radius === 360) this.center.copy(focus);
-    else this.center.lerpVectors(eye, focus, Math.min(1, (radius * 0.5) / Math.max(1, distance)));
+    else {
+      // Frame the walk and its subject together. Near a tier boundary reserve
+      // enough space around the subject for its shadow and the snapped centre.
+      const towardEye = Math.min(0.5, (radius * 0.8) / Math.max(1, distance));
+      this.center.lerpVectors(focus, eye, towardEye);
+    }
     const grid = radius / 15;
     this.center.divideScalar(grid).round().multiplyScalar(grid);
     if (previous === radius && now - this.last < 1000 && this.center.equals(light.target.position))
