@@ -270,6 +270,11 @@ def set_deck_uv_channel(tree):
     for material in tree["materials"]:
         if material["name"] in {GLASS, SHOP_GLASS}:
             material["extras"] = {"reflectSky": True, "surfaceRole": "facade"}
+        if material["name"] == SHOP_GLASS:
+            material["extras"]["facadeProbes"] = {
+                "span": 17.274, "height": 2.50, "eyeHeight": 1.36,
+                "first": 2.40, "spacing": 6.24, "count": 3, "depth": 7.4,
+            }
     for mesh in tree["meshes"]:
         for primitive in mesh["primitives"]:
             attrs = primitive["attributes"]
@@ -417,6 +422,7 @@ def bake(source, timber, output, buildings_file, streetscape_file):
     else:
         furniture["props"]["庭院店面参考"] = SHOP_PHOTO
         furniture["props"]["庭院店面"] = "沿 OneMap 约 17.3 米的一层墙线重建。柱、门框、内退玻璃和檐下空间参照街景照片，分隔、进深及室内陈设为估值。"
+        furniture["props"]["入口玻璃倒影"] = "在窗前沿线三个机位采集庭院、树池和海湾，反射随视线与玻璃位置变化。采集反映场景当前的日间布置。"
         furniture["props"]["幕墙参考"] = GLAZING_PHOTO
         furniture["props"]["幕墙"] = "二层五个窗面沿折线合计约 52 米，采用 OneMap 原始立面和影像。主窗框按影像配准，框深、颜色和反射强度为估值。"
         furniture["props"]["棚顶"] = "两座棚体的坡面采用 SLA 实测坐标。深浅表面、浅棚的四段横框和屋脊色带参照正射影像。材料和构件厚度为估值。"
