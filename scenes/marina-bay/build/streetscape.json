@@ -362,5 +362,44 @@
       "来源": "Map Data © Singapore Land Authority / OneMap。三段水面沿酒店测绘网格轮廓配准。",
       "材质": "池底颜色、泳池砖尺度及小波纹为日间视觉近似。"
     }
+  },
+  {
+    "entityId": "bay.sands-skypark-poolside",
+    "layer": "ext",
+    "kind": "structure",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海湾金沙 · 池畔木平台与日光躺椅",
+    "assetHash": "01a97206cb252c6c1d352b616c928f49fec43e1876ee6f98a18ecf37ab660b7a",
+    "bounds": {
+      "min": [
+        -480.35571429135,
+        133.93725408627992,
+        541.6432442656
+      ],
+      "max": [
+        -458.09917147075,
+        134.81946794242978,
+        702.7301732745999
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "backgroundView": {
+        "focus": [
+          -469.22744288105,
+          134.37836101435485,
+          622.1867087700999
+        ],
+        "maxDistance": 320
+      },
+      "平台来源": "Map Data © Singapore Land Authority / OneMap。铺面配准分段测绘网格。",
+      "现场参考": "https://commons.wikimedia.org/wiki/File:Infinity_pool_at_Sands_Sky_Park,_Marina_Bay_Sands_Hotel,_Singapore_-_20100820.jpg",
+      "木材来源": "Poly Haven · Teak Veneer · CC0",
+      "说明": "依影像估配 48 张躺椅。椅型、面料、木板宽度和具体间距为视觉近似。"
+    }
   }
 ]
