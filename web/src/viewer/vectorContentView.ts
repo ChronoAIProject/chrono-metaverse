@@ -305,6 +305,7 @@ export class VectorContentItem {
     const mesh = new THREE.Mesh(geometry, this.buildingMaterial(geometry));
     mesh.layers.enable(CITY_REFLECTION_LAYER);
     mesh.castShadow = this.groundMaterials.size > 0;
+    mesh.receiveShadow = mesh.castShadow;
     for (const part of ground) {
       const surface = new THREE.Mesh(part.geometry, this.groundMaterials.get(part.material)!);
       surface.name = 'ground:' + part.material;
