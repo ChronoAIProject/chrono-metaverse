@@ -76,7 +76,10 @@ def bake(folder, spreading_tree, east_grove=False):
         if fit:
             warp = np.eye(3)
             horizontal = np.ix_([0, 2], [0, 2])
-            warp[horizontal] = road_axes.T @ np.diag(fit["scaleAlongAcross"]) @ road_axes
+            if "shapeLocalXZ" in fit:
+                warp[horizontal] = fit["shapeLocalXZ"]
+            else:
+                warp[horizontal] = road_axes.T @ np.diag(fit["scaleAlongAcross"]) @ road_axes
             # Shear from ground level so the visible crown can lean beyond the stem.
             warp[[0, 2], 1] = (fit["offsetAlongAcrossMetres"] @ road_axes) / (.70 * height)
             transform = warp @ transform
