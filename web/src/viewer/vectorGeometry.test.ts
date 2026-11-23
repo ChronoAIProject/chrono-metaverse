@@ -168,4 +168,18 @@ describe('通用矢量三维内容', () => {
     camera.updateMatrixWorld();
     expect(visibleVectorTiles(camera, new THREE.Matrix4(), reference, 14, 12000)).toEqual([]);
   });
+
+  it('复用瓦片范围时仍按当前成员变换裁剪', () => {
+    const camera = new THREE.PerspectiveCamera(50, 1.5, 0.02, 30000);
+    camera.position.set(0, 60, 250);
+    camera.lookAt(0, 20, -1000);
+    camera.updateMatrixWorld();
+    const transform = new THREE.Matrix4().makeRotationY(0.85).setPosition(2700, 0, 1000);
+    const fresh = new GeoReference({ longitude, latitude, origin: [4, -60, 8], heading: 37 });
+    const initial = visibleVectorTiles(camera, new THREE.Matrix4(), reference, 14, 12000);
+    const moved = visibleVectorTiles(camera, transform, reference, 14, 12000);
+    expect(moved).toEqual(visibleVectorTiles(camera, transform, fresh, 14, 12000));
+    expect(moved).not.toEqual(initial);
+    expect(visibleVectorTiles(camera, new THREE.Matrix4(), reference, 14, 12000)).toEqual(initial);
+  });
 });
