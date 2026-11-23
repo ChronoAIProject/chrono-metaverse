@@ -60,6 +60,7 @@ import {
   bakeInPlace,
   createModelMaterial,
   createShapeMaterial,
+  filterModelSurface,
   modelMaterialKey,
   srgb,
   TextureCache,
@@ -809,7 +810,10 @@ export class SceneView {
         styleLook,
         kind,
       );
-      if (air) cityModelAir(material);
+      if (air) {
+        filterModelSurface(material, this.renderer.capabilities.getMaxAnisotropy());
+        cityModelAir(material);
+      }
       if (coverage) cityCutout(material);
       this.materialCache.set(key, material);
     }
