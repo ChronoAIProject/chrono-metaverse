@@ -992,6 +992,10 @@ export class SceneView {
       !(owner?.view.styleLook ?? owner?.styleLook)?.hologram &&
       !(owner?.view.backgroundColor ?? owner?.backgroundColor) &&
       environment?.map?.surfaceDetail === 'urban';
+    this.renderer.toneMapping =
+      this.daylightCity && environment?.daylightToneMapping === 'agx'
+        ? THREE.AgXToneMapping
+        : THREE.ACESFilmicToneMapping;
     const sky = environment?.sky;
     this.lights = createLights(
       preset,
