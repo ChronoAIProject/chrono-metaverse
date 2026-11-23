@@ -688,5 +688,36 @@
       "铺装": "中心线、铺石类型来自 OSM。两侧宽度依正射影像估读，石材、砖缝及路面高程为估值。",
       "材质来源": "Poly Haven · Granite Tile 04 · CC0 · https://polyhaven.com/a/granite_tile_04"
     }
+  },
+  {
+    "entityId": "bay.fullerton-seawall",
+    "regionId": "marina-bay-exterior",
+    "kind": "structure",
+    "layer": "ext",
+    "label": "浮尔顿滨水步道 · 菱砌驳岸",
+    "assetHash": "dec3a1a6efa809c4265e57d8a23fe821bd4b5bef33387bb1069cc49ff8e5eaab",
+    "bounds": {
+      "min": [
+        256.1013085289749,
+        -60.3971,
+        452.8215
+      ],
+      "max": [
+        271.55711,
+        -59.5182,
+        617.2880507765522
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "岸线": "https://www.openstreetmap.org/way/687912605",
+      "地图来源": "© OpenStreetMap contributors · ODbL",
+      "照片参考": "https://commons.wikimedia.org/wiki/File:Singapore_-_panoramio_(109).jpg",
+      "材质来源": "Poly Haven · Granite Tile 04 · CC0",
+      "砌石": "沿已配准的岸线重建照片可见的菱形石缝与压条。块材尺寸、墙身坡度和湿痕宽度依照片估值，水线随场景水面配准。"
+    }
   }
 ]
