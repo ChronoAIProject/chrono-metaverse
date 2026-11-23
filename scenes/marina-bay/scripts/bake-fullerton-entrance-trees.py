@@ -58,6 +58,13 @@ def planting_bed(materials):
     return result
 
 
+def tag_foliage(document):
+    # In this model the roots and leaf clusters share the same metric origin.
+    for node in document["nodes"]:
+        if node["name"] in {"Island tree bark", "Island tree branch clusters"}:
+            node.setdefault("extras", {})["vegetationWind"] = "small-tree"
+
+
 def bake(folder):
     quay = json.loads((ROOT / "context.json").read_text())["quay"]
     start, end = np.array(quay["start"]), np.array(quay["end"])
@@ -89,7 +96,7 @@ def bake(folder):
     origin[1] = low[1]
     for mesh in scene.geometry.values():
         mesh.apply_translation(-origin)
-    data = trimesh.exchange.gltf.export_glb(scene, include_normals=True)
+    data = trimesh.exchange.gltf.export_glb(scene, include_normals=True, tree_postprocessor=tag_foliage)
     digest = hashlib.sha256(data).hexdigest()
     (ROOT / "assets" / (digest + ".glb")).write_bytes(data)
     return dict(entityId="bay.fullerton-entrance-trees", kind="structure", layer="ext",
