@@ -12,20 +12,30 @@ export function placeExterior(entity: EntityBody, placement: Placement): EntityB
   const angle = (placement.yaw * Math.PI) / 180;
   const c = Math.cos(angle),
     s = Math.sin(angle);
+  const point = (x: number, y: number, z: number): [number, number, number] => [
+    c * x + s * z + placement.translation[0],
+    y + placement.translation[1],
+    -s * x + c * z + placement.translation[2],
+  ];
   const points: number[][] = [];
   for (const x of [entity.bounds.min[0], entity.bounds.max[0]]) {
     for (const y of [entity.bounds.min[1], entity.bounds.max[1]]) {
       for (const z of [entity.bounds.min[2], entity.bounds.max[2]]) {
-        points.push([
-          c * x + s * z + placement.translation[0],
-          y + placement.translation[1],
-          -s * x + c * z + placement.translation[2],
-        ]);
+        points.push(point(x, y, z));
       }
+    }
+  }
+  const view = entity.props?.backgroundView;
+  let props = entity.props;
+  if (view && typeof view === 'object' && 'focus' in view) {
+    const focus = view.focus;
+    if (Array.isArray(focus) && focus.length === 3 && focus.every(Number.isFinite)) {
+      props = { ...props, backgroundView: { ...view, focus: point(focus[0], focus[1], focus[2]) } };
     }
   }
   return {
     ...entity,
+    ...(props ? { props } : {}),
     transform: {
       ...entity.transform,
       yaw: (entity.transform?.yaw ?? 0) + placement.yaw,
