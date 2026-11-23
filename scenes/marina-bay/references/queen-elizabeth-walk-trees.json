@@ -32,7 +32,12 @@
           1.08,
           1.16
         ]
-      }
+      },
+      "foliageGainLinear": [
+        0.66,
+        0.66,
+        0.796
+      ]
     },
     {
       "treeId": "10530703",
@@ -63,7 +68,12 @@
           1.0,
           0.84
         ]
-      }
+      },
+      "foliageGainLinear": [
+        0.94,
+        0.916,
+        1
+      ]
     },
     {
       "treeId": "10530704",
@@ -94,7 +104,12 @@
           1.0,
           0.84
         ]
-      }
+      },
+      "foliageGainLinear": [
+        0.955,
+        0.932,
+        1
+      ]
     },
     {
       "treeId": "10530705",
@@ -125,7 +140,12 @@
           1.08,
           0.92
         ]
-      }
+      },
+      "foliageGainLinear": [
+        0.66,
+        0.66,
+        0.786
+      ]
     },
     {
       "treeId": "10530706",
@@ -156,7 +176,12 @@
           1.0,
           1.16
         ]
-      }
+      },
+      "foliageGainLinear": [
+        0.66,
+        0.66,
+        0.788
+      ]
     },
     {
       "treeId": "10530707",
@@ -187,7 +212,12 @@
           0.84,
           0.84
         ]
-      }
+      },
+      "foliageGainLinear": [
+        0.903,
+        0.895,
+        0.993
+      ]
     },
     {
       "treeId": "10530708",
@@ -218,7 +248,12 @@
           0.92,
           1.0
         ]
-      }
+      },
+      "foliageGainLinear": [
+        0.691,
+        0.716,
+        0.756
+      ]
     },
     {
       "treeId": "10530709",
@@ -249,7 +284,12 @@
           1.0,
           0.84
         ]
-      }
+      },
+      "foliageGainLinear": [
+        0.848,
+        0.896,
+        0.877
+      ]
     },
     {
       "treeId": "10530710",
@@ -280,7 +320,12 @@
           0.84,
           0.84
         ]
-      }
+      },
+      "foliageGainLinear": [
+        0.66,
+        0.706,
+        0.844
+      ]
     },
     {
       "treeId": "10530711",
@@ -311,12 +356,18 @@
           1.16,
           0.84
         ]
-      }
+      },
+      "foliageGainLinear": [
+        0.781,
+        0.808,
+        0.921
+      ]
     }
   ],
   "crownReference": {
     "source": "Map Data © Singapore Land Authority / OneMap, OrthoJPG, zoom 20",
     "method": "Estimated crown limits on the four cardinal axes relative to the registered trunk. Where adjacent crowns overlap, the division is inferred. Survey dates for the orthophoto and the tree register may differ.",
-    "outlineFit": "The scanned tree is rotated, then its outer branches are scaled along eight bearings from east counterclockwise towards north. Estimates use the alpha-tested crown footprint and the connected foliage around each registered stem in the zoom 20 orthophoto. Fits use three of every four image blocks. Adjoining crowns and obscured branch ends are approximate."
+    "outlineFit": "The scanned tree is rotated, then its outer branches are scaled along eight bearings from east counterclockwise towards north. Estimates use the alpha-tested crown footprint and the connected foliage around each registered stem in the zoom 20 orthophoto. Fits use three of every four image blocks. Adjoining crowns and obscured branch ends are approximate.",
+    "foliageColour": "Relative canopy colour from OneMap zoom 20, calibrated to the scene daylight with 39 Connaught Drive crowns. Vertex tints fit three quarters of the spatial image blocks around each stem, excluding pixels covered by other scene objects."
   }
 }

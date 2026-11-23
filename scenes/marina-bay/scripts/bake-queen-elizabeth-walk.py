@@ -79,6 +79,11 @@ def bake(folder):
         mesh = combined(group)
         if mesh.visual.material.name == "Island tree branch clusters":
             preserve_crown_normals(mesh)
+            # glTF vertex colour multiplies albedo in linear light.
+            tints = [np.rint(255 * np.array([*tree.get("foliageGainLinear", [1, 1, 1]), 1]))
+                     for tree in register["trees"]]
+            mesh.visual.vertex_attributes["color"] = np.repeat(
+                np.asarray(tints, dtype=np.uint8), [len(crown.vertices) for crown in group], axis=0)
         scene.add_geometry(mesh, geom_name=mesh.visual.material.name)
     low, high = scene.bounds
     center = (low + high) / 2
