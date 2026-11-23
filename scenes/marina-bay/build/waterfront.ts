@@ -1,4 +1,4 @@
-import type { Kit, Vec3 } from '@chrono-metaverse/sdk';
+import type { Kit, Shape, Vec3 } from '@chrono-metaverse/sdk';
 import type { Placement } from './placement.ts';
 
 export interface Quay {
@@ -61,35 +61,57 @@ export function waterfront(kit: Kit, quay: Quay, placement: Placement, regionId?
       chamfer: 0.016,
       ...granite('#c9c3b3', 2),
     }),
+  ];
+  // The photographed posts repeat every ~1.8 m. Stone joints have their own spacing.
+  const railCount = Math.max(1, Math.round(length / 1.8));
+  const railSpan = length / railCount;
+  const rails = [
     kit.cylinder(0.071, 0.025, { at: [0.21, 0.66, 0], segments: 10, ...steel }),
     kit.cylinder(0.031, 0.98, { at: [0.21, 0.68, 0], segments: 10, ...steel }),
-    ...[0.95, 1.22, 1.66].map((height) =>
-      kit.cylinder(height === 1.66 ? 0.035 : 0.016, span, {
-        at: [0.21, height, -span / 2],
+    ...[0.82, 0.99, 1.15, 1.32, 1.49, 1.66].map((height) =>
+      kit.cylinder(height === 1.66 ? 0.035 : 0.016, railSpan, {
+        at: [0.21, height, -railSpan / 2],
         pitch: 90,
         segments: 10,
         ...steel,
       }),
     ),
   ];
-  return Array.from({ length: count }, (_, i) => {
-    const t = (i + 0.5) / count;
-    const px = x + dx * t,
-      pz = z + dz * t;
-    const at: Vec3 = [
-      tx + Math.cos(angle) * px + Math.sin(angle) * pz,
-      ty + y + (quay.end[1] - y) * t,
-      tz - Math.sin(angle) * px + Math.cos(angle) * pz,
-    ];
-    return kit.entity(`${quay.id}.${i + 1}`, kit.group(children, { at, yaw }), {
-      label: quay.label,
-      regionId,
-      kind: 'structure',
-      props: {
-        background: true,
-        来源地址: quay.source,
-        版权: '© OpenStreetMap contributors · ODbL',
-      },
+  function sections(
+    id: string,
+    label: string,
+    parts: Shape[],
+    sectionsCount: number,
+    props: Record<string, string>,
+  ) {
+    return Array.from({ length: sectionsCount }, (_, i) => {
+      const t = (i + 0.5) / sectionsCount;
+      const px = x + dx * t,
+        pz = z + dz * t;
+      const at: Vec3 = [
+        tx + Math.cos(angle) * px + Math.sin(angle) * pz,
+        ty + y + (quay.end[1] - y) * t,
+        tz - Math.sin(angle) * px + Math.cos(angle) * pz,
+      ];
+      return kit.entity(`${id}.${i + 1}`, kit.group(parts, { at, yaw }), {
+        label,
+        regionId,
+        kind: 'structure',
+        props: {
+          background: true,
+          来源地址: quay.source,
+          版权: '© OpenStreetMap contributors · ODbL',
+          ...props,
+        },
+      });
     });
-  });
+  }
+  return [
+    ...sections(quay.id, quay.label, children, count, {}),
+    ...sections(`${quay.id}.rail`, '浮尔顿滨水步道 · 六道金属栏杆', rails, railCount, {
+      实景参考: 'https://commons.wikimedia.org/wiki/File:Singapore_-_panoramio_(109).jpg',
+      栏杆依据:
+        '2014 年临水立面可辨一道扶手、五道下横杆。按广场嵌石配准估读柱距约 1.8 米。杆径、高度、两端收口与现状均为估值。',
+    }),
+  ];
 }
