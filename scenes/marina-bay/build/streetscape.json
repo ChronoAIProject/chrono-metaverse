@@ -632,17 +632,17 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "伊丽莎白女王步道 · 十株双翼豆",
-    "assetHash": "c2a0ad3eb1fe3d67e6a54abc38140568156a3b7674f37b27893d3a57056a0158",
+    "assetHash": "9d84e297d88eb92f3bef8611f3d6737a9dc758432d8807e8aa8b59d9b77123b0",
     "bounds": {
       "min": [
-        478.6277631597118,
+        480.61907723459524,
         -60.36,
-        698.0910918349987
+        696.9112697456862
       ],
       "max": [
-        505.9631640869318,
+        506.12454712260467,
         -44.04491203809597,
-        818.5641339920154
+        819.252233563248
       ]
     },
     "material": {
@@ -1039,7 +1039,7 @@
     "layer": "ext",
     "kind": "structure",
     "label": "滨海公园 · 步道与康乐通道林冠",
-    "assetHash": "5c9d759aa0972db3d9fd2446a60b83e910814fff4442fbd0785351a38f3a8893",
+    "assetHash": "268009ed1070cb09ccfc73cb464bc71cbdbb85280b297833a66a89d88dcc6c6f",
     "bounds": {
       "min": [
         476.00759487527444,
@@ -1101,7 +1101,7 @@
     "layer": "ext",
     "kind": "structure",
     "label": "滨海公园 · 东侧林带",
-    "assetHash": "5f82942e8edde83ad8034720fab2a4c59e6910dd3dd06219e5a69fe9d6f8268b",
+    "assetHash": "e32c796d3ac326f611de24ffc58968cc37b6407e973994cbacc7fd83d3eace42",
     "bounds": {
       "min": [
         435.0129761168245,
