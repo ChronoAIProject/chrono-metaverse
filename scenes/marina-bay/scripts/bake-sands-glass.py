@@ -11,6 +11,8 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 from scipy.ndimage import gaussian_filter
 
+from skypark_geometry import HOTEL_ID, overflow_crest
+
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = {
     "95664d417851f133b6a370bda1e85cf1851107852768a377516e02ff5653e8ea",
@@ -33,7 +35,7 @@ def rebalance(image, mask):
     return Image.fromarray(np.uint8(np.clip(output, 0, 255)))
 
 
-def primitive(doc, views, prim, floor, pixels, painter):
+def primitive(doc, views, prim, floor, pixels, painter, pool_anchor):
     def read(index):
         acc = doc["accessors"][index]
         width = {"VEC2": 2, "VEC3": 3, "VEC4": 4, "SCALAR": 1}[acc["type"]]
@@ -72,13 +74,18 @@ def primitive(doc, views, prim, floor, pixels, painter):
         for face in original[facing_bay]:
             uv = attrs["TEXCOORD_0"][face] * pixels
             painter.polygon([tuple(point) for point in uv], fill=255)
+    if pool_anchor is not None:
+        positions, count = overflow_crest(attrs["POSITION"], pool_anchor)
+        if "TEXCOORD_0" in attrs and count < 35:
+            raise ValueError("Expected the narrow pool parapet in the measured hotel shell")
+        attrs["POSITION"] = positions
     for key, index in prim["attributes"].items():
         write(index, attrs[key][keep_vertices])
     write(prim["indices"], triangles[first].astype(faces.dtype).reshape(-1, 1))
     return len(first)
 
 
-def convert(raw, floor):
+def convert(raw, floor, pool_anchor=None):
     json_length = struct.unpack_from("<I", raw, 12)[0]
     doc = json.loads(raw[20:20 + json_length])
     binary = raw[28 + json_length:]
@@ -88,7 +95,7 @@ def convert(raw, floor):
     image = Image.open(io.BytesIO(views[image_info["bufferView"]]))
     mask = Image.new("L", image.size)
     painter = ImageDraw.Draw(mask)
-    count = sum(primitive(doc, views, prim, floor, image.size, painter)
+    count = sum(primitive(doc, views, prim, floor, image.size, painter, pool_anchor)
                 for mesh in doc["meshes"] for prim in mesh["primitives"])
     jpeg = io.BytesIO()
     rebalance(image, mask).save(jpeg, "JPEG", quality=95, subsampling=0, optimize=True)
@@ -121,7 +128,14 @@ def bake(sources):
         raw = (sources / f"{source}.glb").read_bytes()
         if hashlib.sha256(raw).hexdigest() != source:
             raise ValueError(f"Source does not match {source}")
-        data, triangles = convert(raw, e["bounds"]["min"][1] + office_height)
+        pool_anchor = None
+        if e["entityId"] == HOTEL_ID:
+            low, high = np.array([e["bounds"][key] for key in ("min", "max")])
+            pool_anchor = (low + high) / 2
+            pool_anchor[1] = low[1]
+            e["props"]["泳池溢流边"] = "沿 SLA 原模型临湾池唇折线，依无边泳池现场照片校正其高出水面的视觉高度，准确高度为估值。"
+            e["props"]["泳池现场参考"] = "https://commons.wikimedia.org/wiki/File:Infinity_Pool_at_Marina_Bay_Sands_SkyPark_Singapore_Ank_Kumar_Infosys_Limited_04.jpg"
+        data, triangles = convert(raw, e["bounds"]["min"][1] + office_height, pool_anchor)
         digest = hashlib.sha256(data).hexdigest()
         (ROOT / "assets" / f"{digest}.glb").write_bytes(data)
         e["assetHash"] = digest

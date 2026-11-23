@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { poolWater } from './poolWater';
 
 /** 米制视距的空气透视，在海湾尺度上逐渐降低反差。 */
 const cityAir = /* glsl */ `
@@ -34,6 +35,16 @@ export function cityModelAir(material: THREE.Material) {
     material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshBasicMaterial
   ))
     return;
+  if (
+    material instanceof THREE.MeshStandardMaterial &&
+    material.userData.waterSurface === 'pool' &&
+    material.map &&
+    material.normalMap &&
+    material.normalMapType === THREE.TangentSpaceNormalMap
+  ) {
+    poolWater(material, citySkyUniforms(material));
+    return;
+  }
   const glass =
     material instanceof THREE.MeshStandardMaterial && material.userData.reflectSky === true;
   const sky = glass ? citySkyUniforms(material) : null;

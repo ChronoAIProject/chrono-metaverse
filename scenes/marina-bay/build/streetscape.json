@@ -332,5 +332,34 @@
       "树木来源": "Poly Haven Island Tree 01 · CC0 · https://polyhaven.com/a/island_tree_01",
       "说明": "按屋顶图像中可单独辨识的 16 处树冠配设阔叶树。树种、株数、树干位置和树高为近似。硬质铺地沿实测露台平面，树池边界及石材为估值。"
     }
+  },
+  {
+    "entityId": "bay.sands-skypark-pool",
+    "layer": "ext",
+    "kind": "structure",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海湾金沙 · 空中花园泳池",
+    "assetHash": "a7f39f8d2125f1a176c7aae8d0290c6dd5b26d9527293ea044eeb3383b911cc9",
+    "bounds": {
+      "min": [
+        -474.8918054125977,
+        133.87274773991928,
+        547.750114480957
+      ],
+      "max": [
+        -458.81388640625005,
+        133.88590368728165,
+        689.014389078125
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "来源": "Map Data © Singapore Land Authority / OneMap。三段水面沿酒店测绘网格轮廓配准。",
+      "材质": "池底颜色、泳池砖尺度及小波纹为日间视觉近似。"
+    }
   }
 ]

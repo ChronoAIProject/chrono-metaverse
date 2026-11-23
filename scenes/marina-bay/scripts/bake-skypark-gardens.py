@@ -15,8 +15,9 @@ from trimesh.visual.texture import TextureVisuals
 
 from skypark_canopy import tree_cards
 
+from skypark_geometry import ACROSS, ALONG, HOTEL_ID, ORIGIN
+
 ROOT = Path(__file__).resolve().parents[1]
-HOTEL = "65eeae21fa2b5477b37f52cf884f6e1a2292517217461790d5d54be02ab4deb9"
 COURTYARD = "9740d4d4ed2e439fca65a882ad55ea5707ea5307c6739bde8a2c5d10d01d9efb"
 # Along the SkyPark, across the deck, canopy diameter. Located by projecting
 # the original SLA roof triangles and their colour atlas down onto the deck.
@@ -30,13 +31,10 @@ CROWNS = [
 ]
 
 
-ORIGIN = np.array([-475.49503137, 652.53070077])
-ALONG = np.array([.03393571, .99942402])
-ACROSS = ALONG[[1, 0]] * [1, -1]
 
 
 def garden_decks(building):
-    scene = trimesh.load_scene(ROOT / "assets" / (HOTEL + ".glb"), process=False)
+    scene = trimesh.load_scene(ROOT / "assets" / (building["assetHash"] + ".glb"), process=False)
     mesh, = [m for m in scene.geometry.values() if isinstance(m.visual, TextureVisuals)]
     low, high = np.array([building["bounds"][k] for k in ("min", "max")])
     center = (low + high) / 2
@@ -202,7 +200,7 @@ def record(result, building, focus, distant):
 
 if __name__ == "__main__":
     buildings = json.loads((ROOT / "build/onemap-entities.json").read_text())
-    records = gardens(next(e for e in buildings if e["assetHash"] == HOTEL))
+    records = gardens(next(e for e in buildings if e["entityId"] == HOTEL_ID))
     path = ROOT / "build/streetscape.json"
     entities = {e["entityId"]: e for e in json.loads(path.read_text())}
     for rec in records:
