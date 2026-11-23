@@ -688,5 +688,35 @@
       "铺装": "中心线、铺石类型来自 OSM。两侧宽度依正射影像估读，石材、砖缝及路面高程为估值。",
       "材质来源": "Poly Haven · Granite Tile 04 · CC0 · https://polyhaven.com/a/granite_tile_04"
     }
+  },
+  {
+    "entityId": "bay.fullerton-entrance-approach",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "One Fullerton · 临水入口广场",
+    "assetHash": "00b4e58f902ccc3f97df7f4026501fb4e0389c5b5edb3919bdbfc5fcd96d1bfe",
+    "bounds": {
+      "min": [
+        268.0054661328103,
+        -60.3022,
+        541.3683883618269
+      ],
+      "max": [
+        281.80387481660256,
+        -59.74525198109902,
+        563.8395251108889
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "影像来源": "Map Data © Singapore Land Authority / OneMap",
+      "现场照片": "https://commons.wikimedia.org/wiki/File:Singapore_-_panoramio_(109).jpg",
+      "材质来源": "Poly Haven · Granite Tile 04 · CC0",
+      "入口广场": "由 OneMap 正射影像中的 35 个嵌石中心拟合铺装排列，可见边线依影像估读。石缝、色泽和遮挡范围内的铺排为估值。坡面衔接场景既有步道与门槛标高。"
+    }
   }
 ]
