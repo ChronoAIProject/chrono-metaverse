@@ -6012,19 +6012,19 @@
     "entityId": "bay.7e5ef1c9-f724-4350-b289-142d7b03b701",
     "layer": "ext",
     "kind": "object",
-    "label": "滨海湾建筑",
+    "label": "达尔豪西纪念碑 · Dalhousie Obelisk",
     "regionId": "marina-bay-exterior",
-    "assetHash": "22805157c69c280625c8cb2ee4ace6bc8f5ce3c76920f1afa9a40d4099852d26",
+    "assetHash": "1354e04baaa421031de0de4d12139aa0fac5937f63eb7d36c9f43ba78dbae909",
     "bounds": {
       "min": [
-        541.422178,
+        541.2821656463597,
         -60.055826,
-        617.160803
+        616.8934121463598
       ],
       "max": [
-        551.802639,
-        -42.000062,
-        627.382507
+        552.2366513536402,
+        -42.000826,
+        627.8478978536403
       ]
     },
     "props": {
@@ -6035,7 +6035,13 @@
       "原始分片": "7/77/11_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 18.055,
-      "三角形数": 424
+      "三角形数": 1498,
+      "原模型哈希": "22805157c69c280625c8cb2ee4ace6bc8f5ce3c76920f1afa9a40d4099852d26",
+      "影像署名": "Geometry reconstructed from OneMap, Map Data © Singapore Land Authority. Photographic textures cropped and rectified from At Singapore 2023 112 by Mike Peel (CC BY-SA 4.0, https://commons.wikimedia.org/wiki/File:At_Singapore_2023_112.jpg) and Daihousie Obelisk 2 by Terence Ong (CC BY 2.5, https://commons.wikimedia.org/wiki/File:Daihousie_Obelisk_2.JPG). Adapted texture atlas and model distributed under CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/.",
+      "造型依据": "碑顶与轴向按 OneMap 测量模型。九级石阶、四角石墩、灯柱和灰塑檐口按现场照片估读。两处拍到的墙面纹饰用于四面近似。"
+    },
+    "material": {
+      "shading": "albedo"
     }
   },
   {

@@ -25,6 +25,9 @@ One Fullerton 临水入口的玻璃侧墙和后墙采用 Андрей Бобро
 
 全市街道与滨水树冠沿用公开场景内 14 个 `landscape.canopy` 分块的编号及树位。996 个树位中，185 个与单独建模的树根相距小于 10 厘米。其余 754 株阔叶树使用三个扫描树形，57 株棕榈借用游戏王棕模型。树位记录保存在成员坐标系，生成入口为 `scripts/bake-city-street-trees.py`。冠幅、高度与树形为近似值。[NParks 名录快照](https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e) · [Poly Haven 扫描树，CC0](https://polyhaven.com/a/jacaranda_tree) · [0 A.D. 王棕，Wildfire Games，CC BY-SA 3.0](https://github.com/0ad/0ad/tree/61a3b9507d974084e6badb88a0826bd89a6d5b8b/binaries/data/mods/public/art)
 
+达尔豪西纪念碑的高度与轴向取自 OneMap 测量模型。石阶、角墩及四盏灯按实拍估定细部。材质文件 `references/dalhousie-obelisk-surfaces.jpg` 由 Mike Peel 与 Terence Ong 的照片裁切、透视校正和调色，改编图集按 CC BY-SA 4.0 分发。[Mike Peel 的 2023 年照片，CC BY-SA 4.0](https://commons.wikimedia.org/wiki/File:At_Singapore_2023_112.jpg) · [Terence Ong 的灯柱照片，CC BY 2.5](https://commons.wikimedia.org/wiki/File:Daihousie_Obelisk_2.JPG) · [改编图集许可](https://creativecommons.org/licenses/by-sa/4.0/)
+
+
 
 浮尔顿路双向车道按 OSM 单向中心线与车道数生成；转向开口保持可通行。六段路侧及中央绿带沿 OneMap 正射影像描绘。路面颗粒采用 2.08 米宽的沥青扫描，路宽、标线和路缘高度为重建估值。用 `scripts/bake-fullerton-road.py` 传入该区域 OSM XML 和 1K 沥青原图可重新烘焙。[道路](https://www.openstreetmap.org/way/22919331) · [OneMap](https://www.onemap.gov.sg/) · [沥青](https://polyhaven.com/a/asphalt_01) · [草皮](https://ambientcg.com/a/Grass004)
 
