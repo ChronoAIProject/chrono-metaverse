@@ -6,6 +6,42 @@ import { GeoReference, tileBounds, tileCoordinates, tileKey, type Tile } from '.
 
 type Point = { x: number; y: number };
 
+/** Same-height buildings may all share one MVT feature. Clipped footprints only
+ * use attributes available on both tiles, including when their feature IDs differ. */
+function facadeVariant(
+  ring: readonly Point[],
+  extent: number,
+  tile: Tile,
+  height: number,
+  tint?: number,
+) {
+  let seed = Math.round(height * 100) ^ (tint ?? 0);
+  let west = extent,
+    north = extent;
+  for (const { x, y } of ring) {
+    if (x <= 0 || y <= 0 || x >= extent || y >= extent) {
+      west = -1;
+      break;
+    }
+    west = Math.min(west, x);
+    north = Math.min(north, y);
+  }
+  if (west >= 0) {
+    const scale = 2 ** (26 - tile.z);
+    seed ^= Math.imul(Math.round((tile.x + west / extent) * scale), 73856093);
+    seed ^= Math.imul(Math.round((tile.y + north / extent) * scale), 19349663);
+  }
+  seed = Math.imul(seed ^ (seed >>> 16), 0x45d9f3b);
+  seed = Math.imul(seed ^ (seed >>> 16), 0x45d9f3b);
+  const sample = (seed ^ (seed >>> 16)) >>> 0;
+  const choice = (sample & 255) / 256;
+  const curtain = height >= 45 && choice < 0.65;
+  const ribbon = height >= 12 && choice > 0.5;
+  // Integer selects punched windows, ribbon windows or curtain wall. The
+  // fractional part varies the module and palette within that family.
+  return (curtain ? 2 : ribbon ? 1 : 0) + ((sample >>> 8) & 1023) / 1024;
+}
+
 /** OpenMapTiles colour is an sRGB hex triplet or a CSS colour name. */
 function buildingPaint(property: unknown): number | undefined {
   if (typeof property !== 'string') return;
@@ -306,13 +342,16 @@ export function vectorGeometry(
         )
       )
         continue;
-      const start = positions.length;
+      const variant = style.facade
+        ? facadeVariant(polygon[0]!, feature.extent, tile, height, tint)
+        : 0;
       const flat = top.flat();
       const shape = top.map((ring) => ring.map((p) => new THREE.Vector2(p.x, p.z)));
       const triangles = THREE.ShapeUtils.triangulateShape(shape[0]!, shape.slice(1));
       // 屋面共享顶点，每段立面单独保留四个顶点，让窗面与转角保持平整。
       const roof = positions.length / 3;
       for (const p of flat) positions.push(p.x, p.y, p.z);
+      if (style.facade) for (let j = 0; j < flat.length; j++) facade.push(height, variant);
       for (const [ia, ib, ic] of triangles) {
         const a = flat[ia!]!,
           b = flat[ib!]!,
@@ -332,16 +371,15 @@ export function vectorGeometry(
           const a = reverse ? next : j,
             b = reverse ? j : next;
           for (const p of [low[a]!, low[b]!, high[a]!, high[b]!]) positions.push(p.x, p.y, p.z);
+          if (style.facade)
+            facade.push(minHeight, variant, minHeight, variant, height, variant, height, variant);
           indices.push(wall, wall + 1, wall + 2, wall + 2, wall + 1, wall + 3);
         }
       }
       if (indices.length > 600000) throw new Error('矢量瓦片生成几何过大');
       if (style.facade) {
-        const seed = feature.id ?? Math.round(height * 113);
-        const variant = (((seed % 997) * 47) % 997) / 997;
         const rgb = tint ?? 0;
-        for (let k = start; k < positions.length; k += 3) {
-          facade.push(positions[k + 1]! - box.min.y + minHeight, variant);
+        for (let k = roof; k < positions.length / 3; k++) {
           paint.push(rgb >>> 16, (rgb >>> 8) & 255, rgb & 255, tint === undefined ? 0 : 255);
         }
       }

@@ -1,7 +1,12 @@
 import Pbf from 'pbf';
 
 /** 自有简单多边形夹具，不包含第三方地理数据。 */
-export function vectorTileFixture(height = 24, hole = false, colour?: string): Uint8Array {
+export function vectorTileFixture(
+  height = 24,
+  hole = false,
+  colour?: string,
+  extraFootprints: number[][][] = [],
+): Uint8Array {
   const bytes = new Pbf();
   bytes.writeMessage(
     3,
@@ -48,6 +53,7 @@ export function vectorTileFixture(height = 24, hole = false, colour?: string): U
               [2560, 2560],
               [2560, 1536],
             ]);
+          for (const footprint of extraFootprints) ring(footprint);
           feature.writePackedVarint(4, geometry);
         },
         null,
