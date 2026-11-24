@@ -44,14 +44,21 @@ export class CitySun {
     const distance = eye.distanceTo(focus);
     const shadow = light.shadow;
     const previous = shadow.camera.right;
+    // Only retain the resolution while tracking the same part of the city.
+    const nearby =
+      Number.isFinite(this.last) &&
+      focus.distanceToSquared(light.target.position) <= previous * previous;
+    const trackingRadius = nearby ? previous : 0;
     // 近处的立柱直径约 6 厘米，需要厘米级阴影采样。切换距离留有回差。
+    // Long views across water include buildings well behind and beside the focus.
+    const farRadius = distance < (trackingRadius === 360 ? 430 : 390) ? 360 : 760;
     const radius =
-      distance < (previous === 40 ? 88 : 72)
+      distance < (trackingRadius === 40 ? 88 : 72)
         ? 40
-        : distance < (previous === 112 ? 286 : 248)
+        : distance < (trackingRadius === 112 ? 286 : 248)
           ? 112
-          : 360;
-    if (radius === 360) this.center.copy(focus);
+          : farRadius;
+    if (radius >= 360) this.center.copy(focus);
     else {
       // Frame the walk and its subject together. Near a tier boundary reserve
       // enough space around the subject for its shadow and the snapped centre.

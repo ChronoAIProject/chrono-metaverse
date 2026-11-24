@@ -1565,5 +1565,31 @@
       "材质版权": "Plan geometry © OpenStreetMap contributors (ODbL). Asphalt 01 and Concrete Floor 02 by Poly Haven (CC0).",
       "重建范围": "OSM 桥面轮廓、车道数、两侧步道和联络通道与 OneMap 航片配准。桥面坡度、桥墩位置、灯杆和栏杆尺寸参照现场照片估读。"
     }
+  },
+  {
+    "entityId": "bay.ns-square-waterfront",
+    "label": "NS Square 施工期临水平台与围护",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "bb82aec2c251baf0e729f8ca19ce40457666adc1f5ef8df37ca03d28fd36097b",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        -238.73537016190497,
+        -60.690000000000005,
+        946.8441016365741
+      ],
+      "max": [
+        35.65975484124981,
+        -57.06315321248269,
+        1118.8739383927127
+      ]
+    },
+    "props": {
+      "background": true
+    }
   }
 ]

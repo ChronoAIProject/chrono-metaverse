@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { vectorGeometry, visibleVectorTiles } from './vectorGeometry';
 import { GeoReference, tileCoordinates, tileKey } from './geography';
 import { vectorTileFixture } from '../test/vectorTile';
-import type { VectorContent } from '../core/externalSource';
+import type { VectorContent, WaterlineEdit } from '../core/externalSource';
 
 const tile = { z: 14, x: 14517, y: 6460 };
 const [longitude, latitude] = tileCoordinates(tile.x + 0.5, tile.y + 0.5, tile.z);
@@ -229,4 +229,61 @@ describe('通用矢量三维内容', () => {
     expect(moved).not.toEqual(initial);
     expect(visibleVectorTiles(camera, new THREE.Matrix4(), reference, 14, 12000)).toEqual(initial);
   });
+});
+
+it('updates only a matching water boundary and retains its island', () => {
+  const edit: WaterlineEdit = {
+    tile: [tile.z, tile.x, tile.y],
+    source: 'https://example.org/tiles',
+    featureId: 1,
+    extent: 4096,
+    from: [
+      [1024, 1024],
+      [3072, 1024],
+    ],
+    interior: [
+      [1024, 750],
+      [3072, 750],
+    ],
+  };
+  const water = (change?: WaterlineEdit) =>
+    vectorGeometry(
+      vectorTileFixture(24, true),
+      tile,
+      reference,
+      style,
+      false,
+      'shapes',
+      [],
+      change ? [change] : [],
+    ).water!;
+  const baseline = water();
+  const extended = water(edit);
+  expect(extended.getAttribute('position').count).toBe(baseline.getAttribute('position').count + 2);
+  const mesh = new THREE.Mesh(extended, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+  const hits = (y: number) => {
+    const start = reference.point(...tileCoordinates(tile.x + 0.5, tile.y + y, tile.z), 30);
+    return new THREE.Raycaster(start, new THREE.Vector3(0, -1, 0)).intersectObject(mesh);
+  };
+  expect(hits(0.2).length).toBeGreaterThan(0);
+  expect(hits(0.5)).toHaveLength(0);
+  for (const mismatch of [
+    {
+      ...edit,
+      from: [
+        [1024, 1025],
+        [3072, 1024],
+      ] as const,
+    },
+    { ...edit, extent: 8192 },
+    { ...edit, featureId: 2 },
+    { ...edit, tile: [14, tile.x + 1, tile.y] as const },
+  ]) {
+    const geometry = water(mismatch);
+    expect(geometry.attributes.position!.array).toEqual(baseline.attributes.position!.array);
+    geometry.dispose();
+  }
+  baseline.dispose();
+  extended.dispose();
+  mesh.material.dispose();
 });
