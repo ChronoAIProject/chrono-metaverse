@@ -350,6 +350,27 @@ it('工作台读取遇到短暂 503 时等待后重试一次', async () => {
   }
 });
 
+it('retries a transient asset failure with the same preview grant', async () => {
+  vi.useFakeTimers();
+  try {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(new Response('model'));
+    const client = createPublicClient({ fetch: request });
+    const blob = client.previewAssetBlob('draft-token', 'a'.repeat(64));
+    await vi.advanceTimersByTimeAsync(1_250);
+    expect(await (await blob).text()).toBe('model');
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(request.mock.calls[1]).toEqual(request.mock.calls[0]);
+    expect(new Headers(request.mock.calls[1]![1]?.headers).get('authorization')).toBe(
+      'Preview draft-token',
+    );
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it('持续故障在一次重试后显示原错误，权限拒绝直接返回', async () => {
   vi.useFakeTimers();
   try {

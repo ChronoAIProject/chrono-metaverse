@@ -6170,7 +6170,7 @@
     "kind": "object",
     "label": "MARINA BAY FINANCIAL CENTRE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "9f95b86ce2e1dbbf12b0d93ed0778b34e5ca777617f3dc4521d9ef55f4ad2488",
+    "assetHash": "54281b87d7c45f46a6394b1753ba1861804b0a84df38bd4fa89e4c577c4dc38a",
     "bounds": {
       "min": [
         -115.061183,
@@ -6191,7 +6191,11 @@
       "原始分片": "7/77/7_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 240.368,
-      "三角形数": 1378
+      "三角形数": 1378,
+      "原建筑资源": "9f95b86ce2e1dbbf12b0d93ed0778b34e5ca777617f3dc4521d9ef55f4ad2488",
+      "玻璃参考": [
+        "https://www.openstreetmap.org/way/116905041/history/12"
+      ]
     }
   },
   {
@@ -6712,7 +6716,7 @@
     "kind": "object",
     "label": "OCEAN FINANCIAL CENTRE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "0dad0eb5e4156601ab724462a826b3a8832b1e6321c24e5e4ee08974d775092c",
+    "assetHash": "6d55c9d97f690811490061149f5bc3d35b755f350c51321dbec0d70928b92d16",
     "bounds": {
       "min": [
         334.76153,
@@ -6733,7 +6737,12 @@
       "原始分片": "7/77/9_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 242.216,
-      "三角形数": 2244
+      "三角形数": 2244,
+      "原建筑资源": "0dad0eb5e4156601ab724462a826b3a8832b1e6321c24e5e4ee08974d775092c",
+      "玻璃参考": [
+        "https://www.openstreetmap.org/way/46595387/history/17",
+        "https://www.openstreetmap.org/way/1566589608/history/1"
+      ]
     }
   },
   {
@@ -7378,7 +7387,7 @@
     "kind": "object",
     "label": "MARINA BAY FINANCIAL CENTRE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "06c1ea3d086b507ff04e54cfa903f29685eb0f99ee137c4ee89cf416507f89e3",
+    "assetHash": "a4f70d6dc77490ce19bca4f00df603b92cd4bd7ea9f12616db86862e19ad6c26",
     "bounds": {
       "min": [
         -26.917404,
@@ -7399,7 +7408,11 @@
       "原始分片": "8/154/14_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 238.991,
-      "三角形数": 924
+      "三角形数": 924,
+      "原建筑资源": "06c1ea3d086b507ff04e54cfa903f29685eb0f99ee137c4ee89cf416507f89e3",
+      "玻璃参考": [
+        "https://www.openstreetmap.org/way/116905042/history/14"
+      ]
     }
   },
   {
