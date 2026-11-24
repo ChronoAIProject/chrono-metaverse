@@ -496,7 +496,12 @@ export class SceneView {
       providerCreditsHost,
       { pixelRatio, anisotropy: Math.min(8, this.renderer.capabilities.getMaxAnisotropy()) },
     );
-    this.externalContent = new ExternalContentView(this.scene, host, providerCreditsHost);
+    this.externalContent = new ExternalContentView(
+      this.scene,
+      host,
+      providerCreditsHost,
+      options.loadTexture,
+    );
 
     // 灯光按物理单位设置（强度是 π 的倍数），见 lighting.ts。
     this.lights = createLights();
