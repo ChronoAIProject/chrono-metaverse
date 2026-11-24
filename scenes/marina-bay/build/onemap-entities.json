@@ -3027,12 +3027,12 @@
     "bounds": {
       "min": [
         179.866324,
-        -60.078959,
+        -57.449803,
         964.700361
       ],
       "max": [
         186.555371,
-        -56.948676,
+        -54.31952,
         971.196483
       ]
     },
@@ -3303,7 +3303,7 @@
     "kind": "object",
     "label": "OUTDOOR THEATRE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "6fb06dbd71e5ef7193dc38730129f1386c44fcace8217a6dd2da8e8eb249fe7a",
+    "assetHash": "87430ab0b33f90fba94ee0e6241a34f6ec84b0d1cf16f241f6dac78ed594d013",
     "bounds": {
       "min": [
         208.132727,
@@ -3324,7 +3324,13 @@
       "原始分片": "6/39/5_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 20.268,
-      "三角形数": 1100
+      "三角形数": 1100,
+      "篷布内衬": {
+        "原模型": "6fb06dbd71e5ef7193dc38730129f1386c44fcace8217a6dd2da8e8eb249fe7a",
+        "面数": 216,
+        "实拍": "https://commons.wikimedia.org/?curid=152986183",
+        "依据": "将对应外表面的原摄影纹理配准到内衬。日间透光强度按跨湾实拍估算。"
+      }
     }
   },
   {
@@ -3517,7 +3523,7 @@
     "kind": "object",
     "label": "OUTDOOR THEATRE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "911805989436ff90fe401e79669dae236a4c0b450dac235cbfd081990e6a3d83",
+    "assetHash": "3912ad961ee23efb0f503ed1c58e3964d5324fb817e56aaa549b695c49e98597",
     "bounds": {
       "min": [
         212.103363,
@@ -3538,7 +3544,13 @@
       "原始分片": "6/39/5_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 8.691,
-      "三角形数": 1016
+      "三角形数": 1016,
+      "篷布内衬": {
+        "原模型": "911805989436ff90fe401e79669dae236a4c0b450dac235cbfd081990e6a3d83",
+        "面数": 132,
+        "实拍": "https://commons.wikimedia.org/?curid=152986183",
+        "依据": "将对应外表面的原摄影纹理配准到内衬。日间透光强度按跨湾实拍估算。"
+      }
     }
   },
   {
@@ -7056,7 +7068,7 @@
     "kind": "object",
     "label": "ESPLANADE - THEATRES ON THE BAY",
     "regionId": "marina-bay-exterior",
-    "assetHash": "bc2879c2bdbda1d5164f4f6a1efa6e90ef4dd357d1fd454bf433d57de9daa5f8",
+    "assetHash": "39565ae186b2741eeea34bb3fd8866063ad4d7e2da1fda32283ac1ed6e7fc37a",
     "bounds": {
       "min": [
         290.903001,
@@ -7077,9 +7089,22 @@
       "原始分片": "7/78/12_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 41.346,
-      "三角形数": 5226,
+      "三角形数": 11755,
       "原建筑资源": "a854e29e024d0d70c6da691c40ab066183b990566291d0d2e8f44f3d279b50de",
-      "穹顶曲面": "按相邻测绘面的边与夹角分出两组穹顶。保留原顶点、轮廓连接边及遮阳片影像。内部边中点的切平面插值位移上限 0.15 米。遮阳片的细部法线来自原图局部明暗，起伏和表面粗糙度 0.49 为估值。"
+      "穹顶曲面": "按相邻测绘面的边与夹角分出两组穹顶。保留原顶点、轮廓连接边及遮阳片影像。内部边中点的切平面插值位移上限 0.15 米。玻璃壳保留原图的浅表法线，外层铝板单独受光。",
+      "穹顶遮阳片": {
+        "每顶片数": [
+          3334,
+          3195
+        ],
+        "设计资料": "https://www.dpa.com.sg/projects/esplanade-theatres-on-the-bay/",
+        "实拍参考": [
+          "https://commons.wikimedia.org/?curid=74794455",
+          "https://commons.wikimedia.org/?curid=83988992",
+          "https://commons.wikimedia.org/?curid=85563656"
+        ],
+        "说明": "沿两座测绘穹顶的截面布置三角铝板。板件间距与抬高量依照片估读。涂层反射按跨湾照片的亮部和暗部校正。"
+      }
     }
   },
   {

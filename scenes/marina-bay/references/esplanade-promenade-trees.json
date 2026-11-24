@@ -1,0 +1,471 @@
+{
+  "orthophoto": "https://www.onemap.gov.sg/maps/tiles/OrthoJPG/20/{x}/{y}.png",
+  "attribution": "Map Data © Singapore Land Authority / OneMap",
+  "referencePhoto": "https://commons.wikimedia.org/?curid=152986183",
+  "heading": 18.454586711764804,
+  "method": "Crown centres and ellipse dimensions estimated from the registered overhead image along the quay. Groups of touching crowns were divided at visible lobes. Roots were checked against the rendered pavement. Heights and scan forms are approximations. Crown numbers identify image measurements.",
+  "crowns": [
+    {
+      "crown": 1,
+      "longitude": 103.8546452,
+      "latitude": 1.2889323,
+      "root": [
+        272.328,
+        -60.151,
+        921.911
+      ],
+      "diameters": [
+        8.68,
+        13.29
+      ],
+      "bearing": 36.2,
+      "estimatedHeight": 9.88,
+      "rgb": [
+        98,
+        111,
+        94
+      ]
+    },
+    {
+      "crown": 2,
+      "longitude": 103.8547351,
+      "latitude": 1.2889481,
+      "root": [
+        263.39,
+        -60.151,
+        926.739
+      ],
+      "diameters": [
+        11.52,
+        14.56
+      ],
+      "bearing": 119.0,
+      "estimatedHeight": 11.47,
+      "rgb": [
+        118,
+        129,
+        104
+      ]
+    },
+    {
+      "crown": 3,
+      "longitude": 103.8548892,
+      "latitude": 1.2889253,
+      "root": [
+        246.327,
+        -60.151,
+        929.768
+      ],
+      "diameters": [
+        7.56,
+        9.68
+      ],
+      "bearing": 65.4,
+      "estimatedHeight": 8.31,
+      "rgb": [
+        117,
+        126,
+        101
+      ]
+    },
+    {
+      "crown": 4,
+      "longitude": 103.8550079,
+      "latitude": 1.2889374,
+      "root": [
+        234.219,
+        -60.152,
+        935.225
+      ],
+      "diameters": [
+        4.23,
+        5.66
+      ],
+      "bearing": 4.6,
+      "estimatedHeight": 5.67,
+      "rgb": [
+        124,
+        134,
+        103
+      ]
+    },
+    {
+      "crown": 5,
+      "longitude": 103.8550685,
+      "latitude": 1.2889435,
+      "root": [
+        228.036,
+        -60.152,
+        937.998
+      ],
+      "diameters": [
+        4.42,
+        5.55
+      ],
+      "bearing": 0.4,
+      "estimatedHeight": 5.72,
+      "rgb": [
+        125,
+        133,
+        104
+      ]
+    },
+    {
+      "crown": 6,
+      "longitude": 103.8551998,
+      "latitude": 1.2889442,
+      "root": [
+        214.199,
+        -60.152,
+        942.699
+      ],
+      "diameters": [
+        2.74,
+        3.95
+      ],
+      "bearing": 49.0,
+      "estimatedHeight": 4.52,
+      "rgb": [
+        93,
+        107,
+        93
+      ]
+    },
+    {
+      "crown": 7,
+      "longitude": 103.8552483,
+      "latitude": 1.2889374,
+      "root": [
+        208.839,
+        -60.152,
+        943.687
+      ],
+      "diameters": [
+        6.88,
+        10.78
+      ],
+      "bearing": 152.3,
+      "estimatedHeight": 8.35,
+      "rgb": [
+        121,
+        130,
+        102
+      ]
+    },
+    {
+      "crown": 8,
+      "longitude": 103.8553943,
+      "latitude": 1.2889314,
+      "root": [
+        193.212,
+        -60.152,
+        948.204
+      ],
+      "diameters": [
+        9.25,
+        10.98
+      ],
+      "bearing": 85.9,
+      "estimatedHeight": 9.41,
+      "rgb": [
+        121,
+        132,
+        97
+      ]
+    },
+    {
+      "crown": 9,
+      "longitude": 103.8555208,
+      "latitude": 1.2889227,
+      "root": [
+        179.554,
+        -60.152,
+        951.749
+      ],
+      "diameters": [
+        7.61,
+        11.0
+      ],
+      "bearing": 114.3,
+      "estimatedHeight": 8.74,
+      "rgb": [
+        128,
+        134,
+        110
+      ]
+    },
+    {
+      "crown": 10,
+      "longitude": 103.8557191,
+      "latitude": 1.2889236,
+      "root": [
+        158.654,
+        -60.153,
+        958.825
+      ],
+      "diameters": [
+        7.31,
+        7.81
+      ],
+      "bearing": 68.1,
+      "estimatedHeight": 7.59,
+      "rgb": [
+        126,
+        133,
+        104
+      ]
+    },
+    {
+      "crown": 11,
+      "longitude": 103.8563177,
+      "latitude": 1.2888914,
+      "root": [
+        94.329,
+        -60.154,
+        976.537
+      ],
+      "diameters": [
+        5.13,
+        7.55
+      ],
+      "bearing": 104.1,
+      "estimatedHeight": 6.63,
+      "rgb": [
+        112,
+        125,
+        100
+      ]
+    },
+    {
+      "crown": 12,
+      "longitude": 103.8563643,
+      "latitude": 1.2888852,
+      "root": [
+        89.198,
+        -60.155,
+        977.534
+      ],
+      "diameters": [
+        5.22,
+        5.79
+      ],
+      "bearing": 174.6,
+      "estimatedHeight": 6.11,
+      "rgb": [
+        133,
+        141,
+        112
+      ]
+    },
+    {
+      "crown": 13,
+      "longitude": 103.8564659,
+      "latitude": 1.288872,
+      "root": [
+        78.008,
+        -60.155,
+        979.724
+      ],
+      "diameters": [
+        6.25,
+        7.85
+      ],
+      "bearing": 142.9,
+      "estimatedHeight": 7.19,
+      "rgb": [
+        125,
+        134,
+        106
+      ]
+    },
+    {
+      "crown": 14,
+      "longitude": 103.8565201,
+      "latitude": 1.2888767,
+      "root": [
+        72.453,
+        -60.155,
+        982.126
+      ],
+      "diameters": [
+        4.64,
+        6.8
+      ],
+      "bearing": 43.9,
+      "estimatedHeight": 6.19,
+      "rgb": [
+        130,
+        136,
+        110
+      ]
+    },
+    {
+      "crown": 15,
+      "longitude": 103.8566401,
+      "latitude": 1.2888671,
+      "root": [
+        59.448,
+        -60.155,
+        985.347
+      ],
+      "diameters": [
+        6.82,
+        7.37
+      ],
+      "bearing": 93.0,
+      "estimatedHeight": 7.25,
+      "rgb": [
+        117,
+        125,
+        100
+      ]
+    },
+    {
+      "crown": 16,
+      "longitude": 103.8566889,
+      "latitude": 1.2888784,
+      "root": [
+        54.696,
+        -60.156,
+        988.256
+      ],
+      "diameters": [
+        5.02,
+        7.07
+      ],
+      "bearing": 57.9,
+      "estimatedHeight": 6.44,
+      "rgb": [
+        121,
+        126,
+        102
+      ]
+    },
+    {
+      "crown": 17,
+      "longitude": 103.8567924,
+      "latitude": 1.2888572,
+      "root": [
+        43.02,
+        -60.156,
+        989.682
+      ],
+      "diameters": [
+        5.64,
+        7.4
+      ],
+      "bearing": 34.3,
+      "estimatedHeight": 6.8,
+      "rgb": [
+        116,
+        121,
+        100
+      ]
+    },
+    {
+      "crown": 18,
+      "longitude": 103.8568498,
+      "latitude": 1.2888507,
+      "root": [
+        36.731,
+        -60.156,
+        991.016
+      ],
+      "diameters": [
+        6.69,
+        7.29
+      ],
+      "bearing": 151.7,
+      "estimatedHeight": 7.18,
+      "rgb": [
+        150,
+        152,
+        115
+      ]
+    },
+    {
+      "crown": 19,
+      "longitude": 103.8572293,
+      "latitude": 1.288851,
+      "root": [
+        -3.32,
+        -60.158,
+        1004.424
+      ],
+      "diameters": [
+        5.09,
+        6.25
+      ],
+      "bearing": 75.3,
+      "estimatedHeight": 6.21,
+      "rgb": [
+        102,
+        114,
+        96
+      ]
+    },
+    {
+      "crown": 20,
+      "longitude": 103.8572766,
+      "latitude": 1.2888409,
+      "root": [
+        -8.663,
+        -60.158,
+        1005.021
+      ],
+      "diameters": [
+        4.76,
+        6.02
+      ],
+      "bearing": 178.6,
+      "estimatedHeight": 6.0,
+      "rgb": [
+        137,
+        143,
+        110
+      ]
+    },
+    {
+      "crown": 21,
+      "longitude": 103.8573801,
+      "latitude": 1.2888334,
+      "root": [
+        -19.847,
+        -60.159,
+        1007.89
+      ],
+      "diameters": [
+        5.94,
+        6.52
+      ],
+      "bearing": 15.1,
+      "estimatedHeight": 6.63,
+      "rgb": [
+        128,
+        134,
+        105
+      ]
+    },
+    {
+      "crown": 22,
+      "longitude": 103.8574379,
+      "latitude": 1.2888342,
+      "root": [
+        -25.922,
+        -60.159,
+        1010.005
+      ],
+      "diameters": [
+        6.57,
+        7.35
+      ],
+      "bearing": 101.6,
+      "estimatedHeight": 7.15,
+      "rgb": [
+        132,
+        137,
+        106
+      ]
+    }
+  ]
+}
