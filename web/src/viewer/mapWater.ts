@@ -117,6 +117,15 @@ export function mapWaterMaterial(
       // Pack the symmetric 2D covariance as (xx, xy, yy).
       vec3 secondMoment(vec2 v) { return vec3(v.x*v.x, v.x*v.y, v.y*v.y); }
 
+      // The pixel average of a cosine retains sinc(half the phase span) along each screen axis.
+      vec4 wavePixelFilter(vec4 phase) {
+        vec4 halfX = max(0.5 * abs(dFdx(phase)), vec4(0.0001));
+        vec4 halfY = max(0.5 * abs(dFdy(phase)), vec4(0.0001));
+        vec4 widest = max(halfX, halfY);
+        vec4 cutoff = 1.0 - smoothstep(vec4(0.5 * PI), vec4(PI), widest);
+        return (sin(halfX) / halfX) * (sin(halfY) / halfY) * cutoff;
+      }
+
       vec2 reflectionGradient(vec2 slopeDelta, vec3 normal, vec3 eye, float reach, vec2 uv, float w) {
         vec3 dn = vec3(slopeDelta.x, 0.0, slopeDelta.y);
         dn = (dn - normal * dot(normal, dn)) * normal.y;
@@ -152,7 +161,7 @@ export function mapWaterMaterial(
         vec4 phase = vec4(dot(meters,k0), dot(meters,k1), dot(meters,k2), dot(meters,k3))
                    - time*vec4(11.59,10.00,16.98,14.78)
                    + 2.8*swell.yxyx + 2.3*chop.xyyx;
-        vec4 resolved = 1.0-smoothstep(vec4(0.5),vec4(3.14),fwidth(phase));
+        vec4 resolved = wavePixelFilter(phase);
         vec4 waves = cos(phase) * resolved;
         vec2 slope0 = 0.0336*normalize(k0), slope1 = 0.0252*normalize(k1);
         vec2 slope2 = 0.0248*normalize(k2), slope3 = 0.0186*normalize(k3);

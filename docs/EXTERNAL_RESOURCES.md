@@ -71,6 +71,8 @@
 
 物件仍需代理形状、范围和 `background: true`。`excludeBounds` 是所在成员本地米制坐标的 `[minX,minZ,maxX,maxZ]`；相交的多边形不生成，保留已有精细模型和室内主体。高度单位为米，顶高须大于底高；仅缺少顶高时使用 `defaultHeight`。矢量体块不等同于实景贴图、测绘模型或已核实的实际楼高。
 
+塔身与商场裙楼重叠时，可用 `extrusion.excludeBuildingParts` 指定被替换的地图部件。每项含矢量要素的 `featureId`、米制底高 `minHeight`、顶高 `height` 和本地平面范围 `bounds`。查看器仅排除编号和高度均匹配且范围相交的多边形。
+
 可选的 `waterLayer` 指定同一份矢量瓦片中的水域多边形图层。查看器在 14 级及以上的瓦片中沿岸线绘制带反光的水面，并保留岛屿。镜头拉远后，水面逐渐过渡到航拍底图。
 
 实体地图可以在地图配置中设置 `surfaceDetail: "urban"`，在近景叠加按米采样的草地、混凝土和沥青扫描纹理，镜头靠近时按影像颜色绘制草叶。水域配置 `waterReflection: "scene"` 后，共享一个低分辨率平面反射缓冲。建筑可在 `extrusion` 中设置 `facade: "urban"` 生成窗格和墙面；当来源提供较低级别的建筑概化层时，`distantZoom` 可指定远景使用的瓦片级别。

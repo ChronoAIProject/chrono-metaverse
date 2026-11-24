@@ -72,6 +72,35 @@ describe('通用矢量三维内容', () => {
     material.dispose();
   });
 
+  it('分片共用编号时只移除被替换的塔身，保留相邻轮廓和下方裙楼', () => {
+    const neighbors = [
+      [
+        [128, 640],
+        [384, 640],
+        [384, 896],
+        [128, 896],
+      ],
+    ];
+    const bounds = [-20, -20, 20, 20] as const;
+    const config = {
+      ...style,
+      excludeBuildingParts: [{ featureId: 1, minHeight: 0, height: 24, bounds }],
+    };
+    const count = (height: number, footprints: number[][][], options: typeof style) => {
+      const { geometry } = vectorGeometry(
+        vectorTileFixture(height, false, undefined, footprints),
+        tile,
+        reference,
+        options,
+      );
+      const vertices = geometry.getAttribute('position').count;
+      geometry.dispose();
+      return vertices;
+    };
+    expect(count(24, neighbors, config)).toBe(count(24, neighbors, style) - count(24, [], style));
+    expect(count(8, neighbors, config)).toBe(count(8, neighbors, style));
+  });
+
   it('只给高度和位置都匹配的同编号楼体绑定三层反射', () => {
     const data = vectorTileFixture(24, false, undefined, [
       [

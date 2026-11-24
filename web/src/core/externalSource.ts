@@ -90,13 +90,15 @@ export interface WaterSample {
   readonly rmsGravitySlope?: number;
 }
 
-export interface FacadeReflectionBuilding {
+export interface VectorBuildingPart {
   readonly featureId: number;
   readonly minHeight: number;
   readonly height: number;
   /** Bounds of the surveyed footprint in the vector source's local x/z plane. */
   readonly bounds: readonly [number, number, number, number];
 }
+
+export type FacadeReflectionBuilding = VectorBuildingPart;
 
 export interface FacadeReflections {
   readonly source: string;
@@ -132,6 +134,8 @@ export interface VectorContent {
     readonly maxDistance: number;
     /** 本地米制坐标中的覆盖区域 [minX,minZ,maxX,maxZ]，保留已有精细内容。 */
     readonly excludeBounds?: readonly (readonly [number, number, number, number])[];
+    /** 已由模型替换的地图楼体部分，按编号、高度和位置匹配。 */
+    readonly excludeBuildingParts?: readonly VectorBuildingPart[];
   };
 }
 
@@ -217,22 +221,24 @@ function validFacadeReflections(value: unknown, textures: readonly string[] | un
     atlas.buildings.length > 64
   )
     return false;
-  return atlas.buildings.every((item) => {
-    const b = record(item);
-    return (
-      !!b &&
-      Number.isSafeInteger(b.featureId) &&
-      Number(b.featureId) >= 0 &&
-      finite(b.minHeight, 0, 2000) &&
-      finite(b.height, 0, 2000) &&
-      Number(b.height) > Number(b.minHeight) &&
-      Array.isArray(b.bounds) &&
-      b.bounds.length === 4 &&
-      b.bounds.every((n) => finite(n, -100000, 100000)) &&
-      b.bounds[2]! > b.bounds[0]! &&
-      b.bounds[3]! > b.bounds[1]!
-    );
-  });
+  return atlas.buildings.every(validBuildingPart);
+}
+
+function validBuildingPart(item: unknown): boolean {
+  const b = record(item);
+  return (
+    !!b &&
+    Number.isSafeInteger(b.featureId) &&
+    Number(b.featureId) >= 0 &&
+    finite(b.minHeight, 0, 2000) &&
+    finite(b.height, 0, 2000) &&
+    Number(b.height) > Number(b.minHeight) &&
+    Array.isArray(b.bounds) &&
+    b.bounds.length === 4 &&
+    b.bounds.every((n) => finite(n, -100000, 100000)) &&
+    b.bounds[2]! > b.bounds[0]! &&
+    b.bounds[3]! > b.bounds[1]!
+  );
 }
 
 function validWaterSample(value: unknown): boolean {
@@ -381,6 +387,13 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
       !finite(style.maxDistance, 100, 50000) ||
       typeof style.color !== 'string' ||
       !/^#[a-f0-9]{6}$/i.test(style.color)
+    )
+      return null;
+    if (
+      style.excludeBuildingParts !== undefined &&
+      (!Array.isArray(style.excludeBuildingParts) ||
+        style.excludeBuildingParts.length > 256 ||
+        !style.excludeBuildingParts.every(validBuildingPart))
     )
       return null;
     if (

@@ -32,6 +32,9 @@ describe('外部数据源协议', () => {
         color: '#aabbcc',
         maxDistance: 20000,
         excludeBounds: [[-10, -10, 10, 10]],
+        excludeBuildingParts: [
+          { featureId: 1, minHeight: 8, height: 25, bounds: [-10, -10, 10, 10] },
+        ],
       },
     };
     expect(
@@ -41,6 +44,7 @@ describe('外部数据源协议', () => {
     for (const change of [
       { reference: undefined },
       { extrusion: { ...vector.extrusion, maxHeight: Infinity } },
+      { extrusion: { ...vector.extrusion, excludeBuildingParts: [{ featureId: 1 }] } },
       { extrusion: { ...vector.extrusion, excludeBounds: [[1, 1, 0, 0]] } },
     ]) {
       expect(
