@@ -824,8 +824,16 @@
       "原始分片": "5/19/3_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 139.933,
-      "三角形数": 15616
-    }
+      "三角形数": 15616,
+      "modelOcclusion": {
+        "sourceAsset": "0ffc18cc8281b5bdc621d7b4a9cd52230f02c6eeb871bea1c0b711599069a9c7",
+        "material": "dc2400779",
+        "texture": "cd00b2ed8c2cbbe8a0b274ca4d7f4b24ce34761c2bf9353c580334f4ea71324a"
+      }
+    },
+    "textures": [
+      "cd00b2ed8c2cbbe8a0b274ca4d7f4b24ce34761c2bf9353c580334f4ea71324a"
+    ]
   },
   {
     "entityId": "bay.91d36a5c-8394-4750-863e-6337cd2b5811",
@@ -3409,7 +3417,7 @@
     "kind": "object",
     "label": "MARINA BAY SANDS (ARTSCIENCE MUSEUM)",
     "regionId": "marina-bay-exterior",
-    "assetHash": "e6ad7551849ed97324c41f8940a3426e8b6d41dfc9bbf82977a0ef7c280d5781",
+    "assetHash": "6f6629b4099f8e84f5102c0a355cd483dae5ce3207608a696f9ad74b683c87b2",
     "bounds": {
       "min": [
         -266.013858,
@@ -6620,7 +6628,7 @@
     "kind": "object",
     "label": "THE SAIL @ MARINA BAY",
     "regionId": "marina-bay-exterior",
-    "assetHash": "2ee202b5a9f76145405850fef7c181113580da9e8d2a6d249e23b3c413c137ec",
+    "assetHash": "9ae09fe1556281aaa41f64a4e587897d7308729513e9be326d37fcc9a4e97d92",
     "bounds": {
       "min": [
         157.142935,
@@ -6643,7 +6651,7 @@
       "官方测量高度（米）": 241.983,
       "三角形数": 1728,
       "modelOcclusion": {
-        "sourceAsset": "2ee202b5a9f76145405850fef7c181113580da9e8d2a6d249e23b3c413c137ec",
+        "sourceAsset": "9ae09fe1556281aaa41f64a4e587897d7308729513e9be326d37fcc9a4e97d92",
         "material": "dc2400602",
         "texture": "9607caad0ba4fcb78d893e3a45557de1896f738c74b44cadf511a6c5847d5e04"
       }
@@ -6748,7 +6756,7 @@
     "kind": "object",
     "label": "ONE MARINA BOULEVARD",
     "regionId": "marina-bay-exterior",
-    "assetHash": "d6a2f36dba4b948c5e6687e5e58b4c6ea8cc10fddf6786f205c39ecb405317a2",
+    "assetHash": "d343a89397510dceb9386a7747ef6f427fb3c913ff9f9cd51351aa298bf6687c",
     "bounds": {
       "min": [
         231.076513,
