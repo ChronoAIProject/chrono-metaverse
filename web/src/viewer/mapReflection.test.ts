@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { expect, it, vi } from 'vitest';
+import { skyRadiance } from './skyRadiance';
 import { MapReflection } from './mapReflection';
 
 it('步行共用水面倒影，切换机位、转身和大幅缩放时在同一帧重画一次', () => {
@@ -46,5 +47,38 @@ it('步行共用水面倒影，切换机位、转身和大幅缩放时在同一�
   } finally {
     clock.mockRestore();
     mirror.dispose();
+  }
+});
+
+it('restores the camera background and retries a failed radiance capture', () => {
+  const reflection = new MapReflection();
+  const renderer = { getRenderTarget: () => null } as THREE.WebGLRenderer;
+  const scene = new THREE.Scene();
+  const visibleSky = new THREE.Texture();
+  const radiance = new THREE.DataTexture();
+  scene.background = visibleSky;
+  skyRadiance.set(visibleSky, radiance);
+  const camera = new THREE.PerspectiveCamera();
+  camera.position.y = 2;
+  camera.updateMatrixWorld();
+  const draw = vi
+    .spyOn(Reflect.get(reflection, 'mirror'), 'onBeforeRender')
+    .mockImplementationOnce(() => {
+      expect(scene.background).toBe(radiance);
+      throw new Error('interrupted');
+    })
+    .mockImplementation(() => {
+      expect(scene.background).toBe(radiance);
+    });
+  try {
+    expect(() => reflection.update(renderer, scene, camera, 0)).toThrow('interrupted');
+    expect(scene.background).toBe(visibleSky);
+    expect(reflection.update(renderer, scene, camera, 0)).toBe(true);
+    expect(draw).toHaveBeenCalledTimes(2);
+    expect(scene.background).toBe(visibleSky);
+  } finally {
+    reflection.dispose();
+    visibleSky.dispose();
+    radiance.dispose();
   }
 });

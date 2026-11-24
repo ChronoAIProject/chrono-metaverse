@@ -269,6 +269,7 @@ export class ExternalContentView {
     private readonly scene: THREE.Scene,
     private readonly host: HTMLElement,
     private readonly providerCreditsHost: HTMLElement,
+    private readonly loadTexture?: (hash: string) => Promise<THREE.Texture>,
   ) {
     this.downloadQueue.priorityCallback = DEFAULT_DOWNLOAD_QUEUE.priorityCallback;
     this.parseQueue.priorityCallback = DEFAULT_PARSE_QUEUE.priorityCallback;
@@ -314,7 +315,15 @@ export class ExternalContentView {
     for (const { config, entity, placement, access, hologram } of selected) {
       const item =
         config.format === 'mvt'
-          ? new VectorContentItem(config, entity, placement, this.credit, access, hologram)
+          ? new VectorContentItem(
+              config,
+              entity,
+              placement,
+              this.credit,
+              access,
+              hologram,
+              this.loadTexture,
+            )
           : new ExternalItem(
               config,
               entity,

@@ -1,5 +1,7 @@
 import * as THREE from 'three';
+import { facadeShadow } from './facadeShadow';
 import { poolWater } from './poolWater';
+import { skyRadiance } from './skyRadiance';
 
 /** 米制视距的空气透视，在海湾尺度上逐渐降低反差。 */
 const cityAir = /* glsl */ `
@@ -31,13 +33,16 @@ function citySkyUniforms(material: THREE.Material) {
     beforeRender.call(this, ...args);
     const scene = args[1];
     const background = scene.background;
-    panorama.value =
+    const display =
       background instanceof THREE.Texture &&
       background.mapping === THREE.EquirectangularReflectionMapping
         ? background
         : null;
-    hasPanorama.value = !!panorama.value;
-    halfDistance.value = panorama.value?.userData.airHalfDistance ?? 4800;
+    // Reflections and air scattering are mixed before the material's tone mapping.
+    panorama.value =
+      display && material.toneMapped ? (skyRadiance.get(display) ?? display) : display;
+    hasPanorama.value = !!display;
+    halfDistance.value = display?.userData.airHalfDistance ?? 4800;
     yaw.value = scene.backgroundRotation.y;
   };
   return {
@@ -123,15 +128,30 @@ export function cityModelAir(material: THREE.Material) {
     material instanceof THREE.MeshStandardMaterial && material.userData.reflectSky === true;
   const probes = glass ? facadeProbeUniforms(material) : null;
   // A prefiltered glTF probe uses model-space directions and stores linear radiance in sRGB.
+  const levels = material.userData.reflectionLevels;
+  const heights =
+    levels &&
+    Number.isFinite(levels.first) &&
+    Number.isFinite(levels.last) &&
+    levels.last > levels.first &&
+    Number.isInteger(levels.count) &&
+    levels.count >= 2 &&
+    levels.count <= 8 &&
+    Number.isFinite(levels.scale) &&
+    levels.scale > 0 &&
+    levels.scale <= 64
+      ? new THREE.Vector4(levels.first, levels.last, levels.count, levels.scale)
+      : null;
   const localProbe =
     material instanceof THREE.MeshStandardMaterial &&
-    material.userData.prefilteredReflection === true &&
     material.emissiveMap &&
-    !glass;
+    !glass &&
+    (heights || material.userData.prefilteredReflection === true);
   const worldToProbe = localProbe ? { value: new THREE.Matrix3() } : null;
   if (worldToProbe) {
     const rotation = new THREE.Matrix4();
-    material.customProgramCacheKey = () => 'city-local-reflection';
+    material.customProgramCacheKey = () =>
+      heights ? 'city-height-reflections' : 'city-local-reflection';
     material.onBeforeRender = (_renderer, _scene, _camera, _geometry, object) => {
       worldToProbe.value.setFromMatrix4(rotation.extractRotation(object.matrixWorld)).transpose();
     };
@@ -168,6 +188,17 @@ export function cityModelAir(material: THREE.Material) {
     }
     if (worldToProbe) {
       shader.uniforms.worldToProbe = worldToProbe;
+      if (heights) {
+        shader.uniforms.reflectionLevels = { value: heights };
+        shader.vertexShader =
+          'varying float probeHeight;\n' +
+          shader.vertexShader.replace(
+            '#include <begin_vertex>',
+            '#include <begin_vertex>\nprobeHeight = position.y;',
+          );
+        shader.fragmentShader =
+          'varying float probeHeight;\nuniform vec4 reflectionLevels;\n' + shader.fragmentShader;
+      }
       shader.fragmentShader =
         'uniform mat3 worldToProbe;\n' +
         shader.fragmentShader.replace(
@@ -176,7 +207,23 @@ export function cityModelAir(material: THREE.Material) {
           vec3 probeRay = reflect(-geometryViewDir, geometryNormal);
           probeRay = normalize(mix(probeRay, geometryNormal, pow4(material.roughness)));
           vec3 localRay = worldToProbe * inverseTransformDirection(probeRay, viewMatrix);
-          radiance += texture2D(emissiveMap, equirectUv(localRay)).rgb;`,
+          vec2 probeUV = equirectUv(localRay);
+          ${
+            heights
+              ? `float count = reflectionLevels.z;
+          float level = clamp((probeHeight - reflectionLevels.x) /
+            (reflectionLevels.y - reflectionLevels.x), 0.0, 1.0) * (count - 1.0);
+          float low = floor(level);
+          float edge = 0.5 * count / float(textureSize(emissiveMap, 0).y);
+          probeUV.y = clamp(probeUV.y, edge, 1.0 - edge) / count;
+          vec2 dx = dFdx(probeUV), dy = dFdy(probeUV);
+          dx.x -= round(dx.x);
+          dy.x -= round(dy.x);
+          vec3 lower = textureGrad(emissiveMap, probeUV + vec2(0.0,low/count), dx,dy).rgb;
+          vec3 upper = textureGrad(emissiveMap, probeUV + vec2(0.0,min(low+1.0,count-1.0)/count), dx,dy).rgb;
+          radiance += reflectionLevels.w * mix(lower, upper, fract(level));`
+              : 'radiance += texture2D(emissiveMap, probeUV).rgb;'
+          }`,
         );
     }
     Object.assign(shader.uniforms, sky);
@@ -218,6 +265,12 @@ export function cityModelAir(material: THREE.Material) {
               : '') +
             'outgoingLight = cityAir(outgoingLight, cityEye, vec3(0.46,0.55,0.62));\n#include <opaque_fragment>',
         );
+    if (
+      material instanceof THREE.MeshStandardMaterial &&
+      !material.transparent &&
+      !material.alphaTest
+    )
+      facadeShadow(shader);
   };
 }
 
@@ -236,21 +289,58 @@ const facadeFiltering = /* glsl */ `
     panes = mix(panes, coverage, smoothstep(vec2(0.6), vec2(2.0), pixel));
     return clamp(panes.x * panes.y, 0.0, 1.0);
   }
+
+  // Ordinary uncoated window glass. Sum the internal reflections at the
+  // two faces of a pane for each polarization, then average for daylight.
+  float paneReflectance(float cosine) {
+    const float ior = 1.52;
+    float transmitted = sqrt(1.0 - (1.0 - cosine * cosine) / (ior * ior));
+    float rs = (cosine - ior * transmitted) / (cosine + ior * transmitted);
+    float rp = (ior * cosine - transmitted) / (ior * cosine + transmitted);
+    vec2 reflectance = vec2(rs * rs, rp * rp);
+    vec2 pane = reflectance / (1.0 + reflectance);
+    return pane.x + pane.y;
+  }
 `;
 
 /** 同一瓦片的楼房共用材质，远处小于一个像素的窗框过渡到立面的平均色。 */
-export function urbanFacade(material: THREE.MeshLambertMaterial) {
+export function urbanFacade(
+  material: THREE.MeshLambertMaterial,
+  reflections?: {
+    map: { value: THREE.Texture | null };
+    ready: { value: boolean };
+    scale: number;
+    rows: number;
+  },
+) {
+  if (reflections) {
+    material.defines = { ...material.defines, LOCAL_FACADE_REFLECTIONS: 1 };
+  }
   const sky = citySkyUniforms(material);
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, sky);
+    if (reflections)
+      Object.assign(shader.uniforms, {
+        facadeReflectionMap: reflections.map,
+        facadeReflectionReady: reflections.ready,
+        facadeReflectionLayout: { value: new THREE.Vector2(reflections.scale, reflections.rows) },
+      });
     const varying =
+      '#ifdef LOCAL_FACADE_REFLECTIONS\nvarying vec2 probeRowLevel;\nvarying vec3 probeDirection;\n#endif\n' +
       'varying vec3 cityPosition;\nvarying vec3 cityNormal;\nvarying vec2 cityFacade;\nvarying vec4 cityPaint;\n';
     shader.vertexShader =
+      '#ifdef LOCAL_FACADE_REFLECTIONS\nattribute vec2 facadeProbe;\n#endif\n' +
       '#include <colorspace_pars_fragment>\nattribute vec4 facadePaint;\n' +
       varying +
       shader.vertexShader.replace(
         '#include <project_vertex>',
         /* glsl */ `#include <project_vertex>
+        #ifdef LOCAL_FACADE_REFLECTIONS
+          probeRowLevel = facadeProbe;
+          // Planar faces interpolate the unnormalized incident ray in the registered map frame.
+          vec3 r = reflect(mvPosition.xyz, normalize(normalMatrix * normal));
+          probeDirection = transpose(mat3(modelViewMatrix)) * r;
+        #endif
         cityPosition = position;
         cityNormal = normal;
         cityFacade = uv;
@@ -259,6 +349,7 @@ export function urbanFacade(material: THREE.MeshLambertMaterial) {
     shader.fragmentShader =
       skyDeclarations +
       cityAir +
+      '#ifdef LOCAL_FACADE_REFLECTIONS\nuniform sampler2D facadeReflectionMap;\nuniform bool facadeReflectionReady;\nuniform vec2 facadeReflectionLayout;\n#endif\n' +
       facadeFiltering +
       varying +
       shader.fragmentShader
@@ -290,16 +381,44 @@ export function urbanFacade(material: THREE.MeshLambertMaterial) {
           /* glsl */ `
         vec3 worldN=inverseTransformDirection(normal,viewMatrix);
         vec3 worldEye=inverseTransformDirection(normalize(vViewPosition),viewMatrix);
+        #if NUM_DIR_LIGHTS == 1 && NUM_POINT_LIGHTS == 0 && NUM_SPOT_LIGHTS == 0 && NUM_RECT_AREA_LIGHTS == 0
+          // A room surface seen through a window receives direct sunlight only
+          // where the eye and sun rays both pass through the same opening.
+          vec3 sun = inverseTransformDirection(directionalLights[0].direction, viewMatrix);
+          vec3 along = vec3(worldN.z, 0.0, -worldN.x);
+          vec2 viewSlope = vec2(dot(along,worldEye), worldEye.y) / max(0.001,dot(worldN,worldEye));
+          vec2 sunSlope = vec2(dot(along,sun), sun.y) / max(0.001,dot(worldN,sun));
+          // Use one storey as the depth of the representative interior bay.
+          vec2 shift = clamp((sunSlope - viewSlope) * module.y / module, -1.0, 1.0);
+          vec2 overlap = max(vec2(0.0), coverage - abs(shift));
+          float sunlitPanes = paneCoverage(grid + 0.5 * shift, overlap);
+          vec3 shadedGlass = glass * wall * max(0.0, panes - sunlitPanes);
+          outgoingLight -= reflectedLight.directDiffuse * shadedGlass / max(diffuseColor.rgb,vec3(0.0001));
+        #endif
         vec3 ray=reflect(-worldEye,worldN);
         float co=cos(citySkyYaw), si=sin(citySkyYaw);
         ray.xz=mat2(co,si,-si,co)*ray.xz;
         ray.y=max(0.015,ray.y);
         vec3 skyLight=cityHasSky ? texture2D(citySky,equirectUv(normalize(ray)),2.0).rgb : vec3(0.34,0.46,0.55);
-        float grazing=pow(1.0-abs(dot(worldEye,worldN)),3.0);
-        float reflection = 0.09 + 0.09*ribbon + 0.12*curtain + 0.32*grazing;
+        #ifdef LOCAL_FACADE_REFLECTIONS
+          if (cityHasSky && facadeReflectionReady && probeRowLevel.x > .5 && wall > 0.0) {
+            // One gutter texel on either longitude edge wraps the panorama at the seam.
+            vec2 size = vec2(textureSize(facadeReflectionMap,0));
+            float stride = size.x / 3.0, rowHeight = size.y / facadeReflectionLayout.y;
+            vec2 uv = equirectUv(normalize(probeDirection));
+            vec2 pixel = vec2(1.0 + uv.x * (stride - 2.0),
+              (probeRowLevel.x - 1.0) * rowHeight + clamp(uv.y * rowHeight, 0.5, rowHeight - 0.5));
+            float level = clamp(probeRowLevel.y,0.0,2.0), low = floor(level);
+            vec3 a = textureLod(facadeReflectionMap,(pixel + vec2(low * stride,0.0)) / size,0.0).rgb;
+            vec3 b = textureLod(facadeReflectionMap,(pixel + vec2(min(low+1.0,2.0) * stride,0.0)) / size,0.0).rgb;
+            skyLight = facadeReflectionLayout.x * mix(a,b,fract(level));
+          }
+        #endif
+        float reflection = paneReflectance(clamp(abs(dot(worldEye,worldN)),0.0,1.0));
         outgoingLight=mix(outgoingLight,skyLight,wall*panes*reflection);
         outgoingLight=cityAir(outgoingLight,-vViewPosition,mix(vec3(0.46,0.55,0.62),skyLight,0.15));
         #include <opaque_fragment>`,
         );
+    facadeShadow(shader);
   };
 }

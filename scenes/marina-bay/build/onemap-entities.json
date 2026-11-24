@@ -758,7 +758,7 @@
     "kind": "object",
     "label": "MARINA BAY SANDS SINGAPORE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "b5193c5e0a2445bf56e9ea741a42c408d53f01da0715b5bf81cddad55fd5a515",
+    "assetHash": "f0f746891d58af9fbb119958f1cf22a89a1d84657d33b2796f93b39b3cda5dda",
     "bounds": {
       "min": [
         -661.780779,
@@ -782,7 +782,7 @@
       "三角形数": 14238,
       "原建筑资源": "95664d417851f133b6a370bda1e85cf1851107852768a377516e02ff5653e8ea",
       "玻璃参考": "https://commons.wikimedia.org/wiki/File:Marina_Bay_Sands_view_from_Merlion_Park,_Singapore_(Ank_Kumar)_01.jpg",
-      "立面处理": "按塔顶角点和塔身轮廓配准鱼尾狮公园的实拍，将可见临湾窗带投影到 SLA 模型。低层受屋顶遮挡的玻璃沿同列可见窗带估补。",
+      "立面处理": "按塔顶角点和塔身轮廓配准鱼尾狮公园的实拍，将可见临湾窗带投影到 SLA 模型。低层受屋顶遮挡的玻璃沿同列可见窗带估补。临湾幕墙随视角反射日间天空。",
       "泳池溢流边": "沿 SLA 原模型临湾池唇折线，依无边泳池现场照片校正其高出水面的视觉高度，准确高度为估值。",
       "泳池现场参考": "https://commons.wikimedia.org/wiki/File:Infinity_Pool_at_Marina_Bay_Sands_SkyPark_Singapore_Ank_Kumar_Infosys_Limited_04.jpg",
       "玻璃影像署名": "Marina Bay Sands view from Merlion Park, Singapore (Ank Kumar) 01. Ank Kumar, CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Cropped, masked and projected into the bay-facing glazing. https://commons.wikimedia.org/wiki/File:Marina_Bay_Sands_view_from_Merlion_Park,_Singapore_(Ank_Kumar)_01.jpg"
@@ -1895,8 +1895,16 @@
       "原始分片": "6/38/4_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 278.219,
-      "三角形数": 2564
-    }
+      "三角形数": 2564,
+      "modelOcclusion": {
+        "material": "dc2400812",
+        "texture": "6200aa383adf9930cccb8bc9b7d08ebaa8d9a893e995173a7ebf75afaa6bcb14",
+        "sourceAsset": "33f987665d9ab65825fb16817d37418f229835930a62657e9a97a752a19be209"
+      }
+    },
+    "textures": [
+      "6200aa383adf9930cccb8bc9b7d08ebaa8d9a893e995173a7ebf75afaa6bcb14"
+    ]
   },
   {
     "entityId": "bay.05610e23-c9f7-4edc-aa67-c1a4bf7eb29a",
@@ -2315,8 +2323,16 @@
       "原始分片": "6/38/4_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 279.586,
-      "三角形数": 1964
-    }
+      "三角形数": 1964,
+      "modelOcclusion": {
+        "material": "dc2400182",
+        "texture": "228ec5a76f258a4cbe4eca5d91656e81bdb3e9298d9a88ff1eb0bf92d6e99b55",
+        "sourceAsset": "68bf31023df1bdbea148bd4d42c9e5a5c918e64088c997639998dccf9346a43d"
+      }
+    },
+    "textures": [
+      "228ec5a76f258a4cbe4eca5d91656e81bdb3e9298d9a88ff1eb0bf92d6e99b55"
+    ]
   },
   {
     "entityId": "bay.9274f3a4-2af5-445f-85d3-3844ff778650",
@@ -2345,7 +2361,24 @@
       "原始分片": "6/38/5_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 280.084,
-      "三角形数": 9320
+      "三角形数": 9320,
+      "modelOcclusion": {
+        "material": "dc2400707",
+        "texture": "9cdd8c4a2fbf80046ba8432c2f8bf35d30d8bb5e7a6254c19f930f7e26d839dc",
+        "sourceAsset": "75c2d8bf817229b247304f90f0331c7140de142054c33c9901894db09de78ef0"
+      },
+      "日间外观参考": "依据 2010 年 Singapore Skyline from Esplanade 和 2015 年 Singapore Marina-Bay-Panorama-02 的临湾立面亮度，以浮尔顿酒店向阳石墙作曝光参照。"
+    },
+    "textures": [
+      "9cdd8c4a2fbf80046ba8432c2f8bf35d30d8bb5e7a6254c19f930f7e26d839dc"
+    ],
+    "material": {
+      "shading": "albedo",
+      "tint": [
+        224,
+        224,
+        224
+      ]
     }
   },
   {
@@ -3324,7 +3357,7 @@
     "kind": "object",
     "label": "TOWER 3 (MARINA BAY SANDS SINGAPORE)",
     "regionId": "marina-bay-exterior",
-    "assetHash": "474a60b1d7e4f4c206ad106a743370a3f5dad455af8698f07f8eb2c472f4cb6c",
+    "assetHash": "ef5d0c88b314358d5ac36c68570af5918a7af73c73f75b1b53d79b425b741844",
     "bounds": {
       "min": [
         -499.465987,
@@ -3348,7 +3381,7 @@
       "三角形数": 398,
       "原建筑资源": "798131dc0624167c639000bd26be350b6ba49c8902a7631387922d2a044b7e48",
       "玻璃参考": "https://commons.wikimedia.org/wiki/File:Marina_Bay_Sands_view_from_Merlion_Park,_Singapore_(Ank_Kumar)_01.jpg",
-      "立面处理": "按塔顶角点和塔身轮廓配准鱼尾狮公园的实拍，将可见临湾窗带投影到 SLA 模型。低层受屋顶遮挡的玻璃沿同列可见窗带估补。",
+      "立面处理": "按塔顶角点和塔身轮廓配准鱼尾狮公园的实拍，将可见临湾窗带投影到 SLA 模型。低层受屋顶遮挡的玻璃沿同列可见窗带估补。临湾幕墙随视角反射日间天空。",
       "玻璃影像署名": "Marina Bay Sands view from Merlion Park, Singapore (Ank Kumar) 01. Ank Kumar, CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Cropped, masked and projected into the bay-facing glazing. https://commons.wikimedia.org/wiki/File:Marina_Bay_Sands_view_from_Merlion_Park,_Singapore_(Ank_Kumar)_01.jpg"
     }
   },
@@ -5855,7 +5888,16 @@
       "原始分片": "7/77/10_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 100.423,
-      "三角形数": 2601
+      "三角形数": 2601,
+      "日间外观参考": "依据 2010 年 Singapore Skyline from Esplanade 和 2015 年 Singapore Marina-Bay-Panorama-02 的临湾立面亮度，以浮尔顿酒店向阳石墙作曝光参照。"
+    },
+    "material": {
+      "shading": "albedo",
+      "tint": [
+        224,
+        224,
+        224
+      ]
     }
   },
   {
@@ -5975,7 +6017,16 @@
       "原始分片": "7/77/10_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 176.854,
-      "三角形数": 1332
+      "三角形数": 1332,
+      "日间外观参考": "依据 2010 年 Singapore Skyline from Esplanade 和 2015 年 Singapore Marina-Bay-Panorama-02 的临湾立面亮度，以浮尔顿酒店向阳石墙作曝光参照。"
+    },
+    "material": {
+      "shading": "albedo",
+      "tint": [
+        176,
+        176,
+        176
+      ]
     }
   },
   {
@@ -6170,7 +6221,7 @@
     "kind": "object",
     "label": "MARINA BAY FINANCIAL CENTRE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "9f95b86ce2e1dbbf12b0d93ed0778b34e5ca777617f3dc4521d9ef55f4ad2488",
+    "assetHash": "54281b87d7c45f46a6394b1753ba1861804b0a84df38bd4fa89e4c577c4dc38a",
     "bounds": {
       "min": [
         -115.061183,
@@ -6191,7 +6242,11 @@
       "原始分片": "7/77/7_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 240.368,
-      "三角形数": 1378
+      "三角形数": 1378,
+      "原建筑资源": "9f95b86ce2e1dbbf12b0d93ed0778b34e5ca777617f3dc4521d9ef55f4ad2488",
+      "玻璃参考": [
+        "https://www.openstreetmap.org/way/116905041/history/12"
+      ]
     }
   },
   {
@@ -6712,7 +6767,7 @@
     "kind": "object",
     "label": "OCEAN FINANCIAL CENTRE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "0dad0eb5e4156601ab724462a826b3a8832b1e6321c24e5e4ee08974d775092c",
+    "assetHash": "6d55c9d97f690811490061149f5bc3d35b755f350c51321dbec0d70928b92d16",
     "bounds": {
       "min": [
         334.76153,
@@ -6733,7 +6788,12 @@
       "原始分片": "7/77/9_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 242.216,
-      "三角形数": 2244
+      "三角形数": 2244,
+      "原建筑资源": "0dad0eb5e4156601ab724462a826b3a8832b1e6321c24e5e4ee08974d775092c",
+      "玻璃参考": [
+        "https://www.openstreetmap.org/way/46595387/history/17",
+        "https://www.openstreetmap.org/way/1566589608/history/1"
+      ]
     }
   },
   {
@@ -7044,7 +7104,7 @@
     "kind": "object",
     "label": "TOWER 2 (MARINA BAY SANDS SINGAPORE)",
     "regionId": "marina-bay-exterior",
-    "assetHash": "92eb30ff6bad66008574daab4dd90873e1ad7dfb31579c6cc1e1c580c11d62e8",
+    "assetHash": "2e8e8a55c3f3ac104e04373f3f8eb9138f7225acb50cccdfa939080516fef4f0",
     "bounds": {
       "min": [
         -516.478454,
@@ -7068,7 +7128,7 @@
       "三角形数": 516,
       "原建筑资源": "827fcc819e9171157b0540bd1fa1d054f69ccd42350737f86c614fe1febd92bd",
       "玻璃参考": "https://commons.wikimedia.org/wiki/File:Marina_Bay_Sands_view_from_Merlion_Park,_Singapore_(Ank_Kumar)_01.jpg",
-      "立面处理": "按塔顶角点和塔身轮廓配准鱼尾狮公园的实拍，将可见临湾窗带投影到 SLA 模型。低层受屋顶遮挡的玻璃沿同列可见窗带估补。",
+      "立面处理": "按塔顶角点和塔身轮廓配准鱼尾狮公园的实拍，将可见临湾窗带投影到 SLA 模型。低层受屋顶遮挡的玻璃沿同列可见窗带估补。临湾幕墙随视角反射日间天空。",
       "玻璃影像署名": "Marina Bay Sands view from Merlion Park, Singapore (Ank Kumar) 01. Ank Kumar, CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Cropped, masked and projected into the bay-facing glazing. https://commons.wikimedia.org/wiki/File:Marina_Bay_Sands_view_from_Merlion_Park,_Singapore_(Ank_Kumar)_01.jpg"
     }
   },
@@ -7378,7 +7438,7 @@
     "kind": "object",
     "label": "MARINA BAY FINANCIAL CENTRE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "06c1ea3d086b507ff04e54cfa903f29685eb0f99ee137c4ee89cf416507f89e3",
+    "assetHash": "a4f70d6dc77490ce19bca4f00df603b92cd4bd7ea9f12616db86862e19ad6c26",
     "bounds": {
       "min": [
         -26.917404,
@@ -7399,7 +7459,11 @@
       "原始分片": "8/154/14_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 238.991,
-      "三角形数": 924
+      "三角形数": 924,
+      "原建筑资源": "06c1ea3d086b507ff04e54cfa903f29685eb0f99ee137c4ee89cf416507f89e3",
+      "玻璃参考": [
+        "https://www.openstreetmap.org/way/116905042/history/14"
+      ]
     }
   },
   {
@@ -7519,7 +7583,16 @@
       "原始分片": "8/154/19_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 176.732,
-      "三角形数": 1992
+      "三角形数": 1992,
+      "日间外观参考": "依据 2010 年 Singapore Skyline from Esplanade 和 2015 年 Singapore Marina-Bay-Panorama-02 的临湾立面亮度，以浮尔顿酒店向阳石墙作曝光参照。"
+    },
+    "material": {
+      "shading": "albedo",
+      "tint": [
+        192,
+        192,
+        192
+      ]
     }
   },
   {

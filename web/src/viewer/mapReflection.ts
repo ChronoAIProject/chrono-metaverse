@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { skyRadiance } from './skyRadiance';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 
 /** 镜像相机只绘制背景建筑、场景灯与天空，不递归绘制水面、界面或室内。 */
@@ -30,6 +31,9 @@ export class MapReflection {
     this.eye.layers.set(CITY_REFLECTION_LAYER);
     this.texture.generateMipmaps = true;
     this.texture.minFilter = THREE.LinearMipmapLinearFilter;
+    // At a grazing angle a ripple stretches the sample footprint along one axis.
+    // Filter along that axis while retaining the narrow reflected shoreline.
+    this.texture.anisotropy = 8;
   }
 
   update(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, level: number) {
@@ -60,20 +64,28 @@ export class MapReflection {
     }
     this.capturedPosition.copy(this.position);
     this.capturedRotation.copy(this.rotation);
-    this.last = now;
+    this.last = -Infinity;
     this.mirror.position.y = level;
     this.mirror.updateMatrixWorld();
     this.eye.matrixWorld.copy(camera.matrixWorld);
     this.eye.projectionMatrix.copy(camera.projectionMatrix);
     this.eye.far = camera.far;
-    this.mirror.onBeforeRender(
-      renderer,
-      scene,
-      this.eye,
-      this.mirror.geometry,
-      this.mirror.material as THREE.Material,
-      null!,
-    );
+    const background = scene.background;
+    const radiance = background instanceof THREE.Texture ? skyRadiance.get(background) : undefined;
+    if (radiance) scene.background = radiance;
+    try {
+      this.mirror.onBeforeRender(
+        renderer,
+        scene,
+        this.eye,
+        this.mirror.geometry,
+        this.mirror.material as THREE.Material,
+        null!,
+      );
+    } finally {
+      scene.background = background;
+    }
+    this.last = now;
     const uniforms = (this.mirror.material as THREE.ShaderMaterial).uniforms;
     this.matrix
       .copy(uniforms.textureMatrix!.value)

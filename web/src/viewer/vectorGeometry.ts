@@ -1,7 +1,13 @@
 import * as THREE from 'three';
 import { VectorTile, classifyRings } from '@mapbox/vector-tile';
 import Pbf from 'pbf';
-import type { GroundLayer, RoadLayer, VectorContent } from '../core/externalSource';
+import type {
+  FacadeReflectionBuilding,
+  GroundLayer,
+  RoadLayer,
+  VectorContent,
+  WaterlineEdit,
+} from '../core/externalSource';
 import { GeoReference, tileBounds, tileCoordinates, tileKey, type Tile } from './geography';
 
 type Point = { x: number; y: number };
@@ -199,6 +205,25 @@ function pavingEdge(
   }
 }
 
+function surveyedWaterline(ring: Point[], edits: readonly WaterlineEdit[]): Point[] {
+  for (const edit of edits) {
+    const start = ring.findIndex(
+      ({ x, y }, i) =>
+        x === edit.from[0]![0] &&
+        y === edit.from[0]![1] &&
+        edit.from.every(([a, b], j) => ring[i + j]?.x === a && ring[i + j]?.y === b),
+    );
+    if (start >= 0) {
+      ring = [
+        ...ring.slice(0, start + 1),
+        ...edit.interior.map(([x, y]) => ({ x, y })),
+        ...ring.slice(start + edit.from.length - 1),
+      ];
+    }
+  }
+  return ring;
+}
+
 /** 从同一份矢量数据生成水面或游戏地表。贴着椭球绘制并保留所有内环。 */
 function polygonSurface(
   data: VectorTile,
@@ -206,9 +231,13 @@ function polygonSurface(
   tile: Tile,
   reference: GeoReference,
   ground?: GroundLayer,
+  edits?: readonly WaterlineEdit[],
+  sampledIds?: ReadonlySet<number>,
 ) {
   const layer = data.layers[name];
   if (!layer || tile.z < 14 || layer.length > 10000) return;
+  const excluded = new Set(ground?.excludeFeatureIds);
+  const mask: number[] = [];
   const positions: number[] = [];
   const indices: number[] = [];
   const uv: number[] = [];
@@ -220,6 +249,7 @@ function polygonSurface(
     if (
       ground &&
       (!ground.values.includes(String(feature.properties[ground.property])) ||
+        (feature.id !== undefined && excluded.has(feature.id)) ||
         feature.properties.brunnel ||
         Number(feature.properties.layer ?? 0) !== 0)
     )
@@ -227,8 +257,16 @@ function polygonSurface(
     const rings = feature.loadGeometry();
     vertices += rings.reduce((n, ring) => n + ring.length, 0);
     if (vertices > 50000) return;
+    const matching = edits?.filter(
+      (edit) => edit.featureId === feature.id && edit.extent === feature.extent,
+    );
     for (const polygon of classifyRings(rings)) {
-      const [outer, ...holes] = polygon.map((ring) => clip(ring, feature.extent));
+      const [outer, ...holes] = polygon.map((ring, i) =>
+        clip(
+          i === 0 && matching?.length ? surveyedWaterline(ring, matching) : ring,
+          feature.extent,
+        ),
+      );
       if (!outer || outer.length < 3) continue;
       const contours = [outer, ...holes.filter((hole) => hole.length >= 3)].map((ring) =>
         ring.map((p) => new THREE.Vector2(p.x, p.y)),
@@ -245,6 +283,7 @@ function polygonSurface(
         const point = reference.point(lon, lat, height);
         positions.push(...point.toArray());
         if (ground) uv.push(point.x, -point.z);
+        if (sampledIds) mask.push(feature.id !== undefined && sampledIds.has(feature.id) ? 1 : 0);
       }
       for (const [a, b, c] of faces) {
         if (ground) indices.push(offset + a!, offset + c!, offset + b!);
@@ -263,6 +302,7 @@ function polygonSurface(
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices);
+  if (sampledIds) geometry.setAttribute('sampledWater', new THREE.Uint8BufferAttribute(mask, 1));
   if (ground) {
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     geometry.computeVertexNormals();
@@ -278,12 +318,16 @@ export function vectorGeometry(
   groundRoads: RoadLayer | boolean = false,
   waterLayer?: string,
   groundLayers: readonly GroundLayer[] = [],
+  waterlineEdits?: readonly WaterlineEdit[],
+  sampledWaterIds?: ReadonlySet<number>,
+  reflectionBuildings?: readonly FacadeReflectionBuilding[],
 ) {
   const data = new VectorTile(new Pbf(bytes));
   const layer = data.layers[style.layer];
   const positions: number[] = [];
   const facade: number[] = [];
   const paint: number[] = [];
+  const reflectionRows: number[] = [];
   const indices: number[] = [];
   let features = 0,
     vertices = 0;
@@ -378,8 +422,24 @@ export function vectorGeometry(
       }
       if (indices.length > 600000) throw new Error('矢量瓦片生成几何过大');
       if (style.facade) {
+        // IDs can group separate footprints. Check the surveyed height and position too.
+        const row =
+          reflectionBuildings?.findIndex(
+            (b) =>
+              b.featureId === feature.id &&
+              b.height === height &&
+              b.minHeight === minHeight &&
+              b.bounds[0] < box.max.x &&
+              b.bounds[2] > box.min.x &&
+              b.bounds[1] < box.max.z &&
+              b.bounds[3] > box.min.z,
+          ) ?? -1;
         const rgb = tint ?? 0;
         for (let k = roof; k < positions.length / 3; k++) {
+          if (reflectionBuildings) {
+            const level = (facade[k * 2]! - minHeight) / (height - minHeight);
+            reflectionRows.push(row + 1, (level - 0.2) / 0.3);
+          }
           paint.push(rgb >>> 16, (rgb >>> 8) & 255, rgb & 255, tint === undefined ? 0 : 255);
         }
       }
@@ -392,6 +452,8 @@ export function vectorGeometry(
   geometry.computeBoundingBox();
   if (style.facade) {
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(facade, 2));
+    if (reflectionBuildings)
+      geometry.setAttribute('facadeProbe', new THREE.Float32BufferAttribute(reflectionRows, 2));
     geometry.setAttribute('facadePaint', new THREE.Uint8BufferAttribute(paint, 4, true));
   }
   geometry.computeVertexNormals();
@@ -403,7 +465,19 @@ export function vectorGeometry(
       const surface = polygonSurface(data, layer.layer, tile, reference, layer);
       return surface ? [{ material: layer.material, geometry: surface }] : [];
     }),
-    water: waterLayer ? polygonSurface(data, waterLayer, tile, reference) : undefined,
+    water: waterLayer
+      ? polygonSurface(
+          data,
+          waterLayer,
+          tile,
+          reference,
+          undefined,
+          waterlineEdits?.filter(
+            ({ tile: [z, x, y] }) => z === tile.z && x === tile.x && y === tile.y,
+          ),
+          sampledWaterIds,
+        )
+      : undefined,
     roads: groundRoads
       ? roadLines(data, tile, reference, groundRoads === true ? openMapTilesRoads : groundRoads)
       : undefined,

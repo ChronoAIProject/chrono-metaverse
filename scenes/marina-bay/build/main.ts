@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { isDeepStrictEqual } from 'node:util';
 import type { BuildBase, EntityBody, Kit } from '@chrono-metaverse/sdk';
 import { placeExterior, type Placement } from './placement.ts';
 import { waterfront } from './waterfront.ts';
@@ -13,40 +14,82 @@ export function withBoatQuay(surroundings: EntityBody): EntityBody {
   const masks: number[][] = JSON.parse(readFileSync(new URL('./boat-quay-exclusions.json', import.meta.url), 'utf8'));
   const saved = new Set(existing.map((bounds) => JSON.stringify(bounds)));
   const excludeBounds = [...existing, ...masks.filter((bounds) => !saved.has(JSON.stringify(bounds)))];
-  return { ...surroundings, props: { ...surroundings.props, externalContent: {
-    ...content, extrusion: { ...style, excludeBounds },
+  const survey: { tileSource: string; features: { featureId: number }[] } = JSON.parse(
+    readFileSync(new URL('../references/pedestrian-asphalt.json', import.meta.url), 'utf8'),
+  );
+  let ground: { groundLayers?: unknown[] } = {};
+  if ('sources' in content && Array.isArray(content.sources) && content.sources.length === 1 &&
+      content.sources[0]?.url === survey.tileSource &&
+      'groundLayers' in content && Array.isArray(content.groundLayers)) {
+    // OpenMapTiles groups asphalt and stone areas under the same pedestrian subclass.
+    ground = { groundLayers: content.groundLayers.map((layer) => {
+      if (layer?.layer !== 'transportation' || layer.property !== 'subclass' ||
+          layer.material !== 'pavers' || !Array.isArray(layer.values) || !layer.values.includes('pedestrian') ||
+          (layer.excludeFeatureIds !== undefined && !Array.isArray(layer.excludeFeatureIds))) return layer;
+      const ids = new Set<number>(layer.excludeFeatureIds);
+      for (const { featureId } of survey.features) ids.add(featureId);
+      return { ...layer, excludeFeatureIds: [...ids] };
+    }) };
+  }
+  const { waterlineEdit } = JSON.parse(readFileSync(new URL('../references/ns-square-waterfront.json', import.meta.url), 'utf8'));
+  const sources = 'sources' in content && Array.isArray(content.sources) ? content.sources : [];
+  const waterLayer = 'waterLayer' in content && content.waterLayer === 'water';
+  let water = {};
+  if (waterLayer && sources.some(s => s?.url === waterlineEdit.source)) {
+    const previous = 'waterlineEdits' in content ? content.waterlineEdits : [];
+    if (Array.isArray(previous) && !previous.some(edit => isDeepStrictEqual(edit, waterlineEdit))) {
+      water = { waterlineEdits: [...previous, waterlineEdit] };
+    }
+  }
+  const { waterSample } = JSON.parse(readFileSync(new URL('../references/marina-reservoir-water.json', import.meta.url), 'utf8'));
+  if (!('waterSample' in content) && waterLayer && sources.some(s => s?.url === waterSample.source)) {
+    water = { ...water, waterSample };
+  }
+  const { facadeReflections } = JSON.parse(readFileSync(new URL('../references/district-window-reflections.json', import.meta.url), 'utf8'));
+  const addReflections = !('facadeReflections' in content) && 'facade' in style && style.facade === 'urban' &&
+    sources.some(source => source?.url === facadeReflections.source);
+  const textures = addReflections ? { textures: [...new Set([...(surroundings.textures ?? []), facadeReflections.texture as string])] } : {};
+  return { ...surroundings, ...textures, props: { ...surroundings.props, externalContent: {
+    ...content, ...ground, ...water, ...(addReflections ? { facadeReflections } : {}), extrusion: { ...style, excludeBounds },
   } } };
 }
 
-interface BaySky {
-  texture?: string;
-  airHalfDistance?: number;
-  daylight?: { directFraction?: number; diffuseProbe?: number[] };
-}
-
-/** Update this site's previous daylight preset while preserving the saved map and sky orientation. */
+/** Only migrate skies previously distributed with the scene. */
 function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | null): EntityBody | null {
   if (!saved || !configured) return saved ?? configured;
-  const environment = saved.props?.environment as { sky?: BaySky } | undefined;
-  const sky = environment?.sky;
-  const target = (configured.props?.environment as { sky?: BaySky } | undefined)?.sky;
-  if (!target?.daylight || !sky?.daylight || sky.texture !== target.texture ||
-      sky.daylight.diffuseProbe !== undefined) return saved;
-  const original = sky.airHalfDistance === undefined && sky.daylight.directFraction === 0.58;
-  const clearDay = sky.airHalfDistance === target.airHalfDistance &&
-    sky.daylight.directFraction === target.daylight.directFraction;
-  if (!original && !clearDay) return saved;
+  const environment = saved.props?.environment as { sky?: Record<string, unknown> } | undefined;
+  const target = configured.props?.environment as { sky?: { texture: string; radiance?: { texture: string } } } | undefined;
+  if (!environment?.sky || !target?.sky) return saved;
+  const previous = JSON.parse(readFileSync(new URL('../references/partly-cloudy-sky.json', import.meta.url), 'utf8'));
+  const base = { texture: previous.texture, yaw: previous.yaw };
+  const { diffuseProbe: _probe, ...daylight } = previous.daylight;
+  const northFacing = JSON.parse(readFileSync(new URL('../references/north-facing-clear-sky.json', import.meta.url), 'utf8'));
+  const { radiance: _oldRadiance, ...previousDisplaySky } = northFacing;
+  const { radiance, ...displaySky } = target.sky;
+  const presets = [
+    displaySky,
+    previousDisplaySky,
+    northFacing,
+    base,
+    { ...base, daylight: { ...daylight, directFraction: 0.58 } },
+    { ...previous, daylight },
+    previous,
+    JSON.parse(readFileSync(new URL('../references/first-clear-sky.json', import.meta.url), 'utf8')),
+    JSON.parse(readFileSync(new URL('../references/integrated-clear-sky.json', import.meta.url), 'utf8')),
+  ];
+  if (!presets.some((preset) => isDeepStrictEqual(preset, environment.sky))) return saved;
+  const textures = new Set(saved.textures);
+  textures.delete(String(environment.sky.texture));
+  textures.add(target.sky.texture);
+  if (radiance) textures.add(radiance.texture);
   return {
     ...saved,
+    textures: [...textures],
     props: {
       ...saved.props,
+      source: configured.props?.source,
       日间照明: configured.props?.日间照明,
-      environment: {
-        ...environment,
-        sky: { ...sky, airHalfDistance: target.airHalfDistance,
-          daylight: { ...sky.daylight, directFraction: target.daylight.directFraction,
-            diffuseProbe: target.daylight.diffuseProbe } },
-      },
+      environment: { ...environment, sky: target.sky },
     },
   };
 }

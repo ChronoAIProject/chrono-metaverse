@@ -1,0 +1,91 @@
+{
+  "skyTexture": "4b0934f93c69c2e47d0dc10773827b68c6f899e015156f2f1e0f7b115445785e",
+  "skyYaw": -120.3757,
+  "models": [
+    {
+      "entityId": "bay.riverwalk-surveyed-facade",
+      "way": "https://www.openstreetmap.org/way/326926544",
+      "wayVersion": "7",
+      "tileFootprintOverlap": 0.977786810248951,
+      "minHeight": 30,
+      "height": 100,
+      "photo": "https://commons.wikimedia.org/wiki/File:Singapore_River_5.JPG",
+      "sourceCornersPixels": [
+        [
+          576,
+          71
+        ],
+        [
+          757,
+          55
+        ],
+        [
+          779,
+          481
+        ],
+        [
+          577,
+          494
+        ]
+      ],
+      "credit": "Footprint © OpenStreetMap contributors, ODbL 1.0. Photo by Terence Ong (CC BY 2.5), https://commons.wikimedia.org/wiki/File:Singapore_River_5.JPG. Rectified and exposure-corrected. Daylight tone reference: Dmitry Rozhkov, CC BY-SA 3.0 (separate image used for relative luminance measurement only).",
+      "placement": "One rectified face adapted to the width of each surveyed wall. The map supplies the roof.",
+      "daylightReference": "https://commons.wikimedia.org/wiki/File:Singapore_River,_Singapore_-_panoramio_(3).jpg",
+      "apertureToConcreteLuminance": 0.02624,
+      "daylightReferenceSamples": {
+        "window": [
+          437,
+          45,
+          441,
+          50
+        ],
+        "wall": [
+          401,
+          45,
+          415,
+          50
+        ]
+      }
+    },
+    {
+      "entityId": "bay.central-office-one-surveyed-facade",
+      "way": "https://www.openstreetmap.org/way/325903782",
+      "wayVersion": "5",
+      "tileFootprintOverlap": 0.9827566137307171,
+      "minHeight": 18,
+      "height": 85,
+      "photo": "https://commons.wikimedia.org/wiki/File:Clarke_Quay_Central_09-11-2023.jpg",
+      "sourceCornersPixels": [
+        [
+          598,
+          271
+        ],
+        [
+          833,
+          24
+        ],
+        [
+          866,
+          567
+        ],
+        [
+          580,
+          678
+        ]
+      ],
+      "credit": "Footprint © OpenStreetMap contributors, ODbL 1.0. Photo by LN9267 (CC BY-SA 4.0), https://commons.wikimedia.org/wiki/File:Clarke_Quay_Central_09-11-2023.jpg. Rectified and exposure-corrected. Adapted texture and model: CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/.",
+      "placement": "One rectified face adapted to the width of each surveyed wall. The map supplies the roof.",
+      "reflection": {
+        "heightsAboveModelBaseMeters": [
+          15.41,
+          34.85,
+          54.28
+        ],
+        "width": 256,
+        "rowsPerLevel": 128,
+        "radianceScale": 8,
+        "source": "Six linear HDR views per level with this model and its underlying map feature excluded. Includes SLA OneMap, OpenStreetMap contributors, Copernicus Sentinel and Poly Haven as credited in the scene."
+      }
+    }
+  ]
+}

@@ -229,10 +229,11 @@ describe('贴图缓存：按（哈希，用途）', () => {
       () => 8,
       (count) => counts.push(count),
     );
-    const [color, normal, again] = await Promise.all([
+    const [color, normal, again, occlusion] = await Promise.all([
       cache.get(COLOR, 'color'),
       cache.get(COLOR, 'normal'),
       cache.get(COLOR, 'color'),
+      cache.get(COLOR, 'model-occlusion'),
     ]);
     expect(load).toHaveBeenCalledTimes(1);
     expect(color).toBe(image);
@@ -242,6 +243,10 @@ describe('贴图缓存：按（哈希，用途）', () => {
     expect(color!.colorSpace).toBe(THREE.SRGBColorSpace);
     expect(normal!.colorSpace).toBe(THREE.NoColorSpace);
     expect(normal!.anisotropy).toBe(8);
+    expect(occlusion).not.toBe(normal);
+    expect(occlusion!.flipY).toBe(false);
+    expect(occlusion!.colorSpace).toBe(THREE.NoColorSpace);
+    expect(color!.flipY).toBe(true);
     expect(counts).toEqual([0, 1, 0]);
     cache.dispose();
   });

@@ -27,6 +27,8 @@ One Fullerton 临水入口的玻璃侧墙和后墙采用 Андрей Бобро
 
 达尔豪西纪念碑的高度与轴向取自 OneMap 测量模型。石阶、角墩及四盏灯按实拍估定细部。材质文件 `references/dalhousie-obelisk-surfaces.jpg` 由 Mike Peel 与 Terence Ong 的照片裁切、透视校正和调色，改编图集按 CC BY-SA 4.0 分发。[Mike Peel 的 2023 年照片，CC BY-SA 4.0](https://commons.wikimedia.org/wiki/File:At_Singapore_2023_112.jpg) · [Terence Ong 的灯柱照片，CC BY 2.5](https://commons.wikimedia.org/wiki/File:Daihousie_Obelisk_2.JPG) · [改编图集许可](https://creativecommons.org/licenses/by-sa/4.0/)
 
+高街中心、半岛广场与国家法院的两座塔楼按 OpenStreetMap 轮廓和标高配准。窗带与立柱来自 2005、2022 和 2023 年的实拍，背面复用同楼可见的立面，立柱出挑深度按照片估算。高街中心照片由 Sengkang 自由授权使用。半岛广场与法院的改编贴图和模型按 CC BY-SA 4.0 分发。[高街中心](https://commons.wikimedia.org/wiki/File:High_Street_Centre_2,_Dec_05.JPG) · [Diego Delso 的半岛广场照片](https://commons.wikimedia.org/wiki/File:Peninsula_Plaza,_Singapur,_2023-08-18,_DD_19.jpg) · [Wzhkevin 的国家法院照片](https://commons.wikimedia.org/wiki/File:State_Court_Tower,_Singapore_-_2022-07-26.jpg) · [改编许可](https://creativecommons.org/licenses/by-sa/4.0/) · [地图数据许可](https://www.openstreetmap.org/copyright)
+
 驳船码头 45 至 85 号之间的 40 栋临河店屋按 OpenStreetMap 独立地块、楼层和高度建模。OneMap 正射影像用于估读岸线、屋面分段和逐户瓦色。12 个排除框覆盖原有的 40 个矢量地块。门窗与雨棚按同街实拍近似，岸墙高度和屋脊为估值。[OpenStreetMap 数据许可](https://www.openstreetmap.org/copyright) · [OneMap](https://www.onemap.gov.sg/)
 
 店屋图集裁切、透视校正并调色自 Frank Schulenburg 的街面照片、Balou46 的隔河照片与 Chensiyuan 的俯拍。改编图集与模型以 CC BY-SA 4.0 分发。[Frank Schulenburg，CC BY-SA 4.0](https://commons.wikimedia.org/wiki/File:Shophouses_on_Boat_Quay,_Singapore_(2023)-L1003691.jpg) · [Balou46，CC BY-SA 3.0](https://commons.wikimedia.org/wiki/File:SG-riverside-boat-quay.jpg) · [Chensiyuan，CC BY-SA 4.0](https://commons.wikimedia.org/wiki/File:Boat_Quay_in_Singapore_(Cropped).jpg) · [改编图集许可](https://creativecommons.org/licenses/by-sa/4.0/)
@@ -131,3 +133,9 @@ node ../../sdk/typescript/dist/cli.js push --inline --preview-ttl 604800
 2026-11-12 缓存与整楼验收：新草稿包含 268 个外景物件，原生预览共加载 320 个物件、292 个模型实例；首次下载 305 份资源，刷新后资源下载数为 0，预览授权两次均重新验证。拉远能看到完整 Tower 1 和十四层办公室标记，点击返回室内。线上无脚本或网络错误，场景保持草稿状态。
 
 2026-11-12 用户确认预览后保存至原空间：`seq 8`，提交 `aa65f277caf34001b23eb9af3beba69e`。保存后读取快照确认新增 268 个背景物件，原有 52 个室内物件的哈希、6 个锚点和扫描资源均一致。
+
+NS Square 临水施工平台的岸线取自 2026 年 10 月 31 日 Sentinel-2C 的 10 米真彩色影像。平台表面使用该影像和 Poly Haven 的 Concrete Floor 02 扫描。水侧桩墙、护栏及高程按 2026 年 9 月的现场照片估算。场景在 OpenFreeMap 的水域要素仍保留旧施工边界时，将该段水面接到围护外缘。Contains modified Copernicus Sentinel data 2026. [Sentinel-2 产品](https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/S2C_48NUG_20261031_0_L2A) · [现场照片](https://commons.wikimedia.org/wiki/File:The_Float@Marina_Bay_undergoing_demolition,_Sep_2026.jpg) · [Concrete Floor 02，CC0](https://polyhaven.com/a/concrete_floor_02) · [OpenStreetMap 数据许可](https://www.openstreetmap.org/copyright)
+
+滨海湾金融中心二、三号楼和 Ocean Financial Centre 的办公幕墙由 OSM 玻璃立面范围与 OneMap 实测模型配准。每栋在楼高的 23%、52%、81% 处采集六个方向的线性光照，把周边楼体、街道、水面和天空保存为反射贴图。查看器按窗面高度与观察方向取样。每一层的采样位置在塔楼中央，近距离的倒影采用这个位置估算。原始建筑编号、玻璃范围和采样高度列于 `references/financial-district-glass.json`。[建筑师项目资料](https://www.kpf.com/project/marina-bay-financial-centre) · [OneMap](https://www.onemap.gov.sg/) · [OpenStreetMap 数据许可](https://www.openstreetmap.org/copyright)
+
+蓄水池中心水色按 2026 年八期 Sentinel-2 L2A 影像估算。在距岸 55 米以上的水域选取 20 米样本，以两个短波红外波段分别拟合可见光统计值，估计水体的漫反射颜色。天空、建筑倒影和阳光闪点由查看器另行计算。该估计受水质和大气校正影响，空间范围及各期观测见 `references/marina-reservoir-water.json`。Contains modified Copernicus Sentinel data 2026. [Earth Search Sentinel-2 L2A](https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a)

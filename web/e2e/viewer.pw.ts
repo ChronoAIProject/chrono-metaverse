@@ -977,6 +977,9 @@ test('预览页：标明草稿预览，草稿区块和新贴图经预览接口�
   expect(await numberAttr(page, 'data-textured')).toBeGreaterThan(0);
   await expectRendered(page);
   await page.screenshot({ path: join(SHOTS, 'preview.png') });
+  await page.setViewportSize({ width: 360, height: 780 });
+  await expect(page.locator('.viewer__canvas')).toHaveCSS('width', '360px');
+  await expect(page.getByRole('button', { name: '显示设置' })).toBeInViewport({ ratio: 1 });
   expect(previewRequests.length).toBeGreaterThan(2);
   for (const request of previewRequests) {
     expect(request.url.startsWith('/api/public/previews')).toBe(true);

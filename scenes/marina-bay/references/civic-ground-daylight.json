@@ -1,0 +1,55 @@
+{
+  "skyTexture": "4a4bca86c5df121d85d7e9b76de8b02f296792909995a89c169b73295f28607f",
+  "skyYaw": -120.3757,
+  "method": "On the registered daylight scene, integrate indirect radiance reaching a horizontal surface over 256 cosine-weighted sky sectors. Each sector uses the mean incoming radiance from the sun-free HDR panorama, the measured geometry and the foliage alpha masks. Store the ratio to the open-sky diffuse probe as glTF occlusion, bounded to the supported range [0, 1].",
+  "groundSurfaces": [
+    {
+      "entityId": "bay.fullerton-road-sidewalk",
+      "sourceAsset": "6f8701bf09570c7b5dbc6a82571a7d0a61632566b42728b8376fd7e90b042147",
+      "bakedAsset": "5839070a239d57bcd76bf11db1de644278aae4c61bba4aa8f1fcffc7f37a85e6",
+      "centerXZ": [
+        251,
+        555.5
+      ],
+      "widthMeters": 172,
+      "receiverY": -60.08,
+      "resolution": 512
+    },
+    {
+      "entityId": "bay.fullerton-entrance-approach",
+      "sourceAsset": "00b4e58f902ccc3f97df7f4026501fb4e0389c5b5edb3919bdbfc5fcd96d1bfe",
+      "bakedAsset": "b5f68c90a5f57fa6666c72c3b05d34337e7806bd117199a9028f7950da893b8a",
+      "centerXZ": [
+        214.7,
+        581.9
+      ],
+      "widthMeters": 30,
+      "receiverY": -59.7,
+      "resolution": 512
+    },
+    {
+      "entityId": "bay.empress-lawn-obelisk-court",
+      "sourceAsset": "e749ccdc5003a2e10ff68d0c8d4f94b9a3ef1ebfbe5bf6c59c320bdaee473b44",
+      "bakedAsset": "045be37dc95e06ff57ff52ac1e65db55a222f7cc2304dc55e1a76adefc7b5ad3",
+      "centerXZ": [
+        492,
+        693
+      ],
+      "widthMeters": 204,
+      "receiverY": -59.85,
+      "resolution": 512
+    },
+    {
+      "entityId": "bay.raffles-statue-fountain",
+      "sourceAsset": "cf4bf599cd78843c1ee20c088516f4fe4e50aab39406b3f6ea46e73fb8a86c0b",
+      "bakedAsset": "f13d04327c01c340de64162e6b1f3153c896d6ebe28c94399b30a5964938ab1a",
+      "centerXZ": [
+        537,
+        742
+      ],
+      "widthMeters": 44,
+      "receiverY": -59.82,
+      "resolution": 512
+    }
+  ]
+}

@@ -24,6 +24,32 @@ const entities = hostOnly
     : [...ground, ...buildings, ...host, ...streetscape, ...streetTrees];
 const assets = entities.map((entity) => ({ ...entity, purpose: 'model', format: 'glb' }));
 if (!probe && !hostOnly) {
+  const environment = JSON.parse(readFileSync(new URL('build/environment.json', root), 'utf8'));
+  assets.push({
+    entityId: environment.entityId,
+    label: '晴空全景',
+    assetHash: environment.props.environment.sky.texture,
+    purpose: 'texture',
+    format: 'jpeg',
+  });
+  const radiance = environment.props.environment.sky.radiance;
+  if (radiance) assets.push({
+    entityId: environment.entityId,
+    label: '晴空反射辐亮度',
+    assetHash: radiance.texture,
+    purpose: 'texture',
+    format: 'png',
+  });
+  const { facadeReflections } = JSON.parse(
+    readFileSync(new URL('references/district-window-reflections.json', root), 'utf8'),
+  );
+  assets.push({
+    entityId: 'bay.city-surroundings',
+    label: '街区窗面反射',
+    assetHash: facadeReflections.texture,
+    purpose: 'texture',
+    format: 'png',
+  });
   const { quay } = JSON.parse(readFileSync(new URL('context.json', root), 'utf8'));
   for (const [role, hash] of Object.entries(quay?.granite ?? {})) {
     assets.push({

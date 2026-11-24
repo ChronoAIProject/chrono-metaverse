@@ -343,8 +343,10 @@ export function createPublicClient(options: PublicClientOptions = {}): PublicCli
       credentials: browser ? 'same-origin' : 'omit',
     };
     let response = await fetcher(url, init);
-    // 工作台用 POST 读取，短暂的限流或服务故障只重试一次，避免放大并发。
-    if (browser && TRANSIENT_READ_STATUSES.has(response.status)) {
+    // A transient preview asset failure can otherwise leave gaps until the page is reopened.
+    const retryableRead =
+      browser || (preview !== undefined && path.startsWith('/previews/assets/'));
+    if (retryableRead && TRANSIENT_READ_STATUSES.has(response.status)) {
       const delay = readRetryDelay(response);
       if (delay <= MAX_READ_RETRY_DELAY_MS) {
         void response.body?.cancel().catch(() => undefined);

@@ -65,6 +65,43 @@ export interface GroundLayer {
   readonly property: string;
   readonly values: readonly string[];
   readonly material: 'turf' | 'pavers';
+  /** Stable feature IDs from this source whose surveyed surface uses the underlying imagery. */
+  readonly excludeFeatureIds?: readonly number[];
+}
+
+/** Replace the interior of one surveyed shoreline segment in source tile coordinates. */
+export interface WaterlineEdit {
+  readonly source: string;
+  readonly tile: readonly [number, number, number];
+  readonly featureId: number;
+  readonly extent: number;
+  readonly from: readonly (readonly [number, number])[];
+  readonly interior: readonly (readonly [number, number])[];
+}
+
+export interface WaterSample {
+  readonly source: string;
+  readonly featureIds: readonly number[];
+  readonly center: readonly [number, number];
+  /** Blend into the surrounding water over the outer fifth of the sample radius in metres. */
+  readonly radius: number;
+  readonly reflectance: readonly [number, number, number];
+}
+
+export interface FacadeReflectionBuilding {
+  readonly featureId: number;
+  readonly minHeight: number;
+  readonly height: number;
+  /** Bounds of the surveyed footprint in the vector source's local x/z plane. */
+  readonly bounds: readonly [number, number, number, number];
+}
+
+export interface FacadeReflections {
+  readonly source: string;
+  readonly texture: string;
+  readonly scale: number;
+  /** Each atlas row holds panoramas at 20%, 50% and 80% of one building's height. */
+  readonly buildings: readonly FacadeReflectionBuilding[];
 }
 
 export interface VectorContent {
@@ -75,6 +112,9 @@ export interface VectorContent {
   readonly reference: GeographicReference;
   readonly roads?: RoadLayer | false;
   readonly waterLayer?: string;
+  readonly waterSample?: WaterSample;
+  readonly facadeReflections?: FacadeReflections;
+  readonly waterlineEdits?: readonly WaterlineEdit[];
   readonly groundLayers?: readonly GroundLayer[];
   readonly waterReflection?: 'scene';
   readonly extrusion: {
@@ -161,6 +201,92 @@ export function geographicReference(value: unknown): GeographicReference | null 
   return { ...raw, heading: raw.heading ?? 0 } as unknown as GeographicReference;
 }
 
+function validFacadeReflections(value: unknown, textures: readonly string[] | undefined): boolean {
+  const atlas = record(value);
+  if (
+    !atlas ||
+    !publicHttps(atlas.source) ||
+    typeof atlas.texture !== 'string' ||
+    !textures?.includes(atlas.texture) ||
+    !/^[a-f0-9]{64}$/.test(atlas.texture) ||
+    !finite(atlas.scale, 0.01, 64) ||
+    !Array.isArray(atlas.buildings) ||
+    atlas.buildings.length < 1 ||
+    atlas.buildings.length > 64
+  )
+    return false;
+  return atlas.buildings.every((item) => {
+    const b = record(item);
+    return (
+      !!b &&
+      Number.isSafeInteger(b.featureId) &&
+      Number(b.featureId) >= 0 &&
+      finite(b.minHeight, 0, 2000) &&
+      finite(b.height, 0, 2000) &&
+      Number(b.height) > Number(b.minHeight) &&
+      Array.isArray(b.bounds) &&
+      b.bounds.length === 4 &&
+      b.bounds.every((n) => finite(n, -100000, 100000)) &&
+      b.bounds[2]! > b.bounds[0]! &&
+      b.bounds[3]! > b.bounds[1]!
+    );
+  });
+}
+
+function validWaterSample(value: unknown): boolean {
+  const sample = record(value);
+  return (
+    !!sample &&
+    publicHttps(sample.source) &&
+    Array.isArray(sample.featureIds) &&
+    sample.featureIds.length > 0 &&
+    sample.featureIds.length <= 32 &&
+    sample.featureIds.every((n) => Number.isSafeInteger(n) && n >= 0) &&
+    Array.isArray(sample.center) &&
+    sample.center.length === 2 &&
+    finite(sample.center[0], -180, 180) &&
+    finite(sample.center[1], -85.05113, 85.05113) &&
+    finite(sample.radius, 1, 50000) &&
+    Array.isArray(sample.reflectance) &&
+    sample.reflectance.length === 3 &&
+    sample.reflectance.every((n) => finite(n, 0, 1))
+  );
+}
+
+function validWaterlineEdit(value: unknown): boolean {
+  const edit = record(value);
+  if (
+    !edit ||
+    !publicHttps(edit.source) ||
+    !Number.isSafeInteger(edit.featureId) ||
+    Number(edit.featureId) < 0 ||
+    !Number.isInteger(edit.extent) ||
+    !finite(edit.extent, 1, 65536)
+  )
+    return false;
+  const extent = edit.extent as number;
+  const tile = edit.tile;
+  if (
+    !Array.isArray(tile) ||
+    tile.length !== 3 ||
+    !tile.every(Number.isInteger) ||
+    !finite(tile[0], 14, 20) ||
+    !tile.slice(1).every((n) => finite(n, 0, 2 ** tile[0] - 1))
+  )
+    return false;
+  const path = (points: unknown, min: number) =>
+    Array.isArray(points) &&
+    points.length >= min &&
+    points.length <= 64 &&
+    points.every(
+      (p) =>
+        Array.isArray(p) &&
+        p.length === 2 &&
+        p.every((n) => Number.isInteger(n) && finite(n, 0, extent)),
+    );
+  return path(edit.from, 2) && path(edit.interior, 0);
+}
+
 /** 外部流式内容仍是普通背景物件，不改变代理范围和空间编辑权限。 */
 export function externalContentOf(entity: EntityBody): ExternalContent | null {
   if (entity.props?.background !== true) return null;
@@ -199,7 +325,10 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
             g.values.length > 0 &&
             g.values.length <= 32 &&
             g.values.every(field) &&
-            (g.material === 'turf' || g.material === 'pavers')
+            (g.material === 'turf' || g.material === 'pavers') &&
+            (g.excludeFeatureIds === undefined ||
+              (Array.isArray(g.excludeFeatureIds) &&
+                g.excludeFeatureIds.every((id) => Number.isSafeInteger(id) && id >= 0)))
           );
         }))
     )
@@ -230,6 +359,15 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
       (style.distantZoom !== undefined &&
         (!finite(style.distantZoom, 0, 20) || !Number.isInteger(style.distantZoom))) ||
       (raw.waterLayer !== undefined && !field(raw.waterLayer)) ||
+      (raw.facadeReflections !== undefined &&
+        (style.facade !== 'urban' ||
+          !validFacadeReflections(raw.facadeReflections, entity.textures))) ||
+      (raw.waterSample !== undefined && (!raw.waterLayer || !validWaterSample(raw.waterSample))) ||
+      (raw.waterlineEdits !== undefined &&
+        (!raw.waterLayer ||
+          !Array.isArray(raw.waterlineEdits) ||
+          raw.waterlineEdits.length > 16 ||
+          !raw.waterlineEdits.every(validWaterlineEdit))) ||
       (raw.waterReflection !== undefined && (raw.waterReflection !== 'scene' || !raw.waterLayer)) ||
       !field(style.heightProperty) ||
       (style.minHeightProperty !== undefined && !field(style.minHeightProperty)) ||
@@ -263,6 +401,9 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
       reference,
       extrusion: style,
       ...(groundLayers ? { groundLayers } : {}),
+      ...(raw.facadeReflections ? { facadeReflections: raw.facadeReflections } : {}),
+      ...(raw.waterSample ? { waterSample: raw.waterSample } : {}),
+      ...(raw.waterlineEdits ? { waterlineEdits: raw.waterlineEdits } : {}),
       ...(raw.waterReflection ? { waterReflection: raw.waterReflection } : {}),
       ...(raw.waterLayer !== undefined ? { waterLayer: raw.waterLayer } : {}),
       ...(raw.roads !== undefined ? { roads: raw.roads } : {}),

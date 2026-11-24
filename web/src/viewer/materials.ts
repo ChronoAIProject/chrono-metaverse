@@ -20,7 +20,7 @@ import { styleLookKey, type StyleLook } from '../core/styles';
  */
 
 /** 贴图的用途：颜色贴图是 sRGB，法线、粗糙度贴图是线性数据。 */
-export type TextureRole = 'color' | 'normal' | 'roughness';
+export type TextureRole = 'color' | 'normal' | 'roughness' | 'model-occlusion';
 
 /** 按（哈希，用途）取设置好的贴图；没有加载函数时返回 null。 */
 export type TextureLookup = (hash: string, role: TextureRole) => Promise<THREE.Texture> | null;
@@ -52,6 +52,7 @@ export function configureTexture(
   role: TextureRole,
   anisotropy: number,
 ): THREE.Texture {
+  if (role === 'model-occlusion') texture.flipY = false;
   texture.colorSpace = role === 'color' ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
@@ -60,12 +61,33 @@ export function configureTexture(
   return texture;
 }
 
-/** 城市模型斜视近景时，给颜色、凹凸与粗糙度使用相同的纹理采样足迹。 */
+export interface ModelOcclusion {
+  readonly material: string;
+  readonly texture: string;
+}
+
+/** An occlusion atlas is registered to one material's UV0 on one version of a model. */
+export function modelOcclusion(entity: EntityBody): ModelOcclusion | undefined {
+  const value = entity.props?.modelOcclusion;
+  if (!value || typeof value !== 'object') return;
+  const { sourceAsset, material, texture } = value as Record<string, unknown>;
+  if (
+    typeof sourceAsset === 'string' &&
+    sourceAsset === entity.assetHash &&
+    typeof material === 'string' &&
+    material.length > 0 &&
+    typeof texture === 'string' &&
+    /^[0-9a-f]{64}$/.test(texture) &&
+    entity.textures?.includes(texture)
+  )
+    return { material, texture };
+}
+
+/** 斜看实景立面时沿表面采样颜色，让照片与附带的法线、粗糙度保持相同清晰度。 */
 export function filterModelSurface(material: THREE.Material, limit: number) {
   if (
     !(material instanceof THREE.MeshStandardMaterial) ||
     !material.map ||
-    !material.normalMap ||
     material.transparent ||
     material.alphaTest > 0
   )

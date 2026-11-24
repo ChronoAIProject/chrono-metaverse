@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { vectorGeometry, visibleVectorTiles } from './vectorGeometry';
 import { GeoReference, tileCoordinates, tileKey } from './geography';
 import { vectorTileFixture } from '../test/vectorTile';
-import type { VectorContent } from '../core/externalSource';
+import type { VectorContent, WaterlineEdit } from '../core/externalSource';
 
 const tile = { z: 14, x: 14517, y: 6460 };
 const [longitude, latitude] = tileCoordinates(tile.x + 0.5, tile.y + 0.5, tile.z);
@@ -70,6 +70,42 @@ describe('通用矢量三维内容', () => {
     expect(geometry.getAttribute('position').count).toBeLessThan(geometry.index!.count);
     geometry.dispose();
     material.dispose();
+  });
+
+  it('只给高度和位置都匹配的同编号楼体绑定三层反射', () => {
+    const data = vectorTileFixture(24, false, undefined, [
+      [
+        [128, 640],
+        [384, 640],
+        [384, 896],
+        [128, 896],
+      ],
+    ]);
+    const { geometry } = vectorGeometry(
+      data,
+      tile,
+      reference,
+      { ...style, facade: 'urban' },
+      false,
+      undefined,
+      [],
+      undefined,
+      undefined,
+      [{ featureId: 1, minHeight: 0, height: 24, bounds: [-20, -20, 20, 20] }],
+    );
+    const row = geometry.getAttribute('facadeProbe');
+    const uv = geometry.getAttribute('uv');
+    const matched = new Set<number>();
+    let other = 0;
+    for (let i = 0; i < row.count; i++) {
+      if (row.getX(i) === 1) {
+        matched.add(uv.getX(i));
+        expect(row.getY(i)).toBeCloseTo((uv.getX(i) / 24 - 0.2) / 0.3);
+      } else other++;
+    }
+    expect(matched).toEqual(new Set([0, 24]));
+    expect(other).toBeGreaterThan(0);
+    geometry.dispose();
   });
 
   it('近处细瓦片和远处概化瓦片同时可见，同一位置只绘制一次', () => {
@@ -149,7 +185,8 @@ describe('通用矢量三维内容', () => {
       undefined,
       [
         { ...mapping, material: 'turf' },
-        { ...mapping, material: 'pavers' },
+        { ...mapping, material: 'pavers', excludeFeatureIds: [2] },
+        { ...mapping, material: 'pavers', excludeFeatureIds: [1] },
         { ...mapping, material: 'turf', values: ['30'] },
       ],
     ).ground;
@@ -228,4 +265,85 @@ describe('通用矢量三维内容', () => {
     expect(moved).not.toEqual(initial);
     expect(visibleVectorTiles(camera, new THREE.Matrix4(), reference, 14, 12000)).toEqual(initial);
   });
+});
+
+it('updates only a matching water boundary and retains its island', () => {
+  const edit: WaterlineEdit = {
+    tile: [tile.z, tile.x, tile.y],
+    source: 'https://example.org/tiles',
+    featureId: 1,
+    extent: 4096,
+    from: [
+      [1024, 1024],
+      [3072, 1024],
+    ],
+    interior: [
+      [1024, 750],
+      [3072, 750],
+    ],
+  };
+  const water = (change?: WaterlineEdit) =>
+    vectorGeometry(
+      vectorTileFixture(24, true),
+      tile,
+      reference,
+      style,
+      false,
+      'shapes',
+      [],
+      change ? [change] : [],
+    ).water!;
+  const baseline = water();
+  const extended = water(edit);
+  expect(extended.getAttribute('position').count).toBe(baseline.getAttribute('position').count + 2);
+  const mesh = new THREE.Mesh(extended, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+  const hits = (y: number) => {
+    const start = reference.point(...tileCoordinates(tile.x + 0.5, tile.y + y, tile.z), 30);
+    return new THREE.Raycaster(start, new THREE.Vector3(0, -1, 0)).intersectObject(mesh);
+  };
+  expect(hits(0.2).length).toBeGreaterThan(0);
+  expect(hits(0.5)).toHaveLength(0);
+  for (const mismatch of [
+    {
+      ...edit,
+      from: [
+        [1024, 1025],
+        [3072, 1024],
+      ] as const,
+    },
+    { ...edit, extent: 8192 },
+    { ...edit, featureId: 2 },
+    { ...edit, tile: [14, tile.x + 1, tile.y] as const },
+  ]) {
+    const geometry = water(mismatch);
+    expect(geometry.attributes.position!.array).toEqual(baseline.attributes.position!.array);
+    geometry.dispose();
+  }
+  baseline.dispose();
+  extended.dispose();
+  mesh.material.dispose();
+});
+
+it('marks only surveyed water features for reflectance sampling', () => {
+  const data = vectorTileFixture(24, true);
+  for (const [ids, weight] of [
+    [new Set([1]), 1],
+    [new Set([2]), 0],
+  ] as const) {
+    const water = vectorGeometry(
+      data,
+      tile,
+      reference,
+      style,
+      false,
+      'shapes',
+      [],
+      undefined,
+      ids,
+    ).water!;
+    const mask = water.getAttribute('sampledWater');
+    expect(mask.count).toBe(water.getAttribute('position').count);
+    expect(Array.from(mask.array).every((value) => value === weight)).toBe(true);
+    water.dispose();
+  }
 });

@@ -98,7 +98,7 @@
     "regionId": "marina-bay-exterior",
     "layer": "ext",
     "kind": "structure",
-    "assetHash": "6f8701bf09570c7b5dbc6a82571a7d0a61632566b42728b8376fd7e90b042147",
+    "assetHash": "5839070a239d57bcd76bf11db1de644278aae4c61bba4aa8f1fcffc7f37a85e6",
     "label": "浮尔顿路 · 人行道与树穴",
     "bounds": {
       "min": [
@@ -725,7 +725,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "One Fullerton · 临水入口广场",
-    "assetHash": "00b4e58f902ccc3f97df7f4026501fb4e0389c5b5edb3919bdbfc5fcd96d1bfe",
+    "assetHash": "b5f68c90a5f57fa6666c72c3b05d34337e7806bd117199a9028f7950da893b8a",
     "bounds": {
       "min": [
         268.0054661328103,
@@ -1193,7 +1193,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "皇后坊 · 大草坪与达尔豪西纪念碑步道",
-    "assetHash": "e749ccdc5003a2e10ff68d0c8d4f94b9a3ef1ebfbe5bf6c59c320bdaee473b44",
+    "assetHash": "045be37dc95e06ff57ff52ac1e65db55a222f7cc2304dc55e1a76adefc7b5ad3",
     "bounds": {
       "min": [
         494.98935236691,
@@ -1294,7 +1294,7 @@
     "layer": "ext",
     "label": "皇后坊 · 莱佛士铜像与双碗喷泉",
     "regionId": "marina-bay-exterior",
-    "assetHash": "cf4bf599cd78843c1ee20c088516f4fe4e50aab39406b3f6ea46e73fb8a86c0b",
+    "assetHash": "f13d04327c01c340de64162e6b1f3153c896d6ebe28c94399b30a5964938ab1a",
     "bounds": {
       "min": [
         594.0310896557544,
@@ -1319,6 +1319,422 @@
       ],
       "材质版权": "Fountain and statue registration: OneMap, Map Data © Singapore Land Authority and © OpenStreetMap contributors, ODbL. Photos adapted from Stamford Raffles Monument, Singapore, August 2023 by Ralff Nestor Nacor and At Singapore 2023 090 and 093 by Mike Peel. Photographs, adapted atlas and model: CC BY-SA 4.0. Paving: Poly Haven Granite Tile 04 (CC0). https://creativecommons.org/licenses/by-sa/4.0/.",
       "重建说明": "两只喷泉与雕像基座按影像配准。铜像由三个实拍角度重建，背部、基座高度和水位为估值。"
+    }
+  },
+  {
+    "entityId": "bay.high-street-centre-facade",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "586ae3d60cdda3a8de014dc8ba811635114d5160642449a0c4afb1dff0df99b5",
+    "label": "高街中心 · 塔楼立面",
+    "bounds": {
+      "min": [
+        967.3469119086596,
+        -36.37933708597089,
+        719.9383514941709
+      ],
+      "max": [
+        1002.3856473282111,
+        55.62571848299663,
+        750.8110958720805
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "来源": "https://www.openstreetmap.org/way/243430457/history",
+      "重建": "按测绘轮廓与高度配准。窗带从实拍校正，背面与遮挡部分复用同楼可见立面，柱宽与出挑深度为估值。",
+      "材质版权": "Footprint © OpenStreetMap contributors (ODbL 1.0). Photograph by Sengkang (Copyrighted free use), https://commons.wikimedia.org/wiki/File:High_Street_Centre_2,_Dec_05.JPG. Cropped, rectified and exposure-adjusted. Photograph by Sengkang (Copyrighted free use), https://commons.wikimedia.org/wiki/File:High_Street_Centre,_Dec_05.JPG. Cropped, rectified and exposure-adjusted.",
+      "backgroundView": {
+        "focus": [
+          984.8662796184353,
+          9.623190698512872,
+          735.3747236831257
+        ],
+        "maxDistance": 4100
+      }
+    }
+  },
+  {
+    "entityId": "bay.peninsula-plaza-facade",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "fe0819ec7cd9d3dfa0f85ac7a2f2bde482c6e6ec275a1c131661291a38b0b3d9",
+    "label": "半岛广场 · 塔楼立面",
+    "bounds": {
+      "min": [
+        898.3072313498765,
+        -42.417075808182176,
+        1033.0855608063846
+      ],
+      "max": [
+        936.8396290031149,
+        50.59253967353516,
+        1071.3461840004693
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "来源": "https://www.openstreetmap.org/way/257193902/history",
+      "重建": "按测绘轮廓与高度配准。窗带从实拍校正，背面与遮挡部分复用同楼可见立面，柱宽与出挑深度为估值。",
+      "材质版权": "Footprint © OpenStreetMap contributors (ODbL 1.0). Photograph by Diego Delso (CC BY-SA 4.0), https://commons.wikimedia.org/wiki/File:Peninsula_Plaza,_Singapur,_2023-08-18,_DD_19.jpg. Cropped, rectified and exposure-adjusted. Adapted atlas and model: CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/.",
+      "backgroundView": {
+        "focus": [
+          917.5734301764957,
+          4.0877319326764905,
+          1052.215872403427
+        ],
+        "maxDistance": 4100
+      }
+    }
+  },
+  {
+    "entityId": "bay.state-courts-office-facade",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "d1c321632ee44fbbc847e1024580d88927722becd8a97ac00dcec955dea7e92c",
+    "label": "国家法院 · 办公塔 · 塔楼立面",
+    "bounds": {
+      "min": [
+        1325.571347431644,
+        -60.401315731608975,
+        40.771707038502534
+      ],
+      "max": [
+        1361.7817519604744,
+        117.60344938314842,
+        131.39162611403054
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "来源": "https://www.openstreetmap.org/way/699163978/history",
+      "重建": "按测绘轮廓与高度配准。窗带从实拍校正，背面与遮挡部分复用同楼可见立面，柱宽与出挑深度为估值。",
+      "材质版权": "Footprint © OpenStreetMap contributors (ODbL 1.0). Photograph by Wzhkevin (CC BY-SA 4.0), https://commons.wikimedia.org/wiki/File:State_Court_Tower,_Singapore_-_2022-07-26.jpg. Cropped, rectified and exposure-adjusted. Adapted atlas and model: CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/.",
+      "backgroundView": {
+        "focus": [
+          1343.6765496960593,
+          28.60106682576972,
+          86.08166657626654
+        ],
+        "maxDistance": 4100
+      }
+    }
+  },
+  {
+    "entityId": "bay.state-courts-court-facade",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "89bf010e0dd653b5f62cbf725dfcc01aa90e5d71cfcf73cd7ad270edd23589df",
+    "label": "国家法院 · 审判塔 · 塔楼立面",
+    "bounds": {
+      "min": [
+        1354.1178978700634,
+        -60.41014278865853,
+        39.66041736218179
+      ],
+      "max": [
+        1408.4144308340155,
+        117.59883986426749,
+        134.80263700259943
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "来源": "https://www.openstreetmap.org/way/699163979/history",
+      "重建": "按测绘轮廓与高度配准。窗带从实拍校正，背面与遮挡部分复用同楼可见立面，柱宽与出挑深度为估值。",
+      "材质版权": "Footprint © OpenStreetMap contributors (ODbL 1.0). Photograph by Wzhkevin (CC BY-SA 4.0), https://commons.wikimedia.org/wiki/File:State_Court_Tower,_Singapore_-_2022-07-26.jpg. Cropped, rectified and exposure-adjusted. Adapted atlas and model: CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/.",
+      "backgroundView": {
+        "focus": [
+          1381.2661643520396,
+          28.59434853780448,
+          87.23152718239061
+        ],
+        "maxDistance": 4100
+      }
+    }
+  },
+  {
+    "entityId": "bay.empress-garden-trees",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "皇后坊 · 纪念碑园路树冠",
+    "assetHash": "e771cd64be41bf963ce15af1feac84cf7dd8336c59025ea6dc1ee5243dbc704a",
+    "bounds": {
+      "min": [
+        496.34514623392306,
+        -60.033,
+        605.0591719670133
+      ],
+      "max": [
+        544.4538657248509,
+        -45.943,
+        646.7164598832749
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "树位依据": [
+        "https://www.openstreetmap.org/node/2971097471/history/1",
+        "https://www.openstreetmap.org/node/2971097474/history/1",
+        "https://www.openstreetmap.org/node/6435167604/history/2"
+      ],
+      "地图来源": "© OpenStreetMap contributors · ODbL",
+      "树冠依据": "Map Data © Singapore Land Authority / OneMap, OrthoJPG",
+      "现场照片": "https://commons.wikimedia.org/wiki/File:2016_Singapur,_Downtown_Core,_Dalhousie_Obelisk.jpg",
+      "树形素材": "Poly Haven · Island Tree 01 · CC0",
+      "植被依据": "树位来自地图，冠幅和偏向按正射影像估读。树高、胸围和枝形为近似值。"
+    }
+  },
+  {
+    "entityId": "bay.helix-bridge",
+    "layer": "ext",
+    "kind": "structure",
+    "label": "双螺旋桥与四处观景台",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "46d8595905cac843202f00f9d7b031a403c6a6e50a7c0816c246bf04b94d2b01",
+    "bounds": {
+      "min": [
+        -324.8987481504143,
+        -60.68843919182357,
+        882.0914669651925
+      ],
+      "max": [
+        -187.54479826864372,
+        -44.342332960881706,
+        1162.6032195852956
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "平面来源": "https://www.openstreetmap.org/relation/18007977/history/2",
+      "建筑参考": "https://www.coxarchitecture.com.au/project/the-helix-bridge/",
+      "材质版权": "Plan geometry © OpenStreetMap contributors (ODbL). Architectural proportions interpreted from COX Architecture, The Helix Bridge. Asphalt 01 by Poly Haven (CC0).",
+      "重建范围": "桥线与四处观景台据 OSM 和 OneMap 配准。桥面纵坡、净宽、螺旋节距、顶棚分段及支座比例参照建筑师立面与照片估读。"
+    }
+  },
+  {
+    "entityId": "bay.bayfront-bridge",
+    "layer": "ext",
+    "kind": "structure",
+    "label": "海湾舫桥与双螺旋桥联络步道",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "f6b6b144eac692e9f28fce7049e662dc931e849b7aae35d273ddf0a2757a87ff",
+    "bounds": {
+      "min": [
+        -430.24012249362096,
+        -61.68843919182356,
+        819.5613437754259
+      ],
+      "max": [
+        -234.072708796837,
+        -43.19051591643465,
+        1202.0943753053707
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "平面来源": "https://www.openstreetmap.org/way/1160851851/history/7",
+      "影像参考": "Map Data © Singapore Land Authority / OneMap",
+      "材质版权": "Plan geometry © OpenStreetMap contributors (ODbL). Asphalt 01 and Concrete Floor 02 by Poly Haven (CC0).",
+      "重建范围": "OSM 桥面轮廓、车道数、两侧步道和联络通道与 OneMap 航片配准。桥面坡度、桥墩位置、灯杆和栏杆尺寸参照现场照片估读。"
+    }
+  },
+  {
+    "entityId": "bay.ns-square-waterfront",
+    "label": "NS Square 施工期临水平台与围护",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "bb82aec2c251baf0e729f8ca19ce40457666adc1f5ef8df37ca03d28fd36097b",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        -238.73537016190497,
+        -60.690000000000005,
+        946.8441016365741
+      ],
+      "max": [
+        35.65975484124981,
+        -57.06315321248269,
+        1118.8739383927127
+      ]
+    },
+    "props": {
+      "background": true
+    }
+  },
+  {
+    "entityId": "bay.riverwalk-surveyed-facade",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "dec447622d5610ecb93b91e320d9f17ca31787be8b8dab1da4be4d7b61a4e889",
+    "label": "河畔公寓 · 实景立面",
+    "bounds": {
+      "min": [
+        949.5654020133085,
+        -30.36135096336195,
+        563.6906478007509
+      ],
+      "max": [
+        988.3147811208646,
+        39.645322374449435,
+        599.716556490587
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "来源": "https://www.openstreetmap.org/way/326926544",
+      "材质版权": "Footprint © OpenStreetMap contributors, ODbL 1.0. Photo by Terence Ong (CC BY 2.5), https://commons.wikimedia.org/wiki/File:Singapore_River_5.JPG. Rectified and exposure-corrected. Daylight tone reference: Dmitry Rozhkov, CC BY-SA 3.0 (separate image used for relative luminance measurement only).",
+      "重建": "轮廓与标高取自地图。将可见一面的实拍纹理按墙宽配准，其他朝向复用同楼的窗面细部。"
+    }
+  },
+  {
+    "entityId": "bay.central-office-one-surveyed-facade",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "9a42356af9beaa74199ab5b25bc4741cffe946f9db73bc752c329b7f53317419",
+    "label": "克拉码头中央广场一号办公楼 · 实景立面",
+    "bounds": {
+      "min": [
+        1174.6129952735348,
+        -42.39253968471785,
+        462.142324248172
+      ],
+      "max": [
+        1206.9129122379925,
+        24.617652576006307,
+        531.9464493306087
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "来源": "https://www.openstreetmap.org/way/325903782",
+      "材质版权": "Footprint © OpenStreetMap contributors, ODbL 1.0. Photo by LN9267 (CC BY-SA 4.0), https://commons.wikimedia.org/wiki/File:Clarke_Quay_Central_09-11-2023.jpg. Rectified and exposure-corrected. Adapted texture and model: CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/.",
+      "重建": "轮廓与标高取自地图。将可见一面的实拍纹理按墙宽配准，其他朝向复用同楼的窗面细部。"
+    }
+  },
+  {
+    "entityId": "bay.hotel-waterfront-daylight",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "7a0393b614000c144625fa941f528e82cdb6ad1fcea5d447df656a5e6a09a014",
+    "label": "浮尔顿酒店 · 临湾坡屋面",
+    "bounds": {
+      "min": [
+        362.9015002587953,
+        -30.07907427364804,
+        497.0591574385292
+      ],
+      "max": [
+        428.09584002292917,
+        -25.426593280486568,
+        599.5452343186671
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "来源建筑": "bay.462d5ad9-51a7-43f8-8148-02cf56282df7",
+      "材质版权": "Photograph: Jukkabrother, Singapore Skyline from Esplanade, CC BY-SA 4.0, https://commons.wikimedia.org/wiki/File:Singapore_Skyline_from_Esplanade.jpg. Cropped, rectified, exposure-adjusted and repeated. Adapted model and texture: CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/. Placement reference: Map Data © 2026 SLA.",
+      "重建": "沿临水坡屋面配准实拍瓦面和老虎窗，以可见的一段沿屋脊重复。"
+    }
+  },
+  {
+    "entityId": "bay.maybank-waterfront-daylight",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "b3ff51807b2005f1dc905e6c0d351a1976ebda4fbfe35a9764b6f3b5dd152635",
+    "label": "马来亚银行大厦 · 临湾窗带",
+    "bounds": {
+      "min": [
+        431.4327396477583,
+        -28.672208379712714,
+        469.3840448949672
+      ],
+      "max": [
+        466.29092392441174,
+        95.47582297925054,
+        491.66161348753553
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "来源建筑": "bay.a7ebea59-8db8-4310-9789-f8f23da30b9c",
+      "材质版权": "Photograph: Jukkabrother, Singapore Skyline from Esplanade, CC BY-SA 4.0, https://commons.wikimedia.org/wiki/File:Singapore_Skyline_from_Esplanade.jpg. Cropped, rectified, exposure-adjusted and repeated. Adapted model and texture: CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/. Placement reference: Map Data © 2026 SLA.",
+      "重建": "以实拍连续五层楼的深蓝窗带和浅色饰面按测绘外墙配准。侧面复用临湾立面。"
+    }
+  },
+  {
+    "entityId": "bay.empress-place-daylight-windows",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "f6e3759645d0aa2356396e6678d2016bb0b635d3f4a78c62aaef8b6c98fa90e4",
+    "label": "皇后坊大厦 · 临园窗洞和拱券",
+    "bounds": {
+      "min": [
+        563.269320896912,
+        -58.704646999999994,
+        533.4710960464806
+      ],
+      "max": [
+        677.6254228869689,
+        -46.806726999999995,
+        625.1771349035554
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "来源建筑": "bay.330831bd-c70b-4e25-86d9-6d252d737532",
+      "材质版权": "Windows: Terence Ong, Asian Civilisations Museum, Empress Place 7, CC BY 2.5, https://creativecommons.org/licenses/by/2.5/. Rectified and repeated on registered survey bays. https://commons.wikimedia.org/wiki/File:Asian_Civilisations_Museum,_Empress_Place_7.JPG. Placement: Map Data © 2026 Singapore Land Authority / OneMap.",
+      "位置与形制": "以测绘图集配准两向立面的 34 个开间，采用 97 组方窗与拱窗。窗套进深为估值，窗扇使用同栋楼的代表性样本。"
     }
   }
 ]

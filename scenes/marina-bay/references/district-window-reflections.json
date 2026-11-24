@@ -1,0 +1,293 @@
+{
+  "facadeReflections": {
+    "source": "https://tiles.openfreemap.org/planet",
+    "texture": "28f7c4b2bfb408b2ec884130a1f19b5835336a0330c9e8e5838c42cc832336c7",
+    "scale": 8,
+    "buildings": [
+      {
+        "featureId": 10574916432,
+        "minHeight": 10,
+        "height": 176,
+        "bounds": [
+          1428,
+          791,
+          1482,
+          843
+        ]
+      },
+      {
+        "featureId": 13420828172,
+        "minHeight": 7,
+        "height": 147,
+        "bounds": [
+          1385,
+          416,
+          1419,
+          457
+        ]
+      },
+      {
+        "featureId": 465948312,
+        "minHeight": 0,
+        "height": 55,
+        "bounds": [
+          749,
+          1187,
+          837,
+          1263
+        ]
+      },
+      {
+        "featureId": 976607542,
+        "minHeight": 0,
+        "height": 30,
+        "bounds": [
+          867,
+          663,
+          997,
+          743
+        ]
+      },
+      {
+        "featureId": 465948300,
+        "minHeight": 0,
+        "height": 34,
+        "bounds": [
+          726,
+          1255,
+          816,
+          1338
+        ]
+      },
+      {
+        "featureId": 1265205750,
+        "minHeight": 0,
+        "height": 18,
+        "bounds": [
+          1033,
+          452,
+          1048,
+          485
+        ]
+      },
+      {
+        "featureId": 10574916410,
+        "minHeight": 10,
+        "height": 77,
+        "bounds": [
+          1368,
+          767,
+          1416,
+          820
+        ]
+      },
+      {
+        "featureId": 38998200,
+        "minHeight": 0,
+        "height": 15,
+        "bounds": [
+          1154,
+          769,
+          1232,
+          842
+        ]
+      },
+      {
+        "featureId": 3259037842,
+        "minHeight": 18,
+        "height": 40,
+        "bounds": [
+          1052,
+          649,
+          1109,
+          713
+        ]
+      },
+      {
+        "featureId": 481787192,
+        "minHeight": 0,
+        "height": 24,
+        "bounds": [
+          827,
+          805,
+          938,
+          879
+        ]
+      },
+      {
+        "featureId": 1031101462,
+        "minHeight": 0,
+        "height": 72,
+        "bounds": [
+          825,
+          1243,
+          904,
+          1312
+        ]
+      },
+      {
+        "featureId": 40399360,
+        "minHeight": 0,
+        "height": 5,
+        "bounds": [
+          132,
+          -161,
+          177,
+          -141
+        ]
+      }
+    ]
+  },
+  "capture": {
+    "sky": "4b0934f93c69c2e47d0dc10773827b68c6f899e015156f2f1e0f7b115445785e",
+    "yaw": -120.3757,
+    "method": "Six scene-linear faces at 20%, 50% and 80% of the mapped height above the building base, with the receiving vector feature removed. Each prefiltered panorama measures 128 by 64 texels, with a one-texel wrapping gutter at both horizontal ends. Captured in the registered daytime scene.",
+    "sources": [
+      {
+        "way": "https://www.openstreetmap.org/way/1057491643",
+        "center": [
+          103.8443034625,
+          1.29147064375
+        ],
+        "elevations": [
+          43.2,
+          93,
+          142.8
+        ]
+      },
+      {
+        "way": "https://www.openstreetmap.org/way/1342082817",
+        "center": [
+          103.84365815217392,
+          1.2880437695652174
+        ],
+        "elevations": [
+          35,
+          77,
+          119
+        ]
+      },
+      {
+        "way": "https://www.openstreetmap.org/way/46594831",
+        "center": [
+          103.8512112111111,
+          1.2930117555555556
+        ],
+        "elevations": [
+          11,
+          27.5,
+          44
+        ]
+      },
+      {
+        "way": "https://www.openstreetmap.org/way/97660754",
+        "center": [
+          103.84851025862069,
+          1.2891319
+        ],
+        "elevations": [
+          6,
+          15,
+          24
+        ]
+      },
+      {
+        "way": "https://www.openstreetmap.org/way/46594830",
+        "center": [
+          103.85163415,
+          1.2935411333333333
+        ],
+        "elevations": [
+          6.8,
+          17,
+          27.2
+        ]
+      },
+      {
+        "way": "https://www.openstreetmap.org/way/172781491",
+        "center": [
+          103.846808125,
+          1.2872408
+        ],
+        "elevations": [
+          3.6,
+          9,
+          14.4
+        ]
+      },
+      {
+        "way": "https://www.openstreetmap.org/way/1057491644",
+        "center": [
+          103.84471928571429,
+          1.29105435
+        ],
+        "elevations": [
+          23.4,
+          43.5,
+          63.6
+        ]
+      },
+      {
+        "way": "https://www.openstreetmap.org/way/45070947",
+        "center": [
+          103.84639,
+          1.2906091333333334
+        ],
+        "elevations": [
+          3,
+          7.5,
+          12
+        ]
+      },
+      {
+        "way": "https://www.openstreetmap.org/way/325903784",
+        "center": [
+          103.84705050909092,
+          1.2892931090909092
+        ],
+        "elevations": [
+          22.4,
+          29,
+          35.6
+        ]
+      },
+      {
+        "way": "https://www.openstreetmap.org/way/48178719",
+        "center": [
+          103.8492191875,
+          1.2898773625
+        ],
+        "elevations": [
+          4.8,
+          12,
+          19.2
+        ]
+      },
+      {
+        "way": "https://www.openstreetmap.org/way/103110146",
+        "center": [
+          103.85069225000001,
+          1.2936234833333333
+        ],
+        "elevations": [
+          14.4,
+          36,
+          57.6
+        ]
+      },
+      {
+        "way": "https://www.openstreetmap.org/way/660596707",
+        "center": [
+          103.85260141666667,
+          1.2793980666666667
+        ],
+        "elevations": [
+          1,
+          2.5,
+          4
+        ]
+      }
+    ],
+    "credit": "Map Data © 2026 SLA. Map geometry © OpenStreetMap contributors (ODbL 1.0), via OpenFreeMap. Sky and other visible scene sources are credited in scenes/marina-bay/README.md and the respective glTF assets."
+  }
+}

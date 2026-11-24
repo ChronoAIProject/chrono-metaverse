@@ -1,5 +1,6 @@
 import type { ExternalAccess } from '../core/externalSource';
 import * as THREE from 'three';
+import { decodeSkyRadiance, skyRadiance } from './skyRadiance';
 import { twilightSky } from './hologram';
 import { environmentOf, type Environment } from '../core/environment';
 import { GRID_UNIT } from '../core/chunk';
@@ -16,6 +17,7 @@ export class EnvironmentView {
   private readonly metals = new Set<THREE.MeshStandardMaterial>();
   private daylightCity = false;
   private generation = 0;
+  private radiancePending: Promise<THREE.Texture | null> | null = null;
   private skyPending: Promise<THREE.Texture> | null = null;
   private backgroundColor?: string;
   private isCurrent: () => boolean = () => true;
@@ -40,8 +42,15 @@ export class EnvironmentView {
 
   private lightMetal(material: THREE.MeshStandardMaterial): void {
     const sky = this.daylightCity && !this.backgroundColor ? this.sky : null;
+    const radiance = sky && skyRadiance.get(sky);
     const image = sky?.image;
-    if (sky && image instanceof HTMLImageElement && image.naturalWidth > 0 && !this.metalSky) {
+    if (
+      sky &&
+      !radiance &&
+      image instanceof HTMLImageElement &&
+      image.naturalWidth > 0 &&
+      !this.metalSky
+    ) {
       // 银灰钢管需要随粗糙度预过滤的天空。512 像素全景对应 PMREM 的 128 像素材质面。
       const canvas = document.createElement('canvas');
       canvas.width = Math.min(512, image.naturalWidth);
@@ -54,13 +63,13 @@ export class EnvironmentView {
         this.metalSky.flipY = sky.flipY;
       }
     }
-    const map = sky ? this.metalSky : null;
+    const map = radiance ?? (sky ? this.metalSky : null);
     if (material.envMap !== map) {
       material.envMap = map;
       material.needsUpdate = true;
     }
     material.envMapRotation.set(0, this.yaw, 0);
-    material.envMapIntensity = 0.48;
+    material.envMapIntensity = radiance ? 1 : 0.48;
   }
 
   setContent(
@@ -128,6 +137,10 @@ export class EnvironmentView {
         if (!hologram && environment.sky && this.loadTexture) {
           this.host.dataset.sky = 'loading';
           this.skyPending = this.loadTexture(environment.sky.texture);
+          if (environment.sky.radiance)
+            this.radiancePending = this.loadTexture(environment.sky.radiance.texture).catch(
+              () => null,
+            );
         }
       }
     }
@@ -148,6 +161,26 @@ export class EnvironmentView {
         })
         .catch(() => {
           if (generation === this.generation && this.isCurrent()) this.host.dataset.sky = 'failed';
+        });
+    }
+    const radiance = selected?.environment.sky?.radiance;
+    if (radiance && this.radiancePending && this.skyPending) {
+      void Promise.all([this.skyPending, this.radiancePending])
+        .then(([, source]) => {
+          if (generation !== this.generation || !this.isCurrent() || !this.sky) return;
+          this.radiancePending = null;
+          if (!source) return;
+          const texture = decodeSkyRadiance(source, radiance.scale);
+          if (texture) {
+            texture.userData.airHalfDistance = this.sky.userData.airHalfDistance;
+            skyRadiance.set(this.sky, texture);
+            for (const metal of this.metals) this.lightMetal(metal);
+            this.metalSky?.dispose();
+            this.metalSky = null;
+          }
+        })
+        .catch(() => {
+          /* The display panorama also serves as the reflection fallback. */
         });
     }
   }
@@ -186,7 +219,12 @@ export class EnvironmentView {
     this.generation++;
     this.map?.dispose();
     this.map = null;
-    this.sky?.dispose();
+    if (this.sky) {
+      skyRadiance.get(this.sky)?.dispose();
+      skyRadiance.delete(this.sky);
+      this.sky.dispose();
+    }
+    this.radiancePending = null;
     this.sky = null;
     this.metalSky?.dispose();
     this.metalSky = null;
