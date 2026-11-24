@@ -3303,7 +3303,7 @@
     "kind": "object",
     "label": "OUTDOOR THEATRE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "6fb06dbd71e5ef7193dc38730129f1386c44fcace8217a6dd2da8e8eb249fe7a",
+    "assetHash": "87430ab0b33f90fba94ee0e6241a34f6ec84b0d1cf16f241f6dac78ed594d013",
     "bounds": {
       "min": [
         208.132727,
@@ -3324,7 +3324,13 @@
       "原始分片": "6/39/5_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 20.268,
-      "三角形数": 1100
+      "三角形数": 1100,
+      "篷布内衬": {
+        "原模型": "6fb06dbd71e5ef7193dc38730129f1386c44fcace8217a6dd2da8e8eb249fe7a",
+        "面数": 216,
+        "实拍": "https://commons.wikimedia.org/?curid=152986183",
+        "依据": "将对应外表面的原摄影纹理配准到内衬。日间透光强度按跨湾实拍估算。"
+      }
     }
   },
   {
@@ -3517,7 +3523,7 @@
     "kind": "object",
     "label": "OUTDOOR THEATRE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "911805989436ff90fe401e79669dae236a4c0b450dac235cbfd081990e6a3d83",
+    "assetHash": "3912ad961ee23efb0f503ed1c58e3964d5324fb817e56aaa549b695c49e98597",
     "bounds": {
       "min": [
         212.103363,
@@ -3538,7 +3544,13 @@
       "原始分片": "6/39/5_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 8.691,
-      "三角形数": 1016
+      "三角形数": 1016,
+      "篷布内衬": {
+        "原模型": "911805989436ff90fe401e79669dae236a4c0b450dac235cbfd081990e6a3d83",
+        "面数": 132,
+        "实拍": "https://commons.wikimedia.org/?curid=152986183",
+        "依据": "将对应外表面的原摄影纹理配准到内衬。日间透光强度按跨湾实拍估算。"
+      }
     }
   },
   {
