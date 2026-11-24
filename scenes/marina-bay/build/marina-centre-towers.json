@@ -267,5 +267,113 @@
         }
       ]
     }
+  },
+  {
+    "entityId": "bay.c445be87-c9a3-4420-a0ed-6099b239d5f0",
+    "kind": "object",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "label": "SOUTH BEACH RESIDENCES",
+    "assetHash": "e7874774c54f3bfa820ae1dc1a2094ef10994fcf039b1bc7bd8db88153ae5024",
+    "bounds": {
+      "min": [
+        291.90771484375,
+        -60.20880126953125,
+        1509.7489013671875
+      ],
+      "max": [
+        355.115966796875,
+        159.20911077182384,
+        1577.746337890625
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "测绘模型": "OneMap 3D · SLA, cheeaun/om3d",
+      "来源地址": "https://github.com/cheeaun/om3d/tree/ac451b84/optimized-tiles",
+      "官方建筑编号": "SLA_BLDG2_c445be87-c9a3-4420-a0ed-6099b239d5f0",
+      "归档分片": "8/156/27_5.b3dm",
+      "官方测量高度（米）": 219.038,
+      "经纬度": [
+        103.85597959500113,
+        1.294405943019891
+      ],
+      "三角形数": 4132,
+      "立面影像": [
+        {
+          "url": "https://commons.wikimedia.org/wiki/File:Hotel_Marriott,_Nicoll_Highway,_Singapur,_2023-08-18,_DD_14.jpg",
+          "author": "Diego Delso",
+          "license": "CC BY-SA 4.0"
+        },
+        {
+          "url": "https://commons.wikimedia.org/wiki/File:JW_Marriott_Singapore_from_Conrad_Centennial.jpg",
+          "author": "Daniel Case",
+          "license": "CC BY-SA 4.0"
+        },
+        {
+          "url": "https://commons.wikimedia.org/wiki/File:South_Beach_Towers,_Singapur,_2023-08-18,_DD_21.jpg",
+          "author": "Diego Delso",
+          "license": "CC BY-SA 4.0"
+        }
+      ],
+      "立面方法": "实拍立面透视校正和明度重建，按测绘屋顶坡面和现场照片的格距重建开放钢框架，各面窗墙分开校准。背向和遮挡区域参考可见立面。"
+    }
+  },
+  {
+    "entityId": "bay.3b567f26-6d50-443b-bc3e-5f7472d4307a",
+    "kind": "object",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "label": "SOUTH BEACH TOWER",
+    "assetHash": "12b1a81e25867027512d8537c417d1283c188abe5010ac40e57bc2d20e74cbc2",
+    "bounds": {
+      "min": [
+        282.2448425292969,
+        -60.25087356567383,
+        1650.18701171875
+      ],
+      "max": [
+        340.5545959472656,
+        159.70603847568128,
+        1712.3311767578125
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "测绘模型": "OneMap 3D · SLA, cheeaun/om3d",
+      "来源地址": "https://github.com/cheeaun/om3d/tree/ac451b84/optimized-tiles",
+      "官方建筑编号": "SLA_BLDG2_3b567f26-6d50-443b-bc3e-5f7472d4307a",
+      "归档分片": "7/78/13_5.b3dm",
+      "官方测量高度（米）": 219.58,
+      "经纬度": [
+        103.8559582190145,
+        1.294774434708738
+      ],
+      "三角形数": 3494,
+      "立面影像": [
+        {
+          "url": "https://commons.wikimedia.org/wiki/File:Hotel_Marriott,_Nicoll_Highway,_Singapur,_2023-08-18,_DD_14.jpg",
+          "author": "Diego Delso",
+          "license": "CC BY-SA 4.0"
+        },
+        {
+          "url": "https://commons.wikimedia.org/wiki/File:JW_Marriott_Singapore_from_Conrad_Centennial.jpg",
+          "author": "Daniel Case",
+          "license": "CC BY-SA 4.0"
+        },
+        {
+          "url": "https://commons.wikimedia.org/wiki/File:South_Beach_Towers,_Singapur,_2023-08-18,_DD_21.jpg",
+          "author": "Diego Delso",
+          "license": "CC BY-SA 4.0"
+        }
+      ],
+      "立面方法": "实拍立面透视校正和明度重建，按测绘屋顶坡面和现场照片的格距重建开放钢框架，各面窗墙分开校准。背向和遮挡区域参考可见立面。"
+    }
   }
 ]
