@@ -22,7 +22,7 @@ PROJECTION = np.array([
 ])
 
 
-def front_wall(vertices, faces):
+def front_wall_indices(vertices, faces):
     """Follow the continuous curtain wall through its UV seams from its largest triangle."""
     triangles = vertices[faces]
     areas = np.linalg.norm(np.cross(triangles[:, 1] - triangles[:, 0],
@@ -39,7 +39,7 @@ def front_wall(vertices, faces):
         neighbours = set.union(*(adjacent[tuple(point)] for point in triangle)) - selected
         selected.update(neighbours)
         pending.extend(neighbours)
-    return faces[sorted(selected)]
+    return sorted(selected)
 
 
 def apply_glazing(image, triangles):
