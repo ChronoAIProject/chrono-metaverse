@@ -6024,7 +6024,7 @@
     "kind": "object",
     "label": "STRAITS TRADING BUILDING",
     "regionId": "marina-bay-exterior",
-    "assetHash": "9a28f67a3be208611c419d50750fcff41b67cc449ef651cc1094309b2a96e2d9",
+    "assetHash": "d19582f60cff88e4d4db0554c0dd6ec62814eabb1e0ceb5399d2722ffee79c77",
     "bounds": {
       "min": [
         400.474851,
@@ -6575,7 +6575,7 @@
     "kind": "object",
     "label": "THE SAIL @ MARINA BAY",
     "regionId": "marina-bay-exterior",
-    "assetHash": "f4f3bb3dcd20c3f826295c978aa851b3ff3ab6d31908b8270c5e4d3d90e259d3",
+    "assetHash": "198913e89291003c87a48bafcb4b61101b61e92bcfa4b4653e1808c7672be21e",
     "bounds": {
       "min": [
         157.142935,
@@ -6598,7 +6598,7 @@
       "官方测量高度（米）": 241.983,
       "三角形数": 1728,
       "modelOcclusion": {
-        "sourceAsset": "f4f3bb3dcd20c3f826295c978aa851b3ff3ab6d31908b8270c5e4d3d90e259d3",
+        "sourceAsset": "198913e89291003c87a48bafcb4b61101b61e92bcfa4b4653e1808c7672be21e",
         "material": "dc2400602",
         "texture": "9607caad0ba4fcb78d893e3a45557de1896f738c74b44cadf511a6c5847d5e04"
       }
@@ -6703,7 +6703,7 @@
     "kind": "object",
     "label": "ONE MARINA BOULEVARD",
     "regionId": "marina-bay-exterior",
-    "assetHash": "8b4c928f79d858287b4c97221a018a4793bb52107ddbc838839e8675be727f6b",
+    "assetHash": "d6a2f36dba4b948c5e6687e5e58b4c6ea8cc10fddf6786f205c39ecb405317a2",
     "bounds": {
       "min": [
         231.076513,
