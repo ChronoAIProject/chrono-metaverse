@@ -196,15 +196,18 @@ def fit_canvas(ends, bays, fabric, frame, post_edge, deck):
                 faces = np.array(faces)[:, ::-1]
             fabric.append(trimesh.Trimesh(vertices=vertices, faces=faces, process=False))
         offset = [0, .052, 0]
-        frame.append(strut(first[side] - offset, last[side] - offset, .034))
+        if fabric is not None:
+            frame.append(strut(first[side] - offset, last[side] - offset, .034))
         for t in np.linspace(.012, .988, bays + 1):
             eave, ridge = (first + t * (last - first))[[side, 1]]
-            frame.append(strut(eave - offset, ridge - offset, .035))
+            if fabric is not None:
+                frame.append(strut(eave - offset, ridge - offset, .035))
             post_x = max(eave[0] + .11, post_edge + .11) if side == 0 else eave[0] - .15
             post = eave + (ridge - eave) * ((post_x - eave[0]) / (ridge[0] - eave[0]))
             post -= offset
             frame.append(box([.065, post[1] - deck, .065], [post[0], (post[1] + deck) / 2, post[2]]))
-    frame.append(strut(first[1] - [0, .052, 0], last[1] - [0, .052, 0], .034))
+    if fabric is not None:
+        frame.append(strut(first[1] - [0, .052, 0], last[1] - [0, .052, 0], .034))
 
 
 def roof_panels(ends, pieces):
@@ -224,8 +227,70 @@ def roof_panels(ends, pieces):
                     faces = faces[:, ::-1]
                 name = "Pale roof trim" if row % 2 == 0 or col != 1 else "Roof infill"
                 pieces[name].append(trimesh.Trimesh(vertices=verts, faces=faces, process=False))
-        a, b = ends[:, side]
-        pieces["Pale roof trim"].append(strut(a - [0, .047, 0], b - [0, .047, 0], .049))
+        fit_panel_lining(ends[:, [side, 1]], pieces, side)
+
+
+def fit_panel_lining(slope, pieces, side):
+    """Fit the lined soffit, edge fascia and rectangular rails visible in the quay photo."""
+    first, last = slope
+    bays = round(np.linalg.norm(last[0] - first[0]) / 1.7)
+    slope_length = np.linalg.norm(first[1] - first[0])
+    # The lining sits inside the measured outer skin. Each shallow fold runs
+    # parallel to the eave. Relax the lining slightly between transverse rails.
+    u = np.linspace(0, 1, 3)
+    t = np.linspace(0, 1, bays * 4 + 1)
+    edge = first[0] + t[:, None] * (last[0] - first[0])
+    ridge = first[1] + t[:, None] * (last[1] - first[1])
+    surface = edge[:, None, :] + u[None, :, None] * (ridge - edge)[:, None, :]
+    surface[:, :, 1] -= .04 + .025 * np.sin(math.pi * bays * t[:, None]) ** 2
+    idx = np.arange(surface.shape[0] * len(u)).reshape(-1, len(u))
+    a, b, c, d = (idx[:-1, :-1], idx[:-1, 1:], idx[1:, :-1], idx[1:, 1:])
+    faces = np.stack((a, b, c, c, b, d), axis=-1).reshape(-1, 3)
+    if side == 2:
+        faces = faces[:, ::-1]
+    lining = trimesh.Trimesh(surface.reshape(-1, 3), faces, process=False)
+    # One texture period spans four pleats. Give each slope its own metric UVs
+    # so the bay-facing and landward sides share the same normal map.
+    lining.vertex_attributes["_LINING_UV"] = np.stack(np.meshgrid(
+        u * slope_length / .76, t * np.linalg.norm(last[0] - first[0]) / .76
+    ), axis=-1).reshape(-1, 2)
+    pieces["Canopy lining"].append(lining)
+
+    # The box profiles meet the lining at the rails. Keep their depth visible
+    # at grazing angles, including the dark reveal behind the edge fascia.
+    def profile(start, end, width, height, drop):
+        direction = end - start
+        length = np.linalg.norm(direction)
+        axis = direction / length
+        lateral = np.cross([0, 1, 0], axis)
+        lateral /= np.linalg.norm(lateral)
+        transform = np.eye(4)
+        transform[:3, :3] = np.column_stack((lateral, np.cross(axis, lateral), axis))
+        transform[:3, 3] = (start + end) / 2 - [0, drop, 0]
+        return trimesh.creation.box([width, height, length], transform=transform)
+
+    stations = np.linspace(0, 1, bays + 1)
+    for frac in stations:
+        eave, peak = first + frac * (last - first)
+        pieces["Pale roof trim"].append(profile(eave, peak, .065, .084, .093))
+    for lo, hi in zip(stations, stations[1:]):
+        start, end = [first[0] + frac * (last[0] - first[0]) for frac in (lo, hi)]
+        inset = .003 * (end - start) / np.linalg.norm(end - start)
+        pieces["Pale roof trim"].append(profile(start + inset, end - inset, .105, .155, .086))
+
+
+def lining_normals():
+    # A 22 mm peak-to-trough fold with a 190 mm period. Slight waviness
+    # along the fold breaks the straight highlights visible from below.
+    y, x = (np.indices((128, 128)) + .5) * (math.tau / 128)
+    phase = 4 * x + .16 * np.sin(y) + .07 * np.sin(2 * y)
+    tilt = .011 * (math.tau / .76) * np.sin(phase)
+    normals = np.stack((4 * tilt, -tilt * (.16 * np.cos(y) + .14 * np.cos(2 * y)),
+                        np.ones_like(tilt)), axis=-1)
+    normals /= np.linalg.norm(normals, axis=-1, keepdims=True)
+    image = Image.fromarray(np.uint8(np.rint((normals + 1) * 127.5)))
+    image.format = "PNG"
+    return image
 
 
 def deck_occlusion(pieces, canopy_ends):
@@ -394,6 +459,8 @@ def furnish(start, along, inland, texture_path, output, region_id, canopy_ends, 
                                      doubleSided=True, metallicFactor=.13, roughnessFactor=.52),
         "Roof infill": PBRMaterial(name="Coated roof panels", baseColorFactor=[114, 107, 91, 255],
                                   doubleSided=True, metallicFactor=.06, roughnessFactor=.63),
+        "Canopy lining": PBRMaterial(name="Pleated canopy lining", baseColorFactor=[196, 189, 170, 255],
+                                    normalTexture=lining_normals(), metallicFactor=0, roughnessFactor=.82),
         "Metal": PBRMaterial(name="Painted steel", baseColorFactor=[40, 43, 44, 255], metallicFactor=.43, roughnessFactor=.57),
         "Canopy frame": PBRMaterial(name="Grey aluminium", baseColorFactor=[106, 111, 106, 255], metallicFactor=.52, roughnessFactor=.49),
         "Deck": PBRMaterial(name="Deck boards", baseColorTexture=timber, baseColorFactor=[103, 98, 94, 255], metallicFactor=0, roughnessFactor=.83),
@@ -431,7 +498,7 @@ def furnish(start, along, inland, texture_path, output, region_id, canopy_ends, 
     scene = trimesh.Scene()
     for name, meshes in pieces.items():
         m = trimesh.util.concatenate(meshes)
-        if name in {"Teak", "Deck", "Canopy frame", "Dining tables"}:
+        if name in {"Teak", "Deck", "Canopy frame", "Dining tables", "Pale roof trim"}:
             # Split at actual panel edges so thin boards do not acquire rounded, inflated normals.
             m = trimesh.Trimesh(vertices=m.vertices[m.faces].reshape(-1, 3),
                                 faces=np.arange(m.faces.size).reshape(-1, 3), process=False)
@@ -450,6 +517,9 @@ def furnish(start, along, inland, texture_path, output, region_id, canopy_ends, 
         if name == "Cane":
             uv = np.concatenate([mesh.vertex_attributes["_CANE_UV"] for mesh in meshes])
             m.vertex_attributes.pop("_CANE_UV", None)
+        if name == "Canopy lining":
+            uv = np.concatenate([mesh.vertex_attributes["_LINING_UV"] for mesh in meshes])
+            m.vertex_attributes.pop("_LINING_UV", None)
         if name in {"Burgundy", "Green", "Charcoal"}:
             uv = np.column_stack((xyz[:, 2] / 1.15, xyz[:, 0] + xyz[:, 1] * .35))
         m.visual = TextureVisuals(uv=uv, material=materials[name])
@@ -527,7 +597,7 @@ def bake(source, timber, output, buildings_file, streetscape_file):
         furniture["props"]["入口玻璃倒影"] = "在窗前沿线三个机位采集庭院、树池和海湾，反射随视线与玻璃位置变化。采集反映场景当前的日间布置。"
         furniture["props"]["幕墙参考"] = GLAZING_PHOTO
         furniture["props"]["幕墙"] = "二层五个窗面沿折线合计约 52 米，采用 OneMap 原始立面和影像。主窗框按影像配准，框深、颜色和反射强度为估值。"
-        furniture["props"]["棚顶"] = "两座棚体的坡面采用 SLA 实测坐标。深浅表面、浅棚的四段横框和屋脊色带参照正射影像。材料和构件厚度为估值。"
+        furniture["props"]["棚顶"] = "两座棚体的坡面采用 SLA 实测坐标。屋面分段和屋脊色带参照正射影像。浅棚底的褶面、矩形横梁及分段檐板参照藤椅现场照片。折距、梁距、厚度和日间颜色为估值。"
     streetscape = {item["entityId"]: item for item in json.loads(streetscape_file.read_text())}
     streetscape[furniture["entityId"]] = furniture
     if not middle:
