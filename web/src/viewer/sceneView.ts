@@ -1,6 +1,6 @@
 import { prepareTreeWind, updateTreeWind } from './treeWind';
 import { PriorityQueue } from '3d-tiles-renderer/core';
-import { cityCutout } from './cityCutout';
+import { cityCutout, matchCutoutShadow } from './cityCutout';
 import { CitySun } from './citySun';
 import { cityModelAir } from './mapFacade';
 import { CITY_REFLECTION_LAYER } from './mapReflection';
@@ -816,6 +816,7 @@ export class SceneView {
             this.modelMaterial(m, look, background, styleLook, kind, occlusion, roof),
           )
         : this.modelMaterial(mesh.material, look, background, styleLook, kind, occlusion, roof);
+      if (background && this.daylightCity && this.multisampleCutouts) matchCutoutShadow(mesh);
     });
     return clone;
   }
