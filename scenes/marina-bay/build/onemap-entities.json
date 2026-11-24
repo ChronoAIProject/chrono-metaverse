@@ -7909,7 +7909,7 @@
     "kind": "object",
     "label": "THE RITZ-CARLTON MILLENIA SINGAPORE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "38ce4cbd7a086641de0014c1c22054e470b6d8489f786c3c36e4ffcae637f8cd",
+    "assetHash": "0654f6b89a8d5a6cb2c09981d1a71b9487c86dccbf42dce685ae514e08402059",
     "bounds": {
       "min": [
         -152.705061,
@@ -7930,7 +7930,9 @@
       "原始分片": "8/158/24_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 139.176,
-      "三角形数": 2748
+      "三角形数": 2748,
+      "材质校准来源": "38ce4cbd7a086641de0014c1c22054e470b6d8489f786c3c36e4ffcae637f8cd",
+      "日间材质": "按官方同楼不同朝向的亮墙校正临湾及侧面窗间墙反照率，窗间墙与窗玻璃的粗糙度随原始纹理变化。"
     }
   },
   {

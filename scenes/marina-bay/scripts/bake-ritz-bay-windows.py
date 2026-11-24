@@ -102,8 +102,8 @@ def bake(path):
     anchor[1]=record["bounds"]["min"][1]
     scene=trimesh.Scene()
     for (vertices,faces), mat in [
-        (panes,PBRMaterial(name="Millenia bay glazing",baseColorFactor=[36,54,67,255],metallicFactor=.15,roughnessFactor=.23)),
-        (ledges,PBRMaterial(name="Millenia window head",baseColorFactor=[149,153,154,255],metallicFactor=.18,roughnessFactor=.48,doubleSided=True)),
+        (panes,PBRMaterial(name="Millenia bay glazing",baseColorFactor=[3,4,5,255],metallicFactor=.045,roughnessFactor=.25)),
+        (ledges,PBRMaterial(name="Millenia window head",baseColorFactor=[107,110,111,255],metallicFactor=.18,roughnessFactor=.48,doubleSided=True)),
     ]:
         mesh=trimesh.Trimesh(vertices=np.asarray(vertices)+anchor,faces=faces,visual=TextureVisuals(material=mat),process=False)
         scene.add_geometry(mesh,geom_name=mat.name)
@@ -123,7 +123,9 @@ def bake(path):
                 label="丽思卡尔顿美年酒店 · 临湾窗带",assetHash=digest,
                 bounds={"min":low.tolist(),"max":high.tolist()},material={"shading":"albedo"},
                 props={"background":True,"立面调查":"Map Data © Singapore Land Authority / OneMap · "+TOWER,
-                       "实景参考":PHOTO,"重建":"从官方立面纹理提取窗列并投回原三角面，按实景区分横向长窗、八角窗及方形开口。玻璃色、窗高与遮阳沿突出量为估值。"})
+                       "实景参考":PHOTO,"重建":"从官方立面纹理提取窗列并投回原三角面，按实景区分横向长窗、八角窗及方形开口。玻璃色、窗高与遮阳沿突出量为估值。",
+                       "材质校准来源":"db04dea9253a476a0a29f179104ac5bc25b8f3d9e04e7be43c4c9ef08eca352b",
+                       "日间材质":"临湾暗玻璃与遮阳沿按跨湾照片校准窗墙明暗差。"})
 
 
 if __name__=="__main__":
