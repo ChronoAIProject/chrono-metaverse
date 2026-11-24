@@ -19,7 +19,7 @@
 
 浮尔顿步道沿滨海蓄水池西岸建模了约 165 米直岸。岸线两端的纬度、经度分别为 `1.2849604, 103.8539466` 和 `1.2863666, 103.8544468`。`context.json` 的 `quay` 保存投影到 OneMap 外景的米制端点，构建时与建筑一起配准到办公室。步道有铺石记录，石板宽度、岸墙横截面及栏杆高度依据行人尺度估算。地图数据 © OpenStreetMap contributors，ODbL 1.0。[岸线](https://www.openstreetmap.org/way/687912605) · [浮尔顿步道](https://www.openstreetmap.org/way/479233715) · [许可](https://www.openstreetmap.org/copyright)
 
-South Beach Tower 与 South Beach Residences 的塔身和斜屋顶采用同一批 OneMap 派生测绘数据。北塔的测绘记录还包括低层园区，场景仅提取塔身。九条地图部件记录用于保留裙楼并替换重复的塔楼。玻璃窗墙与屋顶格栅取自 Diego Delso 的 2023 年照片，背向立面参考 Daniel Case 从康莱德酒店拍摄的照片。贴图经透视校正、明度调整和裁切，背面及被遮挡的窗格按可见面近似，改编贴图以 CC BY-SA 4.0 分发。[双塔原照](https://commons.wikimedia.org/wiki/File:South_Beach_Towers,_Singapur,_2023-08-18,_DD_21.jpg) · [侧面原照](https://commons.wikimedia.org/wiki/File:Hotel_Marriott,_Nicoll_Highway,_Singapur,_2023-08-18,_DD_14.jpg) · [背向原照](https://commons.wikimedia.org/wiki/File:JW_Marriott_Singapore_from_Conrad_Centennial.jpg) · [贴图许可](https://creativecommons.org/licenses/by-sa/4.0/)
+South Beach Tower 与 South Beach Residences 的塔身和斜屋顶采用同一批 OneMap 派生测绘数据。北塔的测绘记录还包括低层园区，场景仅提取塔身。九条地图部件记录用于保留裙楼并替换重复的塔楼。玻璃窗墙取自 Diego Delso 的 2023 年照片，背向立面参考 Daniel Case 从康莱德酒店拍摄的照片。屋顶钢构按测绘坡面和照片中的格距生成，杆径为估值。贴图经透视校正、明度调整和裁切，背面及被遮挡的窗格按可见面近似，改编贴图以 CC BY-SA 4.0 分发。[双塔原照](https://commons.wikimedia.org/wiki/File:South_Beach_Towers,_Singapur,_2023-08-18,_DD_21.jpg) · [侧面原照](https://commons.wikimedia.org/wiki/File:Hotel_Marriott,_Nicoll_Highway,_Singapur,_2023-08-18,_DD_14.jpg) · [背向原照](https://commons.wikimedia.org/wiki/File:JW_Marriott_Singapore_from_Conrad_Centennial.jpg) · [贴图许可](https://creativecommons.org/licenses/by-sa/4.0/)
 
 ## 系统内预览
 
