@@ -127,15 +127,30 @@ export function cityModelAir(material: THREE.Material) {
     material instanceof THREE.MeshStandardMaterial && material.userData.reflectSky === true;
   const probes = glass ? facadeProbeUniforms(material) : null;
   // A prefiltered glTF probe uses model-space directions and stores linear radiance in sRGB.
+  const levels = material.userData.reflectionLevels;
+  const heights =
+    levels &&
+    Number.isFinite(levels.first) &&
+    Number.isFinite(levels.last) &&
+    levels.last > levels.first &&
+    Number.isInteger(levels.count) &&
+    levels.count >= 2 &&
+    levels.count <= 8 &&
+    Number.isFinite(levels.scale) &&
+    levels.scale > 0 &&
+    levels.scale <= 64
+      ? new THREE.Vector4(levels.first, levels.last, levels.count, levels.scale)
+      : null;
   const localProbe =
     material instanceof THREE.MeshStandardMaterial &&
-    material.userData.prefilteredReflection === true &&
     material.emissiveMap &&
-    !glass;
+    !glass &&
+    (heights || material.userData.prefilteredReflection === true);
   const worldToProbe = localProbe ? { value: new THREE.Matrix3() } : null;
   if (worldToProbe) {
     const rotation = new THREE.Matrix4();
-    material.customProgramCacheKey = () => 'city-local-reflection';
+    material.customProgramCacheKey = () =>
+      heights ? 'city-height-reflections' : 'city-local-reflection';
     material.onBeforeRender = (_renderer, _scene, _camera, _geometry, object) => {
       worldToProbe.value.setFromMatrix4(rotation.extractRotation(object.matrixWorld)).transpose();
     };
@@ -172,6 +187,17 @@ export function cityModelAir(material: THREE.Material) {
     }
     if (worldToProbe) {
       shader.uniforms.worldToProbe = worldToProbe;
+      if (heights) {
+        shader.uniforms.reflectionLevels = { value: heights };
+        shader.vertexShader =
+          'varying float probeHeight;\n' +
+          shader.vertexShader.replace(
+            '#include <begin_vertex>',
+            '#include <begin_vertex>\nprobeHeight = position.y;',
+          );
+        shader.fragmentShader =
+          'varying float probeHeight;\nuniform vec4 reflectionLevels;\n' + shader.fragmentShader;
+      }
       shader.fragmentShader =
         'uniform mat3 worldToProbe;\n' +
         shader.fragmentShader.replace(
@@ -180,7 +206,23 @@ export function cityModelAir(material: THREE.Material) {
           vec3 probeRay = reflect(-geometryViewDir, geometryNormal);
           probeRay = normalize(mix(probeRay, geometryNormal, pow4(material.roughness)));
           vec3 localRay = worldToProbe * inverseTransformDirection(probeRay, viewMatrix);
-          radiance += texture2D(emissiveMap, equirectUv(localRay)).rgb;`,
+          vec2 probeUV = equirectUv(localRay);
+          ${
+            heights
+              ? `float count = reflectionLevels.z;
+          float level = clamp((probeHeight - reflectionLevels.x) /
+            (reflectionLevels.y - reflectionLevels.x), 0.0, 1.0) * (count - 1.0);
+          float low = floor(level);
+          float edge = 0.5 * count / float(textureSize(emissiveMap, 0).y);
+          probeUV.y = clamp(probeUV.y, edge, 1.0 - edge) / count;
+          vec2 dx = dFdx(probeUV), dy = dFdy(probeUV);
+          dx.x -= round(dx.x);
+          dy.x -= round(dy.x);
+          vec3 lower = textureGrad(emissiveMap, probeUV + vec2(0.0,low/count), dx,dy).rgb;
+          vec3 upper = textureGrad(emissiveMap, probeUV + vec2(0.0,min(low+1.0,count-1.0)/count), dx,dy).rgb;
+          radiance += reflectionLevels.w * mix(lower, upper, fract(level));`
+              : 'radiance += texture2D(emissiveMap, probeUV).rgb;'
+          }`,
         );
     }
     Object.assign(shader.uniforms, sky);
