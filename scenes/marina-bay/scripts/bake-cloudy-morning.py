@@ -15,9 +15,7 @@ PREVIOUS = Path(__file__).resolve().parents[1] / "references/qwantani-balanced-s
 CLOUD_FRACTION = .35
 
 
-def read_sky(path, digest, azimuth, elevation, latitude, longitude):
-    if hashlib.md5(path.read_bytes()).hexdigest() != digest:
-        raise ValueError(f"Unexpected 4K HDR source: {path.name}")
+def read_sky(path, azimuth, elevation, latitude, longitude):
     raw = subprocess.check_output(["ffmpeg", "-v", "error", "-i", str(path), "-frames:v", "1",
                                    "-f", "rawvideo", "-pix_fmt", "gbrpf32le", "pipe:1"])
     sky = np.frombuffer(raw, "<f4").reshape(3, 2048, 4096)[[2, 0, 1]].transpose(1, 2, 0).copy()
@@ -50,6 +48,15 @@ def diffuse_probe(radiance):
 def bake(morning_path, cloud_path, output):
     sky = json.loads(PREVIOUS.read_text())
     day = sky["daylight"]
+    morning_digest = hashlib.md5(morning_path.read_bytes()).hexdigest()
+    if morning_digest == "e403ba6805b2e6b7da51a13a4aaab898":
+        # Solar centroid and direct-light chromaticity from the 4K mid-morning HDR.
+        day.update(azimuth=36.051, elevation=40.1473, sunColor=[1.06352, 0.99158, 0.8964])
+        sky["yaw"] = round(day["azimuth"] - 71.5454 - 65, 4)  # 65 degrees from geographic north
+    elif morning_digest != "b065d32bfc96c2a87f0547bd06ba30f5":
+        raise ValueError(f"Unexpected Qwantani 4K HDR source: {morning_path.name}")
+    if hashlib.md5(cloud_path.read_bytes()).hexdigest() != "816340c969d2e60d659051d13ac3c4dc":
+        raise ValueError(f"Unexpected Kloofendal 4K HDR source: {cloud_path.name}")
     h, w = 2048, 4096
     lat = (.5 - (np.arange(h) + .5) / h) * np.pi
     lon = ((np.arange(w) + .5) / w - .5) * 2 * np.pi
@@ -58,11 +65,9 @@ def bake(morning_path, cloud_path, output):
     def irradiance(image):
         return weights @ image.mean(axis=1, dtype=float)
 
-    base, disk, direct = read_sky(morning_path, "b065d32bfc96c2a87f0547bd06ba30f5",
-                                  day["azimuth"], day["elevation"], lat, lon)
+    base, disk, direct = read_sky(morning_path, day["azimuth"], day["elevation"], lat, lon)
     cloud_azimuth = 34.2568
-    cloud, _, _ = read_sky(cloud_path, "816340c969d2e60d659051d13ac3c4dc",
-                           cloud_azimuth, 47.8848, lat, lon)
+    cloud, _, _ = read_sky(cloud_path, cloud_azimuth, 47.8848, lat, lon)
     shift = (day["azimuth"] - cloud_azimuth) * w / 360
     offset = int(np.floor(shift))
     cloud = (np.roll(cloud, offset, axis=1) * (1 - shift + offset)
@@ -103,7 +108,7 @@ def bake(morning_path, cloud_path, output):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("morning", type=Path, help="Qwantani Morning (Pure Sky), 4K HDR")
+    parser.add_argument("morning", type=Path, help="Qwantani Mid Morning or Morning (Pure Sky), 4K HDR")
     parser.add_argument("clouds", type=Path, help="Kloofendal 48d Partly Cloudy (Pure Sky), 4K HDR")
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
