@@ -836,5 +836,55 @@
       "三角形数": 783,
       "玻璃反射": "在三个高度隐藏该组楼体后采集街区和天空，并依楼层高度插值。"
     }
+  },
+  {
+    "entityId": "bay.ab40e823-8c31-454c-af85-bc734d103a21",
+    "kind": "object",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "Conrad Singapore Marina Bay",
+    "bounds": {
+      "min": [
+        -59.22096252441406,
+        -60.19977569580078,
+        1504.9482421875
+      ],
+      "max": [
+        36.722248077392564,
+        55.708786010742195,
+        1575.485595703125
+      ]
+    },
+    "assetHash": "bb5551397ef3703df65b8df5ab39a208856f440a8d667b103dd29430b55c9032",
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "官方建筑编号": "SLA_BLDG2_ab40e823-8c31-454c-af85-bc734d103a21",
+      "测绘高度（米）": 115.904,
+      "经纬度": [
+        103.85876825280353,
+        1.2934546612906583
+      ],
+      "测绘模型": "Map Data © Singapore Land Authority, OneMap 3D",
+      "来源地址": "https://github.com/cheeaun/om3d/blob/ac451b84/optimized-tiles/8/157/26_5.b3dm",
+      "立面影像": [
+        {
+          "author": "Terence Ong",
+          "url": "https://commons.wikimedia.org/wiki/File:Conrad_Centennial_Singapore.JPG",
+          "license": "CC BY 2.5",
+          "licenseUrl": "https://creativecommons.org/licenses/by/2.5/"
+        },
+        {
+          "author": "User:Sengkang",
+          "url": "https://commons.wikimedia.org/wiki/File:Conrad_Centennial_Singapore,_Aug_06.JPG",
+          "license": "Copyrighted free use"
+        }
+      ],
+      "屋面影像": "OneMap 正射影像，按测绘平面配准",
+      "材质方法": "主立面按两侧实拍透视校正；侧墙、裙楼重复使用同楼窗格。玻璃和石材的粗糙度为估计。",
+      "三角形数": 676
+    }
   }
 ]
