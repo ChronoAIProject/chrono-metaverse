@@ -120,6 +120,10 @@ export function createLights(
     // 航拍地表已有日照。阴影只保留水平面各色通道收到的天光。
     const skyLight = hemisphere.color.clone().multiplyScalar(hemisphere.intensity);
     const sunlight = sun.color.clone().multiplyScalar(sun.intensity * Math.sin(elevation));
+    sun.userData.horizontalDiffuse = skyLight
+      .clone()
+      .add(sunlight)
+      .multiplyScalar(1 / Math.PI);
     const transmission = (sky: number, direct: number) =>
       sky + direct > 0 ? sky / (sky + direct) : 1;
     sun.userData.groundShadow = new THREE.Color(

@@ -226,10 +226,12 @@ function polygonSurface(
   reference: GeoReference,
   ground?: GroundLayer,
   edits?: readonly WaterlineEdit[],
+  sampledIds?: ReadonlySet<number>,
 ) {
   const layer = data.layers[name];
   if (!layer || tile.z < 14 || layer.length > 10000) return;
   const excluded = new Set(ground?.excludeFeatureIds);
+  const mask: number[] = [];
   const positions: number[] = [];
   const indices: number[] = [];
   const uv: number[] = [];
@@ -275,6 +277,7 @@ function polygonSurface(
         const point = reference.point(lon, lat, height);
         positions.push(...point.toArray());
         if (ground) uv.push(point.x, -point.z);
+        if (sampledIds) mask.push(feature.id !== undefined && sampledIds.has(feature.id) ? 1 : 0);
       }
       for (const [a, b, c] of faces) {
         if (ground) indices.push(offset + a!, offset + c!, offset + b!);
@@ -293,6 +296,7 @@ function polygonSurface(
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices);
+  if (sampledIds) geometry.setAttribute('sampledWater', new THREE.Uint8BufferAttribute(mask, 1));
   if (ground) {
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     geometry.computeVertexNormals();
@@ -309,6 +313,7 @@ export function vectorGeometry(
   waterLayer?: string,
   groundLayers: readonly GroundLayer[] = [],
   waterlineEdits?: readonly WaterlineEdit[],
+  sampledWaterIds?: ReadonlySet<number>,
 ) {
   const data = new VectorTile(new Pbf(bytes));
   const layer = data.layers[style.layer];
@@ -444,6 +449,7 @@ export function vectorGeometry(
           waterlineEdits?.filter(
             ({ tile: [z, x, y] }) => z === tile.z && x === tile.x && y === tile.y,
           ),
+          sampledWaterIds,
         )
       : undefined,
     roads: groundRoads

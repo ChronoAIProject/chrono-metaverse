@@ -287,3 +287,27 @@ it('updates only a matching water boundary and retains its island', () => {
   extended.dispose();
   mesh.material.dispose();
 });
+
+it('marks only surveyed water features for reflectance sampling', () => {
+  const data = vectorTileFixture(24, true);
+  for (const [ids, weight] of [
+    [new Set([1]), 1],
+    [new Set([2]), 0],
+  ] as const) {
+    const water = vectorGeometry(
+      data,
+      tile,
+      reference,
+      style,
+      false,
+      'shapes',
+      [],
+      undefined,
+      ids,
+    ).water!;
+    const mask = water.getAttribute('sampledWater');
+    expect(mask.count).toBe(water.getAttribute('position').count);
+    expect(Array.from(mask.array).every((value) => value === weight)).toBe(true);
+    water.dispose();
+  }
+});

@@ -79,6 +79,15 @@ export interface WaterlineEdit {
   readonly interior: readonly (readonly [number, number])[];
 }
 
+export interface WaterSample {
+  readonly source: string;
+  readonly featureIds: readonly number[];
+  readonly center: readonly [number, number];
+  /** Blend into the surrounding water over the outer fifth of the sample radius in metres. */
+  readonly radius: number;
+  readonly reflectance: readonly [number, number, number];
+}
+
 export interface VectorContent {
   readonly version: 1;
   readonly format: 'mvt';
@@ -87,6 +96,7 @@ export interface VectorContent {
   readonly reference: GeographicReference;
   readonly roads?: RoadLayer | false;
   readonly waterLayer?: string;
+  readonly waterSample?: WaterSample;
   readonly waterlineEdits?: readonly WaterlineEdit[];
   readonly groundLayers?: readonly GroundLayer[];
   readonly waterReflection?: 'scene';
@@ -172,6 +182,26 @@ export function geographicReference(value: unknown): GeographicReference | null 
   )
     return null;
   return { ...raw, heading: raw.heading ?? 0 } as unknown as GeographicReference;
+}
+
+function validWaterSample(value: unknown): boolean {
+  const sample = record(value);
+  return (
+    !!sample &&
+    publicHttps(sample.source) &&
+    Array.isArray(sample.featureIds) &&
+    sample.featureIds.length > 0 &&
+    sample.featureIds.length <= 32 &&
+    sample.featureIds.every((n) => Number.isSafeInteger(n) && n >= 0) &&
+    Array.isArray(sample.center) &&
+    sample.center.length === 2 &&
+    finite(sample.center[0], -180, 180) &&
+    finite(sample.center[1], -85.05113, 85.05113) &&
+    finite(sample.radius, 1, 50000) &&
+    Array.isArray(sample.reflectance) &&
+    sample.reflectance.length === 3 &&
+    sample.reflectance.every((n) => finite(n, 0, 1))
+  );
 }
 
 function validWaterlineEdit(value: unknown): boolean {
@@ -280,6 +310,7 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
       (style.distantZoom !== undefined &&
         (!finite(style.distantZoom, 0, 20) || !Number.isInteger(style.distantZoom))) ||
       (raw.waterLayer !== undefined && !field(raw.waterLayer)) ||
+      (raw.waterSample !== undefined && (!raw.waterLayer || !validWaterSample(raw.waterSample))) ||
       (raw.waterlineEdits !== undefined &&
         (!raw.waterLayer ||
           !Array.isArray(raw.waterlineEdits) ||
@@ -318,6 +349,7 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
       reference,
       extrusion: style,
       ...(groundLayers ? { groundLayers } : {}),
+      ...(raw.waterSample ? { waterSample: raw.waterSample } : {}),
       ...(raw.waterlineEdits ? { waterlineEdits: raw.waterlineEdits } : {}),
       ...(raw.waterReflection ? { waterReflection: raw.waterReflection } : {}),
       ...(raw.waterLayer !== undefined ? { waterLayer: raw.waterLayer } : {}),
