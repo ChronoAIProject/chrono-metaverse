@@ -83,6 +83,28 @@ export function modelOcclusion(entity: EntityBody): ModelOcclusion | undefined {
     return { material, texture };
 }
 
+export interface ModelRoofReflectance {
+  readonly material: string;
+  readonly scale: number;
+}
+
+/** A linear albedo multiplier measured on upward surfaces of one surveyed model. */
+export function modelRoofReflectance(entity: EntityBody): ModelRoofReflectance | undefined {
+  const value = entity.props?.modelRoofReflectance;
+  if (!value || typeof value !== 'object') return;
+  const { sourceAsset, material, scale } = value as Record<string, unknown>;
+  if (
+    typeof sourceAsset === 'string' &&
+    sourceAsset === entity.assetHash &&
+    typeof material === 'string' &&
+    material.length > 0 &&
+    typeof scale === 'number' &&
+    scale > 0 &&
+    scale < 1
+  )
+    return { material, scale };
+}
+
 /** 斜看实景立面时沿表面采样颜色，让照片与附带的法线、粗糙度保持相同清晰度。 */
 export function filterModelSurface(material: THREE.Material, limit: number) {
   if (

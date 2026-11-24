@@ -109,7 +109,7 @@ const probeReflection = /* glsl */ `
 `;
 
 /** 实景模型既有标准受光材质，也有烘焙为无光照贴图的楼面。 */
-export function cityModelAir(material: THREE.Material) {
+export function cityModelAir(material: THREE.Material, roofScale?: number) {
   if (!(
     material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshBasicMaterial
   ))
@@ -171,6 +171,22 @@ export function cityModelAir(material: THREE.Material) {
   if (glass)
     material.customProgramCacheKey = () => (probes ? 'city-facade-probes' : 'city-model-glazing');
   material.onBeforeCompile = (shader) => {
+    if (roofScale !== undefined) {
+      shader.uniforms.roofAlbedoScale = { value: roofScale };
+      // The survey facets have flat normals in the original model's Y-up frame.
+      shader.vertexShader =
+        'uniform float roofAlbedoScale;\nvarying float roofAlbedo;\n' +
+        shader.vertexShader.replace(
+          '#include <beginnormal_vertex>',
+          '#include <beginnormal_vertex>\nroofAlbedo = mix(1.0, roofAlbedoScale, step(0.67, normal.y));',
+        );
+      shader.fragmentShader =
+        'varying float roofAlbedo;\n' +
+        shader.fragmentShader.replace(
+          '#include <color_fragment>',
+          '#include <color_fragment>\ndiffuseColor.rgb *= roofAlbedo;',
+        );
+    }
     if (drops || fountain) {
       shader.uniforms.flowOffset = flowOffset;
       shader.vertexShader =
@@ -272,6 +288,10 @@ export function cityModelAir(material: THREE.Material) {
     )
       facadeShadow(shader);
   };
+  if (roofScale !== undefined) {
+    const baseKey = material.customProgramCacheKey();
+    material.customProgramCacheKey = () => baseKey + '|roof-albedo';
+  }
 }
 
 // Integral of a periodic strip. Taking the difference at the pixel edges

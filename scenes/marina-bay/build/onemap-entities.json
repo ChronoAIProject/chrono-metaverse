@@ -89,7 +89,13 @@
       "原始分片": "5/18/3_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 53.69,
-      "三角形数": 3252
+      "三角形数": 3252,
+      "modelRoofReflectance": {
+        "sourceAsset": "bad8d452a599a25eae9866e321b1f50b26e6ae38b9bf6a829b4e1c72eacb65eb",
+        "material": "dc2400314",
+        "scale": 0.81
+      },
+      "屋面反射率来源": "Copernicus Sentinel-2 L2A · 48NUG，2026-04-16 正射像元估计，2026-06-13 不同位置复核。"
     }
   },
   {
@@ -5078,7 +5084,13 @@
       "钟楼参考": "https://commons.wikimedia.org/wiki/File:Victoria_Theatre_and_Victoria_Concert_Hall,_with_54m_high_Clock_Tower.jpg",
       "钟楼开口": "四侧共十六处柱间开口按 OneMap 原始立面图定位。柱带厚度与洞口进深依照片估值。",
       "钟面参考": "https://commons.wikimedia.org/wiki/File:Front_of_the_clock_tower,_Victoria_Theatre_and_Concert_Hall,_Singapore_-_20141101-01.JPG",
-      "钟面重建": "四面位置和直径按测绘图分别配准。玻璃分格、罗马数字与指针按实景照片重绘，边框进深为估值。四面采用照片约 06:10 的静态读数。"
+      "钟面重建": "四面位置和直径按测绘图分别配准。玻璃分格、罗马数字与指针按实景照片重绘，边框进深为估值。四面采用照片约 06:10 的静态读数。",
+      "modelRoofReflectance": {
+        "sourceAsset": "2feaa0aed475f9251049756212bbb4710ac182b58453e2efd4c398a28e943f4e",
+        "material": "dc2400688",
+        "scale": 0.715
+      },
+      "屋面反射率来源": "Copernicus Sentinel-2 L2A · 48NUG，2026-04-16 正射像元估计，2026-06-13 不同位置复核。"
     }
   },
   {
@@ -5108,7 +5120,13 @@
       "原始分片": "7/76/11_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 23.957,
-      "三角形数": 3396
+      "三角形数": 3396,
+      "modelRoofReflectance": {
+        "sourceAsset": "bc51eca6d3a75f60893a6f07e3abb80596edfdbc72b1e8db03b341cc856916ae",
+        "material": "dc2400670",
+        "scale": 0.713
+      },
+      "屋面反射率来源": "Copernicus Sentinel-2 L2A · 48NUG，2026-04-16 正射像元估计，2026-06-13 不同位置复核。"
     }
   },
   {
@@ -5198,7 +5216,13 @@
       "原始分片": "7/76/12_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 18.534,
-      "三角形数": 2728
+      "三角形数": 2728,
+      "modelRoofReflectance": {
+        "sourceAsset": "33e051fa99544903e31ab77380042c850c6b65e34e4a240e50617bab86ac8517",
+        "material": "dc2400686",
+        "scale": 0.597
+      },
+      "屋面反射率来源": "Copernicus Sentinel-2 L2A · 48NUG，2026-04-16 正射像元估计，2026-06-13 不同位置复核。"
     }
   },
   {
@@ -5288,7 +5312,13 @@
       "原始分片": "7/76/12_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 43.704,
-      "三角形数": 1588
+      "三角形数": 1588,
+      "modelRoofReflectance": {
+        "sourceAsset": "de481b562e2b2b2cefa91887b976591d72e479d2c616e24a603202b9bf73ae14",
+        "material": "dc2400214",
+        "scale": 0.668
+      },
+      "屋面反射率来源": "Copernicus Sentinel-2 L2A · 48NUG，2026-04-16 正射像元估计，2026-06-13 不同位置复核。"
     }
   },
   {
@@ -5318,7 +5348,13 @@
       "原始分片": "7/76/12_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 55.281,
-      "三角形数": 6576
+      "三角形数": 6576,
+      "modelRoofReflectance": {
+        "sourceAsset": "e8b3c53b009966eccf28e4a937d358f3dd3d9f60755838dbe9d9d14f3e3859d1",
+        "material": "dc2400253",
+        "scale": 0.966
+      },
+      "屋面反射率来源": "Copernicus Sentinel-2 L2A · 48NUG，2026-04-16 正射像元估计，2026-06-13 不同位置复核。"
     }
   },
   {
@@ -6975,7 +7011,13 @@
       "原始分片": "7/78/12_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 21.791,
-      "三角形数": 6244
+      "三角形数": 6244,
+      "modelRoofReflectance": {
+        "sourceAsset": "0c3c210efd2f97bd6b5a8e2abe73efef95ae8f759a42c79e1f89dd82edda502d",
+        "material": "dc2400407",
+        "scale": 0.632
+      },
+      "屋面反射率来源": "Copernicus Sentinel-2 L2A · 48NUG，2026-04-16 正射像元估计，2026-06-13 不同位置复核。"
     }
   },
   {
