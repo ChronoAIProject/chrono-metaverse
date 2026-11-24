@@ -465,5 +465,145 @@
       ],
       "立面方法": "实拍立面透视校正和明度重建，按测绘屋顶坡面和现场照片的格距重建开放钢框架，各面窗墙分开校准。背向和遮挡区域参考可见立面。"
     }
+  },
+  {
+    "entityId": "bay.1a2bd984-a7d6-4a5a-b553-db591b97b36b",
+    "kind": "object",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "label": "SUNTEC TOWER FIVE",
+    "assetHash": "031a4e1d8226a5f20b5a1443373cc7822dda01eb34f26cb218d95272f6825070",
+    "bounds": {
+      "min": [
+        78.81568145751953,
+        -60.22713088989258,
+        1592.1951904296875
+      ],
+      "max": [
+        144.0784454345703,
+        30.318460464477532,
+        1657.322998046875
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "立面方法": "实拍配准到 OneMap 裙线、屋顶及四向立面。遮挡层和背面沿用同楼窗带。",
+      "测绘模型": "OneMap 3D · SLA, cheeaun/om3d",
+      "来源地址": "https://github.com/cheeaun/om3d/tree/ac451b84/optimized-tiles",
+      "官方建筑编号": "SLA_BLDG2_1a2bd984-a7d6-4a5a-b553-db591b97b36b",
+      "测绘高度（米）": 90.539,
+      "经纬度": [
+        103.8580163262388,
+        1.2945006246969128
+      ],
+      "三角形数": 416,
+      "立面影像": [
+        {
+          "author": "Merlion444",
+          "url": "https://commons.wikimedia.org/wiki/File:Suntec_Tower_Five.JPG",
+          "license": "Public domain"
+        }
+      ]
+    }
+  },
+  {
+    "entityId": "bay.04bef3bb-3e9b-40da-9b03-5d18389ef8eb",
+    "kind": "object",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "label": "SUNTEC SINGAPORE INTERNATIONAL CONVENTION AND EXHIBITION CENTRE",
+    "assetHash": "8b965c4843182923f934cb1117666a614a447caa40c5fda8904d4cb570ab28bd",
+    "bounds": {
+      "min": [
+        71.69107055664062,
+        -60.22352981567383,
+        1394.7381591796875
+      ],
+      "max": [
+        246.4457550048828,
+        -1.2602930068969727,
+        1654.6826171875
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "测绘模型": "OneMap 3D · SLA, cheeaun/om3d",
+      "官方建筑编号": "SLA_BLDG2_04bef3bb-3e9b-40da-9b03-5d18389ef8eb",
+      "来源地址": "https://github.com/cheeaun/om3d/tree/ac451b84/optimized-tiles/8/157/26_5.b3dm",
+      "测绘高度（米）": 58.93,
+      "经纬度": [
+        103.8572170149955,
+        1.2937333502254984
+      ],
+      "三角形数": 12486,
+      "立面影像": [
+        {
+          "author": "User:Sengkang",
+          "url": "https://commons.wikimedia.org/wiki/File:Suntec_Singapore_International_Convention_and_Exhibition_Centre,_Aug_06.JPG",
+          "license": "Copyrighted free use"
+        },
+        {
+          "author": "Terence Ong",
+          "url": "https://commons.wikimedia.org/wiki/File:Suntec_Singapore_International_Convention_and_Exhibition_Centre_4.JPG",
+          "license": "CC BY 2.5"
+        }
+      ],
+      "材质方法": "保留测绘折板、张拉棚和杆件的外形，消除重复三角形。玻璃砖与屋面颜色按实拍取样，梁柱间距据折线檐口定位，底层及背面明暗为估值。"
+    }
+  },
+  {
+    "entityId": "bay.5b0efee0-096c-465b-9cc5-f8fee4bd4007",
+    "kind": "object",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "label": "ONE RAFFLES LINK",
+    "assetHash": "3d7e0c48db3fad8d12812a5ce819f39c54fcc87a488b5ea3775ad705a65b9e79",
+    "bounds": {
+      "min": [
+        220.6945343017578,
+        -60.15718078613281,
+        1214.5831298828125
+      ],
+      "max": [
+        304.7402038574219,
+        -16.525955200195312,
+        1379.0916748046875
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "测绘模型": "OneMap 3D · SLA, cheeaun/om3d",
+      "官方建筑编号": "SLA_BLDG2_5b0efee0-096c-465b-9cc5-f8fee4bd4007",
+      "附属构件编号": "SLA_BLDG2_2289bcaf-9390-45e0-a266-e7133dbbc834",
+      "来源地址": "https://github.com/cheeaun/om3d/tree/ac451b84/optimized-tiles/7/78/12_5.b3dm",
+      "经纬度": [
+        103.85579542564459,
+        1.2920709181952248
+      ],
+      "测绘高度（米）": 43.637,
+      "三角形数": 2127,
+      "立面影像": [
+        {
+          "author": "Terence Ong",
+          "url": "https://commons.wikimedia.org/wiki/File:One_Raffles_Link.JPG",
+          "license": "CC BY 2.5"
+        },
+        {
+          "author": "User:Sengkang",
+          "url": "https://commons.wikimedia.org/wiki/File:One_Raffles_Link,_Jan_06.JPG",
+          "license": "Copyrighted free use"
+        }
+      ],
+      "材质方法": "窗带及玻璃楼端取样自同楼照片。面朝草场的檐口按测绘剖面恢复开放弧梁，梁距、截面及背面窗带为估值。"
+    }
   }
 ]
