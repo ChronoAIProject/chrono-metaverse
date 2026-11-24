@@ -1512,7 +1512,7 @@
     "kind": "structure",
     "label": "双螺旋桥与四处观景台",
     "regionId": "marina-bay-exterior",
-    "assetHash": "d19f8b98dcd50e8a912687805f21a5e6fad1633c70e6f6061538bfd8c15a2105",
+    "assetHash": "46d8595905cac843202f00f9d7b031a403c6a6e50a7c0816c246bf04b94d2b01",
     "bounds": {
       "min": [
         -324.8987481504143,
@@ -1534,6 +1534,36 @@
       "建筑参考": "https://www.coxarchitecture.com.au/project/the-helix-bridge/",
       "材质版权": "Plan geometry © OpenStreetMap contributors (ODbL). Architectural proportions interpreted from COX Architecture, The Helix Bridge. Asphalt 01 by Poly Haven (CC0).",
       "重建范围": "桥线与四处观景台据 OSM 和 OneMap 配准。桥面纵坡、净宽、螺旋节距、顶棚分段及支座比例参照建筑师立面与照片估读。"
+    }
+  },
+  {
+    "entityId": "bay.bayfront-bridge",
+    "layer": "ext",
+    "kind": "structure",
+    "label": "海湾舫桥与双螺旋桥联络步道",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "f6b6b144eac692e9f28fce7049e662dc931e849b7aae35d273ddf0a2757a87ff",
+    "bounds": {
+      "min": [
+        -430.24012249362096,
+        -61.68843919182356,
+        819.5613437754259
+      ],
+      "max": [
+        -234.072708796837,
+        -43.19051591643465,
+        1202.0943753053707
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "平面来源": "https://www.openstreetmap.org/way/1160851851/history/7",
+      "影像参考": "Map Data © Singapore Land Authority / OneMap",
+      "材质版权": "Plan geometry © OpenStreetMap contributors (ODbL). Asphalt 01 and Concrete Floor 02 by Poly Haven (CC0).",
+      "重建范围": "OSM 桥面轮廓、车道数、两侧步道和联络通道与 OneMap 航片配准。桥面坡度、桥墩位置、灯杆和栏杆尺寸参照现场照片估读。"
     }
   }
 ]
