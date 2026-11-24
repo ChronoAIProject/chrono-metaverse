@@ -107,8 +107,12 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
   const { radiance: _cloudRadiance, ...cloudyDisplaySky } = cloudyMorning;
   const clearQwantani = JSON.parse(readFileSync(new URL('../references/qwantani-clear-sky.json', import.meta.url), 'utf8'));
   const { radiance: _qwantaniRadiance, ...clearQwantaniDisplay } = clearQwantani;
+  const balancedQwantani = JSON.parse(readFileSync(new URL('../references/qwantani-balanced-sky.json', import.meta.url), 'utf8'));
+  const { radiance: _balancedRadiance, ...balancedDisplaySky } = balancedQwantani;
   const { radiance, ...displaySky } = target.sky;
   const presets = [
+    balancedQwantani,
+    balancedDisplaySky,
     clearQwantani,
     clearQwantaniDisplay,
     cloudyMorning,
@@ -138,6 +142,7 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
     props: {
       ...saved.props,
       source: configured.props?.source,
+      版权: configured.props?.版权,
       日间照明: configured.props?.日间照明,
       environment: { ...environment, sky: target.sky },
     },
