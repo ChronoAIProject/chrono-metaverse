@@ -9,10 +9,12 @@ import numpy as np
 import trimesh
 
 from fullerton_shrubs import combined
+from esplanade_quay import QuaySurface
 from scanned_canopy import ROOT, write_tree_asset
 
 
 def bake(spreading, compact):
+    quay = QuaySurface()
     reference = json.loads((ROOT / 'references/esplanade-promenade-trees.json').read_text())
     forms = {}
     broadleaf = import_module('bake-city-street-trees').broadleaf
@@ -45,6 +47,9 @@ def bake(spreading, compact):
         crown_center = (high + low) / 2
         crown_center[1] = 0
         base = np.array(tree['root']) - orient @ (crown_center * scale)
+        deck_height = quay.height(base[[0, 2]])
+        if deck_height is not None:
+            base[1] = deck_height
         tint = np.clip(np.rint(230 * (np.array(tree['rgb']) / median_rgb) ** .65), 155, 255)
         for source in (crown, trunk):
             mesh = source.copy()

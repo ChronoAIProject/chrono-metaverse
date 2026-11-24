@@ -25,6 +25,8 @@ South Beach Tower 与 South Beach Residences 的塔身和斜屋顶采用同一�
 
 滨海艺术中心露天剧场两侧的临水树列依据 OneMap 正射影像中可辨的 22 个树冠布置。冠幅与方向取自影像，树形和高度按两种阔叶树扫描素材估算。坐标与测量值保存在 `references/esplanade-promenade-trees.json`。[OneMap](https://www.onemap.gov.sg/) · [Jacaranda Tree，CC0](https://polyhaven.com/a/jacaranda_tree) · [Island Tree 01，CC0](https://polyhaven.com/a/island_tree_01)
 
+滨海艺术中心东侧约 145 米岸墙与露天剧场旁的浮码头按正射影像布设。墙顶和栏杆高度按跨湾实拍估算，内侧坡面接回场景原有地坪。重建入口为 `scripts/bake-esplanade-east-quay.py`，沿岸树列使用同一坡面确定树根标高。[OneMap](https://www.onemap.gov.sg/) · [码头地图轮廓](https://www.openstreetmap.org/way/256275113) · [跨湾实拍](https://commons.wikimedia.org/?curid=152986183)
+
 步道靠建筑的一侧有四段低矮绿化，沿 One Fullerton 底层影像可辨的绿带重建。花槽宽度、植物高度和枝条朝向采用估值。枝叶采用同一张带透明遮罩的图集，与花槽一起储存在场景附带的 GLB 中。[Poly Haven · Shrub 01，CC0](https://polyhaven.com/a/shrub_01)
 
 One Fullerton 临水入口的玻璃侧墙和后墙采用 Андрей Бобровский 于 2014 年 3 月 14 日拍摄的照片，经裁切、透视校正和阴影调整。门廊开口配准至 OneMap 立面，门廊进深、后方台阶和玻璃回折面的尺寸按照片估值。地坪使用花岗岩扫描。[现场照片](https://commons.wikimedia.org/wiki/File:Singapore_-_panoramio_(109).jpg) · [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) · [石材来源，CC0](https://polyhaven.com/a/granite_tile_04)

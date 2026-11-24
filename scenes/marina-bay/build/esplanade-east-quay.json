@@ -1,0 +1,31 @@
+{
+  "entityId": "bay.esplanade-east-quay",
+  "label": "滨海艺术中心 · 东侧岸墙、步道与浮码头",
+  "layer": "ext",
+  "kind": "structure",
+  "regionId": "marina-bay-exterior",
+  "assetHash": "0d02649e2dfdca64caf7934473012aed3ef316ed514700cd1696915e15ac9ef5",
+  "material": {
+    "shading": "albedo"
+  },
+  "bounds": {
+    "min": [
+      -43.95937842484572,
+      -60.842110000000005,
+      946.6713100000001
+    ],
+    "max": [
+      99.72985,
+      -56.33950050374252,
+      1026.47581
+    ]
+  },
+  "props": {
+    "background": true,
+    "岸线": "Map Data © Singapore Land Authority / OneMap",
+    "码头轮廓": "https://www.openstreetmap.org/way/256275113",
+    "实拍": "https://commons.wikimedia.org/?curid=152986183",
+    "高程": "岸顶按跨湾照片估高，内侧和两端的坡面与现有地面衔接。浮台干舷、栏杆和桩径为估值。",
+    "铺装": "Poly Haven Granite Tile 04, CC0"
+  }
+}
