@@ -5020,8 +5020,16 @@
       "原始分片": "7/76/11_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 21.939,
-      "三角形数": 1032
-    }
+      "三角形数": 1032,
+      "modelOcclusion": {
+        "sourceAsset": "2bdd869a8b56ac3e5654d9c745c1a1be171081b0f82fd94f689133b88ccf413e",
+        "material": "dc2400688",
+        "texture": "dcd3a20c4d881ee5f9a23a85714df8ac3e8ad8ccf94a7e37af10cc3c7f641953"
+      }
+    },
+    "textures": [
+      "dcd3a20c4d881ee5f9a23a85714df8ac3e8ad8ccf94a7e37af10cc3c7f641953"
+    ]
   },
   {
     "entityId": "bay.2d5c9141-07c9-49a7-9b40-57efba19435e",
@@ -5050,8 +5058,16 @@
       "原始分片": "7/76/11_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 16.667,
-      "三角形数": 1748
-    }
+      "三角形数": 1748,
+      "modelOcclusion": {
+        "sourceAsset": "a5e702cd7f325a45a10bad92787b3aef1c63ac3a2542aaf2bbb65891957a0057",
+        "material": "dc2400688",
+        "texture": "5a7b86ca15b20ab00a75c7130fe959fc144cd769be92026297564151c58f8c79"
+      }
+    },
+    "textures": [
+      "5a7b86ca15b20ab00a75c7130fe959fc144cd769be92026297564151c58f8c79"
+    ]
   },
   {
     "entityId": "bay.f21025bc-7836-44eb-82b6-f78da166312a",
@@ -5090,8 +5106,16 @@
         "material": "dc2400688",
         "scale": 0.715
       },
-      "屋面反射率来源": "Copernicus Sentinel-2 L2A · 48NUG，2026-04-16 正射像元估计，2026-06-13 不同位置复核。"
-    }
+      "屋面反射率来源": "Copernicus Sentinel-2 L2A · 48NUG，2026-04-16 正射像元估计，2026-06-13 不同位置复核。",
+      "modelOcclusion": {
+        "sourceAsset": "2feaa0aed475f9251049756212bbb4710ac182b58453e2efd4c398a28e943f4e",
+        "material": "dc2400688",
+        "texture": "ec70e0e1fba91891a7b4daba09b3ed59cd425d5bb03b4ec91a3a986c6f4618b9"
+      }
+    },
+    "textures": [
+      "ec70e0e1fba91891a7b4daba09b3ed59cd425d5bb03b4ec91a3a986c6f4618b9"
+    ]
   },
   {
     "entityId": "bay.330831bd-c70b-4e25-86d9-6d252d737532",
@@ -5126,8 +5150,16 @@
         "material": "dc2400670",
         "scale": 0.713
       },
-      "屋面反射率来源": "Copernicus Sentinel-2 L2A · 48NUG，2026-04-16 正射像元估计，2026-06-13 不同位置复核。"
-    }
+      "屋面反射率来源": "Copernicus Sentinel-2 L2A · 48NUG，2026-04-16 正射像元估计，2026-06-13 不同位置复核。",
+      "modelOcclusion": {
+        "sourceAsset": "bc51eca6d3a75f60893a6f07e3abb80596edfdbc72b1e8db03b341cc856916ae",
+        "material": "dc2400670",
+        "texture": "d98e21c7d73e6b9aa25de2951a1dbbb3f7e3a948e285e75cde820f569812ba65"
+      }
+    },
+    "textures": [
+      "d98e21c7d73e6b9aa25de2951a1dbbb3f7e3a948e285e75cde820f569812ba65"
+    ]
   },
   {
     "entityId": "bay.585b6472-4bf8-44c9-bf6b-980bc51367f1",
@@ -5252,8 +5284,16 @@
       "原始分片": "7/76/12_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 62.896,
-      "三角形数": 2092
-    }
+      "三角形数": 2092,
+      "modelOcclusion": {
+        "sourceAsset": "d8b2a7656d9d65269d6c1686f5bad1e55d4d7bf3e6783a091824a50201f1179c",
+        "material": "dc2400587",
+        "texture": "7b21acb55abb294a2d6db424412eb259c1bc930f1f38980b2e540c8e4afb148e"
+      }
+    },
+    "textures": [
+      "7b21acb55abb294a2d6db424412eb259c1bc930f1f38980b2e540c8e4afb148e"
+    ]
   },
   {
     "entityId": "bay.cffb7630-e2ef-41ce-999a-dda194d7e63d",
@@ -5354,8 +5394,16 @@
         "material": "dc2400253",
         "scale": 0.966
       },
-      "屋面反射率来源": "Copernicus Sentinel-2 L2A · 48NUG，2026-04-16 正射像元估计，2026-06-13 不同位置复核。"
-    }
+      "屋面反射率来源": "Copernicus Sentinel-2 L2A · 48NUG，2026-04-16 正射像元估计，2026-06-13 不同位置复核。",
+      "modelOcclusion": {
+        "sourceAsset": "e8b3c53b009966eccf28e4a937d358f3dd3d9f60755838dbe9d9d14f3e3859d1",
+        "material": "dc2400253",
+        "texture": "5c2a85b3db16f15840c517fb94185f3c43757d9a838ae32d7f59c34b0ad5d7c4"
+      }
+    },
+    "textures": [
+      "5c2a85b3db16f15840c517fb94185f3c43757d9a838ae32d7f59c34b0ad5d7c4"
+    ]
   },
   {
     "entityId": "bay.db0ea683-512b-436a-b02d-aae31b382a69",
@@ -6092,8 +6140,16 @@
       "原始分片": "7/77/11_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 14.778,
-      "三角形数": 1584
-    }
+      "三角形数": 1584,
+      "modelOcclusion": {
+        "sourceAsset": "1283d08eb340ba6b38d6cdb785cde1b596b81db0464bb33a727ce5277f9a0572",
+        "material": "dc2400294",
+        "texture": "7e8b9ef31cc2dfd338072d35c03582597d8ceafbc723208f5b33ad1149e1594f"
+      }
+    },
+    "textures": [
+      "7e8b9ef31cc2dfd338072d35c03582597d8ceafbc723208f5b33ad1149e1594f"
+    ]
   },
   {
     "entityId": "bay.7e5ef1c9-f724-4350-b289-142d7b03b701",
@@ -6188,8 +6244,16 @@
       "原始分片": "7/77/11_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 50.69,
-      "三角形数": 11964
-    }
+      "三角形数": 11964,
+      "modelOcclusion": {
+        "sourceAsset": "b12cd8c11fa96bbc345894fa384e5aadca9a208d2e4cbe15fd2832a700c55980",
+        "material": "dc2400281",
+        "texture": "5c29936c7b79d88696f21d9dd2d94e210efaad9dcc2508064692ec2bcb5491fb"
+      }
+    },
+    "textures": [
+      "5c29936c7b79d88696f21d9dd2d94e210efaad9dcc2508064692ec2bcb5491fb"
+    ]
   },
   {
     "entityId": "bay.bb96b66b-30c0-44d0-8d9e-17507565e182",
@@ -6524,8 +6588,16 @@
       "原始分片": "7/77/8_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 241.983,
-      "三角形数": 1728
-    }
+      "三角形数": 1728,
+      "modelOcclusion": {
+        "sourceAsset": "f4f3bb3dcd20c3f826295c978aa851b3ff3ab6d31908b8270c5e4d3d90e259d3",
+        "material": "dc2400602",
+        "texture": "9607caad0ba4fcb78d893e3a45557de1896f738c74b44cadf511a6c5847d5e04"
+      }
+    },
+    "textures": [
+      "9607caad0ba4fcb78d893e3a45557de1896f738c74b44cadf511a6c5847d5e04"
+    ]
   },
   {
     "entityId": "bay.844e97dc-af67-4133-99ff-530c55714845",
@@ -6764,8 +6836,16 @@
       "原始分片": "7/77/9_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 101.935,
-      "三角形数": 3524
-    }
+      "三角形数": 3524,
+      "modelOcclusion": {
+        "sourceAsset": "78388dd6872bfe2d8df7dd8711c1aacb2fba57154b5e115637b666ea83f535b5",
+        "material": "dc2400418",
+        "texture": "c4970bfbde71a0fb3ab6426a757f8e189327bf5b76d2c3cbae7cce006947eea7"
+      }
+    },
+    "textures": [
+      "c4970bfbde71a0fb3ab6426a757f8e189327bf5b76d2c3cbae7cce006947eea7"
+    ]
   },
   {
     "entityId": "bay.2f3a8c3d-2a3b-44da-b3b5-0083572ffce5",
@@ -6829,8 +6909,16 @@
       "玻璃参考": [
         "https://www.openstreetmap.org/way/46595387/history/17",
         "https://www.openstreetmap.org/way/1566589608/history/1"
-      ]
-    }
+      ],
+      "modelOcclusion": {
+        "sourceAsset": "6d55c9d97f690811490061149f5bc3d35b755f350c51321dbec0d70928b92d16",
+        "material": "dc2400186",
+        "texture": "feb5c83f43e2191ad7fea4c0461bbae40d48165f2315de53f8700cefa9eb8bd5"
+      }
+    },
+    "textures": [
+      "feb5c83f43e2191ad7fea4c0461bbae40d48165f2315de53f8700cefa9eb8bd5"
+    ]
   },
   {
     "entityId": "bay.07ac6503-7c4d-4f9b-94e6-1bc3c1d1cff9",
@@ -6859,8 +6947,16 @@
       "原始分片": "7/77/9_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 32.735,
-      "三角形数": 3819
-    }
+      "三角形数": 3819,
+      "modelOcclusion": {
+        "sourceAsset": "6664b40a21cb242f35c6aab475b4b6306692a02af5dce52c4781f2213098282b",
+        "material": "dc2400621",
+        "texture": "2b381a591c6df99c421702cffe4fa97effbf218ab57d3b748f9970b03508cfa4"
+      }
+    },
+    "textures": [
+      "2b381a591c6df99c421702cffe4fa97effbf218ab57d3b748f9970b03508cfa4"
+    ]
   },
   {
     "entityId": "bay.f12c4c1b-81c5-4af9-aedd-c2d0e30033e8",
@@ -7535,8 +7631,16 @@
       "原始分片": "8/154/16_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 242.286,
-      "三角形数": 584
-    }
+      "三角形数": 584,
+      "modelOcclusion": {
+        "sourceAsset": "f30b0b8445e6e8e066bd4c5a52faa811b6615b65e6f30c260d5fb10b82e0d25a",
+        "material": "dc2400800",
+        "texture": "ecf05c773f2d0b3e291a8c83555be5c74f05b48f03d1dcb43e94584b100a2c6a"
+      }
+    },
+    "textures": [
+      "ecf05c773f2d0b3e291a8c83555be5c74f05b48f03d1dcb43e94584b100a2c6a"
+    ]
   },
   {
     "entityId": "bay.cc194fd8-80d6-401f-9ed8-bab8a00991d4",
