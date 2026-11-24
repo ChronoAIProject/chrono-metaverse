@@ -6329,7 +6329,7 @@
     "kind": "object",
     "label": "MARINA BAY FINANCIAL CENTRE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "54281b87d7c45f46a6394b1753ba1861804b0a84df38bd4fa89e4c577c4dc38a",
+    "assetHash": "641aadcde7103cb3f14b6f73f415c3dbac9c93246f83d09d7c26c3ca81db77e4",
     "bounds": {
       "min": [
         -115.061183,
@@ -6891,7 +6891,7 @@
     "kind": "object",
     "label": "OCEAN FINANCIAL CENTRE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "6d55c9d97f690811490061149f5bc3d35b755f350c51321dbec0d70928b92d16",
+    "assetHash": "ca681fb6ca62b9b1eed59263d129f2dc9a92cb3c181eb29a345e01b7d2166598",
     "bounds": {
       "min": [
         334.76153,
@@ -6919,7 +6919,7 @@
         "https://www.openstreetmap.org/way/1566589608/history/1"
       ],
       "modelOcclusion": {
-        "sourceAsset": "6d55c9d97f690811490061149f5bc3d35b755f350c51321dbec0d70928b92d16",
+        "sourceAsset": "ca681fb6ca62b9b1eed59263d129f2dc9a92cb3c181eb29a345e01b7d2166598",
         "material": "dc2400186",
         "texture": "feb5c83f43e2191ad7fea4c0461bbae40d48165f2315de53f8700cefa9eb8bd5"
       }
@@ -7584,7 +7584,7 @@
     "kind": "object",
     "label": "MARINA BAY FINANCIAL CENTRE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "a4f70d6dc77490ce19bca4f00df603b92cd4bd7ea9f12616db86862e19ad6c26",
+    "assetHash": "2d4557e2a41a600bf3172f491dc1b9275a5104aadb879005a8015c2b48c287bc",
     "bounds": {
       "min": [
         -26.917404,
