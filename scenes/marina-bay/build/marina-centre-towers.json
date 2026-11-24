@@ -515,7 +515,7 @@
     "regionId": "marina-bay-exterior",
     "layer": "ext",
     "label": "SUNTEC SINGAPORE INTERNATIONAL CONVENTION AND EXHIBITION CENTRE",
-    "assetHash": "8b965c4843182923f934cb1117666a614a447caa40c5fda8904d4cb570ab28bd",
+    "assetHash": "99ba9a248469edd5625b409537991aa32d96f1f6b2884e99bdfbf141b1c1701d",
     "bounds": {
       "min": [
         71.69107055664062,
@@ -554,7 +554,8 @@
           "license": "CC BY 2.5"
         }
       ],
-      "材质方法": "保留测绘折板、张拉棚和杆件的外形，消除重复三角形。玻璃砖与屋面颜色按实拍取样，梁柱间距据折线檐口定位，底层及背面明暗为估值。"
+      "材质方法": "保留测绘折板、张拉棚和杆件的外形，消除重复三角形。玻璃砖与屋面颜色按实拍取样，梁柱间距据折线檐口定位，底层及背面明暗为估值。",
+      "立面反射": "三层高度采集周围城市与日照天空。玻璃砖、窗带及浅色构件按实拍区分粗糙度与微表面朝向，材质参数为估值。"
     }
   },
   {
@@ -563,7 +564,7 @@
     "regionId": "marina-bay-exterior",
     "layer": "ext",
     "label": "ONE RAFFLES LINK",
-    "assetHash": "3d7e0c48db3fad8d12812a5ce819f39c54fcc87a488b5ea3775ad705a65b9e79",
+    "assetHash": "b4640a51933a969323d185f94ab0c1f4c5df19196cf9f342695d6862d8ef4c94",
     "bounds": {
       "min": [
         220.6945343017578,
@@ -603,7 +604,117 @@
           "license": "Copyrighted free use"
         }
       ],
-      "材质方法": "窗带及玻璃楼端取样自同楼照片。面朝草场的檐口按测绘剖面恢复开放弧梁，梁距、截面及背面窗带为估值。"
+      "材质方法": "窗带及玻璃楼端取样自同楼照片。面朝草场的檐口按测绘剖面恢复开放弧梁，梁距、截面及背面窗带为估值。",
+      "立面反射": "三层高度采集周围城市与日照天空。玻璃砖、窗带及浅色构件按实拍区分粗糙度与微表面朝向，材质参数为估值。"
+    }
+  },
+  {
+    "entityId": "bay.d9952b9a-c894-4231-984e-b5b44238a62a",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "kind": "object",
+    "assetHash": "b3f84c18343aa6599be6a9db7e0d4ccc7fec62e1490b39710454012ff9b0bb28",
+    "label": "Guoco Midtown office tower",
+    "bounds": {
+      "min": [
+        175.50167846679688,
+        -60.32666015625,
+        1799.2181396484375
+      ],
+      "max": [
+        278.7172546386719,
+        133.1763916015625,
+        1979.29345703125
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "官方建筑编号": "SLA_BLDG2_d9952b9a-c894-4231-984e-b5b44238a62a",
+      "建筑识别": "归档无楼名。经 OneMap 地址坐标、相邻建筑关系和跨湾实拍屋顶轮廓比对。",
+      "测绘模型": "OneMap 3D · SLA, cheeaun/om3d",
+      "来源地址": "https://github.com/cheeaun/om3d/blob/ac451b84/optimized-tiles/6/39/7_5.b3dm",
+      "经纬度": [
+        103.85782877752008,
+        1.2971422760875664
+      ],
+      "测绘高度（米）": 193.475,
+      "立面影像": [
+        {
+          "author": "Waldyrious",
+          "url": "https://commons.wikimedia.org/wiki/File:Guoco_Midtown_II.jpg",
+          "license": "CC BY-SA 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/"
+        },
+        {
+          "author": "Waldyrious",
+          "url": "https://commons.wikimedia.org/wiki/File:Midtown_Bay_and_Guoco_Midtown_II.jpg",
+          "license": "CC BY-SA 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/"
+        },
+        {
+          "author": "Matti Blume",
+          "url": "https://commons.wikimedia.org/wiki/File:Marina_Bay,_Singapore_(P1110054).jpg",
+          "license": "CC BY-SA 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/"
+        }
+      ],
+      "材质方法": "办公塔玻璃和开放层来自街面实拍；朝水库的设备层开口与标识按同机位跨湾照片校正。背面沿用可见面样式。",
+      "三角形数": 4440,
+      "玻璃反射": "从建筑内部三个高度移除自身后采集周围街区与天空，按视线及立面高度采样。"
+    }
+  },
+  {
+    "entityId": "bay.7c9b86de-1e7d-4c64-9ba6-75f42f96847c",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "kind": "object",
+    "assetHash": "58e8e525f4bf23364b29a248ba1763546f9b418346317ab84b45ac5bb141cacb",
+    "label": "Midtown Bay",
+    "bounds": {
+      "min": [
+        230.86268615722656,
+        -60.277793884277344,
+        1755.5931396484375
+      ],
+      "max": [
+        291.1630859375,
+        70.68598175048828,
+        1823.7005615234375
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "官方建筑编号": "SLA_BLDG2_7c9b86de-1e7d-4c64-9ba6-75f42f96847c",
+      "建筑识别": "归档无楼名。经 OneMap 地址坐标、相邻建筑关系和跨湾实拍屋顶轮廓比对。",
+      "测绘模型": "OneMap 3D · SLA, cheeaun/om3d",
+      "来源地址": "https://github.com/cheeaun/om3d/blob/ac451b84/optimized-tiles/6/39/7_5.b3dm",
+      "经纬度": [
+        103.85722145093594,
+        1.2963229787609374
+      ],
+      "测绘高度（米）": 130.951,
+      "立面影像": [
+        {
+          "author": "Waldyrious",
+          "url": "https://commons.wikimedia.org/wiki/File:Guoco_Midtown_II.jpg",
+          "license": "CC BY-SA 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/"
+        },
+        {
+          "author": "Waldyrious",
+          "url": "https://commons.wikimedia.org/wiki/File:Midtown_Bay_and_Guoco_Midtown_II.jpg",
+          "license": "CC BY-SA 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/"
+        }
+      ],
+      "材质方法": "按实拍层间关系重建住宅开间，施工遮挡与背面处的竣工材质和阳台细部为估值。",
+      "三角形数": 1232
     }
   }
 ]
