@@ -466,5 +466,54 @@
       ],
       "材质方法": "保留测绘折板、张拉棚和杆件的外形，消除重复三角形。玻璃砖与屋面颜色按实拍取样，梁柱间距据折线檐口定位，底层及背面明暗为估值。"
     }
+  },
+  {
+    "entityId": "bay.5b0efee0-096c-465b-9cc5-f8fee4bd4007",
+    "kind": "object",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "label": "ONE RAFFLES LINK",
+    "assetHash": "3d7e0c48db3fad8d12812a5ce819f39c54fcc87a488b5ea3775ad705a65b9e79",
+    "bounds": {
+      "min": [
+        220.6945343017578,
+        -60.15718078613281,
+        1214.5831298828125
+      ],
+      "max": [
+        304.7402038574219,
+        -16.525955200195312,
+        1379.0916748046875
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "测绘模型": "OneMap 3D · SLA, cheeaun/om3d",
+      "官方建筑编号": "SLA_BLDG2_5b0efee0-096c-465b-9cc5-f8fee4bd4007",
+      "附属构件编号": "SLA_BLDG2_2289bcaf-9390-45e0-a266-e7133dbbc834",
+      "来源地址": "https://github.com/cheeaun/om3d/tree/ac451b84/optimized-tiles/7/78/12_5.b3dm",
+      "经纬度": [
+        103.85579542564459,
+        1.2920709181952248
+      ],
+      "测绘高度（米）": 43.637,
+      "三角形数": 2127,
+      "立面影像": [
+        {
+          "author": "Terence Ong",
+          "url": "https://commons.wikimedia.org/wiki/File:One_Raffles_Link.JPG",
+          "license": "CC BY 2.5"
+        },
+        {
+          "author": "User:Sengkang",
+          "url": "https://commons.wikimedia.org/wiki/File:One_Raffles_Link,_Jan_06.JPG",
+          "license": "Copyrighted free use"
+        }
+      ],
+      "材质方法": "窗带及玻璃楼端取样自同楼照片。面朝草场的檐口按测绘剖面恢复开放弧梁，梁距、截面及背面窗带为估值。"
+    }
   }
 ]
