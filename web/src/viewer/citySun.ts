@@ -32,7 +32,8 @@ export class CitySun {
     shadow.mapSize.set(2048, 2048);
     shadow.bias = -0.0001;
     shadow.normalBias = 0.12;
-    shadow.radius = 2;
+    // Hardware PCF already interpolates four depths at each sample.
+    shadow.radius = 0.5;
     shadow.autoUpdate = false;
   }
 
@@ -81,7 +82,9 @@ export class CitySun {
       Object.assign(shadow.camera, { left: -radius, right: radius, top: radius, bottom: -radius });
       shadow.camera.updateProjectionMatrix();
     }
-    shadow.normalBias = radius / 3000;
+    // Keep nearby shadows attached to thin railings. At city scale a wider
+    // normal offset keeps oblique, sunlit facades from sampling themselves.
+    shadow.normalBias = texelX * (radius >= 360 ? 0.65 : 0.34);
     light.position.copy(this.direction).multiplyScalar(1000).add(this.center);
     light.target.position.copy(this.center);
     light.target.updateMatrixWorld();
