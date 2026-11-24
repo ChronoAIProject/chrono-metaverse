@@ -109,8 +109,12 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
   const { radiance: _qwantaniRadiance, ...clearQwantaniDisplay } = clearQwantani;
   const balancedQwantani = JSON.parse(readFileSync(new URL('../references/qwantani-balanced-sky.json', import.meta.url), 'utf8'));
   const { radiance: _balancedRadiance, ...balancedDisplaySky } = balancedQwantani;
+  const scatteredMorning = JSON.parse(readFileSync(new URL('../references/qwantani-scattered-sky.json', import.meta.url), 'utf8'));
+  const { radiance: _scatteredRadiance, ...scatteredDisplaySky } = scatteredMorning;
   const { radiance, ...displaySky } = target.sky;
   const presets = [
+    scatteredMorning,
+    scatteredDisplaySky,
     balancedQwantani,
     balancedDisplaySky,
     clearQwantani,
