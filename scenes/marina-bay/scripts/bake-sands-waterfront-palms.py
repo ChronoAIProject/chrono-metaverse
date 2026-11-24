@@ -51,7 +51,7 @@ def read_palm(path):
     return positions - foot, normals, uv, faces.reshape(-1, 3)
 
 
-def bake(folder):
+def palm_stand(folder, trees):
     reference = json.loads((ROOT / "references/sands-waterfront-palms.json").read_text())
     for name, digest in reference["sourceHashes"].items():
         if hashlib.sha256((folder / name).read_bytes()).hexdigest() != digest:
@@ -64,9 +64,9 @@ def bake(folder):
                            normalTexture=normal, baseColorFactor=[125, 176, 168, 255], alphaMode="MASK", alphaCutoff=.38, doubleSided=True,
                            metallicFactor=0, roughnessFactor=.93)
     sources = {variant: read_palm(folder / f"tree_roystonea_regia_{variant}.dae")
-               for variant in {tree["variant"] for tree in reference["trees"]}}
+               for variant in {tree["variant"] for tree in trees}}
     meshes, colours = [], []
-    for tree in reference["trees"]:
+    for tree in trees:
         xyz, n, uv, faces = sources[tree["variant"]]
         crown_width = np.sqrt(np.prod(np.ptp(xyz[:, [0, 2]], axis=0)))
         width = tree["crownDiameterMetres"] / crown_width
@@ -75,6 +75,12 @@ def bake(folder):
         rotation = trimesh.transformations.rotation_matrix(angle, [0, 1, 0])[:3, :3]
         transform = rotation @ np.diag([width, height, width])
         x, z = tree["localXZ"]
+        if "trunkWidthFactor" in tree:
+            # Taper into the crown without opening a seam at the leaf attachments.
+            fraction = xyz[:, 1] / np.ptp(xyz[:, 1])
+            blend = np.clip((fraction-.62)/.13, 0, 1)
+            xyz = xyz.copy()
+            xyz[:, [0,2]] *= (tree["trunkWidthFactor"]*(1-blend) + blend)[:, None]
         points = xyz @ transform.T + [x, tree["groundY"] - .025, z]
         normals = n @ np.linalg.inv(transform)
         normals /= np.maximum(1e-8, np.linalg.norm(normals, axis=1, keepdims=True))
@@ -84,8 +90,14 @@ def bake(folder):
         colours.append(np.tile([*tree["linearTint"], 255], (len(points), 1)))
     stand = combined(meshes)
     stand.visual.vertex_attributes["color"] = np.vstack(colours).astype(np.uint8)
+    return stand
+
+
+def bake(folder):
+    reference = json.loads((ROOT / "references/sands-waterfront-palms.json").read_text())
+    stand = palm_stand(folder, reference["trees"])
     scene = trimesh.Scene()
-    scene.add_geometry(stand, geom_name=material.name)
+    scene.add_geometry(stand, geom_name=stand.visual.material.name)
 
     digest, bounds = write_tree_asset(scene, packing_options=("-si", "0.48", "-se", "0.0005", "-slb"),
                                      copyright=CREDIT)

@@ -1956,5 +1956,72 @@
       ],
       "场地重建": "场界与板球磨损带按正射影像估计。草色参考日间实拍。"
     }
+  },
+  {
+    "entityId": "bay.artscience-promenade",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "艺术科学博物馆滨水廊架",
+    "assetHash": "5617e93e49e4df663d5fb2c4e99b4a83c79f2a14b2872ba4672f578cc301cc43",
+    "bounds": {
+      "min": [
+        -352.5814532042327,
+        -60.30456849597076,
+        746.3439937106469
+      ],
+      "max": [
+        -166.48763108962407,
+        -57.20675292240973,
+        902.857795295504
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "平面依据": "Singapore Land Authority OneMap OrthoJPG",
+      "现场照片": [
+        "https://commons.wikimedia.org/wiki/File:Singapore_(SG),_ArtScience_Museum_--_2019_--_4544.jpg",
+        "https://commons.wikimedia.org/wiki/File:ArtScience_Museum_Birdview_from_Singapore_Flyer_20130209.JPG"
+      ],
+      "资料来源": "Layout interpreted from OneMap and OpenStreetMap contributors (ODbL). Granite Tile 04 by Poly Haven (CC0).",
+      "重建范围": "六段弧形廊架及棚下铺地。棚高取自地图标注，柱距和格栅尺寸据照片及正射图估读。"
+    }
+  },
+  {
+    "entityId": "bay.artscience-palm-court",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "艺术科学博物馆滨水棕榈广场",
+    "assetHash": "0f81d060ecfe4b0289a87c4258fbae5986ac175b1112dd157b88097b06778f6e",
+    "bounds": {
+      "min": [
+        -352.7371840387038,
+        -60.31789658855049,
+        884.2689661010089
+      ],
+      "max": [
+        -280.86929962162435,
+        -52.827864513519195,
+        901.1193179608437
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "平面依据": "Singapore Land Authority OneMap OrthoJPG",
+      "现场照片": [
+        "https://commons.wikimedia.org/wiki/File:Singapore_(SG),_ArtScience_Museum_--_2019_--_4544.jpg",
+        "https://commons.wikimedia.org/wiki/File:ArtScience_Museum_Birdview_from_Singapore_Flyer_20130209.JPG"
+      ],
+      "素材来源": "Royal palm meshes and textures adapted from 0 A.D., Wildfire Games (https://wildfiregames.com/), CC BY-SA 3.0 (https://creativecommons.org/licenses/by-sa/3.0/). Scaled, rotated, tinted and batched for the Sands waterfront.",
+      "重建范围": "树冠中心按正射影像定位。树高及冠幅按照片估读，复用王棕网格近似树形。"
+    }
   }
 ]
