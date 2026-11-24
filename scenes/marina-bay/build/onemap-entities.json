@@ -3409,7 +3409,7 @@
     "kind": "object",
     "label": "MARINA BAY SANDS (ARTSCIENCE MUSEUM)",
     "regionId": "marina-bay-exterior",
-    "assetHash": "e6ad7551849ed97324c41f8940a3426e8b6d41dfc9bbf82977a0ef7c280d5781",
+    "assetHash": "6f6629b4099f8e84f5102c0a355cd483dae5ce3207608a696f9ad74b683c87b2",
     "bounds": {
       "min": [
         -266.013858,
@@ -6620,7 +6620,7 @@
     "kind": "object",
     "label": "THE SAIL @ MARINA BAY",
     "regionId": "marina-bay-exterior",
-    "assetHash": "2ee202b5a9f76145405850fef7c181113580da9e8d2a6d249e23b3c413c137ec",
+    "assetHash": "573b805dfae453a5fe675c6b3d9444f85941169aa62b69b3debe5ff3183bdb70",
     "bounds": {
       "min": [
         157.142935,
@@ -6643,7 +6643,7 @@
       "官方测量高度（米）": 241.983,
       "三角形数": 1728,
       "modelOcclusion": {
-        "sourceAsset": "2ee202b5a9f76145405850fef7c181113580da9e8d2a6d249e23b3c413c137ec",
+        "sourceAsset": "573b805dfae453a5fe675c6b3d9444f85941169aa62b69b3debe5ff3183bdb70",
         "material": "dc2400602",
         "texture": "9607caad0ba4fcb78d893e3a45557de1896f738c74b44cadf511a6c5847d5e04"
       }
@@ -6748,7 +6748,7 @@
     "kind": "object",
     "label": "ONE MARINA BOULEVARD",
     "regionId": "marina-bay-exterior",
-    "assetHash": "d6a2f36dba4b948c5e6687e5e58b4c6ea8cc10fddf6786f205c39ecb405317a2",
+    "assetHash": "a1b578e0ecde9ba753f1d1f5e9052515a1c59a3c5144edec68b5ead640ca1159",
     "bounds": {
       "min": [
         231.076513,
