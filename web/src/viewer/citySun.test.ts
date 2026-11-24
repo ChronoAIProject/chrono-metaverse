@@ -66,3 +66,21 @@ it('extends the sun map to neighbouring buildings in a wide view and preserves t
   lighting.update(renderer, focus.clone().add(new THREE.Vector3(5, 0, 0)), focus, false);
   expect(light.shadow.camera.right).toBe(40);
 });
+
+it('keeps hysteresis while walking and reframes a distant camera cut like a fresh view', () => {
+  const sun = new CitySun();
+  const key = new THREE.DirectionalLight();
+  key.position.set(0.55, 0.74, 0.38);
+  sun.setLight(key);
+  const renderer = { shadowMap: {} } as THREE.WebGLRenderer;
+  const pose = (x: number, distance: number) => {
+    const target = new THREE.Vector3(x, 0, 0);
+    sun.update(renderer, new THREE.Vector3(x, 0, distance), target, false);
+    return key.shadow.camera.right;
+  };
+  expect(pose(0, 160)).toBe(112);
+  expect(pose(1, 265)).toBe(112);
+  expect(pose(900, 265)).toBe(360);
+  sun.setLight(key);
+  expect(pose(900, 265)).toBe(360);
+});
