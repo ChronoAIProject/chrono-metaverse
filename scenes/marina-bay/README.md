@@ -4,8 +4,8 @@
 
 ## 下载结果与来源
 
-- 官方页面：https://www.onemap.gov.sg/3d
-- 官方三维索引：https://www.onemap.gov.sg/omapi/tilesets/sg_noterrain_tiles/tileset.json
+- 2026 年 11 月 24 日从 OneMap 首页点击 “Open 3D map view”，入口直达维护公告。旧域名 `www.onemap3d.gov.sg` 跳转到同一首页。[OneMap 首页](https://www.onemap.gov.sg/) · [维护公告](https://www.onemap.gov.sg/maintenance)
+- 金沙原始下载使用的页面 `/3d` 和三维索引 `/omapi/tilesets/sg_noterrain_tiles/tileset.json` 在上述日期均返回 HTTP 404。
 - 官方正射影像：https://www.onemap.gov.sg/maps/tiles/OrthoJPG/{z}/{x}/{y}.png
 - 范围：西界经度 103.8500、南纬度 1.2780、东经度 103.8647、北纬度 1.2918。
 - 下载 49 个最高精度 B3DM 分片，共 825,204,456 字节；另外下载 36 张第 17 级正射影像。
