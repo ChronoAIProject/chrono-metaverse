@@ -418,5 +418,53 @@
         }
       ]
     }
+  },
+  {
+    "entityId": "bay.04bef3bb-3e9b-40da-9b03-5d18389ef8eb",
+    "kind": "object",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "label": "SUNTEC SINGAPORE INTERNATIONAL CONVENTION AND EXHIBITION CENTRE",
+    "assetHash": "8b965c4843182923f934cb1117666a614a447caa40c5fda8904d4cb570ab28bd",
+    "bounds": {
+      "min": [
+        71.69107055664062,
+        -60.22352981567383,
+        1394.7381591796875
+      ],
+      "max": [
+        246.4457550048828,
+        -1.2602930068969727,
+        1654.6826171875
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "测绘模型": "OneMap 3D · SLA, cheeaun/om3d",
+      "官方建筑编号": "SLA_BLDG2_04bef3bb-3e9b-40da-9b03-5d18389ef8eb",
+      "来源地址": "https://github.com/cheeaun/om3d/tree/ac451b84/optimized-tiles/8/157/26_5.b3dm",
+      "测绘高度（米）": 58.93,
+      "经纬度": [
+        103.8572170149955,
+        1.2937333502254984
+      ],
+      "三角形数": 12486,
+      "立面影像": [
+        {
+          "author": "User:Sengkang",
+          "url": "https://commons.wikimedia.org/wiki/File:Suntec_Singapore_International_Convention_and_Exhibition_Centre,_Aug_06.JPG",
+          "license": "Copyrighted free use"
+        },
+        {
+          "author": "Terence Ong",
+          "url": "https://commons.wikimedia.org/wiki/File:Suntec_Singapore_International_Convention_and_Exhibition_Centre_4.JPG",
+          "license": "CC BY 2.5"
+        }
+      ],
+      "材质方法": "保留测绘折板、张拉棚和杆件的外形，消除重复三角形。玻璃砖与屋面颜色按实拍取样，梁柱间距据折线檐口定位，底层及背面明暗为估值。"
+    }
   }
 ]
