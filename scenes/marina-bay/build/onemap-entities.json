@@ -6868,7 +6868,7 @@
     "kind": "object",
     "label": "OUE BAYFRONT",
     "regionId": "marina-bay-exterior",
-    "assetHash": "a31dbcb77efcc4e5976ea642bd69fd40795404183a7bb79fd085642a2093b067",
+    "assetHash": "dc5d940ffb0eba7e75d1ff6dc51cd44dc7c007d73ee9fb81eb488f54b383a650",
     "bounds": {
       "min": [
         228.377465,
@@ -6891,7 +6891,7 @@
       "官方测量高度（米）": 101.935,
       "三角形数": 3524,
       "modelOcclusion": {
-        "sourceAsset": "a31dbcb77efcc4e5976ea642bd69fd40795404183a7bb79fd085642a2093b067",
+        "sourceAsset": "dc5d940ffb0eba7e75d1ff6dc51cd44dc7c007d73ee9fb81eb488f54b383a650",
         "material": "dc2400418",
         "texture": "c4970bfbde71a0fb3ab6426a757f8e189327bf5b76d2c3cbae7cce006947eea7"
       }
@@ -7686,7 +7686,7 @@
     "kind": "object",
     "label": "ONE RAFFLES QUAY (NORTH TOWER)",
     "regionId": "marina-bay-exterior",
-    "assetHash": "41055cf708a46f69b5a9259f7b058418969d94e9bdf243ef68ae90469114e9dd",
+    "assetHash": "f67318d63cafd84e2c0e792d48b933356c05101c450bb86387a9b62800d07112",
     "bounds": {
       "min": [
         243.863294,
@@ -7709,7 +7709,7 @@
       "官方测量高度（米）": 242.286,
       "三角形数": 584,
       "modelOcclusion": {
-        "sourceAsset": "41055cf708a46f69b5a9259f7b058418969d94e9bdf243ef68ae90469114e9dd",
+        "sourceAsset": "f67318d63cafd84e2c0e792d48b933356c05101c450bb86387a9b62800d07112",
         "material": "dc2400800",
         "texture": "ecf05c773f2d0b3e291a8c83555be5c74f05b48f03d1dcb43e94584b100a2c6a"
       }
