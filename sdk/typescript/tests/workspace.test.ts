@@ -1,4 +1,11 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { main } from '../src/commands/index.js';
@@ -197,6 +204,14 @@ describe('metaverse init', () => {
       readFileSync(join(SDK_ROOT, 'skills/metaverse-reconstruct/SKILL.md'), 'utf8'),
     );
     expect(recon).toContain('metaverse-recon');
+    const realismSource = join(SDK_ROOT, 'skills/web-scene-realism');
+    const realismTarget = join(root, '.claude/skills/web-scene-realism');
+    const references = readdirSync(join(realismSource, 'references'));
+    for (const file of ['SKILL.md', ...references.map((name) => join('references', name))]) {
+      expect(readFileSync(join(realismTarget, file), 'utf8')).toBe(
+        readFileSync(join(realismSource, file), 'utf8'),
+      );
+    }
     expect(readFileSync(join(root, 'build/main.ts'), 'utf8')).toContain(
       'export default function build',
     );
