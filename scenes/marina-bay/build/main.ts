@@ -62,11 +62,16 @@ export function withBoatQuay(surroundings: EntityBody): EntityBody {
       if (available.length) water = { waterlineEdits: [...previous, ...available] };
     }
   }
-  const { waterSample } = JSON.parse(readFileSync(new URL('../references/marina-reservoir-water.json', import.meta.url), 'utf8'));
-  const { rmsGravitySlope: _slope, ...previousSample } = waterSample;
+  const { waterSample, rippleWind } = JSON.parse(readFileSync(new URL('../references/marina-reservoir-water.json', import.meta.url), 'utf8'));
+  const { rmsRippleSlope: _ripple, ...gravitySample } = waterSample;
+  const { rmsGravitySlope: _slope, ...previousSample } = gravitySample;
   if (waterLayer && sources.some(s => s?.url === waterSample.source) &&
-      (!('waterSample' in content) || isDeepStrictEqual(content.waterSample, previousSample))) {
+      (!('waterSample' in content) || isDeepStrictEqual(content.waterSample, gravitySample) ||
+       isDeepStrictEqual(content.waterSample, previousSample))) {
     water = { ...water, waterSample };
+  }
+  if (waterLayer && sources.some(s => s?.url === waterSample.source) && !('rippleWindFrom' in content)) {
+    water = { ...water, rippleWindFrom: rippleWind.fromDegrees };
   }
   const { facadeReflections, capture } = JSON.parse(readFileSync(new URL('../references/district-window-reflections.json', import.meta.url), 'utf8'));
   const oldAtlas = capture.previousTexture as string;

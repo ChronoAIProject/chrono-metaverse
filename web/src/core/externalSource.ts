@@ -88,6 +88,8 @@ export interface WaterSample {
   readonly reflectance: readonly [number, number, number];
   /** Root-mean-square slope of the metre-scale gravity waves. */
   readonly rmsGravitySlope?: number;
+  /** RMS slope of short reservoir waves, before local wind modulation. */
+  readonly rmsRippleSlope?: number;
 }
 
 export interface VectorBuildingPart {
@@ -116,6 +118,8 @@ export interface VectorContent {
   readonly reference: GeographicReference;
   readonly roads?: RoadLayer | false;
   readonly waterLayer?: string;
+  /** Meteorological wind-from bearing for short water waves, clockwise from true north. */
+  readonly rippleWindFrom?: number;
   readonly waterSample?: WaterSample;
   readonly facadeReflections?: FacadeReflections;
   readonly waterlineEdits?: readonly WaterlineEdit[];
@@ -256,6 +260,7 @@ function validWaterSample(value: unknown): boolean {
     finite(sample.center[1], -85.05113, 85.05113) &&
     finite(sample.radius, 1, 50000) &&
     (sample.rmsGravitySlope === undefined || finite(sample.rmsGravitySlope, 0, 1)) &&
+    (sample.rmsRippleSlope === undefined || finite(sample.rmsRippleSlope, 0, 1)) &&
     Array.isArray(sample.reflectance) &&
     sample.reflectance.length === 3 &&
     sample.reflectance.every((n) => finite(n, 0, 1))
@@ -368,6 +373,8 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
       (style.distantZoom !== undefined &&
         (!finite(style.distantZoom, 0, 20) || !Number.isInteger(style.distantZoom))) ||
       (raw.waterLayer !== undefined && !field(raw.waterLayer)) ||
+      (raw.rippleWindFrom !== undefined &&
+        (!raw.waterLayer || !finite(raw.rippleWindFrom, 0, 360))) ||
       (raw.facadeReflections !== undefined &&
         (style.facade !== 'urban' ||
           !validFacadeReflections(raw.facadeReflections, entity.textures))) ||
@@ -422,6 +429,7 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
       ...(raw.waterlineEdits ? { waterlineEdits: raw.waterlineEdits } : {}),
       ...(raw.waterReflection ? { waterReflection: raw.waterReflection } : {}),
       ...(raw.waterLayer !== undefined ? { waterLayer: raw.waterLayer } : {}),
+      ...(raw.rippleWindFrom !== undefined ? { rippleWindFrom: raw.rippleWindFrom } : {}),
       ...(raw.roads !== undefined ? { roads: raw.roads } : {}),
     } as unknown as VectorContent;
   }

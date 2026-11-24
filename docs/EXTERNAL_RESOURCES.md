@@ -75,7 +75,11 @@
 
 可选的 `waterLayer` 指定同一份矢量瓦片中的水域多边形图层。查看器在 14 级及以上的瓦片中沿岸线绘制带反光的水面，并保留岛屿。镜头拉远后，水面逐渐过渡到航拍底图。
 
+有当地风向记录时，可以在水域图层设置 `rippleWindFrom`。它以真北为零，顺时针记录风的来向，单位为度。两组短波向下风方向传播，波数经过地图朝向与物件旋转校正。
+
 实体地图可以在地图配置中设置 `surfaceDetail: "urban"`，在近景叠加按米采样的草地、混凝土和沥青扫描纹理，镜头靠近时按影像颜色绘制草叶。水域配置 `waterReflection: "scene"` 后，共享一个低分辨率平面反射缓冲。建筑可在 `extrusion` 中设置 `facade: "urban"` 生成窗格和墙面；当来源提供较低级别的建筑概化层时，`distantZoom` 可指定远景使用的瓦片级别。
+
+在 `waterSample` 中设置 `rmsRippleSlope` 可为 `featureIds` 指定的水域启用具有方向分布的短波。数值是阵风调制前的均方根斜率，范围为 0 到 1。米级波浪与细浪使用各自的空间尺度和移动速度。`radius` 控制水体反射率采样与长波斜率的过渡范围。
 
 在矢量物件上配置 `groundLayers` 后，实体视图使用已映射的多边形重建草坪和铺装。每项指定 `layer`、分类字段 `property`、匹配值 `values` 及游戏材质 `material`（`turf` 或 `pavers`）。例如 `{"layer":"transportation","property":"subclass","values":["pedestrian"],"material":"pavers"}` 按步行广场边界及孔洞铺设花岗岩，外缘带压顶石。数据缺失时仍可查看已有影像。
 
