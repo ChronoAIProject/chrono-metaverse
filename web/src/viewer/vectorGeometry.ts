@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { VectorTile, classifyRings } from '@mapbox/vector-tile';
 import Pbf from 'pbf';
 import type {
-  FacadeReflectionBuilding,
+  VectorBuildingPart,
   GroundLayer,
   RoadLayer,
   VectorContent,
@@ -11,6 +11,24 @@ import type {
 import { GeoReference, tileBounds, tileCoordinates, tileKey, type Tile } from './geography';
 
 type Point = { x: number; y: number };
+
+function matchesBuildingPart(
+  part: VectorBuildingPart,
+  id: number | undefined,
+  minHeight: number,
+  height: number,
+  box: THREE.Box3,
+) {
+  return (
+    part.featureId === id &&
+    part.minHeight === minHeight &&
+    part.height === height &&
+    part.bounds[0] < box.max.x &&
+    part.bounds[2] > box.min.x &&
+    part.bounds[1] < box.max.z &&
+    part.bounds[3] > box.min.z
+  );
+}
 
 /** Same-height buildings may all share one MVT feature. Clipped footprints only
  * use attributes available on both tiles, including when their feature IDs differ. */
@@ -320,7 +338,7 @@ export function vectorGeometry(
   groundLayers: readonly GroundLayer[] = [],
   waterlineEdits?: readonly WaterlineEdit[],
   sampledWaterIds?: ReadonlySet<number>,
-  reflectionBuildings?: readonly FacadeReflectionBuilding[],
+  reflectionBuildings?: readonly VectorBuildingPart[],
 ) {
   const data = new VectorTile(new Pbf(bytes));
   const layer = data.layers[style.layer];
@@ -383,6 +401,9 @@ export function vectorGeometry(
         style.excludeBounds?.some(
           ([x0, z0, x1, z1]) =>
             box.min.x < x1 && box.max.x > x0 && box.min.z < z1 && box.max.z > z0,
+        ) ||
+        style.excludeBuildingParts?.some((part) =>
+          matchesBuildingPart(part, feature.id, minHeight, height, box),
         )
       )
         continue;
@@ -424,15 +445,8 @@ export function vectorGeometry(
       if (style.facade) {
         // IDs can group separate footprints. Check the surveyed height and position too.
         const row =
-          reflectionBuildings?.findIndex(
-            (b) =>
-              b.featureId === feature.id &&
-              b.height === height &&
-              b.minHeight === minHeight &&
-              b.bounds[0] < box.max.x &&
-              b.bounds[2] > box.min.x &&
-              b.bounds[1] < box.max.z &&
-              b.bounds[3] > box.min.z,
+          reflectionBuildings?.findIndex((part) =>
+            matchesBuildingPart(part, feature.id, minHeight, height, box),
           ) ?? -1;
         const rgb = tint ?? 0;
         for (let k = roof; k < positions.length / 3; k++) {

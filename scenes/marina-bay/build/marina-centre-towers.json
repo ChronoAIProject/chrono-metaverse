@@ -1,0 +1,271 @@
+[
+  {
+    "entityId": "bay.04d573f1-aed4-471d-bfa4-759ecdec771b",
+    "kind": "object",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "label": "SUNTEC TOWER ONE",
+    "assetHash": "977bc9d23c3ada5fb97b718ec6ed510de55c3e7959f9252b82fbe298889529f5",
+    "bounds": {
+      "min": [
+        79.2293701171875,
+        -60.252376556396484,
+        1711.4234619140625
+      ],
+      "max": [
+        127.91734313964844,
+        118.72154998779297,
+        1760.19775390625
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "立面方法": "实拍窗组透视校正与按米制重复",
+      "测绘模型": "OneMap 3D · SLA, cheeaun/om3d",
+      "来源地址": "https://github.com/cheeaun/om3d/tree/ac451b84/optimized-tiles",
+      "官方建筑编号": "SLA_BLDG2_04d573f1-aed4-471d-bfa4-759ecdec771b",
+      "归档分片": "7/78/13_5.b3dm",
+      "官方测量高度（米）": 178.948,
+      "经纬度": [
+        103.85839890338292,
+        1.295431075497501
+      ],
+      "三角形数": 588,
+      "立面影像": [
+        {
+          "author": "CEphoto, Uwe Aranas",
+          "url": "https://commons.wikimedia.org/wiki/File:Singapore_Marina-Mandarin-Singapore-Hotel-03.jpg",
+          "license": "CC BY-SA 3.0"
+        }
+      ]
+    }
+  },
+  {
+    "entityId": "bay.bdf8a43d-df18-4111-a7a8-55e83260fd96",
+    "kind": "object",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "label": "SUNTEC TOWER FOUR",
+    "assetHash": "dcdf801848f13717585f3a39a7d3034c505ed973017a57378082fee949a25923",
+    "bounds": {
+      "min": [
+        -90.10428619384766,
+        -60.24849319458008,
+        1677.193359375
+      ],
+      "max": [
+        -41.41725540161133,
+        118.5697250366211,
+        1725.71630859375
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "立面方法": "实拍窗组透视校正与按米制重复",
+      "测绘模型": "OneMap 3D · SLA, cheeaun/om3d",
+      "来源地址": "https://github.com/cheeaun/om3d/tree/ac451b84/optimized-tiles",
+      "官方建筑编号": "SLA_BLDG2_bdf8a43d-df18-4111-a7a8-55e83260fd96",
+      "归档分片": "7/79/13_5.b3dm",
+      "官方测量高度（米）": 178.805,
+      "经纬度": [
+        103.859744243363,
+        1.2946521591304356
+      ],
+      "三角形数": 968,
+      "立面影像": [
+        {
+          "author": "CEphoto, Uwe Aranas",
+          "url": "https://commons.wikimedia.org/wiki/File:Singapore_Marina-Mandarin-Singapore-Hotel-03.jpg",
+          "license": "CC BY-SA 3.0"
+        }
+      ]
+    }
+  },
+  {
+    "entityId": "bay.648fdce7-4983-4752-9646-5057e13ed6ee",
+    "kind": "object",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "label": "CENTENNIAL TOWER",
+    "assetHash": "05aaa23359e84f0626a8fdca7c60cf4970eaeaf32051eec4ff5758c66b1b1607",
+    "bounds": {
+      "min": [
+        -198.87591552734375,
+        -60.2153205871582,
+        1567.1661376953125
+      ],
+      "max": [
+        -126.89844512939453,
+        98.59361267089844,
+        1610.71533203125
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "立面方法": "实拍窗组透视校正与按米制重复",
+      "测绘模型": "OneMap 3D · SLA, cheeaun/om3d",
+      "来源地址": "https://github.com/cheeaun/om3d/tree/ac451b84/optimized-tiles",
+      "官方建筑编号": "SLA_BLDG2_648fdce7-4983-4752-9646-5057e13ed6ee",
+      "归档分片": "7/79/13_5.b3dm",
+      "官方测量高度（米）": 158.8,
+      "经纬度": [
+        103.86025761296732,
+        1.2934059308087147
+      ],
+      "三角形数": 2320,
+      "立面影像": [
+        {
+          "author": "Daniel Case",
+          "url": "https://commons.wikimedia.org/wiki/File:Centennial_Tower_with_Millenia_Walk_skylight,_Singapore.jpg",
+          "license": "CC BY-SA 4.0"
+        }
+      ]
+    }
+  },
+  {
+    "entityId": "bay.da2bc05d-fea0-4a97-a1fa-42711a3b7f20",
+    "kind": "object",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "label": "SUNTEC TOWER THREE",
+    "assetHash": "ef40a0a4b3227bb23f94d8fe42233fff315ff31f641b5ce4676e1c793a05dbab",
+    "bounds": {
+      "min": [
+        -52.75089645385742,
+        -60.26472473144531,
+        1732.353515625
+      ],
+      "max": [
+        -3.710535764694214,
+        118.08235168457031,
+        1782.5191650390625
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "立面方法": "实拍窗组透视校正与按米制重复",
+      "测绘模型": "OneMap 3D · SLA, cheeaun/om3d",
+      "来源地址": "https://github.com/cheeaun/om3d/tree/ac451b84/optimized-tiles",
+      "官方建筑编号": "SLA_BLDG2_da2bc05d-fea0-4a97-a1fa-42711a3b7f20",
+      "归档分片": "7/79/13_5.b3dm",
+      "官方测量高度（米）": 178.333,
+      "经纬度": [
+        103.85958435656882,
+        1.295241271390605
+      ],
+      "三角形数": 752,
+      "立面影像": [
+        {
+          "author": "CEphoto, Uwe Aranas",
+          "url": "https://commons.wikimedia.org/wiki/File:Singapore_Marina-Mandarin-Singapore-Hotel-03.jpg",
+          "license": "CC BY-SA 3.0"
+        }
+      ]
+    }
+  },
+  {
+    "entityId": "bay.e8d3e6df-4f2f-4be4-9adb-2e7c5e958b77",
+    "kind": "object",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "label": "SUNTEC TOWER TWO",
+    "assetHash": "c262218d23fd487898a89fffea06b4b6f7bae74af2b4a33f5c7a1b5eea198143",
+    "bounds": {
+      "min": [
+        22.507465362548828,
+        -60.26938247680664,
+        1749.02294921875
+      ],
+      "max": [
+        71.24858093261719,
+        118.71237182617188,
+        1797.4993896484375
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "立面方法": "实拍窗组透视校正与按米制重复",
+      "测绘模型": "OneMap 3D · SLA, cheeaun/om3d",
+      "来源地址": "https://github.com/cheeaun/om3d/tree/ac451b84/optimized-tiles",
+      "官方建筑编号": "SLA_BLDG2_e8d3e6df-4f2f-4be4-9adb-2e7c5e958b77",
+      "归档分片": "7/79/13_5.b3dm",
+      "官方测量高度（米）": 178.973,
+      "经纬度": [
+        103.8589887282026,
+        1.295590186768552
+      ],
+      "三角形数": 788,
+      "立面影像": [
+        {
+          "author": "CEphoto, Uwe Aranas",
+          "url": "https://commons.wikimedia.org/wiki/File:Singapore_Marina-Mandarin-Singapore-Hotel-03.jpg",
+          "license": "CC BY-SA 3.0"
+        }
+      ]
+    }
+  },
+  {
+    "entityId": "bay.2ed0d7c0-03ce-4db9-9fc3-29c412ddd017",
+    "kind": "object",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "label": "MILLENIA TOWER",
+    "assetHash": "e78bbda8ceaf3d29039221091f0ee65ce6acaae62958ff1772b01583d36eb429",
+    "bounds": {
+      "min": [
+        -224.8251495361328,
+        -60.206058502197266,
+        1482.4697265625
+      ],
+      "max": [
+        -169.9803009033203,
+        157.9144287109375,
+        1537.6658935546875
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "立面方法": "实拍窗组透视校正与按米制重复",
+      "测绘模型": "OneMap 3D · SLA, cheeaun/om3d",
+      "来源地址": "https://github.com/cheeaun/om3d/tree/ac451b84/optimized-tiles",
+      "官方建筑编号": "SLA_BLDG2_2ed0d7c0-03ce-4db9-9fc3-29c412ddd017",
+      "归档分片": "7/79/12_5.b3dm",
+      "官方测量高度（米）": 218.109,
+      "经纬度": [
+        103.86031966233678,
+        1.2926325474899547
+      ],
+      "三角形数": 1440,
+      "立面影像": [
+        {
+          "author": "Daniel Case",
+          "url": "https://commons.wikimedia.org/wiki/File:Centennial_Tower_and_Millenia_Tower,_Singapore,_by_day.jpg",
+          "license": "CC BY-SA 4.0"
+        },
+        {
+          "author": "Matti Blume",
+          "url": "https://commons.wikimedia.org/wiki/File:Marina_Bay,_Singapore_(P1110054).jpg",
+          "license": "CC BY-SA 4.0"
+        }
+      ]
+    }
+  }
+]
