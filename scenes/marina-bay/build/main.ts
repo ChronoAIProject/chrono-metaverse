@@ -98,8 +98,12 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
   const { radiance: _oldRadiance, ...previousDisplaySky } = northFacing;
   const morningClear = JSON.parse(readFileSync(new URL('../references/morning-clear-sky.json', import.meta.url), 'utf8'));
   const { radiance: _clearRadiance, ...morningDisplaySky } = morningClear;
+  const cloudyMorning = JSON.parse(readFileSync(new URL('../references/sunflowers-morning-sky.json', import.meta.url), 'utf8'));
+  const { radiance: _cloudRadiance, ...cloudyDisplaySky } = cloudyMorning;
   const { radiance, ...displaySky } = target.sky;
   const presets = [
+    cloudyMorning,
+    cloudyDisplaySky,
     morningClear,
     morningDisplaySky,
     displaySky,
