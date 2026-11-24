@@ -824,8 +824,16 @@
       "原始分片": "5/19/3_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 139.933,
-      "三角形数": 15616
-    }
+      "三角形数": 15616,
+      "modelOcclusion": {
+        "sourceAsset": "0ffc18cc8281b5bdc621d7b4a9cd52230f02c6eeb871bea1c0b711599069a9c7",
+        "material": "dc2400779",
+        "texture": "cd00b2ed8c2cbbe8a0b274ca4d7f4b24ce34761c2bf9353c580334f4ea71324a"
+      }
+    },
+    "textures": [
+      "cd00b2ed8c2cbbe8a0b274ca4d7f4b24ce34761c2bf9353c580334f4ea71324a"
+    ]
   },
   {
     "entityId": "bay.91d36a5c-8394-4750-863e-6337cd2b5811",
