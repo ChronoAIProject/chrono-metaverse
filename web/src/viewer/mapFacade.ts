@@ -38,7 +38,8 @@ function citySkyUniforms(material: THREE.Material) {
         ? background
         : null;
     // Reflections and air scattering are mixed before the material's tone mapping.
-    panorama.value = display && material.toneMapped ? skyRadiance.get(display) ?? display : display;
+    panorama.value =
+      display && material.toneMapped ? (skyRadiance.get(display) ?? display) : display;
     hasPanorama.value = !!display;
     halfDistance.value = display?.userData.airHalfDistance ?? 4800;
     yaw.value = scene.backgroundRotation.y;
