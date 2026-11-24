@@ -11,6 +11,7 @@
     ],
     "radius": 440,
     "rmsGravitySlope": 0.04,
+    "rmsRippleSlope": 0.115,
     "reflectance": [
       0.016729,
       0.038256,
@@ -34,6 +35,8 @@
   },
   "processing": "Copernicus Sentinel-2 L2A surface reflectance. Use the supplied scale on offset-corrected Earth Search COGs. Within the mapped bay, erode valid SCL water by two 20-m pixels and stay 55 m off the mapped shore. Fit per-date median RGB against each shortwave infrared band with Theil\u2013Sen slopes and take the mean zero-SWIR intercept. The centre and radius summarize pixels classified as water on at least five dates. The Singapore River mouth shares the continuous water surface.",
   "waves": {
+    "ripples": "Two directional bands break up parallel reflections over the two mapped reservoir water features. A short-wave RMS slope of 0.115 before gust modulation was chosen from three registered daytime photographs. It is a fit for this water state. The satellite reflectance sample keeps its own spatial falloff.",
+    "rippleReference": "https://commons.wikimedia.org/?curid=152986183",
     "method": "Fit the metre-scale gravity-wave slope to open-water contrast in 12 windows per photograph. Compare the 1–3, 3–9 and 9–27 pixel bands after local brightness normalization. A slope of 0.04 improves all three bands in both fitted views. Leave the shorter ripples at their original energy. This represents one daylight water state over the reflectance sample area.",
     "photographs": [
       "https://commons.wikimedia.org/?curid=157871412",

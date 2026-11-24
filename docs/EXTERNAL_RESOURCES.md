@@ -79,6 +79,8 @@
 
 实体地图可以在地图配置中设置 `surfaceDetail: "urban"`，在近景叠加按米采样的草地、混凝土和沥青扫描纹理，镜头靠近时按影像颜色绘制草叶。水域配置 `waterReflection: "scene"` 后，共享一个低分辨率平面反射缓冲。建筑可在 `extrusion` 中设置 `facade: "urban"` 生成窗格和墙面；当来源提供较低级别的建筑概化层时，`distantZoom` 可指定远景使用的瓦片级别。
 
+在 `waterSample` 中设置 `rmsRippleSlope` 可为 `featureIds` 指定的水域启用具有方向分布的短波。数值是阵风调制前的均方根斜率，范围为 0 到 1。米级波浪与细浪使用各自的空间尺度和移动速度。`radius` 控制水体反射率采样与长波斜率的过渡范围。
+
 在矢量物件上配置 `groundLayers` 后，实体视图使用已映射的多边形重建草坪和铺装。每项指定 `layer`、分类字段 `property`、匹配值 `values` 及游戏材质 `material`（`turf` 或 `pavers`）。例如 `{"layer":"transportation","property":"subclass","values":["pedestrian"],"material":"pavers"}` 按步行广场边界及孔洞铺设花岗岩，外缘带压顶石。数据缺失时仍可查看已有影像。
 
 TileJSON 和 PBF 复用现有空间权限、署名和 HTTP 磁盘缓存。MVT 来源只允许索引自身与显式 `resourcePrefixes`，不会因索引位于根路径而开放整个域名。每次读取最多 8 MiB，每份来源最多四个并行请求、32 块可见瓦片，不预取全球数据。移动镜头取消不再需要的下载；几何缓存限制为 48 块及 96 MiB，移除物件释放资源。当前支持标准 Web Mercator XYZ。地图与三维同时启动时，服务端在总时限内排队，最多八个出站下载。

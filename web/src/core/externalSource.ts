@@ -88,6 +88,8 @@ export interface WaterSample {
   readonly reflectance: readonly [number, number, number];
   /** Root-mean-square slope of the metre-scale gravity waves. */
   readonly rmsGravitySlope?: number;
+  /** RMS slope of short reservoir waves, before local wind modulation. */
+  readonly rmsRippleSlope?: number;
 }
 
 export interface VectorBuildingPart {
@@ -258,6 +260,7 @@ function validWaterSample(value: unknown): boolean {
     finite(sample.center[1], -85.05113, 85.05113) &&
     finite(sample.radius, 1, 50000) &&
     (sample.rmsGravitySlope === undefined || finite(sample.rmsGravitySlope, 0, 1)) &&
+    (sample.rmsRippleSlope === undefined || finite(sample.rmsRippleSlope, 0, 1)) &&
     Array.isArray(sample.reflectance) &&
     sample.reflectance.length === 3 &&
     sample.reflectance.every((n) => finite(n, 0, 1))

@@ -2,12 +2,19 @@ import * as THREE from 'three';
 import type { MapReflection } from './mapReflection';
 import { skyRadiance } from './skyRadiance';
 import { KEY_LIGHT } from './lighting';
+import gravityField from '../assets/geography/reservoir-gravity.webp';
+import rippleField from '../assets/geography/reservoir-ripples.webp';
 
 /** 同一片水域共用米制波纹坐标；像素覆盖超过波长时逐渐滤掉细纹。 */
 export function mapWaterMaterial(
   hologram: boolean,
   reflection?: MapReflection,
-  sample?: { center: THREE.Vector3; reflectance: THREE.Color; rmsGravitySlope?: number },
+  sample?: {
+    center: THREE.Vector3;
+    reflectance: THREE.Color;
+    rmsGravitySlope?: number;
+    rmsRippleSlope?: number;
+  },
   downwindHeading?: number,
 ) {
   // The wave field's +Y axis in the water plane points along world (-0.60, 0.80).
@@ -15,6 +22,8 @@ export function mapWaterMaterial(
   const origin = new THREE.Vector2();
   const first = new THREE.Vector2(-11.4, 27.1).rotateAround(origin, rotation);
   const second = new THREE.Vector2(9.4, 20.2).rotateAround(origin, rotation);
+  const measuredRipples = sample?.rmsRippleSlope;
+  const downwind = new THREE.Vector2(0, 1).rotateAround(origin, rotation);
   const material = new THREE.ShaderMaterial({
     side: THREE.DoubleSide,
     forceSinglePass: true,
@@ -22,6 +31,7 @@ export function mapWaterMaterial(
     defines: {
       ...(reflection ? { WATER_SHORE_SHADOW: 1 } : {}),
       ...(sample ? { WATER_SAMPLE: 1 } : {}),
+      ...(measuredRipples !== undefined ? { WATER_SPECTRUM: 1 } : {}),
     },
     transparent: true,
     depthWrite: false,
@@ -34,6 +44,15 @@ export function mapWaterMaterial(
             // The two gravity-wave gradients have total RMS sqrt(2 * 26/175 * (0.015² + 0.030²)).
             waterGravityGain: { value: (sample.rmsGravitySlope ?? 0.01828) / 0.01828 },
             horizontalDiffuse: { value: new THREE.Color(1, 1, 1) },
+          }
+        : {}),
+      ...(measuredRipples !== undefined
+        ? {
+            gravityField: { value: null as THREE.Texture | null },
+            rippleField: { value: null as THREE.Texture | null },
+            spectrumReady: { value: false },
+            rippleRms: { value: measuredRipples },
+            rippleDownwind: { value: downwind },
           }
         : {}),
       directFraction: { value: 0 },
@@ -88,6 +107,21 @@ export function mapWaterMaterial(
       uniform float directFraction;
       uniform float time;
       uniform vec4 shortWaveNumbers;
+      #ifdef WATER_SPECTRUM
+        uniform sampler2D gravityField, rippleField;
+        uniform bool spectrumReady;
+        uniform float rippleRms;
+        uniform vec2 rippleDownwind;
+
+        // The linear mip chain averages slopes and their second moments together.
+        vec2 meanSlope(vec4 sampleValue) {
+          return (sampleValue.rg - 0.5) * (255.0 / 36.0);
+        }
+        vec2 slopeVariance(vec4 sampleValue, vec2 mean) {
+          vec2 moment = (sampleValue.ba * 255.0 - vec2(1, 32)) / vec2(28, 23);
+          return max(moment - mean*mean, vec2(0));
+        }
+      #endif
       uniform sampler2D reflectionMap;
       uniform sampler2D reflectionDepth;
       uniform mat4 reflectionMatrix;
@@ -183,6 +217,24 @@ export function mapWaterMaterial(
         #endif
         vec2 gravitySlope = gravityGain * (0.015*swell + 0.030*chop);
         vec2 normalXZ = (gravitySlope + gust*(rippleSlope + 0.034*(fine*crosswind))) * wind;
+        #ifdef WATER_SPECTRUM
+          float spectrumWeight = spectrumReady ? samplePosition.z : 0.0;
+          vec3 spectralVariance = vec3(0);
+          if (spectrumReady) {
+            mat2 direction = mat2(rippleDownwind.y, rippleDownwind.x, -rippleDownwind.x, rippleDownwind.y);
+            vec4 longWaves = texture2D(gravityField, (meters - vec2(0.13,1.28) * time) / 32.0);
+            vec4 shortWaves = texture2D(rippleField, (direction * meters - vec2(0.09,0.70) * time) / 8.0);
+            vec2 longMean = meanSlope(longWaves), shortMean = meanSlope(shortWaves);
+            float longRms = gravityGain * 0.01828, shortRms = gust * rippleRms;
+            vec2 reservoirSlope = longRms * longMean + shortRms * (shortMean * direction);
+            normalXZ = mix(normalXZ, reservoirSlope * wind, spectrumWeight);
+            vec2 longVariance = slopeVariance(longWaves, longMean) * longRms * longRms;
+            vec2 shortVariance = slopeVariance(shortWaves, shortMean) * shortRms * shortRms;
+            spectralVariance = vec3(longVariance.x, 0.0, longVariance.y)
+                             + shortVariance.x * secondMoment(vec2(1,0) * direction)
+                             + shortVariance.y * secondMoment(vec2(0,1) * direction);
+          }
+        #endif
         vec3 normal = normalize(vec3(normalXZ.x, 1.0, normalXZ.y));
         vec3 reflected = reflect(-eye, normal);
         vec3 sky = horizon;
@@ -231,12 +283,21 @@ export function mapWaterMaterial(
           float noise = (26.0/175.0) * (gravityGain*gravityGain*gravityVariance
                       + 0.034*0.034*gust*gust*(1.0-fineFilter*fineFilter));
           variance.xz += noise;
+          #ifdef WATER_SPECTRUM
+            variance = mix(variance, spectralVariance, spectrumWeight);
+          #endif
           float sx = sqrt(max(variance.x,0.0));
           float shear = variance.y/max(sx,1e-8);
           float sz = sqrt(max(0.0,variance.z-shear*shear));
           vec2 spreadX = reflectionGradient(vec2(sx,shear)*wind,normal,eye,projectedReach,uv,clip.w);
           vec2 spreadY = reflectionGradient(vec2(0.0,sz)*wind,normal,eye,projectedReach,uv,clip.w);
-          vec3 footprint = secondMoment(dFdx(uv)) + secondMoment(dFdy(uv))
+          vec2 footprintUv = uv;
+          #ifdef WATER_SPECTRUM
+            // The sampled moments already include normal variation within the pixel.
+            vec4 plane = reflectionMatrix * vec4(surfacePosition, 1.0);
+            footprintUv = mix(uv, plane.xy / max(plane.w, 0.001), spectrumWeight);
+          #endif
+          vec3 footprint = secondMoment(dFdx(footprintUv)) + secondMoment(dFdy(footprintUv))
                          + 12.0*(secondMoment(spreadX)+secondMoment(spreadY));
           // Factor the combined footprint into the two gradients consumed by the anisotropic sampler.
           float width = sqrt(max(footprint.x,1e-16));
@@ -282,6 +343,23 @@ export function mapWaterMaterial(
         #include <colorspace_fragment>
       }`,
   });
+  if (measuredRipples !== undefined) {
+    const loader = new THREE.TextureLoader();
+    let count = 0;
+    const loaded = () => {
+      material.uniforms.spectrumReady!.value = ++count === 2;
+    };
+    const textures = [gravityField, rippleField].map((url) => {
+      const texture = loader.load(url, loaded);
+      texture.flipY = false;
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      texture.anisotropy = 8;
+      return texture;
+    });
+    material.uniforms.gravityField!.value = textures[0];
+    material.uniforms.rippleField!.value = textures[1];
+    material.addEventListener('dispose', () => textures.forEach((texture) => texture.dispose()));
+  }
   if (sample) Object.assign(material.defaultAttributeValues, { sampledWater: [0] });
   material.onBeforeRender = (_renderer, scene) => {
     const key = scene.children.find((o) => o.name === 'light:key');
