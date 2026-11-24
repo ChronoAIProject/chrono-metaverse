@@ -1,7 +1,13 @@
 import * as THREE from 'three';
 import { VectorTile, classifyRings } from '@mapbox/vector-tile';
 import Pbf from 'pbf';
-import type { GroundLayer, RoadLayer, VectorContent, WaterlineEdit } from '../core/externalSource';
+import type {
+  FacadeReflectionBuilding,
+  GroundLayer,
+  RoadLayer,
+  VectorContent,
+  WaterlineEdit,
+} from '../core/externalSource';
 import { GeoReference, tileBounds, tileCoordinates, tileKey, type Tile } from './geography';
 
 type Point = { x: number; y: number };
@@ -314,12 +320,14 @@ export function vectorGeometry(
   groundLayers: readonly GroundLayer[] = [],
   waterlineEdits?: readonly WaterlineEdit[],
   sampledWaterIds?: ReadonlySet<number>,
+  reflectionBuildings?: readonly FacadeReflectionBuilding[],
 ) {
   const data = new VectorTile(new Pbf(bytes));
   const layer = data.layers[style.layer];
   const positions: number[] = [];
   const facade: number[] = [];
   const paint: number[] = [];
+  const reflectionRows: number[] = [];
   const indices: number[] = [];
   let features = 0,
     vertices = 0;
@@ -414,8 +422,24 @@ export function vectorGeometry(
       }
       if (indices.length > 600000) throw new Error('矢量瓦片生成几何过大');
       if (style.facade) {
+        // IDs can group separate footprints. Check the surveyed height and position too.
+        const row =
+          reflectionBuildings?.findIndex(
+            (b) =>
+              b.featureId === feature.id &&
+              b.height === height &&
+              b.minHeight === minHeight &&
+              b.bounds[0] < box.max.x &&
+              b.bounds[2] > box.min.x &&
+              b.bounds[1] < box.max.z &&
+              b.bounds[3] > box.min.z,
+          ) ?? -1;
         const rgb = tint ?? 0;
         for (let k = roof; k < positions.length / 3; k++) {
+          if (reflectionBuildings) {
+            const level = (facade[k * 2]! - minHeight) / (height - minHeight);
+            reflectionRows.push(row + 1, (level - 0.2) / 0.3);
+          }
           paint.push(rgb >>> 16, (rgb >>> 8) & 255, rgb & 255, tint === undefined ? 0 : 255);
         }
       }
@@ -428,6 +452,8 @@ export function vectorGeometry(
   geometry.computeBoundingBox();
   if (style.facade) {
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(facade, 2));
+    if (reflectionBuildings)
+      geometry.setAttribute('facadeProbe', new THREE.Float32BufferAttribute(reflectionRows, 2));
     geometry.setAttribute('facadePaint', new THREE.Uint8BufferAttribute(paint, 4, true));
   }
   geometry.computeVertexNormals();

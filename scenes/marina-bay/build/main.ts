@@ -45,8 +45,12 @@ export function withBoatQuay(surroundings: EntityBody): EntityBody {
   if (!('waterSample' in content) && waterLayer && sources.some(s => s?.url === waterSample.source)) {
     water = { ...water, waterSample };
   }
-  return { ...surroundings, props: { ...surroundings.props, externalContent: {
-    ...content, ...ground, ...water, extrusion: { ...style, excludeBounds },
+  const { facadeReflections } = JSON.parse(readFileSync(new URL('../references/district-window-reflections.json', import.meta.url), 'utf8'));
+  const addReflections = !('facadeReflections' in content) && 'facade' in style && style.facade === 'urban' &&
+    sources.some(source => source?.url === facadeReflections.source);
+  const textures = addReflections ? { textures: [...new Set([...(surroundings.textures ?? []), facadeReflections.texture as string])] } : {};
+  return { ...surroundings, ...textures, props: { ...surroundings.props, externalContent: {
+    ...content, ...ground, ...water, ...(addReflections ? { facadeReflections } : {}), extrusion: { ...style, excludeBounds },
   } } };
 }
 

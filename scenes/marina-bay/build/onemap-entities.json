@@ -1895,8 +1895,16 @@
       "原始分片": "6/38/4_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 278.219,
-      "三角形数": 2564
-    }
+      "三角形数": 2564,
+      "modelOcclusion": {
+        "material": "dc2400812",
+        "texture": "6200aa383adf9930cccb8bc9b7d08ebaa8d9a893e995173a7ebf75afaa6bcb14",
+        "sourceAsset": "33f987665d9ab65825fb16817d37418f229835930a62657e9a97a752a19be209"
+      }
+    },
+    "textures": [
+      "6200aa383adf9930cccb8bc9b7d08ebaa8d9a893e995173a7ebf75afaa6bcb14"
+    ]
   },
   {
     "entityId": "bay.05610e23-c9f7-4edc-aa67-c1a4bf7eb29a",
@@ -2315,8 +2323,16 @@
       "原始分片": "6/38/4_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 279.586,
-      "三角形数": 1964
-    }
+      "三角形数": 1964,
+      "modelOcclusion": {
+        "material": "dc2400182",
+        "texture": "228ec5a76f258a4cbe4eca5d91656e81bdb3e9298d9a88ff1eb0bf92d6e99b55",
+        "sourceAsset": "68bf31023df1bdbea148bd4d42c9e5a5c918e64088c997639998dccf9346a43d"
+      }
+    },
+    "textures": [
+      "228ec5a76f258a4cbe4eca5d91656e81bdb3e9298d9a88ff1eb0bf92d6e99b55"
+    ]
   },
   {
     "entityId": "bay.9274f3a4-2af5-445f-85d3-3844ff778650",
@@ -2345,7 +2361,24 @@
       "原始分片": "6/38/5_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 280.084,
-      "三角形数": 9320
+      "三角形数": 9320,
+      "modelOcclusion": {
+        "material": "dc2400707",
+        "texture": "9cdd8c4a2fbf80046ba8432c2f8bf35d30d8bb5e7a6254c19f930f7e26d839dc",
+        "sourceAsset": "75c2d8bf817229b247304f90f0331c7140de142054c33c9901894db09de78ef0"
+      },
+      "日间外观参考": "依据 2010 年 Singapore Skyline from Esplanade 和 2015 年 Singapore Marina-Bay-Panorama-02 的临湾立面亮度，以浮尔顿酒店向阳石墙作曝光参照。"
+    },
+    "textures": [
+      "9cdd8c4a2fbf80046ba8432c2f8bf35d30d8bb5e7a6254c19f930f7e26d839dc"
+    ],
+    "material": {
+      "shading": "albedo",
+      "tint": [
+        224,
+        224,
+        224
+      ]
     }
   },
   {
@@ -5855,7 +5888,16 @@
       "原始分片": "7/77/10_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 100.423,
-      "三角形数": 2601
+      "三角形数": 2601,
+      "日间外观参考": "依据 2010 年 Singapore Skyline from Esplanade 和 2015 年 Singapore Marina-Bay-Panorama-02 的临湾立面亮度，以浮尔顿酒店向阳石墙作曝光参照。"
+    },
+    "material": {
+      "shading": "albedo",
+      "tint": [
+        224,
+        224,
+        224
+      ]
     }
   },
   {
@@ -5975,7 +6017,16 @@
       "原始分片": "7/77/10_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 176.854,
-      "三角形数": 1332
+      "三角形数": 1332,
+      "日间外观参考": "依据 2010 年 Singapore Skyline from Esplanade 和 2015 年 Singapore Marina-Bay-Panorama-02 的临湾立面亮度，以浮尔顿酒店向阳石墙作曝光参照。"
+    },
+    "material": {
+      "shading": "albedo",
+      "tint": [
+        176,
+        176,
+        176
+      ]
     }
   },
   {
@@ -7532,7 +7583,16 @@
       "原始分片": "8/154/19_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 176.732,
-      "三角形数": 1992
+      "三角形数": 1992,
+      "日间外观参考": "依据 2010 年 Singapore Skyline from Esplanade 和 2015 年 Singapore Marina-Bay-Panorama-02 的临湾立面亮度，以浮尔顿酒店向阳石墙作曝光参照。"
+    },
+    "material": {
+      "shading": "albedo",
+      "tint": [
+        192,
+        192,
+        192
+      ]
     }
   },
   {

@@ -39,6 +39,7 @@ export class VectorContentItem {
   private readonly material: THREE.MeshLambertMaterial;
   private readonly exteriorMaterial?: THREE.MeshLambertMaterial;
   private readonly localEye = new THREE.Vector3();
+  private reflectionAtlas?: THREE.Texture;
   private readonly sampledWaterIds?: ReadonlySet<number>;
   private readonly waterMaterial?: ReturnType<typeof mapWaterMaterial>;
   private readonly reflection?: MapReflection;
@@ -67,6 +68,7 @@ export class VectorContentItem {
     host: HTMLElement,
     private readonly access?: ExternalAccess,
     hologram = false,
+    loadTexture?: (hash: string) => Promise<THREE.Texture>,
   ) {
     this.reference = new GeoReference(config.reference);
     this.material = new THREE.MeshLambertMaterial({
@@ -81,8 +83,44 @@ export class VectorContentItem {
     if (config.extrusion.facade && !hologram) {
       this.exteriorMaterial = new THREE.MeshLambertMaterial({ color: config.extrusion.color });
       this.exteriorMaterial.shadowSide = THREE.DoubleSide;
-      urbanFacade(this.exteriorMaterial);
-      urbanFacade(this.material);
+      const atlas = config.facadeReflections;
+      const reflections =
+        atlas && loadTexture
+          ? {
+              map: { value: null as THREE.Texture | null },
+              ready: { value: false },
+              scale: atlas.scale,
+              rows: atlas.buildings.length,
+            }
+          : undefined;
+      urbanFacade(this.exteriorMaterial, reflections);
+      urbanFacade(this.material, reflections);
+      if (atlas && reflections && loadTexture) {
+        void loadTexture(atlas.texture)
+          .then((source) => {
+            if (
+              this.disposed ||
+              !(source.image instanceof HTMLImageElement) ||
+              source.image.width % 3 ||
+              source.image.height % reflections.rows ||
+              source.image.width / 3 < 4 ||
+              source.image.height / reflections.rows < 2
+            )
+              return;
+            const texture = source.clone();
+            texture.flipY = false;
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.generateMipmaps = false;
+            texture.minFilter = texture.magFilter = THREE.LinearFilter;
+            texture.needsUpdate = true;
+            this.reflectionAtlas = texture;
+            reflections.map.value = texture;
+            reflections.ready.value = true;
+          })
+          .catch(() => {
+            /* Continue with the live sky when the baked atlas is unavailable. */
+          });
+      }
     }
     if (config.waterLayer) {
       if (!hologram && config.waterReflection === 'scene') this.reflection = new MapReflection();
@@ -283,6 +321,11 @@ export class VectorContentItem {
       this.groundMaterials.size ? this.config.groundLayers : [],
       this.config.waterlineEdits?.filter((edit) => edit.source === source.url),
       this.config.waterSample?.source === source.url ? this.sampledWaterIds : undefined,
+      this.exteriorMaterial && this.config.facadeReflections
+        ? this.config.facadeReflections.source === source.url
+          ? this.config.facadeReflections.buildings
+          : []
+        : undefined,
     );
     const size =
       Object.values(geometry.attributes).reduce((n, a) => n + a.array.byteLength, 0) +
@@ -401,6 +444,7 @@ export class VectorContentItem {
     for (const material of this.groundMaterials.values()) material.dispose();
     this.waterMaterial?.dispose();
     this.reflection?.dispose();
+    this.reflectionAtlas?.dispose();
     this.nodes.clear();
     this.exteriorMaterial?.dispose();
     this.material.dispose();
