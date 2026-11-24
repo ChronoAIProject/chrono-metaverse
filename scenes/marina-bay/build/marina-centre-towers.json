@@ -375,5 +375,48 @@
       ],
       "立面方法": "实拍立面透视校正和明度重建，按测绘屋顶坡面和现场照片的格距重建开放钢框架，各面窗墙分开校准。背向和遮挡区域参考可见立面。"
     }
+  },
+  {
+    "entityId": "bay.1a2bd984-a7d6-4a5a-b553-db591b97b36b",
+    "kind": "object",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "label": "SUNTEC TOWER FIVE",
+    "assetHash": "031a4e1d8226a5f20b5a1443373cc7822dda01eb34f26cb218d95272f6825070",
+    "bounds": {
+      "min": [
+        78.81568145751953,
+        -60.22713088989258,
+        1592.1951904296875
+      ],
+      "max": [
+        144.0784454345703,
+        30.318460464477532,
+        1657.322998046875
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "立面方法": "实拍配准到 OneMap 裙线、屋顶及四向立面。遮挡层和背面沿用同楼窗带。",
+      "测绘模型": "OneMap 3D · SLA, cheeaun/om3d",
+      "来源地址": "https://github.com/cheeaun/om3d/tree/ac451b84/optimized-tiles",
+      "官方建筑编号": "SLA_BLDG2_1a2bd984-a7d6-4a5a-b553-db591b97b36b",
+      "测绘高度（米）": 90.539,
+      "经纬度": [
+        103.8580163262388,
+        1.2945006246969128
+      ],
+      "三角形数": 416,
+      "立面影像": [
+        {
+          "author": "Merlion444",
+          "url": "https://commons.wikimedia.org/wiki/File:Suntec_Tower_Five.JPG",
+          "license": "Public domain"
+        }
+      ]
+    }
   }
 ]
