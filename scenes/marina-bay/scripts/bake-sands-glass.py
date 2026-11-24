@@ -11,7 +11,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 from scipy.ndimage import gaussian_filter
 
-from sands_glazing import CREDIT, apply_glazing, front_wall
+from sands_glazing import CREDIT, apply_glazing, front_wall_indices
 from skypark_geometry import HOTEL_ID, overflow_crest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -66,6 +66,7 @@ def primitive(doc, views, prim, floor, pixels, painter, pool_anchor, tower_ancho
     cyclic = (np.arange(3) + np.argmin(triangles, axis=1)[:, None]) % 3
     _, first = np.unique(np.take_along_axis(triangles, cyclic, axis=1), axis=0, return_index=True)
     first.sort()
+    front = np.zeros(len(first), dtype=bool)
     if "TEXCOORD_0" in attrs:
         original = faces[first]
         normals = attrs["NORMAL"][original].mean(axis=1)
@@ -73,7 +74,9 @@ def primitive(doc, views, prim, floor, pixels, painter, pool_anchor, tower_ancho
         facing_bay = ((normals[:, 0] > .82) & (np.abs(normals[:, 1]) < .25)
                       & (altitude > 22) & (altitude < 182.4))
         if tower_anchor is not None and facing_bay.any():
-            for face in front_wall(attrs["POSITION"], original[facing_bay]):
+            wall = front_wall_indices(attrs["POSITION"], original[facing_bay])
+            front[np.flatnonzero(facing_bay)[wall]] = True
+            for face in original[front]:
                 glazing.append((attrs["POSITION"][face] + tower_anchor, attrs["TEXCOORD_0"][face]))
         for face in original[facing_bay]:
             uv = attrs["TEXCOORD_0"][face] * pixels
@@ -85,8 +88,19 @@ def primitive(doc, views, prim, floor, pixels, painter, pool_anchor, tower_ancho
         attrs["POSITION"] = positions
     for key, index in prim["attributes"].items():
         write(index, attrs[key][keep_vertices])
-    write(prim["indices"], triangles[first].astype(faces.dtype).reshape(-1, 1))
-    return len(first)
+    indices = triangles[first].astype(faces.dtype)
+    if not front.any():
+        write(prim["indices"], indices.reshape(-1, 1))
+        return len(first), None
+    # Share the SLA positions, normals and photo atlas between the shell and its windows.
+    accessor = doc["accessors"][prim["indices"]]
+    window_index = len(doc["accessors"])
+    doc["accessors"].append({**accessor, "bufferView": len(views)})
+    doc["bufferViews"].append({**doc["bufferViews"][accessor["bufferView"]]})
+    views.append(b"")
+    write(prim["indices"], indices[~front].reshape(-1, 1))
+    write(window_index, indices[front].reshape(-1, 1))
+    return len(first), {**prim, "indices": window_index}
 
 
 def convert(raw, floor, pool_anchor=None, tower_anchor=None):
@@ -100,8 +114,17 @@ def convert(raw, floor, pool_anchor=None, tower_anchor=None):
     mask = Image.new("L", image.size)
     painter = ImageDraw.Draw(mask)
     glazing = []
-    count = sum(primitive(doc, views, prim, floor, image.size, painter, pool_anchor, tower_anchor, glazing)
-                for mesh in doc["meshes"] for prim in mesh["primitives"])
+    count = 0
+    for mesh in doc["meshes"]:
+        for prim in list(mesh["primitives"]):
+            total, windows = primitive(doc, views, prim, floor, image.size, painter, pool_anchor, tower_anchor, glazing)
+            count += total
+            if windows is not None:
+                material = doc["materials"][prim["material"]]
+                windows["material"] = len(doc["materials"])
+                doc["materials"].append({**material, "name": "Bay-facing hotel glazing",
+                                         "extras": {**material.get("extras", {}), "reflectSky": True}})
+                mesh["primitives"].append(windows)
     jpeg = io.BytesIO()
     texture = rebalance(image, mask)
     if glazing:
@@ -151,7 +174,7 @@ def bake(sources):
         e["assetHash"] = digest
         e["props"].update({"三角形数": triangles, "原建筑资源": source, "玻璃参考": REFERENCE,
                            "玻璃影像署名": CREDIT,
-                           "立面处理": "按塔顶角点和塔身轮廓配准鱼尾狮公园的实拍，将可见临湾窗带投影到 SLA 模型。低层受屋顶遮挡的玻璃沿同列可见窗带估补。"})
+                           "立面处理": "按塔顶角点和塔身轮廓配准鱼尾狮公园的实拍，将可见临湾窗带投影到 SLA 模型。低层受屋顶遮挡的玻璃沿同列可见窗带估补。临湾幕墙随视角反射日间天空。"})
         found.add(source)
         print(e["label"], digest, len(data), triangles)
     if found != SOURCES:
