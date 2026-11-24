@@ -100,8 +100,12 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
   const { radiance: _clearRadiance, ...morningDisplaySky } = morningClear;
   const cloudyMorning = JSON.parse(readFileSync(new URL('../references/sunflowers-morning-sky.json', import.meta.url), 'utf8'));
   const { radiance: _cloudRadiance, ...cloudyDisplaySky } = cloudyMorning;
+  const clearQwantani = JSON.parse(readFileSync(new URL('../references/qwantani-clear-sky.json', import.meta.url), 'utf8'));
+  const { radiance: _qwantaniRadiance, ...clearQwantaniDisplay } = clearQwantani;
   const { radiance, ...displaySky } = target.sky;
   const presets = [
+    clearQwantani,
+    clearQwantaniDisplay,
     cloudyMorning,
     cloudyDisplaySky,
     morningClear,

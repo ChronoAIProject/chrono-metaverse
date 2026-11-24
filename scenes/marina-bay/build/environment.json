@@ -32,8 +32,8 @@
     }
   },
   "textures": [
-    "35092eb004776955348568ef24a227658257d6d447d96d9387ca10cbca05dc1b",
-    "ae0dc18761bc800ef653fd1f7008bd277f07538cd36f7008118d86a0f85ca05f"
+    "d1c952b18c4f5f234f34e2bb9cb51ba79d0ac02a785707095b51c6d7fd5b6eca",
+    "19c5f491045dc7d45b22712c9fbe2927a22133f2d995e788a7c60483638ec2b4"
   ],
   "props": {
     "background": true,
@@ -41,13 +41,13 @@
       "version": 1,
       "multisampleCutouts": true,
       "sky": {
-        "texture": "35092eb004776955348568ef24a227658257d6d447d96d9387ca10cbca05dc1b",
+        "texture": "d1c952b18c4f5f234f34e2bb9cb51ba79d0ac02a785707095b51c6d7fd5b6eca",
         "yaw": -145.458,
         "airHalfDistance": 28800,
         "daylight": {
           "azimuth": 36.0874,
           "elevation": 20.1688,
-          "directFraction": 0.70788,
+          "directFraction": 0.55,
           "sunColor": [
             1.19434,
             0.97208,
@@ -89,7 +89,7 @@
           ]
         },
         "radiance": {
-          "texture": "ae0dc18761bc800ef653fd1f7008bd277f07538cd36f7008118d86a0f85ca05f",
+          "texture": "19c5f491045dc7d45b22712c9fbe2927a22133f2d995e788a7c60483638ec2b4",
           "scale": 32
         }
       },
@@ -137,6 +137,6 @@
       "title": "Qwantani Morning (Pure Sky)",
       "page": "https://polyhaven.com/a/qwantani_morning_puresky"
     },
-    "日间照明": "4K HDR 晨光实拍统一驱动背景、直射光、漫射天光和水面天空反射。太阳仰角 20.17°，水平直射占比 70.8%。在场景中采用从真北顺时针 110° 的东南侧光，方位按步道与跨湾全景的受光效果选取。"
+    "日间照明": "4K Qwantani 晨光实拍。太阳仰角为 20.17°，场景方位为从真北顺时针 110°。源图测得的水平直射占比约 71%，按两幅实拍的楼面与天空亮度关系调至 55%。显示天空、漫射天光和水面反射使用同一组照度比例。"
   }
 }
