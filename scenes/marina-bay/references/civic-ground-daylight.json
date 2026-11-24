@@ -37,7 +37,17 @@
       ],
       "widthMeters": 204,
       "receiverY": -59.85,
-      "resolution": 512
+      "resolution": 512,
+      "turfReflectance": {
+        "calibratedAsset": "07dc01a84a5a288eb3797ecc05cbd30a9cc34610f73b147a88ba8b9fa3f2d53d",
+        "source": "Copernicus Sentinel-2 L2A, grid 48NUG, 10 m surface reflectance",
+        "observations": {
+          "S2A_48NUG_20260416_0_L2A": 26,
+          "S2C_48NUG_20260613_0_L2A": 25
+        },
+        "method": "Compare grass-dominated cells to the rendered red and green channels under the solar direction on each acquisition date. Smooth the log ratios with a 10 m Gaussian kernel. Fade toward the original colour outside the samples. Apply the field to glTF turf vertex colours and rebase the embedded turf albedo to preserve tint headroom.",
+        "measurementLimit": "These cells include seasonal grass changes and residual contributions from nearby tree shadows. The blue band differs between acquisitions."
+      }
     },
     {
       "entityId": "bay.raffles-statue-fountain",

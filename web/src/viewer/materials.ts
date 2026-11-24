@@ -83,6 +83,42 @@ export function modelOcclusion(entity: EntityBody): ModelOcclusion | undefined {
     return { material, texture };
 }
 
+export interface ModelRoofReflectance {
+  readonly material: string;
+  readonly scale: number;
+}
+
+/** A linear albedo multiplier measured on upward surfaces of one surveyed model. */
+export function modelRoofReflectance(entity: EntityBody): ModelRoofReflectance | undefined {
+  const value = entity.props?.modelRoofReflectance;
+  if (!value || typeof value !== 'object') return;
+  const { sourceAsset, material, scale } = value as Record<string, unknown>;
+  if (
+    typeof sourceAsset === 'string' &&
+    sourceAsset === entity.assetHash &&
+    typeof material === 'string' &&
+    material.length > 0 &&
+    typeof scale === 'number' &&
+    scale > 0 &&
+    scale < 1
+  )
+    return { material, scale };
+}
+
+/** Preserve sampler choices on pixel art and raise trilinear filtering on oblique surfaces. */
+export function filterModelTexture(texture: THREE.Texture | null, limit: number) {
+  const level = Math.min(4, limit);
+  if (
+    texture &&
+    texture.anisotropy < level &&
+    texture.magFilter === THREE.LinearFilter &&
+    texture.minFilter === THREE.LinearMipmapLinearFilter
+  ) {
+    texture.anisotropy = level;
+    texture.needsUpdate = true;
+  }
+}
+
 /** 斜看实景立面时沿表面采样颜色，让照片与附带的法线、粗糙度保持相同清晰度。 */
 export function filterModelSurface(material: THREE.Material, limit: number) {
   if (
@@ -92,23 +128,13 @@ export function filterModelSurface(material: THREE.Material, limit: number) {
     material.alphaTest > 0
   )
     return;
-  const level = Math.min(4, limit);
   for (const texture of [
     material.map,
     material.normalMap,
     material.roughnessMap,
     material.metalnessMap,
-  ]) {
-    if (
-      texture &&
-      texture.anisotropy < level &&
-      texture.magFilter === THREE.LinearFilter &&
-      texture.minFilter === THREE.LinearMipmapLinearFilter
-    ) {
-      texture.anisotropy = level;
-      texture.needsUpdate = true;
-    }
-  }
+  ])
+    filterModelTexture(texture, limit);
 }
 
 /**

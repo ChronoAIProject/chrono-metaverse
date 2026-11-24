@@ -1,7 +1,8 @@
 import * as THREE from 'three';
+import { filterModelTexture } from './materials';
 
 /** 多重采样的像素用原图遮罩控制覆盖率，已绘制的天空保持不透明。 */
-export function cityCutout(material: THREE.Material) {
+export function cityCutout(material: THREE.Material, anisotropy: number) {
   if (
     !(
       material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshBasicMaterial
@@ -11,6 +12,7 @@ export function cityCutout(material: THREE.Material) {
     !material.map
   )
     return;
+  filterModelTexture(material.map, anisotropy);
   material.alphaToCoverage = true;
   material.blending = THREE.CustomBlending;
   material.blendSrc = THREE.OneFactor;
@@ -44,5 +46,23 @@ export function cityCutout(material: THREE.Material) {
            diffuseColor.a = 1.0;
          }`,
       );
+  };
+}
+
+/** Use the visible leaf mask when three.js draws the single-sample shadow map. */
+export function matchCutoutShadow(mesh: THREE.Mesh) {
+  const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  if (!materials.some((m) => m.alphaToCoverage && m.alphaTest > 0)) return;
+  const beforeShadow = mesh.onBeforeShadow;
+  mesh.onBeforeShadow = function (...args) {
+    beforeShadow.call(this, ...args);
+    const [, , , , , depthMaterial, group] = args;
+    // WebGLShadowMap supplies the geometry group for multi-material meshes.
+    const index = group && 'materialIndex' in group ? group.materialIndex : undefined;
+    const source = Array.isArray(mesh.material)
+      ? typeof index === 'number' && mesh.material[index]
+      : mesh.material;
+    if (source && source.alphaToCoverage && source.alphaTest > 0)
+      depthMaterial.alphaTest = source.alphaTest;
   };
 }

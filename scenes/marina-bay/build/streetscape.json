@@ -1193,7 +1193,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "皇后坊 · 大草坪与达尔豪西纪念碑步道",
-    "assetHash": "045be37dc95e06ff57ff52ac1e65db55a222f7cc2304dc55e1a76adefc7b5ad3",
+    "assetHash": "07dc01a84a5a288eb3797ecc05cbd30a9cc34610f73b147a88ba8b9fa3f2d53d",
     "bounds": {
       "min": [
         494.98935236691,
@@ -1226,7 +1226,8 @@
       ],
       "现场照片": "https://commons.wikimedia.org/wiki/File:2016_Singapur,_Downtown_Core,_Dalhousie_Obelisk.jpg",
       "材质素材": "ambientCG Grass 004；Poly Haven Granite Tile 04 · CC0",
-      "地面重建": "边界按正射影像与通道中心线定位。树冠下的边缘、铺装尺寸和高程为估值。"
+      "地面重建": "边界按正射影像与通道中心线定位。树冠下的边缘、铺装尺寸和高程为估值。",
+      "草皮反射率依据": "按 2026-04-16、2026-06-13 两期 Sentinel-2 地表反射率校准草坪红、绿通道的十米尺度变化。"
     }
   },
   {
@@ -1735,6 +1736,69 @@
       "来源建筑": "bay.330831bd-c70b-4e25-86d9-6d252d737532",
       "材质版权": "Windows: Terence Ong, Asian Civilisations Museum, Empress Place 7, CC BY 2.5, https://creativecommons.org/licenses/by/2.5/. Rectified and repeated on registered survey bays. https://commons.wikimedia.org/wiki/File:Asian_Civilisations_Museum,_Empress_Place_7.JPG. Placement: Map Data © 2026 Singapore Land Authority / OneMap.",
       "位置与形制": "以测绘图集配准两向立面的 34 个开间，采用 97 组方窗与拱窗。窗套进深为估值，窗扇使用同栋楼的代表性样本。"
+    }
+  },
+  {
+    "entityId": "bay.esplanade-road-bridge",
+    "label": "滨海桥 · 七跨公路桥",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "04464d8430d99856dae5f253b64f7c1c46ec6892e5f89cba544866cc185500fb",
+    "bounds": {
+      "min": [
+        312.8685085019049,
+        -61.397,
+        581.6527019897756
+      ],
+      "max": [
+        457.31400708205814,
+        -44.81123762671767,
+        983.6607530809939
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "平面来源": "© OpenStreetMap contributors, ODbL 1.0. Coordinates are longitude and latitude. Each way records its source version.",
+      "影像参考": "Singapore Land Authority, OneMap OrthoJPG, inspected at zoom 20.",
+      "结构参考": [
+        "https://commons.wikimedia.org/wiki/File:Singapore_Skyline_from_Esplanade.jpg",
+        "https://commons.wikimedia.org/wiki/File:Singapore_Marina-Bay-Panorama-02.jpg"
+      ],
+      "桥面与桥墩": "道路与步道按地图定位。桥墩、桥腹、栏杆和桥面坡度参照跨湾实拍估算。"
+    }
+  },
+  {
+    "entityId": "bay.jubilee-bridge",
+    "label": "禧年桥 · 弧形人行桥",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "d0fc3945b22770335640d123c5aa06c6f31c52b6f456ed44e1913f58f491634c",
+    "bounds": {
+      "min": [
+        300.6211410276216,
+        -61.06700000000001,
+        676.5511722910109
+      ],
+      "max": [
+        367.2679207434266,
+        -51.77084262890937,
+        884.3101954248166
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "平面来源": "© OpenStreetMap contributors, ODbL 1.0. Coordinates are longitude and latitude. Each way records its source version.",
+      "影像参考": "Singapore Land Authority, OneMap OrthoJPG, inspected at zoom 20.",
+      "结构参考": "https://www.coxarchitecture.com.au/project/jubilee-bridge",
+      "重建范围": "按地图定位弧形桥面与桥间通道。三跨两墩，变截面混凝土箱梁。桥高、墩位和栏杆尺寸为估值。"
     }
   }
 ]
