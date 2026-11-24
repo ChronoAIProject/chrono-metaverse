@@ -78,7 +78,8 @@ def bake(folders, selected_tile=None):
     if selected_tile and selected_tile not in reference['tiles']:
         raise ValueError(f'Unknown street-tree tile {selected_tile}')
     records = {e['entityId']: e for e in json.loads(output.read_text())} if selected_tile else {}
-    spreading_crown = broadleaf(folders[2], 'jacaranda_tree', sprays=True)
+    source_folders = dict(zip(('tree_small_02', 'island_tree_01', 'jacaranda_tree'), folders[:3]))
+    branch_models = {'jacaranda_tree': broadleaf(folders[2], 'jacaranda_tree', sprays=True)}
     for key, tile in reference['tiles'].items():
         if selected_tile and selected_tile != key:
             continue
@@ -93,7 +94,8 @@ def bake(folders, selected_tile=None):
                 palms += 1
             elif genus in SPREADING:
                 form = 'jacaranda_tree'
-                width = max(width, height * rng.uniform(.88, 1.18))
+                if not tile.get('surveyedCrownWidths'):
+                    width = max(width, height * rng.uniform(.88, 1.18))
             elif genus in {'Sindora', 'Khaya', 'Millettia', 'Dalbergia'}:
                 form = 'tree_small_02'
             else:
@@ -102,8 +104,13 @@ def bake(folders, selected_tile=None):
             rotation = trimesh.transformations.rotation_matrix(yaw, [0,1,0])[:3, :3]
             scale = np.array([width, height, width*rng.uniform(.85,1.09)])
             leaf_tint = np.rint(np.array([235,240,225])*rng.uniform(.85,1.05)).clip(0,255)
-            detailed = tile.get('spreadingBranches', False) and form == 'jacaranda_tree'
-            for source in (spreading_crown if detailed else forms[form]):
+            detailed = tile.get('branchSprays') or (tile.get('spreadingBranches') and form == 'jacaranda_tree')
+            model = forms[form]
+            if detailed and form in source_folders:
+                if form not in branch_models:
+                    branch_models[form] = broadleaf(source_folders[form], form, sprays=True)
+                model = branch_models[form]
+            for source in model:
                 mesh = source.copy()
                 mesh.vertices = (source.vertices * scale) @ rotation.T + [x,y,z]
                 normals = (source.vertex_normals / scale) @ rotation.T

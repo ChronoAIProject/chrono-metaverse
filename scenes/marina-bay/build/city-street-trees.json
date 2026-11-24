@@ -559,5 +559,38 @@
       "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes.",
       "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
     }
+  },
+  {
+    "entityId": "bay.marina-centre-canopy-1",
+    "kind": "object",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海湾 · 街道与滨水树冠",
+    "assetHash": "628f75fbff984b2bc1e6e2c6a9e8fd4942223c442536113c8af2b7f2db559807",
+    "bounds": {
+      "min": [
+        -598.3594586537828,
+        -60.463,
+        1136.1486355221903
+      ],
+      "max": [
+        -255.65078155958534,
+        -39.53940145985426,
+        1535.812822792095
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "位置来源": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树位数": 48,
+      "棕榈数": 0,
+      "已单独建模树位数": 0,
+      "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes.",
+      "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
+    }
   }
 ]

@@ -21,6 +21,7 @@ __pycache__/
 references/model-paths.json
 references/singapore-model.json
 references/onemap/
+!assets/628f75fbff984b2bc1e6e2c6a9e8fd4942223c442536113c8af2b7f2db559807.glb
 references/objaverse-paths.json.gz
 references/osm.json
 references/context-osm.json
