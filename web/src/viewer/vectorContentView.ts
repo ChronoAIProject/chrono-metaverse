@@ -134,6 +134,7 @@ export class VectorContentItem {
           ? {
               center: new THREE.Vector3(center.x, center.z, sample.radius),
               reflectance: new THREE.Color().fromArray(sample.reflectance),
+              rmsGravitySlope: sample.rmsGravitySlope,
             }
           : undefined,
       );

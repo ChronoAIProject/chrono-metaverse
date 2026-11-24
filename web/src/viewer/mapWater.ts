@@ -7,7 +7,7 @@ import { KEY_LIGHT } from './lighting';
 export function mapWaterMaterial(
   hologram: boolean,
   reflection?: MapReflection,
-  sample?: { center: THREE.Vector3; reflectance: THREE.Color },
+  sample?: { center: THREE.Vector3; reflectance: THREE.Color; rmsGravitySlope?: number },
 ) {
   const material = new THREE.ShaderMaterial({
     side: THREE.DoubleSide,
@@ -25,6 +25,8 @@ export function mapWaterMaterial(
         ? {
             waterSampleArea: { value: sample.center },
             waterReflectance: { value: sample.reflectance },
+            // The two gravity-wave gradients have total RMS sqrt(2 * 26/175 * (0.015² + 0.030²)).
+            waterGravityGain: { value: (sample.rmsGravitySlope ?? 0.01828) / 0.01828 },
             horizontalDiffuse: { value: new THREE.Color(1, 1, 1) },
           }
         : {}),
@@ -92,6 +94,7 @@ export function mapWaterMaterial(
       #ifdef WATER_SAMPLE
         varying vec3 samplePosition;
         uniform vec3 waterSampleArea, waterReflectance, horizontalDiffuse;
+        uniform float waterGravityGain;
       #endif
       uniform vec3 deep;
       uniform vec3 horizon;
@@ -155,7 +158,14 @@ export function mapWaterMaterial(
         vec2 slope2 = 0.0248*normalize(k2), slope3 = 0.0186*normalize(k3);
         vec2 rippleSlope = waves.x*slope0 + waves.y*slope1 + waves.z*slope2 + waves.w*slope3;
         float gust = clamp(0.81 + 0.31*swell.x, 0.48, 1.12);
-        vec2 normalXZ = (0.015*swell + 0.030*chop + gust*(rippleSlope + 0.034*(fine*crosswind))) * wind;
+        float gravityGain = 1.0;
+        #ifdef WATER_SAMPLE
+          float sampleRange = distance(samplePosition.xy, waterSampleArea.xy);
+          float weight = samplePosition.z * (1.0 - smoothstep(0.8 * waterSampleArea.z, waterSampleArea.z, sampleRange));
+          gravityGain = mix(1.0, waterGravityGain, weight);
+        #endif
+        vec2 gravitySlope = gravityGain * (0.015*swell + 0.030*chop);
+        vec2 normalXZ = (gravitySlope + gust*(rippleSlope + 0.034*(fine*crosswind))) * wind;
         vec3 normal = normalize(vec3(normalXZ.x, 1.0, normalXZ.y));
         vec3 reflected = reflect(-eye, normal);
         vec3 sky = horizon;
@@ -199,8 +209,9 @@ export function mapWaterMaterial(
           vec3 variance = lost.x*secondMoment(slope0) + lost.y*secondMoment(slope1)
                         + lost.z*secondMoment(slope2) + lost.w*secondMoment(slope3);
           // A smoothstep-interpolated uniform noise field has slope variance 26/175 per axis.
-          float noise = (26.0/175.0) * (0.015*0.015*(1.0-swellFilter*swellFilter)
-                      + 0.030*0.030*(1.0-chopFilter*chopFilter)
+          float gravityVariance = 0.015*0.015*(1.0-swellFilter*swellFilter)
+                                + 0.030*0.030*(1.0-chopFilter*chopFilter);
+          float noise = (26.0/175.0) * (gravityGain*gravityGain*gravityVariance
                       + 0.034*0.034*gust*gust*(1.0-fineFilter*fineFilter));
           variance.xz += noise;
           float sx = sqrt(max(variance.x,0.0));
@@ -233,8 +244,6 @@ export function mapWaterMaterial(
                     * waterFresnel(clamp(dot(eye,halfVector),0.0,1.0));
         vec3 bodyColor = deep;
         #ifdef WATER_SAMPLE
-          float sampleRange = distance(samplePosition.xy, waterSampleArea.xy);
-          float weight = samplePosition.z * (1.0 - smoothstep(0.8 * waterSampleArea.z, waterSampleArea.z, sampleRange));
           vec3 measured = waterReflectance * horizontalDiffuse / (0.84 + 0.12 * max(sunlight.y,0.0));
           bodyColor = mix(bodyColor, measured, weight);
         #endif

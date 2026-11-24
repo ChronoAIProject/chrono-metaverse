@@ -86,6 +86,8 @@ export interface WaterSample {
   /** Blend into the surrounding water over the outer fifth of the sample radius in metres. */
   readonly radius: number;
   readonly reflectance: readonly [number, number, number];
+  /** Root-mean-square slope of the metre-scale gravity waves. */
+  readonly rmsGravitySlope?: number;
 }
 
 export interface FacadeReflectionBuilding {
@@ -247,6 +249,7 @@ function validWaterSample(value: unknown): boolean {
     finite(sample.center[0], -180, 180) &&
     finite(sample.center[1], -85.05113, 85.05113) &&
     finite(sample.radius, 1, 50000) &&
+    (sample.rmsGravitySlope === undefined || finite(sample.rmsGravitySlope, 0, 1)) &&
     Array.isArray(sample.reflectance) &&
     sample.reflectance.length === 3 &&
     sample.reflectance.every((n) => finite(n, 0, 1))
