@@ -75,6 +75,7 @@ import {
 import { applyStyleLook } from './materials';
 import { styleLookKey, type StyleLook } from '../core/styles';
 import { createMeshService, type MeshService } from './meshService';
+import { repairModelNormals } from './modelNormals';
 import { fitModelInto, measureModel, modelFit, modelFitWarning, type BoxLike } from './modelFit';
 import { placedModelBox, placeRotatedModel } from './modelPlacement';
 import type { ShapeJob, ShapeJobResult } from './meshJobs';
@@ -740,9 +741,14 @@ export class SceneView {
         bytes,
         '',
         (gltf) => {
+          const checked = new Set<THREE.BufferGeometry>();
           gltf.scene.traverse((object) => {
             const mesh = object as THREE.Mesh;
             if (!mesh.isMesh) return;
+            if (!checked.has(mesh.geometry)) {
+              repairModelNormals(mesh.geometry);
+              checked.add(mesh.geometry);
+            }
             const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
             for (const material of materials) {
               if (doubleSided) material.side = THREE.DoubleSide;
