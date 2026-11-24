@@ -65,8 +65,12 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
   const { diffuseProbe: _probe, ...daylight } = previous.daylight;
   const northFacing = JSON.parse(readFileSync(new URL('../references/north-facing-clear-sky.json', import.meta.url), 'utf8'));
   const { radiance: _oldRadiance, ...previousDisplaySky } = northFacing;
+  const morningClear = JSON.parse(readFileSync(new URL('../references/morning-clear-sky.json', import.meta.url), 'utf8'));
+  const { radiance: _clearRadiance, ...morningDisplaySky } = morningClear;
   const { radiance, ...displaySky } = target.sky;
   const presets = [
+    morningClear,
+    morningDisplaySky,
     displaySky,
     previousDisplaySky,
     northFacing,
@@ -80,6 +84,8 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
   if (!presets.some((preset) => isDeepStrictEqual(preset, environment.sky))) return saved;
   const textures = new Set(saved.textures);
   textures.delete(String(environment.sky.texture));
+  const oldRadiance = environment.sky.radiance as { texture?: string } | undefined;
+  if (oldRadiance?.texture) textures.delete(oldRadiance.texture);
   textures.add(target.sky.texture);
   if (radiance) textures.add(radiance.texture);
   return {
