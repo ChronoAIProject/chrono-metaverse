@@ -1193,7 +1193,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "皇后坊 · 大草坪与达尔豪西纪念碑步道",
-    "assetHash": "045be37dc95e06ff57ff52ac1e65db55a222f7cc2304dc55e1a76adefc7b5ad3",
+    "assetHash": "07dc01a84a5a288eb3797ecc05cbd30a9cc34610f73b147a88ba8b9fa3f2d53d",
     "bounds": {
       "min": [
         494.98935236691,
@@ -1226,7 +1226,8 @@
       ],
       "现场照片": "https://commons.wikimedia.org/wiki/File:2016_Singapur,_Downtown_Core,_Dalhousie_Obelisk.jpg",
       "材质素材": "ambientCG Grass 004；Poly Haven Granite Tile 04 · CC0",
-      "地面重建": "边界按正射影像与通道中心线定位。树冠下的边缘、铺装尺寸和高程为估值。"
+      "地面重建": "边界按正射影像与通道中心线定位。树冠下的边缘、铺装尺寸和高程为估值。",
+      "草皮反射率依据": "按 2026-04-16、2026-06-13 两期 Sentinel-2 地表反射率校准草坪红、绿通道的十米尺度变化。"
     }
   },
   {
