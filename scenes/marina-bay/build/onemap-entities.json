@@ -7056,7 +7056,7 @@
     "kind": "object",
     "label": "ESPLANADE - THEATRES ON THE BAY",
     "regionId": "marina-bay-exterior",
-    "assetHash": "bc2879c2bdbda1d5164f4f6a1efa6e90ef4dd357d1fd454bf433d57de9daa5f8",
+    "assetHash": "aaea7d7684f964d6644fc1955fbd430580bc94a2a8e78f2b0e136429de60da12",
     "bounds": {
       "min": [
         290.903001,
@@ -7077,9 +7077,22 @@
       "原始分片": "7/78/12_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 41.346,
-      "三角形数": 5226,
+      "三角形数": 11755,
       "原建筑资源": "a854e29e024d0d70c6da691c40ab066183b990566291d0d2e8f44f3d279b50de",
-      "穹顶曲面": "按相邻测绘面的边与夹角分出两组穹顶。保留原顶点、轮廓连接边及遮阳片影像。内部边中点的切平面插值位移上限 0.15 米。遮阳片的细部法线来自原图局部明暗，起伏和表面粗糙度 0.49 为估值。"
+      "穹顶曲面": "按相邻测绘面的边与夹角分出两组穹顶。保留原顶点、轮廓连接边及遮阳片影像。内部边中点的切平面插值位移上限 0.15 米。玻璃壳保留原图的浅表法线，外层铝板单独受光。",
+      "穹顶遮阳片": {
+        "每顶片数": [
+          3334,
+          3195
+        ],
+        "设计资料": "https://www.dpa.com.sg/projects/esplanade-theatres-on-the-bay/",
+        "实拍参考": [
+          "https://commons.wikimedia.org/?curid=74794455",
+          "https://commons.wikimedia.org/?curid=83988992",
+          "https://commons.wikimedia.org/?curid=85563656"
+        ],
+        "说明": "沿两座测绘穹顶的截面布置三角铝板。板件间距、抬高量及涂层依据照片估读。"
+      }
     }
   },
   {

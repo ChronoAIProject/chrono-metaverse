@@ -15,6 +15,8 @@ from scipy.ndimage import gaussian_filter
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 
+from esplanade_shades import DESIGN, PHOTOGRAPHS, triangular_plates
+
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = "a854e29e024d0d70c6da691c40ab066183b990566291d0d2e8f44f3d279b50de"
 ENTITY = "bay.e9850f77-b4a1-4b67-9b2c-61c38941e442"
@@ -110,6 +112,17 @@ def bake(raw):
         a.update(count=len(data), min=data.min(axis=0).tolist(), max=data.max(axis=0).tolist())
         views[a['bufferView']] = data.tobytes()
 
+    def add_accessor(values, kind, component, target):
+        data = np.ascontiguousarray(values)
+        index = len(doc['accessors'])
+        accessor = {'bufferView': len(views), 'componentType': component, 'count': len(data), 'type': kind}
+        if kind == 'VEC3':
+            accessor.update(min=data.min(axis=0).tolist(), max=data.max(axis=0).tolist())
+        doc['accessors'].append(accessor)
+        doc['bufferViews'].append({'buffer': 0, 'target': target})
+        views.append(data.tobytes())
+        return index
+
     count = 0
     for mesh in doc['meshes']:
         primitive, = mesh['primitives']
@@ -129,20 +142,42 @@ def bake(raw):
             doc['accessors'].append(index)
             write(pane['indices'], indices[first_roof:].astype(faces.dtype))
             count += (indices.size - first_roof) // 3
+            plates, panel_counts = triangular_plates(attributes['POSITION'], indices[first_roof:].reshape(-1, 3))
             indices = indices[:first_roof]
             roof = copy.deepcopy(doc['materials'][primitive['material']])
-            roof['name'] = 'Esplanade aluminium sunshades'
-            roof['pbrMetallicRoughness']['roughnessFactor'] = .49
+            roof['name'] = 'Esplanade double-glazed roof'
+            roof['pbrMetallicRoughness'].update(baseColorFactor=[.098, .142, .128, 1], metallicFactor=.19, roughnessFactor=.29)
             pose = views[doc['images'][0]['bufferView']]
             normal_map = canopy_relief(pose, dome_uv)
             doc['images'].append({'mimeType':'image/jpeg','bufferView':len(views)})
             doc['bufferViews'].append({'buffer':0})
             views.append(normal_map)
-            roof['normalTexture'] = {'index':len(doc['textures']), 'scale':.64}
+            roof['normalTexture'] = {'index':len(doc['textures']), 'scale':.12}
             doc['textures'].append({'source':len(doc['images']) - 1})
             pane['material'] = len(doc['materials'])
             doc['materials'].append(roof)
             mesh['primitives'].append(pane)
+            vertices = plates.reshape(-1, 3).astype('<f4')
+            normals = np.cross(plates[:, 1] - plates[:, 0], plates[:, 2] - plates[:, 0])
+            normals /= np.linalg.norm(normals, axis=1, keepdims=True)
+            normal = np.repeat(normals, 3, axis=0).astype('<f4')
+            material = len(doc['materials'])
+            doc['materials'].append({
+                'name': 'Esplanade triangular sunshades', 'doubleSided': True,
+                'pbrMetallicRoughness': {'baseColorFactor': [.48, .433, .351, 1],
+                                         'metallicFactor': .60, 'roughnessFactor': .47},
+            })
+            mesh['primitives'].append({
+                'attributes': {'POSITION': add_accessor(vertices, 'VEC3', 5126, 34962),
+                               'NORMAL': add_accessor(normal, 'VEC3', 5126, 34962)},
+                'indices': add_accessor(np.arange(len(vertices), dtype='<u2'), 'SCALAR', 5123, 34963),
+                'material': material, 'mode': 4,
+            })
+            doc['asset'].setdefault('extras', {})['sunshades'] = {
+                'design': DESIGN, 'photoReferences': PHOTOGRAPHS, 'panelsPerDome': panel_counts,
+                'fit': 'Panel spacing, lift and coating estimated over the surveyed glass shells.',
+            }
+            count += len(plates)
         else:
             compact, indices = np.unique(faces, return_inverse=True)
             attributes = {k:v[compact] for k,v in attributes.items()}
@@ -159,7 +194,7 @@ def bake(raw):
     header = json.dumps(doc,separators=(',',':')).encode()
     header += b' ' * (-len(header)%4)
     return (struct.pack('<4sIII4s',b'glTF',2,28+len(header)+len(buf),len(header),b'JSON') +
-            header + struct.pack('<I4s',len(buf),b'BIN\0') + buf), count
+            header + struct.pack('<I4s',len(buf),b'BIN\0') + buf), count, panel_counts
 
 
 if __name__ == '__main__':
@@ -168,14 +203,18 @@ if __name__ == '__main__':
     raw = parser.parse_args().source.read_bytes()
     if hashlib.sha256(raw).hexdigest() != SOURCE:
         raise ValueError('Expected the original Esplanade Theatres survey')
-    result, count = bake(raw)
+    result, count, panel_counts = bake(raw)
     digest = hashlib.sha256(result).hexdigest()
     (ROOT/'assets'/(digest+'.glb')).write_bytes(result)
     path = ROOT/'build/onemap-entities.json'
     records = json.loads(path.read_text())
     e = next(e for e in records if e['entityId'] == ENTITY)
     e['assetHash'] = digest
+    e['props']['穹顶遮阳片'] = {
+        '每顶片数': panel_counts, '设计资料': DESIGN, '实拍参考': PHOTOGRAPHS,
+        '说明': '沿两座测绘穹顶的截面布置三角铝板。板件间距、抬高量及涂层依据照片估读。',
+    }
     e['props'].update({'原建筑资源':SOURCE,'三角形数':count,
-        '穹顶曲面':'按相邻测绘面的边与夹角分出两组穹顶。保留原顶点、轮廓连接边及遮阳片影像。内部边中点的切平面插值位移上限 0.15 米。遮阳片的细部法线来自原图局部明暗，起伏和表面粗糙度 0.49 为估值。'})
+        '穹顶曲面':'按相邻测绘面的边与夹角分出两组穹顶。保留原顶点、轮廓连接边及遮阳片影像。内部边中点的切平面插值位移上限 0.15 米。玻璃壳保留原图的浅表法线，外层铝板单独受光。'})
     path.write_text(json.dumps(records,ensure_ascii=False,indent=2)+'\n')
     print(digest,len(result),count)
