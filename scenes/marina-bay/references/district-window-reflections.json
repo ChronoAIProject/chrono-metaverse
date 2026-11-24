@@ -1,7 +1,7 @@
 {
   "facadeReflections": {
     "source": "https://tiles.openfreemap.org/planet",
-    "texture": "28f7c4b2bfb408b2ec884130a1f19b5835336a0330c9e8e5838c42cc832336c7",
+    "texture": "345c0f6d2825ff8f0c1aea42a6bb6805fa545801d98b31554f66cf41a85045e7",
     "scale": 8,
     "buildings": [
       {
@@ -139,8 +139,8 @@
     ]
   },
   "capture": {
-    "sky": "4b0934f93c69c2e47d0dc10773827b68c6f899e015156f2f1e0f7b115445785e",
-    "yaw": -120.3757,
+    "sky": "0f32c57c33baead1a22701e9ee25864bb0aaa161c812561e2373a66375705ee6",
+    "yaw": -120.3897,
     "method": "Six scene-linear faces at 20%, 50% and 80% of the mapped height above the building base, with the receiving vector feature removed. Each prefiltered panorama measures 128 by 64 texels, with a one-texel wrapping gutter at both horizontal ends. Captured in the registered daytime scene.",
     "sources": [
       {
@@ -288,6 +288,7 @@
         ]
       }
     ],
-    "credit": "Map Data © 2026 SLA. Map geometry © OpenStreetMap contributors (ODbL 1.0), via OpenFreeMap. Sky and other visible scene sources are credited in scenes/marina-bay/README.md and the respective glTF assets."
+    "credit": "Map Data © 2026 SLA. Map geometry © OpenStreetMap contributors (ODbL 1.0), via OpenFreeMap. Sky and other visible scene sources are credited in scenes/marina-bay/README.md and the respective glTF assets.",
+    "previousTexture": "28f7c4b2bfb408b2ec884130a1f19b5835336a0330c9e8e5838c42cc832336c7"
   }
 }

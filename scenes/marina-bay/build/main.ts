@@ -55,10 +55,18 @@ export function withBoatQuay(surroundings: EntityBody): EntityBody {
       (!('waterSample' in content) || isDeepStrictEqual(content.waterSample, previousSample))) {
     water = { ...water, waterSample };
   }
-  const { facadeReflections } = JSON.parse(readFileSync(new URL('../references/district-window-reflections.json', import.meta.url), 'utf8'));
-  const addReflections = !('facadeReflections' in content) && 'facade' in style && style.facade === 'urban' &&
-    sources.some(source => source?.url === facadeReflections.source);
-  const textures = addReflections ? { textures: [...new Set([...(surroundings.textures ?? []), facadeReflections.texture as string])] } : {};
+  const { facadeReflections, capture } = JSON.parse(readFileSync(new URL('../references/district-window-reflections.json', import.meta.url), 'utf8'));
+  const oldAtlas = capture.previousTexture as string;
+  const previousReflections = { ...facadeReflections, texture: oldAtlas };
+  const migrateReflections = 'facadeReflections' in content &&
+    isDeepStrictEqual(content.facadeReflections, previousReflections);
+  const addReflections = (!('facadeReflections' in content) || migrateReflections) &&
+    'facade' in style && style.facade === 'urban' && sources.some(source => source?.url === facadeReflections.source);
+  const existingTextures = surroundings.textures ?? [];
+  const textures = addReflections ? { textures: [...new Set([
+    ...existingTextures.map(hash => migrateReflections && hash === oldAtlas ? facadeReflections.texture as string : hash),
+    facadeReflections.texture as string,
+  ])] } : {};
   return { ...surroundings, ...textures, props: { ...surroundings.props, externalContent: {
     ...content, ...ground, ...water, ...(addReflections ? { facadeReflections } : {}), extrusion: { ...style, excludeBounds },
   } } };
