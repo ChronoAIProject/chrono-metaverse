@@ -876,7 +876,7 @@ export class SceneView {
           })
           .catch(() => undefined);
       }
-      if (coverage) cityCutout(material);
+      if (coverage) cityCutout(material, this.renderer.capabilities.getMaxAnisotropy());
       this.materialCache.set(key, material);
     }
     return material;

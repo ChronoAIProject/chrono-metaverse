@@ -105,6 +105,20 @@ export function modelRoofReflectance(entity: EntityBody): ModelRoofReflectance |
     return { material, scale };
 }
 
+/** Preserve sampler choices on pixel art and raise trilinear filtering on oblique surfaces. */
+export function filterModelTexture(texture: THREE.Texture | null, limit: number) {
+  const level = Math.min(4, limit);
+  if (
+    texture &&
+    texture.anisotropy < level &&
+    texture.magFilter === THREE.LinearFilter &&
+    texture.minFilter === THREE.LinearMipmapLinearFilter
+  ) {
+    texture.anisotropy = level;
+    texture.needsUpdate = true;
+  }
+}
+
 /** 斜看实景立面时沿表面采样颜色，让照片与附带的法线、粗糙度保持相同清晰度。 */
 export function filterModelSurface(material: THREE.Material, limit: number) {
   if (
@@ -114,23 +128,13 @@ export function filterModelSurface(material: THREE.Material, limit: number) {
     material.alphaTest > 0
   )
     return;
-  const level = Math.min(4, limit);
   for (const texture of [
     material.map,
     material.normalMap,
     material.roughnessMap,
     material.metalnessMap,
-  ]) {
-    if (
-      texture &&
-      texture.anisotropy < level &&
-      texture.magFilter === THREE.LinearFilter &&
-      texture.minFilter === THREE.LinearMipmapLinearFilter
-    ) {
-      texture.anisotropy = level;
-      texture.needsUpdate = true;
-    }
-  }
+  ])
+    filterModelTexture(texture, limit);
 }
 
 /**

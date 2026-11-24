@@ -1,7 +1,8 @@
 import * as THREE from 'three';
+import { filterModelTexture } from './materials';
 
 /** 多重采样的像素用原图遮罩控制覆盖率，已绘制的天空保持不透明。 */
-export function cityCutout(material: THREE.Material) {
+export function cityCutout(material: THREE.Material, anisotropy: number) {
   if (
     !(
       material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshBasicMaterial
@@ -11,6 +12,7 @@ export function cityCutout(material: THREE.Material) {
     !material.map
   )
     return;
+  filterModelTexture(material.map, anisotropy);
   material.alphaToCoverage = true;
   material.blending = THREE.CustomBlending;
   material.blendSrc = THREE.OneFactor;

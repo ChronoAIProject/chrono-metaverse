@@ -5,7 +5,8 @@ import { cityCutout, matchCutoutShadow } from './cityCutout';
 it('uses each draw group’s visible cutoff in its shadow pass', () => {
   const leaves = new THREE.MeshStandardMaterial({ map: new THREE.Texture(), alphaTest: 0.36 });
   const bark = new THREE.MeshStandardMaterial();
-  cityCutout(leaves);
+  cityCutout(leaves, 8);
+  expect(leaves.map?.anisotropy).toBe(4);
   const mesh = new THREE.Mesh(new THREE.BufferGeometry(), [bark, leaves]);
   const before = vi.fn();
   mesh.onBeforeShadow = before;
