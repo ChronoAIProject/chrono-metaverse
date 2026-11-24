@@ -6620,7 +6620,7 @@
     "kind": "object",
     "label": "THE SAIL @ MARINA BAY",
     "regionId": "marina-bay-exterior",
-    "assetHash": "573b805dfae453a5fe675c6b3d9444f85941169aa62b69b3debe5ff3183bdb70",
+    "assetHash": "9ae09fe1556281aaa41f64a4e587897d7308729513e9be326d37fcc9a4e97d92",
     "bounds": {
       "min": [
         157.142935,
@@ -6643,7 +6643,7 @@
       "官方测量高度（米）": 241.983,
       "三角形数": 1728,
       "modelOcclusion": {
-        "sourceAsset": "573b805dfae453a5fe675c6b3d9444f85941169aa62b69b3debe5ff3183bdb70",
+        "sourceAsset": "9ae09fe1556281aaa41f64a4e587897d7308729513e9be326d37fcc9a4e97d92",
         "material": "dc2400602",
         "texture": "9607caad0ba4fcb78d893e3a45557de1896f738c74b44cadf511a6c5847d5e04"
       }
@@ -6748,7 +6748,7 @@
     "kind": "object",
     "label": "ONE MARINA BOULEVARD",
     "regionId": "marina-bay-exterior",
-    "assetHash": "a1b578e0ecde9ba753f1d1f5e9052515a1c59a3c5144edec68b5ead640ca1159",
+    "assetHash": "d343a89397510dceb9386a7747ef6f427fb3c913ff9f9cd51351aa298bf6687c",
     "bounds": {
       "min": [
         231.076513,
