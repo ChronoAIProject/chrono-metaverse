@@ -3,21 +3,21 @@
     {
       "entityId": "bay.08072a9f-809e-4a62-8517-0ec0efc1b4a2",
       "sourceAsset": "6ae3f4f6c231ab32b1762da219c5ef23b4f1d8a214ee1bd415a4faaddd08b5a3",
-      "model": "a31dbcb77efcc4e5976ea642bd69fd40795404183a7bb79fd085642a2093b067",
+      "model": "dc5d940ffb0eba7e75d1ff6dc51cd44dc7c007d73ee9fb81eb488f54b383a650",
       "osmWay": "679032154",
       "glassTriangles": 46,
       "glassAreaSquareMetres": 16549,
-      "baseColorFactor": 0.16,
+      "baseColorFactor": 0.4,
       "roughness": 0.22
     },
     {
       "entityId": "bay.eb0b5645-2ff0-4639-8499-3ff115b9e23b",
       "sourceAsset": "f30b0b8445e6e8e066bd4c5a52faa811b6615b65e6f30c260d5fb10b82e0d25a",
-      "model": "41055cf708a46f69b5a9259f7b058418969d94e9bdf243ef68ae90469114e9dd",
+      "model": "f67318d63cafd84e2c0e792d48b933356c05101c450bb86387a9b62800d07112",
       "osmWay": "172915345",
       "glassTriangles": 132,
       "glassAreaSquareMetres": 83983,
-      "baseColorFactor": 0.34,
+      "baseColorFactor": 0.55,
       "roughness": 0.22
     }
   ],
@@ -26,11 +26,12 @@
     0.52,
     0.81
   ],
-  "sky": "0f32c57c33baead1a22701e9ee25864bb0aaa161c812561e2373a66375705ee6",
-  "method": "Glass elevations follow the surveyed building mesh. Two bay-facing sides of OUE Bayfront were identified in registered photos. One Raffles Quay North Tower follows the upper footprint of its mapped tower. Each reflection direction selects terrain and map tiles at the capture height with the tower hidden. Diffuse response was compared against both the sky and visible Fullerton Hotel masonry.",
+  "sky": "a01d2127467e89c971c8067c36429ab9c5fefe92783715a5149a723e30e0c748",
+  "method": "The surveyed upper glazing samples the current bay from three heights. From the centre of each tower, capture six directions at each height with the tower hidden. The glTF emissive texture stores linear radiance at scale 8, with a zero emissive factor. The renderer selects the height-dependent local reflection. Compare diffuse response in registered photographs relative to the sky and adjacent buildings.",
   "photographs": [
     "https://commons.wikimedia.org/?curid=137548517",
     "https://commons.wikimedia.org/?curid=157871412",
-    "https://commons.wikimedia.org/?curid=148217395"
+    "https://commons.wikimedia.org/?curid=148217395",
+    "https://commons.wikimedia.org/?curid=32263050"
   ]
 }
