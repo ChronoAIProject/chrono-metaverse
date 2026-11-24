@@ -72,6 +72,42 @@ describe('通用矢量三维内容', () => {
     material.dispose();
   });
 
+  it('只给高度和位置都匹配的同编号楼体绑定三层反射', () => {
+    const data = vectorTileFixture(24, false, undefined, [
+      [
+        [128, 640],
+        [384, 640],
+        [384, 896],
+        [128, 896],
+      ],
+    ]);
+    const { geometry } = vectorGeometry(
+      data,
+      tile,
+      reference,
+      { ...style, facade: 'urban' },
+      false,
+      undefined,
+      [],
+      undefined,
+      undefined,
+      [{ featureId: 1, minHeight: 0, height: 24, bounds: [-20, -20, 20, 20] }],
+    );
+    const row = geometry.getAttribute('facadeProbe');
+    const uv = geometry.getAttribute('uv');
+    const matched = new Set<number>();
+    let other = 0;
+    for (let i = 0; i < row.count; i++) {
+      if (row.getX(i) === 1) {
+        matched.add(uv.getX(i));
+        expect(row.getY(i)).toBeCloseTo((uv.getX(i) / 24 - 0.2) / 0.3);
+      } else other++;
+    }
+    expect(matched).toEqual(new Set([0, 24]));
+    expect(other).toBeGreaterThan(0);
+    geometry.dispose();
+  });
+
   it('近处细瓦片和远处概化瓦片同时可见，同一位置只绘制一次', () => {
     const camera = new THREE.PerspectiveCamera(48, 1.6, 0.1, 40000);
     camera.position.set(0, 180, 0);

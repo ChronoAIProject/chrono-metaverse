@@ -88,6 +88,22 @@ export interface WaterSample {
   readonly reflectance: readonly [number, number, number];
 }
 
+export interface FacadeReflectionBuilding {
+  readonly featureId: number;
+  readonly minHeight: number;
+  readonly height: number;
+  /** Bounds of the surveyed footprint in the vector source's local x/z plane. */
+  readonly bounds: readonly [number, number, number, number];
+}
+
+export interface FacadeReflections {
+  readonly source: string;
+  readonly texture: string;
+  readonly scale: number;
+  /** Each atlas row holds panoramas at 20%, 50% and 80% of one building's height. */
+  readonly buildings: readonly FacadeReflectionBuilding[];
+}
+
 export interface VectorContent {
   readonly version: 1;
   readonly format: 'mvt';
@@ -97,6 +113,7 @@ export interface VectorContent {
   readonly roads?: RoadLayer | false;
   readonly waterLayer?: string;
   readonly waterSample?: WaterSample;
+  readonly facadeReflections?: FacadeReflections;
   readonly waterlineEdits?: readonly WaterlineEdit[];
   readonly groundLayers?: readonly GroundLayer[];
   readonly waterReflection?: 'scene';
@@ -182,6 +199,38 @@ export function geographicReference(value: unknown): GeographicReference | null 
   )
     return null;
   return { ...raw, heading: raw.heading ?? 0 } as unknown as GeographicReference;
+}
+
+function validFacadeReflections(value: unknown, textures: readonly string[] | undefined): boolean {
+  const atlas = record(value);
+  if (
+    !atlas ||
+    !publicHttps(atlas.source) ||
+    typeof atlas.texture !== 'string' ||
+    !textures?.includes(atlas.texture) ||
+    !/^[a-f0-9]{64}$/.test(atlas.texture) ||
+    !finite(atlas.scale, 0.01, 64) ||
+    !Array.isArray(atlas.buildings) ||
+    atlas.buildings.length < 1 ||
+    atlas.buildings.length > 64
+  )
+    return false;
+  return atlas.buildings.every((item) => {
+    const b = record(item);
+    return (
+      !!b &&
+      Number.isSafeInteger(b.featureId) &&
+      Number(b.featureId) >= 0 &&
+      finite(b.minHeight, 0, 2000) &&
+      finite(b.height, 0, 2000) &&
+      Number(b.height) > Number(b.minHeight) &&
+      Array.isArray(b.bounds) &&
+      b.bounds.length === 4 &&
+      b.bounds.every((n) => finite(n, -100000, 100000)) &&
+      b.bounds[2]! > b.bounds[0]! &&
+      b.bounds[3]! > b.bounds[1]!
+    );
+  });
 }
 
 function validWaterSample(value: unknown): boolean {
@@ -310,6 +359,9 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
       (style.distantZoom !== undefined &&
         (!finite(style.distantZoom, 0, 20) || !Number.isInteger(style.distantZoom))) ||
       (raw.waterLayer !== undefined && !field(raw.waterLayer)) ||
+      (raw.facadeReflections !== undefined &&
+        (style.facade !== 'urban' ||
+          !validFacadeReflections(raw.facadeReflections, entity.textures))) ||
       (raw.waterSample !== undefined && (!raw.waterLayer || !validWaterSample(raw.waterSample))) ||
       (raw.waterlineEdits !== undefined &&
         (!raw.waterLayer ||
@@ -349,6 +401,7 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
       reference,
       extrusion: style,
       ...(groundLayers ? { groundLayers } : {}),
+      ...(raw.facadeReflections ? { facadeReflections: raw.facadeReflections } : {}),
       ...(raw.waterSample ? { waterSample: raw.waterSample } : {}),
       ...(raw.waterlineEdits ? { waterlineEdits: raw.waterlineEdits } : {}),
       ...(raw.waterReflection ? { waterReflection: raw.waterReflection } : {}),

@@ -40,6 +40,16 @@ if (!probe && !hostOnly) {
     purpose: 'texture',
     format: 'png',
   });
+  const { facadeReflections } = JSON.parse(
+    readFileSync(new URL('references/district-window-reflections.json', root), 'utf8'),
+  );
+  assets.push({
+    entityId: 'bay.city-surroundings',
+    label: '街区窗面反射',
+    assetHash: facadeReflections.texture,
+    purpose: 'texture',
+    format: 'png',
+  });
   const { quay } = JSON.parse(readFileSync(new URL('context.json', root), 'utf8'));
   for (const [role, hash] of Object.entries(quay?.granite ?? {})) {
     assets.push({
