@@ -1,0 +1,31 @@
+{
+  "entityId": "bay.esplanade-promenade-trees",
+  "layer": "ext",
+  "kind": "object",
+  "regionId": "marina-bay-exterior",
+  "label": "滨海艺术中心 · 临水步道树列",
+  "bounds": {
+    "min": [
+      -29.54157274083282,
+      -60.159,
+      915.462665128176
+    ],
+    "max": [
+      276.61332986097966,
+      -48.681000000000004,
+      1013.1634232078835
+    ]
+  },
+  "assetHash": "bb3ad3a874a83c1b6ece9fff9ee0b8d38da0084df2d1df1def4971e3f4e39bef",
+  "material": {
+    "shading": "albedo"
+  },
+  "props": {
+    "background": true,
+    "surfaceRole": "landscape",
+    "影像来源": "https://www.onemap.gov.sg/maps/tiles/OrthoJPG/20/{x}/{y}.png",
+    "树冠数": 22,
+    "素材来源": "Tree forms adapted from Poly Haven Jacaranda Tree and Island Tree 01, CC0. Crown footprints from OneMap, Singapore Land Authority.",
+    "树木依据": "按航拍树冠位置、长短轴及色差布设。树形与高度为估计。"
+  }
+}

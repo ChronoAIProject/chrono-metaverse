@@ -4,7 +4,7 @@
 
 ## 下载结果与来源
 
-- 2026 年 11 月 24 日从 OneMap 首页点击 “Open 3D map view”，入口直达维护公告。旧域名 `www.onemap3d.gov.sg` 跳转到同一首页。[OneMap 首页](https://www.onemap.gov.sg/) · [维护公告](https://www.onemap.gov.sg/maintenance)
+- 2026 年 11 月 25 日从 OneMap 首页点击 “3D Map”，打开的页面显示 “This feature is temporarily unavailable” 并提供返回首页的链接。旧域名 `www.onemap3d.gov.sg` 通过 HTTP 302 跳转到同一首页。[OneMap 首页](https://www.onemap.gov.sg/) · [维护公告](https://www.onemap.gov.sg/maintenance)
 - 金沙原始下载使用的页面 `/3d` 和三维索引 `/omapi/tilesets/sg_noterrain_tiles/tileset.json` 在上述日期均返回 HTTP 404。
 - 官方正射影像：https://www.onemap.gov.sg/maps/tiles/OrthoJPG/{z}/{x}/{y}.png
 - 范围：西界经度 103.8500、南纬度 1.2780、东经度 103.8647、北纬度 1.2918。
@@ -22,6 +22,8 @@
 South Beach Tower 与 South Beach Residences 的塔身和斜屋顶采用同一批 OneMap 派生测绘数据。北塔的测绘记录还包括低层园区，场景仅提取塔身。九条地图部件记录用于保留裙楼并替换重复的塔楼。玻璃窗墙取自 Diego Delso 的 2023 年照片，背向立面参考 Daniel Case 从康莱德酒店拍摄的照片。屋顶钢构按测绘坡面和照片中的格距生成，杆径为估值。贴图经透视校正、明度调整和裁切，背面及被遮挡的窗格按可见面近似，改编贴图以 CC BY-SA 4.0 分发。[双塔原照](https://commons.wikimedia.org/wiki/File:South_Beach_Towers,_Singapur,_2023-08-18,_DD_21.jpg) · [侧面原照](https://commons.wikimedia.org/wiki/File:Hotel_Marriott,_Nicoll_Highway,_Singapur,_2023-08-18,_DD_14.jpg) · [背向原照](https://commons.wikimedia.org/wiki/File:JW_Marriott_Singapore_from_Conrad_Centennial.jpg) · [贴图许可](https://creativecommons.org/licenses/by-sa/4.0/)
 
 ## 系统内预览
+
+滨海艺术中心露天剧场两侧的临水树列依据 OneMap 正射影像中可辨的 22 个树冠布置。冠幅与方向取自影像，树形和高度按两种阔叶树扫描素材估算。坐标与测量值保存在 `references/esplanade-promenade-trees.json`。[OneMap](https://www.onemap.gov.sg/) · [Jacaranda Tree，CC0](https://polyhaven.com/a/jacaranda_tree) · [Island Tree 01，CC0](https://polyhaven.com/a/island_tree_01)
 
 步道靠建筑的一侧有四段低矮绿化，沿 One Fullerton 底层影像可辨的绿带重建。花槽宽度、植物高度和枝条朝向采用估值。枝叶采用同一张带透明遮罩的图集，与花槽一起储存在场景附带的 GLB 中。[Poly Haven · Shrub 01，CC0](https://polyhaven.com/a/shrub_01)
 

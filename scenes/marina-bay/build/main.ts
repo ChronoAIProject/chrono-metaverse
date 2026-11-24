@@ -172,6 +172,9 @@ export default function build(base: BuildBase, kit: Kit) {
       readFileSync(new URL('./city-street-trees.json', import.meta.url), 'utf8'),
     );
     entities.push(...streetTrees);
+    entities.push(JSON.parse(
+      readFileSync(new URL('./esplanade-promenade-trees.json', import.meta.url), 'utf8'),
+    ));
     // These surveyed towers are already aligned to the same final member coordinates as the census tiles.
     const marinaCentre: EntityBody[] = JSON.parse(
       readFileSync(new URL('./marina-centre-towers.json', import.meta.url), 'utf8'),
