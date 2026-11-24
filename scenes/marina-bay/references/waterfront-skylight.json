@@ -1,0 +1,30 @@
+{
+  "skyRadiance": "0f32c57c33baead1a22701e9ee25864bb0aaa161c812561e2373a66375705ee6",
+  "method": "Ambient skylight visibility traced against the four modelled bridges and four waterfront landings. Sample directions are weighted by measured sky luminance and surface orientation. Opaque surfaces return an estimated single diffuse bounce from the sky and visible sun. Water and transmissive canopy panels are excluded from the occluder mesh.",
+  "sampling": {
+    "vertexDirections": 192,
+    "validationDirections": 384
+  },
+  "materials": {
+    "bay.helix-bridge": [
+      "Asphalt wearing course",
+      "Deck edge and crossbeams",
+      "Pier concrete"
+    ],
+    "bay.bayfront-bridge": [
+      "Deck and pier concrete",
+      "Lane markings",
+      "Walkway kerbs and median"
+    ],
+    "bay.esplanade-road-bridge": [
+      "Esplanade concrete box girders",
+      "Esplanade pier caps and parapet edge"
+    ],
+    "bay.jubilee-bridge": [
+      "Jubilee variable-depth concrete girder"
+    ],
+    "bay.merlion-lookout": [
+      "Deck soffit and piles"
+    ]
+  }
+}
