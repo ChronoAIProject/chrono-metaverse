@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { facadeShadow } from './facadeShadow';
 import { poolWater } from './poolWater';
 import { skyRadiance } from './skyRadiance';
 
@@ -264,6 +265,12 @@ export function cityModelAir(material: THREE.Material) {
               : '') +
             'outgoingLight = cityAir(outgoingLight, cityEye, vec3(0.46,0.55,0.62));\n#include <opaque_fragment>',
         );
+    if (
+      material instanceof THREE.MeshStandardMaterial &&
+      !material.transparent &&
+      !material.alphaTest
+    )
+      facadeShadow(shader);
   };
 }
 
@@ -358,5 +365,6 @@ export function urbanFacade(material: THREE.MeshLambertMaterial) {
         outgoingLight=cityAir(outgoingLight,-vViewPosition,mix(vec3(0.46,0.55,0.62),skyLight,0.15));
         #include <opaque_fragment>`,
         );
+    facadeShadow(shader);
   };
 }
