@@ -45,9 +45,13 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
   const previous = JSON.parse(readFileSync(new URL('../references/partly-cloudy-sky.json', import.meta.url), 'utf8'));
   const base = { texture: previous.texture, yaw: previous.yaw };
   const { diffuseProbe: _probe, ...daylight } = previous.daylight;
+  const northFacing = JSON.parse(readFileSync(new URL('../references/north-facing-clear-sky.json', import.meta.url), 'utf8'));
+  const { radiance: _oldRadiance, ...previousDisplaySky } = northFacing;
   const { radiance, ...displaySky } = target.sky;
   const presets = [
     displaySky,
+    previousDisplaySky,
+    northFacing,
     base,
     { ...base, daylight: { ...daylight, directFraction: 0.58 } },
     { ...previous, daylight },
