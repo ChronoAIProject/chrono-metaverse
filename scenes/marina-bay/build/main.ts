@@ -42,7 +42,9 @@ export function withBoatQuay(surroundings: EntityBody): EntityBody {
     }
   }
   const { waterSample } = JSON.parse(readFileSync(new URL('../references/marina-reservoir-water.json', import.meta.url), 'utf8'));
-  if (!('waterSample' in content) && waterLayer && sources.some(s => s?.url === waterSample.source)) {
+  const { rmsGravitySlope: _slope, ...previousSample } = waterSample;
+  if (waterLayer && sources.some(s => s?.url === waterSample.source) &&
+      (!('waterSample' in content) || isDeepStrictEqual(content.waterSample, previousSample))) {
     water = { ...water, waterSample };
   }
   const { facadeReflections } = JSON.parse(readFileSync(new URL('../references/district-window-reflections.json', import.meta.url), 'utf8'));
