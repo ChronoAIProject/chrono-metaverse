@@ -13,6 +13,10 @@
 - `assets/onemap/manifest.json` 保留原始分片地址、SHA-256、批次属性和下载时间，`marina-bay.tileset.json` 可作为本地三维分片入口。
 - 署名：**Map Data © 2026 SLA**。原始数据没有随代码纳入 Git。
 
+滨海中心的新达城一至四塔、Centennial Tower 和 Millenia Tower 采用 SLA OneMap 的公开派生几何存档。存档保留了建筑编号、位置和测量高度，移除了原始摄影纹理。六栋的窗带、石材和百叶采用现场照片经透视校正、调光并重复铺设，屋顶和背立面按可见面近似。每个 GLB 内嵌独立的颜色及粗糙度图集，建筑放置记录见 `build/marina-centre-towers.json`。新达城五塔仍由原有地图表示。[OneMap 几何存档](https://github.com/cheeaun/om3d/tree/ac451b84/optimized-tiles)
+
+新达城四栋的改编贴图按 CC BY-SA 3.0 分发，原照由 CEphoto / Uwe Aranas 拍摄。Centennial 与 Millenia 的改编贴图按 CC BY-SA 4.0 分发，两栋立面原照由 Daniel Case 拍摄，Millenia 屋顶实拍来自 Matti Blume。[新达城原照](https://commons.wikimedia.org/wiki/File:Singapore_Marina-Mandarin-Singapore-Hotel-03.jpg) · [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) · [Centennial 原照](https://commons.wikimedia.org/wiki/File:Centennial_Tower_with_Millenia_Walk_skylight,_Singapore.jpg) · [Millenia 原照](https://commons.wikimedia.org/wiki/File:Centennial_Tower_and_Millenia_Tower,_Singapore,_by_day.jpg) · [临湾屋顶原照](https://commons.wikimedia.org/wiki/File:Marina_Bay,_Singapore_(P1110054).jpg) · [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
+
 浮尔顿步道沿滨海蓄水池西岸建模了约 165 米直岸。岸线两端的纬度、经度分别为 `1.2849604, 103.8539466` 和 `1.2863666, 103.8544468`。`context.json` 的 `quay` 保存投影到 OneMap 外景的米制端点，构建时与建筑一起配准到办公室。步道有铺石记录，石板宽度、岸墙横截面及栏杆高度依据行人尺度估算。地图数据 © OpenStreetMap contributors，ODbL 1.0。[岸线](https://www.openstreetmap.org/way/687912605) · [浮尔顿步道](https://www.openstreetmap.org/way/479233715) · [许可](https://www.openstreetmap.org/copyright)
 
 ## 系统内预览

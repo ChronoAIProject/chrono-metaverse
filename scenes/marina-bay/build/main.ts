@@ -35,6 +35,19 @@ export function withBoatQuay(surroundings: EntityBody): EntityBody {
     JSON.parse(readFileSync(new URL(`../references/${name}.json`, import.meta.url), 'utf8')).waterlineEdit,
   );
   const sources = 'sources' in content && Array.isArray(content.sources) ? content.sources : [];
+  const towerSurvey = JSON.parse(readFileSync(new URL('../references/marina-centre-towers.json', import.meta.url), 'utf8')) as {
+    tileSource: string; layer: string; reference: unknown; excludeBuildingParts: unknown[];
+  };
+  const previousParts = 'excludeBuildingParts' in style ? style.excludeBuildingParts : [];
+  let towerParts = {};
+  if (sources.length === 1 && sources[0]?.url === towerSurvey.tileSource &&
+      'layer' in style && style.layer === towerSurvey.layer &&
+      'reference' in content && isDeepStrictEqual(content.reference, towerSurvey.reference) && Array.isArray(previousParts)) {
+    const additions = towerSurvey.excludeBuildingParts.filter(part => !previousParts.some(saved => isDeepStrictEqual(saved, part)));
+    if (previousParts.length + additions.length <= 256 && additions.length) {
+      towerParts = { excludeBuildingParts: [...previousParts, ...additions] };
+    }
+  }
   const waterLayer = 'waterLayer' in content && content.waterLayer === 'water';
   let water = {};
   if (waterLayer) {
@@ -68,7 +81,7 @@ export function withBoatQuay(surroundings: EntityBody): EntityBody {
     facadeReflections.texture as string,
   ])] } : {};
   return { ...surroundings, ...textures, props: { ...surroundings.props, externalContent: {
-    ...content, ...ground, ...water, ...(addReflections ? { facadeReflections } : {}), extrusion: { ...style, excludeBounds },
+    ...content, ...ground, ...water, ...(addReflections ? { facadeReflections } : {}), extrusion: { ...style, excludeBounds, ...towerParts },
   } } };
 }
 
@@ -159,6 +172,11 @@ export default function build(base: BuildBase, kit: Kit) {
       readFileSync(new URL('./city-street-trees.json', import.meta.url), 'utf8'),
     );
     entities.push(...streetTrees);
+    // These surveyed towers are already aligned to the same final member coordinates as the census tiles.
+    const marinaCentre: EntityBody[] = JSON.parse(
+      readFileSync(new URL('./marina-centre-towers.json', import.meta.url), 'utf8'),
+    );
+    entities.push(...marinaCentre);
   }
   // 线上按视野流式加载的周边楼群独立于离线模型包，由空间保存其图层和保护范围。
   const surroundings = base.entities.find((entity) => entity.entityId === 'bay.city-surroundings');
