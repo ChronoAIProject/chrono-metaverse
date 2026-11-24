@@ -1,0 +1,24 @@
+{
+  "ortho": "Map Data © Singapore Land Authority / OneMap, OrthoJPG",
+  "zoom": 18,
+  "tilePixelOrigin": [52913664, 33313536],
+  "mapWay": "https://www.openstreetmap.org/way/21587770/history/10",
+  "photographs": [
+    "https://commons.wikimedia.org/wiki/File:Padang_and_Singapore_skyline.JPG",
+    "https://commons.wikimedia.org/wiki/File:Padang_singapore_skyline.JPG",
+    "https://commons.wikimedia.org/wiki/File:Schoolboy_rugby_at_the_Padang,_Singapore_-_20131026-03.jpg"
+  ],
+  "fields": [
+    {
+      "corners": [[375, 69], [540, 144], [460, 315], [284, 228]],
+      "grassSamples": [[359,127,135,142,108], [387,141,132,138,104], [416,156,128,134,101], [334,170,131,136,103], [363,184,131,136,103], [392,198,128,132,105], [334,221,127,125,100], [364,235,129,135,101]]
+    },
+    {
+      "corners": [[281, 233], [457, 320], [335, 553], [157, 463]],
+      "grassSamples": [[278,270,151,156,114], [309,283,142,146,115], [341,296,134,141,107], [254,317,144,151,112], [284,332,134,145,105], [315,347,137,143,107], [226,371,144,154,112], [255,383,140,149,110], [284,395,147,151,114], [196,419,132,143,104], [220,431,140,150,110], [244,444,128,138,103], [269,457,143,145,112]],
+      "pitchCorners": [[294,253], [441,325], [387,433], [240,360]],
+      "boundaryRing": {"centre": [303,418], "radii": [97,104]},
+      "wickets": [[[298,401], [280,439]], [[313,409], [295,447]]]
+    }
+  ]
+}

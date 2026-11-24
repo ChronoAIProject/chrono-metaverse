@@ -1,71 +1,28 @@
 """Register the Empress Lawn and the Dalhousie Obelisk pedestrian junction."""
 import json
 import sys
-from pathlib import Path
 
 import numpy as np
 import shapely
 from scipy.spatial import cKDTree
 import trimesh
-from PIL import Image
 from shapely.geometry import LineString, Polygon, box
-from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
+from ground_materials import scanned_pavers, scanned_turf
 from context_geometry import geographic_point
 from scanned_canopy import ROOT, write_tree_asset
 
 sys.path.insert(0, str(ROOT.parents[1] / 'recon/src'))
 from metaverse_recon.context.convert import frame
 
-ASSETS = ROOT.parents[1] / 'web/src/assets/geography'
-
 
 def ground_material(grass, reference):
-    name = 'turf' if grass else 'pavers'
-    size = 768
-    with Image.open(ASSETS / f'{name}-color.webp') as image:
-        scan = np.asarray(image.convert('RGB').resize((size, size), Image.Resampling.LANCZOS), float)
-    with Image.open(ASSETS / f'{name}-surface.webp') as image:
-        packed = np.asarray(image.resize((size, size), Image.Resampling.LANCZOS), float)
-    y, x = np.indices((size, size))
     if grass:
-        # Preserve the photographed blades, with the site survey setting the mean colour.
-        mean = np.asarray(reference['colourSurvey']['grass']) * [.57,.66,.43]
-        rgb = scan / np.mean(scan, axis=(0, 1)) * mean
-        slope = (packed[:, :, :2] / 127.5 - 1) * .68
-        rough = np.maximum(packed[:, :, 2], 200)
-    else:
-        # The source grain comes from the face of one clean granite unit. Set out
-        # staggered rectangular stones at the pitch seen in the ground photograph.
-        col, row = (x + .5) / size * 4, (y + .5) / size * 6
-        col += .5 * (row.astype(int) % 2)
-        u, v = col % 1, row % 1
-        i, j = (48 + v * 49).astype(int), (48 + u * 49).astype(int)
-        grain = scan[i, j] @ [.2126, .7152, .0722]
-        pitch = np.asarray(reference['stonePitchMetres'])
-        seam = np.minimum(np.minimum(u, 1-u)*pitch[0], np.minimum(v, 1-v)*pitch[1])
-        joint = np.clip(1-seam/.0055, 0, 1)
-        tone = np.random.default_rng(149).normal(0, 5, (6,4))[row.astype(int), col.astype(int)%4]
-        mean = np.asarray(reference['colourSurvey']['stone']) * [.80,.76,.69]
-        rgb = mean + (tone + (grain - grain.mean())*.56 - 28*joint)[:,:,None]
-        relief = -.0032 * joint + .000015*(grain - grain.mean())
-        dy = (np.roll(relief,-1,0)-np.roll(relief,1,0)) * size/(12*pitch[1])
-        dx = (np.roll(relief,-1,1)-np.roll(relief,1,1)) * size/(8*pitch[0])
-        slope = np.dstack((-dx,dy))
-        rough = np.clip(packed[i,j,2]*.27 + 145 + 31*joint, 145, 245)
-    rgb = Image.fromarray(np.uint8(np.clip(rgb,0,255)))
-    rgb.format = 'JPEG'
-    normals = np.dstack((slope, np.ones_like(rough)))
-    normals /= np.linalg.norm(normals,axis=2,keepdims=True)
-    normal = Image.fromarray(np.uint8((normals+1)*127.5)).resize((384,384),Image.Resampling.LANCZOS)
-    normal.format = 'JPEG'
-    mr = Image.fromarray(np.uint8(np.dstack((np.full_like(rough,255),rough,np.zeros_like(rough))))).resize(
-        (384,384),Image.Resampling.BOX)
-    mr.format = 'PNG'
-    return PBRMaterial(name='Empress Lawn turf' if grass else 'Dalhousie court granite',
-                       baseColorTexture=rgb, normalTexture=normal, metallicRoughnessTexture=mr,
-                       metallicFactor=0, roughnessFactor=1)
+        mean = np.asarray(reference['colourSurvey']['grass']) * [.57, .66, .43]
+        return scanned_turf('Empress Lawn turf', mean)
+    mean = np.asarray(reference['colourSurvey']['stone']) * [.80, .76, .69]
+    return scanned_pavers('Dalhousie court granite', mean, reference['stonePitchMetres'])
 
 
 def surface(polygon, grass, basis, datum, reference):

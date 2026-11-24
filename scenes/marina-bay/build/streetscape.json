@@ -1919,5 +1919,42 @@
       "影像": "Map Data © Singapore Land Authority / OneMap",
       "表面": "Granite Tile 04 · Poly Haven · CC0. Surface finish approximated from the aerial image."
     }
+  },
+  {
+    "entityId": "bay.padang-playing-fields",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "政府大厦前大草场 · 南北球场",
+    "assetHash": "8033a6582ff968e3f16230f51fd4ffcb35a74fac0904af685bf06f6481a1220e",
+    "bounds": {
+      "min": [
+        560.2195923694571,
+        -60.31855428324724,
+        823.3970088992457
+      ],
+      "max": [
+        687.5046950438252,
+        -60.12941702759756,
+        1094.9406507013662
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "边界依据": "Map Data © Singapore Land Authority / OneMap, OrthoJPG",
+      "地图来源": "© OpenStreetMap contributors · ODbL",
+      "参考场地": "https://www.openstreetmap.org/way/21587770/history/10",
+      "材质素材": "ambientCG Grass 004、Poly Haven Granite Tile 04 · CC0",
+      "现场照片": [
+        "https://commons.wikimedia.org/wiki/File:Padang_and_Singapore_skyline.JPG",
+        "https://commons.wikimedia.org/wiki/File:Padang_singapore_skyline.JPG",
+        "https://commons.wikimedia.org/wiki/File:Schoolboy_rugby_at_the_Padang,_Singapore_-_20131026-03.jpg"
+      ],
+      "场地重建": "场界与板球磨损带按正射影像估计。草色参考日间实拍。"
+    }
   }
 ]
