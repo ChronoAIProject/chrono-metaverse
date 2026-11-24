@@ -1,7 +1,7 @@
 {
   "source": "https://www.openstreetmap.org/copyright",
   "scene": "marina-bay-exterior",
-  "skyYawDegrees": -120.3757,
+  "skyYawDegrees": -120.3897,
   "method": "Three linear-radiance environment captures per tower, taken at 23, 52 and 81 percent of measured height with the tower hidden. The reflected surroundings are an approximation from the tower centre.",
   "buildings": [
     {
@@ -277,5 +277,6 @@
         193.583
       ]
     }
-  ]
+  ],
+  "skyRadiance": "0f32c57c33baead1a22701e9ee25864bb0aaa161c812561e2373a66375705ee6"
 }
