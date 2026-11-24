@@ -42,6 +42,18 @@ def canopy_material(compact, spreading, east_grove):
 
 def bake_stands(folder, spreading_tree, stands):
     ref = json.loads((ROOT / "references/esplanade-park-stand.json").read_text())
+    reflectance = json.loads((ROOT / "references/esplanade-crown-reflectance.json").read_text())
+
+    def finish_materials(doc):
+        use_occlusion_uv(doc)
+        for material in doc["materials"]:
+            if material["name"] in reflectance["materials"]:
+                surface = material["pbrMetallicRoughness"]
+                rgba = surface.get("baseColorFactor", [1, 1, 1, 1])
+                surface["baseColorFactor"] = [
+                    value * reflectance["linearReflectanceScale"] for value in rgba[:3]
+                ] + [rgba[3]]
+
     points, colors, canopy, compact_bark_mesh = sample_scan(folder, "island_tree_01")
     compact_xyz, uv, compact_normals, faces, compact = slices(points, colors, canopy, fit_opacity=True)
     points, colors, canopy, spreading_bark_mesh = sample_scan(spreading_tree, "jacaranda_tree")
@@ -136,7 +148,7 @@ def bake_stands(folder, spreading_tree, stands):
             assign_occlusion(trunk_mesh, np.concatenate([visibility[i][1] for i in indices]))
             trunk_mesh.visual.vertex_attributes["color"] = np.tile(source.visual.vertex_attributes["color"], (len(indices), 1))
             scene.add_geometry(trunk_mesh, geom_name=trunk_mesh.visual.material.name)
-        digest, bounds = write_tree_asset(scene, use_occlusion_uv)
+        digest, bounds = write_tree_asset(scene, finish_materials)
         entries.append(stand_entry(east_grove, tree_count, digest, bounds, ref, avenue))
     return entries
 

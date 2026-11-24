@@ -1,0 +1,50 @@
+{
+  "linearReflectanceScale": 0.628,
+  "materials": [
+    "Esplanade Park layered broadleaf canopy",
+    "Esplanade Drive layered crowns"
+  ],
+  "source": "Contains modified Copernicus Sentinel-2 L2A data (2025\u20132026).",
+  "instrumentResponses": "https://sentiwiki.copernicus.eu/web/s2-documents",
+  "leafSpectra": "https://doi.org/10.15486/NGT/1781003",
+  "method": "Render registered crown masks and linear RGB from above at each overpass solar direction. Normalize the render by a sunlit white horizontal Lambertian panel. Use 10 m pixels with model crown cover over 85%, SCL vegetation, NDVI above 0.55 and local AOT at most 0.20. Estimate daylight linear sRGB from MSI B2\u2013B4 with S2A/B/C spectral response tables and measured tropical mature-leaf spectra (763 samples from 70 species). Fit a shared neutral brightness factor to canopy-dominated cells in alternating 60 m blocks. The observations measure the combined crown and illumination at pixel scale.",
+  "trainingCount": 25,
+  "dates": [
+    {
+      "item": "S2A_48NUG_20260416_0_L2A",
+      "url": "https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/S2A_48NUG_20260416_0_L2A"
+    },
+    {
+      "item": "S2B_48NUG_20260320_0_L2A",
+      "url": "https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/S2B_48NUG_20260320_0_L2A"
+    },
+    {
+      "item": "S2C_48NUG_20251205_0_L2A",
+      "url": "https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/S2C_48NUG_20251205_0_L2A"
+    },
+    {
+      "item": "S2C_48NUG_20260424_0_L2A",
+      "url": "https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/S2C_48NUG_20260424_0_L2A"
+    },
+    {
+      "item": "S2C_48NUG_20260613_0_L2A",
+      "url": "https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/S2C_48NUG_20260613_0_L2A"
+    }
+  ],
+  "heldOutOverpasses": [
+    {
+      "item": "S2A_48NUG_20260416_0_L2A",
+      "pixels": 19,
+      "old": 0.035028523168343026,
+      "new": 0.012582691796554288,
+      "change": 0.6407872596831066
+    },
+    {
+      "item": "S2C_48NUG_20260613_0_L2A",
+      "pixels": 20,
+      "old": 0.034145235275110944,
+      "new": 0.01104718618811287,
+      "change": 0.6764647805439092
+    }
+  ]
+}
