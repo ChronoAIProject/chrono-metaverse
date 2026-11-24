@@ -1649,5 +1649,63 @@
       "材质版权": "Footprint © OpenStreetMap contributors, ODbL 1.0. Photo by LN9267 (CC BY-SA 4.0), https://commons.wikimedia.org/wiki/File:Clarke_Quay_Central_09-11-2023.jpg. Rectified and exposure-corrected. Adapted texture and model: CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/.",
       "重建": "轮廓与标高取自地图。将可见一面的实拍纹理按墙宽配准，其他朝向复用同楼的窗面细部。"
     }
+  },
+  {
+    "entityId": "bay.hotel-waterfront-daylight",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "7a0393b614000c144625fa941f528e82cdb6ad1fcea5d447df656a5e6a09a014",
+    "label": "浮尔顿酒店 · 临湾坡屋面",
+    "bounds": {
+      "min": [
+        362.9015002587953,
+        -30.07907427364804,
+        497.0591574385292
+      ],
+      "max": [
+        428.09584002292917,
+        -25.426593280486568,
+        599.5452343186671
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "来源建筑": "bay.462d5ad9-51a7-43f8-8148-02cf56282df7",
+      "材质版权": "Photograph: Jukkabrother, Singapore Skyline from Esplanade, CC BY-SA 4.0, https://commons.wikimedia.org/wiki/File:Singapore_Skyline_from_Esplanade.jpg. Cropped, rectified, exposure-adjusted and repeated. Adapted model and texture: CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/. Placement reference: Map Data © 2026 SLA.",
+      "重建": "沿临水坡屋面配准实拍瓦面和老虎窗，以可见的一段沿屋脊重复。"
+    }
+  },
+  {
+    "entityId": "bay.maybank-waterfront-daylight",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "b3ff51807b2005f1dc905e6c0d351a1976ebda4fbfe35a9764b6f3b5dd152635",
+    "label": "马来亚银行大厦 · 临湾窗带",
+    "bounds": {
+      "min": [
+        431.4327396477583,
+        -28.672208379712714,
+        469.3840448949672
+      ],
+      "max": [
+        466.29092392441174,
+        95.47582297925054,
+        491.66161348753553
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "来源建筑": "bay.a7ebea59-8db8-4310-9789-f8f23da30b9c",
+      "材质版权": "Photograph: Jukkabrother, Singapore Skyline from Esplanade, CC BY-SA 4.0, https://commons.wikimedia.org/wiki/File:Singapore_Skyline_from_Esplanade.jpg. Cropped, rectified, exposure-adjusted and repeated. Adapted model and texture: CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/. Placement reference: Map Data © 2026 SLA.",
+      "重建": "以实拍连续五层楼的深蓝窗带和浅色饰面按测绘外墙配准。侧面复用临湾立面。"
+    }
   }
 ]
