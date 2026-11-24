@@ -20,7 +20,7 @@ export class MapReflection {
   private last = -Infinity;
   private readonly position = new THREE.Vector3();
   private readonly rotation = new THREE.Quaternion();
-  private readonly capturedPosition = new THREE.Vector3();
+  readonly capturedPosition = new THREE.Vector3();
   private readonly capturedRotation = new THREE.Quaternion();
 
   constructor() {
