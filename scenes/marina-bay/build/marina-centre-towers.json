@@ -425,7 +425,7 @@
     "regionId": "marina-bay-exterior",
     "layer": "ext",
     "label": "SUNTEC SINGAPORE INTERNATIONAL CONVENTION AND EXHIBITION CENTRE",
-    "assetHash": "8b965c4843182923f934cb1117666a614a447caa40c5fda8904d4cb570ab28bd",
+    "assetHash": "99ba9a248469edd5625b409537991aa32d96f1f6b2884e99bdfbf141b1c1701d",
     "bounds": {
       "min": [
         71.69107055664062,
@@ -464,7 +464,8 @@
           "license": "CC BY 2.5"
         }
       ],
-      "材质方法": "保留测绘折板、张拉棚和杆件的外形，消除重复三角形。玻璃砖与屋面颜色按实拍取样，梁柱间距据折线檐口定位，底层及背面明暗为估值。"
+      "材质方法": "保留测绘折板、张拉棚和杆件的外形，消除重复三角形。玻璃砖与屋面颜色按实拍取样，梁柱间距据折线檐口定位，底层及背面明暗为估值。",
+      "立面反射": "三层高度采集周围城市与日照天空。玻璃砖、窗带及浅色构件按实拍区分粗糙度与微表面朝向，材质参数为估值。"
     }
   },
   {
@@ -473,7 +474,7 @@
     "regionId": "marina-bay-exterior",
     "layer": "ext",
     "label": "ONE RAFFLES LINK",
-    "assetHash": "3d7e0c48db3fad8d12812a5ce819f39c54fcc87a488b5ea3775ad705a65b9e79",
+    "assetHash": "b4640a51933a969323d185f94ab0c1f4c5df19196cf9f342695d6862d8ef4c94",
     "bounds": {
       "min": [
         220.6945343017578,
@@ -513,7 +514,8 @@
           "license": "Copyrighted free use"
         }
       ],
-      "材质方法": "窗带及玻璃楼端取样自同楼照片。面朝草场的檐口按测绘剖面恢复开放弧梁，梁距、截面及背面窗带为估值。"
+      "材质方法": "窗带及玻璃楼端取样自同楼照片。面朝草场的檐口按测绘剖面恢复开放弧梁，梁距、截面及背面窗带为估值。",
+      "立面反射": "三层高度采集周围城市与日照天空。玻璃砖、窗带及浅色构件按实拍区分粗糙度与微表面朝向，材质参数为估值。"
     }
   }
 ]
