@@ -1716,5 +1716,79 @@
       118,
       97
     ]
+  ],
+  "gardenTrees": [
+    {
+      "osmNode": "https://www.openstreetmap.org/node/2971097471/history/1",
+      "longitude": 103.8525905,
+      "latitude": 1.2874006,
+      "localXZ": [
+        507.112,
+        633.583
+      ],
+      "groundY": -59.913,
+      "sourceYawDegrees": 105,
+      "estimatedHeightMetres": 14,
+      "crownDiameterMetres": 20.74,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.44632,
+          -0.89487
+        ],
+        "stretch": 1.0941,
+        "leanLocalXZ": [
+          0.213,
+          1.823
+        ]
+      }
+    },
+    {
+      "osmNode": "https://www.openstreetmap.org/node/2971097474/history/1",
+      "longitude": 103.8524877,
+      "latitude": 1.287482,
+      "localXZ": [
+        521.284,
+        636.906
+      ],
+      "groundY": -59.911,
+      "sourceYawDegrees": 32,
+      "estimatedHeightMetres": 13,
+      "crownDiameterMetres": 22.11,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.28145,
+          -0.95957
+        ],
+        "stretch": 1.1665,
+        "leanLocalXZ": [
+          0.978,
+          -3.722
+        ]
+      }
+    },
+    {
+      "osmNode": "https://www.openstreetmap.org/node/6435167604/history/2",
+      "longitude": 103.8522575,
+      "latitude": 1.2873724,
+      "localXZ": [
+        539.382,
+        615.095
+      ],
+      "groundY": -60.003,
+      "sourceYawDegrees": 238,
+      "estimatedHeightMetres": 12,
+      "crownDiameterMetres": 20.62,
+      "crownFit": {
+        "majorLocalXZ": [
+          -0.99993,
+          0.01223
+        ],
+        "stretch": 1.2228,
+        "leanLocalXZ": [
+          -7.525,
+          -1.598
+        ]
+      }
+    }
   ]
 }

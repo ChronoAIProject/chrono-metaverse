@@ -65,6 +65,8 @@ export interface GroundLayer {
   readonly property: string;
   readonly values: readonly string[];
   readonly material: 'turf' | 'pavers';
+  /** Stable feature IDs from this source whose surveyed surface uses the underlying imagery. */
+  readonly excludeFeatureIds?: readonly number[];
 }
 
 export interface VectorContent {
@@ -199,7 +201,10 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
             g.values.length > 0 &&
             g.values.length <= 32 &&
             g.values.every(field) &&
-            (g.material === 'turf' || g.material === 'pavers')
+            (g.material === 'turf' || g.material === 'pavers') &&
+            (g.excludeFeatureIds === undefined ||
+              (Array.isArray(g.excludeFeatureIds) &&
+                g.excludeFeatureIds.every((id) => Number.isSafeInteger(id) && id >= 0)))
           );
         }))
     )

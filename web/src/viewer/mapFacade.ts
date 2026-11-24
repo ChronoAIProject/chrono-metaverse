@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { poolWater } from './poolWater';
+import { skyRadiance } from './skyRadiance';
 
 /** 米制视距的空气透视，在海湾尺度上逐渐降低反差。 */
 const cityAir = /* glsl */ `
@@ -31,13 +32,16 @@ function citySkyUniforms(material: THREE.Material) {
     beforeRender.call(this, ...args);
     const scene = args[1];
     const background = scene.background;
-    panorama.value =
+    const display =
       background instanceof THREE.Texture &&
       background.mapping === THREE.EquirectangularReflectionMapping
         ? background
         : null;
-    hasPanorama.value = !!panorama.value;
-    halfDistance.value = panorama.value?.userData.airHalfDistance ?? 4800;
+    // Reflections and air scattering are mixed before the material's tone mapping.
+    panorama.value =
+      display && material.toneMapped ? (skyRadiance.get(display) ?? display) : display;
+    hasPanorama.value = !!display;
+    halfDistance.value = display?.userData.airHalfDistance ?? 4800;
     yaw.value = scene.backgroundRotation.y;
   };
   return {

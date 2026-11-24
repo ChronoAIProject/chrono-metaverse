@@ -60,12 +60,11 @@ export function configureTexture(
   return texture;
 }
 
-/** 城市模型斜视近景时，给颜色、凹凸与粗糙度使用相同的纹理采样足迹。 */
+/** 斜看实景立面时沿表面采样颜色，让照片与附带的法线、粗糙度保持相同清晰度。 */
 export function filterModelSurface(material: THREE.Material, limit: number) {
   if (
     !(material instanceof THREE.MeshStandardMaterial) ||
     !material.map ||
-    !material.normalMap ||
     material.transparent ||
     material.alphaTest > 0
   )

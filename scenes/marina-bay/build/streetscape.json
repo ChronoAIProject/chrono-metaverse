@@ -1468,5 +1468,72 @@
         "maxDistance": 4100
       }
     }
+  },
+  {
+    "entityId": "bay.empress-garden-trees",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "皇后坊 · 纪念碑园路树冠",
+    "assetHash": "e771cd64be41bf963ce15af1feac84cf7dd8336c59025ea6dc1ee5243dbc704a",
+    "bounds": {
+      "min": [
+        496.34514623392306,
+        -60.033,
+        605.0591719670133
+      ],
+      "max": [
+        544.4538657248509,
+        -45.943,
+        646.7164598832749
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "树位依据": [
+        "https://www.openstreetmap.org/node/2971097471/history/1",
+        "https://www.openstreetmap.org/node/2971097474/history/1",
+        "https://www.openstreetmap.org/node/6435167604/history/2"
+      ],
+      "地图来源": "© OpenStreetMap contributors · ODbL",
+      "树冠依据": "Map Data © Singapore Land Authority / OneMap, OrthoJPG",
+      "现场照片": "https://commons.wikimedia.org/wiki/File:2016_Singapur,_Downtown_Core,_Dalhousie_Obelisk.jpg",
+      "树形素材": "Poly Haven · Island Tree 01 · CC0",
+      "植被依据": "树位来自地图，冠幅和偏向按正射影像估读。树高、胸围和枝形为近似值。"
+    }
+  },
+  {
+    "entityId": "bay.helix-bridge",
+    "layer": "ext",
+    "kind": "structure",
+    "label": "双螺旋桥与四处观景台",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "d19f8b98dcd50e8a912687805f21a5e6fad1633c70e6f6061538bfd8c15a2105",
+    "bounds": {
+      "min": [
+        -324.8987481504143,
+        -60.68843919182357,
+        882.0914669651925
+      ],
+      "max": [
+        -187.54479826864372,
+        -44.342332960881706,
+        1162.6032195852956
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "平面来源": "https://www.openstreetmap.org/relation/18007977/history/2",
+      "建筑参考": "https://www.coxarchitecture.com.au/project/the-helix-bridge/",
+      "材质版权": "Plan geometry © OpenStreetMap contributors (ODbL). Architectural proportions interpreted from COX Architecture, The Helix Bridge. Asphalt 01 by Poly Haven (CC0).",
+      "重建范围": "桥线与四处观景台据 OSM 和 OneMap 配准。桥面纵坡、净宽、螺旋节距、顶棚分段及支座比例参照建筑师立面与照片估读。"
+    }
   }
 ]
