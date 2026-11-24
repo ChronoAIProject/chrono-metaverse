@@ -3,6 +3,26 @@
   "surface": "asphalt",
   "features": [
     {
+      "featureId": 1728923162,
+      "source": "https://www.openstreetmap.org/way/172892316/history/4",
+      "replacementEntity": "bay.helix-bridge"
+    },
+    {
+      "featureId": 1728923172,
+      "source": "https://www.openstreetmap.org/way/172892317/history/4",
+      "replacementEntity": "bay.helix-bridge"
+    },
+    {
+      "featureId": 1728923182,
+      "source": "https://www.openstreetmap.org/way/172892318/history/4",
+      "replacementEntity": "bay.helix-bridge"
+    },
+    {
+      "featureId": 1728923192,
+      "source": "https://www.openstreetmap.org/way/172892319/history/4",
+      "replacementEntity": "bay.helix-bridge"
+    },
+    {
       "featureId": 4743009592,
       "source": "https://www.openstreetmap.org/way/474300959/history/7"
     },
