@@ -1744,7 +1744,7 @@
     "kind": "structure",
     "layer": "ext",
     "regionId": "marina-bay-exterior",
-    "assetHash": "3eb3c0bc710489cd6a6ce6e2b5bcd70972edc4a870536b86f7066c70d1594d7b",
+    "assetHash": "04464d8430d99856dae5f253b64f7c1c46ec6892e5f89cba544866cc185500fb",
     "bounds": {
       "min": [
         312.8685085019049,
@@ -1777,7 +1777,7 @@
     "kind": "structure",
     "layer": "ext",
     "regionId": "marina-bay-exterior",
-    "assetHash": "e8ed7c0c643ea9b369435c21abff0c98cd60099d5e27372de0e722284bb9b1f9",
+    "assetHash": "d0fc3945b22770335640d123c5aa06c6f31c52b6f456ed44e1913f58f491634c",
     "bounds": {
       "min": [
         300.6211410276216,
