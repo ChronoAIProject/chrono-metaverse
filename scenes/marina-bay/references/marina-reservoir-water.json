@@ -1,0 +1,173 @@
+{
+  "waterSample": {
+    "source": "https://tiles.openfreemap.org/planet",
+    "featureIds": [
+      95421463,
+      95699013
+    ],
+    "center": [
+      103.8562245,
+      1.2852154
+    ],
+    "radius": 440,
+    "reflectance": [
+      0.016729,
+      0.038256,
+      0.02987
+    ]
+  },
+  "processing": "Copernicus Sentinel-2 L2A surface reflectance. Use the supplied scale on offset-corrected Earth Search COGs. Within the mapped bay, erode valid SCL water by two 20-m pixels and stay 55 m off the mapped shore. Fit per-date median RGB against each shortwave infrared band with Theil\u2013Sen slopes and take the mean zero-SWIR intercept. The centre and radius summarize pixels classified as water on at least five dates. The Singapore River mouth shares the continuous water surface.",
+  "items": [
+    {
+      "id": "S2A_48NUG_20260903_0_L2A",
+      "pixels": 581,
+      "fraction": 0.9830795262267343,
+      "bands": {
+        "red": 0.09340000000000001,
+        "green": 0.1168,
+        "blue": 0.1038,
+        "nir": 0.0736,
+        "swir16": 0.0692,
+        "swir22": 0.063,
+        "aot": 0.324
+      },
+      "url": "https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/S2A_48NUG_20260903_0_L2A"
+    },
+    {
+      "id": "S2B_48NUG_20260817_0_L2A",
+      "pixels": 577,
+      "fraction": 0.9763113367174281,
+      "bands": {
+        "red": 0.060000000000000005,
+        "green": 0.08660000000000001,
+        "blue": 0.0728,
+        "nir": 0.037700000000000004,
+        "swir16": 0.0429,
+        "swir22": 0.0395,
+        "aot": 0.258
+      },
+      "url": "https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/S2B_48NUG_20260817_0_L2A"
+    },
+    {
+      "id": "S2B_48NUG_20261006_0_L2A",
+      "pixels": 579,
+      "fraction": 0.9796954314720813,
+      "bands": {
+        "red": 0.14930000000000002,
+        "green": 0.18100000000000002,
+        "blue": 0.1935,
+        "nir": 0.125,
+        "swir16": 0.0654,
+        "swir22": 0.044700000000000004,
+        "aot": 0.324
+      },
+      "url": "https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/S2B_48NUG_20261006_0_L2A"
+    },
+    {
+      "id": "S2C_48NUG_20260613_0_L2A",
+      "pixels": 323,
+      "fraction": 0.5465313028764806,
+      "bands": {
+        "red": 0.0333,
+        "green": 0.051500000000000004,
+        "blue": 0.044000000000000004,
+        "nir": 0.0177,
+        "swir16": 0.0173,
+        "swir22": 0.013300000000000001,
+        "aot": 0.186
+      },
+      "url": "https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/S2C_48NUG_20260613_0_L2A"
+    },
+    {
+      "id": "S2C_48NUG_20260812_0_L2A",
+      "pixels": 565,
+      "fraction": 0.9560067681895094,
+      "bands": {
+        "red": 0.057300000000000004,
+        "green": 0.0765,
+        "blue": 0.0584,
+        "nir": 0.040600000000000004,
+        "swir16": 0.0495,
+        "swir22": 0.045700000000000005,
+        "aot": 0.305
+      },
+      "url": "https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/S2C_48NUG_20260812_0_L2A"
+    },
+    {
+      "id": "S2C_48NUG_20260822_0_L2A",
+      "pixels": 580,
+      "fraction": 0.9813874788494078,
+      "bands": {
+        "red": 0.07055,
+        "green": 0.09115000000000001,
+        "blue": 0.0752,
+        "nir": 0.0511,
+        "swir16": 0.05785,
+        "swir22": 0.0509,
+        "aot": 0.276
+      },
+      "url": "https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/S2C_48NUG_20260822_0_L2A"
+    },
+    {
+      "id": "S2C_48NUG_20261001_0_L2A",
+      "pixels": 580,
+      "fraction": 0.9813874788494078,
+      "bands": {
+        "red": 0.08045000000000001,
+        "green": 0.0984,
+        "blue": 0.08510000000000001,
+        "nir": 0.05995,
+        "swir16": 0.0663,
+        "swir22": 0.057150000000000006,
+        "aot": 0.34800000000000003
+      },
+      "url": "https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/S2C_48NUG_20261001_0_L2A"
+    },
+    {
+      "id": "S2C_48NUG_20261031_0_L2A",
+      "pixels": 580,
+      "fraction": 0.9813874788494078,
+      "bands": {
+        "red": 0.059800000000000006,
+        "green": 0.08175,
+        "blue": 0.0746,
+        "nir": 0.046650000000000004,
+        "swir16": 0.0371,
+        "swir22": 0.028900000000000002,
+        "aot": 0.366
+      },
+      "url": "https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/S2C_48NUG_20261031_0_L2A"
+    }
+  ],
+  "fits": [
+    [
+      {
+        "slope": 1.102362559199035,
+        "intercept": 0.013468886968109052
+      },
+      {
+        "slope": 1.1200946424552551,
+        "intercept": 0.035335151262096826
+      },
+      {
+        "slope": 1.138607899807322,
+        "intercept": 0.024127902215799614
+      }
+    ],
+    [
+      {
+        "slope": 1.0471702629540331,
+        "intercept": 0.019988427487444185
+      },
+      {
+        "slope": 1.0620382893811104,
+        "intercept": 0.04117699966565784
+      },
+      {
+        "slope": 0.8967955941509478,
+        "intercept": 0.03561235291265545
+      }
+    ]
+  ],
+  "uncertainty": "Intercepts of separate SWIR1/SWIR2 fits, averaged across the two estimates. Seasonal water and aerosol variability remain in these estimates."
+}

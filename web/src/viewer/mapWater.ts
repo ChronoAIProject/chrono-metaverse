@@ -4,16 +4,30 @@ import { skyRadiance } from './skyRadiance';
 import { KEY_LIGHT } from './lighting';
 
 /** 同一片水域共用米制波纹坐标；像素覆盖超过波长时逐渐滤掉细纹。 */
-export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) {
+export function mapWaterMaterial(
+  hologram: boolean,
+  reflection?: MapReflection,
+  sample?: { center: THREE.Vector3; reflectance: THREE.Color },
+) {
   const material = new THREE.ShaderMaterial({
     side: THREE.DoubleSide,
     forceSinglePass: true,
     lights: !!reflection,
-    defines: reflection ? { WATER_SHORE_SHADOW: 1 } : {},
+    defines: {
+      ...(reflection ? { WATER_SHORE_SHADOW: 1 } : {}),
+      ...(sample ? { WATER_SAMPLE: 1 } : {}),
+    },
     transparent: true,
     depthWrite: false,
     uniforms: {
       ...(reflection ? THREE.UniformsUtils.clone(THREE.UniformsLib.lights) : {}),
+      ...(sample
+        ? {
+            waterSampleArea: { value: sample.center },
+            waterReflectance: { value: sample.reflectance },
+            horizontalDiffuse: { value: new THREE.Color(1, 1, 1) },
+          }
+        : {}),
       directFraction: { value: 0 },
       reflectionMap: { value: reflection?.texture ?? null },
       reflectionDepth: { value: reflection?.depth ?? null },
@@ -35,10 +49,17 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
       #ifdef WATER_SHORE_SHADOW
         #include <shadowmap_pars_vertex>
       #endif
+      #ifdef WATER_SAMPLE
+        attribute float sampledWater;
+        varying vec3 samplePosition;
+      #endif
       varying vec3 surfacePosition;
       void main() {
         vec4 worldPosition = modelMatrix * vec4(position, 1.0);
         surfacePosition = worldPosition.xyz;
+        #ifdef WATER_SAMPLE
+          samplePosition = vec3(position.xz, sampledWater);
+        #endif
         #ifdef WATER_SHORE_SHADOW
           vec3 transformedNormal = mat3(viewMatrix) * vec3(0.0, 1.0, 0.0);
           #include <shadowmap_vertex>
@@ -66,6 +87,10 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
       uniform bool hasSky;
       uniform float skyWeight;
       uniform float skyYaw;
+      #ifdef WATER_SAMPLE
+        varying vec3 samplePosition;
+        uniform vec3 waterSampleArea, waterReflectance, horizontalDiffuse;
+      #endif
       uniform vec3 deep;
       uniform vec3 horizon;
       varying vec3 surfacePosition;
@@ -164,7 +189,14 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
         float visibleSlopes = min(1.0, 2.0*nh*min(nl,cosine) / max(0.0001,dot(eye,halfVector)));
         float shine = distribution * visibleSlopes / max(0.0001,4.0*cosine)
                     * waterFresnel(clamp(dot(eye,halfVector),0.0,1.0));
-        vec3 water = deep*(0.84 + 0.12*swell.y + 0.12*max(dot(normal,sunlight),0.0));
+        vec3 bodyColor = deep;
+        #ifdef WATER_SAMPLE
+          float sampleRange = distance(samplePosition.xy, waterSampleArea.xy);
+          float weight = samplePosition.z * (1.0 - smoothstep(0.8 * waterSampleArea.z, waterSampleArea.z, sampleRange));
+          vec3 measured = waterReflectance * horizontalDiffuse / (0.84 + 0.12 * max(sunlight.y,0.0));
+          bodyColor = mix(bodyColor, measured, weight);
+        #endif
+        vec3 water = bodyColor*(0.84 + 0.12*swell.y + 0.12*max(dot(normal,sunlight),0.0));
         float visibility = 1.0;
         #if defined(WATER_SHORE_SHADOW) && defined(USE_SHADOWMAP) && NUM_DIR_LIGHT_SHADOWS > 0
           if (receiveShadow) {
@@ -182,8 +214,15 @@ export function mapWaterMaterial(hologram: boolean, reflection?: MapReflection) 
         #include <colorspace_fragment>
       }`,
   });
+  if (sample) Object.assign(material.defaultAttributeValues, { sampledWater: [0] });
   material.onBeforeRender = (_renderer, scene) => {
     const key = scene.children.find((o) => o.name === 'light:key');
+    if (sample) {
+      const light = key?.userData.horizontalDiffuse;
+      const diffuse = material.uniforms.horizontalDiffuse!.value;
+      if (light instanceof THREE.Color) diffuse.copy(light);
+      else diffuse.setRGB(1, 1, 1);
+    }
     if (key instanceof THREE.DirectionalLight) {
       material.uniforms.sunlight!.value.copy(key.position).sub(key.target.position).normalize();
       material.uniforms.sunColor!.value.copy(key.color).multiplyScalar(key.intensity / Math.PI);
