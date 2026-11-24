@@ -1707,5 +1707,34 @@
       "材质版权": "Photograph: Jukkabrother, Singapore Skyline from Esplanade, CC BY-SA 4.0, https://commons.wikimedia.org/wiki/File:Singapore_Skyline_from_Esplanade.jpg. Cropped, rectified, exposure-adjusted and repeated. Adapted model and texture: CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/. Placement reference: Map Data © 2026 SLA.",
       "重建": "以实拍连续五层楼的深蓝窗带和浅色饰面按测绘外墙配准。侧面复用临湾立面。"
     }
+  },
+  {
+    "entityId": "bay.empress-place-daylight-windows",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "f6e3759645d0aa2356396e6678d2016bb0b635d3f4a78c62aaef8b6c98fa90e4",
+    "label": "皇后坊大厦 · 临园窗洞和拱券",
+    "bounds": {
+      "min": [
+        563.269320896912,
+        -58.704646999999994,
+        533.4710960464806
+      ],
+      "max": [
+        677.6254228869689,
+        -46.806726999999995,
+        625.1771349035554
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "来源建筑": "bay.330831bd-c70b-4e25-86d9-6d252d737532",
+      "材质版权": "Windows: Terence Ong, Asian Civilisations Museum, Empress Place 7, CC BY 2.5, https://creativecommons.org/licenses/by/2.5/. Rectified and repeated on registered survey bays. https://commons.wikimedia.org/wiki/File:Asian_Civilisations_Museum,_Empress_Place_7.JPG. Placement: Map Data © 2026 Singapore Land Authority / OneMap.",
+      "位置与形制": "以测绘图集配准两向立面的 34 个开间，采用 97 组方窗与拱窗。窗套进深为估值，窗扇使用同栋楼的代表性样本。"
+    }
   }
 ]
