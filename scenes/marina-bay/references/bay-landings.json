@@ -1,0 +1,269 @@
+{
+  "source": "Footprints traced on OneMap OrthoJPG at zoom 20, Map Data © Singapore Land Authority. Way identifiers refer to © OpenStreetMap contributors, ODbL 1.0. Coordinates are WGS84 longitude and latitude.",
+  "heightNotes": "Metres above the local model datum. The lookout meets the modelled park landing at 2.6 m. Float freeboard, deck sections, supporting piles and rail profiles are estimates. The gangway meets the existing mapped bank. Surface colours are estimates from the aerial image and the lookout photograph.",
+  "landings": [
+    {
+      "id": "merlion-lookout",
+      "label": "鱼尾狮公园 · 临水观景台",
+      "way": 164881352,
+      "coordinates": [
+        [
+          103.85444641,
+          1.2870034
+        ],
+        [
+          103.85466635,
+          1.28708116
+        ],
+        [
+          103.85482594,
+          1.28694038
+        ],
+        [
+          103.85476023,
+          1.2868653
+        ],
+        [
+          103.85462075,
+          1.28698999
+        ],
+        [
+          103.85452285,
+          1.28695647
+        ],
+        [
+          103.85444909,
+          1.286931
+        ]
+      ],
+      "surfaceHeight": 2.625,
+      "thickness": 0.5,
+      "surfaceColor": [
+        170,
+        166,
+        158
+      ],
+      "railEdges": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "piles": [
+        [
+          103.8545537,
+          1.28701412
+        ],
+        [
+          103.85462478,
+          1.28704228
+        ],
+        [
+          103.8546744,
+          1.28703289
+        ],
+        [
+          103.85473207,
+          1.28698597
+        ],
+        [
+          103.85478169,
+          1.28693904
+        ],
+        [
+          103.85475487,
+          1.28690552
+        ],
+        [
+          103.85469317,
+          1.28696452
+        ],
+        [
+          103.85461941,
+          1.28700876
+        ],
+        [
+          103.85456309,
+          1.28698463
+        ]
+      ],
+      "sourcePhoto": "https://commons.wikimedia.org/wiki/File:Merlion_Statue_at_Merlion_Park,_Singapore_(Ank_Kumar)_02.jpg"
+    },
+    {
+      "id": "west-bay-boat-landing",
+      "label": "西岸 · 小艇浮码头",
+      "way": 1388777630,
+      "coordinates": [
+        [
+          103.85322466,
+          1.28222088
+        ],
+        [
+          103.85344192,
+          1.28220881
+        ],
+        [
+          103.85344192,
+          1.28218066
+        ],
+        [
+          103.85343388,
+          1.28218066
+        ],
+        [
+          103.85342047,
+          1.28204658
+        ],
+        [
+          103.85340974,
+          1.28204926
+        ],
+        [
+          103.85342181,
+          1.282182
+        ],
+        [
+          103.85322466,
+          1.28219541
+        ]
+      ],
+      "surfaceHeight": 0.86,
+      "thickness": 0.62,
+      "surfaceColor": [
+        137,
+        124,
+        111
+      ]
+    },
+    {
+      "id": "south-bay-landing",
+      "label": "南岸 · 临湾浮台",
+      "way": 172471577,
+      "coordinates": [
+        [
+          103.85659888,
+          1.28208814
+        ],
+        [
+          103.85676116,
+          1.28234691
+        ],
+        [
+          103.85679871,
+          1.28232278
+        ],
+        [
+          103.8567692,
+          1.28227585
+        ],
+        [
+          103.85678664,
+          1.28226513
+        ],
+        [
+          103.85666728,
+          1.28204658
+        ]
+      ],
+      "surfaceHeight": 0.96,
+      "thickness": 0.72,
+      "surfaceColor": [
+        135,
+        131,
+        122
+      ]
+    },
+    {
+      "id": "gallery-landing",
+      "label": "城市展览馆岸边 · 浮台与引桥",
+      "way": 395113913,
+      "coordinates": [
+        [
+          103.85592565,
+          1.2810048
+        ],
+        [
+          103.85597393,
+          1.28101553
+        ],
+        [
+          103.85603294,
+          1.28072726
+        ],
+        [
+          103.85599002,
+          1.28071788
+        ]
+      ],
+      "surfaceHeight": 0.91,
+      "thickness": 0.64,
+      "surfaceColor": [
+        163,
+        151,
+        135
+      ],
+      "ramp": [
+        [
+          103.85599136,
+          1.28071922
+        ],
+        [
+          103.8560088,
+          1.28072324
+        ],
+        [
+          103.85604769,
+          1.28052615
+        ],
+        [
+          103.85603026,
+          1.28052347
+        ]
+      ],
+      "rampLandHeight": 0.24
+    }
+  ],
+  "waterlineEdit": {
+    "source": "https://tiles.openfreemap.org/planet",
+    "tile": [
+      14,
+      12918,
+      8133
+    ],
+    "featureId": 95421463,
+    "extent": 4096,
+    "from": [
+      [
+        2191,
+        1736
+      ],
+      [
+        2208,
+        1731
+      ],
+      [
+        2234,
+        1754
+      ],
+      [
+        2247,
+        1741
+      ],
+      [
+        2218,
+        1715
+      ],
+      [
+        2115,
+        1752
+      ]
+    ],
+    "interior": [
+      [
+        2191,
+        1725
+      ]
+    ]
+  }
+}
