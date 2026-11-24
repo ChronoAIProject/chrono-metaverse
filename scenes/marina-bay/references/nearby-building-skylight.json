@@ -1,0 +1,26 @@
+{
+  "sky": "0f32c57c33baead1a22701e9ee25864bb0aaa161c812561e2373a66375705ee6",
+  "method": "One diffuse bounce from opaque surveyed scene geometry. Sky rays use the measured HDR panorama with its solar disc removed. The visible sun supplies direct irradiance on the reflecting surface. Values only attenuate indirect light on non-overlapping vertical UV regions. Building-wide strength was compared at six registered photographic views.",
+  "maps": {
+    "bay.647494f3-6637-490c-9a05-88bf0478efb3": {
+      "sourceAsset": "5dcadc763932483033a29f7eb60843ae6a0e32e648b1bc50de6d071e06d23e42",
+      "material": "dc2400425",
+      "texture": "683ce7335e77ef2329fcac88f5ef21c7f7e7d9b519ba5120abcd0272cfc4c7a7"
+    },
+    "bay.a5ce51b3-d8d4-4785-97bf-c9e8085f3126": {
+      "sourceAsset": "440ba49ffcff74b40f125856c90bbab619bf9078f70f769ebbfc1b3f588d8cff",
+      "material": "dc2400191",
+      "texture": "79588cc2cc503a6471a097a737d9405a8a0306e96010eda567e38d0c97d5d02a"
+    },
+    "bay.bee3cf9e-0167-4fdf-83e6-96ca1547de00": {
+      "sourceAsset": "d19582f60cff88e4d4db0554c0dd6ec62814eabb1e0ceb5399d2722ffee79c77",
+      "material": "dc2400421",
+      "texture": "117bcafcd96d9cb2f16495651fcb5825bb8cd7376f52d7b82705c0be05c3411f"
+    },
+    "bay.5ea9e54d-5342-459d-8f01-13fc9f0d4ef2": {
+      "sourceAsset": "2a797fa0cc5f2c9c8ed1d8d29c0b611b1d86bc768bac4fbfdeb111af30032877",
+      "material": "dc2400573",
+      "texture": "7fac642877aaba195e70a5b99c1085e3a831a2e61b7777af243c32084a36c432"
+    }
+  }
+}
