@@ -146,7 +146,7 @@ def bake(raw):
             indices = indices[:first_roof]
             roof = copy.deepcopy(doc['materials'][primitive['material']])
             roof['name'] = 'Esplanade double-glazed roof'
-            roof['pbrMetallicRoughness'].update(baseColorFactor=[.098, .142, .128, 1], metallicFactor=.19, roughnessFactor=.29)
+            roof['pbrMetallicRoughness'].update(baseColorFactor=[.155, .196, .18, 1], metallicFactor=.13, roughnessFactor=.36)
             pose = views[doc['images'][0]['bufferView']]
             normal_map = canopy_relief(pose, dome_uv)
             doc['images'].append({'mimeType':'image/jpeg','bufferView':len(views)})
@@ -164,8 +164,8 @@ def bake(raw):
             material = len(doc['materials'])
             doc['materials'].append({
                 'name': 'Esplanade triangular sunshades', 'doubleSided': True,
-                'pbrMetallicRoughness': {'baseColorFactor': [.48, .433, .351, 1],
-                                         'metallicFactor': .60, 'roughnessFactor': .47},
+                'pbrMetallicRoughness': {'baseColorFactor': [.26, .246, .222, 1],
+                                         'metallicFactor': .19, 'roughnessFactor': .62},
             })
             mesh['primitives'].append({
                 'attributes': {'POSITION': add_accessor(vertices, 'VEC3', 5126, 34962),
@@ -212,7 +212,7 @@ if __name__ == '__main__':
     e['assetHash'] = digest
     e['props']['穹顶遮阳片'] = {
         '每顶片数': panel_counts, '设计资料': DESIGN, '实拍参考': PHOTOGRAPHS,
-        '说明': '沿两座测绘穹顶的截面布置三角铝板。板件间距、抬高量及涂层依据照片估读。',
+        '说明': '沿两座测绘穹顶的截面布置三角铝板。板件间距与抬高量依照片估读。涂层反射按跨湾照片的亮部和暗部校正。',
     }
     e['props'].update({'原建筑资源':SOURCE,'三角形数':count,
         '穹顶曲面':'按相邻测绘面的边与夹角分出两组穹顶。保留原顶点、轮廓连接边及遮阳片影像。内部边中点的切平面插值位移上限 0.15 米。玻璃壳保留原图的浅表法线，外层铝板单独受光。'})

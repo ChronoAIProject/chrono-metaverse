@@ -7056,7 +7056,7 @@
     "kind": "object",
     "label": "ESPLANADE - THEATRES ON THE BAY",
     "regionId": "marina-bay-exterior",
-    "assetHash": "aaea7d7684f964d6644fc1955fbd430580bc94a2a8e78f2b0e136429de60da12",
+    "assetHash": "39565ae186b2741eeea34bb3fd8866063ad4d7e2da1fda32283ac1ed6e7fc37a",
     "bounds": {
       "min": [
         290.903001,
@@ -7091,7 +7091,7 @@
           "https://commons.wikimedia.org/?curid=83988992",
           "https://commons.wikimedia.org/?curid=85563656"
         ],
-        "说明": "沿两座测绘穹顶的截面布置三角铝板。板件间距、抬高量及涂层依据照片估读。"
+        "说明": "沿两座测绘穹顶的截面布置三角铝板。板件间距与抬高量依照片估读。涂层反射按跨湾照片的亮部和暗部校正。"
       }
     }
   },
