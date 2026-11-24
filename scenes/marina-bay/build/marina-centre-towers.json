@@ -716,5 +716,125 @@
       "材质方法": "按实拍层间关系重建住宅开间，施工遮挡与背面处的竣工材质和阳台细部为估值。",
       "三角形数": 1232
     }
+  },
+  {
+    "entityId": "bay.7812bb48-9647-4873-830a-e85602c3d247",
+    "kind": "object",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "material": {
+      "shading": "albedo"
+    },
+    "assetHash": "f023cea13bdc15257089a89e25064ad38b137a40182fba808a93a1465ba75aca",
+    "bounds": {
+      "min": [
+        196.58396911621094,
+        -60.42922592163086,
+        2075.0849609375
+      ],
+      "max": [
+        426.4098205566406,
+        128.23487854003906,
+        2296.856689453125
+      ]
+    },
+    "label": "DUO · 双塔及裙楼",
+    "props": {
+      "background": true,
+      "材质方法": "按测绘曲面展开六角遮阳构件，以法线和粗糙度纹理描述折边。冠部、退台与凹弧沿用测绘，遮阳构件尺度及隐蔽立面作了估计。",
+      "设计资料": "https://buro-os.com/projects/duo",
+      "正射影像": "https://www.onemap.gov.sg/maps/tiles/OrthoJPG/{z}/{x}/{y}.png",
+      "测绘模型": "OneMap 3D · SLA, cheeaun/om3d",
+      "官方建筑编号": [
+        "SLA_BLDG2_7812bb48-9647-4873-830a-e85602c3d247"
+      ],
+      "来源地址": [
+        "https://github.com/cheeaun/om3d/blob/ac451b84/optimized-tiles/3/4/1_3.b3dm"
+      ],
+      "测绘高度（米）": [
+        188.618
+      ],
+      "经纬度": [
+        [
+          103.85785851506854,
+          1.2998788172698434
+        ]
+      ],
+      "立面影像": [
+        {
+          "author": "Basile Morin",
+          "url": "https://commons.wikimedia.org/wiki/File:Fa%C3%A7ade_hoist_along_the_Andaz_Hotel_of_Singapore_at_sunset.jpg",
+          "license": "CC BY-SA 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/"
+        },
+        {
+          "author": "Basile Morin",
+          "url": "https://commons.wikimedia.org/wiki/File:Parkview_Square_and_Andaz_Hotel_buildings.jpg",
+          "license": "CC BY-SA 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/"
+        }
+      ],
+      "三角形数": 4302,
+      "玻璃反射": "在三个高度隐藏该组楼体后采集街区和天空，并依楼层高度插值。"
+    }
+  },
+  {
+    "entityId": "bay.34d976f9-3b66-452c-a286-4025ec565240",
+    "kind": "object",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "material": {
+      "shading": "albedo"
+    },
+    "assetHash": "8ff2c0028b94003c8d5b9d975de47f6aa6f0e7232ac5b7e9e28d0e9a58d74ef9",
+    "bounds": {
+      "min": [
+        94.43683624267578,
+        -60.373695373535156,
+        2041.2720947265625
+      ],
+      "max": [
+        198.55349731445312,
+        90.42935180664062,
+        2156.469970703125
+      ]
+    },
+    "label": "The Gateway · 东塔与西塔",
+    "props": {
+      "background": true,
+      "材质方法": "玻璃窗带与银灰色层间板从同楼实拍校正；两座测绘塔共享材质，背面采用可见立面样式。",
+      "测绘模型": "OneMap 3D · SLA, cheeaun/om3d",
+      "官方建筑编号": [
+        "SLA_BLDG2_34d976f9-3b66-452c-a286-4025ec565240",
+        "SLA_BLDG2_533e7318-e76d-4b4f-9123-6a701d6ff8cb"
+      ],
+      "来源地址": [
+        "https://github.com/cheeaun/om3d/blob/ac451b84/optimized-tiles/7/79/15_5.b3dm"
+      ],
+      "测绘高度（米）": [
+        146.586,
+        150.804
+      ],
+      "经纬度": [
+        [
+          103.85885309534756,
+          1.2983695653522258
+        ],
+        [
+          103.85933147345162,
+          1.2988449257292212
+        ]
+      ],
+      "立面影像": [
+        {
+          "author": "Darlingmav",
+          "url": "https://commons.wikimedia.org/wiki/File:The_Gateway_at_Beach_Road.jpg",
+          "license": "CC BY-SA 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/"
+        }
+      ],
+      "三角形数": 783,
+      "玻璃反射": "在三个高度隐藏该组楼体后采集街区和天空，并依楼层高度插值。"
+    }
   }
 ]
