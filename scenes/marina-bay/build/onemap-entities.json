@@ -7209,7 +7209,7 @@
     "kind": "object",
     "label": "ESPLANADE - THEATRES ON THE BAY",
     "regionId": "marina-bay-exterior",
-    "assetHash": "c5d3a36eb0e083d26db29f112e097b3afd94a0f944707e04b38ab66f2141eb9b",
+    "assetHash": "ae94c3424641851f524e92239f4010fc7596fa744fef83ef5d334d807a918129",
     "bounds": {
       "min": [
         80.611376,
@@ -7230,7 +7230,14 @@
       "原始分片": "7/78/12_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 18.636,
-      "三角形数": 360
+      "三角形数": 344,
+      "舞台塔外墙": {
+        "原模型": "c5d3a36eb0e083d26db29f112e097b3afd94a0f944707e04b38ab66f2141eb9b",
+        "实拍": "https://www.esplanade.com/visit/venues-and-spaces/venues/singtel-waterfront-theatre",
+        "测绘墙面数": 7,
+        "跨湾参照": "https://commons.wikimedia.org/?curid=152986183",
+        "依据": "从原摄影图集采样涂层、通风口及临水饰面。竖纹间距、涂层色调与粗糙度按日景照估算，临水饰面按跨湾照校正采集阴影。"
+      }
     }
   },
   {
