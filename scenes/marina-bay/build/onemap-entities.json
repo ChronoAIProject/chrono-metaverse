@@ -4660,8 +4660,16 @@
       "原始分片": "7/76/10_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 170.383,
-      "三角形数": 1528
-    }
+      "三角形数": 1528,
+      "modelOcclusion": {
+        "sourceAsset": "fc8aa586b491f101242b6a54ed0be4cafff9a03173ae573b9a49f521ac18d059",
+        "material": "dc2400573",
+        "texture": "7fac642877aaba195e70a5b99c1085e3a831a2e61b7777af243c32084a36c432"
+      }
+    },
+    "textures": [
+      "7fac642877aaba195e70a5b99c1085e3a831a2e61b7777af243c32084a36c432"
+    ]
   },
   {
     "entityId": "bay.91ee3ede-5713-4014-872e-e30cf5c65859",
@@ -5852,8 +5860,16 @@
       "原始分片": "7/76/8_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 114.524,
-      "三角形数": 946
-    }
+      "三角形数": 946,
+      "modelOcclusion": {
+        "sourceAsset": "9b5c108cc5158b40faf5a4224b940fbe0a2d718208e9b2946525162b3f201574",
+        "material": "dc2400191",
+        "texture": "79588cc2cc503a6471a097a737d9405a8a0306e96010eda567e38d0c97d5d02a"
+      }
+    },
+    "textures": [
+      "79588cc2cc503a6471a097a737d9405a8a0306e96010eda567e38d0c97d5d02a"
+    ]
   },
   {
     "entityId": "bay.4f698c20-5e07-4b2b-ae5b-1ae597d96afb",
@@ -6045,8 +6061,16 @@
       "原始分片": "7/77/10_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 157.07,
-      "三角形数": 3194
-    }
+      "三角形数": 3194,
+      "modelOcclusion": {
+        "sourceAsset": "d19582f60cff88e4d4db0554c0dd6ec62814eabb1e0ceb5399d2722ffee79c77",
+        "material": "dc2400421",
+        "texture": "117bcafcd96d9cb2f16495651fcb5825bb8cd7376f52d7b82705c0be05c3411f"
+      }
+    },
+    "textures": [
+      "117bcafcd96d9cb2f16495651fcb5825bb8cd7376f52d7b82705c0be05c3411f"
+    ]
   },
   {
     "entityId": "bay.73240d23-a2b9-4580-a1b5-9ef9a8ddc2c9",
@@ -7778,8 +7802,16 @@
       "原始分片": "8/154/19_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 83.819,
-      "三角形数": 1620
-    }
+      "三角形数": 1620,
+      "modelOcclusion": {
+        "sourceAsset": "04ae1db399db6714377452a5678a1ac82cc004750751366109eab470e5921958",
+        "material": "dc2400425",
+        "texture": "683ce7335e77ef2329fcac88f5ef21c7f7e7d9b519ba5120abcd0272cfc4c7a7"
+      }
+    },
+    "textures": [
+      "683ce7335e77ef2329fcac88f5ef21c7f7e7d9b519ba5120abcd0272cfc4c7a7"
+    ]
   },
   {
     "entityId": "bay.6dc8e0e1-acf5-41f4-9c59-3b01a23e7d46",
