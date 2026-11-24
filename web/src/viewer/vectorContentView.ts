@@ -39,6 +39,7 @@ export class VectorContentItem {
   private readonly material: THREE.MeshLambertMaterial;
   private readonly exteriorMaterial?: THREE.MeshLambertMaterial;
   private readonly localEye = new THREE.Vector3();
+  private readonly sampledWaterIds?: ReadonlySet<number>;
   private readonly waterMaterial?: ReturnType<typeof mapWaterMaterial>;
   private readonly reflection?: MapReflection;
   private readonly roadMaterial?: THREE.LineBasicMaterial;
@@ -85,7 +86,19 @@ export class VectorContentItem {
     }
     if (config.waterLayer) {
       if (!hologram && config.waterReflection === 'scene') this.reflection = new MapReflection();
-      this.waterMaterial = mapWaterMaterial(hologram, this.reflection);
+      const sample = !hologram ? config.waterSample : undefined;
+      const center = sample && this.reference.point(...sample.center, 0);
+      if (sample) this.sampledWaterIds = new Set(sample.featureIds);
+      this.waterMaterial = mapWaterMaterial(
+        hologram,
+        this.reflection,
+        sample && center
+          ? {
+              center: new THREE.Vector3(center.x, center.z, sample.radius),
+              reflectance: new THREE.Color().fromArray(sample.reflectance),
+            }
+          : undefined,
+      );
     }
     if (hologram) {
       hologramMaterial(this.material, 'facade');
@@ -269,12 +282,13 @@ export class VectorContentItem {
       this.config.waterLayer,
       this.groundMaterials.size ? this.config.groundLayers : [],
       this.config.waterlineEdits?.filter((edit) => edit.source === source.url),
+      this.config.waterSample?.source === source.url ? this.sampledWaterIds : undefined,
     );
     const size =
       Object.values(geometry.attributes).reduce((n, a) => n + a.array.byteLength, 0) +
       (geometry.index?.array.byteLength ?? 0) +
       (roads?.getAttribute('position').array.byteLength ?? 0) +
-      (water?.getAttribute('position').array.byteLength ?? 0) +
+      Object.values(water?.attributes ?? {}).reduce((n, a) => n + a.array.byteLength, 0) +
       (water?.index?.array.byteLength ?? 0) +
       ground.reduce(
         (sum, { geometry: g }) =>

@@ -32,13 +32,18 @@ export function withBoatQuay(surroundings: EntityBody): EntityBody {
     }) };
   }
   const { waterlineEdit } = JSON.parse(readFileSync(new URL('../references/ns-square-waterfront.json', import.meta.url), 'utf8'));
+  const sources = 'sources' in content && Array.isArray(content.sources) ? content.sources : [];
+  const waterLayer = 'waterLayer' in content && content.waterLayer === 'water';
   let water = {};
-  if ('waterLayer' in content && content.waterLayer === 'water' &&
-      'sources' in content && Array.isArray(content.sources) && content.sources.some(s => s?.url === waterlineEdit.source)) {
+  if (waterLayer && sources.some(s => s?.url === waterlineEdit.source)) {
     const previous = 'waterlineEdits' in content ? content.waterlineEdits : [];
     if (Array.isArray(previous) && !previous.some(edit => isDeepStrictEqual(edit, waterlineEdit))) {
       water = { waterlineEdits: [...previous, waterlineEdit] };
     }
+  }
+  const { waterSample } = JSON.parse(readFileSync(new URL('../references/marina-reservoir-water.json', import.meta.url), 'utf8'));
+  if (!('waterSample' in content) && waterLayer && sources.some(s => s?.url === waterSample.source)) {
+    water = { ...water, waterSample };
   }
   return { ...surroundings, props: { ...surroundings.props, externalContent: {
     ...content, ...ground, ...water, extrusion: { ...style, excludeBounds },
