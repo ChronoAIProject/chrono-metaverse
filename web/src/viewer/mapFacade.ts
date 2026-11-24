@@ -282,6 +282,18 @@ const facadeFiltering = /* glsl */ `
     panes = mix(panes, coverage, smoothstep(vec2(0.6), vec2(2.0), pixel));
     return clamp(panes.x * panes.y, 0.0, 1.0);
   }
+
+  // Ordinary uncoated window glass. Sum the internal reflections at the
+  // two faces of a pane for each polarization, then average for daylight.
+  float paneReflectance(float cosine) {
+    const float ior = 1.52;
+    float transmitted = sqrt(1.0 - (1.0 - cosine * cosine) / (ior * ior));
+    float rs = (cosine - ior * transmitted) / (cosine + ior * transmitted);
+    float rp = (ior * cosine - transmitted) / (ior * cosine + transmitted);
+    vec2 reflectance = vec2(rs * rs, rp * rp);
+    vec2 pane = reflectance / (1.0 + reflectance);
+    return pane.x + pane.y;
+  }
 `;
 
 /** 同一瓦片的楼房共用材质，远处小于一个像素的窗框过渡到立面的平均色。 */
@@ -341,8 +353,7 @@ export function urbanFacade(material: THREE.MeshLambertMaterial) {
         ray.xz=mat2(co,si,-si,co)*ray.xz;
         ray.y=max(0.015,ray.y);
         vec3 skyLight=cityHasSky ? texture2D(citySky,equirectUv(normalize(ray)),2.0).rgb : vec3(0.34,0.46,0.55);
-        float grazing=pow(1.0-abs(dot(worldEye,worldN)),3.0);
-        float reflection = 0.09 + 0.09*ribbon + 0.12*curtain + 0.32*grazing;
+        float reflection = paneReflectance(clamp(abs(dot(worldEye,worldN)),0.0,1.0));
         outgoingLight=mix(outgoingLight,skyLight,wall*panes*reflection);
         outgoingLight=cityAir(outgoingLight,-vViewPosition,mix(vec3(0.46,0.55,0.62),skyLight,0.15));
         #include <opaque_fragment>`,
