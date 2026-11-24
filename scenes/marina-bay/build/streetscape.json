@@ -1737,5 +1737,68 @@
       "材质版权": "Windows: Terence Ong, Asian Civilisations Museum, Empress Place 7, CC BY 2.5, https://creativecommons.org/licenses/by/2.5/. Rectified and repeated on registered survey bays. https://commons.wikimedia.org/wiki/File:Asian_Civilisations_Museum,_Empress_Place_7.JPG. Placement: Map Data © 2026 Singapore Land Authority / OneMap.",
       "位置与形制": "以测绘图集配准两向立面的 34 个开间，采用 97 组方窗与拱窗。窗套进深为估值，窗扇使用同栋楼的代表性样本。"
     }
+  },
+  {
+    "entityId": "bay.esplanade-road-bridge",
+    "label": "滨海桥 · 七跨公路桥",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "3eb3c0bc710489cd6a6ce6e2b5bcd70972edc4a870536b86f7066c70d1594d7b",
+    "bounds": {
+      "min": [
+        312.8685085019049,
+        -61.397,
+        581.6527019897756
+      ],
+      "max": [
+        457.31400708205814,
+        -44.81123762671767,
+        983.6607530809939
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "平面来源": "© OpenStreetMap contributors, ODbL 1.0. Coordinates are longitude and latitude. Each way records its source version.",
+      "影像参考": "Singapore Land Authority, OneMap OrthoJPG, inspected at zoom 20.",
+      "结构参考": [
+        "https://commons.wikimedia.org/wiki/File:Singapore_Skyline_from_Esplanade.jpg",
+        "https://commons.wikimedia.org/wiki/File:Singapore_Marina-Bay-Panorama-02.jpg"
+      ],
+      "桥面与桥墩": "道路与步道按地图定位。桥墩、桥腹、栏杆和桥面坡度参照跨湾实拍估算。"
+    }
+  },
+  {
+    "entityId": "bay.jubilee-bridge",
+    "label": "禧年桥 · 弧形人行桥",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "e8ed7c0c643ea9b369435c21abff0c98cd60099d5e27372de0e722284bb9b1f9",
+    "bounds": {
+      "min": [
+        300.6211410276216,
+        -61.06700000000001,
+        676.5511722910109
+      ],
+      "max": [
+        367.2679207434266,
+        -51.77084262890937,
+        884.3101954248166
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "平面来源": "© OpenStreetMap contributors, ODbL 1.0. Coordinates are longitude and latitude. Each way records its source version.",
+      "影像参考": "Singapore Land Authority, OneMap OrthoJPG, inspected at zoom 20.",
+      "结构参考": "https://www.coxarchitecture.com.au/project/jubilee-bridge",
+      "重建范围": "按地图定位弧形桥面与桥间通道。三跨两墩，变截面混凝土箱梁。桥高、墩位和栏杆尺寸为估值。"
+    }
   }
 ]
