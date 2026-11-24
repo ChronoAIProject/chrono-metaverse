@@ -5937,7 +5937,7 @@
     "kind": "object",
     "label": "SINGAPORE LAND TOWER",
     "regionId": "marina-bay-exterior",
-    "assetHash": "cc008af77e2bb29dcfbec57e1e220ee5b371f16f1d9f3c5544e8378d73c2871b",
+    "assetHash": "398f08f6543f2480a9f42a88de4040186bcdcfe9c519c23955597a157eef9503",
     "bounds": {
       "min": [
         396.620759,
@@ -6149,7 +6149,7 @@
     "kind": "object",
     "label": "THE FULLERTON WATERBOAT HOUSE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "05d2a5030afb1a90b4bf7ee44dba0855a174841f1807a68eff2978e01bf05dbb",
+    "assetHash": "1283d08eb340ba6b38d6cdb785cde1b596b81db0464bb33a727ce5277f9a0572",
     "bounds": {
       "min": [
         376.435679,
@@ -6172,7 +6172,7 @@
       "官方测量高度（米）": 14.778,
       "三角形数": 1584,
       "modelOcclusion": {
-        "sourceAsset": "05d2a5030afb1a90b4bf7ee44dba0855a174841f1807a68eff2978e01bf05dbb",
+        "sourceAsset": "1283d08eb340ba6b38d6cdb785cde1b596b81db0464bb33a727ce5277f9a0572",
         "material": "dc2400294",
         "texture": "7e8b9ef31cc2dfd338072d35c03582597d8ceafbc723208f5b33ad1149e1594f"
       }
