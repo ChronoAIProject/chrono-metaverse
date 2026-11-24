@@ -31,6 +31,9 @@ export class MapReflection {
     this.eye.layers.set(CITY_REFLECTION_LAYER);
     this.texture.generateMipmaps = true;
     this.texture.minFilter = THREE.LinearMipmapLinearFilter;
+    // At a grazing angle a ripple stretches the sample footprint along one axis.
+    // Filter along that axis while retaining the narrow reflected shoreline.
+    this.texture.anisotropy = 8;
   }
 
   update(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, level: number) {
