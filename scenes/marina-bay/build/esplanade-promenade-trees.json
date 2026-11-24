@@ -7,7 +7,7 @@
   "bounds": {
     "min": [
       -29.54157274083282,
-      -60.159,
+      -60.153,
       915.462665128176
     ],
     "max": [
@@ -16,7 +16,7 @@
       1013.1634232078835
     ]
   },
-  "assetHash": "bb3ad3a874a83c1b6ece9fff9ee0b8d38da0084df2d1df1def4971e3f4e39bef",
+  "assetHash": "70263785b98137c21ec38e756e04f8b5765c5935bb24072cfa9bd935a8dd1224",
   "material": {
     "shading": "albedo"
   },
