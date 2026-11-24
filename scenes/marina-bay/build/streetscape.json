@@ -1513,7 +1513,7 @@
     "kind": "structure",
     "label": "双螺旋桥与四处观景台",
     "regionId": "marina-bay-exterior",
-    "assetHash": "46d8595905cac843202f00f9d7b031a403c6a6e50a7c0816c246bf04b94d2b01",
+    "assetHash": "3b8ed80efbb4dd54cd8c0610af6077df8aeb400a5075c9bb6424077608a4d42e",
     "bounds": {
       "min": [
         -324.8987481504143,
@@ -1543,7 +1543,7 @@
     "kind": "structure",
     "label": "海湾舫桥与双螺旋桥联络步道",
     "regionId": "marina-bay-exterior",
-    "assetHash": "f6b6b144eac692e9f28fce7049e662dc931e849b7aae35d273ddf0a2757a87ff",
+    "assetHash": "aa7447238eb352da518821fd8f7cf5e1e03554486c1b60b671003152160b6d9d",
     "bounds": {
       "min": [
         -430.24012249362096,
@@ -1744,7 +1744,7 @@
     "kind": "structure",
     "layer": "ext",
     "regionId": "marina-bay-exterior",
-    "assetHash": "04464d8430d99856dae5f253b64f7c1c46ec6892e5f89cba544866cc185500fb",
+    "assetHash": "e16f7c661d23f2dd2bc87dfb18f1626558c0cfab7cef75569a4ce97cf0715260",
     "bounds": {
       "min": [
         312.8685085019049,
@@ -1777,7 +1777,7 @@
     "kind": "structure",
     "layer": "ext",
     "regionId": "marina-bay-exterior",
-    "assetHash": "d0fc3945b22770335640d123c5aa06c6f31c52b6f456ed44e1913f58f491634c",
+    "assetHash": "c0c10cfef8308fe6e18e232957cbe71163901810a9536dc490d127e092c9000e",
     "bounds": {
       "min": [
         300.6211410276216,
@@ -1807,7 +1807,7 @@
     "kind": "structure",
     "regionId": "marina-bay-exterior",
     "label": "鱼尾狮公园 · 临水观景台",
-    "assetHash": "15cf425a304d2a91bca0f6d4b97618ea979654932dbfc7a1f194ac4dc835b00e",
+    "assetHash": "34ed26c0bd8c6290dd80fd193ba14d1f9ae2c9305aaf265c9eecc050e50a0912",
     "material": {
       "shading": "albedo"
     },
