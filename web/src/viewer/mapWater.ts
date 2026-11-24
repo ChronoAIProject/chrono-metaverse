@@ -175,6 +175,13 @@ export function mapWaterMaterial(
         vec4 clipDelta = reflectionMatrix * vec4(reach * rayDelta, 0.0);
         return (clipDelta.xy - uv * clipDelta.w) / max(w, 0.001);
       }
+      #ifdef USE_LOGARITHMIC_DEPTH_BUFFER
+        float mirrorDepth(vec4 clip) {
+          vec2 uv = clamp(clip.xy / max(clip.w, 0.001), 0.0, 1.0);
+          float encoded = texture2D(reflectionDepth, uv).r;
+          return exp2(encoded * (2.0 / logDepthBufFC)) - 1.0;
+        }
+      #endif
       // 非偏振光从空气进入淡水时，两个偏振方向反射率的平均值。
       float waterFresnel(float cosine) {
         const float ior = 1.333;
@@ -250,24 +257,22 @@ export function mapWaterMaterial(
           vec3 flatRay = vec3(-eye.x, eye.y, -eye.z);
           #ifdef USE_LOGARITHMIC_DEPTH_BUFFER
             vec4 flatClip = reflectionMatrix * vec4(surfacePosition, 1.0);
-            vec2 flatUv = clamp(flatClip.xy / max(.001,flatClip.w), 0.0, 1.0);
-            // glTF 楼体和岸墙已随倒影写入对数深度。两段视深的比值给出
-            // 水面到被反射物体的相对距离，贴岸处的波纹偏转随之收紧。
-            float encoded = texture2D(reflectionDepth,flatUv).r;
-            float hitDepth = exp2(encoded * (2.0 / logDepthBufFC)) - 1.0;
-            float projectedReach = range * clamp(1.0 - flatClip.w / max(.001,hitDepth), 0.0, 1.0);
-          #else
-            float projectedReach = range * 110.0 / (110.0 + range);
-          #endif
-          vec3 samplePoint = surfacePosition + (reflected-flatRay)*projectedReach;
-          #ifdef USE_LOGARITHMIC_DEPTH_BUFFER
-            // Between mirror captures the reflected eye moves with the camera,
-            // with its vertical translation reversed across the water plane.
             vec3 eyeShift = cameraPosition - reflectionEye;
             eyeShift.y = -eyeShift.y;
-            float axialShift = (reflectionMatrix * vec4(eyeShift, 0.0)).w;
-            float parallax = clamp((hitDepth-flatClip.w)/max(0.001,hitDepth-axialShift),0.0,1.0);
-            samplePoint -= eyeShift * parallax;
+            // Project the wave ray into the last mirror capture, including camera motion.
+            vec3 bend = range * (reflected - flatRay) - eyeShift;
+            vec4 clipDelta = reflectionMatrix * vec4(bend, 0.0);
+            float flatDepth = mirrorDepth(flatClip);
+            float fraction = clamp((flatDepth - flatClip.w) / max(0.001, flatDepth + clipDelta.w), 0.0, 1.0);
+            // A tilted wave can see a pier in front of the shore seen by the flat ray.
+            // The nearer of the two depths keeps the shore from bleeding through its reflection.
+            float depth = min(flatDepth, mirrorDepth(flatClip + fraction * clipDelta));
+            fraction = clamp((depth - flatClip.w) / max(0.001, depth + clipDelta.w), 0.0, 1.0);
+            float projectedReach = range * fraction;
+            vec3 samplePoint = surfacePosition + bend * fraction;
+          #else
+            float projectedReach = range * 110.0 / (110.0 + range);
+            vec3 samplePoint = surfacePosition + (reflected-flatRay)*projectedReach;
           #endif
           vec4 clip = reflectionMatrix * vec4(samplePoint, 1.0);
           vec2 uv = clip.xy / max(0.001,clip.w);
