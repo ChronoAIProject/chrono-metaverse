@@ -31,14 +31,22 @@ export function withBoatQuay(surroundings: EntityBody): EntityBody {
       return { ...layer, excludeFeatureIds: [...ids] };
     }) };
   }
-  const { waterlineEdit } = JSON.parse(readFileSync(new URL('../references/ns-square-waterfront.json', import.meta.url), 'utf8'));
+  const shoreSurveys = ['ns-square-waterfront', 'bay-landings'].map(name =>
+    JSON.parse(readFileSync(new URL(`../references/${name}.json`, import.meta.url), 'utf8')).waterlineEdit,
+  );
   const sources = 'sources' in content && Array.isArray(content.sources) ? content.sources : [];
   const waterLayer = 'waterLayer' in content && content.waterLayer === 'water';
   let water = {};
-  if (waterLayer && sources.some(s => s?.url === waterlineEdit.source)) {
+  if (waterLayer) {
     const previous = 'waterlineEdits' in content ? content.waterlineEdits : [];
-    if (Array.isArray(previous) && !previous.some(edit => isDeepStrictEqual(edit, waterlineEdit))) {
-      water = { waterlineEdits: [...previous, waterlineEdit] };
+    if (Array.isArray(previous)) {
+      const additions = shoreSurveys.filter(survey =>
+        sources.some(s => s?.url === survey.source) &&
+        !previous.some(edit => edit?.source === survey.source && edit.featureId === survey.featureId &&
+          isDeepStrictEqual(edit.tile, survey.tile) && isDeepStrictEqual(edit.from, survey.from)),
+      );
+      const available = additions.slice(0, Math.max(0, 16 - previous.length));
+      if (available.length) water = { waterlineEdits: [...previous, ...available] };
     }
   }
   const { waterSample } = JSON.parse(readFileSync(new URL('../references/marina-reservoir-water.json', import.meta.url), 'utf8'));

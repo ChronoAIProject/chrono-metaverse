@@ -1800,5 +1800,122 @@
       "结构参考": "https://www.coxarchitecture.com.au/project/jubilee-bridge",
       "重建范围": "按地图定位弧形桥面与桥间通道。三跨两墩，变截面混凝土箱梁。桥高、墩位和栏杆尺寸为估值。"
     }
+  },
+  {
+    "entityId": "bay.merlion-lookout",
+    "layer": "ext",
+    "kind": "structure",
+    "regionId": "marina-bay-exterior",
+    "label": "鱼尾狮公园 · 临水观景台",
+    "assetHash": "15cf425a304d2a91bca0f6d4b97618ea979654932dbfc7a1f194ac4dc835b00e",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        260.0979511289618,
+        -60.30210882539718,
+        673.9389013773373
+      ],
+      "max": [
+        301.3807165992582,
+        -56.57510882539718,
+        699.2364638015354
+      ]
+    },
+    "props": {
+      "background": true,
+      "岸线": "https://www.openstreetmap.org/way/164881352",
+      "影像": "Map Data © Singapore Land Authority / OneMap",
+      "表面": "Granite Tile 04 · Poly Haven · CC0. Surface finish approximated from the aerial image.",
+      "现场照片": "https://commons.wikimedia.org/wiki/File:Merlion_Statue_at_Merlion_Park,_Singapore_(Ank_Kumar)_02.jpg"
+    }
+  },
+  {
+    "entityId": "bay.west-bay-boat-landing",
+    "layer": "ext",
+    "kind": "structure",
+    "regionId": "marina-bay-exterior",
+    "label": "西岸 · 小艇浮码头",
+    "assetHash": "6c3d373019a09b7ea676854d15984f83afdb7d2805fa5fcc740daaf944ddc4a8",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        173.19885941680263,
+        -60.021978708790904,
+        135.83144037428934
+      ],
+      "max": [
+        201.0943634000197,
+        -59.40197870879079,
+        153.33427044296715
+      ]
+    },
+    "props": {
+      "background": true,
+      "岸线": "https://www.openstreetmap.org/way/1388777630",
+      "影像": "Map Data © Singapore Land Authority / OneMap",
+      "表面": "Granite Tile 04 · Poly Haven · CC0. Surface finish approximated from the aerial image."
+    }
+  },
+  {
+    "entityId": "bay.south-bay-landing",
+    "layer": "ext",
+    "kind": "structure",
+    "regionId": "marina-bay-exterior",
+    "label": "南岸 · 临湾浮台",
+    "assetHash": "9ee36afd6142cc242eb484a4c881916d692de3d1c45cf75d419c67bd68039fd1",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        -156.11552184756698,
+        -60.0261376436832,
+        288.7779505232722
+      ],
+      "max": [
+        -145.44811452528012,
+        -59.306137643683186,
+        323.291013339318
+      ]
+    },
+    "props": {
+      "background": true,
+      "岸线": "https://www.openstreetmap.org/way/172471577",
+      "影像": "Map Data © Singapore Land Authority / OneMap",
+      "表面": "Granite Tile 04 · Poly Haven · CC0. Surface finish approximated from the aerial image."
+    }
+  },
+  {
+    "entityId": "bay.gallery-landing",
+    "layer": "ext",
+    "kind": "structure",
+    "regionId": "marina-bay-exterior",
+    "label": "城市展览馆岸边 · 浮台与引桥",
+    "assetHash": "cf957ab4b4a3ef70bda6c408d828c28fb50700c5cd551f379efc160860589395",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        -162.87193735935855,
+        -60.15166837159659,
+        106.15216947206493
+      ],
+      "max": [
+        -128.16861609468566,
+        -58.24857898939578,
+        152.84043474542813
+      ]
+    },
+    "props": {
+      "background": true,
+      "岸线": "https://www.openstreetmap.org/way/395113913",
+      "影像": "Map Data © Singapore Land Authority / OneMap",
+      "表面": "Granite Tile 04 · Poly Haven · CC0. Surface finish approximated from the aerial image."
+    }
   }
 ]
