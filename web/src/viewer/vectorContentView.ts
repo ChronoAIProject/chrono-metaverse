@@ -268,6 +268,7 @@ export class VectorContentItem {
       this.roadMaterial ? (this.config.roads ?? true) : false,
       this.config.waterLayer,
       this.groundMaterials.size ? this.config.groundLayers : [],
+      this.config.waterlineEdits?.filter((edit) => edit.source === source.url),
     );
     const size =
       Object.values(geometry.attributes).reduce((n, a) => n + a.array.byteLength, 0) +

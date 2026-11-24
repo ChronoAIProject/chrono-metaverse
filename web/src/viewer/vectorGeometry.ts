@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { VectorTile, classifyRings } from '@mapbox/vector-tile';
 import Pbf from 'pbf';
-import type { GroundLayer, RoadLayer, VectorContent } from '../core/externalSource';
+import type { GroundLayer, RoadLayer, VectorContent, WaterlineEdit } from '../core/externalSource';
 import { GeoReference, tileBounds, tileCoordinates, tileKey, type Tile } from './geography';
 
 type Point = { x: number; y: number };
@@ -199,6 +199,25 @@ function pavingEdge(
   }
 }
 
+function surveyedWaterline(ring: Point[], edits: readonly WaterlineEdit[]): Point[] {
+  for (const edit of edits) {
+    const start = ring.findIndex(
+      ({ x, y }, i) =>
+        x === edit.from[0]![0] &&
+        y === edit.from[0]![1] &&
+        edit.from.every(([a, b], j) => ring[i + j]?.x === a && ring[i + j]?.y === b),
+    );
+    if (start >= 0) {
+      ring = [
+        ...ring.slice(0, start + 1),
+        ...edit.interior.map(([x, y]) => ({ x, y })),
+        ...ring.slice(start + edit.from.length - 1),
+      ];
+    }
+  }
+  return ring;
+}
+
 /** 从同一份矢量数据生成水面或游戏地表。贴着椭球绘制并保留所有内环。 */
 function polygonSurface(
   data: VectorTile,
@@ -206,6 +225,7 @@ function polygonSurface(
   tile: Tile,
   reference: GeoReference,
   ground?: GroundLayer,
+  edits?: readonly WaterlineEdit[],
 ) {
   const layer = data.layers[name];
   if (!layer || tile.z < 14 || layer.length > 10000) return;
@@ -229,8 +249,16 @@ function polygonSurface(
     const rings = feature.loadGeometry();
     vertices += rings.reduce((n, ring) => n + ring.length, 0);
     if (vertices > 50000) return;
+    const matching = edits?.filter(
+      (edit) => edit.featureId === feature.id && edit.extent === feature.extent,
+    );
     for (const polygon of classifyRings(rings)) {
-      const [outer, ...holes] = polygon.map((ring) => clip(ring, feature.extent));
+      const [outer, ...holes] = polygon.map((ring, i) =>
+        clip(
+          i === 0 && matching?.length ? surveyedWaterline(ring, matching) : ring,
+          feature.extent,
+        ),
+      );
       if (!outer || outer.length < 3) continue;
       const contours = [outer, ...holes.filter((hole) => hole.length >= 3)].map((ring) =>
         ring.map((p) => new THREE.Vector2(p.x, p.y)),
@@ -280,6 +308,7 @@ export function vectorGeometry(
   groundRoads: RoadLayer | boolean = false,
   waterLayer?: string,
   groundLayers: readonly GroundLayer[] = [],
+  waterlineEdits?: readonly WaterlineEdit[],
 ) {
   const data = new VectorTile(new Pbf(bytes));
   const layer = data.layers[style.layer];
@@ -405,7 +434,18 @@ export function vectorGeometry(
       const surface = polygonSurface(data, layer.layer, tile, reference, layer);
       return surface ? [{ material: layer.material, geometry: surface }] : [];
     }),
-    water: waterLayer ? polygonSurface(data, waterLayer, tile, reference) : undefined,
+    water: waterLayer
+      ? polygonSurface(
+          data,
+          waterLayer,
+          tile,
+          reference,
+          undefined,
+          waterlineEdits?.filter(
+            ({ tile: [z, x, y] }) => z === tile.z && x === tile.x && y === tile.y,
+          ),
+        )
+      : undefined,
     roads: groundRoads
       ? roadLines(data, tile, reference, groundRoads === true ? openMapTilesRoads : groundRoads)
       : undefined,

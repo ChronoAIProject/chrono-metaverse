@@ -31,8 +31,17 @@ export function withBoatQuay(surroundings: EntityBody): EntityBody {
       return { ...layer, excludeFeatureIds: [...ids] };
     }) };
   }
+  const { waterlineEdit } = JSON.parse(readFileSync(new URL('../references/ns-square-waterfront.json', import.meta.url), 'utf8'));
+  let water = {};
+  if ('waterLayer' in content && content.waterLayer === 'water' &&
+      'sources' in content && Array.isArray(content.sources) && content.sources.some(s => s?.url === waterlineEdit.source)) {
+    const previous = 'waterlineEdits' in content ? content.waterlineEdits : [];
+    if (Array.isArray(previous) && !previous.some(edit => isDeepStrictEqual(edit, waterlineEdit))) {
+      water = { waterlineEdits: [...previous, waterlineEdit] };
+    }
+  }
   return { ...surroundings, props: { ...surroundings.props, externalContent: {
-    ...content, ...ground, extrusion: { ...style, excludeBounds },
+    ...content, ...ground, ...water, extrusion: { ...style, excludeBounds },
   } } };
 }
 

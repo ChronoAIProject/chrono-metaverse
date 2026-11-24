@@ -69,6 +69,16 @@ export interface GroundLayer {
   readonly excludeFeatureIds?: readonly number[];
 }
 
+/** Replace the interior of one surveyed shoreline segment in source tile coordinates. */
+export interface WaterlineEdit {
+  readonly source: string;
+  readonly tile: readonly [number, number, number];
+  readonly featureId: number;
+  readonly extent: number;
+  readonly from: readonly (readonly [number, number])[];
+  readonly interior: readonly (readonly [number, number])[];
+}
+
 export interface VectorContent {
   readonly version: 1;
   readonly format: 'mvt';
@@ -77,6 +87,7 @@ export interface VectorContent {
   readonly reference: GeographicReference;
   readonly roads?: RoadLayer | false;
   readonly waterLayer?: string;
+  readonly waterlineEdits?: readonly WaterlineEdit[];
   readonly groundLayers?: readonly GroundLayer[];
   readonly waterReflection?: 'scene';
   readonly extrusion: {
@@ -163,6 +174,40 @@ export function geographicReference(value: unknown): GeographicReference | null 
   return { ...raw, heading: raw.heading ?? 0 } as unknown as GeographicReference;
 }
 
+function validWaterlineEdit(value: unknown): boolean {
+  const edit = record(value);
+  if (
+    !edit ||
+    !publicHttps(edit.source) ||
+    !Number.isSafeInteger(edit.featureId) ||
+    Number(edit.featureId) < 0 ||
+    !Number.isInteger(edit.extent) ||
+    !finite(edit.extent, 1, 65536)
+  )
+    return false;
+  const extent = edit.extent as number;
+  const tile = edit.tile;
+  if (
+    !Array.isArray(tile) ||
+    tile.length !== 3 ||
+    !tile.every(Number.isInteger) ||
+    !finite(tile[0], 14, 20) ||
+    !tile.slice(1).every((n) => finite(n, 0, 2 ** tile[0] - 1))
+  )
+    return false;
+  const path = (points: unknown, min: number) =>
+    Array.isArray(points) &&
+    points.length >= min &&
+    points.length <= 64 &&
+    points.every(
+      (p) =>
+        Array.isArray(p) &&
+        p.length === 2 &&
+        p.every((n) => Number.isInteger(n) && finite(n, 0, extent)),
+    );
+  return path(edit.from, 2) && path(edit.interior, 0);
+}
+
 /** 外部流式内容仍是普通背景物件，不改变代理范围和空间编辑权限。 */
 export function externalContentOf(entity: EntityBody): ExternalContent | null {
   if (entity.props?.background !== true) return null;
@@ -235,6 +280,11 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
       (style.distantZoom !== undefined &&
         (!finite(style.distantZoom, 0, 20) || !Number.isInteger(style.distantZoom))) ||
       (raw.waterLayer !== undefined && !field(raw.waterLayer)) ||
+      (raw.waterlineEdits !== undefined &&
+        (!raw.waterLayer ||
+          !Array.isArray(raw.waterlineEdits) ||
+          raw.waterlineEdits.length > 16 ||
+          !raw.waterlineEdits.every(validWaterlineEdit))) ||
       (raw.waterReflection !== undefined && (raw.waterReflection !== 'scene' || !raw.waterLayer)) ||
       !field(style.heightProperty) ||
       (style.minHeightProperty !== undefined && !field(style.minHeightProperty)) ||
@@ -268,6 +318,7 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
       reference,
       extrusion: style,
       ...(groundLayers ? { groundLayers } : {}),
+      ...(raw.waterlineEdits ? { waterlineEdits: raw.waterlineEdits } : {}),
       ...(raw.waterReflection ? { waterReflection: raw.waterReflection } : {}),
       ...(raw.waterLayer !== undefined ? { waterLayer: raw.waterLayer } : {}),
       ...(raw.roads !== undefined ? { roads: raw.roads } : {}),

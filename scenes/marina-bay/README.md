@@ -133,3 +133,5 @@ node ../../sdk/typescript/dist/cli.js push --inline --preview-ttl 604800
 2026-11-12 缓存与整楼验收：新草稿包含 268 个外景物件，原生预览共加载 320 个物件、292 个模型实例；首次下载 305 份资源，刷新后资源下载数为 0，预览授权两次均重新验证。拉远能看到完整 Tower 1 和十四层办公室标记，点击返回室内。线上无脚本或网络错误，场景保持草稿状态。
 
 2026-11-12 用户确认预览后保存至原空间：`seq 8`，提交 `aa65f277caf34001b23eb9af3beba69e`。保存后读取快照确认新增 268 个背景物件，原有 52 个室内物件的哈希、6 个锚点和扫描资源均一致。
+
+NS Square 临水施工平台的岸线取自 2026 年 10 月 31 日 Sentinel-2C 的 10 米真彩色影像。平台表面使用该影像和 Poly Haven 的 Concrete Floor 02 扫描。水侧桩墙、护栏及高程按 2026 年 9 月的现场照片估算。场景在 OpenFreeMap 的水域要素仍保留旧施工边界时，将该段水面接到围护外缘。Contains modified Copernicus Sentinel data 2026. [Sentinel-2 产品](https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/S2C_48NUG_20261031_0_L2A) · [现场照片](https://commons.wikimedia.org/wiki/File:The_Float@Marina_Bay_undergoing_demolition,_Sep_2026.jpg) · [Concrete Floor 02，CC0](https://polyhaven.com/a/concrete_floor_02) · [OpenStreetMap 数据许可](https://www.openstreetmap.org/copyright)
