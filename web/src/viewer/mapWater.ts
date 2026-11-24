@@ -102,13 +102,24 @@ export function mapWaterMaterial(
         return fract((seed.x + seed.y) * seed.z);
       }
       // 平滑噪声的解析梯度让波峰自然断开，同一组法线用于天空反射和掠射角。
-      vec2 slope(vec2 p) {
+      vec2 slope(vec2 p, out float resolved) {
         vec2 cell = floor(p), f = fract(p), u = f*f*(3.0-2.0*f);
         float a = hash(cell), b = hash(cell+vec2(1,0));
         float c = hash(cell+vec2(0,1)), d = hash(cell+vec2(1,1));
         vec2 gradient = vec2(mix(b-a,d-c,u.y), mix(c-a,d-b,u.x));
         float footprint = max(fwidth(p.x),fwidth(p.y));
-        return gradient * 6.0*f*(1.0-f) * (1.0-smoothstep(0.3,1.1,footprint));
+        resolved = 1.0-smoothstep(0.3,1.1,footprint);
+        return gradient * 6.0*f*(1.0-f) * resolved;
+      }
+      // Pack the symmetric 2D covariance as (xx, xy, yy).
+      vec3 secondMoment(vec2 v) { return vec3(v.x*v.x, v.x*v.y, v.y*v.y); }
+
+      vec2 reflectionGradient(vec2 slopeDelta, vec3 normal, vec3 eye, float reach, vec2 uv, float w) {
+        vec3 dn = vec3(slopeDelta.x, 0.0, slopeDelta.y);
+        dn = (dn - normal * dot(normal, dn)) * normal.y;
+        vec3 rayDelta = 2.0 * (dot(eye, dn) * normal + dot(eye, normal) * dn);
+        vec4 clipDelta = reflectionMatrix * vec4(reach * rayDelta, 0.0);
+        return (clipDelta.xy - uv * clipDelta.w) / max(w, 0.001);
       }
       // 非偏振光从空气进入淡水时，两个偏振方向反射率的平均值。
       float waterFresnel(float cosine) {
@@ -126,10 +137,11 @@ export function mapWaterMaterial(
         vec3 eye = toEye / max(range, 0.001);
         mat2 wind = mat2(0.80,-0.60,0.60,0.80);
         vec2 meters = wind*p;
-        vec2 swell = slope(meters*vec2(0.065,0.14) - time*vec2(0.018,0.09));
-        vec2 chop = slope(meters*vec2(0.47,0.94) - time*vec2(0.05,0.45));
+        float swellFilter, chopFilter, fineFilter;
+        vec2 swell = slope(meters*vec2(0.065,0.14) - time*vec2(0.018,0.09),swellFilter);
+        vec2 chop = slope(meters*vec2(0.47,0.94) - time*vec2(0.05,0.45),chopFilter);
         mat2 crosswind = mat2(0.86,0.51,-0.51,0.86);
-        vec2 fine = slope((crosswind*meters)*vec2(3.2,6.8) - time*vec2(0.3,2.1));
+        vec2 fine = slope((crosswind*meters)*vec2(3.2,6.8) - time*vec2(0.3,2.1),fineFilter);
         // 两个短波频段各有一对不同方向的波列，叠加处形成有限长度的波峰。
         // 米制波数 k 对应重力波角频率 sqrt(g * length(k))。
         const vec2 k0 = vec2(3.6, 13.2), k1 = vec2(-2.45, 9.9);
@@ -139,8 +151,9 @@ export function mapWaterMaterial(
                    + 2.8*swell.yxyx + 2.3*chop.xyyx;
         vec4 resolved = 1.0-smoothstep(vec4(0.5),vec4(3.14),fwidth(phase));
         vec4 waves = cos(phase) * resolved;
-        vec2 rippleSlope = 0.0336*waves.x*normalize(k0) + 0.0252*waves.y*normalize(k1)
-                         + 0.0248*waves.z*normalize(k2) + 0.0186*waves.w*normalize(k3);
+        vec2 slope0 = 0.0336*normalize(k0), slope1 = 0.0252*normalize(k1);
+        vec2 slope2 = 0.0248*normalize(k2), slope3 = 0.0186*normalize(k3);
+        vec2 rippleSlope = waves.x*slope0 + waves.y*slope1 + waves.z*slope2 + waves.w*slope3;
         float gust = clamp(0.81 + 0.31*swell.x, 0.48, 1.12);
         vec2 normalXZ = (0.015*swell + 0.030*chop + gust*(rippleSlope + 0.034*(fine*crosswind))) * wind;
         vec3 normal = normalize(vec3(normalXZ.x, 1.0, normalXZ.y));
@@ -180,11 +193,29 @@ export function mapWaterMaterial(
           vec4 clip = reflectionMatrix * vec4(samplePoint, 1.0);
           vec2 uv = clip.xy / max(0.001,clip.w);
           vec2 edge = smoothstep(vec2(0.0),vec2(0.028),min(uv,1.0-uv));
-          // 消失在一个像素内的短波只轻微扩大楼影的采样足迹，保留岸线倒影。
-          float unresolved = dot(1.0-resolved*resolved, vec4(0.416,0.234,0.224,0.126));
-          float footprintScale = 1.0 + 0.48*gust*unresolved;
-          sky = mix(sky, textureGrad(reflectionMap,clamp(uv,0.001,0.999),
-                    dFdx(uv)*footprintScale,dFdy(uv)*footprintScale).rgb,
+          // Unresolved wave slopes still spread reflected light. Each cosine
+          // contributes half its squared amplitude to the slope variance.
+          vec4 lost = 0.5 * gust*gust * (1.0-resolved*resolved);
+          vec3 variance = lost.x*secondMoment(slope0) + lost.y*secondMoment(slope1)
+                        + lost.z*secondMoment(slope2) + lost.w*secondMoment(slope3);
+          // A smoothstep-interpolated uniform noise field has slope variance 26/175 per axis.
+          float noise = (26.0/175.0) * (0.015*0.015*(1.0-swellFilter*swellFilter)
+                      + 0.030*0.030*(1.0-chopFilter*chopFilter)
+                      + 0.034*0.034*gust*gust*(1.0-fineFilter*fineFilter));
+          variance.xz += noise;
+          float sx = sqrt(max(variance.x,0.0));
+          float shear = variance.y/max(sx,1e-8);
+          float sz = sqrt(max(0.0,variance.z-shear*shear));
+          vec2 spreadX = reflectionGradient(vec2(sx,shear)*wind,normal,eye,projectedReach,uv,clip.w);
+          vec2 spreadY = reflectionGradient(vec2(0.0,sz)*wind,normal,eye,projectedReach,uv,clip.w);
+          vec3 footprint = secondMoment(dFdx(uv)) + secondMoment(dFdy(uv))
+                         + 12.0*(secondMoment(spreadX)+secondMoment(spreadY));
+          // Factor the combined footprint into the two gradients consumed by the anisotropic sampler.
+          float width = sqrt(max(footprint.x,1e-16));
+          float crossTerm = footprint.y/width;
+          vec2 gradX = vec2(width,crossTerm);
+          vec2 gradY = vec2(0.0,sqrt(max(0.0,footprint.z-crossTerm*crossTerm)));
+          sky = mix(sky, textureGrad(reflectionMap,clamp(uv,0.001,0.999),gradX,gradY).rgb,
                     edge.x*edge.y*step(0.001,clip.w));
         }
         float cosine = clamp(dot(eye,normal),0.0,1.0);
