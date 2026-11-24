@@ -126,6 +126,13 @@ export class VectorContentItem {
       if (!hologram && config.waterReflection === 'scene') this.reflection = new MapReflection();
       const sample = !hologram ? config.waterSample : undefined;
       const center = sample && this.reference.point(...sample.center, 0);
+      // Geographic east is local -X at heading zero. Positive placement yaw turns +Z toward +X.
+      const downwindHeading =
+        config.rippleWindFrom === undefined || hologram
+          ? undefined
+          : THREE.MathUtils.degToRad(
+              180 - config.rippleWindFrom + config.reference.heading + placement.rotation,
+            );
       if (sample) this.sampledWaterIds = new Set(sample.featureIds);
       this.waterMaterial = mapWaterMaterial(
         hologram,
@@ -135,8 +142,10 @@ export class VectorContentItem {
               center: new THREE.Vector3(center.x, center.z, sample.radius),
               reflectance: new THREE.Color().fromArray(sample.reflectance),
               rmsGravitySlope: sample.rmsGravitySlope,
+              rmsRippleSlope: sample.rmsRippleSlope,
             }
           : undefined,
+        downwindHeading,
       );
     }
     if (hologram) {
