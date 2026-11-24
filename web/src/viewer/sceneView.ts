@@ -63,6 +63,8 @@ import {
   createShapeMaterial,
   filterModelSurface,
   modelMaterialKey,
+  modelOcclusion,
+  type ModelOcclusion,
   srgb,
   TextureCache,
   type MaterialContext,
@@ -785,6 +787,7 @@ export class SceneView {
     background = false,
     styleLook?: StyleLook,
     kind: 'structure' | 'object' = 'object',
+    occlusion?: ModelOcclusion,
   ): THREE.Object3D {
     const clone = model.clone(true);
     clone.traverse((object) => {
@@ -805,8 +808,10 @@ export class SceneView {
         mesh.receiveShadow = look?.shading === 'albedo';
       }
       mesh.material = Array.isArray(mesh.material)
-        ? mesh.material.map((m) => this.modelMaterial(m, look, background, styleLook, kind))
-        : this.modelMaterial(mesh.material, look, background, styleLook, kind);
+        ? mesh.material.map((m) =>
+            this.modelMaterial(m, look, background, styleLook, kind, occlusion),
+          )
+        : this.modelMaterial(mesh.material, look, background, styleLook, kind, occlusion);
     });
     return clone;
   }
@@ -817,12 +822,22 @@ export class SceneView {
     background = false,
     styleLook?: StyleLook,
     kind: 'structure' | 'object' = 'object',
+    occlusion?: ModelOcclusion,
   ): THREE.Material {
     const lookKey = modelMaterialKey(source, look, styleLook);
     if (lookKey === null && !background) return source;
     const air = background && this.daylightCity && !styleLook;
     const coverage = air && this.multisampleCutouts && source.alphaTest > 0;
-    const key = `${lookKey ?? source.uuid}|${background}|${styleLookKey(styleLook)}|${kind}|${air}|${coverage}`;
+    const ao =
+      air &&
+      look?.shading === 'albedo' &&
+      source.name === occlusion?.material &&
+      source instanceof THREE.MeshStandardMaterial &&
+      source.map &&
+      !source.aoMap
+        ? occlusion?.texture
+        : undefined;
+    const key = `${lookKey ?? source.uuid}|${background}|${styleLookKey(styleLook)}|${kind}|${air}|${coverage}|${ao ?? ''}`;
     let material = this.materialCache.get(key);
     if (material === undefined) {
       material = createModelMaterial(
@@ -835,6 +850,16 @@ export class SceneView {
       if (air) {
         filterModelSurface(material, this.renderer.capabilities.getMaxAnisotropy());
         cityModelAir(material);
+      }
+      if (ao && material instanceof THREE.MeshStandardMaterial) {
+        const target = material;
+        this.texture(ao, 'model-occlusion')
+          ?.then((map) => {
+            if (this.disposed) return;
+            target.aoMap = map;
+            target.needsUpdate = true;
+          })
+          .catch(() => undefined);
       }
       if (coverage) cityCutout(material);
       this.materialCache.set(key, material);
@@ -1296,6 +1321,7 @@ export class SceneView {
                 background,
                 surfaceLook(member.view.styleLook ?? member.styleLook, entity, background),
                 entity.kind === 'structure' ? 'structure' : 'object',
+                modelOcclusion(entity),
               );
               placeRotatedModel(clone, entity.transform, box ?? undefined);
               holder.add(fitModelInto(clone, fit));
