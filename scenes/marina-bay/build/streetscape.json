@@ -1591,5 +1591,63 @@
     "props": {
       "background": true
     }
+  },
+  {
+    "entityId": "bay.riverwalk-surveyed-facade",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "dec447622d5610ecb93b91e320d9f17ca31787be8b8dab1da4be4d7b61a4e889",
+    "label": "河畔公寓 · 实景立面",
+    "bounds": {
+      "min": [
+        949.5654020133085,
+        -30.36135096336195,
+        563.6906478007509
+      ],
+      "max": [
+        988.3147811208646,
+        39.645322374449435,
+        599.716556490587
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "来源": "https://www.openstreetmap.org/way/326926544",
+      "材质版权": "Footprint © OpenStreetMap contributors, ODbL 1.0. Photo by Terence Ong (CC BY 2.5), https://commons.wikimedia.org/wiki/File:Singapore_River_5.JPG. Rectified and exposure-corrected. Daylight tone reference: Dmitry Rozhkov, CC BY-SA 3.0 (separate image used for relative luminance measurement only).",
+      "重建": "轮廓与标高取自地图。将可见一面的实拍纹理按墙宽配准，其他朝向复用同楼的窗面细部。"
+    }
+  },
+  {
+    "entityId": "bay.central-office-one-surveyed-facade",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "9a42356af9beaa74199ab5b25bc4741cffe946f9db73bc752c329b7f53317419",
+    "label": "克拉码头中央广场一号办公楼 · 实景立面",
+    "bounds": {
+      "min": [
+        1174.6129952735348,
+        -42.39253968471785,
+        462.142324248172
+      ],
+      "max": [
+        1206.9129122379925,
+        24.617652576006307,
+        531.9464493306087
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "来源": "https://www.openstreetmap.org/way/325903782",
+      "材质版权": "Footprint © OpenStreetMap contributors, ODbL 1.0. Photo by LN9267 (CC BY-SA 4.0), https://commons.wikimedia.org/wiki/File:Clarke_Quay_Central_09-11-2023.jpg. Rectified and exposure-corrected. Adapted texture and model: CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/.",
+      "重建": "轮廓与标高取自地图。将可见一面的实拍纹理按墙宽配准，其他朝向复用同楼的窗面细部。"
+    }
   }
 ]
