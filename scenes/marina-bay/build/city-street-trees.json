@@ -33,6 +33,39 @@
     }
   },
   {
+    "entityId": "bay.padang-park-canopy",
+    "kind": "object",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海湾 · 纪念公园与滨海路行道树",
+    "assetHash": "59b63b409c66907e4c14f740a148a5326afe5e6d0b6859a665008d597b6d4759",
+    "bounds": {
+      "min": [
+        287.19569774489656,
+        -60.40546830956017,
+        1155.8177204784045
+      ],
+      "max": [
+        413.4814668479736,
+        -43.17864357237428,
+        1280.1806294111047
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "位置来源": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树位数": 7,
+      "棕榈数": 0,
+      "已单独建模树位数": 0,
+      "树形素材": "Poly Haven: Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes.",
+      "树冠": "7 株按 NParks 树位和高度档复位，冠幅按 OneMap 正射影像估读。树形与档内高度为估值。"
+    }
+  },
+  {
     "entityId": "landscape.canopy--1-0",
     "kind": "object",
     "layer": "ext",

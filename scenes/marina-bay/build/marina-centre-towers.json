@@ -44,6 +44,50 @@
     }
   },
   {
+    "entityId": "bay.f53396c2-9592-4187-9722-ee1dd3b7352b",
+    "kind": "object",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "label": "SINGAPORE RECREATION CLUB",
+    "assetHash": "f2acdf4737c7ecfff108f48f7cbbd8bdbcd86a580b124e0f47eb38f36a686769",
+    "bounds": {
+      "min": [
+        431.2150573730469,
+        -60.16265106201172,
+        1198.8582763671875
+      ],
+      "max": [
+        524.48193359375,
+        -41.71131134033203,
+        1244.097412109375
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "官方建筑编号": "SLA_BLDG2_f53396c2-9592-4187-9722-ee1dd3b7352b",
+      "测绘模型": "OneMap 3D · SLA, cheeaun/om3d",
+      "来源地址": "https://github.com/cheeaun/om3d/tree/ac451b84/optimized-tiles/6/38/6_5.b3dm",
+      "经纬度": [
+        103.85371441180706,
+        1.2920339341833043
+      ],
+      "测绘高度（米）": 18.418,
+      "三角形数": 2821,
+      "立面影像": [
+        {
+          "author": "Dietmar Rabich",
+          "url": "https://commons.wikimedia.org/wiki/File:Singapore_(SG),_Singapore_Recreation_Club_--_2019_--_4501.jpg",
+          "license": "CC BY-SA 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/"
+        }
+      ],
+      "材质方法": "窗间墙、门廊石材与屋面取样自 2019 年草场正面照片。主体沿 OneMap 格局与标高，背面和被遮挡的开间沿用可见面样式。"
+    }
+  },
+  {
     "entityId": "bay.bdf8a43d-df18-4111-a7a8-55e83260fd96",
     "kind": "object",
     "regionId": "marina-bay-exterior",
