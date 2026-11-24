@@ -355,6 +355,20 @@ export function urbanFacade(material: THREE.MeshLambertMaterial) {
           /* glsl */ `
         vec3 worldN=inverseTransformDirection(normal,viewMatrix);
         vec3 worldEye=inverseTransformDirection(normalize(vViewPosition),viewMatrix);
+        #if NUM_DIR_LIGHTS == 1 && NUM_POINT_LIGHTS == 0 && NUM_SPOT_LIGHTS == 0 && NUM_RECT_AREA_LIGHTS == 0
+          // A room surface seen through a window receives direct sunlight only
+          // where the eye and sun rays both pass through the same opening.
+          vec3 sun = inverseTransformDirection(directionalLights[0].direction, viewMatrix);
+          vec3 along = vec3(worldN.z, 0.0, -worldN.x);
+          vec2 viewSlope = vec2(dot(along,worldEye), worldEye.y) / max(0.001,dot(worldN,worldEye));
+          vec2 sunSlope = vec2(dot(along,sun), sun.y) / max(0.001,dot(worldN,sun));
+          // Use one storey as the depth of the representative interior bay.
+          vec2 shift = clamp((sunSlope - viewSlope) * module.y / module, -1.0, 1.0);
+          vec2 overlap = max(vec2(0.0), coverage - abs(shift));
+          float sunlitPanes = paneCoverage(grid + 0.5 * shift, overlap);
+          vec3 shadedGlass = glass * wall * max(0.0, panes - sunlitPanes);
+          outgoingLight -= reflectedLight.directDiffuse * shadedGlass / max(diffuseColor.rgb,vec3(0.0001));
+        #endif
         vec3 ray=reflect(-worldEye,worldN);
         float co=cos(citySkyYaw), si=sin(citySkyYaw);
         ray.xz=mat2(co,si,-si,co)*ray.xz;
