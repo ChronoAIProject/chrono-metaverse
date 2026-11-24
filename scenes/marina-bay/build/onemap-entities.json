@@ -3613,7 +3613,7 @@
     "kind": "object",
     "label": "ONE FULLERTON",
     "regionId": "marina-bay-exterior",
-    "assetHash": "31746fdd71495d5fd00b3141c46b3376ae17ca83e331eba914a46798e98d8e79",
+    "assetHash": "3a4c1bfb5b3d6c6905245967f272845f9fa7d740253283a09bea17f0d1be39e5",
     "bounds": {
       "min": [
         262.010899,
@@ -4639,7 +4639,7 @@
     "kind": "object",
     "label": "CHARTERED BANK BUILDING",
     "regionId": "marina-bay-exterior",
-    "assetHash": "fc8aa586b491f101242b6a54ed0be4cafff9a03173ae573b9a49f521ac18d059",
+    "assetHash": "2a797fa0cc5f2c9c8ed1d8d29c0b611b1d86bc768bac4fbfdeb111af30032877",
     "bounds": {
       "min": [
         450.057017,
@@ -4660,8 +4660,16 @@
       "原始分片": "7/76/10_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 170.383,
-      "三角形数": 1528
-    }
+      "三角形数": 1528,
+      "modelOcclusion": {
+        "sourceAsset": "2a797fa0cc5f2c9c8ed1d8d29c0b611b1d86bc768bac4fbfdeb111af30032877",
+        "material": "dc2400573",
+        "texture": "7fac642877aaba195e70a5b99c1085e3a831a2e61b7777af243c32084a36c432"
+      }
+    },
+    "textures": [
+      "7fac642877aaba195e70a5b99c1085e3a831a2e61b7777af243c32084a36c432"
+    ]
   },
   {
     "entityId": "bay.91ee3ede-5713-4014-872e-e30cf5c65859",
@@ -5831,7 +5839,7 @@
     "kind": "object",
     "label": "滨海湾建筑",
     "regionId": "marina-bay-exterior",
-    "assetHash": "9b5c108cc5158b40faf5a4224b940fbe0a2d718208e9b2946525162b3f201574",
+    "assetHash": "440ba49ffcff74b40f125856c90bbab619bf9078f70f769ebbfc1b3f588d8cff",
     "bounds": {
       "min": [
         348.555003,
@@ -5852,8 +5860,16 @@
       "原始分片": "7/76/8_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 114.524,
-      "三角形数": 946
-    }
+      "三角形数": 946,
+      "modelOcclusion": {
+        "sourceAsset": "440ba49ffcff74b40f125856c90bbab619bf9078f70f769ebbfc1b3f588d8cff",
+        "material": "dc2400191",
+        "texture": "79588cc2cc503a6471a097a737d9405a8a0306e96010eda567e38d0c97d5d02a"
+      }
+    },
+    "textures": [
+      "79588cc2cc503a6471a097a737d9405a8a0306e96010eda567e38d0c97d5d02a"
+    ]
   },
   {
     "entityId": "bay.4f698c20-5e07-4b2b-ae5b-1ae597d96afb",
@@ -5994,7 +6010,7 @@
     "kind": "object",
     "label": "TUNG CENTRE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "baaa85069e2d23e01583ee6f994cb20d0f2768cd9e06236162b77f245d764bb4",
+    "assetHash": "0a75153b4b854fa8548e74ab83bebe9526471caf5273c5f272047f49b5d32e14",
     "bounds": {
       "min": [
         347.764871,
@@ -6045,8 +6061,16 @@
       "原始分片": "7/77/10_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 157.07,
-      "三角形数": 3194
-    }
+      "三角形数": 3194,
+      "modelOcclusion": {
+        "sourceAsset": "d19582f60cff88e4d4db0554c0dd6ec62814eabb1e0ceb5399d2722ffee79c77",
+        "material": "dc2400421",
+        "texture": "117bcafcd96d9cb2f16495651fcb5825bb8cd7376f52d7b82705c0be05c3411f"
+      }
+    },
+    "textures": [
+      "117bcafcd96d9cb2f16495651fcb5825bb8cd7376f52d7b82705c0be05c3411f"
+    ]
   },
   {
     "entityId": "bay.73240d23-a2b9-4580-a1b5-9ef9a8ddc2c9",
@@ -6229,7 +6253,7 @@
     "kind": "object",
     "label": "THE FULLERTON HOTEL",
     "regionId": "marina-bay-exterior",
-    "assetHash": "8f93a2f9b2134d79b54f4c4819082490733e050d8cbd10e6ed8ab44eaf93fc9e",
+    "assetHash": "f547730e2839676bf3a3942c37536d9847b22ec28d0021cefc4070f0e9521bcb",
     "bounds": {
       "min": [
         358.72023,
@@ -6252,7 +6276,7 @@
       "官方测量高度（米）": 50.69,
       "三角形数": 11964,
       "modelOcclusion": {
-        "sourceAsset": "8f93a2f9b2134d79b54f4c4819082490733e050d8cbd10e6ed8ab44eaf93fc9e",
+        "sourceAsset": "f547730e2839676bf3a3942c37536d9847b22ec28d0021cefc4070f0e9521bcb",
         "material": "dc2400281",
         "texture": "5c29936c7b79d88696f21d9dd2d94e210efaad9dcc2508064692ec2bcb5491fb"
       },
@@ -6575,7 +6599,7 @@
     "kind": "object",
     "label": "THE SAIL @ MARINA BAY",
     "regionId": "marina-bay-exterior",
-    "assetHash": "198913e89291003c87a48bafcb4b61101b61e92bcfa4b4653e1808c7672be21e",
+    "assetHash": "2ee202b5a9f76145405850fef7c181113580da9e8d2a6d249e23b3c413c137ec",
     "bounds": {
       "min": [
         157.142935,
@@ -6598,7 +6622,7 @@
       "官方测量高度（米）": 241.983,
       "三角形数": 1728,
       "modelOcclusion": {
-        "sourceAsset": "198913e89291003c87a48bafcb4b61101b61e92bcfa4b4653e1808c7672be21e",
+        "sourceAsset": "2ee202b5a9f76145405850fef7c181113580da9e8d2a6d249e23b3c413c137ec",
         "material": "dc2400602",
         "texture": "9607caad0ba4fcb78d893e3a45557de1896f738c74b44cadf511a6c5847d5e04"
       }
@@ -6823,7 +6847,7 @@
     "kind": "object",
     "label": "OUE BAYFRONT",
     "regionId": "marina-bay-exterior",
-    "assetHash": "78388dd6872bfe2d8df7dd8711c1aacb2fba57154b5e115637b666ea83f535b5",
+    "assetHash": "6ae3f4f6c231ab32b1762da219c5ef23b4f1d8a214ee1bd415a4faaddd08b5a3",
     "bounds": {
       "min": [
         228.377465,
@@ -6846,7 +6870,7 @@
       "官方测量高度（米）": 101.935,
       "三角形数": 3524,
       "modelOcclusion": {
-        "sourceAsset": "78388dd6872bfe2d8df7dd8711c1aacb2fba57154b5e115637b666ea83f535b5",
+        "sourceAsset": "6ae3f4f6c231ab32b1762da219c5ef23b4f1d8a214ee1bd415a4faaddd08b5a3",
         "material": "dc2400418",
         "texture": "c4970bfbde71a0fb3ab6426a757f8e189327bf5b76d2c3cbae7cce006947eea7"
       }
@@ -7757,7 +7781,7 @@
     "kind": "object",
     "label": "THE ARCADE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "04ae1db399db6714377452a5678a1ac82cc004750751366109eab470e5921958",
+    "assetHash": "5dcadc763932483033a29f7eb60843ae6a0e32e648b1bc50de6d071e06d23e42",
     "bounds": {
       "min": [
         335.22899,
@@ -7778,8 +7802,16 @@
       "原始分片": "8/154/19_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 83.819,
-      "三角形数": 1620
-    }
+      "三角形数": 1620,
+      "modelOcclusion": {
+        "sourceAsset": "5dcadc763932483033a29f7eb60843ae6a0e32e648b1bc50de6d071e06d23e42",
+        "material": "dc2400425",
+        "texture": "683ce7335e77ef2329fcac88f5ef21c7f7e7d9b519ba5120abcd0272cfc4c7a7"
+      }
+    },
+    "textures": [
+      "683ce7335e77ef2329fcac88f5ef21c7f7e7d9b519ba5120abcd0272cfc4c7a7"
+    ]
   },
   {
     "entityId": "bay.6dc8e0e1-acf5-41f4-9c59-3b01a23e7d46",
