@@ -8,7 +8,13 @@ export function mapWaterMaterial(
   hologram: boolean,
   reflection?: MapReflection,
   sample?: { center: THREE.Vector3; reflectance: THREE.Color; rmsGravitySlope?: number },
+  downwindHeading?: number,
 ) {
+  // The wave field's +Y axis in the water plane points along world (-0.60, 0.80).
+  const rotation = downwindHeading === undefined ? 0 : -Math.atan2(0.6, 0.8) - downwindHeading;
+  const origin = new THREE.Vector2();
+  const first = new THREE.Vector2(-11.4, 27.1).rotateAround(origin, rotation);
+  const second = new THREE.Vector2(9.4, 20.2).rotateAround(origin, rotation);
   const material = new THREE.ShaderMaterial({
     side: THREE.DoubleSide,
     forceSinglePass: true,
@@ -39,6 +45,7 @@ export function mapWaterMaterial(
       sunlight: { value: new THREE.Vector3(...KEY_LIGHT.direction).normalize() },
       sunColor: { value: new THREE.Color(0xfff7e3) },
       time: { value: 0 },
+      shortWaveNumbers: { value: new THREE.Vector4(first.x, first.y, second.x, second.y) },
       skyMap: { value: null },
       hasSky: { value: false },
       skyWeight: { value: 0.72 },
@@ -80,6 +87,7 @@ export function mapWaterMaterial(
       #endif
       uniform float directFraction;
       uniform float time;
+      uniform vec4 shortWaveNumbers;
       uniform sampler2D reflectionMap;
       uniform sampler2D reflectionDepth;
       uniform mat4 reflectionMatrix;
@@ -157,7 +165,7 @@ export function mapWaterMaterial(
         // 两个短波频段各有一对不同方向的波列，叠加处形成有限长度的波峰。
         // 米制波数 k 对应重力波角频率 sqrt(g * length(k))。
         const vec2 k0 = vec2(3.6, 13.2), k1 = vec2(-2.45, 9.9);
-        const vec2 k2 = vec2(-11.4, 27.1), k3 = vec2(9.4, 20.2);
+        vec2 k2 = shortWaveNumbers.xy, k3 = shortWaveNumbers.zw;
         vec4 phase = vec4(dot(meters,k0), dot(meters,k1), dot(meters,k2), dot(meters,k3))
                    - time*vec4(11.59,10.00,16.98,14.78)
                    + 2.8*swell.yxyx + 2.3*chop.xyyx;

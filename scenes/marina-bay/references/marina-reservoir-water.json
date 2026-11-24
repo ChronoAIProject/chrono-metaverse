@@ -17,6 +17,21 @@
       0.02987
     ]
   },
+  "rippleWind": {
+    "fromDegrees": 106.6,
+    "station": "S111, Scotts Road (3.6 km from the bay centre)",
+    "interval": [
+      "2023-08-17T09:30:00+08:00",
+      "2023-08-17T10:30:00+08:00"
+    ],
+    "samples": 61,
+    "meanSpeedKnots": 5.26,
+    "method": "Speed-weighted circular mean of minute wind-from bearings for a representative Singapore morning. This is a nearby land-station estimate. Only the shorter pair of ripple wave vectors follow this bearing.",
+    "sources": [
+      "https://api.data.gov.sg/v1/environment/wind-direction?date=2023-08-17",
+      "https://api.data.gov.sg/v1/environment/wind-speed?date=2023-08-17"
+    ]
+  },
   "processing": "Copernicus Sentinel-2 L2A surface reflectance. Use the supplied scale on offset-corrected Earth Search COGs. Within the mapped bay, erode valid SCL water by two 20-m pixels and stay 55 m off the mapped shore. Fit per-date median RGB against each shortwave infrared band with Theil\u2013Sen slopes and take the mean zero-SWIR intercept. The centre and radius summarize pixels classified as water on at least five dates. The Singapore River mouth shares the continuous water surface.",
   "waves": {
     "method": "Fit the metre-scale gravity-wave slope to open-water contrast in 12 windows per photograph. Compare the 1–3, 3–9 and 9–27 pixel bands after local brightness normalization. A slope of 0.04 improves all three bands in both fitted views. Leave the shorter ripples at their original energy. This represents one daylight water state over the reflectance sample area.",

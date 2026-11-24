@@ -41,7 +41,13 @@ describe('外部数据源协议', () => {
       externalContentOf({ ...entity, props: { background: true, externalContent: vector } })
         ?.format,
     ).toBe('mvt');
+    const water = { ...vector, waterLayer: 'water', rippleWindFrom: 0 };
+    expect(
+      externalContentOf({ ...entity, props: { background: true, externalContent: water } }),
+    ).toMatchObject({ waterLayer: 'water', rippleWindFrom: 0 });
     for (const change of [
+      { rippleWindFrom: 0 },
+      { waterLayer: 'water', rippleWindFrom: 361 },
       { reference: undefined },
       { extrusion: { ...vector.extrusion, maxHeight: Infinity } },
       { extrusion: { ...vector.extrusion, excludeBuildingParts: [{ featureId: 1 }] } },

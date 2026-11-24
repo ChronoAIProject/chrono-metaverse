@@ -116,6 +116,8 @@ export interface VectorContent {
   readonly reference: GeographicReference;
   readonly roads?: RoadLayer | false;
   readonly waterLayer?: string;
+  /** Meteorological wind-from bearing for short water waves, clockwise from true north. */
+  readonly rippleWindFrom?: number;
   readonly waterSample?: WaterSample;
   readonly facadeReflections?: FacadeReflections;
   readonly waterlineEdits?: readonly WaterlineEdit[];
@@ -368,6 +370,8 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
       (style.distantZoom !== undefined &&
         (!finite(style.distantZoom, 0, 20) || !Number.isInteger(style.distantZoom))) ||
       (raw.waterLayer !== undefined && !field(raw.waterLayer)) ||
+      (raw.rippleWindFrom !== undefined &&
+        (!raw.waterLayer || !finite(raw.rippleWindFrom, 0, 360))) ||
       (raw.facadeReflections !== undefined &&
         (style.facade !== 'urban' ||
           !validFacadeReflections(raw.facadeReflections, entity.textures))) ||
@@ -422,6 +426,7 @@ export function externalContentOf(entity: EntityBody): ExternalContent | null {
       ...(raw.waterlineEdits ? { waterlineEdits: raw.waterlineEdits } : {}),
       ...(raw.waterReflection ? { waterReflection: raw.waterReflection } : {}),
       ...(raw.waterLayer !== undefined ? { waterLayer: raw.waterLayer } : {}),
+      ...(raw.rippleWindFrom !== undefined ? { rippleWindFrom: raw.rippleWindFrom } : {}),
       ...(raw.roads !== undefined ? { roads: raw.roads } : {}),
     } as unknown as VectorContent;
   }
