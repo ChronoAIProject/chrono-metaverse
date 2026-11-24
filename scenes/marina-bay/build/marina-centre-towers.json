@@ -44,6 +44,96 @@
     }
   },
   {
+    "entityId": "bay.91dbb678-4dd7-4023-b13e-1fd19dc6497c",
+    "kind": "object",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "label": "CIVILIAN WAR MEMORIAL",
+    "assetHash": "14a9b48f605f450b0dcef48b01906789eb81410c510f686744c2aa602bf02f7d",
+    "bounds": {
+      "min": [
+        375.9156494140625,
+        -60.18316650390625,
+        1310.2802734375
+      ],
+      "max": [
+        433.48046875,
+        1.8501322269439697,
+        1368.174560546875
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "官方建筑编号": "SLA_BLDG2_91dbb678-4dd7-4023-b13e-1fd19dc6497c",
+      "测绘模型": "OneMap 3D · SLA, cheeaun/om3d",
+      "来源地址": "https://github.com/cheeaun/om3d/blob/ac451b84/optimized-tiles/6/38/6_5.b3dm",
+      "经纬度": [
+        103.85470398939393,
+        1.2928913349361697
+      ],
+      "测绘高度（米）": 62.025,
+      "立面影像": [
+        {
+          "author": "Deoma12",
+          "url": "https://commons.wikimedia.org/wiki/File:Civilian_War_Memorial_Entrance.jpg",
+          "license": "CC BY-SA 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/"
+        }
+      ],
+      "表面与布局": "四柱与台基取自 OneMap 存档。浅池轮廓依 OneMap 正射影像描绘。入口两侧石壁取自 2019 年照片，步道与阶梯尺度为估值。",
+      "文物说明": "https://www.roots.gov.sg/places/places-landing/Places/national-monuments/civilian-war-memorial",
+      "正射影像": "https://www.onemap.gov.sg/maps/tiles/OrthoJPG/{z}/{x}/{y}.png",
+      "三角形数": 400
+    }
+  },
+  {
+    "entityId": "bay.f53396c2-9592-4187-9722-ee1dd3b7352b",
+    "kind": "object",
+    "regionId": "marina-bay-exterior",
+    "layer": "ext",
+    "label": "SINGAPORE RECREATION CLUB",
+    "assetHash": "f2acdf4737c7ecfff108f48f7cbbd8bdbcd86a580b124e0f47eb38f36a686769",
+    "bounds": {
+      "min": [
+        431.2150573730469,
+        -60.16265106201172,
+        1198.8582763671875
+      ],
+      "max": [
+        524.48193359375,
+        -41.71131134033203,
+        1244.097412109375
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "官方建筑编号": "SLA_BLDG2_f53396c2-9592-4187-9722-ee1dd3b7352b",
+      "测绘模型": "OneMap 3D · SLA, cheeaun/om3d",
+      "来源地址": "https://github.com/cheeaun/om3d/tree/ac451b84/optimized-tiles/6/38/6_5.b3dm",
+      "经纬度": [
+        103.85371441180706,
+        1.2920339341833043
+      ],
+      "测绘高度（米）": 18.418,
+      "三角形数": 2821,
+      "立面影像": [
+        {
+          "author": "Dietmar Rabich",
+          "url": "https://commons.wikimedia.org/wiki/File:Singapore_(SG),_Singapore_Recreation_Club_--_2019_--_4501.jpg",
+          "license": "CC BY-SA 4.0",
+          "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/"
+        }
+      ],
+      "材质方法": "窗间墙、门廊石材与屋面取样自 2019 年草场正面照片。主体沿 OneMap 格局与标高，背面和被遮挡的开间沿用可见面样式。"
+    }
+  },
+  {
     "entityId": "bay.bdf8a43d-df18-4111-a7a8-55e83260fd96",
     "kind": "object",
     "regionId": "marina-bay-exterior",
