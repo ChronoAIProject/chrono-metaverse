@@ -10,3 +10,5 @@
 - 广场和压顶石采用 Poly Haven 的 Granite Tile 04，颜色取 2K，法线和粗糙度取 1K。[素材及许可](https://polyhaven.com/a/granite_tile_04)
 
 铺装表面图的 A 通道保存石材的存水倾向。用同一份 Granite Tile 04 的 1K 高度、OpenGL 法线和粗糙度 PNG，依次作为输入传给 `scenes/marina-bay/scripts/bake-paver-surface.py`，第四个参数指定输出 WebP。石缝和湿边采用周期滤波离线烘焙，填入 128 至 252 的范围；湿痕的米制分布由材质控制。[风化方法参考 hypbr](https://github.com/wrong-nebula/hypbr/blob/58beced3de0d58a827c20a166789be9770855cbb/hypbr/weathering.py)
+
+普通建筑的日间外墙图集使用 ambientCG 的 CC0 素材 Facade018A、Facade019A、Facade006、Facade005 和 Facade013，以及滨海中心街墙的门窗与灰泥纹理。图集按楼层尺度重复，每层的透明通道记录玻璃和金属表面的反光权重。[ambientCG](https://ambientcg.com/list?search=facade) · [低层街墙来源](../../../../scenes/marina-bay/references/skyline-finishes/footprints.json)
