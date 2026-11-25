@@ -5,7 +5,7 @@
     "kind": "structure",
     "label": "滨海湾 · 远景楼群与临湾外墙",
     "regionId": "marina-bay-exterior",
-    "assetHash": "c2b21319f957610cbb01298e964a9ab82a1c7514b9b5b4a84280c0573a36faf8",
+    "assetHash": "b8274c97aa4d629e95a9bfd9c437448dc0b54c2110ad4404b8ec78b6f524f235",
     "material": {
       "shading": "albedo"
     },
@@ -23,7 +23,7 @@
     },
     "props": {
       "background": true,
-      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Daylight glass sample by ambientCG and concrete scan by Poly Haven (CC0). Cladding, floor pitches and openings are visual approximations. Concrete coping scan by Poly Haven (CC0).",
+      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Daylight glass sample by ambientCG and concrete scan by Poly Haven (CC0). Cladding, floor pitches and openings are visual approximations. Concrete coping scan by Poly Haven (CC0). Office grids adapted for daylight from Facade014 and Facade017 by ambientCG (CC0).",
       "表面": "基于地图楼高与轮廓，采用阳台、竖向陶板、石柱窗墙、蓝色层间板、成对窗与横向百叶区分楼群。"
     }
   },
@@ -165,6 +165,34 @@
       "background": true,
       "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Daylight glass sample by ambientCG and concrete scan by Poly Haven (CC0). Cladding, floor pitches and openings are visual approximations. Concrete coping scan by Poly Haven (CC0).",
       "表面": "基于地图楼高与轮廓，采用阳台、竖向陶板、石柱窗墙、蓝色层间板、成对窗与横向百叶区分楼群。"
+    }
+  },
+  {
+    "entityId": "bay.waterfront-skyline-facades.concourse",
+    "layer": "ext",
+    "kind": "structure",
+    "label": "滨海中心远景 · Concourse 楼群",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "546aa1461c2f111cbdc8b15ecd0e37136291121f340d55d7058d5ecff0d1b4da",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        -187.63287584140812,
+        -60.764545624906056,
+        2359.6609125748905
+      ],
+      "max": [
+        -18.216666533175307,
+        101.26278742955724,
+        2524.993386512448
+      ]
+    },
+    "props": {
+      "background": true,
+      "版权": "© OpenStreetMap contributors (ODbL), building relations 14347745–14347748. OpenFreeMap building tile 14/12918/8132 supplies the scene-space footprints and elevations. Cladding design is a visual approximation. Glass and concrete samples adapted from Facade005 by ambientCG and Concrete Floor 02 by Poly Haven (CC0).",
+      "表面": "两栋阶梯住宅、八角办公塔与商业裙楼分别采用阳台、遮阳屏、银灰横窗与石质竖柱。"
     }
   }
 ]

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import atlasUrl from '../assets/geography/facades.webp';
 
 const columns = 4;
-const rows = 6;
+const rows = 7;
 const layers = columns * rows;
 
 /** Wall and roof finishes. The alpha channel distinguishes glazing from cladding. */
@@ -65,17 +65,18 @@ export const buildingFinishShader = /* glsl */ `
   uniform highp sampler2DArray buildingFinishes;
   uniform bool buildingFinishesReady;
   // Retain the physical floor pitch even where multiple floors share a belt or pier.
-  const vec2 finishSpan[24] = vec2[24](
+  const vec2 finishSpan[28] = vec2[28](
     vec2(18.0,21.6), vec2(17.4,21.0), vec2(22.4,27.2), vec2(20.0,26.4), vec2(27.0,34.0),
     vec2(15.0,3.55), vec2(14.4,3.55), vec2(6.4,5.0), vec2(3.4), vec2(5.5), vec2(16.2,3.55),
     vec2(14.4,3.55), vec2(18.0,28.4), vec2(24.0,24.85), vec2(25.2,31.95), vec2(21.6,28.4),
     vec2(18.4,21.3), vec2(21.0,28.4), vec2(14.4,28.4), vec2(18.0,21.3),
-    vec2(24.0,20.4), vec2(28.8,28.4), vec2(24.0,29.6), vec2(21.6,28.4));
+    vec2(24.0,20.4), vec2(28.8,28.4), vec2(24.0,29.6), vec2(21.6,28.4),
+    vec2(25.6,28.4), vec2(24.0,28.4), vec2(21.6,21.3), vec2(30.0,28.4));
   // Punched-window, ribbon and curtain-wall buildings each draw from their own palette.
-  const int wallLayers[36] = int[36](
-     0, 12, 14, 16,  1, 13, 20, 23, 19, 21,  4, 18,
-     2, 17, 12, 15,  1, 14, 21, 18, 20, 22,  0, 23,
-     3,  4, 15, 13, 17,  2, 22, 19, 23, 18, 16, 21);
+  const int wallLayers[48] = int[48](
+     0, 12, 14, 16,  1, 13, 20, 23, 19, 21,  4, 18, 24, 25, 26, 27,
+     2, 17, 12, 15,  1, 14, 21, 18, 20, 22,  0, 23, 27, 24, 25, 26,
+     3,  4, 15, 13, 17,  2, 22, 19, 23, 18, 16, 21, 26, 27, 24, 25);
   vec4 buildingFinish(vec3 pos, vec2 tangent, float style) {
     float seed = fract(style);
     int index;
@@ -83,10 +84,9 @@ export const buildingFinishShader = /* glsl */ `
       int frontage = int(seed * 4.0);
       index = frontage < 2 ? 5 + frontage : 8 + frontage;
     } else {
-      // Use all ten footprint seed bits. Window spacing and brightness use
-      // the fractional value directly, so their order does not dictate the finish.
-      int slot = int(seed * 1024.0) % 12;
-      index = wallLayers[int(floor(style)) * 12 + slot];
+      // Keep material selection stable for stacked sections with the same footprint seed.
+      int slot = int(seed * 1024.0) % 16;
+      index = wallLayers[int(floor(style)) * 16 + slot];
     }
     vec2 metres = vec2(dot(pos.xz,tangent),pos.y);
     vec4 sampleColor = texture(buildingFinishes,vec3(metres / finishSpan[index] + vec2(fract(17.0*seed),0.0),float(index)));
