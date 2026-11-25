@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import atlasUrl from '../assets/geography/facades.webp';
 
-const layers = 10;
+const layers = 12;
 
 /** Wall and roof finishes. The alpha channel distinguishes glazing from cladding. */
 function loadFinishes() {
@@ -58,14 +58,18 @@ export const buildingFinishShader = /* glsl */ `
   uniform bool buildingFinishesReady;
   vec4 buildingFinish(vec3 pos, vec2 tangent, float seed, float lowRise) {
     float index = min(4.0, floor(seed * 5.0));
-    if (lowRise > .5) index = seed < .50 ? 5.0 : 6.0;
+    if (lowRise > .5) {
+      float frontage = min(3.0, floor(seed * 4.0));
+      index = frontage < 2.0 ? 5.0 + frontage : 8.0 + frontage;
+    }
     vec2 size = vec2(18.0, 21.6);
     if (index == 1.0) size = vec2(17.4, 21.0);
     if (index == 2.0) size = vec2(22.4, 27.2);
     if (index == 3.0) size = vec2(20.0, 26.4);
     if (index == 4.0) size = vec2(27.0, 34.0);
-    if (index == 5.0) size = vec2(13.8, 3.55);
-    if (index == 6.0) size = vec2(12.6, 3.55);
+    if (index == 5.0) size = vec2(15.0, 3.55);
+    if (index == 6.0 || index == 11.0) size = vec2(14.4, 3.55);
+    if (index == 10.0) size = vec2(16.2, 3.55);
     vec2 metres = vec2(dot(pos.xz,tangent),pos.y);
     vec4 sampleColor = texture(buildingFinishes,vec3(metres / size + vec2(fract(17.0*seed),0.0),index));
     sampleColor.a = clamp((sampleColor.a * 255.0 - 128.0) / 127.0, 0.0, 1.0);

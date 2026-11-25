@@ -24,12 +24,12 @@
     "BrickArcade": [
       "https://polyhaven.com/a/brick_wall_003",
       "https://polyhaven.com/a/painted_metal_shutter",
-      "https://ambientcg.com/a/Facade019A"
+      "Marina Bay rendered courtyard daylight (references/fullerton-courtyard-reflection.jpg)"
     ],
     "PanelArcade": [
-      "https://polyhaven.com/a/rectangular_facade_tiles",
+      "https://polyhaven.com/a/rectangular_facade_tiles_02",
       "https://polyhaven.com/a/painted_metal_shutter",
-      "https://ambientcg.com/a/Facade019A"
+      "Marina Bay rendered courtyard daylight (references/fullerton-courtyard-reflection.jpg)"
     ],
     "ZincRoof": "https://polyhaven.com/a/corrugated_iron_03",
     "SlateRoof": "https://polyhaven.com/a/grey_roof_tiles_02",
@@ -37,7 +37,17 @@
     "Facade005": "https://ambientcg.com/a/Facade005",
     "Facade013": "https://ambientcg.com/a/Facade013",
     "Facade015": "https://ambientcg.com/a/Facade015",
-    "Facade020A": "https://ambientcg.com/a/Facade020A"
+    "Facade020A": "https://ambientcg.com/a/Facade020A",
+    "Workshop": [
+      "https://polyhaven.com/a/factory_wall",
+      "https://polyhaven.com/a/painted_metal_shutter",
+      "Marina Bay rendered courtyard daylight (references/fullerton-courtyard-reflection.jpg)"
+    ],
+    "RibbedFront": [
+      "https://polyhaven.com/a/ribbed_concrete_wall",
+      "https://polyhaven.com/a/painted_metal_shutter",
+      "Marina Bay rendered courtyard daylight (references/fullerton-courtyard-reflection.jpg)"
+    ]
   },
   "parts": [
     {
@@ -1639,7 +1649,7 @@
       "minHeight": 0,
       "height": 5,
       "tile": "14/12918/8134",
-      "finish": "PanelArcade",
+      "finish": "BrickArcade",
       "roofFinish": "SlateRoof",
       "group": "service-south",
       "outline": [
@@ -1676,7 +1686,7 @@
       "minHeight": 0,
       "height": 5,
       "tile": "14/12918/8134",
-      "finish": "BrickArcade",
+      "finish": "RibbedFront",
       "roofFinish": "SlateRoof",
       "group": "service-south",
       "outline": [
@@ -1753,7 +1763,7 @@
       "minHeight": 0,
       "height": 5,
       "tile": "14/12918/8133",
-      "finish": "PanelArcade",
+      "finish": "Workshop",
       "roofFinish": "ZincRoof",
       "group": "service-south",
       "outline": [
@@ -1805,7 +1815,7 @@
       "minHeight": 0,
       "height": 5,
       "tile": "14/12918/8133",
-      "finish": "BrickArcade",
+      "finish": "Workshop",
       "roofFinish": "ZincRoof",
       "group": "service-south",
       "outline": [
@@ -1842,7 +1852,7 @@
       "minHeight": 0,
       "height": 5,
       "tile": "14/12918/8133",
-      "finish": "PanelArcade",
+      "finish": "BrickArcade",
       "roofFinish": "SlateRoof",
       "group": "service-south",
       "outline": [
@@ -1916,7 +1926,7 @@
       "minHeight": 0,
       "height": 5,
       "tile": "14/12918/8133",
-      "finish": "BrickArcade",
+      "finish": "RibbedFront",
       "roofFinish": "SlateRoof",
       "group": "service-south",
       "outline": [
@@ -1990,7 +2000,7 @@
       "minHeight": 0,
       "height": 3,
       "tile": "14/12918/8133",
-      "finish": "BrickArcade",
+      "finish": "Workshop",
       "roofFinish": "SlateRoof",
       "group": "service-centre",
       "outline": [
@@ -2047,7 +2057,7 @@
       "minHeight": 0,
       "height": 3,
       "tile": "14/12918/8133",
-      "finish": "BrickArcade",
+      "finish": "PanelArcade",
       "roofFinish": "ZincRoof",
       "group": "service-centre",
       "outline": [
@@ -2126,7 +2136,7 @@
       "minHeight": 0,
       "height": 3,
       "tile": "14/12918/8133",
-      "finish": "BrickArcade",
+      "finish": "PanelArcade",
       "roofFinish": "SlateRoof",
       "group": "service-centre",
       "outline": [
@@ -2163,7 +2173,7 @@
       "minHeight": 0,
       "height": 3,
       "tile": "14/12918/8133",
-      "finish": "BrickArcade",
+      "finish": "RibbedFront",
       "roofFinish": "ConcreteRoof",
       "group": "service-centre",
       "outline": [
@@ -2210,7 +2220,7 @@
       "minHeight": 0,
       "height": 3,
       "tile": "14/12918/8133",
-      "finish": "PanelArcade",
+      "finish": "BrickArcade",
       "roofFinish": "SlateRoof",
       "group": "service-centre",
       "outline": [
@@ -2253,5 +2263,5 @@
       ]
     }
   ],
-  "lowRiseCopyright": "Building footprints and heights \u00a9 OpenStreetMap contributors (ODbL), via OpenFreeMap. Brick, ceramic cladding, shutter and roof surfaces by Poly Haven (CC0). Window finish by ambientCG (CC0). Openings and finishes are visual approximations."
+  "lowRiseCopyright": "Building footprints and heights \u00a9 OpenStreetMap contributors (ODbL), via OpenFreeMap. Wall, shutter and roof scans by Poly Haven (CC0). Window panels use sampled Marina Bay scene radiance. Openings and finishes are visual approximations."
 }

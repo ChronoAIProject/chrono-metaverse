@@ -18,7 +18,8 @@ REFERENCES = ROOT / "references/skyline-finishes"
 REPEAT = {"Facade006": (22.4, 27.2), "Facade018A": (18.0, 21.6), "Facade019A": (17.4, 21.0),
           "Facade005": (24.0, 42.6), "Facade013": (28.8, 56.8),
           "Facade015": (28.8, 56.8), "Facade020A": (18.0, 21.3),
-          "ServiceWall": (12.0, 3.55), "BrickArcade": (13.8, 3.55), "PanelArcade": (12.6, 3.55)}
+          "ServiceWall": (12.0, 3.55), "BrickArcade": (15.0, 3.55), "PanelArcade": (14.4, 3.55),
+          "Workshop": (16.2, 3.55), "RibbedFront": (14.4, 3.55)}
 
 
 def facade_material(name):
@@ -100,10 +101,11 @@ def roof_surface(part):
 
 
 def bake_group(group, parts, credit_line):
+    if any(not part.get("roofFinish") for part in parts):
+        credit_line += " Concrete coping scan by Poly Haven (CC0)."
     if any(part.get("groundFloorFinish") for part in parts):
         credit_line += " Ground-floor cladding and shutter scans by Poly Haven (CC0)."
     finishes = {}
-    trim = []
     for part in parts:
         if ground_finish := part.get("groundFloorFinish"):
             floor_height = part["height"] / max(1, round(part["height"] / 3.55))
@@ -112,7 +114,10 @@ def bake_group(group, parts, credit_line):
             part = {**part, "minHeight": floor_height}
         wall, coping = exterior(part)
         finishes.setdefault(part["finish"], []).append(wall)
-        trim.append(coping)
+        # At roof height the coping is horizontal. Carry the finish across it
+        # in metres, including the original narrow caps on the taller blocks.
+        coping.visual = TextureVisuals(uv=coping.vertices[:, [0, 2]] / 3.4)
+        finishes.setdefault(part.get("roofFinish", "ConcreteRoof"), []).append(coping)
         if part.get("roofFinish"):
             finishes.setdefault(part["roofFinish"], []).append(roof_surface(part))
     scene = trimesh.Scene()
@@ -121,10 +126,6 @@ def bake_group(group, parts, credit_line):
         mesh = trimesh.util.concatenate(pieces)
         mesh.visual = TextureVisuals(uv=uv, material=facade_material(name))
         scene.add_geometry(mesh, geom_name=name)
-    coping = trimesh.util.concatenate(trim)
-    coping.visual = TextureVisuals(material=PBRMaterial(name="Coping", baseColorFactor=[142,147,147,255],
-                                                       metallicFactor=0, roughnessFactor=.87))
-    scene.add_geometry(coping, geom_name="Coping")
     low, high = scene.bounds
     origin = (low + high) / 2
     origin[1] = low[1]
@@ -150,7 +151,7 @@ def bake_group(group, parts, credit_line):
         "props": {
             "background": True,
             "版权": credit_line,
-            "表面": ("基于地图楼高与轮廓，金属、瓦片和混凝土屋面，砖墙、面砖、卷帘门与窗带按米制尺度估算。" if low_rise
+            "表面": ("基于地图楼高与轮廓，砖墙、面砖、压型板和肋纹混凝土沿街交替。玻璃门窗、百叶、装卸门及屋顶收边按米制尺度估算。" if low_rise
                    else "基于地图楼高与轮廓，采用四组日间玻璃、百叶、窗带及面砖纹理估算楼层与开间。"),
         },
     }
