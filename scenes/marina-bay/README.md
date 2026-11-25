@@ -53,6 +53,8 @@ One Fullerton 临水入口的玻璃侧墙和后墙采用 Андрей Бобро
 
 浮尔顿路双向车道按 OSM 单向中心线与车道数生成；转向开口保持可通行。六段路侧及中央绿带沿 OneMap 正射影像描绘。路面颗粒采用 2.08 米宽的沥青扫描，路宽、标线和路缘高度为重建估值。用 `scripts/bake-fullerton-road.py` 传入该区域 OSM XML 和 1K 沥青原图可重新烘焙。[道路](https://www.openstreetmap.org/way/22919331) · [OneMap](https://www.onemap.gov.sg/) · [沥青](https://polyhaven.com/a/asphalt_01) · [草皮](https://ambientcg.com/a/Grass004)
 
+莱佛士林荫道与淡马锡道周边的车道、分流岛和步道共用一个地面模型。运行 `python scripts/bake-marina-centre-roads.py` 可从仓库内的道路中心线、正射影像描绘的边界和扫描纹理重建。标线、轮迹、路缘高度与铺装尺度为估值。[道路线形与许可](https://www.openstreetmap.org/copyright) · [OneMap](https://www.onemap.gov.sg/) · [沥青](https://polyhaven.com/a/asphalt_01) · [草皮](https://ambientcg.com/a/Grass004) · [花岗岩](https://polyhaven.com/a/granite_tile_04)
+
 在仓库根目录先安装 `web` 和 `sdk/typescript` 的依赖、编译 SDK，再进入本目录：
 
 ```sh
