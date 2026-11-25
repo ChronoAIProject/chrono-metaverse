@@ -45,7 +45,72 @@ def diffuse_probe(radiance):
     return np.einsum("hwn,hwc,hw->nc", basis, radiance, area).round(7).flatten().tolist()
 
 
-def bake(morning_path, cloud_path, output):
+def angular_blur(field, sigma_cells, axis):
+    radius = int(np.ceil(3 * sigma_cells))
+    offsets = np.arange(-radius, radius + 1)
+    weights = np.exp(-.5 * (offsets / sigma_cells)**2)
+    weights /= weights.sum()
+    if axis == 1:
+        return sum(w * np.roll(field, shift, axis=1) for shift, w in zip(offsets, weights))
+    padded = np.pad(field, ((radius, radius), (0, 0), (0, 0)), mode="edge")
+    return sum(w * padded[start:start + len(field)] for start, w in enumerate(weights))
+
+
+def resize_panorama(field, width, height):
+    # Pad the longitude seam so both ends interpolate between the same cells.
+    border = width // field.shape[1]
+    wrapped = np.concatenate((field[:, -1:], field, field[:, :1]), axis=1)
+    channels = []
+    for channel in wrapped.transpose(2, 0, 1):
+        image = Image.fromarray(channel.astype(np.float32))
+        enlarged = image.resize((width + 2 * border, height), Image.Resampling.BILINEAR)
+        channels.append(np.asarray(enlarged)[:, border:border + width])
+    return np.stack(channels, axis=2)
+
+
+def add_cloud_structure(mixed, cloud, latitude):
+    height, width = mixed.shape[:2]
+    # Exclude the source landscape from the horizon filter.
+    upper = latitude > np.radians(1)
+    cloud[~upper] = cloud[np.flatnonzero(upper)[-1]]
+    log_cloud = np.log(np.maximum(.0002, cloud))
+    small = log_cloud.reshape(128, height // 128, 256, width // 256, 3).mean((1, 3))
+    latitude_blur = angular_blur(small, 8 * 128 / 180, axis=0)
+    broad = angular_blur(latitude_blur, 8 * 256 / 360, axis=1)
+    local_contrast = log_cloud - resize_panorama(broad, width, height)
+    fade = np.clip((np.degrees(latitude) - .7) / 3, 0, 1)
+    fade = (fade**2 * (3 - 2 * fade))[:, None, None]
+    layered = mixed * np.exp(.9 * fade * np.clip(local_contrast, -1.9, 1.9))
+
+    # Match the original low-frequency diffuse illumination in each colour
+    # channel while permitting clouds to change reflected radiance locally.
+    rows, columns = 64, 128
+    def upper_average(image):
+        return image.reshape(rows, height // rows, columns, width // columns, 3).mean((1, 3))[:rows // 2]
+
+    original = upper_average(mixed)
+    candidate = upper_average(layered)
+    el = (.5 - (np.arange(rows // 2) + .5) / rows) * np.pi
+    az = ((np.arange(columns) + .5) / columns - .5) * 2 * np.pi
+    y, x, z = np.broadcast_arrays(np.sin(el)[:, None], np.cos(el)[:, None] * np.cos(az),
+                                  np.cos(el)[:, None] * np.sin(az))
+    harmonics = np.stack([np.ones_like(x), x, y, z, x*y, x*z, y*z, x*x-y*y, 3*z*z-1], axis=-1)
+    basis = harmonics.reshape(-1, 9)
+    area = np.broadcast_to(np.cos(el)[:, None], x.shape).ravel()
+    gain = np.empty_like(candidate)
+    for channel in range(3):
+        target = basis.T @ (original[:, :, channel].ravel() * area)
+        values = candidate[:, :, channel].ravel() * area
+        coeff = np.zeros(9)
+        for _ in range(5):
+            weighted = values * np.exp(basis @ coeff)
+            coeff += np.linalg.solve(basis.T @ (weighted[:, None] * basis), target - basis.T @ weighted)
+        gain[:, :, channel] = np.exp(harmonics @ coeff)
+    gain = np.concatenate((gain, np.repeat(gain[-1:], rows // 2, axis=0)))
+    return layered * resize_panorama(gain, width, height)
+
+
+def bake(morning_path, cloud_path, output, detail_path=None):
     sky = json.loads(PREVIOUS.read_text())
     day = sky["daylight"]
     morning_digest = hashlib.md5(morning_path.read_bytes()).hexdigest()
@@ -81,6 +146,15 @@ def bake(morning_path, cloud_path, output):
     mixed = base * (1 - fade) + mixed * fade
     mixed /= irradiance(mixed) @ LUMA
 
+    if detail_path is not None:
+        # The 4K Kloofendal 38d capture supplies cloud structure at about the
+        # same solar elevation. Register its measured solar centroid in yaw.
+        detail_azimuth = 35.9417
+        detail, _, _ = read_sky(detail_path, detail_azimuth, 37.9541, lat, lon)
+        shift = round((day["azimuth"] - detail_azimuth) * w / 360)
+        mixed = add_cloud_structure(mixed, np.roll(detail, shift, axis=1), lat)
+        mixed /= irradiance(mixed) @ LUMA
+
     total = exposure.HORIZONTAL_IRRADIANCE
     diffuse = mixed * (total * (1 - day["directFraction"]))
     display = diffuse.copy()
@@ -111,5 +185,6 @@ if __name__ == "__main__":
     parser.add_argument("morning", type=Path, help="Qwantani Mid Morning or Morning (Pure Sky), 4K HDR")
     parser.add_argument("clouds", type=Path, help="Kloofendal 48d Partly Cloudy (Pure Sky), 4K HDR")
     parser.add_argument("output", type=Path)
+    parser.add_argument("--cloud-detail", type=Path, help="Kloofendal 38d Partly Cloudy (Pure Sky), 4K HDR")
     args = parser.parse_args()
-    bake(args.morning, args.clouds, args.output)
+    bake(args.morning, args.clouds, args.output, args.cloud_detail)
