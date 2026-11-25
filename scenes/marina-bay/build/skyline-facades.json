@@ -5,7 +5,7 @@
     "kind": "structure",
     "label": "滨海湾 · 远景楼群与临湾外墙",
     "regionId": "marina-bay-exterior",
-    "assetHash": "b8274c97aa4d629e95a9bfd9c437448dc0b54c2110ad4404b8ec78b6f524f235",
+    "assetHash": "9d19ebf8e5c622353e3de5c85b3bd693ed3a28a0d3c0db3bccf9ead4cc1a0ca5",
     "material": {
       "shading": "albedo"
     },
@@ -33,7 +33,7 @@
     "kind": "structure",
     "label": "滨海湾 · 远景楼群与临湾外墙",
     "regionId": "marina-bay-exterior",
-    "assetHash": "b429ee33eaba31fd74dd8c3de709bf513a2ce30c361dff690eda749e3a7c9fc0",
+    "assetHash": "54ae8de59154b3a6e478af9b27518f5e440d89bcefde4b18294ced9a51f2d77d",
     "material": {
       "shading": "albedo"
     },
@@ -61,7 +61,7 @@
     "kind": "structure",
     "label": "滨海湾 · 远景楼群与临湾外墙",
     "regionId": "marina-bay-exterior",
-    "assetHash": "c61c812d594e725c257d854272f329274817bd725f9dbf621c95b237590758f6",
+    "assetHash": "c28ec5551bd8c35656d70440b80660a5aff0895cae13030655cc54eb621e1fc6",
     "material": {
       "shading": "albedo"
     },
@@ -145,7 +145,7 @@
     "kind": "structure",
     "label": "滨海湾 · 远景楼群与临湾外墙",
     "regionId": "marina-bay-exterior",
-    "assetHash": "cda239570b27a34dda6558d37e07bf62c0a6ec568548fc33f70e543249158079",
+    "assetHash": "ac39bc28b32c4824ec15d14f4fbc38c5db63961f3e9eed1c79125b38438d3821",
     "material": {
       "shading": "albedo"
     },
@@ -173,7 +173,7 @@
     "kind": "structure",
     "label": "滨海中心远景 · Concourse 楼群",
     "regionId": "marina-bay-exterior",
-    "assetHash": "546aa1461c2f111cbdc8b15ecd0e37136291121f340d55d7058d5ecff0d1b4da",
+    "assetHash": "70ccfbd840b84db214326232666a42fcd887d01de8f89f53383d26df883de335",
     "material": {
       "shading": "albedo"
     },

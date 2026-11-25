@@ -1,3 +1,4 @@
+import { outdoorSurfaceVariation } from './surfaceVariation';
 import { prepareTreeWind, updateTreeWind } from './treeWind';
 import { PriorityQueue } from '3d-tiles-renderer/core';
 import { cityCutout, matchCutoutShadow } from './cityCutout';
@@ -871,6 +872,7 @@ export class SceneView {
       if (air) {
         filterModelSurface(material, this.renderer.capabilities.getMaxAnisotropy());
         cityModelAir(material, roofScale);
+        outdoorSurfaceVariation(material);
       }
       if (ao && material instanceof THREE.MeshStandardMaterial) {
         const target = material;
