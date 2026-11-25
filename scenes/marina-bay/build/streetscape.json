@@ -2378,5 +2378,35 @@
       "材质说明": "按 OneMap 测绘屋面、退台和短翼设置墙与斜屋顶。Casuarina Cove 与 Camelot 的暗窗取自现场夜景中的未点灯窗，日间底色与第三组住宅窗带参考同街区日景。楼间遮蔽与三层环境反射按各组团估算。",
       "三角形数": 16100
     }
+  },
+  {
+    "entityId": "bay.marina-centre-carriageways",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海中心 · 莱佛士林荫道与淡马锡道",
+    "assetHash": "6482fbad85ae4e71ef484e5630d273f38ccb1bc5393f33eff37f2de38906236c",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        -292.78318085324867,
+        -60.44745091915634,
+        1320.4996175224087
+      ],
+      "max": [
+        14.519851964851107,
+        -60.3243769824313,
+        1655.7356445596104
+      ]
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "版权": "Roads © OpenStreetMap contributors (ODbL). Map Data © Singapore Land Authority / OneMap. Asphalt 01 and Granite Tile 04 by Poly Haven, Grass 004 by ambientCG (CC0).",
+      "路旁地面": "按正射影像描绘绿地和铺装。石板尺寸、路缘高度、草色为估值。",
+      "道路材质": "扫描沥青与路面涂料。车道数和道路线形取自 OSM，路宽、标线及磨耗为视觉近似。"
+    }
   }
 ]
