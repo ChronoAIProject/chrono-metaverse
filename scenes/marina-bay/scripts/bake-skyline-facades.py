@@ -106,7 +106,12 @@ def roof_surface(part):
         vertices.extend(points)
     mesh = trimesh.Trimesh(vertices=vertices, faces=np.arange(len(vertices)).reshape(-1, 3), process=False)
     offset = mesh.vertices[:, [0, 2]] - plan[0]
-    mesh.visual = TextureVisuals(uv=np.column_stack([offset @ axis / 6.4, offset @ across / 5.0]))
+    # Keep adjoining courses parallel. Offset their origin separately for each mapped roof.
+    key = hashlib.sha256(f"{part['featureId']}/{plan[0].tolist()}".encode()).digest()
+    phase = np.frombuffer(key[:8], dtype="<u4") / 2**32
+    width, height = {"SlateRoof": (3.4, 3.4), "ZincRoof": (6.4, 5.0),
+                     "ConcreteRoof": (5.5, 5.5)}[part["roofFinish"]]
+    mesh.visual = TextureVisuals(uv=np.column_stack([offset @ axis / width, offset @ across / height]) + phase)
     return mesh
 
 
