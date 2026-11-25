@@ -12,7 +12,8 @@ from PIL import Image
 exposure = import_module("bake-clear-sky")
 LUMA = np.array([.2126, .7152, .0722])
 PREVIOUS = Path(__file__).resolve().parents[1] / "references/qwantani-balanced-sky.json"
-CLOUD_FRACTION = .35
+CLOUD_FRACTION = .30
+CLOUD_CONTRAST = .50
 
 
 def read_sky(path, azimuth, elevation, latitude, longitude):
@@ -80,7 +81,7 @@ def add_cloud_structure(mixed, cloud, latitude):
     local_contrast = log_cloud - resize_panorama(broad, width, height)
     fade = np.clip((np.degrees(latitude) - .7) / 3, 0, 1)
     fade = (fade**2 * (3 - 2 * fade))[:, None, None]
-    layered = mixed * np.exp(.9 * fade * np.clip(local_contrast, -1.9, 1.9))
+    layered = mixed * np.exp(CLOUD_CONTRAST * fade * np.clip(local_contrast, -1.9, 1.9))
 
     # Match the original low-frequency diffuse illumination in each colour
     # channel while permitting clouds to change reflected radiance locally.
@@ -116,8 +117,8 @@ def bake(morning_path, cloud_path, output, detail_path=None):
     morning_digest = hashlib.md5(morning_path.read_bytes()).hexdigest()
     if morning_digest == "e403ba6805b2e6b7da51a13a4aaab898":
         # Solar centroid and direct-light chromaticity from the 4K mid-morning HDR.
-        day.update(azimuth=36.051, elevation=40.1473, sunColor=[1.06352, 0.99158, 0.8964])
-        sky["yaw"] = round(day["azimuth"] - 71.5454 - 65, 4)  # 65 degrees from geographic north
+        day.update(azimuth=36.051, elevation=40.1473, directFraction=.68, sunColor=[1.06352, 0.99158, 0.8964])
+        sky["yaw"] = round(day["azimuth"] - 71.5454 - 88, 4)  # 88 degrees from geographic north
     elif morning_digest != "b065d32bfc96c2a87f0547bd06ba30f5":
         raise ValueError(f"Unexpected Qwantani 4K HDR source: {morning_path.name}")
     if hashlib.md5(cloud_path.read_bytes()).hexdigest() != "816340c969d2e60d659051d13ac3c4dc":
