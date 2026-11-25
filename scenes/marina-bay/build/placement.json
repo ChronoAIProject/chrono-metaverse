@@ -68,7 +68,7 @@
       "kind": "object",
       "label": "MBFC Tower 1 · 十四层以下楼体（剖面）",
       "regionId": "marina-bay-exterior",
-      "assetHash": "42598f4f4621352ca325ca42ae716e71c34b98f6fe3f33838d766945cbec1d4f",
+      "assetHash": "a265477c567665dda0f3f9d593ed260f785fd79386aaf728fb0e303771dce3f0",
       "bounds": {
         "min": [
           -20.402247,
@@ -112,7 +112,11 @@
               15.4088
             ]
           }
-        }
+        },
+        "幕墙日间反射": "原测绘外墙按表面朝向区分玻璃、楼顶与底座。窗面使用跨湾实拍估计的底色，并按世界高度采样来自对岸和金融区的局部环境光。"
+      },
+      "material": {
+        "shading": "albedo"
       }
     },
     {
@@ -121,7 +125,7 @@
       "kind": "object",
       "label": "MBFC Tower 1 · 完整楼体上部",
       "regionId": "marina-bay-exterior",
-      "assetHash": "a0472e8a8bd4b8f248e45d190aaeaa111438b2c392d1281fdf50833a10204447",
+      "assetHash": "f91dd981e988a74b20785c76e28fc19c1fb7200c265b6639e4397b8300234c4b",
       "bounds": {
         "min": [
           -14.597709,
@@ -152,7 +156,11 @@
           "minDistance": 80
         },
         "处理说明": "远看时显示所在楼层以上的完整官方楼体",
-        "background": true
+        "background": true,
+        "幕墙日间反射": "原测绘外墙按表面朝向区分玻璃、楼顶与底座。窗面使用跨湾实拍估计的底色，并按世界高度采样来自对岸和金融区的局部环境光。"
+      },
+      "material": {
+        "shading": "albedo"
       }
     },
     {
@@ -161,7 +169,7 @@
       "kind": "object",
       "label": "MBFC Tower 1 · 十四层外墙",
       "regionId": "marina-bay-exterior",
-      "assetHash": "f75a24f2d82db513954c94338ebc8cf9122944e5a6d0010ac490e1d64a5bb1be",
+      "assetHash": "9d7bddc67f87827734b8a1e70610e6119a05927aa82209eb6bb8b32b4728aa76",
       "bounds": {
         "min": [
           -14.59958,
@@ -191,7 +199,11 @@
           ],
           "minDistance": 80
         },
-        "background": true
+        "background": true,
+        "幕墙日间反射": "原测绘外墙按表面朝向区分玻璃、楼顶与底座。窗面使用跨湾实拍估计的底色，并按世界高度采样来自对岸和金融区的局部环境光。"
+      },
+      "material": {
+        "shading": "albedo"
       }
     },
     {
@@ -200,7 +212,7 @@
       "kind": "object",
       "label": "MBFC Tower 1 · 十四层外墙",
       "regionId": "marina-bay-exterior",
-      "assetHash": "57e48f32c201ebd167e34106285a9dd3595adbb1e14bd95581bc2d799366f8e8",
+      "assetHash": "b74dd6d076a84866753d71a573f9780b71a4d407970508d78f777fbf2fbdc064",
       "bounds": {
         "min": [
           11.62,
@@ -230,7 +242,11 @@
           ],
           "minDistance": 80
         },
-        "background": true
+        "background": true,
+        "幕墙日间反射": "原测绘外墙按表面朝向区分玻璃、楼顶与底座。窗面使用跨湾实拍估计的底色，并按世界高度采样来自对岸和金融区的局部环境光。"
+      },
+      "material": {
+        "shading": "albedo"
       }
     },
     {
@@ -239,7 +255,7 @@
       "kind": "object",
       "label": "MBFC Tower 1 · 十四层外墙",
       "regionId": "marina-bay-exterior",
-      "assetHash": "02d1ce857f2eba485a58dfd92cafb9b7df77880e33ba44d77082c0fc524ad5c2",
+      "assetHash": "79d30c9d8157aa79d7b40ecb3965bd08c484cfaee2839f9489d151218ef3776c",
       "bounds": {
         "min": [
           -0.12,
@@ -269,7 +285,11 @@
           ],
           "minDistance": 80
         },
-        "background": true
+        "background": true,
+        "幕墙日间反射": "原测绘外墙按表面朝向区分玻璃、楼顶与底座。窗面使用跨湾实拍估计的底色，并按世界高度采样来自对岸和金融区的局部环境光。"
+      },
+      "material": {
+        "shading": "albedo"
       }
     },
     {
@@ -278,7 +298,7 @@
       "kind": "object",
       "label": "MBFC Tower 1 · 十四层外墙",
       "regionId": "marina-bay-exterior",
-      "assetHash": "d41fcd5bb2f5a8cca9f37488aee66d3fb268d1897718fcc181f75e17842f1481",
+      "assetHash": "07103eb3ab8ab5229a3ca52150effa9b733d6de4d1130a859bd8acf3f586f89b",
       "bounds": {
         "min": [
           4.830842,
@@ -308,7 +328,11 @@
           ],
           "minDistance": 80
         },
-        "background": true
+        "background": true,
+        "幕墙日间反射": "原测绘外墙按表面朝向区分玻璃、楼顶与底座。窗面使用跨湾实拍估计的底色，并按世界高度采样来自对岸和金融区的局部环境光。"
+      },
+      "material": {
+        "shading": "albedo"
       }
     },
     {

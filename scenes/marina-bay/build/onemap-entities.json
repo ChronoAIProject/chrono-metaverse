@@ -6648,7 +6648,7 @@
     "kind": "object",
     "label": "THE SAIL @ MARINA BAY",
     "regionId": "marina-bay-exterior",
-    "assetHash": "4e106564f9238b45b8decf96f6ad19d9ff5d7e9cd19886d286293faf3abbde72",
+    "assetHash": "504d929680f7f1eb414fd786541d1ff4ba235a336d7f9425371bb378a8af19cc",
     "bounds": {
       "min": [
         157.142935,
@@ -6671,11 +6671,12 @@
       "官方测量高度（米）": 241.983,
       "三角形数": 1728,
       "modelOcclusion": {
-        "sourceAsset": "4e106564f9238b45b8decf96f6ad19d9ff5d7e9cd19886d286293faf3abbde72",
+        "sourceAsset": "504d929680f7f1eb414fd786541d1ff4ba235a336d7f9425371bb378a8af19cc",
         "material": "dc2400602",
         "texture": "9607caad0ba4fcb78d893e3a45557de1896f738c74b44cadf511a6c5847d5e04"
       },
-      "跨湾立面亮度": "按两处临水实拍中立面相对天空的亮度估计曝光，在测绘外墙图集上校准。窗格与遮阳构件的局部明暗以相邻框材为参照。"
+      "跨湾立面亮度": "按两处临水实拍中立面相对天空的亮度估计曝光，在测绘外墙图集上校准。窗格与遮阳构件的局部明暗以相邻框材为参照。",
+      "镀膜色度估计": "以天空与邻楼中性色校正两处实拍的色偏，从各立面的投影面积估计不同反射方向的镀膜色度。三层本地环境反射贴图记录估计结果，掠射方向逐渐趋近中性。"
     },
     "textures": [
       "9607caad0ba4fcb78d893e3a45557de1896f738c74b44cadf511a6c5847d5e04"
@@ -6777,7 +6778,7 @@
     "kind": "object",
     "label": "ONE MARINA BOULEVARD",
     "regionId": "marina-bay-exterior",
-    "assetHash": "ed7b6629255418f3a8c1878ec476d27830339f4a38373da57c5920e78d0387b9",
+    "assetHash": "270f7973e1300d4dfa9b7fbb5eebd8c1197c1d7154897073a48383d17ecb2067",
     "bounds": {
       "min": [
         231.076513,
@@ -6799,7 +6800,8 @@
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 164.295,
       "三角形数": 3824,
-      "跨湾立面亮度": "按两处临水实拍中立面相对天空的亮度估计曝光，在测绘外墙图集上校准。窗格与遮阳构件的局部明暗以相邻框材为参照。"
+      "跨湾立面亮度": "按两处临水实拍中立面相对天空的亮度估计曝光，在测绘外墙图集上校准。窗格与遮阳构件的局部明暗以相邻框材为参照。",
+      "镀膜色度估计": "以天空与邻楼中性色校正两处实拍的色偏，从各立面的投影面积估计不同反射方向的镀膜色度。三层本地环境反射贴图记录估计结果，掠射方向逐渐趋近中性。"
     }
   },
   {
@@ -6902,7 +6904,7 @@
     "kind": "object",
     "label": "OUE BAYFRONT",
     "regionId": "marina-bay-exterior",
-    "assetHash": "dc5d940ffb0eba7e75d1ff6dc51cd44dc7c007d73ee9fb81eb488f54b383a650",
+    "assetHash": "566b1d2b142c2e2ec924f4b9351829b5b56793aafbd43ecef1eb4ae609f9d0ec",
     "bounds": {
       "min": [
         228.377465,
@@ -6925,10 +6927,11 @@
       "官方测量高度（米）": 101.935,
       "三角形数": 3524,
       "modelOcclusion": {
-        "sourceAsset": "dc5d940ffb0eba7e75d1ff6dc51cd44dc7c007d73ee9fb81eb488f54b383a650",
+        "sourceAsset": "566b1d2b142c2e2ec924f4b9351829b5b56793aafbd43ecef1eb4ae609f9d0ec",
         "material": "dc2400418",
         "texture": "c4970bfbde71a0fb3ab6426a757f8e189327bf5b76d2c3cbae7cce006947eea7"
-      }
+      },
+      "镀膜色度估计": "以天空与邻楼中性色校正两处实拍的色偏，从各立面的投影面积估计不同反射方向的镀膜色度。三层本地环境反射贴图记录估计结果，掠射方向逐渐趋近中性。"
     },
     "textures": [
       "c4970bfbde71a0fb3ab6426a757f8e189327bf5b76d2c3cbae7cce006947eea7"
@@ -7723,7 +7726,7 @@
     "kind": "object",
     "label": "ONE RAFFLES QUAY (NORTH TOWER)",
     "regionId": "marina-bay-exterior",
-    "assetHash": "f67318d63cafd84e2c0e792d48b933356c05101c450bb86387a9b62800d07112",
+    "assetHash": "9daf5ba3498cd9b4b5b8298feea2c5824dd7bf87dbc64556a0ec89021bb21591",
     "bounds": {
       "min": [
         243.863294,
@@ -7746,10 +7749,11 @@
       "官方测量高度（米）": 242.286,
       "三角形数": 584,
       "modelOcclusion": {
-        "sourceAsset": "f67318d63cafd84e2c0e792d48b933356c05101c450bb86387a9b62800d07112",
+        "sourceAsset": "9daf5ba3498cd9b4b5b8298feea2c5824dd7bf87dbc64556a0ec89021bb21591",
         "material": "dc2400800",
         "texture": "ecf05c773f2d0b3e291a8c83555be5c74f05b48f03d1dcb43e94584b100a2c6a"
-      }
+      },
+      "镀膜色度估计": "以天空与邻楼中性色校正两处实拍的色偏，从各立面的投影面积估计不同反射方向的镀膜色度。三层本地环境反射贴图记录估计结果，掠射方向逐渐趋近中性。"
     },
     "textures": [
       "ecf05c773f2d0b3e291a8c83555be5c74f05b48f03d1dcb43e94584b100a2c6a"
@@ -7821,7 +7825,7 @@
     "kind": "object",
     "label": "HITACHI TOWER",
     "regionId": "marina-bay-exterior",
-    "assetHash": "8e689b9f92acee6a952e8a4e3f6fb557aa571f6b39318553e3675a4dd0ac0078",
+    "assetHash": "e570fe9bde184dd89a9cca55f00d068cbdf5f4ed548ed692ac81be8bd8b81ee0",
     "bounds": {
       "min": [
         341.179069,
@@ -7848,7 +7852,8 @@
       "日间墙面校准": "用 2010-01-24 和 2015-02-19 跨湾实拍核对墙面亮度分布。原测绘纹理在线性光下按墙面法线调整中间调，亮度枢轴 0.72，额外指数 0.4。照片用于测量。",
       "高层窗带反射": "按测绘贴图区分玻璃及框料的粗糙度，玻璃取本楼三个高度的环境反射。在三处实拍机位按相邻楼面配准曝光后校准窗带的底色。",
       "窗格明暗校准": "在测绘立面的纹理坐标内，以相邻窗框、墙面和玻璃的实拍亮度差估计窗格漫反射。按跨湾机位分别校准，遮挡区域沿用测绘影像。",
-      "周边天空光": "从当前实景的遮挡几何、漫射天空与一次间接反弹估计窗面的可见天空光，并按不同朝向的跨湾照片校准。"
+      "周边天空光": "从当前实景的遮挡几何、漫射天空与一次间接反弹估计窗面的可见天空光，并按不同朝向的跨湾照片校准。",
+      "镀膜色度估计": "以天空与邻楼中性色校正两处实拍的色偏，从各立面的投影面积估计不同反射方向的镀膜色度。三层本地环境反射贴图记录估计结果，掠射方向逐渐趋近中性。"
     },
     "material": {
       "shading": "albedo"
@@ -8114,7 +8119,7 @@
     "kind": "object",
     "label": "ONE GEORGE STREET",
     "regionId": "marina-bay-exterior",
-    "assetHash": "dc65ea737428c314305fb18715583a482bc3ca2d6e3014e5ed490bec90575a35",
+    "assetHash": "89361da84e60422d4f30138de7f70721ef055151c9a93f86eaef3941c33cd723",
     "material": {
       "shading": "albedo"
     },
@@ -8138,7 +8143,8 @@
       "来源地址": "https://github.com/cheeaun/om3d/blob/ac451b84/optimized-tiles/7/73/10_5.b3dm",
       "幕墙影像署名": "Facade texture adapted from Boat Quay and One George Street (13735227334) by Nicolas Lannuzel, CC BY-SA 2.0, https://commons.wikimedia.org/wiki/File:Boat_Quay_and_One_George_Street_(13735227334).jpg ; https://creativecommons.org/licenses/by-sa/2.0/",
       "处理说明": "OneMap 三维测绘外形，按驳船码头实拍提取窗格。遮挡面使用同楼纹理，幕墙粗糙度和天光反射为估计值。",
-      "三角形数": 1354
+      "三角形数": 1354,
+      "镀膜色度估计": "以天空与邻楼中性色校正两处实拍的色偏，从各立面的投影面积估计不同反射方向的镀膜色度。三层本地环境反射贴图记录估计结果，掠射方向逐渐趋近中性。"
     }
   },
   {
