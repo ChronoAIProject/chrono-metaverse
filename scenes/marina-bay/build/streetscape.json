@@ -2027,5 +2027,35 @@
       "素材来源": "Royal palm meshes and textures adapted from 0 A.D., Wildfire Games (https://wildfiregames.com/), CC BY-SA 3.0 (https://creativecommons.org/licenses/by-sa/3.0/). Scaled, rotated, tinted and batched for the Sands waterfront.",
       "重建范围": "树冠中心按正射影像定位。树高及冠幅按照片估读，复用王棕网格近似树形。"
     }
+  },
+  {
+    "entityId": "bay.ns-square-construction-stand",
+    "label": "NS Square 施工期看台与吊装结构",
+    "layer": "ext",
+    "kind": "structure",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "df2217ec3d9f39a1aee22f8cf507ad5b7ead90724f5d25b8e40ccd613ba4aea2",
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "照片": "Actuall7, The Float@Marina Bay undergoing demolition, Sep 2026.jpg, CC BY 4.0. https://commons.wikimedia.org/wiki/File:The_Float@Marina_Bay_undergoing_demolition,_Sep_2026.jpg",
+      "图像日期": "2026-09-24",
+      "建模说明": "按照片可辨认的屋盖外沿、看台、吊臂与临时支撑建模。屋盖进深、开间与被遮挡面为估计。基于 2026 年 10 月的临水平台岸线。",
+      "三角形数": 20276
+    },
+    "bounds": {
+      "min": [
+        -245.43224350114465,
+        -58.21028906463291,
+        1014.723433103085
+      ],
+      "max": [
+        -18.452123026277576,
+        34.22728754957639,
+        1109.86395350106
+      ]
+    }
   }
 ]
