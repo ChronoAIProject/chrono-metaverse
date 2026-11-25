@@ -14,6 +14,7 @@ from shapely.ops import substring
 import trimesh
 from trimesh.visual.material import PBRMaterial
 
+from marina_centre_flyovers import add_flyovers
 from marina_centre_verges import add_verges
 
 fullerton = import_module("bake-fullerton-road")
@@ -72,10 +73,9 @@ def road_surfaces(survey, nodes):
         if len(points) >= 4:
             carriageways.append(MultiPoint(points).convex_hull)
     area = union_all(carriageways)
-    # Retain the aerial bridge decks where elevated roads cross these surface streets.
+    # Keep ground-level asphalt continuous through the grade-separated crossings.
     bridges = [LineString([nodes[i] for i in road["nodes"]]).buffer(road["lanes"] * LANE / 2 + 1.35)
                for road in survey["overpasses"]]
-    area = area.difference(union_all(bridges))
     clear = union_all(interruptions)
     for (_, count), lines in lanes.items():
         for line in get_parts(line_merge(union_all(lines))):
@@ -177,6 +177,8 @@ def bake():
         return fullerton.geographic_point(*point, origin, rotation, shift)[[0, 2]]
 
     areas = add_verges(scene, verge_survey, project, carriageway, bridges, ground, shift[[0, 2]], fullerton.surface)
+    flyovers = json.loads((REFERENCES / "flyovers.json").read_text())
+    add_flyovers(scene, flyovers, project, ground, shift[[0, 2]], road, stripe, fullerton.surface)
     print(f"Planted {areas[0]} m², paved {areas[1]} m²")
     low, high = scene.bounds
     anchor = (low + high) / 2
@@ -184,7 +186,7 @@ def bake():
     for mesh in scene.geometry.values():
         mesh.apply_translation(-anchor)
     credit = ("Roads © OpenStreetMap contributors (ODbL). Map Data © Singapore Land Authority / OneMap. "
-              "Asphalt 01 and Granite Tile 04 by Poly Haven, Grass 004 by ambientCG (CC0).")
+              "Asphalt 01, Concrete Floor 02 and Granite Tile 04 by Poly Haven, Grass 004 by ambientCG (CC0).")
 
     def credit_asset(doc):
         doc["asset"]["copyright"] = credit
@@ -197,6 +199,7 @@ def bake():
         "label": "滨海中心 · 莱佛士林荫道与淡马锡道", "assetHash": digest, "material": {"shading": "albedo"},
         "bounds": {"min": low.tolist(), "max": high.tolist()},
         "props": {"background": True, "surfaceRole": "landscape", "版权": credit,
+                  "高架道路": "OSM 中心线与车道数，桥面高程、断面尺寸及墩位为视觉估值。",
                   "路旁地面": "按正射影像描绘绿地和铺装。石板尺寸、路缘高度、草色为估值。",
                   "道路材质": "扫描沥青与路面涂料。车道数和道路线形取自 OSM，路宽、标线及磨耗为视觉近似。"}
     }

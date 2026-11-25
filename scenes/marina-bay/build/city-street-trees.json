@@ -602,7 +602,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "滨海湾 · 街道与滨水树冠",
-    "assetHash": "628f75fbff984b2bc1e6e2c6a9e8fd4942223c442536113c8af2b7f2db559807",
+    "assetHash": "e85f7bf3973d461b3b062c580857eaef5deb517b3e3cb6ce735202bcb04a2774",
     "bounds": {
       "min": [
         -598.3594586537828,
@@ -612,7 +612,7 @@
       "max": [
         -255.65078155958534,
         -39.53940145985426,
-        1535.812822792095
+        1535.8474468438792
       ]
     },
     "material": {
