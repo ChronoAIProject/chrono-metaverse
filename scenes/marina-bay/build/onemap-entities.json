@@ -6401,7 +6401,7 @@
     "kind": "object",
     "label": "MARINA BAY FINANCIAL CENTRE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "641aadcde7103cb3f14b6f73f415c3dbac9c93246f83d09d7c26c3ca81db77e4",
+    "assetHash": "eb0b215981fdc4bf914adcac8da9e3ba1152a501f2af3426a78ef21bb5e54c59",
     "bounds": {
       "min": [
         -115.061183,
@@ -6426,7 +6426,8 @@
       "原建筑资源": "9f95b86ce2e1dbbf12b0d93ed0778b34e5ca777617f3dc4521d9ef55f4ad2488",
       "玻璃参考": [
         "https://www.openstreetmap.org/way/116905041/history/12"
-      ]
+      ],
+      "临湾幕墙受光": "在两处跨湾照片可见的竖向立面上校准窗框相对暗窗的反照率；按各塔自己的三个楼层采集周围环境反射。"
     }
   },
   {
@@ -7687,7 +7688,7 @@
     "kind": "object",
     "label": "MARINA BAY FINANCIAL CENTRE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "2d4557e2a41a600bf3172f491dc1b9275a5104aadb879005a8015c2b48c287bc",
+    "assetHash": "818246252eb0745a5685cca36999302458812e9079c9fc19ee47776d254b1937",
     "bounds": {
       "min": [
         -26.917404,
@@ -7712,7 +7713,8 @@
       "原建筑资源": "06c1ea3d086b507ff04e54cfa903f29685eb0f99ee137c4ee89cf416507f89e3",
       "玻璃参考": [
         "https://www.openstreetmap.org/way/116905042/history/14"
-      ]
+      ],
+      "临湾幕墙受光": "在两处跨湾照片可见的竖向立面上校准窗框相对暗窗的反照率；按各塔自己的三个楼层采集周围环境反射。"
     }
   },
   {
