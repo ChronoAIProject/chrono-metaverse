@@ -10,6 +10,7 @@ from shapely import constrained_delaunay_triangles
 from shapely.geometry import LineString, Point
 import trimesh
 
+from helix_glazing import apply_glazing
 from bridge_geometry import BridgeFrame, HelixDeck, SurfaceBatch
 from scanned_canopy import ROOT, write_tree_asset
 
@@ -106,10 +107,12 @@ def bake(texture):
     credit = ("Plan geometry © OpenStreetMap contributors (ODbL). Architectural proportions interpreted "
               "from COX Architecture, The Helix Bridge. Asphalt 01 by Poly Haven (CC0).")
     digest, bounds = write_tree_asset(scene, copyright=credit)
+    digest = apply_glazing(ROOT / "assets" / (digest + ".glb"), ROOT / "references/helix-canopy")
     return {"entityId": "bay.helix-bridge", "layer": "ext", "kind": "structure",
             "label": "双螺旋桥与四处观景台", "regionId": "marina-bay-exterior", "assetHash": digest,
             "bounds": bounds, "material": {"shading": "albedo"}, "props": {"background": True,
             "平面来源": survey["source"], "建筑参考": survey["design"], "材质版权": credit,
+            "遮棚玻璃": "参考 COX 日间照片估算夹胶玻璃的透光、丝印及板缝，按五处桥上视点为三个桥段估计局部反射。",
             "重建范围": "桥线与四处观景台据 OSM 和 OneMap 配准。桥面纵坡、净宽、螺旋节距、顶棚分段及支座比例参照建筑师立面与照片估读。"}}
 
 

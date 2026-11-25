@@ -1,0 +1,24 @@
+{
+  "reference": "https://www.coxarchitecture.com.au/project/the-helix-bridge/",
+  "bands": {
+    "southern": {
+      "first": 8.22435314485,
+      "last": 11.824353144849999,
+      "scale": 17
+    },
+    "central": {
+      "first": 9.884159971919999,
+      "last": 13.48415997192,
+      "scale": 18
+    },
+    "northern": {
+      "first": 7.907073327799999,
+      "last": 11.5070733278,
+      "scale": 18
+    }
+  },
+  "boundaries": [
+    -53.29723525342001,
+    53.29722637141995
+  ]
+}
