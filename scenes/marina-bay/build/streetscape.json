@@ -1522,7 +1522,7 @@
     "kind": "structure",
     "label": "双螺旋桥与四处观景台",
     "regionId": "marina-bay-exterior",
-    "assetHash": "3b8ed80efbb4dd54cd8c0610af6077df8aeb400a5075c9bb6424077608a4d42e",
+    "assetHash": "ea19ac98fb4b7313f36e4219234cf05de5d89184a011ff63238688f980e3d864",
     "bounds": {
       "min": [
         -324.8987481504143,
@@ -1543,7 +1543,8 @@
       "平面来源": "https://www.openstreetmap.org/relation/18007977/history/2",
       "建筑参考": "https://www.coxarchitecture.com.au/project/the-helix-bridge/",
       "材质版权": "Plan geometry © OpenStreetMap contributors (ODbL). Architectural proportions interpreted from COX Architecture, The Helix Bridge. Asphalt 01 by Poly Haven (CC0).",
-      "重建范围": "桥线与四处观景台据 OSM 和 OneMap 配准。桥面纵坡、净宽、螺旋节距、顶棚分段及支座比例参照建筑师立面与照片估读。"
+      "重建范围": "桥线与四处观景台据 OSM 和 OneMap 配准。桥面纵坡、净宽、螺旋节距、顶棚分段及支座比例参照建筑师立面与照片估读。",
+      "遮棚玻璃": "参考 COX 日间照片估算夹胶玻璃的透光、丝印及板缝，按五处桥上视点为三个桥段估计局部反射。"
     }
   },
   {
