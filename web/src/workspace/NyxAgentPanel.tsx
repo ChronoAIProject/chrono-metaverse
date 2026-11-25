@@ -1,4 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { AssistantHost, type NyxIDService } from '@chronoai/nyx-assistant-sdk';
+import { decodeNyxReply } from '@chronoai/nyx-assistant-sdk/nyx-chat';
+import { registerViewerTools, ViewerToolsContext } from './viewerTools';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react';
 import { AgentKeyConnection } from '../auth/AgentKeyConnection';
 import {
   outputMessages,
@@ -47,6 +58,8 @@ export function NyxAgentPanel({
   readonly onViewerCommand?: (command: ViewerCommand) => void;
   readonly viewerFeedback?: { error?: string; notice?: string };
 }) {
+  const viewerRef = useContext(ViewerToolsContext);
+  const activeCredential = useRef('');
   const orgId = space?.owner.kind === 'org' ? space.owner.id : undefined;
   const session = useMemo(
     () => ({
@@ -87,8 +100,10 @@ export function NyxAgentPanel({
     end.current?.scrollIntoView?.({ block: 'nearest' });
   }, [text, note.messages]);
   const connection = useCallback((ready: boolean, version?: string) => {
-    setCredentialVersion(ready && validCredentialVersion(version) ? version : '');
-    if (!ready) active.current?.abort();
+    const next = ready && validCredentialVersion(version) ? version : '';
+    if (next !== activeCredential.current) active.current?.abort();
+    activeCredential.current = next;
+    setCredentialVersion(next);
   }, []);
   const commit = useCallback(
     (value: NyxagentNote) => {
@@ -102,6 +117,21 @@ export function NyxAgentPanel({
   const finished = useCallback(
     (response: NyxagentResponse) => {
       const rawAnswer = outputMessages(response.output).join('\n');
+      // 恢复旧请求时，这个页面已不再拥有原查看器的工具绑定。
+      if (
+        current.current.pending?.body.instructionsVersion === 6 &&
+        rawAnswer.includes('```nyx-host-call')
+      ) {
+        commit({
+          ...current.current,
+          conversationId: response.conversation.id,
+          pending: undefined,
+          recoveryRequired: true,
+        });
+        setActivity('请核对原窗口的页面操作后再开始新对话。');
+        setText('');
+        return;
+      }
       const answer = viewerReply(rawAnswer);
       const controls = parseViewerActions(rawAnswer);
       const saved = current.current;
@@ -149,7 +179,7 @@ export function NyxAgentPanel({
     },
     [commit, onPreview, onViewerCommand],
   );
-  async function run(pending: NyxagentPending) {
+  async function run(pending: NyxagentPending, useCurrentViewer = false) {
     if (!space || active.current || !credentialVersion || current.current.recoveryRequired) return;
     if (credentialVersion !== pending.credentialVersion) {
       setError('凭据已变化。请切回原 NyxAgent 授权后恢复请求。');
@@ -164,31 +194,83 @@ export function NyxAgentPanel({
     setText('');
     setActivity('正在连接 NyxAgent…');
     try {
-      // Save the exact request before any write. Refresh never resubmits it automatically.
-      commit({ ...current.current, pending });
-      const response = await streamNyxagent(
-        session,
-        pending,
-        controller.signal,
-        (update) => {
-          if (!mounted.current) return;
-          setText(viewerReply(update.text));
-          setActivity(update.activity);
-          const p = current.current.pending;
-          if (
-            p &&
-            (update.responseId !== p.responseId ||
-              (update.conversationId && update.conversationId !== current.current.conversationId))
-          )
-            commit({
-              ...current.current,
-              ...(update.conversationId ? { conversationId: update.conversationId } : {}),
-              pending: { ...p, ...(update.responseId ? { responseId: update.responseId } : {}) },
-            });
-        },
-        request,
-      );
-      if (mounted.current) finished(response);
+      // 每个网络步骤在发送前保存完整请求，供原凭据核对结果。
+      const sendStep = (step: NyxagentPending) => {
+        commit({ ...current.current, pending: step, recoveryRequired: false });
+        return streamNyxagent(
+          session,
+          step,
+          controller.signal,
+          (update) => {
+            if (!mounted.current) return;
+            setText(viewerReply(update.text.split('```nyx-host-call')[0] ?? ''));
+            setActivity(update.activity);
+            const p = current.current.pending;
+            if (
+              p &&
+              (update.responseId !== p.responseId ||
+                (update.conversationId && update.conversationId !== current.current.conversationId))
+            )
+              commit({
+                ...current.current,
+                ...(update.conversationId ? { conversationId: update.conversationId } : {}),
+                pending: { ...p, ...(update.responseId ? { responseId: update.responseId } : {}) },
+              });
+          },
+          request,
+        );
+      };
+      const viewer = viewerRef?.current;
+      if (useCurrentViewer && viewer && viewerRef) {
+        let last: NyxagentResponse | undefined;
+        const service: NyxIDService = {
+          async turn(req) {
+            controller.signal.throwIfAborted();
+            const step: NyxagentPending = {
+              credentialVersion: pending.credentialVersion,
+              body: {
+                ...pending.body,
+                instructionsVersion: 6,
+                instruction: req.input.type === 'user' ? req.input.text : JSON.stringify(req.input),
+                idempotencyKey: req.requestId,
+                conversationId: req.conversationId,
+                viewerContext: {
+                  ...viewerContext,
+                  spaces: viewerContext?.spaces ?? [],
+                  host: { instanceId: req.instanceId, requestId: req.requestId, tools: req.tools },
+                },
+              },
+            };
+            last = await sendStep(step);
+            controller.signal.throwIfAborted();
+            if (last.status === 'failed')
+              return { type: 'answer', conversationId: last.conversation.id, text: '' };
+            const raw = outputMessages(last.output).join('\n');
+            if (!raw.includes('```nyx-host-call'))
+              return { type: 'answer', conversationId: last.conversation.id, text: raw };
+            if (raw.includes('```metaverse-view'))
+              throw new Error('同一回复包含两种页面指令，请核对。');
+            const reply = decodeNyxReply(last, req);
+            // 页面重新载入时能看到待核对状态，不能重放可能已执行的操作。
+            if (reply.type === 'call') commit({ ...current.current, recoveryRequired: true });
+            return reply;
+          },
+        };
+        const host = new AssistantHost(service, () => null, pending.body.conversationId);
+        const dispose = () => host.dispose();
+        controller.signal.addEventListener('abort', dispose, { once: true });
+        try {
+          registerViewerTools(host, viewerRef, viewer);
+          await host.send(pending.body.instruction);
+          if (mounted.current && last) finished(last);
+        } finally {
+          controller.signal.removeEventListener('abort', dispose);
+          host.dispose();
+        }
+      } else {
+        const response = await sendStep(pending);
+        if (mounted.current) finished(response);
+      }
     } catch (failure) {
       if (mounted.current) {
         if (failure instanceof WorkerError && failure.code === 'nyxagent_recovery_required')
@@ -241,7 +323,7 @@ export function NyxAgentPanel({
         messages: [...note.messages, { role: 'user', text: displayed }],
         pending: { body, credentialVersion },
       });
-      void run({ body, credentialVersion });
+      void run({ body, credentialVersion }, true);
       setConfirmPublish('');
     } catch {
       setError('无法保存原请求，请检查浏览器存储后重试。');

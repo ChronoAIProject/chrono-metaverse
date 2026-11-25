@@ -4,6 +4,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { saveBrowserKey } from '../auth/browserKey';
 import { NyxAgentPanel } from './NyxAgentPanel';
 import { readNyxagentNote, saveNyxagentNote } from './nyxagent';
+import { ViewerToolBinding, ViewerToolsContext } from './viewerTools';
 import type { SpaceSummary } from './client';
 
 const session = { enabled: true, connected: true, subject: 'alice', csrfToken: 'csrf' };
@@ -24,9 +25,9 @@ const space: SpaceSummary = {
   access: 'manage',
   updatedAt: '',
 };
-function sse(complete = true, text = '草稿预览 /preview#t=safe-preview-token') {
+function sse(complete = true, text = '草稿预览 /preview#t=safe-preview-token', id = 'resp_test') {
   const response = {
-    id: 'resp_test',
+    id,
     conversation: { id: 'conv_test' },
     status: 'in_progress',
     output: [],
@@ -421,4 +422,63 @@ it('原会话无法恢复时持久保存核对状态，不再提供无效重试�
   await userEvent.click(screen.getByRole('button', { name: '确认开始新的 NyxAgent 对话' }));
   expect(readNyxagentNote('alice', 'lobby').recoveryRequired).toBeUndefined();
   expect(screen.getByRole('textbox', { name: '给 NyxAgent 发消息' })).toBeEnabled();
+});
+
+it('通过同一会话读取真实选区，将聚焦结果回传到工作台助手', async () => {
+  const binding = new ViewerToolBinding();
+  const target = { spaceId: 'lobby', entityId: crypto.randomUUID() };
+  const focus = vi.fn(() => true);
+  binding.bind({ selection: () => target, focus });
+  let turns = 0;
+  const request = vi.fn<typeof fetch>(async (url, init) => {
+    if (String(url).endsWith('/key/check')) return Response.json(identity);
+    if (!String(url).endsWith('/message')) throw new Error('未预期的请求');
+    const body = JSON.parse(String(init?.body));
+    const host = body.viewerContext.host;
+    const call = (name: string, args: object) =>
+      '```nyx-host-call\n' +
+      JSON.stringify({ requestId: host.requestId, name, arguments: args }) +
+      '\n```';
+    expect(body.instructionsVersion).toBe(6);
+    expect(body.idempotencyKey).toBe(host.requestId);
+    turns++;
+    if (turns === 1) {
+      expect(host.tools.map((tool: { name: string }) => tool.name)).toEqual([
+        'read_selection',
+        'focus_selection',
+      ]);
+      return sse(true, call('read_selection', {}), 'resp_read');
+    }
+    expect(body.conversationId).toBe('conv_test');
+    const input = JSON.parse(body.instruction);
+    if (turns === 2) {
+      expect(input).toMatchObject({ callId: 'resp_read', result: { ok: true, value: target } });
+      return sse(true, call('focus_selection', input.result.value), 'resp_focus');
+    }
+    expect(input).toMatchObject({
+      callId: 'resp_focus',
+      result: { ok: true, value: { ...target, focused: true } },
+    });
+    return sse(true, '镜头已聚焦当前选中的物件。', 'resp_answer');
+  });
+  render(
+    <ViewerToolsContext.Provider value={binding}>
+      <NyxAgentPanel
+        session={session}
+        space={space}
+        request={request}
+        onPreview={vi.fn()}
+        onBusy={vi.fn()}
+      />
+    </ViewerToolsContext.Provider>,
+  );
+  await screen.findByText('已连接 NyxAgent · NyxAgent');
+  await userEvent.type(
+    screen.getByRole('textbox', { name: '给 NyxAgent 发消息' }),
+    '聚焦当前选中物件',
+  );
+  await userEvent.click(screen.getByRole('button', { name: '发送给 NyxAgent' }));
+  await screen.findByText('镜头已聚焦当前选中的物件。');
+  expect(focus).toHaveBeenCalledExactlyOnceWith(target);
+  expect(turns).toBe(3);
 });

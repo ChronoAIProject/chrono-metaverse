@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { ViewerToolsContext } from '../workspace/viewerTools';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { Texture } from 'three';
 import { sceneChange, viewHasGeometry, type SceneContent } from '../core/scene';
 import { sceneSources } from '../core/sources';
@@ -111,6 +121,28 @@ export function Viewer({
   const [unsupported, setUnsupported] = useState<string | null>(null);
   const [step, setStep] = useState<LoadStep | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
+  const sdkViewer = useContext(ViewerToolsContext);
+  const currentSelection = useRef(selection);
+  useLayoutEffect(() => {
+    currentSelection.current = selection;
+  }, [selection]);
+  useLayoutEffect(() => {
+    if (!sdkViewer || !content) return;
+    return sdkViewer.bind({
+      selection() {
+        const picked = currentSelection.current;
+        return picked && readyContent.current === content
+          ? { spaceId: picked.spaceId, entityId: picked.entity.entityId }
+          : null;
+      },
+      focus(target) {
+        return (
+          readyContent.current === content &&
+          (viewRef.current?.applyCamera?.({ kind: 'focus', ...target }, content) ?? false)
+        );
+      },
+    });
+  }, [sdkViewer, content]);
   const [moreLabels, setMoreLabels] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [hasProviderCredits, setHasProviderCredits] = useState(false);

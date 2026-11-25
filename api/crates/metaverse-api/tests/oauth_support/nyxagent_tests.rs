@@ -270,7 +270,7 @@ async fn nyxagent_versions_instructions_without_changing_legacy_retries() {
             .contains("get_agent_guide"));
         assert_eq!(bodies[0]["input"], bodies[3]["input"]);
     }
-    for version in [json!(0), json!(6), json!("2"), json!(-1)] {
+    for version in [json!(0), json!(7), json!("2"), json!(-1)] {
         let mut input = task();
         input["instructionsVersion"] = version;
         assert_eq!(
@@ -838,4 +838,29 @@ async fn 组合查看器协议保留成员动作与挂起请求原始字节() {
     assert!(instructions.contains(r#"{"type":"camera","kind":"focus","entityId":"实际物件编号"}（可选字段 `spaceId` 指定组合成员空间编号）"#));
     assert!(instructions.contains("不清缓存"));
     assert!(bodies[0]["input"].as_str().unwrap().contains("前厅"));
+}
+
+#[tokio::test]
+async fn 当前查看器的工具描述和调用编号传给同一服务() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let cookie = setup(&app).await;
+    let mut input = task();
+    input["instructionsVersion"] = json!(6);
+    input["viewerContext"] = json!({"spaces": [], "host": {
+        "instanceId": "current-window", "requestId":"stable-nyx-request-001",
+        "tools":[{"name":"read_selection","description":"读取选区","inputSchema":{"type":"object"}}]
+    }});
+    let result = call(&app, &cookie, "message", input).await;
+    assert_eq!(result.0, StatusCode::OK, "{}", result.2);
+    let state = app.nyx.oauth.0.lock().unwrap();
+    let (_, _, body) = state.worker_calls.last().unwrap();
+    assert_eq!(body["model"], "nyxagent/chat");
+    let text = body["input"].as_str().unwrap();
+    assert!(text.contains("read_selection") && text.contains("current-window"));
+    assert!(body["instructions"]
+        .as_str()
+        .unwrap()
+        .contains("nyx-host-call"));
 }
