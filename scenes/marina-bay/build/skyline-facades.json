@@ -145,7 +145,7 @@
     "kind": "structure",
     "label": "滨海湾 · 远景楼群与临湾外墙",
     "regionId": "marina-bay-exterior",
-    "assetHash": "7613a762422bb1ba6ed9e14024dbcca388cde17d5f9d357f3472ad3f4251a4e4",
+    "assetHash": "cda239570b27a34dda6558d37e07bf62c0a6ec568548fc33f70e543249158079",
     "material": {
       "shading": "albedo"
     },

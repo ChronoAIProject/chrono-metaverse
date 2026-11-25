@@ -71,6 +71,26 @@
     "HorizontalLouvers": [
       "https://ambientcg.com/a/Facade005",
       "https://polyhaven.com/a/concrete_floor_02"
+    ],
+    "StaggeredGalleries": [
+      "https://ambientcg.com/a/Facade005",
+      "https://polyhaven.com/a/concrete_floor_02",
+      "https://polyhaven.com/a/ribbed_concrete_wall"
+    ],
+    "SandstoneRibbons": [
+      "https://ambientcg.com/a/Facade005",
+      "https://polyhaven.com/a/concrete_floor_02",
+      "https://polyhaven.com/a/ribbed_concrete_wall"
+    ],
+    "EnamelFins": [
+      "https://ambientcg.com/a/Facade005",
+      "https://polyhaven.com/a/concrete_floor_02",
+      "https://polyhaven.com/a/ribbed_concrete_wall"
+    ],
+    "DoubleHeightFrames": [
+      "https://ambientcg.com/a/Facade005",
+      "https://polyhaven.com/a/concrete_floor_02",
+      "https://polyhaven.com/a/ribbed_concrete_wall"
     ]
   },
   "parts": [
@@ -2291,7 +2311,7 @@
       "minHeight": 0,
       "height": 118,
       "tile": "14/12918/8132",
-      "finish": "LimestonePiers",
+      "finish": "DoubleHeightFrames",
       "outline": [
         [
           39.4277,
@@ -2384,7 +2404,7 @@
       "minHeight": 25,
       "height": 92,
       "tile": "14/12918/8132",
-      "finish": "BlueSpandrels",
+      "finish": "EnamelFins",
       "outline": [
         [
           66.9516,
@@ -2422,7 +2442,7 @@
       "minHeight": 14,
       "height": 110,
       "tile": "14/12918/8132",
-      "finish": "RecessedBalconies",
+      "finish": "StaggeredGalleries",
       "outline": [
         [
           -48.0799,
@@ -2680,7 +2700,7 @@
       "minHeight": 14,
       "height": 77,
       "tile": "14/12918/8132",
-      "finish": "ClayFins",
+      "finish": "SandstoneRibbons",
       "outline": [
         [
           -298.7232,
