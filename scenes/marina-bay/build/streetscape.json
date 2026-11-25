@@ -2394,26 +2394,27 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "滨海中心 · 莱佛士林荫道与淡马锡道",
-    "assetHash": "6482fbad85ae4e71ef484e5630d273f38ccb1bc5393f33eff37f2de38906236c",
+    "assetHash": "6cd25517257a79cbad12cba788eefcd3e7048b670a90e94598dac2879ed2ce14",
     "material": {
       "shading": "albedo"
     },
     "bounds": {
       "min": [
-        -292.78318085324867,
-        -60.44745091915634,
-        1320.4996175224087
+        -403.8271034701403,
+        -60.51597781686792,
+        1063.1151121883613
       ],
       "max": [
         14.519851964851107,
-        -60.3243769824313,
-        1655.7356445596104
+        -51.446034616199654,
+        1693.7011579760576
       ]
     },
     "props": {
       "background": true,
       "surfaceRole": "landscape",
-      "版权": "Roads © OpenStreetMap contributors (ODbL). Map Data © Singapore Land Authority / OneMap. Asphalt 01 and Granite Tile 04 by Poly Haven, Grass 004 by ambientCG (CC0).",
+      "版权": "Roads © OpenStreetMap contributors (ODbL). Map Data © Singapore Land Authority / OneMap. Asphalt 01, Concrete Floor 02 and Granite Tile 04 by Poly Haven, Grass 004 by ambientCG (CC0).",
+      "高架道路": "OSM 中心线与车道数，桥面高程、断面尺寸及墩位为视觉估值。",
       "路旁地面": "按正射影像描绘绿地和铺装。石板尺寸、路缘高度、草色为估值。",
       "道路材质": "扫描沥青与路面涂料。车道数和道路线形取自 OSM，路宽、标线及磨耗为视觉近似。"
     }
