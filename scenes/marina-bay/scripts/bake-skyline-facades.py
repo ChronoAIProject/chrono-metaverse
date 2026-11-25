@@ -105,13 +105,25 @@ def roof_surface(part):
             points.reverse()
         vertices.extend(points)
     mesh = trimesh.Trimesh(vertices=vertices, faces=np.arange(len(vertices)).reshape(-1, 3), process=False)
+    concrete = part["roofFinish"] == "ConcreteRoof"
+    if concrete:
+        # Interpolate the changing scan direction across the existing roof plane.
+        points, faces = trimesh.remesh.subdivide_to_size(mesh.vertices, mesh.faces, max_edge=3.5)
+        mesh = trimesh.Trimesh(vertices=points, faces=faces, process=False)
     offset = mesh.vertices[:, [0, 2]] - plan[0]
     # Keep adjoining courses parallel. Offset their origin separately for each mapped roof.
     key = hashlib.sha256(f"{part['featureId']}/{plan[0].tolist()}".encode()).digest()
     phase = np.frombuffer(key[:8], dtype="<u4") / 2**32
     width, height = {"SlateRoof": (3.4, 3.4), "ZincRoof": (6.4, 5.0),
                      "ConcreteRoof": (5.5, 5.5)}[part["roofFinish"]]
-    mesh.visual = TextureVisuals(uv=np.column_stack([offset @ axis / width, offset @ across / height]) + phase)
+    uv = np.column_stack([offset @ axis / width, offset @ across / height]) + phase
+    if concrete:
+        # Two smooth shears move aggregate marks out of phase along either axis.
+        # Each shear preserves area. All three material maps use the same coordinates.
+        u, v = uv.T
+        u += .28 * np.sin(1.47 * v + phase[0]) + .12 * np.sin(2.61 * v + phase[1])
+        v += .32 * np.sin(1.62 * u + phase[1]) + .10 * np.sin(2.73 * u + phase[0])
+    mesh.visual = TextureVisuals(uv=uv)
     return mesh
 
 
