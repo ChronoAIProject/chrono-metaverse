@@ -2289,5 +2289,89 @@
       "材质说明": "根据实拍推定窗墙节奏、侧墙颜色和屋面材料。按测绘楼间距与朝向估计遮蔽，按各组团庭院环境近似窗面倒影。",
       "三角形数": 33714
     }
+  },
+  {
+    "entityId": "bay.tanjong-rhu-waterway-residences",
+    "label": "丹戎禺水道住宅 · Casuarina Cove、Camelot 与 Tanjong Ria",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "4186ce65876248baaea435c55f1787a8821e034a639e6a119f0e6444000a854e",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        -1392.0935648070508,
+        -60.76527610488073,
+        2550.673452954666
+      ],
+      "max": [
+        -1154.080911184876,
+        16.631444362848537,
+        2791.5292685021514
+      ]
+    },
+    "props": {
+      "background": true,
+      "测绘建筑": [
+        {
+          "名称": "TANJONG RIA CONDOMINIUM",
+          "编号": "SLA_BLDG2_2e41e50d-8b9c-44f0-b6af-67bad4039125",
+          "高度": 6.605,
+          "分片": "5/21/3_2.b3dm"
+        },
+        {
+          "名称": "CAMELOT BY-THE-WATER",
+          "编号": "SLA_BLDG2_91d94ccb-57b9-475e-a590-80708c679227",
+          "高度": 5.437,
+          "分片": "5/21/3_2.b3dm"
+        },
+        {
+          "名称": "CASUARINA COVE",
+          "编号": "SLA_BLDG2_2de8ad4a-fab0-4066-b61b-103716c9276e",
+          "高度": 40.017,
+          "分片": "5/21/3_2.b3dm"
+        },
+        {
+          "名称": "CASUARINA COVE",
+          "编号": "SLA_BLDG2_b12a51d8-a9cc-4948-889e-5ed44021510b",
+          "高度": 62.606,
+          "分片": "5/21/3_2.b3dm"
+        },
+        {
+          "名称": "CASUARINA COVE",
+          "编号": "SLA_BLDG2_aeab21ca-9859-40fe-a39e-1dc74cff7f47",
+          "高度": 24.736,
+          "分片": "5/21/3_2.b3dm"
+        },
+        {
+          "名称": "CAMELOT BY-THE-WATER",
+          "编号": "SLA_BLDG2_b531bff0-8a2e-46a4-b897-bf9a9eb060fb",
+          "高度": 77.39,
+          "分片": "5/21/3_2.b3dm"
+        },
+        {
+          "名称": "CAMELOT BY-THE-WATER",
+          "编号": "SLA_BLDG2_b4f122ec-2bd8-4717-a042-66aff40f3730",
+          "高度": 57.137,
+          "分片": "5/21/3_2.b3dm"
+        },
+        {
+          "名称": "TANJONG RIA CONDOMINIUM",
+          "编号": "SLA_BLDG2_bc31abba-aad9-44a4-b067-33008970f626",
+          "高度": 73.785,
+          "分片": "5/21/3_2.b3dm"
+        }
+      ],
+      "数据来源": "Map Data © Singapore Land Authority. https://github.com/cheeaun/om3d/tree/ac451b84/optimized-tiles",
+      "立面影像": [
+        "Erwin Soo, Casuarina Cove, Tanjong Rhu (8157689712). Window spacing and recesses cropped and relit. CC BY 2.0. https://commons.wikimedia.org/wiki/File:Casuarina_Cove,_Tanjong_Rhu_(8157689712).jpg https://creativecommons.org/licenses/by/2.0/",
+        "Erwin Soo, Camelot by the Bay,Tanjong Rhu (8148366160). Window spacing and recesses cropped and relit. CC BY 2.0. https://commons.wikimedia.org/wiki/File:Camelot_by_the_Bay,Tanjong_Rhu_(8148366160).jpg https://creativecommons.org/licenses/by/2.0/",
+        "Robert Sim, Haze over Tanjong Rhu on Sept 14, 2026 - RSKY. Rectified, cropped and relit. CC BY-SA 4.0. https://commons.wikimedia.org/wiki/File:Haze_over_Tanjong_Rhu_on_Sept_14,_2026_-_RSKY.jpg https://creativecommons.org/licenses/by-sa/4.0/"
+      ],
+      "材质说明": "按 OneMap 测绘屋面、退台和短翼设置墙与斜屋顶。Casuarina Cove 与 Camelot 的暗窗取自现场夜景中的未点灯窗，日间底色与第三组住宅窗带参考同街区日景。楼间遮蔽与三层环境反射按各组团估算。",
+      "三角形数": 16100
+    }
   }
 ]
