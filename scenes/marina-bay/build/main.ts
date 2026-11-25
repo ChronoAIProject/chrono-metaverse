@@ -176,6 +176,19 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
   };
 }
 
+/** Use the paved ground mesh's survey for the geographic grass coverage as well. */
+function promenadeGround(environment: EntityBody | null): EntityBody | null {
+  const settings = environment?.props?.environment as { map?: { surfaceDetail?: string; grassExclusions?: unknown[] } } | undefined;
+  if (!environment || settings?.map?.surfaceDetail !== 'urban') return environment;
+  const survey = JSON.parse(readFileSync(new URL('../references/marina-promenade-ground.json', import.meta.url), 'utf8'));
+  const existing = settings.map.grassExclusions ?? [];
+  const additional = survey.concrete.filter((polygon: unknown) => !existing.some(value => isDeepStrictEqual(value, polygon)));
+  if (!additional.length) return environment;
+  return { ...environment, props: { ...environment.props, environment: {
+    ...settings, map: { ...settings.map, grassExclusions: [...existing, ...additional] },
+  } } };
+}
+
 /** 滨海湾扩展引用 OneMap 转换结果，室内沿用已有的重建物件。 */
 export default function build(base: BuildBase, kit: Kit) {
   const buildings: EntityBody[] = JSON.parse(
@@ -186,9 +199,9 @@ export default function build(base: BuildBase, kit: Kit) {
     ? JSON.parse(readFileSync(environmentFile, 'utf8'))
     : null;
   // 已保存的物件是权威状态；重新构建不能恢复已被用户替换的有限地板或天空壳。
-  const environment = bayDaylight(
+  const environment = promenadeGround(bayDaylight(
     base.entities.find((entity) => entity.entityId === configured?.entityId), configured,
-  );
+  ));
   const ground: EntityBody[] = environment
     ? []
     : JSON.parse(readFileSync(new URL('./ground.json', import.meta.url), 'utf8'));
