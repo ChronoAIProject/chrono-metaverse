@@ -604,7 +604,7 @@
       "minHeight": 0,
       "height": 207,
       "tile": "14/12918/8133",
-      "finish": "LimestonePiers",
+      "finish": "Facade005",
       "outline": [
         [
           77.2428,
@@ -1036,7 +1036,7 @@
       "minHeight": 0,
       "height": 141,
       "tile": "14/12918/8133",
-      "finish": "RecessedBalconies",
+      "finish": "PairedWindows",
       "outline": [
         [
           27.3861,
