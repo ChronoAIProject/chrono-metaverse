@@ -83,9 +83,9 @@ def bake(texture):
     frit = Image.fromarray(np.where(dots[:, :, None], [218,223,221,170], [142,175,188,52]).astype(np.uint8))
     frit.format = "PNG"
     asphalt = SurfaceBatch("Asphalt wearing course", [236,236,236,255], 0, .92, baseColorTexture=scan)
-    steel = SurfaceBatch("Duplex stainless steel", [185,191,194,255], .54, .34)
-    edge = SurfaceBatch("Deck edge and crossbeams", [115,124,130,255], .40, .48)
-    concrete = SurfaceBatch("Pier concrete", [156,153,142,255], 0, .9)
+    steel = SurfaceBatch("Duplex stainless steel", [185,191,194,255], .54, .60, finish="steel", repeat=1.2)
+    edge = SurfaceBatch("Deck edge and crossbeams", [115,124,130,255], .40, .72, finish="steel", repeat=1.2)
+    concrete = SurfaceBatch("Pier concrete", [156,153,142,255], 0, .96, finish="concrete", repeat=2.2)
     glass = SurfaceBatch("Fritted canopy", [255,255,255,255], .08, .28, alphaMode="BLEND",
                          doubleSided=True, baseColorTexture=frit)
     bayfront = json.loads((ROOT / "references/bayfront-bridge.json").read_text())
@@ -105,7 +105,7 @@ def bake(texture):
     for batch in [asphalt, steel, edge, concrete, glass]:
         scene.add_geometry(batch.mesh(), geom_name=batch.material.name)
     credit = ("Plan geometry © OpenStreetMap contributors (ODbL). Architectural proportions interpreted "
-              "from COX Architecture, The Helix Bridge. Asphalt 01 by Poly Haven (CC0).")
+              "from COX Architecture, The Helix Bridge. Asphalt 01, Concrete Floor 02 and Metal Plate 02 by Poly Haven (CC0).")
     digest, bounds = write_tree_asset(scene, copyright=credit)
     digest = apply_glazing(ROOT / "assets" / (digest + ".glb"), ROOT / "references/helix-canopy")
     return {"entityId": "bay.helix-bridge", "layer": "ext", "kind": "structure",

@@ -249,9 +249,9 @@ def bake(texture, concrete_scan):
     paving = Image.fromarray(color.astype(np.uint8))
     paving.format = "JPEG"
     walkway = SurfaceBatch("Bridge footway aggregate", [225, 225, 225, 255], 0, 0.93, baseColorTexture=paving)
-    concrete = SurfaceBatch("Deck and pier concrete", [118, 115, 107, 255], 0, 0.90)
-    kerb = SurfaceBatch("Walkway kerbs and median", [177, 171, 152, 255], 0, 0.87)
-    steel = SurfaceBatch("Bridge rails and lighting", [178, 185, 184, 255], 0.32, 0.42)
+    concrete = SurfaceBatch("Deck and pier concrete", [118, 115, 107, 255], 0, .97, finish="concrete", repeat=2.2)
+    kerb = SurfaceBatch("Walkway kerbs and median", [177, 171, 152, 255], 0, .95, finish="concrete", repeat=1.4)
+    steel = SurfaceBatch("Bridge rails and lighting", [178, 185, 184, 255], .32, .65, finish="steel", repeat=.85)
     paint = SurfaceBatch("Lane markings", [208, 205, 186, 255], 0, 0.84)
     deck_structure(road, asphalt, walkway, concrete, kerb)
     markings(road, paint)
@@ -260,7 +260,7 @@ def bake(texture, concrete_scan):
     scene = trimesh.Scene()
     for batch in [asphalt, walkway, concrete, kerb, steel, paint]:
         scene.add_geometry(batch.mesh(), geom_name=batch.material.name)
-    credit = "Plan geometry © OpenStreetMap contributors (ODbL). Asphalt 01 and Concrete Floor 02 by Poly Haven (CC0)."
+    credit = "Plan geometry © OpenStreetMap contributors (ODbL). Asphalt 01, Concrete Floor 02 and Metal Plate 02 by Poly Haven (CC0)."
     digest, bounds = write_tree_asset(scene, copyright=credit)
     return {
         "entityId": "bay.bayfront-bridge",

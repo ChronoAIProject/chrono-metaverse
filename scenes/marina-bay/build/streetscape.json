@@ -1522,7 +1522,7 @@
     "kind": "structure",
     "label": "双螺旋桥与四处观景台",
     "regionId": "marina-bay-exterior",
-    "assetHash": "ea19ac98fb4b7313f36e4219234cf05de5d89184a011ff63238688f980e3d864",
+    "assetHash": "ca9dfc16f5407db9bb1537540d67d9c3535b3f1477ee26249ab2b9ca23ec912b",
     "bounds": {
       "min": [
         -324.8987481504143,
@@ -1542,9 +1542,9 @@
       "background": true,
       "平面来源": "https://www.openstreetmap.org/relation/18007977/history/2",
       "建筑参考": "https://www.coxarchitecture.com.au/project/the-helix-bridge/",
-      "材质版权": "Plan geometry © OpenStreetMap contributors (ODbL). Architectural proportions interpreted from COX Architecture, The Helix Bridge. Asphalt 01 by Poly Haven (CC0).",
-      "重建范围": "桥线与四处观景台据 OSM 和 OneMap 配准。桥面纵坡、净宽、螺旋节距、顶棚分段及支座比例参照建筑师立面与照片估读。",
-      "遮棚玻璃": "参考 COX 日间照片估算夹胶玻璃的透光、丝印及板缝，按五处桥上视点为三个桥段估计局部反射。"
+      "材质版权": "Plan geometry © OpenStreetMap contributors (ODbL). Architectural proportions interpreted from COX Architecture, The Helix Bridge. Asphalt 01, Concrete Floor 02 and Metal Plate 02 by Poly Haven (CC0).",
+      "遮棚玻璃": "参考 COX 日间照片估算夹胶玻璃的透光、丝印及板缝，按五处桥上视点为三个桥段估计局部反射。",
+      "重建范围": "桥线与四处观景台据 OSM 和 OneMap 配准。桥面纵坡、净宽、螺旋节距、顶棚分段及支座比例参照建筑师立面与照片估读。"
     }
   },
   {
@@ -1553,7 +1553,7 @@
     "kind": "structure",
     "label": "海湾舫桥与双螺旋桥联络步道",
     "regionId": "marina-bay-exterior",
-    "assetHash": "aa7447238eb352da518821fd8f7cf5e1e03554486c1b60b671003152160b6d9d",
+    "assetHash": "0e96d6082b1f3ee872575d29babe0f80221e4cb7bdc220d7fc2d5f860acc27dd",
     "bounds": {
       "min": [
         -430.24012249362096,
@@ -1573,7 +1573,7 @@
       "background": true,
       "平面来源": "https://www.openstreetmap.org/way/1160851851/history/7",
       "影像参考": "Map Data © Singapore Land Authority / OneMap",
-      "材质版权": "Plan geometry © OpenStreetMap contributors (ODbL). Asphalt 01 and Concrete Floor 02 by Poly Haven (CC0).",
+      "材质版权": "Plan geometry © OpenStreetMap contributors (ODbL). Asphalt 01, Concrete Floor 02 and Metal Plate 02 by Poly Haven (CC0).",
       "重建范围": "OSM 桥面轮廓、车道数、两侧步道和联络通道与 OneMap 航片配准。桥面坡度、桥墩位置、灯杆和栏杆尺寸参照现场照片估读。"
     }
   },
@@ -1819,7 +1819,7 @@
     "kind": "structure",
     "regionId": "marina-bay-exterior",
     "label": "鱼尾狮公园 · 临水观景台",
-    "assetHash": "34ed26c0bd8c6290dd80fd193ba14d1f9ae2c9305aaf265c9eecc050e50a0912",
+    "assetHash": "95997921c1d31fe86b500c6741bbad441ef484bfa79d88145e9b18bbfd0965ac",
     "material": {
       "shading": "albedo"
     },
@@ -1839,7 +1839,7 @@
       "background": true,
       "岸线": "https://www.openstreetmap.org/way/164881352",
       "影像": "Map Data © Singapore Land Authority / OneMap",
-      "表面": "Granite Tile 04 · Poly Haven · CC0. Surface finish approximated from the aerial image.",
+      "表面": "Granite Tile 04, Concrete Floor 02 and Metal Plate 02 · Poly Haven · CC0. Surface finish approximated from the aerial image.",
       "现场照片": "https://commons.wikimedia.org/wiki/File:Merlion_Statue_at_Merlion_Park,_Singapore_(Ank_Kumar)_02.jpg"
     }
   },
@@ -1849,7 +1849,7 @@
     "kind": "structure",
     "regionId": "marina-bay-exterior",
     "label": "西岸 · 小艇浮码头",
-    "assetHash": "6c3d373019a09b7ea676854d15984f83afdb7d2805fa5fcc740daaf944ddc4a8",
+    "assetHash": "92fb919777ad18863d2de9cb2db61339664d11a3cfa195affb2a1737e7c58f11",
     "material": {
       "shading": "albedo"
     },
@@ -1869,7 +1869,7 @@
       "background": true,
       "岸线": "https://www.openstreetmap.org/way/1388777630",
       "影像": "Map Data © Singapore Land Authority / OneMap",
-      "表面": "Granite Tile 04 · Poly Haven · CC0. Surface finish approximated from the aerial image."
+      "表面": "Granite Tile 04, Concrete Floor 02 and Metal Plate 02 · Poly Haven · CC0. Surface finish approximated from the aerial image."
     }
   },
   {
@@ -1878,7 +1878,7 @@
     "kind": "structure",
     "regionId": "marina-bay-exterior",
     "label": "南岸 · 临湾浮台",
-    "assetHash": "9ee36afd6142cc242eb484a4c881916d692de3d1c45cf75d419c67bd68039fd1",
+    "assetHash": "95d87cd821b85d9560149942d21e7c24703ddd4e6571b8c3a6254ef18e11cceb",
     "material": {
       "shading": "albedo"
     },
@@ -1898,7 +1898,7 @@
       "background": true,
       "岸线": "https://www.openstreetmap.org/way/172471577",
       "影像": "Map Data © Singapore Land Authority / OneMap",
-      "表面": "Granite Tile 04 · Poly Haven · CC0. Surface finish approximated from the aerial image."
+      "表面": "Granite Tile 04, Concrete Floor 02 and Metal Plate 02 · Poly Haven · CC0. Surface finish approximated from the aerial image."
     }
   },
   {
@@ -1907,7 +1907,7 @@
     "kind": "structure",
     "regionId": "marina-bay-exterior",
     "label": "城市展览馆岸边 · 浮台与引桥",
-    "assetHash": "cf957ab4b4a3ef70bda6c408d828c28fb50700c5cd551f379efc160860589395",
+    "assetHash": "9d25ba875faa96c6cc1930f65b73f2b6ee0c1da741600d3fa56aff41b38a5ad1",
     "material": {
       "shading": "albedo"
     },
@@ -1927,7 +1927,7 @@
       "background": true,
       "岸线": "https://www.openstreetmap.org/way/395113913",
       "影像": "Map Data © Singapore Land Authority / OneMap",
-      "表面": "Granite Tile 04 · Poly Haven · CC0. Surface finish approximated from the aerial image."
+      "表面": "Granite Tile 04, Concrete Floor 02 and Metal Plate 02 · Poly Haven · CC0. Surface finish approximated from the aerial image."
     }
   },
   {
