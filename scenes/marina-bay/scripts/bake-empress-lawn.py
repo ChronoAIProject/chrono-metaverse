@@ -9,7 +9,7 @@ import trimesh
 from shapely.geometry import LineString, Polygon, box
 from trimesh.visual.texture import TextureVisuals
 
-from ground_materials import scanned_pavers, scanned_turf
+from ground_materials import scanned_pavers, scanned_turf, turf_wear
 from context_geometry import geographic_point
 from scanned_canopy import ROOT, write_tree_asset
 
@@ -63,7 +63,7 @@ def surface(polygon, grass, basis, datum, reference):
         ds, near = tree.query(xz, k=4)
         weight = 1 / np.maximum(ds, .5)**2
         field = np.sum(tones[near]*weight[:,:,None],axis=1) / weight.sum(axis=1)[:,None]
-        tint = np.minimum(1, .82 * (field/np.median(tones,axis=0))**2.4)
+        tint = np.minimum(1, .82 * (field/np.median(tones,axis=0))**2.4 * turf_wear(xz))
         mesh.visual.vertex_attributes['color'] = np.uint8(
             np.column_stack((tint,np.ones(len(tint))))*255)
     return mesh

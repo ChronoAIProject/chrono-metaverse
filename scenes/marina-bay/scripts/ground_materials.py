@@ -1,6 +1,7 @@
 """Build PBR ground materials from the shared CC0 scans."""
 import numpy as np
 from PIL import Image
+from scipy.ndimage import gaussian_filter, map_coordinates
 from trimesh.visual.material import PBRMaterial
 
 from scanned_canopy import ROOT
@@ -17,8 +18,26 @@ def ground_scan(name):
     return scan, packed
 
 
+def turf_grain(scan):
+    # Keep the blade texture without repeating the same patch of drying grass every 1.4 m.
+    mean = scan.mean(axis=(0, 1))
+    local = gaussian_filter(scan, (scan.shape[0] / 62, scan.shape[1] / 62, 0), mode="wrap")
+    return scan * mean / np.maximum(local, 1.0)
+
+
+def turf_wear(xz):
+    # Two differently oriented fields move across the lawn in metres, independent of UV.
+    rot = np.array([[.8, -.6], [.6, .8]])
+    coarse = map_coordinates(np.random.default_rng(5201).uniform(-1, 1, (79, 83)),
+                             (xz / 17).T, order=3, mode="grid-wrap")
+    fine = map_coordinates(np.random.default_rng(5203).uniform(-1, 1, (61, 89)),
+                           (xz @ rot / 6.8).T, order=3, mode="grid-wrap")
+    return 1 + (.68 * coarse + .32 * fine)[:, None] * [.30, .16, -.06]
+
+
 def scanned_turf(name, mean_rgb, *, minimum_roughness=200):
     scan, packed = ground_scan('turf')
+    scan = turf_grain(scan)
     rgb = scan / np.mean(scan, axis=(0, 1)) * mean_rgb
     slope = (packed[:, :, :2] / 127.5 - 1) * .68
     rough = np.maximum(packed[:, :, 2], minimum_roughness)

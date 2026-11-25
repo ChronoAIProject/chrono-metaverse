@@ -8,7 +8,7 @@ from scipy.spatial.distance import cdist
 from trimesh.visual.texture import TextureVisuals
 
 from context_geometry import geographic_point
-from ground_materials import scanned_pavers, scanned_turf
+from ground_materials import scanned_pavers, scanned_turf, turf_wear
 from scanned_canopy import ROOT, write_tree_asset
 
 sys.path.insert(0, str(ROOT.parents[1] / 'recon/src'))
@@ -63,7 +63,7 @@ def field_geometry(field, project, datum):
         grass += wear * ([119, 104, 67] - grass) * .83
     # The shared scan carries the blades. glTF vertex colors multiply it in linear light.
     linear = lambda rgb: ((np.asarray(rgb)/255 + .055)/1.055)**2.4
-    tint = np.clip(linear(grass) / linear(SCAN_RGB), 0, 1)
+    tint = np.clip(linear(grass) / linear(SCAN_RGB) * turf_wear(xz), 0, 1)
     idx = np.arange(rows*cols).reshape(rows, cols)
     a, b, c, d = (q.ravel() for q in (idx[:-1, :-1], idx[:-1, 1:], idx[1:, 1:], idx[1:, :-1]))
     faces = np.vstack((np.column_stack((a,b,c)), np.column_stack((a,c,d))))
