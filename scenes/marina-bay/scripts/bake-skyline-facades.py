@@ -47,7 +47,7 @@ def exterior(part):
     ground = {tuple(v[[0, 2]]): v[1] for v in outline}
     u_repeat, v_repeat = REPEAT[part["finish"]]
     # End every wall above the same floor line, including raised building sections.
-    floors = max(1, round(part["height"] / 3.55))
+    floors = part.get("storeys") or max(1, round(part["height"] / 3.55))
     floor_height = part["height"] / floors
     stories_per_tile = round(v_repeat / 3.55)
     low_rise = bool(part.get("roofFinish"))

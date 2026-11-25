@@ -138,5 +138,33 @@
       "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Wall, shutter and roof scans by Poly Haven (CC0). Window panels use sampled Marina Bay scene radiance. Openings and finishes are visual approximations.",
       "表面": "基于地图楼高与轮廓，砖墙、面砖、压型板和肋纹混凝土沿街交替。玻璃门窗、百叶、装卸门及屋顶收边按米制尺度估算。"
     }
+  },
+  {
+    "entityId": "bay.waterfront-skyline-facades.beach-road",
+    "layer": "ext",
+    "kind": "structure",
+    "label": "滨海湾 · 远景楼群与临湾外墙",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "7613a762422bb1ba6ed9e14024dbcca388cde17d5f9d357f3472ad3f4251a4e4",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        -314.6970881435491,
+        -60.6826,
+        2250.122356903758
+      ],
+      "max": [
+        96.21347217083779,
+        57.339,
+        2733.958758524039
+      ]
+    },
+    "props": {
+      "background": true,
+      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Daylight glass sample by ambientCG and concrete scan by Poly Haven (CC0). Cladding, floor pitches and openings are visual approximations. Concrete coping scan by Poly Haven (CC0).",
+      "表面": "基于地图楼高与轮廓，采用阳台、竖向陶板、石柱窗墙、蓝色层间板、成对窗与横向百叶区分楼群。"
+    }
   }
 ]
