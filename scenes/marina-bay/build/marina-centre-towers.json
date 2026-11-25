@@ -315,7 +315,7 @@
     "regionId": "marina-bay-exterior",
     "layer": "ext",
     "label": "MILLENIA TOWER",
-    "assetHash": "e78bbda8ceaf3d29039221091f0ee65ce6acaae62958ff1772b01583d36eb429",
+    "assetHash": "70ffe200cf60e549261f86c7153573647fe40360714c1909608ca25998e51710",
     "bounds": {
       "min": [
         -224.8251495361328,
@@ -355,7 +355,8 @@
           "url": "https://commons.wikimedia.org/wiki/File:Marina_Bay,_Singapore_(P1110054).jpg",
           "license": "CC BY-SA 4.0"
         }
-      ]
+      ],
+      "临湾日间材质": "依 Daniel Case 实拍配准塔冠下方的暗窗横带与转角连窗，使用三处高度的当地环境反射。下部和未拍到的侧面参照同楼开窗方式延续。"
     }
   },
   {
