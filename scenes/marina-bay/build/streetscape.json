@@ -1338,7 +1338,7 @@
     "kind": "structure",
     "layer": "ext",
     "regionId": "marina-bay-exterior",
-    "assetHash": "586ae3d60cdda3a8de014dc8ba811635114d5160642449a0c4afb1dff0df99b5",
+    "assetHash": "4a4957410d0fdf7184c1d5d7023abfbaca2218c2a30b9a1d75e59ed9270883dc",
     "label": "高街中心 · 塔楼立面",
     "bounds": {
       "min": [
@@ -1367,7 +1367,8 @@
           735.3747236831257
         ],
         "maxDistance": 4100
-      }
+      },
+      "外装表面": "Poly Haven (CC0): concrete_wall_007."
     }
   },
   {
@@ -1375,7 +1376,7 @@
     "kind": "structure",
     "layer": "ext",
     "regionId": "marina-bay-exterior",
-    "assetHash": "fe0819ec7cd9d3dfa0f85ac7a2f2bde482c6e6ec275a1c131661291a38b0b3d9",
+    "assetHash": "df86fc11fde06908fe7fe698b1dadc4073b72668e45e9ef7119d9168fa69fcd3",
     "label": "半岛广场 · 塔楼立面",
     "bounds": {
       "min": [
@@ -1404,7 +1405,8 @@
           1052.215872403427
         ],
         "maxDistance": 4100
-      }
+      },
+      "外装表面": "Poly Haven (CC0): concrete_wall_007."
     }
   },
   {
@@ -1412,7 +1414,7 @@
     "kind": "structure",
     "layer": "ext",
     "regionId": "marina-bay-exterior",
-    "assetHash": "d1c321632ee44fbbc847e1024580d88927722becd8a97ac00dcec955dea7e92c",
+    "assetHash": "fe6e5463c00a60fce710a456444372a39d027f317e089a89bf30d671f47cad26",
     "label": "国家法院 · 办公塔 · 塔楼立面",
     "bounds": {
       "min": [
@@ -1441,7 +1443,8 @@
           86.08166657626654
         ],
         "maxDistance": 4100
-      }
+      },
+      "外装表面": "Poly Haven (CC0): concrete_wall_007."
     }
   },
   {
@@ -1449,7 +1452,7 @@
     "kind": "structure",
     "layer": "ext",
     "regionId": "marina-bay-exterior",
-    "assetHash": "89bf010e0dd653b5f62cbf725dfcc01aa90e5d71cfcf73cd7ad270edd23589df",
+    "assetHash": "68b21817fa2a21449be2bdb70adf2e677bab89ff8d1186e21794e5f3e4e5faf8",
     "label": "国家法院 · 审判塔 · 塔楼立面",
     "bounds": {
       "min": [
@@ -1478,7 +1481,8 @@
           87.23152718239061
         ],
         "maxDistance": 4100
-      }
+      },
+      "外装表面": "Poly Haven (CC0): concrete_wall_007."
     }
   },
   {
@@ -1585,7 +1589,7 @@
     "kind": "structure",
     "layer": "ext",
     "regionId": "marina-bay-exterior",
-    "assetHash": "02bc5631533fb40362a032eeb26a88629928f32ac7e49f6088de406d6151a0e2",
+    "assetHash": "f20e7169a4ae88480a34e279b53591284bfe19058be416819246930b1a41fe8c",
     "material": {
       "shading": "albedo"
     },
@@ -1604,7 +1608,8 @@
     "props": {
       "background": true,
       "施工地表": "依 2026-10-31 Sentinel-2 干地区域与施工边界延伸至平台后方。地表以 10 米卫星反射率估计大面积色差，近处采用 Poly Haven Concrete Floor 02（CC0）扫描纹理，看台下按施工几何估计间接光遮蔽。地面标高与材质衔接为估计。",
-      "工区边界来源": "© OpenStreetMap contributors, https://www.openstreetmap.org/way/1221351351"
+      "工区边界来源": "© OpenStreetMap contributors, https://www.openstreetmap.org/way/1221351351",
+      "外装表面": "Poly Haven (CC0): concrete_wall_007, metal_plate_02."
     }
   },
   {
@@ -1758,7 +1763,7 @@
     "kind": "structure",
     "layer": "ext",
     "regionId": "marina-bay-exterior",
-    "assetHash": "e16f7c661d23f2dd2bc87dfb18f1626558c0cfab7cef75569a4ce97cf0715260",
+    "assetHash": "9733b7319920a7914ae0c2c3b6220d60334129334a09322455d4dc4d9aff2d89",
     "bounds": {
       "min": [
         312.8685085019049,
@@ -1782,7 +1787,8 @@
         "https://commons.wikimedia.org/wiki/File:Singapore_Skyline_from_Esplanade.jpg",
         "https://commons.wikimedia.org/wiki/File:Singapore_Marina-Bay-Panorama-02.jpg"
       ],
-      "桥面与桥墩": "道路与步道按地图定位。桥墩、桥腹、栏杆和桥面坡度参照跨湾实拍估算。"
+      "桥面与桥墩": "道路与步道按地图定位。桥墩、桥腹、栏杆和桥面坡度参照跨湾实拍估算。",
+      "外装表面": "Poly Haven (CC0): blue_metal_plate, concrete_wall_007."
     }
   },
   {
@@ -1791,7 +1797,7 @@
     "kind": "structure",
     "layer": "ext",
     "regionId": "marina-bay-exterior",
-    "assetHash": "c0c10cfef8308fe6e18e232957cbe71163901810a9536dc490d127e092c9000e",
+    "assetHash": "5adee81dddb944cf4072f18eccb5f2d83e393ff7315095f149d636363bdadd57",
     "bounds": {
       "min": [
         300.6211410276216,
@@ -1812,7 +1818,8 @@
       "平面来源": "© OpenStreetMap contributors, ODbL 1.0. Coordinates are longitude and latitude. Each way records its source version.",
       "影像参考": "Singapore Land Authority, OneMap OrthoJPG, inspected at zoom 20.",
       "结构参考": "https://www.coxarchitecture.com.au/project/jubilee-bridge",
-      "重建范围": "按地图定位弧形桥面与桥间通道。三跨两墩，变截面混凝土箱梁。桥高、墩位和栏杆尺寸为估值。"
+      "重建范围": "按地图定位弧形桥面与桥间通道。三跨两墩，变截面混凝土箱梁。桥高、墩位和栏杆尺寸为估值。",
+      "外装表面": "Poly Haven (CC0): concrete_wall_007, metal_plate_02."
     }
   },
   {
@@ -1975,7 +1982,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "艺术科学博物馆滨水廊架",
-    "assetHash": "5617e93e49e4df663d5fb2c4e99b4a83c79f2a14b2872ba4672f578cc301cc43",
+    "assetHash": "9b5b8279042b7bd64d694e6a829ed12f94e55efd650c57ae98d612ec11919c42",
     "bounds": {
       "min": [
         -352.5814532042327,
@@ -1999,7 +2006,8 @@
         "https://commons.wikimedia.org/wiki/File:ArtScience_Museum_Birdview_from_Singapore_Flyer_20130209.JPG"
       ],
       "资料来源": "Layout interpreted from OneMap and OpenStreetMap contributors (ODbL). Granite Tile 04 by Poly Haven (CC0).",
-      "重建范围": "六段弧形廊架及棚下铺地。棚高取自地图标注，柱距和格栅尺寸据照片及正射图估读。"
+      "重建范围": "六段弧形廊架及棚下铺地。棚高取自地图标注，柱距和格栅尺寸据照片及正射图估读。",
+      "外装表面": "Poly Haven (CC0): blue_metal_plate."
     }
   },
   {
@@ -2042,7 +2050,7 @@
     "layer": "ext",
     "kind": "structure",
     "regionId": "marina-bay-exterior",
-    "assetHash": "df2217ec3d9f39a1aee22f8cf507ad5b7ead90724f5d25b8e40ccd613ba4aea2",
+    "assetHash": "5e2f7ac8cb46183fb058a6c8ff9d40496ef0b4f1c2ae54b0901b344bfed27962",
     "material": {
       "shading": "albedo"
     },
@@ -2051,7 +2059,8 @@
       "照片": "Actuall7, The Float@Marina Bay undergoing demolition, Sep 2026.jpg, CC BY 4.0. https://commons.wikimedia.org/wiki/File:The_Float@Marina_Bay_undergoing_demolition,_Sep_2026.jpg",
       "图像日期": "2026-09-24",
       "建模说明": "按照片可辨认的屋盖外沿、看台、吊臂与临时支撑建模。屋盖进深、开间与被遮挡面为估计。基于 2026 年 10 月的临水平台岸线。",
-      "三角形数": 20276
+      "三角形数": 20276,
+      "外装表面": "Poly Haven (CC0): concrete_wall_007, corrugated_iron_02, metal_plate_02."
     },
     "bounds": {
       "min": [

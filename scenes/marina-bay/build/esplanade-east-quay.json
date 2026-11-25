@@ -4,7 +4,7 @@
   "layer": "ext",
   "kind": "structure",
   "regionId": "marina-bay-exterior",
-  "assetHash": "0d02649e2dfdca64caf7934473012aed3ef316ed514700cd1696915e15ac9ef5",
+  "assetHash": "439a69ef5d45288c14c088448e73f96b243400cad68b46443916033ff86f38a6",
   "material": {
     "shading": "albedo"
   },
@@ -26,6 +26,7 @@
     "码头轮廓": "https://www.openstreetmap.org/way/256275113",
     "实拍": "https://commons.wikimedia.org/?curid=152986183",
     "高程": "岸顶按跨湾照片估高，内侧和两端的坡面与现有地面衔接。浮台干舷、栏杆和桩径为估值。",
-    "铺装": "Poly Haven Granite Tile 04, CC0"
+    "铺装": "Poly Haven Granite Tile 04, CC0",
+    "外装表面": "Poly Haven (CC0): blue_metal_plate, metal_plate_02."
   }
 }
