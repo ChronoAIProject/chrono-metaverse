@@ -19,6 +19,7 @@ from fullerton_shopfront import GLASS as SHOP_GLASS, PHOTO as SHOP_PHOTO, shopfr
 from fullerton_glazing import GLASS, PHOTO as GLAZING_PHOTO, glazing_patch
 from fullerton_wicker import PHOTO as WICKER_PHOTO, cane_material, rounded_board, woven_chair
 from fullerton_pendants import pendants
+from fullerton_terrace_daylight import apply_terrace_daylight, glazing_levels
 from fullerton_passage import bake as bake_passage
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -336,14 +337,16 @@ def deck_occlusion(pieces, canopy_ends):
 def set_deck_uv_channel(tree):
     for material in tree["materials"]:
         if "occlusionTexture" in material and material["name"] in {
-            "Deck boards", "Woven dining cane", "Outdoor timber", "Painted steel", "Sheltered teak tabletops"
+            "Deck boards", "Woven dining cane", "Outdoor timber", "Painted steel", "Sheltered teak tabletops",
+            "Pleated canopy lining", "Pale roof trim", "Grey aluminium",
         }:
             material["occlusionTexture"]["texCoord"] = 1
         if material["name"] == "Sheltered teak tabletops":
             material["extras"] = {"prefilteredReflection": True}
-        if material["name"] in {GLASS, SHOP_GLASS}:
-            material["extras"] = {"reflectSky": True, "surfaceRole": "facade"}
+        if material["name"] == GLASS:
+            material["extras"] = {"reflectionLevels": glazing_levels()}
         if material["name"] == SHOP_GLASS:
+            material["extras"] = {"reflectSky": True, "surfaceRole": "facade"}
             material["extras"]["facadeProbes"] = {
                 "span": 17.274, "height": 2.50, "eyeHeight": 1.36,
                 "first": 2.40, "spacing": 6.24, "count": 3, "depth": 7.4,
@@ -539,6 +542,7 @@ def furnish(start, along, inland, texture_path, output, region_id, canopy_ends, 
     anchor[1] = low[1]
     for mesh in scene.geometry.values():
         mesh.vertices -= anchor
+    apply_terrace_daylight(scene, middle)
     data = trimesh.exchange.gltf.export_glb(scene, include_normals=True,
                                             tree_postprocessor=set_deck_uv_channel)
     return dict(entityId="bay.fullerton-middle-terraces" if middle else "bay.fullerton-dining-terraces", regionId=region_id, layer="ext", kind="structure",
@@ -598,6 +602,11 @@ def bake(source, timber, output, buildings_file, streetscape_file):
         furniture["props"]["幕墙参考"] = GLAZING_PHOTO
         furniture["props"]["幕墙"] = "二层五个窗面沿折线合计约 52 米，采用 OneMap 原始立面和影像。主窗框按影像配准，框深、颜色和反射强度为估值。"
         furniture["props"]["棚顶"] = "两座棚体的坡面采用 SLA 实测坐标。屋面分段和屋脊色带参照正射影像。浅棚底的褶面、矩形横梁及分段檐板参照藤椅现场照片。折距、梁距、厚度和日间颜色为估值。"
+    if middle:
+        furniture["props"]["棚下间接光"] = "中段茶座的金属棚架按朝向采样天空和周围表面的一次漫反射。"
+    else:
+        furniture["props"]["棚下间接光"] = "按日间环境与周围建筑、木平台和梁架的一次漫反射估算间接照明。棚底光照纹理与褶面法线采用独立坐标，金属杆件按面向分别采样。"
+        furniture["props"]["二层玻璃倒影"] = "在临水窗带外侧三个高度采集当前海湾、步道和雨棚的日间光照，按玻璃粗糙度预过滤。暗窗底色、镀膜及粗糙度参照日间照片估计。"
     streetscape = {item["entityId"]: item for item in json.loads(streetscape_file.read_text())}
     streetscape[furniture["entityId"]] = furniture
     if not middle:
