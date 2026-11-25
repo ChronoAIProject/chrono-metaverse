@@ -10,6 +10,8 @@ import type {
 } from '../core/externalSource';
 import { GeoReference, tileBounds, tileCoordinates, tileKey, type Tile } from './geography';
 
+import { continueStackedFacades, type FacadeSection } from './stackedFacades';
+
 type Point = { x: number; y: number };
 
 function matchesBuildingPart(
@@ -346,6 +348,7 @@ export function vectorGeometry(
   const facade: number[] = [];
   const paint: number[] = [];
   const reflectionRows: number[] = [];
+  const sections: FacadeSection[] = [];
   const indices: number[] = [];
   let features = 0,
     vertices = 0;
@@ -443,6 +446,15 @@ export function vectorGeometry(
       }
       if (indices.length > 600000) throw new Error('矢量瓦片生成几何过大');
       if (style.facade) {
+        sections.push({
+          outline: polygon[0]!,
+          extent: feature.extent,
+          bottom: minHeight,
+          top: height,
+          tint,
+          firstVertex: roof,
+          endVertex: positions.length / 3,
+        });
         // IDs can group separate footprints. Check the surveyed height and position too.
         const row =
           reflectionBuildings?.findIndex((part) =>
@@ -465,6 +477,7 @@ export function vectorGeometry(
   geometry.setIndex(indices);
   geometry.computeBoundingBox();
   if (style.facade) {
+    continueStackedFacades(sections, facade);
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(facade, 2));
     if (reflectionBuildings)
       geometry.setAttribute('facadeProbe', new THREE.Float32BufferAttribute(reflectionRows, 2));
