@@ -1,0 +1,32 @@
+{
+  "south": {
+    "Grey aluminium": {
+      "samples": "fullerton-dining-terraces-grey-aluminium.npz"
+    },
+    "Pale roof trim": {
+      "samples": "fullerton-dining-terraces-pale-roof-trim.npz"
+    },
+    "Pleated canopy lining": {
+      "min": [
+        -7.623017311096191,
+        -9.86001968383789
+      ],
+      "max": [
+        3.044583797454834,
+        14.975311279296875
+      ],
+      "texture": "dining-canopy-irradiance.png"
+    }
+  },
+  "middle": {
+    "Grey aluminium": {
+      "samples": "fullerton-middle-terraces-grey-aluminium.npz"
+    }
+  },
+  "glazing": {
+    "first": 4.910514650344851,
+    "last": 10.697738113403318,
+    "count": 3,
+    "scale": 43
+  }
+}
