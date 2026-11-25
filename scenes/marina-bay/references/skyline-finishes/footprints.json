@@ -20,7 +20,20 @@
       "https://polyhaven.com/a/painted_plaster_wall",
       "https://ambientcg.com/view?id=Facade019A"
     ],
-    "SheetRoof": "https://polyhaven.com/a/corrugated_iron_03"
+    "SheetRoof": "https://polyhaven.com/a/corrugated_iron_03",
+    "BrickArcade": [
+      "https://polyhaven.com/a/brick_wall_003",
+      "https://polyhaven.com/a/painted_metal_shutter",
+      "https://ambientcg.com/a/Facade019A"
+    ],
+    "PanelArcade": [
+      "https://polyhaven.com/a/rectangular_facade_tiles",
+      "https://polyhaven.com/a/painted_metal_shutter",
+      "https://ambientcg.com/a/Facade019A"
+    ],
+    "ZincRoof": "https://polyhaven.com/a/corrugated_iron_03",
+    "SlateRoof": "https://polyhaven.com/a/grey_roof_tiles_02",
+    "ConcreteRoof": "https://polyhaven.com/a/concrete_floor_02"
   },
   "parts": [
     {
@@ -1621,8 +1634,8 @@
       "minHeight": 0,
       "height": 5,
       "tile": "14/12918/8134",
-      "finish": "ServiceWall",
-      "roofFinish": "SheetRoof",
+      "finish": "PanelArcade",
+      "roofFinish": "SlateRoof",
       "group": "service-south",
       "outline": [
         [
@@ -1658,8 +1671,8 @@
       "minHeight": 0,
       "height": 5,
       "tile": "14/12918/8134",
-      "finish": "ServiceWall",
-      "roofFinish": "SheetRoof",
+      "finish": "BrickArcade",
+      "roofFinish": "SlateRoof",
       "group": "service-south",
       "outline": [
         [
@@ -1735,8 +1748,8 @@
       "minHeight": 0,
       "height": 5,
       "tile": "14/12918/8133",
-      "finish": "ServiceWall",
-      "roofFinish": "SheetRoof",
+      "finish": "PanelArcade",
+      "roofFinish": "ZincRoof",
       "group": "service-south",
       "outline": [
         [
@@ -1787,8 +1800,8 @@
       "minHeight": 0,
       "height": 5,
       "tile": "14/12918/8133",
-      "finish": "ServiceWall",
-      "roofFinish": "SheetRoof",
+      "finish": "BrickArcade",
+      "roofFinish": "ZincRoof",
       "group": "service-south",
       "outline": [
         [
@@ -1824,8 +1837,8 @@
       "minHeight": 0,
       "height": 5,
       "tile": "14/12918/8133",
-      "finish": "ServiceWall",
-      "roofFinish": "SheetRoof",
+      "finish": "PanelArcade",
+      "roofFinish": "SlateRoof",
       "group": "service-south",
       "outline": [
         [
@@ -1861,8 +1874,8 @@
       "minHeight": 0,
       "height": 5,
       "tile": "14/12918/8133",
-      "finish": "ServiceWall",
-      "roofFinish": "SheetRoof",
+      "finish": "PanelArcade",
+      "roofFinish": "SlateRoof",
       "group": "service-south",
       "outline": [
         [
@@ -1898,8 +1911,8 @@
       "minHeight": 0,
       "height": 5,
       "tile": "14/12918/8133",
-      "finish": "ServiceWall",
-      "roofFinish": "SheetRoof",
+      "finish": "BrickArcade",
+      "roofFinish": "SlateRoof",
       "group": "service-south",
       "outline": [
         [
@@ -1935,8 +1948,8 @@
       "minHeight": 0,
       "height": 4,
       "tile": "14/12918/8134",
-      "finish": "ServiceWall",
-      "roofFinish": "SheetRoof",
+      "finish": "PanelArcade",
+      "roofFinish": "ZincRoof",
       "group": "service-south",
       "outline": [
         [
@@ -1972,8 +1985,8 @@
       "minHeight": 0,
       "height": 3,
       "tile": "14/12918/8133",
-      "finish": "ServiceWall",
-      "roofFinish": "SheetRoof",
+      "finish": "BrickArcade",
+      "roofFinish": "SlateRoof",
       "group": "service-centre",
       "outline": [
         [
@@ -2029,8 +2042,8 @@
       "minHeight": 0,
       "height": 3,
       "tile": "14/12918/8133",
-      "finish": "ServiceWall",
-      "roofFinish": "SheetRoof",
+      "finish": "BrickArcade",
+      "roofFinish": "ZincRoof",
       "group": "service-centre",
       "outline": [
         [
@@ -2066,8 +2079,8 @@
       "minHeight": 0,
       "height": 3,
       "tile": "14/12918/8133",
-      "finish": "ServiceWall",
-      "roofFinish": "SheetRoof",
+      "finish": "BrickArcade",
+      "roofFinish": "ConcreteRoof",
       "group": "service-centre",
       "outline": [
         [
@@ -2108,8 +2121,8 @@
       "minHeight": 0,
       "height": 3,
       "tile": "14/12918/8133",
-      "finish": "ServiceWall",
-      "roofFinish": "SheetRoof",
+      "finish": "BrickArcade",
+      "roofFinish": "SlateRoof",
       "group": "service-centre",
       "outline": [
         [
@@ -2145,8 +2158,8 @@
       "minHeight": 0,
       "height": 3,
       "tile": "14/12918/8133",
-      "finish": "ServiceWall",
-      "roofFinish": "SheetRoof",
+      "finish": "BrickArcade",
+      "roofFinish": "ConcreteRoof",
       "group": "service-centre",
       "outline": [
         [
@@ -2192,8 +2205,8 @@
       "minHeight": 0,
       "height": 3,
       "tile": "14/12918/8133",
-      "finish": "ServiceWall",
-      "roofFinish": "SheetRoof",
+      "finish": "PanelArcade",
+      "roofFinish": "SlateRoof",
       "group": "service-centre",
       "outline": [
         [
@@ -2235,5 +2248,5 @@
       ]
     }
   ],
-  "lowRiseCopyright": "Building footprints and heights \u00a9 OpenStreetMap contributors (ODbL), via OpenFreeMap. Painted Plaster Wall and Corrugated Iron 03 by Poly Haven (CC0); Facade019A by ambientCG (CC0). Wall openings, paint and roofing are visual approximations."
+  "lowRiseCopyright": "Building footprints and heights \u00a9 OpenStreetMap contributors (ODbL), via OpenFreeMap. Brick, ceramic cladding, shutter and roof surfaces by Poly Haven (CC0). Window finish by ambientCG (CC0). Openings and finishes are visual approximations."
 }

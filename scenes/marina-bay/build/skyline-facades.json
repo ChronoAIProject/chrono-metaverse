@@ -89,7 +89,7 @@
     "kind": "structure",
     "label": "滨海湾 · 低层建筑屋面与墙身",
     "regionId": "marina-bay-exterior",
-    "assetHash": "c7a6b3cd8b6c2c4d5a37a2382497a231dd756b5bf82da7796b89f4f04e3a8c9d",
+    "assetHash": "7f4deef03ab2901cb3ce13a3f1399dfee6ea06a6f0fcd29e7225e5febee002a5",
     "material": {
       "shading": "albedo"
     },
@@ -107,8 +107,8 @@
     },
     "props": {
       "background": true,
-      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Painted Plaster Wall and Corrugated Iron 03 by Poly Haven (CC0); Facade019A by ambientCG (CC0). Wall openings, paint and roofing are visual approximations.",
-      "表面": "基于地图楼高与轮廓，金属屋面、灰泥、窗带和门板按米制尺度估算。"
+      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Brick, ceramic cladding, shutter and roof surfaces by Poly Haven (CC0). Window finish by ambientCG (CC0). Openings and finishes are visual approximations.",
+      "表面": "基于地图楼高与轮廓，金属、瓦片和混凝土屋面，砖墙、面砖、卷帘门与窗带按米制尺度估算。"
     }
   },
   {
@@ -117,7 +117,7 @@
     "kind": "structure",
     "label": "滨海湾 · 低层建筑屋面与墙身",
     "regionId": "marina-bay-exterior",
-    "assetHash": "6e1e8979ca573cc33a4b504d6fe0c8f05d82c1f0a8e1d89bbfe41c910ca1fc6c",
+    "assetHash": "281452a6e3e2b244e52a47599bd825756986cf0e864ce51cab534edf7e54f4db",
     "material": {
       "shading": "albedo"
     },
@@ -135,8 +135,8 @@
     },
     "props": {
       "background": true,
-      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Painted Plaster Wall and Corrugated Iron 03 by Poly Haven (CC0); Facade019A by ambientCG (CC0). Wall openings, paint and roofing are visual approximations.",
-      "表面": "基于地图楼高与轮廓，金属屋面、灰泥、窗带和门板按米制尺度估算。"
+      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Brick, ceramic cladding, shutter and roof surfaces by Poly Haven (CC0). Window finish by ambientCG (CC0). Openings and finishes are visual approximations.",
+      "表面": "基于地图楼高与轮廓，金属、瓦片和混凝土屋面，砖墙、面砖、卷帘门与窗带按米制尺度估算。"
     }
   }
 ]

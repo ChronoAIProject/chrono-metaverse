@@ -403,6 +403,8 @@ export function urbanFacade(
           diffuseColor.rgb = mix(diffuseColor.rgb,finish.rgb*tint,wall);
           panes = finish.a;
           glass = diffuseColor.rgb;
+        } else if (buildingFinishesReady) {
+          diffuseColor.rgb = buildingRoof(cityPosition.xz, variant, step(3.0,cityFacade.y));
         }
         `,
         )

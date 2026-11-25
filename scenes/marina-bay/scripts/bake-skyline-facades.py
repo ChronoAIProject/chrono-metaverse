@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REFERENCES = ROOT / "references/skyline-finishes"
 # Width and height in metres of each repeating window-wall texture.
 REPEAT = {"Facade006": (22.4, 27.2), "Facade018A": (18.0, 21.6), "Facade019A": (17.4, 21.0),
-          "ServiceWall": (12.0, 3.55)}
+          "ServiceWall": (12.0, 3.55), "BrickArcade": (13.8, 3.55), "PanelArcade": (12.6, 3.55)}
 
 
 def facade_material(name):
@@ -141,7 +141,7 @@ def bake_group(group, parts, credit_line):
         "props": {
             "background": True,
             "版权": credit_line,
-            "表面": ("基于地图楼高与轮廓，金属屋面、灰泥、窗带和门板按米制尺度估算。" if low_rise
+            "表面": ("基于地图楼高与轮廓，金属、瓦片和混凝土屋面，砖墙、面砖、卷帘门与窗带按米制尺度估算。" if low_rise
                    else "基于地图楼高与轮廓，采用三组日间外墙贴图估算窗格与层间饰面。"),
         },
     }
