@@ -302,7 +302,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "滨海湾 · 街道与滨水树冠",
-    "assetHash": "1f4b2b3f42b7467418980921c8904bc61fb3c8a9922bc0dce4e239bf5368ae2b",
+    "assetHash": "3530ef63201a2500fe0c1d4bb1496795962f89b63bb31353e22b2fe96e703139",
     "bounds": {
       "min": [
         -1.725346582742541,
@@ -326,7 +326,8 @@
       "棕榈数": 0,
       "已单独建模树位数": 0,
       "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes.",
-      "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
+      "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。",
+      "街区天光": "按周边建筑及地表遮挡估计叶片能收到的天空漫射光，包括一次反弹。保留已有树冠间的遮蔽，并按叶片两侧的入射照度加权。"
     }
   },
   {
@@ -335,7 +336,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "滨海湾 · 街道与滨水树冠",
-    "assetHash": "74b4c314d25f388441aa32eed89f618818a65298d47ba551e06feb8ff66210ad",
+    "assetHash": "31dbbf7d8c7bdb3512af90027517aff0a0c10ac012015c9e4dc233e01f3122c3",
     "bounds": {
       "min": [
         33.830532604743034,
@@ -359,7 +360,8 @@
       "棕榈数": 12,
       "已单独建模树位数": 22,
       "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes. Royal palm mesh and textures adapted from 0 A.D., Wildfire Games, https://wildfiregames.com/, CC BY-SA 3.0, https://creativecommons.org/licenses/by-sa/3.0/. Scaled, rotated and batched for the street-tree census.",
-      "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
+      "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。",
+      "街区天光": "按周边建筑及地表遮挡估计叶片能收到的天空漫射光，包括一次反弹。保留已有树冠间的遮蔽，并按叶片两侧的入射照度加权。"
     }
   },
   {
@@ -368,7 +370,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "滨海湾 · 街道与滨水树冠",
-    "assetHash": "211483b6cd96a34f82f048ed0ae073100cb9193f1f884887fba59d172d2be2e9",
+    "assetHash": "79c941722dcea00ed14ca94be7b38beff09493c2727287cd6cb9784d78d2c006",
     "bounds": {
       "min": [
         286.0409405901775,
@@ -392,7 +394,8 @@
       "棕榈数": 0,
       "已单独建模树位数": 115,
       "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes.",
-      "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
+      "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。",
+      "街区天光": "按周边建筑及地表遮挡估计叶片能收到的天空漫射光，包括一次反弹。保留已有树冠间的遮蔽，并按叶片两侧的入射照度加权。"
     }
   },
   {
