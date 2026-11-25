@@ -1204,7 +1204,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "皇后坊 · 大草坪与达尔豪西纪念碑步道",
-    "assetHash": "07dc01a84a5a288eb3797ecc05cbd30a9cc34610f73b147a88ba8b9fa3f2d53d",
+    "assetHash": "c72623f5167c0efc9be5a3c916464fe7ff61a81dbb8b5466006f302f900d50d0",
     "bounds": {
       "min": [
         494.98935236691,
@@ -1945,7 +1945,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "政府大厦前大草场 · 南北球场",
-    "assetHash": "8033a6582ff968e3f16230f51fd4ffcb35a74fac0904af685bf06f6481a1220e",
+    "assetHash": "3b902f19f4abf4709dbc1e8fe29158ac7fa74ba1cddd24f7be50561bf2dfb7e9",
     "bounds": {
       "min": [
         560.2195923694571,
