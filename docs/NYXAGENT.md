@@ -64,3 +64,9 @@ NyxID 的 OpenAPI 抓取策略可能拒绝本地地址，此时服务提供 `chr
 `web/src/workspace/nyxagent.test.ts` 验证分块 SSE、终态与会话编号、授权及存储隔离；`NyxAgentPanel.test.tsx` 验证发送、预览、续聊、断流恢复和换 Key 限制。后端 `tests/oauth_support/nyxagent_tests.rs` 使用真实 MongoDB 与模拟 NyxID/NyxAgent，验证原始 Key 转发、授权范围、CSRF、组织归属、幂等头和错误脱敏。
 
 真实模型调用需要用户在浏览器批准对应 Agent Key。模拟集成通过及测试站部署成功，不等于已经用用户真实 Key 完成空间编辑。
+
+## 当前选区的 SDK 工具
+
+在工作台查看器里点选一个可见物件，对 NyxAgent 说“聚焦当前选中物件”。页面通过 NyxID 助手 SDK 声明 `read_selection` 与 `focus_selection`。前者读取当前查看器选区，后者核对空间和物件编号，调用查看器的镜头接口，并把实际结果交还原会话。切换视图、关闭窗口或选区变化都可能使原调用失效。
+
+这条路径沿用已授权的 `llm-nyx` 服务、同源消息接口和请求恢复机制。工作台以指令版本 6 发送宿主工具描述；确认需要在当前实例执行时才分发调用。重新载入时，已经失去原绑定的页面操作显示为待核对。SDK 版本由网页的包锁文件固定。

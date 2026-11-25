@@ -16,6 +16,7 @@
     "e2e": "playwright test --config e2e/playwright.config.ts --trace off"
   },
   "dependencies": {
+    "@chronoai/nyx-assistant-sdk": "https://github.com/ChronoAIProject/nyx-assistant-sdk/releases/download/v0.1.0-alpha.2/chronoai-nyx-assistant-sdk-0.1.0-alpha.2.tgz",
     "@mapbox/vector-tile": "2.0.5",
     "@noble/hashes": "2.4.0",
     "3d-tiles-renderer": "0.5.4",

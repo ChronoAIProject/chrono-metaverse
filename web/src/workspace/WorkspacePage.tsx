@@ -35,6 +35,7 @@ import { OAuthConnection } from '../auth/OAuthConnection';
 import { AgentKeyConnection } from '../auth/AgentKeyConnection';
 import { readAuthMethod, saveAuthMethod, type CmaAuthMethod } from '../auth/cmaConnection';
 import { useFloatingChat } from './useFloatingChat';
+import { ViewerToolsContext, ViewerToolBinding } from './viewerTools';
 import { NyxAgentPanel } from './NyxAgentPanel';
 import { setPendingViewerCommand, type ViewerCommand } from './viewerActions';
 
@@ -72,6 +73,15 @@ function fileUploadIntent(base: Notebook): Intent {
   };
 }
 export function WorkspacePage({ request = fetch }: { readonly request?: typeof fetch }) {
+  const [sdkViewer] = useState(() => new ViewerToolBinding());
+  return (
+    <ViewerToolsContext.Provider value={sdkViewer}>
+      <Workspace request={request} />
+    </ViewerToolsContext.Provider>
+  );
+}
+
+function Workspace({ request }: { readonly request: typeof fetch }) {
   const [accountSession, setSession] = useState<Session | null>(null);
   const [note, setNote] = useState<Notebook>(emptyNotebook);
   const [catalog, setCatalog] = useState<Catalog | null>(null);

@@ -14,7 +14,7 @@ export type NyxagentTask = {
   instruction: string;
   idempotencyKey: string;
   conversationId?: string;
-  instructionsVersion?: 1 | 2 | 3 | 4 | 5;
+  instructionsVersion?: 1 | 2 | 3 | 4 | 5 | 6;
   viewerContext?: ViewerContext;
 };
 export type NyxagentResponse = {
@@ -76,7 +76,8 @@ export function readNyxagentNote(subject: string, spaceId: string, orgId?: strin
           p.body.instructionsVersion !== 2 &&
           p.body.instructionsVersion !== 3 &&
           p.body.instructionsVersion !== 4 &&
-          p.body.instructionsVersion !== 5) ||
+          p.body.instructionsVersion !== 5 &&
+          p.body.instructionsVersion !== 6) ||
         (p.body.viewerContext !== undefined &&
           JSON.stringify(p.body.viewerContext).length > 16000) ||
         (p.body.conversationId !== undefined && !identifier(p.body.conversationId))
