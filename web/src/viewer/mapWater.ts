@@ -4,6 +4,7 @@ import { skyRadiance } from './skyRadiance';
 import { KEY_LIGHT } from './lighting';
 import gravityField from '../assets/geography/reservoir-gravity.webp';
 import rippleField from '../assets/geography/reservoir-ripples.webp';
+import reservoirReflectance from '../assets/geography/reservoir-reflectance.png';
 
 /** 同一片水域共用米制波纹坐标；像素覆盖超过波长时逐渐滤掉细纹。 */
 export function mapWaterMaterial(
@@ -51,6 +52,8 @@ export function mapWaterMaterial(
             gravityField: { value: null as THREE.Texture | null },
             rippleField: { value: null as THREE.Texture | null },
             spectrumReady: { value: false },
+            slopeReflectance: { value: null as THREE.Texture | null },
+            reflectanceReady: { value: false },
             rippleRms: { value: measuredRipples },
             rippleDownwind: { value: downwind },
           }
@@ -110,6 +113,8 @@ export function mapWaterMaterial(
       #ifdef WATER_SPECTRUM
         uniform sampler2D gravityField, rippleField;
         uniform bool spectrumReady;
+        uniform sampler2D slopeReflectance;
+        uniform bool reflectanceReady;
         uniform float rippleRms;
         uniform vec2 rippleDownwind;
 
@@ -314,6 +319,19 @@ export function mapWaterMaterial(
         }
         float cosine = clamp(dot(eye,normal),0.0,1.0);
         float fresnel = waterFresnel(cosine);
+        #ifdef WATER_SPECTRUM
+          if (spectrumWeight > 0.0 && reflectanceReady) {
+            // The mean normal loses subpixel slopes. Use their variance along the
+            // viewing direction for the integrated dielectric response.
+            vec2 azimuth = wind * eye.xz / max(length(eye.xz), 1e-5);
+            float variance = dot(spectralVariance, secondMoment(azimuth) * vec3(1, 2, 1));
+            float sigma = sqrt(max(variance, 0.0));
+            vec2 size = vec2(textureSize(slopeReflectance, 0));
+            vec2 entry = vec2(sqrt(cosine), pow(min(sigma / 6.0, 1.0), 1.0 / 3.0));
+            vec2 uv = (entry * (size - 1.0) + 0.5) / size;
+            fresnel = mix(fresnel, texture2D(slopeReflectance, uv).r, spectrumWeight);
+          }
+        #endif
         vec3 halfVector = normalize(eye + sunlight);
         float nh = max(0.0,dot(normal,halfVector));
         // 风浪斜率近似高斯分布。只在满足镜面反射的浪面上形成太阳闪光。
@@ -363,7 +381,17 @@ export function mapWaterMaterial(
     });
     material.uniforms.gravityField!.value = textures[0];
     material.uniforms.rippleField!.value = textures[1];
-    material.addEventListener('dispose', () => textures.forEach((texture) => texture.dispose()));
+    const table = loader.load(reservoirReflectance, () => {
+      material.uniforms.reflectanceReady!.value = true;
+    });
+    table.flipY = false;
+    table.generateMipmaps = false;
+    table.minFilter = THREE.LinearFilter;
+    material.uniforms.slopeReflectance!.value = table;
+    material.addEventListener('dispose', () => {
+      textures.forEach((texture) => texture.dispose());
+      table.dispose();
+    });
   }
   if (sample) Object.assign(material.defaultAttributeValues, { sampledWater: [0] });
   material.onBeforeRender = (_renderer, scene) => {
