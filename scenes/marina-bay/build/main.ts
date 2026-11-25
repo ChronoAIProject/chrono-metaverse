@@ -36,16 +36,21 @@ export function withBoatQuay(surroundings: EntityBody): EntityBody {
   );
   const sources = 'sources' in content && Array.isArray(content.sources) ? content.sources : [];
   const towerSurvey = JSON.parse(readFileSync(new URL('../references/marina-centre-towers.json', import.meta.url), 'utf8')) as {
-    tileSource: string; layer: string; reference: unknown; excludeBuildingParts: unknown[];
+    tileSource: string; layer: string; reference: unknown; excludeBuildingParts: unknown[]; supersededBuildingParts: unknown[];
   };
   const previousParts = 'excludeBuildingParts' in style ? style.excludeBuildingParts : [];
   let towerParts = {};
   if (sources.length === 1 && sources[0]?.url === towerSurvey.tileSource &&
       'layer' in style && style.layer === towerSurvey.layer &&
       'reference' in content && isDeepStrictEqual(content.reference, towerSurvey.reference) && Array.isArray(previousParts)) {
-    const additions = towerSurvey.excludeBuildingParts.filter(part => !previousParts.some(saved => isDeepStrictEqual(saved, part)));
-    if (previousParts.length + additions.length <= 256 && additions.length) {
-      towerParts = { excludeBuildingParts: [...previousParts, ...additions] };
+    const retained = previousParts.filter(saved =>
+      !towerSurvey.supersededBuildingParts.some(part => isDeepStrictEqual(saved, part)),
+    );
+    const additions = towerSurvey.excludeBuildingParts.filter(part =>
+      !retained.some(saved => isDeepStrictEqual(saved, part)),
+    );
+    if (retained.length + additions.length <= 256 && (additions.length || retained.length !== previousParts.length)) {
+      towerParts = { excludeBuildingParts: [...retained, ...additions] };
     }
   }
   const waterLayer = 'waterLayer' in content && content.waterLayer === 'water';

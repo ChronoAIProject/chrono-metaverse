@@ -2122,5 +2122,172 @@
       "材质说明": "按原始斜屋面和外墙法线分材质。住宅窗带由现场影像裁切，窗距、色调与亲水中心表面为估计。",
       "三角形数": 24196
     }
+  },
+  {
+    "entityId": "bay.tanjong-rhu-residences",
+    "label": "丹戎禺住宅群 · Pebble Bay、Park Shore、Sanctuary Green 与 Water Place",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "55cb04a6441cf895edd7c3086771370d7064ea4aa7993d28dd29388d0dafc150",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        -1147.2304084623331,
+        -60.66039345497627,
+        2287.669908161226
+      ],
+      "max": [
+        -763.7735264036442,
+        17.8553049188567,
+        2657.8280984354697
+      ]
+    },
+    "props": {
+      "background": true,
+      "测绘建筑": [
+        {
+          "名称": "WATER PLACE",
+          "编号": "SLA_BLDG2_daa8dd32-a3b4-4a64-84d5-e2a7e18f7f92",
+          "高度": 64.775,
+          "分片": "5/21/2_2.b3dm"
+        },
+        {
+          "名称": "WATER PLACE",
+          "编号": "SLA_BLDG2_9542beed-98e4-41a4-99b6-d7bc7d5da9ef",
+          "高度": 78.434,
+          "分片": "5/21/2_2.b3dm"
+        },
+        {
+          "名称": "WATER PLACE",
+          "编号": "SLA_BLDG2_309a5fd8-ed2a-4be8-83e3-68e8027b5ac5",
+          "高度": 54.787,
+          "分片": "5/21/3_2.b3dm"
+        },
+        {
+          "名称": "WATER PLACE",
+          "编号": "SLA_BLDG2_8ac6be05-43b2-431f-b761-62e3e227e15b",
+          "高度": 56.295,
+          "分片": "5/21/3_2.b3dm"
+        },
+        {
+          "名称": "PEBBLE BAY",
+          "编号": "SLA_BLDG2_9ec87663-0f65-4550-a1f5-96b414b0c781",
+          "高度": 42.149,
+          "分片": "5/21/3_2.b3dm"
+        },
+        {
+          "名称": "PARK SHORE",
+          "编号": "SLA_BLDG2_bd415414-8e31-4346-9bfa-c4fc16ef7e88",
+          "高度": 7.306,
+          "分片": "5/20/3_3.b3dm"
+        },
+        {
+          "名称": "SANCTUARY GREEN",
+          "编号": "SLA_BLDG2_ae71d632-4b24-4125-99a0-74c343b26952",
+          "高度": 46.371,
+          "分片": "5/20/3_3.b3dm"
+        },
+        {
+          "名称": "PARK SHORE",
+          "编号": "SLA_BLDG2_24d7e447-c5d2-428c-99d5-e46a4a49efbb",
+          "高度": 32.481,
+          "分片": "5/20/3_3.b3dm"
+        },
+        {
+          "名称": "PEBBLE BAY",
+          "编号": "SLA_BLDG2_bdef784c-019f-4fd7-89e6-2798571215ed",
+          "高度": 36.041,
+          "分片": "5/20/3_3.b3dm"
+        },
+        {
+          "名称": "PARK SHORE",
+          "编号": "SLA_BLDG2_47feb77e-88eb-47d7-9c20-78652f88928e",
+          "高度": 56.859,
+          "分片": "5/20/3_3.b3dm"
+        },
+        {
+          "名称": "SANCTUARY GREEN",
+          "编号": "SLA_BLDG2_b9dcc6bd-2c51-42b6-b20c-a77d71099d47",
+          "高度": 8.292,
+          "分片": "6/41/5_4.b3dm"
+        },
+        {
+          "名称": "SANCTUARY GREEN",
+          "编号": "SLA_BLDG2_11239c1b-b2af-4209-9dff-baa0187b45c0",
+          "高度": 46.995,
+          "分片": "6/41/5_4.b3dm"
+        },
+        {
+          "名称": "WATER PLACE",
+          "编号": "SLA_BLDG2_81c39a56-59e3-4486-99bd-818067fb1273",
+          "高度": 62.77,
+          "分片": "6/41/5_4.b3dm"
+        },
+        {
+          "名称": "SANCTUARY GREEN",
+          "编号": "SLA_BLDG2_9f7117ad-7f6f-4004-9824-1a47e9e27db1",
+          "高度": 58.412,
+          "分片": "6/41/5_4.b3dm"
+        },
+        {
+          "名称": "WATER PLACE",
+          "编号": "SLA_BLDG2_52c852a0-232c-4ba3-8c32-58d98966a318",
+          "高度": 54.859,
+          "分片": "6/41/5_4.b3dm"
+        },
+        {
+          "名称": "PARK SHORE",
+          "编号": "SLA_BLDG2_43e9deaf-908d-4d82-aa67-4cb229b187cf",
+          "高度": 33.192,
+          "分片": "6/41/5_4.b3dm"
+        },
+        {
+          "名称": "SANCTUARY GREEN",
+          "编号": "SLA_BLDG2_922ff31e-5fbe-49cb-8d9f-721da88d1403",
+          "高度": 72.792,
+          "分片": "6/41/5_4.b3dm"
+        },
+        {
+          "名称": "SANCTUARY GREEN",
+          "编号": "SLA_BLDG2_e16ffb4f-927e-4d7c-b4fc-dd215f9cc976",
+          "高度": 59.662,
+          "分片": "6/41/5_4.b3dm"
+        },
+        {
+          "名称": "PEBBLE BAY",
+          "编号": "SLA_BLDG2_1766e2ee-5be8-44ba-a517-633e9d6b0306",
+          "高度": 34.448,
+          "分片": "6/41/7_4.b3dm"
+        },
+        {
+          "名称": "PEBBLE BAY",
+          "编号": "SLA_BLDG2_f044209d-26e2-4fd8-a0b2-36995652a074",
+          "高度": 72.849,
+          "分片": "6/41/7_4.b3dm"
+        },
+        {
+          "名称": "PEBBLE BAY",
+          "编号": "SLA_BLDG2_68bd5f08-816b-41fd-a670-91743eb4c11c",
+          "高度": 64.435,
+          "分片": "6/41/7_4.b3dm"
+        },
+        {
+          "名称": "PEBBLE BAY",
+          "编号": "SLA_BLDG2_8d94b1de-7b59-49a3-ade0-dcc5670307ed",
+          "高度": 73.094,
+          "分片": "6/41/7_4.b3dm"
+        }
+      ],
+      "数据来源": "Map Data © Singapore Land Authority. https://github.com/cheeaun/om3d/tree/ac451b84/optimized-tiles",
+      "立面影像": [
+        "Erwin Soo, Pebble Bay, Tanjong Rhu (8166823267). Cropped, rectified and relit. CC BY 2.0. https://commons.wikimedia.org/wiki/File:Pebble_Bay,_Tanjong_Rhu_(8166823267).jpg https://creativecommons.org/licenses/by/2.0/",
+        "Robert Sim, Haze over Tanjong Rhu on Sept 14, 2026 - RSKY. Cropped, rectified and relit. CC BY-SA 4.0. https://commons.wikimedia.org/wiki/File:Haze_over_Tanjong_Rhu_on_Sept_14,_2026_-_RSKY.jpg https://creativecommons.org/licenses/by-sa/4.0/"
+      ],
+      "材质说明": "根据实拍推定窗墙节奏、侧墙颜色和屋面材料。按测绘楼间距与朝向估计遮蔽，按各组团庭院环境近似窗面倒影。",
+      "三角形数": 33714
+    }
   }
 ]
