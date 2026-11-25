@@ -1,3 +1,4 @@
+import type { ToolDescription } from '@chronoai/nyx-assistant-sdk';
 import { viewerLink } from './client';
 import { isStyleId } from '../core/styles';
 
@@ -31,6 +32,7 @@ export function consumePendingViewerCommand(): ViewerCommand | undefined {
 }
 
 export type ViewerContext = {
+  host?: { instanceId: string; requestId: string; tools: ToolDescription[] };
   spaces: { id: string; name: string }[];
   preview?: string;
 };
