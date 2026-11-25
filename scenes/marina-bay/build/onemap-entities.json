@@ -6008,7 +6008,7 @@
     "kind": "object",
     "label": "HSBC BUILDING",
     "regionId": "marina-bay-exterior",
-    "assetHash": "774842bfadb93afb76919cf876bff69cfd51d220e3705b8c56cb33197115fe3d",
+    "assetHash": "5da169d7b80130c1850f58e2f365e83a6d9dd9381af301ed841eaff48e88edb3",
     "bounds": {
       "min": [
         352.466252,
@@ -6032,7 +6032,8 @@
       "三角形数": 2601,
       "日间外观参考": "依据 2010 年 Singapore Skyline from Esplanade 和 2015 年 Singapore Marina-Bay-Panorama-02 的临湾立面亮度，以浮尔顿酒店向阳石墙作曝光参照。",
       "原建筑资源": "ef6027fa1252b09ac77c89c2d6e9939c75e6d6056d199fa029860cc992009872",
-      "临湾墙面色度": "以浮尔顿酒店临湾石墙为白平衡参照，用 2010、2015 年跨湾照片估算墙面红绿与蓝绿比例的偏差，并以 2023 年两张独立照片核对。在线性光下调整原材质的色度，按原亮度归一。"
+      "临湾墙面色度": "以浮尔顿酒店临湾石墙为白平衡参照，用 2010、2015 年跨湾照片估算墙面红绿与蓝绿比例的偏差，并以 2023 年两张独立照片核对。在线性光下调整原材质的色度，按原亮度归一。",
+      "窗格明暗校准": "在测绘立面的纹理坐标内，以相邻窗框、墙面和玻璃的实拍亮度差估计窗格漫反射。按跨湾机位分别校准，遮挡区域沿用测绘影像。"
     },
     "material": {
       "shading": "albedo",
@@ -6958,7 +6959,7 @@
     "kind": "object",
     "label": "OCEAN FINANCIAL CENTRE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "ca681fb6ca62b9b1eed59263d129f2dc9a92cb3c181eb29a345e01b7d2166598",
+    "assetHash": "0f8cc7570f590f2623810fd11a06b41dfb531a8f8699a0a22a35f461785aa942",
     "bounds": {
       "min": [
         334.76153,
@@ -6986,10 +6987,11 @@
         "https://www.openstreetmap.org/way/1566589608/history/1"
       ],
       "modelOcclusion": {
-        "sourceAsset": "ca681fb6ca62b9b1eed59263d129f2dc9a92cb3c181eb29a345e01b7d2166598",
+        "sourceAsset": "0f8cc7570f590f2623810fd11a06b41dfb531a8f8699a0a22a35f461785aa942",
         "material": "dc2400186",
         "texture": "feb5c83f43e2191ad7fea4c0461bbae40d48165f2315de53f8700cefa9eb8bd5"
-      }
+      },
+      "窗格明暗校准": "在测绘立面的纹理坐标内，以相邻窗框、墙面和玻璃的实拍亮度差估计窗格漫反射。按跨湾机位分别校准，遮挡区域沿用测绘影像。"
     },
     "textures": [
       "feb5c83f43e2191ad7fea4c0461bbae40d48165f2315de53f8700cefa9eb8bd5"
@@ -7806,7 +7808,7 @@
     "kind": "object",
     "label": "HITACHI TOWER",
     "regionId": "marina-bay-exterior",
-    "assetHash": "b1e3a106ca5f3f82586703d78fad1e4d65f5abff47f82357ec0228b7e8f5723c",
+    "assetHash": "2cb40a9b5f51ed800365cc0b0e8b04c70db9c50e3f7a8a58b0af2255ba2eef0a",
     "bounds": {
       "min": [
         341.179069,
@@ -7831,7 +7833,8 @@
       "日间外观参考": "依据 2010 年 Singapore Skyline from Esplanade 和 2015 年 Singapore Marina-Bay-Panorama-02 的临湾立面亮度，以浮尔顿酒店向阳石墙作曝光参照。",
       "原建筑资源": "f56c642e1e2d24d0f0309c388f54a6b11ee26d2227d0c49c1a58b4f69689ba2c",
       "日间墙面校准": "用 2010-01-24 和 2015-02-19 跨湾实拍核对墙面亮度分布。原测绘纹理在线性光下按墙面法线调整中间调，亮度枢轴 0.72，额外指数 0.4。照片用于测量。",
-      "高层窗带反射": "按测绘贴图区分玻璃及框料的粗糙度，玻璃取本楼三个高度的环境反射。在三处实拍机位按相邻楼面配准曝光后校准窗带的底色。"
+      "高层窗带反射": "按测绘贴图区分玻璃及框料的粗糙度，玻璃取本楼三个高度的环境反射。在三处实拍机位按相邻楼面配准曝光后校准窗带的底色。",
+      "窗格明暗校准": "在测绘立面的纹理坐标内，以相邻窗框、墙面和玻璃的实拍亮度差估计窗格漫反射。按跨湾机位分别校准，遮挡区域沿用测绘影像。"
     },
     "material": {
       "shading": "albedo"
@@ -8154,6 +8157,39 @@
       "幕墙影像署名": "Facade texture adapted from Boat Quay and One George Street (13735227334) by Nicolas Lannuzel, CC BY-SA 2.0, https://commons.wikimedia.org/wiki/File:Boat_Quay_and_One_George_Street_(13735227334).jpg ; https://creativecommons.org/licenses/by-sa/2.0/",
       "处理说明": "OneMap 三维测绘外形，按驳船码头实拍提取窗格。遮挡面使用同楼纹理，幕墙粗糙度和天光反射为估计值。",
       "三角形数": 5124
+    }
+  },
+  {
+    "entityId": "bay.729ab0b3-79a3-4d1b-bf5f-736f299bb54c",
+    "layer": "ext",
+    "kind": "object",
+    "label": "PARKROYAL ON PICKERING",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "9977d0870f0f38a3170aa4884087b04399883279d3be2d294dd39e81588154aa",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        978.6252235619753,
+        -60.10176128257724,
+        138.8295359552225
+      ],
+      "max": [
+        1122.9130498182228,
+        30.41775597332676,
+        181.28792813203864
+      ]
+    },
+    "props": {
+      "background": true,
+      "数据来源": "OneMap 3D · Singapore Land Authority",
+      "版权": "Map Data © SLA",
+      "官方建筑编号": "SLA_BLDG2_729ab0b3-79a3-4d1b-bf5f-736f299bb54c",
+      "来源地址": "https://github.com/cheeaun/om3d/blob/ac451b84/optimized-tiles/7/72/10_5.b3dm",
+      "幕墙影像署名": "Facade and planted terrace textures adapted from Singapore (26116826522) by Visions of Domino, CC BY 2.0, https://commons.wikimedia.org/wiki/File:Singapore_(26116826522).jpg, https://creativecommons.org/licenses/by/2.0/",
+      "处理说明": "OneMap 三维测绘外形，按芳林公园实拍配准三座客房翼楼、层叠露台与实际种植区域。遮挡面使用同楼纹理，幕墙粗糙度和天光反射为估计值。",
+      "三角形数": 23690
     }
   }
 ]
