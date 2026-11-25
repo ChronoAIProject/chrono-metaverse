@@ -770,6 +770,72 @@
         -1296,
         2361
       ]
+    },
+    {
+      "featureId": 3935936160,
+      "minHeight": 0,
+      "height": 57,
+      "bounds": [
+        -1555,
+        2441,
+        -1548,
+        2443
+      ]
+    },
+    {
+      "featureId": 3935936160,
+      "minHeight": 0,
+      "height": 57,
+      "bounds": [
+        -1619,
+        2568,
+        -1617,
+        2570
+      ]
+    },
+    {
+      "featureId": 3935936160,
+      "minHeight": 0,
+      "height": 57,
+      "bounds": [
+        -1667,
+        2612,
+        -1665,
+        2614
+      ]
+    },
+    {
+      "featureId": 3935936172,
+      "minHeight": 0,
+      "height": 76,
+      "bounds": [
+        -1676,
+        2592,
+        -1674,
+        2594
+      ]
+    },
+    {
+      "featureId": 4391686660,
+      "minHeight": 0,
+      "height": 33,
+      "bounds": [
+        -1489,
+        2523,
+        -1487,
+        2525
+      ]
+    },
+    {
+      "featureId": 5419728920,
+      "minHeight": 0,
+      "height": 55,
+      "bounds": [
+        -1537,
+        2533,
+        -1535,
+        2535
+      ]
     }
   ],
   "supersededBuildingParts": [
