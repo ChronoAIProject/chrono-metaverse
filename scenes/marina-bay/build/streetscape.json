@@ -880,7 +880,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "文华东方酒店 · 临湾客房立面",
-    "assetHash": "8a69a56682d19e227f458c2c6e41ce9599b6ec9a0f384f87f548e433c41f71ce",
+    "assetHash": "b571b8dbdfe5fb151f5639c672547a3b8457a9af82f835f54de484aaa525131b",
     "material": {
       "shading": "albedo"
     },
@@ -900,7 +900,8 @@
       "background": true,
       "立面调查": "Map Data © Singapore Land Authority / OneMap · bay.cba4c479-1333-4eb8-a531-9f6e1049408e",
       "实景参考": "https://commons.wikimedia.org/wiki/File:Mandarin_Oriental_Building_Singapore_Meqqal.jpg",
-      "重建": "16 层、13 开间按原始立面纹理定位。横梁、窗间柱挑出量和玻璃材质按照片估值。"
+      "重建": "16 层、13 开间按原始立面纹理定位。横梁、窗间柱挑出量和玻璃材质按照片估值。",
+      "临湾日间材质": "客房玻璃根据同一楼址三个高度的环境采样反映邻楼与天空。窗槽依据横梁、窗框的挑出量近似天光遮挡。"
     }
   },
   {
@@ -1579,7 +1580,7 @@
     "kind": "structure",
     "layer": "ext",
     "regionId": "marina-bay-exterior",
-    "assetHash": "bb82aec2c251baf0e729f8ca19ce40457666adc1f5ef8df37ca03d28fd36097b",
+    "assetHash": "02bc5631533fb40362a032eeb26a88629928f32ac7e49f6088de406d6151a0e2",
     "material": {
       "shading": "albedo"
     },
@@ -1590,13 +1591,15 @@
         946.8441016365741
       ],
       "max": [
-        35.65975484124981,
+        81.03432,
         -57.06315321248269,
-        1118.8739383927127
+        1175.73085
       ]
     },
     "props": {
-      "background": true
+      "background": true,
+      "施工地表": "依 2026-10-31 Sentinel-2 干地区域与施工边界延伸至平台后方。地表以 10 米卫星反射率估计大面积色差，近处采用 Poly Haven Concrete Floor 02（CC0）扫描纹理，看台下按施工几何估计间接光遮蔽。地面标高与材质衔接为估计。",
+      "工区边界来源": "© OpenStreetMap contributors, https://www.openstreetmap.org/way/1221351351"
     }
   },
   {
@@ -2026,6 +2029,36 @@
       ],
       "素材来源": "Royal palm meshes and textures adapted from 0 A.D., Wildfire Games (https://wildfiregames.com/), CC BY-SA 3.0 (https://creativecommons.org/licenses/by-sa/3.0/). Scaled, rotated, tinted and batched for the Sands waterfront.",
       "重建范围": "树冠中心按正射影像定位。树高及冠幅按照片估读，复用王棕网格近似树形。"
+    }
+  },
+  {
+    "entityId": "bay.ns-square-construction-stand",
+    "label": "NS Square 施工期看台与吊装结构",
+    "layer": "ext",
+    "kind": "structure",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "df2217ec3d9f39a1aee22f8cf507ad5b7ead90724f5d25b8e40ccd613ba4aea2",
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "照片": "Actuall7, The Float@Marina Bay undergoing demolition, Sep 2026.jpg, CC BY 4.0. https://commons.wikimedia.org/wiki/File:The_Float@Marina_Bay_undergoing_demolition,_Sep_2026.jpg",
+      "图像日期": "2026-09-24",
+      "建模说明": "按照片可辨认的屋盖外沿、看台、吊臂与临时支撑建模。屋盖进深、开间与被遮挡面为估计。基于 2026 年 10 月的临水平台岸线。",
+      "三角形数": 20276
+    },
+    "bounds": {
+      "min": [
+        -245.43224350114465,
+        -58.21028906463291,
+        1014.723433103085
+      ],
+      "max": [
+        -18.452123026277576,
+        34.22728754957639,
+        1109.86395350106
+      ]
     }
   }
 ]

@@ -7966,7 +7966,7 @@
     "kind": "object",
     "label": "MANDARIN ORIENTAL, SINGAPORE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "37772bf78798e97dbd829f1ef013051d766c31b7281f35ffc3620180b7a300f4",
+    "assetHash": "c825022a43572cc4c3e5f672b0b51b345ed0b6920740ee8efa4aea4d7932156d",
     "bounds": {
       "min": [
         -7.091591,
@@ -7987,7 +7987,8 @@
       "原始分片": "8/157/25_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 83.819,
-      "三角形数": 5478
+      "三角形数": 8400,
+      "临湾日间材质": "对照 2026 年 9 月临水照片，将客房横梁、竖框与退进玻璃延续至邻接的临湾立面。采用邻面的楼层标高及开间近似，反射采自酒店所在地的三个高度。"
     }
   },
   {
@@ -7996,7 +7997,7 @@
     "kind": "object",
     "label": "PARKROYAL COLLECTION MARINA BAY, SINGAPORE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "b5ba8169b571e0587e961f5bfb47053cd6bbdcbbfe1b1be3329b5cfc70a230a4",
+    "assetHash": "f0a878311d475172d4bf32fd7f5a00355b9e70af36f54fd4081254fb802d7084",
     "bounds": {
       "min": [
         209.569156,
@@ -8020,7 +8021,8 @@
       "三角形数": 15068,
       "原建筑资源": "f664ce4ebb0c6d268b000500c1fdee93d6ce0f2d7a878db11d1290cf993e50d8",
       "几何处理": "两翼沿 OneMap 测绘弧面重建阳台，每翼 16 层。栏板、退进玻璃及竖向分隔按照片估算，阳台退深约 1.75 米。",
-      "立面参考": "https://commons.wikimedia.org/wiki/File:Singapore_Marina-Mandarin-Singapore-Hotel-03.jpg"
+      "立面参考": "https://commons.wikimedia.org/wiki/File:Singapore_Marina-Mandarin-Singapore-Hotel-03.jpg",
+      "临湾日间材质": "沿阳台前缘调整混凝土的反照率。凹入的客房窗面按高度插值街区、邻楼与天空的环境反射。"
     }
   },
   {
