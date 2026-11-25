@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { buildingFinishShader, buildingFinishUniforms } from './buildingFinishes';
 import { facadeShadow } from './facadeShadow';
 import { poolWater } from './poolWater';
 import { skyRadiance } from './skyRadiance';
@@ -337,8 +338,9 @@ export function urbanFacade(
     material.defines = { ...material.defines, LOCAL_FACADE_REFLECTIONS: 1 };
   }
   const sky = citySkyUniforms(material);
+  const finishMap = buildingFinishUniforms(material);
   material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, sky);
+    Object.assign(shader.uniforms, sky, finishMap);
     if (reflections)
       Object.assign(shader.uniforms, {
         facadeReflectionMap: reflections.map,
@@ -370,6 +372,7 @@ export function urbanFacade(
       skyDeclarations +
       cityAir +
       '#ifdef LOCAL_FACADE_REFLECTIONS\nuniform sampler2D facadeReflectionMap;\nuniform bool facadeReflectionReady;\nuniform vec2 facadeReflectionLayout;\n#endif\n' +
+      buildingFinishShader +
       facadeFiltering +
       varying +
       shader.fragmentShader
@@ -394,6 +397,15 @@ export function urbanFacade(
         vec3 glass = mix(diffuseColor.rgb*glazing, masonry*vec3(.32,.43,.49), cityPaint.a*.65);
         vec3 frame = mix(masonry,mix(glass,masonry,0.25),curtain);
         diffuseColor.rgb = mix(masonry*.88, mix(frame,glass,panes), wall);
+        if (buildingFinishesReady && wall > 0.0) {
+          vec4 finish = buildingFinish(vec3(cityPosition.x,cityFacade.x,cityPosition.z),tangent,variant,step(3.0,cityFacade.y));
+          vec3 tint = mix(vec3(.92+variant*.14), .70+.55*paint,cityPaint.a*.55);
+          diffuseColor.rgb = mix(diffuseColor.rgb,finish.rgb*tint,wall);
+          panes = finish.a;
+          glass = diffuseColor.rgb;
+        } else if (buildingFinishesReady) {
+          diffuseColor.rgb = buildingRoof(cityPosition.xz, variant, step(3.0,cityFacade.y));
+        }
         `,
         )
         .replace(
@@ -412,7 +424,9 @@ export function urbanFacade(
           vec2 shift = clamp((sunSlope - viewSlope) * module.y / module, -1.0, 1.0);
           vec2 overlap = max(vec2(0.0), coverage - abs(shift));
           float sunlitPanes = paneCoverage(grid + 0.5 * shift, overlap);
-          vec3 shadedGlass = glass * wall * max(0.0, panes - sunlitPanes);
+          float shaded = buildingFinishesReady ? panes*(1.0-clamp(overlap.x*overlap.y/max(.01,coverage.x*coverage.y),0.0,1.0))
+                                               : max(0.0,panes-sunlitPanes);
+          vec3 shadedGlass = glass * wall * shaded;
           outgoingLight -= reflectedLight.directDiffuse * shadedGlass / max(diffuseColor.rgb,vec3(0.0001));
         #endif
         vec3 ray=reflect(-worldEye,worldN);

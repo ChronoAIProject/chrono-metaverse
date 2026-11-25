@@ -63,7 +63,7 @@ function facadeVariant(
   const ribbon = height >= 12 && choice > 0.5;
   // Integer selects punched windows, ribbon windows or curtain wall. The
   // fractional part varies the module and palette within that family.
-  return (curtain ? 2 : ribbon ? 1 : 0) + ((sample >>> 8) & 1023) / 1024;
+  return (height < 5.5 ? 3 : curtain ? 2 : ribbon ? 1 : 0) + ((sample >>> 8) & 1023) / 1024;
 }
 
 /** OpenMapTiles colour is an sRGB hex triplet or a CSS colour name. */
