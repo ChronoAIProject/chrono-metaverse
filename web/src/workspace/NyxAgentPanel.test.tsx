@@ -424,6 +424,60 @@ it('原会话无法恢复时持久保存核对状态，不再提供无效重试�
   expect(screen.getByRole('textbox', { name: '给 NyxAgent 发消息' })).toBeEnabled();
 });
 
+it('刷新后核对旧窗口的查看器指令，当前窗口保持原位置', async () => {
+  saveNyxagentNote('alice', 'lobby', {
+    instruction: '',
+    messages: [],
+    pending: {
+      credentialVersion: identity.credentialVersion,
+      responseId: 'resp_old',
+      body: {
+        spaceId: 'lobby',
+        instruction: '查看物件',
+        instructionsVersion: 6,
+        idempotencyKey: 'stable-previous-viewer-001',
+      },
+    },
+  });
+  const command = vi.fn();
+  const preview = vi.fn();
+  const request = vi.fn<typeof fetch>(async (url) => {
+    if (String(url).endsWith('/key/check')) return Response.json(identity);
+    if (!String(url).endsWith('/response')) throw new Error('未预期的请求');
+    return Response.json({
+      id: 'resp_old',
+      conversation: { id: 'conv_test' },
+      status: 'completed',
+      output: [
+        {
+          type: 'message',
+          role: 'assistant',
+          content: [
+            {
+              type: 'output_text',
+              text: '草稿 /preview#t=safe-preview-token\n```metaverse-view\n{"actions":[{"type":"camera","kind":"overview"}]}\n```',
+            },
+          ],
+        },
+      ],
+    });
+  });
+  render(
+    <NyxAgentPanel
+      session={session}
+      space={space}
+      request={request}
+      onPreview={preview}
+      onViewerCommand={command}
+      onBusy={vi.fn()}
+    />,
+  );
+  await waitFor(() => expect(readNyxagentNote('alice', 'lobby').pending).toBeUndefined());
+  expect(command).not.toHaveBeenCalled();
+  expect(preview).not.toHaveBeenCalled();
+  expect(readNyxagentNote('alice', 'lobby').recoveryRequired).toBe(true);
+});
+
 it('通过同一会话读取真实选区，将聚焦结果回传到工作台助手', async () => {
   const binding = new ViewerToolBinding();
   const target = { spaceId: 'lobby', entityId: crypto.randomUUID() };

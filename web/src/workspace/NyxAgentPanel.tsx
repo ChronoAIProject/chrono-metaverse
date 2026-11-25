@@ -115,12 +115,13 @@ export function NyxAgentPanel({
     [space, session.subject],
   );
   const finished = useCallback(
-    (response: NyxagentResponse) => {
+    (response: NyxagentResponse, ownsViewer = false) => {
       const rawAnswer = outputMessages(response.output).join('\n');
       // 恢复旧请求时，这个页面已不再拥有原查看器的工具绑定。
+      const pastViewer = current.current.pending?.body.instructionsVersion === 6 && !ownsViewer;
       if (
-        current.current.pending?.body.instructionsVersion === 6 &&
-        rawAnswer.includes('```nyx-host-call')
+        pastViewer &&
+        (rawAnswer.includes('```nyx-host-call') || rawAnswer.includes('```metaverse-view'))
       ) {
         commit({
           ...current.current,
@@ -128,7 +129,7 @@ export function NyxAgentPanel({
           pending: undefined,
           recoveryRequired: true,
         });
-        setActivity('请核对原窗口的页面操作后再开始新对话。');
+        setError('请核对原窗口的页面操作后再开始新对话。');
         setText('');
         return;
       }
@@ -168,6 +169,7 @@ export function NyxAgentPanel({
       if (controls.invalid)
         setError('页面操作格式无法核验，已保留聊天结果；请重新描述需要的页面操作。');
       if (
+        !pastViewer &&
         links[0] &&
         !controls.actions.some((a) => ['space', 'universe', 'current', 'preview'].includes(a.type))
       )
@@ -262,14 +264,15 @@ export function NyxAgentPanel({
         try {
           registerViewerTools(host, viewerRef, viewer);
           await host.send(pending.body.instruction);
-          if (mounted.current && last) finished(last);
+          if (mounted.current && !controller.signal.aborted && last)
+            finished(last, viewerRef.current === viewer);
         } finally {
           controller.signal.removeEventListener('abort', dispose);
           host.dispose();
         }
       } else {
         const response = await sendStep(pending);
-        if (mounted.current) finished(response);
+        if (mounted.current && !controller.signal.aborted) finished(response);
       }
     } catch (failure) {
       if (mounted.current) {
@@ -355,7 +358,7 @@ export function NyxAgentPanel({
           controller.signal,
           request,
         );
-        if (!mounted.current) return;
+        if (!mounted.current || controller.signal.aborted) return;
         const response = parseNyxagentResponse(value);
         if (
           response.id !== pending.responseId ||
