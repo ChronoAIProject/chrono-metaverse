@@ -379,9 +379,10 @@ export function urbanFacade(
         .replace(
           '#include <color_fragment>',
           /* glsl */ `#include <color_fragment>
-        float variant = fract(cityFacade.y);
-        float ribbon = step(1.0,cityFacade.y);
-        float curtain = step(2.0,cityFacade.y);
+        float style = floor(cityFacade.y * 1024.0 + 0.5) / 1024.0;
+        float variant = fract(style);
+        float ribbon = step(1.0,style);
+        float curtain = step(2.0,style);
         float wall = 1.0 - smoothstep(0.35,0.8,abs(cityNormal.y));
         vec2 tangent = normalize(vec2(cityNormal.z + 0.0001, -cityNormal.x));
         vec2 module = vec2(mix(2.6,4.6,variant) * mix(1.0,0.60,curtain),
@@ -398,13 +399,13 @@ export function urbanFacade(
         vec3 frame = mix(masonry,mix(glass,masonry,0.25),curtain);
         diffuseColor.rgb = mix(masonry*.88, mix(frame,glass,panes), wall);
         if (buildingFinishesReady && wall > 0.0) {
-          vec4 finish = buildingFinish(vec3(cityPosition.x,cityFacade.x,cityPosition.z),tangent,variant,step(3.0,cityFacade.y));
+          vec4 finish = buildingFinish(vec3(cityPosition.x,cityFacade.x,cityPosition.z),tangent,style);
           vec3 tint = mix(vec3(.92+variant*.14), .70+.55*paint,cityPaint.a*.55);
           diffuseColor.rgb = mix(diffuseColor.rgb,finish.rgb*tint,wall);
           panes = finish.a;
           glass = diffuseColor.rgb;
         } else if (buildingFinishesReady) {
-          diffuseColor.rgb = buildingRoof(cityPosition.xz, variant, step(3.0,cityFacade.y));
+          diffuseColor.rgb = buildingRoof(cityPosition.xz, variant, step(3.0,style));
         }
         `,
         )
