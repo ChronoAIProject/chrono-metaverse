@@ -2287,5 +2287,34 @@
       ]
     }
   ],
-  "lowRiseCopyright": "Building footprints and heights \u00a9 OpenStreetMap contributors (ODbL), via OpenFreeMap. Wall, shutter and roof scans by Poly Haven (CC0). Window panels use sampled Marina Bay scene radiance. Openings and finishes are visual approximations."
+  "lowRiseCopyright": "Building footprints and heights \u00a9 OpenStreetMap contributors (ODbL), via OpenFreeMap. Wall, shutter and roof scans by Poly Haven (CC0). Window panels use sampled Marina Bay scene radiance. Openings and finishes are visual approximations.",
+  "reflectedDaylight": {
+    "downtown": {
+      "image": "downtown-window-daylight.png",
+      "sourceAsset": "818246252eb0745a5685cca36999302458812e9079c9fc19ee47776d254b1937",
+      "sourceMaterial": "Surveyed office curtain wall",
+      "first": 45.6803,
+      "last": 193.8553,
+      "count": 3,
+      "scale": 2
+    },
+    "bayfront": {
+      "image": "bayfront-window-daylight.png",
+      "sourceAsset": "eb0b215981fdc4bf914adcac8da9e3ba1152a501f2af3426a78ef21bb5e54c59",
+      "sourceMaterial": "Surveyed office curtain wall",
+      "first": 45.9481,
+      "last": 194.9771,
+      "count": 3,
+      "scale": 2
+    },
+    "north": {
+      "image": "north-window-daylight.png",
+      "sourceAsset": "b3f84c18343aa6599be6a9db7e0d4ccc7fec62e1490b39710454012ff9b0bb28",
+      "sourceMaterial": "Guoco Midtown broad curtain wall",
+      "first": 44.7134,
+      "last": 156.9452,
+      "count": 3,
+      "scale": 2
+    }
+  }
 }

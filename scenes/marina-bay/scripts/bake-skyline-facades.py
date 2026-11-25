@@ -25,7 +25,7 @@ REPEAT = {"Facade006": (22.4, 27.2), "Facade018A": (18.0, 21.6), "Facade019A": (
           "Workshop": (16.2, 3.55), "RibbedFront": (14.4, 3.55)}
 
 
-def facade_material(name):
+def facade_material(name, daylight=None):
     folder = REFERENCES / name
     color = Image.open(folder / "Color.jpg")
     normal = Image.open(folder / "NormalGL.jpg")
@@ -34,6 +34,7 @@ def facade_material(name):
     packed = Image.merge("RGB", (Image.new("L", rough.size, 255), rough, metal))
     packed.format = "JPEG"
     return PBRMaterial(name=name, baseColorTexture=color, normalTexture=normal,
+                       emissiveTexture=daylight,
                        metallicRoughnessTexture=packed, metallicFactor=.20, roughnessFactor=.94)
 
 
@@ -103,7 +104,7 @@ def roof_surface(part):
     return mesh
 
 
-def bake_group(group, parts, credit_line):
+def bake_group(group, parts, credit_line, daylight=None):
     if any(not part.get("roofFinish") for part in parts):
         credit_line += " Concrete coping scan by Poly Haven (CC0)."
     if any(part.get("groundFloorFinish") for part in parts):
@@ -124,10 +125,16 @@ def bake_group(group, parts, credit_line):
         if part.get("roofFinish"):
             finishes.setdefault(part["roofFinish"], []).append(roof_surface(part))
     scene = trimesh.Scene()
+    walls = {part["finish"] for part in parts}
+    reflection = None
+    if daylight:
+        with Image.open(REFERENCES / daylight["image"]) as image:
+            reflection = image.copy()
+            reflection.format = "PNG"
     for name, pieces in finishes.items():
         uv = np.concatenate([piece.visual.uv for piece in pieces])
         mesh = trimesh.util.concatenate(pieces)
-        mesh.visual = TextureVisuals(uv=uv, material=facade_material(name))
+        mesh.visual = TextureVisuals(uv=uv, material=facade_material(name, reflection if name in walls else None))
         scene.add_geometry(mesh, geom_name=name)
     low, high = scene.bounds
     origin = (low + high) / 2
@@ -137,6 +144,14 @@ def bake_group(group, parts, credit_line):
 
     def credit(doc):
         doc["asset"]["copyright"] = credit_line
+        if daylight:
+            for material in doc["materials"]:
+                if material["name"] in walls:
+                    # The viewer samples this radiance by reflected direction and height.
+                    material["emissiveFactor"] = [0, 0, 0]
+                    material["extras"] = {"reflectionLevels": {
+                        key: daylight[key] for key in ("first", "last", "count", "scale")
+                    }}
 
     data = trimesh.exchange.gltf.export_glb(scene, include_normals=True, tree_postprocessor=credit)
     digest = hashlib.sha256(data).hexdigest()
@@ -166,7 +181,9 @@ def bake():
     for part in survey["parts"]:
         groups.setdefault(part["group"], []).append(part)
     entities = [
-        bake_group(group, parts, survey["lowRiseCopyright"] if parts[0].get("roofFinish") else survey["copyright"])
+        bake_group(group, parts,
+                   survey["lowRiseCopyright"] if parts[0].get("roofFinish") else survey["copyright"],
+                   survey.get("reflectedDaylight", {}).get(group))
         for group, parts in groups.items()
     ]
     (ROOT / "build/skyline-facades.json").write_text(json.dumps(entities, ensure_ascii=False, indent=2) + "\n")
