@@ -32,8 +32,8 @@
     }
   },
   "textures": [
-    "a01d2127467e89c971c8067c36429ab9c5fefe92783715a5149a723e30e0c748",
-    "44c39e592727b08cc284ed285f02f58b1874c567d77aa77359b78c6746f532c9"
+    "5c89e1b9e2a0c264e5ac60e66c0dded7e05c3c2cfa7700f098e2e1a026a2c839",
+    "b87b4896a23f73bb77780e7bdc721585b7176d8067ac0c8cb506b2995270144b"
   ],
   "props": {
     "background": true,
@@ -41,7 +41,7 @@
       "version": 1,
       "multisampleCutouts": true,
       "sky": {
-        "texture": "a01d2127467e89c971c8067c36429ab9c5fefe92783715a5149a723e30e0c748",
+        "texture": "5c89e1b9e2a0c264e5ac60e66c0dded7e05c3c2cfa7700f098e2e1a026a2c839",
         "yaw": -100.4944,
         "airHalfDistance": 28800,
         "daylight": {
@@ -54,42 +54,42 @@
             0.8964
           ],
           "skyColor": [
-            0.78673,
+            0.78676,
             1.01453,
-            1.48403
+            1.48396
           ],
           "diffuseProbe": [
-            0.7606664,
-            0.8766644,
-            1.10133,
-            0.1641547,
-            0.2915342,
-            0.5485771,
-            0.1779065,
-            0.2156409,
-            0.2688314,
-            0.2512878,
-            0.3067249,
-            0.3857184,
-            0.2314769,
-            0.2819108,
-            0.3656877,
-            0.165301,
-            0.1987224,
-            0.2542462,
-            0.0052922,
-            0.0028984,
-            -0.0115127,
-            0.1641328,
-            0.1933086,
-            0.2384192,
-            0.0998656,
-            0.1199001,
-            0.1290079
+            0.7606213,
+            0.8766169,
+            1.1012622,
+            0.1641718,
+            0.2915349,
+            0.5485462,
+            0.1778884,
+            0.2156325,
+            0.2688284,
+            0.2513345,
+            0.3067902,
+            0.3858011,
+            0.2316668,
+            0.2821062,
+            0.3658862,
+            0.1653408,
+            0.1987611,
+            0.2542797,
+            0.0052052,
+            0.0028131,
+            -0.0116,
+            0.1642396,
+            0.1934346,
+            0.2385623,
+            0.0999368,
+            0.1200011,
+            0.1291419
           ]
         },
         "radiance": {
-          "texture": "44c39e592727b08cc284ed285f02f58b1874c567d77aa77359b78c6746f532c9",
+          "texture": "b87b4896a23f73bb77780e7bdc721585b7176d8067ac0c8cb506b2995270144b",
           "scale": 32
         }
       },
@@ -128,7 +128,7 @@
       }
     },
     "说明": "按地理参考持续加载海陆影像，天空采用渲染器背景，无球壳边界",
-    "版权": "天空采用 Poly Haven 的两幅 CC0 全景。Qwantani Mid Morning 由 Greg Zaal 摄影、Jarod Guest 处理，散云来自两人制作的 Kloofendal 48d Partly Cloudy (Pure Sky)，https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky 。地图来源在查看器常驻署名。",
+    "版权": "天空使用 Poly Haven 的三幅 CC0 全景。Qwantani Mid Morning、Kloofendal 48d Partly Cloudy 和 Kloofendal 38d Partly Cloudy 的拍摄与处理来自 Greg Zaal、Jarod Guest。https://polyhaven.com/a/qwantani_mid_morning_puresky https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky https://polyhaven.com/a/kloofendal_38d_partly_cloudy_puresky 。地图来源在查看器常驻署名。",
     "source": {
       "library": "polyhaven",
       "id": "qwantani_mid_morning_puresky",
@@ -137,6 +137,6 @@
       "title": "Qwantani Mid Morning (Pure Sky)",
       "page": "https://polyhaven.com/a/qwantani_mid_morning_puresky"
     },
-    "日间照明": "太阳仰角 40.15°，方位从真北顺时针 65°。水平直射光占 55%，地平线上方的漫射光混入 35% 的散云天空。背景、楼面天光与水面反射采用同一组合。"
+    "日间照明": "太阳仰角 40.15°，方位从真北顺时针 65°，水平直射光占 55%。天空和水面反射来自同一组线性辐射数据。将实拍云纹与原有漫射天空配准，并保持各个方向的低阶漫射照明。"
   }
 }
