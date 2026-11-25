@@ -6788,7 +6788,7 @@
     "kind": "object",
     "label": "CUSTOMS HOUSE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "1566e44d9f9c7f8723a9495a5bed9b24604a4910625f872f743bf3c3a9770eb9",
+    "assetHash": "89c353daabd9a4bb6e54f1766579c604ab99e459556a02c7cf6981f46a5c140d",
     "bounds": {
       "min": [
         147.446344,
@@ -6809,7 +6809,9 @@
       "原始分片": "7/77/8_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 23.338,
-      "三角形数": 4776
+      "三角形数": 4776,
+      "临水立面影像署名": "Matti Blume, Marina Bay, Singapore (P1110053).jpg. Rectified and masked facade texture. CC BY-SA 4.0. https://commons.wikimedia.org/wiki/File:Marina_Bay,_Singapore_(P1110053).jpg https://creativecommons.org/licenses/by-sa/4.0/",
+      "临水立面处理": "以上层遮屏、窗带和外挑檐带配准现场照片。底层和被树冠遮住的窗格依可见邻窗估补，玻璃使用三处高度的滨水反射。"
     }
   },
   {
