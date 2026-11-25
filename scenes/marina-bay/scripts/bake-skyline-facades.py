@@ -12,6 +12,8 @@ from shapely.geometry.polygon import orient
 from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
+from concourse_facades import concourse_meshes
+
 ROOT = Path(__file__).resolve().parents[1]
 REFERENCES = ROOT / "references/skyline-finishes"
 # Width and height in metres of each repeating window-wall texture.
@@ -129,8 +131,12 @@ def bake_group(group, parts, credit_line, daylight=None):
         finishes.setdefault(part.get("roofFinish", "ConcreteRoof"), []).append(coping)
         if part.get("roofFinish"):
             finishes.setdefault(part["roofFinish"], []).append(roof_surface(part))
+    return export_group(group, finishes, {part["finish"] for part in parts}, credit_line,
+                        daylight, low_rise=bool(parts[0].get("roofFinish")))
+
+
+def export_group(group, finishes, walls, credit_line, daylight, low_rise=False):
     scene = trimesh.Scene()
-    walls = {part["finish"] for part in parts}
     reflection = None
     if daylight:
         with Image.open(REFERENCES / daylight["image"]) as image:
@@ -161,7 +167,6 @@ def bake_group(group, parts, credit_line, daylight=None):
     data = trimesh.exchange.gltf.export_glb(scene, include_normals=True, tree_postprocessor=credit)
     digest = hashlib.sha256(data).hexdigest()
     (ROOT / "assets" / (digest + ".glb")).write_bytes(data)
-    low_rise = bool(parts[0].get("roofFinish"))
     return {
         "entityId": f"bay.waterfront-skyline-facades.{group}",
         "layer": "ext",
@@ -191,6 +196,13 @@ def bake():
                    survey.get("reflectedDaylight", {}).get(group))
         for group, parts in groups.items()
     ]
+    concourse = json.loads((REFERENCES / "concourse.json").read_text())
+    meshes = concourse_meshes(concourse["groups"])
+    cluster = export_group("concourse", meshes, set(meshes), concourse["source"],
+                           survey["reflectedDaylight"]["north"])
+    cluster["label"] = "滨海中心远景 · Concourse 楼群"
+    cluster["props"]["表面"] = "两栋阶梯住宅、八角办公塔与商业裙楼分别采用阳台、遮阳屏、银灰横窗与石质竖柱。"
+    entities.append(cluster)
     (ROOT / "build/skyline-facades.json").write_text(json.dumps(entities, ensure_ascii=False, indent=2) + "\n")
 
 
