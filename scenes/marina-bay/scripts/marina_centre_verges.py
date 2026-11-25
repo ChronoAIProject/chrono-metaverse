@@ -5,7 +5,7 @@ from scipy.spatial import cKDTree
 from shapely import get_parts, union_all
 from shapely.geometry import GeometryCollection, Polygon, box
 
-from ground_materials import scanned_pavers, scanned_turf
+from ground_materials import scanned_pavers, scanned_turf, turf_wear
 
 
 def add_verges(scene, reference, project, carriageway, bridges, ground, datum, surface):
@@ -49,7 +49,7 @@ def add_verges(scene, reference, project, carriageway, bridges, ground, datum, s
     # Convert the relative survey colours to linear vertex multipliers. Limit the
     # influence of dark tree crowns so the scene's own tree shadows remain legible.
     relative = np.clip(field / np.median(rgb, axis=0), .61, 1.48)
-    tint = np.clip(.56 * relative ** 1.8, .25, 1)
+    tint = np.clip(.56 * relative ** 1.8 * turf_wear(lawn.vertices[:, [0, 2]]) * [1, 1.08, .88], .19, 1)
     lawn.visual.vertex_attributes["color"] = np.uint8(255 * np.column_stack((tint, np.ones(len(tint)))))
     scene.add_geometry(lawn, geom_name="Planted road margins")
     return round(grass.area), round(stone.area)

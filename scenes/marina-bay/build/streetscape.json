@@ -1204,7 +1204,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "皇后坊 · 大草坪与达尔豪西纪念碑步道",
-    "assetHash": "c72623f5167c0efc9be5a3c916464fe7ff61a81dbb8b5466006f302f900d50d0",
+    "assetHash": "e2742498873693a5d0211f58a70fbb293cd2054886c00f5b1a1cd01f96099c5d",
     "bounds": {
       "min": [
         494.98935236691,
@@ -1945,7 +1945,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "政府大厦前大草场 · 南北球场",
-    "assetHash": "3b902f19f4abf4709dbc1e8fe29158ac7fa74ba1cddd24f7be50561bf2dfb7e9",
+    "assetHash": "2c4193db96a4b81dad78ead429182d37b6301ba2459414477c4cac97acdf0d76",
     "bounds": {
       "min": [
         560.2195923694571,
@@ -1982,7 +1982,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "艺术科学博物馆滨水廊架",
-    "assetHash": "9b5b8279042b7bd64d694e6a829ed12f94e55efd650c57ae98d612ec11919c42",
+    "assetHash": "bee6128ac6f07c867cebe5d7c338f4027229f2389475a94dbdfa6a73c2a513d2",
     "bounds": {
       "min": [
         -352.5814532042327,
@@ -2394,7 +2394,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "滨海中心 · 莱佛士林荫道与淡马锡道",
-    "assetHash": "187feebf3213eede6a5f24d4107721bc0eb5fb40f7ac77ff7bb34ac34b4b9093",
+    "assetHash": "076d3e2013449a8b837fa4fe3e56b30b6f7adc30925facbf39ad745247d3a8c8",
     "material": {
       "shading": "albedo"
     },
@@ -2425,7 +2425,7 @@
     "kind": "structure",
     "layer": "ext",
     "regionId": "marina-bay-exterior",
-    "assetHash": "e98fa1c17e480c3f4766e7e95cab976794af234a6c4c98832ae8ea30b8c80abe",
+    "assetHash": "ba3eee2eed297653ad2629118907ec1875523211fbbea451d0f56413d16beff7",
     "material": {
       "shading": "albedo"
     },
@@ -2466,7 +2466,7 @@
         2764.0919211835776
       ]
     },
-    "assetHash": "c42c05f368facd93953acf33389049a595b7d3004417ab972cecc80a7bd0d7fa",
+    "assetHash": "d9c83328be02c81663f04b3c6170a167d05376bf188b5165a1bd090ab79d8e29",
     "material": {
       "shading": "albedo"
     },

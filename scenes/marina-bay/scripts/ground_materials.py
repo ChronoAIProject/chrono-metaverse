@@ -1,4 +1,6 @@
 """Build PBR ground materials from the shared CC0 scans."""
+from hashlib import sha256
+
 import numpy as np
 from PIL import Image
 from scipy.ndimage import gaussian_filter, map_coordinates
@@ -38,6 +40,16 @@ def turf_wear(xz):
 def scanned_turf(name, mean_rgb, *, minimum_roughness=200):
     scan, packed = ground_scan('turf')
     scan = turf_grain(scan)
+    # Select intact blade clusters from a second part of the scan. Apply the same
+    # periodic mask to colour, normals and roughness so the highlights follow the blades.
+    rng = np.random.default_rng(int.from_bytes(sha256(name.encode()).digest()[:8], 'little'))
+    side = len(scan)
+    grid = rng.uniform(-1, 1, (7, 9))
+    coords = np.indices((side, side)) * (np.array(grid.shape) / side)[:, None, None]
+    weight = np.clip(.5 + 5 * map_coordinates(grid, coords, mode='grid-wrap'), 0, 1)[..., None]
+    shift = rng.integers(side // 5, 4 * side // 5, size=2)
+    for channel in (scan, packed):
+        channel += weight * (np.roll(channel, shift, axis=(0, 1)) - channel)
     rgb = scan / np.mean(scan, axis=(0, 1)) * mean_rgb
     slope = (packed[:, :, :2] / 127.5 - 1) * .68
     rough = np.maximum(packed[:, :, 2], minimum_roughness)
@@ -48,17 +60,20 @@ def scanned_pavers(name, mean_rgb, pitch):
     scan, packed = ground_scan('pavers')
     size = len(scan)
     y, x = np.indices((size, size))
-    # The source grain comes from the face of one clean granite unit. Set out
-    # staggered rectangular stones at the pitch seen in the ground photograph.
+    # The scan contains five courses of five stones. Take a different face
+    # for each unit, clear of the source joints, at this site's surveyed pitch.
     col, row = (x + .5) / size * 4, (y + .5) / size * 6
     col += .5 * (row.astype(int) % 2)
     u, v = col % 1, row % 1
-    i, j = (48 + v * 49).astype(int), (48 + u * 49).astype(int)
+    rng = np.random.default_rng(int.from_bytes(sha256(name.encode()).digest()[:8], 'little'))
+    unit = rng.permutation(25)[:24].reshape(6, 4)[row.astype(int), col.astype(int) % 4]
+    i = (size * ((unit // 5 + .10 + .80 * v) / 5)).astype(int) % size
+    j = (size * ((unit % 5 + .60 + .80 * u) / 5)).astype(int) % size
     grain = scan[i, j] @ [.2126, .7152, .0722]
     pitch = np.asarray(pitch)
     seam = np.minimum(np.minimum(u, 1-u)*pitch[0], np.minimum(v, 1-v)*pitch[1])
     joint = np.clip(1-seam/.0055, 0, 1)
-    tone = np.random.default_rng(149).normal(0, 5, (6,4))[row.astype(int), col.astype(int)%4]
+    tone = rng.normal(0, 4, (6, 4))[row.astype(int), col.astype(int) % 4]
     rgb = np.asarray(mean_rgb) + (tone + (grain - grain.mean())*.56 - 28*joint)[:,:,None]
     relief = -.0032 * joint + .000015*(grain - grain.mean())
     dy = (np.roll(relief,-1,0)-np.roll(relief,1,0)) * size/(12*pitch[1])
