@@ -6821,7 +6821,7 @@
     "kind": "object",
     "label": "CUSTOMS HOUSE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "a207da0a5708103ff84be44120e1a8549f3cc8b32d23e0e1a6e49dae36f46479",
+    "assetHash": "b2cb50177170a9b2a6ebb349a96037b756aab2e9e36c9a8e1ccf182c6359be5f",
     "bounds": {
       "min": [
         147.446344,
@@ -6842,17 +6842,19 @@
       "原始分片": "7/77/8_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 23.338,
-      "三角形数": 7446,
+      "三角形数": 7552,
       "临水立面影像署名": "Matti Blume, Marina Bay, Singapore (P1110053).jpg. Rectified and masked facade texture. CC BY-SA 4.0. https://commons.wikimedia.org/wiki/File:Marina_Bay,_Singapore_(P1110053).jpg https://creativecommons.org/licenses/by-sa/4.0/",
       "临水立面处理": "以上层遮屏、窗带和外挑檐带配准现场照片。底层和被树冠遮住的窗格依可见邻窗估补，玻璃使用三处高度的滨水反射。",
       "原测绘三角形数": 4776,
       "临水桩基": "两段岸边沿测绘边线和现场照片重建护舷桩、桩梁、梁下开口与滨水栏杆。桩距、梁底形状、栏杆高度与凹入深度依照片估计。桩面与混凝土纹理沿用临水立面影像署名。",
       "modelOcclusion": {
-        "sourceAsset": "a207da0a5708103ff84be44120e1a8549f3cc8b32d23e0e1a6e49dae36f46479",
+        "sourceAsset": "b2cb50177170a9b2a6ebb349a96037b756aab2e9e36c9a8e1ccf182c6359be5f",
         "material": "dc2400280",
         "texture": "ca00605a204aa2915bfa4f7f2afbc2aa3435f8fa3aa4910e61e2838d964147e3"
       },
-      "岸线天光": "以周边建筑、地面和一次漫反射估计普通外墙的间接日光，按测绘纹理坐标烘焙立面遮蔽。"
+      "岸线天光": "以周边建筑、地面和一次漫反射估计普通外墙的间接日光，按测绘纹理坐标烘焙立面遮蔽。",
+      "临水餐亭": "在 28.45 米测绘屋盖内按现场照片恢复退进玻璃、滨水开廊与外张柱头。柱、窗和退距尺寸依照片估计。玻璃使用原楼三个高度的临湾环境反射。",
+      "临水餐亭影像署名": "LN9267, Customs House, Singapore 09-11-2023.jpg. Cropped and rectified shopfront under CC BY-SA 4.0. https://commons.wikimedia.org/wiki/File:Customs_House,_Singapore_09-11-2023.jpg https://creativecommons.org/licenses/by-sa/4.0/"
     },
     "textures": [
       "ca00605a204aa2915bfa4f7f2afbc2aa3435f8fa3aa4910e61e2838d964147e3"
