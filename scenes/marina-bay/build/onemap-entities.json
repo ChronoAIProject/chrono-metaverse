@@ -5,7 +5,7 @@
     "kind": "object",
     "label": "THE SHOPPES AT MARINA BAY SANDS",
     "regionId": "marina-bay-exterior",
-    "assetHash": "efb3f392cd196e5b9f6900a6b87a9d993fbfc05b87efe7174998ed4a3f9c46dd",
+    "assetHash": "2c6658040a6b9f9e497c0bd61cb100d0b1f900d34406ea439db6f8e44c2d1501",
     "bounds": {
       "min": [
         -396.044722,
@@ -29,7 +29,9 @@
       "三角形数": 13644,
       "原建筑资源": "54795e699927d46b1d354d4f17e59fb7142cd073937b84bed3d4cf5e689586be",
       "玻璃影像署名": "Marina Bay Sands view from Merlion Park, Singapore (Ank Kumar) 01. Ank Kumar, CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Cropped, masked and projected into the bay-facing glazing. https://commons.wikimedia.org/wiki/File:Marina_Bay_Sands_view_from_Merlion_Park,_Singapore_(Ank_Kumar)_01.jpg",
-      "立面处理": "购物中心临湾中央玻璃依鱼尾狮公园实拍配准。树冠和行人遮挡处的立柱与底层玻璃按邻窗估补。"
+      "立面处理": "购物中心临湾中央玻璃依鱼尾狮公园实拍配准。树冠和行人遮挡处的立柱与底层玻璃按邻窗估补。",
+      "北端弧形幕墙": "沿原测绘弧面重建窗格与底层框料，采用三个高度的滨水环境反射。窗格间距、色泽与粗糙度依据实拍估计。",
+      "北端玻璃纹理署名": "北端玻璃细纹取自玄史生《ArtScience Museum Birdview from Singapore Flyer 20130209.JPG》，经裁切、校正及亮度处理，CC BY-SA 3.0。https://commons.wikimedia.org/wiki/File:ArtScience_Museum_Birdview_from_Singapore_Flyer_20130209.JPG https://creativecommons.org/licenses/by-sa/3.0/"
     },
     "material": {
       "shading": "baked"
@@ -6786,7 +6788,7 @@
     "kind": "object",
     "label": "CUSTOMS HOUSE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "1566e44d9f9c7f8723a9495a5bed9b24604a4910625f872f743bf3c3a9770eb9",
+    "assetHash": "89c353daabd9a4bb6e54f1766579c604ab99e459556a02c7cf6981f46a5c140d",
     "bounds": {
       "min": [
         147.446344,
@@ -6807,7 +6809,9 @@
       "原始分片": "7/77/8_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 23.338,
-      "三角形数": 4776
+      "三角形数": 4776,
+      "临水立面影像署名": "Matti Blume, Marina Bay, Singapore (P1110053).jpg. Rectified and masked facade texture. CC BY-SA 4.0. https://commons.wikimedia.org/wiki/File:Marina_Bay,_Singapore_(P1110053).jpg https://creativecommons.org/licenses/by-sa/4.0/",
+      "临水立面处理": "以上层遮屏、窗带和外挑檐带配准现场照片。底层和被树冠遮住的窗格依可见邻窗估补，玻璃使用三处高度的滨水反射。"
     }
   },
   {
@@ -7792,7 +7796,7 @@
     "kind": "object",
     "label": "HITACHI TOWER",
     "regionId": "marina-bay-exterior",
-    "assetHash": "41b98b9d7e2c78d27239c04cb8b4425644a02cb7b5ecf080c49a5c0b3110ca9d",
+    "assetHash": "b1e3a106ca5f3f82586703d78fad1e4d65f5abff47f82357ec0228b7e8f5723c",
     "bounds": {
       "min": [
         341.179069,
@@ -7816,15 +7820,11 @@
       "三角形数": 1992,
       "日间外观参考": "依据 2010 年 Singapore Skyline from Esplanade 和 2015 年 Singapore Marina-Bay-Panorama-02 的临湾立面亮度，以浮尔顿酒店向阳石墙作曝光参照。",
       "原建筑资源": "f56c642e1e2d24d0f0309c388f54a6b11ee26d2227d0c49c1a58b4f69689ba2c",
-      "日间墙面校准": "用 2010-01-24 和 2015-02-19 跨湾实拍核对墙面亮度分布。原测绘纹理在线性光下按墙面法线调整中间调，亮度枢轴 0.72，额外指数 0.4。照片用于测量。"
+      "日间墙面校准": "用 2010-01-24 和 2015-02-19 跨湾实拍核对墙面亮度分布。原测绘纹理在线性光下按墙面法线调整中间调，亮度枢轴 0.72，额外指数 0.4。照片用于测量。",
+      "高层窗带反射": "按测绘贴图区分玻璃及框料的粗糙度，玻璃取本楼三个高度的环境反射。在三处实拍机位按相邻楼面配准曝光后校准窗带的底色。"
     },
     "material": {
-      "shading": "albedo",
-      "tint": [
-        192,
-        192,
-        192
-      ]
+      "shading": "albedo"
     }
   },
   {
