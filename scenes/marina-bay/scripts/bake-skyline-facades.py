@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import trimesh
 from PIL import Image
+from shapely import constrained_delaunay_triangles
 from shapely.geometry import Polygon
 from shapely.geometry.polygon import orient
 from trimesh.visual.material import PBRMaterial
@@ -14,7 +15,8 @@ from trimesh.visual.texture import TextureVisuals
 ROOT = Path(__file__).resolve().parents[1]
 REFERENCES = ROOT / "references/skyline-finishes"
 # Width and height in metres of each repeating window-wall texture.
-REPEAT = {"Facade006": (22.4, 27.2), "Facade018A": (18.0, 21.6), "Facade019A": (17.4, 21.0)}
+REPEAT = {"Facade006": (22.4, 27.2), "Facade018A": (18.0, 21.6), "Facade019A": (17.4, 21.0),
+          "ServiceWall": (12.0, 3.55)}
 
 
 def facade_material(name):
@@ -41,7 +43,8 @@ def exterior(part):
     floors = max(1, round(part["height"] / 3.55))
     floor_height = part["height"] / floors
     stories_per_tile = round(v_repeat / 3.55)
-    floor_repeat = floor_height * stories_per_tile
+    low_rise = bool(part.get("roofFinish"))
+    floor_repeat = part["height"] if low_rise else floor_height * stories_per_tile
     # A 24 cm cladding cavity separates the finish from the streamed map wall.
     # Use shared corner positions and cap the cavity where it meets the original roof.
     path = ring[:-1]
@@ -56,8 +59,12 @@ def exterior(part):
         b = path[j]
         start = len(vertices)
         length = np.linalg.norm(b - a)
-        for k, elevation, u in [(i, part["minHeight"], 0), (j, part["minHeight"], length / u_repeat),
-                                (j, part["height"], length / u_repeat), (i, part["height"], 0)]:
+        repeats = length / u_repeat
+        if low_rise:
+            # Single-storey facade modules start and end on solid piers at the corners.
+            repeats = max(1, round(repeats))
+        for k, elevation, u in [(i, part["minHeight"], 0), (j, part["minHeight"], repeats),
+                                (j, part["height"], repeats), (i, part["height"], 0)]:
             vertices.append([skin[k, 0], ground[tuple(path[k])] + elevation, skin[k, 1]])
             uv.append([u, elevation / floor_repeat])
         faces.extend([[start, start + 2, start + 1], [start, start + 3, start + 2]])
@@ -70,15 +77,37 @@ def exterior(part):
     return walls, coping
 
 
+def roof_surface(part):
+    outline = np.asarray(part["outline"])
+    plan = outline[:, [0, 2]]
+    ground = {tuple(pt): y for pt, y in zip(plan, outline[:, 1])}
+    edges = np.roll(plan, -1, axis=0) - plan
+    spans = np.linalg.norm(edges, axis=1)
+    axis = edges[spans.argmax()] / spans.max()
+    across = np.array([-axis[1], axis[0]])
+    vertices = []
+    for triangle in constrained_delaunay_triangles(Polygon(plan)).geoms:
+        points = [[x, ground[x, z] + part["height"] + .045, z] for x, z in triangle.exterior.coords[:-1]]
+        if np.cross(np.subtract(points[1], points[0]), np.subtract(points[2], points[0]))[1] < 0:
+            points.reverse()
+        vertices.extend(points)
+    mesh = trimesh.Trimesh(vertices=vertices, faces=np.arange(len(vertices)).reshape(-1, 3), process=False)
+    offset = mesh.vertices[:, [0, 2]] - plan[0]
+    mesh.visual = TextureVisuals(uv=np.column_stack([offset @ axis / 6.4, offset @ across / 5.0]))
+    return mesh
+
+
 def bake_group(group, parts, credit_line):
-    walls = {}
+    finishes = {}
     trim = []
     for part in parts:
         wall, coping = exterior(part)
-        walls.setdefault(part["finish"], []).append(wall)
+        finishes.setdefault(part["finish"], []).append(wall)
         trim.append(coping)
+        if part.get("roofFinish"):
+            finishes.setdefault(part["roofFinish"], []).append(roof_surface(part))
     scene = trimesh.Scene()
-    for name, pieces in walls.items():
+    for name, pieces in finishes.items():
         uv = np.concatenate([piece.visual.uv for piece in pieces])
         mesh = trimesh.util.concatenate(pieces)
         mesh.visual = TextureVisuals(uv=uv, material=facade_material(name))
@@ -99,11 +128,12 @@ def bake_group(group, parts, credit_line):
     data = trimesh.exchange.gltf.export_glb(scene, include_normals=True, tree_postprocessor=credit)
     digest = hashlib.sha256(data).hexdigest()
     (ROOT / "assets" / (digest + ".glb")).write_bytes(data)
+    low_rise = bool(parts[0].get("roofFinish"))
     return {
         "entityId": f"bay.waterfront-skyline-facades.{group}",
         "layer": "ext",
         "kind": "structure",
-        "label": "滨海湾 · 远景楼群与临湾外墙",
+        "label": "滨海湾 · 低层建筑屋面与墙身" if low_rise else "滨海湾 · 远景楼群与临湾外墙",
         "regionId": "marina-bay-exterior",
         "assetHash": digest,
         "material": {"shading": "albedo"},
@@ -111,7 +141,8 @@ def bake_group(group, parts, credit_line):
         "props": {
             "background": True,
             "版权": credit_line,
-            "表面": "基于地图楼高与轮廓，采用三组日间外墙贴图估算窗格与层间饰面。",
+            "表面": ("基于地图楼高与轮廓，金属屋面、灰泥、窗带和门板按米制尺度估算。" if low_rise
+                   else "基于地图楼高与轮廓，采用三组日间外墙贴图估算窗格与层间饰面。"),
         },
     }
 
@@ -121,7 +152,10 @@ def bake():
     groups = {}
     for part in survey["parts"]:
         groups.setdefault(part["group"], []).append(part)
-    entities = [bake_group(group, parts, survey["copyright"]) for group, parts in groups.items()]
+    entities = [
+        bake_group(group, parts, survey["lowRiseCopyright"] if parts[0].get("roofFinish") else survey["copyright"])
+        for group, parts in groups.items()
+    ]
     (ROOT / "build/skyline-facades.json").write_text(json.dumps(entities, ensure_ascii=False, indent=2) + "\n")
 
 

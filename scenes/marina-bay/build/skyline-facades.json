@@ -82,5 +82,61 @@
       "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Facade006, Facade018A and Facade019A by ambientCG (CC0). Window layouts and storey heights are artistic approximations.",
       "表面": "基于地图楼高与轮廓，采用三组日间外墙贴图估算窗格与层间饰面。"
     }
+  },
+  {
+    "entityId": "bay.waterfront-skyline-facades.service-south",
+    "layer": "ext",
+    "kind": "structure",
+    "label": "滨海湾 · 低层建筑屋面与墙身",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "c7a6b3cd8b6c2c4d5a37a2382497a231dd756b5bf82da7796b89f4f04e3a8c9d",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        -1211.2335594241986,
+        -60.441,
+        -1337.0891114068343
+      ],
+      "max": [
+        510.64416304393274,
+        -55.2144,
+        -141.77104406235665
+      ]
+    },
+    "props": {
+      "background": true,
+      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Painted Plaster Wall and Corrugated Iron 03 by Poly Haven (CC0); Facade019A by ambientCG (CC0). Wall openings, paint and roofing are visual approximations.",
+      "表面": "基于地图楼高与轮廓，金属屋面、灰泥、窗带和门板按米制尺度估算。"
+    }
+  },
+  {
+    "entityId": "bay.waterfront-skyline-facades.service-centre",
+    "layer": "ext",
+    "kind": "structure",
+    "label": "滨海湾 · 低层建筑屋面与墙身",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "6e1e8979ca573cc33a4b504d6fe0c8f05d82c1f0a8e1d89bbfe41c910ca1fc6c",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        -309.14040813273306,
+        -60.4915,
+        1404.3495008005339
+      ],
+      "max": [
+        -202.16155493447187,
+        -57.3761,
+        1697.9917165761672
+      ]
+    },
+    "props": {
+      "background": true,
+      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Painted Plaster Wall and Corrugated Iron 03 by Poly Haven (CC0); Facade019A by ambientCG (CC0). Wall openings, paint and roofing are visual approximations.",
+      "表面": "基于地图楼高与轮廓，金属屋面、灰泥、窗带和门板按米制尺度估算。"
+    }
   }
 ]
