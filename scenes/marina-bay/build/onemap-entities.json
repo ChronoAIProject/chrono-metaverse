@@ -807,7 +807,7 @@
     "kind": "object",
     "label": "MARINA SQUARE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "0ffc18cc8281b5bdc621d7b4a9cd52230f02c6eeb871bea1c0b711599069a9c7",
+    "assetHash": "79401c051c7ddebe8cc8269e50308d8640da3e0a9395e3e8f67b9cc1564480c4",
     "bounds": {
       "min": [
         -31.819782,
@@ -830,10 +830,12 @@
       "官方测量高度（米）": 139.933,
       "三角形数": 15616,
       "modelOcclusion": {
-        "sourceAsset": "0ffc18cc8281b5bdc621d7b4a9cd52230f02c6eeb871bea1c0b711599069a9c7",
+        "sourceAsset": "79401c051c7ddebe8cc8269e50308d8640da3e0a9395e3e8f67b9cc1564480c4",
         "material": "dc2400779",
         "texture": "cd00b2ed8c2cbbe8a0b274ca4d7f4b24ce34761c2bf9353c580334f4ea71324a"
-      }
+      },
+      "泛太平洋客房窗面": "两面长窗带按从百年大厦拍摄的日景配准，折面保持测绘开窗。按 38、76、114 米近似高度采样周围天空和建筑。",
+      "窗带影像署名": "Merlion444, Public Domain, https://commons.wikimedia.org/wiki/File:Pan_Pacific_Hotel_from_Centennial_Tower.JPG. Cropped, registered, relit. Map Data © Singapore Land Authority."
     },
     "textures": [
       "cd00b2ed8c2cbbe8a0b274ca4d7f4b24ce34761c2bf9353c580334f4ea71324a"
