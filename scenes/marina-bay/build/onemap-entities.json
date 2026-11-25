@@ -8243,5 +8243,71 @@
       "处理说明": "OneMap 三维测绘外形，按芳林公园实拍配准三座客房翼楼、层叠露台与实际种植区域。遮挡面使用同楼纹理，幕墙粗糙度和天光反射为估计值。",
       "三角形数": 23690
     }
+  },
+  {
+    "entityId": "bay.0d72385e-b91b-46ec-b5c3-9c815e4c5364",
+    "layer": "ext",
+    "kind": "object",
+    "label": "OCBC CENTRE",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "c9a435ad0aaf9f74e3f03450ff398caeb551a8a454f5544b123ac029eb7a0b15",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        709.7972755883067,
+        -60.05519466694246,
+        247.49906609723539
+      ],
+      "max": [
+        769.4312457007902,
+        137.27424458038294,
+        279.5839089076999
+      ]
+    },
+    "props": {
+      "background": true,
+      "数据来源": "OneMap 3D · Singapore Land Authority",
+      "版权": "Map Data © SLA",
+      "官方建筑编号": "SLA_BLDG2_0d72385e-b91b-46ec-b5c3-9c815e4c5364",
+      "来源地址": "https://github.com/cheeaun/om3d/blob/ac451b84/optimized-tiles/6/37/5_5.b3dm",
+      "幕墙影像署名": "Terence Ong, OCBC Centre, Pickering Operations Complex and One George Street.JPG, CC BY 2.5. Perspective-corrected and adjusted window and concrete textures. https://commons.wikimedia.org/wiki/File:OCBC_Centre,_Pickering_Operations_Complex_and_One_George_Street.JPG https://creativecommons.org/licenses/by/2.5/",
+      "处理说明": "依测绘图元界定窗带和墙，配准河岸实拍的窗格与混凝土纹理。背向照片的墙面按同类材料估计。",
+      "三角形数": 582
+    }
+  },
+  {
+    "entityId": "bay.f6a8e92e-c80d-4149-a4cc-7e9ef813beed",
+    "layer": "ext",
+    "kind": "object",
+    "label": "PICKERING OPERATIONS COMPLEX",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "a1b0a0710deec7db7afdaa6b74640be1bfaa713c5cbec0f3367ad9207ed2c49f",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        826.228622030888,
+        -60.06417721186801,
+        191.55793475796736
+      ],
+      "max": [
+        868.943543545665,
+        135.4382264848209,
+        217.3309033042166
+      ]
+    },
+    "props": {
+      "background": true,
+      "数据来源": "OneMap 3D · Singapore Land Authority",
+      "版权": "Map Data © SLA",
+      "官方建筑编号": "SLA_BLDG2_f6a8e92e-c80d-4149-a4cc-7e9ef813beed",
+      "来源地址": "https://github.com/cheeaun/om3d/blob/ac451b84/optimized-tiles/6/37/5_5.b3dm",
+      "幕墙影像署名": "Terence Ong, OCBC Centre, Pickering Operations Complex and One George Street.JPG, CC BY 2.5. Perspective-corrected and adjusted window and concrete textures. https://commons.wikimedia.org/wiki/File:OCBC_Centre,_Pickering_Operations_Complex_and_One_George_Street.JPG https://creativecommons.org/licenses/by/2.5/",
+      "处理说明": "依测绘图元界定窗带和墙，配准河岸实拍的窗格与混凝土纹理。背向照片的墙面按同类材料估计。",
+      "三角形数": 668
+    }
   }
 ]
