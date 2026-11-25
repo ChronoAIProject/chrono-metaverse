@@ -16,7 +16,7 @@
       1013.1634232078835
     ]
   },
-  "assetHash": "70263785b98137c21ec38e756e04f8b5765c5935bb24072cfa9bd935a8dd1224",
+  "assetHash": "8848d774aecced273b1f1d60dbca68cce637d0de29c44296136e2ad94634ebba",
   "material": {
     "shading": "albedo"
   },
@@ -26,6 +26,7 @@
     "影像来源": "https://www.onemap.gov.sg/maps/tiles/OrthoJPG/20/{x}/{y}.png",
     "树冠数": 22,
     "素材来源": "Tree forms adapted from Poly Haven Jacaranda Tree and Island Tree 01, CC0. Crown footprints from OneMap, Singapore Land Authority.",
-    "树木依据": "按航拍树冠位置、长短轴及色差布设。树形与高度为估计。"
+    "树木依据": "按航拍树冠位置、长短轴及色差布设。树形与高度为估计。",
+    "街区天光": "按周边建筑及地表遮挡估计叶片能收到的天空漫射光，包括一次反弹。保留已有树冠间的遮蔽，并按叶片两侧的入射照度加权。"
   }
 }
