@@ -1,3 +1,4 @@
+import { surfaceNoise } from './surfaceVariation';
 import * as THREE from 'three';
 import atlasUrl from '../assets/geography/facades.webp';
 
@@ -62,6 +63,7 @@ export function buildingFinishUniforms(material: THREE.Material) {
 }
 
 export const buildingFinishShader = /* glsl */ `
+  ${surfaceNoise}
   uniform highp sampler2DArray buildingFinishes;
   uniform bool buildingFinishesReady;
   // Retain the physical floor pitch even where multiple floors share a belt or pier.
@@ -132,6 +134,17 @@ export const buildingFinishShader = /* glsl */ `
     float index = seed < .36 ? 7.0 : 9.0;
     if (lowRise > .5 && seed > .62) index = 8.0;
     vec2 repeatSize = index == 7.0 ? vec2(6.4,5.0) : (index == 8.0 ? vec2(3.4,3.4) : vec2(5.5));
-    return texture(buildingFinishes,vec3(metres / repeatSize,index)).rgb;
+    vec2 phase = vec2(fract(seed*13.0),fract(seed*39.0));
+    // Give each roof one laying direction, shared by all sheet and slate courses.
+    mat2 turn = fract(seed*23.) < .5 ? mat2(0.,1.,-1.,0.) : mat2(1.);
+    vec2 uv = turn*metres/repeatSize+phase;
+    float patches = surfaceField(metres*.10+phase*27.0);
+    vec3 roof = texture(buildingFinishes,vec3(uv,index)).rgb;
+    if (index == 9.0) {
+      vec3 concrete = texture(buildingFinishes,vec3(uv+vec2(.43,.62),index)).rgb;
+      roof = mix(roof,concrete,smoothstep(.27,.72,patches));
+    }
+    float wear = .68*patches+.32*surfaceField(metres*.34+phase);
+    return roof*(vec3(1.)+(wear-.5)*vec3(.66,.55,.43));
   }
 `;

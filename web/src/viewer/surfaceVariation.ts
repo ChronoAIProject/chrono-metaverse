@@ -1,0 +1,63 @@
+import * as THREE from 'three';
+
+/** Lattice corners are computed from integer coordinates shared by adjacent patches. */
+export const surfaceNoise = /* glsl */ `
+  float surfaceCorner(ivec2 p) {
+    uint h = uint(p.x) * 1597334677u ^ uint(p.y) * 3812015801u;
+    h = (h ^ (h >> 16u)) * 2246822519u;
+    return float((h ^ (h >> 13u)) & 65535u) / 65535.0;
+  }
+  float surfaceField(vec2 p) {
+    ivec2 cell = ivec2(floor(p));
+    vec2 w = fract(p);
+    w = w*w*(3.0-2.0*w);
+    return mix(mix(surfaceCorner(cell),surfaceCorner(cell+ivec2(1,0)),w.x),
+               mix(surfaceCorner(cell+ivec2(0,1)),surfaceCorner(cell+ivec2(1,1)),w.x),w.y);
+  }
+`;
+
+/** Sample opaque weathering and leaf colour in scene metres, independently of the model's UV atlas. */
+export function outdoorSurfaceVariation(material: THREE.Material) {
+  if (
+    !(
+      material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshBasicMaterial
+    ) ||
+    !material.map
+  )
+    return;
+  const compile = material.onBeforeCompile;
+  const key = material.customProgramCacheKey();
+  const foliage = material.alphaTest > 0;
+  const strength = foliage ? 0.38 : material.transparent ? 0.08 : 0.24;
+  let seed = 0;
+  for (const ch of material.name) seed = (Math.imul(seed, 31) + ch.charCodeAt(0)) | 0;
+  const phase = new THREE.Vector2((seed & 255) * 0.69, ((seed >>> 8) & 255) * 0.83);
+  material.customProgramCacheKey = () => key + '|outdoor-surface';
+  material.onBeforeCompile = function (shader, renderer) {
+    compile.call(this, shader, renderer);
+    shader.uniforms.finishPhase = { value: phase };
+    shader.uniforms.finishStrength = { value: strength };
+    shader.vertexShader =
+      'varying vec3 finishMeters;\n' +
+      shader.vertexShader.replace(
+        '#include <project_vertex>',
+        /* glsl */ `#include <project_vertex>
+        vec4 finishVertex = vec4(transformed,1.0);
+        #ifdef USE_INSTANCING
+          finishVertex = instanceMatrix * finishVertex;
+        #endif
+        finishMeters = (modelMatrix * finishVertex).xyz;`,
+      );
+    shader.fragmentShader =
+      surfaceNoise +
+      'varying vec3 finishMeters; uniform vec2 finishPhase; uniform float finishStrength;\n' +
+      shader.fragmentShader.replace(
+        '#include <color_fragment>',
+        /* glsl */ `#include <color_fragment>
+        vec2 surfacePoint = finishMeters.xz + vec2(.47,.81)*finishMeters.y + finishPhase;
+        float condition = .68*surfaceField(surfacePoint*.09) + .32*surfaceField(surfacePoint*.36);
+        float variation = (condition - .5) * finishStrength;
+        diffuseColor.rgb *= vec3(1.0) + variation*vec3(1.24,1.0,.63);`,
+      );
+  };
+}
