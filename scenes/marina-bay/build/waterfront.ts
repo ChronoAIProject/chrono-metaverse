@@ -1,6 +1,8 @@
 import type { Kit, Shape, Vec3 } from '@chrono-metaverse/sdk';
 import type { Placement } from './placement.ts';
 
+interface FinishMaps { color: string; normal: string; roughness: string }
+
 export interface Quay {
   id: string;
   label: string;
@@ -13,7 +15,7 @@ export interface Quay {
 }
 
 /** 岸线端点与 OneMap 外景用同一米制坐标。截面的 +X 朝陆地，+Z 沿岸。 */
-export function waterfront(kit: Kit, quay: Quay, placement: Placement, regionId?: string) {
+export function waterfront(kit: Kit, quay: Quay, placement: Placement, finishes: { concrete: FinishMaps; steel: FinishMaps }, regionId?: string) {
   const [x, y, z] = quay.start;
   const dx = quay.end[0] - x,
     dz = quay.end[2] - z;
@@ -23,7 +25,14 @@ export function waterfront(kit: Kit, quay: Quay, placement: Placement, regionId?
   const angle = (placement.yaw * Math.PI) / 180;
   const yaw = placement.yaw + (Math.atan2(dx, dz) * 180) / Math.PI;
   const [tx, ty, tz] = placement.translation;
-  const steel = { color: '#9ea9ab', roughness: 0.38, metalness: 0.55 };
+  const finish = (maps: FinishMaps, tint: string, tile: number) => ({
+    texture: { hash: maps.color, uv: 'box' as const, tint },
+    normalMap: maps.normal,
+    roughnessMap: maps.roughness,
+    shading: 'albedo' as const,
+    tile,
+  });
+  const steel = { ...finish(finishes.steel, '#aab5b7', 0.85), roughness: 0.62, metalness: 0.55 };
   // 错缝铺设，单块略有色差。石板的实体边缘在斜视时仍能接住日光。
   const paving = ['#b5b2a8', '#b9b6ac', '#b7b4a9', '#b2b0a7'];
   const granite = (tint: string, variant: number) => ({
@@ -53,13 +62,13 @@ export function waterfront(kit: Kit, quay: Quay, placement: Placement, regionId?
   const children = [
     kit.box([3.04, 0.45, span], {
       at: [1.98, -0.18, 0],
-      color: '#777771',
+      ...finish(finishes.concrete, '#888880', 2.2),
       roughness: 0.91,
     }),
     // 朝步道的基层内退 2 厘米，板缝露出深色基层，饰面与基层不会争用同一深度。
     kit.box([0.46, 1.1, span], {
       at: [0.2, -0.6, 0],
-      color: '#535958',
+      ...finish(finishes.concrete, '#626867', 2.2),
       roughness: 0.88,
     }),
     kit.box([0.52, 0.28, span - 0.016], {

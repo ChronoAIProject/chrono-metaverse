@@ -1,7 +1,9 @@
 """Survey coordinates and material batches shared by the two Bayfront bridges."""
+from functools import lru_cache
 import json
 import sys
 
+from PIL import Image
 import numpy as np
 from scipy.interpolate import CubicSpline
 from shapely import orient_polygons, union_all
@@ -73,9 +75,31 @@ class HelixDeck:
         return self.point(station, radius*np.cos(angle), height)
 
 
+@lru_cache(maxsize=2)
+def finish_maps(finish):
+    catalog = json.loads((ROOT / "references/waterfront-finishes.json").read_text())[finish]
+
+    def image(role):
+        with Image.open(ROOT / "assets" / (catalog[role] + ".webp")) as source:
+            result = source.convert("RGB")
+        result.format = "JPEG" if role == "color" else "PNG"
+        return result
+
+    roughness = image("roughness").getchannel("R")
+    white = Image.new("L", roughness.size, 255)
+    packed = Image.merge("RGB", (white, roughness, white))
+    packed.format = "PNG"
+    return dict(baseColorTexture=image("color"), normalTexture=image("normal"),
+                metallicRoughnessTexture=packed)
+
+
 class SurfaceBatch:
     """Join disconnected pieces that share a material into a single draw."""
-    def __init__(self, name, color, metalness, roughness, **properties):
+    def __init__(self, name, color, metalness, roughness, *, finish=None, repeat=1.0, **properties):
+        self.finish = finish
+        self.repeat = repeat
+        if finish:
+            properties.update(finish_maps(finish))
         self.material = PBRMaterial(name=name, baseColorFactor=color, metallicFactor=metalness,
                                     roughnessFactor=roughness, **properties)
         self.vertices, self.faces, self.uv = [], [], []
@@ -106,5 +130,19 @@ class SurfaceBatch:
         self.add(rings.reshape(-1, 3), faces)
 
     def mesh(self):
-        return trimesh.Trimesh(vertices=np.vstack(self.vertices), faces=np.vstack(self.faces),
-                               process=False, visual=TextureVisuals(uv=np.vstack(self.uv), material=self.material))
+        positions = np.vstack(self.vertices)
+        faces = np.vstack(self.faces)
+        mesh = trimesh.Trimesh(vertices=positions, faces=faces, process=False)
+        uv = np.vstack(self.uv)
+        if self.finish:
+            # Split UVs where the projection plane changes, keeping the original smooth normals.
+            planes = np.abs(mesh.face_normals).argmax(axis=1)
+            corners = np.column_stack((faces.ravel(), np.repeat(planes, 3)))
+            pairs, indices = np.unique(corners, axis=0, return_inverse=True)
+            vertices, plane = pairs.T
+            axes = np.array([[2, 1], [0, 2], [0, 1]])[plane]
+            uv = np.take_along_axis(positions[vertices] - positions.min(axis=0), axes, axis=1) / self.repeat
+            mesh = trimesh.Trimesh(vertices=positions[vertices], faces=indices.reshape(-1, 3),
+                                   vertex_normals=mesh.vertex_normals[vertices], process=False)
+        mesh.visual = TextureVisuals(uv=uv, material=self.material)
+        return mesh

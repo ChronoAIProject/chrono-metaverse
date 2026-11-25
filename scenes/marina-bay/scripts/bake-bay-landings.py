@@ -78,9 +78,9 @@ def landing(frame, item, aggregate, datum_offset):
     image = Image.fromarray(toned)
     image.format = "JPEG"
     surface = SurfaceBatch("Landing wearing course", [255] * 4, 0, .83, baseColorTexture=image)
-    edge = SurfaceBatch("Exposed deck edge", [156, 148, 136, 255] if lookout else [89, 83, 76, 255], 0, .83)
-    base = SurfaceBatch("Deck soffit and piles", [128, 122, 110, 255], 0, .88)
-    metal = SurfaceBatch("Waterfront handrails", [165, 169, 166, 255], .52, .34)
+    edge = SurfaceBatch("Exposed deck edge", [156, 148, 136, 255] if lookout else [89, 83, 76, 255], 0, .96, finish="concrete", repeat=2.2)
+    base = SurfaceBatch("Deck soffit and piles", [128, 122, 110, 255], 0, .98, finish="concrete", repeat=2.2)
+    metal = SurfaceBatch("Waterfront handrails", [165, 169, 166, 255], .52, .58, finish="steel", repeat=.85)
     build_deck(plan, np.full(len(plan), top), item["thickness"], surface, edge, base, .85)
     posts = set()
     for i in item.get("railEdges", []):
@@ -111,7 +111,7 @@ def landing(frame, item, aggregate, datum_offset):
                 bounds={"min": low.tolist(), "max": high.tolist()},
                 props={"background": True, "岸线": "https://www.openstreetmap.org/way/" + str(item["way"]),
                        "影像": "Map Data © Singapore Land Authority / OneMap",
-                       "表面": "Granite Tile 04 · Poly Haven · CC0. Surface finish approximated from the aerial image.",
+                       "表面": "Granite Tile 04, Concrete Floor 02 and Metal Plate 02 · Poly Haven · CC0. Surface finish approximated from the aerial image.",
                        **({"现场照片": item["sourcePhoto"]} if "sourcePhoto" in item else {})})
 
 

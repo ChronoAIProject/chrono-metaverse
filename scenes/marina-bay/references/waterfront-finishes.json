@@ -1,0 +1,17 @@
+{
+  "concrete": {
+    "color": "3843dab525940e9007a38634ffa94108e0d95bcdd18b87a5395e21c0595eb45d",
+    "normal": "012f35b3233c401b26c2d7ba5553d7ed6ba311cb5c8e2cbd2a76c0b0ec295979",
+    "roughness": "cb5416d9928f8405ea6cee9611c4de7bfc8da868e2a385c97e15d81533c3faef"
+  },
+  "steel": {
+    "color": "eada6f383ba8605eb68a828ecf6fbff90718614fe5d449914d3df5eba81e36cc",
+    "normal": "6d4793a4650706441a33acac58345bbfa60e784f88d4fd5f04a9ca7a71049b79",
+    "roughness": "2439993d7701a0456345452f88ef30d71168df42adfac1459242c24f91aef91a"
+  },
+  "sources": {
+    "concrete": "https://polyhaven.com/a/concrete_floor_02",
+    "steel": "https://polyhaven.com/a/metal_plate_02",
+    "license": "CC0"
+  }
+}
