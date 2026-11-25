@@ -20,6 +20,7 @@ from fullerton_glazing import GLASS, PHOTO as GLAZING_PHOTO, glazing_patch
 from fullerton_wicker import PHOTO as WICKER_PHOTO, cane_material, rounded_board, woven_chair
 from fullerton_pendants import pendants
 from fullerton_terrace_daylight import apply_terrace_daylight, glazing_levels
+from fullerton_terrace_finishes import apply_canopy_finishes
 from fullerton_passage import bake as bake_passage
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -545,11 +546,13 @@ def furnish(start, along, inland, texture_path, output, region_id, canopy_ends, 
     apply_terrace_daylight(scene, middle)
     data = trimesh.exchange.gltf.export_glb(scene, include_normals=True,
                                             tree_postprocessor=set_deck_uv_channel)
+    data = apply_canopy_finishes(data)
     return dict(entityId="bay.fullerton-middle-terraces" if middle else "bay.fullerton-dining-terraces", regionId=region_id, layer="ext", kind="structure",
                 label="One Fullerton · 中段临水茶座" if middle else "One Fullerton · 临水餐饮露台", assetHash=write_asset(data, output),
                 bounds={"min": low.tolist(), "max": high.tolist()}, material={"shading": "albedo"},
                 props={"background": True, "surfaceRole": "landscape", "现场参考": PHOTO,
                        "建筑来源": "Map Data © Singapore Land Authority / OneMap",
+                       "棚面来源": "Poly Haven CC0 · https://polyhaven.com/a/corrugated_iron_03 · https://polyhaven.com/a/blue_metal_plate",
                        "木材来源": "Teak Veneer · Poly Haven · CC0 · https://polyhaven.com/a/teak_veneer",
                        "说明": "沿 OneMap 两段既有双坡棚顶配设支架、矮边和用餐区。桌椅样式、数量与排列为视觉近似。"})
 
