@@ -400,6 +400,20 @@ export function urbanFacade(
         diffuseColor.rgb = mix(masonry*.88, mix(frame,glass,panes), wall);
         if (buildingFinishesReady && wall > 0.0) {
           vec4 finish = buildingFinish(vec3(cityPosition.x,cityFacade.x,cityPosition.z),tangent,style);
+          if (style < 3.0 && cityPaint.a < 0.5) {
+            // Linear RGB relative to luminance, sampled separately from the glass and
+            // panel masks of the facade finishes. The low four bits select the window layout.
+            const vec3 panels[6] = vec3[6](
+              vec3(1.03,1.01,.95), vec3(1.36,.93,.60), vec3(.85,1.04,1.01),
+              vec3(1.91,.79,.44), vec3(.59,1.08,1.37), vec3(1.05,1.01,.78));
+            const vec3 glassCoats[4] = vec3[4](
+              vec3(.89,1.01,1.22)*1.18, vec3(.53,1.10,1.44)*.96,
+              vec3(.42,1.17,1.04)*.91, vec3(.76,1.06,1.09)*1.12);
+            int family = int(variant * 1024.0) / 16;
+            vec3 chroma = mix(panels[family % 6],glassCoats[(family / 6) % 4],finish.a);
+            float luma = dot(finish.rgb, vec3(.2126,.7152,.0722));
+            finish.rgb = mix(finish.rgb,luma*chroma,.72);
+          }
           vec3 tint = mix(vec3(.92+variant*.14), .70+.55*paint,cityPaint.a*.55);
           diffuseColor.rgb = mix(diffuseColor.rgb,finish.rgb*tint,wall);
           panes = finish.a;
