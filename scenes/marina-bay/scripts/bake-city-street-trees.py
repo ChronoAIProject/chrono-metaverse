@@ -119,6 +119,16 @@ def bake(folders, selected_tile=None):
                 mesh = source.copy()
                 mesh.vertices = (source.vertices * scale) @ rotation.T + [x,y,z]
                 normals = (source.vertex_normals / scale) @ rotation.T
+                # Limit only the road-facing branches of surveyed trees beside raised decks.
+                edge = tile.get('flyoverEdges', {}).get(str(tree_id))
+                if edge is not None:
+                    axis = np.array([edge[2], 0., edge[3]])
+                    distance = (mesh.vertices - [edge[0], y, edge[1]]) @ axis
+                    # A smooth maximum bends growth back into the verge and keeps continuous normals.
+                    clearance = np.logaddexp(0., distance)
+                    mesh.vertices += np.outer(clearance - distance, axis)
+                    slope = 1 / (1 + np.exp(-distance))
+                    normals += np.outer((normals @ axis) * (1 / slope - 1), axis)
                 mesh.vertex_normals = normals / np.linalg.norm(normals, axis=1)[:,None]
                 group = source.visual.material.name
                 groups[group].append(mesh)

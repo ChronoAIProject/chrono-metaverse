@@ -22,6 +22,8 @@ REPEAT = {"Facade006": (22.4, 27.2), "Facade018A": (18.0, 21.6), "Facade019A": (
           "RecessedBalconies": (18.0, 28.4), "ClayFins": (24.0, 24.85),
           "LimestonePiers": (25.2, 31.95), "BlueSpandrels": (21.6, 28.4),
           "PairedWindows": (18.4, 21.3), "HorizontalLouvers": (21.0, 28.4),
+          "StaggeredGalleries": (24., 20.4), "SandstoneRibbons": (28.8, 28.4),
+          "EnamelFins": (24., 29.6), "DoubleHeightFrames": (21.6, 28.4),
           "ServiceWall": (12.0, 3.55), "BrickArcade": (15.0, 3.55), "PanelArcade": (14.4, 3.55),
           "Workshop": (16.2, 3.55), "RibbedFront": (14.4, 3.55)}
 
@@ -48,7 +50,7 @@ def exterior(part):
     ground = {tuple(v[[0, 2]]): v[1] for v in outline}
     u_repeat, v_repeat = REPEAT[part["finish"]]
     # End every wall above the same floor line, including raised building sections.
-    floors = max(1, round(part["height"] / 3.55))
+    floors = part.get("storeys") or max(1, round(part["height"] / 3.55))
     floor_height = part["height"] / floors
     stories_per_tile = round(v_repeat / 3.55)
     low_rise = bool(part.get("roofFinish"))
