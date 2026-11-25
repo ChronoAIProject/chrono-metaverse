@@ -1,3 +1,4 @@
+import { surfaceNoise } from './surfaceVariation';
 import * as THREE from 'three';
 import { tileGrassCells } from './grassCells';
 
@@ -60,6 +61,7 @@ export function grassPatch(
       cells: { value: cells },
     },
     vertexShader: /* glsl */ `
+      ${surfaceNoise}
       #include <common>
       #include <logdepthbuf_pars_vertex>
       #ifdef SPARSE_GRASS
@@ -90,13 +92,16 @@ export function grassPatch(
                    * smoothstep(-0.13,0.05,(photo.g-photo.r)/lum);
         vec4 base = modelViewMatrix*vec4(root,1.0);
         float scale = (1.0-smoothstep(12.0,27.0,length(base.xyz)))*turf*(0.65+random.z);
+        // Thinner patches interrupt the tile lattice without moving roots off the imagery.
+        float cover = surfaceField(root.xz*.39);
+        scale *= smoothstep(.17,.56,cover+.28*random.x)*mix(.80,1.16,cover);
         float angle = random.y*6.283185;
         vec3 blade = position * scale;
         blade.xz=mat2(cos(angle),sin(angle),-sin(angle),cos(angle))*blade.xz;
         float height=clamp(position.y/0.17,0.0,1.0);
         blade.xz+=vec2(0.016,0.009)*scale*height*height*sin(time*1.7+root.x*0.38+root.z*0.24);
         gl_Position = projectionMatrix*(base + modelViewMatrix*vec4(blade,0.0));
-        bladeColor = photo * mix(0.60,1.26,clamp(position.y*8.0,0.0,1.0)) * (0.88+random.x*0.24);
+        bladeColor = photo * mix(0.60,1.26,clamp(position.y*8.0,0.0,1.0)) * (0.88+random.x*0.24)*mix(vec3(1.08,.99,.82),vec3(.93,1.03,1.02),cover);
         #include <logdepthbuf_vertex>
       }`,
     fragmentShader: /* glsl */ `

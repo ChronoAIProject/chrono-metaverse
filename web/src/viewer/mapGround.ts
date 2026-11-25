@@ -1,3 +1,4 @@
+import { surfaceNoise } from './surfaceVariation';
 import * as THREE from 'three';
 import detailUrl from '../assets/geography/surface-detail.webp';
 
@@ -62,6 +63,7 @@ export function urbanGroundMaterial(detail: THREE.Texture, shadow: THREE.Color) 
         '#include <project_vertex>\n groundMeters = (modelMatrix * vec4(transformed, 1.0)).xz;',
       );
     shader.fragmentShader =
+      surfaceNoise +
       'uniform vec3 groundShadow;\nuniform sampler2D groundDetail;\nvarying vec2 groundMeters;\n' +
       shader.fragmentShader
         .replace(
@@ -84,9 +86,10 @@ export function urbanGroundMaterial(detail: THREE.Texture, shadow: THREE.Color) 
         float paving = smoothstep(0.10, 0.29, luminance);
         vec3 weights = vec3(grass, (1.0-grass)*paving, (1.0-grass)*(1.0-paving));
         vec2 uv = groundMeters / 2.2;
-        vec3 micro = texture2D(groundDetail, uv).rgb - 0.5;
+        vec2 phase = vec2(surfaceField(groundMeters*.09),surfaceField(groundMeters*.07+17.9));
+        vec3 micro = texture2D(groundDetail, uv+phase*.48).rgb - 0.5;
         // 放大的第二频段只取无方向的草土起伏，保留铺装接缝的单一朝向。
-        float turf = texture2D(groundDetail, mat2(0.8,-0.6,0.6,0.8)*uv*0.18).r - 0.5;
+        float turf = texture2D(groundDetail, mat2(0.8,-0.6,0.6,0.8)*uv*0.18-phase.yx*.25).r - 0.5;
         float visible = 1.0-smoothstep(0.25, 2.0, max(fwidth(uv.x),fwidth(uv.y)));
         diffuseColor.rgb = photo * (1.0 + visible * clamp(2.6 * dot(weights, micro) + grass * 1.2*turf,-0.65,0.85));
         #endif`,

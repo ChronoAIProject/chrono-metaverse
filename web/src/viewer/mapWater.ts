@@ -1,3 +1,4 @@
+import { surfaceNoise } from './surfaceVariation';
 import * as THREE from 'three';
 import type { MapReflection } from './mapReflection';
 import { skyRadiance } from './skyRadiance';
@@ -146,6 +147,7 @@ export function mapWaterMaterial(
       uniform vec3 deep;
       uniform vec3 horizon;
       varying vec3 surfacePosition;
+      ${surfaceNoise}
       float hash(vec2 cell) {
         vec3 seed = fract(vec3(cell.xyx) * vec3(0.1031,0.1030,0.0973));
         seed += dot(seed, seed.yzx + 33.33);
@@ -234,8 +236,10 @@ export function mapWaterMaterial(
           vec3 spectralVariance = vec3(0);
           if (spectrumReady) {
             mat2 direction = mat2(rippleDownwind.y, rippleDownwind.x, -rippleDownwind.x, rippleDownwind.y);
-            vec4 longWaves = texture2D(gravityField, (meters - vec2(0.13,1.28) * time) / 32.0);
-            vec4 shortWaves = texture2D(rippleField, (direction * meters - vec2(0.09,0.70) * time) / 8.0);
+            // Long, smooth phase offsets break the repeat of the wave scans while retaining wind direction.
+            vec2 drift=vec2(surfaceField(meters*.013),surfaceField(meters*.019+37.0))-.5;
+            vec4 longWaves = texture2D(gravityField, (meters + 7.2*drift - vec2(0.13,1.28) * time) / 32.0);
+            vec4 shortWaves = texture2D(rippleField, (direction * meters + 2.6*drift.yx - vec2(0.09,0.70) * time) / 8.0);
             vec2 longMean = meanSlope(longWaves), shortMean = meanSlope(shortWaves);
             float longRms = gravityGain * 0.01828, shortRms = gust * rippleRms;
             vec2 reservoirSlope = longRms * longMean + shortRms * (shortMean * direction);
