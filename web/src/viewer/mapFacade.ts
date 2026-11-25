@@ -198,8 +198,16 @@ export function cityModelAir(material: THREE.Material, roofScale?: number, finis
             vec2 axis = normalize(vec2(face.z, -face.x) + vec2(.000001,0.0));
             vec4 finish = buildingFinish(finishPosition,axis,fract(surveyFinish),floor(surveyFinish));
             paneMask = facadeWall * finish.a;
-            vec3 tint = clamp(.72 + .50 * diffuseColor.rgb, .72, 1.18);
-            diffuseColor.rgb = mix(diffuseColor.rgb,finish.rgb*tint,facadeWall*.86);
+            vec3 finishColor = finish.rgb;
+            #ifdef USE_MAP
+              // Carry the survey's broad daylight colours through the repeating window detail.
+              // Compress luminance relative to middle grey while retaining the ratios of R/G/B.
+              vec3 surveyColor = diffuseColor.rgb + .015;
+              float luminance = dot(surveyColor, vec3(.2126, .7152, .0722));
+              vec3 tint = clamp(surveyColor * inversesqrt(.18 * luminance), .24, 2.2);
+              finishColor *= tint;
+            #endif
+            diffuseColor.rgb = mix(diffuseColor.rgb, finishColor, facadeWall * .86);
           }`,
           )
           .replace(
