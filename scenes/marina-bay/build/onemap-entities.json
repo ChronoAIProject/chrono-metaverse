@@ -6790,7 +6790,7 @@
     "kind": "object",
     "label": "CUSTOMS HOUSE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "89c353daabd9a4bb6e54f1766579c604ab99e459556a02c7cf6981f46a5c140d",
+    "assetHash": "a207da0a5708103ff84be44120e1a8549f3cc8b32d23e0e1a6e49dae36f46479",
     "bounds": {
       "min": [
         147.446344,
@@ -6811,9 +6811,11 @@
       "原始分片": "7/77/8_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 23.338,
-      "三角形数": 4776,
+      "三角形数": 7446,
       "临水立面影像署名": "Matti Blume, Marina Bay, Singapore (P1110053).jpg. Rectified and masked facade texture. CC BY-SA 4.0. https://commons.wikimedia.org/wiki/File:Marina_Bay,_Singapore_(P1110053).jpg https://creativecommons.org/licenses/by-sa/4.0/",
-      "临水立面处理": "以上层遮屏、窗带和外挑檐带配准现场照片。底层和被树冠遮住的窗格依可见邻窗估补，玻璃使用三处高度的滨水反射。"
+      "临水立面处理": "以上层遮屏、窗带和外挑檐带配准现场照片。底层和被树冠遮住的窗格依可见邻窗估补，玻璃使用三处高度的滨水反射。",
+      "原测绘三角形数": 4776,
+      "临水桩基": "两段岸边沿测绘边线和现场照片重建护舷桩、桩梁、梁下开口与滨水栏杆。桩距、梁底形状、栏杆高度与凹入深度依照片估计。桩面与混凝土纹理沿用临水立面影像署名。"
     }
   },
   {
