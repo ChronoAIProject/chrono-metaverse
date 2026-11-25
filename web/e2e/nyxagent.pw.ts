@@ -22,6 +22,7 @@ test('AI 页面动作切换空间、视图、草稿和镜头，保留同一个 W
   let nextActions: unknown[] = [];
   let turn = 0;
   let failed = false;
+  let readAndFocus = false;
   const writes: Record<string, unknown>[] = [];
   const share = 'Share fixture-share-token-0123456789abcdef';
   await page.route('**/api/auth/nyxid/**', async (route) => {
@@ -71,9 +72,22 @@ test('AI 页面动作切换空间、视图、草稿和镜头，保留同一个 W
       });
     if (url.pathname.endsWith('/key/check')) return route.fulfill({ json: identity });
     if (url.pathname.endsWith('/nyxagent/message')) {
-      writes.push(route.request().postDataJSON());
+      const body = route.request().postDataJSON();
+      writes.push(body);
       turn++;
-      const text = `将执行页面操作 ${turn}。\n\`\`\`metaverse-view\n${JSON.stringify({ actions: nextActions })}\n\`\`\``;
+      let text = `将执行页面操作 ${turn}。\n\`\`\`metaverse-view\n${JSON.stringify({ actions: nextActions })}\n\`\`\``;
+      if (readAndFocus) {
+        const call = (name: string, args: object) =>
+          '```nyx-host-call\n' +
+          JSON.stringify({ requestId: body.viewerContext.host.requestId, name, arguments: args }) +
+          '\n```';
+        if (body.instruction === '读取并聚焦当前选区') text = call('read_selection', {});
+        else {
+          const input = JSON.parse(body.instruction);
+          if (input.name === 'read_selection') text = call('focus_selection', input.result.value);
+          else text = JSON.stringify(input.result);
+        }
+      }
       const response = {
         id: `resp_page_${turn}`,
         conversation: { id: 'conv_page' },
@@ -213,6 +227,25 @@ test('AI 页面动作切换空间、视图、草稿和镜头，保留同一个 W
   ]);
   await expect(page.getByText('无法打开该空间，请先在空间列表中核对访问权限。')).toBeVisible();
   await expect(viewer).toHaveAttribute('data-mode', 'optimized');
+  await send([{ type: 'camera', kind: 'focus', entityId: 'desk-01' }]);
+  await expect(page.getByRole('complementary', { name: '物件信息' })).toContainText('desk-01');
+  readAndFocus = true;
+  const initialWrites = writes.length;
+  await page.getByLabel('给 NyxAgent 发消息').fill('读取并聚焦当前选区');
+  await page.getByRole('button', { name: '发送给 NyxAgent', exact: true }).click();
+  const selected = { spaceId: 'demo-lobby', entityId: 'desk-01' };
+  const focused = { ok: true, value: { ...selected, focused: true } };
+  await expect(page.getByText(JSON.stringify(focused), { exact: true })).toBeVisible();
+  expect(writes).toHaveLength(initialWrites + 3);
+  expect(JSON.parse(String(writes[initialWrites + 1]!.instruction))).toMatchObject({
+    name: 'read_selection',
+    result: { ok: true, value: selected },
+  });
+  expect(JSON.parse(String(writes[initialWrites + 2]!.instruction))).toMatchObject({
+    name: 'focus_selection',
+    result: focused,
+  });
+  readAndFocus = false;
   failed = true;
   await send([{ type: 'mode', value: 'raw' }]);
   await expect(
@@ -220,8 +253,12 @@ test('AI 页面动作切换空间、视图、草稿和镜头，保留同一个 W
   ).toBeVisible();
   await expect(viewer).toHaveAttribute('data-mode', 'optimized');
   expect(writes[0]).toMatchObject({
-    instructionsVersion: 5,
+    instructionsVersion: 6,
     viewerContext: {
+      host: {
+        requestId: writes[0]!.idempotencyKey,
+        tools: [{ name: 'read_selection' }, { name: 'focus_selection' }],
+      },
       spaces: [
         { id: 'demo-lobby', name: '前厅' },
         { id: 'demo-second', name: '第二空间' },
