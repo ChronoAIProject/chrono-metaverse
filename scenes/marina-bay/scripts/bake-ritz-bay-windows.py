@@ -2,11 +2,14 @@
 
 import argparse
 import hashlib
+import io
+import struct
 import json
 from pathlib import Path
 
 import numpy as np
 import trimesh
+from PIL import Image
 from scipy.signal import find_peaks
 from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
@@ -39,6 +42,7 @@ def place_openings(mesh):
     matrices,uv,triangles = matrices[valid],uv[valid],triangles[valid]
     inverse = np.linalg.inv(matrices)
     panes, pane_faces, ledges, ledge_faces = [],[],[],[]
+    pane_sizes = []
     counts = {}
     for first,last,kind in BANDS:
         y = .5*(first+last)
@@ -74,6 +78,7 @@ def place_openings(mesh):
             outline3 = center+.029*normal+outline[:,:1]*side*width/2+outline[:,1:]*up*height/2
             offset=len(panes)
             panes.extend(outline3)
+            pane_sizes.append(len(outline3))
             pane_faces.extend((offset,offset+k,offset+k+1) for k in range(1,len(outline)-1))
             top=center+up*(height*.5)+normal*.015
             # The photograph shows a pitched sheet and triangular cheeks, with
@@ -89,14 +94,81 @@ def place_openings(mesh):
                                [(0,3,2),(0,2,1),(3,5,4),(3,4,2),(0,5,3),(1,2,4)])
             shape="octagon" if len(outline)==8 else ("long" if kind=="long" else "square")
             counts[shape]=counts.get(shape,0)+1
-    return (panes,pane_faces),(ledges,ledge_faces),counts
+    return (panes,pane_faces),(ledges,ledge_faces),counts,pane_sizes
+
+
+def waterfront_glazing(data, pane_sizes):
+    """Add the measured waterfront reflection and the shade under each window head."""
+    json_size = int.from_bytes(data[12:16], "little")
+    doc = json.loads(data[20:20 + json_size])
+    original = data[28 + json_size:]
+    views = doc["bufferViews"]
+    binary = bytearray(original)
+
+    def append_view(payload, **properties):
+        binary.extend(bytes(-len(binary) % 4))
+        views.append({"buffer": 0, **properties, "byteOffset": len(binary), "byteLength": len(payload)})
+        binary.extend(payload)
+        return len(views) - 1
+
+    doc["images"] = []
+    doc["textures"] = []
+
+    def png_texture(name, payload):
+        view = append_view(payload)
+        doc["images"].append({"bufferView": view, "mimeType": "image/png", "name": name})
+        doc["textures"].append({"source": len(doc["images"]) - 1})
+        return len(doc["textures"]) - 1
+
+    panes = doc["meshes"][0]["primitives"][0]
+    position = doc["accessors"][panes["attributes"]["POSITION"]]
+    view = views[position["bufferView"]]
+    vertices = np.frombuffer(original, dtype="<f4", count=3 * position["count"],
+                             offset=view.get("byteOffset", 0) + position.get("byteOffset", 0)).reshape(-1, 3)
+    uv = np.empty((len(vertices), 2), dtype="<f4")
+    offset = 0
+    for size in pane_sizes:
+        end = offset + size
+        pane = vertices[offset:end]
+        along = pane @ np.array([.9965, 0, .0836])
+        uv[offset:end, 0] = (along - along.min()) / np.ptp(along)
+        uv[offset:end, 1] = (pane[:, 1].max() - pane[:, 1]) / np.ptp(pane[:, 1])
+        offset = end
+    if offset != len(vertices):
+        raise ValueError("Window outlines disagree with the exported vertex order")
+    uv_view = append_view(uv.tobytes(), target=34962)
+    panes["attributes"]["TEXCOORD_0"] = len(doc["accessors"])
+    doc["accessors"].append({"bufferView": uv_view, "componentType": 5126, "count": len(uv), "type": "VEC2"})
+
+    capture = ROOT / "references/ritz-millenia-window-radiance.png"
+    reflection = png_texture("Millenia waterfront at three window heights", capture.read_bytes())
+    y, x = np.mgrid[:64, :96]
+    s, t = (x + .5) / 96, (y + .5) / 64
+    visibility = 1 - .405 * np.exp(-t / .20) - .065 * (np.exp(-s / .085) + np.exp(-(1 - s) / .085))
+    stream = io.BytesIO()
+    Image.fromarray(np.rint(255 * visibility).astype("uint8")).convert("RGB").save(stream, "PNG", optimize=True)
+    occlusion = png_texture("Window head and jamb sky visibility", stream.getvalue())
+
+    material = doc["materials"][panes["material"]]
+    material["extras"] = {
+        "surfaceRole": "facade",
+        "reflectionLevels": {"first": 21.007188415527345, "last": 73.98183746337891, "count": 3, "scale": 13},
+    }
+    material.update(emissiveTexture={"index": reflection}, emissiveFactor=[0, 0, 0], occlusionTexture={"index": occlusion})
+    material["pbrMetallicRoughness"].update(metallicFactor=.02, roughnessFactor=.27)
+    binary.extend(bytes(-len(binary) % 4))
+    doc["buffers"][0]["byteLength"] = len(binary)
+    encoded = json.dumps(doc, ensure_ascii=False, separators=(",", ":")).encode()
+    encoded += b" " * (-len(encoded) % 4)
+    header = struct.pack("<4sIII4s", b"glTF", 2, len(encoded) + len(binary) + 28, len(encoded), b"JSON")
+    return header + encoded + struct.pack("<I4s", len(binary), b"BIN\0") + binary
 
 
 def bake(path):
     if hashlib.sha256(path.read_bytes()).hexdigest()!=SOURCE:
         raise ValueError("Expected the original registered Millenia hotel glTF")
     source=trimesh.load_scene(path,process=False).geometry["24_0.glb"]
-    panes,ledges,counts=place_openings(source)
+    panes,ledges,counts,pane_sizes=place_openings(source)
     record=next(e for e in json.loads((ROOT/"build/onemap-entities.json").read_text()) if e["entityId"]==TOWER)
     anchor=np.array([record["bounds"]["min"],record["bounds"]["max"]]).mean(axis=0)
     anchor[1]=record["bounds"]["min"][1]
@@ -116,6 +188,7 @@ def bake(path):
         panel=next(m for m in doc["materials"] if m["name"]=="Millenia bay glazing")
         panel["extras"]={"surfaceRole":"facade","reflectSky":True}
     data=trimesh.exchange.gltf.export_glb(scene,include_normals=True,tree_postprocessor=metadata)
+    data = waterfront_glazing(data, pane_sizes)
     digest=hashlib.sha256(data).hexdigest()
     (ROOT/"assets"/(digest+".glb")).write_bytes(data)
     print(counts)
@@ -125,7 +198,9 @@ def bake(path):
                 props={"background":True,"立面调查":"Map Data © Singapore Land Authority / OneMap · "+TOWER,
                        "实景参考":PHOTO,"重建":"从官方立面纹理提取窗列并投回原三角面，按实景区分横向长窗、八角窗及方形开口。玻璃色、窗高与遮阳沿突出量为估值。",
                        "材质校准来源":"db04dea9253a476a0a29f179104ac5bc25b8f3d9e04e7be43c4c9ef08eca352b",
-                       "日间材质":"临湾暗玻璃与遮阳沿按跨湾照片校准窗墙明暗差。"})
+                       "日间材质":"临湾暗玻璃与遮阳沿按跨湾照片校准窗墙明暗差。",
+                       "临湾日间材质":"按已配准的客房外窗开口估计窗头与侧边的天空遮蔽。窗内反射在酒店前方三个高度的现场渲染环境之间插值。",
+                       "已测窗数":len(pane_sizes)})
 
 
 if __name__=="__main__":
