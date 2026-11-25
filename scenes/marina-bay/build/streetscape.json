@@ -880,7 +880,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "文华东方酒店 · 临湾客房立面",
-    "assetHash": "8a69a56682d19e227f458c2c6e41ce9599b6ec9a0f384f87f548e433c41f71ce",
+    "assetHash": "b571b8dbdfe5fb151f5639c672547a3b8457a9af82f835f54de484aaa525131b",
     "material": {
       "shading": "albedo"
     },
@@ -900,7 +900,8 @@
       "background": true,
       "立面调查": "Map Data © Singapore Land Authority / OneMap · bay.cba4c479-1333-4eb8-a531-9f6e1049408e",
       "实景参考": "https://commons.wikimedia.org/wiki/File:Mandarin_Oriental_Building_Singapore_Meqqal.jpg",
-      "重建": "16 层、13 开间按原始立面纹理定位。横梁、窗间柱挑出量和玻璃材质按照片估值。"
+      "重建": "16 层、13 开间按原始立面纹理定位。横梁、窗间柱挑出量和玻璃材质按照片估值。",
+      "临湾日间材质": "客房玻璃根据同一楼址三个高度的环境采样反映邻楼与天空。窗槽依据横梁、窗框的挑出量近似天光遮挡。"
     }
   },
   {
