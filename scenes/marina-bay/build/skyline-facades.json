@@ -1,0 +1,86 @@
+[
+  {
+    "entityId": "bay.waterfront-skyline-facades.downtown",
+    "layer": "ext",
+    "kind": "structure",
+    "label": "滨海湾 · 远景楼群与临湾外墙",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "cd0028277c5e1e9283d36bd63332d70991931ecd75e4c67579b8086181eace07",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        -1122.5049923630827,
+        -60.273,
+        -551.6676811982946
+      ],
+      "max": [
+        455.15522305662796,
+        176.712,
+        -113.82721777428543
+      ]
+    },
+    "props": {
+      "background": true,
+      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Facade006, Facade018A and Facade019A by ambientCG (CC0). Window layouts and storey heights are artistic approximations.",
+      "表面": "基于地图楼高与轮廓，采用三组日间外墙贴图估算窗格与层间饰面。"
+    }
+  },
+  {
+    "entityId": "bay.waterfront-skyline-facades.bayfront",
+    "layer": "ext",
+    "kind": "structure",
+    "label": "滨海湾 · 远景楼群与临湾外墙",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "42a9f86604bbe0045b5d2210eb0e5f4c3285a7fd32e9b3be41cb87a528b82252",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        -519.8063727080804,
+        -60.2799,
+        22.146869583578667
+      ],
+      "max": [
+        -461.7676949225349,
+        -25.2748,
+        100.34131646770642
+      ]
+    },
+    "props": {
+      "background": true,
+      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Facade006, Facade018A and Facade019A by ambientCG (CC0). Window layouts and storey heights are artistic approximations.",
+      "表面": "基于地图楼高与轮廓，采用三组日间外墙贴图估算窗格与层间饰面。"
+    }
+  },
+  {
+    "entityId": "bay.waterfront-skyline-facades.north",
+    "layer": "ext",
+    "kind": "structure",
+    "label": "滨海湾 · 远景楼群与临湾外墙",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "6c571c410a7384571c0a03483c8a012b0c6c4cb4e4cf1a5ae3982f8c584a9877",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        285.1056850149973,
+        -60.5344,
+        1790.9255984431009
+      ],
+      "max": [
+        314.8565129639225,
+        60.4795,
+        1840.914586343132
+      ]
+    },
+    "props": {
+      "background": true,
+      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Facade006, Facade018A and Facade019A by ambientCG (CC0). Window layouts and storey heights are artistic approximations.",
+      "表面": "基于地图楼高与轮廓，采用三组日间外墙贴图估算窗格与层间饰面。"
+    }
+  }
+]

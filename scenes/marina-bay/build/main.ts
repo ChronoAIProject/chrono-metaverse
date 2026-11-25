@@ -97,6 +97,22 @@ export function withBoatQuay(surroundings: EntityBody): EntityBody {
   } } };
 }
 
+/** Facade cladding is surveyed against one source in final member coordinates. */
+function withSkylineFacades(surroundings: EntityBody): EntityBody[] {
+  const content = surroundings.props?.externalContent;
+  if (!content || typeof content !== 'object' || !('extrusion' in content)) return [surroundings];
+  const style = content.extrusion;
+  const survey = JSON.parse(readFileSync(new URL('../references/skyline-finishes/footprints.json', import.meta.url), 'utf8'));
+  if (!style || typeof style !== 'object' || !('layer' in style) || style.layer !== survey.layer ||
+      !('heightProperty' in style) || style.heightProperty !== 'render_height' ||
+      !('minHeightProperty' in style) || style.minHeightProperty !== 'render_min_height' ||
+      !('sources' in content) || !Array.isArray(content.sources) || content.sources.length !== 1 ||
+      content.sources[0]?.url !== survey.source ||
+      !('reference' in content) || !isDeepStrictEqual(content.reference, survey.reference)) return [surroundings];
+  const models: EntityBody[] = JSON.parse(readFileSync(new URL('./skyline-facades.json', import.meta.url), 'utf8'));
+  return [surroundings, ...models];
+}
+
 /** Only migrate skies previously distributed with the scene. */
 function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | null): EntityBody | null {
   if (!saved || !configured) return saved ?? configured;
@@ -216,7 +232,7 @@ export default function build(base: BuildBase, kit: Kit) {
   }
   // 线上按视野流式加载的周边楼群独立于离线模型包，由空间保存其图层和保护范围。
   const surroundings = base.entities.find((entity) => entity.entityId === 'bay.city-surroundings');
-  if (surroundings) entities.push(config.quay ? withBoatQuay(surroundings) : surroundings);
+  if (surroundings) entities.push(...(config.quay ? withSkylineFacades(withBoatQuay(surroundings)) : [surroundings]));
   const ids = new Set(entities.map((entity) => entity.entityId));
   return {
     message: config.message,
