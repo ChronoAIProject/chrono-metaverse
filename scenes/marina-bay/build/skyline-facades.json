@@ -5,7 +5,7 @@
     "kind": "structure",
     "label": "滨海湾 · 远景楼群与临湾外墙",
     "regionId": "marina-bay-exterior",
-    "assetHash": "a87a736813f5041b271b617a8a1b59098adf3a1631b5020fc8155fdade174b43",
+    "assetHash": "3da5277ef656a3fffa534543407acc58f14c425ffc45c8ca94aeaba04a2637a2",
     "material": {
       "shading": "albedo"
     },
@@ -23,8 +23,8 @@
     },
     "props": {
       "background": true,
-      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Facade005, Facade013, Facade015 and Facade020A by ambientCG (CC0). Window arrangements, cladding and storey heights are visual approximations. Concrete coping scan by Poly Haven (CC0).",
-      "表面": "基于地图楼高与轮廓，采用四组日间玻璃、百叶、窗带及面砖纹理估算楼层与开间。"
+      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Daylight glass sample by ambientCG and concrete scan by Poly Haven (CC0). Cladding, floor pitches and openings are visual approximations. Concrete coping scan by Poly Haven (CC0).",
+      "表面": "基于地图楼高与轮廓，采用阳台、竖向陶板、石柱窗墙、蓝色层间板、成对窗与横向百叶区分楼群。"
     }
   },
   {
@@ -33,7 +33,7 @@
     "kind": "structure",
     "label": "滨海湾 · 远景楼群与临湾外墙",
     "regionId": "marina-bay-exterior",
-    "assetHash": "2d50679a0f8177988e1a9a479b0c73d01c89d3b1145725cfd97e8243a0532be0",
+    "assetHash": "efb52c75ca769e7862e903f3290b5a1864d5b401d25b4dc9f59ddc13c35d8cc9",
     "material": {
       "shading": "albedo"
     },
@@ -51,8 +51,8 @@
     },
     "props": {
       "background": true,
-      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Facade005, Facade013, Facade015 and Facade020A by ambientCG (CC0). Window arrangements, cladding and storey heights are visual approximations. Concrete coping scan by Poly Haven (CC0). Ground-floor cladding and shutter scans by Poly Haven (CC0).",
-      "表面": "基于地图楼高与轮廓，采用四组日间玻璃、百叶、窗带及面砖纹理估算楼层与开间。"
+      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Daylight glass sample by ambientCG and concrete scan by Poly Haven (CC0). Cladding, floor pitches and openings are visual approximations. Concrete coping scan by Poly Haven (CC0). Ground-floor cladding and shutter scans by Poly Haven (CC0).",
+      "表面": "基于地图楼高与轮廓，采用阳台、竖向陶板、石柱窗墙、蓝色层间板、成对窗与横向百叶区分楼群。"
     }
   },
   {
@@ -61,7 +61,7 @@
     "kind": "structure",
     "label": "滨海湾 · 远景楼群与临湾外墙",
     "regionId": "marina-bay-exterior",
-    "assetHash": "66e88371775b0fff82d80d7ed9601df2d927d35e02d2ab679921877c14bd45cd",
+    "assetHash": "769f1dc99672f9e0d9ee3c5bd580372b8517b1349009c5afe8baedcdf96c585a",
     "material": {
       "shading": "albedo"
     },
@@ -79,8 +79,8 @@
     },
     "props": {
       "background": true,
-      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Facade005, Facade013, Facade015 and Facade020A by ambientCG (CC0). Window arrangements, cladding and storey heights are visual approximations. Concrete coping scan by Poly Haven (CC0).",
-      "表面": "基于地图楼高与轮廓，采用四组日间玻璃、百叶、窗带及面砖纹理估算楼层与开间。"
+      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Daylight glass sample by ambientCG and concrete scan by Poly Haven (CC0). Cladding, floor pitches and openings are visual approximations. Concrete coping scan by Poly Haven (CC0).",
+      "表面": "基于地图楼高与轮廓，采用阳台、竖向陶板、石柱窗墙、蓝色层间板、成对窗与横向百叶区分楼群。"
     }
   },
   {

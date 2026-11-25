@@ -11,7 +11,7 @@
       -12.785997359593134
     ]
   },
-  "copyright": "Building footprints and heights \u00a9 OpenStreetMap contributors (ODbL), via OpenFreeMap. Facade005, Facade013, Facade015 and Facade020A by ambientCG (CC0). Window arrangements, cladding and storey heights are visual approximations.",
+  "copyright": "Building footprints and heights \u00a9 OpenStreetMap contributors (ODbL), via OpenFreeMap. Daylight glass sample by ambientCG and concrete scan by Poly Haven (CC0). Cladding, floor pitches and openings are visual approximations.",
   "materials": {
     "Facade006": "https://ambientcg.com/view?id=Facade006",
     "Facade018A": "https://ambientcg.com/view?id=Facade018A",
@@ -47,6 +47,30 @@
       "https://polyhaven.com/a/ribbed_concrete_wall",
       "https://polyhaven.com/a/painted_metal_shutter",
       "Marina Bay rendered courtyard daylight (references/fullerton-courtyard-reflection.jpg)"
+    ],
+    "RecessedBalconies": [
+      "https://ambientcg.com/a/Facade005",
+      "https://polyhaven.com/a/concrete_floor_02"
+    ],
+    "ClayFins": [
+      "https://ambientcg.com/a/Facade005",
+      "https://polyhaven.com/a/concrete_floor_02"
+    ],
+    "LimestonePiers": [
+      "https://ambientcg.com/a/Facade005",
+      "https://polyhaven.com/a/concrete_floor_02"
+    ],
+    "BlueSpandrels": [
+      "https://ambientcg.com/a/Facade005",
+      "https://polyhaven.com/a/concrete_floor_02"
+    ],
+    "PairedWindows": [
+      "https://ambientcg.com/a/Facade005",
+      "https://polyhaven.com/a/concrete_floor_02"
+    ],
+    "HorizontalLouvers": [
+      "https://ambientcg.com/a/Facade005",
+      "https://polyhaven.com/a/concrete_floor_02"
     ]
   },
   "parts": [
@@ -55,7 +79,7 @@
       "minHeight": 124,
       "height": 162,
       "tile": "14/12918/8133",
-      "finish": "Facade005",
+      "finish": "PairedWindows",
       "outline": [
         [
           -1065.3358,
@@ -241,7 +265,7 @@
       "minHeight": 51,
       "height": 121,
       "tile": "14/12918/8133",
-      "finish": "Facade020A",
+      "finish": "PairedWindows",
       "outline": [
         [
           -1065.3358,
@@ -427,7 +451,7 @@
       "minHeight": 0,
       "height": 35,
       "tile": "14/12918/8133",
-      "finish": "Facade020A",
+      "finish": "ClayFins",
       "outline": [
         [
           -482.7481,
@@ -499,7 +523,7 @@
       "minHeight": 0,
       "height": 207,
       "tile": "14/12918/8133",
-      "finish": "Facade005",
+      "finish": "LimestonePiers",
       "outline": [
         [
           112.8262,
@@ -580,7 +604,7 @@
       "minHeight": 0,
       "height": 207,
       "tile": "14/12918/8133",
-      "finish": "Facade005",
+      "finish": "LimestonePiers",
       "outline": [
         [
           77.2428,
@@ -661,7 +685,7 @@
       "minHeight": 0,
       "height": 141,
       "tile": "14/12918/8133",
-      "finish": "Facade020A",
+      "finish": "RecessedBalconies",
       "outline": [
         [
           -10.4396,
@@ -1012,7 +1036,7 @@
       "minHeight": 0,
       "height": 141,
       "tile": "14/12918/8133",
-      "finish": "Facade020A",
+      "finish": "RecessedBalconies",
       "outline": [
         [
           27.3861,
@@ -1363,7 +1387,7 @@
       "minHeight": 29,
       "height": 237,
       "tile": "14/12918/8133",
-      "finish": "Facade013",
+      "finish": "BlueSpandrels",
       "outline": [
         [
           423.6968,
@@ -1399,7 +1423,7 @@
       "minHeight": 29,
       "height": 237,
       "tile": "14/12918/8133",
-      "finish": "Facade013",
+      "finish": "BlueSpandrels",
       "outline": [
         [
           449.353,
@@ -1445,7 +1469,7 @@
       "minHeight": 29,
       "height": 123,
       "tile": "14/12918/8133",
-      "finish": "Facade013",
+      "finish": "HorizontalLouvers",
       "outline": [
         [
           422.1654,
@@ -1486,7 +1510,7 @@
       "minHeight": 0,
       "height": 216,
       "tile": "14/12918/8133",
-      "finish": "Facade015",
+      "finish": "ClayFins",
       "outline": [
         [
           101.6152,
@@ -1522,7 +1546,7 @@
       "minHeight": 3,
       "height": 110,
       "tile": "14/12918/8133",
-      "finish": "Facade013",
+      "finish": "HorizontalLouvers",
       "outline": [
         [
           -1122.2046,
@@ -1613,7 +1637,7 @@
       "minHeight": 0,
       "height": 121,
       "tile": "14/12918/8132",
-      "finish": "Facade015",
+      "finish": "RecessedBalconies",
       "outline": [
         [
           285.4187,

@@ -18,6 +18,9 @@ REFERENCES = ROOT / "references/skyline-finishes"
 REPEAT = {"Facade006": (22.4, 27.2), "Facade018A": (18.0, 21.6), "Facade019A": (17.4, 21.0),
           "Facade005": (24.0, 42.6), "Facade013": (28.8, 56.8),
           "Facade015": (28.8, 56.8), "Facade020A": (18.0, 21.3),
+          "RecessedBalconies": (18.0, 28.4), "ClayFins": (24.0, 24.85),
+          "LimestonePiers": (25.2, 31.95), "BlueSpandrels": (21.6, 28.4),
+          "PairedWindows": (18.4, 21.3), "HorizontalLouvers": (21.0, 28.4),
           "ServiceWall": (12.0, 3.55), "BrickArcade": (15.0, 3.55), "PanelArcade": (14.4, 3.55),
           "Workshop": (16.2, 3.55), "RibbedFront": (14.4, 3.55)}
 
@@ -152,7 +155,7 @@ def bake_group(group, parts, credit_line):
             "background": True,
             "版权": credit_line,
             "表面": ("基于地图楼高与轮廓，砖墙、面砖、压型板和肋纹混凝土沿街交替。玻璃门窗、百叶、装卸门及屋顶收边按米制尺度估算。" if low_rise
-                   else "基于地图楼高与轮廓，采用四组日间玻璃、百叶、窗带及面砖纹理估算楼层与开间。"),
+                   else "基于地图楼高与轮廓，采用阳台、竖向陶板、石柱窗墙、蓝色层间板、成对窗与横向百叶区分楼群。"),
         },
     }
 
