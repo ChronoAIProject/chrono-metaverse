@@ -3680,8 +3680,17 @@
       "露台参考": "https://commons.wikimedia.org/wiki/File:One_Fullerton_12-05-2024(7).jpg",
       "入口参考": "https://commons.wikimedia.org/wiki/File:Singapore_-_panoramio_(109).jpg",
       "入口门廊": "按临水雨棚下的测绘立面恢复入口开口。",
-      "门廊纹理署名": "Андрей Бобровский · Singapore - panoramio (109) · 2014 · https://creativecommons.org/licenses/by/3.0/ · 裁切、透视纠正并调整阴影。石材纹理 Poly Haven Granite Tile 04 · CC0。"
-    }
+      "门廊纹理署名": "Андрей Бобровский · Singapore - panoramio (109) · 2014 · https://creativecommons.org/licenses/by/3.0/ · 裁切、透视纠正并调整阴影。石材纹理 Poly Haven Granite Tile 04 · CC0。",
+      "modelOcclusion": {
+        "sourceAsset": "3a4c1bfb5b3d6c6905245967f272845f9fa7d740253283a09bea17f0d1be39e5",
+        "material": "dc2400190",
+        "texture": "4f81dd13d48ae20810232681f9d8fb80303340def60eb9141646ae16181af423"
+      },
+      "岸线天光": "以周边建筑、地面和一次漫反射估计普通外墙的间接日光，按测绘纹理坐标烘焙立面遮蔽。"
+    },
+    "textures": [
+      "4f81dd13d48ae20810232681f9d8fb80303340def60eb9141646ae16181af423"
+    ]
   },
   {
     "entityId": "bay.5179509c-8324-4b2c-bd04-d81f2beca61e",
@@ -6837,8 +6846,17 @@
       "临水立面影像署名": "Matti Blume, Marina Bay, Singapore (P1110053).jpg. Rectified and masked facade texture. CC BY-SA 4.0. https://commons.wikimedia.org/wiki/File:Marina_Bay,_Singapore_(P1110053).jpg https://creativecommons.org/licenses/by-sa/4.0/",
       "临水立面处理": "以上层遮屏、窗带和外挑檐带配准现场照片。底层和被树冠遮住的窗格依可见邻窗估补，玻璃使用三处高度的滨水反射。",
       "原测绘三角形数": 4776,
-      "临水桩基": "两段岸边沿测绘边线和现场照片重建护舷桩、桩梁、梁下开口与滨水栏杆。桩距、梁底形状、栏杆高度与凹入深度依照片估计。桩面与混凝土纹理沿用临水立面影像署名。"
-    }
+      "临水桩基": "两段岸边沿测绘边线和现场照片重建护舷桩、桩梁、梁下开口与滨水栏杆。桩距、梁底形状、栏杆高度与凹入深度依照片估计。桩面与混凝土纹理沿用临水立面影像署名。",
+      "modelOcclusion": {
+        "sourceAsset": "a207da0a5708103ff84be44120e1a8549f3cc8b32d23e0e1a6e49dae36f46479",
+        "material": "dc2400280",
+        "texture": "ca00605a204aa2915bfa4f7f2afbc2aa3435f8fa3aa4910e61e2838d964147e3"
+      },
+      "岸线天光": "以周边建筑、地面和一次漫反射估计普通外墙的间接日光，按测绘纹理坐标烘焙立面遮蔽。"
+    },
+    "textures": [
+      "ca00605a204aa2915bfa4f7f2afbc2aa3435f8fa3aa4910e61e2838d964147e3"
+    ]
   },
   {
     "entityId": "bay.44eb6d08-ff24-44fa-8af4-8069bc7b1a95",
@@ -7788,8 +7806,17 @@
       "原始分片": "8/154/16_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 216.437,
-      "三角形数": 2344
-    }
+      "三角形数": 2344,
+      "modelOcclusion": {
+        "sourceAsset": "ace72157147276458a32ae49a51f2b99a021857b9d0fd1f2b912488c1c235cdb",
+        "material": "dc2400603",
+        "texture": "cb8911c84ce11a05c55c45724988f221e4e879baa7bf7956977ca88c504ecdc0"
+      },
+      "岸线天光": "以周边建筑、地面和一次漫反射估计普通外墙的间接日光，按测绘纹理坐标烘焙立面遮蔽。"
+    },
+    "textures": [
+      "cb8911c84ce11a05c55c45724988f221e4e879baa7bf7956977ca88c504ecdc0"
+    ]
   },
   {
     "entityId": "bay.0bcae51e-7b9c-4013-beca-761cbaaa8805",
