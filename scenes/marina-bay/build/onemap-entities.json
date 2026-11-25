@@ -3421,7 +3421,7 @@
     "kind": "object",
     "label": "MARINA BAY SANDS (ARTSCIENCE MUSEUM)",
     "regionId": "marina-bay-exterior",
-    "assetHash": "6f6629b4099f8e84f5102c0a355cd483dae5ce3207608a696f9ad74b683c87b2",
+    "assetHash": "6cc5dca48719e2d4a9dd7b3f5b4dd69c7567abd1bb1f8d7e5088ad748d3820f1",
     "bounds": {
       "min": [
         -266.013858,
@@ -3442,7 +3442,11 @@
       "原始分片": "6/39/5_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 60.357,
-      "三角形数": 4672
+      "三角形数": 12460,
+      "展馆基座与外窗": "依实拍配准中央斜撑窗、展馆入口窗带、金属侧墙、坡屋面及花瓣凸窗。玻璃与框料按影像区分粗糙度，沿高度插值檐下三个实景位置的反射。低处遮挡部分用同立面窗格估补。",
+      "展馆立面纹理署名": "Facade details cropped and rectified from Singapore Skyline and ArtScience Museum by Alexeyevitch, public domain: https://commons.wikimedia.org/wiki/File:Singapore_Skyline_and_ArtScience_Museum.jpg",
+      "花瓣曲面": "在测绘面法线连续的区域用三次曲面补足网格，使花瓣弯曲处的日影跟随表面。保留测绘顶点、窗框边界及硬折线，曲面内插为估计。",
+      "原测绘面数": 4672
     }
   },
   {
