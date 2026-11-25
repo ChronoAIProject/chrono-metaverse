@@ -5,7 +5,7 @@
     "kind": "structure",
     "label": "滨海湾 · 远景楼群与临湾外墙",
     "regionId": "marina-bay-exterior",
-    "assetHash": "c2b21319f957610cbb01298e964a9ab82a1c7514b9b5b4a84280c0573a36faf8",
+    "assetHash": "b8274c97aa4d629e95a9bfd9c437448dc0b54c2110ad4404b8ec78b6f524f235",
     "material": {
       "shading": "albedo"
     },
@@ -23,7 +23,7 @@
     },
     "props": {
       "background": true,
-      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Daylight glass sample by ambientCG and concrete scan by Poly Haven (CC0). Cladding, floor pitches and openings are visual approximations. Concrete coping scan by Poly Haven (CC0).",
+      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Daylight glass sample by ambientCG and concrete scan by Poly Haven (CC0). Cladding, floor pitches and openings are visual approximations. Concrete coping scan by Poly Haven (CC0). Office grids adapted for daylight from Facade014 and Facade017 by ambientCG (CC0).",
       "表面": "基于地图楼高与轮廓，采用阳台、竖向陶板、石柱窗墙、蓝色层间板、成对窗与横向百叶区分楼群。"
     }
   },

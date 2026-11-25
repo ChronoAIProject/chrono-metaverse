@@ -13,6 +13,8 @@
   },
   "copyright": "Building footprints and heights \u00a9 OpenStreetMap contributors (ODbL), via OpenFreeMap. Daylight glass sample by ambientCG and concrete scan by Poly Haven (CC0). Cladding, floor pitches and openings are visual approximations.",
   "materials": {
+    "TerracottaOfficeGrid": "https://ambientcg.com/a/Facade014",
+    "SilverPrecastOffice": "https://ambientcg.com/a/Facade017",
     "Facade006": "https://ambientcg.com/view?id=Facade006",
     "Facade018A": "https://ambientcg.com/view?id=Facade018A",
     "Facade019A": "https://ambientcg.com/view?id=Facade019A",
@@ -624,7 +626,7 @@
       "minHeight": 0,
       "height": 207,
       "tile": "14/12918/8133",
-      "finish": "Facade005",
+      "finish": "SilverPrecastOffice",
       "outline": [
         [
           77.2428,
@@ -1056,7 +1058,7 @@
       "minHeight": 0,
       "height": 141,
       "tile": "14/12918/8133",
-      "finish": "PairedWindows",
+      "finish": "TerracottaOfficeGrid",
       "outline": [
         [
           27.3861,
