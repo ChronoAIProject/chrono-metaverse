@@ -2417,5 +2417,34 @@
       "路旁地面": "按正射影像描绘绿地和铺装。石板尺寸、路缘高度、草色为估值。",
       "道路材质": "扫描沥青与路面涂料。车道数和道路线形取自 OSM，路宽、标线及磨耗为视觉近似。"
     }
+  },
+  {
+    "entityId": "bay.straits-boulevard",
+    "label": "海峡大道与沿线地面",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "e98fa1c17e480c3f4766e7e95cab976794af234a6c4c98832ae8ea30b8c80abe",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        -410.1558859252894,
+        -60.3006687028579,
+        -827.4360448535317
+      ],
+      "max": [
+        248.87770383763947,
+        -59.74803942181018,
+        -619.2476440185437
+      ]
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "版权": "Roads © OpenStreetMap contributors (ODbL). Terrain reference © Singapore Land Authority / OneMap. Asphalt 01, Granite Tile 04, Dirt Aerial 02 and Sandy Gravel 02 by Poly Haven (CC0).",
+      "依据": "OSM 车行道及步道中心线、车道数与 OneMap 航片裸土范围。地表起伏、铺装宽度和路缘高度为视觉估值。"
+    }
   }
 ]
