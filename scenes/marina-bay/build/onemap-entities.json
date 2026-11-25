@@ -5,7 +5,7 @@
     "kind": "object",
     "label": "THE SHOPPES AT MARINA BAY SANDS",
     "regionId": "marina-bay-exterior",
-    "assetHash": "2c6658040a6b9f9e497c0bd61cb100d0b1f900d34406ea439db6f8e44c2d1501",
+    "assetHash": "3c26a6fd4f04a5f1e5d66d40061396ea9bb0c7087690f7f3be8e6b63fb4b07b8",
     "bounds": {
       "min": [
         -396.044722,
@@ -26,12 +26,14 @@
       "原始分片": "4/9/1_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 44.869,
-      "三角形数": 13644,
+      "三角形数": 22688,
       "原建筑资源": "54795e699927d46b1d354d4f17e59fb7142cd073937b84bed3d4cf5e689586be",
       "玻璃影像署名": "Marina Bay Sands view from Merlion Park, Singapore (Ank Kumar) 01. Ank Kumar, CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Cropped, masked and projected into the bay-facing glazing. https://commons.wikimedia.org/wiki/File:Marina_Bay_Sands_view_from_Merlion_Park,_Singapore_(Ank_Kumar)_01.jpg",
       "立面处理": "购物中心临湾中央玻璃依鱼尾狮公园实拍配准。树冠和行人遮挡处的立柱与底层玻璃按邻窗估补。",
       "北端弧形幕墙": "沿原测绘弧面重建窗格与底层框料，采用三个高度的滨水环境反射。窗格间距、色泽与粗糙度依据实拍估计。",
-      "北端玻璃纹理署名": "北端玻璃细纹取自玄史生《ArtScience Museum Birdview from Singapore Flyer 20130209.JPG》，经裁切、校正及亮度处理，CC BY-SA 3.0。https://commons.wikimedia.org/wiki/File:ArtScience_Museum_Birdview_from_Singapore_Flyer_20130209.JPG https://creativecommons.org/licenses/by-sa/3.0/"
+      "北端玻璃纹理署名": "北端玻璃细纹取自玄史生《ArtScience Museum Birdview from Singapore Flyer 20130209.JPG》，经裁切、校正及亮度处理，CC BY-SA 3.0。https://commons.wikimedia.org/wiki/File:ArtScience_Museum_Birdview_from_Singapore_Flyer_20130209.JPG https://creativecommons.org/licenses/by-sa/3.0/",
+      "北端遮阳棚": "两段临水挑檐依测绘的内外轮廓恢复金属百叶和檩条。叶片间距和倾角依据俯视照片估计。弧形挑檐的细叶片使用可随采样尺度过滤的开口纹理，横梁与边框保留实体厚度。",
+      "原测绘三角形数": 13644
     },
     "material": {
       "shading": "baked"
