@@ -771,7 +771,7 @@
     "kind": "object",
     "label": "MARINA BAY SANDS SINGAPORE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "f0f746891d58af9fbb119958f1cf22a89a1d84657d33b2796f93b39b3cda5dda",
+    "assetHash": "10b04da8e224ac97aadb823c7afec4c35e596bf004620ab8e339892b2359bf53",
     "bounds": {
       "min": [
         -661.780779,
@@ -795,7 +795,7 @@
       "三角形数": 14238,
       "原建筑资源": "95664d417851f133b6a370bda1e85cf1851107852768a377516e02ff5653e8ea",
       "玻璃参考": "https://commons.wikimedia.org/wiki/File:Marina_Bay_Sands_view_from_Merlion_Park,_Singapore_(Ank_Kumar)_01.jpg",
-      "立面处理": "按塔顶角点和塔身轮廓配准鱼尾狮公园的实拍，将可见临湾窗带投影到 SLA 模型。低层受屋顶遮挡的玻璃沿同列可见窗带估补。临湾幕墙随视角反射日间天空。",
+      "立面处理": "临湾窗带使用鱼尾狮公园实拍投影，按窗格明暗估计玻璃与框料的粗糙度。每座塔在对应窗面外的三个高度采样湾区环境，随高度与视角反射。底层被遮挡的部分沿同列可见窗带估补。",
       "泳池溢流边": "沿 SLA 原模型临湾池唇折线，依无边泳池现场照片校正其高出水面的视觉高度，准确高度为估值。",
       "泳池现场参考": "https://commons.wikimedia.org/wiki/File:Infinity_Pool_at_Marina_Bay_Sands_SkyPark_Singapore_Ank_Kumar_Infosys_Limited_04.jpg",
       "玻璃影像署名": "Marina Bay Sands view from Merlion Park, Singapore (Ank Kumar) 01. Ank Kumar, CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Cropped, masked and projected into the bay-facing glazing. https://commons.wikimedia.org/wiki/File:Marina_Bay_Sands_view_from_Merlion_Park,_Singapore_(Ank_Kumar)_01.jpg"
@@ -3387,7 +3387,7 @@
     "kind": "object",
     "label": "TOWER 3 (MARINA BAY SANDS SINGAPORE)",
     "regionId": "marina-bay-exterior",
-    "assetHash": "ef5d0c88b314358d5ac36c68570af5918a7af73c73f75b1b53d79b425b741844",
+    "assetHash": "952f6675720b2aef2bd2753bbdd91bfabf1207ea93eba69836b2b866c157ba83",
     "bounds": {
       "min": [
         -499.465987,
@@ -3411,7 +3411,7 @@
       "三角形数": 398,
       "原建筑资源": "798131dc0624167c639000bd26be350b6ba49c8902a7631387922d2a044b7e48",
       "玻璃参考": "https://commons.wikimedia.org/wiki/File:Marina_Bay_Sands_view_from_Merlion_Park,_Singapore_(Ank_Kumar)_01.jpg",
-      "立面处理": "按塔顶角点和塔身轮廓配准鱼尾狮公园的实拍，将可见临湾窗带投影到 SLA 模型。低层受屋顶遮挡的玻璃沿同列可见窗带估补。临湾幕墙随视角反射日间天空。",
+      "立面处理": "临湾窗带使用鱼尾狮公园实拍投影，按窗格明暗估计玻璃与框料的粗糙度。每座塔在对应窗面外的三个高度采样湾区环境，随高度与视角反射。底层被遮挡的部分沿同列可见窗带估补。",
       "玻璃影像署名": "Marina Bay Sands view from Merlion Park, Singapore (Ank Kumar) 01. Ank Kumar, CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Cropped, masked and projected into the bay-facing glazing. https://commons.wikimedia.org/wiki/File:Marina_Bay_Sands_view_from_Merlion_Park,_Singapore_(Ank_Kumar)_01.jpg"
     }
   },
@@ -7331,7 +7331,7 @@
     "kind": "object",
     "label": "TOWER 2 (MARINA BAY SANDS SINGAPORE)",
     "regionId": "marina-bay-exterior",
-    "assetHash": "2e8e8a55c3f3ac104e04373f3f8eb9138f7225acb50cccdfa939080516fef4f0",
+    "assetHash": "32051efaba890692d6c29767f28f0a9724008ee063563261080ba1e772b5435e",
     "bounds": {
       "min": [
         -516.478454,
@@ -7355,7 +7355,7 @@
       "三角形数": 516,
       "原建筑资源": "827fcc819e9171157b0540bd1fa1d054f69ccd42350737f86c614fe1febd92bd",
       "玻璃参考": "https://commons.wikimedia.org/wiki/File:Marina_Bay_Sands_view_from_Merlion_Park,_Singapore_(Ank_Kumar)_01.jpg",
-      "立面处理": "按塔顶角点和塔身轮廓配准鱼尾狮公园的实拍，将可见临湾窗带投影到 SLA 模型。低层受屋顶遮挡的玻璃沿同列可见窗带估补。临湾幕墙随视角反射日间天空。",
+      "立面处理": "临湾窗带使用鱼尾狮公园实拍投影，按窗格明暗估计玻璃与框料的粗糙度。每座塔在对应窗面外的三个高度采样湾区环境，随高度与视角反射。底层被遮挡的部分沿同列可见窗带估补。",
       "玻璃影像署名": "Marina Bay Sands view from Merlion Park, Singapore (Ank Kumar) 01. Ank Kumar, CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Cropped, masked and projected into the bay-facing glazing. https://commons.wikimedia.org/wiki/File:Marina_Bay_Sands_view_from_Merlion_Park,_Singapore_(Ank_Kumar)_01.jpg"
     }
   },
