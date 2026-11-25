@@ -77,10 +77,17 @@ export function groundSurfaceMaterial(kind: GroundLayer['material']) {
       float rough=mix(max(props.b,0.48),wetRoughness,film);
       diffuseColor.rgb*=albedo*mix(vec3(1.04),vec3(0.43,0.47,0.50),damp);`;
     shader.fragmentShader =
-      `float coverNoise(vec2 p) {
-      vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
-      vec4 d=fract(sin(dot(i,vec2(39.3,71.7))+vec4(0.0,39.3,71.7,111.0))*4375.37);
-      return mix(mix(d.x,d.y,f.x),mix(d.z,d.w,f.x),f.y);
+      `float coverCorner(ivec2 cell) {
+      return fract(sin(dot(vec2(cell), vec2(39.3, 71.7))) * 4375.37);
+    }
+    float coverNoise(vec2 p) {
+      // Neighbours evaluate their shared corner at exactly the same lattice coordinate.
+      ivec2 cell = ivec2(floor(p));
+      vec2 f = fract(p);
+      f = f * f * (3.0 - 2.0 * f);
+      float low = mix(coverCorner(cell), coverCorner(cell + ivec2(1, 0)), f.x);
+      float high = mix(coverCorner(cell + ivec2(0, 1)), coverCorner(cell + ivec2(1, 1)), f.x);
+      return mix(low, high, f.y);
     }\n` +
       shader.fragmentShader
         .replace('#include <map_fragment>', sample)
