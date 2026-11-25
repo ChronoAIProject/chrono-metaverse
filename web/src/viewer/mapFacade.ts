@@ -110,7 +110,7 @@ const probeReflection = /* glsl */ `
 `;
 
 /** 实景模型既有标准受光材质，也有烘焙为无光照贴图的楼面。 */
-export function cityModelAir(material: THREE.Material, roofScale?: number, finish?: number) {
+export function cityModelAir(material: THREE.Material, roofScale?: number) {
   if (!(
     material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshBasicMaterial
   ))
@@ -169,53 +169,9 @@ export function cityModelAir(material: THREE.Material, roofScale?: number, finis
     };
   }
   const sky = citySkyUniforms(material);
-  const finishMap = finish !== undefined ? buildingFinishUniforms(material) : undefined;
-  if (finishMap) material.customProgramCacheKey = () => 'surveyed-building-finish';
   if (glass)
     material.customProgramCacheKey = () => (probes ? 'city-facade-probes' : 'city-model-glazing');
   material.onBeforeCompile = (shader) => {
-    if (finishMap && finish !== undefined) {
-      Object.assign(shader.uniforms, finishMap, { surveyFinish: { value: finish } });
-      const varying = 'varying vec3 finishPosition;\n';
-      shader.vertexShader =
-        varying +
-        shader.vertexShader.replace(
-          '#include <project_vertex>',
-          '#include <project_vertex>\nfinishPosition=(modelMatrix*vec4(transformed,1.0)).xyz;',
-        );
-      shader.fragmentShader =
-        buildingFinishShader +
-        varying +
-        'uniform float surveyFinish;\n' +
-        shader.fragmentShader
-          .replace(
-            '#include <color_fragment>',
-            /* glsl */ `#include <color_fragment>
-          vec3 face = normalize(cross(dFdx(finishPosition), dFdy(finishPosition)));
-          float facadeWall = 1.0 - smoothstep(.30, .65, abs(face.y));
-          float paneMask = 0.0;
-          if (buildingFinishesReady && facadeWall > 0.0) {
-            vec2 axis = normalize(vec2(face.z, -face.x) + vec2(.000001,0.0));
-            vec4 finish = buildingFinish(finishPosition,axis,fract(surveyFinish),floor(surveyFinish));
-            paneMask = facadeWall * finish.a;
-            vec3 finishColor = finish.rgb;
-            #ifdef USE_MAP
-              // Carry the survey's broad daylight colours through the repeating window detail.
-              // Compress luminance relative to middle grey while retaining the ratios of R/G/B.
-              vec3 surveyColor = diffuseColor.rgb + .015;
-              float luminance = dot(surveyColor, vec3(.2126, .7152, .0722));
-              vec3 tint = clamp(surveyColor * inversesqrt(.18 * luminance), .24, 2.2);
-              finishColor *= tint;
-            #endif
-            diffuseColor.rgb = mix(diffuseColor.rgb, finishColor, facadeWall * .86);
-          }`,
-          )
-          .replace(
-            '#include <roughnessmap_fragment>',
-            `#include <roughnessmap_fragment>
-          roughnessFactor = mix(roughnessFactor, .28, paneMask*.8);`,
-          );
-    }
     if (roofScale !== undefined) {
       shader.uniforms.roofAlbedoScale = { value: roofScale };
       // The survey facets have flat normals in the original model's Y-up frame.

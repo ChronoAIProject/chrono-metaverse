@@ -798,11 +798,6 @@ export class SceneView {
   ): THREE.Object3D {
     const look = entity?.material;
     const roof = entity && modelRoofReflectance(entity);
-    const proposedFinish = entity?.props?.buildingFacadeFinish;
-    const finish =
-      typeof proposedFinish === 'number' && proposedFinish >= 0 && proposedFinish < 2
-        ? proposedFinish
-        : undefined;
     const occlusion = entity && modelOcclusion(entity);
     const clone = model.clone(true);
     clone.traverse((object) => {
@@ -824,18 +819,9 @@ export class SceneView {
       }
       mesh.material = Array.isArray(mesh.material)
         ? mesh.material.map((m) =>
-            this.modelMaterial(m, look, background, styleLook, kind, occlusion, roof, finish),
+            this.modelMaterial(m, look, background, styleLook, kind, occlusion, roof),
           )
-        : this.modelMaterial(
-            mesh.material,
-            look,
-            background,
-            styleLook,
-            kind,
-            occlusion,
-            roof,
-            finish,
-          );
+        : this.modelMaterial(mesh.material, look, background, styleLook, kind, occlusion, roof);
       if (background && this.daylightCity && this.multisampleCutouts) matchCutoutShadow(mesh);
     });
     return clone;
@@ -849,7 +835,6 @@ export class SceneView {
     kind: 'structure' | 'object' = 'object',
     occlusion?: ModelOcclusion,
     roof?: ModelRoofReflectance,
-    finish?: number,
   ): THREE.Material {
     const lookKey = modelMaterialKey(source, look, styleLook);
     if (lookKey === null && !background) return source;
@@ -873,7 +858,7 @@ export class SceneView {
       !source.transparent
         ? roof?.scale
         : undefined;
-    const key = `${lookKey ?? source.uuid}|${background}|${styleLookKey(styleLook)}|${kind}|${air}|${coverage}|${ao ?? ''}|${roofScale ?? ''}|${finish ?? ''}`;
+    const key = `${lookKey ?? source.uuid}|${background}|${styleLookKey(styleLook)}|${kind}|${air}|${coverage}|${ao ?? ''}|${roofScale ?? ''}`;
     let material = this.materialCache.get(key);
     if (material === undefined) {
       material = createModelMaterial(
@@ -885,7 +870,7 @@ export class SceneView {
       );
       if (air) {
         filterModelSurface(material, this.renderer.capabilities.getMaxAnisotropy());
-        cityModelAir(material, roofScale, finish);
+        cityModelAir(material, roofScale);
       }
       if (ao && material instanceof THREE.MeshStandardMaterial) {
         const target = material;

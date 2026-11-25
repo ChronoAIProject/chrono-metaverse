@@ -198,19 +198,11 @@ export default function build(base: BuildBase, kit: Kit) {
   const config = JSON.parse(readFileSync(new URL('../context.json', import.meta.url), 'utf8'));
   // Give surveyed exteriors the same daylight and cast shadows as the urban
   // ground and water. Preserve the looks supplied by individual asset authors.
-  const cityBuildings = buildings.map((entity): EntityBody => {
-    if (!config.quay || !entity.assetHash || entity.material) return entity;
-    const daylight = { ...entity, material: { shading: 'albedo' as const } };
-    // Survey shells include gardens, sculptures and landmark roofs as well as ordinary blocks.
-    const height = entity.bounds.max[1] - entity.bounds.min[1];
-    const landmark = /GARDENS BY THE BAY|SINGAPORE FLYER|CENOTAPH|CRYSTAL PAVILION|MARINA BAY SANDS|OUTDOOR THEATRE|CLIFFORD PIER|ONE FULLERTON|LAU PA SAT/i.test(entity.label ?? '');
-    if (height < 2.4 || landmark) return daylight;
-    const name = entity.label && entity.label !== '滨海湾建筑' ? entity.label : entity.entityId;
-    let hash = 2166136261;
-    for (const char of name) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
-    const seed = (hash >>> 0) / 4294967296;
-    return { ...daylight, props: { ...entity.props, buildingFacadeFinish: seed + (height < 5.5 ? 1 : 0) } };
-  });
+  const cityBuildings = buildings.map((entity): EntityBody =>
+    config.quay && entity.assetHash && !entity.material
+      ? { ...entity, material: { shading: 'albedo' } }
+      : entity,
+  );
   const entities = [...cityBuildings, ...ground]
     .map((entity) => placeExterior(entity, placement))
     .concat(placement.hostEntities, environment ? [environment] : []);
