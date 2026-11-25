@@ -2447,5 +2447,34 @@
       "版权": "Roads © OpenStreetMap contributors (ODbL). Terrain reference © Singapore Land Authority / OneMap. Asphalt 01, Granite Tile 04, Dirt Aerial 02 and Sandy Gravel 02 by Poly Haven (CC0).",
       "依据": "OSM 车行道及步道中心线、车道数与 OneMap 航片裸土范围。地表起伏、铺装宽度和路缘高度为视觉估值。"
     }
+  },
+  {
+    "entityId": "bay.marina-promenade-park-ground",
+    "label": "滨海步道 · 河岸草地与混凝土慢行道",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "bounds": {
+      "min": [
+        -342.7530846451835,
+        -60.803913112670294,
+        1890.1689609271693
+      ],
+      "max": [
+        -59.416446153808536,
+        -60.437634371041064,
+        2764.0919211835776
+      ]
+    },
+    "assetHash": "c42c05f368facd93953acf33389049a595b7d3004417ab972cecc80a7bd0d7fa",
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "版权": "OpenStreetMap contributors (ODbL). Land-cover survey derived from OneMap orthophotography, Singapore Land Authority. Grass 004 by ambientCG and concrete scan by Poly Haven (CC0).",
+      "依据": "OSM 公园边界与步道中心线、OneMap z18 影像的植被和陆岸边界。草地色泽与路面宽度为视觉估值。"
+    }
   }
 ]

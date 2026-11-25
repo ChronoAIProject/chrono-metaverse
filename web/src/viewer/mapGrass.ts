@@ -1,5 +1,7 @@
 import { surfaceNoise } from './surfaceVariation';
 import * as THREE from 'three';
+import type { GrassFootprints } from './grassFootprints';
+import type { Tile } from './geography';
 import { tileGrassCells } from './grassCells';
 
 /** 近处草叶使用瓦片自身的影像决定密度和颜色。每块一次实例绘制。 */
@@ -7,6 +9,8 @@ export function grassPatch(
   terrain: THREE.BufferGeometry,
   image: THREE.Texture<ImageBitmap>,
   width: number,
+  tile: Tile,
+  paving?: GrassFootprints,
 ) {
   const positions = terrain.getAttribute('position');
   const corner = (index: number) => new THREE.Vector3().fromBufferAttribute(positions, index);
@@ -43,7 +47,8 @@ export function grassPatch(
     );
   }
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(blades, 3));
-  const selected = tileGrassCells(image.image, cells);
+  const candidates = tileGrassCells(image.image, cells);
+  const selected = paving ? paving.filter(tile, cells, candidates) : candidates;
   const sparse = selected && selected.length < cells * cells;
   if (sparse) geometry.setAttribute('grassCell', new THREE.InstancedBufferAttribute(selected, 1));
   geometry.instanceCount = selected?.length ?? cells * cells;

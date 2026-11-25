@@ -661,5 +661,38 @@
       "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes. Royal palm mesh and textures adapted from 0 A.D., Wildfire Games, https://wildfiregames.com/, CC BY-SA 3.0, https://creativecommons.org/licenses/by-sa/3.0/. Scaled, rotated and batched for the street-tree census.",
       "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
     }
+  },
+  {
+    "entityId": "bay.marina-promenade-park-trees",
+    "kind": "object",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海步道 · 河岸公园树带",
+    "assetHash": "5b7354dec439be3befc9954fd3b922445578db78bd03a9c8848e4e93853b0291",
+    "bounds": {
+      "min": [
+        -548.347695379949,
+        -60.78623430504474,
+        2259.887724208411
+      ],
+      "max": [
+        -332.12973068757253,
+        -40.87224325784085,
+        2608.716713091566
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "位置来源": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树位数": 37,
+      "棕榈数": 0,
+      "已单独建模树位数": 0,
+      "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes.",
+      "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
+    }
   }
 ]

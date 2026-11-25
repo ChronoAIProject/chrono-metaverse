@@ -1,4 +1,5 @@
 import { grassPatch } from './mapGrass';
+import { GrassFootprints } from './grassFootprints';
 import type { ExternalAccess } from '../core/externalSource';
 import * as THREE from 'three';
 import { groundAir, groundDetailTexture, urbanGroundMaterial, type GroundAir } from './mapGround';
@@ -76,6 +77,7 @@ export class GeographicMap {
   private viewport = '';
   private readonly groundShadow = new THREE.Color(0.55, 0.61, 0.68);
   private readonly detail?: THREE.Texture;
+  private readonly paving?: GrassFootprints;
   private readonly air: GroundAir = {
     groundSky: { value: null },
     groundSkyYaw: { value: 0 },
@@ -92,6 +94,7 @@ export class GeographicMap {
     private readonly sampling = { pixelRatio: 1, anisotropy: 4 },
   ) {
     this.reference = new GeoReference(config);
+    if (config.grassExclusions?.length) this.paving = new GrassFootprints(config.grassExclusions);
     if (config.surfaceDetail === 'urban' && !resource?.hologram)
       this.detail = groundDetailTexture(sampling.anisotropy);
     this.group.name = 'geographic-map';
@@ -404,7 +407,13 @@ export class GeographicMap {
       if (this.detail && node.texture && node.z >= 18 && node.width < 50) {
         const near = node.bounds.distanceToPoint(this.localEye) < 28;
         if (near && !patch.grass) {
-          patch.grass = grassPatch(patch.mesh.geometry, node.texture, node.width);
+          patch.grass = grassPatch(
+            patch.mesh.geometry,
+            node.texture,
+            node.width,
+            node,
+            this.paving,
+          );
           patch.mesh.add(patch.grass);
         }
         if (patch.grass) patch.grass.visible = near;

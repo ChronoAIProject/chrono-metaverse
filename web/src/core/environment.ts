@@ -21,8 +21,12 @@ export interface TileSource extends SourceCredit, SourceDelivery {
   readonly bounds?: readonly [number, number, number, number];
 }
 
+export type GeographicPolygon = readonly (readonly (readonly [number, number])[])[];
+
 export interface GeographicMap extends GeographicReference {
   readonly surfaceDetail?: 'urban';
+  /** WGS84 hardscape footprints. Each polygon starts with its shell, followed by holes. */
+  readonly grassExclusions?: readonly GeographicPolygon[];
   readonly sources: readonly TileSource[];
 }
 
@@ -156,8 +160,34 @@ export function environmentOf(entity: EntityBody): Environment | null {
     if (sources.some((source) => !source) || !sources.some((s) => s?.minZoom === 0 && !s.bounds))
       return null;
     if (value.surfaceDetail !== undefined && value.surfaceDetail !== 'urban') return null;
+    const exclusions = value.grassExclusions;
+    if (
+      exclusions !== undefined &&
+      !(
+        Array.isArray(exclusions) &&
+        exclusions.every(
+          (polygon) =>
+            Array.isArray(polygon) &&
+            polygon.length > 0 &&
+            polygon.every(
+              (ring) =>
+                Array.isArray(ring) &&
+                ring.length >= 3 &&
+                ring.every(
+                  (point) =>
+                    Array.isArray(point) &&
+                    point.length === 2 &&
+                    finite(point[0], -180, 180) &&
+                    finite(point[1], -85.051129, 85.051129),
+                ),
+            ),
+        )
+      )
+    )
+      return null;
     map = {
       ...reference,
+      ...(exclusions ? { grassExclusions: exclusions } : {}),
       sources,
       ...(value.surfaceDetail ? { surfaceDetail: value.surfaceDetail } : {}),
     } as GeographicMap;
