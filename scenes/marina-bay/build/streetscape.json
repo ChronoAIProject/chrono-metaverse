@@ -2060,5 +2060,67 @@
         1109.86395350106
       ]
     }
+  },
+  {
+    "entityId": "bay.costa-rhu-and-passion-wave",
+    "label": "Costa Rhu 临水住宅群与百盛亲水天地",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "78baed699a767a0322cba3c803b229e080641fad92168c63e65678f5bd35c164",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        -627.9092040416854,
+        -60.44930154147175,
+        2029.265156194988
+      ],
+      "max": [
+        -399.36737422999147,
+        12.610236763023218,
+        2340.243437105429
+      ]
+    },
+    "props": {
+      "background": true,
+      "测绘建筑": [
+        {
+          "名称": "COSTA RHU",
+          "编号": "SLA_BLDG2_b3e3be1f-a20f-4729-9000-c105329c55ab",
+          "高度": 63.434,
+          "分片": "5/20/2_3.b3dm"
+        },
+        {
+          "名称": "COSTA RHU",
+          "编号": "SLA_BLDG2_9e6010cc-9c01-4381-baac-6ac562c10ae6",
+          "高度": 72.168,
+          "分片": "5/20/2_3.b3dm"
+        },
+        {
+          "名称": "COSTA RHU",
+          "编号": "SLA_BLDG2_0047c335-91e0-4908-84ab-d7acdb4d5668",
+          "高度": 62.437,
+          "分片": "5/20/2_3.b3dm"
+        },
+        {
+          "名称": "COSTA RHU",
+          "编号": "SLA_BLDG2_579419ab-7b13-40c8-8dac-94c4271b2e25",
+          "高度": 73.058,
+          "分片": "5/20/3_3.b3dm"
+        },
+        {
+          "名称": "PASSION WAVE @ MARINA BAY",
+          "编号": "SLA_BLDG2_ba194c95-2a65-4b4b-b378-be87dd72e9a3",
+          "高度": 11.457,
+          "分片": "5/20/2_3.b3dm"
+        }
+      ],
+      "数据来源": "Map Data © Singapore Land Authority, OneMap. Archived simplified geometry from https://github.com/cheeaun/om3d/tree/ac451b84/optimized-tiles",
+      "立面影像": "Daniel Case，Costa Rhu, Singapore, from Downtown Core.jpg。取景裁切与颜色校正，CC BY-SA 4.0。https://commons.wikimedia.org/wiki/File:Costa_Rhu,_Singapore,_from_Downtown_Core.jpg https://creativecommons.org/licenses/by-sa/4.0/",
+      "材质说明": "按原始斜屋面和外墙法线分材质。住宅窗带由现场影像裁切，窗距、色调与亲水中心表面为估计。",
+      "三角形数": 24196
+    }
   }
 ]
