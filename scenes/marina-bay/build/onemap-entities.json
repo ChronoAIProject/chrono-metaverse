@@ -8150,7 +8150,7 @@
     "kind": "object",
     "label": "ONE GEORGE STREET",
     "regionId": "marina-bay-exterior",
-    "assetHash": "89361da84e60422d4f30138de7f70721ef055151c9a93f86eaef3941c33cd723",
+    "assetHash": "ad6463992e7dfbcc5344cdf020e37fcbbdca0b6970173b01a3b22efde43a55bc",
     "material": {
       "shading": "albedo"
     },
@@ -8175,7 +8175,8 @@
       "幕墙影像署名": "Facade texture adapted from Boat Quay and One George Street (13735227334) by Nicolas Lannuzel, CC BY-SA 2.0, https://commons.wikimedia.org/wiki/File:Boat_Quay_and_One_George_Street_(13735227334).jpg ; https://creativecommons.org/licenses/by-sa/2.0/",
       "处理说明": "OneMap 三维测绘外形，按驳船码头实拍提取窗格。遮挡面使用同楼纹理，幕墙粗糙度和天光反射为估计值。",
       "三角形数": 1354,
-      "镀膜色度估计": "以天空与邻楼中性色校正两处实拍的色偏，从各立面的投影面积估计不同反射方向的镀膜色度。三层本地环境反射贴图记录估计结果，掠射方向逐渐趋近中性。"
+      "镀膜色度估计": "以天空与邻楼中性色校正两处实拍的色偏，从各立面的投影面积估计不同反射方向的镀膜色度。三层本地环境反射贴图记录估计结果，掠射方向逐渐趋近中性。",
+      "临湾立面光度": "在三张日间跨湾照片中用邻楼校准曝光，分别估计两侧窗带、顶层遮阳片的亮度与色调。窗面与金属百叶依原照片明暗分配粗糙度。"
     }
   },
   {
