@@ -1895,7 +1895,7 @@
     "kind": "object",
     "label": "REPUBLIC PLAZA",
     "regionId": "marina-bay-exterior",
-    "assetHash": "33f987665d9ab65825fb16817d37418f229835930a62657e9a97a752a19be209",
+    "assetHash": "2dcea3d7e077475031a5ba69ec168039d59ce855aa1bbc048fe08cbd2ac9feac",
     "bounds": {
       "min": [
         438.667192,
@@ -1920,8 +1920,9 @@
       "modelOcclusion": {
         "material": "dc2400812",
         "texture": "6200aa383adf9930cccb8bc9b7d08ebaa8d9a893e995173a7ebf75afaa6bcb14",
-        "sourceAsset": "33f987665d9ab65825fb16817d37418f229835930a62657e9a97a752a19be209"
-      }
+        "sourceAsset": "2dcea3d7e077475031a5ba69ec168039d59ce855aa1bbc048fe08cbd2ac9feac"
+      },
+      "跨湾立面亮度": "按两处临水实拍中立面相对天空的亮度估计曝光，在测绘外墙图集上校准。窗格与遮阳构件的局部明暗以相邻框材为参照。"
     },
     "textures": [
       "6200aa383adf9930cccb8bc9b7d08ebaa8d9a893e995173a7ebf75afaa6bcb14"
@@ -2323,7 +2324,7 @@
     "kind": "object",
     "label": "ONE RAFFLES PLACE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "68bf31023df1bdbea148bd4d42c9e5a5c918e64088c997639998dccf9346a43d",
+    "assetHash": "e6470375a12ee008c1f845ca73b64b8db25c87459488ad1b34baff8bdb17d6da",
     "bounds": {
       "min": [
         477.486499,
@@ -2348,8 +2349,9 @@
       "modelOcclusion": {
         "material": "dc2400182",
         "texture": "228ec5a76f258a4cbe4eca5d91656e81bdb3e9298d9a88ff1eb0bf92d6e99b55",
-        "sourceAsset": "68bf31023df1bdbea148bd4d42c9e5a5c918e64088c997639998dccf9346a43d"
-      }
+        "sourceAsset": "e6470375a12ee008c1f845ca73b64b8db25c87459488ad1b34baff8bdb17d6da"
+      },
+      "跨湾立面亮度": "按两处临水实拍中立面相对天空的亮度估计曝光，在测绘外墙图集上校准。窗格与遮阳构件的局部明暗以相邻框材为参照。"
     },
     "textures": [
       "228ec5a76f258a4cbe4eca5d91656e81bdb3e9298d9a88ff1eb0bf92d6e99b55"
@@ -2361,7 +2363,7 @@
     "kind": "object",
     "label": "UOB PLAZA",
     "regionId": "marina-bay-exterior",
-    "assetHash": "75c2d8bf817229b247304f90f0331c7140de142054c33c9901894db09de78ef0",
+    "assetHash": "04b275a4346bae50cb747f01e30d552d8fd494a2c62411a56134adfa533343ff",
     "bounds": {
       "min": [
         527.969819,
@@ -2386,9 +2388,10 @@
       "modelOcclusion": {
         "material": "dc2400707",
         "texture": "9cdd8c4a2fbf80046ba8432c2f8bf35d30d8bb5e7a6254c19f930f7e26d839dc",
-        "sourceAsset": "75c2d8bf817229b247304f90f0331c7140de142054c33c9901894db09de78ef0"
+        "sourceAsset": "04b275a4346bae50cb747f01e30d552d8fd494a2c62411a56134adfa533343ff"
       },
-      "日间外观参考": "依据 2010 年 Singapore Skyline from Esplanade 和 2015 年 Singapore Marina-Bay-Panorama-02 的临湾立面亮度，以浮尔顿酒店向阳石墙作曝光参照。"
+      "日间外观参考": "依据 2010 年 Singapore Skyline from Esplanade 和 2015 年 Singapore Marina-Bay-Panorama-02 的临湾立面亮度，以浮尔顿酒店向阳石墙作曝光参照。",
+      "跨湾立面亮度": "按两处临水实拍中立面相对天空的亮度估计曝光，在测绘外墙图集上校准。窗格与遮阳构件的局部明暗以相邻框材为参照。"
     },
     "textures": [
       "9cdd8c4a2fbf80046ba8432c2f8bf35d30d8bb5e7a6254c19f930f7e26d839dc"
@@ -5974,7 +5977,7 @@
     "kind": "object",
     "label": "SINGAPORE LAND TOWER",
     "regionId": "marina-bay-exterior",
-    "assetHash": "c6ec4582251f46b969b527f485e3a6e4d043faf75aef0dca2ff5c4f503210764",
+    "assetHash": "0f678bd50c2e1c48cf8323998dc9fe9826c94e74b38fff2d5f44c79ca3d2e92b",
     "bounds": {
       "min": [
         396.620759,
@@ -5999,7 +6002,8 @@
       "原建筑资源": "be3b10daca5aabdc6fa19b90450d48486b0bd172fe50b5ec6c3103becaa64f7d",
       "临湾墙面色度": "以浮尔顿酒店临湾石墙为白平衡参照，用 2010、2015 年跨湾照片估算墙面红绿与蓝绿比例的偏差，并以 2023 年两张独立照片核对。在线性光下调整原材质的色度，按原亮度归一。",
       "幕墙影像署名": "Window textures derived from Singapore Land Tower 20250903 by DvTor8303 (CC0), https://commons.wikimedia.org/wiki/File:Singapore_Land_Tower_20250903.jpg",
-      "临湾窗带": "按 2025 年 9 月街景校准测绘塔楼上的玻璃窗格和两条金属带，在三个高度采集周边建筑与天空的反射。遮挡面复用已观测的同楼窗格，粗糙度和涂层反射为估计值。"
+      "临湾窗带": "按 2025 年 9 月街景校准测绘塔楼上的玻璃窗格和两条金属带，在三个高度采集周边建筑与天空的反射。遮挡面复用已观测的同楼窗格，粗糙度和涂层反射为估计值。",
+      "跨湾立面亮度": "按两处临水实拍中立面相对天空的亮度估计曝光，在测绘外墙图集上校准。窗格与遮阳构件的局部明暗以相邻框材为参照。"
     }
   },
   {
@@ -6082,7 +6086,7 @@
     "kind": "object",
     "label": "STRAITS TRADING BUILDING",
     "regionId": "marina-bay-exterior",
-    "assetHash": "d19582f60cff88e4d4db0554c0dd6ec62814eabb1e0ceb5399d2722ffee79c77",
+    "assetHash": "6c8854cbeb2b8961c7f8acf2925eb941f0b6d02eb6b0412d3b78fd3369a32e52",
     "bounds": {
       "min": [
         400.474851,
@@ -6105,10 +6109,11 @@
       "官方测量高度（米）": 157.07,
       "三角形数": 3194,
       "modelOcclusion": {
-        "sourceAsset": "d19582f60cff88e4d4db0554c0dd6ec62814eabb1e0ceb5399d2722ffee79c77",
+        "sourceAsset": "6c8854cbeb2b8961c7f8acf2925eb941f0b6d02eb6b0412d3b78fd3369a32e52",
         "material": "dc2400421",
         "texture": "117bcafcd96d9cb2f16495651fcb5825bb8cd7376f52d7b82705c0be05c3411f"
-      }
+      },
+      "跨湾立面亮度": "按两处临水实拍中立面相对天空的亮度估计曝光，在测绘外墙图集上校准。窗格与遮阳构件的局部明暗以相邻框材为参照。"
     },
     "textures": [
       "117bcafcd96d9cb2f16495651fcb5825bb8cd7376f52d7b82705c0be05c3411f"
@@ -6295,7 +6300,7 @@
     "kind": "object",
     "label": "THE FULLERTON HOTEL",
     "regionId": "marina-bay-exterior",
-    "assetHash": "f547730e2839676bf3a3942c37536d9847b22ec28d0021cefc4070f0e9521bcb",
+    "assetHash": "085910d20bc63cd29d264987c92a5d53454884efe07d88bcfb38412f1cdfa75d",
     "bounds": {
       "min": [
         358.72023,
@@ -6318,12 +6323,13 @@
       "官方测量高度（米）": 50.69,
       "三角形数": 11964,
       "modelOcclusion": {
-        "sourceAsset": "f547730e2839676bf3a3942c37536d9847b22ec28d0021cefc4070f0e9521bcb",
+        "sourceAsset": "085910d20bc63cd29d264987c92a5d53454884efe07d88bcfb38412f1cdfa75d",
         "material": "dc2400281",
         "texture": "5c29936c7b79d88696f21d9dd2d94e210efaad9dcc2508064692ec2bcb5491fb"
       },
       "原建筑资源": "b12cd8c11fa96bbc345894fa384e5aadca9a208d2e4cbe15fd2832a700c55980",
-      "日间墙面校准": "用 2010-01-24 和 2015-02-19 跨湾实拍核对墙面亮度分布。原测绘纹理在线性光下按墙面法线调整中间调，亮度枢轴 0.72，额外指数 1.3。照片用于测量。"
+      "日间墙面校准": "用 2010-01-24 和 2015-02-19 跨湾实拍核对墙面亮度分布。原测绘纹理在线性光下按墙面法线调整中间调，亮度枢轴 0.72，额外指数 1.3。照片用于测量。",
+      "跨湾立面亮度": "按两处临水实拍中立面相对天空的亮度估计曝光，在测绘外墙图集上校准。窗格与遮阳构件的局部明暗以相邻框材为参照。"
     },
     "textures": [
       "5c29936c7b79d88696f21d9dd2d94e210efaad9dcc2508064692ec2bcb5491fb"
@@ -6641,7 +6647,7 @@
     "kind": "object",
     "label": "THE SAIL @ MARINA BAY",
     "regionId": "marina-bay-exterior",
-    "assetHash": "9ae09fe1556281aaa41f64a4e587897d7308729513e9be326d37fcc9a4e97d92",
+    "assetHash": "4e106564f9238b45b8decf96f6ad19d9ff5d7e9cd19886d286293faf3abbde72",
     "bounds": {
       "min": [
         157.142935,
@@ -6664,10 +6670,11 @@
       "官方测量高度（米）": 241.983,
       "三角形数": 1728,
       "modelOcclusion": {
-        "sourceAsset": "9ae09fe1556281aaa41f64a4e587897d7308729513e9be326d37fcc9a4e97d92",
+        "sourceAsset": "4e106564f9238b45b8decf96f6ad19d9ff5d7e9cd19886d286293faf3abbde72",
         "material": "dc2400602",
         "texture": "9607caad0ba4fcb78d893e3a45557de1896f738c74b44cadf511a6c5847d5e04"
-      }
+      },
+      "跨湾立面亮度": "按两处临水实拍中立面相对天空的亮度估计曝光，在测绘外墙图集上校准。窗格与遮阳构件的局部明暗以相邻框材为参照。"
     },
     "textures": [
       "9607caad0ba4fcb78d893e3a45557de1896f738c74b44cadf511a6c5847d5e04"
@@ -6769,7 +6776,7 @@
     "kind": "object",
     "label": "ONE MARINA BOULEVARD",
     "regionId": "marina-bay-exterior",
-    "assetHash": "d343a89397510dceb9386a7747ef6f427fb3c913ff9f9cd51351aa298bf6687c",
+    "assetHash": "ed7b6629255418f3a8c1878ec476d27830339f4a38373da57c5920e78d0387b9",
     "bounds": {
       "min": [
         231.076513,
@@ -6790,7 +6797,8 @@
       "原始分片": "7/77/8_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 164.295,
-      "三角形数": 3824
+      "三角形数": 3824,
+      "跨湾立面亮度": "按两处临水实拍中立面相对天空的亮度估计曝光，在测绘外墙图集上校准。窗格与遮阳构件的局部明暗以相邻框材为参照。"
     }
   },
   {
@@ -7850,7 +7858,7 @@
     "kind": "object",
     "label": "THE ARCADE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "5dcadc763932483033a29f7eb60843ae6a0e32e648b1bc50de6d071e06d23e42",
+    "assetHash": "8fd95c1373f6afadbd8e0d0cd2cc5ce149ee72d6cff55793b47960f1cefed6e0",
     "bounds": {
       "min": [
         335.22899,
@@ -7873,10 +7881,11 @@
       "官方测量高度（米）": 83.819,
       "三角形数": 1620,
       "modelOcclusion": {
-        "sourceAsset": "5dcadc763932483033a29f7eb60843ae6a0e32e648b1bc50de6d071e06d23e42",
+        "sourceAsset": "8fd95c1373f6afadbd8e0d0cd2cc5ce149ee72d6cff55793b47960f1cefed6e0",
         "material": "dc2400425",
         "texture": "683ce7335e77ef2329fcac88f5ef21c7f7e7d9b519ba5120abcd0272cfc4c7a7"
-      }
+      },
+      "跨湾立面亮度": "按两处临水实拍中立面相对天空的亮度估计曝光，在测绘外墙图集上校准。窗格与遮阳构件的局部明暗以相邻框材为参照。"
     },
     "textures": [
       "683ce7335e77ef2329fcac88f5ef21c7f7e7d9b519ba5120abcd0272cfc4c7a7"
