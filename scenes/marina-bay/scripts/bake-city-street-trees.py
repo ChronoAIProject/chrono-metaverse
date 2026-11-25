@@ -25,9 +25,14 @@ PALM_CREDIT = ("Royal palm mesh and textures adapted from 0 A.D., Wildfire Games
                "Scaled, rotated and batched for the street-tree census.")
 
 
-def broadleaf(folder, name, sprays=False):
+def broadleaf(folder, name, sprays=False, distant=False):
     points, colours, leaves, trunk = sample_scan(folder, name)
-    if sprays:
+    if distant:
+        # Distant stems and leaves share the same textured depth sections. Including
+        # the scanned bark keeps the root and fork visible without a separate draw.
+        xyz, uv, normals, faces, atlas = slices(points, colours, np.ones_like(leaves),
+                                                layer_count=2, cells=2)
+    elif sprays:
         (xyz, uv, normals, faces), atlas = branch_sprays(points, colours, leaves)
     else:
         xyz, uv, normals, faces, atlas = slices(points, colours, leaves, fit_opacity=True, layer_count=3, cells=2)
@@ -35,13 +40,15 @@ def broadleaf(folder, name, sprays=False):
                               roughnessFactor=.95, alphaMode="MASK", alphaCutoff=.36)
     foliage = trimesh.Trimesh(vertices=xyz, faces=faces, vertex_normals=normals,
                               visual=TextureVisuals(uv=uv, material=crown_paint), process=False)
+    foot = np.median(trunk.vertices[trunk.vertices[:, 1] < .08], axis=0)
+    foot[1] = trunk.bounds[0, 1]
+    foliage.apply_translation(-foot)
+    if distant:
+        return [foliage]
     bark_map = trunk.visual.material.baseColorTexture.resize((256, 256), Image.Resampling.LANCZOS)
     bark_map.format = "JPEG"
     trunk.visual.material.baseColorTexture = bark_map
-    foot = np.median(trunk.vertices[trunk.vertices[:, 1] < .08], axis=0)
-    foot[1] = trunk.bounds[0, 1]
-    for mesh in (foliage, trunk):
-        mesh.apply_translation(-foot)
+    trunk.apply_translation(-foot)
     return [foliage, trunk]
 
 
@@ -70,16 +77,13 @@ def palm(folder):
 
 
 def bake(folders, selected_tile=None):
-    forms = {name: broadleaf(folder, name) for name, folder in
-             zip(('tree_small_02', 'island_tree_01', 'jacaranda_tree'), folders[:3])}
-    forms['palm'] = palm(folders[3])
     reference = json.loads((ROOT/'references/city-street-trees.json').read_text())
     output = ROOT/'build/city-street-trees.json'
     if selected_tile and selected_tile not in reference['tiles']:
         raise ValueError(f'Unknown street-tree tile {selected_tile}')
     records = {e['entityId']: e for e in json.loads(output.read_text())} if selected_tile else {}
     source_folders = dict(zip(('tree_small_02', 'island_tree_01', 'jacaranda_tree'), folders[:3]))
-    branch_models = {'jacaranda_tree': broadleaf(folders[2], 'jacaranda_tree', sprays=True)}
+    models = {}
     for key, tile in reference['tiles'].items():
         if selected_tile and selected_tile != key:
             continue
@@ -105,11 +109,12 @@ def bake(folders, selected_tile=None):
             scale = np.array([width, height, width*rng.uniform(.85,1.09)])
             leaf_tint = np.rint(np.array([235,240,225])*rng.uniform(.85,1.05)).clip(0,255)
             detailed = tile.get('branchSprays') or (tile.get('spreadingBranches') and form == 'jacaranda_tree')
-            model = forms[form]
-            if detailed and form in source_folders:
-                if form not in branch_models:
-                    branch_models[form] = broadleaf(source_folders[form], form, sprays=True)
-                model = branch_models[form]
+            distant = tile.get('distantCrowns', False)
+            cache_key = (form, bool(detailed), distant)
+            if cache_key not in models:
+                models[cache_key] = (palm(folders[3]) if form == 'palm' else
+                                     broadleaf(source_folders[form], form, sprays=detailed, distant=distant))
+            model = models[cache_key]
             for source in model:
                 mesh = source.copy()
                 mesh.vertices = (source.vertices * scale) @ rotation.T + [x,y,z]
@@ -128,7 +133,7 @@ def bake(folders, selected_tile=None):
         credit = CREDIT + (' ' + PALM_CREDIT if palms else '')
         digest, bounds = write_tree_asset(scene, copyright=credit)
         records[key] = dict(entityId=key, kind='object', layer='ext', regionId='marina-bay-exterior',
-                            label='滨海湾 · 街道与滨水树冠', assetHash=digest, bounds=bounds,
+                            label=tile.get('label', '滨海湾 · 街道与滨水树冠'), assetHash=digest, bounds=bounds,
                             material={'shading':'albedo'}, props={'background':True,'surfaceRole':'landscape',
                             '位置来源':reference['source'], '树位数':len(tile['trees']), '棕榈数':palms,
                             '已单独建模树位数':len(tile['coveredTreeIds']), '树形素材':credit,
