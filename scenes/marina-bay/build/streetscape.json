@@ -1580,7 +1580,7 @@
     "kind": "structure",
     "layer": "ext",
     "regionId": "marina-bay-exterior",
-    "assetHash": "bb82aec2c251baf0e729f8ca19ce40457666adc1f5ef8df37ca03d28fd36097b",
+    "assetHash": "02bc5631533fb40362a032eeb26a88629928f32ac7e49f6088de406d6151a0e2",
     "material": {
       "shading": "albedo"
     },
@@ -1591,13 +1591,15 @@
         946.8441016365741
       ],
       "max": [
-        35.65975484124981,
+        81.03432,
         -57.06315321248269,
-        1118.8739383927127
+        1175.73085
       ]
     },
     "props": {
-      "background": true
+      "background": true,
+      "施工地表": "依 2026-10-31 Sentinel-2 干地区域与施工边界延伸至平台后方。地表以 10 米卫星反射率估计大面积色差，近处采用 Poly Haven Concrete Floor 02（CC0）扫描纹理，看台下按施工几何估计间接光遮蔽。地面标高与材质衔接为估计。",
+      "工区边界来源": "© OpenStreetMap contributors, https://www.openstreetmap.org/way/1221351351"
     }
   },
   {
