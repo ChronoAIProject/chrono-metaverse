@@ -5974,7 +5974,7 @@
     "kind": "object",
     "label": "SINGAPORE LAND TOWER",
     "regionId": "marina-bay-exterior",
-    "assetHash": "398f08f6543f2480a9f42a88de4040186bcdcfe9c519c23955597a157eef9503",
+    "assetHash": "c6ec4582251f46b969b527f485e3a6e4d043faf75aef0dca2ff5c4f503210764",
     "bounds": {
       "min": [
         396.620759,
@@ -5995,9 +5995,11 @@
       "原始分片": "7/77/10_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 210.011,
-      "三角形数": 1062,
+      "三角形数": 1106,
       "原建筑资源": "be3b10daca5aabdc6fa19b90450d48486b0bd172fe50b5ec6c3103becaa64f7d",
-      "临湾墙面色度": "以浮尔顿酒店临湾石墙为白平衡参照，用 2010、2015 年跨湾照片估算墙面红绿与蓝绿比例的偏差，并以 2023 年两张独立照片核对。在线性光下调整原材质的色度，按原亮度归一。"
+      "临湾墙面色度": "以浮尔顿酒店临湾石墙为白平衡参照，用 2010、2015 年跨湾照片估算墙面红绿与蓝绿比例的偏差，并以 2023 年两张独立照片核对。在线性光下调整原材质的色度，按原亮度归一。",
+      "幕墙影像署名": "Window textures derived from Singapore Land Tower 20250903 by DvTor8303 (CC0), https://commons.wikimedia.org/wiki/File:Singapore_Land_Tower_20250903.jpg",
+      "临湾窗带": "按 2025 年 9 月街景校准测绘塔楼上的玻璃窗格和两条金属带，在三个高度采集周边建筑与天空的反射。遮挡面复用已观测的同楼窗格，粗糙度和涂层反射为估计值。"
     }
   },
   {
@@ -8086,6 +8088,72 @@
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 7.994,
       "三角形数": 88
+    }
+  },
+  {
+    "entityId": "bay.3b2c3f12-5d43-4274-ace0-a4a32608288d",
+    "layer": "ext",
+    "kind": "object",
+    "label": "ONE GEORGE STREET",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "dc65ea737428c314305fb18715583a482bc3ca2d6e3014e5ed490bec90575a35",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        884.9772748385071,
+        -60.076888787222295,
+        197.976746503809
+      ],
+      "max": [
+        947.914153150822,
+        83.87530840585141,
+        281.32327586451646
+      ]
+    },
+    "props": {
+      "background": true,
+      "数据来源": "OneMap 3D · Singapore Land Authority",
+      "版权": "Map Data © SLA",
+      "官方建筑编号": "SLA_BLDG2_3b2c3f12-5d43-4274-ace0-a4a32608288d",
+      "来源地址": "https://github.com/cheeaun/om3d/blob/ac451b84/optimized-tiles/7/73/10_5.b3dm",
+      "幕墙影像署名": "Facade texture adapted from Boat Quay and One George Street (13735227334) by Nicolas Lannuzel, CC BY-SA 2.0, https://commons.wikimedia.org/wiki/File:Boat_Quay_and_One_George_Street_(13735227334).jpg ; https://creativecommons.org/licenses/by-sa/2.0/",
+      "处理说明": "OneMap 三维测绘外形，按驳船码头实拍提取窗格。遮挡面使用同楼纹理，幕墙粗糙度和天光反射为估计值。",
+      "三角形数": 1354
+    }
+  },
+  {
+    "entityId": "bay.98a165d8-1d2e-4025-a98b-7cd6deacc9e5",
+    "layer": "ext",
+    "kind": "object",
+    "label": "ONE UPPER PICKERING",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "eb59f8c869b6039c45b21c9293a3094db1c3d8c6dd534dff11628029344c1a3d",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        1121.2292462328787,
+        -60.12032268776913,
+        148.14779088572982
+      ],
+      "max": [
+        1182.176635135051,
+        30.353123863020215,
+        185.85521420932457
+      ]
+    },
+    "props": {
+      "background": true,
+      "数据来源": "OneMap 3D · Singapore Land Authority",
+      "版权": "Map Data © SLA",
+      "官方建筑编号": "SLA_BLDG2_98a165d8-1d2e-4025-a98b-7cd6deacc9e5",
+      "来源地址": "https://github.com/cheeaun/om3d/blob/ac451b84/optimized-tiles/7/71/11_5.b3dm",
+      "幕墙影像署名": "Facade texture adapted from Boat Quay and One George Street (13735227334) by Nicolas Lannuzel, CC BY-SA 2.0, https://commons.wikimedia.org/wiki/File:Boat_Quay_and_One_George_Street_(13735227334).jpg ; https://creativecommons.org/licenses/by-sa/2.0/",
+      "处理说明": "OneMap 三维测绘外形，按驳船码头实拍提取窗格。遮挡面使用同楼纹理，幕墙粗糙度和天光反射为估计值。",
+      "三角形数": 5124
     }
   }
 ]
