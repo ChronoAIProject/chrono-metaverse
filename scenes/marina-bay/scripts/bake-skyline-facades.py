@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import trimesh
 from PIL import Image
+from scipy.ndimage import map_coordinates
 from shapely import constrained_delaunay_triangles
 from shapely.geometry import Polygon
 from shapely.geometry.polygon import orient
@@ -106,10 +107,9 @@ def roof_surface(part):
         vertices.extend(points)
     mesh = trimesh.Trimesh(vertices=vertices, faces=np.arange(len(vertices)).reshape(-1, 3), process=False)
     concrete = part["roofFinish"] == "ConcreteRoof"
-    if concrete:
-        # Interpolate the changing scan direction across the existing roof plane.
-        points, faces = trimesh.remesh.subdivide_to_size(mesh.vertices, mesh.faces, max_edge=3.5)
-        mesh = trimesh.Trimesh(vertices=points, faces=faces, process=False)
+    # Sample broad changes in surface condition within each mapped roof plane.
+    points, faces = trimesh.remesh.subdivide_to_size(mesh.vertices, mesh.faces, max_edge=3.5 if concrete else 5.5)
+    mesh = trimesh.Trimesh(vertices=points, faces=faces, process=False)
     offset = mesh.vertices[:, [0, 2]] - plan[0]
     # Keep adjoining courses parallel. Offset their origin separately for each mapped roof.
     key = hashlib.sha256(f"{part['featureId']}/{plan[0].tolist()}".encode()).digest()
@@ -124,6 +124,13 @@ def roof_surface(part):
         u += .28 * np.sin(1.47 * v + phase[0]) + .12 * np.sin(2.61 * v + phase[1])
         v += .32 * np.sin(1.62 * u + phase[1]) + .10 * np.sin(2.73 * u + phase[0])
     mesh.visual = TextureVisuals(uv=uv)
+    rng = np.random.default_rng(int.from_bytes(key[8:16], "little"))
+    # Sheet weathering follows the ribs. Concrete and slate age in wider patches.
+    span = (4.5, 15.0) if part["roofFinish"] == "ZincRoof" else (8.5, 7.0)
+    coords = np.array([offset @ axis / span[0], offset @ across / span[1]])
+    wear = map_coordinates(rng.uniform(0, 1, (37, 41)), coords, mode="grid-wrap").clip(0, 1)
+    tint = 1 - (wear ** 1.7)[:, None] * [.32, .36, .39]
+    mesh.visual.vertex_attributes["color"] = np.uint8(np.rint(255 * np.c_[tint, np.ones(len(tint))]))
     return mesh
 
 
@@ -164,6 +171,11 @@ def export_group(group, finishes, walls, credit_line, daylight, low_rise=False):
         uv = np.concatenate([piece.visual.uv for piece in pieces])
         mesh = trimesh.util.concatenate(pieces)
         mesh.visual = TextureVisuals(uv=uv, material=facade_material(name, reflection if name in walls else None, group if name in walls else None))
+        if any("color" in piece.visual.vertex_attributes for piece in pieces):
+            mesh.visual.vertex_attributes["color"] = np.concatenate([
+                piece.visual.vertex_attributes["color"] if "color" in piece.visual.vertex_attributes
+                else np.full((len(piece.vertices), 4), 255, dtype=np.uint8) for piece in pieces
+            ])
         scene.add_geometry(mesh, geom_name=name)
     low, high = scene.bounds
     origin = (low + high) / 2

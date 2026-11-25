@@ -694,5 +694,38 @@
       "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes.",
       "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
     }
+  },
+  {
+    "entityId": "bay.temasek-north-street-trees",
+    "kind": "object",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "淡马锡道 · 北段路旁树带",
+    "assetHash": "d547f1190d23168b7a17dd29da9bd8e33e38ee273a021b48346cf7691c16f9a8",
+    "bounds": {
+      "min": [
+        -295.50093375551137,
+        -60.441,
+        1525.6022571479994
+      ],
+      "max": [
+        -174.89002118306698,
+        -46.37906738075924,
+        1748.0857895029635
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "位置来源": "https://github.com/cheeaun/sgtreesdata/tree/c97d9454adfddfc984f6fa0693c57739b002e79e",
+      "树位数": 47,
+      "棕榈数": 0,
+      "已单独建模树位数": 0,
+      "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes.",
+      "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
+    }
   }
 ]
