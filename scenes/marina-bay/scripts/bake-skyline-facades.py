@@ -13,6 +13,7 @@ from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
 from concourse_facades import concourse_meshes
+from facade_interiors import WINDOW_LAYOUT, occupied_windows, repeats
 
 ROOT = Path(__file__).resolve().parents[1]
 REFERENCES = ROOT / "references/skyline-finishes"
@@ -30,9 +31,9 @@ REPEAT = {"Facade006": (22.4, 27.2), "Facade018A": (18.0, 21.6), "Facade019A": (
           "Workshop": (16.2, 3.55), "RibbedFront": (14.4, 3.55)}
 
 
-def facade_material(name, daylight=None):
+def facade_material(name, daylight=None, group=None):
     folder = REFERENCES / name
-    color = Image.open(folder / "Color.jpg")
+    color = occupied_windows(folder, group) if group and name in WINDOW_LAYOUT else Image.open(folder / "Color.jpg")
     normal = Image.open(folder / "NormalGL.jpg")
     rough = Image.open(folder / "Roughness.jpg").convert("L")
     metal = Image.open(folder / "Metalness.jpg").convert("L")
@@ -145,7 +146,7 @@ def export_group(group, finishes, walls, credit_line, daylight, low_rise=False):
     for name, pieces in finishes.items():
         uv = np.concatenate([piece.visual.uv for piece in pieces])
         mesh = trimesh.util.concatenate(pieces)
-        mesh.visual = TextureVisuals(uv=uv, material=facade_material(name, reflection if name in walls else None))
+        mesh.visual = TextureVisuals(uv=uv, material=facade_material(name, reflection if name in walls else None, group if name in walls else None))
         scene.add_geometry(mesh, geom_name=name)
     low, high = scene.bounds
     origin = (low + high) / 2
@@ -155,6 +156,14 @@ def export_group(group, finishes, walls, credit_line, daylight, low_rise=False):
 
     def credit(doc):
         doc["asset"]["copyright"] = credit_line
+        for material in doc["materials"]:
+            name = material["name"]
+            if name in walls and name in WINDOW_LAYOUT:
+                across, up, _ = repeats(name)
+                colour = material["pbrMetallicRoughness"]["baseColorTexture"]
+                colour["extensions"] = {"KHR_texture_transform": {"scale": [1 / across, 1 / up]}}
+                if "KHR_texture_transform" not in doc.setdefault("extensionsUsed", []):
+                    doc["extensionsUsed"].append("KHR_texture_transform")
         if daylight:
             for material in doc["materials"]:
                 if material["name"] in walls:
