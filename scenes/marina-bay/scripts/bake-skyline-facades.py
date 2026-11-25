@@ -16,6 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 REFERENCES = ROOT / "references/skyline-finishes"
 # Width and height in metres of each repeating window-wall texture.
 REPEAT = {"Facade006": (22.4, 27.2), "Facade018A": (18.0, 21.6), "Facade019A": (17.4, 21.0),
+          "Facade005": (24.0, 42.6), "Facade013": (28.8, 56.8),
+          "Facade015": (28.8, 56.8), "Facade020A": (18.0, 21.3),
           "ServiceWall": (12.0, 3.55), "BrickArcade": (13.8, 3.55), "PanelArcade": (12.6, 3.55)}
 
 
@@ -98,9 +100,16 @@ def roof_surface(part):
 
 
 def bake_group(group, parts, credit_line):
+    if any(part.get("groundFloorFinish") for part in parts):
+        credit_line += " Ground-floor cladding and shutter scans by Poly Haven (CC0)."
     finishes = {}
     trim = []
     for part in parts:
+        if ground_finish := part.get("groundFloorFinish"):
+            floor_height = part["height"] / max(1, round(part["height"] / 3.55))
+            street, _ = exterior({**part, "height": floor_height, "finish": ground_finish})
+            finishes.setdefault(ground_finish, []).append(street)
+            part = {**part, "minHeight": floor_height}
         wall, coping = exterior(part)
         finishes.setdefault(part["finish"], []).append(wall)
         trim.append(coping)
@@ -142,7 +151,7 @@ def bake_group(group, parts, credit_line):
             "background": True,
             "版权": credit_line,
             "表面": ("基于地图楼高与轮廓，金属、瓦片和混凝土屋面，砖墙、面砖、卷帘门与窗带按米制尺度估算。" if low_rise
-                   else "基于地图楼高与轮廓，采用三组日间外墙贴图估算窗格与层间饰面。"),
+                   else "基于地图楼高与轮廓，采用四组日间玻璃、百叶、窗带及面砖纹理估算楼层与开间。"),
         },
     }
 

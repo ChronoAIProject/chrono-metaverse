@@ -5,7 +5,7 @@
     "kind": "structure",
     "label": "滨海湾 · 远景楼群与临湾外墙",
     "regionId": "marina-bay-exterior",
-    "assetHash": "cd0028277c5e1e9283d36bd63332d70991931ecd75e4c67579b8086181eace07",
+    "assetHash": "b79fcdadcc2913d217ad0d524af048d3591d30d9e9f3f76e44a3b6d70a136a83",
     "material": {
       "shading": "albedo"
     },
@@ -23,8 +23,8 @@
     },
     "props": {
       "background": true,
-      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Facade006, Facade018A and Facade019A by ambientCG (CC0). Window layouts and storey heights are artistic approximations.",
-      "表面": "基于地图楼高与轮廓，采用三组日间外墙贴图估算窗格与层间饰面。"
+      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Facade005, Facade013, Facade015 and Facade020A by ambientCG (CC0). Window arrangements, cladding and storey heights are visual approximations.",
+      "表面": "基于地图楼高与轮廓，采用四组日间玻璃、百叶、窗带及面砖纹理估算楼层与开间。"
     }
   },
   {
@@ -33,7 +33,7 @@
     "kind": "structure",
     "label": "滨海湾 · 远景楼群与临湾外墙",
     "regionId": "marina-bay-exterior",
-    "assetHash": "42a9f86604bbe0045b5d2210eb0e5f4c3285a7fd32e9b3be41cb87a528b82252",
+    "assetHash": "70dc6ca868598dc64825dbc8dd8bffc81305bd1a9268456bcb2bf62e01a8f9b2",
     "material": {
       "shading": "albedo"
     },
@@ -51,8 +51,8 @@
     },
     "props": {
       "background": true,
-      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Facade006, Facade018A and Facade019A by ambientCG (CC0). Window layouts and storey heights are artistic approximations.",
-      "表面": "基于地图楼高与轮廓，采用三组日间外墙贴图估算窗格与层间饰面。"
+      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Facade005, Facade013, Facade015 and Facade020A by ambientCG (CC0). Window arrangements, cladding and storey heights are visual approximations. Ground-floor cladding and shutter scans by Poly Haven (CC0).",
+      "表面": "基于地图楼高与轮廓，采用四组日间玻璃、百叶、窗带及面砖纹理估算楼层与开间。"
     }
   },
   {
@@ -61,7 +61,7 @@
     "kind": "structure",
     "label": "滨海湾 · 远景楼群与临湾外墙",
     "regionId": "marina-bay-exterior",
-    "assetHash": "6c571c410a7384571c0a03483c8a012b0c6c4cb4e4cf1a5ae3982f8c584a9877",
+    "assetHash": "e0120e4530a5f6766e4c743a6d9cd8b0f96b8faf605f71417d423e8260719f92",
     "material": {
       "shading": "albedo"
     },
@@ -79,8 +79,8 @@
     },
     "props": {
       "background": true,
-      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Facade006, Facade018A and Facade019A by ambientCG (CC0). Window layouts and storey heights are artistic approximations.",
-      "表面": "基于地图楼高与轮廓，采用三组日间外墙贴图估算窗格与层间饰面。"
+      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Facade005, Facade013, Facade015 and Facade020A by ambientCG (CC0). Window arrangements, cladding and storey heights are visual approximations.",
+      "表面": "基于地图楼高与轮廓，采用四组日间玻璃、百叶、窗带及面砖纹理估算楼层与开间。"
     }
   },
   {

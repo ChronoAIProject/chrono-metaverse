@@ -11,7 +11,7 @@
       -12.785997359593134
     ]
   },
-  "copyright": "Building footprints and heights \u00a9 OpenStreetMap contributors (ODbL), via OpenFreeMap. Facade006, Facade018A and Facade019A by ambientCG (CC0). Window layouts and storey heights are artistic approximations.",
+  "copyright": "Building footprints and heights \u00a9 OpenStreetMap contributors (ODbL), via OpenFreeMap. Facade005, Facade013, Facade015 and Facade020A by ambientCG (CC0). Window arrangements, cladding and storey heights are visual approximations.",
   "materials": {
     "Facade006": "https://ambientcg.com/view?id=Facade006",
     "Facade018A": "https://ambientcg.com/view?id=Facade018A",
@@ -33,7 +33,11 @@
     ],
     "ZincRoof": "https://polyhaven.com/a/corrugated_iron_03",
     "SlateRoof": "https://polyhaven.com/a/grey_roof_tiles_02",
-    "ConcreteRoof": "https://polyhaven.com/a/concrete_floor_02"
+    "ConcreteRoof": "https://polyhaven.com/a/concrete_floor_02",
+    "Facade005": "https://ambientcg.com/a/Facade005",
+    "Facade013": "https://ambientcg.com/a/Facade013",
+    "Facade015": "https://ambientcg.com/a/Facade015",
+    "Facade020A": "https://ambientcg.com/a/Facade020A"
   },
   "parts": [
     {
@@ -41,7 +45,7 @@
       "minHeight": 124,
       "height": 162,
       "tile": "14/12918/8133",
-      "finish": "Facade006",
+      "finish": "Facade005",
       "outline": [
         [
           -1065.3358,
@@ -227,7 +231,7 @@
       "minHeight": 51,
       "height": 121,
       "tile": "14/12918/8133",
-      "finish": "Facade006",
+      "finish": "Facade020A",
       "outline": [
         [
           -1065.3358,
@@ -413,7 +417,7 @@
       "minHeight": 0,
       "height": 35,
       "tile": "14/12918/8133",
-      "finish": "Facade019A",
+      "finish": "Facade020A",
       "outline": [
         [
           -482.7481,
@@ -477,14 +481,15 @@
         -462.066,
         100.057
       ],
-      "group": "bayfront"
+      "group": "bayfront",
+      "groundFloorFinish": "PanelArcade"
     },
     {
       "featureId": 4638579450,
       "minHeight": 0,
       "height": 207,
       "tile": "14/12918/8133",
-      "finish": "Facade006",
+      "finish": "Facade005",
       "outline": [
         [
           112.8262,
@@ -565,7 +570,7 @@
       "minHeight": 0,
       "height": 207,
       "tile": "14/12918/8133",
-      "finish": "Facade006",
+      "finish": "Facade005",
       "outline": [
         [
           77.2428,
@@ -646,7 +651,7 @@
       "minHeight": 0,
       "height": 141,
       "tile": "14/12918/8133",
-      "finish": "Facade018A",
+      "finish": "Facade020A",
       "outline": [
         [
           -10.4396,
@@ -997,7 +1002,7 @@
       "minHeight": 0,
       "height": 141,
       "tile": "14/12918/8133",
-      "finish": "Facade018A",
+      "finish": "Facade020A",
       "outline": [
         [
           27.3861,
@@ -1348,7 +1353,7 @@
       "minHeight": 29,
       "height": 237,
       "tile": "14/12918/8133",
-      "finish": "Facade019A",
+      "finish": "Facade013",
       "outline": [
         [
           423.6968,
@@ -1384,7 +1389,7 @@
       "minHeight": 29,
       "height": 237,
       "tile": "14/12918/8133",
-      "finish": "Facade019A",
+      "finish": "Facade013",
       "outline": [
         [
           449.353,
@@ -1430,7 +1435,7 @@
       "minHeight": 29,
       "height": 123,
       "tile": "14/12918/8133",
-      "finish": "Facade019A",
+      "finish": "Facade013",
       "outline": [
         [
           422.1654,
@@ -1471,7 +1476,7 @@
       "minHeight": 0,
       "height": 216,
       "tile": "14/12918/8133",
-      "finish": "Facade006",
+      "finish": "Facade015",
       "outline": [
         [
           101.6152,
@@ -1507,7 +1512,7 @@
       "minHeight": 3,
       "height": 110,
       "tile": "14/12918/8133",
-      "finish": "Facade006",
+      "finish": "Facade013",
       "outline": [
         [
           -1122.2046,
@@ -1598,7 +1603,7 @@
       "minHeight": 0,
       "height": 121,
       "tile": "14/12918/8132",
-      "finish": "Facade018A",
+      "finish": "Facade015",
       "outline": [
         [
           285.4187,
