@@ -8155,5 +8155,38 @@
       "处理说明": "OneMap 三维测绘外形，按驳船码头实拍提取窗格。遮挡面使用同楼纹理，幕墙粗糙度和天光反射为估计值。",
       "三角形数": 5124
     }
+  },
+  {
+    "entityId": "bay.729ab0b3-79a3-4d1b-bf5f-736f299bb54c",
+    "layer": "ext",
+    "kind": "object",
+    "label": "PARKROYAL ON PICKERING",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "9977d0870f0f38a3170aa4884087b04399883279d3be2d294dd39e81588154aa",
+    "material": {
+      "shading": "albedo"
+    },
+    "bounds": {
+      "min": [
+        978.6252235619753,
+        -60.10176128257724,
+        138.8295359552225
+      ],
+      "max": [
+        1122.9130498182228,
+        30.41775597332676,
+        181.28792813203864
+      ]
+    },
+    "props": {
+      "background": true,
+      "数据来源": "OneMap 3D · Singapore Land Authority",
+      "版权": "Map Data © SLA",
+      "官方建筑编号": "SLA_BLDG2_729ab0b3-79a3-4d1b-bf5f-736f299bb54c",
+      "来源地址": "https://github.com/cheeaun/om3d/blob/ac451b84/optimized-tiles/7/72/10_5.b3dm",
+      "幕墙影像署名": "Facade and planted terrace textures adapted from Singapore (26116826522) by Visions of Domino, CC BY 2.0, https://commons.wikimedia.org/wiki/File:Singapore_(26116826522).jpg, https://creativecommons.org/licenses/by/2.0/",
+      "处理说明": "OneMap 三维测绘外形，按芳林公园实拍配准三座客房翼楼、层叠露台与实际种植区域。遮挡面使用同楼纹理，幕墙粗糙度和天光反射为估计值。",
+      "三角形数": 23690
+    }
   }
 ]
