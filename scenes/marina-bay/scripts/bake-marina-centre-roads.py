@@ -8,8 +8,9 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
+from scipy.ndimage import map_coordinates
 from shapely import get_parts, line_merge, union_all
-from shapely.geometry import LineString, MultiPoint, Point
+from shapely.geometry import LineString, MultiPoint, Point, Polygon
 from shapely.ops import substring
 import trimesh
 from trimesh.visual.material import PBRMaterial
@@ -88,25 +89,39 @@ def road_surfaces(survey, nodes):
     return area.difference(paint), paint, area, bridges
 
 
-def lane_textures():
+def lane_textures(site="Marina Centre"):
     # One tile spans a traffic lane and four lengths of the aggregate scan.
     # The wheel paths are slightly smoother and darker than the lane centre.
     height, width = 1024, 512
     row, col = np.indices((height, width))
     u = (col + .5) / width
     v = (row + .5) / height
-    wander = .025 * np.sin(v * 2 * np.pi) + .013 * np.sin(v * 4 * np.pi)
+    rng = np.random.default_rng(int.from_bytes(hashlib.sha256(site.encode()).digest()[:8], "little"))
+    # Use periodic fields so the source offsets and wheel wear meet at all four edges.
+    positions = np.stack((v * 7, u * 5))
+    field = map_coordinates(rng.uniform(-1, 1, (7, 5)), positions, mode="grid-wrap")
+    phase = rng.uniform(0, 2 * np.pi, 2)
+    wander = .042 * np.sin(v * 2 * np.pi + phase[0]) + .018 * np.sin(v * 4 * np.pi + phase[1])
     distance = np.abs(np.abs((u - .5) * LANE + wander) - .74)
-    wear = np.exp(-.5 * (distance / .23) ** 2)
-    uneven = 2.6 * np.sin(2 * np.pi * (u + .3 * np.sin(2 * np.pi * v)))
+    wear = np.exp(-.5 * (distance / .23) ** 2) * (1 + .38 * field)
+    # Mix translated copies of the scan. Colour, tangent normals and roughness
+    # share the same weights and coordinates, with no rotation of the tangent axes.
+    offsets = rng.integers(0, 256, (3, 2))
+    selector = np.clip((field + .48) / .96, 0, 1) * 2
+    blend = np.clip(3 * (selector[..., None] - np.array([.5, 1.5])) + .5, 0, 1)
+    weights = [1 - blend[..., 0], blend[..., 0] - blend[..., 1], blend[..., 1]]
     images = {}
     for role in ["color", "normal", "roughness"]:
         with Image.open(REFERENCES / f"asphalt-{role}.jpg") as source:
             tile = np.asarray(source.convert("RGB").resize((width // 2, height // 4), Image.Resampling.LANCZOS))
-        pixels = np.tile(tile, (4, 2, 1)).astype(float)
+        pixels = sum(weight[..., None] * tile[(row + dy) % len(tile), (col + dx) % tile.shape[1]]
+                     for weight, (dy, dx) in zip(weights, offsets))
         if role == "color":
             median = np.median(tile, axis=(0, 1))
-            pixels = [101, 104, 104] + .94 * (pixels - median) + (uneven - 8 * wear)[:, :, None]
+            pixels = [101, 104, 104] + .94 * (pixels - median) + (4.2 * field - 8 * wear)[:, :, None]
+        elif role == "normal":
+            normal = pixels / 127.5 - 1
+            pixels = 127.5 * (1 + normal / np.maximum(np.linalg.norm(normal, axis=2, keepdims=True), 1e-5))
         elif role == "roughness":
             pixels[:, :, 1] -= 19 * wear
         image = Image.fromarray(np.uint8(pixels.clip(0, 255)))
@@ -149,9 +164,22 @@ def bake():
     shift = np.asarray(json.loads((ROOT / "build/alignment.json").read_text())["shift"])
     origin, rotation = fullerton.frame(config["oneMap"])
     survey = json.loads((REFERENCES / "survey.json").read_text())
-    nodes = {int(k): fullerton.geographic_point(*lonlat, origin, rotation, shift)[[0, 2]]
-             for k, lonlat in survey["nodes"].items()}
+    verge_survey = json.loads((REFERENCES / "verges.json").read_text())
+
+    def project(point):
+        return fullerton.geographic_point(*point, origin, rotation, shift)[[0, 2]]
+
+    nodes = {int(k): project(lonlat) for k, lonlat in survey["nodes"].items()}
     asphalt, markings, carriageway, bridges = road_surfaces(survey, nodes)
+    # The drop-off lane widens beyond the nominal OSM lane count at the hotel.
+    # Keep the existing planted islands and footways inside its surveyed outline.
+    margins = verge_survey["surfaces"]
+    turning = union_all([Polygon([project(p) for p in s["ring"]]) for s in margins if s["surface"] == "asphalt"])
+    protected = [Polygon([project(p) for p in s["ring"]]) for s in margins if s["surface"] != "asphalt"]
+    protected.extend(Polygon([project(p) for p in ring]) for ring in verge_survey["coveredFootprints"])
+    turning = turning.difference(union_all(protected)).difference(carriageway)
+    asphalt = asphalt.union(turning)
+    carriageway = carriageway.union(turning)
     color = Image.open(REFERENCES / "asphalt-color.jpg")
     normal = Image.open(REFERENCES / "asphalt-normal.jpg")
     rough = Image.open(REFERENCES / "asphalt-roughness.jpg")
@@ -171,11 +199,6 @@ def bake():
         if material is road:
             mesh.visual.uv = lane_coordinates(mesh, survey, nodes)
         scene.add_geometry(mesh, geom_name=material.name)
-    verge_survey = json.loads((REFERENCES / "verges.json").read_text())
-
-    def project(point):
-        return fullerton.geographic_point(*point, origin, rotation, shift)[[0, 2]]
-
     areas = add_verges(scene, verge_survey, project, carriageway, bridges, ground, shift[[0, 2]], fullerton.surface)
     flyovers = json.loads((REFERENCES / "flyovers.json").read_text())
     add_flyovers(scene, flyovers, project, ground, shift[[0, 2]], road, stripe, fullerton.surface)
