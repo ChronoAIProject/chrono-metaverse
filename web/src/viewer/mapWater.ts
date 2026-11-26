@@ -241,7 +241,12 @@ export function mapWaterMaterial(
             vec4 longWaves = texture2D(gravityField, (meters + 7.2*drift - vec2(0.13,1.28) * time) / 32.0);
             vec4 shortWaves = texture2D(rippleField, (direction * meters + 2.6*drift.yx - vec2(0.09,0.70) * time) / 8.0);
             vec2 longMean = meanSlope(longWaves), shortMean = meanSlope(shortWaves);
-            float longRms = gravityGain * 0.01828, shortRms = gust * rippleRms;
+            // Wind exposure varies in broad patches elongated along the short waves' wind.
+            vec2 windMeters = direction * meters;
+            vec2 fetchPatch = windMeters / vec2(24.0, 82.0) + 0.72*drift;
+            float exposure = smoothstep(.22, .78, surfaceField(fetchPatch));
+            float longRms = gravityGain * 0.01828;
+            float shortRms = gust * rippleRms * mix(.36, 1.12, exposure);
             vec2 reservoirSlope = longRms * longMean + shortRms * (shortMean * direction);
             normalXZ = mix(normalXZ, reservoirSlope * wind, spectrumWeight);
             vec2 longVariance = slopeVariance(longWaves, longMean) * longRms * longRms;
