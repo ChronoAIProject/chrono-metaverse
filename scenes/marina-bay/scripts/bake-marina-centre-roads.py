@@ -209,7 +209,7 @@ def bake():
     for mesh in scene.geometry.values():
         mesh.apply_translation(-anchor)
     credit = ("Roads © OpenStreetMap contributors (ODbL). Map Data © Singapore Land Authority / OneMap. "
-              "Asphalt 01, Concrete Floor 02 and Granite Tile 04 by Poly Haven, Grass 004 by ambientCG (CC0).")
+              "Asphalt 01, Concrete Floor 02, Granite Tile 04 and Leafy Grass by Poly Haven (CC0).")
 
     def credit_asset(doc):
         doc["asset"]["copyright"] = credit

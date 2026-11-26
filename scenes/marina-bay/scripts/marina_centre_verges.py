@@ -27,7 +27,7 @@ def add_verges(scene, reference, project, carriageway, bridges, ground, datum, s
     pavement.visual.uv = pavement.visual.uv * [2.08 / (4 * .55), 2.08 / (6 * .35)]
     scene.add_geometry(pavement, geom_name="Paved approaches and stone kerbs")
 
-    turf = scanned_turf("Marina Centre planted verges", [115, 122, 90])
+    turf = scanned_turf("Marina Centre planted verges", [115, 122, 90], cover="leafy_grass")
     # Sample several metres of grass per vertex while the photographed blades and
     # roughness repeat at ground scale. Adjacent cells sample the same colour field.
     cells = []

@@ -207,7 +207,7 @@ function surveyedGrassCoverage(environment: EntityBody | null): EntityBody | nul
 // These scans have freely repeating grains. Panels, pavers and marked roads have authored joints.
 const groundScanMaterials: Record<string, string[]> = {
   'bay.empress-lawn-obelisk-court': ['Empress Lawn turf'],
-  'bay.fullerton-carriageways': ['Grass 004'],
+  'bay.fullerton-carriageways': ['Fullerton verge grass'],
   'bay.fullerton-entrance-trees': ['Fullerton planted soil'],
   'bay.marina-centre-carriageways': ['Marina Centre planted verges'],
   'bay.marina-centre-worksite': ['Compacted gravel', 'Graded soil'],

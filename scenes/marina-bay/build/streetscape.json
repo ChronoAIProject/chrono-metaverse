@@ -128,7 +128,7 @@
     "regionId": "marina-bay-exterior",
     "layer": "ext",
     "kind": "structure",
-    "assetHash": "7b06b477152f87440116d006d3ffac5c45ea6c87dfa7d31f99b15a4168480b44",
+    "assetHash": "cc62e008e858155945e9f2c3d7f000b48ed837a2b39baee4ad385828df117762",
     "label": "浮尔顿路 · 沥青车道与标线",
     "bounds": {
       "min": [
@@ -148,7 +148,7 @@
     "props": {
       "background": true,
       "surfaceRole": "landscape",
-      "绿带轮廓": "Map Data © Singapore Land Authority / OneMap 正射影像；Grass 004 · ambientCG · CC0",
+      "绿带轮廓": "Map Data © Singapore Land Authority / OneMap 正射影像；Sparse Grass · Poly Haven · CC0",
       "道路来源": "https://www.openstreetmap.org/way/22919331",
       "道路编号": [
         22919331,
@@ -1204,7 +1204,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "皇后坊 · 大草坪与达尔豪西纪念碑步道",
-    "assetHash": "f76a02cd91be39a1e686ab8b345dd7d4314d997bcbe707d9154c92cb5edd6cd7",
+    "assetHash": "9aeb2e8e4bbc739ff8d631147f334b74f243e2a4eb4d89b05a8655c93e558e86",
     "bounds": {
       "min": [
         494.98935236691,
@@ -1236,7 +1236,7 @@
         "https://www.openstreetmap.org/way/474982557/history/5"
       ],
       "现场照片": "https://commons.wikimedia.org/wiki/File:2016_Singapur,_Downtown_Core,_Dalhousie_Obelisk.jpg",
-      "材质素材": "ambientCG Grass 004；Poly Haven Granite Tile 04 · CC0",
+      "材质素材": "Poly Haven Grass Ground、 Granite Tile 04 · CC0",
       "地面重建": "边界按正射影像与通道中心线定位。树冠下的边缘、铺装尺寸和高程为估值。",
       "草皮反射率依据": "按 2026-04-16、2026-06-13 两期 Sentinel-2 地表反射率校准草坪红、绿通道的十米尺度变化。"
     }
@@ -1945,7 +1945,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "政府大厦前大草场 · 南北球场",
-    "assetHash": "90566c733358d3a814b1ab150acdc5b4462bc78ba03d256f32e3f53705115dea",
+    "assetHash": "cfd00b2f7c89dc9a7311adcb713fd7f212ded5e1651489699026d86d2fffc0aa",
     "bounds": {
       "min": [
         560.2195923694571,
@@ -1967,7 +1967,7 @@
       "边界依据": "Map Data © Singapore Land Authority / OneMap, OrthoJPG",
       "地图来源": "© OpenStreetMap contributors · ODbL",
       "参考场地": "https://www.openstreetmap.org/way/21587770/history/10",
-      "材质素材": "ambientCG Grass 004、Poly Haven Granite Tile 04 · CC0",
+      "材质素材": "Poly Haven Grass Ground、 Granite Tile 04 · CC0",
       "现场照片": [
         "https://commons.wikimedia.org/wiki/File:Padang_and_Singapore_skyline.JPG",
         "https://commons.wikimedia.org/wiki/File:Padang_singapore_skyline.JPG",
@@ -2394,7 +2394,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "滨海中心 · 莱佛士林荫道与淡马锡道",
-    "assetHash": "a800cc0a6178eca16fd25a7a4ff66107a67dce269065251d7400488dfe9a0b0a",
+    "assetHash": "d52e684534b3d7366ed59c3db651b4284ad9f0e92fadb0ebc5dcb138c3272860",
     "material": {
       "shading": "albedo"
     },
@@ -2413,7 +2413,7 @@
     "props": {
       "background": true,
       "surfaceRole": "landscape",
-      "版权": "Roads © OpenStreetMap contributors (ODbL). Map Data © Singapore Land Authority / OneMap. Asphalt 01, Concrete Floor 02 and Granite Tile 04 by Poly Haven, Grass 004 by ambientCG (CC0).",
+      "版权": "Roads © OpenStreetMap contributors (ODbL). Map Data © Singapore Land Authority / OneMap. Asphalt 01, Concrete Floor 02 and Granite Tile 04 and Leafy Grass by Poly Haven (CC0).",
       "高架道路": "OSM 中心线与车道数，桥面高程、断面尺寸及墩位为视觉估值。",
       "路旁地面": "按正射影像描绘绿地和铺装。石板尺寸、路缘高度、草色为估值。",
       "道路材质": "扫描沥青与路面涂料。车道数和道路线形取自 OSM，路宽、标线及磨耗为视觉近似。"
@@ -2466,14 +2466,14 @@
         2764.0919211835776
       ]
     },
-    "assetHash": "d026cedce85242c667c2b677740496970e7f8b7ee8adfd9a0161aa27c5757f49",
+    "assetHash": "07210fb3d3bb31b4c6757df4ab045c2592122125b82db3511c52d3c5ce1a20ae",
     "material": {
       "shading": "albedo"
     },
     "props": {
       "background": true,
       "surfaceRole": "landscape",
-      "版权": "OpenStreetMap contributors (ODbL). Land-cover survey derived from OneMap orthophotography, Singapore Land Authority. Grass 004 by ambientCG and concrete and Sandy Gravel 02 scans by Poly Haven (CC0).",
+      "版权": "OpenStreetMap contributors (ODbL). Land-cover survey derived from OneMap orthophotography, Singapore Land Authority. Leafy Grass, concrete and Sandy Gravel 02 scans by Poly Haven (CC0).",
       "依据": "OSM 公园边界与步道中心线、OneMap z18 影像的植被和陆岸边界。临水作业地、碎石与草坡取自 OneMap z19 航片，岸坡高度、地表磨损与路面宽度为视觉估值。"
     }
   },

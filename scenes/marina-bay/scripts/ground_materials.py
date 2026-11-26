@@ -3,7 +3,7 @@ from hashlib import sha256
 
 import numpy as np
 from PIL import Image
-from scipy.ndimage import gaussian_filter, map_coordinates
+from scipy.ndimage import map_coordinates
 from trimesh.visual.material import PBRMaterial
 
 from scanned_canopy import ROOT
@@ -18,13 +18,6 @@ def ground_scan(name):
     with Image.open(ASSETS / f'{name}-surface.webp') as image:
         packed = np.asarray(image.resize((size, size), Image.Resampling.LANCZOS), float)
     return scan, packed
-
-
-def turf_grain(scan):
-    # Keep the blade texture without repeating the same patch of drying grass every 1.4 m.
-    mean = scan.mean(axis=(0, 1))
-    local = gaussian_filter(scan, (scan.shape[0] / 62, scan.shape[1] / 62, 0), mode="wrap")
-    return scan * mean / np.maximum(local, 1.0)
 
 
 def turf_wear(xz):
@@ -43,23 +36,40 @@ def turf_wear(xz):
     return np.exp(dryness[:, None] * [.86, .53, -.12])
 
 
-def scanned_turf(name, mean_rgb, *, minimum_roughness=200):
-    scan, packed = ground_scan('turf')
-    scan = turf_grain(scan)
-    # Select intact blade clusters from a second part of the scan. Apply the same
-    # periodic mask to colour, normals and roughness so the highlights follow the blades.
-    rng = np.random.default_rng(int.from_bytes(sha256(name.encode()).digest()[:8], 'little'))
-    side = len(scan)
-    grid = rng.uniform(-1, 1, (7, 9))
-    coords = np.indices((side, side)) * (np.array(grid.shape) / side)[:, None, None]
-    weight = np.clip(.5 + 5 * map_coordinates(grid, coords, mode='grid-wrap'), 0, 1)[..., None]
-    shift = rng.integers(side // 5, 4 * side // 5, size=2)
-    for channel in (scan, packed):
-        channel += weight * (np.roll(channel, shift, axis=(0, 1)) - channel)
-    rgb = scan / np.mean(scan, axis=(0, 1)) * mean_rgb
-    slope = (packed[:, :, :2] / 127.5 - 1) * .68
-    rough = np.maximum(packed[:, :, 2], minimum_roughness)
-    return ground_pbr(name, rgb, slope, rough)
+def turf_colour(cover, mean_rgb, size):
+    folder = ROOT / 'references/ground-cover' / cover
+    with Image.open(folder / 'Color.jpg') as source:
+        pixels = np.asarray(source.convert('RGB').resize(size, Image.Resampling.LANCZOS)) / 255
+
+    def linear(rgb):
+        return np.where(rgb <= .04045, rgb / 12.92, ((rgb + .055) / 1.055) ** 2.4)
+
+    # Match the surveyed average in linear light, retaining the scan's clumps and bare soil.
+    radiance = linear(pixels)
+    radiance *= linear(np.asarray(mean_rgb) / 255) / radiance.mean(axis=(0, 1))
+    rgb = np.where(radiance <= .0031308, radiance * 12.92, 1.055 * radiance ** (1 / 2.4) - .055)
+    image = Image.fromarray(np.rint(255 * rgb).clip(0, 255).astype(np.uint8))
+    image.format = 'JPEG'
+    return image
+
+
+def scanned_turf(name, mean_rgb, *, cover, roughness=200):
+    folder = ROOT / 'references/ground-cover' / cover
+    rgb = turf_colour(cover, mean_rgb, (768, 768))
+    size = (384, 384)
+    with Image.open(folder / 'NormalGL.jpg') as image:
+        normals = np.asarray(image.convert('RGB').resize(size, Image.Resampling.LANCZOS)) / 127.5 - 1
+    normals[:, :, :2] *= .75
+    normals /= np.maximum(np.linalg.norm(normals, axis=2, keepdims=True), 1e-5)
+    normal = Image.fromarray(np.rint((normals + 1) * 127.5).clip(0, 255).astype(np.uint8))
+    normal.format = 'JPEG'
+    with Image.open(folder / 'Roughness.jpg') as image:
+        measured = np.asarray(image.convert('L').resize(size, Image.Resampling.LANCZOS), float)
+    calibrated = np.rint(measured - measured.mean() + roughness).clip(175, 255).astype(np.uint8)
+    packed = Image.merge('RGB', (Image.new('L', size, 255), Image.fromarray(calibrated), Image.new('L', size)))
+    packed.format = 'PNG'
+    return PBRMaterial(name=name, baseColorTexture=rgb, normalTexture=normal,
+                       metallicRoughnessTexture=packed, metallicFactor=0, roughnessFactor=1)
 
 
 def scanned_pavers(name, mean_rgb, pitch):
