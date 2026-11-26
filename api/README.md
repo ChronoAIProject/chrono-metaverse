@@ -28,8 +28,6 @@ cargo deny --locked --all-features check advisories licenses bans sources
 - 测试用的 RSA 密钥由 `openssl genrsa` 临时生成（与 CMA 相同），仓库里没有任何私钥。
 - 重新生成跨语言测试向量：`METAVERSE_WRITE_VECTORS=1 cargo test -p metaverse-core --test vectors`。
 
-接口服务构建时把工具源码版本写入二进制，本地默认取 Git HEAD。手动构建 `infra/api/Dockerfile` 须传 `--build-arg CHRONO_BUILD_SHA=<完整40位提交哈希>`；发布工作流已传入该参数。在线 worker 从这个固定版本安装工具，用户不需要仓库写权限。
-
 本地运行接口服务（鉴权配置缺一项就启动失败）：
 
 ```bash
@@ -55,7 +53,6 @@ cargo run -p metaverse-api
 | `ALLOWED_NYX_SERVICE_IDS` | 是 | 允许的 NyxID 服务编号，逗号分隔（过渡期可同时填自定义服务和目录服务的编号） |
 | `BIND` | 否 | 默认 `0.0.0.0:8080` |
 | `PUBLIC_BASE_URL` | 否 | 默认 `http://localhost:8080`；用于预览链接和 OAuth 回调；OAuth 启用时须为 HTTPS 根地址（本机可用 HTTP） |
-| `CMA_BASE_URL` | 否 | 固定 CMA 根地址；设置后可在 `/workspace` 授权浏览器 CMA 子凭据并明确同意调用在线 worker；Key 仅临时转发，账号/组织查询仍要求已配置 OAuth；HTTPS，本机测试可用 HTTP |
 | `NYXID_OAUTH_CLIENT_ID` | 否 | 专用保密 OAuth 客户端 ID；三个 OAuth 变量须同时配置，否则默认禁用 |
 | `NYXID_OAUTH_CLIENT_SECRET` | 启用 OAuth 时必填 | 客户端秘密，使用应用密钥注入 |
 | `NYXID_OAUTH_ENCRYPTION_KEY` | 启用 OAuth 时必填 | 32 字节随机密钥的标准 base64 编码，使用应用密钥注入 |
@@ -438,7 +435,7 @@ universeRevisions { _id: "<组合编号>:<seq>", universeId, owner, seq, at, act
 
 3. **资源级**：读出主人（没有一致归属证据的组织空间按个人所有处理）→ 主人本人或组织本身直接是"管理"→ 否则优先用调用者转发来的 `Authorization: Bearer`，没有转发凭据时按签名 `sub` 获取同一用户保存的 OAuth 凭据，再调 NyxID `GET /api/v1/orgs/{id}/authorization`（转发的是 JWT 时先验签并要求 sub 一致；返回编号必须等于组织编号；401/403/404 判为不是成员，其他判为查不到；15 秒截止；不跨请求缓存；证据最多用 60 秒）→ admin 是"管理"，member/viewer 是"只读"。看不到 404，能看不能写 403，写操作查不到角色 503 `org_membership_unavailable`。
 
-用户连接入口为 `/connect`，OAuth 管理端点在 `/api/auth/nyxid/*`，独立于业务身份中间件；浏览器 Cookie 不能调用 `/api/v1/*`。在线工作台另有经同意的固定 CMA 操作集合，见 [工作台规划](../docs/WEB_CONSOLE_PLAN.md)。凭据加密存储、自动刷新和断开流程见 [NyxID OAuth 接入](../docs/NYXID_OAUTH.md)。
+用户连接入口为 `/connect`，OAuth 管理端点在 `/api/auth/nyxid/*`，独立于业务身份中间件；浏览器 Cookie 不能调用 `/api/v1/*`。凭据加密存储、自动刷新和断开流程见 [NyxID OAuth 接入](../docs/NYXID_OAUTH.md)。
 
 ### 从 CMA 复用了什么
 
@@ -463,7 +460,7 @@ universeRevisions { _id: "<组合编号>:<seq>", universeId, owner, seq, at, act
 - 迁移锁（`migrations` 集合）。
 - 草稿、草稿区块、预览、上传会话的过期清理：这些集合的 `expiresAt` 是 RFC 3339 字符串，由接口服务的定期清理（`runner/cleanup.rs`）删除，不用 TTL 索引；只有 `replay` 用 BSON 日期和 TTL 索引。
 
-网页空间目录与只读场景使用 `/api/auth/nyxid/spaces` 和固定的 `/api/auth/nyxid/view/spaces/{id}` 子路径（均为 POST，使用浏览器会话、Origin 和 CSRF 校验），经过 OAuth userinfo、主人或组织权限和授权版本检查。见 [空间聊天工作台](../docs/WEB_CONSOLE_PLAN.md)。
+网页空间目录与只读场景使用 `/api/auth/nyxid/spaces` 和固定的 `/api/auth/nyxid/view/spaces/{id}` 子路径（均为 POST，使用浏览器会话、Origin 和 CSRF 校验），经过 OAuth userinfo、主人或组织权限和授权版本检查。见 [空间聊天工作台](../docs/NYXAGENT.md)。
 
 `POST /api/auth/nyxid/spaces/{id}/share` 使用同样的浏览器校验并要求空间管理权限。公开空间返回 `{"token":null}`，未列出的空间返回可重复复制的 `{"token":"…"}`。签发时登记令牌哈希，并将工作台需要再次显示的令牌用 `NYXID_OAUTH_ENCRYPTION_KEY` 加密存储。管理接口轮换令牌时同时撤销该链接，之后从工作台取链接会生成新令牌。
 

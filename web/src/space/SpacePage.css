@@ -421,7 +421,7 @@
   }
 }
 
-.space__worker-link {
+.space__workspace-link {
   color: var(--dsw-alias-state-business-primary);
   font-size: 12px;
   white-space: nowrap;

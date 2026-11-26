@@ -1,16 +1,9 @@
-//! 用户 OAuth 托管组织查询；经浏览器明确同意后，可调用固定 CMA 操作。
-//! metaverse 业务接口仍只接受 NyxID 签名身份，worker 凭据由 CMA 管理。
-mod agent_key;
+//! 工作台使用 NyxID OAuth 核验账号、空间和组织访问权限。
 pub(crate) mod catalog;
 mod config;
-mod creation;
 mod crypto;
-mod nyxagent;
-mod owner;
 mod provider;
 mod routes;
-mod tools;
-mod worker;
 
 use std::{
     sync::Arc,
@@ -66,7 +59,6 @@ impl Drop for Tokens {
 pub(crate) struct HeldCredential {
     pub credential: ForwardedCredential,
     record: OAuthGrantRecord,
-    cma_granted: bool,
 }
 
 pub struct OAuthService {
@@ -76,7 +68,6 @@ pub struct OAuthService {
     repo: Repo,
     vault: Vault,
     http: reqwest::Client,
-    nyxagent_http: reqwest::Client,
     browser_subject_checks: ReadChecks<(String, String), Result<(), OAuthError>>,
 }
 
@@ -112,12 +103,6 @@ impl OAuthService {
             vault,
             http,
             browser_subject_checks: ReadChecks::new(Result::is_ok),
-            nyxagent_http: reqwest::Client::builder()
-                .redirect(reqwest::redirect::Policy::none())
-                .connect_timeout(Duration::from_secs(5))
-                .timeout(Duration::from_secs(1900))
-                .build()
-                .map_err(|_| "NyxAgent HTTP 客户端配置不可用")?,
         }))
     }
 
@@ -177,10 +162,6 @@ impl OAuthService {
             if tokens.expires_at > seconds()? + 30 && tokens.subject_verified {
                 return Ok(Some(HeldCredential {
                     credential: ForwardedCredential::retained(tokens.access_token.clone()),
-                    cma_granted: tokens
-                        .scope
-                        .as_deref()
-                        .is_some_and(|s| s.split_whitespace().any(|s| s == "proxy")),
                     record,
                 }));
             }
@@ -254,13 +235,6 @@ impl OAuthService {
 
     pub(crate) async fn current(&self, held: &HeldCredential) -> Result<bool, OAuthError> {
         Ok(self.repo.oauth_grant_current(&STORE, &held.record).await?)
-    }
-
-    async fn browser_authority_current(&self, held: &HeldCredential) -> Result<bool, OAuthError> {
-        Ok(self
-            .repo
-            .oauth_grant_authority_current(&STORE, &held.record)
-            .await?)
     }
 }
 

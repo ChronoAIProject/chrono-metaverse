@@ -24,12 +24,9 @@ pub(crate) struct OAuthGrantRecord {
 }
 
 pub(crate) struct OAuthSessionRecord {
-    pub id: String,
     pub grant_id: String,
     pub subject: String,
     pub incarnation: String,
-    pub worker_enabled: bool,
-    pub worker_consent_version: Option<String>,
 }
 
 fn grant(doc: Document) -> Result<OAuthGrantRecord, RepoError> {
@@ -159,15 +156,6 @@ impl Repo {
         Ok(self.collection(GRANTS).find_one(doc!{"_id":&record.id,"version":&record.version,"incarnation":&record.incarnation,"active":true}).await?.is_some())
     }
 
-    /// A browser login survives token rotation; disconnect and reauthorization fence its incarnation.
-    pub(crate) async fn oauth_grant_authority_current(
-        &self,
-        _: &StoreAuthority,
-        record: &OAuthGrantRecord,
-    ) -> Result<bool, RepoError> {
-        Ok(self.collection(GRANTS).find_one(doc!{"_id":&record.id,"subject":&record.subject,"incarnation":&record.incarnation,"active":true}).await?.is_some())
-    }
-
     pub(crate) async fn oauth_grant_disable(
         &self,
         _: &StoreAuthority,
@@ -205,37 +193,12 @@ impl Repo {
                         .map_err(|_| RepoError::Corrupt("OAuth session".into()))
                 };
                 Ok(OAuthSessionRecord {
-                    id: field("_id")?,
                     grant_id: field("grantId")?,
                     subject: field("subject")?,
                     incarnation: field("incarnation")?,
-                    worker_consent_version: doc
-                        .get_str("workerConsentVersion")
-                        .ok()
-                        .map(str::to_owned),
-                    worker_enabled: match doc.get("workerEnabled") {
-                        None => false,
-                        Some(mongodb::bson::Bson::Boolean(value)) => *value,
-                        _ => return Err(RepoError::Corrupt("OAuth worker consent".into())),
-                    },
                 })
             })
             .transpose()
-    }
-
-    /// 同意仅绑定当前浏览器和这次授权；重新登录的默认值仍为 false。
-    pub(crate) async fn oauth_worker_consent(
-        &self,
-        _: &StoreAuthority,
-        session: &OAuthSessionRecord,
-        enabled: bool,
-        now: i64,
-    ) -> Result<bool, RepoError> {
-        Ok(self.collection(SESSIONS).update_one(
-            doc!{"_id":&session.id,"grantId":&session.grant_id,"incarnation":&session.incarnation,
-                "expiresAt":{"$gt":DateTime::from_millis(now*1000)}},
-            doc!{"$set":{"workerEnabled":enabled,"workerConsentVersion":uuid::Uuid::new_v4().to_string()}},
-        ).await?.matched_count == 1)
     }
 
     pub(crate) async fn oauth_disconnect(
