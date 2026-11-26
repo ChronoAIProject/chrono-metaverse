@@ -2368,7 +2368,7 @@
     "kind": "object",
     "label": "UOB PLAZA",
     "regionId": "marina-bay-exterior",
-    "assetHash": "04b275a4346bae50cb747f01e30d552d8fd494a2c62411a56134adfa533343ff",
+    "assetHash": "b86e14783c4753182a3f98ee52cfe5af1e04fb49e0a3786b48bbb020bf4b0e9e",
     "bounds": {
       "min": [
         527.969819,
@@ -7865,7 +7865,7 @@
     "kind": "object",
     "label": "HITACHI TOWER",
     "regionId": "marina-bay-exterior",
-    "assetHash": "e570fe9bde184dd89a9cca55f00d068cbdf5f4ed548ed692ac81be8bd8b81ee0",
+    "assetHash": "fc8d14b09381f74ee2ac03897c138a8a4235caa21772380e4c8fa24ec5e5d2dc",
     "bounds": {
       "min": [
         341.179069,
@@ -8161,7 +8161,7 @@
     "kind": "object",
     "label": "ONE GEORGE STREET",
     "regionId": "marina-bay-exterior",
-    "assetHash": "ad6463992e7dfbcc5344cdf020e37fcbbdca0b6970173b01a3b22efde43a55bc",
+    "assetHash": "7d5986275fb7493922b562096f5fb2778aa573749ddff043e672c979d6eb013a",
     "material": {
       "shading": "albedo"
     },
@@ -8295,7 +8295,7 @@
     "kind": "object",
     "label": "PICKERING OPERATIONS COMPLEX",
     "regionId": "marina-bay-exterior",
-    "assetHash": "a1b0a0710deec7db7afdaa6b74640be1bfaa713c5cbec0f3367ad9207ed2c49f",
+    "assetHash": "de272a8a79debbacd3678d31b161e35fa639419d3fc5ba587f9e14753ee82d18",
     "material": {
       "shading": "albedo"
     },
