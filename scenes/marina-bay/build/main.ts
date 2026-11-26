@@ -176,13 +176,27 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
   };
 }
 
-/** Use the paved ground mesh's survey for the geographic grass coverage as well. */
-function promenadeGround(environment: EntityBody | null): EntityBody | null {
+/** Use the surveyed paving and cut playing fields to bound the map's taller wild grass. */
+function surveyedGrassCoverage(environment: EntityBody | null): EntityBody | null {
   const settings = environment?.props?.environment as { map?: { surfaceDetail?: string; grassExclusions?: unknown[] } } | undefined;
   if (!environment || settings?.map?.surfaceDetail !== 'urban') return environment;
   const survey = JSON.parse(readFileSync(new URL('../references/marina-promenade-ground.json', import.meta.url), 'utf8'));
+  const padang = JSON.parse(readFileSync(new URL('../references/padang-playing-fields.json', import.meta.url), 'utf8')) as {
+    zoom: number;
+    tilePixelOrigin: [number, number];
+    fields: { corners: [number, number][] }[];
+  };
+  const worldPixels = 256 * 2 ** padang.zoom;
+  const playingFields = padang.fields.map(({ corners }) => [corners.map(([x, y]) => {
+    const longitude = (padang.tilePixelOrigin[0] + x) * 360 / worldPixels - 180;
+    const mercatorY = (padang.tilePixelOrigin[1] + y) / worldPixels;
+    const latitude = Math.atan(Math.sinh(Math.PI * (1 - 2 * mercatorY))) * 180 / Math.PI;
+    return [longitude, latitude];
+  })]);
   const existing = settings.map.grassExclusions ?? [];
-  const additional = survey.concrete.filter((polygon: unknown) => !existing.some(value => isDeepStrictEqual(value, polygon)));
+  const additional = [...survey.concrete, ...playingFields].filter(
+    polygon => !existing.some(value => isDeepStrictEqual(value, polygon)),
+  );
   if (!additional.length) return environment;
   return { ...environment, props: { ...environment.props, environment: {
     ...settings, map: { ...settings.map, grassExclusions: [...existing, ...additional] },
@@ -199,7 +213,7 @@ export default function build(base: BuildBase, kit: Kit) {
     ? JSON.parse(readFileSync(environmentFile, 'utf8'))
     : null;
   // 已保存的物件是权威状态；重新构建不能恢复已被用户替换的有限地板或天空壳。
-  const environment = promenadeGround(bayDaylight(
+  const environment = surveyedGrassCoverage(bayDaylight(
     base.entities.find((entity) => entity.entityId === configured?.entityId), configured,
   ));
   const ground: EntityBody[] = environment

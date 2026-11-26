@@ -28,13 +28,19 @@ def turf_grain(scan):
 
 
 def turf_wear(xz):
-    # Two differently oriented fields move across the lawn in metres, independent of UV.
-    rot = np.array([[.8, -.6], [.6, .8]])
-    coarse = map_coordinates(np.random.default_rng(5201).uniform(-1, 1, (79, 83)),
-                             (xz / 17).T, order=3, mode="grid-wrap")
-    fine = map_coordinates(np.random.default_rng(5203).uniform(-1, 1, (61, 89)),
-                           (xz @ rot / 6.8).T, order=3, mode="grid-wrap")
-    return 1 + (.68 * coarse + .32 * fine)[:, None] * [.30, .16, -.06]
+    # Grass dries in connected areas across the blade scan. Bend the patch edges
+    # on a larger scale so neighbouring lawns don't read as grids from above.
+    rng = np.random.default_rng(5201)
+    broad = map_coordinates(rng.uniform(-1, 1, (79, 83)), (xz / 29).T,
+                            order=3, mode="grid-wrap")
+    angle = np.array([[.8, -.6], [.6, .8]])
+    warped = xz @ angle + broad[:, None] * [7.5, -4.0]
+    patch = map_coordinates(rng.uniform(-1, 1, (67, 73)), (warped / [8.0, 14.0]).T,
+                            order=3, mode="grid-wrap")
+    # Dry blades are lighter and warmer, with fresh growth at the cool end.
+    # These are linear-light multipliers on each site's sampled ground colour.
+    dryness = np.clip(.60 * patch + .40 * broad, -1, 1)
+    return np.exp(dryness[:, None] * [.86, .53, -.12])
 
 
 def scanned_turf(name, mean_rgb, *, minimum_roughness=200):
