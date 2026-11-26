@@ -1,0 +1,31 @@
+{
+  "entityId": "bay.promontory-lawns",
+  "regionId": "marina-bay-exterior",
+  "kind": "structure",
+  "layer": "ext",
+  "label": "滨海大道 · 临水草坪",
+  "assetHash": "b2115982fb79f9233e0421858a6790ea81ce7d7729ae428318b32036b19a728f",
+  "bounds": {
+    "min": [
+      -10.2,
+      -60.19956632769328,
+      67.933
+    ],
+    "max": [
+      210.381,
+      -60.1955116689206,
+      202.962
+    ]
+  },
+  "material": {
+    "shading": "albedo"
+  },
+  "props": {
+    "background": true,
+    "surfaceRole": "landscape",
+    "groundScanMaterials": [
+      "Promontory lawn"
+    ],
+    "attribution": "© OpenStreetMap contributors · SLA OneMap · Meta/WRI canopy height · Poly Haven Grass Ground (CC0)"
+  }
+}

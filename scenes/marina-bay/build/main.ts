@@ -117,6 +117,36 @@ function withSkylineFacades(surroundings: EntityBody): EntityBody[] {
   return [surroundings, ...models];
 }
 
+/** Replace the four registered vector lawns and their shared survey mesh together. */
+function withPromontoryLawns(surroundings: EntityBody, environment: EntityBody | null): EntityBody[] {
+  const content = surroundings.props?.externalContent;
+  const map = (environment?.props?.environment as { map?: {
+    origin?: unknown; longitude?: number; latitude?: number; heading?: number;
+    sources?: { urlTemplate?: string }[]; surfaceDetail?: string;
+  } } | undefined)?.map;
+  if (!map || map.surfaceDetail !== 'urban' || !content || typeof content !== 'object' ||
+      !('groundLayers' in content) || !Array.isArray(content.groundLayers)) return [surroundings];
+  const survey = JSON.parse(readFileSync(new URL('../references/promontory-turf.json', import.meta.url), 'utf8'));
+  const ref = survey.reference;
+  if (map.sources?.[0]?.urlTemplate !== survey.imagery || !isDeepStrictEqual(map.origin, ref.origin) ||
+      map.heading !== ref.heading || Math.abs((map.longitude ?? Infinity) - ref.longitude) > 1e-9 ||
+      Math.abs((map.latitude ?? Infinity) - ref.latitude) > 1e-9 ||
+      !('sources' in content) || !Array.isArray(content.sources) || content.sources.length !== 1 ||
+      content.sources[0]?.url !== survey.tileSource || !('reference' in content) ||
+      !isDeepStrictEqual(content.reference, ref)) return [surroundings];
+  const eligible = content.groundLayers.find(layer => layer?.material === 'turf' &&
+    layer.layer === survey.layer && layer.property === survey.property &&
+    isDeepStrictEqual(layer.values, survey.values) &&
+    (layer.excludeFeatureIds === undefined || Array.isArray(layer.excludeFeatureIds)));
+  if (!eligible) return [surroundings];
+  const ids = new Set<number>(eligible.excludeFeatureIds);
+  for (const row of survey.features) ids.add(row.featureId);
+  const groundLayers = content.groundLayers.map(layer =>
+    layer === eligible ? { ...layer, excludeFeatureIds: [...ids] } : layer);
+  const mesh: EntityBody = JSON.parse(readFileSync(new URL('./promontory-turf.json', import.meta.url), 'utf8'));
+  return [{ ...surroundings, props: { ...surroundings.props, externalContent: { ...content, groundLayers } } }, mesh];
+}
+
 /** Only migrate skies previously distributed with the scene. */
 function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | null): EntityBody | null {
   if (!saved || !configured) return saved ?? configured;
@@ -355,7 +385,12 @@ export default function build(base: BuildBase, kit: Kit) {
   }
   // 线上按视野流式加载的周边楼群独立于离线模型包，由空间保存其图层和保护范围。
   const surroundings = base.entities.find((entity) => entity.entityId === 'bay.city-surroundings');
-  if (surroundings) entities.push(...(config.quay ? withSkylineFacades(withBoatQuay(surroundings)) : [surroundings]));
+  if (surroundings && config.quay) {
+    const [registered, ...lawns] = withPromontoryLawns(withBoatQuay(surroundings), environment);
+    entities.push(...withSkylineFacades(registered), ...lawns);
+  } else if (surroundings) {
+    entities.push(surroundings);
+  }
   // Sky visibility belongs to each facade at its surveyed location and to the sampled mesh revision.
   const facadeFinishes = ['district-skylight/survey', 'financial-facade-exposure'].flatMap((name) => {
     const survey: { buildings: { entityId: string; source: string; output: string }[] } = JSON.parse(
