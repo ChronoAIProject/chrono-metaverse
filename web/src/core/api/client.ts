@@ -284,6 +284,7 @@ export function trimTrailingSlashes(value: string): string {
 
 const TRANSIENT_READ_STATUSES = new Set([429, 502, 503, 504]);
 const MAX_READ_RETRY_DELAY_MS = 3_000;
+const PREVIEW_DOWNLOAD_CONCURRENCY = 6;
 
 function readRetryDelay(response: Response): number {
   const retryAfter = response.headers.get('Retry-After');
@@ -315,6 +316,8 @@ export function createPublicClient(options: PublicClientOptions = {}): PublicCli
   const base = trimTrailingSlashes(options.baseUrl ?? '');
   const universe = options.universe ?? undefined;
   const fetcher = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+  let activeDownloads = 0;
+  const waitingDownloads: (() => void)[] = [];
   const previewGrants = new Map<string, { scope: string; expires: number }>();
   const headers = (extra: Record<string, string> = {}): Record<string, string> => ({
     ...(options.share ? { Authorization: `Share ${options.share}` } : {}),
@@ -368,8 +371,19 @@ export function createPublicClient(options: PublicClientOptions = {}): PublicCli
     onProgress?: ProgressCallback,
   ): Promise<Blob> {
     const checked = checkedHash(hash);
-    const load = async () =>
-      readBody(await request(`/previews/assets/${checked}`, undefined, token), onProgress);
+    // Queue cache misses through body completion. Large previews share the same asset service.
+    const load = async () => {
+      if (activeDownloads < PREVIEW_DOWNLOAD_CONCURRENCY) activeDownloads++;
+      else await new Promise<void>((resolve) => waitingDownloads.push(resolve));
+      try {
+        const response = await request(`/previews/assets/${checked}`, undefined, token);
+        return await readBody(response, onProgress);
+      } finally {
+        const next = waitingDownloads.shift();
+        if (next) next();
+        else activeDownloads--;
+      }
+    };
     const grant = previewGrants.get(token);
     if (!grant || grant.expires <= Date.now()) return load();
     const blob = await browserAssetCache.get(grant.scope, checked, load);
