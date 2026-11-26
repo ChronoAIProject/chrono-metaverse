@@ -32,8 +32,8 @@
     }
   },
   "textures": [
-    "19626a9d6bc69b10182f2c945e8e6c013a52c2282fd742e810ce101fbfec0927",
-    "8c4fe2a8c4cc556299ecb0580fd42264b9e3e21885273f548ed88f5d7310ebc2"
+    "f38d9963be482d28a9fb240f0d334475e6ec039a09973f4cbeb5ffccd96c16da",
+    "f4fc4d1101e4e7373408140d8818b0fc06baceebd6097f9e727113c980472354"
   ],
   "props": {
     "background": true,
@@ -41,13 +41,13 @@
       "version": 1,
       "multisampleCutouts": true,
       "sky": {
-        "texture": "19626a9d6bc69b10182f2c945e8e6c013a52c2282fd742e810ce101fbfec0927",
+        "texture": "f38d9963be482d28a9fb240f0d334475e6ec039a09973f4cbeb5ffccd96c16da",
         "yaw": -123.4944,
         "airHalfDistance": 28800,
         "daylight": {
           "azimuth": 36.051,
           "elevation": 40.1473,
-          "directFraction": 0.68,
+          "directFraction": 0.62,
           "sunColor": [
             1.06352,
             0.99158,
@@ -89,7 +89,7 @@
           ]
         },
         "radiance": {
-          "texture": "8c4fe2a8c4cc556299ecb0580fd42264b9e3e21885273f548ed88f5d7310ebc2",
+          "texture": "f4fc4d1101e4e7373408140d8818b0fc06baceebd6097f9e727113c980472354",
           "scale": 32
         }
       },
@@ -137,6 +137,6 @@
       "title": "Qwantani Mid Morning (Pure Sky)",
       "page": "https://polyhaven.com/a/qwantani_mid_morning_puresky"
     },
-    "日间照明": "太阳仰角 40.15°，真北顺时针 88°，水平直射光占 68%。天空、水面反射与漫射光照使用同一组晨间辐射数据。"
+    "日间照明": "太阳仰角 40.15°，真北顺时针 88°，水平直射光占 62%。天空、水面反射与漫射光照使用同一组晨间辐射数据。"
   }
 }

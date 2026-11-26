@@ -13,9 +13,9 @@
     "rmsGravitySlope": 0.04,
     "rmsRippleSlope": 0.1725,
     "reflectance": [
-      0.016729,
-      0.038256,
-      0.02987
+      0.012014,
+      0.031722,
+      0.019442
     ]
   },
   "rippleWind": {
@@ -195,5 +195,11 @@
       }
     ]
   ],
-  "uncertainty": "Intercepts of separate SWIR1/SWIR2 fits, averaged across the two estimates. Seasonal water and aerosol variability remain in these estimates."
+  "uncertainty": "Intercepts of separate SWIR1/SWIR2 fits, averaged across the two estimates. Seasonal water and aerosol variability remain in these estimates.",
+  "daylightWater": "For the morning display, use the 2026-08-22 observation. Subtract each fitted SWIR slope times its corresponding SWIR band from the same-date RGB medians, then average the two corrected estimates. This is a representative darker water state within the eight observed dates.",
+  "multiDateReflectance": [
+    0.016729,
+    0.038256,
+    0.02987
+  ]
 }
