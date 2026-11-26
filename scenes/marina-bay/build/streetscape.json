@@ -2566,11 +2566,11 @@
   },
   {
     "entityId": "bay.beach-road-terrace-roofs",
-    "label": "美芝路 · 店屋陶瓦坡顶",
+    "label": "美芝路 · 店屋上层与陶瓦坡顶",
     "kind": "structure",
     "layer": "ext",
     "regionId": "marina-bay-exterior",
-    "assetHash": "aaaf6839ec63ab28967ca169cb5a06ad34534f1621c87ce6ac17c2420a1409ce",
+    "assetHash": "155b834fdc3b70c2a1a4e70f3620cac48bcd1bf45f5878c6c9ac618d5cd92791",
     "bounds": {
       "min": [
         214.50640596909847,
@@ -2579,7 +2579,7 @@
       ],
       "max": [
         442.9856009526912,
-        -51.83077123136569,
+        -43.51658777252936,
         2609.9856034853146
       ]
     },
@@ -2588,8 +2588,8 @@
     },
     "props": {
       "background": true,
-      "版权": "Footprints © OpenStreetMap contributors (ODbL 1.0), via OpenFreeMap. Roof survey © Singapore Land Authority / OneMap. Clay and plaster scans by Amal Kumar, Poly Haven (CC0).",
-      "依据": "按普通地图建筑轮廓与 OneMap 航片可辨认的陶瓦区间重建，坡高、瓦型和遮挡处的屋脊为估计。"
+      "版权": "Footprints © OpenStreetMap contributors (ODbL 1.0), via OpenFreeMap. Roof survey and 3D measurements © Singapore Land Authority / OneMap. Clay and plaster scans by Amal Kumar, Poly Haven (CC0). Adapted photo textures: Shophouses on Boat Quay, Singapore (2023)-L1003691 by Frank Schulenburg and Boat Quay in Singapore (Cropped) by Chensiyuan (CC BY-SA 4.0), SG-riverside-boat-quay by Balou46 (CC BY-SA 3.0). Adapted textures and model: https://creativecommons.org/licenses/by-sa/4.0/.",
+      "依据": "按建筑轮廓和 OneMap 航片重建陶瓦屋面。27 栋采用 OneMap 测绘模型估算檐高和脊高，其余采用估计坡高。窗面借用驳船码头同类店屋实拍，分户配色和楼层划分为近似。"
     }
   },
   {
