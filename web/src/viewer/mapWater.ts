@@ -258,6 +258,15 @@ export function mapWaterMaterial(
         #endif
         vec3 normal = normalize(vec3(normalXZ.x, 1.0, normalXZ.y));
         vec3 reflected = reflect(-eye, normal);
+        // At grazing angles the slope on the flat map mesh can aim below the water.
+        // Fold that ray above the horizon and use its half-vector for Fresnel and filtering.
+        if (eye.y > 0.0 && reflected.y < 0.0) {
+          // (eye + foldedRay) / 2, avoiding cancellation between nearly opposite rays.
+          vec3 halfDir = dot(eye, normal) * normal;
+          halfDir.y -= reflected.y;
+          normal = normalize(halfDir);
+          reflected.y = -reflected.y;
+        }
         vec3 sky = horizon;
         if (hasSky) {
           float c = cos(skyYaw), s = sin(skyYaw);
