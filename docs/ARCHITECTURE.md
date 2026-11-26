@@ -1,6 +1,6 @@
 # chrono-metaverse 整体设计（第四版）
 
-当前网页聊天建设流程、功能划分和场景隔离边界见 [无需修改仓库的空间建设](SPACE_AUTHORING.md)。下文保留早期设计背景；网页工作台现已支持模型上传与草稿确认。
+当前网页聊天建设流程、功能划分和场景隔离边界见 [无需修改仓库的空间建设](SPACE_AUTHORING.md)。下文保留早期设计背景；网页聊天、选区操作和草稿确认见 [工作台 NyxBot](NYXAGENT.md)。
 
 > 状态：方案稿。标"待定"的地方需要确认后再实现。
 > 平台相关结论来自对 NyxID、chrono-cd、chrono-bucket 源码的核查（第 15 节）；扫描处理的可行性已用公司前厅扫描实测（第 16 节、`spikes/voxelize/`）。
@@ -645,7 +645,7 @@ jobs { _id, spaceId, owner, kind, params, status: queued|running|done|failed, no
   - 有转发令牌时优先使用，JWT 先验签并要求 sub 等于身份令牌的 sub；没有时按签名 sub 获取同一用户保存的 OAuth 授权。未连接或授权不可用判为"查不到"，显式凭据失败不能回退。
 - **查不到怎么办**：写操作返回 503 `org_membership_unavailable`；读操作按"不是成员"处理，公开空间和凭分享令牌的访问不受影响。
 - **调用者凭据从哪来**：
-  - 与 CMA 一样，用户通过 NyxID OAuth 授权，服务端加密保存 access/refresh token；`/connect` 提供连接与断开入口。只请求 `openid offline_access`，只用于主体核对、刷新及组织角色查询。
+  - 与 CMA 一样，用户通过 NyxID OAuth 授权，服务端加密保存 access/refresh token；`/connect` 提供连接与断开入口。只请求 `openid roles offline_access`，只用于主体核对、刷新及组织角色查询。
   - Agent 继续用现有 Key，经 NyxID 检查服务权限和操作范围后转发。metaverse 仍须验签、防重放和资源 ACL；浏览器连接 Cookie 不授予业务 API 身份。
   - 保留 `forward_access_token` 的原有兼容路径；显式转发令牌只在内存使用，不写日志或数据库。没有转发凭据时使用同一 `sub` 的保存授权，不跨用户借用。
   - 刷新使用数据库租约，断开使用版本条件更新；角色查询结束再核对授权仍有效。部署、生命周期及性能见 [NyxID OAuth 接入](NYXID_OAUTH.md)。

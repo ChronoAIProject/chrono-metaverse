@@ -4,11 +4,7 @@ use axum::{extract::Form, routing::post};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
-mod agent_key_tests;
 mod catalog_tests;
-mod connection_tests;
-mod nyxagent_tests;
-mod worker_tests;
 
 const ROOT: &str = "/api/auth/nyxid";
 const ORIGIN: &str = "http://localhost:8080";
@@ -40,25 +36,6 @@ struct ProviderState {
     scopes: HashMap<String, String>,
     serial: u64,
     refreshes: usize,
-    worker_calls: Vec<(String, String, Value)>,
-    browser_keys: HashMap<String, Value>,
-    key_delivery: Option<Value>,
-    key_verification_uri: Option<String>,
-    key_revocations: Vec<String>,
-    worker_bearers: Vec<String>,
-    message_refusal: Option<StatusCode>,
-    nyxagent_error_code: Option<String>,
-    nyxagent_stream_error: bool,
-    nyxagent_stream_gate: Option<Arc<tokio::sync::Notify>>,
-    nyxagent_stream_entered: Option<Arc<tokio::sync::Notify>>,
-    nyxagent_stream_finished: Option<Arc<tokio::sync::Notify>>,
-    cma_auth_reply: Option<(StatusCode, Value)>,
-    cma_auth_calls: usize,
-    cma_auth_gate: Option<Arc<tokio::sync::Notify>>,
-    cma_auth_entered: Option<Arc<tokio::sync::Notify>>,
-    worker_setup_required: bool,
-    worker_gate: Option<Arc<tokio::sync::Notify>>,
-    worker_entered: Option<Arc<tokio::sync::Notify>>,
     role: Option<String>,
     role_failure: Option<StatusCode>,
     userinfo_down: bool,
@@ -110,7 +87,7 @@ impl MockProvider {
         let token = self.clone();
         let user = self.clone();
         let orgs = self.clone();
-        let app = app.route("/oauth/token", post(move |Form(fields): Form<HashMap<String,String>>| {
+        app.route("/oauth/token", post(move |Form(fields): Form<HashMap<String,String>>| {
             let provider = token.clone();
             async move {
                     if fields["grant_type"] == "refresh_token" {
@@ -146,7 +123,6 @@ impl MockProvider {
                 } else { format!("oauth-access-{}", state.serial) };
                 let refresh = format!("oauth-refresh-{}", state.serial);
                 state.access.insert(access.clone(), subject.clone());
-                agent_key_tests::register_state(&mut state, &subject);
                 state.scopes.insert(refresh.clone(), scope.clone());
                 state.refresh.insert(refresh.clone(), subject);
                 Json(json!({"access_token":access,"refresh_token":refresh,"token_type":"Bearer","expires_in":ttl,"scope":scope})).into_response()
@@ -174,10 +150,7 @@ impl MockProvider {
                     None => StatusCode::UNAUTHORIZED.into_response(),
                 }
             }
-        }));
-        app.merge(worker_tests::routes(self.clone(), Router::new()))
-            .merge(agent_key_tests::routes(self.clone(), Router::new()))
-            .merge(nyxagent_tests::routes(self.clone(), Router::new()))
+        }))
     }
 }
 
@@ -221,15 +194,8 @@ async fn begin_at(app: &TestApp, subject: &str, ttl: i64, workspace: bool) -> (S
         .query_pairs()
         .map(|(k, v)| (k.into_owned(), v.into_owned()))
         .collect();
-    assert!(matches!(
-        params["scope"].as_str(),
-        "openid roles offline_access" | "openid roles offline_access proxy"
-    ));
-    if params["scope"].split_whitespace().any(|s| s == "proxy") {
-        assert!(params["resource"].ends_with("/api/v1/proxy/s/cma"));
-    } else {
-        assert!(!params.contains_key("resource"));
-    }
+    assert_eq!(params["scope"], "openid roles offline_access");
+    assert!(!params.contains_key("resource"));
     assert_eq!(params["code_challenge_method"], "S256");
     let code = uuid::Uuid::new_v4().to_string();
     app.nyx.oauth.0.lock().unwrap().codes.insert(

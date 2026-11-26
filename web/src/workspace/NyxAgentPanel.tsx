@@ -2,7 +2,7 @@ import { useContext, useLayoutEffect, useRef, useState } from 'react';
 import { z, type ToolResult } from '@chronoai/nyx-assistant-sdk';
 import { NyxAssistantElement } from '@chronoai/nyx-assistant-sdk/widget';
 import { resultLinks, type Session, type SpaceSummary } from './client';
-import { clearBrowserKey, readBrowserKey } from '../auth/browserKey';
+import { legacyNyxGrant } from '../auth/browserKey';
 import { readNyxagentNote } from './nyxagent';
 import { validViewerActions, type ViewerCommand, type ViewerContext } from './viewerActions';
 import { registerViewerTools, ViewerToolsContext } from './viewerTools';
@@ -20,9 +20,8 @@ if (!customElements.get('nyx-assistant'))
 
 type PanelProps = {
   session: Session;
-  space?: SpaceSummary;
+  space: SpaceSummary;
   onBusy: (busy: boolean) => void;
-  onRestore: () => void;
   viewerContext: ViewerContext;
   onViewerCommand: (command: ViewerCommand) => boolean;
   viewerFeedback: { error?: string; notice?: string };
@@ -38,7 +37,7 @@ export function NyxAgentPanel(props: PanelProps) {
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [legacy] = useState(() =>
-    space && session.subject
+    session.subject
       ? readNyxagentNote(
           session.subject,
           space.id,
@@ -50,12 +49,12 @@ export function NyxAgentPanel(props: PanelProps) {
     latest.current = props;
   });
   const subject = session.subject;
-  const spaceId = space?.id;
+  const spaceId = space.id;
   useLayoutEffect(() => {
     if (!subject || !spaceId || !mount.current) return;
     const widget = document.createElement('nyx-assistant') as NyxAssistantElement;
     widgetRef.current = widget;
-    widget.setAttribute('layout', 'embedded');
+    widget.setAttribute('layout', 'anchored');
     Object.assign(widget.dataset, {
       nyxid: relay,
       verificationOrigin: 'https://nyxid.ai',
@@ -65,23 +64,13 @@ export function NyxAgentPanel(props: PanelProps) {
       services: 'llm-nyx,chrono-llm-public,chrono-metaverse',
       catalogServices: 'llm-nyx,chrono-llm-public',
     });
-    widget.previousGrant = () => {
-      const saved = readBrowserKey(subject, subject, 'nyxagent');
-      if (!saved) return;
-      return {
-        credential: saved.credential,
-        forget() {
-          if (readBrowserKey(subject, subject, 'nyxagent')?.credential === saved.credential)
-            clearBrowserKey(subject, subject, 'nyxagent');
-        },
-      };
-    };
+    widget.previousGrant = () => legacyNyxGrant(subject);
     widget.instructions = instructions;
     widget.context = () => {
       const { space, viewerContext } = latest.current;
       return {
         spaceId,
-        orgId: space?.owner.kind === 'org' ? space.owner.id : null,
+        orgId: space.owner.kind === 'org' ? space.owner.id : null,
         spaces: viewerContext.spaces,
         preview: viewerContext.preview ?? null,
       };
@@ -161,19 +150,9 @@ export function NyxAgentPanel(props: PanelProps) {
         setConfirm(false);
       }
     });
-    widget.addEventListener('nyx-recovery', () => latest.current.onRestore());
     widget.addEventListener('nyx-answer', (event) => {
       const content = (event as CustomEvent<string>).detail;
-      const links = resultLinks({
-        turns: [
-          {
-            turn_sequence: 0,
-            owner_message: '',
-            outcome: null,
-            messages: [{ sequence: 0, role: 'assistant', content }],
-          },
-        ],
-      });
+      const links = resultLinks(content);
       const link = links.find((url) => url.startsWith('/preview#')) ?? '';
       setDraft(link);
       setConfirm(false);
@@ -187,63 +166,65 @@ export function NyxAgentPanel(props: PanelProps) {
       releaseTools();
       widget.remove();
       widgetRef.current = null;
+      latest.current.onBusy(false);
     };
   }, [subject, spaceId, viewer]);
 
   return (
-    <>
-      {viewerFeedback.error && (
-        <p role="alert" className="workspace__notice">
-          {viewerFeedback.error}
-        </p>
-      )}
-      {viewerFeedback.notice && (
-        <p role="status" className="workspace__notice">
-          {viewerFeedback.notice}
-        </p>
-      )}
-      {!space && <p className="workspace__notice">先选择已有空间。</p>}
-      {legacy && (legacy.messages.length > 0 || legacy.pending || legacy.recoveryRequired) && (
-        <details className="workspace__legacy">
-          <summary>查看迁移前的对话</summary>
-          {legacy.messages.map((m, i) => (
-            <p key={i}>
-              {m.role === 'user' ? '你' : 'NyxBot'} · {m.text}
-            </p>
-          ))}
-          {(legacy.pending || legacy.recoveryRequired) && (
-            <p>
-              旧请求有待核对，请查看空间的草稿、预览或已发布版本。原请求编号{' '}
-              {legacy.pending?.responseId ?? legacy.pending?.body.idempotencyKey}
-            </p>
-          )}
-        </details>
-      )}
+    <div className="workspace__assistant">
       <div ref={mount} className="workspace__nyx" />
-      {draft && (
-        <section aria-label="草稿预览操作" className="workspace__preview-action">
-          <button onClick={() => props.onPreview(draft)}>查看草稿预览</button>
-          {confirm ? (
-            <>
-              <p>发布后，其他人将看到这份预览中的修改。</p>
-              <button
-                disabled={busy}
-                onClick={() => {
-                  setConfirm(false);
-                  void widgetRef.current?.sendMessage('我已查看并确认发布这个草稿预览：' + draft);
-                }}
-              >
-                确认发布此预览
+      <div className="workspace__feedback">
+        {viewerFeedback.error && (
+          <p role="alert" className="workspace__notice">
+            {viewerFeedback.error}
+          </p>
+        )}
+        {viewerFeedback.notice && (
+          <p role="status" className="workspace__sr-only">
+            {viewerFeedback.notice}
+          </p>
+        )}
+        {legacy && (legacy.messages.length > 0 || legacy.pending || legacy.recoveryRequired) && (
+          <details className="workspace__legacy">
+            <summary>查看迁移前的对话</summary>
+            {legacy.messages.map((m, i) => (
+              <p key={i}>
+                {m.role === 'user' ? '你' : 'NyxBot'} · {m.text}
+              </p>
+            ))}
+            {(legacy.pending || legacy.recoveryRequired) && (
+              <p>
+                旧请求有待核对，请查看空间的草稿、预览或已发布版本。原请求编号{' '}
+                {legacy.pending?.responseId ?? legacy.pending?.body.idempotencyKey}
+              </p>
+            )}
+          </details>
+        )}
+        {draft && (
+          <section aria-label="草稿预览操作" className="workspace__preview-action">
+            <button onClick={() => props.onPreview(draft)}>查看草稿预览</button>
+            {confirm ? (
+              <>
+                <p>发布后，其他人将看到这份预览中的修改。</p>
+                <button
+                  disabled={busy}
+                  onClick={() => {
+                    setConfirm(false);
+                    void widgetRef.current?.sendMessage('我已查看并确认发布这个草稿预览：' + draft);
+                  }}
+                >
+                  确认发布此预览
+                </button>
+                <button onClick={() => setConfirm(false)}>暂不发布</button>
+              </>
+            ) : (
+              <button disabled={busy} onClick={() => setConfirm(true)}>
+                发布这个草稿…
               </button>
-              <button onClick={() => setConfirm(false)}>暂不发布</button>
-            </>
-          ) : (
-            <button disabled={busy} onClick={() => setConfirm(true)}>
-              发布这个草稿…
-            </button>
-          )}
-        </section>
-      )}
-    </>
+            )}
+          </section>
+        )}
+      </div>
+    </div>
   );
 }

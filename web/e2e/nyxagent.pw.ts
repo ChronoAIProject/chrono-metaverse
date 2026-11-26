@@ -45,7 +45,6 @@ test('AI 页面动作切换空间、视图、草稿和镜头，保留同一个 W
       'metaverse-nyxagent-credential:v2:owner:owner',
       JSON.stringify({ subject: 'owner', credential: 'nyx_browser_page_actions', identity }),
     );
-    sessionStorage.setItem('metaverse-chat-provider', 'nyxagent');
   }, identity);
   let nextActions: unknown[] = [];
   let turn = 0;
@@ -79,8 +78,6 @@ test('AI 页面动作切换空间、视图、草稿和镜头，保留同一个 W
           connected: true,
           subject: 'owner',
           csrfToken: 'csrf',
-          workerAvailable: false,
-          workerEnabled: false,
         },
       });
     if (url.pathname.endsWith('/spaces'))
@@ -167,7 +164,7 @@ test('AI 页面动作切换空间、视图、草稿和镜头，保留同一个 W
     if (/\/api\/public\/(?:previews\/)?assets\//.test(r.url())) downloads.push(r.url());
   });
   await page.goto('/workspace?space=demo-lobby');
-  await page.getByRole('button', { name: '打开空间助手', exact: true }).click();
+  await page.getByRole('button', { name: 'Nyx 助手', exact: true }).click();
   await expect(page.getByRole('button', { name: '断开授权' })).toBeVisible();
   const viewer = page.locator('.workspace__scene .viewer');
   const ready = async () => {
@@ -177,11 +174,21 @@ test('AI 页面动作切换空间、视图、草稿和镜头，保留同一个 W
   };
   await ready();
   const canvas = await viewer.locator('canvas').first().elementHandle();
-  async function send(actions: unknown[]) {
+  async function send(actions: { type: string; [key: string]: unknown }[]) {
     nextActions = actions;
+    const launcher = page.getByRole('button', { name: 'Nyx 助手', exact: true });
+    if ((await launcher.getAttribute('aria-expanded')) === 'false') await launcher.click();
     await page.getByRole('textbox', { name: '消息', exact: true }).fill(`页面请求 ${turn + 1}`);
     await page.getByRole('button', { name: '发送', exact: true }).click();
-    if (!failed)
+    if (
+      actions[0]?.type === 'space' &&
+      ['demo-second', 'demo-lobby'].includes(String(actions[0].spaceId))
+    ) {
+      await expect(page.locator('nyx-assistant')).toHaveAttribute(
+        'data-session',
+        String(actions[0].spaceId),
+      );
+    } else if (!failed)
       await expect(page.getByRole('button', { name: '发送', exact: true })).toBeEnabled();
   }
   await send([{ type: 'mode', value: 'raw' }]);
@@ -317,11 +324,6 @@ test('独立 Agent Key 聊天，无 CMA 配置也可续聊；刷新后自动查�
         'metaverse-nyxagent-credential:v2:owner:owner',
         JSON.stringify({ subject: 'owner', credential: key, identity }),
       );
-      if (!sessionStorage.getItem('metaverse-worker:owner'))
-        sessionStorage.setItem(
-          'metaverse-worker:owner',
-          JSON.stringify({ spaceId: 'lobby', orgId: '', instruction: '' }),
-        );
     },
     { key, identity },
   );
@@ -334,8 +336,6 @@ test('独立 Agent Key 聊天，无 CMA 配置也可续聊；刷新后自动查�
           connected: true,
           subject: 'owner',
           csrfToken: 'csrf',
-          workerAvailable: false,
-          workerEnabled: false,
         },
       });
     if (path.endsWith('/spaces'))
@@ -356,12 +356,6 @@ test('独立 Agent Key 聊天，无 CMA 配置也可续聊；刷新后自动查�
         },
       });
     if (path.includes('/view/')) return route.fulfill({ status: 404, json: {} });
-    if (path.includes('/worker/'))
-      return route.fulfill({
-        status: 503,
-        json: { code: 'cma_unavailable', detail: '未配置 CMA' },
-      });
-    expect(path).toContain('/nyxagent/');
     throw new Error(`未预期的工作台调用 ${path}`);
   });
   await verifyGrant(page);
@@ -403,11 +397,8 @@ test('独立 Agent Key 聊天，无 CMA 配置也可续聊；刷新后自动查�
     }
     throw new Error(`Unexpected operation ${path}`);
   });
-  await page.goto('/workspace');
-  await page.locator('.workspace__chat-launcher').waitFor({ state: 'attached' });
-  if (await page.getByRole('button', { name: '打开空间助手' }).isVisible())
-    await page.getByRole('button', { name: '打开空间助手' }).click();
-  await page.getByRole('combobox', { name: '空间助手' }).selectOption('nyxagent');
+  await page.goto('/workspace?space=lobby');
+  await page.getByRole('button', { name: 'Nyx 助手', exact: true }).click();
   await expect(page.getByRole('button', { name: '断开授权' })).toBeVisible();
   await page.getByRole('textbox', { name: '消息', exact: true }).fill('第一条');
   await page.getByRole('button', { name: '发送', exact: true }).click();
@@ -420,7 +411,8 @@ test('独立 Agent Key 聊天，无 CMA 配置也可续聊；刷新后自动查�
   expect(writes).toHaveLength(2);
   expect(writes[1]!.conversationId).toBe('conv_test');
   await page.reload();
-  await expect(page.getByRole('dialog', { name: 'NyxAgent 空间聊天' })).toBeVisible();
+  await page.getByRole('button', { name: 'Nyx 助手', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Nyx 助手' })).toBeVisible();
   await expect(page.getByRole('button', { name: '断开授权' })).toBeVisible();
   expect(writes).toHaveLength(2);
   await expect(page.getByText('已恢复原请求')).toBeVisible();
@@ -430,7 +422,7 @@ test('独立 Agent Key 聊天，无 CMA 配置也可续聊；刷新后自动查�
   ).toBeNull();
 });
 
-test('在已有工作台连接 NyxID，刷新恢复加密授权，断开后可重新连接', async ({ page }) => {
+async function personalWorkspace(page: Page) {
   await page.route('**/api/auth/nyxid/**', (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith('/session'))
@@ -440,8 +432,6 @@ test('在已有工作台连接 NyxID，刷新恢复加密授权，断开后可�
           connected: true,
           subject: 'owner',
           csrfToken: 'csrf',
-          workerAvailable: false,
-          workerEnabled: false,
         },
       });
     if (path.endsWith('/spaces'))
@@ -460,10 +450,61 @@ test('在已有工作台连接 NyxID，刷新恢复加密授权，断开后可�
           next: null,
         },
       });
-    if (path.includes('/view/') || path.includes('/worker/'))
-      return route.fulfill({ status: 404, json: {} });
+    if (path.includes('/view/')) return route.fulfill({ status: 404, json: {} });
     throw Error(path);
   });
+}
+
+test('空间助手在深浅主题下可读，桌面和手机可展开、收起并访问空间菜单', async ({ page }) => {
+  await personalWorkspace(page);
+  await page.goto('/workspace?space=lobby');
+  const launcher = page.getByRole('button', { name: 'Nyx 助手', exact: true });
+  const panel = page.getByRole('dialog', { name: 'Nyx 助手' });
+  const connect = panel.getByRole('button', { name: '连接 NyxID' });
+  for (const theme of ['dark', 'light']) {
+    await page.evaluate((theme) => localStorage.setItem('metaverse:appearance', theme), theme);
+    await page.reload();
+    await launcher.click();
+    const ratio = () =>
+      connect.evaluate((button) => {
+        const luminance = (rgb: string) => {
+          const [r, g, b] = rgb
+            .match(/[0-9.]+/g)!
+            .map((v) => Number(v) / 255)
+            .map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+          return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+        };
+        const { color, backgroundColor } = getComputedStyle(button);
+        const a = luminance(color),
+          b = luminance(backgroundColor);
+        return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+      });
+    expect(await ratio()).toBeGreaterThanOrEqual(4.5);
+    await connect.hover();
+    expect(await ratio()).toBeGreaterThanOrEqual(4.5);
+    for (const [width, height] of [
+      [320, 568],
+      [390, 844],
+      [768, 1024],
+      [1440, 900],
+    ] as const) {
+      await page.setViewportSize({ width, height });
+      const rect = await panel.boundingBox();
+      const header = await page.locator('.workspace__header').boundingBox();
+      expect(rect!.x).toBeGreaterThanOrEqual(0);
+      expect(rect!.y).toBeGreaterThanOrEqual(header!.y + header!.height);
+      expect(rect!.x + rect!.width).toBeLessThanOrEqual(width);
+      expect(rect!.y + rect!.height).toBeLessThanOrEqual(height);
+      await page.getByRole('button', { name: '选择空间', exact: true }).click();
+      await page.getByRole('button', { name: '关闭空间菜单' }).click();
+      await panel.getByRole('button', { name: '收起助手' }).click();
+      await expect(launcher).toHaveAttribute('aria-expanded', 'false');
+      await launcher.click();
+    }
+  }
+});
+test('在已有工作台连接 NyxID，刷新恢复加密授权，断开后可重新连接', async ({ page }) => {
+  await personalWorkspace(page);
   const key = 'nyx_browser_sdk_login_fixture';
   let requested = 0,
     revoked = 0;
@@ -487,8 +528,7 @@ test('在已有工作台连接 NyxID，刷新恢复加密授权，断开后可�
     return route.fulfill({ json: sdkIdentity });
   });
   await page.goto('/workspace?space=lobby');
-  await page.getByRole('button', { name: '打开空间助手', exact: true }).click();
-  await page.getByRole('combobox', { name: '空间助手' }).selectOption('nyxagent');
+  await page.getByRole('button', { name: 'Nyx 助手', exact: true }).click();
   await page.getByRole('button', { name: '连接 NyxID', exact: true }).click();
   await expect(page.getByRole('link', { name: '打开 NyxID 授权页' })).toHaveAttribute(
     'href',
@@ -499,7 +539,7 @@ test('在已有工作台连接 NyxID，刷新恢复加密授权，断开后可�
   expect(values.some((v) => v.startsWith('nyx-sealed:v1:'))).toBe(true);
   expect(values.join('')).not.toContain(key);
   await page.reload();
-  await page.getByRole('button', { name: '打开空间助手', exact: true }).click();
+  await page.getByRole('button', { name: 'Nyx 助手', exact: true }).click();
   await page.getByRole('button', { name: '断开授权' }).click();
   await expect(page.getByRole('button', { name: '连接 NyxID', exact: true })).toBeVisible();
   expect([requested, revoked]).toEqual([1, 1]);
