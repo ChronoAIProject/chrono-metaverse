@@ -105,6 +105,14 @@
   ],
   "imagery": "https://www.onemap.gov.sg/maps/tiles/OrthoJPG/{z}/{x}/{y}.png",
   "method": "Eight-metre sampling grid in the four OpenFreeMap grass polygons. Median colour of open, vegetated OneMap pixels within 6 m, excluding Meta/WRI canopy heights above 3 m, paving and bare soil. RGB samples set broad relative colour, while a CC0 Poly Haven grass_ground scan supplies the blade-scale surface.",
+  "wear": {
+    "image": "promontory-turf-wear.png",
+    "originXZ": [-12, 66],
+    "metresPerPixel": 1,
+    "greenRGB": [122, 130, 92],
+    "wornRGB": [147, 134, 110],
+    "method": "On the registered OneMap ortho, sample turf at one-metre spacing at least one metre inside the footprint. Exclude canopy above 3 m, deep shadow (green <= 78) and neutral paving (green - blue <= 10). Map red/green ratios of 0.94 to 1.11 onto zero to full wear and smooth valid values with a one-metre Gaussian. Fade to zero where coverage falls below 65%. Each column increments local X and each row increments local Z."
+  },
   "samplesXZrgb": [
     [12.734, 88.407, 92, 99, 86],
     [5.145, 90.939, 102, 108, 90],
