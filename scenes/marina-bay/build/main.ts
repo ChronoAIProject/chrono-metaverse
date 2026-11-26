@@ -220,16 +220,20 @@ function surveyedGrassCoverage(environment: EntityBody | null): EntityBody | nul
 }
 
 /** 滨海湾扩展引用 OneMap 转换结果，室内沿用已有的重建物件。 */
-// These scans have freely repeating grains. Panels, pavers and marked roads have authored joints.
+// Unstructured grains can be sampled in any direction. The Fullerton paint follows separate road geometry.
 const groundScanMaterials: Record<string, string[]> = {
+  'bay.bayfront-bridge': ['Bayfront asphalt'],
   'bay.empress-lawn-obelisk-court': ['Empress Lawn turf'],
-  'bay.fullerton-carriageways': ['Fullerton verge grass'],
+  'bay.esplanade-road-bridge': ['Esplanade carriageways'],
+  'bay.fullerton-carriageways': ['Fullerton verge grass', 'Asphalt', 'Lane paint', 'Bus lane paint'],
   'bay.fullerton-entrance-trees': ['Fullerton planted soil'],
+  'bay.helix-bridge': ['Asphalt wearing course'],
   'bay.marina-centre-carriageways': ['Marina Centre planted verges'],
   'bay.marina-centre-worksite': ['Compacted gravel', 'Graded soil'],
   'bay.marina-promenade-park-ground': ['Marina Promenade ground cover', 'Marina Promenade compacted gravel'],
   'bay.padang-playing-fields': ['Padang playing turf'],
   'bay.sands-skypark-gardens': ['Garden soil'],
+  'bay.south-service-court': ['South court asphalt'],
   'bay.straits-boulevard': ['Compacted gravel', 'Graded soil'],
 };
 
