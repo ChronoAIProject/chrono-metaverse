@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -51,7 +52,7 @@ def read_palm(path):
     return positions - foot, normals, uv, faces.reshape(-1, 3)
 
 
-def palm_stand(folder, trees):
+def palm_stand(folder, trees, *, face_budget=None):
     reference = json.loads((ROOT / "references/sands-waterfront-palms.json").read_text())
     for name, digest in reference["sourceHashes"].items():
         if hashlib.sha256((folder / name).read_bytes()).hexdigest() != digest:
@@ -65,6 +66,15 @@ def palm_stand(folder, trees):
                            metallicFactor=0, roughnessFactor=.93)
     sources = {variant: read_palm(folder / f"tree_roystonea_regia_{variant}.dae")
                for variant in {tree["variant"] for tree in trees}}
+    if face_budget:
+        for variant, (xyz, normals, uv, triangles) in sources.items():
+            request = dict(faces=triangles.ravel().tolist(), position=xyz.ravel().tolist(),
+                           attributes=np.column_stack((normals, uv)).ravel().tolist(),
+                           targetTriangles=face_budget, maxError=.019)
+            result = subprocess.run(["node", str(Path(__file__).with_name("simplify-skypark-tree.mjs"))],
+                                    input=json.dumps(request), text=True, capture_output=True, check=True)
+            used, remapped = np.unique(np.asarray(json.loads(result.stdout)), return_inverse=True)
+            sources[variant] = xyz[used], normals[used], uv[used], remapped.reshape(-1, 3)
     meshes, colours = [], []
     for tree in trees:
         xyz, n, uv, faces = sources[tree["variant"]]

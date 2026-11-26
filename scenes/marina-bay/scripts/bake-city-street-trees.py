@@ -76,6 +76,54 @@ def palm(folder):
                             visual=TextureVisuals(uv=uv, material=paint), process=False)]
 
 
+def observed_bank_canopy(key, tile, source_folders, palm_folder):
+    survey = json.loads((ROOT / 'references' / tile['crownSurvey']).read_text())
+    crowns = survey['crowns']
+    median = np.median([row[-3:] for row in crowns], axis=0)
+    models, groups, colours = {}, defaultdict(list), defaultdict(list)
+    palms = []
+    for _, _, x, y, z, height, width, form, seed, red, green, blue in crowns:
+        rng = np.random.default_rng(seed)
+        pigment = np.array([red, green, blue]) / median
+        luminance = pigment @ [.2126, .7152, .0722]
+        tint = np.clip((pigment / luminance)**1.6 * luminance**.6, .73, 1.16)
+        if form == 'palm':
+            palms.append(dict(localXZ=[x, z], groundY=y, variant=str(rng.choice(list('abcd'))),
+                              trunkWidthFactor=float(rng.uniform(.42, .58)),
+                              yawDegrees=float(rng.uniform(0, 360)), estimatedHeightMetres=height,
+                              crownDiameterMetres=width, linearTint=np.minimum(
+                                  np.rint(np.array([239, 241, 220]) * tint**.55), 255).astype(int).tolist()))
+            continue
+        name = {'round': 'island_tree_01', 'spreading': 'jacaranda_tree'}[form]
+        if name not in models:
+            models[name] = broadleaf(source_folders[name], name, sprays=True)
+        rotation = trimesh.transformations.rotation_matrix(rng.uniform(-np.pi, np.pi), [0, 1, 0])[:3, :3]
+        scale = [width, height, width * rng.uniform(.91, 1.1)]
+        for source in models[name]:
+            mesh = source.copy()
+            normals = (np.asarray(source.vertex_normals) / scale) @ rotation.T
+            mesh.vertices = (source.vertices * scale) @ rotation.T + [x, y, z]
+            mesh.vertex_normals = normals / np.linalg.norm(normals, axis=1, keepdims=True)
+            material = mesh.visual.material.name
+            groups[material].append(mesh)
+            rgb = np.clip(np.rint([215, 223, 210] * tint), 0, 255)
+            colours[material].append(np.tile([*rgb, 255], (len(mesh.vertices), 1)))
+
+    scene = trimesh.Scene()
+    palm_mesh = import_module('bake-sands-waterfront-palms').palm_stand(palm_folder, palms, face_budget=1200)
+    scene.add_geometry(palm_mesh, geom_name=palm_mesh.visual.material.name)
+    for name, pieces in groups.items():
+        mesh = combined(pieces)
+        mesh.visual.vertex_attributes['color'] = np.vstack(colours[name]).astype(np.uint8)
+        scene.add_geometry(mesh, geom_name=name)
+    credit = CREDIT + ' ' + PALM_CREDIT + ' Crown footprints from OneMap, Singapore Land Authority.'
+    digest, bounds = write_tree_asset(scene, copyright=credit)
+    return dict(entityId=key, label=tile['label'], layer='ext', kind='object', regionId='marina-bay-exterior',
+                assetHash=digest, bounds=bounds, material={'shading': 'albedo'},
+                props={'background': True, 'surfaceRole': 'landscape', '版权': credit,
+                       '依据': survey['source'], '树冠数': len(crowns), '棕榈冠数': len(palms)})
+
+
 def bake(folders, selected_tile=None):
     reference = json.loads((ROOT/'references/city-street-trees.json').read_text())
     colours = json.loads((ROOT/'references/marina-centre-crown-colours.json').read_text())['samples']
@@ -88,6 +136,9 @@ def bake(folders, selected_tile=None):
     models = {}
     for key, tile in reference['tiles'].items():
         if selected_tile and selected_tile != key:
+            continue
+        if tile.get('crownSurvey'):
+            records[key] = observed_bank_canopy(key, tile, source_folders, folders[3])
             continue
         groups = defaultdict(list)
         painted = defaultdict(list)
