@@ -20,7 +20,7 @@ RUN --mount=type=cache,id=metaverse-api-cargo-registry,target=/usr/local/cargo/r
 # ---- 运行：distroless（只有 glibc、libgcc 和 CA 证书，没有 shell） ----
 # 与构建镜像同为 Debian 13，glibc 版本一致。依赖全部是 rustls（不链接 OpenSSL）。
 # distroless 没有版本号标签，按摘要固定；更新时取 nonroot 标签的新摘要。
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:cc66d222f0a7ec996b78a99fe76a969bc80b539a5016ad866c14d1949bc6d0ab AS runtime
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:29ee70762214fe8190cea04ef1c0a84a8365879e047ce8f911ae5a5ab2355fa2 AS runtime
 LABEL org.opencontainers.image.source="https://github.com/ChronoAIProject/chrono-metaverse" \
       org.opencontainers.image.title="chrono-metaverse-api" \
       org.opencontainers.image.description="chrono-metaverse 接口服务：公开读、写和管理接口，NyxID 鉴权"
