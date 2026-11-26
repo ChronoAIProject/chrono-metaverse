@@ -1,8 +1,8 @@
 import { surfaceNoise } from './surfaceVariation';
 import * as THREE from 'three';
 import type { GroundLayer } from '../core/externalSource';
-import turfColor from '../assets/geography/turf-color.webp';
-import turfSurface from '../assets/geography/turf-surface.webp';
+import turfColor from '../assets/geography/turf-quilt-color.webp';
+import turfSurface from '../assets/geography/turf-quilt-surface.webp';
 import paversColor from '../assets/geography/pavers-color.webp';
 import paversSurface from '../assets/geography/pavers-surface.webp';
 
@@ -54,9 +54,9 @@ export function groundSurfaceMaterial(kind: GroundLayer['material']) {
       // Two continuous areas of grass use independent scan phases. Warp the boundaries
       // at two metre scales so neither the edge nor the sample repeats in parallel bands.
       vec2 offsets=vec2(surfaceField(vMapUv*.067),surfaceField(vMapUv*.083+19.4));
-      vec2 uvA=vMapUv/1.4+offsets*1.4;
+      vec2 uvA=vMapUv/4.2+offsets*1.4;
       mat2 turn=mat2(0.6,-0.8,0.8,0.6);
-      vec2 uvB=turn*(vMapUv/1.4)*0.91+vec2(0.37,0.71)-offsets.yx;
+      vec2 uvB=turn*(vMapUv/4.2)*0.91+vec2(0.37,0.71)-offsets.yx;
       float blend=smoothstep(.29,.71,surfaceField(vMapUv*.21+offsets));
       vec3 albedo=mix(texture2D(map,uvA).rgb,texture2D(map,uvB).rgb,blend);
       vec3 propsA=texture2D(normalMap,uvA).rgb, propsB=texture2D(normalMap,uvB).rgb;
