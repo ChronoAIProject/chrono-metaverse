@@ -817,6 +817,7 @@ export class SceneView {
     const roof = entity && modelRoofReflectance(entity);
     const occlusion = entity && modelOcclusion(entity);
     const scans = entity?.props?.groundScanMaterials;
+    const panes = entity?.props?.thinGlassMaterials;
     const applyMaterial = (m: THREE.Material) =>
       this.modelMaterial(
         m,
@@ -828,6 +829,7 @@ export class SceneView {
         roof,
         Array.isArray(scans) && scans.includes(m.name),
         pavingAtlas(entity?.props?.pavingCourseAtlas, m.name),
+        Array.isArray(panes) && panes.includes(m.name),
       );
     const clone = model.clone(true);
     clone.traverse((object) => {
@@ -865,6 +867,7 @@ export class SceneView {
     roof?: ModelRoofReflectance,
     scatter = false,
     paving?: PavingAtlas,
+    thinGlass = false,
   ): THREE.Material {
     const lookKey = modelMaterialKey(source, look, styleLook);
     if (lookKey === null && !background) return source;
@@ -888,7 +891,7 @@ export class SceneView {
       !source.transparent
         ? roof?.scale
         : undefined;
-    const key = `${lookKey ?? source.uuid}|${background}|${styleLookKey(styleLook)}|${kind}|${air}|${coverage}|${ao ?? ''}|${roofScale ?? ''}|${scatter}|${paving ? JSON.stringify(paving) : ''}`;
+    const key = `${lookKey ?? source.uuid}|${background}|${styleLookKey(styleLook)}|${kind}|${air}|${coverage}|${ao ?? ''}|${roofScale ?? ''}|${scatter}|${paving ? JSON.stringify(paving) : ''}|${thinGlass}`;
     let material = this.materialCache.get(key);
     if (material === undefined) {
       material = createModelMaterial(
@@ -900,7 +903,7 @@ export class SceneView {
       );
       if (air) {
         filterModelSurface(material, this.renderer.capabilities.getMaxAnisotropy());
-        cityModelAir(material, roofScale);
+        cityModelAir(material, roofScale, thinGlass);
         outdoorSurfaceVariation(material, scatter, paving);
       }
       if (ao && material instanceof THREE.MeshStandardMaterial) {

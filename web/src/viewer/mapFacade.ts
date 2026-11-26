@@ -110,7 +110,7 @@ const probeReflection = /* glsl */ `
 `;
 
 /** 实景模型既有标准受光材质，也有烘焙为无光照贴图的楼面。 */
-export function cityModelAir(material: THREE.Material, roofScale?: number) {
+export function cityModelAir(material: THREE.Material, roofScale?: number, thinGlass = false) {
   if (!(
     material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshBasicMaterial
   ))
@@ -149,10 +149,12 @@ export function cityModelAir(material: THREE.Material, roofScale?: number) {
     !glass &&
     (heights || material.userData.prefilteredReflection === true);
   const worldToProbe = localProbe ? { value: new THREE.Matrix3() } : null;
+  const glassSheet = localProbe && thinGlass && material.metalness === 0;
   if (worldToProbe) {
     const rotation = new THREE.Matrix4();
     material.customProgramCacheKey = () =>
-      heights ? 'city-height-reflections' : 'city-local-reflection';
+      (heights ? 'city-height-reflections' : 'city-local-reflection') +
+      (glassSheet ? '|glass-sheet' : '');
     material.onBeforeRender = (_renderer, _scene, _camera, _geometry, object) => {
       worldToProbe.value.setFromMatrix4(rotation.extractRotation(object.matrixWorld)).transpose();
     };
@@ -205,6 +207,16 @@ export function cityModelAir(material: THREE.Material, roofScale?: number) {
     }
     if (worldToProbe) {
       shader.uniforms.worldToProbe = worldToProbe;
+      if (glassSheet) {
+        // At normal incidence a lossless sheet reflects 2R/(1+R) across both surfaces.
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <lights_physical_fragment>',
+          `#include <lights_physical_fragment>
+          vec3 transmissionRatio = 1.0 / (1.0 + material.specularColor);
+          material.diffuseColor *= transmissionRatio;
+          material.specularColor *= 2.0 * transmissionRatio;`,
+        );
+      }
       if (heights) {
         shader.uniforms.reflectionLevels = { value: heights };
         shader.vertexShader =
