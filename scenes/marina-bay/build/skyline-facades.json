@@ -89,7 +89,7 @@
     "kind": "structure",
     "label": "滨海湾 · 低层建筑屋面与墙身",
     "regionId": "marina-bay-exterior",
-    "assetHash": "fb994286d1ea484fb6adcf51bb419b3d7d901e4f142793bd23843200863ffd26",
+    "assetHash": "540272bc2a4a6789f42623cc25a581dae21497e5df535f70b7b64ceb4cb67bbc",
     "material": {
       "shading": "albedo"
     },
@@ -107,7 +107,7 @@
     },
     "props": {
       "background": true,
-      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Wall, shutter and roof scans by Poly Haven (CC0). Window panels use sampled Marina Bay scene radiance. Openings and finishes are visual approximations.",
+      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Wall, shutter and roof scans by Poly Haven (CC0). Window panels use sampled Marina Bay scene radiance. Openings and finishes are visual approximations. Roof tone samples: Map Data © Singapore Land Authority / OneMap.",
       "表面": "基于地图楼高与轮廓，砖墙、面砖、压型板和肋纹混凝土沿街交替。玻璃门窗、百叶、装卸门及屋顶收边按米制尺度估算。"
     }
   },
@@ -117,7 +117,7 @@
     "kind": "structure",
     "label": "滨海湾 · 低层建筑屋面与墙身",
     "regionId": "marina-bay-exterior",
-    "assetHash": "952960885cb74121f2ae59130d12d5940e7726646459d2de88d37a5bcab97f8c",
+    "assetHash": "56bf070630e7cd7326620d64916376c2689cfc992c469018c839a9fabd02cf33",
     "material": {
       "shading": "albedo"
     },
@@ -135,7 +135,7 @@
     },
     "props": {
       "background": true,
-      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Wall, shutter and roof scans by Poly Haven (CC0). Window panels use sampled Marina Bay scene radiance. Openings and finishes are visual approximations.",
+      "版权": "Building footprints and heights © OpenStreetMap contributors (ODbL), via OpenFreeMap. Wall, shutter and roof scans by Poly Haven (CC0). Window panels use sampled Marina Bay scene radiance. Openings and finishes are visual approximations. Roof tone samples: Map Data © Singapore Land Authority / OneMap.",
       "表面": "基于地图楼高与轮廓，砖墙、面砖、压型板和肋纹混凝土沿街交替。玻璃门窗、百叶、装卸门及屋顶收边按米制尺度估算。"
     }
   },

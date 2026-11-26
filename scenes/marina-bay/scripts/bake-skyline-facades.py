@@ -7,6 +7,7 @@ import numpy as np
 import trimesh
 from PIL import Image
 from scipy.ndimage import map_coordinates
+from scipy.spatial import cKDTree
 from shapely import constrained_delaunay_triangles
 from shapely.geometry import Polygon
 from shapely.geometry.polygon import orient
@@ -33,8 +34,14 @@ REPEAT = {"Facade006": (22.4, 27.2), "Facade018A": (18.0, 21.6), "Facade019A": (
 
 
 def facade_material(name, daylight=None, group=None):
-    folder = REFERENCES / name
+    folder = REFERENCES / name.removesuffix(" surveyed")
     color = occupied_windows(folder, group) if group and name in WINDOW_LAYOUT else Image.open(folder / "Color.jpg")
+    if name.endswith(" surveyed"):
+        # A neutral base provides enough headroom for bright metal roofs. Attenuate
+        # scan contrast because the aerial samples already supply the broad tonality.
+        grain = np.asarray(color.convert("L"), float)
+        color = Image.fromarray(np.uint8(np.clip(210 + .50 * (grain - np.median(grain)), 0, 255))).convert("RGB")
+        color.format = "JPEG"
     normal = Image.open(folder / "NormalGL.jpg")
     rough = Image.open(folder / "Roughness.jpg").convert("L")
     metal = Image.open(folder / "Metalness.jpg").convert("L")
@@ -130,6 +137,15 @@ def roof_surface(part):
     coords = np.array([offset @ axis / span[0], offset @ across / span[1]])
     wear = map_coordinates(rng.uniform(0, 1, (37, 41)), coords, mode="grid-wrap").clip(0, 1)
     tint = 1 - (wear ** 1.7)[:, None] * [.32, .36, .39]
+    if samples := part.get("roofToneSamples"):
+        # Interpolate nearby roof patches, keeping the scan for the fine material grain.
+        # The shared light-grey scan is multiplied by glTF vertex colours in linear light.
+        survey = np.asarray(samples)
+        neighbours = range(1, min(4, len(survey)) + 1)
+        distance, indices = cKDTree(survey[:, :2]).query(mesh.vertices[:, [0, 2]], k=list(neighbours))
+        weights = 1 / (distance ** 2 + 1.5 ** 2)
+        daylight = (survey[indices, 2:] * weights[:, :, None]).sum(axis=1) / weights.sum(axis=1)[:, None]
+        tint = np.clip(((daylight + 14.025) / (210 + 14.025)) ** 2.4, .025, 1)
     mesh.visual.vertex_attributes["color"] = np.uint8(np.rint(255 * np.c_[tint, np.ones(len(tint))]))
     return mesh
 
@@ -141,6 +157,8 @@ def bake_group(group, parts, credit_line, daylight=None):
         credit_line += " Ground-floor cladding and shutter scans by Poly Haven (CC0)."
     if any(part["finish"] in {"TerracottaOfficeGrid", "SilverPrecastOffice"} for part in parts):
         credit_line += " Office grids adapted for daylight from Facade014 and Facade017 by ambientCG (CC0)."
+    if any(part.get("roofToneSamples") for part in parts):
+        credit_line += " Roof tone samples: Map Data © Singapore Land Authority / OneMap."
     finishes = {}
     for part in parts:
         if ground_finish := part.get("groundFloorFinish"):
@@ -155,7 +173,10 @@ def bake_group(group, parts, credit_line, daylight=None):
         coping.visual = TextureVisuals(uv=coping.vertices[:, [0, 2]] / 3.4)
         finishes.setdefault(part.get("roofFinish", "ConcreteRoof"), []).append(coping)
         if part.get("roofFinish"):
-            finishes.setdefault(part["roofFinish"], []).append(roof_surface(part))
+            name = part["roofFinish"]
+            if part.get("roofToneSamples"):
+                name += " surveyed"
+            finishes.setdefault(name, []).append(roof_surface(part))
     return export_group(group, finishes, {part["finish"] for part in parts}, credit_line,
                         daylight, low_rise=bool(parts[0].get("roofFinish")))
 
