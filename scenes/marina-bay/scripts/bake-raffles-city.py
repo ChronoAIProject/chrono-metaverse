@@ -12,6 +12,7 @@ from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
 from context_geometry import geographic_point
+from raffles_roof import podium_roof
 from scanned_canopy import ROOT, write_tree_asset
 
 sys.path.insert(0, str(ROOT.parents[1] / 'recon/src'))
@@ -101,10 +102,16 @@ def bake():
         mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False,
                                visual=TextureVisuals(uv=texcoords, material=facade_material(name)))
         scene.add_geometry(mesh, geom_name=name)
-    credit = ('Footprints © OpenStreetMap contributors, ODbL. Photograph by Diego Delso, 2023. '
+    for name, surface in podium_roof(data['parts'], origin, rotation, shift, datum).items():
+        scene.add_geometry(surface, geom_name=name)
+    credit = ('Footprints © OpenStreetMap contributors, ODbL. Deck layout and colours: Map Data © Singapore Land Authority / OneMap. Roof surface grain: Poly Haven (CC0). Photograph by Diego Delso, 2023. '
               + data['photograph'] + '. Rectified facade strips and model: CC BY-SA 4.0, '
               'https://creativecommons.org/licenses/by-sa/4.0/.')
-    digest, bounds = write_tree_asset(scene, copyright=credit)
+    def mark_water(document):
+        pool = next(m for m in document['materials'] if m['name'] == 'Raffles pool water')
+        pool['extras'] = {'waterSurface':'pool'}
+
+    digest, bounds = write_tree_asset(scene, mark_water, packing_options=('-ke',), copyright=credit)
     return dict(entityId='bay.raffles-city-elevations', kind='structure', layer='ext',
                 regionId='marina-bay-exterior', label='来福士城 · 酒店、办公楼与裙楼',
                 assetHash=digest, bounds=bounds, material={'shading':'albedo'},
