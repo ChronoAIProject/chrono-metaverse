@@ -1,538 +1,62 @@
-import { render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { beforeEach, expect, it, vi } from 'vitest';
-import { saveBrowserKey } from '../auth/browserKey';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { expect, it, vi } from 'vitest';
+import { NyxIDConnection } from '@chronoai/nyx-assistant-sdk';
+import type { NyxAssistantElement } from '@chronoai/nyx-assistant-sdk/widget';
 import { NyxAgentPanel } from './NyxAgentPanel';
-import { readNyxagentNote, saveNyxagentNote } from './nyxagent';
-import { ViewerToolBinding, ViewerToolsContext } from './viewerTools';
-import type { SpaceSummary } from './client';
+import type { Session, SpaceSummary } from './client';
 
-const session = { enabled: true, connected: true, subject: 'alice', csrfToken: 'csrf' };
-const identity = {
-  keyId: 'nyx-key',
-  name: 'NyxAgent',
-  credentialId: 'child',
-  credentialVersion: 'v'.repeat(43),
-  credentialExpiresAt: null,
-  keyExpiresAt: null,
+const props = {
+  session: { subject: 'owner' } as Session,
+  space: { id: 'demo', owner: { kind: 'person', id: 'owner' } } as SpaceSummary,
+  viewerContext: { spaces: [{ id: 'demo', name: '工作空间' }] },
+  viewerFeedback: {},
+  onPreview: vi.fn(),
+  onViewerCommand: vi.fn(() => true),
+  onRestore: vi.fn(),
+  onBusy: vi.fn(),
 };
-const space: SpaceSummary = {
-  id: 'lobby',
-  name: '前厅',
-  description: '',
-  owner: { kind: 'person', id: 'alice' },
-  visibility: 'private',
-  access: 'manage',
-  updatedAt: '',
-};
-function sse(complete = true, text = '草稿预览 /preview#t=safe-preview-token', id = 'resp_test') {
-  const response = {
-    id,
-    conversation: { id: 'conv_test' },
-    status: 'in_progress',
-    output: [],
-  };
-  return new Response(
-    `data: ${JSON.stringify({ type: 'response.created', response })}\n\n` +
-      (complete
-        ? `data: ${JSON.stringify({ type: 'response.completed', response: { ...response, status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] }] } })}\n\n`
-        : ''),
-    { headers: { 'Content-Type': 'text/event-stream' } },
-  );
-}
-beforeEach(() => {
-  localStorage.clear();
-  sessionStorage.clear();
-  saveBrowserKey('alice', 'nyx_test_nyxagent_browser_credential', identity, 'alice', 'nyxagent');
-});
 
-it('切换组合时保留成员样式和镜头动作，不被回复中的预览链接抢占', async () => {
-  const actions = [
-    { type: 'universe', universeId: 'demo-street' },
-    { type: 'look', styleId: 'maquette', spaceId: 'demo-lobby' },
-    { type: 'camera', kind: 'focus', entityId: 'chair', spaceId: 'demo-lobby' },
-  ];
-  const request = vi.fn<typeof fetch>(async (url) => {
-    if (String(url).endsWith('/key/check')) return Response.json(identity);
-    if (String(url).endsWith('/message'))
-      return sse(
-        true,
-        `将切换组合。/preview#t=safe-preview-token\n\`\`\`metaverse-view\n${JSON.stringify({ actions })}\n\`\`\``,
-      );
-    throw new Error(`未预期的请求：${url}`);
-  });
-  const preview = vi.fn();
-  const command = vi.fn();
-  render(
-    <NyxAgentPanel
-      session={session}
-      space={space}
-      request={request}
-      onPreview={preview}
-      onViewerCommand={command}
-      onBusy={vi.fn()}
-    />,
-  );
-  await screen.findByText('已连接 NyxAgent · NyxAgent');
-  await userEvent.type(
-    screen.getByRole('textbox', { name: '给 NyxAgent 发消息' }),
-    '切换组合并聚焦前厅',
-  );
-  await userEvent.click(screen.getByRole('button', { name: '发送给 NyxAgent' }));
-  await waitFor(() => expect(command).toHaveBeenCalledWith({ id: 'resp_test', actions }));
-  expect(preview).not.toHaveBeenCalled();
-});
-
-it('从工作台发送、显示完成预览，再用同一个会话续聊', async () => {
-  const writes: Record<string, unknown>[] = [];
-  const request = vi.fn<typeof fetch>(async (url, init) => {
-    if (String(url).endsWith('/key/check')) return Response.json(identity);
-    if (String(url).endsWith('/message')) {
-      writes.push(JSON.parse(String(init?.body)));
-      return sse();
-    }
-    throw new Error(`unexpected ${url}`);
-  });
-  const preview = vi.fn();
-  const onBusy = vi.fn();
-  render(
-    <NyxAgentPanel
-      session={session}
-      space={space}
-      request={request}
-      onPreview={preview}
-      onBusy={onBusy}
-    />,
-  );
-  await screen.findByText('已连接 NyxAgent · NyxAgent');
-  await userEvent.type(screen.getByRole('textbox', { name: '给 NyxAgent 发消息' }), '添加欢迎牌');
-  await userEvent.click(screen.getByRole('button', { name: '发送给 NyxAgent' }));
-  await screen.findByText('草稿预览 /preview#t=safe-preview-token');
-  expect(preview).toHaveBeenCalledWith('/preview#t=safe-preview-token');
-  expect(readNyxagentNote('alice', 'lobby').pending).toBeUndefined();
-  expect(writes[0]).toMatchObject({
-    spaceId: 'lobby',
-    instruction: '添加欢迎牌',
-    instructionsVersion: 5,
-  });
-  expect(writes[0]).not.toHaveProperty('conversationId');
-  await userEvent.type(screen.getByRole('textbox', { name: '给 NyxAgent 发消息' }), '改成蓝色');
-  await userEvent.click(screen.getByRole('button', { name: '发送给 NyxAgent' }));
-  await waitFor(() => expect(writes).toHaveLength(2));
-  expect(writes[1]).toMatchObject({ instruction: '改成蓝色', conversationId: 'conv_test' });
-  expect(writes[1]!.idempotencyKey).not.toBe(writes[0]!.idempotencyKey);
-  await waitFor(() => expect(onBusy).toHaveBeenLastCalledWith(false));
-});
-
-it('断流后刷新只恢复本地状态，自动只读取原结果，不重复执行', async () => {
-  const writes: string[] = [];
-  let reads = 0;
-  const request = vi.fn<typeof fetch>(async (url, init) => {
-    if (String(url).endsWith('/key/check')) return Response.json(identity);
-    if (String(url).endsWith('/message')) {
-      writes.push(String(init?.body));
-      return sse(writes.length > 1);
-    }
-    if (String(url).endsWith('/response')) {
-      reads++;
+it('使用 SDK 面板注册查看器动作，草稿须经用户确认后发送具体预览', async () => {
+  const { container } = render(<NyxAgentPanel {...props} />);
+  const widget = container.querySelector('nyx-assistant') as NyxAssistantElement;
+  expect(widget.dataset.ownerId).toBe('owner');
+  expect(widget.context()).toMatchObject({ spaceId: 'demo' });
+  expect(widget.getAttribute('layout')).toBe('embedded');
+  const inputs: { input: { type: string; text?: string }; requestId: string }[] = [];
+  widget.bind(
+    new NyxIDConnection(new URL('https://sdk.example'), async (_url, init) => {
+      const turn = JSON.parse(JSON.parse(String(init?.body)).input);
+      inputs.push(turn);
+      const text =
+        inputs.length === 1
+          ? '```nyx-host-call\n' +
+            JSON.stringify({
+              requestId: turn.requestId,
+              name: 'set_view',
+              arguments: { actions: [{ type: 'mode', value: 'raw' }] },
+            }) +
+            '\n```'
+          : '完成。 /preview#t=draft-one';
       return Response.json({
-        id: 'resp_test',
-        conversation: { id: 'conv_test' },
-        status: reads === 1 ? 'in_progress' : 'completed',
-        output:
-          reads === 1
-            ? []
-            : [
-                {
-                  type: 'message',
-                  role: 'assistant',
-                  content: [{ type: 'output_text', text: '原请求已完成' }],
-                },
-              ],
+        id: 'r' + inputs.length,
+        conversation: { id: 'c' },
+        status: 'completed',
+        output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] }],
       });
-    }
-    throw new Error(`unexpected ${url}`);
-  });
-  const props = { session, space, request, onPreview: vi.fn(), onBusy: vi.fn() };
-  const view = render(<NyxAgentPanel {...props} />);
-  await screen.findByText('已连接 NyxAgent · NyxAgent');
-  await userEvent.type(screen.getByRole('textbox', { name: '给 NyxAgent 发消息' }), '添加欢迎牌');
-  await userEvent.click(screen.getByRole('button', { name: '发送给 NyxAgent' }));
-  await screen.findByRole('button', { name: '查看任务进度' });
-  expect(writes).toHaveLength(1);
-  const pending = readNyxagentNote('alice', 'lobby').pending;
-  expect(pending?.responseId).toBe('resp_test');
-  expect(pending?.body.instructionsVersion).toBe(5);
-  expect(pending?.body).not.toHaveProperty('conversationId');
-  view.unmount();
-  render(<NyxAgentPanel {...props} />);
-  await screen.findByText('已连接 NyxAgent · NyxAgent');
-  expect(writes).toHaveLength(1);
-  await screen.findByText('原请求已完成', {}, { timeout: 3000 });
-  expect(writes).toHaveLength(1);
-  expect(reads).toBe(2);
-});
-
-it('任务示例只填写输入框，发布必须确认具体预览，取消确认不会发送', async () => {
-  const writes: Record<string, unknown>[] = [];
-  const request = vi.fn<typeof fetch>(async (url, init) => {
-    if (String(url).endsWith('/key/check')) return Response.json(identity);
-    if (String(url).endsWith('/message')) {
-      writes.push(JSON.parse(String(init?.body)));
-      return sse();
-    }
-    throw new Error(`unexpected ${url}`);
-  });
-  const preview = vi.fn();
-  render(
-    <NyxAgentPanel
-      session={session}
-      space={space}
-      request={request}
-      onPreview={preview}
-      onBusy={vi.fn()}
-    />,
+    }),
   );
-  await screen.findByText('已连接 NyxAgent · NyxAgent');
-  await userEvent.click(screen.getByRole('button', { name: '看看这个空间里有什么' }));
-  const input = screen.getByRole('textbox', { name: '给 NyxAgent 发消息' });
-  expect(input).toHaveValue('看看这个空间里有什么');
-  expect(input).toHaveFocus();
-  expect(writes).toHaveLength(0);
-  await userEvent.click(screen.getByRole('button', { name: '发送给 NyxAgent' }));
-  await screen.findByRole('button', { name: '查看草稿预览' });
-  await userEvent.click(screen.getByRole('button', { name: '发布这个草稿…' }));
-  expect(writes).toHaveLength(1);
-  await userEvent.click(screen.getByRole('button', { name: '暂不发布' }));
-  expect(writes).toHaveLength(1);
-  await userEvent.click(screen.getByRole('button', { name: '发布这个草稿…' }));
-  await userEvent.click(screen.getByRole('button', { name: '确认发布此预览' }));
-  await waitFor(() => expect(writes).toHaveLength(2));
-  expect(writes[1]).toMatchObject({
-    conversationId: 'conv_test',
-    instruction: '我已查看并确认发布这个草稿预览：/preview#t=safe-preview-token',
+  await widget.sendMessage('查看并生成预览');
+  await screen.findByText('查看草稿预览');
+  expect(props.onViewerCommand).toHaveBeenCalledWith({
+    id: expect.any(String),
+    actions: [{ type: 'mode', value: 'raw' }],
   });
-});
-
-it('换 Key 后不能恢复旧请求，也不会自动创建任务', async () => {
-  saveNyxagentNote('alice', 'lobby', {
-    instruction: '',
-    messages: [],
-    pending: {
-      credentialVersion: 'x'.repeat(43),
-      responseId: 'resp_old',
-      body: { spaceId: 'lobby', instruction: '原请求', idempotencyKey: 'stable-old-request-001' },
-    },
-  });
-  const request = vi.fn<typeof fetch>(async () => Response.json(identity));
-  render(
-    <NyxAgentPanel
-      session={session}
-      space={space}
-      request={request}
-      onPreview={vi.fn()}
-      onBusy={vi.fn()}
-    />,
-  );
-  await screen.findByText('已连接 NyxAgent · NyxAgent');
-  expect(screen.queryByRole('button', { name: '继续这次任务' })).toBeNull();
-  expect(screen.getByRole('button', { name: '查看任务进度' })).toBeDisabled();
-  expect(request).toHaveBeenCalledTimes(1);
-});
-
-it('组织归属加载后通知工作台打开待恢复对话，没有响应编号时不自动发送', async () => {
-  const pending = {
-    credentialVersion: identity.credentialVersion,
-    body: {
-      spaceId: 'lobby',
-      orgId: 'team',
-      instruction: '原组织空间请求',
-      idempotencyKey: 'stable-org-request-001',
-    },
-  };
-  saveNyxagentNote('alice', 'lobby', { instruction: '', messages: [], pending });
-  const request = vi.fn<typeof fetch>(async () => Response.json(identity));
-  const onRestore = vi.fn();
-  render(
-    <NyxAgentPanel
-      session={session}
-      space={{ ...space, owner: { kind: 'org', id: 'team' } }}
-      request={request}
-      onPreview={vi.fn()}
-      onBusy={vi.fn()}
-      onRestore={onRestore}
-    />,
-  );
-  await waitFor(() => expect(onRestore).toHaveBeenCalledTimes(1));
-  await screen.findByText('已连接 NyxAgent · NyxAgent');
-  expect(readNyxagentNote('alice', 'lobby', 'team').pending).toEqual(pending);
-  expect(request.mock.calls.every(([url]) => String(url).endsWith('/key/check'))).toBe(true);
-  expect(screen.getByRole('button', { name: '继续这次任务' })).toBeEnabled();
-});
-
-it('升级后恢复旧待确认请求，不补写新协议版本', async () => {
-  const body = {
-    spaceId: 'lobby',
-    instruction: '旧版未完成的修改',
-    idempotencyKey: 'stable-legacy-request-001',
-  };
-  saveNyxagentNote('alice', 'lobby', {
-    instruction: '',
-    messages: [],
-    pending: { body, credentialVersion: identity.credentialVersion },
-  });
-  const writes: string[] = [];
-  const request = vi.fn<typeof fetch>(async (url, init) => {
-    if (String(url).endsWith('/key/check')) return Response.json(identity);
-    if (String(url).endsWith('/message')) {
-      writes.push(String(init?.body));
-      return sse();
-    }
-    throw new Error(`unexpected ${url}`);
-  });
-  render(
-    <NyxAgentPanel
-      session={session}
-      space={space}
-      request={request}
-      onPreview={vi.fn()}
-      onBusy={vi.fn()}
-    />,
-  );
-  await screen.findByText('已连接 NyxAgent · NyxAgent');
-  expect(writes).toEqual([]);
-  await userEvent.click(screen.getByRole('button', { name: '继续这次任务' }));
-  await screen.findByText('草稿预览 /preview#t=safe-preview-token');
-  expect(writes).toEqual([JSON.stringify(body)]);
-});
-
-it('主动中断显示可操作的提示，并保留响应与原请求', async () => {
-  const request = vi.fn<typeof fetch>(async (url, init) => {
-    if (String(url).endsWith('/key/check')) return Response.json(identity);
-    if (String(url).endsWith('/message')) {
-      return new Response(
-        new ReadableStream({
-          start(controller) {
-            controller.enqueue(
-              new TextEncoder().encode(
-                `data: ${JSON.stringify({ type: 'response.created', response: { id: 'resp_test', conversation: { id: 'conv_test' } } })}\n\n`,
-              ),
-            );
-            init?.signal?.addEventListener('abort', () =>
-              controller.error(new DOMException('BodyStreamBuffer was aborted', 'AbortError')),
-            );
-          },
-        }),
-        { headers: { 'Content-Type': 'text/event-stream' } },
-      );
-    }
-    throw new Error(`unexpected ${url}`);
-  });
-  render(
-    <NyxAgentPanel
-      session={session}
-      space={space}
-      request={request}
-      onPreview={vi.fn()}
-      onBusy={vi.fn()}
-    />,
-  );
-  await screen.findByText('已连接 NyxAgent · NyxAgent');
-  await userEvent.type(screen.getByRole('textbox', { name: '给 NyxAgent 发消息' }), '修改立方体');
-  await userEvent.click(screen.getByRole('button', { name: '发送给 NyxAgent' }));
+  fireEvent.click(screen.getByText('发布这个草稿…'));
+  fireEvent.click(screen.getByText('暂不发布'));
+  expect(inputs).toHaveLength(2);
+  fireEvent.click(screen.getByText('发布这个草稿…'));
+  fireEvent.click(screen.getByText('确认发布此预览'));
   await waitFor(() =>
-    expect(readNyxagentNote('alice', 'lobby').pending?.responseId).toBe('resp_test'),
+    expect(inputs[2]?.input.text).toContain('确认发布这个草稿预览：/preview#t=draft-one'),
   );
-  await userEvent.click(screen.getByRole('button', { name: '停止等待' }));
-  await screen.findByText('连接已中断，操作结果尚未确认。请先核对结果，避免重复操作。');
-  expect(screen.queryByText('BodyStreamBuffer was aborted')).toBeNull();
-  expect(readNyxagentNote('alice', 'lobby').pending?.body.instruction).toBe('修改立方体');
-  expect(screen.getByRole('button', { name: '查看任务进度' })).toBeEnabled();
-});
-
-it('失败终态完成核对，保留会话并指引开始新对话', async () => {
-  const request = vi.fn<typeof fetch>(async (url) => {
-    if (String(url).endsWith('/key/check')) return Response.json(identity);
-    if (String(url).endsWith('/message'))
-      return new Response(
-        `data: ${JSON.stringify({ type: 'response.failed', response: { id: 'resp_test', conversation: { id: 'conv_test' }, status: 'failed', output: [] } })}\n\n`,
-        { headers: { 'Content-Type': 'text/event-stream' } },
-      );
-    throw new Error(`unexpected ${url}`);
-  });
-  render(
-    <NyxAgentPanel
-      session={session}
-      space={space}
-      request={request}
-      onPreview={vi.fn()}
-      onBusy={vi.fn()}
-    />,
-  );
-  await screen.findByText('已连接 NyxAgent · NyxAgent');
-  await userEvent.type(screen.getByRole('textbox', { name: '给 NyxAgent 发消息' }), '修改立方体');
-  await userEvent.click(screen.getByRole('button', { name: '发送给 NyxAgent' }));
-  await screen.findByText('NyxAgent 本轮执行失败，请核对已完成的操作后开始新的 NyxAgent 对话。');
-  expect(readNyxagentNote('alice', 'lobby').pending).toBeUndefined();
-  expect(readNyxagentNote('alice', 'lobby').conversationId).toBe('conv_test');
-  expect(screen.getByRole('button', { name: '开始新的 NyxAgent 对话' })).toBeInTheDocument();
-  expect(screen.getByRole('textbox', { name: '给 NyxAgent 发消息' })).toBeDisabled();
-  expect(readNyxagentNote('alice', 'lobby').recoveryRequired).toBe(true);
-});
-
-it('原会话无法恢复时持久保存核对状态，不再提供无效重试或续聊', async () => {
-  saveNyxagentNote('alice', 'lobby', {
-    instruction: '',
-    messages: [],
-    pending: {
-      credentialVersion: identity.credentialVersion,
-      body: {
-        spaceId: 'lobby',
-        instruction: '原请求',
-        idempotencyKey: 'stable-unknown-request-001',
-      },
-    },
-  });
-  const writes = vi.fn();
-  const request = vi.fn<typeof fetch>(async (url) => {
-    if (String(url).endsWith('/key/check')) return Response.json(identity);
-    if (String(url).endsWith('/message')) {
-      writes();
-      return Response.json(
-        { code: 'nyxagent_recovery_required', detail: '原会话无法继续执行' },
-        { status: 409 },
-      );
-    }
-    throw new Error(`unexpected ${url}`);
-  });
-  const props = { session, space, request, onPreview: vi.fn(), onBusy: vi.fn() };
-  const view = render(<NyxAgentPanel {...props} />);
-  await screen.findByText('已连接 NyxAgent · NyxAgent');
-  await userEvent.click(screen.getByRole('button', { name: '继续这次任务' }));
-  await screen.findByText('需要核对已执行的操作');
-  expect(screen.queryByRole('button', { name: '继续这次任务' })).toBeNull();
-  expect(readNyxagentNote('alice', 'lobby').pending?.body.idempotencyKey).toBe(
-    'stable-unknown-request-001',
-  );
-  view.unmount();
-  render(<NyxAgentPanel {...props} />);
-  await screen.findByText('需要核对已执行的操作');
-  expect(writes).toHaveBeenCalledTimes(1);
-  await userEvent.click(screen.getByRole('button', { name: '开始新的 NyxAgent 对话' }));
-  await userEvent.click(screen.getByRole('button', { name: '确认开始新的 NyxAgent 对话' }));
-  expect(readNyxagentNote('alice', 'lobby').recoveryRequired).toBeUndefined();
-  expect(screen.getByRole('textbox', { name: '给 NyxAgent 发消息' })).toBeEnabled();
-});
-
-it('刷新后核对旧窗口的查看器指令，当前窗口保持原位置', async () => {
-  saveNyxagentNote('alice', 'lobby', {
-    instruction: '',
-    messages: [],
-    pending: {
-      credentialVersion: identity.credentialVersion,
-      responseId: 'resp_old',
-      body: {
-        spaceId: 'lobby',
-        instruction: '查看物件',
-        instructionsVersion: 6,
-        idempotencyKey: 'stable-previous-viewer-001',
-      },
-    },
-  });
-  const command = vi.fn();
-  const preview = vi.fn();
-  const request = vi.fn<typeof fetch>(async (url) => {
-    if (String(url).endsWith('/key/check')) return Response.json(identity);
-    if (!String(url).endsWith('/response')) throw new Error('未预期的请求');
-    return Response.json({
-      id: 'resp_old',
-      conversation: { id: 'conv_test' },
-      status: 'completed',
-      output: [
-        {
-          type: 'message',
-          role: 'assistant',
-          content: [
-            {
-              type: 'output_text',
-              text: '草稿 /preview#t=safe-preview-token\n```metaverse-view\n{"actions":[{"type":"camera","kind":"overview"}]}\n```',
-            },
-          ],
-        },
-      ],
-    });
-  });
-  render(
-    <NyxAgentPanel
-      session={session}
-      space={space}
-      request={request}
-      onPreview={preview}
-      onViewerCommand={command}
-      onBusy={vi.fn()}
-    />,
-  );
-  await waitFor(() => expect(readNyxagentNote('alice', 'lobby').pending).toBeUndefined());
-  expect(command).not.toHaveBeenCalled();
-  expect(preview).not.toHaveBeenCalled();
-  expect(readNyxagentNote('alice', 'lobby').recoveryRequired).toBe(true);
-});
-
-it('通过同一会话读取真实选区，将聚焦结果回传到工作台助手', async () => {
-  const binding = new ViewerToolBinding();
-  const target = { spaceId: 'lobby', entityId: crypto.randomUUID() };
-  const focus = vi.fn(() => true);
-  binding.bind({ selection: () => target, focus });
-  let turns = 0;
-  const request = vi.fn<typeof fetch>(async (url, init) => {
-    if (String(url).endsWith('/key/check')) return Response.json(identity);
-    if (!String(url).endsWith('/message')) throw new Error('未预期的请求');
-    const body = JSON.parse(String(init?.body));
-    const host = body.viewerContext.host;
-    const call = (name: string, args: object) =>
-      '```nyx-host-call\n' +
-      JSON.stringify({ requestId: host.requestId, name, arguments: args }) +
-      '\n```';
-    expect(body.instructionsVersion).toBe(6);
-    expect(body.idempotencyKey).toBe(host.requestId);
-    turns++;
-    if (turns === 1) {
-      expect(host.tools.map((tool: { name: string }) => tool.name)).toEqual([
-        'read_selection',
-        'focus_selection',
-      ]);
-      return sse(true, call('read_selection', {}), 'resp_read');
-    }
-    expect(body.conversationId).toBe('conv_test');
-    const input = JSON.parse(body.instruction);
-    if (turns === 2) {
-      expect(input).toMatchObject({ callId: 'resp_read', result: { ok: true, value: target } });
-      return sse(true, call('focus_selection', input.result.value), 'resp_focus');
-    }
-    expect(input).toMatchObject({
-      callId: 'resp_focus',
-      result: { ok: true, value: { ...target, focused: true } },
-    });
-    return sse(true, '镜头已聚焦当前选中的物件。', 'resp_answer');
-  });
-  render(
-    <ViewerToolsContext.Provider value={binding}>
-      <NyxAgentPanel
-        session={session}
-        space={space}
-        request={request}
-        onPreview={vi.fn()}
-        onBusy={vi.fn()}
-      />
-    </ViewerToolsContext.Provider>,
-  );
-  await screen.findByText('已连接 NyxAgent · NyxAgent');
-  await userEvent.type(
-    screen.getByRole('textbox', { name: '给 NyxAgent 发消息' }),
-    '聚焦当前选中物件',
-  );
-  await userEvent.click(screen.getByRole('button', { name: '发送给 NyxAgent' }));
-  await screen.findByText('镜头已聚焦当前选中的物件。');
-  expect(focus).toHaveBeenCalledExactlyOnceWith(target);
-  expect(turns).toBe(3);
 });
