@@ -1,0 +1,192 @@
+{
+  "source": "Facade vertices from the distributed models. Occluders from Singapore Land Authority / OneMap 3D building models and OpenStreetMap contributors via OpenFreeMap. Sampling in scene coordinates on 2026-11-26.",
+  "sampling": {
+    "hemisphereDirections": 256,
+    "rayOriginOffsetMetres": 0.36,
+    "diffuseFillFraction": 0.26,
+    "reference": "Cosine-weighted sky visibility over the upper hemisphere, fading to neutral on surfaces within 41 degrees of horizontal. The archive stores the final unsigned-normalized lookup coordinate per vertex. Diffuse fill is estimated."
+  },
+  "buildings": [
+    {
+      "label": "SUNTEC TOWER ONE",
+      "source": "977bc9d23c3ada5fb97b718ec6ed510de55c3e7959f9252b82fbe298889529f5",
+      "output": "51dec51a192519b12b77bb4c76ad0f7f6e646a129f82cfdd5d2bf48887d02b8d",
+      "primitives": {
+        "0/0": "m0_0_0"
+      },
+      "entityId": "bay.04d573f1-aed4-471d-bfa4-759ecdec771b"
+    },
+    {
+      "label": "SUNTEC TOWER FIVE",
+      "source": "031a4e1d8226a5f20b5a1443373cc7822dda01eb34f26cb218d95272f6825070",
+      "output": "314835ac6f33f92eed1620f673cd38ca9ef0f153eccafab81f4d149a90351b94",
+      "primitives": {
+        "0/0": "m1_0_0"
+      },
+      "entityId": "bay.1a2bd984-a7d6-4a5a-b553-db591b97b36b"
+    },
+    {
+      "label": "MILLENIA TOWER",
+      "source": "70ffe200cf60e549261f86c7153573647fe40360714c1909608ca25998e51710",
+      "output": "20a3f6133dfc2ab230691ecf6189263647f72f25831e1f58774538e7657fec06",
+      "primitives": {
+        "0/0": "m2_0_0",
+        "0/1": "m2_0_1"
+      },
+      "entityId": "bay.2ed0d7c0-03ce-4db9-9fc3-29c412ddd017"
+    },
+    {
+      "label": "The Gateway · 东塔与西塔",
+      "source": "8ff2c0028b94003c8d5b9d975de47f6aa6f0e7232ac5b7e9e28d0e9a58d74ef9",
+      "output": "43a946dffaffc4ef6388b8070933c7a6873781d2c00d52c95d8b55119e164121",
+      "primitives": {
+        "0/0": "m3_0_0"
+      },
+      "entityId": "bay.34d976f9-3b66-452c-a286-4025ec565240"
+    },
+    {
+      "label": "SOUTH BEACH TOWER",
+      "source": "12b1a81e25867027512d8537c417d1283c188abe5010ac40e57bc2d20e74cbc2",
+      "output": "2611625cdd30bced640058c84110231dd6afb3bc6970c0f9861374dff95248ad",
+      "primitives": {
+        "0/0": "m4_0_0"
+      },
+      "entityId": "bay.3b567f26-6d50-443b-bc3e-5f7472d4307a"
+    },
+    {
+      "label": "CENTENNIAL TOWER",
+      "source": "05aaa23359e84f0626a8fdca7c60cf4970eaeaf32051eec4ff5758c66b1b1607",
+      "output": "ddc993265c8f4aca905f5bc9bbef7772ab226f414bed4945ee041b01210dd198",
+      "primitives": {
+        "0/0": "m5_0_0"
+      },
+      "entityId": "bay.648fdce7-4983-4752-9646-5057e13ed6ee"
+    },
+    {
+      "label": "DUO · 双塔及裙楼",
+      "source": "f023cea13bdc15257089a89e25064ad38b137a40182fba808a93a1465ba75aca",
+      "output": "a1cd002acad9a68cd4f3683fcc0e72f9b142312319ef0502885ff8ba55f6c31f",
+      "primitives": {
+        "0/0": "m6_0_0",
+        "1/0": "m6_1_0"
+      },
+      "entityId": "bay.7812bb48-9647-4873-830a-e85602c3d247"
+    },
+    {
+      "label": "Midtown Bay",
+      "source": "58e8e525f4bf23364b29a248ba1763546f9b418346317ab84b45ac5bb141cacb",
+      "output": "0ecb1eca888e7dc370c2a7bd14d94522d5c08a04ed3bd429e3948328954faa4e",
+      "primitives": {
+        "1/0": "m7_1_0"
+      },
+      "entityId": "bay.7c9b86de-1e7d-4c64-9ba6-75f42f96847c"
+    },
+    {
+      "label": "Conrad Singapore Marina Bay",
+      "source": "bb5551397ef3703df65b8df5ab39a208856f440a8d667b103dd29430b55c9032",
+      "output": "d37d342528ea840b615c7910ba506938d3715f32d0f1c3dfd140d0fde7547b62",
+      "primitives": {
+        "1/0": "m8_1_0",
+        "2/0": "m8_2_0",
+        "3/0": "m8_3_0",
+        "4/0": "m8_4_0"
+      },
+      "entityId": "bay.ab40e823-8c31-454c-af85-bc734d103a21"
+    },
+    {
+      "label": "SUNTEC TOWER FOUR",
+      "source": "dcdf801848f13717585f3a39a7d3034c505ed973017a57378082fee949a25923",
+      "output": "6f33c41ae4a5c5ce1baefc951e69348df1440644bc908f08f576826abda475bb",
+      "primitives": {
+        "0/0": "m9_0_0"
+      },
+      "entityId": "bay.bdf8a43d-df18-4111-a7a8-55e83260fd96"
+    },
+    {
+      "label": "SOUTH BEACH RESIDENCES",
+      "source": "e7874774c54f3bfa820ae1dc1a2094ef10994fcf039b1bc7bd8db88153ae5024",
+      "output": "5197331ef6abd3a8eade13c28a0ae6a4d19e3c6178fa6aa5b0d5d09066eb1a41",
+      "primitives": {
+        "0/0": "m10_0_0"
+      },
+      "entityId": "bay.c445be87-c9a3-4420-a0ed-6099b239d5f0"
+    },
+    {
+      "label": "Guoco Midtown office tower",
+      "source": "b3f84c18343aa6599be6a9db7e0d4ccc7fec62e1490b39710454012ff9b0bb28",
+      "output": "a8f3813fe42ae3ffa8c9f7115cd74752ff2d2e2b94bdde5197551b4b074ba7d1",
+      "primitives": {
+        "1/0": "m11_1_0",
+        "2/0": "m11_2_0"
+      },
+      "entityId": "bay.d9952b9a-c894-4231-984e-b5b44238a62a"
+    },
+    {
+      "label": "SUNTEC TOWER THREE",
+      "source": "ef40a0a4b3227bb23f94d8fe42233fff315ff31f641b5ce4676e1c793a05dbab",
+      "output": "0f88b67b807ead662dd49cee96fd8a644d7968a73f3d3c78dc1fe34232530303",
+      "primitives": {
+        "0/0": "m12_0_0"
+      },
+      "entityId": "bay.da2bc05d-fea0-4a97-a1fa-42711a3b7f20"
+    },
+    {
+      "label": "SUNTEC TOWER TWO",
+      "source": "c262218d23fd487898a89fffea06b4b6f7bae74af2b4a33f5c7a1b5eea198143",
+      "output": "066c4eac6a72e31a02cf6622356bf81a705041ec693b741ba66573c85d8f85b8",
+      "primitives": {
+        "0/0": "m13_0_0"
+      },
+      "entityId": "bay.e8d3e6df-4f2f-4be4-9adb-2e7c5e958b77"
+    },
+    {
+      "label": "滨海湾 · 远景楼群与临湾外墙",
+      "source": "ac39bc28b32c4824ec15d14f4fbc38c5db63961f3e9eed1c79125b38438d3821",
+      "output": "0eaccb731a1bc3fb39bb52f7bf2b6eda00df54ab438a49e8dcd4db3658f07301",
+      "primitives": {
+        "0/0": "m14_0_0",
+        "2/0": "m14_2_0",
+        "3/0": "m14_3_0",
+        "4/0": "m14_4_0"
+      },
+      "entityId": "bay.waterfront-skyline-facades.beach-road"
+    },
+    {
+      "label": "滨海中心远景 · Concourse 楼群",
+      "source": "1b1f29a961868e4fb2557e2a90a819a2eeca3270a3fdb0e0ea78c56b02078767",
+      "output": "fc943854437ede6562b1357a7a7b013212df6e94ca7291bc23d5eb71b8e114de",
+      "primitives": {
+        "0/0": "m15_0_0",
+        "1/0": "m15_1_0",
+        "2/0": "m15_2_0",
+        "3/0": "m15_3_0"
+      },
+      "entityId": "bay.waterfront-skyline-facades.concourse"
+    },
+    {
+      "label": "滨海湾 · 远景楼群与临湾外墙",
+      "source": "9d19ebf8e5c622353e3de5c85b3bd693ed3a28a0d3c0db3bccf9ead4cc1a0ca5",
+      "output": "fd0f375c38cd8a7bfa897f71eae80509174f42eac1038447261319b7727d665e",
+      "primitives": {
+        "0/0": "m16_0_0",
+        "2/0": "m16_2_0",
+        "3/0": "m16_3_0",
+        "4/0": "m16_4_0",
+        "5/0": "m16_5_0",
+        "6/0": "m16_6_0",
+        "7/0": "m16_7_0",
+        "8/0": "m16_8_0"
+      },
+      "entityId": "bay.waterfront-skyline-facades.downtown"
+    },
+    {
+      "label": "滨海湾 · 远景楼群与临湾外墙",
+      "source": "c28ec5551bd8c35656d70440b80660a5aff0895cae13030655cc54eb621e1fc6",
+      "output": "06c949eb47b580730e37636109f4e2345e78b09e2dffd78f9ba27de56d7fd3c9",
+      "primitives": {
+        "0/0": "m17_0_0"
+      },
+      "entityId": "bay.waterfront-skyline-facades.north"
+    }
+  ]
+}

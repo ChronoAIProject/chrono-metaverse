@@ -2620,5 +2620,34 @@
       "版权": "Paths © OpenStreetMap contributors (ODbL). Aerial interpretation © Singapore Land Authority / OneMap. Concrete Floor 02 and Granite Tile 04 by Poly Haven (CC0).",
       "依据": "路面类型来自 OSM，道路宽度和材质冷暖按 OneMap 航片估计。"
     }
+  },
+  {
+    "entityId": "bay.beach-road-carriageways",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "e11fc1651a02e379805fe97be3a0aa582045714e4aa13caefcae5bbf4556e59b",
+    "bounds": {
+      "min": [
+        162.0738883292752,
+        -60.72695256760364,
+        2316.6733107878404
+      ],
+      "max": [
+        349.0981108973293,
+        -60.64840020678336,
+        2537.618090981363
+      ]
+    },
+    "label": "美芝路 · 店屋沿街车道",
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "版权": "Roads © OpenStreetMap contributors (ODbL). Map Data © Singapore Land Authority / OneMap. Asphalt 01 by Poly Haven (CC0).",
+      "道路材质": "中心线与车道数取自 OSM。沥青色调参考 OneMap 航片，路宽与标线间距为估值。"
+    }
   }
 ]

@@ -1,0 +1,29 @@
+{
+  "entityId": "bay.promontory-waterfront-canopy",
+  "regionId": "marina-bay-exterior",
+  "layer": "ext",
+  "kind": "structure",
+  "label": "滨海大道 · 草坪南侧滨水林带",
+  "assetHash": "60e4452fb5a47edc48ed4c781c307846b1fcd1700a448a08a700781c7cf10830",
+  "bounds": {
+    "min": [
+      13.554356780066648,
+      -60.13,
+      60.3664897912836
+    ],
+    "max": [
+      65.8802902314397,
+      -51.239213227315126,
+      100.15494808409449
+    ]
+  },
+  "material": {
+    "shading": "albedo"
+  },
+  "props": {
+    "background": true,
+    "surfaceRole": "landscape",
+    "survey": "Crown envelope estimated from SLA OneMap OrthoJPG and the Meta/WRI 1 m canopy height map. Individual stems, species and ground height approximated.",
+    "attribution": "Poly Haven · Tree Small 02 (CC0)"
+  }
+}

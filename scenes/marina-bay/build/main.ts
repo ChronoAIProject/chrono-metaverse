@@ -213,12 +213,15 @@ function surveyedGrassCoverage(environment: EntityBody | null): EntityBody | nul
     surfaces: { surface: string; ring: number[][] }[];
   };
   const streetPaving = verges.surfaces.filter(row => row.surface === 'paving').map(row => [row.ring]);
+  const beachRoad = JSON.parse(readFileSync(new URL('../references/beach-road-carriageways.json', import.meta.url), 'utf8')) as {
+    grassExclusions: number[][][][];
+  };
   const existing = settings.map.grassExclusions ?? [];
   // Equivalent longitude/latitude coordinates can differ at double precision after a draft roundtrip.
   const ringKey = (rings: unknown) => JSON.stringify(rings, (_, item: unknown) =>
     typeof item === 'number' ? Number(item.toFixed(9)) : item);
   const known = new Set(existing.map(ringKey));
-  const additional = [...survey.concrete, ...playingFields, ...museumPaving, ...streetPaving].filter(
+  const additional = [...survey.concrete, ...playingFields, ...museumPaving, ...streetPaving, ...beachRoad.grassExclusions].filter(
     polygon => !known.has(ringKey(polygon)),
   );
   if (!additional.length) return environment;
@@ -337,6 +340,9 @@ export default function build(base: BuildBase, kit: Kit) {
     entities.push(JSON.parse(
       readFileSync(new URL('./esplanade-east-quay.json', import.meta.url), 'utf8'),
     ));
+    entities.push(JSON.parse(
+      readFileSync(new URL('./promontory-canopy.json', import.meta.url), 'utf8'),
+    ));
     // These surveyed towers are already aligned to the same final member coordinates as the census tiles.
     const marinaCentre: EntityBody[] = JSON.parse(
       readFileSync(new URL('./marina-centre-towers.json', import.meta.url), 'utf8'),
@@ -346,6 +352,14 @@ export default function build(base: BuildBase, kit: Kit) {
   // 线上按视野流式加载的周边楼群独立于离线模型包，由空间保存其图层和保护范围。
   const surroundings = base.entities.find((entity) => entity.entityId === 'bay.city-surroundings');
   if (surroundings) entities.push(...(config.quay ? withSkylineFacades(withBoatQuay(surroundings)) : [surroundings]));
+  // Sky visibility belongs to each facade at its surveyed location and to the sampled mesh revision.
+  const facadeFinishes = ['district-skylight/survey', 'financial-facade-exposure'].flatMap((name) => {
+    const survey: { buildings: { entityId: string; source: string; output: string }[] } = JSON.parse(
+      readFileSync(new URL(`../references/${name}.json`, import.meta.url), 'utf8'),
+    );
+    return survey.buildings;
+  });
+  const bakedFacades = new Map(facadeFinishes.map((row) => [row.entityId, row]));
   const ids = new Set(entities.map((entity) => entity.entityId));
   return {
     message: config.message,
@@ -359,10 +373,12 @@ export default function build(base: BuildBase, kit: Kit) {
         )
         .map((entity) => kit.removeEntity(entity.entityId)),
       ...entities.map((entity) => {
+        const facade = config.quay ? bakedFacades.get(entity.entityId) : undefined;
         const scans = config.quay && groundScanMaterials[entity.entityId];
         const pavers = config.quay && pavedSurfaces[entity.entityId];
         return kit.placeEntity({
           ...entity,
+          ...(facade && entity.assetHash === facade.source && { assetHash: facade.output }),
           props: {
             ...entity.props,
             background: true,

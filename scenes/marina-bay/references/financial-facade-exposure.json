@@ -1,0 +1,163 @@
+{
+  "method": "Neutral exposure transfer in linear light using same-sign residuals after subtracting the median building exposure error in each photograph. The correction rolls off on bright material samples.",
+  "buildings": [
+    {
+      "entityId": "bay.9caa0720-0418-4ecd-add7-a9b77dde07de",
+      "label": "OCEAN FINANCIAL CENTRE",
+      "source": "ad68aa9efedcf94b48449677f120dfa4341582673320545ce4ffb4667a6152cb",
+      "output": "88f9cc1f278fd67b9ef8d6a0cb92ee5bfe67d0987803cabbd94f39def2add76d",
+      "stops": 0.6138,
+      "materials": [
+        "Surveyed office curtain wall"
+      ],
+      "references": [
+        {
+          "id": "157871412",
+          "label": "OCEAN FINANCIAL CENTRE",
+          "points": 27,
+          "brightness": -0.93,
+          "redBlue": -0.65
+        },
+        {
+          "id": "137548517",
+          "label": "OCEAN FINANCIAL CENTRE",
+          "points": 27,
+          "brightness": -1.18,
+          "redBlue": -0.7
+        }
+      ]
+    },
+    {
+      "entityId": "bay.4345937a-f8cc-4025-b8ea-54c7f53b5f48",
+      "label": "SINGAPORE LAND TOWER",
+      "source": "0f678bd50c2e1c48cf8323998dc9fe9826c94e74b38fff2d5f44c79ca3d2e92b",
+      "output": "3acfc424adc50e2dc9db59fe08142723fe29e5692f129b58ab33a3e1c91326c9",
+      "stops": -0.4752,
+      "materials": [
+        "dc2400420",
+        "Singapore Land Tower coated curtain wall"
+      ],
+      "references": [
+        {
+          "id": "157871412",
+          "label": "SINGAPORE LAND TOWER",
+          "points": 5,
+          "brightness": 0.72,
+          "redBlue": -0.44
+        },
+        {
+          "id": "137548517",
+          "label": "SINGAPORE LAND TOWER",
+          "points": 7,
+          "brightness": 0.86,
+          "redBlue": 0.07
+        }
+      ]
+    },
+    {
+      "entityId": "bay.d22d5a6f-c5c5-4979-9e78-39502269b04f",
+      "label": "MARINA BAY RESIDENCES",
+      "source": "1940b8fd7bc3d8e01d6e502aaf639b9a81cb5c8cbe0d5729e783b083070d0f68",
+      "output": "d7c583b5e0d3c996e9d5010addf6a725355bde7b1f88503fca07de6ed451101f",
+      "stops": 0.78,
+      "materials": [
+        "dc2400285"
+      ],
+      "references": [
+        {
+          "id": "157871412",
+          "label": "MARINA BAY RESIDENCES",
+          "points": 37,
+          "brightness": -1.91,
+          "redBlue": -0.32
+        },
+        {
+          "id": "137548517",
+          "label": "MARINA BAY RESIDENCES",
+          "points": 51,
+          "brightness": -3.79,
+          "redBlue": 0.33
+        }
+      ]
+    },
+    {
+      "entityId": "bay.maybank-waterfront-daylight",
+      "label": "马来亚银行大厦 · 临湾窗带",
+      "source": "b3ff51807b2005f1dc905e6c0d351a1976ebda4fbfe35a9764b6f3b5dd152635",
+      "output": "399d7f3c89b5915d3dc746d51093953638b49789cf730e2cb4b0d790e8a32011",
+      "stops": -0.66,
+      "materials": [
+        "Maybank waterfront window bands"
+      ],
+      "references": [
+        {
+          "id": "157871412",
+          "label": "马来亚银行大厦 · 临湾窗带",
+          "points": 15,
+          "brightness": 1.0,
+          "redBlue": -0.26
+        },
+        {
+          "id": "137548517",
+          "label": "马来亚银行大厦 · 临湾窗带",
+          "points": 38,
+          "brightness": 1.14,
+          "redBlue": 1.25
+        }
+      ]
+    },
+    {
+      "entityId": "bay.08072a9f-809e-4a62-8517-0ec0efc1b4a2",
+      "label": "OUE BAYFRONT",
+      "source": "566b1d2b142c2e2ec924f4b9351829b5b56793aafbd43ecef1eb4ae609f9d0ec",
+      "output": "8d5cc0027ee7dbdecd539620c4a1c049fdf1ff1831027e1416186ce094c4a9f7",
+      "stops": -0.78,
+      "materials": [
+        "dc2400418",
+        "dc2400418"
+      ],
+      "references": [
+        {
+          "id": "157871412",
+          "label": "OUE BAYFRONT",
+          "points": 18,
+          "brightness": 1.76,
+          "redBlue": -0.41
+        },
+        {
+          "id": "137548517",
+          "label": "OUE BAYFRONT",
+          "points": 12,
+          "brightness": 1.26,
+          "redBlue": 1.38
+        }
+      ]
+    },
+    {
+      "entityId": "bay.3b2c3f12-5d43-4274-ace0-a4a32608288d",
+      "label": "ONE GEORGE STREET",
+      "source": "ad6463992e7dfbcc5344cdf020e37fcbbdca0b6970173b01a3b22efde43a55bc",
+      "output": "5fa151634983518a5301289c4114c97805c44e44ffec4e35856b702772bcb199",
+      "stops": -0.44880000000000003,
+      "materials": [
+        "ONE GEORGE STREET silver screen and office glazing"
+      ],
+      "references": [
+        {
+          "id": "157871412",
+          "label": "ONE GEORGE STREET",
+          "points": 20,
+          "brightness": 0.68,
+          "redBlue": 0.24
+        },
+        {
+          "id": "137548517",
+          "label": "ONE GEORGE STREET",
+          "points": 16,
+          "brightness": 0.84,
+          "redBlue": 0.31
+        }
+      ]
+    }
+  ]
+}
