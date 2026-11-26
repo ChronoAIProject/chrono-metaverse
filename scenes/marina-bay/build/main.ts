@@ -140,8 +140,12 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
   const { radiance: _scatteredRadiance, ...scatteredDisplaySky } = scatteredMorning;
   const midMorning = JSON.parse(readFileSync(new URL('../references/qwantani-mid-morning-sky.json', import.meta.url), 'utf8'));
   const { radiance: _midMorningRadiance, ...midMorningDisplay } = midMorning;
+  const diffuseMorning = JSON.parse(readFileSync(new URL('../references/qwantani-diffuse-morning-sky.json', import.meta.url), 'utf8'));
+  const { radiance: _diffuseRadiance, ...diffuseDisplaySky } = diffuseMorning;
   const { radiance, ...displaySky } = target.sky;
   const presets = [
+    diffuseMorning,
+    diffuseDisplaySky,
     midMorning,
     midMorningDisplay,
     scatteredMorning,
