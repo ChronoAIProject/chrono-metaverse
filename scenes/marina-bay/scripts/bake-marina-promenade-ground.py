@@ -17,13 +17,17 @@ from scanned_canopy import ROOT, write_tree_asset
 surface = import_module("bake-fullerton-road").surface
 
 
-def patch_cells(polygons, frame, pitch):
+def patch_cells(polygons, frame, pitch, exclude=None):
     cells = []
     for rings in polygons:
         shell, *holes = [frame.project({"coordinates": ring}) for ring in rings]
         area = Polygon(shell, holes)
         if not area.is_valid:
             area = area.buffer(0)
+        if exclude is not None:
+            area = area.difference(exclude)
+        if area.is_empty:
+            continue
         x0, z0, x1, z1 = area.bounds
         x, z = np.meshgrid(np.arange(np.floor(x0 / pitch) * pitch, x1, pitch),
                            np.arange(np.floor(z0 / pitch) * pitch, z1, pitch))
@@ -47,15 +51,15 @@ def concrete():
                        metallicFactor=0)
 
 
-def bank_surfaces(frame, datum, origin, turf):
-    survey = json.loads((ROOT / "references/marina-promenade-bank.json").read_text())
+def bank_surfaces(survey, frame, datum, origin, turf):
     shore = LineString(frame.project({"coordinates": survey["shore"]}))
     gravel = import_module("bake-straits-boulevard").soil_material("gravel")
+    yard_edge = LineString(frame.project({"coordinates": survey["yardEdge"]}))
     gravel.name = "Marina Promenade compacted gravel"
-    gravel.baseColorFactor = [207, 206, 201, 255]
+    gravel.baseColorFactor = [182, 182, 179, 255]
     for kind, material, pitch in [("turf", turf, 1.4), ("gravel", gravel, 2.53)]:
         patch = survey[kind]
-        mesh = surface(patch_cells(patch["rings"], frame, 2.25), material, datum, origin,
+        mesh = surface(patch_cells(patch["rings"], frame, 1.5), material, datum, origin,
                        height=.069, tile_width=pitch)
         xz = mesh.vertices[:, [0, 2]]
         inland = distance(points(xz), shore)
@@ -70,13 +74,22 @@ def bank_surfaces(frame, datum, origin, turf):
         # The photographed shore is darker at its toe. Apply this on the land side
         # of the surveyed water edge and let the material grain continue through it.
         damp = 1 - .26 * np.exp(-inland / 1.25)
+        # Both sides of the gravel track carry a strip of soil and sparse grass.
+        # Blend in metres so the land-cover outline does not read as a cutout.
+        wear = turf_wear(xz)
+        edge = np.clip(distance(points(xz), yard_edge) / 4.6, 0, 1)
+        amount = (edge * edge * (3 - 2 * edge))[:, None]
+        soil = np.array([106, 107, 85]) * wear**.36
         if kind == "turf":
-            pigment = np.clip(rgb * [.95, 1.01, .91], [72, 76, 46], [137, 142, 107])
-            tint = (pigment / [133, 139, 105])**2.2 * turf_wear(xz)
+            pigment = np.clip(rgb * [.93, .99, .88], [72, 78, 46], [130, 135, 101]) * wear**.40
+            midtone = [133, 139, 105]
         else:
-            tint = (np.clip(rgb, 86, 182) / [207, 199, 182])**2.2
+            pigment = np.clip(rgb * [.89, .87, .81], [80, 78, 71], [149, 145, 132])
+            midtone = np.array([207, 199, 182]) * gravel.baseColorFactor[:3] / 255
             # Shift aggregate features over several metres. All PBR maps share these UVs.
             mesh.visual.uv += np.column_stack((.31 * np.sin(xz[:, 1] / 6.1), .28 * np.cos(xz[:, 0] / 8.7)))
+        pigment = soil + amount * (pigment - soil)
+        tint = (pigment / midtone)**2.2
         tint = np.clip(tint * damp[:, None], .03, 1)
         mesh.visual.vertex_attributes["color"] = np.uint8(np.rint(255 * np.c_[tint, np.ones(len(tint))]))
         yield mesh
@@ -90,7 +103,9 @@ def bake():
     datum = terrain["origin"][1] - placement["translation"][1]
     origin = frame.shift[[0, 2]]
     turf = scanned_turf("Marina Promenade ground cover", [133, 139, 105])
-    lawn = surface(patch_cells(survey["turf"], frame, 6.5), turf, datum, origin, height=.068, tile_width=1.4)
+    bank = json.loads((ROOT / "references/marina-promenade-bank.json").read_text())
+    margin = Polygon(frame.project({"coordinates": bank["margin"][0]}))
+    lawn = surface(patch_cells(survey["turf"], frame, 6.5, exclude=margin), turf, datum, origin, height=.068, tile_width=1.4)
     tones = np.array(survey["tones"])
     samples = frame.project({"coordinates": tones[:, :2]})
     positions = lawn.vertices[:, [0, 2]]
@@ -107,7 +122,7 @@ def bake():
     scene = trimesh.Scene()
     for mesh in (lawn, paving):
         scene.add_geometry(mesh, geom_name=mesh.visual.material.name)
-    for mesh in bank_surfaces(frame, datum, origin, turf):
+    for mesh in bank_surfaces(bank, frame, datum, origin, turf):
         scene.add_geometry(mesh, geom_name=mesh.visual.material.name + " along the bank")
     credit = ("OpenStreetMap contributors (ODbL). Land-cover survey derived from OneMap orthophotography, "
               "Singapore Land Authority. Grass 004 by ambientCG and concrete and Sandy Gravel 02 scans by Poly Haven (CC0).")
