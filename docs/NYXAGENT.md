@@ -1,6 +1,6 @@
 # 工作台 NyxBot
 
-进入 `/workspace`，选择已有空间，点「空间助手」，选择「NyxBot · 对话编辑」。聊天窗内嵌 `@chronoai/nyx-assistant-sdk/widget`，通过 SDK 的独立 chrono-cd 服务调用 NyxID 的 `llm-nyx` 和 `nyxagent/chat`。工作台的扫描与模型导入继续使用 CMA。
+进入 `/workspace`，选择个人或组织空间，打开「Nyx 助手」。顶栏直接挂载 `@chronoai/nyx-assistant-sdk/widget`。授权、消息、Markdown 和请求恢复由 SDK 提供，通过独立的 chrono-cd 转发服务访问 NyxID。空间工作台提供查看器工具、草稿预览与发布确认。
 
 ## 连接与恢复
 

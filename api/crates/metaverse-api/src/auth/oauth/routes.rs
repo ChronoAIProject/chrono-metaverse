@@ -36,9 +36,6 @@ pub fn router(state: AppState, viewer: Router<AppState>) -> Router<AppState> {
             post(super::catalog::share),
         )
         .merge(viewer)
-        .merge(super::worker::router())
-        .merge(super::agent_key::router())
-        .merge(super::nyxagent::router())
         .route_layer(axum::middleware::from_fn_with_state(
             state,
             crate::public::guard,
@@ -175,22 +172,11 @@ async fn login(
         ("response_type", "code"),
         ("client_id", oauth.config.client_id.as_str()),
         ("redirect_uri", oauth.config.redirect_uri.as_str()),
-        (
-            "scope",
-            if oauth.config.cma_base_url.is_some() {
-                "openid roles offline_access proxy"
-            } else {
-                "openid roles offline_access"
-            },
-        ),
+        ("scope", "openid roles offline_access"),
         ("state", state.as_str()),
         ("code_challenge", crypto::digest(&verifier).as_str()),
         ("code_challenge_method", "S256"),
     ]);
-    if oauth.config.cma_base_url.is_some() {
-        url.query_pairs_mut()
-            .append_pair("resource", oauth.endpoint("/api/v1/proxy/s/cma").as_str());
-    }
     let mut response = Redirect::to(url.as_str()).into_response();
     set_cookie(
         &mut response,
@@ -318,22 +304,6 @@ async fn finish_callback(
             seconds()? + SESSION_TTL,
         )
         .await?;
-    if flow.workspace && oauth.config.cma_base_url.is_some() {
-        let browser = oauth
-            .repo
-            .oauth_session_get(&STORE, &crypto::digest(&session), seconds()?)
-            .await?
-            .ok_or(OAuthError::Reconnect)?;
-        // The CMA authorization click also enables this browser. Actual service
-        // access still requires a successful direct CMA probe; CMA enforces resource access.
-        if !oauth
-            .repo
-            .oauth_worker_consent(&STORE, &browser, true, seconds()?)
-            .await?
-        {
-            return Err(OAuthError::Reconnect.into());
-        }
-    }
     let mut response = Redirect::to(if flow.workspace {
         "/workspace"
     } else {
@@ -391,8 +361,8 @@ async fn session(State(state): State<AppState>, headers: HeaderMap) -> Result<Re
         None => None,
     };
     Ok(private(Json(match session {
-        Some(session)=>json!({"enabled":true,"connected":true,"subject":session.subject,"csrfToken":crypto::digest(&format!("csrf/{}",raw.as_ref().unwrap().as_str())),"toolSourceRef":super::tools::SOURCE_REF,"workerAvailable":oauth.config.cma_base_url.is_some(),"workerUrl":oauth.config.cma_base_url,"workerEnabled":session.worker_enabled}),
-        None=>json!({"enabled":true,"connected":false,"toolSourceRef":super::tools::SOURCE_REF,"workerAvailable":oauth.config.cma_base_url.is_some()}),
+        Some(session)=>json!({"enabled":true,"connected":true,"subject":session.subject,"csrfToken":crypto::digest(&format!("csrf/{}",raw.as_ref().unwrap().as_str()))}),
+        None=>json!({"enabled":true,"connected":false}),
     }).into_response()))
 }
 

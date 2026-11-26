@@ -258,6 +258,7 @@ it('网络失败可重试，未启用时不显示授权入口', async () => {
 
 it('迁移后清除旧浏览器凭据，断开只调用 OAuth 断开接口', async () => {
   localStorage.setItem('metaverse-cma-credential:v2:alice:alice', 'legacy-secret');
+  localStorage.setItem('metaverse-cma-credential:v2:bob:bob', 'other');
   const request = vi.fn<typeof fetch>(async (input) =>
     Response.json(String(input).endsWith('/session') ? connected : { ok: true }),
   );
@@ -270,4 +271,5 @@ it('迁移后清除旧浏览器凭据，断开只调用 OAuth 断开接口', asy
     '/api/auth/nyxid/disconnect',
   ]);
   expect(localStorage.getItem('metaverse-cma-credential:v2:alice:alice')).toBeNull();
+  expect(localStorage.getItem('metaverse-cma-credential:v2:bob:bob')).toBe('other');
 });

@@ -1,5 +1,4 @@
-// 凭据仅保存在浏览器独立的授权存储中，不进入任务、聊天记录、URL 或诊断。
-export type KeyIdentity = {
+type KeyIdentity = {
   ownerId?: string;
   credentialVersion?: string;
   keyId: string;
@@ -9,21 +8,9 @@ export type KeyIdentity = {
   keyExpiresAt: string | null;
 };
 type SavedKey = { subject: string; credential: string; identity: KeyIdentity };
-export type ChatProvider = 'cma' | 'nyxagent';
-const LEGACY = 'metaverse-cma-credential:v1';
-const prefix = (subject: string, provider: ChatProvider = 'cma') =>
-  `metaverse-${provider}-credential:v2:${encodeURIComponent(subject)}:`;
-export const browserKeyStorageKey = (subject: string, provider: ChatProvider = 'cma') =>
-  `${prefix(subject, provider)}${encodeURIComponent(subject)}`;
-const legacyKey = (subject: string, owner = subject) =>
-  owner === subject ? LEGACY : `${LEGACY}:org:${owner}`;
-const storageKeys = (storage: Storage) =>
-  Array.from({ length: storage.length }, (_, index) => storage.key(index)).filter(
-    (key): key is string => key !== null,
-  );
-export const validCredential = (v: unknown): v is string =>
+const validCredential = (v: unknown): v is string =>
   typeof v === 'string' && /^(?:nyx_|nyxid_ag_)[!-~]{12,4090}$/.test(v);
-export function validIdentity(v: unknown): v is KeyIdentity {
+function validIdentity(v: unknown): v is KeyIdentity {
   if (!v || typeof v !== 'object') return false;
   const x = v as KeyIdentity;
   return (
@@ -33,98 +20,69 @@ export function validIdentity(v: unknown): v is KeyIdentity {
     )
   );
 }
-export function readBrowserKey(
-  subject?: string,
-  owner = subject,
-  provider: ChatProvider = 'cma',
-): SavedKey | null {
-  if (!subject) return null;
+// SDK 验证并加密迁移完成后，才移除本次读取的旧凭据。
+export function legacyNyxGrant(subject: string) {
+  const id = encodeURIComponent(subject);
+  const key = `metaverse-nyxagent-credential:v2:${id}:${id}`;
   try {
-    const key = browserKeyStorageKey(subject, provider);
-    const persistent = localStorage.getItem(key);
-    const raw =
-      persistent ?? (provider === 'cma' ? sessionStorage.getItem(legacyKey(subject, owner)) : null);
-    if (!raw || raw.length > 16_384) return null;
-    const v = JSON.parse(raw) as SavedKey;
+    const raw = localStorage.getItem(key);
+    if (!raw || raw.length > 16384) return;
+    const value = JSON.parse(raw) as SavedKey;
     if (
-      v.subject !== subject ||
-      !validCredential(v.credential) ||
-      !validIdentity(v.identity) ||
-      (v.identity.ownerId !== undefined && v.identity.ownerId !== subject)
+      value.subject !== subject ||
+      !validCredential(value.credential) ||
+      !validIdentity(value.identity)
     )
-      return null;
+      return;
+    const identity = value.identity;
+    if (identity.ownerId !== undefined && identity.ownerId !== subject) return;
     if (
-      [v.identity.credentialExpiresAt, v.identity.keyExpiresAt].some(
-        (s) => s !== null && Date.parse(s) <= Date.now(),
+      [identity.credentialExpiresAt, identity.keyExpiresAt].some(
+        (time) => time !== null && Date.parse(time) <= Date.now(),
       )
     )
-      return null;
-    if (persistent === null) saveBrowserKey(subject, v.credential, v.identity, owner, provider);
-    return v;
+      return;
+    return {
+      credential: value.credential,
+      forget() {
+        if (localStorage.getItem(key) === raw) localStorage.removeItem(key);
+      },
+    };
   } catch {
-    return null;
+    return;
   }
 }
-export function saveBrowserKey(
-  subject: string,
-  credential: string,
-  identity: KeyIdentity,
-  owner = subject,
-  provider: ChatProvider = 'cma',
-) {
-  if (
-    !validCredential(credential) ||
-    !validIdentity(identity) ||
-    (identity.ownerId !== undefined && identity.ownerId !== subject)
-  )
-    throw new Error('无法核对 Agent Key 授权结果，请重新授权。');
-  try {
-    localStorage.setItem(
-      browserKeyStorageKey(subject, provider),
-      JSON.stringify({ subject, credential, identity }),
-    );
-  } catch {
-    throw new Error('无法在此浏览器保存 Agent Key 授权，请检查网站存储设置后重试。');
-  }
-  try {
-    if (provider !== 'cma') return;
-    const previous = sessionStorage.getItem(legacyKey(subject, owner));
-    if (previous && (JSON.parse(previous) as SavedKey).subject === subject)
-      sessionStorage.removeItem(legacyKey(subject, owner));
-  } catch {
-    // 新凭据已经保存；旧标签页存储不可用时不误报保存失败。
-  }
-}
-export function readBrowserKeys(subject: string): Array<SavedKey & { owner: string }> {
-  const saved = readBrowserKey(subject);
-  return saved ? [{ ...saved, owner: subject }] : [];
-}
-export function clearBrowserKey(subject: string, owner?: string, provider: ChatProvider = 'cma') {
-  for (const storage of [localStorage, sessionStorage]) {
-    const keys = owner
-      ? [
-          browserKeyStorageKey(subject, provider),
-          ...(provider === 'cma' ? [legacyKey(subject, owner)] : []),
-        ]
-      : storageKeys(storage).filter(
-          (k) =>
-            k.startsWith(prefix(subject, provider)) ||
-            (provider === 'cma' && (k === LEGACY || k.startsWith(`${LEGACY}:org:`))),
-        );
-    for (const key of keys) {
-      try {
-        const raw = storage.getItem(key);
-        if (raw && (JSON.parse(raw) as SavedKey).subject === subject) storage.removeItem(key);
-      } catch {
-        storage.removeItem(key);
+
+export function forgetLegacyGrants(subject: string) {
+  const id = encodeURIComponent(subject);
+  for (const name of ['localStorage', 'sessionStorage'] as const) {
+    try {
+      const storage = window[name];
+      for (let index = storage.length - 1; index >= 0; index--) {
+        const key = storage.key(index);
+        if (key === null) continue;
+        if (
+          ['cma', 'nyxagent'].some(
+            (provider) =>
+              key.startsWith(`metaverse-${provider}-credential:v2:${id}:`) ||
+              key.startsWith(`metaverse-${provider}-enrollment:v1:${id}:`),
+          )
+        ) {
+          storage.removeItem(key);
+        } else if (
+          key === 'metaverse-cma-credential:v1' ||
+          key.startsWith('metaverse-cma-credential:v1:org:')
+        ) {
+          try {
+            if (JSON.parse(storage.getItem(key) ?? 'null')?.subject === subject)
+              storage.removeItem(key);
+          } catch {
+            /* 无法确定所属账号。 */
+          }
+        }
       }
+    } catch {
+      /* 禁用存储的浏览器仍可断开账号。 */
     }
   }
-}
-export function browserKeyHeaders(subject?: string, owner = subject): Record<string, string> {
-  const value = readBrowserKey(subject, owner);
-  return {
-    ...(value ? { Authorization: `Bearer ${value.credential}` } : {}),
-    ...(owner && owner !== subject ? { 'x-metaverse-cma-owner': owner } : {}),
-  };
 }
