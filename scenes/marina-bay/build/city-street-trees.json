@@ -727,5 +727,36 @@
       "树形素材": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes.",
       "树冠": "树位按 NParks 名录。按树形选用扫描阔叶树或游戏棕榈近似，冠幅和高度为估值。"
     }
+  },
+  {
+    "entityId": "bay.north-bank-crown-cover",
+    "label": "滨海步道 · 临水树带",
+    "layer": "ext",
+    "kind": "object",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "7f8477165e94cf83c79106432694f3f34838ca304149b1baa34b15d9e5b1bc92",
+    "bounds": {
+      "min": [
+        -524.7560594195721,
+        -60.707,
+        2130.1261609069143
+      ],
+      "max": [
+        -356.385543359364,
+        -40.31370122623089,
+        2516.325045559383
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "版权": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes. Royal palm mesh and textures adapted from 0 A.D., Wildfire Games, https://wildfiregames.com/, CC BY-SA 3.0, https://creativecommons.org/licenses/by-sa/3.0/. Scaled, rotated and batched for the street-tree census. Crown footprints from OneMap, Singapore Land Authority.",
+      "依据": "Crown centres, diameters and pigments interpreted from OneMap OrthoJPG zoom 19, Singapore Land Authority. Heights, species-like forms and crown depth are visual estimates. Excludes existing mapped canopies, the compacted gravel and the concrete path.",
+      "树冠数": 48,
+      "棕榈冠数": 26
+    }
   }
 ]
