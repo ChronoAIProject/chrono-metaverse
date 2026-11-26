@@ -1,5 +1,5 @@
 import { useContext, useLayoutEffect, useRef, useState } from 'react';
-import { z } from '@chronoai/nyx-assistant-sdk';
+import { z, type ToolResult } from '@chronoai/nyx-assistant-sdk';
 import { NyxAssistantElement } from '@chronoai/nyx-assistant-sdk/widget';
 import { resultLinks, type Session, type SpaceSummary } from './client';
 import { clearBrowserKey, readBrowserKey } from '../auth/browserKey';
@@ -117,7 +117,7 @@ export function NyxAgentPanel(props: PanelProps) {
         name: 'set_view',
         description: actionDescription,
         parameters: z.object({ actions: z.array(z.record(z.string(), z.unknown())).min(1).max(8) }),
-        execute({ actions }) {
+        execute({ actions }): ToolResult {
           if (!validViewerActions(actions))
             return { ok: false, code: 'invalid_action', message: '页面操作或参数无效。' };
           const command = { id: crypto.randomUUID(), actions };
