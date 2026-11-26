@@ -173,7 +173,7 @@
     "kind": "structure",
     "label": "滨海中心远景 · Concourse 楼群",
     "regionId": "marina-bay-exterior",
-    "assetHash": "70ccfbd840b84db214326232666a42fcd887d01de8f89f53383d26df883de335",
+    "assetHash": "1b1f29a961868e4fb2557e2a90a819a2eeca3270a3fdb0e0ea78c56b02078767",
     "material": {
       "shading": "albedo"
     },
@@ -191,7 +191,7 @@
     },
     "props": {
       "background": true,
-      "版权": "© OpenStreetMap contributors (ODbL), building relations 14347745–14347748. OpenFreeMap building tile 14/12918/8132 supplies the scene-space footprints and elevations. Cladding design is a visual approximation. Glass and concrete samples adapted from Facade005 by ambientCG and Concrete Floor 02 by Poly Haven (CC0).",
+      "版权": "© OpenStreetMap contributors (ODbL), building relations 14347745–14347748. OpenFreeMap building tile 14/12918/8132 supplies the scene-space footprints and elevations. Cladding design is a visual approximation. Glass and concrete samples adapted from Facade005 by ambientCG and Concrete Floor 02 by Poly Haven (CC0). Tower facade textures adapted from Singapore The-Concourse-Office-Tower-and-Concourse-Condo-01 by CEphoto, Uwe Aranas, CC BY-SA 3.0, https://commons.wikimedia.org/?curid=39424571 . Cropped, reordered and relit, adaptations CC BY-SA 3.0, https://creativecommons.org/licenses/by-sa/3.0/.",
       "表面": "两栋阶梯住宅、八角办公塔与商业裙楼分别采用阳台、遮阳屏、银灰横窗与石质竖柱。"
     }
   }
