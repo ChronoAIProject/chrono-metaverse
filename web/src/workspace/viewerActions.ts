@@ -114,19 +114,19 @@ export function parseViewerActions(text: string): { actions: ViewerAction[]; inv
   if (matches.length !== 1 || matches[0]![1]!.length > 16000) return { actions: [], invalid: true };
   try {
     const value = JSON.parse(matches[0]![1]!) as { actions?: unknown };
-    if (
-      !value ||
-      Object.keys(value).some((k) => k !== 'actions') ||
-      !Array.isArray(value.actions) ||
-      value.actions.length > 8 ||
-      !value.actions.every(valid)
-    )
-      return { actions: [], invalid: true };
-    // A space transition must precede all actions targeting its viewer.
-    if (value.actions.some((a, i) => (a.type === 'space' || a.type === 'universe') && i !== 0))
-      return { actions: [], invalid: true };
-    return { actions: value.actions, invalid: false };
+    return validViewerActions(value?.actions) && Object.keys(value).every((k) => k === 'actions')
+      ? { actions: value.actions, invalid: false }
+      : { actions: [], invalid: true };
   } catch {
     return { actions: [], invalid: true };
   }
+}
+
+export function validViewerActions(actions: unknown): actions is ViewerAction[] {
+  return (
+    Array.isArray(actions) &&
+    actions.length <= 8 &&
+    actions.every(valid) &&
+    !actions.some((a, i) => (a.type === 'space' || a.type === 'universe') && i !== 0)
+  );
 }
