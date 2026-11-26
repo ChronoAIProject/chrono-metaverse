@@ -78,6 +78,8 @@ def palm(folder):
 
 def bake(folders, selected_tile=None):
     reference = json.loads((ROOT/'references/city-street-trees.json').read_text())
+    colours = json.loads((ROOT/'references/marina-centre-crown-colours.json').read_text())['samples']
+    median_crown = np.median(list(colours.values()), axis=0)
     output = ROOT/'build/city-street-trees.json'
     if selected_tile and selected_tile not in reference['tiles']:
         raise ValueError(f'Unknown street-tree tile {selected_tile}')
@@ -133,6 +135,21 @@ def bake(folders, selected_tile=None):
                 group = source.visual.material.name
                 groups[group].append(mesh)
                 tint = source.visual.vertex_attributes.get("color")
+                if group.endswith('street foliage') and str(tree_id) in colours:
+                    # Recover relative crown pigments from the aerial survey. Suppress
+                    # exposure and shadow differences already supplied by the renderer.
+                    pigment = np.array(colours[str(tree_id)]) / median_crown
+                    light = pigment @ [.2126, .7152, .0722]
+                    pigment = np.clip((pigment / light) ** 2.2 * light ** .8, .72, 1.24)
+                    phase = np.random.default_rng(tree_id + 431).uniform(0, 2 * np.pi, 2)
+                    local = source.vertices
+                    patch = .62 * np.sin(local @ [6.1, 4.7, -5.4] + phase[0])
+                    patch += .38 * np.sin(local @ [9.3, -7.5, 4.2] + phase[1])
+                    # Sun-exposed sprays carry younger leaves. Changes are continuous
+                    # across all atlas slices at the same position within a crown.
+                    flush = np.clip(.68 * patch + .5 * (local[:, 1] - .5), -1, 1)
+                    rgb = leaf_tint * pigment * (1 + flush[:, None] * [.23, .12, -.06])
+                    tint = np.uint8(np.rint(np.c_[rgb.clip(0, 255), np.full(len(rgb), 255)]))
                 painted[group].append(tint if tint is not None else
                                       np.tile([*leaf_tint,255], (len(mesh.vertices),1)))
         scene = trimesh.Scene()
