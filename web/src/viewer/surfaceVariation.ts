@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { scatterGroundScan, supportsGroundScan } from './groundScan';
+import { type PavingAtlas, scatterGroundScan, supportsGroundScan } from './groundScan';
 
 /** Lattice corners are computed from integer coordinates shared by adjacent patches. */
 export const surfaceNoise = /* glsl */ `
@@ -18,7 +18,11 @@ export const surfaceNoise = /* glsl */ `
 `;
 
 /** Sample opaque weathering and leaf colour in scene metres, independently of the model's UV atlas. */
-export function outdoorSurfaceVariation(material: THREE.Material, scatter = false) {
+export function outdoorSurfaceVariation(
+  material: THREE.Material,
+  scatter = false,
+  paving?: PavingAtlas,
+) {
   if (
     !(
       material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshBasicMaterial
@@ -33,8 +37,9 @@ export function outdoorSurfaceVariation(material: THREE.Material, scatter = fals
   let seed = 0;
   for (const ch of material.name) seed = (Math.imul(seed, 31) + ch.charCodeAt(0)) | 0;
   const phase = new THREE.Vector2((seed & 255) * 0.69, ((seed >>> 8) & 255) * 0.83);
-  const grain = scatter && supportsGroundScan(material);
-  material.customProgramCacheKey = () => key + '|outdoor-surface' + (grain ? '|ground-grain' : '');
+  const grain = (scatter || paving !== undefined) && supportsGroundScan(material);
+  const pattern = grain ? (paving ? '|paving-stones' : '|ground-grain') : '';
+  material.customProgramCacheKey = () => key + '|outdoor-surface' + pattern;
   material.onBeforeCompile = function (shader, renderer) {
     compile.call(this, shader, renderer);
     shader.uniforms.finishPhase = { value: phase };
@@ -75,6 +80,9 @@ export function outdoorSurfaceVariation(material: THREE.Material, scatter = fals
         // less variation at the mirror and matte ends of the measured finish.
         roughnessFactor += 1.45 * (condition - .5) * roughnessFactor * (1.0 - roughnessFactor);`,
         );
-    if (grain) shader.fragmentShader = scatterGroundScan(shader.fragmentShader);
+    if (grain) {
+      if (paving) shader.uniforms.pavingUnits = { value: new THREE.Vector2(...paving) };
+      shader.fragmentShader = scatterGroundScan(shader.fragmentShader, Boolean(paving));
+    }
   };
 }

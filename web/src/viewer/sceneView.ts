@@ -1,3 +1,4 @@
+import { type PavingAtlas, pavingAtlas } from './groundScan';
 import { outdoorSurfaceVariation } from './surfaceVariation';
 import { prepareTreeWind, updateTreeWind } from './treeWind';
 import { PriorityQueue } from '3d-tiles-renderer/core';
@@ -811,6 +812,7 @@ export class SceneView {
         occlusion,
         roof,
         Array.isArray(scans) && scans.includes(m.name),
+        pavingAtlas(entity?.props?.pavingCourseAtlas, m.name),
       );
     const clone = model.clone(true);
     clone.traverse((object) => {
@@ -847,6 +849,7 @@ export class SceneView {
     occlusion?: ModelOcclusion,
     roof?: ModelRoofReflectance,
     scatter = false,
+    paving?: PavingAtlas,
   ): THREE.Material {
     const lookKey = modelMaterialKey(source, look, styleLook);
     if (lookKey === null && !background) return source;
@@ -870,7 +873,7 @@ export class SceneView {
       !source.transparent
         ? roof?.scale
         : undefined;
-    const key = `${lookKey ?? source.uuid}|${background}|${styleLookKey(styleLook)}|${kind}|${air}|${coverage}|${ao ?? ''}|${roofScale ?? ''}|${scatter}`;
+    const key = `${lookKey ?? source.uuid}|${background}|${styleLookKey(styleLook)}|${kind}|${air}|${coverage}|${ao ?? ''}|${roofScale ?? ''}|${scatter}|${paving?.join('x') ?? ''}`;
     let material = this.materialCache.get(key);
     if (material === undefined) {
       material = createModelMaterial(
@@ -883,7 +886,7 @@ export class SceneView {
       if (air) {
         filterModelSurface(material, this.renderer.capabilities.getMaxAnisotropy());
         cityModelAir(material, roofScale);
-        outdoorSurfaceVariation(material, scatter);
+        outdoorSurfaceVariation(material, scatter, paving);
       }
       if (ao && material instanceof THREE.MeshStandardMaterial) {
         const target = material;
