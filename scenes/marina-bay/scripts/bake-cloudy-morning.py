@@ -117,7 +117,7 @@ def bake(morning_path, cloud_path, output, detail_path=None):
     morning_digest = hashlib.md5(morning_path.read_bytes()).hexdigest()
     if morning_digest == "e403ba6805b2e6b7da51a13a4aaab898":
         # Solar centroid and direct-light chromaticity from the 4K mid-morning HDR.
-        day.update(azimuth=36.051, elevation=40.1473, directFraction=.68, sunColor=[1.06352, 0.99158, 0.8964])
+        day.update(azimuth=36.051, elevation=40.1473, directFraction=0.62, sunColor=[1.06352, 0.99158, 0.8964])
         sky["yaw"] = round(day["azimuth"] - 71.5454 - 88, 4)  # 88 degrees from geographic north
     elif morning_digest != "b065d32bfc96c2a87f0547bd06ba30f5":
         raise ValueError(f"Unexpected Qwantani 4K HDR source: {morning_path.name}")

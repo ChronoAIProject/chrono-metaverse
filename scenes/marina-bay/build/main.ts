@@ -67,12 +67,14 @@ export function withBoatQuay(surroundings: EntityBody): EntityBody {
       if (available.length) water = { waterlineEdits: [...previous, ...available] };
     }
   }
-  const { waterSample, rippleWind } = JSON.parse(readFileSync(new URL('../references/marina-reservoir-water.json', import.meta.url), 'utf8'));
-  const { rmsRippleSlope: _ripple, ...gravitySample } = waterSample;
+  const { waterSample, rippleWind, multiDateReflectance } = JSON.parse(readFileSync(new URL('../references/marina-reservoir-water.json', import.meta.url), 'utf8'));
+  const multiDateSample = { ...waterSample, reflectance: multiDateReflectance };
+  const { rmsRippleSlope: _ripple, ...gravitySample } = multiDateSample;
   const { rmsGravitySlope: _slope, ...previousSample } = gravitySample;
   const originalRippleSample = { ...gravitySample, rmsRippleSlope: 0.115 };
   if (waterLayer && sources.some(s => s?.url === waterSample.source) &&
-      (!('waterSample' in content) || isDeepStrictEqual(content.waterSample, originalRippleSample) ||
+      (!('waterSample' in content) || isDeepStrictEqual(content.waterSample, multiDateSample) ||
+       isDeepStrictEqual(content.waterSample, originalRippleSample) ||
        isDeepStrictEqual(content.waterSample, gravitySample) ||
        isDeepStrictEqual(content.waterSample, previousSample))) {
     water = { ...water, waterSample };
@@ -134,8 +136,12 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
   const { radiance: _balancedRadiance, ...balancedDisplaySky } = balancedQwantani;
   const scatteredMorning = JSON.parse(readFileSync(new URL('../references/qwantani-scattered-sky.json', import.meta.url), 'utf8'));
   const { radiance: _scatteredRadiance, ...scatteredDisplaySky } = scatteredMorning;
+  const midMorning = JSON.parse(readFileSync(new URL('../references/qwantani-mid-morning-sky.json', import.meta.url), 'utf8'));
+  const { radiance: _midMorningRadiance, ...midMorningDisplay } = midMorning;
   const { radiance, ...displaySky } = target.sky;
   const presets = [
+    midMorning,
+    midMorningDisplay,
     scatteredMorning,
     scatteredDisplaySky,
     balancedQwantani,
