@@ -44,9 +44,17 @@ export function outdoorSurfaceVariation(
   let seed = 0;
   for (const ch of material.name) seed = (Math.imul(seed, 31) + ch.charCodeAt(0)) | 0;
   const phase = new THREE.Vector2((seed & 255) * 0.69, ((seed >>> 8) & 255) * 0.83);
-  const grain = (scatter || paving !== undefined) && supportsGroundScan(material);
+  // A second UV set can contain shadows baked under nearby trees or buildings.
+  const bakedAo = Boolean(
+    paving &&
+    material instanceof THREE.MeshStandardMaterial &&
+    material.aoMap &&
+    material.aoMap.channel !== material.map.channel,
+  );
+  const grain = (scatter || paving !== undefined) && supportsGroundScan(material, bakedAo);
   const pattern = grain ? (paving ? '|paving-stones' : '|ground-grain') : '';
-  material.customProgramCacheKey = () => key + '|outdoor-surface' + pattern;
+  material.customProgramCacheKey = () =>
+    key + '|outdoor-surface' + pattern + (grain && bakedAo ? '|baked-ao' : '');
   material.onBeforeCompile = function (shader, renderer) {
     compile.call(this, shader, renderer);
     shader.uniforms.finishPhase = { value: phase };
@@ -88,8 +96,13 @@ export function outdoorSurfaceVariation(
         roughnessFactor += 1.45 * (condition - .5) * roughnessFactor * (1.0 - roughnessFactor);`,
         );
     if (grain) {
-      if (paving) shader.uniforms.pavingUnits = { value: new THREE.Vector2(...paving) };
-      shader.fragmentShader = scatterGroundScan(shader.fragmentShader, Boolean(paving));
+      if (paving) {
+        shader.uniforms.pavingUnits = { value: new THREE.Vector2(paving.columns, paving.rows) };
+        shader.uniforms.pavingOriginAndStagger = {
+          value: new THREE.Vector2(paving.originU, paving.stagger),
+        };
+      }
+      shader.fragmentShader = scatterGroundScan(shader.fragmentShader, Boolean(paving), bakedAo);
     }
   };
 }

@@ -68,8 +68,8 @@ export function groundSurfaceMaterial(kind: GroundLayer['material']) {
       diffuseColor.rgb*=albedo*turfTone*mix(.77,1.17,lawn);`
       : /* glsl */ `
       vec2 uvA=vMapUv/2.0;
-      // The five stones across the scan meet on joints at 0.1 + n/5.
-      ivec2 slab=ivec2(floor(uvA*5.0-vec2(.5)));
+      // Measured mortar centres start at U = .0955 and V = 0 in the square scan.
+      ivec2 slab=ivec2(floor((uvA-vec2(.0955,0.))*5.0));
       float batch=surfaceCorner(slab);
       vec2 offset=floor(vec2(batch,surfaceCorner(slab+ivec2(73,11)))*4.99)/5.0;
       vec2 dx=dFdx(uvA), dy=dFdy(uvA);
