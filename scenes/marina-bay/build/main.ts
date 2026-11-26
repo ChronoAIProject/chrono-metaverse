@@ -68,12 +68,14 @@ export function withBoatQuay(surroundings: EntityBody): EntityBody {
     }
   }
   const { waterSample, rippleWind, multiDateReflectance } = JSON.parse(readFileSync(new URL('../references/marina-reservoir-water.json', import.meta.url), 'utf8'));
-  const multiDateSample = { ...waterSample, reflectance: multiDateReflectance };
+  const centralSample = { ...waterSample, radius: 440 };
+  const multiDateSample = { ...centralSample, reflectance: multiDateReflectance };
   const { rmsRippleSlope: _ripple, ...gravitySample } = multiDateSample;
   const { rmsGravitySlope: _slope, ...previousSample } = gravitySample;
   const originalRippleSample = { ...gravitySample, rmsRippleSlope: 0.115 };
   if (waterLayer && sources.some(s => s?.url === waterSample.source) &&
-      (!('waterSample' in content) || isDeepStrictEqual(content.waterSample, multiDateSample) ||
+      (!('waterSample' in content) || isDeepStrictEqual(content.waterSample, centralSample) ||
+       isDeepStrictEqual(content.waterSample, multiDateSample) ||
        isDeepStrictEqual(content.waterSample, originalRippleSample) ||
        isDeepStrictEqual(content.waterSample, gravitySample) ||
        isDeepStrictEqual(content.waterSample, previousSample))) {
