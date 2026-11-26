@@ -8,10 +8,22 @@ export type ViewerTools = {
 };
 export class ViewerToolBinding {
   current: ViewerTools | null = null;
+  private listeners = new Set<() => void>();
+  subscribe(listener: () => void) {
+    this.listeners.add(listener);
+    listener();
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
   bind(viewer: ViewerTools) {
     this.current = viewer;
+    for (const listener of this.listeners) listener();
     return () => {
-      if (this.current === viewer) this.current = null;
+      if (this.current === viewer) {
+        this.current = null;
+        for (const listener of this.listeners) listener();
+      }
     };
   }
 }
@@ -23,7 +35,7 @@ export function registerViewerTools(
   ref: ViewerToolBinding,
   viewer: ViewerTools,
 ) {
-  host.registerTool({
+  const read = host.registerTool({
     name: 'read_selection',
     description: '读取此查看器当前实际选中的空间和物件编号。',
     parameters: z.object({}),
@@ -34,7 +46,7 @@ export function registerViewerTools(
         : { ok: false, code: 'selection_unavailable', message: '当前没有可读取的选中物件。' };
     },
   });
-  host.registerTool({
+  const focus = host.registerTool({
     name: 'focus_selection',
     description: '将镜头聚焦到刚读取的选中物件。选区变化时返回失败。',
     parameters: z.object({ spaceId: z.string(), entityId: z.string() }),
@@ -48,4 +60,8 @@ export function registerViewerTools(
         : { ok: false, code: 'focus_unavailable', message: '当前物件不可聚焦。' };
     },
   });
+  return () => {
+    read();
+    focus();
+  };
 }
