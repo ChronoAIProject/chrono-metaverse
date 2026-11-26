@@ -13,17 +13,22 @@ const sampling = /* glsl */ `
     return vec2(surfaceCorner(corner + ivec2(3,41)), surfaceCorner(corner + ivec2(53,17)));
   }
   GroundPatch groundPatch(vec2 uv) {
-    vec2 lattice = mat2(1.,0.,-.57735027,1.15470054) * uv * .55;
+    // Change donor before an identifiable part of the photograph repeats one UV tile away.
+    vec2 lattice = mat2(1.,0.,-.57735027,1.15470054) * uv * 1.38;
     ivec2 base = ivec2(floor(lattice));
     vec2 f = fract(lattice);
     bool upper = f.x + f.y > 1.;
     if (upper) f = 1. - f;
     vec3 w = vec3(1. - f.x - f.y, f);
-    w = w*w*w;
     ivec2 corner = base + (upper ? ivec2(1) : ivec2(0));
     int stepToEdge = upper ? -1 : 1;
-    return GroundPatch(w / (w.x+w.y+w.z), groundPhase(corner),
-      groundPhase(corner+ivec2(stepToEdge,0)), groundPhase(corner+ivec2(0,stepToEdge)));
+    vec2 first = groundPhase(corner);
+    vec2 second = groundPhase(corner+ivec2(stepToEdge,0));
+    vec2 third = groundPhase(corner+ivec2(0,stepToEdge));
+    // Vary each donor's coverage. Both triangles sharing an edge use the same endpoint weights.
+    w *= .80 + .40 * vec3(first.y, second.y, third.y);
+    w = w*w*w;
+    return GroundPatch(w / (w.x+w.y+w.z), first, second, third);
   }
   vec4 groundSample(sampler2D scan, vec2 uv, GroundPatch region) {
     vec2 dx=dFdx(uv), dy=dFdy(uv);
