@@ -51,13 +51,21 @@ export function outdoorSurfaceVariation(material: THREE.Material) {
     shader.fragmentShader =
       surfaceNoise +
       'varying vec3 finishMeters; uniform vec2 finishPhase; uniform float finishStrength;\n' +
-      shader.fragmentShader.replace(
-        '#include <color_fragment>',
-        /* glsl */ `#include <color_fragment>
+      shader.fragmentShader
+        .replace(
+          '#include <color_fragment>',
+          /* glsl */ `#include <color_fragment>
         vec2 surfacePoint = finishMeters.xz + vec2(.47,.81)*finishMeters.y + finishPhase;
         float condition = .68*surfaceField(surfacePoint*.09) + .32*surfaceField(surfacePoint*.36);
         float variation = (condition - .5) * finishStrength;
         diffuseColor.rgb *= vec3(1.0) + variation*vec3(1.24,1.0,.63);`,
-      );
+        )
+        .replace(
+          '#include <roughnessmap_fragment>',
+          /* glsl */ `#include <roughnessmap_fragment>
+        // Polish and weathering follow the same patches as the colour, with
+        // less variation at the mirror and matte ends of the measured finish.
+        roughnessFactor += 1.45 * (condition - .5) * roughnessFactor * (1.0 - roughnessFactor);`,
+        );
   };
 }
