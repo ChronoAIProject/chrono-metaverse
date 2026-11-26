@@ -171,14 +171,19 @@ def bake():
 
     nodes = {int(k): project(lonlat) for k, lonlat in survey["nodes"].items()}
     asphalt, markings, carriageway, bridges = road_surfaces(survey, nodes)
-    # The drop-off lane widens beyond the nominal OSM lane count at the hotel.
+    # The hotel drop-off and turning lanes widen beyond the nominal OSM lane count.
     # Keep the existing planted islands and footways inside its surveyed outline.
     margins = verge_survey["surfaces"]
     turning = union_all([Polygon([project(p) for p in s["ring"]]) for s in margins if s["surface"] == "asphalt"])
     protected = [Polygon([project(p) for p in s["ring"]]) for s in margins if s["surface"] != "asphalt"]
     protected.extend(Polygon([project(p) for p in ring]) for ring in verge_survey["coveredFootprints"])
     turning = turning.difference(union_all(protected)).difference(carriageway)
-    asphalt = asphalt.union(turning)
+    # Use the same road-paint material for the tapered dividers in the widened lanes.
+    lines = [LineString([project(p) for p in line]).buffer(divider["widthMetres"] / 2, cap_style="flat")
+             for divider in verge_survey.get("paintedDividers", []) for line in divider["lines"]]
+    divider_paint = union_all(lines).intersection(turning)
+    markings = markings.union(divider_paint)
+    asphalt = asphalt.union(turning.difference(divider_paint))
     carriageway = carriageway.union(turning)
     color = Image.open(REFERENCES / "asphalt-color.jpg")
     normal = Image.open(REFERENCES / "asphalt-normal.jpg")
@@ -227,8 +232,9 @@ def bake():
                   "道路材质": "扫描沥青与路面涂料。车道数和道路线形取自 OSM，路宽、标线及磨耗为视觉近似。"}
     }
     file = ROOT / "build/streetscape.json"
-    records = [e for e in json.loads(file.read_text()) if e["entityId"] != ID]
-    file.write_text(json.dumps([*records, entity], ensure_ascii=False, indent=2) + "\n")
+    records = {e["entityId"]: e for e in json.loads(file.read_text())}
+    records[ID] = entity
+    file.write_text(json.dumps(list(records.values()), ensure_ascii=False, indent=2) + "\n")
     print(digest, len(data))
 
 
