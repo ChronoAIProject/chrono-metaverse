@@ -287,7 +287,7 @@ test('AI 页面动作切换空间、视图、草稿和镜头，保留同一个 W
   readAndFocus = false;
   failed = true;
   await send([{ type: 'mode', value: 'raw' }]);
-  await expect(page.getByText('NyxID reported a failed turn')).toBeVisible();
+  await expect(page.getByText('NyxID 报告本次请求失败。')).toBeVisible();
   await expect(viewer).toHaveAttribute('data-mode', 'optimized');
   expect(writes[0]).toMatchObject({
     tools: expect.arrayContaining([
