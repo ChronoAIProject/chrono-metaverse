@@ -92,7 +92,7 @@ def bake():
             ids.append(key)
         survey["roads"].append({"name": "Straits Boulevard", "lanes": row["lanes"], "nodes": ids})
     road, paint, carriageway, _ = roads.road_surfaces(survey, nodes)
-    maps = roads.lane_textures()
+    maps = roads.lane_textures("Straits Boulevard")
     asphalt = PBRMaterial(name="Straits Boulevard asphalt", baseColorTexture=maps["color"],
                           normalTexture=maps["normal"], metallicRoughnessTexture=maps["roughness"],
                           metallicFactor=0, roughnessFactor=1)
