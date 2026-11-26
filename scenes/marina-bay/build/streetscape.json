@@ -2591,5 +2591,34 @@
       "版权": "Footprints © OpenStreetMap contributors (ODbL 1.0), via OpenFreeMap. Roof survey © Singapore Land Authority / OneMap. Clay and plaster scans by Amal Kumar, Poly Haven (CC0).",
       "依据": "按普通地图建筑轮廓与 OneMap 航片可辨认的陶瓦区间重建，坡高、瓦型和遮挡处的屋脊为估计。"
     }
+  },
+  {
+    "entityId": "bay.kampong-glam-lanes",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "a27b3829286e39bc0e744bcb69323db9b1bee91ce5ca03348c8c555af7a2d690",
+    "bounds": {
+      "min": [
+        151.4712938046825,
+        -60.73595935486506,
+        2317.65686929982
+      ],
+      "max": [
+        455.87911411066005,
+        -60.628112995378764,
+        2580.5742117913883
+      ]
+    },
+    "label": "甘榜格南 · 店屋巷道与石铺步道",
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "版权": "Paths © OpenStreetMap contributors (ODbL). Aerial interpretation © Singapore Land Authority / OneMap. Concrete Floor 02 and Granite Tile 04 by Poly Haven (CC0).",
+      "依据": "路面类型来自 OSM，道路宽度和材质冷暖按 OneMap 航片估计。"
+    }
   }
 ]
