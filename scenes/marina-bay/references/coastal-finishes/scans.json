@@ -1,0 +1,44 @@
+{
+  "barrel": {
+    "asset": "clay_roof_tiles",
+    "span": 4.0,
+    "credit": {
+      "Amal Kumar": "All"
+    }
+  },
+  "interlock": {
+    "asset": "clay_roof_tiles_02",
+    "span": 2.5,
+    "credit": {
+      "Amal Kumar": "All"
+    }
+  },
+  "flat-clay": {
+    "asset": "clay_roof_tiles_03",
+    "span": 2.6,
+    "credit": {
+      "Amal Kumar": "All"
+    }
+  },
+  "grey-tile": {
+    "asset": "grey_roof_tiles",
+    "span": 3.0,
+    "credit": {
+      "Rob Tuytel": "All"
+    }
+  },
+  "cut-stone": {
+    "asset": "granite_tile_04",
+    "span": 2.0,
+    "credit": {
+      "Amal Kumar": "All"
+    }
+  },
+  "render": {
+    "asset": "painted_plaster_wall",
+    "span": 2.0,
+    "credit": {
+      "Amal Kumar": "All"
+    }
+  }
+}
