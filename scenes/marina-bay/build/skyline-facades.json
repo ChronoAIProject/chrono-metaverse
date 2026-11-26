@@ -89,7 +89,7 @@
     "kind": "structure",
     "label": "滨海湾 · 低层建筑屋面与墙身",
     "regionId": "marina-bay-exterior",
-    "assetHash": "7327a506188095f0e54eeafaf8e213ebb85976d3eefa8654fb6f5400a23086c3",
+    "assetHash": "aae0990d62af7459468058b25862e936cf9a74cc85b272d438c5a4341cba4077",
     "material": {
       "shading": "albedo"
     },
@@ -117,7 +117,7 @@
     "kind": "structure",
     "label": "滨海湾 · 低层建筑屋面与墙身",
     "regionId": "marina-bay-exterior",
-    "assetHash": "4e205aba9941f05a4205965885207a379d752f13386066d93d120361450a4267",
+    "assetHash": "ddb5ac914b470b9c5cc554cd25521c0d3049fcce08cbdcd09780ab926544df16",
     "material": {
       "shading": "albedo"
     },

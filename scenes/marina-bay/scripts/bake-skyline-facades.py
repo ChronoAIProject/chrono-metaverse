@@ -33,6 +33,33 @@ REPEAT = {"Facade006": (22.4, 27.2), "Facade018A": (18.0, 21.6), "Facade019A": (
           "ServiceWall": (12.0, 3.55), "BrickArcade": (15.0, 3.55), "PanelArcade": (14.4, 3.55),
           "Workshop": (16.2, 3.55), "RibbedFront": (14.4, 3.55)}
 
+# Column boundaries inside the solid piers of each 1280-pixel scan.
+# The door adjoining the PanelArcade storefront travels with the glazing.
+FRONTAGE_PIERS = {
+    "BrickArcade": (0, 410, 540, 825, 1280),
+    "PanelArcade": (0, 584, 932, 1280),
+    "Workshop": (0, 380, 724, 878, 1280),
+    "RibbedFront": (0, 641, 866, 1280),
+}
+
+
+def frontage_bays(finish, repeats, start, end):
+    """Yield edge fractions and source U coordinates for each complete bay."""
+    if finish not in FRONTAGE_PIERS or repeats < 2 or repeats != int(repeats):
+        yield 0., 1., 0., repeats
+        return
+    piers = FRONTAGE_PIERS[finish]
+    bays = list(zip(piers, piers[1:])) * int(repeats)
+    edge = np.round([start, end], 3).astype("<f8").tobytes()
+    seed = int.from_bytes(hashlib.sha256(edge).digest()[:8], "little")
+    np.random.default_rng(seed).shuffle(bays)
+    total_width = piers[-1] * int(repeats)
+    offset = 0
+    for left, right in bays:
+        following = offset + right - left
+        yield offset / total_width, following / total_width, left / piers[-1], right / piers[-1]
+        offset = following
+
 
 def facade_material(name, daylight=None, group=None):
     folder = REFERENCES / name.removesuffix(" surveyed")
@@ -79,20 +106,26 @@ def exterior(part):
     for i, a in enumerate(path):
         j = (i + 1) % len(path)
         b = path[j]
-        start = len(vertices)
         length = np.linalg.norm(b - a)
         repeats = length / u_repeat
         if low_rise:
             # Single-storey facade modules start and end on solid piers at the corners.
             repeats = max(1, round(repeats))
-        for k, elevation, u in [(i, part["minHeight"], 0), (j, part["minHeight"], repeats),
-                                (j, part["height"], repeats), (i, part["height"], 0)]:
-            vertices.append([skin[k, 0], ground[tuple(path[k])] + elevation, skin[k, 1]])
-            uv.append([u, elevation / floor_repeat])
-        faces.extend([[start, start + 2, start + 1], [start, start + 3, start + 2]])
+        foot_a = np.array([skin[i, 0], ground[tuple(a)], skin[i, 1]])
+        foot_b = np.array([skin[j, 0], ground[tuple(b)], skin[j, 1]])
+        bottom = np.array([0., part["minHeight"], 0.])
+        top = np.array([0., part["height"], 0.])
+        for left, right, u0, u1 in frontage_bays(part["finish"], repeats, a, b):
+            start = len(vertices)
+            p = (1 - left) * foot_a + left * foot_b
+            q = (1 - right) * foot_a + right * foot_b
+            vertices.extend([p + bottom, q + bottom, q + top, p + top])
+            uv.extend([(u0, bottom[1] / floor_repeat), (u1, bottom[1] / floor_repeat),
+                       (u1, top[1] / floor_repeat), (u0, top[1] / floor_repeat)])
+            faces.extend([[start, start + 2, start + 1], [start, start + 3, start + 2]])
         top_a = [a[0], ground[tuple(a)] + part["height"], a[1]]
         top_b = [b[0], ground[tuple(b)] + part["height"], b[1]]
-        trim.extend([vertices[start + 3], top_a, top_b, vertices[start + 3], top_b, vertices[start + 2]])
+        trim.extend([foot_a + top, top_a, top_b, foot_a + top, top_b, foot_b + top])
     walls = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
     walls.visual = TextureVisuals(uv=np.asarray(uv))
     coping = trimesh.Trimesh(vertices=trim, faces=np.arange(len(trim)).reshape(-1, 3), process=False)
