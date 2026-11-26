@@ -172,7 +172,7 @@
     "layer": "ext",
     "kind": "structure",
     "label": "One Fullerton · 临水餐饮露台",
-    "assetHash": "c6f0e5c983ac2bae7a2f5acc03001890e42e2f8a451804339f3d8520d4573ec4",
+    "assetHash": "beada8ceaeb8e3d236d93077713d33d6d5377dd77b62d41cfec5543787240e0c",
     "bounds": {
       "min": [
         261.97713136643426,
@@ -215,7 +215,7 @@
     "layer": "ext",
     "kind": "structure",
     "label": "One Fullerton · 中段临水茶座",
-    "assetHash": "db0bc005ad36a5632280f1f6b07e3faaf7f73e37155ff6699767266dd79a8e97",
+    "assetHash": "edfca1ca6fdaea1bafe28506050cd3600b18da5bde0b4a1c50fcfd0da72d2330",
     "bounds": {
       "min": [
         265.66854860159896,
@@ -386,7 +386,7 @@
     "kind": "structure",
     "regionId": "marina-bay-exterior",
     "label": "滨海湾金沙 · 池畔木平台与日光躺椅",
-    "assetHash": "01a97206cb252c6c1d352b616c928f49fec43e1876ee6f98a18ecf37ab660b7a",
+    "assetHash": "ce425c92e3b1d367c35fe5c582e872fa5679dcde338cfed039a90e1d15989b88",
     "bounds": {
       "min": [
         -480.35571429135,
@@ -415,7 +415,7 @@
       },
       "平台来源": "Map Data © Singapore Land Authority / OneMap。铺面配准分段测绘网格。",
       "现场参考": "https://commons.wikimedia.org/wiki/File:Infinity_pool_at_Sands_Sky_Park,_Marina_Bay_Sands_Hotel,_Singapore_-_20100820.jpg",
-      "木材来源": "Poly Haven · Teak Veneer · CC0",
+      "木材来源": "Poly Haven · Wooden Planks、Weathered Planks 与 Teak Veneer · CC0",
       "说明": "依影像估配 48 张躺椅。椅型、面料、木板宽度和具体间距为视觉近似。"
     }
   },
@@ -570,7 +570,7 @@
     "kind": "structure",
     "regionId": "marina-bay-exterior",
     "label": "浮尔顿水上圆亭 · 南侧与西侧平台",
-    "assetHash": "ccc2483a12c6461d1b048525f00b93456bad03322e44fa6e67a2233b3ad4d93d",
+    "assetHash": "9ce432668a7bb7beaf36982aa1e65424a0c964d6b88333a71d3030f228ee52a0",
     "bounds": {
       "min": [
         215.7762476492711,

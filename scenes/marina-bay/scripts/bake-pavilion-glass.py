@@ -1,6 +1,8 @@
 """Identify the curved window belt on the measured Fullerton Pavilion shell."""
 import argparse
 import copy
+from timber_decks import apply_deck_scans
+
 import hashlib
 import io
 import json
@@ -192,6 +194,7 @@ if __name__ == "__main__":
     if hashlib.sha256(raw).hexdigest() != SOURCE:
         raise ValueError("Expected the original SLA Pavilion GLB")
     added_triangles, result = convert(raw)
+    result = apply_deck_scans(result, "Fullerton pier walk boards", "pier")
     digest = hashlib.sha256(result).hexdigest()
     (ROOT / "assets" / (digest + ".glb")).write_bytes(result)
     path = ROOT / "build/onemap-entities.json"

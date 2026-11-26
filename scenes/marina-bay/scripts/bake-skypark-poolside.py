@@ -1,5 +1,7 @@
 """Reconstruct the surveyed SkyPark poolside platforms and their sun loungers."""
 
+from timber_decks import apply_deck_scans
+
 import hashlib
 import json
 import math
@@ -114,7 +116,7 @@ def lounger(angle):
 def board_material(records):
     terrace = next(r for r in records if r["entityId"] == "bay.fullerton-dining-terraces")
     scene = trimesh.load_scene(ROOT / "assets" / (terrace["assetHash"] + ".glb"), process=False)
-    source = next(m.visual.material for m in scene.geometry.values() if m.visual.material.name == "Deck boards")
+    source = next(m.visual.material for m in scene.geometry.values() if m.visual.material.name == "Outdoor timber")
     photo = ImageOps.grayscale(source.baseColorTexture).resize((512, 512), Image.Resampling.LANCZOS)
     wood = np.asarray(ImageOps.colorize(photo, (48, 39, 34), (151, 132, 110))).copy()
     rng = np.random.default_rng(57)
@@ -223,6 +225,7 @@ def poolside(building, records):
                     attrs["TEXCOORD_1"] = attrs.pop("_CONTACT_UV")
 
     data = trimesh.exchange.gltf.export_glb(result, include_normals=True, tree_postprocessor=contact_channel)
+    data = apply_deck_scans(data, "Poolside timber boards", "pool")
     digest = hashlib.sha256(data).hexdigest()
     (ROOT / "assets" / (digest + ".glb")).write_bytes(data)
     return dict(entityId="bay.sands-skypark-poolside", layer="ext", kind="structure", regionId=building["regionId"],
@@ -231,7 +234,7 @@ def poolside(building, records):
                 props={"background": True, "surfaceRole": "landscape",
                        "backgroundView": {"focus": ((lo + hi) / 2).tolist(), "maxDistance": 320},
                        "平台来源": "Map Data © Singapore Land Authority / OneMap。铺面配准分段测绘网格。",
-                       "现场参考": PHOTO, "木材来源": "Poly Haven · Teak Veneer · CC0",
+                       "现场参考": PHOTO, "木材来源": "Poly Haven · Wooden Planks、Weathered Planks 与 Teak Veneer · CC0",
                        "说明": f"依影像估配 {len(footprints)} 张躺椅。椅型、面料、木板宽度和具体间距为视觉近似。"})
 
 

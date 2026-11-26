@@ -1,5 +1,7 @@
 """Restore the two low landings beside the Fullerton Pavilion from OneMap orthophotography."""
 import argparse
+from timber_decks import apply_deck_scans
+
 import hashlib
 import json
 import math
@@ -133,7 +135,7 @@ def landing(timber):
 
     data = trimesh.exchange.gltf.export_glb(model, include_normals=True,
                                             tree_postprocessor=set_edge_material)
-    return data, low, high
+    return apply_deck_scans(data, "Weathered landing boards", "pier"), low, high
 
 
 if __name__ == "__main__":
