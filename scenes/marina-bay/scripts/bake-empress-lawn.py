@@ -20,7 +20,7 @@ from metaverse_recon.context.convert import frame
 def ground_material(grass, reference):
     if grass:
         mean = np.asarray(reference['colourSurvey']['grass']) * [.57, .66, .43]
-        return scanned_turf('Empress Lawn turf', mean)
+        return scanned_turf('Empress Lawn turf', mean, cover='grass_ground')
     mean = np.asarray(reference['colourSurvey']['stone']) * [.80, .76, .69]
     return scanned_pavers('Dalhousie court granite', mean, reference['stonePitchMetres'])
 
@@ -109,7 +109,7 @@ def bake():
                 assetHash=digest,bounds=bounds,material={'shading':'albedo'},
                 props={'background':True,'surfaceRole':'landscape','影像依据':ref['ortho']['title'],
                        '地图来源':'© OpenStreetMap contributors · ODbL','参考道路':ref['mapWays'],
-                       '现场照片':ref['photograph'],'材质素材':'ambientCG Grass 004；Poly Haven Granite Tile 04 · CC0',
+                       '现场照片':ref['photograph'],'材质素材':'Poly Haven Grass Ground、Granite Tile 04 · CC0',
                        '地面重建':'边界按正射影像与通道中心线定位。树冠下的边缘、铺装尺寸和高程为估值。'})
 
 

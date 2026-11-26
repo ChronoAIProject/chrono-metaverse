@@ -13,6 +13,7 @@ from PIL import Image, ImageEnhance
 from shapely import constrained_delaunay_triangles, get_parts, orient_polygons, union_all
 from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import substring
+from ground_materials import turf_colour
 from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
@@ -199,10 +200,8 @@ def bake(extract, texture):
         scene.add_geometry(mesh, geom_name=name, node_name=name)
     islands = planting_islands(config, roads, footprint)
     turf_area = islands.buffer(-0.15, join_style="mitre")
-    turf = Image.open(ROOT.parents[1] / "web/src/assets/geography/turf-color.webp").convert("RGB")
-    turf = turf.resize((512, 512), Image.Resampling.LANCZOS)
-    turf.format = "JPEG"
-    grass = PBRMaterial(name="Grass 004", baseColorTexture=turf, baseColorFactor=[170, 179, 149, 255],
+    turf = turf_colour("sparse_grass", [99, 111, 53], (512, 512))
+    grass = PBRMaterial(name="Fullerton verge grass", baseColorTexture=turf, baseColorFactor=[170, 179, 149, 255],
                         metallicFactor=0, roughnessFactor=1)
     kerb = PBRMaterial(name="Weathered kerb", baseColorFactor=[115, 114, 103, 255],
                        metallicFactor=0, roughnessFactor=0.96)
@@ -223,7 +222,7 @@ def bake(extract, texture):
                   assetHash=digest, label="浮尔顿路 · 沥青车道与标线", bounds=dict(min=low.tolist(), max=high.tolist()),
                   material={"shading": "albedo"}, props={
                       "background": True, "surfaceRole": "landscape",
-                      "绿带轮廓": "Map Data © Singapore Land Authority / OneMap 正射影像；Grass 004 · ambientCG · CC0",
+                      "绿带轮廓": "Map Data © Singapore Land Authority / OneMap 正射影像；Sparse Grass · Poly Haven · CC0",
                       "道路来源": "https://www.openstreetmap.org/way/22919331", "道路编号": list(roads),
                       "材质来源": "https://polyhaven.com/a/asphalt_01",
                       "版权": "© OpenStreetMap contributors · ODbL；Asphalt 01 · Poly Haven · CC0",

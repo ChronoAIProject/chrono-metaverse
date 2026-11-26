@@ -102,7 +102,7 @@ def bake():
     placement = json.loads((ROOT / "build/placement.json").read_text())
     datum = terrain["origin"][1] - placement["translation"][1]
     origin = frame.shift[[0, 2]]
-    turf = scanned_turf("Marina Promenade ground cover", [133, 139, 105])
+    turf = scanned_turf("Marina Promenade ground cover", [133, 139, 105], cover="leafy_grass")
     bank = json.loads((ROOT / "references/marina-promenade-bank.json").read_text())
     margin = Polygon(frame.project({"coordinates": bank["margin"][0]}))
     lawn = surface(patch_cells(survey["turf"], frame, 6.5, exclude=margin), turf, datum, origin, height=.068, tile_width=1.4)
@@ -125,7 +125,7 @@ def bake():
     for mesh in bank_surfaces(bank, frame, datum, origin, turf):
         scene.add_geometry(mesh, geom_name=mesh.visual.material.name + " along the bank")
     credit = ("OpenStreetMap contributors (ODbL). Land-cover survey derived from OneMap orthophotography, "
-              "Singapore Land Authority. Grass 004 by ambientCG and concrete and Sandy Gravel 02 scans by Poly Haven (CC0).")
+              "Singapore Land Authority. Leafy Grass, concrete and Sandy Gravel 02 scans by Poly Haven (CC0).")
     digest, bounds = write_tree_asset(scene, copyright=credit)
     row = dict(entityId="bay.marina-promenade-park-ground", label="滨海步道 · 河岸草地与混凝土慢行道",
                kind="structure", layer="ext", regionId="marina-bay-exterior", bounds=bounds, assetHash=digest,

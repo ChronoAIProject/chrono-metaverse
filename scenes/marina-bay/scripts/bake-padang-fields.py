@@ -118,7 +118,7 @@ def bake():
         uv.append(texcoords)
         colors.append(tint)
         offset += len(points)
-    mat = scanned_turf('Padang playing turf', SCAN_RGB, minimum_roughness=252)
+    mat = scanned_turf('Padang playing turf', SCAN_RGB, cover='grass_ground', roughness=252)
     mesh = trimesh.Trimesh(vertices=np.vstack(vertices), faces=np.vstack(faces), process=False,
                            visual=TextureVisuals(uv=np.vstack(uv), material=mat))
     down = mesh.face_normals[:, 1] < 0
@@ -147,13 +147,13 @@ def bake():
     walkway.faces[down] = walkway.faces[down, ::-1]
     walkway.vertex_normals = np.tile([0., 1., 0.], (len(paving), 1))
     scene.add_geometry(walkway)
-    digest, bounds = write_tree_asset(scene, copyright='ambientCG Grass 004 and Poly Haven Granite Tile 04 (CC0).')
+    digest, bounds = write_tree_asset(scene, copyright='Grass Ground and Granite Tile 04 by Poly Haven (CC0).')
     return dict(entityId='bay.padang-playing-fields', kind='structure', layer='ext',
                 regionId='marina-bay-exterior', label='政府大厦前大草场 · 南北球场',
                 assetHash=digest, bounds=bounds, material={'shading':'albedo'},
                 props={'background': True, 'surfaceRole':'landscape', '边界依据':ref['ortho'],
                        '地图来源':'© OpenStreetMap contributors · ODbL', '参考场地':ref['mapWay'],
-                       '材质素材':'ambientCG Grass 004、Poly Haven Granite Tile 04 · CC0', '现场照片':ref['photographs'],
+                       '材质素材':'Poly Haven Grass Ground、Granite Tile 04 · CC0', '现场照片':ref['photographs'],
                        '场地重建':'场界与板球磨损带按正射影像估计。草色参考日间实拍。'})
 
 
