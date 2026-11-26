@@ -16,6 +16,7 @@ from trimesh.visual.texture import TextureVisuals
 
 from concourse_facades import concourse_meshes
 from facade_interiors import WINDOW_LAYOUT, occupied_windows, repeats
+from roof_finishes import weather_roof, roof_texture_scales
 
 ROOT = Path(__file__).resolve().parents[1]
 REFERENCES = ROOT / "references/skyline-finishes"
@@ -191,7 +192,10 @@ def export_group(group, finishes, walls, credit_line, daylight, low_rise=False):
     for name, pieces in finishes.items():
         uv = np.concatenate([piece.visual.uv for piece in pieces])
         mesh = trimesh.util.concatenate(pieces)
-        mesh.visual = TextureVisuals(uv=uv, material=facade_material(name, reflection if name in walls else None, group if name in walls else None))
+        material = facade_material(name, reflection if name in walls else None, group if name in walls else None)
+        if low_rise and name.removesuffix(" surveyed") in {"SlateRoof", "ZincRoof", "ConcreteRoof"}:
+            weather_roof(material, group, REFERENCES)
+        mesh.visual = TextureVisuals(uv=uv, material=material)
         if any("color" in piece.visual.vertex_attributes for piece in pieces):
             mesh.visual.vertex_attributes["color"] = np.concatenate([
                 piece.visual.vertex_attributes["color"] if "color" in piece.visual.vertex_attributes
@@ -208,6 +212,10 @@ def export_group(group, finishes, walls, credit_line, daylight, low_rise=False):
         doc["asset"]["copyright"] = credit_line
         for material in doc["materials"]:
             name = material["name"]
+            if low_rise and name.removesuffix(" surveyed") in {"SlateRoof", "ZincRoof", "ConcreteRoof"}:
+                roof_texture_scales(material)
+                if "KHR_texture_transform" not in doc.setdefault("extensionsUsed", []):
+                    doc["extensionsUsed"].append("KHR_texture_transform")
             if name in walls and name in WINDOW_LAYOUT:
                 across, up, _ = repeats(name)
                 colour = material["pbrMetallicRoughness"]["baseColorTexture"]
