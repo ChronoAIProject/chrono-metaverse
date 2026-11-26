@@ -4,6 +4,8 @@ import json
 import numpy as np
 import shapely
 import trimesh
+from PIL import Image
+from scipy.ndimage import map_coordinates
 from scipy.spatial import cKDTree
 from shapely.geometry import Polygon, box
 from trimesh.visual.texture import TextureVisuals
@@ -34,8 +36,19 @@ def bake(survey):
     # Temper aerial light and moisture variations before lighting the surface in 3D.
     tint = np.clip((rgb / base) ** 1.7 * turf_wear(xz) ** .23, .20, 1)
     material = scanned_turf('Promontory lawn', base, cover='grass_ground')
-    # Linear-light calibration against two measured daytime views under the bay sky.
-    material.baseColorFactor = [0.55, 0.55, 0.50, 1.0]
+    # Reintroduce the warm patches excluded by the green-only survey. Convert the
+    # measured colour ratio to linear light before mixing into vertex colours.
+    wear = survey['wear']
+    with Image.open(ROOT / 'references' / wear['image']) as image:
+        field = np.asarray(image.convert('L'), dtype=float) / 255
+    pixel = (xz - wear['originXZ']) / wear['metresPerPixel']
+    coverage = map_coordinates(field, pixel[:, ::-1].T, order=1, mode='constant')[:, None]
+    green, worn = np.asarray([wear['greenRGB'], wear['wornRGB']]) / 255
+    ratio = ((worn + .055) / (green + .055)) ** 2.4
+    # Reserve enough headroom for the brighter worn turf in the UNORM vertex channel.
+    headroom = np.maximum(1, ratio)
+    tint *= (1 + coverage * (ratio - 1)) / headroom
+    material.baseColorFactor = [*(np.array([.55, .55, .50]) * headroom), 1.]
     uv = xz @ np.array([[.8, -.6], [.6, .8]]) / 1.8
     mesh = trimesh.Trimesh(vertices=np.column_stack((xz[:, 0], height, xz[:, 1])),
                            faces=indices.reshape(-1, 3), process=False,
