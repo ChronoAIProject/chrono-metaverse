@@ -1,0 +1,437 @@
+{
+  "bay.costa-rhu-and-passion-wave": {
+    "source": "78baed699a767a0322cba3c803b229e080641fad92168c63e65678f5bd35c164",
+    "buildings": [
+      {
+        "building": "COSTA RHU",
+        "surveyID": "SLA_BLDG2_b3e3be1f-a20f-4729-9000-c105329c55ab",
+        "center": [
+          -32.39,
+          -52.97
+        ],
+        "extent": [
+          53.29,
+          44.51
+        ]
+      },
+      {
+        "building": "COSTA RHU",
+        "surveyID": "SLA_BLDG2_9e6010cc-9c01-4381-baac-6ac562c10ae6",
+        "center": [
+          -38.19,
+          36.41
+        ],
+        "extent": [
+          44.92,
+          43.32
+        ]
+      },
+      {
+        "building": "COSTA RHU",
+        "surveyID": "SLA_BLDG2_0047c335-91e0-4908-84ab-d7acdb4d5668",
+        "center": [
+          56.03,
+          4.54
+        ],
+        "extent": [
+          47.92,
+          71.69
+        ]
+      },
+      {
+        "building": "COSTA RHU",
+        "surveyID": "SLA_BLDG2_579419ab-7b13-40c8-8dac-94c4271b2e25",
+        "center": [
+          60.52,
+          111.7
+        ],
+        "extent": [
+          53.75,
+          43.79
+        ]
+      },
+      {
+        "building": "PASSION WAVE @ MARINA BAY",
+        "surveyID": "SLA_BLDG2_ba194c95-2a65-4b4b-b378-be87dd72e9a3",
+        "center": [
+          -62.81,
+          -122.62
+        ],
+        "extent": [
+          51.46,
+          32.87
+        ]
+      }
+    ]
+  },
+  "bay.tanjong-rhu-residences": {
+    "source": "55cb04a6441cf895edd7c3086771370d7064ea4aa7993d28dd29388d0dafc150",
+    "buildings": [
+      {
+        "building": "WATER PLACE",
+        "surveyID": "SLA_BLDG2_daa8dd32-a3b4-4a64-84d5-e2a7e18f7f92",
+        "center": [
+          -159.98,
+          18.21
+        ],
+        "extent": [
+          13.36,
+          16.66
+        ]
+      },
+      {
+        "building": "WATER PLACE",
+        "surveyID": "SLA_BLDG2_9542beed-98e4-41a4-99b6-d7bc7d5da9ef",
+        "center": [
+          -163.9,
+          -27.93
+        ],
+        "extent": [
+          27.83,
+          25.78
+        ]
+      },
+      {
+        "building": "WATER PLACE",
+        "surveyID": "SLA_BLDG2_309a5fd8-ed2a-4be8-83e3-68e8027b5ac5",
+        "center": [
+          -106.18,
+          28.48
+        ],
+        "extent": [
+          16.51,
+          12.58
+        ]
+      },
+      {
+        "building": "WATER PLACE",
+        "surveyID": "SLA_BLDG2_8ac6be05-43b2-431f-b761-62e3e227e15b",
+        "center": [
+          -137.49,
+          50.72
+        ],
+        "extent": [
+          16.58,
+          12.7
+        ]
+      },
+      {
+        "building": "PEBBLE BAY",
+        "surveyID": "SLA_BLDG2_9ec87663-0f65-4550-a1f5-96b414b0c781",
+        "center": [
+          -105.14,
+          140.57
+        ],
+        "extent": [
+          30.39,
+          44.51
+        ]
+      },
+      {
+        "building": "PARK SHORE",
+        "surveyID": "SLA_BLDG2_bd415414-8e31-4346-9bfa-c4fc16ef7e88",
+        "center": [
+          98.33,
+          -63.25
+        ],
+        "extent": [
+          8.77,
+          7.82
+        ]
+      },
+      {
+        "building": "SANCTUARY GREEN",
+        "surveyID": "SLA_BLDG2_ae71d632-4b24-4125-99a0-74c343b26952",
+        "center": [
+          10.81,
+          -13.85
+        ],
+        "extent": [
+          15.92,
+          15.94
+        ]
+      },
+      {
+        "building": "PARK SHORE",
+        "surveyID": "SLA_BLDG2_24d7e447-c5d2-428c-99d5-e46a4a49efbb",
+        "center": [
+          38.84,
+          -39.64
+        ],
+        "extent": [
+          20.59,
+          29.32
+        ]
+      },
+      {
+        "building": "PEBBLE BAY",
+        "surveyID": "SLA_BLDG2_bdef784c-019f-4fd7-89e6-2798571215ed",
+        "center": [
+          100.22,
+          99.94
+        ],
+        "extent": [
+          55.43,
+          46.34
+        ]
+      },
+      {
+        "building": "PARK SHORE",
+        "surveyID": "SLA_BLDG2_47feb77e-88eb-47d7-9c20-78652f88928e",
+        "center": [
+          76.87,
+          -61.31
+        ],
+        "extent": [
+          30.93,
+          38.28
+        ]
+      },
+      {
+        "building": "SANCTUARY GREEN",
+        "surveyID": "SLA_BLDG2_b9dcc6bd-2c51-42b6-b20c-a77d71099d47",
+        "center": [
+          -1.11,
+          -42.77
+        ],
+        "extent": [
+          7.81,
+          7.37
+        ]
+      },
+      {
+        "building": "SANCTUARY GREEN",
+        "surveyID": "SLA_BLDG2_11239c1b-b2af-4209-9dff-baa0187b45c0",
+        "center": [
+          63.05,
+          -168.61
+        ],
+        "extent": [
+          16.28,
+          16.47
+        ]
+      },
+      {
+        "building": "WATER PLACE",
+        "surveyID": "SLA_BLDG2_81c39a56-59e3-4486-99bd-818067fb1273",
+        "center": [
+          -120.11,
+          -46.77
+        ],
+        "extent": [
+          16.65,
+          14.11
+        ]
+      },
+      {
+        "building": "SANCTUARY GREEN",
+        "surveyID": "SLA_BLDG2_9f7117ad-7f6f-4004-9824-1a47e9e27db1",
+        "center": [
+          -30.46,
+          -97.39
+        ],
+        "extent": [
+          15.28,
+          15.99
+        ]
+      },
+      {
+        "building": "WATER PLACE",
+        "surveyID": "SLA_BLDG2_52c852a0-232c-4ba3-8c32-58d98966a318",
+        "center": [
+          -89.25,
+          -27.33
+        ],
+        "extent": [
+          16.66,
+          13.19
+        ]
+      },
+      {
+        "building": "PARK SHORE",
+        "surveyID": "SLA_BLDG2_43e9deaf-908d-4d82-aa67-4cb229b187cf",
+        "center": [
+          114.5,
+          -84.28
+        ],
+        "extent": [
+          21.33,
+          30.55
+        ]
+      },
+      {
+        "building": "SANCTUARY GREEN",
+        "surveyID": "SLA_BLDG2_922ff31e-5fbe-49cb-8d9f-721da88d1403",
+        "center": [
+          45.4,
+          -122.77
+        ],
+        "extent": [
+          53.71,
+          37.24
+        ]
+      },
+      {
+        "building": "SANCTUARY GREEN",
+        "surveyID": "SLA_BLDG2_e16ffb4f-927e-4d7c-b4fc-dd215f9cc976",
+        "center": [
+          -40.37,
+          -40.35
+        ],
+        "extent": [
+          37.11,
+          58.38
+        ]
+      },
+      {
+        "building": "PEBBLE BAY",
+        "surveyID": "SLA_BLDG2_1766e2ee-5be8-44ba-a517-633e9d6b0306",
+        "center": [
+          171.43,
+          33.94
+        ],
+        "extent": [
+          20.3,
+          27.31
+        ]
+      },
+      {
+        "building": "PEBBLE BAY",
+        "surveyID": "SLA_BLDG2_f044209d-26e2-4fd8-a0b2-36995652a074",
+        "center": [
+          118.1,
+          21.89
+        ],
+        "extent": [
+          48.28,
+          41.08
+        ]
+      },
+      {
+        "building": "PEBBLE BAY",
+        "surveyID": "SLA_BLDG2_68bd5f08-816b-41fd-a670-91743eb4c11c",
+        "center": [
+          25.54,
+          63.24
+        ],
+        "extent": [
+          37.48,
+          23.44
+        ]
+      },
+      {
+        "building": "PEBBLE BAY",
+        "surveyID": "SLA_BLDG2_8d94b1de-7b59-49a3-ade0-dcc5670307ed",
+        "center": [
+          -49.79,
+          100.02
+        ],
+        "extent": [
+          41.03,
+          39.77
+        ]
+      }
+    ]
+  },
+  "bay.tanjong-rhu-waterway-residences": {
+    "source": "4186ce65876248baaea435c55f1787a8821e034a639e6a119f0e6444000a854e",
+    "buildings": [
+      {
+        "building": "TANJONG RIA CONDOMINIUM",
+        "surveyID": "SLA_BLDG2_2e41e50d-8b9c-44f0-b6af-67bad4039125",
+        "center": [
+          13.23,
+          -33.56
+        ],
+        "extent": [
+          4.3,
+          4.3
+        ]
+      },
+      {
+        "building": "CAMELOT BY-THE-WATER",
+        "surveyID": "SLA_BLDG2_91d94ccb-57b9-475e-a590-80708c679227",
+        "center": [
+          -87.98,
+          111.37
+        ],
+        "extent": [
+          17.92,
+          9.06
+        ]
+      },
+      {
+        "building": "CASUARINA COVE",
+        "surveyID": "SLA_BLDG2_2de8ad4a-fab0-4066-b61b-103716c9276e",
+        "center": [
+          78.29,
+          7.1
+        ],
+        "extent": [
+          28.86,
+          34.4
+        ]
+      },
+      {
+        "building": "CASUARINA COVE",
+        "surveyID": "SLA_BLDG2_b12a51d8-a9cc-4948-889e-5ed44021510b",
+        "center": [
+          31.84,
+          22.56
+        ],
+        "extent": [
+          20.76,
+          24.83
+        ]
+      },
+      {
+        "building": "CASUARINA COVE",
+        "surveyID": "SLA_BLDG2_aeab21ca-9859-40fe-a39e-1dc74cff7f47",
+        "center": [
+          71.71,
+          56.77
+        ],
+        "extent": [
+          47.3,
+          13.49
+        ]
+      },
+      {
+        "building": "CAMELOT BY-THE-WATER",
+        "surveyID": "SLA_BLDG2_b531bff0-8a2e-46a4-b897-bf9a9eb060fb",
+        "center": [
+          -96.22,
+          90.33
+        ],
+        "extent": [
+          22.78,
+          14.12
+        ]
+      },
+      {
+        "building": "CAMELOT BY-THE-WATER",
+        "surveyID": "SLA_BLDG2_b4f122ec-2bd8-4717-a042-66aff40f3730",
+        "center": [
+          -42.68,
+          63.52
+        ],
+        "extent": [
+          48.84,
+          35.59
+        ]
+      },
+      {
+        "building": "TANJONG RIA CONDOMINIUM",
+        "surveyID": "SLA_BLDG2_bc31abba-aad9-44a4-b067-33008970f626",
+        "center": [
+          6.1,
+          -69.6
+        ],
+        "extent": [
+          57.53,
+          50.83
+        ]
+      }
+    ]
+  }
+}
