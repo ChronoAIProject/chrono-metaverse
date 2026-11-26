@@ -14,6 +14,8 @@ LUMA = np.array([.2126, .7152, .0722])
 PREVIOUS = Path(__file__).resolve().parents[1] / "references/qwantani-balanced-sky.json"
 CLOUD_FRACTION = .30
 CLOUD_CONTRAST = .50
+# Display exposure from registered daylight views across the reservoir.
+DISPLAY_EXPOSURE_STOPS = .45
 
 
 def read_sky(path, azimuth, elevation, latitude, longitude):
@@ -163,7 +165,7 @@ def bake(morning_path, cloud_path, output, detail_path=None):
     display[disk] += direct * (total * day["directFraction"] / direct_energy)
     pixels = np.empty((h, w, 3), np.uint8)
     for y in range(0, h, 64):
-        pixels[y:y+64] = exposure.display_rgb(display[y:y+64])
+        pixels[y:y+64] = exposure.display_rgb(display[y:y+64] * 2**DISPLAY_EXPOSURE_STOPS)
 
     output.mkdir(parents=True, exist_ok=True)
     panorama, reflection = output / "sky.jpeg", output / "radiance.png"
