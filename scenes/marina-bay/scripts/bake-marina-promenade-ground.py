@@ -5,8 +5,8 @@ from importlib import import_module
 import numpy as np
 from PIL import Image
 from scipy.spatial import cKDTree
-from shapely import get_parts, intersection, box
-from shapely.geometry import GeometryCollection, Polygon
+from shapely import box, distance, get_parts, intersection, points
+from shapely.geometry import GeometryCollection, LineString, Polygon
 import trimesh
 from trimesh.visual.material import PBRMaterial
 
@@ -47,6 +47,41 @@ def concrete():
                        metallicFactor=0)
 
 
+def bank_surfaces(frame, datum, origin, turf):
+    survey = json.loads((ROOT / "references/marina-promenade-bank.json").read_text())
+    shore = LineString(frame.project({"coordinates": survey["shore"]}))
+    gravel = import_module("bake-straits-boulevard").soil_material("gravel")
+    gravel.name = "Marina Promenade compacted gravel"
+    gravel.baseColorFactor = [207, 206, 201, 255]
+    for kind, material, pitch in [("turf", turf, 1.4), ("gravel", gravel, 2.53)]:
+        patch = survey[kind]
+        mesh = surface(patch_cells(patch["rings"], frame, 2.25), material, datum, origin,
+                       height=.069, tile_width=pitch)
+        xz = mesh.vertices[:, [0, 2]]
+        inland = distance(points(xz), shore)
+        # A low bank at the waterline grades back into the existing park surface.
+        crest = np.clip(inland / 2.3, 0, 1) * np.clip(1 - inland / 9, 0, 1)
+        mesh.vertices[:, 1] += .60 * crest
+        samples = np.asarray(patch["tones"])
+        locations = frame.project({"coordinates": samples[:, :2]})
+        offsets, ids = cKDTree(locations).query(xz, k=4)
+        weights = 1 / (1 + offsets**2)
+        rgb = np.sum(samples[ids, 2:] * weights[:, :, None], axis=1) / weights.sum(axis=1)[:, None]
+        # The photographed shore is darker at its toe. Apply this on the land side
+        # of the surveyed water edge and let the material grain continue through it.
+        damp = 1 - .26 * np.exp(-inland / 1.25)
+        if kind == "turf":
+            pigment = np.clip(rgb * [.95, 1.01, .91], [72, 76, 46], [137, 142, 107])
+            tint = (pigment / [133, 139, 105])**2.2 * turf_wear(xz)
+        else:
+            tint = (np.clip(rgb, 86, 182) / [207, 199, 182])**2.2
+            # Shift aggregate features over several metres. All PBR maps share these UVs.
+            mesh.visual.uv += np.column_stack((.31 * np.sin(xz[:, 1] / 6.1), .28 * np.cos(xz[:, 0] / 8.7)))
+        tint = np.clip(tint * damp[:, None], .03, 1)
+        mesh.visual.vertex_attributes["color"] = np.uint8(np.rint(255 * np.c_[tint, np.ones(len(tint))]))
+        yield mesh
+
+
 def bake():
     survey = json.loads((ROOT / "references/marina-promenade-ground.json").read_text())
     frame = BridgeFrame()
@@ -72,13 +107,15 @@ def bake():
     scene = trimesh.Scene()
     for mesh in (lawn, paving):
         scene.add_geometry(mesh, geom_name=mesh.visual.material.name)
+    for mesh in bank_surfaces(frame, datum, origin, turf):
+        scene.add_geometry(mesh, geom_name=mesh.visual.material.name + " along the bank")
     credit = ("OpenStreetMap contributors (ODbL). Land-cover survey derived from OneMap orthophotography, "
-              "Singapore Land Authority. Grass 004 by ambientCG and concrete scan by Poly Haven (CC0).")
+              "Singapore Land Authority. Grass 004 by ambientCG and concrete and Sandy Gravel 02 scans by Poly Haven (CC0).")
     digest, bounds = write_tree_asset(scene, copyright=credit)
     row = dict(entityId="bay.marina-promenade-park-ground", label="滨海步道 · 河岸草地与混凝土慢行道",
                kind="structure", layer="ext", regionId="marina-bay-exterior", bounds=bounds, assetHash=digest,
                material={"shading": "albedo"}, props={"background": True, "surfaceRole": "landscape",
-               "版权": credit, "依据": "OSM 公园边界与步道中心线、OneMap z18 影像的植被和陆岸边界。草地色泽与路面宽度为视觉估值。"})
+               "版权": credit, "依据": "OSM 公园边界与步道中心线、OneMap z18 影像的植被和陆岸边界。临水作业地、碎石与草坡取自 OneMap z19 航片，岸坡高度、地表磨损与路面宽度为视觉估值。"})
     manifest = ROOT / "build/streetscape.json"
     rows = {r["entityId"]: r for r in json.loads(manifest.read_text())}
     rows[row["entityId"]] = row

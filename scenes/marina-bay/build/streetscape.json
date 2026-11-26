@@ -2462,19 +2462,19 @@
       ],
       "max": [
         -59.416446153808536,
-        -60.437634371041064,
+        -60.134611908080856,
         2764.0919211835776
       ]
     },
-    "assetHash": "eac74a9f047ab801947f0cc6e6092c2f4ec4245c4c1649e153914c64a6f8035a",
+    "assetHash": "4cc49de4996c32149cdce42da4e7896f71d03731aca3a6203490a554159aef17",
     "material": {
       "shading": "albedo"
     },
     "props": {
       "background": true,
       "surfaceRole": "landscape",
-      "版权": "OpenStreetMap contributors (ODbL). Land-cover survey derived from OneMap orthophotography, Singapore Land Authority. Grass 004 by ambientCG and concrete scan by Poly Haven (CC0).",
-      "依据": "OSM 公园边界与步道中心线、OneMap z18 影像的植被和陆岸边界。草地色泽与路面宽度为视觉估值。"
+      "版权": "OpenStreetMap contributors (ODbL). Land-cover survey derived from OneMap orthophotography, Singapore Land Authority. Grass 004 by ambientCG and concrete and Sandy Gravel 02 scans by Poly Haven (CC0).",
+      "依据": "OSM 公园边界与步道中心线、OneMap z18 影像的植被和陆岸边界。临水作业地、碎石与草坡取自 OneMap z19 航片，岸坡高度、地表磨损与路面宽度为视觉估值。"
     }
   },
   {
