@@ -2394,7 +2394,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "滨海中心 · 莱佛士林荫道与淡马锡道",
-    "assetHash": "b7cb05555403e10feff8ed5eea7b6f9998ecb26b3a0683f294afe3fb0d529d8a",
+    "assetHash": "eebd34b3e0c303ce2c950a959d0bdcf339d7c225072737ab34f88c789a1b8ad8",
     "material": {
       "shading": "albedo"
     },

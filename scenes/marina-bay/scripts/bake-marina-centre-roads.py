@@ -185,6 +185,13 @@ def bake():
     markings = markings.union(divider_paint)
     asphalt = asphalt.union(turning.difference(divider_paint))
     carriageway = carriageway.union(turning)
+    for crossing in verge_survey.get("surveyedCrossings", []):
+        area = Polygon([project(p) for p in crossing["ring"]])
+        old_paint = markings.intersection(area)
+        bars = union_all([LineString([project(p) for p in line]).buffer(crossing["widthMetres"] / 2,
+                          cap_style="flat") for line in crossing["lines"]]).intersection(carriageway)
+        asphalt = asphalt.union(old_paint).difference(bars)
+        markings = markings.difference(area).union(bars)
     color = Image.open(REFERENCES / "asphalt-color.jpg")
     normal = Image.open(REFERENCES / "asphalt-normal.jpg")
     rough = Image.open(REFERENCES / "asphalt-roughness.jpg")
