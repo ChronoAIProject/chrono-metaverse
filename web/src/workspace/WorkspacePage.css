@@ -256,6 +256,41 @@
   gap: 8px;
   margin-top: 12px;
 }
+.workspace__share-trigger {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.workspace__share-dialog {
+  width: min(420px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 18px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+}
+.workspace__share-dialog::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+.workspace__share-dialog h2 {
+  font-size: 16px;
+}
+.workspace__share-dialog p {
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
+.workspace__share-link {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+.workspace__share-link p {
+  grid-column: 1 / -1;
+  margin: 0;
+  min-height: 1.7em;
+}
 .workspace__stage {
   position: relative;
   display: grid;
