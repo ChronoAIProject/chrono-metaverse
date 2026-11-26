@@ -141,7 +141,8 @@ spaces {
   ownerEvidence?: { issuer, orgId, verifiedBy, verifiedAt, basis, roleAtVerification? }   // 组织空间创建时的核验记录，之后只读
                                    // basis：org_subject | org_admin | operator_seed（部署配置种子，9.2）
   visibility: unlisted | public    // 第一步只用 unlisted（凭分享令牌）
-  shareTokens: [ { id, hash, createdAt, revokedAt } ]   // 至少 128 位随机数，只存哈希，可轮换、可吊销
+  shareTokens: [ { id, hash, createdAt, revokedAt } ]   // 至少 128 位随机数，按哈希核验，可轮换、可吊销
+  workspaceShare?: string  // 工作台分享令牌密文，轮换令牌时删除
   frame: { fixedAt, referenceScan } // 坐标系：首次导入扫描时固定，之后不变
   head: { seq, at, commitId }      // 时间线最新位置
   compositionEnabled, members, links, themeId?, invitations  // 子空间组合当前状态（4.5）
