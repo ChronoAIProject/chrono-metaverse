@@ -23,21 +23,29 @@ CREDIT = ("Roads © OpenStreetMap contributors (ODbL). Terrain reference © Sing
           "Asphalt 01, Granite Tile 04, Dirt Aerial 02 and Sandy Gravel 02 by Poly Haven (CC0).")
 
 
-def soil_material(kind):
+def soil_material(kind, *, aggregate=None):
     def scan(role):
-        with Image.open(REFERENCE / f"{kind}-{role}.jpg") as image:
-            return np.asarray(image.convert("RGB"), float)
+        if aggregate:
+            filename = {"color": "Color", "normal": "NormalGL", "rough": "Roughness"}[role]
+            return Image.open(ROOT / "references/ground-cover" / aggregate / (filename + ".jpg"))
+        return Image.open(REFERENCE / f"{kind}-{role}.jpg")
 
-    pixels = scan("color")
+    with scan("color") as image:
+        pixels = np.asarray(image.convert("RGB"), float)
     # Leave room for a linear vertex tint measured across the work site.
-    variation = (pixels - np.median(pixels, axis=(0, 1))) * (1.08 if kind == "earth" else .88)
+    median = np.median(pixels, axis=(0, 1))
+    if aggregate:
+        variation = (pixels / median - 1) * [207, 199, 182]
+    else:
+        variation = (pixels - median) * (1.08 if kind == "earth" else .88)
     if kind == "earth":
         # Keep the scan's small clods, then recover the larger colour field from the survey.
         variation -= .72 * gaussian_filter(variation, (15, 15, 0), mode="wrap")
     base = Image.fromarray(np.uint8(np.clip([207, 199, 182] + variation, 0, 255)))
     base.format = "JPEG"
-    normal = Image.open(REFERENCE / f"{kind}-normal.jpg")
-    rough = np.uint8(scan("rough")[:, :, 0])
+    normal = scan("normal")
+    with scan("rough") as image:
+        rough = np.asarray(image.convert("RGB"))[:, :, 0]
     mr = Image.fromarray(np.dstack([np.full_like(rough, 255), rough, np.zeros_like(rough)]))
     mr.format = "JPEG"
     return PBRMaterial(name="Graded soil" if kind == "earth" else "Compacted gravel",
@@ -46,7 +54,7 @@ def soil_material(kind):
                        metallicFactor=0, roughnessFactor=1)
 
 
-def soil_mesh(area, material, ground, datum, tones, kind, *, low_rgb=(110, 101, 86), high_rgb=(195, 183, 166), min_tint=.12):
+def soil_mesh(area, material, ground, datum, tones, kind, *, low_rgb=(110, 101, 86), high_rgb=(195, 183, 166), min_tint=.12, gravel_width=2.53):
     cells = []
     for part in get_parts(area):
         if part.area < .01:
@@ -58,7 +66,7 @@ def soil_mesh(area, material, ground, datum, tones, kind, *, low_rgb=(110, 101, 
                 if piece.area > .001:
                     cells.extend(poly for poly in get_parts(piece) if poly.geom_type == "Polygon")
     mesh = surface(GeometryCollection(cells), material, ground, datum, height=.058,
-                   tile_width=20 if kind == "earth" else 2.53)
+                   tile_width=20 if kind == "earth" else gravel_width)
     xz = mesh.vertices[:, [0, 2]]
     # Introduce a shallow undulation within the bare earth, tapering back to road and plot edges.
     edge = np.clip(distance(points(xz), area.boundary) / 7, 0, 1)
