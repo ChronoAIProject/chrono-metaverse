@@ -218,6 +218,31 @@ impl Authorizer {
         space_id: &str,
         purpose: Purpose,
     ) -> Result<Grant, ApiError> {
+        self.authenticated_space(&caller.subject, caller.credential(), space_id, purpose)
+            .await
+    }
+
+    pub(crate) async fn browser_share_space(
+        &self,
+        identity: &super::oauth::catalog::BrowserIdentity,
+        space_id: &str,
+    ) -> Result<Grant, ApiError> {
+        self.authenticated_space(
+            identity.subject(),
+            Some(identity.credential()),
+            space_id,
+            Purpose::Manage,
+        )
+        .await
+    }
+
+    async fn authenticated_space(
+        &self,
+        subject: &str,
+        credential: Option<&super::ForwardedCredential>,
+        space_id: &str,
+        purpose: Purpose,
+    ) -> Result<Grant, ApiError> {
         if !is_space_id(space_id) {
             return Err(ApiError::not_found());
         }
@@ -226,7 +251,7 @@ impl Authorizer {
             .space_policy(&Self::key(), space_id)
             .await?
             .ok_or_else(ApiError::not_found)?;
-        self.space_from_policy(caller, space_id, policy, purpose)
+        self.space_from_policy(subject, credential, space_id, policy, purpose)
             .await
     }
 
@@ -245,23 +270,30 @@ impl Authorizer {
             .space_policy_for_deletion(&Self::key(), space_id)
             .await?
             .ok_or_else(ApiError::not_found)?;
-        self.space_from_policy(caller, space_id, policy, Purpose::Manage)
-            .await
+        self.space_from_policy(
+            &caller.subject,
+            caller.credential(),
+            space_id,
+            policy,
+            Purpose::Manage,
+        )
+        .await
     }
 
     async fn space_from_policy(
         &self,
-        caller: &Caller,
+        subject: &str,
+        credential: Option<&super::ForwardedCredential>,
         space_id: &str,
         policy: crate::repo::SpacePolicy,
         purpose: Purpose,
     ) -> Result<Grant, ApiError> {
         let owner = policy.effective_owner();
-        let level = match direct_access(&owner, &caller.subject) {
+        let level = match direct_access(&owner, subject) {
             Some(level) => level,
             None => match self
                 .organizations
-                .membership(&caller.subject, caller.credential(), &owner.id)
+                .membership(subject, credential, &owner.id)
                 .await
             {
                 MembershipLookup::Member(evidence) => level_for_role(evidence.role),

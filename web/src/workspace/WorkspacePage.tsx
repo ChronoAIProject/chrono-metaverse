@@ -37,6 +37,7 @@ import { readAuthMethod, saveAuthMethod, type CmaAuthMethod } from '../auth/cmaC
 import { useFloatingChat } from './useFloatingChat';
 import { ViewerToolsContext, ViewerToolBinding } from './viewerTools';
 import { NyxAgentPanel } from './NyxAgentPanel';
+import { ShareSpace } from './ShareSpace';
 import { setPendingViewerCommand, type ViewerCommand } from './viewerActions';
 
 type PreviewIdentity = {
@@ -1422,6 +1423,16 @@ function Workspace({ request }: { readonly request: typeof fetch }) {
             </div>
           </>
         )}
+        {browserCsrf &&
+          selected &&
+          (selected.visibility === 'public' || selected.access === 'manage') && (
+            <ShareSpace
+              key={`${browserCsrf}:${selected.id}`}
+              space={selected}
+              csrfToken={browserCsrf}
+              request={request}
+            />
+          )}
         {session?.connected && (
           <button
             ref={chatButton}

@@ -31,6 +31,10 @@ pub fn router(state: AppState, viewer: Router<AppState>) -> Router<AppState> {
         .route("/api/auth/nyxid/organizations", post(organizations))
         .route("/api/auth/nyxid/disconnect", post(disconnect))
         .route("/api/auth/nyxid/spaces", post(super::catalog::list))
+        .route(
+            "/api/auth/nyxid/spaces/{space_id}/share",
+            post(super::catalog::share),
+        )
         .merge(viewer)
         .merge(super::worker::router())
         .merge(super::agent_key::router())

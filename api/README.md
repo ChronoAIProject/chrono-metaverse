@@ -463,6 +463,8 @@ universeRevisions { _id: "<组合编号>:<seq>", universeId, owner, seq, at, act
 - 迁移锁（`migrations` 集合）。
 - 草稿、草稿区块、预览、上传会话的过期清理：这些集合的 `expiresAt` 是 RFC 3339 字符串，由接口服务的定期清理（`runner/cleanup.rs`）删除，不用 TTL 索引；只有 `replay` 用 BSON 日期和 TTL 索引。
 
-网页空间目录与只读场景使用 `/api/auth/nyxid/spaces` 和固定的 `/api/auth/nyxid/view/spaces/{id}` 子路径（均为 POST，浏览器会话 + Origin + CSRF），经过 OAuth userinfo、主人/组织权限与授权版本检查；不认证业务写入、不签发分享令牌。见 [空间聊天工作台](../docs/WEB_CONSOLE_PLAN.md)。
+网页空间目录与只读场景使用 `/api/auth/nyxid/spaces` 和固定的 `/api/auth/nyxid/view/spaces/{id}` 子路径（均为 POST，使用浏览器会话、Origin 和 CSRF 校验），经过 OAuth userinfo、主人或组织权限和授权版本检查。见 [空间聊天工作台](../docs/WEB_CONSOLE_PLAN.md)。
+
+`POST /api/auth/nyxid/spaces/{id}/share` 使用同样的浏览器校验并要求空间管理权限。公开空间返回 `{"token":null}`，未列出的空间返回可重复复制的 `{"token":"…"}`。签发时登记令牌哈希，并将工作台需要再次显示的令牌用 `NYXID_OAUTH_ENCRYPTION_KEY` 加密存储。管理接口轮换令牌时同时撤销该链接，之后从工作台取链接会生成新令牌。
 
 外部地图与三维资源的服务端读取、磁盘缓存配置及授权边界见 [外部资源](../docs/EXTERNAL_RESOURCES.md)。`EXTERNAL_CACHE_DIR` 必须为实例独占的绝对目录；默认容器临时盘，容量由 `EXTERNAL_CACHE_BYTES` 限制，默认 512 MiB，不写 MongoDB。

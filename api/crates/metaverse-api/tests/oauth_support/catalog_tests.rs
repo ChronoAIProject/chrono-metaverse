@@ -151,6 +151,110 @@ async fn browser_viewer_reads_unlisted_space_without_issuing_shares_or_authentic
 }
 
 #[tokio::test]
+async fn browser_share_requires_management_and_reuses_a_read_only_link_until_rotation() {
+    let Some(app) = TestApp::start_with_options(true, true).await else {
+        return;
+    };
+    let created = app
+        .create(&identity(ORG), None, space_body("oauth-hall", "org", ORG))
+        .await;
+    assert_eq!(created.status, StatusCode::CREATED);
+    let original = format!(
+        "Share {}",
+        created.body["shareToken"]["token"].as_str().unwrap()
+    );
+    let cookie = connect(&app, "browser-owner", 3600).await;
+    let path = "spaces/oauth-hall/share";
+
+    let unchecked = app
+        .send(
+            Method::POST,
+            &format!("{ROOT}/{path}"),
+            &[("cookie", &cookie)],
+            None,
+        )
+        .await;
+    assert_eq!(unchecked.status, StatusCode::FORBIDDEN);
+    app.nyx.oauth.0.lock().unwrap().role = Some("viewer".into());
+    assert_eq!(
+        browser(&app, &cookie, path, None).await.status,
+        StatusCode::FORBIDDEN
+    );
+
+    app.nyx.oauth.0.lock().unwrap().role = Some("admin".into());
+    let (first, duplicate) = tokio::join!(
+        browser(&app, &cookie, path, None),
+        browser(&app, &cookie, path, None)
+    );
+    assert_eq!(first.status, StatusCode::OK, "{}", first.body);
+    assert_eq!(first.headers[header::CACHE_CONTROL], "no-store");
+    assert_eq!(duplicate.status, StatusCode::OK);
+    assert_eq!(first.body, duplicate.body);
+    let share = format!("Share {}", first.body["token"].as_str().unwrap());
+    assert_ne!(share, original);
+    assert_eq!(
+        app.public("oauth-hall", None).await.status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        app.public("oauth-hall", Some(&share)).await.status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        app.public("oauth-hall", Some(&original)).await.status,
+        StatusCode::OK
+    );
+    let mutation = app
+        .send(
+            Method::POST,
+            "/api/v1/admin/spaces/oauth-hall/share-tokens",
+            &[("authorization", &share)],
+            None,
+        )
+        .await;
+    assert_eq!(mutation.status, StatusCode::UNAUTHORIZED);
+
+    let rotated = app
+        .send(
+            Method::POST,
+            "/api/v1/admin/spaces/oauth-hall/share-tokens",
+            &[("x-nyxid-identity-token", &identity(ORG))],
+            None,
+        )
+        .await;
+    assert_eq!(rotated.status, StatusCode::CREATED);
+    assert_eq!(
+        app.public("oauth-hall", Some(&share)).await.status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        app.public("oauth-hall", Some(&original)).await.status,
+        StatusCode::NOT_FOUND
+    );
+    let renewed = browser(&app, &cookie, path, None).await;
+    assert_eq!(renewed.status, StatusCode::OK);
+    assert_ne!(first.body, renewed.body);
+    let renewed = format!("Share {}", renewed.body["token"].as_str().unwrap());
+    assert_eq!(
+        app.public("oauth-hall", Some(&renewed)).await.status,
+        StatusCode::OK
+    );
+
+    let mut public_space = space_body("open-hall", "person", "browser-owner");
+    public_space["visibility"] = json!("public");
+    assert_eq!(
+        app.create(&identity("browser-owner"), None, public_space)
+            .await
+            .status,
+        StatusCode::CREATED
+    );
+    let public_link = browser(&app, &cookie, "spaces/open-hall/share", None).await;
+    assert_eq!(public_link.status, StatusCode::OK);
+    assert_eq!(public_link.body, json!({"token": null}));
+    assert_eq!(app.public("open-hall", None).await.status, StatusCode::OK);
+}
+
+#[tokio::test]
 async fn browser_viewer_reuses_successful_checks_and_rechecks_after_expiry_or_reconnect() {
     let Some(app) = TestApp::start_with_options(true, true).await else {
         return;

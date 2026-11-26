@@ -1,9 +1,9 @@
-//! Browser-only discovery and read access. No Agent or mutation credentials are issued.
+//! 浏览器的空间目录、查看和分享。浏览器会话不能用于调用写入接口。
 use super::{routes, HeldCredential, OAuthError, OAuthService};
 use crate::{
     auth::{Authorizer, Grant},
     error::ApiError,
-    routes::ApiJson,
+    routes::{admin_spaces::new_share_token, ApiJson},
     AppState,
 };
 use axum::{
@@ -13,7 +13,10 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use metaverse_core::model::{OrgRole, Owner};
+use metaverse_core::{
+    model::{OrgRole, Owner, ShareTokenRecord, Visibility},
+    sha256_hex,
+};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -89,6 +92,50 @@ async fn ensure_current(oauth: &OAuthService, held: &HeldCredential) -> Result<(
         return Err(OAuthError::Reconnect.into());
     }
     Ok(())
+}
+
+pub(crate) async fn share(
+    State(state): State<AppState>,
+    Path(space_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let oauth = routes::service(&state)?;
+    let (session, held) = routes::verified_browser(&oauth, &headers).await?;
+    let identity = BrowserIdentity {
+        subject: session.subject,
+        grant_version: held.record.version.clone(),
+        credential: held.credential.clone(),
+    };
+    let grant = state
+        .authorizer
+        .browser_share_space(&identity, &space_id)
+        .await?;
+    let (id, token) = new_share_token()?;
+    let record = ShareTokenRecord {
+        id,
+        hash: sha256_hex(token.as_bytes()),
+        created_at: crate::now()?,
+        revoked_at: None,
+    };
+    let aad = format!("workspace-space-share/{space_id}");
+    let ciphertext = oauth.vault.seal(token.as_bytes(), &aad)?;
+    ensure_current(&oauth, &held).await?;
+    let share = state
+        .repo
+        .workspace_share(&grant, &record, &ciphertext)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    ensure_current(&oauth, &held).await?;
+    if share.visibility == Visibility::Public {
+        return Ok(Json(json!({"token": null})));
+    }
+    let stored = share.workspace_share.ok_or_else(ApiError::internal)?;
+    if stored == ciphertext {
+        tracing::info!(target: "audit", space = %space_id, by = %identity.subject, token = %record.id, "工作台分享链接已创建");
+    }
+    let bytes = oauth.vault.open(&stored, &aad)?;
+    let token = std::str::from_utf8(&bytes).map_err(|_| ApiError::internal())?;
+    Ok(Json(json!({"token": token})))
 }
 
 pub(crate) async fn read(

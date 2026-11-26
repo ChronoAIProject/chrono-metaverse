@@ -3,7 +3,11 @@
 
 use metaverse_core::model::{ShareTokenRecord, SpaceStyleSpec, Visibility};
 use metaverse_core::Timestamp;
-use mongodb::bson::{doc, Document};
+use mongodb::{
+    bson::{self, doc, Document},
+    options::ReturnDocument,
+};
+use serde::Deserialize;
 
 use super::commits::{granted_space, to_bson};
 use super::{collections, Repo, RepoError};
@@ -11,6 +15,13 @@ use crate::auth::Grant;
 
 /// 一个空间最多保留多少条分享令牌记录（含已吊销的，留作审计）。
 pub const MAX_SHARE_TOKEN_RECORDS: usize = 20;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WorkspaceShare {
+    pub visibility: Visibility,
+    pub workspace_share: Option<String>,
+}
 
 /// 名称、说明、可见性的修改；`None` 表示不改。
 #[derive(Debug, Clone, Default)]
@@ -66,26 +77,64 @@ impl Repo {
         if !grant.can_manage() {
             return Err(RepoError::GrantMismatch);
         }
-        let spaces = self.collection(collections::SPACES);
-        let Some(space) = self.space(grant).await? else {
-            return Ok(false);
-        };
-        let mut records = space.share_tokens;
-        for existing in &mut records {
-            if existing.revoked_at.is_none() {
-                existing.revoked_at = Some(now);
-            }
-        }
-        records.push(record.clone());
-        let skip = records.len().saturating_sub(MAX_SHARE_TOKEN_RECORDS);
-        let records: Vec<ShareTokenRecord> = records.into_iter().skip(skip).collect();
-        let result = spaces
+        let revoked = doc! {"$map": {
+            "input": {"$ifNull": ["$shareTokens", []]},
+            "as": "record",
+            "in": {"$mergeObjects": ["$$record", {
+                "revokedAt": {"$ifNull": ["$$record.revokedAt", now.to_rfc3339()]},
+            }]},
+        }};
+        let result = self
+            .collection(collections::SPACES)
             .update_one(
                 granted_space(grant),
-                doc! {"$set": {"shareTokens": to_bson(&records)?, "updatedAt": now.to_rfc3339()}},
+                vec![
+                    doc! {"$set": {
+                        "shareTokens": append_share_token(revoked, record)?,
+                        "updatedAt": now.to_rfc3339(),
+                    }},
+                    doc! {"$unset": "workspaceShare"},
+                ],
             )
             .await?;
         Ok(result.matched_count == 1)
+    }
+
+    /// 已有工作台链接时复用密文，并发请求也只登记一个令牌。
+    pub(crate) async fn workspace_share(
+        &self,
+        grant: &Grant,
+        record: &ShareTokenRecord,
+        ciphertext: &str,
+    ) -> Result<Option<WorkspaceShare>, RepoError> {
+        if !grant.can_manage() {
+            return Err(RepoError::GrantMismatch);
+        }
+        let create = doc! {"$and": [
+            {"$eq": ["$visibility", "unlisted"]},
+            {"$eq": [{"$type": "$workspaceShare"}, "missing"]},
+        ]};
+        let current = doc! {"$ifNull": ["$shareTokens", []]};
+        let found = self
+            .collection(collections::SPACES)
+            .find_one_and_update(
+                granted_space(grant),
+                vec![doc! {"$set": {
+                    "shareTokens": {"$cond": [
+                        create.clone(), append_share_token(current, record)?, "$shareTokens",
+                    ]},
+                    "workspaceShare": {"$cond": [create, ciphertext, "$workspaceShare"]},
+                }}],
+            )
+            .projection(doc! {"_id": 0, "visibility": 1, "workspaceShare": 1})
+            .return_document(ReturnDocument::After)
+            .await?;
+        found
+            .map(|document| {
+                bson::deserialize_from_document(document)
+                    .map_err(|error| RepoError::Corrupt(error.to_string()))
+            })
+            .transpose()
     }
 
     /// 开始删除空间：在空间文档上记下 `deletingAt`（墓碑）。之后任何授权都拿不到这个空间、任何
@@ -152,6 +201,13 @@ impl Repo {
         let deleted = spaces.delete_one(filter).await?;
         Ok(deleted.deleted_count == 1)
     }
+}
+
+fn append_share_token(records: Document, record: &ShareTokenRecord) -> Result<Document, RepoError> {
+    Ok(doc! {"$slice": [
+        {"$concatArrays": [records, {"$literal": [to_bson(record)?]}]},
+        -(MAX_SHARE_TOKEN_RECORDS as i32),
+    ]})
 }
 
 /// 删除用的条件：`{_id, owner.kind, owner.id}`，不排除墓碑。
