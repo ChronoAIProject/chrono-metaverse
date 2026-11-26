@@ -8,6 +8,7 @@ import { cityModelAir } from './mapFacade';
 import { CITY_REFLECTION_LAYER } from './mapReflection';
 import { externalContentOf } from '../core/externalSource';
 import { FirstPersonView, type CameraPerspective } from './cameraPerspective';
+import { CameraArea } from './cameraArea';
 import { attachCameraNavigation, type CameraStep } from './cameraNavigation';
 import { ExternalContentView } from './externalContentView';
 import * as THREE from 'three';
@@ -346,6 +347,7 @@ export class SceneView {
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(50, 1, 0.05, 500);
   private readonly controls: OrbitControls;
+  private cameraArea: CameraArea | null = null;
   private firstPerson: FirstPersonView | null = null;
   private readonly navigation: ReturnType<typeof attachCameraNavigation>;
   private readonly content = new THREE.Group();
@@ -632,8 +634,8 @@ export class SceneView {
     } else {
       this.navigation.update();
       this.controls.update();
-      this.firstPerson?.sync();
     }
+    this.constrainCamera();
     const globe =
       this.broadcast?.update(this.camera, this.flight ? null : this.selectedShot) ?? false;
     this.overlay.visible = this.visualLayer.visible = !globe;
@@ -1095,6 +1097,10 @@ export class SceneView {
     for (const light of this.lights) this.scene.remove(light);
     const preset = owner?.view.lighting ?? owner?.lighting ?? 'daylight';
     const environment = owner?.view.entities.map(environmentOf).find((env) => env !== null);
+    this.cameraArea =
+      owner && environment?.cameraArea
+        ? new CameraArea(environment.cameraArea, owner.placement)
+        : null;
     this.daylightCity =
       preset === 'daylight' &&
       !(owner?.view.styleLook ?? owner?.styleLook)?.hologram &&
@@ -2198,6 +2204,7 @@ export class SceneView {
       this.firstPerson?.exit();
       this.firstPerson = null;
     }
+    this.constrainCamera();
     this.options.onPerspectiveChange?.(mode);
   }
 
@@ -2248,9 +2255,22 @@ export class SceneView {
     this.moveCamera(pose.to, pose.target, animate, true);
   }
 
+  private constrainCamera(): void {
+    const moved = this.cameraArea?.constrain(
+      this.controls.object.position,
+      this.controls.target,
+      this.firstPerson !== null,
+    );
+    if (this.firstPerson) this.firstPerson.sync();
+    else if (moved) {
+      this.camera.lookAt(this.controls.target);
+      this.camera.updateMatrixWorld();
+    }
+  }
+
   stepCamera(action: CameraStep): void {
     this.navigation.step(action, this.firstPerson !== null);
-    this.firstPerson?.sync();
+    this.constrainCamera();
   }
 
   private frameBounds(
@@ -2386,7 +2406,7 @@ export class SceneView {
       .copy(this.controls.target)
       .add(offset.setFromSpherical(spherical));
     this.controls.update();
-    this.firstPerson?.sync();
+    this.constrainCamera();
     return true;
   }
 
@@ -2404,6 +2424,11 @@ export class SceneView {
     broadcast = false,
   ): void {
     if (!broadcast) this.selectedShot = null;
+    if (this.cameraArea) {
+      to = to.clone();
+      target = target.clone();
+      this.cameraArea.fitDestination(to, target);
+    }
     if (!animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       this.flight = null;
       this.camera.position.copy(to);
