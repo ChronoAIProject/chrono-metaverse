@@ -1,3 +1,5 @@
+import type { OffshorePatch } from './offshoreWater';
+import { offshoreLight } from './offshoreWater';
 import { surfaceNoise } from './surfaceVariation';
 import * as THREE from 'three';
 import detailUrl from '../assets/geography/surface-detail.webp';
@@ -10,20 +12,29 @@ export interface GroundAir {
 }
 
 /** 远处的影像按视线长度衰减，散射光取当前方位的实景天际线。 */
-export function groundAir(material: THREE.Material, uniforms: GroundAir) {
+export function groundAir(material: THREE.Material, uniforms: GroundAir, offshore?: OffshorePatch) {
   const compile = material.onBeforeCompile.bind(material);
   const key = material.customProgramCacheKey();
-  material.customProgramCacheKey = () => key + '/ground-air';
+  material.customProgramCacheKey = () => key + '/ground-air' + (offshore ? '/offshore' : '');
   material.onBeforeCompile = (shader, renderer) => {
     compile(shader, renderer);
-    Object.assign(shader.uniforms, uniforms);
+    Object.assign(shader.uniforms, uniforms, offshore);
+    const uvVertex = offshore
+      ? 'uniform vec4 oceanRect;attribute vec2 tileUv;varying vec2 oceanUv;\n'
+      : '';
+    const oceanFragment = offshore
+      ? 'varying vec2 oceanUv; uniform sampler2D oceanMask, oceanSky, oceanReflectance; uniform float oceanReady, oceanRoughness;\n'
+      : '';
     shader.vertexShader =
+      uvVertex +
       'varying vec3 groundView;\n' +
       shader.vertexShader.replace(
         '#include <project_vertex>',
-        '#include <project_vertex>\ngroundView = mvPosition.xyz;',
+        '#include <project_vertex>\ngroundView = mvPosition.xyz;' +
+          (offshore ? '\noceanUv = oceanRect.xy + vec2(tileUv.x, tileUv.y-1.0)*oceanRect.zw;' : ''),
       );
     shader.fragmentShader =
+      oceanFragment +
       'varying vec3 groundView;\nuniform sampler2D groundSky;\nuniform float groundSkyYaw, groundAirStrength, groundAirHalfDistance;\n' +
       shader.fragmentShader.replace(
         '#include <opaque_fragment>',
@@ -34,6 +45,7 @@ export function groundAir(material: THREE.Material, uniforms: GroundAir) {
             float c = cos(groundSkyYaw), s = sin(groundSkyYaw);
             ray.xz = mat2(c,s,-s,c) * ray.xz;
             vec3 horizon = texture2D(groundSky, equirectUv(normalize(vec3(ray.x, 0.012, ray.z)))).rgb;
+            ${offshore ? offshoreLight : ''}
             float scatter = (1.0 - exp2(-path / groundAirHalfDistance)) * groundAirStrength;
             outgoingLight = mix(outgoingLight, horizon, scatter);
           }

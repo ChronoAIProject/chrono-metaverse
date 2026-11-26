@@ -1,0 +1,14 @@
+{
+  "source": "© OpenStreetMap contributors, ODbL 1.0. OpenMapTiles ocean polygons served by OpenFreeMap, planet 20261115_080022_pt.",
+  "url": "https://tiles.openfreemap.org/planet/20261115_080022_pt/{z}/{x}/{y}.pbf",
+  "license": "https://www.openstreetmap.org/copyright",
+  "class": "water / ocean",
+  "zoom": 10,
+  "boundsMetres": 100000,
+  "centerWGS84": [
+    103.8542,
+    1.28017
+  ],
+  "maskPixels": 2048,
+  "sampling": "Rasterized in EPSG:3857. Set coverage to zero within 80 metres of mapped land, reaching full coverage 250 metres offshore. RMS slope 0.12 is a moderate-wind approximation."
+}

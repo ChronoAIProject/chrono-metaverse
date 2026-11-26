@@ -331,9 +331,18 @@ export default function build(base: BuildBase, kit: Kit) {
     ? JSON.parse(readFileSync(environmentFile, 'utf8'))
     : null;
   // 已保存的物件是权威状态；重新构建不能恢复已被用户替换的有限地板或天空壳。
-  const currentEnvironment = surveyedGrassCoverage(bayDaylight(
+  let currentEnvironment = surveyedGrassCoverage(bayDaylight(
     base.entities.find((entity) => entity.entityId === configured?.entityId), configured,
   ));
+  const authoredMap = (configured?.props?.environment as { map?: { longitude?: number; latitude?: number; offshore?: {texture: string} } } | undefined)?.map;
+  const savedEnvironment = currentEnvironment?.props?.environment as { map?: { offshore?: unknown; longitude?: number; latitude?: number } } | undefined;
+  if (currentEnvironment && authoredMap?.offshore && savedEnvironment?.map && !savedEnvironment.map.offshore &&
+      savedEnvironment.map.longitude === authoredMap.longitude && savedEnvironment.map.latitude === authoredMap.latitude) {
+    currentEnvironment = { ...currentEnvironment,
+      textures: [...new Set([...(currentEnvironment.textures ?? []), authoredMap.offshore.texture])],
+      props: {...currentEnvironment.props, environment: {...savedEnvironment, map: {...savedEnvironment.map, offshore: authoredMap.offshore}}}
+    };
+  }
   const authoredArea = (configured?.props?.environment as { cameraArea?: unknown } | undefined)?.cameraArea;
   const currentSettings = currentEnvironment?.props?.environment as Record<string, unknown> | undefined;
   const environment = currentEnvironment && currentSettings && authoredArea !== undefined && currentSettings.cameraArea === undefined

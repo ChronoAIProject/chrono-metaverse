@@ -24,6 +24,12 @@ export interface TileSource extends SourceCredit, SourceDelivery {
 export type GeographicPolygon = readonly (readonly (readonly [number, number])[])[];
 
 export interface GeographicMap extends GeographicReference {
+  /** Ocean coverage in normalized Web Mercator coordinates, north-west origin. */
+  readonly offshore?: {
+    readonly texture: string;
+    readonly rect: readonly [number, number, number, number];
+    readonly rmsSlope: number;
+  };
   readonly surfaceDetail?: 'urban';
   /** WGS84 hardscape footprints. Each polygon starts with its shell, followed by holes. */
   readonly grassExclusions?: readonly GeographicPolygon[];
@@ -187,8 +193,28 @@ export function environmentOf(entity: EntityBody): Environment | null {
       )
     )
       return null;
+    const offshore = record(value.offshore);
+    const rect = offshore?.rect;
+    const ocean =
+      offshore &&
+      typeof offshore.texture === 'string' &&
+      entity.textures?.includes(offshore.texture) &&
+      /^[a-f0-9]{64}$/.test(offshore.texture) &&
+      Array.isArray(rect) &&
+      rect.length === 4 &&
+      rect.every((n) => finite(n, 0, 1)) &&
+      rect[2]! > rect[0]! &&
+      rect[3]! > rect[1]! &&
+      finite(offshore.rmsSlope, 0.001, 1)
+        ? {
+            texture: offshore.texture,
+            rect: rect as [number, number, number, number],
+            rmsSlope: offshore.rmsSlope as number,
+          }
+        : undefined;
     map = {
       ...reference,
+      ...(ocean ? { offshore: ocean } : {}),
       ...(exclusions ? { grassExclusions: exclusions } : {}),
       sources,
       ...(value.surfaceDetail ? { surfaceDetail: value.surfaceDetail } : {}),

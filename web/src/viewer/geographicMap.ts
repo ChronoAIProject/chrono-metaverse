@@ -1,3 +1,4 @@
+import { OffshoreWater } from './offshoreWater';
 import { grassPatch } from './mapGrass';
 import { GrassFootprints } from './grassFootprints';
 import type { ExternalAccess } from '../core/externalSource';
@@ -76,6 +77,7 @@ export class GeographicMap {
   private readonly cameraProjection = new THREE.Matrix4();
   private viewport = '';
   private readonly groundShadow = new THREE.Color(0.55, 0.61, 0.68);
+  private readonly offshore?: OffshoreWater;
   private readonly detail?: THREE.Texture;
   private readonly paving?: GrassFootprints;
   private readonly air: GroundAir = {
@@ -92,11 +94,14 @@ export class GeographicMap {
     private readonly resource?: { entity: string; access?: ExternalAccess; hologram?: boolean },
     providerCreditsHost = host,
     private readonly sampling = { pixelRatio: 1, anisotropy: 4 },
+    loadTexture?: (hash: string) => Promise<THREE.Texture>,
   ) {
     this.reference = new GeoReference(config);
     if (config.grassExclusions?.length) this.paving = new GrassFootprints(config.grassExclusions);
     if (config.surfaceDetail === 'urban' && !resource?.hologram)
       this.detail = groundDetailTexture(sampling.anisotropy);
+    if (this.detail && config.offshore && loadTexture)
+      this.offshore = new OffshoreWater(config.offshore, loadTexture);
     this.group.name = 'geographic-map';
     this.credit.className = 'viewer__map-credit';
     this.credit.setAttribute('aria-label', '地图来源');
@@ -130,6 +135,7 @@ export class GeographicMap {
     this.air.groundSkyYaw.value = yaw;
     this.air.groundAirHalfDistance.value =
       this.air.groundSky.value?.userData.airHalfDistance ?? 5200;
+    this.offshore?.setSky(this.air.groundSky.value);
     this.updateAirStrength();
   }
 
@@ -391,7 +397,9 @@ export class GeographicMap {
         if (this.resource?.hologram) hologramMaterial(mesh.material, 'terrain');
         else {
           mesh.material.toneMapped = false;
-          if (this.detail) groundAir(mesh.material, this.air);
+          if (this.detail) {
+            groundAir(mesh.material, this.air, this.offshore?.patch(node));
+          }
           if (mesh.material instanceof THREE.MeshLambertMaterial) {
             mesh.geometry.computeVertexNormals();
             mesh.receiveShadow = true;
@@ -539,6 +547,7 @@ export class GeographicMap {
     this.abort.abort();
     this.credit.remove();
     this.detail?.dispose();
+    this.offshore?.dispose();
     for (const patch of this.patches.values()) {
       patch.grass?.geometry.dispose();
       patch.grass?.material.dispose();
