@@ -501,7 +501,7 @@
     "kind": "structure",
     "layer": "ext",
     "regionId": "marina-bay-exterior",
-    "assetHash": "1debb8c166dbf81a4465bb9af093aaf041542a5a1c5bce560b41d60fbb30b6cd",
+    "assetHash": "11e15b3cb142a85c192bb69a1182dd2304a1ea1fa6bf57b6de6e06b96504d9d9",
     "label": "鱼尾狮公园 · 滨水石阶",
     "material": {
       "shading": "albedo"
@@ -2081,7 +2081,7 @@
     "kind": "structure",
     "layer": "ext",
     "regionId": "marina-bay-exterior",
-    "assetHash": "78baed699a767a0322cba3c803b229e080641fad92168c63e65678f5bd35c164",
+    "assetHash": "ec92570d8585012b1af3bc4334f7f1ee111ab97c81378e8b475ba9b4adb785ae",
     "material": {
       "shading": "albedo"
     },
@@ -2143,7 +2143,7 @@
     "kind": "structure",
     "layer": "ext",
     "regionId": "marina-bay-exterior",
-    "assetHash": "55cb04a6441cf895edd7c3086771370d7064ea4aa7993d28dd29388d0dafc150",
+    "assetHash": "44727b7a1ddbf82ea3701b5c4eace108e4698126f04785e776422c2c0f97639e",
     "material": {
       "shading": "albedo"
     },
@@ -2310,7 +2310,7 @@
     "kind": "structure",
     "layer": "ext",
     "regionId": "marina-bay-exterior",
-    "assetHash": "4186ce65876248baaea435c55f1787a8821e034a639e6a119f0e6444000a854e",
+    "assetHash": "751c2ce9824b36674961bff32d30b40a30041eec9a3a697c7fc3899021ce8fcb",
     "material": {
       "shading": "albedo"
     },

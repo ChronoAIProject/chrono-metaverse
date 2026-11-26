@@ -8,6 +8,8 @@ from pathlib import Path
 import numpy as np
 import trimesh
 from PIL import Image
+
+from coastal_finishes import dress_risers
 from shapely import constrained_delaunay_triangles
 from shapely.geometry import MultiPoint, Point, Polygon
 from trimesh.visual.material import PBRMaterial
@@ -205,6 +207,7 @@ def bake(source, reference):
         for mat in doc["materials"]:
             if "normalTexture" in mat:mat["normalTexture"]["scale"]=.34
     data=trimesh.exchange.gltf.export_glb(scene,include_normals=True,tree_postprocessor=normal_strength)
+    data=dress_risers(data)
     digest=hashlib.sha256(data).hexdigest();(ROOT/'assets'/(digest+'.glb')).write_bytes(data)
     path=ROOT/'build/streetscape.json'
     items={e['entityId']:e for e in json.loads(path.read_text())};key="bay.merlion-park-steps"
