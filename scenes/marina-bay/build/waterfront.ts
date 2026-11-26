@@ -118,6 +118,7 @@ export function waterfront(kit: Kit, quay: Quay, placement: Placement, finishes:
       kind: 'structure',
       props: {
         background: true,
+        varyTextureOrigin: true,
         来源地址: quay.source,
         版权: '© OpenStreetMap contributors · ODbL',
         ...props,
