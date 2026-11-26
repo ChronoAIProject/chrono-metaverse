@@ -222,19 +222,45 @@ function surveyedGrassCoverage(environment: EntityBody | null): EntityBody | nul
 /** 滨海湾扩展引用 OneMap 转换结果，室内沿用已有的重建物件。 */
 // Unstructured grains can be sampled in any direction. The Fullerton paint follows separate road geometry.
 const groundScanMaterials: Record<string, string[]> = {
-  'bay.bayfront-bridge': ['Bayfront asphalt'],
+  'bay.bayfront-bridge': [
+    'Bayfront asphalt',
+    'Walkway kerbs and median',
+    'Deck and pier concrete',
+    'Bridge footway aggregate',
+  ],
   'bay.empress-lawn-obelisk-court': ['Empress Lawn turf'],
-  'bay.esplanade-road-bridge': ['Esplanade carriageways'],
+  'bay.esplanade-road-bridge': ['Esplanade carriageways', 'Esplanade footways'],
   'bay.fullerton-carriageways': ['Fullerton verge grass', 'Asphalt', 'Lane paint', 'Bus lane paint'],
-  'bay.fullerton-entrance-trees': ['Fullerton planted soil'],
-  'bay.helix-bridge': ['Asphalt wearing course'],
-  'bay.marina-centre-carriageways': ['Marina Centre planted verges'],
+  'bay.fullerton-courtyard-trees': ['Courtyard paving', 'Dark planter edging'],
+  'bay.fullerton-dining-terraces': ['Recessed shop cladding'],
+  'bay.fullerton-entrance-trees': ['Fullerton planted soil', 'Dark planter edging'],
+  'bay.gallery-landing': ['Exposed deck edge', 'Deck soffit and piles', 'Landing wearing course'],
+  'bay.helix-bridge': ['Asphalt wearing course', 'Pier concrete'],
+  'bay.jubilee-bridge': ['Jubilee deck aggregate'],
+  'bay.marina-centre-carriageways': [
+    'Marina Centre planted verges',
+    'Flyover parapets, box girders and piers',
+    'Marina Centre road paint',
+  ],
   'bay.marina-centre-worksite': ['Compacted gravel', 'Graded soil'],
-  'bay.marina-promenade-park-ground': ['Marina Promenade ground cover', 'Marina Promenade compacted gravel'],
+  'bay.marina-promenade-park-ground': [
+    'Marina Promenade ground cover',
+    'Marina Promenade compacted gravel',
+    'Marina Promenade concrete',
+  ],
+  'bay.merlion-lookout': ['Exposed deck edge', 'Deck soffit and piles', 'Landing wearing course'],
+  'bay.merlion-park-steps': ['Merlion Park granite'],
   'bay.padang-playing-fields': ['Padang playing turf'],
   'bay.sands-skypark-gardens': ['Garden soil'],
-  'bay.south-service-court': ['South court asphalt'],
+  'bay.south-bay-landing': ['Exposed deck edge', 'Deck soffit and piles', 'Landing wearing course'],
+  'bay.south-service-court': ['South court asphalt', 'South court faded guides'],
   'bay.straits-boulevard': ['Compacted gravel', 'Graded soil'],
+  'bay.waterfront-skyline-facades.bayfront': ['ConcreteRoof'],
+  'bay.waterfront-skyline-facades.beach-road': ['ConcreteRoof'],
+  'bay.waterfront-skyline-facades.downtown': ['ConcreteRoof'],
+  'bay.waterfront-skyline-facades.north': ['ConcreteRoof'],
+  'bay.waterfront-skyline-facades.service-centre': ['ConcreteRoof'],
+  'bay.west-bay-boat-landing': ['Exposed deck edge', 'Deck soffit and piles', 'Landing wearing course'],
 };
 
 // Each granite scan is packed by scanned_pavers into four stones across six staggered courses.
@@ -281,16 +307,7 @@ export default function build(base: BuildBase, kit: Kit) {
     const streetscape: EntityBody[] = JSON.parse(
       readFileSync(new URL('./streetscape.json', import.meta.url), 'utf8'),
     );
-    entities.push(...streetscape.map((entity) => {
-      const placed = placeExterior(entity, placement);
-      const scans = groundScanMaterials[entity.entityId];
-      const pavers = pavedSurfaces[entity.entityId];
-      if (!scans && !pavers) return placed;
-      return { ...placed, props: {
-        ...placed.props, ...(scans && { groundScanMaterials: scans }),
-        ...(pavers && { pavingCourseAtlas: { [pavers]: [4, 6] } }),
-      } };
-    }));
+    entities.push(...streetscape.map((entity) => placeExterior(entity, placement)));
     // The inherited census tiles already use final member coordinates.
     const streetTrees: EntityBody[] = JSON.parse(
       readFileSync(new URL('./city-street-trees.json', import.meta.url), 'utf8'),
@@ -323,12 +340,19 @@ export default function build(base: BuildBase, kit: Kit) {
             !ids.has(entity.entityId),
         )
         .map((entity) => kit.removeEntity(entity.entityId)),
-      ...entities.map((entity) =>
-        kit.placeEntity({
+      ...entities.map((entity) => {
+        const scans = config.quay && groundScanMaterials[entity.entityId];
+        const pavers = config.quay && pavedSurfaces[entity.entityId];
+        return kit.placeEntity({
           ...entity,
-          props: { ...entity.props, background: true },
-        }),
-      ),
+          props: {
+            ...entity.props,
+            background: true,
+            ...(scans && { groundScanMaterials: scans }),
+            ...(pavers && { pavingCourseAtlas: { [pavers]: [4, 6] } }),
+          },
+        });
+      }),
     ],
   };
 }
