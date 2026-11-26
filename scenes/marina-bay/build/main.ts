@@ -340,10 +340,13 @@ export default function build(base: BuildBase, kit: Kit) {
   const surroundings = base.entities.find((entity) => entity.entityId === 'bay.city-surroundings');
   if (surroundings) entities.push(...(config.quay ? withSkylineFacades(withBoatQuay(surroundings)) : [surroundings]));
   // Sky visibility belongs to each facade at its surveyed location and to the sampled mesh revision.
-  const facadeSurvey: { buildings: { entityId: string; source: string; output: string }[] } = JSON.parse(
-    readFileSync(new URL('../references/district-skylight/survey.json', import.meta.url), 'utf8'),
-  );
-  const bakedFacades = new Map(facadeSurvey.buildings.map((row) => [row.entityId, row]));
+  const facadeFinishes = ['district-skylight/survey', 'financial-facade-exposure'].flatMap((name) => {
+    const survey: { buildings: { entityId: string; source: string; output: string }[] } = JSON.parse(
+      readFileSync(new URL(`../references/${name}.json`, import.meta.url), 'utf8'),
+    );
+    return survey.buildings;
+  });
+  const bakedFacades = new Map(facadeFinishes.map((row) => [row.entityId, row]));
   const ids = new Set(entities.map((entity) => entity.entityId));
   return {
     message: config.message,
