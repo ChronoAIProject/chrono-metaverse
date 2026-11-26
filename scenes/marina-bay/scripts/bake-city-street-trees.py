@@ -16,6 +16,7 @@ from trimesh.visual.texture import TextureVisuals
 from fullerton_shrubs import combined
 from scanned_canopy import ROOT, sample_scan, slices, write_tree_asset
 from street_foliage import branch_sprays
+from leaf_sprays import photographed_sprays
 
 PALM_GENERA = {'Washingtonia', 'Dypsis', 'Roystonea', 'Bismarckia', 'Phoenix'}
 SPREADING = {'Samanea', 'Peltophorum', 'Libidibia', 'Delonix', 'Pterocarpus'}
@@ -25,9 +26,11 @@ PALM_CREDIT = ("Royal palm mesh and textures adapted from 0 A.D., Wildfire Games
                "Scaled, rotated and batched for the street-tree census.")
 
 
-def broadleaf(folder, name, sprays=False, distant=False):
-    points, colours, leaves, trunk = sample_scan(folder, name)
-    if distant:
+def broadleaf(folder, name, sprays=False, distant=False, photographed=False):
+    points, colours, leaves, trunk = sample_scan(folder, name, bark_triangles=900 if photographed else 240)
+    if photographed:
+        (xyz, uv, normals, faces), atlas = photographed_sprays(points, leaves, folder, name)
+    elif distant:
         # Distant stems and leaves share the same textured depth sections. Including
         # the scanned bark keeps the root and fork visible without a separate draw.
         xyz, uv, normals, faces, atlas = slices(points, colours, np.ones_like(leaves),
@@ -37,7 +40,7 @@ def broadleaf(folder, name, sprays=False, distant=False):
     else:
         xyz, uv, normals, faces, atlas = slices(points, colours, leaves, fit_opacity=True, layer_count=3, cells=2)
     crown_paint = PBRMaterial(name=name + " street foliage", baseColorTexture=atlas, metallicFactor=0,
-                              roughnessFactor=.95, alphaMode="MASK", alphaCutoff=.36)
+                              roughnessFactor=.95, alphaMode="MASK", alphaCutoff=.27 if photographed else .36)
     foliage = trimesh.Trimesh(vertices=xyz, faces=faces, vertex_normals=normals,
                               visual=TextureVisuals(uv=uv, material=crown_paint), process=False)
     foot = np.median(trunk.vertices[trunk.vertices[:, 1] < .08], axis=0)
@@ -45,7 +48,8 @@ def broadleaf(folder, name, sprays=False, distant=False):
     foliage.apply_translation(-foot)
     if distant:
         return [foliage]
-    bark_map = trunk.visual.material.baseColorTexture.resize((256, 256), Image.Resampling.LANCZOS)
+    bark_size = 512 if photographed else 256
+    bark_map = trunk.visual.material.baseColorTexture.resize((bark_size, bark_size), Image.Resampling.LANCZOS)
     bark_map.format = "JPEG"
     trunk.visual.material.baseColorTexture = bark_map
     trunk.apply_translation(-foot)
@@ -76,10 +80,13 @@ def palm(folder):
                             visual=TextureVisuals(uv=uv, material=paint), process=False)]
 
 
-def observed_bank_canopy(key, tile, source_folders, palm_folder):
+def surveyed_canopy(key, tile, source_folders, palm_folder):
     survey = json.loads((ROOT / 'references' / tile['crownSurvey']).read_text())
     crowns = survey['crowns']
     median = np.median([row[-3:] for row in crowns], axis=0)
+    if section := tile.get('section'):
+        tree_ids = set(survey['sections'][section])
+        crowns = [row for row in crowns if row[8] in tree_ids]
     models, groups, colours = {}, defaultdict(list), defaultdict(list)
     palms = []
     for _, _, x, y, z, height, width, form, seed, red, green, blue in crowns:
@@ -96,7 +103,8 @@ def observed_bank_canopy(key, tile, source_folders, palm_folder):
             continue
         name = {'round': 'island_tree_01', 'spreading': 'jacaranda_tree'}[form]
         if name not in models:
-            models[name] = broadleaf(source_folders[name], name, sprays=True)
+            models[name] = broadleaf(source_folders[name], name, sprays=True,
+                                     photographed=tile.get('photographedSprays', False))
         rotation = trimesh.transformations.rotation_matrix(rng.uniform(-np.pi, np.pi), [0, 1, 0])[:3, :3]
         scale = [width, height, width * rng.uniform(.91, 1.1)]
         for source in models[name]:
@@ -110,8 +118,10 @@ def observed_bank_canopy(key, tile, source_folders, palm_folder):
             colours[material].append(np.tile([*rgb, 255], (len(mesh.vertices), 1)))
 
     scene = trimesh.Scene()
-    palm_mesh = import_module('bake-sands-waterfront-palms').palm_stand(palm_folder, palms, face_budget=1200)
-    scene.add_geometry(palm_mesh, geom_name=palm_mesh.visual.material.name)
+    if palms:
+        palm_mesh = import_module('bake-sands-waterfront-palms').palm_stand(
+            palm_folder, palms, face_budget=1200)
+        scene.add_geometry(palm_mesh, geom_name=palm_mesh.visual.material.name)
     for name, pieces in groups.items():
         mesh = combined(pieces)
         mesh.visual.vertex_attributes['color'] = np.vstack(colours[name]).astype(np.uint8)
@@ -138,7 +148,7 @@ def bake(folders, selected_tile=None):
         if selected_tile and selected_tile != key:
             continue
         if tile.get('crownSurvey'):
-            records[key] = observed_bank_canopy(key, tile, source_folders, folders[3])
+            records[key] = surveyed_canopy(key, tile, source_folders, folders[3])
             continue
         groups = defaultdict(list)
         painted = defaultdict(list)
