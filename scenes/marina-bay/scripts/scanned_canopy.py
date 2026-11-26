@@ -25,7 +25,7 @@ SOURCES = {
 }
 
 
-def sample_scan(folder, name):
+def sample_scan(folder, name, *, bark_triangles=240):
     raw = (folder / f"{name}_1k.gltf").read_bytes()
     if hashlib.sha256(raw).hexdigest() != SOURCES[name]:
         raise ValueError(f"Expected the Poly Haven {name} 1k glTF")
@@ -79,7 +79,7 @@ def sample_scan(folder, name):
             bark = trimesh.Trimesh(vertices=pos, faces=faces, vertex_normals=read(attr["NORMAL"]),
                                    visual=TextureVisuals(uv=uv * [1, -1] + [0, 1], material=paint),
                                    process=False)
-            bark = compact_bark(bark, target_triangles=240, max_error=.12)
+            bark = compact_bark(bark, target_triangles=bark_triangles, max_error=.12)
         points.append(np.einsum("ij,ijk->ik", weights, tri[sample])[keep])
         colours.append(image[v[keep],u[keep]])
     xyz = np.vstack(points)

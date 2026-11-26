@@ -758,5 +758,67 @@
       "树冠数": 48,
       "棕榈冠数": 26
     }
+  },
+  {
+    "entityId": "bay.beach-road-street-canopy",
+    "label": "美芝路 · 西段行道树",
+    "layer": "ext",
+    "kind": "object",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "5f8431b4e821dd4ae3f066802504f4d8792b3309138c67d568e1f8fb3048585d",
+    "bounds": {
+      "min": [
+        -8.199400145091833,
+        -60.692,
+        2321.245380142993
+      ],
+      "max": [
+        109.43303307731405,
+        -40.05755365963682,
+        2446.2836949258995
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "版权": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes. Royal palm mesh and textures adapted from 0 A.D., Wildfire Games, https://wildfiregames.com/, CC BY-SA 3.0, https://creativecommons.org/licenses/by-sa/3.0/. Scaled, rotated and batched for the street-tree census. Crown footprints from OneMap, Singapore Land Authority.",
+      "依据": "NParks tree inventory via cheeaun/sgtreesdata at c97d9454adfddfc984f6fa0693c57739b002e79e. Crown widths and leaf tones estimated from OneMap OrthoJPG z19, © Singapore Land Authority. Height taken near the centre of the recorded band. Tree forms approximate the recorded species.",
+      "树冠数": 19,
+      "棕榈冠数": 1
+    }
+  },
+  {
+    "entityId": "bay.beach-road-street-canopy-east",
+    "label": "美芝路 · 东段行道树",
+    "layer": "ext",
+    "kind": "object",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "1e80fe086a13119cb17ee15998e936734da9e3d0a2a843473fb57f69ed28e876",
+    "bounds": {
+      "min": [
+        -125.70629543005322,
+        -60.739,
+        2408.842560420201
+      ],
+      "max": [
+        -5.619547079626838,
+        -40.13555365963682,
+        2563.7089818817244
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "版权": "Poly Haven: Tree Small 02, Island Tree 01 and Jacaranda Tree (CC0), adapted to layered crown meshes. Royal palm mesh and textures adapted from 0 A.D., Wildfire Games, https://wildfiregames.com/, CC BY-SA 3.0, https://creativecommons.org/licenses/by-sa/3.0/. Scaled, rotated and batched for the street-tree census. Crown footprints from OneMap, Singapore Land Authority.",
+      "依据": "NParks tree inventory via cheeaun/sgtreesdata at c97d9454adfddfc984f6fa0693c57739b002e79e. Crown widths and leaf tones estimated from OneMap OrthoJPG z19, © Singapore Land Authority. Height taken near the centre of the recorded band. Tree forms approximate the recorded species.",
+      "树冠数": 19,
+      "棕榈冠数": 0
+    }
   }
 ]
