@@ -1,6 +1,6 @@
 # NyxID 用户授权与 Agent 组织访问
 
-当前 CMA 工作台采用 [CMA 用户 OAuth 直连](CMA_OAUTH.md)。下文保留网页登录、组织访问和历次部署记录；历史浏览器 Key 和早期 OAuth 兼容缺口描述不代表本次代码已上线。
+网页聊天的独立授权流程见 [工作台 NyxBot](NYXAGENT.md)。
 
 Agent 继续使用已有的、绑定服务的 Agent Key。NyxID 校验 Key、服务访问权限和操作范围，再向 metaverse 签发身份令牌。metaverse 根据令牌的 `sub` 找到**同一用户**保存的 OAuth 授权，实时查询该用户在资源所属组织的角色。组织 admin 可管理，member/viewer 只读。
 
@@ -22,7 +22,7 @@ Agent 原有 Key → NyxID（Key / 服务 / 操作范围检查）
                  metaverse 资源 ACL → 执行业务操作
 ```
 
-OAuth 用于账号核验、组织查询，以及经用户明确授权后的固定 CMA 操作。CMA 请求直接使用同一用户 grant；服务范围通过 OAuth resource 限定到 CMA，业务流量不经过 NyxID 服务代理。具体前置能力、权限与发布条件见上面的 CMA 接入文档。浏览器会话仍不能认证 `/api/v1/*` 业务写入。
+OAuth 用于账号核验、组织查询和空间目录。浏览器会话不能认证 `/api/v1/*` 业务写入。
 
 ## 网页管理
 
@@ -42,7 +42,7 @@ OAuth 回调成功后返回 `/connect?connected=1`；取消、过期、provider 
 
 ## 配置
 
-在 NyxID 注册一个专用于此部署的**保密 OAuth 客户端**，支持 `authorization_code`、`refresh_token`、PKCE S256、`client_secret_post`，允许 scopes `openid roles offline_access proxy`；启用 CMA 时申请固定 CMA resource。`proxy` 在这里用于受限服务授权，实际请求直接到 CMA。现有 NyxID 的普通用户组织查询接口以用户身份判定成员权限，不要求新增组织 scope。此结论根据 NyxID 源码核对；实际部署仍需完成下文的线上验收。
+在 NyxID 注册一个专用于此部署的**保密 OAuth 客户端**，支持 `authorization_code`、`refresh_token`、PKCE S256、`client_secret_post`，允许 scopes `openid roles offline_access`。现有 NyxID 的普通用户组织查询接口以用户身份判定成员权限，不要求新增组织 scope。此结论根据 NyxID 源码核对；实际部署仍需完成下文的线上验收。
 
 `openid offline_access` 是历史组织查询方案申请的 scope 集合，但 NyxID 现有普通用户组织接口没有“仅查询角色”的专用 scope。账号核验和组织查询是 metaverse 对已保存 OAuth 的代码使用边界，不代表 provider 已将令牌硬限制到这些接口；令牌仍须按敏感用户凭据保护，其他接口能否接受它取决于各服务路由的身份、scope 及资源检查。
 
@@ -118,12 +118,3 @@ nyxid proxy request chrono-cd "$APP/services/metaverse-api/secrets?org_id=$ORG" 
 - 已在线核对：新页面真实渲染、手机布局与滚动、未连接时组织查询不可操作、权限范围说明可展开、回调失败返回固定恢复页面且清理地址参数、点击授权可到 NyxID 登录页；未执行用户同意步骤。
 - 新增 `check`、`organizations` 接口对无会话请求返回 401，回调错误和状态响应不缓存；授权跳转仍包含原客户端、最小 scopes、精确回调与 PKCE；业务接口仍拒绝未签名请求，既有 NyxID OAuth 代理仍能读取 `chronoai-lobby`。
 - 连接后的账号检查、组织列表和角色查询、断开流程已通过本地真实 MongoDB + 模拟 NyxID 的集成测试及桌面/手机浏览器测试。线上完整连接链路仍需用户以与 Agent Key 相同的账号授权后验收。
-
-
-## 在线 CMA worker 工作台
-
-`/workspace` 提供自然语言委托、准备与执行状态、对话、追加需求、停止当前响应、结果链接及三维预览。查看预览后可明确要求同一 worker 发布。详细规划与权限边界见 [WEB_CONSOLE_PLAN.md](WEB_CONSOLE_PLAN.md)。没有手工编辑方块、坐标或业务 JSON 的控制台。
-
-部署设置 `CMA_BASE_URL`（固定 HTTPS 根地址，生产为 `https://cma.nyxid.ai`）。
-本次代码迁移、实际 OAuth 令牌测试结果和 CMA 发布前提见 [CMA 用户 OAuth 直连](CMA_OAUTH.md)。
-CMA 与 Metaverse 均完成验证之前，不把这次迁移描述为已部署或连续聊天已修复。

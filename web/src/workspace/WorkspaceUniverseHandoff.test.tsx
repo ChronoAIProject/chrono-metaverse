@@ -73,8 +73,6 @@ it.each(['成员样式', '全局样式'] as const)(
             connected: true,
             subject: 'owner',
             csrfToken: 'csrf',
-            workerAvailable: true,
-            workerEnabled: true,
           });
         if (url.endsWith('/spaces'))
           return Response.json({
@@ -119,10 +117,6 @@ it.each(['成员样式', '全局样式'] as const)(
         }
       />,
     );
-    fireEvent.click(await screen.findByRole('button', { name: '打开空间助手' }));
-    fireEvent.change(screen.getByRole('combobox', { name: '空间助手' }), {
-      target: { value: 'nyxagent' },
-    });
     await screen.findByText('前厅', { selector: '.workspace__space-trigger span' });
     await userEvent.click(
       await screen.findByRole('button', {

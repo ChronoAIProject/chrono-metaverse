@@ -12,7 +12,6 @@ const props = {
   viewerFeedback: {},
   onPreview: vi.fn(),
   onViewerCommand: vi.fn(() => true),
-  onRestore: vi.fn(),
   onBusy: vi.fn(),
 };
 
@@ -21,7 +20,7 @@ it('使用 SDK 面板注册查看器动作，草稿须经用户确认后发送�
   const widget = container.querySelector('nyx-assistant') as NyxAssistantElement;
   expect(widget.dataset.ownerId).toBe('owner');
   expect(widget.context()).toMatchObject({ spaceId: 'demo' });
-  expect(widget.getAttribute('layout')).toBe('embedded');
+  expect(widget.getAttribute('layout')).toBe('anchored');
   const inputs: { input: { type: string; text?: string }; requestId: string }[] = [];
   widget.bind(
     new NyxIDConnection(new URL('https://sdk.example'), async (_url, init) => {
