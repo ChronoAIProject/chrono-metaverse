@@ -76,6 +76,7 @@ async function prepare(
           background: true,
           environment: {
             version: 1,
+            ...(tour && { cameraArea: { center: [0, 0], radius: 100, floor: -10, height: 80 } }),
             sky: { texture: DRAFT_TEXTURE.hash },
             map: { latitude: -33.8, longitude: 151.2, heading: 45, origin: [0, -10, 0], sources },
           },

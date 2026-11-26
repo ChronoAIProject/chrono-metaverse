@@ -1515,7 +1515,10 @@ export class SceneView {
     this.lastContent = content;
     if (change === 'extension') {
       // 离开巡演时停在当前眼位。用户主动发起的普通镜头动作继续执行。
-      if (previousShot) this.flight = null;
+      if (previousShot) {
+        if (!this.flight) this.selectedShot = previousShot;
+        this.flight = null;
+      }
       this.autoFramed = false;
     }
     if (
@@ -2259,6 +2262,9 @@ export class SceneView {
   }
 
   private constrainCamera(): void {
+    // Authored tour stops can be in another coordinate frame, including Earth orbit.
+    // Starting manual navigation clears the shot and reactivates the local bounds.
+    if (this.broadcast && this.selectedShot !== null) return;
     const moved = this.cameraArea?.constrain(
       this.controls.object.position,
       this.controls.target,
@@ -2427,7 +2433,7 @@ export class SceneView {
     broadcast = false,
   ): void {
     if (!broadcast) this.selectedShot = null;
-    if (this.cameraArea) {
+    if (!broadcast && this.cameraArea) {
       to = to.clone();
       target = target.clone();
       this.cameraArea.fitDestination(to, target);
