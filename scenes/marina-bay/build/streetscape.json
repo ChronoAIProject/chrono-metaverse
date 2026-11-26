@@ -2505,5 +2505,34 @@
       "版权": "Terrain interpretation © Singapore Land Authority / OneMap. Dirt Aerial 02 and Sandy Gravel 02 by Poly Haven (CC0).",
       "依据": "OneMap 航片内的裸土与压实通道。材质分界、色泽及地形起伏为估值。"
     }
+  },
+  {
+    "entityId": "bay.south-service-court",
+    "label": "滨海南岸 · 作业场地与进场路",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "671e6f6d31ea924b772b5ee8c478552093381b3b9f7babd103cd0cab47ce4809",
+    "bounds": {
+      "min": [
+        122.22211204947688,
+        -60.35301168203292,
+        -1432.7285478239467
+      ],
+      "max": [
+        378.0186677897199,
+        -60.284121434136914,
+        -1105.2619807354865
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "版权": "Ground outlines and colour samples © Singapore Land Authority / OneMap. Concrete Floor 02 and Asphalt 01 by Poly Haven (CC0).",
+      "依据": "OneMap 航片可辨认的场地边界、路面和标线走向。表面标高、涂装宽度和磨损为视觉估值。"
+    }
   }
 ]
