@@ -46,7 +46,7 @@ def soil_material(kind):
                        metallicFactor=0, roughnessFactor=1)
 
 
-def soil_mesh(area, material, ground, datum, tones, kind):
+def soil_mesh(area, material, ground, datum, tones, kind, *, low_rgb=(110, 101, 86), high_rgb=(195, 183, 166), min_tint=.12):
     cells = []
     for part in get_parts(area):
         if part.area < .01:
@@ -69,8 +69,8 @@ def soil_mesh(area, material, ground, datum, tones, kind):
     weight = 1 / np.maximum(1, dist)**2
     rgb = np.sum(tones[ix, 2:] * weight[:, :, None], axis=1) / weight.sum(axis=1)[:, None]
     # The aerial gives broad variations in soil moisture. Keep the scan's own aggregate in the colour map.
-    rgb = np.clip(rgb, [110, 101, 86], [195, 183, 166])
-    tint = np.clip((rgb / [207, 199, 182])**2.2, .12, 1)
+    rgb = np.clip(rgb, low_rgb, high_rgb)
+    tint = np.clip((rgb / [207, 199, 182])**2.2, min_tint, 1)
     mesh.visual.vertex_attributes["color"] = np.uint8(255 * np.c_[tint, np.ones(len(xz))])
     return mesh
 
