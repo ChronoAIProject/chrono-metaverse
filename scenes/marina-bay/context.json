@@ -1,5 +1,17 @@
 {
   "entityPrefix": "bay.",
+  "overview": {
+    "entityId": "bay.1ce79c44-305a-4e67-80bf-9aa31f2f39a4",
+    "landmark": {
+      "label": "滨海湾金沙",
+      "position": [-538, 143, 565],
+      "focusBounds": { "min": [-608, -193, 260], "max": [-335, 83, 845] },
+      "azimuth": 72,
+      "elevation": 4,
+      "maxDistance": 330,
+      "overview": true
+    }
+  },
   "quay": {
     "id": "bay.fullerton-quay",
     "label": "浮尔顿滨水步道 · 石岸与栏杆",
