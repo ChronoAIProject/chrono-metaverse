@@ -31,8 +31,8 @@ def window_atlas():
     source = Image.open(ROOT / 'references/boat-quay-surfaces.jpg').convert('RGB')
     sheet = Image.new('RGB', (1024, 128))
     for index, (left, top, right, bottom) in enumerate([
-        (10, 1027, 243, 1205), (259, 1028, 505, 1200),
-        (517, 1029, 762, 1199), (775, 1030, 1011, 1146),
+        (32, 1076, 222, 1156), (266, 1030, 502, 1160),
+        (524, 1064, 761, 1138), (786, 1072, 1004, 1145),
     ]):
         panel = source.crop((left, top, right, bottom)).resize((256, 128), Image.Resampling.LANCZOS)
         sheet.paste(ImageEnhance.Color(panel).enhance(.56), (256 * index, 0))
@@ -41,7 +41,7 @@ def window_atlas():
 
 def upper_walls(plan, axes, origin, floor, eave, plaster, phase, panel, spans, batches):
     height = eave - floor
-    levels = np.linspace(floor - .05, eave, max(1, round(height / 3.5)) + 1)
+    levels = np.linspace(floor - .05, eave - .05, max(1, round(height / 3.5)) + 1)
     boundary = np.asarray(plan.exterior.coords)
     winding = 1 if plan.exterior.is_ccw else -1
     for a, b in zip(boundary, boundary[1:]):
@@ -49,26 +49,47 @@ def upper_walls(plan, axes, origin, floor, eave, plaster, phase, panel, spans, b
         length = np.linalg.norm(b - a)
         if length < .02:
             continue
-        edge = np.array([a, b, b, a]) @ axes + origin
-        outward = winding * np.array([dv, -du]) @ axes
-        # End walls parallel to the ridge face the street or the rear court.
+        start = a @ axes + origin
+        direction = (b - a) @ axes / length
+        outward = winding * np.array([dv, -du]) @ axes / length
         windows = abs(du) > .85 * length and length > 2.8 and height >= 1.95
-        for lo, hi in zip(levels, levels[1:]):
-            points = np.column_stack((edge[:, 0], [lo, lo, hi, hi], edge[:, 1]))
-            if windows:
-                material = 'windows'
+
+        def quad(profile, material='render'):
+            offsets, ys, depth = np.asarray(profile).T
+            world = start + offsets[:, None] * direction - depth[:, None] * outward
+            vertices = np.column_stack((world[:, 0], ys, world[:, 1]))
+            uv = (np.column_stack((offsets, ys)) + phase) / spans['render']
+            tint = plaster
+            if material == 'windows':
                 uv = np.array([[(panel + u) / 4, v] for u, v in
                                [(.012, .018), (.988, .018), (.988, .982), (.012, .982)]])
-                tint = .62 * plaster + .38 * 245
-            else:
-                material = 'render'
-                uv = (np.array([[0, lo], [length, lo], [length, hi], [0, hi]]) + phase) / spans[material]
-                tint = plaster
-            normal = np.cross(points[1] - points[0], points[2] - points[0])
+                tint = .25 * plaster + .75 * 255
             for tri in [[0, 1, 2], [0, 2, 3]]:
-                if normal[[0, 2]] @ outward < 0:
+                # Horizontal and recessed faces follow the same boundary winding.
+                if winding > 0:
                     tri = tri[::-1]
-                batches[material].append((points[tri], uv[tri], np.tile(tint, (3, 1))))
+                batches[material].append((vertices[tri], uv[tri], np.tile(tint, (3, 1))))
+
+        def panel_quad(left, right, low, high, depth=0.):
+            return np.array([(left, low, depth), (right, low, depth),
+                             (right, high, depth), (left, high, depth)])
+
+        for lo, hi in zip(levels, levels[1:]):
+            outer = panel_quad(0., length, lo, hi)
+            if not windows:
+                quad(outer)
+                continue
+            # A continuous scanned surround wraps the opening and carries the gable colour.
+            # Only the glazing and shutters use the rectified photographs.
+            margin = min(.58, length * .105)
+            sill, head = lo + (hi - lo) * .22, hi - (hi - lo) * .17
+            opening = panel_quad(margin, length - margin, sill, head)
+            glass = panel_quad(margin + .055, length - margin - .055, sill + .05, head - .05, .13)
+            for k in range(4):
+                j = (k + 1) % 4
+                quad([outer[k], outer[j], opening[j], opening[k]])
+                quad([opening[k], opening[j], glass[j], glass[k]])
+            quad(glass, 'windows')
 
 
 def add_section(building, section, project, phase, panel, spans, batches):
