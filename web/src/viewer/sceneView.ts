@@ -2259,6 +2259,9 @@ export class SceneView {
   }
 
   private constrainCamera(): void {
+    // Authored tour stops can be in another coordinate frame, including Earth orbit.
+    // Starting manual navigation clears the shot and reactivates the local bounds.
+    if (this.selectedShot !== null) return;
     const moved = this.cameraArea?.constrain(
       this.controls.object.position,
       this.controls.target,
@@ -2427,7 +2430,7 @@ export class SceneView {
     broadcast = false,
   ): void {
     if (!broadcast) this.selectedShot = null;
-    if (this.cameraArea) {
+    if (!broadcast && this.cameraArea) {
       to = to.clone();
       target = target.clone();
       this.cameraArea.fitDestination(to, target);
