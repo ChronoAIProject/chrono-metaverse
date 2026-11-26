@@ -1,0 +1,238 @@
+{
+  "references": [
+    "https://www.onemap.gov.sg",
+    "https://dataforgood-fb-data.s3.amazonaws.com/forests/v1/alsgedi_global_v6_float/chm/132232231.tif",
+    "https://polyhaven.com/a/tree_small_02"
+  ],
+  "method": "Overlap of OneMap aerial foliage with canopy heights over 5 m, screened against the rendered vegetation footprint. The connected area along Marina Boulevard covers about 1060 square metres. Crown centres and widths approximate that envelope. Heights use the local 85th percentile. Ground level, individual stems and species are estimates. localXZ is the final member frame.",
+  "trees": [
+    {
+      "localXZ": [
+        40.563,
+        91.243
+      ],
+      "groundY": -60.1,
+      "crownDiameterMetres": 16.4,
+      "estimatedHeightMetres": 8.89,
+      "sourceYawDegrees": 137.51,
+      "aerialRGB": [
+        114,
+        120,
+        93
+      ],
+      "geo": [
+        103.85425790361673,
+        1.2811428697358422
+      ]
+    },
+    {
+      "localXZ": [
+        33.6,
+        73.537
+      ],
+      "groundY": -60.1,
+      "crownDiameterMetres": 16.4,
+      "estimatedHeightMetres": 8.0,
+      "sourceYawDegrees": 275.02,
+      "aerialRGB": [
+        100,
+        107,
+        89
+      ],
+      "geo": [
+        103.85426688899621,
+        1.280971040397403
+      ]
+    },
+    {
+      "localXZ": [
+        28.228,
+        85.872
+      ],
+      "groundY": -60.1,
+      "crownDiameterMetres": 16.4,
+      "estimatedHeightMetres": 8.67,
+      "sourceYawDegrees": 52.52,
+      "aerialRGB": [
+        100,
+        109,
+        91
+      ],
+      "geo": [
+        103.85434775745163,
+        1.2810614768878075
+      ]
+    },
+    {
+      "localXZ": [
+        57.005,
+        86.811
+      ],
+      "groundY": -60.1,
+      "crownDiameterMetres": 14.14,
+      "estimatedHeightMetres": 7.0,
+      "sourceYawDegrees": 190.03,
+      "aerialRGB": [
+        108,
+        120,
+        90
+      ],
+      "geo": [
+        103.85410515208912,
+        1.2811519133841383
+      ]
+    },
+    {
+      "localXZ": [
+        22.532,
+        75.122
+      ],
+      "groundY": -60.1,
+      "crownDiameterMetres": 12.0,
+      "estimatedHeightMetres": 8.0,
+      "sourceYawDegrees": 327.54,
+      "aerialRGB": [
+        98,
+        106,
+        87
+      ],
+      "geo": [
+        103.854365728212,
+        1.280952953094098
+      ]
+    },
+    {
+      "localXZ": [
+        43.089,
+        79.858
+      ],
+      "groundY": -60.1,
+      "crownDiameterMetres": 11.66,
+      "estimatedHeightMetres": 7.0,
+      "sourceYawDegrees": 105.05,
+      "aerialRGB": [
+        108,
+        112,
+        93
+      ],
+      "geo": [
+        103.85420399131281,
+        1.2810524332427384
+      ]
+    },
+    {
+      "localXZ": [
+        26.324,
+        67.531
+      ],
+      "groundY": -60.1,
+      "crownDiameterMetres": 10.0,
+      "estimatedHeightMetres": 7.93,
+      "sourceYawDegrees": 242.56,
+      "aerialRGB": [
+        98,
+        104,
+        87
+      ],
+      "geo": [
+        103.85431181590985,
+        1.2808986912007103
+      ]
+    },
+    {
+      "localXZ": [
+        48.467,
+        86.497
+      ],
+      "groundY": -60.1,
+      "crownDiameterMetres": 12.0,
+      "estimatedHeightMetres": 7.17,
+      "sourceYawDegrees": 20.06,
+      "aerialRGB": [
+        109,
+        115,
+        93
+      ],
+      "geo": [
+        103.85417703516127,
+        1.2811247824376637
+      ]
+    },
+    {
+      "localXZ": [
+        42.453,
+        71.637
+      ],
+      "groundY": -60.1,
+      "crownDiameterMetres": 8.25,
+      "estimatedHeightMetres": 7.0,
+      "sourceYawDegrees": 157.57,
+      "aerialRGB": [
+        93,
+        103,
+        88
+      ],
+      "geo": [
+        103.85418602054591,
+        1.2809800840476446
+      ]
+    },
+    {
+      "localXZ": [
+        36.765,
+        83.023
+      ],
+      "groundY": -60.1,
+      "crownDiameterMetres": 16.4,
+      "estimatedHeightMetres": 8.0,
+      "sourceYawDegrees": 295.08,
+      "aerialRGB": [
+        103,
+        107,
+        93
+      ],
+      "geo": [
+        103.85426688899857,
+        1.2810614768912305
+      ]
+    },
+    {
+      "localXZ": [
+        32.025,
+        94.092
+      ],
+      "groundY": -60.1,
+      "crownDiameterMetres": 6.32,
+      "estimatedHeightMetres": 8.0,
+      "sourceYawDegrees": 72.59,
+      "aerialRGB": [
+        113,
+        123,
+        91
+      ],
+      "geo": [
+        103.85433877207235,
+        1.2811428697327045
+      ]
+    },
+    {
+      "localXZ": [
+        62.379,
+        80.8
+      ],
+      "groundY": -60.1,
+      "crownDiameterMetres": 6.32,
+      "estimatedHeightMetres": 6.0,
+      "sourceYawDegrees": 210.1,
+      "aerialRGB": [
+        95,
+        107,
+        86
+      ],
+      "geo": [
+        103.8540422544034,
+        1.2811157387835346
+      ]
+    }
+  ]
+}
