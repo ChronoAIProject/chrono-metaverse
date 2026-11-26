@@ -294,9 +294,14 @@ export default function build(base: BuildBase, kit: Kit) {
     ? JSON.parse(readFileSync(environmentFile, 'utf8'))
     : null;
   // 已保存的物件是权威状态；重新构建不能恢复已被用户替换的有限地板或天空壳。
-  const environment = surveyedGrassCoverage(bayDaylight(
+  const currentEnvironment = surveyedGrassCoverage(bayDaylight(
     base.entities.find((entity) => entity.entityId === configured?.entityId), configured,
   ));
+  const authoredArea = (configured?.props?.environment as { cameraArea?: unknown } | undefined)?.cameraArea;
+  const currentSettings = currentEnvironment?.props?.environment as Record<string, unknown> | undefined;
+  const environment = currentEnvironment && currentSettings && authoredArea !== undefined && currentSettings.cameraArea === undefined
+    ? { ...currentEnvironment, props: { ...currentEnvironment.props, environment: { ...currentSettings, cameraArea: authoredArea } } }
+    : currentEnvironment;
   const ground: EntityBody[] = environment
     ? []
     : JSON.parse(readFileSync(new URL('./ground.json', import.meta.url), 'utf8'));

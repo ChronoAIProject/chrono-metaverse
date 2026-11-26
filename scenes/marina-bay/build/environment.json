@@ -39,6 +39,7 @@
     "background": true,
     "environment": {
       "version": 1,
+      "cameraArea": {"center": [-95, 530], "radius": 850, "floor": -59.7, "height": 360},
       "multisampleCutouts": true,
       "sky": {
         "texture": "f38d9963be482d28a9fb240f0d334475e6ec039a09973f4cbeb5ffccd96c16da",

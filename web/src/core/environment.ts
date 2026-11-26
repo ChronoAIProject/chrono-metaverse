@@ -73,6 +73,8 @@ function skyDaylight(value: unknown): SkyDaylight | undefined {
 
 export interface Environment {
   readonly version: 1;
+  /** Playable camera cylinder in member metres, centered on the XZ plane. */
+  readonly cameraArea?: { center: [number, number]; radius: number; floor: number; height: number };
   readonly daylightToneMapping?: 'agx';
   readonly multisampleCutouts?: boolean;
   readonly sky?: {
@@ -193,8 +195,29 @@ export function environmentOf(entity: EntityBody): Environment | null {
     } as GeographicMap;
   }
   if (!sky && !map) return null;
+  const area = record(raw.cameraArea);
+  const cameraArea =
+    area &&
+    Array.isArray(area.center) &&
+    area.center.length === 2 &&
+    area.center.every(Number.isFinite) &&
+    Number.isFinite(area.floor) &&
+    typeof area.radius === 'number' &&
+    Number.isFinite(area.radius) &&
+    area.radius > 0 &&
+    typeof area.height === 'number' &&
+    Number.isFinite(area.height) &&
+    area.height > 0
+      ? {
+          center: area.center as [number, number],
+          floor: area.floor as number,
+          radius: area.radius,
+          height: area.height,
+        }
+      : undefined;
   return {
     version: 1,
+    ...(cameraArea ? { cameraArea } : {}),
     sky,
     map,
     ...(raw.multisampleCutouts === true ? { multisampleCutouts: true } : {}),
