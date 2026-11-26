@@ -1,5 +1,5 @@
 import { type PavingAtlas, pavingAtlas } from './groundScan';
-import { outdoorSurfaceVariation } from './surfaceVariation';
+import { outdoorSurfaceVariation, varyShapeTextureOrigin } from './surfaceVariation';
 import { prepareTreeWind, updateTreeWind } from './treeWind';
 import { PriorityQueue } from '3d-tiles-renderer/core';
 import { cityCutout, matchCutoutShadow } from './cityCutout';
@@ -672,12 +672,25 @@ export class SceneView {
     background = false,
     styleLook?: StyleLook,
     kind: 'structure' | 'object' = 'object',
+    varyOrigin = false,
   ): THREE.Material {
-    const key = `${materialKey(material)}|${glass ? 'g' : 'o'}|${background}|${styleLookKey(styleLook)}|${kind}`;
+    const key = `${materialKey(material)}|${glass ? 'g' : 'o'}|${background}|${styleLookKey(styleLook)}|${kind}|${varyOrigin}`;
     let cached = this.materialCache.get(key);
     if (cached === undefined) {
       const context = background ? { ...this.materialContext, clipping: [] } : this.materialContext;
       cached = createShapeMaterial(material, glass, context, styleLook, kind);
+      if (
+        varyOrigin &&
+        !glass &&
+        !styleLook &&
+        isTextureMaterial(material) &&
+        material.tile &&
+        material.shading === 'albedo' &&
+        cached instanceof THREE.MeshStandardMaterial &&
+        !cached.transparent
+      ) {
+        varyShapeTextureOrigin(cached);
+      }
       if (
         background &&
         !glass &&
@@ -1199,6 +1212,7 @@ export class SceneView {
           key: string;
           glass: boolean;
           background: boolean;
+          varyOrigin: boolean;
           styleLook?: StyleLook;
           kind: 'structure' | 'object';
           items: { entity: EntityBody; matrix: THREE.Matrix4 }[];
@@ -1215,11 +1229,13 @@ export class SceneView {
           background,
         );
         const kind = entity.kind === 'structure' ? 'structure' : 'object';
-        const batchKey = `${key}|${glass}|${background}|${kind}|${styleLookKey(styleLook)}|${JSON.stringify(entity.props?.backgroundView ?? null)}|${entity === broadcast?.mirror}`;
+        const varyOrigin = background && entity.props?.varyTextureOrigin === true;
+        const batchKey = `${key}|${glass}|${background}|${varyOrigin}|${kind}|${styleLookKey(styleLook)}|${JSON.stringify(entity.props?.backgroundView ?? null)}|${entity === broadcast?.mirror}`;
         const batch = batches.get(batchKey) ?? {
           key,
           glass,
           background,
+          varyOrigin,
           styleLook,
           kind,
           items: [],
@@ -1235,7 +1251,14 @@ export class SceneView {
         }
         if (built.geometry.index === null || built.geometry.index.count === 0) continue;
         const materials = built.materials.map((m) =>
-          this.shapeMaterial(m, batch.glass, batch.background, batch.styleLook, batch.kind),
+          this.shapeMaterial(
+            m,
+            batch.glass,
+            batch.background,
+            batch.styleLook,
+            batch.kind,
+            batch.varyOrigin,
+          ),
         );
         textured += built.materials.filter(isTextureMaterial).length;
         const payload = batch.items.map((item) => ({
@@ -1297,7 +1320,14 @@ export class SceneView {
             );
             const mirror = mesh.clone(false);
             mirror.material = built.materials.map((m) =>
-              this.shapeMaterial(m, batch.glass, true, batch.styleLook, batch.kind),
+              this.shapeMaterial(
+                m,
+                batch.glass,
+                true,
+                batch.styleLook,
+                batch.kind,
+                batch.varyOrigin,
+              ),
             );
             this.broadcast.setMirror(mirror);
             this.scene.add(this.broadcast.root);

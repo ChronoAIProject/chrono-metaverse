@@ -136,6 +136,35 @@ function shapeMeshes(view: SceneView) {
   return found;
 }
 
+it('共用岸段几何时，独立取样的实例合批且与默认纹理材质分开', async () => {
+  const { view } = setup();
+  const base = shapeContent();
+  const member = base.members[0]!;
+  const entities = [false, true, true].map((varyTextureOrigin, i) => ({
+    entityId: 'stone-' + i,
+    layer: 'ext' as const,
+    kind: 'structure' as const,
+    props: { background: true, varyTextureOrigin },
+    shape: {
+      type: 'box' as const,
+      size: [2, 1, 3] as const,
+      transform: { position: [i * 2, 0, 0] as const },
+      material: { texture: 'a'.repeat(64), shading: 'albedo' as const, tile: [1, 1] as const },
+    },
+  }));
+  await view.setContent({
+    ...base,
+    members: [{ ...member, view: { ...member.view, styleLook: undefined, entities } }],
+  });
+  const meshes = shapeMeshes(view);
+  expect(meshes).toHaveLength(2);
+  const shared = meshes.find((mesh) => mesh instanceof THREE.InstancedMesh)!;
+  const single = meshes.find((mesh) => mesh !== shared)!;
+  expect(shared.geometry).toBe(single.geometry);
+  expect(shared.material[0]!.customProgramCacheKey()).toContain('|shape-texture-origin');
+  expect(single.material[0]!.customProgramCacheKey()).not.toContain('|shape-texture-origin');
+});
+
 const shapeCache = (view: SceneView) =>
   Reflect.get(view, 'geometryCache') as Map<string, { geometry: THREE.BufferGeometry }>;
 const shapePending = (view: SceneView) =>

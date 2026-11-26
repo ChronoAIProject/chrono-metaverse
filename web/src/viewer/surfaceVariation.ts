@@ -1,12 +1,19 @@
 import * as THREE from 'three';
 import { type PavingAtlas, scatterGroundScan, supportsGroundScan } from './groundScan';
 
+const coordinateHash = /* glsl */ `
+  uint surfaceHash(ivec2 cell) {
+    uint h = uint(cell.x) * 1597334677u ^ uint(cell.y) * 3812015801u;
+    h = (h ^ (h >> 16u)) * 2246822519u;
+    return h ^ (h >> 13u);
+  }
+`;
+
 /** Lattice corners are computed from integer coordinates shared by adjacent patches. */
 export const surfaceNoise = /* glsl */ `
+  ${coordinateHash}
   float surfaceCorner(ivec2 p) {
-    uint h = uint(p.x) * 1597334677u ^ uint(p.y) * 3812015801u;
-    h = (h ^ (h >> 16u)) * 2246822519u;
-    return float((h ^ (h >> 13u)) & 65535u) / 65535.0;
+    return float(surfaceHash(p) & 65535u) / 65535.0;
   }
   float surfaceField(vec2 p) {
     ivec2 cell = ivec2(floor(p));
@@ -84,5 +91,37 @@ export function outdoorSurfaceVariation(
       if (paving) shader.uniforms.pavingUnits = { value: new THREE.Vector2(...paving) };
       shader.fragmentShader = scatterGroundScan(shader.fragmentShader, Boolean(paving));
     }
+  };
+}
+
+/** Move all tiled PBR channels together for each placement of a shared shape. */
+export function varyShapeTextureOrigin(material: THREE.MeshStandardMaterial) {
+  const compile = material.onBeforeCompile;
+  const key = material.customProgramCacheKey();
+  material.customProgramCacheKey = () => key + '|shape-texture-origin';
+  material.onBeforeCompile = function (shader, renderer) {
+    compile.call(this, shader, renderer);
+    shader.vertexShader =
+      coordinateHash +
+      shader.vertexShader.replace(
+        '#include <uv_vertex>',
+        /* glsl */ `#include <uv_vertex>
+      vec4 shapeOrigin = vec4(0.0, 0.0, 0.0, 1.0);
+      #ifdef USE_INSTANCING
+        shapeOrigin = instanceMatrix[3];
+      #endif
+      vec2 anchor = (modelMatrix * shapeOrigin).xz;
+      uint seed = surfaceHash(ivec2(floor(anchor * 16.0 + 0.5)));
+      vec2 phase = vec2(seed & 65535u, seed >> 16u) / 65536.0;
+      #ifdef USE_MAP
+        vMapUv += phase;
+      #endif
+      #ifdef USE_NORMALMAP
+        vNormalMapUv += phase;
+      #endif
+      #ifdef USE_ROUGHNESSMAP
+        vRoughnessMapUv += phase;
+      #endif`,
+      );
   };
 }
