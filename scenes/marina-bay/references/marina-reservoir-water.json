@@ -9,7 +9,7 @@
       103.8562245,
       1.2852154
     ],
-    "radius": 440,
+    "radius": 600,
     "rmsGravitySlope": 0.04,
     "rmsRippleSlope": 0.1725,
     "reflectance": [
@@ -33,7 +33,7 @@
       "https://api.data.gov.sg/v1/environment/wind-speed?date=2023-08-17"
     ]
   },
-  "processing": "Copernicus Sentinel-2 L2A surface reflectance. Use the supplied scale on offset-corrected Earth Search COGs. Within the mapped bay, erode valid SCL water by two 20-m pixels and stay 55 m off the mapped shore. Fit per-date median RGB against each shortwave infrared band with Theil\u2013Sen slopes and take the mean zero-SWIR intercept. The centre and radius summarize pixels classified as water on at least five dates. The Singapore River mouth shares the continuous water surface.",
+  "processing": "Copernicus Sentinel-2 L2A surface reflectance. Use the supplied scale on offset-corrected Earth Search COGs. Within the mapped bay, erode valid SCL water by two 20-m pixels and stay 55 m off the mapped shore. Fit per-date median RGB against each shortwave infrared band with Theil\u2013Sen slopes and take the mean zero-SWIR intercept. The centre comes from pixels classified as water on at least five dates. Shore sampling and the blend radius are described in shoreCoverage. The Singapore River mouth shares the continuous water surface.",
   "waves": {
     "ripples": "The original short-wave RMS slope of 0.115 was fitted to three daytime photographs. The current morning light uses a breezier 0.1725 across the two reservoir features. This artistic choice breaks up the broad bright reflection when looking across the bay. The short-wave strength also varies across elongated wind patches. The 24 m crosswind and 82 m downwind scales and 0.36 to 1.12 gain range are visual estimates. The same gain applies to resolved ripples and their unresolved slope variance.",
     "rippleReference": "https://commons.wikimedia.org/?curid=152986183",
@@ -201,5 +201,31 @@
     0.016729,
     0.038256,
     0.02987
-  ]
+  ],
+  "shoreCoverage": {
+    "gridMetres": 20,
+    "minimumWaterDates": 5,
+    "minimumDistanceFromMappedBankMetres": 29,
+    "sampleCount": 788,
+    "distanceFromCentreMetres": {
+      "p95": 416.7,
+      "p98": 488.5,
+      "maximum": 592.1
+    },
+    "observation": "Within the two mapped reservoir features, compare water-classified Sentinel pixels at 440\u2013540 m to those inside 352 m. After the existing two-SWIR correction the outer median green reflectance was lower on each of the eight dates (17\u201326 outer pixels per date). Beyond 540 m only 3\u20135 pixels per date were usable and several corrected medians were negative.",
+    "morningSample": {
+      "date": "2026-08-22",
+      "innerRgb": [
+        0.0122,
+        0.0318,
+        0.019
+      ],
+      "outerRgb": [
+        0.01,
+        0.0285,
+        0.0178
+      ]
+    },
+    "blend": "Keep the representative central sample through 480 m and fade to the regional water material by 600 m. The outer radius rounds the farthest stable sampled pixel to a 20 m grid cell. The existing smooth transition also applies to the gravity-wave amplitude."
+  }
 }
