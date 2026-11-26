@@ -2466,14 +2466,14 @@
         2764.0919211835776
       ]
     },
-    "assetHash": "07210fb3d3bb31b4c6757df4ab045c2592122125b82db3511c52d3c5ce1a20ae",
+    "assetHash": "712c79d6d6f1d3f1a18bc784089fd14e90ee1367d8b058f2c4993dbe0e3e2a08",
     "material": {
       "shading": "albedo"
     },
     "props": {
       "background": true,
       "surfaceRole": "landscape",
-      "版权": "OpenStreetMap contributors (ODbL). Land-cover survey derived from OneMap orthophotography, Singapore Land Authority. Leafy Grass, concrete and Sandy Gravel 02 scans by Poly Haven (CC0).",
+      "版权": "OpenStreetMap contributors (ODbL). Land-cover survey derived from OneMap orthophotography, Singapore Land Authority. Leafy Grass, concrete and Gravel Ground 01 scans by Poly Haven (CC0).",
       "依据": "OSM 公园边界与步道中心线、OneMap z18 影像的植被和陆岸边界。临水作业地、碎石与草坡取自 OneMap z19 航片，岸坡高度、地表磨损与路面宽度为视觉估值。"
     }
   },
@@ -2483,7 +2483,7 @@
     "kind": "structure",
     "layer": "ext",
     "regionId": "marina-bay-exterior",
-    "assetHash": "8797a4cb8777f14c7fd18e9c7b2d068455c44df4450c20a8c3abd58cafc7e1b0",
+    "assetHash": "0a42e8b1ef305f0c3eb25f1f9b640a83a7e553f64d86a3823d9a943b81be379c",
     "bounds": {
       "min": [
         -213.80720194772476,
@@ -2502,7 +2502,7 @@
     "props": {
       "background": true,
       "surfaceRole": "landscape",
-      "版权": "Terrain interpretation © Singapore Land Authority / OneMap. Dirt Aerial 02 and Sandy Gravel 02 by Poly Haven (CC0).",
+      "版权": "Terrain interpretation © Singapore Land Authority / OneMap. Dirt Aerial 02 and Gravel Floor 02 by Poly Haven (CC0).",
       "依据": "OneMap 航片内的裸土与压实通道。材质分界、色泽及地形起伏为估值。"
     }
   },

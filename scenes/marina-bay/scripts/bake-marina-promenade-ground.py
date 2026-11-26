@@ -53,11 +53,15 @@ def concrete():
 
 def bank_surfaces(survey, frame, datum, origin, turf):
     shore = LineString(frame.project({"coordinates": survey["shore"]}))
-    gravel = import_module("bake-straits-boulevard").soil_material("gravel")
-    yard_edge = LineString(frame.project({"coordinates": survey["yardEdge"]}))
+    gravel = import_module("bake-straits-boulevard").soil_material("gravel", aggregate="gravel_ground_01")
+    # Grass, bare soil and aggregate share the same measured colour field across
+    # the work yard. The geometry boundary only chooses the close-range grain.
+    samples = np.asarray(survey["turf"]["tones"] + survey["gravel"]["tones"])
+    locations = frame.project({"coordinates": samples[:, :2]})
+    tree = cKDTree(locations)
     gravel.name = "Marina Promenade compacted gravel"
     gravel.baseColorFactor = [182, 182, 179, 255]
-    for kind, material, pitch in [("turf", turf, 1.4), ("gravel", gravel, 2.53)]:
+    for kind, material, pitch in [("turf", turf, 1.4), ("gravel", gravel, 3.0)]:
         patch = survey[kind]
         mesh = surface(patch_cells(patch["rings"], frame, 1.5), material, datum, origin,
                        height=.069, tile_width=pitch)
@@ -66,30 +70,32 @@ def bank_surfaces(survey, frame, datum, origin, turf):
         # A low bank at the waterline grades back into the existing park surface.
         crest = np.clip(inland / 2.3, 0, 1) * np.clip(1 - inland / 9, 0, 1)
         mesh.vertices[:, 1] += .60 * crest
-        samples = np.asarray(patch["tones"])
-        locations = frame.project({"coordinates": samples[:, :2]})
-        offsets, ids = cKDTree(locations).query(xz, k=4)
-        weights = 1 / (1 + offsets**2)
+        offsets, ids = tree.query(xz, k=12)
+        # The survey has a 2.4 m pitch. A local kernel preserves connected bare
+        # patches and tapers to the surrounding samples where the yard was occluded.
+        radius = np.maximum(1.5, offsets[:, 0] + 1.0)
+        weights = np.exp(-.5 * (offsets / radius[:, None])**2)
         rgb = np.sum(samples[ids, 2:] * weights[:, :, None], axis=1) / weights.sum(axis=1)[:, None]
-        # The photographed shore is darker at its toe. Apply this on the land side
-        # of the surveyed water edge and let the material grain continue through it.
-        damp = 1 - .26 * np.exp(-inland / 1.25)
-        # Both sides of the gravel track carry a strip of soil and sparse grass.
-        # Blend in metres so the land-cover outline does not read as a cutout.
+        grass_share = np.sum(weights * (ids < len(survey["turf"]["tones"])), axis=1) / weights.sum(axis=1)
+        dry_aggregate = np.array([.91, .88, .84])
+        vegetation = np.array([.88, .94, .78])
+        pigment = rgb * (dry_aggregate + grass_share[:, None] * (vegetation - dry_aggregate))
+        # Warm dry grass and compacted soil change together, even when their
+        # boundary crosses triangles carrying different scans.
         wear = turf_wear(xz)
-        edge = np.clip(distance(points(xz), yard_edge) / 4.6, 0, 1)
-        amount = (edge * edge * (3 - 2 * edge))[:, None]
-        soil = np.array([106, 107, 85]) * wear**.36
+        pigment *= wear**.28
+        damp_width = 1.35 * wear[:, 1]**-1.4
+        damp = 1.0 - .36 * np.exp(-inland / damp_width)
         if kind == "turf":
-            pigment = np.clip(rgb * [.93, .99, .88], [72, 78, 46], [130, 135, 101]) * wear**.40
-            midtone = [133, 139, 105]
+            scan = np.array([133, 139, 105])
+            factor = 1.0
         else:
-            pigment = np.clip(rgb * [.89, .87, .81], [80, 78, 71], [149, 145, 132])
-            midtone = np.array([207, 199, 182]) * gravel.baseColorFactor[:3] / 255
-            # Shift aggregate features over several metres. All PBR maps share these UVs.
+            scan = np.array([207, 199, 182])
+            factor = gravel.baseColorFactor[:3] / 255
             mesh.visual.uv += np.column_stack((.31 * np.sin(xz[:, 1] / 6.1), .28 * np.cos(xz[:, 0] / 8.7)))
-        pigment = soil + amount * (pigment - soil)
-        tint = (pigment / midtone)**2.2
+        # The colour texture is sRGB. glTF vertex colour and baseColorFactor
+        # multiply its decoded linear radiance.
+        tint = ((pigment + 14.025) / (scan + 14.025))**2.4 / factor
         tint = np.clip(tint * damp[:, None], .03, 1)
         mesh.visual.vertex_attributes["color"] = np.uint8(np.rint(255 * np.c_[tint, np.ones(len(tint))]))
         yield mesh
@@ -125,7 +131,7 @@ def bake():
     for mesh in bank_surfaces(bank, frame, datum, origin, turf):
         scene.add_geometry(mesh, geom_name=mesh.visual.material.name + " along the bank")
     credit = ("OpenStreetMap contributors (ODbL). Land-cover survey derived from OneMap orthophotography, "
-              "Singapore Land Authority. Leafy Grass, concrete and Sandy Gravel 02 scans by Poly Haven (CC0).")
+              "Singapore Land Authority. Leafy Grass, concrete and Gravel Ground 01 scans by Poly Haven (CC0).")
     digest, bounds = write_tree_asset(scene, copyright=credit)
     row = dict(entityId="bay.marina-promenade-park-ground", label="滨海步道 · 河岸草地与混凝土慢行道",
                kind="structure", layer="ext", regionId="marina-bay-exterior", bounds=bounds, assetHash=digest,

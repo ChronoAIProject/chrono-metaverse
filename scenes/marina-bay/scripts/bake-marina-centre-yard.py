@@ -11,7 +11,7 @@ from bridge_geometry import BridgeFrame
 from scanned_canopy import ROOT, write_tree_asset
 
 terrain = import_module("bake-straits-boulevard")
-CREDIT = "Terrain interpretation © Singapore Land Authority / OneMap. Dirt Aerial 02 and Sandy Gravel 02 by Poly Haven (CC0)."
+CREDIT = "Terrain interpretation © Singapore Land Authority / OneMap. Dirt Aerial 02 and Gravel Floor 02 by Poly Haven (CC0)."
 
 
 def bake():
@@ -31,11 +31,11 @@ def bake():
     samples = np.column_stack((positions, tones[:, 2:]))
     scene = trimesh.Scene()
     for kind, area in [("earth", earth), ("gravel", gravel)]:
-        material = terrain.soil_material(kind)
+        material = terrain.soil_material(kind, aggregate="gravel_floor_02" if kind == "gravel" else None)
         # Match the surrounding ground in the bay daylight rig at the flyover viewpoint.
         material.baseColorFactor = [128, 128, 124, 255]
         mesh = terrain.soil_mesh(area, material, ground, frame.shift[[0, 2]], samples, kind,
-                                 low_rgb=(57, 59, 53), high_rgb=(175, 171, 156), min_tint=0)
+                                 low_rgb=(57, 59, 53), high_rgb=(175, 171, 156), min_tint=0, gravel_width=2.0)
         coords = mesh.vertices[:, [0, 2]]
         # Shift the registered scans over several metres without repeating the same gravel streak.
         uv = mesh.visual.uv.copy()
