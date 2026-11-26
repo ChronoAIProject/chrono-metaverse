@@ -2476,5 +2476,34 @@
       "版权": "OpenStreetMap contributors (ODbL). Land-cover survey derived from OneMap orthophotography, Singapore Land Authority. Grass 004 by ambientCG and concrete scan by Poly Haven (CC0).",
       "依据": "OSM 公园边界与步道中心线、OneMap z18 影像的植被和陆岸边界。草地色泽与路面宽度为视觉估值。"
     }
+  },
+  {
+    "entityId": "bay.marina-centre-worksite",
+    "label": "滨海中心 · 淡马锡道高架旁场地",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "8797a4cb8777f14c7fd18e9c7b2d068455c44df4450c20a8c3abd58cafc7e1b0",
+    "bounds": {
+      "min": [
+        -213.80720194772476,
+        -60.4506384141279,
+        1612.1522652349388
+      ],
+      "max": [
+        -7.9765181321309475,
+        -60.22811603040801,
+        1775.273055521936
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "版权": "Terrain interpretation © Singapore Land Authority / OneMap. Dirt Aerial 02 and Sandy Gravel 02 by Poly Haven (CC0).",
+      "依据": "OneMap 航片内的裸土与压实通道。材质分界、色泽及地形起伏为估值。"
+    }
   }
 ]
