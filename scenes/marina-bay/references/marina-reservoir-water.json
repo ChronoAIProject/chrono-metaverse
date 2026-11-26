@@ -13,9 +13,9 @@
     "rmsGravitySlope": 0.04,
     "rmsRippleSlope": 0.1725,
     "reflectance": [
-      0.012014,
-      0.031722,
-      0.019442
+      0.006089,
+      0.02451,
+      0.009728
     ]
   },
   "rippleWind": {
@@ -196,7 +196,7 @@
     ]
   ],
   "uncertainty": "Intercepts of separate SWIR1/SWIR2 fits, averaged across the two estimates. Seasonal water and aerosol variability remain in these estimates.",
-  "daylightWater": "For the morning display, use the 2026-08-22 observation. Subtract each fitted SWIR slope times its corresponding SWIR band from the same-date RGB medians, then average the two corrected estimates. This is a representative darker water state within the eight observed dates.",
+  "daylightWater": "For the morning display, use the 2026-08-12 Sentinel-2 observation. Subtract each fitted SWIR slope times its corresponding SWIR band from the same-date RGB medians, then average the two corrected estimates. It represents one of the daytime water conditions observed here.",
   "multiDateReflectance": [
     0.016729,
     0.038256,
@@ -214,18 +214,23 @@
     },
     "observation": "Within the two mapped reservoir features, compare water-classified Sentinel pixels at 440\u2013540 m to those inside 352 m. After the existing two-SWIR correction the outer median green reflectance was lower on each of the eight dates (17\u201326 outer pixels per date). Beyond 540 m only 3\u20135 pixels per date were usable and several corrected medians were negative.",
     "morningSample": {
-      "date": "2026-08-22",
+      "date": "2026-08-12",
       "innerRgb": [
-        0.0122,
-        0.0318,
-        0.019
+        0.0052,
+        0.0234,
+        0.0086
       ],
       "outerRgb": [
-        0.01,
-        0.0285,
-        0.0178
+        -0.0023,
+        0.0138,
+        0.0009
       ]
     },
     "blend": "Keep the representative central sample through 480 m and fade to the regional water material by 600 m. The outer radius rounds the farthest stable sampled pixel to a 20 m grid cell. The existing smooth transition also applies to the gravity-wave amplitude."
-  }
+  },
+  "previousDaylightReflectance": [
+    0.012014,
+    0.031722,
+    0.019442
+  ]
 }
