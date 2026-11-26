@@ -330,6 +330,34 @@ export async function readCatalog(
   }
   return (await r.json()) as Catalog;
 }
+
+export async function requestSpaceShare(
+  spaceId: string,
+  csrfToken: string,
+  signal: AbortSignal,
+  request: typeof fetch,
+): Promise<string | null> {
+  const response = await request(`/api/auth/nyxid/spaces/${encodeURIComponent(spaceId)}/share`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    cache: 'no-store',
+    signal,
+    headers: { 'x-csrf-token': csrfToken },
+  });
+  const result = (await response.json().catch(() => null)) as {
+    token?: unknown;
+    detail?: unknown;
+  } | null;
+  if (!response.ok && typeof result?.detail === 'string') throw new Error(result.detail);
+  if (response.ok) {
+    if (result?.token === null) return null;
+    if (typeof result?.token === 'string' && /^[A-Za-z0-9_-]{22,256}$/.test(result.token)) {
+      return result.token;
+    }
+  }
+  throw new Error('暂时无法获取分享链接，请重试。');
+}
+
 export function readSpaceNotebook(subject: string, spaceId: string): Notebook {
   const key = `metaverse-worker:${subject}:space:${spaceId}`;
   const raw = sessionStorage.getItem(key);
