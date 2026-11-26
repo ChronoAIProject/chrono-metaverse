@@ -2563,5 +2563,33 @@
       "版权": "Footprints © OpenStreetMap contributors, ODbL. Deck layout and colours: Map Data © Singapore Land Authority / OneMap. Roof surface grain: Poly Haven (CC0). Photograph by Diego Delso, 2023. https://commons.wikimedia.org/wiki/File:Swiss%C3%B4tel_The_Stamford,_Singapur,_2023-08-18,_DD_18.jpg. Rectified facade strips and model: CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/.",
       "立面": "按地图轮廓和高度配准。背面和遮挡处依据同楼的可见开间估计。"
     }
+  },
+  {
+    "entityId": "bay.beach-road-terrace-roofs",
+    "label": "美芝路 · 店屋陶瓦坡顶",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "aaaf6839ec63ab28967ca169cb5a06ad34534f1621c87ce6ac17c2420a1409ce",
+    "bounds": {
+      "min": [
+        214.50640596909847,
+        -55.859177163608166,
+        2353.4382677103085
+      ],
+      "max": [
+        442.9856009526912,
+        -51.83077123136569,
+        2609.9856034853146
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "版权": "Footprints © OpenStreetMap contributors (ODbL 1.0), via OpenFreeMap. Roof survey © Singapore Land Authority / OneMap. Clay and plaster scans by Amal Kumar, Poly Haven (CC0).",
+      "依据": "按普通地图建筑轮廓与 OneMap 航片可辨认的陶瓦区间重建，坡高、瓦型和遮挡处的屋脊为估计。"
+    }
   }
 ]
