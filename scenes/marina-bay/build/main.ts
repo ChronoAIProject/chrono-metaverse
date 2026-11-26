@@ -186,16 +186,32 @@ function surveyedGrassCoverage(environment: EntityBody | null): EntityBody | nul
     tilePixelOrigin: [number, number];
     fields: { corners: [number, number][] }[];
   };
-  const worldPixels = 256 * 2 ** padang.zoom;
-  const playingFields = padang.fields.map(({ corners }) => [corners.map(([x, y]) => {
-    const longitude = (padang.tilePixelOrigin[0] + x) * 360 / worldPixels - 180;
-    const mercatorY = (padang.tilePixelOrigin[1] + y) / worldPixels;
-    const latitude = Math.atan(Math.sinh(Math.PI * (1 - 2 * mercatorY))) * 180 / Math.PI;
-    return [longitude, latitude];
-  })]);
+  const geographicRing = (pixels: number[][], origin: number[], zoom: number) => {
+    const worldPixels = 256 * 2 ** zoom;
+    return pixels.map(([x, y]) => {
+      const longitude = (origin[0] + x) * 360 / worldPixels - 180;
+      const latitude = Math.atan(Math.sinh(Math.PI * (1 - 2 * (origin[1] + y) / worldPixels))) * 180 / Math.PI;
+      return [longitude, latitude];
+    });
+  };
+  const playingFields = padang.fields.map(({ corners }) => [geographicRing(corners, padang.tilePixelOrigin, padang.zoom)]);
+  const museum = JSON.parse(readFileSync(new URL('../references/artscience-promenade.json', import.meta.url), 'utf8')) as {
+    zoom: number; pixelOrigin: number[]; palmCourt: number[][];
+    segments: { bayEdge: number[][]; museumEdge: number[][] }[];
+  };
+  const museumPaving = [museum.palmCourt, ...museum.segments.map(({ bayEdge, museumEdge }) =>
+    [...bayEdge, ...[...museumEdge].reverse()])].map(ring => [geographicRing(ring, museum.pixelOrigin, museum.zoom)]);
+  const verges = JSON.parse(readFileSync(new URL('../references/marina-centre-roads/verges.json', import.meta.url), 'utf8')) as {
+    surfaces: { surface: string; ring: number[][] }[];
+  };
+  const streetPaving = verges.surfaces.filter(row => row.surface === 'paving').map(row => [row.ring]);
   const existing = settings.map.grassExclusions ?? [];
-  const additional = [...survey.concrete, ...playingFields].filter(
-    polygon => !existing.some(value => isDeepStrictEqual(value, polygon)),
+  // Equivalent longitude/latitude coordinates can differ at double precision after a draft roundtrip.
+  const ringKey = (rings: unknown) => JSON.stringify(rings, (_, item: unknown) =>
+    typeof item === 'number' ? Number(item.toFixed(9)) : item);
+  const known = new Set(existing.map(ringKey));
+  const additional = [...survey.concrete, ...playingFields, ...museumPaving, ...streetPaving].filter(
+    polygon => !known.has(ringKey(polygon)),
   );
   if (!additional.length) return environment;
   return { ...environment, props: { ...environment.props, environment: {
@@ -215,6 +231,15 @@ const groundScanMaterials: Record<string, string[]> = {
   'bay.padang-playing-fields': ['Padang playing turf'],
   'bay.sands-skypark-gardens': ['Garden soil'],
   'bay.straits-boulevard': ['Compacted gravel', 'Graded soil'],
+};
+
+// Each granite scan is packed by scanned_pavers into four stones across six staggered courses.
+const pavedSurfaces: Record<string, string> = {
+  'bay.empress-lawn-obelisk-court': 'Dalhousie court granite',
+  'bay.padang-playing-fields': 'Padang crossing',
+  'bay.artscience-promenade': 'Museum promenade granite',
+  'bay.marina-centre-carriageways': 'Marina Centre granite paving',
+  'bay.straits-boulevard': 'Straits Boulevard footway',
 };
 
 export default function build(base: BuildBase, kit: Kit) {
@@ -255,7 +280,12 @@ export default function build(base: BuildBase, kit: Kit) {
     entities.push(...streetscape.map((entity) => {
       const placed = placeExterior(entity, placement);
       const scans = groundScanMaterials[entity.entityId];
-      return scans ? { ...placed, props: { ...placed.props, groundScanMaterials: scans } } : placed;
+      const pavers = pavedSurfaces[entity.entityId];
+      if (!scans && !pavers) return placed;
+      return { ...placed, props: {
+        ...placed.props, ...(scans && { groundScanMaterials: scans }),
+        ...(pavers && { pavingCourseAtlas: { [pavers]: [4, 6] } }),
+      } };
     }));
     // The inherited census tiles already use final member coordinates.
     const streetTrees: EntityBody[] = JSON.parse(

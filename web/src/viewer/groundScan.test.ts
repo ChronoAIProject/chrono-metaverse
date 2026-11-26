@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { expect, it } from 'vitest';
-import { scatterGroundScan, supportsGroundScan } from './groundScan';
+import { pavingAtlas, scatterGroundScan, supportsGroundScan } from './groundScan';
 
 it('requires repeating PBR maps in the same UV space', () => {
   const texture = new THREE.Texture();
@@ -23,4 +23,23 @@ it('uses the same patch for all five standard map slots', () => {
     expect(fragment).toContain('groundSample(' + slot + ',');
   }
   expect(fragment.match(/GroundPatch surfacePatch=/g)).toHaveLength(1);
+});
+
+it('accepts complete staggered courses and keeps all PBR maps aligned to one selected stone', () => {
+  expect(pavingAtlas({ granite: [4, 6] }, 'granite')).toEqual([4, 6]);
+  for (const grid of [
+    [4, 5],
+    [0, 6],
+    [4, 3.5],
+    [4, 6, 8],
+    ['4', 6],
+  ]) {
+    expect(pavingAtlas({ granite: grid }, 'granite')).toBeUndefined();
+  }
+  expect(pavingAtlas({}, 'toString')).toBeUndefined();
+  const shader = scatterGroundScan(THREE.ShaderLib.standard.fragmentShader, true);
+  expect(shader.match(/stoneOffset = pavingOffset/g)).toHaveLength(1);
+  for (const slot of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap']) {
+    expect(shader).toContain('textureGrad(' + slot + ',');
+  }
 });

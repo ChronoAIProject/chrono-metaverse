@@ -33,6 +33,40 @@ const sampling = /* glsl */ `
   }
 `;
 
+export type PavingAtlas = readonly [number, number];
+
+/** A repeating running bond needs an even number of rows for the stagger to meet at the seam. */
+export function pavingAtlas(value: unknown, material: string): PavingAtlas | undefined {
+  if (!value || typeof value !== 'object' || !Object.hasOwn(value, material)) return;
+  const size = (value as Record<string, unknown>)[material];
+  if (!Array.isArray(size) || size.length !== 2) return;
+  const [columns, rows] = size;
+  if (
+    !Number.isInteger(columns) ||
+    columns < 1 ||
+    columns > 128 ||
+    !Number.isInteger(rows) ||
+    rows < 2 ||
+    rows > 128 ||
+    rows % 2 !== 0
+  )
+    return;
+  return [columns, rows];
+}
+
+const pavingSampling = /* glsl */ `
+  uniform vec2 pavingUnits;
+  vec2 pavingOffset(vec2 uv) {
+    vec2 stone = uv * pavingUnits;
+    stone.x += .5 * mod(floor(stone.y), 2.);
+    ivec2 cell = ivec2(floor(stone));
+    vec2 pick = vec2(surfaceCorner(cell + ivec2(64,2)), surfaceCorner(cell + ivec2(35,-17)));
+    vec2 donor = min(floor(pick * pavingUnits), pavingUnits - 1.);
+    donor.x -= .5 * mod(donor.y, 2.);
+    return (donor + fract(stone)) / pavingUnits - uv;
+  }
+`;
+
 const chunks = [
   'map_fragment',
   'normal_fragment_maps',
@@ -71,14 +105,21 @@ export function supportsGroundScan(material: THREE.Material) {
 }
 
 /** Reuse one set of offsets across the PBR maps and keep the unshifted pixel footprint for mip selection. */
-export function scatterGroundScan(fragment: string) {
-  let shader = fragment.replace('void main() {', sampling + '\nvoid main() {');
+export function scatterGroundScan(fragment: string, paving = false) {
+  const code = paving ? pavingSampling : sampling;
+  const sample = paving
+    ? 'textureGrad($1, $2 + stoneOffset, dFdx($2), dFdy($2))'
+    : 'groundSample($1, $2, surfacePatch)';
+  const setup = paving
+    ? 'vec2 stoneOffset = pavingOffset(vMapUv);'
+    : 'GroundPatch surfacePatch=groundPatch(vMapUv);';
+  let shader = fragment.replace('void main() {', code + '\nvoid main() {');
   for (const name of chunks) {
     const body = THREE.ShaderChunk[name].replace(
       /texture2D\(\s*(map|normalMap|roughnessMap|metalnessMap|aoMap)\s*,\s*(v\w+Uv)\s*\)/g,
-      'groundSample($1, $2, surfacePatch)',
+      sample,
     );
-    const prefix = name === 'map_fragment' ? 'GroundPatch surfacePatch=groundPatch(vMapUv);\n' : '';
+    const prefix = name === 'map_fragment' ? setup + '\n' : '';
     shader = shader.replace('#include <' + name + '>', prefix + body);
   }
   return shader;
