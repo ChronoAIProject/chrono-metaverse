@@ -1,0 +1,136 @@
+{
+  "BalconyBays": {
+    "seed": 1982,
+    "columns": 5,
+    "rows": 24,
+    "cellSize": [
+      128,
+      24
+    ],
+    "floorsPerRow": 1,
+    "donors": [
+      {
+        "image": "BalconyBays-1.png",
+        "left": 2.3177083333332575,
+        "right": 433.95833333333326,
+        "firstFloor": 2.40625,
+        "floorPitch": 70.21354166666666,
+        "levels": 18,
+        "originalCrop": [
+          625,
+          999,
+          1061,
+          2268
+        ]
+      },
+      {
+        "image": "BalconyBays-2.png",
+        "left": 2.328125,
+        "right": 370.66145833333326,
+        "firstFloor": 2.0546874999997726,
+        "floorPitch": 70.15598958333332,
+        "levels": 12,
+        "originalCrop": [
+          1189,
+          1412,
+          1562,
+          2258
+        ]
+      }
+    ]
+  },
+  "GalleryScreens": {
+    "seed": 1983,
+    "columns": 5,
+    "rows": 24,
+    "cellSize": [
+      128,
+      24
+    ],
+    "floorsPerRow": 1,
+    "donors": [
+      {
+        "image": "GalleryScreens-1.png",
+        "left": 2.1145833333332575,
+        "right": 295.63020833333303,
+        "firstFloor": 2.877604166666515,
+        "floorPitch": 69.81067708333333,
+        "levels": 7,
+        "originalCrop": [
+          1782,
+          1768,
+          2080,
+          2262
+        ]
+      },
+      {
+        "image": "GalleryScreens-2.png",
+        "left": 2.385416666666515,
+        "right": 255.61458333333303,
+        "firstFloor": 2.877604166666515,
+        "floorPitch": 69.81067708333333,
+        "levels": 7,
+        "originalCrop": [
+          2081,
+          1768,
+          2339,
+          2262
+        ]
+      },
+      {
+        "image": "GalleryScreens-3.png",
+        "left": 2.59375,
+        "right": 330.640625,
+        "firstFloor": 2.0546874999997726,
+        "floorPitch": 70.15598958333332,
+        "levels": 12,
+        "originalCrop": [
+          1206,
+          1412,
+          1539,
+          2258
+        ]
+      }
+    ]
+  },
+  "SilverRibbonGlazing": {
+    "seed": 1984,
+    "columns": 4,
+    "rows": 5,
+    "cellSize": [
+      160,
+      94
+    ],
+    "floorsPerRow": 4,
+    "donors": [
+      {
+        "image": "SilverRibbonGlazing-1.png",
+        "left": 2.479166666666515,
+        "right": 405.34375,
+        "firstFloor": 2.0572916666666288,
+        "floorPitch": 324.59375,
+        "levels": 4,
+        "originalCrop": [
+          2737,
+          669,
+          3145,
+          1972
+        ]
+      },
+      {
+        "image": "SilverRibbonGlazing-2.png",
+        "left": 2.588541666666515,
+        "right": 313.3697916666665,
+        "firstFloor": 2.0572916666666288,
+        "floorPitch": 324.59375,
+        "levels": 4,
+        "originalCrop": [
+          3134,
+          669,
+          3450,
+          1972
+        ]
+      }
+    ]
+  }
+}

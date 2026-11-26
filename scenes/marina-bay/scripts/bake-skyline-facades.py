@@ -15,6 +15,7 @@ from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
 from concourse_facades import concourse_meshes
+from concourse_elevations import photographed_maps, read_elevations
 from facade_interiors import WINDOW_LAYOUT, occupied_windows, repeats
 from roof_finishes import weather_roof, roof_texture_scales
 
@@ -222,10 +223,14 @@ def export_group(group, finishes, walls, credit_line, daylight, low_rise=False):
         with Image.open(REFERENCES / daylight["image"]) as image:
             reflection = image.copy()
             reflection.format = "PNG"
+    elevations = read_elevations() if group == "concourse" else {}
     for name, pieces in finishes.items():
         uv = np.concatenate([piece.visual.uv for piece in pieces])
         mesh = trimesh.util.concatenate(pieces)
-        material = facade_material(name, reflection if name in walls else None, group if name in walls else None)
+        wall_group = group if name in walls and name not in elevations else None
+        material = facade_material(name, reflection if name in walls else None, wall_group)
+        if name in elevations:
+            material.baseColorTexture, material.metallicRoughnessTexture, material.normalTexture = photographed_maps(elevations[name])
         if low_rise and name.removesuffix(" surveyed") in {"SlateRoof", "ZincRoof", "ConcreteRoof"}:
             weather_roof(material, group, REFERENCES)
         mesh.visual = TextureVisuals(uv=uv, material=material)
@@ -249,7 +254,15 @@ def export_group(group, finishes, walls, credit_line, daylight, low_rise=False):
                 roof_texture_scales(material)
                 if "KHR_texture_transform" not in doc.setdefault("extensionsUsed", []):
                     doc["extensionsUsed"].append("KHR_texture_transform")
-            if name in walls and name in WINDOW_LAYOUT:
+            if name in elevations:
+                sheet = elevations[name]
+                layout = {"KHR_texture_transform": {"scale": [1 / 3, 8 / (sheet["rows"] * sheet["floorsPerRow"])]}}
+                pbr = material["pbrMetallicRoughness"]
+                for texture in [pbr["baseColorTexture"], pbr["metallicRoughnessTexture"], material["normalTexture"]]:
+                    texture["extensions"] = layout
+                if "KHR_texture_transform" not in doc.setdefault("extensionsUsed", []):
+                    doc["extensionsUsed"].append("KHR_texture_transform")
+            elif name in walls and name in WINDOW_LAYOUT:
                 across, up, _ = repeats(name)
                 colour = material["pbrMetallicRoughness"]["baseColorTexture"]
                 colour["extensions"] = {"KHR_texture_transform": {"scale": [1 / across, 1 / up]}}
