@@ -129,6 +129,7 @@ export class EnvironmentView {
             },
             this.providerCreditsHost,
             this.sampling,
+            this.loadTexture,
           );
           this.map.group.rotation.y = THREE.MathUtils.degToRad(placement.rotation);
           this.map.group.position.fromArray(placement.offset).multiplyScalar(GRID_UNIT);
@@ -174,6 +175,11 @@ export class EnvironmentView {
           if (texture) {
             texture.userData.airHalfDistance = this.sky.userData.airHalfDistance;
             skyRadiance.set(this.sky, texture);
+            this.map?.setSky(
+              this.scene.background,
+              this.scene.backgroundRotation.y,
+              this.scene.getObjectByName('light:key')?.userData.groundShadow,
+            );
             for (const metal of this.metals) this.lightMetal(metal);
             this.metalSky?.dispose();
             this.metalSky = null;
