@@ -2541,7 +2541,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "来福士城 · 酒店、办公楼与裙楼",
-    "assetHash": "b624632b1f277a416c5aa41d626dd6e28dd382f99f111c28409d0a6f9112645d",
+    "assetHash": "1d11f7442387281b69926efda6267630c29c256d23fcf047f54755b65ce0a040",
     "bounds": {
       "min": [
         647.3880540161341,
@@ -2560,7 +2560,7 @@
     "props": {
       "background": true,
       "参考照片": "https://commons.wikimedia.org/wiki/File:Swiss%C3%B4tel_The_Stamford,_Singapur,_2023-08-18,_DD_18.jpg",
-      "版权": "Footprints © OpenStreetMap contributors, ODbL. Photograph by Diego Delso, 2023. https://commons.wikimedia.org/wiki/File:Swiss%C3%B4tel_The_Stamford,_Singapur,_2023-08-18,_DD_18.jpg. Rectified facade strips and model: CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/.",
+      "版权": "Footprints © OpenStreetMap contributors, ODbL. Deck layout and colours: Map Data © Singapore Land Authority / OneMap. Roof surface grain: Poly Haven (CC0). Photograph by Diego Delso, 2023. https://commons.wikimedia.org/wiki/File:Swiss%C3%B4tel_The_Stamford,_Singapur,_2023-08-18,_DD_18.jpg. Rectified facade strips and model: CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/.",
       "立面": "按地图轮廓和高度配准。背面和遮挡处依据同楼的可见开间估计。"
     }
   }
