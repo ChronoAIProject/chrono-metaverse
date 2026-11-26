@@ -886,7 +886,7 @@ export class SceneView {
       !source.transparent
         ? roof?.scale
         : undefined;
-    const key = `${lookKey ?? source.uuid}|${background}|${styleLookKey(styleLook)}|${kind}|${air}|${coverage}|${ao ?? ''}|${roofScale ?? ''}|${scatter}|${paving?.join('x') ?? ''}`;
+    const key = `${lookKey ?? source.uuid}|${background}|${styleLookKey(styleLook)}|${kind}|${air}|${coverage}|${ao ?? ''}|${roofScale ?? ''}|${scatter}|${paving ? JSON.stringify(paving) : ''}`;
     let material = this.materialCache.get(key);
     if (material === undefined) {
       material = createModelMaterial(

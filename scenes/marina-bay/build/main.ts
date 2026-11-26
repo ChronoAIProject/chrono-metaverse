@@ -263,13 +263,18 @@ const groundScanMaterials: Record<string, string[]> = {
   'bay.west-bay-boat-landing': ['Exposed deck edge', 'Deck soffit and piles', 'Landing wearing course'],
 };
 
-// Each granite scan is packed by scanned_pavers into four stones across six staggered courses.
-const pavedSurfaces: Record<string, string> = {
-  'bay.empress-lawn-obelisk-court': 'Dalhousie court granite',
-  'bay.padang-playing-fields': 'Padang crossing',
-  'bay.artscience-promenade': 'Museum promenade granite',
-  'bay.marina-centre-carriageways': 'Marina Centre granite paving',
-  'bay.straits-boulevard': 'Straits Boulevard footway',
+// Bind the charts independently of baked tree shade on the second UV channel.
+const squareGranite = { grid: [5, 5], bond: 'stack', originU: .0955 };
+const pavedSurfaces: Record<string, Record<string, number[] | typeof squareGranite>> = {
+  'bay.empress-lawn-obelisk-court': { 'Dalhousie court granite': [4, 6] },
+  'bay.padang-playing-fields': { 'Padang crossing': [4, 6] },
+  'bay.artscience-promenade': { 'Museum promenade granite': [4, 6] },
+  'bay.marina-centre-carriageways': { 'Marina Centre granite paving': [4, 6] },
+  'bay.straits-boulevard': { 'Straits Boulevard footway': [4, 6] },
+  'bay.esplanade-east-quay': { 'Esplanade promenade paving': [2, 4], 'Esplanade landing deck': [2, 4] },
+  'bay.queen-elizabeth-walk-paving': { 'Queen Elizabeth Walk paving stones': squareGranite },
+  'bay.fullerton-road-sidewalk': { 'Coursed granite': squareGranite },
+  'bay.sands-skypark-gardens': { 'SkyPark garden pavers': squareGranite },
 };
 
 export default function build(base: BuildBase, kit: Kit) {
@@ -349,7 +354,7 @@ export default function build(base: BuildBase, kit: Kit) {
             ...entity.props,
             background: true,
             ...(scans && { groundScanMaterials: scans }),
-            ...(pavers && { pavingCourseAtlas: { [pavers]: [4, 6] } }),
+            ...(pavers && { pavingCourseAtlas: pavers }),
           },
         });
       }),

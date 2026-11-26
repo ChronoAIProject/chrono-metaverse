@@ -33,37 +33,52 @@ const sampling = /* glsl */ `
   }
 `;
 
-export type PavingAtlas = readonly [number, number];
+export interface PavingAtlas {
+  columns: number;
+  rows: number;
+  stagger: number;
+  originU: number;
+}
 
-/** A repeating running bond needs an even number of rows for the stagger to meet at the seam. */
+/** Existing two-number charts use a half-stone running bond. Straight courses may start inside a stone. */
 export function pavingAtlas(value: unknown, material: string): PavingAtlas | undefined {
   if (!value || typeof value !== 'object' || !Object.hasOwn(value, material)) return;
-  const size = (value as Record<string, unknown>)[material];
-  if (!Array.isArray(size) || size.length !== 2) return;
-  const [columns, rows] = size;
+  const chart: unknown = (value as Record<string, unknown>)[material];
+  const straight =
+    !!chart && typeof chart === 'object' && 'bond' in chart && chart.bond === 'stack';
+  const grid = straight && 'grid' in chart ? chart.grid : chart;
+  const originU = straight && 'originU' in chart ? chart.originU : 0;
+  if (!Array.isArray(grid) || grid.length !== 2) return;
+  const [columns, rows] = grid;
   if (
     !Number.isInteger(columns) ||
     columns < 1 ||
     columns > 128 ||
     !Number.isInteger(rows) ||
-    rows < 2 ||
+    rows < 1 ||
     rows > 128 ||
-    rows % 2 !== 0
+    (!straight && rows % 2 !== 0) ||
+    typeof originU !== 'number' ||
+    !Number.isFinite(originU) ||
+    originU < 0 ||
+    originU >= 1
   )
     return;
-  return [columns, rows];
+  return { columns, rows, stagger: straight ? 0 : 0.5, originU };
 }
 
 const pavingSampling = /* glsl */ `
   uniform vec2 pavingUnits;
+  uniform vec2 pavingOriginAndStagger;
   vec2 pavingOffset(vec2 uv) {
-    vec2 stone = uv * pavingUnits;
-    stone.x += .5 * mod(floor(stone.y), 2.);
+    vec2 gridOrigin = vec2(pavingOriginAndStagger.x,0.);
+    vec2 stone = (uv - gridOrigin) * pavingUnits;
+    stone.x += pavingOriginAndStagger.y * mod(floor(stone.y), 2.);
     ivec2 cell = ivec2(floor(stone));
     vec2 pick = vec2(surfaceCorner(cell + ivec2(64,2)), surfaceCorner(cell + ivec2(35,-17)));
     vec2 donor = min(floor(pick * pavingUnits), pavingUnits - 1.);
-    donor.x -= .5 * mod(donor.y, 2.);
-    return (donor + fract(stone)) / pavingUnits - uv;
+    donor.x -= pavingOriginAndStagger.y * mod(donor.y, 2.);
+    return gridOrigin + (donor + fract(stone)) / pavingUnits - uv;
   }
 `;
 
@@ -76,7 +91,7 @@ const chunks = [
 ] as const;
 
 /** Asset authors opt in continuous, opaque scans whose material channels share a UV transform. */
-export function supportsGroundScan(material: THREE.Material) {
+export function supportsGroundScan(material: THREE.Material, preserveBakedAo = false) {
   if (
     !(material instanceof THREE.MeshStandardMaterial) ||
     !material.map ||
@@ -91,7 +106,7 @@ export function supportsGroundScan(material: THREE.Material) {
     material.normalMap,
     material.roughnessMap,
     material.metalnessMap,
-    material.aoMap,
+    preserveBakedAo ? null : material.aoMap,
   ].every((texture) => {
     if (!texture) return true;
     if (texture.matrixAutoUpdate) texture.updateMatrix();
@@ -105,7 +120,7 @@ export function supportsGroundScan(material: THREE.Material) {
 }
 
 /** Reuse one set of offsets across the PBR maps and keep the unshifted pixel footprint for mip selection. */
-export function scatterGroundScan(fragment: string, paving = false) {
+export function scatterGroundScan(fragment: string, paving = false, preserveBakedAo = false) {
   const code = paving ? pavingSampling : sampling;
   const sample = paving
     ? 'textureGrad($1, $2 + stoneOffset, dFdx($2), dFdy($2))'
@@ -115,6 +130,7 @@ export function scatterGroundScan(fragment: string, paving = false) {
     : 'GroundPatch surfacePatch=groundPatch(vMapUv);';
   let shader = fragment.replace('void main() {', code + '\nvoid main() {');
   for (const name of chunks) {
+    if (name === 'aomap_fragment' && preserveBakedAo) continue;
     const body = THREE.ShaderChunk[name].replace(
       /texture2D\(\s*(map|normalMap|roughnessMap|metalnessMap|aoMap)\s*,\s*(v\w+Uv)\s*\)/g,
       sample,
