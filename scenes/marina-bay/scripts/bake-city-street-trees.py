@@ -84,6 +84,9 @@ def surveyed_canopy(key, tile, source_folders, palm_folder):
     survey = json.loads((ROOT / 'references' / tile['crownSurvey']).read_text())
     crowns = survey['crowns']
     median = np.median([row[-3:] for row in crowns], axis=0)
+    if section := tile.get('section'):
+        tree_ids = set(survey['sections'][section])
+        crowns = [row for row in crowns if row[8] in tree_ids]
     models, groups, colours = {}, defaultdict(list), defaultdict(list)
     palms = []
     for _, _, x, y, z, height, width, form, seed, red, green, blue in crowns:
@@ -115,8 +118,10 @@ def surveyed_canopy(key, tile, source_folders, palm_folder):
             colours[material].append(np.tile([*rgb, 255], (len(mesh.vertices), 1)))
 
     scene = trimesh.Scene()
-    palm_mesh = import_module('bake-sands-waterfront-palms').palm_stand(palm_folder, palms, face_budget=1200)
-    scene.add_geometry(palm_mesh, geom_name=palm_mesh.visual.material.name)
+    if palms:
+        palm_mesh = import_module('bake-sands-waterfront-palms').palm_stand(
+            palm_folder, palms, face_budget=1200)
+        scene.add_geometry(palm_mesh, geom_name=palm_mesh.visual.material.name)
     for name, pieces in groups.items():
         mesh = combined(pieces)
         mesh.visual.vertex_attributes['color'] = np.vstack(colours[name]).astype(np.uint8)
