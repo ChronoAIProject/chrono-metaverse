@@ -25,11 +25,11 @@ const sampling = /* glsl */ `
     return GroundPatch(w / (w.x+w.y+w.z), groundPhase(corner),
       groundPhase(corner+ivec2(stepToEdge,0)), groundPhase(corner+ivec2(0,stepToEdge)));
   }
-  vec4 groundSample(sampler2D scan, vec2 uv, GroundPatch patch) {
+  vec4 groundSample(sampler2D scan, vec2 uv, GroundPatch region) {
     vec2 dx=dFdx(uv), dy=dFdy(uv);
-    return patch.weights.x * textureGrad(scan,uv+patch.first,dx,dy)
-         + patch.weights.y * textureGrad(scan,uv+patch.second,dx,dy)
-         + patch.weights.z * textureGrad(scan,uv+patch.third,dx,dy);
+    return region.weights.x * textureGrad(scan,uv+region.first,dx,dy)
+         + region.weights.y * textureGrad(scan,uv+region.second,dx,dy)
+         + region.weights.z * textureGrad(scan,uv+region.third,dx,dy);
   }
 `;
 
