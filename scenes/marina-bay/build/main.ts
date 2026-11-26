@@ -204,6 +204,19 @@ function surveyedGrassCoverage(environment: EntityBody | null): EntityBody | nul
 }
 
 /** 滨海湾扩展引用 OneMap 转换结果，室内沿用已有的重建物件。 */
+// These scans have freely repeating grains. Panels, pavers and marked roads have authored joints.
+const groundScanMaterials: Record<string, string[]> = {
+  'bay.empress-lawn-obelisk-court': ['Empress Lawn turf'],
+  'bay.fullerton-carriageways': ['Grass 004'],
+  'bay.fullerton-entrance-trees': ['Fullerton planted soil'],
+  'bay.marina-centre-carriageways': ['Marina Centre planted verges'],
+  'bay.marina-centre-worksite': ['Compacted gravel', 'Graded soil'],
+  'bay.marina-promenade-park-ground': ['Marina Promenade ground cover', 'Marina Promenade compacted gravel'],
+  'bay.padang-playing-fields': ['Padang playing turf'],
+  'bay.sands-skypark-gardens': ['Garden soil'],
+  'bay.straits-boulevard': ['Compacted gravel', 'Graded soil'],
+};
+
 export default function build(base: BuildBase, kit: Kit) {
   const buildings: EntityBody[] = JSON.parse(
     readFileSync(new URL('./onemap-entities.json', import.meta.url), 'utf8'),
@@ -239,7 +252,11 @@ export default function build(base: BuildBase, kit: Kit) {
     const streetscape: EntityBody[] = JSON.parse(
       readFileSync(new URL('./streetscape.json', import.meta.url), 'utf8'),
     );
-    entities.push(...streetscape.map((entity) => placeExterior(entity, placement)));
+    entities.push(...streetscape.map((entity) => {
+      const placed = placeExterior(entity, placement);
+      const scans = groundScanMaterials[entity.entityId];
+      return scans ? { ...placed, props: { ...placed.props, groundScanMaterials: scans } } : placed;
+    }));
     // The inherited census tiles already use final member coordinates.
     const streetTrees: EntityBody[] = JSON.parse(
       readFileSync(new URL('./city-street-trees.json', import.meta.url), 'utf8'),

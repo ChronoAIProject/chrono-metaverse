@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { scatterGroundScan, supportsGroundScan } from './groundScan';
 
 /** Lattice corners are computed from integer coordinates shared by adjacent patches. */
 export const surfaceNoise = /* glsl */ `
@@ -17,7 +18,7 @@ export const surfaceNoise = /* glsl */ `
 `;
 
 /** Sample opaque weathering and leaf colour in scene metres, independently of the model's UV atlas. */
-export function outdoorSurfaceVariation(material: THREE.Material) {
+export function outdoorSurfaceVariation(material: THREE.Material, scatter = false) {
   if (
     !(
       material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshBasicMaterial
@@ -32,7 +33,8 @@ export function outdoorSurfaceVariation(material: THREE.Material) {
   let seed = 0;
   for (const ch of material.name) seed = (Math.imul(seed, 31) + ch.charCodeAt(0)) | 0;
   const phase = new THREE.Vector2((seed & 255) * 0.69, ((seed >>> 8) & 255) * 0.83);
-  material.customProgramCacheKey = () => key + '|outdoor-surface';
+  const grain = scatter && supportsGroundScan(material);
+  material.customProgramCacheKey = () => key + '|outdoor-surface' + (grain ? '|ground-grain' : '');
   material.onBeforeCompile = function (shader, renderer) {
     compile.call(this, shader, renderer);
     shader.uniforms.finishPhase = { value: phase };
@@ -73,5 +75,6 @@ export function outdoorSurfaceVariation(material: THREE.Material) {
         // less variation at the mirror and matte ends of the measured finish.
         roughnessFactor += 1.45 * (condition - .5) * roughnessFactor * (1.0 - roughnessFactor);`,
         );
+    if (grain) shader.fragmentShader = scatterGroundScan(shader.fragmentShader);
   };
 }
