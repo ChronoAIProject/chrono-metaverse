@@ -2462,19 +2462,19 @@
       ],
       "max": [
         -59.416446153808536,
-        -60.437634371041064,
+        -60.125018889906315,
         2764.0919211835776
       ]
     },
-    "assetHash": "eac74a9f047ab801947f0cc6e6092c2f4ec4245c4c1649e153914c64a6f8035a",
+    "assetHash": "d026cedce85242c667c2b677740496970e7f8b7ee8adfd9a0161aa27c5757f49",
     "material": {
       "shading": "albedo"
     },
     "props": {
       "background": true,
       "surfaceRole": "landscape",
-      "版权": "OpenStreetMap contributors (ODbL). Land-cover survey derived from OneMap orthophotography, Singapore Land Authority. Grass 004 by ambientCG and concrete scan by Poly Haven (CC0).",
-      "依据": "OSM 公园边界与步道中心线、OneMap z18 影像的植被和陆岸边界。草地色泽与路面宽度为视觉估值。"
+      "版权": "OpenStreetMap contributors (ODbL). Land-cover survey derived from OneMap orthophotography, Singapore Land Authority. Grass 004 by ambientCG and concrete and Sandy Gravel 02 scans by Poly Haven (CC0).",
+      "依据": "OSM 公园边界与步道中心线、OneMap z18 影像的植被和陆岸边界。临水作业地、碎石与草坡取自 OneMap z19 航片，岸坡高度、地表磨损与路面宽度为视觉估值。"
     }
   },
   {
@@ -2504,6 +2504,35 @@
       "surfaceRole": "landscape",
       "版权": "Terrain interpretation © Singapore Land Authority / OneMap. Dirt Aerial 02 and Sandy Gravel 02 by Poly Haven (CC0).",
       "依据": "OneMap 航片内的裸土与压实通道。材质分界、色泽及地形起伏为估值。"
+    }
+  },
+  {
+    "entityId": "bay.south-service-court",
+    "label": "滨海南岸 · 作业场地与进场路",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "assetHash": "40615d080e0670cf0dcc8c7ae401e66bc7ebf39e26a2ebd06e385283531b30d7",
+    "bounds": {
+      "min": [
+        122.22211204947688,
+        -60.35301168203292,
+        -1432.7285478239467
+      ],
+      "max": [
+        378.0186677897199,
+        -60.284121434136914,
+        -1105.2619807354865
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "版权": "Ground outlines and colour samples © Singapore Land Authority / OneMap. Concrete Floor 02 and Asphalt 01 by Poly Haven (CC0).",
+      "依据": "OneMap 航片可辨认的场地边界、路面和标线走向。表面标高、涂装宽度和磨损为视觉估值。"
     }
   }
 ]
