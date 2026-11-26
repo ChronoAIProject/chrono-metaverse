@@ -1945,7 +1945,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "政府大厦前大草场 · 南北球场",
-    "assetHash": "cfd00b2f7c89dc9a7311adcb713fd7f212ded5e1651489699026d86d2fffc0aa",
+    "assetHash": "8bb9b72fdb4db74599bfbe4370d278fb077ca9735855713d306edb743fa135a7",
     "bounds": {
       "min": [
         560.2195923694571,
@@ -1967,13 +1967,13 @@
       "边界依据": "Map Data © Singapore Land Authority / OneMap, OrthoJPG",
       "地图来源": "© OpenStreetMap contributors · ODbL",
       "参考场地": "https://www.openstreetmap.org/way/21587770/history/10",
-      "材质素材": "Poly Haven Grass Ground、 Granite Tile 04 · CC0",
+      "材质素材": "Poly Haven Grass Ground、Granite Tile 04 · CC0",
       "现场照片": [
         "https://commons.wikimedia.org/wiki/File:Padang_and_Singapore_skyline.JPG",
         "https://commons.wikimedia.org/wiki/File:Padang_singapore_skyline.JPG",
         "https://commons.wikimedia.org/wiki/File:Schoolboy_rugby_at_the_Padang,_Singapore_-_20131026-03.jpg"
       ],
-      "场地重建": "场界与板球磨损带按正射影像估计。草色参考日间实拍。"
+      "场地重建": "场界、球道和成片草色取自 OneMap 正射影像。树下草色由相邻日照草地估算。"
     }
   },
   {

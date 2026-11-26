@@ -4,7 +4,7 @@ import sys
 
 import numpy as np
 import trimesh
-from scipy.spatial.distance import cdist
+from scipy.spatial import cKDTree
 from trimesh.visual.texture import TextureVisuals
 
 from context_geometry import geographic_point
@@ -33,25 +33,15 @@ def field_geometry(field, project, datum):
     metres = (xz - corners[0, [0, 2]]) @ axis.T
     samples = np.array(field['grassSamples'])
     sites = np.array([project(p)[[0, 2]] for p in samples[:, :2]])
-    weights = 1 / (cdist(xz, sites)**2 + 36)
-    survey = weights @ samples[:, 2:] / weights.sum(axis=1, keepdims=True)
-    across_m, along_m = metres.T
-    bands = 1 + .024*np.sin(along_m*2*np.pi/9.8) + .012*np.cos(across_m*.14 + along_m*.08)
-    # Smooth, irregular turf wear operates at player scale and remains visible from the gallery.
-    rng = np.random.default_rng(21587770)
-    variation = np.zeros(len(xz))
-    for scale, amplitude in [(18, .052), (7, .038), (3, .022)]:
-        grid = (metres - metres.min(axis=0)) / scale
-        cell = np.floor(grid).astype(int)
-        fade = grid - cell
-        fade *= fade * (3 - 2*fade)
-        noise = rng.uniform(-1, 1, tuple(cell.max(axis=0) + 2))
-        left, top = cell.T
-        fx, fy = fade.T
-        variation += amplitude * ((1-fy)*((1-fx)*noise[left,top]+fx*noise[left+1,top])
-                                  + fy*((1-fx)*noise[left,top+1]+fx*noise[left+1,top+1]))
-    grass = survey * [.58, .66, .46] * bands[:, None]
-    grass *= 1 + variation[:, None]*[1.8, 1., .5]
+    distance, near = cKDTree(sites).query(xz, k=range(1, min(4, len(sites)) + 1))
+    weights = 1 / (distance**2 + 1.)
+    weights /= weights.sum(axis=1, keepdims=True)
+    local = np.sum(weights[:, :, None] * samples[near, 2:], axis=1)
+    # Use the field's median under shadowed trees and beyond the exposed grass samples.
+    coverage = np.clip(1 - (distance[:, :1] - 3.) / 12., 0, 1)
+    typical = np.median(samples[:, 2:], axis=0)
+    survey = typical + coverage * (local - typical) * 1.45
+    grass = survey * [.58, .66, .46]
     for start, end in field.get('wickets', []):
         a, b = (project(p)[[0, 2]] for p in (start, end))
         direction = (b-a) / np.linalg.norm(b-a)
@@ -63,7 +53,7 @@ def field_geometry(field, project, datum):
         grass += wear * ([119, 104, 67] - grass) * .83
     # The shared scan carries the blades. glTF vertex colors multiply it in linear light.
     linear = lambda rgb: ((np.asarray(rgb)/255 + .055)/1.055)**2.4
-    tint = np.clip(linear(grass) / linear(SCAN_RGB) * turf_wear(xz), 0, 1)
+    tint = np.clip(linear(grass) / linear(SCAN_RGB) * turf_wear(xz) ** (.74 - .27 * coverage), 0, 1)
     idx = np.arange(rows*cols).reshape(rows, cols)
     a, b, c, d = (q.ravel() for q in (idx[:-1, :-1], idx[:-1, 1:], idx[1:, 1:], idx[1:, :-1]))
     faces = np.vstack((np.column_stack((a,b,c)), np.column_stack((a,c,d))))
@@ -154,7 +144,7 @@ def bake():
                 props={'background': True, 'surfaceRole':'landscape', '边界依据':ref['ortho'],
                        '地图来源':'© OpenStreetMap contributors · ODbL', '参考场地':ref['mapWay'],
                        '材质素材':'Poly Haven Grass Ground、Granite Tile 04 · CC0', '现场照片':ref['photographs'],
-                       '场地重建':'场界与板球磨损带按正射影像估计。草色参考日间实拍。'})
+                       '场地重建':'场界、球道和成片草色取自 OneMap 正射影像。树下草色由相邻日照草地估算。'})
 
 
 if __name__ == '__main__':
