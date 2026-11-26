@@ -56,7 +56,13 @@ export function outdoorSurfaceVariation(material: THREE.Material) {
           '#include <color_fragment>',
           /* glsl */ `#include <color_fragment>
         vec2 surfacePoint = finishMeters.xz + vec2(.47,.81)*finishMeters.y + finishPhase;
-        float condition = .68*surfaceField(surfacePoint*.09) + .32*surfaceField(surfacePoint*.36);
+        // Bend the patch boundaries over tens of metres. The smaller grain has a different axis.
+        vec2 coarse = mat2(.87,.49,-.49,.87) * surfacePoint * .038;
+        float bend = surfaceField(coarse);
+        vec2 warped = surfacePoint + vec2(9.0,-5.0) * (bend - .5);
+        float moisture = surfaceField(warped * .093);
+        float grain = surfaceField(mat2(.60,-.80,.80,.60) * surfacePoint * .33);
+        float condition = .54*moisture + .25*grain + .21*bend;
         float variation = (condition - .5) * finishStrength;
         diffuseColor.rgb *= vec3(1.0) + variation*vec3(1.24,1.0,.63);`,
         )
