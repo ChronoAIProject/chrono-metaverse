@@ -1,6 +1,8 @@
 """Open the two surveyed dining canopies in One Fullerton and furnish their decks."""
 
 import argparse
+from timber_decks import apply_deck_scans
+
 import hashlib
 import json
 import math
@@ -546,7 +548,7 @@ def furnish(start, along, inland, texture_path, output, region_id, canopy_ends, 
     apply_terrace_daylight(scene, middle)
     data = trimesh.exchange.gltf.export_glb(scene, include_normals=True,
                                             tree_postprocessor=set_deck_uv_channel)
-    data = apply_canopy_finishes(data)
+    data = apply_deck_scans(apply_canopy_finishes(data), "Deck boards", "terrace")
     return dict(entityId="bay.fullerton-middle-terraces" if middle else "bay.fullerton-dining-terraces", regionId=region_id, layer="ext", kind="structure",
                 label="One Fullerton · 中段临水茶座" if middle else "One Fullerton · 临水餐饮露台", assetHash=write_asset(data, output),
                 bounds={"min": low.tolist(), "max": high.tolist()}, material={"shading": "albedo"},
