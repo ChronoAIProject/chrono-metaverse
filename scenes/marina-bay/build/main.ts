@@ -339,6 +339,11 @@ export default function build(base: BuildBase, kit: Kit) {
   // 线上按视野流式加载的周边楼群独立于离线模型包，由空间保存其图层和保护范围。
   const surroundings = base.entities.find((entity) => entity.entityId === 'bay.city-surroundings');
   if (surroundings) entities.push(...(config.quay ? withSkylineFacades(withBoatQuay(surroundings)) : [surroundings]));
+  // Sky visibility belongs to each facade at its surveyed location and to the sampled mesh revision.
+  const facadeSurvey: { buildings: { entityId: string; source: string; output: string }[] } = JSON.parse(
+    readFileSync(new URL('../references/district-skylight/survey.json', import.meta.url), 'utf8'),
+  );
+  const bakedFacades = new Map(facadeSurvey.buildings.map((row) => [row.entityId, row]));
   const ids = new Set(entities.map((entity) => entity.entityId));
   return {
     message: config.message,
@@ -352,10 +357,12 @@ export default function build(base: BuildBase, kit: Kit) {
         )
         .map((entity) => kit.removeEntity(entity.entityId)),
       ...entities.map((entity) => {
+        const facade = config.quay ? bakedFacades.get(entity.entityId) : undefined;
         const scans = config.quay && groundScanMaterials[entity.entityId];
         const pavers = config.quay && pavedSurfaces[entity.entityId];
         return kit.placeEntity({
           ...entity,
+          ...(facade && entity.assetHash === facade.source && { assetHash: facade.output }),
           props: {
             ...entity.props,
             background: true,
