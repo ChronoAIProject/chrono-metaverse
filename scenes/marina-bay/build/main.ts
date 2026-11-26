@@ -346,6 +346,11 @@ export default function build(base: BuildBase, kit: Kit) {
     readFileSync(new URL('./placement.json', import.meta.url), 'utf8'),
   );
   const config = JSON.parse(readFileSync(new URL('../context.json', import.meta.url), 'utf8'));
+  // Landmark positions and framing bounds use the final member coordinates.
+  const overview = config.overview;
+  const savedLandmark = overview && base.entities.find(
+    (entity) => entity.entityId === overview.entityId,
+  )?.props?.landmark;
   // Give surveyed exteriors the same daylight and cast shadows as the urban
   // ground and water. Preserve the looks supplied by individual asset authors.
   const cityBuildings = buildings.map((entity): EntityBody =>
@@ -421,6 +426,9 @@ export default function build(base: BuildBase, kit: Kit) {
           props: {
             ...entity.props,
             background: true,
+            ...(overview && entity.entityId === overview.entityId && {
+              landmark: savedLandmark ?? entity.props?.landmark ?? overview.landmark,
+            }),
             ...(scans && { groundScanMaterials: scans }),
             ...(pavers && { pavingCourseAtlas: pavers }),
           },
