@@ -211,12 +211,15 @@ function surveyedGrassCoverage(environment: EntityBody | null): EntityBody | nul
     surfaces: { surface: string; ring: number[][] }[];
   };
   const streetPaving = verges.surfaces.filter(row => row.surface === 'paving').map(row => [row.ring]);
+  const beachRoad = JSON.parse(readFileSync(new URL('../references/beach-road-carriageways.json', import.meta.url), 'utf8')) as {
+    grassExclusions: number[][][][];
+  };
   const existing = settings.map.grassExclusions ?? [];
   // Equivalent longitude/latitude coordinates can differ at double precision after a draft roundtrip.
   const ringKey = (rings: unknown) => JSON.stringify(rings, (_, item: unknown) =>
     typeof item === 'number' ? Number(item.toFixed(9)) : item);
   const known = new Set(existing.map(ringKey));
-  const additional = [...survey.concrete, ...playingFields, ...museumPaving, ...streetPaving].filter(
+  const additional = [...survey.concrete, ...playingFields, ...museumPaving, ...streetPaving, ...beachRoad.grassExclusions].filter(
     polygon => !known.has(ringKey(polygon)),
   );
   if (!additional.length) return environment;
