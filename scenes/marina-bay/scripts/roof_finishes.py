@@ -3,6 +3,7 @@ import hashlib
 
 import numpy as np
 from PIL import Image
+from slate_faces import photographed_slates
 
 
 def concrete_samples(side, rng):
@@ -25,19 +26,9 @@ def concrete_samples(side, rng):
     return weights, samples
 
 
-def roof_weathering(finish, side, references, rng):
+def metal_weathering(side, rng):
     y, x = np.indices((2 * side, 2 * side))
     u, v = (x + .5) / side, (y + .5) / side
-    if finish == 'SlateRoof':
-        # Red and green label the nine tiles in each of eleven measured courses.
-        # At the wrap seam a face can belong to the preceding course or column.
-        with Image.open(references / 'SlateRoof/Units.png') as image:
-            units = np.asarray(image, dtype=int)
-        local = units[((v % 1) * units.shape[0]).astype(int), ((u % 1) * units.shape[1]).astype(int)]
-        col = ((x // side) * 9 + local[:, :, 0] - 1) % 18
-        row = ((y // side) * 11 + local[:, :, 1] - 1) % 22
-        return rng.uniform(-.5, .5, (22, 18))[row, col] * (local[:, :, 2] / 255)
-
     # The zinc scan spans 61 ribs. Group whole ribs into sheets, stagger their end joints.
     edges = np.rint(np.linspace(0, 122, 17))
     col = np.searchsorted(edges, (u * 61) % 122, side='right') - 1
@@ -47,6 +38,15 @@ def roof_weathering(finish, side, references, rng):
 
 def weather_roof(material, group, references):
     finish = material.name.removesuffix(' surveyed')
+    if finish == 'SlateRoof':
+        with Image.open(references / 'SlateRoof/Units.png') as atlas:
+            units = np.asarray(atlas)
+        # The plain and aerial-coloured versions share identical surface relief.
+        shared_seed = int.from_bytes(hashlib.sha256((group + finish).encode()).digest()[:8], 'little')
+        for key in ('baseColorTexture', 'metallicRoughnessTexture', 'normalTexture'):
+            image = photographed_slates(getattr(material, key), units, shared_seed, key == 'normalTexture')
+            setattr(material, key, image)
+        return
     seed = int.from_bytes(hashlib.sha256((group + material.name).encode()).digest()[:8], 'little')
     layers = ['baseColorTexture', 'metallicRoughnessTexture']
     if finish == 'ConcreteRoof':
@@ -60,7 +60,7 @@ def weather_roof(material, group, references):
             weights, samples = concrete_samples(side, rng)
             result = sum(weights[:, :, i, None] * pixels[at] for i, at in enumerate(samples))
         else:
-            amount = roof_weathering(finish, side, references, rng)
+            amount = metal_weathering(side, rng)
             result = np.tile(pixels, (2, 2, 1)).astype(float)
             if key == 'baseColorTexture':
                 result *= np.exp(amount[:, :, None] * [.22, .18, .14])
@@ -80,8 +80,10 @@ def weather_roof(material, group, references):
 def roof_texture_scales(material):
     pbr = material['pbrMetallicRoughness']
     maps = [pbr['baseColorTexture'], pbr['metallicRoughnessTexture']]
-    if material['name'] == 'ConcreteRoof':
+    finish = material['name'].removesuffix(' surveyed')
+    if material['name'] == 'ConcreteRoof' or finish == 'SlateRoof':
         maps.append(material['normalTexture'])
-    # A half-scale transform restores the original tile size in metres.
+    # Restore the pitch of each original photographed course in metres.
+    scale = .25 if finish == 'SlateRoof' else .5
     for texture in maps:
-        texture['extensions'] = {'KHR_texture_transform': {'scale': [.5, .5]}}
+        texture['extensions'] = {'KHR_texture_transform': {'scale': [scale, scale]}}
