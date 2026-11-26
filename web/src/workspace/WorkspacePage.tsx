@@ -943,13 +943,13 @@ function Workspace({ request }: { readonly request: typeof fetch }) {
   }
   function applyViewerCommand(command: ViewerCommand) {
     const key = `${note.spaceId}:${command.id}`;
-    if (busy || note.pending || appliedViewerCommands.current.has(key)) return;
+    if (busy || note.pending || appliedViewerCommands.current.has(key)) return false;
     const space = command.actions.find((a) => a.type === 'space');
     if (space?.type === 'space') {
       const target = catalog?.items.find((s) => s.id === space.spaceId);
       if (!target) {
         setViewerFeedback({ error: '无法打开该空间，请先在空间列表中核对访问权限。' });
-        return;
+        return false;
       }
       openSpace(target.id, target.owner.kind === 'org' ? target.owner.id : undefined, true);
     }
@@ -957,13 +957,13 @@ function Workspace({ request }: { readonly request: typeof fetch }) {
     if (universe?.type === 'universe') {
       if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(universe.universeId)) {
         setViewerFeedback({ error: '组合编号格式不正确。' });
-        return;
+        return false;
       }
       setPendingViewerCommand({ id: command.id, actions: command.actions.slice(1) });
       appliedViewerCommands.current.add(key);
       window.history.pushState(null, '', `/s/${encodeURIComponent(universe.universeId)}`);
       window.dispatchEvent(new PopStateEvent('popstate'));
-      return;
+      return true;
     }
     appliedViewerCommands.current.add(key);
     if (appliedViewerCommands.current.size > 50)
@@ -984,6 +984,7 @@ function Workspace({ request }: { readonly request: typeof fetch }) {
     }
     setViewerCommand(command);
     setViewerFeedback({ notice: '已更新页面查看设置。' });
+    return true;
   }
   const conversation = (transcript?.turns ?? [])
     .slice(-30)
@@ -1590,7 +1591,7 @@ function Workspace({ request }: { readonly request: typeof fetch }) {
                   onChange={(event) => chooseAssistant(event.target.value as 'cma' | 'nyxagent')}
                 >
                   <option value="cma">CMA · 扫描与导入</option>
-                  <option value="nyxagent">NyxAgent · 对话编辑</option>
+                  <option value="nyxagent">NyxBot · 对话编辑</option>
                 </select>
               </label>
               <span className="workspace__badge" role="status">
@@ -1621,7 +1622,6 @@ function Workspace({ request }: { readonly request: typeof fetch }) {
                 key={`${session.subject}:${selected?.id ?? ''}:${selected?.owner.id ?? ''}`}
                 session={session}
                 space={selected}
-                request={request}
                 onBusy={setNyxagentBusy}
                 onRestore={openRestoredChat}
                 viewerContext={{

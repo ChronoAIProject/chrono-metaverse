@@ -809,3 +809,20 @@
   border-color: var(--dsw-alias-state-business-primary);
   color: var(--dsw-alias-state-business-primary);
 }
+
+.workspace__nyx {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  --nyx-surface: var(--dsw-alias-bg-base);
+  --nyx-text: var(--dsw-alias-label-primary);
+  --nyx-muted: var(--dsw-alias-label-secondary);
+  --nyx-accent: var(--dsw-alias-state-business-primary);
+  --nyx-border: var(--dsw-alias-border-l1);
+}
+.workspace__legacy {
+  max-height: 30%;
+  padding-inline: 12px;
+  overflow: auto;
+}
