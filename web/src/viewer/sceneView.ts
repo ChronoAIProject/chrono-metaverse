@@ -2427,7 +2427,7 @@ export class SceneView {
     if (this.cameraArea) {
       to = to.clone();
       target = target.clone();
-      this.cameraArea.constrain(to, target);
+      this.cameraArea.fitDestination(to, target);
     }
     if (!animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       this.flight = null;

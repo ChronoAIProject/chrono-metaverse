@@ -22,6 +22,17 @@ describe('authored camera area', () => {
     expect(eye.distanceTo(pivot)).toBeGreaterThan(0);
   });
 
+  it('shortens a distant look ray without moving an in-bounds saved viewpoint', () => {
+    const volume = new CameraArea(area, IDENTITY_PLACEMENT);
+    const eye = new Vector3(14, 2, 0);
+    const target = new Vector3(110, 34, 160);
+    const direction = target.clone().sub(eye).normalize();
+    volume.fitDestination(eye, target);
+    expect(eye.toArray()).toEqual([14, 2, 0]);
+    expect(target.clone().sub(eye).normalize().distanceTo(direction)).toBeLessThan(1e-10);
+    expect(Math.hypot(target.x - 12, target.z + 4)).toBeCloseTo(19.95);
+  });
+
   it('contains the walking eye in a rotated member while preserving the look direction', () => {
     const placement = { offset: [20, 4, -8] as [number, number, number], rotation: 90 };
     const volume = new CameraArea(area, placement);
