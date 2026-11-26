@@ -350,6 +350,35 @@ it('工作台读取遇到短暂 503 时等待后重试一次', async () => {
   }
 });
 
+it('limits cold preview downloads through body completion and releases a slot on failure', async () => {
+  const bodies: ReadableStreamDefaultController<Uint8Array>[] = [];
+  const fetcher = vi.fn(
+    async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start: (body) => {
+            bodies.push(body);
+          },
+        }),
+      ),
+  );
+  const client = createPublicClient({ fetch: fetcher });
+  const loads = Array.from({ length: 8 }, (_, i) =>
+    client.previewAssetBlob('draft', i.toString(16).repeat(64)),
+  );
+  const results = Promise.allSettled(loads);
+  await vi.waitFor(() => expect(bodies).toHaveLength(6));
+  bodies[0]!.error(new Error('interrupted stream'));
+  await vi.waitFor(() => expect(bodies).toHaveLength(7));
+  bodies[1]!.close();
+  await vi.waitFor(() => expect(bodies).toHaveLength(8));
+  for (const body of bodies.slice(2)) body.close();
+  expect((await results).map((result) => result.status)).toEqual([
+    'rejected',
+    ...Array<string>(7).fill('fulfilled'),
+  ]);
+});
+
 it('retries a transient asset failure with the same preview grant', async () => {
   vi.useFakeTimers();
   try {
