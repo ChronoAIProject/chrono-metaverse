@@ -49,8 +49,8 @@ def pavement_material(kind):
         iy = ((v * 2.5 + start[row, col, 1])*size).astype(int) % size
         dx = np.minimum(u % 1, 1-u % 1)*5
         dy = np.minimum(v % 1, 1-v % 1)*6
-        seal = np.clip(1-np.minimum(dx,dy)/.050, 0, 1)
-        tone = rng.uniform(-15, 13, (4, 4))[row,col] - 47*seal
+        seal = np.clip(1-np.minimum(dx,dy)/.022, 0, 1)
+        tone = rng.uniform(-3, 3, (4, 4))[row,col] - 28*seal
         grain = grain[iy, ix]
         relief = normal[iy, ix].copy()
         depth = -.006 * seal
@@ -66,15 +66,15 @@ def pavement_material(kind):
     # Calibrated against the pre-existing aerial ground at the same exposure.
     return PBRMaterial(name="South court " + kind, baseColorTexture=albedo, normalTexture=normal_image,
                        metallicRoughnessTexture=packed, roughnessFactor=1, metallicFactor=0,
-                       baseColorFactor=[137, 135, 128, 255] if kind == "concrete" else [148, 144, 135, 255])
+                       baseColorFactor=[162, 160, 153, 255] if kind == "concrete" else [148, 144, 135, 255])
 
 
 def paved_mesh(region, kind, frame, ground, tones, along):
     cells = []
     for polygon in get_parts(region):
         x0, z0, x1, z1 = polygon.bounds
-        x, z = np.meshgrid(np.arange(np.floor(x0 / 4) * 4, x1, 4), np.arange(np.floor(z0 / 4) * 4, z1, 4))
-        clipped = intersection(box(x.ravel(), z.ravel(), x.ravel() + 4, z.ravel() + 4), polygon)
+        x, z = np.meshgrid(np.arange(np.floor(x0 / 3) * 3, x1, 3), np.arange(np.floor(z0 / 3) * 3, z1, 3))
+        clipped = intersection(box(x.ravel(), z.ravel(), x.ravel() + 3, z.ravel() + 3), polygon)
         cells.extend(p for p in get_parts(clipped) if p.geom_type == "Polygon" and p.area > .001)
     mesh = surface(GeometryCollection(cells), pavement_material(kind), ground, frame.shift[[0, 2]], height=.065)
     coords = mesh.vertices[:, [0, 2]]
@@ -86,7 +86,7 @@ def paved_mesh(region, kind, frame, ground, tones, along):
     samples = np.asarray(tones)
     positions = frame.project({"coordinates": samples[:, :2]})
     dist, idx = cKDTree(positions).query(coords, k=4)
-    weights = 1 / (dist**2 + 2.0**2)
+    weights = 1 / (dist**2 + 1.2**2)
     rgb = (samples[idx, 2:] * weights[:, :, None]).sum(axis=1) / weights.sum(axis=1)[:, None]
     tint = np.clip(((rgb + 14.025) / 204.025)**2.4, .035, 1)
     mesh.visual.vertex_attributes["color"] = np.uint8(np.rint(255*np.c_[tint, np.ones(len(tint))]))
