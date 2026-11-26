@@ -110,18 +110,33 @@ export const buildingFinishShader = /* glsl */ `
     return mix(colour,mix(meanRoom,interior,resolved),glazing);
   }
 
+  vec4 shopFinish(vec2 metres, float seed) {
+    const int shopLayers[4] = int[4](5, 6, 10, 11);
+    const int upperLayers[4] = int[4](16, 20, 7, 26);
+    const vec3 upperTint[4] = vec3[4](
+      vec3(1.16,.93,.74), vec3(.94,.91,.89), vec3(.82,.92,.73), vec3(1.10,.96,.79));
+    int frontage = int(seed * 4.0);
+    int shop = shopLayers[frontage];
+    float lintel = finishSpan[shop].y;
+    bool above = metres.y > lintel;
+    int layer = above ? upperLayers[frontage] : shop;
+    // Start the upper sheet at its base. The atlas stores door sills at row zero.
+    vec2 scale = 1.0 / finishSpan[layer];
+    vec2 uv = (metres - vec2(0., above ? lintel : 0.)) * scale + vec2(fract(17.*seed),0.);
+    // Use physical wall gradients to avoid a coarse mip at the junction of the two sheets.
+    vec4 finish = textureGrad(buildingFinishes,vec3(uv,float(layer)),dFdx(metres)*scale,dFdy(metres)*scale);
+    finish.a = clamp((finish.a*255.0-128.0)/127.0,0.0,1.0);
+    if (above) finish.rgb *= mix(upperTint[frontage],vec3(1.0),finish.a);
+    return finish;
+  }
+
   vec4 buildingFinish(vec3 pos, vec2 tangent, float style) {
     float seed = fract(style);
-    int index;
-    if (style >= 3.0) {
-      int frontage = int(seed * 4.0);
-      index = frontage < 2 ? 5 + frontage : 8 + frontage;
-    } else {
-      // Keep material selection stable for stacked sections with the same footprint seed.
-      int slot = int(seed * 1024.0) % 16;
-      index = wallLayers[int(floor(style)) * 16 + slot];
-    }
     vec2 metres = vec2(dot(pos.xz,tangent),pos.y);
+    if (style >= 3.0) return shopFinish(metres,seed);
+    // Stacked sections with the same footprint seed use the same wall finish.
+    int slot = int(seed * 1024.0) % 16;
+    int index = wallLayers[int(floor(style)) * 16 + slot];
     vec2 uv = metres / finishSpan[index] + vec2(fract(17.0*seed),0.0);
     vec4 sampleColor = texture(buildingFinishes,vec3(uv,float(index)));
     sampleColor.a = clamp((sampleColor.a * 255.0 - 128.0) / 127.0, 0.0, 1.0);
