@@ -602,7 +602,7 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "滨海湾 · 街道与滨水树冠",
-    "assetHash": "e85f7bf3973d461b3b062c580857eaef5deb517b3e3cb6ce735202bcb04a2774",
+    "assetHash": "fbe1898f116d410e7602998d7c84e3b330f94e3700e126be1412df502b70183c",
     "bounds": {
       "min": [
         -598.3594586537828,
@@ -701,12 +701,12 @@
     "layer": "ext",
     "regionId": "marina-bay-exterior",
     "label": "淡马锡道 · 北段路旁树带",
-    "assetHash": "d547f1190d23168b7a17dd29da9bd8e33e38ee273a021b48346cf7691c16f9a8",
+    "assetHash": "c3ca4876f36f8d898342d49a6be32ba446977147891820cfac136a27973ef595",
     "bounds": {
       "min": [
-        -295.50093375551137,
+        -294.6908820271341,
         -60.441,
-        1525.6022571479994
+        1526.1547670007917
       ],
       "max": [
         -174.89002118306698,
