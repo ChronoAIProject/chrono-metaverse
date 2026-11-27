@@ -1,0 +1,455 @@
+{
+  "sources": {
+    "imagery": "Map Data © Singapore Land Authority, OneMap orthophoto, https://www.onemap.gov.sg/",
+    "woodedHeight": "Meta and World Resources Institute, https://registry.opendata.aws/dataforgood-fb-forests/",
+    "shoreline": "© OpenStreetMap contributors, https://www.openstreetmap.org/relation/2295810",
+    "fieldPhotos": [
+      "https://commons.wikimedia.org/?curid=148557551",
+      "https://commons.wikimedia.org/?curid=148557558"
+    ],
+    "regionalHeight": "Lang et al., A high-resolution canopy height model of the Earth, https://doi.org/10.1038/s41559-023-02206-6"
+  },
+  "method": "Radial palm crowns were marked on the OneMap orthophoto at zoom 20. Spread follows the mapped fronds. Three near crowns were height-matched to the bridge rails and canopy outline in the first field photo. Other heights use crown diameter and the regional canopy-height raster where available. Heights and species are approximate. Four 0 A.D. royal palm variants represent the crowns on land.",
+  "trees": [
+    {
+      "treeId": "dragonfly-palm-4",
+      "localXZ": [
+        -730.72,
+        505.085
+      ],
+      "latitude": 1.282485,
+      "longitude": 103.8620089,
+      "crownDiameterMetres": 6.57,
+      "groundY": -60.257,
+      "estimatedHeightMetres": 12.77,
+      "yawDegrees": 70.5,
+      "variant": "d",
+      "linearTint": [
+        216,
+        222,
+        211
+      ],
+      "trunkWidthFactor": 0.8
+    },
+    {
+      "treeId": "dragonfly-palm-5",
+      "localXZ": [
+        -735.582,
+        507.49
+      ],
+      "latitude": 1.2824917,
+      "longitude": 103.8620572,
+      "crownDiameterMetres": 6.27,
+      "groundY": -60.257,
+      "estimatedHeightMetres": 12.42,
+      "yawDegrees": 208.0,
+      "variant": "c",
+      "linearTint": [
+        216,
+        222,
+        211
+      ],
+      "trunkWidthFactor": 0.8
+    },
+    {
+      "treeId": "dragonfly-palm-6",
+      "localXZ": [
+        -740.301,
+        508.908
+      ],
+      "latitude": 1.2824904,
+      "longitude": 103.8621014,
+      "crownDiameterMetres": 6.86,
+      "groundY": -60.257,
+      "estimatedHeightMetres": 13.1,
+      "yawDegrees": 345.5,
+      "variant": "b",
+      "linearTint": [
+        216,
+        222,
+        211
+      ],
+      "trunkWidthFactor": 0.8
+    },
+    {
+      "treeId": "dragonfly-palm-7",
+      "localXZ": [
+        -749.544,
+        508.085
+      ],
+      "latitude": 1.2824569,
+      "longitude": 103.8621779,
+      "crownDiameterMetres": 5.97,
+      "groundY": -60.257,
+      "estimatedHeightMetres": 12.08,
+      "yawDegrees": 123.0,
+      "variant": "a",
+      "linearTint": [
+        216,
+        222,
+        211
+      ],
+      "trunkWidthFactor": 0.8
+    },
+    {
+      "treeId": "dragonfly-palm-8",
+      "localXZ": [
+        -754.69,
+        510.584
+      ],
+      "latitude": 1.2824636,
+      "longitude": 103.8622288,
+      "crownDiameterMetres": 4.48,
+      "groundY": -60.257,
+      "estimatedHeightMetres": 10.36,
+      "yawDegrees": 260.6,
+      "variant": "d",
+      "linearTint": [
+        216,
+        222,
+        211
+      ],
+      "trunkWidthFactor": 0.8
+    },
+    {
+      "treeId": "dragonfly-palm-11",
+      "localXZ": [
+        -801.84,
+        529.132
+      ],
+      "latitude": 1.2824877,
+      "longitude": 103.8626835,
+      "crownDiameterMetres": 6.27,
+      "groundY": -60.257,
+      "estimatedHeightMetres": 10.0,
+      "yawDegrees": 313.1,
+      "variant": "a",
+      "linearTint": [
+        216,
+        222,
+        211
+      ],
+      "trunkWidthFactor": 0.8
+    },
+    {
+      "treeId": "dragonfly-palm-12",
+      "localXZ": [
+        -805.23,
+        525.575
+      ],
+      "latitude": 1.2824475,
+      "longitude": 103.8627023,
+      "crownDiameterMetres": 5.97,
+      "groundY": -60.257,
+      "estimatedHeightMetres": 11.0,
+      "yawDegrees": 90.6,
+      "variant": "d",
+      "linearTint": [
+        216,
+        222,
+        211
+      ],
+      "trunkWidthFactor": 0.8
+    },
+    {
+      "treeId": "dragonfly-palm-13",
+      "localXZ": [
+        -811.162,
+        519.114
+      ],
+      "latitude": 1.2823751,
+      "longitude": 103.8627344,
+      "crownDiameterMetres": 6.27,
+      "groundY": -60.257,
+      "estimatedHeightMetres": 12.6,
+      "yawDegrees": 228.1,
+      "variant": "c",
+      "linearTint": [
+        216,
+        222,
+        211
+      ],
+      "trunkWidthFactor": 0.8
+    },
+    {
+      "treeId": "dragonfly-palm-14",
+      "localXZ": [
+        -823.731,
+        532.843
+      ],
+      "latitude": 1.2824569,
+      "longitude": 103.8628806,
+      "crownDiameterMetres": 7.16,
+      "groundY": -60.257,
+      "estimatedHeightMetres": 13.45,
+      "yawDegrees": 5.6,
+      "variant": "b",
+      "linearTint": [
+        216,
+        222,
+        211
+      ],
+      "trunkWidthFactor": 0.8
+    },
+    {
+      "treeId": "dragonfly-palm-15",
+      "localXZ": [
+        -824.147,
+        527.355
+      ],
+      "latitude": 1.2824086,
+      "longitude": 103.8628685,
+      "crownDiameterMetres": 6.57,
+      "groundY": -60.257,
+      "estimatedHeightMetres": 13.97,
+      "yawDegrees": 143.1,
+      "variant": "a",
+      "linearTint": [
+        216,
+        222,
+        211
+      ],
+      "trunkWidthFactor": 0.8
+    },
+    {
+      "treeId": "dragonfly-palm-16",
+      "localXZ": [
+        -825.083,
+        523.135
+      ],
+      "latitude": 1.2823697,
+      "longitude": 103.8628645,
+      "crownDiameterMetres": 6.86,
+      "groundY": -60.257,
+      "estimatedHeightMetres": 14.3,
+      "yawDegrees": 280.6,
+      "variant": "d",
+      "linearTint": [
+        216,
+        222,
+        211
+      ],
+      "trunkWidthFactor": 0.8
+    },
+    {
+      "treeId": "dragonfly-palm-17",
+      "localXZ": [
+        -830.832,
+        520.052
+      ],
+      "latitude": 1.2823268,
+      "longitude": 103.8629048,
+      "crownDiameterMetres": 6.57,
+      "groundY": -60.257,
+      "estimatedHeightMetres": 13.97,
+      "yawDegrees": 58.1,
+      "variant": "c",
+      "linearTint": [
+        216,
+        222,
+        211
+      ],
+      "trunkWidthFactor": 0.8
+    },
+    {
+      "treeId": "dragonfly-palm-18",
+      "localXZ": [
+        -838.055,
+        523.869
+      ],
+      "latitude": 1.2823389,
+      "longitude": 103.8629772,
+      "crownDiameterMetres": 6.57,
+      "groundY": -60.257,
+      "estimatedHeightMetres": 12.77,
+      "yawDegrees": 195.6,
+      "variant": "b",
+      "linearTint": [
+        216,
+        222,
+        211
+      ],
+      "trunkWidthFactor": 0.8
+    },
+    {
+      "treeId": "dragonfly-palm-19",
+      "localXZ": [
+        -843.532,
+        527.26
+      ],
+      "latitude": 1.2823523,
+      "longitude": 103.8630335,
+      "crownDiameterMetres": 5.67,
+      "groundY": -60.257,
+      "estimatedHeightMetres": 11.73,
+      "yawDegrees": 333.1,
+      "variant": "a",
+      "linearTint": [
+        216,
+        222,
+        211
+      ],
+      "trunkWidthFactor": 0.8
+    },
+    {
+      "treeId": "dragonfly-palm-20",
+      "localXZ": [
+        -849.097,
+        527.085
+      ],
+      "latitude": 1.2823348,
+      "longitude": 103.8630804,
+      "crownDiameterMetres": 7.16,
+      "groundY": -60.257,
+      "estimatedHeightMetres": 13.45,
+      "yawDegrees": 110.6,
+      "variant": "d",
+      "linearTint": [
+        216,
+        222,
+        211
+      ],
+      "trunkWidthFactor": 0.8
+    },
+    {
+      "treeId": "dragonfly-palm-21",
+      "localXZ": [
+        -850.192,
+        533.234
+      ],
+      "latitude": 1.2823845,
+      "longitude": 103.8631073,
+      "crownDiameterMetres": 5.97,
+      "groundY": -60.257,
+      "estimatedHeightMetres": 12.08,
+      "yawDegrees": 248.2,
+      "variant": "c",
+      "linearTint": [
+        216,
+        222,
+        211
+      ],
+      "trunkWidthFactor": 0.8
+    },
+    {
+      "treeId": "dragonfly-palm-22",
+      "localXZ": [
+        -839.692,
+        543.483
+      ],
+      "latitude": 1.2825024,
+      "longitude": 103.8630469,
+      "crownDiameterMetres": 6.86,
+      "groundY": -60.257,
+      "estimatedHeightMetres": 13.1,
+      "yawDegrees": 25.7,
+      "variant": "b",
+      "linearTint": [
+        216,
+        222,
+        211
+      ],
+      "trunkWidthFactor": 0.8
+    },
+    {
+      "treeId": "dragonfly-palm-23",
+      "localXZ": [
+        -842.708,
+        541.989
+      ],
+      "latitude": 1.282481,
+      "longitude": 103.8630684,
+      "crownDiameterMetres": 6.27,
+      "groundY": -60.257,
+      "estimatedHeightMetres": 12.42,
+      "yawDegrees": 163.2,
+      "variant": "a",
+      "linearTint": [
+        216,
+        222,
+        211
+      ],
+      "trunkWidthFactor": 0.8
+    },
+    {
+      "treeId": "dragonfly-palm-24",
+      "localXZ": [
+        -846.44,
+        545.892
+      ],
+      "latitude": 1.2825038,
+      "longitude": 103.8631113,
+      "crownDiameterMetres": 6.86,
+      "groundY": -60.257,
+      "estimatedHeightMetres": 13.1,
+      "yawDegrees": 300.7,
+      "variant": "d",
+      "linearTint": [
+        216,
+        222,
+        211
+      ],
+      "trunkWidthFactor": 0.8
+    },
+    {
+      "treeId": "dragonfly-palm-25",
+      "localXZ": [
+        -808.848,
+        489.272
+      ],
+      "latitude": 1.2821257,
+      "longitude": 103.8626298,
+      "crownDiameterMetres": 5.37,
+      "groundY": -60.257,
+      "estimatedHeightMetres": 10.31,
+      "yawDegrees": 78.2,
+      "variant": "c",
+      "linearTint": [
+        216,
+        222,
+        211
+      ],
+      "trunkWidthFactor": 0.8
+    },
+    {
+      "treeId": "dragonfly-palm-26",
+      "localXZ": [
+        -813.894,
+        488.768
+      ],
+      "latitude": 1.2821069,
+      "longitude": 103.8626714,
+      "crownDiameterMetres": 5.67,
+      "groundY": -60.257,
+      "estimatedHeightMetres": 11.73,
+      "yawDegrees": 215.7,
+      "variant": "b",
+      "linearTint": [
+        216,
+        222,
+        211
+      ],
+      "trunkWidthFactor": 0.8
+    },
+    {
+      "treeId": "dragonfly-palm-27",
+      "localXZ": [
+        -811.767,
+        485.713
+      ],
+      "latitude": 1.2820868,
+      "longitude": 103.8626446,
+      "crownDiameterMetres": 5.37,
+      "groundY": -60.257,
+      "estimatedHeightMetres": 10.31,
+      "yawDegrees": 353.2,
+      "variant": "a",
+      "linearTint": [
+        216,
+        222,
+        211
+      ],
+      "trunkWidthFactor": 0.8
+    }
+  ]
+}

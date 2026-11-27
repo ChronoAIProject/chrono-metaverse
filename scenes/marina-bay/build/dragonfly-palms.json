@@ -1,0 +1,29 @@
+{
+  "entityId": "bay.dragonfly-palm-grove",
+  "kind": "structure",
+  "layer": "ext",
+  "regionId": "marina-bay-exterior",
+  "label": "蜻蜓湖 · 棕榈林",
+  "assetHash": "42e26b73b8f61285f37dac978b0c6425e3069e0d55e2ca68a01b3d6733350b23",
+  "bounds": {
+    "min": [
+      -853.4690849584324,
+      -60.282,
+      483.30597031490447
+    ],
+    "max": [
+      -727.251796733032,
+      -45.982,
+      549.4119275048337
+    ]
+  },
+  "material": {
+    "shading": "albedo"
+  },
+  "props": {
+    "background": true,
+    "surfaceRole": "landscape",
+    "survey": "Radial palm crowns were marked on the OneMap orthophoto at zoom 20. Spread follows the mapped fronds. Three near crowns were height-matched to the bridge rails and canopy outline in the first field photo. Other heights use crown diameter and the regional canopy-height raster where available. Heights and species are approximate. Four 0 A.D. royal palm variants represent the crowns on land.",
+    "attribution": "Royal palm meshes and textures adapted from 0 A.D., Wildfire Games (https://wildfiregames.com/), CC BY-SA 3.0 (https://creativecommons.org/licenses/by-sa/3.0/). Scaled, rotated, tinted and batched for the Sands waterfront. | Map Data © Singapore Land Authority, OneMap orthophoto, https://www.onemap.gov.sg/ | Meta and World Resources Institute, https://registry.opendata.aws/dataforgood-fb-forests/ | © OpenStreetMap contributors, https://www.openstreetmap.org/relation/2295810"
+  }
+}
