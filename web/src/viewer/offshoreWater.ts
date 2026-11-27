@@ -16,6 +16,7 @@ export class OffshoreWater {
     oceanReflectance: { value: null as THREE.Texture | null },
     oceanReady: { value: 0 },
     oceanRoughness: { value: 0 },
+    oceanSkyLod: { value: 0 },
   };
   private disposed = false;
 
@@ -53,7 +54,14 @@ export class OffshoreWater {
   }
 
   setSky(sky: THREE.Texture | null) {
-    this.uniforms.oceanSky.value = sky && (skyRadiance.get(sky) ?? sky);
+    const radiance = sky && (skyRadiance.get(sky) ?? sky);
+    this.uniforms.oceanSky.value = radiance;
+    // A facet tilt changes the reflected angle by twice the tilt. Convert this
+    // angular width to texels in the latitude direction of the panorama.
+    const height = radiance?.height ?? 1;
+    this.uniforms.oceanSkyLod.value = Math.log2(
+      Math.max(1, (2 * Math.atan(this.config.rmsSlope) * height) / Math.PI),
+    );
   }
 
   patch(tile: Tile): OffshorePatch | undefined {
@@ -87,9 +95,14 @@ export const offshoreLight = /* glsl */ `
       float cosine = clamp(-ray.y,0.0,1.0);
       vec2 size = vec2(textureSize(oceanReflectance,0));
       vec2 entry = vec2(sqrt(cosine),oceanRoughness);
-      float fresnel = texture2D(oceanReflectance,(entry*(size-1.0)+0.5)/size).r;
-      vec3 reflected = normalize(vec3(ray.x,max(0.025,cosine),ray.z));
-      vec3 sky = textureLod(oceanSky,equirectUv(reflected),2.0).rgb;
+      vec3 lookup = texture2D(oceanReflectance,(entry*(size-1.0)+0.5)/size).rgb;
+      float fresnel = lookup.r;
+      // Visible wave faces reflect sky above the geometric horizon at grazing angles.
+      // The LUT stores the displacement in units of pi, directly in panorama V.
+      float elevationShift = (dot(lookup.gb,vec2(65280.0,255.0))-32768.0)/32767.0;
+      vec2 skyUv = equirectUv(vec3(ray.x,cosine,ray.z));
+      skyUv.y = clamp(skyUv.y + elevationShift,0.5,1.0);
+      vec3 sky = textureLod(oceanSky,skyUv,oceanSkyLod).rgb;
       // Same linear deep-water reflectance as the detailed water surface (#325553).
       vec3 sea = mix(vec3(0.03190,0.09084,0.08650),sky,fresnel);
       #ifdef USE_MAP
