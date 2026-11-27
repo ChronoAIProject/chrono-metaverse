@@ -406,6 +406,10 @@ export default function build(base: BuildBase, kit: Kit) {
     entities.push(JSON.parse(
       readFileSync(new URL('./garden-conservatories.json', import.meta.url), 'utf8'),
     ));
+    const gardenCanopy: EntityBody[] = JSON.parse(
+      readFileSync(new URL('./garden-lake-canopy.json', import.meta.url), 'utf8'),
+    );
+    entities.push(...gardenCanopy);
   }
   // 线上按视野流式加载的周边楼群独立于离线模型包，由空间保存其图层和保护范围。
   const surroundings = base.entities.find((entity) => entity.entityId === 'bay.city-surroundings');

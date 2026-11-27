@@ -1,0 +1,60 @@
+[
+  {
+    "entityId": "bay.garden-lake-canopy-1",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海湾花园 · 蜻蜓湖林带 1",
+    "assetHash": "6153e801abfce53d03d74c3077e486391285481f6a4b9ad272d49c4df9232f59",
+    "bounds": {
+      "min": [
+        -1371.7547667125434,
+        -60.262481206637325,
+        311.65008660381
+      ],
+      "max": [
+        -770.5484612656734,
+        -46.26248120663732,
+        770.2765297424803
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "survey": "Gardens by the Bay canopy reconstructed from aerial and satellite data. Individual trees are estimated.",
+      "attribution": "Singapore Land Authority, OneMap aerial imagery, https://www.onemap.gov.sg/ | Meta and World Resources Institute, High Resolution Canopy Height Maps, https://registry.opendata.aws/dataforgood-fb-forests/ | ESA WorldCover 2021 v200, CC BY 4.0, https://doi.org/10.5281/zenodo.7254221 | Lang, Jetz, Schindler & Wegner (2023), A high-resolution canopy height model of the Earth, CC BY 4.0, https://doi.org/10.3929/ethz-b-000609802 and https://doi.org/10.1038/s41559-023-02206-6 | Poly Haven, Tree Small 02 and Island Tree 01, CC0, https://polyhaven.com/a/tree_small_02 and https://polyhaven.com/a/island_tree_01"
+    }
+  },
+  {
+    "entityId": "bay.garden-lake-canopy-2",
+    "kind": "structure",
+    "layer": "ext",
+    "regionId": "marina-bay-exterior",
+    "label": "滨海湾花园 · 蜻蜓湖林带 2",
+    "assetHash": "0336fae3a7b87b751e0fb8b22adc97df7fe8823b8ac8c82514f62992f6722866",
+    "bounds": {
+      "min": [
+        -1375.7811792755183,
+        -60.266402824975415,
+        313.82336635187625
+      ],
+      "max": [
+        -768.1521206511452,
+        -46.166402824975414,
+        764.790682328738
+      ]
+    },
+    "material": {
+      "shading": "albedo"
+    },
+    "props": {
+      "background": true,
+      "surfaceRole": "landscape",
+      "survey": "Gardens by the Bay canopy reconstructed from aerial and satellite data. Individual trees are estimated.",
+      "attribution": "Singapore Land Authority, OneMap aerial imagery, https://www.onemap.gov.sg/ | Meta and World Resources Institute, High Resolution Canopy Height Maps, https://registry.opendata.aws/dataforgood-fb-forests/ | ESA WorldCover 2021 v200, CC BY 4.0, https://doi.org/10.5281/zenodo.7254221 | Lang, Jetz, Schindler & Wegner (2023), A high-resolution canopy height model of the Earth, CC BY 4.0, https://doi.org/10.3929/ethz-b-000609802 and https://doi.org/10.1038/s41559-023-02206-6 | Poly Haven, Tree Small 02 and Island Tree 01, CC0, https://polyhaven.com/a/tree_small_02 and https://polyhaven.com/a/island_tree_01"
+    }
+  }
+]
