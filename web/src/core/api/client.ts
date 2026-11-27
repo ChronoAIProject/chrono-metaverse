@@ -1,3 +1,4 @@
+import { retryTransientRead } from './readRetry';
 import type { ExternalRequest } from '../externalSource';
 import { decompressChunk } from '../chunk';
 import { sha256HexOfText } from '../hash';
@@ -282,35 +283,7 @@ export function trimTrailingSlashes(value: string): string {
   return value.slice(0, end);
 }
 
-const TRANSIENT_READ_STATUSES = new Set([429, 502, 503, 504]);
-const MAX_READ_RETRY_DELAY_MS = 3_000;
 const PREVIEW_DOWNLOAD_CONCURRENCY = 6;
-
-function readRetryDelay(response: Response): number {
-  const retryAfter = response.headers.get('Retry-After');
-  const delay = retryAfter
-    ? /^\d+$/.test(retryAfter)
-      ? Number(retryAfter) * 1_000
-      : Date.parse(retryAfter) - Date.now()
-    : 0;
-  return Math.max(1_000, delay || 0);
-}
-
-async function waitForReadRetry(delay: number, signal?: AbortSignal): Promise<void> {
-  signal?.throwIfAborted();
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', abort);
-      resolve();
-    }, delay);
-    function abort() {
-      clearTimeout(timer);
-      reject(signal?.reason);
-    }
-    signal?.addEventListener('abort', abort, { once: true });
-  });
-  signal?.throwIfAborted();
-}
 
 export function createPublicClient(options: PublicClientOptions = {}): PublicClient {
   const base = trimTrailingSlashes(options.baseUrl ?? '');
@@ -349,13 +322,8 @@ export function createPublicClient(options: PublicClientOptions = {}): PublicCli
     // A transient preview asset failure can otherwise leave gaps until the page is reopened.
     const retryableRead =
       browser || (preview !== undefined && path.startsWith('/previews/assets/'));
-    if (retryableRead && TRANSIENT_READ_STATUSES.has(response.status)) {
-      const delay = readRetryDelay(response);
-      if (delay <= MAX_READ_RETRY_DELAY_MS) {
-        void response.body?.cancel().catch(() => undefined);
-        await waitForReadRetry(delay + Math.random() * 250, signal);
-        response = await fetcher(url, init);
-      }
+    if (retryableRead && (await retryTransientRead(response, signal))) {
+      response = await fetcher(url, init);
     }
     if (!response.ok && response.status !== 304) throw await problem(response);
     return response;
