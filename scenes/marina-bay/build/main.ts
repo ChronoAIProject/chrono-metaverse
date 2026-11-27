@@ -227,7 +227,7 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
 
 /** Use the surveyed paving and cut playing fields to bound the map's taller wild grass. */
 function surveyedGrassCoverage(environment: EntityBody | null): EntityBody | null {
-  const settings = environment?.props?.environment as { map?: { surfaceDetail?: string; grassExclusions?: unknown[] } } | undefined;
+  const settings = environment?.props?.environment as { map?: { surfaceDetail?: string; grassExclusions?: unknown[]; mownLawns?: unknown[] } } | undefined;
   if (!environment || settings?.map?.surfaceDetail !== 'urban') return environment;
   const survey = JSON.parse(readFileSync(new URL('../references/marina-promenade-ground.json', import.meta.url), 'utf8'));
   const padang = JSON.parse(readFileSync(new URL('../references/padang-playing-fields.json', import.meta.url), 'utf8')) as {
@@ -265,9 +265,15 @@ function surveyedGrassCoverage(environment: EntityBody | null): EntityBody | nul
   const additional = [...survey.concrete, ...playingFields, ...museumPaving, ...streetPaving, ...beachRoad.grassExclusions].filter(
     polygon => !known.has(ringKey(polygon)),
   );
-  if (!additional.length) return environment;
+  const turf = JSON.parse(readFileSync(new URL('../references/promontory-turf.json', import.meta.url), 'utf8')) as {
+    features: { rings: number[][][] }[];
+  };
+  const lawns = settings.map.mownLawns ?? [];
+  const knownLawns = new Set(lawns.map(ringKey));
+  const newLawns = turf.features.map(feature => feature.rings).filter(rings => !knownLawns.has(ringKey(rings)));
+  if (!additional.length && !newLawns.length) return environment;
   return { ...environment, props: { ...environment.props, environment: {
-    ...settings, map: { ...settings.map, grassExclusions: [...existing, ...additional] },
+    ...settings, map: { ...settings.map, grassExclusions: [...existing, ...additional], mownLawns: [...lawns, ...newLawns] },
   } } };
 }
 

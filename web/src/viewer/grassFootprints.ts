@@ -22,16 +22,16 @@ export class GrassFootprints {
     });
   }
 
-  filter(tile: Tile, cells: number, candidates: Uint16Array | null) {
+  coverage(tile: Tile, cells: number) {
     const [west, south, east, north] = tileBounds(tile);
     const overlaps = this.polygons.filter(
       (p) => p.east >= west && p.west <= east && p.north >= south && p.south <= north,
     );
-    if (!overlaps.length || candidates?.length === 0) return candidates;
+    if (!overlaps.length) return null;
     this.context ??=
       document.createElement('canvas').getContext('2d', { willReadFrequently: true }) ?? undefined;
     const ctx = this.context;
-    if (!ctx) return candidates;
+    if (!ctx) return null;
     if (ctx.canvas.width !== cells || ctx.canvas.height !== cells) {
       ctx.canvas.width = cells;
       ctx.canvas.height = cells;
@@ -54,7 +54,13 @@ export class GrassFootprints {
       ctx.fill('evenodd');
       ctx.stroke();
     }
-    const coverage = ctx.getImageData(0, 0, cells, cells).data;
+    return ctx.getImageData(0, 0, cells, cells).data;
+  }
+
+  filter(tile: Tile, cells: number, candidates: Uint16Array | null) {
+    if (candidates?.length === 0) return candidates;
+    const coverage = this.coverage(tile, cells);
+    if (!coverage) return candidates;
     const available = candidates ?? Uint16Array.from({ length: cells * cells }, (_, i) => i);
     return available.filter((id) => coverage[id * 4 + 3] === 0);
   }

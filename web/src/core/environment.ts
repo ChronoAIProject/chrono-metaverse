@@ -33,7 +33,33 @@ export interface GeographicMap extends GeographicReference {
   readonly surfaceDetail?: 'urban';
   /** WGS84 hardscape footprints. Each polygon starts with its shell, followed by holes. */
   readonly grassExclusions?: readonly GeographicPolygon[];
+  /** Surveyed lawns with short, individually spaced blades. */
+  readonly mownLawns?: readonly GeographicPolygon[];
   readonly sources: readonly TileSource[];
+}
+
+function validFootprints(polygons: unknown): polygons is GeographicPolygon[] | undefined {
+  return (
+    polygons === undefined ||
+    (Array.isArray(polygons) &&
+      polygons.every(
+        (polygon) =>
+          Array.isArray(polygon) &&
+          polygon.length > 0 &&
+          polygon.every(
+            (ring) =>
+              Array.isArray(ring) &&
+              ring.length >= 3 &&
+              ring.every(
+                (point) =>
+                  Array.isArray(point) &&
+                  point.length === 2 &&
+                  finite(point[0], -180, 180) &&
+                  finite(point[1], -85.051129, 85.051129),
+              ),
+          ),
+      ))
+  );
 }
 
 /** 天空全景自身坐标系中的太阳方位，以及线性 RGB 下的日光、天光色度。 */
@@ -169,30 +195,8 @@ export function environmentOf(entity: EntityBody): Environment | null {
       return null;
     if (value.surfaceDetail !== undefined && value.surfaceDetail !== 'urban') return null;
     const exclusions = value.grassExclusions;
-    if (
-      exclusions !== undefined &&
-      !(
-        Array.isArray(exclusions) &&
-        exclusions.every(
-          (polygon) =>
-            Array.isArray(polygon) &&
-            polygon.length > 0 &&
-            polygon.every(
-              (ring) =>
-                Array.isArray(ring) &&
-                ring.length >= 3 &&
-                ring.every(
-                  (point) =>
-                    Array.isArray(point) &&
-                    point.length === 2 &&
-                    finite(point[0], -180, 180) &&
-                    finite(point[1], -85.051129, 85.051129),
-                ),
-            ),
-        )
-      )
-    )
-      return null;
+    const lawns = value.mownLawns;
+    if (!validFootprints(exclusions) || !validFootprints(lawns)) return null;
     const offshore = record(value.offshore);
     const rect = offshore?.rect;
     const ocean =
@@ -216,6 +220,7 @@ export function environmentOf(entity: EntityBody): Environment | null {
       ...reference,
       ...(ocean ? { offshore: ocean } : {}),
       ...(exclusions ? { grassExclusions: exclusions } : {}),
+      ...(lawns ? { mownLawns: lawns } : {}),
       sources,
       ...(value.surfaceDetail ? { surfaceDetail: value.surfaceDetail } : {}),
     } as GeographicMap;
