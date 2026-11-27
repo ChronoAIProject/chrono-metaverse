@@ -26,6 +26,7 @@ export function mapWaterMaterial(
   const second = new THREE.Vector2(9.4, 20.2).rotateAround(origin, rotation);
   const measuredRipples = sample?.rmsRippleSlope;
   const downwind = new THREE.Vector2(0, 1).rotateAround(origin, rotation);
+  const viewport = new THREE.Vector4();
   const material = new THREE.ShaderMaterial({
     side: THREE.DoubleSide,
     forceSinglePass: true,
@@ -57,6 +58,7 @@ export function mapWaterMaterial(
             reflectanceReady: { value: false },
             rippleRms: { value: measuredRipples },
             rippleDownwind: { value: downwind },
+            waterPixelStep: { value: new THREE.Vector2() },
           }
         : {}),
       directFraction: { value: 0 },
@@ -199,10 +201,12 @@ export function mapWaterMaterial(
         return 0.5 * (perpendicular*perpendicular + parallel*parallel);
       }
       uniform vec2 fadeRange;
-      void main() {
-        #include <logdepthbuf_fragment>
-        vec2 p = surfacePosition.xz;
-        vec3 toEye = cameraPosition - surfacePosition;
+      #ifdef WATER_SPECTRUM
+        uniform vec2 waterPixelStep;
+      #endif
+      vec4 sampleWater(vec3 point) {
+        vec2 p = point.xz;
+        vec3 toEye = cameraPosition - point;
         float range = length(toEye);
         vec3 eye = toEye / max(range, 0.001);
         mat2 wind = mat2(0.80,-0.60,0.60,0.80);
@@ -281,7 +285,7 @@ export function mapWaterMaterial(
           // 接近对岸时逐渐收紧偏移，让建筑在水线处接上自己的倒影。
           vec3 flatRay = vec3(-eye.x, eye.y, -eye.z);
           #ifdef USE_LOGARITHMIC_DEPTH_BUFFER
-            vec4 flatClip = reflectionMatrix * vec4(surfacePosition, 1.0);
+            vec4 flatClip = reflectionMatrix * vec4(point, 1.0);
             vec3 eyeShift = cameraPosition - reflectionEye;
             eyeShift.y = -eyeShift.y;
             // Project the wave ray into the last mirror capture, including camera motion.
@@ -296,10 +300,10 @@ export function mapWaterMaterial(
             float depth = tiltedDepth >= flatClip.w ? min(flatDepth, tiltedDepth) : flatDepth;
             fraction = clamp((depth - flatClip.w) / max(0.001, depth + clipDelta.w), 0.0, 1.0);
             float projectedReach = range * fraction;
-            vec3 samplePoint = surfacePosition + bend * fraction;
+            vec3 samplePoint = point + bend * fraction;
           #else
             float projectedReach = range * 110.0 / (110.0 + range);
-            vec3 samplePoint = surfacePosition + (reflected-flatRay)*projectedReach;
+            vec3 samplePoint = point + (reflected-flatRay)*projectedReach;
           #endif
           vec4 clip = reflectionMatrix * vec4(samplePoint, 1.0);
           vec2 uv = clip.xy / max(0.001,clip.w);
@@ -326,7 +330,7 @@ export function mapWaterMaterial(
           vec2 footprintUv = uv;
           #ifdef WATER_SPECTRUM
             // The sampled moments already include normal variation within the pixel.
-            vec4 plane = reflectionMatrix * vec4(surfacePosition, 1.0);
+            vec4 plane = reflectionMatrix * vec4(point, 1.0);
             footprintUv = mix(uv, plane.xy / max(plane.w, 0.001), spectrumWeight);
           #endif
           vec3 footprint = secondMoment(dFdx(footprintUv)) + secondMoment(dFdy(footprintUv))
@@ -383,7 +387,22 @@ export function mapWaterMaterial(
         water *= mix(1.0 - directFraction, 1.0, visibility);
         vec3 color = mix(water,sky,fresnel) + sunColor * shine * visibility;
         float distanceFade = 1.0 - smoothstep(fadeRange.x, fadeRange.y, range);
-        gl_FragColor = vec4(color, 0.96 * distanceFade);
+        return vec4(color, 0.96 * distanceFade);
+      }
+      void main() {
+        #include <logdepthbuf_fragment>
+        #ifdef WATER_SPECTRUM
+          // Intersect a quarter-pixel camera offset with the horizontal water plane.
+          // Computing it from the projection keeps the wave textures' implicit derivatives valid.
+          vec3 ray = surfacePosition - cameraPosition;
+          vec3 shift = (vec3(waterPixelStep, 0.0) * mat3(viewMatrix)) / gl_FragCoord.w;
+          float height = max(abs(ray.y), max(2.0 * abs(shift.y), 1e-5));
+          vec2 offset = shift.xz - ray.xz * (sign(ray.y) * shift.y / height);
+          vec3 delta = vec3(offset.x, 0.0, offset.y);
+          gl_FragColor = 0.5 * (sampleWater(surfacePosition - delta) + sampleWater(surfacePosition + delta));
+        #else
+          gl_FragColor = sampleWater(surfacePosition);
+        #endif
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`,
@@ -416,7 +435,17 @@ export function mapWaterMaterial(
     });
   }
   if (sample) Object.assign(material.defaultAttributeValues, { sampledWater: [0] });
-  material.onBeforeRender = (_renderer, scene) => {
+  material.onBeforeRender = (renderer, scene, camera) => {
+    if (measuredRipples !== undefined) {
+      const step = material.uniforms.waterPixelStep!.value;
+      if (camera instanceof THREE.PerspectiveCamera) {
+        renderer.getCurrentViewport(viewport);
+        const p = camera.projectionMatrix.elements;
+        step.set(0.5 / (p[0]! * viewport.z), 0.5 / (p[5]! * viewport.w));
+      } else {
+        step.set(0, 0);
+      }
+    }
     const key = scene.children.find((o) => o.name === 'light:key');
     if (sample) {
       const light = key?.userData.horizontalDiffuse;
