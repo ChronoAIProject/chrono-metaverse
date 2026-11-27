@@ -2555,6 +2555,19 @@ export class SceneView {
       !this.labelCamera.equals(this.camera.matrixWorld) ||
       !this.labelProjection.equals(this.camera.projectionMatrix);
     if (!this.labelsDirty && !cameraMoved) return;
+    if (this.labelsDirty) {
+      // Default-hidden anchors can number in the thousands at a venue. Keep them
+      // out of browser layout until an event, focus or display setting needs them.
+      for (const [key, info] of this.anchors) {
+        if (!info.element) continue;
+        const hidden =
+          !this.moreLabels &&
+          key !== this.hoverAnchor &&
+          key !== this.focusedAnchorKey &&
+          anchorLabelPriority(info.anchor.kind, this.eventAnchors.has(key)) === 0;
+        if (info.element.hidden !== hidden) info.element.hidden = hidden;
+      }
+    }
     this.labelsDirty = false;
     this.labelCamera.copy(this.camera.matrixWorld);
     this.labelProjection.copy(this.camera.projectionMatrix);
@@ -2563,6 +2576,7 @@ export class SceneView {
     const elements = Array.from(this.labels.domElement.children) as HTMLElement[];
     const candidates: LabelCandidate[] = [];
     for (const [index, element] of elements.entries()) {
+      if (element.hidden) continue;
       const rect = element.getBoundingClientRect();
       if (
         !rect.width ||
