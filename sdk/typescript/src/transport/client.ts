@@ -225,19 +225,29 @@ async function problem(method: string, path: string, response: Response): Promis
   let body: unknown;
   let code: string | undefined;
   let detail: string | undefined;
+  let proxyError = false;
   try {
     body = await response.json();
     const record = body as Record<string, unknown>;
     if (typeof record.code === 'string') code = record.code;
     if (typeof record.detail === 'string' && record.detail !== '') detail = record.detail;
     else if (typeof record.title === 'string' && record.title !== '') detail = record.title;
+    else if (
+      typeof record.error === 'string' &&
+      typeof record.message === 'string' &&
+      record.message
+    ) {
+      code ??= record.error;
+      detail = record.message;
+      proxyError = true;
+    }
   } catch {
     // 没有问题文档时只用状态码。
   }
   const hint =
     response.status === 401
       ? '（令牌无效或过期：重新运行 nyxid login，或检查 --token / NYXID_TOKEN）'
-      : response.status === 403
+      : response.status === 403 && !proxyError
         ? '（没有权限：检查 agent key 的操作范围和空间主人）'
         : response.status === 404
           ? '（找不到，或者没有查看权限）'

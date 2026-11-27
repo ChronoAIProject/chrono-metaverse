@@ -383,17 +383,17 @@ nyxid service list --output json      # slug 为 chrono-metaverse 的那一项
 #   id                  连接（UserService）编号：改身份设置用
 #   catalog_service_id  服务定义编号：身份令牌里的 nyx_service_id（第 4 步要用；没有这个字段时用 id）
 
-# 3. 开启身份令牌（jwt 模式，受众固定）和"转发调用者令牌"
+# 3. 设置身份 JWT 和受众，由 metaverse 使用同一账号在 /connect 保存的 OAuth 授权
 nyxid whoami                          # 顺便刷新登录状态（账号令牌有效期较短）
 curl -X PUT "https://nyx-api.chrono-ai.fun/api/v1/user-services/<第 2 步的 id>" \
   -H "Authorization: Bearer $(cat ~/.nyxid/access_token)" \
   -H "Content-Type: application/json" \
-  -d '{"identity_propagation_mode":"jwt","identity_jwt_audience":"urn:chrono-metaverse:api","forward_access_token":true}'
-nyxid service list --output json      # 确认这一项的三个字段已经是 jwt、urn:chrono-metaverse:api、true
+  -d '{"identity_propagation_mode":"jwt","identity_jwt_audience":"urn:chrono-metaverse:api","forward_access_token":false}'
+nyxid service list --output json      # 确认这一项的三个字段已经是 jwt、urn:chrono-metaverse:api、false
 ```
 
 - **身份令牌**：`identity_propagation_mode = jwt` 让 NyxID 每次转发都附带 `X-NyxID-Identity-Token`；`identity_jwt_audience` 要和接口服务的 `NYXID_JWT_AUDIENCE` 一字不差（`urn:chrono-metaverse:api`），不设置时默认等于 `--endpoint-url`，接口服务会拒绝。
-- **转发调用者令牌**：`forward_access_token = true` 让 NyxID 把调用者的令牌放在 `Authorization: Bearer` 里转过来，接口服务用它查调用者在组织里的角色（整体设计 9.2 的例外，只在内存里用）。也可以用命令行单独开：`nyxid service update <第 2 步的 id> --forward-access-token true`。
+- 新建连接使用 `forward_access_token = false`。用户在当前部署的 `/connect` 完成 NyxID 授权后，metaverse 用身份 JWT 中的主体查询该用户的组织角色。已有连接若启用了转发，NyxID 会额外检查目标是否可接收调用者令牌。代理返回 `This destination cannot receive the caller's access token` 时，请核对所选连接和转发配置。
 - 这一步要用 `nyxid login` 登录后的账号令牌；Claude 的 NyxID 连接器会被拒绝，所以不能交给云端会话里的 Claude 做。NyxID 的说明里，身份设置要改在连接（`/api/v1/user-services/<id>`）上，不要拿服务定义编号去改。
 
 4. 把服务编号填进接口服务的允许列表 `ALLOWED_NYX_SERVICE_IDS`（chrono-cd 的 `PATCH`，命令见 `infra/chrono-cd/README.md` 第 7 步）。NyxID 签发身份令牌时 `nyx_service_id` 取的是服务定义的编号；填错时，经 NyxID 调用会返回 401，错误详情里有 `service_not_allowed`，换成另一个编号即可。

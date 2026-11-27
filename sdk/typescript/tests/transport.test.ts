@@ -296,6 +296,29 @@ describe('错误和重试', () => {
     expect(error.message).toContain('操作范围');
   });
 
+  it('保留 NyxID 代理拒绝转发的原因', async () => {
+    const body = {
+      error: 'forbidden',
+      error_code: 1002,
+      message: "Forbidden: This destination cannot receive the caller's access token",
+    };
+    const client = new ApiClient({
+      mode: 'nyxid',
+      token: () => 't',
+      fetch: capturingFetch([() => Response.json(body, { status: 403 })], []),
+    });
+    const error = await client
+      .json('GET', '/api/v1/spaces/street-corner')
+      .catch((e: ApiError) => e);
+    expect(error).toMatchObject({
+      status: 403,
+      code: 'forbidden',
+      body,
+      message: expect.stringContaining(body.message),
+    });
+    expect((error as ApiError).message).not.toContain('空间主人');
+  });
+
   it('GET 遇到 503 和网络错误自动重试，POST 不重试', async () => {
     const captured: Captured[] = [];
     let calls = 0;
