@@ -64,6 +64,35 @@ describe('令牌来源顺序', () => {
     ).toBe('default-token');
   });
 
+  it('uses an explicit Agent Key profile only for the proxy and refuses redirects', async () => {
+    const directory = '/home/me/.nyxid/profiles/builder';
+    const options = { home: '/home/me', env: {}, profile: 'builder' };
+    const profileFiles: Record<string, string> = {
+      ...files,
+      [directory + '/auth_kind']: 'agent_key\n',
+    };
+    const readProfile = (path: string) => profileFiles[path] ?? null;
+    expect(() => resolveNyxToken({ ...options, readFile: readProfile })).toThrow(TokenError);
+    const resolved = resolveNyxToken({
+      ...options,
+      readFile: (path) => (path === directory + '/token' ? 'example-key\n' : readProfile(path)),
+    });
+    expect(resolved.authKind).toBe('agent_key');
+    const client = new ApiClient({
+      mode: 'nyxid',
+      authKind: resolved.authKind!,
+      token: () => resolved.token,
+      fetch: async (_input, init) => {
+        const headers = new Headers(init?.headers);
+        expect(headers.get('x-api-key')).toBe('example-key');
+        expect(headers.has('authorization')).toBe(false);
+        expect(init?.redirect).toBe('error');
+        return new Response('{}');
+      },
+    });
+    await client.json('GET', '/api/v1/spaces/example');
+  });
+
   it('都没有时报错并列出找过的位置', () => {
     expect(() => resolveNyxToken({ home: '/nowhere', readFile, env: {} })).toThrow(TokenError);
     try {

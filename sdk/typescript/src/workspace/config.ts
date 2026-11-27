@@ -33,7 +33,7 @@ export interface WorkspaceConfig {
   readonly nyxBase?: string;
   /** 服务在 NyxID 里的 slug（nyxid 模式），默认 chrono-metaverse。只能用字母、数字、_ 和 -。 */
   readonly slug?: string;
-  /** nyxid 命令行的配置名（读 ~/.nyxid/profiles/<名称>/access_token）。只能用字母、数字、_ 和 -。 */
+  /** NyxID 配置名（支持 Agent Key 和旧版账号 profile）。只能用字母、数字、_ 和 -。 */
   readonly profile?: string;
   /** 接口服务地址（direct 模式），例如 http://127.0.0.1:8080。 */
   readonly api?: string;
