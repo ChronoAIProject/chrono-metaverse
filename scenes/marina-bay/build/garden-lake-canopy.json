@@ -25,7 +25,12 @@
       "background": true,
       "surfaceRole": "landscape",
       "survey": "Gardens by the Bay canopy reconstructed from aerial and satellite data. Individual trees are estimated.",
-      "attribution": "Singapore Land Authority, OneMap aerial imagery, https://www.onemap.gov.sg/ | Meta and World Resources Institute, High Resolution Canopy Height Maps, https://registry.opendata.aws/dataforgood-fb-forests/ | ESA WorldCover 2021 v200, CC BY 4.0, https://doi.org/10.5281/zenodo.7254221 | Lang, Jetz, Schindler & Wegner (2023), A high-resolution canopy height model of the Earth, CC BY 4.0, https://doi.org/10.3929/ethz-b-000609802 and https://doi.org/10.1038/s41559-023-02206-6 | Poly Haven, Tree Small 02 and Island Tree 01, CC0, https://polyhaven.com/a/tree_small_02 and https://polyhaven.com/a/island_tree_01"
+      "attribution": "Singapore Land Authority, OneMap aerial imagery, https://www.onemap.gov.sg/ | Meta and World Resources Institute, High Resolution Canopy Height Maps, https://registry.opendata.aws/dataforgood-fb-forests/ | ESA WorldCover 2021 v200, CC BY 4.0, https://doi.org/10.5281/zenodo.7254221 | Lang, Jetz, Schindler & Wegner (2023), A high-resolution canopy height model of the Earth, CC BY 4.0, https://doi.org/10.3929/ethz-b-000609802 and https://doi.org/10.1038/s41559-023-02206-6 | Poly Haven, Tree Small 02 and Island Tree 01, CC0, https://polyhaven.com/a/tree_small_02 and https://polyhaven.com/a/island_tree_01",
+      "树冠高光": "根据步行与跨湖全景估算整簇叶片的镜面反射，给受光树冠保留柔和亮部。",
+      "crownSpecular": {
+        "material": "tree_small_02 garden crown",
+        "intensity": 0.3
+      }
     }
   },
   {
@@ -54,7 +59,12 @@
       "background": true,
       "surfaceRole": "landscape",
       "survey": "Gardens by the Bay canopy reconstructed from aerial and satellite data. Individual trees are estimated.",
-      "attribution": "Singapore Land Authority, OneMap aerial imagery, https://www.onemap.gov.sg/ | Meta and World Resources Institute, High Resolution Canopy Height Maps, https://registry.opendata.aws/dataforgood-fb-forests/ | ESA WorldCover 2021 v200, CC BY 4.0, https://doi.org/10.5281/zenodo.7254221 | Lang, Jetz, Schindler & Wegner (2023), A high-resolution canopy height model of the Earth, CC BY 4.0, https://doi.org/10.3929/ethz-b-000609802 and https://doi.org/10.1038/s41559-023-02206-6 | Poly Haven, Tree Small 02 and Island Tree 01, CC0, https://polyhaven.com/a/tree_small_02 and https://polyhaven.com/a/island_tree_01"
+      "attribution": "Singapore Land Authority, OneMap aerial imagery, https://www.onemap.gov.sg/ | Meta and World Resources Institute, High Resolution Canopy Height Maps, https://registry.opendata.aws/dataforgood-fb-forests/ | ESA WorldCover 2021 v200, CC BY 4.0, https://doi.org/10.5281/zenodo.7254221 | Lang, Jetz, Schindler & Wegner (2023), A high-resolution canopy height model of the Earth, CC BY 4.0, https://doi.org/10.3929/ethz-b-000609802 and https://doi.org/10.1038/s41559-023-02206-6 | Poly Haven, Tree Small 02 and Island Tree 01, CC0, https://polyhaven.com/a/tree_small_02 and https://polyhaven.com/a/island_tree_01",
+      "树冠高光": "根据步行与跨湖全景估算整簇叶片的镜面反射，给受光树冠保留柔和亮部。",
+      "crownSpecular": {
+        "material": "island_tree_01 garden crown",
+        "intensity": 0.3
+      }
     }
   }
 ]

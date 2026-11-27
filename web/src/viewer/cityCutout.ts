@@ -1,6 +1,40 @@
 import * as THREE from 'three';
 import { filterModelTexture } from './materials';
 
+export function crownSpecularIntensity(config: unknown, materialName: string): number | undefined {
+  if (!config || typeof config !== 'object') return;
+  const { material, intensity } = config as Record<string, unknown>;
+  if (material === materialName && typeof intensity === 'number' && intensity >= 0 && intensity < 1)
+    return intensity;
+}
+
+/** A canopy card averages many leaf orientations into one shading normal. */
+export function softenCrownSpecular(material: THREE.Material, intensity: number) {
+  if (
+    !(material instanceof THREE.MeshStandardMaterial) ||
+    material.transparent ||
+    material.alphaTest <= 0 ||
+    !material.map ||
+    material.metalness !== 0
+  )
+    return;
+  const compile = material.onBeforeCompile;
+  const previousKey = material.customProgramCacheKey();
+  material.customProgramCacheKey = () => previousKey + '|crown-specular';
+  material.onBeforeCompile = function (shader, renderer) {
+    compile.call(this, shader, renderer);
+    shader.uniforms.crownSpecularIntensity = { value: intensity };
+    shader.fragmentShader =
+      'uniform float crownSpecularIntensity;\n' +
+      shader.fragmentShader.replace(
+        '#include <lights_physical_fragment>',
+        `#include <lights_physical_fragment>
+       material.specularColor *= crownSpecularIntensity;
+       material.specularF90 *= crownSpecularIntensity;`,
+      );
+  };
+}
+
 /** 多重采样的像素用原图遮罩控制覆盖率，已绘制的天空保持不透明。 */
 export function cityCutout(material: THREE.Material, anisotropy: number, foliage = false) {
   if (
