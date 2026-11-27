@@ -61,7 +61,9 @@ def bake_species(folder, species, group, survey, median):
         "assetHash": digest, "bounds": bounds, "material": {"shading": "albedo"},
         "props": {"background": True, "surfaceRole": "landscape",
                   "survey": "Gardens by the Bay canopy reconstructed from aerial and satellite data. Individual trees are estimated.",
-                  "attribution": attribution},
+                  "attribution": attribution,
+                  "树冠高光": "根据步行与跨湖全景估算整簇叶片的镜面反射，给受光树冠保留柔和亮部。",
+                  "crownSpecular": {"material": paint.name, "intensity": .30}},
     }
 
 

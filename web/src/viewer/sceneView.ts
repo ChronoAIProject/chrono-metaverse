@@ -2,7 +2,12 @@ import { type PavingAtlas, pavingAtlas } from './groundScan';
 import { outdoorSurfaceVariation, varyShapeTextureOrigin } from './surfaceVariation';
 import { prepareTreeWind, updateTreeWind } from './treeWind';
 import { PriorityQueue } from '3d-tiles-renderer/core';
-import { cityCutout, matchCutoutShadow } from './cityCutout';
+import {
+  cityCutout,
+  crownSpecularIntensity,
+  matchCutoutShadow,
+  softenCrownSpecular,
+} from './cityCutout';
 import { CitySun } from './citySun';
 import { cityModelAir } from './mapFacade';
 import { CITY_REFLECTION_LAYER } from './mapReflection';
@@ -832,6 +837,7 @@ export class SceneView {
         pavingAtlas(entity?.props?.pavingCourseAtlas, m.name),
         Array.isArray(panes) && panes.includes(m.name),
         entity?.props?.surfaceRole === 'landscape',
+        crownSpecularIntensity(entity?.props?.crownSpecular, m.name),
       );
     const clone = model.clone(true);
     clone.traverse((object) => {
@@ -871,6 +877,7 @@ export class SceneView {
     paving?: PavingAtlas,
     thinGlass = false,
     landscape = false,
+    crownSpecular?: number,
   ): THREE.Material {
     const lookKey = modelMaterialKey(source, look, styleLook);
     if (lookKey === null && !background) return source;
@@ -895,7 +902,7 @@ export class SceneView {
       !source.transparent
         ? roof?.scale
         : undefined;
-    const key = `${lookKey ?? source.uuid}|${background}|${styleLookKey(styleLook)}|${kind}|${air}|${coverage}|${foliage}|${ao ?? ''}|${roofScale ?? ''}|${scatter}|${paving ? JSON.stringify(paving) : ''}|${thinGlass}`;
+    const key = `${lookKey ?? source.uuid}|${background}|${styleLookKey(styleLook)}|${kind}|${air}|${coverage}|${foliage}|${ao ?? ''}|${roofScale ?? ''}|${scatter}|${paving ? JSON.stringify(paving) : ''}|${thinGlass}|${crownSpecular ?? ''}`;
     let material = this.materialCache.get(key);
     if (material === undefined) {
       material = createModelMaterial(
@@ -909,6 +916,8 @@ export class SceneView {
         filterModelSurface(material, this.renderer.capabilities.getMaxAnisotropy());
         cityModelAir(material, roofScale, thinGlass);
         outdoorSurfaceVariation(material, scatter, paving);
+        if (landscape && crownSpecular !== undefined && look?.shading === 'albedo')
+          softenCrownSpecular(material, crownSpecular);
       }
       if (ao && material instanceof THREE.MeshStandardMaterial) {
         const target = material;
