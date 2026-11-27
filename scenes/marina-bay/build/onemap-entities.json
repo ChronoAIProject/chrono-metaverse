@@ -6420,7 +6420,7 @@
     "kind": "object",
     "label": "MARINA BAY FINANCIAL CENTRE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "eb0b215981fdc4bf914adcac8da9e3ba1152a501f2af3426a78ef21bb5e54c59",
+    "assetHash": "074d2bb68cdc74a23004df0f529bf2501a17a55ab24fd72cacb740d775c3055a",
     "bounds": {
       "min": [
         -115.061183,
@@ -7725,7 +7725,7 @@
     "kind": "object",
     "label": "MARINA BAY FINANCIAL CENTRE",
     "regionId": "marina-bay-exterior",
-    "assetHash": "818246252eb0745a5685cca36999302458812e9079c9fc19ee47776d254b1937",
+    "assetHash": "547983c3a354c7a816d000ec3007a748b4cd7d8df99074a7e202275ecb7210b6",
     "bounds": {
       "min": [
         -26.917404,
