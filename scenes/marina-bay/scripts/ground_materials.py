@@ -7,6 +7,7 @@ from scipy.ndimage import map_coordinates
 from trimesh.visual.material import PBRMaterial
 
 from scanned_canopy import ROOT
+from turf_quilt import quilt
 
 ASSETS = ROOT.parents[1] / 'web/src/assets/geography'
 
@@ -51,6 +52,45 @@ def turf_colour(cover, mean_rgb, size):
     image = Image.fromarray(np.rint(255 * rgb).clip(0, 255).astype(np.uint8))
     image.format = 'JPEG'
     return image
+
+
+def vary_turf_direction(material):
+    # Keep all three PBR maps in register at their existing resolution and ground scale.
+    srgb = np.asarray(material.baseColorTexture.convert('RGB'), dtype=np.float32) / 255
+    colour = np.where(srgb <= .04045, srgb / 12.92, ((srgb + .055) / 1.055) ** 2.4)
+    normals = np.asarray(material.normalTexture.convert('RGB'), dtype=np.float32) / 255
+    roughness = np.asarray(material.metallicRoughnessTexture, dtype=np.float32)[:, :, 1] / 255
+    surface = np.dstack((normals[:, :, :2], roughness))
+    covers = [(colour, surface)]
+    kinds = np.zeros((2, 2), dtype=int)
+    rng = np.random.default_rng(4217)
+    turns = rng.permutation(4).reshape(2, 2)
+    # Whole texels in both maps keep the original blades sharp through quarter turns.
+    size = surface.shape[0]
+    phases = rng.integers(0, size, (2, 2, 2)) / size
+    result = quilt(covers, colour.shape[0], False, kinds, turns, phases, 1)
+    packed = quilt(covers, size, True, kinds, turns, phases, 1)
+
+    # Match the scanned mean and contrast in linear light after blending patch boundaries.
+    mean = colour.mean(axis=(0, 1), dtype=np.float64)
+    deviation = result.std(axis=(0, 1), dtype=np.float64)
+    gain = colour.std(axis=(0, 1), dtype=np.float64) / np.maximum(deviation, 1e-8)
+    result = np.maximum(0, mean + (result - result.mean(axis=(0, 1), dtype=np.float64)) * gain)
+    result *= mean / np.maximum(result.mean(axis=(0, 1), dtype=np.float64), 1e-8)
+    srgb = np.where(result <= .0031308, result * 12.92, 1.055 * result ** (1 / 2.4) - .055)
+    xy = packed[:, :, :2] * 2 - 1
+    z = np.sqrt(np.maximum(0, 1 - (xy ** 2).sum(axis=2)))
+
+    def image(pixels, fmt):
+        out = Image.fromarray(np.rint(pixels * 255).clip(0, 255).astype(np.uint8))
+        out.format = fmt
+        return out
+
+    material.baseColorTexture = image(srgb, 'JPEG')
+    material.normalTexture = image(np.dstack((xy, z)) * .5 + .5, 'JPEG')
+    material.metallicRoughnessTexture = image(
+        np.dstack((np.ones_like(z), packed[:, :, 2], np.zeros_like(z))), 'PNG')
+    return material
 
 
 def scanned_turf(name, mean_rgb, *, cover, roughness=200):

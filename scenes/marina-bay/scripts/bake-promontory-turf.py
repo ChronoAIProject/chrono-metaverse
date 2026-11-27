@@ -10,7 +10,7 @@ from scipy.spatial import cKDTree
 from shapely.geometry import Polygon, box
 from trimesh.visual.texture import TextureVisuals
 
-from ground_materials import scanned_turf, turf_wear
+from ground_materials import scanned_turf, turf_wear, vary_turf_direction
 from scanned_canopy import ROOT, write_tree_asset
 
 
@@ -38,6 +38,7 @@ def bake(survey):
     # Temper aerial light and moisture variations before lighting the surface in 3D.
     tint = np.clip((rgb / base) ** 1.7 * turf_wear(xz) ** .23, .20, 1)
     material = scanned_turf('Promontory lawn', base, cover='grass_ground')
+    vary_turf_direction(material)
     # Reintroduce the warm patches excluded by the green-only survey. Convert the
     # measured colour ratio to linear light before mixing into vertex colours.
     wear = survey['wear']
