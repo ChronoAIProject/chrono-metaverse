@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { isSafeName } from '../workspace/config.js';
 
 /**
@@ -9,14 +9,8 @@ import { isSafeName } from '../workspace/config.js';
  * 1. 命令行 `--token`；
  * 2. 环境变量 `NYXID_TOKEN`；
  * 3. 环境变量 `NYXID_TOKEN_FILE` 指定的文件；
- * 4. 给了 `--profile <名称>`（或 metaverse.json 的 profile）时读 `~/.nyxid/profiles/<名称>/access_token`
- *    （名称只能用字母、数字、_ 和 -，不能拼出别的路径）；
- * 5. 否则读 `~/.nyxid/access_token`。
- *
- * 4、5 的文件位置是按 `nyxid login --agent-key --profile <名称>` 的说明推测的，
- * 实际不同时用 `NYXID_TOKEN_FILE` 指定。文件内容可以是令牌原文，也可以是带
- * `access_token` / `accessToken` / `token` 字段的 JSON。令牌只放进 Authorization 请求头，
- * 不写日志、不落盘。
+ * 4. 指定 profile 时，通过其 auth_kind 识别 Agent Key，旧 profile 使用 access_token；
+ * 5. 默认读取 ~/.nyxid/access_token。
  */
 
 export interface TokenSourceOptions {
@@ -31,6 +25,7 @@ export interface ResolvedToken {
   readonly token: string;
   /** 令牌从哪里来（给用户看，不含令牌本身）。 */
   readonly source: string;
+  readonly authKind?: 'agent_key';
 }
 
 export class TokenError extends Error {
@@ -91,6 +86,16 @@ export function resolveNyxToken(options: TokenSourceOptions = {}): ResolvedToken
   }
   const read = options.readFile ?? defaultRead;
   const candidates = tokenFileCandidates(options);
+  if (options.profile !== undefined && !env.NYXID_TOKEN_FILE) {
+    const directory = dirname(candidates[0]!);
+    if (read(join(directory, 'auth_kind'))?.trim() === 'agent_key') {
+      const path = join(directory, 'token');
+      const content = read(path);
+      const token = content === null ? null : tokenFromFileContent(content);
+      if (!token) throw new TokenError(`找不到 profile ${options.profile} 的 Agent Key（${path}）`);
+      return { token, source: `文件 ${path}`, authKind: 'agent_key' };
+    }
+  }
   for (const path of candidates) {
     const content = read(path);
     const token = content === null ? null : tokenFromFileContent(content);
@@ -102,7 +107,7 @@ export function resolveNyxToken(options: TokenSourceOptions = {}): ResolvedToken
       '  --token <令牌>',
       '  环境变量 NYXID_TOKEN',
       '  环境变量 NYXID_TOKEN_FILE=<令牌文件>',
-      `  nyxid login --agent-key --profile <名称>，再加 --profile <名称>（读 ${join('~', '.nyxid', 'profiles', '<名称>', 'access_token')}）`,
+      '  nyxid login --agent-key --profile <名称>，再加 --profile <名称>',
       `已经找过：${candidates.join('、')}`,
     ].join('\n'),
   );

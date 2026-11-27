@@ -207,6 +207,7 @@ export function makeApi(ctx: CliContext, ws: Workspace, values: Values): Metaver
             ...(config.nyxBase !== undefined ? { nyxBase: config.nyxBase } : {}),
             ...(config.slug !== undefined ? { slug: config.slug } : {}),
             token: () => resolved.token,
+            ...(resolved.authKind && { authKind: resolved.authKind }),
             ...(ctx.fetch ? { fetch: ctx.fetch } : {}),
           };
         })()
