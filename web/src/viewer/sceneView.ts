@@ -831,6 +831,7 @@ export class SceneView {
         Array.isArray(scans) && scans.includes(m.name),
         pavingAtlas(entity?.props?.pavingCourseAtlas, m.name),
         Array.isArray(panes) && panes.includes(m.name),
+        entity?.props?.surfaceRole === 'landscape',
       );
     const clone = model.clone(true);
     clone.traverse((object) => {
@@ -869,11 +870,13 @@ export class SceneView {
     scatter = false,
     paving?: PavingAtlas,
     thinGlass = false,
+    landscape = false,
   ): THREE.Material {
     const lookKey = modelMaterialKey(source, look, styleLook);
     if (lookKey === null && !background) return source;
     const air = background && this.daylightCity && !styleLook;
     const coverage = air && this.multisampleCutouts && source.alphaTest > 0;
+    const foliage = coverage && landscape;
     const ao =
       air &&
       look?.shading === 'albedo' &&
@@ -892,7 +895,7 @@ export class SceneView {
       !source.transparent
         ? roof?.scale
         : undefined;
-    const key = `${lookKey ?? source.uuid}|${background}|${styleLookKey(styleLook)}|${kind}|${air}|${coverage}|${ao ?? ''}|${roofScale ?? ''}|${scatter}|${paving ? JSON.stringify(paving) : ''}|${thinGlass}`;
+    const key = `${lookKey ?? source.uuid}|${background}|${styleLookKey(styleLook)}|${kind}|${air}|${coverage}|${foliage}|${ao ?? ''}|${roofScale ?? ''}|${scatter}|${paving ? JSON.stringify(paving) : ''}|${thinGlass}`;
     let material = this.materialCache.get(key);
     if (material === undefined) {
       material = createModelMaterial(
@@ -917,7 +920,7 @@ export class SceneView {
           })
           .catch(() => undefined);
       }
-      if (coverage) cityCutout(material, this.renderer.capabilities.getMaxAnisotropy());
+      if (coverage) cityCutout(material, this.renderer.capabilities.getMaxAnisotropy(), foliage);
       this.materialCache.set(key, material);
     }
     return material;

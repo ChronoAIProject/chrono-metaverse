@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { filterModelTexture } from './materials';
 
 /** 多重采样的像素用原图遮罩控制覆盖率，已绘制的天空保持不透明。 */
-export function cityCutout(material: THREE.Material, anisotropy: number) {
+export function cityCutout(material: THREE.Material, anisotropy: number, foliage = false) {
   if (
     !(
       material instanceof THREE.MeshStandardMaterial || material instanceof THREE.MeshBasicMaterial
@@ -20,6 +20,17 @@ export function cityCutout(material: THREE.Material, anisotropy: number) {
   material.blendSrcAlpha = THREE.ZeroFactor;
   material.blendDstAlpha = THREE.OneFactor;
 
+  // Mip filtering averages narrow leaf silhouettes below the authored cutoff.
+  // The short dimension of the UV footprint keeps resolved, oblique leaves sharp.
+  const minifiedLeaves =
+    foliage && !material.alphaMap
+      ? `vec2 texel = vMapUv * vec2(textureSize(map, 0));
+       vec2 dx = dFdx(texel), dy = dFdy(texel);
+       float area = abs(dx.x * dy.y - dx.y * dy.x);
+       float span = area * inversesqrt(max(max(dot(dx, dx), dot(dy, dy)), 1e-8));
+       diffuseColor.a *= 1.0 + 0.10 * smoothstep(1.0, 4.0, span);`
+      : '';
+
   const multisampled = { value: true };
   const beforeRender = material.onBeforeRender;
   material.onBeforeRender = function (...args) {
@@ -29,7 +40,8 @@ export function cityCutout(material: THREE.Material, anisotropy: number) {
   };
   const compile = material.onBeforeCompile;
   const programKey = material.customProgramCacheKey();
-  material.customProgramCacheKey = () => programKey + '|city-cutout';
+  material.customProgramCacheKey = () =>
+    programKey + (minifiedLeaves ? '|city-foliage-cutout' : '|city-cutout');
   material.onBeforeCompile = function (shader, renderer) {
     compile.call(this, shader, renderer);
     shader.uniforms.cutoutMultisampled = multisampled;
@@ -38,6 +50,7 @@ export function cityCutout(material: THREE.Material, anisotropy: number) {
       shader.fragmentShader.replace(
         '#include <alphatest_fragment>',
         `if (cutoutMultisampled) {
+           ${minifiedLeaves}
            float width = max(fwidth(diffuseColor.a), 0.0001);
            diffuseColor.a = smoothstep(alphaTest - 0.5 * width, alphaTest + 0.5 * width, diffuseColor.a);
            if (diffuseColor.a == 0.0) discard;
