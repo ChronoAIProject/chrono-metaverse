@@ -261,6 +261,9 @@ export function mapWaterMaterial(
                              + shortVariance.x * secondMoment(vec2(1,0) * direction)
                              + shortVariance.y * secondMoment(vec2(0,1) * direction);
           }
+          // The LUT stores a signed 16-bit angular displacement in G/B.
+          // Keep its decoded direction separate from the Fresnel response in R.
+          vec4 slopeLookup = vec4(1.0, 0.5, 0.0, 1.0);
         #endif
         vec3 normal = normalize(vec3(normalXZ.x, 1.0, normalXZ.y));
         vec3 reflected = reflect(-eye, normal);
@@ -273,6 +276,27 @@ export function mapWaterMaterial(
           normal = normalize(halfDir);
           reflected.y = -reflected.y;
         }
+        #ifdef WATER_SPECTRUM
+          if (spectrumWeight > 0.0 && reflectanceReady) {
+            vec2 azimuth = wind * eye.xz / max(length(eye.xz), 1e-5);
+            float variance = dot(spectralVariance, secondMoment(azimuth) * vec3(1, 2, 1));
+            float sigma = sqrt(max(variance, 0.0));
+            vec2 size = vec2(textureSize(slopeReflectance, 0));
+            vec2 entry = vec2(sqrt(clamp(dot(eye, normal), 0.0, 1.0)),
+                              pow(min(sigma / 6.0, 1.0), 1.0 / 3.0));
+            vec2 lookupUv = (entry * (size - 1.0) + 0.5) / size;
+            slopeLookup = texture2D(slopeReflectance, lookupUv);
+            float encodedDirection =
+              (dot(slopeLookup.gb, vec2(65280.0, 255.0)) - 32768.0) / 32767.0;
+            float shift = encodedDirection * PI * spectrumWeight;
+            float cosine = clamp(dot(eye, normal), 0.0, 1.0);
+            vec3 tangent = normal - reflected * cosine;
+            reflected = normalize(
+              cos(shift) * reflected
+              + sin(shift) * tangent / max(length(tangent), 1.0e-6)
+            );
+          }
+        #endif
         vec3 sky = horizon;
         if (hasSky) {
           float c = cos(skyYaw), s = sin(skyYaw);
@@ -347,15 +371,7 @@ export function mapWaterMaterial(
         float fresnel = waterFresnel(cosine);
         #ifdef WATER_SPECTRUM
           if (spectrumWeight > 0.0 && reflectanceReady) {
-            // The mean normal loses subpixel slopes. Use their variance along the
-            // viewing direction for the integrated dielectric response.
-            vec2 azimuth = wind * eye.xz / max(length(eye.xz), 1e-5);
-            float variance = dot(spectralVariance, secondMoment(azimuth) * vec3(1, 2, 1));
-            float sigma = sqrt(max(variance, 0.0));
-            vec2 size = vec2(textureSize(slopeReflectance, 0));
-            vec2 entry = vec2(sqrt(cosine), pow(min(sigma / 6.0, 1.0), 1.0 / 3.0));
-            vec2 uv = (entry * (size - 1.0) + 0.5) / size;
-            fresnel = mix(fresnel, texture2D(slopeReflectance, uv).r, spectrumWeight);
+            fresnel = mix(fresnel, slopeLookup.r, spectrumWeight);
           }
         #endif
         vec3 halfVector = normalize(eye + sunlight);
