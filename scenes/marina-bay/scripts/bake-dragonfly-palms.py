@@ -14,7 +14,9 @@ def main():
     parser.add_argument('source', type=Path, help='Directory containing the 0 A.D. royal palm models and textures')
     survey = json.loads((ROOT / 'references/dragonfly-palms.json').read_text())
     palms = import_module('bake-sands-waterfront-palms')
-    stand = palms.palm_stand(parser.parse_args().source, survey['trees'], face_budget=1000)
+    # The grove is visible in silhouette from both banks. Keep the cutout fronds
+    # intact when batching the four source meshes.
+    stand = palms.palm_stand(parser.parse_args().source, survey['trees'])
     stand.visual.material.name = 'Dragonfly Lake palm fronds and bark'
     scene = trimesh.Scene()
     scene.add_geometry(stand, geom_name='Dragonfly Lake palm grove')
