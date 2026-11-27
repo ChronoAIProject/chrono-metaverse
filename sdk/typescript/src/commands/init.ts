@@ -23,7 +23,7 @@ import {
 export const INIT_HELP = `metaverse init <空间编号> [目录]
 
 创建本地工作区（默认目录 ./<空间编号>）：写入 metaverse.json、示例建造脚本 build/main.ts、
-在 .claude/skills/ 安装建造、实体空间重建和实时场景写实优化技能，并写入编辑器所需的 tsconfig.json。
+在 .claude/skills/ 安装建造、实体空间重建、实时场景写实优化和场景备份技能，并写入编辑器所需的 tsconfig.json。
 
 选项：
   --mode nyxid|direct     调用方式（默认 nyxid：经 NyxID 代理调用线上服务）
@@ -121,7 +121,12 @@ export function ensureGitignore(root: string): string[] {
 }
 
 /** 随 SDK 分发并安装到工作区的技能。 */
-export const SKILLS = ['metaverse-builder', 'metaverse-reconstruct', 'web-scene-realism'] as const;
+export const SKILLS = [
+  'metaverse-builder',
+  'metaverse-reconstruct',
+  'web-scene-realism',
+  'metaverse-scene-backup',
+] as const;
 
 /** 技能说明的源文件（随 SDK 分发）。 */
 export function skillSource(sdkRoot: string, name: string = SKILLS[0]): string {
