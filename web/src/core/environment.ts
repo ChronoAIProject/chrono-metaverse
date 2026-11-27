@@ -35,6 +35,8 @@ export interface GeographicMap extends GeographicReference {
   readonly grassExclusions?: readonly GeographicPolygon[];
   /** Surveyed lawns with short, individually spaced blades. */
   readonly mownLawns?: readonly GeographicPolygon[];
+  /** Vertical distance in member metres from the map surface to the surveyed lawn cover. */
+  readonly mownLawnSurfaceOffset?: number;
   readonly sources: readonly TileSource[];
 }
 
@@ -221,6 +223,9 @@ export function environmentOf(entity: EntityBody): Environment | null {
       ...(ocean ? { offshore: ocean } : {}),
       ...(exclusions ? { grassExclusions: exclusions } : {}),
       ...(lawns ? { mownLawns: lawns } : {}),
+      ...(lawns?.length && Number.isFinite(value.mownLawnSurfaceOffset)
+        ? { mownLawnSurfaceOffset: value.mownLawnSurfaceOffset }
+        : {}),
       sources,
       ...(value.surfaceDetail ? { surfaceDetail: value.surfaceDetail } : {}),
     } as GeographicMap;
