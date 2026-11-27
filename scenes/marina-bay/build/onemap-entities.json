@@ -1606,7 +1606,7 @@
     "kind": "object",
     "label": "GARDENS BY THE BAY",
     "regionId": "marina-bay-exterior",
-    "assetHash": "ee2a284ad0691bdfb819826671a7e840ce1f77647d57285fc76074c27e7282f7",
+    "assetHash": "c8db89ed34632208c77733ddf9f09c49ae5633a6192e96e41771fbf674eaf5fb",
     "bounds": {
       "min": [
         -799.586889,
@@ -1627,7 +1627,8 @@
       "原始分片": "5/20/0_0.b3dm",
       "数据创建日期": "2025-02-05",
       "官方测量高度（米）": 2.448,
-      "三角形数": 1248
+      "三角形数": 5556,
+      "栈道": "沿用 OneMap 桥面轮廓与三个入口的标高；临水段净高、边梁和桩距按蜻蜓湖实拍估算。"
     }
   },
   {
