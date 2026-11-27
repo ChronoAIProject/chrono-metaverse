@@ -1,0 +1,239 @@
+{
+  "sources": [
+    "Singapore Land Authority · OneMap 3D, https://www.onemap.gov.sg/3d",
+    "Dragonfly Lake, Allie Caulfield, CC BY 2.0, https://commons.wikimedia.org/?curid=20457961",
+    "Supertree Grove from Dragonfly Lake, Dietmar Rabich, CC BY-SA 4.0, https://commons.wikimedia.org/?curid=85563664"
+  ],
+  "method": "Heights, upper crown areas and centres sampled from OneMap surfaces in the loaded garden. Coordinates below are in each source GLB. The open steelwork and platform supports approximate the silhouettes in two daylight photographs. Beam sections, branching and colour are estimates.",
+  "models": [
+    {
+      "entityId": "bay.ecc0e40b-014d-4a72-a9d1-c247f9e296be",
+      "source": "2585e5d76389101b54f905d1e32ed4efb17e0eeac0f5ba82240afc0fdcab6731",
+      "sourceOrigin": [
+        -913.21201,
+        -60.107054,
+        700.7685675
+      ],
+      "crowns": [
+        {
+          "centerXZ": [
+            0.034,
+            0.0473
+          ],
+          "groundY": -0.1499,
+          "height": 28.6,
+          "radius": 11.7536
+        }
+      ]
+    },
+    {
+      "entityId": "bay.bc15bec1-ed14-4cd8-a17f-23375c597dda",
+      "source": "942a9237182c94aa1e1714cd3e268e4676171a934efeaaef798b20ec758602d1",
+      "sourceOrigin": [
+        -862.77168,
+        -60.095825,
+        662.7601345
+      ],
+      "crowns": [
+        {
+          "centerXZ": [
+            0.0155,
+            0.0101
+          ],
+          "groundY": -0.1612,
+          "height": 30.3,
+          "radius": 14.273
+        }
+      ]
+    },
+    {
+      "entityId": "bay.ffbe29d2-b8a6-48e8-be30-d3ee89588ef5",
+      "source": "0cd4d07759b56fb2991928c2fff8184e2dabd872c49dfa86ee2047394bbd8421",
+      "sourceOrigin": [
+        -883.8008145,
+        -60.101503,
+        621.055873
+      ],
+      "crowns": [
+        {
+          "centerXZ": [
+            -13.7117,
+            46.9806
+          ],
+          "groundY": -0.1555,
+          "height": 43.4,
+          "radius": 19.9551
+        },
+        {
+          "centerXZ": [
+            -4.637,
+            -46.9259
+          ],
+          "groundY": -0.1555,
+          "height": 43.2,
+          "radius": 20.0029
+        }
+      ]
+    },
+    {
+      "entityId": "bay.d41cd196-b863-4ada-9f13-f7af3e71ac48",
+      "source": "2c910011fac0c88e39b810e0508fa84fa7e7d3bdc2c892808b89922b9d3bb360",
+      "sourceOrigin": [
+        -845.33312,
+        -60.090488,
+        632.8815905
+      ],
+      "crowns": [
+        {
+          "centerXZ": [
+            -0.048,
+            -0.0974
+          ],
+          "groundY": -0.1665,
+          "height": 37.3,
+          "radius": 17.7069
+        }
+      ]
+    },
+    {
+      "entityId": "bay.7eb7920b-123e-4e59-996e-e523a19f2f8d",
+      "source": "ee4cf61e98ae7cdb6567fd38854f6988e85f2270190293919dfee2c3828e0866",
+      "sourceOrigin": [
+        -930.9709815,
+        -60.106172,
+        669.2500385
+      ],
+      "crowns": [
+        {
+          "centerXZ": [
+            -0.0091,
+            0.0195
+          ],
+          "groundY": -0.1508,
+          "height": 28.6,
+          "radius": 11.7129
+        }
+      ]
+    },
+    {
+      "entityId": "bay.00a3960e-522e-400b-b175-bce54c6b68f6",
+      "source": "d1b0253c644b379e59aacaff0f150792920b8a73ddedd2fa226372dfab8262c5",
+      "sourceOrigin": [
+        -890.689838,
+        -60.095702,
+        619.661112
+      ],
+      "crowns": [
+        {
+          "centerXZ": [
+            -0.1038,
+            -0.0059
+          ],
+          "groundY": -0.1613,
+          "height": 51.3,
+          "radius": 23.8232
+        }
+      ]
+    },
+    {
+      "entityId": "bay.1de5c998-4118-40ff-b422-7de444fd1bbd",
+      "source": "0919a09af29178766ba3833a8841e4e320d66bbedf142f2324e6abe511a20153",
+      "sourceOrigin": [
+        -925.078785,
+        -60.102508,
+        642.757222
+      ],
+      "crowns": [
+        {
+          "centerXZ": [
+            -0.0703,
+            0.0451
+          ],
+          "groundY": -0.1545,
+          "height": 26.6,
+          "radius": 11.915
+        }
+      ]
+    },
+    {
+      "entityId": "bay.6feb4352-6165-451e-bd2b-0e8e13c35dbc",
+      "source": "ac40259d366a188ebe1a0e92fd080cb3c420147ff09713f466ff10b9d2410f89",
+      "sourceOrigin": [
+        -848.376625,
+        -60.08736,
+        598.6966555
+      ],
+      "crowns": [
+        {
+          "centerXZ": [
+            -0.0088,
+            0.0079
+          ],
+          "groundY": -0.1696,
+          "height": 30.6,
+          "radius": 14.3064
+        }
+      ]
+    },
+    {
+      "entityId": "bay.676ed1c5-a36c-4795-a55e-2e8d6be79904",
+      "source": "3ed614788052bad21df8b331e3c5ff913c6ff4189cfe2e1ad4d2c9669b46d004",
+      "sourceOrigin": [
+        -946.598948,
+        -60.103664,
+        623.275032
+      ],
+      "crowns": [
+        {
+          "centerXZ": [
+            -0.0129,
+            0.0267
+          ],
+          "groundY": -0.1533,
+          "height": 25.8,
+          "radius": 11.9283
+        }
+      ]
+    },
+    {
+      "entityId": "bay.7fa4ed5a-1b57-4249-98fa-6849e0660c9e",
+      "source": "103a6f2428a2043818d2880cb88588550c1ecd8d4b2793ff7dc83676e89a2e3c",
+      "sourceOrigin": [
+        -923.451583,
+        -60.097876,
+        598.521539
+      ],
+      "crowns": [
+        {
+          "centerXZ": [
+            0.0012,
+            -0.0418
+          ],
+          "groundY": -0.1591,
+          "height": 30.2,
+          "radius": 14.2841
+        }
+      ]
+    },
+    {
+      "entityId": "bay.1816b1cf-b933-4684-b386-c4bba9f0e755",
+      "source": "a1c24fe5ed0ea5906548f4ceb9b7d25c5189c2f38c989abbd9cf6dfaae5ec81c",
+      "sourceOrigin": [
+        -892.2662715,
+        -60.088014,
+        540.8900245
+      ],
+      "crowns": [
+        {
+          "centerXZ": [
+            0.0067,
+            0.019
+          ],
+          "groundY": -0.169,
+          "height": 25.9,
+          "radius": 11.9016
+        }
+      ]
+    }
+  ]
+}
