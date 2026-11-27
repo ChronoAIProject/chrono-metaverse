@@ -23,7 +23,7 @@ export function groundAir(material: THREE.Material, uniforms: GroundAir, offshor
       ? 'uniform vec4 oceanRect;attribute vec2 tileUv;varying vec2 oceanUv;\n'
       : '';
     const oceanFragment = offshore
-      ? 'varying vec2 oceanUv; uniform sampler2D oceanMask, oceanSky, oceanReflectance; uniform float oceanReady, oceanRoughness;\n'
+      ? 'varying vec2 oceanUv; uniform sampler2D oceanMask, oceanSky, oceanReflectance; uniform float oceanReady, oceanRoughness, oceanSkyLod;\n'
       : '';
     shader.vertexShader =
       uvVertex +
