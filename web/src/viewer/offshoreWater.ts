@@ -93,9 +93,12 @@ export const offshoreLight = /* glsl */ `
       // Same linear deep-water reflectance as the detailed water surface (#325553).
       vec3 sea = mix(vec3(0.03190,0.09084,0.08650),sky,fresnel);
       #ifdef USE_MAP
-        // Keep wakes and vessels in the image without reintroducing broad photographic colour casts.
-        vec3 localMean = texture2D(map,vMapUv,3.0).rgb;
-        sea += clamp(diffuseColor.rgb-localMean,vec3(-0.035),vec3(0.18));
+        // Transfer the photograph's local luminance contrast to the reflected sky.
+        // At grazing angles an additive residual loses dark hulls against the bright sea.
+        const vec3 luma = vec3(0.2126,0.7152,0.0722);
+        float localMean = dot(texture2D(map,vMapUv,3.0).rgb,luma);
+        float detail = dot(diffuseColor.rgb,luma) - localMean;
+        sea *= clamp(1.0 + detail / max(localMean,0.015),0.55,1.55);
       #endif
       outgoingLight = mix(outgoingLight,sea,coverage);
     }
