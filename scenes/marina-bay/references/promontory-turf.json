@@ -110,7 +110,7 @@
     "originXZ": [-12, 66],
     "metresPerPixel": 1,
     "variationImage": "promontory-turf-variation.png",
-    "variationMethod": "One-metre OneMap ortho samples on the wear grid. Within each open turf footprint, compare 0.85 m and 9 m Gaussian averages of log2 linear RGB chromaticity. Add 55% of the log-luminance difference limited to -0.18 to +0.26 stops. Exclude canopy, pavement, deep shadow and low-coverage edges. RGB 128 is neutral, with 256 code values per stop.",
+    "variationMethod": "Sample SLA OneMap OrthoJPG level 20 on a 0.25 m review grid. Compare 0.4 m and 8 m Gaussian averages of linear-light log chromaticity, adding 78% of the local log-luminance residual clamped to -0.27 to +0.31 stops. Include only open turf at least 1 m inside its footprint, with canopy below 2 m, green greater than 100/255 and green minus blue greater than 17/255. Fade incomplete ground coverage. Store one sample per metre with RGB 128 neutral and 256 code values per stop.",
     "greenRGB": [122, 130, 92],
     "wornRGB": [147, 134, 110],
     "method": "On the registered OneMap ortho, sample turf at one-metre spacing at least one metre inside the footprint. Exclude canopy above 3 m, deep shadow (green <= 78) and neutral paving (green - blue <= 10). Map red/green ratios of 0.94 to 1.11 onto zero to full wear and smooth valid values with a one-metre Gaussian. Fade to zero where coverage falls below 65%. Each column increments local X and each row increments local Z."
