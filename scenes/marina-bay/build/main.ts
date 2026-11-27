@@ -417,6 +417,9 @@ export default function build(base: BuildBase, kit: Kit) {
     );
     entities.push(...gardenCanopy);
     entities.push(JSON.parse(
+      readFileSync(new URL('./dragonfly-palms.json', import.meta.url), 'utf8'),
+    ));
+    entities.push(JSON.parse(
       readFileSync(new URL('./dragonfly-bridge.json', import.meta.url), 'utf8'),
     ));
   }

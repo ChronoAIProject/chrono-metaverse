@@ -29,6 +29,8 @@ def bake_species(folder, species, group, survey, median):
     colors_by_batch = defaultdict(list)
     for i in range(group, len(survey["trees"]), 2):
         tree = survey["trees"][i]
+        if tree.get("palmId"):
+            continue
         x, z = tree["localXZ"]
         diameter = tree["radius"] * 2
         height = tree["height"]
