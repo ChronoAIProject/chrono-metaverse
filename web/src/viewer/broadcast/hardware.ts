@@ -1,6 +1,7 @@
 import * as T from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { projectionMaterial } from './projection';
+import { retryTransientRead } from '../../core/api/readRetry';
 import { createDracoLoader } from '../draco';
 import type { BroadcastModel } from '../../core/broadcastTour';
 
@@ -17,6 +18,7 @@ export class EquipmentModels {
   private readonly models = new Map<string, Promise<T.Group>>();
   private readonly resources = new Set<T.BufferGeometry | T.Material | T.Texture>();
   private readonly instances: T.Object3D[] = [];
+  private readonly abort = new AbortController();
   private disposed = false;
 
   constructor(private readonly loadEntity: LoadEntity) {}
@@ -48,7 +50,18 @@ export class EquipmentModels {
       if (typeof ref === 'string') {
         const url = library[`../../assets/broadcast/${ref}.glb`];
         if (!url) throw new Error('设备资源库中没有这个模型');
-        model = await loader.loadAsync(url);
+        try {
+          model = await loader.loadAsync(url);
+        } catch (error) {
+          const response = error instanceof Error && 'response' in error ? error.response : null;
+          if (
+            !(response instanceof Response) ||
+            !(await retryTransientRead(response, this.abort.signal))
+          ) {
+            throw error;
+          }
+          model = await loader.loadAsync(url);
+        }
       } else {
         const bytes = await this.loadEntity(ref.entity);
         if (!bytes) throw new Error('当前空间中缺少设备模型实体');
@@ -98,6 +111,7 @@ export class EquipmentModels {
   }
   dispose() {
     this.disposed = true;
+    this.abort.abort();
     for (const instance of this.instances) instance.removeFromParent();
     this.instances.length = 0;
     this.models.clear();
