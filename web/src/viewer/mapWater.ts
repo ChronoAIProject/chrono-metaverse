@@ -289,7 +289,9 @@ export function mapWaterMaterial(
             float fraction = clamp((flatDepth - flatClip.w) / max(0.001, flatDepth + clipDelta.w), 0.0, 1.0);
             // A tilted wave can see a pier in front of the shore seen by the flat ray.
             // The nearer of the two depths keeps the shore from bleeding through its reflection.
-            float depth = min(flatDepth, mirrorDepth(flatClip + fraction * clipDelta));
+            float tiltedDepth = mirrorDepth(flatClip + fraction * clipDelta);
+            // A foreground texel in front of the water cannot be a hit along this reflected ray.
+            float depth = tiltedDepth >= flatClip.w ? min(flatDepth, tiltedDepth) : flatDepth;
             fraction = clamp((depth - flatClip.w) / max(0.001, depth + clipDelta.w), 0.0, 1.0);
             float projectedReach = range * fraction;
             vec3 samplePoint = surfacePosition + bend * fraction;
