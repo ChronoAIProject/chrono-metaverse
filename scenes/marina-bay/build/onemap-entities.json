@@ -5492,7 +5492,7 @@
     "kind": "object",
     "label": "ASIA SQUARE TOWER 1",
     "regionId": "marina-bay-exterior",
-    "assetHash": "0d9cc894b2b87e931dd7f32f9d9e35c3040f4be21712d71e3199990c0c2109f8",
+    "assetHash": "d839fc022b33c3a1e28333584cb7ae2ff75bb01c6c77402388c84d1c2d8e97b1",
     "bounds": {
       "min": [
         201.137418,
@@ -6724,7 +6724,7 @@
     "kind": "object",
     "label": "MARINA BAY SUITES",
     "regionId": "marina-bay-exterior",
-    "assetHash": "b90c08c5af04a06bf8944064ff9ea4b318408c35b4920c79e6b1ec5803a03391",
+    "assetHash": "0e2807083a2c24df8973eeb47a703fc70995b4ca17e618cd80113beefc84a0c5",
     "bounds": {
       "min": [
         163.955908,
@@ -7814,7 +7814,7 @@
     "kind": "object",
     "label": "THE SAIL @ MARINA BAY",
     "regionId": "marina-bay-exterior",
-    "assetHash": "ace72157147276458a32ae49a51f2b99a021857b9d0fd1f2b912488c1c235cdb",
+    "assetHash": "ebce167a9cde32357b4d3ea6d47638406d652e89ac258d08f4d3895b5b140a3e",
     "bounds": {
       "min": [
         150.199567,
@@ -7837,7 +7837,7 @@
       "官方测量高度（米）": 216.437,
       "三角形数": 2344,
       "modelOcclusion": {
-        "sourceAsset": "ace72157147276458a32ae49a51f2b99a021857b9d0fd1f2b912488c1c235cdb",
+        "sourceAsset": "ebce167a9cde32357b4d3ea6d47638406d652e89ac258d08f4d3895b5b140a3e",
         "material": "dc2400603",
         "texture": "cb8911c84ce11a05c55c45724988f221e4e879baa7bf7956977ca88c504ecdc0"
       },
