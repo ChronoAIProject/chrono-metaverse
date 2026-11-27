@@ -204,6 +204,9 @@ describe('metaverse init', () => {
       readFileSync(join(SDK_ROOT, 'skills/metaverse-reconstruct/SKILL.md'), 'utf8'),
     );
     expect(recon).toContain('metaverse-recon');
+    expect(readFileSync(join(root, '.claude/skills/metaverse-scene-backup/SKILL.md'), 'utf8')).toBe(
+      readFileSync(join(SDK_ROOT, 'skills/metaverse-scene-backup/SKILL.md'), 'utf8'),
+    );
     const realismSource = join(SDK_ROOT, 'skills/web-scene-realism');
     const realismTarget = join(root, '.claude/skills/web-scene-realism');
     const references = readdirSync(join(realismSource, 'references'));
