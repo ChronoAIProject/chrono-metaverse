@@ -113,6 +113,33 @@ def add_cloud_structure(mixed, cloud, latitude):
     return layered * resize_panorama(gain, width, height)
 
 
+def cloud_highlights(radiance, pixels, latitude):
+    """Recover cloud-scale contrast compressed by the display transform in bright sky."""
+    display = pixels.astype(np.float32) / 255
+    linear = np.where(display <= .04045, display / 12.92, ((display + .055) / 1.055)**2.4)
+    luminance = linear @ LUMA.astype(np.float32)
+    log_display = np.log2(np.maximum(luminance, .00025))
+    log_source = np.log2(np.maximum(radiance @ LUMA.astype(np.float32), .00025))
+    loss = log_source - log_display
+    h, w = loss.shape
+    # The low-frequency exposure is retained. The longitudinal filter wraps at the panorama seam.
+    cells = loss.reshape(h // 8, 8, w // 8, 8).mean((1, 3))[:, :, None]
+    broad = angular_blur(angular_blur(cells, 4.4, 0), 4.4, 1)
+    structure = loss - resize_panorama(broad, w, h)[:, :, 0]
+
+    def smooth_step(x):
+        t = np.clip(x, 0, 1)
+        return t * t * (3 - 2 * t)
+
+    bright = smooth_step((luminance - .62) / .23)
+    above_horizon = smooth_step((np.degrees(latitude) - 1) / 5)[:, None]
+    stops = .75 * bright * above_horizon * np.clip(structure, -1.3, 1.3)
+    gain = np.minimum(2**stops, 1 / np.maximum(.001, linear.max(axis=2)))
+    adjusted = np.clip(linear * gain[:, :, None], 0, 1)
+    encoded = np.where(adjusted <= .0031308, 12.92 * adjusted, 1.055 * adjusted**(1 / 2.4) - .055)
+    return np.rint(255 * encoded).astype(np.uint8)
+
+
 def bake(morning_path, cloud_path, output, detail_path=None):
     sky = json.loads(PREVIOUS.read_text())
     day = sky["daylight"]
@@ -169,7 +196,7 @@ def bake(morning_path, cloud_path, output, detail_path=None):
 
     output.mkdir(parents=True, exist_ok=True)
     panorama, reflection = output / "sky.jpeg", output / "radiance.png"
-    Image.fromarray(pixels).save(panorama, quality=90, subsampling=0)
+    Image.fromarray(cloud_highlights(display, pixels, lat)).save(panorama, quality=90, subsampling=0)
     average = diffuse.reshape(256, 8, 512, 8, 3).mean((1, 3), dtype=float)
     linear = average / sky["radiance"]["scale"]
     srgb = np.where(linear <= .0031308, 12.92*linear, 1.055*linear.clip(0)**(1/2.4)-.055)
