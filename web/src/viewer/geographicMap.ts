@@ -80,6 +80,7 @@ export class GeographicMap {
   private readonly offshore?: OffshoreWater;
   private readonly detail?: THREE.Texture;
   private readonly paving?: GrassFootprints;
+  private readonly lawns?: GrassFootprints;
   private readonly air: GroundAir = {
     groundSky: { value: null },
     groundSkyYaw: { value: 0 },
@@ -97,6 +98,7 @@ export class GeographicMap {
     loadTexture?: (hash: string) => Promise<THREE.Texture>,
   ) {
     this.reference = new GeoReference(config);
+    if (config.mownLawns?.length) this.lawns = new GrassFootprints(config.mownLawns);
     if (config.grassExclusions?.length) this.paving = new GrassFootprints(config.grassExclusions);
     if (config.surfaceDetail === 'urban' && !resource?.hologram)
       this.detail = groundDetailTexture(sampling.anisotropy);
@@ -369,8 +371,7 @@ export class GeographicMap {
     for (const [key, patch] of this.patches) {
       if (!keep.has(key)) {
         this.group.remove(patch.mesh);
-        patch.grass?.geometry.dispose();
-        patch.grass?.material.dispose();
+        disposeGrass(patch.grass);
         patch.mesh.geometry.dispose();
         patch.mesh.material.dispose();
         this.patches.delete(key);
@@ -421,10 +422,11 @@ export class GeographicMap {
             node.width,
             node,
             this.paving,
+            this.lawns,
           );
-          patch.mesh.add(patch.grass);
+          patch.mesh.add(...patch.grass);
         }
-        if (patch.grass) patch.grass.visible = near;
+        if (patch.grass) for (const mesh of patch.grass) mesh.visible = near;
       }
       let ancestor = node;
       let unavailable = false;
@@ -549,8 +551,7 @@ export class GeographicMap {
     this.detail?.dispose();
     this.offshore?.dispose();
     for (const patch of this.patches.values()) {
-      patch.grass?.geometry.dispose();
-      patch.grass?.material.dispose();
+      disposeGrass(patch.grass);
       patch.mesh.geometry.dispose();
       patch.mesh.material.dispose();
     }
@@ -564,4 +565,12 @@ export class GeographicMap {
     for (const key of ['mapTiles', 'mapPending', 'mapFailed', 'mapZoom', 'mapReady'])
       delete this.host.dataset[key];
   }
+}
+
+function disposeGrass(grass: Patch['grass']) {
+  if (grass)
+    for (const mesh of grass) {
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+    }
 }

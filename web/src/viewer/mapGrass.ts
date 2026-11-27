@@ -11,44 +11,38 @@ export function grassPatch(
   width: number,
   tile: Tile,
   paving?: GrassFootprints,
+  lawns?: GrassFootprints,
+) {
+  const cells = Math.min(144, Math.ceil(width / 0.24));
+  const candidates = tileGrassCells(image.image, cells);
+  const selected = paving ? paving.filter(tile, cells, candidates) : candidates;
+  const mask = lawns?.coverage(tile, cells);
+  const patch = (ids: Uint16Array | null, mown: boolean) =>
+    bladeMesh(terrain, image, cells, ids, mown);
+  if (!mask) return [patch(selected, false)];
+  const available = selected ?? Uint16Array.from({ length: cells * cells }, (_, id) => id);
+  const short = available.filter((id) => mask[id * 4 + 3] !== 0);
+  if (!short.length) return [patch(selected, false)];
+  if (short.length === available.length) return [patch(selected, true)];
+  const tall = available.filter((id) => mask[id * 4 + 3] === 0);
+  return [patch(tall, false), patch(short, true)];
+}
+
+function bladeMesh(
+  terrain: THREE.BufferGeometry,
+  image: THREE.Texture<ImageBitmap>,
+  cells: number,
+  selected: Uint16Array | null,
+  mown: boolean,
 ) {
   const positions = terrain.getAttribute('position');
   const corner = (index: number) => new THREE.Vector3().fromBufferAttribute(positions, index);
   // 精细地块固定为 4 × 4 个格，首行从西北到东北。
   const origin = corner(0);
-  const cells = Math.min(144, Math.ceil(width / 0.24));
   const geometry = new THREE.InstancedBufferGeometry();
   // 根部较宽，叶尖收窄并弯折；由实例朝向打散相邻草簇。
-  const blades: number[] = [];
-  for (const [angle, height, lean] of [
-    [0, 0.14, 0.045],
-    [2.2, 0.17, 0.052],
-    [4.3, 0.105, 0.058],
-  ] as const) {
-    const tip = (width: number, y: number, bend: number) => [
-      Math.cos(angle) * width + Math.sin(angle) * bend,
-      y,
-      -Math.sin(angle) * width + Math.cos(angle) * bend,
-    ];
-    const left = tip(-0.017, 0, 0),
-      right = tip(0.017, 0, 0);
-    const midLeft = tip(-0.008, height * 0.6, lean * 0.35),
-      midRight = tip(0.008, height * 0.6, lean * 0.35);
-    blades.push(
-      ...left,
-      ...right,
-      ...midLeft,
-      ...midLeft,
-      ...right,
-      ...midRight,
-      ...midLeft,
-      ...midRight,
-      ...tip(0, height, lean),
-    );
-  }
+  const blades = mown ? mownBlades() : tallBlades();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(blades, 3));
-  const candidates = tileGrassCells(image.image, cells);
-  const selected = paving ? paving.filter(tile, cells, candidates) : candidates;
   const sparse = selected && selected.length < cells * cells;
   if (sparse) geometry.setAttribute('grassCell', new THREE.InstancedBufferAttribute(selected, 1));
   geometry.instanceCount = selected?.length ?? cells * cells;
@@ -56,7 +50,7 @@ export function grassPatch(
   const material = new THREE.ShaderMaterial({
     side: THREE.DoubleSide,
     toneMapped: false,
-    defines: sparse ? { SPARSE_GRASS: 1 } : {},
+    defines: { ...(sparse ? { SPARSE_GRASS: 1 } : {}), ...(mown ? { MOWN_GRASS: 1 } : {}) },
     uniforms: {
       time: { value: 0 },
       imagery: { value: image },
@@ -103,10 +97,18 @@ export function grassPatch(
         float angle = random.y*6.283185;
         vec3 blade = position * scale;
         blade.xz=mat2(cos(angle),sin(angle),-sin(angle),cos(angle))*blade.xz;
+        #ifdef MOWN_GRASS
+        float height=clamp(position.y/0.083,0.0,1.0);
+        vec2 wind=vec2(0.008,0.0045);
+        float tipLight=clamp(position.y*14.0,0.0,1.0);
+        #else
         float height=clamp(position.y/0.17,0.0,1.0);
-        blade.xz+=vec2(0.016,0.009)*scale*height*height*sin(time*1.7+root.x*0.38+root.z*0.24);
+        vec2 wind=vec2(0.016,0.009);
+        float tipLight=clamp(position.y*8.0,0.0,1.0);
+        #endif
+        blade.xz+=wind*scale*height*height*sin(time*1.7+root.x*0.38+root.z*0.24);
         gl_Position = projectionMatrix*(base + modelViewMatrix*vec4(blade,0.0));
-        bladeColor = photo * mix(0.60,1.26,clamp(position.y*8.0,0.0,1.0)) * (0.88+random.x*0.24)*mix(vec3(1.08,.99,.82),vec3(.93,1.03,1.02),cover);
+        bladeColor = photo * mix(0.60,1.26,tipLight) * (0.88+random.x*0.24)*mix(vec3(1.08,.99,.82),vec3(.93,1.03,1.02),cover);
         #include <logdepthbuf_vertex>
       }`,
     fragmentShader: /* glsl */ `
@@ -123,7 +125,66 @@ export function grassPatch(
   mesh.onBeforeRender = () => {
     material.uniforms.time!.value = performance.now() * 0.001;
   };
-  mesh.name = 'map-grass';
+  mesh.name = mown ? 'map-mown-grass' : 'map-grass';
   mesh.userData.background = true;
   return mesh;
+}
+
+function tallBlades() {
+  const blades: number[] = [];
+  for (const [angle, height, lean] of [
+    [0, 0.14, 0.045],
+    [2.2, 0.17, 0.052],
+    [4.3, 0.105, 0.058],
+  ] as const) {
+    const tip = (width: number, y: number, bend: number) => [
+      Math.cos(angle) * width + Math.sin(angle) * bend,
+      y,
+      -Math.sin(angle) * width + Math.cos(angle) * bend,
+    ];
+    const left = tip(-0.017, 0, 0),
+      right = tip(0.017, 0, 0);
+    const midLeft = tip(-0.008, height * 0.6, lean * 0.35),
+      midRight = tip(0.008, height * 0.6, lean * 0.35);
+    blades.push(
+      ...left,
+      ...right,
+      ...midLeft,
+      ...midLeft,
+      ...right,
+      ...midRight,
+      ...midLeft,
+      ...midRight,
+      ...tip(0, height, lean),
+    );
+  }
+  return blades;
+}
+
+function mownBlades() {
+  const blades: number[] = [];
+  // Separate the leaf bases within each tuft. At walking height the tapered
+  // blades cover only a few pixels, including their wind displacement.
+  for (const [angle, height, halfWidth, lean, offset] of [
+    [0.18, 0.059, 0.009, 0.025, 0.011],
+    [1.56, 0.083, 0.007, 0.024, 0.02],
+    [2.76, 0.046, 0.008, 0.019, 0.015],
+    [4.08, 0.073, 0.007, 0.032, 0.008],
+    [5.36, 0.052, 0.008, 0.023, 0.019],
+  ] as const) {
+    const c = Math.cos(angle),
+      s = Math.sin(angle);
+    blades.push(
+      c * offset - s * halfWidth,
+      0,
+      s * offset + c * halfWidth,
+      c * offset + s * halfWidth,
+      0,
+      s * offset - c * halfWidth,
+      c * (offset + lean),
+      height,
+      s * (offset + lean),
+    );
+  }
+  return blades;
 }

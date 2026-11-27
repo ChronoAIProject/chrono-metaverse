@@ -159,3 +159,5 @@ NS Square 临水施工平台的岸线取自 2026 年 10 月 31 日 Sentinel-2C �
 超级树林的 12 个冠架沿用 OneMap 的树位、冠幅与高度。外缘的钢构件按蜻蜓湖边两张日间照片估算，中心平台、植生柱和空中步道使用原测绘表面。将原始 GLB 放入同一目录后，可用 `scripts/bake-supertree-grove.py` 重建，源文件哈希和冠幅记录在 `references/supertree-grove.json`。[OneMap](https://www.onemap.gov.sg/3d) · [蜻蜓湖实拍，2012](https://commons.wikimedia.org/?curid=20457961) · [蜻蜓湖实拍，2019](https://commons.wikimedia.org/?curid=85563664)
 
 蜻蜓湖栈道沿用 OneMap 桥面轮廓，在三个入口衔接原有标高。临水段桥面高出水面约 0.8 米，按两张湖边实拍估算，边梁厚约 0.23 米，支撑中心间距约 2.6 米。以原始栈道 GLB 为参数运行 `scripts/bake-dragonfly-boardwalk.py` 可重建。[OneMap](https://www.onemap.gov.sg/3d) · [2012 年蜻蜓湖实拍](https://commons.wikimedia.org/?curid=20457961) · [2019 年蜻蜓湖实拍](https://commons.wikimedia.org/?curid=85563664)
+
+滨海大道和临水步道的四块草坪沿用 `references/promontory-turf.json` 中的测绘轮廓。短草的宽度和高度按邻近街区的地面照片估算，斑块颜色和覆盖率使用注册到场景的航拍影像。[Downtown 地铁站出口附近草坪](https://commons.wikimedia.org/?curid=52009484) · [2020 年滨海大道草坪实拍](https://commons.wikimedia.org/?curid=100059953)
