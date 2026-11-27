@@ -35,20 +35,20 @@ export function withBoatQuay(surroundings: EntityBody): EntityBody {
     JSON.parse(readFileSync(new URL(`../references/${name}.json`, import.meta.url), 'utf8')).waterlineEdit,
   );
   const sources = 'sources' in content && Array.isArray(content.sources) ? content.sources : [];
-  const towerSurvey = JSON.parse(readFileSync(new URL('../references/marina-centre-towers.json', import.meta.url), 'utf8')) as {
-    tileSource: string; layer: string; reference: unknown; excludeBuildingParts: unknown[]; supersededBuildingParts: unknown[];
-  };
+  const buildingSurveys = ['marina-centre-towers', 'garden-conservatories'].map(name =>
+    JSON.parse(readFileSync(new URL(`../references/${name}.json`, import.meta.url), 'utf8')) as {
+      tileSource: string; layer: string; reference: unknown; excludeBuildingParts: unknown[]; supersededBuildingParts?: unknown[];
+    },
+  );
   const previousParts = 'excludeBuildingParts' in style ? style.excludeBuildingParts : [];
   let towerParts = {};
-  if (sources.length === 1 && sources[0]?.url === towerSurvey.tileSource &&
-      'layer' in style && style.layer === towerSurvey.layer &&
-      'reference' in content && isDeepStrictEqual(content.reference, towerSurvey.reference) && Array.isArray(previousParts)) {
-    const retained = previousParts.filter(saved =>
-      !towerSurvey.supersededBuildingParts.some(part => isDeepStrictEqual(saved, part)),
-    );
-    const additions = towerSurvey.excludeBuildingParts.filter(part =>
-      !retained.some(saved => isDeepStrictEqual(saved, part)),
-    );
+  if (sources.length === 1 && 'layer' in style && 'reference' in content && Array.isArray(previousParts)) {
+    const applicable = buildingSurveys.filter(survey => sources[0]?.url === survey.tileSource &&
+      style.layer === survey.layer && isDeepStrictEqual(content.reference, survey.reference));
+    const superseded = applicable.flatMap(survey => survey.supersededBuildingParts ?? []);
+    const retained = previousParts.filter(saved => !superseded.some(part => isDeepStrictEqual(saved, part)));
+    const additions = applicable.flatMap(survey => survey.excludeBuildingParts).filter(part =>
+      !retained.some(saved => isDeepStrictEqual(saved, part)));
     if (retained.length + additions.length <= 256 && (additions.length || retained.length !== previousParts.length)) {
       towerParts = { excludeBuildingParts: [...retained, ...additions] };
     }
@@ -96,7 +96,10 @@ export function withBoatQuay(surroundings: EntityBody): EntityBody {
     ...existingTextures.map(hash => migrateReflections && hash === oldAtlas ? facadeReflections.texture as string : hash),
     facadeReflections.texture as string,
   ])] } : {};
-  return { ...surroundings, ...textures, props: { ...surroundings.props, externalContent: {
+  // Leave room for the cross-tile dome exclusions in the saved 16 KiB props record.
+  const credit = surroundings.props?.['说明'] === '按现有精细模型的局部范围保护原楼体，其余位置按开放轮廓和高度绘制远近建筑；窗格与材质为程序化外观。' && 'excludeBuildingParts' in towerParts
+    ? { '说明': '实测楼体优先，轮廓楼按地图高度绘制，窗面材质为估算。' } : {};
+  return { ...surroundings, ...textures, props: { ...surroundings.props, ...credit, externalContent: {
     ...content, ...ground, ...water, ...(addReflections ? { facadeReflections } : {}), extrusion: { ...style, excludeBounds, ...towerParts },
   } } };
 }
@@ -400,6 +403,9 @@ export default function build(base: BuildBase, kit: Kit) {
       readFileSync(new URL('./marina-centre-towers.json', import.meta.url), 'utf8'),
     );
     entities.push(...marinaCentre);
+    entities.push(JSON.parse(
+      readFileSync(new URL('./garden-conservatories.json', import.meta.url), 'utf8'),
+    ));
   }
   // 线上按视野流式加载的周边楼群独立于离线模型包，由空间保存其图层和保护范围。
   const surroundings = base.entities.find((entity) => entity.entityId === 'bay.city-surroundings');

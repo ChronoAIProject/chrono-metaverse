@@ -1,0 +1,32 @@
+{
+  "entityId": "bay.garden-conservatories",
+  "kind": "structure",
+  "layer": "ext",
+  "regionId": "marina-bay-exterior",
+  "label": "滨海湾花园 · 花穹与云雾林",
+  "bounds": {
+    "min": [
+      -1167.2629591298762,
+      -60.16254663261872,
+      742.7824973362381
+    ],
+    "max": [
+      -851.2460812476725,
+      2.7116465765241253,
+      876.3341403701673
+    ]
+  },
+  "material": {
+    "shading": "albedo"
+  },
+  "assetHash": "b3e59185eb6a75afa91e083f56f1fa1d35e2251ab3fffb32742e2ad74cb12e03",
+  "props": {
+    "background": true,
+    "测绘来源": "Map Data © Singapore Land Authority / OneMap · https://github.com/cheeaun/om3d/tree/ac451b84/optimized-tiles/6/41",
+    "官方建筑编号": [
+      "SLA_BLDG2_136d04c6-2354-48d0-885e-97b3624ed79d",
+      "SLA_BLDG2_442c591c-8282-4f2d-a552-42e3ef8a7c7c"
+    ],
+    "屋面影像": "OneMap 正射影像，玻璃表面反射为近似值。"
+  }
+}

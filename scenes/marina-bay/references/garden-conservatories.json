@@ -1,0 +1,86 @@
+{
+  "tileSource": "https://tiles.openfreemap.org/planet",
+  "reference": {
+    "heading": 18.454586711764804,
+    "latitude": 1.280170677425135,
+    "longitude": 103.85419949862056,
+    "origin": [
+      12.698957563907662,
+      -60.257,
+      -12.785997359593134
+    ]
+  },
+  "layer": "building",
+  "excludeBuildingParts": [
+    {
+      "featureId": 1711425950,
+      "minHeight": 0,
+      "height": 30,
+      "bounds": [
+        -1130,
+        790,
+        -940,
+        800
+      ]
+    },
+    {
+      "featureId": 465228410,
+      "height": 30,
+      "minHeight": 0,
+      "bounds": [
+        -970,
+        785,
+        -935,
+        805
+      ]
+    }
+  ],
+  "geometryTile": "https://raw.githubusercontent.com/cheeaun/om3d/ac451b84/optimized-tiles/6/41/2_0.b3dm",
+  "geometrySha256": "fe4409a34c59594d729cca7cc2f0a06f7dce0a777f11e1cda9697ac90415c5db",
+  "roofImage": "https://www.onemap.gov.sg/maps/tiles/OrthoJPG/{z}/{x}/{y}.png",
+  "imageryZoom": 18,
+  "buildings": [
+    {
+      "sourceId": "SLA_BLDG2_136d04c6-2354-48d0-885e-97b3624ed79d",
+      "label": "Flower Dome",
+      "faces": 4640,
+      "bounds": [
+        [
+          -1034.426,
+          -60.143,
+          752.447
+        ],
+        [
+          -851.246,
+          -16.821,
+          876.334
+        ]
+      ],
+      "imageSize": [
+        306,
+        236
+      ]
+    },
+    {
+      "sourceId": "SLA_BLDG2_442c591c-8282-4f2d-a552-42e3ef8a7c7c",
+      "label": "Cloud Forest",
+      "faces": 3458,
+      "bounds": [
+        [
+          -1167.263,
+          -60.163,
+          742.782
+        ],
+        [
+          -1050.307,
+          2.712,
+          838.685
+        ]
+      ],
+      "imageSize": [
+        192,
+        180
+      ]
+    }
+  ]
+}
