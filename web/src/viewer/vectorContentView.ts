@@ -18,7 +18,12 @@ import { backgroundView } from './background';
 import { GeoReference, tileKey, type Tile } from './geography';
 import { sourceResponse } from './externalResource';
 import { sourceCredit } from './sourceCredit';
-import { vectorGeometry, visibleVectorTiles } from './vectorGeometry';
+import {
+  detailedTileDistance,
+  surfaceZoom,
+  vectorGeometry,
+  visibleVectorTiles,
+} from './vectorGeometry';
 
 interface Node {
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
@@ -206,6 +211,14 @@ export class VectorContentItem {
         if (this.disposed) return;
         this.sourceIndex = index;
         this.zoom = Number(data.maxzoom);
+        // Distant tiles below the surface zoom contain no rendered water polygons.
+        // Finish blending to the map before the first coarse tile can enter the view.
+        if (this.waterMaterial && (this.config.extrusion.distantZoom ?? this.zoom) < surfaceZoom) {
+          this.waterMaterial.uniforms.fadeRange!.value.set(
+            detailedTileDistance / 2,
+            detailedTileDistance,
+          );
+        }
         this.template = data.tiles[0] as string;
         this.credit.dataset.sourceIndex = String(index);
         this.credit.dataset.zoom = String(this.zoom);
