@@ -3439,7 +3439,7 @@
     "kind": "object",
     "label": "MARINA BAY SANDS (ARTSCIENCE MUSEUM)",
     "regionId": "marina-bay-exterior",
-    "assetHash": "99b818c3f55392a7a582e268b2c5dfd171e2adf8309b85160594e6a9928a4c97",
+    "assetHash": "225a6fd266bb183c389e5f584f38a360c42f038d27d7f6ef74fb734a9d8e83da",
     "bounds": {
       "min": [
         -266.013858,
@@ -3465,7 +3465,8 @@
       "展馆立面纹理署名": "Facade details cropped and rectified from Singapore Skyline and ArtScience Museum by Alexeyevitch, public domain: https://commons.wikimedia.org/wiki/File:Singapore_Skyline_and_ArtScience_Museum.jpg",
       "花瓣曲面": "在测绘面法线连续的区域用三次曲面补足网格，使花瓣弯曲处的日影跟随表面。保留测绘顶点、窗框边界及硬折线，曲面内插为估计。",
       "原测绘面数": 4672,
-      "花瓣下方的环境光": "按花瓣间的遮挡、开阔天空与下方水岸估算间接光；反弹光强为近似。"
+      "花瓣下方的环境光": "按花瓣间的遮挡、开阔天空与下方水岸估算间接光；反弹光强为近似。",
+      "花瓣表面反射率": "对照两岸五个日间机位，将外壳贴图从航测时的明暗校准到估算的浅色覆层反射率，使用曲面原有的自遮挡。"
     }
   },
   {
