@@ -50,10 +50,10 @@ cd web && npm ci && npm run build     # 生成 web/dist；dev 默认在 SDK 所�
 1. `--token <令牌>`；
 2. 环境变量 `NYXID_TOKEN`；
 3. 环境变量 `NYXID_TOKEN_FILE` 指定的文件；
-4. 给了 `--profile <名称>`（或 `metaverse.json` 的 `profile`）时读 `~/.nyxid/profiles/<名称>/access_token`；
+4. 给了 `--profile <名称>`（或 `metaverse.json` 的 `profile`）时读对应 profile。标为 `auth_kind=agent_key` 的 profile 使用 `token`，旧版账号 profile 使用 `access_token`；
 5. 否则读 `~/.nyxid/access_token`。
 
-第 4、5 条的文件位置是按 `nyxid login --agent-key --profile <名称>` 推测的，实际不同就用 `NYXID_TOKEN_FILE`。
+通过 `nyxid login --agent-key --profile <名称>` 授权后，在 SDK 中使用同名 profile。SDK 将 Agent Key 放进发往 NyxID 代理的 `x-api-key` 请求头，并关闭该请求的自动重定向。显式令牌和旧版账号文件仍使用 Bearer。
 文件内容可以是令牌原文，也可以是带 `access_token` / `accessToken` / `token` 字段的 JSON。
 AI 建造时应当用它自己的 agent key 配置（由人在 NyxID 里审批和限定操作范围），不要用人的登录态。
 配置名（`profile`）和 `slug` 只能用 1–64 个字母、数字、`_` 和 `-`，不能拼出别的路径。

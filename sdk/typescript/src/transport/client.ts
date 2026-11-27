@@ -10,7 +10,7 @@ import {
  * 调用接口服务的两种方式：
  *
  * - `nyxid`（默认，线上）：`https://nyx-api.chrono-ai.fun/api/v1/proxy/s/<slug>/<路径>`，
- *   带 `Authorization: Bearer <令牌>`。NyxID 代理会丢掉自定义请求头，所以这里只发标准头
+ *   账号使用 `Authorization: Bearer <令牌>`，Agent Key 使用 `x-api-key`。NyxID 代理会丢掉自定义请求头，所以这里只发标准头
  *   （Authorization、Content-Type、Accept、If-Match、Idempotency-Key、Range）；基准版本放在
  *   If-Match 或请求体里。NyxID 地址必须是 https（本机回环地址可以用 http），否则构造时就报错，
  *   令牌不会以明文发出。
@@ -27,6 +27,8 @@ export interface TransportConfig {
   readonly slug?: string;
   /** nyxid 模式：取令牌（每次请求调用一次，可以是缓存的值）。 */
   readonly token?: () => string;
+  /** The proxy authenticates an explicitly selected Agent Key from this profile. */
+  readonly authKind?: 'agent_key';
   /** direct 模式：接口服务地址。 */
   readonly api?: string;
   /** direct 模式：取令牌地址。 */
@@ -55,6 +57,7 @@ export class ApiError extends Error {
 /** NyxID 代理会转发的请求头（小写）。其余的一律不发，避免误以为能传过去。 */
 export const PROXY_SAFE_HEADERS = new Set([
   'authorization',
+  'x-api-key',
   'content-type',
   'accept',
   'if-match',
@@ -127,6 +130,7 @@ export class ApiClient {
   async authHeaders(): Promise<Record<string, string>> {
     if (this.config.mode === 'nyxid') {
       if (this.config.token === undefined) throw new ApiError(0, 'nyxid 模式没有令牌');
+      if (this.config.authKind === 'agent_key') return { 'x-api-key': this.config.token() };
       return { Authorization: `Bearer ${this.config.token()}` };
     }
     const response = await this.fetcher(this.config.devTokenUrl!, {
@@ -189,7 +193,13 @@ export class ApiClient {
             if (!PROXY_SAFE_HEADERS.has(key.toLowerCase())) delete headers[key];
           }
         }
-        response = await this.fetcher(this.url(path, options.query), { method, headers, body });
+        response = await this.fetcher(this.url(path, options.query), {
+          method,
+          headers,
+          body,
+          ...(this.config.mode === 'nyxid' &&
+            this.config.authKind === 'agent_key' && { redirect: 'error' }),
+        });
       } catch (error) {
         if (error instanceof ApiError) throw error;
         if (idempotent && attempt <= retries) {
@@ -225,19 +235,29 @@ async function problem(method: string, path: string, response: Response): Promis
   let body: unknown;
   let code: string | undefined;
   let detail: string | undefined;
+  let proxyError = false;
   try {
     body = await response.json();
     const record = body as Record<string, unknown>;
     if (typeof record.code === 'string') code = record.code;
     if (typeof record.detail === 'string' && record.detail !== '') detail = record.detail;
     else if (typeof record.title === 'string' && record.title !== '') detail = record.title;
+    else if (
+      typeof record.error === 'string' &&
+      typeof record.message === 'string' &&
+      record.message
+    ) {
+      code ??= record.error;
+      detail = record.message;
+      proxyError = true;
+    }
   } catch {
     // 没有问题文档时只用状态码。
   }
   const hint =
     response.status === 401
       ? '（令牌无效或过期：重新运行 nyxid login，或检查 --token / NYXID_TOKEN）'
-      : response.status === 403
+      : response.status === 403 && !proxyError
         ? '（没有权限：检查 agent key 的操作范围和空间主人）'
         : response.status === 404
           ? '（找不到，或者没有查看权限）'
