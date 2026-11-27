@@ -1,0 +1,35 @@
+{
+  "entityId": "bay.dragonfly-bridge",
+  "kind": "structure",
+  "layer": "ext",
+  "regionId": "marina-bay-exterior",
+  "label": "滨海湾花园 · 蜻蜓桥",
+  "assetHash": "cf24cef845998a00f76097a315c42916110826424b0cdda3fde09f342b6a81d5",
+  "bounds": {
+    "min": [
+      -831.0294447366041,
+      -60.43,
+      484.98526516565664
+    ],
+    "max": [
+      -700.7382872480529,
+      -55.99503540047297,
+      532.0644019354984
+    ]
+  },
+  "material": {
+    "shading": "albedo"
+  },
+  "props": {
+    "background": true,
+    "桥身与宽度": "按 OpenStreetMap 四段木桥中心线相连，跨度约 90.1 米。桥宽按 OneMap 航片横断面估为 4.5 米。",
+    "桥面与连接": "高程、护栏与支撑按公开照片和场景相交步道估算，木纹使用 Poly Haven CC0 扫描。",
+    "来源": "© OpenStreetMap contributors, ODbL. Map Data © Singapore Land Authority.",
+    "路线来源": "https://www.openstreetmap.org/way/171142596",
+    "实拍参考": [
+      "https://commons.wikimedia.org/?curid=20345420",
+      "https://commons.wikimedia.org/?curid=148557551",
+      "https://commons.wikimedia.org/?curid=148557558"
+    ]
+  }
+}
