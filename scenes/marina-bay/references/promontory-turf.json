@@ -109,6 +109,8 @@
     "image": "promontory-turf-wear.png",
     "originXZ": [-12, 66],
     "metresPerPixel": 1,
+    "variationImage": "promontory-turf-variation.png",
+    "variationMethod": "One-metre OneMap ortho samples on the wear grid. Within each open turf footprint, compare 0.85 m and 9 m Gaussian averages of log2 linear RGB chromaticity. Add 55% of the log-luminance difference limited to -0.18 to +0.26 stops. Exclude canopy, pavement, deep shadow and low-coverage edges. RGB 128 is neutral, with 256 code values per stop.",
     "greenRGB": [122, 130, 92],
     "wornRGB": [147, 134, 110],
     "method": "On the registered OneMap ortho, sample turf at one-metre spacing at least one metre inside the footprint. Exclude canopy above 3 m, deep shadow (green <= 78) and neutral paving (green - blue <= 10). Map red/green ratios of 0.94 to 1.11 onto zero to full wear and smooth valid values with a one-metre Gaussian. Fade to zero where coverage falls below 65%. Each column increments local X and each row increments local Z."

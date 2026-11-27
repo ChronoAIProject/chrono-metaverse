@@ -12,6 +12,9 @@ import { GeoReference, tileBounds, tileCoordinates, tileKey, type Tile } from '.
 
 import { continueStackedFacades, type FacadeSection } from './stackedFacades';
 
+export const surfaceZoom = 14;
+export const detailedTileDistance = 4200;
+
 type Point = { x: number; y: number };
 
 function matchesBuildingPart(
@@ -255,7 +258,7 @@ function polygonSurface(
   sampledIds?: ReadonlySet<number>,
 ) {
   const layer = data.layers[name];
-  if (!layer || tile.z < 14 || layer.length > 10000) return;
+  if (!layer || tile.z < surfaceZoom || layer.length > 10000) return;
   const excluded = new Set(ground?.excludeFeatureIds);
   const mask: number[] = [];
   const positions: number[] = [];
@@ -560,7 +563,7 @@ export function visibleVectorTiles(
     const distance = camera.position.distanceTo(sphere.center);
     if (distance - sphere.radius > maxDistance || !frustum.intersectsSphere(sphere)) continue;
     // 近岸保留最高精度；远端优先使用来源确实提供建筑的概化层。
-    const distant = tile.z === distantZoom && distance - sphere.radius > 4200;
+    const distant = tile.z === distantZoom && distance - sphere.radius > detailedTileDistance;
     if (tile.z === zoom || distant) leaves.push({ tile, distance });
     else
       for (let i = 0; i < 4; i++)

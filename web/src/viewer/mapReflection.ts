@@ -5,11 +5,15 @@ import { Reflector } from 'three/addons/objects/Reflector.js';
 /** 镜像相机只绘制背景建筑、场景灯与天空，不递归绘制水面、界面或室内。 */
 export const CITY_REFLECTION_LAYER = 1;
 
+// Waves and camera turns sample beyond the visible shoreline between mirror captures.
+const captureScale = 1.25;
+const widenProjection = new THREE.Matrix4().makeScale(1 / captureScale, 1 / captureScale, 1);
+
 /** 岸线共用镜像缓冲。步行时每秒更新六次，切换机位时立即采样新视野。 */
 export class MapReflection {
   private readonly mirror = new Reflector(new THREE.BufferGeometry(), {
-    textureWidth: 512,
-    textureHeight: 384,
+    textureWidth: 512 * captureScale,
+    textureHeight: 384 * captureScale,
     multisample: 0,
   });
   private readonly eye = new THREE.PerspectiveCamera();
@@ -69,6 +73,7 @@ export class MapReflection {
     this.mirror.updateMatrixWorld();
     this.eye.matrixWorld.copy(camera.matrixWorld);
     this.eye.projectionMatrix.copy(camera.projectionMatrix);
+    this.eye.projectionMatrix.premultiply(widenProjection);
     this.eye.far = camera.far;
     const background = scene.background;
     const radiance = background instanceof THREE.Texture ? skyRadiance.get(background) : undefined;
@@ -84,6 +89,8 @@ export class MapReflection {
       );
     } finally {
       scene.background = background;
+      // Cache the player projection for the next zoom comparison.
+      this.eye.projectionMatrix.copy(camera.projectionMatrix);
     }
     this.last = now;
     const uniforms = (this.mirror.material as THREE.ShaderMaterial).uniforms;
