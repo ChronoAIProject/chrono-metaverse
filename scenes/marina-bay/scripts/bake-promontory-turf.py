@@ -21,7 +21,7 @@ def bake(survey):
         polygon = Polygon(feature['boundaryXZ'])
         xmin, zmin, xmax, zmax = polygon.bounds
         # Resolve the metre-scale changes in turf cover along a normal walk.
-        pitch = 2
+        pitch = 1
         for x in np.arange(np.floor(xmin / pitch) * pitch, xmax, pitch):
             for z in np.arange(np.floor(zmin / pitch) * pitch, zmax, pitch):
                 cell = polygon.intersection(box(x, z, x + pitch, z + pitch))
@@ -59,7 +59,7 @@ def bake(survey):
         map_coordinates(channel, pixel[:, ::-1].T, order=1, mode='constant')
         for channel in variation.transpose(2, 0, 1)
     ])
-    tint *= np.exp2(.50 * offsets)
+    tint *= np.exp2(offsets)
     factor = np.array([.55, .55, .50]) * headroom
     # Preserve bright samples when storing linear vertex colours as unsigned bytes.
     scale = np.minimum(np.maximum(1, tint.max(axis=0)), 1 / factor)
