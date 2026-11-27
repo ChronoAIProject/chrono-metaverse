@@ -2964,7 +2964,7 @@
     "kind": "object",
     "label": "MARINA BAY SANDS (MICE)",
     "regionId": "marina-bay-exterior",
-    "assetHash": "1c06ade585328910e05a8b47febc9660b4b3a4adb9f4c5f333db984a513fd33e",
+    "assetHash": "a58c31f771221a1f0e72b56bc358b76521dfe18e2c561852d94490c3f9e5e883",
     "bounds": {
       "min": [
         -391.398759,
@@ -2985,7 +2985,8 @@
       "原始分片": "6/39/4_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 56.443,
-      "三角形数": 5080
+      "三角形数": 5080,
+      "临水屋顶涂层": "按跨湾日景的成对机位估算阶梯屋顶的冷色偏差。上层立面与坡面分开校准，低层商业立面沿用测绘纹理。"
     },
     "material": {
       "shading": "baked"
@@ -3475,7 +3476,7 @@
     "kind": "object",
     "label": "MARINA BAY SANDS (THEATRE)",
     "regionId": "marina-bay-exterior",
-    "assetHash": "1967cab9cd7b956ad16ac9f7eec1008277d894a5dc6479946e384692c1a7f61b",
+    "assetHash": "034831095e90f6c45c0154f2f05e944bd442e500c657f96a130a823064fc7b76",
     "bounds": {
       "min": [
         -413.703888,
@@ -3496,7 +3497,8 @@
       "原始分片": "6/39/5_0.b3dm",
       "数据创建日期": "2025-06-08",
       "官方测量高度（米）": 41.292,
-      "三角形数": 4420
+      "三角形数": 4420,
+      "临水屋顶涂层": "按跨湾日景的成对机位估算阶梯屋顶的冷色偏差。上层立面与坡面分开校准，低层商业立面沿用测绘纹理。"
     },
     "material": {
       "shading": "baked"
