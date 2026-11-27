@@ -20,9 +20,11 @@ def bake(survey):
     for feature in survey['features']:
         polygon = Polygon(feature['boundaryXZ'])
         xmin, zmin, xmax, zmax = polygon.bounds
-        for x in np.arange(np.floor(xmin / 4) * 4, xmax, 4):
-            for z in np.arange(np.floor(zmin / 4) * 4, zmax, 4):
-                cell = polygon.intersection(box(x, z, x + 4, z + 4))
+        # Resolve the metre-scale changes in turf cover along a normal walk.
+        pitch = 2
+        for x in np.arange(np.floor(xmin / pitch) * pitch, xmax, pitch):
+            for z in np.arange(np.floor(zmin / pitch) * pitch, zmax, pitch):
+                cell = polygon.intersection(box(x, z, x + pitch, z + pitch))
                 for tri in shapely.get_parts(shapely.constrained_delaunay_triangles(cell)):
                     faces.append(np.asarray(tri.exterior.coords)[:3])
     xz, indices = np.unique(np.asarray(faces).reshape(-1, 2), axis=0, return_inverse=True)
@@ -48,7 +50,20 @@ def bake(survey):
     # Reserve enough headroom for the brighter worn turf in the UNORM vertex channel.
     headroom = np.maximum(1, ratio)
     tint *= (1 + coverage * (ratio - 1)) / headroom
-    material.baseColorFactor = [*(np.array([.55, .55, .50]) * headroom), 1.]
+    # Add local cover variation after the broad wear gradient. Neutral samples
+    # outside reliable open turf preserve the surveyed colour at the path edge.
+    with Image.open(ROOT / 'references' / wear['variationImage']) as image:
+        variation = (np.asarray(image.convert('RGB'), dtype=float) - 128) / 256
+    offsets = np.column_stack([
+        map_coordinates(channel, pixel[:, ::-1].T, order=1, mode='constant')
+        for channel in variation.transpose(2, 0, 1)
+    ])
+    tint *= np.exp2(.50 * offsets)
+    factor = np.array([.55, .55, .50]) * headroom
+    # Preserve bright samples when storing linear vertex colours as unsigned bytes.
+    scale = np.minimum(np.maximum(1, tint.max(axis=0)), 1 / factor)
+    tint = np.clip(tint / scale, 0, 1)
+    material.baseColorFactor = [*(factor * scale), 1.]
     uv = xz @ np.array([[.8, -.6], [.6, .8]]) / 1.8
     mesh = trimesh.Trimesh(vertices=np.column_stack((xz[:, 0], height, xz[:, 1])),
                            faces=indices.reshape(-1, 3), process=False,
