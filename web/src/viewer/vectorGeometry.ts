@@ -466,8 +466,8 @@ export function vectorGeometry(
         const rgb = tint ?? 0;
         for (let k = roof; k < positions.length / 3; k++) {
           if (reflectionBuildings) {
-            const level = (facade[k * 2]! - minHeight) / (height - minHeight);
-            reflectionRows.push(row + 1, (level - 0.2) / 0.3);
+            // Each vertex lies at the base or roof. The shader blends the three probe heights.
+            reflectionRows.push(row + 1, facade[k * 2] === height ? 1 : 0);
           }
           paint.push(rgb >>> 16, (rgb >>> 8) & 255, rgb & 255, tint === undefined ? 0 : 255);
         }
@@ -483,10 +483,14 @@ export function vectorGeometry(
     continueStackedFacades(sections, facade);
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(facade, 2));
     if (reflectionBuildings)
-      geometry.setAttribute('facadeProbe', new THREE.Float32BufferAttribute(reflectionRows, 2));
+      geometry.setAttribute('facadeProbe', new THREE.Uint8BufferAttribute(reflectionRows, 2));
     geometry.setAttribute('facadePaint', new THREE.Uint8BufferAttribute(paint, 4, true));
   }
   geometry.computeVertexNormals();
+  // Accumulate normals in float32, then fit each unit component into a normalized signed short.
+  const normals = geometry.getAttribute('normal');
+  const packed = Int16Array.from(normals.array, (component) => Math.round(component * 32767));
+  geometry.setAttribute('normal', new THREE.BufferAttribute(packed, 3, true));
   geometry.computeBoundingSphere();
   return {
     geometry,

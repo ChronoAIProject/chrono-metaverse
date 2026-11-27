@@ -370,7 +370,7 @@ export function urbanFacade(
         '#include <project_vertex>',
         /* glsl */ `#include <project_vertex>
         #ifdef LOCAL_FACADE_REFLECTIONS
-          probeRowLevel = facadeProbe;
+          probeRowLevel = vec2(facadeProbe.x, (facadeProbe.y - 0.2) / 0.3);
           // Planar faces interpolate the unnormalized incident ray in the registered map frame.
           vec3 r = reflect(mvPosition.xyz, normalize(normalMatrix * normal));
           probeDirection = transpose(mat3(modelViewMatrix)) * r;

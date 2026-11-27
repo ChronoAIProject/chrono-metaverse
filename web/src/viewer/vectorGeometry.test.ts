@@ -124,12 +124,25 @@ describe('通用矢量三维内容', () => {
     );
     const row = geometry.getAttribute('facadeProbe');
     const uv = geometry.getAttribute('uv');
+    expect(row.array).toBeInstanceOf(Uint8Array);
+    const normal = geometry.getAttribute('normal');
+    expect(normal.array).toBeInstanceOf(Int16Array);
+    const original = geometry.clone().deleteAttribute('normal');
+    original.computeVertexNormals();
+    const actual = new THREE.Vector3();
+    const expected = new THREE.Vector3();
+    for (let i = 0; i < normal.count; i++) {
+      actual.fromBufferAttribute(normal, i);
+      expected.fromBufferAttribute(original.getAttribute('normal'), i);
+      expect(actual.distanceTo(expected)).toBeLessThan(0.00003);
+    }
+    original.dispose();
     const matched = new Set<number>();
     let other = 0;
     for (let i = 0; i < row.count; i++) {
       if (row.getX(i) === 1) {
         matched.add(uv.getX(i));
-        expect(row.getY(i)).toBeCloseTo((uv.getX(i) / 24 - 0.2) / 0.3);
+        expect(row.getY(i)).toBe(uv.getX(i) / 24);
       } else other++;
     }
     expect(matched).toEqual(new Set([0, 24]));
