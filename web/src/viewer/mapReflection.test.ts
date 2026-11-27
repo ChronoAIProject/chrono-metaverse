@@ -50,6 +50,36 @@ it('步行共用水面倒影，切换机位、转身和大幅缩放时在同一�
   }
 });
 
+it('keeps texel density and captures the shoreline outside an off-centre player view', () => {
+  const reflection = new MapReflection();
+  const renderer = { getRenderTarget: () => null } as THREE.WebGLRenderer;
+  const camera = new THREE.PerspectiveCamera(52, 1.7, 0.05, 4000);
+  camera.position.y = 3;
+  camera.setViewOffset(1200, 800, 150, 100, 900, 600);
+  camera.updateMatrixWorld();
+  const projection = camera.projectionMatrix.clone();
+  const { width, height } = reflection.texture;
+  const draw = vi
+    .spyOn(Reflect.get(reflection, 'mirror'), 'onBeforeRender')
+    .mockImplementation((...args) => {
+      const capture = args[2] as THREE.PerspectiveCamera;
+      const point = new THREE.Vector3(3, 1, -5);
+      const player = point.clone().applyMatrix4(projection);
+      const mirror = point.clone().applyMatrix4(capture.projectionMatrix);
+      expect(mirror.x * width).toBeCloseTo(player.x * 512);
+      expect(mirror.y * height).toBeCloseTo(player.y * 384);
+      expect(mirror.z).toBeCloseTo(player.z);
+    });
+  try {
+    expect(width).toBeGreaterThan(512);
+    expect(reflection.update(renderer, new THREE.Scene(), camera, 0)).toBe(true);
+    expect(draw).toHaveBeenCalledTimes(1);
+    expect(camera.projectionMatrix).toEqual(projection);
+  } finally {
+    reflection.dispose();
+  }
+});
+
 it('restores the camera background and retries a failed radiance capture', () => {
   const reflection = new MapReflection();
   const renderer = { getRenderTarget: () => null } as THREE.WebGLRenderer;
