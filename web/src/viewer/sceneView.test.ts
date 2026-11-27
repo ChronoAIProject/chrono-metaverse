@@ -346,6 +346,55 @@ it('`VE-P14-03`：形状任务失败后清理在途状态允许重试，视图�
   expect(shapeMeshes(late.view)).toHaveLength(0);
 });
 
+it('batches positioned anchor markers in member space and releases instances on rebuild', async () => {
+  const { view } = setup();
+  const base = content({ ...source(), chunks: [] });
+  const member = base.members[0]!;
+  await view.setContent({
+    ...base,
+    members: [
+      {
+        ...member,
+        placement: { offset: [20, 0, 40], rotation: 90 },
+        view: {
+          ...member.view,
+          anchors: [
+            { anchorId: 'front', kind: 'seat', visibility: 'public', position: [1, 1, 2] },
+            { anchorId: 'back', kind: 'seat', visibility: 'public', position: [3, 2, 6] },
+            { anchorId: 'status', kind: 'status', visibility: 'public' },
+          ],
+        },
+      },
+    ],
+  });
+  const scene = sceneOf(view);
+  scene.updateMatrixWorld(true);
+  const markers: THREE.InstancedMesh[] = [];
+  scene.traverse((object) => {
+    if (object instanceof THREE.InstancedMesh && object.userData.accent) markers.push(object);
+  });
+  expect(markers).toHaveLength(1);
+  const batch = markers[0]!;
+  expect(batch.count).toBe(2);
+  const matrix = new THREE.Matrix4();
+  const center = new THREE.Vector3();
+  const expected = [
+    [3, 1, 1],
+    [7, 2, -1],
+  ];
+  for (let i = 0; i < batch.count; i++) {
+    batch.getMatrixAt(i, matrix);
+    center.setFromMatrixPosition(matrix);
+    expect(batch.boundingSphere?.containsPoint(center)).toBe(true);
+    expect(center.applyMatrix4(batch.matrixWorld).toArray()).toEqual(
+      expected[i]!.map((value) => expect.closeTo(value, 6)),
+    );
+  }
+  const release = vi.spyOn(batch, 'dispose');
+  await view.setContent(base);
+  expect(release).toHaveBeenCalledOnce();
+});
+
 it('`VE-P12-03`：三类连接双向聚焦变换后的公开锚点，成员取景与全景包围盒准确', async () => {
   const s = setup();
   const base = content({ ...source(), chunks: [] }).members[0]!.view;

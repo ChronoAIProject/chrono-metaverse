@@ -210,6 +210,7 @@ function disposeObject(root: THREE.Object3D): void {
   root.traverse((object) => {
     if (object.userData.shared === true) return;
     const mesh = object as THREE.Mesh;
+    if (mesh instanceof THREE.InstancedMesh) mesh.dispose();
     if (mesh.isMesh || (object as THREE.Line).isLine) {
       if (!mesh.userData.sharedGeometry) mesh.geometry?.dispose();
       if (!mesh.userData.sharedMaterial) {
@@ -1638,6 +1639,9 @@ export class SceneView {
       bounds.set(entity.anchorId, existing ? existing.union(box) : box);
     }
 
+    // Nearby markers share a draw call and a culling bound in member space.
+    const markerCells = new Map<string, THREE.Vector3[]>();
+    const markerCellSize = 16;
     for (const anchor of member.view.anchors) {
       const local = anchorPosition(anchor);
       const ref = { spaceId: member.spaceId, anchorId: anchor.anchorId };
@@ -1654,14 +1658,10 @@ export class SceneView {
         const object = new CSS2DObject(element);
         object.position.set(...local);
         overlay.add(object);
-        const marker = new THREE.Mesh(
-          new THREE.SphereGeometry(0.035, 12, 8),
-          // 锚点圆点和标签一样，在剖切高度以上时不显示。
-          new THREE.MeshBasicMaterial({ color: this.accent, clippingPlanes: this.clipping }),
-        );
-        marker.userData.accent = true;
-        marker.position.set(...local);
-        overlay.add(marker);
+        const cell = local.map((value) => Math.floor(value / markerCellSize)).join(',');
+        const positions = markerCells.get(cell);
+        if (positions) positions.push(object.position);
+        else markerCells.set(cell, [object.position]);
       }
       const attached = bounds.get(anchor.anchorId) ?? null;
       this.anchors.set(anchorKey(ref), {
@@ -1674,6 +1674,21 @@ export class SceneView {
         extent: anchor.box ? placedGridBox(placement, anchor.box) : attached,
         memberName: member.name,
       });
+    }
+
+    for (const markerPositions of markerCells.values()) {
+      const markers = new THREE.InstancedMesh(
+        new THREE.SphereGeometry(0.035, 12, 8),
+        new THREE.MeshBasicMaterial({ color: this.accent, clippingPlanes: this.clipping }),
+        markerPositions.length,
+      );
+      const matrix = new THREE.Matrix4();
+      markerPositions.forEach((position, i) =>
+        markers.setMatrixAt(i, matrix.makeTranslation(position)),
+      );
+      markers.computeBoundingSphere();
+      markers.userData.accent = true;
+      overlay.add(markers);
     }
 
     if (universe && member.name) {
