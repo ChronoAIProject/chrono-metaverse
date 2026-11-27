@@ -68,6 +68,7 @@ export function mapWaterMaterial(
       sunlight: { value: new THREE.Vector3(...KEY_LIGHT.direction).normalize() },
       sunColor: { value: new THREE.Color(0xfff7e3) },
       time: { value: 0 },
+      fadeRange: { value: new THREE.Vector2(3500, 11000) },
       shortWaveNumbers: { value: new THREE.Vector4(first.x, first.y, second.x, second.y) },
       skyMap: { value: null },
       hasSky: { value: false },
@@ -197,6 +198,7 @@ export function mapWaterMaterial(
         float parallel = (ior*cosine - transmitted)/(ior*cosine + transmitted);
         return 0.5 * (perpendicular*perpendicular + parallel*parallel);
       }
+      uniform vec2 fadeRange;
       void main() {
         #include <logdepthbuf_fragment>
         vec2 p = surfacePosition.xz;
@@ -380,7 +382,7 @@ export function mapWaterMaterial(
         // 遮挡只衰减直射照亮的水体与太阳高光，镜像相机已记录岸楼自身的明暗。
         water *= mix(1.0 - directFraction, 1.0, visibility);
         vec3 color = mix(water,sky,fresnel) + sunColor * shine * visibility;
-        float distanceFade = 1.0 - smoothstep(3500.0, 11000.0, range);
+        float distanceFade = 1.0 - smoothstep(fadeRange.x, fadeRange.y, range);
         gl_FragColor = vec4(color, 0.96 * distanceFade);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
