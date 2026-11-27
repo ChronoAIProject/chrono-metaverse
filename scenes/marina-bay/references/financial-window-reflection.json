@@ -1,0 +1,58 @@
+{
+  "references": [
+    "https://commons.wikimedia.org/?curid=197932455",
+    "https://commons.wikimedia.org/?curid=157871412",
+    "https://commons.wikimedia.org/?curid=137548517"
+  ],
+  "method": "Use the surveyed facade atlas to estimate roughness differences between dark glass and brighter frame bands. Compare the two assignments in registered photos, retaining the response which recovers the floor bands. The roughness values are estimates.",
+  "models": [
+    {
+      "id": "bay.tower1-below-office",
+      "source": "a265477c567665dda0f3f9d593ed260f785fd79386aaf728fb0e303771dce3f0",
+      "material": "MBFC Tower 1 bay-facing curtain wall",
+      "output": "a21bd698e13626db3c15ef8c5d214fc2fb0ebded2f19caaf150f6c63eaffd657"
+    },
+    {
+      "id": "bay.tower1-above-office",
+      "source": "f91dd981e988a74b20785c76e28fc19c1fb7200c265b6639e4397b8300234c4b",
+      "material": "MBFC Tower 1 bay-facing curtain wall",
+      "output": "cecc0ec70a9cbcb0afd4616e3d828ada77d4892660851601b91d3013acbcc0a1"
+    },
+    {
+      "id": "bay.tower1-office-facade-west",
+      "source": "9d7bddc67f87827734b8a1e70610e6119a05927aa82209eb6bb8b32b4728aa76",
+      "material": "MBFC Tower 1 bay-facing curtain wall",
+      "output": "673f68d059ecbf3c5edc36855efdbd3c973fe31397bfc69d6d7197aa7732631f"
+    },
+    {
+      "id": "bay.tower1-office-facade-east",
+      "source": "b74dd6d076a84866753d71a573f9780b71a4d407970508d78f777fbf2fbdc064",
+      "material": "MBFC Tower 1 bay-facing curtain wall",
+      "output": "18f44ea602afda0b6f43f4ba6855e17dcec52b2cc9ec38be6726b3a7b4d9c9a8"
+    },
+    {
+      "id": "bay.tower1-office-facade-north",
+      "source": "79d30c9d8157aa79d7b40ecb3965bd08c484cfaee2839f9489d151218ef3776c",
+      "material": "MBFC Tower 1 bay-facing curtain wall",
+      "output": "10a3512ed10fcba649c731bcf2acd7612d8330f318e4973168872a21486bef3d"
+    },
+    {
+      "id": "bay.tower1-office-facade-south",
+      "source": "07103eb3ab8ab5229a3ca52150effa9b733d6de4d1130a859bd8acf3f586f89b",
+      "material": "MBFC Tower 1 bay-facing curtain wall",
+      "output": "d63428487eb3c5d689f8f293be47c09e738cb5d5f9b782c744553136cf0d7e4c"
+    },
+    {
+      "id": "bay.6e5e6a36-a02d-4ff1-8661-ff9619e42b42",
+      "source": "eb0b215981fdc4bf914adcac8da9e3ba1152a501f2af3426a78ef21bb5e54c59",
+      "material": "Surveyed office curtain wall",
+      "output": "074d2bb68cdc74a23004df0f529bf2501a17a55ab24fd72cacb740d775c3055a"
+    },
+    {
+      "id": "bay.cb2ee51a-5128-416d-92dd-193db140cc02",
+      "source": "818246252eb0745a5685cca36999302458812e9079c9fc19ee47776d254b1937",
+      "material": "Surveyed office curtain wall",
+      "output": "547983c3a354c7a816d000ec3007a748b4cd7d8df99074a7e202275ecb7210b6"
+    }
+  ]
+}
