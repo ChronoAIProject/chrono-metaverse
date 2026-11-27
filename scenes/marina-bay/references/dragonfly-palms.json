@@ -6,9 +6,10 @@
     "fieldPhotos": [
       "https://commons.wikimedia.org/?curid=148557551",
       "https://commons.wikimedia.org/?curid=148557558"
-    ]
+    ],
+    "regionalHeight": "Lang et al., A high-resolution canopy height model of the Earth, https://doi.org/10.1038/s41559-023-02206-6"
   },
-  "method": "Radial crowns visible beside Dragonfly Bridge were marked on the OneMap image at zoom 20. Diameter follows the frond spread. Height and species are approximate. Palm proxies use four 0 A.D. royal palm variants. Centres inside the mapped lake were excluded.",
+  "method": "Radial palm crowns were marked on the OneMap orthophoto at zoom 20. Spread follows the mapped fronds. Three near crowns were height-matched to the bridge rails and canopy outline in the first field photo. Other heights use crown diameter and the regional canopy-height raster where available. Heights and species are approximate. Four 0 A.D. royal palm variants represent the crowns on land.",
   "trees": [
     {
       "treeId": "dragonfly-palm-4",
@@ -20,7 +21,7 @@
       "longitude": 103.8620089,
       "crownDiameterMetres": 6.57,
       "groundY": -60.257,
-      "estimatedHeightMetres": 7.35,
+      "estimatedHeightMetres": 12.77,
       "yawDegrees": 70.5,
       "variant": "d",
       "linearTint": [
@@ -40,7 +41,7 @@
       "longitude": 103.8620572,
       "crownDiameterMetres": 6.27,
       "groundY": -60.257,
-      "estimatedHeightMetres": 7.02,
+      "estimatedHeightMetres": 12.42,
       "yawDegrees": 208.0,
       "variant": "c",
       "linearTint": [
@@ -60,7 +61,7 @@
       "longitude": 103.8621014,
       "crownDiameterMetres": 6.86,
       "groundY": -60.257,
-      "estimatedHeightMetres": 7.69,
+      "estimatedHeightMetres": 13.1,
       "yawDegrees": 345.5,
       "variant": "b",
       "linearTint": [
@@ -80,7 +81,7 @@
       "longitude": 103.8621779,
       "crownDiameterMetres": 5.97,
       "groundY": -60.257,
-      "estimatedHeightMetres": 6.68,
+      "estimatedHeightMetres": 12.08,
       "yawDegrees": 123.0,
       "variant": "a",
       "linearTint": [
@@ -100,7 +101,7 @@
       "longitude": 103.8622288,
       "crownDiameterMetres": 4.48,
       "groundY": -60.257,
-      "estimatedHeightMetres": 5.01,
+      "estimatedHeightMetres": 10.36,
       "yawDegrees": 260.6,
       "variant": "d",
       "linearTint": [
@@ -120,7 +121,7 @@
       "longitude": 103.8626835,
       "crownDiameterMetres": 6.27,
       "groundY": -60.257,
-      "estimatedHeightMetres": 7.02,
+      "estimatedHeightMetres": 10.0,
       "yawDegrees": 313.1,
       "variant": "a",
       "linearTint": [
@@ -140,7 +141,7 @@
       "longitude": 103.8627023,
       "crownDiameterMetres": 5.97,
       "groundY": -60.257,
-      "estimatedHeightMetres": 6.68,
+      "estimatedHeightMetres": 11.0,
       "yawDegrees": 90.6,
       "variant": "d",
       "linearTint": [
@@ -160,7 +161,7 @@
       "longitude": 103.8627344,
       "crownDiameterMetres": 6.27,
       "groundY": -60.257,
-      "estimatedHeightMetres": 7.02,
+      "estimatedHeightMetres": 12.6,
       "yawDegrees": 228.1,
       "variant": "c",
       "linearTint": [
@@ -180,7 +181,7 @@
       "longitude": 103.8628806,
       "crownDiameterMetres": 7.16,
       "groundY": -60.257,
-      "estimatedHeightMetres": 8.02,
+      "estimatedHeightMetres": 13.45,
       "yawDegrees": 5.6,
       "variant": "b",
       "linearTint": [
@@ -200,7 +201,7 @@
       "longitude": 103.8628685,
       "crownDiameterMetres": 6.57,
       "groundY": -60.257,
-      "estimatedHeightMetres": 7.35,
+      "estimatedHeightMetres": 13.97,
       "yawDegrees": 143.1,
       "variant": "a",
       "linearTint": [
@@ -220,7 +221,7 @@
       "longitude": 103.8628645,
       "crownDiameterMetres": 6.86,
       "groundY": -60.257,
-      "estimatedHeightMetres": 7.69,
+      "estimatedHeightMetres": 14.3,
       "yawDegrees": 280.6,
       "variant": "d",
       "linearTint": [
@@ -240,7 +241,7 @@
       "longitude": 103.8629048,
       "crownDiameterMetres": 6.57,
       "groundY": -60.257,
-      "estimatedHeightMetres": 7.35,
+      "estimatedHeightMetres": 13.97,
       "yawDegrees": 58.1,
       "variant": "c",
       "linearTint": [
@@ -260,7 +261,7 @@
       "longitude": 103.8629772,
       "crownDiameterMetres": 6.57,
       "groundY": -60.257,
-      "estimatedHeightMetres": 7.35,
+      "estimatedHeightMetres": 12.77,
       "yawDegrees": 195.6,
       "variant": "b",
       "linearTint": [
@@ -280,7 +281,7 @@
       "longitude": 103.8630335,
       "crownDiameterMetres": 5.67,
       "groundY": -60.257,
-      "estimatedHeightMetres": 6.35,
+      "estimatedHeightMetres": 11.73,
       "yawDegrees": 333.1,
       "variant": "a",
       "linearTint": [
@@ -300,7 +301,7 @@
       "longitude": 103.8630804,
       "crownDiameterMetres": 7.16,
       "groundY": -60.257,
-      "estimatedHeightMetres": 8.02,
+      "estimatedHeightMetres": 13.45,
       "yawDegrees": 110.6,
       "variant": "d",
       "linearTint": [
@@ -320,7 +321,7 @@
       "longitude": 103.8631073,
       "crownDiameterMetres": 5.97,
       "groundY": -60.257,
-      "estimatedHeightMetres": 6.68,
+      "estimatedHeightMetres": 12.08,
       "yawDegrees": 248.2,
       "variant": "c",
       "linearTint": [
@@ -340,7 +341,7 @@
       "longitude": 103.8630469,
       "crownDiameterMetres": 6.86,
       "groundY": -60.257,
-      "estimatedHeightMetres": 7.69,
+      "estimatedHeightMetres": 13.1,
       "yawDegrees": 25.7,
       "variant": "b",
       "linearTint": [
@@ -360,7 +361,7 @@
       "longitude": 103.8630684,
       "crownDiameterMetres": 6.27,
       "groundY": -60.257,
-      "estimatedHeightMetres": 7.02,
+      "estimatedHeightMetres": 12.42,
       "yawDegrees": 163.2,
       "variant": "a",
       "linearTint": [
@@ -380,7 +381,7 @@
       "longitude": 103.8631113,
       "crownDiameterMetres": 6.86,
       "groundY": -60.257,
-      "estimatedHeightMetres": 7.69,
+      "estimatedHeightMetres": 13.1,
       "yawDegrees": 300.7,
       "variant": "d",
       "linearTint": [
@@ -400,7 +401,7 @@
       "longitude": 103.8626298,
       "crownDiameterMetres": 5.37,
       "groundY": -60.257,
-      "estimatedHeightMetres": 8.06,
+      "estimatedHeightMetres": 10.31,
       "yawDegrees": 78.2,
       "variant": "c",
       "linearTint": [
@@ -420,7 +421,7 @@
       "longitude": 103.8626714,
       "crownDiameterMetres": 5.67,
       "groundY": -60.257,
-      "estimatedHeightMetres": 8.51,
+      "estimatedHeightMetres": 11.73,
       "yawDegrees": 215.7,
       "variant": "b",
       "linearTint": [
@@ -440,7 +441,7 @@
       "longitude": 103.8626446,
       "crownDiameterMetres": 5.37,
       "groundY": -60.257,
-      "estimatedHeightMetres": 8.06,
+      "estimatedHeightMetres": 10.31,
       "yawDegrees": 353.2,
       "variant": "a",
       "linearTint": [
