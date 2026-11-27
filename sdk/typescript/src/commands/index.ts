@@ -51,7 +51,7 @@ export const HELP = `metaverse —— chrono-metaverse 的本地工作区和建�
   --json                 输出 JSON
   --mode nyxid|direct    调用方式（覆盖 metaverse.json）
   --token <令牌>         NyxID 令牌（nyxid 模式；也可以用 NYXID_TOKEN、NYXID_TOKEN_FILE、--profile）
-  --profile <名称>       nyxid 命令行的配置名（读 ~/.nyxid/profiles/<名称>/access_token）
+  --profile <名称>       NyxID 配置名（支持 Agent Key 和旧版账号 profile）
   --slug <slug>          服务在 NyxID 里的 slug（默认 chrono-metaverse）
   --nyx-base <地址>      NyxID 地址（默认 https://nyx-api.chrono-ai.fun；也可以用 METAVERSE_NYX_BASE）。
                          令牌会发到这里，必须是 https；metaverse.json 里只能写内置的可信地址
