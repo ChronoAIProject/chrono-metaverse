@@ -7,7 +7,7 @@ from pathlib import Path
 import subprocess
 
 import numpy as np
-from scipy.ndimage import gaussian_filter1d
+from scipy.ndimage import gaussian_filter, gaussian_filter1d
 from PIL import Image
 
 exposure = import_module("bake-clear-sky")
@@ -236,6 +236,40 @@ def cloud_highlights(radiance, pixels, latitude):
     return np.rint(255 * encoded).astype(np.uint8)
 
 
+def water_reflection_sky(panorama, reflection, scale, output):
+    """Match broad near-horizon reflection luminance to the visible sky at the same bearing."""
+    def linear_srgb(pixels):
+        encoded = pixels / 255.0
+        return np.where(encoded <= .04045, encoded / 12.92, ((encoded + .055) / 1.055)**2.4)
+
+    visible = np.asarray(Image.open(panorama).convert("RGB"))
+    radiance = scale * linear_srgb(np.asarray(Image.open(reflection).convert("RGB")))
+    height, width = radiance.shape[:2]
+    block_height, block_width = visible.shape[0] // height, visible.shape[1] // width
+    target = np.empty((height, width))
+    for row in range(height):
+        band = visible[row * block_height:(row + 1) * block_height]
+        blocks = linear_srgb(band).reshape(block_height, width, block_width, 3)
+        target[row] = blocks.mean(axis=(0, 2)) @ LUMA
+
+    # Invert the viewing tone curve along the original RGB ray. This preserves the
+    # colour of the incident light while accounting for exposure of the visible sky.
+    low = np.full(target.shape, -2.0)
+    high = np.full(target.shape, 2.0)
+    for _ in range(13):
+        mid = (low + high) / 2
+        trial = linear_srgb(exposure.display_rgb(radiance * np.exp2(mid[..., None]))) @ LUMA
+        low = np.where(trial < target, mid, low)
+        high = np.where(trial >= target, mid, high)
+    gain = gaussian_filter((low + high) / 2, 2.2, mode=("nearest", "wrap")).clip(-1, 1)
+    latitude = 90 - (np.arange(height) + .5) * 180 / height
+    horizon = smooth_step((latitude + 3) / 3) * (1 - smooth_step((latitude - 13) / 9))
+    # Partial correction retains the open-water contrast across the two opposing shore views.
+    corrected = np.clip(radiance * np.exp2((.5 * gain * horizon[:, None])[..., None]) / scale, 0, 1)
+    encoded = np.where(corrected <= .0031308, 12.92 * corrected, 1.055 * corrected**(1 / 2.4) - .055)
+    Image.fromarray(np.uint8(np.rint(255 * encoded))).save(output)
+
+
 def bake(morning_path, cloud_path, output, detail_path=None):
     sky = json.loads(PREVIOUS.read_text())
     sky["airHalfDistance"] = 14400
@@ -308,6 +342,9 @@ def bake(morning_path, cloud_path, output, detail_path=None):
     day["diffuseProbe"] = diffuse_probe(average / (total * (1-day["directFraction"])))
     sky["texture"] = hashlib.sha256(panorama.read_bytes()).hexdigest()
     sky["radiance"]["texture"] = hashlib.sha256(reflection.read_bytes()).hexdigest()
+    water = output / "water-radiance.png"
+    water_reflection_sky(panorama, reflection, sky["radiance"]["scale"], water)
+    sky["radiance"]["waterTexture"] = hashlib.sha256(water.read_bytes()).hexdigest()
     (output / "sky.json").write_text(json.dumps(sky, indent=2) + "\n")
 
 

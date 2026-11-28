@@ -2,7 +2,7 @@ import { offshoreRadiance, offshoreSamplers, type OffshoreWater } from './offsho
 import { surfaceNoise } from './surfaceVariation';
 import * as THREE from 'three';
 import type { MapReflection } from './mapReflection';
-import { skyRadiance } from './skyRadiance';
+import { waterReflectionSky } from './skyRadiance';
 import { KEY_LIGHT } from './lighting';
 import gravityField from '../assets/geography/reservoir-gravity.webp';
 import rippleField from '../assets/geography/reservoir-ripples.webp';
@@ -586,7 +586,7 @@ export function mapWaterMaterial(
     const sky = scene.background;
     const hasSky =
       sky instanceof THREE.Texture && sky.mapping === THREE.EquirectangularReflectionMapping;
-    const radiance = hasSky ? skyRadiance.get(sky) : undefined;
+    const radiance = hasSky ? waterReflectionSky(sky) : undefined;
     material.uniforms.skyMap!.value = radiance ?? (hasSky ? sky : null);
     material.uniforms.skyWeight!.value = radiance ? 1 : 0.72;
     material.uniforms.hasSky!.value = hasSky;

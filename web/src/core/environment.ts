@@ -174,7 +174,12 @@ export interface Environment {
     /** 米。经过这段空气后，地物与地平线之间的亮度差减半。 */
     readonly airHalfDistance?: number;
     /** Sun-free sky radiance encoded as sRGB times a linear scale. */
-    readonly radiance?: { readonly texture: string; readonly scale: number };
+    readonly radiance?: {
+      readonly texture: string;
+      readonly scale: number;
+      /** Optional low-sky appearance for water reflections at the same linear scale. */
+      readonly waterTexture?: string;
+    };
     readonly daylight?: SkyDaylight;
   };
   readonly map?: GeographicMap;
@@ -248,7 +253,18 @@ export function environmentOf(entity: EntityBody): Environment | null {
       /^[a-f0-9]{64}$/.test(radiance.texture) &&
       entity.textures?.includes(radiance.texture) &&
       finite(radiance.scale, 0.001, 65504)
-        ? { radiance: { texture: radiance.texture, scale: radiance.scale } }
+        ? {
+            radiance: {
+              texture: radiance.texture,
+              scale: radiance.scale,
+              ...(typeof radiance.waterTexture === 'string' &&
+              radiance.waterTexture !== radiance.texture &&
+              /^[a-f0-9]{64}$/.test(radiance.waterTexture) &&
+              entity.textures?.includes(radiance.waterTexture)
+                ? { waterTexture: radiance.waterTexture }
+                : {}),
+            },
+          }
         : {}),
       texture: value.texture,
       yaw: (value.yaw as number | undefined) ?? 0,
