@@ -24,6 +24,8 @@ const entities = hostOnly
     : [...ground, ...buildings, ...host, ...streetscape, ...streetTrees];
 const assets = entities.map((entity) => ({ ...entity, purpose: 'model', format: 'glb' }));
 if (!probe && !hostOnly) {
+  const domes = JSON.parse(readFileSync(new URL('build/garden-conservatories.json', root), 'utf8'));
+  assets.push({ ...domes, purpose: 'model', format: 'glb' });
   const environment = JSON.parse(readFileSync(new URL('build/environment.json', root), 'utf8'));
   assets.push({
     entityId: environment.entityId,
