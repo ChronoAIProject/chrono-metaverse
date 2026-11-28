@@ -37,7 +37,8 @@ def bake(survey):
     base = np.array([141, 156, 119])
     # Temper aerial light and moisture variations before lighting the surface in 3D.
     tint = np.clip((rgb / base) ** 1.7 * turf_wear(xz) ** .23, .20, 1)
-    material = scanned_turf('Promontory lawn', base, cover='grass_ground')
+    # A broad reflection matches both walking directions across the open lawns.
+    material = scanned_turf('Promontory lawn', base, cover='grass_ground', roughness=253)
     vary_turf_direction(material)
     # Reintroduce the warm patches excluded by the green-only survey. Convert the
     # measured colour ratio to linear light before mixing into vertex colours.
@@ -60,7 +61,7 @@ def bake(survey):
         for channel in variation.transpose(2, 0, 1)
     ])
     tint *= np.exp2(offsets)
-    factor = np.array([.55, .55, .50]) * headroom
+    factor = np.array([.5665, .53625, .471]) * headroom
     # Preserve bright samples when storing linear vertex colours as unsigned bytes.
     scale = np.minimum(np.maximum(1, tint.max(axis=0)), 1 / factor)
     tint = np.clip(tint / scale, 0, 1)
