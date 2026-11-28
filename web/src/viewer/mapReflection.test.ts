@@ -111,6 +111,53 @@ it('redraws a resized shoreline target once even within the capture interval', (
   }
 });
 
+it('refreshes moving eye-level shoreline reflections between regular captures', () => {
+  const mirror = new MapReflection();
+  const renderer = { getRenderTarget: () => null } as THREE.WebGLRenderer;
+  const camera = new THREE.PerspectiveCamera();
+  const scene = new THREE.Scene();
+  const clock = vi.spyOn(performance, 'now');
+  const draw = vi
+    .spyOn(Reflect.get(mirror, 'mirror'), 'onBeforeRender')
+    .mockImplementation(() => {});
+  const update = (time: number, level = 0) => {
+    clock.mockReturnValue(time);
+    camera.updateMatrixWorld();
+    return mirror.update(renderer, scene, camera, level);
+  };
+  try {
+    mirror.fitShorelineViewport(1390, 747);
+    camera.position.y = 2;
+    update(1000);
+    update(1083);
+    expect(draw).toHaveBeenCalledTimes(1);
+    camera.position.x += 0.12;
+    expect(update(1084, 1)).toBe(false);
+    update(1084);
+    update(1084);
+    expect(draw).toHaveBeenCalledTimes(2);
+    camera.rotation.y += 0.01;
+    update(1150);
+    expect(draw).toHaveBeenCalledTimes(2);
+    update(1168);
+    expect(draw).toHaveBeenCalledTimes(3);
+    camera.position.y = 200;
+    update(1300);
+    camera.position.x += 0.12;
+    update(1390);
+    expect(draw).toHaveBeenCalledTimes(4);
+    camera.position.y = 2;
+    mirror.fitShorelineViewport(390, 800);
+    update(1450);
+    camera.position.x += 0.12;
+    update(1540);
+    expect(draw).toHaveBeenCalledTimes(5);
+  } finally {
+    clock.mockRestore();
+    mirror.dispose();
+  }
+});
+
 it('restores the camera background and retries a failed radiance capture', () => {
   const reflection = new MapReflection();
   const renderer = { getRenderTarget: () => null } as THREE.WebGLRenderer;
