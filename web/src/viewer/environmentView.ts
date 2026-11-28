@@ -6,13 +6,20 @@ import { environmentOf, type Environment } from '../core/environment';
 import { GRID_UNIT } from '../core/chunk';
 import type { Placement, SceneContent } from '../core/scene';
 import { EARTH_RADIUS } from './geography';
-import type { MemberOcean } from './offshoreWater';
+import type { OffshoreWater } from './offshoreWater';
+import type { TurfColorSurvey } from '../core/environment';
 import { GeographicMap } from './geographicMap';
+
+export interface MemberSurfaces {
+  readonly spaceId: string;
+  readonly water?: OffshoreWater;
+  readonly turf?: TurfColorSurvey;
+}
 
 /** 环境独立于内容网格，天空没有有限半径，也不参与主体剖切、取景和点选。 */
 export class EnvironmentView {
   private key = '';
-  offshore?: MemberOcean;
+  surfaces?: MemberSurfaces;
   private map: GeographicMap | null = null;
   private sky: THREE.Texture | null = null;
   private metalSky: THREE.Texture | null = null;
@@ -40,6 +47,35 @@ export class EnvironmentView {
   addOutdoorMetal(material: THREE.MeshStandardMaterial): void {
     this.metals.add(material);
     this.lightMetal(material);
+  }
+
+  addModelSkyReflection(material: THREE.Material): void {
+    if (
+      !(material instanceof THREE.MeshStandardMaterial) ||
+      material.transparent ||
+      material.alphaTest > 0 ||
+      material.metalness <= 0 ||
+      material.envMap ||
+      material.userData.reflectSky ||
+      material.userData.prefilteredReflection ||
+      material.userData.reflectionLevels ||
+      material.userData.waterSurface ||
+      (material instanceof THREE.MeshPhysicalMaterial && material.transmission > 0)
+    )
+      return;
+
+    // 场景已有漫射天光，保留光照贴图，只取按粗糙度过滤的环境镜面分量。
+    const previous = material.onBeforeCompile;
+    const key = material.customProgramCacheKey();
+    material.customProgramCacheKey = () => key + '|outdoor-sky-specular';
+    material.onBeforeCompile = function (shader, renderer) {
+      previous.call(this, shader, renderer);
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <lights_fragment_maps>',
+        'vec3 previousIrradiance = iblIrradiance;\n#include <lights_fragment_maps>\niblIrradiance = previousIrradiance;',
+      );
+    };
+    this.addOutdoorMetal(material);
   }
 
   private lightMetal(material: THREE.MeshStandardMaterial): void {
@@ -135,8 +171,13 @@ export class EnvironmentView {
             this.sampling,
             this.loadTexture,
           );
-          if (this.map.offshore)
-            this.offshore = { spaceId: selected.spaceId, water: this.map.offshore };
+          if (!hologram && (this.map.offshore || environment.map.turfColorSurvey)) {
+            this.surfaces = {
+              spaceId: selected.spaceId,
+              water: this.map.offshore,
+              turf: environment.map.turfColorSurvey,
+            };
+          }
           this.map.group.rotation.y = THREE.MathUtils.degToRad(placement.rotation);
           this.map.group.position.fromArray(placement.offset).multiplyScalar(GRID_UNIT);
           this.scene.add(this.map.group);
@@ -231,7 +272,7 @@ export class EnvironmentView {
     this.generation++;
     this.map?.dispose();
     this.map = null;
-    this.offshore = undefined;
+    this.surfaces = undefined;
     if (this.sky) {
       skyRadiance.get(this.sky)?.dispose();
       skyRadiance.delete(this.sky);

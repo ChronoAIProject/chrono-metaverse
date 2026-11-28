@@ -24,6 +24,8 @@ const entities = hostOnly
     : [...ground, ...buildings, ...host, ...streetscape, ...streetTrees];
 const assets = entities.map((entity) => ({ ...entity, purpose: 'model', format: 'glb' }));
 if (!probe && !hostOnly) {
+  const domes = JSON.parse(readFileSync(new URL('build/garden-conservatories.json', root), 'utf8'));
+  assets.push({ ...domes, purpose: 'model', format: 'glb' });
   const environment = JSON.parse(readFileSync(new URL('build/environment.json', root), 'utf8'));
   assets.push({
     entityId: environment.entityId,
@@ -31,6 +33,15 @@ if (!probe && !hostOnly) {
     assetHash: environment.props.environment.sky.texture,
     purpose: 'texture',
     format: 'jpeg',
+  });
+  const turf = environment.props.environment.map?.turfColorSurvey;
+  if (turf) assets.push({
+    entityId: environment.entityId,
+    label: '实测草地色差',
+    assetHash: turf.texture,
+    path: new URL('references/marina-south-turf/reflectance.png', root).pathname,
+    purpose: 'texture',
+    format: 'png',
   });
   const radiance = environment.props.environment.sky.radiance;
   if (radiance) assets.push({
@@ -82,7 +93,7 @@ async function next() {
         format: entity.format,
         plot: config.plot,
         source: {
-          path: new URL(`assets/${entity.assetHash}.${entity.format}`, root).pathname,
+          path: entity.path ?? new URL(`assets/${entity.assetHash}.${entity.format}`, root).pathname,
         },
       });
       if (result.jobId)

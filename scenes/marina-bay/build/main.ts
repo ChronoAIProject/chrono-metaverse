@@ -325,6 +325,10 @@ const groundScanMaterials: Record<string, string[]> = {
   'bay.west-bay-boat-landing': ['Exposed deck edge', 'Deck soffit and piles', 'Landing wearing course'],
 };
 
+const skyReflectionMaterials: Record<string, string[]> = JSON.parse(
+  readFileSync(new URL('./waterfront-reflectors.json', import.meta.url), 'utf8'),
+);
+
 // Bind the charts independently of baked tree shade on the second UV channel.
 const squareGranite = { grid: [5, 5], bond: 'stack', originU: .0955 };
 const pavedSurfaces: Record<string, Record<string, number[] | typeof squareGranite>> = {
@@ -357,13 +361,21 @@ export default function build(base: BuildBase, kit: Kit) {
     ? withPromontoryLawns(withBoatQuay(surroundings), daylight)
     : [];
   let currentEnvironment = surveyedGrassCoverage(daylight, registered.length > 1);
-  const authoredMap = (configured?.props?.environment as { map?: { longitude?: number; latitude?: number; offshore?: {texture: string} } } | undefined)?.map;
-  const savedEnvironment = currentEnvironment?.props?.environment as { map?: { offshore?: unknown; longitude?: number; latitude?: number } } | undefined;
-  if (currentEnvironment && authoredMap?.offshore && savedEnvironment?.map && !savedEnvironment.map.offshore &&
+  type SurfaceMap = { longitude?: number; latitude?: number; offshore?: { texture: string }; turfColorSurvey?: { texture: string } };
+  const authoredMap = (configured?.props?.environment as { map?: SurfaceMap } | undefined)?.map;
+  const savedEnvironment = currentEnvironment?.props?.environment as { map?: SurfaceMap } | undefined;
+  if (currentEnvironment && authoredMap && savedEnvironment?.map &&
       savedEnvironment.map.longitude === authoredMap.longitude && savedEnvironment.map.latitude === authoredMap.latitude) {
-    currentEnvironment = { ...currentEnvironment,
-      textures: [...new Set([...(currentEnvironment.textures ?? []), authoredMap.offshore.texture])],
-      props: {...currentEnvironment.props, environment: {...savedEnvironment, map: {...savedEnvironment.map, offshore: authoredMap.offshore}}}
+    const map = { ...savedEnvironment.map };
+    const textures = new Set(currentEnvironment.textures);
+    for (const key of ['offshore', 'turfColorSurvey'] as const) {
+      if (!map[key] && authoredMap[key]) {
+        map[key] = authoredMap[key];
+        textures.add(authoredMap[key].texture);
+      }
+    }
+    currentEnvironment = { ...currentEnvironment, textures: [...textures],
+      props: { ...currentEnvironment.props, environment: { ...savedEnvironment, map } }
     };
   }
   const authoredArea = (configured?.props?.environment as { cameraArea?: unknown } | undefined)?.cameraArea;
@@ -461,6 +473,7 @@ export default function build(base: BuildBase, kit: Kit) {
         .map((entity) => kit.removeEntity(entity.entityId)),
       ...entities.map((entity) => {
         const facade = config.quay ? bakedFacades.get(entity.entityId) : undefined;
+        const reflectors = config.quay && skyReflectionMaterials[entity.entityId];
         const scans = config.quay && groundScanMaterials[entity.entityId];
         const pavers = config.quay && pavedSurfaces[entity.entityId];
         return kit.placeEntity({
@@ -473,6 +486,7 @@ export default function build(base: BuildBase, kit: Kit) {
               landmark: savedLandmark ?? entity.props?.landmark ?? overview.landmark,
             }),
             ...(scans && { groundScanMaterials: scans }),
+            ...(reflectors && { skyReflectionMaterials: reflectors }),
             ...(pavers && { pavingCourseAtlas: pavers }),
           },
         });

@@ -87,11 +87,6 @@ export class OffshoreWater {
   }
 }
 
-export interface MemberOcean {
-  readonly spaceId: string;
-  readonly water: OffshoreWater;
-}
-
 export const offshoreSamplers = /* glsl */ `
   uniform sampler2D oceanMask, oceanSky, oceanReflectance;
   uniform float oceanReady, oceanRoughness, oceanSkyLod;
