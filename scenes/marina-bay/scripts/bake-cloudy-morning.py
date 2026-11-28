@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 
 import numpy as np
+from scipy.ndimage import gaussian_filter1d
 from PIL import Image
 
 exposure = import_module("bake-clear-sky")
@@ -158,6 +159,24 @@ def balance_display_sky(pixels, latitude, solar_peak):
     return np.rint(255 * encoded).astype(np.uint8)
 
 
+def coastal_horizon(pixels, latitude):
+    """Limit the low sky's excess luminance relative to the same azimuth slightly higher up."""
+    encoded = pixels.astype(np.float32) / 255
+    linear = np.where(encoded <= .04045, encoded / 12.92, ((encoded + .055) / 1.055)**2.4)
+    luma = np.log2(np.maximum(linear @ LUMA.astype(np.float32), .0001))
+    altitude = np.degrees(latitude)
+    # In the registered coast photographs (Commons 121317196, 85567180 and 124097740),
+    # the lowest sky is slightly darker than the sky five degrees above it.
+    near = np.median(luma[(altitude >= -.5) & (altitude < 1.25)], axis=0)
+    above = np.median(luma[(altitude >= 4.5) & (altitude < 7.5)], axis=0)
+    excess = gaussian_filter1d(near - above, pixels.shape[1] * 5 / 360, mode="wrap")
+    delta = np.clip(excess, 0, .75) * 1.3
+    weight = (1 - smooth_step((altitude - .7) / 4)) * smooth_step((altitude + 7) / 4)
+    linear *= np.exp2(-weight[:, None] * delta[None, :]).astype(np.float32)[:, :, None]
+    encoded = np.where(linear <= .0031308, 12.92 * linear, 1.055 * linear**(1 / 2.4) - .055)
+    return np.uint8(np.rint(np.clip(encoded, 0, 1) * 255))
+
+
 def cloud_highlights(radiance, pixels, latitude):
     """Recover cloud-scale contrast compressed by the display transform in bright sky."""
     display = pixels.astype(np.float32) / 255
@@ -239,8 +258,8 @@ def bake(morning_path, cloud_path, output, detail_path=None):
     panorama, reflection = output / "sky.jpeg", output / "radiance.png"
     solar_peak = np.unravel_index(np.argmax(display[:h // 2] @ LUMA), (h // 2, w))
     textured_sky = cloud_highlights(display, pixels, lat)
-    Image.fromarray(balance_display_sky(textured_sky, lat, solar_peak)).save(
-        panorama, quality=90, subsampling=0)
+    balanced_sky = balance_display_sky(textured_sky, lat, solar_peak)
+    Image.fromarray(coastal_horizon(balanced_sky, lat)).save(panorama, quality=90, subsampling=0)
     average = diffuse.reshape(256, 8, 512, 8, 3).mean((1, 3), dtype=float)
     linear = average / sky["radiance"]["scale"]
     srgb = np.where(linear <= .0031308, 12.92*linear, 1.055*linear.clip(0)**(1/2.4)-.055)
