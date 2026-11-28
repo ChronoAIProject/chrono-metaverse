@@ -180,9 +180,18 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
   const cloudHighlightSky = JSON.parse(readFileSync(new URL('../references/qwantani-cloud-highlight-sky.json', import.meta.url), 'utf8'));
   const { radiance: _highlightRadiance, ...cloudHighlightDisplay } = cloudHighlightSky;
   const { radiance, ...displaySky } = target.sky;
+  const previousAir = { ...target.sky, airHalfDistance: 28800 };
+  const { radiance: _previousProbe, ...previousAirDisplay } = previousAir;
+  const previousTextures = [
+    previousAir.texture,
+    'd7538511f26c40e4a32424cf8d9eca1f1c9e151daca1e3b607444b837a333419',
+    'ed15daa79ace156cf0db282fbeddbff900882d7253580f6e1705e57fd8822400',
+  ];
   const presets = [
-    { ...target.sky, texture: 'd7538511f26c40e4a32424cf8d9eca1f1c9e151daca1e3b607444b837a333419' },
-    { ...target.sky, texture: 'ed15daa79ace156cf0db282fbeddbff900882d7253580f6e1705e57fd8822400' },
+    ...previousTextures.flatMap(texture => [
+      { ...previousAir, texture },
+      { ...previousAirDisplay, texture },
+    ]),
     cloudHighlightSky,
     cloudHighlightDisplay,
     exposedMorning,
@@ -370,10 +379,22 @@ export default function build(base: BuildBase, kit: Kit) {
   type SurfaceMap = { longitude?: number; latitude?: number; offshore?: { texture: string }; turfColorSurvey?: { texture: string }; vegetationExposure?: { texture: string }; rippleShelter?: { texture: string } };
   const authoredMap = (configured?.props?.environment as { map?: SurfaceMap } | undefined)?.map;
   const savedEnvironment = currentEnvironment?.props?.environment as { map?: SurfaceMap } | undefined;
+  // Published coordinates can differ by a few floating-point units after a JSON round trip.
+  const sameCoordinate = (a?: number, b?: number) =>
+    a !== undefined && b !== undefined && Math.abs(a - b) < 1e-9;
   if (currentEnvironment && authoredMap && savedEnvironment?.map &&
-      savedEnvironment.map.longitude === authoredMap.longitude && savedEnvironment.map.latitude === authoredMap.latitude) {
+      sameCoordinate(savedEnvironment.map.longitude, authoredMap.longitude) &&
+      sameCoordinate(savedEnvironment.map.latitude, authoredMap.latitude)) {
     const map = { ...savedEnvironment.map };
     const textures = new Set(currentEnvironment.textures);
+    const oldShelter = 'ba8ef4fc904bc4727126ba831b17f4fbc3b910342decf404d4f65bbdc17540a6';
+    if (authoredMap.rippleShelter?.texture && isDeepStrictEqual(map.rippleShelter, {
+      ...authoredMap.rippleShelter, texture: oldShelter,
+    })) {
+      map.rippleShelter = authoredMap.rippleShelter;
+      textures.delete(oldShelter);
+      textures.add(authoredMap.rippleShelter.texture);
+    }
     for (const key of ['offshore', 'turfColorSurvey', 'vegetationExposure', 'rippleShelter'] as const) {
       if (!map[key] && authoredMap[key]) {
         map[key] = authoredMap[key];

@@ -234,6 +234,7 @@ def cloud_highlights(radiance, pixels, latitude):
 
 def bake(morning_path, cloud_path, output, detail_path=None):
     sky = json.loads(PREVIOUS.read_text())
+    sky["airHalfDistance"] = 14400
     day = sky["daylight"]
     morning_digest = hashlib.md5(morning_path.read_bytes()).hexdigest()
     if morning_digest == "e403ba6805b2e6b7da51a13a4aaab898":

@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 from pyproj import Transformer
-from scipy.ndimage import map_coordinates
+from scipy.ndimage import gaussian_filter, map_coordinates, maximum_filter, shift
 from shapely import contains_xy, make_valid, transform
 from shapely.geometry import shape
 from shapely.ops import unary_union
@@ -27,6 +27,28 @@ def upwind_distance(water, samples, direction, step):
     distance = np.where(inside, (columns - last_land - .5) * step, 0)
     indices = ((rotated - low) / step)[:, :, [1, 0]].transpose(2, 0, 1)
     return map_coordinates(distance, indices, order=1)
+
+
+def building_shelter(folder, x, z, step, wind_from):
+    survey = json.loads((folder / 'building-heights.json').read_text())
+    extent = [x[0] - step/2, z[0] - step/2, x[-1] + step/2, z[-1] + step/2]
+    with Image.open(folder / 'building-heights.png') as image:
+        heights = np.asarray(image, dtype=np.float32) / 4
+    if heights.shape != (len(z), len(x)) or extent != survey['extentXZ'] or step != survey['spacing']:
+        raise ValueError("Building survey and reservoir grid do not align")
+    nearby = maximum_filter(heights, size=3)
+    weighted_angle = np.zeros_like(heights)
+    for offset, weight in [(-20, .12), (-10, .22), (0, .32), (10, .22), (20, .12)]:
+        bearing = wind_from + np.radians(offset)
+        slope = np.zeros_like(heights)
+        for distance in np.arange(12, 1550, 12):
+            move = [-np.cos(bearing) * distance/step, np.sin(bearing) * distance/step]
+            upwind = shift(nearby if distance < 30 else heights, move,
+                           order=1, mode='constant', prefilter=False)
+            slope = np.maximum(slope, np.maximum(upwind - 2, 0) / distance)
+        weighted_angle += weight * np.arctan(slope)
+    angle = np.degrees(gaussian_filter(weighted_angle, .9))
+    return 1 - .49 * np.sin(np.minimum(np.pi/2, angle/22 * np.pi/2))**2
 
 
 def bake(polygons, scene, output):
@@ -61,6 +83,8 @@ def bake(polygons, scene, output):
     # The shore gain and recovery length were selected using waterfront daylight views.
     fraction = np.clip(distances / 252, 0, 1)
     gain = .55 + .45 * fraction**2 * (3 - 2*fraction)
+    # Combine the calibrated shoreline coverage with the surveyed upwind skyline.
+    gain *= building_shelter(scene / 'references/reservoir-wind', x, z, step, np.radians(wind) - heading)
     gain[~contains_xy(water, xx, zz)] = 1
     image = output / 'ripple-shelter.png'
     output.mkdir(parents=True, exist_ok=True)
