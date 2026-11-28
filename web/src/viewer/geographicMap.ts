@@ -27,8 +27,8 @@ import { sourceCredit } from './sourceCredit';
 const MAX_LEAVES = 96;
 const MAX_TEXTURES = 192;
 const CONCURRENCY = 6;
-// 两个单位四元数的点积是转角一半的余弦。转过 2° 时，及时补上新露出的地面。
-const refreshTurnDot = Math.cos(THREE.MathUtils.degToRad(1));
+// 两个单位四元数的点积是转角一半的余弦。转过 1° 时，及时补上新露出的地面。
+const refreshTurnDot = Math.cos(THREE.MathUtils.degToRad(0.5));
 
 interface Node extends Tile {
   readonly center: THREE.Vector3;
