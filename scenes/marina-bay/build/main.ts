@@ -432,6 +432,8 @@ export default function build(base: BuildBase, kit: Kit) {
     .map((entity) => placeExterior(entity, placement))
     .concat(placement.hostEntities, environment ? [environment] : []);
   if (config.quay) {
+    const anchorage: EntityBody = JSON.parse(readFileSync(new URL('./eastern-anchorage.json', import.meta.url), 'utf8'));
+    entities.push(base.entities.find(entity => entity.entityId === anchorage.entityId) ?? anchorage);
     const finishes = JSON.parse(readFileSync(new URL('../references/waterfront-finishes.json', import.meta.url), 'utf8'));
     entities.push(...waterfront(kit, config.quay, placement, finishes, buildings[0]?.regionId));
     const streetscape: EntityBody[] = JSON.parse(
