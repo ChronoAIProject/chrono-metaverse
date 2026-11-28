@@ -1,5 +1,5 @@
 import type { MemberSurfaces } from './environmentView';
-import { applyTurfSurvey } from './turfSurvey';
+import { applyTurfSurvey, surfaceRasterTransform } from './turfSurvey';
 import { MapReflection, CITY_REFLECTION_LAYER } from './mapReflection';
 import { groundSurfaceMaterial } from './groundSurface';
 import { mapWaterMaterial } from './mapWater';
@@ -159,6 +159,36 @@ export class VectorContentItem {
         downwindHeading,
         hologram ? undefined : this.surfaces?.water?.uniforms,
       );
+      const shelter = surfaces?.rippleShelter;
+      if (
+        shelter &&
+        loadTexture &&
+        sample?.rmsRippleSlope !== undefined &&
+        config.rippleWindFrom !== undefined &&
+        (config.rippleWindFrom - shelter.windFrom) % 360 === 0
+      ) {
+        const transform = surfaceRasterTransform(this.reference, shelter.corners);
+        if (transform) {
+          const material = this.waterMaterial;
+          void loadTexture(shelter.texture)
+            .then((source) => {
+              if (this.disposed) return;
+              const texture = source.clone();
+              texture.flipY = true;
+              texture.colorSpace = THREE.NoColorSpace;
+              texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+              texture.needsUpdate = true;
+              material.uniforms.rippleShelter = { value: texture };
+              material.uniforms.shelterTransform = { value: transform };
+              material.defines.RIPPLE_SHELTER = 1;
+              material.needsUpdate = true;
+              material.addEventListener('dispose', () => texture.dispose());
+            })
+            .catch(() => {
+              /* Use the open-water spectrum when the coverage is unavailable. */
+            });
+        }
+      }
     }
     if (hologram) {
       hologramMaterial(this.material, 'facade');

@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import type { TurfColorSurvey } from '../core/environment';
+import type { SurfaceRaster, TurfColorSurvey } from '../core/environment';
 import type { GeoReference } from './geography';
 
 /** Polygon UVs are member metres (x, -z), including geographic heading and origin. */
-export function turfSurveyTransform(reference: GeoReference, corners: TurfColorSurvey['corners']) {
+export function surfaceRasterTransform(reference: GeoReference, corners: SurfaceRaster['corners']) {
   const [origin, east, north] = corners.map(([lon, lat]) => reference.point(lon, lat));
   if (!origin || !east || !north) return;
   east.sub(origin);
@@ -29,7 +29,7 @@ export function applyTurfSurvey(
   survey: TurfColorSurvey,
   load: (hash: string) => Promise<THREE.Texture>,
 ) {
-  const transform = turfSurveyTransform(reference, survey.corners);
+  const transform = surfaceRasterTransform(reference, survey.corners);
   if (!transform) return;
   let texture: THREE.Texture | undefined;
   let disposed = false;

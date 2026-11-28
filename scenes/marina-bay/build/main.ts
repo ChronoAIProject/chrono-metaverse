@@ -365,14 +365,14 @@ export default function build(base: BuildBase, kit: Kit) {
     ? withPromontoryLawns(withBoatQuay(surroundings), daylight)
     : [];
   let currentEnvironment = surveyedGrassCoverage(daylight, registered.length > 1);
-  type SurfaceMap = { longitude?: number; latitude?: number; offshore?: { texture: string }; turfColorSurvey?: { texture: string }; vegetationExposure?: { texture: string } };
+  type SurfaceMap = { longitude?: number; latitude?: number; offshore?: { texture: string }; turfColorSurvey?: { texture: string }; vegetationExposure?: { texture: string }; rippleShelter?: { texture: string } };
   const authoredMap = (configured?.props?.environment as { map?: SurfaceMap } | undefined)?.map;
   const savedEnvironment = currentEnvironment?.props?.environment as { map?: SurfaceMap } | undefined;
   if (currentEnvironment && authoredMap && savedEnvironment?.map &&
       savedEnvironment.map.longitude === authoredMap.longitude && savedEnvironment.map.latitude === authoredMap.latitude) {
     const map = { ...savedEnvironment.map };
     const textures = new Set(currentEnvironment.textures);
-    for (const key of ['offshore', 'turfColorSurvey', 'vegetationExposure'] as const) {
+    for (const key of ['offshore', 'turfColorSurvey', 'vegetationExposure', 'rippleShelter'] as const) {
       if (!map[key] && authoredMap[key]) {
         map[key] = authoredMap[key];
         textures.add(authoredMap[key].texture);

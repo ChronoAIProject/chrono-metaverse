@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { expect, it, vi } from 'vitest';
 import type { TurfColorSurvey } from '../core/environment';
 import { GeoReference } from './geography';
-import { applyTurfSurvey, turfSurveyTransform } from './turfSurvey';
+import { applyTurfSurvey, surfaceRasterTransform } from './turfSurvey';
 
 const reference = new GeoReference({
   latitude: 35,
@@ -20,7 +20,7 @@ const survey: TurfColorSurvey = {
 };
 
 it('registers rotated metre UVs to the three outer image edges', () => {
-  const transform = turfSurveyTransform(reference, survey.corners)!;
+  const transform = surfaceRasterTransform(reference, survey.corners)!;
   for (const [i, uv] of [
     [0, 0],
     [1, 0],
@@ -32,7 +32,7 @@ it('registers rotated metre UVs to the three outer image edges', () => {
     expect(result.y).toBeCloseTo(uv[1]!, 8);
   }
   expect(
-    turfSurveyTransform(reference, [survey.corners[0], survey.corners[0], survey.corners[2]]),
+    surfaceRasterTransform(reference, [survey.corners[0], survey.corners[0], survey.corners[2]]),
   ).toBeUndefined();
 });
 

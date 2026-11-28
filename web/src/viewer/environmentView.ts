@@ -7,13 +7,14 @@ import { GRID_UNIT } from '../core/chunk';
 import type { Placement, SceneContent } from '../core/scene';
 import { EARTH_RADIUS } from './geography';
 import type { OffshoreWater } from './offshoreWater';
-import type { TurfColorSurvey } from '../core/environment';
+import type { GeographicMap as MapConfig, TurfColorSurvey } from '../core/environment';
 import { GeographicMap } from './geographicMap';
 
 export interface MemberSurfaces {
   readonly spaceId: string;
   readonly water?: OffshoreWater;
   readonly turf?: TurfColorSurvey;
+  readonly rippleShelter?: MapConfig['rippleShelter'];
 }
 
 /** 环境独立于内容网格，天空没有有限半径，也不参与主体剖切、取景和点选。 */
@@ -171,11 +172,15 @@ export class EnvironmentView {
             this.sampling,
             this.loadTexture,
           );
-          if (!hologram && (this.map.offshore || environment.map.turfColorSurvey)) {
+          if (
+            !hologram &&
+            (this.map.offshore || environment.map.turfColorSurvey || environment.map.rippleShelter)
+          ) {
             this.surfaces = {
               spaceId: selected.spaceId,
               water: this.map.offshore,
               turf: environment.map.turfColorSurvey,
+              rippleShelter: environment.map.rippleShelter,
             };
           }
           this.map.group.rotation.y = THREE.MathUtils.degToRad(placement.rotation);
