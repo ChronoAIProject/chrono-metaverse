@@ -34,7 +34,7 @@
   "textures": [
     "4c838144dd96db7606ae10bb178a1b950eea59ca1f3d880145d382018c2dd9cf",
     "8db5c83ef94f65039b1528b6d55c5980c4aaaf2060c72e89d26b3adc82edabcb",
-    "8817efa478279ec5b235c21ce9d88aeafeed2e94c4571eecccda0a92b1240f8e",
+    "ed15daa79ace156cf0db282fbeddbff900882d7253580f6e1705e57fd8822400",
     "f4fc4d1101e4e7373408140d8818b0fc06baceebd6097f9e727113c980472354",
     "b4d282645f0852dcb4360a215e623c7289fb0c942151463b27e6f4c843000e1d"
   ],
@@ -45,7 +45,7 @@
       "cameraArea": {"center": [-95, 530], "radius": 850, "floor": -59.7, "height": 360},
       "multisampleCutouts": true,
       "sky": {
-        "texture": "8817efa478279ec5b235c21ce9d88aeafeed2e94c4571eecccda0a92b1240f8e",
+        "texture": "ed15daa79ace156cf0db282fbeddbff900882d7253580f6e1705e57fd8822400",
         "yaw": -123.4944,
         "airHalfDistance": 28800,
         "daylight": {
