@@ -29,7 +29,8 @@ def bake(folder, alpha):
         normals = source.vertex_normals @ np.linalg.inv(basis)
         mesh.vertex_normals = normals / np.linalg.norm(normals, axis=1)[:, None]
         mesh.visual.material.name = "Lakeshore shrub foliage"
-        sector = (int(np.floor((x + 1600) / 150)), int(np.floor((z + 100) / 150)))
+        # The strip follows the long axis of the lake. Keep one mesh per reach.
+        sector = int(np.floor((z + 140) / 200))
         blocks[sector].append(mesh)
 
     scene = trimesh.Scene()
