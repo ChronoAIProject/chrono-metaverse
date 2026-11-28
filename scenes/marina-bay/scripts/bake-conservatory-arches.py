@@ -4,7 +4,22 @@ import json
 import struct
 from pathlib import Path
 
+import numpy as np
+from PIL import Image
+
+from facade_atlas import replace_atlas
+
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def balance_glazing(image):
+    # Daylight photos show a warmer middle tone on both roofs. Preserve the atlas endpoints.
+    srgb = np.asarray(image.convert("RGB"), dtype=np.float64) / 255
+    linear = np.where(srgb <= .04045, srgb / 12.92, ((srgb + .055) / 1.055) ** 2.4)
+    gain = np.array([2.0, 1.48, 1.0])
+    adjusted = gain * linear / (1 + (gain - 1) * linear)
+    encoded = np.where(adjusted <= .0031308, adjusted * 12.92, 1.055 * adjusted ** (1 / 2.4) - .055)
+    return Image.fromarray(np.rint(encoded * 255).astype(np.uint8))
 
 
 def bake():
@@ -13,6 +28,10 @@ def bake():
     raw = (ROOT / "assets" / f"{source}.glb").read_bytes()
     if hashlib.sha256(raw).hexdigest() != source:
         raise ValueError("Survey face ranges require the recorded source model")
+    # Repack images before splitting the index buffer into overlapping views for steel and glass.
+    # The two original measured meshes each have one colour atlas.
+    for image_index in (0, 1):
+        raw = replace_atlas(raw, balance_glazing, image_index=image_index, keep_encoding=True)
     header_size = struct.unpack_from("<I", raw, 12)[0]
     model = json.loads(raw[20:20 + header_size])
     binary = bytearray(raw[28 + header_size:])
