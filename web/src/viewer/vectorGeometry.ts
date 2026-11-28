@@ -265,6 +265,7 @@ function polygonSurface(
   const mask: number[] = [];
   const bodyMask: number[] = [];
   const oceanCoords: number[] = [];
+  const oceanClass: number[] = [];
   const positions: number[] = [];
   const indices: number[] = [];
   const uv: number[] = [];
@@ -310,11 +311,13 @@ function polygonSurface(
         const point = reference.point(lon, lat, height);
         positions.push(...point.toArray());
         if (ground) uv.push(point.x, -point.z);
-        if (oceanRect)
+        if (oceanRect) {
+          oceanClass.push(feature.properties.class === 'ocean' ? 1 : 0);
           oceanCoords.push(
             oceanRect.x + (p.x / feature.extent) * oceanRect.z,
             oceanRect.y - (p.y / feature.extent) * oceanRect.w,
           );
+        }
         if (coloredWaterId !== undefined) bodyMask.push(feature.id === coloredWaterId ? 1 : 0);
         if (sampledIds) mask.push(feature.id !== undefined && sampledIds.has(feature.id) ? 1 : 0);
       }
@@ -335,8 +338,10 @@ function polygonSurface(
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices);
-  if (oceanRect)
+  if (oceanRect) {
     geometry.setAttribute('offshoreUv', new THREE.Float32BufferAttribute(oceanCoords, 2));
+    geometry.setAttribute('oceanFeature', new THREE.Uint8BufferAttribute(oceanClass, 1));
+  }
   if (coloredWaterId !== undefined)
     geometry.setAttribute('waterBodyMask', new THREE.Uint8BufferAttribute(bodyMask, 1));
   if (sampledIds) geometry.setAttribute('sampledWater', new THREE.Uint8BufferAttribute(mask, 1));

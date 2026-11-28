@@ -103,11 +103,14 @@ export function mapWaterMaterial(
       varying vec3 surfacePosition;
       #ifdef OFFSHORE_WATER
         attribute vec2 offshoreUv;
+        attribute float oceanFeature;
         varying vec2 seaUv;
+        varying float isOcean;
       #endif
       void main() {
         #ifdef OFFSHORE_WATER
           seaUv = offshoreUv;
+          isOcean = oceanFeature;
         #endif
         #ifdef LOCAL_WATER_COLOR
           bodyWeight = waterBodyMask;
@@ -128,6 +131,7 @@ export function mapWaterMaterial(
       #include <common>
       #ifdef OFFSHORE_WATER
         varying vec2 seaUv;
+        varying float isOcean;
         ${offshoreSamplers}
         ${offshoreRadiance}
       #endif
@@ -468,7 +472,11 @@ export function mapWaterMaterial(
           // unresolved waves on both representations should reflect the same sky.
           if (offshoreDistance > 900.0 && hasSky && oceanReady > 0.0 &&
               all(greaterThanEqual(seaUv,vec2(0))) && all(lessThanEqual(seaUv,vec2(1)))) {
-            float seaCoverage = texture2D(oceanMask,seaUv).r * smoothstep(900.0,1800.0,offshoreDistance);
+            // Vector ocean polygons resolve the coast more closely than the offshore imagery mask.
+            vec2 edgePixels = min(seaUv,1.0-seaUv)*vec2(textureSize(oceanMask,0));
+            float ocean = isOcean*smoothstep(0.0,2.0,min(edgePixels.x,edgePixels.y));
+            float seaCoverage = max(ocean,texture2D(oceanMask,seaUv).r)
+                              * smoothstep(900.0,1800.0,offshoreDistance);
             if (seaCoverage > 0.0 && hasReflection) {
               // Keep the captured silhouettes of ships or land against the open sky.
               vec4 clip = reflectionMatrix * vec4(surfacePosition,1.0);
@@ -517,7 +525,8 @@ export function mapWaterMaterial(
       table.dispose();
     });
   }
-  if (offshore) Object.assign(material.defaultAttributeValues, { offshoreUv: [-1, -1] });
+  if (offshore)
+    Object.assign(material.defaultAttributeValues, { offshoreUv: [-1, -1], oceanFeature: [0] });
   if (sample) Object.assign(material.defaultAttributeValues, { sampledWater: [0] });
   material.onBeforeRender = (renderer, scene, camera) => {
     if (measuredRipples !== undefined) {

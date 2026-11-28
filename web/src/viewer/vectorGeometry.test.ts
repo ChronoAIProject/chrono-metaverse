@@ -444,8 +444,31 @@ it('maps vector water to the same north-up ocean mask as the imagery tile', () =
       [0.375, 0.5625],
     ]),
   );
+  expect(Array.from(water.getAttribute('oceanFeature').array).every((v) => v === 0)).toBe(true);
   water.dispose();
+  for (const classification of ['ocean', 'lake']) {
+    const classified = vectorGeometry(
+      vectorTileFixture(24, false, classification, [], 'class'),
+      tile,
+      reference,
+      style,
+      false,
+      'shapes',
+      [],
+      undefined,
+      undefined,
+      undefined,
+      rect,
+    ).water!;
+    const flags = classified.getAttribute('oceanFeature');
+    expect(flags.count).toBe(classified.getAttribute('position').count);
+    expect(Array.from(flags.array).every((v) => v === Number(classification === 'ocean'))).toBe(
+      true,
+    );
+    classified.dispose();
+  }
   const inland = vectorGeometry(bytes, tile, reference, style, false, 'shapes').water!;
   expect(inland.hasAttribute('offshoreUv')).toBe(false);
+  expect(inland.hasAttribute('oceanFeature')).toBe(false);
   inland.dispose();
 });
