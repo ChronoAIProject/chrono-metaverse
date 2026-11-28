@@ -302,6 +302,7 @@ export function createPublicClient(options: PublicClientOptions = {}): PublicCli
     extra?: Record<string, string>,
     preview?: string,
     signal?: AbortSignal,
+    retryResource = false,
   ): Promise<Response> {
     const browser = options.browser && path.startsWith('/spaces/') ? options.browser : undefined;
     const url = `${base}${browser ? '/api/auth/nyxid/view' : '/api/public'}${path}`;
@@ -319,10 +320,8 @@ export function createPublicClient(options: PublicClientOptions = {}): PublicCli
       credentials: browser ? 'same-origin' : 'omit',
     };
     let response = await fetcher(url, init);
-    // A transient preview asset failure can otherwise leave gaps until the page is reopened.
-    const retryableRead =
-      browser || (preview !== undefined && path.startsWith('/previews/assets/'));
-    if (retryableRead && (await retryTransientRead(response, signal))) {
+    // A transient resource or index failure can otherwise leave gaps until the page is reopened.
+    if ((browser || retryResource) && (await retryTransientRead(response, signal))) {
       response = await fetcher(url, init);
     }
     if (!response.ok && response.status !== 304) throw await problem(response);
@@ -344,7 +343,13 @@ export function createPublicClient(options: PublicClientOptions = {}): PublicCli
       if (activeDownloads < PREVIEW_DOWNLOAD_CONCURRENCY) activeDownloads++;
       else await new Promise<void>((resolve) => waitingDownloads.push(resolve));
       try {
-        const response = await request(`/previews/assets/${checked}`, undefined, token);
+        const response = await request(
+          `/previews/assets/${checked}`,
+          undefined,
+          token,
+          undefined,
+          true,
+        );
         return await readBody(response, onProgress);
       } finally {
         const next = waitingDownloads.shift();
@@ -368,9 +373,15 @@ export function createPublicClient(options: PublicClientOptions = {}): PublicCli
     scene: (spaceId, at) => json<UniverseView>(`/spaces/${segment(spaceId)}/scene${query({ at })}`),
     forComposition: (path) => createPublicClient({ ...options, universe: path }),
     external: (spaceId, seq, resource, signal) =>
-      request(`${space(spaceId)}/external${q({ seq, ...resource })}`, undefined, undefined, signal),
+      request(
+        `${space(spaceId)}/external${q({ seq, ...resource })}`,
+        undefined,
+        undefined,
+        signal,
+        true,
+      ),
     previewExternal: (token, resource, signal) =>
-      request(`/previews/external${query({ ...resource })}`, undefined, token, signal),
+      request(`/previews/external${query({ ...resource })}`, undefined, token, signal, true),
     space: (spaceId) => json<SpaceInfo>(`${space(spaceId)}${q()}`),
     async head(spaceId, etag) {
       const response = await request(

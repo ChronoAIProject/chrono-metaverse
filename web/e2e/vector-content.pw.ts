@@ -122,6 +122,26 @@ test('矢量入口与新瓦片共用服务端预览权限，不向浏览器提�
   expect(direct).toEqual([]);
 });
 
+test('矢量索引临时不可用时，游客在原页面恢复可见瓦片', async ({ page }) => {
+  const { seen, direct } = await prepare(page, true);
+  let interrupted = false;
+  await page.route('**/api/public/previews/external?**', async (route) => {
+    const resource = new URL(route.request().url()).searchParams.get('url');
+    if (!interrupted && resource?.endsWith('/index.json')) {
+      interrupted = true;
+      return route.fulfill({ status: 503, headers: { 'retry-after': '1' } });
+    }
+    await route.fallback();
+  });
+  await page.goto(PREVIEW);
+  const credit = page.locator('.viewer__external-credit[data-format="mvt"]');
+  await expect(credit).toHaveAttribute('data-state', 'ready');
+  await expect(credit).toHaveAttribute('data-visible-tiles', /^[1-9]\d*$/);
+  expect(interrupted).toBe(true);
+  expect(seen.some((url) => url.endsWith('.pbf'))).toBe(true);
+  expect(direct).toEqual([]);
+});
+
 test('矢量入口拒绝访问只影响该来源，主体正常且不绕回浏览器直连', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
