@@ -423,6 +423,7 @@ export class GeographicMap {
             node,
             this.paving,
             this.lawns,
+            this.config.mownLawnSurfaceOffset,
           );
           patch.mesh.add(...patch.grass);
         }

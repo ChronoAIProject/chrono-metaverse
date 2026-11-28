@@ -226,8 +226,8 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
 }
 
 /** Use the surveyed paving and cut playing fields to bound the map's taller wild grass. */
-function surveyedGrassCoverage(environment: EntityBody | null): EntityBody | null {
-  const settings = environment?.props?.environment as { map?: { surfaceDetail?: string; grassExclusions?: unknown[]; mownLawns?: unknown[] } } | undefined;
+function surveyedGrassCoverage(environment: EntityBody | null, hasSurveyedCover: boolean): EntityBody | null {
+  const settings = environment?.props?.environment as { map?: { surfaceDetail?: string; grassExclusions?: unknown[]; mownLawns?: unknown[]; mownLawnSurfaceOffset?: number } } | undefined;
   if (!environment || settings?.map?.surfaceDetail !== 'urban') return environment;
   const survey = JSON.parse(readFileSync(new URL('../references/marina-promenade-ground.json', import.meta.url), 'utf8'));
   const padang = JSON.parse(readFileSync(new URL('../references/padang-playing-fields.json', import.meta.url), 'utf8')) as {
@@ -266,14 +266,18 @@ function surveyedGrassCoverage(environment: EntityBody | null): EntityBody | nul
     polygon => !known.has(ringKey(polygon)),
   );
   const turf = JSON.parse(readFileSync(new URL('../references/promontory-turf.json', import.meta.url), 'utf8')) as {
-    features: { rings: number[][][] }[];
+    features: { rings: number[][][] }[]; surfaceOffset: number;
   };
   const lawns = settings.map.mownLawns ?? [];
   const knownLawns = new Set(lawns.map(ringKey));
   const newLawns = turf.features.map(feature => feature.rings).filter(rings => !knownLawns.has(ringKey(rings)));
-  if (!additional.length && !newLawns.length) return environment;
+  const surveyedRings = new Set(turf.features.map(feature => ringKey(feature.rings)));
+  const addSurfaceOffset = hasSurveyedCover && settings.map.mownLawnSurfaceOffset === undefined &&
+    lawns.every(rings => surveyedRings.has(ringKey(rings)));
+  if (!additional.length && !newLawns.length && !addSurfaceOffset) return environment;
   return { ...environment, props: { ...environment.props, environment: {
-    ...settings, map: { ...settings.map, grassExclusions: [...existing, ...additional], mownLawns: [...lawns, ...newLawns] },
+    ...settings, map: { ...settings.map, grassExclusions: [...existing, ...additional], mownLawns: [...lawns, ...newLawns],
+      ...(addSurfaceOffset && { mownLawnSurfaceOffset: turf.surfaceOffset }) },
   } } };
 }
 
@@ -344,9 +348,15 @@ export default function build(base: BuildBase, kit: Kit) {
     ? JSON.parse(readFileSync(environmentFile, 'utf8'))
     : null;
   // 已保存的物件是权威状态；重新构建不能恢复已被用户替换的有限地板或天空壳。
-  let currentEnvironment = surveyedGrassCoverage(bayDaylight(
+  const daylight = bayDaylight(
     base.entities.find((entity) => entity.entityId === configured?.entityId), configured,
-  ));
+  );
+  const config = JSON.parse(readFileSync(new URL('../context.json', import.meta.url), 'utf8'));
+  const surroundings = base.entities.find((entity) => entity.entityId === 'bay.city-surroundings');
+  const registered = surroundings && config.quay
+    ? withPromontoryLawns(withBoatQuay(surroundings), daylight)
+    : [];
+  let currentEnvironment = surveyedGrassCoverage(daylight, registered.length > 1);
   const authoredMap = (configured?.props?.environment as { map?: { longitude?: number; latitude?: number; offshore?: {texture: string} } } | undefined)?.map;
   const savedEnvironment = currentEnvironment?.props?.environment as { map?: { offshore?: unknown; longitude?: number; latitude?: number } } | undefined;
   if (currentEnvironment && authoredMap?.offshore && savedEnvironment?.map && !savedEnvironment.map.offshore &&
@@ -367,7 +377,6 @@ export default function build(base: BuildBase, kit: Kit) {
   const placement: Placement = JSON.parse(
     readFileSync(new URL('./placement.json', import.meta.url), 'utf8'),
   );
-  const config = JSON.parse(readFileSync(new URL('../context.json', import.meta.url), 'utf8'));
   // Landmark positions and framing bounds use the final member coordinates.
   const overview = config.overview;
   const savedLandmark = overview && base.entities.find(
@@ -424,10 +433,9 @@ export default function build(base: BuildBase, kit: Kit) {
     ));
   }
   // 线上按视野流式加载的周边楼群独立于离线模型包，由空间保存其图层和保护范围。
-  const surroundings = base.entities.find((entity) => entity.entityId === 'bay.city-surroundings');
-  if (surroundings && config.quay) {
-    const [registered, ...lawns] = withPromontoryLawns(withBoatQuay(surroundings), environment);
-    entities.push(...withSkylineFacades(registered), ...lawns);
+  const [city, ...lawns] = registered;
+  if (city) {
+    entities.push(...withSkylineFacades(city), ...lawns);
   } else if (surroundings) {
     entities.push(surroundings);
   }
