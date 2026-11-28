@@ -92,6 +92,8 @@ out/             build 的输出：ops.ndjson、result.json、新区块、drafts
                  本地重建工具的基线 out/recon/ 和重建包 out/bundle/
 .claude/skills/metaverse-builder/SKILL.md       技能说明（建造）
 .claude/skills/metaverse-reconstruct/SKILL.md   技能说明（用 AI 重建实体空间）
+.claude/skills/web-scene-realism/SKILL.md       技能说明（实时场景写实优化）
+.claude/skills/metaverse-scene-backup/SKILL.md   技能说明（线上场景和组合备份）
 tsconfig.json、node_modules/@chrono-metaverse/sdk（指向这份 SDK 的链接，编辑器和脚本里的 import 用）
 ```
 
