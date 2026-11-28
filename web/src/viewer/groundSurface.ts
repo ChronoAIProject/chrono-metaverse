@@ -64,7 +64,13 @@ export function groundSurfaceMaterial(kind: GroundLayer['material']) {
       float rough=mix(propsA.b,propsB.b,blend);
       float lawn=surfaceField(vMapUv*.048+offsets*.82);
       float wear=0.52*surfaceField(vMapUv*0.044)+0.32*surfaceField(vMapUv*0.14)+0.16*surfaceField(vMapUv*0.46);
-      vec3 turfTone=mix(vec3(0.79,0.87,0.83),vec3(1.32,1.10,0.90),smoothstep(0.25,0.73,wear));
+      float dryFraction = smoothstep(0.25, 0.73, wear);
+      #ifdef HAS_TURF_COVERAGE
+        // The survey already supplies parcel-scale wear. Keep the scan and its mean tint.
+        dryFraction = mix(dryFraction, 0.5, 0.8 * turfCoverage);
+        lawn = mix(lawn, 0.5, 0.8 * turfCoverage);
+      #endif
+      vec3 turfTone=mix(vec3(0.79,0.87,0.83),vec3(1.32,1.10,0.90),dryFraction);
       diffuseColor.rgb*=albedo*turfTone*mix(.77,1.17,lawn);`
       : /* glsl */ `
       vec2 uvA=vMapUv/2.0;

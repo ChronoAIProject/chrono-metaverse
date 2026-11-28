@@ -64,17 +64,21 @@ export function applyTurfSurvey(
             '#include <begin_vertex>\nturfSurveyUv = (turfTransform * vec3(uv, 1.0)).xy;',
           );
         shader.fragmentShader =
-          (scale ? 'uniform vec3 turfScale;\n' : '') +
+          (scale ? '#define HAS_TURF_COVERAGE\nuniform vec3 turfScale;\n' : '') +
           'uniform sampler2D turfSurvey;\nvarying vec2 turfSurveyUv;\n' +
           shader.fragmentShader.replace(
-            '#include <alphatest_fragment>',
+            '#include <clipping_planes_fragment>',
             `
+          #include <clipping_planes_fragment>
+          bool inSurvey = all(greaterThanEqual(turfSurveyUv, vec2(0.0))) &&
+                          all(lessThanEqual(turfSurveyUv, vec2(1.0)));
           vec4 surveySample = texture2D(turfSurvey, turfSurveyUv);
           vec3 turfGain = surveySample.rgb * (255.0 / 128.0);
-          ${scale ? 'turfGain *= mix(vec3(1.0), turfScale, clamp((surveySample.a * 255.0 - 128.0) / 127.0, 0.0, 1.0));' : ''}
-          if (all(greaterThanEqual(turfSurveyUv,vec2(0.0))) && all(lessThanEqual(turfSurveyUv,vec2(1.0))))
-            diffuseColor.rgb *= turfGain;
-          #include <alphatest_fragment>`,
+          #ifdef HAS_TURF_COVERAGE
+            float turfCoverage = inSurvey ? clamp((surveySample.a * 255.0 - 128.0) / 127.0, 0.0, 1.0) : 0.0;
+            turfGain *= mix(vec3(1.0), turfScale, turfCoverage);
+          #endif
+          if (inSurvey) diffuseColor.rgb *= turfGain;`,
           );
       };
       material.needsUpdate = true;
