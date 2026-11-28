@@ -389,3 +389,35 @@ it('marks only surveyed water features for reflectance sampling', () => {
     water.dispose();
   }
 });
+
+it('maps vector water to the same north-up ocean mask as the imagery tile', () => {
+  const bytes = vectorTileFixture();
+  const rect = new THREE.Vector4(0.25, 0.75, 0.5, 0.25);
+  const water = vectorGeometry(
+    bytes,
+    tile,
+    reference,
+    style,
+    false,
+    'shapes',
+    [],
+    undefined,
+    undefined,
+    undefined,
+    rect,
+  ).water!;
+  const uv = water.getAttribute('offshoreUv');
+  const pairs = Array.from({ length: uv.count }, (_, i) => [uv.getX(i), uv.getY(i)]);
+  expect(pairs).toEqual(
+    expect.arrayContaining([
+      [0.375, 0.6875],
+      [0.625, 0.6875],
+      [0.625, 0.5625],
+      [0.375, 0.5625],
+    ]),
+  );
+  water.dispose();
+  const inland = vectorGeometry(bytes, tile, reference, style, false, 'shapes').water!;
+  expect(inland.hasAttribute('offshoreUv')).toBe(false);
+  inland.dispose();
+});

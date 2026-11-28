@@ -87,24 +87,39 @@ export class OffshoreWater {
   }
 }
 
+export interface MemberOcean {
+  readonly spaceId: string;
+  readonly water: OffshoreWater;
+}
+
+export const offshoreSamplers = /* glsl */ `
+  uniform sampler2D oceanMask, oceanSky, oceanReflectance;
+  uniform float oceanReady, oceanRoughness, oceanSkyLod;
+`;
+
+export const offshoreRadiance = /* glsl */ `
+  vec3 openSeaRadiance(vec3 ray, vec3 body) {
+    float cosine = clamp(-ray.y,0.0,1.0);
+    vec2 size = vec2(textureSize(oceanReflectance,0));
+    vec2 entry = vec2(sqrt(cosine),oceanRoughness);
+    vec3 lookup = texture2D(oceanReflectance,(entry*(size-1.0)+0.5)/size).rgb;
+    float fresnel = lookup.r;
+    // Visible wave faces reflect sky above the geometric horizon at grazing angles.
+    // The LUT stores the displacement in units of pi, directly in panorama V.
+    float elevationShift = (dot(lookup.gb,vec2(65280.0,255.0))-32768.0)/32767.0;
+    vec2 skyUv = equirectUv(vec3(ray.x,cosine,ray.z));
+    skyUv.y = clamp(skyUv.y + elevationShift,0.5,1.0);
+    vec3 sky = textureLod(oceanSky,skyUv,oceanSkyLod).rgb;
+    return mix(body,sky,fresnel);
+  }
+`;
+
 export const offshoreLight = /* glsl */ `
   if (oceanReady > 0.0 && path > 1800.0 && all(greaterThanEqual(oceanUv,vec2(0))) &&
       all(lessThanEqual(oceanUv,vec2(1)))) {
     float coverage = texture2D(oceanMask,oceanUv).r * smoothstep(1800.0,4000.0,path) * groundAirStrength;
     if (coverage > 0.0) {
-      float cosine = clamp(-ray.y,0.0,1.0);
-      vec2 size = vec2(textureSize(oceanReflectance,0));
-      vec2 entry = vec2(sqrt(cosine),oceanRoughness);
-      vec3 lookup = texture2D(oceanReflectance,(entry*(size-1.0)+0.5)/size).rgb;
-      float fresnel = lookup.r;
-      // Visible wave faces reflect sky above the geometric horizon at grazing angles.
-      // The LUT stores the displacement in units of pi, directly in panorama V.
-      float elevationShift = (dot(lookup.gb,vec2(65280.0,255.0))-32768.0)/32767.0;
-      vec2 skyUv = equirectUv(vec3(ray.x,cosine,ray.z));
-      skyUv.y = clamp(skyUv.y + elevationShift,0.5,1.0);
-      vec3 sky = textureLod(oceanSky,skyUv,oceanSkyLod).rgb;
-      // Same linear deep-water reflectance as the detailed water surface (#325553).
-      vec3 sea = mix(vec3(0.03190,0.09084,0.08650),sky,fresnel);
+      vec3 sea = openSeaRadiance(ray, vec3(0.03190,0.09084,0.08650));
       #ifdef USE_MAP
         // Transfer the photograph's local luminance contrast to the reflected sky.
         // At grazing angles an additive residual loses dark hulls against the bright sea.

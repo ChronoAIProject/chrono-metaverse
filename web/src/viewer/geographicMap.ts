@@ -77,7 +77,7 @@ export class GeographicMap {
   private readonly cameraProjection = new THREE.Matrix4();
   private viewport = '';
   private readonly groundShadow = new THREE.Color(0.55, 0.61, 0.68);
-  private readonly offshore?: OffshoreWater;
+  readonly offshore?: OffshoreWater;
   private readonly detail?: THREE.Texture;
   private readonly paving?: GrassFootprints;
   private readonly lawns?: GrassFootprints;

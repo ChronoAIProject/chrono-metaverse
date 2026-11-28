@@ -1192,7 +1192,7 @@ export class SceneView {
     this.landmarks = [];
     this.overviewBox = null;
     this.updateStyleEnvironment(content);
-    this.externalContent.setContent(content);
+    this.externalContent.setContent(content, this.environment.offshore);
     this.grid.visible = !this.environment.hasMap;
     // 换了内容，原来选中的物件（信息面板随之关闭）不再固定显示标签。
     this.focusedAnchorKey = null;
