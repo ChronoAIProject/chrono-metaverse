@@ -45,6 +45,7 @@
       "version": 1,
       "cameraArea": {"center": [-95, 530], "radius": 850, "floor": -59.7, "height": 360},
       "multisampleCutouts": true,
+      "adaptiveSupersampling": true,
       "sky": {
         "texture": "e4ee82e447316f4b5a69aea43e4fe2040ff1c8e5d20c459800e2dd16cdcd8bf5",
         "yaw": -123.4944,
