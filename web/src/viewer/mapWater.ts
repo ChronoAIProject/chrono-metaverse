@@ -20,6 +20,7 @@ export function mapWaterMaterial(
   },
   downwindHeading?: number,
   offshore?: OffshoreWater['uniforms'],
+  bodyColor?: THREE.Color,
 ) {
   // The wave field's +Y axis in the water plane points along world (-0.60, 0.80).
   const rotation = downwindHeading === undefined ? 0 : -Math.atan2(0.6, 0.8) - downwindHeading;
@@ -35,6 +36,7 @@ export function mapWaterMaterial(
     lights: !!reflection,
     defines: {
       ...(offshore ? { OFFSHORE_WATER: 1 } : {}),
+      ...(bodyColor ? { LOCAL_WATER_COLOR: 1 } : {}),
       ...(reflection ? { WATER_SHORE_SHADOW: 1 } : {}),
       ...(sample ? { WATER_SAMPLE: 1 } : {}),
       ...(measuredRipples !== undefined ? { WATER_SPECTRUM: 1 } : {}),
@@ -43,6 +45,7 @@ export function mapWaterMaterial(
     depthWrite: false,
     uniforms: {
       ...offshore,
+      ...(bodyColor ? { localBodyColor: { value: bodyColor } } : {}),
       ...(reflection ? THREE.UniformsUtils.clone(THREE.UniformsLib.lights) : {}),
       ...(sample
         ? {
@@ -93,14 +96,24 @@ export function mapWaterMaterial(
         attribute float sampledWater;
         varying vec3 samplePosition;
       #endif
+      #ifdef LOCAL_WATER_COLOR
+        attribute float waterBodyMask;
+        varying float bodyWeight;
+      #endif
       varying vec3 surfacePosition;
       #ifdef OFFSHORE_WATER
         attribute vec2 offshoreUv;
+        attribute float oceanFeature;
         varying vec2 seaUv;
+        varying float isOcean;
       #endif
       void main() {
         #ifdef OFFSHORE_WATER
           seaUv = offshoreUv;
+          isOcean = oceanFeature;
+        #endif
+        #ifdef LOCAL_WATER_COLOR
+          bodyWeight = waterBodyMask;
         #endif
         vec4 worldPosition = modelMatrix * vec4(position, 1.0);
         surfacePosition = worldPosition.xyz;
@@ -118,6 +131,7 @@ export function mapWaterMaterial(
       #include <common>
       #ifdef OFFSHORE_WATER
         varying vec2 seaUv;
+        varying float isOcean;
         ${offshoreSamplers}
         ${offshoreRadiance}
       #endif
@@ -126,6 +140,10 @@ export function mapWaterMaterial(
         #include <packing>
         #include <shadowmap_pars_fragment>
         uniform bool receiveShadow;
+      #endif
+      #ifdef LOCAL_WATER_COLOR
+        uniform vec3 localBodyColor;
+        varying float bodyWeight;
       #endif
       uniform float directFraction;
       uniform float time;
@@ -411,6 +429,9 @@ export function mapWaterMaterial(
         float shine = distribution * visibleSlopes / max(0.0001,4.0*cosine)
                     * waterFresnel(clamp(dot(eye,halfVector),0.0,1.0));
         vec3 bodyColor = deep;
+        #ifdef LOCAL_WATER_COLOR
+          bodyColor = mix(deep, localBodyColor, bodyWeight);
+        #endif
         #ifdef WATER_SAMPLE
           vec3 measured = waterReflectance * horizontalDiffuse / (0.84 + 0.12 * max(sunlight.y,0.0));
           bodyColor = mix(bodyColor, measured, weight);
@@ -451,7 +472,11 @@ export function mapWaterMaterial(
           // unresolved waves on both representations should reflect the same sky.
           if (offshoreDistance > 900.0 && hasSky && oceanReady > 0.0 &&
               all(greaterThanEqual(seaUv,vec2(0))) && all(lessThanEqual(seaUv,vec2(1)))) {
-            float seaCoverage = texture2D(oceanMask,seaUv).r * smoothstep(900.0,1800.0,offshoreDistance);
+            // Vector ocean polygons resolve the coast more closely than the offshore imagery mask.
+            vec2 edgePixels = min(seaUv,1.0-seaUv)*vec2(textureSize(oceanMask,0));
+            float ocean = isOcean*smoothstep(0.0,2.0,min(edgePixels.x,edgePixels.y));
+            float seaCoverage = max(ocean,texture2D(oceanMask,seaUv).r)
+                              * smoothstep(900.0,1800.0,offshoreDistance);
             if (seaCoverage > 0.0 && hasReflection) {
               // Keep the captured silhouettes of ships or land against the open sky.
               vec4 clip = reflectionMatrix * vec4(surfacePosition,1.0);
@@ -471,6 +496,8 @@ export function mapWaterMaterial(
         #include <colorspace_fragment>
       }`,
   });
+  // A fallback vector source may omit the source-specific polygon mask.
+  if (bodyColor) Object.assign(material.defaultAttributeValues, { waterBodyMask: [0] });
   if (measuredRipples !== undefined) {
     const loader = new THREE.TextureLoader();
     let count = 0;
@@ -498,7 +525,8 @@ export function mapWaterMaterial(
       table.dispose();
     });
   }
-  if (offshore) Object.assign(material.defaultAttributeValues, { offshoreUv: [-1, -1] });
+  if (offshore)
+    Object.assign(material.defaultAttributeValues, { offshoreUv: [-1, -1], oceanFeature: [0] });
   if (sample) Object.assign(material.defaultAttributeValues, { sampledWater: [0] });
   material.onBeforeRender = (renderer, scene, camera) => {
     if (measuredRipples !== undefined) {

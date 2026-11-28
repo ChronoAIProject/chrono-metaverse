@@ -83,6 +83,42 @@ describe('通用环境配置', () => {
     expect(result?.sky?.texture).toBe(hash);
     expect(result?.sky?.daylight).toBeUndefined();
   });
+  it('reads a source-scoped body colour and ignores malformed estimates', () => {
+    const color = {
+      source: 'https://maps.example.org/index',
+      layer: 'water',
+      featureId: 4,
+      linearRGB: [0.02, 0.08, 0.04],
+    };
+    const parse = (waterBodyColor: unknown) =>
+      environmentOf({
+        ...entity,
+        props: {
+          background: true,
+          environment: {
+            version: 1,
+            map: {
+              latitude: 35,
+              longitude: -120,
+              origin: [4, -32, 7],
+              sources: [source],
+              waterBodyColor,
+            },
+          },
+        },
+      })?.map;
+    expect(parse(color)?.waterBodyColor).toEqual(color);
+    for (const bad of [
+      { linearRGB: [1, 2, 0] },
+      { featureId: -2 },
+      { layer: '' },
+      { source: 'bad' },
+    ]) {
+      const map = parse({ ...color, ...bad });
+      expect(map?.waterBodyColor).toBeUndefined();
+      expect(map?.sources).toHaveLength(1);
+    }
+  });
   it('读取天空的空气透视距离，无效距离沿用原有衰减', () => {
     const sky = (airHalfDistance: number) =>
       environmentOf({
@@ -101,6 +137,38 @@ describe('通用环境配置', () => {
       sky: { texture: hash, yaw: 0 },
       map: { latitude: 35, longitude: -120, heading: 0, sources: [source] },
     });
+  });
+
+  it('loads a turf survey with optional linear calibration', () => {
+    const env = entity.props!.environment as Record<string, unknown>;
+    const map = env.map as Record<string, unknown>;
+    const parse = (reflectanceScale?: unknown) =>
+      environmentOf({
+        ...entity,
+        props: {
+          ...entity.props,
+          environment: {
+            ...env,
+            map: {
+              ...map,
+              turfColorSurvey: {
+                texture: hash,
+                corners: [
+                  [0, 0],
+                  [1, 0],
+                  [0, 1],
+                ],
+                reflectanceScale,
+              },
+            },
+          },
+        },
+      })?.map?.turfColorSurvey;
+    expect(parse([0.8, 0.7, 2.6])?.reflectanceScale).toEqual([0.8, 0.7, 2.6]);
+    for (const value of [undefined, [1, -1, 2], [1, Infinity, 1], [0.8, 2]]) {
+      expect(parse(value)?.texture).toBe(hash);
+      expect(parse(value)?.reflectanceScale).toBeUndefined();
+    }
   });
 
   it('植被曝光只接受已声明的贴图和有效边界，缺图时基础地图仍可用', () => {

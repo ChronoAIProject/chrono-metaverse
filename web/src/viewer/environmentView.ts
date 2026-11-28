@@ -14,6 +14,7 @@ export interface MemberSurfaces {
   readonly spaceId: string;
   readonly water?: OffshoreWater;
   readonly turf?: TurfColorSurvey;
+  readonly waterBodyColor?: MapConfig['waterBodyColor'];
   readonly rippleShelter?: MapConfig['rippleShelter'];
 }
 
@@ -174,11 +175,15 @@ export class EnvironmentView {
           );
           if (
             !hologram &&
-            (this.map.offshore || environment.map.turfColorSurvey || environment.map.rippleShelter)
+            (this.map.offshore ||
+              environment.map.turfColorSurvey ||
+              environment.map.rippleShelter ||
+              environment.map.waterBodyColor)
           ) {
             this.surfaces = {
               spaceId: selected.spaceId,
               water: this.map.offshore,
+              waterBodyColor: environment.map.waterBodyColor,
               turf: environment.map.turfColorSurvey,
               rippleShelter: environment.map.rippleShelter,
             };

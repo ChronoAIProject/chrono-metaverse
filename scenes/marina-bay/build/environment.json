@@ -33,7 +33,7 @@
   },
   "textures": [
     "4c838144dd96db7606ae10bb178a1b950eea59ca1f3d880145d382018c2dd9cf",
-    "8db5c83ef94f65039b1528b6d55c5980c4aaaf2060c72e89d26b3adc82edabcb",
+    "de101dd7c52544aa5b7e598a8b2f67a9844775f7a3ce5f7ca3cd0aea314b23cc",
     "506f87975ad3d06492299504354bc8e432b74bad800e13d825aea79f3bbcf9bc",
     "f4fc4d1101e4e7373408140d8818b0fc06baceebd6097f9e727113c980472354",
     "b4d282645f0852dcb4360a215e623c7289fb0c942151463b27e6f4c843000e1d",
@@ -131,13 +131,15 @@
           }
         ],
         "vegetationExposure": {"texture": "4c838144dd96db7606ae10bb178a1b950eea59ca1f3d880145d382018c2dd9cf", "rect": [0.7884980458201676, 0.4964270008638193, 0.7885291874166837, 0.4964557469529111], "stops": -0.75},
+        "waterBodyColor": {"source": "https://tiles.openfreemap.org/planet", "layer": "water", "featureId": 22958103, "linearRGB": [0.079, 0.099, 0.038]},
         "rippleShelter": {"texture": "871468e4b10288854dedd2c5c80d69966541424a93fbda2f6312726fec467944", "windFrom": 106.6, "corners": [[103.8823359836, 1.3072998398], [103.8426509961, 1.3206291297], [103.8715043741, 1.2746327179]]},
         "turfColorSurvey": {
+          "reflectanceScale": [0.867054, 0.785275, 2.672289],
           "credit": {
             "attribution": "Contains modified Copernicus Sentinel data (2026)",
             "page": "https://dataspace.copernicus.eu/terms-and-conditions"
           },
-          "texture": "8db5c83ef94f65039b1528b6d55c5980c4aaaf2060c72e89d26b3adc82edabcb",
+          "texture": "de101dd7c52544aa5b7e598a8b2f67a9844775f7a3ce5f7ca3cd0aea314b23cc",
           "corners": [[103.85165105, 1.26817491], [103.88526306, 1.2681897], [103.85164083, 1.29115033]]
         },
         "offshore": {
