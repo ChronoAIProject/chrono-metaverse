@@ -196,7 +196,11 @@ def balance_sky_colour(pixels, latitude):
     offset = np.concatenate((offset, np.repeat(offset[-1:], rows // 2, axis=0)))
     broad = resize_panorama(offset[:, :, None], width, height)[:, :, 0]
     weight = smooth_step((np.degrees(latitude) - 2) / 9)[:, None] * (1 - smooth_step((luminance - .72) / .25))
-    stops = broad * weight
+    # Seven registered daylight views compare the low sky with the same bearing
+    # at 6–11 degrees elevation. Apply the correction before encoding the display panorama.
+    altitude = np.degrees(latitude)
+    low_sky = (smooth_step((altitude + 7) / 5) * (1 - smooth_step((altitude - 2) / 5)))[:, None]
+    stops = broad * weight + .12 * low_sky
     colour = linear.copy()
     colour[:, :, 0] *= np.exp2(-stops * .5)
     colour[:, :, 2] *= np.exp2(stops * .5)
@@ -204,7 +208,7 @@ def balance_sky_colour(pixels, latitude):
     # Stop at the first channel that reaches the sRGB boundary, preserving luminance.
     delta = colour - linear
     fraction = np.min(np.where(delta > 1e-6, (1 - linear) / np.maximum(delta, 1e-6), 1.), axis=2).clip(0, 1)
-    adjusted = linear + fraction[:, :, None] * delta
+    adjusted = (linear + fraction[:, :, None] * delta) * np.exp2(-.06 * low_sky)[:, :, None]
     encoded = np.where(adjusted <= .0031308, 12.92 * adjusted, 1.055 * adjusted.clip(0)**(1/2.4) - .055)
     return np.uint8(np.rint(255 * encoded.clip(0, 1)))
 
