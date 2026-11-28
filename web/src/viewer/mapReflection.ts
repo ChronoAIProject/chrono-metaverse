@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CityTurnPrograms } from './cityTurnPrograms';
 import { waterReflectionSky } from './skyRadiance';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 
@@ -11,6 +12,7 @@ const widenProjection = new THREE.Matrix4().makeScale(1 / captureScale, 1 / capt
 
 /** 岸线共用镜像缓冲。步行时每秒更新六次，切换机位时立即采样新视野。 */
 export class MapReflection {
+  private readonly turnPrograms = new CityTurnPrograms();
   private readonly mirror = new Reflector(new THREE.BufferGeometry(), {
     textureWidth: 512 * captureScale,
     textureHeight: 384 * captureScale,
@@ -101,7 +103,20 @@ export class MapReflection {
     return true;
   }
 
+  prepareTurn(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera) {
+    if (!Number.isFinite(this.last)) return;
+    this.turnPrograms.observe(
+      renderer,
+      scene,
+      camera,
+      this.eye,
+      this.mirror.getRenderTarget(),
+      this.mirror.position.y,
+    );
+  }
+
   dispose() {
+    this.turnPrograms.dispose();
     this.mirror.geometry.dispose();
     this.mirror.dispose();
   }

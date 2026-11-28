@@ -54,7 +54,7 @@ export class VectorContentItem {
   private readonly stationIds?: ReadonlySet<number>;
   private readonly sampledWaterIds?: ReadonlySet<number>;
   private readonly waterMaterial?: ReturnType<typeof mapWaterMaterial>;
-  private readonly reflection?: MapReflection;
+  readonly reflection?: MapReflection;
   private readonly roadMaterial?: THREE.LineBasicMaterial;
   private readonly groundMaterials = new Map<GroundLayer['material'], THREE.MeshStandardMaterial>();
   private readonly nodes = new Map<string, Node>();
