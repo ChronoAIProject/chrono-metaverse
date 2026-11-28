@@ -1,0 +1,28 @@
+{
+  "entityId": "bay.dragonfly-lake-understorey",
+  "kind": "structure",
+  "layer": "ext",
+  "regionId": "marina-bay-exterior",
+  "label": "蜻蜓湖 · 滨水植被",
+  "assetHash": "e58c4a45da1844c389f629663ccf7e471fc166e5902f8fc6b3999e3800c122d7",
+  "bounds": {
+    "min": [
+      -914.6227351960683,
+      -60.26,
+      -109.38798510890015
+    ],
+    "max": [
+      -639.4704125158373,
+      -55.73,
+      868.9450081207617
+    ]
+  },
+  "material": {
+    "shading": "albedo"
+  },
+  "props": {
+    "background": true,
+    "surfaceRole": "landscape",
+    "attribution": "Shrub 04, Poly Haven, CC0. OneMap, Singapore Land Authority. Meta and WRI High Resolution Canopy Height Maps. © OpenStreetMap contributors, ODbL 1.0."
+  }
+}
