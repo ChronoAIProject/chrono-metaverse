@@ -250,6 +250,27 @@ describe('metaverse pull：工作区的 .gitignore', () => {
     expect(readFileSync(join(root, '.gitignore'), 'utf8').split('\n')).toEqual(lines);
     expect(again.errors.join('\n')).not.toContain('.gitignore');
   });
+  it.each(['assets/*', '/assets/*', 'assets/**', '/assets/**'])(
+    '保留工作区用 %s 管理的可发布资产',
+    async (pattern) => {
+      fake = await startFakeApi(state(scanZip()));
+      const root = workspace(fake);
+      const ignore = [
+        pattern,
+        '!assets/daylight.jpeg',
+        'out/',
+        'chunks/',
+        'node_modules/',
+        'work/',
+        'scan/',
+        'web/',
+        '',
+      ].join('\n');
+      writeFileSync(join(root, '.gitignore'), ignore);
+      expect(await main(makeContext(root), ['pull'])).toBe(0);
+      expect(readFileSync(join(root, '.gitignore'), 'utf8')).toBe(ignore);
+    },
+  );
 });
 
 describe('metaverse pull --share', () => {

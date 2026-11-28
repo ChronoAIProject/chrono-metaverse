@@ -108,8 +108,16 @@ export function ensureGitignore(root: string): string[] {
   }
   const text = readFileSync(file, 'utf8');
   const lines = new Set(text.split(/\r?\n/).map((line) => line.trim()));
+  // 场景可以默认忽略下载的资产，再按文件名纳入可发布的模型和贴图。
+  const ignoresAssetContents = ['assets/*', '/assets/*', 'assets/**', '/assets/**'].some(
+    (pattern) => lines.has(pattern),
+  );
   const missing = WORKSPACE_IGNORED.filter(
-    (entry) => !lines.has(entry) && !lines.has(`/${entry}`) && !lines.has(entry.slice(0, -1)),
+    (entry) =>
+      !(entry === 'assets/' && ignoresAssetContents) &&
+      !lines.has(entry) &&
+      !lines.has(`/${entry}`) &&
+      !lines.has(entry.slice(0, -1)),
   );
   if (missing.length === 0) return [];
   const prefix = text.length === 0 || text.endsWith('\n') ? '' : '\n';
