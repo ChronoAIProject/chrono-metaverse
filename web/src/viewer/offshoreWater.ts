@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { GeographicMap } from '../core/environment';
 import { coverageRect, type Tile } from './geography';
-import { skyRadiance } from './skyRadiance';
+import { waterReflectionSky } from './skyRadiance';
 import reflectanceUrl from '../assets/geography/reservoir-reflectance.png';
 
 type Coverage = NonNullable<GeographicMap['offshore']>;
@@ -54,7 +54,7 @@ export class OffshoreWater {
   }
 
   setSky(sky: THREE.Texture | null) {
-    const radiance = sky && (skyRadiance.get(sky) ?? sky);
+    const radiance = sky && (waterReflectionSky(sky) ?? sky);
     this.uniforms.oceanSky.value = radiance;
     // A facet tilt changes the reflected angle by twice the tilt. Convert this
     // angular width to texels in the latitude direction of the panorama.

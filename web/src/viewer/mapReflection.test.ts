@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { expect, it, vi } from 'vitest';
-import { skyRadiance } from './skyRadiance';
+import { skyRadiance, waterSkyRadiance } from './skyRadiance';
 import { MapReflection } from './mapReflection';
 
 it('步行共用水面倒影，切换机位、转身和大幅缩放时在同一帧重画一次', () => {
@@ -91,6 +91,7 @@ it('restores the camera background and retries a failed radiance capture', () =>
   const camera = new THREE.PerspectiveCamera();
   camera.position.y = 2;
   camera.updateMatrixWorld();
+  const water = new THREE.DataTexture();
   const draw = vi
     .spyOn(Reflect.get(reflection, 'mirror'), 'onBeforeRender')
     .mockImplementationOnce(() => {
@@ -98,17 +99,19 @@ it('restores the camera background and retries a failed radiance capture', () =>
       throw new Error('interrupted');
     })
     .mockImplementation(() => {
-      expect(scene.background).toBe(radiance);
+      expect(scene.background).toBe(water);
     });
   try {
     expect(() => reflection.update(renderer, scene, camera, 0)).toThrow('interrupted');
     expect(scene.background).toBe(visibleSky);
+    waterSkyRadiance.set(visibleSky, water);
     expect(reflection.update(renderer, scene, camera, 0)).toBe(true);
     expect(draw).toHaveBeenCalledTimes(2);
     expect(scene.background).toBe(visibleSky);
   } finally {
     reflection.dispose();
     visibleSky.dispose();
+    water.dispose();
     radiance.dispose();
   }
 });

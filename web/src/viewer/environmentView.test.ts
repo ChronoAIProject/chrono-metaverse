@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import type { EntityBody } from '../core/api/types';
 import { IDENTITY_PLACEMENT, selectView, type SceneContent } from '../core/scene';
 import { EnvironmentView } from './environmentView';
+import { waterReflectionSky } from './skyRadiance';
 
 const hash = 'b'.repeat(64);
 const entity: EntityBody = {
@@ -109,6 +110,7 @@ it('线性天空载入后替换室外金属的显示全景并共享预滤波输�
     getImageData: () => ({ data: new Uint8ClampedArray(32).fill(128) }),
   } as unknown as CanvasRenderingContext2D);
   const radianceHash = 'c'.repeat(64);
+  const waterHash = 'd'.repeat(64);
   let finish!: (texture: THREE.Texture) => void;
   const radiance = new Promise<THREE.Texture>((resolve) => {
     finish = resolve;
@@ -119,7 +121,7 @@ it('线性天空载入后替换室外金属的显示全景并共享预滤波输�
   );
   const configured = {
     ...entity,
-    textures: [hash, radianceHash],
+    textures: [hash, radianceHash, waterHash],
     props: {
       background: true,
       environment: {
@@ -127,7 +129,7 @@ it('线性天空载入后替换室外金属的显示全景并共享预滤波输�
         sky: {
           texture: hash,
           yaw: 20,
-          radiance: { texture: radianceHash, scale: 32 },
+          radiance: { texture: radianceHash, scale: 32, waterTexture: waterHash },
         },
       },
     },
@@ -147,7 +149,15 @@ it('线性天空载入后替换室外金属的显示全景并共享预滤波输�
   expect(late.envMap).toBe(early.envMap);
   expect(late.envMapIntensity).toBe(1);
   expect(scene.background).not.toBe(late.envMap);
+  const display = scene.background as THREE.Texture;
+  const water = waterReflectionSky(display)!;
+  expect(water).toBeInstanceOf(THREE.DataTexture);
+  expect(water).not.toBe(late.envMap);
+  const waterDisposed = vi.fn();
+  water.addEventListener('dispose', waterDisposed);
   view.dispose();
+  expect(waterDisposed).toHaveBeenCalledOnce();
+  expect(waterReflectionSky(display)).toBeUndefined();
   expect(late.envMap).toBeNull();
 });
 

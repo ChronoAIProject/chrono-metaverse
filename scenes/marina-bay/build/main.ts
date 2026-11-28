@@ -154,7 +154,7 @@ function withPromontoryLawns(surroundings: EntityBody, environment: EntityBody |
 function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | null): EntityBody | null {
   if (!saved || !configured) return saved ?? configured;
   const environment = saved.props?.environment as { sky?: Record<string, unknown> } | undefined;
-  const target = configured.props?.environment as { sky?: { texture: string; radiance?: { texture: string } } } | undefined;
+  const target = configured.props?.environment as { sky?: { texture: string; radiance?: { texture: string; waterTexture?: string } } } | undefined;
   if (!environment?.sky || !target?.sky) return saved;
   const previous = JSON.parse(readFileSync(new URL('../references/partly-cloudy-sky.json', import.meta.url), 'utf8'));
   const base = { texture: previous.texture, yaw: previous.yaw };
@@ -180,8 +180,10 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
   const cloudHighlightSky = JSON.parse(readFileSync(new URL('../references/qwantani-cloud-highlight-sky.json', import.meta.url), 'utf8'));
   const { radiance: _highlightRadiance, ...cloudHighlightDisplay } = cloudHighlightSky;
   const { radiance, ...displaySky } = target.sky;
+  const { waterTexture, ...originalRadiance } = radiance ?? {};
+  const previousSky = { ...displaySky, radiance: originalRadiance };
   const previousTexture = '506f87975ad3d06492299504354bc8e432b74bad800e13d825aea79f3bbcf9bc';
-  const previousAir = { ...target.sky, texture: previousTexture, airHalfDistance: 28800 };
+  const previousAir = { ...previousSky, texture: previousTexture, airHalfDistance: 28800 };
   const { radiance: _previousProbe, ...previousAirDisplay } = previousAir;
   const previousTextures = [
     previousAir.texture,
@@ -189,7 +191,8 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
     'ed15daa79ace156cf0db282fbeddbff900882d7253580f6e1705e57fd8822400',
   ];
   const presets = [
-    { ...target.sky, texture: previousTexture },
+    previousSky,
+    { ...previousSky, texture: previousTexture },
     { ...displaySky, texture: previousTexture },
     ...previousTextures.flatMap(texture => [
       { ...previousAir, texture },
@@ -230,6 +233,7 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
   if (oldRadiance?.texture) textures.delete(oldRadiance.texture);
   textures.add(target.sky.texture);
   if (radiance) textures.add(radiance.texture);
+  if (waterTexture) textures.add(waterTexture);
   return {
     ...saved,
     textures: [...textures],
