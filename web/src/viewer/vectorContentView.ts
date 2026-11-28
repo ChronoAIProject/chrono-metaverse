@@ -47,6 +47,7 @@ export class VectorContentItem {
   private readonly exteriorMaterial?: THREE.MeshLambertMaterial;
   private readonly localEye = new THREE.Vector3();
   private reflectionAtlas?: THREE.Texture;
+  private readonly waterBodyColor?: MemberSurfaces['waterBodyColor'];
   private readonly sampledWaterIds?: ReadonlySet<number>;
   private readonly waterMaterial?: ReturnType<typeof mapWaterMaterial>;
   private readonly reflection?: MapReflection;
@@ -145,6 +146,13 @@ export class VectorContentItem {
               180 - config.rippleWindFrom + config.reference.heading + placement.rotation,
             );
       if (sample) this.sampledWaterIds = new Set(sample.featureIds);
+      const body = surfaces?.waterBodyColor;
+      if (
+        !hologram &&
+        body?.layer === config.waterLayer &&
+        config.sources.some((s) => s.url === body.source)
+      )
+        this.waterBodyColor = body;
       this.waterMaterial = mapWaterMaterial(
         hologram,
         this.reflection,
@@ -158,6 +166,7 @@ export class VectorContentItem {
           : undefined,
         downwindHeading,
         hologram ? undefined : this.surfaces?.water?.uniforms,
+        this.waterBodyColor && new THREE.Color().fromArray(this.waterBodyColor.linearRGB),
       );
       const shelter = surfaces?.rippleShelter;
       if (
@@ -389,6 +398,7 @@ export class VectorContentItem {
       this.waterMaterial?.defines.OFFSHORE_WATER
         ? this.surfaces?.water?.patch(tile)?.oceanRect.value
         : undefined,
+      this.waterBodyColor?.source === source.url ? this.waterBodyColor.featureId : undefined,
     );
     const size =
       Object.values(geometry.attributes).reduce((n, a) => n + a.array.byteLength, 0) +

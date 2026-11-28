@@ -257,11 +257,13 @@ function polygonSurface(
   edits?: readonly WaterlineEdit[],
   sampledIds?: ReadonlySet<number>,
   oceanRect?: THREE.Vector4,
+  coloredWaterId?: number,
 ) {
   const layer = data.layers[name];
   if (!layer || tile.z < surfaceZoom || layer.length > 10000) return;
   const excluded = new Set(ground?.excludeFeatureIds);
   const mask: number[] = [];
+  const bodyMask: number[] = [];
   const oceanCoords: number[] = [];
   const positions: number[] = [];
   const indices: number[] = [];
@@ -313,6 +315,7 @@ function polygonSurface(
             oceanRect.x + (p.x / feature.extent) * oceanRect.z,
             oceanRect.y - (p.y / feature.extent) * oceanRect.w,
           );
+        if (coloredWaterId !== undefined) bodyMask.push(feature.id === coloredWaterId ? 1 : 0);
         if (sampledIds) mask.push(feature.id !== undefined && sampledIds.has(feature.id) ? 1 : 0);
       }
       for (const [a, b, c] of faces) {
@@ -334,6 +337,8 @@ function polygonSurface(
   geometry.setIndex(indices);
   if (oceanRect)
     geometry.setAttribute('offshoreUv', new THREE.Float32BufferAttribute(oceanCoords, 2));
+  if (coloredWaterId !== undefined)
+    geometry.setAttribute('waterBodyMask', new THREE.Uint8BufferAttribute(bodyMask, 1));
   if (sampledIds) geometry.setAttribute('sampledWater', new THREE.Uint8BufferAttribute(mask, 1));
   if (ground) {
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
@@ -354,6 +359,7 @@ export function vectorGeometry(
   sampledWaterIds?: ReadonlySet<number>,
   reflectionBuildings?: readonly VectorBuildingPart[],
   oceanRect?: THREE.Vector4,
+  coloredWaterId?: number,
 ) {
   const data = new VectorTile(new Pbf(bytes));
   const layer = data.layers[style.layer];
@@ -521,6 +527,7 @@ export function vectorGeometry(
           ),
           sampledWaterIds,
           oceanRect,
+          coloredWaterId,
         )
       : undefined,
     roads: groundRoads

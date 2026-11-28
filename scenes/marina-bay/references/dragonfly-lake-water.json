@@ -1,0 +1,78 @@
+{
+  "method": "Compare open-water blocks common to a photo annotation and the eroded rendered lake mask. For each camera, report median absolute log2 error in water/sky luminance, sky-normalized red/green and blue/green. Two 2012 frames belong to the same evening. The 2019 afternoon view fits three grove crowns, holds out a fourth (5 px centre error at 720 px), and excludes the fountain. Six Sentinel-2 dates had no valid inland water pixels after shoreline erosion. The selected linear scene colour is a daylight appearance estimate.",
+  "linearRGB": [
+    0.079,
+    0.099,
+    0.038
+  ],
+  "views": [
+    {
+      "photo": "https://commons.wikimedia.org/?curid=124097740",
+      "artist": "Robbie",
+      "license": "CC BY-SA 4.0",
+      "date": "2016-02-26 15:25:04",
+      "blocks": 38,
+      "before": [
+        1.436,
+        1.804,
+        1.671
+      ],
+      "candidate": [
+        1.2,
+        0.509,
+        0.658
+      ]
+    },
+    {
+      "photo": "https://commons.wikimedia.org/?curid=20457961",
+      "artist": "Allie Caulfield.",
+      "license": "CC BY 2.0",
+      "date": "2012-06-29 19:13:30",
+      "blocks": 314,
+      "before": [
+        0.807,
+        0.218,
+        0.157
+      ],
+      "candidate": [
+        0.817,
+        0.141,
+        0.279
+      ]
+    },
+    {
+      "photo": "https://commons.wikimedia.org/?curid=20457987",
+      "artist": "Allie Caulfield.",
+      "license": "CC BY 2.0",
+      "date": "2012-06-29 19:15:06",
+      "blocks": 266,
+      "before": [
+        1.659,
+        0.303,
+        0.871
+      ],
+      "candidate": [
+        1.701,
+        0.336,
+        0.733
+      ]
+    },
+    {
+      "photo": "https://commons.wikimedia.org/?curid=85563664",
+      "artist": "Dietmar Rabich",
+      "license": "CC BY-SA 4.0",
+      "date": "Taken on 6 November 2019, 15:47",
+      "blocks": 161,
+      "before": [
+        0.854,
+        0.485,
+        1.317
+      ],
+      "candidate": [
+        0.805,
+        0.073,
+        0.773
+      ]
+    }
+  ]
+}

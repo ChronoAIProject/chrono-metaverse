@@ -44,6 +44,13 @@ export interface MapCoverage {
 }
 
 export interface GeographicMap extends GeographicReference {
+  /** Linear body colour for one water polygon in its originating vector layer. */
+  readonly waterBodyColor?: {
+    readonly source: string;
+    readonly layer: string;
+    readonly featureId: number;
+    readonly linearRGB: readonly [number, number, number];
+  };
   readonly vegetationExposure?: MapCoverage & { readonly stops: number };
   readonly turfColorSurvey?: TurfColorSurvey;
   readonly rippleShelter?: SurfaceRaster & { readonly windFrom: number };
@@ -289,6 +296,26 @@ export function environmentOf(entity: EntityBody): Environment | null {
       oceanCoverage && finite(offshore?.rmsSlope, 0.001, 1)
         ? { ...oceanCoverage, rmsSlope: offshore.rmsSlope }
         : undefined;
+    const body = record(value.waterBodyColor);
+    const rgb = body?.linearRGB;
+    const waterBodyColor =
+      body &&
+      publicHttps(body.source) &&
+      typeof body.layer === 'string' &&
+      body.layer.length > 0 &&
+      typeof body.featureId === 'number' &&
+      Number.isSafeInteger(body.featureId) &&
+      body.featureId >= 0 &&
+      Array.isArray(rgb) &&
+      rgb.length === 3 &&
+      rgb.every((v) => finite(v, 0, 1))
+        ? {
+            source: body.source,
+            layer: body.layer,
+            featureId: body.featureId,
+            linearRGB: [rgb[0], rgb[1], rgb[2]] as const,
+          }
+        : undefined;
     const vegetation = record(value.vegetationExposure);
     const coverage = mapCoverage(vegetation, entity);
     const vegetationExposure =
@@ -297,6 +324,7 @@ export function environmentOf(entity: EntityBody): Environment | null {
         : undefined;
     map = {
       ...reference,
+      ...(waterBodyColor ? { waterBodyColor } : {}),
       ...(ocean ? { offshore: ocean } : {}),
       ...(vegetationExposure ? { vegetationExposure } : {}),
       ...(turfColorSurvey ? { turfColorSurvey } : {}),

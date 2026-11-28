@@ -390,6 +390,34 @@ it('marks only surveyed water features for reflectance sampling', () => {
   }
 });
 
+it('marks the selected body colour independently of sampled reservoir waves', () => {
+  const bytes = vectorTileFixture(24, true);
+  for (const featureId of [1, 2, undefined]) {
+    const water = vectorGeometry(
+      bytes,
+      tile,
+      reference,
+      style,
+      false,
+      'shapes',
+      [],
+      undefined,
+      new Set([2]),
+      undefined,
+      undefined,
+      featureId,
+    ).water!;
+    expect(Array.from(water.getAttribute('sampledWater').array).every((n) => n === 0)).toBe(true);
+    const mask = water.getAttribute('waterBodyMask');
+    if (featureId === undefined) expect(mask).toBeUndefined();
+    else {
+      expect(mask.count).toBe(water.getAttribute('position').count);
+      expect(Array.from(mask.array).every((n) => n === Number(featureId === 1))).toBe(true);
+    }
+    water.dispose();
+  }
+});
+
 it('maps vector water to the same north-up ocean mask as the imagery tile', () => {
   const bytes = vectorTileFixture();
   const rect = new THREE.Vector4(0.25, 0.75, 0.5, 0.25);

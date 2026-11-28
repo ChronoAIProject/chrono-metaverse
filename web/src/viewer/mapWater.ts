@@ -20,6 +20,7 @@ export function mapWaterMaterial(
   },
   downwindHeading?: number,
   offshore?: OffshoreWater['uniforms'],
+  bodyColor?: THREE.Color,
 ) {
   // The wave field's +Y axis in the water plane points along world (-0.60, 0.80).
   const rotation = downwindHeading === undefined ? 0 : -Math.atan2(0.6, 0.8) - downwindHeading;
@@ -35,6 +36,7 @@ export function mapWaterMaterial(
     lights: !!reflection,
     defines: {
       ...(offshore ? { OFFSHORE_WATER: 1 } : {}),
+      ...(bodyColor ? { LOCAL_WATER_COLOR: 1 } : {}),
       ...(reflection ? { WATER_SHORE_SHADOW: 1 } : {}),
       ...(sample ? { WATER_SAMPLE: 1 } : {}),
       ...(measuredRipples !== undefined ? { WATER_SPECTRUM: 1 } : {}),
@@ -43,6 +45,7 @@ export function mapWaterMaterial(
     depthWrite: false,
     uniforms: {
       ...offshore,
+      ...(bodyColor ? { localBodyColor: { value: bodyColor } } : {}),
       ...(reflection ? THREE.UniformsUtils.clone(THREE.UniformsLib.lights) : {}),
       ...(sample
         ? {
@@ -93,6 +96,10 @@ export function mapWaterMaterial(
         attribute float sampledWater;
         varying vec3 samplePosition;
       #endif
+      #ifdef LOCAL_WATER_COLOR
+        attribute float waterBodyMask;
+        varying float bodyWeight;
+      #endif
       varying vec3 surfacePosition;
       #ifdef OFFSHORE_WATER
         attribute vec2 offshoreUv;
@@ -101,6 +108,9 @@ export function mapWaterMaterial(
       void main() {
         #ifdef OFFSHORE_WATER
           seaUv = offshoreUv;
+        #endif
+        #ifdef LOCAL_WATER_COLOR
+          bodyWeight = waterBodyMask;
         #endif
         vec4 worldPosition = modelMatrix * vec4(position, 1.0);
         surfacePosition = worldPosition.xyz;
@@ -126,6 +136,10 @@ export function mapWaterMaterial(
         #include <packing>
         #include <shadowmap_pars_fragment>
         uniform bool receiveShadow;
+      #endif
+      #ifdef LOCAL_WATER_COLOR
+        uniform vec3 localBodyColor;
+        varying float bodyWeight;
       #endif
       uniform float directFraction;
       uniform float time;
@@ -411,6 +425,9 @@ export function mapWaterMaterial(
         float shine = distribution * visibleSlopes / max(0.0001,4.0*cosine)
                     * waterFresnel(clamp(dot(eye,halfVector),0.0,1.0));
         vec3 bodyColor = deep;
+        #ifdef LOCAL_WATER_COLOR
+          bodyColor = mix(deep, localBodyColor, bodyWeight);
+        #endif
         #ifdef WATER_SAMPLE
           vec3 measured = waterReflectance * horizontalDiffuse / (0.84 + 0.12 * max(sunlight.y,0.0));
           bodyColor = mix(bodyColor, measured, weight);
@@ -471,6 +488,8 @@ export function mapWaterMaterial(
         #include <colorspace_fragment>
       }`,
   });
+  // A fallback vector source may omit the source-specific polygon mask.
+  if (bodyColor) Object.assign(material.defaultAttributeValues, { waterBodyMask: [0] });
   if (measuredRipples !== undefined) {
     const loader = new THREE.TextureLoader();
     let count = 0;
