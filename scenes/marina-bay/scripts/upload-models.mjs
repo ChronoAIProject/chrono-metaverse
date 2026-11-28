@@ -43,6 +43,15 @@ if (!probe && !hostOnly) {
     purpose: 'texture',
     format: 'png',
   });
+  const vegetation = environment.props.environment.map?.vegetationExposure;
+  if (vegetation) assets.push({
+    entityId: environment.entityId,
+    label: '公园航片植被覆盖',
+    assetHash: vegetation.texture,
+    path: new URL('references/marina-south-turf/park-vegetation.png', root).pathname,
+    purpose: 'texture',
+    format: 'png',
+  });
   const radiance = environment.props.environment.sky.radiance;
   if (radiance) assets.push({
     entityId: environment.entityId,

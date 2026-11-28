@@ -103,6 +103,23 @@ describe('通用环境配置', () => {
     });
   });
 
+  it('植被曝光只接受已声明的贴图和有效边界，缺图时基础地图仍可用', () => {
+    const env = entity.props!.environment as Record<string, unknown>;
+    const map = env.map as Record<string, unknown>;
+    const region = { texture: hash, rect: [0, 0.25, 0.5, 1], stops: -0.75 };
+    const parse = (vegetationExposure: unknown) =>
+      environmentOf({
+        ...entity,
+        props: { ...entity.props, environment: { ...env, map: { ...map, vegetationExposure } } },
+      })?.map;
+    expect(parse(region)?.vegetationExposure).toEqual(region);
+    for (const change of [{ texture: 'c'.repeat(64) }, { rect: [0.5, 0, 0, 1] }, { stops: NaN }]) {
+      const result = parse({ ...region, ...change });
+      expect(result?.sources).toHaveLength(1);
+      expect(result?.vegetationExposure).toBeUndefined();
+    }
+  });
+
   it('资源没有声明归属时不读取天空，普通物件不启用环境', () => {
     expect(environmentOf({ ...entity, textures: [] })).toBeNull();
     expect(environmentOf({ ...entity, props: { ...entity.props, background: false } })).toBeNull();

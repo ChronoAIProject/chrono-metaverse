@@ -11,17 +11,33 @@ export interface GroundAir {
   groundAirHalfDistance: THREE.IUniform<number>;
 }
 
+interface VegetationPatch {
+  vegetationMask: THREE.IUniform<THREE.Texture | null>;
+  vegetationRect: THREE.IUniform<THREE.Vector4>;
+  vegetationStops: THREE.IUniform<number>;
+}
+
+const greenFraction = `smoothstep(0.05, 0.32, (diffuseColor.g-diffuseColor.b)/max(0.025, dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722))))
+                    * smoothstep(-0.20, 0.05, (diffuseColor.g-diffuseColor.r)/max(0.025, dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722))))`;
+
 /** 远处的影像按视线长度衰减，散射光取当前方位的实景天际线。 */
-export function groundAir(material: THREE.Material, uniforms: GroundAir, offshore?: OffshorePatch) {
+export function groundAir(
+  material: THREE.Material,
+  uniforms: GroundAir,
+  offshore?: OffshorePatch,
+  vegetation?: VegetationPatch,
+) {
   const compile = material.onBeforeCompile.bind(material);
   const key = material.customProgramCacheKey();
-  material.customProgramCacheKey = () => key + '/ground-air' + (offshore ? '/offshore' : '');
+  material.customProgramCacheKey = () =>
+    key + '/ground-air' + (offshore ? '/offshore' : '') + (vegetation ? '/vegetation' : '');
   material.onBeforeCompile = (shader, renderer) => {
     compile(shader, renderer);
-    Object.assign(shader.uniforms, uniforms, offshore);
-    const uvVertex = offshore
-      ? 'uniform vec4 oceanRect;attribute vec2 tileUv;varying vec2 oceanUv;\n'
-      : '';
+    Object.assign(shader.uniforms, uniforms, offshore, vegetation);
+    const uvVertex =
+      (offshore || vegetation ? 'attribute vec2 tileUv;\n' : '') +
+      (offshore ? 'uniform vec4 oceanRect; varying vec2 oceanUv;\n' : '') +
+      (vegetation ? 'uniform vec4 vegetationRect; varying vec2 vegetationUv;\n' : '');
     const oceanFragment = offshore ? 'varying vec2 oceanUv;\n' + offshoreSamplers : '';
     shader.vertexShader =
       uvVertex +
@@ -29,12 +45,32 @@ export function groundAir(material: THREE.Material, uniforms: GroundAir, offshor
       shader.vertexShader.replace(
         '#include <project_vertex>',
         '#include <project_vertex>\ngroundView = mvPosition.xyz;' +
-          (offshore ? '\noceanUv = oceanRect.xy + vec2(tileUv.x, tileUv.y-1.0)*oceanRect.zw;' : ''),
+          (offshore
+            ? '\noceanUv = oceanRect.xy + vec2(tileUv.x, tileUv.y-1.0)*oceanRect.zw;'
+            : '') +
+          (vegetation
+            ? '\nvegetationUv = vegetationRect.xy + vec2(tileUv.x,tileUv.y-1.0)*vegetationRect.zw;'
+            : ''),
       );
     shader.fragmentShader =
+      (vegetation
+        ? 'varying vec2 vegetationUv; uniform sampler2D vegetationMask; uniform float vegetationStops;\n'
+        : '') +
       oceanFragment +
       'varying vec3 groundView;\nuniform sampler2D groundSky;\nuniform float groundSkyYaw, groundAirStrength, groundAirHalfDistance;\n' +
       shader.fragmentShader
+        .replace(
+          '#include <map_fragment>',
+          vegetation
+            ? `#include <map_fragment>
+          #ifdef USE_MAP
+          if (all(greaterThanEqual(vegetationUv,vec2(0.0))) && all(lessThanEqual(vegetationUv,vec2(1.0)))) {
+            float coverage = texture2D(vegetationMask,vegetationUv).r;
+            diffuseColor.rgb *= exp2(vegetationStops * coverage * (${greenFraction}));
+          }
+          #endif`
+            : '#include <map_fragment>',
+        )
         .replace('#include <common>', '#include <common>\n' + (offshore ? offshoreRadiance : ''))
         .replace(
           '#include <opaque_fragment>',
@@ -93,8 +129,7 @@ export function urbanGroundMaterial(detail: THREE.Texture, shadow: THREE.Color) 
         #ifdef USE_MAP
         vec3 photo = diffuseColor.rgb;
         float luminance = dot(photo, vec3(0.2126, 0.7152, 0.0722));
-        float grass = smoothstep(0.05, 0.32, (photo.g-photo.b)/max(0.025, luminance))
-                    * smoothstep(-0.20, 0.05, (photo.g-photo.r)/max(0.025, luminance));
+        float grass = ${greenFraction};
         float paving = smoothstep(0.10, 0.29, luminance);
         vec3 weights = vec3(grass, (1.0-grass)*paving, (1.0-grass)*(1.0-paving));
         vec2 uv = groundMeters / 2.2;

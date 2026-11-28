@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ancestorUv,
   children,
+  coverageRect,
   ecef,
   EARTH_RADIUS,
   GeoReference,
@@ -43,6 +44,14 @@ describe('地图坐标与瓦片来源', () => {
     expect(tileSources({ z: 5, x: 16, y: 15 }, [local, global])).toEqual([local, global]);
     expect(tileSources({ z: 5, x: 17, y: 15 }, [local, global])).toEqual([global]);
     expect(tileUrl({ z: 5, x: 17, y: 15 }, global)).toBe('https://example.org/5/15/17');
+  });
+
+  it('区域遮罩以子瓦片原始 UV 对齐，排除只接触边缘的瓦片', () => {
+    const bounds = [0.25, 0.5, 0.75, 0.75] as const;
+    expect(coverageRect({ z: 2, x: 1, y: 2 }, bounds)?.toArray()).toEqual([0, 1, 0.5, 1]);
+    expect(coverageRect({ z: 3, x: 5, y: 5 }, bounds)?.toArray()).toEqual([0.75, 0.5, 0.25, 0.5]);
+    expect(coverageRect({ z: 2, x: 3, y: 2 }, bounds)).toBeUndefined();
+    expect(coverageRect({ z: 2, x: 2, y: 1 }, bounds)).toBeUndefined();
   });
 
   it('祖先纹理的子区间精确衔接，不需要重叠地面网格', () => {
