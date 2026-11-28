@@ -377,6 +377,7 @@ export class SceneView {
   private readonly citySun = new CitySun();
   private daylightCity = false;
   private adaptiveSupersampling = false;
+  private modelsReady = false;
   private readonly drawScale = new AdaptivePixelRatio();
   private multisampleCutouts = false;
   private readonly canvasMultisampled: boolean;
@@ -678,6 +679,8 @@ export class SceneView {
     }
     this.citySun.update(this.renderer, this.camera.position, this.controls.target, globe);
     this.renderer.render(this.scene, this.camera);
+    if (now !== undefined && this.daylightCity && this.modelsReady && !globe)
+      this.externalContent.prepareTurn(this.renderer, this.camera);
     this.liveScreens.render(this.scene, this.camera);
     this.updateLabels();
   }
@@ -1234,6 +1237,7 @@ export class SceneView {
     let modelsFailed = 0;
     const modelProgress = () => {
       if (this.disposed || generation !== this.generation) return;
+      this.modelsReady = modelsPending === 0 && modelsLoaded > 0;
       this.host.dataset.modelsPending = String(modelsPending);
       this.host.dataset.modelsLoaded = String(modelsLoaded);
       this.host.dataset.modelsFailed = String(modelsFailed);

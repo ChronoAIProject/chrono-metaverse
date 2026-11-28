@@ -356,6 +356,15 @@ export class ExternalContentView {
     }
   }
 
+  prepareTurn(renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera): void {
+    for (const item of this.items) {
+      if (item instanceof VectorContentItem && item.reflection) {
+        item.reflection.prepareTurn(renderer, this.scene, camera);
+        return;
+      }
+    }
+  }
+
   private clear(): void {
     for (const item of this.items) item.dispose();
     this.items = [];
