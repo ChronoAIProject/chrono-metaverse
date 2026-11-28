@@ -1,6 +1,6 @@
 import type { ExternalAccess } from '../core/externalSource';
 import * as THREE from 'three';
-import { decodeSkyRadiance, skyRadiance } from './skyRadiance';
+import { decodeSkyRadiance, skyRadiance, waterSkyRadiance } from './skyRadiance';
 import { twilightSky } from './hologram';
 import { environmentOf, type Environment } from '../core/environment';
 import { GRID_UNIT } from '../core/chunk';
@@ -29,7 +29,7 @@ export class EnvironmentView {
   private readonly metals = new Set<THREE.MeshStandardMaterial>();
   private daylightCity = false;
   private generation = 0;
-  private radiancePending: Promise<THREE.Texture | null> | null = null;
+  private readonly radiancePending = new Map<typeof skyRadiance, Promise<THREE.Texture | null>>();
   private skyPending: Promise<THREE.Texture> | null = null;
   private backgroundColor?: string;
   private isCurrent: () => boolean = () => true;
@@ -198,10 +198,19 @@ export class EnvironmentView {
         if (!hologram && environment.sky && this.loadTexture) {
           this.host.dataset.sky = 'loading';
           this.skyPending = this.loadTexture(environment.sky.texture);
-          if (environment.sky.radiance)
-            this.radiancePending = this.loadTexture(environment.sky.radiance.texture).catch(
-              () => null,
+          const radiance = environment.sky.radiance;
+          if (radiance) {
+            this.radiancePending.set(
+              skyRadiance,
+              this.loadTexture(radiance.texture).catch(() => null),
             );
+            if (radiance.waterTexture) {
+              this.radiancePending.set(
+                waterSkyRadiance,
+                this.loadTexture(radiance.waterTexture).catch(() => null),
+              );
+            }
+          }
         }
       }
     }
@@ -225,24 +234,22 @@ export class EnvironmentView {
         });
     }
     const radiance = selected?.environment.sky?.radiance;
-    if (radiance && this.radiancePending && this.skyPending) {
-      void Promise.all([this.skyPending, this.radiancePending])
+    if (!radiance || !this.skyPending) return;
+    for (const [destination, pending] of this.radiancePending) {
+      void Promise.all([this.skyPending, pending])
         .then(([, source]) => {
           if (generation !== this.generation || !this.isCurrent() || !this.sky) return;
-          this.radiancePending = null;
+          this.radiancePending.delete(destination);
           if (!source) return;
           const texture = decodeSkyRadiance(source, radiance.scale);
           if (texture) {
             texture.userData.airHalfDistance = this.sky.userData.airHalfDistance;
-            skyRadiance.set(this.sky, texture);
-            this.map?.setSky(
-              this.scene.background,
-              this.scene.backgroundRotation.y,
-              this.scene.getObjectByName('light:key')?.userData.groundShadow,
-            );
-            for (const metal of this.metals) this.lightMetal(metal);
-            this.metalSky?.dispose();
-            this.metalSky = null;
+            destination.set(this.sky, texture);
+            this.applyBackground();
+            if (destination === skyRadiance) {
+              this.metalSky?.dispose();
+              this.metalSky = null;
+            }
           }
         })
         .catch(() => {
@@ -287,11 +294,13 @@ export class EnvironmentView {
     this.map = null;
     this.surfaces = undefined;
     if (this.sky) {
-      skyRadiance.get(this.sky)?.dispose();
-      skyRadiance.delete(this.sky);
+      for (const maps of [skyRadiance, waterSkyRadiance]) {
+        maps.get(this.sky)?.dispose();
+        maps.delete(this.sky);
+      }
       this.sky.dispose();
     }
-    this.radiancePending = null;
+    this.radiancePending.clear();
     this.sky = null;
     this.metalSky?.dispose();
     this.metalSky = null;

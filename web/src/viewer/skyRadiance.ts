@@ -3,6 +3,12 @@ import * as THREE from 'three';
 /** Display panoramas and their measured, scene-linear counterparts share the same orientation. */
 export const skyRadiance = new WeakMap<THREE.Texture, THREE.DataTexture>();
 
+export const waterSkyRadiance = new WeakMap<THREE.Texture, THREE.DataTexture>();
+
+export function waterReflectionSky(display: THREE.Texture): THREE.DataTexture | undefined {
+  return waterSkyRadiance.get(display) ?? skyRadiance.get(display);
+}
+
 export function decodeSkyRadiance(source: THREE.Texture, scale: number): THREE.DataTexture | null {
   const image = source.image;
   if (!(image instanceof HTMLImageElement) || !image.naturalWidth || !image.naturalHeight)

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { skyRadiance } from './skyRadiance';
+import { waterReflectionSky } from './skyRadiance';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 
 /** 镜像相机只绘制背景建筑、场景灯与天空，不递归绘制水面、界面或室内。 */
@@ -76,7 +76,8 @@ export class MapReflection {
     this.eye.projectionMatrix.premultiply(widenProjection);
     this.eye.far = camera.far;
     const background = scene.background;
-    const radiance = background instanceof THREE.Texture ? skyRadiance.get(background) : undefined;
+    const radiance =
+      background instanceof THREE.Texture ? waterReflectionSky(background) : undefined;
     if (radiance) scene.background = radiance;
     try {
       this.mirror.onBeforeRender(
