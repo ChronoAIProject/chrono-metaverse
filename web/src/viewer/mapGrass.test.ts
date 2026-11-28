@@ -14,7 +14,12 @@ it('keeps surveyed lawn and taller grass on their original cells after paving is
   const pixels = new Uint8ClampedArray(16);
   pixels[7] = pixels[11] = 255;
   vi.spyOn(lawns, 'coverage').mockReturnValue(pixels);
-  const patches = grassPatch(terrain, image, 0.48, { x: 0, y: 0, z: 0 }, paving, lawns);
+  const tile = { x: 0, y: 0, z: 0 };
+  const patches = grassPatch(terrain, image, 0.48, tile, paving, lawns, 0.062);
+  expect(patches.map((mesh) => mesh.position.y)).toEqual([0, 0.062]);
+  expect(
+    grassPatch(terrain, image, 0.48, tile, paving, lawns).map((mesh) => mesh.position.y),
+  ).toEqual([0, 0]);
   expect(patches.map((mesh) => [mesh.name, ...mesh.geometry.attributes.grassCell!.array])).toEqual([
     ['map-grass', 0, 3],
     ['map-mown-grass', 2],

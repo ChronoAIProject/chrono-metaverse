@@ -12,13 +12,17 @@ export function grassPatch(
   tile: Tile,
   paving?: GrassFootprints,
   lawns?: GrassFootprints,
+  mownLawnSurfaceOffset = 0,
 ) {
   const cells = Math.min(144, Math.ceil(width / 0.24));
   const candidates = tileGrassCells(image.image, cells);
   const selected = paving ? paving.filter(tile, cells, candidates) : candidates;
   const mask = lawns?.coverage(tile, cells);
-  const patch = (ids: Uint16Array | null, mown: boolean) =>
-    bladeMesh(terrain, image, cells, ids, mown);
+  const patch = (ids: Uint16Array | null, mown: boolean) => {
+    const mesh = bladeMesh(terrain, image, cells, ids, mown);
+    if (mown) mesh.position.y = mownLawnSurfaceOffset;
+    return mesh;
+  };
   if (!mask) return [patch(selected, false)];
   const available = selected ?? Uint16Array.from({ length: cells * cells }, (_, id) => id);
   const short = available.filter((id) => mask[id * 4 + 3] !== 0);
