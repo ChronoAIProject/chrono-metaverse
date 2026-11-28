@@ -423,11 +423,18 @@ export default function build(base: BuildBase, kit: Kit) {
       props: { ...currentEnvironment.props, environment: { ...savedEnvironment, map } }
     };
   }
-  const authoredArea = (configured?.props?.environment as { cameraArea?: unknown } | undefined)?.cameraArea;
+  const authoredSettings = configured?.props?.environment as Record<string, unknown> | undefined;
   const currentSettings = currentEnvironment?.props?.environment as Record<string, unknown> | undefined;
-  const environment = currentEnvironment && currentSettings && authoredArea !== undefined && currentSettings.cameraArea === undefined
-    ? { ...currentEnvironment, props: { ...currentEnvironment.props, environment: { ...currentSettings, cameraArea: authoredArea } } }
-    : currentEnvironment;
+  let environment = currentEnvironment;
+  if (currentEnvironment && currentSettings && authoredSettings) {
+    const settings = { ...currentSettings };
+    if (settings.cameraArea === undefined && authoredSettings.cameraArea !== undefined)
+      settings.cameraArea = authoredSettings.cameraArea;
+    if (settings.adaptiveSupersampling === undefined && authoredSettings.adaptiveSupersampling === true &&
+        settings.multisampleCutouts === true && isDeepStrictEqual(settings.sky, authoredSettings.sky))
+      settings.adaptiveSupersampling = true;
+    environment = { ...currentEnvironment, props: { ...currentEnvironment.props, environment: settings } };
+  }
   const ground: EntityBody[] = environment
     ? []
     : JSON.parse(readFileSync(new URL('./ground.json', import.meta.url), 'utf8'));

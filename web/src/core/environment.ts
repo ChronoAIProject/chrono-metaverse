@@ -167,6 +167,7 @@ export interface Environment {
   readonly cameraArea?: { center: [number, number]; radius: number; floor: number; height: number };
   readonly daylightToneMapping?: 'agx';
   readonly multisampleCutouts?: boolean;
+  readonly adaptiveSupersampling?: boolean;
   readonly sky?: {
     readonly texture: string;
     readonly yaw: number;
@@ -394,6 +395,7 @@ export function environmentOf(entity: EntityBody): Environment | null {
     ...(cameraArea ? { cameraArea } : {}),
     sky,
     map,
+    ...(raw.adaptiveSupersampling === true ? { adaptiveSupersampling: true } : {}),
     ...(raw.multisampleCutouts === true ? { multisampleCutouts: true } : {}),
     ...(raw.daylightToneMapping === 'agx' ? { daylightToneMapping: 'agx' } : {}),
   };

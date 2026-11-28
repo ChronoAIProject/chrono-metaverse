@@ -8,6 +8,7 @@ import {
   matchCutoutShadow,
   softenCrownSpecular,
 } from './cityCutout';
+import { AdaptivePixelRatio } from './adaptivePixelRatio';
 import { CitySun } from './citySun';
 import { cityModelAir } from './mapFacade';
 import { CITY_REFLECTION_LAYER } from './mapReflection';
@@ -375,6 +376,8 @@ export class SceneView {
   private readonly textures: TextureCache;
   private readonly citySun = new CitySun();
   private daylightCity = false;
+  private adaptiveSupersampling = false;
+  private readonly drawScale = new AdaptivePixelRatio();
   private multisampleCutouts = false;
   private readonly canvasMultisampled: boolean;
   private readonly environment: EnvironmentView;
@@ -555,7 +558,7 @@ export class SceneView {
     this.themeObserver.observe(document.body, { attributes: true });
     this.applyTheme();
     this.fit();
-    this.renderer.setAnimationLoop(() => this.frame());
+    this.renderer.setAnimationLoop((now) => this.frame(now));
   }
 
   /** 当前场景的统计（测试和端到端截图用来确认真的画出了东西）。 */
@@ -592,9 +595,20 @@ export class SceneView {
     this.renderer.setClearColor(this.backgroundColor, this.liveScreens.hasEmbed ? 1 : 0);
   }
 
+  private configureDrawScale(width: number, height: number): void {
+    const ratio = this.drawScale.configure(
+      this.adaptiveSupersampling,
+      Math.min(window.devicePixelRatio, 2),
+      width,
+      height,
+    );
+    if (ratio !== undefined) this.renderer.setPixelRatio(ratio);
+  }
+
   private fit(): void {
     const width = Math.max(1, this.host.clientWidth);
     const height = Math.max(1, this.host.clientHeight);
+    this.configureDrawScale(width, height);
     this.renderer.setSize(width, height, false);
     this.liveScreens.resize(width, height);
     this.labels.setSize(width, height);
@@ -605,8 +619,12 @@ export class SceneView {
     if (this.autoFramed && !this.flight) this.frameContent(false);
   }
 
-  private frame(): void {
+  private frame(now?: number): void {
     if (this.disposed) return;
+    if (now !== undefined && this.adaptiveSupersampling) {
+      const ratio = this.drawScale.frame(now, !document.hidden);
+      if (ratio !== undefined) this.renderer.setPixelRatio(ratio);
+    }
     const flight = this.flight;
     if (flight) {
       const now = performance.now();
@@ -1127,6 +1145,8 @@ export class SceneView {
       !(owner?.view.styleLook ?? owner?.styleLook)?.hologram &&
       !(owner?.view.backgroundColor ?? owner?.backgroundColor) &&
       environment?.map?.surfaceDetail === 'urban';
+    this.adaptiveSupersampling = this.daylightCity && environment?.adaptiveSupersampling === true;
+    this.configureDrawScale(this.host.clientWidth, this.host.clientHeight);
     this.multisampleCutouts = this.canvasMultisampled && environment?.multisampleCutouts === true;
     this.renderer.toneMapping =
       this.daylightCity && environment?.daylightToneMapping === 'agx'
