@@ -1,0 +1,27 @@
+{
+  "bay.garden-conservatories": [
+    "Flower Dome aerial glazing",
+    "Cloud Forest aerial glazing"
+  ],
+  "bay.fullerton-dining-terraces": [
+    "Coated roof panels",
+    "Pale roof trim",
+    "Anodised glazing bars",
+    "Grey aluminium",
+    "Painted steel",
+    "Entrance aluminium"
+  ],
+  "bay.dragonfly-bridge": [
+    "Muted purple painted steel"
+  ],
+  "bay.artscience-promenade": [
+    "Museum promenade painted aluminium"
+  ],
+  "bay.fullerton-entrance-lamps": [
+    "Promenade painted aluminium"
+  ],
+  "bay.ns-square-construction-stand": [
+    "Grandstand standing seam roof",
+    "Grandstand roof steel"
+  ]
+}

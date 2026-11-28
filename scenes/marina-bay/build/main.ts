@@ -325,6 +325,10 @@ const groundScanMaterials: Record<string, string[]> = {
   'bay.west-bay-boat-landing': ['Exposed deck edge', 'Deck soffit and piles', 'Landing wearing course'],
 };
 
+const skyReflectionMaterials: Record<string, string[]> = JSON.parse(
+  readFileSync(new URL('./waterfront-reflectors.json', import.meta.url), 'utf8'),
+);
+
 // Bind the charts independently of baked tree shade on the second UV channel.
 const squareGranite = { grid: [5, 5], bond: 'stack', originU: .0955 };
 const pavedSurfaces: Record<string, Record<string, number[] | typeof squareGranite>> = {
@@ -461,6 +465,7 @@ export default function build(base: BuildBase, kit: Kit) {
         .map((entity) => kit.removeEntity(entity.entityId)),
       ...entities.map((entity) => {
         const facade = config.quay ? bakedFacades.get(entity.entityId) : undefined;
+        const reflectors = config.quay && skyReflectionMaterials[entity.entityId];
         const scans = config.quay && groundScanMaterials[entity.entityId];
         const pavers = config.quay && pavedSurfaces[entity.entityId];
         return kit.placeEntity({
@@ -473,6 +478,7 @@ export default function build(base: BuildBase, kit: Kit) {
               landmark: savedLandmark ?? entity.props?.landmark ?? overview.landmark,
             }),
             ...(scans && { groundScanMaterials: scans }),
+            ...(reflectors && { skyReflectionMaterials: reflectors }),
             ...(pavers && { pavingCourseAtlas: pavers }),
           },
         });

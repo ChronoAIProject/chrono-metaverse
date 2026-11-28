@@ -824,6 +824,7 @@ export class SceneView {
     const occlusion = entity && modelOcclusion(entity);
     const scans = entity?.props?.groundScanMaterials;
     const panes = entity?.props?.thinGlassMaterials;
+    const reflectors = entity?.props?.skyReflectionMaterials;
     const applyMaterial = (m: THREE.Material) =>
       this.modelMaterial(
         m,
@@ -838,6 +839,7 @@ export class SceneView {
         Array.isArray(panes) && panes.includes(m.name),
         entity?.props?.surfaceRole === 'landscape',
         crownSpecularIntensity(entity?.props?.crownSpecular, m.name),
+        Array.isArray(reflectors) && reflectors.includes(m.name),
       );
     const clone = model.clone(true);
     clone.traverse((object) => {
@@ -878,6 +880,7 @@ export class SceneView {
     thinGlass = false,
     landscape = false,
     crownSpecular?: number,
+    reflectSky = false,
   ): THREE.Material {
     const lookKey = modelMaterialKey(source, look, styleLook);
     if (lookKey === null && !background) return source;
@@ -902,7 +905,7 @@ export class SceneView {
       !source.transparent
         ? roof?.scale
         : undefined;
-    const key = `${lookKey ?? source.uuid}|${background}|${styleLookKey(styleLook)}|${kind}|${air}|${coverage}|${foliage}|${ao ?? ''}|${roofScale ?? ''}|${scatter}|${paving ? JSON.stringify(paving) : ''}|${thinGlass}|${crownSpecular ?? ''}`;
+    const key = `${lookKey ?? source.uuid}|${background}|${styleLookKey(styleLook)}|${kind}|${air}|${coverage}|${foliage}|${ao ?? ''}|${roofScale ?? ''}|${scatter}|${paving ? JSON.stringify(paving) : ''}|${thinGlass}|${crownSpecular ?? ''}|${reflectSky}`;
     let material = this.materialCache.get(key);
     if (material === undefined) {
       material = createModelMaterial(
@@ -916,6 +919,8 @@ export class SceneView {
         filterModelSurface(material, this.renderer.capabilities.getMaxAnisotropy());
         cityModelAir(material, roofScale, thinGlass);
         outdoorSurfaceVariation(material, scatter, paving);
+        if (reflectSky && look?.shading === 'albedo')
+          this.environment.addModelSkyReflection(material);
         if (landscape && crownSpecular !== undefined && look?.shading === 'albedo')
           softenCrownSpecular(material, crownSpecular);
       }

@@ -42,6 +42,35 @@ export class EnvironmentView {
     this.lightMetal(material);
   }
 
+  addModelSkyReflection(material: THREE.Material): void {
+    if (
+      !(material instanceof THREE.MeshStandardMaterial) ||
+      material.transparent ||
+      material.alphaTest > 0 ||
+      material.metalness <= 0 ||
+      material.envMap ||
+      material.userData.reflectSky ||
+      material.userData.prefilteredReflection ||
+      material.userData.reflectionLevels ||
+      material.userData.waterSurface ||
+      (material instanceof THREE.MeshPhysicalMaterial && material.transmission > 0)
+    )
+      return;
+
+    // 场景已有漫射天光，保留光照贴图，只取按粗糙度过滤的环境镜面分量。
+    const previous = material.onBeforeCompile;
+    const key = material.customProgramCacheKey();
+    material.customProgramCacheKey = () => key + '|outdoor-sky-specular';
+    material.onBeforeCompile = function (shader, renderer) {
+      previous.call(this, shader, renderer);
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <lights_fragment_maps>',
+        'vec3 previousIrradiance = iblIrradiance;\n#include <lights_fragment_maps>\niblIrradiance = previousIrradiance;',
+      );
+    };
+    this.addOutdoorMetal(material);
+  }
+
   private lightMetal(material: THREE.MeshStandardMaterial): void {
     const sky = this.daylightCity && !this.backgroundColor ? this.sky : null;
     const radiance = sky && skyRadiance.get(sky);

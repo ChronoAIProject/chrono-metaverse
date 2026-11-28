@@ -74,6 +74,29 @@ it('室外金属共享缩小的天空并随样式切换和资源释放', async (
   expect(late.envMap).toBeNull();
 });
 
+it('仅将室外模型选定的金属饰面接入天空，保留原探针和透射材质', () => {
+  const view = new EnvironmentView(new THREE.Scene(), document.createElement('div'));
+  const metal = new THREE.MeshStandardMaterial({ metalness: 0.25 });
+  metal.customProgramCacheKey = () => 'coated';
+  const grass = new THREE.MeshStandardMaterial({ metalness: 0, metalnessMap: new THREE.Texture() });
+  const probe = metal.clone();
+  probe.userData.prefilteredReflection = true;
+  const mapped = metal.clone();
+  const local = new THREE.Texture();
+  mapped.envMap = local;
+  const glazing = new THREE.MeshPhysicalMaterial({ metalness: 0.1, transmission: 1 });
+
+  for (const material of [metal, grass, probe, mapped, glazing]) {
+    const previous = material.customProgramCacheKey();
+    view.addModelSkyReflection(material);
+    expect(material.customProgramCacheKey()).toBe(
+      material === metal ? previous + '|outdoor-sky-specular' : previous,
+    );
+  }
+  expect(mapped.envMap).toBe(local);
+  view.dispose();
+});
+
 it('线性天空载入后替换室外金属的显示全景并共享预滤波输入', async () => {
   const photo = new Image();
   Object.defineProperties(photo, {
