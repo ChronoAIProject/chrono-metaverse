@@ -131,6 +131,7 @@
           }
         ],
         "vegetationExposure": {"texture": "4c838144dd96db7606ae10bb178a1b950eea59ca1f3d880145d382018c2dd9cf", "rect": [0.7884980458201676, 0.4964270008638193, 0.7885291874166837, 0.4964557469529111], "stops": -0.75},
+        "waterBodyColor": {"source": "https://tiles.openfreemap.org/planet", "layer": "water", "featureId": 22958103, "linearRGB": [0.079, 0.099, 0.038]},
         "rippleShelter": {"texture": "871468e4b10288854dedd2c5c80d69966541424a93fbda2f6312726fec467944", "windFrom": 106.6, "corners": [[103.8823359836, 1.3072998398], [103.8426509961, 1.3206291297], [103.8715043741, 1.2746327179]]},
         "turfColorSurvey": {
           "credit": {
