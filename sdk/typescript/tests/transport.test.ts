@@ -64,6 +64,35 @@ describe('令牌来源顺序', () => {
     ).toBe('default-token');
   });
 
+  it('uses an explicit Agent Key profile only for the proxy and refuses redirects', async () => {
+    const directory = '/home/me/.nyxid/profiles/builder';
+    const options = { home: '/home/me', env: {}, profile: 'builder' };
+    const profileFiles: Record<string, string> = {
+      ...files,
+      [directory + '/auth_kind']: 'agent_key\n',
+    };
+    const readProfile = (path: string) => profileFiles[path] ?? null;
+    expect(() => resolveNyxToken({ ...options, readFile: readProfile })).toThrow(TokenError);
+    const resolved = resolveNyxToken({
+      ...options,
+      readFile: (path) => (path === directory + '/token' ? 'example-key\n' : readProfile(path)),
+    });
+    expect(resolved.authKind).toBe('agent_key');
+    const client = new ApiClient({
+      mode: 'nyxid',
+      authKind: resolved.authKind!,
+      token: () => resolved.token,
+      fetch: async (_input, init) => {
+        const headers = new Headers(init?.headers);
+        expect(headers.get('x-api-key')).toBe('example-key');
+        expect(headers.has('authorization')).toBe(false);
+        expect(init?.redirect).toBe('error');
+        return new Response('{}');
+      },
+    });
+    await client.json('GET', '/api/v1/spaces/example');
+  });
+
   it('都没有时报错并列出找过的位置', () => {
     expect(() => resolveNyxToken({ home: '/nowhere', readFile, env: {} })).toThrow(TokenError);
     try {
@@ -294,6 +323,29 @@ describe('错误和重试', () => {
     expect(error.code).toBe('forbidden');
     expect(error.message).toContain('没有写入权限');
     expect(error.message).toContain('操作范围');
+  });
+
+  it('保留 NyxID 代理拒绝转发的原因', async () => {
+    const body = {
+      error: 'forbidden',
+      error_code: 1002,
+      message: "Forbidden: This destination cannot receive the caller's access token",
+    };
+    const client = new ApiClient({
+      mode: 'nyxid',
+      token: () => 't',
+      fetch: capturingFetch([() => Response.json(body, { status: 403 })], []),
+    });
+    const error = await client
+      .json('GET', '/api/v1/spaces/street-corner')
+      .catch((e: ApiError) => e);
+    expect(error).toMatchObject({
+      status: 403,
+      code: 'forbidden',
+      body,
+      message: expect.stringContaining(body.message),
+    });
+    expect((error as ApiError).message).not.toContain('空间主人');
   });
 
   it('GET 遇到 503 和网络错误自动重试，POST 不重试', async () => {

@@ -317,16 +317,16 @@ curl -s -o /dev/null -w '%{http_code}\n' $URL/api/v1/spaces/x   # 401（没有�
 
 ### 第 7 步：注册成 NyxID 服务（组织管理员，在自己电脑上）
 
-ChronoAI 的现有部署已完成注册：组织 `chronoai`（`52aa284c-b5b2-49bd-9d12-79f24772dbd7`），服务 `chrono-metaverse`，连接编号 `362df1f5-8135-4a05-aa85-d929a5fd9f73`，地址 `https://chrono-metaverse-chronoai.apps.nyxid.ai`，OpenAPI 地址为该域名下的 `/api/openapi.json`。连接已开启 `jwt` 身份传递、受众 `urn:chrono-metaverse:api` 和 `forward_access_token`，允许组织成员使用；`app.json` 的服务编号白名单已同步。
+ChronoAI 的现有部署已完成注册：组织 `chronoai`（`52aa284c-b5b2-49bd-9d12-79f24772dbd7`），服务 `chrono-metaverse`，连接编号 `362df1f5-8135-4a05-aa85-d929a5fd9f73`，地址 `https://chrono-metaverse-chronoai.apps.nyxid.ai`，OpenAPI 地址为该域名下的 `/api/openapi.json`。连接使用 `jwt` 身份传递和受众 `urn:chrono-metaverse:api`，允许组织成员使用；`app.json` 的服务编号白名单已同步。
 
-已验证 `nyxid proxy request chrono-metaverse api/v1/spaces/chronoai-lobby --output json` 可读取前厅数据，MCP 可发现 `chrono-metaverse__get_space` 等具体工具。MCP 使用 `x-api-key` 时不会转发用户访问令牌。旧版本因此无法查询组织角色，读取组织空间返回 404；本次 OAuth 实现允许用户先在 `/connect` 授权，再以原有 Agent Key 调用。需先发布新版 API/web，并按 [NyxID OAuth 接入](../../docs/NYXID_OAUTH.md) 注册 OAuth 客户端、设置两个应用密钥和客户端 ID；本次发布同时配置该功能；每位用户仍需打开 `/connect` 授权一次。无需新建服务连接或 Agent Key。
+早期部署曾验证 `nyxid proxy request chrono-metaverse api/v1/spaces/chronoai-lobby --output json` 可读取前厅数据，MCP 可发现 `chrono-metaverse__get_space` 等具体工具。MCP 使用 `x-api-key` 时不会转发用户访问令牌。旧版本因此无法查询组织角色，读取组织空间返回 404；本次 OAuth 实现允许用户先在 `/connect` 授权，再以原有 Agent Key 调用。需先发布新版 API/web，并按 [NyxID OAuth 接入](../../docs/NYXID_OAUTH.md) 注册 OAuth 客户端、设置两个应用密钥和客户端 ID；本次发布同时配置该功能；每位用户仍需打开 `/connect` 授权一次。无需新建服务连接或 Agent Key。
 
 维护现有部署时复用这条连接，无需再次创建。以下步骤用于新建或重建连接：
 
 完整命令见开发教程 [`docs/tutorials/cloud-claude-code-nyxid.md`](../../docs/tutorials/cloud-claude-code-nyxid.md) 第 9.3 节。要点：
 
 1. `nyxid service add --custom --slug chrono-metaverse --endpoint-url "$URL" --openapi-spec-url "$URL/api/openapi.json" --auth-method none --org chronoai`；
-2. 开启身份令牌（`identity_propagation_mode = jwt`，受众 `urn:chrono-metaverse:api`）和转发调用者令牌（`forward_access_token = true`，查组织角色要用，设计 9.2）；
+2. 设置 `identity_propagation_mode = jwt`、受众 `urn:chrono-metaverse:api` 和 `forward_access_token = false`。用户在当前部署的 `/connect` 授权后，接口服务使用同一主体的 OAuth 凭据查询组织角色；
 3. 把服务编号填进接口服务的允许列表：
 
 ```bash

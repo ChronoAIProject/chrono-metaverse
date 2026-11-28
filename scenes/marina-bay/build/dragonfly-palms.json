@@ -4,12 +4,12 @@
   "layer": "ext",
   "regionId": "marina-bay-exterior",
   "label": "蜻蜓湖 · 棕榈林",
-  "assetHash": "42e26b73b8f61285f37dac978b0c6425e3069e0d55e2ca68a01b3d6733350b23",
+  "assetHash": "2214e26de0f411ef10eb177c2fcebb1ed7df60afdac3aac2dc1fb2fc6ccd4da2",
   "bounds": {
     "min": [
-      -853.4690849584324,
+      -853.3448686189801,
       -60.282,
-      483.30597031490447
+      483.5818790672741
     ],
     "max": [
       -727.251796733032,

@@ -25,7 +25,7 @@ SOURCES = {
 }
 
 
-def sample_scan(folder, name, *, bark_triangles=240):
+def scan_reflectance(folder, name, *, bark_triangles=240):
     raw = (folder / f"{name}_1k.gltf").read_bytes()
     if hashlib.sha256(raw).hexdigest() != SOURCES[name]:
         raise ValueError(f"Expected the Poly Haven {name} 1k glTF")
@@ -105,13 +105,17 @@ def sample_scan(folder, name, *, bark_triangles=240):
         coverage += np.clip((maximum_filter(front, size=3)[tuple(grid.T)]-depth-.025)/.26, 0, 1)
     canopy = np.concatenate([np.full(len(part), i != bark_index) for i, part in enumerate(points)])
     shade = 1 - .34 * coverage / 5
-    shaded = np.uint8(np.clip(rgb * shade[:, None], 0, 255))
     # Preserve the scanned skylight occlusion after separating solid wood from the atlas.
     nearest = cKDTree(xyz[~canopy]).query(bark.vertices, k=12)[1]
     linear = np.power(shade[~canopy][nearest].mean(axis=1), 2.2)
     bark.visual.vertex_attributes["color"] = np.uint8(
         np.column_stack((linear, linear, linear, np.ones(len(linear)))) * 255)
-    return xyz, shaded, canopy, bark
+    return xyz, rgb.astype(np.uint8), shade, canopy, bark
+
+
+def sample_scan(folder, name, *, bark_triangles=240):
+    xyz, rgb, shade, canopy, bark = scan_reflectance(folder, name, bark_triangles=bark_triangles)
+    return xyz, np.uint8(rgb * shade[:, None]), canopy, bark
 
 
 def canopy_depths(points, u, v, depth, cells=3, layer_count=LAYERS):
