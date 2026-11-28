@@ -1,0 +1,64 @@
+{
+  "entityId": "bay.eastern-anchorage",
+  "kind": "object",
+  "label": "东部锚地 · 远海船群（2023 年 7 月）",
+  "layer": "ext",
+  "regionId": "marina-bay-exterior",
+  "bounds": {
+    "min": [
+      8.07,
+      -61,
+      8.07
+    ],
+    "max": [
+      8.09,
+      -60.98,
+      8.09
+    ]
+  },
+  "shape": {
+    "type": "box",
+    "size": [
+      0.02,
+      0.02,
+      0.02
+    ],
+    "transform": {
+      "position": [
+        8.08,
+        -61,
+        8.08
+      ]
+    }
+  },
+  "textures": [],
+  "props": {
+    "background": true,
+    "externalContent": {
+      "version": 1,
+      "format": "3d-tiles",
+      "sources": [
+        {
+          "url": "https://raw.githubusercontent.com/ChronoAIProject/chrono-metaverse/b8c5a8e4a8323f6869d8970cbbc0b8536688d0bf/scenes/marina-bay/references/eastern-anchorage/tiles/tileset.json",
+          "attribution": "Contains modified Copernicus Sentinel data (2023).",
+          "page": "https://dataspace.copernicus.eu/",
+          "license": {
+            "label": "Copernicus Sentinel data terms",
+            "url": "https://dataspace.copernicus.eu/terms-and-conditions"
+          }
+        }
+      ],
+      "reference": {
+        "latitude": 1.2801706774251347,
+        "longitude": 103.85419949862057,
+        "origin": [
+          12.698957563907662,
+          -60.257,
+          -12.785997359593134
+        ],
+        "heading": 18.454586711764804
+      }
+    },
+    "说明": "船位、朝向和甲板颜色取自 2023-07-24 同次影像。船高和上层建筑为按屋顶全景校准的估值。"
+  }
+}
