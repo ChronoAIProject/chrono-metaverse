@@ -1,5 +1,5 @@
 import type { OffshorePatch } from './offshoreWater';
-import { offshoreLight } from './offshoreWater';
+import { offshoreLight, offshoreRadiance, offshoreSamplers } from './offshoreWater';
 import { surfaceNoise } from './surfaceVariation';
 import * as THREE from 'three';
 import detailUrl from '../assets/geography/surface-detail.webp';
@@ -22,9 +22,7 @@ export function groundAir(material: THREE.Material, uniforms: GroundAir, offshor
     const uvVertex = offshore
       ? 'uniform vec4 oceanRect;attribute vec2 tileUv;varying vec2 oceanUv;\n'
       : '';
-    const oceanFragment = offshore
-      ? 'varying vec2 oceanUv; uniform sampler2D oceanMask, oceanSky, oceanReflectance; uniform float oceanReady, oceanRoughness, oceanSkyLod;\n'
-      : '';
+    const oceanFragment = offshore ? 'varying vec2 oceanUv;\n' + offshoreSamplers : '';
     shader.vertexShader =
       uvVertex +
       'varying vec3 groundView;\n' +
@@ -36,9 +34,11 @@ export function groundAir(material: THREE.Material, uniforms: GroundAir, offshor
     shader.fragmentShader =
       oceanFragment +
       'varying vec3 groundView;\nuniform sampler2D groundSky;\nuniform float groundSkyYaw, groundAirStrength, groundAirHalfDistance;\n' +
-      shader.fragmentShader.replace(
-        '#include <opaque_fragment>',
-        /* glsl */ `
+      shader.fragmentShader
+        .replace('#include <common>', '#include <common>\n' + (offshore ? offshoreRadiance : ''))
+        .replace(
+          '#include <opaque_fragment>',
+          /* glsl */ `
           float path = max(0.0, length(groundView) - 250.0);
           if (path > 0.0 && groundAirStrength > 0.0) {
             vec3 ray = inverseTransformDirection(normalize(groundView), viewMatrix);
@@ -50,7 +50,7 @@ export function groundAir(material: THREE.Material, uniforms: GroundAir, offshor
             outgoingLight = mix(outgoingLight, horizon, scatter);
           }
           #include <opaque_fragment>`,
-      );
+        );
   };
 }
 

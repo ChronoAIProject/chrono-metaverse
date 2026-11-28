@@ -27,6 +27,7 @@ import { GeoReference } from './geography';
 import { sourceResponse } from './externalResource';
 import { sourceCredit } from './sourceCredit';
 import { backgroundView } from './background';
+import type { MemberOcean } from './offshoreWater';
 import { VectorContentItem } from './vectorContentView';
 
 /** 标准三维分片的显示实例；与物件模型哈希、提供方及具体地点无关。 */
@@ -259,6 +260,7 @@ class ExternalItem {
 
 export class ExternalContentView {
   private key = '';
+  private offshore?: MemberOcean;
   private items: (ExternalItem | VectorContentItem)[] = [];
   private readonly credit = document.createElement('section');
   private readonly downloadQueue = new DownloadPriorityQueue();
@@ -287,7 +289,7 @@ export class ExternalContentView {
     this.credit.append(heading);
   }
 
-  setContent(content: SceneContent): void {
+  setContent(content: SceneContent, offshore?: MemberOcean): void {
     const selected = content.members.flatMap((member) =>
       member.view.entities.flatMap((entity) => {
         const config = externalContentOf(entity);
@@ -295,6 +297,7 @@ export class ExternalContentView {
           ? [
               {
                 config,
+                spaceId: member.spaceId,
                 entity,
                 placement: member.placement,
                 access: member.external,
@@ -307,12 +310,13 @@ export class ExternalContentView {
     const key = JSON.stringify(
       selected.map(({ access, ...item }) => ({ ...item, access: access?.key })),
     );
-    if (key === this.key) return;
+    if (key === this.key && this.offshore === offshore) return;
+    this.offshore = offshore;
     this.clear();
     this.key = key;
     if (!selected.length) return;
     this.providerCreditsHost.append(this.credit);
-    for (const { config, entity, placement, access, hologram } of selected) {
+    for (const { config, spaceId, entity, placement, access, hologram } of selected) {
       const item =
         config.format === 'mvt'
           ? new VectorContentItem(
@@ -323,6 +327,7 @@ export class ExternalContentView {
               access,
               hologram,
               this.loadTexture,
+              offshore?.spaceId === spaceId ? offshore.water : undefined,
             )
           : new ExternalItem(
               config,

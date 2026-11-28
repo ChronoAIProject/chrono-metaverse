@@ -1,3 +1,4 @@
+import type { OffshoreWater } from './offshoreWater';
 import { MapReflection, CITY_REFLECTION_LAYER } from './mapReflection';
 import { groundSurfaceMaterial } from './groundSurface';
 import { mapWaterMaterial } from './mapWater';
@@ -74,6 +75,7 @@ export class VectorContentItem {
     private readonly access?: ExternalAccess,
     hologram = false,
     loadTexture?: (hash: string) => Promise<THREE.Texture>,
+    private readonly offshore?: OffshoreWater,
   ) {
     this.reference = new GeoReference(config.reference);
     this.material = new THREE.MeshLambertMaterial({
@@ -151,6 +153,7 @@ export class VectorContentItem {
             }
           : undefined,
         downwindHeading,
+        hologram ? undefined : this.offshore?.uniforms,
       );
     }
     if (hologram) {
@@ -348,6 +351,9 @@ export class VectorContentItem {
         ? this.config.facadeReflections.source === source.url
           ? this.config.facadeReflections.buildings
           : []
+        : undefined,
+      this.waterMaterial?.defines.OFFSHORE_WATER
+        ? this.offshore?.patch(tile)?.oceanRect.value
         : undefined,
     );
     const size =

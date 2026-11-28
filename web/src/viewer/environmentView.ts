@@ -6,11 +6,13 @@ import { environmentOf, type Environment } from '../core/environment';
 import { GRID_UNIT } from '../core/chunk';
 import type { Placement, SceneContent } from '../core/scene';
 import { EARTH_RADIUS } from './geography';
+import type { MemberOcean } from './offshoreWater';
 import { GeographicMap } from './geographicMap';
 
 /** 环境独立于内容网格，天空没有有限半径，也不参与主体剖切、取景和点选。 */
 export class EnvironmentView {
   private key = '';
+  offshore?: MemberOcean;
   private map: GeographicMap | null = null;
   private sky: THREE.Texture | null = null;
   private metalSky: THREE.Texture | null = null;
@@ -83,6 +85,7 @@ export class EnvironmentView {
     this.isCurrent = isCurrent;
     let selected: {
       environment: Environment;
+      spaceId: string;
       placement: Placement;
       entity: string;
       access?: ExternalAccess;
@@ -93,6 +96,7 @@ export class EnvironmentView {
         if (environment) {
           selected = {
             environment,
+            spaceId: member.spaceId,
             placement: member.placement,
             entity: entity.entityId,
             access: member.external,
@@ -131,6 +135,8 @@ export class EnvironmentView {
             this.sampling,
             this.loadTexture,
           );
+          if (this.map.offshore)
+            this.offshore = { spaceId: selected.spaceId, water: this.map.offshore };
           this.map.group.rotation.y = THREE.MathUtils.degToRad(placement.rotation);
           this.map.group.position.fromArray(placement.offset).multiplyScalar(GRID_UNIT);
           this.scene.add(this.map.group);
@@ -225,6 +231,7 @@ export class EnvironmentView {
     this.generation++;
     this.map?.dispose();
     this.map = null;
+    this.offshore = undefined;
     if (this.sky) {
       skyRadiance.get(this.sky)?.dispose();
       skyRadiance.delete(this.sky);

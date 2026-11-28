@@ -1,3 +1,4 @@
+import { offshoreRadiance, offshoreSamplers, type OffshoreWater } from './offshoreWater';
 import { surfaceNoise } from './surfaceVariation';
 import * as THREE from 'three';
 import type { MapReflection } from './mapReflection';
@@ -18,6 +19,7 @@ export function mapWaterMaterial(
     rmsRippleSlope?: number;
   },
   downwindHeading?: number,
+  offshore?: OffshoreWater['uniforms'],
 ) {
   // The wave field's +Y axis in the water plane points along world (-0.60, 0.80).
   const rotation = downwindHeading === undefined ? 0 : -Math.atan2(0.6, 0.8) - downwindHeading;
@@ -32,6 +34,7 @@ export function mapWaterMaterial(
     forceSinglePass: true,
     lights: !!reflection,
     defines: {
+      ...(offshore ? { OFFSHORE_WATER: 1 } : {}),
       ...(reflection ? { WATER_SHORE_SHADOW: 1 } : {}),
       ...(sample ? { WATER_SAMPLE: 1 } : {}),
       ...(measuredRipples !== undefined ? { WATER_SPECTRUM: 1 } : {}),
@@ -39,6 +42,7 @@ export function mapWaterMaterial(
     transparent: true,
     depthWrite: false,
     uniforms: {
+      ...offshore,
       ...(reflection ? THREE.UniformsUtils.clone(THREE.UniformsLib.lights) : {}),
       ...(sample
         ? {
@@ -90,7 +94,14 @@ export function mapWaterMaterial(
         varying vec3 samplePosition;
       #endif
       varying vec3 surfacePosition;
+      #ifdef OFFSHORE_WATER
+        attribute vec2 offshoreUv;
+        varying vec2 seaUv;
+      #endif
       void main() {
+        #ifdef OFFSHORE_WATER
+          seaUv = offshoreUv;
+        #endif
         vec4 worldPosition = modelMatrix * vec4(position, 1.0);
         surfacePosition = worldPosition.xyz;
         #ifdef WATER_SAMPLE
@@ -105,6 +116,11 @@ export function mapWaterMaterial(
       }`,
     fragmentShader: /* glsl */ `
       #include <common>
+      #ifdef OFFSHORE_WATER
+        varying vec2 seaUv;
+        ${offshoreSamplers}
+        ${offshoreRadiance}
+      #endif
       #include <logdepthbuf_pars_fragment>
       #ifdef WATER_SHORE_SHADOW
         #include <packing>
@@ -420,6 +436,29 @@ export function mapWaterMaterial(
         #else
           gl_FragColor = sampleWater(surfacePosition);
         #endif
+        #ifdef OFFSHORE_WATER
+          vec3 offshoreRay = surfacePosition - cameraPosition;
+          float offshoreDistance = length(offshoreRay);
+          // By the time the mapped sea starts to replace imagery at 1.8 km,
+          // unresolved waves on both representations should reflect the same sky.
+          if (offshoreDistance > 900.0 && hasSky && oceanReady > 0.0 &&
+              all(greaterThanEqual(seaUv,vec2(0))) && all(lessThanEqual(seaUv,vec2(1)))) {
+            float seaCoverage = texture2D(oceanMask,seaUv).r * smoothstep(900.0,1800.0,offshoreDistance);
+            if (seaCoverage > 0.0 && hasReflection) {
+              // Keep the captured silhouettes of ships or land against the open sky.
+              vec4 clip = reflectionMatrix * vec4(surfacePosition,1.0);
+              vec2 uv = clip.xy / max(clip.w,0.001);
+              if (clip.w > 0.0 && all(greaterThanEqual(uv,vec2(0))) && all(lessThanEqual(uv,vec2(1))) &&
+                  texture2D(reflectionDepth,uv).r < 1.0) seaCoverage = 0.0;
+            }
+            if (seaCoverage > 0.0) {
+              offshoreRay /= offshoreDistance;
+              float cs = cos(skyYaw), sn = sin(skyYaw);
+              offshoreRay.xz = mat2(cs,sn,-sn,cs) * offshoreRay.xz;
+              gl_FragColor.rgb = mix(gl_FragColor.rgb,openSeaRadiance(offshoreRay,deep),seaCoverage);
+            }
+          }
+        #endif
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`,
@@ -451,6 +490,7 @@ export function mapWaterMaterial(
       table.dispose();
     });
   }
+  if (offshore) Object.assign(material.defaultAttributeValues, { offshoreUv: [-1, -1] });
   if (sample) Object.assign(material.defaultAttributeValues, { sampledWater: [0] });
   material.onBeforeRender = (renderer, scene, camera) => {
     if (measuredRipples !== undefined) {

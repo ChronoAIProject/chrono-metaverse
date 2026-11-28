@@ -256,11 +256,13 @@ function polygonSurface(
   ground?: GroundLayer,
   edits?: readonly WaterlineEdit[],
   sampledIds?: ReadonlySet<number>,
+  oceanRect?: THREE.Vector4,
 ) {
   const layer = data.layers[name];
   if (!layer || tile.z < surfaceZoom || layer.length > 10000) return;
   const excluded = new Set(ground?.excludeFeatureIds);
   const mask: number[] = [];
+  const oceanCoords: number[] = [];
   const positions: number[] = [];
   const indices: number[] = [];
   const uv: number[] = [];
@@ -306,6 +308,11 @@ function polygonSurface(
         const point = reference.point(lon, lat, height);
         positions.push(...point.toArray());
         if (ground) uv.push(point.x, -point.z);
+        if (oceanRect)
+          oceanCoords.push(
+            oceanRect.x + (p.x / feature.extent) * oceanRect.z,
+            oceanRect.y - (p.y / feature.extent) * oceanRect.w,
+          );
         if (sampledIds) mask.push(feature.id !== undefined && sampledIds.has(feature.id) ? 1 : 0);
       }
       for (const [a, b, c] of faces) {
@@ -325,6 +332,8 @@ function polygonSurface(
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices);
+  if (oceanRect)
+    geometry.setAttribute('offshoreUv', new THREE.Float32BufferAttribute(oceanCoords, 2));
   if (sampledIds) geometry.setAttribute('sampledWater', new THREE.Uint8BufferAttribute(mask, 1));
   if (ground) {
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
@@ -344,6 +353,7 @@ export function vectorGeometry(
   waterlineEdits?: readonly WaterlineEdit[],
   sampledWaterIds?: ReadonlySet<number>,
   reflectionBuildings?: readonly VectorBuildingPart[],
+  oceanRect?: THREE.Vector4,
 ) {
   const data = new VectorTile(new Pbf(bytes));
   const layer = data.layers[style.layer];
@@ -510,6 +520,7 @@ export function vectorGeometry(
             ({ tile: [z, x, y] }) => z === tile.z && x === tile.x && y === tile.y,
           ),
           sampledWaterIds,
+          oceanRect,
         )
       : undefined,
     roads: groundRoads
