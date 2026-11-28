@@ -4,19 +4,31 @@ import io
 import json
 import struct
 
+import numpy as np
 from PIL import Image, JpegImagePlugin
 
 
-def replace_atlas(raw, edit, credit=None, *, jpeg_quality=None, keep_encoding=False):
+def accessor(doc, binary, index):
+    field = doc["accessors"][index]
+    view = doc["bufferViews"][field["bufferView"]]
+    dtype = np.dtype({5126: "<f4", 5123: "<u2", 5125: "<u4"}[field["componentType"]])
+    width = {"VEC2": 2, "VEC3": 3, "SCALAR": 1}[field["type"]]
+    offset = view.get("byteOffset", 0) + field.get("byteOffset", 0)
+    stride = view.get("byteStride", width * dtype.itemsize)
+    return np.ndarray((field["count"], width), dtype, binary, offset=offset,
+                      strides=(stride, dtype.itemsize))
+
+
+def replace_atlas(raw, edit, credit=None, *, jpeg_quality=None, keep_encoding=False, image_index=0):
     size = struct.unpack_from("<I", raw, 12)[0]
     doc = json.loads(raw[20:20+size])
     binary = raw[28+size:]
     blocks = [binary[v.get("byteOffset", 0):v.get("byteOffset", 0)+v["byteLength"]] for v in doc["bufferViews"]]
     if credit:
-        doc["images"][0].setdefault("extras", {})["glazingAttribution"] = credit
+        doc["images"][image_index].setdefault("extras", {})["glazingAttribution"] = credit
     if not keep_encoding:
-        doc["images"][0]["mimeType"] = "image/png" if jpeg_quality is None else "image/jpeg"
-    image_view = doc["images"][0]["bufferView"]
+        doc["images"][image_index]["mimeType"] = "image/png" if jpeg_quality is None else "image/jpeg"
+    image_view = doc["images"][image_index]["bufferView"]
     encoded = io.BytesIO()
     with Image.open(io.BytesIO(blocks[image_view])) as image:
         result = edit(image)

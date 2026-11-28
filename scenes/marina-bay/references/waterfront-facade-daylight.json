@@ -1,0 +1,155 @@
+{
+  "method": "Adjacent facade pairs in multiple registered photographs have the same signed excess contrast as their unlit colour atlas. Apply bounded linear-light gains to the matching wall directions. Preserve roofs, conflicting atlas overlaps and the relative detail inside each facade.",
+  "references": [
+    "https://commons.wikimedia.org/?curid=137548517",
+    "https://commons.wikimedia.org/?curid=157871412",
+    "https://commons.wikimedia.org/?curid=197932455",
+    "https://commons.wikimedia.org/?curid=8324827"
+  ],
+  "buildings": [
+    {
+      "label": "MARINA BAY RESIDENCES",
+      "material": "dc2400285",
+      "source": "d7c583b5e0d3c996e9d5010addf6a725355bde7b1f88503fca07de6ed451101f",
+      "gains": {
+        "9": 0.917,
+        "10": 0.748,
+        "13": -1.0
+      },
+      "normalToWorld": [
+        [
+          0.993481817,
+          0.0,
+          0.113990695
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          -0.113990695,
+          0.0,
+          0.993481817
+        ]
+      ],
+      "entityId": "bay.d22d5a6f-c5c5-4979-9e78-39502269b04f",
+      "output": "f3e01f77f29182359bb2cd1cd55ad4ecb2e5a75eae9048ad97350edc7a3883b7"
+    },
+    {
+      "label": "OUE BAYFRONT",
+      "material": "dc2400418",
+      "source": "8d5cc0027ee7dbdecd539620c4a1c049fdf1ff1831027e1416186ce094c4a9f7",
+      "gains": {
+        "12": 0.425,
+        "15": -0.425
+      },
+      "normalToWorld": [
+        [
+          0.993481817,
+          0.0,
+          0.113990695
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          -0.113990695,
+          0.0,
+          0.993481817
+        ]
+      ],
+      "entityId": "bay.08072a9f-809e-4a62-8517-0ec0efc1b4a2",
+      "output": "7b32eed5f7d9655b2cb6875a76777bf7096fa7f58df2b68abb1eed93379a3fb9"
+    },
+    {
+      "label": "CHEVRON HOUSE",
+      "material": "dc2400572",
+      "source": "4750ffeefe0fe5f7cc0e344907aef29ba120885e154ef78d7f1438cf2a631336",
+      "gains": {
+        "11": -0.236,
+        "15": 0.236
+      },
+      "normalToWorld": [
+        [
+          0.993481817,
+          0.0,
+          0.113990695
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          -0.113990695,
+          0.0,
+          0.993481817
+        ]
+      ],
+      "entityId": "bay.0bcae51e-7b9c-4013-beca-761cbaaa8805",
+      "output": "89cf3eeb59d079980138e1c03a58c9113c7de38cb4db89592a7dc4f48347c41b"
+    },
+    {
+      "label": "UOB PLAZA",
+      "material": "dc2400707",
+      "source": "b86e14783c4753182a3f98ee52cfe5af1e04fb49e0a3786b48bbb020bf4b0e9e",
+      "gains": {
+        "11": 0.311,
+        "13": -0.072,
+        "15": -0.239
+      },
+      "normalToWorld": [
+        [
+          0.993481817,
+          0.0,
+          0.113990695
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          -0.113990695,
+          0.0,
+          0.993481817
+        ]
+      ],
+      "entityId": "bay.9274f3a4-2af5-445f-85d3-3844ff778650",
+      "output": "24570155f7583427c4504c440167806783ef521aa245f71a81c60acf506d1950"
+    },
+    {
+      "label": "STRAITS TRADING BUILDING",
+      "material": "dc2400421",
+      "source": "6c8854cbeb2b8961c7f8acf2925eb941f0b6d02eb6b0412d3b78fd3369a32e52",
+      "gains": {
+        "10": 1.0,
+        "12": -0.928,
+        "13": -0.087,
+        "15": -0.244
+      },
+      "normalToWorld": [
+        [
+          0.993481817,
+          0.0,
+          0.113990695
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          -0.113990695,
+          0.0,
+          0.993481817
+        ]
+      ],
+      "entityId": "bay.bee3cf9e-0167-4fdf-83e6-96ca1547de00",
+      "output": "7426b525adc187e6ae13bb6e73b91636c5045ed3456d563d6859f021447da349"
+    }
+  ]
+}
