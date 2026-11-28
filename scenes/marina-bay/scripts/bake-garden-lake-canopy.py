@@ -63,7 +63,14 @@ def bake_species(folder, species, group, survey, median):
             mesh.vertex_normals = n / np.linalg.norm(n, axis=1)[:, None]
             key = (*sector, name)
             batches[key].append(mesh)
-            colors_by_batch[key].append(np.tile(np.uint8([*color, 255]), (len(mesh.vertices), 1)))
+            vertex_colors = np.tile(np.uint8([*color, 255]), (len(mesh.vertices), 1))
+            if name == "crown":
+                # The normals point out of each crown, including its two-sided leaf cards.
+                # Calibrate the upper canopy and the lake-facing sides in the same bake.
+                upward = np.clip(mesh.vertex_normals[:, 1], 0, 1)
+                gain = 1.50 + (0.62 - 1.50) * upward**2.4
+                vertex_colors[:, :3] = np.rint(np.clip(vertex_colors[:, :3] * gain[:, None], 0, 255))
+            colors_by_batch[key].append(vertex_colors)
 
     scene = trimesh.Scene()
     for key, meshes in batches.items():
