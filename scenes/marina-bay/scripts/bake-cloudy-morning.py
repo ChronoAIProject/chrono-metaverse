@@ -119,6 +119,20 @@ def smooth_step(value):
     return t * t * (3 - 2 * t)
 
 
+def smooth_hemisphere(cells, sigma_degrees):
+    """Average a scalar hemisphere grid by angular distance and solid angle."""
+    upper, columns = cells.shape
+    rows = upper * 2
+    lat = (.5 - (np.arange(upper) + .5) / rows) * np.pi
+    lon = ((np.arange(columns) + .5) / columns - .5) * 2 * np.pi
+    y, x, z = np.broadcast_arrays(np.sin(lat)[:, None], np.cos(lat)[:, None] * np.cos(lon),
+                                  np.cos(lat)[:, None] * np.sin(lon))
+    directions = np.stack([x, y, z], axis=-1).reshape(-1, 3)
+    solid_angle = np.repeat(np.cos(lat), columns)
+    weights = np.exp((directions @ directions.T - 1) / np.deg2rad(sigma_degrees)**2) * solid_angle
+    return ((weights @ cells.ravel()) / weights.sum(axis=1)).reshape(upper, columns)
+
+
 def balance_display_sky(pixels, latitude, solar_peak):
     """Balance broad areas of the visible hemisphere in display-linear light."""
     height, width = pixels.shape[:2]
@@ -130,17 +144,8 @@ def balance_display_sky(pixels, latitude, solar_peak):
     rows, columns = 32, 64
     upper = rows // 2
     cells = luminance.reshape(rows, height // rows, columns, width // columns).mean((1, 3))[:upper]
-    lat = (.5 - (np.arange(upper) + .5) / rows) * np.pi
-    lon = ((np.arange(columns) + .5) / columns - .5) * 2 * np.pi
-    y, x, z = np.broadcast_arrays(np.sin(lat)[:, None], np.cos(lat)[:, None] * np.cos(lon),
-                                  np.cos(lat)[:, None] * np.sin(lon))
-    directions = np.stack([x, y, z], axis=-1).reshape(-1, 3)
-    solid_angle = np.repeat(np.cos(lat), columns)
-    weights = np.exp((directions @ directions.T - 1) / np.deg2rad(18)**2) * solid_angle
-    log_light = np.log2(np.maximum(cells.ravel(), .001))
-    broad_light = (weights @ log_light / weights.sum(axis=1)).reshape(upper, columns)
-
-    # Calibrated against daylight views looking toward both shores.
+    log_light = np.log2(np.maximum(cells, .001))
+    broad_light = smooth_hemisphere(log_light, 18)
     gain = np.clip(.68 * (-.96 - broad_light), -.60, .36)
     gain = np.concatenate((gain, np.repeat(gain[-1:], upper, axis=0)))
     gain = resize_panorama(gain[:, :, None], width, height)[:, :, 0]
@@ -175,6 +180,33 @@ def coastal_horizon(pixels, latitude):
     linear *= np.exp2(-weight[:, None] * delta[None, :]).astype(np.float32)[:, :, None]
     encoded = np.where(linear <= .0031308, 12.92 * linear, 1.055 * linear**(1 / 2.4) - .055)
     return np.uint8(np.rint(np.clip(encoded, 0, 1) * 255))
+
+
+def balance_sky_colour(pixels, latitude):
+    """Reduce the excess variation in sky colour between the two waterfront directions."""
+    height, width = pixels.shape[:2]
+    encoded = pixels.astype(np.float32) / 255
+    linear = np.where(encoded <= .04045, encoded / 12.92, ((encoded + .055) / 1.055)**2.4)
+    luminance = linear @ LUMA.astype(np.float32)
+    rows, columns = 32, 64
+    cells = linear.reshape(rows, height // rows, columns, width // columns, 3).mean((1, 3))[:rows // 2]
+    blue_red = np.log2(np.maximum(.0001, cells[:, :, 2]) / np.maximum(.0001, cells[:, :, 0]))
+    # Approximate direction-balanced daylight colour measured above the bay.
+    offset = np.clip(.60 - smooth_hemisphere(blue_red, 15), -.60, .60)
+    offset = np.concatenate((offset, np.repeat(offset[-1:], rows // 2, axis=0)))
+    broad = resize_panorama(offset[:, :, None], width, height)[:, :, 0]
+    weight = smooth_step((np.degrees(latitude) - 2) / 9)[:, None] * (1 - smooth_step((luminance - .72) / .25))
+    stops = broad * weight
+    colour = linear.copy()
+    colour[:, :, 0] *= np.exp2(-stops * .5)
+    colour[:, :, 2] *= np.exp2(stops * .5)
+    colour *= (luminance / np.maximum(colour @ LUMA.astype(np.float32), 1e-8))[:, :, None]
+    # Stop at the first channel that reaches the sRGB boundary, preserving luminance.
+    delta = colour - linear
+    fraction = np.min(np.where(delta > 1e-6, (1 - linear) / np.maximum(delta, 1e-6), 1.), axis=2).clip(0, 1)
+    adjusted = linear + fraction[:, :, None] * delta
+    encoded = np.where(adjusted <= .0031308, 12.92 * adjusted, 1.055 * adjusted.clip(0)**(1/2.4) - .055)
+    return np.uint8(np.rint(255 * encoded.clip(0, 1)))
 
 
 def cloud_highlights(radiance, pixels, latitude):
@@ -259,7 +291,8 @@ def bake(morning_path, cloud_path, output, detail_path=None):
     solar_peak = np.unravel_index(np.argmax(display[:h // 2] @ LUMA), (h // 2, w))
     textured_sky = cloud_highlights(display, pixels, lat)
     balanced_sky = balance_display_sky(textured_sky, lat, solar_peak)
-    Image.fromarray(coastal_horizon(balanced_sky, lat)).save(panorama, quality=90, subsampling=0)
+    coloured_sky = balance_sky_colour(coastal_horizon(balanced_sky, lat), lat)
+    Image.fromarray(coloured_sky).save(panorama, quality=90, subsampling=0)
     average = diffuse.reshape(256, 8, 512, 8, 3).mean((1, 3), dtype=float)
     linear = average / sky["radiance"]["scale"]
     srgb = np.where(linear <= .0031308, 12.92*linear, 1.055*linear.clip(0)**(1/2.4)-.055)
