@@ -44,6 +44,39 @@ def measurements(region, stable, changed):
     }
 
 
+def reference_errors(before, after, references, regions):
+    # Load this optional dependency only for linear-light reference comparisons.
+    try:
+        import numpy as np
+    except ImportError as error:
+        raise ValueError("Install NumPy to compare against reference frames.") from error
+
+    srgb = np.arange(256, dtype=np.float64) / 255
+    linear = np.where(srgb <= 0.04045, srgb / 12.92, ((srgb + 0.055) / 1.055) ** 2.4)
+
+    def luminance(frame):
+        red, green, blue = np.asarray(frame).transpose(2, 0, 1)
+        return 0.2126 * linear[red] + 0.7152 * linear[green] + 0.0722 * linear[blue]
+
+    baseline, candidate = luminance(before), luminance(after)
+    masks = {name: np.asarray(mask) != 0 for name, mask in regions.items()}
+    results = []
+    for path in references:
+        reference = read_frame(path)
+        check_size(reference, before.size, path)
+        target = luminance(reference)
+        errors = {"path": str(path)}
+        for name, mask in masks.items():
+            count = int(np.count_nonzero(mask))
+            errors[name] = {
+                "stable_pixels": count,
+                "before_mae": float(np.abs(baseline[mask] - target[mask]).mean()) if count else None,
+                "after_mae": float(np.abs(candidate[mask] - target[mask]).mean()) if count else None,
+            }
+        results.append(errors)
+    return results
+
+
 def compare(args):
     before = read_frame(args.before)
     after = read_frame(args.after)
@@ -64,13 +97,17 @@ def compare(args):
         "change_threshold": args.threshold,
         "frame": measurements(full, stable, changed),
     }
+    regions = {"frame": stable}
     if args.mask:
         with Image.open(args.mask) as mask:
             check_size(mask, before.size, args.mask)
             region = mask.convert("L").point(lambda v: 255 if v >= 128 else 0)
         result["mask"] = measurements(region, stable, changed)
+        regions["mask"] = ImageChops.multiply(region, stable)
+    if args.reference:
+        result["linear_luminance_references"] = reference_errors(before, after, args.reference, regions)
     if args.sheet:
-        if args.sheet.resolve() in {p.resolve() for p in [args.before, args.after, *args.repeat, args.mask] if p}:
+        if args.sheet.resolve() in {p.resolve() for p in [args.before, args.after, *args.repeat, *args.reference, args.mask] if p}:
             raise ValueError("The comparison sheet needs its own output path.")
         sheet = Image.new("RGB", (2 * before.width, before.height + 24), "#22272b")
         labels = ImageDraw.Draw(sheet)
@@ -94,6 +131,8 @@ def main():
     parser.add_argument("after", type=Path)
     parser.add_argument("--repeat", action="append", default=[], type=Path,
                         help="Repeated baseline, zero-strength or restored frame. May be repeated.")
+    parser.add_argument("--reference", action="append", default=[], type=Path,
+                        help="Same-camera sRGB reference. May be repeated. Requires NumPy.")
     parser.add_argument("--mask", type=Path, help="Optional grayscale region mask, 128–255 included.")
     parser.add_argument("--noise", type=threshold, default=1, help="Maximum tolerated repeat difference.")
     parser.add_argument("--threshold", type=threshold, default=3, help="Minimum change, exclusive.")
