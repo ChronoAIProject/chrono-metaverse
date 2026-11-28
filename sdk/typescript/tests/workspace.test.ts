@@ -210,7 +210,11 @@ describe('metaverse init', () => {
     const realismSource = join(SDK_ROOT, 'skills/web-scene-realism');
     const realismTarget = join(root, '.claude/skills/web-scene-realism');
     const references = readdirSync(join(realismSource, 'references'));
-    for (const file of ['SKILL.md', ...references.map((name) => join('references', name))]) {
+    for (const file of [
+      'SKILL.md',
+      ...readdirSync(join(realismSource, 'scripts')).map((name) => join('scripts', name)),
+      ...references.map((name) => join('references', name)),
+    ]) {
       expect(readFileSync(join(realismTarget, file), 'utf8')).toBe(
         readFileSync(join(realismSource, file), 'utf8'),
       );
