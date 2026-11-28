@@ -1,0 +1,84 @@
+{
+  "material": "Sands tower waterfront glazing",
+  "blueFactor": 0.84,
+  "method": "Capture the current HDR scene in six cube faces at each measured facade height, with the sampled tower hidden. Retain the existing local probe basis, RGB scale and level dimensions. Compare refreshed reflections and several diffuse blue factors separately across registered daylight photographs.",
+  "photographs": [
+    "https://commons.wikimedia.org/?curid=50301373",
+    "https://commons.wikimedia.org/?curid=24719119",
+    "https://commons.wikimedia.org/?curid=71347180",
+    "https://commons.wikimedia.org/?curid=60403579",
+    "https://commons.wikimedia.org/?curid=90050160"
+  ],
+  "additionalPhotograph": "https://commons.wikimedia.org/wiki/File:Marina_Bay_Sands_view_from_Merlion_Park,_Singapore_(Ank_Kumar)_01.jpg",
+  "buildings": [
+    {
+      "entityId": "bay.1ce79c44-305a-4e67-80bf-9aa31f2f39a4",
+      "source": "6f7ac95daf7283da92b7bfd83d69c5c8ea3f7fe9f9a39c5832c3a2a23235a569",
+      "atlas": "tower-1-reflections.png",
+      "worldPoints": [
+        [
+          -503.1946709034861,
+          -20.5926967331543,
+          465.47584645361815
+        ],
+        [
+          -504.1286619378475,
+          37.80506724389648,
+          466.58690700136276
+        ],
+        [
+          -502.30145598581834,
+          96.20283122094725,
+          468.88905010450674
+        ]
+      ],
+      "output": "ae9a04cfbd7be2241e516d422dd4ecf0b079ccc185fc42e280cb558b778f1864"
+    },
+    {
+      "entityId": "bay.442cc6d3-c313-420b-a093-7c7e1173d30f",
+      "source": "99b96c5e74ba5505130ab98cedb61b9983ebd813cc737a764d234c21201497d2",
+      "atlas": "tower-2-reflections.png",
+      "worldPoints": [
+        [
+          -528.779364118573,
+          -23.1561130531311,
+          565.0546563536677
+        ],
+        [
+          -528.9396495883582,
+          35.481147040557865,
+          566.6958349819913
+        ],
+        [
+          -526.5621298153301,
+          94.11840713424681,
+          568.2718938927825
+        ]
+      ],
+      "output": "e4ab7c6504ab5c5100f8f216878449d4877f042fd7bffcc9faa69468afd23fa7"
+    },
+    {
+      "entityId": "bay.e9e5a4f5-3776-479b-bf51-34a87711ba7c",
+      "source": "a55d5f675292e239b2a1e17923f117e482f1e0f9bcb4ab52cc64a8d3adb4288d",
+      "atlas": "tower-3-reflections.png",
+      "worldPoints": [
+        [
+          -534.9219931592309,
+          -22.47331611080933,
+          666.536610216004
+        ],
+        [
+          -534.3865600269095,
+          36.399833493988034,
+          667.3986877166034
+        ],
+        [
+          -530.0998556129778,
+          95.2729830987854,
+          668.8905740878379
+        ]
+      ],
+      "output": "1b95aa677cc0f9d51f24e461601ad96a20b32c0db911894e78321b8445824cec"
+    }
+  ]
+}

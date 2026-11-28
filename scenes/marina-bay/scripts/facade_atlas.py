@@ -19,11 +19,31 @@ def accessor(doc, binary, index):
                       strides=(stride, dtype.itemsize))
 
 
-def replace_atlas(raw, edit, credit=None, *, jpeg_quality=None, keep_encoding=False, image_index=0):
+def glb_blocks(raw):
     size = struct.unpack_from("<I", raw, 12)[0]
     doc = json.loads(raw[20:20+size])
     binary = raw[28+size:]
     blocks = [binary[v.get("byteOffset", 0):v.get("byteOffset", 0)+v["byteLength"]] for v in doc["bufferViews"]]
+    return doc, blocks
+
+
+def pack_glb(doc, blocks):
+    payload = bytearray()
+    for view, block in zip(doc["bufferViews"], blocks, strict=True):
+        payload.extend(bytes(-len(payload) % 4))
+        view.update(byteOffset=len(payload), byteLength=len(block))
+        payload.extend(block)
+    payload.extend(bytes(-len(payload) % 4))
+    doc["buffers"][0]["byteLength"] = len(payload)
+    header = json.dumps(doc, ensure_ascii=False, separators=(",", ":")).encode()
+    header += b" " * (-len(header) % 4)
+    data = (struct.pack("<4sIII4s", b"glTF", 2, 28 + len(header) + len(payload), len(header), b"JSON")
+            + header + struct.pack("<I4s", len(payload), b"BIN\0") + payload)
+    return data
+
+
+def replace_atlas(raw, edit, credit=None, *, jpeg_quality=None, keep_encoding=False, image_index=0):
+    doc, blocks = glb_blocks(raw)
     if credit:
         doc["images"][image_index].setdefault("extras", {})["glazingAttribution"] = credit
     if not keep_encoding:
@@ -42,15 +62,4 @@ def replace_atlas(raw, edit, credit=None, *, jpeg_quality=None, keep_encoding=Fa
         else:
             result.convert("RGB").save(encoded, "JPEG", quality=jpeg_quality, subsampling=0)
     blocks[image_view] = encoded.getvalue()
-    payload = bytearray()
-    for view, block in zip(doc["bufferViews"], blocks, strict=True):
-        payload.extend(bytes(-len(payload) % 4))
-        view.update(byteOffset=len(payload), byteLength=len(block))
-        payload.extend(block)
-    payload.extend(bytes(-len(payload) % 4))
-    doc["buffers"][0]["byteLength"] = len(payload)
-    header = json.dumps(doc, ensure_ascii=False, separators=(",", ":")).encode()
-    header += b" " * (-len(header) % 4)
-    data = (struct.pack("<4sIII4s", b"glTF", 2, 28 + len(header) + len(payload), len(header), b"JSON")
-            + header + struct.pack("<I4s", len(payload), b"BIN\0") + payload)
-    return data
+    return pack_glb(doc, blocks)

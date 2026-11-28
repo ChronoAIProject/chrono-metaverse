@@ -459,7 +459,7 @@ export default function build(base: BuildBase, kit: Kit) {
     entities.push(surroundings);
   }
   // Sky visibility belongs to each facade at its surveyed location and to the sampled mesh revision.
-  const facadeFinishes = ['district-skylight/survey', 'financial-facade-exposure', 'waterfront-facade-daylight'].map((name) => {
+  const facadeFinishes = ['district-skylight/survey', 'financial-facade-exposure', 'waterfront-facade-daylight', 'sands-daylight/survey'].map((name) => {
     const survey: { buildings: { entityId: string; source: string; output: string }[] } = JSON.parse(
       readFileSync(new URL(`../references/${name}.json`, import.meta.url), 'utf8'),
     );
