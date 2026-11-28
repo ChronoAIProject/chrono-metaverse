@@ -300,8 +300,9 @@ export class VectorContentItem {
     this.paint();
   }
 
-  update(camera: THREE.PerspectiveCamera): void {
+  update(camera: THREE.PerspectiveCamera, width = 0, height = 0): void {
     if (this.disposed || !this.template) return;
+    this.reflection?.fitShorelineViewport(width, height);
     if (this.waterMaterial) this.waterMaterial.uniforms.time!.value = performance.now() / 1000;
     this.group.updateWorldMatrix(true, false);
     if (this.view) {
