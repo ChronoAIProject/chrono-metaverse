@@ -67,6 +67,39 @@ describe('地图按镜头选择精度', () => {
     map.dispose();
   });
 
+  it('在两次定时更新之间转向时，新露出的地面仍有瓦片', () => {
+    const time = vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const host = document.createElement('div');
+    Object.defineProperty(host, 'clientHeight', { value: 747 });
+    const map = new GeographicMap(config, host);
+    try {
+      const camera = new THREE.PerspectiveCamera(50, 1.86, 0.02, 20000000);
+      camera.position.set(0, 300, 0);
+      camera.lookAt(0, -60, -900);
+      map.update(camera, true);
+
+      time.mockReturnValue(1040);
+      camera.lookAt(900, -60, 0);
+      map.update(camera);
+      map.group.updateMatrixWorld(true);
+      const ray = new THREE.Raycaster();
+      const visibleSurface = () =>
+        [-0.95, 0, 0.95].map((x) => {
+          ray.setFromCamera(new THREE.Vector2(x, -0.2), camera);
+          return ray.intersectObjects(map.group.children)[0]?.object.name;
+        });
+      const duringTurn = visibleSurface();
+      map.update(camera, true);
+      map.group.updateMatrixWorld(true);
+      const settled = visibleSurface();
+      expect(settled.every((name) => name?.startsWith('map:'))).toBe(true);
+      expect(duringTurn).toEqual(settled);
+    } finally {
+      time.mockRestore();
+      map.dispose();
+    }
+  });
+
   it('地球尺度会降低精度，地图来源署名是安全的链接和纯文本', () => {
     const host = document.createElement('div');
     Object.defineProperty(host, 'clientHeight', { value: 900 });

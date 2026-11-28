@@ -27,6 +27,8 @@ import { sourceCredit } from './sourceCredit';
 const MAX_LEAVES = 96;
 const MAX_TEXTURES = 192;
 const CONCURRENCY = 6;
+// 两个单位四元数的点积是转角一半的余弦。转过 2° 时，及时补上新露出的地面。
+const refreshTurnDot = Math.cos(THREE.MathUtils.degToRad(1));
 
 interface Node extends Tile {
   readonly center: THREE.Vector3;
@@ -75,6 +77,8 @@ export class GeographicMap {
   private lastUpdate = -Infinity;
   private readonly localEye = new THREE.Vector3();
   private readonly cameraWorld = new THREE.Matrix4();
+  private readonly lastOrientation = new THREE.Quaternion();
+  private readonly orientation = new THREE.Quaternion();
   private readonly cameraProjection = new THREE.Matrix4();
   private viewport = '';
   private readonly groundShadow = new THREE.Color(0.55, 0.61, 0.68);
@@ -336,7 +340,14 @@ export class GeographicMap {
   update(camera: THREE.PerspectiveCamera, force = false): void {
     if (this.disposed) return;
     const now = performance.now();
-    if (!force && now - this.lastUpdate < 180) return;
+    camera.getWorldQuaternion(this.orientation);
+    if (
+      !force &&
+      now - this.lastUpdate < 180 &&
+      Math.abs(this.orientation.dot(this.lastOrientation)) > refreshTurnDot &&
+      this.cameraProjection.equals(camera.projectionMatrix)
+    )
+      return;
     this.group.updateWorldMatrix(true, false);
     camera.updateMatrixWorld();
     const viewport = `${this.host.clientWidth}/${this.host.clientHeight}`;
@@ -350,6 +361,7 @@ export class GeographicMap {
     )
       return;
     this.lastUpdate = now;
+    this.lastOrientation.copy(this.orientation);
     this.viewport = viewport;
     this.cameraWorld.copy(camera.matrixWorld);
     this.cameraProjection.copy(camera.projectionMatrix);
