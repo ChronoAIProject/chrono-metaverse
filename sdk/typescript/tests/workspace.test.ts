@@ -212,7 +212,7 @@ describe('metaverse init', () => {
     const references = readdirSync(join(realismSource, 'references'));
     for (const file of [
       'SKILL.md',
-      'scripts/compare_frames.py',
+      ...readdirSync(join(realismSource, 'scripts')).map((name) => join('scripts', name)),
       ...references.map((name) => join('references', name)),
     ]) {
       expect(readFileSync(join(realismTarget, file), 'utf8')).toBe(
