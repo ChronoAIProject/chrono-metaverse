@@ -374,6 +374,14 @@ export default function build(base: BuildBase, kit: Kit) {
       savedEnvironment.map.longitude === authoredMap.longitude && savedEnvironment.map.latitude === authoredMap.latitude) {
     const map = { ...savedEnvironment.map };
     const textures = new Set(currentEnvironment.textures);
+    const oldShelter = 'ba8ef4fc904bc4727126ba831b17f4fbc3b910342decf404d4f65bbdc17540a6';
+    if (authoredMap.rippleShelter?.texture && isDeepStrictEqual(map.rippleShelter, {
+      ...authoredMap.rippleShelter, texture: oldShelter,
+    })) {
+      map.rippleShelter = authoredMap.rippleShelter;
+      textures.delete(oldShelter);
+      textures.add(authoredMap.rippleShelter.texture);
+    }
     for (const key of ['offshore', 'turfColorSurvey', 'vegetationExposure', 'rippleShelter'] as const) {
       if (!map[key] && authoredMap[key]) {
         map[key] = authoredMap[key];

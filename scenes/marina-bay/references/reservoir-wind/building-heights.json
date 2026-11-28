@@ -1,0 +1,12 @@
+{
+  "source": "Map Data © Singapore Land Authority / OneMap. Height above scene water level in quarter-metres. Orthographic upper envelope of 652 meshes from 291 registered surveyed entities in Marina Bay scene revision 73. Rows follow increasing world Z and columns increasing X.",
+  "extentXZ": [
+    -2008,
+    16,
+    2648,
+    3824
+  ],
+  "spacing": 8,
+  "waterY": -59.957,
+  "estimates": "Upwind skyline obstruction is a proxy for short-wave shelter. The influence angle, angular fan and attenuation are visual estimates. Eight waterfront photographs were used to compare scale-dependent ripple contrast."
+}
