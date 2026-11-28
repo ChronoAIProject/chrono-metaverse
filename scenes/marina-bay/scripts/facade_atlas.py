@@ -5,7 +5,7 @@ import json
 import struct
 
 import numpy as np
-from PIL import Image, JpegImagePlugin
+from PIL import Image, ImageDraw, JpegImagePlugin
 
 
 def accessor(doc, binary, index):
@@ -63,3 +63,33 @@ def replace_atlas(raw, edit, credit=None, *, jpeg_quality=None, keep_encoding=Fa
             result.convert("RGB").save(encoded, "JPEG", quality=jpeg_quality, subsampling=0)
     blocks[image_view] = encoded.getvalue()
     return pack_glb(doc, blocks)
+
+
+def balance(image, regions):
+    from scipy.ndimage import distance_transform_edt
+
+    masks = {}
+    for triangle, stops in regions:
+        mask = masks.get(stops)
+        if mask is None:
+            mask = Image.new("1", image.size)
+            masks[stops] = mask
+        ImageDraw.Draw(mask).polygon([tuple(v) for v in triangle * image.size], fill=1)
+    coverage = np.zeros(image.size[::-1], dtype=np.uint8)
+    gain = np.zeros(image.size[::-1], dtype=np.float32)
+    for stops, mask in masks.items():
+        inside = np.asarray(mask)
+        coverage[inside] += 1
+        gain[inside] = stops
+    gain[coverage != 1] = 0
+    distance, nearest = distance_transform_edt(coverage == 0, return_indices=True)
+    gutter = (coverage == 0) & (distance <= 2)
+    gain[gutter] = gain[nearest[0][gutter], nearest[1][gutter]]
+    srgb = np.asarray(image.convert("RGB"), dtype=np.float32) / 255
+    linear = np.where(srgb <= .04045, srgb / 12.92, ((srgb + .055) / 1.055) ** 2.4)
+    linear *= np.exp2(gain[:, :, None])
+    encoded = np.where(linear <= .0031308, linear * 12.92, 1.055 * linear ** (1 / 2.4) - .055)
+    result = Image.fromarray(np.uint8(np.rint(255 * np.clip(encoded, 0, 1))))
+    if image.mode == "RGBA":
+        result.putalpha(image.getchannel("A"))
+    return result

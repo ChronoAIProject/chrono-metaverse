@@ -6,10 +6,8 @@ import struct
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw
-from scipy.ndimage import distance_transform_edt
 
-from facade_atlas import accessor, replace_atlas
+from facade_atlas import accessor, balance, replace_atlas
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -41,31 +39,6 @@ def wall_regions(document, binary, record):
                 gains[:] = 0
             regions.setdefault(image, []).extend(zip(uv, gains, strict=True))
     return regions
-
-
-def balance(image, regions):
-    masks = {}
-    for triangle, stops in regions:
-        mask = masks.get(stops)
-        if mask is None:
-            mask = Image.new("1", image.size)
-            masks[stops] = mask
-        ImageDraw.Draw(mask).polygon([tuple(v) for v in triangle * image.size], fill=1)
-    coverage = np.zeros(image.size[::-1], dtype=np.uint8)
-    gain = np.zeros(image.size[::-1], dtype=np.float32)
-    for stops, mask in masks.items():
-        inside = np.asarray(mask)
-        coverage[inside] += 1
-        gain[inside] = stops
-    gain[coverage != 1] = 0
-    distance, nearest = distance_transform_edt(coverage == 0, return_indices=True)
-    gutter = (coverage == 0) & (distance <= 2)
-    gain[gutter] = gain[nearest[0][gutter], nearest[1][gutter]]
-    srgb = np.asarray(image.convert("RGB"), dtype=np.float32) / 255
-    linear = np.where(srgb <= .04045, srgb / 12.92, ((srgb + .055) / 1.055) ** 2.4)
-    linear *= np.exp2(gain[:, :, None])
-    encoded = np.where(linear <= .0031308, linear * 12.92, 1.055 * linear ** (1 / 2.4) - .055)
-    return Image.fromarray(np.uint8(np.rint(255 * np.clip(encoded, 0, 1))))
 
 
 def bake(source, output, record):

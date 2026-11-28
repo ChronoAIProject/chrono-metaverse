@@ -24,7 +24,11 @@
           "height": 28.6,
           "radius": 11.7536
         }
-      ]
+      ],
+      "daylight": {
+        "source": "ca073e498bc91b09cf61654c0b76e8cab2af012361ad2e2afa745494422493c6",
+        "output": "c12bb8f44948dfa8400c3f1ad6b9d9fab7fcb1088fb88831afc6ad4b658acbe5"
+      }
     },
     {
       "entityId": "bay.bc15bec1-ed14-4cd8-a17f-23375c597dda",
@@ -44,7 +48,11 @@
           "height": 30.3,
           "radius": 14.273
         }
-      ]
+      ],
+      "daylight": {
+        "source": "4d6bbbf72b3bf57f8acf7d562b4fdb8057cfd1b695db64e62d9449dc545342cd",
+        "output": "c21d41f62b012ae08e1d9e55b8110c89141c8295924359a7b0d7c51322bc3145"
+      }
     },
     {
       "entityId": "bay.ffbe29d2-b8a6-48e8-be30-d3ee89588ef5",
@@ -73,7 +81,11 @@
           "height": 43.2,
           "radius": 20.0029
         }
-      ]
+      ],
+      "daylight": {
+        "source": "9ff584d49b88a9f3e11e5efe7859feab0489c66ee8650819acb1a738a76008f3",
+        "output": "5143931ca969a24e798ea243ae0c7af0d69c9a487cdd981e3f030522dfdab554"
+      }
     },
     {
       "entityId": "bay.d41cd196-b863-4ada-9f13-f7af3e71ac48",
@@ -93,7 +105,11 @@
           "height": 37.3,
           "radius": 17.7069
         }
-      ]
+      ],
+      "daylight": {
+        "source": "1969ad57a326186df505c5e48325da6e419021400a33b8d204c29712c178b962",
+        "output": "034d972ef67256d746d83fb590da838d8050d356d1d69d87d2aa6d995f327705"
+      }
     },
     {
       "entityId": "bay.7eb7920b-123e-4e59-996e-e523a19f2f8d",
@@ -113,7 +129,11 @@
           "height": 28.6,
           "radius": 11.7129
         }
-      ]
+      ],
+      "daylight": {
+        "source": "3be04419007be89b5051927b96b01c28ed56ba26a1c2c28dc81650bc9194ea31",
+        "output": "38ad19c012404e55d757827e9346a5dbe94e10f184fe74f8c51c1991798c0448"
+      }
     },
     {
       "entityId": "bay.00a3960e-522e-400b-b175-bce54c6b68f6",
@@ -133,7 +153,11 @@
           "height": 51.3,
           "radius": 23.8232
         }
-      ]
+      ],
+      "daylight": {
+        "source": "078ecbd64a449e2fbbe2b97c0598385dfcf8eefcd8d834387358ddc1410f64b3",
+        "output": "caa988f2df8d1c334853617ff684ddd914f1fbff49e460811ecda72d8bb32f8f"
+      }
     },
     {
       "entityId": "bay.1de5c998-4118-40ff-b422-7de444fd1bbd",
@@ -153,7 +177,11 @@
           "height": 26.6,
           "radius": 11.915
         }
-      ]
+      ],
+      "daylight": {
+        "source": "fdac991b6faf33da8903913197928e61b45e5ef528be70c7cd6e31e21f2121c9",
+        "output": "3ada2b0c34e8f3771fe37dbf924810301ed7e1186bd8498575e23772c2eb95ba"
+      }
     },
     {
       "entityId": "bay.6feb4352-6165-451e-bd2b-0e8e13c35dbc",
@@ -173,7 +201,11 @@
           "height": 30.6,
           "radius": 14.3064
         }
-      ]
+      ],
+      "daylight": {
+        "source": "e8a69c8af78522a9dffa0cc9bb1f820c8fd2eb3610c0f69295cdf5443d7dd500",
+        "output": "df5b74228614e1d5a998063ada966ac8f8020bde92a7ba653d313ea6137fa1f6"
+      }
     },
     {
       "entityId": "bay.676ed1c5-a36c-4795-a55e-2e8d6be79904",
@@ -193,7 +225,11 @@
           "height": 25.8,
           "radius": 11.9283
         }
-      ]
+      ],
+      "daylight": {
+        "source": "7ae323a178a1b2ab8125b0be909f7b2ca6a60285d11833e7b4f6895d2ebd0cd2",
+        "output": "0192d39ea234641e18351f7e3999aa7785f117a4c6ecdc0939549f530431faf1"
+      }
     },
     {
       "entityId": "bay.7fa4ed5a-1b57-4249-98fa-6849e0660c9e",
@@ -213,7 +249,11 @@
           "height": 30.2,
           "radius": 14.2841
         }
-      ]
+      ],
+      "daylight": {
+        "source": "8a6d59cb7c796f38f2b0c8224f934ce6bb7c1a5ff4c028ef4728ceefc9e42334",
+        "output": "05ef37edcab4d67f574f746c72e72b3d10213f07923e170c39ca1fa649031235"
+      }
     },
     {
       "entityId": "bay.1816b1cf-b933-4684-b386-c4bba9f0e755",
@@ -233,7 +273,19 @@
           "height": 25.9,
           "radius": 11.9016
         }
-      ]
+      ],
+      "daylight": {
+        "source": "7269f71d5f18143c42aaa856d1e74a4ce35d46422886d72a129fe33d2281e511",
+        "output": "429a865e86667743e26d0468c7998d8f82cbc2824c8514d9a825e599914a48a4"
+      }
     }
-  ]
+  ],
+  "daylightReferences": [
+    "https://commons.wikimedia.org/?curid=121317196",
+    "https://commons.wikimedia.org/?curid=85567180",
+    "https://commons.wikimedia.org/?curid=124097740",
+    "https://commons.wikimedia.org/?curid=20457961",
+    "https://commons.wikimedia.org/?curid=20457987"
+  ],
+  "daylightMethod": "Compare shafts, decks and open painted frames relative to the sky in three roof views and two views from the same lakeside photo series. Use the shaft and frame neighbourhoods, including the background visible between rods. Apply up to one stop to surveyed verticals and one stop to linear steel vertex colours."
 }
