@@ -6,13 +6,20 @@ import { environmentOf, type Environment } from '../core/environment';
 import { GRID_UNIT } from '../core/chunk';
 import type { Placement, SceneContent } from '../core/scene';
 import { EARTH_RADIUS } from './geography';
-import type { MemberOcean } from './offshoreWater';
+import type { OffshoreWater } from './offshoreWater';
+import type { TurfColorSurvey } from '../core/environment';
 import { GeographicMap } from './geographicMap';
+
+export interface MemberSurfaces {
+  readonly spaceId: string;
+  readonly water?: OffshoreWater;
+  readonly turf?: TurfColorSurvey;
+}
 
 /** 环境独立于内容网格，天空没有有限半径，也不参与主体剖切、取景和点选。 */
 export class EnvironmentView {
   private key = '';
-  offshore?: MemberOcean;
+  surfaces?: MemberSurfaces;
   private map: GeographicMap | null = null;
   private sky: THREE.Texture | null = null;
   private metalSky: THREE.Texture | null = null;
@@ -164,8 +171,13 @@ export class EnvironmentView {
             this.sampling,
             this.loadTexture,
           );
-          if (this.map.offshore)
-            this.offshore = { spaceId: selected.spaceId, water: this.map.offshore };
+          if (!hologram && (this.map.offshore || environment.map.turfColorSurvey)) {
+            this.surfaces = {
+              spaceId: selected.spaceId,
+              water: this.map.offshore,
+              turf: environment.map.turfColorSurvey,
+            };
+          }
           this.map.group.rotation.y = THREE.MathUtils.degToRad(placement.rotation);
           this.map.group.position.fromArray(placement.offset).multiplyScalar(GRID_UNIT);
           this.scene.add(this.map.group);
@@ -260,7 +272,7 @@ export class EnvironmentView {
     this.generation++;
     this.map?.dispose();
     this.map = null;
-    this.offshore = undefined;
+    this.surfaces = undefined;
     if (this.sky) {
       skyRadiance.get(this.sky)?.dispose();
       skyRadiance.delete(this.sky);

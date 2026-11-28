@@ -32,6 +32,15 @@ if (!probe && !hostOnly) {
     purpose: 'texture',
     format: 'jpeg',
   });
+  const turf = environment.props.environment.map?.turfColorSurvey;
+  if (turf) assets.push({
+    entityId: environment.entityId,
+    label: '实测草地色差',
+    assetHash: turf.texture,
+    path: new URL('references/marina-south-turf/reflectance.png', root).pathname,
+    purpose: 'texture',
+    format: 'png',
+  });
   const radiance = environment.props.environment.sky.radiance;
   if (radiance) assets.push({
     entityId: environment.entityId,
@@ -82,7 +91,7 @@ async function next() {
         format: entity.format,
         plot: config.plot,
         source: {
-          path: new URL(`assets/${entity.assetHash}.${entity.format}`, root).pathname,
+          path: entity.path ?? new URL(`assets/${entity.assetHash}.${entity.format}`, root).pathname,
         },
       });
       if (result.jobId)

@@ -23,7 +23,19 @@ export interface TileSource extends SourceCredit, SourceDelivery {
 
 export type GeographicPolygon = readonly (readonly (readonly [number, number])[])[];
 
+export interface TurfColorSurvey {
+  readonly credit?: Pick<SourceCredit, 'attribution' | 'page'>;
+  readonly texture: string;
+  /** WGS84 image corners in bottom-left, bottom-right, top-left order. */
+  readonly corners: readonly [
+    readonly [number, number],
+    readonly [number, number],
+    readonly [number, number],
+  ];
+}
+
 export interface GeographicMap extends GeographicReference {
+  readonly turfColorSurvey?: TurfColorSurvey;
   /** Ocean coverage in normalized Web Mercator coordinates, north-west origin. */
   readonly offshore?: {
     readonly texture: string;
@@ -199,6 +211,33 @@ export function environmentOf(entity: EntityBody): Environment | null {
     const exclusions = value.grassExclusions;
     const lawns = value.mownLawns;
     if (!validFootprints(exclusions) || !validFootprints(lawns)) return null;
+    const survey = record(value.turfColorSurvey);
+    const credit = record(survey?.credit);
+    const surveyCredit =
+      credit &&
+      typeof credit.attribution === 'string' &&
+      credit.attribution.trim().length > 0 &&
+      credit.attribution.length <= 500 &&
+      publicHttps(credit.page)
+        ? { attribution: credit.attribution, page: credit.page }
+        : undefined;
+    const turfColorSurvey =
+      survey &&
+      typeof survey.texture === 'string' &&
+      /^[a-f0-9]{64}$/.test(survey.texture) &&
+      entity.textures?.includes(survey.texture) &&
+      Array.isArray(survey.corners) &&
+      survey.corners.length === 3 &&
+      survey.corners.every(
+        (p) =>
+          Array.isArray(p) && p.length === 2 && finite(p[0], -180, 180) && finite(p[1], -85, 85),
+      )
+        ? {
+            texture: survey.texture,
+            corners: survey.corners,
+            ...(surveyCredit ? { credit: surveyCredit } : {}),
+          }
+        : undefined;
     const offshore = record(value.offshore);
     const rect = offshore?.rect;
     const ocean =
@@ -221,6 +260,7 @@ export function environmentOf(entity: EntityBody): Environment | null {
     map = {
       ...reference,
       ...(ocean ? { offshore: ocean } : {}),
+      ...(turfColorSurvey ? { turfColorSurvey } : {}),
       ...(exclusions ? { grassExclusions: exclusions } : {}),
       ...(lawns ? { mownLawns: lawns } : {}),
       ...(lawns?.length && Number.isFinite(value.mownLawnSurfaceOffset)

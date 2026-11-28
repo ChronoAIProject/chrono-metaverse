@@ -361,13 +361,21 @@ export default function build(base: BuildBase, kit: Kit) {
     ? withPromontoryLawns(withBoatQuay(surroundings), daylight)
     : [];
   let currentEnvironment = surveyedGrassCoverage(daylight, registered.length > 1);
-  const authoredMap = (configured?.props?.environment as { map?: { longitude?: number; latitude?: number; offshore?: {texture: string} } } | undefined)?.map;
-  const savedEnvironment = currentEnvironment?.props?.environment as { map?: { offshore?: unknown; longitude?: number; latitude?: number } } | undefined;
-  if (currentEnvironment && authoredMap?.offshore && savedEnvironment?.map && !savedEnvironment.map.offshore &&
+  type SurfaceMap = { longitude?: number; latitude?: number; offshore?: { texture: string }; turfColorSurvey?: { texture: string } };
+  const authoredMap = (configured?.props?.environment as { map?: SurfaceMap } | undefined)?.map;
+  const savedEnvironment = currentEnvironment?.props?.environment as { map?: SurfaceMap } | undefined;
+  if (currentEnvironment && authoredMap && savedEnvironment?.map &&
       savedEnvironment.map.longitude === authoredMap.longitude && savedEnvironment.map.latitude === authoredMap.latitude) {
-    currentEnvironment = { ...currentEnvironment,
-      textures: [...new Set([...(currentEnvironment.textures ?? []), authoredMap.offshore.texture])],
-      props: {...currentEnvironment.props, environment: {...savedEnvironment, map: {...savedEnvironment.map, offshore: authoredMap.offshore}}}
+    const map = { ...savedEnvironment.map };
+    const textures = new Set(currentEnvironment.textures);
+    for (const key of ['offshore', 'turfColorSurvey'] as const) {
+      if (!map[key] && authoredMap[key]) {
+        map[key] = authoredMap[key];
+        textures.add(authoredMap[key].texture);
+      }
+    }
+    currentEnvironment = { ...currentEnvironment, textures: [...textures],
+      props: { ...currentEnvironment.props, environment: { ...savedEnvironment, map } }
     };
   }
   const authoredArea = (configured?.props?.environment as { cameraArea?: unknown } | undefined)?.cameraArea;

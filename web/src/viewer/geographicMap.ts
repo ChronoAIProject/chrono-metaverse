@@ -111,6 +111,8 @@ export class GeographicMap {
     heading.textContent = '地图来源';
     this.credit.append(heading);
     for (const source of config.sources) this.credit.append(sourceCredit(source));
+    if (config.turfColorSurvey?.credit)
+      this.credit.append(sourceCredit(config.turfColorSurvey.credit));
     providerCreditsHost.append(this.credit);
     // 两极超出 Web Mercator 覆盖的部分仍有地球表面，不露出透明背景。
     for (const north of [true, false]) {

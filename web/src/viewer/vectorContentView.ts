@@ -1,4 +1,5 @@
-import type { OffshoreWater } from './offshoreWater';
+import type { MemberSurfaces } from './environmentView';
+import { applyTurfSurvey } from './turfSurvey';
 import { MapReflection, CITY_REFLECTION_LAYER } from './mapReflection';
 import { groundSurfaceMaterial } from './groundSurface';
 import { mapWaterMaterial } from './mapWater';
@@ -75,7 +76,7 @@ export class VectorContentItem {
     private readonly access?: ExternalAccess,
     hologram = false,
     loadTexture?: (hash: string) => Promise<THREE.Texture>,
-    private readonly offshore?: OffshoreWater,
+    private readonly surfaces?: MemberSurfaces,
   ) {
     this.reference = new GeoReference(config.reference);
     this.material = new THREE.MeshLambertMaterial({
@@ -87,6 +88,9 @@ export class VectorContentItem {
         if (!this.groundMaterials.has(material))
           this.groundMaterials.set(material, groundSurfaceMaterial(material));
       }
+    const turf = this.groundMaterials.get('turf');
+    if (turf && surfaces?.turf && loadTexture)
+      applyTurfSurvey(turf, this.reference, surfaces.turf, loadTexture);
     if (config.extrusion.facade && !hologram) {
       this.exteriorMaterial = new THREE.MeshLambertMaterial({ color: config.extrusion.color });
       this.exteriorMaterial.shadowSide = THREE.DoubleSide;
@@ -153,7 +157,7 @@ export class VectorContentItem {
             }
           : undefined,
         downwindHeading,
-        hologram ? undefined : this.offshore?.uniforms,
+        hologram ? undefined : this.surfaces?.water?.uniforms,
       );
     }
     if (hologram) {
@@ -353,7 +357,7 @@ export class VectorContentItem {
           : []
         : undefined,
       this.waterMaterial?.defines.OFFSHORE_WATER
-        ? this.offshore?.patch(tile)?.oceanRect.value
+        ? this.surfaces?.water?.patch(tile)?.oceanRect.value
         : undefined,
     );
     const size =
