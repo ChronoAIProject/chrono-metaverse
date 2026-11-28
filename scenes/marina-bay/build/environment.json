@@ -48,7 +48,7 @@
       "sky": {
         "texture": "506f87975ad3d06492299504354bc8e432b74bad800e13d825aea79f3bbcf9bc",
         "yaw": -123.4944,
-        "airHalfDistance": 28800,
+        "airHalfDistance": 14400,
         "daylight": {
           "azimuth": 36.051,
           "elevation": 40.1473,

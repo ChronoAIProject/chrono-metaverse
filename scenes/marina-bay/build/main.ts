@@ -180,9 +180,18 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
   const cloudHighlightSky = JSON.parse(readFileSync(new URL('../references/qwantani-cloud-highlight-sky.json', import.meta.url), 'utf8'));
   const { radiance: _highlightRadiance, ...cloudHighlightDisplay } = cloudHighlightSky;
   const { radiance, ...displaySky } = target.sky;
+  const previousAir = { ...target.sky, airHalfDistance: 28800 };
+  const { radiance: _previousProbe, ...previousAirDisplay } = previousAir;
+  const previousTextures = [
+    previousAir.texture,
+    'd7538511f26c40e4a32424cf8d9eca1f1c9e151daca1e3b607444b837a333419',
+    'ed15daa79ace156cf0db282fbeddbff900882d7253580f6e1705e57fd8822400',
+  ];
   const presets = [
-    { ...target.sky, texture: 'd7538511f26c40e4a32424cf8d9eca1f1c9e151daca1e3b607444b837a333419' },
-    { ...target.sky, texture: 'ed15daa79ace156cf0db282fbeddbff900882d7253580f6e1705e57fd8822400' },
+    ...previousTextures.flatMap(texture => [
+      { ...previousAir, texture },
+      { ...previousAirDisplay, texture },
+    ]),
     cloudHighlightSky,
     cloudHighlightDisplay,
     exposedMorning,
