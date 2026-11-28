@@ -23,8 +23,7 @@ export interface TileSource extends SourceCredit, SourceDelivery {
 
 export type GeographicPolygon = readonly (readonly (readonly [number, number])[])[];
 
-export interface TurfColorSurvey {
-  readonly credit?: Pick<SourceCredit, 'attribution' | 'page'>;
+export interface SurfaceRaster {
   readonly texture: string;
   /** WGS84 image corners in bottom-left, bottom-right, top-left order. */
   readonly corners: readonly [
@@ -32,6 +31,10 @@ export interface TurfColorSurvey {
     readonly [number, number],
     readonly [number, number],
   ];
+}
+
+export interface TurfColorSurvey extends SurfaceRaster {
+  readonly credit?: Pick<SourceCredit, 'attribution' | 'page'>;
 }
 
 export interface MapCoverage {
@@ -43,6 +46,7 @@ export interface MapCoverage {
 export interface GeographicMap extends GeographicReference {
   readonly vegetationExposure?: MapCoverage & { readonly stops: number };
   readonly turfColorSurvey?: TurfColorSurvey;
+  readonly rippleShelter?: SurfaceRaster & { readonly windFrom: number };
   /** Ocean coverage in normalized Web Mercator coordinates, north-west origin. */
   readonly offshore?: MapCoverage & {
     readonly rmsSlope: number;
@@ -183,6 +187,28 @@ function tileSource(value: unknown): TileSource | null {
   return raw as unknown as TileSource;
 }
 
+function surfaceRaster(
+  survey: Record<string, unknown> | null,
+  entity: EntityBody,
+): SurfaceRaster | undefined {
+  if (
+    survey &&
+    typeof survey.texture === 'string' &&
+    /^[a-f0-9]{64}$/.test(survey.texture) &&
+    entity.textures?.includes(survey.texture) &&
+    Array.isArray(survey.corners) &&
+    survey.corners.length === 3 &&
+    survey.corners.every(
+      (p) => Array.isArray(p) && p.length === 2 && finite(p[0], -180, 180) && finite(p[1], -85, 85),
+    )
+  ) {
+    return {
+      texture: survey.texture,
+      corners: survey.corners as unknown as SurfaceRaster['corners'],
+    };
+  }
+}
+
 /** 环境由普通背景物件配置；无效配置按普通物件处理，不发起外部请求。 */
 export function environmentOf(entity: EntityBody): Environment | null {
   if (entity.props?.background !== true) return null;
@@ -246,22 +272,16 @@ export function environmentOf(entity: EntityBody): Environment | null {
       publicHttps(credit.page)
         ? { attribution: credit.attribution, page: credit.page }
         : undefined;
-    const turfColorSurvey =
-      survey &&
-      typeof survey.texture === 'string' &&
-      /^[a-f0-9]{64}$/.test(survey.texture) &&
-      entity.textures?.includes(survey.texture) &&
-      Array.isArray(survey.corners) &&
-      survey.corners.length === 3 &&
-      survey.corners.every(
-        (p) =>
-          Array.isArray(p) && p.length === 2 && finite(p[0], -180, 180) && finite(p[1], -85, 85),
-      )
-        ? {
-            texture: survey.texture,
-            corners: survey.corners,
-            ...(surveyCredit ? { credit: surveyCredit } : {}),
-          }
+    const turfRaster = surfaceRaster(survey, entity);
+    const turfColorSurvey = turfRaster && {
+      ...turfRaster,
+      ...(surveyCredit ? { credit: surveyCredit } : {}),
+    };
+    const shelter = record(value.rippleShelter);
+    const shelterRaster = surfaceRaster(shelter, entity);
+    const rippleShelter =
+      shelterRaster && finite(shelter?.windFrom, 0, 360)
+        ? { ...shelterRaster, windFrom: shelter.windFrom }
         : undefined;
     const offshore = record(value.offshore);
     const oceanCoverage = mapCoverage(offshore, entity);
@@ -280,6 +300,7 @@ export function environmentOf(entity: EntityBody): Environment | null {
       ...(ocean ? { offshore: ocean } : {}),
       ...(vegetationExposure ? { vegetationExposure } : {}),
       ...(turfColorSurvey ? { turfColorSurvey } : {}),
+      ...(rippleShelter ? { rippleShelter } : {}),
       ...(exclusions ? { grassExclusions: exclusions } : {}),
       ...(lawns ? { mownLawns: lawns } : {}),
       ...(lawns?.length && Number.isFinite(value.mownLawnSurfaceOffset)

@@ -113,6 +113,51 @@ def add_cloud_structure(mixed, cloud, latitude):
     return layered * resize_panorama(gain, width, height)
 
 
+def smooth_step(value):
+    t = np.clip(value, 0, 1)
+    return t * t * (3 - 2 * t)
+
+
+def balance_display_sky(pixels, latitude, solar_peak):
+    """Balance broad areas of the visible hemisphere in display-linear light."""
+    height, width = pixels.shape[:2]
+    encoded = pixels.astype(np.float32) / 255
+    linear = np.where(encoded <= .04045, encoded / 12.92, ((encoded + .055) / 1.055)**2.4)
+    luminance = linear @ LUMA.astype(np.float32)
+
+    # The coarse grid covers the full panorama. Only the upper half measures sky.
+    rows, columns = 32, 64
+    upper = rows // 2
+    cells = luminance.reshape(rows, height // rows, columns, width // columns).mean((1, 3))[:upper]
+    lat = (.5 - (np.arange(upper) + .5) / rows) * np.pi
+    lon = ((np.arange(columns) + .5) / columns - .5) * 2 * np.pi
+    y, x, z = np.broadcast_arrays(np.sin(lat)[:, None], np.cos(lat)[:, None] * np.cos(lon),
+                                  np.cos(lat)[:, None] * np.sin(lon))
+    directions = np.stack([x, y, z], axis=-1).reshape(-1, 3)
+    solid_angle = np.repeat(np.cos(lat), columns)
+    weights = np.exp((directions @ directions.T - 1) / np.deg2rad(18)**2) * solid_angle
+    log_light = np.log2(np.maximum(cells.ravel(), .001))
+    broad_light = (weights @ log_light / weights.sum(axis=1)).reshape(upper, columns)
+
+    # Calibrated against daylight views looking toward both shores.
+    gain = np.clip(.68 * (-.96 - broad_light), -.60, .36)
+    gain = np.concatenate((gain, np.repeat(gain[-1:], upper, axis=0)))
+    gain = resize_panorama(gain[:, :, None], width, height)[:, :, 0]
+
+    sun_row, sun_column = solar_peak
+    longitude = ((np.arange(width) + .5) / width - .5) * 2 * np.pi
+    cos_distance = (np.sin(latitude)[:, None] * np.sin(latitude[sun_row])
+                    + np.cos(latitude)[:, None] * np.cos(latitude[sun_row])
+                    * np.cos(longitude - longitude[sun_column]))
+    inner, outer = np.cos(np.deg2rad([.45, 2.2]))
+    away_from_sun = smooth_step((inner - cos_distance) / (inner - outer))
+    above_horizon = smooth_step((np.degrees(latitude) - .5) / 4)
+    stops = gain * away_from_sun * above_horizon[:, None]
+    adjusted = np.clip(linear * np.exp2(stops)[:, :, None], 0, 1)
+    encoded = np.where(adjusted <= .0031308, 12.92 * adjusted, 1.055 * adjusted**(1 / 2.4) - .055)
+    return np.rint(255 * encoded).astype(np.uint8)
+
+
 def cloud_highlights(radiance, pixels, latitude):
     """Recover cloud-scale contrast compressed by the display transform in bright sky."""
     display = pixels.astype(np.float32) / 255
@@ -126,10 +171,6 @@ def cloud_highlights(radiance, pixels, latitude):
     cells = loss.reshape(h // 8, 8, w // 8, 8).mean((1, 3))[:, :, None]
     broad = angular_blur(angular_blur(cells, 4.4, 0), 4.4, 1)
     structure = loss - resize_panorama(broad, w, h)[:, :, 0]
-
-    def smooth_step(x):
-        t = np.clip(x, 0, 1)
-        return t * t * (3 - 2 * t)
 
     bright = smooth_step((luminance - .62) / .23)
     above_horizon = smooth_step((np.degrees(latitude) - 1) / 5)[:, None]
@@ -196,7 +237,10 @@ def bake(morning_path, cloud_path, output, detail_path=None):
 
     output.mkdir(parents=True, exist_ok=True)
     panorama, reflection = output / "sky.jpeg", output / "radiance.png"
-    Image.fromarray(cloud_highlights(display, pixels, lat)).save(panorama, quality=90, subsampling=0)
+    solar_peak = np.unravel_index(np.argmax(display[:h // 2] @ LUMA), (h // 2, w))
+    textured_sky = cloud_highlights(display, pixels, lat)
+    Image.fromarray(balance_display_sky(textured_sky, lat, solar_peak)).save(
+        panorama, quality=90, subsampling=0)
     average = diffuse.reshape(256, 8, 512, 8, 3).mean((1, 3), dtype=float)
     linear = average / sky["radiance"]["scale"]
     srgb = np.where(linear <= .0031308, 12.92*linear, 1.055*linear.clip(0)**(1/2.4)-.055)

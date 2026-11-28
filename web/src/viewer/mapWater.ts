@@ -137,6 +137,10 @@ export function mapWaterMaterial(
         uniform bool reflectanceReady;
         uniform float rippleRms;
         uniform vec2 rippleDownwind;
+        #ifdef RIPPLE_SHELTER
+          uniform sampler2D rippleShelter;
+          uniform mat3 shelterTransform;
+        #endif
 
         // The linear mip chain averages slopes and their second moments together.
         vec2 meanSlope(vec4 sampleValue) {
@@ -270,6 +274,10 @@ export function mapWaterMaterial(
             float exposure = surfaceField(fetchPatch);
             float longRms = gravityGain * 0.01828;
             float shortRms = gust * rippleRms * mix(.60, .92, exposure);
+            #ifdef RIPPLE_SHELTER
+              vec2 uv = (shelterTransform * vec3(samplePosition.x, -samplePosition.y, 1.0)).xy;
+              shortRms *= texture2D(rippleShelter, uv).r;
+            #endif
             vec2 reservoirSlope = longRms * longMean + shortRms * (shortMean * direction);
             normalXZ = mix(normalXZ, reservoirSlope * wind, spectrumWeight);
             vec2 longVariance = slopeVariance(longWaves, longMean) * longRms * longRms;

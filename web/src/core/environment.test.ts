@@ -120,6 +120,34 @@ describe('通用环境配置', () => {
     }
   });
 
+  it('水面风场只接受已声明的贴图、有效风向和配准角点', () => {
+    const env = entity.props!.environment as Record<string, unknown>;
+    const map = env.map as Record<string, unknown>;
+    const raster = {
+      texture: hash,
+      windFrom: 106.6,
+      corners: [
+        [1, 2],
+        [2, 2],
+        [1, 3],
+      ],
+    };
+    const parse = (rippleShelter: unknown) =>
+      environmentOf({
+        ...entity,
+        props: { ...entity.props, environment: { ...env, map: { ...map, rippleShelter } } },
+      })?.map;
+    expect(parse(raster)?.rippleShelter).toEqual(raster);
+    for (const invalid of [
+      { ...raster, texture: 'e'.repeat(64) },
+      { ...raster, windFrom: -1 },
+      { ...raster, corners: [] },
+    ]) {
+      expect(parse(invalid)?.rippleShelter).toBeUndefined();
+      expect(parse(invalid)?.sources).toEqual(parse(raster)?.sources);
+    }
+  });
+
   it('资源没有声明归属时不读取天空，普通物件不启用环境', () => {
     expect(environmentOf({ ...entity, textures: [] })).toBeNull();
     expect(environmentOf({ ...entity, props: { ...entity.props, background: false } })).toBeNull();
