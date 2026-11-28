@@ -227,5 +227,29 @@
       ]
     },
     "blend": "Keep the representative central sample through 480 m and fade to the regional water material by 600 m. The outer radius rounds the farthest stable sampled pixel to a 20 m grid cell. The existing smooth transition also applies to the gravity-wave amplitude."
+  },
+  "eastArm": {
+    "featureId": 95421463,
+    "gridMetres": 20,
+    "clearCells": 751,
+    "centerWGS84": [
+      103.8686293,
+      1.2852784
+    ],
+    "maximumCellDistanceMetres": 627.7,
+    "blendRadiusMetres": 640,
+    "date": "2026-08-22",
+    "linearReflectance": [
+      0.022933,
+      0.054399,
+      0.038646
+    ],
+    "method": "Use the reservoir east arm between 103.866\u2013103.873\u00b0 E and 1.279\u20131.291\u00b0 N, 40 m inside the bank. Aggregate visible light to the native 20 m SWIR grid. Keep water-classified cells after a one-cell erosion. June, August and October provided five usable dates. Subtract each SWIR fit from the same-day red, green and blue medians and average the two estimates. The centre is the component-wise median of cells classified as water on at least four dates. Fade over the outer fifth of the radius.",
+    "photoCheck": "Two rooftop photographs and two directions from the barrage supplied 135, 61, 1509 and 1857 comparable water blocks. Both barrage views were taken seconds apart under the same overcast sky. With the August sample all four blue/green ratio errors improved. The red/green error increased in one rooftop view. Relative luminance error increased by 0.025 stops in the second barrage direction. A third rooftop view supplied no comparable blocks.",
+    "barragePhotographs": [
+      "https://commons.wikimedia.org/?curid=196603533",
+      "https://commons.wikimedia.org/?curid=196603583"
+    ],
+    "photoCredit": "RFNirmala, CC BY 4.0. Recorded positions and true bearings, equivalent focal length and the mapped opposite shore were used for registration. Mean residuals on held-out bank points were 1.77 and 1.75 pixels at 960\u00d7540."
   }
 }

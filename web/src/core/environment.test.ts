@@ -119,6 +119,38 @@ describe('通用环境配置', () => {
       expect(map?.sources).toHaveLength(1);
     }
   });
+  it('keeps the base map when a regional reflectance observation is malformed', () => {
+    const map = { latitude: 35, longitude: -120, origin: [4, -32, 7], sources: [source] };
+    const station = {
+      source: 'https://maps.example.org/index',
+      layer: 'water',
+      featureIds: [4],
+      center: [-120, 35],
+      radius: 420,
+      reflectance: [0.02, 0.08, 0.04],
+    };
+    const parse = (waterReflectanceStation: unknown) =>
+      environmentOf({
+        ...entity,
+        props: {
+          background: true,
+          environment: { version: 1, map: { ...map, waterReflectanceStation } },
+        },
+      })?.map;
+    expect(parse(station)?.waterReflectanceStation).toEqual(station);
+    for (const patch of [
+      { layer: '' },
+      { center: [190, 35] },
+      { radius: 0 },
+      { featureIds: [] },
+      { reflectance: [-1, 0, 0] },
+    ]) {
+      const parsed = parse({ ...station, ...patch });
+      expect(parsed?.sources).toHaveLength(1);
+      expect(parsed?.waterReflectanceStation).toBeUndefined();
+    }
+  });
+
   it('读取天空的空气透视距离，无效距离沿用原有衰减', () => {
     const sky = (airHalfDistance: number) =>
       environmentOf({

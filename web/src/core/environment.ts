@@ -4,6 +4,8 @@ import {
   finite,
   publicHttps,
   validSource,
+  validWaterSample,
+  type WaterSample,
   geographicReference,
   type SourceCredit,
   type SourceDelivery,
@@ -53,6 +55,10 @@ export interface GeographicMap extends GeographicReference {
     readonly featureId: number;
     readonly linearRGB: readonly [number, number, number];
   };
+  readonly waterReflectanceStation?: Pick<
+    WaterSample,
+    'source' | 'featureIds' | 'center' | 'radius' | 'reflectance'
+  > & { readonly layer: string };
   readonly vegetationExposure?: MapCoverage & { readonly stops: number };
   readonly turfColorSurvey?: TurfColorSurvey;
   readonly rippleShelter?: SurfaceRaster & { readonly windFrom: number };
@@ -326,6 +332,19 @@ export function environmentOf(entity: EntityBody): Environment | null {
             linearRGB: [rgb[0], rgb[1], rgb[2]] as const,
           }
         : undefined;
+    const station = record(value.waterReflectanceStation);
+    const layer = station?.layer;
+    const waterReflectanceStation =
+      typeof layer === 'string' && layer.length > 0 && validWaterSample(station)
+        ? {
+            source: station.source,
+            featureIds: station.featureIds,
+            center: station.center,
+            radius: station.radius,
+            reflectance: station.reflectance,
+            layer,
+          }
+        : undefined;
     const vegetation = record(value.vegetationExposure);
     const coverage = mapCoverage(vegetation, entity);
     const vegetationExposure =
@@ -335,6 +354,7 @@ export function environmentOf(entity: EntityBody): Environment | null {
     map = {
       ...reference,
       ...(waterBodyColor ? { waterBodyColor } : {}),
+      ...(waterReflectanceStation ? { waterReflectanceStation } : {}),
       ...(ocean ? { offshore: ocean } : {}),
       ...(vegetationExposure ? { vegetationExposure } : {}),
       ...(turfColorSurvey ? { turfColorSurvey } : {}),

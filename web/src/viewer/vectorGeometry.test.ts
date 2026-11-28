@@ -406,8 +406,10 @@ it('marks the selected body colour independently of sampled reservoir waves', ()
       undefined,
       undefined,
       featureId,
+      new Set([2]),
     ).water!;
     expect(Array.from(water.getAttribute('sampledWater').array).every((n) => n === 0)).toBe(true);
+    expect(Array.from(water.getAttribute('stationWater').array).every((v) => v === 0)).toBe(true);
     const mask = water.getAttribute('waterBodyMask');
     if (featureId === undefined) expect(mask).toBeUndefined();
     else {

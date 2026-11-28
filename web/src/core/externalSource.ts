@@ -250,7 +250,7 @@ function validBuildingPart(item: unknown): boolean {
   );
 }
 
-function validWaterSample(value: unknown): boolean {
+export function validWaterSample(value: unknown): value is WaterSample {
   const sample = record(value);
   return (
     !!sample &&

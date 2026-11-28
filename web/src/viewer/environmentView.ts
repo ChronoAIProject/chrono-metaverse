@@ -15,6 +15,7 @@ export interface MemberSurfaces {
   readonly water?: OffshoreWater;
   readonly turf?: TurfColorSurvey;
   readonly waterBodyColor?: MapConfig['waterBodyColor'];
+  readonly waterReflectanceStation?: MapConfig['waterReflectanceStation'];
   readonly rippleShelter?: MapConfig['rippleShelter'];
 }
 
@@ -178,12 +179,14 @@ export class EnvironmentView {
             (this.map.offshore ||
               environment.map.turfColorSurvey ||
               environment.map.rippleShelter ||
-              environment.map.waterBodyColor)
+              environment.map.waterBodyColor ||
+              environment.map.waterReflectanceStation)
           ) {
             this.surfaces = {
               spaceId: selected.spaceId,
               water: this.map.offshore,
               waterBodyColor: environment.map.waterBodyColor,
+              waterReflectanceStation: environment.map.waterReflectanceStation,
               turf: environment.map.turfColorSurvey,
               rippleShelter: environment.map.rippleShelter,
             };

@@ -21,6 +21,7 @@ export function mapWaterMaterial(
   downwindHeading?: number,
   offshore?: OffshoreWater['uniforms'],
   bodyColor?: THREE.Color,
+  station?: { center: THREE.Vector3; reflectance: THREE.Color },
 ) {
   // The wave field's +Y axis in the water plane points along world (-0.60, 0.80).
   const rotation = downwindHeading === undefined ? 0 : -Math.atan2(0.6, 0.8) - downwindHeading;
@@ -37,6 +38,7 @@ export function mapWaterMaterial(
     defines: {
       ...(offshore ? { OFFSHORE_WATER: 1 } : {}),
       ...(bodyColor ? { LOCAL_WATER_COLOR: 1 } : {}),
+      ...(station ? { REGIONAL_WATER_SAMPLE: 1 } : {}),
       ...(reflection ? { WATER_SHORE_SHADOW: 1 } : {}),
       ...(sample ? { WATER_SAMPLE: 1 } : {}),
       ...(measuredRipples !== undefined ? { WATER_SPECTRUM: 1 } : {}),
@@ -45,6 +47,13 @@ export function mapWaterMaterial(
     depthWrite: false,
     uniforms: {
       ...offshore,
+      ...(sample || station ? { horizontalDiffuse: { value: new THREE.Color(1, 1, 1) } } : {}),
+      ...(station
+        ? {
+            stationArea: { value: station.center },
+            stationReflectance: { value: station.reflectance },
+          }
+        : {}),
       ...(bodyColor ? { localBodyColor: { value: bodyColor } } : {}),
       ...(reflection ? THREE.UniformsUtils.clone(THREE.UniformsLib.lights) : {}),
       ...(sample
@@ -53,7 +62,6 @@ export function mapWaterMaterial(
             waterReflectance: { value: sample.reflectance },
             // The two gravity-wave gradients have total RMS sqrt(2 * 26/175 * (0.015² + 0.030²)).
             waterGravityGain: { value: (sample.rmsGravitySlope ?? 0.01828) / 0.01828 },
-            horizontalDiffuse: { value: new THREE.Color(1, 1, 1) },
           }
         : {}),
       ...(measuredRipples !== undefined
@@ -96,6 +104,10 @@ export function mapWaterMaterial(
         attribute float sampledWater;
         varying vec3 samplePosition;
       #endif
+      #ifdef REGIONAL_WATER_SAMPLE
+        attribute float stationWater;
+        varying vec3 stationPosition;
+      #endif
       #ifdef LOCAL_WATER_COLOR
         attribute float waterBodyMask;
         varying float bodyWeight;
@@ -114,6 +126,9 @@ export function mapWaterMaterial(
         #endif
         #ifdef LOCAL_WATER_COLOR
           bodyWeight = waterBodyMask;
+        #endif
+        #ifdef REGIONAL_WATER_SAMPLE
+          stationPosition = vec3(position.xz,stationWater);
         #endif
         vec4 worldPosition = modelMatrix * vec4(position, 1.0);
         surfacePosition = worldPosition.xyz;
@@ -182,8 +197,15 @@ export function mapWaterMaterial(
       uniform float skyYaw;
       #ifdef WATER_SAMPLE
         varying vec3 samplePosition;
-        uniform vec3 waterSampleArea, waterReflectance, horizontalDiffuse;
+        uniform vec3 waterSampleArea, waterReflectance;
         uniform float waterGravityGain;
+      #endif
+      #ifdef REGIONAL_WATER_SAMPLE
+        varying vec3 stationPosition;
+        uniform vec3 stationArea, stationReflectance;
+      #endif
+      #if defined(WATER_SAMPLE) || defined(REGIONAL_WATER_SAMPLE)
+        uniform vec3 horizontalDiffuse;
       #endif
       uniform vec3 deep;
       uniform vec3 horizon;
@@ -436,6 +458,12 @@ export function mapWaterMaterial(
           vec3 measured = waterReflectance * horizontalDiffuse / (0.84 + 0.12 * max(sunlight.y,0.0));
           bodyColor = mix(bodyColor, measured, weight);
         #endif
+        #ifdef REGIONAL_WATER_SAMPLE
+          float stationDistance = distance(stationPosition.xy, stationArea.xy);
+          float stationWeight = stationPosition.z * (1.0 - smoothstep(0.8*stationArea.z, stationArea.z, stationDistance));
+          vec3 stationColor = stationReflectance * horizontalDiffuse / (0.84 + 0.12*max(sunlight.y,0.0));
+          bodyColor = mix(bodyColor, stationColor, stationWeight);
+        #endif
         vec3 water = bodyColor*(0.84 + 0.12*swell.y + 0.12*max(dot(normal,sunlight),0.0));
         float visibility = 1.0;
         #if defined(WATER_SHORE_SHADOW) && defined(USE_SHADOWMAP) && NUM_DIR_LIGHT_SHADOWS > 0
@@ -527,6 +555,7 @@ export function mapWaterMaterial(
   }
   if (offshore)
     Object.assign(material.defaultAttributeValues, { offshoreUv: [-1, -1], oceanFeature: [0] });
+  if (station) Object.assign(material.defaultAttributeValues, { stationWater: [0] });
   if (sample) Object.assign(material.defaultAttributeValues, { sampledWater: [0] });
   material.onBeforeRender = (renderer, scene, camera) => {
     if (measuredRipples !== undefined) {
@@ -540,7 +569,7 @@ export function mapWaterMaterial(
       }
     }
     const key = scene.children.find((o) => o.name === 'light:key');
-    if (sample) {
+    if (sample || station) {
       const light = key?.userData.horizontalDiffuse;
       const diffuse = material.uniforms.horizontalDiffuse!.value;
       if (light instanceof THREE.Color) diffuse.copy(light);
