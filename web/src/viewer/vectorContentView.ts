@@ -27,6 +27,9 @@ import {
   visibleVectorTiles,
 } from './vectorGeometry';
 
+// Use the half-angle cosine to compare successive world-space camera orientations.
+const refreshTurnDot = Math.cos(THREE.MathUtils.degToRad(0.25));
+
 interface Node {
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
   roads?: THREE.BufferGeometry;
@@ -59,9 +62,13 @@ export class VectorContentItem {
   private readonly failed = new Map<string, number>();
   private readonly abort = new AbortController();
   private readonly view: ReturnType<typeof backgroundView>;
+  private readonly orientation = new THREE.Quaternion();
+  private readonly lastOrientation = new THREE.Quaternion();
   private readonly cameraWorld = new THREE.Matrix4();
   private readonly projection = new THREE.Matrix4();
   private wanted = new Set<string>();
+  private nextRequestTiles?: Tile[];
+  private lastRequestUpdate = -Infinity;
   private queue: Tile[] = [];
   private sourceIndex = 0;
   private template: string | null = null;
@@ -304,45 +311,57 @@ export class VectorContentItem {
       if (!this.group.visible) return;
     }
     const now = performance.now();
-    if (now - this.lastUpdate < 250) return;
+    const requestsDue = now - this.lastRequestUpdate >= 250;
+    camera.getWorldQuaternion(this.orientation);
+    if (
+      !requestsDue &&
+      Math.abs(this.orientation.dot(this.lastOrientation)) > refreshTurnDot &&
+      this.projection.equals(camera.projectionMatrix)
+    )
+      return;
     camera.updateMatrixWorld();
     if (camera.far < this.config.extrusion.maxDistance + 2000) {
       camera.far = this.config.extrusion.maxDistance + 2000;
       camera.updateProjectionMatrix();
     }
     if (
-      now - this.lastUpdate < 30000 &&
-      this.cameraWorld.equals(camera.matrixWorld) &&
-      this.projection.equals(camera.projectionMatrix)
-    )
-      return;
-    this.lastUpdate = now;
-    this.cameraWorld.copy(camera.matrixWorld);
-    this.projection.copy(camera.projectionMatrix);
-    this.group.worldToLocal(this.localEye.copy(camera.position));
-    const selected = visibleVectorTiles(
-      camera,
-      this.group.matrixWorld,
-      this.reference,
-      this.zoom,
-      this.config.extrusion.maxDistance,
-      this.config.extrusion.distantZoom,
-    );
-    this.wanted = new Set(selected.map(tileKey));
-    for (const [key, node] of this.nodes) {
-      node.mesh.visible = this.wanted.has(key);
-      if (node.mesh.visible) {
-        node.used = now;
-        node.mesh.material = this.buildingMaterial(node.mesh.geometry);
+      now - this.lastUpdate >= 30000 ||
+      !this.cameraWorld.equals(camera.matrixWorld) ||
+      !this.projection.equals(camera.projectionMatrix)
+    ) {
+      this.lastUpdate = now;
+      this.lastOrientation.copy(this.orientation);
+      this.cameraWorld.copy(camera.matrixWorld);
+      this.projection.copy(camera.projectionMatrix);
+      this.group.worldToLocal(this.localEye.copy(camera.position));
+      this.nextRequestTiles = visibleVectorTiles(
+        camera,
+        this.group.matrixWorld,
+        this.reference,
+        this.zoom,
+        this.config.extrusion.maxDistance,
+        this.config.extrusion.distantZoom,
+      );
+      this.wanted = new Set(this.nextRequestTiles.map(tileKey));
+      for (const [key, node] of this.nodes) {
+        node.mesh.visible = this.wanted.has(key);
+        if (node.mesh.visible) {
+          node.used = now;
+          node.mesh.material = this.buildingMaterial(node.mesh.geometry);
+        }
       }
     }
+    // Reveal resident geometry during a turn. Batch network requests and cancellations.
+    if (!requestsDue || !this.nextRequestTiles) return;
+    this.lastRequestUpdate = now;
     for (const [key, pending] of this.pending) if (!this.wanted.has(key)) pending.abort();
-    this.queue = selected.filter(
+    this.queue = this.nextRequestTiles.filter(
       (tile) =>
         !this.nodes.has(tileKey(tile)) &&
         !this.pending.has(tileKey(tile)) &&
         now - (this.failed.get(tileKey(tile)) ?? -Infinity) > 30000,
     );
+    this.nextRequestTiles = undefined;
     this.pump();
     this.paint();
   }
