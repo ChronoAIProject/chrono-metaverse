@@ -7,19 +7,34 @@ from pathlib import Path
 
 import numpy as np
 import trimesh
+from PIL import Image
 from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
 from fullerton_shrubs import combined
-from scanned_canopy import ROOT, sample_scan, slices, write_tree_asset
+from scanned_canopy import ROOT, scan_reflectance, slices, write_tree_asset
 
 
 def bake_species(folder, species, group, survey, median):
-    points, colors, leaves, bark = sample_scan(folder, species, bark_triangles=90)
-    positions, uv, normals, faces, atlas = slices(
-        points, colors, leaves, fit_opacity=True, layer_count=3, cells=2,
-    )
+    points, colors, shade, leaves, bark = scan_reflectance(folder, species, bark_triangles=90)
+    sampling = dict(fit_opacity=True, layer_count=3, cells=2)
+    positions, uv, normals, faces, atlas = slices(points, colors, leaves, **sampling)
+    *_, shaded_atlas = slices(points, np.uint8(colors * shade[:, None]), leaves, **sampling)
+
+    # Match the previous skylight response in linear light while leaving the scanned
+    # base colour available to direct sun. Both atlases use the same cutout footprint.
+    def luminance(image):
+        rgb = np.asarray(image)[:, :, :3] / 255
+        linear = np.where(rgb <= .04045, rgb / 12.92, ((rgb + .055) / 1.055) ** 2.4)
+        return linear @ [.2126, .7152, .0722]
+
+    unshaded = luminance(atlas)
+    visibility = np.divide(luminance(shaded_atlas), unshaded,
+                           out=np.ones_like(unshaded), where=unshaded > 0)
+    occlusion = Image.fromarray(np.uint8(np.rint(255 * np.clip(visibility, 0, 1))))
+    occlusion.format = "PNG"
     paint = PBRMaterial(name=f"{species} garden crown", baseColorTexture=atlas,
+                        occlusionTexture=occlusion,
                         roughnessFactor=.97, metallicFactor=0, alphaMode="MASK", alphaCutoff=.4)
     crown = trimesh.Trimesh(vertices=positions, faces=faces, vertex_normals=normals,
                             visual=TextureVisuals(uv=uv, material=paint), process=False)
