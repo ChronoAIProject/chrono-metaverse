@@ -34,6 +34,8 @@ export interface SurfaceRaster {
 }
 
 export interface TurfColorSurvey extends SurfaceRaster {
+  /** Linear RGB multipliers at full survey coverage. */
+  readonly reflectanceScale?: readonly [number, number, number];
   readonly credit?: Pick<SourceCredit, 'attribution' | 'page'>;
 }
 
@@ -280,7 +282,15 @@ export function environmentOf(entity: EntityBody): Environment | null {
         ? { attribution: credit.attribution, page: credit.page }
         : undefined;
     const turfRaster = surfaceRaster(survey, entity);
+    const gain = survey?.reflectanceScale;
+    const reflectanceScale =
+      Array.isArray(gain) &&
+      gain.length === 3 &&
+      gain.every((v) => typeof v === 'number' && Number.isFinite(v) && v >= 0)
+        ? ([gain[0], gain[1], gain[2]] as const)
+        : undefined;
     const turfColorSurvey = turfRaster && {
+      ...(reflectanceScale ? { reflectanceScale } : {}),
       ...turfRaster,
       ...(surveyCredit ? { credit: surveyCredit } : {}),
     };

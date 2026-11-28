@@ -49,10 +49,13 @@ export function applyTurfSurvey(
       texture.needsUpdate = true;
       const compile = material.onBeforeCompile.bind(material);
       const key = material.customProgramCacheKey();
-      material.customProgramCacheKey = () => key + '|turf-survey';
+      const scale =
+        survey.reflectanceScale && new THREE.Vector3().fromArray(survey.reflectanceScale);
+      material.customProgramCacheKey = () => key + (scale ? '|turf-survey-scale' : '|turf-survey');
       material.onBeforeCompile = (shader, renderer) => {
         compile(shader, renderer);
         shader.uniforms.turfSurvey = { value: texture };
+        if (scale) shader.uniforms.turfScale = { value: scale };
         shader.uniforms.turfTransform = { value: transform };
         shader.vertexShader =
           'uniform mat3 turfTransform;\nvarying vec2 turfSurveyUv;\n' +
@@ -61,11 +64,14 @@ export function applyTurfSurvey(
             '#include <begin_vertex>\nturfSurveyUv = (turfTransform * vec3(uv, 1.0)).xy;',
           );
         shader.fragmentShader =
+          (scale ? 'uniform vec3 turfScale;\n' : '') +
           'uniform sampler2D turfSurvey;\nvarying vec2 turfSurveyUv;\n' +
           shader.fragmentShader.replace(
             '#include <alphatest_fragment>',
             `
-          vec3 turfGain = texture2D(turfSurvey, turfSurveyUv).rgb * (255.0 / 128.0);
+          vec4 surveySample = texture2D(turfSurvey, turfSurveyUv);
+          vec3 turfGain = surveySample.rgb * (255.0 / 128.0);
+          ${scale ? 'turfGain *= mix(vec3(1.0), turfScale, clamp((surveySample.a * 255.0 - 128.0) / 127.0, 0.0, 1.0));' : ''}
           if (all(greaterThanEqual(turfSurveyUv,vec2(0.0))) && all(lessThanEqual(turfSurveyUv,vec2(1.0))))
             diffuseColor.rgb *= turfGain;
           #include <alphatest_fragment>`,

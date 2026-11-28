@@ -72,6 +72,7 @@ def bake(cache, output):
         median = np.nanmedian(observations, axis=0)
     repeat = np.isfinite(np.asarray(observations)[:, :, :, 1]).sum(axis=0) >= 2
     image = np.full((*SIZE, 3), 128, dtype=np.uint8)
+    surveyed = np.zeros(SIZE, dtype=bool)
     accepted = 0
     for number in range(1, len(parcels) + 1):
         core = interior == number
@@ -82,8 +83,13 @@ def bake(cache, output):
         covered = target == number
         ratio = median[nearest[0][covered], nearest[1][covered]].clip(0.4, 2.5)
         image[covered] = np.rint(128 * ratio ** 0.6).astype(np.uint8)
+        surveyed |= covered
         accepted += 1
-    Image.fromarray(image).save(output)
+    # The upper half of alpha carries the calibration footprint. Keeping all texels
+    # at least half opaque preserves neutral RGB when browsers decode the data PNG.
+    weight = np.clip(distance_transform_edt(surveyed) - 0.5, 0, 1)
+    coverage = np.rint(128 + 127 * weight).astype(np.uint8)
+    Image.fromarray(np.dstack([image, coverage])).save(output)
     print(f"{accepted} surveyed parcels, {output.stat().st_size} bytes")
 
 

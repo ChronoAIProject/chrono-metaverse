@@ -376,7 +376,7 @@ export default function build(base: BuildBase, kit: Kit) {
     ? withPromontoryLawns(withBoatQuay(surroundings), daylight)
     : [];
   let currentEnvironment = surveyedGrassCoverage(daylight, registered.length > 1);
-  type SurfaceMap = { waterBodyColor?: unknown; longitude?: number; latitude?: number; offshore?: { texture: string }; turfColorSurvey?: { texture: string }; vegetationExposure?: { texture: string }; rippleShelter?: { texture: string } };
+  type SurfaceMap = { waterBodyColor?: unknown; longitude?: number; latitude?: number; offshore?: { texture: string }; turfColorSurvey?: { texture: string; reflectanceScale?: readonly number[] }; vegetationExposure?: { texture: string }; rippleShelter?: { texture: string } };
   const authoredMap = (configured?.props?.environment as { map?: SurfaceMap } | undefined)?.map;
   const savedEnvironment = currentEnvironment?.props?.environment as { map?: SurfaceMap } | undefined;
   // Published coordinates can differ by a few floating-point units after a JSON round trip.
@@ -390,6 +390,15 @@ export default function build(base: BuildBase, kit: Kit) {
       map.waterBodyColor = authoredMap.waterBodyColor;
     }
     const textures = new Set(currentEnvironment.textures);
+    const oldTurfColor = '8db5c83ef94f65039b1528b6d55c5980c4aaaf2060c72e89d26b3adc82edabcb';
+    if (authoredMap.turfColorSurvey?.texture && map.turfColorSurvey) {
+      const { reflectanceScale, ...currentSurvey } = authoredMap.turfColorSurvey;
+      if (reflectanceScale && isDeepStrictEqual(map.turfColorSurvey, { ...currentSurvey, texture: oldTurfColor })) {
+        map.turfColorSurvey = authoredMap.turfColorSurvey;
+        textures.delete(oldTurfColor);
+        textures.add(authoredMap.turfColorSurvey.texture);
+      }
+    }
     const oldShelter = 'ba8ef4fc904bc4727126ba831b17f4fbc3b910342decf404d4f65bbdc17540a6';
     if (authoredMap.rippleShelter?.texture && isDeepStrictEqual(map.rippleShelter, {
       ...authoredMap.rippleShelter, texture: oldShelter,
