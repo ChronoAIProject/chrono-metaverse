@@ -4,22 +4,28 @@ import io
 import json
 import struct
 
-from PIL import Image
+from PIL import Image, JpegImagePlugin
 
 
-def replace_atlas(raw, edit, credit=None, *, jpeg_quality=None):
+def replace_atlas(raw, edit, credit=None, *, jpeg_quality=None, keep_encoding=False):
     size = struct.unpack_from("<I", raw, 12)[0]
     doc = json.loads(raw[20:20+size])
     binary = raw[28+size:]
     blocks = [binary[v.get("byteOffset", 0):v.get("byteOffset", 0)+v["byteLength"]] for v in doc["bufferViews"]]
     if credit:
         doc["images"][0].setdefault("extras", {})["glazingAttribution"] = credit
-    doc["images"][0]["mimeType"] = "image/png" if jpeg_quality is None else "image/jpeg"
+    if not keep_encoding:
+        doc["images"][0]["mimeType"] = "image/png" if jpeg_quality is None else "image/jpeg"
     image_view = doc["images"][0]["bufferView"]
     encoded = io.BytesIO()
     with Image.open(io.BytesIO(blocks[image_view])) as image:
         result = edit(image)
-        if jpeg_quality is None:
+        if keep_encoding and image.format == "JPEG":
+            result.save(encoded, "JPEG", qtables=image.quantization,
+                        subsampling=JpegImagePlugin.get_sampling(image), optimize=True)
+        elif keep_encoding:
+            result.save(encoded, image.format, optimize=True)
+        elif jpeg_quality is None:
             result.save(encoded, "PNG")
         else:
             result.convert("RGB").save(encoded, "JPEG", quality=jpeg_quality, subsampling=0)
