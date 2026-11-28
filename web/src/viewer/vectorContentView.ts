@@ -48,6 +48,7 @@ export class VectorContentItem {
   private readonly localEye = new THREE.Vector3();
   private reflectionAtlas?: THREE.Texture;
   private readonly waterBodyColor?: MemberSurfaces['waterBodyColor'];
+  private readonly stationIds?: ReadonlySet<number>;
   private readonly sampledWaterIds?: ReadonlySet<number>;
   private readonly waterMaterial?: ReturnType<typeof mapWaterMaterial>;
   private readonly reflection?: MapReflection;
@@ -153,6 +154,14 @@ export class VectorContentItem {
         config.sources.some((s) => s.url === body.source)
       )
         this.waterBodyColor = body;
+      const station = surfaces?.waterReflectanceStation;
+      const stationPoint =
+        !hologram &&
+        station?.layer === config.waterLayer &&
+        config.sources.some((s) => s.url === station.source)
+          ? this.reference.point(...station.center, 0)
+          : undefined;
+      if (stationPoint && station) this.stationIds = new Set(station.featureIds);
       this.waterMaterial = mapWaterMaterial(
         hologram,
         this.reflection,
@@ -167,6 +176,12 @@ export class VectorContentItem {
         downwindHeading,
         hologram ? undefined : this.surfaces?.water?.uniforms,
         this.waterBodyColor && new THREE.Color().fromArray(this.waterBodyColor.linearRGB),
+        stationPoint && station
+          ? {
+              center: new THREE.Vector3(stationPoint.x, stationPoint.z, station.radius),
+              reflectance: new THREE.Color().fromArray(station.reflectance),
+            }
+          : undefined,
       );
       const shelter = surfaces?.rippleShelter;
       if (
@@ -399,6 +414,7 @@ export class VectorContentItem {
         ? this.surfaces?.water?.patch(tile)?.oceanRect.value
         : undefined,
       this.waterBodyColor?.source === source.url ? this.waterBodyColor.featureId : undefined,
+      this.surfaces?.waterReflectanceStation?.source === source.url ? this.stationIds : undefined,
     );
     const size =
       Object.values(geometry.attributes).reduce((n, a) => n + a.array.byteLength, 0) +
