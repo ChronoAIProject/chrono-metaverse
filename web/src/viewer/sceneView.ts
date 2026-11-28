@@ -179,6 +179,7 @@ interface AnchorInfo {
   /** 世界坐标；空间级锚点为 null。 */
   readonly world: THREE.Vector3 | null;
   readonly element: HTMLElement | null;
+  readonly labelObject: CSS2DObject | null;
   readonly label: string;
   /** 挂在这个锚点上的物件的包围盒（世界坐标）。 */
   readonly bounds: THREE.Box3 | null;
@@ -660,7 +661,6 @@ export class SceneView {
     this.citySun.update(this.renderer, this.camera.position, this.controls.target, globe);
     this.renderer.render(this.scene, this.camera);
     this.liveScreens.render(this.scene, this.camera);
-    this.labels.render(this.scene, this.camera);
     this.updateLabels();
   }
 
@@ -1658,6 +1658,7 @@ export class SceneView {
       const local = anchorPosition(anchor);
       const ref = { spaceId: member.spaceId, anchorId: anchor.anchorId };
       const label = anchor.label ?? anchor.anchorId;
+      let object: CSS2DObject | null = null;
       let element: HTMLElement | null = null;
       let world: THREE.Vector3 | null = null;
       if (local !== null) {
@@ -1667,7 +1668,7 @@ export class SceneView {
         element.dataset.anchorId = anchor.anchorId;
         element.dataset.spaceId = member.spaceId;
         element.textContent = label;
-        const object = new CSS2DObject(element);
+        object = new CSS2DObject(element);
         object.position.set(...local);
         overlay.add(object);
         const cell = local.map((value) => Math.floor(value / markerCellSize)).join(',');
@@ -1681,6 +1682,7 @@ export class SceneView {
         anchor,
         world,
         element,
+        labelObject: object,
         label,
         bounds: attached,
         extent: anchor.box ? placedGridBox(placement, anchor.box) : attached,
@@ -2576,25 +2578,28 @@ export class SceneView {
     return Math.max(((maxX - minX) * width) / 2, ((maxY - minY) * height) / 2);
   }
 
-  /** 投影完成后统一读取标签边界，再集中更新可见性。遮住的标签仍可在下一帧测量。 */
+  /** 投影参与布局的标签，再统一读取边界与处理避让。 */
   private updateLabels(): void {
-    const cameraMoved =
-      !this.labelCamera.equals(this.camera.matrixWorld) ||
-      !this.labelProjection.equals(this.camera.projectionMatrix);
-    if (!this.labelsDirty && !cameraMoved) return;
     if (this.labelsDirty) {
-      // Default-hidden anchors can number in the thousands at a venue. Keep them
-      // out of browser layout until an event, focus or display setting needs them.
+      // CSS2DRenderer also projects and sorts HTML elements hidden by the browser.
+      // Apply eligibility to the scene object before projecting newly visible labels.
       for (const [key, info] of this.anchors) {
-        if (!info.element) continue;
+        if (!info.labelObject) continue;
         const hidden =
           !this.moreLabels &&
           key !== this.hoverAnchor &&
           key !== this.focusedAnchorKey &&
           anchorLabelPriority(info.anchor.kind, this.eventAnchors.has(key)) === 0;
-        if (info.element.hidden !== hidden) info.element.hidden = hidden;
+        info.labelObject.visible = !hidden;
+        const element = info.labelObject.element;
+        if (element.hidden !== hidden) element.hidden = hidden;
       }
     }
+    this.labels.render(this.scene, this.camera);
+    const cameraMoved =
+      !this.labelCamera.equals(this.camera.matrixWorld) ||
+      !this.labelProjection.equals(this.camera.projectionMatrix);
+    if (!this.labelsDirty && !cameraMoved) return;
     this.labelsDirty = false;
     this.labelCamera.copy(this.camera.matrixWorld);
     this.labelProjection.copy(this.camera.projectionMatrix);

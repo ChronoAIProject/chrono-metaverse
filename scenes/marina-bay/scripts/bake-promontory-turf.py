@@ -29,7 +29,7 @@ def bake(survey):
                     faces.append(np.asarray(tri.exterior.coords)[:3])
     xz, indices = np.unique(np.asarray(faces).reshape(-1, 2), axis=0, return_inverse=True)
     origin = np.asarray(survey['reference']['origin'])
-    height = origin[1] + .062 - np.sum((xz - origin[[0, 2]]) ** 2, axis=1) / (2 * 6371000)
+    height = origin[1] + survey['surfaceOffset'] - np.sum((xz - origin[[0, 2]]) ** 2, axis=1) / (2 * 6371000)
     samples = np.asarray(survey['samplesXZrgb'])
     distance, near = cKDTree(samples[:, :2]).query(xz, k=4)
     weights = 1 / np.maximum(distance, 1.5) ** 2

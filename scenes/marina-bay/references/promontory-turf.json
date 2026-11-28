@@ -6,6 +6,7 @@
     "longitude": 103.85419949862056,
     "origin": [12.698957563907662, -60.257, -12.785997359593134]
   },
+  "surfaceOffset": 0.062,
   "layer": "landcover",
   "property": "subclass",
   "values": [
