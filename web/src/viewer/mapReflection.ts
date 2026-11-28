@@ -10,9 +10,11 @@ export const CITY_REFLECTION_LAYER = 1;
 const captureScale = 1.25;
 const baseWidth = 512;
 const baseHeight = 384;
+// Quaternion dot product uses the half angle of the measured walking turn.
+const walkingTurnDot = Math.cos(0.002);
 const widenProjection = new THREE.Matrix4().makeScale(1 / captureScale, 1 / captureScale, 1);
 
-/** 岸线共用镜像缓冲。步行时每秒更新六次，切换机位时立即采样新视野。 */
+/** 岸线共用镜像缓冲。临水漫游时跟随相机，切换机位时立即采样新视野。 */
 export class MapReflection {
   private readonly turnPrograms = new CityTurnPrograms();
   private readonly mirror = new Reflector(new THREE.BufferGeometry(), {
@@ -65,16 +67,28 @@ export class MapReflection {
     const now = performance.now();
     this.position.setFromMatrixPosition(camera.matrixWorld);
     this.rotation.setFromRotationMatrix(camera.matrixWorld);
-    if (now - this.last < 166) {
+    const elapsed = now - this.last;
+    if (elapsed < 166) {
       // 同一水域的瓦片可在一帧内多次进入这里。大幅切镜才打断正常的刷新间隔。
       if (Math.abs(this.mirror.position.y - level) >= 0.03) return false;
-      const reach = Math.max(8, (this.position.y - level) * 0.3);
+      const height = this.position.y - level;
+      const travelled = this.position.distanceToSquared(this.capturedPosition);
+      const alignment = Math.abs(this.rotation.dot(this.capturedRotation));
+      // At walking height a stale shoreline silhouette crosses several water pixels.
+      // Interleave one capture during motion on the larger geographic target.
+      const movingShore =
+        elapsed >= 83 &&
+        height <= 8 &&
+        this.texture.width > baseWidth * captureScale &&
+        (travelled > 0.08 ** 2 || alignment < walkingTurnDot);
+      const reach = Math.max(8, height * 0.3);
       const projection = camera.projectionMatrix.elements;
       const captured = this.eye.projectionMatrix.elements;
       if (
+        !movingShore &&
         this.eye.far === camera.far &&
-        this.position.distanceToSquared(this.capturedPosition) <= reach * reach &&
-        Math.abs(this.rotation.dot(this.capturedRotation)) >= Math.cos(Math.PI / 15) &&
+        travelled <= reach * reach &&
+        alignment >= Math.cos(Math.PI / 15) &&
         Math.abs(projection[0]! / captured[0]! - 1) <= 0.2 &&
         Math.abs(projection[5]! / captured[5]! - 1) <= 0.2
       )
