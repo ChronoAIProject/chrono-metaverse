@@ -156,9 +156,11 @@ export function installSkill(sdkRoot: string, root: string, force: boolean): str
     if (!existsSync(source)) throw new CliError(`找不到技能说明源文件 ${source}`);
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, readFileSync(source));
-    const references = join(dirname(source), 'references');
-    if (existsSync(references))
-      cpSync(references, join(dirname(target), 'references'), { recursive: true });
+    for (const directory of ['references', 'scripts']) {
+      const resources = join(dirname(source), directory);
+      if (existsSync(resources))
+        cpSync(resources, join(dirname(target), directory), { recursive: true });
+    }
     written.push(target);
   }
   return written;
