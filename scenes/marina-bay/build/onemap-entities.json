@@ -5,7 +5,7 @@
     "kind": "object",
     "label": "THE SHOPPES AT MARINA BAY SANDS",
     "regionId": "marina-bay-exterior",
-    "assetHash": "3c26a6fd4f04a5f1e5d66d40061396ea9bb0c7087690f7f3be8e6b63fb4b07b8",
+    "assetHash": "2125fe955431aa962f3bd0b054c56580c44ebcbea70fb3f14dc907e04924fb1f",
     "bounds": {
       "min": [
         -396.044722,
@@ -2964,7 +2964,7 @@
     "kind": "object",
     "label": "MARINA BAY SANDS (MICE)",
     "regionId": "marina-bay-exterior",
-    "assetHash": "a58c31f771221a1f0e72b56bc358b76521dfe18e2c561852d94490c3f9e5e883",
+    "assetHash": "418086ed544fd874d5e37bee5117c7378e581ff5e0164c1a19e8b964169b9cd9",
     "bounds": {
       "min": [
         -391.398759,
@@ -3476,7 +3476,7 @@
     "kind": "object",
     "label": "MARINA BAY SANDS (THEATRE)",
     "regionId": "marina-bay-exterior",
-    "assetHash": "034831095e90f6c45c0154f2f05e944bd442e500c657f96a130a823064fc7b76",
+    "assetHash": "c0b10e61049c95ee822fbd5074528ab3080410887a17f112c25b94666d3d7c4a",
     "bounds": {
       "min": [
         -413.703888,
@@ -7437,7 +7437,7 @@
     "kind": "object",
     "label": "MARINA BAY SANDS (CASINO)",
     "regionId": "marina-bay-exterior",
-    "assetHash": "2120f0f7b40b26370bad7698cdfc37a3a986a3c19aeb3d33c7aca4d3163d3609",
+    "assetHash": "4c9c68ec12aae367b3c89b53b212f9c6b9c1591aa7ea51afc81057dc92f3bfd7",
     "bounds": {
       "min": [
         -413.68048,
