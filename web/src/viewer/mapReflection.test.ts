@@ -80,6 +80,37 @@ it('keeps texel density and captures the shoreline outside an off-centre player 
   }
 });
 
+it('redraws a resized shoreline target once even within the capture interval', () => {
+  const mirror = new MapReflection();
+  const renderer = { getRenderTarget: () => null } as THREE.WebGLRenderer;
+  const camera = new THREE.PerspectiveCamera();
+  camera.position.y = 2;
+  camera.updateMatrixWorld();
+  const scene = new THREE.Scene();
+  const clock = vi.spyOn(performance, 'now').mockReturnValue(1000);
+  const draw = vi
+    .spyOn(Reflect.get(mirror, 'mirror'), 'onBeforeRender')
+    .mockImplementation(() => {});
+  try {
+    for (const [width, height, expected] of [
+      [390, 800, 640],
+      [1390, 747, 1280],
+      [851, 393, 640],
+    ] as const) {
+      for (let i = 0; i < 2; i++) {
+        mirror.fitShorelineViewport(width, height);
+        expect(mirror.update(renderer, scene, camera, 0)).toBe(true);
+        expect(mirror.texture.width).toBe(expected);
+        expect(mirror.texture.height).toBe(expected * 0.75);
+      }
+    }
+    expect(draw).toHaveBeenCalledTimes(3);
+  } finally {
+    clock.mockRestore();
+    mirror.dispose();
+  }
+});
+
 it('restores the camera background and retries a failed radiance capture', () => {
   const reflection = new MapReflection();
   const renderer = { getRenderTarget: () => null } as THREE.WebGLRenderer;

@@ -8,14 +8,16 @@ export const CITY_REFLECTION_LAYER = 1;
 
 // Waves and camera turns sample beyond the visible shoreline between mirror captures.
 const captureScale = 1.25;
+const baseWidth = 512;
+const baseHeight = 384;
 const widenProjection = new THREE.Matrix4().makeScale(1 / captureScale, 1 / captureScale, 1);
 
 /** 岸线共用镜像缓冲。步行时每秒更新六次，切换机位时立即采样新视野。 */
 export class MapReflection {
   private readonly turnPrograms = new CityTurnPrograms();
   private readonly mirror = new Reflector(new THREE.BufferGeometry(), {
-    textureWidth: 512 * captureScale,
-    textureHeight: 384 * captureScale,
+    textureWidth: baseWidth * captureScale,
+    textureHeight: baseHeight * captureScale,
     multisample: 0,
   });
   private readonly eye = new THREE.PerspectiveCamera();
@@ -40,6 +42,16 @@ export class MapReflection {
     // At a grazing angle a ripple stretches the sample footprint along one axis.
     // Filter along that axis while retaining the narrow reflected shoreline.
     this.texture.anisotropy = 8;
+  }
+
+  fitShorelineViewport(width: number, height: number) {
+    // Budget the visible portion against CSS pixels, independently of adaptive supersampling.
+    const scale = width * height >= 4 * baseWidth * baseHeight ? 2 : 1;
+    const target = this.mirror.getRenderTarget();
+    const captureWidth = baseWidth * captureScale * scale;
+    if (target.width === captureWidth) return;
+    target.setSize(captureWidth, baseHeight * captureScale * scale);
+    this.last = -Infinity;
   }
 
   update(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, level: number) {
