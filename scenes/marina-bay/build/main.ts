@@ -370,8 +370,12 @@ export default function build(base: BuildBase, kit: Kit) {
   type SurfaceMap = { longitude?: number; latitude?: number; offshore?: { texture: string }; turfColorSurvey?: { texture: string }; vegetationExposure?: { texture: string }; rippleShelter?: { texture: string } };
   const authoredMap = (configured?.props?.environment as { map?: SurfaceMap } | undefined)?.map;
   const savedEnvironment = currentEnvironment?.props?.environment as { map?: SurfaceMap } | undefined;
+  // Published coordinates can differ by a few floating-point units after a JSON round trip.
+  const sameCoordinate = (a?: number, b?: number) =>
+    a !== undefined && b !== undefined && Math.abs(a - b) < 1e-9;
   if (currentEnvironment && authoredMap && savedEnvironment?.map &&
-      savedEnvironment.map.longitude === authoredMap.longitude && savedEnvironment.map.latitude === authoredMap.latitude) {
+      sameCoordinate(savedEnvironment.map.longitude, authoredMap.longitude) &&
+      sameCoordinate(savedEnvironment.map.latitude, authoredMap.latitude)) {
     const map = { ...savedEnvironment.map };
     const textures = new Set(currentEnvironment.textures);
     const oldShelter = 'ba8ef4fc904bc4727126ba831b17f4fbc3b910342decf404d4f65bbdc17540a6';
