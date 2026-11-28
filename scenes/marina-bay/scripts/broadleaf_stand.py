@@ -1,5 +1,7 @@
 """Bake one pair of leaf and trunk meshes for a surveyed stand of small broadleaf trees."""
 
+import hashlib
+
 import numpy as np
 import trimesh
 from trimesh.visual.material import PBRMaterial
@@ -10,7 +12,7 @@ from grove_occlusion import assign_occlusion, neighbouring_sky, use_occlusion_uv
 from scanned_canopy import sample_scan, slices, write_tree_asset
 
 
-def bake_stand(scan_folder, trees, median, label):
+def bake_stand(scan_folder, trees, median, label, *, sky_survey=None):
     points, albedo, canopy, bark = sample_scan(scan_folder, "tree_small_02")
     xyz, uv, normals, faces, atlas = slices(points, albedo, canopy, fit_opacity=True)
     paint = PBRMaterial(name=label + " crowns", baseColorTexture=atlas,
@@ -61,7 +63,14 @@ def bake_stand(scan_folder, trees, median, label):
     wood.visual.vertex_attributes["color"] = np.tile(bark.visual.vertex_attributes["color"], (len(trunks), 1))
     visibility = neighbouring_sky([c.vertices for c in crowns], [c.vertex_normals for c in crowns],
                                   trunks, [uv] * len(crowns), faces[::2], atlas, paint.alphaCutoff)
-    assign_occlusion(foliage, np.concatenate([leaf for leaf, _ in visibility]))
+    leaf_visibility = np.concatenate([leaf for leaf, _ in visibility])
+    if sky_survey is not None:
+        with np.load(sky_survey, allow_pickle=False) as survey:
+            positions = np.rint(foliage.vertices * 1000).astype("<i4")
+            if hashlib.sha256(positions.tobytes()).hexdigest() != survey["positionDigest"].item():
+                raise ValueError("The district skylight survey does not match these crown positions")
+            leaf_visibility *= survey["visibility"].astype(float) / 65535
+    assign_occlusion(foliage, leaf_visibility)
     assign_occlusion(wood, np.concatenate([stem for _, stem in visibility]))
     scene = trimesh.Scene()
     scene.add_geometry(foliage, geom_name=paint.name)

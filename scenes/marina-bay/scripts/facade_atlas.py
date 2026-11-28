@@ -4,19 +4,51 @@ import io
 import json
 import struct
 
-from PIL import Image, JpegImagePlugin
+import numpy as np
+from PIL import Image, ImageDraw, JpegImagePlugin
 
 
-def replace_atlas(raw, edit, credit=None, *, jpeg_quality=None, keep_encoding=False):
+def accessor(doc, binary, index):
+    field = doc["accessors"][index]
+    view = doc["bufferViews"][field["bufferView"]]
+    dtype = np.dtype({5126: "<f4", 5123: "<u2", 5125: "<u4"}[field["componentType"]])
+    width = {"VEC2": 2, "VEC3": 3, "SCALAR": 1}[field["type"]]
+    offset = view.get("byteOffset", 0) + field.get("byteOffset", 0)
+    stride = view.get("byteStride", width * dtype.itemsize)
+    return np.ndarray((field["count"], width), dtype, binary, offset=offset,
+                      strides=(stride, dtype.itemsize))
+
+
+def glb_blocks(raw):
     size = struct.unpack_from("<I", raw, 12)[0]
     doc = json.loads(raw[20:20+size])
     binary = raw[28+size:]
     blocks = [binary[v.get("byteOffset", 0):v.get("byteOffset", 0)+v["byteLength"]] for v in doc["bufferViews"]]
+    return doc, blocks
+
+
+def pack_glb(doc, blocks):
+    payload = bytearray()
+    for view, block in zip(doc["bufferViews"], blocks, strict=True):
+        payload.extend(bytes(-len(payload) % 4))
+        view.update(byteOffset=len(payload), byteLength=len(block))
+        payload.extend(block)
+    payload.extend(bytes(-len(payload) % 4))
+    doc["buffers"][0]["byteLength"] = len(payload)
+    header = json.dumps(doc, ensure_ascii=False, separators=(",", ":")).encode()
+    header += b" " * (-len(header) % 4)
+    data = (struct.pack("<4sIII4s", b"glTF", 2, 28 + len(header) + len(payload), len(header), b"JSON")
+            + header + struct.pack("<I4s", len(payload), b"BIN\0") + payload)
+    return data
+
+
+def replace_atlas(raw, edit, credit=None, *, jpeg_quality=None, keep_encoding=False, image_index=0):
+    doc, blocks = glb_blocks(raw)
     if credit:
-        doc["images"][0].setdefault("extras", {})["glazingAttribution"] = credit
+        doc["images"][image_index].setdefault("extras", {})["glazingAttribution"] = credit
     if not keep_encoding:
-        doc["images"][0]["mimeType"] = "image/png" if jpeg_quality is None else "image/jpeg"
-    image_view = doc["images"][0]["bufferView"]
+        doc["images"][image_index]["mimeType"] = "image/png" if jpeg_quality is None else "image/jpeg"
+    image_view = doc["images"][image_index]["bufferView"]
     encoded = io.BytesIO()
     with Image.open(io.BytesIO(blocks[image_view])) as image:
         result = edit(image)
@@ -30,15 +62,34 @@ def replace_atlas(raw, edit, credit=None, *, jpeg_quality=None, keep_encoding=Fa
         else:
             result.convert("RGB").save(encoded, "JPEG", quality=jpeg_quality, subsampling=0)
     blocks[image_view] = encoded.getvalue()
-    payload = bytearray()
-    for view, block in zip(doc["bufferViews"], blocks, strict=True):
-        payload.extend(bytes(-len(payload) % 4))
-        view.update(byteOffset=len(payload), byteLength=len(block))
-        payload.extend(block)
-    payload.extend(bytes(-len(payload) % 4))
-    doc["buffers"][0]["byteLength"] = len(payload)
-    header = json.dumps(doc, ensure_ascii=False, separators=(",", ":")).encode()
-    header += b" " * (-len(header) % 4)
-    data = (struct.pack("<4sIII4s", b"glTF", 2, 28 + len(header) + len(payload), len(header), b"JSON")
-            + header + struct.pack("<I4s", len(payload), b"BIN\0") + payload)
-    return data
+    return pack_glb(doc, blocks)
+
+
+def balance(image, regions):
+    from scipy.ndimage import distance_transform_edt
+
+    masks = {}
+    for triangle, stops in regions:
+        mask = masks.get(stops)
+        if mask is None:
+            mask = Image.new("1", image.size)
+            masks[stops] = mask
+        ImageDraw.Draw(mask).polygon([tuple(v) for v in triangle * image.size], fill=1)
+    coverage = np.zeros(image.size[::-1], dtype=np.uint8)
+    gain = np.zeros(image.size[::-1], dtype=np.float32)
+    for stops, mask in masks.items():
+        inside = np.asarray(mask)
+        coverage[inside] += 1
+        gain[inside] = stops
+    gain[coverage != 1] = 0
+    distance, nearest = distance_transform_edt(coverage == 0, return_indices=True)
+    gutter = (coverage == 0) & (distance <= 2)
+    gain[gutter] = gain[nearest[0][gutter], nearest[1][gutter]]
+    srgb = np.asarray(image.convert("RGB"), dtype=np.float32) / 255
+    linear = np.where(srgb <= .04045, srgb / 12.92, ((srgb + .055) / 1.055) ** 2.4)
+    linear *= np.exp2(gain[:, :, None])
+    encoded = np.where(linear <= .0031308, linear * 12.92, 1.055 * linear ** (1 / 2.4) - .055)
+    result = Image.fromarray(np.uint8(np.rint(255 * np.clip(encoded, 0, 1))))
+    if image.mode == "RGBA":
+        result.putalpha(image.getchannel("A"))
+    return result

@@ -181,6 +181,8 @@ function bayDaylight(saved: EntityBody | undefined, configured: EntityBody | nul
   const { radiance: _highlightRadiance, ...cloudHighlightDisplay } = cloudHighlightSky;
   const { radiance, ...displaySky } = target.sky;
   const presets = [
+    { ...target.sky, texture: 'd7538511f26c40e4a32424cf8d9eca1f1c9e151daca1e3b607444b837a333419' },
+    { ...target.sky, texture: 'ed15daa79ace156cf0db282fbeddbff900882d7253580f6e1705e57fd8822400' },
     cloudHighlightSky,
     cloudHighlightDisplay,
     exposedMorning,
@@ -459,13 +461,12 @@ export default function build(base: BuildBase, kit: Kit) {
     entities.push(surroundings);
   }
   // Sky visibility belongs to each facade at its surveyed location and to the sampled mesh revision.
-  const facadeFinishes = ['district-skylight/survey', 'financial-facade-exposure'].flatMap((name) => {
+  const facadeFinishes = ['district-skylight/survey', 'financial-facade-exposure', 'waterfront-facade-daylight', 'sands-daylight/survey'].map((name) => {
     const survey: { buildings: { entityId: string; source: string; output: string }[] } = JSON.parse(
       readFileSync(new URL(`../references/${name}.json`, import.meta.url), 'utf8'),
     );
-    return survey.buildings;
+    return new Map(survey.buildings.map((row) => [row.entityId, row]));
   });
-  const bakedFacades = new Map(facadeFinishes.map((row) => [row.entityId, row]));
   const ids = new Set(entities.map((entity) => entity.entityId));
   return {
     message: config.message,
@@ -479,13 +480,19 @@ export default function build(base: BuildBase, kit: Kit) {
         )
         .map((entity) => kit.removeEntity(entity.entityId)),
       ...entities.map((entity) => {
-        const facade = config.quay ? bakedFacades.get(entity.entityId) : undefined;
+        let assetHash = entity.assetHash;
+        if (config.quay && assetHash) {
+          for (const finishes of facadeFinishes) {
+            const finish = finishes.get(entity.entityId);
+            if (finish && finish.source === assetHash) assetHash = finish.output;
+          }
+        }
         const reflectors = config.quay && skyReflectionMaterials[entity.entityId];
         const scans = config.quay && groundScanMaterials[entity.entityId];
         const pavers = config.quay && pavedSurfaces[entity.entityId];
         return kit.placeEntity({
           ...entity,
-          ...(facade && entity.assetHash === facade.source && { assetHash: facade.output }),
+          ...(assetHash && { assetHash }),
           props: {
             ...entity.props,
             background: true,

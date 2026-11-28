@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 from scipy.ndimage import distance_transform_edt, gaussian_filter
 
-from facade_atlas import replace_atlas
+from facade_atlas import accessor, replace_atlas
 
 ROOT = Path(__file__).resolve().parents[1]
 # Roof height, followed by (exposure EV, excess blue/red EV) for high walls and
@@ -22,17 +22,6 @@ ROOFS = {
     "1967cab9cd7b956ad16ac9f7eec1008277d894a5dc6479946e384692c1a7f61b":
         (41.31, ((.888, .615), (0., .873))),
 }
-
-
-def accessor(doc, binary, index):
-    field = doc["accessors"][index]
-    view = doc["bufferViews"][field["bufferView"]]
-    dtype = np.dtype({5126: "<f4", 5123: "<u2", 5125: "<u4"}[field["componentType"]])
-    width = {"VEC2": 2, "VEC3": 3, "SCALAR": 1}[field["type"]]
-    offset = view.get("byteOffset", 0) + field.get("byteOffset", 0)
-    stride = view.get("byteStride", width * dtype.itemsize)
-    return np.ndarray((field["count"], width), dtype, binary, offset=offset,
-                      strides=(stride, dtype.itemsize))
 
 
 def surface_masks(doc, binary, size, roof_height):

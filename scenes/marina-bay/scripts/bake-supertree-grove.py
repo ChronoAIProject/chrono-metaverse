@@ -9,6 +9,7 @@ from textwrap import indent
 
 import numpy as np
 import trimesh
+from grove_daylight import calibrate
 from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
@@ -169,7 +170,12 @@ def main():
         def credit(doc):
             doc["asset"]["copyright"] = "Map Data © Singapore Land Authority / OneMap. Open crown reconstruction."
         data = trimesh.exchange.gltf.export_glb(model, include_normals=True, tree_postprocessor=credit)
+        if hashlib.sha256(data).hexdigest() != record["daylight"]["source"]:
+            raise ValueError(f"Open crown reconstruction differs for {record['entityId']}")
+        data = calibrate(data)
         digest = hashlib.sha256(data).hexdigest()
+        if digest != record["daylight"]["output"]:
+            raise ValueError(f"Daylight calibration differs for {record['entityId']}")
         (ROOT / "assets" / (digest + ".glb")).write_bytes(data)
         entity = by_id[record["entityId"]]
         origin = np.asarray(record["sourceOrigin"])
