@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { GeographicMap } from '../core/environment';
-import type { Tile } from './geography';
+import { coverageRect, type Tile } from './geography';
 import { skyRadiance } from './skyRadiance';
 import reflectanceUrl from '../assets/geography/reservoir-reflectance.png';
 
@@ -65,19 +65,8 @@ export class OffshoreWater {
   }
 
   patch(tile: Tile): OffshorePatch | undefined {
-    const [left, top, right, bottom] = this.config.rect;
-    const size = 1 / 2 ** tile.z;
-    const x = tile.x * size,
-      y = tile.y * size;
-    if (x >= right || y >= bottom || x + size <= left || y + size <= top) return;
-    const w = right - left,
-      h = bottom - top;
-    return {
-      ...this.uniforms,
-      oceanRect: {
-        value: new THREE.Vector4((x - left) / w, 1 - (y - top) / h, size / w, size / h),
-      },
-    };
+    const rect = coverageRect(tile, this.config.rect);
+    if (rect) return { ...this.uniforms, oceanRect: { value: rect } };
   }
 
   dispose() {

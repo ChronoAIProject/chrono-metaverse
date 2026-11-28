@@ -208,7 +208,12 @@ export function geographicReference(value: unknown): GeographicReference | null 
     !raw.origin.every((n) => finite(n, -100000, 100000))
   )
     return null;
-  return { ...raw, heading: raw.heading ?? 0 } as unknown as GeographicReference;
+  return {
+    latitude: raw.latitude,
+    longitude: raw.longitude,
+    origin: raw.origin as [number, number, number],
+    heading: (raw.heading as number | undefined) ?? 0,
+  };
 }
 
 function validFacadeReflections(value: unknown, textures: readonly string[] | undefined): boolean {

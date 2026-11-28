@@ -1,4 +1,4 @@
-"""Bake Marina South's ten-metre linear turf gains from the four recorded Earth Search L2A COGs."""
+"""Bake Marina South turf colour or park vegetation coverage from Sentinel-2 L2A imagery."""
 import argparse
 import json
 import warnings
@@ -10,6 +10,7 @@ from PIL import Image
 from pyproj import Transformer
 from rasterio.features import rasterize
 from rasterio.transform import from_origin
+from rasterio.warp import reproject, Resampling
 from rasterio.windows import from_bounds
 from scipy.ndimage import distance_transform_edt
 from shapely import transform
@@ -86,9 +87,48 @@ def bake(cache, output):
     print(f"{accepted} surveyed parcels, {output.stat().st_size} bytes")
 
 
+def bake_vegetation(cache, output):
+    feature = json.loads((SOURCE / "park-boundary.geojson").read_text())
+    project = Transformer.from_crs(4326, 3857, always_xy=True).transform
+    boundary = transform(shape(feature["geometry"]), project, interleaved=False)
+    pixel_size = 4
+    lower = (np.floor(np.array(boundary.bounds[:2]) / pixel_size) - 2) * pixel_size
+    upper = (np.ceil(np.array(boundary.bounds[2:]) / pixel_size) + 2) * pixel_size
+    width, height = ((upper - lower) / pixel_size).astype(int)
+    target = from_origin(lower[0], upper[1], pixel_size, pixel_size)
+    interior = rasterize([(boundary, 1)], out_shape=(height, width), transform=target)
+
+    observations = []
+    for item in (*TRAINING, "S2C_48NUG_20261031_0_L2A", "S2A_48NUG_20261122_0_L2A"):
+        bands = read_bands(item, cache)
+        red, nir = bands["red"], bands["nir"]
+        ndvi = (nir - red) / np.maximum(nir + red, 0.0002)
+        observations.append(np.where(np.isin(bands["scl"], [4, 5]), ndvi, np.nan))
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", "All-NaN slice encountered", RuntimeWarning)
+        median = np.nanmedian(observations, axis=0)
+    support = np.isfinite(observations).sum(axis=0) >= 3
+    weight = support * np.clip((np.nan_to_num(median) - 0.42) / 0.24, 0, 1)
+    mask = np.zeros(interior.shape, dtype=np.float32)
+    reproject(weight.astype(np.float32), mask,
+              src_crs="EPSG:32648", src_transform=from_origin(BOUNDS[0], BOUNDS[3], 10, 10),
+              dst_crs="EPSG:3857", dst_transform=target, resampling=Resampling.bilinear)
+    mask *= np.minimum(1, distance_transform_edt(interior) / 2)
+    Image.fromarray(np.rint(mask.clip(0, 1) * 255).astype(np.uint8)).save(output)
+    world = 2 * np.pi * 6378137
+    rect = [0.5 + lower[0] / world, 0.5 - upper[1] / world,
+            0.5 + upper[0] / world, 0.5 - lower[1] / world]
+    print("North-up normalized Web Mercator bounds", json.dumps(rect))
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("cache", type=Path, help="Local cache for the cropped spectral bands")
     parser.add_argument("output", type=Path)
+    parser.add_argument("--park-vegetation", action="store_true",
+                        help="Bake the park vegetation exposure mask instead of turf colour gains")
     args = parser.parse_args()
-    bake(args.cache, args.output)
+    if args.park_vegetation:
+        bake_vegetation(args.cache, args.output)
+    else:
+        bake(args.cache, args.output)

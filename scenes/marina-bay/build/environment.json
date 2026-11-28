@@ -32,6 +32,7 @@
     }
   },
   "textures": [
+    "4c838144dd96db7606ae10bb178a1b950eea59ca1f3d880145d382018c2dd9cf",
     "8db5c83ef94f65039b1528b6d55c5980c4aaaf2060c72e89d26b3adc82edabcb",
     "8817efa478279ec5b235c21ce9d88aeafeed2e94c4571eecccda0a92b1240f8e",
     "f4fc4d1101e4e7373408140d8818b0fc06baceebd6097f9e727113c980472354",
@@ -128,6 +129,7 @@
             "maxZoom": 13
           }
         ],
+        "vegetationExposure": {"texture": "4c838144dd96db7606ae10bb178a1b950eea59ca1f3d880145d382018c2dd9cf", "rect": [0.7884980458201676, 0.4964270008638193, 0.7885291874166837, 0.4964557469529111], "stops": -0.75},
         "turfColorSurvey": {
           "credit": {
             "attribution": "Contains modified Copernicus Sentinel data (2026)",

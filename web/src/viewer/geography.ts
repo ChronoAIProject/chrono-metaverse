@@ -121,6 +121,21 @@ export class GeoReference {
   }
 }
 
+/** Map the child tile's own UVs to a north-up regional raster, independently of its imagery LOD. */
+export function coverageRect(tile: Tile, bounds: readonly [number, number, number, number]) {
+  const [left, top, right, bottom] = bounds;
+  const size = 1 / 2 ** tile.z;
+  const x = tile.x * size,
+    y = tile.y * size;
+  if (x >= right || y >= bottom || x + size <= left || y + size <= top) return;
+  return new THREE.Vector4(
+    (x - left) / (right - left),
+    1 - (y - top) / (bottom - top),
+    size / (right - left),
+    size / (bottom - top),
+  );
+}
+
 /** 子瓦片使用祖先影像时的采样范围；几何仍只画一份，避免共面闪烁。 */
 export function ancestorUv(tile: Tile, ancestor: Tile): { x: number; y: number; size: number } {
   const scale = 2 ** (tile.z - ancestor.z);

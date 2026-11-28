@@ -9,6 +9,7 @@ import type { GeographicMap as MapConfig } from '../core/environment';
 import {
   ancestorUv,
   children,
+  coverageRect,
   ecef,
   EARTH_RADIUS,
   GeoReference,
@@ -78,6 +79,7 @@ export class GeographicMap {
   private viewport = '';
   private readonly groundShadow = new THREE.Color(0.55, 0.61, 0.68);
   readonly offshore?: OffshoreWater;
+  private readonly vegetationMask = { value: null as THREE.Texture | null };
   private readonly detail?: THREE.Texture;
   private readonly paving?: GrassFootprints;
   private readonly lawns?: GrassFootprints;
@@ -104,6 +106,21 @@ export class GeographicMap {
       this.detail = groundDetailTexture(sampling.anisotropy);
     if (this.detail && config.offshore && loadTexture)
       this.offshore = new OffshoreWater(config.offshore, loadTexture);
+    if (this.detail && config.vegetationExposure && loadTexture) {
+      void loadTexture(config.vegetationExposure.texture)
+        .then((source) => {
+          if (this.disposed) return;
+          const mask = source.clone();
+          mask.colorSpace = THREE.NoColorSpace;
+          mask.flipY = true;
+          mask.wrapS = mask.wrapT = THREE.ClampToEdgeWrapping;
+          mask.needsUpdate = true;
+          this.vegetationMask.value = mask;
+        })
+        .catch(() => {
+          /* Missing coverage leaves the imagery at its surveyed exposure. */
+        });
+    }
     this.group.name = 'geographic-map';
     this.credit.className = 'viewer__map-credit';
     this.credit.setAttribute('aria-label', '地图来源');
@@ -401,7 +418,21 @@ export class GeographicMap {
         else {
           mesh.material.toneMapped = false;
           if (this.detail) {
-            groundAir(mesh.material, this.air, this.offshore?.patch(node));
+            const survey =
+              mesh.material instanceof THREE.MeshLambertMaterial && this.config.vegetationExposure;
+            const rect = survey && coverageRect(node, survey.rect);
+            groundAir(
+              mesh.material,
+              this.air,
+              this.offshore?.patch(node),
+              survey && rect
+                ? {
+                    vegetationMask: this.vegetationMask,
+                    vegetationRect: { value: rect },
+                    vegetationStops: { value: survey.stops },
+                  }
+                : undefined,
+            );
           }
           if (mesh.material instanceof THREE.MeshLambertMaterial) {
             mesh.geometry.computeVertexNormals();
@@ -553,6 +584,7 @@ export class GeographicMap {
     this.credit.remove();
     this.detail?.dispose();
     this.offshore?.dispose();
+    this.vegetationMask.value?.dispose();
     for (const patch of this.patches.values()) {
       disposeGrass(patch.grass);
       patch.mesh.geometry.dispose();

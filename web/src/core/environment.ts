@@ -34,12 +34,17 @@ export interface TurfColorSurvey {
   ];
 }
 
+export interface MapCoverage {
+  readonly texture: string;
+  /** Left, top, right, bottom in normalized Web Mercator coordinates. */
+  readonly rect: readonly [number, number, number, number];
+}
+
 export interface GeographicMap extends GeographicReference {
+  readonly vegetationExposure?: MapCoverage & { readonly stops: number };
   readonly turfColorSurvey?: TurfColorSurvey;
   /** Ocean coverage in normalized Web Mercator coordinates, north-west origin. */
-  readonly offshore?: {
-    readonly texture: string;
-    readonly rect: readonly [number, number, number, number];
+  readonly offshore?: MapCoverage & {
     readonly rmsSlope: number;
   };
   readonly surfaceDetail?: 'urban';
@@ -50,6 +55,26 @@ export interface GeographicMap extends GeographicReference {
   /** Vertical distance in member metres from the map surface to the surveyed lawn cover. */
   readonly mownLawnSurfaceOffset?: number;
   readonly sources: readonly TileSource[];
+}
+
+function mapCoverage(
+  value: Record<string, unknown> | null,
+  entity: EntityBody,
+): MapCoverage | undefined {
+  const rect = value?.rect;
+  if (
+    !value ||
+    typeof value.texture !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(value.texture) ||
+    !entity.textures?.includes(value.texture) ||
+    !Array.isArray(rect) ||
+    rect.length !== 4 ||
+    !rect.every((n) => finite(n, 0, 1)) ||
+    rect[2]! <= rect[0]! ||
+    rect[3]! <= rect[1]!
+  )
+    return;
+  return { texture: value.texture, rect: rect as [number, number, number, number] };
 }
 
 function validFootprints(polygons: unknown): polygons is GeographicPolygon[] | undefined {
@@ -239,27 +264,21 @@ export function environmentOf(entity: EntityBody): Environment | null {
           }
         : undefined;
     const offshore = record(value.offshore);
-    const rect = offshore?.rect;
+    const oceanCoverage = mapCoverage(offshore, entity);
     const ocean =
-      offshore &&
-      typeof offshore.texture === 'string' &&
-      entity.textures?.includes(offshore.texture) &&
-      /^[a-f0-9]{64}$/.test(offshore.texture) &&
-      Array.isArray(rect) &&
-      rect.length === 4 &&
-      rect.every((n) => finite(n, 0, 1)) &&
-      rect[2]! > rect[0]! &&
-      rect[3]! > rect[1]! &&
-      finite(offshore.rmsSlope, 0.001, 1)
-        ? {
-            texture: offshore.texture,
-            rect: rect as [number, number, number, number],
-            rmsSlope: offshore.rmsSlope as number,
-          }
+      oceanCoverage && finite(offshore?.rmsSlope, 0.001, 1)
+        ? { ...oceanCoverage, rmsSlope: offshore.rmsSlope }
+        : undefined;
+    const vegetation = record(value.vegetationExposure);
+    const coverage = mapCoverage(vegetation, entity);
+    const vegetationExposure =
+      coverage && finite(vegetation?.stops, -4, 4)
+        ? { ...coverage, stops: vegetation.stops }
         : undefined;
     map = {
       ...reference,
       ...(ocean ? { offshore: ocean } : {}),
+      ...(vegetationExposure ? { vegetationExposure } : {}),
       ...(turfColorSurvey ? { turfColorSurvey } : {}),
       ...(exclusions ? { grassExclusions: exclusions } : {}),
       ...(lawns ? { mownLawns: lawns } : {}),
